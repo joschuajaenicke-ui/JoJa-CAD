@@ -36,6 +36,28 @@ cargo test                          # muss grün sein
 Das Binary trägt eine Build-Nummer (Git-Commit-Zähler, `crates/jjcad-gui/build.rs`)
 in Fenstertitel und Statusleiste.
 
+### Build-Identität (verbindlich)
+
+Die Build-Nummer ist der Commit-Zähler **von `master`** — auf einem Zweig hat sie
+keine Bedeutung. Deshalb trägt jeder ausgelieferte Build zusätzlich die
+Commit-Kurzform:
+
+```
+~/jjcad-live/jjcad-0.2.0-b27-81ec0c2      <- Name = Nummer + Commit
+~/jjcad-live/jjcad                        <- Symlink auf den neuesten
+~/jjcad-live/shipped.last                 <- zuletzt ausgelieferter Commit
+```
+
+`build-live.sh` bricht ab, wenn
+- der Zweig nicht `master` ist,
+- das Arbeitsverzeichnis ungesaubert ist,
+- ein Build mit gleichem Namen schon existiert,
+- der Stand **kein Nachfolger** des zuletzt ausgelieferten ist (Vorfahren-Prüfung;
+  verhindert, dass ein älterer Zweig gelöste Fehler zurückbringt).
+
+Testbuilds von Workern heißen nie so — sie bauen nur `cargo build --release` in
+ihrem Worktree.
+
 **`~/jjcad-live` gehört dem Manager, nicht den Workern.** Ein Worker baut seinen
 Zweig mit `cargo build --release` und testet ihn headless; er ruft **nie**
 `scripts/build-live.sh` auf. Sonst bekommt der Nutzer Builds aus einem
