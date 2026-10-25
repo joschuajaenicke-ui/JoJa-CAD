@@ -413,11 +413,11 @@ fn snapping_finds_endpoints_and_intersections() {
     s.execute("draw.line", &json!({"a": [1, -1], "b": [1, 1]})).unwrap();
     // Rasterfang für diesen Test ausschalten
     s.execute("doc.settings", &json!({"snap": {"grid": false}})).unwrap();
-    let hit = jjcad_core::snap::find_snap(&s.doc, v(1500.0, 1500.0), 20.0, None, &[]);
+    let hit = jjcad_core::snap::find_snap(&s.doc, v(1500.0, 1500.0), 20.0, None, &[], &[]);
     assert!(hit.is_none(), "{hit:?}");
-    let hit = jjcad_core::snap::find_snap(&s.doc, v(1990.0, 10.0), 60.0, None, &[]).unwrap();
+    let hit = jjcad_core::snap::find_snap(&s.doc, v(1990.0, 10.0), 60.0, None, &[], &[]).unwrap();
     assert_eq!(hit.point.x, 2000.0);
-    let hit = jjcad_core::snap::find_snap(&s.doc, v(1005.0, 5.0), 80.0, None, &[]).unwrap();
+    let hit = jjcad_core::snap::find_snap(&s.doc, v(1005.0, 5.0), 80.0, None, &[], &[]).unwrap();
     assert!((hit.point.x - 1000.0).abs() < 1.0);
 }
 
@@ -431,7 +431,7 @@ fn wandkontur_fang_ueber_einstellungen() {
 
     // Die Konturecke liegt 150 mm neben der Achse: (0;150) statt (0;0).
     let ecke = v(0.0, 150.0);
-    let hit = jjcad_core::snap::find_snap(&s.doc, v(4.0, 146.0), 30.0, None, &[])
+    let hit = jjcad_core::snap::find_snap(&s.doc, v(4.0, 146.0), 30.0, None, &[], &[])
         .expect("Wandkontur muss fangbar sein");
     assert!(hit.point.dist(ecke) < 1e-6, "{hit:?}");
     assert_eq!(hit.kind, jjcad_core::snap::SnapKind::Endpoint);
@@ -440,8 +440,8 @@ fn wandkontur_fang_ueber_einstellungen() {
     // Abschalten: nur die Kontur verschwindet, die Achse bleibt fangbar.
     s.execute("doc.settings", &json!({"snap": {"wall_edges": false}}))
         .unwrap();
-    assert!(jjcad_core::snap::find_snap(&s.doc, v(4.0, 146.0), 30.0, None, &[]).is_none());
-    let achse = jjcad_core::snap::find_snap(&s.doc, v(4.0, 4.0), 30.0, None, &[])
+    assert!(jjcad_core::snap::find_snap(&s.doc, v(4.0, 146.0), 30.0, None, &[], &[]).is_none());
+    let achse = jjcad_core::snap::find_snap(&s.doc, v(4.0, 4.0), 30.0, None, &[], &[])
         .expect("Achsendendpunkt bleibt");
     assert!(achse.point.dist(v(0.0, 0.0)) < 1e-6, "{achse:?}");
 
@@ -615,7 +615,7 @@ fn wandkontur_fang_ist_getrennt_schaltbar() {
         (5000.0, -120.0),
     ];
     for (x, y) in ecken {
-        let hit = jjcad_core::snap::find_snap(&s.doc, v(x, y), 20.0, None, &[])
+        let hit = jjcad_core::snap::find_snap(&s.doc, v(x, y), 20.0, None, &[], &[])
             .unwrap_or_else(|| panic!("Konturecke ({x},{y}) muss fangen"));
         assert!(
             (hit.point.x - x).abs() < 1e-6 && (hit.point.y - y).abs() < 1e-6,
@@ -628,22 +628,22 @@ fn wandkontur_fang_ist_getrennt_schaltbar() {
         .unwrap();
     for (x, y) in ecken {
         assert!(
-            jjcad_core::snap::find_snap(&s.doc, v(x, y), 20.0, None, &[]).is_none(),
+            jjcad_core::snap::find_snap(&s.doc, v(x, y), 20.0, None, &[], &[]).is_none(),
             "Konturecke ({x},{y}) darf nicht mehr fangen"
         );
     }
     // Die Wandachse bleibt unberuehrt fangbar.
-    let achse = jjcad_core::snap::find_snap(&s.doc, v(0.0, 0.0), 20.0, None, &[])
+    let achse = jjcad_core::snap::find_snap(&s.doc, v(0.0, 0.0), 20.0, None, &[], &[])
         .expect("Achsen-Endpunkt muss weiterhin fangen");
     assert_eq!(achse.point, v(0.0, 0.0));
-    let mitte = jjcad_core::snap::find_snap(&s.doc, v(2500.0, 0.0), 20.0, None, &[])
+    let mitte = jjcad_core::snap::find_snap(&s.doc, v(2500.0, 0.0), 20.0, None, &[], &[])
         .expect("Achsen-Mittelpunkt muss weiterhin fangen");
     assert_eq!(mitte.point, v(2500.0, 0.0));
 
     // Wieder einschalten: Kontur ist sofort wieder da.
     s.execute("doc.settings", &json!({"snap": {"wall_edges": true}}))
         .unwrap();
-    assert!(jjcad_core::snap::find_snap(&s.doc, v(0.0, 120.0), 20.0, None, &[]).is_some());
+    assert!(jjcad_core::snap::find_snap(&s.doc, v(0.0, 120.0), 20.0, None, &[], &[]).is_some());
 }
 
 #[test]

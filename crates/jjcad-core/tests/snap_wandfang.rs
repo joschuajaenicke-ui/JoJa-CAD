@@ -38,7 +38,7 @@ fn wand(s: &mut Session, a: [f64; 2], b: [f64; 2], dicke: f64) -> u64 {
 /// Fang ohne Raster (die Zeichenfläche schaltet den Rasterfang genauso ab,
 /// wenn das Raster nicht angezeigt wird).
 fn fang(s: &Session, p: Vec2, tol: f64) -> Option<jjcad_core::snap::SnapHit> {
-    find_snap(&s.doc, p, tol, None, &[])
+    find_snap(&s.doc, p, tol, None, &[], &[])
 }
 
 /// Name des Schalterfeldes für den Wandkontur-Fang im `snap`-Objekt.
@@ -298,7 +298,7 @@ fn ignorierte_wand_liefert_keine_kontur() {
     let mut s = s();
     let id = wand(&mut s, [0.0, 0.0], [5.0, 0.0], 0.30);
     let ecke = kontur_ecken(&s.doc, id)[0];
-    let hit = find_snap(&s.doc, ecke + v(2.0, 2.0), 30.0, None, &[id]);
+    let hit = find_snap(&s.doc, ecke + v(2.0, 2.0), 30.0, None, &[id], &[]);
     assert!(
         hit.is_none(),
         "ignorierte Wand liefert weiterhin einen Fangpunkt: {hit:?}"
@@ -449,7 +449,7 @@ fn schalter_ueberlebt_speichern_und_laden() {
     let id = geladen.entities.last().unwrap().id;
     let ecke = kontur_ecken(&geladen, id)[0];
     assert!(
-        find_snap(&geladen, ecke + v(2.0, 2.0), 30.0, None, &[]).is_none(),
+        find_snap(&geladen, ecke + v(2.0, 2.0), 30.0, None, &[], &[]).is_none(),
         "nach dem Laden darf die Kontur-Ecke nicht fangen"
     );
 }
@@ -598,4 +598,60 @@ fn wandtyp_bleibt_erhalten() {
         s.doc.entities[0].kind,
         EntityKind::Wall { .. }
     ));
+}
+
+// ---------------------------------------------------------------------------
+// Ausgewählte Objekte (Kanban t_410e5128)
+// ---------------------------------------------------------------------------
+
+/// Fang an einer ausgewählten Wand: Ecken ja, „Nächster Punkt" nein.
+fn fang_auswahl(s: &Session, p: Vec2, tol: f64, ids: &[u64]) -> Option<jjcad_core::snap::SnapHit> {
+    find_snap(&s.doc, p, tol, None, &[], ids)
+}
+
+#[test]
+fn ausgewaehlte_wand_behaelt_ihre_eckpunkte() {
+    let mut s = s();
+    let id = wand(&mut s, [0.0, 0.0], [5.0, 0.0], 0.30);
+    let ecke = kontur_ecken(&s.doc, id)[0];
+    // Vorher wurde die Auswahl dem Fang als `ignore` übergeben — kein Fang …
+    assert!(
+        find_snap(&s.doc, ecke + v(2.0, 2.0), 30.0, None, &[id], &[]).is_none(),
+        "Vorbedingung: ignoriertes Objekt fängt nicht"
+    );
+    // … jetzt liefert dieselbe Wand als Auswahl exakt ihre Konturecke.
+    let hit = fang_auswahl(&s, ecke + v(2.0, 2.0), 30.0, &[id])
+        .unwrap_or_else(|| panic!("ausgewählte Wandecke {ecke:?} muss fangen"));
+    assert!(hit.point.dist(ecke) < 1e-9, "{hit:?} != {ecke:?}");
+    assert_eq!(hit.kind, SnapKind::Endpoint);
+    assert_eq!(hit.entity, Some(id));
+}
+
+#[test]
+fn ausgewaehlte_wand_klebt_nicht_am_naechsten_punkt() {
+    // 1000 mm die Wand entlang, 5 mm neben der Kante: nur der kontinuierliche
+    // Fang könnte hier greifen — der bleibt für ausgewählte Objekte aus.
+    let mut s = s();
+    let id = wand(&mut s, [0.0, 0.0], [5.0, 0.0], 0.30);
+    let p = v(1000.0, 5.0);
+    assert!(fang(&s, p, 30.0).is_some(), "Vorbedingung: Fang an der Wand");
+    assert!(
+        fang_auswahl(&s, p, 30.0, &[id]).is_none(),
+        "ausgewähltes Objekt darf keinen Nächster-Punkt-Fang liefern"
+    );
+}
+
+#[test]
+fn auswahl_aendert_nichts_am_fang_anderer_objekte() {
+    let mut s = s();
+    let a = wand(&mut s, [0.0, 0.0], [5.0, 0.0], 0.30);
+    let b = wand(&mut s, [0.0, -4.0], [0.0, -1.0], 0.30);
+    let ecke_b = kontur_ecken(&s.doc, b)[0];
+    let p = ecke_b + v(2.0, 2.0);
+    let ohne = fang(&s, p, 30.0).expect("Fang an b");
+    let mit = fang_auswahl(&s, p, 30.0, &[a]).expect("Fang an b mit Auswahl");
+    assert_eq!(ohne.point, mit.point);
+    assert_eq!(ohne.kind, mit.kind);
+    assert_eq!(mit.entity, Some(b));
+    let _ = a;
 }

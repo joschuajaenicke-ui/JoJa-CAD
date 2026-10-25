@@ -68,14 +68,21 @@ pub struct SnapHit {
 ///
 /// * `tol` – Fangradius in Weltkoordinaten
 /// * `reference` – Bezugspunkt (für Lotfuß / Ortho)
+/// * `ignore` – Objekte, die überhaupt nicht fangen (z. B. das gerade live
+///   gezogene Objekt)
+/// * `selected` – ausgewählte Objekte: sie bleiben mit ihren *diskreten*
+///   Punkten (Ende, Mitte, Zentrum, Quadrant) fangbar, liefern aber keine
+///   kontinuierlichen Fänge (Nächster Punkt, Lot, Schnittpunkt). Sonst klebte
+///   ein bewegtes Objekt an sich selbst.
 pub fn find_snap(
     doc: &Document,
     cursor: Vec2,
     tol: f64,
     reference: Option<Vec2>,
     ignore: &[Id],
+    selected: &[Id],
 ) -> Option<SnapHit> {
-    find_snap_gated(doc, cursor, tol, reference, ignore, true)
+    find_snap_gated(doc, cursor, tol, reference, ignore, selected, true)
 }
 
 /// Wie [`find_snap`], aber der Rasterfang lässt sich abschalten —
@@ -86,9 +93,10 @@ pub fn find_snap_gated(
     tol: f64,
     reference: Option<Vec2>,
     ignore: &[Id],
+    selected: &[Id],
     allow_grid: bool,
 ) -> Option<SnapHit> {
-    snap_candidates_gated(doc, cursor, tol, reference, ignore, allow_grid)
+    snap_candidates_gated(doc, cursor, tol, reference, ignore, selected, allow_grid)
         .into_iter()
         .next()
 }
@@ -107,16 +115,19 @@ pub fn snap_candidates(
     tol: f64,
     reference: Option<Vec2>,
     ignore: &[Id],
+    selected: &[Id],
 ) -> Vec<SnapHit> {
-    snap_candidates_gated(doc, cursor, tol, reference, ignore, true)
+    snap_candidates_gated(doc, cursor, tol, reference, ignore, selected, true)
 }
 
+#[allow(clippy::too_many_arguments)]
 pub fn snap_candidates_gated(
     doc: &Document,
     cursor: Vec2,
     tol: f64,
     reference: Option<Vec2>,
     ignore: &[Id],
+    selected: &[Id],
     allow_grid: bool,
 ) -> Vec<SnapHit> {
     let mut s = doc.settings.snap.clone();
@@ -141,13 +152,16 @@ pub fn snap_candidates_gated(
         ));
     };
 
-    // Kandidaten sammeln (nur sichtbare Objekte in der Nähe)
+    // Kandidaten sammeln (nur sichtbare Objekte in der Nähe).
+    // Dritter Wert je Segment: gehört das Segment zu einem ausgewählten
+    // Objekt? Dann nur diskrete Punkte anbieten, keine kontinuierlichen Fänge.
     let area = BBox::new(cursor - v(tol, tol), cursor + v(tol, tol));
-    let mut segs: Vec<(Seg, Id)> = Vec::new();
+    let mut segs: Vec<(Seg, Id, bool)> = Vec::new();
     for e in &doc.entities {
         if ignore.contains(&e.id) {
             continue;
         }
+        let ausgewaehlt = selected.contains(&e.id);
         if let Some(l) = doc.layer(e.layer) {
             if !l.visible || l.locked {
                 continue;
@@ -158,7 +172,7 @@ pub fn snap_candidates_gated(
             continue;
         }
         for sg in render::entity_segments(doc, e) {
-            segs.push((sg, e.id));
+            segs.push((sg, e.id, ausgewaehlt));
         }
         // Wandkörper: die umgrenzenden Linien (Längskanten, Gehrungs-/Stirn-
         // ecken, Laibungen) liefern ebenfalls Fangpunkte. Ohne diesen Zweig
@@ -166,7 +180,7 @@ pub fn snap_candidates_gated(
         // `snap.wall_edges` — die Achse bleibt in jedem Fall erhalten.
         if s.wall_edges && matches!(e.kind, EntityKind::Wall { .. }) {
             for sg in render::wall_contour_segments(doc, e) {
-                segs.push((sg, e.id));
+                segs.push((sg, e.id, ausgewaehlt));
             }
         }
         if s.center {
@@ -180,7 +194,7 @@ pub fn snap_candidates_gated(
     }
 
     // Endpunkte / Mittelpunkte / Quadranten
-    for (sg, id) in &segs {
+    for (sg, id, ausgewaehlt) in &segs {
         let a = sg.start();
         let b = sg.end();
         let da = a.dist(cursor);
@@ -205,26 +219,33 @@ pub fn snap_candidates_gated(
                 }
             }
         }
-        if s.perpendicular {
+        // Kontinuierliche Fänge nur an nicht ausgewählten Objekten: an einem
+        // ausgewählten Objekt würde „Nächster Punkt" den Zeiger auf das
+        // Objekt selbst zurückziehen, sobald es mitgezogen wird.
+        if s.perpendicular && !*ausgewaehlt {
             if let Some(r) = reference {
                 let foot = closest_point_on_segment(r, a, b);
                 // Lot nur, wenn der Fuß nahe am Cursor liegt
                 consider(foot, SnapKind::Perpendicular, Some(*id), foot.dist(cursor));
             }
         }
-        if s.nearest {
+        if s.nearest && !*ausgewaehlt {
             let (q, d) = sg.closest(cursor);
             consider(q, SnapKind::Nearest, Some(*id), d);
         }
     }
 
-    // Schnittpunkte
+    // Schnittpunkte — nicht mit ausgewählten Objekten: der Schnittpunkt
+    // wandert mit, sobald das Objekt bewegt wird (gleiche Begründung wie oben).
     if s.intersection {
         let n = segs.len().min(400);
         for i in 0..n {
             for j in (i + 1)..n {
-                let (a, ia) = &segs[i];
-                let (b, ib) = &segs[j];
+                let (a, ia, sa) = &segs[i];
+                let (b, ib, sb) = &segs[j];
+                if *sa || *sb {
+                    continue;
+                }
                 // Nur wenn beide Segmente nahe am Cursor liegen
                 let ba = a.bbox();
                 let bb = b.bbox();
@@ -503,7 +524,7 @@ mod tests {
             "{pts:?}"
         );
         // Der Fang greift auf der Konturecke, nicht auf der Achse.
-        let hit = find_snap_gated(&doc, Vec2::new(4.0, 146.0), 30.0, None, &[], false)
+        let hit = find_snap_gated(&doc, Vec2::new(4.0, 146.0), 30.0, None, &[], &[], false)
             .expect("Konturecke muss fangbar sein");
         assert!(hit.point.dist(Vec2::new(0.0, 150.0)) < 1e-6, "{hit:?}");
         assert_eq!(hit.kind, SnapKind::Endpoint);
@@ -543,7 +564,7 @@ mod tests {
         ] {
             assert!(pts.iter().any(|p| p.dist(soll) < 1e-6), "fehlt {soll:?}: {pts:?}");
         }
-        let hit = find_snap_gated(&doc, Vec2::new(1502.0, 147.0), 30.0, None, &[], false)
+        let hit = find_snap_gated(&doc, Vec2::new(1502.0, 147.0), 30.0, None, &[], &[], false)
             .expect("Laibungsecke muss fangbar sein");
         assert!(hit.point.dist(Vec2::new(1500.0, 150.0)) < 1e-6, "{hit:?}");
     }
@@ -557,10 +578,10 @@ mod tests {
             wand(d, Vec2::ZERO, Vec2::new(5000.0, 0.0));
         }
         let cursor = Vec2::new(4.0, 146.0);
-        let an = find_snap_gated(&doc, cursor, 30.0, None, &[], false);
+        let an = find_snap_gated(&doc, cursor, 30.0, None, &[], &[], false);
         assert!(an.is_some());
         // Aus: keine Konturpunkte mehr — und die Achse liefert hier nichts.
-        let aus = find_snap_gated(&doc_aus, cursor, 30.0, None, &[], false);
+        let aus = find_snap_gated(&doc_aus, cursor, 30.0, None, &[], &[], false);
         assert!(aus.is_none(), "{aus:?}");
     }
 
@@ -572,7 +593,7 @@ mod tests {
         wand(&mut doc, Vec2::ZERO, Vec2::new(0.0, 4000.0));
         // Beide Wände rechnen die Gehrungsecke (-150,-150) — sie darf nur einmal
         // im Vorschlag stehen.
-        let cands = snap_candidates_gated(&doc, Vec2::new(-150.0, -150.0), 200.0, None, &[], false);
+        let cands = snap_candidates_gated(&doc, Vec2::new(-150.0, -150.0), 200.0, None, &[], &[], false);
         for (i, a) in cands.iter().enumerate() {
             for b in cands.iter().skip(i + 1) {
                 assert!(
@@ -588,13 +609,124 @@ mod tests {
     }
 
     #[test]
+    fn ausgewaehlte_wand_liefert_weiter_eckpunkte() {
+        let mut doc = Document::blank();
+        let id = wand(&mut doc, Vec2::ZERO, Vec2::new(5000.0, 0.0));
+        let cursor = Vec2::new(4.0, 146.0);
+        // Bisher wurde die Auswahl als `ignore` übergeben — dann kein Fang …
+        assert!(
+            find_snap_gated(&doc, cursor, 30.0, None, &[id], &[], false).is_none(),
+            "ignoriertes Objekt darf nichts liefern"
+        );
+        // … als ausgewähltes Objekt liefert sie ihre Konturecke.
+        let hit = find_snap_gated(&doc, cursor, 30.0, None, &[], &[id], false)
+            .expect("ausgewählte Wandecke muss fangen");
+        assert!(hit.point.dist(Vec2::new(0.0, 150.0)) < 1e-9, "{hit:?}");
+        assert_eq!(hit.kind, SnapKind::Endpoint);
+        assert_eq!(hit.entity, Some(id));
+    }
+
+    #[test]
+    fn ausgewaehltes_objekt_liefert_keinen_naechsten_punkt() {
+        let mut doc = Document::blank();
+        let id = wand(&mut doc, Vec2::ZERO, Vec2::new(5000.0, 0.0));
+        // 1000 mm die Wand entlang, 5 mm daneben: nichts diskretes in Reichweite.
+        let cursor = Vec2::new(1000.0, 5.0);
+        let ohne = find_snap_gated(&doc, cursor, 30.0, None, &[], &[], false);
+        assert_eq!(
+            ohne.map(|h| h.kind),
+            Some(SnapKind::Nearest),
+            "nicht ausgewählt: Nächster Punkt wie bisher"
+        );
+        // Ausgewählt: kein Zurückziehen auf das eigene Objekt (sonst klebt das
+        // Verschieben am Startpunkt).
+        assert!(
+            find_snap_gated(&doc, cursor, 30.0, None, &[], &[id], false).is_none(),
+            "ausgewähltes Objekt darf keinen Nächster-Punkt-Fang liefern"
+        );
+    }
+
+    #[test]
+    fn ausgewaehltes_objekt_bildet_keinen_schnittpunkt() {
+        let mut doc = Document::blank();
+        let a = wand(&mut doc, Vec2::ZERO, Vec2::new(5000.0, 0.0));
+        wand(&mut doc, Vec2::new(2500.0, -2000.0), Vec2::new(2500.0, 2000.0));
+        doc.settings.snap.nearest = false;
+        doc.settings.snap.midpoint = false;
+        doc.settings.snap.perpendicular = false;
+        doc.settings.snap.grid = false;
+        let cursor = Vec2::new(2500.0, 0.0);
+        let ohne = snap_candidates_gated(&doc, cursor, 30.0, None, &[], &[], false);
+        assert!(
+            ohne
+                .iter()
+                .any(|h| h.kind == SnapKind::Intersection && h.point.dist(cursor) < 1.0),
+            "{ohne:?}"
+        );
+        let mit = snap_candidates_gated(&doc, cursor, 30.0, None, &[], &[a], false);
+        assert!(
+            mit.iter().all(|h| h.kind != SnapKind::Intersection),
+            "{mit:?}"
+        );
+    }
+
+    #[test]
+    fn nicht_ausgewaehlte_objekte_fangen_unveraendert() {
+        let mut doc = Document::blank();
+        let a = wand(&mut doc, Vec2::ZERO, Vec2::new(5000.0, 0.0));
+        let b = wand(&mut doc, Vec2::new(0.0, -4000.0), Vec2::new(0.0, -1000.0));
+        // Cursor an der Konturecke der *nicht* ausgewählten Wand b.
+        let cursor = Vec2::new(147.0, -1004.0);
+        let ohne = find_snap_gated(&doc, cursor, 30.0, None, &[], &[], false).expect("Fang an b");
+        let mit =
+            find_snap_gated(&doc, cursor, 30.0, None, &[], &[a], false).expect("Fang an b mit Auswahl");
+        assert_eq!(ohne.point, mit.point);
+        assert_eq!(ohne.kind, mit.kind);
+        assert_eq!(mit.entity, Some(b));
+    }
+
+    #[test]
+    fn verschieben_rastet_auf_eigener_wandecke() {
+        use crate::session::Session;
+        let mut s = Session::new();
+        // Eingaben in Millimetern: Wand 0…5000 mm lang, 300 mm dick.
+        s.execute("doc.settings", &serde_json::json!({"input_unit": "mm"}))
+            .unwrap();
+        s.execute(
+            "draw.wall",
+            &serde_json::json!({"a": [0.0, 0.0], "b": [5000.0, 0.0], "thickness": 300.0}),
+        )
+        .unwrap();
+        let id = s.doc.entities[0].id;
+        // Klick 6 mm neben der Konturecke (0,150) — der Fang zieht exakt dorthin.
+        let basis = find_snap_gated(&s.doc, Vec2::new(6.0, 144.0), 30.0, None, &[], &[id], false)
+            .expect("Wandecke als Basispunkt")
+            .point;
+        assert!(basis.dist(Vec2::new(0.0, 150.0)) < 1e-9, "{basis:?}");
+        // Verschiebung um exakt 1000 mm: Achse liegt danach bei 1000…6000.
+        let ziel = basis + v(1000.0, 0.0);
+        s.execute(
+            "modify.move",
+            &serde_json::json!({"ids": [id], "from": [basis.x, basis.y], "to": [ziel.x, ziel.y]}),
+        )
+        .unwrap();
+        match &s.doc.entities[0].kind {
+            EntityKind::Wall { a, b, .. } => {
+                assert!(a.dist(Vec2::new(1000.0, 0.0)) < 1e-9, "{a:?}");
+                assert!(b.dist(Vec2::new(6000.0, 0.0)) < 1e-9, "{b:?}");
+            }
+            other => panic!("keine Wand: {other:?}"),
+        }
+    }
+
+    #[test]
     fn rasterfang_folgt_der_rasteranzeige() {
         let doc = Document::blank();
         let p = Vec2::new(104.0, 97.0);
         // Raster eingeschaltet -> fängt auf 100/100
-        let on = find_snap_gated(&doc, p, 20.0, None, &[], true).expect("Rasterfang");
+        let on = find_snap_gated(&doc, p, 20.0, None, &[], &[], true).expect("Rasterfang");
         assert!((on.point.x - 100.0).abs() < 1e-9);
         // Raster ausgeschaltet -> kein Rasterfang mehr
-        assert!(find_snap_gated(&doc, p, 20.0, None, &[], false).is_none());
+        assert!(find_snap_gated(&doc, p, 20.0, None, &[], &[], false).is_none());
     }
 }
