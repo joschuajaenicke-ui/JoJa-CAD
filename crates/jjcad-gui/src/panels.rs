@@ -404,12 +404,13 @@ fn pending_props(app: &mut App, ui: &mut Ui) {
         app.doc_mut().current_layer = new_layer;
     }
 
-    // Farbe
+    // Farbe der Linie (bei der Wand: Umrandung des Körpers)
     let by_layer = app.ui.pending.color.is_none();
     let col = app.ui.pending.color.unwrap_or(Color::BLACK);
     let mut picked_col: Option<Option<Color>> = None;
-    widgets::field_row(ui, "Farbe", |ui| {
-        picked_col = color_combo(ui, "pend_col", col, by_layer, false);
+    let color_label = if is_wall { "Linienfarbe" } else { "Farbe" };
+    widgets::field_row(ui, color_label, |ui| {
+        picked_col = color_combo(ui, "pend_col", col, by_layer, false, "vom Layer");
     });
     if let Some(v) = picked_col {
         app.ui.pending.color = v;
@@ -486,12 +487,16 @@ fn pending_props(app: &mut App, ui: &mut Ui) {
             };
         }
 
-        // Füllung
-        let fill_by_layer = app.ui.pending.fill.is_none();
-        let fill_cur = app.ui.pending.fill.unwrap_or(Color::WHITE);
+        // Füllfläche der Wand — eigene Farbe, unabhängig von der Linie
+        let fill_unset = app.ui.pending.fill.is_none();
+        let fill_cur = app
+            .ui
+            .pending
+            .fill
+            .unwrap_or_else(|| col.mix(Color::WHITE, 0.74));
         let mut picked_fill: Option<Option<Color>> = None;
-        widgets::field_row(ui, "Füllung", |ui| {
-            picked_fill = color_combo(ui, "pend_fill", fill_cur, fill_by_layer, false);
+        widgets::field_row(ui, "Füllfarbe", |ui| {
+            picked_fill = color_combo(ui, "pend_fill", fill_cur, fill_unset, false, "Standard");
         });
         if let Some(v) = picked_fill {
             app.ui.pending.fill = v;
@@ -779,7 +784,18 @@ fn weight_combo(ui: &mut Ui, salt: &str, cur: f64, mixed: bool) -> Option<f64> {
 }
 
 /// Auswahl einer Farbe: Vorgaben aus der Liste, freie Farbe inline.
-fn color_combo(ui: &mut Ui, salt: &str, cur: Color, by_layer: bool, mixed: bool) -> Option<Option<Color>> {
+///
+/// `unset_label` benennt den Zustand "kein eigener Wert". Für Linien ist das
+/// "vom Layer", für Wandflächen gibt es keine Layerfarbe — dort heißt der
+/// Zustand "Standard" (Fläche hellt aus der Linienfarbe auf).
+fn color_combo(
+    ui: &mut Ui,
+    salt: &str,
+    cur: Color,
+    unset: bool,
+    mixed: bool,
+    unset_label: &str,
+) -> Option<Option<Color>> {
     let eid = ui.make_persistent_id(("ce", salt));
     let editing = ui.data(|d| d.get_temp::<bool>(eid)).unwrap_or(false);
     if editing {
@@ -799,8 +815,8 @@ fn color_combo(ui: &mut Ui, salt: &str, cur: Color, by_layer: bool, mixed: bool)
     }
     let (cap, sw) = if mixed {
         ("*variiert*".to_string(), None)
-    } else if by_layer {
-        ("vom Layer".to_string(), None)
+    } else if unset {
+        (unset_label.to_string(), None)
     } else {
         let hex = cur.to_hex();
         let name = COLOR_PRESETS
@@ -818,7 +834,7 @@ fn color_combo(ui: &mut Ui, salt: &str, cur: Color, by_layer: bool, mixed: bool)
     };
     dropdown(ui, salt, &cap, sw.map(BtnIcon::Color), |ui| {
         let mut out: Option<Option<Color>> = None;
-        if ui.selectable_label(by_layer, "vom Layer").clicked() {
+        if ui.selectable_label(unset, unset_label).clicked() {
             out = Some(None);
         }
         ui.separator();
@@ -826,7 +842,7 @@ fn color_combo(ui: &mut Ui, salt: &str, cur: Color, by_layer: bool, mixed: bool)
             for (i, (name, meaning, rgb)) in COLOR_PRESETS.iter().enumerate() {
                 let cell = &mut cols[i % 2];
                 let c = preset_color(*rgb);
-                let sel = !by_layer && cur.to_hex() == c.to_hex();
+                let sel = !unset && cur.to_hex() == c.to_hex();
                 cell.horizontal(|ui| {
                     swatch(ui, c);
                     let txt = if meaning.is_empty() {
@@ -891,12 +907,14 @@ fn entity_props(app: &mut App, ui: &mut Ui, id: Id) {
         app.mark_changed();
     }
 
-    // Farbe
+    // Farbe der Linie (bei der Wand: Umrandung des Körpers)
+    let ist_wand = matches!(e.kind, EntityKind::Wall { .. });
     let color = e.style.color.unwrap_or(app.doc().effective_color(&e));
     let by_layer = e.style.color.is_none();
     let mut picked_col: Option<Option<Color>> = None;
-    widgets::field_row(ui, "Farbe", |ui| {
-        picked_col = color_combo(ui, "ent_col", color, by_layer, false);
+    let color_label = if ist_wand { "Linienfarbe" } else { "Farbe" };
+    widgets::field_row(ui, color_label, |ui| {
+        picked_col = color_combo(ui, "ent_col", color, by_layer, false, "vom Layer");
     });
     if let Some(v) = picked_col {
         let cval = match v {
@@ -1050,10 +1068,12 @@ fn entity_props(app: &mut App, ui: &mut Ui, id: Id) {
 
             // Füllfläche getrennt von der Umrandung
             let fill_set = e.style.fill.is_some();
-            let fill_cur = e.style.fill.unwrap_or(Color::WHITE);
+            // Ohne eigene Füllfarbe zeigt der Farbwähler den tatsächlich
+            // gezeichneten Standard: Linienfarbe, 74 % Richtung Weiß.
+            let fill_cur = e.style.fill.unwrap_or_else(|| color.mix(Color::WHITE, 0.74));
             let mut picked_fill: Option<Option<Color>> = None;
-            widgets::field_row(ui, "Füllung", |ui| {
-                picked_fill = color_combo(ui, "wall_fill", fill_cur, !fill_set, false);
+            widgets::field_row(ui, "Füllfarbe", |ui| {
+                picked_fill = color_combo(ui, "wall_fill", fill_cur, !fill_set, false, "Standard");
             });
             if let Some(v) = picked_fill {
                 match v {
@@ -1065,7 +1085,7 @@ fn entity_props(app: &mut App, ui: &mut Ui, id: Id) {
                         app.mark_changed();
                     }
                     None => {
-                        // "vom Layer" = Standard-Schraffur der Wand
+                        // "Standard" = Fläche wieder aus der Linienfarbe aufhellen
                         let _ = app.session_mut().execute(
                             "modify.set",
                             &json!({"ids": [id], "fill": "none"}),
@@ -1443,33 +1463,49 @@ fn multi_props(app: &mut App, ui: &mut Ui, ids: &[Id]) {
     }
     section_title(ui, "select", "Mehrfachauswahl");
     ui.label(theme::dim(format!("{} Objekte", ents.len())));
+    // Nur Wände haben eine eigene Füllfläche — dort heißen die beiden
+    // Farbeinstellungen "Linienfarbe" und "Füllfarbe".
+    let alle_waende = ents
+        .iter()
+        .all(|e| matches!(e.kind, jjcad_core::model::EntityKind::Wall { .. }));
     ui.add_space(2.0);
 
     // ---- gemeinsame Felder ----
     // Layer
     let same_layer = ents.iter().all(|e| e.layer == ents[0].layer);
-    let layer_text = if same_layer {
-        app.doc()
-            .layer(ents[0].layer)
-            .map(|l| l.name.clone())
-            .unwrap_or_default()
-    } else {
-        "*variiert*".to_string()
-    };
     let mut picked: Option<Id> = None;
-    widgets::field_row(ui, "Layer", |ui| {
-        egui::ComboBox::from_id_salt("multi_layer")
-            .width(ui.available_width())
-            .selected_text(layer_text.clone())
-            .show_ui(ui, |ui| {
-                for l in &app.doc().layers {
-                    let sel = same_layer && l.id == ents[0].layer;
-                    if ui.selectable_label(sel, &l.name).clicked() {
-                        picked = Some(l.id);
+    if same_layer {
+        // gleicher Layer in allen Objekten: normaler Dropdown
+        let layer_items: Vec<(Id, String)> = app
+            .doc()
+            .layers
+            .iter()
+            .map(|l| (l.id, l.name.clone()))
+            .collect();
+        let cur = ents[0].layer;
+        widgets::field_row(ui, "Layer", |ui| {
+            picked = pick_combo(ui, "multi_layer", cur, &layer_items);
+        });
+    } else {
+        // verschiedene Layer: Feld zeigt *variiert*, Auswahl setzt alle
+        let layer_items: Vec<(Id, String)> = app
+            .doc()
+            .layers
+            .iter()
+            .map(|l| (l.id, l.name.clone()))
+            .collect();
+        widgets::field_row(ui, "Layer", |ui| {
+            picked = dropdown(ui, "multi_layer", "*variiert*", None, |ui| {
+                let mut out = None;
+                for (id, name) in &layer_items {
+                    if ui.selectable_label(false, name).clicked() {
+                        out = Some(*id);
                     }
                 }
+                out
             });
-    });
+        });
+    }
     if let Some(l) = picked {
         let _ = app
             .session_mut()
@@ -1481,14 +1517,38 @@ fn multi_props(app: &mut App, ui: &mut Ui, ids: &[Id]) {
     let cols: Vec<Color> = ents.iter().map(|e| app.doc().effective_color(e)).collect();
     let same_col = cols.iter().all(|c| *c == cols[0]);
     let mut picked_col: Option<Option<Color>> = None;
-    widgets::field_row(ui, "Farbe", |ui| {
-        picked_col = color_combo(ui, "multi_col", cols[0], false, !same_col);
+    let multi_color_label = if alle_waende { "Linienfarbe" } else { "Farbe" };
+    widgets::field_row(ui, multi_color_label, |ui| {
+        picked_col = color_combo(ui, "multi_col", cols[0], false, !same_col, "vom Layer");
     });
     if let Some(Some(c)) = picked_col {
         let _ = app
             .session_mut()
             .execute("modify.set", &json!({"ids": ids, "color": c.to_hex()}));
         app.mark_changed();
+    }
+
+    // Füllfarbe — nur wenn ausschließlich Wände gewählt sind; sonst wäre das
+    // Feld für Linien und Punkte ohne Bedeutung.
+    if alle_waende {
+        let fills: Vec<Option<Color>> = ents.iter().map(|e| e.style.fill).collect();
+        let same_fill = fills.iter().all(|f| *f == fills[0]);
+        let fill_unset = same_fill && fills[0].is_none();
+        let fill_cur = fills[0].unwrap_or_else(|| cols[0].mix(Color::WHITE, 0.74));
+        let mut picked_fill: Option<Option<Color>> = None;
+        widgets::field_row(ui, "Füllfarbe", |ui| {
+            picked_fill = color_combo(ui, "multi_fill", fill_cur, fill_unset, !same_fill, "Standard");
+        });
+        if let Some(v) = picked_fill {
+            let wert = match v {
+                Some(c) => json!(c.to_hex()),
+                None => json!("none"),
+            };
+            let _ = app
+                .session_mut()
+                .execute("modify.set", &json!({"ids": ids, "fill": wert}));
+            app.mark_changed();
+        }
     }
 
     // Linienstärke
