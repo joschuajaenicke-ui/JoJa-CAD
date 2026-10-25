@@ -960,6 +960,31 @@ fn draw_tool_preview(
                 );
             }
         }
+        "draw.fill.boundary" => {
+            // Polygonzug bis zum Zeiger — der Umriss, der beim Klick entsteht.
+            for pair in tool.pts.windows(2) {
+                p.line_segment([w2s(pair[0]), w2s(pair[1])], stroke);
+            }
+            if let Some(start) = last {
+                p.line_segment([w2s(start), w2s(cursor)], stroke);
+                // Schlusskante zum Anfang: zeigt, wo sich das Polygon schließt
+                if let Some(first) = tool.pts.first() {
+                    p.line_segment([w2s(cursor), w2s(*first)], dashed);
+                }
+            }
+            let mut umriss = tool.pts.clone();
+            umriss.push(cursor);
+            draw_fill_ghost(app, p, rect, view, &umriss);
+            if let Some(pts) = fill_boundary_points(&umriss) {
+                label = format!(
+                    "{} Punkte · {}",
+                    pts.len(),
+                    unit.format_area(polygon_area(&pts).abs(), 2)
+                );
+            } else {
+                label = format!("{} Punkte", tool.pts.len() + 1);
+            }
+        }
         "draw.rect" => {
             if let Some(start) = last {
                 let r = Rect::from_two_pos(w2s(start), w2s(cursor));
@@ -1499,13 +1524,17 @@ fn handle_input(
         return;
     }
 
-    // Enter beendet Polylinie und Maßkette (Tippeingabe hat Vorrang)
+    // Enter beendet Polylinie, Umriss-Fläche und Maßkette (Tippeingabe hat Vorrang)
     if app.ui.typed.is_empty()
         && !ctx.wants_keyboard_input()
         && ctx.input(|i| i.key_pressed(egui::Key::Enter))
     {
         if let Some(t) = app.tool.clone() {
-            if matches!(t.action.as_str(), "draw.polyline" | "dim.chain") && t.pts.len() >= 2 {
+            if matches!(
+                t.action.as_str(),
+                "draw.polyline" | "draw.fill.boundary" | "dim.chain"
+            ) && t.pts.len() >= 2
+            {
                 finish_tool(app, true);
                 return;
             }
@@ -1614,8 +1643,10 @@ fn handle_input(
         return;
     }
 
-    // Rechtsklick: Kontextmenü für ein Objekt oder die Fläche
-    if resp.clicked_by(egui::PointerButton::Secondary) {
+    // Rechtsklick: Kontextmenü für ein Objekt oder die Fläche.
+    // Während ein Werkzeug läuft, beendet der Rechtsklick das Werkzeug
+    // (Polylinie, Umriss-Fläche, Maßkette) — dann kein Menü darüberlegen.
+    if app.tool.is_none() && resp.clicked_by(egui::PointerButton::Secondary) {
         if let Some(pos) = resp.interact_pointer_pos() {
             if let Some(w) = raw {
                 let tol = (app.doc().settings.snap.tolerance_px / view.zoom).max(1.0);
@@ -1700,7 +1731,7 @@ fn handle_input(
     if resp.clicked_by(egui::PointerButton::Secondary) {
         if let Some(tool) = app.tool.clone() {
             match tool.action.as_str() {
-                "draw.polyline" | "dim.chain" => {
+                "draw.polyline" | "draw.fill.boundary" | "dim.chain" => {
                     finish_tool(app, true);
                 }
                 _ => {
@@ -2073,6 +2104,84 @@ fn ghost_shape(p: &Painter, sh: &PShape, w2s: &dyn Fn(V2) -> Pos2, zoom: f64, st
 // Werkzeug-Logik
 // ---------------------------------------------------------------------------
 
+/// Eckpunkte einer Umriss-Füllung aus den gesammelten Klicks.
+///
+/// Doppelte Punkte fallen weg (zweimal auf dieselbe Stelle geklickt,
+/// Doppelklick am letzten Punkt), und ein Schlusspunkt auf dem Startpunkt
+/// schließt den Umriss, statt eine vierte Ecke zu erzeugen. Weniger als drei
+/// Ecken ergeben keine Fläche.
+pub fn fill_boundary_points(pts: &[V2]) -> Option<Vec<V2>> {
+    let mut out: Vec<V2> = Vec::with_capacity(pts.len());
+    for p in pts {
+        if out.last().map(|q: &V2| q.dist(*p) > 0.5).unwrap_or(true) {
+            out.push(*p);
+        }
+    }
+    if out.len() > 1 && out[0].dist(*out.last().unwrap()) <= 0.5 {
+        out.pop();
+    }
+    if out.len() >= 3 {
+        Some(out)
+    } else {
+        None
+    }
+}
+
+/// Vorschau der aufgezogenen Füllfläche: halbtransparente Fläche unter dem
+/// Polygonzug plus das echte Muster aus den Werkzeugoptionen.
+///
+/// Das Muster kommt aus [`render::render_fill`] — derselben Funktion, die das
+/// fertige Objekt zeichnet; die Fläche selbst wird trianguliert eingefärbt
+/// (egui füllt nur konvexe Polygone selbst, ein Umriss darf konkav sein).
+fn draw_fill_ghost(app: &App, p: &Painter, rect: Rect, view: View, umriss: &[V2]) {
+    let Some(boundary) = fill_boundary_points(umriss) else {
+        return;
+    };
+    let w2s = |q: V2| world_to_screen(rect, view, q);
+
+    // Fläche andeuten — der Plan darunter bleibt lesbar
+    let screen: Vec<Pos2> = boundary.iter().map(|q| w2s(*q)).collect();
+    if !fill_too_thin(&screen) {
+        let c = Palette::ACCENT.gamma_multiply(0.14);
+        for tri in triangulate(&screen) {
+            p.add(Shape::convex_polygon(tri.to_vec(), c, Stroke::NONE));
+        }
+    }
+
+    // Muster wie beim fertigen Objekt
+    let mut e = Entity::new(
+        0,
+        app.doc().current_layer,
+        EntityKind::Fill {
+            boundary,
+            pattern: app.options.fill_pattern,
+            pattern_angle: app.options.fill_angle,
+            pattern_scale: app.options.fill_scale,
+            border: false,
+        },
+    );
+    e.style.fill = app.ui.pending.fill;
+    let mut dl = DisplayList::default();
+    render::render_entity(
+        &render::RenderCtx::new(app.doc()),
+        &e,
+        Affine::IDENTITY,
+        &mut dl,
+        0,
+    );
+    let pc = PaintCtx {
+        selected: Vec::new(),
+        hover: None,
+        lineweights: true,
+        lineweights_scaled: app.ui.lineweights_scaled,
+        paper_px: view.zoom * app.doc().settings.annotation_scale,
+        preview: true,
+    };
+    for prim in &dl.prims {
+        paint_prim(p, prim, &w2s, view.zoom, &pc, 1.0);
+    }
+}
+
 pub fn finish_tool(app: &mut App, from_enter: bool) {
     let Some(tool) = app.tool.clone() else { return };
     match tool.action.as_str() {
@@ -2086,6 +2195,25 @@ pub fn finish_tool(app: &mut App, from_enter: bool) {
                 );
             }
             app.tool = None;
+        }
+        "draw.fill.boundary" => {
+            match fill_boundary_points(&tool.pts) {
+                Some(boundary) => {
+                    let _ = run(
+                        app,
+                        "draw.fill.boundary",
+                        json!({"boundary": boundary.iter().map(|p| [app.unit().from_mm(p.x), app.unit().from_mm(p.y)]).collect::<Vec<_>>(),
+                               "pattern": app.options.fill_pattern.key(),
+                               "angle": app.options.fill_angle.to_degrees(),
+                               "scale": app.unit().from_mm(app.options.fill_scale),
+                               "border": app.options.fill_border}),
+                    );
+                    app.tool = None;
+                }
+                // Zu wenige Ecken: Werkzeug bleibt stehen, der Punkt ist noch
+                // nicht verloren (ESC verwirft).
+                None => app.toast("Mindestens drei Punkte für eine Fläche"),
+            }
         }
         "dim.chain" => {
             if tool.pts.len() >= 2 {
@@ -2228,6 +2356,20 @@ fn tool_click(app: &mut App, w: V2) {
             tool.pts.push(w);
             app.tool = Some(tool);
         }
+        // Umriss abfahren: derselbe Klickpfad wie die Polylinie — gesammelt
+        // werden Punkte, nur das Ende erzeugt eine Füllfläche statt einer Linie.
+        "draw.fill.boundary" => {
+            // Klick auf den letzten Punkt (Doppelklick) oder auf den Startpunkt
+            // schließt den Umriss — wie Enter, nur mit der Maus.
+            let doppelt = tool.pts.last().map(|q| q.dist(w) <= 0.5).unwrap_or(false);
+            let am_start = tool.pts.first().map(|q| q.dist(w) <= 0.5).unwrap_or(false);
+            if tool.pts.len() >= 3 && (doppelt || am_start) {
+                finish_tool(app, true);
+            } else {
+                tool.pts.push(w);
+                app.tool = Some(tool);
+            }
+        }
         "draw.rect" => {
             if tool.pts.is_empty() {
                 tool.pts.push(w);
@@ -2327,13 +2469,14 @@ fn tool_click(app: &mut App, w: V2) {
                     };
                     match boundary {
                         Some(pts) => {
-                            let pat = app.options.fill_pattern.key();
                             let _ = run(
                                 app,
                                 "draw.fill",
                                 json!({"boundary": pts.iter().map(|q| ax(*q)).collect::<Vec<_>>(),
-                                       "pattern": pat,
-                                       "scale": unit.from_mm(app.options.fill_scale)}),
+                                       "pattern": app.options.fill_pattern.key(),
+                                       "angle": app.options.fill_angle.to_degrees(),
+                                       "scale": unit.from_mm(app.options.fill_scale),
+                                       "border": app.options.fill_border}),
                             );
                         }
                         None => app.toast("Bitte eine geschlossene Kontur anklicken"),
@@ -2616,6 +2759,157 @@ fn run(app: &mut App, action: &str, params: serde_json::Value) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use jjcad_core::style::FillPattern;
+
+    // ---- Umriss-Füllfläche (Karte F2) ----
+
+    fn app() -> App {
+        App::with_ctx(egui::Context::default())
+    }
+
+    fn ecken(app: &App) -> Vec<V2> {
+        app.doc()
+            .entities
+            .iter()
+            .find_map(|e| match &e.kind {
+                EntityKind::Fill { boundary, .. } => Some(boundary.clone()),
+                _ => None,
+            })
+            .unwrap_or_default()
+    }
+
+    fn fill_kind(app: &App) -> Option<EntityKind> {
+        app.doc()
+            .entities
+            .iter()
+            .find(|e| matches!(e.kind, EntityKind::Fill { .. }))
+            .map(|e| e.kind.clone())
+    }
+
+    /// Drei Klicks und Enter ergeben genau eine Füllfläche mit drei Ecken und
+    /// der richtigen Fläche — über denselben Klickpfad wie die Polylinie.
+    #[test]
+    fn drei_klicks_und_enter_erzeugen_eine_flaeche() {
+        let mut app = app();
+        app.options.fill_pattern = FillPattern::Cross;
+        app.options.fill_angle = 0.0;
+        app.options.fill_scale = 200.0;
+        app.options.fill_border = true;
+        app.start_tool("draw.fill.boundary");
+        assert_eq!(app.tool_id(), Some("draw.fill.boundary"));
+
+        // 2 m × 1 m Dreieck in mm
+        tool_click(&mut app, V2::new(0.0, 0.0));
+        tool_click(&mut app, V2::new(2000.0, 0.0));
+        tool_click(&mut app, V2::new(0.0, 1000.0));
+        assert_eq!(app.doc().entities.len(), 0, "während des Klickens nichts anlegen");
+
+        finish_tool(&mut app, true);
+        assert_eq!(app.doc().entities.len(), 1, "genau ein Objekt");
+        let ecken = ecken(&app);
+        assert_eq!(ecken.len(), 3, "drei Eckpunkte");
+        let flaeche = jjcad_core::geom::polygon_area(&ecken).abs();
+        assert!(
+            (flaeche - 1_000_000.0).abs() < 1e-6,
+            "Fläche 1 m², ist {flaeche} mm²"
+        );
+
+        let Some(EntityKind::Fill {
+            pattern,
+            pattern_scale,
+            border,
+            ..
+        }) = fill_kind(&app)
+        else {
+            panic!("kein Fill angelegt");
+        };
+        assert_eq!(pattern, FillPattern::Cross, "Muster aus den Werkzeugoptionen");
+        assert!((pattern_scale - 200.0).abs() < 1e-9, "Abstand aus den Optionen");
+        assert!(border);
+        assert!(app.tool.is_none(), "Werkzeug beendet");
+    }
+
+    /// Klick auf den Startpunkt schließt den Umriss (Maus statt Enter), ohne
+    /// eine vierte Ecke zu erzeugen; ein Doppelklick auf den letzten Punkt
+    /// ebenso.
+    #[test]
+    fn klick_auf_start_schliesst_den_umriss() {
+        let mut app = app();
+        app.start_tool("draw.fill.boundary");
+        tool_click(&mut app, V2::new(0.0, 0.0));
+        tool_click(&mut app, V2::new(2000.0, 0.0));
+        tool_click(&mut app, V2::new(2000.0, 1000.0));
+        tool_click(&mut app, V2::new(0.0, 0.0)); // zurück auf den Start
+        assert_eq!(app.doc().entities.len(), 1);
+        assert_eq!(ecken(&app).len(), 3);
+        assert!(app.tool.is_none());
+    }
+
+    #[test]
+    fn doppelklick_auf_den_letzten_punkt_schliesst() {
+        let mut app = app();
+        app.start_tool("draw.fill.boundary");
+        tool_click(&mut app, V2::new(0.0, 0.0));
+        tool_click(&mut app, V2::new(2000.0, 0.0));
+        tool_click(&mut app, V2::new(0.0, 1000.0));
+        tool_click(&mut app, V2::new(0.0, 1000.0)); // derselbe Punkt nochmal
+        assert_eq!(app.doc().entities.len(), 1);
+        assert_eq!(ecken(&app).len(), 3, "Doppelklick zählt keine Ecke");
+    }
+
+    /// ESC verwirft: kein Objekt, Werkzeug beendet.
+    #[test]
+    fn esc_verwirft_den_umriss() {
+        let mut app = app();
+        app.start_tool("draw.fill.boundary");
+        tool_click(&mut app, V2::new(0.0, 0.0));
+        tool_click(&mut app, V2::new(2000.0, 0.0));
+        tool_click(&mut app, V2::new(0.0, 1000.0));
+        app.cancel_tool();
+        assert!(app.tool.is_none(), "Werkzeug beendet");
+        assert!(app.doc().entities.is_empty(), "nichts angelegt");
+    }
+
+    /// Zu wenige Punkte: Enter legt nichts an, der gesammelte Umriss bleibt
+    /// stehen (der Nutzer kann weiterklicken).
+    #[test]
+    fn zwei_punkte_und_enter_legen_nichts_an() {
+        let mut app = app();
+        app.start_tool("draw.fill.boundary");
+        tool_click(&mut app, V2::new(0.0, 0.0));
+        tool_click(&mut app, V2::new(2000.0, 0.0));
+        finish_tool(&mut app, true);
+        assert!(app.doc().entities.is_empty(), "keine Fläche aus zwei Punkten");
+        assert_eq!(
+            app.tool.as_ref().map(|t| t.pts.len()),
+            Some(2),
+            "Punkte bleiben erhalten"
+        );
+    }
+
+    /// Punktliste: Doppelte fallen weg, Schlusspunkt auf dem Start schließt.
+    #[test]
+    fn punktliste_entdoppelt_und_schliesst() {
+        let a = V2::new(0.0, 0.0);
+        let b = V2::new(2000.0, 0.0);
+        let c = V2::new(0.0, 1000.0);
+        assert!(fill_boundary_points(&[a, b]).is_none(), "zwei Ecken reichen nicht");
+        assert_eq!(fill_boundary_points(&[a, b, c]).unwrap().len(), 3);
+        assert_eq!(
+            fill_boundary_points(&[a, b, c, a]).unwrap().len(),
+            3,
+            "Schlusspunkt auf dem Start ist keine vierte Ecke"
+        );
+        assert_eq!(
+            fill_boundary_points(&[a, b, c, c]).unwrap().len(),
+            3,
+            "Doppelklick-Punkt fällt weg"
+        );
+        assert!(
+            fill_boundary_points(&[a, b, b, c]).unwrap().len() == 3,
+            "doppelter Zwischenpunkt fällt weg"
+        );
+    }
 
     /// Zwei-Klick-Winkelwahl: Zentrum → „von" → „bis", Winkel zwischen den
     /// beiden Richtungen (nicht die Richtung zur X-Achse).

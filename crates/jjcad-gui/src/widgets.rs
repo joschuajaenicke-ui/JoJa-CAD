@@ -218,7 +218,10 @@ pub fn length_input(ui: &mut Ui, value_mm: &mut f64, unit: jjcad_core::units::Un
         crate::widgets::dv(&mut v)
             .speed(unit.mm() * 0.5)
             .max_decimals(decimals)
-            .min_decimals(0)
+            // Nachkommastellen sind auch die Anzeigegenauigkeit: mit
+            // min_decimals(0) stand für 0,10 m nur „0 m“ im Feld (jede
+            // Längenangabe in Metern wurde auf ganze Meter gerundet).
+            .min_decimals(decimals.min(2))
             .suffix(format!(" {}", unit.short())),
     );
     if resp.changed() {

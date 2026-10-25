@@ -97,6 +97,7 @@ pub const ACTIONS: &[ActionDef] = &[
     act!("draw.arc", "Bogen", Zeichnen, "arc", "", "Start, Ende, Bogenpunkt klicken", true),
     act!("draw.point", "Punkt", Zeichnen, "point", "p", "Punkt setzen", true),
     act!("draw.fill", "Füllfläche", Zeichnen, "fill", "", "Geschlossene Kontur klicken", true),
+    act!("draw.fill.boundary", "Fläche nach Umriss", Zeichnen, "fill", "i", "Umriss abfahren: Punkte klicken, Enter beendet", true),
     act!("draw.text", "Text", Zeichnen, "text", "t", "Position klicken, dann Text eingeben", true),
     act!("draw.ellipse", "Ellipse", Zeichnen, "ellipse", "", "Mittelpunkt und Achsen klicken", true),
 
@@ -189,6 +190,7 @@ pub fn is_mutating(id: &str) -> bool {
             | "draw.arc"
             | "draw.point"
             | "draw.fill"
+            | "draw.fill.boundary"
             | "draw.hatch"
             | "draw.text"
             | "draw.ellipse"
@@ -841,9 +843,11 @@ pub fn execute(doc: &mut Document, id: &str, params: &Value) -> Result<Value, St
             doc.add_entity(e);
             Ok(json!({"ok": true, "created": [idn]}))
         }
-        // `draw.hatch` bleibt als alter Name erreichbar (Hotbar-Vorgaben,
-        // MCP-Aufrufe von vor der Vereinheitlichung).
-        "draw.fill" | "draw.hatch" => {
+        // Eine Füllfläche aus einer Punktliste. Alle drei Namen laufen durch
+        // denselben Code: `draw.fill` (Kontur anklicken, Klickpfad in der GUI),
+        // `draw.fill.boundary` (Umriss abfahren) und der alte Name `draw.hatch`
+        // (Hotbar-Vorgaben, MCP-Aufrufe von vor der Vereinheitlichung).
+        "draw.fill" | "draw.fill.boundary" | "draw.hatch" => {
             let boundary = p
                 .pts("boundary")
                 .or_else(|| p.pts("pts"))

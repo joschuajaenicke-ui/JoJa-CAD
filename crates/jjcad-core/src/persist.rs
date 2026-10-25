@@ -414,6 +414,21 @@ impl UserPrefs {
         if self.bindings.is_empty() {
             self.bindings = UserPrefs::default().bindings;
         }
+        // `bindings` wird als Ganzes gespeichert. Eine später ergänzte Aktion
+        // bekäme ihre Werktaste sonst nie: fehlende Einträge nachziehen, solange
+        // die Taste nicht schon einer anderen Aktion gehört.
+        for a in actions::ACTIONS {
+            if a.key.is_empty() || self.bindings.contains_key(a.id) {
+                continue;
+            }
+            let frei = !self
+                .bindings
+                .values()
+                .any(|k| k.eq_ignore_ascii_case(a.key));
+            if frei {
+                self.bindings.insert(a.id.to_string(), a.key.to_string());
+            }
+        }
         if self.active_preset >= self.hotbar_presets.len() {
             self.active_preset = 0;
         }

@@ -101,7 +101,12 @@ pub struct ToolOptions {
     pub offset_dist: f64,
     pub elevation_z: f64,
     pub fill_pattern: FillPattern,
+    /// Musterabstand in mm
     pub fill_scale: f64,
+    /// Drehung des Musters (Bogenmaß, 0 = waagerecht)
+    pub fill_angle: f64,
+    /// Randlinie entlang des Umrisses
+    pub fill_border: bool,
     pub block_id: Option<String>,
     pub block_rot: f64,
     pub block_scale: f64,
@@ -130,6 +135,8 @@ impl ToolOptions {
             elevation_z: 0.0,
             fill_pattern: FillPattern::Lines,
             fill_scale: 100.0,
+            fill_angle: std::f64::consts::FRAC_PI_4,
+            fill_border: true,
             block_id: None,
             block_rot: 0.0,
             block_scale: 1.0,
@@ -520,6 +527,19 @@ impl App {
                     }
                 }
                 "fill" => self.start_tool("draw.fill"),
+                // Umriss abfahren: Punkte vorgeben, damit die Vorschau (Fläche
+                // halbtransparent, Muster aus dem Panel) im Screenshot steht.
+                "fillboundary" => {
+                    self.start_tool("draw.fill.boundary");
+                    if let Some(t) = &mut self.tool {
+                        t.pts = vec![
+                            V2::new(2000.0, 2000.0),
+                            V2::new(7000.0, 2000.0),
+                            V2::new(7000.0, 5000.0),
+                            V2::new(4500.0, 6500.0),
+                        ];
+                    }
+                }
                 "selwalls" => {
                     // erste zwei Wände auswählen: Panel der Mehrfachauswahl
                     let ids: Vec<u64> = self
@@ -1337,6 +1357,7 @@ impl App {
                 (egui::Key::F, "f"),
                 (egui::Key::G, "g"),
                 (egui::Key::H, "h"),
+                (egui::Key::I, "i"),
                 (egui::Key::J, "j"),
                 (egui::Key::K, "k"),
                 (egui::Key::L, "l"),
@@ -1806,11 +1827,21 @@ fn rail(ui: &mut egui::Ui, icon: &str, tooltip: &str, chevron: &str) -> bool {
                         }
                     });
                     widgets::vline(ui, RIBBON_H);
+                    self.group(ui, "Füllen", |ui, app| {
+                        for (id, icon, label) in [
+                            ("draw.fill.boundary", "fill", "Umriss"),
+                            ("draw.fill", "fill", "Kontur"),
+                        ] {
+                            if widgets::ribbon_button(ui, icon, label, app.tool_id() == Some(id)).clicked() {
+                                app.start_tool(id);
+                            }
+                        }
+                    });
+                    widgets::vline(ui, RIBBON_H);
                     self.group(ui, "Weitere", |ui, app| {
                         for (id, icon, label) in [
                             ("draw.ellipse", "ellipse", "Ellipse"),
                             ("draw.point", "point", "Punkt"),
-                            ("draw.fill", "fill", "Füllfläche"),
                             ("draw.text", "text", "Text"),
                         ] {
                             if widgets::ribbon_button(ui, icon, label, app.tool_id() == Some(id)).clicked() {
@@ -2451,7 +2482,7 @@ fn rail(ui: &mut egui::Ui, icon: &str, tooltip: &str, chevron: &str) -> bool {
                     ui.label(theme::dim("Text"));
                     ui.add_sized([240.0, 22.0], egui::TextEdit::singleline(&mut self.options.text));
                 }
-                "draw.fill" | "draw.hatch" => {
+                "draw.fill" | "draw.hatch" | "draw.fill.boundary" => {
                     ui.label(theme::dim("Muster"));
                     let items: Vec<(FillPattern, String)> = FillPattern::ALL
                         .iter()
@@ -2901,6 +2932,7 @@ fn commands_hint(tool: &Tool) -> &'static str {
         "block.insert" => "Position klicken",
         "draw.text" => "Position klicken",
         "draw.polyline" => "Punkte klicken – Enter beendet",
+        "draw.fill.boundary" => "Umriss abfahren – Enter oder Doppelklick beendet",
         "draw.fill" | "draw.hatch" => "Geschlossene Kontur anklicken",
         "draw.arc" => match tool.pts.len() {
             0 => "Startpunkt",
