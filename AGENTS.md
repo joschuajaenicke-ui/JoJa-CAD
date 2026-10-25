@@ -52,8 +52,8 @@ in Fenstertitel und Statusleiste. `build-live.sh` legt
    mit Compile-Fehlern.
 5. **Debug-Dateien löschen** (`examples/dbg_*.rs`, temporäre Testdateien),
    bevor du abgibst.
-6. Abschluss: Karte kommentieren mit Build-Nummer, geänderten Dateien,
-   Nachweis und dem, was der Nutzer testen soll.
+6. Abschluss: Karte auf `request-review` setzen und den Kommentar **exakt nach
+   der Vorlage** unten schreiben (Build, Testen, Erwartung).
 
 ## Verbindliche Designentscheidungen
 
@@ -89,6 +89,41 @@ Mit dem Nutzer abgestimmt — nicht „verbessern":
   (nicht den Fangpunkt).
 - **Zieh-Modi**: Einstellungen → Bedienung → „Ziehen" (Gedrückthalten / Zwei
   Klicks), gespeichert in `prefs.json`, gilt für Auswahl *und* Griffe.
+
+## Bericht an den Nutzer (Review)
+
+Der Nutzer testet jedes Ergebnis selbst und will **keinen Roman**. Jeder
+Abschluss-Kommentar an der Karte hat genau diese Form, maximal 6 Zeilen:
+
+```
+Build b<N> — <eine Zeile: was jetzt anders ist>
+Testen: <2–4 konkrete Schritte in der App>
+Erwartung: <was man sehen muss>
+```
+
+Beispiel:
+
+```
+Build b12 — Tür sitzt auf der vorderen Wandkante, Dropdown entfernt.
+Testen: Wohnhaus.jjcad öffnen → Tür anklicken → Blatt Seite A/B umschalten.
+Erwartung: Tür springt auf die jeweilige Wandaußenseite, kein Feld "Ausrichtung".
+```
+
+Keine Implementierungserklärungen, keine Zwischenschritte, keine Testprotokolle
+in Prosa. Zahlen statt Adjektive.
+
+## Umgang mit Rückmeldungen
+
+- **Abgenommen wird vom Nutzer.** Du setzt die Karte auf `request-review`,
+  **nie** selbst auf `done`.
+- **Nicht gelöst:** Kommentar an der *gleichen* Karte
+  (`Nicht gelöst: <Symptom>, Build b<N>`), dann dort weiterarbeiten und den
+  nächsten Build liefern.
+- **Folgeproblem** (durch den Fix neu entstanden): gleiche Karte, Kommentar
+  `Folgeproblem: <Symptom>`; Ursache neu suchen statt am alten Fix zu flicken.
+- **Anderes Thema:** neue Karte, nicht in die laufende mischen.
+- Nach `failure_limit` Fehlversuchen blockiert der Dispatcher die Karte — dann
+  Ursache und offene Frage im Kommentar festhalten, nicht weiterprobieren.
 
 ## Abnahme (Definition of Done)
 
