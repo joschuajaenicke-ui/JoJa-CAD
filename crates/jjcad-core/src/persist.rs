@@ -110,6 +110,73 @@ impl HotbarPreset {
     }
 }
 
+/// Art, wie Objekte und Griffe gezogen werden.
+///
+/// `HoldAndDrag` ist das bisherige Verhalten und bleibt Standard, damit sich
+/// für Bestandsnutzer nichts ändert.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum DragMode {
+    /// Taste drücken, ziehen, loslassen
+    HoldAndDrag,
+    /// Erster Klick setzt den Basispunkt, zweiter Klick bestätigt
+    TwoClicks,
+}
+
+impl Default for DragMode {
+    fn default() -> Self {
+        DragMode::HoldAndDrag
+    }
+}
+
+impl DragMode {
+    /// Beide Modi in Anzeigereihenfolge (Einstellungen, Hilfetexte).
+    pub const ALL: [DragMode; 2] = [DragMode::HoldAndDrag, DragMode::TwoClicks];
+
+    /// Deutsche Beschriftung für die Oberfläche.
+    pub fn label(self) -> &'static str {
+        match self {
+            DragMode::HoldAndDrag => "Gedrückthalten",
+            DragMode::TwoClicks => "Zwei Klicks",
+        }
+    }
+
+    /// Kurze Erläuterung (Tooltip bzw. Hilfetext im Dialog).
+    pub fn hint(self) -> &'static str {
+        match self {
+            DragMode::HoldAndDrag => "Taste drücken, ziehen, loslassen",
+            DragMode::TwoClicks => {
+                "Klick setzt den Basispunkt, Bewegung zeigt die Vorschau, zweiter Klick bestätigt"
+            }
+        }
+    }
+
+    /// true, wenn mit zwei Klicks gezogen wird.
+    pub fn two_clicks(self) -> bool {
+        matches!(self, DragMode::TwoClicks)
+    }
+}
+
+/// Liest den neuen Modus und übernimmt zusätzlich das alte Wahrheitsfeld
+/// `drag_two_clicks` (Build b7), damit eine bestehende `prefs.json` ihre
+/// Einstellung behält, statt still auf den Standard zurückzufallen.
+fn de_drag_mode_mit_altfeld<'de, D>(d: D) -> Result<DragMode, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    #[derive(Deserialize)]
+    #[serde(untagged)]
+    enum Roh {
+        Modus(DragMode),
+        Alt(bool),
+    }
+    Ok(match Roh::deserialize(d)? {
+        Roh::Modus(m) => m,
+        Roh::Alt(true) => DragMode::TwoClicks,
+        Roh::Alt(false) => DragMode::HoldAndDrag,
+    })
+}
+
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct UserPrefs {
     #[serde(default)]
@@ -128,9 +195,13 @@ pub struct UserPrefs {
     /// Linienstärken maßstabsgetreu statt bildschirmkonstant
     #[serde(default)]
     pub lineweights_scaled: bool,
-    /// Ziehen mit zwei Klicks (true) oder Gedrueckthalten (false)
-    #[serde(default)]
-    pub drag_two_clicks: bool,
+    /// Zieh-Modus für Objekte und Griffe
+    #[serde(
+        default,
+        alias = "drag_two_clicks",
+        deserialize_with = "de_drag_mode_mit_altfeld"
+    )]
+    pub drag_mode: DragMode,
     #[serde(default = "default_true")]
     pub snap_marker: bool,
     #[serde(default)]
@@ -211,7 +282,7 @@ impl Default for UserPrefs {
             last_dir: String::new(),
             show_lineweights: true,
             lineweights_scaled: false,
-            drag_two_clicks: false,
+            drag_mode: DragMode::HoldAndDrag,
             snap_marker: true,
             show_properties: true,
             show_layers: true,
@@ -226,8 +297,12 @@ impl UserPrefs {
     }
 
     pub fn load() -> Self {
-        let p = Self::path();
-        if let Ok(s) = std::fs::read_to_string(&p) {
+        Self::load_from(&Self::path())
+    }
+
+    /// Lädt Einstellungen aus einer beliebigen Datei (Tests, portable Profile).
+    pub fn load_from(path: &Path) -> Self {
+        if let Ok(s) = std::fs::read_to_string(path) {
             if let Ok(mut prefs) = serde_json::from_str::<UserPrefs>(&s) {
                 prefs.ensure_defaults();
                 return prefs;
@@ -258,12 +333,17 @@ impl UserPrefs {
     }
 
     pub fn save(&self) -> Result<(), String> {
-        let p = Self::path();
-        if let Some(parent) = p.parent() {
+        self.save_to(&Self::path())
+    }
+
+    /// Schreibt die Einstellungen in eine beliebige Datei (Tests, portable Profile).
+    pub fn save_to(&self, path: &Path) -> Result<(), String> {
+        if let Some(parent) = path.parent() {
             std::fs::create_dir_all(parent).ok();
         }
         let s = serde_json::to_string_pretty(self).map_err(|e| e.to_string())?;
-        std::fs::write(&p, s).map_err(|e| format!("Einstellungen konnten nicht gespeichert werden: {e}"))
+        std::fs::write(path, s)
+            .map_err(|e| format!("Einstellungen konnten nicht gespeichert werden: {e}"))
     }
 
     /// Aktuelle Hotbar-Slots.
@@ -348,4 +428,86 @@ pub fn user_blocks_dir() -> PathBuf {
 
 pub fn autosave_path() -> PathBuf {
     config_dir().join("autosave.jjcad")
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Eigenes Testverzeichnis, damit die echten Einstellungen des Nutzers
+    /// (`~/.config/jjcad/prefs.json`) unberührt bleiben.
+    fn test_dir(name: &str) -> PathBuf {
+        let d = std::env::temp_dir().join(format!("jjcad-prefs-{}-{name}", std::process::id()));
+        std::fs::create_dir_all(&d).unwrap();
+        d
+    }
+
+    #[test]
+    fn drag_mode_standard_ist_gedrueckthalten() {
+        assert_eq!(DragMode::default(), DragMode::HoldAndDrag);
+        assert_eq!(UserPrefs::default().drag_mode, DragMode::HoldAndDrag);
+        assert!(!DragMode::HoldAndDrag.two_clicks());
+        assert!(DragMode::TwoClicks.two_clicks());
+    }
+
+    #[test]
+    fn drag_mode_schreibt_snake_case() {
+        let s = serde_json::to_string(&DragMode::TwoClicks).unwrap();
+        assert_eq!(s, "\"two_clicks\"");
+        let s = serde_json::to_string(&DragMode::HoldAndDrag).unwrap();
+        assert_eq!(s, "\"hold_and_drag\"");
+    }
+
+    #[test]
+    fn alte_prefs_ohne_drag_mode_ergeben_gedrueckthalten() {
+        // Alte Datei: vollständige Einstellungen, aber ohne den neuen Schlüssel.
+        let dir = test_dir("alt");
+        let p = dir.join("prefs.json");
+        std::fs::write(
+            &p,
+            r#"{"active_preset":0,"last_dir":"/tmp","lineweights_scaled":true,"show_grid":true}"#,
+        )
+        .unwrap();
+        let prefs = UserPrefs::load_from(&p);
+        assert_eq!(prefs.drag_mode, DragMode::HoldAndDrag);
+        assert!(prefs.lineweights_scaled, "übrige Werte bleiben erhalten");
+        assert_eq!(prefs.last_dir, "/tmp");
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn zwei_klicks_ueberleben_speichern_und_laden() {
+        let dir = test_dir("zwei");
+        let p = dir.join("prefs.json");
+
+        let mut prefs = UserPrefs::default();
+        prefs.drag_mode = DragMode::TwoClicks;
+        prefs.save_to(&p).unwrap();
+
+        let roh = std::fs::read_to_string(&p).unwrap();
+        assert!(
+            roh.contains("\"drag_mode\": \"two_clicks\""),
+            "prefs.json muss den Wert lesbar enthalten:\n{roh}"
+        );
+        assert!(
+            !roh.contains("drag_two_clicks"),
+            "Altfeld darf nicht mehr geschrieben werden"
+        );
+
+        // Nächster Start
+        let wieder = UserPrefs::load_from(&p);
+        assert_eq!(wieder.drag_mode, DragMode::TwoClicks);
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn altes_bool_feld_wird_uebernommen() {
+        let an: UserPrefs = serde_json::from_str(r#"{"drag_two_clicks": true}"#).unwrap();
+        assert_eq!(an.drag_mode, DragMode::TwoClicks);
+        let aus: UserPrefs = serde_json::from_str(r#"{"drag_two_clicks": false}"#).unwrap();
+        assert_eq!(aus.drag_mode, DragMode::HoldAndDrag);
+        // Neuer Schlüssel hat Vorrang bzw. wird normal gelesen.
+        let neu: UserPrefs = serde_json::from_str(r#"{"drag_mode": "two_clicks"}"#).unwrap();
+        assert_eq!(neu.drag_mode, DragMode::TwoClicks);
+    }
 }

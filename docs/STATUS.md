@@ -1,7 +1,7 @@
 # JoJa-CAD v0.2 — Arbeitsstand
 
 Kurzer Übergabestand für neue Sitzungen. Nach jeder Änderung fortschreiben.
-Stand: 25.10.2026, 11:50
+Stand: 25.10.2026, 14:35
 
 ## Build & Start
 
@@ -32,6 +32,11 @@ offene Fensterinstanz zeigt weiterhin den alten Stand.
 - **Eigenschaften-Panel**: einheitliche Zeilen (96 px Label, 150 px Wert),
   alle Auswahllisten gleiche Optik/Größe, Identisch während/nach dem Platzieren
   (Unterschied: Untertitel + Geometrie-Block).
+- **Zieh-Modus als Enum**: `persist::DragMode` (`hold_and_drag` = Standard,
+  `two_clicks`) liegt als `UserPrefs.drag_mode` in `prefs.json`; alte Dateien
+  ohne Schlüssel ergeben `hold_and_drag`, das Altfeld `drag_two_clicks` aus
+  Build b7 wird beim Laden übernommen. Nur Typ/Persistenz umgestellt — die
+  Bedienung ist unverändert (Auswahlfeld-Optik und Zwei-Klick-Ablauf folgen).
 
 ## Offen
 

@@ -12,7 +12,7 @@ use jjcad_core::actions::{self, ActionGroup};
 use jjcad_core::export::RasterOptions;
 use jjcad_core::geom::{BBox, Vec2 as V2};
 use jjcad_core::model::*;
-use jjcad_core::persist::{self, UserPrefs};
+use jjcad_core::persist::{self, DragMode, UserPrefs};
 use jjcad_core::render::DisplayList;
 use jjcad_core::session::Session;
 use jjcad_core::style::{Color, HatchPattern};
@@ -234,8 +234,8 @@ pub struct UiState {
     pub lineweights: bool,
     /// Linienstärken über den Maßstab skalieren (gedruckte Breite)
     pub lineweights_scaled: bool,
-    /// Zieh-Modus: false = Gedrueckthalten, true = zwei Klicks
-    pub drag_two_clicks: bool,
+    /// Zieh-Modus für Objekte und Griffe
+    pub drag_mode: DragMode,
     /// Offenes Kontextmenü (Objekt, Zeichenfläche oder Chip)
     pub menu: Option<MenuState>,
     pub bind_slot: Option<usize>,
@@ -282,7 +282,7 @@ impl Default for UiState {
             show_grid: true,
             lineweights: true,
             lineweights_scaled: false,
-            drag_two_clicks: false,
+            drag_mode: DragMode::HoldAndDrag,
             menu: None,
             bind_slot: None,
             slot_drag: None,
@@ -395,7 +395,7 @@ impl App {
         let show_grid = tab.session.doc.settings.show_grid;
         let lineweights = prefs.show_lineweights;
         let lineweights_scaled = prefs.lineweights_scaled;
-        let drag_two_clicks = prefs.drag_two_clicks;
+        let drag_mode = prefs.drag_mode;
         let layers_open = prefs.show_layers;
         let props_open = prefs.show_properties;
         let mut app = Self {
@@ -424,7 +424,7 @@ impl App {
         app.ui.show_grid = show_grid;
         app.ui.lineweights = lineweights;
         app.ui.lineweights_scaled = lineweights_scaled;
-        app.ui.drag_two_clicks = drag_two_clicks;
+        app.ui.drag_mode = drag_mode;
         app.ui.layers_open = layers_open;
         app.ui.props_open = props_open;
         app.fit_view();

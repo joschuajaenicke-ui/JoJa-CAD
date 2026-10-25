@@ -6,6 +6,7 @@ use crate::widgets;
 use egui::{Align, Color32, FontId, Layout, Pos2, Rect, RichText, Rounding, Sense, Stroke, Ui, Vec2};
 use jjcad_core::actions;
 use jjcad_core::geom::{Vec2 as V2};
+use jjcad_core::persist::DragMode;
 use jjcad_core::units::{format_scale, Unit};
 use serde_json::json;
 
@@ -795,7 +796,7 @@ fn settings_body(app: &mut App, ui: &mut Ui) {
     let mut ds_changed = false;
     let mut lw = app.ui.lineweights;
     let mut lw_scaled = app.ui.lineweights_scaled;
-    let mut zwei_klicks = app.ui.drag_two_clicks;
+    let mut drag_mode = app.ui.drag_mode;
     let mut show_layers = app.ui.layers_open;
     let mut show_props = app.ui.props_open;
     let mut marker = app.prefs.snap_marker;
@@ -959,12 +960,10 @@ fn settings_body(app: &mut App, ui: &mut Ui) {
 
             theme::section(ui, "Bedienung");
             widgets::field_row(ui, "Ziehen", |ui| {
-                let mut m = if zwei_klicks { 1 } else { 0 };
-                ui.selectable_value(&mut m, 0, "Gedrückthalten")
-                    .on_hover_text("Taste drücken, ziehen, loslassen");
-                ui.selectable_value(&mut m, 1, "Zwei Klicks")
-                    .on_hover_text("Klick setzt ab, Bewegung folgt dem Zeiger, zweiter Klick bestätigt");
-                zwei_klicks = m == 1;
+                for m in DragMode::ALL {
+                    ui.selectable_value(&mut drag_mode, m, m.label())
+                        .on_hover_text(m.hint());
+                }
             });
             ui.label(theme::faint("Gilt für Auswahl und Griffe"));
 
@@ -985,8 +984,8 @@ fn settings_body(app: &mut App, ui: &mut Ui) {
     // ------------------------------ anwenden -----------------------------
     app.ui.lineweights = true;
     app.ui.lineweights_scaled = lw_scaled;
-    app.ui.drag_two_clicks = zwei_klicks;
-    app.prefs.drag_two_clicks = zwei_klicks;
+    app.ui.drag_mode = drag_mode;
+    app.prefs.drag_mode = drag_mode;
     app.prefs.lineweights_scaled = lw_scaled;
     app.ui.layers_open = show_layers;
     app.ui.props_open = show_props;

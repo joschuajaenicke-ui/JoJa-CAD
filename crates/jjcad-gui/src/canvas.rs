@@ -1488,7 +1488,7 @@ fn handle_input(
     // Fensterauswahl aufziehen
     // Griffe: direktes Bearbeiten der Geometrie
     if app.tool.is_none() {
-        let zwei_klicks = app.ui.drag_two_clicks;
+        let zwei_klicks = app.ui.drag_mode.two_clicks();
         // Laufende Verschiebung der Auswahl
         if let Some(md) = app.move_drag.as_ref() {
             let cur = snapped.or(raw).unwrap_or(md.cur);
