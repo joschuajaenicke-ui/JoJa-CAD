@@ -27,6 +27,9 @@ struct PaintCtx {
     lineweights_scaled: bool,
     /// Pixel pro Papier-mm (für Strichstärken und Linientypen)
     paper_px: f64,
+    /// Vorschau-Modus: einheitliche Akzentkontur (wie die Einfüge-Vorschau),
+    /// ohne Auswahl-/Hover-Hervorhebung und ohne Originalfarbe/-strichart.
+    preview: bool,
 }
 
 fn color32(c: jjcad_core::style::Color) -> Color32 {
@@ -173,10 +176,13 @@ fn stroke_pts(p: &Painter, pts: &[Pos2], w: f32, col: Color32) {
 }
 
 fn paint_prim(p: &Painter, prim: &Prim, w2s: &dyn Fn(V2) -> Pos2, scale: f64, pc: &PaintCtx, alpha: f32) {
-    let is_sel = pc.selected.contains(&prim.entity) && prim.entity != 0;
-    let is_hover = pc.hover == Some(prim.entity) && prim.entity != 0 && !is_sel;
+    let is_sel = !pc.preview && pc.selected.contains(&prim.entity) && prim.entity != 0;
+    let is_hover = !pc.preview && pc.hover == Some(prim.entity) && prim.entity != 0 && !is_sel;
     let mut col = color32(prim.style.color);
-    if is_sel {
+    if pc.preview {
+        // Wie die Einfüge-Vorschau (ghost): durchgezogene Akzentkontur
+        col = Palette::ACCENT;
+    } else if is_sel {
         col = Palette::SELECT;
     } else if is_hover {
         col = Palette::HOVER;
@@ -192,9 +198,19 @@ fn paint_prim(p: &Painter, prim: &Prim, w2s: &dyn Fn(V2) -> Pos2, scale: f64, pc
         (prim.style.width * PAPER_PX_PER_MM).clamp(0.7, 9.0)
     };
     let _ = pc.lineweights;
-    let w = if is_sel || is_hover { base_w.max(1.6) + 0.6 } else { base_w };
+    let w = if pc.preview {
+        1.2
+    } else if is_sel || is_hover {
+        base_w.max(1.6) + 0.6
+    } else {
+        base_w
+    };
     let stroke = Stroke::new(w as f32, col);
-    let dash = dash_pattern(prim.style.line_type, pc.paper_px, pc.lineweights_scaled);
+    let dash = if pc.preview {
+        None
+    } else {
+        dash_pattern(prim.style.line_type, pc.paper_px, pc.lineweights_scaled)
+    };
 
     match &prim.shape {
         PShape::Line(a, b) => {
@@ -236,7 +252,10 @@ fn paint_prim(p: &Painter, prim: &Prim, w2s: &dyn Fn(V2) -> Pos2, scale: f64, pc
             }
             let v: Vec<Pos2> = pts.iter().map(|q| w2s(*q)).collect();
             let fill = prim.style.fill.unwrap_or(prim.style.color);
-            let c = if is_sel {
+            let c = if pc.preview {
+                // Nur andeuten: die Vorschau darf den Plan darunter nicht verdecken
+                Palette::ACCENT.gamma_multiply(0.12)
+            } else if is_sel {
                 Palette::SELECT.gamma_multiply(0.25)
             } else if is_hover {
                 Palette::HOVER.gamma_multiply(0.2)
@@ -458,6 +477,7 @@ pub fn show(app: &mut App, ui: &mut Ui) {
             lineweights,
             lineweights_scaled,
             paper_px,
+            preview: false,
         };
         if app.ui.show_grid {
             draw_grid(app, &painter, rect, view_now);
@@ -638,6 +658,7 @@ fn draw_sheet(app: &mut App, p: &Painter, rect: Rect, view: View, cursor: Option
         lineweights: true,
         lineweights_scaled: true,
         paper_px: view.zoom,
+        preview: false,
     };
     let dl = render::render_sheet(app.doc(), &sheet);
     for prim in &dl.prims {
@@ -668,6 +689,7 @@ fn draw_sheet(app: &mut App, p: &Painter, rect: Rect, view: View, cursor: Option
             lineweights: true,
             lineweights_scaled: true,
             paper_px: view.zoom * vp.scale,
+            preview: false,
         };
         for prim in &vdl.prims {
             paint_prim(&clip, prim, &vp_w2s, view.zoom * s, &vpc, 1.0);
@@ -1051,14 +1073,7 @@ fn draw_tool_preview(
             if let Some(base) = last {
                 p.line_segment([w2s(base), w2s(cursor)], stroke);
                 let ids = app.selection().to_vec();
-                for id in ids {
-                    if let Some(e) = app.doc().entity(id) {
-                        if let EntityKind::Line { a, b } = &e.kind {
-                            let m = Affine::translate(cursor - base);
-                            p.line_segment([w2s(m.apply(*a)), w2s(m.apply(*b))], dashed);
-                        }
-                    }
-                }
+                draw_selection_preview(app, p, rect, view, &ids, cursor - base);
                 label = format!(
                     "{} {}",
                     unit.format_plain(base.dist(cursor), unit.decimals()),
@@ -1168,6 +1183,45 @@ fn draw_tool_preview(
         p.galley(label_pos, galley, Palette::TEXT);
     }
 
+}
+
+// ---------------------------------------------------------------------------
+// Vorschau beim Verschieben/Kopieren
+// ---------------------------------------------------------------------------
+
+/// Zeichnet die Auswahl als Akzentkontur an der Zielposition.
+///
+/// Grundlage ist dieselbe Displayliste wie beim Platzieren
+/// ([`render::preview_selection`]) — dadurch bekommt **jeder** Elementtyp eine
+/// Vorschau (Linie, Wand, Tür, Fenster, Text, Maß, Block …), nicht nur Linien.
+fn draw_selection_preview(
+    app: &mut App,
+    p: &Painter,
+    rect: Rect,
+    view: View,
+    ids: &[Id],
+    delta: V2,
+) {
+    if ids.is_empty() || delta.len() < 1e-9 {
+        return;
+    }
+    let dl = render::preview_selection(app.doc(), ids, delta);
+    if dl.prims.is_empty() {
+        return;
+    }
+    let paper_px = view.zoom * app.doc().settings.annotation_scale;
+    let pc = PaintCtx {
+        selected: Vec::new(),
+        hover: None,
+        lineweights: true,
+        lineweights_scaled: app.ui.lineweights_scaled,
+        paper_px,
+        preview: true,
+    };
+    let w2s = |q: V2| world_to_screen(rect, view, q);
+    for prim in &dl.prims {
+        paint_prim(p, prim, &w2s, view.zoom, &pc, 1.0);
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -1369,6 +1423,12 @@ fn handle_input(
         return;
     }
 
+    // Laufende Drags zuerst: sie müssen auch dann abschließen, wenn der Zeiger
+    // die Zeichenfläche verlässt (Loslassen außerhalb).
+    if laufender_drag(app, resp, snapped, raw) {
+        return;
+    }
+
     let Some(pos) = ctx.pointer_hover_pos() else { return };
     if !rect.contains(pos) {
         return;
@@ -1488,31 +1548,6 @@ fn handle_input(
     // Fensterauswahl aufziehen
     // Griffe: direktes Bearbeiten der Geometrie
     if app.tool.is_none() {
-        let zwei_klicks = app.ui.drag_mode.two_clicks();
-        // Laufende Verschiebung der Auswahl
-        if let Some(md) = app.move_drag.as_ref() {
-            let cur = snapped.or(raw).unwrap_or(md.cur);
-            let start_frame = md.frame;
-            app.update_move_drag(cur);
-            let frame = resp.ctx.input(|i| i.time);
-            let fertig = fertig_erkennen(resp, zwei_klicks, start_frame, frame);
-            if fertig {
-                app.end_move_drag();
-            }
-            return;
-        }
-        if app.grip_drag.is_some() {
-            let start_frame = app.grip_start_frame;
-            if let Some(pt) = snapped.or(raw) {
-                app.update_grip_drag(pt);
-            }
-            let frame = resp.ctx.input(|i| i.time);
-            let fertig = fertig_erkennen(resp, zwei_klicks, start_frame, frame);
-            if fertig {
-                app.end_grip_drag();
-            }
-            return;
-        }
         // Griff hat Vorrang: Treffer mit der ROHEN Zeigerposition (nicht dem
         // Fangpunkt) und 12 Bildschirm-Pixel Radius — sonst muss man pixelgenau
         // treffen, sobald der Fang aufs Raster zieht.
@@ -1566,6 +1601,40 @@ fn handle_input(
             }
         }
     }
+}
+
+/// Setzt eine laufende Maus-Verschiebung bzw. einen Griff-Drag fort und beendet
+/// sie beim Loslassen. Liefert `true`, wenn ein Drag läuft — die übrige
+/// Zeigerauswertung wird dann übersprungen.
+fn laufender_drag(app: &mut App, resp: &Response, snapped: Option<V2>, raw: Option<V2>) -> bool {
+    if app.tool.is_some() {
+        return false;
+    }
+    let zwei_klicks = app.ui.drag_mode.two_clicks();
+    if let Some(md) = app.move_drag.as_ref() {
+        // Ohne Zeigerposition über der Fläche bleibt die letzte Lage stehen
+        // (Zeiger außerhalb): der Drag läuft weiter, bis die Taste loskommt.
+        let cur = snapped.or(raw).unwrap_or(md.cur);
+        let start_frame = md.frame;
+        app.update_move_drag(cur);
+        let frame = resp.ctx.input(|i| i.time);
+        if fertig_erkennen(resp, zwei_klicks, start_frame, frame) {
+            app.end_move_drag();
+        }
+        return true;
+    }
+    if app.grip_drag.is_some() {
+        let start_frame = app.grip_start_frame;
+        if let Some(pt) = snapped.or(raw) {
+            app.update_grip_drag(pt);
+        }
+        let frame = resp.ctx.input(|i| i.time);
+        if fertig_erkennen(resp, zwei_klicks, start_frame, frame) {
+            app.end_grip_drag();
+        }
+        return true;
+    }
+    false
 }
 
 /// Ende einer Mausbewegung: im Zwei-Klick-Modus der naechste Klick (nicht im
