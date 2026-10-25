@@ -4,6 +4,13 @@
 #   ~/jjcad-live/jjcad               (Symlink auf den neuesten Build)
 set -euo pipefail
 cd "$(dirname "$0")/.."
+# Der Testkanal des Nutzers wird NUR aus master beliefert. Worker bauen ihre
+# Zweige mit cargo build und fassen ~/jjcad-live nicht an.
+BRANCH="$(git rev-parse --abbrev-ref HEAD 2>/dev/null || echo '?')"
+if [ "${JJCAD_LIVE_FORCE:-0}" != "1" ] && [ "$BRANCH" != "master" ]; then
+    printf 'build-live: nur aus master (aktuell: %s). Fertig zum Testen? Dann melde die Karte dem Manager.\n' "$BRANCH" >&2
+    exit 2
+fi
 cargo build --release -p jjcad-gui
 BUILD="$(git rev-list --count HEAD)"
 VER="$(grep -m1 '^version' Cargo.toml | cut -d'"' -f2)"

@@ -34,8 +34,14 @@ cargo test                          # muss grün sein
 ```
 
 Das Binary trägt eine Build-Nummer (Git-Commit-Zähler, `crates/jjcad-gui/build.rs`)
-in Fenstertitel und Statusleiste. `build-live.sh` legt
-`~/jjcad-live/jjcad-<version>-b<nummer>` an und aktualisiert den Symlink `jjcad`.
+in Fenstertitel und Statusleiste.
+
+**`~/jjcad-live` gehört dem Manager, nicht den Workern.** Ein Worker baut seinen
+Zweig mit `cargo build --release` und testet ihn headless; er ruft **nie**
+`scripts/build-live.sh` auf. Sonst bekommt der Nutzer Builds aus einem
+Feature-Zweig, in dem andere Fixes fehlen (schon passiert: b26/b27 aus
+Worker-Zweigen). `build-live.sh` verweigert deshalb den Dienst außerhalb von
+`master`.
 
 ## Regeln für parallele Arbeit
 
