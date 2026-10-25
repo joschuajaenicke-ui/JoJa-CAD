@@ -960,7 +960,7 @@ fn draw_tool_preview(
                 );
             }
         }
-        "draw.fill.boundary" => {
+        "draw.fill.boundary" | "draw.fill.points" => {
             // Polygonzug bis zum Zeiger — der Umriss, der beim Klick entsteht.
             for pair in tool.pts.windows(2) {
                 p.line_segment([w2s(pair[0]), w2s(pair[1])], stroke);
@@ -1530,13 +1530,12 @@ fn handle_input(
         && ctx.input(|i| i.key_pressed(egui::Key::Enter))
     {
         if let Some(t) = app.tool.clone() {
-            if matches!(
-                t.action.as_str(),
-                "draw.polyline" | "draw.fill.boundary" | "dim.chain"
-            ) && t.pts.len() >= 2
-            {
-                finish_tool(app, true);
-                return;
+            let punktfolge = ist_fuell_punkte(&t.action);
+            if matches!(t.action.as_str(), "draw.polyline" | "dim.chain") || punktfolge {
+                if t.pts.len() >= 2 {
+                    finish_tool(app, true);
+                    return;
+                }
             }
         }
     }
@@ -1731,8 +1730,19 @@ fn handle_input(
     if resp.clicked_by(egui::PointerButton::Secondary) {
         if let Some(tool) = app.tool.clone() {
             match tool.action.as_str() {
-                "draw.polyline" | "draw.fill.boundary" | "dim.chain" => {
+                "draw.polyline" | "dim.chain" => {
                     finish_tool(app, true);
+                }
+                // Füllflächen aus Punkten: Rechtsklick schließt wie Enter. Bei
+                // zu wenigen Punkten gibt es nichts zu schließen — dann bricht
+                // er das Werkzeug ab (für beide Füll-Werkzeuge gleich).
+                action if ist_fuell_punkte(action) => {
+                    if tool.pts.len() >= 3 {
+                        finish_tool(app, true);
+                    } else {
+                        app.tool = None;
+                        app.status_msg = "Abgebrochen".into();
+                    }
                 }
                 _ => {
                     app.tool = None;
@@ -2104,7 +2114,17 @@ fn ghost_shape(p: &Painter, sh: &PShape, w2s: &dyn Fn(V2) -> Pos2, zoom: f64, st
 // Werkzeug-Logik
 // ---------------------------------------------------------------------------
 
-/// Eckpunkte einer Umriss-Füllung aus den gesammelten Klicks.
+/// Füll-Werkzeuge, deren Umgrenzung als Punktfolge geklickt wird.
+///
+/// `draw.fill.boundary` (Umriss abfahren) und `draw.fill.points` (freie
+/// Punktfolge) unterscheiden sich nur im Einstieg — Klicks, Vorschau, Abschluss,
+/// Undo und Platzieren-Panel teilen sie sich. Ein zweiter Zweig pro Werkzeug
+/// würde die beiden Werkzeuge früher oder später auseinanderlaufen lassen.
+pub fn ist_fuell_punkte(action: &str) -> bool {
+    matches!(action, "draw.fill.boundary" | "draw.fill.points")
+}
+
+/// Eckpunkte einer Füllfläche aus den gesammelten Klicks.
 ///
 /// Doppelte Punkte fallen weg (zweimal auf dieselbe Stelle geklickt,
 /// Doppelklick am letzten Punkt), und ein Schlusspunkt auf dem Startpunkt
@@ -2182,6 +2202,44 @@ fn draw_fill_ghost(app: &App, p: &Painter, rect: Rect, view: View, umriss: &[V2]
     }
 }
 
+/// Schließt eine Füllfläche aus der geklickten Punktfolge.
+///
+/// Gemeinsamer Abschluss der Füll-Werkzeuge: baut die Eckpunkte mit
+/// [`fill_boundary_points`] (doppelte Punkte, Schluss auf dem Start), nimmt
+/// Muster, Winkel, Abstand und Randlinie aus dem Platzieren-Panel und ruft die
+/// Action `action` — `draw.fill.boundary` bzw. `draw.fill.points`. Beide landen
+/// im Kern in `actions::add_fill`, also entstehen dasselbe Objekt, dasselbe
+/// Undo und derselbe Panel-Zustand.
+///
+/// `true`, wenn eine Fläche angelegt wurde. Bei zu wenigen Ecken bleibt das
+/// Werkzeug stehen (der gesetzte Punkt ist noch nicht verloren, ESC verwirft).
+fn finish_fill(app: &mut App, action: &str) -> bool {
+    let Some(tool) = app.tool.clone() else {
+        return false;
+    };
+    let Some(boundary) = fill_boundary_points(&tool.pts) else {
+        app.toast("Mindestens drei Punkte für eine Fläche");
+        return false;
+    };
+    let pts: Vec<[f64; 2]> = boundary
+        .iter()
+        .map(|p| [app.unit().from_mm(p.x), app.unit().from_mm(p.y)])
+        .collect();
+    let ok = run(
+        app,
+        action,
+        json!({"boundary": pts,
+               "pattern": app.options.fill_pattern.key(),
+               "angle": app.options.fill_angle.to_degrees(),
+               "scale": app.unit().from_mm(app.options.fill_scale),
+               "border": app.options.fill_border}),
+    );
+    if ok {
+        app.tool = None;
+    }
+    ok
+}
+
 pub fn finish_tool(app: &mut App, from_enter: bool) {
     let Some(tool) = app.tool.clone() else { return };
     match tool.action.as_str() {
@@ -2196,24 +2254,10 @@ pub fn finish_tool(app: &mut App, from_enter: bool) {
             }
             app.tool = None;
         }
-        "draw.fill.boundary" => {
-            match fill_boundary_points(&tool.pts) {
-                Some(boundary) => {
-                    let _ = run(
-                        app,
-                        "draw.fill.boundary",
-                        json!({"boundary": boundary.iter().map(|p| [app.unit().from_mm(p.x), app.unit().from_mm(p.y)]).collect::<Vec<_>>(),
-                               "pattern": app.options.fill_pattern.key(),
-                               "angle": app.options.fill_angle.to_degrees(),
-                               "scale": app.unit().from_mm(app.options.fill_scale),
-                               "border": app.options.fill_border}),
-                    );
-                    app.tool = None;
-                }
-                // Zu wenige Ecken: Werkzeug bleibt stehen, der Punkt ist noch
-                // nicht verloren (ESC verwirft).
-                None => app.toast("Mindestens drei Punkte für eine Fläche"),
-            }
+        "draw.fill.boundary" | "draw.fill.points" => {
+            // Ein Abschluss für beide Eingaben; `action` bestimmt nur, welche
+            // Action den Kern aufruft (MCP und Klickpfad landen im selben Code).
+            finish_fill(app, &tool.action);
         }
         "dim.chain" => {
             if tool.pts.len() >= 2 {
@@ -2358,7 +2402,9 @@ fn tool_click(app: &mut App, w: V2) {
         }
         // Umriss abfahren: derselbe Klickpfad wie die Polylinie — gesammelt
         // werden Punkte, nur das Ende erzeugt eine Füllfläche statt einer Linie.
-        "draw.fill.boundary" => {
+        // Gilt für beide Füll-Werkzeuge (`draw.fill.boundary` und
+        // `draw.fill.points`), damit sich die Eingabe nicht unterscheidet.
+        "draw.fill.boundary" | "draw.fill.points" => {
             // Klick auf den letzten Punkt (Doppelklick) oder auf den Startpunkt
             // schließt den Umriss — wie Enter, nur mit der Maus.
             let doppelt = tool.pts.last().map(|q| q.dist(w) <= 0.5).unwrap_or(false);
@@ -2909,6 +2955,135 @@ mod tests {
             fill_boundary_points(&[a, b, b, c]).unwrap().len() == 3,
             "doppelter Zwischenpunkt fällt weg"
         );
+    }
+
+    // ---- Füllfläche aus freier Punktfolge (Karte F3) ----
+
+    /// Vier Punkte + Enter: ein Fill mit vier Ecken und 12 m² — Werte aus dem
+    /// Platzieren-Panel, Undo nimmt genau dieses Objekt zurück.
+    #[test]
+    fn vier_punkte_und_enter_erzeugen_vier_ecken() {
+        let mut app = app();
+        app.options.fill_pattern = FillPattern::Insulation;
+        app.options.fill_angle = 30.0_f64.to_radians();
+        app.options.fill_scale = 120.0;
+        app.options.fill_border = true;
+        app.start_tool("draw.fill.points");
+        assert_eq!(app.tool_id(), Some("draw.fill.points"));
+
+        // 4 m × 3 m Rechteck in mm
+        tool_click(&mut app, V2::new(0.0, 0.0));
+        tool_click(&mut app, V2::new(4000.0, 0.0));
+        tool_click(&mut app, V2::new(4000.0, 3000.0));
+        tool_click(&mut app, V2::new(0.0, 3000.0));
+        assert_eq!(app.doc().entities.len(), 0, "während des Klickens nichts anlegen");
+
+        finish_tool(&mut app, true);
+        assert_eq!(app.doc().entities.len(), 1, "genau ein Objekt");
+        let ecken = ecken(&app);
+        assert_eq!(ecken.len(), 4, "vier Eckpunkte");
+        let flaeche = jjcad_core::geom::polygon_area(&ecken).abs();
+        assert!(
+            (flaeche - 12_000_000.0).abs() < 1e-6,
+            "Fläche 12 m², ist {flaeche} mm²"
+        );
+
+        let Some(EntityKind::Fill {
+            pattern,
+            pattern_angle,
+            pattern_scale,
+            border,
+            ..
+        }) = fill_kind(&app)
+        else {
+            panic!("kein Fill angelegt");
+        };
+        assert_eq!(pattern, FillPattern::Insulation, "Muster aus dem Panel");
+        assert!((pattern_angle - 30.0_f64.to_radians()).abs() < 1e-9);
+        assert!((pattern_scale - 120.0).abs() < 1e-9, "Abstand aus dem Panel");
+        assert!(border, "Randlinie aus dem Panel");
+        assert!(app.tool.is_none(), "Werkzeug beendet");
+
+        // Undo: genau ein Schritt nimmt die Fläche zurück
+        assert!(app.session_mut().undo(), "Rückgängig muss greifen");
+        assert!(app.doc().entities.is_empty(), "Fläche wieder weg");
+    }
+
+    /// Dieselben Klicks über beide Füll-Werkzeuge ergeben dasselbe Objekt —
+    /// der gemeinsame Abschluss ist der Grund dafür.
+    #[test]
+    fn punktfolge_und_umriss_ergeben_dasselbe_objekt() {
+        let klicks = [
+            V2::new(0.0, 0.0),
+            V2::new(2000.0, 0.0),
+            V2::new(2000.0, 1500.0),
+            V2::new(700.0, 2200.0),
+        ];
+
+        let mut a = app();
+        a.options.fill_pattern = FillPattern::Dots;
+        a.options.fill_scale = 80.0;
+        a.start_tool("draw.fill.boundary");
+        for w in klicks {
+            tool_click(&mut a, w);
+        }
+        finish_tool(&mut a, true);
+
+        let mut b = app();
+        b.options.fill_pattern = FillPattern::Dots;
+        b.options.fill_scale = 80.0;
+        b.start_tool("draw.fill.points");
+        for w in klicks {
+            tool_click(&mut b, w);
+        }
+        finish_tool(&mut b, true);
+
+        assert_eq!(a.doc().entities.len(), 1);
+        assert_eq!(b.doc().entities.len(), 1);
+        assert_eq!(
+            a.doc().entities[0].kind,
+            b.doc().entities[0].kind,
+            "gleiche Ecken und gleiches Muster"
+        );
+        assert_eq!(a.doc().entities[0].style, b.doc().entities[0].style);
+    }
+
+    /// Doppelklick auf den letzten Punkt schließt die Punktfolge, ohne eine
+    /// fünfte Ecke zu erzeugen.
+    #[test]
+    fn doppelklick_schliesst_die_punktfolge() {
+        let mut app = app();
+        app.start_tool("draw.fill.points");
+        tool_click(&mut app, V2::new(0.0, 0.0));
+        tool_click(&mut app, V2::new(2000.0, 0.0));
+        tool_click(&mut app, V2::new(2000.0, 1000.0));
+        tool_click(&mut app, V2::new(2000.0, 1000.0)); // derselbe Punkt nochmal
+        assert_eq!(app.doc().entities.len(), 1);
+        assert_eq!(ecken(&app).len(), 3, "Doppelklick zählt keine Ecke");
+        assert!(app.tool.is_none());
+    }
+
+    /// ESC verwirft die Punktfolge: kein Objekt, Werkzeug beendet.
+    #[test]
+    fn esc_verwirft_die_punktfolge() {
+        let mut app = app();
+        app.start_tool("draw.fill.points");
+        tool_click(&mut app, V2::new(0.0, 0.0));
+        tool_click(&mut app, V2::new(2000.0, 0.0));
+        tool_click(&mut app, V2::new(2000.0, 1000.0));
+        app.cancel_tool();
+        assert!(app.tool.is_none());
+        assert!(app.doc().entities.is_empty(), "nichts angelegt");
+    }
+
+    /// Der gemeinsame Abschluss greift für beide Füll-Werkzeuge — nicht nur
+    /// für eines (Schutz gegen einen zweiten, abweichenden Zweig).
+    #[test]
+    fn beide_fuell_werkzeuge_teilen_den_abschluss() {
+        assert!(ist_fuell_punkte("draw.fill.boundary"));
+        assert!(ist_fuell_punkte("draw.fill.points"));
+        assert!(!ist_fuell_punkte("draw.fill"));
+        assert!(!ist_fuell_punkte("draw.polyline"));
     }
 
     /// Zwei-Klick-Winkelwahl: Zentrum → „von" → „bis", Winkel zwischen den

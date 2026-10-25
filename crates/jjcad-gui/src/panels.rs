@@ -370,7 +370,7 @@ fn pending_props(app: &mut App, ui: &mut Ui) {
     // Abstand, Randlinie) — Werte bleiben für das nächste Element stehen.
     let is_fill = matches!(
         tool_id.as_str(),
-        "draw.fill" | "draw.hatch" | "draw.fill.boundary"
+        "draw.fill" | "draw.hatch" | "draw.fill.boundary" | "draw.fill.points"
     );
     let label = app
         .tool
