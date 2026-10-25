@@ -161,8 +161,9 @@ pub fn snap_candidates_gated(
             segs.push((sg, e.id));
         }
         // Wandkörper: die umgrenzenden Linien (Längskanten, Gehrungs-/Stirn-
-        // ecken, Laibungen) liefern ebenfalls Fangpunkte — ohne diesen Zweig
-        // kennt der Fang nur die Wandachse. Nur bei aktivem Wand-Punktfang.
+        // ecken, Laibungen) liefern ebenfalls Fangpunkte. Ohne diesen Zweig
+        // kennt der Fang nur die Wandachse. Getrennt schaltbar über
+        // `snap.wall_edges` — die Achse bleibt in jedem Fall erhalten.
         if s.wall_edges && matches!(e.kind, EntityKind::Wall { .. }) {
             for sg in render::wall_contour_segments(doc, e) {
                 segs.push((sg, e.id));

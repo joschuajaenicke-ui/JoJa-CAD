@@ -846,6 +846,7 @@ fn settings_body(app: &mut App, ui: &mut Ui) {
             theme::section(ui, "Fangen");
             for (label, field) in [
                 ("Endpunkt", &mut snap.endpoint),
+                ("Wandkanten", &mut snap.wall_edges),
                 ("Mittelpunkt", &mut snap.midpoint),
                 ("Zentrum", &mut snap.center),
                 ("Schnittpunkt", &mut snap.intersection),
@@ -1012,6 +1013,7 @@ fn settings_body(app: &mut App, ui: &mut Ui) {
         || snap.grid != cur.snap.grid
         || snap.ortho != cur.snap.ortho
         || snap.polar != cur.snap.polar
+        || snap.wall_edges != cur.snap.wall_edges
         || show_grid != cur.show_grid
         || (th - cur.text_height).abs() > 1e-9
         || (wall - cur.wall_thickness).abs() > 1e-9
@@ -1037,7 +1039,7 @@ fn settings_body(app: &mut App, ui: &mut Ui) {
                 "endpoint": snap.endpoint, "midpoint": snap.midpoint, "center": snap.center,
                 "intersection": snap.intersection, "perpendicular": snap.perpendicular,
                 "nearest": snap.nearest, "grid": snap.grid, "ortho": snap.ortho,
-                "polar": snap.polar,
+                "polar": snap.polar, "wall_edges": snap.wall_edges,
                 "grid_step": unit.from_mm(grid_step),
                 "polar_step": polar_step,
                 "polar_tolerance": polar_tol,
@@ -1046,6 +1048,8 @@ fn settings_body(app: &mut App, ui: &mut Ui) {
         });
         let _ = app.session_mut().execute("doc.settings", &p);
         app.mark_changed();
+        // Wandkontur-Fang auch app-weit merken (überlebt Neustart/neue Zeichnung).
+        app.prefs.snap_wall_edges = snap.wall_edges;
         let _ = app.prefs.save();
     }
 

@@ -594,3 +594,74 @@ fn select_window_nutzt_geometrie_nicht_bbox() {
     let ganz = jjcad_core::snap::select_window(&s.doc, v(-100.0, -100.0), v(6000.0, 6000.0), false);
     assert_eq!(ganz, vec![id]);
 }
+
+#[test]
+fn wandkontur_fang_ist_getrennt_schaltbar() {
+    // Wand 5 m lang, 240 mm dick, mittig -> Konturecken bei 0/5000 ± 120.
+    let mut s = s();
+    s.execute(
+        "draw.wall",
+        &json!({"a": [0, 0], "b": [5, 0], "thickness": 0.24}),
+    )
+    .unwrap();
+    s.execute("doc.settings", &json!({"snap": {"grid": false}}))
+        .unwrap();
+    assert!(s.doc.settings.snap.wall_edges, "Standard: Wandkanten aktiv");
+
+    let ecken = [
+        (0.0, 120.0),
+        (0.0, -120.0),
+        (5000.0, 120.0),
+        (5000.0, -120.0),
+    ];
+    for (x, y) in ecken {
+        let hit = jjcad_core::snap::find_snap(&s.doc, v(x, y), 20.0, None, &[])
+            .unwrap_or_else(|| panic!("Konturecke ({x},{y}) muss fangen"));
+        assert!(
+            (hit.point.x - x).abs() < 1e-6 && (hit.point.y - y).abs() < 1e-6,
+            "Konturecke ({x},{y}) -> {hit:?}"
+        );
+    }
+
+    // Abschalten: ausschliesslich die Wandkontur verschwindet.
+    s.execute("doc.settings", &json!({"snap": {"wall_edges": false}}))
+        .unwrap();
+    for (x, y) in ecken {
+        assert!(
+            jjcad_core::snap::find_snap(&s.doc, v(x, y), 20.0, None, &[]).is_none(),
+            "Konturecke ({x},{y}) darf nicht mehr fangen"
+        );
+    }
+    // Die Wandachse bleibt unberuehrt fangbar.
+    let achse = jjcad_core::snap::find_snap(&s.doc, v(0.0, 0.0), 20.0, None, &[])
+        .expect("Achsen-Endpunkt muss weiterhin fangen");
+    assert_eq!(achse.point, v(0.0, 0.0));
+    let mitte = jjcad_core::snap::find_snap(&s.doc, v(2500.0, 0.0), 20.0, None, &[])
+        .expect("Achsen-Mittelpunkt muss weiterhin fangen");
+    assert_eq!(mitte.point, v(2500.0, 0.0));
+
+    // Wieder einschalten: Kontur ist sofort wieder da.
+    s.execute("doc.settings", &json!({"snap": {"wall_edges": true}}))
+        .unwrap();
+    assert!(jjcad_core::snap::find_snap(&s.doc, v(0.0, 120.0), 20.0, None, &[]).is_some());
+}
+
+#[test]
+fn wandkanten_option_wird_gespeichert() {
+    let sp = jjcad_core::model::SnapSettings::default();
+    assert!(sp.wall_edges, "Default muss aktiv sein");
+    // Serde-Rundreise (Dokument-Settings landen so in der .jjcad-Datei)
+    let mut aus = sp;
+    aus.wall_edges = false;
+    let js = serde_json::to_string(&aus).unwrap();
+    let zurueck: jjcad_core::model::SnapSettings = serde_json::from_str(&js).unwrap();
+    assert!(!zurueck.wall_edges);
+    // Alte Dateien ohne den Schluessel: Default aktiv
+    let alt: jjcad_core::model::SnapSettings = serde_json::from_str("{}").unwrap();
+    assert!(alt.wall_edges);
+    // Befehls-Schicht (MCP/GUI) kann die Option setzen
+    let mut s = s();
+    s.execute("doc.settings", &json!({"snap": {"wall_edges": false}}))
+        .unwrap();
+    assert!(!s.doc.settings.snap.wall_edges);
+}

@@ -1024,10 +1024,24 @@ fn push_clipped_line(
     others: &[Vec<Vec2>],
     xf: Affine,
 ) {
+    for (a, b) in clipped_line_pieces(p0, p1, others) {
+        dl.push(Prim {
+            shape: Shape::Line(xf.apply(a), xf.apply(b)),
+            style: *st,
+            entity: e.id,
+            layer: e.layer,
+        });
+    }
+}
+
+/// Zerlegt eine Wandkante in die sichtbaren Abschnitte (außerhalb fremder
+/// Wandkörper). Gemeinsame Grundlage für das Zeichnen und den Punktfang —
+/// so können Anzeige und Fang nicht auseinanderdriften.
+fn clipped_line_pieces(p0: Vec2, p1: Vec2, others: &[Vec<Vec2>]) -> Vec<(Vec2, Vec2)> {
     let d = p1 - p0;
     let l2 = d.len2();
     if l2 < 1e-12 {
-        return;
+        return Vec::new();
     }
     // Schnittpunkte mit allen Nachbarkanten als Unterteilungspunkte
     let mut ts: Vec<f64> = vec![0.0, 1.0];
@@ -1045,6 +1059,7 @@ fn push_clipped_line(
     }
     ts.sort_by(|x, y| x.partial_cmp(y).unwrap_or(std::cmp::Ordering::Equal));
     ts.dedup_by(|x, y| (*x - *y).abs() < 1e-9);
+    let mut out = Vec::new();
     for w in ts.windows(2) {
         let (t0, t1) = (w[0], w[1]);
         if t1 - t0 < 1e-9 {
@@ -1070,13 +1085,106 @@ fn push_clipped_line(
         if inside {
             continue;
         }
-        dl.push(Prim {
-            shape: Shape::Line(xf.apply(p0 + d * t0), xf.apply(p0 + d * t1)),
-            style: *st,
-            entity: e.id,
-            layer: e.layer,
-        });
+        out.push((p0 + d * t0, p0 + d * t1));
     }
+    out
+}
+
+/// Wandkontur als Weltgeometrie für den Punktfang: die Längskanten, die
+/// Stirnseiten freier Enden und die Laibungskanten an Öffnungen — genau die
+/// Linien, die `render_wall` zeichnet (inkl. Beschneidung an Nachbarwänden),
+/// aber ohne Füllung und Schraffur. Die Wandachse liefert weiterhin
+/// `entity_segments`; diese Funktion ergänzt sie nur, wenn der Wand-Punktfang
+/// in den Einstellungen aktiv ist.
+pub fn wall_contour_segments(doc: &Document, e: &Entity) -> Vec<Seg> {
+    let EntityKind::Wall {
+        a,
+        b,
+        thickness,
+        align,
+        ..
+    } = &e.kind
+    else {
+        return Vec::new();
+    };
+    // Dünne Wände werden selbst als eine Linie gezeichnet (siehe render_wall).
+    if *thickness <= 0.5 {
+        return Vec::new();
+    }
+    let dir = (*b - *a).normalized();
+    let n = dir.perp();
+    let h = *thickness * 0.5;
+    let shift = n * (h * align.offset());
+    let a = *a + shift;
+    let b = *b + shift;
+    let len = a.dist(b);
+
+    // Anschlüsse wie beim Zeichnen: Gehrung, Verlängerung oder freies Ende.
+    let se = wall_end(doc, e, a, -dir, n, h);
+    let ee = wall_end(doc, e, b, dir, n, h);
+    let start = a - dir * se.ext;
+    let total = len + se.ext + ee.ext;
+
+    // Feste Segmente zwischen den Öffnungen (Laibungen bleiben als Kanten).
+    let openings: Vec<(f64, f64)> = wall_opening_intervals(doc, e)
+        .into_iter()
+        .map(|(s0, s1)| (s0 + se.ext, s1 + se.ext))
+        .collect();
+    let mut segments: Vec<(f64, f64)> = Vec::new();
+    let mut cursor = 0.0;
+    for (s0, s1) in &openings {
+        if *s0 > cursor + 0.5 {
+            segments.push((cursor, *s0));
+        }
+        cursor = (*s1).max(cursor);
+    }
+    if cursor < total - 0.5 {
+        segments.push((cursor, total));
+    }
+
+    let others: Vec<Vec<Vec2>> = wall_bands(doc)
+        .into_iter()
+        .filter(|(id, _)| *id != e.id)
+        .map(|(_, q)| q)
+        .collect();
+
+    let mut out: Vec<Seg> = Vec::new();
+    let mut push_visible = |p0: Vec2, p1: Vec2, out: &mut Vec<Seg>| {
+        for (q0, q1) in clipped_line_pieces(p0, p1, &others) {
+            out.push(Seg::Line(q0, q1));
+        }
+    };
+    for (s0, s1) in &segments {
+        let p0 = start + dir * *s0;
+        let p1 = start + dir * *s1;
+        let (c0o, c0i) = if *s0 < 0.5 {
+            (se.o, se.i)
+        } else {
+            (p0 + n * h, p0 - n * h)
+        };
+        let (c1o, c1i) = if (*s1 - total).abs() < 0.5 {
+            (ee.o, ee.i)
+        } else {
+            (p1 + n * h, p1 - n * h)
+        };
+        push_visible(c0o, c1o, &mut out);
+        push_visible(c0i, c1i, &mut out);
+        // Stirnseiten nur an freien Wandenden
+        if *s0 < 0.5 && !se.conn {
+            push_visible(se.o, se.i, &mut out);
+        }
+        if (*s1 - total).abs() < 0.5 && !ee.conn {
+            push_visible(ee.o, ee.i, &mut out);
+        }
+    }
+    // Laibungen an Öffnungen
+    for (s0, s1) in &openings {
+        for s in [*s0, *s1] {
+            let p = start + dir * s;
+            out.push(Seg::Line(p + n * h, p - n * h));
+        }
+    }
+    out
 }
 
 /// Aufbau einer Wand: verschobene Achse, Anschlüsse an beiden Enden,

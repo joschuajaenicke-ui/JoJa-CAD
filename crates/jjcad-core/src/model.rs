@@ -569,8 +569,8 @@ pub struct SnapSettings {
     pub ortho: bool,
     #[serde(default = "default_true")]
     pub polar: bool,
-    /// Punktfang auf den umgrenzenden Linien der Wandkörper (Kanten/Ecken) —
-    /// unabhängig von den übrigen Fangarten schaltbar.
+    /// Punktfang auf den umgrenzenden Linien der Wandkörper (Kanten, Ecken,
+    /// Laibungen) — unabhängig von den übrigen Fangarten schaltbar.
     #[serde(default = "default_true")]
     pub wall_edges: bool,
     /// Rasterweite in mm
