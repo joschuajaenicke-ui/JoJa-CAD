@@ -41,18 +41,29 @@ in Fenstertitel und Statusleiste. `build-live.sh` legt
 
 1. **Nur im eigenen Workspace arbeiten** (Worktree bzw. zugewiesenes Verzeichnis).
    Nie in einen fremden Worktree schreiben.
-2. **Niemals `pkill -x jjcad`** oder ähnliche Muster-Kills — das beendet die
-   Instanz des Nutzers. Nur selbst gestartete Prozesse per PID beenden.
-   Für Screenshots `python3 scripts/qa-shot.py` benutzen (eigenes Xvfb).
-3. **Nicht mergen, nicht direkt auf `master` committen.** Arbeitest du im
+2. **Niemals die GUI auf dem Bildschirm des Nutzers starten** (kein
+   `DISPLAY=:0`, kein Start ohne Display-Angabe). Jedes Fenster, das auf seinem
+   Schreibtisch aufpoppt, stört ihn beim Testen. Immer auf einem eigenen,
+   unsichtbaren Xvfb-Display arbeiten:
+
+   ```bash
+   python3 scripts/qa-shot.py out.png          # startet Xvfb + App, macht Screenshot
+   ./scripts/gui-headless.sh --shot out.png    # dito als Shell-Variante
+   ```
+
+   Auf dem Bildschirm des Nutzers erscheint ausschließlich, was er selbst über
+   `scripts/start-live.sh` startet.
+3. **Niemals `pkill -x jjcad`** oder ähnliche Muster-Kills — das beendet seine
+   Instanz. Nur selbst gestartete Prozesse per PID beenden.
+4. **Nicht mergen, nicht direkt auf `master` committen.** Arbeitest du im
    Hauptverzeichnis (Workspace = Projektordner), lege zuerst einen eigenen Zweig
    an: `git checkout -b fix/t_<karten-id>`. Arbeitest du in einem Worktree,
    committest du auf dessen Zweig.
-4. **Kleine, prüfbare Schritte**: bauen, testen, dann committen. Kein Commit
+5. **Kleine, prüfbare Schritte**: bauen, testen, dann committen. Kein Commit
    mit Compile-Fehlern.
-5. **Debug-Dateien löschen** (`examples/dbg_*.rs`, temporäre Testdateien),
+6. **Debug-Dateien löschen** (`examples/dbg_*.rs`, temporäre Testdateien),
    bevor du abgibst.
-6. Abschluss: Karte auf `request-review` setzen und den Kommentar **exakt nach
+7. Abschluss: Karte auf `request-review` setzen und den Kommentar **exakt nach
    der Vorlage** unten schreiben (Build, Testen, Erwartung).
 
 ## Verbindliche Designentscheidungen
