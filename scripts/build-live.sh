@@ -46,11 +46,12 @@ NAME="jjcad-${VER}-b${COUNT}-${HASH}"
 if [ -f "$STATE" ]; then
     LAST="$(cut -d' ' -f1 "$STATE")"
     LASTNAME="$(cut -d' ' -f2- "$STATE")"
-    if [ -n "$LAST" ] && ! git merge-base --is-ancestor "$LAST" HEAD 2>/dev/null; then
+    if [ -n "$LAST" ] && [ "${JJCAD_LIVE_ROLLBACK:-0}" != "1" ] && ! git merge-base --is-ancestor "$LAST" HEAD 2>/dev/null; then
         printf 'build-live: ABGELEHNT. %s ist kein Nachfolger von %s (%s).\n' \
             "$HASH" "$LAST" "$LASTNAME" >&2
         printf 'Der Stand enthaelt den zuletzt ausgelieferten nicht — er wuerde\n' >&2
         printf 'geloeste Fehler zurueckbringen. Erst master nachziehen.\n' >&2
+        printf 'Bewusster Rueckbau? Dann JJCAD_LIVE_ROLLBACK=1 setzen.\n' >&2
         exit 4
     fi
 fi
