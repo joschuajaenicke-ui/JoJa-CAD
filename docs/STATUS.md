@@ -46,13 +46,27 @@ offene Fensterinstanz zeigt weiterhin den alten Stand.
   Zeiger 5 px neben der Ecke → Status „X 0,00 Y 0,15 · Endpunkt", Ring auf der
   Ecke; `wall_edges=false` → (-0,02; 0,17) ohne Fang, Achse bleibt fangbar.
 
+- **Wandgehrung an extrem spitzen Ecken / ungleich dicken Wänden**: Was die
+  Gehrungslinie vom eigenen Körper abschneidet, ohne dass der Nachbar es deckt,
+  wird als Füllung nachgereicht (`miter_patch`) und die Gehrungsnaht nur dort
+  gezeichnet, wo der Nachbar sie nicht abdeckt (`line_outside_pieces` gegen
+  `partner_body`). Vorher endete die Füllung bis 24 mm vor der eigenen
+  Stirnebene und die Kante blieb ohne Linie. Nachweis: `crates/jjcad-core/tests/
+  wandgehrung_spitz.rs` (7 Tests, prüfen „Körper vollständig gefüllt“, „jede
+  Füllkante umrandet“, „keine Linie im Wandinneren“ für 90/30/20/15/10/5/2°,
+  365/115, 115/365, Links/Rechts-Kombinationen, Stich, freies Ende); auf dem
+  alten Stand schlägt `spitze_ecke_ungleich_dick` an (63 Punkte ohne Linie).
+
 ## Offen
 
 1. **Tür/Fenster-Ausrichtung im Eigenschaften-Panel** — beim Anlegen gesetzt,
    noch nicht nachträglich änderbar (braucht Wanddicke im Änderungspfad).
 2. **Öffnungsposition als Wandparameter** (Abstand längs + Lage quer) statt
    absolutem Mittelpunkt — nötig, damit Öffnungen beim Verschieben der Wand folgen.
-3. **Wand-Union**: letzter Feinschliff an extrem spitzen Ecken (Millimeter).
+3. **Wand-Union als echte Polygon-Vereinigung** — Ecken sind jetzt geschlossen
+   und rundum umrandet, gezeichnet wird aber weiter je Wand aus beschnittenen
+   Kanten. Nötig erst, wenn Wände unterschiedliche *Füllfarben* bekommen: an der
+   Ecke überlappen die Füllflächen (gleiche Farbe fällt nicht auf).
 4. Bemaßung: Griffe an Maßketten fehlen.
 5. ~~Wandfang-Schalter in der Oberfläche~~ — erledigt: Checkbox „Wandkanten" im
    Einstellungen-Dialog, Ribbon-Gruppe Fangen, Statusmenü Fang (inkl. „Alle an/aus").

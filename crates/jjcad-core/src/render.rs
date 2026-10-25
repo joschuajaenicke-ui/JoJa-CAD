@@ -1057,6 +1057,16 @@ fn wall_end(
     }
 }
 
+/// Liegt die Strecke p–q auf der Geraden durch a–b?
+fn on_line(p: Vec2, q: Vec2, a: Vec2, b: Vec2) -> bool {
+    let d = b - a;
+    if d.len() < 1e-9 {
+        return false;
+    }
+    let n = d.normalized().perp();
+    (p - a).dot(n).abs() < 1e-6 && (q - a).dot(n).abs() < 1e-6
+}
+
 /// Teile einer Strecke, die **außerhalb** eines Polygons liegen (mindestens
 /// `eps` vom Rand entfernt). Gegenstück zu `clipped_line_pieces`, das die
 /// innen liegenden Teile behält.
@@ -1490,6 +1500,16 @@ fn render_wall(
             if !active || end.patch.len() < 3 {
                 continue;
             }
+            // Liegt das Stück ohnehin im Körper einer anderen Wand, ist es
+            // dort schon gefüllt — dann nicht doppelt zeichnen.
+            let c = end
+                .patch
+                .iter()
+                .fold(Vec2::ZERO, |s, q| s + *q)
+                / end.patch.len() as f64;
+            if others.iter().any(|q| point_in_polygon(c, q)) {
+                continue;
+            }
             dl.push(Prim {
                 shape: Shape::Fill(end.patch.iter().map(|q| xf.apply(*q)).collect()),
                 style: fill_style,
@@ -1528,6 +1548,17 @@ fn render_wall(
                     }
                     _ => {
                         let quad_w = [xf.apply(c0o), xf.apply(c1o), xf.apply(c1i), xf.apply(c0i)];
+                        // Schraffurfläche = Wandkörper **plus** das nachgereichte
+                        // Gehrungsstück; sonst bleibt an spitzen Ecken ein
+                        // unschraffierter Keil neben der Gehrung stehen.
+                        let mut flechen: Vec<Vec<Vec2>> = vec![quad_w.to_vec()];
+                        for (end, near_start) in [(se, true), (ee, false)] {
+                            let active =
+                                if near_start { *s0 < 0.5 } else { (*s1 - total).abs() < 0.5 };
+                            if active && end.patch.len() >= 3 {
+                                flechen.push(end.patch.iter().map(|q| xf.apply(*q)).collect());
+                            }
+                        }
                         let mut angles = vec![std::f64::consts::FRAC_PI_4];
                         if hp == HatchPattern::Cross {
                             angles.push(std::f64::consts::FRAC_PI_4 + std::f64::consts::FRAC_PI_2);
@@ -1541,13 +1572,15 @@ fn render_wall(
                                 let off = nrm * (i as f64 * sp);
                                 let p_start = origin + off - dirh * 4000.0;
                                 let p_end = origin + off + dirh * 4000.0;
-                                for (q0, q1) in clip_line_polygon(p_start, p_end, &quad_w) {
-                                    dl.push(Prim {
-                                        shape: Shape::Line(q0, q1),
-                                        style: thin,
-                                        entity: e.id,
-                                        layer: e.layer,
-                                    });
+                                for fl in &flechen {
+                                    for (q0, q1) in clip_line_polygon(p_start, p_end, fl) {
+                                        dl.push(Prim {
+                                            shape: Shape::Line(q0, q1),
+                                            style: thin,
+                                            entity: e.id,
+                                            layer: e.layer,
+                                        });
+                                    }
                                 }
                             }
                         }
@@ -1573,10 +1606,45 @@ fn render_wall(
             if !active || end.patch.len() < 3 {
                 continue;
             }
+            let c = end.patch.iter().fold(Vec2::ZERO, |s, q| s + *q) / end.patch.len() as f64;
+            if others.iter().any(|q| point_in_polygon(c, q)) {
+                continue;
+            }
             for k in 0..end.patch.len() {
                 let q0 = end.patch[k];
                 let q1 = end.patch[(k + 1) % end.patch.len()];
+                // Die Gehrungsnaht selbst zeichnet der Block darunter
+                if on_line(q0, q1, end.o, end.i) {
+                    continue;
+                }
                 push_clipped_line(dl, e, st, q0, q1, &others, xf);
+            }
+        }
+        // Gehrungsnaht: nur die Stücke, die der Nachbar nicht abdeckt. Bei
+        // gleich dicken Wänden deckt er die ganze Naht ab (nichts zu zeichnen);
+        // bei unterschiedlich dicken Wänden bleiben Zipfel übrig, die sonst als
+        // ungerandete Füllkante enden.
+        for (end, near_start) in [(se, true), (ee, false)] {
+            let active = if near_start { *s0 < 0.5 } else { (*s1 - total).abs() < 0.5 };
+            let Some(pid) = end.partner else { continue };
+            if !active || !end.mitered {
+                continue;
+            }
+            let Some(body) = partner_body(ctx.doc, pid, end.o) else {
+                continue;
+            };
+            // Stücke außerhalb des Nachbarkörpers; die an das nachgereichte
+            // Gehrungsstück angrenzenden Teile liegen danach wieder im
+            // Wandinneren und entfallen.
+            let mut pieces = line_outside_pieces(end.o, end.i, &body, 0.1);
+            if end.patch.len() >= 3 {
+                pieces = pieces
+                    .into_iter()
+                    .flat_map(|(a, b)| line_outside_pieces(a, b, &end.patch, 0.1))
+                    .collect();
+            }
+            for (a, b) in pieces {
+                push_clipped_line(dl, e, st, a, b, &others, xf);
             }
         }
     }
