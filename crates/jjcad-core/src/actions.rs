@@ -142,7 +142,7 @@ pub const ACTIONS: &[ActionDef] = &[
     act!("view.zoom_extents", "Alles zeigen", Ansicht, "zoomfit", "", "Zeichnung einpassen", false),
     act!("view.zoom_in", "Vergrößern", Ansicht, "zoomin", "", "Hineinzoomen", false),
     act!("view.zoom_out", "Verkleinern", Ansicht, "zoomout", "", "Herauszoomen", false),
-    act!("view.inventory", "Inventar", Ansicht, "inventory", "e", "Inventar öffnen (E)", false),
+    act!("view.inventory", "Inventar", Ansicht, "inventory", "e", "Inventar ein-/ausblenden (E)", false),
     act!("view.layers", "Layer", Ansicht, "layers", "", "Layerverwaltung", false),
     act!("view.keymap", "Tastaturbelegung", Ansicht, "keyboard", "", "Tastenbelegung bearbeiten", false),
     act!("view.settings", "Einstellungen", Ansicht, "settings", "", "Einheiten und Raster", false),
