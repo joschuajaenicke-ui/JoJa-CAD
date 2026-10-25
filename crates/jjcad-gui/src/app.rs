@@ -311,6 +311,21 @@ impl RibbonTab {
 // App
 // ---------------------------------------------------------------------------
 
+/// Build-Kennung: Version aus Cargo.toml + Git-Commit-Zähler (build.rs).
+pub const VERSION: &str = env!("CARGO_PKG_VERSION");
+pub const BUILD: &str = env!("JJCAD_BUILD");
+pub const BUILD_HASH: &str = env!("JJCAD_HASH");
+
+/// Anzeige der Build-Kennung, z. B. "v0.2.42 (9b34136)".
+pub fn build_label() -> String {
+    format!("v{} ({} · {})", VERSION, BUILD, BUILD_HASH)
+}
+
+/// Fenstertitel inklusive Build-Nummer.
+pub fn window_title() -> String {
+    format!("JoJa-CAD v{} · Build {}", VERSION, BUILD)
+}
+
 pub struct App {
     pub tabs: Vec<DocTab>,
     pub active: usize,
@@ -2294,6 +2309,8 @@ fn rail(ui: &mut egui::Ui, icon: &str, tooltip: &str, chevron: &str) -> bool {
                 );
             }
             ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+                ui.add_space(10.0);
+                ui.label(theme::faint(build_label()));
                 ui.add_space(10.0);
                 // Maßstab
                 ui.label(theme::mono(format_scale(self.doc().settings.annotation_scale)));

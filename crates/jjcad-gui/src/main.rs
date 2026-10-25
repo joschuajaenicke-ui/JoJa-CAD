@@ -24,7 +24,7 @@ fn main() -> eframe::Result<()> {
         viewport: egui::ViewportBuilder::default()
             .with_inner_size([1500.0, 950.0])
             .with_min_inner_size([1080.0, 680.0])
-            .with_title("JoJa-CAD")
+            .with_title(app::window_title())
             .with_icon(load_icon()),
         vsync: true,
         ..Default::default()
