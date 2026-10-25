@@ -422,31 +422,61 @@ fn snapping_finds_endpoints_and_intersections() {
 }
 
 #[test]
-fn opening_align_repositions_in_wall() {
-    // Tür sitzt in der Wanddicke: Ausrichtung links/mittig/rechts verschiebt sie
-    // quer zur Wand, die Lage entlang der Wand bleibt erhalten.
+fn door_sits_on_front_wall_face() {
+    // Tür sitzt immer auf der vorderen Wandkante (Blattseite), nicht in der
+    // Wandmitte; Ausrichtung ist fuer Tueren ohne Wirkung.
     let mut s = s();
     s.execute("draw.wall", &json!({"a": [0, 0], "b": [5, 0], "thickness": 0.3}))
         .unwrap();
     let wall = last_id(&s);
     s.execute(
         "draw.door",
-        &json!({"center": [2, 0], "width": 0.9, "host": [wall], "align": "center"}),
+        &json!({"center": [2, 0], "width": 0.9, "host": [wall]}),
     )
     .unwrap();
     let door = last_id(&s);
-    let cy = |s: &Session| match &s.doc.entity(door).unwrap().kind {
-        EntityKind::Door { center, .. } => center.y,
+    let pos = |s: &Session| match &s.doc.entity(door).unwrap().kind {
+        EntityKind::Door { center, .. } => *center,
         _ => unreachable!(),
     };
-    assert!(cy(&s).abs() < 1.0, "mittig: y={}", cy(&s));
+    let p = pos(&s);
+    assert!((p.y - 150.0).abs() < 1.0, "vordere Kante: y={}", p.y);
+    assert!((p.x - 2000.0).abs() < 1.0, "x={}", p.x);
+
+    // Blatt auf die andere Seite -> andere Kante, Lage laengs bleibt
+    s.execute("modify.set", &json!({"ids": [door], "swing_in": false}))
+        .unwrap();
+    let p = pos(&s);
+    assert!((p.y + 150.0).abs() < 1.0, "gegenueber: y={}", p.y);
+    assert!((p.x - 2000.0).abs() < 1.0, "x nach Spiegelung={}", p.x);
+
+    // Ausrichtung wird bei Tueren ignoriert
     s.execute("modify.set", &json!({"ids": [door], "align": "left"}))
         .unwrap();
+    assert!((pos(&s).y + 150.0).abs() < 1.0, "align darf nichts aendern");
+}
+
+#[test]
+fn window_align_repositions_in_wall() {
+    // Fenster: Ausrichtung verschiebt innerhalb der Wanddicke (75 mm bei 300 mm)
+    let mut s = s();
+    s.execute("draw.wall", &json!({"a": [0, 0], "b": [5, 0], "thickness": 0.3}))
+        .unwrap();
+    let wall = last_id(&s);
+    s.execute(
+        "draw.window",
+        &json!({"center": [2, 0], "width": 1.0, "host": [wall], "align": "center"}),
+    )
+    .unwrap();
+    let win = last_id(&s);
+    let cy = |s: &Session| match &s.doc.entity(win).unwrap().kind {
+        EntityKind::Window { center, .. } => center.y,
+        _ => unreachable!(),
+    };
+    s.execute("modify.set", &json!({"ids": [win], "align": "left"}))
+        .unwrap();
     assert!((cy(&s) - 75.0).abs() < 1.0, "links: y={}", cy(&s));
-    s.execute("modify.set", &json!({"ids": [door], "align": "right"}))
+    s.execute("modify.set", &json!({"ids": [win], "align": "right"}))
         .unwrap();
     assert!((cy(&s) + 75.0).abs() < 1.0, "rechts: y={}", cy(&s));
-    if let EntityKind::Door { center, .. } = &s.doc.entity(door).unwrap().kind {
-        assert!((center.x - 2000.0).abs() < 1.0, "x verschoben: {}", center.x);
-    }
 }

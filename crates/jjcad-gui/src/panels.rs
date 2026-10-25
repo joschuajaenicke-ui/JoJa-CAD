@@ -1089,7 +1089,6 @@ fn entity_props(app: &mut App, ui: &mut Ui, id: Id) {
             kind,
             hinge,
             swing_in,
-            align,
             center,
             angle,
             ..
@@ -1098,11 +1097,6 @@ fn entity_props(app: &mut App, ui: &mut Ui, id: Id) {
             let mut k = *kind;
             let mut hg = *hinge;
             let mut sw = *swing_in;
-            let align_cur = *align;
-            let align_items: Vec<(WallAlign, String)> = WallAlign::ALL
-                .iter()
-                .map(|a| (*a, a.label().to_string()))
-                .collect();
             widgets::field_row(ui, "Breite", |ui| {
                 if widgets::length_input(ui, &mut w, unit, 100.0) {
                     changed_params.insert("width".into(), json!(unit.from_mm(w)));
@@ -1146,19 +1140,6 @@ fn entity_props(app: &mut App, ui: &mut Ui, id: Id) {
                 {
                     sw = false;
                     changed_params.insert("swing_in".into(), json!(sw));
-                }
-            });
-            // Lage der Tür innerhalb der Wanddicke
-            widgets::field_row(ui, "Ausrichtung", |ui| {
-                if let Some(v) = pick_combo(ui, "door_align", align_cur, &align_items) {
-                    changed_params.insert(
-                        "align".into(),
-                        json!(match v {
-                            WallAlign::Left => "left",
-                            WallAlign::Center => "center",
-                            WallAlign::Right => "right",
-                        }),
-                    );
                 }
             });
             ui.add_space(4.0);

@@ -46,6 +46,8 @@ pub fn from_json(s: &str) -> Result<Document, String> {
         .max()
         .unwrap_or(0);
     doc.next_id = doc.next_id.max(max_id + 1);
+    // Türen auf die vordere Wandkante setzen (auch bei älteren Dateien)
+    actions::normalize_openings(&mut doc);
     doc.modified = false;
     Ok(doc)
 }
