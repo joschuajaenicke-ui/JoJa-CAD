@@ -475,6 +475,53 @@ impl App {
                         self.session_mut().selection = vec![id];
                     }
                 }
+                "selwall" => {
+                    // erste Wand auswählen: Eigenschaften-Panel der Wand zeigen
+                    if let Some(id) = self
+                        .doc()
+                        .entities
+                        .iter()
+                        .find(|e| matches!(e.kind, EntityKind::Wall { .. }))
+                        .map(|e| e.id)
+                    {
+                        self.session_mut().selection = vec![id];
+                    }
+                }
+                "selwalls" => {
+                    // erste zwei Wände auswählen: Panel der Mehrfachauswahl
+                    let ids: Vec<u64> = self
+                        .doc()
+                        .entities
+                        .iter()
+                        .filter(|e| matches!(e.kind, EntityKind::Wall { .. }))
+                        .take(2)
+                        .map(|e| e.id)
+                        .collect();
+                    self.session_mut().selection = ids;
+                }
+                "wallcolors" => {
+                    // Prüfzustand: Linie und Füllfläche der ersten Wand in
+                    // zwei deutlich verschiedenen Farben
+                    if let Some(id) = self
+                        .doc()
+                        .entities
+                        .iter()
+                        .find(|e| matches!(e.kind, EntityKind::Wall { .. }))
+                        .map(|e| e.id)
+                    {
+                        let _ = self.tab_mut().session.execute(
+                            "modify.set",
+                            &serde_json::json!({
+                                "ids": [id],
+                                "color": "#FF0000",
+                                "fill": "#2E5FA3"
+                            }),
+                        );
+                        // nicht auswählen: die Auswahl färbt blau ein und
+                        // verdeckt genau die beiden Farben, die hier zählen
+                        self.session_mut().selection.clear();
+                    }
+                }
                 "selwindow" => {
                     if let Some(id) = self
                         .doc()
