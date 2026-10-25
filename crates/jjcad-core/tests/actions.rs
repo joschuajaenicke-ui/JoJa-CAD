@@ -665,3 +665,43 @@ fn wandkanten_option_wird_gespeichert() {
         .unwrap();
     assert!(!s.doc.settings.snap.wall_edges);
 }
+
+#[test]
+fn zwei_klick_winkel_dreht_um_den_winkel_zwischen_den_richtungen() {
+    use jjcad_core::transform::angle_between_directions;
+
+    // Waagerechte Linie links vom Drehzentrum
+    let mut s = s();
+    s.execute("draw.line", &json!({"a": [1, 0], "b": [2, 0]}))
+        .unwrap();
+    let id = last_id(&s);
+
+    // Zentrum (0|0), "von" auf +X, "bis" auf +Y → +90°
+    let center = v(0.0, 0.0);
+    let angle = angle_between_directions(center, v(1000.0, 0.0), v(0.0, 1000.0)).unwrap();
+    assert!((angle - 90.0).abs() < 1e-9, "{angle}");
+    s.execute(
+        "modify.rotate",
+        &json!({"ids": [id], "center": [0, 0], "angle": angle}),
+    )
+    .unwrap();
+    if let EntityKind::Line { a, b } = &s.doc.entity(id).unwrap().kind {
+        assert!((a.x - 0.0).abs() < 1e-6 && (a.y - 1000.0).abs() < 1e-6, "{a:?}");
+        assert!((b.x - 0.0).abs() < 1e-6 && (b.y - 2000.0).abs() < 1e-6, "{b:?}");
+    } else {
+        panic!("Linie erwartet");
+    }
+
+    // Gegenrichtung: "bis" auf -Y → -90°, dreht die Linie zurück und weiter nach unten
+    let angle = angle_between_directions(center, v(1000.0, 0.0), v(0.0, -1000.0)).unwrap();
+    assert!((angle + 90.0).abs() < 1e-9, "{angle}");
+    s.execute(
+        "modify.rotate",
+        &json!({"ids": [id], "center": [0, 0], "angle": angle}),
+    )
+    .unwrap();
+    if let EntityKind::Line { a, b } = &s.doc.entity(id).unwrap().kind {
+        assert!((a.x - 1000.0).abs() < 1e-6 && (a.y - 0.0).abs() < 1e-6, "{a:?}");
+        assert!((b.x - 2000.0).abs() < 1e-6 && (b.y - 0.0).abs() < 1e-6, "{b:?}");
+    }
+}
