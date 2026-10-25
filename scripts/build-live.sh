@@ -35,8 +35,6 @@ if [ "${JJCAD_LIVE_FORCE:-0}" != "1" ]; then
     fi
 fi
 
-cargo build --release -p jjcad-gui
-
 COUNT="$(git rev-list --count HEAD)"
 HASH="$(git rev-parse --short HEAD)"
 VER="$(grep -m1 '^version' Cargo.toml | cut -d'"' -f2)"
@@ -46,6 +44,10 @@ if [ -f "$STATE" ]; then
     case "$LASTSEQ" in ''|*[!0-9]*) SEQ=1 ;; *) SEQ=$((LASTSEQ + 1)) ;; esac
 fi
 NAME="jjcad-${VER}-s${SEQ}-${HASH}"
+
+# Nummer vor dem Bauen setzen, damit sie im Fenstertitel erscheint
+export JJCAD_SHIP="$SEQ"
+cargo build --release -p jjcad-gui
 
 # 4. Vorfahren-Pruefung gegen den zuletzt ausgelieferten Stand
 if [ -f "$STATE" ]; then

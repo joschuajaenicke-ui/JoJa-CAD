@@ -31,6 +31,11 @@ fn main() {
     );
 
     // Neu bauen, wenn sich der Stand ändert
+    // Auslieferungsnummer (vom build-live.sh gesetzt) — im Programm sichtbar
+    let ship = std::env::var("JJCAD_SHIP").unwrap_or_default();
+    println!("cargo:rustc-env=JJCAD_SHIP={}", ship);
+    println!("cargo:rerun-if-env-changed=JJCAD_SHIP");
+
     println!("cargo:rerun-if-changed=../../.git/HEAD");
     println!("cargo:rerun-if-changed=../../.git/refs");
 }

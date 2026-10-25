@@ -318,15 +318,26 @@ impl RibbonTab {
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");
 pub const BUILD: &str = env!("JJCAD_BUILD");
 pub const BUILD_HASH: &str = env!("JJCAD_HASH");
+/// Auslieferungsnummer (build-live.sh), leer bei lokalen Builds
+pub const SHIP: &str = env!("JJCAD_SHIP");
+
+/// Kennung eines ausgelieferten Builds: "s3" oder "b12" (lokaler Build).
+pub fn build_id() -> String {
+    if SHIP.is_empty() {
+        format!("b{BUILD}")
+    } else {
+        format!("s{SHIP}")
+    }
+}
 
 /// Anzeige der Build-Kennung, z. B. "v0.2.42 (9b34136)".
 pub fn build_label() -> String {
-    format!("v{} ({} · {})", VERSION, BUILD, BUILD_HASH)
+    format!("v{} ({} · {})", VERSION, build_id(), BUILD_HASH)
 }
 
 /// Fenstertitel inklusive Build-Nummer.
 pub fn window_title() -> String {
-    format!("JoJa-CAD v{} · Build {}", VERSION, BUILD)
+    format!("JoJa-CAD v{} · {}", VERSION, build_id())
 }
 
 /// Laufende Verschiebung der Auswahl mit der Maus.
