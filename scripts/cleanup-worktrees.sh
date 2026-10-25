@@ -8,6 +8,7 @@ git worktree list --porcelain | awk '
     /^branch /   { b = substr($0, 8); sub("refs/heads/", "", b); print w "\t" b }
 ' | while IFS=$'\t' read -r w b; do
     [ -z "$b" ] || [ "$b" = "master" ] && continue
+    case " ${JJCAD_KEEP_BRANCH:-} " in *" $b "*) continue ;; esac
     case "$w" in */.worktrees/*) ;; *) continue ;; esac
     # nichts Ungespeichertes?
     [ -n "$(git -C "$w" status --porcelain 2>/dev/null)" ] && continue
