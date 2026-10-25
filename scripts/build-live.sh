@@ -40,7 +40,12 @@ cargo build --release -p jjcad-gui
 COUNT="$(git rev-list --count HEAD)"
 HASH="$(git rev-parse --short HEAD)"
 VER="$(grep -m1 '^version' Cargo.toml | cut -d'"' -f2)"
-NAME="jjcad-${VER}-b${COUNT}-${HASH}"
+SEQ=1
+if [ -f "$STATE" ]; then
+    LASTSEQ="$(awk '{print $3}' "$STATE" 2>/dev/null)"
+    case "$LASTSEQ" in ''|*[!0-9]*) SEQ=1 ;; *) SEQ=$((LASTSEQ + 1)) ;; esac
+fi
+NAME="jjcad-${VER}-s${SEQ}-${HASH}"
 
 # 4. Vorfahren-Pruefung gegen den zuletzt ausgelieferten Stand
 if [ -f "$STATE" ]; then
@@ -65,11 +70,11 @@ fi
 
 cp target/release/jjcad "$DEST/$NAME"
 ln -sfn "$NAME" "$DEST/jjcad"
-printf '%s %s\n' "$(git rev-parse HEAD)" "$NAME" > "$STATE"
+printf '%s %s %s\n' "$(git rev-parse HEAD)" "$NAME" "$SEQ" > "$STATE"
 
 # nur die letzten 10 Builds behalten
 ls -1t "$DEST"/jjcad-* 2>/dev/null | tail -n +11 | xargs -r rm -f
 
-printf 'Build %s bereit  (%s/%s)\n' "$COUNT" "$DEST" "$NAME"
+printf 'Build s%s bereit  (%s/%s)\n' "$SEQ" "$DEST" "$NAME"
 printf 'Im Programm sichtbar als: %s\n' "$NAME"
 printf 'Starten mit:  scripts/start-live.sh [datei.jjcad]\n'
