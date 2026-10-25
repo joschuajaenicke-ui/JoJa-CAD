@@ -43,8 +43,10 @@ in Fenstertitel und Statusleiste. `build-live.sh` legt
 2. **Niemals `pkill -x jjcad`** oder aehnliche Muster-Kills — das beendet die
    Instanz des Nutzers. Nur selbst gestartete Prozesse per PID beenden.
    Fuer Screenshots `python3 scripts/qa-shot.py` benutzen (eigenes Xvfb).
-3. **Nicht mergen, nicht direkt auf `master` committen**, wenn du in einem
-   Worktree arbeitest. Ein Commit pro Karte, Nachricht mit Karten-ID:
+3. **Nicht mergen, nicht direkt auf `master` committen.** Arbeitest du im
+   Hauptverzeichnis (Workspace = Projektordner), lege zuerst einen eigenen Zweig
+   an: `git checkout -b fix/t_<karten-id>`. Arbeitest du in einem Worktree,
+   committest du auf dessen Zweig. Ein Commit pro Karte, Nachricht mit Karten-ID:
    `t_xxxx: <was geaendert wurde>`.
 4. **Kleine, pruefbare Schritte**: bauen, testen, dann committen. Kein Commit
    mit Compile-Fehlern.
