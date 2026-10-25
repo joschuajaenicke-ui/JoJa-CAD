@@ -26,6 +26,15 @@ if [ "${JJCAD_LIVE_FORCE:-0}" != "1" ] && [ -n "$(git status --porcelain)" ]; th
     exit 3
 fi
 
+# Torwaechter: ohne gruene Tests verlaesst kein Build das Haus
+if [ "${JJCAD_LIVE_FORCE:-0}" != "1" ]; then
+    if ! cargo test -q >/tmp/build-live-test.log 2>&1; then
+        printf 'build-live: TESTS ROT — nicht ausgeliefert.\n' >&2
+        tail -20 /tmp/build-live-test.log >&2
+        exit 5
+    fi
+fi
+
 cargo build --release -p jjcad-gui
 
 COUNT="$(git rev-list --count HEAD)"

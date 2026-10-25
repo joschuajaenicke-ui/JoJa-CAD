@@ -65,6 +65,24 @@ Feature-Zweig, in dem andere Fixes fehlen (schon passiert: b26/b27 aus
 Worker-Zweigen). `build-live.sh` verweigert deshalb den Dienst außerhalb von
 `master`.
 
+## Wasserdichte Regeln (aus Schaden gelernt)
+
+Diese fünf Regeln verhindern, dass gelöste Fehler wieder auftauchen:
+
+1. **Nur ein Worker gleichzeitig.** `kanban.max_in_progress = 1`. Zwei parallele
+   Worker haben schon einmal verschiedene Stände gleichzeitig gebaut und
+   dieselbe Datei überschrieben.
+2. **Isolierter Zweig pro Karte.** Jede Karte arbeitet in einem eigenen Worktree.
+   Nie im Hauptverzeichnis, nie auf `master`: `git checkout -b fix/t_<id>`.
+3. **Merge nur durch den Manager**, immer mit `scripts/merge-card.sh <zweig>` —
+   das Skript rollt den Merge zurück, wenn `cargo test` rot wird.
+4. **Jeder Fix bekommt einen Test.** Ohne Test kann ein Fehler unbemerkt
+   zurückkommen; mit Test bricht der nächste Merge sofort. Das ist der einzige
+   echte Regressionsschutz.
+5. **Testkanal nur mit grünen Tests.** `scripts/build-live.sh` läuft `cargo test`
+   und liefert bei Rot nicht aus; Builds aus Zweigen sind gesperrt (Vorfahren-
+   Prüfung, Commit-Hash im Namen).
+
 ## Regeln für parallele Arbeit
 
 1. **Nur im eigenen Workspace arbeiten** (Worktree bzw. zugewiesenes Verzeichnis).
