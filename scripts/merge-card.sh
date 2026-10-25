@@ -25,7 +25,7 @@ if [ "$BEHIND" != "0" ] && [ "${JJCAD_MERGE_ALLOW_STALE:-0}" != "1" ]; then
     exit 4
 fi
 
-if git merge --no-edit -m "Merge $BRANCH (Manager)" "$BRANCH"; then
+if git merge --no-ff --no-edit -m "Merge $BRANCH (Manager)" "$BRANCH"; then
     :
 else
     echo "KONFLIKT in $BRANCH — Merge abgebrochen, Karte muss neu gebaut werden." >&2
