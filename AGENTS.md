@@ -96,10 +96,13 @@ Der Nutzer testet jedes Ergebnis selbst und will **keinen Roman**. Jeder
 Abschluss-Kommentar an der Karte hat genau diese Form, maximal 6 Zeilen:
 
 ```
-Build b<N> — <eine Zeile: was jetzt anders ist>
+TEST b<N> — <eine Zeile: was jetzt anders ist>
 Testen: <2–4 konkrete Schritte in der App>
 Erwartung: <was man sehen muss>
 ```
+
+Das Wort `TEST` am Anfang ist Pflicht: daran erkennt der Mensch, dass die Karte
+in der Review-Spalte auf ihn wartet.
 
 Beispiel:
 
@@ -112,14 +115,41 @@ Erwartung: Tür springt auf die jeweilige Wandaußenseite, kein Feld "Ausrichtun
 Keine Implementierungserklärungen, keine Zwischenschritte, keine Testprotokolle
 in Prosa. Zahlen statt Adjektive.
 
-## Umgang mit Rückmeldungen
+## Abnahme-System (verbindlich)
 
-- **Abgenommen wird vom Nutzer.** Du setzt die Karte auf `request-review`,
-  **nie** selbst auf `done`.
-- **Nach bestandener Review nicht `block`en** — `blocked` heißt „ich brauche
-  eine Entscheidung, ich kann nicht weiter". Wartet die Karte nur auf den Test
-  des Nutzers, gehört sie auf `request-review`. Ein Blockierer erscheint als
-  Problem auf dem Board und muss manuell aufgelöst werden.
+Jede Spalte hat **genau eine** Bedeutung:
+
+| Spalte | Bedeutung | Wer arbeitet |
+|---|---|---|
+| `todo` / `ready` | Warteschlange | Dispatcher |
+| `running` | Ein Agent arbeitet | Agent |
+| `review` | **Wartet auf den Menschen** (Joschua testet in der App) | niemand automatisch |
+| `blocked` | Echter Blocker: Entscheidung nötig, Repro fehlt, 2 Fehlversuche | Mensch |
+| `done` | Abgeschlossen | — |
+
+Daraus folgen die Regeln:
+
+- **`review` ist ausschließlich die Warteschlange des Menschen.** Karten dort
+  werden von Joschua getestet. Kein Agent darf sie von dort wegbewegen — weder
+  auf `done` noch auf `blocked`. Ein Prüf-Agent schreibt höchstens einen
+  Kommentar (`Technisch geprüft: …`) und lässt den Status stehen.
+- **`blocked` niemals als „wartet auf Test" verwenden.** `blocked` erzeugt eine
+  Störung auf dem Board und muss manuell aufgelöst werden.
+- **Selbst auf `done` setzen ist nur bei trivialen, eindeutig prüfbaren
+  Änderungen erlaubt.** Zulässig:
+  - Umbenennen von Beschriftungen, Menüeinträgen, Tooltips
+  - Tippfehler, Kommentare, Dokumentation, Formatierung
+  - Entfernen von Debug-Ausgaben
+  - ein Wert/Text, den ein Test direkt prüft
+
+  **Nicht** zulässig (immer `request-review`): Geometrie, Fang, Treffer-Tests,
+  Rendering, Persistenz, Verhalten von Werkzeugen, Änderungen an der
+  Bedienoberfläche, alles was man sehen oder anfassen muss.
+- Bei Selbst-Abnahme: Karte auf `done` **und** ein Satz im Kommentar
+  (`Selbst abgenommen: reine Umbenennung, Test X grün`) — damit nachvollziehbar
+  bleibt, warum kein Mensch geprüft hat.
+
+## Umgang mit Rückmeldungen
 - **Nicht gelöst:** Kommentar an der *gleichen* Karte
   (`Nicht gelöst: <Symptom>, Build b<N>`), dann dort weiterarbeiten und den
   nächsten Build liefern.
