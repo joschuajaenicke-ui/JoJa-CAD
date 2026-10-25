@@ -276,6 +276,11 @@ fn schalter_aus_blendet_nur_die_wandkontur() {
         ecke.x,
         ecke.y
     );
+    // Auch die Längskante selbst liefert keinen Fangpunkt mehr
+    assert!(
+        fang(&s, v(2500.0, 150.0), 30.0).is_none(),
+        "bei ausgeschaltetem Wand-Punktfang darf auch die Längskante nicht fangen"
+    );
     // Wandachse bleibt unberührt
     let achse = fang(&s, v(5.0, 4.0), 30.0).expect("Wandachse muss weiter fangen");
     assert_punkt(achse.point, v(0.0, 0.0), "Achse bei ausgeschaltetem Schalter");
@@ -458,6 +463,46 @@ fn performance_viele_waende() {
     assert!(
         pro_fang < 25.0,
         "Fang mit 200 Wänden zu langsam: {pro_fang:.2} ms je Aufruf (Grenze 25 ms)"
+    );
+}
+
+// ---------------------------------------------------------------------------
+// 6. Fremdnutzung der Segmentquelle bleibt unberührt (Stutzen)
+// ---------------------------------------------------------------------------
+
+#[test]
+fn stutzen_nutzt_weiter_die_wandachse() {
+    // Schnittkanten für Stutzen/Verkürzen stammen aus derselben Segmentquelle.
+    // Die Wand darf dort weiter nur mit ihrer Achse schneiden — sonst endet eine
+    // gestutzte Linie plötzlich auf der Wandkante statt auf der Achse.
+    let mut s = s();
+    wand(&mut s, [0.0, 0.0], [5.0, 0.0], 0.30);
+    s.execute(
+        "draw.line",
+        &json!({"a": [2.0, 3.0], "b": [2.0, -0.5]}),
+    )
+    .unwrap();
+    let linie = s.doc.entities.last().unwrap().id;
+    s.execute("modify.trim", &json!({"ids": [linie], "at": [2.0, 1.0]}))
+        .unwrap();
+    let enden: Vec<f64> = s
+        .doc
+        .entities
+        .iter()
+        .flat_map(|e| match &e.kind {
+            EntityKind::Line { a, b } if (a.x - 2000.0).abs() < 1.0 && (b.x - 2000.0).abs() < 1.0 => {
+                vec![a.y, b.y]
+            }
+            _ => vec![],
+        })
+        .collect();
+    assert!(
+        enden.iter().any(|y| y.abs() < 1.0),
+        "Stutzen muss an der Wandachse (y=0) enden, Endpunkte: {enden:?}"
+    );
+    assert!(
+        !enden.iter().any(|y| (y.abs() - 150.0).abs() < 1.0),
+        "Stutzen darf nicht an der Wandkante (y=+-150) enden, Endpunkte: {enden:?}"
     );
 }
 
