@@ -363,7 +363,10 @@ fn write_shape(out: &mut W, layer: &str, prim: &render::Prim) {
             out.f(41, 0.0);
             out.f(42, std::f64::consts::TAU);
         }
-        render::Shape::Fill(pts) => {
+        // DXF kennt kein SOLID mit Aussparungen; hier steht deshalb nur der
+        // Außenring. Bildschirm, PDF und PNG zeigen die Löcher (Even-Odd).
+        render::Shape::Fill { outer, .. } => {
+            let pts = outer;
             if pts.len() >= 3 {
                 out.g(0, "SOLID");
                 out.g(8, layer);

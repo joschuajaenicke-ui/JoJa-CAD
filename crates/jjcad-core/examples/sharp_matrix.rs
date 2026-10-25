@@ -50,7 +50,7 @@ fn main() {
             let mut prims = Vec::new();
             for p in &dl.prims {
                 match &p.shape {
-                    Shape::Fill(poly) => {
+                    Shape::Fill { outer: poly, .. } => {
                         let pts: Vec<[f64; 2]> = poly.iter().map(|q| [q.x, q.y]).collect();
                         prims.push(json!({"t": "fill", "pts": pts}));
                     }

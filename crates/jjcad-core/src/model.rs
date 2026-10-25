@@ -180,6 +180,11 @@ pub enum EntityKind {
     Fill {
         /// Geschlossene Kontur (mm, wie eingegeben).
         boundary: Vec<Vec2>,
+        /// Inseln in der Fläche (z. B. Schornstein, Treppe, Pfeiler) — werden
+        /// ausgespart, nicht übermalt. Leer bei Flächen ohne Insel und in
+        /// Dateien von vor diesem Feld (`serde(default)`).
+        #[serde(default)]
+        holes: Vec<Vec<Vec2>>,
         #[serde(default)]
         pattern: FillPattern,
         /// Drehung des Musters (Bogenmaß, 0 = waagerecht)

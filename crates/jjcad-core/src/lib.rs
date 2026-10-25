@@ -8,6 +8,7 @@
 //! in [`render`], Ein-/Ausgabe in [`persist`], [`dxf`], [`pdf`] und [`raster`].
 
 pub mod actions;
+pub mod area;
 pub mod blocks_lib;
 pub mod boundary;
 pub mod dxf;

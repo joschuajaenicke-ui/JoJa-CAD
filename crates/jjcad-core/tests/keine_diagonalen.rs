@@ -61,7 +61,7 @@ fn fuellungen(s: &Session) -> Vec<Vec<Vec2>> {
     dl.prims
         .iter()
         .filter_map(|p| match &p.shape {
-            Shape::Fill(pts) => Some(pts.clone()),
+            Shape::Fill { outer, .. } => Some(outer.clone()),
             _ => None,
         })
         .collect()

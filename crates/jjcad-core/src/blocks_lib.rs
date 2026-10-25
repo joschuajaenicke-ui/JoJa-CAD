@@ -88,6 +88,7 @@ impl B {
         let id = self.id();
         let mut e = Entity::new(id, 0, EntityKind::Fill {
             boundary: pts,
+            holes: Vec::new(),
             pattern: FillPattern::Solid,
             pattern_angle: 0.0,
             pattern_scale: 100.0,

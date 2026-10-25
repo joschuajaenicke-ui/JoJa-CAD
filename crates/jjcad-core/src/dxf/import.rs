@@ -557,6 +557,7 @@ fn convert_entities(
                     push(
                         EntityKind::Fill {
                             boundary: pts,
+                            holes: Vec::new(),
                             pattern: crate::style::FillPattern::Solid,
                             pattern_angle: 0.0,
                             pattern_scale: 100.0,

@@ -28,6 +28,7 @@ fn fills(doc: &Document) -> Vec<(Vec<jjcad_core::geom::Vec2>, FillPattern, f64, 
                 pattern_angle,
                 pattern_scale,
                 border,
+                ..
             } => Some((
                 boundary.clone(),
                 *pattern,

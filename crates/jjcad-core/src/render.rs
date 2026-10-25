@@ -66,7 +66,16 @@ pub enum Shape {
         ry: f64,
         rot: f64,
     },
-    Fill(Vec<Vec2>),
+    /// Gefüllte Fläche: Außenring plus Löcher (Inseln).
+    ///
+    /// Gefüllt wird nach der Even-Odd-Regel — die Löcher sind Aussparungen,
+    /// nicht Flächen in einer anderen Farbe. Raster und PDF schreiben dafür
+    /// alle Ringe als Unterpfade, die GUI verbindet sie über Stege zu einem
+    /// Polygon ([`crate::area::bridge_holes`]).
+    Fill {
+        outer: Vec<Vec2>,
+        holes: Vec<Vec<Vec2>>,
+    },
     Text(TextPrim),
     Dot {
         p: Vec2,
@@ -96,7 +105,7 @@ impl Prim {
                 let dy = (ex.y * ex.y + ey.y * ey.y).sqrt();
                 BBox::new(*c - v(dx, dy), *c + v(dx, dy))
             }
-            Shape::Fill(pts) => BBox::from_points(pts),
+            Shape::Fill { outer, .. } => BBox::from_points(outer),
             Shape::Dot { p, r } => BBox::new(*p - v(*r, *r), *p + v(*r, *r)),
             Shape::Text(t) => {
                 let w = estimate_text_width(&t.text, t.height);
@@ -226,7 +235,7 @@ pub fn render_document(ctx: &RenderCtx) -> DisplayList {
             let mut tmp = DisplayList::default();
             render_entity(ctx, e, Affine::IDENTITY, &mut tmp, 0);
             for prim in tmp.prims {
-                if matches!(prim.shape, Shape::Fill(_)) {
+                if matches!(prim.shape, Shape::Fill { .. }) {
                     fills.push(prim);
                 } else {
                     rest.push(prim);
@@ -267,7 +276,7 @@ pub fn preview_selection(doc: &Document, ids: &[Id], delta: Vec2) -> DisplayList
         render_entity(&ctx, e, xf, &mut tmp, 0);
         if matches!(e.kind, EntityKind::Wall { .. }) {
             for prim in tmp.prims {
-                if matches!(prim.shape, Shape::Fill(_)) {
+                if matches!(prim.shape, Shape::Fill { .. }) {
                     fills.push(prim);
                 } else {
                     rest.push(prim);
@@ -402,13 +411,23 @@ pub fn render_entity(
         EntityKind::Polyline { verts, closed } => render_polyline(ctx, e, &st, verts, *closed, xf, dl),
         EntityKind::Fill {
             boundary,
+            holes,
             pattern,
             pattern_angle,
             pattern_scale,
             border,
-        } => {
-            render_fill(e, &st, boundary, *pattern, *pattern_angle, *pattern_scale, *border, xf, dl)
-        }
+        } => render_fill(
+            e,
+            &st,
+            boundary,
+            holes,
+            *pattern,
+            *pattern_angle,
+            *pattern_scale,
+            *border,
+            xf,
+            dl,
+        ),
         EntityKind::Text {
             p,
             text,
@@ -621,12 +640,14 @@ fn c_off(pos: Vec2, rot: f64, scale: Vec2, x: f64, y: f64) -> Vec2 {
 ///
 /// Das ist der einzige Weg, ein gefülltes Feld zu erzeugen — Bildschirm, PDF
 /// und PNG lesen anschließend dieselbe Displayliste. Randstriche werden als
-/// ein geschlossener Polygonzug ausgegeben, damit das Muster die Fläche nicht
-/// überragt.
+/// geschlossene Polygonzüge ausgegeben, damit das Muster die Fläche nicht
+/// überragt. Löcher (`holes`) sind Aussparungen: Fläche, Muster *und*
+/// Randlinie lassen sie frei, damit im Loch der Untergrund zu sehen ist.
 pub fn render_fill(
     e: &Entity,
     st: &PrimStyle,
     boundary: &[Vec2],
+    holes: &[Vec<Vec2>],
     pattern: FillPattern,
     pattern_angle: f64,
     pattern_scale: f64,
@@ -638,6 +659,12 @@ pub fn render_fill(
     if pts.len() < 3 {
         return;
     }
+    // Ringe, die keine Fläche sind (entartet), fallen weg.
+    let loecher: Vec<Vec<Vec2>> = holes
+        .iter()
+        .map(|h| h.iter().map(|p| xf.apply(*p)).collect::<Vec<Vec2>>())
+        .filter(|h| h.len() >= 3)
+        .collect();
     let scale = xf.scale_factor().abs().max(1e-6);
 
     // Fläche: eine gesetzte Füllfarbe gewinnt immer. Ohne sie wird nur bei
@@ -650,7 +677,10 @@ pub fn render_fill(
     };
     if let Some(c) = area {
         dl.push(Prim {
-            shape: Shape::Fill(pts.clone()),
+            shape: Shape::Fill {
+                outer: pts.clone(),
+                holes: loecher.clone(),
+            },
             style: PrimStyle {
                 color: c,
                 fill: Some(c),
@@ -672,7 +702,7 @@ pub fn render_fill(
         let angle = pattern_angle + xf.rotation();
         match pattern {
             FillPattern::Lines => {
-                push_pattern_lines(dl, e, &thin, &pts, &[angle], spacing)
+                push_pattern_lines(dl, e, &thin, &pts, &loecher, &[angle], spacing)
             }
             FillPattern::Cross => {
                 push_pattern_lines(
@@ -680,25 +710,36 @@ pub fn render_fill(
                     e,
                     &thin,
                     &pts,
+                    &loecher,
                     &[angle, angle + std::f64::consts::FRAC_PI_2],
                     spacing,
                 )
             }
-            FillPattern::Dots => push_pattern_dots(dl, e, &thin, &pts, angle, spacing),
+            FillPattern::Dots => push_pattern_dots(dl, e, &thin, &pts, &loecher, angle, spacing),
             FillPattern::Insulation => {
-                push_pattern_meander(dl, e, &thin, &pts, angle, spacing)
+                push_pattern_meander(dl, e, &thin, &pts, &loecher, angle, spacing)
             }
             FillPattern::Solid => {}
         }
     }
 
     if border {
+        // Randlinie: Außenring und jede Lochkante — die Insel muss sichtbar
+        // umrandet sein, sonst wirkt sie wie ein Loch im Papier.
         dl.push(Prim {
-            shape: Shape::Poly(pts, true),
+            shape: Shape::Poly(pts.clone(), true),
             style: PrimStyle { fill: None, ..*st },
             entity: e.id,
             layer: e.layer,
         });
+        for h in &loecher {
+            dl.push(Prim {
+                shape: Shape::Poly(h.clone(), true),
+                style: PrimStyle { fill: None, ..*st },
+                entity: e.id,
+                layer: e.layer,
+            });
+        }
     }
 }
 
@@ -712,12 +753,13 @@ fn fill_diag(pts: &[Vec2]) -> f64 {
 }
 
 /// Parallele Musterlinien in mehreren Richtungen über eine Kontur legen und
-/// am Polygon beschneiden.
+/// am Polygon beschneiden — Löcher bleiben frei.
 fn push_pattern_lines(
     dl: &mut DisplayList,
     e: &Entity,
     st: &PrimStyle,
     pts: &[Vec2],
+    holes: &[Vec<Vec2>],
     angles: &[f64],
     spacing: f64,
 ) {
@@ -733,7 +775,7 @@ fn push_pattern_lines(
             let off = nrm * (i as f64 * spacing);
             let a = origin + off - dir * reach;
             let b = origin + off + dir * reach;
-            for (q0, q1) in clip_line_polygon(a, b, pts) {
+            for (q0, q1) in crate::area::clip_line_area(a, b, pts, holes) {
                 dl.push(Prim {
                     shape: Shape::Line(q0, q1),
                     style: *st,
@@ -751,6 +793,7 @@ fn push_pattern_dots(
     e: &Entity,
     st: &PrimStyle,
     pts: &[Vec2],
+    holes: &[Vec<Vec2>],
     angle: f64,
     spacing: f64,
 ) {
@@ -769,7 +812,7 @@ fn push_pattern_dots(
     for i in -n..=n {
         for j in -n..=n {
             let p = origin + dir * (i as f64 * spacing) + nrm * (j as f64 * spacing);
-            if !point_in_polygon(p, pts) {
+            if !crate::area::point_in_area(p, pts, holes) {
                 continue;
             }
             dl.push(Prim {
@@ -783,12 +826,13 @@ fn push_pattern_dots(
 }
 
 /// Dämmung: Mäanderlinien (Mineralwolle) entlang der Musterrichtung, am
-/// Polygon beschnitten.
+/// Polygon beschnitten — Löcher bleiben frei.
 fn push_pattern_meander(
     dl: &mut DisplayList,
     e: &Entity,
     st: &PrimStyle,
     pts: &[Vec2],
+    holes: &[Vec<Vec2>],
     angle: f64,
     spacing: f64,
 ) {
@@ -818,7 +862,7 @@ fn push_pattern_meander(
             let off = ((s / period) * std::f64::consts::TAU).sin() * amp;
             let p = base + dir * s + nrm * off;
             if let Some(q) = prev {
-                for (q0, q1) in clip_line_polygon(q, p, pts) {
+                for (q0, q1) in crate::area::clip_line_area(q, p, pts, holes) {
                     dl.push(Prim {
                         shape: Shape::Line(q0, q1),
                         style: *st,
@@ -1358,12 +1402,15 @@ fn push_joint_band(
 ) {
     let d = into * FILL_OVERLAP;
     dl.push(Prim {
-        shape: Shape::Fill(vec![
-            xf.apply(o + d),
-            xf.apply(i + d),
-            xf.apply(i - d),
-            xf.apply(o - d),
-        ]),
+        shape: Shape::Fill {
+            outer: vec![
+                xf.apply(o + d),
+                xf.apply(i + d),
+                xf.apply(i - d),
+                xf.apply(o - d),
+            ],
+            holes: Vec::new(),
+        },
         style,
         entity: e.id,
         layer: e.layer,
@@ -1673,12 +1720,15 @@ fn render_wall(
             ..*st
         };
         dl.push(Prim {
-            shape: Shape::Fill(vec![
-                xf.apply(c0o),
-                xf.apply(c1o),
-                xf.apply(c1i),
-                xf.apply(c0i),
-            ]),
+            shape: Shape::Fill {
+                outer: vec![
+                    xf.apply(c0o),
+                    xf.apply(c1o),
+                    xf.apply(c1i),
+                    xf.apply(c0i),
+                ],
+                holes: Vec::new(),
+            },
             style: fill_style,
             entity: e.id,
             layer: e.layer,
@@ -1710,7 +1760,10 @@ fn render_wall(
                 continue;
             }
             dl.push(Prim {
-                shape: Shape::Fill(end.patch.iter().map(|q| xf.apply(*q)).collect()),
+                shape: Shape::Fill {
+                    outer: end.patch.iter().map(|q| xf.apply(*q)).collect(),
+                    holes: Vec::new(),
+                },
                 style: fill_style,
                 entity: e.id,
                 layer: e.layer,
@@ -2629,9 +2682,16 @@ fn entity_segments_tief(doc: &Document, e: &Entity, depth: usize) -> Vec<Seg> {
             };
             out.extend(pl.segments());
         }
-        EntityKind::Fill { boundary, .. } => {
-            for i in 0..boundary.len() {
-                out.push(Seg::Line(boundary[i], boundary[(i + 1) % boundary.len()]));
+        EntityKind::Fill {
+            boundary, holes, ..
+        } => {
+            for ring in std::iter::once(boundary).chain(holes.iter()) {
+                if ring.len() < 2 {
+                    continue;
+                }
+                for i in 0..ring.len() {
+                    out.push(Seg::Line(ring[i], ring[(i + 1) % ring.len()]));
+                }
             }
         }
         EntityKind::Dim { a, b, .. } => out.push(Seg::Line(*a, *b)),

@@ -45,7 +45,7 @@ fn liste(doc: &Document) -> DisplayList {
 fn fuellungen(dl: &DisplayList, id: u64) -> Vec<&Prim> {
     dl.prims
         .iter()
-        .filter(|p| p.entity == id && matches!(p.shape, Shape::Fill(_)))
+        .filter(|p| p.entity == id && matches!(p.shape, Shape::Fill { .. }))
         .collect()
 }
 

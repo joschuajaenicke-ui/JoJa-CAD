@@ -470,7 +470,14 @@ impl Gitter {
                 // geschlossenen Rand — und der kostet nur den Umfang statt der
                 // Fläche. Wandkörper mit 6 m² Fläche wären sonst Millionen
                 // Schreibzugriffe je Klick.
-                Shape::Fill(pts) => self.ring(pts),
+                // Außenring *und* Lochränder sind Begrenzungen: eine bereits
+                // gefüllte Fläche mit Insel darf die Flut nicht überrennen.
+                Shape::Fill { outer, holes } => {
+                    self.ring(outer);
+                    for h in holes {
+                        self.ring(h);
+                    }
+                }
                 Shape::Circle { c, r } => {
                     let ring = self.kreis(*c, *r);
                     self.ring(&ring);

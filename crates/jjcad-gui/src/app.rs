@@ -554,6 +554,42 @@ impl App {
                         ];
                     }
                 }
+                // Farbeimer-Prüffall (F1b): den Raum unten links füllen, so wie
+                // es der Farbeimer tun wird — mit Inseln. Im Screenshot müssen
+                // Schornstein und Treppe frei bleiben (kein Muster darin).
+                "fillhole" => {
+                    let klick = V2::new(1500.0, 2600.0);
+                    let grenze = jjcad_core::boundary::detect_boundary(
+                        self.doc(),
+                        klick,
+                        &Default::default(),
+                    );
+                    if let Ok(g) = grenze {
+                        let u = self.unit();
+                        let ring = |r: &[V2]| -> Vec<[f64; 2]> {
+                            r.iter().map(|p| [u.from_mm(p.x), u.from_mm(p.y)]).collect()
+                        };
+                        let holes: Vec<Vec<[f64; 2]>> = g.holes.iter().map(|h| ring(h)).collect();
+                        let r = self.session_mut().execute(
+                            "draw.fill.boundary",
+                            &serde_json::json!({
+                                "boundary": ring(&g.outer),
+                                "holes": holes,
+                                "pattern": "lines",
+                                "angle": 45.0,
+                                "scale": u.from_mm(250.0),
+                                "border": false,
+                                "fill": "#d8e4f0",
+                            }),
+                        );
+                        if let Ok(v) = r {
+                            if let Some(id) = v["created"][0].as_u64() {
+                                self.session_mut().selection = vec![id];
+                            }
+                        }
+                        self.mark_changed();
+                    }
+                }
                 "selwalls" => {
                     // erste zwei Wände auswählen: Panel der Mehrfachauswahl
                     let ids: Vec<u64> = self

@@ -47,7 +47,7 @@ fn main() {
         println!("===== Winkel {th}° =====");
         for p in &dl.prims {
             match &p.shape {
-                Shape::Fill(poly) => {
+                Shape::Fill { outer: poly, .. } => {
                     let pts: Vec<String> = poly.iter().map(|q| fmt(*q)).collect();
                     println!("  FILL [{}]", pts.join(" "));
                 }

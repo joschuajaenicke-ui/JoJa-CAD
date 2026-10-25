@@ -135,6 +135,12 @@ impl Content {
     fn fill(&mut self) {
         self.raw("f");
     }
+
+    /// Füllen nach der Even-Odd-Regel (`f*`) — nötig für Flächen mit Löchern:
+    /// alle Ringe sind Unterpfade, jeder zweite Umschlag wird ausgespart.
+    fn fill_even_odd(&mut self) {
+        self.raw("f*");
+    }
     fn fill_stroke(&mut self) {
         self.raw("B");
     }
@@ -234,13 +240,20 @@ fn draw_prim(c: &mut Content, prim: &Prim, xf: &Xf, paper_scale: f64) {
             push_polyline(c, pts, *closed, xf);
             c.stroke();
         }
-        Shape::Fill(pts) => {
-            if pts.len() < 3 {
+        Shape::Fill { outer, holes } => {
+            if outer.len() < 3 {
                 return;
             }
             c.fill_color(prim.style.fill.unwrap_or(prim.style.color));
-            push_polyline(c, pts, true, xf);
-            c.fill();
+            push_polyline(c, outer, true, xf);
+            for h in holes {
+                if h.len() >= 3 {
+                    push_polyline(c, h, true, xf);
+                }
+            }
+            // Even-Odd: die Löcher bleiben frei. Ein einfaches `f` würde die
+            // Innenringe je nach Umlaufsinn mitfüllen.
+            c.fill_even_odd();
         }
         Shape::Circle { c: cc, r } => {
             c.stroke_color(prim.style.color);
