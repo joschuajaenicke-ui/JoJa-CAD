@@ -67,7 +67,7 @@ pub fn show(app: &mut App, ctx: &egui::Context) {
                 }
                 ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
                     if widgets::icon_button(ui, "close", 26.0, false, "Schließen (E)").clicked() {
-                        app.ui.inventory_open = false;
+                        app.close_inventory();
                     }
                 });
             });
@@ -82,7 +82,7 @@ pub fn show(app: &mut App, ctx: &egui::Context) {
             }
         });
     if !open {
-        app.ui.inventory_open = false;
+        app.close_inventory();
     }
 }
 

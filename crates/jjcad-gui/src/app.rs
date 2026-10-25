@@ -678,9 +678,11 @@ impl App {
                     self.ui.block_name_dialog = Some((String::new(), false));
                 }
             }
-            "block.manager" | "view.inventory" => {
+            // Inventar als Toggle: offen → zu, zu → offen (Taste E, Ribbon, Hotbar-Kachel)
+            "view.inventory" => self.toggle_inventory(),
+            "block.manager" => {
                 self.ui.inventory_open = true;
-                self.ui.inventory_tab = if id == "block.manager" { 1 } else { self.ui.inventory_tab };
+                self.ui.inventory_tab = 1;
             }
             "view.layers" => self.ui.layers_open = !self.ui.layers_open,
             "view.keymap" => self.ui.keymap_open = true,
@@ -824,6 +826,27 @@ impl App {
             return;
         }
         self.cancel_tool();
+    }
+
+    /// Inventar ein-/ausblenden — ein Druck auf die Taste der Aktion
+    /// `view.inventory` (Standard: E) schaltet zwischen offen und geschlossen.
+    pub fn toggle_inventory(&mut self) {
+        if self.ui.inventory_open {
+            self.close_inventory();
+        } else {
+            self.ui.inventory_open = true;
+        }
+    }
+
+    /// Schließt das Inventar. Gemeinsamer Pfad für Taste E, Schließen-Button
+    /// und Fensterkreuz, damit kein Zustand aus dem Inventar hängen bleibt.
+    pub fn close_inventory(&mut self) {
+        self.ui.inventory_open = false;
+        // Nur Zieh-Vorgänge, die im Inventar begonnen haben, verwerfen —
+        // eine Hotbar-Umbelegung per Ziehen läuft unabhängig weiter.
+        if matches!(self.ui.slot_drag, Some((usize::MAX, _))) {
+            self.ui.slot_drag = None;
+        }
     }
 
     pub fn cancel_tool(&mut self) {

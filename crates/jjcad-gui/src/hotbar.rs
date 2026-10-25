@@ -220,9 +220,9 @@ pub fn show(app: &mut App, ui: &mut Ui) {
                 Palette::TEXT_FAINT,
             );
             if resp.clicked() {
-                app.ui.inventory_open = !app.ui.inventory_open;
+                app.toggle_inventory();
             }
-            resp.on_hover_text("Inventar öffnen (E)");
+            resp.on_hover_text("Inventar ein-/ausblenden (E)");
         });
     });
 }
