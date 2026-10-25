@@ -109,8 +109,12 @@ Diese fünf Regeln verhindern, dass gelöste Fehler wieder auftauchen:
    mit Compile-Fehlern.
 6. **Debug-Dateien löschen** (`examples/dbg_*.rs`, temporäre Testdateien),
    bevor du abgibst.
-7. Abschluss: Karte auf `request-review` setzen und den Kommentar **exakt nach
-   der Vorlage** unten schreiben (Build, Testen, Erwartung).
+7. **Handoff zuerst, Politur danach.** Ein Worker hat ein festes
+   Iterationsbudget (150). Sobald der Fix committet ist und `cargo test` grün
+   läuft: **sofort** `request-review` mit dem Bericht nach Vorlage. Screenshots,
+   Doku oder Gegenproben danach als Kommentar nachreichen. Sonst geht das Budget
+   für Nebensächliches drauf und der Lauf endet ohne Übergabe (schon passiert:
+   t_9e6eb560, 150/150 Iterationen, Arbeit fertig, Handoff fehlte).
 
 ## Verbindliche Designentscheidungen
 
