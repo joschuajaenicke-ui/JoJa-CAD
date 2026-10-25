@@ -1965,6 +1965,7 @@ pub fn execute(doc: &mut Document, id: &str, params: &Value) -> Result<Value, St
                     ("grid", &mut doc.settings.snap.grid),
                     ("ortho", &mut doc.settings.snap.ortho),
                     ("polar", &mut doc.settings.snap.polar),
+                    ("wall_edges", &mut doc.settings.snap.wall_edges),
                 ] {
                     if let Some(v) = sp.boolean(k) {
                         *target = v;

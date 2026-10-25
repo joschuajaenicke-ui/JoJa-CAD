@@ -422,6 +422,39 @@ fn snapping_finds_endpoints_and_intersections() {
 }
 
 #[test]
+fn wandkontur_fang_ueber_einstellungen() {
+    let mut s = s();
+    s.execute("draw.wall", &json!({"a": [0, 0], "b": [5, 0], "thickness": 0.30}))
+        .unwrap();
+    let wall_id = last_id(&s);
+    s.execute("doc.settings", &json!({"snap": {"grid": false}})).unwrap();
+
+    // Die Konturecke liegt 150 mm neben der Achse: (0;150) statt (0;0).
+    let ecke = v(0.0, 150.0);
+    let hit = jjcad_core::snap::find_snap(&s.doc, v(4.0, 146.0), 30.0, None, &[])
+        .expect("Wandkontur muss fangbar sein");
+    assert!(hit.point.dist(ecke) < 1e-6, "{hit:?}");
+    assert_eq!(hit.kind, jjcad_core::snap::SnapKind::Endpoint);
+    assert_eq!(hit.entity, Some(wall_id));
+
+    // Abschalten: nur die Kontur verschwindet, die Achse bleibt fangbar.
+    s.execute("doc.settings", &json!({"snap": {"wall_edges": false}}))
+        .unwrap();
+    assert!(jjcad_core::snap::find_snap(&s.doc, v(4.0, 146.0), 30.0, None, &[]).is_none());
+    let achse = jjcad_core::snap::find_snap(&s.doc, v(4.0, 4.0), 30.0, None, &[])
+        .expect("Achsendendpunkt bleibt");
+    assert!(achse.point.dist(v(0.0, 0.0)) < 1e-6, "{achse:?}");
+
+    // Der Schalter überlebt Speichern und Laden.
+    let dir = std::env::temp_dir().join("jjcad-test");
+    std::fs::create_dir_all(&dir).unwrap();
+    let path = dir.join("wandfang.jjcad");
+    s.save(&path).unwrap();
+    let loaded = jjcad_core::persist::load_document(&path).unwrap();
+    assert!(!loaded.settings.snap.wall_edges, "Schalter muss gespeichert sein");
+}
+
+#[test]
 fn door_sits_on_front_wall_face() {
     // Tür sitzt immer auf der vorderen Wandkante (Blattseite), nicht in der
     // Wandmitte; Ausrichtung ist fuer Tueren ohne Wirkung.

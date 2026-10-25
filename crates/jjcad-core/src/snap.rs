@@ -88,28 +88,57 @@ pub fn find_snap_gated(
     ignore: &[Id],
     allow_grid: bool,
 ) -> Option<SnapHit> {
+    snap_candidates_gated(doc, cursor, tol, reference, ignore, allow_grid)
+        .into_iter()
+        .next()
+}
+
+/// Toleranz, unterhalb derer zwei Fangpunkte als derselbe Punkt gelten (mm).
+/// Nötig, weil eine Gehrungsecke von beiden beteiligten Wänden geliefert wird
+/// und die Wandachse eigene Endpunkte beisteuert.
+const SNAP_DEDUP: f64 = 0.1;
+
+/// Alle Fang-Kandidaten in Reichweite, entdoppelt und nach Priorität/Abstand
+/// sortiert (bester zuerst). Für Anzeige und Prüfung mehrerer Vorschläge;
+/// [`find_snap`] nimmt nur den ersten Treffer.
+pub fn snap_candidates(
+    doc: &Document,
+    cursor: Vec2,
+    tol: f64,
+    reference: Option<Vec2>,
+    ignore: &[Id],
+) -> Vec<SnapHit> {
+    snap_candidates_gated(doc, cursor, tol, reference, ignore, true)
+}
+
+pub fn snap_candidates_gated(
+    doc: &Document,
+    cursor: Vec2,
+    tol: f64,
+    reference: Option<Vec2>,
+    ignore: &[Id],
+    allow_grid: bool,
+) -> Vec<SnapHit> {
     let mut s = doc.settings.snap.clone();
     if !allow_grid {
         s.grid = false;
     }
     let s = &s;
     let tol = tol.max(1e-6);
-    let mut best: Option<SnapHit> = None;
-    let mut best_key = (u8::MAX, f64::INFINITY);
+    let mut cands: Vec<(f64, SnapHit)> = Vec::new();
 
     let mut consider = |p: Vec2, kind: SnapKind, entity: Option<Id>, dist: f64| {
         if dist > tol {
             return;
         }
-        let key = (kind.priority(), dist);
-        if key.0 < best_key.0 || (key.0 == best_key.0 && key.1 < best_key.1) {
-            best_key = key;
-            best = Some(SnapHit {
+        cands.push((
+            dist,
+            SnapHit {
                 point: p,
                 kind,
                 entity,
-            });
-        }
+            },
+        ));
     };
 
     // Kandidaten sammeln (nur sichtbare Objekte in der Nähe)
@@ -130,6 +159,14 @@ pub fn find_snap_gated(
         }
         for sg in render::entity_segments(doc, e) {
             segs.push((sg, e.id));
+        }
+        // Wandkörper: die umgrenzenden Linien (Längskanten, Gehrungs-/Stirn-
+        // ecken, Laibungen) liefern ebenfalls Fangpunkte — ohne diesen Zweig
+        // kennt der Fang nur die Wandachse. Nur bei aktivem Wand-Punktfang.
+        if s.wall_edges && matches!(e.kind, EntityKind::Wall { .. }) {
+            for sg in render::wall_contour_segments(doc, e) {
+                segs.push((sg, e.id));
+            }
         }
         if s.center {
             for c in render::entity_centers(doc, e) {
@@ -211,8 +248,24 @@ pub fn find_snap_gated(
         }
     }
 
-    let _ = best_key;
-    best
+    // Beste zuerst: Priorität der Fangart, dann Abstand zum Zeiger.
+    cands.sort_by(|a, b| {
+        a.1.kind
+            .priority()
+            .cmp(&b.1.kind.priority())
+            .then(a.0.partial_cmp(&b.0).unwrap_or(std::cmp::Ordering::Equal))
+    });
+
+    // Entdoppeln: dieselbe Koordinate (innerhalb SNAP_DEDUP) wird nur einmal
+    // angeboten — der beste Kandidat an dieser Stelle gewinnt.
+    let mut out: Vec<SnapHit> = Vec::with_capacity(cands.len());
+    for (_, hit) in cands {
+        if out.iter().any(|h| h.point.dist(hit.point) <= SNAP_DEDUP) {
+            continue;
+        }
+        out.push(hit);
+    }
+    out
 }
 
 /// Trefferprüfung (Auswahl per Klick).
@@ -409,6 +462,128 @@ mod tests {
     fn polarwinkel_standard_ist_45_grad() {
         let doc = Document::blank();
         assert!((doc.settings.snap.polar_step - 45.0).abs() < 1e-9);
+    }
+
+    /// Eine Wand über die Befehlsschicht anlegen (Achse 0,0 → 5000,0).
+    fn wand(doc: &mut Document, a: Vec2, b: Vec2) -> Id {
+        let e = Entity {
+            id: doc.new_id(),
+            layer: 0,
+            kind: EntityKind::Wall {
+                a,
+                b,
+                thickness: 300.0,
+                height: 2500.0,
+                material: String::new(),
+                hatch: None,
+                align: crate::style::WallAlign::Center,
+            },
+            style: Default::default(),
+            by_block: false,
+        };
+        let id = e.id;
+        doc.entities.push(e);
+        id
+    }
+
+    #[test]
+    fn wandkontur_liefert_eckpunkte() {
+        let mut doc = Document::blank();
+        doc.settings.snap.wall_edges = true;
+        let id = wand(&mut doc, Vec2::ZERO, Vec2::new(5000.0, 0.0));
+        // Mitte der Wandachse liegt bei (2500,0); die Konturecken bei 0/5000 ± 150.
+        let pts = render::wall_contour_points(&doc, doc.entity(id).unwrap());
+        assert!(
+            pts.iter().any(|p| p.dist(Vec2::new(0.0, 150.0)) < 1e-6),
+            "{pts:?}"
+        );
+        assert!(
+            pts.iter().any(|p| p.dist(Vec2::new(5000.0, -150.0)) < 1e-6),
+            "{pts:?}"
+        );
+        // Der Fang greift auf der Konturecke, nicht auf der Achse.
+        let hit = find_snap_gated(&doc, Vec2::new(4.0, 146.0), 30.0, None, &[], false)
+            .expect("Konturecke muss fangbar sein");
+        assert!(hit.point.dist(Vec2::new(0.0, 150.0)) < 1e-6, "{hit:?}");
+        assert_eq!(hit.kind, SnapKind::Endpoint);
+        assert_eq!(hit.entity, Some(id));
+    }
+
+    #[test]
+    fn oeffnung_laibungsecken_sind_fangbar() {
+        let mut doc = Document::blank();
+        let id = wand(&mut doc, Vec2::ZERO, Vec2::new(5000.0, 0.0));
+        // Tür 1000 mm breit, Mitte bei 2000 mm auf der Wand
+        let door = Entity {
+            id: doc.new_id(),
+            layer: 0,
+            kind: EntityKind::Door {
+                center: Vec2::new(2000.0, 0.0),
+                angle: 0.0,
+                width: 1000.0,
+                kind: DoorKind::Opening,
+                hinge: 1.0,
+                swing_in: true,
+                align: crate::style::WallAlign::Center,
+                host: Some(id),
+                at: Some(2000.0),
+            },
+            style: Default::default(),
+            by_block: false,
+        };
+        doc.entities.push(door);
+        let pts = render::wall_contour_points(&doc, doc.entity(id).unwrap());
+        // Laibungsecken bei 1500/2500 mm, je ±150 mm neben der Achse
+        for soll in [
+            Vec2::new(1500.0, 150.0),
+            Vec2::new(1500.0, -150.0),
+            Vec2::new(2500.0, 150.0),
+            Vec2::new(2500.0, -150.0),
+        ] {
+            assert!(pts.iter().any(|p| p.dist(soll) < 1e-6), "fehlt {soll:?}: {pts:?}");
+        }
+        let hit = find_snap_gated(&doc, Vec2::new(1502.0, 147.0), 30.0, None, &[], false)
+            .expect("Laibungsecke muss fangbar sein");
+        assert!(hit.point.dist(Vec2::new(1500.0, 150.0)) < 1e-6, "{hit:?}");
+    }
+
+    #[test]
+    fn wandkontur_fang_ist_abschaltbar() {
+        let mut doc = Document::blank();
+        let mut doc_aus = Document::blank();
+        doc_aus.settings.snap.wall_edges = false;
+        for d in [&mut doc, &mut doc_aus] {
+            wand(d, Vec2::ZERO, Vec2::new(5000.0, 0.0));
+        }
+        let cursor = Vec2::new(4.0, 146.0);
+        let an = find_snap_gated(&doc, cursor, 30.0, None, &[], false);
+        assert!(an.is_some());
+        // Aus: keine Konturpunkte mehr — und die Achse liefert hier nichts.
+        let aus = find_snap_gated(&doc_aus, cursor, 30.0, None, &[], false);
+        assert!(aus.is_none(), "{aus:?}");
+    }
+
+    #[test]
+    fn gehrungsecke_wird_nur_einmal_angeboten() {
+        let mut doc = Document::blank();
+        // Zwei Wände im rechten Winkel am gemeinsamen Punkt (0,0).
+        wand(&mut doc, Vec2::ZERO, Vec2::new(5000.0, 0.0));
+        wand(&mut doc, Vec2::ZERO, Vec2::new(0.0, 4000.0));
+        // Beide Wände rechnen die Gehrungsecke (-150,-150) — sie darf nur einmal
+        // im Vorschlag stehen.
+        let cands = snap_candidates_gated(&doc, Vec2::new(-150.0, -150.0), 200.0, None, &[], false);
+        for (i, a) in cands.iter().enumerate() {
+            for b in cands.iter().skip(i + 1) {
+                assert!(
+                    a.point.dist(b.point) > SNAP_DEDUP,
+                    "doppelt: {:?}",
+                    (a, b)
+                );
+            }
+        }
+        let ecke = Vec2::new(-150.0, -150.0);
+        let treffer = cands.iter().filter(|h| h.point.dist(ecke) < 1.0).count();
+        assert_eq!(treffer, 1, "{cands:?}");
     }
 
     #[test]

@@ -536,10 +536,10 @@ pub fn render_entity(
             b: p1,
             thickness,
             hatch,
-            align,
             ..
         } => {
-            render_wall(ctx, e, &st, *p0, *p1, *thickness, *hatch, *align, xf, dl);
+            // Ausrichtung und Anschlüsse rechnet `WallLayout::of` aus dem Objekt.
+            render_wall(ctx, e, &st, *p0, *p1, *thickness, *hatch, xf, dl);
         }
         EntityKind::Door {
             center,
@@ -1079,6 +1079,172 @@ fn push_clipped_line(
     }
 }
 
+/// Aufbau einer Wand: verschobene Achse, Anschlüsse an beiden Enden,
+/// Öffnungsintervalle und die festen Abschnitte dazwischen.
+///
+/// EINE Quelle für Darstellung **und** Fang — würde die Kontur an zwei Stellen
+/// gerechnet, weichen gezeichnete Kante und Fangpunkt bei Gehrung/Öffnung
+/// still voneinander ab.
+struct WallLayout {
+    dir: Vec2,
+    n: Vec2,
+    /// halbe Wanddicke
+    h: f64,
+    se: WallEnd,
+    ee: WallEnd,
+    /// Beginn der (verlängerten) Achse
+    start: Vec2,
+    /// Gesamtlänge inklusive Verlängerungen
+    total: f64,
+    /// Öffnungsintervalle, um die Verlängerung am Anfang verschoben
+    openings: Vec<(f64, f64)>,
+    /// feste Abschnitte zwischen den Öffnungen
+    segments: Vec<(f64, f64)>,
+}
+
+impl WallLayout {
+    fn of(doc: &Document, e: &Entity) -> Option<Self> {
+        let EntityKind::Wall {
+            a,
+            b,
+            thickness,
+            align,
+            ..
+        } = &e.kind
+        else {
+            return None;
+        };
+        if *thickness <= 0.5 {
+            return None;
+        }
+        let len = a.dist(*b);
+        if len < 1e-6 {
+            return None;
+        }
+        let dir = (*b - *a).normalized();
+        let n = dir.perp();
+        let h = thickness * 0.5;
+        // Ausrichtung: Wandkörper relativ zur Achse verschieben (links/mittig/rechts)
+        let shift = n * (h * align.offset());
+        let a = *a + shift;
+        let b = *b + shift;
+
+        // Anschlüsse: Gehrung zum Ecknachbarn oder Ende so weit in den Nachbarn
+        // schieben, dass beide Stirnecken in dessen Körper liegen.
+        let se = wall_end(doc, e, a, -dir, n, h);
+        let ee = wall_end(doc, e, b, dir, n, h);
+        let start = a - dir * se.ext;
+        let total = len + se.ext + ee.ext;
+
+        // Öffnungen (relativ zum ursprünglichen Wandanfang)
+        let openings: Vec<(f64, f64)> = wall_opening_intervals(doc, e)
+            .into_iter()
+            .map(|(s0, s1)| (s0 + se.ext, s1 + se.ext))
+            .collect();
+
+        // Feste Segmente zwischen den Öffnungen
+        let mut segments: Vec<(f64, f64)> = Vec::new();
+        let mut cursor = 0.0;
+        for (s0, s1) in &openings {
+            if *s0 > cursor + 0.5 {
+                segments.push((cursor, *s0));
+            }
+            cursor = (*s1).max(cursor);
+        }
+        if cursor < total - 0.5 {
+            segments.push((cursor, total));
+        }
+
+        Some(Self {
+            dir,
+            n,
+            h,
+            se,
+            ee,
+            start,
+            total,
+            openings,
+            segments,
+        })
+    }
+
+    /// Punkt auf der (verlängerten) Achse, `s` ab Wandbeginn gemessen.
+    fn p(&self, s: f64) -> Vec2 {
+        self.start + self.dir * s
+    }
+
+    /// Die vier Ecken eines festen Abschnitts: (außen Anfang, innen Anfang,
+    /// außen Ende, innen Ende). An den Wandenden sind es die Stirn-/Gehrungsecken.
+    fn corners(&self, s0: f64, s1: f64) -> (Vec2, Vec2, Vec2, Vec2) {
+        let p0 = self.p(s0);
+        let p1 = self.p(s1);
+        let (c0o, c0i) = if s0 < 0.5 {
+            (self.se.o, self.se.i)
+        } else {
+            (p0 + self.n * self.h, p0 - self.n * self.h)
+        };
+        let (c1o, c1i) = if (s1 - self.total).abs() < 0.5 {
+            (self.ee.o, self.ee.i)
+        } else {
+            (p1 + self.n * self.h, p1 - self.n * self.h)
+        };
+        (c0o, c0i, c1o, c1i)
+    }
+}
+
+/// Umgrenzende Linien einer Wand in Weltkoordinaten: Längskanten je Abschnitt,
+/// Stirnkanten an freien Enden und Laibungskanten an Öffnungen.
+///
+/// Das ist die Kontur, die der Betrachter sieht — bewusst **ohne** den Beschnitt
+/// an Nachbarwänden: gefangen wird die konstruierte Ecke (z. B. der Gehrungspunkt),
+/// nicht der sichtbare Rest der Linie. Leere Liste, wenn die Wand zu dünn ist
+/// und als einfache Linie gezeichnet wird.
+pub fn wall_contour_segments(doc: &Document, e: &Entity) -> Vec<Seg> {
+    let Some(l) = WallLayout::of(doc, e) else {
+        return vec![];
+    };
+    let mut out = Vec::new();
+    for (s0, s1) in &l.segments {
+        let (c0o, c0i, c1o, c1i) = l.corners(*s0, *s1);
+        // Längskanten
+        out.push(Seg::Line(c0o, c1o));
+        out.push(Seg::Line(c0i, c1i));
+        // Stirnseiten nur an freien Wandenden (bei Anschluss deckt der Nachbar)
+        if *s0 < 0.5 && !l.se.conn {
+            out.push(Seg::Line(l.se.o, l.se.i));
+        }
+        if (*s1 - l.total).abs() < 0.5 && !l.ee.conn {
+            out.push(Seg::Line(l.ee.o, l.ee.i));
+        }
+    }
+    // Laibungen an Öffnungen
+    for (s0, s1) in &l.openings {
+        for s in [*s0, *s1] {
+            let p = l.p(s);
+            out.push(Seg::Line(p + l.n * l.h, p - l.n * l.h));
+        }
+    }
+    out
+}
+
+/// Umgrenzende Eckpunkte einer Wand (Endpunkte der Konturlinien, entdoppelt).
+pub fn wall_contour_points(doc: &Document, e: &Entity) -> Vec<Vec2> {
+    let mut out: Vec<Vec2> = Vec::new();
+    for sg in wall_contour_segments(doc, e) {
+        for p in [sg.start(), sg.end()] {
+            if !out.iter().any(|q| q.dist(p) <= CONTOUR_DEDUP) {
+                out.push(p);
+            }
+        }
+    }
+    out
+}
+
+/// Toleranz, unterhalb derer zwei Konturpunkte als derselbe Punkt gelten (mm).
+/// Gehrungsecken werden je Wand über dieselben Schnitte gerechnet; die
+/// Rundungsreste liegen weit unter dieser Grenze.
+const CONTOUR_DEDUP: f64 = 0.1;
+
 fn render_wall(
     ctx: &RenderCtx,
     e: &Entity,
@@ -1087,7 +1253,6 @@ fn render_wall(
     b: Vec2,
     thickness: f64,
     hatch: Option<HatchPattern>,
-    align: crate::style::WallAlign,
     xf: Affine,
     dl: &mut DisplayList,
 ) {
@@ -1100,50 +1265,25 @@ fn render_wall(
         });
         return;
     }
-    let dir = (b - a).normalized();
-    let n = dir.perp();
-    let len = a.dist(b);
-    let h = thickness * 0.5;
-    // Ausrichtung: Wandkörper relativ zur Achse verschieben (links/mittig/rechts)
-    let shift = n * (h * align.offset());
-    let a = a + shift;
-    let b = b + shift;
-
-    // Anschlüsse: Gehrung zum Ecknachbarn oder Ende so weit in den Nachbarn
-    // schieben, dass beide Stirnecken in dessen Körper liegen.
-    let se = wall_end(ctx.doc, e, a, -dir, n, h);
-    let ee = wall_end(ctx.doc, e, b, dir, n, h);
-    let (ext_a, ext_b) = (se.ext, ee.ext);
+    let Some(layout) = WallLayout::of(ctx.doc, e) else {
+        return;
+    };
+    let dir = layout.dir;
+    let n = layout.n;
+    let h = layout.h;
+    let (se, ee) = (&layout.se, &layout.ee);
     let (conn_a, conn_b) = (se.conn, ee.conn);
     let (s_out, s_in) = (se.o, se.i);
     let (e_out, e_in) = (ee.o, ee.i);
-    let start = a - dir * ext_a;
-    let total = len + ext_a + ext_b;
-
-    // Öffnungen (relativ zum ursprünglichen Wandanfang)
-    let openings: Vec<(f64, f64)> = wall_opening_intervals(ctx.doc, e)
-        .into_iter()
-        .map(|(s0, s1)| (s0 + ext_a, s1 + ext_a))
-        .collect();
+    let start = layout.start;
+    let total = layout.total;
+    let openings = &layout.openings;
+    let segments = &layout.segments;
 
     let fill = e
         .style
         .fill
         .unwrap_or_else(|| st.color.mix(Color::WHITE, 0.74));
-
-
-    // Feste Segmente zwischen den Öffnungen
-    let mut segments: Vec<(f64, f64)> = Vec::new();
-    let mut cursor = 0.0;
-    for (s0, s1) in &openings {
-        if *s0 > cursor + 0.5 {
-            segments.push((cursor, *s0));
-        }
-        cursor = (*s1).max(cursor);
-    }
-    if cursor < total - 0.5 {
-        segments.push((cursor, total));
-    }
 
     // Andere Wände (Bänder) für das Beschneiden von Kanten und Füllungen
     let bands = wall_bands(ctx.doc);
@@ -1153,19 +1293,10 @@ fn render_wall(
         .map(|(_, q)| q.clone())
         .collect();
 
-    for (s0, s1) in &segments {
+    for (s0, s1) in segments {
         let p0 = start + dir * *s0;
         let p1 = start + dir * *s1;
-        let (c0o, c0i) = if *s0 < 0.5 {
-            (s_out, s_in)
-        } else {
-            (p0 + n * h, p0 - n * h)
-        };
-        let (c1o, c1i) = if (*s1 - total).abs() < 0.5 {
-            (e_out, e_in)
-        } else {
-            (p1 + n * h, p1 - n * h)
-        };
+        let (c0o, c0i, c1o, c1i) = layout.corners(*s0, *s1);
         let fill_style = PrimStyle {
             color: fill,
             fill: Some(fill),
@@ -1263,7 +1394,7 @@ fn render_wall(
     }
 
     // Laibungen an Öffnungen
-    for (s0, s1) in &openings {
+    for (s0, s1) in openings {
         for s in [*s0, *s1] {
             let p = start + dir * s;
             dl.push(Prim {
