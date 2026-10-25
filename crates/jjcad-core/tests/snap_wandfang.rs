@@ -241,6 +241,89 @@ fn wandkontur_ohne_doppelte_fangkandidaten() {
 }
 
 // ---------------------------------------------------------------------------
+// 1b. Randfälle der Wandkontur
+// ---------------------------------------------------------------------------
+
+#[test]
+fn wandkontur_ecken_bei_ausrichtung_links() {
+    // Ausrichtung links: der Körper liegt auf der Seite der Normalen, die
+    // Kontur reicht von der Achse bis Achse + Dicke.
+    let mut s = s();
+    s.execute(
+        "draw.wall",
+        &json!({"a": [0.0, 0.0], "b": [5.0, 0.0], "thickness": 0.30, "align": "left"}),
+    )
+    .unwrap();
+    for p in [v(0.0, 300.0), v(5000.0, 300.0)] {
+        let hit = fang(&s, p + v(3.0, -3.0), 30.0).unwrap_or_else(|| {
+            panic!("Ausrichtung links: Ecke ({}, {}) nicht fangbar", p.x, p.y)
+        });
+        assert_punkt(hit.point, p, "Ausrichtung links");
+    }
+}
+
+#[test]
+fn wand_ohne_dicke_bleibt_achsenfang() {
+    // Dicke 0: die Wand wird als Linie gezeichnet, es gibt keine Kontur.
+    let mut s = s();
+    wand(&mut s, [0.0, 0.0], [5.0, 0.0], 0.0);
+    let hit = fang(&s, v(5005.0, 5.0), 40.0).expect("Achsen-Endpunkt bei Dicke 0");
+    assert_punkt(hit.point, v(5000.0, 0.0), "Achsen-Endpunkt bei Dicke 0");
+    assert!(kontur_linien(&s.doc, s.doc.entities[0].id).len() == 1);
+}
+
+#[test]
+fn kein_fang_auf_ausgeblendeter_ebene() {
+    let mut s = s();
+    let id = wand(&mut s, [0.0, 0.0], [5.0, 0.0], 0.30);
+    let ecke = kontur_ecken(&s.doc, id)[0];
+    assert!(fang(&s, ecke + v(2.0, 2.0), 30.0).is_some(), "Vorbedingung");
+    let layer = s.doc.entities[0].layer;
+    s.doc
+        .layers
+        .iter_mut()
+        .find(|l| l.id == layer)
+        .expect("Ebene")
+        .visible = false;
+    assert!(
+        fang(&s, ecke + v(2.0, 2.0), 30.0).is_none(),
+        "ausgeblendete Wand darf keine Fangpunkte liefern"
+    );
+}
+
+#[test]
+fn ignorierte_wand_liefert_keine_kontur() {
+    // Beim Zeichnen wird die aktive Wand über `ignore` ausgeblendet — sie darf
+    // dann auch keine Kontur-Fangpunkte beisteuern (Selbstfang).
+    let mut s = s();
+    let id = wand(&mut s, [0.0, 0.0], [5.0, 0.0], 0.30);
+    let ecke = kontur_ecken(&s.doc, id)[0];
+    let hit = find_snap(&s.doc, ecke + v(2.0, 2.0), 30.0, None, &[id]);
+    assert!(
+        hit.is_none(),
+        "ignorierte Wand liefert weiterhin einen Fangpunkt: {hit:?}"
+    );
+}
+
+#[test]
+fn laibungsecken_werden_gefangen() {
+    // Öffnung in der Wand: die Laibungsecken gehören zur gezeichneten Kontur.
+    let mut s = s();
+    let id = wand(&mut s, [0.0, 0.0], [5.0, 0.0], 0.30);
+    s.execute(
+        "draw.window",
+        &json!({"center": [2.5, 0.0], "width": 1.0, "host": id}),
+    )
+    .unwrap();
+    for p in [v(2000.0, 150.0), v(3000.0, -150.0)] {
+        let hit = fang(&s, p + v(2.0, 2.0), 30.0).unwrap_or_else(|| {
+            panic!("Laibungsecke ({}, {}) nicht fangbar", p.x, p.y)
+        });
+        assert_punkt(hit.point, p, "Laibungsecke");
+    }
+}
+
+// ---------------------------------------------------------------------------
 // 2. Schalter „Wand-Punktfang“ (steuert nur die Kontur)
 // ---------------------------------------------------------------------------
 
