@@ -422,6 +422,39 @@ fn snapping_finds_endpoints_and_intersections() {
 }
 
 #[test]
+fn wandkontur_fang_ueber_einstellungen() {
+    let mut s = s();
+    s.execute("draw.wall", &json!({"a": [0, 0], "b": [5, 0], "thickness": 0.30}))
+        .unwrap();
+    let wall_id = last_id(&s);
+    s.execute("doc.settings", &json!({"snap": {"grid": false}})).unwrap();
+
+    // Die Konturecke liegt 150 mm neben der Achse: (0;150) statt (0;0).
+    let ecke = v(0.0, 150.0);
+    let hit = jjcad_core::snap::find_snap(&s.doc, v(4.0, 146.0), 30.0, None, &[])
+        .expect("Wandkontur muss fangbar sein");
+    assert!(hit.point.dist(ecke) < 1e-6, "{hit:?}");
+    assert_eq!(hit.kind, jjcad_core::snap::SnapKind::Endpoint);
+    assert_eq!(hit.entity, Some(wall_id));
+
+    // Abschalten: nur die Kontur verschwindet, die Achse bleibt fangbar.
+    s.execute("doc.settings", &json!({"snap": {"wall_edges": false}}))
+        .unwrap();
+    assert!(jjcad_core::snap::find_snap(&s.doc, v(4.0, 146.0), 30.0, None, &[]).is_none());
+    let achse = jjcad_core::snap::find_snap(&s.doc, v(4.0, 4.0), 30.0, None, &[])
+        .expect("Achsendendpunkt bleibt");
+    assert!(achse.point.dist(v(0.0, 0.0)) < 1e-6, "{achse:?}");
+
+    // Der Schalter überlebt Speichern und Laden.
+    let dir = std::env::temp_dir().join("jjcad-test");
+    std::fs::create_dir_all(&dir).unwrap();
+    let path = dir.join("wandfang.jjcad");
+    s.save(&path).unwrap();
+    let loaded = jjcad_core::persist::load_document(&path).unwrap();
+    assert!(!loaded.settings.snap.wall_edges, "Schalter muss gespeichert sein");
+}
+
+#[test]
 fn door_sits_on_front_wall_face() {
     // Tür sitzt immer auf der vorderen Wandkante (Blattseite), nicht in der
     // Wandmitte; Ausrichtung ist fuer Tueren ohne Wirkung.
@@ -560,4 +593,75 @@ fn select_window_nutzt_geometrie_nicht_bbox() {
     // vollstaendig enthalten
     let ganz = jjcad_core::snap::select_window(&s.doc, v(-100.0, -100.0), v(6000.0, 6000.0), false);
     assert_eq!(ganz, vec![id]);
+}
+
+#[test]
+fn wandkontur_fang_ist_getrennt_schaltbar() {
+    // Wand 5 m lang, 240 mm dick, mittig -> Konturecken bei 0/5000 ± 120.
+    let mut s = s();
+    s.execute(
+        "draw.wall",
+        &json!({"a": [0, 0], "b": [5, 0], "thickness": 0.24}),
+    )
+    .unwrap();
+    s.execute("doc.settings", &json!({"snap": {"grid": false}}))
+        .unwrap();
+    assert!(s.doc.settings.snap.wall_edges, "Standard: Wandkanten aktiv");
+
+    let ecken = [
+        (0.0, 120.0),
+        (0.0, -120.0),
+        (5000.0, 120.0),
+        (5000.0, -120.0),
+    ];
+    for (x, y) in ecken {
+        let hit = jjcad_core::snap::find_snap(&s.doc, v(x, y), 20.0, None, &[])
+            .unwrap_or_else(|| panic!("Konturecke ({x},{y}) muss fangen"));
+        assert!(
+            (hit.point.x - x).abs() < 1e-6 && (hit.point.y - y).abs() < 1e-6,
+            "Konturecke ({x},{y}) -> {hit:?}"
+        );
+    }
+
+    // Abschalten: ausschliesslich die Wandkontur verschwindet.
+    s.execute("doc.settings", &json!({"snap": {"wall_edges": false}}))
+        .unwrap();
+    for (x, y) in ecken {
+        assert!(
+            jjcad_core::snap::find_snap(&s.doc, v(x, y), 20.0, None, &[]).is_none(),
+            "Konturecke ({x},{y}) darf nicht mehr fangen"
+        );
+    }
+    // Die Wandachse bleibt unberuehrt fangbar.
+    let achse = jjcad_core::snap::find_snap(&s.doc, v(0.0, 0.0), 20.0, None, &[])
+        .expect("Achsen-Endpunkt muss weiterhin fangen");
+    assert_eq!(achse.point, v(0.0, 0.0));
+    let mitte = jjcad_core::snap::find_snap(&s.doc, v(2500.0, 0.0), 20.0, None, &[])
+        .expect("Achsen-Mittelpunkt muss weiterhin fangen");
+    assert_eq!(mitte.point, v(2500.0, 0.0));
+
+    // Wieder einschalten: Kontur ist sofort wieder da.
+    s.execute("doc.settings", &json!({"snap": {"wall_edges": true}}))
+        .unwrap();
+    assert!(jjcad_core::snap::find_snap(&s.doc, v(0.0, 120.0), 20.0, None, &[]).is_some());
+}
+
+#[test]
+fn wandkanten_option_wird_gespeichert() {
+    let sp = jjcad_core::model::SnapSettings::default();
+    assert!(sp.wall_edges, "Default muss aktiv sein");
+    // Serde-Rundreise (Dokument-Settings landen so in der .jjcad-Datei)
+    let mut aus = sp;
+    aus.wall_edges = false;
+    let js = serde_json::to_string(&aus).unwrap();
+    let zurueck: jjcad_core::model::SnapSettings = serde_json::from_str(&js).unwrap();
+    assert!(!zurueck.wall_edges);
+    // Alte Dateien ohne den Schluessel: Default aktiv
+    let alt: jjcad_core::model::SnapSettings = serde_json::from_str("{}").unwrap();
+    assert!(alt.wall_edges);
+    // Befehls-Schicht (MCP/GUI) kann die Option setzen
+    let mut s = s();
+    s.execute("doc.settings", &json!({"snap": {"wall_edges": false}}))
+        .unwrap();
+    assert!(!s.doc.settings.snap.wall_edges);
 }

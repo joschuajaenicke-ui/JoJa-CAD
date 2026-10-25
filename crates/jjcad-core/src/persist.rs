@@ -204,6 +204,10 @@ pub struct UserPrefs {
     pub drag_mode: DragMode,
     #[serde(default = "default_true")]
     pub snap_marker: bool,
+    /// Wandkontur-Punktfang (snap.wall_edges) — app-weit gemerkt, damit die
+    /// Einstellung auch in einer neuen/ungespeicherten Zeichnung erhalten bleibt.
+    #[serde(default = "default_true")]
+    pub snap_wall_edges: bool,
     #[serde(default)]
     pub show_properties: bool,
     #[serde(default = "default_true")]
@@ -284,6 +288,7 @@ impl Default for UserPrefs {
             lineweights_scaled: false,
             drag_mode: DragMode::HoldAndDrag,
             snap_marker: true,
+            snap_wall_edges: true,
             show_properties: true,
             show_layers: true,
             inventory: vec![None; 40],

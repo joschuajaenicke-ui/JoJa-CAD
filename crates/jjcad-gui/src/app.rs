@@ -381,6 +381,9 @@ impl App {
         let prefs = UserPrefs::load();
         let mut s = Session::new();
         s.doc.name = "Unbenannt".into();
+        // App-weite Vorliebe für den Wandkontur-Fang übernehmen, damit die
+        // Einstellung auch ohne gespeicherte Zeichnung einen Neustart überlebt.
+        s.doc.settings.snap.wall_edges = prefs.snap_wall_edges;
         let tab = DocTab {
             session: s,
             tab: TabKind::Model,
@@ -920,7 +923,8 @@ impl App {
     }
 
     pub fn new_document(&mut self) {
-        let s = Session::new();
+        let mut s = Session::new();
+        s.doc.settings.snap.wall_edges = self.prefs.snap_wall_edges;
         let tab = DocTab {
             session: s,
             tab: TabKind::Model,
@@ -1928,15 +1932,21 @@ fn rail(ui: &mut egui::Ui, icon: &str, tooltip: &str, chevron: &str) -> bool {
                                 changed |= ui.checkbox(&mut snap.grid, "Fangraster").changed();
                                 changed |= ui.checkbox(&mut snap.ortho, "Ortho").changed();
                             });
+                            ui.horizontal(|ui| {
+                                changed |= ui.checkbox(&mut snap.wall_edges, "Wandkanten").changed();
+                            });
                             if changed {
                                 let _ = app.session_mut().execute(
                                     "doc.settings",
                                     &serde_json::json!({"snap": {
                                         "endpoint": snap.endpoint, "midpoint": snap.midpoint,
                                         "intersection": snap.intersection, "center": snap.center,
-                                        "grid": snap.grid, "ortho": snap.ortho, "polar": snap.polar
+                                        "grid": snap.grid, "ortho": snap.ortho, "polar": snap.polar,
+                                        "wall_edges": snap.wall_edges
                                     }}),
                                 );
+                                app.prefs.snap_wall_edges = snap.wall_edges;
+                                let _ = app.prefs.save();
                             }
                         });
                     });
@@ -2026,6 +2036,7 @@ fn rail(ui: &mut egui::Ui, icon: &str, tooltip: &str, chevron: &str) -> bool {
             "grid" => sn.grid = value,
             "ortho" => sn.ortho = value,
             "polar" => sn.polar = value,
+            "wall_edges" => sn.wall_edges = value,
             _ => return,
         }
         let _ = self.session_mut().execute(
@@ -2033,9 +2044,16 @@ fn rail(ui: &mut egui::Ui, icon: &str, tooltip: &str, chevron: &str) -> bool {
             &serde_json::json!({"snap": {
                 "endpoint": sn.endpoint, "midpoint": sn.midpoint, "center": sn.center,
                 "intersection": sn.intersection, "perpendicular": sn.perpendicular,
-                "nearest": sn.nearest, "grid": sn.grid, "ortho": sn.ortho, "polar": sn.polar
+                "nearest": sn.nearest, "grid": sn.grid, "ortho": sn.ortho, "polar": sn.polar,
+                "wall_edges": sn.wall_edges
             }}),
         );
+        // Der Wandkontur-Fang ist eine app-weite Vorliebe — auch für neue
+        // Zeichnungen und über einen Neustart hinweg merken.
+        if key == "wall_edges" {
+            self.prefs.snap_wall_edges = sn.wall_edges;
+            let _ = self.prefs.save();
+        }
     }
 
     fn release_keyboard_focus(&mut self) {
@@ -2893,6 +2911,7 @@ impl App {
                             let s0 = self.doc().settings.snap.clone();
                             for (label, key, val) in [
                                 ("Endpunkt", "endpoint", s0.endpoint),
+                                ("Wandkanten", "wall_edges", s0.wall_edges),
                                 ("Mittelpunkt", "midpoint", s0.midpoint),
                                 ("Zentrum", "center", s0.center),
                                 ("Schnittpunkt", "intersection", s0.intersection),
@@ -2908,6 +2927,7 @@ impl App {
                             if ui.button("Alle an").clicked() {
                                 for k in [
                                     "endpoint",
+                                    "wall_edges",
                                     "midpoint",
                                     "center",
                                     "intersection",
@@ -2921,6 +2941,7 @@ impl App {
                             if ui.button("Alle aus").clicked() {
                                 for k in [
                                     "endpoint",
+                                    "wall_edges",
                                     "midpoint",
                                     "center",
                                     "intersection",

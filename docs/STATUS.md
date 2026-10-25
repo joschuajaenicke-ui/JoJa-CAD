@@ -1,7 +1,7 @@
 # JoJa-CAD v0.2 — Arbeitsstand
 
 Kurzer Übergabestand für neue Sitzungen. Nach jeder Änderung fortschreiben.
-Stand: 25.10.2026, 14:35
+Stand: 25.10.2026, 15:00
 
 ## Build & Start
 
@@ -37,6 +37,14 @@ offene Fensterinstanz zeigt weiterhin den alten Stand.
   ohne Schlüssel ergeben `hold_and_drag`, das Altfeld `drag_two_clicks` aus
   Build b7 wird beim Laden übernommen. Nur Typ/Persistenz umgestellt — die
   Bedienung ist unverändert (Auswahlfeld-Optik und Zwei-Klick-Ablauf folgen).
+- **Punktfang auf Wandkontur** (`snap.wall_edges`, Standard an): Die umgrenzenden
+  Wandlinien (Längskanten, Gehrungs-/Stirnecken, Laibungen an Öffnungen) liefern
+  Fangpunkte — Endpunkt, Mittelpunkt, Nächster Punkt und Schnittpunkte mit anderen
+  Wänden. EINE Geometriequelle: `render::WallLayout::of` versorgt Darstellung
+  (`render_wall`) und Fang (`render::wall_contour_segments`); Kandidaten werden in
+  `snap::snap_candidates` entdoppelt (0,1 mm). Nachweis: Wand 0,0→5000,0, 300 mm —
+  Zeiger 5 px neben der Ecke → Status „X 0,00 Y 0,15 · Endpunkt", Ring auf der
+  Ecke; `wall_edges=false` → (-0,02; 0,17) ohne Fang, Achse bleibt fangbar.
 
 ## Offen
 
@@ -46,6 +54,8 @@ offene Fensterinstanz zeigt weiterhin den alten Stand.
    absolutem Mittelpunkt — nötig, damit Öffnungen beim Verschieben der Wand folgen.
 3. **Wand-Union**: letzter Feinschliff an extrem spitzen Ecken (Millimeter).
 4. Bemaßung: Griffe an Maßketten fehlen.
+5. ~~Wandfang-Schalter in der Oberfläche~~ — erledigt: Checkbox „Wandkanten" im
+   Einstellungen-Dialog, Ribbon-Gruppe Fangen, Statusmenü Fang (inkl. „Alle an/aus").
 
 ## Arbeitsweise (Lessons)
 
