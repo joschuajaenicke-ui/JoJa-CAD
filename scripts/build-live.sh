@@ -10,7 +10,15 @@ VER="$(grep -m1 '^version' Cargo.toml | cut -d'"' -f2)"
 NAME="jjcad-${VER}-b${BUILD}"
 DEST="${HOME}/jjcad-live"
 mkdir -p "$DEST"
-cp target/release/jjcad "$DEST/$NAME"
+if ! cp target/release/jjcad "$DEST/$NAME" 2>/dev/null; then
+    # Datei laeuft gerade (Nutzer testet) -> Inhalt ist identisch, nichts zu tun
+    if [ -f "$DEST/$NAME" ]; then
+        printf 'Build %s laeuft gerade und ist unveraendert (%s).\n' "$BUILD" "$DEST/$NAME"
+        exit 0
+    fi
+    printf 'Kopie nach %s fehlgeschlagen.\n' "$DEST/$NAME" >&2
+    exit 1
+fi
 ln -sfn "$NAME" "$DEST/jjcad"
 # nur die letzten 10 Builds behalten
 ls -1t "$DEST"/jjcad-* 2>/dev/null | tail -n +11 | xargs -r rm -f

@@ -116,6 +116,10 @@ in Prosa. Zahlen statt Adjektive.
 
 - **Abgenommen wird vom Nutzer.** Du setzt die Karte auf `request-review`,
   **nie** selbst auf `done`.
+- **Nach bestandener Review nicht `block`en** — `blocked` heißt „ich brauche
+  eine Entscheidung, ich kann nicht weiter". Wartet die Karte nur auf den Test
+  des Nutzers, gehört sie auf `request-review`. Ein Blockierer erscheint als
+  Problem auf dem Board und muss manuell aufgelöst werden.
 - **Nicht gelöst:** Kommentar an der *gleichen* Karte
   (`Nicht gelöst: <Symptom>, Build b<N>`), dann dort weiterarbeiten und den
   nächsten Build liefern.
