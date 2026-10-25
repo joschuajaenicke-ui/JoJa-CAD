@@ -1,0 +1,13 @@
+[package]
+name = "jjcad-core"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+serde = { workspace = true }
+serde_json = { workspace = true }
+
+# Headless-Rendering (PNG) und PDF-Export laufen ohne GUI.
+tiny-skia = { version = "0.11", default-features = false, features = ["std", "png-format"] }
+ab_glyph = "0.2"

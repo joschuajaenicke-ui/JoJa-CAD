@@ -1,0 +1,480 @@
+//! Vektoricons — mit dem Painter gezeichnet, damit sie in jeder Größe scharf sind.
+
+use egui::{Color32, Painter, Pos2, Rect, Stroke, Vec2};
+
+pub struct IconPainter<'a> {
+    p: &'a Painter,
+    r: Rect,
+    color: Color32,
+    w: f32,
+}
+
+impl<'a> IconPainter<'a> {
+    fn pt(&self, x: f32, y: f32) -> Pos2 {
+        let s = self.r.width() / 24.0;
+        Pos2::new(self.r.min.x + x * s, self.r.min.y + y * s)
+    }
+
+    fn line(&self, x1: f32, y1: f32, x2: f32, y2: f32) {
+        self.p.line_segment(
+            [self.pt(x1, y1), self.pt(x2, y2)],
+            Stroke::new(self.w, self.color),
+        );
+    }
+
+    fn poly(&self, pts: &[(f32, f32)], close: bool) {
+        let mut v: Vec<Pos2> = pts.iter().map(|(x, y)| self.pt(*x, *y)).collect();
+        if close {
+            v.push(self.pt(pts[0].0, pts[0].1));
+        }
+        for pair in v.windows(2) {
+            self.p
+                .line_segment([pair[0], pair[1]], Stroke::new(self.w, self.color));
+        }
+    }
+
+    fn rect(&self, x: f32, y: f32, w: f32, h: f32) {
+        self.p.rect_stroke(
+            Rect::from_min_size(self.pt(x, y), Vec2::new(w, h) * (self.r.width() / 24.0)),
+            egui::Rounding::same(1.0),
+            Stroke::new(self.w, self.color),
+        );
+    }
+
+    fn circle(&self, cx: f32, cy: f32, r: f32) {
+        self.p.circle_stroke(
+            self.pt(cx, cy),
+            r * (self.r.width() / 24.0),
+            Stroke::new(self.w, self.color),
+        );
+    }
+
+    fn arc(&self, cx: f32, cy: f32, r: f32, a0: f32, a1: f32) {
+        let n = 18;
+        let mut pts = Vec::new();
+        for i in 0..=n {
+            let a = a0 + (a1 - a0) * i as f32 / n as f32;
+            pts.push((cx + r * a.cos(), cy + r * a.sin()));
+        }
+        self.poly(&pts, false);
+    }
+
+    fn dot(&self, x: f32, y: f32, r: f32) {
+        self.p.circle_filled(
+            self.pt(x, y),
+            r * (self.r.width() / 24.0),
+            self.color,
+        );
+    }
+
+    fn filled(&self, pts: &[(f32, f32)]) {
+        let v: Vec<Pos2> = pts.iter().map(|(x, y)| self.pt(*x, *y)).collect();
+        self.p.add(egui::Shape::convex_polygon(
+            v,
+            self.color,
+            Stroke::NONE,
+        ));
+    }
+
+    fn arrow_head(&self, x: f32, y: f32, ang: f32, size: f32) {
+        let a1 = ang + 2.6;
+        let a2 = ang - 2.6;
+        self.filled(&[
+            (x, y),
+            (x + size * a1.cos(), y + size * a1.sin()),
+            (x + size * a2.cos(), y + size * a2.sin()),
+        ]);
+    }
+}
+
+/// Zeichnet ein Icon in `rect`.
+pub fn paint(painter: &Painter, rect: Rect, name: &str, color: Color32) {
+    let w = (rect.width() / 13.0).clamp(1.1, 2.0);
+    let i = IconPainter {
+        p: painter,
+        r: rect,
+        color,
+        w,
+    };
+    match name {
+        "line" => {
+            i.line(4.0, 19.0, 20.0, 5.0);
+            i.dot(4.0, 19.0, 1.6);
+            i.dot(20.0, 5.0, 1.6);
+        }
+        "polyline" => {
+            i.poly(&[(3.0, 18.0), (9.0, 8.0), (15.0, 15.0), (21.0, 6.0)], false);
+            i.dot(3.0, 18.0, 1.3);
+            i.dot(21.0, 6.0, 1.3);
+        }
+        "circle" => {
+            i.circle(12.0, 12.0, 7.5);
+            i.dot(12.0, 12.0, 1.1);
+        }
+        "arc" => {
+            i.arc(12.0, 15.0, 8.0, 3.34, 6.08);
+            i.dot(4.6, 12.5, 1.2);
+            i.dot(19.4, 12.5, 1.2);
+        }
+        "ellipse" => {
+            i.p.add(egui::Shape::line(
+                (0..=28)
+                    .map(|k| {
+                        let a = k as f32 / 28.0 * std::f32::consts::TAU;
+                        let s = i.r.width() / 24.0;
+                        Pos2::new(i.r.min.x + 12.0 * s + 9.0 * a.cos() * s, i.r.min.y + 12.0 * s + 6.5 * a.sin() * s)
+                    })
+                    .collect::<Vec<_>>(),
+                Stroke::new(i.w, color),
+            ));
+        }
+        "rect" => i.rect(4.0, 6.0, 16.0, 12.0),
+        "point" => {
+            i.dot(12.0, 12.0, 2.2);
+            i.line(12.0, 4.0, 12.0, 8.0);
+            i.line(12.0, 16.0, 12.0, 20.0);
+            i.line(4.0, 12.0, 8.0, 12.0);
+            i.line(16.0, 12.0, 20.0, 12.0);
+        }
+        "hatch" => {
+            i.rect(4.0, 5.0, 16.0, 14.0);
+            for k in 0..5 {
+                i.line(5.0 + k as f32 * 3.4, 18.0, 10.0 + k as f32 * 3.4, 6.0);
+            }
+        }
+        "text" => {
+            i.line(5.0, 6.0, 19.0, 6.0);
+            i.line(12.0, 6.0, 12.0, 19.0);
+            i.line(8.5, 19.0, 15.5, 19.0);
+        }
+        "wall" => {
+            i.poly(&[(3.0, 8.0), (21.0, 8.0), (21.0, 16.0), (3.0, 16.0)], true);
+            for k in 0..4 {
+                i.line(5.0 + k as f32 * 4.5, 16.0, 9.5 + k as f32 * 4.5, 8.0);
+            }
+        }
+        "door" => {
+            i.line(4.0, 19.0, 4.0, 6.0);
+            i.arc(4.0, 19.0, 12.0, 4.71, 6.28);
+            i.line(4.0, 19.0, 16.0, 19.0);
+            i.dot(4.0, 19.0, 1.2);
+        }
+        "window" => {
+            i.rect(3.0, 7.0, 18.0, 10.0);
+            i.line(3.0, 12.0, 21.0, 12.0);
+            i.line(12.0, 7.0, 12.0, 17.0);
+        }
+        "stair" => {
+            i.poly(&[(4.0, 19.0), (4.0, 15.0), (8.0, 15.0), (8.0, 11.0), (12.0, 11.0), (12.0, 7.0), (16.0, 7.0), (16.0, 4.0)], false);
+            i.line(2.0, 21.0, 22.0, 21.0);
+        }
+        "dim" => {
+            i.line(3.0, 15.0, 21.0, 15.0);
+            i.line(3.0, 11.0, 3.0, 19.0);
+            i.line(21.0, 11.0, 21.0, 19.0);
+            i.line(3.0, 15.0, 5.0, 13.0);
+            i.line(21.0, 15.0, 19.0, 13.0);
+            i.line(8.0, 10.0, 16.0, 10.0);
+        }
+        "dimchain" => {
+            i.line(3.0, 14.0, 21.0, 14.0);
+            for x in [3.0, 9.0, 15.0, 21.0] {
+                i.line(x, 10.5, x, 18.0);
+            }
+            i.line(3.0, 14.0, 4.5, 12.5);
+            i.line(15.0, 14.0, 16.5, 12.5);
+        }
+        "elevation" => {
+            i.line(4.0, 17.0, 20.0, 17.0);
+            i.poly(&[(12.0, 17.0), (9.5, 20.0), (14.5, 20.0)], true);
+            i.line(12.0, 17.0, 12.0, 8.0);
+            i.line(12.0, 8.0, 20.0, 8.0);
+        }
+        "style" => {
+            i.circle(9.0, 9.0, 5.0);
+            i.line(12.0, 12.0, 20.0, 20.0);
+            i.line(17.0, 17.0, 20.0, 14.0);
+        }
+        "move" => {
+            i.line(12.0, 3.0, 12.0, 21.0);
+            i.line(3.0, 12.0, 21.0, 12.0);
+            i.arrow_head(12.0, 3.0, -1.57, 3.4);
+            i.arrow_head(12.0, 21.0, 1.57, 3.4);
+            i.arrow_head(3.0, 12.0, 3.14, 3.4);
+            i.arrow_head(21.0, 12.0, 0.0, 3.4);
+        }
+        "copy" => {
+            i.rect(3.0, 3.0, 12.0, 12.0);
+            i.rect(9.0, 9.0, 12.0, 12.0);
+        }
+        "rotate" => {
+            i.arc(12.0, 12.0, 8.0, 0.6, 4.4);
+            i.arrow_head(12.0 + 8.0 * 0.6f32.cos(), 12.0 + 8.0 * 0.6f32.sin(), 0.6 + 2.2, 3.6);
+            i.dot(12.0, 12.0, 1.2);
+        }
+        "mirror" => {
+            i.line(12.0, 2.0, 12.0, 22.0);
+            i.poly(&[(9.0, 5.0), (3.0, 12.0), (9.0, 19.0)], true);
+            i.poly(&[(15.0, 5.0), (21.0, 12.0), (15.0, 19.0)], true);
+        }
+        "scale" => {
+            i.rect(3.0, 3.0, 11.0, 11.0);
+            i.rect(3.0, 3.0, 18.0, 18.0);
+            i.line(14.0, 14.0, 21.0, 21.0);
+        }
+        "offset" => {
+            i.poly(&[(5.0, 5.0), (13.0, 5.0), (13.0, 13.0), (5.0, 13.0)], true);
+            i.poly(&[(10.0, 2.0), (19.0, 2.0), (19.0, 19.0), (2.0, 19.0), (2.0, 10.0)], false);
+        }
+        "trim" => {
+            i.poly(&[(3.0, 18.0), (21.0, 6.0)], false);
+            i.line(8.0, 4.0, 8.0, 20.0);
+            i.line(16.0, 4.0, 16.0, 20.0);
+            i.p.extend(egui::Shape::dashed_line(
+                &[i.pt(9.0, 14.0), i.pt(15.0, 10.0)],
+                Stroke::new(1.0, color.gamma_multiply(0.4)),
+                3.0,
+                3.0,
+            ));
+        }
+        "extend" => {
+            i.line(3.0, 18.0, 13.0, 18.0);
+            i.line(19.0, 4.0, 19.0, 21.0);
+            i.line(13.0, 18.0, 17.0, 18.0);
+            i.arrow_head(17.5, 18.0, 0.0, 3.2);
+        }
+        "erase" => {
+            i.poly(&[(5.0, 20.0), (14.0, 4.0), (21.0, 9.0), (13.0, 20.0)], true);
+            i.line(5.0, 20.0, 21.0, 20.0);
+            i.line(10.0, 12.0, 18.0, 16.0);
+        }
+        "explode" => {
+            i.poly(&[(3.0, 8.0), (10.0, 8.0), (10.0, 15.0), (3.0, 15.0)], true);
+            i.poly(&[(14.0, 4.0), (21.0, 4.0), (21.0, 11.0), (14.0, 11.0)], true);
+            i.poly(&[(14.0, 14.0), (21.0, 14.0), (21.0, 21.0), (14.0, 21.0)], true);
+            i.line(10.0, 8.0, 14.0, 4.0);
+        }
+        "block" => {
+            i.rect(6.0, 6.0, 12.0, 12.0);
+            i.line(6.0, 6.0, 12.0, 1.5);
+            i.line(18.0, 6.0, 12.0, 1.5);
+            i.line(12.0, 1.5, 12.0, 6.0);
+        }
+        "blocknew" => {
+            i.rect(3.0, 7.0, 11.0, 11.0);
+            i.line(18.0, 4.0, 18.0, 12.0);
+            i.line(14.0, 8.0, 22.0, 8.0);
+        }
+        "library" => {
+            i.rect(3.0, 3.0, 8.0, 8.0);
+            i.rect(13.0, 3.0, 8.0, 8.0);
+            i.rect(3.0, 13.0, 8.0, 8.0);
+            i.rect(13.0, 13.0, 8.0, 8.0);
+        }
+        "select" => {
+            i.poly(&[(5.0, 3.0), (18.0, 12.0), (12.0, 13.5), (15.0, 20.0), (12.5, 21.0), (9.5, 14.5), (5.0, 18.0)], true);
+        }
+        "eyedropper" => {
+            i.line(4.0, 20.0, 11.0, 13.0);
+            i.poly(&[(9.0, 11.0), (13.0, 7.0), (17.0, 11.0), (13.0, 15.0)], true);
+            i.line(14.0, 6.0, 18.0, 2.0);
+            i.dot(4.0, 20.0, 1.4);
+        }
+        "new" => {
+            i.poly(&[(6.0, 2.0), (15.0, 2.0), (19.0, 6.0), (19.0, 22.0), (6.0, 22.0)], true);
+            i.line(15.0, 2.0, 15.0, 6.0);
+            i.line(15.0, 6.0, 19.0, 6.0);
+        }
+        "open" => {
+            i.poly(&[(3.0, 6.0), (10.0, 6.0), (12.0, 9.0), (21.0, 9.0), (18.0, 20.0), (3.0, 20.0)], true);
+            i.line(3.0, 6.0, 3.0, 20.0);
+        }
+        "save" => {
+            i.rect(4.0, 3.0, 16.0, 18.0);
+            i.rect(8.0, 3.0, 8.0, 6.0);
+            i.rect(7.0, 13.0, 10.0, 8.0);
+        }
+        "pdf" => {
+            i.poly(&[(6.0, 2.0), (15.0, 2.0), (19.0, 6.0), (19.0, 22.0), (6.0, 22.0)], true);
+            i.line(9.0, 13.0, 16.0, 13.0);
+            i.line(9.0, 17.0, 14.0, 17.0);
+        }
+        "dxf" => {
+            i.rect(3.0, 4.0, 18.0, 16.0);
+            i.line(7.0, 15.0, 11.0, 9.0);
+            i.line(11.0, 9.0, 15.0, 15.0);
+            i.line(9.0, 12.5, 13.0, 12.5);
+            i.line(16.0, 9.0, 16.0, 15.0);
+            i.line(16.0, 9.0, 19.0, 9.0);
+            i.line(16.0, 15.0, 19.0, 15.0);
+        }
+        "image" => {
+            i.rect(3.0, 5.0, 18.0, 14.0);
+            i.circle(8.0, 10.0, 1.8);
+            i.poly(&[(5.0, 18.0), (10.0, 12.5), (14.0, 16.0), (16.5, 13.5), (19.0, 18.0)], false);
+        }
+        "import" => {
+            i.poly(&[(12.0, 3.0), (12.0, 14.0)], false);
+            i.arrow_head(12.0, 15.0, 1.57, 3.4);
+            i.poly(&[(3.0, 14.0), (3.0, 21.0), (21.0, 21.0), (21.0, 14.0)], false);
+        }
+        "undo" => {
+            i.arc(12.0, 13.0, 7.5, 3.2, 6.2);
+            i.arrow_head(4.8, 11.0, -2.0, 3.6);
+        }
+        "redo" => {
+            i.arc(12.0, 13.0, 7.5, 3.1, 6.1);
+            i.arrow_head(19.2, 11.0, -1.14, 3.6);
+        }
+        "zoomfit" => {
+            i.rect(3.0, 3.0, 18.0, 18.0);
+            i.rect(8.0, 8.0, 8.0, 8.0);
+        }
+        "zoomin" => {
+            i.circle(10.5, 10.5, 6.5);
+            i.line(15.0, 15.0, 21.0, 21.0);
+            i.line(7.5, 10.5, 13.5, 10.5);
+            i.line(10.5, 7.5, 10.5, 13.5);
+        }
+        "zoomout" => {
+            i.circle(10.5, 10.5, 6.5);
+            i.line(15.0, 15.0, 21.0, 21.0);
+            i.line(7.5, 10.5, 13.5, 10.5);
+        }
+        "inventory" => {
+            i.rect(3.0, 3.0, 18.0, 18.0);
+            i.line(3.0, 9.0, 21.0, 9.0);
+            i.line(3.0, 15.0, 21.0, 15.0);
+            i.line(9.0, 3.0, 9.0, 21.0);
+            i.line(15.0, 3.0, 15.0, 21.0);
+        }
+        "layers" => {
+            i.poly(&[(12.0, 3.0), (21.0, 8.0), (12.0, 13.0), (3.0, 8.0)], true);
+            i.poly(&[(3.0, 12.0), (12.0, 17.0), (21.0, 12.0)], false);
+            i.poly(&[(3.0, 16.0), (12.0, 21.0), (21.0, 16.0)], false);
+        }
+        "keyboard" => {
+            i.rect(2.0, 6.0, 20.0, 12.0);
+            for row in 0..2 {
+                for k in 0..5 {
+                    i.dot(5.5 + k as f32 * 3.2, 10.0 + row as f32 * 4.0, 0.9);
+                }
+            }
+            i.line(7.0, 16.0, 17.0, 16.0);
+        }
+        "settings" => {
+            // Zahnrad: Innenkreis plus acht rechteckige Zähne
+            i.circle(12.0, 12.0, 6.2);
+            i.circle(12.0, 12.0, 2.6);
+            for k in 0..8 {
+                let a = k as f32 / 8.0 * std::f32::consts::TAU;
+                let (sa, ca) = a.sin_cos();
+                let (x0, y0) = (12.0 + 6.0 * ca, 12.0 + 6.0 * sa);
+                let (x1, y1) = (12.0 + 9.2 * ca, 12.0 + 9.2 * sa);
+                // Zahn als kurzer, breiter Strich quer zur Achse
+                let (px, py) = (-sa * 1.5, ca * 1.5);
+                i.line(x0 + px, y0 + py, x0 - px, y0 - py);
+                i.line(x1 + px, y1 + py, x1 - px, y1 - py);
+                i.line(x0 + px, y0 + py, x1 + px, y1 + py);
+                i.line(x0 - px, y0 - py, x1 - px, y1 - py);
+            }
+        }
+        "hotbar" => {
+            for k in 0..4 {
+                i.rect(2.5 + k as f32 * 5.2, 9.0, 4.0, 6.0);
+            }
+            i.line(4.5, 11.0, 4.5, 13.0);
+        }
+        "help" => {
+            i.circle(12.0, 12.0, 8.5);
+            i.arc(12.0, 10.0, 3.2, 3.4, 5.6);
+            i.line(12.0, 13.4, 12.0, 15.0);
+            i.dot(12.0, 17.6, 1.0);
+        }
+        "sheet" => {
+            i.rect(3.0, 3.0, 18.0, 18.0);
+            i.rect(11.0, 13.0, 7.0, 5.0);
+            i.line(3.0, 8.0, 21.0, 8.0);
+        }
+        "viewport" => {
+            i.rect(2.5, 4.0, 19.0, 16.0);
+            i.p.extend(egui::Shape::dashed_line(
+                &[i.pt(7.0, 8.0), i.pt(17.0, 8.0), i.pt(17.0, 16.0), i.pt(7.0, 16.0), i.pt(7.0, 8.0)],
+                Stroke::new(1.0, color),
+                3.0,
+                2.5,
+            ));
+        }
+        "properties" => {
+            i.line(3.0, 7.0, 21.0, 7.0);
+            i.line(3.0, 12.0, 21.0, 12.0);
+            i.line(3.0, 17.0, 21.0, 17.0);
+            i.circle(8.0, 7.0, 1.8);
+            i.circle(15.0, 12.0, 1.8);
+            i.circle(10.0, 17.0, 1.8);
+        }
+        "repeat" => {
+            i.arc(12.0, 12.0, 7.5, 0.4, 5.6);
+            i.arrow_head(19.0, 9.0, 0.4, 3.4);
+        }
+        "info" => {
+            i.circle(12.0, 12.0, 8.5);
+            i.line(12.0, 11.0, 12.0, 17.0);
+            i.dot(12.0, 8.0, 1.1);
+        }
+        "close" => {
+            i.line(6.0, 6.0, 18.0, 18.0);
+            i.line(18.0, 6.0, 6.0, 18.0);
+        }
+        "plus" => {
+            i.line(12.0, 5.0, 12.0, 19.0);
+            i.line(5.0, 12.0, 19.0, 12.0);
+        }
+        "eye" => {
+            i.poly(&[(2.0, 12.0), (7.0, 7.0), (17.0, 7.0), (22.0, 12.0), (17.0, 17.0), (7.0, 17.0)], true);
+            i.circle(12.0, 12.0, 2.6);
+        }
+        "eye_off" => {
+            i.poly(&[(2.0, 12.0), (7.0, 7.0), (17.0, 7.0), (22.0, 12.0), (17.0, 17.0), (7.0, 17.0)], true);
+            i.line(4.0, 20.0, 20.0, 4.0);
+        }
+        "lock" => {
+            i.rect(5.0, 11.0, 14.0, 9.0);
+            i.arc(12.0, 11.0, 4.0, 3.14, 6.28);
+            i.line(7.0, 11.0, 7.0, 9.5);
+            i.line(17.0, 11.0, 17.0, 9.5);
+        }
+        "unlock" => {
+            i.rect(5.0, 11.0, 14.0, 9.0);
+            i.arc(16.0, 11.0, 4.0, 3.14, 6.28);
+        }
+        "chevron_down" => {
+            i.poly(&[(7.0, 10.0), (12.0, 15.0), (17.0, 10.0)], false);
+        }
+        "chevron_right" => {
+            i.poly(&[(10.0, 7.0), (15.0, 12.0), (10.0, 17.0)], false);
+        }
+        "chevron_left" => {
+            i.poly(&[(14.0, 7.0), (9.0, 12.0), (14.0, 17.0)], false);
+        }
+        "chevron_up" => {
+            i.poly(&[(7.0, 14.0), (12.0, 9.0), (17.0, 14.0)], false);
+        }
+        "grid" => {
+            for k in 0..4 {
+                i.line(3.0 + k as f32 * 6.0, 3.0, 3.0 + k as f32 * 6.0, 21.0);
+                i.line(3.0, 3.0 + k as f32 * 6.0, 21.0, 3.0 + k as f32 * 6.0);
+            }
+        }
+        "snap" => {
+            i.circle(12.0, 12.0, 4.0);
+            i.line(12.0, 2.0, 12.0, 7.0);
+            i.line(12.0, 17.0, 12.0, 22.0);
+            i.line(2.0, 12.0, 7.0, 12.0);
+            i.line(17.0, 12.0, 22.0, 12.0);
+        }
+        _ => {
+            i.circle(12.0, 12.0, 7.0);
+        }
+    }
+}

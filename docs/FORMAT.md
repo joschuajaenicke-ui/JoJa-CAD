@@ -1,0 +1,200 @@
+# Das Projektformat `.jjcad`
+
+Eine JoJa-CAD-Zeichnung ist eine **UTF-8-JSON-Datei** — lesbar, diffbar und ohne
+Lock-in. Es gibt keine Binärdaten und keine eingebetteten Archive.
+
+- **Interne Einheit: Millimeter.** Alle Koordinaten, Dicken und Höhen stehen als
+  mm in der Datei, unabhängig davon, in welcher Einheit die Oberfläche rechnet.
+- **Winkel in Bogenmaß** (Radiant), Nullrichtung +X, Drehsinn mathematisch positiv.
+- **Farben** als `"#RRGGBB"`.
+- **IDs** sind projektweit eindeutige Ganzzahlen, fortlaufend aus `next_id`.
+
+## Kopfbereich
+
+```json
+{
+  "format": "jjcad",
+  "version": 2,
+  "name": "Wohnhaus",
+  "project": {
+    "project": "Wohnhaus Musterstraße 12",
+    "client": "Bauherr Max Mustermann",
+    "planner": "Planungsbüro JoJa",
+    "plan_no": "A-01",
+    "plan_title": "Grundriss Erdgeschoss",
+    "address": "12345 Musterstadt",
+    "note": "",
+    "date": "",
+    "revision": "0"
+  },
+  "settings": { "...": "siehe unten" },
+  "layers": [ "...": "siehe unten" ],
+  "current_layer": 1,
+  "blocks": [ "...": "siehe unten" ],
+  "entities": [ "...": "siehe unten" ],
+  "sheets": [ "...": "siehe unten" ],
+  "dim_style": { "...": "siehe unten" },
+  "next_id": 87
+}
+```
+
+Die Felder `project` und `settings` sind optional; fehlende Werte werden mit
+Standardwerten ergänzt. `modified` und `path` werden nicht gespeichert.
+
+## `settings`
+
+| Feld | Typ | Standard | Bedeutung |
+|---|---|---|---|
+| `input_unit` | `"Mm" \| "Cm" \| "M"` | `"M"` | Einheit für Eingaben (auch MCP-Koordinaten) |
+| `dim_unit` | `"Mm" \| "Cm" \| "M"` | `"M"` | Einheit der Maßzahlen |
+| `decimals` | Zahl | `2` | Nachkommastellen der Maßzahlen |
+| `annotation_scale` | Zahl | `100` | Bezugsmaßstab für Papiergrößen von Texten/Bemaßung |
+| `text_height` | mm | `250` | Standard-Texthöhe |
+| `wall_thickness`, `door_width`, `window_width`, `stair_width` | mm | 240 / 885 / 1200 / 1000 | Werkzeugvorgaben |
+| `show_grid`, `show_rulers` | bool | `true` | Anzeige |
+| `snap` | Objekt | siehe unten | Fangoptionen |
+
+`snap`: `endpoint`, `midpoint`, `center`, `intersection`, `perpendicular`,
+`nearest`, `grid`, `ortho`, `polar` (bool), `grid_step` (mm, Standard 100),
+`tolerance_px` (Standard 12).
+
+## `layers`
+
+```json
+{ "id": 1, "name": "Wände", "color": "#23262C", "line_weight": 0.5,
+  "line_type": "Solid", "visible": true, "locked": false, "printable": true }
+```
+
+`line_type`: `Solid`, `Dashed`, `Dotted`, `DashDot`, `Hidden`.
+`line_weight` ist die **Plotstärke in mm** (0,05–3,0).
+
+## `entities`
+
+Jedes Objekt hat `id`, `kind`, `layer` und optional `style`:
+
+```json
+{
+  "id": 42,
+  "layer": 1,
+  "style": { "color": null, "line_type": null, "line_weight": null, "fill": null },
+  "kind": { "type": "wall", "a": {"x": 0.0, "y": 0.0}, "b": {"x": 5000.0, "y": 0.0},
+            "thickness": 300.0, "height": 2750.0, "material": "Mauerwerk" }
+}
+```
+
+`null` in `style` bedeutet **ByLayer** (vom Layer erben). `by_block: true`
+übernimmt die Eigenschaften der Blockinstanz.
+
+### Objekttypen (`kind.type`)
+
+| `type` | Felder | Hinweise |
+|---|---|---|
+| `point` | `p` | Punkt |
+| `line` | `a`, `b` | Strecke |
+| `circle` | `c`, `r` | Kreis |
+| `arc` | `c`, `r`, `a0`, `a1` | Bogen gegen den Uhrzeigersinn |
+| `ellipse` | `c`, `rx`, `ry`, `rot` | gedrehte Ellipse |
+| `polyline` | `verts[{p,bulge}]`, `closed` | `bulge = tan(θ/4)`, 0 = Gerade |
+| `hatch` | `boundary[]`, `pattern`, `angle`, `spacing`, `filled` | Muster: `Solid`, `Lines`, `Cross`, `Dots` |
+| `text` | `p`, `text`, `height`, `angle`, `align`, `valign`, `bold` | `{DATUM}` usw. werden ersetzt |
+| `dim` | `a`, `b`, `line_pos`, `axis`, `override_text` | `axis`: `X`, `Y`, `Aligned` |
+| `dim_chain` | `pts[]`, `line_pos`, `axis` | Maßkette |
+| `elevation` | `p`, `z`, `angle`, `override_text` | Höhenkote, `z` in mm über ±0,00 |
+| `wall` | `a`, `b`, `thickness`, `height`, `material` | Achse + Dicke; Öffnungen kommen aus Türen/Fenstern mit `host` |
+| `door` | `center`, `angle`, `width`, `kind`, `hinge`, `swing_in`, `host` | `kind`: `Hinge`, `Sliding`, `Double`, `Opening` |
+| `window` | `center`, `angle`, `width`, `sill`, `height`, `host` | |
+| `stair` | `a`, `b`, `width`, `steps`, `direction` | `direction`: `Up`, `Down`, `Both` |
+| `block_ref` | `block`, `pos`, `rot`, `scale`, `mirror` | verweist auf `blocks[].id` |
+
+**Wände verhalten sich wie Linien mit Breite:** `a`/`b` beschreiben die Achse; die
+Darstellung (zwei parallele Kanten, Füllung, Laibungen) wird gerendert, nicht
+gespeichert. Dadurch funktionieren Verschieben, Drehen, Stutzen und Verlängern
+genau wie bei Linien.
+
+**Türen und Fenster** sind eigenständige Objekte mit optionalem `host` (Wand-ID).
+Fehlt `host`, sucht das Programm beim Zeichnen die nächste Wand. Der Wand-Renderer
+schneidet die Öffnung aus der Wand und zeichnet die Laibungen.
+
+## `blocks`
+
+```json
+{
+  "id": "sys:wc",
+  "name": "WC",
+  "category": "Sanitär",
+  "source": "System",
+  "description": "Wand-WC, 380 × 600 mm",
+  "entities": [ { "id": 1, "layer": 0, "by_block": true, "kind": { "...": "..." } } ],
+  "icon": null,
+  "base": { "x": 0.0, "y": 0.0 }
+}
+```
+
+- `source`: `System` (mitgeliefert, schreibgeschützt), `Project` (in der Datei),
+  `User` (Benutzerbibliothek im Profil).
+- IDs sind namensraum-präfixiert (`sys:`, `prj:`, `dxf:`), damit beim Kopieren
+  zwischen Dateien keine Kollisionen entstehen. Beim Import werden kollidierende
+  IDs automatisch umbenannt.
+- Blockinhalte liegen im **Blockkoordinatensystem**; die Instanz transformiert sie
+  (Position, Rotation, Skalierung, Spiegelung).
+
+## `sheets`
+
+```json
+{
+  "id": 60,
+  "name": "Blatt 1",
+  "paper": "A3",
+  "landscape": true,
+  "scale": 50.0,
+  "frame": true,
+  "show_title_block": true,
+  "viewports": [
+    { "id": 61, "name": "Ansicht", "x": 15.0, "y": 83.0, "w": 395.0, "h": 204.0,
+      "center": { "x": 5250.0, "y": 4100.0 }, "scale": 50.0,
+      "show_frame": false, "locked": false, "layers": null }
+  ],
+  "entities": [ "...": "Schriftfeld im Papierraum (mm)" ]
+}
+```
+
+- `x/y/w/h` sind **Papierkoordinaten in mm**, Ursprung unten links.
+- `center` ist die Weltkoordinate in der Mitte des Fensters, `scale` der
+  Fenstermaßstab (1:`scale`).
+- `entities` im Blatt sind normale Zeichenobjekte im Papierraum — das Schriftfeld
+  ist damit frei gestaltbar und kann ersetzt werden.
+
+## `dim_style`
+
+Alle Werte in **Papier-Millimetern**; der Renderer multipliziert sie mit dem
+Zeichnungsmaßstab.
+
+| Feld | Standard | Bedeutung |
+|---|---|---|
+| `text_height` | 2.5 | Texthöhe |
+| `arrow_size` | 2.0 | Größe der Markierung |
+| `arrow` | `"Slash"` | `Slash` (DIN 1356), `Arrow`, `Dot`, `None` |
+| `text_gap` | 0.8 | Abstand Maßlinie → Text |
+| `ext_gap` | 1.5 | Abstand Bauteil → Hilfslinie |
+| `ext_overshoot` | 1.5 | Überstand der Hilfslinie |
+| `chain_gap` | 8.0 | Abstand zwischen Maßketten |
+| `decimals` | 2 | Nachkommastellen |
+
+## Dynamische Textfelder
+
+In `text`, `override_text` und im Schriftfeld:
+
+| Platzhalter | Ersetzung |
+|---|---|
+| `{DATUM}` / `{DATE}` | aktuelles Datum (TT.MM.JJJJ) |
+| `{ISO}` | aktuelles Datum (JJJJ-MM-TT) |
+| `{PROJEKT}`, `{BAUHERR}`, `{PLANER}`, `{ADRESSE}` | Projektdaten |
+| `{PLAN}`, `{PLANTITEL}`, `{REVISION}` | Plandaten |
+| `{MASSTAB}` / `{MASSSTAB}` | Blattmaßstab (im Papierraum) bzw. Bezugsmaßstab |
+| `{DATEI}` | Dokumentname |
+
+## Kompatibilität
+
+- Neue Felder werden mit Standardwerten ergänzt; unbekannte Felder werden ignoriert.
+- Eine Datei mit höherer `version` wird mit Hinweis abgelehnt.
+- Fehlende Layer werden beim Laden repariert, `next_id` wird nachgezogen.

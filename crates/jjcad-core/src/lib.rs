@@ -1,0 +1,35 @@
+//! # jjcad-core
+//!
+//! Kern von **JoJa-CAD** — 2D-CAD für Architektur und Bauantragszeichnungen.
+//!
+//! Der Kern ist GUI-frei und wird von der Desktop-Anwendung (`jjcad`) und dem
+//! MCP-Server (`jjcad-mcp`) gemeinsam genutzt. Alle Funktionen laufen über die
+//! Befehls-Schicht in [`actions`]; Dokumentmodell in [`model`], Anzeigeaufbau
+//! in [`render`], Ein-/Ausgabe in [`persist`], [`dxf`], [`pdf`] und [`raster`].
+
+pub mod actions;
+pub mod blocks_lib;
+pub mod dxf;
+pub mod export;
+pub mod geom;
+pub mod history;
+pub mod model;
+pub mod pdf;
+pub mod persist;
+pub mod raster;
+pub mod render;
+pub mod session;
+pub mod snap;
+pub mod style;
+pub mod templates;
+pub mod transform;
+pub mod units;
+pub mod util;
+
+pub use geom::{v, Arc, BBox, Vec2, Vertex};
+pub use model::{Document, Entity, EntityKind, Id, Layer, Sheet};
+pub use session::Session;
+
+pub const APP_NAME: &str = "JoJa-CAD";
+pub const APP_VERSION: &str = env!("CARGO_PKG_VERSION");
+pub const FILE_EXTENSION: &str = "jjcad";
