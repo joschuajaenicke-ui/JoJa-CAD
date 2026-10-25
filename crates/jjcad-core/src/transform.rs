@@ -78,12 +78,19 @@ pub fn transform_kind(k: &EntityKind, m: &Affine) -> EntityKind {
         }
         EntityKind::Fill {
             boundary,
+            holes,
             pattern,
             pattern_angle,
             pattern_scale,
             border,
         } => EntityKind::Fill {
             boundary: boundary.iter().map(|p| m.apply(*p)).collect(),
+            // Inseln wandern mit: verschieben, drehen und spiegeln wirkt auf
+            // Außenring und Locheringe gleich.
+            holes: holes
+                .iter()
+                .map(|h| h.iter().map(|p| m.apply(*p)).collect())
+                .collect(),
             pattern: *pattern,
             pattern_angle: pattern_angle + m.rotation(),
             pattern_scale: pattern_scale * f,

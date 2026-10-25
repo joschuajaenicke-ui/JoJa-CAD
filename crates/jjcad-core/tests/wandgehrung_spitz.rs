@@ -80,7 +80,7 @@ fn zeichnung(s: &Session) -> Zeichnung {
     let mut lines = Vec::new();
     for p in &dl.prims {
         match &p.shape {
-            Shape::Fill(poly) => fills.push(poly.clone()),
+            Shape::Fill { outer, .. } => fills.push(outer.clone()),
             Shape::Line(a, b) => lines.push((*a, *b)),
             _ => {}
         }

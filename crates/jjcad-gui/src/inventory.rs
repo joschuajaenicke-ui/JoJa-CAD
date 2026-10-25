@@ -326,13 +326,16 @@ pub fn draw_block_preview(app: &App, p: &egui::Painter, rect: Rect, b: &BlockDef
                     .collect();
                 p.add(egui::Shape::line(pts, stroke));
             }
-            PShape::Fill(pts) => {
-                let v: Vec<Pos2> = pts.iter().map(|q| w2s(*q)).collect();
+            PShape::Fill { outer, holes } => {
+                let v: Vec<Pos2> = outer.iter().map(|q| w2s(*q)).collect();
                 p.add(egui::Shape::convex_polygon(
                     v,
                     Palette::TEXT_FAINT.gamma_multiply(0.35),
                     Stroke::NONE,
                 ));
+                // In der Kachel (wenige Pixel) ist die Insel nicht zu sehen;
+                // die Fläche bleibt deshalb der Außenring.
+                let _ = holes;
             }
             PShape::Dot { p: q, .. } => {
                 p.circle_filled(w2s(*q), 1.5, col);

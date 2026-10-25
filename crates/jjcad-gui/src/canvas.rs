@@ -263,11 +263,11 @@ fn paint_prim(p: &Painter, prim: &Prim, w2s: &dyn Fn(V2) -> Pos2, scale: f64, pc
             }
             stroke_pts(p, &v, w as f32, col);
         }
-        PShape::Fill(pts) => {
-            if pts.len() < 3 {
+        PShape::Fill { outer, holes } => {
+            if outer.len() < 3 {
                 return;
             }
-            let v: Vec<Pos2> = pts.iter().map(|q| w2s(*q)).collect();
+            let v: Vec<Pos2> = outer.iter().map(|q| w2s(*q)).collect();
             if v.iter().any(|q| !q.x.is_finite() || !q.y.is_finite()) {
                 return;
             }
@@ -293,7 +293,24 @@ fn paint_prim(p: &Painter, prim: &Prim, w2s: &dyn Fn(V2) -> Pos2, scale: f64, pc
             } else {
                 color32(fill)
             };
-            for tri in triangulate(&v) {
+            // egui füllt nur konvexe Polygone und kennt keine Aussparungen.
+            // Löcher deshalb über null breite Stege zu **einem** Ring verbinden
+            // (`area::bridge_holes`) und den triangulieren — dieselbe Fläche
+            // wie im PDF/PNG, nur anders zerlegt.
+            let mut screen: Vec<Pos2> = if holes.is_empty() {
+                v
+            } else {
+                jjcad_core::area::bridge_holes(outer, holes)
+                    .iter()
+                    .map(|q| w2s(*q))
+                    .collect()
+            };
+            // Der Triangulierer erwartet positiven Umlaufsinn in
+            // Bildschirmkoordinaten (y nach unten); sonst findet er keine Ohren.
+            if flaeche_signiert(&screen) < 0.0 {
+                screen.reverse();
+            }
+            for tri in triangulate(&screen) {
                 p.add(Shape::convex_polygon(
                     tri.to_vec(),
                     c.gamma_multiply(alpha),
@@ -359,6 +376,75 @@ fn paint_prim(p: &Painter, prim: &Prim, w2s: &dyn Fn(V2) -> Pos2, scale: f64, pc
     }
 }
 
+#[cfg(test)]
+mod tests_loecher {
+    use super::*;
+
+    fn rechteck(x0: f32, y0: f32, x1: f32, y1: f32) -> Vec<V2> {
+        vec![
+            V2::new(x0 as f64, y0 as f64),
+            V2::new(x1 as f64, y0 as f64),
+            V2::new(x1 as f64, y1 as f64),
+            V2::new(x0 as f64, y1 as f64),
+        ]
+    }
+
+    /// egui füllt nur konvexe Polygone: die Insel wird über einen Steg zu einem
+    /// Ring verbunden und trianguliert. Die Dreiecke müssen zusammen genau die
+    /// Fläche ohne Loch ergeben — und keines darf im Loch liegen (sonst wäre die
+    /// Insel auf dem Bildschirm übermalt, im PDF aber frei).
+    #[test]
+    fn dreiecke_fuellen_die_flaeche_ohne_das_loch() {
+        let k: f32 = 0.1; // 0,1 px je mm
+        let aussen = rechteck(0.0, 0.0, 400.0, 300.0);
+        let loch = rechteck(100.0, 100.0, 200.0, 200.0);
+        let ring = jjcad_core::area::bridge_holes(&aussen, &[loch]);
+        let mut screen: Vec<Pos2> = ring
+            .iter()
+            .map(|q| Pos2::new((q.x * k as f64) as f32, (q.y * k as f64) as f32))
+            .collect();
+        if flaeche_signiert(&screen) < 0.0 {
+            screen.reverse();
+        }
+        let tris = triangulate(&screen);
+        assert!(!tris.is_empty(), "keine Dreiecke");
+        let flaeche: f32 = tris
+            .iter()
+            .map(|t| {
+                ((t[1].x - t[0].x) * (t[2].y - t[0].y) - (t[1].y - t[0].y) * (t[2].x - t[0].x)).abs()
+                    * 0.5
+            })
+            .sum();
+        let soll = (400.0 * 300.0 - 100.0 * 100.0) * k * k;
+        assert!(
+            (flaeche - soll).abs() < 1.5,
+            "Fläche {flaeche} px² statt {soll} px²"
+        );
+        for t in &tris {
+            let c = Pos2::new(
+                (t[0].x + t[1].x + t[2].x) / 3.0,
+                (t[0].y + t[1].y + t[2].y) / 3.0,
+            );
+            let im_loch = c.x > 100.0 * k + 0.01
+                && c.x < 200.0 * k - 0.01
+                && c.y > 100.0 * k + 0.01
+                && c.y < 200.0 * k - 0.01;
+            assert!(!im_loch, "Dreieck im Loch bei {c:?}");
+        }
+    }
+}
+
+/// Vorzeichen der Polygonfläche (Shoelace) in Bildschirmkoordinaten.
+fn flaeche_signiert(v: &[Pos2]) -> f32 {
+    let mut a = 0.0;
+    for i in 0..v.len() {
+        let p = v[i];
+        let q = v[(i + 1) % v.len()];
+        a += p.x * q.y - p.y * q.x;
+    }
+    a * 0.5
+}
+
 /// Einfache Ohr-Triangulation für gefüllte Polygone (auch konkav).
 fn triangulate(pts: &[Pos2]) -> Vec<Vec<Pos2>> {
     let n = pts.len();
@@ -391,7 +477,15 @@ fn triangulate(pts: &[Pos2]) -> Vec<Vec<Pos2>> {
                     continue;
                 }
                 let p = pts[j];
-                let inside_tri = area(a, b, p) >= 0.0 && area(b, c, p) >= 0.0 && area(c, a, p) >= 0.0;
+                // Nur **echt** innen liegende Punkte blockieren das Ohr. Ein
+                // Punkt auf der Kante gehört zum Ohr selbst: bei verbundenen
+                // Löchern ist der Steg doppelt vorhanden, und die zweite Kopie
+                // der Stegecke liegt exakt auf der Kante — mit `>= 0` würde
+                // jedes Ohr am Steg verworfen und der Rest als Fächer mit
+                // überlappenden Dreiecken ausgegeben (Fläche zu groß).
+                const EPS: f32 = 1e-4;
+                let inside_tri =
+                    area(a, b, p) > EPS && area(b, c, p) > EPS && area(c, a, p) > EPS;
                 if inside_tri {
                     inside = true;
                     break;
@@ -2174,6 +2268,7 @@ fn draw_fill_ghost(app: &App, p: &Painter, rect: Rect, view: View, umriss: &[V2]
         app.doc().current_layer,
         EntityKind::Fill {
             boundary,
+            holes: Vec::new(),
             pattern: app.options.fill_pattern,
             pattern_angle: app.options.fill_angle,
             pattern_scale: app.options.fill_scale,

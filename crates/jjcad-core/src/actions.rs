@@ -350,6 +350,24 @@ impl<'a> Params<'a> {
 
     pub fn pts(&self, k: &str) -> Option<Vec<Vec2>> {
         let arr = self.raw(k)?.as_array()?;
+        self.pts_from(arr)
+    }
+
+    /// Ringe (Löcher einer Fläche): `[[[x,y], …], [[x,y], …]]`.
+    ///
+    /// Dieselbe Einheitenrechnung wie [`Params::pts`] — ein Loch darf nicht in
+    /// einer anderen Einheit ankommen als sein Außenring.
+    pub fn rings(&self, k: &str) -> Option<Vec<Vec<Vec2>>> {
+        let arr = self.raw(k)?.as_array()?;
+        let mut out = Vec::new();
+        for ring in arr {
+            let pts = self.pts_from(ring.as_array()?)?;
+            out.push(pts);
+        }
+        Some(out)
+    }
+
+    fn pts_from(&self, arr: &[Value]) -> Option<Vec<Vec2>> {
         let mut out = Vec::new();
         for item in arr {
             let p = if let Some(a) = item.as_array() {
@@ -758,6 +776,15 @@ fn add_fill(doc: &mut Document, boundary: Vec<Vec2>, p: &Params) -> Result<Value
     if boundary.len() < 3 {
         return Err("Füllfläche braucht mindestens drei Punkte".into());
     }
+    // Inseln kommen als Ringe mit: der Farbeimer (`detect_boundary`) liefert
+    // sie aus derselben Flutfüllung. Ohne sie würde er Schornstein, Treppe und
+    // Pfeiler übermalen. Werkzeuge ohne Löcher lassen den Schlüssel weg.
+    let holes = p
+        .rings("holes")
+        .unwrap_or_default()
+        .into_iter()
+        .filter(|h| h.len() >= 3)
+        .collect();
     let layer = resolve_layer(doc, p);
     let idn = doc.new_id();
     let mut e = Entity::new(
@@ -765,6 +792,7 @@ fn add_fill(doc: &mut Document, boundary: Vec<Vec2>, p: &Params) -> Result<Value
         layer,
         EntityKind::Fill {
             boundary,
+            holes,
             pattern: p.fill_pattern("pattern").unwrap_or(FillPattern::Lines),
             pattern_angle: p.angle_or("angle", std::f64::consts::FRAC_PI_4),
             pattern_scale: p
@@ -2594,10 +2622,11 @@ pub fn explode_entity(doc: &mut Document, id: Id) -> Result<Vec<Id>, String> {
                 ry: *ry,
                 rot: *rot,
             }),
-            Shape::Fill(pts) => {
-                if pts.len() >= 3 {
+            Shape::Fill { outer, holes } => {
+                if outer.len() >= 3 {
                     Some(EntityKind::Fill {
-                        boundary: pts.clone(),
+                        boundary: outer.clone(),
+                        holes: holes.clone(),
                         pattern: FillPattern::Solid,
                         pattern_angle: 0.0,
                         pattern_scale: 100.0,

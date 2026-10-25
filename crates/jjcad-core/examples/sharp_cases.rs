@@ -76,7 +76,7 @@ fn main() {
                 println!("===== {name} =====");
                 for p in &dl.prims {
                     match &p.shape {
-                        jjcad_core::render::Shape::Fill(poly) => {
+                        jjcad_core::render::Shape::Fill { outer: poly, .. } => {
                             let pts: Vec<String> = poly
                                 .iter()
                                 .map(|q| format!("({:8.2},{:8.2})", q.x, q.y))

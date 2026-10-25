@@ -8,7 +8,9 @@
 //! in [`render`], Ein-/Ausgabe in [`persist`], [`dxf`], [`pdf`] und [`raster`].
 
 pub mod actions;
+pub mod area;
 pub mod blocks_lib;
+pub mod boundary;
 pub mod dxf;
 pub mod export;
 pub mod geom;
@@ -26,6 +28,7 @@ pub mod transform;
 pub mod units;
 pub mod util;
 
+pub use boundary::{detect_boundary, BoundaryError, BoundaryOpts, FillBoundary};
 pub use geom::{v, Arc, BBox, Vec2, Vertex};
 pub use model::{Document, Entity, EntityKind, Id, Layer, Sheet};
 pub use session::Session;

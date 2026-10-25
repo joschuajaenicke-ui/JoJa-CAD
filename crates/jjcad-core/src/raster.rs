@@ -103,6 +103,31 @@ fn build_path(pts: &[Vec2], closed: bool, map: &Map) -> Option<tiny_skia::Path> 
     pb.finish()
 }
 
+/// Pfad aus mehreren geschlossenen Ringen (Außenkontur plus Löcher).
+fn build_rings_path(
+    outer: &[Vec2],
+    holes: &[Vec<Vec2>],
+    map: &Map,
+) -> Option<tiny_skia::Path> {
+    if outer.len() < 3 {
+        return None;
+    }
+    let mut pb = PathBuilder::new();
+    for ring in std::iter::once(outer).chain(holes.iter().map(|h| h.as_slice())) {
+        if ring.len() < 3 {
+            continue;
+        }
+        let (fx, fy) = map.p(ring[0]);
+        pb.move_to(fx, fy);
+        for p in &ring[1..] {
+            let (qx, qy) = map.p(*p);
+            pb.line_to(qx, qy);
+        }
+        pb.close();
+    }
+    pb.finish()
+}
+
 fn dash_for(lt: LineType, paper_px: f64) -> Option<StrokeDash> {
     let pattern: Vec<f32> = lt
         .pattern()
@@ -239,12 +264,15 @@ fn draw_prim(pm: &mut Pixmap, prim: &Prim, map: &Map, paper_px: f64) {
                 pm.stroke_path(&path, &paint, &stroke, Transform::identity(), None);
             }
         }
-        Shape::Fill(pts) => {
-            if let Some(path) = build_path(pts, true, map) {
+        Shape::Fill { outer, holes } => {
+            // Alle Ringe als Unterpfade einer Fläche, gefüllt nach Even-Odd:
+            // die Löcher sind dann echte Aussparungen (der Untergrund bleibt
+            // sichtbar) und nicht mit Hintergrundfarbe übermalt.
+            if let Some(path) = build_rings_path(outer, holes, map) {
                 let mut fp = Paint::default();
                 fp.set_color(color_of(prim.style.fill.unwrap_or(prim.style.color)));
                 fp.anti_alias = true;
-                pm.fill_path(&path, &fp, FillRule::Winding, Transform::identity(), None);
+                pm.fill_path(&path, &fp, FillRule::EvenOdd, Transform::identity(), None);
             }
         }
         Shape::Circle { c, r } => {

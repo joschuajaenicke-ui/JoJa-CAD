@@ -1169,6 +1169,7 @@ fn entity_props(app: &mut App, ui: &mut Ui, id: Id) {
         // Abstand, Randlinie) plus die beiden Farben.
         EntityKind::Fill {
             boundary,
+            holes,
             pattern,
             pattern_angle,
             pattern_scale,
@@ -1224,19 +1225,29 @@ fn entity_props(app: &mut App, ui: &mut Ui, id: Id) {
                 app.mark_changed();
             }
             ui.add_space(4.0);
+            // Umriss = alle Ringe; die Inselkanten werden mitgezeichnet.
+            let umfang: f64 = std::iter::once(boundary)
+                .chain(holes.iter())
+                .map(|r| {
+                    r.iter()
+                        .zip(r.iter().cycle().skip(1))
+                        .take(r.len())
+                        .map(|(a, b)| a.dist(*b))
+                        .sum::<f64>()
+                })
+                .sum();
             ui.label(theme::dim(format!(
                 "{} Punkte · Umriss {}",
                 boundary.len(),
-                unit.format(
-                    boundary
-                        .iter()
-                        .zip(boundary.iter().cycle().skip(1))
-                        .take(boundary.len())
-                        .map(|(a, b)| a.dist(*b))
-                        .sum::<f64>(),
-                    unit.decimals()
-                )
+                unit.format(umfang, unit.decimals())
             )));
+            if !holes.is_empty() {
+                ui.label(theme::dim(format!(
+                    "{} Inseln · Fläche {} m²",
+                    holes.len(),
+                    unit.format_area(jjcad_core::area::area_of(boundary, holes), 2)
+                )));
+            }
         }
         EntityKind::Door {
             width,
