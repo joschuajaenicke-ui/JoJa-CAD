@@ -74,6 +74,9 @@ cp target/release/jjcad "$DEST/$NAME"
 ln -sfn "$NAME" "$DEST/jjcad"
 printf '%s %s %s\n' "$(git rev-parse HEAD)" "$NAME" "$SEQ" > "$STATE"
 
+# aufgeraeumte Worktrees (deren Inhalt in master steckt) entfernen
+./scripts/cleanup-worktrees.sh >/dev/null 2>&1 || true
+
 # nur die letzten 10 Builds behalten
 ls -1t "$DEST"/jjcad-* 2>/dev/null | tail -n +11 | xargs -r rm -f
 

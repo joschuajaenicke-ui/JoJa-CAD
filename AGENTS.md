@@ -85,8 +85,12 @@ Diese fünf Regeln verhindern, dass gelöste Fehler wieder auftauchen:
 
 ## Regeln für parallele Arbeit
 
-1. **Nur im eigenen Workspace arbeiten** (Worktree bzw. zugewiesenes Verzeichnis).
-   Nie in einen fremden Worktree schreiben.
+1. **Erster Schritt: auf den aktuellen master ziehen.** Bevor du eine Zeile
+   änderst: `git merge master` (oder `git rebase master`) im eigenen Workspace.
+   Ein Worktree kann von einem früheren Lauf stammen und dann auf veraltetem
+   Stand stehen — dann baust du alte Fehler wieder ein. Prüfe danach:
+   `git merge-base --is-ancestor master HEAD && echo aktuell`.
+   Dann **nur im eigenen Workspace** arbeiten, nie in einem fremden Worktree.
 2. **Niemals die GUI auf dem Bildschirm des Nutzers starten** (kein
    `DISPLAY=:0`, kein Start ohne Display-Angabe). Jedes Fenster, das auf seinem
    Schreibtisch aufpoppt, stört ihn beim Testen. Immer auf einem eigenen,

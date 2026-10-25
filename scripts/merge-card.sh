@@ -18,6 +18,13 @@ fi
 git checkout -q master
 BEFORE="$(git rev-parse HEAD)"
 
+BEHIND="$(git rev-list --count "$BRANCH"..master 2>/dev/null || echo 0)"
+if [ "$BEHIND" != "0" ] && [ "${JJCAD_MERGE_ALLOW_STALE:-0}" != "1" ]; then
+    echo "ABGELEHNT: $BRANCH ist $BEHIND Commits hinter master." >&2
+    echo "Erst im Worktree 'git merge master' laufen lassen (oder Karte neu aufsetzen)." >&2
+    exit 4
+fi
+
 if git merge --no-edit -m "Merge $BRANCH (Manager)" "$BRANCH"; then
     :
 else
