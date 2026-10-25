@@ -173,7 +173,10 @@ in der Review-Spalte auf ihn wartet.
 | Karte in `review` ohne TEST-Kommentar | vom Worker abgeliefert, wartet auf den Merge durch den Manager → **nicht testen** |
 
 Nur der Manager schreibt den TEST-Kommentar, und zwar erst **nach** Merge und
-Build. Ein Worker, der eine Karte auf `review` setzt, hat damit nur seine Arbeit
+Build — und **nur der jüngste Kommentar zählt**. Wird eine Karte wieder geöffnet,
+ist jeder ältere Stempel ungültig; beim erneuten Ausliefern schreibt der Manager
+`GÜLTIG: TEST b<N>-<hash>` und verweist darauf, dass frühere Stempel nicht mehr
+gelten. Ein Worker, der eine Karte auf `review` setzt, hat damit nur seine Arbeit
 abgegeben — sie ist noch in keinem Build.
 
 Beispiel:
