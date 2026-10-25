@@ -541,6 +541,18 @@ impl App {
                         self.session_mut().selection = vec![id];
                     }
                 }
+                // Prüfhilfe: erste Blockinstanz auswählen (Auswahlfarbe belegen)
+                "selblock" => {
+                    if let Some(id) = self
+                        .doc()
+                        .entities
+                        .iter()
+                        .find(|e| matches!(e.kind, EntityKind::BlockRef { .. }))
+                        .map(|e| e.id)
+                    {
+                        self.session_mut().selection = vec![id];
+                    }
+                }
                 "sheetview" => {
                     if let Some(s) = self.doc().sheets.first().map(|s| s.id) {
                         self.tab_mut().tab = TabKind::Sheet(s);

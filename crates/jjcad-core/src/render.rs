@@ -6,6 +6,7 @@
 use crate::geom::*;
 use crate::model::*;
 use crate::style::*;
+use crate::transform;
 use crate::units::{dim_text, elevation_text, format_number, format_scale};
 
 // ---------------------------------------------------------------------------
@@ -645,6 +646,9 @@ pub fn render_entity(
             let block_color = doc.effective_color(e);
             for child in &def.entities {
                 let mut child_style = child.clone();
+                // Die gezeichneten Grundlinien gehören zur *Instanz* — nur so
+                // wird eine Auswahl (blau) und die Hervorhebung sichtbar.
+                child_style.id = e.id;
                 if child_style.by_block {
                     // ByBlock: Eigenschaften der Instanz erben
                     if child_style.style.color.is_none() {
@@ -2435,6 +2439,11 @@ pub fn render_viewport(doc: &Document, vp: &Viewport) -> DisplayList {
 
 /// Zerlegt ein Objekt in Segmente (für Fang, Schnitt und Trefferprüfung).
 pub fn entity_segments(doc: &Document, e: &Entity) -> Vec<Seg> {
+    entity_segments_tief(doc, e, 0)
+}
+
+/// Wie `entity_segments`, mit Tiefenzähler gegen verschachtelte Blöcke.
+fn entity_segments_tief(doc: &Document, e: &Entity, depth: usize) -> Vec<Seg> {
     let mut out = Vec::new();
     match &e.kind {
         EntityKind::Line { a, b } => out.push(Seg::Line(*a, *b)),
@@ -2485,10 +2494,31 @@ pub fn entity_segments(doc: &Document, e: &Entity) -> Vec<Seg> {
             out.push(Seg::Line(*p, *p));
         }
         EntityKind::Elevation { p, .. } => out.push(Seg::Line(*p, *p)),
-        EntityKind::BlockRef { block, .. } => {
+        EntityKind::BlockRef {
+            block,
+            pos,
+            rot,
+            scale,
+            mirror,
+        } => {
+            // Die Kindgeometrie liegt blocklokal — erst die Abbildung der
+            // Instanz anwenden, sonst würde an der Blockdefinition im Ursprung
+            // getroffen statt an der eingefügten Stelle.
+            if depth > 12 {
+                return out;
+            }
             if let Some(def) = doc.block(block) {
+                let mut m = Affine::translate(*pos);
+                m = m * Affine::rotate(*rot);
+                if *mirror {
+                    m = m * Affine::scale(-1.0, 1.0);
+                }
+                m = m * Affine::scale(scale.x, scale.y);
                 for ce in &def.entities {
-                    out.extend(entity_segments(doc, ce));
+                    let kind = transform::transform_kind(&ce.kind, &m);
+                    let mut te = ce.clone();
+                    te.kind = kind;
+                    out.extend(entity_segments_tief(doc, &te, depth + 1));
                 }
             }
         }

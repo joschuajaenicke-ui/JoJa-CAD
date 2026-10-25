@@ -705,3 +705,65 @@ fn zwei_klick_winkel_dreht_um_den_winkel_zwischen_den_richtungen() {
         assert!((b.x - 2000.0).abs() < 1e-6 && (b.y - 0.0).abs() < 1e-6, "{b:?}");
     }
 }
+
+#[test]
+fn block_laesst_sich_mit_auswahlwerkzeug_anklicken() {
+    // Ein Block (Rechteck 2 x 1 m um den Ursprung) wird als Block angelegt und
+    // an einer anderen Stelle als Instanz eingefuegt. Anklicken und Fenster-
+    // auswahl muessen die Instanz treffen — also an der *eingefuegten* Stelle,
+    // nicht an der Blockdefinition im Ursprung.
+    let mut s = s();
+    s.execute("draw.rect", &json!({"a": [0, 0], "b": [3, 1]}))
+        .unwrap();
+    let id = last_id(&s);
+    s.execute(
+        "block.create",
+        &json!({"name": "Auswahlblock", "ids": [id], "base": [0, 0]}),
+    )
+    .unwrap();
+    s.execute(
+        "block.insert",
+        &json!({"block": "Auswahlblock", "pos": [10, 5]}),
+    )
+    .unwrap();
+    let inst = last_id(&s);
+    assert!(matches!(s.doc.entity(inst).unwrap().kind, EntityKind::BlockRef { .. }));
+
+    // Klick auf die linke Kante der Instanz: (10, 5) bis (10, 6) m
+    let hit = jjcad_core::snap::hit_test(&s.doc, v(10000.0, 5500.0), 50.0, None);
+    assert_eq!(hit, Some(inst), "Klick auf Blockkante muss die Instanz treffen");
+
+    // Klick auf die obere Kante
+    let hit = jjcad_core::snap::hit_test(&s.doc, v(11000.0, 6000.0), 50.0, None);
+    assert_eq!(hit, Some(inst), "Klick auf obere Blockkante muss treffen");
+
+    // Kreuzfenster ueber die Instanz (beruehrt die linke Kante)
+    let ids = jjcad_core::snap::select_window(&s.doc, v(9000.0, 5000.0), v(10500.0, 6000.0), true);
+    assert!(ids.contains(&inst), "Kreuzfenster muss die Instanz waehlen: {ids:?}");
+    // Fensterauswahl: Instanz vollstaendig enthalten
+    let ids = jjcad_core::snap::select_window(&s.doc, v(9500.0, 4500.0), v(13500.0, 6500.0), false);
+    assert!(ids.contains(&inst), "Fenster muss die Instanz waehlen: {ids:?}");
+
+    // Alle gezeichneten Grundlinien der Instanz tragen deren Id — nur dann
+    // faerbt die Auswahl den Block blau ein.
+    let ctx = jjcad_core::render::RenderCtx::new(&s.doc);
+    let dl = jjcad_core::render::render_document(&ctx);
+    let eigene = dl
+        .prims
+        .iter()
+        .filter(|p| p.entity == inst)
+        .count();
+    assert!(eigene >= 4, "Blockinstanz muss ihre Linien zeichnen, gefunden: {eigene}");
+    assert!(
+        dl.prims.iter().all(|p| p.entity != 0),
+        "keine Linie darf ohne Objekt-Id gezeichnet werden"
+    );
+
+    // Nachgelagerte Aktionen: Verschieben und Loeschen wirken auf die Instanz.
+    s.execute("modify.move", &json!({"ids": [inst], "from": [10, 5], "to": [20, 5]}))
+        .unwrap();
+    let hit = jjcad_core::snap::hit_test(&s.doc, v(20000.0, 5500.0), 50.0, None);
+    assert_eq!(hit, Some(inst), "nach dem Verschieben muss die Instanz dort liegen");
+    s.execute("modify.erase", &json!({"ids": [inst]})).unwrap();
+    assert!(s.doc.entity(inst).is_none());
+}
