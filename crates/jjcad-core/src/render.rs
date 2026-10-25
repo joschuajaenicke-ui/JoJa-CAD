@@ -798,6 +798,11 @@ struct WallEnd {
     into: Vec2,
     /// Nachbarwand, in der das Ende steckt (für die Füllungs-Überlappung)
     partner: Option<Id>,
+    /// Wandstück, das die Gehrungslinie abschneidet, ohne dass der Nachbar es
+    /// abdeckt (siehe `miter_patch`); leer, wenn nichts fehlt.
+    patch: Vec<Vec2>,
+    /// Ende liegt auf einer Gehrungslinie (o→i ist die Naht zum Nachbarn)
+    mitered: bool,
 }
 
 /// Sucht die Nachbarwand, deren Ende am nächsten an `at` liegt (Eckanschluss).
@@ -861,6 +866,72 @@ fn miter_corners(
         outward
     };
     Some((o, i, into))
+}
+
+/// Behält den Teil eines konvexen Polygons auf der Seite `(p - p0)·nrm >= 0`
+/// (Sutherland-Hodgman, eine Halbebene).
+pub(crate) fn clip_keep_side(poly: &[Vec2], p0: Vec2, nrm: Vec2) -> Vec<Vec2> {
+    let mut out: Vec<Vec2> = Vec::with_capacity(poly.len() + 2);
+    for k in 0..poly.len() {
+        let a = poly[k];
+        let b = poly[(k + 1) % poly.len()];
+        let (da, db) = ((a - p0).dot(nrm), (b - p0).dot(nrm));
+        if da >= 0.0 {
+            out.push(a);
+        }
+        if (da > 0.0 && db < 0.0) || (da < 0.0 && db > 0.0) {
+            let t = da / (da - db);
+            out.push(a + (b - a) * t);
+        }
+    }
+    // Doppelte Punkte (Schnitt genau auf einer Ecke) entfernen
+    out.dedup_by(|a, b| a.dist(*b) < 1e-6);
+    if out.len() > 1 && out[0].dist(*out.last().unwrap()) < 1e-6 {
+        out.pop();
+    }
+    out
+}
+
+/// Fläche, die die Gehrungslinie vom eigenen Wandkörper abschneidet, obwohl der
+/// Nachbar sie nicht abdeckt.
+///
+/// Bei gleich dicken Wänden deckt der Nachbarkörper alles ab, was hinter der
+/// Gehrungslinie liegt. Bei unterschiedlich dicken Wänden (oder versetzten
+/// Achsen) kippt die Gehrungslinie so weit, dass sie in die eigene Wand
+/// hineinschneidet: die Füllung endet dann vor der eigenen Stirnebene, ein
+/// Stück Wandkörper fehlt und dessen Kante bleibt ohne Linie (sichtbar als
+/// ungerandete Stufe an der Ecke). Dieses Stück wird hier nachgerechnet —
+/// eigener Körper bis zur Stirnebene, auf der dem Körper abgewandten Seite
+/// der Gehrungslinie.
+fn miter_patch(
+    at: Vec2,
+    outward: Vec2,
+    n: Vec2,
+    h: f64,
+    len: f64,
+    o: Vec2,
+    i: Vec2,
+) -> Vec<Vec2> {
+    let d = i - o;
+    if d.len() < 1e-6 || len < 1e-6 {
+        return vec![];
+    }
+    let back = at - outward * len;
+    let band = [at + n * h, at - n * h, back - n * h, back + n * h];
+    // nur hinter der eigenen Stirnebene
+    let rest = clip_keep_side(&band, at, -outward);
+    if rest.len() < 3 {
+        return vec![];
+    }
+    // Seite der Gehrungslinie bestimmen: die dem Körper abgewandte behalten
+    let inside = at - outward * (h.min(len) * 0.5);
+    let side = d.cross(inside - o);
+    let nrm = if side > 0.0 { -d.perp() } else { d.perp() };
+    let patch = clip_keep_side(&rest, o, nrm);
+    if patch.len() < 3 || polygon_area(&patch).abs() < 1.0 {
+        return vec![];
+    }
+    patch
 }
 
 /// Schnitt der Strecke a→b mit einem konvexen Polygon als Parameterintervall.
@@ -938,7 +1009,15 @@ fn wall_reach(
 
 /// Anschluss eines Wandendes: Gehrung zum Ecknachbarn, sonst so weit
 /// verlängern, dass das Ende im Nachbarkörper steckt, sonst freies Ende.
-fn wall_end(doc: &Document, w: &Entity, at: Vec2, outward: Vec2, n: Vec2, h: f64) -> WallEnd {
+fn wall_end(
+    doc: &Document,
+    w: &Entity,
+    at: Vec2,
+    outward: Vec2,
+    n: Vec2,
+    h: f64,
+    len: f64,
+) -> WallEnd {
     if let Some(p) = end_partner(doc, w, at, h) {
         if let Some((o, i, into)) = miter_corners(doc, at, outward, n, h, p) {
             return WallEnd {
@@ -948,6 +1027,8 @@ fn wall_end(doc: &Document, w: &Entity, at: Vec2, outward: Vec2, n: Vec2, h: f64
                 i,
                 into,
                 partner: Some(p),
+                patch: miter_patch(at, outward, n, h, len, o, i),
+                mitered: true,
             };
         }
     }
@@ -960,6 +1041,8 @@ fn wall_end(doc: &Document, w: &Entity, at: Vec2, outward: Vec2, n: Vec2, h: f64
             i: p - n * h,
             into: outward,
             partner: Some(id),
+            patch: vec![],
+            mitered: false,
         };
     }
     WallEnd {
@@ -969,7 +1052,73 @@ fn wall_end(doc: &Document, w: &Entity, at: Vec2, outward: Vec2, n: Vec2, h: f64
         i: at - n * h,
         into: outward,
         partner: None,
+        patch: vec![],
+        mitered: false,
     }
+}
+
+/// Teile einer Strecke, die **außerhalb** eines Polygons liegen (mindestens
+/// `eps` vom Rand entfernt). Gegenstück zu `clipped_line_pieces`, das die
+/// innen liegenden Teile behält.
+fn line_outside_pieces(a: Vec2, b: Vec2, poly: &[Vec2], eps: f64) -> Vec<(Vec2, Vec2)> {
+    let d = b - a;
+    let l2 = d.len2();
+    if poly.len() < 3 || l2 < 1e-12 {
+        return vec![];
+    }
+    let mut ts: Vec<f64> = vec![0.0, 1.0];
+    for i in 0..poly.len() {
+        if let Some(x) = line_line(a, b, poly[i], poly[(i + 1) % poly.len()], false, false) {
+            let t = (x - a).dot(d) / l2;
+            if t > 1e-6 && t < 1.0 - 1e-6 {
+                ts.push(t);
+            }
+        }
+    }
+    ts.sort_by(|x, y| x.partial_cmp(y).unwrap_or(std::cmp::Ordering::Equal));
+    ts.dedup_by(|x, y| (*x - *y).abs() < 1e-9);
+    let mut out = Vec::new();
+    for w in ts.windows(2) {
+        let (t0, t1) = (w[0], w[1]);
+        if t1 - t0 < 1e-9 {
+            continue;
+        }
+        let p = a + d * (0.5 * (t0 + t1));
+        if point_in_polygon(p, poly) {
+            continue;
+        }
+        let near = poly
+            .iter()
+            .enumerate()
+            .map(|(i, q)| dist_point_segment(p, *q, poly[(i + 1) % poly.len()]))
+            .fold(f64::INFINITY, f64::min);
+        if near <= eps {
+            continue;
+        }
+        out.push((a + d * t0, a + d * t1));
+    }
+    out
+}
+
+/// Körperfläche des Nachbarn am Stoß (gehrungbeschnitten, also ohne den
+/// Bereich, den die Gehrungslinie abschneidet). Dient dazu, die Gehrungsnaht
+/// nur dort zu zeichnen, wo der Nachbar sie nicht abdeckt.
+fn partner_body(doc: &Document, id: Id, at: Vec2) -> Option<Vec<Vec2>> {
+    let other = doc.entity(id)?;
+    let l = WallLayout::of(doc, other)?;
+    let mut best: Option<(f64, Vec<Vec2>)> = None;
+    for (s0, s1) in &l.segments {
+        let (c0o, c0i, c1o, c1i) = l.corners(*s0, *s1);
+        let quad = vec![c0o, c1o, c1i, c0i];
+        let d = quad
+            .iter()
+            .map(|p| p.dist(at))
+            .fold(f64::INFINITY, f64::min);
+        if best.as_ref().map(|(bd, _)| d < *bd).unwrap_or(true) {
+            best = Some((d, quad));
+        }
+    }
+    best.map(|(_, q)| q)
 }
 
 /// Wandbänder aller Wände (zum Beschneiden von Kanten und Füllungen).
@@ -1142,8 +1291,8 @@ impl WallLayout {
 
         // Anschlüsse: Gehrung zum Ecknachbarn oder Ende so weit in den Nachbarn
         // schieben, dass beide Stirnecken in dessen Körper liegen.
-        let se = wall_end(doc, e, a, -dir, n, h);
-        let ee = wall_end(doc, e, b, dir, n, h);
+        let se = wall_end(doc, e, a, -dir, n, h, len);
+        let ee = wall_end(doc, e, b, dir, n, h, len);
         let start = a - dir * se.ext;
         let total = len + se.ext + ee.ext;
 
@@ -1333,6 +1482,21 @@ fn render_wall(
         if (*s1 - total).abs() < 0.5 && conn_b {
             push_joint_band(dl, e, fill_style, e_out, e_in, ee.into, xf);
         }
+        // Von der Gehrungslinie abgeschnittenes, vom Nachbarn nicht abgedecktes
+        // Wandstück: als Füllung nachreichen, sonst endet der Wandkörper an
+        // einer ungerandeten Stufe.
+        for (end, near_start) in [(se, true), (ee, false)] {
+            let active = if near_start { *s0 < 0.5 } else { (*s1 - total).abs() < 0.5 };
+            if !active || end.patch.len() < 3 {
+                continue;
+            }
+            dl.push(Prim {
+                shape: Shape::Fill(end.patch.iter().map(|q| xf.apply(*q)).collect()),
+                style: fill_style,
+                entity: e.id,
+                layer: e.layer,
+            });
+        }
         // Schraffur der Wandfläche
         if let Some(hp) = hatch {
             if hp != HatchPattern::Solid {
@@ -1401,6 +1565,19 @@ fn render_wall(
         }
         if (*s1 - total).abs() < 0.5 && !conn_b {
             push_clipped_line(dl, e, st, e_out, e_in, &others, xf);
+        }
+        // Kanten des nachgereichten Gehrungsstücks (nur außerhalb der
+        // Nachbarkörper; im Nachbarn liegende Teile blendet der Beschnitt aus)
+        for (end, near_start) in [(se, true), (ee, false)] {
+            let active = if near_start { *s0 < 0.5 } else { (*s1 - total).abs() < 0.5 };
+            if !active || end.patch.len() < 3 {
+                continue;
+            }
+            for k in 0..end.patch.len() {
+                let q0 = end.patch[k];
+                let q1 = end.patch[(k + 1) % end.patch.len()];
+                push_clipped_line(dl, e, st, q0, q1, &others, xf);
+            }
         }
     }
 
