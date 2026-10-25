@@ -13,8 +13,11 @@
 # Voraussetzungen: Arbeit ist im Worktree der Karte committet, der Zweig
 # enthaelt den aktuellen master, das Hauptverzeichnis ist sauber.
 set -uo pipefail
-cd "$(dirname "$0")/.."
-MAIN="$PWD"
+# Immer im HAUPTVERZEICHNIS arbeiten: aus einem Worktree heraus aufgerufen
+# liefert --git-common-dir das .git des Hauptbaums (dort liegt master).
+cd "$(dirname "$0")/.." || exit 1
+MAIN="$(dirname "$(git rev-parse --path-format=absolute --git-common-dir)")"
+cd "$MAIN" || exit 1
 
 ID="${1:-}"
 if ! [[ "$ID" =~ ^t_[0-9a-f]+$ ]]; then
