@@ -175,6 +175,24 @@ fn stroke_pts(p: &Painter, pts: &[Pos2], w: f32, col: Color32) {
     }
 }
 
+/// Grenze, unter der eine Füllung auf dem Bildschirm verschwindet (Pixel).
+/// Unter einem Pixel Breite ist nichts zu sehen — solche Streifen dürfen nicht
+/// tesselliert werden (siehe `paint_prim`, Fill-Zweig).
+const FILL_MIN_WIDTH_PX: f64 = 0.75;
+
+/// Ist die Füllung auf dem Bildschirm schmaler als ein Pixel?
+///
+/// Maß ist die kleinste Breite des Polygons (2·Fläche/Umfang) in Pixeln; die
+/// Länge spielt dabei keine Rolle. Abläufe, die nur die Fläche betrachten,
+/// verpassen lange, hauchdünne Streifen.
+fn fill_too_thin(v: &[Pos2]) -> bool {
+    if v.len() < 3 {
+        return true;
+    }
+    let pts: Vec<V2> = v.iter().map(|q| V2::new(q.x as f64, q.y as f64)).collect();
+    jjcad_core::geom::polygon_min_width(&pts) < FILL_MIN_WIDTH_PX
+}
+
 fn paint_prim(p: &Painter, prim: &Prim, w2s: &dyn Fn(V2) -> Pos2, scale: f64, pc: &PaintCtx, alpha: f32) {
     let is_sel = !pc.preview && pc.selected.contains(&prim.entity) && prim.entity != 0;
     let is_hover = !pc.preview && pc.hover == Some(prim.entity) && prim.entity != 0 && !is_sel;
@@ -251,6 +269,20 @@ fn paint_prim(p: &Painter, prim: &Prim, w2s: &dyn Fn(V2) -> Pos2, scale: f64, pc
                 return;
             }
             let v: Vec<Pos2> = pts.iter().map(|q| w2s(*q)).collect();
+            if v.iter().any(|q| !q.x.is_finite() || !q.y.is_finite()) {
+                return;
+            }
+            // Unterpixelbreite Füllungen nicht zeichnen. Wandfüllungen enthalten
+            // das 0,4-mm-Füllband auf der Gehrungsnaht (Haarnnaht gegen
+            // Antialiasing-Streifen); bei kleiner Ansicht ist der Streifen
+            // schmaler als ein Pixel. egui tesselliert solche entarteten
+            // Polygone zu Dreiecken mit praktisch unendlichen Ecken und zieht
+            // dadurch lange diagonale Striche quer über die Zeichenfläche
+            // (Gitternetz aus Winkelhalbierenden). Sichtbar ist der Streifen
+            // ohnehin nicht — also vorher ausblenden.
+            if fill_too_thin(&v) {
+                return;
+            }
             let fill = prim.style.fill.unwrap_or(prim.style.color);
             let c = if pc.preview {
                 // Nur andeuten: die Vorschau darf den Plan darunter nicht verdecken
@@ -385,7 +417,57 @@ fn triangulate(pts: &[Pos2]) -> Vec<Vec<Pos2>> {
     if idx.len() == 3 {
         out.push(vec![pts[idx[0]], pts[idx[1]], pts[idx[2]]]);
     }
+    // Entartete Dreiecke (Fläche ~0) nicht zurückgeben: egui zeichnet sie nicht,
+    // tesselliert sie aber zu Formen mit unbrauchbaren Normalen — im
+    // ungünstigen Fall als lange Striche quer über die Fläche.
+    out.retain(|t| area(t[0], t[1], t[2]).abs() >= 0.01);
     out
+}
+
+#[cfg(test)]
+mod tests_haarnnaht {
+    use super::*;
+
+    /// Anzeige bei „ganze Zeichnung im Fenster“: rund 53 px je Meter.
+    const K: f32 = 0.053;
+
+    fn rechteck(w_mm: f32, h_mm: f32) -> Vec<Pos2> {
+        vec![
+            Pos2::new(0.0, 0.0),
+            Pos2::new(w_mm * K, 0.0),
+            Pos2::new(w_mm * K, h_mm * K),
+            Pos2::new(0.0, h_mm * K),
+        ]
+    }
+
+    /// Die Haarnnaht an der Gehrungsnaht (0,4 mm breit) verschwindet unter einem
+    /// Pixel und darf nicht tesselliert werden — sonst zieht egui lange
+    /// Diagonalen über die Zeichenfläche.
+    #[test]
+    fn haarnnaht_wird_verworfen() {
+        assert!(fill_too_thin(&rechteck(300.0, 0.4)));
+        assert!(fill_too_thin(&rechteck(10500.0, 0.4)));
+    }
+
+    /// Die Wandfläche selbst bleibt sichtbar (300 mm ≈ 16 px).
+    #[test]
+    fn wandflaeche_wird_gezeichnet() {
+        assert!(!fill_too_thin(&rechteck(300.0, 300.0)));
+        assert!(!fill_too_thin(&rechteck(2100.0, 300.0)));
+        assert!(!fill_too_thin(&rechteck(300.0, 115.0)));
+    }
+
+    /// Entartete Polygone (doppelte Punkte, weniger als drei Ecken) fallen raus.
+    #[test]
+    fn entartete_fuellung_wird_verworfen() {
+        assert!(fill_too_thin(&[]));
+        assert!(fill_too_thin(&[Pos2::new(0.0, 0.0), Pos2::new(10.0, 10.0)]));
+        assert!(fill_too_thin(&[
+            Pos2::new(0.0, 0.0),
+            Pos2::new(10.0, 10.0),
+            Pos2::new(20.0, 20.0),
+        ]));
+    }
 }
 
 // ---------------------------------------------------------------------------

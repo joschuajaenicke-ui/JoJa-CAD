@@ -946,6 +946,29 @@ pub fn polygon_area(poly: &[Vec2]) -> f64 {
     a * 0.5
 }
 
+/// Kleinste Breite eines Polygons: 2·Fläche / Umfang.
+///
+/// Für einen Streifen der Länge L und Breite b ergibt das genau b — anders als
+/// die Fläche allein ist das Maß unabhängig von der Länge. Damit lassen sich
+/// Füllungen erkennen, die auf dem Bildschirm schmaler als ein Pixel sind
+/// (z. B. die 0,4-mm-Haarnnaht an Wandstößen bei kleiner Anzeige): die sind
+/// unsichtbar und dürfen gar nicht erst tesselliert werden.
+pub fn polygon_min_width(poly: &[Vec2]) -> f64 {
+    let n = poly.len();
+    if n < 3 {
+        return 0.0;
+    }
+    let mut per = 0.0;
+    for i in 0..n {
+        per += poly[i].dist(poly[(i + 1) % n]);
+    }
+    let a = polygon_area(poly).abs();
+    if per < 1e-12 || !a.is_finite() || !per.is_finite() {
+        return 0.0;
+    }
+    2.0 * a / per
+}
+
 pub fn polygon_centroid(poly: &[Vec2]) -> Vec2 {
     let a = polygon_area(poly);
     if a.abs() < 1e-9 {
