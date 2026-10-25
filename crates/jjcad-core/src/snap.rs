@@ -282,7 +282,34 @@ pub fn hit_test(doc: &Document, p: Vec2, tol: f64, layer_filter: Option<&[Id]>) 
     best.map(|(id, _, _)| id)
 }
 
+/// Punkte, die ein Segment beschreiben (Bögen werden abgeflacht).
+fn seg_points(sg: &Seg) -> Vec<Vec2> {
+    match sg {
+        Seg::Line(a, b) => vec![*a, *b],
+        Seg::Arc(arc) => arc.flatten(1.0),
+    }
+}
+
+/// Berührt die Strecke das Rechteck? (Endpunkt innen oder echte Kreuzung)
+fn seg_meets_rect(a: Vec2, b: Vec2, r: &BBox) -> bool {
+    if r.contains(a) || r.contains(b) {
+        return true;
+    }
+    let ecken = [
+        (r.min, Vec2::new(r.max.x, r.min.y)),
+        (Vec2::new(r.max.x, r.min.y), r.max),
+        (r.max, Vec2::new(r.min.x, r.max.y)),
+        (Vec2::new(r.min.x, r.max.y), r.min),
+    ];
+    ecken
+        .iter()
+        .any(|(p, q)| line_line(a, b, *p, *q, false, false).is_some())
+}
+
 /// Objekte in einem Fenster (links→rechts) oder Querfenster (rechts→links).
+/// `crossing` = berührt (sonst: vollständig enthalten).
+/// Geprüft wird die echte Geometrie, nicht die achsenparallele Bounding-Box —
+/// sonst würde eine Diagonale im Eckbereich ihres Rechtecks mitgewählt.
 pub fn select_window(doc: &Document, a: Vec2, b: Vec2, crossing: bool) -> Vec<Id> {
     let rect = BBox::from_corners(a, b);
     let mut out = Vec::new();
@@ -296,11 +323,65 @@ pub fn select_window(doc: &Document, a: Vec2, b: Vec2, crossing: bool) -> Vec<Id
         if !bb.is_valid() {
             continue;
         }
-        if crossing {
-            if bb.intersects(&rect) {
+        // Flächige Elemente: Fläche zählt, BBox ist hier korrekt
+        let flaechig = matches!(
+            e.kind,
+            EntityKind::Hatch { .. }
+                | EntityKind::Stair { .. }
+                | EntityKind::Text { .. }
+                | EntityKind::Point { .. }
+                | EntityKind::Elevation { .. }
+        );
+        if flaechig {
+            if (crossing && bb.intersects(&rect)) || (!crossing && rect.contains_bbox(&bb)) {
                 out.push(e.id);
             }
-        } else if rect.contains_bbox(&bb) {
+            continue;
+        }
+        // Wand: Körper zählt als Fläche
+        if let EntityKind::Wall {
+            a: wa,
+            b: wb,
+            thickness,
+            ..
+        } = &e.kind
+        {
+            let halb = thickness * 0.5;
+            let mitte_innen = dist_point_segment(rect.center(), *wa, *wb) <= halb;
+            let im_koerper = |p: Vec2| dist_point_segment(p, *wa, *wb) <= halb;
+            let ecken_innen = [rect.min, Vec2::new(rect.max.x, rect.min.y), rect.max, Vec2::new(rect.min.x, rect.max.y)]
+                .iter()
+                .all(|p| im_koerper(*p));
+            if crossing {
+                if mitte_innen || ecken_innen || {
+                    let pts: Vec<Vec2> = render::entity_segments(doc, e)
+                        .iter()
+                        .flat_map(seg_points)
+                        .collect();
+                    pts.windows(2).any(|w| seg_meets_rect(w[0], w[1], &rect))
+                } {
+                    out.push(e.id);
+                }
+            } else if ecken_innen {
+                out.push(e.id);
+            }
+            continue;
+        }
+        let pts: Vec<Vec2> = render::entity_segments(doc, e)
+            .iter()
+            .flat_map(seg_points)
+            .collect();
+        if pts.is_empty() {
+            if rect.contains(bb.center()) {
+                out.push(e.id);
+            }
+            continue;
+        }
+        if crossing {
+            if pts.windows(2).any(|w| seg_meets_rect(w[0], w[1], &rect)) {
+                out.push(e.id);
+            }
+        } else if pts.iter().all(|p| rect.contains(*p)) {
             out.push(e.id);
         }
     }

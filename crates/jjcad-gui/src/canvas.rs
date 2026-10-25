@@ -1488,21 +1488,56 @@ fn handle_input(
     // Fensterauswahl aufziehen
     // Griffe: direktes Bearbeiten der Geometrie
     if app.tool.is_none() {
+        let zwei_klicks = app.ui.drag_two_clicks;
+        // Laufende Verschiebung der Auswahl
+        if let Some(md) = app.move_drag.as_ref() {
+            let cur = snapped.or(raw).unwrap_or(md.cur);
+            let start_frame = md.frame;
+            app.update_move_drag(cur);
+            let frame = resp.ctx.input(|i| i.time);
+            let fertig = fertig_erkennen(resp, zwei_klicks, start_frame, frame);
+            if fertig {
+                app.end_move_drag();
+            }
+            return;
+        }
         if app.grip_drag.is_some() {
+            let start_frame = app.grip_start_frame;
             if let Some(pt) = snapped.or(raw) {
                 app.update_grip_drag(pt);
             }
-            if resp.drag_stopped_by(egui::PointerButton::Primary) {
+            let frame = resp.ctx.input(|i| i.time);
+            let fertig = fertig_erkennen(resp, zwei_klicks, start_frame, frame);
+            if fertig {
                 app.end_grip_drag();
             }
             return;
         }
-        if resp.drag_started_by(egui::PointerButton::Primary) {
-            let tol = 10.0 / view.zoom.max(1e-6);
-            if let Some((id, kind)) = app.grip_at(w, tol) {
+        // Griff hat Vorrang: Treffer mit der ROHEN Zeigerposition (nicht dem
+        // Fangpunkt) und 12 Bildschirm-Pixel Radius — sonst muss man pixelgenau
+        // treffen, sobald der Fang aufs Raster zieht.
+        let griff_tol = 12.0 / view.zoom.max(1e-6);
+        let griff = raw.and_then(|r| app.grip_at(r, griff_tol));
+        if resp.hovered() {
+            app.hover_grip = griff;
+        }
+        if resp.hovered() && resp.ctx.input(|i| i.pointer.primary_pressed()) {
+            if let Some((id, kind)) = griff {
                 app.begin_grip_drag(id, kind);
+                app.grip_start_frame = resp.ctx.input(|i| i.time);
                 app.select_drag = None;
                 return;
+            }
+            // Klick auf ein bereits ausgewaehltes Objekt: Auswahl verschieben
+            if let Some(r) = raw {
+                let tol2 = 10.0 / view.zoom.max(1e-6);
+                if let Some(hit) = snap::hit_test(app.doc(), r, tol2, None) {
+                    if app.selection().contains(&hit) {
+                        app.begin_move_drag(r, resp.ctx.input(|i| i.time));
+                        app.select_drag = None;
+                        return;
+                    }
+                }
             }
         }
     }
@@ -1530,6 +1565,16 @@ fn handle_input(
                 app.session_mut().select(sel);
             }
         }
+    }
+}
+
+/// Ende einer Mausbewegung: im Zwei-Klick-Modus der naechste Klick (nicht im
+/// Startframe), im Gedrueckthalten-Modus das Loslassen.
+fn fertig_erkennen(resp: &Response, zwei_klicks: bool, start_frame: f64, frame: f64) -> bool {
+    if zwei_klicks {
+        (start_frame - frame).abs() > 1e-9 && resp.ctx.input(|i| i.pointer.primary_pressed())
+    } else {
+        resp.ctx.input(|i| i.pointer.any_released())
     }
 }
 
@@ -1659,10 +1704,18 @@ fn draw_grips(app: &App, p: &Painter, rect: Rect, view: View, selected: &[Id]) {
         };
         for (kind, gw) in crate::handles::grips_of(e) {
             let c = world_to_screen(rect, view, gw);
+            // Griff unter dem Zeiger: groesser und in Warnfarbe, damit man
+            // sieht, dass die Trefferflaeche greift
+            let hot = app.hover_grip == Some((*id, kind));
+            let size = if hot { 11.0 } else { 8.0 };
             match kind {
                 crate::handles::GripKind::Vert(_) => {
-                    let r = Rect::from_center_size(c, Vec2::splat(8.0));
-                    p.rect_filled(r, egui::Rounding::same(1.5), Palette::ACCENT);
+                    let r = Rect::from_center_size(c, Vec2::splat(size));
+                    p.rect_filled(
+                        r,
+                        egui::Rounding::same(1.5),
+                        if hot { Palette::TEXT } else { Palette::ACCENT },
+                    );
                     p.rect_stroke(r, egui::Rounding::same(1.5), Stroke::new(1.2_f32, Palette::BG));
                 }
                 crate::handles::GripKind::Edge(i) => {

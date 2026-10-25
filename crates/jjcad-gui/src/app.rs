@@ -234,6 +234,8 @@ pub struct UiState {
     pub lineweights: bool,
     /// Linienstärken über den Maßstab skalieren (gedruckte Breite)
     pub lineweights_scaled: bool,
+    /// Zieh-Modus: false = Gedrueckthalten, true = zwei Klicks
+    pub drag_two_clicks: bool,
     /// Offenes Kontextmenü (Objekt, Zeichenfläche oder Chip)
     pub menu: Option<MenuState>,
     pub bind_slot: Option<usize>,
@@ -280,6 +282,7 @@ impl Default for UiState {
             show_grid: true,
             lineweights: true,
             lineweights_scaled: false,
+            drag_two_clicks: false,
             menu: None,
             bind_slot: None,
             slot_drag: None,
@@ -326,6 +329,18 @@ pub fn window_title() -> String {
     format!("JoJa-CAD v{} · Build {}", VERSION, BUILD)
 }
 
+/// Laufende Verschiebung der Auswahl mit der Maus.
+pub struct MoveDrag {
+    pub start: V2,
+    pub cur: V2,
+    /// Frame, in dem die Verschiebung begann (verhindert sofortiges Beenden
+    /// im Zwei-Klick-Modus)
+    pub frame: f64,
+    pub orig: Vec<jjcad_core::model::Entity>,
+    /// Undo-Snapshot erst beim ersten echten Verschieben anlegen
+    pub recorded: bool,
+}
+
 pub struct App {
     pub tabs: Vec<DocTab>,
     pub active: usize,
@@ -346,6 +361,12 @@ pub struct App {
     /// Vorschau vor dem Platzieren (Block oder Zwischenablage)
     pub ghost: Option<crate::ghost::Ghost>,
     pub grip_drag: Option<crate::handles::GripDrag>,
+    /// Griff unter dem Zeiger (für Hervorhebung und Vorrang beim Klicken)
+    pub hover_grip: Option<(Id, crate::handles::GripKind)>,
+    /// Laufende Maus-Verschiebung der Auswahl
+    pub move_drag: Option<MoveDrag>,
+    /// Frame, in dem der Griff-Drag begann (Zwei-Klick-Modus)
+    pub grip_start_frame: f64,
 }
 
 impl App {
@@ -374,6 +395,7 @@ impl App {
         let show_grid = tab.session.doc.settings.show_grid;
         let lineweights = prefs.show_lineweights;
         let lineweights_scaled = prefs.lineweights_scaled;
+        let drag_two_clicks = prefs.drag_two_clicks;
         let layers_open = prefs.show_layers;
         let props_open = prefs.show_properties;
         let mut app = Self {
@@ -395,10 +417,14 @@ impl App {
             ctx: ctx.clone(),
             ghost: None,
             grip_drag: None,
+            hover_grip: None,
+            move_drag: None,
+            grip_start_frame: 0.0,
         };
         app.ui.show_grid = show_grid;
         app.ui.lineweights = lineweights;
         app.ui.lineweights_scaled = lineweights_scaled;
+        app.ui.drag_two_clicks = drag_two_clicks;
         app.ui.layers_open = layers_open;
         app.ui.props_open = props_open;
         app.fit_view();
@@ -3051,3 +3077,62 @@ fn fmt_len(mm: f64, unit: Unit) -> String {
 
 #[allow(dead_code)]
 fn unused(_: RasterOptions, _: persist::HotbarPreset) {}
+
+impl App {
+    /// Beginnt das Verschieben der Auswahl mit der Maus (Undo-Snapshot einmalig).
+    pub fn begin_move_drag(&mut self, start: V2, frame: f64) {
+        let ids = self.selection().to_vec();
+        if ids.is_empty() {
+            return;
+        }
+        let orig: Vec<jjcad_core::model::Entity> = ids
+            .iter()
+            .filter_map(|id| self.doc().entity(*id).cloned())
+            .collect();
+        self.move_drag = Some(MoveDrag {
+            start,
+            cur: start,
+            frame,
+            orig,
+            recorded: false,
+        });
+        self.status_msg = "Auswahl verschieben".into();
+    }
+
+    /// Verschiebt die Auswahl live mit (Ausgangsgeometrie bleibt gespeichert).
+    pub fn update_move_drag(&mut self, p: V2) {
+        let Some(md) = self.move_drag.as_ref() else {
+            return;
+        };
+        let d = p - md.start;
+        let orig = md.orig.clone();
+        let schon = md.recorded;
+        if !schon && d.len() < 0.5 {
+            return;
+        }
+        if !schon {
+            let snap = self.doc().clone();
+            self.session_mut().history.record(&snap);
+        }
+        if let Some(md) = self.move_drag.as_mut() {
+            md.cur = p;
+            md.recorded = true;
+        }
+        for e in orig {
+            let moved = jjcad_core::transform::transform_entity(
+                &e,
+                &jjcad_core::geom::Affine::translate(d),
+            );
+            if let Some(dst) = self.doc_mut().entity_mut(e.id) {
+                *dst = moved;
+            }
+        }
+    }
+
+    pub fn end_move_drag(&mut self) {
+        if self.move_drag.take().is_some() {
+            self.mark_changed();
+            self.status_msg = "Verschoben".into();
+        }
+    }
+}

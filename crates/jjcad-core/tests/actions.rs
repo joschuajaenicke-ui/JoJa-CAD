@@ -540,3 +540,24 @@ fn moved_opening_stays_on_wall() {
     assert!((p.x - 3500.0).abs() < 1.0, "x={}", p.x);
     assert!((p.y - 150.0).abs() < 1.0, "y auf Kante={}", p.y);
 }
+
+#[test]
+fn select_window_nutzt_geometrie_nicht_bbox() {
+    // Eine Diagonale darf nicht mitgewaehlt werden, nur weil das Auswahlrechteck
+    // in ihrer Bounding-Box liegt.
+    let mut s = s();
+    s.execute("draw.line", &json!({"a": [0, 0], "b": [5, 5]}))
+        .unwrap();
+    let id = last_id(&s);
+    // liegt in der BBox der Linie, beruehrt sie aber nicht
+    let neben = jjcad_core::snap::select_window(&s.doc, v(3000.0, 0.0), v(4400.0, 2000.0), true);
+    assert!(neben.is_empty(), "Kreuzfenster ohne Beruehrung: {neben:?}");
+    let fenster = jjcad_core::snap::select_window(&s.doc, v(3000.0, 0.0), v(4400.0, 2000.0), false);
+    assert!(fenster.is_empty(), "Fenster ohne Beruehrung: {fenster:?}");
+    // schneidet die Linie wirklich
+    let treffer = jjcad_core::snap::select_window(&s.doc, v(4000.0, 3000.0), v(6000.0, 5000.0), true);
+    assert_eq!(treffer, vec![id]);
+    // vollstaendig enthalten
+    let ganz = jjcad_core::snap::select_window(&s.doc, v(-100.0, -100.0), v(6000.0, 6000.0), false);
+    assert_eq!(ganz, vec![id]);
+}

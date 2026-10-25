@@ -795,6 +795,7 @@ fn settings_body(app: &mut App, ui: &mut Ui) {
     let mut ds_changed = false;
     let mut lw = app.ui.lineweights;
     let mut lw_scaled = app.ui.lineweights_scaled;
+    let mut zwei_klicks = app.ui.drag_two_clicks;
     let mut show_layers = app.ui.layers_open;
     let mut show_props = app.ui.props_open;
     let mut marker = app.prefs.snap_marker;
@@ -956,6 +957,17 @@ fn settings_body(app: &mut App, ui: &mut Ui) {
                 }
             });
 
+            theme::section(ui, "Bedienung");
+            widgets::field_row(ui, "Ziehen", |ui| {
+                let mut m = if zwei_klicks { 1 } else { 0 };
+                ui.selectable_value(&mut m, 0, "Gedrückthalten")
+                    .on_hover_text("Taste drücken, ziehen, loslassen");
+                ui.selectable_value(&mut m, 1, "Zwei Klicks")
+                    .on_hover_text("Klick setzt ab, Bewegung folgt dem Zeiger, zweiter Klick bestätigt");
+                zwei_klicks = m == 1;
+            });
+            ui.label(theme::faint("Gilt für Auswahl und Griffe"));
+
             theme::section(ui, "Darstellung");
             widgets::field_row(ui, "Linienstärken", |ui| {
                 let mut m = if lw_scaled { 1 } else { 0 };
@@ -973,6 +985,8 @@ fn settings_body(app: &mut App, ui: &mut Ui) {
     // ------------------------------ anwenden -----------------------------
     app.ui.lineweights = true;
     app.ui.lineweights_scaled = lw_scaled;
+    app.ui.drag_two_clicks = zwei_klicks;
+    app.prefs.drag_two_clicks = zwei_klicks;
     app.prefs.lineweights_scaled = lw_scaled;
     app.ui.layers_open = show_layers;
     app.ui.props_open = show_props;

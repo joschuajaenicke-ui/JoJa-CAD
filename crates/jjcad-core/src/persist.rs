@@ -128,6 +128,9 @@ pub struct UserPrefs {
     /// Linienstärken maßstabsgetreu statt bildschirmkonstant
     #[serde(default)]
     pub lineweights_scaled: bool,
+    /// Ziehen mit zwei Klicks (true) oder Gedrueckthalten (false)
+    #[serde(default)]
+    pub drag_two_clicks: bool,
     #[serde(default = "default_true")]
     pub snap_marker: bool,
     #[serde(default)]
@@ -208,6 +211,7 @@ impl Default for UserPrefs {
             last_dir: String::new(),
             show_lineweights: true,
             lineweights_scaled: false,
+            drag_two_clicks: false,
             snap_marker: true,
             show_properties: true,
             show_layers: true,
