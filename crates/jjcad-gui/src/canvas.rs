@@ -1067,11 +1067,67 @@ fn draw_tool_preview(
             }
         }
         "modify.rotate" => {
-            if let Some(c) = last {
-                let a0 = (cursor - c).angle();
-                p.line_segment([w2s(c), w2s(cursor)], stroke);
-                p.circle_stroke(w2s(c), (c.dist(cursor) * view.zoom) as f32, dashed);
-                label = format!("{:.1}°", a0.to_degrees());
+            // Winkelwahl über „von"/„bis": der Winkel ist die Differenz der
+            // beiden vom Drehzentrum aus gesehenen Richtungen.
+            if let Some(&c) = tool.pts.first() {
+                center_mark(p, w2s(c), Palette::ACCENT);
+                match tool.pts.get(1).copied() {
+                    None => {
+                        // Von-Richtung (Bezugsrichtung) wird gesetzt
+                        if c.dist(cursor) > 1e-6 {
+                            p.line_segment([w2s(c), w2s(cursor)], dashed);
+                        }
+                        p.circle_stroke(w2s(cursor), 5.0, stroke);
+                        label = format!(
+                            "von {}°",
+                            format_number((cursor - c).angle().to_degrees(), 1)
+                        );
+                    }
+                    Some(from) => {
+                        let v0 = from - c;
+                        let v1 = cursor - c;
+                        p.line_segment([w2s(c), w2s(from)], stroke);
+                        match jjcad_core::transform::angle_between_directions(c, from, cursor) {
+                            Some(angle) => {
+                                p.line_segment([w2s(c), w2s(cursor)], dashed);
+                                // Winkelbogen in Drehrichtung (mit Vorzeichen, <= 180°).
+                                // Nicht über geom::Arc: das läuft immer gegen den
+                                // Uhrzeigersinn und zeichnet bei negativem Winkel
+                                // den langen Weg (315° statt 45°).
+                                let r = v0.len().min(v1.len()) * 0.45;
+                                if r > 1.0 {
+                                    let a0 = v0.angle();
+                                    let sweep = angle.to_radians();
+                                    let pts: Vec<Pos2> = (0..=48)
+                                        .map(|i| {
+                                            let a = a0 + sweep * (i as f64 / 48.0);
+                                            w2s(c + V2::new(a.cos(), a.sin()) * r)
+                                        })
+                                        .collect();
+                                    p.add(Shape::line(pts, stroke));
+                                }
+                                // Vorschau der gedrehten Auswahl
+                                let m = Affine::rotate_about(c, angle.to_radians());
+                                let rctx = render::RenderCtx::new(app.doc());
+                                let mut dl = DisplayList::default();
+                                for id in app.selection().to_vec() {
+                                    if let Some(e) = app.doc().entity(id) {
+                                        render::render_entity(&rctx, e, m, &mut dl, 0);
+                                    }
+                                }
+                                let pre = Stroke::new(1.1, Palette::SELECT.gamma_multiply(0.85));
+                                for prim in &dl.prims {
+                                    ghost_shape(p, &prim.shape, &w2s, view.zoom, pre);
+                                }
+                                label = format!("Drehen {}°", format_number(angle, 1));
+                            }
+                            None => {
+                                // Bis-Punkt liegt auf dem Zentrum: keine Richtung
+                                label = "bis: Abstand zum Drehzentrum nötig".into();
+                            }
+                        }
+                    }
+                }
             }
         }
         "modify.mirror" => {
@@ -1885,6 +1941,45 @@ pub fn finish_tool(app: &mut App, from_enter: bool) {
     }
 }
 
+/// Ergebnis eines Klicks im Dreh-Werkzeug (Drehzentrum → „von" → „bis").
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum RotateStep {
+    /// Punkt übernehmen (Drehzentrum bzw. „von"-Punkt) und weiter sammeln.
+    Collect { point: V2 },
+    /// Winkel steht: die Auswahl um `angle` Grad um `center` drehen.
+    Apply {
+        center: V2,
+        from: V2,
+        angle: f64,
+    },
+    /// Klick ist unbrauchbar (zu nah am Drehzentrum, Richtung unbestimmt).
+    Reject(&'static str),
+}
+
+/// Wertet einen Klick der Zwei-Klick-Winkelwahl aus — ohne Seiteneffekte,
+/// damit die Reihenfolge Zentrum → „von" → „bis" prüfbar ist. Erst der dritte
+/// Klick liefert einen Winkel: die Differenz der beiden vom Zentrum aus
+/// gesehenen Richtungen (mathematisch positiv), nicht die Richtung des
+/// Klicks gegenüber einer festen Achse.
+pub fn rotate_step(pts: &[V2], w: V2) -> RotateStep {
+    if pts.len() < 2 {
+        if let Some(c) = pts.first().copied() {
+            if c.dist(w) < jjcad_core::transform::ANGLE_MIN_RADIUS {
+                return RotateStep::Reject("Etwas Abstand zum Drehzentrum nötig");
+            }
+        }
+        return RotateStep::Collect { point: w };
+    }
+    match jjcad_core::transform::angle_between_directions(pts[0], pts[1], w) {
+        Some(angle) => RotateStep::Apply {
+            center: pts[0],
+            from: pts[1],
+            angle,
+        },
+        None => RotateStep::Reject("Bis-Punkt braucht Abstand zum Drehzentrum"),
+    }
+}
+
 fn tool_click(app: &mut App, w: V2) {
     let Some(mut tool) = app.tool.clone() else { return };
     let unit = app.unit();
@@ -2191,19 +2286,29 @@ fn tool_click(app: &mut App, w: V2) {
             }
         }
         "modify.rotate" => {
-            if tool.pts.is_empty() {
-                tool.pts.push(w);
-                app.tool = Some(tool);
-            } else {
-                let c = tool.pts[0];
-                let a = (w - c).angle().to_degrees();
-                let ids = app.selection().to_vec();
-                let _ = run(
-                    app,
-                    "modify.rotate",
-                    json!({"ids": ids, "center": ax(c), "angle": a}),
-                );
-                app.tool = None;
+            // Drei Klicks: Drehzentrum, „von"-Punkt, „bis"-Punkt. Der Winkel ist
+            // die Differenz der beiden vom Zentrum aus gesehenen Richtungen —
+            // nicht mehr die Richtung eines Klicks zur X-Achse.
+            match rotate_step(&tool.pts, w) {
+                RotateStep::Collect { point } => {
+                    tool.pts.push(point);
+                    app.tool = Some(tool);
+                }
+                RotateStep::Apply {
+                    center,
+                    from: _,
+                    angle,
+                } => {
+                    let ids = app.selection().to_vec();
+                    let _ = run(
+                        app,
+                        "modify.rotate",
+                        json!({"ids": ids, "center": ax(center), "angle": angle}),
+                    );
+                    app.toast(&format!("Gedreht um {:.1}°", angle));
+                    app.tool = None;
+                }
+                RotateStep::Reject(msg) => app.toast(msg),
             }
         }
         "modify.mirror" => {
@@ -2335,3 +2440,56 @@ fn run(app: &mut App, action: &str, params: serde_json::Value) -> bool {
     }
 }
 
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Zwei-Klick-Winkelwahl: Zentrum → „von" → „bis", Winkel zwischen den
+    /// beiden Richtungen (nicht die Richtung zur X-Achse).
+    #[test]
+    fn drehwerkzeug_fragt_zentrum_dann_von_dann_bis() {
+        let c = V2::new(0.0, 0.0);
+        let von = V2::new(1000.0, 1000.0); // 45°-Richtung
+        let bis = V2::new(0.0, 1000.0); // 90°-Richtung
+
+        // 1. Klick: Drehzentrum wird nur gesammelt
+        assert!(matches!(
+            rotate_step(&[], c),
+            RotateStep::Collect { .. }
+        ));
+        // 2. Klick: „von" wird gesammelt, noch kein Winkel
+        assert!(matches!(
+            rotate_step(&[c], von),
+            RotateStep::Collect { .. }
+        ));
+        // 3. Klick: Winkel = 90° - 45° = 45°, nicht 90°
+        match rotate_step(&[c, von], bis) {
+            RotateStep::Apply {
+                center,
+                angle,
+                ..
+            } => {
+                assert_eq!(center, c);
+                assert!((angle - 45.0).abs() < 1e-9, "{angle}");
+            }
+            other => panic!("Winkel erwartet, war {other:?}"),
+        }
+        // Gegenrichtung: 45° → 0° ergibt -45°
+        match rotate_step(&[c, von], V2::new(1000.0, 0.0)) {
+            RotateStep::Apply { angle, .. } => assert!((angle + 45.0).abs() < 1e-9, "{angle}"),
+            other => panic!("Winkel erwartet, war {other:?}"),
+        }
+        // Vollkreis-Gegenprobe: 0° → 180° sind 180°, nicht 0°
+        match rotate_step(&[c, V2::new(1000.0, 0.0)], V2::new(-1000.0, 0.0)) {
+            RotateStep::Apply { angle, .. } => assert!((angle.abs() - 180.0).abs() < 1e-9, "{angle}"),
+            other => panic!("Winkel erwartet, war {other:?}"),
+        }
+        // Klick auf das Zentrum ist keine gültige Richtung
+        assert!(matches!(rotate_step(&[c], c), RotateStep::Reject(_)));
+        assert!(matches!(
+            rotate_step(&[c, von], c),
+            RotateStep::Reject(_)
+        ));
+    }
+}

@@ -2305,6 +2305,32 @@ fn rail(ui: &mut egui::Ui, icon: &str, tooltip: &str, chevron: &str) -> bool {
                     ui.label(theme::dim("Abstand"));
                     widgets::length_input(ui, &mut self.options.offset_dist, unit, 80.0);
                 }
+                "modify.rotate" => {
+                    // Winkelwahl über zwei Klicks: „von" (Bezug) und „bis" (Ziel).
+                    ui.label(theme::dim(match tool.pts.len() {
+                        0 => "Drehzentrum klicken",
+                        1 => "Von-Punkt klicken (Bezugsrichtung)",
+                        _ => "Bis-Punkt klicken (neue Richtung)",
+                    }));
+                    if let Some(from) = tool.pts.get(1).copied() {
+                        if let Some(p) = self.pointer_world {
+                            if let Some(a) = jjcad_core::transform::angle_between_directions(
+                                tool.pts[0], from, p,
+                            ) {
+                                ui.add_space(10.0);
+                                ui.label(theme::faint("|"));
+                                ui.add_space(10.0);
+                                ui.label(theme::dim("Winkel"));
+                                ui.label(theme::mono(format!("{}°", format_number(a, 1))));
+                            }
+                        }
+                    }
+                    ui.add_space(10.0);
+                    ui.label(theme::faint("|"));
+                    ui.add_space(10.0);
+                    ui.label(theme::dim("Objekte"));
+                    ui.label(theme::mono(format!("{}", self.selection().len())));
+                }
                 "block.insert" => {
                     let name = self
                         .options
@@ -2654,13 +2680,11 @@ fn commands_hint(tool: &Tool) -> &'static str {
                 "Zielpunkt"
             }
         }
-        "modify.rotate" => {
-            if tool.pts.is_empty() {
-                "Drehzentrum"
-            } else {
-                "Winkel klicken"
-            }
-        }
+        "modify.rotate" => match tool.pts.len() {
+            0 => "Drehzentrum",
+            1 => "Von-Punkt (Bezugsrichtung)",
+            _ => "Bis-Punkt (neue Richtung) – Winkel von → bis",
+        },
         "modify.mirror" => {
             if tool.pts.is_empty() {
                 "Erster Punkt der Spiegelachse"

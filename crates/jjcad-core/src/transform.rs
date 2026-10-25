@@ -234,6 +234,66 @@ pub fn rotate_about(c: Vec2, angle: f64) -> Affine {
     Affine::rotate_about(c, angle)
 }
 
+/// Mindestabstand eines Winkelpunktes zum Drehzentrum (mm). Liegt ein Punkt
+/// darauf, ist seine Richtung nicht bestimmt.
+pub const ANGLE_MIN_RADIUS: f64 = 0.5;
+
+/// Drehwinkel in Grad (mathematisch positiv) zwischen den vom Drehzentrum aus
+/// gesehenen Richtungen `from` und `to` — die Rechnung der Zwei-Klick-Winkelwahl.
+///
+/// `None`, wenn einer der Punkte auf dem Zentrum liegt; der Winkel ist dann
+/// nicht bestimmt und es darf nicht gedreht werden.
+pub fn angle_between_directions(center: Vec2, from: Vec2, to: Vec2) -> Option<f64> {
+    let a = from - center;
+    let b = to - center;
+    if a.len() < ANGLE_MIN_RADIUS || b.len() < ANGLE_MIN_RADIUS {
+        return None;
+    }
+    Some(a.signed_angle_to(b).to_degrees())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn winkel_zwischen_richtungen_mit_vorzeichen() {
+        let c = v(0., 0.);
+        // von +X nach +Y: +90°
+        let a = angle_between_directions(c, v(1., 0.), v(0., 1.)).unwrap();
+        assert!((a - 90.0).abs() < 1e-9, "{a}");
+        // von +X nach -Y: -90°
+        let a = angle_between_directions(c, v(1., 0.), v(0., -1.)).unwrap();
+        assert!((a + 90.0).abs() < 1e-9, "{a}");
+        // von +Y nach +X: -90° (Gegenprobe zur ersten Zeile)
+        let a = angle_between_directions(c, v(0., 1.), v(1., 0.)).unwrap();
+        assert!((a + 90.0).abs() < 1e-9, "{a}");
+        // 45°-Richtung nach +Y: +45°
+        let a = angle_between_directions(c, v(1., 1.), v(0., 1.)).unwrap();
+        assert!((a - 45.0).abs() < 1e-9, "{a}");
+        // Richtungsumkehr: 180°, nicht 0°
+        let a = angle_between_directions(c, v(1., 0.), v(-1., 0.)).unwrap();
+        assert!((a.abs() - 180.0).abs() < 1e-9, "{a}");
+    }
+
+    #[test]
+    fn winkel_um_ein_versetztes_zentrum() {
+        // Richtungen zählen ab dem Zentrum, nicht ab dem Ursprung
+        let c = v(1000., 1000.);
+        let a = angle_between_directions(c, v(2000., 1000.), v(1000., 2000.)).unwrap();
+        assert!((a - 90.0).abs() < 1e-9, "{a}");
+    }
+
+    #[test]
+    fn winkel_auf_dem_zentrum_ist_unbestimmt() {
+        let c = v(500., 500.);
+        assert!(angle_between_directions(c, c, v(0., 0.)).is_none());
+        assert!(angle_between_directions(c, v(0., 0.), c).is_none());
+        // knapp daneben (0,4 mm) gilt ebenfalls als unbestimmt
+        assert!(angle_between_directions(c, v(500.4, 500.), v(600., 500.)).is_none());
+    }
+}
+
 pub fn mirror_at(p1: Vec2, p2: Vec2) -> Affine {
     Affine::mirror(p1, p2)
 }

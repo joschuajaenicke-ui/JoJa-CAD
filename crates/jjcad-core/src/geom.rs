@@ -102,6 +102,16 @@ impl Vec2 {
         (o - self).angle()
     }
 
+    /// Vorzeichenbehafteter Winkel von `self` nach `o`, Bereich (-π, π].
+    /// Positiv ist der mathematisch positive Drehsinn (gegen den Uhrzeigersinn).
+    /// Anders als `o.angle() - self.angle()` läuft das Ergebnis nicht über ±π hinaus.
+    #[inline]
+    pub fn signed_angle_to(self, o: Vec2) -> f64 {
+        let cross = self.x * o.y - self.y * o.x;
+        let dot = self.x * o.x + self.y * o.y;
+        cross.atan2(dot)
+    }
+
     #[inline]
     pub fn rotated(self, angle: f64) -> Vec2 {
         let (s, c) = angle.sin_cos();
