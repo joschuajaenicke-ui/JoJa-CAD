@@ -249,6 +249,41 @@ pub fn render_entities(ctx: &RenderCtx, ents: &[Entity]) -> DisplayList {
     dl
 }
 
+/// Vorschau einer Auswahl, um `delta` verschoben.
+///
+/// Grundlage für die Vorschau beim Verschieben/Kopieren: dieselbe Geometrie wie
+/// die fertige Platzierung (alle Elementtypen inklusive Blockauflösung), nur um
+/// `delta` versetzt. Wandfüllungen stehen wie in [`render_document`] vor allen
+/// Linien, damit keine Umrandung überdeckt wird.
+pub fn preview_selection(doc: &Document, ids: &[Id], delta: Vec2) -> DisplayList {
+    let ctx = RenderCtx::new(doc);
+    let xf = Affine::translate(delta);
+    let mut fills = DisplayList::default();
+    let mut rest = DisplayList::default();
+    for id in ids {
+        let Some(e) = doc.entity(*id) else { continue };
+        let mut tmp = DisplayList::default();
+        render_entity(&ctx, e, xf, &mut tmp, 0);
+        if matches!(e.kind, EntityKind::Wall { .. }) {
+            for prim in tmp.prims {
+                if matches!(prim.shape, Shape::Fill(_)) {
+                    fills.push(prim);
+                } else {
+                    rest.push(prim);
+                }
+            }
+        } else {
+            for prim in tmp.prims {
+                rest.push(prim);
+            }
+        }
+    }
+    for prim in rest.prims {
+        fills.push(prim);
+    }
+    fills
+}
+
 pub fn entity_bbox(doc: &Document, e: &Entity) -> BBox {
     let ctx = RenderCtx::new(doc);
     let mut dl = DisplayList::default();

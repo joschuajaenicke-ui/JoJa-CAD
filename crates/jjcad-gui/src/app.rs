@@ -436,7 +436,10 @@ impl App {
     }
 
     /// Erlaubt das Setzen eines Startzustands für Screenshots/automatisierte UI-Tests:
-    /// `JJCAD_DEMO_UI=arch,inv,sheet,wall,text`
+    /// `JJCAD_DEMO_UI=arch,inv,sheet,wall,text` — für die Verschiebe-Vorschau
+    /// zusätzlich `moveline`, `movewall`, `movedoor`, `moveall` (Auswahl setzen
+    /// und Werkzeug „Verschieben" mit Basispunkt starten) sowie `selall` (nur
+    /// auswählen, zum Prüfen des direkten Ziehens).
     pub fn apply_demo_ui(&mut self) {
         let Ok(spec) = std::env::var("JJCAD_DEMO_UI") else { return };
         for part in spec.split(',') {
@@ -544,8 +547,80 @@ impl App {
                         t.pts.push(V2::new(0.0, 0.0));
                     }
                 }
+                // Prüfhilfe Verschiebe-Vorschau: Auswahl setzen, Werkzeug
+                // „Verschieben" starten und den Basispunkt in die Auswahlmitte
+                // legen — die Vorschau hängt dann am Zeiger.
+                "moveline" => {
+                    // Prüfzeichnung enthält keine Linie — eine anlegen
+                    let _ = self.session_mut().execute(
+                        "draw.line",
+                        &serde_json::json!({"a": [1.0, 1.0], "b": [3.0, 2.0]}),
+                    );
+                    let ids: Vec<Id> = self
+                        .doc()
+                        .entities
+                        .iter()
+                        .filter(|e| matches!(e.kind, EntityKind::Line { .. }))
+                        .map(|e| e.id)
+                        .rev()
+                        .take(1)
+                        .collect();
+                    self.start_move_preview(ids);
+                }
+                "movewall" => {
+                    let ids: Vec<Id> = self
+                        .doc()
+                        .entities
+                        .iter()
+                        .filter(|e| matches!(e.kind, EntityKind::Wall { .. }))
+                        .map(|e| e.id)
+                        .take(1)
+                        .collect();
+                    self.start_move_preview(ids);
+                }
+                "movedoor" => {
+                    let ids: Vec<Id> = self
+                        .doc()
+                        .entities
+                        .iter()
+                        .filter(|e| {
+                            matches!(e.kind, EntityKind::Door { .. } | EntityKind::Window { .. })
+                        })
+                        .map(|e| e.id)
+                        .collect();
+                    self.start_move_preview(ids);
+                }
+                "moveall" => {
+                    let ids: Vec<Id> = self.doc().entities.iter().map(|e| e.id).collect();
+                    self.start_move_preview(ids);
+                }
+                // Nur auswählen (für die Prüfung des direkten Ziehens)
+                "selall" => {
+                    let ids: Vec<Id> = self.doc().entities.iter().map(|e| e.id).collect();
+                    self.session_mut().select(ids);
+                }
                 _ => {}
             }
+        }
+    }
+
+    /// Prüfhilfe: Auswahl setzen, „Verschieben" starten, Basispunkt in die
+    /// Auswahlmitte legen (Vorschau folgt dem Zeiger).
+    fn start_move_preview(&mut self, ids: Vec<Id>) {
+        if ids.is_empty() {
+            return;
+        }
+        let mut bb = BBox::EMPTY;
+        for id in &ids {
+            if let Some(e) = self.doc().entity(*id) {
+                bb.union(jjcad_core::render::entity_bbox(self.doc(), e));
+            }
+        }
+        let base = if bb.is_valid() { bb.center() } else { V2::ZERO };
+        self.session_mut().selection = ids;
+        self.start_tool("modify.move");
+        if let Some(t) = &mut self.tool {
+            t.pts.push(base);
         }
     }
 
@@ -904,6 +979,9 @@ impl App {
         if self.ghost.take().is_some() {
             self.status_msg = "Platzieren abgebrochen".into();
         }
+        // Laufendes Ziehen der Auswahl zurücknehmen (keine halb verschobene
+        // Geometrie zurücklassen)
+        self.cancel_move_drag();
         self.cancel_grip_drag();
         self.session_mut().clear_selection();
         self.select_drag = None;
@@ -3242,6 +3320,9 @@ impl App {
                 *dst = moved;
             }
         }
+        // Displayliste neu aufbauen: sonst zeigt die Zeichenfläche beim Ziehen
+        // den alten Stand (die Vorschau klebt am Zeiger statt mitzuwandern).
+        self.mark_changed();
     }
 
     pub fn end_move_drag(&mut self) {
@@ -3249,5 +3330,20 @@ impl App {
             self.mark_changed();
             self.status_msg = "Verschoben".into();
         }
+    }
+
+    /// Bricht eine laufende Maus-Verschiebung ab und stellt die Ausgangslage her
+    /// (Esc während des Ziehens).
+    pub fn cancel_move_drag(&mut self) {
+        let Some(md) = self.move_drag.take() else {
+            return;
+        };
+        for e in &md.orig {
+            if let Some(dst) = self.doc_mut().entity_mut(e.id) {
+                *dst = e.clone();
+            }
+        }
+        self.mark_changed();
+        self.status_msg = "Verschieben abgebrochen".into();
     }
 }
