@@ -212,16 +212,19 @@ pub fn field_row(ui: &mut Ui, label: &str, add: impl FnOnce(&mut Ui)) {
 /// Textfeld mit Einheitensuffix, für Längen in Dokumenteinheit.
 pub fn length_input(ui: &mut Ui, value_mm: &mut f64, unit: jjcad_core::units::Unit, width: f32) -> bool {
     let mut v = unit.from_mm(*value_mm);
-    let decimals = unit.decimals().max(1);
+    let decimals = unit.decimals();
+    // Anzeige fest an der Einheit ausrichten statt an egui's automatischer
+    // Stellenzahl (die hängt an aim_radius/speed) und statt an min_decimals(0):
+    // sonst stand für 0,24 m nur „0 m“ im Feld. format_length_auto zeigt
+    // 0,24 m / 2,75 m / 240 mm und keine Tausenderpunkte (eindeutig lesbar).
     let resp = ui.add_sized(
         [width, 20.0],
-        crate::widgets::dv(&mut v)
+        egui::DragValue::new(&mut v)
             .speed(unit.mm() * 0.5)
-            .max_decimals(decimals)
-            // Nachkommastellen sind auch die Anzeigegenauigkeit: mit
-            // min_decimals(0) stand für 0,10 m nur „0 m“ im Feld (jede
-            // Längenangabe in Metern wurde auf ganze Meter gerundet).
-            .min_decimals(decimals.min(2))
+            .min_decimals(decimals)
+            .max_decimals(decimals + 2)
+            .custom_parser(flexible_number)
+            .custom_formatter(move |n, _| unit.format_length_auto(unit.to_mm(n)))
             .suffix(format!(" {}", unit.short())),
     );
     if resp.changed() {

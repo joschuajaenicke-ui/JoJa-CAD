@@ -552,6 +552,9 @@ impl App {
                         .collect();
                     self.session_mut().selection = ids;
                 }
+                "unitmm" => self.session_mut().doc.settings.input_unit = Unit::Mm,
+                "unitcm" => self.session_mut().doc.settings.input_unit = Unit::Cm,
+                "unitm" => self.session_mut().doc.settings.input_unit = Unit::M,
                 "wallcolors" => {
                     // Prüfzustand: Linie und Füllfläche der ersten Wand in
                     // zwei deutlich verschiedenen Farben
