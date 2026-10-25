@@ -224,36 +224,66 @@ impl Default for DimStyle {
 }
 
 // ---------------------------------------------------------------------------
-// Schraffur
+// Muster einer Füllfläche
 // ---------------------------------------------------------------------------
 
+/// Muster einer Füllfläche. Gilt für den Objekttyp `Fill` **und** für die
+/// Wandschraffur (`Wall.hatch`) — ein Muster, eine Bedeutung.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, Default)]
-pub enum HatchPattern {
+pub enum FillPattern {
+    /// Fläche in der Füllfarbe
     #[default]
     Solid,
+    /// Parallele Linien (Standard 45°)
     Lines,
+    /// Zwei Linienscharen im rechten Winkel
     Cross,
+    /// Punktraster
     Dots,
     /// Dämmung: Mäanderlinie (Mineralwolle) — typisch für Bauzeichnungen
     Insulation,
 }
 
-impl HatchPattern {
-    pub const ALL: [HatchPattern; 5] = [
-        HatchPattern::Solid,
-        HatchPattern::Lines,
-        HatchPattern::Cross,
-        HatchPattern::Dots,
-        HatchPattern::Insulation,
+impl FillPattern {
+    pub const ALL: [FillPattern; 5] = [
+        FillPattern::Solid,
+        FillPattern::Lines,
+        FillPattern::Cross,
+        FillPattern::Dots,
+        FillPattern::Insulation,
     ];
+
     pub fn label(self) -> &'static str {
         match self {
-            HatchPattern::Solid => "Vollfläche",
-            HatchPattern::Lines => "Schraffur 45°",
-            HatchPattern::Cross => "Kreuzschraffur",
-            HatchPattern::Dots => "Punktraster",
-            HatchPattern::Insulation => "Dämmung",
+            FillPattern::Solid => "Vollfläche",
+            FillPattern::Lines => "Schraffur 45°",
+            FillPattern::Cross => "Kreuzschraffur",
+            FillPattern::Dots => "Punktraster",
+            FillPattern::Insulation => "Dämmung",
         }
+    }
+
+    /// Schlüssel für Action-Parameter (`draw.fill`, `modify.set`).
+    pub fn key(self) -> &'static str {
+        match self {
+            FillPattern::Solid => "solid",
+            FillPattern::Lines => "lines",
+            FillPattern::Cross => "cross",
+            FillPattern::Dots => "dots",
+            FillPattern::Insulation => "insulation",
+        }
+    }
+
+    /// Muster aus einem Action-Parameter lesen (deutsch und englisch).
+    pub fn from_key(s: &str) -> Option<FillPattern> {
+        Some(match s.trim().to_lowercase().as_str() {
+            "solid" | "voll" | "vollflaeche" | "vollfläche" => FillPattern::Solid,
+            "lines" | "line" | "linien" | "schraffur" | "45" => FillPattern::Lines,
+            "cross" | "kreuz" | "kreuzschraffur" => FillPattern::Cross,
+            "dots" | "punkte" | "punktraster" => FillPattern::Dots,
+            "insulation" | "daemmung" | "dämmung" => FillPattern::Insulation,
+            _ => return None,
+        })
     }
 }
 

@@ -76,18 +76,18 @@ pub fn transform_kind(k: &EntityKind, m: &Affine) -> EntityKind {
                 closed: *closed,
             }
         }
-        EntityKind::Hatch {
+        EntityKind::Fill {
             boundary,
             pattern,
-            angle,
-            spacing,
-            filled,
-        } => EntityKind::Hatch {
+            pattern_angle,
+            pattern_scale,
+            border,
+        } => EntityKind::Fill {
             boundary: boundary.iter().map(|p| m.apply(*p)).collect(),
             pattern: *pattern,
-            angle: angle + m.rotation(),
-            spacing: spacing * f,
-            filled: *filled,
+            pattern_angle: pattern_angle + m.rotation(),
+            pattern_scale: pattern_scale * f,
+            border: *border,
         },
         EntityKind::Text {
             p,

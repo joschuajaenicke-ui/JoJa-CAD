@@ -5,7 +5,7 @@
 
 use crate::geom::*;
 use crate::model::*;
-use crate::style::{Color, HatchPattern};
+use crate::style::{Color, FillPattern};
 
 struct B {
     next: Id,
@@ -86,12 +86,12 @@ impl B {
 
     fn fill(&mut self, pts: Vec<Vec2>, color: Color) {
         let id = self.id();
-        let mut e = Entity::new(id, 0, EntityKind::Hatch {
+        let mut e = Entity::new(id, 0, EntityKind::Fill {
             boundary: pts,
-            pattern: HatchPattern::Solid,
-            angle: 0.0,
-            spacing: 100.0,
-            filled: true,
+            pattern: FillPattern::Solid,
+            pattern_angle: 0.0,
+            pattern_scale: 100.0,
+            border: false,
         });
         e.by_block = true;
         e.style.fill = Some(color);
