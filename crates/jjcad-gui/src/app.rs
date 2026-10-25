@@ -1581,7 +1581,7 @@ fn rail(ui: &mut egui::Ui, icon: &str, tooltip: &str, chevron: &str) -> bool {
                         if widgets::ribbon_button(ui, "info", "Projektdaten", false).clicked() {
                             app.ui.project_dialog = true;
                         }
-                        if widgets::ribbon_button(ui, "settings", "Einheiten", false).clicked() {
+                        if widgets::ribbon_button(ui, "settings", "Einstellungen", false).clicked() {
                             app.ui.settings_open = true;
                         }
                     });
