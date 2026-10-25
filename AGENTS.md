@@ -161,6 +161,17 @@ Erwartung: <was man sehen muss>
 Das Wort `TEST` am Anfang ist Pflicht: daran erkennt der Mensch, dass die Karte
 in der Review-Spalte auf ihn wartet.
 
+**In `review` liegen zwei Sorten Karten:**
+
+| Aussehen | Bedeutung |
+|---|---|
+| Karte in `review`, Kommentar beginnt mit `TEST b<N>-<hash>` | gemergt, gebaut, **ausgeliefert** → gehört dem Menschen |
+| Karte in `review` ohne TEST-Kommentar | vom Worker abgeliefert, wartet auf den Merge durch den Manager → **nicht testen** |
+
+Nur der Manager schreibt den TEST-Kommentar, und zwar erst **nach** Merge und
+Build. Ein Worker, der eine Karte auf `review` setzt, hat damit nur seine Arbeit
+abgegeben — sie ist noch in keinem Build.
+
 Beispiel:
 
 ```
