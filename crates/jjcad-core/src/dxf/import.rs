@@ -555,12 +555,12 @@ fn convert_entities(
                 }
                 if pts.len() >= 3 {
                     push(
-                        EntityKind::Hatch {
+                        EntityKind::Fill {
                             boundary: pts,
-                            pattern: crate::style::HatchPattern::Solid,
-                            angle: 0.0,
-                            spacing: 100.0,
-                            filled: true,
+                            pattern: crate::style::FillPattern::Solid,
+                            pattern_angle: 0.0,
+                            pattern_scale: 100.0,
+                            border: true,
                         },
                         layer,
                         color,

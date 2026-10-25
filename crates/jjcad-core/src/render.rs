@@ -400,73 +400,14 @@ pub fn render_entity(
             });
         }
         EntityKind::Polyline { verts, closed } => render_polyline(ctx, e, &st, verts, *closed, xf, dl),
-        EntityKind::Hatch {
+        EntityKind::Fill {
             boundary,
             pattern,
-            angle,
-            spacing,
-            filled,
+            pattern_angle,
+            pattern_scale,
+            border,
         } => {
-            let pts: Vec<Vec2> = boundary.iter().map(|p| xf.apply(*p)).collect();
-            let fill = e.style.fill.unwrap_or(st.color);
-            let fill = fill.mix(Color::WHITE, 0.72);
-            if *filled || *pattern == HatchPattern::Solid {
-                dl.push(Prim {
-                    shape: Shape::Fill(pts.clone()),
-                    style: PrimStyle {
-                        color: fill,
-                        fill: Some(fill),
-                        ..st
-                    },
-                    entity: e.id,
-                    layer: e.layer,
-                });
-            }
-            match pattern {
-                HatchPattern::Solid => {
-                    if !*filled {
-                        dl.push(Prim {
-                            shape: Shape::Fill(pts),
-                            style: PrimStyle {
-                                color: fill,
-                                fill: Some(fill),
-                                ..st
-                            },
-                            entity: e.id,
-                            layer: e.layer,
-                        });
-                    }
-                }
-                p => {
-                    let mut angles: Vec<f64> = vec![*angle];
-                    if *p == HatchPattern::Cross {
-                        angles.push(*angle + std::f64::consts::FRAC_PI_2);
-                    }
-                    let sp = spacing.max(1.0) * xf.scale_factor();
-                    for ang in angles {
-                        let n = Vec2::polar(ang + std::f64::consts::FRAC_PI_2, 1.0);
-                        let d = Vec2::polar(ang, 1.0);
-                        let origin = BBox::from_points(&pts).center();
-                        for i in -200..=200 {
-                            let off = n * (i as f64 * sp);
-                            let p0 = origin + off - d * 500000.0;
-                            let p1 = origin + off + d * 500000.0;
-                            for (a0, a1) in clip_line_polygon(p0, p1, &pts) {
-                                dl.push(Prim {
-                                    shape: Shape::Line(a0, a1),
-                                    style: PrimStyle {
-                                        color: st.color,
-                                        width: st.width * 0.6,
-                                        ..st
-                                    },
-                                    entity: e.id,
-                                    layer: e.layer,
-                                });
-                            }
-                        }
-                    }
-                }
-            }
+            render_fill(e, &st, boundary, *pattern, *pattern_angle, *pattern_scale, *border, xf, dl)
         }
         EntityKind::Text {
             p,
@@ -670,6 +611,225 @@ pub fn render_entity(
 
 fn c_off(pos: Vec2, rot: f64, scale: Vec2, x: f64, y: f64) -> Vec2 {
     pos + Vec2::new(x * scale.x, y * scale.y).rotated(rot)
+}
+
+// ---------------------------------------------------------------------------
+// Füllfläche
+// ---------------------------------------------------------------------------
+
+/// Zeichnet eine Füllfläche: Fläche, Muster und optionale Randlinie.
+///
+/// Das ist der einzige Weg, ein gefülltes Feld zu erzeugen — Bildschirm, PDF
+/// und PNG lesen anschließend dieselbe Displayliste. Randstriche werden als
+/// ein geschlossener Polygonzug ausgegeben, damit das Muster die Fläche nicht
+/// überragt.
+pub fn render_fill(
+    e: &Entity,
+    st: &PrimStyle,
+    boundary: &[Vec2],
+    pattern: FillPattern,
+    pattern_angle: f64,
+    pattern_scale: f64,
+    border: bool,
+    xf: Affine,
+    dl: &mut DisplayList,
+) {
+    let pts: Vec<Vec2> = boundary.iter().map(|p| xf.apply(*p)).collect();
+    if pts.len() < 3 {
+        return;
+    }
+    let scale = xf.scale_factor().abs().max(1e-6);
+
+    // Fläche: eine gesetzte Füllfarbe gewinnt immer. Ohne sie wird nur bei
+    // Vollfläche aufgehellt — ein Muster mit Flächenfarbe bleibt sonst ein
+    // grauer Kasten unter den Linien.
+    let area = match (pattern, e.style.fill) {
+        (_, Some(c)) => Some(c),
+        (FillPattern::Solid, None) => Some(st.color.mix(Color::WHITE, 0.72)),
+        _ => None,
+    };
+    if let Some(c) = area {
+        dl.push(Prim {
+            shape: Shape::Fill(pts.clone()),
+            style: PrimStyle {
+                color: c,
+                fill: Some(c),
+                ..*st
+            },
+            entity: e.id,
+            layer: e.layer,
+        });
+    }
+
+    if pattern != FillPattern::Solid {
+        let thin = PrimStyle {
+            color: st.color,
+            fill: None,
+            width: st.width * 0.6,
+            ..*st
+        };
+        let spacing = (pattern_scale * scale).max(0.5);
+        let angle = pattern_angle + xf.rotation();
+        match pattern {
+            FillPattern::Lines => {
+                push_pattern_lines(dl, e, &thin, &pts, &[angle], spacing)
+            }
+            FillPattern::Cross => {
+                push_pattern_lines(
+                    dl,
+                    e,
+                    &thin,
+                    &pts,
+                    &[angle, angle + std::f64::consts::FRAC_PI_2],
+                    spacing,
+                )
+            }
+            FillPattern::Dots => push_pattern_dots(dl, e, &thin, &pts, angle, spacing),
+            FillPattern::Insulation => {
+                push_pattern_meander(dl, e, &thin, &pts, angle, spacing)
+            }
+            FillPattern::Solid => {}
+        }
+    }
+
+    if border {
+        dl.push(Prim {
+            shape: Shape::Poly(pts, true),
+            style: PrimStyle { fill: None, ..*st },
+            entity: e.id,
+            layer: e.layer,
+        });
+    }
+}
+
+/// Bereich einer Kontur als Bounding-Box-Maß (Diagonale).
+fn fill_diag(pts: &[Vec2]) -> f64 {
+    if pts.is_empty() {
+        return 0.0;
+    }
+    let bb = BBox::from_points(pts);
+    (bb.max.x - bb.min.x).hypot(bb.max.y - bb.min.y)
+}
+
+/// Parallele Musterlinien in mehreren Richtungen über eine Kontur legen und
+/// am Polygon beschneiden.
+fn push_pattern_lines(
+    dl: &mut DisplayList,
+    e: &Entity,
+    st: &PrimStyle,
+    pts: &[Vec2],
+    angles: &[f64],
+    spacing: f64,
+) {
+    let origin = BBox::from_points(pts).center();
+    let reach = fill_diag(pts) * 0.5 + spacing;
+    // Genug Linien für die ganze Kontur, aber begrenzt — ein sehr kleiner
+    // Abstand darf das Zeichnen nicht lahmlegen.
+    let n = ((reach / spacing).ceil() as i64 + 1).clamp(1, 4000);
+    for &ang in angles {
+        let nrm = Vec2::polar(ang + std::f64::consts::FRAC_PI_2, 1.0);
+        let dir = Vec2::polar(ang, 1.0);
+        for i in -n..=n {
+            let off = nrm * (i as f64 * spacing);
+            let a = origin + off - dir * reach;
+            let b = origin + off + dir * reach;
+            for (q0, q1) in clip_line_polygon(a, b, pts) {
+                dl.push(Prim {
+                    shape: Shape::Line(q0, q1),
+                    style: *st,
+                    entity: e.id,
+                    layer: e.layer,
+                });
+            }
+        }
+    }
+}
+
+/// Punktraster im gedrehten Musterraster, nur innerhalb der Kontur.
+fn push_pattern_dots(
+    dl: &mut DisplayList,
+    e: &Entity,
+    st: &PrimStyle,
+    pts: &[Vec2],
+    angle: f64,
+    spacing: f64,
+) {
+    let origin = BBox::from_points(pts).center();
+    let dir = Vec2::polar(angle, 1.0);
+    let nrm = dir.perp();
+    // Rasterweite notfalls vergröbern, damit eine große Fläche bei kleinem
+    // Abstand nicht zehntausende Punkte erzeugt.
+    let mut spacing = spacing;
+    let half = fill_diag(pts) * 0.5 + spacing;
+    while (2.0 * half / spacing).powi(2) > 30000.0 {
+        spacing *= 1.5;
+    }
+    let r = (spacing * 0.055).max(st.width * 0.9).max(0.05);
+    let n = ((half / spacing).ceil() as i64 + 1).clamp(1, 4000);
+    for i in -n..=n {
+        for j in -n..=n {
+            let p = origin + dir * (i as f64 * spacing) + nrm * (j as f64 * spacing);
+            if !point_in_polygon(p, pts) {
+                continue;
+            }
+            dl.push(Prim {
+                shape: Shape::Dot { p, r },
+                style: *st,
+                entity: e.id,
+                layer: e.layer,
+            });
+        }
+    }
+}
+
+/// Dämmung: Mäanderlinien (Mineralwolle) entlang der Musterrichtung, am
+/// Polygon beschnitten.
+fn push_pattern_meander(
+    dl: &mut DisplayList,
+    e: &Entity,
+    st: &PrimStyle,
+    pts: &[Vec2],
+    angle: f64,
+    spacing: f64,
+) {
+    let origin = BBox::from_points(pts).center();
+    let dir = Vec2::polar(angle, 1.0);
+    let nrm = dir.perp();
+    // Rasterweite notfalls vergröbern, damit die Zahl der Wellensegmente
+    // begrenzt bleibt (die Displayliste wird je Stand einmal gebaut).
+    let mut spacing = spacing;
+    let mut half = fill_diag(pts) * 0.5 + spacing;
+    while (2.0 * half / spacing) * (2.0 * half / (spacing * 2.0 / 10.0)) > 40000.0 {
+        spacing *= 1.5;
+        half = fill_diag(pts) * 0.5 + spacing;
+    }
+    let amp = spacing * 0.45;
+    let period = spacing * 2.0;
+    // Auflösung so wählen, dass die Welle glatt bleibt und die Zahl der
+    // Segmente trotzdem begrenzt ist.
+    let step = (period / 10.0).max(half / 400.0).max(0.2);
+    let steps = ((half * 2.0) / step).ceil() as i64;
+    let n = ((half / spacing).ceil() as i64 + 1).clamp(1, 400);
+    for i in -n..=n {
+        let base = origin + nrm * (i as f64 * spacing);
+        let mut prev: Option<Vec2> = None;
+        for k in 0..=steps {
+            let s = -half + k as f64 * step;
+            let off = ((s / period) * std::f64::consts::TAU).sin() * amp;
+            let p = base + dir * s + nrm * off;
+            if let Some(q) = prev {
+                for (q0, q1) in clip_line_polygon(q, p, pts) {
+                    dl.push(Prim {
+                        shape: Shape::Line(q0, q1),
+                        style: *st,
+                        entity: e.id,
+                        layer: e.layer,
+                    });
+                }
+            }
+            prev = Some(p);
+        }
+    }
 }
 
 fn render_polyline(
@@ -1461,7 +1621,7 @@ fn render_wall(
     a: Vec2,
     b: Vec2,
     thickness: f64,
-    hatch: Option<HatchPattern>,
+    hatch: Option<FillPattern>,
     xf: Affine,
     dl: &mut DisplayList,
 ) {
@@ -1558,14 +1718,14 @@ fn render_wall(
         }
         // Schraffur der Wandfläche
         if let Some(hp) = hatch {
-            if hp != HatchPattern::Solid {
+            if hp != FillPattern::Solid {
                 let thin = PrimStyle {
                     width: st.width * 0.55,
                     ..*st
                 };
                 let seg_dir = (p1 - p0).normalized();
                 match hp {
-                    HatchPattern::Insulation => {
+                    FillPattern::Insulation => {
                         // Mäanderlinie (Mineralwolle/ Dämmung)
                         let seg_len = p0.dist(p1);
                         let period = (4.0 * h).max(80.0);
@@ -1599,7 +1759,7 @@ fn render_wall(
                             }
                         }
                         let mut angles = vec![std::f64::consts::FRAC_PI_4];
-                        if hp == HatchPattern::Cross {
+                        if hp == FillPattern::Cross {
                             angles.push(std::f64::consts::FRAC_PI_4 + std::f64::consts::FRAC_PI_2);
                         }
                         let sp = (thickness * 0.25).max(12.0);
@@ -2469,7 +2629,7 @@ fn entity_segments_tief(doc: &Document, e: &Entity, depth: usize) -> Vec<Seg> {
             };
             out.extend(pl.segments());
         }
-        EntityKind::Hatch { boundary, .. } => {
+        EntityKind::Fill { boundary, .. } => {
             for i in 0..boundary.len() {
                 out.push(Seg::Line(boundary[i], boundary[(i + 1) % boundary.len()]));
             }

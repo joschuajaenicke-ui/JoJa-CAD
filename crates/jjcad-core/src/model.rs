@@ -173,16 +173,24 @@ pub enum EntityKind {
         verts: Vec<Vertex>,
         closed: bool,
     },
-    Hatch {
+    /// Füllfläche: Muster + Flächenfarbe + optionale Randlinie.
+    ///
+    /// Der einzige gefüllte Objekttyp — die frühere Schraffur (Typ
+    /// `"hatch"`) wird beim Laden migriert (siehe `persist::from_json`).
+    Fill {
+        /// Geschlossene Kontur (mm, wie eingegeben).
         boundary: Vec<Vec2>,
         #[serde(default)]
-        pattern: HatchPattern,
+        pattern: FillPattern,
+        /// Drehung des Musters (Bogenmaß, 0 = waagerecht)
         #[serde(default)]
-        angle: f64,
-        #[serde(default = "default_hatch_spacing")]
-        spacing: f64,
+        pattern_angle: f64,
+        /// Musterabstand bzw. Rasterweite in mm
+        #[serde(default = "default_pattern_scale")]
+        pattern_scale: f64,
+        /// Randlinie entlang der Kontur zeichnen (Farbe aus `style.color`)
         #[serde(default)]
-        filled: bool,
+        border: bool,
     },
     Text {
         p: Vec2,
@@ -236,7 +244,7 @@ pub enum EntityKind {
         material: String,
         /// Schraffur der Wandfläche (None = Vollfläche in der Füllfarbe)
         #[serde(default)]
-        hatch: Option<crate::style::HatchPattern>,
+        hatch: Option<FillPattern>,
         /// Ausrichtung des Wandkörpers zur Achse
         #[serde(default)]
         align: crate::style::WallAlign,
@@ -302,7 +310,7 @@ pub enum EntityKind {
     },
 }
 
-fn default_hatch_spacing() -> f64 {
+fn default_pattern_scale() -> f64 {
     100.0
 }
 fn default_wall_height() -> f64 {
@@ -333,7 +341,7 @@ impl EntityKind {
             EntityKind::Arc { .. } => "Bogen",
             EntityKind::Ellipse { .. } => "Ellipse",
             EntityKind::Polyline { .. } => "Polylinie",
-            EntityKind::Hatch { .. } => "Schraffur",
+            EntityKind::Fill { .. } => "Füllfläche",
             EntityKind::Text { .. } => "Text",
             EntityKind::Dim { .. } => "Maß",
             EntityKind::DimChain { .. } => "Maßkette",

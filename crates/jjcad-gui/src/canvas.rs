@@ -6,7 +6,6 @@ use egui::{Align2, Color32, FontId, Painter, Pos2, Rect, Response, Sense, Shape,
 use jjcad_core::actions;
 use jjcad_core::geom::*;
 use jjcad_core::geom::Vec2 as V2;
-use jjcad_core::style::HatchPattern;
 use jjcad_core::model::*;
 use jjcad_core::render::{self, DisplayList, Prim, Shape as PShape};
 use jjcad_core::snap;
@@ -1092,7 +1091,7 @@ fn draw_tool_preview(
                 col,
             );
         }
-        "draw.hatch" => {
+        "draw.fill" | "draw.hatch" => {
             p.circle_stroke(w2s(cursor), 9.0, dashed);
             label = "Kontur anklicken".into();
         }
@@ -2310,7 +2309,7 @@ fn tool_click(app: &mut App, w: V2) {
             });
             app.tool = None;
         }
-        "draw.hatch" => {
+        "draw.fill" | "draw.hatch" => {
             let tol = (10.0 / app.current_view().zoom).max(0.5);
             let hit = snap::hit_test(app.doc(), w, tol, None);
             if let Some(id) = hit {
@@ -2328,19 +2327,13 @@ fn tool_click(app: &mut App, w: V2) {
                     };
                     match boundary {
                         Some(pts) => {
-                            let p = app.options.hatch_pattern;
-                            let pat = match p {
-                                HatchPattern::Solid => "solid",
-                                HatchPattern::Lines => "lines",
-                                HatchPattern::Cross => "cross",
-                                HatchPattern::Dots => "dots",
-                                HatchPattern::Insulation => "insulation",
-                            };
+                            let pat = app.options.fill_pattern.key();
                             let _ = run(
                                 app,
-                                "draw.hatch",
+                                "draw.fill",
                                 json!({"boundary": pts.iter().map(|q| ax(*q)).collect::<Vec<_>>(),
-                                       "pattern": pat, "spacing": unit.from_mm(app.options.hatch_spacing)}),
+                                       "pattern": pat,
+                                       "scale": unit.from_mm(app.options.fill_scale)}),
                             );
                         }
                         None => app.toast("Bitte eine geschlossene Kontur anklicken"),
