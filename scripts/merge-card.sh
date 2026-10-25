@@ -25,10 +25,18 @@ if [ "$BEHIND" != "0" ] && [ "${JJCAD_MERGE_ALLOW_STALE:-0}" != "1" ]; then
     exit 4
 fi
 
-if git merge --no-ff --no-edit -m "Merge $BRANCH (Manager)" "$BRANCH"; then
+if git merge --no-ff --no-edit -m "Merge $BRANCH (Manager)" "$BRANCH" >/tmp/merge-card-merge.log 2>&1; then
     :
 else
-    echo "KONFLIKT in $BRANCH — Merge abgebrochen, Karte muss neu gebaut werden." >&2
+    # Nicht jeder Fehlschlag ist ein Konflikt (z. B. fehlende Git-Identitaet)
+    if grep -qiE "konflikt|conflict" /tmp/merge-card-merge.log; then
+        echo "KONFLIKT in $BRANCH — Merge abgebrochen, Karte muss neu gebaut werden." >&2
+        grep -iE "konflikt|conflict" /tmp/merge-card-merge.log | head -5 >&2
+    else
+        echo "MERGE FEHLGESCHLAGEN in $BRANCH (kein Konflikt) — nichts veraendert." >&2
+        tail -6 /tmp/merge-card-merge.log >&2
+        echo "Details: /tmp/merge-card-merge.log" >&2
+    fi
     git merge --abort 2>/dev/null || true
     git reset --hard -q "$BEFORE"
     exit 2

@@ -540,6 +540,20 @@ impl App {
                         ];
                     }
                 }
+                // Freie Punktfolge: derselbe Vorschau-Zustand wie oben, nur über
+                // das zweite Füll-Werkzeug — so lässt sich prüfen, dass beide
+                // Werkzeuge gleich aussehen.
+                "fillpoints" => {
+                    self.start_tool("draw.fill.points");
+                    if let Some(t) = &mut self.tool {
+                        t.pts = vec![
+                            V2::new(2000.0, 2000.0),
+                            V2::new(7000.0, 2000.0),
+                            V2::new(7000.0, 5000.0),
+                            V2::new(4500.0, 6500.0),
+                        ];
+                    }
+                }
                 "selwalls" => {
                     // erste zwei Wände auswählen: Panel der Mehrfachauswahl
                     let ids: Vec<u64> = self
@@ -552,6 +566,9 @@ impl App {
                         .collect();
                     self.session_mut().selection = ids;
                 }
+                "unitmm" => self.session_mut().doc.settings.input_unit = Unit::Mm,
+                "unitcm" => self.session_mut().doc.settings.input_unit = Unit::Cm,
+                "unitm" => self.session_mut().doc.settings.input_unit = Unit::M,
                 "wallcolors" => {
                     // Prüfzustand: Linie und Füllfläche der ersten Wand in
                     // zwei deutlich verschiedenen Farben
@@ -1375,9 +1392,22 @@ impl App {
                 (egui::Key::Y, "y"),
             ];
             for (key, label) in keys {
-                if ctx.input(|i| i.key_pressed(key)) {
+                // Einzeltasten gelten nur ohne Umschalt — sonst würde
+                // Umschalt+I zusätzlich die Belegung von "i" auslösen.
+                if !shift && ctx.input(|i| i.key_pressed(key)) {
                     if let Some(action) = self.prefs.action_for_key(label) {
                         run = Some(action);
+                    }
+                }
+            }
+            // Kürzel mit Umschalt, in der Belegung als "shift+i" gespeichert
+            // (Umschalt+I: Füllfläche aus einer freien Punktfolge).
+            if shift {
+                for (key, label) in [(egui::Key::I, "shift+i")] {
+                    if ctx.input(|i| i.key_pressed(key)) {
+                        if let Some(action) = self.prefs.action_for_key(label) {
+                            run = Some(action);
+                        }
                     }
                 }
             }
@@ -1828,8 +1858,11 @@ fn rail(ui: &mut egui::Ui, icon: &str, tooltip: &str, chevron: &str) -> bool {
                     });
                     widgets::vline(ui, RIBBON_H);
                     self.group(ui, "Füllen", |ui, app| {
+                        // Drei Eingaben für dasselbe Objekt: Umriss abfahren,
+                        // freie Punktfolge, geschlossene Kontur anklicken.
                         for (id, icon, label) in [
                             ("draw.fill.boundary", "fill", "Umriss"),
+                            ("draw.fill.points", "fill", "Punktfolge"),
                             ("draw.fill", "fill", "Kontur"),
                         ] {
                             if widgets::ribbon_button(ui, icon, label, app.tool_id() == Some(id)).clicked() {
@@ -2482,7 +2515,7 @@ fn rail(ui: &mut egui::Ui, icon: &str, tooltip: &str, chevron: &str) -> bool {
                     ui.label(theme::dim("Text"));
                     ui.add_sized([240.0, 22.0], egui::TextEdit::singleline(&mut self.options.text));
                 }
-                "draw.fill" | "draw.hatch" | "draw.fill.boundary" => {
+                "draw.fill" | "draw.hatch" | "draw.fill.boundary" | "draw.fill.points" => {
                     ui.label(theme::dim("Muster"));
                     let items: Vec<(FillPattern, String)> = FillPattern::ALL
                         .iter()
@@ -2933,6 +2966,13 @@ fn commands_hint(tool: &Tool) -> &'static str {
         "draw.text" => "Position klicken",
         "draw.polyline" => "Punkte klicken – Enter beendet",
         "draw.fill.boundary" => "Umriss abfahren – Enter oder Doppelklick beendet",
+        "draw.fill.points" => {
+            if tool.pts.len() < 3 {
+                "Punkte klicken – mindestens drei, Enter schließt"
+            } else {
+                "Enter oder Doppelklick schließt die Fläche, ESC verwirft"
+            }
+        }
         "draw.fill" | "draw.hatch" => "Geschlossene Kontur anklicken",
         "draw.arc" => match tool.pts.len() {
             0 => "Startpunkt",

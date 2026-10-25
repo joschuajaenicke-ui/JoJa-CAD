@@ -370,7 +370,7 @@ fn pending_props(app: &mut App, ui: &mut Ui) {
     // Abstand, Randlinie) — Werte bleiben für das nächste Element stehen.
     let is_fill = matches!(
         tool_id.as_str(),
-        "draw.fill" | "draw.hatch" | "draw.fill.boundary"
+        "draw.fill" | "draw.hatch" | "draw.fill.boundary" | "draw.fill.points"
     );
     let label = app
         .tool
@@ -1034,14 +1034,14 @@ fn entity_props(app: &mut App, ui: &mut Ui, id: Id) {
     let len = entity_length(&e);
     if len > 0.0 {
         widgets::field_row(ui, "Länge", |ui| {
-            ui.label(theme::mono(unit.format(len, 2)));
+            ui.label(theme::mono(unit.format(len, unit.decimals())));
         });
     }
     if let jjcad_core::model::EntityKind::Circle { r, .. }
     | jjcad_core::model::EntityKind::Arc { r, .. } = &e.kind
     {
         widgets::field_row(ui, "Radius", |ui| {
-            ui.label(theme::mono(unit.format(*r, 2)));
+            ui.label(theme::mono(unit.format(*r, unit.decimals())));
         });
     }
     let area = entity_area(&e);
@@ -1158,7 +1158,7 @@ fn entity_props(app: &mut App, ui: &mut Ui, id: Id) {
             ui.add_space(4.0);
             ui.label(theme::dim(format!(
                 "Länge {} · Achse ({:.2}, {:.2}) → ({:.2}, {:.2})",
-                unit.format(a.dist(*b), 2),
+                unit.format(a.dist(*b), unit.decimals()),
                 unit.from_mm(a.x),
                 unit.from_mm(a.y),
                 unit.from_mm(b.x),
@@ -1234,7 +1234,7 @@ fn entity_props(app: &mut App, ui: &mut Ui, id: Id) {
                         .take(boundary.len())
                         .map(|(a, b)| a.dist(*b))
                         .sum::<f64>(),
-                    2
+                    unit.decimals()
                 )
             )));
         }
@@ -1531,20 +1531,20 @@ fn entity_props(app: &mut App, ui: &mut Ui, id: Id) {
                 if *closed { "geschlossen" } else { "offen" }
             )));
             ui.label(theme::dim(format!("Länge {}", unit.format(
-                Polyline { verts: verts.clone(), closed: *closed }.len(), 2
+                Polyline { verts: verts.clone(), closed: *closed }.len(), unit.decimals()
             ))));
         }
         EntityKind::Line { a, b } => {
             ui.label(theme::dim(format!(
                 "Länge {} · Winkel {:.1}°",
-                unit.format(a.dist(*b), 2),
+                unit.format(a.dist(*b), unit.decimals()),
                 (*b - *a).angle().to_degrees()
             )));
         }
         EntityKind::Arc { r, a0, a1, .. } => {
             ui.label(theme::dim(format!(
                 "Radius {} · Winkel {:.0}°",
-                unit.format(*r, 2),
+                unit.format(*r, unit.decimals()),
                 (a1 - a0).to_degrees().abs()
             )));
         }
@@ -1743,7 +1743,7 @@ fn multi_props(app: &mut App, ui: &mut Ui, ids: &[Id]) {
     }
     if total_len > 0.0 {
         widgets::field_row(ui, "Gesamtlänge", |ui| {
-            ui.label(theme::mono(unit.format(total_len, 2)));
+            ui.label(theme::mono(unit.format(total_len, unit.decimals())));
         });
     }
     if total_area > 0.0 {

@@ -78,6 +78,37 @@ impl Unit {
         format_number(self.from_mm(mm), decimals)
     }
 
+    /// Längenwert für Eingabefelder: mindestens die Stellenzahl der Einheit
+    /// (mm 0, cm 1, m 2), mehr nur wenn der Wert sie wirklich braucht.
+    ///
+    /// Eingabefelder dürfen keine Genauigkeit verschweigen: mit fester
+    /// Stellenzahl stand für 0,24 m nur „0 m“ im Feld. Umgekehrt soll ein
+    /// mm-Feld nicht „240,0“ zeigen. Deshalb: Nachkommastellen der Einheit
+    /// immer, zwei Reserve-Stellen nur bei echtem Bedarf (0,2405 m), keine
+    /// Tausenderpunkte — die wären beim Wiedereinlesen nicht eindeutig
+    /// („12.500“ könnte 12500 oder 12,5 heißen).
+    pub fn format_length_auto(self, mm: f64) -> String {
+        if !mm.is_finite() {
+            return "–".to_string();
+        }
+        let min = self.decimals();
+        let mut s = format!("{:.*}", min + 2, self.from_mm(mm)).replace('.', ",");
+        if let Some(pos) = s.rfind(',') {
+            let mut dec = s.len() - pos - 1;
+            while dec > min && s.ends_with('0') {
+                s.pop();
+                dec -= 1;
+            }
+            if dec == 0 {
+                s.pop();
+            }
+        }
+        if s == "-0" {
+            s = "0".to_string();
+        }
+        s
+    }
+
     /// Fläche (mm²) in der Einheit², z. B. "12,5 m²".
     pub fn format_area(self, mm2: f64, decimals: usize) -> String {
         let f = self.mm() * self.mm();
@@ -209,6 +240,28 @@ mod tests {
         assert_eq!(format_number(1234567.891, 2), "1.234.567,89");
         assert_eq!(format_number(-0.5, 2), "-0,50");
         assert_eq!(format_number(0.0, 2), "0,00");
+    }
+
+    #[test]
+    fn laengenfeld_format() {
+        // Metern: 240 mm Wanddicke und 2750 mm Höhe waren als „0 m“/„3 m“ sichtbar
+        assert_eq!(Unit::M.format_length_auto(240.0), "0,24");
+        assert_eq!(Unit::M.format_length_auto(2750.0), "2,75");
+        assert_eq!(Unit::M.format_length_auto(1000.0), "1,00");
+        assert_eq!(Unit::M.format_length_auto(0.0), "0,00");
+        // Millimeter: keine überflüssigen Nullen, aber echte Genauigkeit bleibt
+        assert_eq!(Unit::Mm.format_length_auto(240.0), "240");
+        assert_eq!(Unit::Mm.format_length_auto(240.5), "240,5");
+        // Zentimeter: eine Stelle wie die Einheit vorgibt
+        assert_eq!(Unit::Cm.format_length_auto(2750.0), "275,0");
+        assert_eq!(Unit::Cm.format_length_auto(2755.0), "275,5");
+        // kein Tausenderpunkt: sonst wäre „12.500“ beim Wiedereinlesen 12,5
+        assert_eq!(Unit::Mm.format_length_auto(12500.0), "12500");
+        // mehr als Einheitenstellenzahl nur bei Bedarf
+        assert_eq!(Unit::M.format_length_auto(240.5), "0,2405");
+        // negative Werte
+        assert_eq!(Unit::M.format_length_auto(-1200.0), "-1,20");
+        assert_eq!(Unit::Mm.format_length_auto(-0.5), "-0,5");
     }
 
     #[test]

@@ -98,6 +98,7 @@ pub const ACTIONS: &[ActionDef] = &[
     act!("draw.point", "Punkt", Zeichnen, "point", "p", "Punkt setzen", true),
     act!("draw.fill", "Füllfläche", Zeichnen, "fill", "", "Geschlossene Kontur klicken", true),
     act!("draw.fill.boundary", "Fläche nach Umriss", Zeichnen, "fill", "i", "Umriss abfahren: Punkte klicken, Enter beendet", true),
+    act!("draw.fill.points", "Fläche nach Punktfolge", Zeichnen, "fill", "shift+i", "Punkte klicken, Enter schließt die Fläche", true),
     act!("draw.text", "Text", Zeichnen, "text", "t", "Position klicken, dann Text eingeben", true),
     act!("draw.ellipse", "Ellipse", Zeichnen, "ellipse", "", "Mittelpunkt und Achsen klicken", true),
 
@@ -191,6 +192,7 @@ pub fn is_mutating(id: &str) -> bool {
             | "draw.point"
             | "draw.fill"
             | "draw.fill.boundary"
+            | "draw.fill.points"
             | "draw.hatch"
             | "draw.text"
             | "draw.ellipse"
@@ -743,6 +745,40 @@ fn ids_from(p: &Params, key: &str) -> Vec<Id> {
     p.ids(key).unwrap_or_default()
 }
 
+/// Gemeinsamer Abschluss aller Füll-Werkzeuge: aus einer geschlossenen Kontur
+/// wird genau eine Füllfläche.
+///
+/// Jede Eingabe — Kontur anklicken (`draw.fill`), Umriss abfahren
+/// (`draw.fill.boundary`), freie Punktfolge (`draw.fill.points`) und der alte
+/// Name `draw.hatch` — läuft hier durch. Damit setzen alle Werkzeuge Muster,
+/// Winkel, Abstand, Randlinie und Stil an derselben Stelle und erzeugen
+/// zwangsläufig dasselbe Objekt; ein zweiter Konstruktionsweg würde früher oder
+/// später ein Feld anders setzen.
+fn add_fill(doc: &mut Document, boundary: Vec<Vec2>, p: &Params) -> Result<Value, String> {
+    if boundary.len() < 3 {
+        return Err("Füllfläche braucht mindestens drei Punkte".into());
+    }
+    let layer = resolve_layer(doc, p);
+    let idn = doc.new_id();
+    let mut e = Entity::new(
+        idn,
+        layer,
+        EntityKind::Fill {
+            boundary,
+            pattern: p.fill_pattern("pattern").unwrap_or(FillPattern::Lines),
+            pattern_angle: p.angle_or("angle", std::f64::consts::FRAC_PI_4),
+            pattern_scale: p
+                .len("scale")
+                .or_else(|| p.len("spacing"))
+                .unwrap_or(100.0),
+            border: p.boolean_or("border", true),
+        },
+    );
+    apply_common(doc, &mut e, p, layer);
+    doc.add_entity(e);
+    Ok(json!({"ok": true, "created": [idn]}))
+}
+
 // ---------------------------------------------------------------------------
 // Ausführung
 // ---------------------------------------------------------------------------
@@ -843,37 +879,17 @@ pub fn execute(doc: &mut Document, id: &str, params: &Value) -> Result<Value, St
             doc.add_entity(e);
             Ok(json!({"ok": true, "created": [idn]}))
         }
-        // Eine Füllfläche aus einer Punktliste. Alle drei Namen laufen durch
-        // denselben Code: `draw.fill` (Kontur anklicken, Klickpfad in der GUI),
-        // `draw.fill.boundary` (Umriss abfahren) und der alte Name `draw.hatch`
-        // (Hotbar-Vorgaben, MCP-Aufrufe von vor der Vereinheitlichung).
-        "draw.fill" | "draw.fill.boundary" | "draw.hatch" => {
+        // Eine Füllfläche aus einer Punktliste. Alle vier Namen laufen durch
+        // denselben Abschluss (`add_fill`): `draw.fill` (Kontur anklicken),
+        // `draw.fill.boundary` (Umriss abfahren), `draw.fill.points` (freie
+        // Punktfolge) und der alte Name `draw.hatch` (Hotbar-Vorgaben,
+        // MCP-Aufrufe von vor der Vereinheitlichung).
+        "draw.fill" | "draw.fill.boundary" | "draw.fill.points" | "draw.hatch" => {
             let boundary = p
                 .pts("boundary")
                 .or_else(|| p.pts("pts"))
                 .ok_or_else(|| "Parameter 'boundary' fehlt".to_string())?;
-            if boundary.len() < 3 {
-                return Err("Füllfläche braucht mindestens drei Punkte".into());
-            }
-            let layer = resolve_layer(doc, &p);
-            let idn = doc.new_id();
-            let mut e = Entity::new(
-                idn,
-                layer,
-                EntityKind::Fill {
-                    boundary,
-                    pattern: p.fill_pattern("pattern").unwrap_or(FillPattern::Lines),
-                    pattern_angle: p.angle_or("angle", std::f64::consts::FRAC_PI_4),
-                    pattern_scale: p
-                        .len("scale")
-                        .or_else(|| p.len("spacing"))
-                        .unwrap_or(100.0),
-                    border: p.boolean_or("border", true),
-                },
-            );
-            apply_common(doc, &mut e, &p, layer);
-            doc.add_entity(e);
-            Ok(json!({"ok": true, "created": [idn]}))
+            add_fill(doc, boundary, &p)
         }
         "draw.text" => {
             let pt = require_pt(&p, "p")?;
