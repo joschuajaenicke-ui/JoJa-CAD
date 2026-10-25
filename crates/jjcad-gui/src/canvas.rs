@@ -2305,7 +2305,7 @@ fn tool_click(app: &mut App, w: V2) {
                         "modify.rotate",
                         json!({"ids": ids, "center": ax(center), "angle": angle}),
                     );
-                    app.toast(&format!("Gedreht um {:.1}°", angle));
+                    app.toast(&format!("Gedreht um {}°", format_number(angle, 1)));
                     app.tool = None;
                 }
                 RotateStep::Reject(msg) => app.toast(msg),
