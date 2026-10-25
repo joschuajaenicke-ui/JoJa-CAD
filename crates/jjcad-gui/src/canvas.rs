@@ -444,8 +444,12 @@ pub fn show(app: &mut App, ui: &mut Ui) {
                     }
                 }
             }
-            let ignore: Vec<Id> = app.selection().to_vec();
-            if let Some(hit) = snap::find_snap(app.doc(), w, tol, reference, &ignore) {
+            // Ausgewählte Objekte bleiben mit ihren Ecken/Endpunkten fangbar.
+            // Nur während sie live gezogen werden (Maus-Verschieben, Griff),
+            // fallen sie ganz aus dem Fang — sonst zieht der Fang das Objekt
+            // auf sich selbst zurück und die Bewegung klebt am Startpunkt.
+            let (ignore, keep) = snap_ignore_keep(app);
+            if let Some(hit) = snap::find_snap(app.doc(), w, tol, reference, ignore, keep) {
                 w = hit.point;
                 app.snap_label = Some(hit.kind.label().to_string());
             }
@@ -1365,11 +1369,35 @@ fn snap_at(app: &App, rect: Rect, view: View, pos: Pos2) -> V2 {
             }
         }
     }
-    let ignore: Vec<Id> = app.selection().to_vec();
-    if let Some(hit) = snap::find_snap(app.doc(), w, tol, reference, &ignore) {
+    let (ignore, keep) = snap_ignore_keep(app);
+    if let Some(hit) = snap::find_snap(app.doc(), w, tol, reference, ignore, keep) {
         w = hit.point;
     }
     w
+}
+
+/// Fang-Ausschluss und Fang-Auswahl für den aktuellen Zustand.
+///
+/// Normalerweise ist die Auswahl ausdrücklich *erlaubt* (Ecken/Endpunkte), und
+/// nichts ist ausgeschlossen. Während die Auswahl selbst bewegt wird (Ziehen
+/// mit der Maus, Griff, Verschieben/Kopieren ab dem Basispunkt), fällt sie
+/// dagegen ganz aus dem Fang, weil ihre Ecken in diesem Moment mit dem Zeiger
+/// wandern — sonst klebt die Bewegung am Startpunkt.
+fn snap_ignore_keep(app: &App) -> (&[Id], &[Id]) {
+    let auswahl_wandert = app.move_drag.is_some()
+        || app.grip_drag.is_some()
+        || app
+            .tool
+            .as_ref()
+            .map(|t| {
+                matches!(t.action.as_str(), "modify.move" | "modify.copy") && !t.pts.is_empty()
+            })
+            .unwrap_or(false);
+    if auswahl_wandert {
+        (app.selection(), &[])
+    } else {
+        (&[], app.selection())
+    }
 }
 
 fn handle_input(

@@ -530,6 +530,9 @@ impl App {
                         self.session_mut().selection.clear();
                     }
                 }
+                // Prüfhilfe: Verschieben-Werkzeug starten (Basispunkt-Fang an
+                // der ausgewählten Wand im Screenshot belegbar)
+                "movetool" => self.start_tool("modify.move"),
                 "selwindow" => {
                     if let Some(id) = self
                         .doc()
