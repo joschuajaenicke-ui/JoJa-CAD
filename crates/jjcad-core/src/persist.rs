@@ -15,8 +15,11 @@ pub fn to_json(doc: &Document) -> Result<String, String> {
 }
 
 pub fn from_json(s: &str) -> Result<Document, String> {
-    let mut doc: Document =
-        serde_json::from_str(s).map_err(|e| format!("Datei ist keine gültige JoJa-CAD-Zeichnung: {e}"))?;
+    let mut raw: serde_json::Value = serde_json::from_str(s)
+        .map_err(|e| format!("Datei ist keine gültige JoJa-CAD-Zeichnung: {e}"))?;
+    migrate_legacy_fills(&mut raw);
+    let mut doc: Document = serde_json::from_value(raw)
+        .map_err(|e| format!("Datei ist keine gültige JoJa-CAD-Zeichnung: {e}"))?;
     if doc.format != FORMAT_NAME {
         return Err(format!(
             "Unbekanntes Format '{}' (erwartet '{}')",
@@ -50,6 +53,85 @@ pub fn from_json(s: &str) -> Result<Document, String> {
     actions::normalize_openings(&mut doc);
     doc.modified = false;
     Ok(doc)
+}
+
+/// Einzige Migrationsstelle für den alten Objekttyp `Hatch` (Schraffur).
+///
+/// Bis v0.2 gab es neben der Füllfläche eine eigene Schraffur. Beide sind jetzt
+/// `EntityKind::Fill`; alte Dateien werden hier beim Laden umgeschrieben:
+///
+/// * `type: "hatch"`  → `type: "fill"`
+/// * `angle`          → `pattern_angle` (Bogenmaß, unverändert)
+/// * `spacing`        → `pattern_scale` (mm, unverändert)
+/// * `filled: true`   → `style.fill` (die alten Renderer zeichneten die Fläche
+///   dann in der aufgehellten Linienfarbe; ohne Angabe bleibt sie leer)
+///
+/// Serde-Alias geht nicht, weil sich neben dem Typnamen auch Feldnamen ändern.
+fn migrate_legacy_fills(v: &mut serde_json::Value) {
+    let layer_colors: std::collections::BTreeMap<u64, crate::style::Color> = v
+        .get("layers")
+        .and_then(|l| l.as_array())
+        .map(|arr| {
+            arr.iter()
+                .filter_map(|l| {
+                    let id = l.get("id")?.as_u64()?;
+                    let col = l.get("color").and_then(|c| c.as_str())?;
+                    Some((id, crate::style::Color::from_hex(col)?))
+                })
+                .collect()
+        })
+        .unwrap_or_default();
+
+    let mut fix_list = |list: &mut Vec<serde_json::Value>| {
+        for e in list.iter_mut() {
+            let Some(kind) = e.get_mut("kind").and_then(|k| k.as_object_mut()) else {
+                continue;
+            };
+            if kind.get("type").and_then(|t| t.as_str()) != Some("hatch") {
+                continue;
+            }
+            kind.insert("type".into(), serde_json::json!("fill"));
+            if let Some(ang) = kind.remove("angle") {
+                kind.insert("pattern_angle".into(), ang);
+            }
+            if let Some(sp) = kind.remove("spacing") {
+                kind.insert("pattern_scale".into(), sp);
+            }
+            let filled = kind
+                .remove("filled")
+                .and_then(|f| f.as_bool())
+                .unwrap_or(false);
+            if filled {
+                // Der alte Renderer nahm die Objektfarbe, sonst die Layerfarbe.
+                let layer = e.get("layer").and_then(|l| l.as_u64()).unwrap_or(0);
+                let base = e
+                    .get("style")
+                    .and_then(|s| s.get("color"))
+                    .and_then(|c| c.as_str())
+                    .and_then(crate::style::Color::from_hex)
+                    .or_else(|| layer_colors.get(&layer).copied())
+                    .unwrap_or(crate::style::Color::BLACK);
+                if !e.get("style").map(|s| s.is_object()).unwrap_or(false) {
+                    e["style"] = serde_json::json!({});
+                }
+                if let Some(st) = e.get_mut("style").and_then(|s| s.as_object_mut()) {
+                    st.entry("fill")
+                        .or_insert_with(|| serde_json::json!(base.mix(crate::style::Color::WHITE, 0.72).to_hex()));
+                }
+            }
+        }
+    };
+
+    if let Some(arr) = v.get_mut("entities").and_then(|e| e.as_array_mut()) {
+        fix_list(arr);
+    }
+    if let Some(blocks) = v.get_mut("blocks").and_then(|b| b.as_array_mut()) {
+        for b in blocks.iter_mut() {
+            if let Some(arr) = b.get_mut("entities").and_then(|e| e.as_array_mut()) {
+                fix_list(arr);
+            }
+        }
+    }
 }
 
 pub fn save_document(doc: &mut Document, path: &Path) -> Result<(), String> {
@@ -331,6 +413,21 @@ impl UserPrefs {
         }
         if self.bindings.is_empty() {
             self.bindings = UserPrefs::default().bindings;
+        }
+        // `bindings` wird als Ganzes gespeichert. Eine später ergänzte Aktion
+        // bekäme ihre Werktaste sonst nie: fehlende Einträge nachziehen, solange
+        // die Taste nicht schon einer anderen Aktion gehört.
+        for a in actions::ACTIONS {
+            if a.key.is_empty() || self.bindings.contains_key(a.id) {
+                continue;
+            }
+            let frei = !self
+                .bindings
+                .values()
+                .any(|k| k.eq_ignore_ascii_case(a.key));
+            if frei {
+                self.bindings.insert(a.id.to_string(), a.key.to_string());
+            }
         }
         if self.active_preset >= self.hotbar_presets.len() {
             self.active_preset = 0;

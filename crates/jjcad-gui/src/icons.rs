@@ -136,7 +136,7 @@ pub fn paint(painter: &Painter, rect: Rect, name: &str, color: Color32) {
             i.line(4.0, 12.0, 8.0, 12.0);
             i.line(16.0, 12.0, 20.0, 12.0);
         }
-        "hatch" => {
+        "fill" | "hatch" => {
             i.rect(4.0, 5.0, 16.0, 14.0);
             for k in 0..5 {
                 i.line(5.0 + k as f32 * 3.4, 18.0, 10.0 + k as f32 * 3.4, 6.0);

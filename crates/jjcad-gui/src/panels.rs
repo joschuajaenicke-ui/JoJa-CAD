@@ -6,7 +6,7 @@ use crate::widgets;
 use egui::{Align, Color32, FontId, Layout, Pos2, Rect, RichText, Rounding, Sense, Stroke, Ui, Vec2};
 use jjcad_core::geom::Polyline;
 use jjcad_core::model::*;
-use jjcad_core::style::{Color, HatchPattern, LineType, PaperSize, WallAlign};
+use jjcad_core::style::{Color, LineType, PaperSize, WallAlign};
 use jjcad_core::units::{format_number, format_scale, Unit};
 use serde_json::{json, Value};
 
@@ -366,6 +366,12 @@ pub fn properties(app: &mut App, ui: &mut Ui) {
 fn pending_props(app: &mut App, ui: &mut Ui) {
     let tool_id = app.tool.as_ref().map(|t| t.action.clone()).unwrap_or_default();
     let is_wall = tool_id == "draw.wall";
+    // Beide Füllwerkzeuge tragen dieselben Typparameter (Muster, Winkel,
+    // Abstand, Randlinie) — Werte bleiben für das nächste Element stehen.
+    let is_fill = matches!(
+        tool_id.as_str(),
+        "draw.fill" | "draw.hatch" | "draw.fill.boundary"
+    );
     let label = app
         .tool
         .as_ref()
@@ -375,6 +381,8 @@ fn pending_props(app: &mut App, ui: &mut Ui) {
     // Gleiche Kopfzeile wie bei einem ausgewaehlten Objekt
     if is_wall {
         section_title(ui, "wall", "Wand");
+    } else if is_fill {
+        section_title(ui, "fill", "Füllfläche");
     } else {
         section_title(ui, "tool", &label);
     }
@@ -408,7 +416,7 @@ fn pending_props(app: &mut App, ui: &mut Ui) {
     let by_layer = app.ui.pending.color.is_none();
     let col = app.ui.pending.color.unwrap_or(Color::BLACK);
     let mut picked_col: Option<Option<Color>> = None;
-    let color_label = if is_wall { "Linienfarbe" } else { "Farbe" };
+    let color_label = if is_wall || is_fill { "Linienfarbe" } else { "Farbe" };
     widgets::field_row(ui, color_label, |ui| {
         picked_col = color_combo(ui, "pend_col", col, by_layer, false, "vom Layer");
     });
@@ -469,18 +477,18 @@ fn pending_props(app: &mut App, ui: &mut Ui) {
         let cur_hatch = app
             .options
             .wall_hatch
-            .unwrap_or(jjcad_core::style::HatchPattern::Solid);
-        let hatch_items: Vec<(jjcad_core::style::HatchPattern, String)> =
-            jjcad_core::style::HatchPattern::ALL
+            .unwrap_or(jjcad_core::style::FillPattern::Solid);
+        let hatch_items: Vec<(jjcad_core::style::FillPattern, String)> =
+            jjcad_core::style::FillPattern::ALL
                 .iter()
                 .map(|c| (*c, c.label().to_string()))
                 .collect();
-        let mut picked_hatch: Option<jjcad_core::style::HatchPattern> = None;
+        let mut picked_hatch: Option<jjcad_core::style::FillPattern> = None;
         widgets::field_row(ui, "Schraffur", |ui| {
             picked_hatch = pick_combo(ui, "pend_wall_hatch", cur_hatch, &hatch_items);
         });
         if let Some(hp) = picked_hatch {
-            app.options.wall_hatch = if hp == jjcad_core::style::HatchPattern::Solid {
+            app.options.wall_hatch = if hp == jjcad_core::style::FillPattern::Solid {
                 None
             } else {
                 Some(hp)
@@ -504,6 +512,56 @@ fn pending_props(app: &mut App, ui: &mut Ui) {
 
         ui.add_space(2.0);
         ui.label(theme::faint("Tab wechselt die Ausrichtung"));
+    }
+
+    // ---- Typparameter Füllfläche (gleiche Zeilen wie im Objekt-Panel) ----
+    if is_fill {
+        let pat_items: Vec<(jjcad_core::style::FillPattern, String)> =
+            jjcad_core::style::FillPattern::ALL
+                .iter()
+                .map(|c| (*c, c.label().to_string()))
+                .collect();
+        widgets::field_row(ui, "Muster", |ui| {
+            if let Some(p) = pick_combo(ui, "pend_fill_pattern", app.options.fill_pattern, &pat_items) {
+                app.options.fill_pattern = p;
+            }
+        });
+        let mut winkel = app.options.fill_angle.to_degrees();
+        widgets::field_row(ui, "Winkel", |ui| {
+            if ui
+                .add(crate::widgets::dv(&mut winkel).speed(1.0).suffix("°"))
+                .changed()
+            {
+                app.options.fill_angle = winkel.to_radians();
+            }
+        });
+        let mut abstand = app.options.fill_scale;
+        widgets::field_row(ui, "Abstand", |ui| {
+            if widgets::length_input(ui, &mut abstand, app.unit(), ui.available_width()) {
+                app.options.fill_scale = abstand;
+            }
+        });
+        let mut rand = app.options.fill_border;
+        widgets::field_row(ui, "Randlinie", |ui| {
+            if ui.checkbox(&mut rand, "").changed() {
+                app.options.fill_border = rand;
+            }
+        });
+
+        // Füllfarbe der Fläche — unabhängig von der Linienfarbe des Umrisses
+        let fill_unset = app.ui.pending.fill.is_none();
+        let fill_cur = app
+            .ui
+            .pending
+            .fill
+            .unwrap_or_else(|| col.mix(Color::WHITE, 0.72));
+        let mut picked_fill: Option<Option<Color>> = None;
+        widgets::field_row(ui, "Füllfarbe", |ui| {
+            picked_fill = color_combo(ui, "pend_fill_area", fill_cur, fill_unset, false, "Standard");
+        });
+        if let Some(v) = picked_fill {
+            app.ui.pending.fill = v;
+        }
     }
 }
 
@@ -714,7 +772,7 @@ fn linetype_combo(ui: &mut Ui, salt: &str, cur: LineType, mixed: bool) -> Option
 
 
 /// Einheitlicher Auswahldropdown (gleiche Optik wie Farbe/Stärke/Linientyp).
-fn pick_combo<T: PartialEq + Copy>(
+pub(crate) fn pick_combo<T: PartialEq + Copy>(
     ui: &mut Ui,
     salt: &str,
     cur: T,
@@ -907,8 +965,11 @@ fn entity_props(app: &mut App, ui: &mut Ui, id: Id) {
         app.mark_changed();
     }
 
-    // Farbe der Linie (bei der Wand: Umrandung des Körpers)
-    let ist_wand = matches!(e.kind, EntityKind::Wall { .. });
+    // Farbe der Linie (bei Wand und Füllfläche: Umrandung bzw. Musterlinie)
+    let ist_wand = matches!(
+        e.kind,
+        EntityKind::Wall { .. } | EntityKind::Fill { .. }
+    );
     let color = e.style.color.unwrap_or(app.doc().effective_color(&e));
     let by_layer = e.style.color.is_none();
     let mut picked_col: Option<Option<Color>> = None;
@@ -1042,10 +1103,10 @@ fn entity_props(app: &mut App, ui: &mut Ui, id: Id) {
             }
 
             // Schraffur der Wandfläche
-            let cur_hatch = hatch.unwrap_or(jjcad_core::style::HatchPattern::Solid);
-            let mut picked_hatch: Option<jjcad_core::style::HatchPattern> = None;
-            let hatch_items: Vec<(jjcad_core::style::HatchPattern, String)> =
-                jjcad_core::style::HatchPattern::ALL
+            let cur_hatch = hatch.unwrap_or(jjcad_core::style::FillPattern::Solid);
+            let mut picked_hatch: Option<jjcad_core::style::FillPattern> = None;
+            let hatch_items: Vec<(jjcad_core::style::FillPattern, String)> =
+                jjcad_core::style::FillPattern::ALL
                     .iter()
                     .map(|c| (*c, c.label().to_string()))
                     .collect();
@@ -1054,11 +1115,11 @@ fn entity_props(app: &mut App, ui: &mut Ui, id: Id) {
             });
             if let Some(hp) = picked_hatch {
                 let name = match hp {
-                    jjcad_core::style::HatchPattern::Solid => "none",
-                    jjcad_core::style::HatchPattern::Lines => "lines",
-                    jjcad_core::style::HatchPattern::Cross => "cross",
-                    jjcad_core::style::HatchPattern::Dots => "dots",
-                    jjcad_core::style::HatchPattern::Insulation => "insulation",
+                    jjcad_core::style::FillPattern::Solid => "none",
+                    jjcad_core::style::FillPattern::Lines => "lines",
+                    jjcad_core::style::FillPattern::Cross => "cross",
+                    jjcad_core::style::FillPattern::Dots => "dots",
+                    jjcad_core::style::FillPattern::Insulation => "insulation",
                 };
                 let _ = app
                     .session_mut()
@@ -1102,6 +1163,79 @@ fn entity_props(app: &mut App, ui: &mut Ui, id: Id) {
                 unit.from_mm(a.y),
                 unit.from_mm(b.x),
                 unit.from_mm(b.y)
+            )));
+        }
+        // Füllfläche: dieselben Felder wie beim Platzieren (Muster, Winkel,
+        // Abstand, Randlinie) plus die beiden Farben.
+        EntityKind::Fill {
+            boundary,
+            pattern,
+            pattern_angle,
+            pattern_scale,
+            border,
+        } => {
+            let mut winkel = pattern_angle.to_degrees();
+            let mut abstand = *pattern_scale;
+            let mut rand = *border;
+            let pat_items: Vec<(jjcad_core::style::FillPattern, String)> =
+                jjcad_core::style::FillPattern::ALL
+                    .iter()
+                    .map(|c| (*c, c.label().to_string()))
+                    .collect();
+            widgets::field_row(ui, "Muster", |ui| {
+                if let Some(v) = pick_combo(ui, "fill_pattern", *pattern, &pat_items) {
+                    changed_params.insert("pattern".into(), json!(v.key()));
+                }
+            });
+            widgets::field_row(ui, "Winkel", |ui| {
+                if ui
+                    .add(crate::widgets::dv(&mut winkel).speed(1.0).suffix("°"))
+                    .changed()
+                {
+                    changed_params.insert("pattern_angle".into(), json!(winkel));
+                }
+            });
+            widgets::field_row(ui, "Abstand", |ui| {
+                if widgets::length_input(ui, &mut abstand, unit, 100.0) {
+                    changed_params.insert("pattern_scale".into(), json!(unit.from_mm(abstand)));
+                }
+            });
+            widgets::field_row(ui, "Randlinie", |ui| {
+                if ui.checkbox(&mut rand, "").changed() {
+                    changed_params.insert("border".into(), json!(rand));
+                }
+            });
+
+            // Fläche getrennt von der Umrandung — wie bei der Wand.
+            let fill_set = e.style.fill.is_some();
+            let fill_cur = e.style.fill.unwrap_or_else(|| color.mix(Color::WHITE, 0.72));
+            let mut picked_fill: Option<Option<Color>> = None;
+            widgets::field_row(ui, "Füllfarbe", |ui| {
+                picked_fill = color_combo(ui, "fill_area", fill_cur, !fill_set, false, "Standard");
+            });
+            if let Some(v) = picked_fill {
+                let wert = match v {
+                    Some(c) => json!(c.to_hex()),
+                    None => json!("none"),
+                };
+                let _ = app
+                    .session_mut()
+                    .execute("modify.set", &json!({"ids": [id], "fill": wert}));
+                app.mark_changed();
+            }
+            ui.add_space(4.0);
+            ui.label(theme::dim(format!(
+                "{} Punkte · Umriss {}",
+                boundary.len(),
+                unit.format(
+                    boundary
+                        .iter()
+                        .zip(boundary.iter().cycle().skip(1))
+                        .take(boundary.len())
+                        .map(|(a, b)| a.dist(*b))
+                        .sum::<f64>(),
+                    2
+                )
             )));
         }
         EntityKind::Door {
@@ -1463,11 +1597,14 @@ fn multi_props(app: &mut App, ui: &mut Ui, ids: &[Id]) {
     }
     section_title(ui, "select", "Mehrfachauswahl");
     ui.label(theme::dim(format!("{} Objekte", ents.len())));
-    // Nur Wände haben eine eigene Füllfläche — dort heißen die beiden
-    // Farbeinstellungen "Linienfarbe" und "Füllfarbe".
-    let alle_waende = ents
-        .iter()
-        .all(|e| matches!(e.kind, jjcad_core::model::EntityKind::Wall { .. }));
+    // Wände und Füllflächen tragen eine eigene Fläche — nur dort heißen die
+    // beiden Farbeinstellungen "Linienfarbe" und "Füllfarbe".
+    let alle_waende = ents.iter().all(|e| {
+        matches!(
+            e.kind,
+            jjcad_core::model::EntityKind::Wall { .. } | jjcad_core::model::EntityKind::Fill { .. }
+        )
+    });
     ui.add_space(2.0);
 
     // ---- gemeinsame Felder ----

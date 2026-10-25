@@ -15,7 +15,7 @@ use jjcad_core::model::*;
 use jjcad_core::persist::{self, DragMode, UserPrefs};
 use jjcad_core::render::DisplayList;
 use jjcad_core::session::Session;
-use jjcad_core::style::{Color, HatchPattern};
+use jjcad_core::style::{Color, FillPattern};
 use jjcad_core::units::{format_number, format_scale, Unit};
 use jjcad_core::{dxf, pdf, raster};
 use std::collections::HashMap;
@@ -84,7 +84,7 @@ pub enum ToolPhase {
 pub struct ToolOptions {
     pub wall_thickness: f64,
     pub wall_align: jjcad_core::style::WallAlign,
-    pub wall_hatch: Option<jjcad_core::style::HatchPattern>,
+    pub wall_hatch: Option<jjcad_core::style::FillPattern>,
     pub wall_height: f64,
     pub door_width: f64,
     pub door_kind: DoorKind,
@@ -100,8 +100,13 @@ pub struct ToolOptions {
     pub dim_axis: Option<DimAxis>,
     pub offset_dist: f64,
     pub elevation_z: f64,
-    pub hatch_pattern: HatchPattern,
-    pub hatch_spacing: f64,
+    pub fill_pattern: FillPattern,
+    /// Musterabstand in mm
+    pub fill_scale: f64,
+    /// Drehung des Musters (Bogenmaß, 0 = waagerecht)
+    pub fill_angle: f64,
+    /// Randlinie entlang des Umrisses
+    pub fill_border: bool,
     pub block_id: Option<String>,
     pub block_rot: f64,
     pub block_scale: f64,
@@ -128,8 +133,10 @@ impl ToolOptions {
             dim_axis: None,
             offset_dist: doc.settings.wall_thickness,
             elevation_z: 0.0,
-            hatch_pattern: HatchPattern::Lines,
-            hatch_spacing: 100.0,
+            fill_pattern: FillPattern::Lines,
+            fill_scale: 100.0,
+            fill_angle: std::f64::consts::FRAC_PI_4,
+            fill_border: true,
             block_id: None,
             block_rot: 0.0,
             block_scale: 1.0,
@@ -504,6 +511,33 @@ impl App {
                         .map(|e| e.id)
                     {
                         self.session_mut().selection = vec![id];
+                    }
+                }
+                "selffill" | "selfill" => {
+                    // erste Füllfläche auswählen: Eigenschaften-Panel der
+                    // Füllfläche (Muster, Winkel, Abstand, Randlinie) zeigen
+                    if let Some(id) = self
+                        .doc()
+                        .entities
+                        .iter()
+                        .find(|e| matches!(e.kind, EntityKind::Fill { .. }))
+                        .map(|e| e.id)
+                    {
+                        self.session_mut().selection = vec![id];
+                    }
+                }
+                "fill" => self.start_tool("draw.fill"),
+                // Umriss abfahren: Punkte vorgeben, damit die Vorschau (Fläche
+                // halbtransparent, Muster aus dem Panel) im Screenshot steht.
+                "fillboundary" => {
+                    self.start_tool("draw.fill.boundary");
+                    if let Some(t) = &mut self.tool {
+                        t.pts = vec![
+                            V2::new(2000.0, 2000.0),
+                            V2::new(7000.0, 2000.0),
+                            V2::new(7000.0, 5000.0),
+                            V2::new(4500.0, 6500.0),
+                        ];
                     }
                 }
                 "selwalls" => {
@@ -1323,6 +1357,7 @@ impl App {
                 (egui::Key::F, "f"),
                 (egui::Key::G, "g"),
                 (egui::Key::H, "h"),
+                (egui::Key::I, "i"),
                 (egui::Key::J, "j"),
                 (egui::Key::K, "k"),
                 (egui::Key::L, "l"),
@@ -1792,11 +1827,21 @@ fn rail(ui: &mut egui::Ui, icon: &str, tooltip: &str, chevron: &str) -> bool {
                         }
                     });
                     widgets::vline(ui, RIBBON_H);
+                    self.group(ui, "Füllen", |ui, app| {
+                        for (id, icon, label) in [
+                            ("draw.fill.boundary", "fill", "Umriss"),
+                            ("draw.fill", "fill", "Kontur"),
+                        ] {
+                            if widgets::ribbon_button(ui, icon, label, app.tool_id() == Some(id)).clicked() {
+                                app.start_tool(id);
+                            }
+                        }
+                    });
+                    widgets::vline(ui, RIBBON_H);
                     self.group(ui, "Weitere", |ui, app| {
                         for (id, icon, label) in [
                             ("draw.ellipse", "ellipse", "Ellipse"),
                             ("draw.point", "point", "Punkt"),
-                            ("draw.hatch", "hatch", "Schraffur"),
                             ("draw.text", "text", "Text"),
                         ] {
                             if widgets::ribbon_button(ui, icon, label, app.tool_id() == Some(id)).clicked() {
@@ -2437,19 +2482,21 @@ fn rail(ui: &mut egui::Ui, icon: &str, tooltip: &str, chevron: &str) -> bool {
                     ui.label(theme::dim("Text"));
                     ui.add_sized([240.0, 22.0], egui::TextEdit::singleline(&mut self.options.text));
                 }
-                "draw.hatch" => {
+                "draw.fill" | "draw.hatch" | "draw.fill.boundary" => {
                     ui.label(theme::dim("Muster"));
-                    egui::ComboBox::from_id_salt("hatchpat")
-                        .width(130.0)
-                        .selected_text(self.options.hatch_pattern.label())
-                        .show_ui(ui, |ui| {
-                            for p in HatchPattern::ALL {
-                                ui.selectable_value(&mut self.options.hatch_pattern, p, p.label());
-                            }
-                        });
+                    let items: Vec<(FillPattern, String)> = FillPattern::ALL
+                        .iter()
+                        .map(|p| (*p, p.label().to_string()))
+                        .collect();
+                    crate::panels::pick_combo(
+                        ui,
+                        "fill_pattern_opt",
+                        self.options.fill_pattern,
+                        &items,
+                    );
                     ui.add_space(6.0);
                     ui.label(theme::dim("Abstand"));
-                    widgets::length_input(ui, &mut self.options.hatch_spacing, unit, 70.0);
+                    widgets::length_input(ui, &mut self.options.fill_scale, unit, 70.0);
                 }
                 "dim.linear" => {
                     ui.label(theme::dim("Richtung"));
@@ -2885,7 +2932,8 @@ fn commands_hint(tool: &Tool) -> &'static str {
         "block.insert" => "Position klicken",
         "draw.text" => "Position klicken",
         "draw.polyline" => "Punkte klicken – Enter beendet",
-        "draw.hatch" => "Geschlossene Kontur anklicken",
+        "draw.fill.boundary" => "Umriss abfahren – Enter oder Doppelklick beendet",
+        "draw.fill" | "draw.hatch" => "Geschlossene Kontur anklicken",
         "draw.arc" => match tool.pts.len() {
             0 => "Startpunkt",
             1 => "Endpunkt",
@@ -3282,7 +3330,7 @@ pub fn entity_kind_icon(kind: &EntityKind) -> &'static str {
         EntityKind::Arc { .. } => "arc",
         EntityKind::Ellipse { .. } => "ellipse",
         EntityKind::Polyline { .. } => "polyline",
-        EntityKind::Hatch { .. } => "hatch",
+        EntityKind::Fill { .. } => "fill",
         EntityKind::Text { .. } => "text",
         EntityKind::Dim { .. } | EntityKind::DimChain { .. } => "dim",
         EntityKind::Elevation { .. } => "elevation",

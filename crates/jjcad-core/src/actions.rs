@@ -96,7 +96,8 @@ pub const ACTIONS: &[ActionDef] = &[
     act!("draw.circle", "Kreis", Zeichnen, "circle", "k", "Mittelpunkt und Radius klicken", true),
     act!("draw.arc", "Bogen", Zeichnen, "arc", "", "Start, Ende, Bogenpunkt klicken", true),
     act!("draw.point", "Punkt", Zeichnen, "point", "p", "Punkt setzen", true),
-    act!("draw.hatch", "Schraffur", Zeichnen, "hatch", "", "Geschlossene Kontur klicken", true),
+    act!("draw.fill", "Füllfläche", Zeichnen, "fill", "", "Geschlossene Kontur klicken", true),
+    act!("draw.fill.boundary", "Fläche nach Umriss", Zeichnen, "fill", "i", "Umriss abfahren: Punkte klicken, Enter beendet", true),
     act!("draw.text", "Text", Zeichnen, "text", "t", "Position klicken, dann Text eingeben", true),
     act!("draw.ellipse", "Ellipse", Zeichnen, "ellipse", "", "Mittelpunkt und Achsen klicken", true),
 
@@ -188,6 +189,8 @@ pub fn is_mutating(id: &str) -> bool {
             | "draw.circle"
             | "draw.arc"
             | "draw.point"
+            | "draw.fill"
+            | "draw.fill.boundary"
             | "draw.hatch"
             | "draw.text"
             | "draw.ellipse"
@@ -404,14 +407,8 @@ impl<'a> Params<'a> {
         })
     }
 
-    pub fn hatch_pattern(&self, k: &str) -> Option<HatchPattern> {
-        match self.text(k)?.to_lowercase().as_str() {
-            "solid" | "voll" => Some(HatchPattern::Solid),
-            "lines" | "schraffur" | "45" => Some(HatchPattern::Lines),
-            "cross" | "kreuz" => Some(HatchPattern::Cross),
-            "dots" | "punkte" => Some(HatchPattern::Dots),
-            _ => None,
-        }
+    pub fn fill_pattern(&self, k: &str) -> Option<FillPattern> {
+        FillPattern::from_key(&self.text(k)?)
     }
 
     pub fn dim_axis(&self, k: &str) -> Option<DimAxis> {
@@ -846,25 +843,32 @@ pub fn execute(doc: &mut Document, id: &str, params: &Value) -> Result<Value, St
             doc.add_entity(e);
             Ok(json!({"ok": true, "created": [idn]}))
         }
-        "draw.hatch" => {
+        // Eine Füllfläche aus einer Punktliste. Alle drei Namen laufen durch
+        // denselben Code: `draw.fill` (Kontur anklicken, Klickpfad in der GUI),
+        // `draw.fill.boundary` (Umriss abfahren) und der alte Name `draw.hatch`
+        // (Hotbar-Vorgaben, MCP-Aufrufe von vor der Vereinheitlichung).
+        "draw.fill" | "draw.fill.boundary" | "draw.hatch" => {
             let boundary = p
                 .pts("boundary")
                 .or_else(|| p.pts("pts"))
                 .ok_or_else(|| "Parameter 'boundary' fehlt".to_string())?;
             if boundary.len() < 3 {
-                return Err("Schraffur braucht mindestens drei Punkte".into());
+                return Err("Füllfläche braucht mindestens drei Punkte".into());
             }
             let layer = resolve_layer(doc, &p);
             let idn = doc.new_id();
             let mut e = Entity::new(
                 idn,
                 layer,
-                EntityKind::Hatch {
+                EntityKind::Fill {
                     boundary,
-                    pattern: p.hatch_pattern("pattern").unwrap_or(HatchPattern::Lines),
-                    angle: p.angle_or("angle", std::f64::consts::FRAC_PI_4),
-                    spacing: p.len_or("spacing", 100.0),
-                    filled: p.boolean_or("filled", false),
+                    pattern: p.fill_pattern("pattern").unwrap_or(FillPattern::Lines),
+                    pattern_angle: p.angle_or("angle", std::f64::consts::FRAC_PI_4),
+                    pattern_scale: p
+                        .len("scale")
+                        .or_else(|| p.len("spacing"))
+                        .unwrap_or(100.0),
+                    border: p.boolean_or("border", true),
                 },
             );
             apply_common(doc, &mut e, &p, layer);
@@ -915,10 +919,10 @@ pub fn execute(doc: &mut Document, id: &str, params: &Value) -> Result<Value, St
                     height: p.len_or("height", 2750.0),
                     material: p.text_or("material", "Mauerwerk"),
                     hatch: match p.text("hatch").unwrap_or_default().to_lowercase().as_str() {
-                        "lines" => Some(crate::style::HatchPattern::Lines),
-                        "cross" => Some(crate::style::HatchPattern::Cross),
-                        "dots" => Some(crate::style::HatchPattern::Dots),
-                        "insulation" => Some(crate::style::HatchPattern::Insulation),
+                        "lines" => Some(crate::style::FillPattern::Lines),
+                        "cross" => Some(crate::style::FillPattern::Cross),
+                        "dots" => Some(crate::style::FillPattern::Dots),
+                        "insulation" => Some(crate::style::FillPattern::Insulation),
                         _ => None,
                     },
                     align: match p.text("align").unwrap_or_default().to_lowercase().as_str() {
@@ -1416,11 +1420,11 @@ pub fn execute(doc: &mut Document, id: &str, params: &Value) -> Result<Value, St
                     if let Some(h) = p.text("hatch") {
                         let hp = match h.to_lowercase().as_str() {
                             "none" | "solid" | "" => None,
-                            "lines" => Some(crate::style::HatchPattern::Lines),
-                            "cross" => Some(crate::style::HatchPattern::Cross),
-                            "dots" => Some(crate::style::HatchPattern::Dots),
+                            "lines" => Some(crate::style::FillPattern::Lines),
+                            "cross" => Some(crate::style::FillPattern::Cross),
+                            "dots" => Some(crate::style::FillPattern::Dots),
                             "insulation" | "daemmung" | "dämmung" => {
-                                Some(crate::style::HatchPattern::Insulation)
+                                Some(crate::style::FillPattern::Insulation)
                             }
                             _ => None,
                         };
@@ -1476,6 +1480,26 @@ pub fn execute(doc: &mut Document, id: &str, params: &Value) -> Result<Value, St
                             }
                             if let Some(v) = height {
                                 *h = v;
+                            }
+                        }
+                        EntityKind::Fill {
+                            pattern,
+                            pattern_angle,
+                            pattern_scale,
+                            border,
+                            ..
+                        } => {
+                            if let Some(v) = p.fill_pattern("pattern") {
+                                *pattern = v;
+                            }
+                            if let Some(v) = p.angle("pattern_angle") {
+                                *pattern_angle = v;
+                            }
+                            if let Some(v) = p.len("pattern_scale") {
+                                *pattern_scale = v.max(0.5);
+                            }
+                            if let Some(v) = p.boolean("border") {
+                                *border = v;
                             }
                         }
                         EntityKind::Stair { width: w, steps: s, direction, .. } => {
@@ -2556,12 +2580,12 @@ pub fn explode_entity(doc: &mut Document, id: Id) -> Result<Vec<Id>, String> {
             }),
             Shape::Fill(pts) => {
                 if pts.len() >= 3 {
-                    Some(EntityKind::Hatch {
+                    Some(EntityKind::Fill {
                         boundary: pts.clone(),
-                        pattern: HatchPattern::Solid,
-                        angle: 0.0,
-                        spacing: 100.0,
-                        filled: true,
+                        pattern: FillPattern::Solid,
+                        pattern_angle: 0.0,
+                        pattern_scale: 100.0,
+                        border: false,
                     })
                 } else {
                     None
