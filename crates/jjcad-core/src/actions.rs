@@ -508,6 +508,36 @@ fn offset_opening(
     center + n * (h * shift)
 }
 
+/// Setzt eine Öffnung erneut in den Wandkörper: Lage entlang der Wand bleibt,
+/// der Abstand quer zur Achse folgt der Ausrichtung (links/mittig/rechts).
+fn realign_opening(
+    doc: &Document,
+    host: Option<Id>,
+    center: Vec2,
+    angle: f64,
+    align: crate::style::WallAlign,
+) -> Vec2 {
+    let Some(hid) = host else {
+        return center;
+    };
+    let Some(EntityKind::Wall {
+        a,
+        b,
+        thickness,
+        align: wall_align,
+        ..
+    }) = doc.entity(hid).map(|w| &w.kind)
+    else {
+        return center;
+    };
+    let dir = (*b - *a).normalized();
+    // Projektion auf die Wandachse hält die Position längs der Wand
+    let axis = *a + dir * (center - *a).dot(dir);
+    let n = Vec2::polar(angle + std::f64::consts::FRAC_PI_2, 1.0);
+    let shift = wall_align.offset() + 0.5 * align.offset();
+    axis + n * (thickness * 0.5 * shift)
+}
+
 fn apply_common(doc: &mut Document, e: &mut Entity, p: &Params, layer: Id) {
     e.layer = layer;
     if let Some(c) = p.color("color") {
@@ -1114,7 +1144,23 @@ pub fn execute(doc: &mut Document, id: &str, params: &Value) -> Result<Value, St
                     .filter(|i| doc.layers.iter().any(|x| x.id == *i))
                     .or_else(|| l.as_str().and_then(|s| doc.layer_id_by_name(s)))
             });
+            // Ausrichtung vorab lesen (gilt für Wand und Öffnungen)
+            let align_new: Option<crate::style::WallAlign> =
+                p.text("align").map(|al| match al.to_lowercase().as_str() {
+                    "left" | "links" => crate::style::WallAlign::Left,
+                    "right" | "rechts" => crate::style::WallAlign::Right,
+                    _ => crate::style::WallAlign::Center,
+                });
             for eid in &ids {
+                // Öffnungen: neue Lage auf der Wandachse berechnen,
+                // solange das Dokument nur lesend geliehen ist
+                let realign: Option<Vec2> = match (align_new, doc.entity(*eid).map(|e| &e.kind)) {
+                    (Some(al), Some(EntityKind::Door { host, center, angle, .. }))
+                    | (Some(al), Some(EntityKind::Window { host, center, angle, .. })) => {
+                        Some(realign_opening(doc, *host, *center, *angle, al))
+                    }
+                    _ => None,
+                };
                 if let Some(e) = doc.entity_mut(*eid) {
                     if let Some(lid) = new_layer {
                         e.layer = lid;
@@ -1139,14 +1185,17 @@ pub fn execute(doc: &mut Document, id: &str, params: &Value) -> Result<Value, St
                     {
                         e.style.fill = None;
                     }
-                    if let Some(al) = p.text("align") {
-                        let wa = match al.to_lowercase().as_str() {
-                            "left" | "links" => crate::style::WallAlign::Left,
-                            "right" | "rechts" => crate::style::WallAlign::Right,
-                            _ => crate::style::WallAlign::Center,
-                        };
-                        if let EntityKind::Wall { align, .. } = &mut e.kind {
-                            *align = wa;
+                    if let Some(wa) = align_new {
+                        match &mut e.kind {
+                            EntityKind::Wall { align, .. } => *align = wa,
+                            EntityKind::Door { align, center, .. }
+                            | EntityKind::Window { align, center, .. } => {
+                                *align = wa;
+                                if let Some(p2) = realign {
+                                    *center = p2;
+                                }
+                            }
+                            _ => {}
                         }
                     }
                     if let Some(h) = p.text("hatch") {

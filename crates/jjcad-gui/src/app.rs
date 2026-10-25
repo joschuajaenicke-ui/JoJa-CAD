@@ -433,6 +433,30 @@ impl App {
                 "wall" => self.start_tool("draw.wall"),
                 "door" => self.start_tool("draw.door"),
                 "text" => self.start_tool("draw.text"),
+                // Prüfhilfe: erste Tür auswählen, damit das Eigenschaften-Panel
+                // im Screenshot belegbar ist
+                "seldoor" => {
+                    if let Some(id) = self
+                        .doc()
+                        .entities
+                        .iter()
+                        .find(|e| matches!(e.kind, EntityKind::Door { .. }))
+                        .map(|e| e.id)
+                    {
+                        self.session_mut().selection = vec![id];
+                    }
+                }
+                "selwindow" => {
+                    if let Some(id) = self
+                        .doc()
+                        .entities
+                        .iter()
+                        .find(|e| matches!(e.kind, EntityKind::Window { .. }))
+                        .map(|e| e.id)
+                    {
+                        self.session_mut().selection = vec![id];
+                    }
+                }
                 "sheetview" => {
                     if let Some(s) = self.doc().sheets.first().map(|s| s.id) {
                         self.tab_mut().tab = TabKind::Sheet(s);

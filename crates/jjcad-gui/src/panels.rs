@@ -6,7 +6,7 @@ use crate::widgets;
 use egui::{Align, Color32, FontId, Layout, Pos2, Rect, RichText, Rounding, Sense, Stroke, Ui, Vec2};
 use jjcad_core::geom::Polyline;
 use jjcad_core::model::*;
-use jjcad_core::style::{Color, HatchPattern, LineType, PaperSize};
+use jjcad_core::style::{Color, HatchPattern, LineType, PaperSize, WallAlign};
 use jjcad_core::units::{format_number, format_scale, Unit};
 use serde_json::{json, Value};
 
@@ -1089,6 +1089,7 @@ fn entity_props(app: &mut App, ui: &mut Ui, id: Id) {
             kind,
             hinge,
             swing_in,
+            align,
             center,
             angle,
             ..
@@ -1097,28 +1098,30 @@ fn entity_props(app: &mut App, ui: &mut Ui, id: Id) {
             let mut k = *kind;
             let mut hg = *hinge;
             let mut sw = *swing_in;
+            let align_cur = *align;
+            let align_items: Vec<(WallAlign, String)> = WallAlign::ALL
+                .iter()
+                .map(|a| (*a, a.label().to_string()))
+                .collect();
             widgets::field_row(ui, "Breite", |ui| {
                 if widgets::length_input(ui, &mut w, unit, 100.0) {
                     changed_params.insert("width".into(), json!(unit.from_mm(w)));
                 }
             });
             widgets::field_row(ui, "Typ", |ui| {
-                egui::ComboBox::from_id_salt(("dk", id))
-                    .width(ui.available_width())
-                    .selected_text(k.label())
-                    .show_ui(ui, |ui| {
-                        for cand in DoorKind::ALL {
-                            if ui.selectable_value(&mut k, cand, cand.label()).changed() {
-                                let name = match cand {
-                                    DoorKind::Hinge => "hinge",
-                                    DoorKind::Sliding => "sliding",
-                                    DoorKind::Double => "double",
-                                    DoorKind::Opening => "opening",
-                                };
-                                changed_params.insert("kind".into(), json!(name));
-                            }
-                        }
-                    });
+                let items: Vec<(DoorKind, String)> = DoorKind::ALL
+                    .iter()
+                    .map(|c| (*c, c.label().to_string()))
+                    .collect();
+                if let Some(v) = pick_combo(ui, "door_kind", k, &items) {
+                    let name = match v {
+                        DoorKind::Hinge => "hinge",
+                        DoorKind::Sliding => "sliding",
+                        DoorKind::Double => "double",
+                        DoorKind::Opening => "opening",
+                    };
+                    changed_params.insert("kind".into(), json!(name));
+                }
             });
             widgets::field_row(ui, "Anschlag", |ui| {
                 if ui.selectable_value(&mut hg, 1.0, "rechts").clicked()
@@ -1145,6 +1148,19 @@ fn entity_props(app: &mut App, ui: &mut Ui, id: Id) {
                     changed_params.insert("swing_in".into(), json!(sw));
                 }
             });
+            // Lage der Tür innerhalb der Wanddicke
+            widgets::field_row(ui, "Ausrichtung", |ui| {
+                if let Some(v) = pick_combo(ui, "door_align", align_cur, &align_items) {
+                    changed_params.insert(
+                        "align".into(),
+                        json!(match v {
+                            WallAlign::Left => "left",
+                            WallAlign::Center => "center",
+                            WallAlign::Right => "right",
+                        }),
+                    );
+                }
+            });
             ui.add_space(4.0);
             ui.label(theme::dim(format!(
                 "Position ({:.2}, {:.2}) · Richtung {:.0}°",
@@ -1157,6 +1173,7 @@ fn entity_props(app: &mut App, ui: &mut Ui, id: Id) {
             width,
             sill,
             height,
+            align,
             center,
             angle,
             ..
@@ -1164,6 +1181,11 @@ fn entity_props(app: &mut App, ui: &mut Ui, id: Id) {
             let mut w = *width;
             let mut s = *sill;
             let mut h = *height;
+            let align_cur = *align;
+            let align_items: Vec<(WallAlign, String)> = WallAlign::ALL
+                .iter()
+                .map(|a| (*a, a.label().to_string()))
+                .collect();
             widgets::field_row(ui, "Breite", |ui| {
                 if widgets::length_input(ui, &mut w, unit, 100.0) {
                     changed_params.insert("width".into(), json!(unit.from_mm(w)));
@@ -1177,6 +1199,19 @@ fn entity_props(app: &mut App, ui: &mut Ui, id: Id) {
             widgets::field_row(ui, "Höhe", |ui| {
                 if widgets::length_input(ui, &mut h, unit, 100.0) {
                     changed_params.insert("height".into(), json!(unit.from_mm(h)));
+                }
+            });
+            // Lage des Fensters innerhalb der Wanddicke
+            widgets::field_row(ui, "Ausrichtung", |ui| {
+                if let Some(v) = pick_combo(ui, "win_align", align_cur, &align_items) {
+                    changed_params.insert(
+                        "align".into(),
+                        json!(match v {
+                            WallAlign::Left => "left",
+                            WallAlign::Center => "center",
+                            WallAlign::Right => "right",
+                        }),
+                    );
                 }
             });
             ui.add_space(4.0);
@@ -1207,23 +1242,20 @@ fn entity_props(app: &mut App, ui: &mut Ui, id: Id) {
                 }
             });
             widgets::field_row(ui, "Richtung", |ui| {
-                egui::ComboBox::from_id_salt(("sd", id))
-                    .width(110.0)
-                    .selected_text(d.label())
-                    .show_ui(ui, |ui| {
-                        for cand in StairDir::ALL {
-                            if ui.selectable_value(&mut d, cand, cand.label()).changed() {
-                                changed_params.insert(
-                                    "direction".into(),
-                                    json!(match cand {
-                                        StairDir::Up => "up",
-                                        StairDir::Down => "down",
-                                        StairDir::Both => "both",
-                                    }),
-                                );
-                            }
-                        }
-                    });
+                let items: Vec<(StairDir, String)> = StairDir::ALL
+                    .iter()
+                    .map(|c| (*c, c.label().to_string()))
+                    .collect();
+                if let Some(v) = pick_combo(ui, "stair_dir", d, &items) {
+                    changed_params.insert(
+                        "direction".into(),
+                        json!(match v {
+                            StairDir::Up => "up",
+                            StairDir::Down => "down",
+                            StairDir::Both => "both",
+                        }),
+                    );
+                }
             });
         }
         EntityKind::Text {

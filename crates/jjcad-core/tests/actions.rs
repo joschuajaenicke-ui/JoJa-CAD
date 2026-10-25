@@ -420,3 +420,33 @@ fn snapping_finds_endpoints_and_intersections() {
     let hit = jjcad_core::snap::find_snap(&s.doc, v(1005.0, 5.0), 80.0, None, &[]).unwrap();
     assert!((hit.point.x - 1000.0).abs() < 1.0);
 }
+
+#[test]
+fn opening_align_repositions_in_wall() {
+    // Tür sitzt in der Wanddicke: Ausrichtung links/mittig/rechts verschiebt sie
+    // quer zur Wand, die Lage entlang der Wand bleibt erhalten.
+    let mut s = s();
+    s.execute("draw.wall", &json!({"a": [0, 0], "b": [5, 0], "thickness": 0.3}))
+        .unwrap();
+    let wall = last_id(&s);
+    s.execute(
+        "draw.door",
+        &json!({"center": [2, 0], "width": 0.9, "host": [wall], "align": "center"}),
+    )
+    .unwrap();
+    let door = last_id(&s);
+    let cy = |s: &Session| match &s.doc.entity(door).unwrap().kind {
+        EntityKind::Door { center, .. } => center.y,
+        _ => unreachable!(),
+    };
+    assert!(cy(&s).abs() < 1.0, "mittig: y={}", cy(&s));
+    s.execute("modify.set", &json!({"ids": [door], "align": "left"}))
+        .unwrap();
+    assert!((cy(&s) - 75.0).abs() < 1.0, "links: y={}", cy(&s));
+    s.execute("modify.set", &json!({"ids": [door], "align": "right"}))
+        .unwrap();
+    assert!((cy(&s) + 75.0).abs() < 1.0, "rechts: y={}", cy(&s));
+    if let EntityKind::Door { center, .. } = &s.doc.entity(door).unwrap().kind {
+        assert!((center.x - 2000.0).abs() < 1.0, "x verschoben: {}", center.x);
+    }
+}
