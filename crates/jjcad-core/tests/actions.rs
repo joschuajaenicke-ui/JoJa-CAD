@@ -480,3 +480,63 @@ fn window_align_repositions_in_wall() {
         .unwrap();
     assert!((cy(&s) + 75.0).abs() < 1.0, "rechts: y={}", cy(&s));
 }
+
+fn opening_pos(s: &Session, id: u64) -> Vec2 {
+    match &s.doc.entity(id).unwrap().kind {
+        EntityKind::Door { center, .. } | EntityKind::Window { center, .. } => *center,
+        _ => unreachable!(),
+    }
+}
+
+#[test]
+fn opening_follows_wall() {
+    // Tür hängt an der Wand: Verschieben und Verdicken der Wand nimmt sie mit.
+    let mut s = s();
+    s.execute("draw.wall", &json!({"a": [0, 0], "b": [5, 0], "thickness": 0.3}))
+        .unwrap();
+    let wall = last_id(&s);
+    s.execute(
+        "draw.door",
+        &json!({"center": [2, 0], "width": 0.9, "host": [wall]}),
+    )
+    .unwrap();
+    let door = last_id(&s);
+
+    s.execute(
+        "modify.move",
+        &json!({"ids": [wall], "from": [0, 0], "to": [1, 0]}),
+    )
+    .unwrap();
+    let p = opening_pos(&s, door);
+    assert!((p.x - 3000.0).abs() < 1.0, "x nach Wandverschiebung={}", p.x);
+    assert!((p.y - 150.0).abs() < 1.0, "y={}", p.y);
+
+    s.execute("modify.set", &json!({"ids": [wall], "thickness": 0.6}))
+        .unwrap();
+    let p = opening_pos(&s, door);
+    assert!((p.y - 300.0).abs() < 1.0, "y nach Dicke={}", p.y);
+    assert!((p.x - 3000.0).abs() < 1.0, "x={}", p.x);
+}
+
+#[test]
+fn moved_opening_stays_on_wall() {
+    // Wird die Tür selbst verschoben, bleibt sie auf ihrer Wand.
+    let mut s = s();
+    s.execute("draw.wall", &json!({"a": [0, 0], "b": [5, 0], "thickness": 0.3}))
+        .unwrap();
+    let wall = last_id(&s);
+    s.execute(
+        "draw.door",
+        &json!({"center": [2, 0], "width": 0.9, "host": [wall]}),
+    )
+    .unwrap();
+    let door = last_id(&s);
+    s.execute(
+        "modify.move",
+        &json!({"ids": [door], "from": [2, 0], "to": [3.5, 0]}),
+    )
+    .unwrap();
+    let p = opening_pos(&s, door);
+    assert!((p.x - 3500.0).abs() < 1.0, "x={}", p.x);
+    assert!((p.y - 150.0).abs() < 1.0, "y auf Kante={}", p.y);
+}

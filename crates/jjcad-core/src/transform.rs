@@ -165,6 +165,7 @@ pub fn transform_kind(k: &EntityKind, m: &Affine) -> EntityKind {
             hinge,
             swing_in,
             host,
+            at,
         } => EntityKind::Door {
             align: *align,
             center: m.apply(*center),
@@ -174,6 +175,7 @@ pub fn transform_kind(k: &EntityKind, m: &Affine) -> EntityKind {
             hinge: *hinge,
             swing_in: *swing_in,
             host: *host,
+            at: *at,
         },
         EntityKind::Window {
             center,
@@ -183,6 +185,7 @@ pub fn transform_kind(k: &EntityKind, m: &Affine) -> EntityKind {
             sill,
             height,
             host,
+            at,
         } => EntityKind::Window {
             align: *align,
             center: m.apply(*center),
@@ -191,6 +194,7 @@ pub fn transform_kind(k: &EntityKind, m: &Affine) -> EntityKind {
             sill: *sill,
             height: *height,
             host: *host,
+            at: *at,
         },
         EntityKind::Stair {
             a,

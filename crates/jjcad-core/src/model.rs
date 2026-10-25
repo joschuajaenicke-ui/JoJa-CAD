@@ -260,6 +260,9 @@ pub enum EntityKind {
         /// Wand, in der die Tür sitzt (für Öffnungen).
         #[serde(default)]
         host: Option<Id>,
+        /// Lage längs der Wand in mm ab Wandanfang — die Tür folgt der Wand.
+        #[serde(default)]
+        at: Option<f64>,
     },
     Window {
         center: Vec2,
@@ -274,6 +277,9 @@ pub enum EntityKind {
         height: f64,
         #[serde(default)]
         host: Option<Id>,
+        /// Lage längs der Wand in mm ab Wandanfang — das Fenster folgt der Wand.
+        #[serde(default)]
+        at: Option<f64>,
     },
     Stair {
         a: Vec2,

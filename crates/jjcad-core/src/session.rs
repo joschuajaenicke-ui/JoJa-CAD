@@ -62,6 +62,16 @@ impl Session {
     pub fn execute(&mut self, action: &str, params: &Value) -> Result<Value, String> {
         let before = self.doc.clone();
         let result = actions::execute(&mut self.doc, action, params)?;
+        // Türen/Fenster folgen ihrer Wand (Verschieben, Verdicken, Drehen)
+        if actions::is_mutating(action) {
+            if matches!(
+                action,
+                "modify.move" | "modify.copy" | "modify.rotate" | "modify.scale" | "modify.mirror"
+            ) {
+                actions::resync_openings(&mut self.doc);
+            }
+            actions::reflow_openings(&mut self.doc);
+        }
         if actions::is_mutating(action) && !same_content(&before, &self.doc) {
             self.history.record(&before);
             self.doc.modified = true;

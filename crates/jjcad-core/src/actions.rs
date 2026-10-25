@@ -537,31 +537,158 @@ pub fn door_face_center(
     axis + n * (thickness * 0.5 * (wall_align.offset() + side))
 }
 
-/// Setzt alle Türen eines Dokuments auf die vordere Wandkante (Datei-Migration).
-pub fn normalize_openings(doc: &mut Document) {
-    let mut updates: Vec<(Id, Vec2)> = Vec::new();
+/// Länge längs der Wandachse ab Wandanfang (mm).
+fn wall_at(doc: &Document, host: Option<Id>, p: Vec2) -> Option<f64> {
+    let hid = host?;
+    let EntityKind::Wall { a, b, .. } = &doc.entity(hid)?.kind else {
+        return None;
+    };
+    let dir = (*b - *a).normalized();
+    Some((p - *a).dot(dir))
+}
+
+/// Lage einer Öffnung aus der Wandgeometrie: Position längs (`at`) und Richtung.
+/// `side` = Some(Blattseite) für Türen (vordere Kante), None für Fenster.
+fn opening_from_wall(
+    doc: &Document,
+    host: Option<Id>,
+    at: f64,
+    side: Option<bool>,
+    align: crate::style::WallAlign,
+) -> Option<(Vec2, f64)> {
+    let hid = host?;
+    let EntityKind::Wall {
+        a,
+        b,
+        thickness,
+        align: wall_align,
+        ..
+    } = &doc.entity(hid)?.kind
+    else {
+        return None;
+    };
+    let dir = (*b - *a).normalized();
+    let angle = dir.angle();
+    let n = Vec2::polar(angle + std::f64::consts::FRAC_PI_2, 1.0);
+    let offset = match side {
+        // Tür: vordere Kante auf der Blattseite
+        Some(sw) => thickness * 0.5 * (wall_align.offset() + if sw { 1.0 } else { -1.0 }),
+        // Fenster: Lage innerhalb der Wanddicke
+        None => thickness * 0.5 * (wall_align.offset() + 0.5 * align.offset()),
+    };
+    Some((*a + dir * at + n * offset, angle))
+}
+
+/// Längslage einer Öffnung aus ihrer aktuellen Position neu bestimmen.
+pub fn resync_openings(doc: &mut Document) {
+    let mut fix: Vec<(Id, f64)> = Vec::new();
     for e in &doc.entities {
-        if let EntityKind::Door {
-            host,
-            center,
-            angle,
-            swing_in,
-            ..
-        } = &e.kind
+        if let EntityKind::Door { host, center, .. } | EntityKind::Window { host, center, .. } =
+            &e.kind
         {
-            let p = door_face_center(&*doc, *host, *center, *angle, *swing_in);
-            if (p - *center).len() > 0.01 {
-                updates.push((e.id, p));
+            if host.is_some() {
+                if let Some(t) = wall_at(&*doc, *host, *center) {
+                    fix.push((e.id, t));
+                }
             }
         }
     }
-    for (id, p) in updates {
+    for (id, t) in fix {
         if let Some(e) = doc.entity_mut(id) {
-            if let EntityKind::Door { center, .. } = &mut e.kind {
-                *center = p;
+            match &mut e.kind {
+                EntityKind::Door { at, .. } | EntityKind::Window { at, .. } => *at = Some(t),
+                _ => {}
             }
         }
     }
+}
+
+/// Türen/Fenster, die in einer der übergebenen Wände sitzen (wandern mit).
+pub fn carried_openings(doc: &Document, walls: &[Id]) -> Vec<Id> {
+    doc.entities
+        .iter()
+        .filter(|e| match &e.kind {
+            EntityKind::Door { host, .. } | EntityKind::Window { host, .. } => {
+                host.map(|h| walls.contains(&h)).unwrap_or(false)
+            }
+            _ => false,
+        })
+        .map(|e| e.id)
+        .collect()
+}
+
+/// Öffnungen folgen ihrer Wand: wird nach jeder mutierenden Aktion aufgerufen,
+/// damit Türen und Fenster beim Verschieben oder Verdicken der Wand mitlaufen.
+pub fn reflow_openings(doc: &mut Document) {
+    let mut updates: Vec<(Id, Vec2, f64)> = Vec::new();
+    for e in &doc.entities {
+        let found = match &e.kind {
+            EntityKind::Door {
+                host,
+                at,
+                swing_in,
+                ..
+            } => at.and_then(|t| {
+                opening_from_wall(
+                    &*doc,
+                    *host,
+                    t,
+                    Some(*swing_in),
+                    crate::style::WallAlign::Center,
+                )
+            }),
+            EntityKind::Window { host, at, align, .. } => at.and_then(|t| {
+                opening_from_wall(&*doc, *host, t, None, *align)
+            }),
+            _ => None,
+        };
+        if let Some((c, ang)) = found {
+            updates.push((e.id, c, ang));
+        }
+    }
+    for (id, c, ang) in updates {
+        if let Some(e) = doc.entity_mut(id) {
+            match &mut e.kind {
+                EntityKind::Door { center, angle, .. }
+                | EntityKind::Window { center, angle, .. } => {
+                    *center = c;
+                    *angle = ang;
+                }
+                _ => {}
+            }
+        }
+    }
+}
+
+/// Datei-Migration: Längslage fehlender Öffnungen ergänzen und alle Öffnungen
+/// anschließend aus ihrer Wand neu setzen.
+pub fn normalize_openings(doc: &mut Document) {
+    let mut fix: Vec<(Id, f64)> = Vec::new();
+    for e in &doc.entities {
+        let mig = match &e.kind {
+            EntityKind::Door { host, at, center, .. }
+            | EntityKind::Window { host, at, center, .. } => {
+                if at.is_none() {
+                    wall_at(&*doc, *host, *center).map(|t| (e.id, t))
+                } else {
+                    None
+                }
+            }
+            _ => None,
+        };
+        if let Some(m) = mig {
+            fix.push(m);
+        }
+    }
+    for (id, t) in fix {
+        if let Some(e) = doc.entity_mut(id) {
+            match &mut e.kind {
+                EntityKind::Door { at, .. } | EntityKind::Window { at, .. } => *at = Some(t),
+                _ => {}
+            }
+        }
+    }
+    reflow_openings(doc);
 }
 
 /// Setzt eine Öffnung erneut in den Wandkörper: Lage entlang der Wand bleibt,
@@ -843,6 +970,7 @@ pub fn execute(doc: &mut Document, id: &str, params: &Value) -> Result<Value, St
             }
             let layer = resolve_layer(doc, &p);
             let swing_in = p.boolean_or("swing_in", true);
+            let at = wall_at(doc, host, center);
             // Tür immer auf die vordere Wandkante (Blattseite) setzen
             let center = door_face_center(doc, host, center, angle.unwrap_or(0.0), swing_in);
             let idn = doc.new_id();
@@ -858,6 +986,7 @@ pub fn execute(doc: &mut Document, id: &str, params: &Value) -> Result<Value, St
                     hinge: p.num_or("hinge", 1.0),
                     swing_in,
                     host,
+                    at,
                 },
             );
             apply_common(doc, &mut e, &p, layer);
@@ -904,6 +1033,7 @@ pub fn execute(doc: &mut Document, id: &str, params: &Value) -> Result<Value, St
                 "right" | "rechts" => crate::style::WallAlign::Right,
                 _ => crate::style::WallAlign::Center,
             };
+            let at = wall_at(doc, host, center);
             let center = offset_opening(doc, host, center, angle.unwrap_or(0.0), align);
             let idn = doc.new_id();
             let mut e = Entity::new(
@@ -917,6 +1047,7 @@ pub fn execute(doc: &mut Document, id: &str, params: &Value) -> Result<Value, St
                     sill: p.len_or("sill", 900.0),
                     height: p.len_or("height", 1250.0),
                     host,
+                    at,
                 },
             );
             apply_common(doc, &mut e, &p, layer);
@@ -1049,6 +1180,15 @@ pub fn execute(doc: &mut Document, id: &str, params: &Value) -> Result<Value, St
             let m = Affine::translate(to - base);
             let copy = id == "modify.copy";
             let mut new_ids = Vec::new();
+            // Öffnungen wandern mit ihrer Wand
+            let mut ids = ids;
+            if !copy {
+                for extra in carried_openings(doc, &ids) {
+                    if !ids.contains(&extra) {
+                        ids.push(extra);
+                    }
+                }
+            }
             for eid in &ids {
                 let Some(e) = doc.entity(*eid).cloned() else { continue };
                 if copy {
