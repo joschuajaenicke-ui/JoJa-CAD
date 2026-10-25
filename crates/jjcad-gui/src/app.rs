@@ -371,13 +371,18 @@ pub struct App {
 
 impl App {
     pub fn new(cc: &eframe::CreationContext<'_>) -> Self {
-        theme::install(&cc.egui_ctx);
         // Klick-Toleranz: egui verwirft einen Klick, sobald sich der Zeiger zwischen
         // Drücken und Loslassen mehr als 6 px bewegt — beim schnellen Klicken passiert
         // das leicht. 10 px sind für Maus und Touchpad unkritisch.
         cc.egui_ctx
             .options_mut(|o| o.input_options.max_click_dist = 10.0);
-        let ctx = cc.egui_ctx.clone();
+        Self::with_ctx(cc.egui_ctx.clone())
+    }
+
+    /// Baut die App auf einem vorhandenen egui-Kontext — ohne Fenster, damit
+    /// Dialoge in Tests headless gezeichnet werden können.
+    pub fn with_ctx(ctx: egui::Context) -> Self {
+        theme::install(&ctx);
         let prefs = UserPrefs::load();
         let mut s = Session::new();
         s.doc.name = "Unbenannt".into();

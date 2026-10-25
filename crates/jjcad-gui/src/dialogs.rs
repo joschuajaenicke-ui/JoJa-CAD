@@ -369,6 +369,17 @@ fn dim_background(ctx: &egui::Context) {
         });
 }
 
+/// Knopfzeile am rechten Rand eines modalen Dialogs. Die Höhe ist begrenzt,
+/// weil `with_layout` den verfügbaren Platz sonst voll ausfüllt und das
+/// modale Fenster dadurch Frame für Frame auf die halbe Bildschirmhöhe wächst.
+fn button_row(ui: &mut Ui, add: impl FnOnce(&mut Ui)) {
+    ui.allocate_ui_with_layout(
+        Vec2::new(ui.available_width(), 30.0),
+        Layout::right_to_left(Align::Center),
+        add,
+    );
+}
+
 fn modal_window<'a>(
     _ctx: &'a egui::Context,
     title: &str,
@@ -424,12 +435,16 @@ pub fn show(app: &mut App, ctx: &egui::Context) {
     if app.ui.text_dialog.is_some() {
         dim_background(ctx);
         let mut done = false;
+        // `win_open` steuert nur das X im Fensterrahmen (false = geschlossen).
+        // Es muss offen starten: mit false zeichnet egui den Dialog überhaupt
+        // nicht, sichtbar bleibt allein die Abdunklung des Hintergrunds.
+        let mut win_open = true;
         let mut cancel = false;
         let mut btn_cancel = false;
         let mut apply: Option<(String, f64, f64)> = None;
         let text_unit = app.doc().settings.input_unit;
         if let Some(td) = app.ui.text_dialog.as_mut() {
-            modal_window(ctx, "Text", 460.0, &mut cancel).show(ctx, |ui| {
+            modal_window(ctx, "Text", 460.0, &mut win_open).show(ctx, |ui| {
                 ui.set_width(440.0);
                 ui.label(theme::dim("Text (Platzhalter wie {DATUM} werden ersetzt)"));
                 let resp = ui.add_sized(
@@ -449,7 +464,7 @@ pub fn show(app: &mut App, ctx: &egui::Context) {
                     }
                 });
                 ui.add_space(8.0);
-                ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+                button_row(ui, |ui| {
                     if ui.button("Einfügen").clicked() && !td.text.trim().is_empty() {
                         apply = Some((td.text.clone(), td.height, td.angle));
                         done = true;
@@ -466,6 +481,9 @@ pub fn show(app: &mut App, ctx: &egui::Context) {
             if btn_cancel {
                 cancel = true;
             }
+        }
+        if !win_open {
+            cancel = true; // X im Fensterrahmen
         }
         if let Some((text, h, angle)) = apply {
             let unit = app.unit();
@@ -501,18 +519,20 @@ pub fn show(app: &mut App, ctx: &egui::Context) {
     // Neuer Block
     if app.ui.block_name_dialog.is_some() {
         dim_background(ctx);
+        // Fenster-Flag: startet offen, false = über das X geschlossen.
+        let mut win_open = true;
         let mut close = false;
         let mut btn_close = false;
         let mut create = false;
         if let Some((name, _)) = app.ui.block_name_dialog.as_mut() {
-            modal_window(ctx, "Block aus Auswahl", 420.0, &mut close).show(ctx, |ui| {
+            modal_window(ctx, "Block aus Auswahl", 420.0, &mut win_open).show(ctx, |ui| {
                 ui.set_width(400.0);
                 ui.label(theme::dim("Die Auswahl wird zur Blockdefinition und als Instanz eingefügt."));
                 ui.add_space(4.0);
                 let resp = ui.add_sized([380.0, 24.0], egui::TextEdit::singleline(name).hint_text("Blockname"));
                 resp.request_focus();
                 ui.add_space(8.0);
-                ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+                button_row(ui, |ui| {
                     if ui.button("Anlegen").clicked() {
                         create = true;
                     }
@@ -527,6 +547,9 @@ pub fn show(app: &mut App, ctx: &egui::Context) {
             if btn_close {
                 close = true;
             }
+        }
+        if !win_open {
+            close = true; // X im Fensterrahmen
         }
         if create {
             if let Some((name, _)) = app.ui.block_name_dialog.clone() {
@@ -551,7 +574,8 @@ pub fn show(app: &mut App, ctx: &egui::Context) {
     // Hotbar-Vorlage anlegen / umbenennen
     if let Some((idx, name)) = app.ui.preset_dialog.clone() {
         dim_background(ctx);
-        let mut win_close = false;
+        // Fenster-Flag: startet offen, false = über das X geschlossen.
+        let mut win_close = true;
         let mut btn_close = false;
         let mut ok = false;
         let mut buf = name.clone();
@@ -569,7 +593,7 @@ pub fn show(app: &mut App, ctx: &egui::Context) {
             );
             resp.request_focus();
             ui.add_space(8.0);
-            ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+            button_row(ui, |ui| {
                 if ui.button("OK").clicked() {
                     ok = true;
                 }
@@ -708,14 +732,15 @@ pub fn show(app: &mut App, ctx: &egui::Context) {
     if app.ui.confirm_new {
         dim_background(ctx);
         let mut close = false;
-        let mut win_close = false;
+        // Fenster-Flag: startet offen, false = über das X geschlossen.
+        let mut win_close = true;
         let mut confirmed = false;
         modal_window(ctx, "Neue Zeichnung", 420.0, &mut win_close).show(ctx, |ui| {
             ui.set_width(400.0);
             ui.label("Neue Zeichnung anlegen?");
             ui.label(theme::dim("Nicht gespeicherte Änderungen der aktuellen Zeichnung bleiben in ihrem Reiter erhalten."));
             ui.add_space(8.0);
-            ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+            button_row(ui, |ui| {
                 if ui.button("Anlegen").clicked() {
                     confirmed = true;
                 }
@@ -724,8 +749,8 @@ pub fn show(app: &mut App, ctx: &egui::Context) {
                 }
             });
         });
-        if win_close {
-            close = true;
+        if !win_close {
+            close = true; // X im Fensterrahmen
         }
         if confirmed {
             app.new_document();
@@ -1341,5 +1366,121 @@ fn help_body(app: &mut App, ui: &mut Ui) {
     ui.add_space(6.0);
     if ui.button("Über JoJa-CAD").clicked() {
         app.ui.about_open = true;
+    }
+}
+
+#[cfg(test)]
+mod modaltests {
+    //! Regression: modale Fenster müssen im ersten Frame gezeichnet werden.
+    //! Vorher startete das Fenster-Flag (`egui::Window::open`) mit `false` —
+    //! egui hält den Dialog dann für geschlossen, zeichnet nichts und es bleibt
+    //! nur die Abdunklung stehen ("Einfügen dunkelt die App ab").
+    use super::*;
+    use egui::{Id, LayerId, Order};
+
+    fn leeres_app() -> (App, egui::Context) {
+        let ctx = egui::Context::default();
+        let app = App::with_ctx(ctx.clone());
+        (app, ctx)
+    }
+
+    /// Einen Frame ohne echtes Fenster zeichnen — wie im laufenden Programm
+    /// wird nur die Dialogschicht aufgerufen.
+    fn frame(ctx: &egui::Context, app: &mut App, events: Vec<egui::Event>) {
+        let input = egui::RawInput {
+            screen_rect: Some(Rect::from_min_size(Pos2::ZERO, Vec2::new(1500.0, 950.0))),
+            events,
+            ..Default::default()
+        };
+        let _ = ctx.run(input, |ctx| show(app, ctx));
+    }
+
+    /// Wird die Fläche (Fenster oder Abdunklung) tatsächlich gezeichnet?
+    fn sichtbar(ctx: &egui::Context, order: Order, name: &str) -> bool {
+        let layer = LayerId::new(order, Id::new(name));
+        ctx.memory(|m| m.areas().is_visible(&layer))
+    }
+
+    fn fenster(ctx: &egui::Context, titel: &str) -> bool {
+        sichtbar(ctx, Order::Middle, titel)
+    }
+
+    fn abdunklung(ctx: &egui::Context) -> bool {
+        sichtbar(ctx, Order::Background, "modal_bg")
+    }
+
+    #[test]
+    fn textdialog_wird_gezeichnet_und_nimmt_einfuegen_an() {
+        let (mut app, ctx) = leeres_app();
+        let layer = app.doc().current_layer;
+        app.ui.text_dialog = Some(TextDialog {
+            pos: V2::new(10.0, 20.0),
+            text: String::new(),
+            height: 250.0,
+            angle: 0.0,
+            layer,
+            editing_id: None,
+        });
+
+        frame(&ctx, &mut app, vec![]);
+        assert!(
+            fenster(&ctx, "Text"),
+            "Textdialog muss im ersten Frame gezeichnet werden"
+        );
+        assert!(
+            abdunklung(&ctx),
+            "der modale Dialog dunkelt den Hintergrund ab"
+        );
+        assert!(
+            ctx.memory(|m| m.focused()).is_some(),
+            "das Textfeld im Dialog muss den Fokus bekommen"
+        );
+        // Das Fenster darf nicht Frame für Frame auf die halbe Bildschirmhöhe
+        // wachsen (egui dehnt eine ungebundene Knopfzeile sonst aus).
+        let mut hoehen = Vec::new();
+        for _ in 0..3 {
+            frame(&ctx, &mut app, vec![]);
+            hoehen.push(ctx.memory(|m| m.area_rect(Id::new("Text"))).unwrap().height());
+        }
+        assert!(
+            hoehen.windows(2).all(|w| (w[0] - w[1]).abs() < 1.0),
+            "Dialoghöhe muss stabil bleiben ({hoehen:?})"
+        );
+        assert!(hoehen[0] < 400.0, "Textdialog bleibt kompakt ({hoehen:?})");
+
+        // Zweimal hintereinander aus der Zwischenablage einfügen (Strg+V).
+        frame(&ctx, &mut app, vec![egui::Event::Paste("HALLO".into())]);
+        frame(&ctx, &mut app, vec![egui::Event::Paste(" WELT".into())]);
+        let text = app.ui.text_dialog.as_ref().expect("Dialog bleibt offen").text.clone();
+        assert_eq!(text, "HALLO WELT", "Einfügen landet im Textfeld des Dialogs");
+
+        // Dialog schließen: Fenster und Abdunklung sind danach weg.
+        app.ui.text_dialog = None;
+        frame(&ctx, &mut app, vec![]);
+        assert!(!fenster(&ctx, "Text"));
+        assert!(!abdunklung(&ctx), "ohne Dialog bleibt keine Abdunklung stehen");
+    }
+
+    #[test]
+    fn weitere_module_werden_gezeichnet() {
+        let (mut app, ctx) = leeres_app();
+
+        app.ui.block_name_dialog = Some(("Block".into(), false));
+        frame(&ctx, &mut app, vec![]);
+        assert!(fenster(&ctx, "Block aus Auswahl"));
+        app.ui.block_name_dialog = None;
+
+        app.ui.preset_dialog = Some((None, "Vorlage".into()));
+        frame(&ctx, &mut app, vec![]);
+        assert!(fenster(&ctx, "Hotbar-Vorlage"));
+        app.ui.preset_dialog = None;
+
+        app.ui.confirm_new = true;
+        frame(&ctx, &mut app, vec![]);
+        assert!(fenster(&ctx, "Neue Zeichnung"));
+        app.ui.confirm_new = false;
+        frame(&ctx, &mut app, vec![]);
+        assert!(!fenster(&ctx, "Neue Zeichnung"));
+        assert!(!abdunklung(&ctx));
     }
 }
