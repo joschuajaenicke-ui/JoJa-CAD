@@ -101,6 +101,10 @@ pub struct ToolOptions {
     pub offset_dist: f64,
     pub elevation_z: f64,
     pub fill_pattern: FillPattern,
+    /// Muster des Farbeimers. Eigener Wert, damit der Eimer mit Vollfläche
+    /// startet (wie ein Farbeimer im Malprogramm), ohne dass die anderen
+    /// Füll-Werkzeuge ihr Muster wechseln.
+    pub paint_pattern: FillPattern,
     /// Musterabstand in mm
     pub fill_scale: f64,
     /// Drehung des Musters (Bogenmaß, 0 = waagerecht)
@@ -134,6 +138,7 @@ impl ToolOptions {
             offset_dist: doc.settings.wall_thickness,
             elevation_z: 0.0,
             fill_pattern: FillPattern::Lines,
+            paint_pattern: FillPattern::Solid,
             fill_scale: 100.0,
             fill_angle: std::f64::consts::FRAC_PI_4,
             fill_border: true,
@@ -385,6 +390,10 @@ pub struct App {
     pub move_drag: Option<MoveDrag>,
     /// Frame, in dem der Griff-Drag begann (Zwei-Klick-Modus)
     pub grip_start_frame: f64,
+    /// Farbeimer-Vorschau: gemerkte Zeigerposition und die dazu ermittelte
+    /// Umgrenzung. Rechnet erst nach kurzem Stillstand (`canvas::PAINT_RUHE`),
+    /// sonst würde jede Zeigerbewegung eine Flutfüllung starten.
+    pub paint: crate::canvas::PaintPreview,
 }
 
 impl App {
@@ -446,6 +455,7 @@ impl App {
             hover_grip: None,
             move_drag: None,
             grip_start_frame: 0.0,
+            paint: crate::canvas::PaintPreview::default(),
         };
         app.ui.show_grid = show_grid;
         app.ui.lineweights = lineweights;
@@ -486,6 +496,7 @@ impl App {
                 "settings" => self.ui.settings_open = true,
                 "help" => self.ui.help_open = true,
                 "wall" => self.start_tool("draw.wall"),
+                "paint" | "farbeimer" => self.start_tool("draw.fill.paint"),
                 "door" => self.start_tool("draw.door"),
                 "text" => self.start_tool("draw.text"),
                 // Prüfhilfe: erste Tür auswählen, damit das Eigenschaften-Panel
@@ -1894,11 +1905,13 @@ fn rail(ui: &mut egui::Ui, icon: &str, tooltip: &str, chevron: &str) -> bool {
                     });
                     widgets::vline(ui, RIBBON_H);
                     self.group(ui, "Füllen", |ui, app| {
-                        // Drei Eingaben für dasselbe Objekt: Umriss abfahren,
-                        // freie Punktfolge, geschlossene Kontur anklicken.
+                        // Vier Eingaben für dasselbe Objekt: Umriss abfahren,
+                        // freie Punktfolge, Farbeimer (Klick in die Fläche) und
+                        // geschlossene Kontur anklicken.
                         for (id, icon, label) in [
                             ("draw.fill.boundary", "fill", "Umriss"),
                             ("draw.fill.points", "fill", "Punktfolge"),
+                            ("draw.fill.paint", "fill", "Farbeimer"),
                             ("draw.fill", "fill", "Kontur"),
                         ] {
                             if widgets::ribbon_button(ui, icon, label, app.tool_id() == Some(id)).clicked() {
@@ -2551,6 +2564,25 @@ fn rail(ui: &mut egui::Ui, icon: &str, tooltip: &str, chevron: &str) -> bool {
                     ui.label(theme::dim("Text"));
                     ui.add_sized([240.0, 22.0], egui::TextEdit::singleline(&mut self.options.text));
                 }
+                "draw.fill.paint" => {
+                    // Muster des Eimers (Vollfläche als Vorgabe) und Abstand —
+                    // eigener Wert, damit die anderen Füll-Werkzeuge ihr Muster
+                    // behalten.
+                    ui.label(theme::dim("Muster"));
+                    let items: Vec<(FillPattern, String)> = FillPattern::ALL
+                        .iter()
+                        .map(|p| (*p, p.label().to_string()))
+                        .collect();
+                    crate::panels::pick_combo(
+                        ui,
+                        "paint_pattern_opt",
+                        self.options.paint_pattern,
+                        &items,
+                    );
+                    ui.add_space(6.0);
+                    ui.label(theme::dim("Abstand"));
+                    widgets::length_input(ui, &mut self.options.fill_scale, unit, 70.0);
+                }
                 "draw.fill" | "draw.hatch" | "draw.fill.boundary" | "draw.fill.points" => {
                     ui.label(theme::dim("Muster"));
                     let items: Vec<(FillPattern, String)> = FillPattern::ALL
@@ -3010,6 +3042,7 @@ fn commands_hint(tool: &Tool) -> &'static str {
             }
         }
         "draw.fill" | "draw.hatch" => "Geschlossene Kontur anklicken",
+        "draw.fill.paint" => "In eine leere Fläche klicken — Vorschau zeigt die Fläche",
         "draw.arc" => match tool.pts.len() {
             0 => "Startpunkt",
             1 => "Endpunkt",

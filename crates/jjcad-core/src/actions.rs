@@ -99,6 +99,7 @@ pub const ACTIONS: &[ActionDef] = &[
     act!("draw.fill", "Füllfläche", Zeichnen, "fill", "", "Geschlossene Kontur klicken", true),
     act!("draw.fill.boundary", "Fläche nach Umriss", Zeichnen, "fill", "i", "Umriss abfahren: Punkte klicken, Enter beendet", true),
     act!("draw.fill.points", "Fläche nach Punktfolge", Zeichnen, "fill", "shift+i", "Punkte klicken, Enter schließt die Fläche", true),
+    act!("draw.fill.paint", "Farbeimer", Zeichnen, "fill", "c", "In eine leere Fläche klicken — die Umgrenzung wird ermittelt", true),
     act!("draw.text", "Text", Zeichnen, "text", "t", "Position klicken, dann Text eingeben", true),
     act!("draw.ellipse", "Ellipse", Zeichnen, "ellipse", "", "Mittelpunkt und Achsen klicken", true),
 
@@ -116,7 +117,7 @@ pub const ACTIONS: &[ActionDef] = &[
     act!("modify.mirror", "Spiegeln", Aendern, "mirror", "f", "Auswahl, Spiegelachse", true),
     act!("modify.scale", "Skalieren", Aendern, "scale", "", "Auswahl, Zentrum, Faktor", true),
     act!("modify.offset", "Versetzen", Aendern, "offset", "", "Abstand und Seite klicken", true),
-    act!("modify.trim", "Stutzen", Aendern, "trim", "c", "Zu stutzendes Segment anklicken", true),
+    act!("modify.trim", "Stutzen", Aendern, "trim", "s", "Zu stutzendes Segment anklicken", true),
     act!("modify.extend", "Verlängern", Aendern, "extend", "x", "Ende anklicken, das verlängert wird", true),
     act!("modify.erase", "Löschen", Aendern, "erase", "entf", "Auswahl löschen", false),
     act!("modify.explode", "Zerlegen", Aendern, "explode", "", "Blöcke/Bauteile in Einzelelemente zerlegen", false),
@@ -193,6 +194,7 @@ pub fn is_mutating(id: &str) -> bool {
             | "draw.fill"
             | "draw.fill.boundary"
             | "draw.fill.points"
+            | "draw.fill.paint"
             | "draw.hatch"
             | "draw.text"
             | "draw.ellipse"
@@ -767,24 +769,43 @@ fn ids_from(p: &Params, key: &str) -> Vec<Id> {
 /// wird genau eine Füllfläche.
 ///
 /// Jede Eingabe — Kontur anklicken (`draw.fill`), Umriss abfahren
-/// (`draw.fill.boundary`), freie Punktfolge (`draw.fill.points`) und der alte
-/// Name `draw.hatch` — läuft hier durch. Damit setzen alle Werkzeuge Muster,
-/// Winkel, Abstand, Randlinie und Stil an derselben Stelle und erzeugen
-/// zwangsläufig dasselbe Objekt; ein zweiter Konstruktionsweg würde früher oder
-/// später ein Feld anders setzen.
+/// (`draw.fill.boundary`), freie Punktfolge (`draw.fill.points`), der Farbeimer
+/// (`draw.fill.paint`) und der alte Name `draw.hatch` — läuft hier durch. Damit
+/// setzen alle Werkzeuge Muster, Winkel, Abstand, Randlinie und Stil an derselben
+/// Stelle und erzeugen zwangsläufig dasselbe Objekt; ein zweiter
+/// Konstruktionsweg würde früher oder später ein Feld anders setzen.
 fn add_fill(doc: &mut Document, boundary: Vec<Vec2>, p: &Params) -> Result<Value, String> {
-    if boundary.len() < 3 {
-        return Err("Füllfläche braucht mindestens drei Punkte".into());
-    }
     // Inseln kommen als Ringe mit: der Farbeimer (`detect_boundary`) liefert
     // sie aus derselben Flutfüllung. Ohne sie würde er Schornstein, Treppe und
     // Pfeiler übermalen. Werkzeuge ohne Löcher lassen den Schlüssel weg.
-    let holes = p
+    let holes: Vec<Vec<Vec2>> = p
         .rings("holes")
         .unwrap_or_default()
         .into_iter()
         .filter(|h| h.len() >= 3)
         .collect();
+    add_fill_rings(doc, boundary, holes, p, true)
+}
+
+/// Wie [`add_fill`], aber mit bereits ermittelten Ringen und einstellbarer
+/// Vorgabe für die Randlinie.
+///
+/// Der Farbeimer rechnet seine Ringe selbst (`detect_boundary`) und setzt
+/// `rand_vorgabe = false`: seine Umgrenzung liegt exakt auf der Wand oder auf
+/// der Linie, die die Fläche schließt. Eine Randlinie würde dort eine zweite
+/// Kante auf die vorhandene legen und die Wand optisch dicker machen. Die
+/// Umgrenzung wird nie als eigene Linien im Dokument abgelegt — nur die
+/// Flächengeometrie.
+fn add_fill_rings(
+    doc: &mut Document,
+    boundary: Vec<Vec2>,
+    holes: Vec<Vec<Vec2>>,
+    p: &Params,
+    rand_vorgabe: bool,
+) -> Result<Value, String> {
+    if boundary.len() < 3 {
+        return Err("Füllfläche braucht mindestens drei Punkte".into());
+    }
     let layer = resolve_layer(doc, p);
     let idn = doc.new_id();
     let mut e = Entity::new(
@@ -799,7 +820,7 @@ fn add_fill(doc: &mut Document, boundary: Vec<Vec2>, p: &Params) -> Result<Value
                 .len("scale")
                 .or_else(|| p.len("spacing"))
                 .unwrap_or(100.0),
-            border: p.boolean_or("border", true),
+            border: p.boolean_or("border", rand_vorgabe),
         },
     );
     apply_common(doc, &mut e, p, layer);
@@ -918,6 +939,21 @@ pub fn execute(doc: &mut Document, id: &str, params: &Value) -> Result<Value, St
                 .or_else(|| p.pts("pts"))
                 .ok_or_else(|| "Parameter 'boundary' fehlt".to_string())?;
             add_fill(doc, boundary, &p)
+        }
+        // Farbeimer: ein Klick in die leere Fläche, die Umgrenzung ermittelt der
+        // Kern (`boundary::detect_boundary`) aus derselben Displayliste, die
+        // Bildschirm, PDF und PNG zeichnen. Der Klickpunkt ist ein Punkt in der
+        // Fläche — kein Fangpunkt auf einer Kante, sonst meldet die Erkennung
+        // „auf einer Linie geklickt“.
+        "draw.fill.paint" => {
+            let pt = require_pt(&p, "p")?;
+            let g = crate::boundary::detect_boundary(
+                doc,
+                pt,
+                &crate::boundary::BoundaryOpts::default(),
+            )
+            .map_err(|e| e.message().to_string())?;
+            add_fill_rings(doc, g.outer, g.holes, &p, false)
         }
         "draw.text" => {
             let pt = require_pt(&p, "p")?;
