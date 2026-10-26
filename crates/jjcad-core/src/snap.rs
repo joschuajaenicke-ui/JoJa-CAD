@@ -130,6 +130,25 @@ pub fn snap_candidates_gated(
     selected: &[Id],
     allow_grid: bool,
 ) -> Vec<SnapHit> {
+    snap_candidates_ohne_punkte(doc, cursor, tol, reference, ignore, selected, &[], allow_grid)
+}
+
+/// Wie [`snap_candidates_gated`], aber gesperrte Punkte fallen schon beim
+/// Sammeln heraus — **vor** dem Entdoppeln. Nachträglich zu filtern wäre falsch:
+/// sitzt ein gesperrter Punkt genau auf dem Endpunkt eines fremden Elements,
+/// hätte das Entdoppeln den fremden Kandidaten bereits verworfen und der Fang
+/// fiele auf einen kontinuierlichen Treffer zurück.
+#[allow(clippy::too_many_arguments)]
+pub fn snap_candidates_ohne_punkte(
+    doc: &Document,
+    cursor: Vec2,
+    tol: f64,
+    reference: Option<Vec2>,
+    ignore: &[Id],
+    selected: &[Id],
+    gesperrt: &[GesperrterPunkt],
+    allow_grid: bool,
+) -> Vec<SnapHit> {
     let mut s = doc.settings.snap.clone();
     if !allow_grid {
         s.grid = false;
@@ -142,14 +161,15 @@ pub fn snap_candidates_gated(
         if dist > tol {
             return;
         }
-        cands.push((
-            dist,
-            SnapHit {
-                point: p,
-                kind,
-                entity,
-            },
-        ));
+        let hit = SnapHit {
+            point: p,
+            kind,
+            entity,
+        };
+        if ist_gesperrt(&hit, gesperrt) {
+            return;
+        }
+        cands.push((dist, hit));
     };
 
     // Kandidaten sammeln (nur sichtbare Objekte in der Nähe).
@@ -290,6 +310,20 @@ pub fn snap_candidates_gated(
     out
 }
 
+/// Ein gesperrter Fangpunkt: gehört zu diesem Element *und* liegt auf dieser
+/// Stelle. Nur die Kombination ist gesperrt — ein fremdes Element, das zufällig
+/// auf demselben Punkt sitzt, darf weiterhin fangen (sonst bricht der Fang ab,
+/// sobald der gezogene Griff auf dem Ziel angekommen ist).
+pub type GesperrterPunkt = (Id, Vec2);
+
+/// Ist dieser Kandidat gesperrt? Verglichen wird mit derselben Toleranz, unter
+/// der zwei Fangpunkte als derselbe Punkt gelten.
+fn ist_gesperrt(hit: &SnapHit, gesperrt: &[GesperrterPunkt]) -> bool {
+    gesperrt
+        .iter()
+        .any(|(id, g)| hit.entity == Some(*id) && g.dist(hit.point) <= SNAP_DEDUP)
+}
+
 /// Woher der endgültige Zeigerpunkt stammt — die Stufen der Fang-Kette.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum SnapSource {
@@ -360,12 +394,39 @@ pub fn snap_constrained(
     selected: &[Id],
     allow_grid: bool,
 ) -> SnapResolution {
+    snap_constrained_ohne_punkte(doc, cursor, tol, reference, ignore, selected, &[], allow_grid)
+}
+
+/// Wie [`snap_constrained`], aber die Punkte in `gesperrt` sind als Fangziel
+/// ausgeschlossen.
+///
+/// Gebraucht beim Ziehen eines Griffs: der bewegte Stützpunkt liegt dauerhaft
+/// im Fangradius des Zeigers. Ohne Sperre fängt er sich selbst (Endpunkt hat
+/// die höchste Priorität) und der Griff bleibt stehen, statt der Maus zu
+/// folgen. Gesperrt wird nur der *eine* Punkt an seinem Element — die ruhenden
+/// Nachbarecken derselben Polylinie fangen weiter (Polylinie an sich selbst
+/// anschließen), und ein fremdes Element auf derselben Stelle ebenfalls.
+#[allow(clippy::too_many_arguments)]
+pub fn snap_constrained_ohne_punkte(
+    doc: &Document,
+    cursor: Vec2,
+    tol: f64,
+    reference: Option<Vec2>,
+    ignore: &[Id],
+    selected: &[Id],
+    gesperrt: &[GesperrterPunkt],
+    allow_grid: bool,
+) -> SnapResolution {
     let s = doc.settings.snap.clone();
     let tol = tol.max(1e-6);
 
     // 1. Objektfang ohne Raster: er gewinnt gegen jede Zwangsrichtung.
     //    Das Raster ist eine Führung wie Ortho und kommt erst in Schritt 3.
-    if let Some(hit) = find_snap_gated(doc, cursor, tol, reference, ignore, selected, false) {
+    if let Some(hit) =
+        snap_candidates_ohne_punkte(doc, cursor, tol, reference, ignore, selected, gesperrt, false)
+            .into_iter()
+            .next()
+    {
         return SnapResolution {
             point: hit.point,
             source: SnapSource::Object(hit.kind),
