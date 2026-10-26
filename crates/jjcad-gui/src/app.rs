@@ -109,14 +109,42 @@ pub struct ToolOptions {
     pub fill_scale: f64,
     /// Drehung des Musters (Bogenmaß, 0 = waagerecht)
     pub fill_angle: f64,
-    /// Randlinie entlang des Umrisses
-    pub fill_border: bool,
+    /// Umrandung der Füllfläche beim **Punkte setzen** (`draw.fill.points`,
+    /// `draw.fill.boundary`) — hier gibt es keine vorhandene Kante, deshalb an.
+    pub fill_border_points: bool,
+    /// Umrandung beim **Kontur anklicken** (`draw.fill`): die Umgrenzung liegt
+    /// schon auf einer Linie oder Wand, deshalb aus.
+    pub fill_border_outline: bool,
+    /// Umrandung beim **Farbeimer** (`draw.fill.paint`): die Grenze ist die
+    /// Wand, eine zweite Kante würde sie dicker machen — deshalb aus.
+    pub fill_border_paint: bool,
     pub block_id: Option<String>,
     pub block_rot: f64,
     pub block_scale: f64,
 }
 
 impl ToolOptions {
+    /// Umrandung des angegebenen Erstellmodus — der Wert, an den das
+    /// Eigenschaften-Panel seine Checkbox bindet. Eine Stelle für die
+    /// Zuordnung Modus → Feld, damit Panel, Vorschau und Erzeugung nicht
+    /// auseinanderlaufen.
+    pub fn fill_border_for(&self, tool_id: &str) -> bool {
+        match tool_id {
+            "draw.fill" | "draw.hatch" => self.fill_border_outline,
+            "draw.fill.paint" => self.fill_border_paint,
+            _ => self.fill_border_points,
+        }
+    }
+
+    /// Wie [`ToolOptions::fill_border_for`], aber schreibbar (Checkbox).
+    pub fn fill_border_for_mut(&mut self, tool_id: &str) -> &mut bool {
+        match tool_id {
+            "draw.fill" | "draw.hatch" => &mut self.fill_border_outline,
+            "draw.fill.paint" => &mut self.fill_border_paint,
+            _ => &mut self.fill_border_points,
+        }
+    }
+
     pub fn from_doc(doc: &Document) -> Self {
         Self {
             wall_thickness: doc.settings.wall_thickness,
@@ -141,7 +169,9 @@ impl ToolOptions {
             paint_pattern: FillPattern::Solid,
             fill_scale: 100.0,
             fill_angle: std::f64::consts::FRAC_PI_4,
-            fill_border: true,
+            fill_border_points: true,
+            fill_border_outline: false,
+            fill_border_paint: false,
             block_id: None,
             block_rot: 0.0,
             block_scale: 1.0,
@@ -608,7 +638,7 @@ impl App {
                 }
                 "selffill" | "selfill" => {
                     // erste Füllfläche auswählen: Eigenschaften-Panel der
-                    // Füllfläche (Muster, Winkel, Abstand, Randlinie) zeigen
+                    // Füllfläche (Muster, Winkel, Abstand, Umrandung) zeigen
                     if let Some(id) = self
                         .doc()
                         .entities

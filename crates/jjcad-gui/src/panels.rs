@@ -366,8 +366,9 @@ pub fn properties(app: &mut App, ui: &mut Ui) {
 fn pending_props(app: &mut App, ui: &mut Ui) {
     let tool_id = app.tool.as_ref().map(|t| t.action.clone()).unwrap_or_default();
     let is_wall = tool_id == "draw.wall";
-    // Beide Füllwerkzeuge tragen dieselben Typparameter (Muster, Winkel,
-    // Abstand, Randlinie) — Werte bleiben für das nächste Element stehen.
+    // Alle Füllwerkzeuge tragen dieselben Typparameter (Muster, Winkel,
+    // Abstand, Umrandung) — Werte bleiben für das nächste Element stehen.
+    // Die Umrandung merkt sich jeder Erstellmodus getrennt.
     let is_fill = matches!(
         tool_id.as_str(),
         "draw.fill" | "draw.hatch" | "draw.fill.boundary" | "draw.fill.points"
@@ -541,10 +542,12 @@ fn pending_props(app: &mut App, ui: &mut Ui) {
                 app.options.fill_scale = abstand;
             }
         });
-        let mut rand = app.options.fill_border;
-        widgets::field_row(ui, "Randlinie", |ui| {
+        // Umrandung: ein Wert je Erstellmodus — „Punkte setzen" an,
+        // „Kontur anklicken" aus. Der Name folgt dem Glossar.
+        let mut rand = app.options.fill_border_for(tool_id.as_str());
+        widgets::field_row(ui, "Umrandung", |ui| {
             if ui.checkbox(&mut rand, "").changed() {
-                app.options.fill_border = rand;
+                *app.options.fill_border_for_mut(tool_id.as_str()) = rand;
             }
         });
 
@@ -695,6 +698,14 @@ fn pending_props(app: &mut App, ui: &mut Ui) {
         widgets::field_row(ui, "Abstand", |ui| {
             if widgets::length_input(ui, &mut abstand, app.unit(), ui.available_width()) {
                 app.options.fill_scale = abstand;
+            }
+        });
+        // Vorgabe aus — die Grenze des Eimers ist die Wand. Die Checkbox
+        // schaltet die Umrandung für neue Flächen zu.
+        let mut rand = app.options.fill_border_for(tool_id.as_str());
+        widgets::field_row(ui, "Umrandung", |ui| {
+            if ui.checkbox(&mut rand, "").changed() {
+                *app.options.fill_border_for_mut(tool_id.as_str()) = rand;
             }
         });
     }
@@ -1363,8 +1374,10 @@ fn entity_props(app: &mut App, ui: &mut Ui, id: Id) {
                     changed_params.insert("pattern_scale".into(), json!(unit.from_mm(abstand)));
                 }
             });
-            widgets::field_row(ui, "Randlinie", |ui| {
+            widgets::field_row(ui, "Umrandung", |ui| {
                 if ui.checkbox(&mut rand, "").changed() {
+                    // Direkt in das Objekt: die Fläche wird im nächsten Frame
+                    // ohne die Randlinie gezeichnet.
                     changed_params.insert("border".into(), json!(rand));
                 }
             });
