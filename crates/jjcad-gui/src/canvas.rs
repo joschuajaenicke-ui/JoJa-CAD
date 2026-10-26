@@ -1696,7 +1696,8 @@ fn fang_radius_px(app: &App, zoom: f64) -> f64 {
 fn fang_zeiger(app: &App, w: V2, tol: f64) -> (V2, Option<&'static str>) {
     let reference = app.tool.as_ref().and_then(|t| t.pts.last().copied());
     let regeln = fang_regeln(app);
-    let res = snap::snap_constrained_ohne_punkte(
+    let vorschau = vorschau_punkte(app);
+    let res = snap::snap_constrained_mit_vorschau(
         app.doc(),
         w,
         tol,
@@ -1704,9 +1705,30 @@ fn fang_zeiger(app: &App, w: V2, tol: f64) -> (V2, Option<&'static str>) {
         &regeln.ignore,
         &regeln.keep,
         &regeln.gesperrt,
+        &vorschau,
         app.ui.show_grid,
     );
     (res.point, res.label())
+}
+
+/// Stützpunkte des gerade gezeichneten Zuges als zusätzliche Fangziele.
+///
+/// Die Polylinie entsteht erst mit dem Abschluss im Modell; bis dahin kennt die
+/// Fang-Engine ihre Punkte nicht und der Anfang (Schließen) oder ein früherer
+/// Stützpunkt ist nicht anvisierbar. Sie fangen deshalb als Endpunkte.
+///
+/// Der **letzte** Punkt ist Bezugspunkt der nächsten Strecke (Lot, Ortho,
+/// Polar) und bleibt außen vor — sonst zöge er den Zeiger auf sich selbst und
+/// die Strecke käme nicht vom Fleck. Weniger als zwei Punkte haben keine
+/// Vorschau: ein einzelner Punkt ist immer der Bezugspunkt.
+fn vorschau_punkte(app: &App) -> Vec<V2> {
+    let Some(t) = app.tool.as_ref() else {
+        return Vec::new();
+    };
+    if t.action != "draw.polyline" || t.pts.len() < 2 {
+        return Vec::new();
+    }
+    t.pts[..t.pts.len() - 1].to_vec()
 }
 
 /// Fängt einen Weltpunkt für eine beliebige Bildschirmposition (ohne Label-Nebenwirkungen).
@@ -4538,6 +4560,139 @@ mod tests_fang_polylinie {
 }
 
 
+
+mod tests_fang_vorschau {
+    //! Punktfang auf die eigene Vorschau bei der Polylinien-Eingabe (Ticket T0002).
+    //!
+    //! Während des Zeichnens steht die Polylinie noch nicht im Modell; ihre
+    //! Stützpunkte kommen über `vorschau_punkte` in die Fang-Engine. Geprüft wird
+    //! der Weg der Zeichenfläche (`fang_zeiger` für Anzeige *und* Klickpunkt) —
+    //! mit Ortho, weil dessen Achse den Anfangspunkt sonst verdeckt.
+
+    use super::*;
+
+    fn app() -> App {
+        App::with_ctx(egui::Context::default())
+    }
+
+    /// Ortho an, Polar und Raster aus.
+    fn ortho_app() -> App {
+        let mut app = app();
+        let _ = app.session_mut().execute(
+            "doc.settings",
+            &serde_json::json!({"input_unit": "mm",
+                               "snap": {"ortho": true, "polar": false, "grid": false}}),
+        );
+        app
+    }
+
+    /// Offenes Dreieck der laufenden Eingabe: (0;0) → (2000;0) → (2000;1500).
+    fn dreieck_im_werkzeug(app: &mut App) {
+        app.start_tool("draw.polyline");
+        tool_click(app, V2::new(0.0, 0.0));
+        tool_click(app, V2::new(2000.0, 0.0));
+        tool_click(app, V2::new(2000.0, 1500.0));
+    }
+
+    fn polylinie_stand(app: &App) -> (Vec<V2>, bool) {
+        app.doc()
+            .entities
+            .iter()
+            .find_map(|e| match &e.kind {
+                EntityKind::Polyline { verts, closed } => {
+                    Some((verts.iter().map(|w| w.p).collect(), *closed))
+                }
+                _ => None,
+            })
+            .expect("keine Polylinie angelegt")
+    }
+
+    /// Der Zeiger fängt auf dem eigenen Anfang — trotz Ortho, dessen Achse vom
+    /// letzten Stützpunkt (2000;1500) aus weit am Anfang vorbeiläuft.
+    #[test]
+    fn zeiger_faengt_eigenen_anfang_trotz_ortho() {
+        let mut app = ortho_app();
+        dreieck_im_werkzeug(&mut app);
+
+        let (p, label) = fang_zeiger(&app, V2::new(10.0, -6.0), 40.0);
+        assert_eq!(label, Some("Endpunkt"), "Snap-Indikator in der Statuszeile");
+        assert!(
+            p.dist(V2::new(0.0, 0.0)) < 1e-9,
+            "Fangpunkt muss der Anfang der Vorschau sein, ist {p:?}"
+        );
+    }
+
+    /// Klick auf den gefangenen Anfang schließt den Zug: Closed-Flag, drei
+    /// Stützpunkte, Werkzeug beendet — auch mit Ortho.
+    #[test]
+    fn klick_auf_gefangenen_anfang_schliesst_trotz_ortho() {
+        let mut app = ortho_app();
+        dreieck_im_werkzeug(&mut app);
+
+        let (p, _) = fang_zeiger(&app, V2::new(10.0, -6.0), 40.0);
+        tool_click(&mut app, p);
+        assert!(app.tool.is_none(), "der Startklick beendet die Eingabe");
+
+        let (pts, closed) = polylinie_stand(&app);
+        assert!(closed, "Closed-Flag fehlt");
+        assert_eq!(pts.len(), 3, "kein doppelter Endpunkt");
+        assert!(pts[0].dist(V2::new(0.0, 0.0)) < 1e-9, "Anfang {:?}", pts[0]);
+    }
+
+    /// Ein Zwischenpunkt der Vorschau ist Fangziel: der Klick landet exakt auf
+    /// der früheren Ecke.
+    #[test]
+    fn zwischenpunkt_der_vorschau_faengt() {
+        let mut app = app();
+        let _ = app.session_mut().execute(
+            "doc.settings",
+            &serde_json::json!({"input_unit": "mm",
+                               "snap": {"ortho": false, "polar": false, "grid": false}}),
+        );
+        dreieck_im_werkzeug(&mut app);
+
+        let (p, label) = fang_zeiger(&app, V2::new(1994.0, 8.0), 40.0);
+        assert_eq!(label, Some("Endpunkt"));
+        assert!(p.dist(V2::new(2000.0, 0.0)) < 1e-9, "ist {p:?}");
+    }
+
+    /// Der zuletzt gesetzte Punkt bleibt Bezugspunkt und zieht den Zeiger nicht
+    /// auf sich selbst — sonst käme die nächste Strecke nicht vom Fleck.
+    #[test]
+    fn letzter_punkt_zieht_den_zeiger_nicht() {
+        let mut app = app();
+        let _ = app.session_mut().execute(
+            "doc.settings",
+            &serde_json::json!({"input_unit": "mm",
+                               "snap": {"ortho": false, "polar": false, "grid": false}}),
+        );
+        app.start_tool("draw.polyline");
+        tool_click(&mut app, V2::new(0.0, 0.0));
+        tool_click(&mut app, V2::new(2000.0, 0.0));
+
+        let cursor = V2::new(1992.0, 8.0);
+        let (p, label) = fang_zeiger(&app, cursor, 40.0);
+        assert_eq!(label, None, "kein Fang am eigenen Bezugspunkt");
+        assert!(p.dist(cursor) < 1e-9, "Zeiger bleibt frei, ist {p:?}");
+    }
+
+    /// Weniger als zwei Punkte haben keine Vorschau — der einzige Punkt ist
+    /// immer der Bezugspunkt der nächsten Strecke.
+    #[test]
+    fn ein_punkt_hat_keine_vorschau() {
+        let mut app = app();
+        assert!(vorschau_punkte(&app).is_empty(), "ohne Werkzeug leer");
+        app.start_tool("draw.polyline");
+        tool_click(&mut app, V2::new(0.0, 0.0));
+        assert!(vorschau_punkte(&app).is_empty(), "ein Punkt ist Bezugspunkt");
+        tool_click(&mut app, V2::new(2000.0, 0.0));
+        assert_eq!(
+            vorschau_punkte(&app),
+            vec![V2::new(0.0, 0.0)],
+            "ab zwei Punkten fängt der Anfang"
+        );
+    }
+}
 
 mod tests_fang_griff {
     //! Punktfang beim Bearbeiten einer ausgewählten Polylinie (Karte t_eb950a21).
