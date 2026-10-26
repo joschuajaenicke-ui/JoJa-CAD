@@ -797,7 +797,8 @@ fn add_fill(
         .into_iter()
         .filter(|h| h.len() >= 3)
         .collect();
-    add_fill_rings(doc, boundary, holes, p, rand_vorgabe)
+    // Kein Randobjekt bekannt (Kontur aus Punkten): die Fläche wird angehängt.
+    add_fill_rings(doc, boundary, holes, p, rand_vorgabe, &[])
 }
 
 /// Wie [`add_fill`], aber mit bereits ermittelten Ringen und einstellbarer
@@ -815,6 +816,7 @@ fn add_fill_rings(
     holes: Vec<Vec<Vec2>>,
     p: &Params,
     rand_vorgabe: bool,
+    unter: &[Id],
 ) -> Result<Value, String> {
     if boundary.len() < 3 {
         return Err("Füllfläche braucht mindestens drei Punkte".into());
@@ -837,8 +839,21 @@ fn add_fill_rings(
         },
     );
     apply_common(doc, &mut e, p, layer);
-    doc.add_entity(e);
-    Ok(json!({"ok": true, "created": [idn]}))
+    // Zeichenreihenfolge: die Liste `entities` IST die Reihenfolge, Index 0
+    // liegt ganz hinten. Die Füllfläche gehört unter die Objekte, die sie
+    // begrenzen — sonst überdeckt ihre Fläche deren Linien und der Rand des
+    // Raums verschwindet. Sie kommt deshalb direkt hinter das vorderste
+    // Randobjekt, also an dessen Platz; die übrigen Objekte rücken nur nach
+    // hinten und behalten ihre relative Lage. Ohne Randobjekte (Kontur aus
+    // freien Punkten) bleibt es beim Anhängen wie bisher.
+    let ziel = unter
+        .iter()
+        .filter_map(|id| doc.entities.iter().position(|o| o.id == *id))
+        .min()
+        .unwrap_or(doc.entities.len());
+    doc.entities.insert(ziel, e);
+    doc.modified = true;
+    Ok(json!({"ok": true, "created": [idn], "position": ziel + 1}))
 }
 
 // ---------------------------------------------------------------------------
@@ -977,7 +992,9 @@ pub fn execute(doc: &mut Document, id: &str, params: &Value) -> Result<Value, St
                 &crate::boundary::BoundaryOpts::default(),
             )
             .map_err(|e| e.message().to_string())?;
-            add_fill_rings(doc, g.outer, g.holes, &p, false)
+            // Die ermittelte Umgrenzung nennt ihre Objekte: unter denen liegt
+            // die Fläche in der Zeichenreihenfolge (`border_entities`).
+            add_fill_rings(doc, g.outer, g.holes, &p, false, &g.border_entities)
         }
         "draw.text" => {
             let pt = require_pt(&p, "p")?;

@@ -74,6 +74,14 @@ impl Default for BoundaryOpts {
 pub struct FillBoundary {
     pub outer: Vec<Vec2>,
     pub holes: Vec<Vec<Vec2>>,
+    /// Objekte, die die Fläche begrenzen — außen wie an den Inseln, in der
+    /// Zeichenreihenfolge des Dokuments.
+    ///
+    /// Das ist der einzige Modellbezug dieser sonst rein geometrischen
+    /// Auskunft. Ohne ihn wüsste die Füllfläche nicht, hinter welche Objekte
+    /// sie in der Zeichenreihenfolge gehört: sie würde am Ende angehängt und
+    /// ihre Fläche überdeckte die Linien ihrer eigenen Umgrenzung.
+    pub border_entities: Vec<Id>,
 }
 
 impl FillBoundary {
@@ -262,6 +270,15 @@ struct Gitter {
     /// Von der Flut gefüllte Läufe `(Zeile, von, bis)` — Grundlage der
     /// Konturen, damit kein voller Scan über das Raster nötig ist.
     laeufe: Vec<(usize, usize, usize)>,
+    /// Zelle → Objekt, das sie als Barriere gezeichnet hat. Nur im feinen
+    /// Raster gefüllt (`None` = keine Aufzeichnung); Grundlage der
+    /// Zeichenreihenfolge der Füllfläche.
+    ///
+    /// Eine Karte je Barrierezelle statt eines zweiten Feldes über alle Zellen:
+    /// belegt wird nur der Umfang der eingezeichneten Linien, nicht die Fläche.
+    eigentuemer: Option<HashMap<usize, Id>>,
+    /// Objekt, dessen Primitiv gerade gezeichnet wird.
+    eigentuemer_jetzt: Id,
 }
 
 impl Gitter {
@@ -280,7 +297,17 @@ impl Gitter {
             kern_spalte: Vec::new(),
             kern_zeile: Vec::new(),
             laeufe: Vec::new(),
+            eigentuemer: None,
+            eigentuemer_jetzt: 0,
         }
+    }
+
+    /// Aufzeichnen, welches Objekt welche Barrierezelle gezeichnet hat.
+    ///
+    /// Kostet eine Karte proportional zur Linienlänge im Raster — deshalb nur
+    /// dort einschalten, wo die Grenzobjekte gebraucht werden.
+    fn merke_eigentuemer(&mut self) {
+        self.eigentuemer = Some(HashMap::new());
     }
 
     /// Gitterpunkt → Weltkoordinate.
@@ -434,7 +461,42 @@ impl Gitter {
         if x < 0 || y < 0 || x as usize >= self.w || y as usize >= self.h {
             return;
         }
-        self.zellen[y as usize * self.w + x as usize] = BARRIERE;
+        let i = y as usize * self.w + x as usize;
+        self.zellen[i] = BARRIERE;
+        if self.eigentuemer.is_some() {
+            let id = self.eigentuemer_jetzt;
+            if let Some(map) = &mut self.eigentuemer {
+                map.insert(i, id);
+            }
+        }
+    }
+
+    /// Objekte, deren Barriere an die gefüllte Fläche grenzt.
+    ///
+    /// Das sind die Objekte, die die Umgrenzung ziehen — außen wie an den
+    /// Inseln. Ein Objekt weiter draußen (jenseits der nächsten Wand) berührt
+    /// die Fläche nicht und bleibt außen vor.
+    fn grenz_objekte(&self) -> Vec<Id> {
+        let Some(map) = &self.eigentuemer else {
+            return Vec::new();
+        };
+        let mut gesehen: HashSet<Id> = HashSet::new();
+        let mut ids: Vec<Id> = Vec::new();
+        for (&i, &id) in map {
+            if gesehen.contains(&id) {
+                continue;
+            }
+            let (x, y) = ((i % self.w) as i32, (i / self.w) as i32);
+            let grenzt = self.gefuellt(x - 1, y)
+                || self.gefuellt(x + 1, y)
+                || self.gefuellt(x, y - 1)
+                || self.gefuellt(x, y + 1);
+            if grenzt {
+                gesehen.insert(id);
+                ids.push(id);
+            }
+        }
+        ids
     }
 
     // -- Zeichnen ----------------------------------------------------------
@@ -456,6 +518,8 @@ impl Gitter {
                     continue;
                 }
             }
+            // Damit jede Barrierezelle ihrem Objekt zugeordnet werden kann.
+            self.eigentuemer_jetzt = prim.entity;
             match &prim.shape {
                 Shape::Line(a, b) => self.linie(*a, *b),
                 Shape::Poly(pts, closed) => {
@@ -1003,6 +1067,9 @@ pub fn detect_boundary(
     }
     let mut fein = Gitter::neu(roi, k_roh.min(ZIEL_PX_PRO_MM));
     fein.setze_kern(kern);
+    // Das feine Raster ist die Grundlage der Grenzobjekte: es sieht den Rand
+    // in der Auflösung, in der die Fläche entsteht.
+    fein.merke_eigentuemer();
     fein.zeichne(&dl, Some(&roi.expanded(2.0)), &schmuck);
     let Some(s) = fein.pixel(click) else {
         return Err(BoundaryError::Open);
@@ -1018,7 +1085,17 @@ pub fn detect_boundary(
     if offen {
         return Err(BoundaryError::Open);
     }
-    aus_gitter(&fein, tol)
+    // Grenzobjekte in der Zeichenreihenfolge des Dokuments: die Ordnung der
+    // Karte ist die der Zellen, nicht die des Plans. Objekte aus Blocks stehen
+    // nicht in `doc.entities` und fallen weg — sie lassen sich nicht ordnen.
+    let mut grenz = fein.grenz_objekte();
+    grenz.retain(|id| doc.entities.iter().any(|e| e.id == *id));
+    grenz.sort_by_key(|id| doc.entities.iter().position(|e| e.id == *id).unwrap_or(usize::MAX));
+    grenz.dedup();
+
+    let mut ergebnis = aus_gitter(&fein, tol)?;
+    ergebnis.border_entities = grenz;
+    Ok(ergebnis)
 }
 
 /// Konturen des gefluteten Rasters als Umgrenzung ausgeben.
@@ -1074,7 +1151,11 @@ fn aus_gitter(gitter: &Gitter, tol: f64) -> Result<FillBoundary, BoundaryError> 
             loch.reverse();
         }
     }
-    Ok(FillBoundary { outer, holes })
+    Ok(FillBoundary {
+        outer,
+        holes,
+        border_entities: Vec::new(),
+    })
 }
 
 /// Schnittmenge zweier Rechtecke (leer, wenn sie sich nicht überschneiden).

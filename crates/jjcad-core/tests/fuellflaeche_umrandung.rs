@@ -120,11 +120,15 @@ fn farbeimer_hat_umrandung_aus() {
             .expect("Rahmen zeichnen");
     }
     let vorher = s.doc.entities.len();
-    s.execute("draw.fill.paint", &json!({ "p": [2.0, 1.5] }))
+    let r = s
+        .execute("draw.fill.paint", &json!({ "p": [2.0, 1.5] }))
         .expect("Farbeimer muss eine Fläche anlegen");
 
     assert_eq!(s.doc.entities.len(), vorher + 1, "genau eine Fläche dazu");
-    let e = s.doc.entities.last().unwrap();
+    // Nicht das letzte Objekt: der Farbeimer legt seine Fläche unter die
+    // Umgrenzung (t_9cd971c5), also an den Anfang der Zeichenreihenfolge.
+    let id = r["created"][0].as_u64().expect("ID der Fläche");
+    let e = s.doc.entity(id).expect("Fläche im Dokument");
     let EntityKind::Fill { border, .. } = &e.kind else {
         panic!("keine Füllfläche, sondern {}", e.kind.type_name());
     };

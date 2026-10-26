@@ -649,6 +649,27 @@ impl App {
                         self.session_mut().selection = vec![id];
                     }
                 }
+                // Farbeimer-Prüffall (t_9cd971c5): den Raum unten links wirklich
+                // füllen und die Fläche auswählen. Im Screenshot muss der
+                // Wandrahmen über der Fläche liegen, und das Eigenschaften-Panel
+                // zeigt, an welcher Stelle der Zeichenreihenfolge sie steht.
+                "fillpaint" => {
+                    let u = self.unit();
+                    let klick = V2::new(1500.0, 2600.0);
+                    let r = self.session_mut().execute(
+                        "draw.fill.paint",
+                        &serde_json::json!({
+                            "p": [u.from_mm(klick.x), u.from_mm(klick.y)],
+                            "pattern": "solid",
+                            "fill": "#f0c8c8",
+                        }),
+                    );
+                    if let Ok(v) = r {
+                        if let Some(id) = v["created"][0].as_u64() {
+                            self.session_mut().selection = vec![id];
+                        }
+                    }
+                }
                 "fill" => self.start_tool("draw.fill"),
                 // Umriss abfahren: Punkte vorgeben, damit die Vorschau (Fläche
                 // halbtransparent, Muster aus dem Panel) im Screenshot steht.
