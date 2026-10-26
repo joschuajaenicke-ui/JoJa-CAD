@@ -284,6 +284,13 @@ pub struct UserPrefs {
         deserialize_with = "de_drag_mode_mit_altfeld"
     )]
     pub drag_mode: DragMode,
+    /// Zuletzt benutzter Eingabemodus der Fuellflaechen-Schaltflaeche
+    /// ("contour" | "points" | "paint")
+    #[serde(default)]
+    pub fill_input: String,
+    /// Dasselbe fuer die Schraffur-Schaltflaeche
+    #[serde(default)]
+    pub hatch_input: String,
     #[serde(default = "default_true")]
     pub snap_marker: bool,
     /// Wandkontur-Punktfang (snap.wall_edges) — app-weit gemerkt, damit die
@@ -369,6 +376,8 @@ impl Default for UserPrefs {
             show_lineweights: true,
             lineweights_scaled: false,
             drag_mode: DragMode::HoldAndDrag,
+            fill_input: "points".into(),
+            hatch_input: "contour".into(),
             snap_marker: true,
             snap_wall_edges: true,
             show_properties: true,

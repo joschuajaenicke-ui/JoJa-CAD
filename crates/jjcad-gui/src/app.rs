@@ -248,6 +248,9 @@ pub struct UiState {
     pub lineweights_scaled: bool,
     /// Zieh-Modus für Objekte und Griffe
     pub drag_mode: DragMode,
+    /// Zuletzt benutzter Eingabemodus je Button (Fläche / Schraffur)
+    pub fill_input: FillInput,
+    pub hatch_input: FillInput,
     /// Offenes Kontextmenü (Objekt, Zeichenfläche oder Chip)
     pub menu: Option<MenuState>,
     pub bind_slot: Option<usize>,
@@ -295,6 +298,8 @@ impl Default for UiState {
             lineweights: true,
             lineweights_scaled: false,
             drag_mode: DragMode::HoldAndDrag,
+            fill_input: FillInput::Points,
+            hatch_input: FillInput::Contour,
             menu: None,
             bind_slot: None,
             slot_drag: None,
@@ -362,6 +367,64 @@ pub struct MoveDrag {
     pub orig: Vec<jjcad_core::model::Entity>,
     /// Undo-Snapshot erst beim ersten echten Verschieben anlegen
     pub recorded: bool,
+}
+
+/// Eingabemodus für Füllflächen und Schraffuren (beide erzeugen dasselbe Objekt).
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum FillInput {
+    /// Geschlossene Kontur anklicken (übernimmt deren Umriss)
+    Contour,
+    /// Punkte setzen, Enter schließt
+    Points,
+    /// Farbeimer: Klick in die Fläche, Umriss wird ermittelt
+    Paint,
+}
+
+impl FillInput {
+    pub const ALL: [FillInput; 3] = [Self::Contour, Self::Points, Self::Paint];
+
+    pub fn action(self) -> &'static str {
+        match self {
+            Self::Contour => "draw.fill",
+            Self::Points => "draw.fill.points",
+            Self::Paint => "draw.fill.paint",
+        }
+    }
+
+    pub fn label(self) -> &'static str {
+        match self {
+            Self::Contour => "Kontur anklicken",
+            Self::Points => "Punkte setzen",
+            Self::Paint => "Farbeimer",
+        }
+    }
+
+    pub fn icon(self, hatch: bool) -> &'static str {
+        match (self, hatch) {
+            (Self::Contour, false) => "fill-contour",
+            (Self::Points, false) => "fill-points",
+            (Self::Paint, false) => "fill-paint",
+            (Self::Contour, true) => "hatch-contour",
+            (Self::Points, true) => "hatch-points",
+            (Self::Paint, true) => "hatch-paint",
+        }
+    }
+
+    pub fn key(self) -> &'static str {
+        match self {
+            Self::Contour => "contour",
+            Self::Points => "points",
+            Self::Paint => "paint",
+        }
+    }
+
+    pub fn from_key(s: &str) -> Self {
+        match s {
+            "points" => Self::Points,
+            "paint" => Self::Paint,
+            _ => Self::Contour,
+        }
+    }
 }
 
 pub struct App {
@@ -1905,19 +1968,11 @@ fn rail(ui: &mut egui::Ui, icon: &str, tooltip: &str, chevron: &str) -> bool {
                     });
                     widgets::vline(ui, RIBBON_H);
                     self.group(ui, "Füllen", |ui, app| {
-                        // Vier Eingaben für dasselbe Objekt: Umriss abfahren,
-                        // freie Punktfolge, Farbeimer (Klick in die Fläche) und
-                        // geschlossene Kontur anklicken.
-                        for (id, icon, label) in [
-                            ("draw.fill.boundary", "fill", "Umriss"),
-                            ("draw.fill.points", "fill", "Punktfolge"),
-                            ("draw.fill.paint", "fill", "Farbeimer"),
-                            ("draw.fill", "fill", "Kontur"),
-                        ] {
-                            if widgets::ribbon_button(ui, icon, label, app.tool_id() == Some(id)).clicked() {
-                                app.start_tool(id);
-                            }
-                        }
+                        // Zwei geteilte Schaltflächen: Fläche und Schraffur.
+                        // Der Pfeil öffnet die Eingabemodi, der Knopf startet
+                        // den zuletzt benutzten — das Icon zeigt ihn an.
+                        app.fill_group_button(ui, false);
+                        app.fill_group_button(ui, true);
                     });
                     widgets::vline(ui, RIBBON_H);
                     self.group(ui, "Weitere", |ui, app| {
@@ -3183,6 +3238,58 @@ fn fmt_len(mm: f64, unit: Unit) -> String {
 fn unused(_: RasterOptions, _: persist::HotbarPreset) {}
 
 impl App {
+    /// Startet ein Füllwerkzeug mit passender Muster-Vorgabe.
+    pub fn start_fill_input(&mut self, mode: FillInput, hatch: bool) {
+        self.options.fill_pattern = if hatch {
+            jjcad_core::style::FillPattern::Lines
+        } else {
+            jjcad_core::style::FillPattern::Solid
+        };
+        self.start_tool(mode.action());
+    }
+
+    /// Geteilte Ribbon-Schaltfläche für Füllflächen/Schraffuren.
+    fn fill_group_button(&mut self, ui: &mut egui::Ui, hatch: bool) {
+        let cur = if hatch {
+            self.ui.hatch_input
+        } else {
+            self.ui.fill_input
+        };
+        let active = self.tool_id() == Some(cur.action());
+        let label = if hatch { "Schraffur" } else { "Fläche" };
+        let (main, arrow) = widgets::ribbon_split_button(ui, cur.icon(hatch), label, active);
+        let popup_id = ui.make_persistent_id(("fillpop", hatch));
+        if arrow.clicked() {
+            ui.memory_mut(|m| m.toggle_popup(popup_id));
+        } else if main.clicked() {
+            self.start_fill_input(cur, hatch);
+        }
+        egui::popup_below_widget(
+            ui,
+            popup_id,
+            &arrow,
+            egui::PopupCloseBehavior::CloseOnClickOutside,
+            |ui| {
+                ui.set_min_width(190.0);
+                ui.spacing_mut().item_spacing.y = 2.0;
+                for m in FillInput::ALL {
+                    if ui.selectable_label(m == cur, m.label()).clicked() {
+                        if hatch {
+                            self.ui.hatch_input = m;
+                            self.prefs.hatch_input = m.key().to_string();
+                        } else {
+                            self.ui.fill_input = m;
+                            self.prefs.fill_input = m.key().to_string();
+                        }
+                        let _ = self.prefs.save();
+                        self.start_fill_input(m, hatch);
+                        ui.memory_mut(|mm| mm.close_popup());
+                    }
+                }
+            },
+        );
+    }
+
     /// Beginnt das Verschieben der Auswahl mit der Maus (Undo-Snapshot einmalig).
     pub fn begin_move_drag(&mut self, start: V2, frame: f64) {
         let ids = self.selection().to_vec();

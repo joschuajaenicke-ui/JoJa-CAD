@@ -136,6 +136,39 @@ pub fn paint(painter: &Painter, rect: Rect, name: &str, color: Color32) {
             i.line(4.0, 12.0, 8.0, 12.0);
             i.line(16.0, 12.0, 20.0, 12.0);
         }
+        // Füllflächen und Schraffuren: je drei Eingabemodi, unterschieden durch
+        // die Fuellung (voll) bzw. Schraffur (Striche) im Inneren.
+        "fill-contour" | "hatch-contour" | "fill-points" | "hatch-points"
+        | "fill-paint" | "hatch-paint" => {
+            let hatch = name.starts_with("hatch");
+            let quad = [(4.0, 19.0), (4.0, 6.0), (20.0, 6.0), (20.0, 19.0)];
+            if name.ends_with("-paint") {
+                // Eimer: schraeger Eimer mit Tropfen
+                i.poly(&[(5.0, 8.0), (13.0, 4.0), (19.0, 12.0), (11.0, 16.0)], true);
+                i.line(8.0, 6.0, 11.0, 4.0);
+                i.dot(19.5, 17.0, 1.6);
+            } else {
+                if hatch {
+                    i.poly(&quad, true);
+                    for k in 0..5 {
+                        i.line(5.0 + k as f32 * 3.4, 18.5, 10.0 + k as f32 * 3.4, 6.5);
+                    }
+                } else {
+                    i.filled(&quad);
+                }
+                if name.ends_with("-contour") {
+                    // Kontur anklicken: geschlossener Umriss, Punkt am Rand
+                    i.poly(&quad, true);
+                    i.circle(4.0, 19.0, 2.4);
+                } else {
+                    // Punktfolge: Ecken als Punkte
+                    i.poly(&quad, true);
+                    for (x, y) in [(4.0, 19.0), (4.0, 6.0), (20.0, 19.0)] {
+                        i.dot(x, y, 1.8);
+                    }
+                }
+            }
+        }
         "fill" | "hatch" => {
             i.rect(4.0, 5.0, 16.0, 14.0);
             for k in 0..5 {

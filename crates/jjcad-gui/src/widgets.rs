@@ -2,7 +2,7 @@
 
 use crate::icons;
 use crate::theme::Palette;
-use egui::{
+use egui::{Shape, 
     Align2, Color32, FontId, Pos2, Rect, Response, Rounding, Sense, Stroke, Ui, Vec2,
 };
 
@@ -41,6 +41,63 @@ pub fn icon_button(
 }
 
 /// Großer Ribbon-Knopf mit Icon und Beschriftung.
+/// Ribbon-Schaltfläche mit kleinem Aufklapp-Pfeil (geteilte Schaltfläche).
+/// Gibt (Hauptfläche, Pfeil) zurück — der Aufrufer öffnet das Menü.
+pub fn ribbon_split_button(
+    ui: &mut Ui,
+    icon_name: &str,
+    label: &str,
+    active: bool,
+) -> (Response, Response) {
+    let w = 70.0;
+    let h = 54.0;
+    let (rect, resp) = ui.allocate_exact_size(Vec2::new(w, h), Sense::click());
+    let hovered = resp.hovered();
+    let arrow_rect = Rect::from_min_max(
+        Pos2::new(rect.right() - 18.0, rect.bottom() - 18.0),
+        rect.max,
+    );
+    let arrow = ui.interact(
+        arrow_rect,
+        ui.id().with(("split_arrow", label)),
+        Sense::click(),
+    );
+    if ui.is_rect_visible(rect) {
+        let p = ui.painter();
+        if active {
+            p.rect_filled(rect, Rounding::same(8.0), Palette::ACCENT_SOFT);
+            p.rect_stroke(rect, Rounding::same(8.0), Stroke::new(1.0, Palette::ACCENT));
+        } else if hovered {
+            p.rect_filled(rect, Rounding::same(8.0), Palette::PANEL_ALT);
+        }
+        let color = if active { Palette::ACCENT } else { Palette::TEXT };
+        let ir = Rect::from_center_size(
+            Pos2::new(rect.center().x, rect.top() + 19.0),
+            Vec2::splat(21.0),
+        );
+        icons::paint(p, ir, icon_name, color);
+        p.text(
+            Pos2::new(rect.center().x - 5.0, rect.bottom() - 10.0),
+            Align2::CENTER_CENTER,
+            label,
+            FontId::proportional(10.5),
+            if active { Palette::ACCENT } else { Palette::TEXT_DIM },
+        );
+        // Aufklapp-Pfeil unten rechts
+        let c = arrow_rect.center();
+        p.add(Shape::convex_polygon(
+            vec![
+                Pos2::new(c.x - 3.5, c.y - 1.8),
+                Pos2::new(c.x + 3.5, c.y - 1.8),
+                Pos2::new(c.x, c.y + 2.4),
+            ],
+            Palette::TEXT_FAINT,
+            Stroke::NONE,
+        ));
+    }
+    (resp, arrow)
+}
+
 pub fn ribbon_button(ui: &mut Ui, icon_name: &str, label: &str, active: bool) -> Response {
     let w = 70.0;
     let h = 54.0;
