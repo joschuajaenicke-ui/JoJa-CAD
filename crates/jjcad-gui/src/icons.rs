@@ -536,6 +536,42 @@ pub fn paint(painter: &Painter, rect: Rect, name: &str, color: Color32) {
             i.line(2.0, 12.0, 7.0, 12.0);
             i.line(17.0, 12.0, 22.0, 12.0);
         }
+        // Zeichenreihenfolge: zwei Blätter, das hervorgehobene (gefüllte) liegt
+        // vorn bzw. hinten; ein Pfeil zeigt die Richtung an.
+        "order-front" => {
+            // Das gefüllte Blatt ist die Auswahl: oben rechts, davor liegend;
+            // der Pfeil zeigt die Richtung (ganz nach vorn).
+            i.rect(2.0, 10.0, 10.0, 10.0);
+            i.filled(&[(7.0, 3.0), (17.0, 3.0), (17.0, 13.0), (7.0, 13.0)]);
+            i.filled(&[(19.5, 18.0), (21.3, 18.0), (21.3, 10.0), (19.5, 10.0)]);
+            i.filled(&[(20.4, 4.0), (24.0, 10.3), (16.8, 10.3)]);
+        }
+        "order-back" => {
+            i.rect(7.0, 3.0, 10.0, 10.0);
+            i.filled(&[(2.0, 10.0), (12.0, 10.0), (12.0, 20.0), (2.0, 20.0)]);
+            i.filled(&[(19.5, 5.0), (21.3, 5.0), (21.3, 13.0), (19.5, 13.0)]);
+            i.filled(&[(20.4, 19.0), (24.0, 12.7), (16.8, 12.7)]);
+        }
+        // Vor/Hinter Element: das gestrichelte Band ist das Bezugselement,
+        // der gefüllte Block die Auswahl darüber bzw. darunter.
+        "order-above" => {
+            i.filled(&[(4.0, 3.0), (20.0, 3.0), (20.0, 11.0), (4.0, 11.0)]);
+            i.p.extend(egui::Shape::dashed_line(
+                &[i.pt(2.0, 16.0), i.pt(22.0, 16.0)],
+                Stroke::new(i.w, color),
+                3.0,
+                2.0,
+            ));
+        }
+        "order-below" => {
+            i.p.extend(egui::Shape::dashed_line(
+                &[i.pt(2.0, 8.0), i.pt(22.0, 8.0)],
+                Stroke::new(i.w, color),
+                3.0,
+                2.0,
+            ));
+            i.filled(&[(4.0, 13.0), (20.0, 13.0), (20.0, 21.0), (4.0, 21.0)]);
+        }
         _ => {
             i.circle(12.0, 12.0, 7.0);
         }
