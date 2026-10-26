@@ -563,6 +563,141 @@ fn pending_props(app: &mut App, ui: &mut Ui) {
             app.ui.pending.fill = v;
         }
     }
+
+    // ---- Tür: gleiche Zeilen wie im Objekt-Panel ----
+    if tool_id == "draw.door" {
+        let mut w = app.options.door_width;
+        widgets::field_row(ui, "Breite", |ui| {
+            if widgets::length_input(ui, &mut w, app.unit(), ui.available_width()) {
+                app.options.door_width = w;
+            }
+        });
+        let kind_items: Vec<(DoorKind, String)> = DoorKind::ALL
+            .iter()
+            .map(|c| (*c, c.label().to_string()))
+            .collect();
+        let mut kind = app.options.door_kind;
+        widgets::field_row(ui, "Typ", |ui| {
+            if let Some(k) = pick_combo(ui, "pend_door_kind", kind, &kind_items) {
+                kind = k;
+            }
+        });
+        app.options.door_kind = kind;
+        widgets::field_row(ui, "Anschlag", |ui| {
+            if ui.selectable_value(&mut app.options.hinge, 1.0, "rechts").clicked() {}
+            if ui.selectable_value(&mut app.options.hinge, -1.0, "links").clicked() {}
+        });
+        widgets::field_row(ui, "Blatt", |ui| {
+            let mut sw = app.options.swing_in;
+            if ui.selectable_label(sw, "Seite A").clicked() {
+                sw = true;
+            }
+            if ui.selectable_label(!sw, "Seite B").clicked() {
+                sw = false;
+            }
+            app.options.swing_in = sw;
+        });
+        ui.add_space(2.0);
+        ui.label(theme::faint("R dreht die Öffnung, F spiegelt sie"));
+    }
+
+    // ---- Fenster ----
+    if tool_id == "draw.window" {
+        let mut w = app.options.window_width;
+        widgets::field_row(ui, "Breite", |ui| {
+            if widgets::length_input(ui, &mut w, app.unit(), ui.available_width()) {
+                app.options.window_width = w;
+            }
+        });
+        let mut s = app.options.window_sill;
+        widgets::field_row(ui, "Brüstung", |ui| {
+            if widgets::length_input(ui, &mut s, app.unit(), ui.available_width()) {
+                app.options.window_sill = s;
+            }
+        });
+    }
+
+    // ---- Treppe ----
+    if tool_id == "draw.stair" {
+        let mut w = app.options.stair_width;
+        widgets::field_row(ui, "Breite", |ui| {
+            if widgets::length_input(ui, &mut w, app.unit(), ui.available_width()) {
+                app.options.stair_width = w;
+            }
+        });
+        let mut st = app.options.stair_steps;
+        widgets::field_row(ui, "Stufen", |ui| {
+            if ui.add(crate::widgets::dv(&mut st).range(2..=80)).changed() {
+                app.options.stair_steps = st;
+            }
+        });
+        let dir_items: Vec<(StairDir, String)> = StairDir::ALL
+            .iter()
+            .map(|d| (*d, d.label().to_string()))
+            .collect();
+        let mut dir = app.options.stair_dir;
+        widgets::field_row(ui, "Richtung", |ui| {
+            if let Some(d) = pick_combo(ui, "pend_stair_dir", dir, &dir_items) {
+                dir = d;
+            }
+        });
+        app.options.stair_dir = dir;
+    }
+
+    // ---- Text ----
+    if tool_id == "draw.text" {
+        let mut h = app.options.text_height;
+        widgets::field_row(ui, "Höhe", |ui| {
+            if widgets::length_input(ui, &mut h, app.unit(), ui.available_width()) {
+                app.options.text_height = h;
+            }
+        });
+        let mut t = app.options.text.clone();
+        widgets::field_row(ui, "Text", |ui| {
+            ui.add_sized([ui.available_width(), 22.0], egui::TextEdit::singleline(&mut t));
+        });
+        app.options.text = t;
+    }
+
+    // ---- Bemaßung ----
+    if tool_id == "dim.linear" {
+        let axis_items: Vec<(Option<DimAxis>, String)> = std::iter::once((None, "Automatisch".to_string()))
+            .chain(
+                DimAxis::ALL
+                    .iter()
+                    .map(|a| (Some(*a), a.label().to_string())),
+            )
+            .collect();
+        let mut cur = app.options.dim_axis;
+        widgets::field_row(ui, "Richtung", |ui| {
+            if let Some(a) = pick_combo(ui, "pend_dim_axis", cur, &axis_items) {
+                cur = a;
+            }
+        });
+        app.options.dim_axis = cur;
+    }
+
+    // ---- Farbeimer: eigenes Muster (startet mit Vollfläche) ----
+    if tool_id == "draw.fill.paint" {
+        let pat_items: Vec<(jjcad_core::style::FillPattern, String)> =
+            jjcad_core::style::FillPattern::ALL
+                .iter()
+                .map(|c| (*c, c.label().to_string()))
+                .collect();
+        let mut p = app.options.paint_pattern;
+        widgets::field_row(ui, "Muster", |ui| {
+            if let Some(v) = pick_combo(ui, "pend_paint_pattern", p, &pat_items) {
+                p = v;
+            }
+        });
+        app.options.paint_pattern = p;
+        let mut abstand = app.options.fill_scale;
+        widgets::field_row(ui, "Abstand", |ui| {
+            if widgets::length_input(ui, &mut abstand, app.unit(), ui.available_width()) {
+                app.options.fill_scale = abstand;
+            }
+        });
+    }
 }
 
 
