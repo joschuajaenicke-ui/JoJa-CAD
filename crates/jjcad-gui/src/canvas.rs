@@ -663,6 +663,9 @@ pub fn show(app: &mut App, ui: &mut Ui) {
 
     if is_sheet {
         draw_sheet(app, &painter, rect, view_now, snapped);
+        // Druckvorschau: derselbe Fadenkreuz-Zeiger wie im Zeichenmodus.
+        // Der Systemzeiger ist oben bereits ausgeblendet, gezeichnet wird hier.
+        draw_fadenkreuz(&painter, rect, ui.ctx().pointer_hover_pos());
     } else {
         let dl = display_list(app);
         let pc = PaintCtx {
@@ -954,6 +957,72 @@ fn draw_sheet(app: &mut App, p: &Painter, rect: Rect, view: View, cursor: Option
 // Auswahl, Cursor, Vorschau
 // ---------------------------------------------------------------------------
 
+/// Die beiden Linien des Fadenkreuzes (waagerecht, senkrecht) über die ganze
+/// Fläche. `None`, wenn der Zeiger außerhalb liegt — dann bleibt der
+/// Systemzeiger sichtbar.
+fn fadenkreuz_linien(rect: Rect, pos: Option<Pos2>) -> Option<([Pos2; 2], [Pos2; 2])> {
+    let pos = pos.filter(|q| rect.contains(*q))?;
+    Some((
+        [Pos2::new(rect.left(), pos.y), Pos2::new(rect.right(), pos.y)],
+        [Pos2::new(pos.x, rect.top()), Pos2::new(pos.x, rect.bottom())],
+    ))
+}
+
+/// Durchgehendes Fadenkreuz bis zu den Bildschirmrändern — eine Darstellung
+/// für Zeichenmodus und Druckvorschau (Blatt).
+fn draw_fadenkreuz(p: &Painter, rect: Rect, pos: Option<Pos2>) {
+    let Some((waagerecht, senkrecht)) = fadenkreuz_linien(rect, pos) else {
+        return;
+    };
+    let c = Color32::from_rgba_unmultiplied(88, 98, 112, 160);
+    p.line_segment(waagerecht, Stroke::new(1.0, c));
+    p.line_segment(senkrecht, Stroke::new(1.0, c));
+}
+
+#[cfg(test)]
+mod tests_fadenkreuz {
+    use super::*;
+
+    fn flaeche() -> Rect {
+        Rect::from_min_max(Pos2::new(100.0, 200.0), Pos2::new(900.0, 700.0))
+    }
+
+    /// Das Fadenkreuz reicht bis an alle vier Ränder, nicht nur um den Zeiger.
+    #[test]
+    fn fadenkreuz_geht_bis_zum_rand() {
+        let (w, s) = fadenkreuz_linien(flaeche(), Some(Pos2::new(400.0, 300.0))).unwrap();
+        assert_eq!(w[0], Pos2::new(100.0, 300.0));
+        assert_eq!(w[1], Pos2::new(900.0, 300.0));
+        assert_eq!(s[0], Pos2::new(400.0, 200.0));
+        assert_eq!(s[1], Pos2::new(400.0, 700.0));
+    }
+
+    /// Außerhalb der Vorschaufläche wird kein Fadenkreuz gezeichnet, damit
+    /// Ribbon, Panels und Dialoge ihren normalen Zeiger behalten.
+    #[test]
+    fn ausserhalb_kein_fadenkreuz() {
+        assert!(fadenkreuz_linien(flaeche(), None).is_none());
+        assert!(fadenkreuz_linien(flaeche(), Some(Pos2::new(400.0, 100.0))).is_none());
+        assert!(fadenkreuz_linien(flaeche(), Some(Pos2::new(950.0, 300.0))).is_none());
+    }
+
+    /// Druckvorschau und Zeichenmodus benutzen dieselbe Funktion — sonst
+    /// verschwindet der Zeiger in der Vorschau wieder (t_a2e21b73).
+    #[test]
+    fn druckvorschau_und_zeichenmodus_teilen_das_fadenkreuz() {
+        let src = include_str!("canvas.rs");
+        let i = src.find("draw_sheet(app, &painter, rect, view_now, snapped);").unwrap();
+        let rest = &src[i..];
+        let abschnitt = &rest[..rest.find("} else {").expect("Blatt-Zweig nicht gefunden")];
+        assert!(
+            abschnitt.contains("draw_fadenkreuz(&painter, rect, ui.ctx().pointer_hover_pos())"),
+            "Blatt-Zweig zeichnet das Fadenkreuz nicht mehr"
+        );
+        let j = src.find("draw_fadenkreuz(p, rect, Some(pos));").unwrap();
+        assert!(j > 0, "Zeichenmodus zeichnet sein Fadenkreuz nicht mehr über draw_fadenkreuz");
+    }
+}
+
 fn draw_cursor(
     app: &mut App,
     ui: &mut Ui,
@@ -976,15 +1045,7 @@ fn draw_cursor(
         }
     }
     // Fadenkreuz bis zu den Bildschirmrändern
-    let c = Color32::from_rgba_unmultiplied(88, 98, 112, 160);
-    p.line_segment(
-        [Pos2::new(rect.left(), pos.y), Pos2::new(rect.right(), pos.y)],
-        Stroke::new(1.0, c),
-    );
-    p.line_segment(
-        [Pos2::new(pos.x, rect.top()), Pos2::new(pos.x, rect.bottom())],
-        Stroke::new(1.0, c),
-    );
+    draw_fadenkreuz(p, rect, Some(pos));
 
     // Aktives Werkzeug am Mauszeiger
     if let Some(t) = &app.tool {
