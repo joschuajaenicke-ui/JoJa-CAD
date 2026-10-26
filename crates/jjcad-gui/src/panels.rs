@@ -6,7 +6,7 @@ use crate::widgets;
 use egui::{Align, Color32, FontId, Layout, Pos2, Rect, RichText, Rounding, Sense, Stroke, Ui, Vec2};
 use jjcad_core::geom::Polyline;
 use jjcad_core::model::*;
-use jjcad_core::style::{Color, LineType, PaperSize, WallAlign};
+use jjcad_core::style::{ArrowKind, Color, LineType, PaperSize, WallAlign};
 use jjcad_core::units::{format_number, format_scale, Unit};
 use serde_json::{json, Value};
 
@@ -2196,9 +2196,7 @@ fn doc_props(app: &mut App, ui: &mut Ui) {
     ui.add_space(8.0);
 
     let mut input = app.doc().settings.input_unit;
-    let mut dimu = app.doc().settings.dim_unit;
     let mut decimals = app.doc().settings.decimals as i32;
-    let mut annot = app.doc().settings.annotation_scale;
     let mut grid = app.doc().settings.snap.grid_step;
     let mut text_h = app.doc().settings.text_height;
     let mut wall_t = app.doc().settings.wall_thickness;
@@ -2213,16 +2211,6 @@ fn doc_props(app: &mut App, ui: &mut Ui) {
                 }
             });
     });
-    widgets::field_row(ui, "Maß-Einheit", |ui| {
-        egui::ComboBox::from_id_salt("dimpunit")
-            .width(ui.available_width())
-            .selected_text(dimu.label())
-            .show_ui(ui, |ui| {
-                for cand in Unit::ALL {
-                    ui.selectable_value(&mut dimu, cand, cand.label());
-                }
-            });
-    });
     widgets::field_row(ui, "Dezimalen", |ui| {
         ui.add_sized([ui.available_width(), 20.0], crate::widgets::dv(&mut decimals).range(0..=4));
     });
@@ -2234,10 +2222,6 @@ fn doc_props(app: &mut App, ui: &mut Ui) {
             app.mark_changed();
         }
     });
-    widgets::field_row(ui, "Maßstab", |ui| {
-        ui.add_sized([ui.available_width(), 20.0], crate::widgets::dv(&mut annot).speed(1.0).range(1.0..=1000.0));
-        ui.label(theme::dim(format_scale(annot)));
-    });
     widgets::field_row(ui, "Texthöhe", |ui| {
         widgets::length_input(ui, &mut text_h, unit, ui.available_width());
     });
@@ -2245,9 +2229,7 @@ fn doc_props(app: &mut App, ui: &mut Ui) {
         widgets::length_input(ui, &mut wall_t, unit, ui.available_width());
     });
     if input != app.doc().settings.input_unit
-        || dimu != app.doc().settings.dim_unit
         || decimals as usize != app.doc().settings.decimals
-        || (annot - app.doc().settings.annotation_scale).abs() > 1e-9
         || (text_h - app.doc().settings.text_height).abs() > 1e-9
         || (wall_t - app.doc().settings.wall_thickness).abs() > 1e-9
     {
@@ -2255,15 +2237,18 @@ fn doc_props(app: &mut App, ui: &mut Ui) {
             "doc.settings",
             &json!({
                 "input_unit": input.short(),
-                "dim_unit": dimu.short(),
                 "decimals": decimals,
-                "annotation_scale": annot,
                 "text_height": unit.from_mm(text_h),
                 "wall_thickness": unit.from_mm(wall_t),
             }),
         );
         app.mark_changed();
     }
+
+    ui.add_space(10.0);
+    widgets::hline(ui);
+    ui.add_space(6.0);
+    dim_props(app, ui);
 
     ui.add_space(10.0);
     widgets::hline(ui);
@@ -2304,4 +2289,105 @@ fn doc_props(app: &mut App, ui: &mut Ui) {
 
     ui.add_space(10.0);
     ui.label(theme::dim("Platzhalter in Texten: {DATUM} {PROJEKT} {BAUHERR} {PLAN} {MASSTAB} {ADRESSE}"));
+}
+
+/// Maßketten: Maßeinheit, Textgröße, Maßstab und Bogensymbole.
+///
+/// Diese vier Werte gehörten früher zur Registerkarte „Bemaßung" im Ribbon und
+/// stehen jetzt ausschließlich hier — ein Wert, eine Stelle. Sie sind
+/// Dokumenteinstellungen: `doc.settings.dim_unit`, `doc.settings.annotation_scale`
+/// und `doc.dim_style.text_height` / `.arrow`. Jede Änderung geht als Action
+/// (`doc.settings` bzw. `dim.style`) über die Befehlsschicht und landet damit
+/// auch in Undo/Redo und in der gespeicherten Datei.
+fn dim_props(app: &mut App, ui: &mut Ui) {
+    section_title(ui, "dimchain", "Maßketten");
+
+    // Maßeinheit der Maßzahl (mm / cm / m)
+    let cur_unit = app.doc().settings.dim_unit;
+    let unit_items: Vec<(Unit, String)> = Unit::ALL
+        .iter()
+        .map(|u| (*u, u.label().to_string()))
+        .collect();
+    let mut picked_unit = None;
+    widgets::field_row(ui, "Maßeinheit", |ui| {
+        picked_unit = pick_combo(ui, "dim_unit", cur_unit, &unit_items);
+    });
+    if let Some(u) = picked_unit {
+        let _ = app
+            .session_mut()
+            .execute("doc.settings", &json!({"dim_unit": u.short()}));
+        app.mark_changed();
+    }
+
+    // Textgröße der Maßzahl in Papier-mm
+    let mut h = app.doc().dim_style.text_height;
+    widgets::field_row(ui, "Textgröße", |ui| {
+        if ui
+            .add_sized(
+                [ui.available_width(), 20.0],
+                crate::widgets::dv(&mut h).speed(0.1).range(0.5..=20.0).suffix(" mm"),
+            )
+            .changed()
+        {
+            let _ = app
+                .session_mut()
+                .execute("dim.style", &json!({"text_height": h}));
+            app.mark_changed();
+        }
+    });
+
+    // Bezugsmaßstab (1:N) — alle Papiergrößen der Bemaßung hängen daran
+    let mut s = app.doc().settings.annotation_scale;
+    widgets::field_row(ui, "Maßstab", |ui| {
+        if ui
+            .add_sized(
+                [ui.available_width(), 20.0],
+                crate::widgets::dv(&mut s).speed(1.0).range(1.0..=1000.0).prefix("1:"),
+            )
+            .changed()
+        {
+            let _ = app
+                .session_mut()
+                .execute("doc.settings", &json!({"annotation_scale": s}));
+            app.mark_changed();
+        }
+    });
+
+    // Bogensymbole an den Maßlinienenden. Im geschlossenen Feld steht die kurze
+    // Form (die DIN-Angabe passt nicht in die Wertespalte), im Menü der volle Name.
+    let cur_arrow = app.doc().dim_style.arrow;
+    let mut picked_arrow = None;
+    widgets::field_row(ui, "Bogensymbole", |ui| {
+        picked_arrow = dropdown(ui, "dim_arrow", arrow_caption(cur_arrow), None, |ui| {
+            let mut out = None;
+            for cand in ArrowKind::ALL {
+                if ui.selectable_label(cand == cur_arrow, cand.label()).clicked() {
+                    out = Some(cand);
+                }
+            }
+            out
+        });
+    });
+    if let Some(a) = picked_arrow {
+        let key = match a {
+            ArrowKind::Arrow => "arrow",
+            ArrowKind::Dot => "dot",
+            ArrowKind::None => "none",
+            ArrowKind::Slash => "slash",
+        };
+        let _ = app
+            .session_mut()
+            .execute("dim.style", &json!({"arrow": key}));
+        app.mark_changed();
+    }
+}
+
+/// Kurzform der Bogensymbole für das geschlossene Auswahlfeld.
+fn arrow_caption(a: ArrowKind) -> &'static str {
+    match a {
+        ArrowKind::Slash => "Schrägstrich",
+        ArrowKind::Arrow => "Pfeil",
+        ArrowKind::Dot => "Punkt",
+        ArrowKind::None => "Ohne",
+    }
 }
