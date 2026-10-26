@@ -465,25 +465,16 @@ fn write_pdf(pages: Vec<Page>, path: &Path, title: &str) -> Result<(), String> {
 // Blatt zeichnen
 // ---------------------------------------------------------------------------
 
-fn draw_sheet_page(doc: &Document, sheet: &Sheet, show_frame: bool) -> Page {
+fn draw_sheet_page(doc: &Document, sheet: &Sheet) -> Page {
     let (pw, ph) = sheet.size();
     let mut c = Content::new();
     // Weißer Hintergrund
     c.fill_color(Color::rgb(255, 255, 255));
     c.raw(&format!("0 0 {:.3} {:.3} re f", pw * MM2PT, ph * MM2PT));
 
-    // Papierraum (Schriftfeld, Rahmen)
-    let mut dl = DisplayList::default();
-    if sheet.show_title_block {
-        dl.prims.extend(render::render_sheet(doc, sheet).prims);
-    } else {
-        // nur Rahmen
-        let mut s2 = sheet.clone();
-        s2.frame = show_frame;
-        // render_sheet zeichnet Papierraum-Objekte immer; für Rahmen ohne Schriftfeld:
-        let only_frame = render::render_sheet(doc, &Sheet { entities: vec![], ..s2 });
-        dl.prims.extend(only_frame.prims);
-    }
+    // Papierraum: Rahmen, Schriftfeld und eigene Blattelemente sind Objekte
+    // des Blatts (T0004) — gedruckt wird genau das, was auf dem Blatt steht.
+    let dl = render::render_sheet(doc, sheet);
     let page_xf = Xf {
         scale: 1.0,
         offset: Vec2::ZERO,
@@ -557,7 +548,7 @@ pub fn export_pdf(doc: &Document, path: &Path, sheet_index: Option<usize>) -> Re
         .sheets
         .get(idx)
         .ok_or_else(|| format!("Blatt {} existiert nicht", idx + 1))?;
-    let page = draw_sheet_page(doc, sheet, sheet.frame);
+    let page = draw_sheet_page(doc, sheet);
     let title = format!("{} — {}", doc.name, sheet.name);
     write_pdf(vec![page], path, &title)
 }
@@ -570,7 +561,7 @@ pub fn export_all_sheets_pdf(doc: &Document, path: &Path) -> Result<(), String> 
     let pages: Vec<Page> = doc
         .sheets
         .iter()
-        .map(|s| draw_sheet_page(doc, s, s.frame))
+        .map(|s| draw_sheet_page(doc, s))
         .collect();
     write_pdf(pages, path, &doc.name)
 }
@@ -582,7 +573,7 @@ pub fn pdf_bytes(doc: &Document, sheet_index: Option<usize>) -> Result<Vec<u8>, 
         .sheets
         .get(idx)
         .ok_or_else(|| "Blatt nicht gefunden".to_string())?;
-    let page = draw_sheet_page(doc, sheet, sheet.frame);
+    let page = draw_sheet_page(doc, sheet);
     let mut w = PdfWriter::new();
     let catalog = w.add(vec![]);
     let pages_idx = w.add(vec![]);

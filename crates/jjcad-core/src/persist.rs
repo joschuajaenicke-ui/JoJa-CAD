@@ -51,8 +51,37 @@ pub fn from_json(s: &str) -> Result<Document, String> {
     doc.next_id = doc.next_id.max(max_id + 1);
     // Türen auf die vordere Wandkante setzen (auch bei älteren Dateien)
     actions::normalize_openings(&mut doc);
+    // Blattrahmen älterer Dateien zu normalen Linien machen
+    normalize_sheet_frames(&mut doc);
     doc.modified = false;
     Ok(doc)
+}
+
+/// Blattrahmen zu normalen Linien machen (T0004).
+///
+/// Bis dahin zeichnete der Renderer den Rahmen aus `Sheet::frame` — er war
+/// damit weder auswählbar noch bearbeitbar. Beim Laden bekommt jedes Blatt mit
+/// gesetztem Rahmen vier Linienobjekte (vor dem Schriftfeld, also dahinter) und
+/// die Flags werden zurückgesetzt. Neue Blätter legen sie sofort an.
+pub fn normalize_sheet_frames(doc: &mut Document) {
+    let mut nachzuholen: Vec<(usize, Vec<Entity>)> = Vec::new();
+    for (i, sheet) in doc.sheets.iter().enumerate() {
+        if !sheet.frame {
+            continue;
+        }
+        let (w, h) = sheet.size();
+        nachzuholen.push((i, crate::templates::frame_entities(w, h)));
+    }
+    for (i, mut rahmen) in nachzuholen {
+        for e in rahmen.iter_mut() {
+            e.id = doc.new_id();
+        }
+        let sheet = &mut doc.sheets[i];
+        rahmen.extend(std::mem::take(&mut sheet.entities));
+        sheet.entities = rahmen;
+        sheet.frame = false;
+        sheet.show_title_block = false;
+    }
 }
 
 /// Einzige Migrationsstelle für den alten Objekttyp `Hatch` (Schraffur).

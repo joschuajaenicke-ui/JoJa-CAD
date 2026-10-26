@@ -129,6 +129,26 @@ pub fn title_block(w: f64, h: f64) -> Vec<Entity> {
     t.ents
 }
 
+/// Blattrahmen als vier normale Linien (10 mm Rand, 15 mm Heftrand links).
+///
+/// Der Rahmen war früher ein Sonderzeichen des Renderers (`Sheet::frame`) und
+/// damit weder auswählbar noch bearbeitbar. Als Linien ist er ein Objekt wie
+/// jedes andere: anklickbar, mit Griffen, im Eigenschaften-Panel änderbar.
+pub fn frame_entities(w: f64, h: f64) -> Vec<Entity> {
+    let m = 10.0;
+    let left = m + 5.0; // Heftrand
+    let ecken = [v(left, m), v(w - m, m), v(w - m, h - m), v(left, h - m)];
+    let mut out = Vec::with_capacity(4);
+    for i in 0..4 {
+        // ID 0: der Aufrufer vergibt sie aus dem Dokument (eindeutig).
+        let mut e = Entity::new(0, 0, EntityKind::Line { a: ecken[i], b: ecken[(i + 1) % 4] });
+        e.style.color = Some(Color::BLACK);
+        e.style.line_weight = Some(0.35);
+        out.push(e);
+    }
+    out
+}
+
 /// Neues Blatt inkl. Schriftfeld und einem Ansichtsfenster.
 pub fn new_sheet(doc: &mut Document, paper: PaperSize, landscape: bool, name: &str) -> Sheet {
     let id = doc.new_id();
@@ -139,15 +159,19 @@ pub fn new_sheet(doc: &mut Document, paper: PaperSize, landscape: bool, name: &s
         paper,
         landscape,
         scale: 100.0,
-        frame: true,
-        show_title_block: true,
+        // Der Rahmen ist ab T0004 ein Objekt (siehe `frame_entities`), kein
+        // Renderer-Sonderfall mehr.
+        frame: false,
+        show_title_block: false,
         viewports: Vec::new(),
         entities: Vec::new(),
     };
-    // Schriftfeld besteht aus normalen Linien und Textfeldern — dieselben
-    // Objekte wie in der Zeichnung, nur im Papierraum. Eigene IDs aus dem
-    // Dokument, damit sie sich eindeutig auswählen und bearbeiten lassen.
-    sheet.entities = title_block(w, h);
+    // Rahmen und Schriftfeld bestehen aus normalen Linien und Textfeldern —
+    // dieselben Objekte wie in der Zeichnung, nur im Papierraum. Eigene IDs aus
+    // dem Dokument, damit sie sich eindeutig auswählen und bearbeiten lassen.
+    // Der Rahmen kommt zuerst: er liegt damit hinter dem Schriftfeld.
+    sheet.entities = frame_entities(w, h);
+    sheet.entities.extend(title_block(w, h));
     for e in sheet.entities.iter_mut() {
         e.id = doc.new_id();
     }

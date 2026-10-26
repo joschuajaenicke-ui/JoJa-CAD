@@ -1081,11 +1081,15 @@ fn entity_props(app: &mut App, ui: &mut Ui, id: Id) {
     let Some(e) = app.doc().entity(id).cloned() else {
         return;
     };
-    let layer_name = app
-        .doc()
-        .layer(e.layer)
-        .map(|l| l.name.clone())
-        .unwrap_or_default();
+    // Blattobjekte (Rahmen, Schriftfeld) liegen ohne Layer im Papierraum —
+    // ein leerer Layer-Name sähe im Panel wie ein Fehler aus.
+    let layer_name = app.doc().layer(e.layer).map(|l| l.name.clone()).unwrap_or_else(|| {
+        if e.layer == 0 {
+            "Blatt".to_string()
+        } else {
+            format!("#{}", e.layer)
+        }
+    });
     section_title(ui, app::entity_kind_icon(&e.kind), e.kind.type_name());
     ui.label(theme::dim(format!("#{} · Layer {}", e.id, layer_name)));
     ui.add_space(6.0);
@@ -2089,24 +2093,12 @@ fn sheet_props(app: &mut App, ui: &mut Ui, sid: Id) {
             app.mark_changed();
         }
     });
-    let mut frame = sheet.frame;
-    let mut tb = sheet.show_title_block;
-    widgets::field_row(ui, "Rahmen", |ui| {
-        if ui.checkbox(&mut frame, "Blattrahmen").changed() {
-            let _ = app
-                .session_mut()
-                .execute("sheet.update", &json!({"sheet": sid, "frame": frame}));
-            app.mark_changed();
-        }
-    });
-    widgets::field_row(ui, "Schriftfeld", |ui| {
-        if ui.checkbox(&mut tb, "anzeigen").changed() {
-            let _ = app
-                .session_mut()
-                .execute("sheet.update", &json!({"sheet": sid, "show_title_block": tb}));
-            app.mark_changed();
-        }
-    });
+    // Rahmen und Schriftfeld sind normale Blattobjekte (T0004): sie werden im
+    // Papierraum angeklickt und geändert wie jede Linie und jeder Text. Ein
+    // Schalter dafür wäre irreführend — hier steht deshalb nur der Hinweis.
+    ui.label(theme::dim(
+        "Rahmen und Schriftfeld sind normale Objekte — im Papierraum anklicken.",
+    ));
 
     ui.add_space(10.0);
     widgets::hline(ui);

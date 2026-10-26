@@ -7,6 +7,8 @@ use crate::render;
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum SnapKind {
     Endpoint,
+    /// Echte Eckpunkte des Blatts im Papierraum (0,0) … (B,H).
+    SheetCorner,
     Intersection,
     Midpoint,
     Center,
@@ -20,6 +22,7 @@ impl SnapKind {
     pub fn label(self) -> &'static str {
         match self {
             SnapKind::Endpoint => "Endpunkt",
+            SnapKind::SheetCorner => "Blattecke",
             SnapKind::Intersection => "Schnittpunkt",
             SnapKind::Midpoint => "Mittelpunkt",
             SnapKind::Center => "Zentrum",
@@ -33,6 +36,7 @@ impl SnapKind {
     pub fn short(self) -> &'static str {
         match self {
             SnapKind::Endpoint => "END",
+            SnapKind::SheetCorner => "ECK",
             SnapKind::Intersection => "SCHN",
             SnapKind::Midpoint => "MIT",
             SnapKind::Center => "ZEN",
@@ -46,6 +50,8 @@ impl SnapKind {
     fn priority(self) -> u8 {
         match self {
             SnapKind::Endpoint => 0,
+            // Die Blattecke ist ein Endpunkt des Papiers — gleichrangig.
+            SnapKind::SheetCorner => 0,
             SnapKind::Intersection => 1,
             SnapKind::Midpoint => 2,
             SnapKind::Center => 3,
@@ -326,6 +332,18 @@ fn snap_candidates_alle(
                     consider(p, SnapKind::Intersection, Some(*ia), p.dist(cursor));
                     let _ = ib;
                 }
+            }
+        }
+    }
+
+    // Blattecken: die echten Eckpunkte des Papiers sind keine Objekte, sollen
+    // aber gefangen werden — sonst trifft man den Blattrand nie genau. Nur im
+    // Papierraum; im Modell gibt es kein Blatt.
+    if s.endpoint {
+        if let Some(sheet) = doc.space_sheet() {
+            let (w, h) = sheet.size();
+            for p in [v(0.0, 0.0), v(w, 0.0), v(w, h), v(0.0, h)] {
+                consider(p, SnapKind::SheetCorner, None, p.dist(cursor));
             }
         }
     }
