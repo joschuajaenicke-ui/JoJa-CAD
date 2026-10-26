@@ -2079,7 +2079,7 @@ fn rail(ui: &mut egui::Ui, icon: &str, tooltip: &str, chevron: &str) -> bool {
         let mut content = ui.new_child(
             egui::UiBuilder::new()
                 .max_rect(block)
-                .layout(Layout::left_to_right(Align::Center)),
+                .layout(Layout::top_down(Align::Min)),
         );
         content.set_clip_rect(area);
         self.ribbon_content(&mut content);
@@ -3767,6 +3767,11 @@ mod tests_ribbon_hoehe {
 
         let _soll_kante = HEADER_H + RIBBON_H + DOCTABS_H;
         let erste_kante = kanten[0].1;
+        assert!(
+            (erste_kante - _soll_kante).abs() < 0.5,
+            "Oberkante der Zeichenfläche {erste_kante} statt {_soll_kante} \
+             (Kopfzeile {HEADER_H} + Ribbon {RIBBON_H} + Blattreiter {DOCTABS_H})"
+        );
         for (name, kante) in &kanten {
             assert!(
                 (kante - erste_kante).abs() < 0.5,
