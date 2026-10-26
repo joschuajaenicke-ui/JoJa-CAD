@@ -149,6 +149,44 @@ pub fn snap_candidates_ohne_punkte(
     gesperrt: &[GesperrterPunkt],
     allow_grid: bool,
 ) -> Vec<SnapHit> {
+    snap_candidates_alle(
+        doc, cursor, tol, reference, ignore, selected, gesperrt, &[], allow_grid,
+    )
+}
+
+/// Wie [`snap_candidates_ohne_punkte`], zusätzlich mit **Vorschau-Punkten**:
+/// Stützpunkte eines noch nicht angelegten Zuges (Polylinie) fangen wie
+/// Endpunkte. Ohne sie wäre der eigene Anfang nicht erreichbar und ein
+/// geschlossener Zug nur per Zufall möglich.
+#[allow(clippy::too_many_arguments)]
+pub fn snap_candidates_mit_vorschau(
+    doc: &Document,
+    cursor: Vec2,
+    tol: f64,
+    reference: Option<Vec2>,
+    ignore: &[Id],
+    selected: &[Id],
+    gesperrt: &[GesperrterPunkt],
+    vorschau: &[Vec2],
+    allow_grid: bool,
+) -> Vec<SnapHit> {
+    snap_candidates_alle(
+        doc, cursor, tol, reference, ignore, selected, gesperrt, vorschau, allow_grid,
+    )
+}
+
+#[allow(clippy::too_many_arguments)]
+fn snap_candidates_alle(
+    doc: &Document,
+    cursor: Vec2,
+    tol: f64,
+    reference: Option<Vec2>,
+    ignore: &[Id],
+    selected: &[Id],
+    gesperrt: &[GesperrterPunkt],
+    vorschau: &[Vec2],
+    allow_grid: bool,
+) -> Vec<SnapHit> {
     let mut s = doc.settings.snap.clone();
     if !allow_grid {
         s.grid = false;
@@ -252,6 +290,16 @@ pub fn snap_candidates_ohne_punkte(
         if s.nearest && !*ausgewaehlt {
             let (q, d) = sg.closest(cursor);
             consider(q, SnapKind::Nearest, Some(*id), d);
+        }
+    }
+
+    // Vorschau-Punkte: Stützpunkte des gerade gezeichneten Zuges, die noch
+    // nicht im Modell stehen. Sie fangen wie Endpunkte eines Objekts — nur so
+    // lässt sich der Anfang (Schließen) oder ein früherer Stützpunkt exakt
+    // wieder treffen.
+    if s.endpoint {
+        for p in vorschau {
+            consider(*p, SnapKind::Endpoint, None, p.dist(cursor));
         }
     }
 
@@ -417,15 +465,52 @@ pub fn snap_constrained_ohne_punkte(
     gesperrt: &[GesperrterPunkt],
     allow_grid: bool,
 ) -> SnapResolution {
+    snap_constrained_alle(
+        doc, cursor, tol, reference, ignore, selected, gesperrt, &[], allow_grid,
+    )
+}
+
+/// Wie [`snap_constrained_ohne_punkte`], zusätzlich mit Vorschau-Punkten des
+/// laufenden Zuges (siehe [`snap_candidates_mit_vorschau`]).
+#[allow(clippy::too_many_arguments)]
+pub fn snap_constrained_mit_vorschau(
+    doc: &Document,
+    cursor: Vec2,
+    tol: f64,
+    reference: Option<Vec2>,
+    ignore: &[Id],
+    selected: &[Id],
+    gesperrt: &[GesperrterPunkt],
+    vorschau: &[Vec2],
+    allow_grid: bool,
+) -> SnapResolution {
+    snap_constrained_alle(
+        doc, cursor, tol, reference, ignore, selected, gesperrt, vorschau, allow_grid,
+    )
+}
+
+#[allow(clippy::too_many_arguments)]
+fn snap_constrained_alle(
+    doc: &Document,
+    cursor: Vec2,
+    tol: f64,
+    reference: Option<Vec2>,
+    ignore: &[Id],
+    selected: &[Id],
+    gesperrt: &[GesperrterPunkt],
+    vorschau: &[Vec2],
+    allow_grid: bool,
+) -> SnapResolution {
     let s = doc.settings.snap.clone();
     let tol = tol.max(1e-6);
 
     // 1. Objektfang ohne Raster: er gewinnt gegen jede Zwangsrichtung.
     //    Das Raster ist eine Führung wie Ortho und kommt erst in Schritt 3.
-    if let Some(hit) =
-        snap_candidates_ohne_punkte(doc, cursor, tol, reference, ignore, selected, gesperrt, false)
-            .into_iter()
-            .next()
+    if let Some(hit) = snap_candidates_alle(
+        doc, cursor, tol, reference, ignore, selected, gesperrt, vorschau, false,
+    )
+    .into_iter()
+    .next()
     {
         return SnapResolution {
             point: hit.point,
