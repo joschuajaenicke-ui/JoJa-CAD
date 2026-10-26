@@ -7,7 +7,7 @@ use egui::{Align, Color32, FontId, Layout, Pos2, Rect, RichText, Rounding, Sense
 use jjcad_core::actions;
 use jjcad_core::geom::{Vec2 as V2};
 use jjcad_core::persist::DragMode;
-use jjcad_core::units::{format_scale, Unit};
+use jjcad_core::units::Unit;
 use serde_json::json;
 
 // ---------------------------------------------------------------------------
@@ -802,9 +802,7 @@ fn settings_body(app: &mut App, ui: &mut Ui) {
     // Ausgangswerte einlesen
     let cur = app.doc().settings.clone();
     let mut input = cur.input_unit;
-    let mut dimu = cur.dim_unit;
     let mut decimals = cur.decimals as i32;
-    let mut annot = cur.annotation_scale;
     let mut show_grid = app.ui.show_grid;
     let mut snap = cur.snap.clone();
     let mut grid_step = snap.grid_step;
@@ -836,22 +834,18 @@ fn settings_body(app: &mut App, ui: &mut Ui) {
                     ui.selectable_value(&mut input, u, u.short());
                 }
             });
-            widgets::field_row(ui, "Bemaßung", |ui| {
-                for u in Unit::ALL {
-                    ui.selectable_value(&mut dimu, u, u.short());
-                }
-            });
             widgets::field_row(ui, "Nachkommastellen", |ui| {
                 ui.add(crate::widgets::dv(&mut decimals).range(0..=4));
             });
-            widgets::field_row(ui, "Bezugsmaßstab", |ui| {
-                ui.add(
-                    crate::widgets::dv(&mut annot)
-                        .speed(1.0)
-                        .range(1.0..=1000.0),
-                );
-                ui.label(theme::dim(format_scale(annot)));
-            });
+            // Maßketten-Werte gibt es nur an einer Stelle: im Abschnitt
+            // „Maßketten" des Eigenschaften-Panels. Hier steht nur der Weg dorthin.
+            ui.add(
+                egui::Label::new(theme::faint(
+                    "Maßeinheit, Maßstab, Textgröße und Bogensymbole stehen im \
+                     Eigenschaften-Panel, Abschnitt Maßketten.",
+                ))
+                .wrap(),
+            );
 
             theme::section(ui, "Raster");
             widgets::field_row(ui, "Rasterweite", |ui| {
@@ -940,18 +934,6 @@ fn settings_body(app: &mut App, ui: &mut Ui) {
             }
 
             theme::section(ui, "Bemaßung");
-            widgets::field_row(ui, "Textgröße", |ui| {
-                if ui
-                    .add(
-                        crate::widgets::dv(&mut ds.text_height)
-                            .speed(0.1)
-                            .suffix(" mm"),
-                    )
-                    .changed()
-                {
-                    ds_changed = true;
-                }
-            });
             widgets::field_row(ui, "Pfeilgröße", |ui| {
                 if ui
                     .add(
@@ -963,18 +945,6 @@ fn settings_body(app: &mut App, ui: &mut Ui) {
                 {
                     ds_changed = true;
                 }
-            });
-            widgets::field_row(ui, "Markierung", |ui| {
-                egui::ComboBox::from_id_salt("arrowstyle")
-                    .width(150.0)
-                    .selected_text(ds.arrow.label())
-                    .show_ui(ui, |ui| {
-                        for a in jjcad_core::style::ArrowKind::ALL {
-                            if ui.selectable_value(&mut ds.arrow, a, a.label()).changed() {
-                                ds_changed = true;
-                            }
-                        }
-                    });
             });
             widgets::field_row(ui, "Nachkommastellen", |ui| {
                 let mut d = ds.decimals as i32;
@@ -1021,9 +991,7 @@ fn settings_body(app: &mut App, ui: &mut Ui) {
     }
 
     let settings_changed = input != cur.input_unit
-        || dimu != cur.dim_unit
         || decimals as usize != cur.decimals
-        || (annot - cur.annotation_scale).abs() > 1e-9
         || (grid_step - cur.snap.grid_step).abs() > 1e-9
         || (polar_step - cur.snap.polar_step).abs() > 1e-9
         || (polar_tol - cur.snap.polar_tolerance).abs() > 1e-9
@@ -1049,9 +1017,7 @@ fn settings_body(app: &mut App, ui: &mut Ui) {
     if settings_changed {
         let p = json!({
             "input_unit": input.short(),
-            "dim_unit": dimu.short(),
             "decimals": decimals,
-            "annotation_scale": annot,
             "show_grid": show_grid,
             "show_rulers": rulers,
             "text_height": unit.from_mm(th),
@@ -1077,17 +1043,12 @@ fn settings_body(app: &mut App, ui: &mut Ui) {
         let _ = app.prefs.save();
     }
 
+    // Textgröße und Bogensymbole stehen im Eigenschaften-Panel (Abschnitt
+    // „Maßketten"); hier werden nur noch Pfeilgröße und Nachkommastellen gesetzt.
     if ds_changed {
-        let arrow = match ds.arrow {
-            jjcad_core::style::ArrowKind::Arrow => "arrow",
-            jjcad_core::style::ArrowKind::Dot => "dot",
-            jjcad_core::style::ArrowKind::None => "none",
-            _ => "slash",
-        };
         let _ = app.session_mut().execute(
             "dim.style",
-            &json!({"text_height": ds.text_height, "arrow_size": ds.arrow_size,
-                    "arrow": arrow, "decimals": ds.decimals}),
+            &json!({"arrow_size": ds.arrow_size, "decimals": ds.decimals}),
         );
         app.mark_changed();
     }

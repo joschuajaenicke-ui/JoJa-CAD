@@ -107,6 +107,43 @@ fn massstab_skaliert_die_papiergroessen() {
     );
 }
 
+/// Eine Stelle, ein Wert: die vier Einstellungen dürfen nur im
+/// Eigenschaften-Panel stehen — nicht mehr im Ribbon und nicht im
+/// Einstellungen-Dialog. Der Test liest die Quellen der GUI, weil dort die
+/// doppelten Bedienelemente saßen.
+#[test]
+fn massketten_einstellungen_nur_im_eigenschaften_panel() {
+    let gui = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../jjcad-gui/src");
+    let panels = std::fs::read_to_string(gui.join("panels.rs")).unwrap();
+    assert!(panels.contains("\"Maßketten\""), "Abschnitt Maßketten fehlt im Panel");
+    for feld in ["Maßeinheit", "Textgröße", "Maßstab", "Bogensymbole"] {
+        assert!(panels.contains(feld), "Panel-Zeile {feld} fehlt");
+    }
+
+    // Ribbon: Registerkarte Bemaßung enthält nur noch die drei Werkzeuge.
+    let app = std::fs::read_to_string(gui.join("app.rs")).unwrap();
+    let arm = &app[app.find("RibbonTab::Bemassung =>").expect("Bemeßungs-Tab")..];
+    let ribbon = &arm[..arm.find("RibbonTab::Bloecke =>").expect("nächster Tab")];
+    for verboten in ["dimunit", "arrowkind", "annotation_scale", "Bogensymbole"] {
+        assert!(
+            !ribbon.contains(verboten),
+            "Ribbon-Tab Bemaßung enthält weiterhin {verboten}"
+        );
+    }
+
+    // Einstellungen-Dialog: kein zweiter Satz derselben Werte.
+    let dialogs = std::fs::read_to_string(gui.join("dialogs.rs")).unwrap();
+    let start = dialogs.find("fn settings_body").expect("settings_body");
+    let rest = &dialogs[start..];
+    let body = &rest[..rest.find("\nfn ").unwrap_or(rest.len())];
+    for verboten in ["dim_unit", "annotation_scale", "arrowstyle", "ds.text_height"] {
+        assert!(
+            !body.contains(verboten),
+            "Einstellungen-Dialog enthält weiterhin {verboten}"
+        );
+    }
+}
+
 #[test]
 fn einstellungen_ueberleben_undo_und_neustart() {
     let mut s = s();
