@@ -22,7 +22,17 @@ use std::collections::HashMap;
 use std::path::PathBuf;
 
 pub const TOOLBAR_H: f32 = 38.0;
-pub const RIBBON_H: f32 = 78.0;
+/// Gesamthöhe der Ribbon-Leiste — für **alle** Reiter gleich (t_92b03440).
+///
+/// Setzt sich zusammen aus dem Innenabstand `RIBBON_PAD` oben und unten und der
+/// Inhaltshöhe `RIBBON_CONTENT_H`. Der Inhalt selbst ist immer `RIBBON_GROUP_H`
+/// hoch (Knopfreihe mit Beschriftung); kürzere Reiter werden zentriert, höhere
+/// würden beschnitten statt das Panel zu vergrößern.
+pub const RIBBON_H: f32 = 80.0;
+pub const RIBBON_PAD: f32 = 5.0;
+pub const RIBBON_CONTENT_H: f32 = RIBBON_H - 2.0 * RIBBON_PAD;
+/// Höhe einer Ribbon-Gruppe: 54 px Knopfreihe + 2 px Abstand + 11 px Beschriftung.
+pub const RIBBON_GROUP_H: f32 = 67.0;
 pub const HEADER_H: f32 = 38.0;
 pub const DOCTABS_H: f32 = 34.0;
 pub const STATUS_H: f32 = 26.0;
@@ -315,6 +325,8 @@ pub struct UiState {
     pub confirm_new: bool,
     pub confirm_quit: bool,
     pub last_canvas: Rect,
+    /// Höhe des zuletzt gezeichneten Ribbon-Inhalts (Regressionstest t_92b03440)
+    pub last_ribbon_content_h: f32,
     pub zoom_edit: Option<String>,
     pub typed: String,
     /// Signatur der Auswahl für die letzte Zeichnung (Panel-Aktualisierung)
@@ -365,6 +377,7 @@ impl Default for UiState {
             confirm_new: false,
             confirm_quit: false,
             last_canvas: Rect::from_min_size(Pos2::ZERO, Vec2::new(1000.0, 700.0)),
+            last_ribbon_content_h: 0.0,
             zoom_edit: None,
             typed: String::new(),
             sel_stamp: 0,
@@ -2048,7 +2061,33 @@ fn rail(ui: &mut egui::Ui, icon: &str, tooltip: &str, chevron: &str) -> bool {
     clicked
 }
 
+    /// Zeichnet die Ribbon-Leiste in einen **festen** Inhaltsbereich.
+    ///
+    /// Ohne diesen festen Rahmen bestimmte der Inhalt die Panelhöhe: der Reiter
+    /// „Ansicht" (vier Fangzeilen) war höher als `RIBBON_H`, der Rahmen wuchs
+    /// darüber hinaus, die folgenden Panels rutschten nach unten und der
+    /// ungezeichnete Streifen darunter erschien als schwarzer Balken
+    /// (t_92b03440). Jetzt ist der Bereich `RIBBON_CONTENT_H` hoch, wird
+    /// beschnitten und der Gruppenblock (`RIBBON_GROUP_H`) darin zentriert.
     fn ribbon(&mut self, ui: &mut egui::Ui) {
+        let area = ui.available_rect_before_wrap();
+        let dy = ((RIBBON_CONTENT_H - RIBBON_GROUP_H) * 0.5).max(0.0);
+        let block = Rect::from_min_size(
+            Pos2::new(area.left(), area.top() + dy),
+            Vec2::new(area.width(), RIBBON_CONTENT_H - dy),
+        );
+        let mut content = ui.new_child(
+            egui::UiBuilder::new()
+                .max_rect(block)
+                .layout(Layout::top_down(Align::Min)),
+        );
+        content.set_clip_rect(area);
+        self.ribbon_content(&mut content);
+        // Für den Regressionstest: tatsächliche Inhaltshöhe dieses Reiters.
+        self.ui.last_ribbon_content_h = content.min_rect().height();
+    }
+
+    fn ribbon_content(&mut self, ui: &mut egui::Ui) {
         let tab = self.ui.ribbon;
         ui.horizontal(|ui| {
             ui.add_space(8.0);
@@ -2065,7 +2104,7 @@ fn rail(ui: &mut egui::Ui, icon: &str, tooltip: &str, chevron: &str) -> bool {
                             app.run_action(ui.ctx(), "file.save");
                         }
                     });
-                    widgets::vline(ui, RIBBON_H);
+                    widgets::vline(ui, RIBBON_GROUP_H);
                     self.group(ui, "Ausgabe", |ui, app| {
                         if widgets::ribbon_button(ui, "pdf", "PDF", false).clicked() {
                             app.run_action(ui.ctx(), "file.export_pdf");
@@ -2080,7 +2119,7 @@ fn rail(ui: &mut egui::Ui, icon: &str, tooltip: &str, chevron: &str) -> bool {
                             app.run_action(ui.ctx(), "file.import_dxf");
                         }
                     });
-                    widgets::vline(ui, RIBBON_H);
+                    widgets::vline(ui, RIBBON_GROUP_H);
                     self.group(ui, "Zwischenablage", |ui, app| {
                         if widgets::ribbon_button(ui, "copy", "Kopieren", false).clicked() {
                             app.copy_selection(false);
@@ -2092,7 +2131,7 @@ fn rail(ui: &mut egui::Ui, icon: &str, tooltip: &str, chevron: &str) -> bool {
                             app.copy_selection(true);
                         }
                     });
-                    widgets::vline(ui, RIBBON_H);
+                    widgets::vline(ui, RIBBON_GROUP_H);
                     self.group(ui, "Projekt", |ui, app| {
                         if widgets::ribbon_button(ui, "info", "Projektdaten", false).clicked() {
                             app.ui.project_dialog = true;
@@ -2101,7 +2140,7 @@ fn rail(ui: &mut egui::Ui, icon: &str, tooltip: &str, chevron: &str) -> bool {
                             app.ui.settings_open = true;
                         }
                     });
-                    widgets::vline(ui, RIBBON_H);
+                    widgets::vline(ui, RIBBON_GROUP_H);
                     self.group(ui, "Ansicht", |ui, app| {
                         if widgets::ribbon_button(ui, "inventory", "Inventar", app.ui.inventory_open).clicked() {
                             app.run_action(ui.ctx(), "view.inventory");
@@ -2128,7 +2167,7 @@ fn rail(ui: &mut egui::Ui, icon: &str, tooltip: &str, chevron: &str) -> bool {
                             }
                         }
                     });
-                    widgets::vline(ui, RIBBON_H);
+                    widgets::vline(ui, RIBBON_GROUP_H);
                     self.group(ui, "Füllen", |ui, app| {
                         // Zwei geteilte Schaltflächen: Fläche und Schraffur.
                         // Der Pfeil öffnet die Eingabemodi, der Knopf startet
@@ -2136,7 +2175,7 @@ fn rail(ui: &mut egui::Ui, icon: &str, tooltip: &str, chevron: &str) -> bool {
                         app.fill_group_button(ui, false);
                         app.fill_group_button(ui, true);
                     });
-                    widgets::vline(ui, RIBBON_H);
+                    widgets::vline(ui, RIBBON_GROUP_H);
                     self.group(ui, "Weitere", |ui, app| {
                         for (id, icon, label) in [
                             ("draw.ellipse", "ellipse", "Ellipse"),
@@ -2171,7 +2210,7 @@ fn rail(ui: &mut egui::Ui, icon: &str, tooltip: &str, chevron: &str) -> bool {
                             }
                         }
                     });
-                    widgets::vline(ui, RIBBON_H);
+                    widgets::vline(ui, RIBBON_GROUP_H);
                     self.group(ui, "Geometrie", |ui, app| {
                         for (id, icon, label) in [
                             ("modify.offset", "offset", "Versetzen"),
@@ -2185,7 +2224,7 @@ fn rail(ui: &mut egui::Ui, icon: &str, tooltip: &str, chevron: &str) -> bool {
                             }
                         }
                     });
-                    widgets::vline(ui, RIBBON_H);
+                    widgets::vline(ui, RIBBON_GROUP_H);
                     // Zeichenreihenfolge: dieselben vier Funktionen wie im
                     // Objekt-Kontextmenü, hier für die aktuelle Auswahl.
                     self.group(ui, "Reihenfolge", |ui, app| {
@@ -2233,7 +2272,7 @@ fn rail(ui: &mut egui::Ui, icon: &str, tooltip: &str, chevron: &str) -> bool {
                             }
                         }
                     });
-                    widgets::vline(ui, RIBBON_H);
+                    widgets::vline(ui, RIBBON_GROUP_H);
                     self.group(ui, "Sonstiges", |ui, app| {
                         for (id, icon, label) in [
                             ("modify.pickprops", "eyedropper", "Pipette"),
@@ -2278,7 +2317,7 @@ fn rail(ui: &mut egui::Ui, icon: &str, tooltip: &str, chevron: &str) -> bool {
                             app.run_action(ui.ctx(), "modify.explode");
                         }
                     });
-                    widgets::vline(ui, RIBBON_H);
+                    widgets::vline(ui, RIBBON_GROUP_H);
                     self.group(ui, "Schnellzugriff", |ui, app| {
                         let blocks: Vec<(String, String)> = app
                             .doc()
@@ -2313,14 +2352,15 @@ fn rail(ui: &mut egui::Ui, icon: &str, tooltip: &str, chevron: &str) -> bool {
                             app.run_action(ui.ctx(), "sheet.pdf");
                         }
                     });
-                    widgets::vline(ui, RIBBON_H);
+                    widgets::vline(ui, RIBBON_GROUP_H);
                     self.group(ui, "Blatteinstellungen", |ui, app| {
                         if let TabKind::Sheet(id) = app.tab().tab {
                             let mut paper = app.doc().sheet(id).map(|s| s.paper).unwrap_or_default();
                             let mut landscape = app.doc().sheet(id).map(|s| s.landscape).unwrap_or(true);
                             let mut scale = app.doc().sheet(id).map(|s| s.scale).unwrap_or(100.0);
                             ui.vertical(|ui| {
-                                ui.add_space(6.0);
+                                // Zwei Zeilen à 24 px (Abstand 6) = 54 px — wie eine
+                                // Knopfreihe, damit der Reiter dieselbe Höhe hat.
                                 ui.horizontal(|ui| {
                                     ui.label(theme::dim("Format"));
                                     egui::ComboBox::from_id_salt("paper")
@@ -2341,7 +2381,7 @@ fn rail(ui: &mut egui::Ui, icon: &str, tooltip: &str, chevron: &str) -> bool {
                                 });
                                 ui.horizontal(|ui| {
                                     ui.label(theme::dim("Maßstab"));
-                                    if ui.add_sized([54.0, 20.0], crate::widgets::dv(&mut scale).speed(1.0)).changed() {
+                                    if ui.add_sized([54.0, 24.0], crate::widgets::dv(&mut scale).speed(1.0)).changed() {
                                         let _ = app.session_mut().execute(
                                             "sheet.update",
                                             &serde_json::json!({"sheet": id, "scale": scale}),
@@ -2368,7 +2408,7 @@ fn rail(ui: &mut egui::Ui, icon: &str, tooltip: &str, chevron: &str) -> bool {
                             app.zoom_by(0.8);
                         }
                     });
-                    widgets::vline(ui, RIBBON_H);
+                    widgets::vline(ui, RIBBON_GROUP_H);
                     self.group(ui, "Panels", |ui, app| {
                         if widgets::ribbon_button(ui, "layers", "Layer", app.ui.layers_open).clicked() {
                             app.ui.layers_open = !app.ui.layers_open;
@@ -2385,26 +2425,25 @@ fn rail(ui: &mut egui::Ui, icon: &str, tooltip: &str, chevron: &str) -> bool {
                             );
                         }
                     });
-                    widgets::vline(ui, RIBBON_H);
+                    widgets::vline(ui, RIBBON_GROUP_H);
                     self.group(ui, "Fangen", |ui, app| {
                         ui.vertical(|ui| {
-                            ui.add_space(6.0);
+                            // Zwei Zeilen à vier Felder: die Gruppe bleibt damit
+                            // genau so hoch wie eine Knopfreihe (54 px), sodass
+                            // alle Reiter dieselbe Ribbon-Höhe haben (t_92b03440).
+                            ui.spacing_mut().item_spacing.y = 6.0;
                             let mut snap = app.doc().settings.snap.clone();
                             let mut changed = false;
                             ui.horizontal(|ui| {
-                                changed |= ui.checkbox(&mut snap.endpoint, "Endpunkt").changed();
-                                changed |= ui.checkbox(&mut snap.midpoint, "Mitte").changed();
+                                changed |= widgets::check_cell(ui, &mut snap.endpoint, "Endpunkt").changed();
+                                changed |= widgets::check_cell(ui, &mut snap.intersection, "Schnitt").changed();
+                                changed |= widgets::check_cell(ui, &mut snap.midpoint, "Mitte").changed();
+                                changed |= widgets::check_cell(ui, &mut snap.center, "Zentrum").changed();
                             });
                             ui.horizontal(|ui| {
-                                changed |= ui.checkbox(&mut snap.intersection, "Schnitt").changed();
-                                changed |= ui.checkbox(&mut snap.center, "Zentrum").changed();
-                            });
-                            ui.horizontal(|ui| {
-                                changed |= ui.checkbox(&mut snap.grid, "Fangraster").changed();
-                                changed |= ui.checkbox(&mut snap.ortho, "Ortho").changed();
-                            });
-                            ui.horizontal(|ui| {
-                                changed |= ui.checkbox(&mut snap.wall_edges, "Wandkanten").changed();
+                                changed |= widgets::check_cell(ui, &mut snap.grid, "Fangraster").changed();
+                                changed |= widgets::check_cell(ui, &mut snap.ortho, "Ortho").changed();
+                                changed |= widgets::check_cell(ui, &mut snap.wall_edges, "Wandkanten").changed();
                             });
                             if changed {
                                 let _ = app.session_mut().execute(
@@ -2779,7 +2818,7 @@ fn rail(ui: &mut egui::Ui, icon: &str, tooltip: &str, chevron: &str) -> bool {
                 .frame(
                     Frame::none()
                         .fill(Palette::PANEL)
-                        .inner_margin(Margin::symmetric(0.0, 2.0)),
+                        .inner_margin(Margin::symmetric(0.0, RIBBON_PAD)),
                 )
                 .show(ctx, |ui| self.ribbon(ui));
         }
@@ -3678,5 +3717,105 @@ mod tests_ribbon_bearbeiten {
             jjcad_core::actions::action("modify.select").is_some(),
             "modify.select muss für Tastatur/Inventar/MCP registriert bleiben"
         );
+    }
+}
+
+mod tests_ribbon_hoehe {
+    //! Alle Ribbon-Reiter sind gleich hoch (t_92b03440).
+    //!
+    //! Vorher bestimmte der Inhalt die Panelhöhe: der Reiter „Ansicht" (vier
+    //! Fangzeilen) und die Trennlinien (`vline` mit voller `RIBBON_H`) wuchsen
+    //! über die Panelhöhe hinaus. Der Rahmen wurde dadurch höher, die
+    //! Zeichenfläche rutschte beim Reiterwechsel nach unten und zwischen Ribbon
+    //! und Zeichenfläche blieb ein ungezeichneter (schwarzer) Streifen.
+    //!
+    //! Der Test zeichnet die ganze Oberfläche headless (ohne Fenster) und misst
+    //! die echte Inhaltshöhe und die Oberkante der Zeichenfläche.
+
+    use super::*;
+
+    /// Zeichnet drei Frames mit fester Fenstergröße und liefert
+    /// (Ribbon-Inhaltshöhe, Oberkante der Zeichenfläche).
+    fn messen(tab: RibbonTab, breite: f32, hoehe: f32) -> (f32, f32) {
+        let ctx = egui::Context::default();
+        let mut app = App::with_ctx(ctx.clone());
+        app.ui.ribbon = tab;
+        let mut werte = (0.0, 0.0);
+        for _ in 0..3 {
+            let raw = egui::RawInput {
+                screen_rect: Some(egui::Rect::from_min_size(
+                    egui::Pos2::ZERO,
+                    egui::vec2(breite, hoehe),
+                )),
+                ..Default::default()
+            };
+            let _ = ctx.run(raw, |ctx| app.ui(ctx));
+            werte = (app.ui.last_ribbon_content_h, app.ui.last_canvas.top());
+        }
+        werte
+    }
+
+    #[test]
+    fn alle_reiter_gleich_hoch_ohne_verschiebung() {
+        let mut hoehen = Vec::new();
+        let mut kanten = Vec::new();
+        for tab in RibbonTab::ALL {
+            let (inhalt, kante) = messen(tab, 1600.0, 1000.0);
+            hoehen.push((tab.label(), inhalt));
+            kanten.push((tab.label(), kante));
+        }
+
+        let _soll_kante = HEADER_H + RIBBON_H + DOCTABS_H;
+        let erste_kante = kanten[0].1;
+        assert!(
+            (erste_kante - _soll_kante).abs() < 0.5,
+            "Oberkante der Zeichenfläche {erste_kante} statt {_soll_kante} \
+             (Kopfzeile {HEADER_H} + Ribbon {RIBBON_H} + Blattreiter {DOCTABS_H})"
+        );
+        for (name, kante) in &kanten {
+            assert!(
+                (kante - erste_kante).abs() < 0.5,
+                "Reiter {name}: Oberkante der Zeichenfläche {kante} statt {erste_kante} \
+                 — beim Reiterwechsel springt die Zeichnung (Höhen: {hoehen:?}, Kanten: {kanten:?})"
+            );
+        }
+
+        for (name, inhalt) in &hoehen {
+            assert!(
+                (inhalt - RIBBON_GROUP_H).abs() < 0.5,
+                "Reiter {name}: Ribbon-Inhalt {inhalt} px hoch, erwartet {RIBBON_GROUP_H} px \
+                 (Höhen aller Reiter: {hoehen:?})"
+            );
+            assert!(
+                *inhalt <= RIBBON_CONTENT_H + 0.01,
+                "Reiter {name}: Ribbon-Inhalt {inhalt} px überschreitet den Rahmen \
+                 ({RIBBON_CONTENT_H} px) — das erzeugt den schwarzen Balken"
+            );
+        }
+    }
+
+    #[test]
+    fn hoehe_bleibt_bei_kleiner_und_grosser_flaeche_gleich() {
+        for (breite, hoehe) in [(1024.0, 720.0), (1920.0, 1080.0)] {
+            let mut kanten = Vec::new();
+            for tab in RibbonTab::ALL {
+                let (inhalt, kante) = messen(tab, breite, hoehe);
+                assert!(
+                    (inhalt - RIBBON_GROUP_H).abs() < 0.5,
+                    "{}×{}: Reiter {} Inhalt {inhalt} px statt {RIBBON_GROUP_H} px",
+                    breite,
+                    hoehe,
+                    tab.label()
+                );
+                kanten.push(kante);
+            }
+            for kante in &kanten {
+                assert!(
+                    (kante - kanten[0]).abs() < 0.5,
+                    "{breite}×{hoehe}: Zeichenfläche verschiebt sich beim Reiterwechsel \
+                     ({kanten:?})"
+                );
+            }
+        }
     }
 }
