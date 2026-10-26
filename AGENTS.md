@@ -4,6 +4,10 @@
 die verbindlichen Konventionen. Abweichungen gelten als Fehler.
 (Gleicher Inhalt als Kopie: `docs/AGENTEN.md`.)
 
+**Begriffe:** `docs/GLOSSAR.md` ist verbindlich. Ein Begriff, eine Bedeutung —
+Tickets, Kommentare, UI-Texte und Code-Kommentare benutzen die dortige linke
+Spalte. Abweichende Wörter gehören nicht in die Oberfläche.
+
 ## Worum es geht
 
 2D-CAD für Architektur- und Bauantragszeichnungen, Rust-Workspace:
