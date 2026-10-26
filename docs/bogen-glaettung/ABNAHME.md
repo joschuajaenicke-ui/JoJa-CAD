@@ -7,6 +7,14 @@ Verglichen mit dem Stand davor: **`29b020b`**, Build **b100**.
 Alle Zahlen dieses Berichts sind mit `cargo test`/Messprogrammen erzeugt
 (nachprüfbar, siehe „Reproduzieren“), nicht geschätzt.
 
+**Messbasis:** Alle Messungen und Screenshots entstanden auf `b3a3865` (Build
+b102). Der Bericht selbst wurde mit **s27-9c3009c** ausgeliefert, also nach dem
+Merge der Ribbon-Karte `t_92b03440`; die Zeichenflächen-Geometrie ist davon
+nicht betroffen, die Bogenrechnung läuft auf demselben Code (`cargo test` auf
+`master` grün). Einzige Folge: `fit_view` kann durch die neue Reiterhöhe eine
+andere Zoomstufe wählen, die Pixelvergleiche gelten deshalb für die genannten
+Zoomstufen, nicht für beliebige Fensterhöhen.
+
 ---
 
 ## 1. Abnahme-Checkliste
