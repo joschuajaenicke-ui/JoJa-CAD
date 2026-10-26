@@ -2626,7 +2626,6 @@ fn render_dim_chain(
 /// Blattrahmen, Schriftfeld, Viewports und Papierraum-Objekte.
 pub fn render_sheet(doc: &Document, sheet: &Sheet) -> DisplayList {
     let mut dl = DisplayList::default();
-    let (w, h) = sheet.size();
     let ctx = RenderCtx {
         doc,
         annot_scale: 1.0,
@@ -2636,33 +2635,11 @@ pub fn render_sheet(doc: &Document, sheet: &Sheet) -> DisplayList {
         sheet_scale: Some(sheet.scale),
         entities: Some(&sheet.entities),
     };
-    // Papierraum-Objekte (Schriftfeld etc.)
+    // Papierraum-Objekte: Blattrahmen, Schriftfeld und alles, was der Nutzer
+    // selbst aufs Blatt zeichnet. Alles davon sind normale Objekte — der
+    // Renderer hat hier keine Sonderdarstellung mehr.
     for e in &sheet.entities {
         render_entity(&ctx, e, Affine::IDENTITY, &mut dl, 0);
-    }
-    // Rahmen
-    if sheet.frame {
-        let m = 10.0;
-        let left = m + 5.0; // Heftrand
-        dl.push(Prim {
-            shape: Shape::Poly(
-                vec![
-                    v(left, m),
-                    v(w - m, m),
-                    v(w - m, h - m),
-                    v(left, h - m),
-                ],
-                true,
-            ),
-            style: PrimStyle {
-                color: Color::BLACK,
-                line_type: LineType::Solid,
-                width: 0.35,
-                fill: None,
-            },
-            entity: 0,
-            layer: 0,
-        });
     }
     dl
 }

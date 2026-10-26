@@ -27,6 +27,18 @@ fn in_papierraum(sess: &mut Session) {
     assert!(sess.doc.in_paper_space(), "Papierraum ist nicht aktiv");
 }
 
+/// Gehört die Linie zum Blattrahmen (10 mm Rand, 15 mm Heftrand links)?
+fn ist_rahmenlinie(kind: &EntityKind, w: f64, h: f64) -> bool {
+    let (m, left) = (10.0, 15.0);
+    match kind {
+        EntityKind::Line { a, b } => {
+            (a.y == b.y && (a.y == m || a.y == h - m))
+                || (a.x == b.x && (a.x == left || a.x == w - m))
+        }
+        _ => false,
+    }
+}
+
 #[test]
 fn zeichnen_landet_im_papierraum() {
     let mut sess = s();
@@ -316,4 +328,176 @@ fn objektzahl_zaehlt_den_aktiven_raum() {
 
     sess.set_space(None);
     assert_eq!(sess.doc.summary_short(), modell, "zurück im Modell");
+}
+
+// ---------------------------------------------------------------------------
+// Blattrahmen als Objekt und Blattecken als Fangpunkte (Nacharbeit 26.10.)
+// ---------------------------------------------------------------------------
+
+/// Der Rahmen ist kein Renderer-Sonderfall mehr, sondern vier Linien.
+#[test]
+fn blattrahmen_ist_ein_auswaehlbares_objekt() {
+    let mut sess = s();
+    let (w, h) = sess.doc.sheets[0].size();
+    let (m, left) = (10.0, 15.0);
+
+    // Die vier Rahmenlinien liegen auf dem Rahmenrechteck.
+    let rahmen: Vec<_> = sess.doc.sheets[0]
+        .entities
+        .iter()
+        .filter_map(|e| match &e.kind {
+            EntityKind::Line { a, b } => Some((e.id, *a, *b)),
+            _ => None,
+        })
+        .filter(|(_, a, b)| {
+            // achsparallel und auf dem Rahmen
+            (a.y == b.y && (a.y == m || a.y == h - m))
+                || (a.x == b.x && (a.x == left || a.x == w - m))
+        })
+        .collect();
+    assert!(rahmen.len() >= 4, "Rahmenlinien fehlen: {}", rahmen.len());
+
+    // Anklicken trifft eine Rahmenlinie (kein entity:0-Sonderfall mehr) —
+    // gesucht wird im Papierraum, denn dort steht der Rahmen.
+    let id = rahmen[0].0;
+    in_papierraum(&mut sess);
+    let treffer = jjcad_core::snap::hit_test(&sess.doc, jjcad_core::geom::v(120.0, m), 1.0, None);
+    assert!(treffer.is_some(), "Rahmen ist nicht anklickbar");
+    assert!(
+        sess.doc.sheets[0].entities.iter().any(|e| e.id == treffer.unwrap()),
+        "Treffer gehört nicht zum Blatt"
+    );
+
+    // Und er lässt sich wie jedes Objekt löschen.
+    sess.execute("modify.erase", &json!({"ids": [id]}))
+        .unwrap();
+    assert!(sess.doc.sheets[0].entities.iter().all(|e| e.id != id));
+}
+
+/// Alte Dateien (Rahmen als Flag) bekommen beim Laden Linien — sonst bliebe
+/// der Rahmen wieder unantastbar.
+#[test]
+fn alter_rahmen_wird_beim_laden_zu_linien() {
+    let mut doc = Document::new();
+    // Zustand von vor T0004 herstellen: Rahmenflag an, keine Rahmenlinien.
+    {
+        let sheet = &mut doc.sheets[0];
+        let (w, h) = sheet.size();
+        sheet.entities.retain(|e| !ist_rahmenlinie(&e.kind, w, h));
+        sheet.frame = true;
+        sheet.show_title_block = true;
+    }
+    let json = jjcad_core::persist::to_json(&doc).unwrap();
+    let mut geladen = jjcad_core::persist::from_json(&json).unwrap();
+    let sid = geladen.sheets[0].id;
+    // Anklicken prüft den aktiven Raum: der Rahmen liegt im Papierraum.
+    geladen.set_space(Some(sid));
+
+    let sheet = &geladen.sheets[0];
+    assert!(!sheet.frame, "Flag muss zurückgesetzt sein");
+    let (w, h) = sheet.size();
+    for p in [
+        jjcad_core::geom::v(15.0, 10.0),
+        jjcad_core::geom::v(w - 10.0, h - 10.0),
+    ] {
+        assert!(
+            jjcad_core::snap::hit_test(&geladen, p, 1.0, None).is_some(),
+            "Eckpunkt {p:?} ohne Rahmenlinie"
+        );
+    }
+    // Keine doppelten IDs nach der Migration
+    let mut ids: Vec<u64> = sheet.entities.iter().map(|e| e.id).collect();
+    let n = ids.len();
+    ids.sort_unstable();
+    ids.dedup();
+    assert_eq!(ids.len(), n, "doppelte IDs nach der Migration");
+    assert!(!geladen.modified, "Laden darf die Datei nicht als geändert markieren");
+}
+
+/// Die echten Blattecken fangen im Papierraum — und nur dort.
+#[test]
+fn blattecken_fangen_im_papierraum() {
+    let mut sess = s();
+    in_papierraum(&mut sess);
+    let kandidaten = jjcad_core::snap::snap_candidates(
+        &sess.doc,
+        jjcad_core::geom::v(1.0, 1.0),
+        6.0,
+        None,
+        &[],
+        &[],
+    );
+    let ecke = kandidaten
+        .iter()
+        .find(|k| k.kind == jjcad_core::snap::SnapKind::SheetCorner)
+        .expect("Blattecke nicht gefangen");
+    assert!(ecke.point.dist(jjcad_core::geom::v(0.0, 0.0)) < 1e-9, "{:?}", ecke.point);
+    assert_eq!(
+        kandidaten[0].kind,
+        jjcad_core::snap::SnapKind::SheetCorner,
+        "Blattecke muss Vorrang vor dem Raster haben"
+    );
+
+    // Obere rechte Blattecke
+    let (w, h) = sess.doc.sheets[0].size();
+    let oben = jjcad_core::snap::snap_candidates(
+        &sess.doc,
+        jjcad_core::geom::v(w - 1.0, h - 1.0),
+        6.0,
+        None,
+        &[],
+        &[],
+    );
+    assert!(
+        oben.iter()
+            .any(|k| k.kind == jjcad_core::snap::SnapKind::SheetCorner),
+        "obere rechte Blattecke fehlt"
+    );
+
+    // Im Modell gibt es kein Blatt und damit keine Blattecke.
+    sess.set_space(None);
+    let im_modell = jjcad_core::snap::snap_candidates(
+        &sess.doc,
+        jjcad_core::geom::v(1.0, 1.0),
+        6.0,
+        None,
+        &[],
+        &[],
+    );
+    assert!(
+        im_modell
+            .iter()
+            .all(|k| k.kind != jjcad_core::snap::SnapKind::SheetCorner),
+        "Blattecken dürfen im Modell nicht fangen"
+    );
+}
+
+/// Der Rahmen steht als Objekt im Blattbild (und damit auch im PDF): vier
+/// Linien mit eigener ID statt eines Renderer-Sonderrahmens mit `entity: 0`.
+#[test]
+fn rahmen_ist_im_blattbild_ein_objekt() {
+    let doc = Document::new();
+    let sheet = &doc.sheets[0];
+    let (w, h) = sheet.size();
+    let dl = jjcad_core::render::render_sheet(&doc, sheet);
+
+    let hat_linie = |a: jjcad_core::geom::Vec2, b: jjcad_core::geom::Vec2| {
+        dl.prims.iter().any(|p| {
+            p.entity != 0
+                && matches!(&p.shape, jjcad_core::render::Shape::Line(pa, pb)
+                    if (pa.dist(a) < 1e-6 && pb.dist(b) < 1e-6)
+                        || (pa.dist(b) < 1e-6 && pb.dist(a) < 1e-6))
+        })
+    };
+    let v = jjcad_core::geom::v;
+    assert!(hat_linie(v(15.0, 10.0), v(w - 10.0, 10.0)), "untere Rahmenlinie");
+    assert!(hat_linie(v(w - 10.0, 10.0), v(w - 10.0, h - 10.0)), "rechte Rahmenlinie");
+    assert!(hat_linie(v(w - 10.0, h - 10.0), v(15.0, h - 10.0)), "obere Rahmenlinie");
+    assert!(hat_linie(v(15.0, h - 10.0), v(15.0, 10.0)), "Heftrand links");
+
+    // Alles auf dem Blatt trägt eine ID — nichts ist mehr unantastbar.
+    assert!(
+        dl.prims.iter().all(|p| p.entity != 0),
+        "Blattbild enthält Objekte ohne ID (nicht auswählbar)"
+    );
 }
