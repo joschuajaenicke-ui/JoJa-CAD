@@ -1698,7 +1698,7 @@ fn entity_props(app: &mut App, ui: &mut Ui, id: Id) {
         // Polylinien tragen keine eigenen Eingabefelder: Länge, Fläche,
         // Stützpunktzahl und Geschlossenheit stehen schon im Abschnitt
         // „Geometrie“ (siehe `geo_rows`).
-        EntityKind::Polyline { .. } => {}
+        EntityKind::Polyline { .. } | EntityKind::Spline { .. } => {}
         EntityKind::Line { a, b } => {
             ui.label(theme::dim(format!(
                 "Länge {} · Winkel {:.1}°",
@@ -1964,7 +1964,7 @@ fn geo_rows(e: &jjcad_core::model::Entity, unit: Unit) -> Vec<(&'static str, Str
     if area > 0.0 {
         rows.push(("Fläche", area_text(unit, area)));
     }
-    if let K::Polyline { verts, closed } = &e.kind {
+    if let K::Polyline { verts, closed } | K::Spline { verts, closed } = &e.kind {
         rows.push(("Stützpunkte", verts.len().to_string()));
         rows.push((
             "Geschlossen",
@@ -1993,6 +1993,13 @@ fn entity_length(e: &jjcad_core::model::Entity) -> f64 {
             }
             d * r
         }
+        K::Spline { verts, closed } => {
+            let sp = jjcad_core::geom::Spline {
+                verts: verts.clone(),
+                closed: *closed,
+            };
+            sp.len()
+        }
         K::Polyline { verts, closed } => {
             let mut len = 0.0;
             for i in 0..verts.len().saturating_sub(1) {
@@ -2012,6 +2019,13 @@ fn entity_area(e: &jjcad_core::model::Entity) -> f64 {
     use jjcad_core::model::EntityKind as K;
     match &e.kind {
         K::Circle { r, .. } => std::f64::consts::PI * r * r,
+        K::Spline { verts, closed } if *closed && verts.len() > 2 => {
+            let sp = jjcad_core::geom::Spline {
+                verts: verts.clone(),
+                closed: *closed,
+            };
+            sp.area()
+        }
         K::Polyline { verts, closed } if *closed && verts.len() > 2 => {
             let mut s = 0.0;
             for i in 0..verts.len() {

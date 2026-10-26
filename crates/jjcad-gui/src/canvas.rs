@@ -1177,6 +1177,47 @@ fn draw_tool_preview(
                 }
             }
         }
+        "draw.spline" => {
+            // Vorschau ist die Kurve selbst — dieselbe Catmull-Rom-Zerlegung
+            // wie beim Anlegen. Der Polygonzug als Vorschau würde ein anderes
+            // Ergebnis zeigen als der Abschluss erzeugt.
+            let tol = fang_radius_px(app, view.zoom);
+            let am_start = tool.pts.len() >= 3
+                && tool
+                    .pts
+                    .first()
+                    .map(|q| q.dist(cursor) <= tol)
+                    .unwrap_or(false);
+            let mut pts = tool.pts.clone();
+            if am_start {
+                label = "schließen".to_string();
+            } else {
+                pts.push(cursor);
+            }
+            let kurve = catmull_rom_points(&pts, am_start, SPLINE_TOL_MM);
+            if kurve.len() >= 2 {
+                let screen: Vec<Pos2> = kurve.iter().map(|q| w2s(*q)).collect();
+                if am_start {
+                    p.add(Shape::line(screen, stroke));
+                } else {
+                    p.add(Shape::line(screen, dashed));
+                }
+            }
+            // Die schon gesetzten Punkte als durchgezogene Kurve darüber.
+            if tool.pts.len() >= 2 {
+                let fest = catmull_rom_points(&tool.pts, false, SPLINE_TOL_MM);
+                if fest.len() >= 2 {
+                    let screen: Vec<Pos2> = fest.iter().map(|q| w2s(*q)).collect();
+                    p.add(Shape::line(screen, stroke));
+                }
+            }
+            for q in &tool.pts {
+                p.circle_stroke(w2s(*q), 2.0, Stroke::new(1.0, Palette::ACCENT));
+            }
+            if label.is_empty() {
+                label = format!("{} Stützpunkte", tool.pts.len() + 1);
+            }
+        }
         "draw.fill.boundary" | "draw.fill.points" => {
             // Polygonzug bis zum Zeiger — der Umriss, der beim Klick entsteht.
             for pair in tool.pts.windows(2) {
@@ -1754,7 +1795,7 @@ fn vorschau_punkte(app: &App) -> Vec<V2> {
     let Some(t) = app.tool.as_ref() else {
         return Vec::new();
     };
-    if t.action != "draw.polyline" || t.pts.len() < 2 {
+    if !matches!(t.action.as_str(), "draw.polyline" | "draw.spline") || t.pts.len() < 2 {
         return Vec::new();
     }
     t.pts[..t.pts.len() - 1].to_vec()
@@ -1854,7 +1895,9 @@ fn handle_input(
     {
         if let Some(t) = app.tool.clone() {
             let punktfolge = ist_fuell_punkte(&t.action);
-            if matches!(t.action.as_str(), "draw.polyline" | "dim.chain") || punktfolge {
+            if matches!(t.action.as_str(), "draw.polyline" | "draw.spline" | "dim.chain")
+                || punktfolge
+            {
                 if t.pts.len() >= 2 {
                     finish_tool(app, true);
                     return;
@@ -2085,7 +2128,7 @@ fn handle_input(
     if resp.clicked_by(egui::PointerButton::Secondary) {
         if let Some(tool) = app.tool.clone() {
             match tool.action.as_str() {
-                "draw.polyline" | "dim.chain" => {
+                "draw.polyline" | "draw.spline" | "dim.chain" => {
                     finish_tool(app, true);
                 }
                 // Füllflächen aus Punkten: Rechtsklick schließt wie Enter. Bei
@@ -2785,7 +2828,12 @@ fn finish_fill(app: &mut App, action: &str) -> bool {
 pub fn finish_tool(app: &mut App, from_enter: bool) {
     let Some(tool) = app.tool.clone() else { return };
     match tool.action.as_str() {
-        "draw.polyline" => {
+        "draw.polyline" | "draw.spline" => {
+            let action = if tool.action == "draw.spline" {
+                "draw.spline"
+            } else {
+                "draw.polyline"
+            };
             if tool.pts.len() >= 2 {
                 let layer = app.doc().current_layer;
                 // Der Klick auf den Startpunkt legt den ersten Punkt erneut ab;
@@ -2802,7 +2850,7 @@ pub fn finish_tool(app: &mut App, from_enter: bool) {
                         .unwrap_or(false);
                 let _ = run(
                     app,
-                    "draw.polyline",
+                    action,
                     json!({"pts": tool.pts.iter().map(|p| [app.unit().from_mm(p.x), app.unit().from_mm(p.y)]).collect::<Vec<_>>(), "closed": geschlossen, "layer": layer}),
                 );
             }
@@ -2983,7 +3031,7 @@ fn tool_click_at(app: &mut App, w: V2, raw: V2) {
                 }
             }
         }
-        "draw.polyline" => {
+        "draw.polyline" | "draw.spline" => {
             // Klick auf den Startpunkt schließt den Zug: der Punkt wird exakt
             // übernommen (kein doppelter Stützpunkt), `finish_tool` übergibt
             // `closed`. Unter drei Punkten entsteht keine Fläche — dann beendet
@@ -3138,6 +3186,16 @@ fn tool_click_at(app: &mut App, w: V2, raw: V2) {
                     let boundary = match &e.kind {
                         EntityKind::Polyline { verts, closed } if *closed => {
                             Some(verts.iter().map(|v| v.p).collect::<Vec<_>>())
+                        }
+                        // Geschlossener Spline: die Füllfläche folgt der Kurve,
+                        // nicht den Stützpunkten — sonst lägen Muster und
+                        // Umrandung neben der sichtbaren Kontur.
+                        EntityKind::Spline { verts, closed } if *closed => {
+                            let sp = Spline {
+                                verts: verts.clone(),
+                                closed: true,
+                            };
+                            Some(sp.flatten(SPLINE_TOL_MM))
                         }
                         EntityKind::Wall { a, b, thickness, .. } => {
                             let dir = (*b - *a).normalized();
@@ -5021,5 +5079,87 @@ mod tests_papierraum {
             (app.options.text_height - app.doc().settings.text_height).abs() < 1e-9,
             "Modell-Texthöhe muss zurückkommen"
         );
+    }
+}
+
+#[cfg(test)]
+mod tests_spline_werkzeug {
+    //! Spline-Werkzeug (T0005): Eingabe wie bei der Polylinie — Punkte klicken,
+    //! Klick auf den Startpunkt schließt, ESC/Enter beendet. Geprüft wird über
+    //! den Klickpfad und die Objekte im Dokument, nicht über die Vorschau.
+
+    use super::*;
+
+    fn app() -> App {
+        App::with_ctx(egui::Context::default())
+    }
+
+    fn taste(app: &mut App, key: egui::Key) {
+        let ctx = app.ctx.clone();
+        let input = egui::RawInput {
+            screen_rect: Some(Rect::from_min_size(Pos2::ZERO, Vec2::new(1500.0, 950.0))),
+            events: vec![egui::Event::Key {
+                key,
+                physical_key: None,
+                pressed: true,
+                repeat: false,
+                modifiers: egui::Modifiers::NONE,
+            }],
+            ..Default::default()
+        };
+        let _ = ctx.run(input, |ctx| app.ui(ctx));
+    }
+
+    fn splines(app: &App) -> Vec<(Vec<V2>, bool)> {
+        app.doc()
+            .entities
+            .iter()
+            .filter_map(|e| match &e.kind {
+                EntityKind::Spline { verts, closed } => {
+                    Some((verts.iter().map(|v| v.p).collect(), *closed))
+                }
+                _ => None,
+            })
+            .collect()
+    }
+
+    #[test]
+    fn klicks_erzeugen_einen_spline_mit_drei_stuetzpunkten() {
+        let mut app = app();
+        app.start_tool("draw.spline");
+        tool_click(&mut app, V2::new(0.0, 0.0));
+        tool_click(&mut app, V2::new(2000.0, 0.0));
+        tool_click(&mut app, V2::new(2000.0, 1500.0));
+        assert!(app.doc().entities.is_empty(), "noch nicht abgeschlossen");
+        taste(&mut app, egui::Key::Escape);
+        let s = splines(&app);
+        assert_eq!(s.len(), 1, "ESC schließt den Spline ab");
+        assert_eq!(s[0].0.len(), 3);
+        assert!(!s[0].1, "drei Punkte bleiben offen");
+        assert!(app.tool.is_none(), "Werkzeug beendet");
+    }
+
+    #[test]
+    fn klick_auf_den_startpunkt_schliesst() {
+        let mut app = app();
+        app.start_tool("draw.spline");
+        tool_click(&mut app, V2::new(0.0, 0.0));
+        tool_click(&mut app, V2::new(2000.0, 0.0));
+        tool_click(&mut app, V2::new(2000.0, 1500.0));
+        tool_click(&mut app, V2::new(0.0, 0.0));
+        let s = splines(&app);
+        assert_eq!(s.len(), 1, "Klick auf den Startpunkt schließt und legt an");
+        assert!(s[0].1, "geschlossen");
+        assert_eq!(s[0].0.len(), 3, "kein doppelter Stützpunkt");
+        assert!(app.tool.is_none());
+    }
+
+    #[test]
+    fn ein_einzelner_punkt_legt_nichts_an() {
+        let mut app = app();
+        app.start_tool("draw.spline");
+        tool_click(&mut app, V2::new(0.0, 0.0));
+        taste(&mut app, egui::Key::Escape);
+        assert!(app.doc().entities.is_empty(), "ein Punkt ist keine Kurve");
     }
 }

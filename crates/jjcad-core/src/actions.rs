@@ -92,6 +92,7 @@ pub const ACTIONS: &[ActionDef] = &[
     // Zeichnen
     act!("draw.line", "Linie", Zeichnen, "line", "l", "Start- und Endpunkt klicken", true),
     act!("draw.polyline", "Polylinie", Zeichnen, "polyline", "o", "Punkte klicken, Klick auf den Startpunkt schließt, Enter beendet", true),
+    act!("draw.spline", "Spline", Zeichnen, "spline", "u", "Punkte klicken, Klick auf den Startpunkt schließt, Enter beendet", true),
     act!("draw.rect", "Rechteck", Zeichnen, "rect", "", "Zwei Ecken klicken", true),
     act!("draw.circle", "Kreis", Zeichnen, "circle", "k", "Mittelpunkt und Radius klicken", true),
     act!("draw.arc", "Bogen", Zeichnen, "arc", "", "Start, Ende, Bogenpunkt klicken", true),
@@ -188,6 +189,7 @@ pub fn is_mutating(id: &str) -> bool {
         id,
         "draw.line"
             | "draw.polyline"
+            | "draw.spline"
             | "draw.rect"
             | "draw.circle"
             | "draw.arc"
@@ -964,6 +966,30 @@ pub fn execute(doc: &mut Document, id: &str, params: &Value) -> Result<Value, St
                     closed,
                 },
             );
+            apply_common(doc, &mut e, &p, layer);
+            doc.add_entity(e);
+            Ok(json!({"ok": true, "created": [idn]}))
+        }
+        // Spline: dieselbe Eingabe wie die Polylinie (Punktfolge, Klick auf den
+        // Startpunkt schließt), aber als Catmull-Rom-Kurve gespeichert. Die
+        // Stützpunkte sind die geklickten Punkte — Tangenten gibt es nicht.
+        "draw.spline" => {
+            let pts = p
+                .pts("pts")
+                .or_else(|| p.pts("points"))
+                .ok_or_else(|| "Parameter 'pts' fehlt".to_string())?;
+            if pts.len() < 2 {
+                return Err("Mindestens zwei Punkte nötig".into());
+            }
+            let closed_req = p.boolean_or("closed", false);
+            let (pts, closed) = polyline_points(&pts, closed_req, POINT_EPS_MM);
+            if pts.len() < 2 {
+                return Err("Mindestens zwei verschiedene Punkte nötig".into());
+            }
+            let layer = resolve_layer(doc, &p);
+            let idn = doc.new_id();
+            let verts = pts.iter().map(|q| Vertex::new(*q)).collect();
+            let mut e = Entity::new(idn, layer, EntityKind::Spline { verts, closed });
             apply_common(doc, &mut e, &p, layer);
             doc.add_entity(e);
             Ok(json!({"ok": true, "created": [idn]}))

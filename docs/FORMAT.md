@@ -95,6 +95,7 @@ Jedes Objekt hat `id`, `kind`, `layer` und optional `style`:
 | `arc` | `c`, `r`, `a0`, `a1` | Bogen gegen den Uhrzeigersinn |
 | `ellipse` | `c`, `rx`, `ry`, `rot` | gedrehte Ellipse |
 | `polyline` | `verts[{p,bulge}]`, `closed` | `bulge = tan(θ/4)`, 0 = Gerade |
+| `spline` | `verts[{p,bulge}]`, `closed` | Catmull-Rom-Kurve durch `verts`, zentripetal; `bulge` ungenutzt |
 | `hatch` | `boundary[]`, `pattern`, `angle`, `spacing`, `filled` | Muster: `Solid`, `Lines`, `Cross`, `Dots` |
 | `text` | `p`, `text`, `height`, `angle`, `align`, `valign`, `bold` | `{DATUM}` usw. werden ersetzt |
 | `dim` | `a`, `b`, `line_pos`, `axis`, `override_text` | `axis`: `X`, `Y`, `Aligned` |

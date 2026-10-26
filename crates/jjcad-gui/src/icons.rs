@@ -107,6 +107,32 @@ pub fn paint(painter: &Painter, rect: Rect, name: &str, color: Color32) {
             i.dot(3.0, 18.0, 1.3);
             i.dot(21.0, 6.0, 1.3);
         }
+        "spline" => {
+            // Kurve durch vier Stützpunkte — Gegenstück zum Polygonzug-Icon.
+            let stoff = [(3.0f32, 18.0f32), (9.0, 7.0), (15.0, 16.0), (21.0, 6.0)];
+            let mut pts: Vec<(f32, f32)> = Vec::new();
+            for k in 0..=24 {
+                let t = k as f32 / 24.0 * 3.0;
+                let i = (t.floor() as usize).min(2);
+                let f = t - i as f32;
+                let p0 = stoff[i.saturating_sub(1)];
+                let p1 = stoff[i];
+                let p2 = stoff[i + 1];
+                let p3 = stoff[(i + 2).min(3)];
+                let h00 = 2.0 * f * f * f - 3.0 * f * f + 1.0;
+                let h10 = f * f * f - 2.0 * f * f + f;
+                let h01 = -2.0 * f * f * f + 3.0 * f * f;
+                let h11 = f * f * f - f * f;
+                pts.push((
+                    h00 * p1.0 + h10 * (p2.0 - p0.0) * 0.5 + h01 * p2.0 + h11 * (p3.0 - p1.0) * 0.5,
+                    h00 * p1.1 + h10 * (p2.1 - p0.1) * 0.5 + h01 * p2.1 + h11 * (p3.1 - p1.1) * 0.5,
+                ));
+            }
+            i.poly(&pts, false);
+            for (x, y) in stoff {
+                i.dot(x, y, 1.2);
+            }
+        }
         "circle" => {
             i.circle(12.0, 12.0, 7.5);
             i.dot(12.0, 12.0, 1.1);

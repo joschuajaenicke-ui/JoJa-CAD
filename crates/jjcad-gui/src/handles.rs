@@ -26,7 +26,7 @@ pub fn grips_of(e: &Entity) -> Vec<(GripKind, V2)> {
         EntityKind::Line { a, b } | EntityKind::Wall { a, b, .. } => {
             vec![(GripKind::Vert(0), *a), (GripKind::Vert(1), *b)]
         }
-        EntityKind::Polyline { verts, closed } => {
+        EntityKind::Polyline { verts, closed } | EntityKind::Spline { verts, closed } => {
             let mut out: Vec<(GripKind, V2)> = verts
                 .iter()
                 .enumerate()
@@ -70,7 +70,7 @@ pub fn apply_grip_tol(orig: &Entity, kind: GripKind, target: V2, tol: f64) -> Op
         (EntityKind::Circle { c, .. }, GripKind::Vert(_)) => *c = target,
         (EntityKind::Arc { c, .. }, GripKind::Vert(_)) => *c = target,
         (EntityKind::Ellipse { c, .. }, GripKind::Vert(_)) => *c = target,
-        (EntityKind::Polyline { verts, closed }, GripKind::Vert(i)) => {
+        (EntityKind::Polyline { verts, closed } | EntityKind::Spline { verts, closed }, GripKind::Vert(i)) => {
             let n = verts.len();
             verts.get_mut(i)?.p = target;
             // Endpunkt auf den anderen gezogen: der Zug ist geschlossen. Erst ab
@@ -127,7 +127,7 @@ pub fn moving_points(e: &Entity, kind: GripKind) -> Vec<V2> {
         | (EntityKind::Wall { a, .. }, GripKind::Vert(0)) => vec![*a],
         (EntityKind::Line { b, .. }, GripKind::Vert(1))
         | (EntityKind::Wall { b, .. }, GripKind::Vert(1)) => vec![*b],
-        (EntityKind::Polyline { verts, .. }, GripKind::Vert(i)) => {
+        (EntityKind::Polyline { verts, .. } | EntityKind::Spline { verts, .. }, GripKind::Vert(i)) => {
             verts.get(i).map(|v| vec![v.p]).unwrap_or_default()
         }
         (EntityKind::Polyline { verts, closed }, GripKind::Edge(i)) if *closed => {

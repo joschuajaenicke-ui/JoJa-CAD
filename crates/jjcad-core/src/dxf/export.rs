@@ -262,6 +262,22 @@ fn write_entity(out: &mut W, doc: &Document, e: &Entity, block_ctx: Option<&str>
         EntityKind::Polyline { verts, closed } => {
             write_polyline(out, &layer, verts, *closed, color);
         }
+        // Splines gehen als abgeflachte POLYLINE hinaus: DXF-SPLINE verlangt
+        // Kontrollpunkte und Knotenvektoren, die eine Catmull-Rom-Kurve nicht
+        // hat. Die Kurve bleibt damit in jedem CAD gleich (Abweichung
+        // `SPLINE_TOL_MM` = 0,05 mm), nur die Bearbeitung als Spline entfällt.
+        EntityKind::Spline { verts, closed } => {
+            let sp = crate::geom::Spline {
+                verts: verts.clone(),
+                closed: *closed,
+            };
+            let flach: Vec<Vertex> = sp
+                .flatten(crate::geom::SPLINE_TOL_MM)
+                .into_iter()
+                .map(Vertex::new)
+                .collect();
+            write_polyline(out, &layer, &flach, *closed, color);
+        }
         EntityKind::Point { p } => {
             out.g(0, "POINT");
             out.g(8, &layer);

@@ -173,6 +173,12 @@ pub enum EntityKind {
         verts: Vec<Vertex>,
         closed: bool,
     },
+    /// Glättende Punktfolge (Catmull-Rom) — Eingabe wie die Polylinie, die Kurve
+    /// läuft durch alle Stützpunkte. Siehe `geom::Spline`.
+    Spline {
+        verts: Vec<Vertex>,
+        closed: bool,
+    },
     /// Füllfläche: Muster + Flächenfarbe + optionale Randlinie.
     ///
     /// Der einzige gefüllte Objekttyp — die frühere Schraffur (Typ
@@ -348,6 +354,7 @@ impl EntityKind {
             EntityKind::Arc { .. } => "Bogen",
             EntityKind::Ellipse { .. } => "Ellipse",
             EntityKind::Polyline { .. } => "Polylinie",
+            EntityKind::Spline { .. } => "Spline",
             EntityKind::Fill { .. } => "Füllfläche",
             EntityKind::Text { .. } => "Text",
             EntityKind::Dim { .. } => "Maß",
