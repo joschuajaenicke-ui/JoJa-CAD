@@ -92,11 +92,14 @@ fn punktfolge_und_umriss_erzeugen_dasselbe_objekt() {
 #[test]
 fn alter_name_draw_fill_erzeugt_dieselbe_flaeche() {
     let boundary = json!([[0.0, 0.0], [2.0, 0.0], [2.0, 1.0]]);
+    // Die Umrandung ausdrücklich gleich setzen: sie folgt dem Erstellmodus
+    // (Punkte setzen an, Kontur anklicken aus) und ist deshalb allein kein
+    // Unterschied der beiden Namen.
     let mut a = Session::new();
-    a.execute("draw.fill", &json!({ "boundary": boundary }))
+    a.execute("draw.fill", &json!({ "boundary": boundary, "border": true }))
         .expect("draw.fill");
     let mut b = Session::new();
-    b.execute("draw.fill.points", &json!({ "pts": boundary }))
+    b.execute("draw.fill.points", &json!({ "pts": boundary, "border": true }))
         .expect("draw.fill.points");
     assert_eq!(a.doc.entities[0].kind, b.doc.entities[0].kind);
 }

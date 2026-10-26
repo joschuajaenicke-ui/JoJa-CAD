@@ -46,6 +46,7 @@ Steht rechts „nicht", dann ist das Wort im Projekt verpönt (auch in der Oberf
 | **Dämmung** | Schraffurmuster als Mäanderlinie (Sinus), Amplitude = Wanddicke | Isolierung, Dämm-Muster |
 | **Insel** / **Loch** | Ausgesparte Fläche innerhalb einer Füllfläche (z. B. Stütze im Raum) | Lochung, Aussparung |
 | **Umgrenzung** | Die Punktfolge, die eine Füllfläche definiert | Umriss, Kontur, Polygon (nur wenn wirklich gemeint) |
+| **Umrandung** | Die gezeichnete Linie entlang der Umgrenzung einer Füllfläche; in den Eigenschaften an/aus, Vorgabe je Erstellmodus | Randlinie, Rahmen, Kontur |
 | **Farbeimer** | Werkzeug: Klick in eine leere Fläche, Umgrenzung wird automatisch ermittelt | Füllwerkzeug, Zauberstab, Paint-Bucket |
 | **Griff** | Anfasser zum Ziehen an Enden, Ecken und Kantenmitten eines ausgewählten Objekts | Handle, Punkt, Anker |
 | **Fang** | Einrasten auf Punkten/Geometrie beim Zeichnen | Snap, Einrasten |

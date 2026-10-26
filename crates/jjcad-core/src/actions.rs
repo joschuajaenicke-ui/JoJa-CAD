@@ -773,10 +773,21 @@ fn ids_from(p: &Params, key: &str) -> Vec<Id> {
 /// Jede Eingabe — Kontur anklicken (`draw.fill`), Umriss abfahren
 /// (`draw.fill.boundary`), freie Punktfolge (`draw.fill.points`), der Farbeimer
 /// (`draw.fill.paint`) und der alte Name `draw.hatch` — läuft hier durch. Damit
-/// setzen alle Werkzeuge Muster, Winkel, Abstand, Randlinie und Stil an derselben
-/// Stelle und erzeugen zwangsläufig dasselbe Objekt; ein zweiter
+/// setzen alle Werkzeuge Muster, Winkel, Abstand, Umrandung und Stil an
+/// derselben Stelle und erzeugen zwangsläufig dasselbe Objekt; ein zweiter
 /// Konstruktionsweg würde früher oder später ein Feld anders setzen.
-fn add_fill(doc: &mut Document, boundary: Vec<Vec2>, p: &Params) -> Result<Value, String> {
+///
+/// `rand_vorgabe` ist die Umrandung des jeweiligen Erstellmodus: Punkte setzen
+/// zeichnet sie (die Fläche hat dort keine vorhandene Kante), Kontur anklicken
+/// und Farbeimer nicht (dort liegt die Umgrenzung bereits auf einer Linie oder
+/// Wand — eine zweite Kante würde sie optisch dicker machen). Ein explizites
+/// `border` im Aufruf sticht die Vorgabe.
+fn add_fill(
+    doc: &mut Document,
+    boundary: Vec<Vec2>,
+    p: &Params,
+    rand_vorgabe: bool,
+) -> Result<Value, String> {
     // Inseln kommen als Ringe mit: der Farbeimer (`detect_boundary`) liefert
     // sie aus derselben Flutfüllung. Ohne sie würde er Schornstein, Treppe und
     // Pfeiler übermalen. Werkzeuge ohne Löcher lassen den Schlüssel weg.
@@ -786,15 +797,15 @@ fn add_fill(doc: &mut Document, boundary: Vec<Vec2>, p: &Params) -> Result<Value
         .into_iter()
         .filter(|h| h.len() >= 3)
         .collect();
-    add_fill_rings(doc, boundary, holes, p, true)
+    add_fill_rings(doc, boundary, holes, p, rand_vorgabe)
 }
 
 /// Wie [`add_fill`], aber mit bereits ermittelten Ringen und einstellbarer
-/// Vorgabe für die Randlinie.
+/// Vorgabe für die Umrandung.
 ///
 /// Der Farbeimer rechnet seine Ringe selbst (`detect_boundary`) und setzt
 /// `rand_vorgabe = false`: seine Umgrenzung liegt exakt auf der Wand oder auf
-/// der Linie, die die Fläche schließt. Eine Randlinie würde dort eine zweite
+/// der Linie, die die Fläche schließt. Eine Umrandung würde dort eine zweite
 /// Kante auf die vorhandene legen und die Wand optisch dicker machen. Die
 /// Umgrenzung wird nie als eigene Linien im Dokument abgelegt — nur die
 /// Flächengeometrie.
@@ -935,12 +946,23 @@ pub fn execute(doc: &mut Document, id: &str, params: &Value) -> Result<Value, St
         // `draw.fill.boundary` (Umriss abfahren), `draw.fill.points` (freie
         // Punktfolge) und der alte Name `draw.hatch` (Hotbar-Vorgaben,
         // MCP-Aufrufe von vor der Vereinheitlichung).
-        "draw.fill" | "draw.fill.boundary" | "draw.fill.points" | "draw.hatch" => {
+        //
+        // Die Umrandung folgt dem Erstellmodus: beim Punkte setzen an (die
+        // Fläche hat keine vorhandene Kante), beim Kontur anklicken aus (die
+        // Umgrenzung liegt schon auf einer Linie oder Wand).
+        "draw.fill.points" | "draw.fill.boundary" => {
             let boundary = p
                 .pts("boundary")
                 .or_else(|| p.pts("pts"))
                 .ok_or_else(|| "Parameter 'boundary' fehlt".to_string())?;
-            add_fill(doc, boundary, &p)
+            add_fill(doc, boundary, &p, true)
+        }
+        "draw.fill" | "draw.hatch" => {
+            let boundary = p
+                .pts("boundary")
+                .or_else(|| p.pts("pts"))
+                .ok_or_else(|| "Parameter 'boundary' fehlt".to_string())?;
+            add_fill(doc, boundary, &p, false)
         }
         // Farbeimer: ein Klick in die leere Fläche, die Umgrenzung ermittelt der
         // Kern (`boundary::detect_boundary`) aus derselben Displayliste, die

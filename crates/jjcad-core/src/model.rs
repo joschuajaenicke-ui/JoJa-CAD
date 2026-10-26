@@ -193,7 +193,9 @@ pub enum EntityKind {
         /// Musterabstand bzw. Rasterweite in mm
         #[serde(default = "default_pattern_scale")]
         pattern_scale: f64,
-        /// Randlinie entlang der Kontur zeichnen (Farbe aus `style.color`)
+        /// Umrandung entlang der Umgrenzung zeichnen (Farbe aus `style.color`).
+        /// Vorgabe je Erstellmodus: Punkte setzen an, Kontur anklicken und
+        /// Farbeimer aus; im Eigenschaften-Panel umschaltbar.
         #[serde(default)]
         border: bool,
     },
