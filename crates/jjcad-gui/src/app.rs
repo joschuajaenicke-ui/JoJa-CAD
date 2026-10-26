@@ -1253,20 +1253,43 @@ impl App {
         }
     }
 
-    /// ESC: Polylinie/Maßkette abschließen statt alles zu verwerfen —
-    /// nur ein unfertiger erster Punkt wird verworfen.
+    /// ESC: Punktfolge abschließen statt alles zu verwerfen.
+    ///
+    /// Polylinie, Maßkette, Füllfläche und Schraffur (Modus „Punkte setzen")
+    /// bestätigen mit ESC genau wie mit Enter — derselbe Abschluss, ein Pfad.
+    /// Verworfen wird nur eine unfertige Punktfolge — ein unfertiger erster
+    /// Punkt; der harte Abbruch dieser Werkzeuge liegt auf Entf/Backspace.
     fn escape_pressed(&mut self) {
         let finisheable = self
             .tool
             .as_ref()
-            .map(|t| matches!(t.action.as_str(), "draw.polyline" | "dim.chain") && t.pts.len() >= 2)
+            .map(|t| {
+                let punktfolge = matches!(t.action.as_str(), "draw.polyline" | "dim.chain")
+                    || crate::canvas::ist_fuell_punkte(&t.action);
+                punktfolge && t.pts.len() >= 2
+            })
             .unwrap_or(false);
         if finisheable {
             crate::canvas::finish_tool(self, false);
-            self.toast("Abgeschlossen");
+            // Zu wenige Ecken für eine Fläche: das Werkzeug bleibt mit seinen
+            // Punkten stehen, es gibt nichts zu quittieren.
+            if self.tool.is_none() {
+                self.toast("Abgeschlossen");
+            }
             return;
         }
         self.cancel_tool();
+    }
+
+    /// Läuft ein Füll-/Schraffur-Werkzeug im Modus „Punkte setzen"?
+    ///
+    /// Nur dort brechen Entf und Backspace die Eingabe ab; alle anderen
+    /// Werkzeuge und Modi behalten ihre bisherige Tastenbehandlung.
+    fn fill_points_running(&self) -> bool {
+        self.tool
+            .as_ref()
+            .map(|t| crate::canvas::ist_fuell_punkte(&t.action))
+            .unwrap_or(false)
     }
 
     /// Inventar ein-/ausblenden — ein Druck auf die Taste der Aktion
@@ -1681,11 +1704,20 @@ impl App {
                 self.tool_enter();
             }
             if ctx.input(|i| i.key_pressed(egui::Key::Delete) || i.key_pressed(egui::Key::Backspace)) {
-                let ids = self.selection().to_vec();
-                if !ids.is_empty() {
-                    let _ = self.session_mut().execute("modify.erase", &serde_json::json!({"ids": ids}));
-                    self.session_mut().clear_selection();
-                    self.mark_changed();
+                // Füllfläche/Schraffur im Modus „Punkte setzen": Entf und
+                // Backspace brechen die Eingabe ab — ESC bestätigt dort.
+                // Nur ohne Tippeingabe, sonst löscht Backspace die getippte
+                // Zahl/Länge statt das Werkzeug zu beenden.
+                if self.ui.typed.is_empty() && self.fill_points_running() {
+                    self.cancel_tool();
+                    self.toast("Abgebrochen: Fläche verworfen");
+                } else {
+                    let ids = self.selection().to_vec();
+                    if !ids.is_empty() {
+                        let _ = self.session_mut().execute("modify.erase", &serde_json::json!({"ids": ids}));
+                        self.session_mut().clear_selection();
+                        self.mark_changed();
+                    }
                 }
             }
             if ctx.input(|i| i.key_pressed(egui::Key::F1)) {
