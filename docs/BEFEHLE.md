@@ -32,6 +32,7 @@ Befehls-Schicht vorbei.
 | `draw.point` | `p` | `{"p":[1.2,3.4]}` |
 | `draw.line` | `a`, `b` | `{"a":[0,0],"b":[5,0]}` |
 | `draw.polyline` | `pts[]`, `closed` | `{"pts":[[0,0],[3,1],[5,0]],"closed":false}` |
+| `draw.spline` | `pts[]`, `closed` | `{"pts":[[0,0],[3,1],[5,0]],"closed":false}` — Catmull-Rom durch die Punkte |
 | `draw.rect` | `a`, `b` | `{"a":[0,0],"b":[3,2]}` |
 | `draw.circle` | `c`, `r` oder `through` | `{"c":[2,2],"r":0.75}` |
 | `draw.arc` | `c`, `r`, `a0`, `a1` (Grad, CCW) | `{"c":[0,0],"r":2,"a0":0,"a1":90}` |

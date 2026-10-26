@@ -76,6 +76,16 @@ pub fn transform_kind(k: &EntityKind, m: &Affine) -> EntityKind {
                 closed: *closed,
             }
         }
+        EntityKind::Spline { verts, closed } => EntityKind::Spline {
+            verts: verts
+                .iter()
+                .map(|v| Vertex {
+                    p: m.apply(v.p),
+                    bulge: 0.0,
+                })
+                .collect(),
+            closed: *closed,
+        },
         EntityKind::Fill {
             boundary,
             holes,

@@ -1343,8 +1343,10 @@ impl App {
             .tool
             .as_ref()
             .map(|t| {
-                let punktfolge = matches!(t.action.as_str(), "draw.polyline" | "dim.chain")
-                    || crate::canvas::ist_fuell_punkte(&t.action);
+                let punktfolge = matches!(
+                    t.action.as_str(),
+                    "draw.polyline" | "draw.spline" | "dim.chain"
+                ) || crate::canvas::ist_fuell_punkte(&t.action);
                 punktfolge && t.pts.len() >= 2
             })
             .unwrap_or(false);
@@ -1728,6 +1730,7 @@ impl App {
                 (egui::Key::R, "r"),
                 (egui::Key::S, "s"),
                 (egui::Key::T, "t"),
+                (egui::Key::U, "u"),
                 (egui::Key::V, "v"),
                 (egui::Key::W, "w"),
                 (egui::Key::X, "x"),
@@ -1811,7 +1814,7 @@ impl App {
     fn tool_enter(&mut self) {
         if let Some(tool) = self.tool.clone() {
             match tool.action.as_str() {
-                "draw.polyline" | "dim.chain" => {
+                "draw.polyline" | "draw.spline" | "dim.chain" => {
                     if tool.pts.len() >= 2 {
                         canvas::finish_tool(self, true);
                     }
@@ -2224,6 +2227,7 @@ fn rail(ui: &mut egui::Ui, icon: &str, tooltip: &str, chevron: &str) -> bool {
                         for (id, icon, label) in [
                             ("draw.line", "line", "Linie"),
                             ("draw.polyline", "polyline", "Polylinie"),
+                            ("draw.spline", "spline", "Spline"),
                             ("draw.rect", "rect", "Rechteck"),
                             ("draw.circle", "circle", "Kreis"),
                             ("draw.arc", "arc", "Bogen"),
@@ -3077,6 +3081,7 @@ fn commands_hint(tool: &Tool) -> &'static str {
         "block.insert" => "Position klicken",
         "draw.text" => "Position klicken",
         "draw.polyline" => "Punkte klicken – Klick auf den Startpunkt schließt, Enter beendet",
+        "draw.spline" => "Punkte klicken – die Kurve läuft durch die Punkte, Enter beendet",
         "draw.fill.boundary" => "Umriss abfahren – Enter oder Doppelklick beendet",
         "draw.fill.points" => {
             if tool.pts.len() < 3 {
@@ -3504,6 +3509,7 @@ pub fn entity_kind_icon(kind: &EntityKind) -> &'static str {
         EntityKind::Arc { .. } => "arc",
         EntityKind::Ellipse { .. } => "ellipse",
         EntityKind::Polyline { .. } => "polyline",
+        EntityKind::Spline { .. } => "spline",
         EntityKind::Fill { .. } => "fill",
         EntityKind::Text { .. } => "text",
         EntityKind::Dim { .. } | EntityKind::DimChain { .. } => "dim",

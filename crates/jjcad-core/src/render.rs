@@ -436,6 +436,7 @@ pub fn render_entity(
             });
         }
         EntityKind::Polyline { verts, closed } => render_polyline(ctx, e, &st, verts, *closed, xf, dl),
+        EntityKind::Spline { verts, closed } => render_spline(e, &st, verts, *closed, xf, dl),
         EntityKind::Fill {
             boundary,
             holes,
@@ -941,6 +942,34 @@ fn render_polyline(
             }
         }
     }
+}
+
+/// Spline zeichnen: die Catmull-Rom-Kurve wird in eine Punktfolge zerlegt und
+/// als **ein** Polygonzug ausgegeben (eine Glättung, keine Stöße zwischen
+/// Teilstrecken). Stützpunkte selbst sind keine Displaylist-Primitive — sie
+/// erscheinen nur als Griffe in der Auswahl.
+fn render_spline(
+    e: &Entity,
+    st: &PrimStyle,
+    verts: &[Vertex],
+    closed: bool,
+    xf: Affine,
+    dl: &mut DisplayList,
+) {
+    let sp = Spline {
+        verts: verts.to_vec(),
+        closed,
+    };
+    let pts: Vec<Vec2> = sp.flatten(SPLINE_TOL_MM).into_iter().map(|p| xf.apply(p)).collect();
+    if pts.len() < 2 {
+        return;
+    }
+    dl.push(Prim {
+        shape: Shape::Poly(pts, closed),
+        style: *st,
+        entity: e.id,
+        layer: e.layer,
+    });
 }
 
 // ---------------------------------------------------------------------------
@@ -2726,6 +2755,15 @@ fn entity_segments_tief(doc: &Document, e: &Entity, depth: usize) -> Vec<Seg> {
                 closed: *closed,
             };
             out.extend(pl.segments());
+        }
+        EntityKind::Spline { verts, closed } => {
+            let sp = Spline {
+                verts: verts.clone(),
+                closed: *closed,
+            };
+            // Dieselbe Zerlegung wie beim Zeichnen (`render_spline`), sonst
+            // läge der Fangpunkt neben der sichtbaren Kurve.
+            out.extend(sp.segments());
         }
         EntityKind::Fill {
             boundary, holes, ..

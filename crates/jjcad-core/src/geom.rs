@@ -931,6 +931,197 @@ impl Polyline {
 }
 
 // ---------------------------------------------------------------------------
+// Spline (Catmull-Rom)
+// ---------------------------------------------------------------------------
+
+/// Glättende Punktfolge ohne Tangenten — ein Catmull-Rom-Spline.
+///
+/// Anders als der Polygonzug (`Polyline`) hat ein Spline keine geraden Kanten
+/// zwischen den Stützpunkten: die Kurve läuft *durch* jeden Stützpunkt, die
+/// Richtung an einem Punkt ergibt sich aus seinen beiden Nachbarn. Tangenten
+/// werden nicht eingegeben (Catmull-Rom rechnet sie aus den Nachbarpunkten).
+/// Die Eingabe ist damit dieselbe wie bei der Polylinie: Punkte klicken,
+/// Klick auf den Startpunkt schließt, Enter beendet.
+///
+/// Die Parameterisierung ist **zentripetal** (alpha = 0,5): bei ungleichmäßig
+/// gesetzten Stützpunkten schießt die gleichförmige Catmull-Rom-Variante über
+/// und bildet Schlaufen; zentripetal bleibt die Kurve zwischen den Punkten.
+#[derive(Clone, Debug, Default, Serialize, Deserialize, PartialEq)]
+pub struct Spline {
+    pub verts: Vec<Vertex>,
+    pub closed: bool,
+}
+
+/// Abweichung, mit der ein Spline in Strecken zerlegt wird (Millimeter).
+///
+/// Derselbe Wert für Bildschirm, PDF und PNG und für Fang/Hit-Test: nur so
+/// liegt der Fangpunkt auf der gezeichneten Kurve.
+pub const SPLINE_TOL_MM: f64 = 0.05;
+
+/// Ein Punkt der Catmull-Rom-Kurve zwischen `p1` und `p2` (zentripetal).
+///
+/// `p0` und `p3` sind die Nachbarn, die die Tangente bestimmen; `t` läuft von 0
+/// (bei `p1`) bis 1 (bei `p2`). Barry-Goldman-Auswertung: drei lineare
+/// Interpolationen über die zentripetalen Knotenabstände.
+pub fn catmull_rom_point(p0: Vec2, p1: Vec2, p2: Vec2, p3: Vec2, t: f64) -> Vec2 {
+    let knot = |a: Vec2, b: Vec2| (b - a).len().sqrt().max(1e-6);
+    let t0 = 0.0;
+    let t1 = t0 + knot(p0, p1);
+    let t2 = t1 + knot(p1, p2);
+    let t3 = t2 + knot(p2, p3);
+    let tt = t1 + (t2 - t1) * t.clamp(0.0, 1.0);
+    let lerp = |a: Vec2, b: Vec2, ta: f64, tb: f64| {
+        if (tb - ta).abs() < 1e-12 {
+            a
+        } else {
+            a * ((tb - tt) / (tb - ta)) + b * ((tt - ta) / (tb - ta))
+        }
+    };
+    let a1 = lerp(p0, p1, t0, t1);
+    let a2 = lerp(p1, p2, t1, t2);
+    let a3 = lerp(p2, p3, t2, t3);
+    let b1 = if (t2 - t0).abs() < 1e-12 {
+        a1
+    } else {
+        a1 * ((t2 - tt) / (t2 - t0)) + a2 * ((tt - t0) / (t2 - t0))
+    };
+    let b2 = if (t3 - t1).abs() < 1e-12 {
+        a2
+    } else {
+        a2 * ((t3 - tt) / (t3 - t1)) + a3 * ((tt - t1) / (t3 - t1))
+    };
+    if (t2 - t1).abs() < 1e-12 {
+        b1
+    } else {
+        b1 * ((t2 - tt) / (t2 - t1)) + b2 * ((tt - t1) / (t2 - t1))
+    }
+}
+
+/// Vereinfacht eine Punktfolge (Ramer-Douglas-Peucker): Punkte, die weniger als
+/// `tol` von der Sehne abweichen, fallen weg.
+fn simplify(pts: &[Vec2], tol: f64) -> Vec<Vec2> {
+    if pts.len() < 3 {
+        return pts.to_vec();
+    }
+    let a = pts[0];
+    let b = pts[pts.len() - 1];
+    let mut idx = 0usize;
+    let mut dmax = 0.0;
+    for (i, p) in pts.iter().enumerate().take(pts.len() - 1).skip(1) {
+        let d = dist_point_segment(*p, a, b);
+        if d > dmax {
+            dmax = d;
+            idx = i;
+        }
+    }
+    if dmax <= tol {
+        return vec![a, b];
+    }
+    let mut links = simplify(&pts[..=idx], tol);
+    let mut rechts = simplify(&pts[idx..], tol);
+    links.pop();
+    links.append(&mut rechts);
+    links
+}
+
+/// Zerlegt einen Catmull-Rom-Spline in eine Punktfolge (Kurve abgetastet und auf
+/// `tol` vereinfacht). Offene Züge bekommen am Anfang und Ende einen
+/// gespiegelten Hilfspunkt, damit die Kurve am Endpunkt in Richtung der letzten
+/// Strecke austritt; geschlossene Züge laufen mit ihren Nachbarn im Kreis.
+pub fn catmull_rom_points(pts: &[Vec2], closed: bool, tol: f64) -> Vec<Vec2> {
+    let n = pts.len();
+    if n < 2 {
+        return pts.to_vec();
+    }
+    const ABTASTUNG: usize = 32;
+    let spans = if closed { n } else { n - 1 };
+    let mut out: Vec<Vec2> = Vec::with_capacity(spans * 4 + 2);
+    for i in 0..spans {
+        let p1 = pts[i];
+        let p2 = pts[(i + 1) % n];
+        let p0 = if i > 0 {
+            pts[i - 1]
+        } else if closed {
+            pts[n - 1]
+        } else {
+            p1 * 2.0 - p2
+        };
+        let p3 = if i + 2 < n {
+            pts[i + 2]
+        } else if closed {
+            pts[(i + 2) % n]
+        } else {
+            p2 * 2.0 - p1
+        };
+        let mut roh: Vec<Vec2> = Vec::with_capacity(ABTASTUNG + 1);
+        for k in 0..=ABTASTUNG {
+            roh.push(catmull_rom_point(p0, p1, p2, p3, k as f64 / ABTASTUNG as f64));
+        }
+        let mut glatt = simplify(&roh, tol);
+        if !out.is_empty() {
+            glatt.remove(0);
+        }
+        out.extend(glatt);
+    }
+    out
+}
+
+impl Spline {
+    pub fn new(pts: Vec<Vec2>, closed: bool) -> Self {
+        Self {
+            verts: pts.into_iter().map(Vertex::new).collect(),
+            closed,
+        }
+    }
+
+    /// Stützpunkte (die vom Nutzer gesetzten Punkte, nicht die Kurve).
+    pub fn points(&self) -> Vec<Vec2> {
+        self.verts.iter().map(|v| v.p).collect()
+    }
+
+    /// Kurve als Punktfolge in Millimetern.
+    pub fn flatten(&self, tol: f64) -> Vec<Vec2> {
+        catmull_rom_points(&self.points(), self.closed, tol)
+    }
+
+    /// Strecken der gezeichneten Kurve.
+    pub fn segments(&self) -> Vec<Seg> {
+        let pts = self.flatten(SPLINE_TOL_MM);
+        let mut out = Vec::new();
+        if pts.len() < 2 {
+            return out;
+        }
+        let last = if self.closed { pts.len() } else { pts.len() - 1 };
+        for i in 0..last {
+            out.push(Seg::Line(pts[i], pts[(i + 1) % pts.len()]));
+        }
+        out
+    }
+
+    pub fn bbox(&self) -> BBox {
+        let pts = self.flatten(SPLINE_TOL_MM);
+        if pts.is_empty() {
+            BBox::EMPTY
+        } else {
+            BBox::from_points(&pts)
+        }
+    }
+
+    /// Länge der Kurve in mm.
+    pub fn len(&self) -> f64 {
+        self.segments().iter().map(|s| s.len()).sum()
+    }
+
+    /// Fläche in mm² — nur ein geschlossener Zug umschließt etwas.
+    pub fn area(&self) -> f64 {
+        if !self.closed {
+            return 0.0;
+        }
+        polygon_area(&self.flatten(SPLINE_TOL_MM)).abs()
+    }
+}
+
+// ---------------------------------------------------------------------------
 // Polygon-Helfer
 // ---------------------------------------------------------------------------
 
