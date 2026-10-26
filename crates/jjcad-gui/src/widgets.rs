@@ -102,6 +102,15 @@ pub fn ribbon_split_button(
     (main, arrow)
 }
 
+/// Kompaktes Kontrollkästchen für Raster im Ribbon (feste Zellenbreite).
+///
+/// Alle Zellen sind gleich breit, damit die Spalten untereinander stehen und
+/// die Gruppe mit zwei Zeilen genau eine Knopfreihe (54 px) hoch wird —
+/// Voraussetzung für die einheitliche Ribbon-Höhe (t_92b03440).
+pub fn check_cell(ui: &mut Ui, value: &mut bool, label: &str) -> Response {
+    ui.add_sized([100.0, 24.0], egui::Checkbox::new(value, label))
+}
+
 pub fn ribbon_button(ui: &mut Ui, icon_name: &str, label: &str, active: bool) -> Response {
     let w = 70.0;
     let h = 54.0;
