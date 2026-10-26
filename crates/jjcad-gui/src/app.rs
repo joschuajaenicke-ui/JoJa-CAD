@@ -555,6 +555,7 @@ impl App {
                 "bloecke" | "blocks" => self.ui.ribbon = RibbonTab::Bloecke,
                 "blatt" | "sheet" => self.ui.ribbon = RibbonTab::Blatt,
                 "ansicht" => self.ui.ribbon = RibbonTab::Ansicht,
+                "aendern" | "change" => self.ui.ribbon = RibbonTab::Aendern,
                 "inv" | "inventar" => self.ui.inventory_open = true,
                 "blocks-tab" => {
                     self.ui.inventory_open = true;
@@ -877,6 +878,49 @@ impl App {
         let t = self.tab_mut();
         t.rev += 1;
         t.cache = None;
+    }
+
+    // ---- Zeichenreihenfolge ----
+    // Eine Stelle für alle Aufrufer (Kontextmenü, Ribbon): die Rechnung selbst
+    // steckt in der Action `modify.order`, hier wird nur die Auswahl übergeben.
+
+    /// Schiebt die Auswahl ganz nach vorn (zuletzt gezeichnet) bzw. nach hinten.
+    pub fn order_selection_to(&mut self, front: bool) {
+        let ids = self.selection().to_vec();
+        if ids.is_empty() {
+            self.toast("Keine Auswahl");
+            return;
+        }
+        self.order_to(front, ids);
+    }
+
+    /// Verschiebt genau diese Objekte an den Anfang/das Ende der Objektliste.
+    pub fn order_to(&mut self, front: bool, ids: Vec<Id>) {
+        if ids.is_empty() {
+            return;
+        }
+        let where_ = if front { "front" } else { "back" };
+        let _ = self
+            .session_mut()
+            .execute("modify.order", &serde_json::json!({"ids": ids, "where": where_}));
+        self.mark_changed();
+        self.toast(if front { "Ganz nach vorn" } else { "Ganz nach hinten" });
+    }
+
+    /// „Vor/Hinter Element“: der nächste Klick in die Zeichenfläche bestimmt das
+    /// Referenzobjekt (ausgewertet in `canvas`). Braucht eine Auswahl.
+    pub fn order_pick_start(&mut self, above: bool) {
+        if self.selection().is_empty() {
+            self.toast("Zuerst ein Element auswählen");
+            return;
+        }
+        self.ui.order_pick = Some(above);
+        self.status_msg = if above {
+            "Element anklicken, VOR das die Auswahl soll — ESC bricht ab"
+        } else {
+            "Element anklicken, HINTER das die Auswahl soll — ESC bricht ab"
+        }
+        .into();
     }
 
     // ---- Ansicht ----
@@ -2053,6 +2097,54 @@ fn rail(ui: &mut egui::Ui, icon: &str, tooltip: &str, chevron: &str) -> bool {
                         }
                     });
                     widgets::vline(ui, RIBBON_H);
+                    // Zeichenreihenfolge: dieselben vier Funktionen wie im
+                    // Objekt-Kontextmenü, hier für die aktuelle Auswahl.
+                    self.group(ui, "Reihenfolge", |ui, app| {
+                        for (icon, label, tip, front) in [
+                            (
+                                "order-front",
+                                "Vordergrund",
+                                "Auswahl ganz nach vorn — zuletzt gezeichnet",
+                                true,
+                            ),
+                            (
+                                "order-back",
+                                "Hintergrund",
+                                "Auswahl ganz nach hinten — zuerst gezeichnet",
+                                false,
+                            ),
+                        ] {
+                            if widgets::ribbon_button(ui, icon, label, false)
+                                .on_hover_text(tip)
+                                .clicked()
+                            {
+                                app.order_selection_to(front);
+                            }
+                        }
+                        for (icon, label, tip, above) in [
+                            (
+                                "order-above",
+                                "Vor Element",
+                                "Auswahl vor ein Element setzen — danach das Element anklicken",
+                                true,
+                            ),
+                            (
+                                "order-below",
+                                "Hinter Element",
+                                "Auswahl hinter ein Element setzen — danach das Element anklicken",
+                                false,
+                            ),
+                        ] {
+                            let active = app.ui.order_pick == Some(above);
+                            if widgets::ribbon_button(ui, icon, label, active)
+                                .on_hover_text(tip)
+                                .clicked()
+                            {
+                                app.order_pick_start(above);
+                            }
+                        }
+                    });
+                    widgets::vline(ui, RIBBON_H);
                     self.group(ui, "Sonstiges", |ui, app| {
                         for (id, icon, label) in [
                             ("modify.pickprops", "eyedropper", "Pipette"),
@@ -2972,37 +3064,21 @@ impl App {
                         // Zeichenreihenfolge: Position in der Objektliste
                         ui.label(theme::faint("Reihenfolge"));
                         if ui.button("In den Vordergrund").clicked() {
-                            let _ = self.session_mut().execute(
-                                "modify.order",
-                                &serde_json::json!({"ids": [id], "where": "front"}),
-                            );
-                            self.mark_changed();
-                            self.toast("Ganz nach vorn".to_string());
+                            self.order_to(true, vec![id]);
                             close = true;
                         }
                         if ui.button("In den Hintergrund").clicked() {
-                            let _ = self.session_mut().execute(
-                                "modify.order",
-                                &serde_json::json!({"ids": [id], "where": "back"}),
-                            );
-                            self.mark_changed();
-                            self.toast("Ganz nach hinten".to_string());
+                            self.order_to(false, vec![id]);
                             close = true;
                         }
                         if ui.button("Vor Element …").clicked() {
-                            self.ui.order_pick = Some(true);
                             self.session_mut().select(vec![id]);
-                            self.status_msg =
-                                "Element anklicken, VOR das die Auswahl soll — ESC bricht ab"
-                                    .into();
+                            self.order_pick_start(true);
                             close = true;
                         }
                         if ui.button("Hinter Element …").clicked() {
-                            self.ui.order_pick = Some(false);
                             self.session_mut().select(vec![id]);
-                            self.status_msg =
-                                "Element anklicken, HINTER das die Auswahl soll — ESC bricht ab"
-                                    .into();
+                            self.order_pick_start(false);
                             close = true;
                         }
                         ui.separator();
@@ -3464,5 +3540,91 @@ impl App {
         }
         self.mark_changed();
         self.status_msg = "Verschieben abgebrochen".into();
+    }
+}
+
+#[cfg(test)]
+mod tests_reihenfolge {
+    //! Die Ribbon-Knöpfe der Zeichenreihenfolge rufen die vorhandenen
+    //! Funktionen auf (keine zweite Logik). Geprüft wird das Ergebnis in der
+    //! Objektliste — die Liste IST die Zeichenreihenfolge.
+
+    use super::*;
+
+    fn app_mit_drei_linien() -> (App, Vec<Id>) {
+        let mut app = App::with_ctx(egui::Context::default());
+        for k in 0..3 {
+            app.session_mut()
+                .execute(
+                    "draw.line",
+                    &serde_json::json!({"a": [k as f64, 0.0], "b": [k as f64, 1.0]}),
+                )
+                .expect("Linie anlegen");
+        }
+        let ids: Vec<Id> = app.doc().entities.iter().map(|e| e.id).collect();
+        assert_eq!(ids.len(), 3);
+        (app, ids)
+    }
+
+    fn reihenfolge(app: &App) -> Vec<Id> {
+        app.doc().entities.iter().map(|e| e.id).collect()
+    }
+
+    /// Knopf „Vordergrund“: die Auswahl wird zum letzten Element der Liste.
+    #[test]
+    fn vordergrund_schiebt_auswahl_nach_vorn() {
+        let (mut app, ids) = app_mit_drei_linien();
+        app.session_mut().select(vec![ids[0]]);
+        app.order_selection_to(true);
+        assert_eq!(reihenfolge(&app), vec![ids[1], ids[2], ids[0]]);
+        assert_eq!(app.status_msg, "Ganz nach vorn");
+    }
+
+    /// Knopf „Hintergrund“: die Auswahl wird zum ersten Element der Liste.
+    #[test]
+    fn hintergrund_schiebt_auswahl_nach_hinten() {
+        let (mut app, ids) = app_mit_drei_linien();
+        app.session_mut().select(vec![ids[2]]);
+        app.order_selection_to(false);
+        assert_eq!(reihenfolge(&app), vec![ids[2], ids[0], ids[1]]);
+        assert_eq!(app.status_msg, "Ganz nach hinten");
+    }
+
+    /// Mehrfachauswahl wandert geschlossen und in ihrer Reihenfolge.
+    #[test]
+    fn mehrfachauswahl_bleibt_zusammen() {
+        let (mut app, ids) = app_mit_drei_linien();
+        app.session_mut().select(vec![ids[0], ids[1]]);
+        app.order_selection_to(true);
+        assert_eq!(reihenfolge(&app), vec![ids[2], ids[0], ids[1]]);
+    }
+
+    /// Ohne Auswahl passiert nichts — und der Anwender erfährt warum.
+    #[test]
+    fn ohne_auswahl_keine_aenderung() {
+        let (mut app, ids) = app_mit_drei_linien();
+        app.order_selection_to(true);
+        assert_eq!(reihenfolge(&app), ids, "Reihenfolge unverändert");
+        assert_eq!(app.status_msg, "Keine Auswahl");
+
+        app.order_pick_start(true);
+        assert_eq!(app.ui.order_pick, None, "ohne Auswahl kein Zielmodus");
+        assert_eq!(app.status_msg, "Zuerst ein Element auswählen");
+    }
+
+    /// Knopf „Vor/Hinter Element“: merkt sich die Richtung für den nächsten
+    /// Klick in die Zeichenfläche (die Auswertung sitzt in `canvas`).
+    #[test]
+    fn vor_element_merkt_richtung() {
+        let (mut app, ids) = app_mit_drei_linien();
+        app.session_mut().select(vec![ids[0]]);
+
+        app.order_pick_start(true);
+        assert_eq!(app.ui.order_pick, Some(true));
+        assert!(app.status_msg.contains("VOR"), "{}", app.status_msg);
+
+        app.order_pick_start(false);
+        assert_eq!(app.ui.order_pick, Some(false));
+        assert!(app.status_msg.contains("HINTER"), "{}", app.status_msg);
     }
 }
