@@ -10,6 +10,7 @@ use jjcad_core::geom::Vec2 as V2;
 use jjcad_core::model::*;
 use jjcad_core::render::{self, DisplayList, Prim, Shape as PShape};
 use jjcad_core::snap;
+use jjcad_core::tessellate::CurveQuality;
 use jjcad_core::units::{format_number, format_scale};
 use serde_json::json;
 
@@ -339,12 +340,29 @@ fn paint_prim(p: &Painter, prim: &Prim, w2s: &dyn Fn(V2) -> Pos2, scale: f64, pc
         }
         PShape::Arc { c, r, a0, a1 } => {
             let arc = Arc::new(*c, *r, *a0, *a1);
-            let pts: Vec<Pos2> = arc
-                .flatten(0.6 / scale.max(1e-6))
+            if *r * scale < 0.4 {
+                // Degenerierter bzw. auf dem Schirm punktförmiger Bogen.
+                p.circle_filled(w2s(*c), (w as f32 * 0.5).max(0.5), col);
+                return;
+            }
+            let pts: Vec<Pos2> = CurveQuality::SCREEN
+                .flatten(&arc, scale)
                 .iter()
                 .map(|q| w2s(*q))
                 .collect();
-            stroke_pts(p, &pts, w as f32, col);
+            // Ein **durchgehender** Pfad statt einer Kapsel je Sehne: bei einer
+            // Kapsel je Segment überlagern sich an jedem Stoß zwei
+            // Kantenglättungen, sichtbar als dunkle Knicke. Der Pfad bekommt
+            // genau eine Glättung; die runden Enden liefern zwei Kreise.
+            if pts.len() >= 2 {
+                let (anfang, ende) = (pts.first().copied(), pts.last().copied());
+                p.add(Shape::line(pts, stroke));
+                let rr = (w as f32 * 0.5).max(0.4);
+                if let (Some(a), Some(b)) = (anfang, ende) {
+                    p.circle_filled(a, rr, col);
+                    p.circle_filled(b, rr, col);
+                }
+            }
             center_mark(p, w2s(*c), col.gamma_multiply(0.8));
         }
         PShape::Ellipse { c, rx, ry, rot } => {
@@ -1233,8 +1251,8 @@ fn draw_tool_preview(
                 let p0 = tool.pts[0];
                 let p1 = tool.pts[1];
                 if let Some(arc) = Arc::from_3_points(p0, cursor, p1) {
-                    let pts: Vec<Pos2> = arc
-                        .flatten(0.5 / view.zoom.max(1e-6))
+                    let pts: Vec<Pos2> = CurveQuality::SCREEN
+                        .flatten(&arc, view.zoom)
                         .iter()
                         .map(|q| w2s(*q))
                         .collect();
@@ -2336,8 +2354,8 @@ fn ghost_shape(p: &Painter, sh: &PShape, w2s: &dyn Fn(V2) -> Pos2, zoom: f64, st
         }
         PShape::Arc { c, r, a0, a1 } => {
             let arc = Arc::new(*c, *r, *a0, *a1);
-            let pts: Vec<Pos2> = arc
-                .flatten(0.6 / zoom.max(1e-6))
+            let pts: Vec<Pos2> = CurveQuality::SCREEN
+                .flatten(&arc, zoom)
                 .iter()
                 .map(|q| w2s(*q))
                 .collect();

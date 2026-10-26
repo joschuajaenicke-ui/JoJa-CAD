@@ -7,6 +7,7 @@ use crate::geom::*;
 use crate::model::*;
 use crate::render::{self, DisplayList, Prim, Shape, TextPrim};
 use crate::style::{Color, LineType, PaperSize};
+use crate::tessellate::CurveQuality;
 use std::fmt::Write as _;
 use std::path::Path;
 
@@ -218,11 +219,6 @@ fn push_polyline(c: &mut Content, pts: &[Vec2], closed: bool, xf: &Xf) {
     }
 }
 
-fn flatten_arc(arc: &Arc, tol_mm_paper: f64) -> Vec<Vec2> {
-    // Toleranz in Papier-mm → Weltkoordinaten
-    arc.flatten(tol_mm_paper)
-}
-
 fn draw_prim(c: &mut Content, prim: &Prim, xf: &Xf, paper_scale: f64) {
     match &prim.shape {
         Shape::Line(a, b) => {
@@ -288,7 +284,7 @@ fn draw_prim(c: &mut Content, prim: &Prim, xf: &Xf, paper_scale: f64) {
             c.line_width(prim.style.width);
             c.dash(prim.style.line_type);
             let arc = Arc::new(*cc, *r, *a0, *a1);
-            let pts = flatten_arc(&arc, 0.08 / paper_scale.max(1e-9));
+            let pts = CurveQuality::PRINT.flatten(&arc, paper_scale);
             push_polyline(c, &pts, false, xf);
             c.stroke();
         }
