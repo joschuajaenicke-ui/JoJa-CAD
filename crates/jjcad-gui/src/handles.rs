@@ -90,6 +90,42 @@ pub fn apply_grip(orig: &Entity, kind: GripKind, target: V2) -> Option<Entity> {
     Some(e)
 }
 
+/// Punkte, die eine Griffbewegung **verschiebt** — in der aktuellen Lage des
+/// Elements (während des Zugs ist das schon die bewegte Lage).
+///
+/// Der Punktfang sperrt genau diese Punkte, solange gezogen wird: der gezogene
+/// Stützpunkt liegt dauerhaft im Fangradius des Zeigers und würde sich sonst
+/// selbst fangen — der Griff bliebe stehen, statt der Maus zu folgen. Die
+/// *ruhenden* Punkte desselben Elements (Nachbarecken) bleiben fangbar.
+pub fn moving_points(e: &Entity, kind: GripKind) -> Vec<V2> {
+    match (&e.kind, kind) {
+        (EntityKind::Line { a, .. }, GripKind::Vert(0))
+        | (EntityKind::Wall { a, .. }, GripKind::Vert(0)) => vec![*a],
+        (EntityKind::Line { b, .. }, GripKind::Vert(1))
+        | (EntityKind::Wall { b, .. }, GripKind::Vert(1)) => vec![*b],
+        (EntityKind::Polyline { verts, .. }, GripKind::Vert(i)) => {
+            verts.get(i).map(|v| vec![v.p]).unwrap_or_default()
+        }
+        (EntityKind::Polyline { verts, closed }, GripKind::Edge(i)) if *closed => {
+            let n = verts.len();
+            if n < 3 || i >= n {
+                return Vec::new();
+            }
+            let j = (i + 1) % n;
+            vec![verts[i].p, verts[j].p]
+        }
+        // Kreis, Bogen, Ellipse und Punkt bewegen ihren Mittelpunkt.
+        (
+            EntityKind::Circle { c, .. }
+            | EntityKind::Arc { c, .. }
+            | EntityKind::Ellipse { c, .. }
+            | EntityKind::Point { p: c },
+            GripKind::Vert(_),
+        ) => vec![*c],
+        _ => Vec::new(),
+    }
+}
+
 /// Richtung einer Polygonkante (normiert).
 pub fn edge_dir(e: &Entity, i: usize) -> Option<(V2, V2)> {
     if let EntityKind::Polyline { verts, closed } = &e.kind {

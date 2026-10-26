@@ -1676,14 +1676,15 @@ fn fang_radius_px(app: &App, zoom: f64) -> f64 {
 /// Fangpunkt ab. Reihenfolge der Fänge: `snap::snap_constrained`.
 fn fang_zeiger(app: &App, w: V2, tol: f64) -> (V2, Option<&'static str>) {
     let reference = app.tool.as_ref().and_then(|t| t.pts.last().copied());
-    let (ignore, keep) = snap_ignore_keep(app);
-    let res = snap::snap_constrained(
+    let regeln = fang_regeln(app);
+    let res = snap::snap_constrained_ohne_punkte(
         app.doc(),
         w,
         tol,
         reference,
-        ignore,
-        keep,
+        &regeln.ignore,
+        &regeln.keep,
+        &regeln.gesperrt,
         app.ui.show_grid,
     );
     (res.point, res.label())
@@ -1695,16 +1696,35 @@ fn snap_at(app: &App, rect: Rect, view: View, pos: Pos2) -> V2 {
     fang_zeiger(app, w, fang_radius_px(app, view.zoom)).0
 }
 
-/// Fang-Ausschluss und Fang-Auswahl für den aktuellen Zustand.
+/// Fang-Regeln für den aktuellen Zustand: was ist gesperrt, was ausdrücklich
+/// erlaubt, welche Punkte sind als Ziel verboten.
+#[derive(Default)]
+struct FangRegeln {
+    /// Elemente, die überhaupt nicht fangen.
+    ignore: Vec<Id>,
+    /// Elemente, die nur mit ihren *diskreten* Punkten fangen (Ecke, Mitte,
+    /// Zentrum, Quadrant) — keine kontinuierlichen Fänge. Sie bewegen sich
+    /// gerade mit, an ihnen würde „Nächster Punkt" den Zeiger zurückziehen.
+    keep: Vec<Id>,
+    /// Einzelne Punkte, die nicht fangen, obwohl ihr Element es darf: die
+    /// gerade gezogenen Stützpunkte (Element + Stelle).
+    gesperrt: Vec<snap::GesperrterPunkt>,
+}
+
+/// Fang-Ausschluss, Fang-Auswahl und gesperrte Punkte für den aktuellen Zustand.
 ///
-/// Normalerweise ist die Auswahl ausdrücklich *erlaubt* (Ecken/Endpunkte), und
-/// nichts ist ausgeschlossen. Während die Auswahl selbst bewegt wird (Ziehen
-/// mit der Maus, Griff, Verschieben/Kopieren ab dem Basispunkt), fällt sie
-/// dagegen ganz aus dem Fang, weil ihre Ecken in diesem Moment mit dem Zeiger
-/// wandern — sonst klebt die Bewegung am Startpunkt.
-fn snap_ignore_keep(app: &App) -> (&[Id], &[Id]) {
+/// * **Ruhezustand / Werkzeug:** die Auswahl ist ausdrücklich *erlaubt*
+///   (Ecken/Endpunkte), nichts ist ausgeschlossen.
+/// * **Auswahl wandert ganz** (Ziehen am Objekt, Verschieben/Kopieren ab dem
+///   Basispunkt): die ganze Auswahl fällt aus dem Fang, weil alle ihre Ecken
+///   mit dem Zeiger wandern — sonst klebt die Bewegung am Startpunkt.
+/// * **Griff-Drag:** nur *ein* Stützpunkt wandert. Das Element bleibt mit
+///   seinen übrigen Ecken fangbar (Polylinie an ihre eigene Nachbarecke bzw.
+///   an den Anfangspunkt anschließen — Voraussetzung für geschlossene Züge);
+///   allein der gezogene Punkt ist gesperrt, sonst fängt er sich selbst und
+///   der Griff bleibt stehen (Karte t_eb950a21).
+fn fang_regeln(app: &App) -> FangRegeln {
     let auswahl_wandert = app.move_drag.is_some()
-        || app.grip_drag.is_some()
         || app
             .tool
             .as_ref()
@@ -1713,9 +1733,29 @@ fn snap_ignore_keep(app: &App) -> (&[Id], &[Id]) {
             })
             .unwrap_or(false);
     if auswahl_wandert {
-        (app.selection(), &[])
-    } else {
-        (&[], app.selection())
+        return FangRegeln {
+            ignore: app.selection().to_vec(),
+            ..FangRegeln::default()
+        };
+    }
+    if let Some(drag) = app.grip_drag.as_ref() {
+        let gesperrt = app
+            .doc()
+            .entity(drag.entity)
+            .map(|e| crate::handles::moving_points(e, drag.kind))
+            .unwrap_or_default()
+            .into_iter()
+            .map(|p| (drag.entity, p))
+            .collect();
+        return FangRegeln {
+            ignore: Vec::new(),
+            keep: vec![drag.entity],
+            gesperrt,
+        };
+    }
+    FangRegeln {
+        keep: app.selection().to_vec(),
+        ..FangRegeln::default()
     }
 }
 
@@ -4356,5 +4396,178 @@ mod tests_fang_polylinie {
         assert!((fang_radius_px(&app, 1.0) - k).abs() < 1e-9);
         assert!((fang_radius_px(&app, 2.0) - k / 2.0).abs() < 1e-9);
         assert!((fang_radius_px(&app, 0.5) - k * 2.0).abs() < 1e-9);
+    }
+}
+
+
+
+mod tests_fang_griff {
+    //! Punktfang beim Bearbeiten einer ausgewählten Polylinie (Karte t_eb950a21).
+    //!
+    //! Geprüft wird der Weg der Zeichenfläche selbst: `fang_zeiger` (Zeigeranzeige
+    //! *und* Klickpunkt laufen beide darüber) mit laufendem Griffzug sowie ein
+    //! vollständiger Mauszug durch `show` mit synthetischen Zeigerereignissen.
+    //! Der Fehler war, dass die Zeichenfläche beim Griffzug die *ganze* Auswahl
+    //! aus dem Fang nahm — die ausgewählte Polylinie konnte sich weder an fremde
+    //! Linien noch an ihre eigenen Ecken anschließen.
+
+    use super::*;
+    use jjcad_core::persist::DragMode;
+
+    fn app() -> App {
+        let mut app = App::with_ctx(egui::Context::default());
+        // Ziehen als Gedrückthalten: unabhängig von den Einstellungen des Rechners.
+        app.ui.drag_mode = DragMode::HoldAndDrag;
+        app.session_mut()
+            .execute(
+                "doc.settings",
+                &serde_json::json!({"input_unit": "mm",
+                                   "snap": {"ortho": false, "polar": false, "grid": false}}),
+            )
+            .unwrap();
+        app
+    }
+
+    /// Polylinie (0;0) → (2000;0) → (2000;1500) und freie Linie
+    /// (0;3000) → (2000;3000); die Polylinie ist ausgewählt.
+    fn szenario() -> (App, Id) {
+        let mut app = app();
+        let s = app.session_mut();
+        s.execute(
+            "draw.polyline",
+            &serde_json::json!({"pts": [[0.0, 0.0], [2000.0, 0.0], [2000.0, 1500.0]]}),
+        )
+        .unwrap();
+        s.execute(
+            "draw.line",
+            &serde_json::json!({"a": [0.0, 3000.0], "b": [2000.0, 3000.0]}),
+        )
+        .unwrap();
+        let poly = app.doc().entities[0].id;
+        app.session_mut().select(vec![poly]);
+        (app, poly)
+    }
+
+    fn punkte(app: &App, id: Id) -> Vec<V2> {
+        match &app.doc().entity(id).expect("Element fehlt").kind {
+            EntityKind::Polyline { verts, .. } => verts.iter().map(|w| w.p).collect(),
+            other => panic!("keine Polylinie: {other:?}"),
+        }
+    }
+
+    fn assert_punkt(ist: V2, soll: V2) {
+        assert!(ist.dist(soll) < 1e-9, "erwartet {soll:?}, ist {ist:?}");
+    }
+
+    /// Ein Frame mit festem Fenster und den gegebenen Zeigerereignissen.
+    fn frame(app: &mut App, events: Vec<egui::Event>) {
+        let ctx = app.ctx.clone();
+        let input = egui::RawInput {
+            screen_rect: Some(Rect::from_min_size(Pos2::ZERO, egui::vec2(1500.0, 950.0))),
+            events,
+            ..Default::default()
+        };
+        let _ = ctx.run(input, |ctx| app.ui(ctx));
+    }
+
+    fn druck(pos: Pos2) -> egui::Event {
+        egui::Event::PointerButton {
+            pos,
+            button: egui::PointerButton::Primary,
+            pressed: true,
+            modifiers: egui::Modifiers::NONE,
+        }
+    }
+
+    fn loslassen(pos: Pos2) -> egui::Event {
+        egui::Event::PointerButton {
+            pos,
+            button: egui::PointerButton::Primary,
+            pressed: false,
+            modifiers: egui::Modifiers::NONE,
+        }
+    }
+
+    // ---- Verdrahtung: fang_zeiger während eines Griffzugs ----
+
+    /// Der Griff der ausgewählten Polylinie fängt auf das fremde Linienende —
+    /// und zwar exakt, ohne Rundung.
+    #[test]
+    fn griffzug_faengt_fremdes_linienende() {
+        let (mut app, poly) = szenario();
+        app.begin_grip_drag(poly, crate::handles::GripKind::Vert(0));
+
+        let (p, label) = fang_zeiger(&app, V2::new(1990.0, 3008.0), 60.0);
+        assert_eq!(label, Some("Endpunkt"), "Snap-Indikator in der Statuszeile");
+        assert_punkt(p, V2::new(2000.0, 3000.0));
+    }
+
+    /// Die ausgewählte Polylinie fängt auf ihre *eigene* Nachbarecke — die
+    /// Grundlage für den geschlossenen Zug.
+    #[test]
+    fn griffzug_faengt_eigene_ecke() {
+        let (mut app, poly) = szenario();
+        app.begin_grip_drag(poly, crate::handles::GripKind::Vert(0));
+
+        let (p, label) = fang_zeiger(&app, V2::new(1994.0, 8.0), 40.0);
+        assert_eq!(label, Some("Endpunkt"), "{p:?}");
+        assert_punkt(p, V2::new(2000.0, 0.0));
+    }
+
+    /// Kein Selbst-Fang: der gezogene Stützpunkt liegt im Fangradius des
+    /// Zeigers, darf ihn aber nicht festziehen.
+    #[test]
+    fn gezogener_punkt_faengt_sich_nicht() {
+        let (mut app, poly) = szenario();
+        app.begin_grip_drag(poly, crate::handles::GripKind::Vert(0));
+
+        let roh = V2::new(5.0, 5.0);
+        let (p, label) = fang_zeiger(&app, roh, 40.0);
+        assert_eq!(label, None, "kein Fang in der Nähe außer dem eigenen Punkt");
+        assert_punkt(p, roh);
+    }
+
+    // ---- Voller Mauszug durch die Oberfläche ----
+
+    /// Klick auf einen Griff, ziehen auf ein fremdes Linienende, loslassen:
+    /// der Stützpunkt landet exakt auf dem Fangpunkt, der Zug endet, und der
+    /// Punkt steht so auch in der gespeicherten Datei.
+    #[test]
+    fn mauszug_uebernimmt_den_fangpunkt_und_speichert_ihn() {
+        let (mut app, poly) = szenario();
+        frame(&mut app, vec![]);
+        let rect = app.ui.last_canvas;
+        let view = app.current_view();
+
+        let griff = world_to_screen(rect, view, V2::new(0.0, 0.0));
+        let ziel = world_to_screen(rect, view, V2::new(1990.0, 3008.0));
+
+        frame(&mut app, vec![egui::Event::PointerMoved(griff)]);
+        frame(&mut app, vec![druck(griff)]);
+        assert!(app.grip_drag.is_some(), "Griffzug muss begonnen haben");
+
+        frame(&mut app, vec![egui::Event::PointerMoved(ziel)]);
+        frame(&mut app, vec![egui::Event::PointerMoved(ziel)]);
+        assert_eq!(app.snap_label.as_deref(), Some("Endpunkt"), "sichtbarer Fang");
+        frame(&mut app, vec![loslassen(ziel)]);
+        assert!(app.grip_drag.is_none(), "Loslassen beendet den Zug");
+
+        let pts = punkte(&app, poly);
+        assert_punkt(pts[0], V2::new(2000.0, 3000.0));
+        // Die übrigen Stützpunkte bleiben unangetastet.
+        assert_punkt(pts[1], V2::new(2000.0, 0.0));
+        assert_punkt(pts[2], V2::new(2000.0, 1500.0));
+
+        // Gespeichert: die Datei trägt die gefangene Koordinate.
+        let json = jjcad_core::persist::to_json(app.doc()).expect("speichern");
+        let wieder = jjcad_core::persist::from_json(&json).expect("laden");
+        let geladen = wieder
+            .entity(poly)
+            .and_then(|e| match &e.kind {
+                EntityKind::Polyline { verts, .. } => Some(verts[0].p),
+                _ => None,
+            })
+            .expect("Polylinie in der Datei");
+        assert_punkt(geladen, V2::new(2000.0, 3000.0));
     }
 }
