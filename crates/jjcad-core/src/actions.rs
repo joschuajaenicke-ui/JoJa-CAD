@@ -112,6 +112,7 @@ pub const ACTIONS: &[ActionDef] = &[
     // Ändern
     act!("modify.select", "Auswählen", Aendern, "select", "esc", "Objekte anklicken oder Fenster aufziehen", false),
     act!("modify.move", "Verschieben", Aendern, "move", "v", "Auswahl, Basispunkt, Zielpunkt", true),
+    act!("modify.order", "Reihenfolge", Aendern, "layers", "", "to = Platz in der Zeichenreihenfolge (1 = ganz hinten)", true),
     act!("modify.copy", "Kopieren", Aendern, "copy", "ctrl+c", "Auswahl, Basispunkt, Zielpunkt", true),
     act!("modify.rotate", "Drehen", Aendern, "rotate", "r", "Auswahl, Zentrum, Winkel", true),
     act!("modify.mirror", "Spiegeln", Aendern, "mirror", "f", "Auswahl, Spiegelachse", true),
@@ -207,6 +208,7 @@ pub fn is_mutating(id: &str) -> bool {
             | "dim.elevation"
             | "dim.style"
             | "modify.move"
+            | "modify.order"
             | "modify.copy"
             | "modify.rotate"
             | "modify.mirror"
@@ -1248,6 +1250,56 @@ pub fn execute(doc: &mut Document, id: &str, params: &Value) -> Result<Value, St
         }
 
         // ---------------- Ändern ----------------
+        // Zeichenreihenfolge: die Liste der Objekte IST die Reihenfolge, der
+        // Index ist der Platz. Ein Element wird entnommen und an der neuen
+        // Stelle wieder eingesetzt — dadurch kann es keine doppelte Position
+        // geben, und die Plaetze bleiben lueckenlos.
+        "modify.order" => {
+            let ids = ids_from(&p, "ids");
+            if ids.is_empty() {
+                return Err("Parameter 'ids' fehlt".into());
+            }
+            // Referenzobjekt für "vor/hinter Element"
+            let referenz = p.id("ref");
+            let wo = p.text("where").unwrap_or_default().to_lowercase();
+
+            let mut gewaehlt: Vec<Entity> = Vec::new();
+            doc.entities.retain(|e| {
+                if ids.contains(&e.id) {
+                    gewaehlt.push(e.clone());
+                    false
+                } else {
+                    true
+                }
+            });
+            let n = doc.entities.len();
+
+            // Ziel erst nach dem Entnehmen bestimmen, damit sich die Plätze
+            // nicht durch das eigene Element verschieben
+            let ziel: usize = if let Some(r) = referenz {
+                match doc.entities.iter().position(|e| e.id == r) {
+                    Some(i) if wo == "above" => i + 1,
+                    Some(i) => i,
+                    None => n,
+                }
+            } else if let Some(t) = p.num("to") {
+                ((t.round() as i64 - 1).max(0) as usize).min(n)
+            } else if wo == "front" || wo == "vorn" || wo == "oben" {
+                n
+            } else {
+                0
+            };
+            let at = ziel.min(n);
+            for (k, e) in gewaehlt.into_iter().enumerate() {
+                doc.entities.insert(at + k, e);
+            }
+            doc.modified = true;
+            Ok(json!({
+                "ok": true,
+                "position": at + 1,
+                "count": doc.entities.len(),
+            }))
+        }
         "modify.move" | "modify.copy" => {
             let ids = ids_from(&p, "ids");
             if ids.is_empty() {

@@ -767,3 +767,78 @@ fn block_laesst_sich_mit_auswahlwerkzeug_anklicken() {
     s.execute("modify.erase", &json!({"ids": [inst]})).unwrap();
     assert!(s.doc.entity(inst).is_none());
 }
+
+#[test]
+fn reihenfolge_ist_der_listenplatz() {
+    // Die Objektliste IST die Zeichenreihenfolge: Umsortieren verschiebt das
+    // Element, ohne dass zwei Objekte denselben Platz belegen koennen.
+    let mut s = s();
+    for (i, x) in [0.0, 1.0, 2.0, 3.0].iter().enumerate() {
+        s.execute(
+            "draw.line",
+            &json!({"a": [*x, i as f64], "b": [*x + 0.5, i as f64]}),
+        )
+        .unwrap();
+    }
+    let ids: Vec<u64> = s.doc.entities.iter().map(|e| e.id).collect();
+    assert_eq!(ids.len(), 4);
+
+    // drittes Element ganz nach hinten (Platz 1)
+    s.execute("modify.order", &json!({"ids": [ids[2]], "to": 1}))
+        .unwrap();
+    let jetzt: Vec<u64> = s.doc.entities.iter().map(|e| e.id).collect();
+    assert_eq!(jetzt[0], ids[2]);
+    assert_eq!(jetzt.len(), 4);
+    // keine doppelten Plaetze: jede id genau einmal
+    let mut sortiert = jetzt.clone();
+    sortiert.sort_unstable();
+    sortiert.dedup();
+    assert_eq!(sortiert.len(), 4);
+
+    // erstes Element ganz nach vorn
+    s.execute("modify.order", &json!({"ids": [ids[0]], "where": "front"}))
+        .unwrap();
+    let jetzt: Vec<u64> = s.doc.entities.iter().map(|e| e.id).collect();
+    assert_eq!(*jetzt.last().unwrap(), ids[0]);
+    assert_eq!(jetzt.len(), 4);
+
+    // Ziel groesser als die Liste -> letzter Platz, kein Fehler
+    s.execute("modify.order", &json!({"ids": [ids[1]], "to": 999}))
+        .unwrap();
+    assert_eq!(s.doc.entities.last().unwrap().id, ids[1]);
+    assert_eq!(s.doc.entities.len(), 4);
+}
+
+#[test]
+fn reihenfolge_vor_und_hinter_element() {
+    let mut s = s();
+    for i in 0..4 {
+        s.execute("draw.line", &json!({"a": [i as f64, 0], "b": [i as f64 + 0.5, 0]}))
+            .unwrap();
+    }
+    let ids: Vec<u64> = s.doc.entities.iter().map(|e| e.id).collect();
+
+    // Element 0 direkt hinter Element 2 (also unterhalb davon im Stapel)
+    s.execute(
+        "modify.order",
+        &json!({"ids": [ids[0]], "ref": ids[2], "where": "below"}),
+    )
+    .unwrap();
+    let jetzt: Vec<u64> = s.doc.entities.iter().map(|e| e.id).collect();
+    eprintln!("ids={:?} jetzt={:?}", ids, jetzt);
+    let p0 = jetzt.iter().position(|x| *x == ids[0]).unwrap();
+    let p2 = jetzt.iter().position(|x| *x == ids[2]).unwrap();
+    assert_eq!(p0 + 1, p2, "muss direkt hinter dem Referenzobjekt liegen");
+
+    // Element 1 direkt vor Element 3
+    s.execute(
+        "modify.order",
+        &json!({"ids": [ids[1]], "ref": ids[3], "where": "above"}),
+    )
+    .unwrap();
+    let jetzt: Vec<u64> = s.doc.entities.iter().map(|e| e.id).collect();
+    let p1 = jetzt.iter().position(|x| *x == ids[1]).unwrap();
+    let p3 = jetzt.iter().position(|x| *x == ids[3]).unwrap();
+    assert_eq!(p1, p3 + 1, "muss direkt vor dem Referenzobjekt liegen");
+    assert_eq!(jetzt.len(), 4);
+}

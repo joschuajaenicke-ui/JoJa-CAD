@@ -257,6 +257,9 @@ pub struct UiState {
     pub fill_active: Option<bool>,
     /// Offenes Kontextmenü (Objekt, Zeichenfläche oder Chip)
     pub menu: Option<MenuState>,
+    /// Auswahl eines Referenzobjekts für "Vor/Hinter Element"
+    /// (Some(true) = davor, Some(false) = dahinter)
+    pub order_pick: Option<bool>,
     pub bind_slot: Option<usize>,
     pub slot_drag: Option<(usize, String)>,
     pub keymap_selected: Option<String>,
@@ -306,6 +309,7 @@ impl Default for UiState {
             hatch_input: FillInput::Contour,
             fill_active: None,
             menu: None,
+            order_pick: None,
             bind_slot: None,
             slot_drag: None,
             keymap_selected: None,
@@ -1376,7 +1380,10 @@ impl App {
     fn handle_shortcuts(&mut self, ctx: &egui::Context) {
         let typing = ctx.wants_keyboard_input();
         if ctx.input(|i| i.key_pressed(egui::Key::Escape)) {
-            if self.ui.bind_slot.is_some() {
+            if self.ui.order_pick.is_some() {
+                self.ui.order_pick = None;
+                self.toast("Abgebrochen: kein Referenzobjekt gewählt");
+            } else if self.ui.bind_slot.is_some() {
                 self.ui.bind_slot = None;
                 self.toast("Verknüpfen abgebrochen");
             } else {
@@ -2960,6 +2967,43 @@ impl App {
                                 self.start_tool(action);
                                 close = true;
                             }
+                        }
+                        ui.separator();
+                        // Zeichenreihenfolge: Position in der Objektliste
+                        ui.label(theme::faint("Reihenfolge"));
+                        if ui.button("In den Vordergrund").clicked() {
+                            let _ = self.session_mut().execute(
+                                "modify.order",
+                                &serde_json::json!({"ids": [id], "where": "front"}),
+                            );
+                            self.mark_changed();
+                            self.toast("Ganz nach vorn".to_string());
+                            close = true;
+                        }
+                        if ui.button("In den Hintergrund").clicked() {
+                            let _ = self.session_mut().execute(
+                                "modify.order",
+                                &serde_json::json!({"ids": [id], "where": "back"}),
+                            );
+                            self.mark_changed();
+                            self.toast("Ganz nach hinten".to_string());
+                            close = true;
+                        }
+                        if ui.button("Vor Element …").clicked() {
+                            self.ui.order_pick = Some(true);
+                            self.session_mut().select(vec![id]);
+                            self.status_msg =
+                                "Element anklicken, VOR das die Auswahl soll — ESC bricht ab"
+                                    .into();
+                            close = true;
+                        }
+                        if ui.button("Hinter Element …").clicked() {
+                            self.ui.order_pick = Some(false);
+                            self.session_mut().select(vec![id]);
+                            self.status_msg =
+                                "Element anklicken, HINTER das die Auswahl soll — ESC bricht ab"
+                                    .into();
+                            close = true;
                         }
                         ui.separator();
                         if ui.button("Zerlegen").clicked() {

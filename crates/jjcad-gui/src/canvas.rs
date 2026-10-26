@@ -1797,6 +1797,36 @@ fn handle_input(
         return;
     }
 
+    // "Vor/Hinter Element": nächster Klick wählt das Referenzobjekt
+    if let Some(above) = app.ui.order_pick {
+        if resp.clicked_by(egui::PointerButton::Primary) {
+            if let Some(pos) = resp.interact_pointer_pos() {
+                let w = screen_to_world(rect, view, pos);
+                let tol = 10.0 / view.zoom.max(1e-6);
+                match snap::hit_test(app.doc(), w, tol, None) {
+                    Some(hit) => {
+                        let ids = app.selection().to_vec();
+                        let _ = app.session_mut().execute(
+                            "modify.order",
+                            &serde_json::json!({
+                                "ids": ids,
+                                "ref": hit,
+                                "where": if above { "above" } else { "below" },
+                            }),
+                        );
+                        app.mark_changed();
+                        app.toast(
+                            if above { "Vor Element gesetzt" } else { "Hinter Element gesetzt" }.to_string(),
+                        );
+                    }
+                    None => app.toast("Kein Element getroffen".to_string()),
+                }
+                app.ui.order_pick = None;
+            }
+            return;
+        }
+    }
+
     // Rechtsklick: Kontextmenü für ein Objekt oder die Fläche.
     // Während ein Werkzeug läuft, beendet der Rechtsklick das Werkzeug
     // (Polylinie, Umriss-Fläche, Maßkette) — dann kein Menü darüberlegen.

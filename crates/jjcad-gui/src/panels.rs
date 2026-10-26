@@ -1080,6 +1080,33 @@ fn entity_props(app: &mut App, ui: &mut Ui, id: Id) {
     ui.label(theme::dim(format!("#{} · Layer {}", e.id, layer_name)));
     ui.add_space(6.0);
 
+    // Zeichenreihenfolge: der Listenplatz ist die Darstellungsposition.
+    // Ein Platz kann nur einmal belegt sein — die Zahl lässt sich direkt
+    // eintippen, das Element wandert dorthin und alles andere rückt auf.
+    let pos = app
+        .doc()
+        .entities
+        .iter()
+        .position(|x| x.id == id)
+        .map(|i| i + 1)
+        .unwrap_or(0);
+    let total = app.doc().entities.len();
+    let mut wunsch = pos as i32;
+    widgets::field_row(ui, "Reihenfolge", |ui| {
+        if ui
+            .add(crate::widgets::dv(&mut wunsch).range(1..=total.max(1) as i32))
+            .changed()
+        {
+        }
+        ui.label(theme::faint(format!("von {total}")));
+    });
+    if wunsch > 0 && wunsch as usize != pos {
+        let _ = app
+            .session_mut()
+            .execute("modify.order", &json!({"ids": [id], "to": wunsch}));
+        app.mark_changed();
+    }
+
     // Layer
     let mut new_layer = e.layer;
     let layer_items: Vec<(Id, String)> = app
