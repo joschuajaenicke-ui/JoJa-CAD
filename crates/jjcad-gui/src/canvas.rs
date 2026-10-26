@@ -2281,8 +2281,10 @@ fn sheet_viewport_input(app: &mut App, resp: &Response, rect: Rect, view: View) 
         }
     }
 
-    // Klick: Papierraum-Objekt hat Vorrang, sonst wird das Fenster gewählt
-    if resp.clicked_by(egui::PointerButton::Primary) {
+    // Klick: Papierraum-Objekt hat Vorrang, sonst wird das Fenster gewählt.
+    // Während ein Zeichenwerkzeug läuft, wird nichts ausgewählt — sonst
+    // markiert jeder Klick ins Fenster zusätzlich das Ansichtsfenster.
+    if resp.clicked_by(egui::PointerButton::Primary) && app.tool.is_none() {
         let tol = (8.0 / view.zoom).max(0.5);
         let objekt = snap::hit_test(app.doc(), w, tol, None);
         if objekt.is_none() {

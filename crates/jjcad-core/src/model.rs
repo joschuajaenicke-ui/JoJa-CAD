@@ -1127,9 +1127,9 @@ impl Document {
         self.layer(id).map(|l| l.locked || !l.visible).unwrap_or(false)
     }
 
-    /// Kurzfassung für die Statuszeile.
+    /// Kurzfassung für die Statuszeile — zählt den aktiven Raum.
     pub fn summary_short(&self) -> String {
-        format!("{} Objekte", self.entities.len())
+        format!("{} Objekte", self.ents().len())
     }
 
     pub fn summary(&self) -> String {

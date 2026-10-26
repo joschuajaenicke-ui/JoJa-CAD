@@ -299,3 +299,21 @@ fn auswahl_und_trefferpruefung_arbeiten_im_papierraum() {
         "„Alles auswählen“ meint genau den aktiven Raum"
     );
 }
+
+#[test]
+fn objektzahl_zaehlt_den_aktiven_raum() {
+    let mut sess = s();
+    sess.execute("draw.line", &json!({"a": [0, 0], "b": [10, 0]}))
+        .unwrap();
+    let modell = sess.doc.summary_short();
+    assert!(modell.starts_with('1'), "{modell}");
+
+    in_papierraum(&mut sess);
+    let blatt = sess.doc.summary_short();
+    let erwartet = format!("{} Objekte", sess.doc.sheets[0].entities.len());
+    assert_eq!(blatt, erwartet, "Statuszeile muss den Papierraum zählen");
+    assert_ne!(blatt, modell);
+
+    sess.set_space(None);
+    assert_eq!(sess.doc.summary_short(), modell, "zurück im Modell");
+}
