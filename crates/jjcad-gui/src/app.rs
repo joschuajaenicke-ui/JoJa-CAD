@@ -2220,87 +2220,9 @@ fn rail(ui: &mut egui::Ui, icon: &str, tooltip: &str, chevron: &str) -> bool {
                             }
                         }
                     });
-                    widgets::vline(ui, RIBBON_H);
-                    self.group(ui, "Stil", |ui, app| {
-                        ui.vertical(|ui| {
-                            ui.add_space(6.0);
-                            let unit = app.doc().settings.dim_unit;
-                            ui.horizontal(|ui| {
-                                ui.label(theme::dim("Maßeinheit"));
-                                let mut u = unit;
-                                egui::ComboBox::from_id_salt("dimunit")
-                                    .width(70.0)
-                                    .selected_text(u.short())
-                                    .show_ui(ui, |ui| {
-                                        for cand in Unit::ALL {
-                                            if ui.selectable_value(&mut u, cand, cand.short()).changed() {
-                                                let _ = app.session_mut().execute(
-                                                    "doc.settings",
-                                                    &serde_json::json!({"dim_unit": cand.short()}),
-                                                );
-                                            }
-                                        }
-                                    });
-                            });
-                            ui.horizontal(|ui| {
-                                ui.label(theme::dim("Textgröße"));
-                                let mut h = app.doc().dim_style.text_height;
-                                if ui
-                                    .add_sized([64.0, 20.0], crate::widgets::dv(&mut h).speed(0.1).suffix(" mm"))
-                                    .changed()
-                                {
-                                    let _ = app
-                                        .session_mut()
-                                        .execute("dim.style", &serde_json::json!({"text_height": h}));
-                                    app.mark_changed();
-                                }
-                            });
-                        });
-                    });
-                    widgets::vline(ui, RIBBON_H);
-                    self.group(ui, "Maßstab", |ui, app| {
-                        ui.vertical(|ui| {
-                            ui.add_space(6.0);
-                            let mut s = app.doc().settings.annotation_scale;
-                            ui.horizontal(|ui| {
-                                ui.label(theme::dim("Bezug"));
-                                if ui
-                                    .add_sized([54.0, 20.0], crate::widgets::dv(&mut s).speed(1.0).range(1.0..=1000.0))
-                                    .changed()
-                                {
-                                    let _ = app.session_mut().execute(
-                                        "doc.settings",
-                                        &serde_json::json!({"annotation_scale": s}),
-                                    );
-                                    app.mark_changed();
-                                }
-                                ui.label(theme::dim(&format!("({})", format_scale(s))));
-                            });
-                            ui.horizontal(|ui| {
-                                ui.label(theme::dim("Bogensymbole"));
-                                let mut arrows = app.doc().dim_style.arrow;
-                                egui::ComboBox::from_id_salt("arrowkind")
-                                    .width(120.0)
-                                    .selected_text(arrows.label())
-                                    .show_ui(ui, |ui| {
-                                        for cand in jjcad_core::style::ArrowKind::ALL {
-                                            if ui.selectable_value(&mut arrows, cand, cand.label()).changed() {
-                                                let _ = app.session_mut().execute(
-                                                    "dim.style",
-                                                    &serde_json::json!({"arrow": match cand {
-                                                        jjcad_core::style::ArrowKind::Arrow => "arrow",
-                                                        jjcad_core::style::ArrowKind::Dot => "dot",
-                                                        jjcad_core::style::ArrowKind::None => "none",
-                                                        _ => "slash",
-                                                    }}),
-                                                );
-                                                app.mark_changed();
-                                            }
-                                        }
-                                    });
-                            });
-                        });
-                    });
+                    // Maßeinheit, Textgröße, Maßstab und Bogensymbole stehen
+                    // ausschließlich im Eigenschaften-Panel (Abschnitt
+                    // „Maßketten") — eine Stelle für jeden Wert.
                 }
                 RibbonTab::Bloecke => {
                     self.group(ui, "Bibliothek", |ui, app| {
