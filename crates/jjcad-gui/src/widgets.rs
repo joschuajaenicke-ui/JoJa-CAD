@@ -43,59 +43,63 @@ pub fn icon_button(
 /// Großer Ribbon-Knopf mit Icon und Beschriftung.
 /// Ribbon-Schaltfläche mit kleinem Aufklapp-Pfeil (geteilte Schaltfläche).
 /// Gibt (Hauptfläche, Pfeil) zurück — der Aufrufer öffnet das Menü.
+/// Geteilte Schaltfläche: Hauptfläche (startet den zuletzt benutzten Modus) und
+/// ein getrennter Pfeilstreifen rechts daneben (öffnet die Auswahl). Zwei
+/// getrennte Rechtecke, damit ein Klick auf den Pfeil nie das Werkzeug startet.
 pub fn ribbon_split_button(
     ui: &mut Ui,
     icon_name: &str,
     label: &str,
     active: bool,
 ) -> (Response, Response) {
-    let w = 70.0;
     let h = 54.0;
-    let (rect, resp) = ui.allocate_exact_size(Vec2::new(w, h), Sense::click());
-    let hovered = resp.hovered();
-    let arrow_rect = Rect::from_min_max(
-        Pos2::new(rect.right() - 18.0, rect.bottom() - 18.0),
-        rect.max,
+    let main_w = 56.0;
+    let arrow_w = 18.0;
+    let (full, _) = ui.allocate_exact_size(Vec2::new(main_w + arrow_w, h), Sense::hover());
+    let main_rect = Rect::from_min_size(full.min, Vec2::new(main_w, h));
+    let arrow_rect = Rect::from_min_size(
+        Pos2::new(full.min.x + main_w, full.min.y),
+        Vec2::new(arrow_w, h),
     );
-    let arrow = ui.interact(
-        arrow_rect,
-        ui.id().with(("split_arrow", label)),
-        Sense::click(),
-    );
-    if ui.is_rect_visible(rect) {
+    let main = ui.interact(main_rect, ui.id().with(("split_main", label)), Sense::click());
+    let arrow = ui.interact(arrow_rect, ui.id().with(("split_arrow", label)), Sense::click());
+
+    if ui.is_rect_visible(full) {
         let p = ui.painter();
         if active {
-            p.rect_filled(rect, Rounding::same(8.0), Palette::ACCENT_SOFT);
-            p.rect_stroke(rect, Rounding::same(8.0), Stroke::new(1.0, Palette::ACCENT));
-        } else if hovered {
-            p.rect_filled(rect, Rounding::same(8.0), Palette::PANEL_ALT);
+            p.rect_filled(main_rect, Rounding::same(8.0), Palette::ACCENT_SOFT);
+            p.rect_stroke(main_rect, Rounding::same(8.0), Stroke::new(1.0, Palette::ACCENT));
+        } else if main.hovered() {
+            p.rect_filled(main_rect, Rounding::same(8.0), Palette::PANEL_ALT);
+        }
+        if arrow.hovered() {
+            p.rect_filled(arrow_rect, Rounding::same(4.0), Palette::PANEL_ALT);
         }
         let color = if active { Palette::ACCENT } else { Palette::TEXT };
         let ir = Rect::from_center_size(
-            Pos2::new(rect.center().x, rect.top() + 19.0),
-            Vec2::splat(21.0),
+            Pos2::new(main_rect.center().x, main_rect.top() + 19.0),
+            Vec2::splat(22.0),
         );
         icons::paint(p, ir, icon_name, color);
         p.text(
-            Pos2::new(rect.center().x - 5.0, rect.bottom() - 10.0),
+            Pos2::new(main_rect.center().x, main_rect.bottom() - 11.0),
             Align2::CENTER_CENTER,
             label,
             FontId::proportional(10.5),
             if active { Palette::ACCENT } else { Palette::TEXT_DIM },
         );
-        // Aufklapp-Pfeil unten rechts
         let c = arrow_rect.center();
         p.add(Shape::convex_polygon(
             vec![
-                Pos2::new(c.x - 3.5, c.y - 1.8),
-                Pos2::new(c.x + 3.5, c.y - 1.8),
-                Pos2::new(c.x, c.y + 2.4),
+                Pos2::new(c.x - 4.0, c.y - 2.0),
+                Pos2::new(c.x + 4.0, c.y - 2.0),
+                Pos2::new(c.x, c.y + 3.0),
             ],
-            Palette::TEXT_FAINT,
+            if arrow.hovered() { Palette::TEXT } else { Palette::TEXT_FAINT },
             Stroke::NONE,
         ));
     }
-    (resp, arrow)
+    (main, arrow)
 }
 
 pub fn ribbon_button(ui: &mut Ui, icon_name: &str, label: &str, active: bool) -> Response {

@@ -3259,11 +3259,16 @@ impl App {
         let label = if hatch { "Schraffur" } else { "Fläche" };
         let (main, arrow) = widgets::ribbon_split_button(ui, cur.icon(hatch), label, active);
         let popup_id = ui.make_persistent_id(("fillpop", hatch));
+        let now = ui.input(|i| i.time);
         if arrow.clicked() {
             ui.memory_mut(|m| m.toggle_popup(popup_id));
+            ui.memory_mut(|m| m.data.insert_temp(popup_id.with("opened"), now));
         } else if main.clicked() {
             self.start_fill_input(cur, hatch);
         }
+        // Der Klick, der das Menü öffnet, darf nicht sofort einen Eintrag wählen
+        let geoeffnet = ui.memory(|m| m.data.get_temp::<f64>(popup_id.with("opened")).unwrap_or(0.0));
+        let bereit = now - geoeffnet > 0.25;
         egui::popup_below_widget(
             ui,
             popup_id,
@@ -3273,7 +3278,8 @@ impl App {
                 ui.set_min_width(190.0);
                 ui.spacing_mut().item_spacing.y = 2.0;
                 for m in FillInput::ALL {
-                    if ui.selectable_label(m == cur, m.label()).clicked() {
+                    let resp = ui.selectable_label(m == cur, m.label());
+                    if bereit && resp.clicked() {
                         if hatch {
                             self.ui.hatch_input = m;
                             self.prefs.hatch_input = m.key().to_string();

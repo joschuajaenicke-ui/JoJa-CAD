@@ -138,36 +138,49 @@ pub fn paint(painter: &Painter, rect: Rect, name: &str, color: Color32) {
         }
         // Füllflächen und Schraffuren: je drei Eingabemodi, unterschieden durch
         // die Fuellung (voll) bzw. Schraffur (Striche) im Inneren.
-        "fill-contour" | "hatch-contour" | "fill-points" | "hatch-points"
-        | "fill-paint" | "hatch-paint" => {
-            let hatch = name.starts_with("hatch");
+        // Füllflächen (Vollton) und Schraffuren (Striche): je drei Eingabemodi.
+        "fill-contour" | "hatch-contour" => {
             let quad = [(4.0, 19.0), (4.0, 6.0), (20.0, 6.0), (20.0, 19.0)];
-            if name.ends_with("-paint") {
-                // Eimer: schraeger Eimer mit Tropfen
-                i.poly(&[(5.0, 8.0), (13.0, 4.0), (19.0, 12.0), (11.0, 16.0)], true);
-                i.line(8.0, 6.0, 11.0, 4.0);
-                i.dot(19.5, 17.0, 1.6);
+            if name.starts_with("hatch") {
+                i.poly(&quad, true);
+                for k in 0..4 {
+                    i.line(5.5 + k as f32 * 4.0, 18.5, 9.5 + k as f32 * 4.0, 6.5);
+                }
             } else {
-                if hatch {
-                    i.poly(&quad, true);
-                    for k in 0..5 {
-                        i.line(5.0 + k as f32 * 3.4, 18.5, 10.0 + k as f32 * 3.4, 6.5);
-                    }
-                } else {
-                    i.filled(&quad);
-                }
-                if name.ends_with("-contour") {
-                    // Kontur anklicken: geschlossener Umriss, Punkt am Rand
-                    i.poly(&quad, true);
-                    i.circle(4.0, 19.0, 2.4);
-                } else {
-                    // Punktfolge: Ecken als Punkte
-                    i.poly(&quad, true);
-                    for (x, y) in [(4.0, 19.0), (4.0, 6.0), (20.0, 19.0)] {
-                        i.dot(x, y, 1.8);
-                    }
-                }
+                i.filled(&quad);
+                i.poly(&quad, true);
             }
+            // Kontur anklicken: Ring am linken Rand
+            i.circle(4.0, 19.0, 3.0);
+        }
+        "fill-points" | "hatch-points" => {
+            let quad = [(4.0, 19.0), (4.0, 6.0), (20.0, 6.0), (20.0, 19.0)];
+            if name.starts_with("hatch") {
+                i.poly(&quad, true);
+                for k in 0..4 {
+                    i.line(5.5 + k as f32 * 4.0, 18.5, 9.5 + k as f32 * 4.0, 6.5);
+                }
+            } else {
+                i.filled(&quad);
+                i.poly(&quad, true);
+            }
+            for (x, y) in [(4.0, 19.0), (4.0, 6.0), (20.0, 6.0)] {
+                i.dot(x, y, 2.0);
+            }
+        }
+        "fill-paint" | "hatch-paint" => {
+            // Farbeimer: Eimerkoerper (Trapez), Buegel als Bogen, Tropfen daneben
+            let body = [(6.0, 10.0), (16.0, 10.0), (14.0, 20.0), (8.0, 20.0)];
+            if name.starts_with("hatch") {
+                i.poly(&body, true);
+                i.line(8.0, 13.0, 14.0, 13.0);
+                i.line(8.5, 16.0, 13.5, 16.0);
+            } else {
+                i.filled(&body);
+                i.poly(&body, true);
+            }
+            i.arc(11.0, 10.0, 5.0, 3.14, 6.28);
+            i.dot(18.5, 5.5, 1.7);
         }
         "fill" | "hatch" => {
             i.rect(4.0, 5.0, 16.0, 14.0);
