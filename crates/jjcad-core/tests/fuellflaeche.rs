@@ -139,9 +139,11 @@ fn modify_set_aendert_muster_winkel_abstand_und_rand() {
 #[test]
 fn render_erzeugt_musterprimitive_und_randlinie() {
     let mut s = Session::new();
+    // Umrandung ausdrücklich an: die Vorgabe von „Kontur anklicken" ist aus
+    // (siehe tests/fuellflaeche_umrandung.rs).
     s.execute(
         "draw.fill",
-        &json!({"boundary": [[0, 0], [2, 0], [2, 1], [0, 1]], "pattern": "lines", "scale": 0.5}),
+        &json!({"boundary": [[0, 0], [2, 0], [2, 1], [0, 1]], "pattern": "lines", "scale": 0.5, "border": true}),
     )
     .unwrap();
     let id = s.doc.entities[0].id;

@@ -2429,7 +2429,8 @@ fn draw_fill_ghost(app: &App, p: &Painter, rect: Rect, view: View, umriss: &[V2]
             pattern: app.options.fill_pattern,
             pattern_angle: app.options.fill_angle,
             pattern_scale: app.options.fill_scale,
-            border: false,
+            // Vorschau zeigt die Umrandung, die das Objekt bekommt
+            border: app.options.fill_border_points,
         },
     );
     e.style.fill = app.ui.pending.fill;
@@ -2481,8 +2482,9 @@ fn draw_paint_ghost(
             pattern: app.options.paint_pattern,
             pattern_angle: app.options.fill_angle,
             pattern_scale: app.options.fill_scale,
-            // Der Eimer legt keine Randlinie an — seine Grenze ist die Wand.
-            border: false,
+            // Vorgabe aus: die Grenze des Eimers ist die Wand. Die Checkbox
+            // schaltet sie zu, dann zeichnet die Vorschau sie wie das Objekt.
+            border: app.options.fill_border_paint,
         },
     );
     e.style.fill = app.ui.pending.fill;
@@ -2505,17 +2507,21 @@ fn draw_paint_ghost(
     for prim in &dl.prims {
         paint_prim(p, prim, &w2s, view.zoom, &pc, 1.0);
     }
-    // Grenze gestrichelt nachziehen, damit die Fläche nicht ohne Kante steht
-    let stroke = Stroke::new(1.2, Palette::ACCENT.gamma_multiply(0.85));
-    for ring in std::iter::once(boundary).chain(holes.iter().map(|h| h.as_slice())) {
-        if ring.len() < 2 {
-            continue;
+    // Ohne Umrandung am Objekt die Grenze gestrichelt nachziehen, damit die
+    // Fläche nicht ohne Kante steht. Mit Umrandung zeichnet der Renderer sie
+    // bereits — eine zweite Linie würde sie nur dicker machen.
+    if !app.options.fill_border_paint {
+        let stroke = Stroke::new(1.2, Palette::ACCENT.gamma_multiply(0.85));
+        for ring in std::iter::once(boundary).chain(holes.iter().map(|h| h.as_slice())) {
+            if ring.len() < 2 {
+                continue;
+            }
+            let pts: Vec<Pos2> = ring.iter().map(|q| w2s(*q)).collect();
+            for pair in pts.windows(2) {
+                p.line_segment([pair[0], pair[1]], stroke);
+            }
+            p.line_segment([*pts.last().unwrap(), pts[0]], stroke);
         }
-        let pts: Vec<Pos2> = ring.iter().map(|q| w2s(*q)).collect();
-        for pair in pts.windows(2) {
-            p.line_segment([pair[0], pair[1]], stroke);
-        }
-        p.line_segment([*pts.last().unwrap(), pts[0]], stroke);
     }
 }
 
@@ -2523,7 +2529,7 @@ fn draw_paint_ghost(
 ///
 /// Gemeinsamer Abschluss der Füll-Werkzeuge: baut die Eckpunkte mit
 /// [`fill_boundary_points`] (doppelte Punkte, Schluss auf dem Start), nimmt
-/// Muster, Winkel, Abstand und Randlinie aus dem Platzieren-Panel und ruft die
+/// Muster, Winkel, Abstand und Umrandung aus dem Platzieren-Panel und ruft die
 /// Action `action` — `draw.fill.boundary` bzw. `draw.fill.points`. Beide landen
 /// im Kern in `actions::add_fill`, also entstehen dasselbe Objekt, dasselbe
 /// Undo und derselbe Panel-Zustand.
@@ -2549,7 +2555,7 @@ fn finish_fill(app: &mut App, action: &str) -> bool {
                "pattern": app.options.fill_pattern.key(),
                "angle": app.options.fill_angle.to_degrees(),
                "scale": app.unit().from_mm(app.options.fill_scale),
-               "border": app.options.fill_border}),
+               "border": app.options.fill_border_points}),
     );
     if ok {
         app.tool = None;
@@ -2835,7 +2841,7 @@ fn tool_click_at(app: &mut App, w: V2, raw: V2) {
                        "pattern": app.options.paint_pattern.key(),
                        "angle": app.options.fill_angle.to_degrees(),
                        "scale": unit.from_mm(app.options.fill_scale),
-                       "border": false}),
+                       "border": app.options.fill_border_paint}),
             );
             // Nach dem Füllen (und auch nach einem Fehlschlag) neu rechnen:
             // die Vorschau gehört zur Fläche unter dem Zeiger, nicht zum Klick.
@@ -2867,7 +2873,7 @@ fn tool_click_at(app: &mut App, w: V2, raw: V2) {
                                        "pattern": app.options.fill_pattern.key(),
                                        "angle": app.options.fill_angle.to_degrees(),
                                        "scale": unit.from_mm(app.options.fill_scale),
-                                       "border": app.options.fill_border}),
+                                       "border": app.options.fill_border_outline}),
                             );
                         }
                         None => app.toast("Bitte eine geschlossene Kontur anklicken"),
@@ -3185,7 +3191,7 @@ mod tests {
         app.options.fill_pattern = FillPattern::Cross;
         app.options.fill_angle = 0.0;
         app.options.fill_scale = 200.0;
-        app.options.fill_border = true;
+        app.options.fill_border_points = true;
         app.start_tool("draw.fill.boundary");
         assert_eq!(app.tool_id(), Some("draw.fill.boundary"));
 
@@ -3312,7 +3318,7 @@ mod tests {
         app.options.fill_pattern = FillPattern::Insulation;
         app.options.fill_angle = 30.0_f64.to_radians();
         app.options.fill_scale = 120.0;
-        app.options.fill_border = true;
+        app.options.fill_border_points = true;
         app.start_tool("draw.fill.points");
         assert_eq!(app.tool_id(), Some("draw.fill.points"));
 
@@ -3648,5 +3654,137 @@ mod tests {
             }),
             "Dreieck größer als die Fläche"
         );
+    }
+}
+
+/// Umrandung je Erstellmodus (Karte t_21567295): die Checkbox im
+/// Eigenschaften-Panel bindet an genau ein Feld pro Modus.
+#[cfg(test)]
+mod tests_umrandung {
+    use super::*;
+
+    fn neue_app() -> App {
+        App::with_ctx(egui::Context::default())
+    }
+
+    /// Liest die Umrandung des einzigen Fills im Dokument.
+    fn umrandung(app: &App) -> bool {
+        let e = app
+            .doc()
+            .entities
+            .iter()
+            .find(|e| matches!(e.kind, EntityKind::Fill { .. }))
+            .expect("keine Füllfläche angelegt");
+        match &e.kind {
+            EntityKind::Fill { border, .. } => *border,
+            _ => unreachable!(),
+        }
+    }
+
+    fn anzahl_fills(app: &App) -> usize {
+        app.doc()
+            .entities
+            .iter()
+            .filter(|e| matches!(e.kind, EntityKind::Fill { .. }))
+            .count()
+    }
+
+    /// Rahmen aus vier Linien — die Umgrenzung, die der Eimer findet.
+    fn rahmen(app: &mut App) {
+        for (a, b) in [
+            ([0.0, 0.0], [4.0, 0.0]),
+            ([4.0, 0.0], [4.0, 3.0]),
+            ([4.0, 3.0], [0.0, 3.0]),
+            ([0.0, 3.0], [0.0, 0.0]),
+        ] {
+            run(app, "draw.line", json!({ "a": a, "b": b }));
+        }
+    }
+
+    /// Die Vorgaben stehen im Modell des Panels: Punkte setzen an, Kontur
+    /// anklicken und Farbeimer aus.
+    #[test]
+    fn vorgabe_je_erstellmodus() {
+        let o = crate::app::ToolOptions::from_doc(&jjcad_core::model::Document::default());
+        assert!(o.fill_border_for("draw.fill.points"), "Punkte setzen: an");
+        assert!(o.fill_border_for("draw.fill.boundary"), "Umriss abfahren: an");
+        assert!(!o.fill_border_for("draw.fill"), "Kontur anklicken: aus");
+        assert!(!o.fill_border_for("draw.hatch"), "alter Name: aus");
+        assert!(!o.fill_border_for("draw.fill.paint"), "Farbeimer: aus");
+    }
+
+    /// Das Panel schreibt in genau ein Feld je Modus — die Modi stören sich
+    /// nicht gegenseitig.
+    #[test]
+    fn checkbox_schreibt_nur_ihren_modus() {
+        let mut o = crate::app::ToolOptions::from_doc(&jjcad_core::model::Document::default());
+        *o.fill_border_for_mut("draw.fill") = true;
+        assert!(o.fill_border_for("draw.fill"));
+        assert!(o.fill_border_for("draw.fill.points"), "unverändert an");
+        assert!(!o.fill_border_for("draw.fill.paint"), "unverändert aus");
+
+        *o.fill_border_for_mut("draw.fill.paint") = true;
+        assert!(o.fill_border_for("draw.fill.paint"));
+        assert!(o.fill_border_for("draw.fill.points"), "Punktmodus bleibt an");
+    }
+
+    /// Kontur anklicken: Klick auf eine geschlossene Polylinie ergibt eine
+    /// Fläche ohne Umrandung (Vorgabe des Modus).
+    #[test]
+    fn kontur_anklicken_legt_flaeche_ohne_umrandung_an() {
+        let mut app = neue_app();
+        run(
+            &mut app,
+            "draw.polyline",
+            json!({"pts": [[0.0, 0.0], [2.0, 0.0], [2.0, 1.0], [0.0, 1.0]], "closed": true}),
+        );
+        app.start_tool("draw.fill");
+        // Klick auf die untere Kante (0,0)-(2,0)
+        tool_click(&mut app, V2::new(1000.0, 0.0));
+        assert_eq!(anzahl_fills(&app), 1, "eine Füllfläche angelegt");
+        assert!(!umrandung(&app), "Kontur anklicken: keine Umrandung");
+
+        // Checkbox an: derselbe Weg legt eine umrandete Fläche an. Frisches
+        // Dokument, damit der Klick wieder die Polylinie trifft und nicht die
+        // gerade entstandene Fläche.
+        let mut mit_rand = neue_app();
+        run(
+            &mut mit_rand,
+            "draw.polyline",
+            json!({"pts": [[0.0, 0.0], [2.0, 0.0], [2.0, 1.0], [0.0, 1.0]], "closed": true}),
+        );
+        mit_rand.options.fill_border_outline = true;
+        mit_rand.start_tool("draw.fill");
+        tool_click(&mut mit_rand, V2::new(1000.0, 0.0));
+        assert_eq!(anzahl_fills(&mit_rand), 1, "eine Füllfläche angelegt");
+        assert!(umrandung(&mit_rand), "Checkbox an: Umrandung gesetzt");
+    }
+
+    /// Farbeimer: Klick in die leere Fläche ergibt eine Fläche ohne
+    /// Umrandung; mit gesetzter Checkbox mit.
+    #[test]
+    fn farbeimer_folgt_der_checkbox() {
+        let mut app = neue_app();
+        rahmen(&mut app);
+        app.start_tool("draw.fill.paint");
+        tool_click(&mut app, V2::new(2000.0, 1500.0));
+        assert_eq!(anzahl_fills(&app), 1, "der Eimer füllt die Fläche");
+        assert!(!umrandung(&app), "Farbeimer: keine Umrandung");
+
+        app.options.fill_border_paint = true;
+        app.start_tool("draw.fill.paint");
+        tool_click(&mut app, V2::new(1000.0, 1000.0));
+        assert_eq!(anzahl_fills(&app), 2, "zweite Fläche gefüllt");
+        let letzte = app
+            .doc()
+            .entities
+            .iter()
+            .filter(|e| matches!(e.kind, EntityKind::Fill { .. }))
+            .next_back()
+            .unwrap();
+        let EntityKind::Fill { border, .. } = &letzte.kind else {
+            unreachable!()
+        };
+        assert!(*border, "Farbeimer mit Checkbox: Umrandung gesetzt");
     }
 }
