@@ -824,6 +824,29 @@ impl App {
                         self.session_mut().selection = vec![id];
                     }
                 }
+                // Prüffall T0004: Papierraum der Druckvorschau mit ausgewähltem
+                // Textfeld des Plankopfes (Eigenschaften-Panel zeigt „Text").
+                "plankopf" => {
+                    if let Some(sid) = self.doc().sheets.first().map(|s| s.id) {
+                        self.tab_mut().tab = TabKind::Sheet(sid);
+                        self.sync_space();
+                        let feld = self
+                            .doc()
+                            .sheets
+                            .first()
+                            .and_then(|s| {
+                                s.entities
+                                    .iter()
+                                    .find(|e| {
+                                        matches!(&e.kind, EntityKind::Text { text, .. } if text == "{PLANTITEL}")
+                                    })
+                                    .map(|e| e.id)
+                            });
+                        if let Some(eid) = feld {
+                            self.session_mut().selection = vec![eid];
+                        }
+                    }
+                }
                 "sheetview" => {
                     if let Some(s) = self.doc().sheets.first().map(|s| s.id) {
                         self.tab_mut().tab = TabKind::Sheet(s);
@@ -879,12 +902,12 @@ impl App {
                     self.start_move_preview(ids);
                 }
                 "moveall" => {
-                    let ids: Vec<Id> = self.doc().entities.iter().map(|e| e.id).collect();
+                    let ids: Vec<Id> = self.doc().ents().iter().map(|e| e.id).collect();
                     self.start_move_preview(ids);
                 }
                 // Nur auswählen (für die Prüfung des direkten Ziehens)
                 "selall" => {
-                    let ids: Vec<Id> = self.doc().entities.iter().map(|e| e.id).collect();
+                    let ids: Vec<Id> = self.doc().ents().iter().map(|e| e.id).collect();
                     self.session_mut().select(ids);
                 }
                 _ => {}
@@ -940,6 +963,36 @@ impl App {
 
     pub fn selection(&self) -> &[Id] {
         &self.session().selection
+    }
+
+    /// Bearbeitungsraum diesem Reiter nachziehen (Modell ↔ Papierraum).
+    /// Wird einmal je Frame aufgerufen; die Action-Schicht liest ihn aus dem
+    /// Dokument, damit GUI, Tastatur und MCP denselben Weg gehen.
+    pub fn sync_space(&mut self) {
+        let raum = match self.tab().tab {
+            TabKind::Model => None,
+            TabKind::Sheet(id) => Some(id),
+        };
+        if self.session().space() != raum {
+            self.session_mut().set_space(raum);
+            self.tool = None;
+            self.ghost = None;
+            self.tab_mut().selected_viewport = None;
+            self.tab_mut().hover = None;
+            // Der Papierraum ist in Blatt-Millimetern gezeichnet: dort ist eine
+            // Texthöhe von 2,5 mm richtig, nicht die 250 mm des Modells.
+            let modell_hoehe = self.doc().settings.text_height;
+            if self.doc().in_paper_space() {
+                self.options.text_height = 2.5;
+            } else if (self.options.text_height - 2.5).abs() < 1e-9 {
+                self.options.text_height = modell_hoehe;
+            }
+        }
+    }
+
+    /// Läuft die Bearbeitung im Papierraum (Druckvorschau)?
+    pub fn im_papierraum(&self) -> bool {
+        self.doc().in_paper_space()
     }
 
     pub fn unit(&self) -> Unit {
@@ -1213,7 +1266,7 @@ impl App {
             "dim.style" => self.ui.settings_open = true,
             "doc.project" => self.ui.project_dialog = true,
             "select.all" => {
-                let ids: Vec<Id> = self.doc().entities.iter().map(|e| e.id).collect();
+                let ids: Vec<Id> = self.doc().ents().iter().map(|e| e.id).collect();
                 self.session_mut().select(ids);
                 self.start_tool("modify.select");
             }
@@ -1766,7 +1819,7 @@ impl App {
         let ids = self.selection().to_vec();
         let ents: Vec<Entity> = self
             .doc()
-            .entities
+            .ents()
             .iter()
             .filter(|e| ids.contains(&e.id))
             .cloned()
@@ -1799,7 +1852,7 @@ impl App {
             let mut ne = jjcad_core::transform::transform_entity(&e, &jjcad_core::geom::Affine::translate(d));
             ne.id = self.doc_mut().new_id();
             new_ids.push(ne.id);
-            self.doc_mut().entities.push(ne);
+            self.doc_mut().ents_mut().push(ne);
         }
         self.mark_changed();
         self.session_mut().select(new_ids);
@@ -2353,6 +2406,24 @@ fn rail(ui: &mut egui::Ui, icon: &str, tooltip: &str, chevron: &str) -> bool {
                         }
                     });
                     widgets::vline(ui, RIBBON_GROUP_H);
+                    // Papierraum: dieselben Zeichenwerkzeuge wie im Modell.
+                    // Der Plankopf besteht aus normalen Linien und Textfeldern.
+                    self.group(ui, "Papierraum", |ui, app| {
+                        if matches!(app.tab().tab, TabKind::Sheet(_)) {
+                            for (icon, label, action) in [
+                                ("line", "Linie", "draw.line"),
+                                ("rect", "Rechteck", "draw.rect"),
+                                ("text", "Text", "draw.text"),
+                            ] {
+                                if widgets::ribbon_button(ui, icon, label, app.tool_id() == Some(action)).clicked() {
+                                    app.start_tool(action);
+                                }
+                            }
+                        } else {
+                            ui.label(theme::dim("Blatt öffnen, dann zeichnen"));
+                        }
+                    });
+                    widgets::vline(ui, RIBBON_GROUP_H);
                     self.group(ui, "Blatteinstellungen", |ui, app| {
                         if let TabKind::Sheet(id) = app.tab().tab {
                             let mut paper = app.doc().sheet(id).map(|s| s.paper).unwrap_or_default();
@@ -2632,7 +2703,7 @@ fn rail(ui: &mut egui::Ui, icon: &str, tooltip: &str, chevron: &str) -> bool {
         for mut e in ents {
             e.id = self.doc_mut().new_id();
             ids.push(e.id);
-            self.doc_mut().entities.push(e);
+            self.doc_mut().ents_mut().push(e);
         }
         self.session_mut().select(ids);
         self.mark_changed();
@@ -2675,6 +2746,21 @@ fn rail(ui: &mut egui::Ui, icon: &str, tooltip: &str, chevron: &str) -> bool {
                         .size(10.5)
                         .color(Palette::ACCENT),
                 );
+            }
+            // Raum und Auswahl: der Papierraum verhält sich wie das Modell,
+            // man muss aber sehen, wo man gerade zeichnet.
+            if let Some(sheet) = self.doc().space_sheet() {
+                ui.add_space(8.0);
+                ui.label(
+                    RichText::new(format!("Papierraum · {}", sheet.name))
+                        .size(10.5)
+                        .color(Palette::ACCENT),
+                );
+            }
+            let sel = self.selection().len();
+            if sel > 0 {
+                ui.add_space(8.0);
+                ui.label(theme::faint(format!("{sel} ausgewählt")));
             }
             ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
                 ui.add_space(10.0);
@@ -2805,6 +2891,9 @@ fn rail(ui: &mut egui::Ui, icon: &str, tooltip: &str, chevron: &str) -> bool {
     // ---- Rahmen ----
 
     pub fn ui(&mut self, ctx: &egui::Context) {
+        // Bearbeitungsraum an den aktiven Reiter binden: Modell oder Papierraum
+        // der Druckvorschau. Alle Befehle arbeiten danach im selben Raum.
+        self.sync_space();
         self.handle_shortcuts(ctx);
 
         egui::TopBottomPanel::top("header")
@@ -3167,7 +3256,7 @@ impl App {
                             close = true;
                         }
                         if ui.button("Alles auswählen").clicked() {
-                            let ids: Vec<Id> = self.doc().entities.iter().map(|e| e.id).collect();
+                            let ids: Vec<Id> = self.doc().ents().iter().map(|e| e.id).collect();
                             self.session_mut().select(ids);
                             close = true;
                         }

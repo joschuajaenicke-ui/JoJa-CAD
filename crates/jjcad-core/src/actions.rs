@@ -848,10 +848,10 @@ fn add_fill_rings(
     // freien Punkten) bleibt es beim Anhängen wie bisher.
     let ziel = unter
         .iter()
-        .filter_map(|id| doc.entities.iter().position(|o| o.id == *id))
+        .filter_map(|id| doc.ents().iter().position(|o| o.id == *id))
         .min()
-        .unwrap_or(doc.entities.len());
-    doc.entities.insert(ziel, e);
+        .unwrap_or(doc.ents().len());
+    doc.ents_mut().insert(ziel, e);
     doc.modified = true;
     Ok(json!({"ok": true, "created": [idn], "position": ziel + 1}))
 }
@@ -1315,7 +1315,7 @@ pub fn execute(doc: &mut Document, id: &str, params: &Value) -> Result<Value, St
             let wo = p.text("where").unwrap_or_default().to_lowercase();
 
             let mut gewaehlt: Vec<Entity> = Vec::new();
-            doc.entities.retain(|e| {
+            doc.ents_mut().retain(|e| {
                 if ids.contains(&e.id) {
                     gewaehlt.push(e.clone());
                     false
@@ -1323,12 +1323,12 @@ pub fn execute(doc: &mut Document, id: &str, params: &Value) -> Result<Value, St
                     true
                 }
             });
-            let n = doc.entities.len();
+            let n = doc.ents().len();
 
             // Ziel erst nach dem Entnehmen bestimmen, damit sich die Plätze
             // nicht durch das eigene Element verschieben
             let ziel: usize = if let Some(r) = referenz {
-                match doc.entities.iter().position(|e| e.id == r) {
+                match doc.ents().iter().position(|e| e.id == r) {
                     Some(i) if wo == "above" => i + 1,
                     Some(i) => i,
                     None => n,
@@ -1342,13 +1342,13 @@ pub fn execute(doc: &mut Document, id: &str, params: &Value) -> Result<Value, St
             };
             let at = ziel.min(n);
             for (k, e) in gewaehlt.into_iter().enumerate() {
-                doc.entities.insert(at + k, e);
+                doc.ents_mut().insert(at + k, e);
             }
             doc.modified = true;
             Ok(json!({
                 "ok": true,
                 "position": at + 1,
-                "count": doc.entities.len(),
+                "count": doc.ents().len(),
             }))
         }
         "modify.move" | "modify.copy" => {
@@ -1382,7 +1382,7 @@ pub fn execute(doc: &mut Document, id: &str, params: &Value) -> Result<Value, St
                     let mut ne = transform::transform_entity(&e, &m);
                     ne.id = doc.new_id();
                     new_ids.push(ne.id);
-                    doc.entities.push(ne);
+                    doc.ents_mut().push(ne);
                 } else if let Some(em) = doc.entity_mut(*eid) {
                     *em = transform::transform_entity(em, &m);
                 }
@@ -1405,7 +1405,7 @@ pub fn execute(doc: &mut Document, id: &str, params: &Value) -> Result<Value, St
                     let mut ne = transform::transform_entity(&e, &m);
                     ne.id = doc.new_id();
                     new_ids.push(ne.id);
-                    doc.entities.push(ne);
+                    doc.ents_mut().push(ne);
                 } else if let Some(em) = doc.entity_mut(*eid) {
                     *em = transform::transform_entity(em, &m);
                 }
@@ -1426,7 +1426,7 @@ pub fn execute(doc: &mut Document, id: &str, params: &Value) -> Result<Value, St
                     let mut ne = transform::transform_entity(&e, &m);
                     ne.id = doc.new_id();
                     new_ids.push(ne.id);
-                    doc.entities.push(ne);
+                    doc.ents_mut().push(ne);
                 } else if let Some(em) = doc.entity_mut(*eid) {
                     *em = transform::transform_entity(em, &m);
                 }
@@ -1467,7 +1467,7 @@ pub fn execute(doc: &mut Document, id: &str, params: &Value) -> Result<Value, St
                 let mut ne = Entity::new(doc.new_id(), e.layer, kind);
                 ne.style = e.style.clone();
                 new_ids.push(ne.id);
-                doc.entities.push(ne);
+                doc.ents_mut().push(ne);
             }
             doc.modified = true;
             Ok(json!({"ok": true, "created": new_ids}))
@@ -1800,7 +1800,14 @@ pub fn execute(doc: &mut Document, id: &str, params: &Value) -> Result<Value, St
             if doc.layers.len() <= 1 {
                 return Err("Der letzte Layer kann nicht gelöscht werden".into());
             }
-            if doc.entities.iter().any(|e| e.layer == lid) {
+            // Papierraum zählt mit: ein Layer, der nur im Schriftfeld benutzt
+            // wird, ist nicht leer.
+            let benutzt = doc.entities.iter().chain(
+                doc.sheets
+                    .iter()
+                    .flat_map(|s| s.entities.iter()),
+            );
+            if benutzt.clone().any(|e| e.layer == lid) {
                 return Err("Layer enthält noch Objekte".into());
             }
             doc.layers.retain(|l| l.id != lid);
@@ -1928,7 +1935,7 @@ pub fn execute(doc: &mut Document, id: &str, params: &Value) -> Result<Value, St
             );
             apply_common(doc, &mut e, &p, layer);
             doc.add_entity(e);
-            Ok(json!({"ok": true, "created": [inst], "block": e_block_id(&doc.entities, inst)}))
+            Ok(json!({"ok": true, "created": [inst], "block": e_block_id(doc.ents(), inst)}))
         }
         "block.update" => {
             let name = p.text("block").ok_or_else(|| "Parameter 'block' fehlt".to_string())?;
@@ -1970,7 +1977,12 @@ pub fn execute(doc: &mut Document, id: &str, params: &Value) -> Result<Value, St
         }
         "block.delete" => {
             let name = p.text("block").ok_or_else(|| "Parameter 'block' fehlt".to_string())?;
-            if doc.entities.iter().any(|e| matches!(&e.kind, EntityKind::BlockRef{block,..} if *block == name)) {
+            let in_benutzung = doc
+                .entities
+                .iter()
+                .chain(doc.sheets.iter().flat_map(|s| s.entities.iter()))
+                .any(|e| matches!(&e.kind, EntityKind::BlockRef{block,..} if *block == name));
+            if in_benutzung {
                 return Err("Block wird noch verwendet".into());
             }
             doc.blocks.retain(|b| b.id != name && !b.name.eq_ignore_ascii_case(&name));
@@ -2255,7 +2267,7 @@ pub fn execute(doc: &mut Document, id: &str, params: &Value) -> Result<Value, St
         // ---------------- Auswahl / Abfragen ----------------
         "select.all" => {
             let ids: Vec<Id> = doc
-                .entities
+                .ents()
                 .iter()
                 .filter(|e| doc.layer(e.layer).map(|l| l.visible && !l.locked).unwrap_or(true))
                 .map(|e| e.id)
@@ -2270,7 +2282,7 @@ pub fn execute(doc: &mut Document, id: &str, params: &Value) -> Result<Value, St
                 _ => None,
             };
             let ids: Vec<Id> = doc
-                .entities
+                .ents()
                 .iter()
                 .filter(|e| {
                     if let Some(l) = &layer {
@@ -2410,7 +2422,7 @@ fn offset_kind(e: &Entity, dist: f64, side: Option<Vec2>) -> Option<EntityKind> 
 
 fn cutter_segments(doc: &Document, exclude: &[Id]) -> Vec<(Seg, Id)> {
     let mut out = Vec::new();
-    for e in &doc.entities {
+    for e in doc.ents() {
         if exclude.contains(&e.id) {
             continue;
         }
@@ -2516,7 +2528,7 @@ fn trim_entity(doc: &mut Document, id: Id, at: Vec2, cutters: &[Id]) -> Result<V
                 let nid = doc.new_id();
                 let mut ne = Entity::new(nid, e.layer, EntityKind::Line { a: mid, b: end });
                 ne.style = e.style.clone();
-                doc.entities.push(ne);
+                doc.ents_mut().push(ne);
                 created.push(nid);
             }
             Ok(created)
@@ -2588,7 +2600,7 @@ fn trim_entity(doc: &mut Document, id: Id, at: Vec2, cutters: &[Id]) -> Result<V
                 let nid = doc.new_id();
                 let mut ne = Entity::new(nid, e.layer, make(a.lerp(*b, t1), *b));
                 ne.style = e.style.clone();
-                doc.entities.push(ne);
+                doc.ents_mut().push(ne);
                 created.push(nid);
             }
             Ok(created)
@@ -2802,7 +2814,7 @@ pub fn explode_entity(doc: &mut Document, id: Id) -> Result<Vec<Id>, String> {
     }
     doc.remove_entity(id);
     for ne in new_ents {
-        doc.entities.push(ne);
+        doc.ents_mut().push(ne);
     }
     doc.modified = true;
     Ok(created)

@@ -178,6 +178,10 @@ pub struct RenderCtx<'a> {
     pub selection: Option<&'a [Id]>,
     /// Papierraum: Maßstab des Blattes für {MASSTAB}
     pub sheet_scale: Option<f64>,
+    /// Objektliste dieses Durchgangs. `None` = aktiver Bearbeitungsraum.
+    /// Ansichtsfenster und Ausgaben setzen hier ausdrücklich das Modell, damit
+    /// ein gerade offener Papierraum nicht in die Zeichnung durchschlägt.
+    pub entities: Option<&'a [Entity]>,
 }
 
 impl<'a> RenderCtx<'a> {
@@ -189,6 +193,7 @@ impl<'a> RenderCtx<'a> {
             resolve_text: true,
             selection: None,
             sheet_scale: None,
+            entities: None,
         }
     }
 
@@ -200,7 +205,28 @@ impl<'a> RenderCtx<'a> {
             resolve_text: true,
             selection: None,
             sheet_scale: None,
+            entities: None,
         }
+    }
+
+    /// Kontext für die Zeichnung selbst — nie den Papierraum. Für Ausgaben,
+    /// Exporte und Ansichtsfenster, die unabhängig vom offenen Blatt gelten.
+    pub fn model(doc: &'a Document) -> Self {
+        let mut c = Self::new(doc);
+        c.entities = Some(&doc.entities);
+        c
+    }
+
+    /// Wie `model`, mit Zeichnungsmaßstab für Beschriftungshöhen.
+    pub fn model_scaled(doc: &'a Document, scale: f64) -> Self {
+        let mut c = Self::with_scale(doc, scale);
+        c.entities = Some(&doc.entities);
+        c
+    }
+
+    /// Objektliste des Durchgangs: ausdrücklich gesetzt, sonst der aktive Raum.
+    pub fn ents(&self) -> &[Entity] {
+        self.entities.unwrap_or_else(|| self.doc.ents())
     }
 
     fn layer_ok(&self, layer: Id) -> bool {
@@ -228,9 +254,10 @@ impl<'a> RenderCtx<'a> {
 pub fn render_document(ctx: &RenderCtx) -> DisplayList {
     // Wände zuerst als reine Füllflächen, danach alle Linien. So kann keine
     // Wandfüllung die Umrandung einer anderen Wand überdecken.
+    // Gerendert wird der aktive Bearbeitungsraum: Modell oder Papierraum.
     let mut fills = DisplayList::default();
     let mut rest = DisplayList::default();
-    for e in &ctx.doc.entities {
+    for e in ctx.ents() {
         if matches!(e.kind, EntityKind::Wall { .. }) {
             let mut tmp = DisplayList::default();
             render_entity(ctx, e, Affine::IDENTITY, &mut tmp, 0);
@@ -2578,6 +2605,7 @@ pub fn render_sheet(doc: &Document, sheet: &Sheet) -> DisplayList {
         resolve_text: true,
         selection: None,
         sheet_scale: Some(sheet.scale),
+        entities: Some(&sheet.entities),
     };
     // Papierraum-Objekte (Schriftfeld etc.)
     for e in &sheet.entities {
@@ -2610,8 +2638,24 @@ pub fn render_sheet(doc: &Document, sheet: &Sheet) -> DisplayList {
     dl
 }
 
+/// Modellgeometrie in einem Ansichtsfenster-Maßstab. Immer die Zeichnung —
+/// auch dann, wenn der Papierraum gerade der aktive Bearbeitungsraum ist.
+pub fn render_model_scaled(doc: &Document, scale: f64, layers: Option<Vec<Id>>) -> DisplayList {
+    let ctx = RenderCtx {
+        doc,
+        annot_scale: scale.max(0.01),
+        layer_filter: layers,
+        resolve_text: true,
+        selection: None,
+        sheet_scale: None,
+        entities: Some(&doc.entities),
+    };
+    render_document(&ctx)
+}
+
 /// Inhalt eines Viewports (Weltkoordinaten), beschnitten auf das Fenster.
 pub fn render_viewport(doc: &Document, vp: &Viewport) -> DisplayList {
+    // Ein Ansichtsfenster zeigt immer die Zeichnung, nie den Papierraum.
     let ctx = RenderCtx {
         doc,
         annot_scale: vp.scale.max(0.01),
@@ -2619,6 +2663,7 @@ pub fn render_viewport(doc: &Document, vp: &Viewport) -> DisplayList {
         resolve_text: true,
         selection: None,
         sheet_scale: None,
+        entities: Some(&doc.entities),
     };
     let mut dl = render_document(&ctx);
     // Auf Fensterfläche beschneiden: Primitive werden bei Bedarf gekürzt.

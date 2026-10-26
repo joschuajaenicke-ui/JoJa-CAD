@@ -625,19 +625,18 @@ pub fn show(app: &mut App, ui: &mut Ui) {
     let pointer = ui.ctx().pointer_hover_pos().filter(|p| rect.contains(*p));
     let raw_world = pointer.map(|p| screen_to_world(rect, app.current_view(), p));
 
-    // Fangen
+    // Fangen — im Papierraum genauso wie im Modell (dort auf Schriftfeld,
+    // Texten und eigenen Blattelementen).
     let mut snapped = raw_world;
     app.snap_label = None;
     if let Some(w) = raw_world {
-        if !is_sheet {
-            let (p, label) = fang_zeiger(app, w, fang_radius_px(app, app.current_view().zoom));
-            snapped = Some(p);
-            app.snap_label = label.map(str::to_string);
-        }
+        let (p, label) = fang_zeiger(app, w, fang_radius_px(app, app.current_view().zoom));
+        snapped = Some(p);
+        app.snap_label = label.map(str::to_string);
     }
     app.pointer_world = snapped;
-    if !is_sheet {
-        if let (Some(g), Some(p)) = (app.ghost.as_mut(), snapped) {
+    if let Some(g) = app.ghost.as_mut() {
+        if let Some(p) = snapped {
             g.pos = p;
         }
     }
@@ -651,10 +650,21 @@ pub fn show(app: &mut App, ui: &mut Ui) {
     let paper_px = view_now.zoom * app.doc().settings.annotation_scale;
 
     if is_sheet {
+        // Druckvorschau: Blatt, Ansichtsfenster und Papierraum-Objekte.
         draw_sheet(app, &painter, rect, view_now, snapped);
-        // Druckvorschau: derselbe Fadenkreuz-Zeiger wie im Zeichenmodus.
-        // Der Systemzeiger ist oben bereits ausgeblendet, gezeichnet wird hier.
-        draw_fadenkreuz(&painter, rect, ui.ctx().pointer_hover_pos());
+        // Danach dieselbe Bedien-Darstellung wie im Zeichenmodus — Werkzeug,
+        // Griffe, Einfüge-Vorschau, Auswahlfenster und Fadenkreuz-Zeiger.
+        if app.tool.is_some() {
+            draw_tool_preview(app, &painter, rect, view_now, snapped, raw_world);
+        }
+        draw_grips(app, &painter, rect, view_now, &selected);
+        if app.ghost.is_some() {
+            draw_ghost(app, &painter, rect, view_now);
+        }
+        if let Some((start, cur, _)) = app.select_drag {
+            draw_auswahlfenster(&painter, rect, view_now, start, cur);
+        }
+        draw_cursor(app, ui, &painter, rect, view_now, snapped, raw_world);
     } else {
         let dl = display_list(app);
         let pc = PaintCtx {
@@ -686,15 +696,7 @@ pub fn show(app: &mut App, ui: &mut Ui) {
             draw_ghost(app, &painter, rect, view_now);
         }
         if let Some((start, cur, _)) = app.select_drag {
-            let r = Rect::from_two_pos(world_to_screen(rect, view_now, start), world_to_screen(rect, view_now, cur));
-            let crossing = cur.x < start.x;
-            let fill = if crossing {
-                Color32::from_rgba_unmultiplied(0x5A, 0xB5, 0x82, 34)
-            } else {
-                Color32::from_rgba_unmultiplied(0x2F, 0x8C, 0xF0, 34)
-            };
-            painter.rect_filled(r, 0.0, fill);
-            painter.rect_stroke(r, 0.0, Stroke::new(1.2, if crossing { Palette::OK } else { Palette::SELECT }));
+            draw_auswahlfenster(&painter, rect, view_now, start, cur);
         }
         draw_cursor(app, ui, &painter, rect, view_now, snapped, raw_world);
     }
@@ -703,8 +705,8 @@ pub fn show(app: &mut App, ui: &mut Ui) {
     let pointer_pos = ui.ctx().pointer_hover_pos();
     if resp.hovered() {
         if let Some(pos) = pointer_pos {
-            // Hover-Highlight
-            if app.tool.is_none() && !is_sheet {
+            // Hover-Highlight (auch im Papierraum — dort auf Schriftfeld/Texten)
+            if app.tool.is_none() {
                 if let Some(w) = snapped {
                     let tol = (8.0 / view_now.zoom).max(0.5);
                     let h = snap::hit_test(app.doc(), w, tol, None);
@@ -822,7 +824,9 @@ fn draw_sheet(app: &mut App, p: &Painter, rect: Rect, view: View, cursor: Option
     }) else {
         return;
     };
-    let Some(sheet) = app.doc().sheet(sid).cloned() else { return };
+    let Some(sheet) = app.doc().sheet(sid).cloned() else {
+        return;
+    };
     // Arbeitsfläche
     p.rect_filled(rect, 0.0, Color32::from_rgb(0x0E, 0x10, 0x13));
     let (pw, ph) = sheet.size();
@@ -838,21 +842,8 @@ fn draw_sheet(app: &mut App, p: &Painter, rect: Rect, view: View, cursor: Option
     p.rect_filled(paper, 1.0, Palette::PAPER);
 
     let w2s = |q: V2| world_to_screen(rect, view, q);
-    let pc = PaintCtx {
-        selected: Vec::new(),
-        hover: None,
-        lineweights: true,
-        lineweights_scaled: true,
-        paper_px: view.zoom,
-        preview: false,
-    };
-    let dl = render::render_sheet(app.doc(), &sheet);
-    for prim in &dl.prims {
-        paint_prim(p, prim, &w2s, view.zoom, &pc, 1.0);
-    }
 
-    // Ansichtsfenster
-    let selected_vp = app.tab().selected_viewport;
+    // 1. Inhalt der Ansichtsfenster (liegt unter dem Papierraum)
     for vp in &sheet.viewports {
         let vp_rect = Rect::from_min_max(
             w2s(V2::new(vp.x, vp.y + vp.h)),
@@ -867,20 +858,30 @@ fn draw_sheet(app: &mut App, p: &Painter, rect: Rect, view: View, cursor: Option
             w2s(paper_p)
         };
         let clip = p.with_clip_rect(vp_rect);
-        let ctx = render::RenderCtx::with_scale(app.doc(), vp.scale);
-        let vdl = render::render_document(&ctx);
+        let vdl = render::render_model_scaled(app.doc(), vp.scale, vp.layers.clone());
+        // Strichstärken sind Papier-Millimeter und hängen nicht am Maßstab
+        // des Fensters — sonst wird aus einer 0,5-mm-Wand eine 60-fache Kante
+        // (so wie im PDF, das die Breite unverändert übernimmt).
         let vpc = PaintCtx {
             selected: Vec::new(),
             hover: None,
             lineweights: true,
             lineweights_scaled: true,
-            paper_px: view.zoom * vp.scale,
+            paper_px: view.zoom,
             preview: false,
         };
         for prim in &vdl.prims {
             paint_prim(&clip, prim, &vp_w2s, view.zoom * s, &vpc, 1.0);
         }
-        // Rahmen des Fensters
+    }
+
+    // 2. Rahmen der Ansichtsfenster
+    let selected_vp = app.tab().selected_viewport;
+    for vp in &sheet.viewports {
+        let vp_rect = Rect::from_min_max(
+            w2s(V2::new(vp.x, vp.y + vp.h)),
+            w2s(V2::new(vp.x + vp.w, vp.y)),
+        );
         let sel = selected_vp == Some(vp.id);
         let stroke = if sel {
             Stroke::new(2.0, Palette::SELECT)
@@ -910,6 +911,21 @@ fn draw_sheet(app: &mut App, p: &Painter, rect: Rect, view: View, cursor: Option
         );
     }
 
+    // 3. Papierraum: Schriftfeld, Texte, eigene Blattelemente — mit Auswahl
+    //    und Hover wie im Zeichenmodus.
+    let pc = PaintCtx {
+        selected: app.selection().to_vec(),
+        hover: app.tab().hover,
+        lineweights: true,
+        lineweights_scaled: true,
+        paper_px: view.zoom,
+        preview: false,
+    };
+    let dl = render::render_sheet(app.doc(), &sheet);
+    for prim in &dl.prims {
+        paint_prim(p, prim, &w2s, view.zoom, &pc, 1.0);
+    }
+
     // Aufziehen eines neuen Ansichtsfensters
     if let Some(tool) = &app.tool {
         if tool.action == "sheet.viewport_tool" {
@@ -936,7 +952,7 @@ fn draw_sheet(app: &mut App, p: &Painter, rect: Rect, view: View, cursor: Option
     p.text(
         Pos2::new(rect.left() + 12.0, rect.top() + 34.0),
         Align2::LEFT_TOP,
-        "Ansicht anklicken · verschieben mit V · neues Fenster über Blatt > Ansicht",
+        "Papierraum: zeichnen und ändern wie im Modell · Ansicht anklicken, verschieben mit V",
         FontId::proportional(10.5),
         Palette::TEXT_FAINT,
     );
@@ -995,21 +1011,34 @@ mod tests_fadenkreuz {
         assert!(fadenkreuz_linien(flaeche(), Some(Pos2::new(950.0, 300.0))).is_none());
     }
 
-    /// Druckvorschau und Zeichenmodus benutzen dieselbe Funktion — sonst
-    /// verschwindet der Zeiger in der Vorschau wieder (t_a2e21b73).
+    /// Druckvorschau und Zeichenmodus benutzen denselben Zeiger: beide Zweige
+    /// enden in `draw_cursor`, und das zeichnet das Fadenkreuz bis zum Rand.
+    /// Sonst verschwindet der Zeiger in der Vorschau wieder (t_a2e21b73).
     #[test]
     fn druckvorschau_und_zeichenmodus_teilen_das_fadenkreuz() {
         let src = include_str!("canvas.rs");
-        let i = src.find("draw_sheet(app, &painter, rect, view_now, snapped);").unwrap();
+        let i = src
+            .find("draw_sheet(app, &painter, rect, view_now, snapped);")
+            .unwrap();
         let rest = &src[i..];
-        let abschnitt = &rest[..rest.find("} else {").expect("Blatt-Zweig nicht gefunden")];
+        let blatt = &rest[..rest.find("} else {").expect("Blatt-Zweig nicht gefunden")];
         assert!(
-            abschnitt.contains("draw_fadenkreuz(&painter, rect, ui.ctx().pointer_hover_pos())"),
-            "Blatt-Zweig zeichnet das Fadenkreuz nicht mehr"
+            blatt.contains("draw_cursor(app, ui, &painter, rect, view_now, snapped, raw_world)"),
+            "Blatt-Zweig zeichnet den Zeiger nicht über draw_cursor"
         );
-        let j = src.find("draw_fadenkreuz(p, rect, Some(pos));").unwrap();
-        assert!(j > 0, "Zeichenmodus zeichnet sein Fadenkreuz nicht mehr über draw_fadenkreuz");
+        let j = src.find("let dl = display_list(app);").unwrap();
+        let rest = &src[j..];
+        let modell = &rest[..rest.find("// Eingabe").expect("Zeichenmodus nicht gefunden")];
+        assert!(
+            modell.contains("draw_cursor(app, ui, &painter, rect, view_now, snapped, raw_world)"),
+            "Zeichenmodus zeichnet den Zeiger nicht über draw_cursor"
+        );
+        assert!(
+            src.contains("draw_fadenkreuz(p, rect, Some(pos));"),
+            "draw_cursor zeichnet das Fadenkreuz nicht mehr"
+        );
     }
+
 }
 
 fn draw_cursor(
@@ -1905,8 +1934,10 @@ fn handle_input(
         app.ui.typed.clear();
     }
 
-    if is_sheet {
-        sheet_input(app, resp, rect, view);
+    // Papierraum: Ansichtsfenster (auswählen, aufziehen, mit V verschieben)
+    // haben Vorrang vor der Objektbearbeitung — alles andere läuft wie im
+    // Modell über dieselben Werkzeuge.
+    if is_sheet && sheet_viewport_input(app, resp, rect, view) {
         return;
     }
 
@@ -2177,16 +2208,23 @@ fn fertig_erkennen(resp: &Response, zwei_klicks: bool, start_frame: f64, frame: 
     }
 }
 
-fn sheet_input(app: &mut App, resp: &Response, rect: Rect, view: View) {
+/// Ansichtsfenster im Papierraum: aufziehen, anklicken, mit `V` verschieben.
+///
+/// Liefert `true`, wenn der Klick/Zug hier verbraucht wurde. Papierraum-Objekte
+/// (Schriftfeld, Texte, eigene Linien) werden nicht angefasst — die laufen
+/// durch dieselbe Werkzeug- und Auswahlbehandlung wie im Modell.
+fn sheet_viewport_input(app: &mut App, resp: &Response, rect: Rect, view: View) -> bool {
     let Some(sid) = (match app.tab().tab {
         TabKind::Sheet(id) => Some(id),
         _ => None,
     }) else {
-        return;
+        return false;
     };
-    let Some(pos) = resp.ctx.pointer_hover_pos() else { return };
+    let Some(pos) = resp.ctx.pointer_hover_pos() else {
+        return false;
+    };
     if !rect.contains(pos) {
-        return;
+        return false;
     }
     let w = screen_to_world(rect, view, pos);
 
@@ -2199,7 +2237,11 @@ fn sheet_input(app: &mut App, resp: &Response, rect: Rect, view: View) {
                 if t.pts.len() >= 2 {
                     let (a, b) = (t.pts[0], t.pts[1]);
                     // auf das Blatt begrenzen und auf 0,5 mm runden
-                    let (sw, sh) = app.doc().sheet(sid).map(|s| s.size()).unwrap_or((420.0, 297.0));
+                    let (sw, sh) = app
+                        .doc()
+                        .sheet(sid)
+                        .map(|s| s.size())
+                        .unwrap_or((420.0, 297.0));
                     let mut x = a.x.min(b.x);
                     let mut y = a.y.min(b.y);
                     let mut ww = (a.x - b.x).abs();
@@ -2235,55 +2277,73 @@ fn sheet_input(app: &mut App, resp: &Response, rect: Rect, view: View) {
                     app.tool = Some(t);
                 }
             }
-            return;
+            return true;
         }
     }
 
-    // Auswahl per Klick
+    // Klick: Papierraum-Objekt hat Vorrang, sonst wird das Fenster gewählt
     if resp.clicked_by(egui::PointerButton::Primary) {
-        let vps: Vec<(Id, f64, f64, f64, f64)> = app
-            .doc()
-            .sheet(sid)
-            .map(|s| {
-                s.viewports
-                    .iter()
-                    .map(|v| (v.id, v.x, v.y, v.w, v.h))
-                    .collect()
-            })
-            .unwrap_or_default();
-        let mut hit = None;
-        for (id, x, y, vw, vh) in vps {
-            if w.x >= x && w.x <= x + vw && w.y >= y && w.y <= y + vh {
-                hit = Some(id);
-            }
-        }
-        app.tab_mut().selected_viewport = hit;
-    }
-
-    // Verschieben nur mit aktivem Verschieben-Werkzeug (V)
-    let move_tool = app.tool_id() == Some("modify.move");
-    if move_tool && resp.drag_started_by(egui::PointerButton::Primary) {
-        if app.tab().selected_viewport.is_some() {
-            let snap = app.doc().clone();
-            app.session_mut().history.record(&snap);
-        }
-    }
-    if move_tool && resp.dragged_by(egui::PointerButton::Primary) {
-        if let Some(vid) = app.tab().selected_viewport {
-            let d = resp.drag_delta();
-            let dx = d.x as f64 / view.zoom;
-            let dy = -d.y as f64 / view.zoom;
-            if let Some(sheet) = app.doc_mut().sheet_mut(sid) {
-                if let Some(vp) = sheet.viewports.iter_mut().find(|v| v.id == vid) {
-                    vp.x = ((vp.x + dx) * 2.0).round() / 2.0;
-                    vp.y = ((vp.y + dy) * 2.0).round() / 2.0;
+        let tol = (8.0 / view.zoom).max(0.5);
+        let objekt = snap::hit_test(app.doc(), w, tol, None);
+        if objekt.is_none() {
+            let vps: Vec<(Id, f64, f64, f64, f64)> = app
+                .doc()
+                .sheet(sid)
+                .map(|s| {
+                    s.viewports
+                        .iter()
+                        .map(|v| (v.id, v.x, v.y, v.w, v.h))
+                        .collect()
+                })
+                .unwrap_or_default();
+            let mut hit = None;
+            for (id, x, y, vw, vh) in vps {
+                if w.x >= x && w.x <= x + vw && w.y >= y && w.y <= y + vh {
+                    hit = Some(id);
                 }
             }
-            app.mark_changed();
+            if hit.is_some() {
+                app.tab_mut().selected_viewport = hit;
+                app.session_mut().clear_selection();
+            } else {
+                // Klick auf freies Papier: Fensterauswahl aufheben, damit
+                // Werkzeuge und Objektauswahl wieder greifen.
+                app.tab_mut().selected_viewport = None;
+            }
+        } else {
+            app.tab_mut().selected_viewport = None;
         }
     }
-}
 
+    // Verschieben nur mit aktivem Verschieben-Werkzeug (V) und ohne Objektauswahl
+    let move_tool = app.tool_id() == Some("modify.move");
+    let fenster_gewaehlt = app.tab().selected_viewport.is_some();
+    if move_tool && fenster_gewaehlt && app.selection().is_empty() {
+        if resp.drag_started_by(egui::PointerButton::Primary) {
+            let snapshot = app.doc().clone();
+            app.session_mut().history.record(&snapshot);
+        }
+        if resp.dragged_by(egui::PointerButton::Primary) {
+            if let Some(vid) = app.tab().selected_viewport {
+                let d = resp.drag_delta();
+                let dx = d.x as f64 / view.zoom;
+                let dy = -d.y as f64 / view.zoom;
+                if let Some(sheet) = app.doc_mut().sheet_mut(sid) {
+                    if let Some(vp) = sheet.viewports.iter_mut().find(|v| v.id == vid) {
+                        vp.x = ((vp.x + dx) * 2.0).round() / 2.0;
+                        vp.y = ((vp.y + dy) * 2.0).round() / 2.0;
+                    }
+                }
+                app.mark_changed();
+            }
+        }
+        // Klicks nicht an die Werkzeuge weitergeben, solange das Fenster steht
+        if resp.clicked_by(egui::PointerButton::Primary) || resp.dragged_by(egui::PointerButton::Primary) {
+            return true;
+        }
+    }
+    false
+}
 
 // ---------------------------------------------------------------------------
 // Vorschau vor dem Platzieren (Block oder Zwischenablage)
@@ -2292,6 +2352,24 @@ fn sheet_input(app: &mut App, resp: &Response, rect: Rect, view: View) {
 // ---------------------------------------------------------------------------
 // Griffe zum direkten Bearbeiten
 // ---------------------------------------------------------------------------
+
+/// Auswahlfenster (blau = Fenster, grün = Querfenster). Beide Räume benutzen
+/// dieselbe Darstellung.
+fn draw_auswahlfenster(p: &Painter, rect: Rect, view: View, start: V2, cur: V2) {
+    let r = Rect::from_two_pos(world_to_screen(rect, view, start), world_to_screen(rect, view, cur));
+    let crossing = cur.x < start.x;
+    let fill = if crossing {
+        Color32::from_rgba_unmultiplied(0x5A, 0xB5, 0x82, 34)
+    } else {
+        Color32::from_rgba_unmultiplied(0x2F, 0x8C, 0xF0, 34)
+    };
+    p.rect_filled(r, 0.0, fill);
+    p.rect_stroke(
+        r,
+        0.0,
+        Stroke::new(1.2, if crossing { Palette::OK } else { Palette::SELECT }),
+    );
+}
 
 fn draw_grips(app: &App, p: &Painter, rect: Rect, view: View, selected: &[Id]) {
     if selected.is_empty() || selected.len() > 60 {
@@ -4862,5 +4940,84 @@ mod tests_fang_griff {
             })
             .expect("Polylinie in der Datei");
         assert_punkt(geladen, V2::new(2000.0, 3000.0));
+    }
+}
+
+/// Papierraum der Druckvorschau (Ticket T0004): Zeichnen und Ändern laufen im
+/// Blatt über dieselben Werkzeuge wie im Modell.
+#[cfg(test)]
+mod tests_papierraum {
+    use super::*;
+
+    fn app_im_papierraum() -> App {
+        let mut app = App::with_ctx(egui::Context::default());
+        let sid = app.doc().sheets[0].id;
+        app.tab_mut().tab = TabKind::Sheet(sid);
+        app.sync_space();
+        app
+    }
+
+    /// Gerade gezeichnete Linie gehört dem Blatt, nicht der Zeichnung.
+    #[test]
+    fn linie_im_blatt_landet_im_papierraum() {
+        let mut app = app_im_papierraum();
+        assert!(app.im_papierraum(), "Reiter Blatt muss Papierraum sein");
+        let vorher = app.doc().space_sheet().unwrap().entities.len();
+
+        app.start_tool("draw.line");
+        tool_click(&mut app, V2::new(20.0, 20.0));
+        tool_click(&mut app, V2::new(120.0, 20.0));
+
+        assert!(
+            app.doc().entities.is_empty(),
+            "Modell darf durch Blattzeichnen leer bleiben"
+        );
+        let sheet = app.doc().space_sheet().unwrap();
+        assert_eq!(sheet.entities.len(), vorher + 1, "eine Linie im Blatt");
+        let neu = sheet
+            .entities
+            .iter()
+            .rev()
+            .find(|e| matches!(e.kind, EntityKind::Line { .. }))
+            .unwrap();
+        match &neu.kind {
+            EntityKind::Line { a, b } => {
+                assert!((a.x - 20.0).abs() < 1e-6, "{a:?}");
+                assert!((b.x - 120.0).abs() < 1e-6, "{b:?}");
+            }
+            other => panic!("keine Linie: {other:?}"),
+        }
+    }
+
+    /// Texthöhe im Blatt in Blatt-Millimetern, nicht die Modell-Vorgabe.
+    #[test]
+    fn texthoehe_im_blatt_ist_in_millimetern() {
+        let app = app_im_papierraum();
+        assert!((app.options.text_height - 2.5).abs() < 1e-9, "{}", app.options.text_height);
+    }
+
+    /// Der Wechsel zurück ins Modell räumt Werkzeug und Auswahl ab.
+    #[test]
+    fn wechsel_ins_modell_leert_auswahl() {
+        let mut app = app_im_papierraum();
+        let feld = app.doc().sheets[0]
+            .entities
+            .iter()
+            .find(|e| matches!(e.kind, EntityKind::Text { .. }))
+            .map(|e| e.id)
+            .unwrap();
+        app.session_mut().selection = vec![feld];
+        app.start_tool("draw.line");
+
+        app.tab_mut().tab = TabKind::Model;
+        app.sync_space();
+
+        assert!(!app.im_papierraum());
+        assert!(app.selection().is_empty(), "Auswahl gehört zum Raum");
+        assert!(app.tool.is_none(), "Werkzeug wird beim Raumwechsel beendet");
+        assert!(
+            (app.options.text_height - app.doc().settings.text_height).abs() < 1e-9,
+            "Modell-Texthöhe muss zurückkommen"
+        );
     }
 }

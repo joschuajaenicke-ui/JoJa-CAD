@@ -529,7 +529,8 @@ pub fn export_model_pdf(doc: &Document, path: &Path, paper: PaperSize) -> Result
     } else {
         (100.0, Vec2::ZERO)
     };
-    let ctx = render::RenderCtx::with_scale(doc, scale);
+    // Modellseite: immer die Zeichnung, auch wenn gerade ein Blatt offen ist.
+    let ctx = render::RenderCtx::model_scaled(doc, scale);
     let dl = render::render_document(&ctx);
     let mut c = Content::new();
     c.fill_color(Color::rgb(255, 255, 255));

@@ -167,6 +167,10 @@ Mit dem Nutzer abgestimmt — nicht „verbessern“:
 - **Auswahl** färbt nur blau ein — kein zusätzlicher Auswahlrahmen.
 - **Raster-Chip** schaltet Anzeige *und* Rasterfang gemeinsam.
 - **Ansichtsfenster** wie Rechtecke, beweglich nur mit `V`, exakte Eingabe X/Y/B/H.
+- **Druckvorschau = Papierraum**: gleiche Werkzeuge wie im Modell. Der Bearbeitungsraum
+  steckt in `Document::space` (`None` = Modell, `Some(Blatt)` = Papierraum); alle Actions
+  laufen über `doc.ents()`/`doc.ents_mut()`. Schriftfeld/Plankopf sind normale Linien und
+  Textfelder in `sheet.entities` und damit auswählbar und bearbeitbar.
 - **Mauszeiger** ist ein durchgehendes Fadenkreuz bis zum Bildschirmrand.
 - **Einfügen** (Block/Zwischenablage): Vorschau oben rechts am Zeiger, `R` dreht,
   `S` spiegelt, Klick bestätigt.

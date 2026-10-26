@@ -344,7 +344,7 @@ pub fn render_model_pixmap(doc: &Document, opts: &RasterOptions) -> Result<Pixma
         oy: bbox.max.y * k + (h as f64 - bbox.height() * k) * 0.5,
     };
     let annot = opts.annot_scale.unwrap_or(doc.settings.annotation_scale);
-    let ctx = crate::render::RenderCtx::with_scale(doc, annot);
+    let ctx = crate::render::RenderCtx::model_scaled(doc, annot);
     let dl = crate::render::render_document(&ctx);
     // Papier-mm pro Pixel
     let paper_px = k * annot;
