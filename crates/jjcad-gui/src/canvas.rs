@@ -3281,9 +3281,11 @@ mod tests {
         assert_eq!(ecken(&app).len(), 3, "Doppelklick zählt keine Ecke");
     }
 
-    /// ESC verwirft: kein Objekt, Werkzeug beendet.
+    /// Abbrechen verwirft: kein Objekt, Werkzeug beendet. (Der harte Abbruch
+    /// liegt im Modus „Punkte setzen" auf Entf/Backspace — ESC bestätigt, siehe
+    /// `tests_tasten_punktfolge`.)
     #[test]
-    fn esc_verwirft_den_umriss() {
+    fn abbrechen_verwirft_den_umriss() {
         let mut app = app();
         app.start_tool("draw.fill.boundary");
         tool_click(&mut app, V2::new(0.0, 0.0));
@@ -3977,5 +3979,234 @@ mod tests_werkzeug_bleibt_aktiv {
         tool_click(&mut app, V2::new(2000.0, 0.0));
         tool_click(&mut app, V2::new(3000.0, 1000.0));
         assert_eq!(polylinien(&app).len(), 1, "ohne Werkzeug entsteht nichts");
+    }
+}
+
+#[cfg(test)]
+mod tests_tasten_punktfolge {
+    //! Tasten im Modus „Punkte setzen" (Karte t_d72aabf3).
+    //!
+    //! Füllflächen und Schraffuren laufen über dieselben Action-IDs
+    //! (`draw.fill.points`, `draw.fill.boundary`, alter Name `draw.hatch`); der
+    //! Unterschied ist nur das Muster in den Werkzeugoptionen. Enter und ESC
+    //! bestätigen die Punktfolge, Entf und Backspace brechen ab.
+    //!
+    //! Geprüft wird mit echten Tastendrücken durch die volle Oberfläche
+    //! (`app.ui`) — ein direkter Aufruf von `finish_tool` würde die
+    //! Tastenverdrahtung nicht belegen — und an den Objekten im Dokument, nie
+    //! an der Vorschau.
+
+    use super::*;
+    use jjcad_core::style::FillPattern;
+
+    fn app() -> App {
+        App::with_ctx(egui::Context::default())
+    }
+
+    /// Ein Frame mit genau einem Tastendruck, wie ihn das laufende Programm
+    /// bekommt (ohne Zeiger, ohne Fenster).
+    fn taste(app: &mut App, key: egui::Key) {
+        let ctx = app.ctx.clone();
+        let input = egui::RawInput {
+            screen_rect: Some(Rect::from_min_size(Pos2::ZERO, Vec2::new(1500.0, 950.0))),
+            events: vec![egui::Event::Key {
+                key,
+                physical_key: None,
+                pressed: true,
+                repeat: false,
+                modifiers: egui::Modifiers::NONE,
+            }],
+            ..Default::default()
+        };
+        let _ = ctx.run(input, |ctx| app.ui(ctx));
+    }
+
+    /// Drei Klicks: Dreieck 2 m × 1 m (1 m²) — Werkzeug läuft danach noch.
+    fn dreieck(app: &mut App) {
+        tool_click(app, V2::new(0.0, 0.0));
+        tool_click(app, V2::new(2000.0, 0.0));
+        tool_click(app, V2::new(0.0, 1000.0));
+    }
+
+    /// Muster der angelegten Füllflächen.
+    fn muster(app: &App) -> Vec<FillPattern> {
+        app.doc()
+            .entities
+            .iter()
+            .filter_map(|e| match &e.kind {
+                EntityKind::Fill { pattern, .. } => Some(*pattern),
+                _ => None,
+            })
+            .collect()
+    }
+
+    /// Ein Durchlauf für ein Muster und eine Taste: (Objekte, Werkzeug läuft).
+    fn ergebnis(pattern: FillPattern, key: egui::Key) -> (usize, bool) {
+        let mut app = app();
+        app.options.fill_pattern = pattern;
+        app.start_tool("draw.fill.points");
+        dreieck(&mut app);
+        taste(&mut app, key);
+        (app.doc().entities.len(), app.tool.is_some())
+    }
+
+    #[test]
+    fn enter_bestaetigt_fuellflaeche() {
+        let mut app = app();
+        app.options.fill_pattern = FillPattern::Solid;
+        app.start_tool("draw.fill.points");
+        dreieck(&mut app);
+        taste(&mut app, egui::Key::Enter);
+        assert_eq!(app.doc().entities.len(), 1, "Enter legt die Fläche an");
+        assert!(app.tool.is_none(), "Enter beendet das Werkzeug");
+        assert_eq!(muster(&app), vec![FillPattern::Solid]);
+    }
+
+    /// Kern der Karte: ESC bestätigt, statt zu verwerfen.
+    #[test]
+    fn esc_bestaetigt_fuellflaeche() {
+        let mut app = app();
+        app.options.fill_pattern = FillPattern::Solid;
+        app.start_tool("draw.fill.points");
+        dreieck(&mut app);
+        taste(&mut app, egui::Key::Escape);
+
+        assert_eq!(app.doc().entities.len(), 1, "ESC legt die Fläche an");
+        assert!(app.tool.is_none(), "ESC beendet das Werkzeug");
+        let ecken = match &app.doc().entities[0].kind {
+            EntityKind::Fill { boundary, .. } => boundary.len(),
+            _ => panic!("kein Fill angelegt"),
+        };
+        assert_eq!(ecken, 3, "drei Eckpunkte, keine vierte Ecke");
+    }
+
+    /// Schraffur ist dasselbe Werkzeug mit anderem Muster — ESC bestätigt auch
+    /// dort und das Muster kommt aus den Werkzeugoptionen.
+    #[test]
+    fn esc_bestaetigt_schraffur() {
+        let mut app = app();
+        app.options.fill_pattern = FillPattern::Lines;
+        app.start_tool("draw.fill.points");
+        dreieck(&mut app);
+        taste(&mut app, egui::Key::Escape);
+
+        assert_eq!(app.doc().entities.len(), 1, "ESC legt die Schraffur an");
+        assert!(app.tool.is_none());
+        assert_eq!(muster(&app), vec![FillPattern::Lines], "Schraffur 45°");
+    }
+
+    /// Umriss-Modus (`draw.fill.boundary`) ist dieselbe Punktfolge — ESC
+    /// bestätigt dort genauso.
+    #[test]
+    fn esc_bestaetigt_den_umriss_modus() {
+        let mut app = app();
+        app.start_tool("draw.fill.boundary");
+        dreieck(&mut app);
+        taste(&mut app, egui::Key::Escape);
+        assert_eq!(app.doc().entities.len(), 1);
+        assert!(app.tool.is_none());
+    }
+
+    /// Entf und Backspace brechen ab — ohne Objekt, Werkzeug beendet.
+    #[test]
+    fn entf_und_backspace_brechen_ab() {
+        for (key, name) in [
+            (egui::Key::Delete, "Entf"),
+            (egui::Key::Backspace, "Backspace"),
+        ] {
+            let mut app = app();
+            app.start_tool("draw.fill.points");
+            dreieck(&mut app);
+            taste(&mut app, key);
+            assert!(app.doc().entities.is_empty(), "{name}: nichts angelegt");
+            assert!(app.tool.is_none(), "{name}: Werkzeug beendet");
+        }
+    }
+
+    /// Schraffur und Füllfläche verhalten sich in allen vier Tasten gleich:
+    /// Enter/ESC legen genau eine Fläche an, Entf/Backspace keine.
+    #[test]
+    fn schraffur_verhaelt_sich_wie_fuellflaeche() {
+        let faelle = [
+            (egui::Key::Enter, "Enter", (1usize, false)),
+            (egui::Key::Escape, "ESC", (1, false)),
+            (egui::Key::Delete, "Entf", (0, false)),
+            (egui::Key::Backspace, "Backspace", (0, false)),
+        ];
+        for (key, name, soll) in faelle {
+            let flaeche = ergebnis(FillPattern::Solid, key);
+            let schraffur = ergebnis(FillPattern::Lines, key);
+            assert_eq!(flaeche, schraffur, "{name}: Schraffur wie Füllfläche");
+            assert_eq!(flaeche, soll, "{name}: erwartetes Ergebnis");
+        }
+    }
+
+    /// Eine unfertige Punktfolge (ein Punkt) wird von ESC weiterhin verworfen —
+    /// ohne mindestens zwei Punkte gibt es nichts zu bestätigen.
+    #[test]
+    fn esc_verwirft_einen_einzelnen_punkt() {
+        let mut app = app();
+        app.start_tool("draw.fill.points");
+        tool_click(&mut app, V2::new(0.0, 0.0));
+        taste(&mut app, egui::Key::Escape);
+        assert!(app.tool.is_none(), "ESC beendet das Werkzeug");
+        assert!(app.doc().entities.is_empty());
+    }
+
+    /// Zwei Punkte reichen für keine Fläche: ESC versucht den Abschluss (wie
+    /// Enter), die Punkte bleiben für weitere Klicks stehen.
+    #[test]
+    fn esc_bei_zwei_punkten_behaelt_die_punkte() {
+        let mut app = app();
+        app.start_tool("draw.fill.points");
+        tool_click(&mut app, V2::new(0.0, 0.0));
+        tool_click(&mut app, V2::new(2000.0, 0.0));
+        taste(&mut app, egui::Key::Escape);
+        assert!(app.doc().entities.is_empty(), "keine Fläche aus zwei Punkten");
+        assert_eq!(
+            app.tool.as_ref().map(|t| t.pts.len()),
+            Some(2),
+            "die gesetzten Punkte bleiben erhalten"
+        );
+    }
+
+    /// Backspace gehört der Tippeingabe, solange eine Zahl im Puffer steht —
+    /// dann bricht es das Werkzeug nicht ab.
+    #[test]
+    fn backspace_loescht_getippte_zahl_statt_abzubrechen() {
+        let mut app = app();
+        app.start_tool("draw.fill.points");
+        dreieck(&mut app);
+        app.ui.typed = "12".into();
+        taste(&mut app, egui::Key::Backspace);
+        assert!(app.tool.is_some(), "Werkzeug läuft weiter");
+        assert!(app.doc().entities.is_empty(), "nichts angelegt");
+        assert_eq!(app.ui.typed, "1", "Backspace löscht die getippte Ziffer");
+    }
+
+    /// Polylinie bleibt unverändert: ESC schließt ab (wie bisher).
+    #[test]
+    fn polylinie_bestaetigt_mit_esc_wie_bisher() {
+        let mut app = app();
+        app.start_tool("draw.polyline");
+        dreieck(&mut app);
+        taste(&mut app, egui::Key::Escape);
+        assert_eq!(app.doc().entities.len(), 1, "ESC schließt die Polylinie ab");
+        match &app.doc().entities[0].kind {
+            EntityKind::Polyline { verts, .. } => assert_eq!(verts.len(), 3),
+            _ => panic!("keine Polylinie angelegt"),
+        }
+        assert!(app.tool.is_none());
+    }
+
+    /// Wand bleibt unverändert: ESC bricht ab, es entsteht keine Wand.
+    #[test]
+    fn wand_bricht_mit_esc_ab_wie_bisher() {
+        let mut app = app();
+        app.start_tool("draw.wall");
+        tool_click(&mut app, V2::new(0.0, 0.0));
+        taste(&mut app, egui::Key::Escape);
+        assert!(app.doc().entities.is_empty(), "keine Wand angelegt");
+        assert!(app.tool.is_none(), "ESC beendet das Wandwerkzeug");
     }
 }
