@@ -2653,6 +2653,30 @@ pub fn rotate_step(pts: &[V2], w: V2) -> RotateStep {
     }
 }
 
+/// Werkzeug nach einem fertigen Objekt für das nächste bereit machen.
+///
+/// Zwei-Klick-Werkzeuge (Rechteck, Kreis, Ellipse) bleiben nach dem Anlegen
+/// aktiv: der Punktpuffer wird geleert, die Action bleibt dieselbe. Damit
+/// entsteht das nächste Objekt ohne erneutes Auswählen des Werkzeugs, und es
+/// bleibt kein Restzustand (Startpunkt, Vorschau) vom vorherigen Objekt zurück
+/// — die Vorschau hängt an `pts` und zeichnet bei leerem Puffer nichts.
+/// Der Hinweis kommt aus dem Action-Register, damit Statusleiste und Start
+/// über Ribbon/Hotbar/Taste dasselbe sagen. Beendet wird weiterhin mit ESC,
+/// Werkzeugwechsel oder Rechtsklick (`cancel_tool`).
+fn restart_tool(app: &mut App, action: &str) {
+    app.tool = Some(Tool {
+        action: action.to_string(),
+        pts: Vec::new(),
+        selecting: false,
+        phase: ToolPhase::Collecting,
+    });
+    if let Some(def) = actions::action(action) {
+        app.status_msg = def.hint.to_string();
+    }
+    // Tippepuffer (Länge/Koordinaten) gehört zum vorigen Objekt.
+    app.ui.typed.clear();
+}
+
 fn tool_click(app: &mut App, w: V2) {
     tool_click_at(app, w, w);
 }
@@ -2748,6 +2772,11 @@ fn tool_click_at(app: &mut App, w: V2, raw: V2) {
                 app.tool = Some(tool);
             }
         }
+        // Rechteck, Kreis und Ellipse brauchen zwei Klicks. Nach dem Anlegen
+        // bleibt das Werkzeug aktiv (nächster Startpunkt, leerer Puffer),
+        // damit mehrere Objekte nacheinander entstehen. Ein unbrauchbarer
+        // zweiter Klick (gleiche x- oder y-Lage, Radius null) legt nichts an
+        // und behält den Startpunkt — der nächste Klick zählt als zweiter.
         "draw.rect" => {
             if tool.pts.is_empty() {
                 tool.pts.push(w);
@@ -2756,13 +2785,11 @@ fn tool_click_at(app: &mut App, w: V2, raw: V2) {
                 let a = tool.pts[0];
                 let b = w;
                 if a.x != b.x && a.y != b.y {
-                    let _ = run(
-                        app,
-                        "draw.rect",
-                        json!({"a": ax(a), "b": ax(b)}),
-                    );
+                    let ok = run(app, "draw.rect", json!({"a": ax(a), "b": ax(b)}));
+                    if ok {
+                        restart_tool(app, "draw.rect");
+                    }
                 }
-                app.tool = None;
             }
         }
         "draw.circle" => {
@@ -2773,13 +2800,11 @@ fn tool_click_at(app: &mut App, w: V2, raw: V2) {
                 let c = tool.pts[0];
                 let r = c.dist(w);
                 if r > 0.5 {
-                    let _ = run(
-                        app,
-                        "draw.circle",
-                        json!({"c": ax(c), "r": unit.from_mm(r)}),
-                    );
+                    let ok = run(app, "draw.circle", json!({"c": ax(c), "r": unit.from_mm(r)}));
+                    if ok {
+                        restart_tool(app, "draw.circle");
+                    }
                 }
-                app.tool = None;
             }
         }
         "draw.ellipse" => {
@@ -2790,12 +2815,14 @@ fn tool_click_at(app: &mut App, w: V2, raw: V2) {
                 let c = tool.pts[0];
                 let rx = (w.x - c.x).abs().max(1.0);
                 let ry = (w.y - c.y).abs().max(1.0);
-                let _ = run(
+                let ok = run(
                     app,
                     "draw.ellipse",
                     json!({"c": ax(c), "rx": unit.from_mm(rx), "ry": unit.from_mm(ry)}),
                 );
-                app.tool = None;
+                if ok {
+                    restart_tool(app, "draw.ellipse");
+                }
             }
         }
         "draw.arc" => {
@@ -3786,5 +3813,169 @@ mod tests_umrandung {
             unreachable!()
         };
         assert!(*border, "Farbeimer mit Checkbox: Umrandung gesetzt");
+    }
+}
+
+#[cfg(test)]
+mod tests_werkzeug_bleibt_aktiv {
+    //! Zeichenwerkzeug bleibt nach dem Objekt aktiv (t_ee4e8d3b).
+    //!
+    //! Rechteck, Kreis und Ellipse brauchen zwei Klicks. Nach dem Anlegen muss
+    //! dasselbe Werkzeug sofort wieder bereitstehen (leerer Punktpuffer), damit
+    //! mehrere Objekte nacheinander ohne erneutes Auswählen entstehen. Geprüft
+    //! wird über den Klickpfad `tool_click` — denselben Weg, den die Maus geht —
+    //! und an den erzeugten Objekten im Dokument, nicht an der Vorschau.
+
+    use super::*;
+
+    fn app() -> App {
+        App::with_ctx(egui::Context::default())
+    }
+
+    /// Geschlossene Polylinien (Rechtecke) mit ihren Ecken.
+    fn polylinien(app: &App) -> Vec<Vec<V2>> {
+        app.doc()
+            .entities
+            .iter()
+            .filter_map(|e| match &e.kind {
+                EntityKind::Polyline { verts, .. } => Some(verts.iter().map(|v| v.p).collect()),
+                _ => None,
+            })
+            .collect()
+    }
+
+    /// Kreise als (Mittelpunkt, Radius).
+    fn kreise(app: &App) -> Vec<(V2, f64)> {
+        app.doc()
+            .entities
+            .iter()
+            .filter_map(|e| match &e.kind {
+                EntityKind::Circle { c, r } => Some((*c, *r)),
+                _ => None,
+            })
+            .collect()
+    }
+
+    /// Ellipsen als (Mittelpunkt, rx, ry).
+    fn ellipsen(app: &App) -> Vec<(V2, f64, f64)> {
+        app.doc()
+            .entities
+            .iter()
+            .filter_map(|e| match &e.kind {
+                EntityKind::Ellipse { c, rx, ry, .. } => Some((*c, *rx, *ry)),
+                _ => None,
+            })
+            .collect()
+    }
+
+    /// Zwei Rechtecke nacheinander — das zweite ohne erneutes `start_tool`.
+    #[test]
+    fn zwei_rechtecke_ohne_erneutes_auswaehlen() {
+        let mut app = app();
+        app.start_tool("draw.rect");
+        tool_click(&mut app, V2::new(0.0, 0.0));
+        tool_click(&mut app, V2::new(2000.0, 1000.0));
+
+        assert_eq!(polylinien(&app).len(), 1, "erstes Rechteck angelegt");
+        assert_eq!(app.tool_id(), Some("draw.rect"), "Werkzeug bleibt aktiv");
+        assert!(
+            app.tool.as_ref().unwrap().pts.is_empty(),
+            "kein Restzustand: der Startpunkt des ersten Rechtecks ist verworfen"
+        );
+
+        // zweites Rechteck, ohne das Werkzeug neu zu wählen
+        tool_click(&mut app, V2::new(3000.0, 0.0));
+        tool_click(&mut app, V2::new(4000.0, 500.0));
+
+        let alle = polylinien(&app);
+        assert_eq!(alle.len(), 2, "zweites Rechteck angelegt");
+        assert_eq!(
+            alle[1],
+            vec![
+                V2::new(3000.0, 0.0),
+                V2::new(4000.0, 0.0),
+                V2::new(4000.0, 500.0),
+                V2::new(3000.0, 500.0),
+            ],
+            "Ecken des zweiten Rechtecks stammen aus den neuen Klicks"
+        );
+        assert_eq!(app.tool_id(), Some("draw.rect"), "nach dem zweiten weiter aktiv");
+        assert!(app.tool.as_ref().unwrap().pts.is_empty());
+    }
+
+    /// Zwei Kreise nacheinander, jeweils mit eigenem Mittelpunkt und Radius.
+    #[test]
+    fn zwei_kreise_ohne_erneutes_auswaehlen() {
+        let mut app = app();
+        app.start_tool("draw.circle");
+        tool_click(&mut app, V2::new(0.0, 0.0));
+        tool_click(&mut app, V2::new(1000.0, 0.0));
+
+        assert_eq!(kreise(&app).len(), 1, "erster Kreis angelegt");
+        assert_eq!(app.tool_id(), Some("draw.circle"), "Werkzeug bleibt aktiv");
+        assert!(app.tool.as_ref().unwrap().pts.is_empty());
+
+        tool_click(&mut app, V2::new(5000.0, 0.0));
+        tool_click(&mut app, V2::new(5500.0, 0.0));
+
+        let alle = kreise(&app);
+        assert_eq!(alle.len(), 2, "zweiter Kreis angelegt");
+        assert!((alle[0].1 - 1000.0).abs() < 1e-6, "Radius 1: {}", alle[0].1);
+        assert_eq!(alle[1].0, V2::new(5000.0, 0.0), "neuer Mittelpunkt");
+        assert!((alle[1].1 - 500.0).abs() < 1e-6, "Radius 2: {}", alle[1].1);
+        assert_eq!(app.tool_id(), Some("draw.circle"));
+    }
+
+    /// Ellipse verhält sich gleich (gleiche Zwei-Klick-Klasse).
+    #[test]
+    fn zwei_ellipsen_ohne_erneutes_auswaehlen() {
+        let mut app = app();
+        app.start_tool("draw.ellipse");
+        tool_click(&mut app, V2::new(0.0, 0.0));
+        tool_click(&mut app, V2::new(1000.0, 500.0));
+        tool_click(&mut app, V2::new(4000.0, 1000.0));
+        tool_click(&mut app, V2::new(4600.0, 1300.0));
+
+        let alle = ellipsen(&app);
+        assert_eq!(alle.len(), 2, "zwei Ellipsen");
+        assert!((alle[1].1 - 600.0).abs() < 1e-6, "rx: {}", alle[1].1);
+        assert!((alle[1].2 - 300.0).abs() < 1e-6, "ry: {}", alle[1].2);
+        assert_eq!(app.tool_id(), Some("draw.ellipse"));
+    }
+
+    /// Ein unbrauchbarer zweiter Klick legt kein Objekt an, behält aber den
+    /// Startpunkt — der nächste Klick zählt als zweiter.
+    #[test]
+    fn entarteter_zweiter_klick_behaelt_den_startpunkt() {
+        let mut app = app();
+        app.start_tool("draw.rect");
+        tool_click(&mut app, V2::new(0.0, 0.0));
+        tool_click(&mut app, V2::new(0.0, 1000.0)); // gleiche x-Lage → kein Rechteck
+
+        assert!(polylinien(&app).is_empty(), "kein entartetes Rechteck angelegt");
+        assert_eq!(app.tool_id(), Some("draw.rect"));
+        let pts = &app.tool.as_ref().unwrap().pts;
+        assert_eq!(pts.len(), 1, "Startpunkt bleibt stehen");
+        assert_eq!(pts[0], V2::new(0.0, 0.0));
+
+        tool_click(&mut app, V2::new(2000.0, 1000.0));
+        assert_eq!(polylinien(&app).len(), 1, "der nächste Klick ergänzt das Rechteck");
+    }
+
+    /// Beenden geht weiterhin — danach entsteht durch Klicks kein Objekt mehr.
+    #[test]
+    fn beenden_wirkt_weiterhin() {
+        let mut app = app();
+        app.start_tool("draw.rect");
+        tool_click(&mut app, V2::new(0.0, 0.0));
+        tool_click(&mut app, V2::new(1000.0, 1000.0));
+        assert_eq!(app.tool_id(), Some("draw.rect"));
+
+        app.cancel_tool();
+        assert!(app.tool.is_none(), "ESC/Abbrechen beendet das Werkzeug");
+
+        tool_click(&mut app, V2::new(2000.0, 0.0));
+        tool_click(&mut app, V2::new(3000.0, 1000.0));
+        assert_eq!(polylinien(&app).len(), 1, "ohne Werkzeug entsteht nichts");
     }
 }
