@@ -62,15 +62,22 @@ impl Session {
     pub fn execute(&mut self, action: &str, params: &Value) -> Result<Value, String> {
         let before = self.doc.clone();
         let result = actions::execute(&mut self.doc, action, params)?;
-        // Türen/Fenster folgen ihrer Wand (Verschieben, Verdicken, Drehen)
+        // Türen/Fenster folgen ihrer Wand (Verschieben, Verdicken, Drehen).
+        // Das gilt nur im Modell — im Papierraum gibt es keine Wände.
         if actions::is_mutating(action) {
             if matches!(
                 action,
                 "modify.move" | "modify.copy" | "modify.rotate" | "modify.scale" | "modify.mirror"
             ) {
+                let raum = self.doc.space;
+                self.doc.space = None;
                 actions::resync_openings(&mut self.doc);
+                self.doc.space = raum;
             }
+            let raum = self.doc.space;
+            self.doc.space = None;
             actions::reflow_openings(&mut self.doc);
+            self.doc.space = raum;
         }
         if actions::is_mutating(action) && !same_content(&before, &self.doc) {
             self.history.record(&before);
@@ -83,10 +90,25 @@ impl Session {
             self.last_action = Some(action.to_string());
             self.last_params = Some(params.clone());
         }
-        // Auswahl aufräumen
-        let ids: std::collections::HashSet<Id> = self.doc.entities.iter().map(|e| e.id).collect();
+        // Auswahl aufräumen (nur der aktive Raum zählt)
+        let ids: std::collections::HashSet<Id> = self.doc.ents().iter().map(|e| e.id).collect();
         self.selection.retain(|id| ids.contains(id));
         Ok(result)
+    }
+
+    /// Bearbeitungsraum: `None` = Modell, `Some(blatt)` = Papierraum.
+    pub fn space(&self) -> Option<Id> {
+        self.doc.space
+    }
+
+    /// Bearbeitungsraum wechseln. Die Auswahl gehört zum Raum und wird beim
+    /// Wechsel geleert — sonst stünde im Papierraum die Modellauswahl.
+    pub fn set_space(&mut self, space: Option<Id>) {
+        let vorher = self.doc.space;
+        self.doc.set_space(space);
+        if self.doc.space != vorher {
+            self.selection.clear();
+        }
     }
 
     pub fn undo(&mut self) -> bool {

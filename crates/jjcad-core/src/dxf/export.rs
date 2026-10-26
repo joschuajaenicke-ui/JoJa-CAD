@@ -313,7 +313,8 @@ fn write_entity(out: &mut W, doc: &Document, e: &Entity, block_ctx: Option<&str>
         }
         // Architektur, Bemaßung, Schraffur: über die Anzeigegeometrie exportieren
         _ => {
-            let ctx = render::RenderCtx::new(doc);
+            // DXF beschreibt die Zeichnung, nie den Papierraum
+            let ctx = render::RenderCtx::model(doc);
             let mut dl = render::DisplayList::default();
             render::render_entity(&ctx, e, Affine::IDENTITY, &mut dl, 0);
             for prim in dl.prims {

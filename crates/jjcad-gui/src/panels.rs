@@ -1096,12 +1096,12 @@ fn entity_props(app: &mut App, ui: &mut Ui, id: Id) {
     // eintippen, das Element wandert dorthin und alles andere rückt auf.
     let pos = app
         .doc()
-        .entities
+        .ents()
         .iter()
         .position(|x| x.id == id)
         .map(|i| i + 1)
         .unwrap_or(0);
-    let total = app.doc().entities.len();
+    let total = app.doc().ents().len();
     let mut wunsch = pos as i32;
     widgets::field_row(ui, "Reihenfolge", |ui| {
         if ui

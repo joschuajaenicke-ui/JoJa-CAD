@@ -107,9 +107,10 @@ pub fn title_block(w: f64, h: f64) -> Vec<Entity> {
     t.text(v(x0 + pad, cy - pad), "PLANINHALT", 1.8, false);
     t.text(v(x0 + pad, cy - 4.2), "{PLANTITEL}", 2.8, true);
 
-    // Planer / Büro
+    // Planer / Büro (Wert mit Abstand unter der Beschriftung — sonst kleben
+    // beide Zeilen bei kleinem Zoom aneinander)
     t.text(v(cx + pad, y1 - pad), "PLANUNG / BÜRO", 1.8, false);
-    t.text(v(cx + pad, y1 - 4.2), "{PLANER}", 2.4, false);
+    t.text(v(cx + pad, y1 - 7.0), "{PLANER}", 2.4, false);
     t.text(v(cx + pad, y0 + bh - 12.0), "GEPRÜFT / FREIGABE", 1.5, false);
 
     // Maßstab
@@ -120,13 +121,10 @@ pub fn title_block(w: f64, h: f64) -> Vec<Entity> {
     t.text(v(cx + pad, cy + 15.0 - 4.2), "{DATUM}", 2.6, false);
     // Plan-Nr
     t.text(v(cx + pad, cy - pad), "PLAN-NR.", 1.8, false);
-    t.text(v(nx + pad, y0 + 5.0), "{PLAN}", 4.4, true);
+    t.text(v(nx + pad, y0 + 7.0), "{PLAN}", 4.4, true);
     // Revision
     t.text(v(rx + 1.2, y1 - pad), "REV.", 1.5, false);
     t.text(v(rx + 1.2, y1 - 4.4), "{REVISION}", 2.2, false);
-
-    // Nordpfeil-Hinweis / Maßstabsbalken im Feld rechts oben
-    t.text(v(cx + pad, cy + 30.0 + 15.0 - 3.0), "{ADRESSE}", 0.0, false);
 
     t.ents
 }
@@ -146,7 +144,13 @@ pub fn new_sheet(doc: &mut Document, paper: PaperSize, landscape: bool, name: &s
         viewports: Vec::new(),
         entities: Vec::new(),
     };
+    // Schriftfeld besteht aus normalen Linien und Textfeldern — dieselben
+    // Objekte wie in der Zeichnung, nur im Papierraum. Eigene IDs aus dem
+    // Dokument, damit sie sich eindeutig auswählen und bearbeiten lassen.
     sheet.entities = title_block(w, h);
+    for e in sheet.entities.iter_mut() {
+        e.id = doc.new_id();
+    }
 
     // Ansichtsfenster über dem Schriftfeld
     let vp_x = 15.0;

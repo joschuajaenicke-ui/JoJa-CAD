@@ -86,5 +86,9 @@ pub fn same_content(a: &Document, b: &Document) -> bool {
     b.modified = false;
     a.path = None;
     b.path = None;
+    // Der Bearbeitungsraum (Modell/Papierraum) ist Bedienzustand, kein Inhalt:
+    // ein Wechsel darf keinen Undo-Schritt erzeugen.
+    a.space = None;
+    b.space = None;
     a == b
 }

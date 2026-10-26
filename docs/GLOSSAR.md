@@ -70,6 +70,8 @@ Steht rechts „nicht", dann ist das Wort im Projekt verpönt (auch in der Oberf
 | **Höhenkote** | Höhenangabe als Text mit Bezug (±0,00) | Höhenmaß, Kote |
 | **Ansichtsfenster** | Fenster auf dem Blatt, das einen Ausschnitt der Zeichnung zeigt | Viewport, Ansicht |
 | **Schriftfeld** | Rahmen mit Feldern für Plan-Nr., Maßstab, Bauherr | Titelblock, Plankopf |
+| **Papierraum** | Bearbeitungsebene eines Blatts (Druckvorschau); enthält Schriftfeld, Texte und eigene Blattelemente | Layout, Paper Space |
+| **Druckvorschau** | Ansicht des Blatts im Papierraum — zeichnen und ändern wie im Modell | Layout-Ansicht, Print Preview |
 | **Blatt** | Papierformat (A4 … A0) mit Schriftfeld | Layout, Seite |
 
 ## 5. Bedienoberfläche

@@ -215,7 +215,8 @@ fn snap_candidates_alle(
     // Objekt? Dann nur diskrete Punkte anbieten, keine kontinuierlichen Fänge.
     let area = BBox::new(cursor - v(tol, tol), cursor + v(tol, tol));
     let mut segs: Vec<(Seg, Id, bool)> = Vec::new();
-    for e in &doc.entities {
+    // Aktiver Bearbeitungsraum (Modell oder Papierraum)
+    for e in doc.ents() {
         if ignore.contains(&e.id) {
             continue;
         }
@@ -331,7 +332,7 @@ fn snap_candidates_alle(
 
     // Raster
     if s.grid {
-        let g = doc.settings.snap.grid_step;
+        let g = doc.grid_step();
         if g > 0.0 {
             let gp = cursor.snap_grid(g, Vec2::ZERO);
             consider(gp, SnapKind::Grid, None, gp.dist(cursor));
@@ -553,7 +554,8 @@ fn snap_constrained_alle(
 /// Trefferprüfung (Auswahl per Klick).
 pub fn hit_test(doc: &Document, p: Vec2, tol: f64, layer_filter: Option<&[Id]>) -> Option<Id> {
     let mut best: Option<(Id, f64, u8)> = None;
-    for e in doc.entities.iter().rev() {
+    // Treffer zählen im aktiven Raum — im Papierraum also Schriftfeld und Text
+    for e in doc.ents().iter().rev() {
         if let Some(l) = doc.layer(e.layer) {
             if !l.visible || l.locked {
                 continue;
@@ -648,7 +650,7 @@ fn seg_meets_rect(a: Vec2, b: Vec2, r: &BBox) -> bool {
 pub fn select_window(doc: &Document, a: Vec2, b: Vec2, crossing: bool) -> Vec<Id> {
     let rect = BBox::from_corners(a, b);
     let mut out = Vec::new();
-    for e in &doc.entities {
+    for e in doc.ents() {
         if let Some(l) = doc.layer(e.layer) {
             if !l.visible || l.locked {
                 continue;

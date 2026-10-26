@@ -790,6 +790,11 @@ pub struct Document {
     pub blocks: Vec<BlockDef>,
     #[serde(default)]
     pub entities: Vec<Entity>,
+    /// Bearbeitungsraum der Befehlsschicht: `None` = Modell, `Some(blatt)` =
+    /// Papierraum (Druckvorschau) dieses Blatts. Reiner Laufzeitzustand — wird
+    /// nicht gespeichert, nicht verglichen und nicht mitgeschrieben.
+    #[serde(skip)]
+    pub space: Option<Id>,
     #[serde(default)]
     pub sheets: Vec<Sheet>,
     #[serde(default)]
@@ -825,6 +830,7 @@ impl Document {
             current_layer: 0,
             blocks: Vec::new(),
             entities: Vec::new(),
+            space: None,
             sheets: Vec::new(),
             dim_style: DimStyle::default(),
             next_id: 1,
@@ -859,6 +865,7 @@ impl Document {
             current_layer: 0,
             blocks: Vec::new(),
             entities: Vec::new(),
+            space: None,
             sheets: Vec::new(),
             dim_style: DimStyle::default(),
             next_id: 1,
@@ -918,6 +925,59 @@ impl Document {
         self.sheets.iter_mut().find(|s| s.id == id)
     }
 
+    // ---- Bearbeitungsraum (Modell / Papierraum) ---------------------------
+    // Die Befehlsschicht arbeitet immer auf "den Objekten des aktiven Raums".
+    // Im Modell ist das `entities`, im Papierraum `sheets[..].entities`.
+    // Dadurch gilt jeder Befehl (Zeichnen, Ändern, Reihenfolge, Auswahl) in
+    // beiden Räumen gleich — ohne zweiten Weg an der Action-Schicht vorbei.
+
+    /// Objekte des aktiven Bearbeitungsraums.
+    pub fn ents(&self) -> &[Entity] {
+        match self.space.and_then(|sid| self.sheet(sid)) {
+            Some(s) => &s.entities,
+            None => &self.entities,
+        }
+    }
+
+    /// Objekte des aktiven Bearbeitungsraums, veränderbar.
+    pub fn ents_mut(&mut self) -> &mut Vec<Entity> {
+        let Some(sid) = self.space.filter(|sid| self.sheets.iter().any(|s| s.id == *sid)) else {
+            return &mut self.entities;
+        };
+        &mut self
+            .sheets
+            .iter_mut()
+            .find(|s| s.id == sid)
+            .expect("Blatt eben geprüft")
+            .entities
+    }
+
+    /// Blatt des aktiven Papierraums (None = Modell).
+    pub fn space_sheet(&self) -> Option<&Sheet> {
+        self.space.and_then(|sid| self.sheet(sid))
+    }
+
+    /// Bearbeitungsraum wechseln. Ein unbekanntes Blatt fällt auf das Modell
+    /// zurück — nie auf ein Blatt, das es nicht gibt.
+    pub fn set_space(&mut self, space: Option<Id>) {
+        self.space = space.filter(|sid| self.sheets.iter().any(|s| s.id == *sid));
+    }
+
+    /// Ist der Papierraum (Druckvorschau) der aktive Raum?
+    pub fn in_paper_space(&self) -> bool {
+        self.space_sheet().is_some()
+    }
+
+    /// Rasterweite des aktiven Raums in mm. Der Papierraum ist in Blatt-
+    /// Millimetern gezeichnet, dort ist 10 mm die brauchbare Rasterweite.
+    pub fn grid_step(&self) -> f64 {
+        if self.in_paper_space() {
+            10.0
+        } else {
+            self.settings.snap.grid_step
+        }
+    }
+
     pub fn add_entity(&mut self, mut e: Entity) -> Id {
         if e.id == 0 {
             e.id = self.new_id();
@@ -926,26 +986,26 @@ impl Document {
             e.layer = self.current_layer;
         }
         let id = e.id;
-        self.entities.push(e);
+        self.ents_mut().push(e);
         self.modified = true;
         id
     }
 
     pub fn remove_entity(&mut self, id: Id) -> Option<Entity> {
-        if let Some(pos) = self.entities.iter().position(|e| e.id == id) {
+        let ents = self.ents_mut();
+        let entfernt = ents.iter().position(|e| e.id == id).map(|pos| ents.remove(pos));
+        if entfernt.is_some() {
             self.modified = true;
-            Some(self.entities.remove(pos))
-        } else {
-            None
         }
+        entfernt
     }
 
     pub fn entity(&self, id: Id) -> Option<&Entity> {
-        self.entities.iter().find(|e| e.id == id)
+        self.ents().iter().find(|e| e.id == id)
     }
 
     pub fn entity_mut(&mut self, id: Id) -> Option<&mut Entity> {
-        self.entities.iter_mut().find(|e| e.id == id)
+        self.ents_mut().iter_mut().find(|e| e.id == id)
     }
 
     /// Alle sichtbaren Layer-IDs
