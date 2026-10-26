@@ -179,6 +179,19 @@ impl ToolOptions {
     }
 }
 
+/// Werkzeuge der Ribbon-Gruppe „Bearbeiten" im Reiter „Ändern".
+///
+/// „Auswählen" steht bewusst nicht in der Liste: Klicken auf der Zeichenfläche
+/// wählt ohnehin aus, der Knopf war ohne Funktion (t_2b62367d). Der Befehl
+/// `modify.select` bleibt für Tastatur, Inventar und MCP erhalten.
+pub const RIBBON_BEARBEITEN: [(&str, &str, &str); 5] = [
+    ("modify.move", "move", "Verschieben"),
+    ("modify.copy", "copy", "Kopieren"),
+    ("modify.rotate", "rotate", "Drehen"),
+    ("modify.mirror", "mirror", "Spiegeln"),
+    ("modify.scale", "scale", "Skalieren"),
+];
+
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub enum RibbonTab {
     Datei,
@@ -2120,14 +2133,7 @@ fn rail(ui: &mut egui::Ui, icon: &str, tooltip: &str, chevron: &str) -> bool {
                 }
                 RibbonTab::Aendern => {
                     self.group(ui, "Bearbeiten", |ui, app| {
-                        for (id, icon, label) in [
-                            ("modify.select", "select", "Auswählen"),
-                            ("modify.move", "move", "Verschieben"),
-                            ("modify.copy", "copy", "Kopieren"),
-                            ("modify.rotate", "rotate", "Drehen"),
-                            ("modify.mirror", "mirror", "Spiegeln"),
-                            ("modify.scale", "scale", "Skalieren"),
-                        ] {
+                        for (id, icon, label) in RIBBON_BEARBEITEN {
                             if widgets::ribbon_button(ui, icon, label, app.tool_id() == Some(id)).clicked() {
                                 app.start_tool(id);
                             }
@@ -3599,5 +3605,46 @@ mod tests_reihenfolge {
         app.order_pick_start(false);
         assert_eq!(app.ui.order_pick, Some(false));
         assert!(app.status_msg.contains("HINTER"), "{}", app.status_msg);
+    }
+}
+
+mod tests_ribbon_bearbeiten {
+    //! Der Reiter „Ändern" bietet kein „Auswählen" mehr an (t_2b62367d):
+    //! Klicken auf der Zeichenfläche wählt ohnehin aus. Die übrigen Werkzeuge
+    //! der Gruppe bleiben unverändert, und der Befehl selbst bleibt für
+    //! Tastatur, Inventar und MCP erreichbar.
+
+    use super::RIBBON_BEARBEITEN;
+
+    #[test]
+    fn auswaehlen_ist_nicht_im_ribbon() {
+        let ids: Vec<&str> = RIBBON_BEARBEITEN.iter().map(|(id, _, _)| *id).collect();
+        assert!(
+            !ids.contains(&"modify.select"),
+            "Auswählen gehört nicht mehr in den Ribbon: {ids:?}"
+        );
+        assert_eq!(
+            ids,
+            [
+                "modify.move",
+                "modify.copy",
+                "modify.rotate",
+                "modify.mirror",
+                "modify.scale",
+            ],
+            "übrige Bearbeiten-Werkzeuge unverändert"
+        );
+        for (_, icon, label) in RIBBON_BEARBEITEN {
+            assert!(!icon.is_empty() && !label.is_empty());
+        }
+    }
+
+    #[test]
+    fn auswaehlen_bleibt_als_befehl_erreichbar() {
+        // Nur der Ribbon-Eintrag entfällt — die Action bleibt registriert.
+        assert!(
+            jjcad_core::actions::action("modify.select").is_some(),
+            "modify.select muss für Tastatur/Inventar/MCP registriert bleiben"
+        );
     }
 }
