@@ -1627,7 +1627,9 @@ impl App {
         // Vorschau: drehen, spiegeln, setzen
         if self.ghost.is_some() && !typing {
             if ctx.input(|i| i.key_pressed(egui::Key::R)) {
-                self.rotate_ghost(if shift { -90.0 } else { 90.0 });
+                // R dreht im Uhrzeigersinn (negativer Winkel), Umschalt+R
+                // gegen den Uhrzeigersinn — im Modell zeigt +y nach oben.
+                self.rotate_ghost(App::ghost_drehgrad(shift));
             }
             // Spiegeln: sowohl S als auch F (wie bei Türen/Blöcken üblich)
             if ctx.input(|i| i.key_pressed(egui::Key::S))
@@ -2658,6 +2660,19 @@ fn rail(ui: &mut egui::Ui, icon: &str, tooltip: &str, chevron: &str) -> bool {
         let ctx = self.ctx.clone();
         if let Some(id) = ctx.memory(|m| m.focused()) {
             ctx.memory_mut(|m| m.surrender_focus(id));
+        }
+    }
+
+    /// Drehwinkel für einen Tastendruck auf `R` in der Vorschau.
+    ///
+    /// `R` dreht im Uhrzeigersinn, `Umschalt+R` gegen den Uhrzeigersinn
+    /// (T0006). Im Modell zeigt +y nach oben, ein positiver Winkel dreht
+    /// deshalb mathematisch positiv = gegen den Uhrzeigersinn.
+    pub fn ghost_drehgrad(shift: bool) -> f64 {
+        if shift {
+            90.0
+        } else {
+            -90.0
         }
     }
 
@@ -3925,5 +3940,86 @@ mod tests_ribbon_hoehe {
                 );
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests_ghost_drehrichtung {
+    //! T0006: `R` dreht die Vorschau im Uhrzeigersinn, `Umschalt+R` dagegen.
+    //!
+    //! Geprüft an der Geometrie der Vorschau, nicht am gespeicherten Winkel:
+    //! eine waagerechte Linie nach rechts muss nach `R` nach unten zeigen
+    //! (Uhrzeigersinn) und nach `Umschalt+R` nach oben.
+
+    use super::*;
+
+    fn app_mit_vorschau() -> App {
+        let mut app = App::with_ctx(egui::Context::default());
+        app.session_mut()
+            .execute(
+                "draw.line",
+                &serde_json::json!({"a": [0.0, 0.0], "b": [2.0, 0.0]}),
+            )
+            .expect("Linie anlegen");
+        let id = app.doc().entities[0].id;
+        app.session_mut().select(vec![id]);
+        app.copy_selection(false);
+        app.pointer_world = Some(V2::new(0.0, 0.0));
+        app.start_ghost_paste();
+        app
+    }
+
+    /// Ein Frame mit genau einer Taste, wie ihn das laufende Programm bekommt.
+    fn taste(app: &mut App, key: egui::Key, modifiers: egui::Modifiers) {
+        let ctx = app.ctx.clone();
+        let input = egui::RawInput {
+            screen_rect: Some(Rect::from_min_size(Pos2::ZERO, Vec2::new(1500.0, 950.0))),
+            modifiers,
+            events: vec![egui::Event::Key {
+                key,
+                physical_key: None,
+                pressed: true,
+                repeat: false,
+                modifiers,
+            }],
+            ..Default::default()
+        };
+        let _ = ctx.run(input, |ctx| app.ui(ctx));
+    }
+
+    /// Richtung der Linie in der Vorschau (Endpunkt minus Startpunkt).
+    fn vorschau_richtung(app: &App) -> V2 {
+        let g = app.ghost.as_ref().expect("Vorschau muss offen sein");
+        let ents = crate::ghost::clipboard_entities(app.doc(), g, &app.ui.clipboard);
+        for e in &ents {
+            if let EntityKind::Line { a, b } = &e.kind {
+                return *b - *a;
+            }
+        }
+        panic!("keine Linie in der Vorschau");
+    }
+
+    #[test]
+    fn r_dreht_im_uhrzeigersinn() {
+        let mut app = app_mit_vorschau();
+        taste(&mut app, egui::Key::R, egui::Modifiers::NONE);
+        let d = vorschau_richtung(&app);
+        assert!(
+            d.y < -1.9 && d.x.abs() < 0.01,
+            "R muss im Uhrzeigersinn drehen (waagerecht nach rechts → nach unten), \
+             Richtung war {d:?}"
+        );
+    }
+
+    #[test]
+    fn umschalt_r_dreht_gegen_den_uhrzeigersinn() {
+        let mut app = app_mit_vorschau();
+        taste(&mut app, egui::Key::R, egui::Modifiers::SHIFT);
+        let d = vorschau_richtung(&app);
+        assert!(
+            d.y > 1.9 && d.x.abs() < 0.01,
+            "Umschalt+R muss gegen den Uhrzeigersinn drehen (waagerecht nach rechts → nach oben), \
+             Richtung war {d:?}"
+        );
     }
 }

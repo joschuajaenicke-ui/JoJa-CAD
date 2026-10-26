@@ -80,7 +80,8 @@ muss der weiße Streifen zwischen ihnen genauso breit sein wie die Linien selbst
     Fangradius, Wandstärke, Tür-/Fenster-/Treppenbreite, Texthöhe, Bemaßungsstil und Darstellung.
 13. **Platzieren mit Vorschau**: Block aus dem Inventar wählen oder `Strg+V` drücken — die Vorschau
     steht mit ihrer **unteren linken Ecke** am Mauszeiger (also oben rechts davon), folgt der Maus
-    und wird mit Klick gesetzt. `R` dreht in 90°-Schritten (`Umschalt+R` zurück), `S` spiegelt,
+    und wird mit Klick gesetzt. `R` dreht in 90°-Schritten im Uhrzeigersinn
+    (`Umschalt+R` gegen den Uhrzeigersinn), `S` spiegelt,
     `ESC` bricht ab. Der Einfügepunkt ist exakt der Ankerpunkt der Vorschau.
 
 Der Zeiger ist über der Zeichenfläche ein durchgehendes Fadenkreuz; der Systemzeiger wird dort
