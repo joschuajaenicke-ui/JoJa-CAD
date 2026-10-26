@@ -8,6 +8,7 @@ use std::time::Instant;
 
 use jjcad_core::boundary::{detect_boundary, BoundaryError, BoundaryOpts};
 use jjcad_core::geom::{polygon_area, Vec2};
+use jjcad_core::model::EntityKind;
 use jjcad_core::persist::load_document;
 use jjcad_core::session::Session;
 use serde_json::json;
@@ -354,4 +355,156 @@ fn ergebnis_haengt_nicht_am_pixelbudget() {
         (a - b).abs() / b.max(1.0) < 0.01,
         "Fläche hängt am Budget: {a} mm² gegen {b} mm²"
     );
+}
+
+// ---------------------------------------------------------------------------
+// Werkzeug Farbeimer (Karte F5, Action `draw.fill.paint`)
+// ---------------------------------------------------------------------------
+
+/// Rechteck aus vier Linien, 4000 × 3000 mm.
+fn raum(s: &mut Session) -> [(f64, f64); 4] {
+    let ecken = [(0.0, 0.0), (4000.0, 0.0), (4000.0, 3000.0), (0.0, 3000.0)];
+    rechteck(s, &ecken);
+    ecken
+}
+
+/// Die eine Füllfläche im Dokument (Panik, wenn es keine gibt).
+fn fuellflaeche(s: &Session) -> (Vec<Vec2>, Vec<Vec<Vec2>>, jjcad_core::style::FillPattern, bool) {
+    let e = s
+        .doc
+        .entities
+        .iter()
+        .find(|e| matches!(e.kind, EntityKind::Fill { .. }))
+        .expect("Füllfläche fehlt");
+    match &e.kind {
+        EntityKind::Fill {
+            boundary,
+            holes,
+            pattern,
+            border,
+            ..
+        } => (boundary.clone(), holes.clone(), *pattern, *border),
+        _ => unreachable!(),
+    }
+}
+
+#[test]
+fn farbeimer_ist_registriert_und_taste_c_ist_frei() {
+    let def = jjcad_core::actions::action("draw.fill.paint").expect("Action registriert");
+    assert_eq!(def.label, "Farbeimer");
+    assert_eq!(def.key, "c", "Tastenkuerzel C");
+    assert!(jjcad_core::actions::is_mutating("draw.fill.paint"));
+    // Genau eine Aktion pro Taste: sonst greift still die alphabetisch erste.
+    let doppelt: Vec<&str> = jjcad_core::actions::ACTIONS
+        .iter()
+        .filter(|a| a.key == "c" && a.id != "draw.fill.paint")
+        .map(|a| a.id)
+        .collect();
+    assert!(doppelt.is_empty(), "Taste C doppelt belegt: {doppelt:?}");
+}
+
+#[test]
+fn farbeimer_fuellt_geschlossenen_raum_mit_deckungsgleichem_rand() {
+    let mut s = leinwand();
+    let ecken = raum(&mut s);
+
+    s.execute(
+        "draw.fill.paint",
+        &json!({"p": [2.0, 1.5], "pattern": "solid"}),
+    )
+    .expect("Farbeimer");
+
+    // Vier Linien + genau eine Fläche: die Umgrenzung wird NICHT als Linien abgelegt.
+    assert_eq!(
+        s.doc.entities.len(),
+        5,
+        "Umgrenzung darf nicht als eigene Linien im Dokument landen"
+    );
+    let (boundary, holes, pattern, border) = fuellflaeche(&s);
+    assert!(holes.is_empty(), "keine Inseln im leeren Rechteck");
+    assert_eq!(pattern, jjcad_core::style::FillPattern::Solid);
+    assert!(!border, "der Eimer legt keine Randlinie an");
+
+    // Abnahme 1: Ränder deckungsgleich mit den Linien (±0,5 mm).
+    assert!(
+        ecken_abweichung(&boundary, &ecken) <= 0.5,
+        "Ecken weichen ab: {boundary:?}"
+    );
+    let soll = 4000.0 * 3000.0;
+    assert!(
+        (polygon_area(&boundary).abs() - soll).abs() / soll < 0.01,
+        "Fläche {} mm² statt {soll} mm²",
+        polygon_area(&boundary).abs()
+    );
+}
+
+#[test]
+fn farbeimer_klick_auf_linie_und_offene_flaeche_geben_meldung() {
+    let mut s = leinwand();
+    raum(&mut s);
+
+    // Abnahme 2a: Klick auf einer Linie.
+    let err = s
+        .execute("draw.fill.paint", &json!({"p": [0.0, 1.5]}))
+        .unwrap_err();
+    assert_eq!(err, "auf einer Linie geklickt");
+
+    // Abnahme 2b: offene Fläche (außerhalb des Rechtecks, kein Objekt angelegt).
+    let err = s
+        .execute("draw.fill.paint", &json!({"p": [10.0, 5.0]}))
+        .unwrap_err();
+    assert_eq!(err, "Fläche ist nicht geschlossen");
+
+    assert_eq!(s.doc.entities.len(), 4, "kein Objekt bei Fehler");
+}
+
+#[test]
+fn farbeimer_undo_entfernt_nur_die_flaeche() {
+    let mut s = leinwand();
+    raum(&mut s);
+    s.execute(
+        "draw.fill.paint",
+        &json!({"p": [2.0, 1.5], "pattern": "solid"}),
+    )
+    .expect("Farbeimer");
+    assert_eq!(s.doc.entities.len(), 5);
+
+    assert!(s.undo(), "Undo muss die Fläche zurücknehmen");
+    assert_eq!(s.doc.entities.len(), 4, "die Linien bleiben stehen");
+    assert!(s
+        .doc
+        .entities
+        .iter()
+        .all(|e| !matches!(e.kind, EntityKind::Fill { .. })));
+}
+
+#[test]
+fn farbeimer_fuellt_wohnhaus_raum_und_meldet_offene_ecke() {
+    let mut s = Session::with_doc(wohnhaus());
+    let vorher = s.doc.entities.len();
+
+    // Abnahme 1 am echten Plan: Raum unten links.
+    s.execute(
+        "draw.fill.paint",
+        &json!({"p": [1.5, 2.6], "pattern": "solid"}),
+    )
+    .expect("Raum im Wohnhaus muss sich füllen lassen");
+    assert_eq!(s.doc.entities.len(), vorher + 1, "genau eine Fläche");
+
+    let (boundary, _holes, _, _) = fuellflaeche(&s);
+    let bb = jjcad_core::geom::BBox::from_points(&boundary);
+    // Die Innenkante der Außenwand (300 mm dick, mittig) liegt bei 150 mm.
+    for (name, ist, soll) in [("links", bb.min.x, 150.0), ("unten", bb.min.y, 150.0)] {
+        assert!(
+            (ist - soll).abs() <= 0.5,
+            "Kante {name} bei {ist} mm statt {soll} mm"
+        );
+    }
+
+    // Abnahme 2: offene Ecke außerhalb des Gebäudes -> Toast, kein Objekt.
+    let err = s
+        .execute("draw.fill.paint", &json!({"p": [40.0, 40.0]}))
+        .unwrap_err();
+    assert_eq!(err, "Fläche ist nicht geschlossen");
+    assert_eq!(s.doc.entities.len(), vorher + 1, "kein zweites Objekt");
 }

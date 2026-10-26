@@ -4,6 +4,7 @@ use crate::app::{screen_to_world, world_to_screen, App, TabKind, Tool, ToolPhase
 use crate::theme::Palette;
 use egui::{Align2, Color32, FontId, Painter, Pos2, Rect, Response, Sense, Shape, Stroke, Ui, Vec2};
 use jjcad_core::actions;
+use jjcad_core::boundary::{detect_boundary, BoundaryError, BoundaryOpts, FillBoundary};
 use jjcad_core::geom::*;
 use jjcad_core::geom::Vec2 as V2;
 use jjcad_core::model::*;
@@ -310,12 +311,26 @@ fn paint_prim(p: &Painter, prim: &Prim, w2s: &dyn Fn(V2) -> Pos2, scale: f64, pc
             if flaeche_signiert(&screen) < 0.0 {
                 screen.reverse();
             }
+            // Die Dreiecke als **ein Mesh** zeichnen, nicht als einzelne
+            // `convex_polygon`-Formen: egui glättet jede Form mit rund 1 px
+            // Kantenbreite. Bei den sehr schmalen Dreiecken, die eine
+            // getreppte Rasterkontur mit Löchern zwangsläufig ergibt, wird die
+            // Gehrung der beiden Längskanten ein Vielfaches länger als das
+            // Dreieck — sichtbar als lange diagonale Streifen und als Fläche
+            // weit außerhalb des Umrisses. Ein Mesh wird ohne Glättung
+            // gezeichnet: keine Spikes und keine doppelt geblendeten
+            // Innenkanten.
+            let col = c.gamma_multiply(alpha);
+            let mut mesh = egui::Mesh::default();
             for tri in triangulate(&screen) {
-                p.add(Shape::convex_polygon(
-                    tri.to_vec(),
-                    c.gamma_multiply(alpha),
-                    Stroke::NONE,
-                ));
+                let base = mesh.vertices.len() as u32;
+                for q in tri {
+                    mesh.colored_vertex(q, col);
+                }
+                mesh.add_triangle(base, base + 1, base + 2);
+            }
+            if !mesh.is_empty() {
+                p.add(Shape::mesh(mesh));
             }
         }
         PShape::Circle { c, r } => {
@@ -672,7 +687,7 @@ pub fn show(app: &mut App, ui: &mut Ui) {
         }
         // Fangmarker + Cursor
         if app.tool.is_some() {
-            draw_tool_preview(app, &painter, rect, view_now, snapped);
+            draw_tool_preview(app, &painter, rect, view_now, snapped, raw_world);
         }
         draw_grips(app, &painter, rect, view_now, &selected);
         if app.ghost.is_some() {
@@ -988,8 +1003,18 @@ fn draw_tool_preview(
     rect: Rect,
     view: View,
     snapped: Option<V2>,
+    raw: Option<V2>,
 ) {
-    let Some(cursor) = snapped else { return };
+    // Farbeimer-Vorschau nur für sein eigenes Werkzeug: beim Wechsel (oder wenn
+    // der Zeiger die Fläche verlässt) bleibt sonst eine Fläche stehen, die zu
+    // keinem Werkzeug mehr gehört.
+    if app.tool.as_ref().map(|t| t.action.as_str()) != Some("draw.fill.paint") {
+        app.paint.zuruecksetzen();
+    }
+    let Some(cursor) = snapped else {
+        app.paint.zuruecksetzen();
+        return;
+    };
     let Some(tool) = app.tool.clone() else { return };
     let col = Palette::ACCENT.gamma_multiply(0.9);
     let stroke = Stroke::new(1.4, col);
@@ -1077,6 +1102,34 @@ fn draw_tool_preview(
                 );
             } else {
                 label = format!("{} Punkte", tool.pts.len() + 1);
+            }
+        }
+        "draw.fill.paint" => {
+            // Gerechnet wird auf dem ROHEN Zeigerpunkt: der Fang zieht sonst
+            // genau auf die Wandkante, und dort wäre „auf einer Linie geklickt“
+            // die richtige, aber unerwünschte Antwort.
+            let zeiger = raw.unwrap_or(cursor);
+            let jetzt = std::time::Instant::now();
+            if app.paint.update(zeiger, jetzt) {
+                let g = detect_boundary(app.doc(), zeiger, &BoundaryOpts::default());
+                app.paint.merken(zeiger, g);
+            }
+            match app.paint.ergebnis(zeiger) {
+                Some(Ok(g)) => {
+                    draw_paint_ghost(app, p, rect, view, &g.outer, &g.holes);
+                    label = format!("Fläche {}", unit.format_area(g.area(), 2));
+                }
+                Some(Err(e)) => {
+                    // Kein Dialog: der Grund steht am Zeiger und beim Klick
+                    // zusätzlich als Toast.
+                    label = e.message().to_string();
+                }
+                None => {
+                    // Auf die Ruhezeit warten — ohne neuen Eingabe-Impuls zeichnet
+                    // egui nicht neu, die Vorschau käme sonst nie.
+                    p.ctx().request_repaint_after(PAINT_RUHE);
+                    label = "Fläche ermitteln …".into();
+                }
             }
         }
         "draw.rect" => {
@@ -1434,13 +1487,21 @@ fn draw_tool_preview(
 
     if !label.is_empty() {
         let galley = p.layout_no_wrap(label, FontId::proportional(11.0), Palette::TEXT);
-        let bg = Rect::from_min_size(
-            label_pos - Vec2::new(6.0, 3.0),
-            galley.size() + Vec2::new(12.0, 6.0),
+        // Box im Zeichenbereich halten: am unteren/äußeren Rand würde sie sonst
+        // abgeschnitten (Fehlermeldungen stehen genau dort, wo geklickt wird).
+        let groesse = galley.size() + Vec2::new(12.0, 6.0);
+        let min = Pos2::new(
+            (label_pos.x - 6.0)
+                .min(rect.right() - groesse.x - 4.0)
+                .max(rect.left() + 4.0),
+            (label_pos.y - 3.0)
+                .min(rect.bottom() - groesse.y - 4.0)
+                .max(rect.top() + 4.0),
         );
+        let bg = Rect::from_min_size(min, groesse);
         p.rect_filled(bg, 4.0, Color32::from_rgba_unmultiplied(24, 27, 32, 235));
         p.rect_stroke(bg, 4.0, Stroke::new(1.0, Palette::BORDER));
-        p.galley(label_pos, galley, Palette::TEXT);
+        p.galley(bg.min + Vec2::new(6.0, 3.0), galley, Palette::TEXT);
     }
 
 }
@@ -1783,7 +1844,7 @@ fn handle_input(
             for pos in releases {
                 if rect.contains(pos) {
                     let pw = snap_at(app, rect, view, pos);
-                    tool_click(app, pw);
+                    tool_click_at(app, pw, screen_to_world(rect, view, pos));
                 }
             }
             return;
@@ -1793,7 +1854,7 @@ fn handle_input(
     // Klick
     if resp.clicked_by(egui::PointerButton::Primary) {
         if app.tool.is_some() {
-            tool_click(app, w);
+            tool_click_at(app, w, raw.unwrap_or(w));
         } else {
             let tol = (8.0 / view.zoom).max(0.5);
             let hit = snap::hit_test(app.doc(), w, tol, None);
@@ -2208,6 +2269,72 @@ fn ghost_shape(p: &Painter, sh: &PShape, w2s: &dyn Fn(V2) -> Pos2, zoom: f64, st
 // Werkzeug-Logik
 // ---------------------------------------------------------------------------
 
+/// Wartezeit, bevor der Farbeimer die Umgrenzung rechnet.
+///
+/// Die Erkennung ist eine Flutfüllung über die halbe Zeichnung (gemessen
+/// 10–80 ms im Wohnhaus-Plan). Bei jeder Zeigerbewegung gerechnet, würde die
+/// Vorschau dem Zeiger hinterherhinken; nach kurzem Stillstand ist sie
+/// schnell genug. 100 ms ist die Grenze, ab der ein stehender Zeiger als
+/// „will jetzt füllen“ gilt.
+pub const PAINT_RUHE: std::time::Duration = std::time::Duration::from_millis(100);
+
+/// Vorschau-Zustand des Farbeimers.
+///
+/// Merkt sich, wo der Zeiger steht, seit wann er dort steht und welches
+/// Ergebnis für genau diese Position gehört. Ohne den Zwischenspeicher würde
+/// jeder Frame neu geflutet; ohne die Ruhezeit würde schon eine winzige
+/// Bewegung eine neue Rechnung auslösen.
+#[derive(Clone, Default)]
+pub struct PaintPreview {
+    /// Position, für die gerechnet wurde bzw. auf die gewartet wird.
+    pos: Option<V2>,
+    /// Zeitpunkt, seit dem der Zeiger auf `pos` steht.
+    seit: Option<std::time::Instant>,
+    /// Ergebnis für genau `pos` (`Err` = kein Füllen möglich).
+    ergebnis: Option<Result<FillBoundary, BoundaryError>>,
+}
+
+impl PaintPreview {
+    /// Zeigerposition melden. `true`, wenn jetzt gerechnet werden soll.
+    pub fn update(&mut self, pos: V2, jetzt: std::time::Instant) -> bool {
+        let gewandert = self.pos.map(|p| p.dist(pos) > 0.01).unwrap_or(true);
+        if gewandert {
+            self.pos = Some(pos);
+            self.seit = Some(jetzt);
+            self.ergebnis = None;
+            return false;
+        }
+        if self.ergebnis.is_some() {
+            return false;
+        }
+        jetzt.duration_since(self.seit.unwrap_or(jetzt)) >= PAINT_RUHE
+    }
+
+    /// Ergebnis für die zuletzt gemeldete Position ablegen.
+    pub fn merken(&mut self, pos: V2, r: Result<FillBoundary, BoundaryError>) {
+        if self.pos.map(|p| p.dist(pos) <= 0.01).unwrap_or(false) {
+            self.ergebnis = Some(r);
+        }
+    }
+
+    /// Ergebnis zur Position — `None`, solange dafür noch nichts gerechnet ist.
+    pub fn ergebnis(&self, pos: V2) -> Option<&Result<FillBoundary, BoundaryError>> {
+        if self.pos.map(|p| p.dist(pos) <= 0.01).unwrap_or(false) {
+            self.ergebnis.as_ref()
+        } else {
+            None
+        }
+    }
+
+    /// Vorschau verwerfen (Zeiger verlässt die Zeichenfläche, Werkzeug wechselt,
+    /// Fläche wurde gefüllt).
+    pub fn zuruecksetzen(&mut self) {
+        self.pos = None;
+        self.seit = None;
+        self.ergebnis = None;
+    }
+}
+
 /// Füll-Werkzeuge, deren Umgrenzung als Punktfolge geklickt wird.
 ///
 /// `draw.fill.boundary` (Umriss abfahren) und `draw.fill.points` (freie
@@ -2294,6 +2421,71 @@ fn draw_fill_ghost(app: &App, p: &Painter, rect: Rect, view: View, umriss: &[V2]
     };
     for prim in &dl.prims {
         paint_prim(p, prim, &w2s, view.zoom, &pc, 1.0);
+    }
+}
+
+/// Vorschau des Farbeimers: die ermittelte Fläche halbtransparent mit dem
+/// Muster aus dem Panel, Inseln (Schornstein, Treppe) ausgespart.
+///
+/// Gezeichnet wird über denselben Renderer wie das fertige Objekt
+/// ([`render::render_entity`]) — Vorschau und Ergebnis können damit nicht
+/// auseinanderlaufen, auch nicht bei Mustern mit Löchern.
+fn draw_paint_ghost(
+    app: &App,
+    p: &Painter,
+    rect: Rect,
+    view: View,
+    boundary: &[V2],
+    holes: &[Vec<V2>],
+) {
+    if boundary.len() < 3 {
+        return;
+    }
+    let w2s = |q: V2| world_to_screen(rect, view, q);
+    let mut e = Entity::new(
+        0,
+        app.doc().current_layer,
+        EntityKind::Fill {
+            boundary: boundary.to_vec(),
+            holes: holes.to_vec(),
+            pattern: app.options.paint_pattern,
+            pattern_angle: app.options.fill_angle,
+            pattern_scale: app.options.fill_scale,
+            // Der Eimer legt keine Randlinie an — seine Grenze ist die Wand.
+            border: false,
+        },
+    );
+    e.style.fill = app.ui.pending.fill;
+    let mut dl = DisplayList::default();
+    render::render_entity(
+        &render::RenderCtx::new(app.doc()),
+        &e,
+        Affine::IDENTITY,
+        &mut dl,
+        0,
+    );
+    let pc = PaintCtx {
+        selected: Vec::new(),
+        hover: None,
+        lineweights: true,
+        lineweights_scaled: app.ui.lineweights_scaled,
+        paper_px: view.zoom * app.doc().settings.annotation_scale,
+        preview: true,
+    };
+    for prim in &dl.prims {
+        paint_prim(p, prim, &w2s, view.zoom, &pc, 1.0);
+    }
+    // Grenze gestrichelt nachziehen, damit die Fläche nicht ohne Kante steht
+    let stroke = Stroke::new(1.2, Palette::ACCENT.gamma_multiply(0.85));
+    for ring in std::iter::once(boundary).chain(holes.iter().map(|h| h.as_slice())) {
+        if ring.len() < 2 {
+            continue;
+        }
+        let pts: Vec<Pos2> = ring.iter().map(|q| w2s(*q)).collect();
+        for pair in pts.windows(2) {
+            p.line_segment([pair[0], pair[1]], stroke);
+        }
+        p.line_segment([*pts.last().unwrap(), pts[0]], stroke);
     }
 }
 
@@ -2426,6 +2618,15 @@ pub fn rotate_step(pts: &[V2], w: V2) -> RotateStep {
 }
 
 fn tool_click(app: &mut App, w: V2) {
+    tool_click_at(app, w, w);
+}
+
+/// Klick im Werkzeug. `w` ist der Fangpunkt, `raw` der rohe Zeigerpunkt.
+///
+/// Fast alle Werkzeuge arbeiten auf dem Fangpunkt. Der Farbeimer braucht den
+/// rohen Punkt: ein Fang auf die Wandkante bedeutet dort „auf einer Linie
+/// geklickt“ und würde einen Klick dicht neben der Wand abweisen.
+fn tool_click_at(app: &mut App, w: V2, raw: V2) {
     let Some(mut tool) = app.tool.clone() else { return };
     let unit = app.unit();
     let ax = |p: V2| [unit.from_mm(p.x), unit.from_mm(p.y)];
@@ -2591,6 +2792,25 @@ fn tool_click(app: &mut App, w: V2) {
                 editing_id: None,
             });
             app.tool = None;
+        }
+        // Farbeimer: ein Klick, kein Ziehen. Der Kern ermittelt die Umgrenzung
+        // (`draw.fill.paint` → `boundary::detect_boundary`); Fehler kommen als
+        // Toast aus der Action zurück („Fläche ist nicht geschlossen“, „auf
+        // einer Linie geklickt“) — kein Dialog, kein Objekt.
+        "draw.fill.paint" => {
+            let ok = run(
+                app,
+                "draw.fill.paint",
+                json!({"p": ax(raw),
+                       "pattern": app.options.paint_pattern.key(),
+                       "angle": app.options.fill_angle.to_degrees(),
+                       "scale": unit.from_mm(app.options.fill_scale),
+                       "border": false}),
+            );
+            // Nach dem Füllen (und auch nach einem Fehlschlag) neu rechnen:
+            // die Vorschau gehört zur Fläche unter dem Zeiger, nicht zum Klick.
+            app.paint.zuruecksetzen();
+            let _ = ok;
         }
         "draw.fill" | "draw.hatch" => {
             let tol = (10.0 / app.current_view().zoom).max(0.5);
@@ -3227,5 +3447,176 @@ mod tests {
             rotate_step(&[c, von], c),
             RotateStep::Reject(_)
         ));
+    }
+
+    // ---- Farbeimer (Karte F5, Action `draw.fill.paint`) ----
+
+    #[test]
+    fn farbeimer_vorschau_rechnet_erst_nach_ruhezeit() {
+        use std::time::{Duration, Instant};
+        let mut p = PaintPreview::default();
+        let t0 = Instant::now();
+        let klick = V2::new(1000.0, 1000.0);
+
+        // Erste Meldung: Position merken, noch nicht rechnen.
+        assert!(!p.update(klick, t0), "erster Frame darf nicht rechnen");
+        assert!(
+            !p.update(klick, t0 + Duration::from_millis(50)),
+            "50 ms Stillstand sind zu wenig"
+        );
+        assert!(
+            p.update(klick, t0 + Duration::from_millis(120)),
+            "nach 100 ms Stillstand muss gerechnet werden"
+        );
+
+        // Ergebnis merken: eine Rechnung pro Position reicht.
+        p.merken(klick, Err(BoundaryError::Open));
+        assert!(
+            !p.update(klick, t0 + Duration::from_secs(2)),
+            "gemerkte Position darf nicht erneut rechnen"
+        );
+        assert_eq!(p.ergebnis(klick), Some(&Err(BoundaryError::Open)));
+
+        // Bewegung verwirft Position und Ergebnis (Vorschau verschwindet).
+        let weiter = V2::new(1500.0, 1000.0);
+        assert!(p.ergebnis(weiter).is_none(), "kein Ergebnis für neue Position");
+        assert!(!p.update(weiter, t0), "neue Position beginnt zu warten");
+        assert!(p.ergebnis(klick).is_none(), "altes Ergebnis ist verworfen");
+
+        // Verlassen der Fläche leert alles.
+        p.merken(weiter, Err(BoundaryError::OnLine));
+        p.zuruecksetzen();
+        assert!(p.ergebnis(weiter).is_none());
+    }
+
+    /// Vier Linien als geschlossener Raum, Klick in die Mitte: genau eine
+    /// Füllfläche, keine zusätzlichen Linien (die Umgrenzung ist keine eigene
+    /// Geometrie im Dokument).
+    #[test]
+    fn farbeimer_klick_im_raum_legt_genau_eine_flaeche_an() {
+        let mut app = app();
+        let u = app.unit();
+        let ecken = [
+            (0.0, 0.0),
+            (4000.0, 0.0),
+            (4000.0, 3000.0),
+            (0.0, 3000.0),
+        ];
+        for i in 0..4 {
+            let (a, b) = (ecken[i], ecken[(i + 1) % 4]);
+            let um = |p: (f64, f64)| [u.from_mm(p.0), u.from_mm(p.1)];
+            assert!(run(
+                &mut app,
+                "draw.line",
+                json!({"a": um(a), "b": um(b)})
+            ));
+        }
+        assert_eq!(app.doc().entities.len(), 4);
+
+        app.start_tool("draw.fill.paint");
+        let klick = V2::new(2000.0, 1500.0);
+        tool_click_at(&mut app, klick, klick);
+
+        assert_eq!(
+            app.doc().entities.len(),
+            5,
+            "vier Linien + eine Fläche, keine Umgrenzungslinien"
+        );
+        let (boundary, holes, pattern, border) = app
+            .doc()
+            .entities
+            .iter()
+            .find_map(|e| match &e.kind {
+                EntityKind::Fill {
+                    boundary,
+                    holes,
+                    pattern,
+                    border,
+                    ..
+                } => Some((boundary.clone(), holes.clone(), *pattern, *border)),
+                _ => None,
+            })
+            .expect("Füllfläche");
+        assert!(holes.is_empty());
+        assert_eq!(pattern, app.options.paint_pattern, "Muster aus dem Panel");
+        assert_eq!(pattern, FillPattern::Solid, "Vorgabe des Eimers");
+        assert!(!border, "keine Randlinie auf der Wand");
+        for (soll_x, soll_y) in [(0.0, 0.0), (4000.0, 3000.0)] {
+            let nah = boundary
+                .iter()
+                .map(|q| q.dist(V2::new(soll_x, soll_y)))
+                .fold(f64::INFINITY, f64::min);
+            assert!(nah <= 0.5, "Ecke ({soll_x},{soll_y}) weicht {nah} mm ab");
+        }
+    }
+
+    /// Klick auf eine Linie: keine Fläche, Toast mit dem Grund.
+    #[test]
+    fn farbeimer_klick_auf_linie_meldet_toast() {
+        let mut app = app();
+        let u = app.unit();
+        for (a, b) in [
+            ((-1000.0, 0.0), (1000.0, 0.0)),
+            ((1000.0, 0.0), (1000.0, 1000.0)),
+            ((1000.0, 1000.0), (-1000.0, 1000.0)),
+            ((-1000.0, 1000.0), (-1000.0, 0.0)),
+        ] {
+            let um = |p: (f64, f64)| [u.from_mm(p.0), u.from_mm(p.1)];
+            assert!(run(&mut app, "draw.line", json!({"a": um(a), "b": um(b)})));
+        }
+        app.start_tool("draw.fill.paint");
+        let auf_der_linie = V2::new(0.0, 0.0);
+        tool_click_at(&mut app, auf_der_linie, auf_der_linie);
+
+        assert_eq!(app.doc().entities.len(), 4, "kein Objekt bei Fehler");
+        assert_eq!(
+            app.status_msg, "auf einer Linie geklickt",
+            "Meldung als Toast/Status, kein Dialog"
+        );
+    }
+    /// Die echte Farbeimer-Fläche aus dem Wohnhaus (125 Ecken, 3 Inseln) muss
+    /// vollständig trianguliert werden: Summe der Dreiecke = Außenring minus
+    /// Inseln. Bricht das, entstehen Lücken oder — schlimmer — Dreiecke
+    /// außerhalb des Umrisses (die als diagonale Streifen über die Zeichenfläche
+    /// laufen).
+    #[test]
+    fn farbeimer_flaeche_trianguliert_vollstaendig() {
+        let pfad = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../../samples/Wohnhaus.jjcad");
+        let doc = jjcad_core::persist::load_document(&pfad).expect("Wohnhaus");
+        let g = detect_boundary(&doc, V2::new(8000.0, 4300.0), &BoundaryOpts::default())
+            .expect("Fläche");
+
+        let k = 0.05284f32; // Bildschirm-px je mm bei „ganze Zeichnung im Fenster“
+        let ring = jjcad_core::area::bridge_holes(&g.outer, &g.holes);
+        let mut screen: Vec<Pos2> = ring
+            .iter()
+            .map(|q| Pos2::new((q.x * k as f64) as f32, (q.y * k as f64) as f32))
+            .collect();
+        if flaeche_signiert(&screen) < 0.0 {
+            screen.reverse();
+        }
+        let tris = triangulate(&screen);
+        let summe: f32 = tris
+            .iter()
+            .map(|t| {
+                let (a, b, c) = (t[0], t[1], t[2]);
+                0.5 * ((b.x - a.x) * (c.y - a.y) - (b.y - a.y) * (c.x - a.x)).abs()
+            })
+            .sum();
+        let soll = g.area() as f32 * k * k;
+        assert!(tris.len() > 50, "nur {} Dreiecke", tris.len());
+        assert!(
+            (summe / soll - 1.0).abs() < 0.02,
+            "Dreieckssumme {summe:.0} px² statt {soll:.0} px²"
+        );
+        // Kein Dreieck darf größer sein als die ganze Fläche.
+        assert!(
+            tris.iter().all(|t| {
+                let (a, b, c) = (t[0], t[1], t[2]);
+                0.5 * ((b.x - a.x) * (c.y - a.y) - (b.y - a.y) * (c.x - a.x)).abs() <= soll
+            }),
+            "Dreieck größer als die Fläche"
+        );
     }
 }
