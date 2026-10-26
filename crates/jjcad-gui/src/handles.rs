@@ -51,6 +51,15 @@ pub fn grips_of(e: &Entity) -> Vec<(GripKind, V2)> {
 
 /// Wendet eine Griffbewegung auf eine Kopie des Elements an.
 pub fn apply_grip(orig: &Entity, kind: GripKind, target: V2) -> Option<Entity> {
+    apply_grip_tol(orig, kind, target, jjcad_core::model::POINT_EPS_MM)
+}
+
+/// Wie [`apply_grip`], aber mit der Toleranz des laufenden Zugs (Bildschirm-px
+/// in Welt-mm). Ein offener Polygonzug wird geschlossen, sobald ein Endpunkt
+/// auf den anderen gezogen wird: der doppelte Stützpunkt fällt weg, `closed`
+/// wird gesetzt — dieselbe Regel wie beim Setzen des letzten Punktes
+/// (`model::polyline_points`).
+pub fn apply_grip_tol(orig: &Entity, kind: GripKind, target: V2, tol: f64) -> Option<Entity> {
     let mut e = orig.clone();
     match (&mut e.kind, kind) {
         (EntityKind::Line { a, .. }, GripKind::Vert(0)) => *a = target,
@@ -61,8 +70,23 @@ pub fn apply_grip(orig: &Entity, kind: GripKind, target: V2) -> Option<Entity> {
         (EntityKind::Circle { c, .. }, GripKind::Vert(_)) => *c = target,
         (EntityKind::Arc { c, .. }, GripKind::Vert(_)) => *c = target,
         (EntityKind::Ellipse { c, .. }, GripKind::Vert(_)) => *c = target,
-        (EntityKind::Polyline { verts, .. }, GripKind::Vert(i)) => {
+        (EntityKind::Polyline { verts, closed }, GripKind::Vert(i)) => {
+            let n = verts.len();
             verts.get_mut(i)?.p = target;
+            // Endpunkt auf den anderen gezogen: der Zug ist geschlossen. Erst ab
+            // vier Stützpunkten bleibt nach dem Wegfall des doppelten Punktes
+            // noch eine Fläche (drei Ecken) übrig.
+            if !*closed && n >= 4 && (i == n - 1 || i == 0) {
+                let start = verts[0].p;
+                let ende = verts[n - 1].p;
+                if start.dist(ende) <= tol {
+                    if i == 0 {
+                        verts[0].p = ende;
+                    }
+                    verts.pop();
+                    *closed = true;
+                }
+            }
         }
         (EntityKind::Polyline { verts, closed }, GripKind::Edge(i)) if *closed => {
             let n = verts.len();
@@ -180,7 +204,13 @@ impl App {
         let Some(d) = self.grip_drag.clone() else {
             return false;
         };
-        let Some(new_e) = apply_grip(&d.orig, d.kind, target) else {
+        let Some(new_e) = apply_grip_tol(
+            &d.orig,
+            d.kind,
+            target,
+            (12.0 / self.current_view().zoom.max(1e-6)).max(jjcad_core::model::POINT_EPS_MM),
+        ) else {
+
             return false;
         };
         if let Some(e) = self.doc_mut().entity_mut(d.entity) {
@@ -204,5 +234,101 @@ impl App {
                 *e = d.orig;
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use jjcad_core::geom::Vertex;
+
+    fn offen(pts: &[V2]) -> Entity {
+        Entity::new(
+            1,
+            1,
+            EntityKind::Polyline {
+                verts: pts.iter().map(|p| Vertex::new(*p)).collect(),
+                closed: false,
+            },
+        )
+    }
+
+    fn stand(e: &Entity) -> (Vec<V2>, bool) {
+        match &e.kind {
+            EntityKind::Polyline { verts, closed } => {
+                (verts.iter().map(|v| v.p).collect(), *closed)
+            }
+            _ => panic!("keine Polylinie"),
+        }
+    }
+
+    /// Letzten Stützpunkt auf den Startpunkt ziehen schließt den Zug: der
+    /// doppelte Punkt fällt weg (drei Ecken bleiben), `closed` steht.
+    #[test]
+    fn griff_auf_startpunkt_schliesst_die_polylinie() {
+        let orig = offen(&[
+            V2::new(0.0, 0.0),
+            V2::new(2000.0, 0.0),
+            V2::new(2000.0, 1000.0),
+            V2::new(500.0, 1500.0),
+        ]);
+        let neu = apply_grip_tol(&orig, GripKind::Vert(3), V2::new(0.0, 0.0), 1.0).unwrap();
+        let (pts, closed) = stand(&neu);
+        assert!(closed, "Closed-Flag fehlt nach dem Griffzug");
+        assert_eq!(pts.len(), 3, "der doppelte Stützpunkt bleibt stehen");
+        assert_eq!(pts[0], V2::new(0.0, 0.0));
+    }
+
+    /// Auch der erste Stützpunkt darf auf den letzten gezogen werden; die
+    /// Geometrie bleibt dabei erhalten (der letzte Punkt wird der neue erste).
+    #[test]
+    fn griff_des_startpunkts_auf_das_ende_schliesst() {
+        let orig = offen(&[
+            V2::new(500.0, 1500.0),
+            V2::new(0.0, 0.0),
+            V2::new(2000.0, 0.0),
+            V2::new(2000.0, 1000.0),
+        ]);
+        let neu = apply_grip_tol(&orig, GripKind::Vert(0), V2::new(2000.0, 1000.0), 1.0).unwrap();
+        let (pts, closed) = stand(&neu);
+        assert!(closed);
+        assert_eq!(pts.len(), 3);
+        assert_eq!(pts[0], V2::new(2000.0, 1000.0), "Endpunkt wird der neue Start");
+    }
+
+    /// Weit weg vom Gegenpunkt bleibt der Zug offen; ein mittlerer Stützpunkt
+    /// schließt nie.
+    #[test]
+    fn griff_abseits_schliesst_nicht() {
+        let orig = offen(&[
+            V2::new(0.0, 0.0),
+            V2::new(2000.0, 0.0),
+            V2::new(2000.0, 1000.0),
+            V2::new(500.0, 1500.0),
+        ]);
+        let neu = apply_grip_tol(&orig, GripKind::Vert(3), V2::new(0.0, 100.0), 1.0).unwrap();
+        let (pts, closed) = stand(&neu);
+        assert!(!closed);
+        assert_eq!(pts.len(), 4);
+
+        let mitte = apply_grip_tol(&orig, GripKind::Vert(1), V2::new(0.0, 0.0), 1.0).unwrap();
+        let (pts2, closed2) = stand(&mitte);
+        assert!(!closed2, "ein mittlerer Stützpunkt schließt nichts");
+        assert_eq!(pts2.len(), 4);
+    }
+
+    /// Ein Dreieck (drei Stützpunkte) lässt sich nicht durch einen Griffzug
+    /// schließen — nach dem Wegfall des doppelten Punktes bliebe keine Fläche.
+    #[test]
+    fn dreieck_wird_nicht_geschlossen() {
+        let orig = offen(&[
+            V2::new(0.0, 0.0),
+            V2::new(2000.0, 0.0),
+            V2::new(0.0, 1000.0),
+        ]);
+        let neu = apply_grip_tol(&orig, GripKind::Vert(2), V2::new(0.0, 0.0), 5.0).unwrap();
+        let (pts, closed) = stand(&neu);
+        assert!(!closed);
+        assert_eq!(pts.len(), 3);
     }
 }

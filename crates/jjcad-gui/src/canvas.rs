@@ -1121,12 +1121,31 @@ fn draw_tool_preview(
                 p.line_segment([w2s(pair[0]), w2s(pair[1])], stroke);
             }
             if let Some(start) = last {
-                p.line_segment([w2s(start), w2s(cursor)], dashed);
-                label = format!(
-                    "{} {}",
-                    unit.format_plain(start.dist(cursor), unit.decimals()),
-                    unit.short()
-                );
+                // Klick auf den Startpunkt schließt den Zug — der Zeiger zeigt
+                // vorher, wo die Schlusskante liegen wird.
+                let tol = fang_radius_px(app, view.zoom);
+                let schliesst = tool.pts.len() >= 2
+                    && tool
+                        .pts
+                        .first()
+                        .map(|q| q.dist(cursor) <= tol)
+                        .unwrap_or(false);
+                if schliesst {
+                    p.line_segment([w2s(start), w2s(cursor)], stroke);
+                    label = "schließen".to_string();
+                } else {
+                    p.line_segment([w2s(start), w2s(cursor)], dashed);
+                    if tool.pts.len() >= 2 {
+                        if let Some(first) = tool.pts.first() {
+                            p.line_segment([w2s(cursor), w2s(*first)], dashed);
+                        }
+                    }
+                    label = format!(
+                        "{} {}",
+                        unit.format_plain(start.dist(cursor), unit.decimals()),
+                        unit.short()
+                    );
+                }
             }
         }
         "draw.fill.boundary" | "draw.fill.points" => {
@@ -2667,10 +2686,22 @@ pub fn finish_tool(app: &mut App, from_enter: bool) {
         "draw.polyline" => {
             if tool.pts.len() >= 2 {
                 let layer = app.doc().current_layer;
+                // Der Klick auf den Startpunkt legt den ersten Punkt erneut ab;
+                // erkannt wird das hier (letzter Punkt = erster Punkt) und geht
+                // als `closed` an die Befehls-Schicht. Die entfernt den doppelten
+                // Endpunkt, damit er nicht im Modell landet.
+                let tol = fang_radius_px(app, app.current_view().zoom);
+                let geschlossen = tool.pts.len() >= 3
+                    && tool
+                        .pts
+                        .first()
+                        .zip(tool.pts.last())
+                        .map(|(a, b)| a.dist(*b) <= tol)
+                        .unwrap_or(false);
                 let _ = run(
                     app,
                     "draw.polyline",
-                    json!({"pts": tool.pts.iter().map(|p| [app.unit().from_mm(p.x), app.unit().from_mm(p.y)]).collect::<Vec<_>>(), "layer": layer}),
+                    json!({"pts": tool.pts.iter().map(|p| [app.unit().from_mm(p.x), app.unit().from_mm(p.y)]).collect::<Vec<_>>(), "closed": geschlossen, "layer": layer}),
                 );
             }
             app.tool = None;
@@ -2851,6 +2882,30 @@ fn tool_click_at(app: &mut App, w: V2, raw: V2) {
             }
         }
         "draw.polyline" => {
+            // Klick auf den Startpunkt schließt den Zug: der Punkt wird exakt
+            // übernommen (kein doppelter Stützpunkt), `finish_tool` übergibt
+            // `closed`. Unter drei Punkten entsteht keine Fläche — dann beendet
+            // der Klick die Punktfolge offen, wie ein Klick auf „Fertig".
+            let tol = fang_radius_px(app, app.current_view().zoom);
+            let am_start = tool
+                .pts
+                .first()
+                .map(|q| q.dist(w) <= tol)
+                .unwrap_or(false);
+            if am_start {
+                if tool.pts.len() >= 3 {
+                    let start = tool.pts[0];
+                    tool.pts.push(start);
+                }
+                app.tool = Some(tool);
+                finish_tool(app, false);
+                return;
+            }
+            // Kein doppelter Stützpunkt, wenn zweimal dieselbe Stelle getroffen
+            // wird (schneller Doppelklick).
+            if tool.pts.last().map(|q| q.dist(w) <= tol).unwrap_or(false) {
+                return;
+            }
             tool.pts.push(w);
             app.tool = Some(tool);
         }
@@ -4306,6 +4361,89 @@ mod tests_tasten_punktfolge {
         taste(&mut app, egui::Key::Escape);
         assert!(app.doc().entities.is_empty(), "keine Wand angelegt");
         assert!(app.tool.is_none(), "ESC beendet das Wandwerkzeug");
+    }
+
+    // ---- Geschlossene Polylinie (Karte t_8b6feebf) ----
+
+    fn polylinie_stand(app: &App) -> (Vec<V2>, bool) {
+        app.doc()
+            .entities
+            .iter()
+            .find_map(|e| match &e.kind {
+                EntityKind::Polyline { verts, closed } => {
+                    Some((verts.iter().map(|w| w.p).collect(), *closed))
+                }
+                _ => None,
+            })
+            .expect("keine Polylinie angelegt")
+    }
+
+    /// Klick auf den Startpunkt schließt den Zug: drei Stützpunkte, Closed-Flag,
+    /// Werkzeug beendet — kein vierter (doppelter) Punkt.
+    #[test]
+    fn klick_auf_startpunkt_schliesst_die_polylinie() {
+        let mut app = app();
+        app.start_tool("draw.polyline");
+        tool_click(&mut app, V2::new(0.0, 0.0));
+        tool_click(&mut app, V2::new(2000.0, 0.0));
+        tool_click(&mut app, V2::new(2000.0, 1000.0));
+        tool_click(&mut app, V2::new(0.0, 0.0));
+        assert!(app.tool.is_none(), "der Startklick beendet die Eingabe");
+        let (pts, closed) = polylinie_stand(&app);
+        assert!(closed, "Closed-Flag fehlt");
+        assert_eq!(pts.len(), 3, "der doppelte Endpunkt wird nicht gespeichert");
+        assert!(
+            pts.last().unwrap().dist(V2::new(0.0, 0.0)) > 1.0,
+            "der Startpunkt steht nicht doppelt in der Punktliste"
+        );
+    }
+
+    /// Ohne Startklick bleibt die Polylinie offen (ESC wie bisher).
+    #[test]
+    fn polylinie_ohne_startklick_bleibt_offen() {
+        let mut app = app();
+        app.start_tool("draw.polyline");
+        dreieck(&mut app);
+        taste(&mut app, egui::Key::Escape);
+        let (pts, closed) = polylinie_stand(&app);
+        assert!(!closed, "offene Punktfolge wird nicht geschlossen");
+        assert_eq!(pts.len(), 3);
+    }
+
+    /// Zweimal auf dieselbe Stelle geklickt: der Punkt wird nicht doppelt
+    /// gespeichert (keine Strecke der Länge null).
+    #[test]
+    fn doppelklick_erzeugt_keinen_doppelten_punkt() {
+        let mut app = app();
+        app.start_tool("draw.polyline");
+        tool_click(&mut app, V2::new(0.0, 0.0));
+        tool_click(&mut app, V2::new(2000.0, 0.0));
+        tool_click(&mut app, V2::new(2000.0, 0.0));
+        finish_tool(&mut app, true);
+        let (pts, closed) = polylinie_stand(&app);
+        assert_eq!(pts.len(), 2, "der wiederholte Punkt entfällt");
+        assert!(!closed);
+    }
+
+    /// Geschlossener Zug lässt sich mit der Befehls-Schicht speichern und laden;
+    /// nach dem Laden steht das Closed-Flag wieder (Datei, nicht nur Modell).
+    #[test]
+    fn geschlossene_polylinie_ueberlebt_speichern_und_laden() {
+        let mut app = app();
+        app.start_tool("draw.polyline");
+        tool_click(&mut app, V2::new(0.0, 0.0));
+        tool_click(&mut app, V2::new(2000.0, 0.0));
+        tool_click(&mut app, V2::new(2000.0, 1000.0));
+        tool_click(&mut app, V2::new(0.0, 0.0));
+        let text = jjcad_core::persist::to_json(app.doc()).unwrap();
+        let geladen = jjcad_core::persist::from_json(&text).unwrap();
+        match &geladen.entities[0].kind {
+            EntityKind::Polyline { verts, closed } => {
+                assert!(*closed, "Closed-Flag geht beim Speichern verloren");
+                assert_eq!(verts.len(), 3);
+            }
+            _ => panic!("keine Polylinie geladen"),
+        }
     }
 }
 

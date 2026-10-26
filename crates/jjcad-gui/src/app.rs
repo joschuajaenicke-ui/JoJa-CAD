@@ -2974,7 +2974,7 @@ fn commands_hint(tool: &Tool) -> &'static str {
         "modify.explode" => "Objekt anklicken",
         "block.insert" => "Position klicken",
         "draw.text" => "Position klicken",
-        "draw.polyline" => "Punkte klicken – Enter beendet",
+        "draw.polyline" => "Punkte klicken – Klick auf den Startpunkt schließt, Enter beendet",
         "draw.fill.boundary" => "Umriss abfahren – Enter oder Doppelklick beendet",
         "draw.fill.points" => {
             if tool.pts.len() < 3 {

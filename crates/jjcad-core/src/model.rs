@@ -379,6 +379,43 @@ impl EntityKind {
     }
 }
 
+/// Weltkoordinaten-Epsilon für „derselbe Punkt" (Millimeter).
+///
+/// Ein Schlusspunkt innerhalb dieser Strecke vom Startpunkt gilt als Startpunkt:
+/// die Polylinie ist dann geschlossen. Der Wert ist bewusst klein — er fängt
+/// Rundungsreste aus der Tippeingabe ab, nicht eine bewusst gesetzte Kurzstrecke.
+pub const POINT_EPS_MM: f64 = 0.5;
+
+/// Fertige Punktfolge für einen Polygonzug.
+///
+/// Doppelte Stützpunkte fallen weg (zwei Klicks auf dieselbe Stelle erzeugen
+/// sonst eine Strecke der Länge null). Liegt der Schlusspunkt innerhalb von
+/// `tol` auf dem Startpunkt, wird er nicht gespeichert: der Zug gilt als
+/// geschlossen und `closed` wird gesetzt — der doppelte Endpunkt existiert im
+/// Modell nicht. Offene Züge bleiben unverändert offen; unter drei Punkten
+/// umschließt nichts eine Fläche, dann bleibt der Zug offen.
+pub fn polyline_points(pts: &[Vec2], closed: bool, tol: f64) -> (Vec<Vec2>, bool) {
+    let mut out: Vec<Vec2> = Vec::with_capacity(pts.len());
+    for p in pts {
+        if out.last().map(|q| q.dist(*p) <= tol).unwrap_or(false) {
+            continue;
+        }
+        out.push(*p);
+    }
+    let mut geschlossen = closed;
+    if out.len() >= 3 {
+        let first = out[0];
+        if out.last().map(|q| q.dist(first) <= tol).unwrap_or(false) {
+            out.pop();
+            geschlossen = true;
+        }
+    }
+    if out.len() < 3 {
+        geschlossen = false;
+    }
+    (out, geschlossen)
+}
+
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
 pub struct EntityStyle {
     /// None = ByLayer

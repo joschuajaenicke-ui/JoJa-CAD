@@ -91,7 +91,7 @@ pub const ACTIONS: &[ActionDef] = &[
 
     // Zeichnen
     act!("draw.line", "Linie", Zeichnen, "line", "l", "Start- und Endpunkt klicken", true),
-    act!("draw.polyline", "Polylinie", Zeichnen, "polyline", "o", "Punkte klicken, Enter beendet", true),
+    act!("draw.polyline", "Polylinie", Zeichnen, "polyline", "o", "Punkte klicken, Klick auf den Startpunkt schließt, Enter beendet", true),
     act!("draw.rect", "Rechteck", Zeichnen, "rect", "", "Zwei Ecken klicken", true),
     act!("draw.circle", "Kreis", Zeichnen, "circle", "k", "Mittelpunkt und Radius klicken", true),
     act!("draw.arc", "Bogen", Zeichnen, "arc", "", "Start, Ende, Bogenpunkt klicken", true),
@@ -940,7 +940,19 @@ pub fn execute(doc: &mut Document, id: &str, params: &Value) -> Result<Value, St
             if pts.len() < 2 {
                 return Err("Mindestens zwei Punkte nötig".into());
             }
-            let closed = if id == "draw.rect" { true } else { p.boolean_or("closed", false) };
+            // Geschlossener Zug: ein Schlusspunkt auf dem Startpunkt wird nicht
+            // als eigener Stützpunkt gespeichert (siehe `polyline_points`).
+            // Das gilt für den ausdrücklichen Parameter `closed` genauso wie für
+            // „der letzte Punkt ist der erste" — beide ergeben dieselbe Geometrie.
+            let closed_req = if id == "draw.rect" {
+                true
+            } else {
+                p.boolean_or("closed", false)
+            };
+            let (pts, closed) = polyline_points(&pts, closed_req, POINT_EPS_MM);
+            if pts.len() < 2 {
+                return Err("Mindestens zwei verschiedene Punkte nötig".into());
+            }
             let layer = resolve_layer(doc, &p);
             let idn = doc.new_id();
             let verts = pts.iter().map(|q| Vertex::new(*q)).collect();
