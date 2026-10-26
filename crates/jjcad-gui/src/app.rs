@@ -675,6 +675,19 @@ impl App {
                         self.session_mut().selection = vec![id];
                     }
                 }
+                "selpoly" => {
+                    // erste (geschlossene) Polylinie auswählen: Eigenschaften-
+                    // Panel mit Länge, Fläche, Stützpunkten, Geschlossenheit
+                    if let Some(id) = self
+                        .doc()
+                        .entities
+                        .iter()
+                        .find(|e| matches!(e.kind, EntityKind::Polyline { .. }))
+                        .map(|e| e.id)
+                    {
+                        self.session_mut().selection = vec![id];
+                    }
+                }
                 // Farbeimer-Prüffall (t_9cd971c5): den Raum unten links wirklich
                 // füllen und die Fläche auswählen. Im Screenshot muss der
                 // Wandrahmen über der Fläche liegen, und das Eigenschaften-Panel

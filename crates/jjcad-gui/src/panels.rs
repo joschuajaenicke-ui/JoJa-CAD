@@ -4,7 +4,6 @@ use crate::app::{self, App, TabKind};
 use crate::theme::{self, Palette};
 use crate::widgets;
 use egui::{Align, Color32, FontId, Layout, Pos2, Rect, RichText, Rounding, Sense, Stroke, Ui, Vec2};
-use jjcad_core::geom::Polyline;
 use jjcad_core::model::*;
 use jjcad_core::style::{ArrowKind, Color, LineType, PaperSize, WallAlign};
 use jjcad_core::units::{format_number, format_scale, Unit};
@@ -1201,26 +1200,12 @@ fn entity_props(app: &mut App, ui: &mut Ui, id: Id) {
     widgets::hline(ui);
     ui.add_space(4.0);
 
-    // Geometrie (nur Anzeige)
+    // Geometrie (nur Anzeige) — eine Quelle für alle Typen
     section_title(ui, "info", "Geometrie");
     let unit = app.unit();
-    let len = entity_length(&e);
-    if len > 0.0 {
-        widgets::field_row(ui, "Länge", |ui| {
-            ui.label(theme::mono(unit.format(len, unit.decimals())));
-        });
-    }
-    if let jjcad_core::model::EntityKind::Circle { r, .. }
-    | jjcad_core::model::EntityKind::Arc { r, .. } = &e.kind
-    {
-        widgets::field_row(ui, "Radius", |ui| {
-            ui.label(theme::mono(unit.format(*r, unit.decimals())));
-        });
-    }
-    let area = entity_area(&e);
-    if area > 0.0 {
-        widgets::field_row(ui, "Fläche", |ui| {
-            ui.label(theme::mono(format!("{} m²", unit.format_area(area, 2))));
+    for (name, wert) in geo_rows(&e, unit) {
+        widgets::field_row(ui, name, |ui| {
+            ui.label(theme::mono(wert.clone()));
         });
     }
     ui.add_space(4.0);
@@ -1418,9 +1403,9 @@ fn entity_props(app: &mut App, ui: &mut Ui, id: Id) {
             )));
             if !holes.is_empty() {
                 ui.label(theme::dim(format!(
-                    "{} Inseln · Fläche {} m²",
+                    "{} Inseln · Fläche {}",
                     holes.len(),
-                    unit.format_area(jjcad_core::area::area_of(boundary, holes), 2)
+                    area_text(unit, jjcad_core::area::area_of(boundary, holes))
                 )));
             }
         }
@@ -1710,16 +1695,10 @@ fn entity_props(app: &mut App, ui: &mut Ui, id: Id) {
                 app.ui.inventory_tab = 1;
             }
         }
-        EntityKind::Polyline { verts, closed } => {
-            ui.label(theme::dim(format!(
-                "{} Stützpunkte · {}",
-                verts.len(),
-                if *closed { "geschlossen" } else { "offen" }
-            )));
-            ui.label(theme::dim(format!("Länge {}", unit.format(
-                Polyline { verts: verts.clone(), closed: *closed }.len(), unit.decimals()
-            ))));
-        }
+        // Polylinien tragen keine eigenen Eingabefelder: Länge, Fläche,
+        // Stützpunktzahl und Geschlossenheit stehen schon im Abschnitt
+        // „Geometrie“ (siehe `geo_rows`).
+        EntityKind::Polyline { .. } => {}
         EntityKind::Line { a, b } => {
             ui.label(theme::dim(format!(
                 "Länge {} · Winkel {:.1}°",
@@ -1934,10 +1913,7 @@ fn multi_props(app: &mut App, ui: &mut Ui, ids: &[Id]) {
     }
     if total_area > 0.0 {
         widgets::field_row(ui, "Gesamtfläche", |ui| {
-            ui.label(theme::mono(format!(
-                "{} m²",
-                unit.format_area(total_area, 2)
-            )));
+            ui.label(theme::mono(area_text(unit, total_area)));
         });
     }
 
@@ -1966,6 +1942,42 @@ fn multi_props(app: &mut App, ui: &mut Ui, ids: &[Id]) {
             app.mark_changed();
         }
     });
+}
+
+/// Anzeigezeilen des Abschnitts „Geometrie“ — für alle Typen dieselbe Quelle.
+///
+/// Der Wert ist reiner Text (Einheit schon enthalten); jede Zeile hat genau
+/// einen Namen und genau einen Wert. Deshalb taucht z. B. „Länge“ bei einer
+/// Polylinie nicht doppelt auf und die Flächeneinheit steht genau einmal im
+/// Text (vorher kam „m²“ aus `format_area` und noch einmal aus dem Aufrufer).
+fn geo_rows(e: &jjcad_core::model::Entity, unit: Unit) -> Vec<(&'static str, String)> {
+    use jjcad_core::model::EntityKind as K;
+    let mut rows: Vec<(&'static str, String)> = Vec::new();
+    let len = entity_length(e);
+    if len > 0.0 {
+        rows.push(("Länge", unit.format(len, unit.decimals())));
+    }
+    if let K::Circle { r, .. } | K::Arc { r, .. } = &e.kind {
+        rows.push(("Radius", unit.format(*r, unit.decimals())));
+    }
+    let area = entity_area(e);
+    if area > 0.0 {
+        rows.push(("Fläche", area_text(unit, area)));
+    }
+    if let K::Polyline { verts, closed } = &e.kind {
+        rows.push(("Stützpunkte", verts.len().to_string()));
+        rows.push((
+            "Geschlossen",
+            if *closed { "Ja" } else { "Nein" }.to_string(),
+        ));
+    }
+    rows
+}
+
+/// Flächentext für die Anzeige: die Einheit kommt aus `format_area` und steht
+/// damit genau einmal im Text.
+fn area_text(unit: Unit, mm2: f64) -> String {
+    unit.format_area(mm2, 2)
 }
 
 /// Länge eines Elements in mm (0, wenn nicht sinnvoll).
@@ -2389,5 +2401,85 @@ fn arrow_caption(a: ArrowKind) -> &'static str {
         ArrowKind::Arrow => "Pfeil",
         ArrowKind::Dot => "Punkt",
         ArrowKind::None => "Ohne",
+    }
+}
+
+#[cfg(test)]
+mod tests_geometrie_zeilen {
+    //! Eigenschaften-Panel der Polylinien (T0003): „Länge“ steht genau einmal,
+    //! die Flächeneinheit genau einmal, und Stützpunkte/Geschlossenheit sind
+    //! eigene Zeilen im Schema Name | Wert.
+    use super::*;
+    use jjcad_core::geom::Vertex;
+
+    fn poly(pts: &[(f64, f64)], closed: bool) -> jjcad_core::model::Entity {
+        let verts = pts
+            .iter()
+            .map(|(x, y)| Vertex::new(jjcad_core::geom::Vec2::new(*x, *y)))
+            .collect();
+        jjcad_core::model::Entity::new(
+            1,
+            1,
+            EntityKind::Polyline {
+                verts,
+                closed,
+            },
+        )
+    }
+
+    fn zeilen(e: &jjcad_core::model::Entity, unit: Unit) -> Vec<(String, String)> {
+        geo_rows(e, unit)
+            .into_iter()
+            .map(|(n, w)| (n.to_string(), w))
+            .collect()
+    }
+
+    #[test]
+    fn offene_polylinie_hat_eine_laengenzeile_und_geschlossen_nein() {
+        let e = poly(&[(0.0, 0.0), (1000.0, 0.0), (1000.0, 500.0)], false);
+        let z = zeilen(&e, Unit::M);
+        let namen: Vec<&str> = z.iter().map(|(n, _)| n.as_str()).collect();
+        assert_eq!(namen, vec!["Länge", "Stützpunkte", "Geschlossen"]);
+        assert_eq!(z[1].1, "3");
+        assert_eq!(z[2].1, "Nein");
+        // 1000 mm + 500 mm
+        assert_eq!(z[0].1, "1,50 m");
+    }
+
+    #[test]
+    fn geschlossenes_quadrat_hat_flaeche_mit_einer_einheit() {
+        let e = poly(
+            &[
+                (0.0, 0.0),
+                (1000.0, 0.0),
+                (1000.0, 1000.0),
+                (0.0, 1000.0),
+            ],
+            true,
+        );
+        let z = zeilen(&e, Unit::M);
+        let namen: Vec<&str> = z.iter().map(|(n, _)| n.as_str()).collect();
+        assert_eq!(namen, vec!["Länge", "Fläche", "Stützpunkte", "Geschlossen"]);
+        assert_eq!(z[3].1, "Ja");
+        assert_eq!(z[1].1, "1,00 m²");
+        // Einheit genau einmal — „m² m²“ war der Fehler
+        assert_eq!(z[1].1.matches("m²").count(), 1);
+        assert!(!z[1].1.contains("m² m²"));
+    }
+
+    #[test]
+    fn laenge_kommt_bei_keinem_typ_doppelt_vor() {
+        let e = poly(&[(0.0, 0.0), (2000.0, 0.0)], false);
+        let z = zeilen(&e, Unit::M);
+        assert_eq!(z.iter().filter(|(n, _)| n == "Länge").count(), 1);
+    }
+
+    #[test]
+    fn flaechentext_traegt_die_einheit_genau_einmal() {
+        for u in Unit::ALL {
+            let t = area_text(u, 2_500_000.0);
+            assert_eq!(t.matches("²").count(), 1, "Einheit doppelt in {t}");
+            assert!(t.ends_with('²'), "Einheit fehlt in {t}");
+        }
     }
 }
