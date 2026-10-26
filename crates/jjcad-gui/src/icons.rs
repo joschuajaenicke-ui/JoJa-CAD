@@ -169,18 +169,35 @@ pub fn paint(painter: &Painter, rect: Rect, name: &str, color: Color32) {
             }
         }
         "fill-paint" | "hatch-paint" => {
-            // Farbeimer: Eimerkoerper (Trapez), Buegel als Bogen, Tropfen daneben
-            let body = [(6.0, 10.0), (16.0, 10.0), (14.0, 20.0), (8.0, 20.0)];
+            // Wie Kontur/Punkte: die Fläche im Hintergrund (Vollton bzw.
+            // Schraffur) — unten links sitzt ein kleiner Farbeimer als Abzeichen.
+            let quad = [(4.0, 19.0), (4.0, 6.0), (20.0, 6.0), (20.0, 19.0)];
             if name.starts_with("hatch") {
-                i.poly(&body, true);
-                i.line(8.0, 13.0, 14.0, 13.0);
-                i.line(8.5, 16.0, 13.5, 16.0);
+                i.poly(&quad, true);
+                for k in 0..4 {
+                    i.line(5.5 + k as f32 * 4.0, 18.5, 9.5 + k as f32 * 4.0, 6.5);
+                }
             } else {
-                i.filled(&body);
-                i.poly(&body, true);
+                i.filled(&quad);
+                i.poly(&quad, true);
             }
-            i.arc(11.0, 10.0, 5.0, 3.14, 6.28);
-            i.dot(18.5, 5.5, 1.7);
+            // Abzeichen gross genug, um bei 22 px lesbar zu sein: Kontrastplatte
+            // unten links, darauf ein Eimer mit Buegel
+            let plate = IconPainter {
+                p: i.p,
+                r: i.r,
+                color: crate::theme::Palette::BG,
+                w: i.w,
+            };
+            plate.filled(&[(1.0, 22.0), (13.5, 22.0), (13.5, 10.0), (1.0, 10.0)]);
+            let body = [(3.0, 21.0), (12.0, 21.0), (11.0, 14.5), (4.0, 14.5)];
+            i.filled(&body);
+            i.poly(&body, true);
+            // Buegel
+            i.line(4.6, 14.5, 7.5, 10.6);
+            i.line(7.5, 10.6, 10.4, 14.5);
+            // Griffstrich im Koerper
+            i.line(4.6, 17.6, 10.4, 17.6);
         }
         "fill" | "hatch" => {
             i.rect(4.0, 5.0, 16.0, 14.0);

@@ -3282,6 +3282,13 @@ impl App {
         } else if main.clicked() {
             self.start_fill_input(cur, hatch);
         }
+        // Prüfhilfe: Menü für einen Screenshot offen halten (nur mit Env-Variable)
+        if let Ok(welches) = std::env::var("JJCAD_DEMO_MENU") {
+            let passt = (welches == "hatch") == hatch;
+            if passt {
+                ui.memory_mut(|m| m.open_popup(popup_id));
+            }
+        }
         // Der Klick, der das Menü öffnet, darf nicht sofort einen Eintrag wählen
         let geoeffnet = ui.memory(|m| m.data.get_temp::<f64>(popup_id.with("opened")).unwrap_or(0.0));
         let bereit = now - geoeffnet > 0.25;
@@ -3291,10 +3298,38 @@ impl App {
             &arrow,
             egui::PopupCloseBehavior::CloseOnClickOutside,
             |ui| {
-                ui.set_min_width(190.0);
-                ui.spacing_mut().item_spacing.y = 2.0;
+                ui.set_min_width(200.0);
+                ui.spacing_mut().item_spacing.y = 1.0;
                 for m in FillInput::ALL {
-                    let resp = ui.selectable_label(m == cur, m.label());
+                    // Zeile mit Icon: gleiches Bild wie der Knopf, damit man den
+                    // Modus auch im Menü am Symbol erkennt
+                    let (rect, resp) = ui.allocate_exact_size(
+                        egui::Vec2::new(ui.available_width().max(196.0), 26.0),
+                        egui::Sense::click(),
+                    );
+                    if resp.hovered() || m == cur {
+                        ui.painter().rect_filled(
+                            rect,
+                            egui::Rounding::same(4.0),
+                            Palette::PANEL_ALT,
+                        );
+                    }
+                    crate::icons::paint(
+                        ui.painter(),
+                        egui::Rect::from_center_size(
+                            egui::Pos2::new(rect.left() + 16.0, rect.center().y),
+                            egui::Vec2::splat(18.0),
+                        ),
+                        m.icon(hatch),
+                        if m == cur { Palette::ACCENT } else { Palette::TEXT },
+                    );
+                    ui.painter().text(
+                        egui::Pos2::new(rect.left() + 32.0, rect.center().y),
+                        egui::Align2::LEFT_CENTER,
+                        m.label(),
+                        egui::FontId::proportional(12.5),
+                        if m == cur { Palette::ACCENT } else { Palette::TEXT },
+                    );
                     if bereit && resp.clicked() {
                         if hatch {
                             self.ui.hatch_input = m;
