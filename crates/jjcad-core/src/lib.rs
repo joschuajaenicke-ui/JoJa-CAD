@@ -24,6 +24,7 @@ pub mod session;
 pub mod snap;
 pub mod style;
 pub mod templates;
+pub mod tessellate;
 pub mod transform;
 pub mod units;
 pub mod util;

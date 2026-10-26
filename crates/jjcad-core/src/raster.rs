@@ -7,6 +7,7 @@ use crate::geom::*;
 use crate::model::*;
 use crate::render::{DisplayList, Prim, Shape};
 use crate::style::LineType;
+use crate::tessellate::CurveQuality;
 use crate::export::RasterOptions;
 use ab_glyph::{Font, FontRef, ScaleFont};
 use std::path::Path;
@@ -285,7 +286,8 @@ fn draw_prim(pm: &mut Pixmap, prim: &Prim, map: &Map, paper_px: f64) {
             }
         }
         Shape::Arc { c, r, a0, a1 } => {
-            let pts = Arc::new(*c, *r, *a0, *a1).flatten(0.1 / map.k.max(1e-9));
+            let arc = Arc::new(*c, *r, *a0, *a1);
+            let pts = CurveQuality::PRINT.flatten(&arc, map.k);
             if let Some(path) = build_path(&pts, false, map) {
                 pm.stroke_path(&path, &paint, &stroke, Transform::identity(), None);
             }

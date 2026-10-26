@@ -681,20 +681,21 @@ impl Arc {
         self.r * self.sweep()
     }
 
+    /// Zerlegt den Bogen in Sehnen; `tol` ist die zulässige Pfeilhöhe in
+    /// Welt-Millimetern.
+    ///
+    /// Für Bildschirm und Druck die Vorgaben aus
+    /// [`crate::tessellate::CurveQuality`] benutzen — dort steht die Toleranz
+    /// in Ausgabe-Einheiten (Pixel bzw. Papier-mm) und die Segmentzahl ist
+    /// zusätzlich nach oben begrenzt.
     pub fn flatten(&self, tol: f64) -> Vec<Vec2> {
-        let sweep = self.sweep();
-        let max_step = if self.r > 1e-6 {
-            (2.0 * (1.0 - (tol / self.r).clamp(-1.0, 1.0)).acos()).max(0.02)
-        } else {
-            0.3
+        let q = crate::tessellate::CurveQuality {
+            max_sagitta: tol.max(1e-9),
+            min_segments: 2,
+            max_segments: 512,
+            min_step: 0.02,
         };
-        let n = ((sweep / max_step).ceil() as usize).clamp(2, 512);
-        (0..=n)
-            .map(|i| {
-                let a = self.a0 + sweep * (i as f64 / n as f64);
-                self.c + Vec2::polar(a, self.r)
-            })
-            .collect()
+        q.flatten_tol(self, q.max_sagitta)
     }
 
     pub fn bbox(&self) -> BBox {
