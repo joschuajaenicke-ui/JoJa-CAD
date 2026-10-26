@@ -310,8 +310,8 @@ pub fn draw_block_preview(app: &App, p: &egui::Painter, rect: Rect, b: &BlockDef
             }
             PShape::Arc { c, r, a0, a1 } => {
                 let arc = jjcad_core::geom::Arc::new(*c, *r, *a0, *a1);
-                let pts: Vec<Pos2> = arc
-                    .flatten(0.5 / k.max(1e-6) as f64)
+                let pts: Vec<Pos2> = jjcad_core::tessellate::CurveQuality::SCREEN
+                    .flatten(&arc, k as f64)
                     .iter()
                     .map(|q| w2s(*q))
                     .collect();
