@@ -290,6 +290,120 @@ pub fn snap_candidates_gated(
     out
 }
 
+/// Woher der endgültige Zeigerpunkt stammt — die Stufen der Fang-Kette.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum SnapSource {
+    /// Objektfang der Fang-Engine (Endpunkt, Schnittpunkt, …, Raster).
+    Object(SnapKind),
+    /// Polarfang: auf ein Vielfaches der Polarschrittweite gedreht.
+    Polar,
+    /// Ortho-Zwang: waagerecht/senkrecht zum Bezugspunkt.
+    Ortho,
+    /// Kein Fang — der Zeigerpunkt gilt unverändert.
+    Free,
+}
+
+impl SnapSource {
+    /// Label für die Statuszeile; Ortho und „frei" bleiben ohne Label, weil
+    /// sie den Zeiger nur führen und keinen Sonderpunkt liefern.
+    pub fn label(self) -> Option<&'static str> {
+        match self {
+            SnapSource::Object(k) => Some(k.label()),
+            SnapSource::Polar => Some("POL"),
+            SnapSource::Ortho | SnapSource::Free => None,
+        }
+    }
+}
+
+/// Ergebnis der Fang-Kette für einen Zeigerpunkt.
+#[derive(Clone, Debug)]
+pub struct SnapResolution {
+    pub point: Vec2,
+    pub source: SnapSource,
+}
+
+impl SnapResolution {
+    /// Der übernommene Punkt ist ein echter Fangpunkt (nicht nur der Zeiger).
+    pub fn is_snap(&self) -> bool {
+        matches!(self.source, SnapSource::Object(_) | SnapSource::Polar)
+    }
+
+    pub fn label(&self) -> Option<&'static str> {
+        self.source.label()
+    }
+}
+
+/// Fang-Kette in der richtigen Reihenfolge: **Objektfang vor Ortho/Polar**.
+///
+/// Aus Schaden gelernt (Karte t_809d529d): wird der Zeiger zuerst ortho
+/// projiziert und der Objektfang erst danach um den projizierten Punkt
+/// gesucht, liegt ein vorhandenes Linienende je nach Winkel weit neben der
+/// Zwangsachse und ist damit unerreichbar — die Polylinie kann nicht an
+/// bestehende Linien anschließen. Deshalb:
+///
+/// 1. Objektfang im Fangradius um den **rohen** Zeiger (Endpunkt hat Vorrang
+///    vor Kante, siehe [`SnapKind::priority`]).
+/// 2. Nur wenn nichts fängt: Ortho bzw. Polar als Führung.
+/// 3. Zuletzt das Raster — es darf eine Zwangsrichtung nicht über den
+///    Fangradius hinaus verbiegen.
+///
+/// Der zurückgegebene Punkt ist der Fangpunkt selbst (keine Rundung); die
+/// Zeichenfläche übernimmt ihn unverändert, damit gespeicherter Punkt und
+/// Fangpunkt identisch sind. `tol` ist der Fangradius in Weltkoordinaten
+/// (Bildschirm-Pixel ÷ Zoom), damit das Verhalten zoomunabhängig bleibt.
+pub fn snap_constrained(
+    doc: &Document,
+    cursor: Vec2,
+    tol: f64,
+    reference: Option<Vec2>,
+    ignore: &[Id],
+    selected: &[Id],
+    allow_grid: bool,
+) -> SnapResolution {
+    let s = doc.settings.snap.clone();
+    let tol = tol.max(1e-6);
+
+    // 1. Objektfang ohne Raster: er gewinnt gegen jede Zwangsrichtung.
+    //    Das Raster ist eine Führung wie Ortho und kommt erst in Schritt 3.
+    if let Some(hit) = find_snap_gated(doc, cursor, tol, reference, ignore, selected, false) {
+        return SnapResolution {
+            point: hit.point,
+            source: SnapSource::Object(hit.kind),
+        };
+    }
+
+    // 2. Kein Objekt in Reichweite: Ortho bzw. Polar.
+    let mut point = cursor;
+    let mut source = SnapSource::Free;
+    if let Some(r) = reference {
+        if s.ortho {
+            point = cursor.ortho_from(r, false);
+            source = SnapSource::Ortho;
+        } else if s.polar && cursor.dist(r) > tol * 2.0 {
+            if let Some(p) = cursor.polar_snap_from_tol(r, s.polar_step.max(1.0), s.polar_tolerance)
+            {
+                point = p;
+                source = SnapSource::Polar;
+            }
+        }
+    }
+
+    // 3. Raster zuletzt und nur im Fangradius.
+    if allow_grid && s.grid {
+        let step = s.grid_step;
+        if step > 0.0 {
+            let gp = point.snap_grid(step, Vec2::ZERO);
+            if gp.dist(point) <= tol {
+                return SnapResolution {
+                    point: gp,
+                    source: SnapSource::Object(SnapKind::Grid),
+                };
+            }
+        }
+    }
+    SnapResolution { point, source }
+}
+
 /// Trefferprüfung (Auswahl per Klick).
 pub fn hit_test(doc: &Document, p: Vec2, tol: f64, layer_filter: Option<&[Id]>) -> Option<Id> {
     let mut best: Option<(Id, f64, u8)> = None;

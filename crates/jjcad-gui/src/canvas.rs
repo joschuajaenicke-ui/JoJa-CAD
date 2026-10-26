@@ -628,41 +628,12 @@ pub fn show(app: &mut App, ui: &mut Ui) {
     // Fangen
     let mut snapped = raw_world;
     app.snap_label = None;
-    if let Some(mut w) = raw_world {
+    if let Some(w) = raw_world {
         if !is_sheet {
-            let s = &app.doc().settings.snap;
-            let tol = (s.tolerance_px / app.current_view().zoom).max(0.5);
-            let reference = app.tool.as_ref().and_then(|t| t.pts.last().copied());
-            if s.ortho {
-                if let Some(r) = reference {
-                    w = w.ortho_from(r, false);
-                }
-            } else if s.polar {
-                if let Some(r) = reference {
-                    let d = w.dist(r);
-                    if d > tol * 2.0 {
-                        if let Some(p) = w.polar_snap_from_tol(
-                            r,
-                            s.polar_step.max(1.0),
-                            s.polar_tolerance,
-                        ) {
-                            w = p;
-                            app.snap_label = Some("POL".to_string());
-                        }
-                    }
-                }
-            }
-            // Ausgewählte Objekte bleiben mit ihren Ecken/Endpunkten fangbar.
-            // Nur während sie live gezogen werden (Maus-Verschieben, Griff),
-            // fallen sie ganz aus dem Fang — sonst zieht der Fang das Objekt
-            // auf sich selbst zurück und die Bewegung klebt am Startpunkt.
-            let (ignore, keep) = snap_ignore_keep(app);
-            if let Some(hit) = snap::find_snap(app.doc(), w, tol, reference, ignore, keep) {
-                w = hit.point;
-                app.snap_label = Some(hit.kind.label().to_string());
-            }
+            let (p, label) = fang_zeiger(app, w, fang_radius_px(app, app.current_view().zoom));
+            snapped = Some(p);
+            app.snap_label = label.map(str::to_string);
         }
-        snapped = Some(w);
     }
     app.pointer_world = snapped;
     if !is_sheet {
@@ -1689,31 +1660,39 @@ fn handle_navigation(app: &mut App, ui: &mut Ui, resp: &Response, rect: Rect, vi
 // Eingabe
 // ---------------------------------------------------------------------------
 
-#[allow(clippy::too_many_arguments)]
+/// Fangradius in Weltkoordinaten für eine Zoomstufe: Bildschirm-Pixel ÷ Zoom.
+///
+/// Damit ist der Fang unabhängig von der Zoomstufe immer gleich groß auf dem
+/// Schirm; die Untergrenze fängt entartete Zoomwerte ab.
+fn fang_radius_px(app: &App, zoom: f64) -> f64 {
+    (app.doc().settings.snap.tolerance_px / zoom.max(1e-6)).max(0.5)
+}
+
+/// Fang-Kette für den Zeiger in der aktuellen Werkzeuglage.
+///
+/// Liefert den zu übernehmenden Weltpunkt und das Label für die Statuszeile.
+/// **Einziger Weg** für Zeigeranzeige (`show`) und Klickpunkt (`snap_at`) —
+/// laufen sie getrennt, weicht der gespeicherte Punkt vom sichtbaren
+/// Fangpunkt ab. Reihenfolge der Fänge: `snap::snap_constrained`.
+fn fang_zeiger(app: &App, w: V2, tol: f64) -> (V2, Option<&'static str>) {
+    let reference = app.tool.as_ref().and_then(|t| t.pts.last().copied());
+    let (ignore, keep) = snap_ignore_keep(app);
+    let res = snap::snap_constrained(
+        app.doc(),
+        w,
+        tol,
+        reference,
+        ignore,
+        keep,
+        app.ui.show_grid,
+    );
+    (res.point, res.label())
+}
+
 /// Fängt einen Weltpunkt für eine beliebige Bildschirmposition (ohne Label-Nebenwirkungen).
 fn snap_at(app: &App, rect: Rect, view: View, pos: Pos2) -> V2 {
-    let mut w = screen_to_world(rect, view, pos);
-    let s = &app.doc().settings.snap;
-    let tol = (s.tolerance_px / view.zoom).max(0.5);
-    let reference = app.tool.as_ref().and_then(|t| t.pts.last().copied());
-    if s.ortho {
-        if let Some(r) = reference {
-            w = w.ortho_from(r, false);
-        }
-    } else if s.polar {
-        if let Some(r) = reference {
-            if w.dist(r) > tol * 2.0 {
-                if let Some(p) = w.polar_snap_from_tol(r, s.polar_step.max(1.0), s.polar_tolerance) {
-                    w = p;
-                }
-            }
-        }
-    }
-    let (ignore, keep) = snap_ignore_keep(app);
-    if let Some(hit) = snap::find_snap(app.doc(), w, tol, reference, ignore, keep) {
-        w = hit.point;
-    }
-    w
+    let w = screen_to_world(rect, view, pos);
+    fang_zeiger(app, w, fang_radius_px(app, view.zoom)).0
 }
 
 /// Fang-Ausschluss und Fang-Auswahl für den aktuellen Zustand.
@@ -4287,5 +4266,95 @@ mod tests_tasten_punktfolge {
         taste(&mut app, egui::Key::Escape);
         assert!(app.doc().entities.is_empty(), "keine Wand angelegt");
         assert!(app.tool.is_none(), "ESC beendet das Wandwerkzeug");
+    }
+}
+
+mod tests_fang_polylinie {
+    //! Punktfang bei der Polylinien-Eingabe (Karte t_809d529d).
+    //!
+    //! Geprüft wird die Verdrahtung der Zeichenfläche, nicht die Fang-Engine
+    //! selbst (die deckt `crates/jjcad-core/tests/snap_polylinie.rs` ab): der
+    //! Zeiger, den `show` anzeigt, und der Punkt, den der Klick übernimmt,
+    //! laufen beide durch `fang_zeiger`. Mit Ortho-Zwang (der Fehlerfall) liegt
+    //! das vorhandene Linienende neben der Zwangsachse — es muss trotzdem
+    //! fangen und unverändert in der Polylinie landen.
+
+    use super::*;
+
+    fn app() -> App {
+        App::with_ctx(egui::Context::default())
+    }
+
+    /// Ortho an, Polar aus, Raster aus: die Zwangsrichtung, unter der der
+    /// Objektfang vorher unerreichbar war.
+    fn ortho_app() -> App {
+        let mut app = app();
+        let _ = app.session_mut().execute(
+            "doc.settings",
+            &serde_json::json!({"input_unit": "mm",
+                               "snap": {"ortho": true, "polar": false, "grid": false}}),
+        );
+        let _ = app
+            .session_mut()
+            .execute("draw.line", &serde_json::json!({"a": [0.0, 0.0], "b": [2000.0, 0.0]}));
+        app
+    }
+
+    fn polylinien_punkte(app: &App) -> Vec<V2> {
+        app.doc()
+            .entities
+            .iter()
+            .find_map(|e| match &e.kind {
+                EntityKind::Polyline { verts, .. } => Some(verts.iter().map(|w| w.p).collect()),
+                _ => None,
+            })
+            .expect("keine Polylinie angelegt")
+    }
+
+    /// Zeiger 8 mm neben dem Linienende, vom letzten Polylinien-Punkt (0; 2000)
+    /// aus gesehen neben der Ortho-Achse: der Fang muss auf (2000; 0) springen
+    /// und den Endpunkt melden.
+    #[test]
+    fn zeiger_faengt_linienende_trotz_ortho() {
+        let mut app = ortho_app();
+        app.start_tool("draw.polyline");
+        tool_click(&mut app, V2::new(0.0, 2000.0));
+
+        let (p, label) = fang_zeiger(&app, V2::new(1992.0, 8.0), 40.0);
+        assert_eq!(label, Some("Endpunkt"), "Snap-Indikator in der Statuszeile");
+        assert!(
+            p.dist(V2::new(2000.0, 0.0)) < 1e-9,
+            "Fangpunkt muss das Linienende sein, ist {p:?}"
+        );
+    }
+
+    /// Der übernommene Punkt ist der Fangpunkt: nach dem Klick steht in der
+    /// gespeicherten Polylinie exakt (2000; 0) — keine Rundungsabweichung.
+    #[test]
+    fn uebernommener_punkt_ist_der_fangpunkt() {
+        let mut app = ortho_app();
+        app.start_tool("draw.polyline");
+        tool_click(&mut app, V2::new(0.0, 2000.0));
+
+        let (p, _) = fang_zeiger(&app, V2::new(1992.0, 8.0), 40.0);
+        tool_click(&mut app, p);
+        finish_tool(&mut app, true);
+
+        let pts = polylinien_punkte(&app);
+        assert_eq!(pts.len(), 2, "zwei Stützpunkte");
+        assert!(pts[1].dist(p) < 1e-9, "gespeichert {:?}, gefangen {p:?}", pts[1]);
+        assert!(pts[1].dist(V2::new(2000.0, 0.0)) < 1e-9, "{:?}", pts[1]);
+    }
+
+    /// Fangradius in Bildschirm-Pixeln: bei doppeltem Zoom halbiert sich der
+    /// Radius in Weltkoordinaten — derselbe Zeigerabstand in Pixeln fängt
+    /// weiterhin.
+    #[test]
+    fn fangradius_ist_bildschirmkonstant() {
+        let app = ortho_app();
+        let k = app.doc().settings.snap.tolerance_px;
+        assert!((fang_radius_px(&app, 1.0) - k).abs() < 1e-9);
+        assert!((fang_radius_px(&app, 2.0) - k / 2.0).abs() < 1e-9);
+        assert!((fang_radius_px(&app, 0.5) - k * 2.0).abs() < 1e-9);
     }
 }
