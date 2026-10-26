@@ -251,6 +251,10 @@ pub struct UiState {
     /// Zuletzt benutzter Eingabemodus je Button (Fläche / Schraffur)
     pub fill_input: FillInput,
     pub hatch_input: FillInput,
+    /// Welcher der beiden Knöpfe das laufende Füllwerkzeug gestartet hat
+    /// (None = kein Füllwerkzeug aktiv). Nötig, weil beide Knöpfe dieselbe
+    /// Action starten können und sonst beide hervorgehoben wären.
+    pub fill_active: Option<bool>,
     /// Offenes Kontextmenü (Objekt, Zeichenfläche oder Chip)
     pub menu: Option<MenuState>,
     pub bind_slot: Option<usize>,
@@ -300,6 +304,7 @@ impl Default for UiState {
             drag_mode: DragMode::HoldAndDrag,
             fill_input: FillInput::Points,
             hatch_input: FillInput::Contour,
+            fill_active: None,
             menu: None,
             bind_slot: None,
             slot_drag: None,
@@ -562,6 +567,15 @@ impl App {
                 "paint" | "farbeimer" => self.start_tool("draw.fill.paint"),
                 "door" => self.start_tool("draw.door"),
                 "text" => self.start_tool("draw.text"),
+                // Prüfhilfe: Füllwerkzeug über den jeweiligen Knopf starten
+                "fillarea" => {
+                    let m = self.ui.fill_input;
+                    self.start_fill_input(m, false);
+                }
+                "fillhatch" => {
+                    let m = self.ui.hatch_input;
+                    self.start_fill_input(m, true);
+                }
                 // Prüfhilfe: erste Tür auswählen, damit das Eigenschaften-Panel
                 // im Screenshot belegbar ist
                 "seldoor" => {
@@ -1087,6 +1101,7 @@ impl App {
 
     pub fn start_tool(&mut self, id: &str) {
         let Some(def) = actions::action(id) else { return };
+        self.ui.fill_active = None;
         // Optionen aus Dokument aktualisieren, falls noch nie gesetzt
         self.tool = Some(Tool {
             action: id.to_string(),
@@ -3246,6 +3261,7 @@ impl App {
             jjcad_core::style::FillPattern::Solid
         };
         self.start_tool(mode.action());
+        self.ui.fill_active = Some(hatch);
     }
 
     /// Geteilte Ribbon-Schaltfläche für Füllflächen/Schraffuren.
@@ -3255,7 +3271,7 @@ impl App {
         } else {
             self.ui.fill_input
         };
-        let active = self.tool_id() == Some(cur.action());
+        let active = self.tool_id() == Some(cur.action()) && self.ui.fill_active == Some(hatch);
         let label = if hatch { "Schraffur" } else { "Fläche" };
         let (main, arrow) = widgets::ribbon_split_button(ui, cur.icon(hatch), label, active);
         let popup_id = ui.make_persistent_id(("fillpop", hatch));
