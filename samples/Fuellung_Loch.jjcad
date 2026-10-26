@@ -1,0 +1,120 @@
+{
+  "format": "jjcad",
+  "version": 2,
+  "name": "",
+  "project": {
+    "project": "",
+    "client": "",
+    "planner": "",
+    "plan_no": "",
+    "plan_title": "",
+    "address": "",
+    "note": "",
+    "date": "",
+    "revision": ""
+  },
+  "settings": {
+    "input_unit": "M",
+    "dim_unit": "M",
+    "decimals": 2,
+    "annotation_scale": 100.0,
+    "snap": {
+      "endpoint": true,
+      "midpoint": true,
+      "center": true,
+      "intersection": true,
+      "perpendicular": true,
+      "nearest": true,
+      "grid": true,
+      "ortho": false,
+      "polar": true,
+      "wall_edges": true,
+      "grid_step": 100.0,
+      "tolerance_px": 12.0,
+      "polar_step": 45.0,
+      "polar_tolerance": 6.0
+    },
+    "text_height": 250.0,
+    "wall_thickness": 240.0,
+    "door_width": 885.0,
+    "window_width": 1200.0,
+    "stair_width": 1000.0,
+    "show_grid": true,
+    "show_rulers": true
+  },
+  "layers": [],
+  "current_layer": 0,
+  "blocks": [],
+  "entities": [
+    {
+      "id": 1,
+      "kind": {
+        "type": "fill",
+        "boundary": [
+          {
+            "x": 0.0,
+            "y": 0.0
+          },
+          {
+            "x": 6000.0,
+            "y": 0.0
+          },
+          {
+            "x": 6000.0,
+            "y": 4000.0
+          },
+          {
+            "x": 0.0,
+            "y": 4000.0
+          }
+        ],
+        "holes": [
+          [
+            {
+              "x": 1500.0,
+              "y": 1500.0
+            },
+            {
+              "x": 3000.0,
+              "y": 1500.0
+            },
+            {
+              "x": 3000.0,
+              "y": 2500.0
+            },
+            {
+              "x": 1500.0,
+              "y": 2500.0
+            }
+          ]
+        ],
+        "pattern": "Lines",
+        "pattern_angle": 0.7853981633974483,
+        "pattern_scale": 100.0,
+        "border": true
+      },
+      "layer": 0,
+      "style": {
+        "color": "#000000",
+        "line_type": null,
+        "line_weight": null,
+        "fill": "#FFD24A"
+      },
+      "by_block": false
+    }
+  ],
+  "sheets": [],
+  "dim_style": {
+    "text_height": 2.5,
+    "arrow_size": 2.0,
+    "arrow": "Slash",
+    "text_gap": 0.8,
+    "ext_gap": 1.5,
+    "ext_overshoot": 1.5,
+    "chain_gap": 8.0,
+    "text_pos": "Above",
+    "decimals": 2,
+    "unit_divisor": 1000.0
+  },
+  "next_id": 2
+}

@@ -209,6 +209,13 @@ Erwartung: Tür springt auf die jeweilige Wandaußenseite, kein Feld "Ausrichtun
 Keine Implementierungserklärungen, keine Zwischenschritte, keine Testprotokolle
 in Prosa. Zahlen statt Adjektive.
 
+**Jeder TEST-Kommentar muss einen Prüfweg enthalten, den der Mensch in zwei
+Minuten gehen kann.** Bei sichtbaren Änderungen: Klickschritte. Bei rein
+technischen Änderungen ohne Bedienelement (Speicherformat, Rendering-Grundlage):
+eine **Beispieldatei im Repo** (`samples/…jjcad`) oder ein MCP-Befehl, mit dem
+man das Ergebnis sieht. Ohne Prüfweg ist der Bericht wertlos — „fertig" ist dann
+nicht überprüfbar.
+
 ## Abnahme-System (verbindlich)
 
 Jede Spalte hat **genau eine** Bedeutung:
