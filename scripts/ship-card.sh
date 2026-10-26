@@ -20,9 +20,20 @@ MAIN="$(dirname "$(git rev-parse --path-format=absolute --git-common-dir)")"
 cd "$MAIN" || exit 1
 
 ID="${1:-}"
-if ! [[ "$ID" =~ ^t_[0-9a-f]+$ ]]; then
-    echo "Aufruf: ./scripts/ship-card.sh t_1234abcd" >&2
+# Zwei Kennungsformen sind erlaubt:
+#   t_1234abcd        (Kanban-Karten, historisch)
+#   T0042-cursor-…    (Ticketbox-Tickets, Namensschema der Spezifikation §5a)
+if ! [[ "$ID" =~ ^t_[0-9a-f]+$ || "$ID" =~ ^T[0-9]{4}-[a-z0-9-]+$ ]]; then
+    echo "Aufruf: ./scripts/ship-card.sh T0042-cursor-polarfang   (oder t_1234abcd)" >&2
     exit 1
+fi
+
+# Auslieferungen serialisieren: Merge + Test + Build dürfen nie verschränkt
+# laufen, sonst überschreiben sich zwei Worker im selben Hauptbaum.
+exec 9>"$MAIN/.git/ticketbox-ship.lock"
+if ! flock -w 1800 9; then
+    echo "Es läuft bereits eine Auslieferung (Sperre .git/ticketbox-ship.lock)." >&2
+    exit 9
 fi
 
 # 1. Zweig der Karte bestimmen: Worktree, sonst wt/ bzw. fix/

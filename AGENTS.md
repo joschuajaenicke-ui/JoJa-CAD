@@ -1,8 +1,12 @@
 # JoJa-CAD v0.2 — Projektkontext für Agenten
 
-**Lies dieses Dokument vollständig, bevor du eine Karte bearbeitest.** Es enthält
+**Lies dieses Dokument vollständig, bevor du ein Ticket bearbeitest.** Es enthält
 die verbindlichen Konventionen. Abweichungen gelten als Fehler.
 (Gleicher Inhalt als Kopie: `docs/AGENTEN.md`.)
+
+**Arbeitsablauf:** Tickets, Kategorien, Arbeitsplatz und Berichtsweg stehen in
+`~/Ticketbox/AGENTS.md` — dieses Dokument ergänzt es um die Projektregeln.
+Ticketbox löst Kanban ab; beides zusammen ist widerspruchsfrei.
 
 **Begriffe:** `docs/GLOSSAR.md` ist verbindlich. Ein Begriff, eine Bedeutung —
 Tickets, Kommentare, UI-Texte und Code-Kommentare benutzen die dortige linke
@@ -60,41 +64,48 @@ Nicht der Commit-Zähler: zwei verschiedene Stände ergäben sonst dieselbe Numm
 - der Stand **kein Nachfolger** des zuletzt ausgelieferten ist (Vorfahren-Prüfung;
   verhindert, dass ein älterer Zweig gelöste Fehler zurückbringt).
 
-### Ausliefern ist Teil der Karte (genau ein Befehl)
+### Ausliefern ist Teil des Tickets (genau ein Befehl)
 
 Jeder Build entsteht **aus `master`** — nur so enthält er alle vorherigen Fixes.
-Deshalb liefert der Worker seine Karte selbst aus:
+Deshalb liefert der Worker sein Ticket selbst aus, in seinem Worktree:
 
 ```bash
-./scripts/ship-card.sh t_1234abcd
+./scripts/ship-card.sh T0042-cursor-polarfang
 ```
 
-Das Skript
+Das Skript läuft unter einer Sperre (`flock`): zwei Auslieferungen können sich
+nicht verschränken. Kennungen beider Formen werden akzeptiert — `T0042-…` für
+Ticketbox, `t_1234abcd` historisch für alte Karten.
+
+Es
 - verweigert die Auslieferung, wenn der Zweig den aktuellen `master` nicht enthält
   (dann erst im Worktree `git merge master`),
-- merged den Karten-Zweig nach `master` (`--no-ff`; Tests müssen grün sein, sonst
+- merged den Ticket-Zweig nach `master` (`--no-ff`; Tests müssen grün sein, sonst
   automatischer Rückbau),
 - baut `master` und legt den Build in `~/jjcad-live/` ab,
-- gibt die Kennung `s<N>-<hash>` aus, die in den Review-Kommentar gehört.
+- gibt die Kennung `s<N>-<hash>` aus, die in `ergebnis.build` gehört.
 
-Ohne diese Kennung geht keine Karte nach `review`. `build-live.sh` nie direkt
-aufrufen, nie aus einem Feature-Zweig bauen.
+Ohne diese Kennung geht kein Ticket nach „Überprüfung“: der Nutzer wüsste nicht,
+welchen Build er testen soll. `build-live.sh` nie direkt aufrufen, nie aus einem
+Feature-Zweig bauen.
 
 
 ## Wasserdichte Regeln (aus Schaden gelernt)
 
 Diese fünf Regeln verhindern, dass gelöste Fehler wieder auftauchen:
 
-1. **Nur ein Worker gleichzeitig.** Erzwungen vom Dispatcher über
-   `kanban.max_in_progress = 1` (gatewayweit, gilt für alle Boards). Zwei parallele
-   Worker haben schon einmal verschiedene Stände gleichzeitig gebaut und dieselbe
-   Datei überschrieben.
-2. **Isolierter Zweig pro Karte.** Jede Karte arbeitet in einem eigenen Worktree
-   (`wt/t_<id>`). Nie im Hauptverzeichnis, nie auf `master` committen:
-   `git checkout -b fix/t_<id>`.
-3. **Merge nur über `scripts/ship-card.sh <karte>`** — es merged mit `--no-ff`,
-   prüft die Tests und rollt bei Rot zurück. Kein `git merge` von Hand auf
-   `master`, kein `git checkout master` im Hauptverzeichnis.
+1. **Nur ein Worker gleichzeitig.** Die Ticketbox startet genau einen Lauf,
+   solange „Bearbeitung“ belegt ist (Auto-Modus). Zwei parallele Worker haben
+   schon einmal verschiedene Stände gleichzeitig gebaut und dieselbe Datei
+   überschrieben. Manuell in „Bearbeitung“ geschobene Tickets sind die einzige
+   Ausnahme — dann gilt Regel 2 umso strenger.
+2. **Isolierter Zweig pro Ticket.** Jedes Ticket arbeitet in seinem eigenen
+   Worktree (`.worktrees/T0042-<slug>`, Zweig `fix/T0042-<slug>`), den die
+   Ticketbox vor dem Start anlegt und auf den aktuellen `master` zieht. Nie im
+   Hauptverzeichnis, nie auf `master` committen.
+3. **Merge nur über `scripts/ship-card.sh <Ticket-Kennung>`** — es merged mit
+   `--no-ff`, prüft die Tests und rollt bei Rot zurück. Kein `git merge` von Hand
+   auf `master`, kein `git checkout master` im Hauptverzeichnis.
 4. **Jeder Fix bekommt einen Test.** Ohne Test kann ein Fehler unbemerkt
    zurückkommen; mit Test bricht der nächste Merge sofort. Das ist der einzige
    echte Regressionsschutz.
@@ -104,11 +115,11 @@ Diese fünf Regeln verhindern, dass gelöste Fehler wieder auftauchen:
 
 ## Regeln für parallele Arbeit
 
-1. **Erster Schritt: auf den aktuellen master ziehen.** Bevor du eine Zeile
-   änderst: `git merge master` (oder `git rebase master`) im eigenen Workspace.
-   Ein Worktree kann von einem früheren Lauf stammen und dann auf veraltetem
-   Stand stehen — dann baust du alte Fehler wieder ein. Prüfe danach:
-   `git merge-base --is-ancestor master HEAD && echo aktuell`.
+1. **Erster Schritt: Stand prüfen.** Bevor du eine Zeile änderst:
+   `git merge-base --is-ancestor master HEAD && echo aktuell` im eigenen
+   Worktree. Nicht aktuell → `git merge master` (Konflikte lösen, Tests grün),
+   erst dann arbeiten. Die Ticketbox zieht den Worktree vor dem Start selbst
+   nach; ein von Hand angelegter Arbeitsplatz kann trotzdem veraltet sein.
    Dann **nur im eigenen Workspace** arbeiten, nie in einem fremden Worktree.
 2. **Niemals die GUI auf dem Bildschirm des Nutzers starten** (kein
    `DISPLAY=:0`, kein Start ohne Display-Angabe). Jedes Fenster, das auf seinem
@@ -124,24 +135,23 @@ Diese fünf Regeln verhindern, dass gelöste Fehler wieder auftauchen:
    `scripts/start-live.sh` startet.
 3. **Niemals `pkill -x jjcad`** oder ähnliche Muster-Kills — das beendet seine
    Instanz. Nur selbst gestartete Prozesse per PID beenden.
-4. **Nicht mergen, nicht direkt auf `master` committen.** Arbeitest du im
-   Hauptverzeichnis (Workspace = Projektordner), lege zuerst einen eigenen Zweig
-   an: `git checkout -b fix/t_<karten-id>`. Arbeitest du in einem Worktree,
-   committest du auf dessen Zweig.
+4. **Nicht mergen, nicht direkt auf `master` committen.** Du arbeitest immer in
+   einem Ticket-Worktree und committest auf dessen Zweig. Ohne Worktree (z. B.
+   bei einer Nachfrage im Hauptprofil): erst `git checkout -b fix/T<NNNN>-<slug>`.
 5. **Kleine, prüfbare Schritte**: bauen, testen, dann committen. Kein Commit
    mit Compile-Fehlern.
 6. **Debug-Dateien löschen** (`examples/dbg_*.rs`, temporäre Testdateien),
    bevor du abgibst.
-7. **Handoff zuerst, Politur danach.** Ein Worker hat ein festes
-   Iterationsbudget (150). Sobald der Fix committet ist und `cargo test` grün
-   läuft: **sofort** `request-review` mit dem Bericht nach Vorlage. Screenshots,
-   Doku oder Gegenproben danach als Kommentar nachreichen. Sonst geht das Budget
-   für Nebensächliches drauf und der Lauf endet ohne Übergabe (schon passiert:
-   t_9e6eb560, 150/150 Iterationen, Arbeit fertig, Handoff fehlte).
+7. **Bericht zuerst, Politur danach.** Sobald der Fix committet ist,
+   `cargo test` grün läuft und ausgeliefert ist: **sofort** `ergebnis` in der
+   `ticket.json` schreiben. Screenshots, Doku oder Gegenproben danach als
+   Nacharbeit am Ticket. Sonst geht das Zeitbudget für Nebensächliches drauf und
+   der Lauf endet ohne Übergabe (schon passiert: t_9e6eb560, 150/150
+   Iterationen, Arbeit fertig, Übergabe fehlte).
 
 ## Verbindliche Designentscheidungen
 
-Mit dem Nutzer abgestimmt — nicht „verbessern":
+Mit dem Nutzer abgestimmt — nicht „verbessern“:
 
 - **Türen** sitzen immer auf der *vorderen Wandkante* (Blattseite), nicht in der
   Wandmitte. Kein Auswahlfeld für die Tür-Lage. Fenster dürfen ihre Lage in
@@ -171,14 +181,14 @@ Mit dem Nutzer abgestimmt — nicht „verbessern":
   nicht die achsenparallele Bounding-Box.
 - **Griffe** haben 8–12 px Trefferradius, geprüft gegen die *rohe* Zeigerposition
   (nicht den Fangpunkt).
-- **Zieh-Modi**: Einstellungen → Bedienung → „Ziehen" (Gedrückthalten / Zwei
+- **Zieh-Modi**: Einstellungen → Bedienung → „Ziehen“ (Gedrückthalten / Zwei
   Klicks), gespeichert in `prefs.json`, gilt für Auswahl *und* Griffe.
 
-## Bericht an den Nutzer (Review)
+## Bericht an den Nutzer (Ergebnis im Ticket)
 
-Der Nutzer testet jedes Ergebnis selbst und will **keinen Roman**. Der
-Abschluss-Kommentar an der Karte hat genau diese Form, maximal 6 Zeilen, und
-beginnt mit der Kennung, die `scripts/ship-card.sh` ausgegeben hat:
+Der Nutzer testet jedes Ergebnis selbst und will **keinen Roman**. Das Feld
+`ergebnis` in `~/Ticketbox/tickets/<Ticket>/ticket.json` hat genau diese Form,
+maximal 6 Zeilen, und beginnt mit der Kennung aus `ship-card.sh`:
 
 ```
 TEST s<N>-<hash> — <eine Zeile: was jetzt anders ist>
@@ -187,19 +197,22 @@ Testen: <2–4 konkrete Schritte in der App>
 Erwartung: <was man sehen muss>
 ```
 
-Das Wort `TEST` am Anfang ist Pflicht: daran erkennt der Mensch, dass die Karte
-in der Review-Spalte auf ihn wartet.
+Das Wort `TEST` am Anfang ist Pflicht: daran erkennt der Mensch, welchen Build er
+in der App testet. Die volle Kennung (`jjcad-0.2.0-s<N>-<hash>`) gehört in
+`ergebnis.build`.
 
 Reihenfolge, nicht verhandelbar:
 
 1. Arbeit committen, `cargo test` grün.
-2. `./scripts/ship-card.sh <karte>` → Build liegt in `~/jjcad-live/`, Kennung notieren.
-3. **Erst dann** `request-review` mit obigem Kommentar.
+2. `./scripts/ship-card.sh <Ticket-Kennung>` → Build liegt in `~/jjcad-live/`,
+   Kennung notieren.
+3. **Erst dann** `ergebnis` schreiben (`build`, `gemacht`, `belege`, `offen`) und
+   `fertig` setzen. Die Ticketbox schiebt das Ticket nach „Überprüfung“.
 
-Eine Karte in `review` ohne `TEST s<N>`-Stempel ist ein Fehler: sie ist dann in
-keinem Build und der Nutzer würde ins Leere testen. **Nur der jüngste Kommentar
-zählt** — nach einer Nacharbeit ist der alte Stempel ungültig; dann neu ausliefern
-und `GÜLTIG: TEST s<N>-<hash>` schreiben.
+Ein Ticket in „Überprüfung“ ohne `ergebnis.build` ist ein Fehler: es ist in
+keinem Build und der Nutzer würde ins Leere testen. **Nur das jüngste Ergebnis
+zählt** — nach einer Nacharbeit ist der alte Stand ungültig; dann neu ausliefern
+und den neuen Build nennen.
 
 Beispiel:
 
@@ -213,65 +226,51 @@ Erwartung: Tür springt auf die jeweilige Wandaußenseite, kein Feld "Ausrichtun
 Keine Implementierungserklärungen, keine Zwischenschritte, keine Testprotokolle
 in Prosa. Zahlen statt Adjektive.
 
-**Jeder TEST-Kommentar muss einen Prüfweg enthalten, den der Mensch in zwei
-Minuten gehen kann.** Bei sichtbaren Änderungen: Klickschritte. Bei rein
-technischen Änderungen ohne Bedienelement (Speicherformat, Rendering-Grundlage):
-eine **Beispieldatei im Repo** (`samples/…jjcad`) oder ein MCP-Befehl, mit dem
-man das Ergebnis sieht. Ohne Prüfweg ist der Bericht wertlos — „fertig" ist dann
+**Jedes Ergebnis muss einen Prüfweg enthalten, den der Mensch in zwei Minuten
+gehen kann.** Bei sichtbaren Änderungen: Klickschritte. Bei rein technischen
+Änderungen ohne Bedienelement (Speicherformat, Rendering-Grundlage): eine
+**Beispieldatei im Repo** (`samples/…jjcad`) oder ein MCP-Befehl, mit dem man
+das Ergebnis sieht. Ohne Prüfweg ist der Bericht wertlos — „fertig“ ist dann
 nicht überprüfbar.
 
 ## Abnahme-System (verbindlich)
 
-Jede Spalte hat **genau eine** Bedeutung:
+Jede Kategorie hat **genau eine** Bedeutung:
 
-| Spalte | Bedeutung | Wer arbeitet |
+| Kategorie | Bedeutung | Wer arbeitet |
 |---|---|---|
-| `triage` | Neue Meldung, noch nicht arbeitsfähig | Automatik (`specify`), alle 5 min |
-| `todo` / `ready` | Warteschlange | Dispatcher, **immer nur eine Karte** |
-| `running` | Ein Agent arbeitet | Agent |
-| `review` | **Wartet auf den Menschen**: Build ist ausgeliefert, Joschua testet in der App | niemand automatisch |
-| `blocked` | Echter Blocker: Entscheidung nötig, Repro fehlt, 2 Fehlversuche | Mensch |
-| `done` | Abgeschlossen | — |
+| Eingang | Warteschlange | Ticketbox, **immer nur ein Ticket** (Auto-Modus) |
+| Bearbeitung | Ein Agent arbeitet | Agent (genau ein Lauf) |
+| Überprüfung | **Wartet auf den Menschen**: Build ist ausgeliefert, Joschua testet in der App | niemand automatisch |
+| Abgeschlossen | Vom Nutzer abgenommen | — |
 
 Daraus folgen die Regeln:
 
-- **Strikt seriell.** `kanban.max_in_progress = 1` im Dispatcher: höchstens eine
-  Karte in `running`, egal wie viele in `ready` warten. Nicht per Skript und nicht
-  durch Zuweisungs-Trickserei „optimieren".
-
-- **`review` ist ausschließlich die Warteschlange des Menschen.** Karten dort
-  werden von Joschua getestet. Kein Agent darf sie von dort wegbewegen — weder
-  auf `done` noch auf `blocked`. Ein Prüf-Agent schreibt höchstens einen
-  Kommentar (`Technisch geprüft: …`) und lässt den Status stehen.
-- **`blocked` niemals als „wartet auf Test" verwenden.** `blocked` erzeugt eine
-  Störung auf dem Board und muss manuell aufgelöst werden.
-- **Selbst auf `done` setzen ist nur bei trivialen, eindeutig prüfbaren
-  Änderungen erlaubt.** Zulässig:
-  - Umbenennen von Beschriftungen, Menüeinträgen, Tooltips
-  - Tippfehler, Kommentare, Dokumentation, Formatierung
-  - Entfernen von Debug-Ausgaben
-  - ein Wert/Text, den ein Test direkt prüft
-
-  **Nicht** zulässig (immer `request-review`): Geometrie, Fang, Treffer-Tests,
-  Rendering, Persistenz, Verhalten von Werkzeugen, Änderungen an der
-  Bedienoberfläche, alles was man sehen oder anfassen muss.
-- Bei Selbst-Abnahme: Karte auf `done` **und** ein Satz im Kommentar
-  (`Selbst abgenommen: reine Umbenennung, Test X grün`) — damit nachvollziehbar
-  bleibt, warum kein Mensch geprüft hat.
+- **Strikt seriell.** Höchstens ein Ticket in „Bearbeitung“, egal wie viele im
+  Eingang warten. Nicht per Skript und nicht durch Zuweisungs-Trickserei
+  „optimieren“.
+- **„Überprüfung“ ist ausschließlich die Warteschlange des Menschen.** Kein
+  Agent bewegt ein Ticket von dort weg. Den Wechsel setzt die Ticketbox selbst,
+  sobald Prozessende und `ergebnis`/`fertig` vorliegen.
+- **Blockade ist kein Wartezustand.** Blockiert heißt:
+  `ergebnis.offen = "blockiert: <Grund>"`; über Nacharbeit entscheidet der Nutzer.
+- **Keine Selbstabnahme.** Nur der Nutzer entscheidet „Abschließen“ oder
+  „Nachforderung“ — auch bei Umbenennungen und Tippfehlern.
 
 ## Umgang mit Rückmeldungen
-- **Nicht gelöst:** Kommentar an der *gleichen* Karte
-  (`Nicht gelöst: <Symptom>, Build s<N>-<hash>`), dann dort weiterarbeiten und den
-  nächsten Build liefern.
-- **Folgeproblem** (durch den Fix neu entstanden): gleiche Karte, Kommentar
-  `Folgeproblem: <Symptom>`; Ursache neu suchen statt am alten Fix zu flicken.
-- **Anderes Thema:** neue Karte, nicht in die laufende mischen.
-- Nach `failure_limit` Fehlversuchen blockiert der Dispatcher die Karte — dann
-  Ursache und offene Frage im Kommentar festhalten, nicht weiterprobieren.
+
+- **Nicht gelöst:** Der Nutzer fordert Nacharbeit an (Prüfvermerk). Das Ticket
+  kommt mit derselben Session zurück in „Bearbeitung“, der Vermerk steht in der
+  Aufgabenstellung. Ursache neu suchen statt am alten Fix zu flicken.
+- **Folgeproblem** (durch den Fix neu entstanden): ebenfalls Nacharbeit am selben
+  Ticket, im Bericht als Folgeproblem benennen.
+- **Anderes Thema:** neues Ticket, nicht in das laufende mischen.
+- Nach dem zweiten erfolglosen Anlauf: `ergebnis.offen = "blockiert: <Ursache und
+  offene Frage>"` statt weiterzuprobieren.
 
 ## Abnahme (Definition of Done)
 
-„Sieht gut aus" ist kein Nachweis. Jede Karte braucht:
+„Sieht gut aus“ ist kein Nachweis. Jedes Ticket braucht:
 
 1. `cargo build --release` ohne Fehler, `cargo test` grün.
 2. Einen **messbaren** Nachweis: Test, geprüftes Feld in der gespeicherten
@@ -279,10 +278,11 @@ Daraus folgen die Regeln:
 3. Screenshot bei sichtbaren Änderungen, erzeugt mit
    `python3 scripts/qa-shot.py --demo "<zustand>" out.png` — niemals die Instanz
    des Nutzers dafür verwenden.
-4. Kommentar an der Karte: Build-Kennung `s<N>-<hash>`, Dateien, Nachweis, Testanleitung.
+4. `ergebnis` im Ticket: Build-Kennung, betroffene Dateien, Nachweis, Testanleitung.
 
 ## Testergebnis des Nutzers
 
 Der Nutzer testet `~/jjcad-live/jjcad` (Build-Nummer im Fenstertitel). Sein
-Feedback kommt als Kommentar an die Karte oder als neue Karte. Bei Rückfragen
-zur Geometrie hilft oft ein Screenshot mit eingezeichneter Hilfslinie.
+Feedback kommt als Nacharbeit am Ticket (mit Prüfvermerk) oder als neues Ticket.
+Bei Rückfragen zur Geometrie hilft oft ein Screenshot mit eingezeichneter
+Hilfslinie.
