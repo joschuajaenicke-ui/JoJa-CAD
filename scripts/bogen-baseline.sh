@@ -1,9 +1,11 @@
 #!/usr/bin/env bash
 # Bogen-Baseline neu erzeugen: Messwerte, Screenshots, 4x-Ausschnitte.
 #
-# Aufruf:  ./scripts/bogen-baseline.sh
+# Aufruf:  ./scripts/bogen-baseline.sh [ZIELVERZEICHNIS]
+#          (Vorgabe: docs/bogen-baseline — der Stand vor der Glättung;
+#           für einen neuen Stand z. B. docs/bogen-baseline/nachher)
 #
-# Ergebnis (alles versioniert in docs/bogen-baseline/):
+# Ergebnis (alles versioniert):
 #   S1_klein.png … S4_starken.png    Vollbild je Szene (Build-Kennung im Fenstertitel)
 #   S*_4x.png                        4x-Ausschnitt der Bogenmitte (Point-Sampling)
 #   messwerte.md                     Messtabelle (Segmente, Bogenfehler, Knick, Zeit)
@@ -15,7 +17,7 @@
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
-OUT=docs/bogen-baseline
+OUT="${1:-docs/bogen-baseline}"
 mkdir -p "$OUT"
 
 echo "== 1/4 Zeichnungen und Ansichten =="
