@@ -1945,21 +1945,6 @@ fn rail(ui: &mut egui::Ui, icon: &str, tooltip: &str, chevron: &str) -> bool {
                             }
                         }
                     });
-                    widgets::vline(ui, RIBBON_H);
-                    self.group(ui, "Vorgaben", |ui, app| {
-                        let u = app.unit();
-                        ui.vertical(|ui| {
-                            ui.add_space(6.0);
-                            ui.horizontal(|ui| {
-                                ui.label(theme::dim("Wandstärke"));
-                                widgets::length_input(ui, &mut app.options.wall_thickness, u, 74.0);
-                            });
-                            ui.horizontal(|ui| {
-                                ui.label(theme::dim("Türbreite"));
-                                widgets::length_input(ui, &mut app.options.door_width, u, 74.0);
-                            });
-                        });
-                    });
                 }
                 RibbonTab::Aendern => {
                     self.group(ui, "Bearbeiten", |ui, app| {
