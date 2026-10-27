@@ -2534,9 +2534,15 @@ fn rail(ui: &mut egui::Ui, icon: &str, tooltip: &str, chevron: &str) -> bool {
                             }
                         }
                     });
-                    // Maßeinheit, Textgröße, Maßstab und Bogensymbole stehen
-                    // ausschließlich im Eigenschaften-Panel (Abschnitt
-                    // „Maßketten") — eine Stelle für jeden Wert.
+                    widgets::vline(ui, RIBBON_GROUP_H);
+                    self.group(ui, "Maßketten", |ui, app| {
+                        // Maßeinheit, Textgröße, Maßstab und Bogensymbole stehen
+                        // ausschließlich im Einstellungen-Dialog (Abschnitt
+                        // „Bemaßung") — eine Stelle für jeden Wert.
+                        if widgets::ribbon_button(ui, "settings", "Einstellungen", false).clicked() {
+                            app.ui.settings_open = true;
+                        }
+                    });
                 }
                 RibbonTab::Bloecke => {
                     self.group(ui, "Bibliothek", |ui, app| {

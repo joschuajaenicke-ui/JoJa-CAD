@@ -1,9 +1,10 @@
 //! Maßketten-Einstellungen: Maßeinheit, Textgröße, Maßstab, Bogensymbole.
 //!
-//! Diese vier Werte standen früher im Ribbon und stehen jetzt im
-//! Eigenschaften-Panel. Das Panel ruft ausschließlich die Actions `doc.settings`
-//! und `dim.style` auf — genau die Kette, die hier geprüft wird: Wirkung auf die
-//! Displayliste, Undo und Persistenz.
+//! Diese vier Werte standen früher im Ribbon, danach im Eigenschaften-Panel des
+//! Modells und seit T0011 im Einstellungen-Dialog (Abschnitt „Bemaßung"). Die
+//! Bedienung ruft ausschließlich die Actions `doc.settings` und `dim.style` auf —
+//! genau die Kette, die hier geprüft wird: Wirkung auf die Displayliste, Undo
+//! und Persistenz.
 
 use jjcad_core::render::{render_document, RenderCtx, Shape};
 use jjcad_core::session::Session;
@@ -107,41 +108,84 @@ fn massstab_skaliert_die_papiergroessen() {
     );
 }
 
-/// Eine Stelle, ein Wert: die vier Einstellungen dürfen nur im
-/// Eigenschaften-Panel stehen — nicht mehr im Ribbon und nicht im
-/// Einstellungen-Dialog. Der Test liest die Quellen der GUI, weil dort die
-/// doppelten Bedienelemente saßen.
+/// Eine Stelle, ein Wert: die vier Maßketten-Werte stehen im
+/// Einstellungen-Dialog (Abschnitt „Bemaßung") — nicht im Eigenschaften-Panel
+/// der Zeichnung (dort stehen seit T0011 nur Informationen über die
+/// Zeichnungsdatei) und nicht im Ribbon. Der Test liest die Quellen der GUI,
+/// weil dort die doppelten Bedienelemente saßen.
+/// Nur die Codezeilen — Kommentare nennen die Werte, um zu erklären, wo sie
+/// stehen, und dürfen den Test nicht auslösen.
+fn ohne_kommentare(src: &str) -> String {
+    src.lines()
+        .filter(|l| {
+            let t = l.trim_start();
+            !(t.starts_with("//") || t.starts_with("/*") || t.starts_with('*'))
+        })
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
 #[test]
-fn massketten_einstellungen_nur_im_eigenschaften_panel() {
+fn massketten_werte_nur_im_einstellungen_dialog() {
     let gui = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../jjcad-gui/src");
     let panels = std::fs::read_to_string(gui.join("panels.rs")).unwrap();
-    assert!(panels.contains("\"Maßketten\""), "Abschnitt Maßketten fehlt im Panel");
-    for feld in ["Maßeinheit", "Textgröße", "Maßstab", "Bogensymbole"] {
-        assert!(panels.contains(feld), "Panel-Zeile {feld} fehlt");
+
+    // Eigenschaften-Panel ohne Auswahl („Zeichnung"): keine Maßketten-Werte.
+    let start = panels.find("fn doc_props").expect("doc_props");
+    let rest = &panels[start..];
+    // Ende des Panel-Abschnitts = Beginn der Werkzeugfunktion darunter (deren
+    // Doc-Kommentar nennt die Werte, deshalb nicht bis zum `fn` schneiden).
+    let doc_panel = ohne_kommentare(&rest[..rest.find("/// Maßketten:").expect("dim_fields")]);
+    for verboten in [
+        "Maßketten",
+        "Maßeinheit",
+        "Textgröße",
+        "Maßstab",
+        "Bogensymbole",
+        "dim_unit",
+        "annotation_scale",
+    ] {
+        assert!(
+            !doc_panel.contains(verboten),
+            "Eigenschaften-Panel der Zeichnung enthält weiterhin {verboten}"
+        );
     }
 
-    // Ribbon: Registerkarte Bemaßung enthält nur noch die drei Werkzeuge.
+    // Die vier Werte gibt es weiterhin — an genau einer Stelle.
+    let start = panels.find("pub(crate) fn dim_fields").expect("dim_fields");
+    let rest = &panels[start..];
+    let felder = &rest[..rest.find("#[cfg(test)]").expect("Testmodul")];
+    for feld in ["Maßeinheit", "Textgröße", "Maßstab", "Bogensymbole"] {
+        assert!(felder.contains(feld), "Zeile {feld} fehlt in dim_fields");
+    }
+
+    // Einstellungen-Dialog: der Abschnitt „Bemaßung" ruft diese Stelle auf.
+    let dialogs = std::fs::read_to_string(gui.join("dialogs.rs")).unwrap();
+    let start = dialogs.find("fn settings_body").expect("settings_body");
+    let rest = &dialogs[start..];
+    let body = &rest[..rest.find("\nfn ").unwrap_or(rest.len())];
+    assert!(
+        body.contains("panels::dim_fields"),
+        "Einstellungen-Dialog ruft panels::dim_fields nicht auf"
+    );
+
+    // Ribbon: Registerkarte Bemaßung enthält nur Werkzeuge und den Weg in die
+    // Einstellungen — keine zweiten Wertfelder.
     let app = std::fs::read_to_string(gui.join("app.rs")).unwrap();
-    let arm = &app[app.find("RibbonTab::Bemassung =>").expect("Bemeßungs-Tab")..];
-    let ribbon = &arm[..arm.find("RibbonTab::Bloecke =>").expect("nächster Tab")];
-    for verboten in ["dimunit", "arrowkind", "annotation_scale", "Bogensymbole"] {
+    // Mit Klammer suchen: `RibbonTab::Bemassung =>` steht auch in der
+    // Zuordnung der Action-Gruppen und wäre dann ein leerer Ausschnitt.
+    let arm = &app[app.find("RibbonTab::Bemassung => {").expect("Bemeßungs-Tab")..];
+    let ribbon = ohne_kommentare(&arm[..arm.find("RibbonTab::Bloecke => {").expect("nächster Tab")]);
+    for verboten in ["dim_unit", "arrowkind", "annotation_scale", "Bogensymbole"] {
         assert!(
             !ribbon.contains(verboten),
             "Ribbon-Tab Bemaßung enthält weiterhin {verboten}"
         );
     }
-
-    // Einstellungen-Dialog: kein zweiter Satz derselben Werte.
-    let dialogs = std::fs::read_to_string(gui.join("dialogs.rs")).unwrap();
-    let start = dialogs.find("fn settings_body").expect("settings_body");
-    let rest = &dialogs[start..];
-    let body = &rest[..rest.find("\nfn ").unwrap_or(rest.len())];
-    for verboten in ["dim_unit", "annotation_scale", "arrowstyle", "ds.text_height"] {
-        assert!(
-            !body.contains(verboten),
-            "Einstellungen-Dialog enthält weiterhin {verboten}"
-        );
-    }
+    assert!(
+        ribbon.contains("settings_open"),
+        "Ribbon-Tab Bemaßung hat keinen Weg zu den Einstellungen"
+    );
 }
 
 #[test]

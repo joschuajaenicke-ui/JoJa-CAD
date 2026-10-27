@@ -2202,6 +2202,137 @@ fn sheet_props(app: &mut App, ui: &mut Ui, sid: Id) {
     }
 }
 
+/// Anzeigezeilen des Abschnitts „Zeichnung": alles, was die Zeichnungsdatei
+/// selbst beschreibt — Datei, Stand, Größe, Ausdehnung und Blätter (der
+/// Bestand nach Objektart steht als eigene Zeile darunter).
+///
+/// Reine Anzeige ohne Bedienelemente. Die Dateiangaben kommen aus der Datei
+/// (`std::fs::metadata`), nicht aus einem mitgeführten Feld — so stimmen sie
+/// auch nach einem Neustart und nach Änderungen von außen. Eine Quelle für
+/// Panel und Test.
+fn zeichnungs_info(
+    doc: &Document,
+    unit: Unit,
+) -> Vec<(&'static str, String, Option<String>)> {
+    let mut zeilen: Vec<(&'static str, String, Option<String>)> = Vec::new();
+    match doc.path.as_deref() {
+        Some(pfad) => {
+            let name = std::path::Path::new(pfad)
+                .file_name()
+                .map(|n| n.to_string_lossy().to_string())
+                .unwrap_or_else(|| pfad.to_string());
+            zeilen.push(("Datei", name, Some(pfad.to_string())));
+            zeilen.push((
+                "Stand",
+                if doc.modified {
+                    "geändert (nicht gespeichert)"
+                } else {
+                    "gespeichert"
+                }
+                .to_string(),
+                None,
+            ));
+            let bytes = std::fs::metadata(pfad).map(|m| m.len()).unwrap_or(0);
+            zeilen.push(("Größe", datei_groesse(bytes), None));
+        }
+        None => {
+            zeilen.push(("Datei", "nicht gespeichert".to_string(), None));
+            zeilen.push(("Stand", "–".to_string(), None));
+            zeilen.push(("Größe", "–".to_string(), None));
+        }
+    }
+    zeilen.push(("Ausdehnung", ausdehnung_text(doc, unit), None));
+    zeilen.push(("Blätter", blatt_text(doc), None));
+    zeilen
+}
+
+/// Dateigröße mit deutschem Komma („4,2 kB", „1,3 MB").
+fn datei_groesse(bytes: u64) -> String {
+    if bytes >= 1024 * 1024 {
+        format!("{} MB", format_number(bytes as f64 / (1024.0 * 1024.0), 1))
+    } else if bytes >= 1024 {
+        format!("{} kB", format_number(bytes as f64 / 1024.0, 1))
+    } else {
+        format!("{bytes} B")
+    }
+}
+
+/// Ausdehnung des Modells (Breite × Höhe) in der Dokumenteinheit.
+fn ausdehnung_text(doc: &Document, unit: Unit) -> String {
+    let b = doc.bbox();
+    if !b.is_valid() {
+        return "leer".to_string();
+    }
+    let s = b.size();
+    let d = unit.decimals();
+    format!(
+        "{} × {} {}",
+        format_number(unit.from_mm(s.x), d),
+        format_number(unit.from_mm(s.y), d),
+        unit.short()
+    )
+}
+
+/// Blätter der Zeichnung: „1 × A3 quer" bzw. „2 Blätter: A3 quer, A4 hoch".
+fn blatt_text(doc: &Document) -> String {
+    let beschreibung = |s: &Sheet| {
+        format!(
+            "{} {}",
+            s.paper.label(),
+            if s.landscape { "quer" } else { "hoch" }
+        )
+    };
+    match doc.sheets.len() {
+        0 => "keine".to_string(),
+        1 => format!("1 × {}", beschreibung(&doc.sheets[0])),
+        n => {
+            let liste: Vec<String> = doc.sheets.iter().map(beschreibung).collect();
+            format!("{n} Blätter: {}", liste.join(", "))
+        }
+    }
+}
+
+/// Bestand nach Objektart — nur Arten, die wirklich vorkommen.
+fn bestand_text(doc: &Document) -> String {
+    let (mut waende, mut tueren, mut fenster, mut treppen) = (0, 0, 0, 0);
+    let (mut masse, mut texte, mut flaechen, mut bloecke) = (0, 0, 0, 0);
+    for e in &doc.entities {
+        match e.kind {
+            EntityKind::Wall { .. } => waende += 1,
+            EntityKind::Door { .. } => tueren += 1,
+            EntityKind::Window { .. } => fenster += 1,
+            EntityKind::Stair { .. } => treppen += 1,
+            EntityKind::Dim { .. } | EntityKind::DimChain { .. } | EntityKind::Elevation { .. } => {
+                masse += 1
+            }
+            EntityKind::Text { .. } => texte += 1,
+            EntityKind::Fill { .. } => flaechen += 1,
+            EntityKind::BlockRef { .. } => bloecke += 1,
+            _ => {}
+        }
+    }
+    // Einzahl/Mehrzahl getrennt: „1 Tür", aber „3 Türen".
+    let teile: Vec<String> = [
+        (waende, "Wand", "Wände"),
+        (tueren, "Tür", "Türen"),
+        (fenster, "Fenster", "Fenster"),
+        (treppen, "Treppe", "Treppen"),
+        (masse, "Maß", "Maße"),
+        (texte, "Text", "Texte"),
+        (flaechen, "Fläche", "Flächen"),
+        (bloecke, "Block", "Blöcke"),
+    ]
+    .iter()
+    .filter(|(n, _, _)| *n > 0)
+    .map(|(n, ein, viel)| format!("{n} {}", if *n == 1 { ein } else { viel }))
+    .collect();
+    if teile.is_empty() {
+        "keine Objekte".to_string()
+    } else {
+        teile.join(" · ")
+    }
+}
+
 fn doc_props(app: &mut App, ui: &mut Ui) {
     section_title(ui, "settings", "Zeichnung");
     let unit = app.doc().settings.input_unit;
@@ -2212,6 +2343,20 @@ fn doc_props(app: &mut App, ui: &mut Ui) {
         app.doc().layers.len()
     )));
     ui.add_space(8.0);
+
+    // Informationen über die Zeichnungsdatei selbst — reine Anzeige.
+    let info = zeichnungs_info(app.doc(), unit);
+    for (name, wert, tip) in &info {
+        widgets::info_row(ui, name, wert, tip.as_deref());
+    }
+    // Der Bestand ist zu lang für die 150-px-Wertespalte — als umbrechende
+    // Zeile darunter, damit nichts abgeschnitten wird.
+    ui.add_space(4.0);
+    ui.label(theme::dim(format!("Bestand: {}", bestand_text(app.doc()))));
+
+    ui.add_space(10.0);
+    widgets::hline(ui);
+    ui.add_space(6.0);
 
     let mut input = app.doc().settings.input_unit;
     let mut decimals = app.doc().settings.decimals as i32;
@@ -2266,11 +2411,6 @@ fn doc_props(app: &mut App, ui: &mut Ui) {
     ui.add_space(10.0);
     widgets::hline(ui);
     ui.add_space(6.0);
-    dim_props(app, ui);
-
-    ui.add_space(10.0);
-    widgets::hline(ui);
-    ui.add_space(6.0);
     section_title(ui, "info", "Projektdaten");
     let mut project = app.doc().project.clone();
     let mut changed = false;
@@ -2311,14 +2451,15 @@ fn doc_props(app: &mut App, ui: &mut Ui) {
 
 /// Maßketten: Maßeinheit, Textgröße, Maßstab und Bogensymbole.
 ///
-/// Diese vier Werte gehörten früher zur Registerkarte „Bemaßung" im Ribbon und
-/// stehen jetzt ausschließlich hier — ein Wert, eine Stelle. Sie sind
+/// Diese vier Werte standen früher im Ribbon und danach im Eigenschaften-Panel
+/// des Modells. Letzteres zeigte sie an, obwohl dort „Informationen über die
+/// Zeichnung" stehen — deshalb sitzen sie seit T0011 im Einstellungen-Dialog
+/// (Abschnitt „Bemaßung") und an keiner anderen Stelle. Sie sind
 /// Dokumenteinstellungen: `doc.settings.dim_unit`, `doc.settings.annotation_scale`
 /// und `doc.dim_style.text_height` / `.arrow`. Jede Änderung geht als Action
 /// (`doc.settings` bzw. `dim.style`) über die Befehlsschicht und landet damit
 /// auch in Undo/Redo und in der gespeicherten Datei.
-fn dim_props(app: &mut App, ui: &mut Ui) {
-    section_title(ui, "dimchain", "Maßketten");
+pub(crate) fn dim_fields(app: &mut App, ui: &mut Ui) {
 
     // Maßeinheit der Maßzahl (mm / cm / m)
     let cur_unit = app.doc().settings.dim_unit;
@@ -2487,5 +2628,127 @@ mod tests_geometrie_zeilen {
             assert_eq!(t.matches("²").count(), 1, "Einheit doppelt in {t}");
             assert!(t.ends_with('²'), "Einheit fehlt in {t}");
         }
+    }
+}
+
+
+#[cfg(test)]
+mod tests_zeichnungs_info {
+    //! Eigenschaften-Panel ohne Auswahl (T0011): der Abschnitt „Zeichnung" zeigt
+    //! Informationen über die Zeichnungsdatei selbst — Datei, Stand, Größe,
+    //! Ausdehnung, Blätter, Bestand — und keine Maßketten-Werte mehr.
+    use super::*;
+    use jjcad_core::session::Session;
+    use serde_json::json;
+
+    fn session() -> Session {
+        let mut s = Session::new();
+        s.execute("doc.settings", &json!({"input_unit": "m"})).unwrap();
+        s.execute(
+            "draw.wall",
+            &json!({"a": [0, 0], "b": [4, 0], "thickness": 0.24}),
+        )
+        .unwrap();
+        s.execute(
+            "draw.wall",
+            &json!({"a": [4, 0], "b": [4, 3], "thickness": 0.24}),
+        )
+        .unwrap();
+        s.execute(
+            "draw.text",
+            &json!({"p": [1, 1], "text": "Wohnen", "height": 0.25}),
+        )
+        .unwrap();
+        s.execute(
+            "dim.chain",
+            &json!({"pts": [[0, 0], [4, 0]], "line_pos": [0, -1.2], "axis": "x"}),
+        )
+        .unwrap();
+        s
+    }
+
+    fn wert(zeilen: &[(&'static str, String, Option<String>)], name: &str) -> String {
+        zeilen
+            .iter()
+            .find(|(n, _, _)| *n == name)
+            .map(|(_, w, _)| w.clone())
+            .unwrap_or_else(|| panic!("Zeile {name} fehlt"))
+    }
+
+    #[test]
+    fn ungespeichert_steht_die_dateizeile_auf_nicht_gespeichert() {
+        let s = session();
+        let z = zeichnungs_info(&s.doc, Unit::M);
+        assert_eq!(wert(&z, "Datei"), "nicht gespeichert");
+        assert_eq!(wert(&z, "Stand"), "–");
+        assert_eq!(wert(&z, "Größe"), "–");
+    }
+
+    #[test]
+    fn gespeicherte_datei_zeigt_name_groesse_und_stand() {
+        let mut s = session();
+        let dir = std::env::temp_dir().join("jjcad-test");
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("Zeichnungsinfo.jjcad");
+        s.save(&path).unwrap();
+
+        let z = zeichnungs_info(&s.doc, Unit::M);
+        assert_eq!(wert(&z, "Datei"), "Zeichnungsinfo.jjcad");
+        assert_eq!(wert(&z, "Stand"), "gespeichert");
+        let groesse = wert(&z, "Größe");
+        assert!(
+            groesse.ends_with("kB") || groesse.ends_with("B"),
+            "Größe ohne Einheit: {groesse}"
+        );
+        // Tooltip trägt den vollen Pfad (die Zelle ist zu schmal dafür).
+        let tip = z
+            .iter()
+            .find(|(n, _, _)| *n == "Datei")
+            .and_then(|(_, _, t)| t.clone())
+            .unwrap_or_default();
+        assert!(tip.ends_with("Zeichnungsinfo.jjcad"), "Tooltip: {tip}");
+    }
+
+    #[test]
+    fn bestand_zaehlt_nach_objektart_mit_einzahl_und_mehrzahl() {
+        let s = session();
+        let t = bestand_text(&s.doc);
+        assert!(t.contains("2 Wände"), "Bestand: {t}");
+        assert!(t.contains("1 Text"), "Einzahl 1 Text fehlt: {t}");
+        assert!(t.contains("1 Maß"), "Einzahl 1 Maß fehlt: {t}");
+        // Arten ohne Objekte tauchen nicht auf.
+        assert!(!t.contains("Türen") && !t.contains("0 "), "Bestand: {t}");
+    }
+
+    #[test]
+    fn leere_zeichnung_hat_keine_objekte() {
+        let doc = Document::new();
+        assert_eq!(bestand_text(&doc), "keine Objekte");
+        assert_eq!(ausdehnung_text(&doc, Unit::M), "leer");
+    }
+
+    #[test]
+    fn ausdehnung_ist_die_bbox_in_dokumenteinheit() {
+        let s = session();
+        let b = s.doc.bbox();
+        let erwartet = format!(
+            "{} × {} m",
+            jjcad_core::units::format_number(b.size().x / 1000.0, 2),
+            jjcad_core::units::format_number(b.size().y / 1000.0, 2)
+        );
+        assert_eq!(ausdehnung_text(&s.doc, Unit::M), erwartet);
+    }
+
+    #[test]
+    fn blattzeile_nennt_format_und_lage() {
+        let doc = Document::new();
+        assert_eq!(blatt_text(&doc), "1 × A3 quer");
+    }
+
+    #[test]
+    fn dateigroesse_mit_deutschem_komma() {
+        assert_eq!(datei_groesse(900), "900 B");
+        assert_eq!(datei_groesse(4 * 1024), "4,0 kB");
+        assert_eq!(datei_groesse(3 * 1024 * 1024), "3,0 MB");
     }
 }
