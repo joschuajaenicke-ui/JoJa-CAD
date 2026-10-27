@@ -339,6 +339,14 @@ pub struct UserPrefs {
     /// Inventar-Raster (frei belegbar, beliebig erweiterbar)
     #[serde(default)]
     pub inventory: Vec<Option<String>>,
+    /// Dateidialog: "system" = Dialog des Betriebssystems (Vorgabe),
+    /// "intern" = eigener Dialog der Anwendung
+    #[serde(default = "default_dateidialog")]
+    pub file_dialog: String,
+}
+
+fn default_dateidialog() -> String {
+    "system".to_string()
 }
 
 fn default_preset_idx() -> usize {
@@ -422,11 +430,18 @@ impl Default for UserPrefs {
             show_properties: true,
             show_layers: true,
             inventory: vec![None; 40],
+            file_dialog: default_dateidialog(),
         }
     }
 }
 
 impl UserPrefs {
+    /// Soll der Dateidialog des Betriebssystems benutzt werden? Vorgabe ist
+    /// „system“; nur ein ausdrückliches "intern" wählt den eigenen Dialog.
+    pub fn dateidialog_system(&self) -> bool {
+        self.file_dialog != "intern"
+    }
+
     pub fn path() -> PathBuf {
         config_dir().join("prefs.json")
     }
@@ -671,6 +686,35 @@ mod tests {
         // Nächster Start
         let wieder = UserPrefs::load_from(&p);
         assert_eq!(wieder.drag_mode, DragMode::TwoClicks);
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn dateidialog_steht_standardmaessig_auf_system() {
+        // Vorgabe: Dialog des Betriebssystems
+        assert_eq!(UserPrefs::default().file_dialog, "system");
+        assert!(UserPrefs::default().dateidialog_system());
+        // Alte prefs.json ohne den Schlüssel → ebenfalls Systemdialog
+        let alt: UserPrefs = serde_json::from_str(r#"{"last_dir": "/tmp"}"#).unwrap();
+        assert!(alt.dateidialog_system(), "Altbestand nutzt den Systemdialog");
+        // Ausdrücklich eingebaut
+        let intern: UserPrefs = serde_json::from_str(r#"{"file_dialog": "intern"}"#).unwrap();
+        assert!(!intern.dateidialog_system());
+    }
+
+    #[test]
+    fn dateidialog_ueberlebt_speichern_und_laden() {
+        let dir = test_dir("dateidialog");
+        let p = dir.join("prefs.json");
+        let mut prefs = UserPrefs::default();
+        prefs.file_dialog = "intern".into();
+        prefs.save_to(&p).unwrap();
+        let roh = std::fs::read_to_string(&p).unwrap();
+        assert!(
+            roh.contains("\"file_dialog\": \"intern\""),
+            "prefs.json muss die Wahl enthalten:\n{roh}"
+        );
+        assert!(!UserPrefs::load_from(&p).dateidialog_system());
         std::fs::remove_dir_all(&dir).ok();
     }
 

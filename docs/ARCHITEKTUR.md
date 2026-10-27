@@ -108,6 +108,11 @@ bearbeitet werden müssen.
   aktives Werkzeug + Klick auf leeren Slot verknüpft, Rechtsklick bietet
   Leeren/Verknüpfen/Bearbeiten, Mitteltaste leert, Ziehen sortiert um.
 - Der Zeichnungs-Cache wird über `rev` (Änderungszähler) und Zoom invalidiert.
+- **Dateidialog:** der Dialog des Betriebssystems (`rfd`, Modul `systemdialog`) —
+  Linux über das XDG-Desktop-Portal (KDE → Dolphin, GNOME → Dateien), Windows über
+  den Win32-Dialog, macOS über NSOpenPanel. Er läuft in einem eigenen Thread, die
+  Oberfläche bleibt bedienbar. Ohne verfügbaren Systemdialog (kein Sitzungsbus,
+  Testumgebung) oder auf Wunsch („Dateidialog: Eingebaut“) greift der eigene Dialog.
 
 ## Ausgabe
 

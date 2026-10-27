@@ -53,6 +53,32 @@ impl FileMode {
     fn is_save(self) -> bool {
         matches!(self, FileMode::SaveJjcad | FileMode::ExportPdf | FileMode::ExportDxf | FileMode::ExportPng)
     }
+    /// Anzeigename des Dateifilters (ohne Endung) für den Systemdialog.
+    fn filter_name(self) -> &'static str {
+        match self {
+            FileMode::Open | FileMode::SaveJjcad => "Zeichnung",
+            FileMode::ImportDxf | FileMode::ExportDxf => "DXF-Zeichnung",
+            FileMode::ExportPdf => "PDF-Dokument",
+            FileMode::ExportPng => "PNG-Bild",
+        }
+    }
+    /// Anfrage an den Systemdialog des Betriebssystems.
+    pub fn anfrage(self, start_dir: std::path::PathBuf, base: &str) -> crate::systemdialog::Anfrage {
+        let name = if base.trim().is_empty() { "Zeichnung" } else { base.trim() };
+        let dateiname = if self.is_save() {
+            Some(format!("{}.{}", name, self.ext()))
+        } else {
+            None
+        };
+        crate::systemdialog::Anfrage::neu(
+            self.title(),
+            self.filter_name(),
+            self.ext(),
+            Some(start_dir),
+            dateiname,
+            self.is_save(),
+        )
+    }
 }
 
 struct Entry {
@@ -395,7 +421,60 @@ fn modal_window<'a>(
         .frame(theme::dialog_frame())
 }
 
+/// Was nach einer Dateiauswahl geschieht — für den eingebauten Dialog und den
+/// Systemdialog gemeinsam.
+pub fn datei_gewaehlt(app: &mut App, mode: FileMode, path: std::path::PathBuf) {
+    match mode {
+        FileMode::Open => app.load_document(&path),
+        FileMode::SaveJjcad => match app.session_mut().save(&path) {
+            Ok(_) => {
+                app.prefs.add_recent(&path.to_string_lossy());
+                app.prefs.last_dir =
+                    path.parent().map(|p| p.to_string_lossy().to_string()).unwrap_or_default();
+                let _ = app.prefs.save();
+                app.toast(format!("Datei · gespeichert: {}", path.display()));
+            }
+            Err(e) => app.toast(e),
+        },
+        FileMode::ImportDxf => app.import_dxf_from(path),
+        FileMode::ExportPdf => app.export_pdf_to(path),
+        FileMode::ExportDxf => app.export_dxf_to(path),
+        FileMode::ExportPng => app.export_png_to(path),
+    }
+}
+
+/// Holt das Ergebnis des Systemdialogs ab. Der Dialog läuft in einem eigenen
+/// Thread; ohne erneute Zeichnanforderung käme das Ergebnis erst beim nächsten
+/// Mausklick an.
+fn systemdialog_abholen(app: &mut App, ctx: &egui::Context) {
+    let stand = match app.ui.systemdialog.as_mut() {
+        Some((mode, dlg)) => Some((*mode, dlg.abfragen())),
+        None => None,
+    };
+    match stand {
+        Some((_, crate::systemdialog::Stand::Laeuft)) => {
+            ctx.request_repaint_after(std::time::Duration::from_millis(100));
+        }
+        Some((mode, crate::systemdialog::Stand::Gewaehlt(path))) => {
+            app.ui.systemdialog = None;
+            datei_gewaehlt(app, mode, path);
+        }
+        Some((_, crate::systemdialog::Stand::Abgebrochen)) => {
+            app.ui.systemdialog = None;
+        }
+        None => {}
+    }
+    // Antwortet das Portal nicht (oder hängt), kommt man mit ESC wieder heraus
+    // und kann erneut öffnen — sonst bliebe der Dateidialog gesperrt.
+    if app.ui.systemdialog.is_some() && ctx.input(|i| i.key_pressed(egui::Key::Escape)) {
+        app.ui.systemdialog = None;
+    }
+}
+
 pub fn show(app: &mut App, ctx: &egui::Context) {
+    // Systemdialog des Betriebssystems (KDE/Dolphin, GNOME, Windows, macOS)
+    systemdialog_abholen(app, ctx);
+
     // Dateidialog
     if app.ui.file_dialog.is_some() {
         dim_background(ctx);
@@ -407,24 +486,7 @@ pub fn show(app: &mut App, ctx: &egui::Context) {
         }
         if let Some((mode, path)) = res {
             app.ui.file_dialog = None;
-            match mode {
-                FileMode::Open => app.load_document(&path),
-                FileMode::SaveJjcad => {
-                    match app.session_mut().save(&path) {
-                        Ok(_) => {
-                            app.prefs.add_recent(&path.to_string_lossy());
-                            app.prefs.last_dir = path.parent().map(|p| p.to_string_lossy().to_string()).unwrap_or_default();
-                            let _ = app.prefs.save();
-                            app.toast(format!("Datei · gespeichert: {}", path.display()));
-                        }
-                        Err(e) => app.toast(e),
-                    }
-                }
-                FileMode::ImportDxf => app.import_dxf_from(path),
-                FileMode::ExportPdf => app.export_pdf_to(path),
-                FileMode::ExportDxf => app.export_dxf_to(path),
-                FileMode::ExportPng => app.export_png_to(path),
-            }
+            datei_gewaehlt(app, mode, path);
         }
         if ctx.input(|i| i.key_pressed(egui::Key::Escape)) {
             app.ui.file_dialog = None;
@@ -826,6 +888,7 @@ fn settings_body(app: &mut App, ui: &mut Ui) {
     let mut show_layers = app.ui.layers_open;
     let mut show_props = app.ui.props_open;
     let mut marker = app.prefs.snap_marker;
+    let mut dateidialog_system = app.prefs.dateidialog_system();
 
     ui.columns(2, |cols| {
         // ----------------------------- links -----------------------------
@@ -976,6 +1039,16 @@ fn settings_body(app: &mut App, ui: &mut Ui) {
                 }
             });
             ui.label(theme::faint("Gilt für Auswahl und Griffe"));
+            widgets::field_row(ui, "Dateidialog", |ui| {
+                let moeglich = crate::systemdialog::verfuegbar();
+                ui.selectable_value(&mut dateidialog_system, true, "System")
+                    .on_hover_text("Dialog des Betriebssystems (Dolphin, Dateien, Windows)");
+                ui.selectable_value(&mut dateidialog_system, false, "Eingebaut")
+                    .on_hover_text("Dialog von JoJa-CAD");
+                if !moeglich {
+                    ui.label(theme::dim("kein Systemdialog verfügbar"));
+                }
+            });
 
             theme::section(ui, "Darstellung");
             widgets::field_row(ui, "Linienstärken", |ui| {
@@ -996,6 +1069,11 @@ fn settings_body(app: &mut App, ui: &mut Ui) {
     app.ui.lineweights_scaled = lw_scaled;
     app.ui.drag_mode = drag_mode;
     app.prefs.drag_mode = drag_mode;
+    let dialog_neu = if dateidialog_system { "system" } else { "intern" };
+    if app.prefs.file_dialog != dialog_neu {
+        app.prefs.file_dialog = dialog_neu.to_string();
+        let _ = app.prefs.save();
+    }
     app.prefs.lineweights_scaled = lw_scaled;
     app.ui.layers_open = show_layers;
     app.ui.props_open = show_props;

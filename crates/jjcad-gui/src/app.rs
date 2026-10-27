@@ -5,6 +5,7 @@ use crate::dialogs::{self, FileDialog, FileMode, TextDialog};
 use crate::hotbar;
 use crate::inventory;
 use crate::panels;
+use crate::systemdialog::Systemdialog;
 use crate::theme::{self, Palette};
 use crate::widgets;
 use egui::{Align, Color32, FontId, Frame, Layout, Margin, Pos2, Rect, RichText, Rounding, Sense, Stroke, Vec2};
@@ -323,6 +324,9 @@ pub struct UiState {
     /// Hotbar-Vorlage: (None = neu, Some(index) = umbenennen), Name
     pub preset_dialog: Option<(Option<usize>, String)>,
     pub file_dialog: Option<FileDialog>,
+    /// Laufender Systemdialog (Betriebssystem) samt dem Modus, für den er
+    /// geöffnet wurde
+    pub systemdialog: Option<(FileMode, Systemdialog)>,
     pub show_grid: bool,
     pub lineweights: bool,
     /// Vollbild gewünscht (maßgeblich ist der Fensterzustand, siehe
@@ -390,6 +394,7 @@ impl Default for UiState {
             block_name_dialog: None,
             preset_dialog: None,
             file_dialog: None,
+            systemdialog: None,
             show_grid: true,
             lineweights: true,
             fullscreen: false,
@@ -1681,6 +1686,16 @@ impl App {
             })
             .unwrap_or_else(|| std::env::var("HOME").map(PathBuf::from).unwrap_or_else(|_| PathBuf::from(".")));
         let base = self.doc().name.clone();
+        // Systemdialog des Betriebssystems (KDE/Dolphin, GNOME, Windows, macOS);
+        // ohne Sitzungsbus oder auf Wunsch der eingebaute Dialog.
+        if self.ui.systemdialog.is_some() {
+            // Es steht schon einer offen — nicht doppelt öffnen.
+            return;
+        }
+        if self.prefs.dateidialog_system() && crate::systemdialog::verfuegbar() {
+            self.ui.systemdialog = Some((mode, Systemdialog::starten(mode.anfrage(start_dir, &base))));
+            return;
+        }
         self.ui.file_dialog = Some(FileDialog::new(mode, start_dir, &base));
     }
 
