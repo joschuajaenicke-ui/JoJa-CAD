@@ -296,6 +296,13 @@ pub fn paint(painter: &Painter, rect: Rect, name: &str, color: Color32) {
             i.rect(3.0, 3.0, 12.0, 12.0);
             i.rect(9.0, 9.0, 12.0, 12.0);
         }
+        "copy-base" => {
+            // Kopieren mit Basispunkt: dasselbe Blattpaar, unten links der
+            // gesetzte Basispunkt.
+            i.rect(5.0, 2.0, 11.0, 11.0);
+            i.rect(10.0, 7.0, 11.0, 11.0);
+            i.dot(5.0, 19.5, 2.2);
+        }
         "rotate" => {
             i.arc(12.0, 12.0, 8.0, 0.6, 4.4);
             i.arrow_head(12.0 + 8.0 * 0.6f32.cos(), 12.0 + 8.0 * 0.6f32.sin(), 0.6 + 2.2, 3.6);

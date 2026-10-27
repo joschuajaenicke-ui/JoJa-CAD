@@ -320,6 +320,10 @@ pub struct UserPrefs {
     /// Dasselbe fuer die Schraffur-Schaltflaeche
     #[serde(default)]
     pub hatch_input: String,
+    /// Zuletzt benutzte Kopierfunktion der Schaltflaeche „Kopieren"
+    /// ("copy" = in die Zwischenablage | "copy_base" = mit Basispunkt)
+    #[serde(default)]
+    pub copy_input: String,
     #[serde(default = "default_true")]
     pub snap_marker: bool,
     /// Wandkontur-Punktfang (snap.wall_edges) — app-weit gemerkt, damit die
@@ -407,6 +411,10 @@ impl Default for UserPrefs {
             drag_mode: DragMode::HoldAndDrag,
             fill_input: "points".into(),
             hatch_input: "contour".into(),
+            // Vorgabe wie bisher im Reiter „Ändern": Kopieren setzt mit
+            // Basispunkt ab. Reines Kopieren in die Zwischenablage wählt man im
+            // Aufklappmenü oder mit Strg+C.
+            copy_input: "copy_base".into(),
             snap_marker: true,
             snap_wall_edges: true,
             show_properties: true,
@@ -462,6 +470,19 @@ impl UserPrefs {
             .unwrap_or(false)
         {
             self.bindings.remove("draw.text");
+        }
+        // T0012: „Kopieren" (Zwischenablage) und „Kopieren mit Basispunkt" sind
+        // getrennte Funktionen. Ältere Belegungen tragen Strg+C noch an der
+        // Basispunkt-Kopie — die Tasten kommen jetzt aus dem Register.
+        let alt = self
+            .bindings
+            .get("modify.copy")
+            .map(|k| k.eq_ignore_ascii_case("ctrl+c"))
+            .unwrap_or(false);
+        if alt {
+            self.bindings
+                .insert("modify.copy".into(), "ctrl+shift+c".into());
+            self.bindings.insert("edit.copy".into(), "ctrl+c".into());
         }
         // `bindings` wird als Ganzes gespeichert. Eine später ergänzte Aktion
         // bekäme ihre Werktaste sonst nie: fehlende Einträge nachziehen, solange

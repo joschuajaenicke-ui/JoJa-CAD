@@ -89,6 +89,8 @@ Steht rechts „nicht", dann ist das Wort im Projekt verpönt (auch in der Oberf
 | **Statusleiste** | Die Zeile ganz unten: Koordinaten, Fang, Ortho, Raster, Maßstab, Build | Fußzeile |
 | **Chip** | Kleine Schaltfläche in der Statusleiste | Button, Toggle |
 | **Vorschau** (Ghost) | Halbtransparente Darstellung des Elements, das beim nächsten Klick entsteht | Ghost, Preview |
+| **Kopieren** | Auswahl in die Zwischenablage legen (Strg+C); eingefügt wird mit Vorschau (Strg+V) | Kopie, Duplizieren |
+| **Kopieren mit Basispunkt** | Kopie versetzt absetzen: Basispunkt, dann Zielpunkt (Strg+Umschalt+C); Icon mit Punkt unten links | Kopieren, Duplizieren |
 | **Chat** | Meldungen der Anwendung unten links in der Zeichenfläche; verblassen nach einigen Sekunden, `^` (Taste unter ESC) öffnet das Protokoll | Log, Konsole |
 | **Protokoll** | Der geöffnete Chat: alle Meldungen, scrollbar, Zeichnung blass | Verlauf, Historie |
 | **Toast** | Kurze Meldung, die von selbst verschwindet — heute eine Zeile im Chat | Benachrichtigung, Popup |
