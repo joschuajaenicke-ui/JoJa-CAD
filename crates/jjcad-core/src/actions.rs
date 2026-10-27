@@ -88,6 +88,9 @@ pub const ACTIONS: &[ActionDef] = &[
     act!("file.export_png", "PNG exportieren", Datei, "image", "", "Ansicht als PNG rendern", false),
     act!("edit.undo", "Rückgängig", Aendern, "undo", "ctrl+z", "Letzten Schritt rückgängig", false),
     act!("edit.redo", "Wiederholen", Aendern, "redo", "ctrl+y", "Rückgängig machen rückgängig", false),
+    // Kopieren ohne Basispunkt: legt die Auswahl nur in die Zwischenablage.
+    // Eingefügt wird danach mit der Vorschau (Strg+V, Knopf „Einfügen").
+    act!("edit.copy", "Kopieren", Aendern, "copy", "ctrl+c", "Auswahl in die Zwischenablage", false),
 
     // Zeichnen
     act!("draw.line", "Linie", Zeichnen, "line", "l", "Start- und Endpunkt klicken", true),
@@ -114,7 +117,9 @@ pub const ACTIONS: &[ActionDef] = &[
     act!("modify.select", "Auswählen", Aendern, "select", "esc", "Objekte anklicken oder Fenster aufziehen", false),
     act!("modify.move", "Verschieben", Aendern, "move", "v", "Auswahl, Basispunkt, Zielpunkt", true),
     act!("modify.order", "Reihenfolge", Aendern, "layers", "", "to = Platz in der Zeichenreihenfolge (1 = ganz hinten)", true),
-    act!("modify.copy", "Kopieren", Aendern, "copy", "ctrl+c", "Auswahl, Basispunkt, Zielpunkt", true),
+    // Kopie versetzt absetzen: erst Basispunkt, dann Zielpunkt. Getrennt vom
+    // reinen Kopieren in die Zwischenablage (`edit.copy`, Strg+C).
+    act!("modify.copy", "Kopieren mit Basispunkt", Aendern, "copy-base", "ctrl+shift+c", "Auswahl, Basispunkt, Zielpunkt", true),
     act!("modify.rotate", "Drehen", Aendern, "rotate", "r", "Auswahl, Zentrum, Winkel", true),
     act!("modify.mirror", "Spiegeln", Aendern, "mirror", "f", "Auswahl, Spiegelachse", true),
     act!("modify.scale", "Skalieren", Aendern, "scale", "", "Auswahl, Zentrum, Faktor", true),

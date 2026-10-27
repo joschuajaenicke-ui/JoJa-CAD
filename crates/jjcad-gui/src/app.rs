@@ -224,7 +224,8 @@ impl ToolOptions {
 /// `modify.select` bleibt für Tastatur, Inventar und MCP erhalten.
 pub const RIBBON_BEARBEITEN: [(&str, &str, &str); 5] = [
     ("modify.move", "move", "Verschieben"),
-    ("modify.copy", "copy", "Kopieren"),
+    // Kopieren ist eine geteilte Schaltfläche (siehe `copy_group_button`)
+    ("modify.copy", "copy-base", "Kopieren mit Basispunkt"),
     ("modify.rotate", "rotate", "Drehen"),
     ("modify.mirror", "mirror", "Spiegeln"),
     ("modify.scale", "scale", "Skalieren"),
@@ -334,6 +335,8 @@ pub struct UiState {
     /// Zuletzt benutzter Eingabemodus je Button (Fläche / Schraffur)
     pub fill_input: FillInput,
     pub hatch_input: FillInput,
+    /// Zuletzt benutzte Kopierfunktion (Zwischenablage / mit Basispunkt)
+    pub copy_input: CopyInput,
     /// Welcher der beiden Knöpfe das laufende Füllwerkzeug gestartet hat
     /// (None = kein Füllwerkzeug aktiv). Nötig, weil beide Knöpfe dieselbe
     /// Action starten können und sonst beide hervorgehoben wären.
@@ -394,6 +397,7 @@ impl Default for UiState {
             drag_mode: DragMode::HoldAndDrag,
             fill_input: FillInput::Points,
             hatch_input: FillInput::Contour,
+            copy_input: CopyInput::BasePoint,
             fill_active: None,
             menu: None,
             order_pick: None,
@@ -525,6 +529,67 @@ impl FillInput {
     }
 }
 
+/// Kopierfunktion der geteilten Schaltfläche „Kopieren".
+///
+/// Zwei Funktionen, ein Knopf: „Kopieren" legt die Auswahl in die Zwischenablage
+/// (Strg+C), „Kopieren mit Basispunkt" setzt eine Kopie versetzt ab
+/// (Strg+Umschalt+C). Der Pfeil wählt — wie bei den Flächen — den Modus, das
+/// Icon zeigt ihn (Basispunkt: kleiner Punkt unten links).
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum CopyInput {
+    /// Nur in die Zwischenablage (Einfügen mit Vorschau)
+    Clipboard,
+    /// Kopie mit Basispunkt und Zielpunkt absetzen
+    BasePoint,
+}
+
+impl CopyInput {
+    pub const ALL: [CopyInput; 2] = [Self::Clipboard, Self::BasePoint];
+
+    pub fn action(self) -> &'static str {
+        match self {
+            Self::Clipboard => "edit.copy",
+            Self::BasePoint => "modify.copy",
+        }
+    }
+
+    pub fn label(self) -> &'static str {
+        match self {
+            Self::Clipboard => "Kopieren",
+            Self::BasePoint => "Kopieren mit Basispunkt",
+        }
+    }
+
+    /// Anzeige des Tastenkürzels im Aufklappmenü
+    pub fn key_label(self) -> &'static str {
+        match self {
+            Self::Clipboard => "Strg+C",
+            Self::BasePoint => "Strg+Umschalt+C",
+        }
+    }
+
+    pub fn icon(self) -> &'static str {
+        match self {
+            Self::Clipboard => "copy",
+            Self::BasePoint => "copy-base",
+        }
+    }
+
+    pub fn key(self) -> &'static str {
+        match self {
+            Self::Clipboard => "copy",
+            Self::BasePoint => "copy_base",
+        }
+    }
+
+    pub fn from_key(s: &str) -> Self {
+        match s {
+            "copy" => Self::Clipboard,
+            _ => Self::BasePoint,
+        }
+    }
+}
+
 pub struct App {
     pub tabs: Vec<DocTab>,
     pub active: usize,
@@ -625,6 +690,7 @@ impl App {
         app.ui.lineweights = lineweights;
         app.ui.lineweights_scaled = lineweights_scaled;
         app.ui.drag_mode = drag_mode;
+        app.ui.copy_input = CopyInput::from_key(&app.prefs.copy_input);
         app.ui.layers_open = layers_open;
         app.ui.props_open = props_open;
         app.fit_view();
@@ -698,6 +764,9 @@ impl App {
                     let m = self.ui.hatch_input;
                     self.start_fill_input(m, true);
                 }
+                // Kopierfunktion der geteilten Schaltfläche (Screenshot-Prüfung)
+                "copyclip" => self.ui.copy_input = CopyInput::Clipboard,
+                "copybase" => self.ui.copy_input = CopyInput::BasePoint,
                 // Prüfhilfe: erste Tür auswählen, damit das Eigenschaften-Panel
                 // im Screenshot belegbar ist
                 "seldoor" => {
@@ -1304,6 +1373,7 @@ impl App {
                     self.toast("Verlauf · wiederholt");
                 }
             }
+            "edit.copy" => self.copy_selection(false),
             "modify.erase" => {
                 let ids = self.selection().to_vec();
                 if ids.is_empty() {
@@ -1791,7 +1861,14 @@ impl App {
         });
         if !typing {
             if ev_copy {
-                self.copy_selection(false);
+                // Strg+Umschalt+C kommt bei egui ebenfalls als Kopier-Ereignis
+                // an (egui-winit prüft nur Strg) — Umschalt entscheidet über den
+                // Basispunkt, damit Strg+C weiterhin nur kopiert.
+                if shift {
+                    self.start_tool("modify.copy");
+                } else {
+                    self.run_action(ctx, "edit.copy");
+                }
             }
             if ev_cut {
                 self.copy_selection(true);
@@ -2355,9 +2432,10 @@ fn rail(ui: &mut egui::Ui, icon: &str, tooltip: &str, chevron: &str) -> bool {
                     });
                     widgets::vline(ui, RIBBON_GROUP_H);
                     self.group(ui, "Zwischenablage", |ui, app| {
-                        if widgets::ribbon_button(ui, "copy", "Kopieren", false).clicked() {
-                            app.copy_selection(false);
-                        }
+                        // Kopieren ist eine geteilte Schaltfläche: Hauptfläche
+                        // führt den zuletzt gewählten Modus aus, der Pfeil
+                        // öffnet die Auswahl (Zwischenablage / Basispunkt).
+                        app.copy_group_button(ui);
                         if widgets::ribbon_button(ui, "import", "Einfügen", false).clicked() {
                             app.paste_clipboard();
                         }
@@ -2440,6 +2518,13 @@ fn rail(ui: &mut egui::Ui, icon: &str, tooltip: &str, chevron: &str) -> bool {
                 RibbonTab::Aendern => {
                     self.group(ui, "Bearbeiten", |ui, app| {
                         for (id, icon, label) in RIBBON_BEARBEITEN {
+                            // Kopieren ist eine geteilte Schaltfläche (zwei
+                            // Kopierfunktionen) — Platz und Reihenfolge bleiben
+                            // wie in der Liste vorgegeben.
+                            if id == "modify.copy" {
+                                app.copy_group_button(ui);
+                                continue;
+                            }
                             if widgets::ribbon_button(ui, icon, label, app.tool_id() == Some(id)).clicked() {
                                 app.start_tool(id);
                             }
@@ -3286,9 +3371,9 @@ pub(crate) fn commands_hint(tool: &Tool) -> &'static str {
             (false, false) => "Verschieben · Basispunkt klicken",
         },
         "modify.copy" => match (tool.selecting, lebt) {
-            (true, _) => "Kopieren · Objekte wählen (Enter)",
-            (false, true) => "Kopieren · Zielpunkt klicken",
-            (false, false) => "Kopieren · Basispunkt klicken",
+            (true, _) => "Kopieren mit Basispunkt · Objekte wählen",
+            (false, true) => "Kopieren mit Basispunkt · Zielpunkt klicken",
+            (false, false) => "Kopieren mit Basispunkt · Basispunkt klicken",
         },
         "modify.rotate" => match tool.pts.len() {
             0 => "Drehen · Zentrum klicken",
@@ -3469,7 +3554,7 @@ impl App {
                         ui.separator();
                         for (label, action) in [
                             ("Verschieben", "modify.move"),
-                            ("Kopieren", "modify.copy"),
+                            ("Kopieren mit Basispunkt", "modify.copy"),
                             ("Drehen", "modify.rotate"),
                             ("Spiegeln", "modify.mirror"),
                         ] {
@@ -3881,6 +3966,102 @@ impl App {
                         }
                         let _ = self.prefs.save();
                         self.start_fill_input(m, hatch);
+                        ui.memory_mut(|mm| mm.close_popup());
+                    }
+                }
+            },
+        );
+    }
+
+    /// Startet die gewählte Kopierfunktion.
+    ///
+    /// „Kopieren" füllt nur die Zwischenablage (kein Werkzeug), „Kopieren mit
+    /// Basispunkt" startet `modify.copy` — dieselbe Action wie Tastatur, MCP und
+    /// Kontextmenü.
+    pub fn start_copy_input(&mut self, mode: CopyInput) {
+        match mode {
+            CopyInput::Clipboard => {
+                let ctx = self.ctx.clone();
+                self.run_action(&ctx, "edit.copy");
+            }
+            CopyInput::BasePoint => self.start_tool("modify.copy"),
+        }
+    }
+
+    /// Geteilte Schaltfläche „Kopieren" (zwei Kopierfunktionen).
+    ///
+    /// Gleiche Bedienung wie bei den Flächen: Hauptfläche startet den zuletzt
+    /// benutzten Modus, der Pfeil öffnet die Auswahl. Das Icon zeigt den Modus —
+    /// „Kopieren mit Basispunkt" trägt unten links einen Punkt.
+    fn copy_group_button(&mut self, ui: &mut egui::Ui) {
+        let cur = self.ui.copy_input;
+        let aktiv = self.tool_id() == Some(cur.action());
+        let (main, arrow) = widgets::ribbon_split_button(ui, cur.icon(), "Kopieren", aktiv);
+        let popup_id = ui.make_persistent_id("copypop");
+        let now = ui.input(|i| i.time);
+        if arrow.clicked() {
+            ui.memory_mut(|m| m.toggle_popup(popup_id));
+            ui.memory_mut(|m| m.data.insert_temp(popup_id.with("opened"), now));
+        } else if main.clicked() {
+            self.start_copy_input(cur);
+        }
+        // Prüfhilfe: Menü für einen Screenshot offen halten (nur mit Env-Variable)
+        if let Ok(welches) = std::env::var("JJCAD_DEMO_MENU") {
+            if welches == "copy" {
+                ui.memory_mut(|m| m.open_popup(popup_id));
+            }
+        }
+        // Der Klick, der das Menü öffnet, darf nicht sofort einen Eintrag wählen
+        let geoeffnet = ui.memory(|m| m.data.get_temp::<f64>(popup_id.with("opened")).unwrap_or(0.0));
+        let bereit = now - geoeffnet > 0.25;
+        egui::popup_below_widget(
+            ui,
+            popup_id,
+            &arrow,
+            egui::PopupCloseBehavior::CloseOnClickOutside,
+            |ui| {
+                ui.set_min_width(320.0);
+                ui.spacing_mut().item_spacing.y = 1.0;
+                for m in CopyInput::ALL {
+                    let (rect, resp) = ui.allocate_exact_size(
+                        egui::Vec2::new(ui.available_width().max(316.0), 26.0),
+                        egui::Sense::click(),
+                    );
+                    if resp.hovered() || m == cur {
+                        ui.painter().rect_filled(
+                            rect,
+                            egui::Rounding::same(4.0),
+                            Palette::PANEL_ALT,
+                        );
+                    }
+                    crate::icons::paint(
+                        ui.painter(),
+                        egui::Rect::from_center_size(
+                            egui::Pos2::new(rect.left() + 16.0, rect.center().y),
+                            egui::Vec2::splat(18.0),
+                        ),
+                        m.icon(),
+                        if m == cur { Palette::ACCENT } else { Palette::TEXT },
+                    );
+                    ui.painter().text(
+                        egui::Pos2::new(rect.left() + 32.0, rect.center().y),
+                        egui::Align2::LEFT_CENTER,
+                        m.label(),
+                        egui::FontId::proportional(12.5),
+                        if m == cur { Palette::ACCENT } else { Palette::TEXT },
+                    );
+                    ui.painter().text(
+                        egui::Pos2::new(rect.right() - 8.0, rect.center().y),
+                        egui::Align2::RIGHT_CENTER,
+                        m.key_label(),
+                        egui::FontId::proportional(11.0),
+                        Palette::TEXT_FAINT,
+                    );
+                    if bereit && resp.clicked() {
+                        self.ui.copy_input = m;
+                        self.prefs.copy_input = m.key().to_string();
+                        let _ = self.prefs.save();
+                        self.start_copy_input(m);
                         ui.memory_mut(|mm| mm.close_popup());
                     }
                 }
@@ -4665,3 +4846,102 @@ mod tests_chat_texte {
         }
     }
 }
+
+#[cfg(test)]
+mod tests_kopieren {
+    //! T0012: zwei Kopierfunktionen an einer geteilten Schaltfläche.
+    //!
+    //! Strg+C kopiert in die Zwischenablage (kein Werkzeug), Strg+Umschalt+C
+    //! startet „Kopieren mit Basispunkt". Beides kommt bei egui als
+    //! `Event::Copy` an — die Umschalttaste entscheidet.
+
+    use super::*;
+
+    fn app_mit_rechteck(auswahl: bool) -> App {
+        let ctx = egui::Context::default();
+        let mut app = App::with_ctx(ctx);
+        let r = app
+            .session_mut()
+            .execute("draw.rect", &serde_json::json!({"a": [0, 0], "b": [1000, 1000]}))
+            .expect("Rechteck");
+        if auswahl {
+            let id = r["created"][0].as_u64().unwrap();
+            app.session_mut().select(vec![id]);
+        }
+        app
+    }
+
+    /// Ein Frame mit Kopier-Ereignis und den angegebenen Zusatztasten.
+    fn kopier_frame(app: &mut App, shift: bool) {
+        let ctx = app.ctx.clone();
+        let mut mods = egui::Modifiers::COMMAND;
+        mods.shift = shift;
+        let raw = egui::RawInput {
+            screen_rect: Some(Rect::from_min_size(Pos2::ZERO, Vec2::new(1500.0, 950.0))),
+            modifiers: mods,
+            events: vec![egui::Event::Copy],
+            ..Default::default()
+        };
+        let _ = ctx.run(raw, |ctx| app.ui(ctx));
+    }
+
+    #[test]
+    fn strg_c_fuellt_die_zwischenablage_ohne_werkzeug() {
+        let mut app = app_mit_rechteck(true);
+        kopier_frame(&mut app, false);
+        assert_eq!(
+            app.ui.clipboard.len(),
+            1,
+            "Strg+C muss die Auswahl in die Zwischenablage legen"
+        );
+        assert_eq!(app.tool_id(), None, "reines Kopieren startet kein Werkzeug");
+    }
+
+    #[test]
+    fn strg_umschalt_c_startet_kopieren_mit_basispunkt() {
+        let mut app = app_mit_rechteck(true);
+        kopier_frame(&mut app, true);
+        assert_eq!(
+            app.tool_id(),
+            Some("modify.copy"),
+            "Strg+Umschalt+C startet Kopieren mit Basispunkt"
+        );
+        assert!(
+            app.ui.clipboard.is_empty(),
+            "Kopieren mit Basispunkt benutzt nicht die Zwischenablage"
+        );
+    }
+
+    /// Das Aufklappmenü bietet beide Funktionen, jede mit eigener Aktion.
+    #[test]
+    fn menue_bietet_beide_kopierfunktionen() {
+        let aktionen: Vec<&str> = CopyInput::ALL.iter().map(|m| m.action()).collect();
+        assert_eq!(aktionen, ["edit.copy", "modify.copy"]);
+        for m in CopyInput::ALL {
+            assert!(
+                jjcad_core::actions::action(m.action()).is_some(),
+                "{} fehlt im Aktionsregister",
+                m.action()
+            );
+            assert!(!m.label().is_empty() && !m.key_label().is_empty());
+        }
+        assert_eq!(CopyInput::Clipboard.label(), "Kopieren");
+        assert_eq!(CopyInput::BasePoint.label(), "Kopieren mit Basispunkt");
+        assert_ne!(
+            CopyInput::Clipboard.icon(),
+            CopyInput::BasePoint.icon(),
+            "der Basispunkt braucht ein eigenes Icon"
+        );
+    }
+
+    /// Vorgabe und gespeicherte Wahl: der Basispunkt-Modus ist voreingestellt
+    /// (wie bisher im Reiter „Ändern"), die Wahl überlebt den Neustart.
+    #[test]
+    fn modus_ist_gemerkt_und_voreingestellt() {
+        assert_eq!(UiState::default().copy_input, CopyInput::BasePoint);
+        for m in CopyInput::ALL {
+            assert_eq!(CopyInput::from_key(m.key()), m, "Schlüssel {}", m.key());
+        }
+    }
+}
+

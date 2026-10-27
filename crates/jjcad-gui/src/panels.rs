@@ -1926,7 +1926,7 @@ fn multi_props(app: &mut App, ui: &mut Ui, ids: &[Id]) {
         if ui.button("Verschieben").clicked() {
             app.start_tool("modify.move");
         }
-        if ui.button("Kopieren").clicked() {
+        if ui.button("Kopieren mit Basispunkt").clicked() {
             app.start_tool("modify.copy");
         }
         if ui.button("Drehen").clicked() {
