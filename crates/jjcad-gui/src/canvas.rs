@@ -757,9 +757,12 @@ pub fn show(app: &mut App, ui: &mut Ui) {
         crate::chat::zeichnen_offen(&app.chat, &painter, rect);
     } else {
         handle_input(app, ui, &resp, rect, &painter, is_sheet, snapped, raw_world);
-        // Aufforderung des laufenden Werkzeugs in den Chat (bzw. ins Log).
-        // Nur bei geändertem Text, sonst stünde sie 60-mal pro Sekunde drin.
-        if let Some(t) = app.tool.clone() {
+        // Aufforderung des laufenden Werkzeugs (bzw. der Einfüge-Vorschau) in
+        // den Chat. Nur bei geändertem Text, sonst stünde sie 60-mal pro
+        // Sekunde im Protokoll.
+        if app.ghost.is_some() {
+            app.mitteilung_wenn_neu("Einfügen · Klick setzt ab (R dreht, S spiegelt)");
+        } else if let Some(t) = app.tool.clone() {
             let hinweis = crate::app::commands_hint(&t);
             app.mitteilung_wenn_neu(hinweis);
         }
@@ -2083,7 +2086,7 @@ fn handle_input(
                             if above { "Vor Element gesetzt" } else { "Hinter Element gesetzt" }.to_string(),
                         );
                     }
-                    None => app.toast("Kein Element getroffen".to_string()),
+                    None => app.toast("Reihenfolge · kein Element getroffen".to_string()),
                 }
                 app.ui.order_pick = None;
             }
@@ -2878,7 +2881,7 @@ fn finish_fill(app: &mut App, action: &str) -> bool {
         return false;
     };
     let Some(boundary) = fill_boundary_points(&tool.pts) else {
-        app.toast("Mindestens drei Punkte für eine Fläche");
+        app.toast("Füllfläche · mindestens 3 Punkte");
         return false;
     };
     let pts: Vec<[f64; 2]> = boundary
@@ -2992,7 +2995,7 @@ pub fn rotate_step(pts: &[V2], w: V2) -> RotateStep {
     if pts.len() < 2 {
         if let Some(c) = pts.first().copied() {
             if c.dist(w) < jjcad_core::transform::ANGLE_MIN_RADIUS {
-                return RotateStep::Reject("Etwas Abstand zum Drehzentrum nötig");
+                return RotateStep::Reject("Drehen · Abstand zum Zentrum nötig");
             }
         }
         return RotateStep::Collect { point: w };
@@ -3003,7 +3006,7 @@ pub fn rotate_step(pts: &[V2], w: V2) -> RotateStep {
             from: pts[1],
             angle,
         },
-        None => RotateStep::Reject("Bis-Punkt braucht Abstand zum Drehzentrum"),
+        None => RotateStep::Reject("Drehen · Abstand zum Zentrum nötig"),
     }
 }
 
@@ -3024,9 +3027,9 @@ fn restart_tool(app: &mut App, action: &str) {
         selecting: false,
         phase: ToolPhase::Collecting,
     });
-    if let Some(def) = actions::action(action) {
-        app.mitteilung(def.hint);
-    }
+    // Die Aufforderung des ersten Schritts kommt in jedem Frame aus
+    // `commands_hint` — hier nichts zusätzlich melden (sonst zwei Zeilen).
+    let _ = action;
     // Tippepuffer (Länge/Koordinaten) gehört zum vorigen Objekt.
     app.ui.typed.clear();
 }
@@ -3291,7 +3294,7 @@ fn tool_click_at(app: &mut App, w: V2, raw: V2) {
                                        "border": app.options.fill_border_outline}),
                             );
                         }
-                        None => app.toast("Bitte eine geschlossene Kontur anklicken"),
+                        None => app.toast("Füllfläche · geschlossene Kontur anklicken"),
                     }
                 }
             }
@@ -3309,7 +3312,7 @@ fn tool_click_at(app: &mut App, w: V2, raw: V2) {
                 None => (w, 0.0, None),
             };
             if host.is_none() {
-                app.toast("Türen müssen auf einer Wand liegen");
+                app.toast("Tür · nur auf einer Wand");
                 return;
             }
             let _ = run(
@@ -3326,7 +3329,7 @@ fn tool_click_at(app: &mut App, w: V2, raw: V2) {
                 None => (w, 0.0, None),
             };
             if host.is_none() {
-                app.toast("Fenster müssen auf einer Wand liegen");
+                app.toast("Fenster · nur auf einer Wand");
                 return;
             }
             let _ = run(
@@ -3432,7 +3435,7 @@ fn tool_click_at(app: &mut App, w: V2, raw: V2) {
                         "modify.rotate",
                         json!({"ids": ids, "center": ax(center), "angle": angle}),
                     );
-                    app.toast(&format!("Gedreht um {}°", format_number(angle, 1)));
+                    app.toast(&format!("Drehen · {}°", format_number(angle, 1)));
                     app.tool = None;
                 }
                 RotateStep::Reject(msg) => app.toast(msg),
@@ -3477,7 +3480,7 @@ fn tool_click_at(app: &mut App, w: V2, raw: V2) {
                     app.tool = Some(tool);
                     app.session_mut().select(vec![id]);
                 } else {
-                    app.toast("Objekt anklicken");
+                    app.toast("Versetzen · Objekt anklicken");
                 }
             } else {
                 let ids = app.selection().to_vec();
@@ -3506,7 +3509,7 @@ fn tool_click_at(app: &mut App, w: V2, raw: V2) {
         }
         "block.insert" => {
             let Some(bid) = app.options.block_id.clone() else {
-                app.toast("Kein Block gewählt – Inventar (E) öffnen");
+                app.toast("Block · im Inventar wählen (E)");
                 return;
             };
             let _ = run(
@@ -3557,6 +3560,10 @@ fn run(app: &mut App, action: &str, params: serde_json::Value) -> bool {
     }
     match app.session_mut().execute(action, &params) {
         Ok(_) => {
+            // Einheitliche Rückmeldung im Chat: `<Objekt> · <Zustand>`
+            if let Some(m) = crate::app::abschluss_meldung(action) {
+                app.mitteilung(m);
+            }
             app.mark_changed();
             true
         }

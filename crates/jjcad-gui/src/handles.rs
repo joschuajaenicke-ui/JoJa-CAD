@@ -196,7 +196,7 @@ impl App {
             kind,
             orig,
         });
-        self.mitteilung("Griff ziehen");
+        self.mitteilung("Griff · ziehen");
     }
 
     /// Verschiebt den Griff auf die Weltposition `target`.
@@ -224,7 +224,7 @@ impl App {
 
     pub fn end_grip_drag(&mut self) {
         if self.grip_drag.take().is_some() {
-            self.mitteilung("Bearbeitet");
+            self.mitteilung("Griff · gesetzt");
         }
     }
 

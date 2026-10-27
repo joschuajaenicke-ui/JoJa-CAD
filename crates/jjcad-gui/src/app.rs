@@ -1154,7 +1154,7 @@ impl App {
     pub fn order_selection_to(&mut self, front: bool) {
         let ids = self.selection().to_vec();
         if ids.is_empty() {
-            self.toast("Keine Auswahl");
+            self.toast("Auswahl · leer");
             return;
         }
         self.order_to(front, ids);
@@ -1177,7 +1177,7 @@ impl App {
     /// Referenzobjekt (ausgewertet in `canvas`). Braucht eine Auswahl.
     pub fn order_pick_start(&mut self, above: bool) {
         if self.selection().is_empty() {
-            self.toast("Zuerst ein Element auswählen");
+            self.toast("Reihenfolge · erst ein Element wählen");
             return;
         }
         self.ui.order_pick = Some(above);
@@ -1295,20 +1295,20 @@ impl App {
             "edit.undo" => {
                 if self.session_mut().undo() {
                     self.mark_changed();
-                    self.toast("Rückgängig");
+                    self.toast("Verlauf · zurück");
                 }
             }
             "edit.redo" => {
                 if self.session_mut().redo() {
                     self.mark_changed();
-                    self.toast("Wiederholt");
+                    self.toast("Verlauf · wiederholt");
                 }
             }
             "modify.erase" => {
                 let ids = self.selection().to_vec();
                 if ids.is_empty() {
                     self.start_tool("modify.select");
-                    self.toast("Objekte auswählen, dann Entf");
+                    self.toast("Löschen · erst Objekte wählen");
                 } else {
                     let _ = self.session_mut().execute("modify.erase", &serde_json::json!({ "ids": ids }));
                     self.mark_changed();
@@ -1317,7 +1317,7 @@ impl App {
             "modify.explode" | "block.explode" => {
                 let ids = self.selection().to_vec();
                 if ids.is_empty() {
-                    self.toast("Zuerst Blöcke/Bauteile auswählen");
+                    self.toast("Blöcke · erst auswählen");
                 } else {
                     match self
                         .session_mut()
@@ -1325,7 +1325,7 @@ impl App {
                     {
                         Ok(_) => {
                             self.mark_changed();
-                            self.toast("Zerlegt");
+                            self.toast("Objekt · zerlegt");
                         }
                         Err(e) => self.toast(e),
                     }
@@ -1333,7 +1333,7 @@ impl App {
             }
             "block.create" => {
                 if self.selection().is_empty() {
-                    self.toast("Zuerst Objekte auswählen");
+                    self.toast("Auswahl · leer");
                 } else {
                     self.ui.block_name_dialog = Some((String::new(), false));
                 }
@@ -1358,7 +1358,7 @@ impl App {
                     .get(self.prefs.active_preset)
                     .map(|p| p.name.clone())
                     .unwrap_or_default();
-                self.toast(format!("Hotbar: {name}"));
+                self.toast(format!("Hotbar · {name}"));
                 let _ = self.prefs.save();
             }
             "edit.repeat" => {
@@ -1370,7 +1370,7 @@ impl App {
                         match self.session_mut().execute(&last, &params) {
                             Ok(_) => {
                                 self.mark_changed();
-                                self.toast(format!("Wiederholt: {}", actions::action(&last).map(|d| d.label).unwrap_or("")));
+                                self.toast(format!("Verlauf · wiederholt: {}", actions::action(&last).map(|d| d.label).unwrap_or("")));
                             }
                             Err(e) => self.toast(e),
                         }
@@ -1413,7 +1413,7 @@ impl App {
                     match r {
                         Ok(_) => {
                             self.mark_changed();
-                            self.toast("Ansichtsfenster hinzugefügt");
+                            self.toast("Ansichtsfenster · angelegt");
                         }
                         Err(e) => self.toast(e),
                     }
@@ -1434,7 +1434,9 @@ impl App {
     }
 
     pub fn start_tool(&mut self, id: &str) {
-        let Some(def) = actions::action(id) else { return };
+        if actions::action(id).is_none() {
+            return;
+        }
         self.ui.fill_active = None;
         // Optionen aus Dokument aktualisieren, falls noch nie gesetzt
         self.tool = Some(Tool {
@@ -1453,11 +1455,12 @@ impl App {
                 ),
             phase: ToolPhase::Collecting,
         });
-        // Werkzeuge melden ihren Bedienschritt selbst aus der Zeichenfläche
-        // (`commands_hint`, ein Text pro Schritt) — sonst stünde beim Start
-        // zweimal dieselbe Aufforderung im Chat.
-        if !def.tool {
-            self.mitteilung(def.hint);
+        // Aufforderung im Chat-Schema (`<Werkzeug> · <Schritt>`). Die
+        // Zeichenfläche meldet in jedem Frame denselben Text; dort wird die
+        // Wiederholung unterdrückt.
+        if let Some(t) = self.tool.clone() {
+            let hinweis = commands_hint(&t);
+            self.mitteilung(hinweis);
         }
         if self.ui.bind_slot.is_some() {
             // Aktives Werkzeug mit Slot verknüpfen
@@ -1468,9 +1471,7 @@ impl App {
         }
         // Auswahlmodus bei Aktionen, die eine Auswahl brauchen
         if let Some(t) = &mut self.tool {
-            if t.selecting {
-                self.mitteilung("Objekte wählen – Enter bestätigt, ESC bricht ab");
-            }
+
         }
         if !matches!(
             id,
@@ -1499,12 +1500,9 @@ impl App {
             })
             .unwrap_or(false);
         if finisheable {
+            // Die Ergebniszeile (`<Objekt> · <Zustand>`) schreibt der
+            // Befehlsaufruf selbst — hier keine zweite Meldung.
             crate::canvas::finish_tool(self, false);
-            // Zu wenige Ecken für eine Fläche: das Werkzeug bleibt mit seinen
-            // Punkten stehen, es gibt nichts zu quittieren.
-            if self.tool.is_none() {
-                self.toast("Abgeschlossen");
-            }
             return;
         }
         self.cancel_tool();
@@ -1548,7 +1546,7 @@ impl App {
             self.mitteilung("Abgebrochen");
         }
         if self.ghost.take().is_some() {
-            self.mitteilung("Platzieren abgebrochen");
+            self.mitteilung("Platzieren · abgebrochen");
         }
         // Laufendes Ziehen der Auswahl zurücknehmen (keine halb verschobene
         // Geometrie zurücklassen)
@@ -1562,7 +1560,7 @@ impl App {
         self.prefs.set_slot(slot, action);
         let name = self.prefs.hotbar_presets[self.prefs.active_preset].name.clone();
         let _ = self.prefs.save();
-        self.toast(format!("Slot {} belegt ({name})", slot + 1));
+        self.toast(format!("Hotbar · Slot {} belegt ({name})", slot + 1));
     }
 
     // ---- Dateien ----
@@ -1596,7 +1594,7 @@ impl App {
             Ok(_) => {
                 self.prefs.add_recent(&path.to_string_lossy());
                 let _ = self.prefs.save();
-                self.toast(format!("Gespeichert: {}", path.display()));
+                self.toast(format!("Datei · gespeichert: {}", path.display()));
             }
             Err(e) => self.toast(e),
         }
@@ -1635,7 +1633,7 @@ impl App {
                 }
                 let _ = self.prefs.save();
                 self.fit_view();
-                self.toast(format!("Geöffnet: {}", path.file_name().unwrap_or_default().to_string_lossy()));
+                self.toast(format!("Datei · geöffnet: {}", path.file_name().unwrap_or_default().to_string_lossy()));
             }
             Err(e) => self.toast(e),
         }
@@ -1658,7 +1656,7 @@ impl App {
         self.active = self.tabs.len() - 1;
         self.options = ToolOptions::from_doc(self.doc());
         self.fit_view();
-        self.toast("Neue Zeichnung");
+        self.toast("Datei · neu");
     }
 
     pub fn close_tab(&mut self, idx: usize) {
@@ -1685,14 +1683,14 @@ impl App {
             pdf::export_all_sheets_pdf(self.doc(), &path)
         };
         match res {
-            Ok(_) => self.toast(format!("PDF exportiert: {}", path.display())),
+            Ok(_) => self.toast(format!("PDF · exportiert: {}", path.display())),
             Err(e) => self.toast(e),
         }
     }
 
     pub fn export_dxf_to(&mut self, path: PathBuf) {
         match dxf::export_dxf(self.doc(), &path) {
-            Ok(_) => self.toast(format!("DXF exportiert: {}", path.display())),
+            Ok(_) => self.toast(format!("DXF · exportiert: {}", path.display())),
             Err(e) => self.toast(e),
         }
     }
@@ -1709,7 +1707,7 @@ impl App {
             ..Default::default()
         };
         match raster::render_png(self.doc(), &opts, &path) {
-            Ok(_) => self.toast(format!("PNG exportiert: {}", path.display())),
+            Ok(_) => self.toast(format!("PNG · exportiert: {}", path.display())),
             Err(e) => self.toast(e),
         }
     }
@@ -1722,7 +1720,7 @@ impl App {
                 let merged = dxf::import::merge_into(self.doc_mut(), res);
                 self.mark_changed();
                 self.fit_view();
-                let mut msg = format!("{n} Objekte importiert");
+                let mut msg = format!("DXF · {n} Objekte importiert");
                 if warn > 0 {
                     msg.push_str(&format!(", {warn} Hinweise"));
                 }
@@ -1755,10 +1753,10 @@ impl App {
             }
             if self.ui.order_pick.is_some() {
                 self.ui.order_pick = None;
-                self.toast("Abgebrochen: kein Referenzobjekt gewählt");
+                self.toast("Reihenfolge · kein Objekt gewählt");
             } else if self.ui.bind_slot.is_some() {
                 self.ui.bind_slot = None;
-                self.toast("Verknüpfen abgebrochen");
+                self.toast("Hotbar · verknüpfen abgebrochen");
             } else {
                 self.escape_pressed();
             }
@@ -1974,7 +1972,7 @@ impl App {
                 // Zahl/Länge statt das Werkzeug zu beenden.
                 if self.ui.typed.is_empty() && self.fill_points_running() {
                     self.cancel_tool();
-                    self.toast("Abgebrochen: Fläche verworfen");
+                    self.toast("Füllfläche · verworfen");
                 } else {
                     let ids = self.selection().to_vec();
                     if !ids.is_empty() {
@@ -2006,7 +2004,7 @@ impl App {
                         if let Some(t) = &mut self.tool {
                             t.selecting = false;
                         }
-                        self.mitteilung("Basispunkt wählen");
+                        self.mitteilung("Verschieben · Basispunkt klicken");
                     }
                 }
             }
@@ -2036,7 +2034,7 @@ impl App {
             self.session_mut().clear_selection();
             self.mark_changed();
         }
-        self.toast(if cut { "Ausgeschnitten" } else { "Kopiert" });
+        self.toast(if cut { "Auswahl · ausgeschnitten" } else { "Auswahl · kopiert" });
     }
 
     pub fn paste_clipboard(&mut self) {
@@ -2055,7 +2053,7 @@ impl App {
         self.mark_changed();
         self.session_mut().select(new_ids);
         self.ui.clipboard_offset += 20.0;
-        self.toast("Eingefügt");
+        self.toast("Auswahl · eingefügt");
     }
 
     // ---- Zeichnungstabs ----
@@ -2164,7 +2162,7 @@ impl App {
                 self.tab_mut().sheet_views.remove(&id);
                 self.mark_changed();
             } else {
-                self.toast("Das letzte Blatt kann nicht geschlossen werden");
+                self.toast("Blatt · das letzte bleibt offen");
             }
         }
         if new_sheet {
@@ -2586,9 +2584,9 @@ fn rail(ui: &mut egui::Ui, icon: &str, tooltip: &str, chevron: &str) -> bool {
                         if widgets::ribbon_button(ui, "viewport", "Ansicht", app.tool_id() == Some("sheet.viewport_tool")).clicked() {
                             if matches!(app.tab().tab, TabKind::Sheet(_)) {
                                 app.start_tool("sheet.viewport_tool");
-                                app.toast("Rechteck für das Ansichtsfenster aufziehen");
+                                app.toast("Ansichtsfenster · Rechteck aufziehen");
                             } else {
-                                app.toast("Bitte zuerst ein Blatt öffnen");
+                                app.toast("Blatt · zuerst ein Blatt öffnen");
                             }
                         }
                         if widgets::ribbon_button(ui, "pdf", "Blatt-PDF", false).clicked() {
@@ -2781,7 +2779,7 @@ fn rail(ui: &mut egui::Ui, icon: &str, tooltip: &str, chevron: &str) -> bool {
     /// Startet die Vorschau für das Einfügen aus der Zwischenablage.
     pub fn start_ghost_paste(&mut self) {
         if self.ui.clipboard.is_empty() {
-            self.toast("Zwischenablage ist leer");
+            self.toast("Einfügen · Zwischenablage leer");
             return;
         }
         if self.ghost.is_some() {
@@ -2868,7 +2866,7 @@ fn rail(ui: &mut egui::Ui, icon: &str, tooltip: &str, chevron: &str) -> bool {
 
     pub fn cancel_ghost(&mut self) {
         if self.ghost.take().is_some() {
-            self.toast("Platzieren abgebrochen");
+            self.toast("Platzieren · abgebrochen");
         }
     }
 
@@ -2918,7 +2916,7 @@ fn rail(ui: &mut egui::Ui, icon: &str, tooltip: &str, chevron: &str) -> bool {
         self.session_mut().select(ids);
         self.mark_changed();
         self.ghost = None;
-        self.toast("Eingefügt");
+        self.toast("Auswahl · eingefügt");
         true
     }
 
@@ -3167,112 +3165,203 @@ fn rail(ui: &mut egui::Ui, icon: &str, tooltip: &str, chevron: &str) -> bool {
     }
 }
 
+/// Einheitliches Schema für die Chat-Meldungen:
+///
+/// * Aufforderung: `<Werkzeug> · <Schritt>` — was der Nutzer jetzt tun muss,
+///   kurz und im Imperativ (`Wand · Ende klicken`).
+/// * Ergebnis: `<Objekt> · <Zustand>` (`Wand · gesetzt`, `Auswahl · kopiert`).
+/// * Abbruch/Fehler: `<Werkzeug> · <Grund>` (`Tür · nur auf einer Wand`).
+///
+/// Der Werkzeugname ist immer die Beschriftung aus dem Aktionsregister, damit
+/// Ribbon, Hotbar und Chat dasselbe Wort benutzen.
+pub const HINWEIS_UNBEKANNT: &str = "Werkzeug · Aktion wählen";
+
+/// Aufforderung des laufenden Werkzeugs — ein Text pro Bedienschritt.
 pub(crate) fn commands_hint(tool: &Tool) -> &'static str {
+    // Textwerkzeug: nach dem Klick wird getippt, nicht mehr geklickt.
+    if tool.action == "draw.text" && tool.phase == ToolPhase::TextInput {
+        return "Text · Text eingeben (Enter)";
+    }
+    let lebt = !tool.pts.is_empty();
     match tool.action.as_str() {
         "draw.line" => {
-            if tool.pts.is_empty() {
-                "Startpunkt klicken"
+            if lebt {
+                "Linie · Endpunkt klicken"
             } else {
-                "Endpunkt klicken – ESC beendet"
+                "Linie · Startpunkt klicken"
             }
         }
-        "draw.wall" => {
-            if tool.pts.is_empty() {
-                "Wandanfang klicken"
+        "draw.polyline" => {
+            if lebt {
+                "Polylinie · nächster Punkt (Enter beendet)"
             } else {
-                "Wandende klicken – ESC beendet"
+                "Polylinie · Startpunkt klicken"
             }
         }
-        "draw.circle" => {
-            if tool.pts.is_empty() {
-                "Kreis: Mittelpunkt klicken"
+        "draw.spline" => {
+            if lebt {
+                "Spline · nächster Punkt (Enter beendet)"
             } else {
-                "Kreis: Radius klicken"
+                "Spline · Startpunkt klicken"
             }
         }
         "draw.rect" => {
-            if tool.pts.is_empty() {
-                "Erste Ecke"
+            if lebt {
+                "Rechteck · zweite Ecke klicken"
             } else {
-                "Zweite Ecke"
+                "Rechteck · erste Ecke klicken"
             }
         }
-        "draw.door" | "draw.window" => "In eine Wand klicken (öffnet und richtet sich aus)",
-        "draw.stair" => {
-            if tool.pts.is_empty() {
-                "Treppenanfang"
+        "draw.circle" => {
+            if lebt {
+                "Kreis · Radius klicken"
             } else {
-                "Treppenende"
+                "Kreis · Mittelpunkt klicken"
             }
         }
-        "dim.linear" => match tool.pts.len() {
-            0 => "Erster Messpunkt",
-            1 => "Zweiter Messpunkt",
-            _ => "Maßlinie platzieren",
+        "draw.ellipse" => {
+            if lebt {
+                "Ellipse · Achsen aufziehen"
+            } else {
+                "Ellipse · Mittelpunkt klicken"
+            }
+        }
+        "draw.arc" => match tool.pts.len() {
+            0 => "Bogen · Startpunkt klicken",
+            1 => "Bogen · Endpunkt klicken",
+            _ => "Bogen · Punkt auf dem Bogen klicken",
         },
-        "dim.chain" => "Punkte klicken – Enter beendet die Kette",
-        "dim.elevation" => "Punkt für Höhenkote klicken",
-        "modify.move" | "modify.copy" => {
-            if tool.selecting {
-                "Objekte wählen"
-            } else if tool.pts.is_empty() {
-                "Basispunkt"
+        "draw.point" => "Punkt · Position klicken",
+        "draw.text" => "Text · Position klicken",
+        "draw.wall" => {
+            if lebt {
+                "Wand · Ende klicken"
             } else {
-                "Zielpunkt"
+                "Wand · Anfang klicken"
             }
         }
+        "draw.door" => "Tür · in eine Wand klicken",
+        "draw.window" => "Fenster · in eine Wand klicken",
+        "draw.stair" => {
+            if lebt {
+                "Treppe · Ende klicken"
+            } else {
+                "Treppe · Anfang klicken"
+            }
+        }
+        "draw.fill" => "Füllfläche · Kontur anklicken",
+        "draw.fill.boundary" => {
+            if lebt {
+                "Füllfläche · nächster Umrisspunkt (Enter)"
+            } else {
+                "Füllfläche · Umriss abfahren"
+            }
+        }
+        "draw.fill.points" => {
+            if tool.pts.len() < 3 {
+                "Füllfläche · Punkt klicken (mind. 3)"
+            } else {
+                "Füllfläche · Enter schließt"
+            }
+        }
+        "draw.fill.paint" => "Farbeimer · Fläche anklicken",
+        "draw.hatch" => "Schraffur · Kontur anklicken",
+        "dim.linear" => match tool.pts.len() {
+            0 => "Maß · erster Punkt",
+            1 => "Maß · zweiter Punkt",
+            _ => "Maß · Maßlinie platzieren",
+        },
+        "dim.chain" => {
+            if lebt {
+                "Maßkette · nächster Punkt (Enter beendet)"
+            } else {
+                "Maßkette · erster Punkt"
+            }
+        }
+        "dim.elevation" => "Höhenkote · Punkt klicken",
+        "modify.select" => "Auswählen · Objekte oder Fenster",
+        "modify.move" => match (tool.selecting, lebt) {
+            (true, _) => "Verschieben · Objekte wählen (Enter)",
+            (false, true) => "Verschieben · Zielpunkt klicken",
+            (false, false) => "Verschieben · Basispunkt klicken",
+        },
+        "modify.copy" => match (tool.selecting, lebt) {
+            (true, _) => "Kopieren · Objekte wählen (Enter)",
+            (false, true) => "Kopieren · Zielpunkt klicken",
+            (false, false) => "Kopieren · Basispunkt klicken",
+        },
         "modify.rotate" => match tool.pts.len() {
-            0 => "Drehzentrum",
-            1 => "Von-Punkt (Bezugsrichtung)",
-            _ => "Bis-Punkt (neue Richtung) – Winkel von → bis",
+            0 => "Drehen · Zentrum klicken",
+            1 => "Drehen · Bezugspunkt klicken",
+            _ => "Drehen · neuen Punkt klicken",
         },
         "modify.mirror" => {
-            if tool.pts.is_empty() {
-                "Erster Punkt der Spiegelachse"
+            if lebt {
+                "Spiegeln · zweiten Achspunkt klicken"
             } else {
-                "Zweiter Punkt"
+                "Spiegeln · Punkt der Achse klicken"
             }
         }
         "modify.scale" => {
-            if tool.pts.is_empty() {
-                "Bezugspunkt"
+            if lebt {
+                "Skalieren · Faktor klicken"
             } else {
-                "Faktor klicken"
+                "Skalieren · Bezugspunkt klicken"
             }
         }
-        "modify.offset" => "Objekt anklicken, dann Seite",
-        "modify.trim" => "Zu stutzendes Segment anklicken",
-        "modify.extend" => "Ende anklicken, das verlängert wird",
-        "modify.explode" => "Objekt anklicken",
-        "block.insert" => "Position klicken",
-        "draw.text" => "Position klicken",
-        "draw.polyline" => {
-            if tool.pts.is_empty() {
-                "Polylinie: Startpunkt klicken"
+        "modify.offset" => {
+            if lebt {
+                "Versetzen · Seite klicken"
             } else {
-                "Nächster Punkt klicken – Klick auf den Startpunkt schließt, Enter beendet"
+                "Versetzen · Objekt anklicken"
             }
         }
-        "draw.spline" => "Punkte klicken – die Kurve läuft durch die Punkte, Enter beendet",
-        "draw.fill.boundary" => "Umriss abfahren – Enter oder Doppelklick beendet",
-        "draw.fill.points" => {
-            if tool.pts.len() < 3 {
-                "Punkte klicken – mindestens drei, Enter schließt"
-            } else {
-                "Enter oder Doppelklick schließt die Fläche, ESC verwirft"
-            }
-        }
-        "draw.fill" | "draw.hatch" => "Geschlossene Kontur anklicken",
-        "draw.fill.paint" => "In eine leere Fläche klicken — Vorschau zeigt die Fläche",
-        "draw.arc" => match tool.pts.len() {
-            0 => "Startpunkt",
-            1 => "Endpunkt",
-            _ => "Punkt auf dem Bogen",
-        },
-        "draw.point" => "Punkt klicken",
-        "modify.select" => "Objekte anklicken oder Fenster aufziehen",
-        _ => "Punkt klicken",
+        "modify.trim" => "Stutzen · Segment anklicken",
+        "modify.extend" => "Verlängern · Ende anklicken",
+        "modify.explode" => "Zerlegen · Objekt anklicken",
+        "modify.pickprops" => "Eigenschaften · Objekt anklicken",
+        "modify.order" => "Reihenfolge · Objekt anklicken",
+        "block.insert" => "Block · Position klicken",
+        "sheet.viewport_tool" => "Ansichtsfenster · Rechteck aufziehen",
+        _ => HINWEIS_UNBEKANNT,
     }
+}
+
+/// Ergebnis-Meldung nach einem erfolgreichen Befehl: `<Objekt> · <Zustand>`.
+/// `None` = der Befehl meldet sein Ergebnis selbst (Drehen, Stutzen,
+/// Reihenfolge) oder braucht keine Rückmeldung.
+pub(crate) fn abschluss_meldung(action: &str) -> Option<&'static str> {
+    Some(match action {
+        "draw.line" => "Linie · gesetzt",
+        "draw.polyline" => "Polylinie · abgeschlossen",
+        "draw.spline" => "Spline · abgeschlossen",
+        "draw.rect" => "Rechteck · gesetzt",
+        "draw.circle" => "Kreis · gesetzt",
+        "draw.ellipse" => "Ellipse · gesetzt",
+        "draw.arc" => "Bogen · gesetzt",
+        "draw.point" => "Punkt · gesetzt",
+        "draw.text" => "Text · gesetzt",
+        "draw.wall" => "Wand · gesetzt",
+        "draw.door" => "Tür · eingefügt",
+        "draw.window" => "Fenster · eingefügt",
+        "draw.stair" => "Treppe · gesetzt",
+        "draw.fill" | "draw.fill.boundary" | "draw.fill.points" | "draw.fill.paint" => {
+            "Füllfläche · gesetzt"
+        }
+        "draw.hatch" => "Schraffur · gesetzt",
+        "dim.linear" => "Maß · gesetzt",
+        "dim.chain" => "Maßkette · gesetzt",
+        "dim.elevation" => "Höhenkote · gesetzt",
+        "modify.move" => "Auswahl · verschoben",
+        "modify.copy" => "Auswahl · kopiert",
+        "modify.mirror" => "Auswahl · gespiegelt",
+        "modify.scale" => "Auswahl · skaliert",
+        "modify.offset" => "Auswahl · versetzt",
+        "modify.explode" => "Objekt · zerlegt",
+        "block.insert" => "Block · eingefügt",
+        "sheet.viewport_tool" => "Ansichtsfenster · angelegt",
+        _ => return None,
+    })
 }
 
 /// Weltkoordinaten aus Bildschirmposition.
@@ -3840,7 +3929,7 @@ impl App {
             orig,
             recorded: false,
         });
-        self.mitteilung("Auswahl verschieben");
+        self.mitteilung("Verschieben · Basispunkt klicken");
     }
 
     /// Verschiebt die Auswahl live mit (Ausgangsgeometrie bleibt gespeichert).
@@ -3879,7 +3968,7 @@ impl App {
     pub fn end_move_drag(&mut self) {
         if self.move_drag.take().is_some() {
             self.mark_changed();
-            self.mitteilung("Verschoben");
+            self.mitteilung("Auswahl · verschoben");
         }
     }
 
@@ -3895,7 +3984,7 @@ impl App {
             }
         }
         self.mark_changed();
-        self.mitteilung("Verschieben abgebrochen");
+        self.mitteilung("Verschieben · abgebrochen");
     }
 }
 
@@ -3961,11 +4050,11 @@ mod tests_reihenfolge {
         let (mut app, ids) = app_mit_drei_linien();
         app.order_selection_to(true);
         assert_eq!(reihenfolge(&app), ids, "Reihenfolge unverändert");
-        assert_eq!(app.status_msg, "Keine Auswahl");
+        assert_eq!(app.status_msg, "Auswahl · leer");
 
         app.order_pick_start(true);
         assert_eq!(app.ui.order_pick, None, "ohne Auswahl kein Zielmodus");
-        assert_eq!(app.status_msg, "Zuerst ein Element auswählen");
+        assert_eq!(app.status_msg, "Reihenfolge · erst ein Element wählen");
     }
 
     /// Knopf „Vor/Hinter Element“: merkt sich die Richtung für den nächsten
@@ -4448,5 +4537,131 @@ mod tests_text_ziehen {
 
         assert!(gestartet, "Linie muss sich ziehen lassen");
         assert!(app.move_drag.is_some(), "Zug läuft");
+    }
+}
+
+#[cfg(test)]
+mod tests_chat_texte {
+    //! Das Chat-Schema (T0009): jede Funktion bekommt eine Aufforderung und
+    //! eine Ergebniszeile — kurz, mit demselben Werkzeugnamen wie im Register
+    //! und in der Form `<Werkzeug> · <Schritt>`.
+
+    use super::*;
+
+    /// Name, der in der Aufforderung vor dem Trennpunkt steht.
+    fn werkzeugname(id: &str) -> String {
+        match id {
+            "draw.fill" | "draw.fill.boundary" | "draw.fill.points" => "Füllfläche".into(),
+            "modify.pickprops" => "Eigenschaften".into(),
+            "block.insert" => "Block".into(),
+            "sheet.viewport_tool" => "Ansichtsfenster".into(),
+            other => actions::action(other).map(|d| d.label).unwrap_or("?").to_string(),
+        }
+    }
+
+    fn werkzeuge() -> Vec<Tool> {
+        let mut out = Vec::new();
+        for a in actions::ACTIONS.iter().filter(|a| a.tool) {
+            for anzahl in [0usize, 1, 2, 3] {
+                for selecting in [false, true] {
+                    for phase in [ToolPhase::Collecting, ToolPhase::TextInput] {
+                        out.push(Tool {
+                            action: a.id.to_string(),
+                            pts: vec![V2::ZERO; anzahl],
+                            selecting,
+                            phase,
+                        });
+                    }
+                }
+            }
+        }
+        out
+    }
+
+    /// Jedes Werkzeug hat in jedem Schritt eine Aufforderung im Schema
+    /// `<Werkzeug> · <Schritt>`, höchstens 48 Zeichen.
+    #[test]
+    fn jedes_werkzeug_hat_eine_kurze_aufforderung() {
+        for t in werkzeuge() {
+            let h = commands_hint(&t);
+            assert_ne!(
+                h, HINWEIS_UNBEKANNT,
+                "{} ({} Punkte) hat keinen Hinweis",
+                t.action,
+                t.pts.len()
+            );
+            assert!(h.contains(" · "), "{}: kein Schema: {h}", t.action);
+            assert!(
+                h.chars().count() <= 48,
+                "{}: {} Zeichen: {h}",
+                t.action,
+                h.chars().count()
+            );
+            let name = werkzeugname(&t.action);
+            assert!(
+                h.starts_with(&format!("{name} · ")),
+                "{}: erwartet \"{name} · …\", war {h}",
+                t.action
+            );
+        }
+    }
+
+    /// Jede platzierende Änderung meldet ein Ergebnis im Schema
+    /// `<Objekt> · <Zustand>`, höchstens 30 Zeichen.
+    #[test]
+    fn ergebnisse_sind_kurz_und_einheitlich() {
+        let mut geprueft = 0;
+        for a in actions::ACTIONS.iter().filter(|a| a.tool) {
+            let Some(m) = abschluss_meldung(a.id) else { continue };
+            geprueft += 1;
+            assert!(m.contains(" · "), "{}: kein Schema: {m}", a.id);
+            assert!(
+                m.chars().count() <= 30,
+                "{}: {} Zeichen: {m}",
+                a.id,
+                m.chars().count()
+            );
+            let objekt = m.split(" · ").next().unwrap();
+            // Erlaubt: das Ergebnisobjekt (meist der Werkzeugname), die
+            // Auswahl oder ein einzelnes Objekt. Der Farbeimer erzeugt eine
+            // Füllfläche, das Werkzeug heißt anders.
+            let name = werkzeugname(a.id);
+            let erlaubt = ["Auswahl", "Objekt", "Füllfläche", name.as_str()];
+            assert!(
+                erlaubt.contains(&objekt),
+                "{}: Objekt \"{objekt}\" passt nicht zum Werkzeug",
+                a.id
+            );
+        }
+        assert!(geprueft >= 25, "zu wenige geprüfte Werkzeuge: {geprueft}");
+    }
+
+    /// Werkzeuge mit eigener, genauerer Meldung schweigen hier (sonst zwei
+    /// Zeilen für einen Vorgang) — und umgekehrt.
+    #[test]
+    fn keine_doppelten_ergebniszeilen() {
+        for id in [
+            "modify.rotate",
+            "modify.trim",
+            "modify.extend",
+            "modify.order",
+            "modify.pickprops",
+        ] {
+            assert_eq!(abschluss_meldung(id), None, "{id} meldet doppelt");
+        }
+        for id in ["draw.wall", "draw.circle", "draw.polyline", "modify.move"] {
+            assert!(abschluss_meldung(id).is_some(), "{id} meldet nichts");
+        }
+    }
+
+    /// Aufforderungen sind Aufforderungen: kurz, Verb am Ende, keine
+    /// Implementierungserklärungen in Klammern außer „Enter“.
+    #[test]
+    fn aufforderungen_sind_knapp() {
+        for t in werkzeuge() {
+            let h = commands_hint(&t);
+            assert!(!h.contains('…'), "{}: Auslassung im Text: {h}", t.action);
+            assert!(!h.contains("bitte"), "{}: Floskel: {h}", t.action);
+        }
     }
 }

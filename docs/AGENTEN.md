@@ -194,6 +194,11 @@ Mit dem Nutzer abgestimmt — nicht „verbessern“:
   Eingaben des Nutzers werden nur protokolliert. Es gibt keinen eigenen Toast
   mehr; das Text-Werkzeug hat kein Kürzel. Bei offenem Protokoll bleibt der
   Mauszeiger sichtbar (in der Eingabezeile als Textcursor).
+- **Chat-Schema** (eine Form für alle Funktionen): `<Werkzeug> · <Schritt>` als
+  Aufforderung (`Wand · Ende klicken`), `<Objekt> · <Zustand>` als Ergebnis
+  (`Wand · gesetzt`, `Auswahl · kopiert`), `<Werkzeug> · <Grund>` als Abbruch
+  (`Tür · nur auf einer Wand`). Kein Satz, keine Erklärung, höchstens 48 Zeichen
+  — `app::tests_chat_texte` prüft Aufforderung und Ergebnis für jedes Werkzeug.
 - Wände: Farbe (Linie) und Füllung (Fläche) getrennt; Schraffuren inklusive
   **Dämmung** (Mäander); Ausrichtung Links/Mittig/Rechts.
 - **Auswahl über Rechteck** prüft echte Geometrie (Segmente, Wandkörper),

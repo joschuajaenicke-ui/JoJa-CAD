@@ -415,7 +415,7 @@ pub fn show(app: &mut App, ctx: &egui::Context) {
                             app.prefs.add_recent(&path.to_string_lossy());
                             app.prefs.last_dir = path.parent().map(|p| p.to_string_lossy().to_string()).unwrap_or_default();
                             let _ = app.prefs.save();
-                            app.toast(format!("Gespeichert: {}", path.display()));
+                            app.toast(format!("Datei · gespeichert: {}", path.display()));
                         }
                         Err(e) => app.toast(e),
                     }
@@ -489,6 +489,7 @@ pub fn show(app: &mut App, ctx: &egui::Context) {
             let unit = app.unit();
             let td = app.ui.text_dialog.clone();
             if let Some(td) = td {
+                let neu = td.editing_id.is_none();
                 let res = match td.editing_id {
                     Some(id) => app.session_mut().execute(
                         "modify.set",
@@ -503,6 +504,8 @@ pub fn show(app: &mut App, ctx: &egui::Context) {
                 match res {
                     Ok(_) => {
                         app.mark_changed();
+                        // Chat-Schema: <Objekt> · <Zustand>
+                        app.mitteilung(if neu { "Text · gesetzt" } else { "Text · geändert" });
                         app.options.text = text.clone();
                         app.options.text_height = h;
                     }

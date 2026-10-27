@@ -125,7 +125,7 @@ pub fn show(app: &mut App, ui: &mut Ui) {
                             if from == usize::MAX {
                                 app.prefs.set_slot(i, Some(a.clone()));
                                 let _ = app.prefs.save();
-                                app.toast(format!("Slot {} belegt", i + 1));
+                                app.toast(format!("Hotbar · Slot {} belegt", i + 1));
                             } else if from != i {
                                 app.prefs.set_slot(i, Some(a.clone()));
                                 app.prefs.set_slot(from, action.clone());
