@@ -3594,11 +3594,17 @@ fn tool_click_at(app: &mut App, w: V2, raw: V2) {
                 let base = tool.pts[0];
                 let ids = app.selection().to_vec();
                 let action = tool.action.clone();
-                let _ = run(
+                let ok = run(
                     app,
                     &action,
-                    json!({"ids": ids, "from": ax(base), "to": ax(w)}),
+                    json!({"ids": ids.clone(), "from": ax(base), "to": ax(w)}),
                 );
+                // Kopieren mit Basispunkt legt die Auswahl zusätzlich in die
+                // Zwischenablage — der geklickte Basispunkt gehört dazu und ist
+                // beim Einfügen der Ankerpunkt.
+                if ok && action == "modify.copy" {
+                    app.merke_zwischenablage(&ids, Some(base));
+                }
                 app.tool = None;
             }
         }
@@ -5840,5 +5846,45 @@ mod tests_hilfslinien {
         );
         assert!(app.halt.is_empty(), "Klick löst die Hilfslinien");
         assert_eq!(app.tool.as_ref().map(|t| t.pts.len()), Some(1), "erster Punkt gesetzt");
+    }
+}
+
+#[cfg(test)]
+mod tests_kopieren_basispunkt {
+    //! T0012, Turn 2: „Kopieren mit Basispunkt" legt die Auswahl **auch** in die
+    //! Zwischenablage — der geklickte Basispunkt gehört dazu.
+
+    use super::*;
+
+    fn leer_app() -> App {
+        let mut app = App::with_ctx(egui::Context::default());
+        app.doc_mut().settings.input_unit = jjcad_core::units::Unit::Mm;
+        app
+    }
+
+    #[test]
+    fn kopieren_mit_basispunkt_fuellt_die_zwischenablage() {
+        let mut app = leer_app();
+        app.start_tool("draw.rect");
+        tool_click(&mut app, V2::new(0.0, 0.0));
+        tool_click(&mut app, V2::new(1000.0, 500.0));
+        let id = app.doc().entities[0].id;
+        app.session_mut().select(vec![id]);
+
+        app.start_tool("modify.copy");
+        tool_click(&mut app, V2::new(250.0, 100.0)); // Basispunkt
+        assert!(
+            app.ui.clipboard.is_empty(),
+            "erst das Absetzen füllt die Zwischenablage — vorher ist sie unberührt"
+        );
+        tool_click(&mut app, V2::new(2250.0, 1100.0)); // Zielpunkt
+
+        assert_eq!(app.doc().entities.len(), 2, "die Kopie ist abgesetzt");
+        assert_eq!(app.ui.clipboard.len(), 1, "die Auswahl liegt in der Zwischenablage");
+        assert_eq!(
+            app.ui.clipboard.base,
+            Some(V2::new(250.0, 100.0)),
+            "der geklickte Basispunkt gehört zur Zwischenablage"
+        );
     }
 }

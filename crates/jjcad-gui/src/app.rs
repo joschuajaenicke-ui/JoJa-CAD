@@ -357,7 +357,8 @@ pub struct UiState {
     pub new_layer_dialog: Option<String>,
     pub color_popup: Option<Id>,
     pub rename_layer: Option<(Id, String)>,
-    pub clipboard: Vec<Entity>,
+    /// Zwischenablage: Elemente **und** Basispunkt (siehe `ghost::Clipboard`)
+    pub clipboard: crate::ghost::Clipboard,
     pub clipboard_offset: f64,
     pub confirm_new: bool,
     pub confirm_quit: bool,
@@ -413,7 +414,7 @@ impl Default for UiState {
             new_layer_dialog: None,
             color_popup: None,
             rename_layer: None,
-            clipboard: Vec::new(),
+            clipboard: crate::ghost::Clipboard::default(),
             clipboard_offset: 20.0,
             confirm_new: false,
             confirm_quit: false,
@@ -2145,19 +2146,44 @@ impl App {
         }
     }
 
-    pub fn copy_selection(&mut self, cut: bool) {
-        let ids = self.selection().to_vec();
-        let ents: Vec<Entity> = self
-            .doc()
-            .ents()
-            .iter()
-            .filter(|e| ids.contains(&e.id))
-            .cloned()
-            .collect();
+    /// Legt Objekte samt Basispunkt in die Zwischenablage.
+    ///
+    /// Ohne Basispunkt (`None`) gilt die untere linke Ecke der Auswahl — das ist
+    /// der automatische Basispunkt der normalen Kopierfunktion. „Kopieren mit
+    /// Basispunkt" übergibt den geklickten Punkt.
+    pub fn merke_zwischenablage(&mut self, ids: &[Id], base: Option<V2>) {
+        let ents: Vec<Entity> = {
+            let doc = self.doc();
+            doc.ents()
+                .iter()
+                .filter(|e| ids.contains(&e.id))
+                .cloned()
+                .collect()
+        };
         if ents.is_empty() {
             return;
         }
-        self.ui.clipboard = ents;
+        let base = base.or_else(|| {
+            let doc = self.doc();
+            let mut bb = BBox::EMPTY;
+            for e in &ents {
+                bb.union(jjcad_core::render::entity_bbox(doc, e));
+            }
+            if bb.is_valid() {
+                Some(bb.min)
+            } else {
+                None
+            }
+        });
+        self.ui.clipboard = crate::ghost::Clipboard { ents, base };
+    }
+
+    pub fn copy_selection(&mut self, cut: bool) {
+        let ids = self.selection().to_vec();
+        self.merke_zwischenablage(&ids, None);
+        if self.ui.clipboard.is_empty() {
+            return;
+        }
         let msg = format!(
             "JoJa-CAD · Zwischenablage ({} Objekte)",
             self.ui.clipboard.len()
@@ -2177,7 +2203,7 @@ impl App {
         }
         let d = V2::new(self.ui.clipboard_offset, -self.ui.clipboard_offset);
         let mut new_ids = Vec::new();
-        let clip = self.ui.clipboard.clone();
+        let clip = self.ui.clipboard.ents.clone();
         for e in clip {
             let mut ne = jjcad_core::transform::transform_entity(&e, &jjcad_core::geom::Affine::translate(d));
             ne.id = self.doc_mut().new_id();
@@ -3018,7 +3044,7 @@ fn rail(ui: &mut egui::Ui, icon: &str, tooltip: &str, chevron: &str) -> bool {
             return false;
         };
         if let Some(bid) = g.block.clone() {
-            let geo = crate::ghost::geometry(self.doc(), &g, &[]);
+            let geo = crate::ghost::geometry(self.doc(), &g, &crate::ghost::Clipboard::default());
             let o = geo.origin;
             let u = self.unit();
             let params = serde_json::json!({
@@ -4917,6 +4943,8 @@ mod tests_kopieren {
     fn app_mit_rechteck(auswahl: bool) -> App {
         let ctx = egui::Context::default();
         let mut app = App::with_ctx(ctx);
+        // Millimeter, damit die Koordinaten im Test direkt mm sind
+        app.doc_mut().settings.input_unit = jjcad_core::units::Unit::Mm;
         let r = app
             .session_mut()
             .execute("draw.rect", &serde_json::json!({"a": [0, 0], "b": [1000, 1000]}))
@@ -4965,7 +4993,70 @@ mod tests_kopieren {
         );
         assert!(
             app.ui.clipboard.is_empty(),
-            "Kopieren mit Basispunkt benutzt nicht die Zwischenablage"
+            "der Start allein füllt noch nichts — erst das Absetzen legt die Kopie in die Zwischenablage"
+        );
+    }
+
+    /// Umschließendes Rechteck der Zwischenablage-Elemente (Weltkoordinaten).
+    fn zwischenablage_bbox(app: &App) -> jjcad_core::geom::BBox {
+        let doc = app.doc();
+        let mut bb = jjcad_core::geom::BBox::EMPTY;
+        for e in &app.ui.clipboard.ents {
+            bb.union(jjcad_core::render::entity_bbox(doc, e));
+        }
+        bb
+    }
+
+    /// Normales Kopieren setzt den Basispunkt automatisch auf die untere linke
+    /// Ecke der Auswahl — genau das, was das Einfügen bisher gemacht hat.
+    #[test]
+    fn strg_c_setzt_den_basispunkt_links_unten() {
+        let mut app = app_mit_rechteck(true);
+        kopier_frame(&mut app, false);
+        let bb = zwischenablage_bbox(&app);
+        assert_eq!(
+            app.ui.clipboard.base,
+            Some(bb.min),
+            "Basispunkt ist die untere linke Ecke der Auswahl"
+        );
+        assert_eq!(bb.min, V2::new(0.0, 0.0), "Rechteck beginnt im Ursprung");
+    }
+
+    /// Einfügen nach „Kopieren": die linke untere Ecke steht am Zeiger.
+    #[test]
+    fn einfuegen_nach_kopieren_setzt_die_ecke_an_den_zeiger() {
+        let mut app = app_mit_rechteck(true);
+        kopier_frame(&mut app, false);
+        app.pointer_world = Some(V2::new(4000.0, 5000.0));
+        app.start_ghost_paste();
+        if let Some(g) = app.ghost.as_mut() {
+            g.pos = V2::new(4000.0, 5000.0);
+        }
+        assert!(app.commit_ghost(), "Einfügen muss etwas anlegen");
+        let neu = app.doc().entities.last().cloned().expect("eingefügtes Objekt");
+        let bb = jjcad_core::render::entity_bbox(app.doc(), &neu);
+        assert_eq!(bb.min, V2::new(4000.0, 5000.0), "Ecke unten links am Zeiger");
+    }
+
+    /// Einfügen nach „Kopieren mit Basispunkt": der gemerkte Basispunkt steht am
+    /// Zeiger, nicht die Ecke der Auswahl.
+    #[test]
+    fn einfuegen_nach_basispunkt_setzt_den_basispunkt_an_den_zeiger() {
+        let mut app = app_mit_rechteck(true);
+        let ids = app.selection().to_vec();
+        app.merke_zwischenablage(&ids, Some(V2::new(250.0, 100.0)));
+        app.pointer_world = Some(V2::new(4000.0, 5000.0));
+        app.start_ghost_paste();
+        if let Some(g) = app.ghost.as_mut() {
+            g.pos = V2::new(4000.0, 5000.0);
+        }
+        assert!(app.commit_ghost(), "Einfügen muss etwas anlegen");
+        let neu = app.doc().entities.last().cloned().expect("eingefügtes Objekt");
+        let bb = jjcad_core::render::entity_bbox(app.doc(), &neu);
+        assert_eq!(
+            bb.min,
+            V2::new(3750.0, 4900.0),
+            "Basispunkt (250,100) sitzt am Zeiger, die Ecke wandert mit"
         );
     }
 
