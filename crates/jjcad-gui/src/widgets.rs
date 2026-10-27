@@ -298,22 +298,49 @@ pub fn info_row(ui: &mut Ui, label: &str, value: &str, tip: Option<&str>) -> Res
 
 /// Textfeld mit Einheitensuffix, für Längen in Dokumenteinheit.
 pub fn length_input(ui: &mut Ui, value_mm: &mut f64, unit: jjcad_core::units::Unit, width: f32) -> bool {
+    length_input_limited(ui, value_mm, unit, width, None)
+}
+
+/// Längenfeld mit Grenzen (in mm), für Werte, bei denen negative oder beliebig
+/// große Eingaben sinnlos sind — etwa die Rasterweite: ohne Grenzen zog der
+/// Ziehpfeil ins Negative und in Werte, die kein Raster mehr ergeben.
+/// Die Grenzen werden in die Dokumenteinheit umgerechnet; der Ziehpfeil kann
+/// den Wert nicht mehr aus dem Bereich schieben, auch nicht beim Tippen.
+pub fn length_input_between(
+    ui: &mut Ui,
+    value_mm: &mut f64,
+    unit: jjcad_core::units::Unit,
+    width: f32,
+    min_mm: f64,
+    max_mm: f64,
+) -> bool {
+    length_input_limited(ui, value_mm, unit, width, Some((min_mm, max_mm)))
+}
+
+fn length_input_limited(
+    ui: &mut Ui,
+    value_mm: &mut f64,
+    unit: jjcad_core::units::Unit,
+    width: f32,
+    limits_mm: Option<(f64, f64)>,
+) -> bool {
     let mut v = unit.from_mm(*value_mm);
     let decimals = unit.decimals();
     // Anzeige fest an der Einheit ausrichten statt an egui's automatischer
     // Stellenzahl (die hängt an aim_radius/speed) und statt an min_decimals(0):
     // sonst stand für 0,24 m nur „0 m“ im Feld. format_length_auto zeigt
     // 0,24 m / 2,75 m / 240 mm und keine Tausenderpunkte (eindeutig lesbar).
-    let resp = ui.add_sized(
-        [width, 20.0],
-        egui::DragValue::new(&mut v)
-            .speed(unit.mm() * 0.5)
-            .min_decimals(decimals)
-            .max_decimals(decimals + 2)
-            .custom_parser(flexible_number)
-            .custom_formatter(move |n, _| unit.format_length_auto(unit.to_mm(n)))
-            .suffix(format!(" {}", unit.short())),
-    );
+    let mut drag = egui::DragValue::new(&mut v)
+        .speed(unit.mm() * 0.5)
+        .min_decimals(decimals)
+        .max_decimals(decimals + 2)
+        .custom_parser(flexible_number)
+        .custom_formatter(move |n, _| unit.format_length_auto(unit.to_mm(n)))
+        .suffix(format!(" {}", unit.short()));
+    if let Some((min_mm, max_mm)) = limits_mm {
+        drag = drag.range(unit.from_mm(min_mm)..=unit.from_mm(max_mm));
+    }
+    let resp = ui.add_sized([width, 20.0], drag);
     if resp.changed() {
         *value_mm = unit.to_mm(v);
         true
@@ -374,5 +401,67 @@ mod zahltests {
         assert_eq!(flexible_number(" 1,5 "), Some(1.5));
         assert_eq!(flexible_number("2"), Some(2.0));
         assert_eq!(flexible_number("abc"), None);
+    }
+
+    /// Grenzen beim Ziehen: ohne `.range` zog das Rasterfeld ins Negative und in
+    /// beliebig große Werte (T0011). Geprüft am echten Widget im egui-Kontext.
+    #[test]
+    fn rasterfeld_zieht_nicht_aus_den_grenzen() {
+        let feld = Rect::from_min_size(Pos2::new(10.0, 10.0), Vec2::new(200.0, 20.0));
+        let mitte = feld.center();
+
+        let ziehen = |dx: f32| -> f64 {
+            let ctx = egui::Context::default();
+            let mut wert = 100.0; // mm (Vorgabe)
+            let mut frames: Vec<Vec<egui::Event>> = vec![
+                Vec::new(),
+                vec![egui::Event::PointerMoved(mitte)],
+                vec![egui::Event::PointerButton {
+                    pos: mitte,
+                    button: egui::PointerButton::Primary,
+                    pressed: true,
+                    modifiers: Default::default(),
+                }],
+                vec![egui::Event::PointerMoved(egui::pos2(mitte.x + dx, mitte.y))],
+                vec![egui::Event::PointerButton {
+                    pos: egui::pos2(mitte.x + dx, mitte.y),
+                    button: egui::PointerButton::Primary,
+                    pressed: false,
+                    modifiers: Default::default(),
+                }],
+            ];
+            for events in frames.drain(..) {
+                let raw = egui::RawInput {
+                    screen_rect: Some(Rect::from_min_size(Pos2::ZERO, Vec2::new(400.0, 60.0))),
+                    events,
+                    ..Default::default()
+                };
+                let _ = ctx.run(raw, |ctx| {
+                    egui::CentralPanel::default().show(ctx, |ui| {
+                        ui.scope_builder(
+                            egui::UiBuilder::new()
+                                .max_rect(feld)
+                                .layout(egui::Layout::left_to_right(egui::Align::Center)),
+                            |ui| {
+                                length_input_between(
+                                    ui,
+                                    &mut wert,
+                                    jjcad_core::units::Unit::M,
+                                    200.0,
+                                    jjcad_core::model::GRID_STEP_MIN_MM,
+                                    jjcad_core::model::GRID_STEP_MAX_MM,
+                                );
+                            },
+                        );
+                    });
+                });
+            }
+            wert
+        };
+
+        // Nach links weit über die Untergrenze hinaus: bleibt bei 1 mm.
+        assert_eq!(ziehen(-2000.0), jjcad_core::model::GRID_STEP_MIN_MM);
+        // Nach rechts weit über die Obergrenze hinaus: bleibt bei 10 m.
+        assert_eq!(ziehen(2000.0), jjcad_core::model::GRID_STEP_MAX_MM);
     }
 }

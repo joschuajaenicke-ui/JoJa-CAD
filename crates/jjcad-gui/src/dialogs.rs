@@ -852,8 +852,16 @@ fn settings_body(app: &mut App, ui: &mut Ui) {
 
             theme::section(ui, "Raster");
             widgets::field_row(ui, "Rasterweite", |ui| {
+                // Dieselben Grenzen wie im Eigenschaften-Panel (1 mm … 10 m).
                 let mut g = grid_step;
-                if widgets::length_input(ui, &mut g, unit, 90.0) {
+                if widgets::length_input_between(
+                    ui,
+                    &mut g,
+                    unit,
+                    90.0,
+                    jjcad_core::model::GRID_STEP_MIN_MM,
+                    jjcad_core::model::GRID_STEP_MAX_MM,
+                ) {
                     grid_step = g;
                 }
             });

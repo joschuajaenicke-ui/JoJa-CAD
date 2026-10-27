@@ -2358,11 +2358,12 @@ fn doc_props(app: &mut App, ui: &mut Ui) {
     widgets::hline(ui);
     ui.add_space(6.0);
 
+    // Einheit, Dezimalen und Rasterweite gelten für die ganze Zeichnung —
+    // Texthöhe und Wandstärke setzt man im Einstellungen-Dialog (Architektur),
+    // nicht hier (T0011, Turn 2).
     let mut input = app.doc().settings.input_unit;
     let mut decimals = app.doc().settings.decimals as i32;
     let mut grid = app.doc().settings.snap.grid_step;
-    let mut text_h = app.doc().settings.text_height;
-    let mut wall_t = app.doc().settings.wall_thickness;
 
     widgets::field_row(ui, "Einheit", |ui| {
         egui::ComboBox::from_id_salt("inpunit")
@@ -2378,31 +2379,28 @@ fn doc_props(app: &mut App, ui: &mut Ui) {
         ui.add_sized([ui.available_width(), 20.0], crate::widgets::dv(&mut decimals).range(0..=4));
     });
     widgets::field_row(ui, "Raster", |ui| {
-        if widgets::length_input(ui, &mut grid, unit, ui.available_width()) {
+        // Grenzen: 1 mm … 10 m. Ohne sie zog der Ziehpfeil ins Negative und in
+        // Werte, bei denen kein Rasterfang mehr stattfindet.
+        if widgets::length_input_between(
+            ui,
+            &mut grid,
+            unit,
+            ui.available_width(),
+            GRID_STEP_MIN_MM,
+            GRID_STEP_MAX_MM,
+        ) {
             let _ = app
                 .session_mut()
                 .execute("doc.settings", &json!({"grid_step": unit.from_mm(grid)}));
             app.mark_changed();
         }
     });
-    widgets::field_row(ui, "Texthöhe", |ui| {
-        widgets::length_input(ui, &mut text_h, unit, ui.available_width());
-    });
-    widgets::field_row(ui, "Wandstärke", |ui| {
-        widgets::length_input(ui, &mut wall_t, unit, ui.available_width());
-    });
-    if input != app.doc().settings.input_unit
-        || decimals as usize != app.doc().settings.decimals
-        || (text_h - app.doc().settings.text_height).abs() > 1e-9
-        || (wall_t - app.doc().settings.wall_thickness).abs() > 1e-9
-    {
+    if input != app.doc().settings.input_unit || decimals as usize != app.doc().settings.decimals {
         let _ = app.session_mut().execute(
             "doc.settings",
             &json!({
                 "input_unit": input.short(),
                 "decimals": decimals,
-                "text_height": unit.from_mm(text_h),
-                "wall_thickness": unit.from_mm(wall_t),
             }),
         );
         app.mark_changed();

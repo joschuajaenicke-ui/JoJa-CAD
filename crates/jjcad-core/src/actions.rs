@@ -2181,7 +2181,7 @@ pub fn execute(doc: &mut Document, id: &str, params: &Value) -> Result<Value, St
                 doc.settings.annotation_scale = s.max(1.0);
             }
             if let Some(g) = p.len("grid_step") {
-                doc.settings.snap.grid_step = g;
+                doc.settings.snap.grid_step = crate::model::clamp_grid_step(g);
             }
             if let Some(v) = p.boolean("show_grid") {
                 doc.settings.show_grid = v;
@@ -2222,8 +2222,11 @@ pub fn execute(doc: &mut Document, id: &str, params: &Value) -> Result<Value, St
                         *target = v;
                     }
                 }
-                if let Some(g) = sp.num("grid_step") {
-                    doc.settings.snap.grid_step = g;
+                // `len` statt `num`: die Rasterweite kommt in der Eingabeeinheit
+                // der Zeichnung (0,25 m), gespeichert wird in mm (250) — `num`
+                // legte 0,25 mm an, sobald die Einheit nicht mm war.
+                if let Some(g) = sp.len("grid_step") {
+                    doc.settings.snap.grid_step = crate::model::clamp_grid_step(g);
                 }
                 if let Some(a) = sp.num("polar_step") {
                     doc.settings.snap.polar_step = a.clamp(1.0, 180.0);

@@ -657,6 +657,26 @@ fn default_polar_step() -> f64 {
 fn default_grid() -> f64 {
     100.0
 }
+
+/// Untere Grenze der Rasterweite in mm: feiner als 1 mm rastet nichts mehr sinnvoll.
+pub const GRID_STEP_MIN_MM: f64 = 1.0;
+/// Obere Grenze der Rasterweite in mm (10 m) — darüber ist ein Fangraster in einer
+/// Bauzeichnung nicht mehr brauchbar, und beliebig große Werte waren der Fehler.
+pub const GRID_STEP_MAX_MM: f64 = 10_000.0;
+
+/// Rasterweite auf den brauchbaren Bereich begrenzen (mm).
+///
+/// Die Grenzen gelten überall dort, wo die Rasterweite ins Dokument kommt
+/// (Action `doc.settings`, Datei laden, Bedienfelder): negative Werte schalten
+/// den Rasterfang still ab (beide Snap-Pfade prüfen `> 0`), riesige Werte
+/// rasten ins Nichts.
+pub fn clamp_grid_step(mm: f64) -> f64 {
+    if mm.is_finite() {
+        mm.clamp(GRID_STEP_MIN_MM, GRID_STEP_MAX_MM)
+    } else {
+        GRID_STEP_MIN_MM
+    }
+}
 fn default_snap_px() -> f64 {
     12.0
 }
