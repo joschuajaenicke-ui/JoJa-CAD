@@ -1671,6 +1671,28 @@ impl App {
     // ---- Dateien ----
 
     pub fn open_file_dialog(&mut self, mode: FileMode) {
+        // Ein bereits offener Systemdialog bleibt; nicht doppelt öffnen.
+        if self.ui.systemdialog.is_some() {
+            return;
+        }
+        if self.prefs.dateidialog_system() && crate::systemdialog::verfuegbar() {
+            let (dir, base) = self.starthilfe();
+            self.ui.systemdialog =
+                Some((mode, Systemdialog::starten(mode.anfrage(dir, &base))));
+            return;
+        }
+        self.open_own_file_dialog(mode);
+    }
+
+    /// Der eingebaute Dateidialog (auch der Rückfall, wenn der Systemdialog
+    /// nicht zustande kommt).
+    pub fn open_own_file_dialog(&mut self, mode: FileMode) {
+        let (start_dir, base) = self.starthilfe();
+        self.ui.file_dialog = Some(FileDialog::new(mode, start_dir, &base));
+    }
+
+    /// Startordner (letzter Ordner) und Name der Zeichnung für Dateidialoge.
+    fn starthilfe(&self) -> (PathBuf, String) {
         let start_dir = self
             .doc()
             .path
@@ -1686,17 +1708,7 @@ impl App {
             })
             .unwrap_or_else(|| std::env::var("HOME").map(PathBuf::from).unwrap_or_else(|_| PathBuf::from(".")));
         let base = self.doc().name.clone();
-        // Systemdialog des Betriebssystems (KDE/Dolphin, GNOME, Windows, macOS);
-        // ohne Sitzungsbus oder auf Wunsch der eingebaute Dialog.
-        if self.ui.systemdialog.is_some() {
-            // Es steht schon einer offen — nicht doppelt öffnen.
-            return;
-        }
-        if self.prefs.dateidialog_system() && crate::systemdialog::verfuegbar() {
-            self.ui.systemdialog = Some((mode, Systemdialog::starten(mode.anfrage(start_dir, &base))));
-            return;
-        }
-        self.ui.file_dialog = Some(FileDialog::new(mode, start_dir, &base));
+        (start_dir, base)
     }
 
     pub fn save_current(&mut self, save_as: bool) {
