@@ -16,6 +16,8 @@ pub enum SnapKind {
     Perpendicular,
     Nearest,
     Grid,
+    /// Punkt auf einer Hilfslinie des erweiterten Punktfangs.
+    Tracking,
 }
 
 impl SnapKind {
@@ -30,6 +32,7 @@ impl SnapKind {
             SnapKind::Perpendicular => "Lot",
             SnapKind::Nearest => "Nächster Punkt",
             SnapKind::Grid => "Raster",
+            SnapKind::Tracking => "Hilfslinie",
         }
     }
 
@@ -44,7 +47,24 @@ impl SnapKind {
             SnapKind::Perpendicular => "LOT",
             SnapKind::Nearest => "NAE",
             SnapKind::Grid => "RAS",
+            SnapKind::Tracking => "HLF",
         }
+    }
+
+    /// Ein Punkt, der fest an der Geometrie hängt (Ecke, Mitte, Zentrum,
+    /// Quadrant, Schnitt, Blattecke). Nur solche Punkte taugen als Haltepunkt
+    /// des erweiterten Punktfangs: „Nächster Punkt" wandert mit dem Zeiger,
+    /// das Raster liegt überall — beide stünden nie still.
+    pub fn ist_diskret(self) -> bool {
+        matches!(
+            self,
+            SnapKind::Endpoint
+                | SnapKind::SheetCorner
+                | SnapKind::Intersection
+                | SnapKind::Midpoint
+                | SnapKind::Center
+                | SnapKind::Quadrant
+        )
     }
 
     fn priority(self) -> u8 {
@@ -59,6 +79,9 @@ impl SnapKind {
             SnapKind::Perpendicular => 5,
             SnapKind::Nearest => 6,
             SnapKind::Grid => 7,
+            // Hilfslinien entstehen nicht im Kandidaten-Sammellauf, sondern in
+            // `hilfslinien_snap`; der Wert hält nur die Reihenfolge eindeutig.
+            SnapKind::Tracking => 8,
         }
     }
 }
@@ -68,6 +91,187 @@ pub struct SnapHit {
     pub point: Vec2,
     pub kind: SnapKind,
     pub entity: Option<Id>,
+}
+
+// ---------------------------------------------------------------------------
+// Erweiterter Punktfang (Hilfslinien)
+// ---------------------------------------------------------------------------
+
+/// Ein festgehaltener Fangpunkt: der Zeiger stand lange genug über ihm, ohne
+/// dass geklickt wurde. Von ihm gehen zwei Hilfslinien aus, auf denen der
+/// nächste Punkt gefangen werden kann.
+#[derive(Clone, Debug, PartialEq)]
+pub struct HaltPunkt {
+    pub point: Vec2,
+    pub kind: SnapKind,
+    pub entity: Option<Id>,
+    /// Richtung der Linie, zu der der Punkt gehört. `Some` = der Punkt liegt
+    /// auf einer Linie (Verlängerung + Normale), `None` = einzelner Punkt
+    /// (Waagerechte + Senkrechte). Siehe [`richtung_am_punkt`].
+    pub richtung: Option<Vec2>,
+}
+
+/// Eine unbegrenzte Hilfslinie: Ursprung (der gehaltene Punkt) und Richtung.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Hilfslinie {
+    pub origin: Vec2,
+    pub dir: Vec2,
+}
+
+impl HaltPunkt {
+    /// Halt aus einem Fangtreffer bauen — die Richtung kommt aus der Geometrie.
+    pub fn neu(doc: &Document, hit: &SnapHit) -> Self {
+        let richtung = hit
+            .entity
+            .and_then(|id| richtung_am_punkt(doc, id, hit.point));
+        HaltPunkt {
+            point: hit.point,
+            kind: hit.kind,
+            entity: hit.entity,
+            richtung,
+        }
+    }
+}
+
+/// Die zwei Hilfslinien eines Haltepunkts.
+///
+/// * Punkt auf einer Linie: die **Verlängerung** der Linie und die **Normale**
+///   dazu (beide durch den Punkt).
+/// * Einzelner Punkt (Zentrum, Blattecke, freier Vorschaupunkt): **Waagerechte**
+///   und **Senkrechte**.
+pub fn hilfslinien(halte: &[HaltPunkt]) -> Vec<Hilfslinie> {
+    let mut out = Vec::new();
+    for h in halte {
+        for dir in richtungen(h) {
+            out.push(Hilfslinie {
+                origin: h.point,
+                dir,
+            });
+        }
+    }
+    out
+}
+
+fn richtungen(h: &HaltPunkt) -> [Vec2; 2] {
+    match h.richtung {
+        Some(d) if d.len() > 1e-9 => [d, d.perp()],
+        _ => [v(1.0, 0.0), v(0.0, 1.0)],
+    }
+}
+
+/// Richtung der Linie, auf der dieser Punkt des Elements liegt.
+///
+/// Gebraucht für die Hilfslinien: ein Punkt, der zu einer Linie gehört, soll
+/// deren Verlängerung und Normale bekommen, kein starres Achsenkreuz. Geliefert
+/// wird die Richtung des ersten Segments, das durch den Punkt läuft (bei Bögen
+/// die Tangente). Findet sich keins (Zentrum, Blattecke, Wandkonturecke neben
+/// der Achse), bleibt es beim Achsenkreuz.
+pub fn richtung_am_punkt(doc: &Document, entity: Id, p: Vec2) -> Option<Vec2> {
+    let e = doc.entity(entity)?;
+    let mut segs = render::entity_segments(doc, e);
+    // Wandkörper: eine Konturecke liegt neben der Achse — ohne die
+    // umgrenzenden Linien fände sie keine Richtung und bekäme ein Achsenkreuz
+    // statt der Verlängerung ihrer Wand.
+    if matches!(e.kind, EntityKind::Wall { .. }) {
+        segs.extend(render::wall_contour_segments(doc, e));
+    }
+    for sg in segs {
+        match sg {
+            Seg::Line(a, b) => {
+                if dist_point_segment(p, a, b) <= SNAP_DEDUP.max(0.5) {
+                    let d = (b - a).normalized();
+                    if d.len() > 1e-9 {
+                        return Some(d);
+                    }
+                }
+            }
+            Seg::Arc(arc) => {
+                // Tangente im Punkt: senkrecht zum Radius.
+                let d = (p - arc.c).normalized();
+                if d.len() > 1e-9 && (p.dist(arc.c) - arc.r).abs() <= SNAP_DEDUP.max(0.5) {
+                    return Some(d.perp());
+                }
+            }
+        }
+    }
+    None
+}
+
+/// Fußpunkt des Lots von `p` auf die **unbegrenzte** Gerade `origin + t·dir`.
+fn fuss_auf_gerade(p: Vec2, origin: Vec2, dir: Vec2) -> Vec2 {
+    let d = dir.normalized();
+    if d.len() <= 1e-9 {
+        return origin;
+    }
+    origin + d * (p - origin).dot(d)
+}
+
+/// Fang auf den Hilfslinien der Haltepunkte.
+///
+/// Angeboten werden alle Kreuzungen zweier Hilfslinien (auch der Haltepunkt
+/// selbst — dort schneiden sich seine beiden Linien) und alle Fußpunkte des
+/// Zeigers auf einer Hilfslinie. **Kreuzungen haben Vorrang**: liegen zwei
+/// Linien im Fangradius, ist der Schnittpunkt beider Bedingungen gemeint und
+/// nicht die nähere der beiden Einzelachsen. Damit lässt sich ein Punkt sowohl
+/// auf eine Achse setzen (x oder y des Haltepunkts) als auch aus zwei
+/// Haltepunkten kombinieren (x von A, y von B).
+pub fn hilfslinien_snap(halte: &[HaltPunkt], cursor: Vec2, tol: f64) -> Option<SnapHit> {
+    if halte.is_empty() || tol <= 0.0 {
+        return None;
+    }
+    let linien = hilfslinien(halte);
+    let tol = tol.max(1e-6);
+    let mut kreuzungen: Vec<(f64, Vec2)> = Vec::new();
+    let mut fuesse: Vec<(f64, Vec2, Option<Id>)> = Vec::new();
+
+    for l in &linien {
+        let f = fuss_auf_gerade(cursor, l.origin, l.dir);
+        let d = f.dist(cursor);
+        if d <= tol {
+            // Element des Haltepunkts, zu dem die Linie gehört.
+            let id = halte
+                .iter()
+                .find(|h| h.point.dist(l.origin) <= SNAP_DEDUP)
+                .and_then(|h| h.entity);
+            fuesse.push((d, f, id));
+        }
+    }
+    for i in 0..linien.len() {
+        for j in (i + 1)..linien.len() {
+            let a = &linien[i];
+            let b = &linien[j];
+            if let Some(x) = line_line(
+                a.origin,
+                a.origin + a.dir,
+                b.origin,
+                b.origin + b.dir,
+                true,
+                true,
+            ) {
+                let d = x.dist(cursor);
+                if d <= tol {
+                    kreuzungen.push((d, x));
+                }
+            }
+        }
+    }
+
+    let nach_abstand =
+        |a: &(f64, Vec2), b: &(f64, Vec2)| a.0.partial_cmp(&b.0).unwrap_or(std::cmp::Ordering::Equal);
+    kreuzungen.sort_by(nach_abstand);
+    if let Some((_, p)) = kreuzungen.first() {
+        return Some(SnapHit {
+            point: *p,
+            kind: SnapKind::Tracking,
+            entity: None,
+        });
+    }
+    fuesse.sort_by(|a, b| a.0.partial_cmp(&b.0).unwrap_or(std::cmp::Ordering::Equal));
+    fuesse.first().map(|(_, p, id)| SnapHit {
+        point: *p,
+        kind: SnapKind::Tracking,
+        entity: *id,
+    })
 }
 
 /// Sucht den besten Fangpunkt in der Nähe des Cursors.
@@ -526,24 +730,76 @@ fn snap_constrained_alle(
     vorschau: &[Vec2],
     allow_grid: bool,
 ) -> SnapResolution {
+    snap_constrained_mit_halte(
+        doc, cursor, tol, reference, ignore, selected, gesperrt, vorschau, &[], allow_grid,
+    )
+}
+
+/// Wie [`snap_constrained_alle`], zusätzlich mit Haltepunkten des erweiterten
+/// Punktfangs.
+///
+/// Reihenfolge innerhalb der Fang-Kette:
+///
+/// 1. **diskrete** Objektfänge (Endpunkt, Mitte, Zentrum, Quadrant, Schnitt,
+///    Blattecke) — ein echter Punkt auf der Geometrie ist immer die genauere
+///    Wahl als eine Hilfslinie.
+/// 2. **Hilfslinien** der Haltepunkte (siehe [`hilfslinien_snap`]).
+/// 3. kontinuierliche Objektfänge (Nächster Punkt, Lot) — sie hängen am Zeiger
+///    und sind nur eine Notlösung; die Hilfslinie ist die ausdrückliche Wahl.
+/// 4. Ortho/Polar, zuletzt das Raster.
+#[allow(clippy::too_many_arguments)]
+pub fn snap_constrained_mit_halte(
+    doc: &Document,
+    cursor: Vec2,
+    tol: f64,
+    reference: Option<Vec2>,
+    ignore: &[Id],
+    selected: &[Id],
+    gesperrt: &[GesperrterPunkt],
+    vorschau: &[Vec2],
+    halte: &[HaltPunkt],
+    allow_grid: bool,
+) -> SnapResolution {
     let s = doc.settings.snap.clone();
     let tol = tol.max(1e-6);
 
     // 1. Objektfang ohne Raster: er gewinnt gegen jede Zwangsrichtung.
     //    Das Raster ist eine Führung wie Ortho und kommt erst in Schritt 3.
-    if let Some(hit) = snap_candidates_alle(
+    let bester = snap_candidates_alle(
         doc, cursor, tol, reference, ignore, selected, gesperrt, vorschau, false,
     )
     .into_iter()
-    .next()
-    {
+    .next();
+
+    let diskret = bester
+        .as_ref()
+        .map(|h| h.kind.ist_diskret())
+        .unwrap_or(false);
+    if diskret {
+        let hit = bester.unwrap();
         return SnapResolution {
             point: hit.point,
             source: SnapSource::Object(hit.kind),
         };
     }
 
-    // 2. Kein Objekt in Reichweite: Ortho bzw. Polar.
+    // 2. Hilfslinien des erweiterten Punktfangs.
+    if let Some(hit) = hilfslinien_snap(halte, cursor, tol) {
+        return SnapResolution {
+            point: hit.point,
+            source: SnapSource::Object(hit.kind),
+        };
+    }
+
+    // 3. Kontinuierlicher Objektfang (Nächster Punkt, Lot) in Reichweite.
+    if let Some(hit) = bester {
+        return SnapResolution {
+            point: hit.point,
+            source: SnapSource::Object(hit.kind),
+        };
+    }
+
+    // 4. Kein Objekt in Reichweite: Ortho bzw. Polar.
     let mut point = cursor;
     let mut source = SnapSource::Free;
     if let Some(r) = reference {

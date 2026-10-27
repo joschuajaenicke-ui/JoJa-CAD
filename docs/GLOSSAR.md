@@ -52,6 +52,8 @@ Steht rechts „nicht", dann ist das Wort im Projekt verpönt (auch in der Oberf
 | **Fang** | Einrasten auf Punkten/Geometrie beim Zeichnen | Snap, Einrasten |
 | **Objektfang** | Fang auf vorhandene Geometrie: END (Endpunkt), SCHN (Schnitt), MIT (Mitte), ZEN (Zentrum), QUA (Quadrant), LOT (Lot), NÄC (nächster Punkt), RAS (Raster), POL (Polar) | Fangmodus, Fangart |
 | **Polarfang** | Fang auf feste Winkel (45°-Schritte, Toleranz 6°) | Winkelraster, Ortho (das ist etwas anderes) |
+| **Erweiterter Punktfang** | Bleibt der Zeiger kurz auf einem Fangpunkt stehen, wird dieser gehalten und bekommt zwei Hilfslinien; auf ihnen fängt der nächste Punkt | Punktverfolgung, Tracking, OTRACK |
+| **Hilfslinie (Punktfang)** | Eine der beiden Linien des erweiterten Punktfangs — **nicht** die Winkelhalbierende und nicht der Layer „Hilfslinien" | Fanglinie, Verfolgungslinie |
 | **Ortho** | Sperre auf waagerecht/senkrecht | — |
 | **Raster** | Zeichenraster; der Chip schaltet Anzeige **und** Rasterfang | Gitter |
 

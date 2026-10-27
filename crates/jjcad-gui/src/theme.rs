@@ -23,6 +23,9 @@ impl Palette {
     pub const PAPER_SHADOW: Color32 = Color32::from_rgb(0x0A, 0x0B, 0x0D);
     pub const SELECT: Color32 = Color32::from_rgb(0x2F, 0x8C, 0xF0);
     pub const HOVER: Color32 = Color32::from_rgb(0x59, 0xA8, 0xFF);
+    /// Hilfslinien des erweiterten Punktfangs: eigener Ton, damit sie weder mit
+    /// der Auswahl (blau) noch mit dem Fangmarker (Akzent) verwechselt werden.
+    pub const TRACK: Color32 = Color32::from_rgb(0x24, 0xB6, 0xA0);
     pub const GRID_MINOR: Color32 = Color32::from_rgb(0xE9, 0xE7, 0xE0);
     pub const GRID_MAJOR: Color32 = Color32::from_rgb(0xD8, 0xD5, 0xCB);
 }
