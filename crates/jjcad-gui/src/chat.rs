@@ -3,7 +3,7 @@
 //! Die frühere Statuszeile, die den Nutzer zu einer Eingabe aufgefordert hat,
 //! ist verschwunden; seitdem fehlt die Rückmeldung. Der Chat übernimmt sie:
 //! geschlossen stehen die letzten Meldungen transparent unten links über der
-//! Zeichnung und verblassen nach einigen Sekunden. `T` öffnet das vollständige
+//! Zeichnung und verblassen nach einigen Sekunden. `^` (Taste unter ESC) öffnet das vollständige
 //! Protokoll — im **selben** Bild wie die Ausgabe, ohne eigenes Fenster: die
 //! Meldungen reichen weiter nach oben, unten steht die Eingabezeile, die wie
 //! eine Meldung aussieht. Eingaben des Nutzers werden noch nicht ausgewertet,
@@ -12,6 +12,9 @@
 use crate::app::App;
 use crate::theme::Palette;
 use egui::{Align2, Color32, FontId, Painter, Pos2, Rect, RichText, Stroke};
+
+/// Taste zum Öffnen und Schließen des Protokolls: `^`, die Taste unter ESC.
+pub const TASTE_OEFFNEN: egui::Key = egui::Key::Backtick;
 
 /// So lange bleibt eine Meldung im geschlossenen Zustand voll sichtbar (s).
 pub const HALTEN_S: f64 = 3.0;
@@ -52,6 +55,8 @@ pub struct Chat {
     pub offen: bool,
     pub nachrichten: Vec<Nachricht>,
     pub eingabe: String,
+    /// Die Eingabezeile soll beim nächsten Zeichnen den Fokus bekommen.
+    pub fokus: bool,
     /// Wie viele Zeilen vom Ende zurückgeblättert ist (0 = neueste unten).
     pub scroll: usize,
 }
@@ -105,16 +110,19 @@ impl Chat {
         self.sagen_art(jetzt, text, true);
     }
 
-    /// Öffnen und Schließen. Die Eingabezeile bekommt absichtlich keinen
-    /// automatischen Fokus: sonst würde T beim nächsten Druck als Text im Feld
-    /// landen statt das Protokoll wieder zu schließen.
+    /// Öffnen und Schließen. Beim Öffnen bekommt die Eingabezeile sofort den
+    /// Fokus — man kann direkt losschreiben. Die Taste `^` schließt auch dann,
+    /// wenn das Feld den Fokus hat (siehe `App::handle_shortcuts`).
     pub fn umschalten(&mut self) {
         self.offen = !self.offen;
         self.scroll = 0;
+        self.fokus = self.offen;
     }
 
     pub fn schliessen(&mut self) {
         self.offen = false;
+        self.fokus = false;
+        self.eingabe.clear();
     }
 
     /// Im Protokoll blättern: `schritt > 0` weiter zurück (ältere Zeilen).
@@ -212,7 +220,7 @@ pub fn zeichnen_geschlossen(chat: &Chat, p: &Painter, rect: Rect, jetzt: f64) {
     p.text(
         Pos2::new(rect.left() + RAND_X, rect.bottom() - 8.0),
         Align2::LEFT_BOTTOM,
-        "T · Protokoll",
+        "^ · Protokoll",
         FontId::proportional(10.0),
         Color32::from_rgba_unmultiplied(0x1A, 0x1D, 0x22, 70),
     );
@@ -241,7 +249,7 @@ pub fn zeichnen_offen(chat: &Chat, p: &Painter, rect: Rect) {
     p.text(
         Pos2::new(rect.left() + RAND_X, rect.bottom() - 8.0),
         Align2::LEFT_BOTTOM,
-        format!("T oder ESC schließt · {oben} · Eingaben werden nur mitgeschrieben"),
+        format!("^ oder ESC schließt · {oben} · Eingaben werden nur mitgeschrieben"),
         FontId::proportional(10.0),
         Color32::from_rgba_unmultiplied(0x1A, 0x1D, 0x22, 90),
     );
@@ -323,6 +331,10 @@ pub fn fenster(app: &mut App, ctx: &egui::Context) {
                         .font(FontId::proportional(SCHRIFT))
                         .text_color(text_farbe()),
                 );
+                if app.chat.fokus {
+                    resp.request_focus();
+                    app.chat.fokus = false;
+                }
                 let enter = ctx.input(|i| i.key_pressed(egui::Key::Enter));
                 if resp.lost_focus() && enter {
                     let jetzt = ctx.input(|i| i.time);
@@ -404,7 +416,7 @@ mod tests {
         );
     }
 
-    /// T öffnet und schließt das Protokoll; offen fordert es Neuzeichnen an.
+    /// `^` öffnet und schließt das Protokoll; offen fordert es Neuzeichnen an.
     #[test]
     fn umschalten_oeffnet_und_schliesst() {
         let mut chat = Chat::neu();
@@ -414,6 +426,20 @@ mod tests {
         assert!(chat.braucht_repaint(0.0));
         chat.schliessen();
         assert!(!chat.offen);
+    }
+
+    /// Die Taste unter ESC ist es — nicht mehr T. Öffnen setzt den Fokus in die
+    /// Eingabezeile, Schließen räumt eine halb getippte Eingabe weg.
+    #[test]
+    fn taste_ist_dach_und_oeffnen_fokussiert() {
+        assert_eq!(TASTE_OEFFNEN, egui::Key::Backtick);
+        let mut chat = Chat::neu();
+        chat.umschalten();
+        assert!(chat.offen && chat.fokus, "Eingabezeile muss Fokus bekommen");
+        chat.eingabe = "halb".into();
+        chat.schliessen();
+        assert!(!chat.offen && !chat.fokus);
+        assert!(chat.eingabe.is_empty());
     }
 
     /// Das offene Protokoll zeigt die neuesten Zeilen; Blättern verschiebt
