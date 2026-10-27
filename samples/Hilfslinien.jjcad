@@ -1,0 +1,212 @@
+{
+ "format": "jjcad",
+ "version": 2,
+ "name": "Hilfslinien",
+ "project": {
+  "project": "Wohnhaus Musterstraße 12",
+  "client": "Bauherr Max Mustermann",
+  "planner": "Planungsbüro JoJa",
+  "plan_no": "A-01",
+  "plan_title": "Grundriss Erdgeschoss",
+  "address": "12345 Musterstadt, Musterstraße 12",
+  "note": "",
+  "date": "",
+  "revision": "0"
+ },
+ "settings": {
+  "input_unit": "M",
+  "dim_unit": "M",
+  "decimals": 2,
+  "annotation_scale": 100.0,
+  "snap": {
+   "endpoint": true,
+   "midpoint": true,
+   "center": true,
+   "intersection": true,
+   "perpendicular": true,
+   "nearest": true,
+   "grid": true,
+   "ortho": false,
+   "polar": true,
+   "grid_step": 100.0,
+   "tolerance_px": 12.0
+  },
+  "text_height": 250.0,
+  "wall_thickness": 240.0,
+  "door_width": 885.0,
+  "window_width": 1200.0,
+  "stair_width": 1000.0,
+  "show_grid": true,
+  "show_rulers": true
+ },
+ "layers": [
+  {
+   "id": 1,
+   "name": "Wände",
+   "color": "#23262C",
+   "line_weight": 0.5,
+   "line_type": "Solid",
+   "visible": true,
+   "locked": false,
+   "printable": true
+  },
+  {
+   "id": 2,
+   "name": "Türen",
+   "color": "#785537",
+   "line_weight": 0.25,
+   "line_type": "Solid",
+   "visible": true,
+   "locked": false,
+   "printable": true
+  },
+  {
+   "id": 3,
+   "name": "Fenster",
+   "color": "#2D69BE",
+   "line_weight": 0.25,
+   "line_type": "Solid",
+   "visible": true,
+   "locked": false,
+   "printable": true
+  },
+  {
+   "id": 4,
+   "name": "Treppen",
+   "color": "#3C8C5F",
+   "line_weight": 0.25,
+   "line_type": "Solid",
+   "visible": true,
+   "locked": false,
+   "printable": true
+  },
+  {
+   "id": 5,
+   "name": "Bemaßung",
+   "color": "#BE463C",
+   "line_weight": 0.18,
+   "line_type": "Solid",
+   "visible": true,
+   "locked": false,
+   "printable": true
+  },
+  {
+   "id": 6,
+   "name": "Text",
+   "color": "#282D34",
+   "line_weight": 0.18,
+   "line_type": "Solid",
+   "visible": true,
+   "locked": false,
+   "printable": true
+  },
+  {
+   "id": 7,
+   "name": "Schraffur",
+   "color": "#969BA0",
+   "line_weight": 0.13,
+   "line_type": "Solid",
+   "visible": true,
+   "locked": false,
+   "printable": true
+  },
+  {
+   "id": 8,
+   "name": "Möbel",
+   "color": "#6E737A",
+   "line_weight": 0.18,
+   "line_type": "Solid",
+   "visible": true,
+   "locked": false,
+   "printable": true
+  },
+  {
+   "id": 9,
+   "name": "Achsen",
+   "color": "#C87828",
+   "line_weight": 0.18,
+   "line_type": "DashDot",
+   "visible": true,
+   "locked": false,
+   "printable": true
+  },
+  {
+   "id": 10,
+   "name": "Hilfslinien",
+   "color": "#96A0AF",
+   "line_weight": 0.13,
+   "line_type": "Dashed",
+   "visible": true,
+   "locked": false,
+   "printable": true
+  }
+ ],
+ "current_layer": 1,
+ "blocks": [],
+ "entities": [
+  {
+   "id": 1,
+   "kind": {
+    "type": "wall",
+    "a": {
+     "x": 0.0,
+     "y": 0.0
+    },
+    "b": {
+     "x": 3000.0,
+     "y": 0.0
+    },
+    "thickness": 240.0,
+    "height": 2750.0,
+    "material": "Mauerwerk"
+   },
+   "layer": 1,
+   "style": {
+    "color": null,
+    "line_type": null,
+    "line_weight": null,
+    "fill": null
+   },
+   "by_block": false
+  },
+  {
+   "id": 2,
+   "kind": {
+    "type": "wall",
+    "a": {
+     "x": 1000.0,
+     "y": 2000.0
+    },
+    "b": {
+     "x": 3500.0,
+     "y": 2000.0
+    },
+    "thickness": 240.0,
+    "height": 2750.0,
+    "material": "Mauerwerk"
+   },
+   "layer": 1,
+   "style": {
+    "color": null,
+    "line_type": null,
+    "line_weight": null,
+    "fill": null
+   },
+   "by_block": false
+  }
+ ],
+ "sheets": [],
+ "dim_style": {
+  "text_height": 2.5,
+  "arrow_size": 2.0,
+  "arrow": "Slash",
+  "text_gap": 0.8,
+  "ext_gap": 1.5,
+  "ext_overshoot": 1.5,
+  "chain_gap": 8.0,
+  "text_pos": "Above",
+  "decimals": 2,
+  "unit_divisor": 1000.0
+ },
+ "next_id": 3
+}
