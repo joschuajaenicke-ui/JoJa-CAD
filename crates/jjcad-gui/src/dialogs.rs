@@ -837,12 +837,12 @@ fn settings_body(app: &mut App, ui: &mut Ui) {
             widgets::field_row(ui, "Nachkommastellen", |ui| {
                 ui.add(crate::widgets::dv(&mut decimals).range(0..=4));
             });
-            // Maßketten-Werte gibt es nur an einer Stelle: im Abschnitt
-            // „Maßketten" des Eigenschaften-Panels. Hier steht nur der Weg dorthin.
+            // Maßketten-Werte gibt es nur an einer Stelle: rechts im Abschnitt
+            // „Bemaßung" dieses Fensters. Hier steht nur der Weg dorthin.
             ui.add(
                 egui::Label::new(theme::faint(
-                    "Maßeinheit, Maßstab, Textgröße und Bogensymbole stehen im \
-                     Eigenschaften-Panel, Abschnitt Maßketten.",
+                    "Maßeinheit, Maßstab, Textgröße und Bogensymbole stehen rechts \
+                     im Abschnitt Bemaßung.",
                 ))
                 .wrap(),
             );
@@ -953,6 +953,9 @@ fn settings_body(app: &mut App, ui: &mut Ui) {
                     ds_changed = true;
                 }
             });
+            // Maßeinheit, Maßstab, Textgröße und Bogensymbole: dieselbe
+            // Funktion wie im Eigenschaften-Panel zuvor — ein Wert, eine Stelle.
+            crate::panels::dim_fields(app, ui);
 
             theme::section(ui, "Bedienung");
             widgets::field_row(ui, "Ziehen", |ui| {

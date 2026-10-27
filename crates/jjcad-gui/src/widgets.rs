@@ -279,6 +279,23 @@ pub fn field_row(ui: &mut Ui, label: &str, add: impl FnOnce(&mut Ui)) {
     let _ = ui;
 }
 
+/// Zeile mit festem Namen und nicht editierbarem Wert.
+///
+/// Gleiche Spalten wie `field_row` (96 px Name, Wert ab derselben Kante), damit
+/// Anzeige- und Eingabezeilen im Eigenschaften-Panel genau untereinander liegen.
+/// Lange Werte werden gekürzt; der volle Text steht im Tooltip (`tip`, sonst der
+/// Wert selbst).
+pub fn info_row(ui: &mut Ui, label: &str, value: &str, tip: Option<&str>) -> Response {
+    let mut resp = None;
+    field_row(ui, label, |ui| {
+        resp = Some(ui.add(
+            egui::Label::new(egui::RichText::new(value).size(11.5).color(Palette::TEXT)).truncate(),
+        ));
+    });
+    let resp = resp.expect("field_row ruft den Zeileninhalt genau einmal auf");
+    resp.on_hover_text(tip.unwrap_or(value))
+}
+
 /// Textfeld mit Einheitensuffix, für Längen in Dokumenteinheit.
 pub fn length_input(ui: &mut Ui, value_mm: &mut f64, unit: jjcad_core::units::Unit, width: f32) -> bool {
     let mut v = unit.from_mm(*value_mm);
