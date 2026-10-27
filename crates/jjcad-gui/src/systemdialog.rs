@@ -19,6 +19,12 @@
 
 use std::path::{Path, PathBuf};
 use std::sync::mpsc::{channel, Receiver, TryRecvError};
+use std::time::{Duration, Instant};
+
+/// Ein Systemdialog, der schneller als das zurückkommt, war nicht offen: kein
+/// Portal erreichbar, kein Dienst, abgelehnt. Ein Mensch braucht zum Abbrechen
+/// deutlich länger, also ist das ein Fehlschlag und kein Abbruch.
+pub const MINDESTDAUER_MS: u128 = 400;
 
 /// Was der Systemdialog anzeigen soll — unabhängig von der Dialogkiste, damit
 /// sich der Aufruf ohne Fenster prüfen lässt.
@@ -63,9 +69,12 @@ pub enum Stand {
     Laeuft,
     /// Der Nutzer hat eine Datei gewählt.
     Gewaehlt(PathBuf),
-    /// Der Nutzer hat abgebrochen (oder das System konnte keinen Dialog
-    /// zeigen).
+    /// Der Nutzer hat abgebrochen.
     Abgebrochen,
+    /// Der Systemdialog kam sofort leer zurück — das System konnte keinen
+    /// zeigen (kein Portal, kein Dienst). Der Aufrufer nimmt dann den
+    /// eingebauten Dialog.
+    Fehlgeschlagen,
 }
 
 /// Rückfrage beim System; im Test durch eine eigene Funktion ersetzbar.
@@ -75,6 +84,8 @@ pub type Abfrage = fn(&Anfrage) -> Option<PathBuf>;
 pub struct Systemdialog {
     rx: Receiver<Option<PathBuf>>,
     ergebnis: Option<Stand>,
+    gestartet: Instant,
+    mindestdauer: Duration,
 }
 
 impl Systemdialog {
@@ -91,7 +102,12 @@ impl Systemdialog {
             .spawn(move || {
                 let _ = tx.send(abfrage(&anfrage));
             });
-        Self { rx, ergebnis: None }
+        Self {
+            rx,
+            ergebnis: None,
+            gestartet: Instant::now(),
+            mindestdauer: Duration::from_millis(MINDESTDAUER_MS as u64),
+        }
     }
 
     /// Fragt den Stand ab; das Ergebnis bleibt nach dem ersten Abholen stehen,
@@ -102,7 +118,14 @@ impl Systemdialog {
         }
         let stand = match self.rx.try_recv() {
             Ok(Some(p)) => Stand::Gewaehlt(p),
-            Ok(None) | Err(TryRecvError::Disconnected) => Stand::Abgebrochen,
+            Ok(None) => {
+                if self.gestartet.elapsed() < self.mindestdauer {
+                    Stand::Fehlgeschlagen
+                } else {
+                    Stand::Abgebrochen
+                }
+            }
+            Err(TryRecvError::Disconnected) => Stand::Fehlgeschlagen,
             Err(TryRecvError::Empty) => return Stand::Laeuft,
         };
         self.ergebnis = Some(stand.clone());
@@ -236,9 +259,22 @@ mod tests {
         );
     }
 
+    fn spaet_nichts(_: &Anfrage) -> Option<PathBuf> {
+        std::thread::sleep(Duration::from_millis((MINDESTDAUER_MS + 150) as u64));
+        None
+    }
+
     #[test]
-    fn keine_datei_meldet_abbruch() {
+    fn sofort_leer_bedeutet_kein_dialog() {
+        // Kein Portal erreichbar: sofortiges None ist ein Fehlschlag …
         let mut d = Systemdialog::mit(liefert_nichts, anfrage(false));
+        assert_eq!(warte(&mut d), Stand::Fehlgeschlagen);
+    }
+
+    #[test]
+    fn später_abbrechen_ist_ein_abbruch() {
+        // … ein echter Abbruch des Nutzers dauert länger.
+        let mut d = Systemdialog::mit(spaet_nichts, anfrage(false));
         assert_eq!(warte(&mut d), Stand::Abgebrochen);
     }
 

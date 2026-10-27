@@ -462,6 +462,12 @@ fn systemdialog_abholen(app: &mut App, ctx: &egui::Context) {
         Some((_, crate::systemdialog::Stand::Abgebrochen)) => {
             app.ui.systemdialog = None;
         }
+        // Das System konnte keinen Dialog zeigen → eingebauten Dialog öffnen,
+        // damit „Öffnen“ nie wirkungslos bleibt.
+        Some((mode, crate::systemdialog::Stand::Fehlgeschlagen)) => {
+            app.ui.systemdialog = None;
+            app.open_own_file_dialog(mode);
+        }
         None => {}
     }
     // Antwortet das Portal nicht (oder hängt), kommt man mit ESC wieder heraus
