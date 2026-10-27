@@ -325,6 +325,9 @@ pub struct UiState {
     pub toast: Option<(String, f64)>,
     pub show_grid: bool,
     pub lineweights: bool,
+    /// Vollbild gewünscht (maßgeblich ist der Fensterzustand, siehe
+    /// `App::is_fullscreen`)
+    pub fullscreen: bool,
     /// Linienstärken über den Maßstab skalieren (gedruckte Breite)
     pub lineweights_scaled: bool,
     /// Zieh-Modus für Objekte und Griffe
@@ -355,6 +358,8 @@ pub struct UiState {
     pub last_canvas: Rect,
     /// Höhe des zuletzt gezeichneten Ribbon-Inhalts (Regressionstest t_92b03440)
     pub last_ribbon_content_h: f32,
+    /// Breite des zuletzt gezeichneten Ribbon-Inhalts
+    pub last_ribbon_content_w: f32,
     pub zoom_edit: Option<String>,
     pub typed: String,
     /// Signatur der Auswahl für die letzte Zeichnung (Panel-Aktualisierung)
@@ -386,6 +391,7 @@ impl Default for UiState {
             toast: None,
             show_grid: true,
             lineweights: true,
+            fullscreen: false,
             lineweights_scaled: false,
             drag_mode: DragMode::HoldAndDrag,
             fill_input: FillInput::Points,
@@ -406,6 +412,7 @@ impl Default for UiState {
             confirm_quit: false,
             last_canvas: Rect::from_min_size(Pos2::ZERO, Vec2::new(1000.0, 700.0)),
             last_ribbon_content_h: 0.0,
+            last_ribbon_content_w: 0.0,
             zoom_edit: None,
             typed: String::new(),
             sel_stamp: 0,
@@ -639,6 +646,7 @@ impl App {
                 "bloecke" | "blocks" => self.ui.ribbon = RibbonTab::Bloecke,
                 "blatt" | "sheet" => self.ui.ribbon = RibbonTab::Blatt,
                 "ansicht" => self.ui.ribbon = RibbonTab::Ansicht,
+                "vollbild" | "fullscreen" => self.ui.fullscreen = true,
                 "aendern" | "change" => self.ui.ribbon = RibbonTab::Aendern,
                 "inv" | "inventar" => self.ui.inventory_open = true,
                 "blocks-tab" => {
@@ -1151,6 +1159,24 @@ impl App {
         t.cache = None;
     }
 
+    /// Ist das Fenster im Vollbild? Maßgeblich ist der Fensterzustand: beendet
+    /// die Fensterverwaltung das Vollbild, zeigt der Knopf das sofort an und
+    /// `ui.fullscreen` bleibt nur Rückfall für Oberflächen ohne Rückmeldung
+    /// (headless, erster Frame).
+    pub fn is_fullscreen(&self, ctx: &egui::Context) -> bool {
+        ctx.input(|i| i.viewport().fullscreen).unwrap_or(self.ui.fullscreen)
+    }
+
+    /// Vollbild ein- oder ausschalten (F11 und Knopf im Reiter „Ansicht").
+    ///
+    /// `ViewportCommand::Fullscreen` macht das Fenster rahmenlos und bildschirm-
+    /// füllend — der Weg, den eframe/winit vorsieht; kein eigener Fensterrahmen.
+    pub fn toggle_fullscreen(&mut self, ctx: &egui::Context) {
+        let want = !self.is_fullscreen(ctx);
+        self.ui.fullscreen = want;
+        ctx.send_viewport_cmd(egui::ViewportCommand::Fullscreen(want));
+    }
+
     /// Ansicht auf Inhalt einpassen.
     pub fn fit_view(&mut self) {
         let rect = self.ui.last_canvas;
@@ -1263,6 +1289,8 @@ impl App {
                 self.ui.inventory_tab = 1;
             }
             "view.layers" => self.ui.layers_open = !self.ui.layers_open,
+            // Vollbild: Fenster ohne Rahmen, gleicher Weg für F11 und Ribbon
+            "view.fullscreen" => self.toggle_fullscreen(ctx),
             "view.keymap" => self.ui.keymap_open = true,
             "view.settings" => self.ui.settings_open = true,
             "view.help" => self.ui.help_open = true,
@@ -1650,6 +1678,12 @@ impl App {
 
     fn handle_shortcuts(&mut self, ctx: &egui::Context) {
         let typing = ctx.wants_keyboard_input();
+        // F11 schaltet das Vollbild — unabhängig von Tippeingabe und Werkzeug,
+        // damit man auch aus einem laufenden Werkzeug heraus wieder herausk kommt.
+        if ctx.input(|i| i.key_pressed(egui::Key::F11)) {
+            self.toggle_fullscreen(ctx);
+            return;
+        }
         if ctx.input(|i| i.key_pressed(egui::Key::Escape)) {
             if self.ui.order_pick.is_some() {
                 self.ui.order_pick = None;
@@ -2199,6 +2233,7 @@ fn rail(ui: &mut egui::Ui, icon: &str, tooltip: &str, chevron: &str) -> bool {
         self.ribbon_content(&mut content);
         // Für den Regressionstest: tatsächliche Inhaltshöhe dieses Reiters.
         self.ui.last_ribbon_content_h = content.min_rect().height();
+        self.ui.last_ribbon_content_w = content.min_rect().width();
     }
 
     fn ribbon_content(&mut self, ui: &mut egui::Ui) {
@@ -2556,6 +2591,13 @@ fn rail(ui: &mut egui::Ui, icon: &str, tooltip: &str, chevron: &str) -> bool {
                                 "doc.settings",
                                 &serde_json::json!({"show_grid": v, "snap": {"grid": v}}),
                             );
+                        }
+                    });
+                    widgets::vline(ui, RIBBON_GROUP_H);
+                    self.group(ui, "Fenster", |ui, app| {
+                        let voll = app.is_fullscreen(ui.ctx());
+                        if widgets::ribbon_button(ui, "fullscreen", "Vollbild", voll).clicked() {
+                            app.run_action(ui.ctx(), "view.fullscreen");
                         }
                     });
                     widgets::vline(ui, RIBBON_GROUP_H);
@@ -4063,6 +4105,181 @@ mod tests_ghost_drehrichtung {
             d.y > 1.9 && d.x.abs() < 0.01,
             "Umschalt+R muss gegen den Uhrzeigersinn drehen (waagerecht nach rechts → nach oben), \
              Richtung war {d:?}"
+        );
+    }
+}
+
+#[cfg(test)]
+mod tests_vollbild {
+    //! T0008: Vollbild (rahmenloses Fenster) über F11 und über den Knopf im
+    //! Reiter „Ansicht".
+    //!
+    //! Geprüft wird der Befehl, den eframe/winit ausführt
+    //! (`ViewportCommand::Fullscreen`) — im Test gibt es kein echtes Fenster.
+
+    use super::*;
+
+    fn frame_mit(
+        ctx: &egui::Context,
+        app: &mut App,
+        events: Vec<egui::Event>,
+        fenster_vollbild: Option<bool>,
+    ) -> Vec<egui::ViewportCommand> {
+        let mut raw = egui::RawInput {
+            screen_rect: Some(Rect::from_min_size(Pos2::ZERO, Vec2::new(1500.0, 950.0))),
+            events,
+            ..Default::default()
+        };
+        if let Some(v) = fenster_vollbild {
+            raw.viewports.insert(
+                egui::ViewportId::ROOT,
+                egui::ViewportInfo {
+                    fullscreen: Some(v),
+                    ..Default::default()
+                },
+            );
+        }
+        let out = ctx.run(raw, |ctx| app.ui(ctx));
+        out.viewport_output
+            .get(&egui::ViewportId::ROOT)
+            .map(|v| v.commands.clone())
+            .unwrap_or_default()
+    }
+
+    fn f11() -> Vec<egui::Event> {
+        vec![egui::Event::Key {
+            key: egui::Key::F11,
+            physical_key: None,
+            pressed: true,
+            repeat: false,
+            modifiers: egui::Modifiers::NONE,
+        }]
+    }
+
+    /// Nur die Vollbild-Befehle aus der Befehlsliste.
+    fn vollbild(cmds: &[egui::ViewportCommand]) -> Vec<bool> {
+        cmds.iter()
+            .filter_map(|c| match c {
+                egui::ViewportCommand::Fullscreen(v) => Some(*v),
+                _ => None,
+            })
+            .collect()
+    }
+
+    #[test]
+    fn f11_schaltet_vollbild_an_und_wieder_aus() {
+        let ctx = egui::Context::default();
+        let mut app = App::with_ctx(ctx.clone());
+
+        let cmds = frame_mit(&ctx, &mut app, f11(), None);
+        assert_eq!(
+            vollbild(&cmds),
+            vec![true],
+            "F11 muss Vollbild einschalten (Befehle: {cmds:?})"
+        );
+        assert!(app.ui.fullscreen);
+
+        let cmds = frame_mit(&ctx, &mut app, f11(), None);
+        assert_eq!(
+            vollbild(&cmds),
+            vec![false],
+            "zweites F11 muss Vollbild ausschalten (Befehle: {cmds:?})"
+        );
+        assert!(!app.ui.fullscreen);
+    }
+
+    #[test]
+    fn knopf_und_f11_nutzen_denselben_befehl() {
+        // Der Knopf im Reiter „Ansicht" ruft genau diese Action auf.
+        let ctx = egui::Context::default();
+        let mut app = App::with_ctx(ctx.clone());
+        let cmds = frame_mit(&ctx, &mut app, Vec::new(), None);
+        assert!(
+            vollbild(&cmds).is_empty(),
+            "ohne Klick/F11 darf kein Vollbildbefehl gehen (Befehle: {cmds:?})"
+        );
+
+        let out = ctx.run(
+            egui::RawInput {
+                screen_rect: Some(Rect::from_min_size(Pos2::ZERO, Vec2::new(1500.0, 950.0))),
+                ..Default::default()
+            },
+            |ctx| app.run_action(ctx, "view.fullscreen"),
+        );
+        let cmds = out
+            .viewport_output
+            .get(&egui::ViewportId::ROOT)
+            .map(|v| v.commands.clone())
+            .unwrap_or_default();
+        assert_eq!(
+            vollbild(&cmds),
+            vec![true],
+            "Action view.fullscreen muss Vollbild einschalten (Befehle: {cmds:?})"
+        );
+        assert!(app.ui.fullscreen);
+    }
+
+    #[test]
+    fn fensterzustand_ist_massgeblich() {
+        // Wird das Vollbild von der Fensterverwaltung beendet, meldet das
+        // Fenster „aus" — der nächste F11-Druck muss dann einschalten, nicht
+        // ausschalten (sonst bliebe die Taste wirkungslos).
+        let ctx = egui::Context::default();
+        let mut app = App::with_ctx(ctx.clone());
+        app.ui.fullscreen = true;
+        let cmds = frame_mit(&ctx, &mut app, f11(), Some(false));
+        assert_eq!(
+            vollbild(&cmds),
+            vec![true],
+            "nach Fenster-Rückmeldung ohne Vollbild muss F11 einschalten (Befehle: {cmds:?})"
+        );
+
+        // Umgekehrt: Fenster ist im Vollbild, der Knopf schaltet aus.
+        let mut app = App::with_ctx(ctx.clone());
+        let cmds = frame_mit(&ctx, &mut app, f11(), Some(true));
+        assert_eq!(
+            vollbild(&cmds),
+            vec![false],
+            "im Vollbild muss F11 ausschalten (Befehle: {cmds:?})"
+        );
+    }
+
+    /// Der Reiter „Ansicht" ist durch die Gruppe „Fenster" breiter geworden.
+    /// Er muss in die kleinste zulässige Fensterbreite passen (1080 Punkte,
+    /// `with_min_inner_size`), sonst wird rechts „Zentrum" abgeschnitten.
+    #[test]
+    fn reiter_ansicht_passt_in_die_mindestbreite() {
+        let ctx = egui::Context::default();
+        let mut app = App::with_ctx(ctx.clone());
+        app.ui.ribbon = RibbonTab::Ansicht;
+        let mut breite = 0.0;
+        for _ in 0..3 {
+            let raw = egui::RawInput {
+                screen_rect: Some(Rect::from_min_size(Pos2::ZERO, Vec2::new(1080.0, 700.0))),
+                ..Default::default()
+            };
+            let _ = ctx.run(raw, |ctx| app.ui(ctx));
+            breite = app.ui.last_ribbon_content_w;
+        }
+        assert!(
+            breite <= 1080.0,
+            "Reiter Ansicht braucht {breite} px und passt nicht in die Mindestbreite 1080 px"
+        );
+    }
+
+    #[test]
+    fn action_steht_im_reiter_ansicht_mit_f11() {
+        let a = actions::action("view.fullscreen").expect("Action view.fullscreen fehlt");
+        assert_eq!(a.label, "Vollbild");
+        assert_eq!(a.group, ActionGroup::Ansicht);
+        assert_eq!(a.key, "f11");
+        assert!(!a.tool, "Vollbild ist kein Zeichenwerkzeug");
+        let im_reiter = actions::actions_in_group(ActionGroup::Ansicht)
+            .iter()
+            .any(|d| d.id == "view.fullscreen");
+        assert!(
+            im_reiter,
+            "Action fehlt in der Gruppe Ansicht (Inventar, Hilfe, Ribbon)"
         );
     }
 }

@@ -430,6 +430,17 @@ pub fn paint(painter: &Painter, rect: Rect, name: &str, color: Color32) {
             i.line(15.0, 15.0, 21.0, 21.0);
             i.line(7.5, 10.5, 13.5, 10.5);
         }
+        "fullscreen" => {
+            // Vier Eckwinkel — das Zeichen für „Fenster ohne Rahmen".
+            i.line(3.0, 8.0, 3.0, 3.0);
+            i.line(3.0, 3.0, 8.0, 3.0);
+            i.line(16.0, 3.0, 21.0, 3.0);
+            i.line(21.0, 3.0, 21.0, 8.0);
+            i.line(3.0, 16.0, 3.0, 21.0);
+            i.line(3.0, 21.0, 8.0, 21.0);
+            i.line(16.0, 21.0, 21.0, 21.0);
+            i.line(21.0, 21.0, 21.0, 16.0);
+        }
         "inventory" => {
             i.rect(3.0, 3.0, 18.0, 18.0);
             i.line(3.0, 9.0, 21.0, 9.0);
