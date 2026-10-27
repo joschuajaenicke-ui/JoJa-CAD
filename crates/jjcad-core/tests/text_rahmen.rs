@@ -29,8 +29,11 @@ fn s() -> Session {
     s
 }
 
-/// Text „Hallo“ mit Höhe 250 mm am Ursprung: Rahmen 785 × 250 mm,
-/// senkrecht mittig (Vorgabe `valign: Middle`), also y von −125 bis +125.
+/// Text „Hallo“ mit Höhe 250 mm am Ursprung: Rahmen 810 × 350 mm,
+/// (Zeichenbreiten 785 mm + 25 mm Rand),
+/// senkrecht mittig (Vorgabe `valign: Middle`), also y von −175 bis +175.
+/// Die Kastenhöhe ist die Zeilenhöhe der Schrift (250 × 1,4), damit auch
+/// Unterlängen (g, p, j) im Rahmen liegen.
 fn session_mit_text() -> Session {
     let mut s = s();
     s.execute(
@@ -60,15 +63,15 @@ fn rahmen_umschliesst_den_text() {
     let ecken = render::text_frame(&s.doc, e).expect("Text braucht einen Rahmen");
 
     assert!(matches!(e.kind, EntityKind::Text { .. }));
-    assert_punkt(ecken[0], v(0.0, -125.0), "links unten");
-    assert_punkt(ecken[1], v(785.0, -125.0), "rechts unten");
-    assert_punkt(ecken[2], v(785.0, 125.0), "rechts oben");
-    assert_punkt(ecken[3], v(0.0, 125.0), "links oben");
+    assert_punkt(ecken[0], v(0.0, -175.0), "links unten");
+    assert_punkt(ecken[1], v(810.0, -175.0), "rechts unten");
+    assert_punkt(ecken[2], v(810.0, 175.0), "rechts oben");
+    assert_punkt(ecken[3], v(0.0, 175.0), "links oben");
 
     // Rahmen und Bounding-Box sind derselbe Kasten (Breite/Höhe in mm).
     let b = render::entity_bbox(&s.doc, e);
-    assert!((b.max.x - b.min.x - 785.0).abs() < 1e-6, "Breite {:?}", b);
-    assert!((b.max.y - b.min.y - 250.0).abs() < 1e-6, "Höhe {:?}", b);
+    assert!((b.max.x - b.min.x - 810.0).abs() < 1e-6, "Breite {:?}", b);
+    assert!((b.max.y - b.min.y - 350.0).abs() < 1e-6, "Höhe {:?}", b);
 }
 
 /// Großbuchstaben sind breiter als der alte Mittelwert von 0,58 je Zeichen:
@@ -91,8 +94,9 @@ fn rahmen_umschliesst_auch_grossbuchstaben() {
         breite > alter_mittelwert,
         "Rahmen {breite} mm ist nicht breiter als der alte Mittelwert {alter_mittelwert} mm"
     );
-    // W ist das breiteste Zeichen (1,15 × Höhe), O/H/N/E/N je 0,90.
-    assert!((breite - (1.15 + 5.0 * 0.90) * 250.0).abs() < 1e-6, "{breite}");
+    // W ist das breiteste Zeichen (1,15 × Höhe), O/H/N/E/N je 0,90, dazu
+    // 10 % Höhe Rand (je Seite 5 %).
+    assert!((breite - ((1.15 + 5.0 * 0.90) * 250.0 + 25.0)).abs() < 1e-6, "{breite}");
 }
 
 /// Gegenprobe: andere Objekte haben keinen Textrahmen.
@@ -123,18 +127,18 @@ fn rahmen_besteht_aus_vier_kanten() {
 #[test]
 fn ecke_des_rahmens_faengt_als_endpunkt() {
     let s = session_mit_text();
-    let r = fang(&s, v(795.0, 132.0), 40.0);
+    let r = fang(&s, v(817.0, 180.0), 40.0);
     assert_eq!(r.source, SnapSource::Object(SnapKind::Endpoint), "{r:?}");
-    assert_punkt(r.point, v(785.0, 125.0), "Ecke rechts oben");
+    assert_punkt(r.point, v(810.0, 175.0), "Ecke rechts oben");
 }
 
 /// Die Mitte einer Rahmenkante fängt als Mittelpunkt.
 #[test]
 fn kantenmitte_faengt_als_mittelpunkt() {
     let s = session_mit_text();
-    let r = fang(&s, v(395.0, 132.0), 40.0);
+    let r = fang(&s, v(407.0, 180.0), 40.0);
     assert_eq!(r.source, SnapSource::Object(SnapKind::Midpoint), "{r:?}");
-    assert_punkt(r.point, v(392.5, 125.0), "Mitte der Oberkante");
+    assert_punkt(r.point, v(405.0, 175.0), "Mitte der Oberkante");
 }
 
 /// Auf der Rahmenkante fängt der nächste Punkt — der Text hat also nicht nur
@@ -160,7 +164,7 @@ fn ankerpunkt_faengt_weiter() {
 #[test]
 fn rahmen_faengt_nur_im_radius() {
     let s = session_mit_text();
-    let cursor = v(785.0, 400.0);
+    let cursor = v(810.0, 500.0);
     let r = fang(&s, cursor, 40.0);
     assert_eq!(r.source, SnapSource::Free, "{r:?}");
     assert_punkt(r.point, cursor, "roher Zeiger");

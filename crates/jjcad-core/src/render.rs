@@ -109,7 +109,7 @@ impl Prim {
             Shape::Dot { p, r } => BBox::new(*p - v(*r, *r), *p + v(*r, *r)),
             Shape::Text(t) => {
                 let w = text_box_width(&t.text, t.height);
-                let h = t.height;
+                let h = text_line_height(t.height);
                 let (ax, ay) = match t.align {
                     TextAlignH::Left => (0.0, 0.0),
                     TextAlignH::Center => (-w * 0.5, 0.0),
@@ -142,6 +142,16 @@ pub fn estimate_text_width(text: &str, height: f64) -> f64 {
     text.chars().count() as f64 * height * 0.58
 }
 
+/// Höhe der Textzeile (Kasten um den Text) in Welt-mm.
+///
+/// Die Anzeige setzt die Schrift auf `Höhe × 1,32` und legt die Zeile mit
+/// ihrem Zeilenabstand (× 1,2) um den Anker. Der Kasten ist deshalb höher als
+/// die reine Texthöhe: sonst lägen Unterlängen (g, p, j) außerhalb des Rahmens
+/// und der Rahmen schnitte die Schrift an.
+pub fn text_line_height(height: f64) -> f64 {
+    height * 1.4
+}
+
 /// Breite des Textkastens: enger am gezeichneten Text als
 /// [`estimate_text_width`], weil der Rahmen die Schrift wirklich umschließen
 /// muss.
@@ -151,7 +161,11 @@ pub fn estimate_text_width(text: &str, height: f64) -> f64 {
 /// Breitenklassen in Vielfachen der Texthöhe; lieber eine Spur zu breit als
 /// durch die Buchstaben geschnitten.
 pub fn text_box_width(text: &str, height: f64) -> f64 {
-    text.chars().map(|c| char_width_factor(c) * height).sum()
+    // Kleiner Rand je Seite (5 % der Höhe): die Schätzung liegt bei einzelnen
+    // Wörtern wenige Prozent daneben, und ein Rahmen darf die Schrift nicht
+    // schneiden.
+    let rand = height * 0.1;
+    text.chars().map(|c| char_width_factor(c) * height).sum::<f64>() + rand
 }
 
 /// Breite eines Zeichens in Vielfachen der Texthöhe (Noto Sans, grob).

@@ -378,34 +378,53 @@ fn paint_prim(p: &Painter, prim: &Prim, w2s: &dyn Fn(V2) -> Pos2, scale: f64, pc
         PShape::Dot { p: pos, r } => {
             p.circle_filled(w2s(*pos), ((*r * scale) as f32).max(1.2), col);
         }
-        PShape::Text(t) => {
-            let size = (t.height * scale * 1.32).max(3.0) as f32;
-            if size < 3.0 {
-                return;
-            }
-            let font = FontId::proportional(size);
-            let galley = p.layout_no_wrap(t.text.clone(), font, col);
-            let sz = galley.size();
-            let (dx, dy) = match t.align {
-                TextAlignH::Left => (0.0, 0.0),
-                TextAlignH::Center => (-sz.x / 2.0, 0.0),
-                TextAlignH::Right => (-sz.x, 0.0),
-            };
-            let (vx, vy) = match t.valign {
-                TextAlignV::Top => (0.0, 0.0),
-                TextAlignV::Middle => (0.0, -sz.y / 2.0),
-                TextAlignV::Bottom => (0.0, -sz.y),
-            };
-            let base = w2s(t.pos);
-            let pos = Pos2::new(base.x + dx + vx, base.y + dy + vy);
-            if t.angle.abs() < 0.001 {
-                p.galley(pos, galley, col);
-            } else {
-                let shape = egui::epaint::TextShape::new(pos, galley, col)
-                    .with_angle(t.angle as f32);
-                p.add(shape);
-            }
-        }
+        PShape::Text(t) => paint_text(p, t, w2s(t.pos), scale, col),
+    }
+}
+
+/// Text an einem Bildschirmpunkt zeichnen — die **eine** Stelle, an der Text
+/// platziert wird.
+///
+/// Gezeichnet wird die Vorschau des Textwerkzeugs über denselben Weg; sonst
+/// stünde sie an einer anderen Stelle als der Text, der beim Klick entsteht
+/// (Vorschau mit Grundlinie am Zeiger, Ergebnis mittig — der Text sprang beim
+/// Einfügen nach unten).
+fn paint_text(p: &Painter, t: &render::TextPrim, base: Pos2, scale: f64, col: Color32) {
+    let size = (t.height * scale * 1.32).max(3.0) as f32;
+    let font = FontId::proportional(size);
+    let galley = p.layout_no_wrap(t.text.clone(), font, col);
+    let sz = galley.size();
+    let (dx, dy) = match t.align {
+        TextAlignH::Left => (0.0, 0.0),
+        TextAlignH::Center => (-sz.x / 2.0, 0.0),
+        TextAlignH::Right => (-sz.x, 0.0),
+    };
+    let vy = match t.valign {
+        TextAlignV::Top => 0.0,
+        TextAlignV::Middle => -sz.y / 2.0,
+        TextAlignV::Bottom => -sz.y,
+    };
+    let pos = Pos2::new(base.x + dx, base.y + dy + vy);
+    if t.angle.abs() < 0.001 {
+        p.galley(pos, galley, col);
+    } else {
+        let shape = egui::epaint::TextShape::new(pos, galley, col).with_angle(t.angle as f32);
+        p.add(shape);
+    }
+}
+
+/// Text, den das Textwerkzeug beim Klick anlegen wird — genau die Vorgaben der
+/// Action `draw.text` (links, mittig, ohne Drehung). Die Vorschau muss diesen
+/// Text zeichnen, damit sie dieselbe Lage zeigt wie das Ergebnis.
+pub(crate) fn text_preview_prim(text: String, height: f64) -> render::TextPrim {
+    render::TextPrim {
+        pos: V2::ZERO,
+        text,
+        height,
+        angle: 0.0,
+        align: TextAlignH::Left,
+        valign: TextAlignV::Middle,
+        bold: false,
     }
 }
 
@@ -1428,13 +1447,9 @@ fn draw_tool_preview(
             } else {
                 app.options.text.clone()
             };
-            p.text(
-                w2s(cursor),
-                Align2::LEFT_BOTTOM,
-                &txt,
-                FontId::proportional((h * view.zoom * 1.3).clamp(8.0, 60.0) as f32),
-                col,
-            );
+            // Dieselbe Platzierung wie der Text, der beim Klick entsteht
+            // (links, mittig) — nicht mit der Grundlinie am Zeiger.
+            paint_text(p, &text_preview_prim(txt, h), w2s(cursor), view.zoom, col);
         }
         "draw.fill" | "draw.hatch" => {
             p.circle_stroke(w2s(cursor), 9.0, dashed);
@@ -5355,5 +5370,60 @@ mod tests_spline_werkzeug {
         tool_click(&mut app, V2::new(0.0, 0.0));
         taste(&mut app, egui::Key::Escape);
         assert!(app.doc().entities.is_empty(), "ein Punkt ist keine Kurve");
+    }
+}
+
+#[cfg(test)]
+mod tests_textvorschau {
+    //! Vorschau des Textwerkzeugs und eingefügter Text sind derselbe Text
+    //! (Ticket T0010, Turn 2).
+    //!
+    //! Die Vorschau stand mit ihrer Grundlinie am Zeiger, der eingefügte Text
+    //! wurde mittig am Klickpunkt gesetzt — beim Klick sprang der Text eine
+    //! halbe Zeile nach unten und der Rahmen saß darunter. Beide gehen jetzt
+    //! über `paint_text` mit den Vorgaben aus `text_preview_prim`.
+
+    use super::*;
+
+    #[test]
+    fn vorschau_legt_den_text_wie_die_action_an() {
+        let vorschau = text_preview_prim("Hallo".to_string(), 250.0);
+
+        let mut app = App::with_ctx(egui::Context::default());
+        app.session_mut()
+            .execute("doc.settings", &json!({ "input_unit": "mm" }))
+            .expect("Einheit setzen");
+        app.session_mut()
+            .execute(
+                "draw.text",
+                &json!({"p": [0.0, 0.0], "text": "Hallo", "height": 250.0}),
+            )
+            .expect("Text anlegen");
+        let e = app.doc().entities.last().expect("Text fehlt");
+        let EntityKind::Text {
+            height,
+            angle,
+            align,
+            valign,
+            bold,
+            ..
+        } = &e.kind
+        else {
+            panic!("kein Text angelegt");
+        };
+
+        assert_eq!(*align, vorschau.align, "waagerechte Ausrichtung");
+        assert_eq!(*valign, vorschau.valign, "Lage in der Höhe");
+        assert_eq!(*bold, vorschau.bold, "Schriftschnitt");
+        assert!((height - vorschau.height).abs() < 1e-9, "Höhe");
+        assert!((angle - vorschau.angle).abs() < 1e-9, "Drehung");
+    }
+
+    /// Mittig: der Text steht um den Klickpunkt, nicht mit der Grundlinie
+    /// darauf — sonst zeigt die Vorschau eine andere Lage als das Ergebnis.
+    #[test]
+    fn vorschau_steht_mittig_auf_dem_zeiger() {
+        let t = text_preview_prim("Hallo".to_string(), 250.0);
+        assert_eq!(t.valign, TextAlignV::Middle);
     }
 }

@@ -167,7 +167,10 @@ Mit dem Nutzer abgestimmt — nicht „verbessern“:
 - **Auswahl** färbt nur blau ein — kein zusätzlicher Auswahlrahmen. **Ausnahme Text**:
   der Text hat einen unsichtbaren Rahmen (derselbe Kasten wie in der Einfüge-Vorschau), der
   bei Auswahl gezeichnet wird und dessen Ecken/Kantenmitten fangen. Text wird **nicht** mit
-  der gedrückten Maustaste verschoben — nur über das Werkzeug „Verschieben“.
+  der gedrückten Maustaste verschoben — nur über das Werkzeug „Verschieben“. Der Kasten ist
+  die Zeilenbox (`render::text_frame`: Höhe × 1,4, Breite nach Zeichenbreiten plus Rand), und
+  die Vorschau des Textwerkzeugs läuft über `canvas::paint_text` — dieselbe Platzierung wie
+  der eingefügte Text (links, mittig), nicht mit der Grundlinie am Zeiger.
 - **Raster-Chip** schaltet Anzeige *und* Rasterfang gemeinsam.
 - **Ansichtsfenster** wie Rechtecke, beweglich nur mit `V`, exakte Eingabe X/Y/B/H.
 - **Druckvorschau = Papierraum**: gleiche Werkzeuge wie im Modell. Der Bearbeitungsraum
