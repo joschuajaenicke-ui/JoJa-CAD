@@ -6,6 +6,7 @@
 
 mod app;
 mod canvas;
+mod chat;
 mod dialogs;
 mod ghost;
 mod hotbar;

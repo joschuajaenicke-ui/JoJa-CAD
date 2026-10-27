@@ -618,8 +618,15 @@ pub fn show(app: &mut App, ui: &mut Ui) {
     // Hintergrund
     painter.rect_filled(rect, 0.0, Palette::BG);
 
+    // Chat-Protokoll offen: die Zeichenfläche ist gesperrt (Navigation,
+    // Werkzeug und Zeichnen ruhen), damit man im Protokoll lesen und
+    // scrollen kann. Die Zeichnung wird dafür blass.
+    let chat_offen = app.chat.offen;
+
     // Navigation
-    handle_navigation(app, ui, &resp, rect, view);
+    if !chat_offen {
+        handle_navigation(app, ui, &resp, rect, view);
+    }
 
     // Weltkoordinate unter dem Zeiger
     let pointer = ui.ctx().pointer_hover_pos().filter(|p| rect.contains(*p));
@@ -703,7 +710,7 @@ pub fn show(app: &mut App, ui: &mut Ui) {
 
     // Eingabe
     let pointer_pos = ui.ctx().pointer_hover_pos();
-    if resp.hovered() {
+    if resp.hovered() && !chat_offen {
         if let Some(pos) = pointer_pos {
             // Hover-Highlight (auch im Papierraum — dort auf Schriftfeld/Texten)
             if app.tool.is_none() {
@@ -718,7 +725,23 @@ pub fn show(app: &mut App, ui: &mut Ui) {
         }
     }
 
-    handle_input(app, ui, &resp, rect, &painter, is_sheet, snapped, raw_world);
+    if chat_offen {
+        // Zeichnung blass hinter dem Protokoll (Lesbarkeit)
+        let (flaeche, farbe) = crate::chat::schleier(rect);
+        painter.rect_filled(flaeche, 0.0, farbe);
+    } else {
+        handle_input(app, ui, &resp, rect, &painter, is_sheet, snapped, raw_world);
+        // Aufforderung des laufenden Werkzeugs in den Chat (bzw. ins Log).
+        // Nur bei geändertem Text, sonst stünde sie 60-mal pro Sekunde drin.
+        if let Some(t) = app.tool.clone() {
+            let hinweis = crate::app::commands_hint(&t);
+            app.mitteilung_wenn_neu(hinweis);
+        }
+        // Transparente Meldungen unten links, die nach einigen Sekunden
+        // verblassen; T öffnet das vollständige Protokoll.
+        let jetzt = ui.ctx().input(|i| i.time);
+        crate::chat::zeichnen_geschlossen(&app.chat, &painter, rect, jetzt);
+    }
 
     // Overlay: Blattmaßstab / Zoom
     if is_sheet {
@@ -2145,7 +2168,7 @@ fn handle_input(
                         finish_tool(app, true);
                     } else {
                         app.tool = None;
-                        app.status_msg = "Abgebrochen".into();
+                        app.mitteilung("Abgebrochen");
                     }
                 }
                 _ => {
@@ -2956,7 +2979,7 @@ fn restart_tool(app: &mut App, action: &str) {
         phase: ToolPhase::Collecting,
     });
     if let Some(def) = actions::action(action) {
-        app.status_msg = def.hint.to_string();
+        app.mitteilung(def.hint);
     }
     // Tippepuffer (Länge/Koordinaten) gehört zum vorigen Objekt.
     app.ui.typed.clear();

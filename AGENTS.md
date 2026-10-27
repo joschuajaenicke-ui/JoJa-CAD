@@ -181,6 +181,10 @@ Mit dem Nutzer abgestimmt — nicht „verbessern“:
   *und* bei Auswahl; bei Mehrfachauswahl nur gemeinsame Felder, abweichende Werte
   als `*variiert*`; nicht editierbare Werte (Länge, Fläche) anzeigen.
 - **Polarfang** 45° (Toleranz 6°); Fangmodi END, SCHN, MIT, ZEN, QUA, LOT, NÄC, RAS, POL.
+- **Chat**: Meldungen stehen unten links in der Zeichenfläche und verblassen
+  nach einigen Sekunden; `T` öffnet das Protokoll (scrollbar, Zeichnung blass),
+  `T`/`ESC` schließen es. Eingaben des Nutzers werden nur protokolliert. Es gibt
+  keinen eigenen Toast mehr, und das Text-Werkzeug liegt nicht mehr auf `T`.
 - Wände: Farbe (Linie) und Füllung (Fläche) getrennt; Schraffuren inklusive
   **Dämmung** (Mäander); Ausrichtung Links/Mittig/Rechts.
 - **Auswahl über Rechteck** prüft echte Geometrie (Segmente, Wandkörper),
