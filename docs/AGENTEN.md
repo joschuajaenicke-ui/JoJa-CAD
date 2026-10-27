@@ -190,8 +190,9 @@ Mit dem Nutzer abgestimmt — nicht „verbessern“:
 - **Erweiterter Punktfang**: bleibt der Zeiger 400 ms auf einem diskreten Fangpunkt stehen
   (ohne Klick), wird dieser *gehalten* und bekommt zwei Hilfslinien — bei einem Punkt auf
   einer Linie Verlängerung und Normale, sonst Waagerechte und Senkrechte. Auf ihnen fängt
-  der nächste Punkt (`SnapKind::Tracking`, Statuszeile „Hilfslinie"); höchstens zwei
-  Haltepunkte, ein Klick löst sie. Diskrete Objektfänge (END, MIT, …) schlagen die
+  der nächste Punkt (`SnapKind::Tracking`, Statuszeile „Hilfslinie"), ebenso der
+  **Schnittpunkt einer Hilfslinie mit einer bestehenden Linie** (Statuszeile „Schnittpunkt");
+  höchstens zwei Haltepunkte, ein Klick löst sie. Diskrete Objektfänge (END, MIT, …) schlagen die
   Hilfslinie, die Hilfslinie schlägt Nächster Punkt/Lot sowie Ortho, Polar und Raster.
 - **Chat**: Meldungen stehen unten links in der Zeichenfläche und verblassen
   nach einigen Sekunden; `^` (die Taste unter ESC) öffnet das Protokoll im

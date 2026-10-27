@@ -219,3 +219,107 @@ fn ohne_haltepunkt_bleibt_der_zeiger_frei() {
     assert_eq!(r.source, SnapSource::Free, "{r:?}");
     assert_punkt(r.point, cursor, "roher Zeiger");
 }
+
+// ---------------------------------------------------------------------------
+// Schnittpunkt Hilfslinie × bestehende Linie (Turn 2)
+// ---------------------------------------------------------------------------
+
+/// Ein einzelner Haltepunkt im Ursprung: Waagerechte y = 0, Senkrechte x = 0.
+fn halt_im_ursprung() -> HaltPunkt {
+    HaltPunkt {
+        point: v(0.0, 0.0),
+        kind: SnapKind::Center,
+        entity: None,
+        richtung: None,
+    }
+}
+
+/// Wo eine Hilfslinie eine bestehende Linie kreuzt, rastet der Zeiger **exakt**
+/// auf der Kreuzung ein — nicht auf dem Fußpunkt daneben.
+#[test]
+fn schnittpunkt_hilfslinie_mit_linie_faengt_exakt() {
+    let mut s = s();
+    s.execute(
+        "draw.line",
+        &json!({ "a": [-2000.0, 1000.0], "b": [5000.0, 1000.0] }),
+    )
+    .unwrap();
+    let r = fang(&s, v(4.0, 996.0), 30.0, None, &[halt_im_ursprung()]);
+    assert_eq!(r.source, SnapSource::Object(SnapKind::Intersection), "{r:?}");
+    assert_punkt(r.point, v(0.0, 1000.0), "Kreuzung Senkrechte × Linie");
+    assert_eq!(r.label(), Some("Schnittpunkt"));
+}
+
+/// Abseits der Kreuzung bleibt der gleitende Fußpunkt auf der Hilfslinie —
+/// die Kreuzung wird nicht Globalfänger.
+#[test]
+fn fusspunkt_bleibt_abseits_der_kreuzung() {
+    let mut s = s();
+    s.execute(
+        "draw.line",
+        &json!({ "a": [-2000.0, 1000.0], "b": [5000.0, 1000.0] }),
+    )
+    .unwrap();
+    let r = fang(&s, v(4.0, 3000.0), 30.0, None, &[halt_im_ursprung()]);
+    assert_eq!(r.source, SnapSource::Object(SnapKind::Tracking), "{r:?}");
+    assert_punkt(r.point, v(0.0, 3000.0), "Fußpunkt auf der Senkrechten");
+}
+
+/// Nur die **Strecke** zählt: die Verlängerung einer bestehenden Linie ist kein
+/// Schnittpunkt (gleiche Regel wie beim Objekt-Schnittpunkt).
+#[test]
+fn verlaengerung_der_linie_ist_kein_schnittpunkt() {
+    let mut s = s();
+    s.execute(
+        "draw.line",
+        &json!({ "a": [2000.0, 1000.0], "b": [5000.0, 1000.0] }),
+    )
+    .unwrap();
+    // Der Fußpunkt (0; 1000) liegt auf der verlängerten Linie, nicht auf ihr.
+    let r = fang(&s, v(4.0, 1000.0), 30.0, None, &[halt_im_ursprung()]);
+    assert_eq!(r.source, SnapSource::Object(SnapKind::Tracking), "{r:?}");
+    assert_punkt(r.point, v(0.0, 1000.0), "Fußpunkt");
+}
+
+/// Ein ausgewähltes Objekt liefert keinen Hilfslinien-Schnittpunkt — es bewegt
+/// sich mit, der Punkt wanderte mit (wie beim Objekt-Schnittpunkt).
+#[test]
+fn ausgewaehlte_linie_bildet_keinen_hilfslinien_schnittpunkt() {
+    let mut s = s();
+    s.execute(
+        "draw.line",
+        &json!({ "a": [-2000.0, 1000.0], "b": [5000.0, 1000.0] }),
+    )
+    .unwrap();
+    let id = s.doc.entities[0].id;
+    let r = snap_constrained_mit_halte(
+        &s.doc,
+        v(4.0, 996.0),
+        30.0,
+        None,
+        &[],
+        &[id],
+        &[],
+        &[],
+        &[halt_im_ursprung()],
+        false,
+    );
+    assert_eq!(r.source, SnapSource::Object(SnapKind::Tracking), "{r:?}");
+}
+
+/// Ohne Haltepunkt gibt es keinen Hilfslinien-Schnittpunkt — die Gegenprobe
+/// zeigt, dass wirklich die Hilfslinie den Punkt liefert.
+#[test]
+fn ohne_haltepunkt_kein_hilfslinien_schnittpunkt() {
+    let s2 = {
+        let mut s = s();
+        s.execute(
+            "draw.line",
+            &json!({ "a": [-2000.0, 1000.0], "b": [5000.0, 1000.0] }),
+        )
+        .unwrap();
+        s
+    };
+    let r = fang(&s2, v(4.0, 996.0), 30.0, None, &[]);
+    assert_eq!(r.source, SnapSource::Object(SnapKind::Nearest), "{r:?}");
+}

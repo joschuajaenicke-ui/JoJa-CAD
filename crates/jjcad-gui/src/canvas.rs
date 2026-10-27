@@ -5745,6 +5745,27 @@ mod tests_hilfslinien {
         assert_eq!(label, Some("Hilfslinie"));
     }
 
+    /// Wo die Hilfslinie eine bestehende Linie kreuzt, rastet der Fang exakt
+    /// auf der Kreuzung ein und die Statuszeile meldet „Schnittpunkt" (Turn 2).
+    #[test]
+    fn schnittpunkt_von_hilfslinie_und_linie_faengt_in_der_app() {
+        let mut app = app();
+        let id = linie(&mut app);
+        app.session_mut()
+            .execute(
+                "draw.line",
+                // Mitte der Linie liegt bei x = 2250, nicht auf der Kreuzung —
+                // sonst gewinnt der (richtige) Mittelpunkt-Fang davor.
+                &serde_json::json!({"a": [1000.0, 1500.0], "b": [3500.0, 1500.0]}),
+            )
+            .unwrap();
+        // Wandende (2000; 0) halten: Senkrechte x = 2000, Waagerechte y = 0.
+        app.halt.push(halt_am_ende(&app, id));
+        let (p, label) = fang_zeiger(&app, V2::new(2004.0, 1504.0), 30.0);
+        assert_punkt(p, V2::new(2000.0, 1500.0), "Kreuzung Senkrechte × Linie");
+        assert_eq!(label, Some("Schnittpunkt"));
+    }
+
     /// Ohne Haltepunkt bleibt derselbe Zeiger frei — die Gegenprobe zeigt, dass
     /// wirklich die Hilfslinie zieht und nicht etwa das Raster.
     #[test]

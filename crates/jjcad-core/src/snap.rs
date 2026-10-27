@@ -206,7 +206,15 @@ fn fuss_auf_gerade(p: Vec2, origin: Vec2, dir: Vec2) -> Vec2 {
     origin + d * (p - origin).dot(d)
 }
 
-/// Fang auf den Hilfslinien der Haltepunkte.
+/// Ein Fangpunkt auf einer Hilfslinie: exakt oder nur der Fußpunkt.
+struct HilfsTreffer {
+    dist: f64,
+    point: Vec2,
+    kind: SnapKind,
+    entity: Option<Id>,
+}
+
+/// Fang auf den Hilfslinien der Haltepunkte — **ohne** Objektgeometrie.
 ///
 /// Angeboten werden alle Kreuzungen zweier Hilfslinien (auch der Haltepunkt
 /// selbst — dort schneiden sich seine beiden Linien) und alle Fußpunkte des
@@ -215,14 +223,109 @@ fn fuss_auf_gerade(p: Vec2, origin: Vec2, dir: Vec2) -> Vec2 {
 /// nicht die nähere der beiden Einzelachsen. Damit lässt sich ein Punkt sowohl
 /// auf eine Achse setzen (x oder y des Haltepunkts) als auch aus zwei
 /// Haltepunkten kombinieren (x von A, y von B).
+///
+/// Für den Fang in der Zeichnung nimmt die Fang-Kette
+/// [`hilfslinien_snap_mit_geometrie`] — dort kommt der Schnitt mit einer
+/// bestehenden Linie hinzu.
 pub fn hilfslinien_snap(halte: &[HaltPunkt], cursor: Vec2, tol: f64) -> Option<SnapHit> {
+    hilfslinien_snap_innen(halte, cursor, tol, &[])
+}
+
+/// Fang auf den Hilfslinien **einschließlich ihrer Schnittpunkte mit
+/// bestehenden Linien**.
+///
+/// Ohne diesen Zweig ließ sich der Punkt, an dem eine Hilfslinie eine Wand oder
+/// Linie kreuzt, nicht treffen: der Fußpunkt des Zeigers auf der Hilfslinie
+/// gewinnt gegen „Nächster Punkt", also glitt der Zeiger an der Kreuzung
+/// vorbei, statt exakt darauf einzurasten (Rückmeldung zum ersten Auslieferungs-
+/// stand). Gesucht wird nur im Fangradius und nur auf **Strecken** — die
+/// Verlängerung einer bestehenden Linie ist kein Schnittpunkt.
+pub fn hilfslinien_snap_mit_geometrie(
+    doc: &Document,
+    halte: &[HaltPunkt],
+    cursor: Vec2,
+    tol: f64,
+    ignore: &[Id],
+    selected: &[Id],
+) -> Option<SnapHit> {
+    let segs = nahe_segmente(doc, cursor, tol, ignore, selected);
+    hilfslinien_snap_innen(halte, cursor, tol, &segs)
+}
+
+/// Strecken in Fangreichweite — dieselbe Auswahl wie in der Fang-Engine
+/// (sichtbare, nicht ausgeschlossene Objekte; Wandkontur nur bei
+/// `snap.wall_edges`), mit der Marke „gehört zu einem ausgewählten Objekt".
+fn nahe_segmente(
+    doc: &Document,
+    cursor: Vec2,
+    tol: f64,
+    ignore: &[Id],
+    selected: &[Id],
+) -> Vec<(Seg, Id, bool)> {
+    let tol = tol.max(1e-6);
+    let area = BBox::new(cursor - v(tol, tol), cursor + v(tol, tol));
+    let wall_edges = doc.settings.snap.wall_edges;
+    let mut segs = Vec::new();
+    for e in doc.ents() {
+        if ignore.contains(&e.id) {
+            continue;
+        }
+        if let Some(l) = doc.layer(e.layer) {
+            if !l.visible || l.locked {
+                continue;
+            }
+        }
+        let b = render::entity_bbox(doc, e);
+        if !b.is_valid() || !b.expanded(tol * 2.0).intersects(&area) {
+            continue;
+        }
+        let ausgewaehlt = selected.contains(&e.id);
+        for sg in render::entity_segments(doc, e) {
+            segs.push((sg, e.id, ausgewaehlt));
+        }
+        for sg in render::text_frame_segments(doc, e) {
+            segs.push((sg, e.id, ausgewaehlt));
+        }
+        if wall_edges && matches!(e.kind, EntityKind::Wall { .. }) {
+            for sg in render::wall_contour_segments(doc, e) {
+                segs.push((sg, e.id, ausgewaehlt));
+            }
+        }
+    }
+    segs
+}
+
+/// Schnittpunkte einer unbegrenzten Geraden mit einer Strecke bzw. einem Bogen.
+fn gerade_schneidet_seg(l: &Hilfslinie, sg: &Seg) -> Vec<Vec2> {
+    let (o, d) = (l.origin, l.origin + l.dir);
+    match sg {
+        Seg::Line(a, b) => line_line(o, d, *a, *b, true, false).into_iter().collect(),
+        Seg::Arc(arc) => line_circle(o, d, arc.c, arc.r)
+            .into_iter()
+            .filter(|p| {
+                let ang = (*p - arc.c).angle();
+                angle_in_arc(ang, arc.a0, arc.a1)
+            })
+            .collect(),
+    }
+}
+
+fn hilfslinien_snap_innen(
+    halte: &[HaltPunkt],
+    cursor: Vec2,
+    tol: f64,
+    segs: &[(Seg, Id, bool)],
+) -> Option<SnapHit> {
     if halte.is_empty() || tol <= 0.0 {
         return None;
     }
     let linien = hilfslinien(halte);
     let tol = tol.max(1e-6);
-    let mut kreuzungen: Vec<(f64, Vec2)> = Vec::new();
-    let mut fuesse: Vec<(f64, Vec2, Option<Id>)> = Vec::new();
+    // Exakte Punkte: Kreuzungen der Hilfslinien untereinander und mit
+    // bestehenden Strecken.
+    let mut exakt: Vec<HilfsTreffer> = Vec::new();
+    // Fußpunkte des Zeigers auf einer Hilfslinie (gleiten mit).
+    let mut fuesse: Vec<HilfsTreffer> = Vec::new();
 
     for l in &linien {
         let f = fuss_auf_gerade(cursor, l.origin, l.dir);
@@ -233,7 +336,31 @@ pub fn hilfslinien_snap(halte: &[HaltPunkt], cursor: Vec2, tol: f64) -> Option<S
                 .iter()
                 .find(|h| h.point.dist(l.origin) <= SNAP_DEDUP)
                 .and_then(|h| h.entity);
-            fuesse.push((d, f, id));
+            fuesse.push(HilfsTreffer {
+                dist: d,
+                point: f,
+                kind: SnapKind::Tracking,
+                entity: id,
+            });
+        }
+        // Schnitt mit einer bestehenden Linie: nur an nicht ausgewählten
+        // Objekten — sie bewegen sich mit, der Schnittpunkt wanderte mit (wie
+        // beim Objekt-Schnittpunkt der Fang-Engine).
+        for (sg, id, ausgewaehlt) in segs {
+            if *ausgewaehlt {
+                continue;
+            }
+            for p in gerade_schneidet_seg(l, sg) {
+                let d = p.dist(cursor);
+                if d <= tol {
+                    exakt.push(HilfsTreffer {
+                        dist: d,
+                        point: p,
+                        kind: SnapKind::Intersection,
+                        entity: Some(*id),
+                    });
+                }
+            }
         }
     }
     for i in 0..linien.len() {
@@ -250,28 +377,35 @@ pub fn hilfslinien_snap(halte: &[HaltPunkt], cursor: Vec2, tol: f64) -> Option<S
             ) {
                 let d = x.dist(cursor);
                 if d <= tol {
-                    kreuzungen.push((d, x));
+                    exakt.push(HilfsTreffer {
+                        dist: d,
+                        point: x,
+                        kind: SnapKind::Tracking,
+                        entity: None,
+                    });
                 }
             }
         }
     }
 
-    let nach_abstand =
-        |a: &(f64, Vec2), b: &(f64, Vec2)| a.0.partial_cmp(&b.0).unwrap_or(std::cmp::Ordering::Equal);
-    kreuzungen.sort_by(nach_abstand);
-    if let Some((_, p)) = kreuzungen.first() {
-        return Some(SnapHit {
-            point: *p,
-            kind: SnapKind::Tracking,
-            entity: None,
-        });
+    let nach_abstand = |a: &HilfsTreffer, b: &HilfsTreffer| {
+        a.dist
+            .partial_cmp(&b.dist)
+            .unwrap_or(std::cmp::Ordering::Equal)
+    };
+    // Exakte Punkte vor den gleitenden Fußpunkten: stehen zwei Linien im
+    // Fangradius, ist ihr Schnittpunkt gemeint, nicht die nähere Einzelachse.
+    for liste in [&mut exakt, &mut fuesse] {
+        liste.sort_by(nach_abstand);
+        if let Some(t) = liste.first() {
+            return Some(SnapHit {
+                point: t.point,
+                kind: t.kind,
+                entity: t.entity,
+            });
+        }
     }
-    fuesse.sort_by(|a, b| a.0.partial_cmp(&b.0).unwrap_or(std::cmp::Ordering::Equal));
-    fuesse.first().map(|(_, p, id)| SnapHit {
-        point: *p,
-        kind: SnapKind::Tracking,
-        entity: *id,
-    })
+    None
 }
 
 /// Sucht den besten Fangpunkt in der Nähe des Cursors.
@@ -783,8 +917,10 @@ pub fn snap_constrained_mit_halte(
         };
     }
 
-    // 2. Hilfslinien des erweiterten Punktfangs.
-    if let Some(hit) = hilfslinien_snap(halte, cursor, tol) {
+    // 2. Hilfslinien des erweiterten Punktfangs — samt ihrem Schnitt mit
+    //    bestehenden Linien (der Punkt, an dem eine Hilfslinie eine Wand
+    //    kreuzt, ist sonst nicht zu treffen).
+    if let Some(hit) = hilfslinien_snap_mit_geometrie(doc, halte, cursor, tol, ignore, selected) {
         return SnapResolution {
             point: hit.point,
             source: SnapSource::Object(hit.kind),
