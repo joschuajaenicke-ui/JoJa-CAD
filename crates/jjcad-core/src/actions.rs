@@ -153,6 +153,7 @@ pub const ACTIONS: &[ActionDef] = &[
     act!("view.settings", "Einstellungen", Ansicht, "settings", "", "Einheiten und Raster", false),
     act!("view.hotbar_next", "Hotbar-Vorlage", Ansicht, "hotbar", "y", "Nächste Hotbar-Vorlage", false),
     act!("view.help", "Hilfe", Hilfe, "help", "f1", "Tastenbelegung und Kurzhilfe", false),
+    act!("view.fullscreen", "Vollbild", Ansicht, "fullscreen", "f11", "Vollbild ein-/ausschalten (F11)", false),
     act!("edit.repeat", "Wiederholen", Aendern, "repeat", " ", "Letzten Befehl wiederholen", false),
 
     // Interne/fortgeschrittene Aktionen (MCP + Eigenschaften-Panel)
