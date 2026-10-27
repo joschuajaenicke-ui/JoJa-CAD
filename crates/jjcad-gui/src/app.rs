@@ -65,13 +65,41 @@ impl Default for View {
     }
 }
 
+/// Schlüssel der zwischengespeicherten Anzeigeliste.
+///
+/// Die Anzeigeliste hängt vom Bearbeitungsraum ab (`Document::space`): im
+/// Modell stehen die Zeichnungsobjekte, im Papierraum Blattrahmen und
+/// Schriftfeld. Beides sind völlig verschiedene Listen bei gleicher Revision —
+/// ohne den Raum im Schlüssel wird ein Papierraum-Stand als Modell gezeichnet
+/// und die Zeichnung ist unsichtbar (T0007).
+#[derive(Clone, Copy, Debug)]
+pub struct DrawCacheKey {
+    pub rev: u64,
+    /// Pixel pro Millimeter — Strichmuster und Kantenbreiten hängen daran.
+    pub zoom: f64,
+    /// Beschriftungsmaßstab (Papier-mm → Welt-mm)
+    pub annot: f64,
+    /// Bearbeitungsraum: `None` = Modell, `Some(Blatt)` = Papierraum
+    pub space: Option<Id>,
+}
+
+impl DrawCacheKey {
+    /// Gleiche Zeichnung, gleiche Ansicht, gleicher Raum?
+    pub fn matches(&self, other: &Self) -> bool {
+        self.rev == other.rev
+            && (self.zoom - other.zoom).abs() < 1e-9
+            && (self.annot - other.annot).abs() < 1e-9
+            && self.space == other.space
+    }
+}
+
 pub struct DocTab {
     pub session: Session,
     pub tab: TabKind,
     pub view_model: View,
     pub sheet_views: HashMap<Id, View>,
     pub rev: u64,
-    pub cache: Option<(u64, f64, f64, DisplayList)>,
+    pub cache: Option<(DrawCacheKey, DisplayList)>,
     pub hover: Option<Id>,
     pub selected_viewport: Option<Id>,
 }
@@ -862,7 +890,7 @@ impl App {
                 }
                 "sheetview" => {
                     if let Some(s) = self.doc().sheets.first().map(|s| s.id) {
-                        self.tab_mut().tab = TabKind::Sheet(s);
+                        self.switch_tab(TabKind::Sheet(s));
                     }
                 }
                 "toolpreview" => {
@@ -978,6 +1006,35 @@ impl App {
         &self.session().selection
     }
 
+    /// Reiter wechseln und den Bearbeitungsraum **im selben Frame** nachziehen.
+    ///
+    /// `sync_space` läuft sonst erst zu Beginn des nächsten Frames. Dann sähe die
+    /// Zeichenfläche im Wechselframe noch den alten Raum und legte dessen
+    /// Anzeigeliste unter dem Schlüssel des neuen Raums ab. Nach dem Zoom in der
+    /// Druckvorschau blieb so der Blattrahmen im Modell stehen und die Zeichnung
+    /// war unsichtbar, bis die Ansicht bewegt wurde (T0007).
+    pub fn switch_tab(&mut self, kind: TabKind) {
+        if self.tab().tab == kind {
+            return;
+        }
+        self.tab_mut().tab = kind;
+        self.tool = None;
+        self.session_mut().clear_selection();
+        self.sync_space();
+        match kind {
+            TabKind::Model => {
+                if self.tab().view_model.zoom < 1e-4 {
+                    self.fit_view();
+                }
+            }
+            TabKind::Sheet(id) => {
+                if !self.tab().sheet_views.contains_key(&id) {
+                    self.fit_view();
+                }
+            }
+        }
+    }
+
     /// Bearbeitungsraum diesem Reiter nachziehen (Modell ↔ Papierraum).
     /// Wird einmal je Frame aufgerufen; die Action-Schicht liest ihn aus dem
     /// Dokument, damit GUI, Tastatur und MCP denselben Weg gehen.
@@ -992,6 +1049,8 @@ impl App {
             self.ghost = None;
             self.tab_mut().selected_viewport = None;
             self.tab_mut().hover = None;
+            // Die Anzeigeliste des alten Raums gilt hier nicht mehr.
+            self.tab_mut().cache = None;
             // Der Papierraum ist in Blatt-Millimetern gezeichnet: dort ist eine
             // Texthöhe von 2,5 mm richtig, nicht die 250 mm des Modells.
             let modell_hoehe = self.doc().settings.text_height;
@@ -1973,29 +2032,13 @@ impl App {
             resp.on_hover_text("Neues Blatt");
         });
         if let Some(kind) = switch_to {
-            if self.tab().tab != kind {
-                self.tab_mut().tab = kind;
-                self.tool = None;
-                self.session_mut().clear_selection();
-                match kind {
-                    TabKind::Model => {
-                        if self.tab().view_model.zoom < 1e-4 {
-                            self.fit_view();
-                        }
-                    }
-                    TabKind::Sheet(id) => {
-                        if !self.tab().sheet_views.contains_key(&id) {
-                            self.fit_view();
-                        }
-                    }
-                }
-            }
+            self.switch_tab(kind);
         }
         if let Some(id) = close_sheet {
             if self.doc().sheets.len() > 1 {
                 let _ = self.session_mut().execute("sheet.delete", &serde_json::json!({"sheet": id}));
                 if self.tab().tab == TabKind::Sheet(id) {
-                    self.tab_mut().tab = TabKind::Model;
+                    self.switch_tab(TabKind::Model);
                 }
                 self.tab_mut().sheet_views.remove(&id);
                 self.mark_changed();

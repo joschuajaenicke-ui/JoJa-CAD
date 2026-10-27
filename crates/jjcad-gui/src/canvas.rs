@@ -1,6 +1,6 @@
 //! Zeichnungsfläche: Anzeige, Fang, Werkzeugbedienung, Navigation.
 
-use crate::app::{screen_to_world, world_to_screen, App, TabKind, Tool, ToolPhase, View};
+use crate::app::{screen_to_world, world_to_screen, App, DrawCacheKey, TabKind, Tool, ToolPhase, View};
 use crate::theme::Palette;
 use egui::{Align2, Color32, FontId, Painter, Pos2, Rect, Response, Sense, Shape, Stroke, Ui, Vec2};
 use jjcad_core::actions;
@@ -740,18 +740,24 @@ pub fn show(app: &mut App, ui: &mut Ui) {
 }
 
 fn display_list(app: &mut App) -> DisplayList {
-    let annot = app.doc().settings.annotation_scale;
-    let rev = app.tab().rev;
-    let zoom = app.current_view().zoom;
+    // Der Schlüssel enthält den Bearbeitungsraum: im Modell und im Papierraum
+    // entstehen bei gleicher Revision völlig verschiedene Listen. Fehlte er,
+    // wurde ein Papierraum-Stand als Modell gezeichnet (T0007).
+    let key = DrawCacheKey {
+        rev: app.tab().rev,
+        zoom: app.current_view().zoom,
+        annot: app.doc().settings.annotation_scale,
+        space: app.session().space(),
+    };
     let doc = app.doc().clone();
-    if let Some((r, z, a, dl)) = &app.tab().cache {
-        if *r == rev && (*z - zoom).abs() < 1e-9 && (*a - annot).abs() < 1e-9 {
+    if let Some((k, dl)) = &app.tab().cache {
+        if k.matches(&key) {
             return dl.clone();
         }
     }
     let ctx = render::RenderCtx::new(&doc);
     let dl = render::render_document(&ctx);
-    app.tab_mut().cache = Some((rev, zoom, annot, dl.clone()));
+    app.tab_mut().cache = Some((key, dl.clone()));
     dl
 }
 
@@ -5079,6 +5085,142 @@ mod tests_papierraum {
             (app.options.text_height - app.doc().settings.text_height).abs() < 1e-9,
             "Modell-Texthöhe muss zurückkommen"
         );
+    }
+}
+
+/// Anzeige beim Reiterwechsel Modell ↔ Papierraum (Ticket T0007): Nach dem
+/// Zoom in der Druckvorschau war die Zeichnung unsichtbar und im Ursprung stand
+/// ein winziger Blattrahmen — bis die Ansicht bewegt wurde.
+#[cfg(test)]
+mod tests_raumwechsel_anzeige {
+    use super::*;
+
+    /// Eine Modelllinie 3000 mm breit; das Blatt ist 420 mm breit. Die
+    /// Ausdehnung der Anzeigeliste sagt damit eindeutig, welcher Raum
+    /// gezeichnet wurde. (Aktionskoordinaten sind Meter: 3.0 = 3000 mm.)
+    fn app_mit_linie_und_blatt() -> (App, Id) {
+        let mut app = App::with_ctx(egui::Context::default());
+        app.session_mut()
+            .execute(
+                "draw.line",
+                &serde_json::json!({"a": [0.0, 0.0], "b": [3.0, 0.0]}),
+            )
+            .expect("Linie im Modell");
+        let sid = app.doc().sheets[0].id;
+        (app, sid)
+    }
+
+    /// Zoom im Papierraum ändern — genau das verwirft den Anzeige-Cache, und
+    /// nur dann trat der Fehler auf.
+    fn blattzoom_aendern(app: &mut App) {
+        let mut v = app.current_view();
+        v.zoom *= 3.0;
+        app.set_view(v);
+    }
+
+    fn ist_modelllinie(dl: &DisplayList, was: &str) {
+        assert!(dl.bbox.is_valid(), "{was}: Anzeigeliste ist leer");
+        assert!(
+            (dl.bbox.width() - 3000.0).abs() < 1.0,
+            "{was}: Modelllinie (3000 mm) erwartet, gezeichnet wurde {} mm breit",
+            dl.bbox.width()
+        );
+    }
+
+    /// `switch_tab` hält Reiter und Bearbeitungsraum zusammen — nicht erst der
+    /// nächste Frame. Sonst zeichnet die Fläche im Wechselframe den alten Raum
+    /// und legt dessen Liste unter dem neuen Schlüssel ab (T0007).
+    #[test]
+    fn reiterwechsel_zieht_den_bearbeitungsraum_mit() {
+        let (mut app, sid) = app_mit_linie_und_blatt();
+        app.switch_tab(TabKind::Sheet(sid));
+        assert!(app.im_papierraum(), "Blattreiter muss den Papierraum setzen");
+        assert_eq!(app.session().space(), Some(sid));
+
+        app.switch_tab(TabKind::Model);
+        assert!(!app.im_papierraum(), "Modellreiter muss den Papierraum verlassen");
+        assert_eq!(app.session().space(), None);
+    }
+
+    /// Der gemeldete Ablauf: im Blatt zoomen, zurück ins Modell — die Zeichnung
+    /// muss sofort wieder da sein, ohne die Ansicht zu bewegen.
+    #[test]
+    fn nach_blattzoom_zeigt_das_modell_wieder_die_zeichnung() {
+        let (mut app, sid) = app_mit_linie_und_blatt();
+        app.switch_tab(TabKind::Sheet(sid));
+        blattzoom_aendern(&mut app);
+
+        app.switch_tab(TabKind::Model);
+
+        assert_eq!(app.session().space(), None, "Modell ist der Bearbeitungsraum");
+        ist_modelllinie(&display_list(&mut app), "nach Reiterwechsel");
+    }
+
+    /// Wechselframe einzeln nachgestellt: Reiter steht schon auf „Modell“, der
+    /// Bearbeitungsraum hängt noch nach. Die dort entstehende Liste darf den
+    /// nächsten Frame nicht überleben.
+    #[test]
+    fn zwischengespeicherte_papierraumliste_wird_nicht_als_modell_gezeichnet() {
+        let (mut app, sid) = app_mit_linie_und_blatt();
+        app.switch_tab(TabKind::Sheet(sid));
+        blattzoom_aendern(&mut app);
+
+        app.tab_mut().tab = TabKind::Model; // Raum absichtlich noch nicht nachgezogen
+        let _ = display_list(&mut app);
+
+        app.sync_space();
+        ist_modelllinie(&display_list(&mut app), "Frame nach dem Raumwechsel");
+    }
+
+    /// Wechselt nur der Bearbeitungsraum (gleiche Revision, gleiche Ansicht),
+    /// ist die alte Liste ungültig — im Modell stand die Zeichnung, im
+    /// Papierraum steht der Blattrahmen.
+    #[test]
+    fn raumwechsel_allein_macht_die_anzeigeliste_ungueltig() {
+        let (mut app, sid) = app_mit_linie_und_blatt();
+        ist_modelllinie(&display_list(&mut app), "Modell");
+
+        app.session_mut().set_space(Some(sid)); // Cache bleibt bestehen
+
+        let blatt = display_list(&mut app);
+        assert!(blatt.bbox.is_valid(), "Blatt-Anzeigeliste ist leer");
+        // Papierbereich (Blattrahmen samt Rand, deutlich unter 1000 mm) —
+        // nicht die 3000-mm-Modelllinie aus dem Zwischenspeicher.
+        assert!(
+            blatt.bbox.width() < 1000.0 && blatt.bbox.width() > 200.0,
+            "Blattrahmen erwartet, gezeichnet wurde {} mm breit",
+            blatt.bbox.width()
+        );
+    }
+
+    /// Der Anzeige-Schlüssel trennt die Räume — gleiche Revision und gleiche
+    /// Ansicht ergeben im Modell und im Papierraum verschiedene Listen.
+    #[test]
+    fn anzeige_schluessel_trennt_modell_und_papierraum() {
+        let modell = DrawCacheKey {
+            rev: 7,
+            zoom: 0.08,
+            annot: 100.0,
+            space: None,
+        };
+        let blatt = DrawCacheKey {
+            rev: 7,
+            zoom: 0.08,
+            annot: 100.0,
+            space: Some(3),
+        };
+        assert!(!modell.matches(&blatt), "Papierraum gilt sonst als Modell");
+        assert!(!blatt.matches(&modell));
+        assert!(modell.matches(&modell));
+        assert!(!modell.matches(&DrawCacheKey { rev: 8, ..modell }));
+        assert!(!modell.matches(&DrawCacheKey {
+            zoom: 0.16,
+            ..modell
+        }));
+        assert!(!modell.matches(&DrawCacheKey {
+            annot: 50.0,
+            ..modell
+        }));
     }
 }
 
