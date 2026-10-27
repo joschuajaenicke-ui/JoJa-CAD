@@ -181,7 +181,9 @@ Mit dem Nutzer abgestimmt — nicht „verbessern“:
   (0,0)…(B,H) fangen im Papierraum als „Blattecke“.
 - **Mauszeiger** ist ein durchgehendes Fadenkreuz bis zum Bildschirmrand.
 - **Einfügen** (Block/Zwischenablage): Vorschau oben rechts am Zeiger, `R` dreht,
-  `S` spiegelt, Klick bestätigt.
+  `S` spiegelt, Klick bestätigt. Die Zwischenablage trägt ihren **Basispunkt** mit:
+  „Kopieren mit Basispunkt" nimmt den geklickten Punkt, „Kopieren" automatisch die
+  untere linke Ecke der Auswahl — beim Einfügen steht dieser Punkt am Zeiger.
 - **Rechtsklickmenüs** bleiben offen, wenn der Zeiger in die Zeichenfläche kommt.
 - **Eigenschaften-Panel**: gleiche Zeilen (96 px Label, 150 px Wert) beim Platzieren
   *und* bei Auswahl; bei Mehrfachauswahl nur gemeinsame Felder, abweichende Werte
