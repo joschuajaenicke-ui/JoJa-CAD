@@ -99,15 +99,28 @@ impl Chat {
     }
 
     /// Eingabe des Nutzers protokollieren (wird noch nicht ausgewertet).
-    pub fn eingabe_senden(&mut self, jetzt: f64) {
+    /// Liefert `false`, wenn nichts zu senden war (leeres Feld).
+    pub fn eingabe_senden(&mut self, jetzt: f64) -> bool {
         let text = self.eingabe.trim().to_string();
         if text.is_empty() {
-            return;
+            return false;
         }
         self.eingabe.clear();
         // Die eigene neue Zeile steht immer unten.
         self.scroll = 0;
         self.sagen_art(jetzt, text, true);
+        true
+    }
+
+    /// Enter in der Eingabezeile: Text protokollieren und das Protokoll
+    /// schließen — nach einer Eingabe gehört der Blick zurück auf die
+    /// Zeichnung. Leeres Feld schließt nichts (es gab keine Eingabe).
+    pub fn eingabe_abschicken(&mut self, jetzt: f64) -> bool {
+        if !self.eingabe_senden(jetzt) {
+            return false;
+        }
+        self.schliessen();
+        true
     }
 
     /// Öffnen und Schließen. Beim Öffnen bekommt die Eingabezeile sofort den
@@ -249,7 +262,7 @@ pub fn zeichnen_offen(chat: &Chat, p: &Painter, rect: Rect) {
     p.text(
         Pos2::new(rect.left() + RAND_X, rect.bottom() - 8.0),
         Align2::LEFT_BOTTOM,
-        format!("^ oder ESC schließt · {oben} · Eingaben werden nur mitgeschrieben"),
+        format!("^ oder ESC schließt · {oben} · Enter schickt ab und schließt"),
         FontId::proportional(10.0),
         Color32::from_rgba_unmultiplied(0x1A, 0x1D, 0x22, 90),
     );
@@ -338,8 +351,12 @@ pub fn fenster(app: &mut App, ctx: &egui::Context) {
                 let enter = ctx.input(|i| i.key_pressed(egui::Key::Enter));
                 if resp.lost_focus() && enter {
                     let jetzt = ctx.input(|i| i.time);
-                    app.chat.eingabe_senden(jetzt);
-                    resp.request_focus();
+                    if app.chat.eingabe_abschicken(jetzt) {
+                        // Protokoll zu, Tastatur zurück an die Zeichenfläche.
+                        ctx.memory_mut(|m| m.stop_text_input());
+                    } else {
+                        resp.request_focus();
+                    }
                 }
             });
         });
@@ -393,13 +410,38 @@ mod tests {
     fn eingabe_wird_protokolliert() {
         let mut chat = Chat::neu();
         chat.eingabe = "   ".into();
-        chat.eingabe_senden(0.0);
+        assert!(!chat.eingabe_senden(0.0));
         assert!(chat.nachrichten.is_empty());
         chat.eingabe = "Hallo".into();
-        chat.eingabe_senden(1.0);
+        assert!(chat.eingabe_senden(1.0));
         assert_eq!(chat.nachrichten.len(), 1);
         assert!(chat.nachrichten[0].eingabe);
         assert!(chat.eingabe.is_empty());
+    }
+
+    /// Nach dem Abschicken ist das Protokoll wieder zu — die Meldung steht
+    /// trotzdem im Chat und ist unten zu sehen. Ein leeres Feld schließt nichts.
+    #[test]
+    fn abschicken_schliesst_das_protokoll() {
+        let mut chat = Chat::neu();
+        chat.umschalten();
+        assert!(chat.offen);
+        // leeres Feld: kein Senden, bleibt offen
+        assert!(!chat.eingabe_abschicken(1.0));
+        assert!(chat.offen);
+        // mit Text: protokolliert und geschlossen
+        chat.eingabe = "Wandstärke 240".into();
+        assert!(chat.eingabe_abschicken(2.0));
+        assert!(!chat.offen);
+        assert!(!chat.fokus);
+        assert_eq!(chat.nachrichten.len(), 1);
+        assert!(chat.nachrichten[0].eingabe);
+        assert!(chat.eingabe.is_empty());
+        // Die neue Zeile steht in der Ausgabe unten und ist sichtbar
+        let sichtbar = chat.sichtbare(2.5);
+        assert_eq!(sichtbar.len(), 1);
+        assert_eq!(sichtbar[0].0.text, "Wandstärke 240");
+        assert!(sichtbar[0].1 > 0.9);
     }
 
     /// Das Protokoll wächst nicht unbegrenzt.
