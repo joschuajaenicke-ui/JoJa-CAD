@@ -164,7 +164,10 @@ Mit dem Nutzer abgestimmt — nicht „verbessern“:
   (maßstabsgetreu wie im Druck). Strichmuster folgt demselben Schalter.
 - **Wandgehrung** über die *Innenwinkel*-Halbierende (`away - outward`);
   Füllungen vor allen Linien zeichnen, damit keine Umrandung überdeckt wird.
-- **Auswahl** färbt nur blau ein — kein zusätzlicher Auswahlrahmen.
+- **Auswahl** färbt nur blau ein — kein zusätzlicher Auswahlrahmen. **Ausnahme Text**:
+  der Text hat einen unsichtbaren Rahmen (derselbe Kasten wie in der Einfüge-Vorschau), der
+  bei Auswahl gezeichnet wird und dessen Ecken/Kantenmitten fangen. Text wird **nicht** mit
+  der gedrückten Maustaste verschoben — nur über das Werkzeug „Verschieben“.
 - **Raster-Chip** schaltet Anzeige *und* Rasterfang gemeinsam.
 - **Ansichtsfenster** wie Rechtecke, beweglich nur mit `V`, exakte Eingabe X/Y/B/H.
 - **Druckvorschau = Papierraum**: gleiche Werkzeuge wie im Modell. Der Bearbeitungsraum

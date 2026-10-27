@@ -108,7 +108,7 @@ impl Prim {
             Shape::Fill { outer, .. } => BBox::from_points(outer),
             Shape::Dot { p, r } => BBox::new(*p - v(*r, *r), *p + v(*r, *r)),
             Shape::Text(t) => {
-                let w = estimate_text_width(&t.text, t.height);
+                let w = text_box_width(&t.text, t.height);
                 let h = t.height;
                 let (ax, ay) = match t.align {
                     TextAlignH::Left => (0.0, 0.0),
@@ -135,8 +135,38 @@ impl Prim {
 }
 
 /// Grobe Textbreite (Faktor 0,58 der Höhe je Zeichen).
+///
+/// Für Bemaßungs- und Kotenbeschriftungen, die mittig an ihrer Bezugslinie
+/// sitzen: dort zählt nur ein gleichmäßiger Mittelwert.
 pub fn estimate_text_width(text: &str, height: f64) -> f64 {
     text.chars().count() as f64 * height * 0.58
+}
+
+/// Breite des Textkastens: enger am gezeichneten Text als
+/// [`estimate_text_width`], weil der Rahmen die Schrift wirklich umschließen
+/// muss.
+///
+/// Ein fester Faktor je Zeichen schneidet breite Buchstaben ab — „WOHNEN“ war
+/// im Rahmen sichtbar zu schmal, das letzte N lag außerhalb. Deshalb grobe
+/// Breitenklassen in Vielfachen der Texthöhe; lieber eine Spur zu breit als
+/// durch die Buchstaben geschnitten.
+pub fn text_box_width(text: &str, height: f64) -> f64 {
+    text.chars().map(|c| char_width_factor(c) * height).sum()
+}
+
+/// Breite eines Zeichens in Vielfachen der Texthöhe (Noto Sans, grob).
+fn char_width_factor(c: char) -> f64 {
+    match c {
+        ' ' => 0.50,
+        'i' | 'l' | 'j' | 't' | 'f' | 'r' | 'I' | '1' | '.' | ',' | ';' | ':' | '\'' | '|' | '!' => {
+            0.40
+        }
+        'm' | 'w' => 1.05,
+        'M' | 'W' => 1.15,
+        c if c.is_ascii_digit() || c.is_uppercase() => 0.90,
+        c if c.is_lowercase() => 0.72,
+        _ => 0.60,
+    }
 }
 
 #[derive(Clone, Debug, Default)]
@@ -326,6 +356,36 @@ pub fn entity_bbox(doc: &Document, e: &Entity) -> BBox {
     let mut dl = DisplayList::default();
     render_entity(&ctx, e, Affine::IDENTITY, &mut dl, 0);
     dl.bbox
+}
+
+/// Unsichtbarer Rahmen eines Textes: die vier Ecken seiner Bounding-Box
+/// (links unten, rechts unten, rechts oben, links oben).
+///
+/// Derselbe Kasten erscheint in der Einfüge-Vorschau; bei Auswahl wird er
+/// gezeichnet, und seine Ecken und Kantenmitten sind Fangpunkte. Eine Quelle
+/// für Anzeige und Fang, damit Rahmen und Fangpunkt nie auseinanderlaufen.
+pub fn text_frame(doc: &Document, e: &Entity) -> Option<[Vec2; 4]> {
+    if !matches!(e.kind, EntityKind::Text { .. }) {
+        return None;
+    }
+    let b = entity_bbox(doc, e);
+    if !b.is_valid() {
+        return None;
+    }
+    Some([
+        b.min,
+        Vec2::new(b.max.x, b.min.y),
+        b.max,
+        Vec2::new(b.min.x, b.max.y),
+    ])
+}
+
+/// Kanten des Textrahmens als Segmente (für den Punktfang).
+pub fn text_frame_segments(doc: &Document, e: &Entity) -> Vec<Seg> {
+    let Some(k) = text_frame(doc, e) else {
+        return Vec::new();
+    };
+    (0..4).map(|i| Seg::Line(k[i], k[(i + 1) % 4])).collect()
 }
 
 /// Bounding-Box inklusive Layer-Sichtbarkeit (für Zoom Extents).

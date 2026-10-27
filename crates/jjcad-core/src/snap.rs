@@ -239,6 +239,12 @@ fn snap_candidates_alle(
         for sg in render::entity_segments(doc, e) {
             segs.push((sg, e.id, ausgewaehlt));
         }
+        // Text: der unsichtbare Rahmen ist mit seinen Ecken (END), Kantenmitten
+        // (MIT) und Kanten (NÄC) fangbar — er ist der Kasten, den die
+        // Einfüge-Vorschau zeigt und der bei Auswahl gezeichnet wird.
+        for sg in render::text_frame_segments(doc, e) {
+            segs.push((sg, e.id, ausgewaehlt));
+        }
         // Wandkörper: die umgrenzenden Linien (Längskanten, Gehrungs-/Stirn-
         // ecken, Laibungen) liefern ebenfalls Fangpunkte. Ohne diesen Zweig
         // kennt der Fang nur die Wandachse. Getrennt schaltbar über
