@@ -86,6 +86,7 @@ Steht rechts „nicht", dann ist das Wort im Projekt verpönt (auch in der Oberf
 | **Inventar** | Seitliche Sammlung von Blöcken und Funktionen (mit `E`) | Bibliothek, Palette |
 | **Eigenschaften** | Das rechte Seitenpanel mit Feldern zum ausgewählten Objekt **oder** zum nächsten Element | Einstellungen (das ist der Dialog), Seitenleiste |
 | **Einstellungen** | Der Dialog (`Datei → Einstellungen`) für globale Vorgaben | Optionen, Preferences |
+| **Dateidialog** | Das Fenster zur Auswahl von Dateien beim Öffnen/Speichern/Exportieren. Vorgabe ist der **Systemdialog** des Betriebssystems; „Eingebaut“ meint den Dialog von JoJa-CAD | Dateiauswahl, File-Picker, Chooser |
 | **Dropdown** | Auswahlfeld mit Klappe; im ganzen Programm gleich breit (150 px) und gleicher Pfeil | Auswahlliste, Combo |
 | **Freier Wert** | Zahlenfeld neben einem Dropdown für einen selbst eingegebenen Wert | „eigener Wert" (verpönt) |
 | **Statusleiste** | Die Zeile ganz unten: Koordinaten, Fang, Ortho, Raster, Maßstab, Build | Fußzeile |
