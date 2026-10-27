@@ -32,6 +32,8 @@ pub fn from_json(s: &str) -> Result<Document, String> {
             doc.version, FORMAT_VERSION
         ));
     }
+    // Rasterweite aus älteren Dateien in den brauchbaren Bereich holen
+    doc.settings.snap.grid_step = crate::model::clamp_grid_step(doc.settings.snap.grid_step);
     // Fehlende Layer reparieren
     if doc.layers.is_empty() {
         doc.layers.push(Layer::new(1, "Waende", crate::style::Color::BLACK));
