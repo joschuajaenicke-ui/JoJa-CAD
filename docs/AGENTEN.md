@@ -188,9 +188,12 @@ Mit dem Nutzer abgestimmt — nicht „verbessern“:
   als `*variiert*`; nicht editierbare Werte (Länge, Fläche) anzeigen.
 - **Polarfang** 45° (Toleranz 6°); Fangmodi END, SCHN, MIT, ZEN, QUA, LOT, NÄC, RAS, POL.
 - **Chat**: Meldungen stehen unten links in der Zeichenfläche und verblassen
-  nach einigen Sekunden; `T` öffnet das Protokoll (scrollbar, Zeichnung blass),
-  `T`/`ESC` schließen es. Eingaben des Nutzers werden nur protokolliert. Es gibt
-  keinen eigenen Toast mehr, und das Text-Werkzeug liegt nicht mehr auf `T`.
+  nach einigen Sekunden; `^` (die Taste unter ESC) öffnet das Protokoll im
+  selben Bild — Meldungen laufen nach oben, unten die Eingabezeile mit Fokus,
+  Mausrad blättert, die Zeichnung wird leicht blass. `^`/`ESC` schließen es.
+  Eingaben des Nutzers werden nur protokolliert. Es gibt keinen eigenen Toast
+  mehr; das Text-Werkzeug hat kein Kürzel. Bei offenem Protokoll bleibt der
+  Mauszeiger sichtbar (in der Eingabezeile als Textcursor).
 - Wände: Farbe (Linie) und Füllung (Fläche) getrennt; Schraffuren inklusive
   **Dämmung** (Mäander); Ausrichtung Links/Mittig/Rechts.
 - **Auswahl über Rechteck** prüft echte Geometrie (Segmente, Wandkörper),

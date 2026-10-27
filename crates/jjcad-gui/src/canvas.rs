@@ -628,7 +628,9 @@ pub fn show(app: &mut App, ui: &mut Ui) {
     // Betriebssystem-Zeiger ausblenden: die Fläche zeichnet ihr eigenes Fadenkreuz.
     // Nicht, solange ein Menü offen ist — das Ausblenden löst ein Zeiger-Ereignis aus,
     // an dem egui das Kontextmenü schließt.
-    if resp.hovered() || resp.dragged_by(egui::PointerButton::Primary) {
+    // Bei offenem Protokoll bleibt der Mauszeiger stehen: die Zeichenfläche
+    // nimmt keine Eingabe an, und in der Eingabezeile wird er zum Textcursor.
+    if !app.chat.offen && (resp.hovered() || resp.dragged_by(egui::PointerButton::Primary)) {
         ui.ctx().set_cursor_icon(egui::CursorIcon::None);
     }
     let view = app.current_view();

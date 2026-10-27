@@ -1763,15 +1763,18 @@ impl App {
                 self.escape_pressed();
             }
         }
-        // T öffnet bzw. schließt das Chat-Protokoll unten links. Die Taste war
-        // früher das Text-Werkzeug; dort ist das Kürzel entfallen (T0009).
-        if !typing && ctx.input(|i| i.key_pressed(egui::Key::T)) {
+        // ^ (Taste unter ESC) öffnet bzw. schließt das Chat-Protokoll unten
+        // links. Schließen gilt auch bei fokussierter Eingabezeile, sonst käme
+        // man mit der Tastatur nicht mehr aus dem Feld heraus.
+        if ctx.input(|i| i.key_pressed(crate::chat::TASTE_OEFFNEN))
+            && (self.chat.offen || !typing)
+        {
             if self.chat.offen {
                 self.chat.schliessen();
+                ctx.memory_mut(|m| m.stop_text_input());
             } else {
                 self.chat.umschalten();
             }
-            ctx.memory_mut(|m| m.stop_text_input());
             return;
         }
         // Solange das Protokoll offen ist, gehört die Tastatur dem Chat:
