@@ -196,8 +196,9 @@ Mit dem Nutzer abgestimmt — nicht „verbessern“:
 - **Chat**: Meldungen stehen unten links in der Zeichenfläche und verblassen
   nach einigen Sekunden; `^` (die Taste unter ESC) öffnet das Protokoll im
   selben Bild — Meldungen laufen nach oben, unten die Eingabezeile mit Fokus,
-  Mausrad blättert, die Zeichnung wird leicht blass. `^`/`ESC` schließen es.
-  Eingaben des Nutzers werden nur protokolliert. Es gibt keinen eigenen Toast
+  Mausrad blättert, die Zeichnung wird leicht blass. `^`/`ESC` schließen es,
+  Enter schickt die Eingabe ab und schließt ebenfalls (sie steht dann als Zeile
+  `› …` im Chat). Eingaben des Nutzers werden nur protokolliert. Es gibt keinen eigenen Toast
   mehr; das Text-Werkzeug hat kein Kürzel. Bei offenem Protokoll bleibt der
   Mauszeiger sichtbar (in der Eingabezeile als Textcursor).
 - **Chat-Schema** (eine Form für alle Funktionen): `<Werkzeug> · <Schritt>` als
