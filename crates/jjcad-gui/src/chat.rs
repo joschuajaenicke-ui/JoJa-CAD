@@ -3,13 +3,15 @@
 //! Die frühere Statuszeile, die den Nutzer zu einer Eingabe aufgefordert hat,
 //! ist verschwunden; seitdem fehlt die Rückmeldung. Der Chat übernimmt sie:
 //! geschlossen stehen die letzten Meldungen transparent unten links über der
-//! Zeichnung und verblassen nach einigen Sekunden, `T` öffnet das vollständige
-//! Protokoll (scrollbar, Zeichnung blass). Eingaben des Nutzers werden noch
-//! nicht ausgewertet, sondern nur protokolliert.
+//! Zeichnung und verblassen nach einigen Sekunden. `T` öffnet das vollständige
+//! Protokoll — im **selben** Bild wie die Ausgabe, ohne eigenes Fenster: die
+//! Meldungen reichen weiter nach oben, unten steht die Eingabezeile, die wie
+//! eine Meldung aussieht. Eingaben des Nutzers werden noch nicht ausgewertet,
+//! sondern nur protokolliert.
 
 use crate::app::App;
 use crate::theme::Palette;
-use egui::{Align, Align2, Color32, FontId, Frame, Layout, Margin, Painter, Pos2, Rect, RichText, Rounding, Stroke};
+use egui::{Align2, Color32, FontId, Painter, Pos2, Rect, RichText, Stroke};
 
 /// So lange bleibt eine Meldung im geschlossenen Zustand voll sichtbar (s).
 pub const HALTEN_S: f64 = 3.0;
@@ -19,8 +21,22 @@ pub const VERBLASSEN_S: f64 = 7.0;
 pub const MAX_NACHRICHTEN: usize = 500;
 /// Höchstzahl gleichzeitig sichtbarer Meldungen im geschlossenen Zustand.
 pub const SICHTBAR: usize = 6;
-/// Zeilenabstand der transparenten Meldungen (px).
+/// Zeilenabstand der Meldungen (px).
 const ZEILE_H: f32 = 19.0;
+/// Schriftgröße der Meldungen — für Ausgabe, Protokoll und Eingabe dieselbe.
+const SCHRIFT: f32 = 12.5;
+/// Linker Rand über der Zeichenfläche.
+const RAND_X: f32 = 18.0;
+
+/// Textfarbe der Anwendungsmeldungen (dunkel auf Papier).
+fn text_farbe() -> Color32 {
+    Color32::from_rgb(0x1A, 0x1D, 0x22)
+}
+
+/// Farbe der Nutzereingaben (abgesetzt, sonst gleiche Form).
+fn eingabe_farbe() -> Color32 {
+    Color32::from_rgb(0x1F, 0x63, 0x9E)
+}
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct Nachricht {
@@ -36,6 +52,8 @@ pub struct Chat {
     pub offen: bool,
     pub nachrichten: Vec<Nachricht>,
     pub eingabe: String,
+    /// Wie viele Zeilen vom Ende zurückgeblättert ist (0 = neueste unten).
+    pub scroll: usize,
 }
 
 impl Chat {
@@ -45,6 +63,10 @@ impl Chat {
 
     /// Meldung anhängen. Alte Meldungen über `MAX_NACHRICHTEN` fallen weg.
     pub fn sagen(&mut self, jetzt: f64, text: impl Into<String>) {
+        self.sagen_art(jetzt, text, false);
+    }
+
+    fn sagen_art(&mut self, jetzt: f64, text: impl Into<String>, eingabe: bool) {
         let text = text.into();
         if text.trim().is_empty() {
             return;
@@ -52,11 +74,12 @@ impl Chat {
         self.nachrichten.push(Nachricht {
             text,
             zeit: jetzt,
-            eingabe: false,
+            eingabe,
         });
         if self.nachrichten.len() > MAX_NACHRICHTEN {
             let weg = self.nachrichten.len() - MAX_NACHRICHTEN;
             self.nachrichten.drain(0..weg);
+            self.scroll = self.scroll.saturating_sub(weg);
         }
     }
 
@@ -76,16 +99,10 @@ impl Chat {
         if text.is_empty() {
             return;
         }
-        self.nachrichten.push(Nachricht {
-            text,
-            zeit: jetzt,
-            eingabe: true,
-        });
-        if self.nachrichten.len() > MAX_NACHRICHTEN {
-            let weg = self.nachrichten.len() - MAX_NACHRICHTEN;
-            self.nachrichten.drain(0..weg);
-        }
         self.eingabe.clear();
+        // Die eigene neue Zeile steht immer unten.
+        self.scroll = 0;
+        self.sagen_art(jetzt, text, true);
     }
 
     /// Öffnen und Schließen. Die Eingabezeile bekommt absichtlich keinen
@@ -93,10 +110,18 @@ impl Chat {
     /// landen statt das Protokoll wieder zu schließen.
     pub fn umschalten(&mut self) {
         self.offen = !self.offen;
+        self.scroll = 0;
     }
 
     pub fn schliessen(&mut self) {
         self.offen = false;
+    }
+
+    /// Im Protokoll blättern: `schritt > 0` weiter zurück (ältere Zeilen).
+    pub fn blaettern(&mut self, schritt: i32, max_zeilen: usize) {
+        let hoechstens = self.nachrichten.len().saturating_sub(max_zeilen.max(1));
+        let neu = self.scroll as i64 + schritt as i64;
+        self.scroll = neu.clamp(0, hoechstens as i64) as usize;
     }
 
     /// Die im geschlossenen Zustand sichtbaren Meldungen mit ihrer Deckkraft,
@@ -140,29 +165,52 @@ pub fn deckkraft(alter: f64) -> f32 {
     }
 }
 
+/// Welche Meldungen das offene Protokoll zeigt: `(von, bis)` als Indexbereich,
+/// `bis` ausschließlich. Neueste unten, `scroll` Zeilen weiter zurück.
+pub fn protokoll_bereich(len: usize, scroll: usize, max_zeilen: usize) -> (usize, usize) {
+    let max_zeilen = max_zeilen.max(1);
+    let scroll = scroll.min(len.saturating_sub(max_zeilen));
+    let bis = len - scroll;
+    let von = bis.saturating_sub(max_zeilen);
+    (von, bis)
+}
+
+/// Wie viele Zeilen passen ins Protokoll über der Eingabezeile?
+pub fn zeilen_im_protokoll(rect: Rect) -> usize {
+    (((rect.height() - 120.0) / ZEILE_H).floor() as i64).clamp(3, 200) as usize
+}
+
+/// Eine Meldungszeile mit Umbruch zeichnen; liefert die verbrauchte Höhe.
+fn zeile(p: &Painter, x: f32, y_unten: f32, text: &str, farbe: Color32, breite: f32) -> f32 {
+    let galley = p.layout(text.to_string(), FontId::proportional(SCHRIFT), farbe, breite);
+    let h = galley.size().y;
+    p.galley(Pos2::new(x, y_unten - h), galley, farbe);
+    h
+}
+
+/// Eine Meldung samt ihrer Darstellung (Eingaben mit `›`, eigene Farbe).
+fn darstellung(n: &Nachricht) -> (String, Color32) {
+    if n.eingabe {
+        (format!("› {}", n.text), eingabe_farbe())
+    } else {
+        (n.text.clone(), text_farbe())
+    }
+}
+
 /// Meldungen unten links über der Zeichnung (geschlossener Chat).
 pub fn zeichnen_geschlossen(chat: &Chat, p: &Painter, rect: Rect, jetzt: f64) {
-    let sichtbare = chat.sichtbare(jetzt);
+    let breite = (rect.width() * 0.5).min(620.0);
     let mut y = rect.bottom() - 26.0;
-    for (n, a) in sichtbare.iter().rev() {
+    for (n, a) in chat.sichtbare(jetzt).iter().rev() {
         let alpha = (255.0 * a) as u8;
-        let farbe = if n.eingabe {
-            Color32::from_rgba_unmultiplied(0x1F, 0x63, 0x9E, alpha)
-        } else {
-            Color32::from_rgba_unmultiplied(0x1A, 0x1D, 0x22, alpha)
-        };
-        p.text(
-            Pos2::new(rect.left() + 18.0, y),
-            Align2::LEFT_BOTTOM,
-            &n.text,
-            FontId::proportional(12.5),
-            farbe,
-        );
-        y -= ZEILE_H;
+        let (text, c) = darstellung(n);
+        let farbe = Color32::from_rgba_unmultiplied(c.r(), c.g(), c.b(), alpha);
+        let h = zeile(p, rect.left() + RAND_X, y, &text, farbe, breite);
+        y -= h.max(ZEILE_H - 3.0) + 2.0;
     }
     // Dauerhafter, dezenter Hinweis auf das Protokoll
     p.text(
-        Pos2::new(rect.left() + 18.0, rect.bottom() - 8.0),
+        Pos2::new(rect.left() + RAND_X, rect.bottom() - 8.0),
         Align2::LEFT_BOTTOM,
         "T · Protokoll",
         FontId::proportional(10.0),
@@ -170,8 +218,37 @@ pub fn zeichnen_geschlossen(chat: &Chat, p: &Painter, rect: Rect, jetzt: f64) {
     );
 }
 
+/// Offenes Protokoll: dieselben Meldungen wie bei der Ausgabe, nur ohne
+/// Verblassen und weiter nach oben; unten die Eingabezeile. Kein Fenster und
+/// kein Rahmen — nur Text auf der blassen Zeichnung.
+pub fn zeichnen_offen(chat: &Chat, p: &Painter, rect: Rect) {
+    let breite = (rect.width() * 0.5).min(620.0);
+    let max_zeilen = zeilen_im_protokoll(rect);
+    let (von, bis) = protokoll_bereich(chat.nachrichten.len(), chat.scroll, max_zeilen);
+    let mut y = rect.bottom() - 44.0;
+    for n in chat.nachrichten[von..bis].iter().rev() {
+        let (text, farbe) = darstellung(n);
+        let h = zeile(p, rect.left() + RAND_X, y, &text, farbe, breite);
+        y -= h.max(ZEILE_H - 3.0) + 2.0;
+    }
+    // Hinweiszeile: blättern, schließen, Eingaben werden nur mitgeschrieben
+    // Keine Pfeil-Glyphen: die Systemschrift hat sie nicht (leere Kästen).
+    let oben = if chat.scroll > 0 {
+        format!("{} Zeilen zurück, Mausrad blättert", chat.scroll)
+    } else {
+        "Mausrad blättert".to_string()
+    };
+    p.text(
+        Pos2::new(rect.left() + RAND_X, rect.bottom() - 8.0),
+        Align2::LEFT_BOTTOM,
+        format!("T oder ESC schließt · {oben} · Eingaben werden nur mitgeschrieben"),
+        FontId::proportional(10.0),
+        Color32::from_rgba_unmultiplied(0x1A, 0x1D, 0x22, 90),
+    );
+}
+
 /// Schleier über der Zeichnung, solange das Protokoll offen ist — die
-/// Zeichnung bleibt sichtbar, tritt aber hinter den Text zurück.
+/// Zeichnung bleibt erkennbar, tritt aber hinter den Text zurück.
 pub fn schleier(rect: Rect) -> (Rect, Color32) {
     (
         rect,
@@ -179,95 +256,80 @@ pub fn schleier(rect: Rect) -> (Rect, Color32) {
             Palette::PAPER.r(),
             Palette::PAPER.g(),
             Palette::PAPER.b(),
-            200,
+            120,
         ),
     )
 }
 
-/// Offenes Protokoll: alle Meldungen, scrollbar, mit Eingabezeile.
+/// Eingabezeile des offenen Protokolls (rahmenloses Textfeld an genau der
+/// Stelle, an der die nächste Meldung stünde) und das Blättern.
 pub fn fenster(app: &mut App, ctx: &egui::Context) {
     if !app.chat.offen {
         return;
     }
     let flaeche = app.ui.last_canvas;
-    if flaeche.width() < 120.0 || flaeche.height() < 120.0 {
+    if flaeche.width() < 200.0 || flaeche.height() < 160.0 {
         return;
     }
-    let hoehe = (flaeche.height() * 0.52).clamp(160.0, 400.0);
-    let breite = 520.0f32.min(flaeche.width() - 32.0);
-    let pos = Pos2::new(flaeche.left() + 16.0, flaeche.bottom() - 16.0 - hoehe);
 
-    egui::Area::new(egui::Id::new("chat_protokoll"))
+    // Blättern: Mausrad über der Zeichenfläche (dort nimmt die Zeichnung keine
+    // Eingabe mehr an) oder Pfeiltasten.
+    let max_zeilen = zeilen_im_protokoll(flaeche);
+    let zeiger_drin = ctx
+        .pointer_latest_pos()
+        .map(|p| flaeche.contains(p))
+        .unwrap_or(false);
+    let rad = if zeiger_drin {
+        ctx.input(|i| i.raw_scroll_delta.y)
+    } else {
+        0.0
+    };
+    let mut schritt = 0;
+    if rad > 0.5 {
+        schritt += 1;
+    } else if rad < -0.5 {
+        schritt -= 1;
+    }
+    if ctx.input(|i| i.key_pressed(egui::Key::ArrowUp) || i.key_pressed(egui::Key::PageUp)) {
+        schritt += 3;
+    }
+    if ctx.input(|i| i.key_pressed(egui::Key::ArrowDown) || i.key_pressed(egui::Key::PageDown)) {
+        schritt -= 3;
+    }
+    if schritt != 0 {
+        app.chat.blaettern(schritt, max_zeilen);
+    }
+
+    // Breite ausdrücklich setzen: ohne feste Breite hat das rahmenlose Feld
+    // keine anklickbare Fläche (die Area schrumpft auf ihren Inhalt).
+    let breite = (flaeche.width() * 0.5).min(620.0);
+    let pos = Pos2::new(flaeche.left() + RAND_X, flaeche.bottom() - 42.0);
+    egui::Area::new(egui::Id::new("chat_eingabe"))
         .order(egui::Order::Foreground)
         .fixed_pos(pos)
         .show(ctx, |ui| {
-            ui.set_width(breite);
-            Frame::none()
-                .fill(Color32::from_rgba_unmultiplied(0x1A, 0x1D, 0x22, 238))
-                .rounding(Rounding::same(10.0))
-                .stroke(Stroke::new(1.0, Palette::BORDER))
-                .inner_margin(Margin::symmetric(12.0, 10.0))
-                .show(ui, |ui| {
-                    ui.set_width(breite - 24.0);
-                    ui.horizontal(|ui| {
-                        ui.label(
-                            RichText::new("Protokoll")
-                                .size(11.5)
-                                .color(Palette::ACCENT),
-                        );
-                        ui.label(
-                            RichText::new("T oder ESC schließt · Eingaben werden nur mitgeschrieben")
-                                .size(10.0)
-                                .color(Palette::TEXT_FAINT),
-                        );
-                        ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-                            if ui
-                                .add(egui::Button::new(
-                                    RichText::new("×").size(13.0).color(Palette::TEXT_DIM),
-                                )
-                                .fill(Color32::TRANSPARENT)
-                                .stroke(Stroke::NONE))
-                                .on_hover_text("Protokoll schließen")
-                                .clicked()
-                            {
-                                app.chat.schliessen();
-                            }
-                        });
-                    });
-                    ui.add_space(4.0);
-                    let liste_h = (hoehe - 84.0).max(60.0);
-                    egui::ScrollArea::vertical()
-                        .max_height(liste_h)
-                        .auto_shrink([false, false])
-                        .stick_to_bottom(true)
-                        .show(ui, |ui| {
-                            ui.set_width(breite - 44.0);
-                            for n in &app.chat.nachrichten {
-                                let text = if n.eingabe {
-                                    RichText::new(format!("› {}", n.text))
-                                        .size(12.0)
-                                        .color(Palette::HOVER)
-                                } else {
-                                    RichText::new(n.text.as_str())
-                                        .size(12.0)
-                                        .color(Palette::TEXT)
-                                };
-                                ui.label(text);
-                            }
-                        });
-                    ui.add_space(6.0);
-                    let resp = ui.add(
-                        egui::TextEdit::singleline(&mut app.chat.eingabe)
-                            .hint_text("Nachricht … (wird nur protokolliert)")
-                            .desired_width(f32::INFINITY),
-                    );
-                    let enter = ctx.input(|i| i.key_pressed(egui::Key::Enter));
-                    if resp.lost_focus() && enter {
-                        let jetzt = ctx.input(|i| i.time);
-                        app.chat.eingabe_senden(jetzt);
-                        resp.request_focus();
-                    }
-                });
+            ui.set_min_width(breite);
+            ui.set_max_width(breite);
+            // Auf Papier: dunkler Text, dunkler Cursor, dezente Auswahl.
+            ui.visuals_mut().text_cursor.stroke = Stroke::new(1.5, text_farbe());
+            ui.visuals_mut().selection.bg_fill =
+                Color32::from_rgba_unmultiplied(0x2F, 0x8C, 0xF0, 70);
+            ui.horizontal(|ui| {
+                ui.label(RichText::new("›").size(SCHRIFT).color(eingabe_farbe()));
+                let resp = ui.add_sized(
+                    [breite - 26.0, 18.0],
+                    egui::TextEdit::singleline(&mut app.chat.eingabe)
+                        .frame(false)
+                        .font(FontId::proportional(SCHRIFT))
+                        .text_color(text_farbe()),
+                );
+                let enter = ctx.input(|i| i.key_pressed(egui::Key::Enter));
+                if resp.lost_focus() && enter {
+                    let jetzt = ctx.input(|i| i.time);
+                    app.chat.eingabe_senden(jetzt);
+                    resp.request_focus();
+                }
+            });
         });
 }
 
@@ -336,7 +398,10 @@ mod tests {
             chat.sagen(0.0, format!("{i}"));
         }
         assert_eq!(chat.nachrichten.len(), MAX_NACHRICHTEN);
-        assert_eq!(chat.nachrichten.last().unwrap().text, format!("{}", MAX_NACHRICHTEN + 19));
+        assert_eq!(
+            chat.nachrichten.last().unwrap().text,
+            format!("{}", MAX_NACHRICHTEN + 19)
+        );
     }
 
     /// T öffnet und schließt das Protokoll; offen fordert es Neuzeichnen an.
@@ -349,5 +414,37 @@ mod tests {
         assert!(chat.braucht_repaint(0.0));
         chat.schliessen();
         assert!(!chat.offen);
+    }
+
+    /// Das offene Protokoll zeigt die neuesten Zeilen; Blättern verschiebt
+    /// das Fenster und wird an beiden Rändern geklemmt.
+    #[test]
+    fn protokoll_blaettert_und_klemmt() {
+        assert_eq!(protokoll_bereich(40, 0, 10), (30, 40));
+        assert_eq!(protokoll_bereich(40, 5, 10), (25, 35));
+        assert_eq!(protokoll_bereich(40, 99, 10), (0, 10));
+
+        let mut chat = Chat::neu();
+        for i in 0..40 {
+            chat.sagen(0.0, format!("{i}"));
+        }
+        chat.blaettern(5, 10);
+        assert_eq!(chat.scroll, 5);
+        chat.blaettern(999, 10);
+        assert_eq!(chat.scroll, 30, "höchstens bis zur ältesten Zeile");
+        chat.blaettern(-999, 10);
+        assert_eq!(chat.scroll, 0, "nicht unter die neueste Zeile");
+        // eine neue eigene Meldung springt wieder ans Ende
+        chat.blaettern(7, 10);
+        chat.eingabe = "neu".into();
+        chat.eingabe_senden(2.0);
+        assert_eq!(chat.scroll, 0);
+    }
+
+    /// Weniger Meldungen als Platz: das Fenster bleibt am Ende.
+    #[test]
+    fn kurzes_protokoll_bleibt_am_ende() {
+        assert_eq!(protokoll_bereich(3, 0, 10), (0, 3));
+        assert_eq!(protokoll_bereich(0, 0, 10), (0, 0));
     }
 }

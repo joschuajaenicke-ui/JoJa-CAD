@@ -728,9 +728,12 @@ pub fn show(app: &mut App, ui: &mut Ui) {
     }
 
     if chat_offen {
-        // Zeichnung blass hinter dem Protokoll (Lesbarkeit)
+        // Zeichnung blass hinter dem Protokoll (Lesbarkeit), darüber dieselben
+        // Meldungen wie bei der Ausgabe — nur weiter nach oben und ohne
+        // Verblassen. Die Eingabezeile zeichnet `chat::fenster`.
         let (flaeche, farbe) = crate::chat::schleier(rect);
         painter.rect_filled(flaeche, 0.0, farbe);
+        crate::chat::zeichnen_offen(&app.chat, &painter, rect);
     } else {
         handle_input(app, ui, &resp, rect, &painter, is_sheet, snapped, raw_world);
         // Aufforderung des laufenden Werkzeugs in den Chat (bzw. ins Log).
