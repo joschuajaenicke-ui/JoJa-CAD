@@ -452,6 +452,17 @@ impl UserPrefs {
         if self.bindings.is_empty() {
             self.bindings = UserPrefs::default().bindings;
         }
+        // T gehört seit T0009 dem Chat-Protokoll. Das Text-Werkzeug lag früher
+        // auf dieser Taste; eine gespeicherte Belegung würde sie stillschweigend
+        // weiter belegen und in der Tastaturbelegung falsch anzeigen.
+        if self
+            .bindings
+            .get("draw.text")
+            .map(|k| k.eq_ignore_ascii_case("t"))
+            .unwrap_or(false)
+        {
+            self.bindings.remove("draw.text");
+        }
         // `bindings` wird als Ganzes gespeichert. Eine später ergänzte Aktion
         // bekäme ihre Werktaste sonst nie: fehlende Einträge nachziehen, solange
         // die Taste nicht schon einer anderen Aktion gehört.

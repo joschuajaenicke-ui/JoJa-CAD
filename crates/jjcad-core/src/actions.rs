@@ -101,7 +101,7 @@ pub const ACTIONS: &[ActionDef] = &[
     act!("draw.fill.boundary", "Fläche nach Umriss", Zeichnen, "fill", "i", "Umriss abfahren: Punkte klicken, Enter beendet", true),
     act!("draw.fill.points", "Fläche nach Punktfolge", Zeichnen, "fill", "shift+i", "Punkte klicken, Enter schließt die Fläche", true),
     act!("draw.fill.paint", "Farbeimer", Zeichnen, "fill", "c", "In eine leere Fläche klicken — die Umgrenzung wird ermittelt", true),
-    act!("draw.text", "Text", Zeichnen, "text", "t", "Position klicken, dann Text eingeben", true),
+    act!("draw.text", "Text", Zeichnen, "text", "", "Position klicken, dann Text eingeben", true),
     act!("draw.ellipse", "Ellipse", Zeichnen, "ellipse", "", "Mittelpunkt und Achsen klicken", true),
 
     // Architektur

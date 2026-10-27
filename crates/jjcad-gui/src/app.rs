@@ -322,7 +322,6 @@ pub struct UiState {
     /// Hotbar-Vorlage: (None = neu, Some(index) = umbenennen), Name
     pub preset_dialog: Option<(Option<usize>, String)>,
     pub file_dialog: Option<FileDialog>,
-    pub toast: Option<(String, f64)>,
     pub show_grid: bool,
     pub lineweights: bool,
     /// Vollbild gewünscht (maßgeblich ist der Fensterzustand, siehe
@@ -388,7 +387,6 @@ impl Default for UiState {
             block_name_dialog: None,
             preset_dialog: None,
             file_dialog: None,
-            toast: None,
             show_grid: true,
             lineweights: true,
             fullscreen: false,
@@ -541,6 +539,8 @@ pub struct App {
     pub mouse_world: Option<V2>,
     pub last_frame: f64,
     pub status_msg: String,
+    /// Meldungen unten links in der Zeichenfläche (Log, mit T geöffnet)
+    pub chat: crate::chat::Chat,
     pub new_tab_menu: bool,
     pub started_at: f64,
     pub ctx: egui::Context,
@@ -610,6 +610,7 @@ impl App {
             mouse_world: None,
             last_frame: 0.0,
             status_msg: String::new(),
+            chat: crate::chat::Chat::neu(),
             new_tab_menu: false,
             started_at: 0.0,
             ctx: ctx.clone(),
@@ -658,6 +659,23 @@ impl App {
                     self.ui.inventory_tab = 2;
                 }
                 "keymap" => self.ui.keymap_open = true,
+                // Chat-Protokoll mit Beispielmeldungen (Screenshot-Prüfung)
+                "chat" => {
+                    for t in [
+                        "Polylinie: Startpunkt klicken",
+                        "Nächster Punkt klicken – Enter beendet",
+                        "Polylinie abgeschlossen",
+                        "Kreis: Mittelpunkt klicken",
+                    ] {
+                        self.chat.sagen(0.0, t);
+                    }
+                    self.chat.offen = true;
+                }
+                // Hinweis im geschlossenen Chat (verblassende Meldung)
+                "chathinweis" => {
+                    self.start_tool("draw.polyline");
+                    self.chat.sagen(0.0, "Polylinie: Startpunkt klicken");
+                }
                 "settings" => self.ui.settings_open = true,
                 "help" => self.ui.help_open = true,
                 "wall" => self.start_tool("draw.wall"),
@@ -1079,9 +1097,27 @@ impl App {
         self.doc().settings.input_unit
     }
 
+    /// Meldung an den Nutzer: steht unten links im Chat (und in `status_msg`
+    /// für die Tests). Ein eigener Toast ist damit entfallen — eine Rückmeldung,
+    /// eine Stelle.
     pub fn toast(&mut self, msg: impl Into<String>) {
-        self.ui.toast = Some((msg.into(), 0.0));
-        self.status_msg = self.ui.toast.as_ref().map(|t| t.0.clone()).unwrap_or_default();
+        self.mitteilung(msg);
+    }
+
+    /// Meldung in Chat und Statusmeldung schreiben.
+    pub fn mitteilung(&mut self, msg: impl Into<String>) {
+        let msg = msg.into();
+        self.status_msg = msg.clone();
+        let jetzt = self.ctx.input(|i| i.time);
+        self.chat.sagen(jetzt, msg);
+    }
+
+    /// Wie [`App::mitteilung`], aber nur bei geändertem Text — für
+    /// Werkzeug-Aufforderungen, die in jedem Frame anliegen.
+    pub fn mitteilung_wenn_neu(&mut self, msg: &str) {
+        self.status_msg = msg.to_string();
+        let jetzt = self.ctx.input(|i| i.time);
+        self.chat.sagen_wenn_neu(jetzt, msg);
     }
 
     pub fn mark_changed(&mut self) {
@@ -1397,7 +1433,12 @@ impl App {
                 ),
             phase: ToolPhase::Collecting,
         });
-        self.status_msg = def.hint.to_string();
+        // Werkzeuge melden ihren Bedienschritt selbst aus der Zeichenfläche
+        // (`commands_hint`, ein Text pro Schritt) — sonst stünde beim Start
+        // zweimal dieselbe Aufforderung im Chat.
+        if !def.tool {
+            self.mitteilung(def.hint);
+        }
         if self.ui.bind_slot.is_some() {
             // Aktives Werkzeug mit Slot verknüpfen
             let slot = self.ui.bind_slot.take().unwrap();
@@ -1408,7 +1449,7 @@ impl App {
         // Auswahlmodus bei Aktionen, die eine Auswahl brauchen
         if let Some(t) = &mut self.tool {
             if t.selecting {
-                self.status_msg = "Objekte wählen – Enter bestätigt, ESC bricht ab".into();
+                self.mitteilung("Objekte wählen – Enter bestätigt, ESC bricht ab");
             }
         }
         if !matches!(
@@ -1484,10 +1525,10 @@ impl App {
     pub fn cancel_tool(&mut self) {
         if self.tool.is_some() {
             self.tool = None;
-            self.status_msg = "Abgebrochen".into();
+            self.mitteilung("Abgebrochen");
         }
         if self.ghost.take().is_some() {
-            self.status_msg = "Platzieren abgebrochen".into();
+            self.mitteilung("Platzieren abgebrochen");
         }
         // Laufendes Ziehen der Auswahl zurücknehmen (keine halb verschobene
         // Geometrie zurücklassen)
@@ -1678,6 +1719,7 @@ impl App {
 
     fn handle_shortcuts(&mut self, ctx: &egui::Context) {
         let typing = ctx.wants_keyboard_input();
+        let chat_offen = self.chat.offen;
         // F11 schaltet das Vollbild — unabhängig von Tippeingabe und Werkzeug,
         // damit man auch aus einem laufenden Werkzeug heraus wieder herausk kommt.
         if ctx.input(|i| i.key_pressed(egui::Key::F11)) {
@@ -1685,6 +1727,12 @@ impl App {
             return;
         }
         if ctx.input(|i| i.key_pressed(egui::Key::Escape)) {
+            if self.chat.offen {
+                // ESC schließt zuerst das Protokoll, nicht das Werkzeug
+                self.chat.schliessen();
+                ctx.memory_mut(|m| m.stop_text_input());
+                return;
+            }
             if self.ui.order_pick.is_some() {
                 self.ui.order_pick = None;
                 self.toast("Abgebrochen: kein Referenzobjekt gewählt");
@@ -1694,6 +1742,22 @@ impl App {
             } else {
                 self.escape_pressed();
             }
+        }
+        // T öffnet bzw. schließt das Chat-Protokoll unten links. Die Taste war
+        // früher das Text-Werkzeug; dort ist das Kürzel entfallen (T0009).
+        if !typing && ctx.input(|i| i.key_pressed(egui::Key::T)) {
+            if self.chat.offen {
+                self.chat.schliessen();
+            } else {
+                self.chat.umschalten();
+            }
+            ctx.memory_mut(|m| m.stop_text_input());
+            return;
+        }
+        // Solange das Protokoll offen ist, gehört die Tastatur dem Chat:
+        // keine Werkzeugkürzel, kein Zeichnen im Hintergrund.
+        if chat_offen {
+            return;
         }
         let (ctrl, shift) = ctx.input(|i| (i.modifiers.command, i.modifiers.shift));
         // Strg+C/X/V kommen von egui als Ereignisse, nicht als Tastendruck
@@ -1919,7 +1983,7 @@ impl App {
                         if let Some(t) = &mut self.tool {
                             t.selecting = false;
                         }
-                        self.status_msg = "Basispunkt wählen".into();
+                        self.mitteilung("Basispunkt wählen");
                     }
                 }
             }
@@ -2977,34 +3041,6 @@ fn rail(ui: &mut egui::Ui, icon: &str, tooltip: &str, chevron: &str) -> bool {
         });
     }
 
-    fn toast_ui(&mut self, ctx: &egui::Context) {
-        if let Some((msg, t0)) = self.ui.toast.clone() {
-            let now = ctx.input(|i| i.time);
-            let age = if t0 == 0.0 { 0.0 } else { now - t0 };
-            if t0 == 0.0 {
-                self.ui.toast = Some((msg.clone(), now));
-            } else if age > 4.0 {
-                self.ui.toast = None;
-                return;
-            }
-            let fade = if age > 3.2 { ((4.0 - age) / 0.8).clamp(0.0, 1.0) } else { 1.0 };
-            egui::Area::new(egui::Id::new("toast"))
-                .anchor(egui::Align2::CENTER_BOTTOM, Vec2::new(0.0, -104.0))
-                .interactable(false)
-                .show(ctx, |ui| {
-                    let frame = Frame::none()
-                        .fill(Color32::from_rgba_unmultiplied(30, 34, 40, (240.0 * fade as f64) as u8))
-                        .rounding(Rounding::same(8.0))
-                        .stroke(Stroke::new(1.0, Palette::BORDER))
-                        .inner_margin(Margin::symmetric(14.0, 8.0));
-                    frame.show(ui, |ui| {
-                        ui.label(RichText::new(msg).size(12.0).color(Palette::TEXT.gamma_multiply(fade as f32)));
-                    });
-                });
-            ctx.request_repaint_after(std::time::Duration::from_millis(120));
-        }
-    }
-
     // ---- Rahmen ----
 
     pub fn ui(&mut self, ctx: &egui::Context) {
@@ -3097,11 +3133,12 @@ fn rail(ui: &mut egui::Ui, icon: &str, tooltip: &str, chevron: &str) -> bool {
         dialogs::show(self, ctx);
         inventory::show(self, ctx);
         panels::layer_color_popup(self, ctx);
-        self.toast_ui(ctx);
+        // Chat-Protokoll über der Zeichnung (unten links), mit T geöffnet
+        crate::chat::fenster(self, ctx);
     }
 }
 
-fn commands_hint(tool: &Tool) -> &'static str {
+pub(crate) fn commands_hint(tool: &Tool) -> &'static str {
     match tool.action.as_str() {
         "draw.line" => {
             if tool.pts.is_empty() {
@@ -3119,9 +3156,9 @@ fn commands_hint(tool: &Tool) -> &'static str {
         }
         "draw.circle" => {
             if tool.pts.is_empty() {
-                "Mittelpunkt klicken"
+                "Kreis: Mittelpunkt klicken"
             } else {
-                "Radius klicken"
+                "Kreis: Radius klicken"
             }
         }
         "draw.rect" => {
@@ -3180,7 +3217,13 @@ fn commands_hint(tool: &Tool) -> &'static str {
         "modify.explode" => "Objekt anklicken",
         "block.insert" => "Position klicken",
         "draw.text" => "Position klicken",
-        "draw.polyline" => "Punkte klicken – Klick auf den Startpunkt schließt, Enter beendet",
+        "draw.polyline" => {
+            if tool.pts.is_empty() {
+                "Polylinie: Startpunkt klicken"
+            } else {
+                "Nächster Punkt klicken – Klick auf den Startpunkt schließt, Enter beendet"
+            }
+        }
         "draw.spline" => "Punkte klicken – die Kurve läuft durch die Punkte, Enter beendet",
         "draw.fill.boundary" => "Umriss abfahren – Enter oder Doppelklick beendet",
         "draw.fill.points" => {
@@ -3552,8 +3595,10 @@ impl eframe::App for App {
             }
             ctx.request_repaint();
         }
-        if self.ui.toast.is_some() {
-            ctx.request_repaint_after(std::time::Duration::from_millis(200));
+        // Meldungen verblassen in Echtzeit: solange etwas sichtbar ist,
+        // weiterzeichnen (der Chat fordert das selbst an).
+        if self.chat.braucht_repaint(ctx.input(|i| i.time)) {
+            ctx.request_repaint_after(std::time::Duration::from_millis(80));
         }
     
         // Auswahl hat sich geändert: ein weiteres Frame zeichnen, damit das
@@ -3742,7 +3787,7 @@ impl App {
             orig,
             recorded: false,
         });
-        self.status_msg = "Auswahl verschieben".into();
+        self.mitteilung("Auswahl verschieben");
     }
 
     /// Verschiebt die Auswahl live mit (Ausgangsgeometrie bleibt gespeichert).
@@ -3781,7 +3826,7 @@ impl App {
     pub fn end_move_drag(&mut self) {
         if self.move_drag.take().is_some() {
             self.mark_changed();
-            self.status_msg = "Verschoben".into();
+            self.mitteilung("Verschoben");
         }
     }
 
@@ -3797,7 +3842,7 @@ impl App {
             }
         }
         self.mark_changed();
-        self.status_msg = "Verschieben abgebrochen".into();
+        self.mitteilung("Verschieben abgebrochen");
     }
 }
 
