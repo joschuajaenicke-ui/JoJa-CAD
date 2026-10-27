@@ -671,6 +671,13 @@ impl App {
                     }
                     self.chat.offen = true;
                 }
+                // Langes Protokoll (Blättern/Screenshot-Prüfung)
+                "chatlang" => {
+                    for i in 1..=40 {
+                        self.chat.sagen(0.0, format!("Meldung {i} – Polylinie: nächster Punkt klicken"));
+                    }
+                    self.chat.offen = true;
+                }
                 // Hinweis im geschlossenen Chat (verblassende Meldung)
                 "chathinweis" => {
                     self.start_tool("draw.polyline");
