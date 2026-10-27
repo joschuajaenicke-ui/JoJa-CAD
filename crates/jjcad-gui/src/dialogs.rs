@@ -470,11 +470,47 @@ fn systemdialog_abholen(app: &mut App, ctx: &egui::Context) {
         }
         None => {}
     }
-    // Antwortet das Portal nicht (oder hängt), kommt man mit ESC wieder heraus
-    // und kann erneut öffnen — sonst bliebe der Dateidialog gesperrt.
-    if app.ui.systemdialog.is_some() && ctx.input(|i| i.key_pressed(egui::Key::Escape)) {
-        app.ui.systemdialog = None;
-    }
+}
+
+/// Solange der Systemdialog offen ist, gehört die Anwendung ihm: die Zeichnung
+/// wird abgedunkelt und ein Hinweis steht in der Mitte. Der Notausstieg (ESC)
+/// steckt in `App::ui`.
+pub fn systemdialog_schleier(app: &App, ctx: &egui::Context) {
+    let Some((mode, _)) = app.ui.systemdialog.as_ref() else { return };
+    // Volle Fläche über allem: dunkelt ab **und** nimmt jeden Mausklick an.
+    // Nur Ereignisse zu verwerfen reicht nicht — Knöpfe und Zeichenfläche
+    // lesen Klicks auch aus dem Zeigerzustand des Frames.
+    egui::Area::new(egui::Id::new("systemdialog_schleier"))
+        .order(egui::Order::Foreground)
+        .fixed_pos(ctx.screen_rect().min)
+        .show(ctx, |ui| {
+            let (rect, _antwort) = ui.allocate_exact_size(
+                ctx.screen_rect().size(),
+                Sense::click_and_drag(),
+            );
+            ui.painter().rect_filled(
+                rect,
+                0.0,
+                Color32::from_rgba_unmultiplied(0, 0, 0, 110),
+            );
+        });
+    egui::Area::new(egui::Id::new("systemdialog_hinweis"))
+        .order(egui::Order::Foreground)
+        .anchor(egui::Align2::CENTER_CENTER, Vec2::ZERO)
+        .interactable(false)
+        .show(ctx, |ui| {
+            theme::dialog_frame().show(ui, |ui| {
+                ui.set_max_width(420.0);
+                ui.vertical_centered(|ui| {
+                    ui.label(theme::bold(mode.title(), 15.0));
+                    ui.add_space(2.0);
+                    ui.label(theme::dim(
+                        "Der Dateidialog des Systems ist geöffnet. Datei wählen oder abbrechen.",
+                    ));
+                    ui.label(theme::faint("ESC schließt den Hinweis, wenn das System nicht antwortet."));
+                });
+            });
+        });
 }
 
 pub fn show(app: &mut App, ctx: &egui::Context) {

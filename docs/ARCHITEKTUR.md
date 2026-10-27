@@ -113,6 +113,14 @@ bearbeitet werden müssen.
   den Win32-Dialog, macOS über NSOpenPanel. Er läuft in einem eigenen Thread, die
   Oberfläche bleibt bedienbar. Ohne verfügbaren Systemdialog (kein Sitzungsbus,
   Testumgebung) oder auf Wunsch („Dateidialog: Eingebaut“) greift der eigene Dialog.
+- **Der Systemdialog ist modal:** solange er offen ist, sperrt `App::ui` die
+  Tastenereignisse und eine deckende Fläche im Vordergrund (`dialogs::systemdialog_schleier`)
+  nimmt alle Mausklicks an — die Zeichnung ist abgedunkelt, der Nutzer muss wählen
+  oder abbrechen. Beide Sperren sind nötig: Knöpfe und Zeichenfläche lesen Klicks
+  auch aus dem Zeigerzustand des Frames, nicht nur aus den Ereignissen. Die Kennung
+  des eigenen Fensters (`systemdialog::Elternfenster`) geht an den Dialog, damit er
+  als Fenster dieser Anwendung über dem Hauptfenster erscheint. `ESC` bleibt als
+  Notausstieg, falls das Portal nicht antwortet.
 
 ## Ausgabe
 

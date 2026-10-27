@@ -1129,6 +1129,7 @@ dependencies = [
  "eframe",
  "egui",
  "jjcad-core",
+ "raw-window-handle",
  "rfd",
  "serde",
  "serde_json",

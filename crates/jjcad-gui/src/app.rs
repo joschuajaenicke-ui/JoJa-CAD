@@ -598,6 +598,9 @@ impl CopyInput {
 
 pub struct App {
     pub tabs: Vec<DocTab>,
+    /// Kennung des eigenen Fensters für den Systemdialog (None in Tests, die
+    /// ohne Fenster laufen)
+    pub elternfenster: Option<crate::systemdialog::Elternfenster>,
     pub active: usize,
     pub prefs: UserPrefs,
     pub options: ToolOptions,
@@ -643,7 +646,11 @@ impl App {
         // das leicht. 10 px sind für Maus und Touchpad unkritisch.
         cc.egui_ctx
             .options_mut(|o| o.input_options.max_click_dist = 10.0);
-        Self::with_ctx(cc.egui_ctx.clone())
+        let mut app = Self::with_ctx(cc.egui_ctx.clone());
+        // Fensterkennung: der Systemdialog erscheint damit als Fenster dieser
+        // Anwendung (bei KDE über dem Hauptfenster) statt frei zu schweben.
+        app.elternfenster = crate::systemdialog::Elternfenster::aus_eframe(cc);
+        app
     }
 
     /// Baut die App auf einem vorhandenen egui-Kontext — ohne Fenster, damit
@@ -675,6 +682,7 @@ impl App {
         let props_open = prefs.show_properties;
         let mut app = Self {
             tabs: vec![tab],
+            elternfenster: None,
             active: 0,
             prefs,
             options,
@@ -716,7 +724,8 @@ impl App {
     /// `JJCAD_DEMO_UI=arch,inv,sheet,wall,text` — für die Verschiebe-Vorschau
     /// zusätzlich `moveline`, `movewall`, `movedoor`, `moveall` (Auswahl setzen
     /// und Werkzeug „Verschieben" mit Basispunkt starten) sowie `selall` (nur
-    /// auswählen, zum Prüfen des direkten Ziehens).
+    /// auswählen, zum Prüfen des direkten Ziehens) sowie `dateidialog` (offener
+    /// Systemdialog mit Abdunklung, ohne echten Dialog).
     pub fn apply_demo_ui(&mut self) {
         let Ok(spec) = std::env::var("JJCAD_DEMO_UI") else { return };
         for part in spec.split(',') {
@@ -762,6 +771,17 @@ impl App {
                 "chathinweis" => {
                     self.start_tool("draw.polyline");
                     self.chat.sagen(0.0, "Polylinie: Startpunkt klicken");
+                }
+                // Offener Systemdialog (nur der Zustand, kein echter Dialog):
+                // zeigt Abdunklung und Hinweis für Screenshots.
+                "dateidialog" => {
+                    self.ui.systemdialog = Some((
+                        FileMode::Open,
+                        Systemdialog::mit_ausfuehrung(|| {
+                            std::thread::sleep(std::time::Duration::from_secs(120));
+                            None
+                        }),
+                    ));
                 }
                 "settings" => self.ui.settings_open = true,
                 "help" => self.ui.help_open = true,
@@ -1678,8 +1698,9 @@ impl App {
         }
         if self.prefs.dateidialog_system() && crate::systemdialog::verfuegbar() {
             let (dir, base) = self.starthilfe();
+            let anfrage = mode.anfrage(dir, &base);
             self.ui.systemdialog =
-                Some((mode, Systemdialog::starten(mode.anfrage(dir, &base))));
+                Some((mode, Systemdialog::starten(anfrage, self.elternfenster.as_ref())));
             return;
         }
         self.open_own_file_dialog(mode);
@@ -3239,6 +3260,18 @@ fn rail(ui: &mut egui::Ui, icon: &str, tooltip: &str, chevron: &str) -> bool {
     // ---- Rahmen ----
 
     pub fn ui(&mut self, ctx: &egui::Context) {
+        // Offener Systemdialog ist modal: die Anwendung nimmt keine Eingaben an,
+        // bis der Nutzer im Dialog wählt oder abbricht. Ohne das ließen sich
+        // Zeichnung und Werkzeuge hinter dem Dialog weiterbedienen.
+        if self.ui.systemdialog.is_some() {
+            if ctx.input(|i| i.key_pressed(egui::Key::Escape)) {
+                // Notausstieg, falls das Portal gar nicht antwortet
+                self.ui.systemdialog = None;
+            } else {
+                ctx.input_mut(|i| i.events.clear());
+            }
+        }
+
         // Bearbeitungsraum an den aktiven Reiter binden: Modell oder Papierraum
         // der Druckvorschau. Alle Befehle arbeiten danach im selben Raum.
         self.sync_space();
@@ -3330,6 +3363,8 @@ fn rail(ui: &mut egui::Ui, icon: &str, tooltip: &str, chevron: &str) -> bool {
         panels::layer_color_popup(self, ctx);
         // Chat-Protokoll über der Zeichnung (unten links), mit T geöffnet
         crate::chat::fenster(self, ctx);
+        // Systemdialog offen: Zeichnung abdunkeln und Hinweis zeigen
+        dialogs::systemdialog_schleier(self, ctx);
     }
 }
 
@@ -4931,6 +4966,155 @@ mod tests_chat_texte {
 }
 
 #[cfg(test)]
+mod tests_systemdialog_modal {
+    //! Der Dateidialog des Systems hält die Anwendung an (T0015, Turn 2).
+    //!
+    //! Vorher lief der Dialog in einem eigenen Thread, die Zeichenfläche blieb
+    //! aber bedienbar: man konnte hinter dem Dialog weiterzeichnen und Werkzeuge
+    //! starten. Jetzt nimmt `App::ui` keine Eingaben mehr an, solange der
+    //! Systemdialog offen ist — erst Wählen oder Abbrechen gibt die Anwendung
+    //! wieder frei.
+
+    use super::*;
+    use crate::dialogs::FileMode;
+    use crate::systemdialog::Systemdialog;
+    use std::time::Duration;
+
+    fn rahmen(events: Vec<egui::Event>) -> egui::RawInput {
+        egui::RawInput {
+            screen_rect: Some(egui::Rect::from_min_size(
+                egui::Pos2::ZERO,
+                egui::vec2(1600.0, 1000.0),
+            )),
+            events,
+            ..Default::default()
+        }
+    }
+
+    fn taste(key: egui::Key) -> egui::Event {
+        egui::Event::Key {
+            key,
+            physical_key: None,
+            pressed: true,
+            repeat: false,
+            modifiers: egui::Modifiers::NONE,
+        }
+    }
+
+    /// App mit fest eingestellter Taste „l“ für das Linienwerkzeug.
+    fn app() -> (egui::Context, App) {
+        let ctx = egui::Context::default();
+        let mut app = App::with_ctx(ctx.clone());
+        app.prefs.bindings.insert("draw.line".into(), "l".into());
+        (ctx, app)
+    }
+
+    /// Ein Systemdialog, der nie zurückkommt (offen, aber ohne Portal).
+    fn offener_dialog() -> (FileMode, Systemdialog) {
+        (
+            FileMode::Open,
+            Systemdialog::mit_ausfuehrung(|| {
+                std::thread::sleep(Duration::from_secs(30));
+                None
+            }),
+        )
+    }
+
+    #[test]
+    fn eingabe_ist_gesperrt_solange_der_systemdialog_offen_ist() {
+        let (ctx, mut app) = app();
+        app.ui.systemdialog = Some(offener_dialog());
+        // Erst ein ruhiger Frame (Fenster einpassen), dann die Taste
+        let _ = ctx.run(rahmen(vec![]), |ctx| app.ui(ctx));
+        let _ = ctx.run(rahmen(vec![taste(egui::Key::L)]), |ctx| app.ui(ctx));
+        assert!(
+            app.tool.is_none(),
+            "Taste „l“ hat hinter dem offenen Systemdialog ein Werkzeug gestartet ({:?})",
+            app.tool.as_ref().map(|t| t.action.clone())
+        );
+        assert!(
+            app.ui.systemdialog.is_some(),
+            "der offene Systemdialog wurde ohne Nutzerentscheidung verworfen"
+        );
+    }
+
+    #[test]
+    fn ohne_systemdialog_wirkt_dieselbe_taste() {
+        // Gegenprobe: derselbe Ablauf ohne offenen Dialog startet das Werkzeug.
+        let (ctx, mut app) = app();
+        let _ = ctx.run(rahmen(vec![]), |ctx| app.ui(ctx));
+        let _ = ctx.run(rahmen(vec![taste(egui::Key::L)]), |ctx| app.ui(ctx));
+        assert_eq!(
+            app.tool.as_ref().map(|t| t.action.as_str()),
+            Some("draw.line"),
+            "Gegenprobe: ohne offenen Dialog muss „l“ das Linienwerkzeug starten"
+        );
+    }
+
+    fn klick_ereignis(pos: egui::Pos2, gedrueckt: bool) -> egui::Event {
+        egui::Event::PointerButton {
+            pos,
+            button: egui::PointerButton::Primary,
+            pressed: gedrueckt,
+            modifiers: egui::Modifiers::NONE,
+        }
+    }
+
+    /// Zwei Klicks auf die Zeichenfläche mit dem Linienwerkzeug — über denselben
+    /// Ereignisweg wie die echte Maus.
+    fn zwei_klicks(ctx: &egui::Context, app: &mut App) -> usize {
+        let _ = ctx.run(rahmen(vec![]), |ctx| app.ui(ctx));
+        let mitte = app.ui.last_canvas.center();
+        let ziel = [mitte, mitte + egui::vec2(120.0, 40.0)];
+        for pos in ziel {
+            let _ = ctx.run(
+                rahmen(vec![egui::Event::PointerMoved(pos), klick_ereignis(pos, true)]),
+                |ctx| app.ui(ctx),
+            );
+            let _ = ctx.run(rahmen(vec![klick_ereignis(pos, false)]), |ctx| app.ui(ctx));
+        }
+        app.doc().entities.len()
+    }
+
+    #[test]
+    fn mausklicks_erreichen_die_zeichenflaeche_nicht() {
+        let (ctx, mut app) = app();
+        app.start_tool("draw.line");
+        app.ui.systemdialog = Some(offener_dialog());
+        assert_eq!(
+            zwei_klicks(&ctx, &mut app),
+            0,
+            "hinter dem offenen Systemdialog wurde gezeichnet"
+        );
+    }
+
+    #[test]
+    fn gegenprobe_ohne_systemdialog_wird_gezeichnet() {
+        let (ctx, mut app) = app();
+        app.start_tool("draw.line");
+        assert_eq!(
+            zwei_klicks(&ctx, &mut app),
+            1,
+            "Gegenprobe: ohne offenen Dialog müssen zwei Klicks eine Linie ergeben"
+        );
+    }
+
+    #[test]
+    fn esc_gibt_einen_haengenden_systemdialog_frei() {
+        let (ctx, mut app) = app();
+        app.ui.systemdialog = Some(offener_dialog());
+        let _ = ctx.run(rahmen(vec![]), |ctx| app.ui(ctx));
+        let _ = ctx.run(rahmen(vec![taste(egui::Key::Escape)]), |ctx| app.ui(ctx));
+        assert!(
+            app.ui.systemdialog.is_none(),
+            "ESC muss den hängenden Systemdialog freigeben, sonst bleibt die Anwendung gesperrt"
+        );
+        // … und danach ist die Anwendung wieder bedienbar
+        let _ = ctx.run(rahmen(vec![taste(egui::Key::L)]), |ctx| app.ui(ctx));
+        assert!(app.tool.is_some(), "nach ESC muss die Taste wieder wirken");
+    }
+}
+
 mod tests_kopieren {
     //! T0012: zwei Kopierfunktionen an einer geteilten Schaltfläche.
     //!
