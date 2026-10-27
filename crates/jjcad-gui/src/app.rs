@@ -622,6 +622,12 @@ pub struct App {
     /// Umgrenzung. Rechnet erst nach kurzem Stillstand (`canvas::PAINT_RUHE`),
     /// sonst würde jede Zeigerbewegung eine Flutfüllung starten.
     pub paint: crate::canvas::PaintPreview,
+    /// Erweiterter Punktfang: Punkte, über denen der Zeiger lange genug stand.
+    /// Von ihnen gehen Hilfslinien aus, auf denen der nächste Punkt fängt.
+    /// Höchstens zwei — damit lässt sich x vom einen und y vom anderen nehmen.
+    pub halt: Vec<jjcad_core::snap::HaltPunkt>,
+    /// Verweil-Erkennung, die `halt` füllt.
+    pub verweil: crate::canvas::VerweilFang,
 }
 
 impl App {
@@ -685,6 +691,8 @@ impl App {
             move_drag: None,
             grip_start_frame: 0.0,
             paint: crate::canvas::PaintPreview::default(),
+            halt: Vec::new(),
+            verweil: crate::canvas::VerweilFang::default(),
         };
         app.ui.show_grid = show_grid;
         app.ui.lineweights = lineweights;
@@ -751,6 +759,28 @@ impl App {
                 }
                 "settings" => self.ui.settings_open = true,
                 "help" => self.ui.help_open = true,
+                // Erweiterter Punktfang sichtbar machen: Werkzeug läuft, ein
+                // Wandende ist gehalten (Verweilen vorgetäuscht) — die
+                // Hilfslinien stehen dann im Screenshot.
+                "halte" | "hilfslinie" => {
+                    self.start_tool("draw.line");
+                    let ecke = self.doc().entities.iter().find_map(|e| match &e.kind {
+                        EntityKind::Wall { b, .. } => Some(*b),
+                        _ => None,
+                    });
+                    if let Some(p) = ecke {
+                        if let Some(hit) = jjcad_core::snap::find_snap(
+                            self.doc(),
+                            p,
+                            60.0,
+                            None,
+                            &[],
+                            &[],
+                        ) {
+                            self.halt.push(jjcad_core::snap::HaltPunkt::neu(self.doc(), &hit));
+                        }
+                    }
+                }
                 "wall" => self.start_tool("draw.wall"),
                 "paint" | "farbeimer" => self.start_tool("draw.fill.paint"),
                 "door" => self.start_tool("draw.door"),

@@ -653,6 +653,27 @@ pub fn show(app: &mut App, ui: &mut Ui) {
     let pointer = ui.ctx().pointer_hover_pos().filter(|p| rect.contains(*p));
     let raw_world = pointer.map(|p| screen_to_world(rect, app.current_view(), p));
 
+    // Erweiterter Punktfang: steht der Zeiger lange genug auf einem Fangpunkt,
+    // wird dieser gehalten — von ihm gehen dann Hilfslinien aus, auf denen der
+    // nächste Punkt fängt. Vor dem Fangen, weil der Fang die Haltepunkte nutzt.
+    if app.tool.is_some() {
+        let tol = fang_radius_px(app, app.current_view().zoom);
+        let kandidat = raw_world.and_then(|w| verweil_kandidat(app, w, tol));
+        let jetzt = std::time::Instant::now();
+        if let Some(h) = app.verweil.update(kandidat, jetzt) {
+            halt_merken(app, h);
+        }
+        if app.verweil.laeuft() {
+            // Ohne Zeigerbewegung kommt kein Frame — der Zeitgeber muss selbst
+            // einen anfordern, sonst löst das Verweilen nie aus.
+            ui.ctx().request_repaint_after(VERWEILDAUER);
+        }
+    } else {
+        // Kein Werkzeug: kein Haltepunkt, keine Hilfslinien.
+        app.halt.clear();
+        app.verweil.zuruecksetzen();
+    }
+
     // Fangen — im Papierraum genauso wie im Modell (dort auf Schriftfeld,
     // Texten und eigenen Blattelementen).
     let mut snapped = raw_world;
@@ -685,6 +706,7 @@ pub fn show(app: &mut App, ui: &mut Ui) {
         if app.tool.is_some() {
             draw_tool_preview(app, &painter, rect, view_now, snapped, raw_world);
         }
+        draw_hilfslinien(app, &painter, rect, view_now);
         draw_text_rahmen(app, &painter, rect, view_now, &selected);
         draw_grips(app, &painter, rect, view_now, &selected);
         if app.ghost.is_some() {
@@ -720,6 +742,9 @@ pub fn show(app: &mut App, ui: &mut Ui) {
         if app.tool.is_some() {
             draw_tool_preview(app, &painter, rect, view_now, snapped, raw_world);
         }
+        // Hilfslinien des erweiterten Punktfangs unter allem, was der Zeiger
+        // selbst zeichnet (Vorschau, Griffe, Fadenkreuz).
+        draw_hilfslinien(app, &painter, rect, view_now);
         draw_text_rahmen(app, &painter, rect, view_now, &selected);
         draw_grips(app, &painter, rect, view_now, &selected);
         if app.ghost.is_some() {
@@ -1821,7 +1846,9 @@ fn fang_zeiger(app: &App, w: V2, tol: f64) -> (V2, Option<&'static str>) {
     let reference = app.tool.as_ref().and_then(|t| t.pts.last().copied());
     let regeln = fang_regeln(app);
     let vorschau = vorschau_punkte(app);
-    let res = snap::snap_constrained_mit_vorschau(
+    // `snap_constrained_mit_halte`: die Haltepunkte des erweiterten Punktfangs
+    // liefern ihre Hilfslinien als zusätzliche Fangziele mit.
+    let res = snap::snap_constrained_mit_halte(
         app.doc(),
         w,
         tol,
@@ -1830,6 +1857,7 @@ fn fang_zeiger(app: &App, w: V2, tol: f64) -> (V2, Option<&'static str>) {
         &regeln.keep,
         &regeln.gesperrt,
         &vorschau,
+        &app.halt,
         app.ui.show_grid,
     );
     (res.point, res.label())
@@ -2144,6 +2172,9 @@ fn handle_input(
                     tool_click_at(app, pw, screen_to_world(rect, view, pos));
                 }
             }
+            // Jeder gesetzte Punkt löst die Hilfslinien; der nächste holt sich
+            // seinen Haltepunkt neu (Verweilen) oder zeichnet frei.
+            app.halt.clear();
             return;
         }
     }
@@ -2152,6 +2183,7 @@ fn handle_input(
     if resp.clicked_by(egui::PointerButton::Primary) {
         if app.tool.is_some() {
             tool_click_at(app, w, raw.unwrap_or(w));
+            app.halt.clear();
         } else {
             let tol = (8.0 / view.zoom).max(0.5);
             let hit = snap::hit_test(app.doc(), w, tol, None);
@@ -2703,6 +2735,161 @@ impl PaintPreview {
         self.seit = None;
         self.ergebnis = None;
     }
+}
+
+// ---------------------------------------------------------------------------
+// Erweiterter Punktfang
+// ---------------------------------------------------------------------------
+
+/// Wie lange der Zeiger auf einem Fangpunkt stehen muss, bis er gehalten wird.
+/// Kurz genug, um nebenbei zu passieren, lang genug, um nicht beim Durchfahren
+/// eines Endpunkts versehentlich Hilfslinien aufzuziehen.
+pub const VERWEILDAUER: std::time::Duration = std::time::Duration::from_millis(400);
+
+/// Höchstzahl gehaltener Punkte. Zwei genügen: x vom einen, y vom anderen —
+/// mehr Linien machen den Fang nur unübersichtlich.
+pub const HALTE_MAX: usize = 2;
+
+/// Verweil-Erkennung des erweiterten Punktfangs.
+///
+/// Merkt sich, welcher Fangpunkt unter dem Zeiger liegt und seit wann. Bleibt
+/// derselbe Punkt lange genug stehen (der Fangpunkt, nicht der Zeiger — ein
+/// paar Pixel Zittern sind unschädlich), gilt er als gehalten und liefert
+/// Hilfslinien. Wandert der Kandidat, beginnt die Zeit von vorn.
+#[derive(Clone, Default)]
+pub struct VerweilFang {
+    /// Fangpunkt unter dem Zeiger (Punkt + Fangart), ohne Richtung.
+    kandidat: Option<(V2, snap::SnapKind)>,
+    /// Zeitpunkt, seit dem dieser Kandidat steht.
+    seit: Option<std::time::Instant>,
+}
+
+impl VerweilFang {
+    /// Kandidat melden; `Some`, sobald er lange genug steht.
+    ///
+    /// Der Kandidat wird nur **einmal** geliefert: danach bleibt `seit` auf dem
+    /// Stand „schon gehalten", sonst entstünde bei jedem Frame ein neuer Halt.
+    pub fn update(
+        &mut self,
+        kandidat: Option<snap::HaltPunkt>,
+        jetzt: std::time::Instant,
+    ) -> Option<snap::HaltPunkt> {
+        let kennung = kandidat.as_ref().map(|h| (h.point, h.kind));
+        let gewechselt = match (&self.kandidat, &kennung) {
+            (Some((p, k)), Some((q, l))) => p.dist(*q) > 0.1 || k != l,
+            (None, None) => false,
+            _ => true,
+        };
+        if gewechselt {
+            self.kandidat = kennung;
+            self.seit = kandidat.as_ref().map(|_| jetzt);
+        }
+        let kandidat = kandidat?;
+        if jetzt.duration_since(self.seit.unwrap_or(jetzt)) >= VERWEILDAUER {
+            // Gehalten: Zeitgeber auf NULL, den Kandidaten aber behalten. Sonst
+            // gälte derselbe Punkt im nächsten Frame wieder als neu, der
+            // Zeitgeber liefe endlos und die Zeichenfläche müsste dauernd
+            // neu zeichnen. Erst ein anderer Kandidat löst wieder aus.
+            self.seit = None;
+            return Some(kandidat);
+        }
+        None
+    }
+
+    /// Läuft gerade eine Verweilzeit? Dann muss die Zeichenfläche einen Frame
+    /// anfordern — ohne Zeigerbewegung kommt sonst keiner.
+    pub fn laeuft(&self) -> bool {
+        self.seit.is_some()
+    }
+
+    /// Verweil-Erkennung verwerfen (Werkzeugwechsel, Zeiger verlässt die Fläche).
+    pub fn zuruecksetzen(&mut self) {
+        self.kandidat = None;
+        self.seit = None;
+    }
+}
+
+/// Haltepunkt übernehmen: höchstens [`HALTE_MAX`], derselbe Punkt nicht doppelt.
+/// Der neueste steht vorn — er ist der zuletzt gewählte.
+fn halt_merken(app: &mut App, h: snap::HaltPunkt) {
+    if app.halt.iter().any(|x| x.point.dist(h.point) <= 0.1) {
+        return;
+    }
+    app.halt.insert(0, h);
+    app.halt.truncate(HALTE_MAX);
+}
+
+/// Fangpunkt unter dem Zeiger, über dem der erweiterte Punktfang auslösen darf.
+///
+/// Nur **diskrete** Punkte (Endpunkt, Blattecke, Schnittpunkt, Mittelpunkt,
+/// Zentrum, Quadrant): „Nächster Punkt" wandert mit dem Zeiger und das Raster
+/// liegt überall — beide stünden nie still und würden bei jedem Verweilen
+/// Hilfslinien erzeugen.
+fn verweil_kandidat(app: &App, w: V2, tol: f64) -> Option<snap::HaltPunkt> {
+    let reference = app.tool.as_ref().and_then(|t| t.pts.last().copied());
+    let regeln = fang_regeln(app);
+    let vorschau = vorschau_punkte(app);
+    snap::snap_candidates_mit_vorschau(
+        app.doc(),
+        w,
+        tol,
+        reference,
+        &regeln.ignore,
+        &regeln.keep,
+        &regeln.gesperrt,
+        &vorschau,
+        false,
+    )
+    .into_iter()
+    .find(|h| h.kind.ist_diskret())
+    .map(|h| snap::HaltPunkt::neu(app.doc(), &h))
+}
+
+/// Hilfslinien der gehaltenen Punkte zeichnen: gestrichelt quer durch die
+/// Zeichenfläche, die Haltepunkte selbst als kleines Kreuz.
+fn draw_hilfslinien(app: &App, p: &Painter, rect: Rect, view: View) {
+    if app.halt.is_empty() {
+        return;
+    }
+    let col = Palette::TRACK;
+    let muster = [6.0, 4.0];
+    let lang = rect.width().max(rect.height()) * 1.2;
+    let mut shapes: Vec<Shape> = Vec::new();
+
+    for l in snap::hilfslinien(&app.halt) {
+        let o = world_to_screen(rect, view, l.origin);
+        // Richtung auf dem Schirm: der y-Anteil dreht sich mit der Ansicht.
+        let d = world_to_screen(rect, view, l.origin + l.dir) - o;
+        if d.length() < 1e-3 {
+            continue;
+        }
+        let u = d.normalized();
+        for [a, b] in dashed_segments(o - u * lang, o + u * lang, &muster) {
+            shapes.push(Shape::line_segment(
+                [a, b],
+                Stroke::new(1.0, col.gamma_multiply(0.8)),
+            ));
+        }
+    }
+
+    for h in &app.halt {
+        let s = world_to_screen(rect, view, h.point);
+        let r = 6.0;
+        shapes.push(Shape::line_segment(
+            [s - Vec2::new(r, 0.0), s + Vec2::new(r, 0.0)],
+            Stroke::new(1.4, col),
+        ));
+        shapes.push(Shape::line_segment(
+            [s - Vec2::new(0.0, r), s + Vec2::new(0.0, r)],
+            Stroke::new(1.4, col),
+        ));
+        shapes.push(Shape::circle_stroke(
+            s,
+            9.0,
+            Stroke::new(1.0, col.gamma_multiply(0.6)),
+        ));
+    }
+    p.extend(shapes);
 }
 
 /// Füll-Werkzeuge, deren Umgrenzung als Punktfolge geklickt wird.
@@ -5434,5 +5621,203 @@ mod tests_textvorschau {
     fn vorschau_steht_mittig_auf_dem_zeiger() {
         let t = text_preview_prim("Hallo".to_string(), 250.0);
         assert_eq!(t.valign, TextAlignV::Middle);
+    }
+}
+
+#[cfg(test)]
+mod tests_hilfslinien {
+    //! Erweiterter Punktfang (Ticket T0014): Verweilen über einem Fangpunkt
+    //! erzeugt Hilfslinien, auf denen der nächste Punkt fängt.
+    //!
+    //! Zwei Ebenen: die Verweil-Erkennung selbst (Zeitgeber, ohne Fenster) und
+    //! die Verdrahtung in der Zeichenfläche (`fang_zeiger`, Klick).
+
+    use super::*;
+
+    fn app() -> App {
+        let mut app = App::with_ctx(egui::Context::default());
+        app.session_mut()
+            .execute(
+                "doc.settings",
+                &serde_json::json!({"input_unit": "mm",
+                                    "snap": {"grid": false, "ortho": false, "polar": false}}),
+            )
+            .unwrap();
+        app
+    }
+
+    fn linie(app: &mut App) -> Id {
+        app.session_mut()
+            .execute(
+                "draw.line",
+                &serde_json::json!({"a": [0.0, 0.0], "b": [2000.0, 0.0]}),
+            )
+            .unwrap();
+        app.doc().entities[0].id
+    }
+
+    fn halt_am_ende(app: &App, id: Id) -> snap::HaltPunkt {
+        let hit = snap::find_snap(app.doc(), V2::new(1999.0, 2.0), 30.0, None, &[], &[])
+            .expect("Linienende muss fangen");
+        snap::HaltPunkt::neu(app.doc(), &hit)
+    }
+
+    fn assert_punkt(ist: V2, soll: V2, was: &str) {
+        assert!(ist.dist(soll) < 1e-9, "{was}: erwartet {soll:?}, ist {ist:?}");
+    }
+
+    fn frame(app: &mut App, events: Vec<egui::Event>) {
+        let ctx = app.ctx.clone();
+        let input = egui::RawInput {
+            screen_rect: Some(Rect::from_min_size(Pos2::ZERO, Vec2::new(1500.0, 950.0))),
+            events,
+            ..Default::default()
+        };
+        let _ = ctx.run(input, |ctx| app.ui(ctx));
+    }
+
+    // ---- Verweil-Erkennung ------------------------------------------------
+
+    /// Erst nach der Verweildauer gilt der Punkt als gehalten — und nur einmal.
+    #[test]
+    fn verweilen_haelt_den_punkt_erst_nach_der_dauer() {
+        let t0 = std::time::Instant::now();
+        let mut v = VerweilFang::default();
+        let h = snap::HaltPunkt {
+            point: V2::new(1000.0, 500.0),
+            kind: snap::SnapKind::Endpoint,
+            entity: None,
+            richtung: None,
+        };
+        assert!(v.update(Some(h.clone()), t0).is_none(), "sofort gehalten?");
+        assert!(v.laeuft(), "Zeitgeber läuft");
+        let halb = t0 + VERWEILDAUER / 2;
+        assert!(v.update(Some(h.clone()), halb).is_none(), "halb ist zu früh");
+        let spaeter = t0 + VERWEILDAUER + std::time::Duration::from_millis(20);
+        assert!(v.update(Some(h.clone()), spaeter).is_some(), "jetzt halten");
+        assert!(!v.laeuft(), "danach läuft kein Zeitgeber mehr");
+        // Derselbe Punkt löst nicht erneut aus.
+        assert!(
+            v.update(Some(h), spaeter + std::time::Duration::from_millis(500)).is_none(),
+            "derselbe Punkt darf nicht doppelt halten"
+        );
+    }
+
+    /// Wandert der Fangpunkt, beginnt die Zeit von vorn.
+    #[test]
+    fn neuer_punkt_beginnt_von_vorn() {
+        let t0 = std::time::Instant::now();
+        let mut v = VerweilFang::default();
+        let a = snap::HaltPunkt {
+            point: V2::new(1000.0, 0.0),
+            kind: snap::SnapKind::Endpoint,
+            entity: None,
+            richtung: None,
+        };
+        let b = snap::HaltPunkt {
+            point: V2::new(3000.0, 0.0),
+            kind: snap::SnapKind::Endpoint,
+            entity: None,
+            richtung: None,
+        };
+        v.update(Some(a), t0);
+        let spaet = t0 + VERWEILDAUER + std::time::Duration::from_millis(50);
+        assert!(v.update(Some(b.clone()), spaet).is_none(), "neuer Punkt, neue Zeit");
+        assert!(v.laeuft());
+        assert!(
+            v.update(Some(b), spaet + VERWEILDAUER).is_some(),
+            "nach der Dauer halten"
+        );
+    }
+
+    // ---- Verdrahtung in der Zeichenfläche ---------------------------------
+
+    /// Die Senkrechte des gehaltenen Punktes zieht den Fangpunkt auf ihr x.
+    #[test]
+    fn hilfslinie_zieht_den_fangpunkt_in_der_app() {
+        let mut app = app();
+        let id = linie(&mut app);
+        let h = halt_am_ende(&app, id);
+        assert_punkt(h.point, V2::new(2000.0, 0.0), "Haltepunkt");
+        app.halt.push(h);
+        let (p, label) = fang_zeiger(&app, V2::new(2004.0, 800.0), 30.0);
+        assert_punkt(p, V2::new(2000.0, 800.0), "auf der Senkrechten");
+        assert_eq!(label, Some("Hilfslinie"));
+    }
+
+    /// Ohne Haltepunkt bleibt derselbe Zeiger frei — die Gegenprobe zeigt, dass
+    /// wirklich die Hilfslinie zieht und nicht etwa das Raster.
+    #[test]
+    fn ohne_halt_bleibt_der_zeiger_frei() {
+        let mut app = app();
+        linie(&mut app);
+        let (p, label) = fang_zeiger(&app, V2::new(2004.0, 800.0), 30.0);
+        assert_punkt(p, V2::new(2004.0, 800.0), "roher Zeiger");
+        assert_eq!(label, None);
+    }
+
+    /// Verweilen über dem Linienende legt den Haltepunkt an (echte Frames) und
+    /// die Statuszeile meldet „Hilfslinie", sobald der Zeiger auf der
+    /// Senkrechten steht.
+    #[test]
+    fn verweilen_ueber_dem_ende_erzeugt_hilfslinien() {
+        let mut app = app();
+        linie(&mut app);
+        app.start_tool("draw.line");
+        frame(&mut app, vec![]);
+        let rect = app.ui.last_canvas;
+        let view = app.current_view();
+        let ende = world_to_screen(rect, view, V2::new(2000.0, 0.0));
+
+        frame(&mut app, vec![egui::Event::PointerMoved(ende)]);
+        assert!(app.halt.is_empty(), "nach einem Frame noch nicht gehalten");
+
+        std::thread::sleep(VERWEILDAUER + std::time::Duration::from_millis(120));
+        frame(&mut app, vec![egui::Event::PointerMoved(ende)]);
+        assert_eq!(app.halt.len(), 1, "Verweilen hält den Endpunkt: {:?}", app.halt);
+        assert_punkt(app.halt[0].point, V2::new(2000.0, 0.0), "Haltepunkt");
+
+        // Zeiger auf die Senkrechte des Haltepunkts: der Fang meldet sie.
+        let tol = fang_radius_px(&app, view.zoom);
+        let auf_der_linie = world_to_screen(rect, view, V2::new(2000.0 + tol * 0.3, 700.0));
+        frame(&mut app, vec![egui::Event::PointerMoved(auf_der_linie)]);
+        assert_eq!(app.snap_label.as_deref(), Some("Hilfslinie"));
+    }
+
+    /// Ein gesetzter Punkt löst die Hilfslinien — sonst blieben sie für den
+    /// nächsten Punkt ohne Anlass stehen.
+    #[test]
+    fn klick_loest_die_hilfslinien() {
+        let mut app = app();
+        let id = linie(&mut app);
+        app.start_tool("draw.line");
+        app.halt.push(halt_am_ende(&app, id));
+        frame(&mut app, vec![]);
+        let rect = app.ui.last_canvas;
+        let view = app.current_view();
+        let center = app.current_view().center;
+        let ziel = world_to_screen(rect, view, center);
+        assert!(rect.contains(ziel), "Zielfläche: {rect:?}, Punkt {ziel:?}");
+
+        frame(
+            &mut app,
+            vec![
+                egui::Event::PointerMoved(ziel),
+                egui::Event::PointerButton {
+                    pos: ziel,
+                    button: egui::PointerButton::Primary,
+                    pressed: true,
+                    modifiers: egui::Modifiers::NONE,
+                },
+                egui::Event::PointerButton {
+                    pos: ziel,
+                    button: egui::PointerButton::Primary,
+                    pressed: false,
+                    modifiers: egui::Modifiers::NONE,
+                },
+            ],
+        );
+        assert!(app.halt.is_empty(), "Klick löst die Hilfslinien");
+        assert_eq!(app.tool.as_ref().map(|t| t.pts.len()), Some(1), "erster Punkt gesetzt");
     }
 }
