@@ -664,6 +664,7 @@ pub fn show(app: &mut App, ui: &mut Ui) {
         if app.tool.is_some() {
             draw_tool_preview(app, &painter, rect, view_now, snapped, raw_world);
         }
+        draw_text_rahmen(app, &painter, rect, view_now, &selected);
         draw_grips(app, &painter, rect, view_now, &selected);
         if app.ghost.is_some() {
             draw_ghost(app, &painter, rect, view_now);
@@ -698,6 +699,7 @@ pub fn show(app: &mut App, ui: &mut Ui) {
         if app.tool.is_some() {
             draw_tool_preview(app, &painter, rect, view_now, snapped, raw_world);
         }
+        draw_text_rahmen(app, &painter, rect, view_now, &selected);
         draw_grips(app, &painter, rect, view_now, &selected);
         if app.ghost.is_some() {
             draw_ghost(app, &painter, rect, view_now);
@@ -2196,12 +2198,13 @@ fn handle_input(
                 app.select_drag = None;
                 return;
             }
-            // Klick auf ein bereits ausgewaehltes Objekt: Auswahl verschieben
+            // Klick auf ein bereits ausgewaehltes Objekt: Auswahl verschieben.
+            // Text nicht — der wandert nur ueber das Werkzeug "Verschieben".
             if let Some(r) = raw {
                 let tol2 = 10.0 / view.zoom.max(1e-6);
+                let frame = resp.ctx.input(|i| i.time);
                 if let Some(hit) = snap::hit_test(app.doc(), r, tol2, None) {
-                    if app.selection().contains(&hit) {
-                        app.begin_move_drag(r, resp.ctx.input(|i| i.time));
+                    if app.selection().contains(&hit) && app.begin_move_drag_bei_klick(hit, r, frame) {
                         app.select_drag = None;
                         return;
                     }
@@ -2443,6 +2446,29 @@ fn draw_auswahlfenster(p: &Painter, rect: Rect, view: View, start: V2, cur: V2) 
         0.0,
         Stroke::new(1.2, if crossing { Palette::OK } else { Palette::SELECT }),
     );
+}
+
+/// Rahmen ausgewählter Texte: derselbe Kasten, den die Einfüge-Vorschau zeigt.
+///
+/// Er ist sonst unsichtbar — er dient dem Punktfang (Ecken und Kantenmitten)
+/// und wird bei Auswahl gezeichnet, damit man sieht, wo der Text hängt. Kein
+/// allgemeiner Auswahlrahmen: nur Text hat keinen Griff, an dem man ihn fasst.
+fn draw_text_rahmen(app: &App, p: &Painter, rect: Rect, view: View, selected: &[Id]) {
+    if selected.is_empty() {
+        return;
+    }
+    let doc = app.doc();
+    for id in selected {
+        let Some(e) = doc.entity(*id) else { continue };
+        let Some(ecken) = render::text_frame(doc, e) else { continue };
+        let a = world_to_screen(rect, view, ecken[0]);
+        let b = world_to_screen(rect, view, ecken[2]);
+        p.rect_stroke(
+            Rect::from_two_pos(a, b),
+            0.0,
+            Stroke::new(1.0, Palette::SELECT.gamma_multiply(0.55)),
+        );
+    }
 }
 
 fn draw_grips(app: &App, p: &Painter, rect: Rect, view: View, selected: &[Id]) {

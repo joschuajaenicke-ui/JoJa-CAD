@@ -742,6 +742,19 @@ impl App {
                         self.session_mut().selection = vec![id];
                     }
                 }
+                "seltext" => {
+                    // ersten Text auswählen: der Rahmen mit den Fangpunkten
+                    // muss im Screenshot sichtbar sein (T0010)
+                    if let Some(id) = self
+                        .doc()
+                        .entities
+                        .iter()
+                        .find(|e| matches!(e.kind, EntityKind::Text { .. }))
+                        .map(|e| e.id)
+                    {
+                        self.session_mut().selection = vec![id];
+                    }
+                }
                 // Farbeimer-Prüffall (t_9cd971c5): den Raum unten links wirklich
                 // füllen und die Fläche auswählen. Im Screenshot muss der
                 // Wandrahmen über der Fläche liegen, und das Eigenschaften-Panel
@@ -3770,6 +3783,30 @@ impl App {
         );
     }
 
+    /// Lässt sich dieses Objekt durch Ziehen mit der Maus verschieben?
+    ///
+    /// Text nicht: ein Klick auf den Text trifft über die ganze Textfläche, ein
+    /// versehentliches Ziehen würde ihn unbemerkt verrücken. Text wandert nur
+    /// über das Werkzeug „Verschieben".
+    pub fn maus_verschiebt(&self, id: Id) -> bool {
+        self.doc()
+            .entity(id)
+            .map(|e| !matches!(e.kind, EntityKind::Text { .. }))
+            .unwrap_or(false)
+    }
+
+    /// Beginnt das Maus-Verschieben nur, wenn das getroffene Objekt es zulässt.
+    ///
+    /// Liefert `false`, wenn der Zug nicht startet (Text) — dann läuft die
+    /// übrige Zeigerauswertung weiter, statt die Auswahl zu verschieben.
+    pub fn begin_move_drag_bei_klick(&mut self, hit: Id, at: V2, frame: f64) -> bool {
+        if !self.maus_verschiebt(hit) {
+            return false;
+        }
+        self.begin_move_drag(at, frame);
+        self.move_drag.is_some()
+    }
+
     /// Beginnt das Verschieben der Auswahl mit der Maus (Undo-Snapshot einmalig).
     pub fn begin_move_drag(&mut self, start: V2, frame: f64) {
         let ids = self.selection().to_vec();
@@ -4326,5 +4363,74 @@ mod tests_vollbild {
             im_reiter,
             "Action fehlt in der Gruppe Ansicht (Inventar, Hilfe, Ribbon)"
         );
+    }
+}
+
+#[cfg(test)]
+mod tests_text_ziehen {
+    //! Text wandert nicht mit der gedrückten Maustaste (Ticket T0010).
+    //!
+    //! Ein Klick trifft beim Text die ganze Textfläche; beim Ziehen verschöbe er
+    //! sich unbemerkt. Verschoben wird Text nur über das Werkzeug „Verschieben".
+    //! Geprüft wird der Weg, den die Zeichenfläche beim Klick nimmt
+    //! (`App::begin_move_drag_bei_klick`) — nicht nur ein Kennzeichen.
+
+    use super::*;
+
+    fn app_mit_text_und_linie() -> (App, Id, Id) {
+        let mut app = App::with_ctx(egui::Context::default());
+        app.session_mut()
+            .execute(
+                "draw.text",
+                &serde_json::json!({ "p": [0.0, 0.0], "text": "Hallo", "height": 250.0 }),
+            )
+            .expect("Text anlegen");
+        app.session_mut()
+            .execute(
+                "draw.line",
+                &serde_json::json!({ "a": [0.0, 2000.0], "b": [1000.0, 2000.0] }),
+            )
+            .expect("Linie anlegen");
+        let text = app
+            .doc()
+            .entities
+            .iter()
+            .find(|e| matches!(e.kind, EntityKind::Text { .. }))
+            .expect("Text fehlt")
+            .id;
+        let linie = app
+            .doc()
+            .entities
+            .iter()
+            .find(|e| matches!(e.kind, EntityKind::Line { .. }))
+            .expect("Linie fehlt")
+            .id;
+        (app, text, linie)
+    }
+
+    /// Ziehen auf dem ausgewählten Text startet kein Verschieben.
+    #[test]
+    fn text_startet_kein_maus_verschieben() {
+        let (mut app, text, _) = app_mit_text_und_linie();
+        app.session_mut().select(vec![text]);
+
+        let gestartet = app.begin_move_drag_bei_klick(text, V2::new(0.0, 0.0), 1.0);
+
+        assert!(!gestartet, "Text darf kein Maus-Verschieben starten");
+        assert!(app.move_drag.is_none(), "kein laufender Zug am Text");
+        assert_eq!(app.selection(), &[text], "Text bleibt ausgewählt");
+    }
+
+    /// Die Linie wandert weiterhin mit der Maus (Gegenprobe: die Sperre gilt
+    /// nur für Text, nicht für die Auswahl insgesamt).
+    #[test]
+    fn linie_startet_weiterhin_maus_verschieben() {
+        let (mut app, _, linie) = app_mit_text_und_linie();
+        app.session_mut().select(vec![linie]);
+
+        let gestartet = app.begin_move_drag_bei_klick(linie, V2::new(500.0, 2000.0), 1.0);
+
+        assert!(gestartet, "Linie muss sich ziehen lassen");
+        assert!(app.move_drag.is_some(), "Zug läuft");
     }
 }
