@@ -156,12 +156,13 @@ Mit dem Nutzer abgestimmt — nicht „verbessern“:
 - **Türen** sitzen immer auf der *vorderen Wandkante* (Blattseite), nicht in der
   Wandmitte. Kein Auswahlfeld für die Tür-Lage. Fenster dürfen ihre Lage in
   der Wanddicke wählen (Links/Mittig/Rechts).
-- **Tür-Vorschau** ist das fertige Objekt, kein Platzhalter: `render::preview_door`
-  zeichnet Blatt, Viertelbogen und Anschlagseite über denselben Renderer wie der
-  eingefügte Block — auf der vorderen Wandkante (Blattseite folgt `swing_in`) — und
-  legt das Loch in der Wand frei (`DoorPreview::loch`, in Papierfarbe, weil die
-  Vorschau **über** der vorhandenen Wand liegt). Wandkanten der Vorschau müssen
-  zeilengleich mit der Wand nach dem Einfügen sein.
+- **Vorschau von Tür und Fenster** ist das fertige Objekt, kein Platzhalter:
+  `render::preview_door`/`preview_window` liefern `OpeningPreview` (Symbol, Wand des
+  Hosts, freigelegte Fläche) aus demselben Renderer wie der eingefügte Block — Tür auf
+  der vorderen Wandkante (Blattseite folgt `swing_in`), Fenster in der Wanddicke; beide
+  schneiden die Wand **gleich** aus. Das Loch wird in Papierfarbe freigelegt
+  (`OpeningPreview::loch`), weil die Vorschau **über** der vorhandenen Wand liegt.
+  Wandkanten der Vorschau müssen zeilengleich mit der Wand nach dem Einfügen sein.
 - **Dropdowns**: immer `panels::pick_combo` bzw. `panels::dropdown`
   (150 px Wertespalte, gleicher Pfeil). **Kein `egui::ComboBox`** — schließt bei
   jedem Klick im Popup und sieht anders aus.

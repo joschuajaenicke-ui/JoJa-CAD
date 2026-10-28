@@ -557,7 +557,7 @@ fn resolve_layer(doc: &mut Document, p: &Params) -> Id {
 
 
 /// Verschiebt den Mittelpunkt einer Öffnung quer zur Wand (Ausrichtung in der Wanddicke).
-fn offset_opening(
+pub fn offset_opening(
     doc: &Document,
     host: Option<Id>,
     center: Vec2,
