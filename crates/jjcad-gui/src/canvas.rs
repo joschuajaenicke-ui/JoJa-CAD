@@ -5673,6 +5673,44 @@ mod tests_fang_griff {
             .expect("Füllfläche in der Datei");
         assert_punkt(geladen, V2::new(5000.0, 500.0));
     }
+
+    /// Zwei Ecken aufeinandergelegt (Zug mit Fang auf die Nachbarecke): aus
+    /// vier Umgrenzungspunkten werden drei, die Fläche bleibt eine Fläche —
+    /// und die gespeicherte Datei trägt drei Punkte (T0018, Turn 2).
+    #[test]
+    fn mauszug_verschmilzt_zwei_ecken_zu_einem_punkt() {
+        let (mut app, id) = szenario_flaeche();
+        frame(&mut app, vec![]);
+        let rect = app.ui.last_canvas;
+        let view = app.current_view();
+
+        let griff = world_to_screen(rect, view, V2::new(4000.0, 0.0));
+        let ziel = world_to_screen(rect, view, V2::new(0.0, 0.0));
+
+        frame(&mut app, vec![egui::Event::PointerMoved(griff)]);
+        frame(&mut app, vec![druck(griff)]);
+        assert!(app.grip_drag.is_some(), "Griffzug muss beginnen");
+
+        frame(&mut app, vec![egui::Event::PointerMoved(ziel)]);
+        frame(&mut app, vec![egui::Event::PointerMoved(ziel)]);
+        frame(&mut app, vec![loslassen(ziel)]);
+        assert!(app.grip_drag.is_none(), "Loslassen beendet den Zug");
+
+        let pts = rand(&app, id);
+        assert_eq!(pts.len(), 3, "ein Umgrenzungspunkt weniger: {pts:?}");
+        assert_eq!(app.status_msg, "Füllfläche · Punkt verbunden");
+
+        let json = jjcad_core::persist::to_json(app.doc()).expect("speichern");
+        let wieder = jjcad_core::persist::from_json(&json).expect("laden");
+        let geladen = wieder
+            .entity(id)
+            .and_then(|e| match &e.kind {
+                EntityKind::Fill { boundary, .. } => Some(boundary.len()),
+                _ => None,
+            })
+            .expect("Füllfläche in der Datei");
+        assert_eq!(geladen, 3, "Punktzahl steht so in der Datei");
+    }
 }
 
 /// Papierraum der Druckvorschau (Ticket T0004): Zeichnen und Ändern laufen im
