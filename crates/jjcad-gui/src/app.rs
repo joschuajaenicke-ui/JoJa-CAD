@@ -915,6 +915,19 @@ impl App {
                         self.session_mut().selection = vec![id];
                     }
                 }
+                "selvolume" | "selvolumen" => {
+                    // erstes Volumen auswählen: Eigenschaften-Panel mit Höhe,
+                    // Fläche und Volumen (m³) zeigen
+                    if let Some(id) = self
+                        .doc()
+                        .entities
+                        .iter()
+                        .find(|e| matches!(e.kind, EntityKind::Volume { .. }))
+                        .map(|e| e.id)
+                    {
+                        self.session_mut().selection = vec![id];
+                    }
+                }
                 "selpoly" => {
                     // erste (geschlossene) Polylinie auswählen: Eigenschaften-
                     // Panel mit Länge, Fläche, Stützpunkten, Geschlossenheit
@@ -2692,6 +2705,7 @@ fn rail(ui: &mut egui::Ui, icon: &str, tooltip: &str, chevron: &str) -> bool {
                     self.group(ui, "Bauteile", |ui, app| {
                         for (id, icon, label) in [
                             ("draw.wall", "wall", "Wand"),
+                            ("draw.volume", "volume", "Volumen"),
                             ("draw.door", "door", "Tür"),
                             ("draw.window", "window", "Fenster"),
                             ("draw.stair", "stair", "Treppe"),
@@ -3572,6 +3586,13 @@ pub(crate) fn commands_hint(tool: &Tool) -> &'static str {
             }
         }
         "draw.fill.paint" => "Farbeimer · Fläche anklicken",
+        "draw.volume" => {
+            if tool.pts.len() < 3 {
+                "Volumen · Kontur klicken (mind. 3)"
+            } else {
+                "Volumen · Enter schließt den Körper"
+            }
+        }
         "draw.hatch" => "Schraffur · Kontur anklicken",
         "dim.linear" => match tool.pts.len() {
             0 => "Maß · erster Punkt",
@@ -4113,6 +4134,7 @@ pub fn entity_kind_icon(kind: &EntityKind) -> &'static str {
         EntityKind::Polyline { .. } => "polyline",
         EntityKind::Spline { .. } => "spline",
         EntityKind::Fill { .. } => "fill",
+        EntityKind::Volume { .. } => "volume",
         EntityKind::Text { .. } => "text",
         EntityKind::Dim { .. } | EntityKind::DimChain { .. } => "dim",
         EntityKind::Elevation { .. } => "elevation",

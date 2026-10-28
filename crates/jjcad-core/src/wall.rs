@@ -804,6 +804,19 @@ impl<'a> WallIndex<'a> {
         false
     }
 
+    /// Liegt `p` im Körper **irgendeiner** Wand? (Anschlussregel für Volumen:
+    /// deren Umrandung fällt aus, wo sie in einer Wand liegt.)
+    pub fn covered_any(&self, p: Vec2) -> bool {
+        for i in self.around(p, 0.0) {
+            let Some((id, _)) = self.at(i) else { continue };
+            let Some(b) = self.body(id) else { continue };
+            if b.pieces.iter().any(|poly| point_in_polygon(p, poly)) {
+                return true;
+            }
+        }
+        false
+    }
+
     /// Randstücke einer Wand.
     ///
     /// `split` unterteilt die Kanten an den Kanten der Nachbarn — nötig zum

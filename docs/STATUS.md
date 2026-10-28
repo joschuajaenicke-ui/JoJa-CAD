@@ -61,6 +61,27 @@ offene Fensterinstanz zeigt weiterhin den alten Stand.
   - Messhilfen: `examples/wand_probe.rs` (Fälle als PNG + Kennzahlen),
     `examples/zeichnung_png.rs <datei.jjcad> [ziel] [x0 y0 x1 y1]`,
     `samples/Wandpruefung.jjcad`.
+- **Volumen** (`crates/jjcad-core/src/model.rs`, `EntityKind::Volume`): ein
+  Architekturelement zwischen Wand und Füllfläche. Es hat die Geometrie einer
+  Füllfläche (Außenring + Inseln, Muster, Randlinie) **und eine Höhe**; in den
+  Eigenschaften stehen Höhe, Fläche und Volumen in m³.
+  - **Es verbindet sich mit den Wänden**: Wandkanten fallen aus, wo sie im
+    Volumen liegen; die Umrandung des Volumens fällt aus, wo sie in einer Wand
+    liegt. Beide Seiten prüfen dieselbe Regel, deshalb steht an der Naht keine
+    Linie — ohne dass Geometrie verschmolzen wird. Kanten werden dafür an den
+    Rändern der jeweils anderen Fläche unterteilt (`render::sichtbare_stuecke`),
+    damit nur das verdeckte Stück wegfällt.
+  - Die Fläche wird standardmäßig im **Wandton** (74 % Richtung Weiß) gefüllt,
+    damit der Übergang auch als Farbe nicht auffällt (`render::WALL_FILL_MIX`).
+  - Gedacht für Mauerwerk, das sich nicht als Rechteckwand zeichnen lässt:
+    runde Wand, Pfeiler, Sonderform. Beispiel: `samples/Volumen.jjcad`
+    (Halbkreisbogen auf zwei geraden Wänden, erzeugt von
+    `examples/volumen_erzeugen.rs`).
+  - Wände tragen ihre Höhe schon als Metadatum; das Eigenschaften-Panel zeigt
+    jetzt zusätzlich das Volumen (Länge × Dicke × Höhe, brutto).
+  - Abnahme: `tests/volumen.rs` — Anschluss in beiden Richtungen ohne Linie
+    (Vektor **und** Pixelbild), gleicher Ton wie die Wand, Höhe/Volumen in m³,
+    Höhenänderung über `modify.set`, Speichern/Laden.
 - **Wandschraffur**: `hatch` an der Wand (Vollfläche, 45°, Kreuz, Punkte,
   **Dämmung = Mäander**), gezeichnet als Displaylisten-Primitive.
 - **Wandausrichtung**: `WallAlign` (Links/Mittig/Rechts), Versatz ±Dicke/2,

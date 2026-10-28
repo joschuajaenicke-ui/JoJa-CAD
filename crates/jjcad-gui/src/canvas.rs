@@ -3192,7 +3192,10 @@ fn draw_hilfslinien(app: &App, p: &Painter, rect: Rect, view: View) {
 /// Undo und Platzieren-Panel teilen sie sich. Ein zweiter Zweig pro Werkzeug
 /// würde die beiden Werkzeuge früher oder später auseinanderlaufen lassen.
 pub fn ist_fuell_punkte(action: &str) -> bool {
-    matches!(action, "draw.fill.boundary" | "draw.fill.points")
+    matches!(
+        action,
+        "draw.fill.boundary" | "draw.fill.points" | "draw.volume"
+    )
 }
 
 /// Eckpunkte einer Füllfläche aus den gesammelten Klicks.
@@ -3370,15 +3373,19 @@ fn finish_fill(app: &mut App, action: &str) -> bool {
         .iter()
         .map(|p| [app.unit().from_mm(p.x), app.unit().from_mm(p.y)])
         .collect();
-    let ok = run(
-        app,
-        action,
-        json!({"boundary": pts,
-               "pattern": app.options.fill_pattern.key(),
-               "angle": app.options.fill_angle.to_degrees(),
-               "scale": app.unit().from_mm(app.options.fill_scale),
-               "border": app.options.fill_border_points}),
-    );
+    let mut params = json!({"boundary": pts,
+           "pattern": app.options.fill_pattern.key(),
+           "angle": app.options.fill_angle.to_degrees(),
+           "scale": app.unit().from_mm(app.options.fill_scale),
+           "border": app.options.fill_border_points});
+    if action == "draw.volume" {
+        // Volumen: Höhe kommt aus dem Platzieren-Panel (Standard = Wandhöhe).
+        params["height"] = json!(app.unit().from_mm(app.options.wall_height));
+        // Ein Körper ist Mauerwerk: standardmäßig die volle Fläche in
+        // Wandfarbe, kein Muster.
+        params["pattern"] = json!("solid");
+    }
+    let ok = run(app, action, params);
     if ok {
         app.tool = None;
     }
@@ -3416,9 +3423,11 @@ pub fn finish_tool(app: &mut App, from_enter: bool) {
             }
             app.tool = None;
         }
-        "draw.fill.boundary" | "draw.fill.points" => {
-            // Ein Abschluss für beide Eingaben; `action` bestimmt nur, welche
-            // Action den Kern aufruft (MCP und Klickpfad landen im selben Code).
+        "draw.fill.boundary" | "draw.fill.points" | "draw.volume" => {
+            // Ein Abschluss für alle drei Eingaben; `action` bestimmt nur,
+            // welche Action den Kern aufruft (MCP und Klickpfad landen im
+            // selben Code). `draw.volume` erzeugt dasselbe Objekt wie eine
+            // Füllfläche, nur als Körper mit Höhe.
             finish_fill(app, &tool.action);
         }
         "dim.chain" => {

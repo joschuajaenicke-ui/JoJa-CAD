@@ -237,6 +237,13 @@ pub struct RenderCtx<'a> {
     /// Nur dieses Gebiet braucht der Durchgang (ein Objekt). Dann wird der
     /// Wandindex nur im Umfeld gebaut statt über die ganze Zeichnung.
     wall_scope: Option<BBox>,
+    /// Grundflächen aller Volumen des Durchgangs (Außenring, Inseln) — für die
+    /// Anschlussregel zwischen Volumen und Wänden.
+    volumes: OnceCell<Vec<(Vec<Vec2>, Vec<Vec<Vec2>>)>>,
+    /// Kanten aller Wandkörper, einmal gesammelt: Fremdkanten (Volumen) werden
+    /// daran unterteilt, damit nur das Stück ausfällt, das wirklich in der Wand
+    /// liegt.
+    wall_edges: OnceCell<Vec<(Vec2, Vec2)>>,
 }
 
 impl<'a> RenderCtx<'a> {
@@ -251,6 +258,8 @@ impl<'a> RenderCtx<'a> {
             entities: None,
             walls: OnceCell::new(),
             wall_scope: None,
+            volumes: OnceCell::new(),
+            wall_edges: OnceCell::new(),
         }
     }
 
@@ -265,6 +274,8 @@ impl<'a> RenderCtx<'a> {
             entities: None,
             walls: OnceCell::new(),
             wall_scope: None,
+            volumes: OnceCell::new(),
+            wall_edges: OnceCell::new(),
         }
     }
 
@@ -289,6 +300,70 @@ impl<'a> RenderCtx<'a> {
     }
 
     /// Wandindex dieses Durchgangs — einmal gebaut, danach nur Nachbarschaft.
+    /// Grundflächen aller Volumen dieses Durchgangs (mit Inseln).
+    pub fn volumes(&self) -> &[(Vec<Vec2>, Vec<Vec<Vec2>>)] {
+        self.volumes.get_or_init(|| {
+            let ents: &'a [Entity] = self.entities.unwrap_or_else(|| self.doc.ents());
+            ents.iter()
+                .filter_map(|e| match &e.kind {
+                    EntityKind::Volume { boundary, holes, .. } => {
+                        Some((boundary.clone(), holes.clone()))
+                    }
+                    _ => None,
+                })
+                .collect()
+        })
+    }
+
+    /// Liegt `p` in einem Volumen? Wandkanten fallen dort aus — so schließt
+    /// das Volumen an die Wand an, ohne Trennlinie.
+    pub fn in_volume(&self, p: Vec2) -> bool {
+        self.volumes()
+            .iter()
+            .any(|(outer, holes)| crate::area::point_in_area(p, outer, holes))
+    }
+
+    /// Kanten aller Wandkörper (unsplittet) — Unterteilung für Fremdkanten.
+    pub fn wall_body_edges(&self) -> &[(Vec2, Vec2)] {
+        self.wall_edges.get_or_init(|| {
+            let ent: &[Entity] = self.entities.unwrap_or_else(|| self.doc.ents());
+            let mut out = Vec::new();
+            for e in ent {
+                if !matches!(e.kind, EntityKind::Wall { .. }) {
+                    continue;
+                }
+                if let Some(b) = self.wall_index().body(e.id) {
+                    for poly in &b.pieces {
+                        let n = poly.len();
+                        for k in 0..n {
+                            out.push((poly[k], poly[(k + 1) % n]));
+                        }
+                    }
+                }
+            }
+            out
+        })
+    }
+
+    /// Kanten aller Volumenflächen (Außenringe und Inseln).
+    pub fn volume_edges(&self) -> Vec<(Vec2, Vec2)> {
+        let mut out = Vec::new();
+        for (outer, holes) in self.volumes() {
+            for ring in std::iter::once(outer).chain(holes.iter()) {
+                let n = ring.len();
+                for k in 0..n {
+                    out.push((ring[k], ring[(k + 1) % n]));
+                }
+            }
+        }
+        out
+    }
+
+    /// Liegt `p` im Körper einer Wand? Umrandung eines Volumens fällt dort aus.
+    pub fn in_wall(&self, p: Vec2) -> bool {
+        self.wall_index().covered_any(p)
+    }
+
     pub fn wall_index(&self) -> &WallIndex<'a> {
         self.walls.get_or_init(|| {
             let ents: &'a [Entity] = self.entities.unwrap_or_else(|| self.doc.ents());
@@ -565,6 +640,28 @@ pub fn render_entity(
             *pattern_angle,
             *pattern_scale,
             *border,
+            None,
+            xf,
+            dl,
+        ),
+        EntityKind::Volume {
+            boundary,
+            holes,
+            pattern,
+            pattern_angle,
+            pattern_scale,
+            border,
+            height: _,
+        } => render_volume(
+            ctx,
+            e,
+            &st,
+            boundary,
+            holes,
+            *pattern,
+            *pattern_angle,
+            *pattern_scale,
+            *border,
             xf,
             dl,
         ),
@@ -783,6 +880,126 @@ fn c_off(pos: Vec2, rot: f64, scale: Vec2, x: f64, y: f64) -> Vec2 {
 /// geschlossene Polygonzüge ausgegeben, damit das Muster die Fläche nicht
 /// überragt. Löcher (`holes`) sind Aussparungen: Fläche, Muster *und*
 /// Randlinie lassen sie frei, damit im Loch der Untergrund zu sehen ist.
+/// Aufhellung des Wandonne für die Wandfläche (Anteil Richtung Weiß).
+pub const WALL_FILL_MIX: f64 = 0.74;
+
+/// Tastabstand für „liegt jenseits dieser Kante schon Material?" (mm).
+const WALL_PROBE: f64 = 0.08;
+
+/// Strecke an `trenn`-Kanten unterteilen und Stücke auslassen, deren Mitte
+/// (um `out · WALL_PROBE` nach außen) als verdeckt gilt.
+///
+/// Eine Kante, die nur **teilweise** in einer anderen Fläche liegt, muss
+/// unterteilt werden — sonst fällt entweder zu viel weg (Lücke in der
+/// Umrandung) oder zu wenig (Trennlinie bleibt stehen).
+fn sichtbare_stuecke(
+    a: Vec2,
+    b: Vec2,
+    out: Vec2,
+    trenn: &[(Vec2, Vec2)],
+    verdeckt: &dyn Fn(Vec2) -> bool,
+) -> Vec<(Vec2, Vec2)> {
+    let d = b - a;
+    if d.len() < 1e-9 {
+        return Vec::new();
+    }
+    let mut ts: Vec<f64> = vec![0.0, 1.0];
+    for (r, q) in trenn {
+        if let Some(x) = line_line(a, b, *r, *q, false, false) {
+            let t = (x - a).dot(d) / d.len2();
+            if t > 1e-6 && t < 1.0 - 1e-6 {
+                ts.push(t);
+            }
+        }
+    }
+    ts.sort_by(|x, y| x.partial_cmp(y).unwrap_or(std::cmp::Ordering::Equal));
+    ts.dedup_by(|x, y| (*x - *y).abs() < 1e-9);
+    let mut out_pieces = Vec::new();
+    for w in ts.windows(2) {
+        let (t0, t1) = (w[0], w[1]);
+        if t1 - t0 < 1e-9 {
+            continue;
+        }
+        let p = a + d * t0;
+        let q = a + d * t1;
+        if verdeckt((p + q) * 0.5 + out * WALL_PROBE) {
+            continue;
+        }
+        out_pieces.push((p, q));
+    }
+    out_pieces
+}
+
+/// Volumen zeichnen: Fläche und Muster wie eine Füllfläche, aber im Wandton
+/// und mit Anschluss an die Wände.
+///
+/// Die Umrandung fällt aus, wo sie in einer Wand (oder in einem anderen
+/// Volumen) liegt; umgekehrt blendet `render_wall` seine Kanten aus, wo sie im
+/// Volumen liegen. Beide Seiten halten dieselbe Regel ein, deshalb bleibt an
+/// der Naht keine Linie stehen — ohne dass Geometrie verschmolzen wird.
+fn render_volume(
+    ctx: &RenderCtx,
+    e: &Entity,
+    st: &PrimStyle,
+    boundary: &[Vec2],
+    holes: &[Vec<Vec2>],
+    pattern: FillPattern,
+    pattern_angle: f64,
+    pattern_scale: f64,
+    border: bool,
+    xf: Affine,
+    dl: &mut DisplayList,
+) {
+    render_fill(
+        e,
+        st,
+        boundary,
+        holes,
+        pattern,
+        pattern_angle,
+        pattern_scale,
+        false,
+        Some(st.color.mix(Color::WHITE, WALL_FILL_MIX)),
+        xf,
+        dl,
+    );
+    if !border {
+        return;
+    }
+    let mut ringe: Vec<&[Vec2]> = vec![boundary];
+    ringe.extend(holes.iter().map(|h| h.as_slice()));
+    let trenn = ctx.wall_body_edges().to_vec();
+    for ring in ringe {
+        let n = ring.len();
+        if n < 2 {
+            continue;
+        }
+        for k in 0..n {
+            let p = ring[k];
+            let q = ring[(k + 1) % n];
+            if p.dist(q) < 0.01 {
+                continue;
+            }
+            let mut out = (q - p).normalized().perp();
+            let mid = (p + q) * 0.5;
+            // Außenseite des Rings bestimmen (Inseln laufen andersherum)
+            if point_in_polygon(mid + out * 0.5, ring) {
+                out = -out;
+            }
+            for (a, b) in sichtbare_stuecke(p, q, out, &trenn, &|pt| {
+                ctx.in_wall(pt) || ctx.in_volume(pt)
+            }) {
+                dl.push(Prim {
+                    shape: Shape::Line(xf.apply(a), xf.apply(b)),
+                    style: *st,
+                    entity: e.id,
+                    layer: e.layer,
+                });
+            }
+        }
+    }
+}
+
 pub fn render_fill(
     e: &Entity,
     st: &PrimStyle,
@@ -792,6 +1009,10 @@ pub fn render_fill(
     pattern_angle: f64,
     pattern_scale: f64,
     border: bool,
+    // Standardton für die Vollfläche, wenn keine Füllfarbe gesetzt ist
+    // (`None` = aufgehellte Linienfarbe einer Fläche). Ein Volumen gibt hier
+    // den **Wandton** an, damit beide Flächen gleich aussehen.
+    shade: Option<Color>,
     xf: Affine,
     dl: &mut DisplayList,
 ) {
@@ -812,7 +1033,9 @@ pub fn render_fill(
     // grauer Kasten unter den Linien.
     let area = match (pattern, e.style.fill) {
         (_, Some(c)) => Some(c),
-        (FillPattern::Solid, None) => Some(st.color.mix(Color::WHITE, 0.72)),
+        (FillPattern::Solid, None) => {
+            Some(shade.unwrap_or_else(|| st.color.mix(Color::WHITE, 0.72)))
+        }
         _ => None,
     };
     if let Some(c) = area {
@@ -1185,7 +1408,7 @@ fn render_wall(
     let fill = e
         .style
         .fill
-        .unwrap_or_else(|| st.color.mix(Color::WHITE, 0.74));
+        .unwrap_or_else(|| st.color.mix(Color::WHITE, WALL_FILL_MIX));
     let fill_style = PrimStyle {
         color: fill,
         fill: Some(fill),
@@ -1215,14 +1438,20 @@ fn render_wall(
     if let Some(hp) = hatch {
         push_wall_hatch(dl, e, st, hp, body, thickness, xf);
     }
-    // 4. Umrandung: nur die Randstücke, deren Außenseite frei ist.
+    // 4. Umrandung: nur die Randstücke, deren Außenseite frei ist. Ein Stück,
+    //    das in einem **Volumen** liegt, fällt ebenfalls aus — so schließen
+    //    Volumen und Wand ohne Trennlinie aneinander an. Die Kante wird dafür
+    //    an den Volumenrändern unterteilt: nur das Stück im Volumen entfällt.
+    let vkanten = ctx.volume_edges();
     for ed in edges.iter().filter(|p| !p.covered) {
-        dl.push(Prim {
-            shape: Shape::Line(xf.apply(ed.a), xf.apply(ed.b)),
-            style: *st,
-            entity: e.id,
-            layer: e.layer,
-        });
+        for (p, q) in sichtbare_stuecke(ed.a, ed.b, ed.out, &vkanten, &|pt| ctx.in_volume(pt)) {
+            dl.push(Prim {
+                shape: Shape::Line(xf.apply(p), xf.apply(q)),
+                style: *st,
+                entity: e.id,
+                layer: e.layer,
+            });
+        }
     }
 }
 
@@ -1977,6 +2206,8 @@ pub fn render_sheet(doc: &Document, sheet: &Sheet) -> DisplayList {
         entities: Some(&sheet.entities),
         walls: OnceCell::new(),
         wall_scope: None,
+        volumes: OnceCell::new(),
+        wall_edges: OnceCell::new(),
     };
     // Papierraum-Objekte: Blattrahmen, Schriftfeld und alles, was der Nutzer
     // selbst aufs Blatt zeichnet. Alles davon sind normale Objekte — der
@@ -2000,6 +2231,8 @@ pub fn render_model_scaled(doc: &Document, scale: f64, layers: Option<Vec<Id>>) 
         entities: Some(&doc.entities),
         walls: OnceCell::new(),
         wall_scope: None,
+        volumes: OnceCell::new(),
+        wall_edges: OnceCell::new(),
     };
     render_document(&ctx)
 }
@@ -2017,6 +2250,8 @@ pub fn render_viewport(doc: &Document, vp: &Viewport) -> DisplayList {
         entities: Some(&doc.entities),
         walls: OnceCell::new(),
         wall_scope: None,
+        volumes: OnceCell::new(),
+        wall_edges: OnceCell::new(),
     };
     let mut dl = render_document(&ctx);
     // Auf Fensterfläche beschneiden: Primitive werden bei Bedarf gekürzt.
@@ -2090,6 +2325,9 @@ fn entity_segments_tief(doc: &Document, e: &Entity, depth: usize) -> Vec<Seg> {
             out.extend(sp.segments());
         }
         EntityKind::Fill {
+            boundary, holes, ..
+        }
+        | EntityKind::Volume {
             boundary, holes, ..
         } => {
             for ring in std::iter::once(boundary).chain(holes.iter()) {

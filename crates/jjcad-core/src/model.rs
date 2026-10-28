@@ -205,6 +205,31 @@ pub enum EntityKind {
         #[serde(default)]
         border: bool,
     },
+    /// Volumen: dieselbe Fläche wie eine Füllfläche, aber ein **Körper** mit
+    /// Höhe — gedacht für Mauerwerk, das sich nicht als Rechteckwand zeichnen
+    /// lässt (runde Wand, Pfeiler, Sonderform).
+    ///
+    /// Optisch verhält es sich wie eine Füllfläche, nur dass es sich mit den
+    /// Wänden **verbindet**: seine Umrandung fällt aus, wo sie in einer Wand
+    /// liegt, und Wandkanten fallen aus, wo sie im Volumen liegen. Die Fläche
+    /// wird standardmäßig im Wandton gefüllt, damit der Übergang nicht als
+    /// Farbkante sichtbar wird.
+    Volume {
+        boundary: Vec<Vec2>,
+        #[serde(default)]
+        holes: Vec<Vec<Vec2>>,
+        #[serde(default)]
+        pattern: FillPattern,
+        #[serde(default)]
+        pattern_angle: f64,
+        #[serde(default = "default_pattern_scale")]
+        pattern_scale: f64,
+        #[serde(default)]
+        border: bool,
+        /// Höhe des Körpers in mm (Metadaten; der Grundriss zeigt keine Höhe).
+        #[serde(default = "default_wall_height")]
+        height: f64,
+    },
     Text {
         p: Vec2,
         text: String,
@@ -356,6 +381,7 @@ impl EntityKind {
             EntityKind::Polyline { .. } => "Polylinie",
             EntityKind::Spline { .. } => "Spline",
             EntityKind::Fill { .. } => "Füllfläche",
+            EntityKind::Volume { .. } => "Volumen",
             EntityKind::Text { .. } => "Text",
             EntityKind::Dim { .. } => "Maß",
             EntityKind::DimChain { .. } => "Maßkette",
@@ -375,6 +401,7 @@ impl EntityKind {
                 | EntityKind::Door { .. }
                 | EntityKind::Window { .. }
                 | EntityKind::Stair { .. }
+                | EntityKind::Volume { .. }
         )
     }
 
@@ -474,6 +501,44 @@ impl Entity {
 
     pub fn line(id: Id, layer: Id, a: Vec2, b: Vec2) -> Self {
         Self::new(id, layer, EntityKind::Line { a, b })
+    }
+
+    /// Außenring und Inseln eines gefüllten Objekts (Füllfläche oder Volumen).
+    pub fn filled_rings(&self) -> Option<(&[Vec2], &[Vec<Vec2>])> {
+        match &self.kind {
+            EntityKind::Fill { boundary, holes, .. }
+            | EntityKind::Volume { boundary, holes, .. } => Some((boundary, holes)),
+            _ => None,
+        }
+    }
+
+    /// Höhe des Körpers in mm — nur Volumen (und Wände) haben eine.
+    pub fn body_height(&self) -> Option<f64> {
+        match &self.kind {
+            EntityKind::Wall { height, .. } | EntityKind::Volume { height, .. } => Some(*height),
+            _ => None,
+        }
+    }
+
+    /// Volumen in m³. Volumen: Grundfläche × Höhe. Wand: Länge × Dicke × Höhe
+    /// (brutto, ohne Abzug der Öffnungen).
+    pub fn volume_m3(&self) -> Option<f64> {
+        match &self.kind {
+            EntityKind::Volume {
+                boundary,
+                holes,
+                height,
+                ..
+            } => Some(crate::area::area_of(boundary, holes) * height / 1e9),
+            EntityKind::Wall {
+                a,
+                b,
+                thickness,
+                height,
+                ..
+            } => Some(a.dist(*b) * thickness * height / 1e9),
+            _ => None,
+        }
     }
 }
 

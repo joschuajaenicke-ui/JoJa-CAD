@@ -1001,7 +1001,14 @@ pub fn detect_boundary(
     let schmuck: HashSet<Id> = doc
         .entities
         .iter()
-        .filter(|e| matches!(e.kind, crate::model::EntityKind::Fill { .. }))
+        // Volumen zählt wie eine Füllfläche: es ist Material und darf beim
+        // Farbeimer weder übermalt noch als Umgrenzung gewählt werden.
+        .filter(|e| {
+            matches!(
+                e.kind,
+                crate::model::EntityKind::Fill { .. } | crate::model::EntityKind::Volume { .. }
+            )
+        })
         .map(|e| e.id)
         .collect();
     let flaeche_gesamt = (zeichnung.width() * zeichnung.height()).max(1e-6);

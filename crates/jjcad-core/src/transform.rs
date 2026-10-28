@@ -106,6 +106,28 @@ pub fn transform_kind(k: &EntityKind, m: &Affine) -> EntityKind {
             pattern_scale: pattern_scale * f,
             border: *border,
         },
+        // Volumen wandert wie eine Füllfläche mit; die Höhe ist ein Maß in mm
+        // und bleibt beim Verschieben/Drehen unverändert.
+        EntityKind::Volume {
+            boundary,
+            holes,
+            pattern,
+            pattern_angle,
+            pattern_scale,
+            border,
+            height,
+        } => EntityKind::Volume {
+            boundary: boundary.iter().map(|p| m.apply(*p)).collect(),
+            holes: holes
+                .iter()
+                .map(|h| h.iter().map(|p| m.apply(*p)).collect())
+                .collect(),
+            pattern: *pattern,
+            pattern_angle: *pattern_angle,
+            pattern_scale: *pattern_scale,
+            border: *border,
+            height: *height,
+        },
         EntityKind::Text {
             p,
             text,

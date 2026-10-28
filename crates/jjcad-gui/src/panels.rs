@@ -1323,6 +1323,11 @@ fn entity_props(app: &mut App, ui: &mut Ui, id: Id) {
                 unit.from_mm(b.x),
                 unit.from_mm(b.y)
             )));
+            // Körper-Kennzahl: die Wand ist ein Volumen (Länge × Dicke × Höhe).
+            ui.label(theme::dim(format!(
+                "Volumen {:.3} m³",
+                a.dist(*b) * *thickness * *height / 1e9
+            )));
         }
         // Füllfläche: dieselben Felder wie beim Platzieren (Muster, Winkel,
         // Abstand, Randlinie) plus die beiden Farben.
@@ -1409,6 +1414,94 @@ fn entity_props(app: &mut App, ui: &mut Ui, id: Id) {
                     area_text(unit, jjcad_core::area::area_of(boundary, holes))
                 )));
             }
+        }
+        // Volumen: dieselben Felder wie die Füllfläche, zusätzlich die Höhe und
+        // die daraus folgende Kennzahl (m³). Der Körper ist Mauerwerk — die
+        // Fläche wird deshalb standardmäßig im Wandton gefüllt.
+        EntityKind::Volume {
+            boundary,
+            holes,
+            pattern,
+            pattern_angle,
+            pattern_scale,
+            border,
+            height,
+        } => {
+            let mut winkel = pattern_angle.to_degrees();
+            let mut abstand = *pattern_scale;
+            let mut rand = *border;
+            let mut hoehe = *height;
+            let pat_items: Vec<(jjcad_core::style::FillPattern, String)> =
+                jjcad_core::style::FillPattern::ALL
+                    .iter()
+                    .map(|c| (*c, c.label().to_string()))
+                    .collect();
+            widgets::field_row(ui, "Höhe", |ui| {
+                if widgets::length_input(ui, &mut hoehe, unit, 100.0) {
+                    changed_params.insert("height".into(), json!(unit.from_mm(hoehe)));
+                }
+            });
+            widgets::field_row(ui, "Muster", |ui| {
+                if let Some(v) = pick_combo(ui, "volume_pattern", *pattern, &pat_items) {
+                    changed_params.insert("pattern".into(), json!(v.key()));
+                }
+            });
+            widgets::field_row(ui, "Winkel", |ui| {
+                if ui
+                    .add(crate::widgets::dv(&mut winkel).speed(1.0).suffix("°"))
+                    .changed()
+                {
+                    changed_params.insert("pattern_angle".into(), json!(winkel));
+                }
+            });
+            widgets::field_row(ui, "Abstand", |ui| {
+                if widgets::length_input(ui, &mut abstand, unit, 100.0) {
+                    changed_params.insert("pattern_scale".into(), json!(unit.from_mm(abstand)));
+                }
+            });
+            widgets::field_row(ui, "Umrandung", |ui| {
+                if ui.checkbox(&mut rand, "").changed() {
+                    changed_params.insert("border".into(), json!(rand));
+                }
+            });
+
+            // Füllfarbe: Standard ist der Wandton (74 % Richtung Weiß), damit
+            // der Übergang zur Wand keine Farbkante zeigt.
+            let fill_set = e.style.fill.is_some();
+            let fill_cur = e
+                .style
+                .fill
+                .unwrap_or_else(|| color.mix(Color::WHITE, jjcad_core::render::WALL_FILL_MIX));
+            let mut picked_fill: Option<Option<Color>> = None;
+            widgets::field_row(ui, "Füllfarbe", |ui| {
+                picked_fill =
+                    color_combo(ui, "volume_fill", fill_cur, !fill_set, false, "Wandton");
+            });
+            if let Some(v) = picked_fill {
+                let wert = match v {
+                    Some(c) => json!(c.to_hex()),
+                    None => json!("none"),
+                };
+                let _ = app
+                    .session_mut()
+                    .execute("modify.set", &json!({"ids": [id], "fill": wert}));
+                app.mark_changed();
+            }
+            ui.add_space(4.0);
+            let flaeche = jjcad_core::area::area_of(boundary, holes);
+            ui.label(theme::dim(format!(
+                "{} Punkte · Fläche {}",
+                boundary.len(),
+                area_text(unit, flaeche)
+            )));
+            if !holes.is_empty() {
+                ui.label(theme::dim(format!("{} Inseln", holes.len())));
+            }
+            ui.label(theme::dim(format!(
+                "Volumen {:.3} m³ (Höhe {})",
+                flaeche * hoehe / 1e9,
+                unit.format(hoehe, unit.decimals())
+            )));
         }
         EntityKind::Door {
             width,

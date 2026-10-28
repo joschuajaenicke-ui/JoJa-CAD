@@ -1009,7 +1009,10 @@ pub fn hit_test(doc: &Document, p: Vec2, tol: f64, layer_filter: Option<&[Id]>) 
         // Wand/Schraffur: auch Innenfläche
         let filled = matches!(
             e.kind,
-            EntityKind::Wall { .. } | EntityKind::Fill { .. } | EntityKind::Stair { .. }
+            EntityKind::Wall { .. }
+                | EntityKind::Fill { .. }
+                | EntityKind::Volume { .. }
+                | EntityKind::Stair { .. }
         );
         if filled {
             if let EntityKind::Wall { a, b: bb, thickness, .. } = &e.kind {
@@ -1085,6 +1088,7 @@ pub fn select_window(doc: &Document, a: Vec2, b: Vec2, crossing: bool) -> Vec<Id
         let flaechig = matches!(
             e.kind,
             EntityKind::Fill { .. }
+                | EntityKind::Volume { .. }
                 | EntityKind::Stair { .. }
                 | EntityKind::Text { .. }
                 | EntityKind::Point { .. }

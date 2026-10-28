@@ -109,6 +109,15 @@ pub const ACTIONS: &[ActionDef] = &[
 
     // Architektur
     act!("draw.wall", "Wand", Architektur, "wall", "g", "Wandachse: Start- und Endpunkt", true),
+    act!(
+        "draw.volume",
+        "Volumen",
+        Architektur,
+        "volume",
+        "v",
+        "Kontur klicken wie eine Fläche — der Körper erhält eine Höhe",
+        true
+    ),
     act!("draw.door", "Tür", Architektur, "door", "h", "In eine Wand klicken", true),
     act!("draw.window", "Fenster", Architektur, "window", "j", "In eine Wand klicken", true),
     act!("draw.stair", "Treppe", Architektur, "stair", "b", "Laufrichtung aufziehen", true),
@@ -209,6 +218,7 @@ pub fn is_mutating(id: &str) -> bool {
             | "draw.text"
             | "draw.ellipse"
             | "draw.wall"
+            | "draw.volume"
             | "draw.door"
             | "draw.window"
             | "draw.stair"
@@ -827,26 +837,60 @@ fn add_fill_rings(
     rand_vorgabe: bool,
     unter: &[Id],
 ) -> Result<Value, String> {
+    add_filled(doc, boundary, holes, p, rand_vorgabe, unter, false)
+}
+
+/// Gemeinsamer Abschluss von Füllfläche und Volumen.
+///
+/// Beide haben dieselbe Geometrie (Außenring + Inseln, Muster, Randlinie);
+/// das Volumen trägt zusätzlich eine Höhe. Ein zweiter Konstruktionsweg würde
+/// früher oder später ein Feld anders setzen.
+fn add_filled(
+    doc: &mut Document,
+    boundary: Vec<Vec2>,
+    holes: Vec<Vec<Vec2>>,
+    p: &Params,
+    rand_vorgabe: bool,
+    unter: &[Id],
+    volumen: bool,
+) -> Result<Value, String> {
     if boundary.len() < 3 {
         return Err("Füllfläche braucht mindestens drei Punkte".into());
     }
     let layer = resolve_layer(doc, p);
     let idn = doc.new_id();
-    let mut e = Entity::new(
-        idn,
-        layer,
+    let pattern = p.fill_pattern("pattern").unwrap_or(if volumen {
+        FillPattern::Solid
+    } else {
+        FillPattern::Lines
+    });
+    let pattern_angle = p.angle_or("angle", std::f64::consts::FRAC_PI_4);
+    let pattern_scale = p
+        .len("scale")
+        .or_else(|| p.len("spacing"))
+        .unwrap_or(100.0);
+    let border = p.boolean_or("border", rand_vorgabe);
+    let kind = if volumen {
+        EntityKind::Volume {
+            boundary,
+            holes,
+            pattern,
+            pattern_angle,
+            pattern_scale,
+            border,
+            height: p.len_or("height", 2750.0).max(1.0),
+        }
+    } else {
         EntityKind::Fill {
             boundary,
             holes,
-            pattern: p.fill_pattern("pattern").unwrap_or(FillPattern::Lines),
-            pattern_angle: p.angle_or("angle", std::f64::consts::FRAC_PI_4),
-            pattern_scale: p
-                .len("scale")
-                .or_else(|| p.len("spacing"))
-                .unwrap_or(100.0),
-            border: p.boolean_or("border", rand_vorgabe),
-        },
-    );
+            pattern,
+            pattern_angle,
+            pattern_scale,
+            border,
+        }
+    };
+    let mut e = Entity::new(idn, layer, kind);
     apply_common(doc, &mut e, p, layer);
     // Zeichenreihenfolge: die Liste `entities` IST die Reihenfolge, Index 0
     // liegt ganz hinten. Die Füllfläche gehört unter die Objekte, die sie
@@ -1023,6 +1067,21 @@ pub fn execute(doc: &mut Document, id: &str, params: &Value) -> Result<Value, St
                 .or_else(|| p.pts("pts"))
                 .ok_or_else(|| "Parameter 'boundary' fehlt".to_string())?;
             add_fill(doc, boundary, &p, false)
+        }
+        // Volumen: dieselbe Kontur wie eine Füllfläche, aber ein Körper mit
+        // Höhe. `params.height` in mm; ohne Angabe die Standard-Wandhöhe.
+        "draw.volume" => {
+            let boundary = p
+                .pts("boundary")
+                .or_else(|| p.pts("pts"))
+                .ok_or_else(|| "Parameter 'boundary' fehlt".to_string())?;
+            let holes: Vec<Vec<Vec2>> = p
+                .rings("holes")
+                .unwrap_or_default()
+                .into_iter()
+                .filter(|h| h.len() >= 3)
+                .collect();
+            add_filled(doc, boundary, holes, &p, false, &[], true)
         }
         // Farbeimer: ein Klick in die leere Fläche, die Umgrenzung ermittelt der
         // Kern (`boundary::detect_boundary`) aus derselben Displayliste, die
@@ -1696,6 +1755,30 @@ pub fn execute(doc: &mut Document, id: &str, params: &Value) -> Result<Value, St
                             }
                             if let Some(v) = height {
                                 *h = v;
+                            }
+                        }
+                        EntityKind::Volume {
+                            pattern,
+                            pattern_angle,
+                            pattern_scale,
+                            border,
+                            height: h,
+                            ..
+                        } => {
+                            if let Some(v) = p.fill_pattern("pattern") {
+                                *pattern = v;
+                            }
+                            if let Some(v) = p.angle("pattern_angle") {
+                                *pattern_angle = v;
+                            }
+                            if let Some(v) = p.len("pattern_scale") {
+                                *pattern_scale = v.max(0.5);
+                            }
+                            if let Some(v) = p.boolean("border") {
+                                *border = v;
+                            }
+                            if let Some(v) = height {
+                                *h = v.max(1.0);
                             }
                         }
                         EntityKind::Fill {
