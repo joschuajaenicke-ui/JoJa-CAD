@@ -7,7 +7,7 @@
 //! [`Clipboard`]).
 
 use jjcad_core::geom::{Affine, BBox, Vec2 as V2};
-use jjcad_core::model::{Document, Entity};
+use jjcad_core::model::{Document, Entity, EntityKind};
 use jjcad_core::render::{self, Prim, RenderCtx};
 
 /// Zwischenablage: die kopierten Elemente **und** ihr Basispunkt.
@@ -163,8 +163,10 @@ pub fn geometry(doc: &Document, g: &Ghost, clip: &Clipboard) -> GhostGeo {
 
     // Zwischenablage
     let ents = clipboard_entities(doc, g, clip);
+    let (liste, ab) = vorschau_durchgang(doc, &ents);
+    let ctx = RenderCtx::over_entities(doc, &liste);
     let mut dl = render::DisplayList::default();
-    for e in &ents {
+    for e in &liste[ab..] {
         render::render_entity(&ctx, e, Affine::IDENTITY, &mut dl, 0);
     }
     GhostGeo {
@@ -172,6 +174,65 @@ pub fn geometry(doc: &Document, g: &Ghost, clip: &Clipboard) -> GhostGeo {
         bbox: dl.bbox,
         origin: g.pos,
     }
+}
+
+/// Objekte des Dokuments im Umfeld der Vorschau — Wände und Volumen.
+fn umfeld_bbox(e: &Entity) -> Option<BBox> {
+    match &e.kind {
+        EntityKind::Wall { .. } => {
+            jjcad_core::wall::Frame::of(e).map(|f| BBox::from_points(&f.band()))
+        }
+        EntityKind::Volume { boundary, holes, .. } => {
+            let mut b = BBox::from_points(boundary);
+            for h in holes {
+                b.union(BBox::from_points(h));
+            }
+            Some(b)
+        }
+        _ => None,
+    }
+}
+
+/// Objektliste für einen Vorschau-Durchgang und der Beginn darin, an dem die
+/// Vorschauobjekte stehen.
+///
+/// Die Vorschauobjekte bekommen **eigene** Ids: sie tragen sonst die Id ihres
+/// Originals, und der Wandindex träfe die Originalwand — die Vorschau stünde am
+/// alten Platz, unter dem Zeiger wäre nichts zu sehen (T0021). Dazu kommen die
+/// Wände und Volumen des Dokuments im Umfeld, damit Anschlüsse und Durchdringungen
+/// so aussehen wie nach dem Einfügen.
+fn vorschau_durchgang(doc: &Document, ents: &[Entity]) -> (Vec<Entity>, usize) {
+    if ents.is_empty() {
+        return (Vec::new(), 0);
+    }
+    let mut bb = BBox::EMPTY;
+    let mut pad = 400.0_f64;
+    for e in ents {
+        bb.union(render::entity_bbox(doc, e));
+        if let Some(f) = jjcad_core::wall::Frame::of(e) {
+            pad = pad.max(jjcad_core::wall::MITER_LIMIT * f.h * 1.5 + 50.0);
+        }
+    }
+    if !bb.is_valid() {
+        return (Vec::new(), 0);
+    }
+    let umfeld = bb.expanded(pad);
+
+    let mut liste: Vec<Entity> = doc
+        .ents()
+        .iter()
+        .filter(|e| matches!(umfeld_bbox(e), Some(b) if b.intersects(&umfeld)))
+        .cloned()
+        .collect();
+    let ab = liste.len();
+    let mut next = liste.iter().map(|e| e.id).max().unwrap_or(0) + 1;
+    for e in ents {
+        let mut e = e.clone();
+        e.id = next;
+        next += 1;
+        liste.push(e);
+    }
+    (liste, ab)
 }
 
 #[cfg(test)]
@@ -254,5 +315,115 @@ mod tests_basispunkt {
             }
             other => panic!("keine Linie: {other:?}"),
         }
+    }
+}
+
+#[cfg(test)]
+mod tests_wandvorschau {
+    //! T0021: Kopierte Wände brauchen eine Vorschau am Zeiger.
+    //!
+    //! Die kopierten Objekte tragen die **Id ihres Originals**. Der Wandindex
+    //! fand darüber die Originalwand und lieferte deren Körper — die Vorschau
+    //! stand also am alten Platz; unter dem Zeiger war nichts zu sehen.
+
+    use super::*;
+    use jjcad_core::model::EntityKind;
+
+    fn wand(doc: &mut Document, a: V2, b: V2, t: f64) -> Entity {
+        Entity::new(
+            doc.new_id(),
+            doc.current_layer,
+            EntityKind::Wall {
+                a,
+                b,
+                thickness: t,
+                height: 2500.0,
+                material: String::new(),
+                hatch: None,
+                align: Default::default(),
+            },
+        )
+    }
+
+    /// Eine einzelne kopierte Wand steht an der Zeigerstelle, nicht beim Original.
+    #[test]
+    fn kopierte_wand_steht_am_zeiger() {
+        let mut doc = Document::default();
+        let w = wand(&mut doc, V2::new(0.0, 0.0), V2::new(3000.0, 0.0), 100.0);
+        doc.entities.push(w.clone());
+        let clip = Clipboard {
+            ents: vec![w],
+            base: Some(V2::new(0.0, 0.0)),
+        };
+        let g = Ghost::new(None, V2::new(8000.0, 5000.0));
+        let geo = geometry(&doc, &g, &clip);
+        assert!(!geo.prims.is_empty(), "Vorschau ohne Geometrie");
+        assert!(
+            (geo.bbox.min.x - 8000.0).abs() < 1.0 && (geo.bbox.min.y - 4950.0).abs() < 1.0,
+            "Körper der kopierten Wand sitzt am Zeiger, war {:?}",
+            geo.bbox
+        );
+    }
+
+    /// Zwei verbundene Wände: die Vorschau zeichnet **dieselben** Linien wie
+    /// das eingefügte Ergebnis — gleiche Gehrung, keine Stirnkanten im Körper.
+    #[test]
+    fn vorschau_zeigt_die_gehrung_des_ergebnisses() {
+        let mut doc = Document::default();
+        let w1 = wand(&mut doc, V2::new(0.0, 0.0), V2::new(3000.0, 0.0), 100.0);
+        doc.entities.push(w1);
+        let w2 = wand(&mut doc, V2::new(0.0, 0.0), V2::new(0.0, 2000.0), 100.0);
+        doc.entities.push(w2);
+        let clip = Clipboard {
+            ents: doc.entities.clone(),
+            base: Some(V2::new(0.0, 0.0)),
+        };
+        let ziel = V2::new(10_000.0, 10_000.0);
+        let vorschau = linien(&geometry(&doc, &Ghost::new(None, ziel), &clip).prims);
+
+        // Ergebnis: dieselben Wände im Dokument an der Zeigerstelle
+        let mut ergebnis_doc = Document::default();
+        for e in &clip.ents {
+            let mut e = jjcad_core::transform::transform_entity(e, &Affine::translate(ziel));
+            e.id = ergebnis_doc.new_id();
+            ergebnis_doc.entities.push(e);
+        }
+        let ctx = RenderCtx::new(&ergebnis_doc);
+        let ergebnis = linien(&render::render_document(&ctx).prims);
+
+        assert_eq!(
+            vorschau.len(),
+            ergebnis.len(),
+            "gleiche Linienzahl in Vorschau und Ergebnis\nVorschau: {vorschau:?}\nErgebnis: {ergebnis:?}"
+        );
+        for (a, b) in vorschau.iter().zip(ergebnis.iter()) {
+            assert!(
+                a.0.dist(b.0) < 0.5 && a.1.dist(b.1) < 0.5,
+                "Vorschau weicht vom Ergebnis ab: {a:?} statt {b:?}"
+            );
+        }
+    }
+
+    /// Linien einer Displayliste, Enden geordnet und gerundet (verglichen wird
+    /// als Menge, nicht in Zeichenreihenfolge).
+    fn linien(prims: &[jjcad_core::render::Prim]) -> Vec<(V2, V2)> {
+        let mut out: Vec<(V2, V2)> = prims
+            .iter()
+            .filter_map(|p| match &p.shape {
+                jjcad_core::render::Shape::Line(a, b) => Some((rund(*a), rund(*b))),
+                _ => None,
+            })
+            .map(|(a, b)| if (a.x, a.y) <= (b.x, b.y) { (a, b) } else { (b, a) })
+            .collect();
+        out.sort_by(|x, y| {
+            (x.0.x, x.0.y, x.1.x, x.1.y)
+                .partial_cmp(&(y.0.x, y.0.y, y.1.x, y.1.y))
+                .unwrap_or(std::cmp::Ordering::Equal)
+        });
+        out
+    }
+
+    fn rund(p: V2) -> V2 {
+        V2::new((p.x * 100.0).round() / 100.0, (p.y * 100.0).round() / 100.0)
     }
 }

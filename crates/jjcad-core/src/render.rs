@@ -294,6 +294,17 @@ impl<'a> RenderCtx<'a> {
         c
     }
 
+    /// Kontext über eine **ausdrückliche** Objektliste statt über das Dokument.
+    ///
+    /// Für Vorschauen bewegter oder kopierter Objekte: Wandanschlüsse,
+    /// Volumen und Kanten werden dann unter genau diesen Objekten gerechnet —
+    /// wie nach dem Einfügen —, nicht über die Objekte des Dokuments.
+    pub fn over_entities(doc: &'a Document, ents: &'a [Entity]) -> Self {
+        let mut c = Self::new(doc);
+        c.entities = Some(ents);
+        c
+    }
+
     /// Objektliste des Durchgangs: ausdrücklich gesetzt, sonst der aktive Raum.
     pub fn ents(&self) -> &[Entity] {
         self.entities.unwrap_or_else(|| self.doc.ents())
@@ -1386,10 +1397,12 @@ fn render_wall(
         return;
     }
     let idx = ctx.wall_index();
-    // Wand nicht im Index (Vorschau, Blockinhalt): als Einzelwand ohne
-    // Nachbarn zeichnen.
+    // Wand nicht im Index oder nicht **diese** Fassung (Vorschau, Blockinhalt):
+    // als Einzelwand ohne Nachbarn zeichnen. `body_of` statt `body`, weil eine
+    // kopierte oder verschobene Wand noch die Id ihres Originals trägt — sonst
+    // zeichnete die Vorschau den Körper der Originalwand (T0021).
     let iso;
-    let body = match idx.body(e.id) {
+    let body = match idx.body_of(e) {
         Some(b) => b,
         None => match wall::Body::isolated(ctx.doc, e) {
             Some(b) => {
@@ -1399,7 +1412,7 @@ fn render_wall(
             None => return,
         },
     };
-    let edges = if idx.body(e.id).is_some() {
+    let edges = if idx.body_of(e).is_some() {
         idx.edges(e.id, true)
     } else {
         body.edges()
