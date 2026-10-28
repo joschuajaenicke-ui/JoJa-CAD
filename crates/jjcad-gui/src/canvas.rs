@@ -2862,6 +2862,15 @@ fn draw_grips(app: &App, p: &Painter, rect: Rect, view: View, selected: &[Id]) {
                     );
                     p.rect_stroke(r, egui::Rounding::same(1.5), Stroke::new(1.2_f32, Palette::BG));
                 }
+                // Bogenenden: runder Griff — der Punkt läuft auf dem Kreis mit
+                crate::handles::GripKind::ArcStart | crate::handles::GripKind::ArcEnd => {
+                    p.circle_filled(
+                        c,
+                        size * 0.55,
+                        if hot { Palette::TEXT } else { Palette::ACCENT },
+                    );
+                    p.circle_stroke(c, size * 0.55, Stroke::new(1.2_f32, Palette::BG));
+                }
                 crate::handles::GripKind::Edge(i) => {
                     let Some((_, dir)) = crate::handles::edge_dir(e, i) else {
                         continue;
@@ -5741,6 +5750,69 @@ mod tests_fang_griff {
             })
             .expect("Füllfläche in der Datei");
         assert_punkt(geladen, V2::new(5000.0, 500.0));
+    }
+
+    /// Bogen auswählen und seinen Endpunkt mit der Maus ziehen: der Winkel
+    /// folgt dem Zeiger, der Radius bleibt stehen, und die gespeicherte Datei
+    /// trägt den neuen Endwinkel (T0022).
+    #[test]
+    fn mauszug_dreht_das_bogenende() {
+        let mut app = app();
+        app.session_mut()
+            .execute(
+                "draw.arc",
+                &serde_json::json!({ "c": [1000.0, 1000.0], "r": 500.0, "a0": 0.0, "a1": 90.0 }),
+            )
+            .expect("Bogen");
+        let id = app
+            .doc()
+            .entities
+            .iter()
+            .find(|e| matches!(e.kind, EntityKind::Arc { .. }))
+            .map(|e| e.id)
+            .expect("Bogen fehlt");
+        app.session_mut().select(vec![id]);
+        frame(&mut app, vec![]);
+        let rect = app.ui.last_canvas;
+        let view = app.current_view();
+        // Endpunkt liegt bei 90° auf (1000;1500); gezogen wird nach 180° (500;1000).
+        let griff = world_to_screen(rect, view, V2::new(1000.0, 1500.0));
+        let ziel = world_to_screen(rect, view, V2::new(500.0, 1000.0));
+
+        frame(&mut app, vec![egui::Event::PointerMoved(griff)]);
+        frame(&mut app, vec![druck(griff)]);
+        assert!(app.grip_drag.is_some(), "Griffzug muss beginnen");
+
+        frame(&mut app, vec![egui::Event::PointerMoved(ziel)]);
+        frame(&mut app, vec![egui::Event::PointerMoved(ziel)]);
+        frame(&mut app, vec![loslassen(ziel)]);
+        assert!(app.grip_drag.is_none(), "Loslassen beendet den Zug");
+
+        let kind = app.doc().entity(id).expect("Bogen fehlt").kind.clone();
+        match kind {
+            EntityKind::Arc { c, r, a0, a1 } => {
+                assert_punkt(c, V2::new(1000.0, 1000.0));
+                assert_eq!(r, 500.0, "Radius darf sich nicht ändern");
+                assert_eq!(a0, 0.0, "Startwinkel darf sich nicht ändern");
+                assert!(
+                    (a1.to_degrees() - 180.0).abs() < 1e-6,
+                    "Endwinkel ist {:.3}°",
+                    a1.to_degrees()
+                );
+            }
+            other => panic!("kein Bogen: {other:?}"),
+        }
+
+        // Gespeichert wird der gezogene Stand.
+        let json = jjcad_core::persist::to_json(app.doc()).expect("speichern");
+        let wieder = jjcad_core::persist::from_json(&json).expect("laden");
+        match &wieder.entity(id).expect("Bogen in der Datei").kind {
+            EntityKind::Arc { a1, r, .. } => {
+                assert!((a1.to_degrees() - 180.0).abs() < 1e-6, "Datei: a1");
+                assert_eq!(*r, 500.0, "Datei: r");
+            }
+            other => panic!("kein Bogen in der Datei: {other:?}"),
+        }
     }
 
     /// Fängt der Fang auf der Nachbarecke, während die gezogene Ecke schon dort

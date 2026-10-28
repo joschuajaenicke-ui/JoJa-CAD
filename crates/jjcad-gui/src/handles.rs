@@ -11,6 +11,10 @@ pub enum GripKind {
     Vert(usize),
     /// Mitte einer Kante eines geschlossenen Polygons (Parallelverschiebung)
     Edge(usize),
+    /// Startpunkt eines Bogens: zieht den Startwinkel um den Mittelpunkt.
+    ArcStart,
+    /// Endpunkt eines Bogens: zieht den Endwinkel um den Mittelpunkt.
+    ArcEnd,
 }
 
 #[derive(Clone, Debug)]
@@ -114,9 +118,16 @@ pub fn grips_of(e: &Entity) -> Vec<(GripKind, V2)> {
             out
         }
         EntityKind::Circle { c, .. }
-        | EntityKind::Arc { c, .. }
         | EntityKind::Ellipse { c, .. }
         | EntityKind::Point { p: c } => vec![(GripKind::Vert(0), *c)],
+        // Bogen: Mittelpunkt (verschiebt den Bogen) und beide Enden. Ein
+        // Endpunkt läuft auf dem Kreis mit, gezogen wird der Winkel; der
+        // Radius bleibt dabei stehen (T0022).
+        EntityKind::Arc { c, r, a0, a1 } => vec![
+            (GripKind::Vert(0), *c),
+            (GripKind::ArcStart, *c + V2::polar(*a0, *r)),
+            (GripKind::ArcEnd, *c + V2::polar(*a1, *r)),
+        ],
         // Füllfläche: die Ecken der Umgrenzung und der Inseln. Zwischenpunkte
         // einer geraden Kante fallen weg (`ist_ecke`) — der Farbeimer liefert
         // seinen Rand als dichten Punktzug.
@@ -158,6 +169,16 @@ pub fn apply_grip_tol(orig: &Entity, kind: GripKind, target: V2, tol: f64) -> Op
         (EntityKind::Point { p }, GripKind::Vert(_)) => *p = target,
         (EntityKind::Circle { c, .. }, GripKind::Vert(_)) => *c = target,
         (EntityKind::Arc { c, .. }, GripKind::Vert(_)) => *c = target,
+        // Endpunkt eines Bogens: der Punkt folgt dem Zeiger auf dem Kreis,
+        // gesetzt wird der Winkel — der Radius bleibt unverändert.
+        (EntityKind::Arc { c, a0, .. }, GripKind::ArcStart)
+        | (EntityKind::Arc { c, a1: a0, .. }, GripKind::ArcEnd) => {
+            let d = target - *c;
+            if d.len() < 1e-6 {
+                return None;
+            }
+            *a0 = d.angle();
+        }
         (EntityKind::Ellipse { c, .. }, GripKind::Vert(_)) => *c = target,
         (EntityKind::Polyline { verts, closed } | EntityKind::Spline { verts, closed }, GripKind::Vert(i)) => {
             let n = verts.len();
@@ -267,6 +288,9 @@ pub fn moving_points(e: &Entity, kind: GripKind) -> Vec<V2> {
             | EntityKind::Point { p: c },
             GripKind::Vert(_),
         ) => vec![*c],
+        // Bogenenden: der Punkt selbst wandert, der Mittelpunkt bleibt.
+        (EntityKind::Arc { c, r, a0, .. }, GripKind::ArcStart) => vec![*c + V2::polar(*a0, *r)],
+        (EntityKind::Arc { c, r, a1, .. }, GripKind::ArcEnd) => vec![*c + V2::polar(*a1, *r)],
         _ => Vec::new(),
     }
 }
@@ -349,9 +373,13 @@ fn eckpunkte(e: &Entity) -> Vec<V2> {
             verts.iter().map(|v| v.p).collect()
         }
         EntityKind::Circle { c, .. }
-        | EntityKind::Arc { c, .. }
         | EntityKind::Ellipse { c, .. }
         | EntityKind::Point { p: c } => vec![*c],
+        // Bogen: Mittelpunkt und beide Enden. Die Enden sind eigene Fangziele;
+        // ohne sie fiele der Fang beim Ziehen eines Endpunkts aus (Flackern).
+        EntityKind::Arc { c, r, a0, a1 } => {
+            vec![*c, *c + V2::polar(*a0, *r), *c + V2::polar(*a1, *r)]
+        }
         EntityKind::Fill { boundary, holes, .. } => boundary
             .iter()
             .chain(holes.iter().flatten())
@@ -697,6 +725,106 @@ mod tests {
     fn fuellflaeche_moving_points() {
         let e = quadrat();
         assert_eq!(moving_points(&e, GripKind::Vert(1)), vec![V2::new(4000.0, 0.0)]);
+    }
+
+    // ---- Bogen: Endpunkte ziehen (T0022) ----
+
+    /// Bogen um (1000;1000) mit 500 mm von 0° bis 90°.
+    fn bogen() -> Entity {
+        Entity::new(
+            1,
+            1,
+            EntityKind::Arc {
+                c: V2::new(1000.0, 1000.0),
+                r: 500.0,
+                a0: 0.0,
+                a1: std::f64::consts::FRAC_PI_2,
+            },
+        )
+    }
+
+    fn bogen_werte(e: &Entity) -> (V2, f64, f64, f64) {
+        match &e.kind {
+            EntityKind::Arc { c, r, a0, a1 } => (*c, *r, *a0, *a1),
+            other => panic!("kein Bogen: {other:?}"),
+        }
+    }
+
+    /// Drei Griffe: Mittelpunkt in der Mitte, je einer auf den beiden Enden.
+    #[test]
+    fn bogen_hat_griffe_am_mittelpunkt_und_an_den_enden() {
+        let e = bogen();
+        let g = grips_of(&e);
+        assert_eq!(g.len(), 3, "Griffe: {g:?}");
+        assert!(g.contains(&(GripKind::Vert(0), V2::new(1000.0, 1000.0))));
+        let start = g
+            .iter()
+            .find(|(k, _)| *k == GripKind::ArcStart)
+            .expect("Startgriff fehlt")
+            .1;
+        let ende = g
+            .iter()
+            .find(|(k, _)| *k == GripKind::ArcEnd)
+            .expect("Endgriff fehlt")
+            .1;
+        assert!(start.dist(V2::new(1500.0, 1000.0)) < 1e-9, "Start {start:?}");
+        assert!(ende.dist(V2::new(1000.0, 1500.0)) < 1e-9, "Ende {ende:?}");
+    }
+
+    /// Endpunkt ziehen setzt den Endwinkel — Radius und Mittelpunkt bleiben.
+    #[test]
+    fn bogen_ende_ziehen_aendert_den_endwinkel() {
+        let e = bogen();
+        // Zeiger unten am Mittelpunkt: Richtung 270°
+        let neu = apply_grip_tol(&e, GripKind::ArcEnd, V2::new(1000.0, 0.0), 1.0)
+            .expect("Endgriff muss greifen");
+        let (c, r, a0, a1) = bogen_werte(&neu);
+        assert_eq!(c, V2::new(1000.0, 1000.0), "Mittelpunkt verschoben");
+        assert_eq!(r, 500.0, "Radius geändert");
+        assert_eq!(a0, 0.0, "Startwinkel geändert");
+        assert!((a1 + std::f64::consts::FRAC_PI_2).abs() < 1e-9, "a1 {a1}");
+    }
+
+    /// Startpunkt ziehen setzt den Startwinkel; der Endpunkt läuft auf dem
+    /// Kreis mit — auch wenn der Zeiger weiter außen liegt.
+    #[test]
+    fn bogen_start_ziehen_aendert_den_startwinkel() {
+        let e = bogen();
+        let ziel = V2::new(1000.0, 3000.0); // Richtung 90°, Abstand 2000 mm
+        let neu = apply_grip_tol(&e, GripKind::ArcStart, ziel, 1.0).expect("Startgriff");
+        let (c, r, a0, a1) = bogen_werte(&neu);
+        assert_eq!(r, 500.0, "Radius folgt dem Zeiger statt zu bleiben");
+        assert!((a0 - std::f64::consts::FRAC_PI_2).abs() < 1e-9, "a0 {a0}");
+        assert_eq!(a1, std::f64::consts::FRAC_PI_2, "Endwinkel geändert");
+        // Der Punkt liegt auf dem Kreis, nicht beim Zeiger.
+        let start = c + V2::polar(a0, r);
+        assert!(start.dist(V2::new(1000.0, 1500.0)) < 1e-9, "Start {start:?}");
+    }
+
+    /// Zeiger genau auf den Mittelpunkt: kein Zug (Richtung unbestimmt).
+    #[test]
+    fn bogen_ende_auf_mittelpunkt_bewegt_nichts() {
+        let e = bogen();
+        assert!(apply_grip_tol(&e, GripKind::ArcEnd, V2::new(1000.0, 1000.0), 1.0).is_none());
+        assert!(apply_grip_tol(&e, GripKind::ArcStart, V2::new(1000.0, 1000.0), 1.0).is_none());
+    }
+
+    /// Der gezogene Endpunkt ist der einzige, der aus dem Fang fällt.
+    #[test]
+    fn bogen_ende_moving_points_ist_der_endpunkt() {
+        let e = bogen();
+        assert_eq!(
+            moving_points(&e, GripKind::ArcEnd),
+            vec![V2::new(1000.0, 1500.0)]
+        );
+        assert_eq!(
+            moving_points(&e, GripKind::ArcStart),
+            vec![V2::new(1500.0, 1000.0)]
+        );
+        assert_eq!(
+            moving_points(&e, GripKind::Vert(0)),
+            vec![V2::new(1000.0, 1000.0)]
+        );
     }
 
     // ---- Zwei Ecken aufeinandergelegt: ein Punkt (T0018, Turn 2) ----

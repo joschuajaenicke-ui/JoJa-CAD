@@ -1876,7 +1876,20 @@ pub fn execute(doc: &mut Document, id: &str, params: &Value) -> Result<Value, St
                         }
                         EntityKind::Circle { r, .. } => {
                             if let Some(v) = p.len("r").or(p.len("radius")) {
-                                *r = v;
+                                *r = v.max(0.001);
+                            }
+                        }
+                        // Bogen: Radius und beide Endwinkel (Eingabe in Grad,
+                        // wie überall in der Befehlsschicht) — T0022.
+                        EntityKind::Arc { r, a0, a1, .. } => {
+                            if let Some(v) = p.len("r").or(p.len("radius")) {
+                                *r = v.max(0.001);
+                            }
+                            if let Some(v) = p.angle("a0") {
+                                *a0 = v;
+                            }
+                            if let Some(v) = p.angle("a1") {
+                                *a1 = v;
                             }
                         }
                         EntityKind::Dim { override_text, axis, .. } => {
