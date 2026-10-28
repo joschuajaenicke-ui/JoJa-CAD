@@ -1,6 +1,6 @@
 //! Seitenpanels: Layer (links) und Eigenschaften (rechts).
 
-use crate::app::{self, App, TabKind};
+use crate::app::{self, App, Einfuegemodus, TabKind};
 use crate::theme::{self, Palette};
 use crate::widgets;
 use egui::{Align, Color32, FontId, Layout, Pos2, Rect, RichText, Rounding, Sense, Stroke, Ui, Vec2};
@@ -444,6 +444,33 @@ fn pending_props(app: &mut App, ui: &mut Ui) {
     });
     if lt != lt_before {
         app.ui.pending.line_type = Some(lt);
+    }
+
+    // ---- Einfügemodus Rechteck/Ellipse ----
+    // Rechteck und Ellipse lassen sich achsenparallel oder über eine Linie
+    // beliebiger Lage einfügen (Basislinie + Höhe bzw. Mittelachse + Breite).
+    if tool_id == "draw.rect" || tool_id == "draw.ellipse" {
+        let cur = app.options.einfuegemodus(tool_id.as_str());
+        let items: Vec<(Einfuegemodus, String)> = Einfuegemodus::ALL
+            .iter()
+            .map(|m| (*m, m.label(tool_id.as_str()).to_string()))
+            .collect();
+        let mut picked: Option<Einfuegemodus> = None;
+        widgets::field_row(ui, "Einfügemodus", |ui| {
+            picked = pick_combo(ui, "pend_einfuegemodus", cur, &items);
+        });
+        if let Some(m) = picked {
+            *app.options.einfuegemodus_mut(tool_id.as_str()) = m;
+        }
+        if cur == Einfuegemodus::Basislinie {
+            let hinweis = if tool_id == "draw.ellipse" {
+                "Mittelachse klicken, dann die Breite"
+            } else {
+                "Basislinie klicken, dann die Höhe"
+            };
+            ui.add_space(2.0);
+            ui.label(theme::faint(hinweis));
+        }
     }
 
     // ---- Typparameter Wand (gleiche Reihenfolge wie im Objekt-Panel) ----

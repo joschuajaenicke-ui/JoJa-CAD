@@ -1,8 +1,8 @@
 //! Zeichnungsfläche: Anzeige, Fang, Werkzeugbedienung, Navigation.
 
 use crate::app::{
-    screen_to_world, visible_world_bounds, world_to_screen, App, DrawCacheKey, TabKind, Tool,
-    ToolPhase, View,
+    screen_to_world, visible_world_bounds, world_to_screen, App, DrawCacheKey, Einfuegemodus,
+    TabKind, Tool, ToolPhase, View,
 };
 use crate::theme::Palette;
 use egui::{Align2, Color32, FontId, Painter, Pos2, Rect, Response, Sense, Shape, Stroke, Ui, Vec2};
@@ -959,7 +959,7 @@ pub fn show(app: &mut App, ui: &mut Ui) {
         if app.ghost.is_some() {
             app.mitteilung_wenn_neu("Einfügen · Klick setzt ab (R dreht, S spiegelt)");
         } else if let Some(t) = app.tool.clone() {
-            let hinweis = crate::app::commands_hint(&t);
+            let hinweis = crate::app::commands_hint(&t, &app.options);
             app.mitteilung_wenn_neu(hinweis);
         }
         // Transparente Meldungen unten links, die nach einigen Sekunden
@@ -1569,7 +1569,39 @@ fn draw_tool_preview(
             }
         }
         "draw.rect" => {
-            if let Some(start) = last {
+            if app.options.rect_mode == Einfuegemodus::Basislinie {
+                match tool.pts.len() {
+                    // Basislinie steht noch nicht: nichts zu zeigen.
+                    0 => {}
+                    // Erste Kante: Basislinie zum Zeiger, mit Länge und Winkel.
+                    1 => {
+                        let a0 = tool.pts[0];
+                        p.line_segment([w2s(a0), w2s(cursor)], dashed);
+                        label = format!(
+                            "{} {}   {:.1}°",
+                            unit.format_plain(a0.dist(cursor), unit.decimals()),
+                            unit.short(),
+                            (cursor - a0).angle().to_degrees()
+                        );
+                    }
+                    // Rechteck über der festen Basislinie, Höhe am Zeiger.
+                    _ => {
+                        let a0 = tool.pts[0];
+                        let b0 = tool.pts[1];
+                        let h = basis_hoehe(a0, b0, cursor);
+                        let n = (b0 - a0).normalized().perp() * h;
+                        let quad: Vec<Pos2> =
+                            [a0, b0, b0 + n, a0 + n].iter().map(|q| w2s(*q)).collect();
+                        p.add(egui::Shape::closed_line(quad, stroke));
+                        p.line_segment([w2s(a0), w2s(b0)], dashed);
+                        label = format!(
+                            "{} × {}",
+                            unit.format_plain(a0.dist(b0), unit.decimals()),
+                            unit.format_plain(h.abs(), unit.decimals())
+                        );
+                    }
+                }
+            } else if let Some(start) = last {
                 let r = Rect::from_two_pos(w2s(start), w2s(cursor));
                 p.rect_stroke(r, 0.0, stroke);
                 label = format!(
@@ -1588,7 +1620,51 @@ fn draw_tool_preview(
             }
         }
         "draw.ellipse" => {
-            if let Some(c) = last {
+            if app.options.ellipse_mode == Einfuegemodus::Basislinie {
+                match tool.pts.len() {
+                    0 => {}
+                    // Mittelachse ziehen: Lage und Länge (2 × große Halbachse).
+                    1 => {
+                        let a0 = tool.pts[0];
+                        p.line_segment([w2s(a0), w2s(cursor)], dashed);
+                        label = format!(
+                            "{} {}   {:.1}°",
+                            unit.format_plain(a0.dist(cursor), unit.decimals()),
+                            unit.short(),
+                            (cursor - a0).angle().to_degrees()
+                        );
+                    }
+                    // Ellipse um die feste Mittelachse, Breite am Zeiger.
+                    _ => {
+                        let a0 = tool.pts[0];
+                        let b0 = tool.pts[1];
+                        let laenge = a0.dist(b0);
+                        let rx = laenge * 0.5;
+                        let ry = basis_hoehe(a0, b0, cursor).abs();
+                        let c = v((a0.x + b0.x) * 0.5, (a0.y + b0.y) * 0.5);
+                        let rot = (b0 - a0).angle();
+                        // Dieselbe Punktfolge wie die Anzeige: gedrehte Ellipse.
+                        let pts: Vec<Pos2> = (0..=64)
+                            .map(|i| {
+                                let t = i as f64 / 64.0 * std::f64::consts::TAU;
+                                let lx = rx * t.cos();
+                                let ly = ry * t.sin();
+                                w2s(c + V2::new(
+                                    lx * rot.cos() - ly * rot.sin(),
+                                    lx * rot.sin() + ly * rot.cos(),
+                                ))
+                            })
+                            .collect();
+                        p.add(Shape::line(pts, stroke));
+                        p.line_segment([w2s(a0), w2s(b0)], dashed);
+                        label = format!(
+                            "{} × {}",
+                            unit.format_plain(laenge, unit.decimals()),
+                            unit.format_plain(ry * 2.0, unit.decimals())
+                        );
+                    }
+                }
+            } else if let Some(c) = last {
                 let rx = (cursor.x - c.x).abs().max(1.0);
                 let ry = (cursor.y - c.y).abs().max(1.0);
                 let pts: Vec<Pos2> = (0..=64)
@@ -3614,6 +3690,24 @@ fn restart_tool(app: &mut App, action: &str) {
     app.ui.typed.clear();
 }
 
+/// Vorzeichenbehafteter Abstand eines Punkts von der Geraden durch `a` in
+/// Richtung `b` (positiv links der Richtung a→b).
+///
+/// Grundlage der diagonalen Einfügemodi: beim Rechteck ist der Abstand die
+/// Höhe über der Basislinie, bei der Ellipse die halbe Breite neben der
+/// Mittelachse. Der Anteil in Achsrichtung zählt nicht — nur der senkrechte
+/// Abstand, damit die Maus entlang der Achse nicht die Höhe verändert.
+fn basis_hoehe(a: V2, b: V2, p: V2) -> f64 {
+    let d = b - a;
+    let l = d.len();
+    if l <= 1e-9 {
+        return 0.0;
+    }
+    let n = d.perp() / l;
+    let r = p - a;
+    r.x * n.x + r.y * n.y
+}
+
 fn tool_click(app: &mut App, w: V2) {
     tool_click_at(app, w, w);
 }
@@ -3739,7 +3833,34 @@ fn tool_click_at(app: &mut App, w: V2, raw: V2) {
         // zweiter Klick (gleiche x- oder y-Lage, Radius null) legt nichts an
         // und behält den Startpunkt — der nächste Klick zählt als zweiter.
         "draw.rect" => {
-            if tool.pts.is_empty() {
+            if app.options.rect_mode == Einfuegemodus::Basislinie {
+                // Basislinie + Höhe: Anfang, Ende, dann die Höhe (3 Klicks).
+                if tool.pts.len() < 2 {
+                    let doppelt = tool
+                        .pts
+                        .last()
+                        .map(|q| q.dist(w) <= 0.5)
+                        .unwrap_or(false);
+                    if !doppelt {
+                        tool.pts.push(w);
+                        app.tool = Some(tool);
+                    }
+                } else {
+                    let a = tool.pts[0];
+                    let b = tool.pts[1];
+                    let h = basis_hoehe(a, b, w);
+                    if h.abs() > 0.5 {
+                        let ok = run(
+                            app,
+                            "draw.rect",
+                            json!({"a": ax(a), "b": ax(b), "height": unit.from_mm(h)}),
+                        );
+                        if ok {
+                            restart_tool(app, "draw.rect");
+                        }
+                    }
+                }
+            } else if tool.pts.is_empty() {
                 tool.pts.push(w);
                 app.tool = Some(tool);
             } else {
@@ -3769,7 +3890,42 @@ fn tool_click_at(app: &mut App, w: V2, raw: V2) {
             }
         }
         "draw.ellipse" => {
-            if tool.pts.is_empty() {
+            if app.options.ellipse_mode == Einfuegemodus::Basislinie {
+                // Mittelachse + Breite: Anfang, Ende der Mittelachse, dann die
+                // Breite (3 Klicks). Die Mittelachse liegt durch den Mittelpunkt,
+                // ihre Länge ist die doppelte große Halbachse; der Abstand des
+                // dritten Klicks zur Achse ist die halbe Breite — der Zeiger
+                // fährt dabei am Ellipsenrand entlang.
+                if tool.pts.len() < 2 {
+                    let doppelt = tool
+                        .pts
+                        .last()
+                        .map(|q| q.dist(w) <= 0.5)
+                        .unwrap_or(false);
+                    if !doppelt {
+                        tool.pts.push(w);
+                        app.tool = Some(tool);
+                    }
+                } else {
+                    let a = tool.pts[0];
+                    let b = tool.pts[1];
+                    let laenge = a.dist(b);
+                    let halbe_breite = basis_hoehe(a, b, w).abs();
+                    if laenge > 0.5 && halbe_breite > 0.5 {
+                        let c = v((a.x + b.x) * 0.5, (a.y + b.y) * 0.5);
+                        let rot = (b - a).angle().to_degrees();
+                        let ok = run(
+                            app,
+                            "draw.ellipse",
+                            json!({"c": ax(c), "rx": unit.from_mm(laenge * 0.5),
+                                   "ry": unit.from_mm(halbe_breite), "rot": rot}),
+                        );
+                        if ok {
+                            restart_tool(app, "draw.ellipse");
+                        }
+                    }
+                }
+            } else if tool.pts.is_empty() {
                 tool.pts.push(w);
                 app.tool = Some(tool);
             } else {
@@ -5019,6 +5175,112 @@ mod tests_werkzeug_bleibt_aktiv {
         tool_click(&mut app, V2::new(2000.0, 0.0));
         tool_click(&mut app, V2::new(3000.0, 1000.0));
         assert_eq!(polylinien(&app).len(), 1, "ohne Werkzeug entsteht nichts");
+    }
+
+    /// Einfügemodus „Basislinie + Höhe": drei Klicks (Anfang, Ende, Höhe)
+    /// ergeben ein Rechteck in beliebiger Lage. Der Abstand in Achsrichtung
+    /// zählt nicht — nur der senkrechte, sonst kippt die Höhe beim Ziehen.
+    #[test]
+    fn rechteck_ueber_basislinie_und_hoehe() {
+        let mut app = app();
+        app.options.rect_mode = Einfuegemodus::Basislinie;
+        app.start_tool("draw.rect");
+        tool_click(&mut app, V2::new(0.0, 0.0));
+        tool_click(&mut app, V2::new(3000.0, 3000.0));
+        assert!(polylinien(&app).is_empty(), "ohne Höhe entsteht nichts");
+
+        // 1000 mm links der 45°-Basislinie, zusätzlich 500 mm in Achsrichtung:
+        // der Versatz entlang der Linie darf die Höhe nicht verändern.
+        let n = V2::new(3000.0, 3000.0)
+            .normalized()
+            .perp()
+            * 1000.0;
+        let klick = V2::new(3000.0, 3000.0) + n + V2::new(353.553, 353.553);
+        tool_click(&mut app, klick);
+
+        let alle = polylinien(&app);
+        assert_eq!(alle.len(), 1, "Rechteck angelegt");
+        let p = &alle[0];
+        assert_eq!(p.len(), 4, "vier Ecken");
+        assert!(p[0].dist(V2::new(0.0, 0.0)) < 1e-6, "{:?}", p[0]);
+        assert!(p[1].dist(V2::new(3000.0, 3000.0)) < 1e-6, "{:?}", p[1]);
+        assert!(
+            (p[1].dist(p[2]) - 1000.0).abs() < 1e-6,
+            "Höhe 1000 mm: {}",
+            p[1].dist(p[2])
+        );
+        let basis = p[1] - p[0];
+        let hoehe = p[2] - p[1];
+        assert!(
+            (basis.x * hoehe.x + basis.y * hoehe.y).abs() < 1.0,
+            "Höhe steht senkrecht auf der Basislinie"
+        );
+        assert_eq!(app.tool_id(), Some("draw.rect"), "Werkzeug bleibt aktiv");
+        assert!(app.tool.as_ref().unwrap().pts.is_empty());
+    }
+
+    /// Ein dritter Klick auf der Basislinie legt nichts an und behält die
+    /// Basislinie — der nächste Klick zählt als Höhe.
+    #[test]
+    fn basislinie_ohne_hoehe_behaelt_die_basis() {
+        let mut app = app();
+        app.options.rect_mode = Einfuegemodus::Basislinie;
+        app.start_tool("draw.rect");
+        tool_click(&mut app, V2::new(0.0, 0.0));
+        tool_click(&mut app, V2::new(3000.0, 0.0));
+        tool_click(&mut app, V2::new(1500.0, 0.0)); // auf der Basislinie
+        assert!(polylinien(&app).is_empty(), "Höhe null legt nichts an");
+        assert_eq!(app.tool.as_ref().unwrap().pts.len(), 2, "Basislinie bleibt");
+
+        tool_click(&mut app, V2::new(1500.0, 800.0));
+        assert_eq!(polylinien(&app).len(), 1, "der nächste Klick setzt die Höhe");
+    }
+
+    /// Einfügemodus „Mittelachse + Breite": die Mittelachse liegt durch den
+    /// Mittelpunkt, ihre Länge ist 2 × rx, der Abstand des dritten Klicks die
+    /// halbe Breite. Die Ellipse trägt die Drehlage der Achse.
+    #[test]
+    fn ellipse_ueber_mittelachse_und_breite() {
+        let mut app = app();
+        app.options.ellipse_mode = Einfuegemodus::Basislinie;
+        app.start_tool("draw.ellipse");
+        tool_click(&mut app, V2::new(0.0, 0.0));
+        tool_click(&mut app, V2::new(2000.0, 2000.0));
+        assert!(ellipsen(&app).is_empty(), "ohne Breite entsteht nichts");
+
+        let n = V2::new(2000.0, 2000.0).normalized().perp() * 500.0;
+        tool_click(&mut app, V2::new(2000.0, 2000.0) + n);
+
+        let alle = ellipsen(&app);
+        assert_eq!(alle.len(), 1, "Ellipse angelegt");
+        let (c, rx, ry) = alle[0];
+        assert!(c.dist(V2::new(1000.0, 1000.0)) < 1e-6, "Mittelpunkt: {c:?}");
+        assert!((rx - 1414.2135623730951).abs() < 0.01, "rx: {rx}");
+        assert!((ry - 500.0).abs() < 1e-6, "halbe Breite: {ry}");
+        let rot = app
+            .doc()
+            .entities
+            .iter()
+            .find_map(|e| match &e.kind {
+                EntityKind::Ellipse { rot, .. } => Some(*rot),
+                _ => None,
+            })
+            .unwrap();
+        assert!((rot - std::f64::consts::FRAC_PI_4).abs() < 1e-9, "Drehlage: {rot}");
+        assert_eq!(app.tool_id(), Some("draw.ellipse"));
+        assert!(app.tool.as_ref().unwrap().pts.is_empty());
+    }
+
+    /// Ohne Umschalten bleibt der bisherige Weg (zwei Klicks) unverändert.
+    #[test]
+    fn einfuegemodus_ist_vorgabe_achsenparallel() {
+        let mut app = app();
+        assert_eq!(app.options.rect_mode, Einfuegemodus::Achsenparallel);
+        assert_eq!(app.options.ellipse_mode, Einfuegemodus::Achsenparallel);
+        app.start_tool("draw.rect");
+        tool_click(&mut app, V2::new(0.0, 0.0));
+        tool_click(&mut app, V2::new(2000.0, 1000.0));
+        assert_eq!(polylinien(&app).len(), 1, "zwei Klicks genügen weiterhin");
     }
 }
 

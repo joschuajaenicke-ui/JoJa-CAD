@@ -33,10 +33,10 @@ Befehls-Schicht vorbei.
 | `draw.line` | `a`, `b` | `{"a":[0,0],"b":[5,0]}` |
 | `draw.polyline` | `pts[]`, `closed` | `{"pts":[[0,0],[3,1],[5,0]],"closed":false}` |
 | `draw.spline` | `pts[]`, `closed` | `{"pts":[[0,0],[3,1],[5,0]],"closed":false}` — Catmull-Rom durch die Punkte |
-| `draw.rect` | `a`, `b` | `{"a":[0,0],"b":[3,2]}` |
+| `draw.rect` | `a`, `b`, optional `height` | `{"a":[0,0],"b":[3,2]}` — mit `height` ist `a`→`b` die Basislinie beliebiger Lage, `height` der senkrechte Abstand (Vorzeichen = Seite, positiv links der Richtung a→b): `{"a":[0,0],"b":[3,3],"height":1}` |
 | `draw.circle` | `c`, `r` oder `through` | `{"c":[2,2],"r":0.75}` |
 | `draw.arc` | `c`, `r`, `a0`, `a1` (Grad, CCW) | `{"c":[0,0],"r":2,"a0":0,"a1":90}` |
-| `draw.ellipse` | `c`, `rx`, `ry`, `rot` | `{"c":[0,0],"rx":1,"ry":0.5}` |
+| `draw.ellipse` | `c`, `rx`, `ry`, `rot` (Grad, CCW) | `{"c":[0,0],"rx":1,"ry":0.5}`; Mittelachse + Breite = `c` = Achsenmitte, `rx` = halbe Achsenlänge, `ry` = halbe Breite, `rot` = Achsenwinkel |
 | `draw.hatch` | `boundary[]`, `pattern` (`solid`/`lines`/`cross`/`dots`), `angle`, `spacing` | |
 | `draw.text` | `p`, `text`, `height`, `angle`, `align`, `bold` | `{"p":[1,2],"text":"Wohnen","height":0.3}` |
 
