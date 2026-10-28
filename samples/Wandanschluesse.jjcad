@@ -1,0 +1,4038 @@
+{
+  "format": "jjcad",
+  "version": 2,
+  "name": "Unbenannt",
+  "project": {
+    "project": "",
+    "client": "",
+    "planner": "",
+    "plan_no": "",
+    "plan_title": "",
+    "address": "",
+    "note": "",
+    "date": "",
+    "revision": ""
+  },
+  "settings": {
+    "input_unit": "M",
+    "dim_unit": "M",
+    "decimals": 2,
+    "annotation_scale": 100.0,
+    "snap": {
+      "endpoint": true,
+      "midpoint": true,
+      "center": true,
+      "intersection": true,
+      "perpendicular": true,
+      "nearest": true,
+      "grid": true,
+      "ortho": false,
+      "polar": true,
+      "wall_edges": true,
+      "grid_step": 100.0,
+      "tolerance_px": 12.0,
+      "polar_step": 45.0,
+      "polar_tolerance": 6.0
+    },
+    "text_height": 250.0,
+    "wall_thickness": 240.0,
+    "door_width": 885.0,
+    "window_width": 1200.0,
+    "stair_width": 1000.0,
+    "show_grid": true,
+    "show_rulers": true
+  },
+  "layers": [
+    {
+      "id": 1,
+      "name": "Wände",
+      "color": "#23262C",
+      "line_weight": 0.5,
+      "line_type": "Solid",
+      "visible": true,
+      "locked": false,
+      "printable": true
+    },
+    {
+      "id": 2,
+      "name": "Türen",
+      "color": "#785537",
+      "line_weight": 0.25,
+      "line_type": "Solid",
+      "visible": true,
+      "locked": false,
+      "printable": true
+    },
+    {
+      "id": 3,
+      "name": "Fenster",
+      "color": "#2D69BE",
+      "line_weight": 0.25,
+      "line_type": "Solid",
+      "visible": true,
+      "locked": false,
+      "printable": true
+    },
+    {
+      "id": 4,
+      "name": "Treppen",
+      "color": "#3C8C5F",
+      "line_weight": 0.25,
+      "line_type": "Solid",
+      "visible": true,
+      "locked": false,
+      "printable": true
+    },
+    {
+      "id": 5,
+      "name": "Bemaßung",
+      "color": "#BE463C",
+      "line_weight": 0.18,
+      "line_type": "Solid",
+      "visible": true,
+      "locked": false,
+      "printable": true
+    },
+    {
+      "id": 6,
+      "name": "Text",
+      "color": "#282D34",
+      "line_weight": 0.18,
+      "line_type": "Solid",
+      "visible": true,
+      "locked": false,
+      "printable": true
+    },
+    {
+      "id": 7,
+      "name": "Schraffur",
+      "color": "#969BA0",
+      "line_weight": 0.13,
+      "line_type": "Solid",
+      "visible": true,
+      "locked": false,
+      "printable": true
+    },
+    {
+      "id": 8,
+      "name": "Möbel",
+      "color": "#6E737A",
+      "line_weight": 0.18,
+      "line_type": "Solid",
+      "visible": true,
+      "locked": false,
+      "printable": true
+    },
+    {
+      "id": 9,
+      "name": "Achsen",
+      "color": "#C87828",
+      "line_weight": 0.18,
+      "line_type": "DashDot",
+      "visible": true,
+      "locked": false,
+      "printable": true
+    },
+    {
+      "id": 10,
+      "name": "Hilfslinien",
+      "color": "#96A0AF",
+      "line_weight": 0.13,
+      "line_type": "Dashed",
+      "visible": true,
+      "locked": false,
+      "printable": true
+    }
+  ],
+  "current_layer": 1,
+  "blocks": [
+    {
+      "id": "sys:wc",
+      "name": "WC",
+      "category": "Sanitär",
+      "source": "System",
+      "description": "Wand-WC, 380 × 600 mm",
+      "entities": [
+        {
+          "id": 1,
+          "kind": {
+            "type": "polyline",
+            "verts": [
+              {
+                "p": {
+                  "x": -190.0,
+                  "y": -300.0
+                },
+                "bulge": 0.0
+              },
+              {
+                "p": {
+                  "x": 190.0,
+                  "y": -300.0
+                },
+                "bulge": 0.0
+              },
+              {
+                "p": {
+                  "x": 190.0,
+                  "y": -120.0
+                },
+                "bulge": 0.0
+              },
+              {
+                "p": {
+                  "x": -190.0,
+                  "y": -120.0
+                },
+                "bulge": 0.0
+              }
+            ],
+            "closed": true
+          },
+          "layer": 0,
+          "style": {
+            "color": null,
+            "line_type": null,
+            "line_weight": null,
+            "fill": null
+          },
+          "by_block": true
+        },
+        {
+          "id": 2,
+          "kind": {
+            "type": "polyline",
+            "verts": [
+              {
+                "p": {
+                  "x": -165.0,
+                  "y": -300.0
+                },
+                "bulge": 0.0
+              },
+              {
+                "p": {
+                  "x": 165.0,
+                  "y": -300.0
+                },
+                "bulge": 0.41421356237309503
+              },
+              {
+                "p": {
+                  "x": 185.0,
+                  "y": -280.0
+                },
+                "bulge": 0.0
+              },
+              {
+                "p": {
+                  "x": 185.0,
+                  "y": -140.0
+                },
+                "bulge": 0.41421356237309503
+              },
+              {
+                "p": {
+                  "x": 165.0,
+                  "y": -120.0
+                },
+                "bulge": 0.0
+              },
+              {
+                "p": {
+                  "x": -165.0,
+                  "y": -120.0
+                },
+                "bulge": 0.41421356237309503
+              },
+              {
+                "p": {
+                  "x": -185.0,
+                  "y": -140.0
+                },
+                "bulge": 0.0
+              },
+              {
+                "p": {
+                  "x": -185.0,
+                  "y": -280.0
+                },
+                "bulge": 0.41421356237309503
+              }
+            ],
+            "closed": true
+          },
+          "layer": 0,
+          "style": {
+            "color": null,
+            "line_type": null,
+            "line_weight": null,
+            "fill": null
+          },
+          "by_block": true
+        },
+        {
+          "id": 3,
+          "kind": {
+            "type": "ellipse",
+            "c": {
+              "x": 0.0,
+              "y": 45.0
+            },
+            "rx": 175.0,
+            "ry": 215.0,
+            "rot": 0.0
+          },
+          "layer": 0,
+          "style": {
+            "color": null,
+            "line_type": null,
+            "line_weight": null,
+            "fill": null
+          },
+          "by_block": true
+        },
+        {
+          "id": 4,
+          "kind": {
+            "type": "ellipse",
+            "c": {
+              "x": 0.0,
+              "y": 45.0
+            },
+            "rx": 130.0,
+            "ry": 170.0,
+            "rot": 0.0
+          },
+          "layer": 0,
+          "style": {
+            "color": null,
+            "line_type": null,
+            "line_weight": null,
+            "fill": null
+          },
+          "by_block": true
+        },
+        {
+          "id": 5,
+          "kind": {
+            "type": "circle",
+            "c": {
+              "x": 0.0,
+              "y": -60.0
+            },
+            "r": 18.0
+          },
+          "layer": 0,
+          "style": {
+            "color": null,
+            "line_type": null,
+            "line_weight": null,
+            "fill": null
+          },
+          "by_block": true
+        }
+      ],
+      "icon": null,
+      "base": {
+        "x": 0.0,
+        "y": 0.0
+      }
+    },
+    {
+      "id": "sys:waschbecken",
+      "name": "Waschbecken",
+      "category": "Sanitär",
+      "source": "System",
+      "description": "Handwaschbecken 550 × 420 mm",
+      "entities": [
+        {
+          "id": 1,
+          "kind": {
+            "type": "polyline",
+            "verts": [
+              {
+                "p": {
+                  "x": -240.0,
+                  "y": -210.0
+                },
+                "bulge": 0.0
+              },
+              {
+                "p": {
+                  "x": 240.0,
+                  "y": -210.0
+                },
+                "bulge": 0.41421356237309503
+              },
+              {
+                "p": {
+                  "x": 275.0,
+                  "y": -175.0
+                },
+                "bulge": 0.0
+              },
+              {
+                "p": {
+                  "x": 275.0,
+                  "y": 175.0
+                },
+                "bulge": 0.41421356237309503
+              },
+              {
+                "p": {
+                  "x": 240.0,
+                  "y": 210.0
+                },
+                "bulge": 0.0
+              },
+              {
+                "p": {
+                  "x": -240.0,
+                  "y": 210.0
+                },
+                "bulge": 0.41421356237309503
+              },
+              {
+                "p": {
+                  "x": -275.0,
+                  "y": 175.0
+                },
+                "bulge": 0.0
+              },
+              {
+                "p": {
+                  "x": -275.0,
+                  "y": -175.0
+                },
+                "bulge": 0.41421356237309503
+              }
+            ],
+            "closed": true
+          },
+          "layer": 0,
+          "style": {
+            "color": null,
+            "line_type": null,
+            "line_weight": null,
+            "fill": null
+          },
+          "by_block": true
+        },
+        {
+          "id": 2,
+          "kind": {
+            "type": "ellipse",
+            "c": {
+              "x": 0.0,
+              "y": 10.0
+            },
+            "rx": 200.0,
+            "ry": 140.0,
+            "rot": 0.0
+          },
+          "layer": 0,
+          "style": {
+            "color": null,
+            "line_type": null,
+            "line_weight": null,
+            "fill": null
+          },
+          "by_block": true
+        },
+        {
+          "id": 3,
+          "kind": {
+            "type": "circle",
+            "c": {
+              "x": 0.0,
+              "y": 165.0
+            },
+            "r": 22.0
+          },
+          "layer": 0,
+          "style": {
+            "color": null,
+            "line_type": null,
+            "line_weight": null,
+            "fill": null
+          },
+          "by_block": true
+        },
+        {
+          "id": 4,
+          "kind": {
+            "type": "circle",
+            "c": {
+              "x": 0.0,
+              "y": 165.0
+            },
+            "r": 8.0
+          },
+          "layer": 0,
+          "style": {
+            "color": null,
+            "line_type": null,
+            "line_weight": null,
+            "fill": null
+          },
+          "by_block": true
+        }
+      ],
+      "icon": null,
+      "base": {
+        "x": 0.0,
+        "y": 0.0
+      }
+    },
+    {
+      "id": "sys:dusche",
+      "name": "Dusche",
+      "category": "Sanitär",
+      "source": "System",
+      "description": "Duschfläche 900 × 900 mm",
+      "entities": [
+        {
+          "id": 1,
+          "kind": {
+            "type": "polyline",
+            "verts": [
+              {
+                "p": {
+                  "x": -450.0,
+                  "y": -450.0
+                },
+                "bulge": 0.0
+              },
+              {
+                "p": {
+                  "x": 450.0,
+                  "y": -450.0
+                },
+                "bulge": 0.0
+              },
+              {
+                "p": {
+                  "x": 450.0,
+                  "y": 450.0
+                },
+                "bulge": 0.0
+              },
+              {
+                "p": {
+                  "x": -450.0,
+                  "y": 450.0
+                },
+                "bulge": 0.0
+              }
+            ],
+            "closed": true
+          },
+          "layer": 0,
+          "style": {
+            "color": null,
+            "line_type": null,
+            "line_weight": null,
+            "fill": null
+          },
+          "by_block": true
+        },
+        {
+          "id": 2,
+          "kind": {
+            "type": "line",
+            "a": {
+              "x": -450.0,
+              "y": -450.0
+            },
+            "b": {
+              "x": 450.0,
+              "y": 450.0
+            }
+          },
+          "layer": 0,
+          "style": {
+            "color": null,
+            "line_type": null,
+            "line_weight": null,
+            "fill": null
+          },
+          "by_block": true
+        },
+        {
+          "id": 3,
+          "kind": {
+            "type": "line",
+            "a": {
+              "x": -450.0,
+              "y": 450.0
+            },
+            "b": {
+              "x": 450.0,
+              "y": -450.0
+            }
+          },
+          "layer": 0,
+          "style": {
+            "color": null,
+            "line_type": null,
+            "line_weight": null,
+            "fill": null
+          },
+          "by_block": true
+        },
+        {
+          "id": 4,
+          "kind": {
+            "type": "circle",
+            "c": {
+              "x": 0.0,
+              "y": 0.0
+            },
+            "r": 55.0
+          },
+          "layer": 0,
+          "style": {
+            "color": null,
+            "line_type": null,
+            "line_weight": null,
+            "fill": null
+          },
+          "by_block": true
+        },
+        {
+          "id": 5,
+          "kind": {
+            "type": "circle",
+            "c": {
+              "x": 0.0,
+              "y": 0.0
+            },
+            "r": 15.0
+          },
+          "layer": 0,
+          "style": {
+            "color": null,
+            "line_type": null,
+            "line_weight": null,
+            "fill": null
+          },
+          "by_block": true
+        }
+      ],
+      "icon": null,
+      "base": {
+        "x": 0.0,
+        "y": 0.0
+      }
+    },
+    {
+      "id": "sys:badewanne",
+      "name": "Badewanne",
+      "category": "Sanitär",
+      "source": "System",
+      "description": "Badewanne 1700 × 750 mm",
+      "entities": [
+        {
+          "id": 1,
+          "kind": {
+            "type": "polyline",
+            "verts": [
+              {
+                "p": {
+                  "x": -850.0,
+                  "y": -375.0
+                },
+                "bulge": 0.0
+              },
+              {
+                "p": {
+                  "x": 850.0,
+                  "y": -375.0
+                },
+                "bulge": 0.0
+              },
+              {
+                "p": {
+                  "x": 850.0,
+                  "y": 375.0
+                },
+                "bulge": 0.0
+              },
+              {
+                "p": {
+                  "x": -850.0,
+                  "y": 375.0
+                },
+                "bulge": 0.0
+              }
+            ],
+            "closed": true
+          },
+          "layer": 0,
+          "style": {
+            "color": null,
+            "line_type": null,
+            "line_weight": null,
+            "fill": null
+          },
+          "by_block": true
+        },
+        {
+          "id": 2,
+          "kind": {
+            "type": "polyline",
+            "verts": [
+              {
+                "p": {
+                  "x": -630.0,
+                  "y": -315.0
+                },
+                "bulge": 0.0
+              },
+              {
+                "p": {
+                  "x": 630.0,
+                  "y": -315.0
+                },
+                "bulge": 0.41421356237309503
+              },
+              {
+                "p": {
+                  "x": 790.0,
+                  "y": -155.0
+                },
+                "bulge": 0.0
+              },
+              {
+                "p": {
+                  "x": 790.0,
+                  "y": 155.0
+                },
+                "bulge": 0.41421356237309503
+              },
+              {
+                "p": {
+                  "x": 630.0,
+                  "y": 315.0
+                },
+                "bulge": 0.0
+              },
+              {
+                "p": {
+                  "x": -630.0,
+                  "y": 315.0
+                },
+                "bulge": 0.41421356237309503
+              },
+              {
+                "p": {
+                  "x": -790.0,
+                  "y": 155.0
+                },
+                "bulge": 0.0
+              },
+              {
+                "p": {
+                  "x": -790.0,
+                  "y": -155.0
+                },
+                "bulge": 0.41421356237309503
+              }
+            ],
+            "closed": true
+          },
+          "layer": 0,
+          "style": {
+            "color": null,
+            "line_type": null,
+            "line_weight": null,
+            "fill": null
+          },
+          "by_block": true
+        },
+        {
+          "id": 3,
+          "kind": {
+            "type": "circle",
+            "c": {
+              "x": 650.0,
+              "y": 0.0
+            },
+            "r": 35.0
+          },
+          "layer": 0,
+          "style": {
+            "color": null,
+            "line_type": null,
+            "line_weight": null,
+            "fill": null
+          },
+          "by_block": true
+        },
+        {
+          "id": 4,
+          "kind": {
+            "type": "circle",
+            "c": {
+              "x": -760.0,
+              "y": 0.0
+            },
+            "r": 25.0
+          },
+          "layer": 0,
+          "style": {
+            "color": null,
+            "line_type": null,
+            "line_weight": null,
+            "fill": null
+          },
+          "by_block": true
+        }
+      ],
+      "icon": null,
+      "base": {
+        "x": 0.0,
+        "y": 0.0
+      }
+    },
+    {
+      "id": "sys:herd",
+      "name": "Herd",
+      "category": "Küche",
+      "source": "System",
+      "description": "Kochfeld 600 × 600 mm",
+      "entities": [
+        {
+          "id": 1,
+          "kind": {
+            "type": "polyline",
+            "verts": [
+              {
+                "p": {
+                  "x": -300.0,
+                  "y": -300.0
+                },
+                "bulge": 0.0
+              },
+              {
+                "p": {
+                  "x": 300.0,
+                  "y": -300.0
+                },
+                "bulge": 0.0
+              },
+              {
+                "p": {
+                  "x": 300.0,
+                  "y": 300.0
+                },
+                "bulge": 0.0
+              },
+              {
+                "p": {
+                  "x": -300.0,
+                  "y": 300.0
+                },
+                "bulge": 0.0
+              }
+            ],
+            "closed": true
+          },
+          "layer": 0,
+          "style": {
+            "color": null,
+            "line_type": null,
+            "line_weight": null,
+            "fill": null
+          },
+          "by_block": true
+        },
+        {
+          "id": 2,
+          "kind": {
+            "type": "circle",
+            "c": {
+              "x": -150.0,
+              "y": 150.0
+            },
+            "r": 85.0
+          },
+          "layer": 0,
+          "style": {
+            "color": null,
+            "line_type": null,
+            "line_weight": null,
+            "fill": null
+          },
+          "by_block": true
+        },
+        {
+          "id": 3,
+          "kind": {
+            "type": "circle",
+            "c": {
+              "x": 150.0,
+              "y": 150.0
+            },
+            "r": 70.0
+          },
+          "layer": 0,
+          "style": {
+            "color": null,
+            "line_type": null,
+            "line_weight": null,
+            "fill": null
+          },
+          "by_block": true
+        },
+        {
+          "id": 4,
+          "kind": {
+            "type": "circle",
+            "c": {
+              "x": -150.0,
+              "y": -150.0
+            },
+            "r": 70.0
+          },
+          "layer": 0,
+          "style": {
+            "color": null,
+            "line_type": null,
+            "line_weight": null,
+            "fill": null
+          },
+          "by_block": true
+        },
+        {
+          "id": 5,
+          "kind": {
+            "type": "circle",
+            "c": {
+              "x": 150.0,
+              "y": -150.0
+            },
+            "r": 85.0
+          },
+          "layer": 0,
+          "style": {
+            "color": null,
+            "line_type": null,
+            "line_weight": null,
+            "fill": null
+          },
+          "by_block": true
+        }
+      ],
+      "icon": null,
+      "base": {
+        "x": 0.0,
+        "y": 0.0
+      }
+    },
+    {
+      "id": "sys:spuele",
+      "name": "Spüle",
+      "category": "Küche",
+      "source": "System",
+      "description": "Doppelspüle 600 × 500 mm",
+      "entities": [
+        {
+          "id": 1,
+          "kind": {
+            "type": "polyline",
+            "verts": [
+              {
+                "p": {
+                  "x": -300.0,
+                  "y": -250.0
+                },
+                "bulge": 0.0
+              },
+              {
+                "p": {
+                  "x": 300.0,
+                  "y": -250.0
+                },
+                "bulge": 0.0
+              },
+              {
+                "p": {
+                  "x": 300.0,
+                  "y": 250.0
+                },
+                "bulge": 0.0
+              },
+              {
+                "p": {
+                  "x": -300.0,
+                  "y": 250.0
+                },
+                "bulge": 0.0
+              }
+            ],
+            "closed": true
+          },
+          "layer": 0,
+          "style": {
+            "color": null,
+            "line_type": null,
+            "line_weight": null,
+            "fill": null
+          },
+          "by_block": true
+        },
+        {
+          "id": 2,
+          "kind": {
+            "type": "polyline",
+            "verts": [
+              {
+                "p": {
+                  "x": -230.0,
+                  "y": -205.0
+                },
+                "bulge": 0.0
+              },
+              {
+                "p": {
+                  "x": -40.0,
+                  "y": -205.0
+                },
+                "bulge": 0.41421356237309503
+              },
+              {
+                "p": {
+                  "x": -15.0,
+                  "y": -180.0
+                },
+                "bulge": 0.0
+              },
+              {
+                "p": {
+                  "x": -15.0,
+                  "y": 180.0
+                },
+                "bulge": 0.41421356237309503
+              },
+              {
+                "p": {
+                  "x": -40.0,
+                  "y": 205.0
+                },
+                "bulge": 0.0
+              },
+              {
+                "p": {
+                  "x": -230.0,
+                  "y": 205.0
+                },
+                "bulge": 0.41421356237309503
+              },
+              {
+                "p": {
+                  "x": -255.0,
+                  "y": 180.0
+                },
+                "bulge": 0.0
+              },
+              {
+                "p": {
+                  "x": -255.0,
+                  "y": -180.0
+                },
+                "bulge": 0.41421356237309503
+              }
+            ],
+            "closed": true
+          },
+          "layer": 0,
+          "style": {
+            "color": null,
+            "line_type": null,
+            "line_weight": null,
+            "fill": null
+          },
+          "by_block": true
+        },
+        {
+          "id": 3,
+          "kind": {
+            "type": "polyline",
+            "verts": [
+              {
+                "p": {
+                  "x": 40.0,
+                  "y": -205.0
+                },
+                "bulge": 0.0
+              },
+              {
+                "p": {
+                  "x": 230.0,
+                  "y": -205.0
+                },
+                "bulge": 0.41421356237309503
+              },
+              {
+                "p": {
+                  "x": 255.0,
+                  "y": -180.0
+                },
+                "bulge": 0.0
+              },
+              {
+                "p": {
+                  "x": 255.0,
+                  "y": 180.0
+                },
+                "bulge": 0.41421356237309503
+              },
+              {
+                "p": {
+                  "x": 230.0,
+                  "y": 205.0
+                },
+                "bulge": 0.0
+              },
+              {
+                "p": {
+                  "x": 40.0,
+                  "y": 205.0
+                },
+                "bulge": 0.41421356237309503
+              },
+              {
+                "p": {
+                  "x": 15.0,
+                  "y": 180.0
+                },
+                "bulge": 0.0
+              },
+              {
+                "p": {
+                  "x": 15.0,
+                  "y": -180.0
+                },
+                "bulge": 0.41421356237309503
+              }
+            ],
+            "closed": true
+          },
+          "layer": 0,
+          "style": {
+            "color": null,
+            "line_type": null,
+            "line_weight": null,
+            "fill": null
+          },
+          "by_block": true
+        },
+        {
+          "id": 4,
+          "kind": {
+            "type": "circle",
+            "c": {
+              "x": 0.0,
+              "y": -215.0
+            },
+            "r": 20.0
+          },
+          "layer": 0,
+          "style": {
+            "color": null,
+            "line_type": null,
+            "line_weight": null,
+            "fill": null
+          },
+          "by_block": true
+        }
+      ],
+      "icon": null,
+      "base": {
+        "x": 0.0,
+        "y": 0.0
+      }
+    },
+    {
+      "id": "sys:kuehlschrank",
+      "name": "Kühlschrank",
+      "category": "Küche",
+      "source": "System",
+      "description": "Kühlschrank 600 × 600 mm",
+      "entities": [
+        {
+          "id": 1,
+          "kind": {
+            "type": "polyline",
+            "verts": [
+              {
+                "p": {
+                  "x": -300.0,
+                  "y": -300.0
+                },
+                "bulge": 0.0
+              },
+              {
+                "p": {
+                  "x": 300.0,
+                  "y": -300.0
+                },
+                "bulge": 0.0
+              },
+              {
+                "p": {
+                  "x": 300.0,
+                  "y": 300.0
+                },
+                "bulge": 0.0
+              },
+              {
+                "p": {
+                  "x": -300.0,
+                  "y": 300.0
+                },
+                "bulge": 0.0
+              }
+            ],
+            "closed": true
+          },
+          "layer": 0,
+          "style": {
+            "color": null,
+            "line_type": null,
+            "line_weight": null,
+            "fill": null
+          },
+          "by_block": true
+        },
+        {
+          "id": 2,
+          "kind": {
+            "type": "line",
+            "a": {
+              "x": -300.0,
+              "y": 240.0
+            },
+            "b": {
+              "x": 300.0,
+              "y": 240.0
+            }
+          },
+          "layer": 0,
+          "style": {
+            "color": null,
+            "line_type": null,
+            "line_weight": null,
+            "fill": null
+          },
+          "by_block": true
+        },
+        {
+          "id": 3,
+          "kind": {
+            "type": "text",
+            "p": {
+              "x": 0.0,
+              "y": 0.0
+            },
+            "text": "KS",
+            "height": 90.0,
+            "angle": 0.0,
+            "align": "Center",
+            "valign": "Middle",
+            "bold": false
+          },
+          "layer": 0,
+          "style": {
+            "color": null,
+            "line_type": null,
+            "line_weight": null,
+            "fill": null
+          },
+          "by_block": true
+        }
+      ],
+      "icon": null,
+      "base": {
+        "x": 0.0,
+        "y": 0.0
+      }
+    },
+    {
+      "id": "sys:bett",
+      "name": "Bett 1600",
+      "category": "Möbel",
+      "source": "System",
+      "description": "Doppelbett 1600 × 2000 mm",
+      "entities": [
+        {
+          "id": 1,
+          "kind": {
+            "type": "polyline",
+            "verts": [
+              {
+                "p": {
+                  "x": -800.0,
+                  "y": -1000.0
+                },
+                "bulge": 0.0
+              },
+              {
+                "p": {
+                  "x": 800.0,
+                  "y": -1000.0
+                },
+                "bulge": 0.0
+              },
+              {
+                "p": {
+                  "x": 800.0,
+                  "y": 1000.0
+                },
+                "bulge": 0.0
+              },
+              {
+                "p": {
+                  "x": -800.0,
+                  "y": 1000.0
+                },
+                "bulge": 0.0
+              }
+            ],
+            "closed": true
+          },
+          "layer": 0,
+          "style": {
+            "color": null,
+            "line_type": null,
+            "line_weight": null,
+            "fill": null
+          },
+          "by_block": true
+        },
+        {
+          "id": 2,
+          "kind": {
+            "type": "line",
+            "a": {
+              "x": -800.0,
+              "y": 780.0
+            },
+            "b": {
+              "x": 800.0,
+              "y": 780.0
+            }
+          },
+          "layer": 0,
+          "style": {
+            "color": null,
+            "line_type": null,
+            "line_weight": null,
+            "fill": null
+          },
+          "by_block": true
+        },
+        {
+          "id": 3,
+          "kind": {
+            "type": "polyline",
+            "verts": [
+              {
+                "p": {
+                  "x": -720.0,
+                  "y": 760.0
+                },
+                "bulge": 0.0
+              },
+              {
+                "p": {
+                  "x": -80.0,
+                  "y": 760.0
+                },
+                "bulge": 0.0
+              },
+              {
+                "p": {
+                  "x": -80.0,
+                  "y": 930.0
+                },
+                "bulge": 0.0
+              },
+              {
+                "p": {
+                  "x": -720.0,
+                  "y": 930.0
+                },
+                "bulge": 0.0
+              }
+            ],
+            "closed": true
+          },
+          "layer": 0,
+          "style": {
+            "color": null,
+            "line_type": null,
+            "line_weight": null,
+            "fill": null
+          },
+          "by_block": true
+        },
+        {
+          "id": 4,
+          "kind": {
+            "type": "polyline",
+            "verts": [
+              {
+                "p": {
+                  "x": 80.0,
+                  "y": 760.0
+                },
+                "bulge": 0.0
+              },
+              {
+                "p": {
+                  "x": 720.0,
+                  "y": 760.0
+                },
+                "bulge": 0.0
+              },
+              {
+                "p": {
+                  "x": 720.0,
+                  "y": 930.0
+                },
+                "bulge": 0.0
+              },
+              {
+                "p": {
+                  "x": 80.0,
+                  "y": 930.0
+                },
+                "bulge": 0.0
+              }
+            ],
+            "closed": true
+          },
+          "layer": 0,
+          "style": {
+            "color": null,
+            "line_type": null,
+            "line_weight": null,
+            "fill": null
+          },
+          "by_block": true
+        },
+        {
+          "id": 5,
+          "kind": {
+            "type": "line",
+            "a": {
+              "x": -800.0,
+              "y": 500.0
+            },
+            "b": {
+              "x": 800.0,
+              "y": 500.0
+            }
+          },
+          "layer": 0,
+          "style": {
+            "color": null,
+            "line_type": null,
+            "line_weight": null,
+            "fill": null
+          },
+          "by_block": true
+        }
+      ],
+      "icon": null,
+      "base": {
+        "x": 0.0,
+        "y": 0.0
+      }
+    },
+    {
+      "id": "sys:bett90",
+      "name": "Bett 900",
+      "category": "Möbel",
+      "source": "System",
+      "description": "Einzelbett 900 × 2000 mm",
+      "entities": [
+        {
+          "id": 1,
+          "kind": {
+            "type": "polyline",
+            "verts": [
+              {
+                "p": {
+                  "x": -450.0,
+                  "y": -1000.0
+                },
+                "bulge": 0.0
+              },
+              {
+                "p": {
+                  "x": 450.0,
+                  "y": -1000.0
+                },
+                "bulge": 0.0
+              },
+              {
+                "p": {
+                  "x": 450.0,
+                  "y": 1000.0
+                },
+                "bulge": 0.0
+              },
+              {
+                "p": {
+                  "x": -450.0,
+                  "y": 1000.0
+                },
+                "bulge": 0.0
+              }
+            ],
+            "closed": true
+          },
+          "layer": 0,
+          "style": {
+            "color": null,
+            "line_type": null,
+            "line_weight": null,
+            "fill": null
+          },
+          "by_block": true
+        },
+        {
+          "id": 2,
+          "kind": {
+            "type": "line",
+            "a": {
+              "x": -450.0,
+              "y": 800.0
+            },
+            "b": {
+              "x": 450.0,
+              "y": 800.0
+            }
+          },
+          "layer": 0,
+          "style": {
+            "color": null,
+            "line_type": null,
+            "line_weight": null,
+            "fill": null
+          },
+          "by_block": true
+        },
+        {
+          "id": 3,
+          "kind": {
+            "type": "polyline",
+            "verts": [
+              {
+                "p": {
+                  "x": -380.0,
+                  "y": 780.0
+                },
+                "bulge": 0.0
+              },
+              {
+                "p": {
+                  "x": 380.0,
+                  "y": 780.0
+                },
+                "bulge": 0.0
+              },
+              {
+                "p": {
+                  "x": 380.0,
+                  "y": 940.0
+                },
+                "bulge": 0.0
+              },
+              {
+                "p": {
+                  "x": -380.0,
+                  "y": 940.0
+                },
+                "bulge": 0.0
+              }
+            ],
+            "closed": true
+          },
+          "layer": 0,
+          "style": {
+            "color": null,
+            "line_type": null,
+            "line_weight": null,
+            "fill": null
+          },
+          "by_block": true
+        }
+      ],
+      "icon": null,
+      "base": {
+        "x": 0.0,
+        "y": 0.0
+      }
+    },
+    {
+      "id": "sys:sofa",
+      "name": "Sofa",
+      "category": "Möbel",
+      "source": "System",
+      "description": "Sofa 2200 × 900 mm, 3-sitzig",
+      "entities": [
+        {
+          "id": 1,
+          "kind": {
+            "type": "polyline",
+            "verts": [
+              {
+                "p": {
+                  "x": -1040.0,
+                  "y": -450.0
+                },
+                "bulge": 0.0
+              },
+              {
+                "p": {
+                  "x": 1040.0,
+                  "y": -450.0
+                },
+                "bulge": 0.41421356237309503
+              },
+              {
+                "p": {
+                  "x": 1100.0,
+                  "y": -390.0
+                },
+                "bulge": 0.0
+              },
+              {
+                "p": {
+                  "x": 1100.0,
+                  "y": 390.0
+                },
+                "bulge": 0.41421356237309503
+              },
+              {
+                "p": {
+                  "x": 1040.0,
+                  "y": 450.0
+                },
+                "bulge": 0.0
+              },
+              {
+                "p": {
+                  "x": -1040.0,
+                  "y": 450.0
+                },
+                "bulge": 0.41421356237309503
+              },
+              {
+                "p": {
+                  "x": -1100.0,
+                  "y": 390.0
+                },
+                "bulge": 0.0
+              },
+              {
+                "p": {
+                  "x": -1100.0,
+                  "y": -390.0
+                },
+                "bulge": 0.41421356237309503
+              }
+            ],
+            "closed": true
+          },
+          "layer": 0,
+          "style": {
+            "color": null,
+            "line_type": null,
+            "line_weight": null,
+            "fill": null
+          },
+          "by_block": true
+        },
+        {
+          "id": 2,
+          "kind": {
+            "type": "line",
+            "a": {
+              "x": -1100.0,
+              "y": 280.0
+            },
+            "b": {
+              "x": 1100.0,
+              "y": 280.0
+            }
+          },
+          "layer": 0,
+          "style": {
+            "color": null,
+            "line_type": null,
+            "line_weight": null,
+            "fill": null
+          },
+          "by_block": true
+        },
+        {
+          "id": 3,
+          "kind": {
+            "type": "line",
+            "a": {
+              "x": -360.0,
+              "y": -450.0
+            },
+            "b": {
+              "x": -360.0,
+              "y": 280.0
+            }
+          },
+          "layer": 0,
+          "style": {
+            "color": null,
+            "line_type": null,
+            "line_weight": null,
+            "fill": null
+          },
+          "by_block": true
+        },
+        {
+          "id": 4,
+          "kind": {
+            "type": "line",
+            "a": {
+              "x": 360.0,
+              "y": -450.0
+            },
+            "b": {
+              "x": 360.0,
+              "y": 280.0
+            }
+          },
+          "layer": 0,
+          "style": {
+            "color": null,
+            "line_type": null,
+            "line_weight": null,
+            "fill": null
+          },
+          "by_block": true
+        }
+      ],
+      "icon": null,
+      "base": {
+        "x": 0.0,
+        "y": 0.0
+      }
+    },
+    {
+      "id": "sys:tisch",
+      "name": "Tisch",
+      "category": "Möbel",
+      "source": "System",
+      "description": "Tisch 1400 × 800 mm",
+      "entities": [
+        {
+          "id": 1,
+          "kind": {
+            "type": "polyline",
+            "verts": [
+              {
+                "p": {
+                  "x": -700.0,
+                  "y": -400.0
+                },
+                "bulge": 0.0
+              },
+              {
+                "p": {
+                  "x": 700.0,
+                  "y": -400.0
+                },
+                "bulge": 0.0
+              },
+              {
+                "p": {
+                  "x": 700.0,
+                  "y": 400.0
+                },
+                "bulge": 0.0
+              },
+              {
+                "p": {
+                  "x": -700.0,
+                  "y": 400.0
+                },
+                "bulge": 0.0
+              }
+            ],
+            "closed": true
+          },
+          "layer": 0,
+          "style": {
+            "color": null,
+            "line_type": null,
+            "line_weight": null,
+            "fill": null
+          },
+          "by_block": true
+        }
+      ],
+      "icon": null,
+      "base": {
+        "x": 0.0,
+        "y": 0.0
+      }
+    },
+    {
+      "id": "sys:stuhl",
+      "name": "Stuhl",
+      "category": "Möbel",
+      "source": "System",
+      "description": "Stuhl 450 × 450 mm",
+      "entities": [
+        {
+          "id": 1,
+          "kind": {
+            "type": "polyline",
+            "verts": [
+              {
+                "p": {
+                  "x": -195.0,
+                  "y": -225.0
+                },
+                "bulge": 0.0
+              },
+              {
+                "p": {
+                  "x": 195.0,
+                  "y": -225.0
+                },
+                "bulge": 0.41421356237309503
+              },
+              {
+                "p": {
+                  "x": 225.0,
+                  "y": -195.0
+                },
+                "bulge": 0.0
+              },
+              {
+                "p": {
+                  "x": 225.0,
+                  "y": 195.0
+                },
+                "bulge": 0.41421356237309503
+              },
+              {
+                "p": {
+                  "x": 195.0,
+                  "y": 225.0
+                },
+                "bulge": 0.0
+              },
+              {
+                "p": {
+                  "x": -195.0,
+                  "y": 225.0
+                },
+                "bulge": 0.41421356237309503
+              },
+              {
+                "p": {
+                  "x": -225.0,
+                  "y": 195.0
+                },
+                "bulge": 0.0
+              },
+              {
+                "p": {
+                  "x": -225.0,
+                  "y": -195.0
+                },
+                "bulge": 0.41421356237309503
+              }
+            ],
+            "closed": true
+          },
+          "layer": 0,
+          "style": {
+            "color": null,
+            "line_type": null,
+            "line_weight": null,
+            "fill": null
+          },
+          "by_block": true
+        },
+        {
+          "id": 2,
+          "kind": {
+            "type": "line",
+            "a": {
+              "x": -225.0,
+              "y": 150.0
+            },
+            "b": {
+              "x": 225.0,
+              "y": 150.0
+            }
+          },
+          "layer": 0,
+          "style": {
+            "color": null,
+            "line_type": null,
+            "line_weight": null,
+            "fill": null
+          },
+          "by_block": true
+        }
+      ],
+      "icon": null,
+      "base": {
+        "x": 0.0,
+        "y": 0.0
+      }
+    },
+    {
+      "id": "sys:schrank",
+      "name": "Schrank",
+      "category": "Möbel",
+      "source": "System",
+      "description": "Schrank 1000 × 600 mm",
+      "entities": [
+        {
+          "id": 1,
+          "kind": {
+            "type": "polyline",
+            "verts": [
+              {
+                "p": {
+                  "x": -500.0,
+                  "y": -300.0
+                },
+                "bulge": 0.0
+              },
+              {
+                "p": {
+                  "x": 500.0,
+                  "y": -300.0
+                },
+                "bulge": 0.0
+              },
+              {
+                "p": {
+                  "x": 500.0,
+                  "y": 300.0
+                },
+                "bulge": 0.0
+              },
+              {
+                "p": {
+                  "x": -500.0,
+                  "y": 300.0
+                },
+                "bulge": 0.0
+              }
+            ],
+            "closed": true
+          },
+          "layer": 0,
+          "style": {
+            "color": null,
+            "line_type": null,
+            "line_weight": null,
+            "fill": null
+          },
+          "by_block": true
+        },
+        {
+          "id": 2,
+          "kind": {
+            "type": "line",
+            "a": {
+              "x": 0.0,
+              "y": -300.0
+            },
+            "b": {
+              "x": 0.0,
+              "y": 300.0
+            }
+          },
+          "layer": 0,
+          "style": {
+            "color": null,
+            "line_type": null,
+            "line_weight": null,
+            "fill": null
+          },
+          "by_block": true
+        },
+        {
+          "id": 3,
+          "kind": {
+            "type": "line",
+            "a": {
+              "x": -500.0,
+              "y": -300.0
+            },
+            "b": {
+              "x": 0.0,
+              "y": 300.0
+            }
+          },
+          "layer": 0,
+          "style": {
+            "color": null,
+            "line_type": null,
+            "line_weight": null,
+            "fill": null
+          },
+          "by_block": true
+        },
+        {
+          "id": 4,
+          "kind": {
+            "type": "line",
+            "a": {
+              "x": 0.0,
+              "y": -300.0
+            },
+            "b": {
+              "x": 500.0,
+              "y": 300.0
+            }
+          },
+          "layer": 0,
+          "style": {
+            "color": null,
+            "line_type": null,
+            "line_weight": null,
+            "fill": null
+          },
+          "by_block": true
+        }
+      ],
+      "icon": null,
+      "base": {
+        "x": 0.0,
+        "y": 0.0
+      }
+    },
+    {
+      "id": "sys:waschmaschine",
+      "name": "Waschmaschine",
+      "category": "Technik",
+      "source": "System",
+      "description": "Waschmaschine 600 × 600 mm",
+      "entities": [
+        {
+          "id": 1,
+          "kind": {
+            "type": "polyline",
+            "verts": [
+              {
+                "p": {
+                  "x": -300.0,
+                  "y": -300.0
+                },
+                "bulge": 0.0
+              },
+              {
+                "p": {
+                  "x": 300.0,
+                  "y": -300.0
+                },
+                "bulge": 0.0
+              },
+              {
+                "p": {
+                  "x": 300.0,
+                  "y": 300.0
+                },
+                "bulge": 0.0
+              },
+              {
+                "p": {
+                  "x": -300.0,
+                  "y": 300.0
+                },
+                "bulge": 0.0
+              }
+            ],
+            "closed": true
+          },
+          "layer": 0,
+          "style": {
+            "color": null,
+            "line_type": null,
+            "line_weight": null,
+            "fill": null
+          },
+          "by_block": true
+        },
+        {
+          "id": 2,
+          "kind": {
+            "type": "circle",
+            "c": {
+              "x": 0.0,
+              "y": 0.0
+            },
+            "r": 180.0
+          },
+          "layer": 0,
+          "style": {
+            "color": null,
+            "line_type": null,
+            "line_weight": null,
+            "fill": null
+          },
+          "by_block": true
+        },
+        {
+          "id": 3,
+          "kind": {
+            "type": "circle",
+            "c": {
+              "x": 0.0,
+              "y": 0.0
+            },
+            "r": 140.0
+          },
+          "layer": 0,
+          "style": {
+            "color": null,
+            "line_type": null,
+            "line_weight": null,
+            "fill": null
+          },
+          "by_block": true
+        },
+        {
+          "id": 4,
+          "kind": {
+            "type": "text",
+            "p": {
+              "x": 0.0,
+              "y": 0.0
+            },
+            "text": "WM",
+            "height": 90.0,
+            "angle": 0.0,
+            "align": "Center",
+            "valign": "Middle",
+            "bold": false
+          },
+          "layer": 0,
+          "style": {
+            "color": null,
+            "line_type": null,
+            "line_weight": null,
+            "fill": null
+          },
+          "by_block": true
+        }
+      ],
+      "icon": null,
+      "base": {
+        "x": 0.0,
+        "y": 0.0
+      }
+    },
+    {
+      "id": "sys:heizkoerper",
+      "name": "Heizkörper",
+      "category": "Technik",
+      "source": "System",
+      "description": "Heizkörper 800 × 100 mm",
+      "entities": [
+        {
+          "id": 1,
+          "kind": {
+            "type": "polyline",
+            "verts": [
+              {
+                "p": {
+                  "x": -400.0,
+                  "y": -50.0
+                },
+                "bulge": 0.0
+              },
+              {
+                "p": {
+                  "x": 400.0,
+                  "y": -50.0
+                },
+                "bulge": 0.0
+              },
+              {
+                "p": {
+                  "x": 400.0,
+                  "y": 50.0
+                },
+                "bulge": 0.0
+              },
+              {
+                "p": {
+                  "x": -400.0,
+                  "y": 50.0
+                },
+                "bulge": 0.0
+              }
+            ],
+            "closed": true
+          },
+          "layer": 0,
+          "style": {
+            "color": null,
+            "line_type": null,
+            "line_weight": null,
+            "fill": null
+          },
+          "by_block": true
+        },
+        {
+          "id": 2,
+          "kind": {
+            "type": "line",
+            "a": {
+              "x": -374.0,
+              "y": -50.0
+            },
+            "b": {
+              "x": -374.0,
+              "y": 50.0
+            }
+          },
+          "layer": 0,
+          "style": {
+            "color": null,
+            "line_type": null,
+            "line_weight": null,
+            "fill": null
+          },
+          "by_block": true
+        },
+        {
+          "id": 3,
+          "kind": {
+            "type": "line",
+            "a": {
+              "x": -321.0,
+              "y": -50.0
+            },
+            "b": {
+              "x": -321.0,
+              "y": 50.0
+            }
+          },
+          "layer": 0,
+          "style": {
+            "color": null,
+            "line_type": null,
+            "line_weight": null,
+            "fill": null
+          },
+          "by_block": true
+        },
+        {
+          "id": 4,
+          "kind": {
+            "type": "line",
+            "a": {
+              "x": -268.0,
+              "y": -50.0
+            },
+            "b": {
+              "x": -268.0,
+              "y": 50.0
+            }
+          },
+          "layer": 0,
+          "style": {
+            "color": null,
+            "line_type": null,
+            "line_weight": null,
+            "fill": null
+          },
+          "by_block": true
+        },
+        {
+          "id": 5,
+          "kind": {
+            "type": "line",
+            "a": {
+              "x": -215.0,
+              "y": -50.0
+            },
+            "b": {
+              "x": -215.0,
+              "y": 50.0
+            }
+          },
+          "layer": 0,
+          "style": {
+            "color": null,
+            "line_type": null,
+            "line_weight": null,
+            "fill": null
+          },
+          "by_block": true
+        },
+        {
+          "id": 6,
+          "kind": {
+            "type": "line",
+            "a": {
+              "x": -162.0,
+              "y": -50.0
+            },
+            "b": {
+              "x": -162.0,
+              "y": 50.0
+            }
+          },
+          "layer": 0,
+          "style": {
+            "color": null,
+            "line_type": null,
+            "line_weight": null,
+            "fill": null
+          },
+          "by_block": true
+        },
+        {
+          "id": 7,
+          "kind": {
+            "type": "line",
+            "a": {
+              "x": -109.0,
+              "y": -50.0
+            },
+            "b": {
+              "x": -109.0,
+              "y": 50.0
+            }
+          },
+          "layer": 0,
+          "style": {
+            "color": null,
+            "line_type": null,
+            "line_weight": null,
+            "fill": null
+          },
+          "by_block": true
+        },
+        {
+          "id": 8,
+          "kind": {
+            "type": "line",
+            "a": {
+              "x": -56.0,
+              "y": -50.0
+            },
+            "b": {
+              "x": -56.0,
+              "y": 50.0
+            }
+          },
+          "layer": 0,
+          "style": {
+            "color": null,
+            "line_type": null,
+            "line_weight": null,
+            "fill": null
+          },
+          "by_block": true
+        },
+        {
+          "id": 9,
+          "kind": {
+            "type": "line",
+            "a": {
+              "x": -3.0,
+              "y": -50.0
+            },
+            "b": {
+              "x": -3.0,
+              "y": 50.0
+            }
+          },
+          "layer": 0,
+          "style": {
+            "color": null,
+            "line_type": null,
+            "line_weight": null,
+            "fill": null
+          },
+          "by_block": true
+        },
+        {
+          "id": 10,
+          "kind": {
+            "type": "line",
+            "a": {
+              "x": 50.0,
+              "y": -50.0
+            },
+            "b": {
+              "x": 50.0,
+              "y": 50.0
+            }
+          },
+          "layer": 0,
+          "style": {
+            "color": null,
+            "line_type": null,
+            "line_weight": null,
+            "fill": null
+          },
+          "by_block": true
+        },
+        {
+          "id": 11,
+          "kind": {
+            "type": "line",
+            "a": {
+              "x": 103.0,
+              "y": -50.0
+            },
+            "b": {
+              "x": 103.0,
+              "y": 50.0
+            }
+          },
+          "layer": 0,
+          "style": {
+            "color": null,
+            "line_type": null,
+            "line_weight": null,
+            "fill": null
+          },
+          "by_block": true
+        },
+        {
+          "id": 12,
+          "kind": {
+            "type": "line",
+            "a": {
+              "x": 156.0,
+              "y": -50.0
+            },
+            "b": {
+              "x": 156.0,
+              "y": 50.0
+            }
+          },
+          "layer": 0,
+          "style": {
+            "color": null,
+            "line_type": null,
+            "line_weight": null,
+            "fill": null
+          },
+          "by_block": true
+        },
+        {
+          "id": 13,
+          "kind": {
+            "type": "line",
+            "a": {
+              "x": 209.0,
+              "y": -50.0
+            },
+            "b": {
+              "x": 209.0,
+              "y": 50.0
+            }
+          },
+          "layer": 0,
+          "style": {
+            "color": null,
+            "line_type": null,
+            "line_weight": null,
+            "fill": null
+          },
+          "by_block": true
+        },
+        {
+          "id": 14,
+          "kind": {
+            "type": "line",
+            "a": {
+              "x": 262.0,
+              "y": -50.0
+            },
+            "b": {
+              "x": 262.0,
+              "y": 50.0
+            }
+          },
+          "layer": 0,
+          "style": {
+            "color": null,
+            "line_type": null,
+            "line_weight": null,
+            "fill": null
+          },
+          "by_block": true
+        },
+        {
+          "id": 15,
+          "kind": {
+            "type": "line",
+            "a": {
+              "x": 315.0,
+              "y": -50.0
+            },
+            "b": {
+              "x": 315.0,
+              "y": 50.0
+            }
+          },
+          "layer": 0,
+          "style": {
+            "color": null,
+            "line_type": null,
+            "line_weight": null,
+            "fill": null
+          },
+          "by_block": true
+        },
+        {
+          "id": 16,
+          "kind": {
+            "type": "line",
+            "a": {
+              "x": 368.0,
+              "y": -50.0
+            },
+            "b": {
+              "x": 368.0,
+              "y": 50.0
+            }
+          },
+          "layer": 0,
+          "style": {
+            "color": null,
+            "line_type": null,
+            "line_weight": null,
+            "fill": null
+          },
+          "by_block": true
+        }
+      ],
+      "icon": null,
+      "base": {
+        "x": 0.0,
+        "y": 0.0
+      }
+    },
+    {
+      "id": "sys:nordpfeil",
+      "name": "Nordpfeil",
+      "category": "Symbole",
+      "source": "System",
+      "description": "Nordpfeil mit Kreis",
+      "entities": [
+        {
+          "id": 1,
+          "kind": {
+            "type": "circle",
+            "c": {
+              "x": 0.0,
+              "y": 0.0
+            },
+            "r": 300.0
+          },
+          "layer": 0,
+          "style": {
+            "color": null,
+            "line_type": null,
+            "line_weight": null,
+            "fill": null
+          },
+          "by_block": true
+        },
+        {
+          "id": 2,
+          "kind": {
+            "type": "circle",
+            "c": {
+              "x": 0.0,
+              "y": 0.0
+            },
+            "r": 240.0
+          },
+          "layer": 0,
+          "style": {
+            "color": null,
+            "line_type": null,
+            "line_weight": null,
+            "fill": null
+          },
+          "by_block": true
+        },
+        {
+          "id": 3,
+          "kind": {
+            "type": "polyline",
+            "verts": [
+              {
+                "p": {
+                  "x": 0.0,
+                  "y": 270.0
+                },
+                "bulge": 0.0
+              },
+              {
+                "p": {
+                  "x": -80.0,
+                  "y": -120.0
+                },
+                "bulge": 0.0
+              },
+              {
+                "p": {
+                  "x": 0.0,
+                  "y": -40.0
+                },
+                "bulge": 0.0
+              },
+              {
+                "p": {
+                  "x": 80.0,
+                  "y": -120.0
+                },
+                "bulge": 0.0
+              }
+            ],
+            "closed": true
+          },
+          "layer": 0,
+          "style": {
+            "color": null,
+            "line_type": null,
+            "line_weight": null,
+            "fill": null
+          },
+          "by_block": true
+        },
+        {
+          "id": 4,
+          "kind": {
+            "type": "text",
+            "p": {
+              "x": 0.0,
+              "y": 420.0
+            },
+            "text": "N",
+            "height": 200.0,
+            "angle": 0.0,
+            "align": "Center",
+            "valign": "Middle",
+            "bold": false
+          },
+          "layer": 0,
+          "style": {
+            "color": null,
+            "line_type": null,
+            "line_weight": null,
+            "fill": null
+          },
+          "by_block": true
+        }
+      ],
+      "icon": null,
+      "base": {
+        "x": 0.0,
+        "y": 0.0
+      }
+    },
+    {
+      "id": "sys:schnitt",
+      "name": "Schnittmarke",
+      "category": "Symbole",
+      "source": "System",
+      "description": "Schnittmarke A–A",
+      "entities": [
+        {
+          "id": 1,
+          "kind": {
+            "type": "line",
+            "a": {
+              "x": -350.0,
+              "y": 0.0
+            },
+            "b": {
+              "x": 350.0,
+              "y": 0.0
+            }
+          },
+          "layer": 0,
+          "style": {
+            "color": null,
+            "line_type": null,
+            "line_weight": null,
+            "fill": null
+          },
+          "by_block": true
+        },
+        {
+          "id": 2,
+          "kind": {
+            "type": "circle",
+            "c": {
+              "x": -350.0,
+              "y": 0.0
+            },
+            "r": 110.0
+          },
+          "layer": 0,
+          "style": {
+            "color": null,
+            "line_type": null,
+            "line_weight": null,
+            "fill": null
+          },
+          "by_block": true
+        },
+        {
+          "id": 3,
+          "kind": {
+            "type": "circle",
+            "c": {
+              "x": 350.0,
+              "y": 0.0
+            },
+            "r": 110.0
+          },
+          "layer": 0,
+          "style": {
+            "color": null,
+            "line_type": null,
+            "line_weight": null,
+            "fill": null
+          },
+          "by_block": true
+        },
+        {
+          "id": 4,
+          "kind": {
+            "type": "text",
+            "p": {
+              "x": -350.0,
+              "y": 0.0
+            },
+            "text": "A",
+            "height": 120.0,
+            "angle": 0.0,
+            "align": "Center",
+            "valign": "Middle",
+            "bold": false
+          },
+          "layer": 0,
+          "style": {
+            "color": null,
+            "line_type": null,
+            "line_weight": null,
+            "fill": null
+          },
+          "by_block": true
+        }
+      ],
+      "icon": null,
+      "base": {
+        "x": 0.0,
+        "y": 0.0
+      }
+    },
+    {
+      "id": "sys:raumstempel",
+      "name": "Raumstempel",
+      "category": "Symbole",
+      "source": "System",
+      "description": "Raumbezeichnung (Text anpassen)",
+      "entities": [
+        {
+          "id": 1,
+          "kind": {
+            "type": "polyline",
+            "verts": [
+              {
+                "p": {
+                  "x": -300.0,
+                  "y": -150.0
+                },
+                "bulge": 0.0
+              },
+              {
+                "p": {
+                  "x": 300.0,
+                  "y": -150.0
+                },
+                "bulge": 0.0
+              },
+              {
+                "p": {
+                  "x": 300.0,
+                  "y": 150.0
+                },
+                "bulge": 0.0
+              },
+              {
+                "p": {
+                  "x": -300.0,
+                  "y": 150.0
+                },
+                "bulge": 0.0
+              }
+            ],
+            "closed": true
+          },
+          "layer": 0,
+          "style": {
+            "color": null,
+            "line_type": null,
+            "line_weight": null,
+            "fill": null
+          },
+          "by_block": true
+        },
+        {
+          "id": 2,
+          "kind": {
+            "type": "text",
+            "p": {
+              "x": 0.0,
+              "y": 0.0
+            },
+            "text": "RAUM",
+            "height": 100.0,
+            "angle": 0.0,
+            "align": "Center",
+            "valign": "Middle",
+            "bold": false
+          },
+          "layer": 0,
+          "style": {
+            "color": null,
+            "line_type": null,
+            "line_weight": null,
+            "fill": null
+          },
+          "by_block": true
+        }
+      ],
+      "icon": null,
+      "base": {
+        "x": 0.0,
+        "y": 0.0
+      }
+    },
+    {
+      "id": "sys:leer",
+      "name": "Platzhalter",
+      "category": "Symbole",
+      "source": "System",
+      "description": "Platzhalter 500 × 500 mm",
+      "entities": [
+        {
+          "id": 1,
+          "kind": {
+            "type": "polyline",
+            "verts": [
+              {
+                "p": {
+                  "x": -250.0,
+                  "y": -250.0
+                },
+                "bulge": 0.0
+              },
+              {
+                "p": {
+                  "x": 250.0,
+                  "y": -250.0
+                },
+                "bulge": 0.0
+              },
+              {
+                "p": {
+                  "x": 250.0,
+                  "y": 250.0
+                },
+                "bulge": 0.0
+              },
+              {
+                "p": {
+                  "x": -250.0,
+                  "y": 250.0
+                },
+                "bulge": 0.0
+              }
+            ],
+            "closed": true
+          },
+          "layer": 0,
+          "style": {
+            "color": null,
+            "line_type": null,
+            "line_weight": null,
+            "fill": null
+          },
+          "by_block": true
+        },
+        {
+          "id": 2,
+          "kind": {
+            "type": "line",
+            "a": {
+              "x": -250.0,
+              "y": -250.0
+            },
+            "b": {
+              "x": 250.0,
+              "y": 250.0
+            }
+          },
+          "layer": 0,
+          "style": {
+            "color": null,
+            "line_type": null,
+            "line_weight": null,
+            "fill": null
+          },
+          "by_block": true
+        },
+        {
+          "id": 3,
+          "kind": {
+            "type": "line",
+            "a": {
+              "x": -250.0,
+              "y": 250.0
+            },
+            "b": {
+              "x": 250.0,
+              "y": -250.0
+            }
+          },
+          "layer": 0,
+          "style": {
+            "color": null,
+            "line_type": null,
+            "line_weight": null,
+            "fill": null
+          },
+          "by_block": true
+        },
+        {
+          "id": 4,
+          "kind": {
+            "type": "text",
+            "p": {
+              "x": 0.0,
+              "y": 0.0
+            },
+            "text": "X",
+            "height": 90.0,
+            "angle": 0.0,
+            "align": "Center",
+            "valign": "Middle",
+            "bold": false
+          },
+          "layer": 0,
+          "style": {
+            "color": null,
+            "line_type": null,
+            "line_weight": null,
+            "fill": null
+          },
+          "by_block": true
+        }
+      ],
+      "icon": null,
+      "base": {
+        "x": 0.0,
+        "y": 0.0
+      }
+    }
+  ],
+  "entities": [
+    {
+      "id": 48,
+      "kind": {
+        "type": "wall",
+        "a": {
+          "x": 0.0,
+          "y": 0.0
+        },
+        "b": {
+          "x": 3000.0,
+          "y": 0.0
+        },
+        "thickness": 240.0,
+        "height": 2750.0,
+        "material": "Mauerwerk",
+        "hatch": null,
+        "align": "Center"
+      },
+      "layer": 1,
+      "style": {
+        "color": null,
+        "line_type": null,
+        "line_weight": null,
+        "fill": null
+      },
+      "by_block": false
+    },
+    {
+      "id": 49,
+      "kind": {
+        "type": "wall",
+        "a": {
+          "x": 3000.0,
+          "y": 0.0
+        },
+        "b": {
+          "x": 6000.0,
+          "y": 0.0
+        },
+        "thickness": 240.0,
+        "height": 2750.0,
+        "material": "Mauerwerk",
+        "hatch": null,
+        "align": "Center"
+      },
+      "layer": 1,
+      "style": {
+        "color": null,
+        "line_type": null,
+        "line_weight": null,
+        "fill": null
+      },
+      "by_block": false
+    },
+    {
+      "id": 50,
+      "kind": {
+        "type": "wall",
+        "a": {
+          "x": 0.0,
+          "y": 2000.0
+        },
+        "b": {
+          "x": 3000.0,
+          "y": 2000.0
+        },
+        "thickness": 240.0,
+        "height": 2750.0,
+        "material": "Mauerwerk",
+        "hatch": null,
+        "align": "Center"
+      },
+      "layer": 1,
+      "style": {
+        "color": null,
+        "line_type": null,
+        "line_weight": null,
+        "fill": null
+      },
+      "by_block": false
+    },
+    {
+      "id": 51,
+      "kind": {
+        "type": "wall",
+        "a": {
+          "x": 3000.0,
+          "y": 2000.0
+        },
+        "b": {
+          "x": 6000.0,
+          "y": 2000.0
+        },
+        "thickness": 240.0,
+        "height": 2750.0,
+        "material": "Mauerwerk",
+        "hatch": null,
+        "align": "Left"
+      },
+      "layer": 1,
+      "style": {
+        "color": null,
+        "line_type": null,
+        "line_weight": null,
+        "fill": null
+      },
+      "by_block": false
+    },
+    {
+      "id": 52,
+      "kind": {
+        "type": "wall",
+        "a": {
+          "x": 0.0,
+          "y": 4000.0
+        },
+        "b": {
+          "x": 3000.0,
+          "y": 4000.0
+        },
+        "thickness": 240.0,
+        "height": 2750.0,
+        "material": "Mauerwerk",
+        "hatch": null,
+        "align": "Center"
+      },
+      "layer": 1,
+      "style": {
+        "color": null,
+        "line_type": null,
+        "line_weight": null,
+        "fill": null
+      },
+      "by_block": false
+    },
+    {
+      "id": 53,
+      "kind": {
+        "type": "wall",
+        "a": {
+          "x": 3000.0,
+          "y": 4000.0
+        },
+        "b": {
+          "x": 4500.0,
+          "y": 2500.0
+        },
+        "thickness": 240.0,
+        "height": 2750.0,
+        "material": "Mauerwerk",
+        "hatch": null,
+        "align": "Right"
+      },
+      "layer": 1,
+      "style": {
+        "color": null,
+        "line_type": null,
+        "line_weight": null,
+        "fill": null
+      },
+      "by_block": false
+    },
+    {
+      "id": 54,
+      "kind": {
+        "type": "wall",
+        "a": {
+          "x": 0.0,
+          "y": 6000.0
+        },
+        "b": {
+          "x": 3000.0,
+          "y": 6000.0
+        },
+        "thickness": 240.0,
+        "height": 2750.0,
+        "material": "Mauerwerk",
+        "hatch": null,
+        "align": "Center"
+      },
+      "layer": 1,
+      "style": {
+        "color": null,
+        "line_type": null,
+        "line_weight": null,
+        "fill": null
+      },
+      "by_block": false
+    },
+    {
+      "id": 55,
+      "kind": {
+        "type": "wall",
+        "a": {
+          "x": 3000.0,
+          "y": 6000.0
+        },
+        "b": {
+          "x": 4200.0,
+          "y": 4800.0
+        },
+        "thickness": 360.0,
+        "height": 2750.0,
+        "material": "Mauerwerk",
+        "hatch": null,
+        "align": "Center"
+      },
+      "layer": 1,
+      "style": {
+        "color": null,
+        "line_type": null,
+        "line_weight": null,
+        "fill": null
+      },
+      "by_block": false
+    }
+  ],
+  "sheets": [
+    {
+      "id": 11,
+      "name": "Blatt 1",
+      "paper": "A3",
+      "landscape": true,
+      "scale": 100.0,
+      "frame": false,
+      "show_title_block": false,
+      "viewports": [
+        {
+          "id": 47,
+          "name": "Ansicht",
+          "x": 15.0,
+          "y": 83.0,
+          "w": 395.0,
+          "h": 204.0,
+          "center": {
+            "x": 0.0,
+            "y": 0.0
+          },
+          "scale": 100.0,
+          "show_frame": false,
+          "locked": false,
+          "layers": null
+        }
+      ],
+      "entities": [
+        {
+          "id": 12,
+          "kind": {
+            "type": "line",
+            "a": {
+              "x": 15.0,
+              "y": 10.0
+            },
+            "b": {
+              "x": 410.0,
+              "y": 10.0
+            }
+          },
+          "layer": 0,
+          "style": {
+            "color": "#1C1F24",
+            "line_type": null,
+            "line_weight": 0.35,
+            "fill": null
+          },
+          "by_block": false
+        },
+        {
+          "id": 13,
+          "kind": {
+            "type": "line",
+            "a": {
+              "x": 410.0,
+              "y": 10.0
+            },
+            "b": {
+              "x": 410.0,
+              "y": 287.0
+            }
+          },
+          "layer": 0,
+          "style": {
+            "color": "#1C1F24",
+            "line_type": null,
+            "line_weight": 0.35,
+            "fill": null
+          },
+          "by_block": false
+        },
+        {
+          "id": 14,
+          "kind": {
+            "type": "line",
+            "a": {
+              "x": 410.0,
+              "y": 287.0
+            },
+            "b": {
+              "x": 15.0,
+              "y": 287.0
+            }
+          },
+          "layer": 0,
+          "style": {
+            "color": "#1C1F24",
+            "line_type": null,
+            "line_weight": 0.35,
+            "fill": null
+          },
+          "by_block": false
+        },
+        {
+          "id": 15,
+          "kind": {
+            "type": "line",
+            "a": {
+              "x": 15.0,
+              "y": 287.0
+            },
+            "b": {
+              "x": 15.0,
+              "y": 10.0
+            }
+          },
+          "layer": 0,
+          "style": {
+            "color": "#1C1F24",
+            "line_type": null,
+            "line_weight": 0.35,
+            "fill": null
+          },
+          "by_block": false
+        },
+        {
+          "id": 16,
+          "kind": {
+            "type": "line",
+            "a": {
+              "x": 230.0,
+              "y": 10.0
+            },
+            "b": {
+              "x": 410.0,
+              "y": 10.0
+            }
+          },
+          "layer": 0,
+          "style": {
+            "color": "#1C1F24",
+            "line_type": null,
+            "line_weight": 0.5,
+            "fill": null
+          },
+          "by_block": false
+        },
+        {
+          "id": 17,
+          "kind": {
+            "type": "line",
+            "a": {
+              "x": 410.0,
+              "y": 10.0
+            },
+            "b": {
+              "x": 410.0,
+              "y": 75.0
+            }
+          },
+          "layer": 0,
+          "style": {
+            "color": "#1C1F24",
+            "line_type": null,
+            "line_weight": 0.5,
+            "fill": null
+          },
+          "by_block": false
+        },
+        {
+          "id": 18,
+          "kind": {
+            "type": "line",
+            "a": {
+              "x": 410.0,
+              "y": 75.0
+            },
+            "b": {
+              "x": 230.0,
+              "y": 75.0
+            }
+          },
+          "layer": 0,
+          "style": {
+            "color": "#1C1F24",
+            "line_type": null,
+            "line_weight": 0.5,
+            "fill": null
+          },
+          "by_block": false
+        },
+        {
+          "id": 19,
+          "kind": {
+            "type": "line",
+            "a": {
+              "x": 230.0,
+              "y": 75.0
+            },
+            "b": {
+              "x": 230.0,
+              "y": 10.0
+            }
+          },
+          "layer": 0,
+          "style": {
+            "color": "#1C1F24",
+            "line_type": null,
+            "line_weight": 0.5,
+            "fill": null
+          },
+          "by_block": false
+        },
+        {
+          "id": 20,
+          "kind": {
+            "type": "line",
+            "a": {
+              "x": 334.4,
+              "y": 10.0
+            },
+            "b": {
+              "x": 334.4,
+              "y": 75.0
+            }
+          },
+          "layer": 0,
+          "style": {
+            "color": "#1C1F24",
+            "line_type": null,
+            "line_weight": 0.25,
+            "fill": null
+          },
+          "by_block": false
+        },
+        {
+          "id": 21,
+          "kind": {
+            "type": "line",
+            "a": {
+              "x": 230.0,
+              "y": 28.0
+            },
+            "b": {
+              "x": 410.0,
+              "y": 28.0
+            }
+          },
+          "layer": 0,
+          "style": {
+            "color": "#1C1F24",
+            "line_type": null,
+            "line_weight": 0.25,
+            "fill": null
+          },
+          "by_block": false
+        },
+        {
+          "id": 22,
+          "kind": {
+            "type": "line",
+            "a": {
+              "x": 230.0,
+              "y": 43.0
+            },
+            "b": {
+              "x": 334.4,
+              "y": 43.0
+            }
+          },
+          "layer": 0,
+          "style": {
+            "color": "#1C1F24",
+            "line_type": null,
+            "line_weight": 0.25,
+            "fill": null
+          },
+          "by_block": false
+        },
+        {
+          "id": 23,
+          "kind": {
+            "type": "line",
+            "a": {
+              "x": 230.0,
+              "y": 58.0
+            },
+            "b": {
+              "x": 334.4,
+              "y": 58.0
+            }
+          },
+          "layer": 0,
+          "style": {
+            "color": "#1C1F24",
+            "line_type": null,
+            "line_weight": 0.25,
+            "fill": null
+          },
+          "by_block": false
+        },
+        {
+          "id": 24,
+          "kind": {
+            "type": "line",
+            "a": {
+              "x": 334.4,
+              "y": 43.0
+            },
+            "b": {
+              "x": 410.0,
+              "y": 43.0
+            }
+          },
+          "layer": 0,
+          "style": {
+            "color": "#1C1F24",
+            "line_type": null,
+            "line_weight": 0.25,
+            "fill": null
+          },
+          "by_block": false
+        },
+        {
+          "id": 25,
+          "kind": {
+            "type": "line",
+            "a": {
+              "x": 334.4,
+              "y": 58.0
+            },
+            "b": {
+              "x": 410.0,
+              "y": 58.0
+            }
+          },
+          "layer": 0,
+          "style": {
+            "color": "#1C1F24",
+            "line_type": null,
+            "line_weight": 0.25,
+            "fill": null
+          },
+          "by_block": false
+        },
+        {
+          "id": 26,
+          "kind": {
+            "type": "line",
+            "a": {
+              "x": 368.0,
+              "y": 10.0
+            },
+            "b": {
+              "x": 368.0,
+              "y": 28.0
+            }
+          },
+          "layer": 0,
+          "style": {
+            "color": "#1C1F24",
+            "line_type": null,
+            "line_weight": 0.25,
+            "fill": null
+          },
+          "by_block": false
+        },
+        {
+          "id": 27,
+          "kind": {
+            "type": "line",
+            "a": {
+              "x": 384.0,
+              "y": 28.0
+            },
+            "b": {
+              "x": 384.0,
+              "y": 75.0
+            }
+          },
+          "layer": 0,
+          "style": {
+            "color": "#1C1F24",
+            "line_type": null,
+            "line_weight": 0.18,
+            "fill": null
+          },
+          "by_block": false
+        },
+        {
+          "id": 28,
+          "kind": {
+            "type": "text",
+            "p": {
+              "x": 232.0,
+              "y": 73.0
+            },
+            "text": "PROJEKT",
+            "height": 1.8,
+            "angle": 0.0,
+            "align": "Left",
+            "valign": "Top",
+            "bold": false
+          },
+          "layer": 0,
+          "style": {
+            "color": "#1C1F24",
+            "line_type": null,
+            "line_weight": 0.18,
+            "fill": null
+          },
+          "by_block": false
+        },
+        {
+          "id": 29,
+          "kind": {
+            "type": "text",
+            "p": {
+              "x": 232.0,
+              "y": 68.4
+            },
+            "text": "{PROJEKT}",
+            "height": 3.6,
+            "angle": 0.0,
+            "align": "Left",
+            "valign": "Top",
+            "bold": true
+          },
+          "layer": 0,
+          "style": {
+            "color": "#1C1F24",
+            "line_type": null,
+            "line_weight": 0.25,
+            "fill": null
+          },
+          "by_block": false
+        },
+        {
+          "id": 30,
+          "kind": {
+            "type": "text",
+            "p": {
+              "x": 232.0,
+              "y": 56.0
+            },
+            "text": "BAUHERR",
+            "height": 1.8,
+            "angle": 0.0,
+            "align": "Left",
+            "valign": "Top",
+            "bold": false
+          },
+          "layer": 0,
+          "style": {
+            "color": "#1C1F24",
+            "line_type": null,
+            "line_weight": 0.18,
+            "fill": null
+          },
+          "by_block": false
+        },
+        {
+          "id": 31,
+          "kind": {
+            "type": "text",
+            "p": {
+              "x": 232.0,
+              "y": 53.8
+            },
+            "text": "{BAUHERR}",
+            "height": 2.6,
+            "angle": 0.0,
+            "align": "Left",
+            "valign": "Top",
+            "bold": false
+          },
+          "layer": 0,
+          "style": {
+            "color": "#1C1F24",
+            "line_type": null,
+            "line_weight": 0.18,
+            "fill": null
+          },
+          "by_block": false
+        },
+        {
+          "id": 32,
+          "kind": {
+            "type": "text",
+            "p": {
+              "x": 232.0,
+              "y": 41.0
+            },
+            "text": "ADRESSE / ORT",
+            "height": 1.8,
+            "angle": 0.0,
+            "align": "Left",
+            "valign": "Top",
+            "bold": false
+          },
+          "layer": 0,
+          "style": {
+            "color": "#1C1F24",
+            "line_type": null,
+            "line_weight": 0.18,
+            "fill": null
+          },
+          "by_block": false
+        },
+        {
+          "id": 33,
+          "kind": {
+            "type": "text",
+            "p": {
+              "x": 232.0,
+              "y": 38.8
+            },
+            "text": "{ADRESSE}",
+            "height": 2.4,
+            "angle": 0.0,
+            "align": "Left",
+            "valign": "Top",
+            "bold": false
+          },
+          "layer": 0,
+          "style": {
+            "color": "#1C1F24",
+            "line_type": null,
+            "line_weight": 0.18,
+            "fill": null
+          },
+          "by_block": false
+        },
+        {
+          "id": 34,
+          "kind": {
+            "type": "text",
+            "p": {
+              "x": 232.0,
+              "y": 26.0
+            },
+            "text": "PLANINHALT",
+            "height": 1.8,
+            "angle": 0.0,
+            "align": "Left",
+            "valign": "Top",
+            "bold": false
+          },
+          "layer": 0,
+          "style": {
+            "color": "#1C1F24",
+            "line_type": null,
+            "line_weight": 0.18,
+            "fill": null
+          },
+          "by_block": false
+        },
+        {
+          "id": 35,
+          "kind": {
+            "type": "text",
+            "p": {
+              "x": 232.0,
+              "y": 23.8
+            },
+            "text": "{PLANTITEL}",
+            "height": 2.8,
+            "angle": 0.0,
+            "align": "Left",
+            "valign": "Top",
+            "bold": true
+          },
+          "layer": 0,
+          "style": {
+            "color": "#1C1F24",
+            "line_type": null,
+            "line_weight": 0.25,
+            "fill": null
+          },
+          "by_block": false
+        },
+        {
+          "id": 36,
+          "kind": {
+            "type": "text",
+            "p": {
+              "x": 336.4,
+              "y": 73.0
+            },
+            "text": "PLANUNG / BÜRO",
+            "height": 1.8,
+            "angle": 0.0,
+            "align": "Left",
+            "valign": "Top",
+            "bold": false
+          },
+          "layer": 0,
+          "style": {
+            "color": "#1C1F24",
+            "line_type": null,
+            "line_weight": 0.18,
+            "fill": null
+          },
+          "by_block": false
+        },
+        {
+          "id": 37,
+          "kind": {
+            "type": "text",
+            "p": {
+              "x": 336.4,
+              "y": 68.0
+            },
+            "text": "{PLANER}",
+            "height": 2.4,
+            "angle": 0.0,
+            "align": "Left",
+            "valign": "Top",
+            "bold": false
+          },
+          "layer": 0,
+          "style": {
+            "color": "#1C1F24",
+            "line_type": null,
+            "line_weight": 0.18,
+            "fill": null
+          },
+          "by_block": false
+        },
+        {
+          "id": 38,
+          "kind": {
+            "type": "text",
+            "p": {
+              "x": 336.4,
+              "y": 63.0
+            },
+            "text": "GEPRÜFT / FREIGABE",
+            "height": 1.5,
+            "angle": 0.0,
+            "align": "Left",
+            "valign": "Top",
+            "bold": false
+          },
+          "layer": 0,
+          "style": {
+            "color": "#1C1F24",
+            "line_type": null,
+            "line_weight": 0.18,
+            "fill": null
+          },
+          "by_block": false
+        },
+        {
+          "id": 39,
+          "kind": {
+            "type": "text",
+            "p": {
+              "x": 336.4,
+              "y": 56.0
+            },
+            "text": "MASSSTAB",
+            "height": 1.8,
+            "angle": 0.0,
+            "align": "Left",
+            "valign": "Top",
+            "bold": false
+          },
+          "layer": 0,
+          "style": {
+            "color": "#1C1F24",
+            "line_type": null,
+            "line_weight": 0.18,
+            "fill": null
+          },
+          "by_block": false
+        },
+        {
+          "id": 40,
+          "kind": {
+            "type": "text",
+            "p": {
+              "x": 336.4,
+              "y": 53.4
+            },
+            "text": "{MASSTAB}",
+            "height": 4.2,
+            "angle": 0.0,
+            "align": "Left",
+            "valign": "Top",
+            "bold": true
+          },
+          "layer": 0,
+          "style": {
+            "color": "#1C1F24",
+            "line_type": null,
+            "line_weight": 0.25,
+            "fill": null
+          },
+          "by_block": false
+        },
+        {
+          "id": 41,
+          "kind": {
+            "type": "text",
+            "p": {
+              "x": 336.4,
+              "y": 41.0
+            },
+            "text": "DATUM",
+            "height": 1.8,
+            "angle": 0.0,
+            "align": "Left",
+            "valign": "Top",
+            "bold": false
+          },
+          "layer": 0,
+          "style": {
+            "color": "#1C1F24",
+            "line_type": null,
+            "line_weight": 0.18,
+            "fill": null
+          },
+          "by_block": false
+        },
+        {
+          "id": 42,
+          "kind": {
+            "type": "text",
+            "p": {
+              "x": 336.4,
+              "y": 38.8
+            },
+            "text": "{DATUM}",
+            "height": 2.6,
+            "angle": 0.0,
+            "align": "Left",
+            "valign": "Top",
+            "bold": false
+          },
+          "layer": 0,
+          "style": {
+            "color": "#1C1F24",
+            "line_type": null,
+            "line_weight": 0.18,
+            "fill": null
+          },
+          "by_block": false
+        },
+        {
+          "id": 43,
+          "kind": {
+            "type": "text",
+            "p": {
+              "x": 336.4,
+              "y": 26.0
+            },
+            "text": "PLAN-NR.",
+            "height": 1.8,
+            "angle": 0.0,
+            "align": "Left",
+            "valign": "Top",
+            "bold": false
+          },
+          "layer": 0,
+          "style": {
+            "color": "#1C1F24",
+            "line_type": null,
+            "line_weight": 0.18,
+            "fill": null
+          },
+          "by_block": false
+        },
+        {
+          "id": 44,
+          "kind": {
+            "type": "text",
+            "p": {
+              "x": 370.0,
+              "y": 17.0
+            },
+            "text": "{PLAN}",
+            "height": 4.4,
+            "angle": 0.0,
+            "align": "Left",
+            "valign": "Top",
+            "bold": true
+          },
+          "layer": 0,
+          "style": {
+            "color": "#1C1F24",
+            "line_type": null,
+            "line_weight": 0.25,
+            "fill": null
+          },
+          "by_block": false
+        },
+        {
+          "id": 45,
+          "kind": {
+            "type": "text",
+            "p": {
+              "x": 385.2,
+              "y": 73.0
+            },
+            "text": "REV.",
+            "height": 1.5,
+            "angle": 0.0,
+            "align": "Left",
+            "valign": "Top",
+            "bold": false
+          },
+          "layer": 0,
+          "style": {
+            "color": "#1C1F24",
+            "line_type": null,
+            "line_weight": 0.18,
+            "fill": null
+          },
+          "by_block": false
+        },
+        {
+          "id": 46,
+          "kind": {
+            "type": "text",
+            "p": {
+              "x": 385.2,
+              "y": 70.6
+            },
+            "text": "{REVISION}",
+            "height": 2.2,
+            "angle": 0.0,
+            "align": "Left",
+            "valign": "Top",
+            "bold": false
+          },
+          "layer": 0,
+          "style": {
+            "color": "#1C1F24",
+            "line_type": null,
+            "line_weight": 0.18,
+            "fill": null
+          },
+          "by_block": false
+        }
+      ]
+    }
+  ],
+  "dim_style": {
+    "text_height": 2.5,
+    "arrow_size": 2.0,
+    "arrow": "Slash",
+    "text_gap": 0.8,
+    "ext_gap": 1.5,
+    "ext_overshoot": 1.5,
+    "chain_gap": 8.0,
+    "text_pos": "Above",
+    "decimals": 2,
+    "unit_divisor": 1000.0
+  },
+  "next_id": 56
+}

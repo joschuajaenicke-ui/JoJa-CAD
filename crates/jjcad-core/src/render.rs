@@ -1433,10 +1433,27 @@ fn end_partner(idx: &WallIndex, own: Id, outward: Vec2, at: Vec2) -> Option<usiz
     best.map(|(_, _, i)| i)
 }
 
-/// Gehrung an einem Wandende: Knotenpunkt = Schnitt der beiden verschobenen
-/// Achsen, Gehrungslinie = Winkelhalbierende. Die Stirnecken sind deren
-/// Schnitt mit den beiden Längskanten. `None`, wenn es keine brauchbare
-/// Gehrung gibt (kein Eckanschluss oder Länge über der Grenze).
+/// Anschlussende eines Nachbarn (verschobene Achse = Mitte des Wandkörpers)
+/// samt Richtung, in der der Nachbar vom Knoten wegläuft.
+fn partner_end(f: &WallFrame, at: Vec2) -> (Vec2, Vec2) {
+    if f.a.dist(at) <= f.b.dist(at) {
+        (f.a, f.dir)
+    } else {
+        (f.b, -f.dir)
+    }
+}
+
+/// Gehrung an einem Wandende: Gehrungslinie = Schnitt der **gleichseitigen**
+/// Wandkanten, also der beiden Außenkanten und der beiden Innenkanten.
+///
+/// Die frühere Winkelhalbierende durch den Basispunkt stimmt nur, wenn beide
+/// Wände gleich dick **und** gleich ausgerichtet sind (beide Achsen fallen
+/// dann mit den BasislInien zusammen). Bei versetzten Achsen oder
+/// unterschiedlichen Dicken lagen die beiden Gehrungslinien nebeneinander:
+/// die Umrandung klaffte am Stoß auf und die Füllung quoll als ungerandeter
+/// Keil heraus (T0020).
+/// `None`, wenn es keine brauchbare Gehrung gibt (fluchtende Wände, kein
+/// Eckanschluss oder Länge über der Grenze).
 fn miter_corners(
     idx: &WallIndex,
     at: Vec2,
@@ -1446,32 +1463,75 @@ fn miter_corners(
     partner: usize,
 ) -> Option<(Vec2, Vec2, Vec2)> {
     let f = idx.frame(partner)?;
-    let joint = line_line(at, at + outward, f.a, f.b, true, true)?;
-    // Richtung des Partners vom Knoten weg
-    let away = if f.a.dist(joint) <= f.b.dist(joint) {
-        f.dir
-    } else {
-        -f.dir
-    };
-    let m = away - outward;
-    if m.len() < 1e-6 {
+    let (pa, away) = partner_end(f, at);
+    // Fluchtende Wände sind kein Gehrungsfall — dort ist der Stoß stumpf
+    // (`butt_join`); parallel laufende Kanten haben keinen Schnittpunkt.
+    if away.cross(outward).abs() < 1e-9 {
         return None;
     }
-    let m = m.normalized();
-    let o = line_line(joint, joint + m, at + n * h, at + n * h + outward, true, true)?;
-    let i = line_line(joint, joint + m, at - n * h, at - n * h + outward, true, true)?;
+    // Unsere +n-Kante schließt an die Kante des Nachbarn an, die auf derselben
+    // Seite der Durchlaufrichtung liegt: am Wandende (outward = +dir) an seine
+    // linke, am Wandanfang an seine rechte.
+    let s = if n.dot(outward.perp()) < 0.0 { -1.0 } else { 1.0 };
+    let la_p = at + n * h;
+    let la_m = at - n * h;
+    let lb_p = pa + away.perp() * (f.h * s);
+    let lb_m = pa - away.perp() * (f.h * s);
+    let o = line_line(la_p, la_p + outward, lb_p, lb_p + away, true, true)?;
+    let i = line_line(la_m, la_m + outward, lb_m, lb_m + away, true, true)?;
     // Extrem spitze Ecken: Gehrung meterlang -> lieber stumpf abschneiden
     if o.dist(at).max(i.dist(at)) > MITER_LIMIT * h {
         return None;
     }
     // Quer zur Gehrungslinie in den Nachbarkörper hinein (für die Füllung)
-    let into = away - m * away.dot(m);
-    let into = if into.len() > 1e-9 {
-        into.normalized()
+    let m = o - i;
+    let into = if m.len() > 1e-9 {
+        let m = m.normalized();
+        let v = away - m * away.dot(m);
+        if v.len() > 1e-9 {
+            v.normalized()
+        } else {
+            outward
+        }
     } else {
         outward
     };
     Some((o, i, into))
+}
+
+/// Stumpfstoß zweier **fluchtender** Wände: die Enden liegen aufeinander, die
+/// Achsen laufen in dieselbe Richtung. Eine Gehrung gibt es nicht (parallele
+/// Kanten), verbunden sind sie trotzdem: keine Stirnlinie quer durch die Wand.
+///
+/// Bei gleicher Ausrichtung deckt der Nachbar die Stirnkante vollständig ab
+/// (nichts zu zeichnen). Bei unterschiedlicher Ausrichtung oder Dicke bleibt
+/// eine Stufe — die zeichnet der Aufrufer als Teil der Stirnkante, den der
+/// Nachbarkörper nicht abdeckt.
+fn butt_join(
+    idx: &WallIndex,
+    at: Vec2,
+    outward: Vec2,
+    n: Vec2,
+    h: f64,
+    partner: usize,
+) -> Option<(Vec2, Vec2)> {
+    let f = idx.frame(partner)?;
+    let (pa, away) = partner_end(f, at);
+    // Nur eine Fortsetzung (nicht die Gegenrichtung, sonst liegen die Wände
+    // übereinander und jedes Ende bleibt für sich).
+    if away.dot(outward) < 0.999 {
+        return None;
+    }
+    // Die beiden Bänder müssen sich in der Stoßebene überlappen — sonst stehen
+    // zwei Körper nebeneinander, ohne sich zu berühren (dann freie Enden).
+    let (b0, b1) = (pa + f.n * f.h, pa - f.n * f.h);
+    let (u0, u1) = ((b0 - at).dot(n), (b1 - at).dot(n));
+    let lo = (-h).max(u0.min(u1));
+    let hi = h.min(u0.max(u1));
+    if hi - lo < 0.5 {
+        return None;
+    }
+    Some((at + n * h, at - n * h))
 }
 
 /// Behält den Teil eines konvexen Polygons auf der Seite `(p - p0)·nrm >= 0`
@@ -1608,6 +1668,66 @@ fn wall_reach(
     best
 }
 
+/// Liegt der von der Gehrungslinie abgeschnittene Keil im Körper des anderen?
+fn keil_gedeckt(patch: &[Vec2], deckung: &[Vec2]) -> bool {
+    if patch.len() < 3 || polygon_area(patch).abs() < 1.0 {
+        return true;
+    }
+    patch.iter().all(|q| {
+        point_in_polygon(*q, deckung)
+            || deckung
+                .iter()
+                .enumerate()
+                .map(|(i, p)| dist_point_segment(*q, *p, deckung[(i + 1) % deckung.len()]))
+                .fold(f64::INFINITY, f64::min)
+                <= 0.5
+    })
+}
+
+/// Ist die Gehrung an diesem Stoß **beidseitig** dicht?
+///
+/// Jede der beiden Wände schneidet an der Gehrungslinie ein Stück ihres
+/// Körpers ab. Deckt die andere Wand dieses Stück ab, ist die Umrandung
+/// geschlossen. Andernfalls bleibt zwischen beiden eine ungerandete Füllfläche
+/// stehen (der Keil aus dem Ticket) — dann wird stumpf gestoßen.
+///
+/// Geprüft werden **beide** Keile: nur so entscheiden beide Wände gleich.
+/// Vorher prüfte jede Wand nur ihren eigenen Keil, und ein Stoß konnte auf der
+/// einen Seite als Gehrung und auf der anderen als Stumpfstoß enden.
+#[allow(clippy::too_many_arguments)]
+fn miter_dicht(
+    idx: &WallIndex,
+    at: Vec2,
+    outward: Vec2,
+    n: Vec2,
+    h: f64,
+    len: f64,
+    partner: usize,
+    o: Vec2,
+    i: Vec2,
+) -> bool {
+    let Some(f) = idx.frame(partner) else {
+        return false;
+    };
+    let (pa, away) = partner_end(f, at);
+    let partner_band = f.band();
+    // Eigener Körper jenseits des Stoßes (ungetrimmt, hinter der Stirnebene).
+    let own_band = vec![
+        at + n * h,
+        at + n * h - outward * len,
+        at - n * h - outward * len,
+        at - n * h,
+    ];
+    let own_patch = miter_patch(at, outward, n, h, len, o, i);
+    if !keil_gedeckt(&own_patch, &partner_band) {
+        return false;
+    }
+    // Keil des Nachbarn, aus seiner Sicht gerechnet.
+    let (p_out, p_h, p_len) = (-away, f.h, f.a.dist(f.b));
+    let p_patch = miter_patch(pa, p_out, p_out.perp(), p_h, p_len, o, i);
+    keil_gedeckt(&p_patch, &own_band)
+}
+
 /// Anschluss eines Wandendes: Gehrung zum Ecknachbarn, sonst so weit
 /// verlängern, dass das Ende im Nachbarkörper steckt, sonst freies Ende.
 #[allow(clippy::too_many_arguments)]
@@ -1623,16 +1743,37 @@ fn wall_end(
 ) -> WallEnd {
     if let Some(p) = end_partner(idx, own, outward, at0) {
         if let Some((o, i, into)) = miter_corners(idx, at, outward, n, h, p) {
+            // Die Gehrung schneidet ein Stück des eigenen Körpers ab. Deckt der
+            // Nachbar es nicht ab, bleibt dort eine ungerandete Lücke (der Keil
+            // aus dem Ticket) — dann lieber stumpf stoßen und die Stufe
+            // zeichnen, statt eine falsche Gehrung zu behaupten.
+            let patch = miter_patch(at, outward, n, h, len, o, i);
+            if miter_dicht(idx, at, outward, n, h, len, p, o, i) {
+                let pid = idx.at(p).map(|(id, _)| id);
+                return WallEnd {
+                    ext: 0.0,
+                    conn: true,
+                    o,
+                    i,
+                    into,
+                    partner: pid,
+                    patch,
+                    mitered: true,
+                };
+            }
+        }
+        // Fluchtende Fortsetzung: stumpfer Stoß, keine Naht quer durch die Wand.
+        if let Some((o, i)) = butt_join(idx, at, outward, n, h, p) {
             let pid = idx.at(p).map(|(id, _)| id);
             return WallEnd {
                 ext: 0.0,
                 conn: true,
                 o,
                 i,
-                into,
+                into: outward,
                 partner: pid,
-                patch: miter_patch(at, outward, n, h, len, o, i),
-                mitered: true,
+                patch: vec![],
+                mitered: false,
             };
         }
     }
@@ -2207,12 +2348,26 @@ fn render_wall(
         // Längskanten (im Inneren der Nachbarwände beschnitten)
         push_clipped_line(dl, e, st, c0o, c1o, &others, xf);
         push_clipped_line(dl, e, st, c0i, c1i, &others, xf);
-        // Stirnseiten nur an freien Wandenden
-        if *s0 < 0.5 && !conn_a {
-            push_clipped_line(dl, e, st, s_out, s_in, &others, xf);
-        }
-        if (*s1 - total).abs() < 0.5 && !conn_b {
-            push_clipped_line(dl, e, st, e_out, e_in, &others, xf);
+        // Stirnseiten zeichnen: an freien Enden ganz, an angeschlossenen nur
+        // so weit, wie der Nachbarkörper sie nicht abdeckt (Stumpfstoß mit
+        // unterschiedlicher Ausrichtung/Dicke ergibt eine sichtbare Stufe).
+        for (aktiv, end) in [(*s0 < 0.5, se), ((*s1 - total).abs() < 0.5, ee)] {
+            // Gehrungsnaht zeichnet der Block weiter unten (nur die Stücke,
+            // die der Nachbar nicht abdeckt) — hier nicht doppelt.
+            if !aktiv || end.mitered {
+                continue;
+            }
+            let (o, i) = (end.o, end.i);
+            let Some(body) = end
+                .partner
+                .and_then(|pid| partner_body(ctx.doc, wall_idx, pid, o))
+            else {
+                push_clipped_line(dl, e, st, o, i, &others, xf);
+                continue;
+            };
+            for (a, b) in line_outside_pieces(o, i, &body, 0.1) {
+                push_clipped_line(dl, e, st, a, b, &others, xf);
+            }
         }
         // Kanten des nachgereichten Gehrungsstücks (nur außerhalb der
         // Nachbarkörper; im Nachbarn liegende Teile blendet der Beschnitt aus)

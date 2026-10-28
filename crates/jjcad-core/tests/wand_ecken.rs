@@ -256,3 +256,164 @@ fn kreuz_laeuft_gerade_durch() {
         }
     }
 }
+
+// ---------------------------------------------------------------------------
+// T0020: Stumpfstoß (Verlängerung) und Anschlüsse mit unterschiedlicher
+// Ausrichtung/Dicke.
+// ---------------------------------------------------------------------------
+
+/// Wand in mm mit Ausrichtung anlegen.
+fn wand_align(
+    s: &mut Session,
+    a: (f64, f64),
+    b: (f64, f64),
+    t: f64,
+    align: &str,
+) -> u64 {
+    s.execute(
+        "draw.wall",
+        &json!({"a": [a.0 / 1000.0, a.1 / 1000.0],
+                "b": [b.0 / 1000.0, b.1 / 1000.0],
+                "thickness": t / 1000.0,
+                "align": align}),
+    )
+    .unwrap();
+    s.doc.entities.last().unwrap().id
+}
+
+/// Alle gezeichneten Linien der Zeichnung.
+fn linien(s: &Session) -> Vec<Seg> {
+    let dl = render::render_document(&render::RenderCtx::model(&s.doc));
+    dl.prims
+        .iter()
+        .filter_map(|p| match &p.shape {
+            render::Shape::Line(a, b) => Some(Seg::Line(*a, *b)),
+            _ => None,
+        })
+        .collect()
+}
+
+/// Liegt eine Strecke auf der Geraden x = `x` und **überschneidet** sie den
+/// y-Bereich (lo, hi) um mehr als die Toleranz? (Ein bloßes Berühren der
+/// Intervallgrenze zählt nicht.)
+fn querlinie_bei(segs: &[Seg], x: f64, lo: f64, hi: f64) -> bool {
+    segs.iter().any(|sg| {
+        let (a, b) = (sg.start(), sg.end());
+        (a.x - x).abs() <= TOL
+            && (b.x - x).abs() <= TOL
+            && a.y.min(b.y) < hi - TOL
+            && a.y.max(b.y) > lo + TOL
+    })
+}
+
+/// Verlängerung zweier fluchtender Wände gleicher Ausrichtung: eine Wand, keine
+/// Naht. Vorher stand dort die Stirnkante der ersten Wand quer im Wandkörper.
+#[test]
+fn verlaengerung_zeichnet_keine_querlinie() {
+    let mut s = session();
+    let a = wand_align(&mut s, (0.0, 0.0), (2000.0, 0.0), 100.0, "center");
+    let b = wand_align(&mut s, (2000.0, 0.0), (4000.0, 0.0), 100.0, "center");
+    let segs = linien(&s);
+
+    assert!(
+        !querlinie_bei(&segs, 2000.0, -50.0, 50.0),
+        "Stumpfstoß darf keine Querlinie im Wandkörper zeichnen"
+    );
+    // Beide Längskanten laufen durch den Stoß durch.
+    for y in [50.0, -50.0] {
+        assert!(
+            hat_strecke(&segs, v(0.0, y), v(4000.0, y)) || hat_strecke(&segs, v(0.0, y), v(2000.0, y)),
+            "Längskante y={y} fehlt vor dem Stoß"
+        );
+        assert!(
+            hat_strecke(&segs, v(2000.0, y), v(4000.0, y)),
+            "Längskante y={y} fehlt nach dem Stoß"
+        );
+    }
+    let _ = (a, b);
+}
+
+/// Verlängerung mit unterschiedlicher Ausrichtung: die Wände stoßen stumpf
+/// zusammen, sichtbar ist nur die Stufe (der Teil der Stirnkante, den der
+/// Nachbarkörper nicht abdeckt) — keine Querlinie durch die überlappende Fläche.
+#[test]
+fn verlaengerung_versetzter_ausrichtung_zeichnet_stufe() {
+    let mut s = session();
+    let _a = wand_align(&mut s, (0.0, 0.0), (2000.0, 0.0), 100.0, "center");
+    let _b = wand_align(&mut s, (2000.0, 0.0), (4000.0, 0.0), 100.0, "left");
+    let segs = linien(&s);
+
+    // Die erste Wand endet bei y = -50..50, die zweite deckt 0..100 ab.
+    // Sichtbar ist nur die Stufe unterhalb von y = 0.
+    assert!(
+        !querlinie_bei(&segs, 2000.0, 0.5, 50.0),
+        "Querlinie im vom Nachbarn abgedeckten Bereich"
+    );
+    assert!(
+        querlinie_bei(&segs, 2000.0, -50.0, -0.5),
+        "Stufe der versetzten Wand fehlt"
+    );
+    // Die Oberkante der zweiten Wand beginnt am Stoß, nicht davor.
+    assert!(
+        segs.iter().any(|sg| {
+            let (p, q) = (sg.start(), sg.end());
+            ((p.dist(v(2000.0, 100.0)) <= TOL && q.dist(v(4000.0, 100.0)) <= TOL)
+                || (p.dist(v(4000.0, 100.0)) <= TOL && q.dist(v(2000.0, 100.0)) <= TOL))
+        }),
+        "Oberkante der versetzten Wand fehlt"
+    );
+}
+
+/// Ecke mit unterschiedlicher Ausrichtung (mittig → rechts): die Umrandung
+/// muss am Knoten geschlossen sein. Vorher endete die Oberkante der ersten
+/// Wand vor dem Knoten, die Füllung stand als ungerandeter Keil darüber.
+#[test]
+fn ecke_versetzter_ausrichtung_ist_geschlossen() {
+    let mut s = session();
+    let a = wand_align(&mut s, (0.0, 0.0), (2000.0, 0.0), 100.0, "center");
+    let _b = wand_align(&mut s, (2000.0, 0.0), (3000.0, -1500.0), 100.0, "right");
+    let segs = linien(&s);
+
+    // Die Oberkante der ersten Wand muss bis an den Knoten reichen.
+    let ende = segs
+        .iter()
+        .filter_map(|sg| {
+            let (p, q) = (sg.start(), sg.end());
+            if (p.y - 50.0).abs() <= TOL && (q.y - 50.0).abs() <= TOL {
+                Some(p.x.max(q.x))
+            } else {
+                None
+            }
+        })
+        .fold(f64::NEG_INFINITY, f64::max);
+    assert!(
+        (ende - 2000.0).abs() <= TOL,
+        "Oberkante endet bei x = {ende}, nicht am Knoten 2000"
+    );
+    // Und der Knoten selbst ist ein Konturpunkt der ersten Wand.
+    assert!(
+        punkte(&s, a).iter().any(|p| p.dist(v(2000.0, 50.0)) <= TOL),
+        "Ecke (2000; 50) fehlt in der Kontur"
+    );
+}
+
+/// Ecke mit **unterschiedlicher Dicke**: beide Wände rechnen dieselbe
+/// Gehrungslinie, die Umrandung ist damit geschlossen. Vorher lag jede Wand
+/// auf ihrer eigenen Winkelhalbierenden, dazwischen klaffte ein Keil.
+#[test]
+fn ecke_unterschiedlicher_dicke_hat_gemeinsame_gehrung() {
+    let mut s = session();
+    let a = wand_align(&mut s, (0.0, 0.0), (2000.0, 0.0), 100.0, "center");
+    let b = wand_align(&mut s, (2000.0, 0.0), (3000.0, -1500.0), 150.0, "center");
+
+    let ra = punkte(&s, a);
+    let rb = punkte(&s, b);
+    let nahe: Vec<Vec2> = ra.iter().cloned().filter(|p| p.dist(v(2000.0, 0.0)) < 400.0).collect();
+    assert!(nahe.len() >= 2, "Gehrungsecken der ersten Wand fehlen: {ra:?}");
+    for p in &nahe {
+        assert!(
+            rb.iter().any(|q| q.dist(*p) <= TOL),
+            "Gehrungsecke {p:?} fehlt an der zweiten Wand: {rb:?}"
+        );
+    }
+}
