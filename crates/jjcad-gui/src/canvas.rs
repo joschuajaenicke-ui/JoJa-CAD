@@ -1008,7 +1008,12 @@ fn display_list(app: &mut App) -> DisplayList {
         }
     }
     let ctx = render::RenderCtx::new(&doc);
-    let dl = render::render_document(&ctx);
+    let mut dl = render::render_document(&ctx);
+    // Der Text, der gerade geschrieben wird, kommt aus der Eingabe
+    // (`textedit::show`) — sonst stünde er doppelt in der Zeichnung.
+    if let Some(id) = app.ui.texteingabe.as_ref().and_then(|t| t.id) {
+        dl.prims.retain(|p| p.entity != id);
+    }
     app.tab_mut().cache = Some((key, dl.clone()));
     dl
 }

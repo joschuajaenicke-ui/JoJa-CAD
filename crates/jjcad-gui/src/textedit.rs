@@ -1,14 +1,17 @@
 //! Text direkt in der Zeichnungsebene schreiben (T0019).
 //!
-//! Das Textwerkzeug öffnet keinen Dialog mehr: nach dem Klick steht ein
-//! Eingabefeld an der Textposition **in** der Zeichnung, der Cursor blinkt
-//! darin. Ein Doppelklick auf einen vorhandenen Text öffnet dasselbe Feld mit
-//! dessen Inhalt. Übernommen wird mit Enter oder einem Klick daneben,
-//! abgebrochen mit Esc; Umschalt+Enter fügt eine neue Zeile ein.
+//! Das Textwerkzeug öffnet keinen Dialog mehr: nach dem Klick wird direkt an
+//! der Textposition **in** die Zeichnung geschrieben. Ein Doppelklick auf einen
+//! vorhandenen Text öffnet dessen Inhalt zum Ändern.
 //!
-//! Die Platzierung des Feldes entspricht der Anzeige des eingefügten Textes
-//! (`canvas::paint_text`: Schriftgröße `Höhe · Zoom · 1,32`, Anker links/mittig),
-//! damit der Text beim Übernehmen nicht springt.
+//! Während der Eingabe sieht der Text **genau so aus wie in der Zeichnung**:
+//! keine Fläche, kein Rahmen — dieselbe Schriftgröße (`Höhe · Zoom · 1,32`),
+//! dieselbe Platzierung (`canvas::paint_text`, Anker links/mittig) und dieselbe
+//! Farbe (Objekt- bzw. Layerfarbe). Der bearbeitete Text wird dafür aus der
+//! Anzeige genommen, damit er nicht doppelt dasteht.
+//!
+//! Esc übernimmt, ein Klick daneben übernimmt ebenfalls, Enter fügt eine neue
+//! Zeile ein, Rechtsklick bricht ab.
 
 use crate::app::{world_to_screen, App, View};
 use crate::theme::Palette;
@@ -16,10 +19,13 @@ use egui::{Color32, FontId, Id, Pos2, Rect, Stroke, Ui, Vec2};
 use jjcad_core::geom::Vec2 as V2;
 use jjcad_core::model::{EntityKind, Id as EId};
 use jjcad_core::render;
+use jjcad_core::style::Color;
 use serde_json::json;
 
-/// Abstand zwischen Textanker und Feldrahmen in Bildschirm-Pixeln.
-const RAND: f32 = 3.0;
+/// Bildschirmfarbe einer Zeichnungsfarbe (wie `canvas::color32`).
+fn color32(c: Color) -> Color32 {
+    Color32::from_rgb(c.r, c.g, c.b)
+}
 
 /// Egui-ID des Feldes — auch für Tests und die Fokusprüfung.
 pub fn feld_id() -> Id {
@@ -35,6 +41,8 @@ pub struct Texteingabe {
     pub angle: f64,
     /// `Some` = vorhandener Text wird geändert, `None` = neuer Text
     pub id: Option<EId>,
+    /// Farbe, in der der Text in der Zeichnung erscheint (Objekt- oder Layerfarbe)
+    pub farbe: Color,
     /// Beim ersten Frame den Fokus (Cursor) holen
     pub fokus: bool,
     /// Bildschirmfläche des Feldes — ein Klick daneben übernimmt
@@ -42,13 +50,21 @@ pub struct Texteingabe {
 }
 
 impl Texteingabe {
-    fn neu(pos: V2, height: f64, text: String, angle: f64, id: Option<EId>) -> Self {
+    fn neu(
+        pos: V2,
+        height: f64,
+        text: String,
+        angle: f64,
+        id: Option<EId>,
+        farbe: Color,
+    ) -> Self {
         Self {
             pos,
             text,
             height,
             angle,
             id,
+            farbe,
             fokus: true,
             flaeche: None,
         }
@@ -58,14 +74,22 @@ impl Texteingabe {
 /// Neuen Text an dieser Stelle schreiben — der Cursor steht sofort darin.
 pub fn start(app: &mut App, pos: V2) {
     app.tool = None;
+    // Angezeigt wird der Text in der Layerfarbe (wie bei `draw.text` ohne
+    // eigene Farbe) — die Eingabe soll nicht anders aussehen als das Ergebnis.
+    let farbe = app
+        .doc()
+        .layer(app.doc().current_layer)
+        .map(|l| l.color)
+        .unwrap_or(Color::BLACK);
     app.ui.texteingabe = Some(Texteingabe::neu(
         pos,
         app.options.text_height,
         String::new(),
         0.0,
         None,
+        farbe,
     ));
-    app.mitteilung("Text · Text eingeben (Enter)");
+    app.mitteilung("Text · Text eingeben (Esc übernimmt)");
 }
 
 /// Inhalt eines vorhandenen Textes bearbeiten (Doppelklick).
@@ -84,9 +108,13 @@ pub fn start_entitaet(app: &mut App, id: EId) -> bool {
         return false;
     };
     let (p, text, height, angle) = (*p, text.clone(), *height, *angle);
+    let farbe = app.doc().effective_color(e);
     app.tool = None;
-    app.ui.texteingabe = Some(Texteingabe::neu(p, height, text, angle, Some(id)));
-    app.mitteilung("Text · Inhalt ändern (Enter)");
+    // Ohne Auswahl: der blaue Auswahlrahmen des Textes würde sonst um den
+    // bearbeiteten Text stehen — beim Schreiben soll nur der Text dastehen.
+    app.session_mut().clear_selection();
+    app.ui.texteingabe = Some(Texteingabe::neu(p, height, text, angle, Some(id), farbe));
+    app.mitteilung("Text · Inhalt ändern (Esc übernimmt)");
     true
 }
 
@@ -164,23 +192,22 @@ fn abbrechen(app: &mut App, ctx: &egui::Context) {
     }
 }
 
-/// Zeichnet das Eingabefeld an der Textposition und wertet Tastatur und Klicks aus.
+/// Schreibt an der Textposition und wertet Tastatur und Klicks aus.
 pub fn show(app: &mut App, ui: &mut Ui, rect: Rect, view: View) {
     if app.ui.texteingabe.is_none() {
         return;
     }
     let ctx = ui.ctx().clone();
 
-    // Enter übernimmt (Umschalt+Enter ist der Zeilenumbruch), Esc bricht ab.
-    // Vor dem Feld geprüft: das TextEdit verbraucht die Tastendrücke selbst.
-    let enter = ctx.input(|i| i.key_pressed(egui::Key::Enter) && !i.modifiers.shift);
-    let esc = ctx.input(|i| i.key_pressed(egui::Key::Escape));
-    if esc {
-        abbrechen(app, &ctx);
+    // Esc übernimmt, Rechtsklick bricht ab. Vor dem Textfeld geprüft: das
+    // TextEdit verbraucht die Tastendrücke selbst, und egui nimmt einem Feld
+    // bei Esc den Fokus.
+    if ctx.input(|i| i.key_pressed(egui::Key::Escape)) {
+        uebernehmen(app, &ctx);
         return;
     }
-    if enter {
-        uebernehmen(app, &ctx);
+    if ctx.input(|i| i.pointer.secondary_pressed()) {
+        abbrechen(app, &ctx);
         return;
     }
 
@@ -189,82 +216,72 @@ pub fn show(app: &mut App, ui: &mut Ui, rect: Rect, view: View) {
         None => return,
     };
 
-    let size = (t.height * view.zoom * 1.32).max(9.0) as f32;
+    // Genau die Schrift der Zeichnung (`canvas::paint_text`): Höhe × Zoom × 1,32.
+    let size = (t.height * view.zoom * 1.32).max(3.0) as f32;
     let font = FontId::proportional(size);
     let zeilenhoehe = ctx.fonts(|f| f.row_height(&font));
     let anker = world_to_screen(rect, view, t.pos);
-    // Breite aus der echten Schriftbreite: der Text darf im Feld **nicht**
-    // umbrechen — das tut der eingefügte Text auch nicht, sonst springt er
-    // beim Übernehmen in eine andere Form.
-    let textbreite = ctx.fonts(|f| {
-        f.layout_no_wrap(t.text.clone(), font.clone(), Palette::TEXT)
-            .size()
-            .x
+    let farbe = color32(t.farbe);
+    // Breite aus der echten Schriftbreite: der Text darf beim Schreiben **nicht**
+    // umbrechen — das tut der eingefügte Text auch nicht, sonst springt er beim
+    // Übernehmen in eine andere Form.
+    let (textbreite, texthoehe) = ctx.fonts(|f| {
+        let g = f.layout_no_wrap(t.text.clone(), font.clone(), farbe);
+        (g.size().x, g.size().y)
     });
-    let breite = (textbreite + size * 1.5).max(120.0);
-    // Eigener Setzer: das Feld bricht **nie** um (auch nicht, wenn der Text
-    // breiter wird als der letzte Rahmen). Der eingefügte Text kennt ebenfalls
-    // keine Umbrüche, nur echte Zeilenumbrüche aus Umschalt+Enter.
+    let breite = (textbreite + size * 1.5).max(if t.text.is_empty() { 20.0 } else { 8.0 });
+    // Eigener Setzer: ohne Umbruch, nur echte Zeilenumbrüche (Enter).
     let setzer_font = font.clone();
     let mut setzer = move |ui: &egui::Ui, text: &str, _wrap: f32| {
-        ui.fonts(|f| f.layout_no_wrap(text.to_owned(), setzer_font.clone(), Palette::TEXT))
+        ui.fonts(|f| f.layout_no_wrap(text.to_owned(), setzer_font.clone(), farbe))
     };
 
     egui::Area::new(Id::new("texteingabe"))
         .order(egui::Order::Foreground)
+        // Senkrecht mittig am Anker wie die Anzeige (`paint_text`, valign Middle):
+        // bei mehreren Zeilen wächst der Block um die halbe Zeilenhöhe nach
+        // beiden Seiten, genau wie der eingefügte Text.
         .fixed_pos(Pos2::new(
-            anker.x - RAND,
-            anker.y - zeilenhoehe * 0.5 - RAND,
+            anker.x,
+            anker.y - texthoehe.max(zeilenhoehe) * 0.5,
         ))
         .show(&ctx, |ui| {
-            // Dunkle Fläche in Zeichenflächenfarbe: der Text darunter wird
-            // verdeckt, damit man nur den bearbeiteten Stand sieht.
-            egui::Frame::none()
-                .fill(Color32::from_rgba_unmultiplied(0x12, 0x14, 0x18, 240))
-                .rounding(egui::Rounding::same(2.0))
-                .stroke(Stroke::new(1.0_f32, Palette::ACCENT))
-                .inner_margin(egui::Margin::same(RAND))
-                .show(ui, |ui| {
-                    // Rahmen genau so breit wie der Text — sonst zieht die
-                    // breitere Hinweiszeile darunter den Kasten in die Länge.
-                    ui.set_min_width(breite);
-                    ui.set_max_width(breite);
-                    ui.visuals_mut().text_cursor.stroke = Stroke::new(1.5_f32, Palette::ACCENT);
-                    // Cursor ohne Blinken: er ist die einzige Markierung der
-                    // Schreibstelle — im dunklen Feld sähe ein ausgeschalteter
-                    // Cursor wie ein leeres Feld ohne Eingabe aus.
-                    ui.visuals_mut().text_cursor.blink = false;
-                    ui.visuals_mut().selection.bg_fill =
-                        Color32::from_rgba_unmultiplied(0x2F, 0x8C, 0xF0, 90);
-                    let resp = ui.add(
-                        egui::TextEdit::multiline(&mut t.text)
-                            .layouter(&mut setzer)
-                            .id(feld_id())
-                            .frame(false)
-                            .margin(Vec2::ZERO)
-                            .font(font.clone())
-                            .text_color(Palette::TEXT)
-                            .desired_width(breite)
-                            .desired_rows(1),
-                    );
-                    if t.fokus {
-                        resp.request_focus();
-                        t.fokus = false;
-                    }
-                    t.flaeche = Some(resp.rect.expand(RAND + 2.0));
-                });
+            // Keine Fläche, kein Rahmen: der Text steht frei in der Zeichnung
+            // und sieht während der Eingabe genauso aus wie danach.
+            ui.visuals_mut().text_cursor.stroke = Stroke::new(1.5_f32, Palette::ACCENT);
+            // Cursor ohne Blinken: er ist die einzige Markierung der
+            // Schreibstelle.
+            ui.visuals_mut().text_cursor.blink = false;
+            ui.visuals_mut().selection.bg_fill =
+                Color32::from_rgba_unmultiplied(0x2F, 0x8C, 0xF0, 90);
+            let resp = ui.add(
+                egui::TextEdit::multiline(&mut t.text)
+                    .layouter(&mut setzer)
+                    .id(feld_id())
+                    .frame(false)
+                    .margin(Vec2::ZERO)
+                    .font(font.clone())
+                    .text_color(farbe)
+                    .desired_width(breite)
+                    .desired_rows(1),
+            );
+            if t.fokus {
+                resp.request_focus();
+                t.fokus = false;
+            }
+            t.flaeche = Some(resp.rect.expand(2.0));
             // Hinweis nur solange nichts getippt ist: beim Schreiben soll nur
-            // der Text dastehen. Er steht unter dem Kasten, nicht darin.
+            // der Text dastehen. Er steht unter dem Text, nicht dahinter.
             if t.text.is_empty() {
                 ui.label(
-                    egui::RichText::new("Enter übernimmt · Esc bricht ab · Umschalt+Enter neue Zeile")
+                    egui::RichText::new("Esc übernimmt · Enter neue Zeile · Rechtsklick bricht ab")
                         .size(10.0)
                         .color(Palette::TEXT_FAINT),
                 );
             }
         });
 
-    // Klick neben das Feld übernimmt den Text (wie in Office-Programmen).
+    // Klick neben den Text übernimmt (wie in Office-Programmen).
     let aussen_geklickt = ctx.input(|i| i.pointer.primary_pressed())
         && ctx
             .input(|i| i.pointer.interact_pos())
@@ -342,9 +359,9 @@ mod tests {
         );
     }
 
-    /// Getippter Text wird mit Enter übernommen; ein zweiter Klick legt nichts an.
+    /// Getippter Text wird mit Esc übernommen und steht danach in der Zeichnung.
     #[test]
-    fn enter_uebernimmt_den_getippten_text() {
+    fn esc_uebernimmt_den_getippten_text() {
         let ctx = egui::Context::default();
         let mut app = App::with_ctx(ctx.clone());
         app.session_mut()
@@ -363,7 +380,7 @@ mod tests {
             Vec::new(),
             vec![egui::Event::Text("Wohnen".into())],
             vec![egui::Event::Key {
-                key: egui::Key::Enter,
+                key: egui::Key::Escape,
                 physical_key: None,
                 pressed: true,
                 repeat: false,
@@ -432,7 +449,7 @@ mod tests {
             Vec::new(),
             vec![egui::Event::Text("Neu".into())],
             vec![egui::Event::Key {
-                key: egui::Key::Enter,
+                key: egui::Key::Escape,
                 physical_key: None,
                 pressed: true,
                 repeat: false,
@@ -535,9 +552,47 @@ mod tests {
         );
     }
 
-    /// Esc lässt einen neuen Text verschwinden.
+    /// Enter fügt eine neue Zeile ein und schließt die Eingabe nicht (T0019).
     #[test]
-    fn escape_bricht_ab() {
+    fn enter_fuegt_eine_neue_zeile_ein() {
+        let ctx = egui::Context::default();
+        let mut app = App::with_ctx(ctx.clone());
+        start(&mut app, V2::new(0.0, 0.0));
+        let mut zeit = 1.0;
+        let mut frame = |app: &mut App, events: Vec<egui::Event>, zeit: &mut f64| {
+            let input = egui::RawInput {
+                screen_rect: Some(Rect::from_min_size(Pos2::ZERO, Vec2::new(1500.0, 950.0))),
+                time: Some(*zeit),
+                predicted_dt: 0.016,
+                events,
+                ..Default::default()
+            };
+            *zeit += 0.1;
+            let _ = ctx.run(input, |c| app.ui(c));
+        };
+        let enter = egui::Event::Key {
+            key: egui::Key::Enter,
+            physical_key: None,
+            pressed: true,
+            repeat: false,
+            modifiers: Default::default(),
+        };
+        frame(&mut app, vec![], &mut zeit);
+        frame(&mut app, vec![egui::Event::Text("EG".into())], &mut zeit);
+        frame(&mut app, vec![enter], &mut zeit);
+        frame(&mut app, vec![egui::Event::Text("OG".into())], &mut zeit);
+        let t = app
+            .ui
+            .texteingabe
+            .as_ref()
+            .expect("Eingabe bleibt nach Enter offen");
+        assert_eq!(t.text, "EG\nOG", "Enter ist der Zeilenumbruch");
+        assert!(app.doc().ents().is_empty(), "noch kein Text angelegt");
+    }
+
+    /// Rechtsklick (bzw. `abbrechen`) lässt einen neuen Text verschwinden.
+    #[test]
+    fn rechtsklick_bricht_ab() {
         let ctx = egui::Context::default();
         let mut app = App::with_ctx(ctx.clone());
         start(&mut app, V2::new(0.0, 0.0));

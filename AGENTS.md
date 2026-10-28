@@ -198,10 +198,11 @@ Mit dem Nutzer abgestimmt — nicht „verbessern“:
   **Schnittpunkt einer Hilfslinie mit einer bestehenden Linie** (Statuszeile „Schnittpunkt");
   höchstens zwei Haltepunkte, ein Klick löst sie. Diskrete Objektfänge (END, MIT, …) schlagen die
   Hilfslinie, die Hilfslinie schlägt Nächster Punkt/Lot sowie Ortho, Polar und Raster.
-- **Texteingabe** läuft direkt in der Zeichnung (kein Dialog): ein Klick mit dem
-  Textwerkzeug setzt an der Klickstelle ein Eingabefeld, der Cursor steht sofort darin;
-  ein Doppelklick auf einen vorhandenen Text öffnet dessen Inhalt. Enter übernimmt, Esc
-  bricht ab, ein Klick daneben übernimmt ebenfalls. Umschalt+Enter fügt eine neue Zeile ein.
+- **Texteingabe** läuft direkt in der Zeichnung (kein Dialog, keine Eingabefläche): ein
+  Klick mit dem Textwerkzeug setzt den Cursor an die Klickstelle, der Text erscheint sofort
+  in der Zeichnung — gleiche Schrift, gleiche Lage, gleiche Farbe wie danach. Ein Doppelklick
+  auf einen vorhandenen Text öffnet dessen Inhalt. **Esc übernimmt**, ein Klick daneben
+  übernimmt ebenfalls, **Enter ist der Zeilenumbruch**, Rechtsklick bricht ab.
 - **Chat**: Meldungen stehen unten links in der Zeichenfläche und verblassen
   nach einigen Sekunden; `^` (die Taste unter ESC) öffnet das Protokoll im
   selben Bild — Meldungen laufen nach oben, unten die Eingabezeile mit Fokus,
