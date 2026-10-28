@@ -2018,15 +2018,11 @@ impl App {
             self.toggle_fullscreen(ctx);
             return;
         }
-        // Text wird direkt in der Zeichnung geschrieben: solange das Feld
-        // offen ist, gehört die Tastatur ihm. Esc bricht ab, Enter übernimmt
-        // (das wertet `textedit::show` aus), Kürzel bleiben aus.
+        // Text wird direkt in der Zeichnung geschrieben: solange geschrieben
+        // wird, gehört die Tastatur dem Text — keine Kürzel, kein Esc-Abbruch.
+        // Esc übernimmt und der Rechtsklick bricht ab; beides wertet
+        // `textedit::show` aus.
         if self.ui.texteingabe.is_some() {
-            if ctx.input(|i| i.key_pressed(egui::Key::Escape)) {
-                self.ui.texteingabe = None;
-                ctx.memory_mut(|m| m.stop_text_input());
-                self.mitteilung("Text · abgebrochen");
-            }
             return;
         }
         if ctx.input(|i| i.key_pressed(egui::Key::Escape)) {
@@ -3551,7 +3547,7 @@ pub const HINWEIS_UNBEKANNT: &str = "Werkzeug · Aktion wählen";
 pub(crate) fn commands_hint(tool: &Tool) -> &'static str {
     // Textwerkzeug: nach dem Klick wird getippt, nicht mehr geklickt.
     if tool.action == "draw.text" && tool.phase == ToolPhase::TextInput {
-        return "Text · Text eingeben (Enter)";
+        return "Text · Text eingeben (Esc übernimmt)";
     }
     let lebt = !tool.pts.is_empty();
     match tool.action.as_str() {
