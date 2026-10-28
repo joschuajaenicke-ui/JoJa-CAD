@@ -1365,7 +1365,10 @@ fn draw_tool_preview(
     // Farbeimer-Vorschau nur für sein eigenes Werkzeug: beim Wechsel (oder wenn
     // der Zeiger die Fläche verlässt) bleibt sonst eine Fläche stehen, die zu
     // keinem Werkzeug mehr gehört.
-    if app.tool.as_ref().map(|t| t.action.as_str()) != Some("draw.fill.paint") {
+    if !matches!(
+        app.tool.as_ref().map(|t| t.action.as_str()),
+        Some("draw.fill.paint") | Some("draw.volume.paint")
+    ) {
         app.paint.zuruecksetzen();
     }
     let Some(cursor) = snapped else {
@@ -1496,7 +1499,7 @@ fn draw_tool_preview(
                 label = format!("{} Stützpunkte", tool.pts.len() + 1);
             }
         }
-        "draw.fill.boundary" | "draw.fill.points" => {
+        "draw.fill.boundary" | "draw.fill.points" | "draw.volume.points" => {
             // Polygonzug bis zum Zeiger — der Umriss, der beim Klick entsteht.
             for pair in tool.pts.windows(2) {
                 p.line_segment([w2s(pair[0]), w2s(pair[1])], stroke);
@@ -1521,7 +1524,7 @@ fn draw_tool_preview(
                 label = format!("{} Punkte", tool.pts.len() + 1);
             }
         }
-        "draw.fill.paint" => {
+        "draw.fill.paint" | "draw.volume.paint" => {
             // Gerechnet wird auf dem ROHEN Zeigerpunkt: der Fang zieht sonst
             // genau auf die Wandkante, und dort wäre „auf einer Linie geklickt“
             // die richtige, aber unerwünschte Antwort.
@@ -1683,7 +1686,7 @@ fn draw_tool_preview(
                 view.rot as f32,
             );
         }
-        "draw.fill" | "draw.hatch" => {
+        "draw.fill" | "draw.hatch" | "draw.volume" => {
             p.circle_stroke(w2s(cursor), 9.0, dashed);
             label = "Kontur anklicken".into();
         }
@@ -3194,7 +3197,7 @@ fn draw_hilfslinien(app: &App, p: &Painter, rect: Rect, view: View) {
 pub fn ist_fuell_punkte(action: &str) -> bool {
     matches!(
         action,
-        "draw.fill.boundary" | "draw.fill.points" | "draw.volume"
+        "draw.fill.boundary" | "draw.fill.points" | "draw.volume.points"
     )
 }
 
@@ -3378,7 +3381,7 @@ fn finish_fill(app: &mut App, action: &str) -> bool {
            "angle": app.options.fill_angle.to_degrees(),
            "scale": app.unit().from_mm(app.options.fill_scale),
            "border": app.options.fill_border_points});
-    if action == "draw.volume" {
+    if action.starts_with("draw.volume") {
         // Volumen: Höhe kommt aus dem Platzieren-Panel (Standard = Wandhöhe).
         params["height"] = json!(app.unit().from_mm(app.options.wall_height));
         // Ein Körper ist Mauerwerk: standardmäßig die volle Fläche in
@@ -3423,7 +3426,7 @@ pub fn finish_tool(app: &mut App, from_enter: bool) {
             }
             app.tool = None;
         }
-        "draw.fill.boundary" | "draw.fill.points" | "draw.volume" => {
+        "draw.fill.boundary" | "draw.fill.points" | "draw.volume.points" => {
             // Ein Abschluss für alle drei Eingaben; `action` bestimmt nur,
             // welche Action den Kern aufruft (MCP und Klickpfad landen im
             // selben Code). `draw.volume` erzeugt dasselbe Objekt wie eine
@@ -3722,10 +3725,11 @@ fn tool_click_at(app: &mut App, w: V2, raw: V2) {
         // (`draw.fill.paint` → `boundary::detect_boundary`); Fehler kommen als
         // Toast aus der Action zurück („Fläche ist nicht geschlossen“, „auf
         // einer Linie geklickt“) — kein Dialog, kein Objekt.
-        "draw.fill.paint" => {
+        "draw.fill.paint" | "draw.volume.paint" => {
+            let act = tool.action.clone();
             let ok = run(
                 app,
-                "draw.fill.paint",
+                &act,
                 json!({"p": ax(raw),
                        "pattern": app.options.paint_pattern.key(),
                        "angle": app.options.fill_angle.to_degrees(),
@@ -3737,7 +3741,8 @@ fn tool_click_at(app: &mut App, w: V2, raw: V2) {
             app.paint.zuruecksetzen();
             let _ = ok;
         }
-        "draw.fill" | "draw.hatch" => {
+        "draw.fill" | "draw.hatch" | "draw.volume" => {
+            let vol = tool.action == "draw.volume";
             let tol = (10.0 / app.current_view().zoom).max(0.5);
             let hit = snap::hit_test(app.doc(), w, tol, None);
             if let Some(id) = hit {
@@ -3761,21 +3766,37 @@ fn tool_click_at(app: &mut App, w: V2, raw: V2) {
                             let n = dir.perp() * (*thickness * 0.5);
                             Some(vec![*a + n, *b + n, *b - n, *a - n])
                         }
+                        // Volumen und Füllfläche: ihre Kontur lässt sich
+                        // übernehmen (z. B. Volumen in eine Fläche umwandeln).
+                        EntityKind::Volume { boundary, .. }
+                        | EntityKind::Fill { boundary, .. } => Some(boundary.clone()),
                         _ => None,
                     };
                     match boundary {
                         Some(pts) => {
-                            let _ = run(
-                                app,
-                                "draw.fill",
-                                json!({"boundary": pts.iter().map(|q| ax(*q)).collect::<Vec<_>>(),
-                                       "pattern": app.options.fill_pattern.key(),
-                                       "angle": app.options.fill_angle.to_degrees(),
-                                       "scale": unit.from_mm(app.options.fill_scale),
-                                       "border": app.options.fill_border_outline}),
-                            );
+                            // Volumen: dieselbe Kontur, aber als Körper mit
+                            // Höhe (Standard = Wandhöhe), Fläche im Wandton.
+                            let mut params = json!({
+                                "boundary": pts.iter().map(|q| ax(*q)).collect::<Vec<_>>(),
+                                "pattern": if vol {
+                                    "solid".to_string()
+                                } else {
+                                    app.options.fill_pattern.key().to_string()
+                                },
+                                "angle": app.options.fill_angle.to_degrees(),
+                                "scale": unit.from_mm(app.options.fill_scale),
+                                "border": app.options.fill_border_outline,
+                            });
+                            if vol {
+                                params["height"] = json!(unit.from_mm(app.options.wall_height));
+                            }
+                            let _ = run(app, if vol { "draw.volume" } else { "draw.fill" }, params);
                         }
-                        None => app.toast("Füllfläche · geschlossene Kontur anklicken"),
+                        None => app.toast(if vol {
+                            "Volumen · geschlossene Kontur anklicken"
+                        } else {
+                            "Füllfläche · geschlossene Kontur anklicken"
+                        }),
                     }
                 }
             }

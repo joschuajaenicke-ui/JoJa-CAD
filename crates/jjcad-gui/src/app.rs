@@ -380,12 +380,13 @@ pub struct UiState {
     /// Zuletzt benutzter Eingabemodus je Button (Fläche / Schraffur)
     pub fill_input: FillInput,
     pub hatch_input: FillInput,
+    pub volume_input: FillInput,
     /// Zuletzt benutzte Kopierfunktion (Zwischenablage / mit Basispunkt)
     pub copy_input: CopyInput,
     /// Welcher der beiden Knöpfe das laufende Füllwerkzeug gestartet hat
     /// (None = kein Füllwerkzeug aktiv). Nötig, weil beide Knöpfe dieselbe
     /// Action starten können und sonst beide hervorgehoben wären.
-    pub fill_active: Option<bool>,
+    pub fill_active: Option<FillKind>,
     /// Offenes Kontextmenü (Objekt, Zeichenfläche oder Chip)
     pub menu: Option<MenuState>,
     /// Auswahl eines Referenzobjekts für "Vor/Hinter Element"
@@ -444,6 +445,7 @@ impl Default for UiState {
             drag_mode: DragMode::HoldAndDrag,
             fill_input: FillInput::Points,
             hatch_input: FillInput::Contour,
+            volume_input: FillInput::Contour,
             copy_input: CopyInput::BasePoint,
             fill_active: None,
             menu: None,
@@ -529,16 +531,58 @@ pub enum FillInput {
     Paint,
 }
 
-impl FillInput {
-    pub const ALL: [FillInput; 3] = [Self::Contour, Self::Points, Self::Paint];
+/// Wofür die Einfüge-Modi gelten: Füllfläche, Schraffur oder Volumen.
+///
+/// Dieselben drei Eingaben (Kontur anklicken, Punkte setzen, Farbeimer) für
+/// alle drei — nur die Action und die Muster-Vorgabe unterscheiden sich.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum FillKind {
+    Area,
+    Hatch,
+    Volume,
+}
 
-    pub fn action(self) -> &'static str {
-        match self {
-            Self::Contour => "draw.fill",
-            Self::Points => "draw.fill.points",
-            Self::Paint => "draw.fill.paint",
+impl FillKind {
+    pub fn action(self, mode: FillInput) -> &'static str {
+        match (self, mode) {
+            (FillKind::Volume, FillInput::Contour) => "draw.volume",
+            (FillKind::Volume, FillInput::Points) => "draw.volume.points",
+            (FillKind::Volume, FillInput::Paint) => "draw.volume.paint",
+            // Fläche und Schraffur teilen sich die Actions; die Schraffur
+            // unterscheidet sich nur in der Muster-Vorgabe.
+            (_, FillInput::Contour) => "draw.fill",
+            (_, FillInput::Points) => "draw.fill.points",
+            (_, FillInput::Paint) => "draw.fill.paint",
         }
     }
+
+    pub fn label(self) -> &'static str {
+        match self {
+            FillKind::Area => "Fläche",
+            FillKind::Hatch => "Schraffur",
+            FillKind::Volume => "Volumen",
+        }
+    }
+
+    /// Symbol der Schaltfläche: das Element selbst. Beim Volumen immer der
+    /// Würfel — der Einfügemodus steht im Menü und in der Beschriftung.
+    pub fn button_icon(self, mode: FillInput) -> &'static str {
+        match self {
+            FillKind::Volume => "volume",
+            _ => mode.icon(self == FillKind::Hatch),
+        }
+    }
+
+    pub fn pattern(self) -> jjcad_core::style::FillPattern {
+        match self {
+            FillKind::Hatch => jjcad_core::style::FillPattern::Lines,
+            _ => jjcad_core::style::FillPattern::Solid,
+        }
+    }
+}
+
+impl FillInput {
+    pub const ALL: [FillInput; 3] = [Self::Contour, Self::Points, Self::Paint];
 
     pub fn label(self) -> &'static str {
         match self {
@@ -868,11 +912,15 @@ impl App {
                 // Prüfhilfe: Füllwerkzeug über den jeweiligen Knopf starten
                 "fillarea" => {
                     let m = self.ui.fill_input;
-                    self.start_fill_input(m, false);
+                    self.start_fill_input(m, FillKind::Area);
                 }
                 "fillhatch" => {
                     let m = self.ui.hatch_input;
-                    self.start_fill_input(m, true);
+                    self.start_fill_input(m, FillKind::Hatch);
+                }
+                "volumen" | "volume" => {
+                    let m = self.ui.volume_input;
+                    self.start_fill_input(m, FillKind::Volume);
                 }
                 // Kopierfunktion der geteilten Schaltfläche (Screenshot-Prüfung)
                 "copyclip" => self.ui.copy_input = CopyInput::Clipboard,
@@ -2685,8 +2733,8 @@ fn rail(ui: &mut egui::Ui, icon: &str, tooltip: &str, chevron: &str) -> bool {
                         // Zwei geteilte Schaltflächen: Fläche und Schraffur.
                         // Der Pfeil öffnet die Eingabemodi, der Knopf startet
                         // den zuletzt benutzten — das Icon zeigt ihn an.
-                        app.fill_group_button(ui, false);
-                        app.fill_group_button(ui, true);
+                        app.fill_group_button(ui, FillKind::Area);
+                        app.fill_group_button(ui, FillKind::Hatch);
                     });
                     widgets::vline(ui, RIBBON_GROUP_H);
                     self.group(ui, "Weitere", |ui, app| {
@@ -2705,7 +2753,6 @@ fn rail(ui: &mut egui::Ui, icon: &str, tooltip: &str, chevron: &str) -> bool {
                     self.group(ui, "Bauteile", |ui, app| {
                         for (id, icon, label) in [
                             ("draw.wall", "wall", "Wand"),
-                            ("draw.volume", "volume", "Volumen"),
                             ("draw.door", "door", "Tür"),
                             ("draw.window", "window", "Fenster"),
                             ("draw.stair", "stair", "Treppe"),
@@ -2714,6 +2761,8 @@ fn rail(ui: &mut egui::Ui, icon: &str, tooltip: &str, chevron: &str) -> bool {
                                 app.start_tool(id);
                             }
                         }
+                        // Volumen mit denselben drei Einfüge-Modi wie die Fläche
+                        app.fill_group_button(ui, FillKind::Volume);
                     });
                 }
                 RibbonTab::Aendern => {
@@ -3586,13 +3635,15 @@ pub(crate) fn commands_hint(tool: &Tool) -> &'static str {
             }
         }
         "draw.fill.paint" => "Farbeimer · Fläche anklicken",
-        "draw.volume" => {
+        "draw.volume" => "Volumen · Kontur anklicken",
+        "draw.volume.points" => {
             if tool.pts.len() < 3 {
-                "Volumen · Kontur klicken (mind. 3)"
+                "Volumen nach Punktfolge · Punkt klicken"
             } else {
-                "Volumen · Enter schließt den Körper"
+                "Volumen nach Punktfolge · Enter schließt"
             }
         }
+        "draw.volume.paint" => "Volumen füllen · leere Fläche anklicken",
         "draw.hatch" => "Schraffur · Kontur anklicken",
         "dim.linear" => match tool.pts.len() {
             0 => "Maß · erster Punkt",
@@ -4156,37 +4207,39 @@ fn unused(_: RasterOptions, _: persist::HotbarPreset) {}
 
 impl App {
     /// Startet ein Füllwerkzeug mit passender Muster-Vorgabe.
-    pub fn start_fill_input(&mut self, mode: FillInput, hatch: bool) {
-        self.options.fill_pattern = if hatch {
-            jjcad_core::style::FillPattern::Lines
-        } else {
-            jjcad_core::style::FillPattern::Solid
-        };
-        self.start_tool(mode.action());
-        self.ui.fill_active = Some(hatch);
+    pub fn start_fill_input(&mut self, mode: FillInput, kind: FillKind) {
+        self.options.fill_pattern = kind.pattern();
+        self.start_tool(kind.action(mode));
+        self.ui.fill_active = Some(kind);
     }
 
-    /// Geteilte Ribbon-Schaltfläche für Füllflächen/Schraffuren.
-    fn fill_group_button(&mut self, ui: &mut egui::Ui, hatch: bool) {
-        let cur = if hatch {
-            self.ui.hatch_input
-        } else {
-            self.ui.fill_input
+    /// Geteilte Ribbon-Schaltfläche für Füllflächen, Schraffuren und Volumen.
+    fn fill_group_button(&mut self, ui: &mut egui::Ui, kind: FillKind) {
+        let hatch = kind == FillKind::Hatch;
+        let cur = match kind {
+            FillKind::Hatch => self.ui.hatch_input,
+            FillKind::Volume => self.ui.volume_input,
+            FillKind::Area => self.ui.fill_input,
         };
-        let active = self.tool_id() == Some(cur.action()) && self.ui.fill_active == Some(hatch);
-        let label = if hatch { "Schraffur" } else { "Fläche" };
-        let (main, arrow) = widgets::ribbon_split_button(ui, cur.icon(hatch), label, active);
-        let popup_id = ui.make_persistent_id(("fillpop", hatch));
+        let active =
+            self.tool_id() == Some(kind.action(cur)) && self.ui.fill_active == Some(kind);
+        let label = kind.label();
+        let (main, arrow) = widgets::ribbon_split_button(ui, kind.button_icon(cur), label, active);
+        let popup_id = ui.make_persistent_id(("fillpop", label));
         let now = ui.input(|i| i.time);
         if arrow.clicked() {
             ui.memory_mut(|m| m.toggle_popup(popup_id));
             ui.memory_mut(|m| m.data.insert_temp(popup_id.with("opened"), now));
         } else if main.clicked() {
-            self.start_fill_input(cur, hatch);
+            self.start_fill_input(cur, kind);
         }
         // Prüfhilfe: Menü für einen Screenshot offen halten (nur mit Env-Variable)
         if let Ok(welches) = std::env::var("JJCAD_DEMO_MENU") {
-            let passt = (welches == "hatch") == hatch;
+            let passt = match welches.as_str() {
+                "hatch" => kind == FillKind::Hatch,
+                "volume" | "volumen" => kind == FillKind::Volume,
+                _ => kind == FillKind::Area,
+            };
             if passt {
                 ui.memory_mut(|m| m.open_popup(popup_id));
             }
@@ -4233,15 +4286,22 @@ impl App {
                         if m == cur { Palette::ACCENT } else { Palette::TEXT },
                     );
                     if bereit && resp.clicked() {
-                        if hatch {
-                            self.ui.hatch_input = m;
-                            self.prefs.hatch_input = m.key().to_string();
-                        } else {
-                            self.ui.fill_input = m;
-                            self.prefs.fill_input = m.key().to_string();
+                        match kind {
+                            FillKind::Hatch => {
+                                self.ui.hatch_input = m;
+                                self.prefs.hatch_input = m.key().to_string();
+                            }
+                            FillKind::Volume => {
+                                self.ui.volume_input = m;
+                                self.prefs.volume_input = m.key().to_string();
+                            }
+                            FillKind::Area => {
+                                self.ui.fill_input = m;
+                                self.prefs.fill_input = m.key().to_string();
+                            }
                         }
                         let _ = self.prefs.save();
-                        self.start_fill_input(m, hatch);
+                        self.start_fill_input(m, kind);
                         ui.memory_mut(|mm| mm.close_popup());
                     }
                 }

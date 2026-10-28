@@ -282,3 +282,68 @@ fn volumen_ueberlebt_speichern() {
     let v = e.volume_m3().unwrap();
     assert!((v - 1.2 * 0.6 * 2.75).abs() < 1e-6, "Volumen nach Laden {v} m³");
 }
+
+// ---------------------------------------------------------------------------
+// 4. Dieselben drei Eingaben wie bei der Füllfläche
+// ---------------------------------------------------------------------------
+
+#[test]
+fn volumen_drei_eingaben() {
+    // (a) Kontur anklicken: die Umgrenzung kommt von außen (Wand, geschlossene
+    //     Polylinie) — hier direkt als Parameter, so wie der Klickpfad sie übergibt.
+    let mut s = session();
+    let kontur = json!({
+        "boundary": [[0.0, 0.0], [2.0, 0.0], [2.0, 1.0], [0.0, 1.0]],
+        "height": 2.75
+    });
+    let r = s.execute("draw.volume", &kontur).unwrap();
+    let id = r["created"][0].as_u64().unwrap();
+    assert!(matches!(
+        s.doc.entity(id).unwrap().kind,
+        jjcad_core::model::EntityKind::Volume { .. }
+    ));
+
+    // (b) Punkte setzen
+    let r = s
+        .execute(
+            "draw.volume.points",
+            &json!({
+                "boundary": [[5.0, 0.0], [7.0, 0.0], [7.0, 1.0], [5.0, 1.0]],
+                "height": 2.75
+            }),
+        )
+        .unwrap();
+    let id2 = r["created"][0].as_u64().unwrap();
+    let e2 = s.doc.entity(id2).unwrap();
+    assert_eq!(e2.kind.type_name(), "Volumen");
+    // Punkte setzen zeichnet die Umrandung (es gibt keine vorhandene Kante)
+    match e2.kind {
+        jjcad_core::model::EntityKind::Volume { border, .. } => assert!(border),
+        _ => panic!("kein Volumen"),
+    }
+
+    // (c) Farbeimer: Raum aus vier Wänden, Klick in die Mitte
+    let mut r = session();
+    for (a, b) in [
+        ((-3.0, -2.0), (0.0, -2.0)),
+        ((0.0, -2.0), (0.0, 2.0)),
+        ((0.0, 2.0), (-3.0, 2.0)),
+        ((-3.0, 2.0), (-3.0, -2.0)),
+    ] {
+        r.execute(
+            "draw.wall",
+            &json!({"a": [a.0, a.1], "b": [b.0, b.1], "thickness": 0.24}),
+        )
+        .unwrap();
+    }
+    let g = r
+        .execute(
+            "draw.volume.paint",
+            &json!({"p": [-1.5, 0.0], "height": 2.75}),
+        )
+        .unwrap();
+    let id3 = g["created"][0].as_u64().unwrap();
+    let v = r.doc.entity(id3).unwrap().volume_m3().expect("kein Volumen");
+    // Raum ~ 2,76 × 3,76 m innen ≈ 10 m² × 2,75 m ≈ 28 m³
+    assert!(v > 20.0 && v < 35.0, "Farbeimer-Volumen {v} m³");
+}

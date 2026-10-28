@@ -231,19 +231,14 @@ pub fn paint(painter: &Painter, rect: Rect, name: &str, color: Color32) {
                 i.line(5.0 + k as f32 * 3.4, 18.0, 10.0 + k as f32 * 3.4, 6.0);
             }
         }
-        // Volumen: gefüllter Körper (Fläche wie eine Füllfläche) mit
-        // Höhenpfeil — dieselbe Fläche, aber ein Körper mit Höhe.
+        // Volumen: 3D-Würfel — Körper, nicht Fläche.
         "volume" => {
-            i.rect(3.0, 10.0, 14.0, 19.0);
-            i.filled(&[(3.0, 10.0), (14.0, 10.0), (14.0, 19.0), (3.0, 19.0)]);
-            i.poly(&[(3.0, 10.0), (14.0, 10.0), (14.0, 19.0), (3.0, 19.0)], true);
-            for k in 0..3 {
-                i.line(4.5 + k as f32 * 3.3, 18.0, 7.0 + k as f32 * 3.3, 11.0);
-            }
-            // Höhenpfeil
-            i.line(19.0, 4.0, 19.0, 18.0);
-            i.line(19.0, 4.0, 17.0, 7.0);
-            i.line(19.0, 4.0, 21.0, 7.0);
+            // Deckfläche (gefüllt, damit der Körper plastisch wirkt)
+            i.filled(&[(6.0, 7.5), (12.0, 4.0), (18.0, 7.5), (12.0, 11.0)]);
+            i.poly(&[(6.0, 7.5), (12.0, 4.0), (18.0, 7.5), (12.0, 11.0)], true);
+            // Seitenflächen
+            i.poly(&[(6.0, 7.5), (12.0, 11.0), (12.0, 19.5), (6.0, 16.0)], true);
+            i.poly(&[(18.0, 7.5), (12.0, 11.0), (12.0, 19.5), (18.0, 16.0)], true);
         }
         "text" => {
             i.line(5.0, 6.0, 19.0, 6.0);

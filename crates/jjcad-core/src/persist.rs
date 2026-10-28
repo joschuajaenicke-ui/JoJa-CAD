@@ -290,6 +290,10 @@ where
     })
 }
 
+fn default_volume_input() -> String {
+    "contour".into()
+}
+
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct UserPrefs {
     #[serde(default)]
@@ -322,6 +326,9 @@ pub struct UserPrefs {
     /// Dasselbe fuer die Schraffur-Schaltflaeche
     #[serde(default)]
     pub hatch_input: String,
+    /// Zuletzt benutzter Einfügemodus des Volumens ("contour" | "points" | "paint")
+    #[serde(default = "default_volume_input")]
+    pub volume_input: String,
     /// Zuletzt benutzte Kopierfunktion der Schaltflaeche „Kopieren"
     /// ("copy" = in die Zwischenablage | "copy_base" = mit Basispunkt)
     #[serde(default)]
@@ -421,6 +428,7 @@ impl Default for UserPrefs {
             drag_mode: DragMode::HoldAndDrag,
             fill_input: "points".into(),
             hatch_input: "contour".into(),
+            volume_input: "contour".into(),
             // Vorgabe wie bisher im Reiter „Ändern": Kopieren setzt mit
             // Basispunkt ab. Reines Kopieren in die Zwischenablage wählt man im
             // Aufklappmenü oder mit Strg+C.

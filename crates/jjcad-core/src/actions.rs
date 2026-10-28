@@ -115,7 +115,25 @@ pub const ACTIONS: &[ActionDef] = &[
         Architektur,
         "volume",
         "v",
-        "Kontur klicken wie eine Fläche — der Körper erhält eine Höhe",
+        "Geschlossene Kontur klicken — der Körper erhält eine Höhe",
+        true
+    ),
+    act!(
+        "draw.volume.points",
+        "Volumen nach Punktfolge",
+        Architektur,
+        "volume",
+        "shift+v",
+        "Punkte klicken, Enter schließt den Körper",
+        true
+    ),
+    act!(
+        "draw.volume.paint",
+        "Volumen füllen",
+        Architektur,
+        "volume",
+        "",
+        "In eine leere Fläche klicken — die Umgrenzung wird ermittelt",
         true
     ),
     act!("draw.door", "Tür", Architektur, "door", "h", "In eine Wand klicken", true),
@@ -219,6 +237,8 @@ pub fn is_mutating(id: &str) -> bool {
             | "draw.ellipse"
             | "draw.wall"
             | "draw.volume"
+            | "draw.volume.points"
+            | "draw.volume.paint"
             | "draw.door"
             | "draw.window"
             | "draw.stair"
@@ -1068,8 +1088,10 @@ pub fn execute(doc: &mut Document, id: &str, params: &Value) -> Result<Value, St
                 .ok_or_else(|| "Parameter 'boundary' fehlt".to_string())?;
             add_fill(doc, boundary, &p, false)
         }
-        // Volumen: dieselbe Kontur wie eine Füllfläche, aber ein Körper mit
-        // Höhe. `params.height` in mm; ohne Angabe die Standard-Wandhöhe.
+        // Volumen: dieselben drei Eingaben wie bei der Füllfläche — Kontur
+        // anklicken (`draw.volume`), Punktfolge (`draw.volume.points`) und
+        // Farbeimer (`draw.volume.paint`) —, nur entsteht ein Körper mit Höhe.
+        // `params.height` in mm; ohne Angabe die Standard-Wandhöhe.
         "draw.volume" => {
             let boundary = p
                 .pts("boundary")
@@ -1081,7 +1103,33 @@ pub fn execute(doc: &mut Document, id: &str, params: &Value) -> Result<Value, St
                 .into_iter()
                 .filter(|h| h.len() >= 3)
                 .collect();
-            add_filled(doc, boundary, holes, &p, false, &[], true)
+            // Umrandung an: die Kontur, die hier übernommen wird (z. B. der
+            // Wandkörper), verschwindet im Volumen — dessen eigene Kante wird
+            // damit zur sichtbaren Kante.
+            add_filled(doc, boundary, holes, &p, true, &[], true)
+        }
+        "draw.volume.points" => {
+            let boundary = p
+                .pts("boundary")
+                .or_else(|| p.pts("pts"))
+                .ok_or_else(|| "Parameter 'boundary' fehlt".to_string())?;
+            let holes: Vec<Vec<Vec2>> = p
+                .rings("holes")
+                .unwrap_or_default()
+                .into_iter()
+                .filter(|h| h.len() >= 3)
+                .collect();
+            add_filled(doc, boundary, holes, &p, true, &[], true)
+        }
+        "draw.volume.paint" => {
+            let pt = require_pt(&p, "p")?;
+            let g = crate::boundary::detect_boundary(
+                doc,
+                pt,
+                &crate::boundary::BoundaryOpts::default(),
+            )
+            .map_err(|e| e.message().to_string())?;
+            add_filled(doc, g.outer, g.holes, &p, false, &g.border_entities, true)
         }
         // Farbeimer: ein Klick in die leere Fläche, die Umgrenzung ermittelt der
         // Kern (`boundary::detect_boundary`) aus derselben Displayliste, die
