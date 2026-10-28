@@ -203,6 +203,10 @@ pub struct ToolOptions {
     pub stair_width: f64,
     pub stair_steps: u32,
     pub stair_dir: StairDir,
+    /// Treppenhöhe (Geschosshöhe) in mm — Grundlage der Schrittmaßregel.
+    pub stair_height: f64,
+    /// Stufenzahl aus Länge und Höhe bestimmen (statt fester Zahl).
+    pub stair_auto: bool,
     pub text_height: f64,
     pub text: String,
     pub dim_axis: Option<DimAxis>,
@@ -272,6 +276,8 @@ impl ToolOptions {
             stair_width: doc.settings.stair_width,
             stair_steps: 17,
             stair_dir: StairDir::Up,
+            stair_height: jjcad_core::stair::HOEHE_VORGABE_MM,
+            stair_auto: true,
             text_height: doc.settings.text_height,
             text: String::new(),
             dim_axis: None,
@@ -956,6 +962,38 @@ impl App {
                             self.halt.push(jjcad_core::snap::HaltPunkt::neu(self.doc(), &hit));
                         }
                     }
+                }
+                // Prüfhilfe T0027: Treppe nach Schrittmaß anlegen — Lauflinie
+                // 4,64 m, Breite 1,00 m, Höhe 2,752 m ergeben 16 Stufen
+                // (17,2 / 29). `seltreppe` wählt sie zusätzlich aus, damit das
+                // Eigenschaften-Panel die Maße zeigt.
+                "treppe" | "seltreppe" => {
+                    let u = self.unit().mm();
+                    let neu = self
+                        .session_mut()
+                        .execute(
+                            "draw.stair",
+                            &serde_json::json!({
+                                "a": [0.0, 0.0],
+                                "b": [0.0, 4640.0 / u],
+                                "width": 1000.0 / u,
+                                "height": 2752.0 / u,
+                                "auto": true,
+                            }),
+                        )
+                        .ok()
+                        .and_then(|r| r["created"][0].as_u64());
+                    if let Some(id) = neu {
+                        // Beschriftung gleich mit — das ist der Zustand nach
+                        // dem Knopf „Beschriftung erzeugen".
+                        let _ = self
+                            .session_mut()
+                            .execute("draw.stair.label", &serde_json::json!({ "id": id }));
+                        if part.trim() == "seltreppe" {
+                            self.session_mut().selection = vec![id];
+                        }
+                    }
+                    self.fit_view();
                 }
                 "wall" => self.start_tool("draw.wall"),
                 "paint" | "farbeimer" => self.start_tool("draw.fill.paint"),
@@ -3743,13 +3781,11 @@ pub(crate) fn commands_hint(tool: &Tool, opts: &ToolOptions) -> &'static str {
         }
         "draw.door" => "Tür · in eine Wand klicken",
         "draw.window" => "Fenster · in eine Wand klicken",
-        "draw.stair" => {
-            if lebt {
-                "Treppe · Ende klicken"
-            } else {
-                "Treppe · Anfang klicken"
-            }
-        }
+        "draw.stair" => match tool.pts.len() {
+            0 => "Treppe · Lauflinie Anfang klicken",
+            1 => "Treppe · Lauflinie Ende klicken",
+            _ => "Treppe · Breite klicken",
+        },
         "draw.fill" => "Füllfläche · Kontur anklicken",
         "draw.fill.boundary" => {
             if lebt {

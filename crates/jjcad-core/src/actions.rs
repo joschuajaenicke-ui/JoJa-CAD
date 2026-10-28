@@ -138,7 +138,24 @@ pub const ACTIONS: &[ActionDef] = &[
     ),
     act!("draw.door", "Tür", Architektur, "door", "h", "In eine Wand klicken", true),
     act!("draw.window", "Fenster", Architektur, "window", "j", "In eine Wand klicken", true),
-    act!("draw.stair", "Treppe", Architektur, "stair", "b", "Laufrichtung aufziehen", true),
+    act!(
+        "draw.stair",
+        "Treppe",
+        Architektur,
+        "stair",
+        "b",
+        "Lauflinie aufziehen, dann die Breite klicken",
+        true
+    ),
+    act!(
+        "draw.stair.label",
+        "Treppenbeschriftung",
+        Architektur,
+        "text",
+        "",
+        "Stufenzahl und Schrittmaß als Textfeld neben die Treppe setzen",
+        false
+    ),
 
     // Ändern
     act!("modify.select", "Auswählen", Aendern, "select", "esc", "Objekte anklicken oder Fenster aufziehen", false),
@@ -1363,11 +1380,72 @@ pub fn execute(doc: &mut Document, id: &str, params: &Value) -> Result<Value, St
                     width: p.len_or("width", doc.settings.stair_width),
                     steps: p.num_or("steps", 16.0).max(1.0) as u32,
                     direction: p.stair_dir("direction").unwrap_or(StairDir::Up),
+                    height: p.len_or("height", crate::stair::HOEHE_VORGABE_MM),
+                    // Ohne ausdrückliche Stufenzahl folgt die Treppe der
+                    // Schrittmaßregel; ein `steps`-Wert gilt als Vorgabe.
+                    auto_steps: p
+                        .boolean("auto")
+                        .unwrap_or_else(|| p.raw("steps").is_none()),
                 },
             );
             apply_common(doc, &mut e, &p, layer);
             doc.add_entity(e);
             Ok(json!({"ok": true, "created": [idn]}))
+        }
+        // Beschriftung einer Treppe: Stufenzahl und Schrittmaß als eigenes
+        // Textfeld. Bewusst eine Action — der Knopf im Eigenschaften-Panel
+        // erzeugt damit dasselbe Objekt wie ein MCP-Aufruf.
+        "draw.stair.label" => {
+            let id = p
+                .id("id")
+                .or_else(|| p.ids("ids").and_then(|v| v.first().copied()))
+                .ok_or("Parameter 'id' (Treppe) fehlt")?;
+            let (a, b, width, steps, height, auto_steps) = match doc.entity(id).map(|e| &e.kind) {
+                Some(EntityKind::Stair {
+                    a,
+                    b,
+                    width,
+                    steps,
+                    height,
+                    auto_steps,
+                    ..
+                }) => (*a, *b, *width, *steps, *height, *auto_steps),
+                Some(_) => return Err(format!("Objekt {id} ist keine Treppe")),
+                None => return Err(format!("Objekt {id} nicht gefunden")),
+            };
+            let mass = crate::stair::treppenmass(a.dist(b), height, steps, auto_steps);
+            let dir = (b - a).normalized();
+            // `perp` dreht 90° nach links: die Beschriftung steht links vom Lauf,
+            // wie im Vorbild (Stufenzahl über Schrittmaß).
+            let nrm = dir.perp();
+            let mid = (a + b) * 0.5;
+            let h = p.len_or("height", doc.settings.text_height);
+            let text = mass.beschriftung();
+            // Die Textbreite kommt aus derselben Schätzung wie der Auswahlrahmen
+            // (`render::text_box`), damit der Kasten genau neben der Treppe endet.
+            let (tw, _) = crate::render::text_box(&text, h);
+            let abstand = p.len_or("gap", h * 0.8);
+            // Anker ist die linke Kante des Textkastens (linksbündig) — so liegt
+            // die rechte Kante genau `abstand` neben der Treppenkante.
+            let anker = mid + nrm * (width * 0.5 + abstand + tw);
+            let layer = resolve_layer(doc, &p);
+            let idn = doc.new_id();
+            let mut t = Entity::new(
+                idn,
+                layer,
+                EntityKind::Text {
+                    p: anker,
+                    text: text.clone(),
+                    height: h,
+                    angle: 0.0,
+                    align: TextAlignH::Left,
+                    valign: TextAlignV::Middle,
+                    bold: false,
+                },
+            );
+            apply_common(doc, &mut t, &p, layer);
+            doc.add_entity(t);
+            Ok(json!({"ok": true, "created": [idn], "text": mass.beschriftung()}))
         }
 
         // ---------------- Bemaßung ----------------
@@ -1777,6 +1855,8 @@ pub fn execute(doc: &mut Document, id: &str, params: &Value) -> Result<Value, St
                     let thickness = p.len("thickness");
                     let width = p.len("width");
                     let steps = p.num("steps").map(|s| s.max(1.0) as u32);
+                    let height_new = p.len("height");
+                    let auto_new = p.boolean("auto_steps");
                     let height = p.len("height");
                     let text = p.text("text");
                     match &mut e.kind {
@@ -1867,12 +1947,28 @@ pub fn execute(doc: &mut Document, id: &str, params: &Value) -> Result<Value, St
                                 *border = v;
                             }
                         }
-                        EntityKind::Stair { width: w, steps: s, direction, .. } => {
+                        EntityKind::Stair {
+                            width: w,
+                            steps: s,
+                            direction,
+                            height,
+                            auto_steps,
+                            ..
+                        } => {
                             if let Some(v) = width {
                                 *w = v;
                             }
+                            if let Some(v) = height_new {
+                                *height = v.max(1.0);
+                            }
                             if let Some(v) = steps {
+                                // Eine ausdrücklich gesetzte Stufenzahl ist
+                                // eine Überschreibung der Schrittmaßregel.
                                 *s = v;
+                                *auto_steps = false;
+                            }
+                            if let Some(v) = auto_new {
+                                *auto_steps = v;
                             }
                             if let Some(d) = p.stair_dir("direction") {
                                 *direction = d;

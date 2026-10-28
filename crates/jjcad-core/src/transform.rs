@@ -240,13 +240,19 @@ pub fn transform_kind(k: &EntityKind, m: &Affine) -> EntityKind {
             b,
             width,
             steps,
+            height,
             direction,
+            auto_steps,
         } => EntityKind::Stair {
             a: m.apply(*a),
             b: m.apply(*b),
             width: width * f,
             steps: *steps,
+            // Die Höhe ist eine Eigenschaft der Treppe, kein Maß des Grundrisses:
+            // sie bleibt beim Skalieren/Verschieben unverändert.
+            height: *height,
             direction: *direction,
+            auto_steps: *auto_steps,
         },
         EntityKind::BlockRef {
             block,
