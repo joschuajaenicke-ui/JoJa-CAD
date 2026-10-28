@@ -77,11 +77,16 @@ offene Fensterinstanz zeigt weiterhin den alten Stand.
     runde Wand, Pfeiler, Sonderform. Beispiel: `samples/Volumen.jjcad`
     (Halbkreisbogen auf zwei geraden Wänden, erzeugt von
     `examples/volumen_erzeugen.rs`).
+  - Aktionen wie bei der Füllfläche: `draw.volume` (Kontur anklicken),
+    `draw.volume.points` (Punkte setzen) und `draw.volume.paint` (Farbeimer) —
+    erreichbar über die geteilte Schaltfläche **Architektur → Volumen**
+    (Würfel-Symbol) mit Modus-Menü; `modify.set height` ändert die Höhe.
   - Wände tragen ihre Höhe schon als Metadatum; das Eigenschaften-Panel zeigt
     jetzt zusätzlich das Volumen (Länge × Dicke × Höhe, brutto).
   - Abnahme: `tests/volumen.rs` — Anschluss in beiden Richtungen ohne Linie
     (Vektor **und** Pixelbild), gleicher Ton wie die Wand, Höhe/Volumen in m³,
-    Höhenänderung über `modify.set`, Speichern/Laden.
+    Höhenänderung über `modify.set`, Speichern/Laden, alle drei Eingaben
+    (`volumen_drei_eingaben`, Farbeimer über `detect_boundary`).
 - **Wandschraffur**: `hatch` an der Wand (Vollfläche, 45°, Kreuz, Punkte,
   **Dämmung = Mäander**), gezeichnet als Displaylisten-Primitive.
 - **Wandausrichtung**: `WallAlign` (Links/Mittig/Rechts), Versatz ±Dicke/2,
