@@ -364,22 +364,39 @@ fn verlaengerung_versetzter_ausrichtung_zeichnet_stufe() {
     );
 }
 
-/// Ecke mit unterschiedlicher Ausrichtung (mittig → rechts): die Umrandung
-/// muss am Knoten geschlossen sein. Vorher endete die Oberkante der ersten
-/// Wand vor dem Knoten, die Füllung stand als ungerandeter Keil darüber.
-///
-/// Hier ist **kein** Gehrungsschnitt möglich: die zweite Wand liegt ganz auf
-/// ihrer einen Seite, ihre Stirnfläche steht an der Basislinie des Knotens.
-/// Die erste Wand endet deshalb bündig an dieser Stirnfläche (x = 2000) —
-/// die Stufe ist die Wand selbst, keine Lücke.
+/// Ecke mit unterschiedlicher Ausrichtung (mittig → rechts): Die Umrandung
+/// muss am Knoten geschlossen sein — beide Wände enden auf **derselben**
+/// Anschlussnaht (Schnitt der gleichseitigen Kanten), auch wenn Achsen und
+/// Dicken versetzt sind. Vorher endete die Oberkante der ersten Wand vor dem
+/// Knoten und die Füllung stand als ungerandeter Keil darüber.
 #[test]
 fn ecke_versetzter_ausrichtung_ist_geschlossen() {
     let mut s = session();
     let a = wand_align(&mut s, (0.0, 0.0), (2000.0, 0.0), 100.0, "center");
-    let _b = wand_align(&mut s, (2000.0, 0.0), (3000.0, -1500.0), 100.0, "right");
+    let b = wand_align(&mut s, (2000.0, 0.0), (3000.0, -1500.0), 100.0, "right");
     let segs = linien(&s);
 
-    // Die Oberkante der ersten Wand muss bis an den Knoten reichen.
+    // Beide Wände haben dieselben beiden Gehrungspunkte.
+    let (pa, pb) = (punkte(&s, a), punkte(&s, b));
+    let gemeinsam: Vec<Vec2> = pa
+        .iter()
+        .cloned()
+        .filter(|p| pb.iter().any(|q| q.dist(*p) <= TOL))
+        .collect();
+    assert!(
+        gemeinsam.len() >= 2,
+        "keine gemeinsame Naht: A={pa:?} B={pb:?}"
+    );
+
+    // Die Oberkante der ersten Wand endet auf der Naht (nicht an der
+    // Stirnebene x = 2000, nicht vor dem Knoten).
+    let oben: Vec<Vec2> = gemeinsam
+        .iter()
+        .cloned()
+        .filter(|p| (p.y - 50.0).abs() <= 1.0)
+        .collect();
+    assert_eq!(oben.len(), 1, "Nahtpunkt auf y = 50 fehlt: {gemeinsam:?}");
+    let ecke = oben[0];
     let ende = segs
         .iter()
         .filter_map(|sg| {
@@ -392,13 +409,9 @@ fn ecke_versetzter_ausrichtung_ist_geschlossen() {
         })
         .fold(f64::NEG_INFINITY, f64::max);
     assert!(
-        (ende - 2000.0).abs() <= TOL,
-        "Oberkante endet bei x = {ende}, nicht am Knoten 2000"
-    );
-    // Und der Knoten selbst ist ein Konturpunkt der ersten Wand.
-    assert!(
-        punkte(&s, a).iter().any(|p| p.dist(v(2000.0, 50.0)) <= TOL),
-        "Ecke (2000; 50) fehlt in der Kontur"
+        (ende - ecke.x).abs() <= TOL,
+        "Oberkante endet bei x = {ende}, nicht auf der Naht bei {}",
+        ecke.x
     );
 }
 

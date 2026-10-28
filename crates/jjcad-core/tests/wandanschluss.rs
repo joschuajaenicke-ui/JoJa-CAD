@@ -19,6 +19,7 @@ use jjcad_core::geom::{dist_point_segment, point_in_polygon, Vec2};
 use jjcad_core::raster::render_model_pixmap;
 use jjcad_core::render::{self, RenderCtx, Shape};
 use jjcad_core::style::WallAlign;
+use jjcad_core::wall::{Seam, WallIndex};
 use jjcad_core::Session;
 use serde_json::json;
 
@@ -144,23 +145,23 @@ fn messen(s: &Session, bb: [f64; 4]) -> Z {
     }
 }
 
-/// Liegt `p` in der Vereinigung der Bänder, und zwar mit Abstand `r` zum Rand?
-fn im_korper(p: Vec2, baender: &[Vec<Vec2>], r: f64) -> bool {
-    let drin = |q: Vec2| {
-        baender.iter().any(|b| {
-            point_in_polygon(q, b)
-                && b.iter()
-                    .enumerate()
-                    .map(|(i, e)| dist_point_segment(q, *e, b[(i + 1) % b.len()]))
-                    .fold(f64::INFINITY, f64::min)
-                    >= r
-        })
-    };
-    drin(p)
+/// Liegt `p` in der Vereinigung der Bänder, und zwar mit Abstand `r` zum Rand —
+/// und nicht jenseits einer Anschlussnaht (dort ist der Körper absichtlich
+/// abgeschnitten)?
+fn im_korper(p: Vec2, waende: &[(Vec<Vec2>, Vec<Seam>)], r: f64) -> bool {
+    waende.iter().any(|(b, naehte)| {
+        point_in_polygon(p, b)
+            && b.iter()
+                .enumerate()
+                .map(|(i, e)| dist_point_segment(p, *e, b[(i + 1) % b.len()]))
+                .fold(f64::INFINITY, f64::min)
+                >= r
+            && !hinter_naht(p, naehte)
+    })
 }
 
 /// Prüfungen 1–3 für einen Ausschnitt.
-fn pruefe(name: &str, z: &Z, baender: &[Vec<Vec2>], bbox: [f64; 4]) {
+fn pruefe(name: &str, z: &Z, waende: &[(Vec<Vec2>, Vec<Seam>)], bbox: [f64; 4]) {
     // 1. Keine Lücke — im Vektor und im Pixelbild.
     let mut luecken: Vec<Vec2> = Vec::new();
     let mut weiss: Vec<Vec2> = Vec::new();
@@ -169,7 +170,7 @@ fn pruefe(name: &str, z: &Z, baender: &[Vec<Vec2>], bbox: [f64; 4]) {
         let mut x = bbox[0];
         while x <= bbox[2] {
             let p = Vec2::new(x, y);
-            if im_korper(p, baender, 1.5) {
+            if im_korper(p, waende, 1.5) {
                 if z.tiefe(p) < -0.5 {
                     luecken.push(p);
                 }
@@ -246,14 +247,21 @@ fn pruefe(name: &str, z: &Z, baender: &[Vec<Vec2>], bbox: [f64; 4]) {
 // Fälle
 // ---------------------------------------------------------------------------
 
+/// Liegt `p` jenseits einer Anschlussnaht dieser Wand (abgeschnitten)?
+fn hinter_naht(p: Vec2, naehte: &[Seam]) -> bool {
+    naehte.iter().any(|s| (p - s.p).dot(s.nrm) < -0.5)
+}
+
 /// Ecke: Wand A von (-2000,0) zum Knoten, Wand B vom Knoten unter `deg`.
+/// Rückgabe: Sitzung, Bänder und Nähte je Wand.
+#[allow(clippy::type_complexity)]
 fn ecke(
     deg: f64,
     ta: f64,
     tb: f64,
     aa: WallAlign,
     ab: WallAlign,
-) -> (Session, Vec<Vec<Vec2>>) {
+) -> (Session, Vec<(Vec<Vec2>, Vec<Seam>)>) {
     let mut s = session();
     let p = (
         2000.0 * deg.to_radians().cos(),
@@ -263,7 +271,12 @@ fn ecke(
     let b = ((0.0, 0.0), p, tb, ab);
     wand(&mut s, a.0, a.1, a.2, a.3);
     wand(&mut s, b.0, b.1, b.2, b.3);
-    let baender = vec![band(a.0, a.1, a.2, a.3), band(b.0, b.1, b.2, b.3)];
+    let idx = WallIndex::build(&s.doc, s.doc.ents());
+    let naehte = |i: usize| idx.seams_of(s.doc.entities[i].id);
+    let baender = vec![
+        (band(a.0, a.1, a.2, a.3), naehte(0)),
+        (band(b.0, b.1, b.2, b.3), naehte(1)),
+    ];
     (s, baender)
 }
 
@@ -285,10 +298,10 @@ fn ecken_ohne_luecke_und_ohne_naht() {
     }
     for (deg, ta, tb, aa, ab) in faelle {
         let name = format!("{deg}° {ta}/{tb} {aa:?}/{ab:?}");
-        let (s, baender) = ecke(deg, ta, tb, aa, ab);
+        let (s, waende) = ecke(deg, ta, tb, aa, ab);
         let z = messen(&s, [-600.0, -600.0, 600.0, 600.0]);
         assert!(!z.fills.is_empty(), "{name}: keine Füllung gezeichnet");
-        pruefe(&name, &z, &baender, [-600.0, -600.0, 600.0, 600.0]);
+        pruefe(&name, &z, &waende, [-600.0, -600.0, 600.0, 600.0]);
     }
 }
 
@@ -342,7 +355,13 @@ fn drei_waende_in_einem_punkt() {
     for w in [a, b, c] {
         wand(&mut s, w.0, w.1, w.2, w.3);
     }
-    let baender = vec![band(a.0, a.1, a.2, a.3), band(b.0, b.1, b.2, b.3), band(c.0, c.1, c.2, c.3)];
+    let idx = WallIndex::build(&s.doc, s.doc.ents());
+    let naehte = |i: usize| idx.seams_of(s.doc.entities[i].id);
+    let baender = vec![
+        (band(a.0, a.1, a.2, a.3), naehte(0)),
+        (band(b.0, b.1, b.2, b.3), naehte(1)),
+        (band(c.0, c.1, c.2, c.3), naehte(2)),
+    ];
     let z = messen(&s, [-600.0, -600.0, 600.0, 600.0]);
     pruefe("drei Wände", &z, &baender, [-600.0, -600.0, 600.0, 600.0]);
     // Kein Splitter: jeder Konturpunkt liegt im Wandkörper oder höchstens
@@ -351,7 +370,7 @@ fn drei_waende_in_einem_punkt() {
         for p in render::wall_contour_points(&s.doc, e) {
             let d = baender
                 .iter()
-                .map(|b| {
+                .map(|(b, _)| {
                     if point_in_polygon(p, b) {
                         0.0
                     } else {
@@ -382,7 +401,12 @@ fn stich_und_kreuzung_geschlossen() {
     let b = ((0.0, 0.0), (2000.0 * 20.0_f64.to_radians().cos(), 2000.0 * 20.0_f64.to_radians().sin()), 115.0, WallAlign::Center);
     wand(&mut s, a.0, a.1, a.2, a.3);
     wand(&mut s, b.0, b.1, b.2, b.3);
-    let baender = vec![band(a.0, a.1, a.2, a.3), band(b.0, b.1, b.2, b.3)];
+    let idx = WallIndex::build(&s.doc, s.doc.ents());
+    let naehte = |i: usize| idx.seams_of(s.doc.entities[i].id);
+    let baender = vec![
+        (band(a.0, a.1, a.2, a.3), naehte(0)),
+        (band(b.0, b.1, b.2, b.3), naehte(1)),
+    ];
     let z = messen(&s, [-600.0, -600.0, 600.0, 600.0]);
     pruefe("Stich 20°", &z, &baender, [-600.0, -600.0, 600.0, 600.0]);
 
@@ -392,7 +416,12 @@ fn stich_und_kreuzung_geschlossen() {
     let b = ((3000.0, -3000.0), (3000.0, 3000.0), 200.0, WallAlign::Center);
     wand(&mut s, a.0, a.1, a.2, a.3);
     wand(&mut s, b.0, b.1, b.2, b.3);
-    let baender = vec![band(a.0, a.1, a.2, a.3), band(b.0, b.1, b.2, b.3)];
+    let idx = WallIndex::build(&s.doc, s.doc.ents());
+    let naehte = |i: usize| idx.seams_of(s.doc.entities[i].id);
+    let baender = vec![
+        (band(a.0, a.1, a.2, a.3), naehte(0)),
+        (band(b.0, b.1, b.2, b.3), naehte(1)),
+    ];
     let z = messen(&s, [2400.0, -600.0, 3600.0, 600.0]);
     pruefe("Kreuzung", &z, &baender, [2400.0, -600.0, 3600.0, 600.0]);
 }

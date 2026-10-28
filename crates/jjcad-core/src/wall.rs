@@ -33,6 +33,7 @@
 
 use crate::geom::*;
 use crate::model::{Document, Entity, EntityKind, Id};
+use std::cell::OnceCell;
 use std::collections::HashMap;
 
 /// Toleranz, unter der zwei Basispunkte als **verbunden** gelten (mm).
@@ -42,10 +43,16 @@ use std::collections::HashMap;
 /// Entscheidung an der Wanddicke.
 pub const JOIN_EPS: f64 = 0.5;
 
-/// Grenze der Gehrung als Vielfaches der halben Wanddicke. Wird die Naht
-/// länger (extrem spitze Ecke), wird nicht geschnitten — sonst schießt der
-/// Gehrungspunkt meterweit aus und der Wandkörper wird ein Splitter.
+/// Reichweite der Naht als Vielfaches der halben Wanddicke: so weit wird der
+/// Körper am verbundenen Ende über die Stirnebene hinaus verlängert, bevor die
+/// Naht ihn schneidet (die Gehrung **ergänzt** die Ecke, sie schneidet sie
+/// nicht nur ab).
 pub const MITER_LIMIT: f64 = 6.0;
+
+/// Grenze der Gehrung: Nahtlänge geteilt durch die Wandbreite (2·h) der
+/// dünneren Wand. Wird die Naht länger (extrem spitze Ecke), wird stumpf
+/// gestoßen (Bevel) — sonst schießt die Spitze meterweit aus.
+pub const MITER_RATIO: f64 = 8.0;
 
 /// Halbe Breite des Füllbands an einer Naht (mm). Deckt die
 /// Antialiasing-Naht zwischen zwei Wandfüllungen ab; liegt vollständig im
@@ -60,9 +67,6 @@ const PROBE: f64 = 0.08;
 /// den Kandidaten der Zellen.
 const GRID_MM: f64 = 1000.0;
 
-/// Toleranz für „liegt auf dem Rand" beim Deckungstest (mm). So groß wie die
-/// Anschlusstoleranz: innerhalb davon gilt die Geometrie als verbunden.
-const EDGE_EPS: f64 = JOIN_EPS;
 
 /// Zellen des Grobrasters, die eine Fläche überdecken.
 fn grid_cells(bb: &BBox) -> Vec<(i64, i64)> {
@@ -363,56 +367,108 @@ pub fn clip_keep_side(poly: &[Vec2], p0: Vec2, nrm: Vec2) -> Vec<Vec2> {
     out
 }
 
-/// Liegt `p` im Körper (oder auf seinem Rand)?
-fn in_body(p: Vec2, poly: &[Vec2]) -> bool {
-    if poly.len() < 3 {
-        return false;
-    }
-    if point_in_polygon(p, poly) {
-        return true;
-    }
-    poly.iter()
-        .enumerate()
-        .map(|(i, q)| dist_point_segment(p, *q, poly[(i + 1) % poly.len()]))
-        .fold(f64::INFINITY, f64::min)
-        <= EDGE_EPS
-}
-
 /// Die beiden Gehrungspunkte eines Wandpaars am gemeinsamen Basispunkt.
 ///
-/// `d`/`dj` laufen **vom Knoten weg**, `f`/`g` sind die Rahmen der beiden
-/// Wände. Innen- und Außenecke sind die Schnitte der gleichseitigen Kanten:
-/// bei einer Linksdrehung von `d` nach `dj` schließt die linke Kante der einen
-/// an die rechte der anderen an.
+/// Rechnung wie in `docs/WANDANSCHLUSS.md`: `S_l` ist der Schnitt der beiden
+/// **linken** Kanten, `S_r` der Schnitt der beiden **rechten** — „links"
+/// bezogen auf die Laufrichtung am Knoten. Die eine Wand läuft auf den Knoten
+/// **zu** (ihr Ende liegt dort), die andere **von ihm weg** (ihr Anfang liegt
+/// dort); daraus folgt die Seite je Wand, und beide Wände rechnen dieselben
+/// zwei Punkte.
+///
+/// Bei gleich dicken, mittigen Wänden liegt die Naht damit auf der
+/// Winkelhalbierenden, bei beliebiger Dicke und beliebigem Versatz auf der
+/// verallgemeinerten Halbierenden (`x'_l = (b_l + a_l·cos α)/sin α`,
+/// `x'_r = −(b_r + a_r·cos α)/sin α` im lokalen System der ankommenden Wand).
 fn miter_points(f: &Frame, d: Vec2, g: &Frame, dj: Vec2) -> Option<(Vec2, Vec2)> {
-    // Welche der beiden eigenen Kanten liegt links der Laufrichtung vom Knoten weg?
+    // Linke Kante, bezogen auf die Laufrichtung `d` bzw. `dj` (vom Knoten weg).
     let si = if d.perp().dot(f.n) >= 0.0 { 1.0 } else { -1.0 };
     let sj = if dj.perp().dot(g.n) >= 0.0 { 1.0 } else { -1.0 };
-    let links = d.cross(dj) > 0.0;
-    let (ai, aj) = if links { (si, -sj) } else { (-si, sj) };
-    let (bi, bj) = (-ai, -aj);
-    let (p1, r1) = f.edge(ai);
-    let (p2, r2) = g.edge(aj);
-    let inner = line_line(p1, p1 + r1, p2, p2 + r2, true, true)?;
-    let (p1, r1) = f.edge(bi);
-    let (p2, r2) = g.edge(bj);
-    let outer = line_line(p1, p1 + r1, p2, p2 + r2, true, true)?;
-    Some((inner, outer))
+    // `f` läuft auf den Knoten zu (Seite gespiegelt), `g` von ihm weg.
+    let (p1, r1) = f.edge(-si);
+    let (p2, r2) = g.edge(sj);
+    let a = line_line(p1, p1 + r1, p2, p2 + r2, true, true)?;
+    let (p1, r1) = f.edge(si);
+    let (p2, r2) = g.edge(-sj);
+    let b = line_line(p1, p1 + r1, p2, p2 + r2, true, true)?;
+    Some((a, b))
 }
 
-/// Ist der Schnitt an dieser Naht beidseitig gedeckt?
+/// Darf die Naht hier angewendet werden?
 ///
-/// Was die Naht von einer Wand abschneidet, muss im Band der anderen liegen —
-/// sonst entstünde dort eine Kerbe bzw. ein Loch: der Nachbar hat das Stück
-/// nicht, also bleibt es stehen (Stumpfstoß). Geprüft werden **beide**
-/// Richtungen, damit beide Wände gleich entscheiden.
-fn cut_covered(f: &Frame, d: Vec2, g: &Frame, dj: Vec2, inner: Vec2, outer: Vec2) -> bool {
-    // Der Nachbar wird für die Prüfung über sein Ende hinaus verlängert — genau
-    // das tut der Schnitt auf seiner Seite auch. Sonst bliebe die Gehrung bei
-    // jeder ungleichen Dicke stecken, obwohl sie die Ecke sauber schließt.
-    let bg = band_ext(g, dj);
-    let bf = band_ext(f, d);
-    removed_ok(f, d, inner, outer, &bg) && removed_ok(g, dj, inner, outer, &bf)
+/// Die Naht selbst ist reine Geometrie (Schnitte der gleichseitigen Kanten).
+/// Angewendet wird sie nur, wenn sie **kaum Material wegnimmt**: geschnitten
+/// wird an zwei verlängerten Bändern, danach wird gemessen, wie viel Fläche der
+/// Vereinigung der ungeschnittenen Bänder dabei verloren geht. Ein Zipfel an
+/// der Ecke (schräge Nachbarstirn) ist zulässig — eine Fläche in der Größe
+/// einer Wandquerschnittsfläche nicht: dann liegen die Körper nebeneinander
+/// statt übereinander (z. B. Wände auf entgegengesetzten Seiten ihrer
+/// Basislinien) und der Schnitt würde ein Loch reißen.
+fn cut_ok(f: &Frame, d: Vec2, g: &Frame, dj: Vec2, inner: Vec2, outer: Vec2) -> bool {
+    let sd = outer - inner;
+    if sd.len() < 1e-9 {
+        return false;
+    }
+    // Behaltene Seite je Wand (diejenige, in der der von der Naht entfernte
+    // Wandteil nicht liegt).
+    let keep = |fr: &Frame, dd: Vec2| {
+        let far = if dd.dot(fr.dir) > 0.0 { fr.b0 } else { fr.a0 };
+        let mut nrm = sd.perp().normalized();
+        if (far - inner).dot(nrm) < 0.0 {
+            nrm = -nrm;
+        }
+        nrm
+    };
+    let (bm_f, bm_g) = (band_ext(f, d), band_ext(g, dj));
+    // Vergleichsfläche ist der **echte** Wandkörper (ohne Verlängerung): die
+    // Verlängerung ist nur Baugerüst für den Schnitt.
+    let (bf, bg) = (f.band(), g.band());
+    let (nf, ng) = (keep(f, d), keep(g, dj));
+    let (tf, tg) = (
+        clip_keep_side(&bm_f, inner, nf),
+        clip_keep_side(&bm_g, inner, ng),
+    );
+    // Verlorene Fläche = was von den **echten** Bändern nach dem Schnitt weder
+    // im eigenen beschnittenen Körper noch im verlängerten Band des Nachbarn
+    // liegt. Analytisch (konvexe Schnitte), nicht abgetastet: der Treffer-Test
+    // fragt die Bounding-Box jeder Wand ab, das muss billig bleiben.
+    let _ = (&tf, &tg);
+    let verloren = verlust(&bf, inner, -nf, &bm_g) + verlust(&bg, inner, -ng, &bm_f);
+    let h_min = f.h.min(g.h);
+    // Bezug: Querschnittsfläche der dünneren Wand (2h)², davon ein Viertel.
+    // (Ein Zipfel von wenigen Prozent bleibt zulässig, eine halbe Wand nicht.)
+    verloren <= 0.25 * (2.0 * h_min).powi(2)
+}
+
+/// Fläche des echten Bandes `band`, die nach dem Schnitt weder in `behalten`
+/// (eigener beschnittener Körper) noch in `nachbar` (verlängertes Band der
+/// anderen Wand) liegt.
+fn verlust(band: &[Vec2], inner: Vec2, weg: Vec2, nachbar: &[Vec2]) -> f64 {
+    let cut = clip_keep_side(band, inner, weg);
+    if cut.len() < 3 {
+        return 0.0;
+    }
+    let a = polygon_area(&cut).abs();
+    let gedeckt = polygon_area(&convex_clip(&cut, nachbar)).abs();
+    (a - gedeckt).max(0.0)
+}
+
+/// Schnittfläche zweier konvexer Polygone (Sutherland-Hodgman).
+fn convex_clip(subject: &[Vec2], clip: &[Vec2]) -> Vec<Vec2> {
+    let mut out = subject.to_vec();
+    if polygon_area(clip) < 0.0 {
+        let mut c = clip.to_vec();
+        c.reverse();
+        return convex_clip(subject, &c);
+    }
+    for k in 0..clip.len() {
+        if out.len() < 3 {
+            return Vec::new();
+        }
+        let (a, b) = (clip[k], clip[(k + 1) % clip.len()]);
+        out = clip_keep_side(&out, a, (b - a).perp());
+    }
+    out
 }
 
 /// Band einer Wand, am Knotenende um die Reichweite der Naht verlängert.
@@ -426,36 +482,6 @@ fn band_ext(f: &Frame, d: Vec2) -> Vec<Vec2> {
     vec![p + f.n * f.h, q + f.n * f.h, q - f.n * f.h, p - f.n * f.h]
 }
 
-/// Liegt der Teil des Bandes `f`, den die Naht abschneidet, im Band `other`
-/// (oder jenseits der Stirnebene `frei`)?
-fn removed_ok(f: &Frame, d: Vec2, inner: Vec2, outer: Vec2, other: &[Vec2]) -> bool {
-    let sd = outer - inner;
-    if sd.len() < 1e-9 {
-        return false;
-    }
-    // Nur das Ende betrachten: die Naht liegt höchstens MITER_LIMIT * h vom
-    // Knoten entfernt.
-    let reach = (MITER_LIMIT * f.h * 1.5).max(10.0);
-    let p = if d.dot(f.dir) > 0.0 { f.a } else { f.b };
-    let a = p + d * reach;
-    let band = vec![
-        a + f.n * f.h,
-        p + f.n * f.h,
-        p - f.n * f.h,
-        a - f.n * f.h,
-    ];
-    // `nrm` zeigt in den eigenen Körper (dort liegt `a`, weit weg vom Knoten).
-    let mut nrm = sd.perp().normalized();
-    if (a - inner).dot(nrm) < 0.0 {
-        nrm = -nrm;
-    }
-    let cut = clip_keep_side(&band, inner, -nrm);
-    if cut.len() < 3 || polygon_area(&cut).abs() < 1.0 {
-        return true;
-    }
-    cut.iter().all(|q| in_body(*q, other))
-}
-
 /// Alle Wände eines Durchgangs, einmal aufgebaut: Rahmen, Nachbarschafts-
 /// raster, Körper und Zugriff über die Id.
 pub struct WallIndex<'a> {
@@ -466,8 +492,11 @@ pub struct WallIndex<'a> {
     by_id: HashMap<Id, usize>,
     /// Rasterzelle → Indizes in `frames`
     grid: HashMap<(i64, i64), Vec<usize>>,
-    /// Körper je Wand (parallel zu `frames`)
-    bodies: Vec<Option<Body>>,
+    /// Körper je Wand (parallel zu `frames`) — erst bei Bedarf gerechnet.
+    /// Die Nahtprüfung tastet Flächen ab; sie für **alle** Wände eines
+    /// Durchgangs zu rechnen kostet mehr, als die meisten Abfragen brauchen
+    /// (Bounding-Box, Treffer-Test, Vorschau einer einzelnen Wand).
+    bodies: Vec<OnceCell<Option<Body>>>,
 }
 
 impl<'a> WallIndex<'a> {
@@ -508,11 +537,7 @@ impl<'a> WallIndex<'a> {
             grid,
             bodies: Vec::new(),
         };
-        let mut bodies = Vec::with_capacity(idx.frames.len());
-        for i in 0..idx.frames.len() {
-            bodies.push(idx.build_body(i));
-        }
-        idx.bodies = bodies;
+        idx.bodies = (0..idx.frames.len()).map(|_| OnceCell::new()).collect();
         idx
     }
 
@@ -554,7 +579,7 @@ impl<'a> WallIndex<'a> {
     /// (Vorschau, Blockinhalt) oder zu dünn ist.
     pub fn body(&self, id: Id) -> Option<&Body> {
         let i = *self.by_id.get(&id)?;
-        self.bodies.get(i).and_then(|b| b.as_ref())
+        self.bodies.get(i)?.get_or_init(|| self.build_body(i)).as_ref()
     }
 
     /// Nahtstellen an einem Wandende.
@@ -598,22 +623,12 @@ impl<'a> WallIndex<'a> {
                 continue;
             };
             // Grenze für **beide** Wände dieselbe (die dünnere zählt): sonst
-            // schneidet die eine Wand und die andere nicht.
-            if inner.dist(p).max(outer.dist(p)) > MITER_LIMIT * f.h.min(g.h) {
+            // schneidet die eine Wand und die andere nicht. Länge der Naht im
+            // Verhältnis zur Wandbreite der dünneren Wand.
+            if inner.dist(outer) > MITER_RATIO * 2.0 * f.h.min(g.h) {
                 continue;
             }
-            // Die Naht muss **beide** Körper wirklich schneiden. Bei weit
-            // versetzten Achsen (links/rechts) liegt der Schnitt der
-            // verlängerten Kanten sonst Hunderte Millimeter hinter dem
-            // Wandende — dort gibt es nichts zu schneiden, nur einen Zipfel.
-            // Beide Bänder prüfen: sonst schneidet die eine Wand und die andere
-            // nicht (zwei verschiedene Nähte — genau der alte Fehler).
-            if clip_line_polygon(inner, outer, &f.band()).is_empty()
-                || clip_line_polygon(inner, outer, &g.band()).is_empty()
-            {
-                continue;
-            }
-            if !cut_covered(f, d, &g, dj, inner, outer) {
+            if !cut_ok(f, d, &g, dj, inner, outer) {
                 continue;
             }
             let mut nrm = (outer - inner).perp().normalized();
@@ -680,9 +695,8 @@ impl<'a> WallIndex<'a> {
             if id == own {
                 continue;
             }
-            let Some(Some(b)) = self.bodies.get(i) else {
-                continue;
-            };
+            let Some((id2, _)) = self.at(i) else { continue };
+            let Some(b) = self.body(id2) else { continue };
             if b.pieces.iter().any(|poly| point_in_polygon(p, poly)) {
                 return true;
             }
@@ -766,7 +780,8 @@ impl<'a> WallIndex<'a> {
                 if !BBox::from_points(&f.band()).intersects(bb) {
                     continue;
                 }
-                if let Some(Some(b)) = self.bodies.get(*i) {
+                let Some((id2, _)) = self.at(*i) else { continue };
+                if let Some(b) = self.body(id2) {
                     for poly in &b.pieces {
                         out.push(poly.as_slice());
                     }

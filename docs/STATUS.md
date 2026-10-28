@@ -16,36 +16,41 @@ offene Fensterinstanz zeigt weiterhin den alten Stand.
 
 ## Erledigt (verifiziert)
 
-- **Wandanschlüsse neu aufgebaut** (`crates/jjcad-core/src/wall.rs`, ersetzt den
-  alten Beschnitt-Apparat in `render.rs` ersatzlos):
-  - Eine Wand ist ein Band um die verschobene Achse. Verbunden = **Basispunkte**
-    zusammen (0,5 mm). An einem verbundenen Ende wird die Wand an der
-    **Anschlussnaht** abgeschnitten: Gerade durch die beiden Gehrungspunkte
-    (Schnitt Außenkante↔Außenkante, Innenkante↔Innenkante). Bei gleich dicken,
-    mittigen Wänden ist das die Winkelhalbierende; sonst die dicken- und
-    ausrichtungsabhängige Halbierende. Beide Wände rechnen **dieselben zwei
-    Punkte** — keine zwei Nähte mehr nebeneinander.
-  - Geschnitten wird nur, wenn es **beidseitig gedeckt** ist (der abgeschnittene
-    Teil liegt im verlängerten Band des Nachbarn, die Naht schneidet beide
-    Bänder, Länge ≤ 6·h_min für beide gleich). Sonst Stumpfstoß. Ein Ende, das
-    am Knoten gerade durchläuft (fluchtender Nachbar), wird nicht geschnitten.
+- **Wandanschlüsse: allgemeine Gehrung** (`crates/jjcad-core/src/wall.rs`,
+  Herleitung in `docs/WANDANSCHLUSS.md`): An einem verbundenen Ende wird jede
+  Wand an der **Anschlussnaht** abgeschnitten — der Geraden durch die beiden
+  Gehrungspunkte `S_l` (Schnitt der linken Kanten) und `S_r` (Schnitt der
+  rechten Kanten), jeweils bezogen auf die Laufrichtung am Knoten. Das gilt für
+  beliebige Dicken, beliebigen Versatz (links/mittig/rechts) und beliebige
+  Winkel; bei gleich dicken, mittigen Wänden ist es die Winkelhalbierende.
+  Beide Wände rechnen **dieselben zwei Punkte** — keine zwei Nähte mehr
+  nebeneinander (das war der Kern des alten Fehlers).
+  - Verbunden = **Basispunkte** zusammen (0,5 mm). Der Körper wird am
+    verbundenen Ende um die Reichweite der Naht verlängert, damit die Gehrung
+    die Ecke **ergänzt** statt sie nur abzuschneiden.
+  - Grenzen: fluchtend/rückläufig → keine Naht (Wand läuft durch, Kreuz und
+    Verlängerung bleiben gerade); Nahtlänge > 8 · Wandbreite der dünneren Wand
+    → stumpf; nimmt der Schnitt mehr als ein Viertel einer
+    Wandquerschnittsfläche weg, die der Nachbar nicht stellt (Wände auf
+    entgegengesetzten Seiten ihrer Basislinien) → stumpf, sonst Loch.
   - Gezeichnet wird die **Vereinigung**: eine Randkante nur, wo außen keine
-    andere Wand liegt. Damit sind Gehrung, Stumpfstoß, Stich, Kreuz und
-    Mehrfachknoten keine Sonderfälle mehr; Nähte im Wandinneren entfallen.
-  - Fang nutzt dieselbe Geometrie (`wall_contour_segments`), Füllband an der
-    Naht 0,6 mm keilförmig (Haarstrich weg).
-  - Abnahme: `crates/jjcad-core/tests/wandanschluss.rs` — 8 Winkel × 4
-    Dickenpaare × 5 Ausrichtungen (160 Ecken), geprüft auf „keine Lücke"
-    (Vektor **und** Pixelbild), „keine Naht im Körper", „jede Füllkante
-    umrandet"; gemeinsame Gehrung gleich dicker Wände; drei Wände in einem
-    Punkt ohne Splitter; Stich/Kreuzung; Reihenfolge der Wände ohne Einfluss.
-    Messhilfen: `examples/wand_probe.rs` (Fälle als PNG + Kennzahlen),
-    `examples/zeichnung_png.rs <datei.jjcad> [ziel] [x0 y0 x1 y1]`.
-  - **Offen:** bei schrägen Ecken, wo der Nachbar den abgeschnittenen Zipfel
-    nicht deckt (45° mittig/rechts, 135° 240/360, 20° 365/115), bleibt die
-    ehrliche Vereinigung stehen — die schräge Stirnfläche spitzt über den
-    Nachbarn hinaus. Ein „Zipfel abschneiden + freie Nahtkante nachziehen"
-    (wie das alte `miter_patch`, aber konsistent) ist ein eigenes Ticket.
+    andere Wand liegt. Gehrung, Stumpfstoß, Stich, Kreuz und Mehrfachknoten
+    brauchen damit keinen Sonderfall.
+  - Fang nutzt dieselbe Geometrie; Füllband an der Naht 0,6 mm keilförmig
+    (kein Haarstrich).
+  - Körper werden **bei Bedarf** gerechnet (OnceCell) — der Treffer-Test fragt
+    die Bounding-Box jeder Wand ab; `detect_boundary` auf dem Wohnhaus bleibt
+    damit unter 100 ms (vorher 127 ms, mit eifriger Rechnung 222 ms).
+  - Abnahme: `tests/wandanschluss.rs` — 8 Winkel × 4 Dickenpaare × 5
+    Ausrichtungen (160 Ecken), geprüft auf „keine Lücke" (Vektor **und**
+    Pixelbild), „keine Naht im Körper", „jede Füllkante umrandet"; gemeinsame
+    Gehrung gleich dicker Wände; drei Wände in einem Punkt ohne Splitter;
+    Stich/Kreuzung; Reihenfolge der Wände ohne Einfluss. Dazu die bestehenden
+    Tests `wand_ecken.rs`, `wandgehrung_spitz.rs`, `snap_wandfang.rs`
+    (dort jetzt: „Körper gefüllt **bis zur Naht**").
+  - Messhilfen: `examples/wand_probe.rs` (Fälle als PNG + Kennzahlen),
+    `examples/zeichnung_png.rs <datei.jjcad> [ziel] [x0 y0 x1 y1]`,
+    `samples/Wandpruefung.jjcad`.
 - **Wandschraffur**: `hatch` an der Wand (Vollfläche, 45°, Kreuz, Punkte,
   **Dämmung = Mäander**), gezeichnet als Displaylisten-Primitive.
 - **Wandausrichtung**: `WallAlign` (Links/Mittig/Rechts), Versatz ±Dicke/2,
@@ -94,10 +99,12 @@ offene Fensterinstanz zeigt weiterhin den alten Stand.
    oder wenn der Haarstrich an der Naht auch bei starkem Zoom weg soll: an der
    Ecke stoßen zwei Füllungen aneinander (gleiche Farbe fällt nicht auf, das
    Füllband deckt die Naht).
-4. **Zipfel an schrägen, ungleich dicken Ecken** — schneidet der Nachbar den von
-   der Naht abgeschnittenen Zipfel nicht, wird heute nicht geschnitten (sonst
-   Loch im Körper); sichtbar spitzt die schräge Stirnfläche über den Nachbarn
-   hinaus. Lösung: Zipfel abschneiden, Restkante als Linie nachziehen.
+4. **Stumpf statt Gehrung bei entgegengesetzter Ausrichtung** — liegen beide
+   Wände auf entgegengesetzten Seiten ihrer Basislinien (links/rechts) und ist
+   der Winkel spitz, würde die Naht mehr als eine halbe Wandquerschnittsfläche
+   wegnehmen; dort wird bewusst stumpf gestoßen (die Körper berühren sich nur,
+   jede Gehrung risse ein Loch). Wer das anders will, braucht eine Entscheidung
+   über die dann fehlende Fläche — kein Rechenfehler, eine Modellfrage.
 5. Bemaßung: Griffe an Maßketten fehlen.
 6. ~~Wandfang-Schalter in der Oberfläche~~ — erledigt: Checkbox „Wandkanten" im
    Einstellungen-Dialog, Ribbon-Gruppe Fangen, Statusmenü Fang (inkl. „Alle an/aus").

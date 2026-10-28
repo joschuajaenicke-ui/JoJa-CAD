@@ -8,6 +8,7 @@
 
 use jjcad_core::geom::{dist_point_segment, point_in_polygon, Vec2};
 use jjcad_core::style::WallAlign;
+use jjcad_core::wall::{Seam, WallIndex};
 use jjcad_core::render::{render_document, RenderCtx, Shape};
 use jjcad_core::Session;
 use serde_json::json;
@@ -117,10 +118,16 @@ impl Zeichnung {
     }
 }
 
-/// 1. Jeder Punkt des Wandkörpers bis zur eigenen Stirnebene muss gefüllt sein.
-fn pruefe_gefuellt(name: &str, z: &Zeichnung, walls: &[Soll]) {
+/// Liegt `p` jenseits einer Anschlussnaht (dort ist der Körper absichtlich
+/// abgeschnitten — die Naht ist die Grenze zum Nachbarn)?
+fn hinter_naht(p: Vec2, naehte: &[Seam]) -> bool {
+    naehte.iter().any(|s| (p - s.p).dot(s.nrm) < -0.5)
+}
+
+/// 1. Jeder Punkt des Wandkörpers **bis zur Anschlussnaht** muss gefüllt sein.
+fn pruefe_gefuellt(name: &str, z: &Zeichnung, walls: &[Soll], naehte: &[Vec<Seam>]) {
     let mut fehlt = Vec::new();
-    for w in walls {
+    for (wi, w) in walls.iter().enumerate() {
         let a = Vec2::new(w.a[0], w.a[1]);
         let b = Vec2::new(w.b[0], w.b[1]);
         let dir = (b - a).normalized();
@@ -136,7 +143,11 @@ fn pruefe_gefuellt(name: &str, z: &Zeichnung, walls: &[Soll]) {
             for k in -10..=10 {
                 let s = h * (k as f64 / 10.0) * 0.94;
                 let p = a + dir * t + n * s;
-                if !z.gefuellt(p, 0.5) {
+                let abgeschnitten = naehte
+                    .get(wi)
+                    .map(|n| hinter_naht(p, n))
+                    .unwrap_or(false);
+                if !abgeschnitten && !z.gefuellt(p, 0.5) {
                     fehlt.push((w.name, p));
                 }
             }
@@ -205,7 +216,15 @@ fn pruefe_keine_innenlinien(name: &str, z: &Zeichnung) {
 fn pruefe(name: &str, s: &Session, walls: &[Soll]) {
     let z = zeichnung(s);
     assert!(!z.fills.is_empty(), "{name}: keine Füllungen gezeichnet");
-    pruefe_gefuellt(name, &z, walls);
+    let idx = WallIndex::build(&s.doc, s.doc.ents());
+    let naehte: Vec<Vec<Seam>> = s
+        .doc
+        .entities
+        .iter()
+        .filter(|e| matches!(e.kind, jjcad_core::model::EntityKind::Wall { .. }))
+        .map(|e| idx.seams_of(e.id))
+        .collect();
+    pruefe_gefuellt(name, &z, walls, &naehte);
     pruefe_umrandet(name, &z);
     pruefe_keine_innenlinien(name, &z);
 }

@@ -6,6 +6,7 @@ use jjcad_core::export::RasterOptions;
 use jjcad_core::geom::{dist_point_segment, point_in_polygon, Vec2};
 use jjcad_core::raster::render_png;
 use jjcad_core::render::{render_document, RenderCtx, Shape};
+use jjcad_core::wall::{Seam, WallIndex};
 use jjcad_core::style::WallAlign;
 use jjcad_core::Session;
 use serde_json::json;
@@ -158,7 +159,7 @@ impl Z {
 
 /// Sammelt Messwerte statt zu panicken: Lücken in der Vereinigung der Bänder,
 /// ungerandete Füllkanten, Linien im Wandinneren.
-fn messe(z: &Z, walls: &[W]) -> (usize, f64, Vec<Vec2>, Vec<Vec2>) {
+fn messe(z: &Z, walls: &[W], naehte: &[Vec<Seam>]) -> (usize, f64, Vec<Vec2>, Vec<Vec2>) {
     let bands: Vec<Vec<Vec2>> = walls.iter().map(band).collect();
     let mut luecken = 0;
     let mut luecke_max = 0.0f64;
@@ -184,7 +185,11 @@ fn messe(z: &Z, walls: &[W]) -> (usize, f64, Vec<Vec2>, Vec<Vec2>) {
             let mut x = x0;
             while x <= x1 {
                 let p = Vec2::new(x, y);
-                if point_in_polygon(p, b) && z.tiefe(p) < -0.8 {
+                let hinten = naehte
+                    .get(bi)
+                    .map(|n| n.iter().any(|s: &Seam| (p - s.p).dot(s.nrm) < -0.5))
+                    .unwrap_or(false);
+                if !hinten && point_in_polygon(p, b) && z.tiefe(p) < -0.8 {
                     luecken += 1;
                     let d = -z.tiefe(p);
                     if d > luecke_max {
@@ -243,7 +248,15 @@ fn main() {
             .unwrap();
         }
         let z = zeichnung(&s);
-        let (luecken, lmax, lbsp, offen) = messe(&z, &f.walls);
+        let idx = WallIndex::build(&s.doc, s.doc.ents());
+        let naehte: Vec<Vec<Seam>> = s
+            .doc
+            .entities
+            .iter()
+            .filter(|e| matches!(e.kind, jjcad_core::model::EntityKind::Wall { .. }))
+            .map(|e| idx.seams_of(e.id))
+            .collect();
+        let (luecken, lmax, lbsp, offen) = messe(&z, &f.walls, &naehte);
         let opts = RasterOptions {
             width_px: 1000,
             height_px: 1000,
