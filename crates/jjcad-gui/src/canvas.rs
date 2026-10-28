@@ -1,6 +1,9 @@
 //! Zeichnungsfläche: Anzeige, Fang, Werkzeugbedienung, Navigation.
 
-use crate::app::{screen_to_world, world_to_screen, App, DrawCacheKey, TabKind, Tool, ToolPhase, View};
+use crate::app::{
+    screen_to_world, visible_world_bounds, world_to_screen, App, DrawCacheKey, TabKind, Tool,
+    ToolPhase, View,
+};
 use crate::theme::Palette;
 use egui::{Align2, Color32, FontId, Painter, Pos2, Rect, Response, Sense, Shape, Stroke, Ui, Vec2};
 use jjcad_core::actions;
@@ -31,6 +34,9 @@ struct PaintCtx {
     /// Vorschau-Modus: einheitliche Akzentkontur (wie die Einfüge-Vorschau),
     /// ohne Auswahl-/Hover-Hervorhebung und ohne Originalfarbe/-strichart.
     preview: bool,
+    /// Drehung der Ansicht (Bogenmaß, mathematisch positiv). Texte drehen mit
+    /// der Zeichnung; Linien und Flächen stecken schon in `w2s`.
+    rot: f32,
 }
 
 fn color32(c: jjcad_core::style::Color) -> Color32 {
@@ -378,7 +384,7 @@ fn paint_prim(p: &Painter, prim: &Prim, w2s: &dyn Fn(V2) -> Pos2, scale: f64, pc
         PShape::Dot { p: pos, r } => {
             p.circle_filled(w2s(*pos), ((*r * scale) as f32).max(1.2), col);
         }
-        PShape::Text(t) => paint_text(p, t, w2s(t.pos), scale, col),
+        PShape::Text(t) => paint_text(p, t, w2s(t.pos), scale, col, pc.rot),
     }
 }
 
@@ -389,7 +395,17 @@ fn paint_prim(p: &Painter, prim: &Prim, w2s: &dyn Fn(V2) -> Pos2, scale: f64, pc
 /// stünde sie an einer anderen Stelle als der Text, der beim Klick entsteht
 /// (Vorschau mit Grundlinie am Zeiger, Ergebnis mittig — der Text sprang beim
 /// Einfügen nach unten).
-fn paint_text(p: &Painter, t: &render::TextPrim, base: Pos2, scale: f64, col: Color32) {
+/// Text in der Zeichenfläche. `rot` ist die Drehung der Ansicht: der Text
+/// dreht mit der Zeichnung, seine Ausrichtung (links/mittig/rechts, oben/mittig/
+/// unten) wird dabei mitgedreht — sonst rutschte der Anker beim Drehen weg.
+fn paint_text(
+    p: &Painter,
+    t: &render::TextPrim,
+    base: Pos2,
+    scale: f64,
+    col: Color32,
+    rot: f32,
+) {
     let size = (t.height * scale * 1.32).max(3.0) as f32;
     let font = FontId::proportional(size);
     let galley = p.layout_no_wrap(t.text.clone(), font, col);
@@ -404,11 +420,18 @@ fn paint_text(p: &Painter, t: &render::TextPrim, base: Pos2, scale: f64, col: Co
         TextAlignV::Middle => -sz.y / 2.0,
         TextAlignV::Bottom => -sz.y,
     };
-    let pos = Pos2::new(base.x + dx, base.y + dy + vy);
-    if t.angle.abs() < 0.001 {
+    // Die Ansichtsdrehung dreht die Zeichnung gegen den Uhrzeigersinn, der
+    // Textwinkel von egui zählt im Uhrzeigersinn — daher minus.
+    let winkel = t.angle as f32 - rot;
+    if winkel.abs() < 0.001 {
+        let pos = Pos2::new(base.x + dx, base.y + dy + vy);
         p.galley(pos, galley, col);
     } else {
-        let shape = egui::epaint::TextShape::new(pos, galley, col).with_angle(t.angle as f32);
+        let (sin, cos) = winkel.sin_cos();
+        let u = dy + vy;
+        let off = Vec2::new(dx * cos - u * sin, dx * sin + u * cos);
+        let pos = base + off;
+        let shape = egui::epaint::TextShape::new(pos, galley, col).with_angle(winkel);
         p.add(shape);
     }
 }
@@ -425,6 +448,151 @@ pub(crate) fn text_preview_prim(text: String, height: f64) -> render::TextPrim {
         align: TextAlignH::Left,
         valign: TextAlignV::Middle,
         bold: false,
+    }
+}
+
+#[cfg(test)]
+mod tests_ansichtsdrehung {
+    //! Drehung der Zeichnungsansicht (T0017): gerechnet wird in
+    //! `world_to_screen`/`screen_to_world`; das Drehzentrum bleibt beim Drehen
+    //! an seiner Bildschirmposition, und das Werkzeug „Ansicht drehen" nimmt
+    //! Zentrum, Bezugspunkt und Zielrichtung in drei Klicks.
+
+    use super::*;
+    use egui::{Pos2, Rect, Vec2};
+
+    fn flaeche() -> Rect {
+        Rect::from_min_size(Pos2::new(0.0, 0.0), Vec2::new(1000.0, 800.0))
+    }
+
+    fn ansicht() -> View {
+        View {
+            center: V2::new(2000.0, 1500.0),
+            zoom: 0.1,
+            rot: 0.0,
+        }
+    }
+
+    /// Das angeklickte Drehzentrum bleibt nach dem Drehen an derselben
+    /// Bildschirmstelle — sonst springt die Zeichnung unter dem Zeiger weg.
+    #[test]
+    fn drehzentrum_bleibt_auf_dem_schirm() {
+        let rect = flaeche();
+        let mut view = ansicht();
+        let zentrum = V2::new(1500.0, 1200.0);
+        let vorher = world_to_screen(rect, view, zentrum);
+        view.rotate_about(zentrum, 37f64.to_radians());
+        let nachher = world_to_screen(rect, view, zentrum);
+        assert!(
+            (vorher - nachher).length() < 0.01,
+            "Zentrum wandert um {:?} px",
+            vorher - nachher
+        );
+        assert!((view.rot - 37f64.to_radians()).abs() < 1e-12);
+    }
+
+    /// Positive Drehung dreht die Zeichnung gegen den Uhrzeigersinn: +X zeigt
+    /// danach nach oben, +Y nach links.
+    #[test]
+    fn positive_drehung_geht_gegen_den_uhrzeigersinn() {
+        let rect = flaeche();
+        let mut view = ansicht();
+        view.rot = 90f64.to_radians();
+        let mitte = world_to_screen(rect, view, view.center);
+        let x_ende = world_to_screen(rect, view, view.center + V2::new(1000.0, 0.0));
+        let y_ende = world_to_screen(rect, view, view.center + V2::new(0.0, 1000.0));
+        assert!((x_ende.x - mitte.x).abs() < 0.01 && x_ende.y < mitte.y - 10.0,
+            "+X muss bei 90° nach oben zeigen, ist {x_ende:?}");
+        assert!((y_ende.y - mitte.y).abs() < 0.01 && y_ende.x < mitte.x - 10.0,
+            "+Y muss bei 90° nach links zeigen, ist {y_ende:?}");
+    }
+
+    /// Hin- und Rückrechnung sind auch bei gedrehter Ansicht exakt.
+    #[test]
+    fn hin_und_rueckrechnung_stimmen() {
+        let rect = flaeche();
+        let mut view = ansicht();
+        view.rot = 0.7;
+        for q in [
+            V2::new(0.0, 0.0),
+            V2::new(1234.0, -567.0),
+            V2::new(5000.0, 4000.0),
+        ] {
+            let s = world_to_screen(rect, view, q);
+            let w = screen_to_world(rect, view, s);
+            // Bildschirmkoordinaten sind f32 — auf 0,01 mm genau reicht.
+            assert!((w - q).len() < 0.01, "{q:?} → {s:?} → {w:?}");
+        }
+    }
+
+    /// Die Rasterhülle umfasst bei 90° die gedrehten Bildschirmecken.
+    #[test]
+    fn rasterhuelle_umfasst_die_gedrehte_flaeche() {
+        let rect = flaeche();
+        let mut view = ansicht();
+        let (x0, y0, x1, y1) = visible_world_bounds(rect, view);
+        assert!((x1 - x0 - 10_000.0).abs() < 1.0, "Breite ist {}", x1 - x0);
+        assert!((y1 - y0 - 8_000.0).abs() < 1.0, "Höhe ist {}", y1 - y0);
+
+        view.rot = 90f64.to_radians();
+        let (x0, y0, x1, y1) = visible_world_bounds(rect, view);
+        assert!((x1 - x0 - 8_000.0).abs() < 1.0, "bei 90° Breite {}", x1 - x0);
+        assert!((y1 - y0 - 10_000.0).abs() < 1.0, "bei 90° Höhe {}", y1 - y0);
+    }
+
+    /// Drei Klicks (Zentrum, Bezugspunkt, Zielrichtung) drehen die Ansicht um
+    /// den Winkel zwischen den beiden Richtungen — und beenden das Werkzeug.
+    #[test]
+    fn werkzeug_dreht_die_ansicht_um_den_winkel() {
+        let mut app = App::with_ctx(egui::Context::default());
+        app.start_tool("view.rotate_tool");
+        assert_eq!(app.tool_id(), Some("view.rotate_tool"));
+
+        let rect = flaeche();
+        let zentrum = V2::new(2000.0, 1500.0);
+        let vorher = world_to_screen(rect, app.current_view(), zentrum);
+
+        tool_click(&mut app, zentrum);
+        tool_click(&mut app, zentrum + V2::new(2000.0, 0.0)); // Bezug: 0°
+        assert_eq!(app.current_view().rot, 0.0, "noch nicht gedreht");
+        tool_click(&mut app, zentrum + V2::new(0.0, 2000.0)); // Ziel: 90°
+
+        let view = app.current_view();
+        assert!(
+            (view.rot.to_degrees() - 90.0).abs() < 1e-6,
+            "Winkel ist {}°",
+            view.rot.to_degrees()
+        );
+        assert!(app.tool.is_none(), "Werkzeug endet nach dem dritten Klick");
+        let nachher = world_to_screen(rect, view, zentrum);
+        assert!(
+            (vorher - nachher).length() < 0.01,
+            "Drehzentrum wandert um {:?} px",
+            vorher - nachher
+        );
+
+        // Zurück auf die Ausgangsorientierung
+        let mut v = app.current_view();
+        v.zurueck_drehen();
+        app.set_view(v);
+        assert_eq!(app.current_view().rot, 0.0);
+    }
+
+    /// Ein Klick direkt auf das Zentrum liefert keinen Winkel — das Werkzeug
+    /// lehnt ab und sammelt nicht weiter.
+    #[test]
+    fn klick_auf_das_zentrum_wird_abgelehnt() {
+        let mut app = App::with_ctx(egui::Context::default());
+        app.start_tool("view.rotate_tool");
+        let zentrum = V2::new(2000.0, 1500.0);
+        tool_click(&mut app, zentrum);
+        tool_click(&mut app, zentrum);
+        assert_eq!(
+            app.tool.as_ref().map(|t| t.pts.len()),
+            Some(1),
+            "der Klick auf das Zentrum darf keinen Bezugspunkt setzen"
+        );
+        assert_eq!(app.current_view().rot, 0.0);
     }
 }
 
@@ -726,6 +894,7 @@ pub fn show(app: &mut App, ui: &mut Ui) {
             lineweights_scaled,
             paper_px,
             preview: false,
+            rot: view_now.rot as f32,
         };
         if app.ui.show_grid {
             draw_grid(app, &painter, rect, view_now);
@@ -852,10 +1021,11 @@ fn draw_grid(app: &App, p: &Painter, rect: Rect, view: View) {
         minor *= 10.0;
     }
     let major = minor * 10.0;
-    let x0 = view.center.x - (rect.width() as f64 * 0.5) / view.zoom;
-    let x1 = view.center.x + (rect.width() as f64 * 0.5) / view.zoom;
-    let y0 = view.center.y - (rect.height() as f64 * 0.5) / view.zoom;
-    let y1 = view.center.y + (rect.height() as f64 * 0.5) / view.zoom;
+    // Sichtbarer Weltbereich: bei gedrehter Ansicht ist das die Hülle der
+    // vier Bildschirmecken. Die Rasterlinien laufen als Weltstrecken durch
+    // diese Hülle und werden mitgedreht gezeichnet — sonst stünden sie quer
+    // zur gedrehten Zeichnung.
+    let (x0, y0, x1, y1) = visible_world_bounds(rect, view);
 
     let draw_set = |step: f64, color: Color32, w: f32, p: &Painter| {
         let start = (x0 / step).floor() as i64;
@@ -863,37 +1033,50 @@ fn draw_grid(app: &App, p: &Painter, rect: Rect, view: View) {
         if end - start > 3000 {
             return;
         }
+        let stroke = Stroke::new(w, color);
         for i in start..=end {
             let x = i as f64 * step;
-            let sx = world_to_screen(rect, view, V2::new(x, 0.0)).x;
             p.line_segment(
-                [Pos2::new(sx, rect.top()), Pos2::new(sx, rect.bottom())],
-                Stroke::new(w, color),
+                [
+                    world_to_screen(rect, view, V2::new(x, y0)),
+                    world_to_screen(rect, view, V2::new(x, y1)),
+                ],
+                stroke,
             );
         }
         let start = (y0 / step).floor() as i64;
         let end = (y1 / step).ceil() as i64;
         for i in start..=end {
             let y = i as f64 * step;
-            let sy = world_to_screen(rect, view, V2::new(0.0, y)).y;
             p.line_segment(
-                [Pos2::new(rect.left(), sy), Pos2::new(rect.right(), sy)],
-                Stroke::new(w, color),
+                [
+                    world_to_screen(rect, view, V2::new(x0, y)),
+                    world_to_screen(rect, view, V2::new(x1, y)),
+                ],
+                stroke,
             );
         }
     };
     draw_set(minor, Palette::GRID_MINOR, 1.0, p);
     draw_set(major, Palette::GRID_MAJOR, 1.0, p);
     // Achsen
-    let o = world_to_screen(rect, view, V2::ZERO);
-    if rect.contains(o) {
+    let achse = Stroke::new(1.2, Color32::from_rgb(0xC9, 0xC2, 0xB0));
+    if x0 <= 0.0 && 0.0 <= x1 {
         p.line_segment(
-            [Pos2::new(rect.left(), o.y), Pos2::new(rect.right(), o.y)],
-            Stroke::new(1.2, Color32::from_rgb(0xC9, 0xC2, 0xB0)),
+            [
+                world_to_screen(rect, view, V2::new(0.0, y0)),
+                world_to_screen(rect, view, V2::new(0.0, y1)),
+            ],
+            achse,
         );
+    }
+    if y0 <= 0.0 && 0.0 <= y1 {
         p.line_segment(
-            [Pos2::new(o.x, rect.top()), Pos2::new(o.x, rect.bottom())],
-            Stroke::new(1.2, Color32::from_rgb(0xC9, 0xC2, 0xB0)),
+            [
+                world_to_screen(rect, view, V2::new(x0, 0.0)),
+                world_to_screen(rect, view, V2::new(x1, 0.0)),
+            ],
+            achse,
         );
     }
 }
@@ -915,17 +1098,21 @@ fn draw_sheet(app: &mut App, p: &Painter, rect: Rect, view: View, cursor: Option
     // Arbeitsfläche
     p.rect_filled(rect, 0.0, Color32::from_rgb(0x0E, 0x10, 0x13));
     let (pw, ph) = sheet.size();
-    let tl = world_to_screen(rect, view, V2::new(0.0, ph));
-    let br = world_to_screen(rect, view, V2::new(pw, 0.0));
-    let paper = Rect::from_min_max(tl, br);
-    // Schatten
-    p.rect_filled(
-        paper.translate(Vec2::new(6.0, 10.0)),
-        2.0,
+    // Das Blatt ist ein Rechteck in Papierkoordinaten — bei gedrehter Ansicht
+    // sind seine vier Ecken ein gedrehtes Viereck, keine achsenparallele Box.
+    let ecken = [
+        world_to_screen(rect, view, V2::new(0.0, 0.0)),
+        world_to_screen(rect, view, V2::new(pw, 0.0)),
+        world_to_screen(rect, view, V2::new(pw, ph)),
+        world_to_screen(rect, view, V2::new(0.0, ph)),
+    ];
+    let schatten: Vec<Pos2> = ecken.iter().map(|q| *q + Vec2::new(6.0, 10.0)).collect();
+    p.add(Shape::convex_polygon(
+        schatten,
         Color32::from_black_alpha(90),
-    );
-    p.rect_filled(paper, 1.0, Palette::PAPER);
-
+        Stroke::NONE,
+    ));
+    p.add(Shape::convex_polygon(ecken.to_vec(), Palette::PAPER, Stroke::NONE));
     let w2s = |q: V2| world_to_screen(rect, view, q);
 
     // 1. Inhalt der Ansichtsfenster (liegt unter dem Papierraum)
@@ -954,6 +1141,7 @@ fn draw_sheet(app: &mut App, p: &Painter, rect: Rect, view: View, cursor: Option
             lineweights_scaled: true,
             paper_px: view.zoom,
             preview: false,
+            rot: 0.0,
         };
         for prim in &vdl.prims {
             paint_prim(&clip, prim, &vp_w2s, view.zoom * s, &vpc, 1.0);
@@ -1005,6 +1193,7 @@ fn draw_sheet(app: &mut App, p: &Painter, rect: Rect, view: View, cursor: Option
         lineweights_scaled: true,
         paper_px: view.zoom,
         preview: false,
+        rot: view.rot as f32,
     };
     let dl = render::render_sheet(app.doc(), &sheet);
     for prim in &dl.prims {
@@ -1481,7 +1670,14 @@ fn draw_tool_preview(
             };
             // Dieselbe Platzierung wie der Text, der beim Klick entsteht
             // (links, mittig) — nicht mit der Grundlinie am Zeiger.
-            paint_text(p, &text_preview_prim(txt, h), w2s(cursor), view.zoom, col);
+            paint_text(
+                p,
+                &text_preview_prim(txt, h),
+                w2s(cursor),
+                view.zoom,
+                col,
+                view.rot as f32,
+            );
         }
         "draw.fill" | "draw.hatch" => {
             p.circle_stroke(w2s(cursor), 9.0, dashed);
@@ -1617,6 +1813,51 @@ fn draw_tool_preview(
                                 // Bis-Punkt liegt auf dem Zentrum: keine Richtung
                                 label = "bis: Abstand zum Drehzentrum nötig".into();
                             }
+                        }
+                    }
+                }
+            }
+        }
+        "view.rotate_tool" => {
+            // Gleiche Winkelwahl wie beim Drehen (Zentrum, Bezugspunkt, neue
+            // Richtung) — gedreht wird aber die Ansicht, nicht die Auswahl.
+            if let Some(&c) = tool.pts.first() {
+                center_mark(p, w2s(c), Palette::ACCENT);
+                match tool.pts.get(1).copied() {
+                    None => {
+                        if c.dist(cursor) > 1e-6 {
+                            p.line_segment([w2s(c), w2s(cursor)], dashed);
+                        }
+                        p.circle_stroke(w2s(cursor), 5.0, stroke);
+                        label = format!(
+                            "Bezug {}°",
+                            format_number((cursor - c).angle().to_degrees(), 1)
+                        );
+                    }
+                    Some(from) => {
+                        let v0 = from - c;
+                        p.line_segment([w2s(c), w2s(from)], stroke);
+                        match jjcad_core::transform::angle_between_directions(c, from, cursor) {
+                            Some(angle) => {
+                                p.line_segment([w2s(c), w2s(cursor)], dashed);
+                                // Winkelbogen in Drehrichtung (Vorzeichen, <= 180°)
+                                let r = v0.len().min((cursor - c).len()) * 0.45;
+                                if r > 1.0 {
+                                    let a0 = v0.angle();
+                                    let sweep = angle.to_radians();
+                                    let pts: Vec<Pos2> = (0..=48)
+                                        .map(|i| {
+                                            let a = a0 + sweep * (i as f64 / 48.0);
+                                            w2s(c + V2::new(a.cos(), a.sin()) * r)
+                                        })
+                                        .collect();
+                                    p.add(Shape::line(pts, stroke));
+                                }
+                                // Das Drehzentrum bleibt beim Drehen stehen
+                                p.circle_stroke(w2s(c), 9.0, dashed);
+                                label = format!("Ansicht {}°", format_number(angle, 1));
+                            }
+                            None => label = "Abstand zum Drehzentrum nötig".into(),
                         }
                     }
                 }
@@ -1758,6 +1999,7 @@ fn draw_selection_preview(
         lineweights_scaled: app.ui.lineweights_scaled,
         paper_px,
         preview: true,
+        rot: view.rot as f32,
     };
     let w2s = |q: V2| world_to_screen(rect, view, q);
     for prim in &dl.prims {
@@ -1790,8 +2032,10 @@ fn handle_navigation(app: &mut App, ui: &mut Ui, resp: &Response, rect: Rect, vi
     if resp.dragged_by(egui::PointerButton::Middle) || (resp.dragged_by(egui::PointerButton::Primary) && space) {
         let d = resp.drag_delta();
         let mut v = app.current_view();
-        v.center.x -= d.x as f64 / v.zoom;
-        v.center.y += d.y as f64 / v.zoom;
+        // Verschiebeversatz über die gedrehte Ansicht zurückrechnen, damit die
+        // Zeichnung dem Zeiger folgt (auch bei gedrehter Ansicht).
+        let w = v.screen_delta_to_world(d);
+        v.center -= w;
         app.set_view(v);
     }
     // WASD-Schwenk
@@ -1812,9 +2056,9 @@ fn handle_navigation(app: &mut App, ui: &mut Ui, resp: &Response, rect: Rect, vi
         }
         if dir != Vec2::ZERO {
             let mut v = app.current_view();
-            let speed = 700.0 * dt as f64 / v.zoom;
-            v.center.x += dir.x as f64 * speed;
-            v.center.y -= dir.y as f64 * speed;
+            let px = 700.0 * dt as f32;
+            let w = v.screen_delta_to_world(Vec2::new(dir.x * px, dir.y * px));
+            v.center += w;
             app.set_view(v);
             ctx.request_repaint();
         }
@@ -2460,8 +2704,9 @@ fn sheet_viewport_input(app: &mut App, resp: &Response, rect: Rect, view: View) 
         if resp.dragged_by(egui::PointerButton::Primary) {
             if let Some(vid) = app.tab().selected_viewport {
                 let d = resp.drag_delta();
-                let dx = d.x as f64 / view.zoom;
-                let dy = -d.y as f64 / view.zoom;
+                let w = view.screen_delta_to_world(d);
+                let dx = w.x;
+                let dy = w.y;
                 if let Some(sheet) = app.doc_mut().sheet_mut(sid) {
                     if let Some(vp) = sheet.viewports.iter_mut().find(|v| v.id == vid) {
                         vp.x = ((vp.x + dx) * 2.0).round() / 2.0;
@@ -3006,6 +3251,7 @@ fn draw_fill_ghost(app: &App, p: &Painter, rect: Rect, view: View, umriss: &[V2]
         lineweights_scaled: app.ui.lineweights_scaled,
         paper_px: view.zoom * app.doc().settings.annotation_scale,
         preview: true,
+        rot: view.rot as f32,
     };
     for prim in &dl.prims {
         paint_prim(p, prim, &w2s, view.zoom, &pc, 1.0);
@@ -3060,6 +3306,7 @@ fn draw_paint_ghost(
         lineweights_scaled: app.ui.lineweights_scaled,
         paper_px: view.zoom * app.doc().settings.annotation_scale,
         preview: true,
+        rot: view.rot as f32,
     };
     for prim in &dl.prims {
         paint_prim(p, prim, &w2s, view.zoom, &pc, 1.0);
@@ -3669,6 +3916,27 @@ fn tool_click_at(app: &mut App, w: V2, raw: V2) {
                     app.tool = None;
                 }
                 RotateStep::Reject(msg) => app.toast(msg),
+            }
+        }
+        "view.rotate_tool" => {
+            // Drei Klicks: Drehzentrum, Bezugspunkt, Zielrichtung. Der Winkel
+            // ist die Differenz der beiden vom Zentrum aus gesehenen
+            // Richtungen; die Ansicht dreht um das angeklickte Zentrum.
+            match rotate_step(&tool.pts, w) {
+                RotateStep::Collect { point } => {
+                    tool.pts.push(point);
+                    app.tool = Some(tool);
+                }
+                RotateStep::Apply { center, angle, .. } => {
+                    let mut v = app.current_view();
+                    v.rotate_about(center, angle.to_radians());
+                    app.set_view(v);
+                    app.tool = None;
+                    app.toast(&format!("Ansicht · gedreht {}°", format_number(angle, 1)));
+                }
+                RotateStep::Reject(_) => {
+                    app.toast("Ansicht drehen · Abstand zum Zentrum nötig")
+                }
             }
         }
         "modify.mirror" => {
