@@ -670,6 +670,26 @@ impl<'a> WallIndex<'a> {
         self.bodies.get(i)?.get_or_init(|| self.build_body(i)).as_ref()
     }
 
+    /// Körper **dieser** Objektfassung — nur wenn der Index sie wirklich enthält.
+    ///
+    /// `body(id)` allein genügt nicht: eine verschobene oder kopierte Wand trägt
+    /// oft noch die Id ihres Originals, und der Index liefert dann dessen Körper.
+    /// Die Vorschau stünde am alten Platz, unter dem Zeiger wäre nichts zu sehen
+    /// (T0021). Deshalb zählt nur ein Körper, der zur übergebenen Geometrie passt.
+    pub fn body_of(&self, e: &Entity) -> Option<&Body> {
+        let f = Frame::of(e)?;
+        let b = self.body(e.id)?;
+        let passt = b.start.dist(f.a) <= JOIN_EPS
+            && b.dir.dot(f.dir) > 0.999
+            && (b.h - f.h).abs() < 0.01
+            && (b.total - f.len()).abs() < 0.01;
+        if passt {
+            Some(b)
+        } else {
+            None
+        }
+    }
+
     /// Nahtstellen an einem Wandende.
     ///
     /// Läuft eine Wand am Knoten **gerade durch** (ein Nachbar setzt sie
@@ -923,7 +943,9 @@ pub fn wall_contour_segments(doc: &Document, e: &Entity) -> Vec<Seg> {
 
 /// Wie [`wall_contour_segments`], aber mit einem bereits gebauten Index.
 pub fn wall_contour_segments_idx(idx: &WallIndex, e: &Entity) -> Vec<Seg> {
-    if idx.body(e.id).is_none() {
+    // `body_of` statt `body`: eine kopierte oder verschobene Wand trägt noch die
+    // Id ihres Originals — deren Körper läge am falschen Platz (T0021).
+    let Some(b) = idx.body_of(e) else {
         // Wand nicht im Index (Block, Vorschau): ohne Nachbarn.
         let Some(b) = Body::isolated(idx.doc(), e) else {
             return vec![];
@@ -934,13 +956,10 @@ pub fn wall_contour_segments_idx(idx: &WallIndex, e: &Entity) -> Vec<Seg> {
             .filter(|p| !p.covered)
             .map(|p| Seg::Line(p.a, p.b))
             .collect();
-    }
+    };
     // Konstruierte Kontur: alle Körperkanten **außer** den Anschlussnähten.
     // Bewusst ohne Beschnitt an Nachbarwänden — gefangen wird die gebaute
     // Ecke (Gehrungspunkt, Laibung, freies Ende), nicht der sichtbare Rest.
-    let Some(b) = idx.body(e.id) else {
-        return vec![];
-    };
     let mut out = Vec::new();
     for poly in &b.pieces {
         for k in 0..poly.len() {

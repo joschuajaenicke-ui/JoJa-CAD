@@ -925,6 +925,26 @@ impl App {
                 }
                 // Kopierfunktion der geteilten Schaltfläche (Screenshot-Prüfung)
                 "copyclip" => self.ui.copy_input = CopyInput::Clipboard,
+                // Prüfhilfe T0021: die erste Wand kopieren und die Einfüge-Vorschau
+                // zeigen — sie steht als Akzentlinie über der Originalwand.
+                "wandvorschau" => {
+                    let wand = self
+                        .doc()
+                        .ents()
+                        .iter()
+                        .position(|e| matches!(e.kind, EntityKind::Wall { .. }));
+                    if let Some(i) = wand {
+                        let id = self.doc().ents()[i].id;
+                        let bb = jjcad_core::render::entity_bbox(self.doc(), &self.doc().ents()[i].clone());
+                        self.merke_zwischenablage(&[id], None);
+                        self.start_ghost_paste();
+                        if let Some(g) = self.ghost.as_mut() {
+                            if bb.is_valid() {
+                                g.pos = V2::new(bb.min.x, bb.max.y + 600.0);
+                            }
+                        }
+                    }
+                }
                 "copybase" => self.ui.copy_input = CopyInput::BasePoint,
                 // Prüfhilfe: erste Tür auswählen, damit das Eigenschaften-Panel
                 // im Screenshot belegbar ist
