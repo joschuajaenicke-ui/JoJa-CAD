@@ -47,6 +47,44 @@ fn ist_ecke(ring: &[V2], i: usize) -> bool {
     kreuz.atan2(punkt).abs() > FILL_ECKE_MIN_WINKEL
 }
 
+/// Zwei **benachbarte** Randpunkte übereinandergelegt werden zu einem Punkt:
+/// der gezogene fällt weg, die Zahl der Umgrenzungspunkte sinkt um eins.
+///
+/// Nur Nachbarn — bei nicht benachbarten Punkten verschwände ein ganzes Stück
+/// Umgrenzung mit. Ein Ring behält mindestens drei Punkte, sonst bleibt keine
+/// Fläche übrig. Liefert `true`, wenn verschmolzen wurde.
+fn verschmelze_nachbar(ring: &mut Vec<V2>, i: usize, tol: f64) -> bool {
+    let n = ring.len();
+    if n <= 3 || i >= n {
+        return false;
+    }
+    let p = ring[i];
+    let davor = ring[(i + n - 1) % n];
+    let danach = ring[(i + 1) % n];
+    if p.dist(davor) <= tol || p.dist(danach) <= tol {
+        ring.remove(i);
+        return true;
+    }
+    false
+}
+
+/// Ring einer Füllfläche zum flachen Eckindex `i` (Umgrenzung zuerst, dann die
+/// Inseln) samt lokalem Index im Ring.
+fn fill_ring_mut(kind: &mut EntityKind, i: usize) -> Option<(&mut Vec<V2>, usize)> {
+    let EntityKind::Fill { boundary, holes, .. } = kind else {
+        return None;
+    };
+    let mut base = 0usize;
+    for ring in std::iter::once(&mut *boundary).chain(holes.iter_mut()) {
+        let n = ring.len();
+        if i < base + n {
+            return Some((ring, i - base));
+        }
+        base += n;
+    }
+    None
+}
+
 /// Alle Griffpunkte eines Elements mit ihrer Weltposition.
 pub fn grips_of(e: &Entity) -> Vec<(GripKind, V2)> {
     match &e.kind {
@@ -153,7 +191,9 @@ pub fn apply_grip_tol(orig: &Entity, kind: GripKind, target: V2, tol: f64) -> Op
             verts[j].p = p2 + normal * d;
         }
         // Ecke einer Füllfläche: der flache Index zählt erst die Umgrenzung,
-        // dann die Inseln (dieselbe Reihenfolge wie die Anzeige).
+        // dann die Inseln (dieselbe Reihenfolge wie die Anzeige). Verschmolzen
+        // wird erst beim Loslassen (`App::end_grip_drag`) — während des Zugs
+        // bleiben die Indizes dadurch gültig.
         (EntityKind::Fill { boundary, holes, .. }, GripKind::Vert(i)) => {
             let mut base = 0usize;
             let mut ziel: Option<&mut Vec<V2>> = None;
@@ -197,6 +237,7 @@ pub fn moving_points(e: &Entity, kind: GripKind) -> Vec<V2> {
             let j = (i + 1) % n;
             vec![verts[i].p, verts[j].p]
         }
+        // Füllfläche: flacher Eckindex, Umgrenzung zuerst.
         (EntityKind::Fill { boundary, holes, .. }, GripKind::Vert(i)) => {
             let mut base = 0usize;
             for ring in std::iter::once(boundary).chain(holes.iter()) {
@@ -292,8 +333,31 @@ impl App {
         }
     }
 
+    /// Beendet den Griffzug. Liegt die gezogene Ecke einer Füllfläche auf einer
+    /// ihrer Nachbarecken, werden beide zu **einem** Punkt: die Umgrenzung hat
+    /// danach einen Punkt weniger.
     pub fn end_grip_drag(&mut self) {
-        if self.grip_drag.take().is_some() {
+        let Some(d) = self.grip_drag.take() else {
+            return;
+        };
+        let mut verbunden = false;
+        if let GripKind::Vert(i) = d.kind {
+            let tol = (12.0 / self.current_view().zoom.max(1e-6))
+                .max(jjcad_core::model::POINT_EPS_MM);
+            if let Some(e) = self.doc_mut().entity_mut(d.entity) {
+                if matches!(e.kind, EntityKind::Fill { .. }) {
+                    if let Some((ring, idx)) = fill_ring_mut(&mut e.kind, i) {
+                        verbunden = verschmelze_nachbar(ring, idx, tol);
+                        if verbunden {
+                            self.mark_changed();
+                        }
+                    }
+                }
+            }
+        }
+        if verbunden {
+            self.mitteilung("Füllfläche · Punkt verbunden");
+        } else {
             self.mitteilung("Griff · gesetzt");
         }
     }
@@ -530,6 +594,100 @@ mod tests {
     fn fuellflaeche_moving_points() {
         let e = quadrat();
         assert_eq!(moving_points(&e, GripKind::Vert(1)), vec![V2::new(4000.0, 0.0)]);
+    }
+
+    // ---- Zwei Ecken aufeinandergelegt: ein Punkt (T0018, Turn 2) ----
+
+    /// Benachbarte Ecken auf derselben Stelle: der gezogene fällt weg, die
+    /// Umgrenzung hat einen Punkt weniger.
+    #[test]
+    fn benachbarte_ecken_verschmelzen_zu_einem_punkt() {
+        let mut ring = vec![
+            V2::new(0.0, 0.0),
+            V2::new(4000.0, 0.0),
+            V2::new(4000.0, 3000.0),
+            V2::new(0.0, 3000.0),
+        ];
+        ring[1] = ring[0];
+        assert!(verschmelze_nachbar(&mut ring, 1, 1.0));
+        assert_eq!(ring.len(), 3, "ein Umrandungspunkt weniger: {ring:?}");
+        assert_eq!(
+            ring,
+            vec![
+                V2::new(0.0, 0.0),
+                V2::new(4000.0, 3000.0),
+                V2::new(0.0, 3000.0)
+            ]
+        );
+    }
+
+    /// Dasselbe über den Griffweg: der Punkt landet auf dem Nachbarn, die
+    /// Fläche bleibt eine Fläche mit drei Ecken.
+    #[test]
+    fn griffzug_auf_die_nachbarecke_verschmilzt() {
+        let neu = apply_grip_tol(&quadrat(), GripKind::Vert(1), V2::new(0.0, 0.0), 1.0).unwrap();
+        let (rand, _) = raender(&neu);
+        assert_eq!(rand.len(), 4, "der Zug selbst verändert die Zahl der Punkte nicht");
+        let mut ring = rand;
+        assert!(verschmelze_nachbar(&mut ring, 1, 1.0));
+        assert_eq!(ring.len(), 3);
+    }
+
+    /// Nur echte Berührung verschmilzt — knapp daneben bleibt der Punkt stehen.
+    #[test]
+    fn knapp_daneben_verschmilzt_nicht() {
+        let mut ring = vec![
+            V2::new(0.0, 0.0),
+            V2::new(4000.0, 0.0),
+            V2::new(4000.0, 3000.0),
+            V2::new(0.0, 3000.0),
+        ];
+        ring[1] = V2::new(0.0, 5.0);
+        assert!(!verschmelze_nachbar(&mut ring, 1, 1.0));
+        assert_eq!(ring.len(), 4);
+    }
+
+    /// Ein Dreieck bleibt ein Dreieck: zwei Punkte wären keine Fläche mehr.
+    #[test]
+    fn dreieck_behaelt_drei_punkte() {
+        let mut ring = vec![
+            V2::new(0.0, 0.0),
+            V2::new(2000.0, 0.0),
+            V2::new(0.0, 1000.0),
+        ];
+        ring[0] = ring[1];
+        assert!(!verschmelze_nachbar(&mut ring, 0, 10.0));
+        assert_eq!(ring.len(), 3);
+    }
+
+    /// Nicht benachbarte Punkte verschmelzen nicht — sonst verschwände ein
+    /// ganzes Stück Umgrenzung mit.
+    #[test]
+    fn nicht_benachbarte_punkte_verschmelzen_nicht() {
+        let mut ring = vec![
+            V2::new(2000.0, 0.0),
+            V2::new(1000.0, 0.0),
+            V2::new(2000.0, 0.0),
+            V2::new(2000.0, 1000.0),
+            V2::new(0.0, 1000.0),
+        ];
+        assert!(!verschmelze_nachbar(&mut ring, 0, 1.0));
+        assert_eq!(ring.len(), 5);
+    }
+
+    /// Der gezogene Punkt verschwindet auch am Ringende (Nachbar = erster
+    /// Punkt): die Umgrenzung schließt sich ohne Doppelpunkt.
+    #[test]
+    fn verschmelzen_ueber_die_ringnaht() {
+        let mut ring = vec![
+            V2::new(0.0, 0.0),
+            V2::new(4000.0, 0.0),
+            V2::new(4000.0, 3000.0),
+            V2::new(0.0, 3000.0),
+        ];
+        ring[3] = ring[0];
+        assert!(verschmelze_nachbar(&mut ring, 3, 1.0));
+        assert_eq!(ring.len(), 3, "{ring:?}");
     }
 
     /// Ein Griff, den es nicht gibt, verändert nichts (kein Panik, kein None-Fehler).
