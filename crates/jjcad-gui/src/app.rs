@@ -1117,6 +1117,13 @@ impl App {
                     let ids: Vec<Id> = self.doc().ents().iter().map(|e| e.id).collect();
                     self.start_move_preview(ids);
                 }
+                // Auswahl setzen und „Kopieren mit Basispunkt" starten: der Chat
+                // fragt nur noch nach dem Basispunkt, es entsteht keine Kopie.
+                "copybasetool" => {
+                    let ids: Vec<Id> = self.doc().ents().iter().map(|e| e.id).collect();
+                    self.session_mut().select(ids);
+                    self.start_tool("modify.copy");
+                }
                 // Nur auswählen (für die Prüfung des direkten Ziehens)
                 "selall" => {
                     let ids: Vec<Id> = self.doc().ents().iter().map(|e| e.id).collect();
@@ -2157,10 +2164,15 @@ impl App {
                 }
                 _ => {
                     if tool.selecting && !self.selection().is_empty() {
+                        // Schritt nach der Auswahl aus dem Werkzeug selbst — nicht
+                        // fest „Verschieben" (gilt auch für Kopieren, Drehen …).
+                        let mut folge = tool.clone();
+                        folge.selecting = false;
                         if let Some(t) = &mut self.tool {
                             t.selecting = false;
                         }
-                        self.mitteilung("Verschieben · Basispunkt klicken");
+                        let hinweis = commands_hint(&folge);
+                        self.mitteilung(hinweis);
                     }
                 }
             }
@@ -3488,10 +3500,10 @@ pub(crate) fn commands_hint(tool: &Tool) -> &'static str {
             (false, true) => "Verschieben · Zielpunkt klicken",
             (false, false) => "Verschieben · Basispunkt klicken",
         },
-        "modify.copy" => match (tool.selecting, lebt) {
-            (true, _) => "Kopieren mit Basispunkt · Objekte wählen",
-            (false, true) => "Kopieren mit Basispunkt · Zielpunkt klicken",
-            (false, false) => "Kopieren mit Basispunkt · Basispunkt klicken",
+        // Kein Zielpunkt: der Klick setzt nur den Basispunkt der Zwischenablage.
+        "modify.copy" => match tool.selecting {
+            true => "Kopieren mit Basispunkt · Objekte wählen",
+            false => "Kopieren mit Basispunkt · Basispunkt klicken",
         },
         "modify.rotate" => match tool.pts.len() {
             0 => "Drehen · Zentrum klicken",

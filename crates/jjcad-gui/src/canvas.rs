@@ -1544,7 +1544,7 @@ fn draw_tool_preview(
             p.circle_stroke(w2s(cursor), 8.0, dashed);
             label = format!("Kote {:.2} m", app.options.elevation_z / 1000.0);
         }
-        "modify.move" | "modify.copy" => {
+        "modify.move" => {
             if let Some(base) = last {
                 p.line_segment([w2s(base), w2s(cursor)], stroke);
                 let ids = app.selection().to_vec();
@@ -1922,7 +1922,7 @@ fn fang_regeln(app: &App) -> FangRegeln {
             .tool
             .as_ref()
             .map(|t| {
-                matches!(t.action.as_str(), "modify.move" | "modify.copy") && !t.pts.is_empty()
+                t.action == "modify.move" && !t.pts.is_empty()
             })
             .unwrap_or(false);
     if auswahl_wandert {
@@ -3586,27 +3586,34 @@ fn tool_click_at(app: &mut App, w: V2, raw: V2) {
                 json!({"p": ax(w), "z": unit.from_mm(z)}),
             );
         }
-        "modify.move" | "modify.copy" => {
+        "modify.move" => {
             if tool.pts.is_empty() {
                 tool.pts.push(w);
                 app.tool = Some(tool);
             } else {
                 let base = tool.pts[0];
                 let ids = app.selection().to_vec();
-                let action = tool.action.clone();
-                let ok = run(
+                let _ = run(
                     app,
-                    &action,
-                    json!({"ids": ids.clone(), "from": ax(base), "to": ax(w)}),
+                    "modify.move",
+                    json!({"ids": ids, "from": ax(base), "to": ax(w)}),
                 );
-                // Kopieren mit Basispunkt legt die Auswahl zusätzlich in die
-                // Zwischenablage — der geklickte Basispunkt gehört dazu und ist
-                // beim Einfügen der Ankerpunkt.
-                if ok && action == "modify.copy" {
-                    app.merke_zwischenablage(&ids, Some(base));
-                }
                 app.tool = None;
             }
+        }
+        // Kopieren mit Basispunkt setzt **keine** Kopie ab, sondern legt die
+        // Auswahl in die Zwischenablage; der Klick bestimmt den Basispunkt.
+        // Abgesetzt wird danach mit der Einfüge-Vorschau (Strg+V) — so oft man
+        // will und an der Stelle, die man gerade braucht.
+        "modify.copy" => {
+            let ids = app.selection().to_vec();
+            if ids.is_empty() {
+                app.toast("Kopieren mit Basispunkt · erst Objekte wählen");
+                return;
+            }
+            app.merke_zwischenablage(&ids, Some(w));
+            app.tool = None;
+            app.toast("Auswahl · kopiert");
         }
         "modify.rotate" => {
             // Drei Klicks: Drehzentrum, „von"-Punkt, „bis"-Punkt. Der Winkel ist
@@ -5851,8 +5858,9 @@ mod tests_hilfslinien {
 
 #[cfg(test)]
 mod tests_kopieren_basispunkt {
-    //! T0012, Turn 2: „Kopieren mit Basispunkt" legt die Auswahl **auch** in die
-    //! Zwischenablage — der geklickte Basispunkt gehört dazu.
+    //! T0012: „Kopieren mit Basispunkt" legt die Auswahl **nur** in die
+    //! Zwischenablage — der Klick bestimmt den Basispunkt, es entsteht dabei
+    //! keine Kopie in der Zeichnung. Abgesetzt wird mit der Einfüge-Vorschau.
 
     use super::*;
 
@@ -5862,29 +5870,49 @@ mod tests_kopieren_basispunkt {
         app
     }
 
-    #[test]
-    fn kopieren_mit_basispunkt_fuellt_die_zwischenablage() {
+    fn app_mit_rechteck() -> App {
         let mut app = leer_app();
         app.start_tool("draw.rect");
         tool_click(&mut app, V2::new(0.0, 0.0));
         tool_click(&mut app, V2::new(1000.0, 500.0));
         let id = app.doc().entities[0].id;
         app.session_mut().select(vec![id]);
+        app
+    }
+
+    #[test]
+    fn kopieren_mit_basispunkt_fuellt_nur_die_zwischenablage() {
+        let mut app = app_mit_rechteck();
 
         app.start_tool("modify.copy");
-        tool_click(&mut app, V2::new(250.0, 100.0)); // Basispunkt
-        assert!(
-            app.ui.clipboard.is_empty(),
-            "erst das Absetzen füllt die Zwischenablage — vorher ist sie unberührt"
-        );
-        tool_click(&mut app, V2::new(2250.0, 1100.0)); // Zielpunkt
+        tool_click(&mut app, V2::new(250.0, 100.0)); // Basispunkt, ein Klick genügt
 
-        assert_eq!(app.doc().entities.len(), 2, "die Kopie ist abgesetzt");
+        assert_eq!(
+            app.doc().entities.len(),
+            1,
+            "Kopieren mit Basispunkt setzt keine Kopie ab — nur die Zwischenablage füllt sich"
+        );
+        assert!(app.tool.is_none(), "nach dem Basispunkt ist das Werkzeug fertig");
         assert_eq!(app.ui.clipboard.len(), 1, "die Auswahl liegt in der Zwischenablage");
         assert_eq!(
             app.ui.clipboard.base,
             Some(V2::new(250.0, 100.0)),
             "der geklickte Basispunkt gehört zur Zwischenablage"
+        );
+    }
+
+    /// Ein weiterer Klick ins Leere legt nichts an (kein zweiter Schritt).
+    #[test]
+    fn nach_dem_basispunkt_entsteht_bei_weiterem_klick_nichts() {
+        let mut app = app_mit_rechteck();
+        app.start_tool("modify.copy");
+        tool_click(&mut app, V2::new(250.0, 100.0));
+        tool_click(&mut app, V2::new(2250.0, 1100.0));
+        assert_eq!(app.doc().entities.len(), 1, "kein zweiter Klick, keine Kopie");
+        assert_eq!(
+            app.ui.clipboard.base,
+            Some(V2::new(250.0, 100.0)),
+            "der Basispunkt bleibt der zuerst geklickte"
         );
     }
 }
