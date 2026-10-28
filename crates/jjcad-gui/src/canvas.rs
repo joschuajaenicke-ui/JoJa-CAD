@@ -23,6 +23,7 @@ const PAPER_PX_PER_MM: f64 = 3.2;
 // Anzeige
 // ---------------------------------------------------------------------------
 
+#[derive(Clone)]
 struct PaintCtx {
     selected: Vec<Id>,
     hover: Option<Id>,
@@ -1739,22 +1740,67 @@ fn draw_tool_preview(
         }
         "draw.door" => {
             let width = app.options.door_width;
-            // Vorschau liegt immer auf der nächsten Wand
-            let (c, ang) = match wall_under(app, cursor) {
-                Some((cp, a, id)) => (opening_center(app, id, cp, a), a),
-                None => (cursor, 0.0),
-            };
-            let dir = V2::polar(ang, 1.0);
-            let half = dir * (width * 0.5);
-            p.line_segment([w2s(c - half), w2s(c + half)], stroke);
-            // Türblatt + Öffnungsbogen andeuten
-            let nrm = dir.perp();
-            let hinge_at = if app.options.hinge >= 0.0 { c + half } else { c - half };
-            let leaf_dir = if app.options.swing_in { nrm } else { -nrm };
-            let leaf = hinge_at + leaf_dir * width;
-            p.line_segment([w2s(hinge_at), w2s(leaf)], dashed);
-            p.circle_stroke(w2s(hinge_at), (width * view.zoom) as f32, dashed);
-            label = format!("Tür {}", unit.format_plain(width, 2));
+            // Vorschau ist die Tür selbst: dasselbe Symbol wie nach dem Klick
+            // (Blatt, Öffnungsbogen, Anschlagseite) auf der vorderen
+            // Wandkante, dazu die Wand mit ihrem Loch. Ein eigener Platzhalter
+            // hatte mit dem Ergebnis nichts zu tun (T0026).
+            match wall_under(app, cursor) {
+                Some((cp, ang, host)) => {
+                    let spec = render::DoorSpec {
+                        host: Some(host),
+                        center: cp,
+                        angle: ang,
+                        width,
+                        kind: app.options.door_kind,
+                        hinge: app.options.hinge,
+                        swing_in: app.options.swing_in,
+                    };
+                    if let Some(v) = render::preview_door(app.doc(), &spec) {
+                        let paper_px = view.zoom * app.doc().settings.annotation_scale;
+                        let wand_ctx = PaintCtx {
+                            selected: app.selection().to_vec(),
+                            hover: app.tab().hover,
+                            lineweights: app.ui.lineweights,
+                            lineweights_scaled: app.ui.lineweights_scaled,
+                            paper_px,
+                            preview: false,
+                            rot: view.rot as f32,
+                        };
+                        let tuer_ctx = PaintCtx {
+                            preview: true,
+                            ..wand_ctx.clone()
+                        };
+                        // Loch in der Wand freilegen (die Wand darunter läuft
+                        // sonst durch), dann Wand, dann Tür als Akzent
+                        for quad in &v.loch {
+                            let pts: Vec<Pos2> = quad.iter().map(|q| w2s(*q)).collect();
+                            p.add(egui::Shape::convex_polygon(
+                                pts,
+                                Palette::PAPER,
+                                Stroke::NONE,
+                            ));
+                        }
+                        for prim in &v.wall.prims {
+                            // Füllflächen auslassen: sie lägen über allem, was
+                            // die Wand überdeckt (Bemaßung, Schraffur) —
+                            // sichtbar ist nur die Unterbrechung der Kanten.
+                            if matches!(prim.shape, PShape::Fill { .. }) {
+                                continue;
+                            }
+                            paint_prim(p, prim, &w2s, view.zoom, &wand_ctx, 1.0);
+                        }
+                        for prim in &v.door.prims {
+                            paint_prim(p, prim, &w2s, view.zoom, &tuer_ctx, 1.0);
+                        }
+                    }
+                    label = format!("Tür {}", unit.format_plain(width, 2));
+                }
+                None => {
+                    // Eine Tür braucht eine Wand — ohne sie nur der Hinweis
+                    p.circle_stroke(w2s(cursor), 9.0, dashed);
+                    label = "Tür · nur auf einer Wand".into();
+                }
+            }
         }
         "draw.window" => {
             let width = app.options.window_width;

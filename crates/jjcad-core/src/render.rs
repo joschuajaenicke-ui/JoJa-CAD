@@ -1677,6 +1677,113 @@ fn render_door(
     }
 }
 
+/// Lage und Form einer Tür, die gerade platziert wird (Werkzeug-Vorschau).
+#[derive(Clone, Copy, Debug)]
+pub struct DoorSpec {
+    /// Wand, in der die Tür sitzt — ohne Wand gibt es keine Vorschau.
+    pub host: Option<Id>,
+    /// Geklickter Punkt auf der Wandachse (mm).
+    pub center: Vec2,
+    /// Richtung der Wand (Bogenmaß).
+    pub angle: f64,
+    pub width: f64,
+    pub kind: DoorKind,
+    /// Anschlagseite: -1 oder +1
+    pub hinge: f64,
+    /// Öffnungsseite; bestimmt zusammen mit der Anschlagseite die vordere
+    /// Wandkante, auf der das Blatt sitzt.
+    pub swing_in: bool,
+}
+
+/// Vorschau einer Tür: das Türsymbol und die Wandstücke ihres Hosts.
+///
+/// Beides kommt aus demselben Renderer wie das fertige Objekt — das Blatt samt
+/// Öffnungsbogen aus [`render_door`], das Loch in der Wand aus
+/// [`wall_opening_intervals`] (die Tür wird dafür in eine Kopie des Dokuments
+/// gelegt). Vorher zeichnete die GUI einen eigenen Platzhalter: voller Kreis
+/// statt Viertelbogen, Anschlag zur falschen Seite und die Tür in der
+/// Wandmitte statt auf der vorderen Kante (T0026).
+pub struct DoorPreview {
+    /// Türsymbol — als Akzentkontur gezeichnet
+    pub door: DisplayList,
+    /// Wandstücke des Hosts mit dem Loch dieser Tür — in Normalfarbe, damit
+    /// die Wand genauso aussieht wie nach dem Klick
+    pub wall: DisplayList,
+    /// Flächen, die die Tür im Wandkörper freimacht (Weltkoordinaten). Die
+    /// Vorschau wird **über** die vorhandene Wand gezeichnet; ohne Freilegen
+    /// bliebe das Loch unsichtbar, weil die Wand darunter weiterläuft.
+    pub loch: Vec<Vec<Vec2>>,
+}
+
+/// Vorschau der Tür, die beim Klick entsteht.
+pub fn preview_door(doc: &Document, spec: &DoorSpec) -> Option<DoorPreview> {
+    let host = spec.host?;
+    // Bewusst in `doc.entities` (Modell) gesucht — dieselbe Stelle, an der
+    // `canvas::wall_under` und die Action `draw.door` den Host finden.
+    let host_e = doc.entities.iter().find(|e| e.id == host)?.clone();
+    if !matches!(host_e.kind, EntityKind::Wall { .. }) {
+        return None;
+    }
+    // Tür immer auf der vorderen Wandkante — dieselbe Rechnung wie in der
+    // Action `draw.door`, sonst springt die Tür beim Klick um die halbe
+    // Wanddicke zur Seite.
+    let center = crate::actions::door_face_center(
+        doc,
+        spec.host,
+        spec.center,
+        spec.angle,
+        spec.swing_in,
+    );
+    let mut vor = doc.clone();
+    let id = vor.new_id();
+    let door = Entity::new(
+        id,
+        vor.current_layer,
+        EntityKind::Door {
+            align: WallAlign::Center,
+            center,
+            angle: spec.angle,
+            width: spec.width,
+            kind: spec.kind,
+            hinge: spec.hinge,
+            swing_in: spec.swing_in,
+            host: spec.host,
+            at: None,
+        },
+    );
+    vor.entities.push(door.clone());
+    let ctx = RenderCtx::new(&vor);
+    let mut door_dl = DisplayList::default();
+    render_entity(&ctx, &door, Affine::IDENTITY, &mut door_dl, 0);
+    let mut wall_dl = DisplayList::default();
+    if let Some(w) = vor.entities.iter().find(|e| e.id == host) {
+        render_entity(&ctx, w, Affine::IDENTITY, &mut wall_dl, 0);
+    }
+    // Fläche der Öffnung: dasselbe Intervall, das die Wand ausschneidet.
+    let mut loch = Vec::new();
+    if let Some(f) = wall::Frame::of(&host_e) {
+        let t = (center - f.a0).dot(f.dir);
+        let total = f.len();
+        let s0 = (t - spec.width * 0.5).clamp(0.0, total);
+        let s1 = (t + spec.width * 0.5).clamp(0.0, total);
+        if s1 > s0 + 1.0 {
+            let p0 = f.a + f.dir * s0;
+            let p1 = f.a + f.dir * s1;
+            loch.push(vec![
+                p0 + f.n * f.h,
+                p1 + f.n * f.h,
+                p1 - f.n * f.h,
+                p0 - f.n * f.h,
+            ]);
+        }
+    }
+    Some(DoorPreview {
+        door: door_dl,
+        wall: wall_dl,
+        loch,
+    })
+}
+
 fn order_arc(a0: f64, a1: f64) -> (f64, f64) {
     // kleineren Sweep wählen
     let ccw = norm_angle(a1 - a0);
