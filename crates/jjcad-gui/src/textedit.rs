@@ -230,6 +230,10 @@ pub fn show(app: &mut App, ui: &mut Ui, rect: Rect, view: View) {
                     ui.set_min_width(breite);
                     ui.set_max_width(breite);
                     ui.visuals_mut().text_cursor.stroke = Stroke::new(1.5_f32, Palette::ACCENT);
+                    // Cursor ohne Blinken: er ist die einzige Markierung der
+                    // Schreibstelle — im dunklen Feld sähe ein ausgeschalteter
+                    // Cursor wie ein leeres Feld ohne Eingabe aus.
+                    ui.visuals_mut().text_cursor.blink = false;
                     ui.visuals_mut().selection.bg_fill =
                         Color32::from_rgba_unmultiplied(0x2F, 0x8C, 0xF0, 90);
                     let resp = ui.add(
