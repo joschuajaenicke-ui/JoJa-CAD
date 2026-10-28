@@ -408,7 +408,16 @@ fn paint_text(
 ) {
     let size = (t.height * scale * 1.32).max(3.0) as f32;
     let font = FontId::proportional(size);
-    let galley = p.layout_no_wrap(t.text.clone(), font, col);
+    // Mehrzeilig: `\n` trennt die Zeilen, und die waagerechte Ausrichtung gilt
+    // je Zeile — sonst stünde ein mittig ausgerichteter Text linksbündig im
+    // Rahmen (`layout_no_wrap` setzt immer links).
+    let mut job = egui::text::LayoutJob::simple(t.text.clone(), font, col, f32::INFINITY);
+    job.halign = match t.align {
+        TextAlignH::Left => egui::Align::LEFT,
+        TextAlignH::Center => egui::Align::Center,
+        TextAlignH::Right => egui::Align::RIGHT,
+    };
+    let galley = p.layout_job(job);
     let sz = galley.size();
     let (dx, dy) = match t.align {
         TextAlignH::Left => (0.0, 0.0),
@@ -420,9 +429,7 @@ fn paint_text(
         TextAlignV::Middle => -sz.y / 2.0,
         TextAlignV::Bottom => -sz.y,
     };
-    // Die Ansichtsdrehung dreht die Zeichnung gegen den Uhrzeigersinn, der
-    // Textwinkel von egui zählt im Uhrzeigersinn — daher minus.
-    let winkel = t.angle as f32 - rot;
+    let winkel = text_winkel(t.angle, rot);
     if winkel.abs() < 0.001 {
         let pos = Pos2::new(base.x + dx, base.y + dy + vy);
         p.galley(pos, galley, col);
@@ -434,6 +441,16 @@ fn paint_text(
         let shape = egui::epaint::TextShape::new(pos, galley, col).with_angle(winkel);
         p.add(shape);
     }
+}
+
+/// Winkel, mit dem egui den Text dreht (Radiant, **im Uhrzeigersinn**).
+///
+/// Die Zeichnung dreht mathematisch positiv (gegen den Uhrzeigersinn) — der
+/// Textwinkel selbst **und** die Ansichtsdrehung. egui zählt andersherum,
+/// deshalb das negative Vorzeichen für beide: mit `t.angle - rot` kippte ein
+/// gedrehter Text in die Gegenrichtung (T0025, „Rotieren ist falschherum“).
+pub(crate) fn text_winkel(angle: f64, rot: f32) -> f32 {
+    -(angle as f32 + rot)
 }
 
 /// Text, den das Textwerkzeug beim Klick anlegen wird — genau die Vorgaben der
@@ -1904,7 +1921,14 @@ fn draw_tool_preview(
                                 }
                                 let pre = Stroke::new(1.1, Palette::SELECT.gamma_multiply(0.85));
                                 for prim in &dl.prims {
-                                    ghost_shape(p, &prim.shape, &w2s, view.zoom, pre);
+                                    ghost_shape(
+                                        p,
+                                        &prim.shape,
+                                        &w2s,
+                                        view.zoom,
+                                        pre,
+                                        view.rot as f32,
+                                    );
                                 }
                                 label = format!("Drehen {}°", format_number(angle, 1));
                             }
@@ -2937,13 +2961,13 @@ fn draw_text_rahmen(app: &App, p: &Painter, rect: Rect, view: View, selected: &[
     for id in selected {
         let Some(e) = doc.entity(*id) else { continue };
         let Some(ecken) = render::text_frame(doc, e) else { continue };
-        let a = world_to_screen(rect, view, ecken[0]);
-        let b = world_to_screen(rect, view, ecken[2]);
-        p.rect_stroke(
-            Rect::from_two_pos(a, b),
-            0.0,
+        // Viereck aus den vier Ecken — bei gedrehtem Text steht der Kasten
+        // schief wie die Schrift, nicht als achsenparalleles Rechteck (T0025).
+        let pts: Vec<Pos2> = ecken.iter().map(|q| world_to_screen(rect, view, *q)).collect();
+        p.add(Shape::closed_line(
+            pts,
             Stroke::new(1.0, Palette::SELECT.gamma_multiply(0.55)),
-        );
+        ));
     }
 }
 
@@ -3047,7 +3071,7 @@ fn draw_ghost(app: &App, p: &Painter, rect: Rect, view: View) {
     let mut dl = jjcad_core::render::DisplayList::default();
     dl.prims = geo.prims.clone();
     for prim in &dl.prims {
-        ghost_shape(p, &prim.shape, &w2s, zoom, stroke);
+        ghost_shape(p, &prim.shape, &w2s, zoom, stroke, view.rot as f32);
     }
 
     // Umriss und Ankerpunkt
@@ -3085,7 +3109,14 @@ fn draw_ghost(app: &App, p: &Painter, rect: Rect, view: View) {
     }
 }
 
-fn ghost_shape(p: &Painter, sh: &PShape, w2s: &dyn Fn(V2) -> Pos2, zoom: f64, stroke: Stroke) {
+fn ghost_shape(
+    p: &Painter,
+    sh: &PShape,
+    w2s: &dyn Fn(V2) -> Pos2,
+    zoom: f64,
+    stroke: Stroke,
+    rot: f32,
+) {
     match sh {
         PShape::Line(a, b) => {
             p.line_segment([w2s(*a), w2s(*b)], stroke);
@@ -3121,7 +3152,16 @@ fn ghost_shape(p: &Painter, sh: &PShape, w2s: &dyn Fn(V2) -> Pos2, zoom: f64, st
                 .collect();
             p.add(egui::Shape::line(pts, stroke));
         }
-        _ => {}
+        // Text war hier nicht gezeichnet: die Einfüge-Vorschau zeigte bei
+        // kopierten Textfeldern nur den Anker, keinen Text (T0025). Gezeichnet
+        // über `paint_text` — dieselbe Lage, Schrift und Drehung wie danach.
+        PShape::Text(t) => paint_text(p, t, w2s(t.pos), zoom, Palette::ACCENT, rot),
+        PShape::Dot { p: pos, r } => {
+            p.circle_filled(w2s(*pos), ((*r * zoom) as f32).max(1.2), stroke.color);
+        }
+        // Füllungen haben in der Vorschau keine Kontur — die Umrandung
+        // zeichnet `draw_ghost` (äußerer Rahmen) bzw. das Objekt selbst.
+        PShape::Fill { .. } => {}
     }
 }
 
@@ -6765,6 +6805,52 @@ mod tests_textvorschau {
     fn vorschau_steht_mittig_auf_dem_zeiger() {
         let t = text_preview_prim("Hallo".to_string(), 250.0);
         assert_eq!(t.valign, TextAlignV::Middle);
+    }
+
+    /// Die Drehung des Textes folgt der Zeichnung (mathematisch positiv) —
+    /// nicht der Bildschirmrichtung. Vorher kippte ein um +90° gedrehter Text
+    /// nach unten statt nach oben (T0025: „Rotieren ist falschherum“).
+    #[test]
+    fn textwinkel_dreht_wie_die_zeichnung() {
+        use std::f64::consts::FRAC_PI_2;
+        assert_eq!(text_winkel(0.0, 0.0), 0.0);
+        assert!(
+            (text_winkel(FRAC_PI_2, 0.0) + FRAC_PI_2 as f32).abs() < 1e-6,
+            "90° in der Zeichnung sind −90° für egui"
+        );
+        // Die Ansichtsdrehung zieht in dieselbe Richtung mit.
+        assert!(
+            (text_winkel(0.0, FRAC_PI_2 as f32) + FRAC_PI_2 as f32).abs() < 1e-6,
+            "Ansichtsdrehung um 90°"
+        );
+        // Textwinkel und Ansichtsdrehung addieren sich.
+        assert!((text_winkel(0.3, 0.4) + 0.7).abs() < 1e-6);
+    }
+
+    /// Einfüge-Vorschau (Zwischenablage): ein kopierter Text wird gezeichnet —
+    /// vorher fiel der Text stillschweigend durch (`_ => {}` in `ghost_shape`),
+    /// sichtbar war nur der Anker (T0025: „Prewiev beim Einfügen fehlt“).
+    #[test]
+    fn einfuege_vorschau_zeichnet_text() {
+        let ctx = egui::Context::default();
+        let out = ctx.run(egui::RawInput::default(), |ctx| {
+            let layer = egui::LayerId::new(egui::Order::Background, egui::Id::new("vorschau"));
+            let p = egui::Painter::new(ctx.clone(), layer, Rect::EVERYTHING);
+            let prim = text_preview_prim("Hallo".to_string(), 250.0);
+            let w2s = |q: V2| Pos2::new(q.x as f32, q.y as f32);
+            ghost_shape(
+                &p,
+                &PShape::Text(prim),
+                &w2s,
+                1.0,
+                Stroke::new(1.5, Palette::ACCENT),
+                0.0,
+                );
+        });
+        assert!(
+            !out.shapes.is_empty(),
+            "der Text fehlt in der Einfüge-Vorschau"
+        );
     }
 }
 
