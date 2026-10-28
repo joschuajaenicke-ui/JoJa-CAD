@@ -1694,13 +1694,21 @@ fn entity_props(app: &mut App, ui: &mut Ui, id: Id) {
             ui.add_space(2.0);
             ui.label(theme::dim("Platzhalter: {DATUM} {PROJEKT} {MASSTAB} {PLAN}"));
         }
-        EntityKind::Circle { r, .. } => {
+        // Kreis: der Radius ist hier einstellbar (T0022) — mit Untergrenze,
+        // damit der Ziehpfeil nicht in negative Werte läuft.
+        EntityKind::Circle { c, r } => {
             let mut rr = *r;
             widgets::field_row(ui, "Radius", |ui| {
-                if widgets::length_input(ui, &mut rr, unit, 110.0) {
+                if widgets::length_input_between(ui, &mut rr, unit, 110.0, 0.1, 1e7) {
                     changed_params.insert("r".into(), json!(unit.from_mm(rr)));
                 }
             });
+            ui.add_space(4.0);
+            ui.label(theme::dim(format!(
+                "Mittelpunkt ({:.2}, {:.2})",
+                unit.from_mm(c.x),
+                unit.from_mm(c.y)
+            )));
         }
         EntityKind::Dim {
             axis,
@@ -1800,11 +1808,45 @@ fn entity_props(app: &mut App, ui: &mut Ui, id: Id) {
                 (*b - *a).angle().to_degrees()
             )));
         }
-        EntityKind::Arc { r, a0, a1, .. } => {
+        // Bogen: Radius und beide Endwinkel sind einstellbar (T0022). Die
+        // Enden selbst sitzen als runde Griffe auf dem Bogen — dort zieht man
+        // sie mit der Maus.
+        EntityKind::Arc { c, r, a0, a1 } => {
+            let mut rr = *r;
+            let mut w0 = a0.to_degrees();
+            let mut w1 = a1.to_degrees();
+            widgets::field_row(ui, "Radius", |ui| {
+                if widgets::length_input_between(ui, &mut rr, unit, 110.0, 0.1, 1e7) {
+                    changed_params.insert("r".into(), json!(unit.from_mm(rr)));
+                }
+            });
+            widgets::field_row(ui, "Startwinkel", |ui| {
+                if ui
+                    .add(crate::widgets::dv(&mut w0).speed(1.0).suffix("°"))
+                    .changed()
+                {
+                    changed_params.insert("a0".into(), json!(w0));
+                }
+            });
+            widgets::field_row(ui, "Endwinkel", |ui| {
+                if ui
+                    .add(crate::widgets::dv(&mut w1).speed(1.0).suffix("°"))
+                    .changed()
+                {
+                    changed_params.insert("a1".into(), json!(w1));
+                }
+            });
+            ui.add_space(4.0);
+            let start = *c + jjcad_core::geom::Vec2::polar(*a0, *r);
+            let ende = *c + jjcad_core::geom::Vec2::polar(*a1, *r);
             ui.label(theme::dim(format!(
-                "Radius {} · Winkel {:.0}°",
-                unit.format(*r, unit.decimals()),
-                (a1 - a0).to_degrees().abs()
+                "Mittelpunkt ({:.2}, {:.2}) · Start ({:.2}, {:.2}) · Ende ({:.2}, {:.2})",
+                unit.from_mm(c.x),
+                unit.from_mm(c.y),
+                unit.from_mm(start.x),
+                unit.from_mm(start.y),
+                unit.from_mm(ende.x),
+                unit.from_mm(ende.y)
             )));
         }
         _ => {}
@@ -2050,9 +2092,6 @@ fn geo_rows(e: &jjcad_core::model::Entity, unit: Unit) -> Vec<(&'static str, Str
     let len = entity_length(e);
     if len > 0.0 {
         rows.push(("Länge", unit.format(len, unit.decimals())));
-    }
-    if let K::Circle { r, .. } | K::Arc { r, .. } = &e.kind {
-        rows.push(("Radius", unit.format(*r, unit.decimals())));
     }
     let area = entity_area(e);
     if area > 0.0 {

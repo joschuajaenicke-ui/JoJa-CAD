@@ -959,6 +959,31 @@ impl App {
                         self.session_mut().selection = vec![id];
                     }
                 }
+                // Prüfhilfe T0022: ersten Kreis bzw. ersten Bogen auswählen —
+                // Eigenschaften-Panel mit Radius (und bei Bogen den beiden
+                // Endwinkeln) sowie die Griffe an den Bogenenden zeigen.
+                "selkreis" | "selcircle" => {
+                    if let Some(id) = self
+                        .doc()
+                        .entities
+                        .iter()
+                        .find(|e| matches!(e.kind, EntityKind::Circle { .. }))
+                        .map(|e| e.id)
+                    {
+                        self.session_mut().selection = vec![id];
+                    }
+                }
+                "selbogen" | "selarc" => {
+                    if let Some(id) = self
+                        .doc()
+                        .entities
+                        .iter()
+                        .find(|e| matches!(e.kind, EntityKind::Arc { .. }))
+                        .map(|e| e.id)
+                    {
+                        self.session_mut().selection = vec![id];
+                    }
+                }
                 "selwall" => {
                     // erste Wand auswählen: Eigenschaften-Panel der Wand zeigen
                     if let Some(id) = self
