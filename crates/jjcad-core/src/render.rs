@@ -113,29 +113,9 @@ impl Prim {
             }
             Shape::Fill { outer, .. } => BBox::from_points(outer),
             Shape::Dot { p, r } => BBox::new(*p - v(*r, *r), *p + v(*r, *r)),
-            Shape::Text(t) => {
-                let w = text_box_width(&t.text, t.height);
-                let h = text_line_height(t.height);
-                let (ax, ay) = match t.align {
-                    TextAlignH::Left => (0.0, 0.0),
-                    TextAlignH::Center => (-w * 0.5, 0.0),
-                    TextAlignH::Right => (-w, 0.0),
-                };
-                let (vx, vy) = match t.valign {
-                    TextAlignV::Top => (0.0, -h),
-                    TextAlignV::Middle => (0.0, -h * 0.5),
-                    TextAlignV::Bottom => (0.0, 0.0),
-                };
-                let base = t.pos + Vec2::polar(t.angle, 0.0) + Vec2 { x: ax + vx, y: ay + vy };
-                let corners = [
-                    base,
-                    base + Vec2::new(w, 0.0),
-                    base + Vec2::new(w, h),
-                    base + Vec2::new(0.0, h),
-                ];
-                let rot = Affine::rotate_about(t.pos, t.angle);
-                BBox::from_points(&corners.iter().map(|p| rot.apply(*p)).collect::<Vec<_>>())
-            }
+            Shape::Text(t) => BBox::from_points(&text_corners(
+                t.pos, &t.text, t.height, t.angle, t.align, t.valign,
+            )),
         }
     }
 }
@@ -187,6 +167,62 @@ fn char_width_factor(c: char) -> f64 {
         c if c.is_lowercase() => 0.72,
         _ => 0.60,
     }
+}
+
+/// Zahl der Zeilen eines Textes — `\n` trennt, auch leere Zeilen zählen mit.
+pub fn text_lines(text: &str) -> usize {
+    text.split('\n').count().max(1)
+}
+
+/// Breite und Höhe des Textkastens in Welt-mm.
+///
+/// Mehrzeilig bestimmt die **breiteste Zeile** die Breite (nicht die Summe
+/// aller Zeichen), und die Zahl der Zeilen die Höhe. Vorher lief beides über
+/// den ganzen Text: bei zwei Zeilen war der Rahmen zu breit und nur eine
+/// Zeile hoch (T0025).
+pub fn text_box(text: &str, height: f64) -> (f64, f64) {
+    let breite = text
+        .split('\n')
+        .map(|zeile| text_box_width(zeile, height))
+        .fold(0.0_f64, f64::max);
+    (breite, text_line_height(height) * text_lines(text) as f64)
+}
+
+/// Die vier Ecken des Textkastens in Weltkoordinaten:
+/// links unten, rechts unten, rechts oben, links oben.
+///
+/// Der Kasten hängt am Anker `pos` (waagerecht nach `align`, senkrecht nach
+/// `valign`) und wird um genau diesen Anker gedreht — dieselbe Lage, die die
+/// Anzeige zeichnet. Eine Quelle für Bounding-Box, Rahmen, Fang und Vorschau;
+/// deshalb ist der Rahmen eines gedrehten Textes ein **gedrehtes Viereck** und
+/// keine achsenparallele Box.
+pub fn text_corners(
+    pos: Vec2,
+    text: &str,
+    height: f64,
+    angle: f64,
+    align: TextAlignH,
+    valign: TextAlignV,
+) -> [Vec2; 4] {
+    let (w, h) = text_box(text, height);
+    let dx = match align {
+        TextAlignH::Left => 0.0,
+        TextAlignH::Center => -w * 0.5,
+        TextAlignH::Right => -w,
+    };
+    let dy = match valign {
+        TextAlignV::Top => -h,
+        TextAlignV::Middle => -h * 0.5,
+        TextAlignV::Bottom => 0.0,
+    };
+    let base = pos + Vec2::new(dx, dy);
+    let rot = Affine::rotate_about(pos, angle);
+    [
+        rot.apply(base),
+        rot.apply(base + Vec2::new(w, 0.0)),
+        rot.apply(base + Vec2::new(w, h)),
+        rot.apply(base + Vec2::new(0.0, h)),
+    ]
 }
 
 #[derive(Clone, Debug, Default)]
@@ -496,26 +532,32 @@ pub fn entity_bbox(doc: &Document, e: &Entity) -> BBox {
     dl.bbox
 }
 
-/// Unsichtbarer Rahmen eines Textes: die vier Ecken seiner Bounding-Box
+/// Unsichtbarer Rahmen eines Textes: die vier Ecken der Zeilenbox
 /// (links unten, rechts unten, rechts oben, links oben).
 ///
 /// Derselbe Kasten erscheint in der Einfüge-Vorschau; bei Auswahl wird er
 /// gezeichnet, und seine Ecken und Kantenmitten sind Fangpunkte. Eine Quelle
 /// für Anzeige und Fang, damit Rahmen und Fangpunkt nie auseinanderlaufen.
+///
+/// Der Kasten ist **gedreht wie der Text** (Viereck, keine achsenparallele
+/// Box) und bei mehrzeiligen Texten so hoch wie alle Zeilen zusammen.
 pub fn text_frame(doc: &Document, e: &Entity) -> Option<[Vec2; 4]> {
     if !matches!(e.kind, EntityKind::Text { .. }) {
         return None;
     }
-    let b = entity_bbox(doc, e);
-    if !b.is_valid() {
-        return None;
+    // Über die Anzeige gehen: dort steht der aufgelöste Text samt tatsächlicher
+    // Schriftgröße (Block-/Blattmaßstab) — der Rahmen kann so nicht abweichen.
+    let ctx = RenderCtx::for_entity(doc, e);
+    let mut dl = DisplayList::default();
+    render_entity(&ctx, e, Affine::IDENTITY, &mut dl, 0);
+    for prim in &dl.prims {
+        if let Shape::Text(t) = &prim.shape {
+            return Some(text_corners(
+                t.pos, &t.text, t.height, t.angle, t.align, t.valign,
+            ));
+        }
     }
-    Some([
-        b.min,
-        Vec2::new(b.max.x, b.min.y),
-        b.max,
-        Vec2::new(b.min.x, b.max.y),
-    ])
+    None
 }
 
 /// Kanten des Textrahmens als Segmente (für den Punktfang).

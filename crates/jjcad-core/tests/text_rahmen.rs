@@ -169,3 +169,76 @@ fn rahmen_faengt_nur_im_radius() {
     assert_eq!(r.source, SnapSource::Free, "{r:?}");
     assert_punkt(r.point, cursor, "roher Zeiger");
 }
+
+// ---------------------------------------------------------------------------
+// Mehrzeilig und gedreht (T0025)
+// ---------------------------------------------------------------------------
+
+/// Mehrzeilig: die **breiteste Zeile** bestimmt die Breite (nicht die Summe
+/// aller Zeichen), und die Zahl der Zeilen die Höhe. Vorher war der Rahmen
+/// doppelt so breit wie der Text und nur eine Zeile hoch.
+#[test]
+fn mehrzeiliger_rahmen_umschliesst_alle_zeilen() {
+    let mut s = s();
+    s.execute(
+        "draw.text",
+        &json!({ "p": [0.0, 0.0], "text": "WOHNEN\nOG", "height": 250.0 }),
+    )
+    .unwrap();
+    let e = s.doc.entities.last().unwrap();
+    let ecken = render::text_frame(&s.doc, e).expect("Rahmen");
+
+    // Breite = „WOHNEN“ (W 1,15 + 5 × 0,90 je Höhe, dazu 10 % Rand)
+    let breite = ecken[1].x - ecken[0].x;
+    let soll = (1.15 + 5.0 * 0.90) * 250.0 + 25.0;
+    assert!((breite - soll).abs() < 1e-6, "Breite {breite} statt {soll}");
+
+    // Höhe = zwei Zeilen à 250 × 1,4, senkrecht mittig um den Anker
+    let hoehe = ecken[2].y - ecken[1].y;
+    assert!((hoehe - 2.0 * 350.0).abs() < 1e-6, "Höhe {hoehe}");
+    assert_punkt(ecken[0], v(0.0, -350.0), "links unten");
+    assert_punkt(ecken[1], v(soll, -350.0), "rechts unten");
+    assert_punkt(ecken[2], v(soll, 350.0), "rechts oben");
+    assert_punkt(ecken[3], v(0.0, 350.0), "links oben");
+}
+
+/// Dreizeilig: die Höhe folgt der Zeilenzahl (3 × 1,4 × Höhe).
+#[test]
+fn drei_zeilen_ergeben_dreifache_hoehe() {
+    let mut s = s();
+    s.execute(
+        "draw.text",
+        &json!({ "p": [0.0, 0.0], "text": "A\nB\nC", "height": 100.0 }),
+    )
+    .unwrap();
+    let e = s.doc.entities.last().unwrap();
+    let ecken = render::text_frame(&s.doc, e).expect("Rahmen");
+    let hoehe = ecken[2].y - ecken[1].y;
+    assert!((hoehe - 3.0 * 140.0).abs() < 1e-6, "Höhe {hoehe}");
+}
+
+/// Ein gedrehter Text hat einen **gedrehten** Rahmen — das Viereck dreht um
+/// den Anker mit, statt als achsenparallele Box zu stehen (T0025: „die
+/// Umrandung ist falsch“).
+#[test]
+fn gedrehter_rahmen_dreht_mit_dem_text() {
+    let mut s = s();
+    s.execute(
+        "draw.text",
+        &json!({ "p": [0.0, 0.0], "text": "Hallo", "height": 250.0, "angle": 90.0 }),
+    )
+    .unwrap();
+    let e = s.doc.entities.last().unwrap();
+    let ecken = render::text_frame(&s.doc, e).expect("Rahmen");
+
+    // 90° gegen den Uhrzeigersinn: „rechts“ zeigt nach oben, „oben“ nach links
+    assert_punkt(ecken[0], v(175.0, 0.0), "links unten gedreht");
+    assert_punkt(ecken[1], v(175.0, 810.0), "rechts unten gedreht");
+    assert_punkt(ecken[2], v(-175.0, 810.0), "rechts oben gedreht");
+    assert_punkt(ecken[3], v(-175.0, 0.0), "links oben gedreht");
+
+    // Die Bounding-Box bleibt die Hülle des gedrehten Kastens.
+    let b = render::entity_bbox(&s.doc, e);
+    assert!((b.max.x - b.min.x - 350.0).abs() < 1e-6, "Breite {b:?}");
+    assert!((b.max.y - b.min.y - 810.0).abs() < 1e-6, "Höhe {b:?}");
+}

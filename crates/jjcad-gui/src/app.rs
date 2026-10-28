@@ -996,6 +996,27 @@ impl App {
                         }
                     }
                 }
+                // Prüfhilfe T0025: ersten Text kopieren und die Einfüge-Vorschau
+                // zeigen. Der Text muss in der Vorschau stehen — vorher fiel er
+                // in `canvas::ghost_shape` durch und nur der Anker war zu sehen.
+                "textvorschau" => {
+                    let text = self
+                        .doc()
+                        .ents()
+                        .iter()
+                        .position(|e| matches!(e.kind, EntityKind::Text { .. }));
+                    if let Some(i) = text {
+                        let e = self.doc().ents()[i].clone();
+                        let bb = jjcad_core::render::entity_bbox(self.doc(), &e);
+                        self.merke_zwischenablage(&[e.id], None);
+                        self.start_ghost_paste();
+                        if let Some(g) = self.ghost.as_mut() {
+                            if bb.is_valid() {
+                                g.pos = V2::new(bb.min.x, bb.min.y - 900.0);
+                            }
+                        }
+                    }
+                }
                 "copybase" => self.ui.copy_input = CopyInput::BasePoint,
                 // Prüfhilfe: erste Tür auswählen, damit das Eigenschaften-Panel
                 // im Screenshot belegbar ist
