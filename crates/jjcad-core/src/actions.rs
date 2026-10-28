@@ -1004,7 +1004,25 @@ pub fn execute(doc: &mut Document, id: &str, params: &Value) -> Result<Value, St
             let pts = if id == "draw.rect" {
                 let a = require_pt(&p, "a")?;
                 let b = require_pt(&p, "b")?;
-                vec![a, v(b.x, a.y), b, v(a.x, b.y)]
+                // Mit `height` ist `a`→`b` eine **Basislinie** beliebiger Lage: das
+                // Rechteck steht senkrecht darauf, die Höhe ist der Abstand zur
+                // Basislinie (Vorzeichen wählt die Seite — positiv = links der
+                // Richtung a→b). Ohne `height` bleibt es achsenparallel über zwei
+                // gegenüberliegende Ecken.
+                match p.len("height") {
+                    Some(h) => {
+                        let d = b - a;
+                        if d.len() <= POINT_EPS_MM {
+                            return Err("Basislinie hat keine Länge".into());
+                        }
+                        if h.abs() <= POINT_EPS_MM {
+                            return Err("Höhe darf nicht null sein".into());
+                        }
+                        let n = d.perp().normalized() * h;
+                        vec![a, b, b + n, a + n]
+                    }
+                    None => vec![a, v(b.x, a.y), b, v(a.x, b.y)],
+                }
             } else {
                 p.pts("pts")
                     .or_else(|| p.pts("points"))

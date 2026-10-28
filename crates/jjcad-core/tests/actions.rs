@@ -41,6 +41,68 @@ fn draw_all_primitives() {
     assert_eq!(ellipse, Some((1000.0, 500.0)));
 }
 
+/// Rechteck über Basislinie und Höhe: `a`→`b` ist die Basislinie in
+/// beliebiger Lage, `height` der senkrechte Abstand (Vorzeichen = Seite).
+#[test]
+fn rechteck_ueber_basislinie_und_hoehe() {
+    let mut s = s();
+    let base_laenge = (3.0f64 * 3.0 + 3.0 * 3.0).sqrt() * 1000.0; // 4242,64 mm
+    s.execute(
+        "draw.rect",
+        &json!({"a": [0, 0], "b": [3, 3], "height": 1}),
+    )
+    .unwrap();
+    let e = s.doc.entities.last().unwrap();
+    let (verts, closed) = match &e.kind {
+        EntityKind::Polyline { verts, closed } => (verts, *closed),
+        other => panic!("Rechteck muss eine geschlossene Polylinie sein: {other:?}"),
+    };
+    assert!(closed, "Rechteck ist geschlossen");
+    assert_eq!(verts.len(), 4, "vier Ecken");
+    let p: Vec<Vec2> = verts.iter().map(|q| q.p).collect();
+
+    // Erste Kante ist die Basislinie selbst.
+    assert!(p[0].dist(v(0.0, 0.0)) < 1e-6, "{:?}", p[0]);
+    assert!(p[1].dist(v(3000.0, 3000.0)) < 1e-6, "{:?}", p[1]);
+    // Höhe steht senkrecht auf der Basislinie und misst genau 1 m.
+    let n = p[2] - p[1];
+    assert!((n.len() - 1000.0).abs() < 1e-6, "Höhe: {}", n.len());
+    let basis = p[1] - p[0];
+    assert!(
+        (basis.x * n.x + basis.y * n.y).abs() < 1.0,
+        "Höhe muss senkrecht auf der Basislinie stehen"
+    );
+    // Die vierte Ecke schließt das Parallelogramm.
+    assert!(p[3].dist(p[0] + n) < 1e-6, "{:?}", p[3]);
+    assert!((p[0].dist(p[1]) - base_laenge).abs() < 0.01);
+
+    // Positiv liegt links der Richtung a→b, negativ auf der anderen Seite.
+    s.execute(
+        "draw.rect",
+        &json!({"a": [0, 0], "b": [3, 3], "height": -1}),
+    )
+    .unwrap();
+    let e = s.doc.entities.last().unwrap();
+    if let EntityKind::Polyline { verts, .. } = &e.kind {
+        assert!(
+            (verts[2].p - v(3000.0 + 707.1067811865475, 3000.0 - 707.1067811865475)).len() < 0.01,
+            "negative Höhe spiegelt die Seite: {:?}",
+            verts[2].p
+        );
+    } else {
+        panic!("Polylinie erwartet");
+    }
+
+    // Null-Höhe und entartete Basislinie legen nichts an.
+    assert!(s
+        .execute("draw.rect", &json!({"a": [0, 0], "b": [3, 0], "height": 0}))
+        .is_err());
+    assert!(s
+        .execute("draw.rect", &json!({"a": [1, 1], "b": [1, 1], "height": 1}))
+        .is_err());
+    assert_eq!(s.doc.entities.len(), 2, "nur die zwei gültigen Rechtecke");
+}
+
 #[test]
 fn architecture_objects_and_openings() {
     let mut s = s();

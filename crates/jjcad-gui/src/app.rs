@@ -159,6 +159,35 @@ pub enum ToolPhase {
     TextInput,
 }
 
+/// Einfügemodus für Rechteck und Ellipse.
+///
+/// `Achsenparallel` ist der bisherige Weg (zwei gegenüberliegende Ecken bzw.
+/// Mittelpunkt und Achsen), `Basislinie` legt die Lage über eine Linie fest:
+/// beim Rechteck Basislinie + Höhe, bei der Ellipse Mittelachse + Breite. Damit
+/// entstehen beide Objekte auch in beliebiger Drehlage.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum Einfuegemodus {
+    /// Achsenparallel (Rechteck über Ecken, Ellipse über Mittelpunkt/Achsen).
+    Achsenparallel,
+    /// Über eine Linie beliebiger Lage (Basislinie bzw. Mittelachse).
+    Basislinie,
+}
+
+impl Einfuegemodus {
+    pub const ALL: [Einfuegemodus; 2] = [Einfuegemodus::Achsenparallel, Einfuegemodus::Basislinie];
+
+    /// Beschriftung im Dropdown — je Werkzeug verschieden, weil die Linie eine
+    /// andere Bedeutung hat (Basislinie des Rechtecks, Mittelachse der Ellipse).
+    pub fn label(self, tool_id: &str) -> &'static str {
+        match (self, tool_id) {
+            (Einfuegemodus::Achsenparallel, "draw.ellipse") => "Über Mittelpunkt",
+            (Einfuegemodus::Achsenparallel, _) => "Über Ecken",
+            (Einfuegemodus::Basislinie, "draw.ellipse") => "Mittelachse + Breite",
+            (Einfuegemodus::Basislinie, _) => "Basislinie + Höhe",
+        }
+    }
+}
+
 #[derive(Clone)]
 pub struct ToolOptions {
     pub wall_thickness: f64,
@@ -200,6 +229,10 @@ pub struct ToolOptions {
     pub block_id: Option<String>,
     pub block_rot: f64,
     pub block_scale: f64,
+    /// Einfügemodus des Rechtecks (`draw.rect`)
+    pub rect_mode: Einfuegemodus,
+    /// Einfügemodus der Ellipse (`draw.ellipse`)
+    pub ellipse_mode: Einfuegemodus,
 }
 
 impl ToolOptions {
@@ -254,6 +287,24 @@ impl ToolOptions {
             block_id: None,
             block_rot: 0.0,
             block_scale: 1.0,
+            rect_mode: Einfuegemodus::Achsenparallel,
+            ellipse_mode: Einfuegemodus::Achsenparallel,
+        }
+    }
+
+    /// Einfügemodus des laufenden Werkzeugs (Rechteck bzw. Ellipse).
+    pub fn einfuegemodus(&self, tool_id: &str) -> Einfuegemodus {
+        match tool_id {
+            "draw.ellipse" => self.ellipse_mode,
+            _ => self.rect_mode,
+        }
+    }
+
+    /// Wie [`ToolOptions::einfuegemodus`], aber schreibbar (Dropdown).
+    pub fn einfuegemodus_mut(&mut self, tool_id: &str) -> &mut Einfuegemodus {
+        match tool_id {
+            "draw.ellipse" => &mut self.ellipse_mode,
+            _ => &mut self.rect_mode,
         }
     }
 }
@@ -1022,6 +1073,19 @@ impl App {
                         self.session_mut().selection = vec![id];
                     }
                 }
+                // Diagonaler Einfügemodus: Rechteck-Werkzeug läuft, im
+                // Eigenschaften-Panel steht „Einfügemodus · Basislinie + Höhe".
+                "diagonal" | "diagonale" => {
+                    self.ui.ribbon = RibbonTab::Zeichnen;
+                    self.options.rect_mode = Einfuegemodus::Basislinie;
+                    self.start_tool("draw.rect");
+                }
+                // Dasselbe für die Ellipse (Mittelachse + Breite).
+                "diagonalellipse" => {
+                    self.ui.ribbon = RibbonTab::Zeichnen;
+                    self.options.ellipse_mode = Einfuegemodus::Basislinie;
+                    self.start_tool("draw.ellipse");
+                }
                 "selpoly" => {
                     // erste (geschlossene) Polylinie auswählen: Eigenschaften-
                     // Panel mit Länge, Fläche, Stützpunkten, Geschlossenheit
@@ -1755,7 +1819,7 @@ impl App {
         // Zeichenfläche meldet in jedem Frame denselben Text; dort wird die
         // Wiederholung unterdrückt.
         if let Some(t) = self.tool.clone() {
-            let hinweis = commands_hint(&t);
+            let hinweis = commands_hint(&t, &self.options);
             self.mitteilung(hinweis);
         }
         if self.ui.bind_slot.is_some() {
@@ -2341,7 +2405,7 @@ impl App {
                         if let Some(t) = &mut self.tool {
                             t.selecting = false;
                         }
-                        let hinweis = commands_hint(&folge);
+                        let hinweis = commands_hint(&folge, &self.options);
                         self.mitteilung(hinweis);
                     }
                 }
@@ -3589,12 +3653,16 @@ fn rail(ui: &mut egui::Ui, icon: &str, tooltip: &str, chevron: &str) -> bool {
 pub const HINWEIS_UNBEKANNT: &str = "Werkzeug · Aktion wählen";
 
 /// Aufforderung des laufenden Werkzeugs — ein Text pro Bedienschritt.
-pub(crate) fn commands_hint(tool: &Tool) -> &'static str {
+///
+/// `opts` liefert den Einfügemodus: Rechteck und Ellipse fragen in der
+/// Basislinien-Variante einen Punkt mehr ab als achsenparallel.
+pub(crate) fn commands_hint(tool: &Tool, opts: &ToolOptions) -> &'static str {
     // Textwerkzeug: nach dem Klick wird getippt, nicht mehr geklickt.
     if tool.action == "draw.text" && tool.phase == ToolPhase::TextInput {
         return "Text · Text eingeben (Esc übernimmt)";
     }
     let lebt = !tool.pts.is_empty();
+    let modus = opts.einfuegemodus(&tool.action);
     match tool.action.as_str() {
         "draw.line" => {
             if lebt {
@@ -3617,13 +3685,13 @@ pub(crate) fn commands_hint(tool: &Tool) -> &'static str {
                 "Spline · Startpunkt klicken"
             }
         }
-        "draw.rect" => {
-            if lebt {
-                "Rechteck · zweite Ecke klicken"
-            } else {
-                "Rechteck · erste Ecke klicken"
-            }
-        }
+        "draw.rect" => match (modus, tool.pts.len()) {
+            (Einfuegemodus::Basislinie, 0) => "Rechteck · Basislinie Anfang klicken",
+            (Einfuegemodus::Basislinie, 1) => "Rechteck · Basislinie Ende klicken",
+            (Einfuegemodus::Basislinie, _) => "Rechteck · Höhe klicken",
+            (_, 0) => "Rechteck · erste Ecke klicken",
+            _ => "Rechteck · zweite Ecke klicken",
+        },
         "draw.circle" => {
             if lebt {
                 "Kreis · Radius klicken"
@@ -3631,13 +3699,13 @@ pub(crate) fn commands_hint(tool: &Tool) -> &'static str {
                 "Kreis · Mittelpunkt klicken"
             }
         }
-        "draw.ellipse" => {
-            if lebt {
-                "Ellipse · Achsen aufziehen"
-            } else {
-                "Ellipse · Mittelpunkt klicken"
-            }
-        }
+        "draw.ellipse" => match (modus, tool.pts.len()) {
+            (Einfuegemodus::Basislinie, 0) => "Ellipse · Mittelachse Anfang klicken",
+            (Einfuegemodus::Basislinie, 1) => "Ellipse · Mittelachse Ende klicken",
+            (Einfuegemodus::Basislinie, _) => "Ellipse · Breite klicken",
+            (_, 0) => "Ellipse · Mittelpunkt klicken",
+            _ => "Ellipse · Achsen aufziehen",
+        },
         "draw.arc" => match tool.pts.len() {
             0 => "Bogen · Startpunkt klicken",
             1 => "Bogen · Endpunkt klicken",
@@ -5141,8 +5209,9 @@ mod tests_chat_texte {
     /// `<Werkzeug> · <Schritt>`, höchstens 48 Zeichen.
     #[test]
     fn jedes_werkzeug_hat_eine_kurze_aufforderung() {
+        let opts = ToolOptions::from_doc(&Document::new());
         for t in werkzeuge() {
-            let h = commands_hint(&t);
+            let h = commands_hint(&t, &opts);
             assert_ne!(
                 h, HINWEIS_UNBEKANNT,
                 "{} ({} Punkte) hat keinen Hinweis",
@@ -5217,8 +5286,9 @@ mod tests_chat_texte {
     /// Implementierungserklärungen in Klammern außer „Enter“.
     #[test]
     fn aufforderungen_sind_knapp() {
+        let opts = ToolOptions::from_doc(&Document::new());
         for t in werkzeuge() {
-            let h = commands_hint(&t);
+            let h = commands_hint(&t, &opts);
             assert!(!h.contains('…'), "{}: Auslassung im Text: {h}", t.action);
             assert!(!h.contains("bitte"), "{}: Floskel: {h}", t.action);
         }
