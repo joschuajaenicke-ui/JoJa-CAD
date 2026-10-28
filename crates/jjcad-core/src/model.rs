@@ -335,6 +335,14 @@ pub enum EntityKind {
         steps: u32,
         #[serde(default)]
         direction: StairDir,
+        /// Treppenhöhe (Geschosshöhe) in mm — Grundlage der Schrittmaßregel.
+        #[serde(default = "default_stair_height")]
+        height: f64,
+        /// Stufenzahl folgt der Schrittmaßregel aus Länge und Höhe
+        /// (`false` = vom Nutzer überschrieben). Ältere Dateien ohne dieses
+        /// Feld behalten ihre gespeicherte Stufenzahl.
+        #[serde(default)]
+        auto_steps: bool,
     },
     BlockRef {
         block: String,
@@ -365,6 +373,9 @@ fn default_window_height() -> f64 {
 }
 fn default_steps() -> u32 {
     16
+}
+fn default_stair_height() -> f64 {
+    crate::stair::HOEHE_VORGABE_MM
 }
 fn default_scale() -> Vec2 {
     v(1.0, 1.0)

@@ -104,7 +104,7 @@ Jedes Objekt hat `id`, `kind`, `layer` und optional `style`:
 | `wall` | `a`, `b`, `thickness`, `height`, `material` | Achse + Dicke; Öffnungen kommen aus Türen/Fenstern mit `host` |
 | `door` | `center`, `angle`, `width`, `kind`, `hinge`, `swing_in`, `host` | `kind`: `Hinge`, `Sliding`, `Double`, `Opening` |
 | `window` | `center`, `angle`, `width`, `sill`, `height`, `host` | |
-| `stair` | `a`, `b`, `width`, `steps`, `direction` | `direction`: `Up`, `Down`, `Both` |
+| `stair` | `a`, `b`, `width`, `steps`, `direction`, `height`, `auto_steps` | `a`/`b` = Lauflinie (mittig), Breite symmetrisch; `height` = Treppenhöhe; `auto_steps` = Stufenzahl aus 2 S + A = 63 cm statt `steps` |
 | `block_ref` | `block`, `pos`, `rot`, `scale`, `mirror` | verweist auf `blocks[].id` |
 
 **Wände verhalten sich wie Linien mit Breite:** `a`/`b` beschreiben die Achse; die

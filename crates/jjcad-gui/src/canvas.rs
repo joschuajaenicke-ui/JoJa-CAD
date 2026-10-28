@@ -1714,28 +1714,66 @@ fn draw_tool_preview(
             }
         }
         "draw.stair" => {
-            if let Some(start) = last {
-                let dir = (cursor - start).normalized();
-                let n = dir.perp() * (app.options.stair_width * 0.5);
-                let quad = vec![
-                    w2s(start + n),
-                    w2s(cursor + n),
-                    w2s(cursor - n),
-                    w2s(start - n),
-                ];
-                p.add(Shape::closed_line(quad, stroke));
-                let steps = app.options.stair_steps.max(1);
-                for i in 1..steps {
-                    let t = i as f64 / steps as f64;
-                    let q = start.lerp(cursor, t);
-                    p.line_segment([w2s(q + n), w2s(q - n)], dashed);
+            // Drei Klicks: Lauflinie (Anfang, Ende), dann die Breite. Die
+            // Vorschau zeigt dieselbe Gestalt wie das fertige Objekt — Umriss,
+            // Stufenlinien und Lauflinie mit Richtungspfeil.
+            match tool.pts.len() {
+                0 => {}
+                1 => {
+                    let a0 = tool.pts[0];
+                    p.line_segment([w2s(a0), w2s(cursor)], dashed);
+                    label = format!(
+                        "{} {}",
+                        unit.format_plain(a0.dist(cursor), unit.decimals()),
+                        unit.short()
+                    );
                 }
-                label = format!(
-                    "{} {} · {} Stufen",
-                    unit.format_plain(start.dist(cursor), unit.decimals()),
-                    unit.short(),
-                    steps
-                );
+                _ => {
+                    let a0 = tool.pts[0];
+                    let b0 = tool.pts[1];
+                    let laenge = a0.dist(b0);
+                    let breite = basis_hoehe(a0, b0, cursor).abs() * 2.0;
+                    if laenge > 1.0 && breite > 1.0 {
+                        let dir = (b0 - a0).normalized();
+                        let nrm = dir.perp();
+                        let hw = breite * 0.5;
+                        let quad = vec![
+                            w2s(a0 + nrm * hw),
+                            w2s(b0 + nrm * hw),
+                            w2s(b0 - nrm * hw),
+                            w2s(a0 - nrm * hw),
+                        ];
+                        p.add(Shape::closed_line(quad, stroke));
+                        let stufen = if app.options.stair_auto {
+                            jjcad_core::stair::stufenzahl(laenge, app.options.stair_height)
+                        } else {
+                            app.options.stair_steps.max(1)
+                        };
+                        for i in 1..stufen {
+                            let q = a0.lerp(b0, i as f64 / stufen as f64);
+                            p.line_segment([w2s(q + nrm * hw), w2s(q - nrm * hw)], dashed);
+                        }
+                        p.line_segment([w2s(a0), w2s(b0)], stroke);
+                        let ah = (laenge * 0.05).max(40.0);
+                        for seite in [1.0, -1.0] {
+                            p.line_segment(
+                                [
+                                    w2s(b0),
+                                    w2s(b0 - dir * (ah * 1.5) + nrm * (ah * 0.6 * seite)),
+                                ],
+                                stroke,
+                            );
+                        }
+                        label = format!(
+                            "{} × {} · {} Stg",
+                            unit.format_plain(laenge, unit.decimals()),
+                            unit.format_plain(breite, unit.decimals()),
+                            stufen
+                        );
+                    } else {
+                        label = "Treppe · Breite klicken".to_string();
+                    }
+                }
             }
         }
         "draw.door" => {
@@ -4174,25 +4212,44 @@ fn tool_click_at(app: &mut App, w: V2, raw: V2) {
             );
         }
         "draw.stair" => {
-            if tool.pts.is_empty() {
-                tool.pts.push(w);
-                app.tool = Some(tool);
-            } else {
-                let a = tool.pts[0];
-                if a.dist(w) > 0.5 {
-                    let dir = match app.options.stair_dir {
-                        StairDir::Up => "up",
-                        StairDir::Down => "down",
-                        StairDir::Both => "both",
-                    };
-                    let _ = run(
-                        app,
-                        "draw.stair",
-                        json!({"a": ax(a), "b": ax(w), "width": unit.from_mm(app.options.stair_width),
-                               "steps": app.options.stair_steps, "direction": dir}),
-                    );
+            // Drei Punkte: Lauflinie (Anfang, Ende), Breite (halber Abstand
+            // zur Lauflinie, also bis zur Außenkante).
+            match tool.pts.len() {
+                0 => {
+                    tool.pts.push(w);
+                    app.tool = Some(tool);
                 }
-                app.tool = None;
+                1 => {
+                    let a = tool.pts[0];
+                    if a.dist(w) > 0.5 {
+                        tool.pts.push(w);
+                        app.tool = Some(tool);
+                    }
+                }
+                _ => {
+                    let a = tool.pts[0];
+                    let b = tool.pts[1];
+                    let breite = basis_hoehe(a, b, w).abs() * 2.0;
+                    if breite > 1.0 && a.dist(b) > 0.5 {
+                        let dir = match app.options.stair_dir {
+                            StairDir::Up => "up",
+                            StairDir::Down => "down",
+                            StairDir::Both => "both",
+                        };
+                        let _ = run(
+                            app,
+                            "draw.stair",
+                            json!({"a": ax(a), "b": ax(b), "width": unit.from_mm(breite),
+                                   "steps": app.options.stair_steps,
+                                   "height": unit.from_mm(app.options.stair_height),
+                                   "auto": app.options.stair_auto,
+                                   "direction": dir}),
+                        );
+                    } else {
+                        app.toast("Treppe · Breite zu klein");
+                    }
+                    app.tool = None;
+                }
             }
         }
         "dim.linear" => {

@@ -648,17 +648,37 @@ fn pending_props(app: &mut App, ui: &mut Ui) {
 
     // ---- Treppe ----
     if tool_id == "draw.stair" {
-        let mut w = app.options.stair_width;
-        widgets::field_row(ui, "Breite", |ui| {
-            if widgets::length_input(ui, &mut w, app.unit(), ui.available_width()) {
-                app.options.stair_width = w;
+        // Die Breite kommt aus dem dritten Klick (Abstand zur Lauflinie), hier
+        // stehen Höhe, Stufenzahl und Laufrichtung.
+        let mut h = app.options.stair_height;
+        widgets::field_row(ui, "Höhe", |ui| {
+            if widgets::length_input_between(ui, &mut h, app.unit(), ui.available_width(), 100.0, 100_000.0) {
+                app.options.stair_height = h;
+            }
+        });
+        let mut auto = app.options.stair_auto;
+        widgets::field_row(ui, "Automatisch", |ui| {
+            if ui
+                .checkbox(&mut auto, "Schrittmaß")
+                .on_hover_text("Stufenzahl aus Länge und Höhe nach 2 S + A = 63 cm")
+                .changed()
+            {
+                app.options.stair_auto = auto;
             }
         });
         let mut st = app.options.stair_steps;
         widgets::field_row(ui, "Stufen", |ui| {
-            if ui.add(crate::widgets::dv(&mut st).range(2..=80)).changed() {
-                app.options.stair_steps = st;
-            }
+            ui.add_enabled_ui(!app.options.stair_auto, |ui| {
+                if ui
+                    .add(
+                        crate::widgets::dv(&mut st)
+                            .range(jjcad_core::stair::STUFEN_MIN..=jjcad_core::stair::STUFEN_MAX),
+                    )
+                    .changed()
+                {
+                    app.options.stair_steps = st;
+                }
+            });
         });
         let dir_items: Vec<(StairDir, String)> = StairDir::ALL
             .iter()
@@ -671,6 +691,7 @@ fn pending_props(app: &mut App, ui: &mut Ui) {
             }
         });
         app.options.stair_dir = dir;
+        ui.label(theme::faint("Dritter Klick setzt die Breite"));
     }
 
     // ---- Text ----
@@ -1650,17 +1671,57 @@ fn entity_props(app: &mut App, ui: &mut Ui, id: Id) {
             )));
         }
         EntityKind::Stair {
-            steps,
+            a,
+            b,
             width,
+            steps,
+            height,
+            auto_steps,
             direction,
             ..
         } => {
-            let mut s = *steps;
             let mut w = *width;
+            let mut h = *height;
             let mut d = *direction;
+            let auto_jetzt = *auto_steps;
+            let laenge = a.dist(*b);
+            let mass = jjcad_core::stair::treppenmass(laenge, *height, *steps, auto_jetzt);
+
+            widgets::field_row(ui, "Höhe", |ui| {
+                if widgets::length_input_between(ui, &mut h, unit, 100.0, 100.0, 100_000.0) {
+                    changed_params.insert("height".into(), json!(unit.from_mm(h)));
+                }
+            });
+            // Die berechnete Stufenzahl steht als Wert da; ein eigener Eintrag
+            // schaltet die Regel ab und gilt dann fest.
+            let mut s = mass.stufen;
             widgets::field_row(ui, "Stufen", |ui| {
-                if ui.add(crate::widgets::dv(&mut s).range(2..=80)).changed() {
-                    changed_params.insert("steps".into(), json!(s));
+                ui.add_enabled_ui(!auto_jetzt, |ui| {
+                    if ui
+                        .add(
+                            crate::widgets::dv(&mut s)
+                                .range(jjcad_core::stair::STUFEN_MIN..=jjcad_core::stair::STUFEN_MAX),
+                        )
+                        .changed()
+                    {
+                        changed_params.insert("steps".into(), json!(s));
+                    }
+                });
+            });
+            widgets::field_row(ui, "Automatisch", |ui| {
+                let mut an = auto_jetzt;
+                let antwort = ui
+                    .checkbox(&mut an, "Schrittmaß")
+                    .on_hover_text("Stufenzahl aus Länge und Höhe nach 2 S + A = 63 cm");
+                if antwort.changed() {
+                    if an {
+                        changed_params.insert("auto_steps".into(), json!(true));
+                    } else {
+                        // Beim Abschalten die berechnete Zahl übernehmen, damit
+                        // die Treppe nicht springt.
+                        changed_params.insert("auto_steps".into(), json!(false));
+                        changed_params.insert("steps".into(), json!(mass.stufen));
+                    }
                 }
             });
             widgets::field_row(ui, "Breite", |ui| {
@@ -1684,6 +1745,40 @@ fn entity_props(app: &mut App, ui: &mut Ui, id: Id) {
                     );
                 }
             });
+            // Schrittmaß als Information — die Zahlen, die auch im Textfeld
+            // der Treppe stehen.
+            let cm = |mm: f64, stellen: usize| {
+                format!("{:.*} cm", stellen, mm / 10.0).replace(".", ",")
+            };
+            ui.add_space(4.0);
+            widgets::info_row(ui, "Auftritt", &cm(mass.auftritt, 1), None);
+            widgets::info_row(ui, "Steigung", &cm(mass.steigung, 1), None);
+            widgets::info_row(
+                ui,
+                "2 S + A",
+                &cm(mass.regel(), 1),
+                Some("Sollwert nach Schrittmaßregel: 63,0 cm"),
+            );
+            widgets::info_row(
+                ui,
+                "Auftrittsfläche",
+                &unit.format_area(mass.auftrittsflaeche(*width), 2),
+                Some("Auftritt × Treppenbreite"),
+            );
+            ui.add_space(6.0);
+            if ui
+                .add_sized(
+                    [ui.available_width(), 24.0],
+                    egui::Button::new("Beschriftung erzeugen"),
+                )
+                .on_hover_text("Stufenzahl und Schrittmaß als Textfeld neben die Treppe setzen")
+                .clicked()
+            {
+                let _ = app
+                    .session_mut()
+                    .execute("draw.stair.label", &json!({"id": id}));
+                app.mark_changed();
+            }
         }
         EntityKind::Text {
             text,

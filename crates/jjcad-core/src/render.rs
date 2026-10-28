@@ -852,8 +852,12 @@ pub fn render_entity(
             width,
             steps,
             direction,
+            height,
+            auto_steps,
         } => {
-            render_stair(ctx, e, &st, *p0, *p1, *width, *steps, *direction, xf, dl);
+            render_stair(
+                ctx, e, &st, *p0, *p1, *width, *steps, *height, *auto_steps, *direction, xf, dl,
+            );
         }
         EntityKind::BlockRef {
             block,
@@ -1886,14 +1890,28 @@ fn render_stair(
     b: Vec2,
     width: f64,
     steps: u32,
+    height: f64,
+    auto_steps: bool,
     direction: StairDir,
     xf: Affine,
     dl: &mut DisplayList,
 ) {
-    let dir = (b - a).normalized();
-    let nrm = dir.perp();
     let len = a.dist(b);
     let hw = width * 0.5;
+    if len < 1.0 || hw < 1.0 {
+        return;
+    }
+    let dir = (b - a).normalized();
+    let nrm = dir.perp();
+    let mass = crate::stair::treppenmass(len, height, steps, auto_steps);
+    let n = mass.stufen.max(1) as usize;
+    let run = len / n as f64;
+    let duenn = PrimStyle {
+        width: st.width * 0.75,
+        ..*st
+    };
+
+    // Umriss der Treppe
     let quad = vec![
         xf.apply(a + nrm * hw),
         xf.apply(b + nrm * hw),
@@ -1906,89 +1924,154 @@ fn render_stair(
         entity: e.id,
         layer: e.layer,
     });
-    let n = steps.max(1);
-    let run = len / n as f64;
+
+    // Abschnittslinie (Bruch) in der Laufmitte: sie unterbricht die
+    // Stufenlinien dort, wo eine der beiden Diagonalen sie kreuzt.
+    let bruch = abschnittslinien(a, dir, nrm, hw, len, width);
     for i in 1..n {
-        let t = i as f64 * run;
-        let p = a + dir * t;
+        let p = a + dir * (run * i as f64);
+        let s = p + nrm * hw;
+        let t = p - nrm * hw;
+        let mut schnitte: Vec<f64> = Vec::new();
+        for l in &bruch {
+            if let Some(u) = kreuz_anteil(s, t, *l) {
+                schnitte.push(u);
+            }
+        }
+        for (q0, q1) in stuecke(s, t, &schnitte, 0.06) {
+            dl.push(Prim {
+                shape: Shape::Line(xf.apply(q0), xf.apply(q1)),
+                style: duenn,
+                entity: e.id,
+                layer: e.layer,
+            });
+        }
+    }
+
+    // Die beiden Diagonalen der Abschnittslinie
+    for (p0, p1) in &bruch {
         dl.push(Prim {
-            shape: Shape::Line(xf.apply(p + nrm * hw), xf.apply(p - nrm * hw)),
-            style: PrimStyle {
-                width: st.width * 0.75,
-                ..*st
-            },
+            shape: Shape::Line(xf.apply(*p0), xf.apply(*p1)),
+            style: *st,
             entity: e.id,
             layer: e.layer,
         });
     }
-    // Laufrichtung + Steigungslinie
-    let mid = (a + b) * 0.5;
-    let arrow_len = (len * 0.5).min(1600.0);
-    let arrow_start = mid - dir * (arrow_len * 0.5);
-    let arrow_end = mid + dir * (arrow_len * 0.5);
+
+    // Lauflinie (Basispunkt a → b, mittig) mit Richtungspfeil und Anfangsring
     dl.push(Prim {
-        shape: Shape::Line(xf.apply(arrow_start), xf.apply(arrow_end)),
+        shape: Shape::Line(xf.apply(a), xf.apply(b)),
         style: *st,
         entity: e.id,
         layer: e.layer,
     });
-    let ah = ctx.a(1.2);
-    let head = |sign: f64| {
-        let tip = if sign > 0.0 { arrow_end } else { arrow_start };
-        let d = dir * sign;
-        vec![
-            xf.apply(tip),
-            xf.apply(tip - d * ah + nrm * (ah * 0.45)),
-            xf.apply(tip - d * ah - nrm * (ah * 0.45)),
-        ]
+    let ah = ctx.a(1.2).max(run * 0.35);
+    let mut pfeil_ende = |tip: Vec2, rueck: Vec2| {
+        for seite in [1.0, -1.0] {
+            let back = tip - rueck * (ah * 1.5) + nrm * (ah * 0.6 * seite);
+            dl.push(Prim {
+                shape: Shape::Line(xf.apply(tip), xf.apply(back)),
+                style: *st,
+                entity: e.id,
+                layer: e.layer,
+            });
+        }
     };
-    let label = match direction {
-        StairDir::Up => "AUF",
-        StairDir::Down => "AB",
-        StairDir::Both => "AUF/AB",
-    };
-    let tip_dir = match direction {
-        StairDir::Down => -1.0,
-        _ => 1.0,
-    };
-    let tri = head(tip_dir);
+    match direction {
+        StairDir::Up => pfeil_ende(b, dir),
+        StairDir::Down => pfeil_ende(a, -dir),
+        StairDir::Both => {
+            pfeil_ende(b, dir);
+            pfeil_ende(a, -dir);
+        }
+    }
+    // Ring am Anfang des Laufs (Anfangspunkt der Treppe)
+    let anfang = if direction == StairDir::Down { b } else { a };
     dl.push(Prim {
-        shape: Shape::Poly(tri, true),
-        style: PrimStyle {
-            color: st.color,
-            fill: Some(st.color),
-            ..*st
+        shape: Shape::Circle {
+            c: xf.apply(anfang),
+            r: (width * 0.06).max(ctx.a(0.5)) * xf.scale_factor(),
         },
-        entity: e.id,
-        layer: e.layer,
-    });
-    if direction == StairDir::Both {
-        dl.push(Prim {
-            shape: Shape::Poly(head(-1.0), true),
-            style: PrimStyle {
-                color: st.color,
-                fill: Some(st.color),
-                ..*st
-            },
-            entity: e.id,
-            layer: e.layer,
-        });
-    }
-    let text_pos = mid + nrm * (hw + ctx.a(1.4));
-    dl.push(Prim {
-        shape: Shape::Text(TextPrim {
-            pos: xf.apply(text_pos),
-            text: label.to_string(),
-            height: ctx.a(2.0) * xf.scale_factor(),
-            angle: dir.angle() + xf.rotation(),
-            align: TextAlignH::Center,
-            valign: TextAlignV::Middle,
-            bold: false,
-        }),
         style: *st,
         entity: e.id,
         layer: e.layer,
     });
+}
+
+/// Anteil (0…1) auf der Strecke `s`→`t`, an dem die Strecke `l` sie schneidet.
+fn kreuz_anteil(s: Vec2, t: Vec2, l: (Vec2, Vec2)) -> Option<f64> {
+    let r = t - s;
+    let q = l.1 - l.0;
+    let denom = r.cross(q);
+    if denom.abs() < 1e-12 {
+        return None;
+    }
+    let u = (l.0 - s).cross(q) / denom;
+    let v = (l.0 - s).cross(r) / denom;
+    if (0.0..=1.0).contains(&u) && (0.0..=1.0).contains(&v) {
+        Some(u)
+    } else {
+        None
+    }
+}
+
+/// Punkt auf der Strecke `s`→`t` beim Anteil `u`.
+fn anteil_punkt(s: Vec2, t: Vec2, u: f64) -> Vec2 {
+    s + (t - s) * u
+}
+
+/// Zerlegt eine Strecke an den Schnittanteilen und lässt an jedem Schnitt eine
+/// Lücke der halben Breite `halb` (Anteil der Strecke).
+fn stuecke(s: Vec2, t: Vec2, schnitte: &[f64], halb: f64) -> Vec<(Vec2, Vec2)> {
+    let mut cuts: Vec<f64> = schnitte
+        .iter()
+        .copied()
+        .filter(|u| *u > 0.01 && *u < 0.99)
+        .collect();
+    cuts.sort_by(|x, y| x.partial_cmp(y).unwrap_or(std::cmp::Ordering::Equal));
+    let mut out = Vec::new();
+    let mut cur = 0.0;
+    for u in cuts {
+        let u0 = (u - halb).max(cur);
+        let u1 = (u + halb).min(1.0);
+        if u0 > cur + 0.001 {
+            out.push((anteil_punkt(s, t, cur), anteil_punkt(s, t, u0)));
+        }
+        cur = cur.max(u1);
+    }
+    if cur < 0.999 {
+        out.push((anteil_punkt(s, t, cur), t));
+    }
+    out
+}
+
+/// Die beiden Diagonalen der Abschnittslinie (Weltkoordinaten).
+///
+/// Sie laufen unter 45° über die Treppenbreite und liegen mittig im Lauf. Bei
+/// kurzen Treppen entfallen sie — dort ist nichts zu verkürzen.
+fn abschnittslinien(
+    a: Vec2,
+    dir: Vec2,
+    nrm: Vec2,
+    hw: f64,
+    len: f64,
+    width: f64,
+) -> Vec<(Vec2, Vec2)> {
+    let d = width * 0.8;
+    let abstand = width * 0.16;
+    if len < d * 1.4 {
+        return Vec::new();
+    }
+    let t0 = (len - (d + abstand)) * 0.5;
+    (0..2)
+        .map(|k| {
+            let t = t0 + abstand * k as f64;
+            (
+                a + dir * t - nrm * hw,
+                a + dir * (t + d) + nrm * hw,
+            )
+        })
+        .collect()
 }
 
 // ---------------------------------------------------------------------------
@@ -2507,7 +2590,39 @@ fn entity_segments_tief(doc: &Document, e: &Entity, depth: usize) -> Vec<Seg> {
                 out.push(Seg::Line(pts[i], pts[i + 1]));
             }
         }
-        EntityKind::Stair { a, b, .. } => out.push(Seg::Line(*a, *b)),
+        EntityKind::Stair {
+            a,
+            b,
+            width,
+            steps,
+            height,
+            auto_steps,
+            ..
+        } => {
+            // Dieselbe Zerlegung wie die Anzeige: Umriss plus Stufenlinien.
+            // Vorher war nur die Achse a→b als Trefferfläche hinterlegt — die
+            // Treppe ließ sich deshalb nur in ihrer Mitte anfassen und jeder
+            // Fangpunkt auf der Kante fehlte.
+            let len = a.dist(*b);
+            if len < 1.0 || *width < 1.0 {
+                out.push(Seg::Line(*a, *b));
+            } else {
+                let dir = (*b - *a).normalized();
+                let nrm = dir.perp();
+                let hw = width * 0.5;
+                let ecken = [*a + nrm * hw, *b + nrm * hw, *b - nrm * hw, *a - nrm * hw];
+                for i in 0..4 {
+                    out.push(Seg::Line(ecken[i], ecken[(i + 1) % 4]));
+                }
+                let mass = crate::stair::treppenmass(len, *height, *steps, *auto_steps);
+                let n = mass.stufen.max(1) as usize;
+                let run = len / n as f64;
+                for i in 1..n {
+                    let p = *a + dir * (run * i as f64);
+                    out.push(Seg::Line(p + nrm * hw, p - nrm * hw));
+                }
+            }
+        }
         EntityKind::Door { center, angle, width, .. } => {
             let d = Vec2::polar(*angle, *width * 0.5);
             out.push(Seg::Line(*center - d, *center + d));
