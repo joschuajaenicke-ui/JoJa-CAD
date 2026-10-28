@@ -2334,6 +2334,14 @@ fn handle_input(
         app.ui.typed.clear();
     }
 
+    // Laufende Fensterauswahl zuerst abschließen: das muss auch dann passieren,
+    // wenn der Zeiger die Zeichenfläche oder das Fenster verlassen hat — unten
+    // wird wegen der Zeigerposition abgebrochen, das Auswahlfenster blieb sonst
+    // dauerhaft stehen (T0023).
+    if auswahl_abschliessen(app, ctx, resp, rect, view) {
+        return;
+    }
+
     // Papierraum: Ansichtsfenster (auswählen, aufziehen, mit V verschieben)
     // haben Vorrang vor der Objektbearbeitung — alles andere läuft wie im
     // Modell über dieselben Werkzeuge.
@@ -2560,21 +2568,70 @@ fn handle_input(
             app.select_drag = Some((start, w, add));
         }
     }
-    if resp.drag_stopped_by(egui::PointerButton::Primary) {
-        if let Some((start, end, add)) = app.select_drag.take() {
-            if start.dist(end) * view.zoom > 4.0 {
-                let crossing = end.x < start.x;
-                let ids = snap::select_window(app.doc(), start, end, crossing);
-                let mut sel = if add { app.selection().to_vec() } else { Vec::new() };
-                for id in ids {
-                    if !sel.contains(&id) {
-                        sel.push(id);
-                    }
-                }
-                app.session_mut().select(sel);
+    // Beendet wird eine Auswahl in `auswahl_abschliessen` (oben) — dort auch
+    // dann, wenn der Zeiger die Zeichenfläche bzw. das Fenster verlassen hat.
+}
+
+/// Schließt eine laufende Fensterauswahl ab (T0023).
+///
+/// `handle_input` bricht weiter unten ab, sobald der Zeiger nicht über der
+/// Zeichenfläche steht. Wer die Maus gedrückt hält und über das Ribbon, die
+/// Panels oder aus dem Fenster hinausfährt, hat das Auswahlfenster deshalb nie
+/// abgeräumt bekommen — es blieb samt Einfärbung stehen. Hier wird der Zug
+/// stattdessen beendet:
+///
+/// * solange die Taste liegt und der Zeiger beim Fenster ist, läuft er weiter;
+///   außerhalb der Zeichenfläche folgt der Endpunkt dem Rand (sonst freeze);
+/// * sonst wird die Auswahl übernommen — das Loslassen außerhalb, ein
+///   abgelöster Zeiger (X11 ohne Mausgriff: das Loslassen erreicht das Fenster
+///   gar nicht) und der Wechsel in ein anderes Fenster beenden ihn hier.
+///
+/// Liefert `true`, wenn der Zug beendet wurde (die übrige Auswertung entfällt).
+fn auswahl_abschliessen(
+    app: &mut App,
+    ctx: &egui::Context,
+    resp: &Response,
+    rect: Rect,
+    view: View,
+) -> bool {
+    let Some((start, letzter, add)) = app.select_drag else {
+        return false;
+    };
+    let (taste_liegt, zeiger_da) = ctx.input(|i| (i.pointer.primary_down(), i.pointer.has_pointer()));
+    if taste_liegt && zeiger_da && !resp.drag_stopped_by(egui::PointerButton::Primary) {
+        if let Some(p) = ctx.input(|i| i.pointer.latest_pos()) {
+            if !rect.contains(p) {
+                let rand = screen_to_world(rect, view, rect.clamp(p));
+                app.select_drag = Some((start, rand, add));
             }
         }
+        return false;
     }
+
+    let end = match ctx.input(|i| i.pointer.latest_pos()) {
+        Some(p) => screen_to_world(rect, view, rect.clamp(p)),
+        None => letzter,
+    };
+    app.select_drag = None;
+    auswahl_uebernehmen(app, start, end, add, view);
+    true
+}
+
+/// Übernimmt das aufgezogene Auswahlfenster (blau = Fenster, grün = Querfenster
+/// bei Zug nach links).
+fn auswahl_uebernehmen(app: &mut App, start: V2, end: V2, add: bool, view: View) {
+    if start.dist(end) * view.zoom <= 4.0 {
+        return;
+    }
+    let crossing = end.x < start.x;
+    let ids = snap::select_window(app.doc(), start, end, crossing);
+    let mut sel = if add { app.selection().to_vec() } else { Vec::new() };
+    for id in ids {
+        if !sel.contains(&id) {
+            sel.push(id);
+        }
+    }
+    app.session_mut().select(sel);
 }
 
 /// Setzt eine laufende Maus-Verschiebung bzw. einen Griff-Drag fort und beendet
@@ -2617,7 +2674,11 @@ fn fertig_erkennen(resp: &Response, zwei_klicks: bool, start_frame: f64, frame: 
     if zwei_klicks {
         (start_frame - frame).abs() > 1e-9 && resp.ctx.input(|i| i.pointer.primary_pressed())
     } else {
-        resp.ctx.input(|i| i.pointer.any_released())
+        // Loslassen — oder der Zeiger hat das Fenster verlassen: unter X11 ohne
+        // Mausgriff erreicht das Loslassen das Fenster dann nicht mehr, der Zug
+        // liefe sonst endlos weiter (T0023).
+        resp.ctx
+            .input(|i| i.pointer.any_released() || !i.pointer.has_pointer())
     }
 }
 
@@ -5363,6 +5424,194 @@ mod tests_fang_polylinie {
     }
 }
 
+
+mod tests_auswahl_bereich {
+    //! Fensterauswahl, die außerhalb der Zeichenfläche bzw. außerhalb des
+    //! Fensters endet (T0023).
+    //!
+    //! `handle_input` bricht ab, sobald der Zeiger nicht über der Zeichenfläche
+    //! steht. Wer die Maus gedrückt hielt und über das Ribbon, die Panels oder
+    //! aus dem Fenster hinausfuhr, ließ das Auswahlfenster deshalb stehen — es
+    //! blieb samt Einfärbung dauerhaft in der Zeichnung.
+
+    use super::*;
+    use jjcad_core::persist::DragMode;
+
+    fn app() -> App {
+        let mut app = App::with_ctx(egui::Context::default());
+        // Ziehen als Gedrückthalten: unabhängig von den Einstellungen des Rechners.
+        app.ui.drag_mode = DragMode::HoldAndDrag;
+        app.session_mut()
+            .execute(
+                "doc.settings",
+                &serde_json::json!({"input_unit": "mm",
+                                   "snap": {"ortho": false, "polar": false, "grid": false}}),
+            )
+            .unwrap();
+        app
+    }
+
+    fn frame(app: &mut App, events: Vec<egui::Event>) {
+        let ctx = app.ctx.clone();
+        let input = egui::RawInput {
+            screen_rect: Some(Rect::from_min_size(Pos2::ZERO, egui::vec2(1500.0, 950.0))),
+            events,
+            ..Default::default()
+        };
+        let _ = ctx.run(input, |ctx| app.ui(ctx));
+    }
+
+    fn druck(pos: Pos2) -> egui::Event {
+        egui::Event::PointerButton {
+            pos,
+            button: egui::PointerButton::Primary,
+            pressed: true,
+            modifiers: egui::Modifiers::NONE,
+        }
+    }
+
+    fn loslassen(pos: Pos2) -> egui::Event {
+        egui::Event::PointerButton {
+            pos,
+            button: egui::PointerButton::Primary,
+            pressed: false,
+            modifiers: egui::Modifiers::NONE,
+        }
+    }
+
+    /// Linie quer über der Zeichenfläche. Liefert (App, Linien-Id,
+    /// Startpunkt des Auswahlfensters, entfernten Eckpunkt) in Bildschirm-Pixeln.
+    fn szenario() -> (App, Id, Pos2, Pos2) {
+        let mut app = app();
+        frame(&mut app, vec![]);
+        let rect = app.ui.last_canvas;
+        let view = app.current_view();
+        let a = Pos2::new(rect.left() + 200.0, rect.top() + 150.0);
+        let b = Pos2::new(rect.left() + 600.0, rect.top() + 400.0);
+        let (wa, wb) = (
+            screen_to_world(rect, view, a),
+            screen_to_world(rect, view, b),
+        );
+        app.session_mut()
+            .execute(
+                "draw.line",
+                &serde_json::json!({"a": [wa.x, wa.y], "b": [wb.x, wb.y]}),
+            )
+            .expect("Linie");
+        let id = app.doc().entities[0].id;
+        let start = Pos2::new(rect.left() + 60.0, rect.top() + 60.0);
+        let ende = Pos2::new(b.x + 60.0, b.y + 60.0);
+        assert!(
+            rect.contains(start) && rect.contains(ende),
+            "Auswahlfenster muss in der Zeichenfläche liegen"
+        );
+        (app, id, start, ende)
+    }
+
+    /// Auswahlfenster aufziehen und die Taste gedrückt lassen.
+    ///
+    /// Nach dem Druck ein kurzer Weg: egui beginnt den Zug erst, wenn der Zeiger
+    /// sich bewegt hat, und der Zugbeginn ist die Stelle dieses Bildes.
+    fn zug_bis(app: &mut App, start: Pos2, ende: Pos2) {
+        frame(app, vec![egui::Event::PointerMoved(start)]);
+        frame(app, vec![druck(start)]);
+        frame(app, vec![egui::Event::PointerMoved(start + Vec2::new(8.0, 8.0))]);
+        frame(app, vec![egui::Event::PointerMoved(ende)]);
+        assert!(app.select_drag.is_some(), "Auswahlfenster muss laufen");
+    }
+
+    /// Loslassen über dem Ribbon (im Fenster, außerhalb der Zeichenfläche): das
+    /// Auswahlfenster darf nicht stehen bleiben.
+    #[test]
+    fn loslassen_ueber_dem_ribbon_raeumt_das_auswahlfenster_ab() {
+        let (mut app, _id, start, ende) = szenario();
+        zug_bis(&mut app, start, ende);
+
+        // Zeiger über das Ribbon schieben (Taste liegt noch) — kein Abbruch.
+        let ribbon = Pos2::new(ende.x, 8.0);
+        frame(&mut app, vec![egui::Event::PointerMoved(ribbon)]);
+        assert!(
+            app.select_drag.is_some(),
+            "solange die Taste liegt, läuft der Zug weiter"
+        );
+
+        frame(&mut app, vec![loslassen(ribbon)]);
+        assert!(
+            app.select_drag.is_none(),
+            "Loslassen außerhalb der Zeichenfläche lässt das Auswahlfenster stehen"
+        );
+    }
+
+    /// Loslassen rechts neben der Zeichenfläche: der Endpunkt folgt dem Rand,
+    /// die Auswahl wird übernommen — nichts bleibt hängen.
+    #[test]
+    fn loslassen_neben_der_flaeche_waehlt_bis_zum_rand() {
+        let (mut app, id, start, ende) = szenario();
+        zug_bis(&mut app, start, ende);
+
+        let daneben = Pos2::new(app.ui.last_canvas.right() + 30.0, ende.y);
+        frame(&mut app, vec![egui::Event::PointerMoved(daneben)]);
+        frame(&mut app, vec![loslassen(daneben)]);
+
+        assert!(app.select_drag.is_none(), "Auswahlfenster abgeräumt");
+        assert_eq!(app.selection(), &[id], "Linie im Zug bis zum Rand");
+    }
+
+    /// Verliert das Fenster den Zeiger (X11 ohne Mausgriff: das Loslassen kommt
+    /// nie an), endet der Zug ebenfalls — die Auswahl bleibt nicht stehen.
+    #[test]
+    fn zeiger_verlaesst_das_fenster_beendet_die_auswahl() {
+        let (mut app, id, start, ende) = szenario();
+        zug_bis(&mut app, start, ende);
+
+        frame(&mut app, vec![egui::Event::PointerGone]);
+        assert!(
+            app.select_drag.is_none(),
+            "abgelöster Zeiger lässt das Auswahlfenster stehen"
+        );
+        assert_eq!(app.selection(), &[id], "bis zum letzten Zeigerstand ausgewählt");
+    }
+
+    /// Gegenprobe: das Loslassen in der Fläche wählt weiterhin wie bisher.
+    #[test]
+    fn loslassen_in_der_flaeche_waehlt_die_linie() {
+        let (mut app, id, start, ende) = szenario();
+        zug_bis(&mut app, start, ende);
+
+        frame(&mut app, vec![loslassen(ende)]);
+        assert!(app.select_drag.is_none());
+        assert_eq!(app.selection(), &[id]);
+    }
+
+    /// Derselbe Fehler beim Griffzug: verliert das Fenster den Zeiger, endet der
+    /// Zug, statt am letzten Stand hängen zu bleiben.
+    #[test]
+    fn zeiger_verlaesst_das_fenster_beendet_den_griffzug() {
+        let mut app = app();
+        app.session_mut()
+            .execute(
+                "draw.polyline",
+                &serde_json::json!({"pts": [[0.0, 0.0], [2000.0, 0.0], [2000.0, 1500.0]]}),
+            )
+            .expect("Polylinie");
+        let poly = app.doc().entities[0].id;
+        app.session_mut().select(vec![poly]);
+        frame(&mut app, vec![]);
+        let rect = app.ui.last_canvas;
+        let view = app.current_view();
+        let griff = world_to_screen(rect, view, V2::new(0.0, 0.0));
+
+        frame(&mut app, vec![egui::Event::PointerMoved(griff)]);
+        frame(&mut app, vec![druck(griff)]);
+        assert!(app.grip_drag.is_some(), "Griffzug muss beginnen");
+
+        frame(&mut app, vec![egui::Event::PointerGone]);
+        assert!(
+            app.grip_drag.is_none(),
+            "abgelöster Zeiger lässt den Griffzug stehen"
+        );
+    }
+}
 
 
 mod tests_fang_vorschau {
