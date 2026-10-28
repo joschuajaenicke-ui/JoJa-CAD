@@ -1,7 +1,7 @@
 //! Anwendungszustand und Fensteraufbau von JoJa-CAD.
 
 use crate::canvas;
-use crate::dialogs::{self, FileDialog, FileMode, TextDialog};
+use crate::dialogs::{self, FileDialog, FileMode};
 use crate::hotbar;
 use crate::inventory;
 use crate::panels;
@@ -359,7 +359,8 @@ pub struct UiState {
     pub about_open: bool,
     pub sheet_dialog: bool,
     pub project_dialog: bool,
-    pub text_dialog: Option<TextDialog>,
+    /// Laufende Texteingabe in der Zeichnung (T0019)
+    pub texteingabe: Option<crate::textedit::Texteingabe>,
     pub block_name_dialog: Option<(String, bool)>,
     /// Hotbar-Vorlage: (None = neu, Some(index) = umbenennen), Name
     pub preset_dialog: Option<(Option<usize>, String)>,
@@ -431,7 +432,7 @@ impl Default for UiState {
             about_open: false,
             sheet_dialog: false,
             project_dialog: false,
-            text_dialog: None,
+            texteingabe: None,
             block_name_dialog: None,
             preset_dialog: None,
             file_dialog: None,
@@ -1953,6 +1954,17 @@ impl App {
         // damit man auch aus einem laufenden Werkzeug heraus wieder herausk kommt.
         if ctx.input(|i| i.key_pressed(egui::Key::F11)) {
             self.toggle_fullscreen(ctx);
+            return;
+        }
+        // Text wird direkt in der Zeichnung geschrieben: solange das Feld
+        // offen ist, gehört die Tastatur ihm. Esc bricht ab, Enter übernimmt
+        // (das wertet `textedit::show` aus), Kürzel bleiben aus.
+        if self.ui.texteingabe.is_some() {
+            if ctx.input(|i| i.key_pressed(egui::Key::Escape)) {
+                self.ui.texteingabe = None;
+                ctx.memory_mut(|m| m.stop_text_input());
+                self.mitteilung("Text · abgebrochen");
+            }
             return;
         }
         if ctx.input(|i| i.key_pressed(egui::Key::Escape)) {

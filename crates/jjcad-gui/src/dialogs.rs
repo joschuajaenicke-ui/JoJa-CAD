@@ -364,20 +364,6 @@ mod dirs {
 }
 
 // ---------------------------------------------------------------------------
-// Textdialog
-// ---------------------------------------------------------------------------
-
-#[derive(Clone)]
-pub struct TextDialog {
-    pub pos: V2,
-    pub text: String,
-    pub height: f64,
-    pub angle: f64,
-    pub layer: jjcad_core::model::Id,
-    pub editing_id: Option<jjcad_core::model::Id>,
-}
-
-// ---------------------------------------------------------------------------
 // Gemeinsame Bausteine
 // ---------------------------------------------------------------------------
 
@@ -532,94 +518,6 @@ pub fn show(app: &mut App, ctx: &egui::Context) {
         }
         if ctx.input(|i| i.key_pressed(egui::Key::Escape)) {
             app.ui.file_dialog = None;
-        }
-    }
-
-    // Text
-    if app.ui.text_dialog.is_some() {
-        dim_background(ctx);
-        let mut done = false;
-        // `win_open` steuert nur das X im Fensterrahmen (false = geschlossen).
-        // Es muss offen starten: mit false zeichnet egui den Dialog überhaupt
-        // nicht, sichtbar bleibt allein die Abdunklung des Hintergrunds.
-        let mut win_open = true;
-        let mut cancel = false;
-        let mut btn_cancel = false;
-        let mut apply: Option<(String, f64, f64)> = None;
-        let text_unit = app.doc().settings.input_unit;
-        if let Some(td) = app.ui.text_dialog.as_mut() {
-            modal_window(ctx, "Text", 460.0, &mut win_open).show(ctx, |ui| {
-                ui.set_width(440.0);
-                ui.label(theme::dim("Text (Platzhalter wie {DATUM} werden ersetzt)"));
-                let resp = ui.add_sized(
-                    [440.0, 90.0],
-                    egui::TextEdit::multiline(&mut td.text).hint_text("Text eingeben …"),
-                );
-                resp.request_focus();
-                ui.add_space(6.0);
-                ui.horizontal(|ui| {
-                    ui.label(theme::dim("Höhe"));
-                    widgets::length_input(ui, &mut td.height, text_unit, 90.0);
-                    ui.add_space(8.0);
-                    ui.label(theme::dim("Drehung"));
-                    let mut a = td.angle.to_degrees();
-                    if ui.add(crate::widgets::dv(&mut a).speed(1.0).suffix("°")).changed() {
-                        td.angle = a.to_radians();
-                    }
-                });
-                ui.add_space(8.0);
-                button_row(ui, |ui| {
-                    if ui.button("Einfügen").clicked() && !td.text.trim().is_empty() {
-                        apply = Some((td.text.clone(), td.height, td.angle));
-                        done = true;
-                    }
-                    if ui.button("Abbrechen").clicked() {
-                        btn_cancel = true;
-                    }
-                });
-                if ui.input(|i| i.key_pressed(egui::Key::Enter) && i.modifiers.command) && !td.text.trim().is_empty() {
-                    apply = Some((td.text.clone(), td.height, td.angle));
-                    done = true;
-                }
-            });
-            if btn_cancel {
-                cancel = true;
-            }
-        }
-        if !win_open {
-            cancel = true; // X im Fensterrahmen
-        }
-        if let Some((text, h, angle)) = apply {
-            let unit = app.unit();
-            let td = app.ui.text_dialog.clone();
-            if let Some(td) = td {
-                let neu = td.editing_id.is_none();
-                let res = match td.editing_id {
-                    Some(id) => app.session_mut().execute(
-                        "modify.set",
-                        &json!({"ids": [id], "text": text, "height": unit.from_mm(h)}),
-                    ),
-                    None => app.session_mut().execute(
-                        "draw.text",
-                        &json!({"p": [unit.from_mm(td.pos.x), unit.from_mm(td.pos.y)],
-                                "text": text, "height": unit.from_mm(h), "angle": angle.to_degrees()}),
-                    ),
-                };
-                match res {
-                    Ok(_) => {
-                        app.mark_changed();
-                        // Chat-Schema: <Objekt> · <Zustand>
-                        app.mitteilung(if neu { "Text · gesetzt" } else { "Text · geändert" });
-                        app.options.text = text.clone();
-                        app.options.text_height = h;
-                    }
-                    Err(e) => app.toast(e),
-                }
-            }
-            app.ui.text_dialog = None;
-        }
-        if done || cancel {
-            app.ui.text_dialog = None;
         }
     }
 
@@ -1502,58 +1400,6 @@ mod modaltests {
 
     fn abdunklung(ctx: &egui::Context) -> bool {
         sichtbar(ctx, Order::Background, "modal_bg")
-    }
-
-    #[test]
-    fn textdialog_wird_gezeichnet_und_nimmt_einfuegen_an() {
-        let (mut app, ctx) = leeres_app();
-        let layer = app.doc().current_layer;
-        app.ui.text_dialog = Some(TextDialog {
-            pos: V2::new(10.0, 20.0),
-            text: String::new(),
-            height: 250.0,
-            angle: 0.0,
-            layer,
-            editing_id: None,
-        });
-
-        frame(&ctx, &mut app, vec![]);
-        assert!(
-            fenster(&ctx, "Text"),
-            "Textdialog muss im ersten Frame gezeichnet werden"
-        );
-        assert!(
-            abdunklung(&ctx),
-            "der modale Dialog dunkelt den Hintergrund ab"
-        );
-        assert!(
-            ctx.memory(|m| m.focused()).is_some(),
-            "das Textfeld im Dialog muss den Fokus bekommen"
-        );
-        // Das Fenster darf nicht Frame für Frame auf die halbe Bildschirmhöhe
-        // wachsen (egui dehnt eine ungebundene Knopfzeile sonst aus).
-        let mut hoehen = Vec::new();
-        for _ in 0..3 {
-            frame(&ctx, &mut app, vec![]);
-            hoehen.push(ctx.memory(|m| m.area_rect(Id::new("Text"))).unwrap().height());
-        }
-        assert!(
-            hoehen.windows(2).all(|w| (w[0] - w[1]).abs() < 1.0),
-            "Dialoghöhe muss stabil bleiben ({hoehen:?})"
-        );
-        assert!(hoehen[0] < 400.0, "Textdialog bleibt kompakt ({hoehen:?})");
-
-        // Zweimal hintereinander aus der Zwischenablage einfügen (Strg+V).
-        frame(&ctx, &mut app, vec![egui::Event::Paste("HALLO".into())]);
-        frame(&ctx, &mut app, vec![egui::Event::Paste(" WELT".into())]);
-        let text = app.ui.text_dialog.as_ref().expect("Dialog bleibt offen").text.clone();
-        assert_eq!(text, "HALLO WELT", "Einfügen landet im Textfeld des Dialogs");
-
-        // Dialog schließen: Fenster und Abdunklung sind danach weg.
-        app.ui.text_dialog = None;
-        frame(&ctx, &mut app, vec![]);
-        assert!(!fenster(&ctx, "Text"));
-        assert!(!abdunklung(&ctx), "ohne Dialog bleibt keine Abdunklung stehen");
     }
 
     #[test]

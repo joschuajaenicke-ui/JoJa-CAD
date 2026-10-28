@@ -654,11 +654,8 @@ fn pending_props(app: &mut App, ui: &mut Ui) {
                 app.options.text_height = h;
             }
         });
-        let mut t = app.options.text.clone();
-        widgets::field_row(ui, "Text", |ui| {
-            ui.add_sized([ui.available_width(), 22.0], egui::TextEdit::singleline(&mut t));
-        });
-        app.options.text = t;
+        // Der Text selbst wird in der Zeichnung getippt (T0019), nicht hier:
+        // ein Feld an dieser Stelle wäre ein zweiter, wirkungsloser Weg.
     }
 
     // ---- Bemaßung ----
