@@ -1193,8 +1193,9 @@ fn render_wall(
         ..*st
     };
 
-    // 1. Füllflächen — exakt der Wandkörper, an der Naht abgeschnitten.
-    for poly in &body.pieces {
+    // 1. Füllflächen — der Wandkörper, an den Nähten in die Nachbarwand
+    //    ausgebucht (überlappt dort, kein Antialiasing-Haarstrich).
+    for poly in &body.fills {
         dl.push(Prim {
             shape: Shape::Fill {
                 outer: poly.iter().map(|q| xf.apply(*q)).collect(),
@@ -1205,59 +1206,11 @@ fn render_wall(
             layer: e.layer,
         });
     }
-    // 2. Füllband an den Nähten. Zwei Wandfüllungen stoßen dort stumpf
-    //    aneinander; die Antialiasing-Ränder ergänzen sich nur auf ~75 %, was
-    //    als heller Haarstrich sichtbar würde. Das Band liegt im
-    //    Nachbarkörper bzw. unter der Außenlinie.
-    for ed in &edges {
-        if !ed.covered || ed.a.dist(ed.b) < 1.0 {
-            continue;
-        }
-        // Nur an einer **Naht** liegt die Füllung des Nachbarn stumpf an; an
-        // einer nur verdeckten Kante (Kante verläuft im Nachbarkörper) darf
-        // kein Band entstehen, sonst quillt die Füllung dort 0,6 mm heraus.
-        let an_naht = body.seams.iter().any(|s| {
-            dist_point_segment(ed.a, s.0, s.1) < 0.05
-                && dist_point_segment(ed.b, s.0, s.1) < 0.05
-        });
-        if !an_naht {
-            continue;
-        }
-        // So weit ins Nachbarband, wie dort wirklich Wand liegt (an den
-        // Gehrungsecken läuft das Band sonst über die Sichtkante hinaus).
-        let weit = |p: Vec2| -> f64 {
-            let mut d = 0.0;
-            while d < wall::FILL_BLEED {
-                let t = (d + 0.2).min(wall::FILL_BLEED);
-                if !idx.covered_point(p + ed.out * (t + 0.05), e.id) {
-                    break;
-                }
-                d = t;
-            }
-            d
-        };
-        let (da, db) = (weit(ed.a), weit(ed.b));
-        if da.max(db) < 0.2 {
-            continue;
-        }
-        // 0,05 mm in die eigene Fläche hinein, damit die Naht selbst in der
-        // Füllung liegt (nicht auf ihrem Rand).
-        let innen = ed.out * 0.05;
-        dl.push(Prim {
-            shape: Shape::Fill {
-                outer: vec![
-                    xf.apply(ed.a - innen),
-                    xf.apply(ed.b - innen),
-                    xf.apply(ed.b + ed.out * db),
-                    xf.apply(ed.a + ed.out * da),
-                ],
-                holes: Vec::new(),
-            },
-            style: fill_style,
-            entity: e.id,
-            layer: e.layer,
-        });
-    }
+    // 2. Kein eigenes Band an der Naht: die Füllflächen selbst sind dort um
+    //    `FILL_BLEED` in die Nachbarwand ausgebucht (`wall::Body::fills`) und
+    //    überlappen. Eine zusätzliche Auflage war entweder als eigene Kante zu
+    //    sehen (breitenabhängig getastet) oder unterpixelbreit und wurde von
+    //    der GUI verworfen — beides erzeugte den Haarstrich.
     // 3. Schraffur der Wandfläche
     if let Some(hp) = hatch {
         push_wall_hatch(dl, e, st, hp, body, thickness, xf);
@@ -1299,7 +1252,7 @@ fn push_wall_hatch(
     match hp {
         FillPattern::Insulation => {
             // Mäanderlinie (Mineralwolle/Dämmung) je Wandstück
-            for poly in &body.pieces {
+            for poly in &body.fills {
                 let ss: Vec<f64> = poly.iter().map(|q| (*q - start).dot(dir)).collect();
                 let smin = ss.iter().cloned().fold(f64::INFINITY, f64::min);
                 let smax = ss.iter().cloned().fold(f64::NEG_INFINITY, f64::max);

@@ -229,7 +229,11 @@ fn pruefe(name: &str, z: &Z, waende: &[(Vec<Vec2>, Vec<Seam>)], bbox: [f64; 4]) 
                     .iter()
                     .enumerate()
                     .any(|(o, g)| o != i && point_in_polygon(p, g));
-                if !drin && !z.linie_nahe(p, 0.3) {
+                // Toleranz = Strichabstand + `FILL_BLEED`: die Füllflächen sind
+                // an der Naht bewusst um 0,6 mm in die Nachbarwand ausgebucht
+                // (kein Haarstrich); an der Nahtspitze liegt dieser Zipfel bis
+                // 0,6 mm neben der Umrandung.
+                if !drin && !z.linie_nahe(p, 0.3 + jjcad_core::wall::FILL_BLEED) {
                     offen.push(p);
                 }
             }

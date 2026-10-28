@@ -3,20 +3,25 @@
 //! Symptom (b): Im Grundriss zogen sich lange diagonale Striche quer durch den
 //! Plan — ein Gitternetz aus Winkelhalbierenden, in der GUI sichtbar, in PDF/PNG
 //! nicht. Ursache war **nicht** eine gezeichnete Konstruktionslinie: Die
-//! Wandfüllung enthält ein 0,4 mm breites Füllband auf der Gehrungsnaht
-//! (Haarnnaht gegen Antialiasing-Streifen). Bei kleiner Anzeige ist dieses Band
-//! schmaler als ein Pixel; egui tesselliert ein so entartetes Polygon zu
-//! Dreiecken mit unbrauchbaren Ecken und zieht daraus Striche über die ganze
-//! Fläche.
+//! Wandfüllung enthielt ein 0,4 mm breites Füllband auf der Gehrungsnaht
+//! (Haarnnaht gegen Antialiasing-Streifen). Bei kleiner Anzeige ist ein so
+//! schmales Band unter einem Pixel; egui tesselliert ein so entartetes Polygon
+//! zu Dreiecken mit unbrauchbaren Ecken und zieht daraus Striche über die
+//! ganze Fläche — und die GUI verwirft es ganz (`fill_too_thin`), dann bleibt
+//! der helle Haarstrich stehen: der flackernde Trennstrich.
+//!
+//! Deshalb gibt es **kein Band mehr**: die Wandfüllungen selbst sind an der Naht
+//! um `FILL_BLEED` (0,6 mm) in die Nachbarwand verlängert (`wall::Body::fills`)
+//! und überlappen dort. Die schmalste Füllung ist damit die Wandfläche.
 //!
 //! Diese Tests halten beide Seiten fest:
 //! 1. Die Displayliste selbst enthält keine unerwartete Diagonale (Kanten einer
 //!    Wand-Ecke sind achsparallel und nicht länger als die Wand).
 //! 2. Für den Beispielplan gibt es keine Linie, die länger als das Haus ist.
-//! 3. Das Haarnnaht-Band ist wirklich unterpixelbreit — also muss die GUI es
-//!    ausblenden (die Grenze dafür prüft `fill_too_thin` in `canvas.rs`).
+//! 3. Keine Füllung ist unterpixelbreit, und die Wandfüllungen überlappen an
+//!    der Naht — es gibt nichts, was die GUI wegblenden könnte.
 
-use jjcad_core::geom::{polygon_min_width, Vec2};
+use jjcad_core::geom::{point_in_polygon, polygon_min_width, Vec2};
 use jjcad_core::persist;
 use jjcad_core::render::{render_document, RenderCtx, Shape};
 use jjcad_core::Session;
@@ -140,30 +145,37 @@ fn beispielplan_ohne_ueberlange_linie() {
     assert!(quer.is_empty(), "schräge Linie über 3 m: {:?}", &quer[..quer.len().min(3)]);
 }
 
-/// Das Haarnnaht-Band ist bei kleiner Anzeige schmaler als ein Pixel.
-///
-/// Damit ist belegt, warum die GUI Füllungen unter 0,75 px Breite verwerfen
-/// muss — und dass die Wandfläche selbst (300 mm) weit darüber liegt.
+/// Keine unterpixelbreite Füllung mehr: die Naht wird nicht durch ein 0,4-mm-
+/// Band geschlossen (das war unter 1 px breit und wurde in der GUI verworfen —
+/// daher der flackernde Trennstrich), sondern durch **überlappende**
+/// Wandfüllungen. Schmalste Füllung ist damit die Wandfläche selbst.
 #[test]
-fn haarnnaht_unterpixelbreit() {
+fn keine_unterpixelbreiten_fuellungen() {
     let s = ecke_90();
     let fills = fuellungen(&s);
-    assert!(!fills.is_empty(), "keine Wandfüllungen");
+    assert!(fills.len() >= 2, "keine Wandfüllungen");
 
     let breiten: Vec<f64> = fills
         .iter()
         .map(|f| polygon_min_width(f) * PX_PER_MM)
         .collect();
     let schmal = breiten.iter().cloned().fold(f64::INFINITY, f64::min);
-    let breit = breiten.iter().cloned().fold(0.0f64, f64::max);
-    // Haarnnaht: 2 × 0,2 mm = 0,4 mm -> ~0,02 px
     assert!(
-        schmal < 0.75,
-        "schmalste Füllung ist {schmal:.3} px breit — Haarnnaht fehlt?"
+        schmal > 5.0,
+        "schmalste Füllung ist {schmal:.3} px breit — unterpixelbreite Auflage?"
     );
-    // Wandkörper: 300 mm -> ~16 px
+
+    // Überlappung an der Naht: eine Ecke der einen Füllung liegt in der anderen.
+    let mut ueberlappt = false;
+    for (i, a) in fills.iter().enumerate() {
+        for (j, b) in fills.iter().enumerate() {
+            if i != j && a.iter().any(|p| point_in_polygon(*p, b)) {
+                ueberlappt = true;
+            }
+        }
+    }
     assert!(
-        breit > 5.0,
-        "breiteste Füllung ist nur {breit:.3} px — die Wandfläche wird verworfen"
+        ueberlappt,
+        "Füllungen überlappen an der Naht nicht — Haarstrich möglich"
     );
 }

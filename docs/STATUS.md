@@ -41,8 +41,13 @@ offene Fensterinstanz zeigt weiterhin den alten Stand.
   - Gezeichnet wird die **Vereinigung**: eine Randkante nur, wo außen keine
     andere Wand liegt. Gehrung, Stumpfstoß, Stich, Kreuz und Mehrfachknoten
     brauchen damit keinen Sonderfall.
-  - Fang nutzt dieselbe Geometrie; Füllband an der Naht 0,6 mm keilförmig
-    (kein Haarstrich).
+  - Fang nutzt dieselbe Geometrie. Gegen den Antialiasing-Haarstrich sind die
+    **Füllflächen** an der Naht um 0,6 mm (`FILL_BLEED`) in die Nachbarwand
+    ausgebucht (`Body::fills`) und überlappen dort; die Geometrie (`pieces`),
+    Umrandung und Fang bleiben exakt. Ein eigenes Bandpolygon taugt nicht: bei
+    breitenabhängiger Tastung war es als Kante zu sehen und flackerte, bei
+    0,4 mm Breite ist es unter einem Pixel und wird von der GUI verworfen —
+    dann bleibt der Haarstrich stehen.
   - Körper werden **bei Bedarf** gerechnet (OnceCell) — der Treffer-Test fragt
     die Bounding-Box jeder Wand ab; `detect_boundary` auf dem Wohnhaus bleibt
     damit unter 100 ms (vorher 127 ms, mit eifriger Rechnung 222 ms).
@@ -101,9 +106,9 @@ offene Fensterinstanz zeigt weiterhin den alten Stand.
 3. **Echte Polygon-Vereinigung der Wandfüllungen** — gezeichnet wird weiter je
    Wand (an der Naht beschnitten, Nebenseite über den Vereinigungstest
    ausgeblendet). Nötig erst, wenn Wände unterschiedliche *Füllfarben* bekommen
-   oder wenn der Haarstrich an der Naht auch bei starkem Zoom weg soll: an der
-   Ecke stoßen zwei Füllungen aneinander (gleiche Farbe fällt nicht auf, das
-   Füllband deckt die Naht).
+   — der Haarstrich an der Naht ist durch die überlappenden Füllflächen
+   (`FILL_BLEED`) erledigt. Zwei verschiedene Füllfarben an einer Naht kann
+   diese Überlappung aber nicht sauber trennen.
 4. **Stumpf statt Gehrung bei entgegengesetzter Ausrichtung** — liegen beide
    Wände auf entgegengesetzten Seiten ihrer Basislinien (links/rechts) und ist
    der Winkel spitz, würde die Naht mehr als eine halbe Wandquerschnittsfläche

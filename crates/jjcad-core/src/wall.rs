@@ -190,6 +190,8 @@ pub struct Seam {
     /// Gehrungspunkte (innen, außen) — für Prüfungen und Tests.
     pub inner: Vec2,
     pub outer: Vec2,
+    /// Die Wand auf der anderen Seite der Naht.
+    pub partner: Id,
 }
 
 /// Körper einer Wand: die Flächen zwischen den Öffnungen, jeweils an den
@@ -201,6 +203,12 @@ pub struct Body {
     /// Anschlussnähte (innen, außen) — die Kanten des Körpers darauf sind
     /// Naht, keine Umgrenzung.
     pub seams: Vec<(Vec2, Vec2)>,
+    /// Nachbarwand je Naht (gleiche Reihenfolge wie `seams`).
+    pub seam_partner: Vec<Id>,
+    /// Wie `pieces`, aber die Nahtkanten sind um `FILL_BLEED` in die
+    /// Nachbarwand ausgebucht — **nur zum Füllen**. Geometrie, Umrandung und
+    /// Fang nutzen `pieces`.
+    pub fills: Vec<Vec<Vec2>>,
     /// Ende ist angeschlossen (Naht oder Ende auf der Basislinie eines
     /// Nachbarn): dort gibt es keine Stirnkante in der Kontur.
     pub end_conn: [bool; 2],
@@ -251,6 +259,7 @@ impl Body {
         // die Ecke (Außenecke hinter dem Wandende), sie schneidet sie nicht nur ab.
         let reach = (MITER_LIMIT * f.h * 1.5).max(10.0);
         let mut pieces = Vec::new();
+        let mut fills = Vec::new();
         for (s0, s1) in segments {
             let mut lo = s0;
             let mut hi = s1;
@@ -275,6 +284,12 @@ impl Body {
             }
             poly = clean_polygon(poly);
             if poly.len() >= 3 && polygon_area(&poly).abs() > 1.0 {
+                let naehte: Vec<(Vec2, Vec2)> = se_start
+                    .iter()
+                    .chain(se_end.iter())
+                    .map(|s| (s.inner, s.outer))
+                    .collect();
+                fills.push(bulge_seam(&poly, &naehte, FILL_BLEED));
                 pieces.push(poly);
             }
         }
@@ -283,11 +298,17 @@ impl Body {
         }
         Some(Self {
             pieces,
+            fills,
             openings,
             seams: se_start
                 .iter()
                 .chain(se_end.iter())
                 .map(|s| (s.inner, s.outer))
+                .collect(),
+            seam_partner: se_start
+                .iter()
+                .chain(se_end.iter())
+                .map(|s| s.partner)
                 .collect(),
             end_conn: [conn[0] || !se_start.is_empty(), conn[1] || !se_end.is_empty()],
             start: f.a,
@@ -466,6 +487,60 @@ fn verlust(band: &[Vec2], inner: Vec2, weg: Vec2, nachbar: &[Vec2]) -> f64 {
     (a - gedeckt).max(0.0)
 }
 
+/// Nahtkante einer Fläche um `w` in die Nachbarwand ausbeulen.
+///
+/// Die Kante bleibt an ihren Endpunkten stehen (kein Zipfel über die Ecke
+/// hinaus), nur die Strecke dazwischen wandert um `w` hinaus. Damit überlappen
+/// die Füllungen beider Wände an der Naht, statt Kante auf Kante zu stoßen —
+/// sonst bleibt bei Unterpixel-Lage ein heller Haarstrich, der beim Ziehen
+/// flackert. Eine eigene, dünne Auflage taugt dafür nicht: die GUI verwirft
+/// Füllungen unter 0,75 px, dann bliebe der Haarstrich stehen.
+fn bulge_seam(poly: &[Vec2], seams: &[(Vec2, Vec2)], w: f64) -> Vec<Vec2> {
+    let mut out: Vec<Vec2> = Vec::with_capacity(poly.len() + 4);
+    let n = poly.len();
+    for k in 0..n {
+        let a = poly[k];
+        let b = poly[(k + 1) % n];
+        out.push(a);
+        let Some((s0, s1)) = seams
+            .iter()
+            .find(|(s0, s1)| on_seam(a, *s0, *s1) && on_seam(b, *s0, *s1))
+            .copied()
+        else {
+            continue;
+        };
+        let d = (s1 - s0).normalized();
+        let mut m = d.perp();
+        // `m` zeigt aus der Fläche hinaus (in die Nachbarwand)
+        if polygon_contains((a + b) * 0.5 + m * 0.5, poly) {
+            m = -m;
+        }
+        out.push(a + m * w);
+        out.push(b + m * w);
+        out.push(b);
+    }
+    out
+}
+
+fn on_seam(p: Vec2, s0: Vec2, s1: Vec2) -> bool {
+    dist_point_segment(p, s0, s1) < 1e-3
+}
+
+fn polygon_contains(p: Vec2, poly: &[Vec2]) -> bool {
+    let mut inside = false;
+    let n = poly.len();
+    for k in 0..n {
+        let (a, b) = (poly[k], poly[(k + 1) % n]);
+        if (a.y > p.y) != (b.y > p.y) {
+            let x = a.x + (p.y - a.y) / (b.y - a.y) * (b.x - a.x);
+            if x > p.x {
+                inside = !inside;
+            }
+        }
+    }
+    inside
+}
+
 /// Schnittfläche zweier konvexer Polygone (Sutherland-Hodgman).
 fn convex_clip(subject: &[Vec2], clip: &[Vec2]) -> Vec<Vec2> {
     let mut out = subject.to_vec();
@@ -605,12 +680,13 @@ impl<'a> WallIndex<'a> {
         let p = if start { f.a0 } else { f.b0 };
         // `d` läuft vom Knoten **in** die Wand (wie `dj` beim Nachbarn).
         let d = if start { f.dir } else { -f.dir };
-        let mut partners: Vec<(Frame, Vec2)> = Vec::new();
+        let mut partners: Vec<(Id, Frame, Vec2)> = Vec::new();
         for j in self.around(p, JOIN_EPS) {
             if j == i {
                 continue;
             }
             let Some(g) = self.frame(j) else { continue };
+            let Some((gid, _)) = self.at(j) else { continue };
             let dj = if g.a0.dist(p) <= JOIN_EPS {
                 g.dir
             } else if g.b0.dist(p) <= JOIN_EPS {
@@ -627,11 +703,11 @@ impl<'a> WallIndex<'a> {
                 }
                 continue;
             }
-            partners.push((*g, dj));
+            partners.push((gid, *g, dj));
         }
         let far = if start { f.b0 } else { f.a0 };
         let mut out = Vec::new();
-        for (g, dj) in partners {
+        for (gid, g, dj) in partners {
             let Some((inner, outer)) = miter_points(f, d, &g, dj) else {
                 continue;
             };
@@ -666,6 +742,7 @@ impl<'a> WallIndex<'a> {
                 nrm,
                 inner,
                 outer,
+                partner: gid,
             });
         }
         out
