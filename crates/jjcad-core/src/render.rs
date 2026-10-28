@@ -8,6 +8,8 @@ use crate::model::*;
 use crate::style::*;
 use crate::transform;
 use crate::units::{dim_text, elevation_text, format_number, format_scale};
+use std::cell::OnceCell;
+use std::collections::HashMap;
 
 // ---------------------------------------------------------------------------
 // Primitive
@@ -226,6 +228,11 @@ pub struct RenderCtx<'a> {
     /// Ansichtsfenster und Ausgaben setzen hier ausdrücklich das Modell, damit
     /// ein gerade offener Papierraum nicht in die Zeichnung durchschlägt.
     pub entities: Option<&'a [Entity]>,
+    /// Wände des Durchgangs, einmal aufgebaut (Nachbarsuche, Bänder).
+    walls: OnceCell<WallIndex<'a>>,
+    /// Nur dieses Gebiet braucht der Durchgang (ein Objekt). Dann wird der
+    /// Wandindex nur im Umfeld gebaut statt über die ganze Zeichnung.
+    wall_scope: Option<BBox>,
 }
 
 impl<'a> RenderCtx<'a> {
@@ -238,6 +245,8 @@ impl<'a> RenderCtx<'a> {
             selection: None,
             sheet_scale: None,
             entities: None,
+            walls: OnceCell::new(),
+            wall_scope: None,
         }
     }
 
@@ -250,6 +259,8 @@ impl<'a> RenderCtx<'a> {
             selection: None,
             sheet_scale: None,
             entities: None,
+            walls: OnceCell::new(),
+            wall_scope: None,
         }
     }
 
@@ -271,6 +282,29 @@ impl<'a> RenderCtx<'a> {
     /// Objektliste des Durchgangs: ausdrücklich gesetzt, sonst der aktive Raum.
     pub fn ents(&self) -> &[Entity] {
         self.entities.unwrap_or_else(|| self.doc.ents())
+    }
+
+    /// Wandindex dieses Durchgangs — einmal gebaut, danach nur Nachbarschaft.
+    pub fn wall_index(&self) -> &WallIndex<'a> {
+        self.walls.get_or_init(|| {
+            let ents: &'a [Entity] = self.entities.unwrap_or_else(|| self.doc.ents());
+            match self.wall_scope {
+                Some(area) => WallIndex::build_near(self.doc, ents, &area),
+                None => WallIndex::build(self.doc, ents),
+            }
+        })
+    }
+
+    /// Kontext für **ein** Objekt: der Wandindex deckt nur dessen Umfeld ab.
+    /// Ohne das würde für die Bounding-Box einer einzelnen Wand der Index über
+    /// die ganze Zeichnung gebaut — und `entity_bbox` läuft in Schleifen.
+    pub fn for_entity(doc: &'a Document, e: &Entity) -> Self {
+        let mut c = Self::new(doc);
+        if let Some(f) = WallFrame::of(e) {
+            let pad = MITER_LIMIT * f.h + 400.0;
+            c.wall_scope = Some(f.band_bbox().expanded(pad));
+        }
+        c
     }
 
     fn layer_ok(&self, layer: Id) -> bool {
@@ -366,7 +400,7 @@ pub fn preview_selection(doc: &Document, ids: &[Id], delta: Vec2) -> DisplayList
 }
 
 pub fn entity_bbox(doc: &Document, e: &Entity) -> BBox {
-    let ctx = RenderCtx::new(doc);
+    let ctx = RenderCtx::for_entity(doc, e);
     let mut dl = DisplayList::default();
     render_entity(&ctx, e, Affine::IDENTITY, &mut dl, 0);
     dl.bbox
@@ -1110,8 +1144,16 @@ const FILL_OVERLAP: f64 = 0.2;
 /// Toleranz für „liegt im Nachbarkörper" beim Beschneiden der Kanten.
 const INSIDE_EPS: f64 = 0.05;
 
-/// Achsrahmen einer Wand: verschobene Achse, Richtung, Normale, halbe Dicke.
+/// Achsrahmen einer Wand: Basislinie, verschobene Achse, Richtung, Normale,
+/// halbe Dicke.
+///
+/// `a0`/`b0` sind die **Basislinie** — die Endpunkte, wie sie im Modell stehen.
+/// `a`/`b` ist dieselbe Achse, um die Ausrichtung (links/mittig/rechts)
+/// verschoben; darauf wird der Wandkörper aufgebaut. Verbunden wird über die
+/// Basislinie, gezeichnet über die verschobene Achse: deshalb stehen beide hier.
 struct WallFrame {
+    a0: Vec2,
+    b0: Vec2,
     a: Vec2,
     b: Vec2,
     dir: Vec2,
@@ -1134,11 +1176,17 @@ impl WallFrame {
         if *thickness <= 0.5 {
             return None;
         }
+        let len = a.dist(*b);
+        if len < 1e-6 {
+            return None;
+        }
         let dir = (*b - *a).normalized();
         let n = dir.perp();
         let h = thickness * 0.5;
         let shift = n * (h * align.offset());
         Some(Self {
+            a0: *a,
+            b0: *b,
             a: *a + shift,
             b: *b + shift,
             dir,
@@ -1155,6 +1203,171 @@ impl WallFrame {
             self.b - self.n * self.h,
             self.a - self.n * self.h,
         ]
+    }
+
+    /// Bounding-Box des Bandes — ohne das Viereck zu bauen (Index-Aufbau).
+    fn band_bbox(&self) -> BBox {
+        BBox::from_points(&[
+            self.a + self.n * self.h,
+            self.b + self.n * self.h,
+            self.b - self.n * self.h,
+            self.a - self.n * self.h,
+        ])
+    }
+}
+
+/// Toleranz, unter der zwei Punkte der Basislinie als **verbunden** gelten (mm).
+///
+/// Darunter liegen nur die Rundungsreste der Koordinaten (Datei, Verschieben,
+/// Drehen). Alles darüber ist ein sichtbarer Spalt und damit **kein** Anschluss:
+/// sonst entschiede die Wanddicke darüber, ob zwei knapp nebeneinanderliegende
+/// Enden eine Gehrung bekommen — genau der unvorhersehbare Zustand, den dieses
+/// Ticket beseitigt.
+pub const JOIN_EPS: f64 = 0.5;
+
+/// Rasterweite der Nachbarsuche (mm). Nur ein Grobfilter; die genaue Prüfung
+/// läuft auf den Kandidaten dieser Zellen.
+const WALL_GRID_MM: f64 = 1000.0;
+
+/// Zellen des Grobrasters, die eine Fläche überdecken.
+fn grid_cells(bb: &BBox) -> Vec<(i64, i64)> {
+    let mut out = Vec::new();
+    if !bb.is_valid() || !bb.min.x.is_finite() || !bb.min.y.is_finite() {
+        return out;
+    }
+    let c = |p: f64| (p / WALL_GRID_MM).floor() as i64;
+    let (x0, x1) = (c(bb.min.x), c(bb.max.x));
+    let (y0, y1) = (c(bb.min.y), c(bb.max.y));
+    // Ausreißer (meterlange Fläche) nicht in Zellen zerlegen — dann eben ohne
+    // Grobfilter, die genaue Prüfung entscheidet ohnehin.
+    if (x1 - x0).abs() > 2048 || (y1 - y0).abs() > 2048 {
+        return out;
+    }
+    for x in x0..=x1 {
+        for y in y0..=y1 {
+            out.push((x, y));
+        }
+    }
+    out
+}
+
+/// Alle Wände eines Durchgangs, **einmal** aufgebaut: Rahmen, Nachbarschafts-
+/// raster und Zugriff über die Id.
+///
+/// Vorher lief jede Wandfunktion über alle Objekte — Ende suchen, Bänder für
+/// den Beschnitt sammeln — und das je Wand. Das war der quadratische Anteil im
+/// Renderer. Mit dem Index kostet der Aufbau einen Durchgang, jede Abfrage nur
+/// noch die Nachbarschaft.
+pub struct WallIndex<'a> {
+    doc: &'a Document,
+    ents: &'a [Entity],
+    frames: Vec<(Id, WallFrame)>,
+    /// Id → Index in `frames`
+    by_id: HashMap<Id, usize>,
+    /// Rasterzelle → Indizes in `frames`
+    grid: HashMap<(i64, i64), Vec<usize>>,
+}
+
+impl<'a> WallIndex<'a> {
+    /// Index über alle Wände der Liste.
+    pub fn build(doc: &'a Document, ents: &'a [Entity]) -> Self {
+        Self::build_in(doc, ents, None)
+    }
+
+    /// Index nur über Wände, deren Band eine Fläche berührt. Für Abfragen zu
+    /// **einem** Objekt (Bounding-Box, Fang-Kontur, Vorschau einer Wand) — dort
+    /// wäre der volle Index für ein einziges Objekt reine Verschwendung.
+    pub fn build_near(doc: &'a Document, ents: &'a [Entity], area: &BBox) -> Self {
+        Self::build_in(doc, ents, Some(*area))
+    }
+
+    fn build_in(doc: &'a Document, ents: &'a [Entity], only: Option<BBox>) -> Self {
+        let mut frames: Vec<(Id, WallFrame)> = Vec::new();
+        let mut by_id: HashMap<Id, usize> = HashMap::new();
+        let mut grid: HashMap<(i64, i64), Vec<usize>> = HashMap::new();
+        for e in ents {
+            let Some(f) = WallFrame::of(e) else { continue };
+            let bb = f.band_bbox();
+            if let Some(area) = only {
+                if !bb.intersects(&area) {
+                    continue;
+                }
+            }
+            let i = frames.len();
+            for key in grid_cells(&bb) {
+                grid.entry(key).or_default().push(i);
+            }
+            by_id.insert(e.id, i);
+            frames.push((e.id, f));
+        }
+        Self {
+            doc,
+            ents,
+            frames,
+            by_id,
+            grid,
+        }
+    }
+
+    fn frame(&self, i: usize) -> Option<&WallFrame> {
+        self.frames.get(i).map(|(_, f)| f)
+    }
+
+    fn at(&self, i: usize) -> Option<(Id, &WallFrame)> {
+        self.frames.get(i).map(|(id, f)| (*id, f))
+    }
+
+    /// Objekt zu einer Id — nur über den Index, damit Papierraum und Modell
+    /// nicht auseinanderlaufen (`Document::entity` sucht im *aktiven* Raum).
+    /// Dokument, aus dem der Index gebaut wurde — für Öffnungssuche/Kontur.
+    pub fn doc(&self) -> &'a Document {
+        self.doc
+    }
+
+    fn ent(&self, id: Id) -> Option<&'a Entity> {
+        self.by_id
+            .get(&id)
+            .and_then(|i| self.frames.get(*i))
+            .and_then(|_| self.ents.iter().find(|e| e.id == id))
+    }
+
+    /// Wandindizes, deren Band im Umkreis `r` um `at` liegt.
+    fn around(&self, at: Vec2, r: f64) -> Vec<usize> {
+        let mut out: Vec<usize> = Vec::new();
+        for key in grid_cells(&BBox::from_point(at).expanded(r)) {
+            if let Some(list) = self.grid.get(&key) {
+                for i in list {
+                    if !out.contains(i) {
+                        out.push(*i);
+                    }
+                }
+            }
+        }
+        out
+    }
+
+    /// Bänder aller Wände außer `own`, die eine um `pad` erweiterte Fläche
+    /// berühren. Genau die braucht der Beschnitt von Kanten und Füllungen.
+    fn bands_near(&self, bb: &BBox, pad: f64, own: Id) -> Vec<Vec<Vec2>> {
+        let area = bb.expanded(pad);
+        let mut out = Vec::new();
+        let mut seen: Vec<usize> = Vec::new();
+        for key in grid_cells(&area) {
+            let Some(list) = self.grid.get(&key) else {
+                continue;
+            };
+            for i in list {
+                let Some((id, f)) = self.at(*i) else { continue };
+                if id == own || seen.contains(i) {
+                    continue;
+                }
+                seen.push(*i);
+                if f.band_bbox().intersects(&area) {
+                    out.push(f.band());
+                }
+            }
+        }
+        out
     }
 }
 
@@ -1178,25 +1391,46 @@ struct WallEnd {
     mitered: bool,
 }
 
-/// Sucht die Nachbarwand, deren Ende am nächsten an `at` liegt (Eckanschluss).
-fn end_partner(doc: &Document, w: &Entity, at: Vec2, h: f64) -> Option<Id> {
-    let mut best: Option<(f64, Id)> = None;
-    for other in &doc.entities {
-        if other.id == w.id {
+/// Sucht die Nachbarwand, deren **Basislinien-Ende** auf `at` liegt
+/// (Eckanschluss).
+///
+/// Verbunden heißt: derselbe Punkt, Toleranz [`JOIN_EPS`]. Ein Ende, das nur
+/// *neben* dem anderen liegt, ist kein Anschluss — die Wand endet dort frei.
+/// Vorher zählte jede Nachbarwand, deren Ende näher als die Summe der halben
+/// Wanddicken (+2 mm) lag; damit hing die Entscheidung an der Wanddicke und war
+/// bei versetzten Enden nicht vorhersehbar.
+fn end_partner(idx: &WallIndex, own: Id, outward: Vec2, at: Vec2) -> Option<usize> {
+    // Bewertung: erst der Abstand zum Basispunkt, bei Gleichstand die
+    // Geradeausfortsetzung. Treffen mehrere Wände in **einem** Punkt zusammen
+    // (Kreuz, T-Stoß), gewinnt damit die fluchtende Wand — die beiden Wände
+    // laufen durch und es entsteht keine willkürliche Gehrung. Ohne diesen
+    // zweiten Schlüssel hinge das Ergebnis an der Reihenfolge im Dokument.
+    let mut best: Option<(f64, f64, usize)> = None;
+    for i in idx.around(at, JOIN_EPS) {
+        let Some((id, f)) = idx.at(i) else { continue };
+        if id == own {
             continue;
         }
-        let Some(f) = WallFrame::of(other) else {
+        let d = f.a0.dist(at).min(f.b0.dist(at));
+        if d > JOIN_EPS {
             continue;
+        }
+        let flucht = f.dir.dot(outward).abs();
+        let besser = match best {
+            None => true,
+            Some((bd, bf, _)) => {
+                if (d - bd).abs() > 1e-9 {
+                    d < bd
+                } else {
+                    flucht > bf
+                }
+            }
         };
-        let d = f.a.dist(at).min(f.b.dist(at));
-        if d > h + f.h + 2.0 {
-            continue;
-        }
-        if best.map(|(bd, _)| d < bd).unwrap_or(true) {
-            best = Some((d, other.id));
+        if besser {
+            best = Some((d, flucht, i));
         }
     }
-    best.map(|(_, id)| id)
+    best.map(|(_, _, i)| i)
 }
 
 /// Gehrung an einem Wandende: Knotenpunkt = Schnitt der beiden verschobenen
@@ -1204,15 +1438,14 @@ fn end_partner(doc: &Document, w: &Entity, at: Vec2, h: f64) -> Option<Id> {
 /// Schnitt mit den beiden Längskanten. `None`, wenn es keine brauchbare
 /// Gehrung gibt (kein Eckanschluss oder Länge über der Grenze).
 fn miter_corners(
-    doc: &Document,
+    idx: &WallIndex,
     at: Vec2,
     outward: Vec2,
     n: Vec2,
     h: f64,
-    partner: Id,
+    partner: usize,
 ) -> Option<(Vec2, Vec2, Vec2)> {
-    let other = doc.entity(partner)?;
-    let f = WallFrame::of(other)?;
+    let f = idx.frame(partner)?;
     let joint = line_line(at, at + outward, f.a, f.b, true, true)?;
     // Richtung des Partners vom Knoten weg
     let away = if f.a.dist(joint) <= f.b.dist(joint) {
@@ -1333,8 +1566,8 @@ fn clip_t_interval(a: Vec2, b: Vec2, poly: &[Vec2]) -> Option<(f64, f64)> {
 /// so steckt eine Wand an einem spitzen Stichanschluss nicht über den Nachbarn
 /// hinaus. `None`, wenn kein Nachbar den Anschluss aufnimmt.
 fn wall_reach(
-    doc: &Document,
-    w: &Entity,
+    idx: &WallIndex,
+    at0: Vec2,
     at: Vec2,
     outward: Vec2,
     n: Vec2,
@@ -1342,18 +1575,13 @@ fn wall_reach(
 ) -> Option<(f64, Id)> {
     let limit = MITER_LIMIT * h + 200.0;
     let mut best: Option<(f64, Id)> = None;
-    for other in &doc.entities {
-        if other.id == w.id {
-            continue;
-        }
-        let Some(f) = WallFrame::of(other) else {
-            continue;
-        };
-        // Anschluss nur, wenn das Ende den Nachbarn überhaupt berührt
-        let touching = [at + n * h, at - n * h]
-            .iter()
-            .any(|c| dist_point_segment(*c, f.a, f.b) <= h + f.h + 1.0);
-        if !touching {
+    for i in idx.around(at0, h + JOIN_EPS) {
+        let Some((id, f)) = idx.at(i) else { continue };
+        // Anschluss nur, wenn der **Basispunkt** auf der Basislinie des
+        // Nachbarn liegt. Vorher genügte, dass die Stirnecken in der Nähe des
+        // Nachbarkörpers lagen — damit hingen seitlich versetzte Enden
+        // scheinbar zusammen, ohne dass ihre Basispunkte verbunden waren.
+        if dist_point_segment(at0, f.a0, f.b0) > JOIN_EPS {
             continue;
         }
         let band = f.band();
@@ -1374,7 +1602,7 @@ fn wall_reach(
         }
         let t = lo.max(0.0);
         if best.map(|(bt, _)| t < bt).unwrap_or(true) {
-            best = Some((t, other.id));
+            best = Some((t, id));
         }
     }
     best
@@ -1382,30 +1610,33 @@ fn wall_reach(
 
 /// Anschluss eines Wandendes: Gehrung zum Ecknachbarn, sonst so weit
 /// verlängern, dass das Ende im Nachbarkörper steckt, sonst freies Ende.
+#[allow(clippy::too_many_arguments)]
 fn wall_end(
-    doc: &Document,
-    w: &Entity,
+    idx: &WallIndex,
+    own: Id,
+    at0: Vec2,
     at: Vec2,
     outward: Vec2,
     n: Vec2,
     h: f64,
     len: f64,
 ) -> WallEnd {
-    if let Some(p) = end_partner(doc, w, at, h) {
-        if let Some((o, i, into)) = miter_corners(doc, at, outward, n, h, p) {
+    if let Some(p) = end_partner(idx, own, outward, at0) {
+        if let Some((o, i, into)) = miter_corners(idx, at, outward, n, h, p) {
+            let pid = idx.at(p).map(|(id, _)| id);
             return WallEnd {
                 ext: 0.0,
                 conn: true,
                 o,
                 i,
                 into,
-                partner: Some(p),
+                partner: pid,
                 patch: miter_patch(at, outward, n, h, len, o, i),
                 mitered: true,
             };
         }
     }
-    if let Some((t, id)) = wall_reach(doc, w, at, outward, n, h) {
+    if let Some((t, id)) = wall_reach(idx, at0, at, outward, n, h) {
         let p = at + outward * t;
         return WallEnd {
             ext: t,
@@ -1486,9 +1717,9 @@ fn line_outside_pieces(a: Vec2, b: Vec2, poly: &[Vec2], eps: f64) -> Vec<(Vec2, 
 /// Körperfläche des Nachbarn am Stoß (gehrungbeschnitten, also ohne den
 /// Bereich, den die Gehrungslinie abschneidet). Dient dazu, die Gehrungsnaht
 /// nur dort zu zeichnen, wo der Nachbar sie nicht abdeckt.
-fn partner_body(doc: &Document, id: Id, at: Vec2) -> Option<Vec<Vec2>> {
-    let other = doc.entity(id)?;
-    let l = WallLayout::of(doc, other)?;
+fn partner_body(doc: &Document, idx: &WallIndex, id: Id, at: Vec2) -> Option<Vec<Vec2>> {
+    let other = idx.ent(id)?;
+    let l = WallLayout::of(doc, idx, other)?;
     let mut best: Option<(f64, Vec<Vec2>)> = None;
     for (s0, s1) in &l.segments {
         let (c0o, c0i, c1o, c1i) = l.corners(*s0, *s1);
@@ -1502,17 +1733,6 @@ fn partner_body(doc: &Document, id: Id, at: Vec2) -> Option<Vec<Vec2>> {
         }
     }
     best.map(|(_, q)| q)
-}
-
-/// Wandbänder aller Wände (zum Beschneiden von Kanten und Füllungen).
-fn wall_bands(doc: &Document) -> Vec<(Id, Vec<Vec2>)> {
-    let mut out = Vec::new();
-    for e in &doc.entities {
-        if let Some(f) = WallFrame::of(e) {
-            out.push((e.id, f.band()));
-        }
-    }
-    out
 }
 
 /// Füllband auf der Anschlusskante. Zwei Wandfüllungen stoßen an der
@@ -1649,7 +1869,7 @@ struct WallLayout {
 }
 
 impl WallLayout {
-    fn of(doc: &Document, e: &Entity) -> Option<Self> {
+    fn of(doc: &Document, idx: &WallIndex, e: &Entity) -> Option<Self> {
         let EntityKind::Wall {
             a,
             b,
@@ -1672,13 +1892,15 @@ impl WallLayout {
         let h = thickness * 0.5;
         // Ausrichtung: Wandkörper relativ zur Achse verschieben (links/mittig/rechts)
         let shift = n * (h * align.offset());
+        let (a0, b0) = (*a, *b);
         let a = *a + shift;
         let b = *b + shift;
 
-        // Anschlüsse: Gehrung zum Ecknachbarn oder Ende so weit in den Nachbarn
-        // schieben, dass beide Stirnecken in dessen Körper liegen.
-        let se = wall_end(doc, e, a, -dir, n, h, len);
-        let ee = wall_end(doc, e, b, dir, n, h, len);
+        // Anschlüsse: Gehrung zum Ecknachbarn (nur bei verbundener Basislinie)
+        // oder Ende so weit in den Nachbarn schieben, dass beide Stirnecken in
+        // dessen Körper liegen.
+        let se = wall_end(idx, e.id, a0, a, -dir, n, h, len);
+        let ee = wall_end(idx, e.id, b0, b, dir, n, h, len);
         let start = a - dir * se.ext;
         let total = len + se.ext + ee.ext;
 
@@ -1746,7 +1968,14 @@ impl WallLayout {
 /// nicht der sichtbare Rest der Linie. Leere Liste, wenn die Wand zu dünn ist
 /// und als einfache Linie gezeichnet wird.
 pub fn wall_contour_segments(doc: &Document, e: &Entity) -> Vec<Seg> {
-    let Some(l) = WallLayout::of(doc, e) else {
+    let idx = WallIndex::build(doc, doc.ents());
+    wall_contour_segments_idx(&idx, e)
+}
+
+/// Wie [`wall_contour_segments`], aber mit einem bereits gebauten Index —
+/// gedacht für Schleifen über viele Objekte (Fang, Auswahl).
+pub fn wall_contour_segments_idx(idx: &WallIndex, e: &Entity) -> Vec<Seg> {
+    let Some(l) = WallLayout::of(idx.doc(), idx, e) else {
         return vec![];
     };
     let mut out = Vec::new();
@@ -1811,7 +2040,8 @@ fn render_wall(
         });
         return;
     }
-    let Some(layout) = WallLayout::of(ctx.doc, e) else {
+    let wall_idx = ctx.wall_index();
+    let Some(layout) = WallLayout::of(ctx.doc, wall_idx, e) else {
         return;
     };
     let dir = layout.dir;
@@ -1831,13 +2061,16 @@ fn render_wall(
         .fill
         .unwrap_or_else(|| st.color.mix(Color::WHITE, 0.74));
 
-    // Andere Wände (Bänder) für das Beschneiden von Kanten und Füllungen
-    let bands = wall_bands(ctx.doc);
-    let others: Vec<Vec<Vec2>> = bands
-        .iter()
-        .filter(|(id, _)| *id != e.id)
-        .map(|(_, q)| q.clone())
-        .collect();
+    // Andere Wände (Bänder) für das Beschneiden von Kanten und Füllungen —
+    // nur die Nachbarschaft, nicht die ganze Zeichnung.
+    let own_bb = BBox::from_points(&[
+        start + dir * 0.0,
+        start + dir * total,
+        start + dir * 0.0 + n * h,
+        start + dir * total - n * h,
+    ]);
+    let others: Vec<Vec<Vec2>> =
+        wall_idx.bands_near(&own_bb, MITER_LIMIT * h + 400.0, e.id);
 
     for (s0, s1) in segments {
         let p0 = start + dir * *s0;
@@ -2012,7 +2245,7 @@ fn render_wall(
             if !active || !end.mitered {
                 continue;
             }
-            let Some(body) = partner_body(ctx.doc, pid, end.o) else {
+            let Some(body) = partner_body(ctx.doc, wall_idx, pid, end.o) else {
                 continue;
             };
             // Stücke außerhalb des Nachbarkörpers; die an das nachgereichte
@@ -2708,6 +2941,8 @@ pub fn render_sheet(doc: &Document, sheet: &Sheet) -> DisplayList {
         selection: None,
         sheet_scale: Some(sheet.scale),
         entities: Some(&sheet.entities),
+        walls: OnceCell::new(),
+        wall_scope: None,
     };
     // Papierraum-Objekte: Blattrahmen, Schriftfeld und alles, was der Nutzer
     // selbst aufs Blatt zeichnet. Alles davon sind normale Objekte — der
@@ -2729,6 +2964,8 @@ pub fn render_model_scaled(doc: &Document, scale: f64, layers: Option<Vec<Id>>) 
         selection: None,
         sheet_scale: None,
         entities: Some(&doc.entities),
+        walls: OnceCell::new(),
+        wall_scope: None,
     };
     render_document(&ctx)
 }
@@ -2744,6 +2981,8 @@ pub fn render_viewport(doc: &Document, vp: &Viewport) -> DisplayList {
         selection: None,
         sheet_scale: None,
         entities: Some(&doc.entities),
+        walls: OnceCell::new(),
+        wall_scope: None,
     };
     let mut dl = render_document(&ctx);
     // Auf Fensterfläche beschneiden: Primitive werden bei Bedarf gekürzt.

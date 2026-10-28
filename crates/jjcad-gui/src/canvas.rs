@@ -708,6 +708,7 @@ pub fn show(app: &mut App, ui: &mut Ui) {
         }
         draw_hilfslinien(app, &painter, rect, view_now);
         draw_text_rahmen(app, &painter, rect, view_now, &selected);
+        draw_wand_basislinien(app, &painter, rect, view_now, &selected);
         draw_grips(app, &painter, rect, view_now, &selected);
         if app.ghost.is_some() {
             draw_ghost(app, &painter, rect, view_now);
@@ -746,6 +747,7 @@ pub fn show(app: &mut App, ui: &mut Ui) {
         // selbst zeichnet (Vorschau, Griffe, Fadenkreuz).
         draw_hilfslinien(app, &painter, rect, view_now);
         draw_text_rahmen(app, &painter, rect, view_now, &selected);
+        draw_wand_basislinien(app, &painter, rect, view_now, &selected);
         draw_grips(app, &painter, rect, view_now, &selected);
         if app.ghost.is_some() {
             draw_ghost(app, &painter, rect, view_now);
@@ -2523,6 +2525,34 @@ fn draw_text_rahmen(app: &App, p: &Painter, rect: Rect, view: View, selected: &[
             0.0,
             Stroke::new(1.0, Palette::SELECT.gamma_multiply(0.55)),
         );
+    }
+}
+
+/// Basislinie der ausgewählten Wände: die Strecke zwischen den beiden
+/// Endpunkten (`a`→`b`), auf der der Wandkörper aufsitzt.
+///
+/// Sie ist das Maß für den Eckanschluss: verbunden wird nur, wenn zwei
+/// Basislinien-Endpunkte **aufeinander** liegen (siehe `render::JOIN_EPS`).
+/// Ohne diese Linie ist bei versetzten Enden nicht zu sehen, warum zwei Wände
+/// keine Gehrung bekommen — gestrichelt und in der Akzentfarbe, damit sie sich
+/// vom blau eingefärbten Wandkörper abhebt.
+fn draw_wand_basislinien(app: &App, p: &Painter, rect: Rect, view: View, selected: &[Id]) {
+    if selected.is_empty() || selected.len() > 60 {
+        return;
+    }
+    let doc = app.doc();
+    let stroke = Stroke::new(1.2, Palette::ACCENT);
+    for id in selected {
+        let Some(e) = doc.entity(*id) else { continue };
+        let EntityKind::Wall { a, b, .. } = &e.kind else {
+            continue;
+        };
+        let pa = world_to_screen(rect, view, *a);
+        let pb = world_to_screen(rect, view, *b);
+        p.extend(Shape::dashed_line(&[pa, pb], stroke, 9.0, 5.0));
+        for q in [pa, pb] {
+            p.circle_filled(q, 2.2, Palette::ACCENT);
+        }
     }
 }
 

@@ -173,7 +173,8 @@ pub fn richtung_am_punkt(doc: &Document, entity: Id, p: Vec2) -> Option<Vec2> {
     // umgrenzenden Linien fände sie keine Richtung und bekäme ein Achsenkreuz
     // statt der Verlängerung ihrer Wand.
     if matches!(e.kind, EntityKind::Wall { .. }) {
-        segs.extend(render::wall_contour_segments(doc, e));
+        let idx = render::WallIndex::build(doc, doc.ents());
+        segs.extend(render::wall_contour_segments_idx(&idx, e));
     }
     for sg in segs {
         match sg {
@@ -266,6 +267,7 @@ fn nahe_segmente(
     let area = BBox::new(cursor - v(tol, tol), cursor + v(tol, tol));
     let wall_edges = doc.settings.snap.wall_edges;
     let mut segs = Vec::new();
+    let mut widx: Option<render::WallIndex> = None;
     for e in doc.ents() {
         if ignore.contains(&e.id) {
             continue;
@@ -287,7 +289,8 @@ fn nahe_segmente(
             segs.push((sg, e.id, ausgewaehlt));
         }
         if wall_edges && matches!(e.kind, EntityKind::Wall { .. }) {
-            for sg in render::wall_contour_segments(doc, e) {
+            let idx = widx.get_or_insert_with(|| render::WallIndex::build(doc, doc.ents()));
+            for sg in render::wall_contour_segments_idx(idx, e) {
                 segs.push((sg, e.id, ausgewaehlt));
             }
         }
@@ -559,6 +562,7 @@ fn snap_candidates_alle(
     // Objekt? Dann nur diskrete Punkte anbieten, keine kontinuierlichen Fänge.
     let area = BBox::new(cursor - v(tol, tol), cursor + v(tol, tol));
     let mut segs: Vec<(Seg, Id, bool)> = Vec::new();
+    let mut widx: Option<render::WallIndex> = None;
     // Aktiver Bearbeitungsraum (Modell oder Papierraum)
     for e in doc.ents() {
         if ignore.contains(&e.id) {
@@ -588,7 +592,8 @@ fn snap_candidates_alle(
         // kennt der Fang nur die Wandachse. Getrennt schaltbar über
         // `snap.wall_edges` — die Achse bleibt in jedem Fall erhalten.
         if s.wall_edges && matches!(e.kind, EntityKind::Wall { .. }) {
-            for sg in render::wall_contour_segments(doc, e) {
+            let idx = widx.get_or_insert_with(|| render::WallIndex::build(doc, doc.ents()));
+            for sg in render::wall_contour_segments_idx(idx, e) {
                 segs.push((sg, e.id, ausgewaehlt));
             }
         }
