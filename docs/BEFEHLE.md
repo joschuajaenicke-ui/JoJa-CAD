@@ -65,7 +65,7 @@ Ohne `host` sucht `draw.door`/`draw.window` die nächste Wand im Umfeld und
 | ID | Parameter | Hinweise |
 |---|---|---|
 | `modify.move` | `ids[]`, `from`, `to` (oder `dx`,`dy`) | |
-| `modify.copy` | wie `move`, `copy: true` | Kopieren mit Basispunkt: erzeugt neue Objekte |
+| `modify.copy` | wie `move`, `copy: true` | Kopieren mit Basispunkt; als Befehl mit `to` erzeugt es die Objekte sofort, in der Oberfläche füllt es nur die Zwischenablage |
 | `modify.rotate` | `ids[]`, `center`, `angle` | `angle` in Grad, `copy` optional |
 | `modify.mirror` | `ids[]`, `p1`, `p2`, `keep_original` | Achse durch zwei Punkte |
 | `modify.scale` | `ids[]`, `center`, `factor` | Faktor > 0 |

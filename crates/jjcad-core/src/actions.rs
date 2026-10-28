@@ -119,7 +119,7 @@ pub const ACTIONS: &[ActionDef] = &[
     act!("modify.order", "Reihenfolge", Aendern, "layers", "", "to = Platz in der Zeichenreihenfolge (1 = ganz hinten)", true),
     // Kopie versetzt absetzen: erst Basispunkt, dann Zielpunkt. Getrennt vom
     // reinen Kopieren in die Zwischenablage (`edit.copy`, Strg+C).
-    act!("modify.copy", "Kopieren mit Basispunkt", Aendern, "copy-base", "ctrl+shift+c", "Auswahl, Basispunkt, Zielpunkt", true),
+    act!("modify.copy", "Kopieren mit Basispunkt", Aendern, "copy-base", "ctrl+shift+c", "Auswahl und Basispunkt — Kopie in die Zwischenablage", true),
     act!("modify.rotate", "Drehen", Aendern, "rotate", "r", "Auswahl, Zentrum, Winkel", true),
     act!("modify.mirror", "Spiegeln", Aendern, "mirror", "f", "Auswahl, Spiegelachse", true),
     act!("modify.scale", "Skalieren", Aendern, "scale", "", "Auswahl, Zentrum, Faktor", true),

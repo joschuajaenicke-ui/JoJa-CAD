@@ -184,6 +184,8 @@ Mit dem Nutzer abgestimmt — nicht „verbessern“:
   `S` spiegelt, Klick bestätigt. Die Zwischenablage trägt ihren **Basispunkt** mit:
   „Kopieren mit Basispunkt" nimmt den geklickten Punkt, „Kopieren" automatisch die
   untere linke Ecke der Auswahl — beim Einfügen steht dieser Punkt am Zeiger.
+  **Kopieren setzt nie sofort eine Kopie ab** (auch nicht mit Basispunkt): es füllt
+  nur die Zwischenablage, platziert wird über die Einfüge-Vorschau.
 - **Rechtsklickmenüs** bleiben offen, wenn der Zeiger in die Zeichenfläche kommt.
 - **Eigenschaften-Panel**: gleiche Zeilen (96 px Label, 150 px Wert) beim Platzieren
   *und* bei Auswahl; bei Mehrfachauswahl nur gemeinsame Felder, abweichende Werte
