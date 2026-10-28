@@ -1699,35 +1699,45 @@ pub struct DoorSpec {
     pub swing_in: bool,
 }
 
-/// Vorschau einer Tür: das Türsymbol und die Wandstücke ihres Hosts.
+/// Lage und Form eines Fensters, das gerade platziert wird.
+#[derive(Clone, Copy, Debug)]
+pub struct WindowSpec {
+    /// Wand, in der das Fenster sitzt — ohne Wand gibt es keine Vorschau.
+    pub host: Option<Id>,
+    /// Geklickter Punkt auf der Wandachse (mm).
+    pub center: Vec2,
+    /// Richtung der Wand (Bogenmaß).
+    pub angle: f64,
+    pub width: f64,
+    /// Lage in der Wanddicke (Links/Mittig/Rechts).
+    pub align: WallAlign,
+}
+
+/// Vorschau einer Öffnung (Tür oder Fenster): Symbol, Wandstücke des Hosts und
+/// die im Wandkörper freigelegte Fläche.
 ///
-/// Beides kommt aus demselben Renderer wie das fertige Objekt — das Blatt samt
-/// Öffnungsbogen aus [`render_door`], das Loch in der Wand aus
-/// [`wall_opening_intervals`] (die Tür wird dafür in eine Kopie des Dokuments
-/// gelegt). Vorher zeichnete die GUI einen eigenen Platzhalter: voller Kreis
-/// statt Viertelbogen, Anschlag zur falschen Seite und die Tür in der
-/// Wandmitte statt auf der vorderen Kante (T0026).
-pub struct DoorPreview {
-    /// Türsymbol — als Akzentkontur gezeichnet
-    pub door: DisplayList,
-    /// Wandstücke des Hosts mit dem Loch dieser Tür — in Normalfarbe, damit
-    /// die Wand genauso aussieht wie nach dem Klick
+/// Alles kommt aus demselben Renderer wie das fertige Objekt — Türblatt samt
+/// Öffnungsbogen bzw. Fensterrahmen aus [`render_entity`], das Loch in der Wand
+/// aus [`wall_opening_intervals`]; die Öffnung wird dafür in eine Kopie des
+/// Dokuments gelegt. Vorher zeichnete die GUI eigene Platzhalter: bei der Tür
+/// ein voller Kreis in der Wandmitte mit gespiegeltem Anschlag, beim Fenster
+/// eine Linie mit zwei Hilfslinien — beide ohne Ausschnitt in der Wand (T0026).
+pub struct OpeningPreview {
+    /// Symbol der Öffnung — als Akzentkontur gezeichnet
+    pub symbol: DisplayList,
+    /// Wandstücke des Hosts mit dem Loch dieser Öffnung — in Normalfarbe,
+    /// damit die Wand genauso aussieht wie nach dem Klick
     pub wall: DisplayList,
-    /// Flächen, die die Tür im Wandkörper freimacht (Weltkoordinaten). Die
+    /// Flächen, die die Öffnung im Wandkörper freimacht (Weltkoordinaten). Die
     /// Vorschau wird **über** die vorhandene Wand gezeichnet; ohne Freilegen
     /// bliebe das Loch unsichtbar, weil die Wand darunter weiterläuft.
     pub loch: Vec<Vec<Vec2>>,
 }
 
 /// Vorschau der Tür, die beim Klick entsteht.
-pub fn preview_door(doc: &Document, spec: &DoorSpec) -> Option<DoorPreview> {
+pub fn preview_door(doc: &Document, spec: &DoorSpec) -> Option<OpeningPreview> {
     let host = spec.host?;
-    // Bewusst in `doc.entities` (Modell) gesucht — dieselbe Stelle, an der
-    // `canvas::wall_under` und die Action `draw.door` den Host finden.
-    let host_e = doc.entities.iter().find(|e| e.id == host)?.clone();
-    if !matches!(host_e.kind, EntityKind::Wall { .. }) {
-        return None;
-    }
+    let host_e = host_wall_entity(doc, host)?;
     // Tür immer auf der vorderen Wandkante — dieselbe Rechnung wie in der
     // Action `draw.door`, sonst springt die Tür beim Klick um die halbe
     // Wanddicke zur Seite.
@@ -1738,38 +1748,78 @@ pub fn preview_door(doc: &Document, spec: &DoorSpec) -> Option<DoorPreview> {
         spec.angle,
         spec.swing_in,
     );
+    let kind = EntityKind::Door {
+        align: WallAlign::Center,
+        center,
+        angle: spec.angle,
+        width: spec.width,
+        kind: spec.kind,
+        hinge: spec.hinge,
+        swing_in: spec.swing_in,
+        host: spec.host,
+        at: None,
+    };
+    opening_preview(doc, host, &host_e, kind, center, spec.width)
+}
+
+/// Vorschau des Fensters, die beim Klick entsteht.
+pub fn preview_window(doc: &Document, spec: &WindowSpec) -> Option<OpeningPreview> {
+    let host = spec.host?;
+    let host_e = host_wall_entity(doc, host)?;
+    // Lage in der Wanddicke wie in der Action `draw.window`.
+    let center =
+        crate::actions::offset_opening(doc, spec.host, spec.center, spec.angle, spec.align);
+    let kind = EntityKind::Window {
+        align: spec.align,
+        center,
+        angle: spec.angle,
+        width: spec.width,
+        // Bauhöhen ändern am Grundriss-Symbol nichts.
+        sill: 0.0,
+        height: 0.0,
+        host: spec.host,
+        at: None,
+    };
+    opening_preview(doc, host, &host_e, kind, center, spec.width)
+}
+
+/// Host-Wand aus dem Modell — dieselbe Stelle, an der `canvas::wall_under` und
+/// die Actions den Host suchen.
+fn host_wall_entity(doc: &Document, host: Id) -> Option<Entity> {
+    let e = doc.entities.iter().find(|e| e.id == host)?.clone();
+    matches!(e.kind, EntityKind::Wall { .. }).then_some(e)
+}
+
+/// Gemeinsamer Weg für Tür und Fenster: Symbol und Wand mit Loch rendern.
+///
+/// Tür und Fenster bekommen damit denselben Ausschnitt in der Wand — gleiche
+/// Breite, gleiche Laibungen (T0026, Turn 2).
+fn opening_preview(
+    doc: &Document,
+    host: Id,
+    host_e: &Entity,
+    kind: EntityKind,
+    center: Vec2,
+    width: f64,
+) -> Option<OpeningPreview> {
     let mut vor = doc.clone();
     let id = vor.new_id();
-    let door = Entity::new(
-        id,
-        vor.current_layer,
-        EntityKind::Door {
-            align: WallAlign::Center,
-            center,
-            angle: spec.angle,
-            width: spec.width,
-            kind: spec.kind,
-            hinge: spec.hinge,
-            swing_in: spec.swing_in,
-            host: spec.host,
-            at: None,
-        },
-    );
-    vor.entities.push(door.clone());
+    let symbol = Entity::new(id, vor.current_layer, kind);
+    vor.entities.push(symbol.clone());
     let ctx = RenderCtx::new(&vor);
-    let mut door_dl = DisplayList::default();
-    render_entity(&ctx, &door, Affine::IDENTITY, &mut door_dl, 0);
+    let mut symbol_dl = DisplayList::default();
+    render_entity(&ctx, &symbol, Affine::IDENTITY, &mut symbol_dl, 0);
     let mut wall_dl = DisplayList::default();
     if let Some(w) = vor.entities.iter().find(|e| e.id == host) {
         render_entity(&ctx, w, Affine::IDENTITY, &mut wall_dl, 0);
     }
     // Fläche der Öffnung: dasselbe Intervall, das die Wand ausschneidet.
     let mut loch = Vec::new();
-    if let Some(f) = wall::Frame::of(&host_e) {
+    if let Some(f) = wall::Frame::of(host_e) {
         let t = (center - f.a0).dot(f.dir);
         let total = f.len();
-        let s0 = (t - spec.width * 0.5).clamp(0.0, total);
-        let s1 = (t + spec.width * 0.5).clamp(0.0, total);
+        let s0 = (t - width * 0.5).clamp(0.0, total);
+        let s1 = (t + width * 0.5).clamp(0.0, total);
         if s1 > s0 + 1.0 {
             let p0 = f.a + f.dir * s0;
             let p1 = f.a + f.dir * s1;
@@ -1781,8 +1831,8 @@ pub fn preview_door(doc: &Document, spec: &DoorSpec) -> Option<DoorPreview> {
             ]);
         }
     }
-    Some(DoorPreview {
-        door: door_dl,
+    Some(OpeningPreview {
+        symbol: symbol_dl,
         wall: wall_dl,
         loch,
     })

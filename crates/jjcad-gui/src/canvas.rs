@@ -56,17 +56,6 @@ fn align_name(a: jjcad_core::style::WallAlign) -> &'static str {
     }
 }
 
-/// Mittelpunkt einer Öffnung im Wandkörper (berücksichtigt die Wandausrichtung).
-fn opening_center(app: &App, host: jjcad_core::model::Id, p: V2, ang: f64) -> V2 {
-    if let Some(jjcad_core::model::EntityKind::Wall { thickness, align, .. }) =
-        app.doc().entity(host).map(|e| &e.kind)
-    {
-        let n = V2::polar(ang + std::f64::consts::FRAC_PI_2, 1.0);
-        return p + n * (thickness * 0.5 * align.offset());
-    }
-    p
-}
-
 /// Nächste Wand unter dem Punkt: liefert (Punkt auf der Achse, Wandwinkel, Wand-Id).
 fn wall_under(app: &App, p: V2) -> Option<(V2, f64, jjcad_core::model::Id)> {
     let mut best: Option<(f64, V2, f64, jjcad_core::model::Id)> = None;
@@ -1388,6 +1377,48 @@ fn draw_cursor(
     }
 }
 
+/// Zeichnet die Vorschau einer Öffnung (Tür oder Fenster).
+///
+/// Drei Schritte, weil die Vorschau **über** der vorhandenen Zeichnung liegt:
+/// erst das Loch in Papierfarbe freilegen (die Wand darunter läuft sonst
+/// durch), dann die Wandkanten in Normalfarbe (Füllflächen auslassen, sie
+/// deckten Bemaßung und Schraffur zu), zuletzt das Symbol als Akzentkontur.
+fn draw_opening_preview(
+    app: &App,
+    p: &Painter,
+    view: View,
+    v: &render::OpeningPreview,
+    w2s: &dyn Fn(V2) -> Pos2,
+) {
+    for quad in &v.loch {
+        let pts: Vec<Pos2> = quad.iter().map(|q| w2s(*q)).collect();
+        p.add(egui::Shape::convex_polygon(pts, Palette::PAPER, Stroke::NONE));
+    }
+    let paper_px = view.zoom * app.doc().settings.annotation_scale;
+    let wand_ctx = PaintCtx {
+        selected: app.selection().to_vec(),
+        hover: app.tab().hover,
+        lineweights: app.ui.lineweights,
+        lineweights_scaled: app.ui.lineweights_scaled,
+        paper_px,
+        preview: false,
+        rot: view.rot as f32,
+    };
+    let symbol_ctx = PaintCtx {
+        preview: true,
+        ..wand_ctx.clone()
+    };
+    for prim in &v.wall.prims {
+        if matches!(prim.shape, PShape::Fill { .. }) {
+            continue;
+        }
+        paint_prim(p, prim, w2s, view.zoom, &wand_ctx, 1.0);
+    }
+    for prim in &v.symbol.prims {
+        paint_prim(p, prim, w2s, view.zoom, &symbol_ctx, 1.0);
+    }
+}
+
 fn draw_tool_preview(
     app: &mut App,
     p: &Painter,
@@ -1780,8 +1811,8 @@ fn draw_tool_preview(
             let width = app.options.door_width;
             // Vorschau ist die Tür selbst: dasselbe Symbol wie nach dem Klick
             // (Blatt, Öffnungsbogen, Anschlagseite) auf der vorderen
-            // Wandkante, dazu die Wand mit ihrem Loch. Ein eigener Platzhalter
-            // hatte mit dem Ergebnis nichts zu tun (T0026).
+            // Wandkante, dazu die Wand mit ihrem Ausschnitt. Ein eigener
+            // Platzhalter hatte mit dem Ergebnis nichts zu tun (T0026).
             match wall_under(app, cursor) {
                 Some((cp, ang, host)) => {
                     let spec = render::DoorSpec {
@@ -1794,42 +1825,7 @@ fn draw_tool_preview(
                         swing_in: app.options.swing_in,
                     };
                     if let Some(v) = render::preview_door(app.doc(), &spec) {
-                        let paper_px = view.zoom * app.doc().settings.annotation_scale;
-                        let wand_ctx = PaintCtx {
-                            selected: app.selection().to_vec(),
-                            hover: app.tab().hover,
-                            lineweights: app.ui.lineweights,
-                            lineweights_scaled: app.ui.lineweights_scaled,
-                            paper_px,
-                            preview: false,
-                            rot: view.rot as f32,
-                        };
-                        let tuer_ctx = PaintCtx {
-                            preview: true,
-                            ..wand_ctx.clone()
-                        };
-                        // Loch in der Wand freilegen (die Wand darunter läuft
-                        // sonst durch), dann Wand, dann Tür als Akzent
-                        for quad in &v.loch {
-                            let pts: Vec<Pos2> = quad.iter().map(|q| w2s(*q)).collect();
-                            p.add(egui::Shape::convex_polygon(
-                                pts,
-                                Palette::PAPER,
-                                Stroke::NONE,
-                            ));
-                        }
-                        for prim in &v.wall.prims {
-                            // Füllflächen auslassen: sie lägen über allem, was
-                            // die Wand überdeckt (Bemaßung, Schraffur) —
-                            // sichtbar ist nur die Unterbrechung der Kanten.
-                            if matches!(prim.shape, PShape::Fill { .. }) {
-                                continue;
-                            }
-                            paint_prim(p, prim, &w2s, view.zoom, &wand_ctx, 1.0);
-                        }
-                        for prim in &v.door.prims {
-                            paint_prim(p, prim, &w2s, view.zoom, &tuer_ctx, 1.0);
-                        }
+                        draw_opening_preview(app, p, view, &v, &w2s);
                     }
                     label = format!("Tür {}", unit.format_plain(width, 2));
                 }
@@ -1842,21 +1838,27 @@ fn draw_tool_preview(
         }
         "draw.window" => {
             let width = app.options.window_width;
-            let (c, ang) = match wall_under(app, cursor) {
-                Some((cp, a, id)) => (opening_center(app, id, cp, a), a),
-                None => (cursor, 0.0),
-            };
-            let dir = V2::polar(ang, 1.0);
-            let nrm = dir.perp();
-            let half = dir * (width * 0.5);
-            p.line_segment([w2s(c - half), w2s(c + half)], stroke);
-            for off in [-60.0, 60.0] {
-                p.line_segment(
-                    [w2s(c - half + nrm * off), w2s(c + half + nrm * off)],
-                    dashed,
-                );
+            // Dasselbe wie bei der Tür: das fertige Fenster mit demselben
+            // Ausschnitt in der Wand (T0026, Turn 2).
+            match wall_under(app, cursor) {
+                Some((cp, ang, host)) => {
+                    let spec = render::WindowSpec {
+                        host: Some(host),
+                        center: cp,
+                        angle: ang,
+                        width,
+                        align: jjcad_core::style::WallAlign::Center,
+                    };
+                    if let Some(v) = render::preview_window(app.doc(), &spec) {
+                        draw_opening_preview(app, p, view, &v, &w2s);
+                    }
+                    label = format!("Fenster {}", unit.format_plain(width, 2));
+                }
+                None => {
+                    p.circle_stroke(w2s(cursor), 9.0, dashed);
+                    label = "Fenster · nur auf einer Wand".into();
+                }
             }
-            label = format!("Fenster {}", unit.format_plain(width, 2));
         }
         "draw.point" => {
             p.circle_stroke(w2s(cursor), 6.0, stroke);
