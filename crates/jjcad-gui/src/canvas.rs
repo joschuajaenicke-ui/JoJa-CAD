@@ -2185,7 +2185,7 @@ fn fang_regeln(app: &App) -> FangRegeln {
         let gesperrt = app
             .doc()
             .entity(drag.entity)
-            .map(|e| crate::handles::moving_points(e, drag.kind))
+            .map(|e| crate::handles::fang_sperre(e, drag.kind))
             .unwrap_or_default()
             .into_iter()
             .map(|p| (drag.entity, p))
@@ -5672,6 +5672,43 @@ mod tests_fang_griff {
             })
             .expect("Füllfläche in der Datei");
         assert_punkt(geladen, V2::new(5000.0, 500.0));
+    }
+
+    /// Fängt der Fang auf der Nachbarecke, während die gezogene Ecke schon dort
+    /// liegt, darf er nicht wieder abfallen — sonst springt die Vorschau
+    /// zwischen Fangpunkt und Zeiger hin und her (T0018, Turn 3).
+    #[test]
+    fn griffzug_auf_die_nachbarecke_flackert_nicht() {
+        let (mut app, id) = szenario_flaeche();
+        app.begin_grip_drag(id, crate::handles::GripKind::Vert(1));
+        let zoom = app.current_view().zoom.max(1e-6);
+        let tol = 12.0 / zoom;
+        // ~11 px neben der Nachbarecke (0;0), innerhalb des Fangradius.
+        let roh = V2::new(10.0 / zoom, 5.0 / zoom);
+
+        let mut lagen = Vec::new();
+        for _ in 0..4 {
+            let (p, label) = fang_zeiger(&app, roh, tol);
+            app.update_grip_drag(p);
+            lagen.push((rand(&app, id)[1], label));
+        }
+        for (ecke, label) in &lagen {
+            assert_eq!(
+                *label,
+                Some("Endpunkt"),
+                "der Fang fällt im nächsten Frame wieder aus: {lagen:?}"
+            );
+            assert!(
+                ecke.dist(V2::new(0.0, 0.0)) < 1e-9,
+                "die Ecke springt zwischen Fangpunkt und Zeiger: {lagen:?}"
+            );
+        }
+
+        // Weit weg vom Punkt löst sich der Fang — keine Haftung.
+        let weit = V2::new(60.0 / zoom, 40.0 / zoom);
+        let (p, label) = fang_zeiger(&app, weit, tol);
+        assert_eq!(label, None, "kein Fang weit weg von der Ecke");
+        assert!(p.dist(weit) < 1e-9);
     }
 
     /// Zwei Ecken aufeinandergelegt (Zug mit Fang auf die Nachbarecke): aus
