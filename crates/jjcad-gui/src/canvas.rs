@@ -991,6 +991,19 @@ pub fn show(app: &mut App, ui: &mut Ui) {
     crate::textedit::show(app, ui, rect, view_now);
 }
 
+/// Der Text, der gerade geschrieben wird, steht in der Eingabe
+/// (`textedit::show`) — er darf nicht zusätzlich aus der Anzeige kommen.
+///
+/// Der Filter läuft **nach** dem Zwischenspeicher: die Liste hängt an
+/// Revision/Zoom, der Bearbeitungszustand nicht. Stand er im Aufbau, blieb der
+/// alte Text beim Doppelklick auf eine geladene Zeichnung im Hintergrund
+/// stehen (T0019, Turn 3).
+fn ohne_texteingabe(app: &App, dl: &mut DisplayList) {
+    if let Some(id) = app.ui.texteingabe.as_ref().and_then(|t| t.id) {
+        dl.prims.retain(|p| p.entity != id);
+    }
+}
+
 fn display_list(app: &mut App) -> DisplayList {
     // Der Schlüssel enthält den Bearbeitungsraum: im Modell und im Papierraum
     // entstehen bei gleicher Revision völlig verschiedene Listen. Fehlte er,
@@ -1001,20 +1014,17 @@ fn display_list(app: &mut App) -> DisplayList {
         annot: app.doc().settings.annotation_scale,
         space: app.session().space(),
     };
-    let doc = app.doc().clone();
-    if let Some((k, dl)) = &app.tab().cache {
-        if k.matches(&key) {
-            return dl.clone();
+    let mut dl = match &app.tab().cache {
+        Some((k, dl)) if k.matches(&key) => dl.clone(),
+        _ => {
+            let doc = app.doc().clone();
+            let ctx = render::RenderCtx::new(&doc);
+            let dl = render::render_document(&ctx);
+            app.tab_mut().cache = Some((key, dl.clone()));
+            dl
         }
-    }
-    let ctx = render::RenderCtx::new(&doc);
-    let mut dl = render::render_document(&ctx);
-    // Der Text, der gerade geschrieben wird, kommt aus der Eingabe
-    // (`textedit::show`) — sonst stünde er doppelt in der Zeichnung.
-    if let Some(id) = app.ui.texteingabe.as_ref().and_then(|t| t.id) {
-        dl.prims.retain(|p| p.entity != id);
-    }
-    app.tab_mut().cache = Some((key, dl.clone()));
+    };
+    ohne_texteingabe(app, &mut dl);
     dl
 }
 
@@ -1204,7 +1214,8 @@ fn draw_sheet(app: &mut App, p: &Painter, rect: Rect, view: View, cursor: Option
         preview: false,
         rot: view.rot as f32,
     };
-    let dl = render::render_sheet(app.doc(), &sheet);
+    let mut dl = render::render_sheet(app.doc(), &sheet);
+    ohne_texteingabe(app, &mut dl);
     for prim in &dl.prims {
         paint_prim(p, prim, &w2s, view.zoom, &pc, 1.0);
     }
@@ -6451,5 +6462,53 @@ mod tests_kopieren_basispunkt {
             Some(V2::new(250.0, 100.0)),
             "der Basispunkt bleibt der zuerst geklickte"
         );
+    }
+}
+
+#[cfg(test)]
+mod tests_texteingabe_anzeige {
+    //! Während ein Text bearbeitet wird, darf er nicht zusätzlich aus der
+    //! Anzeige kommen (T0019, Turn 3). Der Filter lief zunächst nur beim
+    //! Aufbau der Displayliste — bei einer geladenen Zeichnung lag die Liste
+    //! schon im Zwischenspeicher, und der alte Text blieb im Hintergrund stehen.
+
+    use super::*;
+
+    fn app_mit_text() -> (App, Id) {
+        let mut app = App::with_ctx(egui::Context::default());
+        app.session_mut()
+            .execute("doc.settings", &json!({ "input_unit": "mm" }))
+            .expect("Einheit setzen");
+        app.session_mut()
+            .execute(
+                "draw.text",
+                &json!({"p": [1000.0, 500.0], "text": "WOHNEN", "height": 250.0}),
+            )
+            .expect("Text anlegen");
+        app.mark_changed();
+        let id = app.doc().ents()[0].id;
+        (app, id)
+    }
+
+    fn sichtbar(app: &mut App, id: Id) -> bool {
+        display_list(app).prims.iter().any(|p| p.entity == id)
+    }
+
+    #[test]
+    fn bearbeiteter_text_verschwindet_aus_der_anzeige() {
+        let (mut app, id) = app_mit_text();
+
+        // Erster Durchgang füllt den Zwischenspeicher (wie beim Öffnen einer Datei).
+        assert!(sichtbar(&mut app, id), "Text steht in der Anzeige");
+
+        assert!(crate::textedit::start_entitaet(&mut app, id), "Bearbeiten startet");
+        assert!(
+            !sichtbar(&mut app, id),
+            "der bearbeitete Text darf nicht zusätzlich gezeichnet werden (Cache-Treffer)"
+        );
+
+        // Eingabe weg: der Text ist wieder da.
+        app.ui.texteingabe = None;
+        assert!(sichtbar(&mut app, id), "nach dem Bearbeiten wieder sichtbar");
     }
 }
