@@ -2888,6 +2888,12 @@ fn rail(ui: &mut egui::Ui, icon: &str, tooltip: &str, chevron: &str) -> bool {
                             ("draw.circle", "circle", "Kreis"),
                             ("draw.arc", "arc", "Bogen"),
                         ] {
+                            // Rechteck trägt zwei Einfügemodi — der Pfeil am
+                            // Knopf öffnet sie (Über Ecken / Basislinie + Höhe).
+                            if id == "draw.rect" {
+                                app.einfuege_group_button(ui, "draw.rect");
+                                continue;
+                            }
                             if widgets::ribbon_button(ui, icon, label, app.tool_id() == Some(id)).clicked() {
                                 app.start_tool(id);
                             }
@@ -2908,6 +2914,12 @@ fn rail(ui: &mut egui::Ui, icon: &str, tooltip: &str, chevron: &str) -> bool {
                             ("draw.point", "point", "Punkt"),
                             ("draw.text", "text", "Text"),
                         ] {
+                            // Ellipse ebenfalls mit zwei Einfügemodi (Über
+                            // Mittelpunkt / Mittelachse + Breite).
+                            if id == "draw.ellipse" {
+                                app.einfuege_group_button(ui, "draw.ellipse");
+                                continue;
+                            }
                             if widgets::ribbon_button(ui, icon, label, app.tool_id() == Some(id)).clicked() {
                                 app.start_tool(id);
                             }
@@ -4381,6 +4393,95 @@ impl App {
     }
 
     /// Geteilte Ribbon-Schaltfläche für Füllflächen, Schraffuren und Volumen.
+    /// Wählt den Einfügemodus eines Werkzeugs und startet es.
+    ///
+    /// Ein Weg für Ribbon-Menü und Tests: der Modus steht in `ToolOptions`
+    /// (dieselbe Quelle, die auch das Eigenschaften-Panel zeigt).
+    pub fn waehle_einfuegemodus(&mut self, tool_id: &str, modus: Einfuegemodus) {
+        *self.options.einfuegemodus_mut(tool_id) = modus;
+        self.start_tool(tool_id);
+    }
+
+    /// Geteilte Schaltfläche für Rechteck und Ellipse.
+    ///
+    /// Der Hauptknopf startet das Werkzeug im zuletzt gewählten Modus, der
+    /// Pfeil öffnet die beiden Einfügemodi. Ohne dieses Menü war der diagonale
+    /// Modus nur im Eigenschaften-Panel zu finden — und dort erst, wenn das
+    /// Werkzeug schon lief.
+    fn einfuege_group_button(&mut self, ui: &mut egui::Ui, tool_id: &'static str) {
+        let ellipse = tool_id == "draw.ellipse";
+        let (icon, label) = if ellipse {
+            ("ellipse", "Ellipse")
+        } else {
+            ("rect", "Rechteck")
+        };
+        let cur = self.options.einfuegemodus(tool_id);
+        let active = self.tool_id() == Some(tool_id);
+        let (main, arrow) = widgets::ribbon_split_button(ui, icon, label, active);
+        let popup_id = ui.make_persistent_id(("einfuegepop", tool_id));
+        let now = ui.input(|i| i.time);
+        if arrow.clicked() {
+            ui.memory_mut(|m| m.toggle_popup(popup_id));
+            ui.memory_mut(|m| m.data.insert_temp(popup_id.with("opened"), now));
+        } else if main.clicked() {
+            self.start_tool(tool_id);
+        }
+        // Prüfhilfe: Menü für einen Screenshot offen halten (nur mit Env-Variable)
+        if let Ok(welches) = std::env::var("JJCAD_DEMO_MENU") {
+            let passt = match welches.as_str() {
+                "ellipse" => ellipse,
+                "rect" | "rechteck" => !ellipse,
+                _ => false,
+            };
+            if passt {
+                ui.memory_mut(|m| m.open_popup(popup_id));
+            }
+        }
+        // Der Klick, der das Menü öffnet, darf nicht sofort einen Eintrag wählen
+        let geoeffnet = ui
+            .memory(|m| m.data.get_temp::<f64>(popup_id.with("opened")).unwrap_or(0.0));
+        let bereit = now - geoeffnet > 0.25;
+        let mut gewaehlt: Option<Einfuegemodus> = None;
+        egui::popup_below_widget(
+            ui,
+            popup_id,
+            &arrow,
+            egui::PopupCloseBehavior::CloseOnClickOutside,
+            |ui| {
+                ui.set_min_width(230.0);
+                ui.spacing_mut().item_spacing.y = 1.0;
+                for m in Einfuegemodus::ALL {
+                    let (rect, resp) = ui.allocate_exact_size(
+                        egui::Vec2::new(ui.available_width().max(226.0), 26.0),
+                        egui::Sense::click(),
+                    );
+                    if resp.hovered() || m == cur {
+                        ui.painter().rect_filled(
+                            rect,
+                            egui::Rounding::same(4.0),
+                            Palette::PANEL_ALT,
+                        );
+                    }
+                    let farbe = if m == cur { Palette::ACCENT } else { Palette::TEXT };
+                    ui.painter().text(
+                        egui::Pos2::new(rect.left() + 10.0, rect.center().y),
+                        egui::Align2::LEFT_CENTER,
+                        m.label(tool_id),
+                        egui::FontId::proportional(12.5),
+                        farbe,
+                    );
+                    if bereit && resp.clicked() {
+                        gewaehlt = Some(m);
+                    }
+                }
+            },
+        );
+        if let Some(m) = gewaehlt {
+            self.waehle_einfuegemodus(tool_id, m);
+            ui.memory_mut(|mm| mm.close_popup());
+        }
+    }
+
     fn fill_group_button(&mut self, ui: &mut egui::Ui, kind: FillKind) {
         let hatch = kind == FillKind::Hatch;
         let cur = match kind {
@@ -4405,7 +4506,11 @@ impl App {
             let passt = match welches.as_str() {
                 "hatch" => kind == FillKind::Hatch,
                 "volume" | "volumen" => kind == FillKind::Volume,
-                _ => kind == FillKind::Area,
+                "area" | "flaeche" | "fill" => kind == FillKind::Area,
+                // Andere Werte gehören den übrigen Menüs (z. B. „rect“ für den
+                // Einfügemodus) — sonst stünde beim Screenshot ein zweites
+                // Menü offen (T0024, Turn 2).
+                _ => false,
             };
             if passt {
                 ui.memory_mut(|m| m.open_popup(popup_id));
@@ -5664,3 +5769,63 @@ mod tests_kopieren {
     }
 }
 
+#[cfg(test)]
+mod tests_einfuegemodus {
+    //! Einfügemodus von Rechteck und Ellipse (T0024, Turn 2).
+    //!
+    //! Der Modus war zuerst nur im Eigenschaften-Panel zu finden — und dort
+    //! erst, wenn das Werkzeug schon lief. Jetzt bietet der Pfeil am
+    //! Ribbon-Knopf beide Modi an; dieser Test prüft den gemeinsamen Weg
+    //! (`App::waehle_einfuegemodus`), den Menü und Panel benutzen.
+
+    use super::*;
+
+    fn app() -> App {
+        App::with_ctx(egui::Context::default())
+    }
+
+    #[test]
+    fn ribbon_menue_setzt_modus_und_startet_werkzeug() {
+        let mut app = app();
+        app.waehle_einfuegemodus("draw.rect", Einfuegemodus::Basislinie);
+        assert_eq!(app.options.rect_mode, Einfuegemodus::Basislinie);
+        assert_eq!(app.tool_id(), Some("draw.rect"), "Werkzeug startet mit");
+        assert_eq!(
+            commands_hint(app.tool.as_ref().unwrap(), &app.options),
+            "Rechteck · Basislinie Anfang klicken",
+            "die Aufforderung nennt den gewählten Modus"
+        );
+
+        // Ellipse hat einen eigenen Modus: die Wahl beim Rechteck bleibt.
+        app.waehle_einfuegemodus("draw.ellipse", Einfuegemodus::Basislinie);
+        assert_eq!(app.options.ellipse_mode, Einfuegemodus::Basislinie);
+        assert_eq!(app.options.rect_mode, Einfuegemodus::Basislinie);
+        assert_eq!(app.tool_id(), Some("draw.ellipse"));
+        assert_eq!(
+            commands_hint(app.tool.as_ref().unwrap(), &app.options),
+            "Ellipse · Mittelachse Anfang klicken"
+        );
+
+        // Zurück auf den achsenparallelen Weg: zwei Klicks genügen wieder.
+        app.waehle_einfuegemodus("draw.rect", Einfuegemodus::Achsenparallel);
+        assert_eq!(
+            commands_hint(app.tool.as_ref().unwrap(), &app.options),
+            "Rechteck · erste Ecke klicken"
+        );
+    }
+
+    /// Beide Modi tragen eine verständliche Beschriftung für ihr Werkzeug.
+    #[test]
+    fn beschriftungen_nennen_die_linie() {
+        assert_eq!(Einfuegemodus::Achsenparallel.label("draw.rect"), "Über Ecken");
+        assert_eq!(Einfuegemodus::Basislinie.label("draw.rect"), "Basislinie + Höhe");
+        assert_eq!(
+            Einfuegemodus::Achsenparallel.label("draw.ellipse"),
+            "Über Mittelpunkt"
+        );
+        assert_eq!(
+            Einfuegemodus::Basislinie.label("draw.ellipse"),
+            "Mittelachse + Breite"
+        );
+    }
+}
