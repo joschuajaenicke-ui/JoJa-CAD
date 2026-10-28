@@ -5704,6 +5704,20 @@ mod tests_fang_griff {
             );
         }
 
+        // Dasselbe beim **Bewegen**: solange der Zeiger im Fangradius um die
+        // Ecke bleibt, sitzt der Punkt dort — er springt nicht zwischen den
+        // Bildern hin und her (so sieht der Nutzer das Flackern).
+        for px in [11.0, 9.0, 7.0, 5.0, 8.0, 10.0] {
+            let roh = V2::new(px / zoom, 2.0 / zoom);
+            let (p, label) = fang_zeiger(&app, roh, tol);
+            app.update_grip_drag(p);
+            assert_eq!(label, Some("Endpunkt"), "bei {px} px: Fang fällt aus");
+            assert!(
+                rand(&app, id)[1].dist(V2::new(0.0, 0.0)) < 1e-9,
+                "bei {px} px: der Punkt springt vom Ziel weg"
+            );
+        }
+
         // Weit weg vom Punkt löst sich der Fang — keine Haftung.
         let weit = V2::new(60.0 / zoom, 40.0 / zoom);
         let (p, label) = fang_zeiger(&app, weit, tol);
