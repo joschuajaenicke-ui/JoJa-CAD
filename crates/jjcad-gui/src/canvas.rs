@@ -985,6 +985,10 @@ pub fn show(app: &mut App, ui: &mut Ui) {
             }
         }
     }
+
+    // Texteingabe steht über der Zeichnung, damit der Cursor sichtbar ist und
+    // die Klicks das Feld treffen.
+    crate::textedit::show(app, ui, rect, view_now);
 }
 
 fn display_list(app: &mut App) -> DisplayList {
@@ -2216,6 +2220,12 @@ fn handle_input(
         return;
     }
 
+    // Offene Texteingabe: die Zeichenfläche nimmt keine Klicks an. Übernommen
+    // bzw. abgebrochen wird in `textedit::show` (Enter, Esc, Klick daneben).
+    if app.ui.texteingabe.is_some() {
+        return;
+    }
+
     // Enter beendet Polylinie, Umriss-Fläche und Maßkette (Tippeingabe hat Vorrang)
     if app.ui.typed.is_empty()
         && !ctx.wants_keyboard_input()
@@ -2421,6 +2431,14 @@ fn handle_input(
             // Jeder gesetzte Punkt löst die Hilfslinien; der nächste holt sich
             // seinen Haltepunkt neu (Verweilen) oder zeichnet frei.
             app.halt.clear();
+            return;
+        }
+    }
+
+    // Doppelklick auf einen Text: Inhalt direkt in der Zeichnung ändern.
+    if app.tool.is_none() && resp.double_clicked_by(egui::PointerButton::Primary) {
+        if let Some(id) = crate::textedit::text_bei(app, raw.unwrap_or(w)) {
+            crate::textedit::start_entitaet(app, id);
             return;
         }
     }
@@ -3686,20 +3704,10 @@ fn tool_click_at(app: &mut App, w: V2, raw: V2) {
                 app.tool = Some(tool);
             }
         }
+        // Text direkt in der Zeichnung: ein Eingabefeld an der Klickstelle,
+        // der Cursor steht sofort darin (kein Dialog, T0019).
         "draw.text" => {
-            app.ui.text_dialog = Some(crate::dialogs::TextDialog {
-                pos: w,
-                text: if app.options.text.is_empty() {
-                    String::new()
-                } else {
-                    app.options.text.clone()
-                },
-                height: app.options.text_height,
-                angle: 0.0,
-                layer: app.doc().current_layer,
-                editing_id: None,
-            });
-            app.tool = None;
+            crate::textedit::start(app, w);
         }
         // Farbeimer: ein Klick, kein Ziehen. Der Kern ermittelt die Umgrenzung
         // (`draw.fill.paint` → `boundary::detect_boundary`); Fehler kommen als
