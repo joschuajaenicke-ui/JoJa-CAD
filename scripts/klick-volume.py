@@ -1,12 +1,15 @@
 #!/usr/bin/env python3
-"""Klickprüfung: Volumen über „Kontur anklicken" auf einer Wand anlegen.
+"""Klickprüfung: Volumen im Programmstandard (Einfügen per Punkten) anlegen.
 
 Startet ein eigenes Xvfb + eine eigene JoJa-CAD-Instanz (die Instanz des
-Nutzers bleibt unberührt), klickt die Volumen-Schaltfläche und danach auf die
-waagerechte Wand, und macht Screenshots vor/nach dem Klick.
+Nutzers bleibt unberührt), klickt die Volumen-Schaltfläche, setzt vier Punkte
+und schließt mit Enter; Screenshots vor/nach der Eingabe.
 
 Klicks über XTest, damit sie wie echte Zeigereignisse ankommen (egui wertet
 Roh-Events aus).
+
+    python3 scripts/klick-volume.py            # Punkte-Modus (Standard)
+    MODE=contour python3 scripts/klick-volume.py
 """
 import ctypes
 import ctypes.util
@@ -19,6 +22,7 @@ DISPLAY = ":97"
 W, H = 1600, 1000
 BIN = os.environ.get("BIN", "target/debug/jjcad")
 DATEI = os.environ.get("FILE", "samples/Volumen.jjcad")
+MODE = os.environ.get("MODE", "points")
 
 x11 = ctypes.cdll.LoadLibrary(ctypes.util.find_library("X11"))
 xtst = ctypes.cdll.LoadLibrary(ctypes.util.find_library("Xtst"))
@@ -91,6 +95,30 @@ def klick(x: int, y: int, wid: int) -> None:
     time.sleep(0.5)
 
 
+def ziehen(x0: int, y0: int, x1: int, y1: int, wid: int) -> None:
+    """Griff ziehen: drücken, in Schritten bewegen, loslassen."""
+    dpy = display_oeffnen()
+    x11.XSetInputFocus(ctypes.c_void_p(dpy), ctypes.c_ulong(wid), 2, 0)
+    ox, oy = fenster_versatz(wid)
+    xtst.XTestFakeMotionEvent(ctypes.c_void_p(dpy), -1, x0 + ox, y0 + oy, 0)
+    x11.XFlush(ctypes.c_void_p(dpy))
+    time.sleep(0.3)
+    xtst.XTestFakeButtonEvent(ctypes.c_void_p(dpy), 1, 1, 0)
+    x11.XFlush(ctypes.c_void_p(dpy))
+    time.sleep(0.15)
+    schritte = 12
+    for k in range(1, schritte + 1):
+        x = x0 + (x1 - x0) * k // schritte
+        y = y0 + (y1 - y0) * k // schritte
+        xtst.XTestFakeMotionEvent(ctypes.c_void_p(dpy), -1, x + ox, y + oy, 0)
+        x11.XFlush(ctypes.c_void_p(dpy))
+        time.sleep(0.05)
+    time.sleep(0.15)
+    xtst.XTestFakeButtonEvent(ctypes.c_void_p(dpy), 1, 0, 0)
+    x11.XFlush(ctypes.c_void_p(dpy))
+    time.sleep(0.5)
+
+
 def taste(name: str, wid: int) -> None:
     """Einzelne Taste senden (z. B. Escape)."""
     dpy = display_oeffnen()
@@ -154,16 +182,32 @@ def main() -> int:
             print("kein Fenster"); return 1
         time.sleep(3.0)
         schuss("/home/joschua/jjcad-live/wand-probe/klick_vorher.png", wid)
-        # Reiter Architektur, dann die Volumen-Schaltfläche (Modus „Kontur anklicken")
+        # Reiter Architektur, dann die Volumen-Schaltfläche (Standardmodus)
         klick(345, 20, wid)
         time.sleep(0.6)
         klick(335, 75, wid)
-        time.sleep(0.8)
-        # auf die waagerechte Wand
-        klick(400, 555, wid)
+        time.sleep(0.6)
+        if MODE == "drag":
+            # Volumen per Punkten anlegen, dann eine Ecke ziehen
+            for x, y in [(350, 250), (520, 250), (520, 380), (350, 380)]:
+                klick(x, y, wid)
+            taste("Return", wid)
+            time.sleep(0.8)
+            # Volumen anklicken (auswählen), dann eine Ecke ziehen
+            klick(430, 320, wid)
+            time.sleep(0.6)
+            schuss(f"/home/joschua/jjcad-live/wand-probe/klick_griff_vorher.png", wid)
+            ziehen(520, 250, 640, 190, wid)
+        elif MODE == "contour":
+            klick(400, 555, wid)  # auf die waagerechte Wand
+        else:
+            # Vier Punkte im freien Bereich, dann Enter
+            for x, y in [(350, 250), (520, 250), (520, 380), (350, 380)]:
+                klick(x, y, wid)
+            taste("Return", wid)
         time.sleep(1.2)
         schuss("/home/joschua/jjcad-live/wand-probe/klick_nachher.png", wid)
-        print("Screenshots: klick_vorher.png, klick_nachher.png")
+        print(f"Screenshots ({MODE}): klick_vorher.png, klick_nachher.png")
     finally:
         app.terminate()
         try:

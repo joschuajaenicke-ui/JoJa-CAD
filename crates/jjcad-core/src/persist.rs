@@ -291,7 +291,7 @@ where
 }
 
 fn default_volume_input() -> String {
-    "contour".into()
+    "points".into()
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -428,7 +428,7 @@ impl Default for UserPrefs {
             drag_mode: DragMode::HoldAndDrag,
             fill_input: "points".into(),
             hatch_input: "contour".into(),
-            volume_input: "contour".into(),
+            volume_input: "points".into(),
             // Vorgabe wie bisher im Reiter „Ändern": Kopieren setzt mit
             // Basispunkt ab. Reines Kopieren in die Zwischenablage wählt man im
             // Aufklappmenü oder mit Strg+C.

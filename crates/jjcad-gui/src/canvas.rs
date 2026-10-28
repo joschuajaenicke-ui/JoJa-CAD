@@ -3388,7 +3388,7 @@ fn finish_fill(app: &mut App, action: &str) -> bool {
         // Wandfarbe, kein Muster.
         params["pattern"] = json!("solid");
     }
-    let ok = run(app, action, params);
+    let ok = run_und_waehlen(app, action, params);
     if ok {
         app.tool = None;
     }
@@ -3635,7 +3635,7 @@ fn tool_click_at(app: &mut App, w: V2, raw: V2) {
         // werden Punkte, nur das Ende erzeugt eine Füllfläche statt einer Linie.
         // Gilt für beide Füll-Werkzeuge (`draw.fill.boundary` und
         // `draw.fill.points`), damit sich die Eingabe nicht unterscheidet.
-        "draw.fill.boundary" | "draw.fill.points" => {
+        "draw.fill.boundary" | "draw.fill.points" | "draw.volume.points" => {
             // Klick auf den letzten Punkt (Doppelklick) oder auf den Startpunkt
             // schließt den Umriss — wie Enter, nur mit der Maus.
             let doppelt = tool.pts.last().map(|q| q.dist(w) <= 0.5).unwrap_or(false);
@@ -3790,7 +3790,11 @@ fn tool_click_at(app: &mut App, w: V2, raw: V2) {
                             if vol {
                                 params["height"] = json!(unit.from_mm(app.options.wall_height));
                             }
-                            let _ = run(app, if vol { "draw.volume" } else { "draw.fill" }, params);
+                            let _ = run_und_waehlen(
+                                app,
+                                if vol { "draw.volume" } else { "draw.fill" },
+                                params,
+                            );
                         }
                         None => app.toast(if vol {
                             "Volumen · geschlossene Kontur anklicken"
@@ -4057,6 +4061,25 @@ fn tool_click_at(app: &mut App, w: V2, raw: V2) {
         "modify.select" => {}
         _ => {}
     }
+}
+
+/// Wie [`run`], wählt aber das neu entstandene Objekt aus — damit sich seine
+/// Eckpunkte sofort greifen lassen (Füllfläche, Volumen).
+fn run_und_waehlen(app: &mut App, action: &str, params: serde_json::Value) -> bool {
+    let vorher: Vec<Id> = app.doc().entities.iter().map(|e| e.id).collect();
+    let ok = run(app, action, params);
+    if ok {
+        if let Some(id) = app
+            .doc()
+            .entities
+            .iter()
+            .find(|e| !vorher.contains(&e.id))
+            .map(|e| e.id)
+        {
+            app.session_mut().select(vec![id]);
+        }
+    }
+    ok
 }
 
 fn run(app: &mut App, action: &str, params: serde_json::Value) -> bool {

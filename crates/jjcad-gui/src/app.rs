@@ -445,7 +445,8 @@ impl Default for UiState {
             drag_mode: DragMode::HoldAndDrag,
             fill_input: FillInput::Points,
             hatch_input: FillInput::Contour,
-            volume_input: FillInput::Contour,
+            // Programmstandard ist das Einfügen per Punkten (wie bei der Fläche)
+            volume_input: FillInput::Points,
             copy_input: CopyInput::BasePoint,
             fill_active: None,
             menu: None,

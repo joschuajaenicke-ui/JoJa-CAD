@@ -1024,6 +1024,20 @@ pub fn hit_test(doc: &Document, p: Vec2, tol: f64, layer_filter: Option<&[Id]>) 
                     continue;
                 }
             }
+            // **Volumen**: auch *in* der Fläche getroffen (Inseln zählen als
+            // außen) — ein Körper lässt sich sonst nur an seiner Kante
+            // anklicken und damit nicht über die Eckpunkte ändern. Für die
+            // Füllfläche bleibt es beim Rand-Treffer: der Farbeimer fragt
+            // dieselbe Funktion und soll in einer gefüllten Fläche weiter
+            // füllen können, nicht „auf einer Linie" melden.
+            if let EntityKind::Volume { boundary, holes, .. } = &e.kind {
+                if crate::area::point_in_area(p, boundary, holes) {
+                    if best.map(|(_, _, bp)| bp > 0).unwrap_or(true) {
+                        best = Some((e.id, 0.0, 0));
+                    }
+                    continue;
+                }
+            }
         }
         let mut dmin = f64::INFINITY;
         for sg in render::entity_segments(doc, e) {

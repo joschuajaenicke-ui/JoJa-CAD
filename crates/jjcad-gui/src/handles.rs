@@ -76,8 +76,10 @@ fn verschmelze_nachbar(ring: &mut Vec<V2>, i: usize, tol: f64) -> bool {
 /// Ring einer Füllfläche zum flachen Eckindex `i` (Umgrenzung zuerst, dann die
 /// Inseln) samt lokalem Index im Ring.
 fn fill_ring_mut(kind: &mut EntityKind, i: usize) -> Option<(&mut Vec<V2>, usize)> {
-    let EntityKind::Fill { boundary, holes, .. } = kind else {
-        return None;
+    let (boundary, holes) = match kind {
+        EntityKind::Fill { boundary, holes, .. }
+        | EntityKind::Volume { boundary, holes, .. } => (boundary, holes),
+        _ => return None,
     };
     let mut base = 0usize;
     for ring in std::iter::once(&mut *boundary).chain(holes.iter_mut()) {
@@ -118,7 +120,8 @@ pub fn grips_of(e: &Entity) -> Vec<(GripKind, V2)> {
         // Füllfläche: die Ecken der Umgrenzung und der Inseln. Zwischenpunkte
         // einer geraden Kante fallen weg (`ist_ecke`) — der Farbeimer liefert
         // seinen Rand als dichten Punktzug.
-        EntityKind::Fill { boundary, holes, .. } => {
+        EntityKind::Fill { boundary, holes, .. }
+        | EntityKind::Volume { boundary, holes, .. } => {
             let mut out: Vec<(GripKind, V2)> = Vec::new();
             let mut base = 0usize;
             for ring in std::iter::once(boundary).chain(holes.iter()) {
@@ -199,7 +202,8 @@ pub fn apply_grip_tol(orig: &Entity, kind: GripKind, target: V2, tol: f64) -> Op
         // dann die Inseln (dieselbe Reihenfolge wie die Anzeige). Verschmolzen
         // wird erst beim Loslassen (`App::end_grip_drag`) — während des Zugs
         // bleiben die Indizes dadurch gültig.
-        (EntityKind::Fill { boundary, holes, .. }, GripKind::Vert(i)) => {
+        (EntityKind::Fill { boundary, holes, .. }
+        | EntityKind::Volume { boundary, holes, .. }, GripKind::Vert(i)) => {
             let mut base = 0usize;
             let mut ziel: Option<&mut Vec<V2>> = None;
             for ring in std::iter::once(&mut *boundary).chain(holes.iter_mut()) {
@@ -243,7 +247,8 @@ pub fn moving_points(e: &Entity, kind: GripKind) -> Vec<V2> {
             vec![verts[i].p, verts[j].p]
         }
         // Füllfläche: flacher Eckindex, Umgrenzung zuerst.
-        (EntityKind::Fill { boundary, holes, .. }, GripKind::Vert(i)) => {
+        (EntityKind::Fill { boundary, holes, .. }
+        | EntityKind::Volume { boundary, holes, .. }, GripKind::Vert(i)) => {
             let mut base = 0usize;
             for ring in std::iter::once(boundary).chain(holes.iter()) {
                 let n = ring.len();
@@ -440,7 +445,10 @@ impl App {
             let tol = (12.0 / self.current_view().zoom.max(1e-6))
                 .max(jjcad_core::model::POINT_EPS_MM);
             if let Some(e) = self.doc_mut().entity_mut(d.entity) {
-                if matches!(e.kind, EntityKind::Fill { .. }) {
+                if matches!(
+                    e.kind,
+                    EntityKind::Fill { .. } | EntityKind::Volume { .. }
+                ) {
                     if let Some((ring, idx)) = fill_ring_mut(&mut e.kind, i) {
                         verbunden = verschmelze_nachbar(ring, idx, tol);
                         if verbunden {
@@ -868,5 +876,99 @@ mod tests {
         let (pts, closed) = stand(&neu);
         assert!(!closed);
         assert_eq!(pts.len(), 3);
+    }
+}
+
+#[cfg(test)]
+mod tests_volumen {
+    use super::*;
+
+    /// Volumen: dieselben Eckpunkte wie eine Füllfläche — sie müssen als
+    /// Griffe erscheinen und sich ziehen lassen.
+    fn volumen() -> Entity {
+        Entity::new(
+            7,
+            1,
+            EntityKind::Volume {
+                boundary: vec![
+                    V2::new(0.0, 0.0),
+                    V2::new(1000.0, 0.0),
+                    V2::new(1000.0, 800.0),
+                    V2::new(0.0, 800.0),
+                ],
+                holes: Vec::new(),
+                pattern: jjcad_core::style::FillPattern::Solid,
+                pattern_angle: 0.0,
+                pattern_scale: 100.0,
+                border: true,
+                height: 2750.0,
+            },
+        )
+    }
+
+    #[test]
+    fn volumen_hat_eckpunkte_als_griffe() {
+        let e = volumen();
+        let g = grips_of(&e);
+        assert_eq!(g.len(), 4, "vier Eckpunkte, war {g:?}");
+        assert!(g.iter().any(|(_, p)| p.dist(V2::new(1000.0, 800.0)) < 0.5));
+    }
+
+    #[test]
+    fn volumen_eckpunkt_laesst_sich_ziehen() {
+        let e = volumen();
+        let neu = apply_grip(&e, GripKind::Vert(2), V2::new(1400.0, 900.0)).expect("kein Zug");
+        match &neu.kind {
+            EntityKind::Volume { boundary, height, .. } => {
+                assert!(boundary[2].dist(V2::new(1400.0, 900.0)) < 0.5, "Ecke nicht gezogen");
+                assert_eq!(*height, 2750.0, "Höhe darf sich nicht ändern");
+            }
+            _ => panic!("kein Volumen mehr"),
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests_volumen_drag {
+    use super::*;
+
+    /// Der komplette Griffzug an einem Volumen: Griff treffen, ziehen,
+    /// loslassen — die Ecke sitzt danach am Ziel, die Höhe bleibt.
+    #[test]
+    fn volumen_griffzug_von_anfang_bis_ende() {
+        let mut app = crate::app::App::with_ctx(egui::Context::default());
+        let id = app
+            .session_mut()
+            .execute(
+                "draw.volume",
+                &serde_json::json!({
+                    "boundary": [[0.0, 0.0], [1.0, 0.0], [1.0, 0.8], [0.0, 0.8]],
+                    "height": 2.75,
+                }),
+            )
+            .unwrap()["created"][0]
+            .as_u64()
+            .unwrap();
+        app.session_mut().select(vec![id]);
+
+        // Griff an der Ecke (1000, 800) treffen und ziehen
+        let (gid, kind) = app
+            .grip_at(V2::new(1000.0, 800.0), 5.0)
+            .expect("kein Griff an der Ecke");
+        assert_eq!(gid, id);
+        app.begin_grip_drag(gid, kind);
+        assert!(app.update_grip_drag(V2::new(1400.0, 900.0)), "Zug kam nicht an");
+        app.end_grip_drag();
+
+        match &app.doc().entity(id).unwrap().kind {
+            EntityKind::Volume { boundary, height, .. } => {
+                assert!(
+                    boundary.iter().any(|p| p.dist(V2::new(1400.0, 900.0)) < 0.5),
+                    "Ecke nicht am Ziel: {boundary:?}"
+                );
+                assert_eq!(*height, 2750.0);
+            }
+            _ => panic!("kein Volumen mehr"),
+        }
     }
 }
