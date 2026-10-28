@@ -20,6 +20,33 @@ pub struct GripDrag {
     pub orig: Entity,
 }
 
+/// Kleinster Knick, ab dem ein Randpunkt der Füllfläche als **Ecke** gilt
+/// (1°). Der Farbeimer liefert seine Umgrenzung als dichten Punktzug entlang
+/// der Wandkanten (gemessen: 125 Punkte für einen Raum); ohne diese Prüfung
+/// läge auf jedem Zwischenpunkt ein Griff und die Fläche wäre nicht mehr zu
+/// fassen.
+const FILL_ECKE_MIN_WINKEL: f64 = 0.017_453_3;
+
+/// Knickt der Rand an `i`? Zwischenpunkte auf einer geraden Kante bekommen
+/// keinen Griff — nur die Ecken.
+fn ist_ecke(ring: &[V2], i: usize) -> bool {
+    let n = ring.len();
+    if n < 3 {
+        return true;
+    }
+    let p = ring[i];
+    let davor = p - ring[(i + n - 1) % n];
+    let danach = ring[(i + 1) % n] - p;
+    let (l1, l2) = (davor.len(), danach.len());
+    if l1 < 1e-9 || l2 < 1e-9 {
+        return false;
+    }
+    // Kreuzprodukt = Sinus, Punktprodukt = Cosinus des Knickwinkels.
+    let kreuz = davor.x * danach.y - davor.y * danach.x;
+    let punkt = davor.dot(danach);
+    kreuz.atan2(punkt).abs() > FILL_ECKE_MIN_WINKEL
+}
+
 /// Alle Griffpunkte eines Elements mit ihrer Weltposition.
 pub fn grips_of(e: &Entity) -> Vec<(GripKind, V2)> {
     match &e.kind {
@@ -45,6 +72,22 @@ pub fn grips_of(e: &Entity) -> Vec<(GripKind, V2)> {
         | EntityKind::Arc { c, .. }
         | EntityKind::Ellipse { c, .. }
         | EntityKind::Point { p: c } => vec![(GripKind::Vert(0), *c)],
+        // Füllfläche: die Ecken der Umgrenzung und der Inseln. Zwischenpunkte
+        // einer geraden Kante fallen weg (`ist_ecke`) — der Farbeimer liefert
+        // seinen Rand als dichten Punktzug.
+        EntityKind::Fill { boundary, holes, .. } => {
+            let mut out: Vec<(GripKind, V2)> = Vec::new();
+            let mut base = 0usize;
+            for ring in std::iter::once(boundary).chain(holes.iter()) {
+                for (i, p) in ring.iter().enumerate() {
+                    if ist_ecke(ring, i) {
+                        out.push((GripKind::Vert(base + i), *p));
+                    }
+                }
+                base += ring.len();
+            }
+            out
+        }
         _ => Vec::new(),
     }
 }
@@ -109,6 +152,22 @@ pub fn apply_grip_tol(orig: &Entity, kind: GripKind, target: V2, tol: f64) -> Op
             verts[i].p = p1 + normal * d;
             verts[j].p = p2 + normal * d;
         }
+        // Ecke einer Füllfläche: der flache Index zählt erst die Umgrenzung,
+        // dann die Inseln (dieselbe Reihenfolge wie die Anzeige).
+        (EntityKind::Fill { boundary, holes, .. }, GripKind::Vert(i)) => {
+            let mut base = 0usize;
+            let mut ziel: Option<&mut Vec<V2>> = None;
+            for ring in std::iter::once(&mut *boundary).chain(holes.iter_mut()) {
+                let n = ring.len();
+                if i < base + n {
+                    ziel = Some(ring);
+                    break;
+                }
+                base += n;
+            }
+            let ring = ziel?;
+            ring[i - base] = target;
+        }
         _ => return None,
     }
     Some(e)
@@ -137,6 +196,17 @@ pub fn moving_points(e: &Entity, kind: GripKind) -> Vec<V2> {
             }
             let j = (i + 1) % n;
             vec![verts[i].p, verts[j].p]
+        }
+        (EntityKind::Fill { boundary, holes, .. }, GripKind::Vert(i)) => {
+            let mut base = 0usize;
+            for ring in std::iter::once(boundary).chain(holes.iter()) {
+                let n = ring.len();
+                if i < base + n {
+                    return ring.get(i - base).map(|p| vec![*p]).unwrap_or_default();
+                }
+                base += n;
+            }
+            Vec::new()
         }
         // Kreis, Bogen, Ellipse und Punkt bewegen ihren Mittelpunkt.
         (
@@ -315,6 +385,159 @@ mod tests {
         let (pts2, closed2) = stand(&mitte);
         assert!(!closed2, "ein mittlerer Stützpunkt schließt nichts");
         assert_eq!(pts2.len(), 4);
+    }
+
+    // ---- Füllflächen (T0018) ----
+
+    fn flaeche(rand: &[V2], inseln: &[&[V2]]) -> Entity {
+        Entity::new(
+            7,
+            1,
+            EntityKind::Fill {
+                boundary: rand.to_vec(),
+                holes: inseln.iter().map(|h| h.to_vec()).collect(),
+                pattern: jjcad_core::style::FillPattern::Lines,
+                pattern_angle: 0.0,
+                pattern_scale: 100.0,
+                border: true,
+            },
+        )
+    }
+
+    fn raender(e: &Entity) -> (Vec<V2>, Vec<Vec<V2>>) {
+        match &e.kind {
+            EntityKind::Fill {
+                boundary, holes, ..
+            } => (boundary.clone(), holes.clone()),
+            _ => panic!("keine Füllfläche"),
+        }
+    }
+
+    fn quadrat() -> Entity {
+        flaeche(
+            &[
+                V2::new(0.0, 0.0),
+                V2::new(4000.0, 0.0),
+                V2::new(4000.0, 3000.0),
+                V2::new(0.0, 3000.0),
+            ],
+            &[],
+        )
+    }
+
+    /// Vier Ecken — und nur dort Griffe, genau auf der Umgrenzung.
+    #[test]
+    fn fuellflaeche_hat_griffe_an_den_ecken() {
+        let e = quadrat();
+        let g = grips_of(&e);
+        let ecken: Vec<V2> = g
+            .iter()
+            .filter(|(k, _)| matches!(k, GripKind::Vert(_)))
+            .map(|(_, p)| *p)
+            .collect();
+        assert_eq!(ecken.len(), 4, "vier Eckgriffe: {g:?}");
+        assert_eq!(ecken[0], V2::new(0.0, 0.0));
+        assert_eq!(ecken[1], V2::new(4000.0, 0.0));
+        assert_eq!(ecken[2], V2::new(4000.0, 3000.0));
+        assert_eq!(ecken[3], V2::new(0.0, 3000.0));
+    }
+
+    /// Zwischenpunkte einer geraden Kante bekommen keinen Griff: der Farbeimer
+    /// liefert seinen Rand als dichten Punktzug (ein Raum = 125 Punkte), sonst
+    /// wäre die Fläche unter lauter Griffen nicht mehr zu treffen.
+    #[test]
+    fn gerade_kante_bekommt_keinen_griff() {
+        let e = flaeche(
+            &[
+                V2::new(0.0, 0.0),
+                V2::new(1000.0, 0.0),
+                V2::new(2000.0, 0.0),
+                V2::new(4000.0, 0.0),
+                V2::new(4000.0, 3000.0),
+                V2::new(0.0, 3000.0),
+            ],
+            &[],
+        );
+        let ecken: Vec<usize> = grips_of(&e)
+            .into_iter()
+            .filter_map(|(k, _)| match k {
+                GripKind::Vert(i) => Some(i),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(ecken, vec![0, 3, 4, 5], "nur die vier echten Ecken");
+    }
+
+    /// Ecke ziehen: nur dieser Punkt wandert, Muster und Umrandung bleiben.
+    #[test]
+    fn fuellflaeche_ecke_ziehen_aendert_nur_diesen_punkt() {
+        let neu = apply_grip_tol(&quadrat(), GripKind::Vert(2), V2::new(5000.0, 3500.0), 1.0)
+            .expect("Griff muss greifen");
+        let (rand, inseln) = raender(&neu);
+        assert_eq!(rand[2], V2::new(5000.0, 3500.0));
+        assert_eq!(rand[0], V2::new(0.0, 0.0));
+        assert_eq!(rand[1], V2::new(4000.0, 0.0));
+        assert_eq!(rand[3], V2::new(0.0, 3000.0));
+        assert!(inseln.is_empty());
+        match &neu.kind {
+            EntityKind::Fill {
+                pattern,
+                pattern_scale,
+                border,
+                ..
+            } => {
+                assert_eq!(*pattern, jjcad_core::style::FillPattern::Lines);
+                assert_eq!(*pattern_scale, 100.0);
+                assert!(*border);
+            }
+            _ => panic!("keine Füllfläche"),
+        }
+    }
+
+    /// Inseln zählen hinter der Umgrenzung: ihr Eckgriff verschiebt nur die
+    /// Insel, die Umgrenzung bleibt stehen.
+    #[test]
+    fn insel_ecke_ziehen_laesst_die_umgrenzung_stehen() {
+        let e = flaeche(
+            &[
+                V2::new(0.0, 0.0),
+                V2::new(4000.0, 0.0),
+                V2::new(4000.0, 3000.0),
+                V2::new(0.0, 3000.0),
+            ],
+            &[&[
+                V2::new(1000.0, 1000.0),
+                V2::new(1500.0, 1000.0),
+                V2::new(1500.0, 1500.0),
+            ]],
+        );
+        let g = grips_of(&e);
+        // 4 Ecken der Umgrenzung, danach 3 Ecken der Insel (flach gezählt).
+        assert_eq!(g.len(), 7, "Griffe: {g:?}");
+        assert!(g.contains(&(GripKind::Vert(4), V2::new(1000.0, 1000.0))));
+        assert!(g.contains(&(GripKind::Vert(6), V2::new(1500.0, 1500.0))));
+
+        let neu = apply_grip_tol(&e, GripKind::Vert(5), V2::new(2000.0, 900.0), 1.0).unwrap();
+        let (rand, inseln) = raender(&neu);
+        assert_eq!(rand, raender(&e).0, "Umgrenzung bleibt unverändert");
+        assert_eq!(inseln[0][1], V2::new(2000.0, 900.0));
+        assert_eq!(inseln[0][0], V2::new(1000.0, 1000.0));
+        assert_eq!(inseln[0][2], V2::new(1500.0, 1500.0));
+    }
+
+    /// Der gezogene Punkt ist der einzige, der aus dem Fang fällt.
+    #[test]
+    fn fuellflaeche_moving_points() {
+        let e = quadrat();
+        assert_eq!(moving_points(&e, GripKind::Vert(1)), vec![V2::new(4000.0, 0.0)]);
+    }
+
+    /// Ein Griff, den es nicht gibt, verändert nichts (kein Panik, kein None-Fehler).
+    #[test]
+    fn fuellflaeche_ohne_passenden_griff_bleibt_unveraendert() {
+        let e = quadrat();
+        assert!(apply_grip_tol(&e, GripKind::Vert(9), V2::new(1.0, 1.0), 1.0).is_none());
+        assert!(apply_grip_tol(&e, GripKind::Edge(9), V2::new(1.0, 1.0), 1.0).is_none());
     }
 
     /// Ein Dreieck (drei Stützpunkte) lässt sich nicht durch einen Griffzug

@@ -5581,6 +5581,90 @@ mod tests_fang_griff {
             .expect("Polylinie in der Datei");
         assert_punkt(geladen, V2::new(2000.0, 3000.0));
     }
+
+    // ---- Füllflächen: Griffe an den Ecken (T0018) ----
+
+    /// Füllfläche 4000 × 3000 mm, ausgewählt; liefert (App, Füllflächen-Id).
+    fn szenario_flaeche() -> (App, Id) {
+        let mut app = app();
+        app.session_mut()
+            .execute(
+                "draw.fill.points",
+                &serde_json::json!({
+                    "pts": [[0.0, 0.0], [4000.0, 0.0], [4000.0, 3000.0], [0.0, 3000.0]],
+                    "pattern": "solid",
+                }),
+            )
+            .expect("Füllfläche");
+        let id = app
+            .doc()
+            .entities
+            .iter()
+            .find(|e| matches!(e.kind, EntityKind::Fill { .. }))
+            .map(|e| e.id)
+            .expect("Füllfläche fehlt");
+        app.session_mut().select(vec![id]);
+        (app, id)
+    }
+
+    fn rand(app: &App, id: Id) -> Vec<V2> {
+        match &app.doc().entity(id).expect("Element fehlt").kind {
+            EntityKind::Fill { boundary, .. } => boundary.clone(),
+            other => panic!("keine Füllfläche: {other:?}"),
+        }
+    }
+
+    /// Jede Ecke der ausgewählten Füllfläche ist als Griff erreichbar — ohne
+    /// das ließe sich die Fläche nicht formen.
+    #[test]
+    fn fuellflaeche_hat_griffe_zum_anfassen() {
+        let (app, id) = szenario_flaeche();
+        for p in rand(&app, id) {
+            let g = app.grip_at(p, 5.0);
+            assert!(
+                matches!(g, Some((gid, crate::handles::GripKind::Vert(_))) if gid == id),
+                "Ecke {p:?}: {g:?}"
+            );
+        }
+    }
+
+    /// Mauszug auf einen Eckgriff: nur diese Ecke wandert, die Fläche bleibt
+    /// eine Füllfläche, und die gespeicherte Datei trägt die neue Koordinate.
+    #[test]
+    fn mauszug_formt_die_fuellflaeche_und_speichert_sie() {
+        let (mut app, id) = szenario_flaeche();
+        frame(&mut app, vec![]);
+        let rect = app.ui.last_canvas;
+        let view = app.current_view();
+
+        let griff = world_to_screen(rect, view, V2::new(4000.0, 0.0));
+        let ziel = world_to_screen(rect, view, V2::new(5000.0, 500.0));
+
+        frame(&mut app, vec![egui::Event::PointerMoved(griff)]);
+        frame(&mut app, vec![druck(griff)]);
+        assert!(app.grip_drag.is_some(), "Griffzug muss beginnen");
+
+        frame(&mut app, vec![egui::Event::PointerMoved(ziel)]);
+        frame(&mut app, vec![egui::Event::PointerMoved(ziel)]);
+        frame(&mut app, vec![loslassen(ziel)]);
+        assert!(app.grip_drag.is_none(), "Loslassen beendet den Zug");
+
+        let pts = rand(&app, id);
+        assert_punkt(pts[1], V2::new(5000.0, 500.0));
+        assert_punkt(pts[0], V2::new(0.0, 0.0));
+        assert_punkt(pts[3], V2::new(0.0, 3000.0));
+
+        let json = jjcad_core::persist::to_json(app.doc()).expect("speichern");
+        let wieder = jjcad_core::persist::from_json(&json).expect("laden");
+        let geladen = wieder
+            .entity(id)
+            .and_then(|e| match &e.kind {
+                EntityKind::Fill { boundary, .. } => Some(boundary[1]),
+                _ => None,
+            })
+            .expect("Füllfläche in der Datei");
+        assert_punkt(geladen, V2::new(5000.0, 500.0));
+    }
 }
 
 /// Papierraum der Druckvorschau (Ticket T0004): Zeichnen und Ändern laufen im
