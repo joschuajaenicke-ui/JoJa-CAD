@@ -8,8 +8,12 @@ use crate::model::*;
 use crate::style::*;
 use crate::transform;
 use crate::units::{dim_text, elevation_text, format_number, format_scale};
+use crate::wall;
 use std::cell::OnceCell;
-use std::collections::HashMap;
+
+pub use crate::wall::{
+    wall_contour_points, wall_contour_segments, wall_contour_segments_idx, WallIndex, JOIN_EPS,
+};
 
 // ---------------------------------------------------------------------------
 // Primitive
@@ -300,9 +304,9 @@ impl<'a> RenderCtx<'a> {
     /// die ganze Zeichnung gebaut — und `entity_bbox` läuft in Schleifen.
     pub fn for_entity(doc: &'a Document, e: &Entity) -> Self {
         let mut c = Self::new(doc);
-        if let Some(f) = WallFrame::of(e) {
-            let pad = MITER_LIMIT * f.h + 400.0;
-            c.wall_scope = Some(f.band_bbox().expanded(pad));
+        if let Some(f) = wall::Frame::of(e) {
+            let pad = wall::MITER_LIMIT * f.h + 400.0;
+            c.wall_scope = Some(crate::geom::BBox::from_points(&f.band()).expanded(pad));
         }
         c
     }
@@ -1130,1037 +1134,14 @@ pub fn wall_opening_intervals(doc: &Document, wall: &Entity) -> Vec<(f64, f64)> 
     out
 }
 
-/// Grenze der Gehrung als Vielfaches der halben Wanddicke. Wird die
-/// Gehrungslinie länger, wird das Wandende gerade abgeschnitten (Stumpfstoß) —
-/// sonst schießt sie bei extrem spitzen Ecken meterweit aus und der Wandkörper
-/// wird zu einem Splitter.
-const MITER_LIMIT: f64 = 6.0;
 
-/// Halbe Breite des Füllbands auf der Anschlusskante (mm). Deckt die
-/// Antialiasing-Naht zwischen zwei Wandfüllungen ab; bleibt unter der
-/// Außenlinie (Strichbreite ≥ 0,5 mm) verborgen.
-const FILL_OVERLAP: f64 = 0.2;
 
-/// Toleranz für „liegt im Nachbarkörper" beim Beschneiden der Kanten.
-const INSIDE_EPS: f64 = 0.05;
-
-/// Achsrahmen einer Wand: Basislinie, verschobene Achse, Richtung, Normale,
-/// halbe Dicke.
+/// Wandkörper zeichnen: Füllflächen, Schraffur und die sichtbare Umrandung.
 ///
-/// `a0`/`b0` sind die **Basislinie** — die Endpunkte, wie sie im Modell stehen.
-/// `a`/`b` ist dieselbe Achse, um die Ausrichtung (links/mittig/rechts)
-/// verschoben; darauf wird der Wandkörper aufgebaut. Verbunden wird über die
-/// Basislinie, gezeichnet über die verschobene Achse: deshalb stehen beide hier.
-struct WallFrame {
-    a0: Vec2,
-    b0: Vec2,
-    a: Vec2,
-    b: Vec2,
-    dir: Vec2,
-    n: Vec2,
-    h: f64,
-}
-
-impl WallFrame {
-    fn of(e: &Entity) -> Option<Self> {
-        let EntityKind::Wall {
-            a,
-            b,
-            thickness,
-            align,
-            ..
-        } = &e.kind
-        else {
-            return None;
-        };
-        if *thickness <= 0.5 {
-            return None;
-        }
-        let len = a.dist(*b);
-        if len < 1e-6 {
-            return None;
-        }
-        let dir = (*b - *a).normalized();
-        let n = dir.perp();
-        let h = thickness * 0.5;
-        let shift = n * (h * align.offset());
-        Some(Self {
-            a0: *a,
-            b0: *b,
-            a: *a + shift,
-            b: *b + shift,
-            dir,
-            n,
-            h,
-        })
-    }
-
-    /// Ungetrimmtes Wandband (Achse ± halbe Dicke) als Viereck.
-    fn band(&self) -> Vec<Vec2> {
-        vec![
-            self.a + self.n * self.h,
-            self.b + self.n * self.h,
-            self.b - self.n * self.h,
-            self.a - self.n * self.h,
-        ]
-    }
-
-    /// Bounding-Box des Bandes — ohne das Viereck zu bauen (Index-Aufbau).
-    fn band_bbox(&self) -> BBox {
-        BBox::from_points(&[
-            self.a + self.n * self.h,
-            self.b + self.n * self.h,
-            self.b - self.n * self.h,
-            self.a - self.n * self.h,
-        ])
-    }
-}
-
-/// Toleranz, unter der zwei Punkte der Basislinie als **verbunden** gelten (mm).
-///
-/// Darunter liegen nur die Rundungsreste der Koordinaten (Datei, Verschieben,
-/// Drehen). Alles darüber ist ein sichtbarer Spalt und damit **kein** Anschluss:
-/// sonst entschiede die Wanddicke darüber, ob zwei knapp nebeneinanderliegende
-/// Enden eine Gehrung bekommen — genau der unvorhersehbare Zustand, den dieses
-/// Ticket beseitigt.
-pub const JOIN_EPS: f64 = 0.5;
-
-/// Rasterweite der Nachbarsuche (mm). Nur ein Grobfilter; die genaue Prüfung
-/// läuft auf den Kandidaten dieser Zellen.
-const WALL_GRID_MM: f64 = 1000.0;
-
-/// Zellen des Grobrasters, die eine Fläche überdecken.
-fn grid_cells(bb: &BBox) -> Vec<(i64, i64)> {
-    let mut out = Vec::new();
-    if !bb.is_valid() || !bb.min.x.is_finite() || !bb.min.y.is_finite() {
-        return out;
-    }
-    let c = |p: f64| (p / WALL_GRID_MM).floor() as i64;
-    let (x0, x1) = (c(bb.min.x), c(bb.max.x));
-    let (y0, y1) = (c(bb.min.y), c(bb.max.y));
-    // Ausreißer (meterlange Fläche) nicht in Zellen zerlegen — dann eben ohne
-    // Grobfilter, die genaue Prüfung entscheidet ohnehin.
-    if (x1 - x0).abs() > 2048 || (y1 - y0).abs() > 2048 {
-        return out;
-    }
-    for x in x0..=x1 {
-        for y in y0..=y1 {
-            out.push((x, y));
-        }
-    }
-    out
-}
-
-/// Alle Wände eines Durchgangs, **einmal** aufgebaut: Rahmen, Nachbarschafts-
-/// raster und Zugriff über die Id.
-///
-/// Vorher lief jede Wandfunktion über alle Objekte — Ende suchen, Bänder für
-/// den Beschnitt sammeln — und das je Wand. Das war der quadratische Anteil im
-/// Renderer. Mit dem Index kostet der Aufbau einen Durchgang, jede Abfrage nur
-/// noch die Nachbarschaft.
-pub struct WallIndex<'a> {
-    doc: &'a Document,
-    ents: &'a [Entity],
-    frames: Vec<(Id, WallFrame)>,
-    /// Id → Index in `frames`
-    by_id: HashMap<Id, usize>,
-    /// Rasterzelle → Indizes in `frames`
-    grid: HashMap<(i64, i64), Vec<usize>>,
-}
-
-impl<'a> WallIndex<'a> {
-    /// Index über alle Wände der Liste.
-    pub fn build(doc: &'a Document, ents: &'a [Entity]) -> Self {
-        Self::build_in(doc, ents, None)
-    }
-
-    /// Index nur über Wände, deren Band eine Fläche berührt. Für Abfragen zu
-    /// **einem** Objekt (Bounding-Box, Fang-Kontur, Vorschau einer Wand) — dort
-    /// wäre der volle Index für ein einziges Objekt reine Verschwendung.
-    pub fn build_near(doc: &'a Document, ents: &'a [Entity], area: &BBox) -> Self {
-        Self::build_in(doc, ents, Some(*area))
-    }
-
-    fn build_in(doc: &'a Document, ents: &'a [Entity], only: Option<BBox>) -> Self {
-        let mut frames: Vec<(Id, WallFrame)> = Vec::new();
-        let mut by_id: HashMap<Id, usize> = HashMap::new();
-        let mut grid: HashMap<(i64, i64), Vec<usize>> = HashMap::new();
-        for e in ents {
-            let Some(f) = WallFrame::of(e) else { continue };
-            let bb = f.band_bbox();
-            if let Some(area) = only {
-                if !bb.intersects(&area) {
-                    continue;
-                }
-            }
-            let i = frames.len();
-            for key in grid_cells(&bb) {
-                grid.entry(key).or_default().push(i);
-            }
-            by_id.insert(e.id, i);
-            frames.push((e.id, f));
-        }
-        Self {
-            doc,
-            ents,
-            frames,
-            by_id,
-            grid,
-        }
-    }
-
-    fn frame(&self, i: usize) -> Option<&WallFrame> {
-        self.frames.get(i).map(|(_, f)| f)
-    }
-
-    fn at(&self, i: usize) -> Option<(Id, &WallFrame)> {
-        self.frames.get(i).map(|(id, f)| (*id, f))
-    }
-
-    /// Objekt zu einer Id — nur über den Index, damit Papierraum und Modell
-    /// nicht auseinanderlaufen (`Document::entity` sucht im *aktiven* Raum).
-    /// Dokument, aus dem der Index gebaut wurde — für Öffnungssuche/Kontur.
-    pub fn doc(&self) -> &'a Document {
-        self.doc
-    }
-
-    fn ent(&self, id: Id) -> Option<&'a Entity> {
-        self.by_id
-            .get(&id)
-            .and_then(|i| self.frames.get(*i))
-            .and_then(|_| self.ents.iter().find(|e| e.id == id))
-    }
-
-    /// Wandindizes, deren Band im Umkreis `r` um `at` liegt.
-    fn around(&self, at: Vec2, r: f64) -> Vec<usize> {
-        let mut out: Vec<usize> = Vec::new();
-        for key in grid_cells(&BBox::from_point(at).expanded(r)) {
-            if let Some(list) = self.grid.get(&key) {
-                for i in list {
-                    if !out.contains(i) {
-                        out.push(*i);
-                    }
-                }
-            }
-        }
-        out
-    }
-
-    /// Bänder aller Wände außer `own`, die eine um `pad` erweiterte Fläche
-    /// berühren. Genau die braucht der Beschnitt von Kanten und Füllungen.
-    fn bands_near(&self, bb: &BBox, pad: f64, own: Id) -> Vec<Vec<Vec2>> {
-        let area = bb.expanded(pad);
-        let mut out = Vec::new();
-        let mut seen: Vec<usize> = Vec::new();
-        for key in grid_cells(&area) {
-            let Some(list) = self.grid.get(&key) else {
-                continue;
-            };
-            for i in list {
-                let Some((id, f)) = self.at(*i) else { continue };
-                if id == own || seen.contains(i) {
-                    continue;
-                }
-                seen.push(*i);
-                if f.band_bbox().intersects(&area) {
-                    out.push(f.band());
-                }
-            }
-        }
-        out
-    }
-}
-
-/// Zustand eines Wandendes nach dem Anschluss an die Nachbarwände.
-struct WallEnd {
-    /// Verlängerung des Endes über die Achse hinaus (mm)
-    ext: f64,
-    /// Ende steckt in einem Nachbarkörper (dann keine Stirnlinie)
-    conn: bool,
-    /// Stirnecken (außen, innen)
-    o: Vec2,
-    i: Vec2,
-    /// Richtung von der Stirnkante in den Nachbarkörper hinein
-    into: Vec2,
-    /// Nachbarwand, in der das Ende steckt (für die Füllungs-Überlappung)
-    partner: Option<Id>,
-    /// Wandstück, das die Gehrungslinie abschneidet, ohne dass der Nachbar es
-    /// abdeckt (siehe `miter_patch`); leer, wenn nichts fehlt.
-    patch: Vec<Vec2>,
-    /// Ende liegt auf einer Gehrungslinie (o→i ist die Naht zum Nachbarn)
-    mitered: bool,
-}
-
-/// Sucht die Nachbarwand, deren **Basislinien-Ende** auf `at` liegt
-/// (Eckanschluss).
-///
-/// Verbunden heißt: derselbe Punkt, Toleranz [`JOIN_EPS`]. Ein Ende, das nur
-/// *neben* dem anderen liegt, ist kein Anschluss — die Wand endet dort frei.
-/// Vorher zählte jede Nachbarwand, deren Ende näher als die Summe der halben
-/// Wanddicken (+2 mm) lag; damit hing die Entscheidung an der Wanddicke und war
-/// bei versetzten Enden nicht vorhersehbar.
-fn end_partner(idx: &WallIndex, own: Id, outward: Vec2, at: Vec2) -> Option<usize> {
-    // Bewertung: erst der Abstand zum Basispunkt, bei Gleichstand die
-    // Geradeausfortsetzung. Treffen mehrere Wände in **einem** Punkt zusammen
-    // (Kreuz, T-Stoß), gewinnt damit die fluchtende Wand — die beiden Wände
-    // laufen durch und es entsteht keine willkürliche Gehrung. Ohne diesen
-    // zweiten Schlüssel hinge das Ergebnis an der Reihenfolge im Dokument.
-    let mut best: Option<(f64, f64, usize)> = None;
-    for i in idx.around(at, JOIN_EPS) {
-        let Some((id, f)) = idx.at(i) else { continue };
-        if id == own {
-            continue;
-        }
-        let d = f.a0.dist(at).min(f.b0.dist(at));
-        if d > JOIN_EPS {
-            continue;
-        }
-        let flucht = f.dir.dot(outward).abs();
-        let besser = match best {
-            None => true,
-            Some((bd, bf, _)) => {
-                if (d - bd).abs() > 1e-9 {
-                    d < bd
-                } else {
-                    flucht > bf
-                }
-            }
-        };
-        if besser {
-            best = Some((d, flucht, i));
-        }
-    }
-    best.map(|(_, _, i)| i)
-}
-
-/// Anschlussende eines Nachbarn (verschobene Achse = Mitte des Wandkörpers)
-/// samt Richtung, in der der Nachbar vom Knoten wegläuft.
-fn partner_end(f: &WallFrame, at: Vec2) -> (Vec2, Vec2) {
-    if f.a.dist(at) <= f.b.dist(at) {
-        (f.a, f.dir)
-    } else {
-        (f.b, -f.dir)
-    }
-}
-
-/// Gehrung an einem Wandende: Gehrungslinie = Schnitt der **gleichseitigen**
-/// Wandkanten, also der beiden Außenkanten und der beiden Innenkanten.
-///
-/// Die frühere Winkelhalbierende durch den Basispunkt stimmt nur, wenn beide
-/// Wände gleich dick **und** gleich ausgerichtet sind (beide Achsen fallen
-/// dann mit den BasislInien zusammen). Bei versetzten Achsen oder
-/// unterschiedlichen Dicken lagen die beiden Gehrungslinien nebeneinander:
-/// die Umrandung klaffte am Stoß auf und die Füllung quoll als ungerandeter
-/// Keil heraus (T0020).
-/// `None`, wenn es keine brauchbare Gehrung gibt (fluchtende Wände, kein
-/// Eckanschluss oder Länge über der Grenze).
-fn miter_corners(
-    idx: &WallIndex,
-    at: Vec2,
-    outward: Vec2,
-    n: Vec2,
-    h: f64,
-    partner: usize,
-) -> Option<(Vec2, Vec2, Vec2)> {
-    let f = idx.frame(partner)?;
-    let (pa, away) = partner_end(f, at);
-    // Fluchtende Wände sind kein Gehrungsfall — dort ist der Stoß stumpf
-    // (`butt_join`); parallel laufende Kanten haben keinen Schnittpunkt.
-    if away.cross(outward).abs() < 1e-9 {
-        return None;
-    }
-    // Unsere +n-Kante schließt an die Kante des Nachbarn an, die auf derselben
-    // Seite der Durchlaufrichtung liegt: am Wandende (outward = +dir) an seine
-    // linke, am Wandanfang an seine rechte.
-    let s = if n.dot(outward.perp()) < 0.0 { -1.0 } else { 1.0 };
-    let la_p = at + n * h;
-    let la_m = at - n * h;
-    let lb_p = pa + away.perp() * (f.h * s);
-    let lb_m = pa - away.perp() * (f.h * s);
-    let o = line_line(la_p, la_p + outward, lb_p, lb_p + away, true, true)?;
-    let i = line_line(la_m, la_m + outward, lb_m, lb_m + away, true, true)?;
-    // Extrem spitze Ecken: Gehrung meterlang -> lieber stumpf abschneiden
-    if o.dist(at).max(i.dist(at)) > MITER_LIMIT * h {
-        return None;
-    }
-    // Quer zur Gehrungslinie in den Nachbarkörper hinein (für die Füllung)
-    let m = o - i;
-    let into = if m.len() > 1e-9 {
-        let m = m.normalized();
-        let v = away - m * away.dot(m);
-        if v.len() > 1e-9 {
-            v.normalized()
-        } else {
-            outward
-        }
-    } else {
-        outward
-    };
-    Some((o, i, into))
-}
-
-/// Stumpfstoß zweier **fluchtender** Wände: die Enden liegen aufeinander, die
-/// Achsen laufen in dieselbe Richtung. Eine Gehrung gibt es nicht (parallele
-/// Kanten), verbunden sind sie trotzdem: keine Stirnlinie quer durch die Wand.
-///
-/// Bei gleicher Ausrichtung deckt der Nachbar die Stirnkante vollständig ab
-/// (nichts zu zeichnen). Bei unterschiedlicher Ausrichtung oder Dicke bleibt
-/// eine Stufe — die zeichnet der Aufrufer als Teil der Stirnkante, den der
-/// Nachbarkörper nicht abdeckt.
-fn butt_join(
-    idx: &WallIndex,
-    at: Vec2,
-    outward: Vec2,
-    n: Vec2,
-    h: f64,
-    partner: usize,
-) -> Option<(Vec2, Vec2)> {
-    let f = idx.frame(partner)?;
-    let (pa, away) = partner_end(f, at);
-    // Nur eine Fortsetzung (nicht die Gegenrichtung, sonst liegen die Wände
-    // übereinander und jedes Ende bleibt für sich).
-    if away.dot(outward) < 0.999 {
-        return None;
-    }
-    // Die beiden Bänder müssen sich in der Stoßebene überlappen — sonst stehen
-    // zwei Körper nebeneinander, ohne sich zu berühren (dann freie Enden).
-    let (b0, b1) = (pa + f.n * f.h, pa - f.n * f.h);
-    let (u0, u1) = ((b0 - at).dot(n), (b1 - at).dot(n));
-    let lo = (-h).max(u0.min(u1));
-    let hi = h.min(u0.max(u1));
-    if hi - lo < 0.5 {
-        return None;
-    }
-    Some((at + n * h, at - n * h))
-}
-
-/// Behält den Teil eines konvexen Polygons auf der Seite `(p - p0)·nrm >= 0`
-/// (Sutherland-Hodgman, eine Halbebene).
-pub(crate) fn clip_keep_side(poly: &[Vec2], p0: Vec2, nrm: Vec2) -> Vec<Vec2> {
-    let mut out: Vec<Vec2> = Vec::with_capacity(poly.len() + 2);
-    for k in 0..poly.len() {
-        let a = poly[k];
-        let b = poly[(k + 1) % poly.len()];
-        let (da, db) = ((a - p0).dot(nrm), (b - p0).dot(nrm));
-        if da >= 0.0 {
-            out.push(a);
-        }
-        if (da > 0.0 && db < 0.0) || (da < 0.0 && db > 0.0) {
-            let t = da / (da - db);
-            out.push(a + (b - a) * t);
-        }
-    }
-    // Doppelte Punkte (Schnitt genau auf einer Ecke) entfernen
-    out.dedup_by(|a, b| a.dist(*b) < 1e-6);
-    if out.len() > 1 && out[0].dist(*out.last().unwrap()) < 1e-6 {
-        out.pop();
-    }
-    out
-}
-
-/// Fläche, die die Gehrungslinie vom eigenen Wandkörper abschneidet, obwohl der
-/// Nachbar sie nicht abdeckt.
-///
-/// Bei gleich dicken Wänden deckt der Nachbarkörper alles ab, was hinter der
-/// Gehrungslinie liegt. Bei unterschiedlich dicken Wänden (oder versetzten
-/// Achsen) kippt die Gehrungslinie so weit, dass sie in die eigene Wand
-/// hineinschneidet: die Füllung endet dann vor der eigenen Stirnebene, ein
-/// Stück Wandkörper fehlt und dessen Kante bleibt ohne Linie (sichtbar als
-/// ungerandete Stufe an der Ecke). Dieses Stück wird hier nachgerechnet —
-/// eigener Körper bis zur Stirnebene, auf der dem Körper abgewandten Seite
-/// der Gehrungslinie.
-fn miter_patch(
-    at: Vec2,
-    outward: Vec2,
-    n: Vec2,
-    h: f64,
-    len: f64,
-    o: Vec2,
-    i: Vec2,
-) -> Vec<Vec2> {
-    let d = i - o;
-    if d.len() < 1e-6 || len < 1e-6 {
-        return vec![];
-    }
-    let back = at - outward * len;
-    let band = [at + n * h, at - n * h, back - n * h, back + n * h];
-    // nur hinter der eigenen Stirnebene
-    let rest = clip_keep_side(&band, at, -outward);
-    if rest.len() < 3 {
-        return vec![];
-    }
-    // Seite der Gehrungslinie bestimmen: die dem Körper abgewandte behalten
-    let inside = at - outward * (h.min(len) * 0.5);
-    let side = d.cross(inside - o);
-    let nrm = if side > 0.0 { -d.perp() } else { d.perp() };
-    let patch = clip_keep_side(&rest, o, nrm);
-    if patch.len() < 3 || polygon_area(&patch).abs() < 1.0 {
-        return vec![];
-    }
-    patch
-}
-
-/// Schnitt der Strecke a→b mit einem konvexen Polygon als Parameterintervall.
-fn clip_t_interval(a: Vec2, b: Vec2, poly: &[Vec2]) -> Option<(f64, f64)> {
-    let d = b - a;
-    let l2 = d.len2();
-    if l2 < 1e-12 {
-        return None;
-    }
-    let (mut lo, mut hi) = (f64::INFINITY, f64::NEG_INFINITY);
-    for (p, q) in clip_line_polygon(a, b, poly) {
-        let t0 = (p - a).dot(d) / l2;
-        let t1 = (q - a).dot(d) / l2;
-        lo = lo.min(t0.min(t1));
-        hi = hi.max(t0.max(t1));
-    }
-    if lo <= hi {
-        Some((lo, hi))
-    } else {
-        None
-    }
-}
-
-/// Kleinste Verlängerung t ≥ 0, sodass beide Stirnecken im Nachbarkörper
-/// liegen. 0, wenn sie schon darin liegen (dann wird nicht verlängert) —
-/// so steckt eine Wand an einem spitzen Stichanschluss nicht über den Nachbarn
-/// hinaus. `None`, wenn kein Nachbar den Anschluss aufnimmt.
-fn wall_reach(
-    idx: &WallIndex,
-    at0: Vec2,
-    at: Vec2,
-    outward: Vec2,
-    n: Vec2,
-    h: f64,
-) -> Option<(f64, Id)> {
-    let limit = MITER_LIMIT * h + 200.0;
-    let mut best: Option<(f64, Id)> = None;
-    for i in idx.around(at0, h + JOIN_EPS) {
-        let Some((id, f)) = idx.at(i) else { continue };
-        // Anschluss nur, wenn der **Basispunkt** auf der Basislinie des
-        // Nachbarn liegt. Vorher genügte, dass die Stirnecken in der Nähe des
-        // Nachbarkörpers lagen — damit hingen seitlich versetzte Enden
-        // scheinbar zusammen, ohne dass ihre Basispunkte verbunden waren.
-        if dist_point_segment(at0, f.a0, f.b0) > JOIN_EPS {
-            continue;
-        }
-        let band = f.band();
-        let mut lo = 0.0f64;
-        let mut hi = limit;
-        let mut ok = true;
-        for c in [at + n * h, at - n * h] {
-            match clip_t_interval(c, c + outward * limit, &band) {
-                Some((t0, t1)) => {
-                    lo = lo.max(t0);
-                    hi = hi.min(t1);
-                }
-                None => ok = false,
-            }
-        }
-        if !ok || hi + 1e-9 < lo {
-            continue;
-        }
-        let t = lo.max(0.0);
-        if best.map(|(bt, _)| t < bt).unwrap_or(true) {
-            best = Some((t, id));
-        }
-    }
-    best
-}
-
-/// Liegt der von der Gehrungslinie abgeschnittene Keil im Körper des anderen?
-fn keil_gedeckt(patch: &[Vec2], deckung: &[Vec2]) -> bool {
-    if patch.len() < 3 || polygon_area(patch).abs() < 1.0 {
-        return true;
-    }
-    patch.iter().all(|q| {
-        point_in_polygon(*q, deckung)
-            || deckung
-                .iter()
-                .enumerate()
-                .map(|(i, p)| dist_point_segment(*q, *p, deckung[(i + 1) % deckung.len()]))
-                .fold(f64::INFINITY, f64::min)
-                <= 0.5
-    })
-}
-
-/// Ist die Gehrung an diesem Stoß **beidseitig** dicht?
-///
-/// Jede der beiden Wände schneidet an der Gehrungslinie ein Stück ihres
-/// Körpers ab. Deckt die andere Wand dieses Stück ab, ist die Umrandung
-/// geschlossen. Andernfalls bleibt zwischen beiden eine ungerandete Füllfläche
-/// stehen (der Keil aus dem Ticket) — dann wird stumpf gestoßen.
-///
-/// Geprüft werden **beide** Keile: nur so entscheiden beide Wände gleich.
-/// Vorher prüfte jede Wand nur ihren eigenen Keil, und ein Stoß konnte auf der
-/// einen Seite als Gehrung und auf der anderen als Stumpfstoß enden.
-#[allow(clippy::too_many_arguments)]
-fn miter_dicht(
-    idx: &WallIndex,
-    at: Vec2,
-    outward: Vec2,
-    n: Vec2,
-    h: f64,
-    len: f64,
-    partner: usize,
-    o: Vec2,
-    i: Vec2,
-) -> bool {
-    let Some(f) = idx.frame(partner) else {
-        return false;
-    };
-    let (pa, away) = partner_end(f, at);
-    let partner_band = f.band();
-    // Eigener Körper jenseits des Stoßes (ungetrimmt, hinter der Stirnebene).
-    let own_band = vec![
-        at + n * h,
-        at + n * h - outward * len,
-        at - n * h - outward * len,
-        at - n * h,
-    ];
-    let own_patch = miter_patch(at, outward, n, h, len, o, i);
-    if !keil_gedeckt(&own_patch, &partner_band) {
-        return false;
-    }
-    // Keil des Nachbarn, aus seiner Sicht gerechnet.
-    let (p_out, p_h, p_len) = (-away, f.h, f.a.dist(f.b));
-    let p_patch = miter_patch(pa, p_out, p_out.perp(), p_h, p_len, o, i);
-    keil_gedeckt(&p_patch, &own_band)
-}
-
-/// Anschluss eines Wandendes: Gehrung zum Ecknachbarn, sonst so weit
-/// verlängern, dass das Ende im Nachbarkörper steckt, sonst freies Ende.
-#[allow(clippy::too_many_arguments)]
-fn wall_end(
-    idx: &WallIndex,
-    own: Id,
-    at0: Vec2,
-    at: Vec2,
-    outward: Vec2,
-    n: Vec2,
-    h: f64,
-    len: f64,
-) -> WallEnd {
-    if let Some(p) = end_partner(idx, own, outward, at0) {
-        if let Some((o, i, into)) = miter_corners(idx, at, outward, n, h, p) {
-            // Die Gehrung schneidet ein Stück des eigenen Körpers ab. Deckt der
-            // Nachbar es nicht ab, bleibt dort eine ungerandete Lücke (der Keil
-            // aus dem Ticket) — dann lieber stumpf stoßen und die Stufe
-            // zeichnen, statt eine falsche Gehrung zu behaupten.
-            let patch = miter_patch(at, outward, n, h, len, o, i);
-            if miter_dicht(idx, at, outward, n, h, len, p, o, i) {
-                let pid = idx.at(p).map(|(id, _)| id);
-                return WallEnd {
-                    ext: 0.0,
-                    conn: true,
-                    o,
-                    i,
-                    into,
-                    partner: pid,
-                    patch,
-                    mitered: true,
-                };
-            }
-        }
-        // Fluchtende Fortsetzung: stumpfer Stoß, keine Naht quer durch die Wand.
-        if let Some((o, i)) = butt_join(idx, at, outward, n, h, p) {
-            let pid = idx.at(p).map(|(id, _)| id);
-            return WallEnd {
-                ext: 0.0,
-                conn: true,
-                o,
-                i,
-                into: outward,
-                partner: pid,
-                patch: vec![],
-                mitered: false,
-            };
-        }
-    }
-    if let Some((t, id)) = wall_reach(idx, at0, at, outward, n, h) {
-        let p = at + outward * t;
-        return WallEnd {
-            ext: t,
-            conn: true,
-            o: p + n * h,
-            i: p - n * h,
-            into: outward,
-            partner: Some(id),
-            patch: vec![],
-            mitered: false,
-        };
-    }
-    WallEnd {
-        ext: 0.0,
-        conn: false,
-        o: at + n * h,
-        i: at - n * h,
-        into: outward,
-        partner: None,
-        patch: vec![],
-        mitered: false,
-    }
-}
-
-/// Liegt die Strecke p–q auf der Geraden durch a–b?
-fn on_line(p: Vec2, q: Vec2, a: Vec2, b: Vec2) -> bool {
-    let d = b - a;
-    if d.len() < 1e-9 {
-        return false;
-    }
-    let n = d.normalized().perp();
-    (p - a).dot(n).abs() < 1e-6 && (q - a).dot(n).abs() < 1e-6
-}
-
-/// Teile einer Strecke, die **außerhalb** eines Polygons liegen (mindestens
-/// `eps` vom Rand entfernt). Gegenstück zu `clipped_line_pieces`, das die
-/// innen liegenden Teile behält.
-fn line_outside_pieces(a: Vec2, b: Vec2, poly: &[Vec2], eps: f64) -> Vec<(Vec2, Vec2)> {
-    let d = b - a;
-    let l2 = d.len2();
-    if poly.len() < 3 || l2 < 1e-12 {
-        return vec![];
-    }
-    let mut ts: Vec<f64> = vec![0.0, 1.0];
-    for i in 0..poly.len() {
-        if let Some(x) = line_line(a, b, poly[i], poly[(i + 1) % poly.len()], false, false) {
-            let t = (x - a).dot(d) / l2;
-            if t > 1e-6 && t < 1.0 - 1e-6 {
-                ts.push(t);
-            }
-        }
-    }
-    ts.sort_by(|x, y| x.partial_cmp(y).unwrap_or(std::cmp::Ordering::Equal));
-    ts.dedup_by(|x, y| (*x - *y).abs() < 1e-9);
-    let mut out = Vec::new();
-    for w in ts.windows(2) {
-        let (t0, t1) = (w[0], w[1]);
-        if t1 - t0 < 1e-9 {
-            continue;
-        }
-        let p = a + d * (0.5 * (t0 + t1));
-        if point_in_polygon(p, poly) {
-            continue;
-        }
-        let near = poly
-            .iter()
-            .enumerate()
-            .map(|(i, q)| dist_point_segment(p, *q, poly[(i + 1) % poly.len()]))
-            .fold(f64::INFINITY, f64::min);
-        if near <= eps {
-            continue;
-        }
-        out.push((a + d * t0, a + d * t1));
-    }
-    out
-}
-
-/// Körperfläche des Nachbarn am Stoß (gehrungbeschnitten, also ohne den
-/// Bereich, den die Gehrungslinie abschneidet). Dient dazu, die Gehrungsnaht
-/// nur dort zu zeichnen, wo der Nachbar sie nicht abdeckt.
-fn partner_body(doc: &Document, idx: &WallIndex, id: Id, at: Vec2) -> Option<Vec<Vec2>> {
-    let other = idx.ent(id)?;
-    let l = WallLayout::of(doc, idx, other)?;
-    let mut best: Option<(f64, Vec<Vec2>)> = None;
-    for (s0, s1) in &l.segments {
-        let (c0o, c0i, c1o, c1i) = l.corners(*s0, *s1);
-        let quad = vec![c0o, c1o, c1i, c0i];
-        let d = quad
-            .iter()
-            .map(|p| p.dist(at))
-            .fold(f64::INFINITY, f64::min);
-        if best.as_ref().map(|(bd, _)| d < *bd).unwrap_or(true) {
-            best = Some((d, quad));
-        }
-    }
-    best.map(|(_, q)| q)
-}
-
-/// Füllband auf der Anschlusskante. Zwei Wandfüllungen stoßen an der
-/// Gehrungslinie stumpf aneinander; die Antialiasing-Ränder beider Flächen
-/// ergänzen sich dort nur auf ~75 %, was als heller Haarstrich sichtbar wird.
-/// Ein Band in Füllfarbe, je `FILL_OVERLAP` links und rechts der Kante, deckt
-/// ihn ab. Es liegt vollständig in den beiden Wandkörpern (bzw. unter der
-/// Außenlinie), ragt also nicht über die Sichtkante hinaus.
-fn push_joint_band(
-    dl: &mut DisplayList,
-    e: &Entity,
-    style: PrimStyle,
-    o: Vec2,
-    i: Vec2,
-    into: Vec2,
-    xf: Affine,
-) {
-    let d = into * FILL_OVERLAP;
-    dl.push(Prim {
-        shape: Shape::Fill {
-            outer: vec![
-                xf.apply(o + d),
-                xf.apply(i + d),
-                xf.apply(i - d),
-                xf.apply(o - d),
-            ],
-            holes: Vec::new(),
-        },
-        style,
-        entity: e.id,
-        layer: e.layer,
-    });
-}
-
-/// Zeichnet eine Wandkante und blendet die Abschnitte aus, die **im Inneren**
-/// einer anderen Wand liegen. Die Kante endet damit exakt auf deren Rand —
-/// kein Haarspalt, kein Stummel und keine doppelte Linie im Nachbarkörper.
-fn push_clipped_line(
-    dl: &mut DisplayList,
-    e: &Entity,
-    st: &PrimStyle,
-    p0: Vec2,
-    p1: Vec2,
-    others: &[Vec<Vec2>],
-    xf: Affine,
-) {
-    for (a, b) in clipped_line_pieces(p0, p1, others) {
-        dl.push(Prim {
-            shape: Shape::Line(xf.apply(a), xf.apply(b)),
-            style: *st,
-            entity: e.id,
-            layer: e.layer,
-        });
-    }
-}
-
-/// Zerlegt eine Wandkante in die sichtbaren Abschnitte (außerhalb fremder
-/// Wandkörper). Gemeinsame Grundlage für das Zeichnen und den Punktfang —
-/// so können Anzeige und Fang nicht auseinanderdriften.
-fn clipped_line_pieces(p0: Vec2, p1: Vec2, others: &[Vec<Vec2>]) -> Vec<(Vec2, Vec2)> {
-    let d = p1 - p0;
-    let l2 = d.len2();
-    if l2 < 1e-12 {
-        return Vec::new();
-    }
-    // Schnittpunkte mit allen Nachbarkanten als Unterteilungspunkte
-    let mut ts: Vec<f64> = vec![0.0, 1.0];
-    for poly in others {
-        for i in 0..poly.len() {
-            let q0 = poly[i];
-            let q1 = poly[(i + 1) % poly.len()];
-            if let Some(x) = line_line(p0, p1, q0, q1, false, false) {
-                let t: f64 = (x - p0).dot(d) / l2;
-                if t > 1e-6 && t < 1.0 - 1e-6 {
-                    ts.push(t);
-                }
-            }
-        }
-    }
-    ts.sort_by(|x, y| x.partial_cmp(y).unwrap_or(std::cmp::Ordering::Equal));
-    ts.dedup_by(|x, y| (*x - *y).abs() < 1e-9);
-    let mut out = Vec::new();
-    for w in ts.windows(2) {
-        let (t0, t1) = (w[0], w[1]);
-        if t1 - t0 < 1e-9 {
-            continue;
-        }
-        // Nur echt innen liegende Abschnitte ausblenden. Ein Punkt auf dem Rand
-        // des Nachbarn (Gehrungsecke) zählt dabei als außen, sonst entsteht dort
-        // ein Spalt in der Umrandung.
-        let inside = others.iter().any(|poly| {
-            let ts = [t0 + (t1 - t0) * 0.25, t0 + (t1 - t0) * 0.5, t0 + (t1 - t0) * 0.75];
-            ts.iter().all(|t| {
-                let p = p0 + d * *t;
-                if !point_in_polygon(p, poly) {
-                    return false;
-                }
-                poly.iter()
-                    .enumerate()
-                    .map(|(i, q)| dist_point_segment(p, *q, poly[(i + 1) % poly.len()]))
-                    .fold(f64::INFINITY, f64::min)
-                    > INSIDE_EPS
-            })
-        });
-        if inside {
-            continue;
-        }
-        out.push((p0 + d * t0, p0 + d * t1));
-    }
-    out
-}
-
-/// Aufbau einer Wand: verschobene Achse, Anschlüsse an beiden Enden,
-/// Öffnungsintervalle und die festen Abschnitte dazwischen.
-///
-/// EINE Quelle für Darstellung **und** Fang — würde die Kontur an zwei Stellen
-/// gerechnet, weichen gezeichnete Kante und Fangpunkt bei Gehrung/Öffnung
-/// still voneinander ab.
-struct WallLayout {
-    dir: Vec2,
-    n: Vec2,
-    /// halbe Wanddicke
-    h: f64,
-    se: WallEnd,
-    ee: WallEnd,
-    /// Beginn der (verlängerten) Achse
-    start: Vec2,
-    /// Gesamtlänge inklusive Verlängerungen
-    total: f64,
-    /// Öffnungsintervalle, um die Verlängerung am Anfang verschoben
-    openings: Vec<(f64, f64)>,
-    /// feste Abschnitte zwischen den Öffnungen
-    segments: Vec<(f64, f64)>,
-}
-
-impl WallLayout {
-    fn of(doc: &Document, idx: &WallIndex, e: &Entity) -> Option<Self> {
-        let EntityKind::Wall {
-            a,
-            b,
-            thickness,
-            align,
-            ..
-        } = &e.kind
-        else {
-            return None;
-        };
-        if *thickness <= 0.5 {
-            return None;
-        }
-        let len = a.dist(*b);
-        if len < 1e-6 {
-            return None;
-        }
-        let dir = (*b - *a).normalized();
-        let n = dir.perp();
-        let h = thickness * 0.5;
-        // Ausrichtung: Wandkörper relativ zur Achse verschieben (links/mittig/rechts)
-        let shift = n * (h * align.offset());
-        let (a0, b0) = (*a, *b);
-        let a = *a + shift;
-        let b = *b + shift;
-
-        // Anschlüsse: Gehrung zum Ecknachbarn (nur bei verbundener Basislinie)
-        // oder Ende so weit in den Nachbarn schieben, dass beide Stirnecken in
-        // dessen Körper liegen.
-        let se = wall_end(idx, e.id, a0, a, -dir, n, h, len);
-        let ee = wall_end(idx, e.id, b0, b, dir, n, h, len);
-        let start = a - dir * se.ext;
-        let total = len + se.ext + ee.ext;
-
-        // Öffnungen (relativ zum ursprünglichen Wandanfang)
-        let openings: Vec<(f64, f64)> = wall_opening_intervals(doc, e)
-            .into_iter()
-            .map(|(s0, s1)| (s0 + se.ext, s1 + se.ext))
-            .collect();
-
-        // Feste Segmente zwischen den Öffnungen
-        let mut segments: Vec<(f64, f64)> = Vec::new();
-        let mut cursor = 0.0;
-        for (s0, s1) in &openings {
-            if *s0 > cursor + 0.5 {
-                segments.push((cursor, *s0));
-            }
-            cursor = (*s1).max(cursor);
-        }
-        if cursor < total - 0.5 {
-            segments.push((cursor, total));
-        }
-
-        Some(Self {
-            dir,
-            n,
-            h,
-            se,
-            ee,
-            start,
-            total,
-            openings,
-            segments,
-        })
-    }
-
-    /// Punkt auf der (verlängerten) Achse, `s` ab Wandbeginn gemessen.
-    fn p(&self, s: f64) -> Vec2 {
-        self.start + self.dir * s
-    }
-
-    /// Die vier Ecken eines festen Abschnitts: (außen Anfang, innen Anfang,
-    /// außen Ende, innen Ende). An den Wandenden sind es die Stirn-/Gehrungsecken.
-    fn corners(&self, s0: f64, s1: f64) -> (Vec2, Vec2, Vec2, Vec2) {
-        let p0 = self.p(s0);
-        let p1 = self.p(s1);
-        let (c0o, c0i) = if s0 < 0.5 {
-            (self.se.o, self.se.i)
-        } else {
-            (p0 + self.n * self.h, p0 - self.n * self.h)
-        };
-        let (c1o, c1i) = if (s1 - self.total).abs() < 0.5 {
-            (self.ee.o, self.ee.i)
-        } else {
-            (p1 + self.n * self.h, p1 - self.n * self.h)
-        };
-        (c0o, c0i, c1o, c1i)
-    }
-}
-
-/// Umgrenzende Linien einer Wand in Weltkoordinaten: Längskanten je Abschnitt,
-/// Stirnkanten an freien Enden und Laibungskanten an Öffnungen.
-///
-/// Das ist die Kontur, die der Betrachter sieht — bewusst **ohne** den Beschnitt
-/// an Nachbarwänden: gefangen wird die konstruierte Ecke (z. B. der Gehrungspunkt),
-/// nicht der sichtbare Rest der Linie. Leere Liste, wenn die Wand zu dünn ist
-/// und als einfache Linie gezeichnet wird.
-pub fn wall_contour_segments(doc: &Document, e: &Entity) -> Vec<Seg> {
-    let idx = WallIndex::build(doc, doc.ents());
-    wall_contour_segments_idx(&idx, e)
-}
-
-/// Wie [`wall_contour_segments`], aber mit einem bereits gebauten Index —
-/// gedacht für Schleifen über viele Objekte (Fang, Auswahl).
-pub fn wall_contour_segments_idx(idx: &WallIndex, e: &Entity) -> Vec<Seg> {
-    let Some(l) = WallLayout::of(idx.doc(), idx, e) else {
-        return vec![];
-    };
-    let mut out = Vec::new();
-    for (s0, s1) in &l.segments {
-        let (c0o, c0i, c1o, c1i) = l.corners(*s0, *s1);
-        // Längskanten
-        out.push(Seg::Line(c0o, c1o));
-        out.push(Seg::Line(c0i, c1i));
-        // Stirnseiten nur an freien Wandenden (bei Anschluss deckt der Nachbar)
-        if *s0 < 0.5 && !l.se.conn {
-            out.push(Seg::Line(l.se.o, l.se.i));
-        }
-        if (*s1 - l.total).abs() < 0.5 && !l.ee.conn {
-            out.push(Seg::Line(l.ee.o, l.ee.i));
-        }
-    }
-    // Laibungen an Öffnungen
-    for (s0, s1) in &l.openings {
-        for s in [*s0, *s1] {
-            let p = l.p(s);
-            out.push(Seg::Line(p + l.n * l.h, p - l.n * l.h));
-        }
-    }
-    out
-}
-
-/// Umgrenzende Eckpunkte einer Wand (Endpunkte der Konturlinien, entdoppelt).
-pub fn wall_contour_points(doc: &Document, e: &Entity) -> Vec<Vec2> {
-    let mut out: Vec<Vec2> = Vec::new();
-    for sg in wall_contour_segments(doc, e) {
-        for p in [sg.start(), sg.end()] {
-            if !out.iter().any(|q| q.dist(p) <= CONTOUR_DEDUP) {
-                out.push(p);
-            }
-        }
-    }
-    out
-}
-
-/// Toleranz, unterhalb derer zwei Konturpunkte als derselbe Punkt gelten (mm).
-/// Gehrungsecken werden je Wand über dieselben Schnitte gerechnet; die
-/// Rundungsreste liegen weit unter dieser Grenze.
-const CONTOUR_DEDUP: f64 = 0.1;
-
+/// Die Geometrie kommt vollständig aus [`crate::wall`] — Körper (an den
+/// Anschlussnähten beschnitten) und Randstücke (nur dort, wo außen keine
+/// andere Wand liegt). Hier gibt es deshalb keine Sonderfälle mehr für
+/// Gehrung, Stumpfstoß, Stich oder Kreuz.
 fn render_wall(
     ctx: &RenderCtx,
     e: &Entity,
@@ -2181,55 +1162,84 @@ fn render_wall(
         });
         return;
     }
-    let wall_idx = ctx.wall_index();
-    let Some(layout) = WallLayout::of(ctx.doc, wall_idx, e) else {
-        return;
+    let idx = ctx.wall_index();
+    // Wand nicht im Index (Vorschau, Blockinhalt): als Einzelwand ohne
+    // Nachbarn zeichnen.
+    let iso;
+    let body = match idx.body(e.id) {
+        Some(b) => b,
+        None => match wall::Body::isolated(ctx.doc, e) {
+            Some(b) => {
+                iso = b;
+                &iso
+            }
+            None => return,
+        },
     };
-    let dir = layout.dir;
-    let n = layout.n;
-    let h = layout.h;
-    let (se, ee) = (&layout.se, &layout.ee);
-    let (conn_a, conn_b) = (se.conn, ee.conn);
-    let (s_out, s_in) = (se.o, se.i);
-    let (e_out, e_in) = (ee.o, ee.i);
-    let start = layout.start;
-    let total = layout.total;
-    let openings = &layout.openings;
-    let segments = &layout.segments;
+    let edges = if idx.body(e.id).is_some() {
+        idx.edges(e.id, true)
+    } else {
+        body.edges()
+    };
 
     let fill = e
         .style
         .fill
         .unwrap_or_else(|| st.color.mix(Color::WHITE, 0.74));
+    let fill_style = PrimStyle {
+        color: fill,
+        fill: Some(fill),
+        width: 0.0,
+        ..*st
+    };
 
-    // Andere Wände (Bänder) für das Beschneiden von Kanten und Füllungen —
-    // nur die Nachbarschaft, nicht die ganze Zeichnung.
-    let own_bb = BBox::from_points(&[
-        start + dir * 0.0,
-        start + dir * total,
-        start + dir * 0.0 + n * h,
-        start + dir * total - n * h,
-    ]);
-    let others: Vec<Vec<Vec2>> =
-        wall_idx.bands_near(&own_bb, MITER_LIMIT * h + 400.0, e.id);
-
-    for (s0, s1) in segments {
-        let p0 = start + dir * *s0;
-        let p1 = start + dir * *s1;
-        let (c0o, c0i, c1o, c1i) = layout.corners(*s0, *s1);
-        let fill_style = PrimStyle {
-            color: fill,
-            fill: Some(fill),
-            width: 0.0,
-            ..*st
+    // 1. Füllflächen — exakt der Wandkörper, an der Naht abgeschnitten.
+    for poly in &body.pieces {
+        dl.push(Prim {
+            shape: Shape::Fill {
+                outer: poly.iter().map(|q| xf.apply(*q)).collect(),
+                holes: Vec::new(),
+            },
+            style: fill_style,
+            entity: e.id,
+            layer: e.layer,
+        });
+    }
+    // 2. Füllband an den Nähten. Zwei Wandfüllungen stoßen dort stumpf
+    //    aneinander; die Antialiasing-Ränder ergänzen sich nur auf ~75 %, was
+    //    als heller Haarstrich sichtbar würde. Das Band liegt im
+    //    Nachbarkörper bzw. unter der Außenlinie.
+    for ed in &edges {
+        if !ed.covered || ed.a.dist(ed.b) < 1.0 {
+            continue;
+        }
+        // So weit ins Nachbarband, wie dort wirklich Wand liegt (an den
+        // Gehrungsecken läuft das Band sonst über die Sichtkante hinaus).
+        let weit = |p: Vec2| -> f64 {
+            let mut d = 0.0;
+            while d < wall::FILL_BLEED {
+                let t = (d + 0.2).min(wall::FILL_BLEED);
+                if !idx.covered_point(p + ed.out * (t + 0.05), e.id) {
+                    break;
+                }
+                d = t;
+            }
+            d
         };
+        let (da, db) = (weit(ed.a), weit(ed.b));
+        if da.max(db) < 0.2 {
+            continue;
+        }
+        // 0,05 mm in die eigene Fläche hinein, damit die Naht selbst in der
+        // Füllung liegt (nicht auf ihrem Rand).
+        let innen = ed.out * 0.05;
         dl.push(Prim {
             shape: Shape::Fill {
                 outer: vec![
-                    xf.apply(c0o),
-                    xf.apply(c1o),
-                    xf.apply(c1i),
-                    xf.apply(c0i),
+                    xf.apply(ed.a - innen),
+                    xf.apply(ed.b - innen),
+                    xf.apply(ed.b + ed.out * db),
+                    xf.apply(ed.a + ed.out * da),
                 ],
                 holes: Vec::new(),
             },
@@ -2237,198 +1247,104 @@ fn render_wall(
             entity: e.id,
             layer: e.layer,
         });
-        // Haarnnaht am Anschluss: Füllung minimal in den Nachbarkörper
-        // hineinlaufen lassen, aber exakt auf dessen Körper beschnitten.
-        if *s0 < 0.5 && conn_a {
-            push_joint_band(dl, e, fill_style, s_out, s_in, se.into, xf);
-        }
-        if (*s1 - total).abs() < 0.5 && conn_b {
-            push_joint_band(dl, e, fill_style, e_out, e_in, ee.into, xf);
-        }
-        // Von der Gehrungslinie abgeschnittenes, vom Nachbarn nicht abgedecktes
-        // Wandstück: als Füllung nachreichen, sonst endet der Wandkörper an
-        // einer ungerandeten Stufe.
-        for (end, near_start) in [(se, true), (ee, false)] {
-            let active = if near_start { *s0 < 0.5 } else { (*s1 - total).abs() < 0.5 };
-            if !active || end.patch.len() < 3 {
-                continue;
-            }
-            // Liegt das Stück ohnehin im Körper einer anderen Wand, ist es
-            // dort schon gefüllt — dann nicht doppelt zeichnen.
-            let c = end
-                .patch
-                .iter()
-                .fold(Vec2::ZERO, |s, q| s + *q)
-                / end.patch.len() as f64;
-            if others.iter().any(|q| point_in_polygon(c, q)) {
-                continue;
-            }
-            dl.push(Prim {
-                shape: Shape::Fill {
-                    outer: end.patch.iter().map(|q| xf.apply(*q)).collect(),
-                    holes: Vec::new(),
-                },
-                style: fill_style,
-                entity: e.id,
-                layer: e.layer,
-            });
-        }
-        // Schraffur der Wandfläche
-        if let Some(hp) = hatch {
-            if hp != FillPattern::Solid {
-                let thin = PrimStyle {
-                    width: st.width * 0.55,
-                    ..*st
-                };
-                let seg_dir = (p1 - p0).normalized();
-                match hp {
-                    FillPattern::Insulation => {
-                        // Mäanderlinie (Mineralwolle/ Dämmung)
-                        let seg_len = p0.dist(p1);
-                        let period = (4.0 * h).max(80.0);
-                        let steps = ((seg_len / period) * 14.0).ceil().max(4.0) as usize;
-                        let mut pts = Vec::with_capacity(steps + 1);
-                        for i in 0..=steps {
-                            let t = i as f64 / steps as f64;
-                            let s_along = t * seg_len;
-                            let ang = s_along / period * std::f64::consts::TAU;
-                            let off = ang.sin() * (h * 0.9);
-                            pts.push(xf.apply(p0 + seg_dir * s_along + n * off));
-                        }
-                        dl.push(Prim {
-                            shape: Shape::Poly(pts, false),
-                            style: thin,
-                            entity: e.id,
-                            layer: e.layer,
-                        });
-                    }
-                    _ => {
-                        let quad_w = [xf.apply(c0o), xf.apply(c1o), xf.apply(c1i), xf.apply(c0i)];
-                        // Schraffurfläche = Wandkörper **plus** das nachgereichte
-                        // Gehrungsstück; sonst bleibt an spitzen Ecken ein
-                        // unschraffierter Keil neben der Gehrung stehen.
-                        let mut flechen: Vec<Vec<Vec2>> = vec![quad_w.to_vec()];
-                        for (end, near_start) in [(se, true), (ee, false)] {
-                            let active =
-                                if near_start { *s0 < 0.5 } else { (*s1 - total).abs() < 0.5 };
-                            if active && end.patch.len() >= 3 {
-                                flechen.push(end.patch.iter().map(|q| xf.apply(*q)).collect());
-                            }
-                        }
-                        let mut angles = vec![std::f64::consts::FRAC_PI_4];
-                        if hp == FillPattern::Cross {
-                            angles.push(std::f64::consts::FRAC_PI_4 + std::f64::consts::FRAC_PI_2);
-                        }
-                        let sp = (thickness * 0.25).max(12.0);
-                        let origin = BBox::from_points(&quad_w).center();
-                        for ang in angles {
-                            let nrm = Vec2::polar(ang + std::f64::consts::FRAC_PI_2, 1.0);
-                            let dirh = Vec2::polar(ang, 1.0);
-                            for i in -80..=80 {
-                                let off = nrm * (i as f64 * sp);
-                                let p_start = origin + off - dirh * 4000.0;
-                                let p_end = origin + off + dirh * 4000.0;
-                                for fl in &flechen {
-                                    for (q0, q1) in clip_line_polygon(p_start, p_end, fl) {
-                                        dl.push(Prim {
-                                            shape: Shape::Line(q0, q1),
-                                            style: thin,
-                                            entity: e.id,
-                                            layer: e.layer,
-                                        });
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-        }
+    }
+    // 3. Schraffur der Wandfläche
+    if let Some(hp) = hatch {
+        push_wall_hatch(dl, e, st, hp, body, thickness, xf);
+    }
+    // 4. Umrandung: nur die Randstücke, deren Außenseite frei ist.
+    for ed in edges.iter().filter(|p| !p.covered) {
+        dl.push(Prim {
+            shape: Shape::Line(xf.apply(ed.a), xf.apply(ed.b)),
+            style: *st,
+            entity: e.id,
+            layer: e.layer,
+        });
+    }
+}
 
-        // Längskanten (im Inneren der Nachbarwände beschnitten)
-        push_clipped_line(dl, e, st, c0o, c1o, &others, xf);
-        push_clipped_line(dl, e, st, c0i, c1i, &others, xf);
-        // Stirnseiten zeichnen: an freien Enden ganz, an angeschlossenen nur
-        // so weit, wie der Nachbarkörper sie nicht abdeckt (Stumpfstoß mit
-        // unterschiedlicher Ausrichtung/Dicke ergibt eine sichtbare Stufe).
-        for (aktiv, end) in [(*s0 < 0.5, se), ((*s1 - total).abs() < 0.5, ee)] {
-            // Gehrungsnaht zeichnet der Block weiter unten (nur die Stücke,
-            // die der Nachbar nicht abdeckt) — hier nicht doppelt.
-            if !aktiv || end.mitered {
-                continue;
-            }
-            let (o, i) = (end.o, end.i);
-            let Some(body) = end
-                .partner
-                .and_then(|pid| partner_body(ctx.doc, wall_idx, pid, o))
-            else {
-                push_clipped_line(dl, e, st, o, i, &others, xf);
-                continue;
-            };
-            for (a, b) in line_outside_pieces(o, i, &body, 0.1) {
-                push_clipped_line(dl, e, st, a, b, &others, xf);
-            }
-        }
-        // Kanten des nachgereichten Gehrungsstücks (nur außerhalb der
-        // Nachbarkörper; im Nachbarn liegende Teile blendet der Beschnitt aus)
-        for (end, near_start) in [(se, true), (ee, false)] {
-            let active = if near_start { *s0 < 0.5 } else { (*s1 - total).abs() < 0.5 };
-            if !active || end.patch.len() < 3 {
-                continue;
-            }
-            let c = end.patch.iter().fold(Vec2::ZERO, |s, q| s + *q) / end.patch.len() as f64;
-            if others.iter().any(|q| point_in_polygon(c, q)) {
-                continue;
-            }
-            for k in 0..end.patch.len() {
-                let q0 = end.patch[k];
-                let q1 = end.patch[(k + 1) % end.patch.len()];
-                // Die Gehrungsnaht selbst zeichnet der Block darunter
-                if on_line(q0, q1, end.o, end.i) {
+/// Schraffur (Muster) der Wandfläche, beschnitten auf die Wandkörper.
+fn push_wall_hatch(
+    dl: &mut DisplayList,
+    e: &Entity,
+    st: &PrimStyle,
+    hp: FillPattern,
+    body: &wall::Body,
+    thickness: f64,
+    xf: Affine,
+) {
+    if hp == FillPattern::Solid {
+        return;
+    }
+    let thin = PrimStyle {
+        width: st.width * 0.55,
+        ..*st
+    };
+    let (h, n, dir, start) = (body.h, body.n, body.dir, body.start);
+    let flechen: Vec<Vec<Vec2>> = body
+        .pieces
+        .iter()
+        .map(|p| p.iter().map(|q| xf.apply(*q)).collect())
+        .collect();
+    match hp {
+        FillPattern::Insulation => {
+            // Mäanderlinie (Mineralwolle/Dämmung) je Wandstück
+            for poly in &body.pieces {
+                let ss: Vec<f64> = poly.iter().map(|q| (*q - start).dot(dir)).collect();
+                let smin = ss.iter().cloned().fold(f64::INFINITY, f64::min);
+                let smax = ss.iter().cloned().fold(f64::NEG_INFINITY, f64::max);
+                let seg_len = smax - smin;
+                if seg_len < 1.0 {
                     continue;
                 }
-                push_clipped_line(dl, e, st, q0, q1, &others, xf);
+                let period = (4.0 * h).max(80.0);
+                let steps = ((seg_len / period) * 14.0).ceil().max(4.0) as usize;
+                let mut pts = Vec::with_capacity(steps + 1);
+                for i in 0..=steps {
+                    let t = i as f64 / steps as f64;
+                    let s_along = t * seg_len;
+                    let ang = s_along / period * std::f64::consts::TAU;
+                    let off = ang.sin() * (h * 0.9);
+                    pts.push(xf.apply(start + dir * (smin + s_along) + n * off));
+                }
+                dl.push(Prim {
+                    shape: Shape::Poly(pts, false),
+                    style: thin,
+                    entity: e.id,
+                    layer: e.layer,
+                });
             }
         }
-        // Gehrungsnaht: nur die Stücke, die der Nachbar nicht abdeckt. Bei
-        // gleich dicken Wänden deckt er die ganze Naht ab (nichts zu zeichnen);
-        // bei unterschiedlich dicken Wänden bleiben Zipfel übrig, die sonst als
-        // ungerandete Füllkante enden.
-        for (end, near_start) in [(se, true), (ee, false)] {
-            let active = if near_start { *s0 < 0.5 } else { (*s1 - total).abs() < 0.5 };
-            let Some(pid) = end.partner else { continue };
-            if !active || !end.mitered {
-                continue;
+        _ => {
+            let mut angles = vec![std::f64::consts::FRAC_PI_4];
+            if hp == FillPattern::Cross {
+                angles.push(std::f64::consts::FRAC_PI_4 + std::f64::consts::FRAC_PI_2);
             }
-            let Some(body) = partner_body(ctx.doc, wall_idx, pid, end.o) else {
-                continue;
-            };
-            // Stücke außerhalb des Nachbarkörpers; die an das nachgereichte
-            // Gehrungsstück angrenzenden Teile liegen danach wieder im
-            // Wandinneren und entfallen.
-            let mut pieces = line_outside_pieces(end.o, end.i, &body, 0.1);
-            if end.patch.len() >= 3 {
-                pieces = pieces
-                    .into_iter()
-                    .flat_map(|(a, b)| line_outside_pieces(a, b, &end.patch, 0.1))
-                    .collect();
+            let sp = (thickness * 0.25).max(12.0);
+            let pts: Vec<Vec2> = flechen.iter().flatten().cloned().collect();
+            if pts.is_empty() {
+                return;
             }
-            for (a, b) in pieces {
-                push_clipped_line(dl, e, st, a, b, &others, xf);
+            let origin = BBox::from_points(&pts).center();
+            for ang in angles {
+                let nrm = Vec2::polar(ang + std::f64::consts::FRAC_PI_2, 1.0);
+                let dirh = Vec2::polar(ang, 1.0);
+                for i in -80..=80 {
+                    let off = nrm * (i as f64 * sp);
+                    let p_start = origin + off - dirh * 4000.0;
+                    let p_end = origin + off + dirh * 4000.0;
+                    for fl in &flechen {
+                        for (q0, q1) in clip_line_polygon(p_start, p_end, fl) {
+                            dl.push(Prim {
+                                shape: Shape::Line(q0, q1),
+                                style: thin,
+                                entity: e.id,
+                                layer: e.layer,
+                            });
+                        }
+                    }
+                }
             }
-        }
-    }
-
-    // Laibungen an Öffnungen
-    for (s0, s1) in openings {
-        for s in [*s0, *s1] {
-            let p = start + dir * s;
-            dl.push(Prim {
-                shape: Shape::Line(xf.apply(p + n * h), xf.apply(p - n * h)),
-                style: *st,
-                entity: e.id,
-                layer: e.layer,
-            });
         }
     }
 }

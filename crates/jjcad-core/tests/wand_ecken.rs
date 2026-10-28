@@ -367,6 +367,11 @@ fn verlaengerung_versetzter_ausrichtung_zeichnet_stufe() {
 /// Ecke mit unterschiedlicher Ausrichtung (mittig → rechts): die Umrandung
 /// muss am Knoten geschlossen sein. Vorher endete die Oberkante der ersten
 /// Wand vor dem Knoten, die Füllung stand als ungerandeter Keil darüber.
+///
+/// Hier ist **kein** Gehrungsschnitt möglich: die zweite Wand liegt ganz auf
+/// ihrer einen Seite, ihre Stirnfläche steht an der Basislinie des Knotens.
+/// Die erste Wand endet deshalb bündig an dieser Stirnfläche (x = 2000) —
+/// die Stufe ist die Wand selbst, keine Lücke.
 #[test]
 fn ecke_versetzter_ausrichtung_ist_geschlossen() {
     let mut s = session();

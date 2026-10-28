@@ -1,7 +1,7 @@
 # JoJa-CAD v0.2 — Arbeitsstand
 
 Kurzer Übergabestand für neue Sitzungen. Nach jeder Änderung fortschreiben.
-Stand: 25.10.2026, 15:00
+Stand: 28.10.2026
 
 ## Build & Start
 
@@ -16,9 +16,36 @@ offene Fensterinstanz zeigt weiterhin den alten Stand.
 
 ## Erledigt (verifiziert)
 
-- **Wandanschlüsse**: Füllungen werden vor allen Linien gezeichnet; Gehrung über
-  die Innenwinkel-Halbierende, Knotenpunkt = Schnitt der *verschobenen* Achsen
-  (`wall_end_corners`). Spitze/stumpfe Ecken, T- und X-Anschlüsse geschlossen.
+- **Wandanschlüsse neu aufgebaut** (`crates/jjcad-core/src/wall.rs`, ersetzt den
+  alten Beschnitt-Apparat in `render.rs` ersatzlos):
+  - Eine Wand ist ein Band um die verschobene Achse. Verbunden = **Basispunkte**
+    zusammen (0,5 mm). An einem verbundenen Ende wird die Wand an der
+    **Anschlussnaht** abgeschnitten: Gerade durch die beiden Gehrungspunkte
+    (Schnitt Außenkante↔Außenkante, Innenkante↔Innenkante). Bei gleich dicken,
+    mittigen Wänden ist das die Winkelhalbierende; sonst die dicken- und
+    ausrichtungsabhängige Halbierende. Beide Wände rechnen **dieselben zwei
+    Punkte** — keine zwei Nähte mehr nebeneinander.
+  - Geschnitten wird nur, wenn es **beidseitig gedeckt** ist (der abgeschnittene
+    Teil liegt im verlängerten Band des Nachbarn, die Naht schneidet beide
+    Bänder, Länge ≤ 6·h_min für beide gleich). Sonst Stumpfstoß. Ein Ende, das
+    am Knoten gerade durchläuft (fluchtender Nachbar), wird nicht geschnitten.
+  - Gezeichnet wird die **Vereinigung**: eine Randkante nur, wo außen keine
+    andere Wand liegt. Damit sind Gehrung, Stumpfstoß, Stich, Kreuz und
+    Mehrfachknoten keine Sonderfälle mehr; Nähte im Wandinneren entfallen.
+  - Fang nutzt dieselbe Geometrie (`wall_contour_segments`), Füllband an der
+    Naht 0,6 mm keilförmig (Haarstrich weg).
+  - Abnahme: `crates/jjcad-core/tests/wandanschluss.rs` — 8 Winkel × 4
+    Dickenpaare × 5 Ausrichtungen (160 Ecken), geprüft auf „keine Lücke"
+    (Vektor **und** Pixelbild), „keine Naht im Körper", „jede Füllkante
+    umrandet"; gemeinsame Gehrung gleich dicker Wände; drei Wände in einem
+    Punkt ohne Splitter; Stich/Kreuzung; Reihenfolge der Wände ohne Einfluss.
+    Messhilfen: `examples/wand_probe.rs` (Fälle als PNG + Kennzahlen),
+    `examples/zeichnung_png.rs <datei.jjcad> [ziel] [x0 y0 x1 y1]`.
+  - **Offen:** bei schrägen Ecken, wo der Nachbar den abgeschnittenen Zipfel
+    nicht deckt (45° mittig/rechts, 135° 240/360, 20° 365/115), bleibt die
+    ehrliche Vereinigung stehen — die schräge Stirnfläche spitzt über den
+    Nachbarn hinaus. Ein „Zipfel abschneiden + freie Nahtkante nachziehen"
+    (wie das alte `miter_patch`, aber konsistent) ist ein eigenes Ticket.
 - **Wandschraffur**: `hatch` an der Wand (Vollfläche, 45°, Kreuz, Punkte,
   **Dämmung = Mäander**), gezeichnet als Displaylisten-Primitive.
 - **Wandausrichtung**: `WallAlign` (Links/Mittig/Rechts), Versatz ±Dicke/2,
@@ -40,22 +67,20 @@ offene Fensterinstanz zeigt weiterhin den alten Stand.
 - **Punktfang auf Wandkontur** (`snap.wall_edges`, Standard an): Die umgrenzenden
   Wandlinien (Längskanten, Gehrungs-/Stirnecken, Laibungen an Öffnungen) liefern
   Fangpunkte — Endpunkt, Mittelpunkt, Nächster Punkt und Schnittpunkte mit anderen
-  Wänden. EINE Geometriequelle: `render::WallLayout::of` versorgt Darstellung
-  (`render_wall`) und Fang (`render::wall_contour_segments`); Kandidaten werden in
+  Wänden. EINE Geometriequelle: `wall::WallIndex` (Körper + Randstücke) versorgt
+  Darstellung (`render_wall`) und Fang (`render::wall_contour_segments`); Kandidaten werden in
   `snap::snap_candidates` entdoppelt (0,1 mm). Nachweis: Wand 0,0→5000,0, 300 mm —
   Zeiger 5 px neben der Ecke → Status „X 0,00 Y 0,15 · Endpunkt", Ring auf der
   Ecke; `wall_edges=false` → (-0,02; 0,17) ohne Fang, Achse bleibt fangbar.
 
-- **Wandgehrung an extrem spitzen Ecken / ungleich dicken Wänden**: Was die
-  Gehrungslinie vom eigenen Körper abschneidet, ohne dass der Nachbar es deckt,
-  wird als Füllung nachgereicht (`miter_patch`) und die Gehrungsnaht nur dort
-  gezeichnet, wo der Nachbar sie nicht abdeckt (`line_outside_pieces` gegen
-  `partner_body`). Vorher endete die Füllung bis 24 mm vor der eigenen
-  Stirnebene und die Kante blieb ohne Linie. Nachweis: `crates/jjcad-core/tests/
-  wandgehrung_spitz.rs` (7 Tests, prüfen „Körper vollständig gefüllt“, „jede
-  Füllkante umrandet“, „keine Linie im Wandinneren“ für 90/30/20/15/10/5/2°,
-  365/115, 115/365, Links/Rechts-Kombinationen, Stich, freies Ende); auf dem
-  alten Stand schlägt `spitze_ecke_ungleich_dick` an (63 Punkte ohne Linie).
+- **Wandgehrung an extrem spitzen Ecken / ungleich dicken Wänden**: Der
+  Beschnitt-Apparat von T0020 (`miter_patch`, `miter_dicht`, `keil_gedeckt`,
+  `line_outside_pieces`, `partner_body`) ist **entfernt** — er hat je Wand eine
+  eigene Naht gerechnet und bei versetzten Achsen zwei Nähte nebeneinander
+  erzeugt. An seine Stelle tritt die gemeinsame Anschlussnaht in
+  `crates/jjcad-core/src/wall.rs` (siehe erster Punkt). Nachweis:
+  `tests/wandgehrung_spitz.rs` (7 Tests) und `tests/wandanschluss.rs` bleiben
+  grün, ohne Patch und ohne Sonderfall.
 
 ## Offen
 
@@ -63,12 +88,18 @@ offene Fensterinstanz zeigt weiterhin den alten Stand.
    noch nicht nachträglich änderbar (braucht Wanddicke im Änderungspfad).
 2. **Öffnungsposition als Wandparameter** (Abstand längs + Lage quer) statt
    absolutem Mittelpunkt — nötig, damit Öffnungen beim Verschieben der Wand folgen.
-3. **Wand-Union als echte Polygon-Vereinigung** — Ecken sind jetzt geschlossen
-   und rundum umrandet, gezeichnet wird aber weiter je Wand aus beschnittenen
-   Kanten. Nötig erst, wenn Wände unterschiedliche *Füllfarben* bekommen: an der
-   Ecke überlappen die Füllflächen (gleiche Farbe fällt nicht auf).
-4. Bemaßung: Griffe an Maßketten fehlen.
-5. ~~Wandfang-Schalter in der Oberfläche~~ — erledigt: Checkbox „Wandkanten" im
+3. **Echte Polygon-Vereinigung der Wandfüllungen** — gezeichnet wird weiter je
+   Wand (an der Naht beschnitten, Nebenseite über den Vereinigungstest
+   ausgeblendet). Nötig erst, wenn Wände unterschiedliche *Füllfarben* bekommen
+   oder wenn der Haarstrich an der Naht auch bei starkem Zoom weg soll: an der
+   Ecke stoßen zwei Füllungen aneinander (gleiche Farbe fällt nicht auf, das
+   Füllband deckt die Naht).
+4. **Zipfel an schrägen, ungleich dicken Ecken** — schneidet der Nachbar den von
+   der Naht abgeschnittenen Zipfel nicht, wird heute nicht geschnitten (sonst
+   Loch im Körper); sichtbar spitzt die schräge Stirnfläche über den Nachbarn
+   hinaus. Lösung: Zipfel abschneiden, Restkante als Linie nachziehen.
+5. Bemaßung: Griffe an Maßketten fehlen.
+6. ~~Wandfang-Schalter in der Oberfläche~~ — erledigt: Checkbox „Wandkanten" im
    Einstellungen-Dialog, Ribbon-Gruppe Fangen, Statusmenü Fang (inkl. „Alle an/aus").
 
 ## Arbeitsweise (Lessons)

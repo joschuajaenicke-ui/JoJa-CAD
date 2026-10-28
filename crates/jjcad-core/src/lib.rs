@@ -26,6 +26,7 @@ pub mod style;
 pub mod templates;
 pub mod tessellate;
 pub mod transform;
+pub mod wall;
 pub mod units;
 pub mod util;
 
