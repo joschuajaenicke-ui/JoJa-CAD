@@ -55,6 +55,10 @@ pub struct View {
     pub center: V2,
     /// Pixel pro Millimeter
     pub zoom: f64,
+    /// Drehung der Zeichnungsansicht im Bogenmaß, mathematisch positiv
+    /// (0 = Ausgangsorientierung). Gilt nur für die Anzeige: Modell,
+    /// Speicherdatei und Ausgaben bleiben ungedreht.
+    pub rot: f64,
 }
 
 impl Default for View {
@@ -62,7 +66,43 @@ impl Default for View {
         Self {
             center: V2::new(5000.0, 4000.0),
             zoom: 0.08,
+            rot: 0.0,
         }
+    }
+}
+
+/// Dreht einen Vektor um `angle` (Bogenmaß, mathematisch positiv).
+fn rot_vec(v: V2, angle: f64) -> V2 {
+    let (sin, cos) = angle.sin_cos();
+    V2::new(v.x * cos - v.y * sin, v.x * sin + v.y * cos)
+}
+
+impl View {
+    /// Ist die Ansicht gegenüber der Ausgangsorientierung gedreht?
+    pub fn ist_gedreht(&self) -> bool {
+        self.rot.abs() > 1e-9
+    }
+
+    /// Dreht die Ansicht um `angle` um den Weltpunkt `about` und hält diesen
+    /// Punkt an seiner Bildschirmposition — das ist das Drehzentrum, das der
+    /// Nutzer angeklickt hat.
+    pub fn rotate_about(&mut self, about: V2, angle: f64) {
+        let alt = self.rot;
+        self.rot = alt + angle;
+        self.center = about - rot_vec(about - self.center, alt - self.rot);
+    }
+
+    /// Setzt die Ansicht auf die Ausgangsorientierung zurück. Der Weltpunkt in
+    /// der Bildmitte bleibt stehen, damit die Zeichnung nicht wegspringt.
+    pub fn zurueck_drehen(&mut self) {
+        self.rot = 0.0;
+    }
+
+    /// Bildschirmversatz (px, y nach unten) → Weltversatz (mm). Hängt am
+    /// Drehwinkel: Verschieben und Schwenken laufen immer dem Zeiger nach.
+    pub fn screen_delta_to_world(&self, d: Vec2) -> V2 {
+        let v = V2::new(d.x as f64 / self.zoom, -(d.y as f64) / self.zoom);
+        rot_vec(v, -self.rot)
     }
 }
 
@@ -736,6 +776,19 @@ impl App {
                 "bloecke" | "blocks" => self.ui.ribbon = RibbonTab::Bloecke,
                 "blatt" | "sheet" => self.ui.ribbon = RibbonTab::Blatt,
                 "ansicht" => self.ui.ribbon = RibbonTab::Ansicht,
+                // Drehen der Zeichnungsansicht: Werkzeug läuft (Aufforderung
+                // „Zentrum klicken") bzw. die Ansicht ist schon gedreht.
+                "drehen" => {
+                    self.ui.ribbon = RibbonTab::Ansicht;
+                    self.start_tool("view.rotate_tool");
+                }
+                "gedreht" => {
+                    self.ui.ribbon = RibbonTab::Ansicht;
+                    let mut v = self.current_view();
+                    let mitte = v.center;
+                    v.rotate_about(mitte, 30f64.to_radians());
+                    self.set_view(v);
+                }
                 "vollbild" | "fullscreen" => self.ui.fullscreen = true,
                 "aendern" | "change" => self.ui.ribbon = RibbonTab::Aendern,
                 "inv" | "inventar" => self.ui.inventory_open = true,
@@ -1330,6 +1383,7 @@ impl App {
             TabKind::Sheet(id) => *t.sheet_views.get(&id).unwrap_or(&View {
                 center: V2::new(0.0, 0.0),
                 zoom: 2.2,
+                rot: 0.0,
             }),
         }
     }
@@ -1390,6 +1444,7 @@ impl App {
         let v = View {
             center: bbox.center(),
             zoom: zoom.clamp(1e-4, 60.0),
+            ..self.current_view()
         };
         self.set_view(v);
     }
@@ -2517,6 +2572,10 @@ fn rail(ui: &mut egui::Ui, icon: &str, tooltip: &str, chevron: &str) -> bool {
     fn ribbon_content(&mut self, ui: &mut egui::Ui) {
         let tab = self.ui.ribbon;
         ui.horizontal(|ui| {
+            // Enger als der egui-Standard: der Reiter „Ansicht" hat fünf
+            // Gruppen und muss in die Mindestfensterbreite 1080 px passen
+            // (Test `reiter_ansicht_passt_in_die_mindestbreite`).
+            ui.spacing_mut().item_spacing.x = 5.0;
             ui.add_space(8.0);
             match tab {
                 RibbonTab::Datei => {
@@ -2866,6 +2925,27 @@ fn rail(ui: &mut egui::Ui, icon: &str, tooltip: &str, chevron: &str) -> bool {
                         }
                         if widgets::ribbon_button(ui, "zoomout", "Kleiner", false).clicked() {
                             app.zoom_by(0.8);
+                        }
+                    });
+                    widgets::vline(ui, RIBBON_GROUP_H);
+                    self.group(ui, "Drehen", |ui, app| {
+                        // Bleibt gedrückt, solange die Ansicht gedreht ist; ein
+                        // zweiter Klick stellt die Ausgangsorientierung her.
+                        let gedreht = app.current_view().ist_gedreht();
+                        let laeuft = app.tool_id() == Some("view.rotate_tool");
+                        if widgets::ribbon_button(ui, "rotate", "Drehen", gedreht || laeuft).clicked() {
+                            if gedreht {
+                                let mut v = app.current_view();
+                                v.zurueck_drehen();
+                                app.set_view(v);
+                                app.tool = None;
+                                app.toast("Ansicht · Ausgangslage");
+                            } else if laeuft {
+                                app.tool = None;
+                                app.toast("Ansicht drehen · abgebrochen");
+                            } else {
+                                app.start_tool("view.rotate_tool");
+                            }
                         }
                     });
                     widgets::vline(ui, RIBBON_GROUP_H);
@@ -3538,6 +3618,11 @@ pub(crate) fn commands_hint(tool: &Tool) -> &'static str {
         "modify.order" => "Reihenfolge · Objekt anklicken",
         "block.insert" => "Block · Position klicken",
         "sheet.viewport_tool" => "Ansichtsfenster · Rechteck aufziehen",
+        "view.rotate_tool" => match tool.pts.len() {
+            0 => "Ansicht drehen · Zentrum klicken",
+            1 => "Ansicht drehen · Bezugspunkt klicken",
+            _ => "Ansicht drehen · Richtung klicken",
+        },
         _ => HINWEIS_UNBEKANNT,
     }
 }
@@ -3580,22 +3665,49 @@ pub(crate) fn abschluss_meldung(action: &str) -> Option<&'static str> {
 }
 
 /// Weltkoordinaten aus Bildschirmposition.
+///
+/// Die Ansicht kann gedreht sein (`View::rot`): erst den Bildschirmversatz
+/// zurückdrehen, dann auf die Bildmitte addieren. Diese eine Umrechnung trägt
+/// die Drehung für Fangen, Trefferprüfung, Griffe und alle Zeichenwege.
 pub fn screen_to_world(rect: Rect, view: View, pos: Pos2) -> V2 {
     let cx = rect.center().x as f64;
     let cy = rect.center().y as f64;
-    V2::new(
-        view.center.x + (pos.x as f64 - cx) / view.zoom,
-        view.center.y - (pos.y as f64 - cy) / view.zoom,
-    )
+    let sx = (pos.x as f64 - cx) / view.zoom;
+    let sy = -(pos.y as f64 - cy) / view.zoom;
+    let d = rot_vec(V2::new(sx, sy), -view.rot);
+    V2::new(view.center.x + d.x, view.center.y + d.y)
 }
 
 pub fn world_to_screen(rect: Rect, view: View, p: V2) -> Pos2 {
     let cx = rect.center().x as f64;
     let cy = rect.center().y as f64;
+    let d = rot_vec(V2::new(p.x - view.center.x, p.y - view.center.y), view.rot);
     Pos2::new(
-        (cx + (p.x - view.center.x) * view.zoom) as f32,
-        (cy - (p.y - view.center.y) * view.zoom) as f32,
+        (cx + d.x * view.zoom) as f32,
+        (cy - d.y * view.zoom) as f32,
     )
+}
+
+/// Sichtbarer Weltbereich als (x0, y0, x1, y1) — die vier Bildschirmecken
+/// zurückgerechnet. Bei gedrehter Ansicht ist das die achsenparallele Hülle des
+/// gedrehten Rechtecks; das Raster wird über diese Hülle gespannt.
+pub fn visible_world_bounds(rect: Rect, view: View) -> (f64, f64, f64, f64) {
+    let ecken = [
+        rect.left_top(),
+        rect.right_top(),
+        rect.left_bottom(),
+        rect.right_bottom(),
+    ];
+    let (mut x0, mut y0) = (f64::MAX, f64::MAX);
+    let (mut x1, mut y1) = (f64::MIN, f64::MIN);
+    for e in ecken {
+        let w = screen_to_world(rect, view, e);
+        x0 = x0.min(w.x);
+        y0 = y0.min(w.y);
+        x1 = x1.max(w.x);
+        y1 = y1.max(w.y);
+    }
+    (x0, y0, x1, y1)
 }
 
 /// Welches Menü unter der Statusleiste offen ist.
