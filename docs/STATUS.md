@@ -28,11 +28,16 @@ offene Fensterinstanz zeigt weiterhin den alten Stand.
   - Verbunden = **Basispunkte** zusammen (0,5 mm). Der Körper wird am
     verbundenen Ende um die Reichweite der Naht verlängert, damit die Gehrung
     die Ecke **ergänzt** statt sie nur abzuschneiden.
-  - Grenzen: fluchtend/rückläufig → keine Naht (Wand läuft durch, Kreuz und
-    Verlängerung bleiben gerade); Nahtlänge > 8 · Wandbreite der dünneren Wand
-    → stumpf; nimmt der Schnitt mehr als ein Viertel einer
+  - Grenzen (alle **beidseitig** — dieselbe Entscheidung für beide Wände, sonst
+    schneidet die eine und die andere nicht; genau daraus entstanden Finne und
+    Überlappung): fluchtend/rückläufig → keine Naht (Wand läuft durch, Kreuz
+    und Verlängerung bleiben gerade); **Öffnungswinkel < 40°**
+    (`MIN_JOINT_ANGLE`) → stumpf, sonst schießt die Wand als meterlange Finne
+    über den Knoten; Nahtlänge > 6 · Wandbreite der dünneren Wand
+    (`MITER_RATIO`) → stumpf; nimmt der Schnitt mehr als ein Viertel einer
     Wandquerschnittsfläche weg, die der Nachbar nicht stellt (Wände auf
-    entgegengesetzten Seiten ihrer Basislinien) → stumpf, sonst Loch.
+    entgegengesetzten Seiten ihrer Basislinien) → stumpf, sonst Loch; liegt ein
+    Gehrungspunkt weiter vom Knoten als die **kürzere** Wand lang ist → stumpf.
   - Gezeichnet wird die **Vereinigung**: eine Randkante nur, wo außen keine
     andere Wand liegt. Gehrung, Stumpfstoß, Stich, Kreuz und Mehrfachknoten
     brauchen damit keinen Sonderfall.

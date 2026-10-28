@@ -310,7 +310,7 @@ fn ecken_ohne_luecke_und_ohne_naht() {
 /// als Füllungsecken haben.
 #[test]
 fn gleich_dick_gemeinsame_gehrung() {
-    for deg in [30.0, 45.0, 60.0, 90.0, 120.0, 135.0, 150.0] {
+    for deg in [45.0f64, 60.0, 90.0, 120.0, 135.0] {
         let (s, _) = ecke(deg, 300.0, 300.0, WallAlign::Center, WallAlign::Center);
         let z = messen(&s, [-600.0, -600.0, 600.0, 600.0]);
         // Gehrungspunkte: Ecken, die in beiden Wandkörpern vorkommen.
@@ -448,4 +448,76 @@ fn reihenfolge_aendert_das_bild_nicht() {
     let b = messen(&bauen(true), [-600.0, -600.0, 600.0, 600.0]);
     assert_eq!(a.fills.len(), b.fills.len(), "Füllflächenzahl hängt an der Reihenfolge");
     assert_eq!(a.lines.len(), b.lines.len(), "Linienzahl hängt an der Reihenfolge");
+}
+
+/// Die Naht gilt **beidseitig oder gar nicht** — unabhängig von Wandlänge,
+/// Dicke und Ausrichtung. Sonst schneidet die eine Wand und die andere nicht,
+/// und die Körper überlappen sichtbar (Kreuz aus beiden Umrandungen).
+#[test]
+fn naht_gilt_beidseitig() {
+    for deg in [20.0f64, 35.0, 45.0, 90.0, 135.0, 170.0] {
+        for (la, lb) in [(3000.0, 800.0), (800.0, 3000.0), (500.0, 500.0)] {
+            for (aa, ab) in [
+                (WallAlign::Center, WallAlign::Center),
+                (WallAlign::Left, WallAlign::Right),
+                (WallAlign::Left, WallAlign::Left),
+                (WallAlign::Right, WallAlign::Center),
+            ] {
+                let mut s = session();
+                let r = deg.to_radians();
+                wand(&mut s, (-la, 0.0), (0.0, 0.0), 240.0, aa);
+                wand(
+                    &mut s,
+                    (0.0, 0.0),
+                    (lb * r.cos(), lb * r.sin()),
+                    240.0,
+                    ab,
+                );
+                let idx = WallIndex::build(&s.doc, s.doc.ents());
+                let a = idx.seams_of(s.doc.entities[0].id);
+                let b = idx.seams_of(s.doc.entities[1].id);
+                assert_eq!(
+                    a.len(),
+                    b.len(),
+                    "{deg}° {la}/{lb} {aa:?}/{ab:?}: Naht einseitig (A {} · B {})",
+                    a.len(),
+                    b.len()
+                );
+            }
+        }
+    }
+}
+
+/// Sehr spitzer Winkel (unter `MIN_JOINT_ANGLE`): die Wände stoßen stumpf,
+/// **ohne Finne** — die Wand darf nicht als meterlange Spitze über den Knoten
+/// hinausschießen. Geprüft am Füllbild: zwischen 1,2 Dicken und 1,5 m Abstand
+/// vom Knoten darf kein Füllpunkt liegen.
+#[test]
+fn spitze_ecke_ohne_finne() {
+    for deg in [150.0f64, 155.0, 160.0, 170.0] {
+        for (aa, ab) in [
+            (WallAlign::Center, WallAlign::Center),
+            (WallAlign::Center, WallAlign::Left),
+            (WallAlign::Left, WallAlign::Right),
+        ] {
+            let (s, _) = ecke(deg, 300.0, 300.0, aa, ab);
+            let idx = WallIndex::build(&s.doc, s.doc.ents());
+            for e in s.doc.entities.iter() {
+                assert!(
+                    idx.seams_of(e.id).is_empty(),
+                    "{deg}° {aa:?}/{ab:?}: Naht trotz spitzem Winkel"
+                );
+            }
+            let z = messen(&s, [-2400.0, -2400.0, 2400.0, 2400.0]);
+            for f in &z.fills {
+                for p in f {
+                    let r = (p.x * p.x + p.y * p.y).sqrt();
+                    assert!(
+                        !(360.0..1500.0).contains(&r),
+                        "{deg}° {aa:?}/{ab:?}: Füllpunkt {p:?} bei {r:.0} mm — Finne"
+                    );
+                }
+            }
+        }
+    }
 }

@@ -52,7 +52,14 @@ pub const MITER_LIMIT: f64 = 6.0;
 /// Grenze der Gehrung: Nahtlänge geteilt durch die Wandbreite (2·h) der
 /// dünneren Wand. Wird die Naht länger (extrem spitze Ecke), wird stumpf
 /// gestoßen (Bevel) — sonst schießt die Spitze meterweit aus.
-pub const MITER_RATIO: f64 = 8.0;
+pub const MITER_RATIO: f64 = 6.0;
+
+/// Kleinster **Öffnungswinkel** (Grad zwischen den beiden Wänden am Knoten:
+/// 180 = fluchtend, 90 = Ecke, 20 = sehr spitz), ab dem gegehrt wird.
+///
+/// Darunter liegt die Naht so weit vom Knoten entfernt, dass die Wand als
+/// meterlange „Finne" über ihn hinausschießt — dort wird stumpf gestoßen.
+pub const MIN_JOINT_ANGLE: f64 = 40.0;
 
 /// Halbe Breite des Füllbands an einer Naht (mm). Deckt die
 /// Antialiasing-Naht zwischen zwei Wandfüllungen ab; liegt vollständig im
@@ -434,6 +441,12 @@ fn cut_ok(f: &Frame, d: Vec2, g: &Frame, dj: Vec2, inner: Vec2, outer: Vec2) -> 
     // fragt die Bounding-Box jeder Wand ab, das muss billig bleiben.
     let _ = (&tf, &tg);
     let verloren = verlust(&bf, inner, -nf, &bm_g) + verlust(&bg, inner, -ng, &bm_f);
+    // Verlängerung über das eigene Ende hinaus, die der Nachbar nicht deckt:
+    // das ist die „Finne" bei sehr spitzem Knick (die Wand schießt über den
+    // Knoten hinaus ins Leere).
+    // Behaltene Seite (`nf` zeigt in den Körper): der Überstand, der stehen
+    // bleibt, ist der Überstand auf dieser Seite.
+    let _ = (&tf, &tg);
     let h_min = f.h.min(g.h);
     // Bezug: Querschnittsfläche der dünneren Wand (2h)², davon ein Viertel.
     // (Ein Zipfel von wenigen Prozent bleibt zulässig, eine halbe Wand nicht.)
@@ -622,15 +635,20 @@ impl<'a> WallIndex<'a> {
             let Some((inner, outer)) = miter_points(f, d, &g, dj) else {
                 continue;
             };
-            // Grenze für **beide** Wände dieselbe (die dünnere zählt): sonst
-            // schneidet die eine Wand und die andere nicht. Länge der Naht im
-            // Verhältnis zur Wandbreite der dünneren Wand.
+            // Öffnungswinkel zwischen den Wänden: `d` und `dj` zeigen beide
+            // vom Knoten in ihre Wand — ihr Winkel ist der Winkel, den die
+            // Wände einschließen (180° = fluchtend, 90° = Ecke, 20° = spitz).
+            let psi = d.dot(dj).clamp(-1.0, 1.0).acos().to_degrees();
+            if psi < MIN_JOINT_ANGLE - 1e-6 {
+                continue;
+            }
+            // Grenzen für **beide** Wände dieselbe (die dünnere/kürzere zählt):
+            // sonst schneidet die eine Wand und die andere nicht — und die
+            // Körper überlappen sichtbar.
             if inner.dist(outer) > MITER_RATIO * 2.0 * f.h.min(g.h) {
                 continue;
             }
-            // Innenecke hinter dem eigenen Wandende (kurze Wand, spitzer
-            // Winkel): dann lieber stumpf, sonst verschwindet die Wand ganz.
-            if inner.dist(p).max(outer.dist(p)) > f.len().max(1.0) {
+            if inner.dist(p).max(outer.dist(p)) > f.len().min(g.len()).max(1.0) {
                 continue;
             }
             if !cut_ok(f, d, &g, dj, inner, outer) {

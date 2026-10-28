@@ -1213,6 +1213,16 @@ fn render_wall(
         if !ed.covered || ed.a.dist(ed.b) < 1.0 {
             continue;
         }
+        // Nur an einer **Naht** liegt die Füllung des Nachbarn stumpf an; an
+        // einer nur verdeckten Kante (Kante verläuft im Nachbarkörper) darf
+        // kein Band entstehen, sonst quillt die Füllung dort 0,6 mm heraus.
+        let an_naht = body.seams.iter().any(|s| {
+            dist_point_segment(ed.a, s.0, s.1) < 0.05
+                && dist_point_segment(ed.b, s.0, s.1) < 0.05
+        });
+        if !an_naht {
+            continue;
+        }
         // So weit ins Nachbarband, wie dort wirklich Wand liegt (an den
         // Gehrungsecken läuft das Band sonst über die Sichtkante hinaus).
         let weit = |p: Vec2| -> f64 {

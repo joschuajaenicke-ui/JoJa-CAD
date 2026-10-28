@@ -1,6 +1,6 @@
 # Wandanschluss: Eckpunkte S_l und S_r in allgemeiner Lage
 
-Herleitung von Joschua (28.10.2026). Sie ist die Grundlage von
+Diese Herleitung ist die Grundlage von
 `crates/jjcad-core/src/wall.rs`: **eine** Naht je Wandpaar, unabhängig von
 Dicke, Ausrichtung und Winkel.
 
@@ -64,15 +64,21 @@ Fallunterscheidung nach Drehrichtung ist nicht nötig.
 - Geschnitten wird an dieser Naht; der Körper wird am verbundenen Ende um die
   Reichweite der Naht verlängert (`MITER_LIMIT · h`), damit die Gehrung die
   Ecke **ergänzt** und nicht nur abschneidet.
-- Grenzen:
+- Grenzen (alle **beidseitig** geprüft: dieselbe Entscheidung für beide Wände,
+  sonst schneidet die eine und die andere nicht — genau das erzeugt Finne bzw.
+  Überlappung):
   1. `α ≈ 0/π` (fluchtend oder rückläufig): keine Naht, Wand läuft durch.
-  2. Nahtlänge > `MITER_RATIO · 2·h_min` (Standard 8): stumpf stoßen.
-  3. Nimmt der Schnitt mehr als ein Viertel einer Wandquerschnittsfläche weg,
+  2. Öffnungswinkel `ψ` (Winkel zwischen den beiden Wänden am Knoten: 180° =
+     fluchtend, 90° = Ecke) kleiner als `MIN_JOINT_ANGLE` (30°): keine Naht.
+     Bei spitzerem Winkel liegt die Naht so weit vom Knoten, dass die Wand als
+     meterlange Finne über ihn hinausschießt.
+  3. Nahtlänge > `MITER_RATIO · 2·h_min` (Standard 6): stumpf stoßen.
+  4. Nimmt der Schnitt mehr als ein Viertel einer Wandquerschnittsfläche weg,
      die der Nachbar nicht stellt (Wände auf entgegengesetzten Seiten ihrer
      Basislinien), wird nicht geschnitten — sonst entstünde ein Loch.
-  4. Liegt ein Gehrungspunkt weiter vom Knoten als die Wand lang ist (kurze
-     Wand, spitzer Winkel), wird ebenfalls nicht geschnitten (Punkt 3 der
-     Herleitung).
+  5. Liegt ein Gehrungspunkt weiter vom Knoten als **die kürzere** der beiden
+     Wände lang ist, wird ebenfalls nicht geschnitten (kurze Wand, spitzer
+     Winkel, Punkt 3 der Herleitung).
 
 ## 7. Probe
 
