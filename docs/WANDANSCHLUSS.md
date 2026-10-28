@@ -70,6 +70,9 @@ Fallunterscheidung nach Drehrichtung ist nicht nötig.
   3. Nimmt der Schnitt mehr als ein Viertel einer Wandquerschnittsfläche weg,
      die der Nachbar nicht stellt (Wände auf entgegengesetzten Seiten ihrer
      Basislinien), wird nicht geschnitten — sonst entstünde ein Loch.
+  4. Liegt ein Gehrungspunkt weiter vom Knoten als die Wand lang ist (kurze
+     Wand, spitzer Winkel), wird ebenfalls nicht geschnitten (Punkt 3 der
+     Herleitung).
 
 ## 7. Probe
 

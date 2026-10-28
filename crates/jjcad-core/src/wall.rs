@@ -628,6 +628,11 @@ impl<'a> WallIndex<'a> {
             if inner.dist(outer) > MITER_RATIO * 2.0 * f.h.min(g.h) {
                 continue;
             }
+            // Innenecke hinter dem eigenen Wandende (kurze Wand, spitzer
+            // Winkel): dann lieber stumpf, sonst verschwindet die Wand ganz.
+            if inner.dist(p).max(outer.dist(p)) > f.len().max(1.0) {
+                continue;
+            }
             if !cut_ok(f, d, &g, dj, inner, outer) {
                 continue;
             }
