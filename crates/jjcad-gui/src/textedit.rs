@@ -157,6 +157,38 @@ pub fn text_bei(app: &App, w: V2) -> Option<EId> {
     })
 }
 
+/// Klick in die Zeichenfläche, aber außerhalb des Eingabefelds?
+///
+/// Der Klick muss **in** der Zeichenfläche liegen: ein Klick ins
+/// Eigenschaften-Panel (Höhe, Ausrichtung) oder in den Ribbon beendet die
+/// Eingabe nicht, sonst ließe sich während des Tippens nichts einstellen.
+pub(crate) fn klick_neben_dem_text(
+    ctx: &egui::Context,
+    flaeche: Rect,
+    feld: Option<Rect>,
+) -> bool {
+    let (gedrueckt, pos) = ctx.input(|i| (i.pointer.primary_pressed(), i.pointer.interact_pos()));
+    if !gedrueckt {
+        return false;
+    }
+    let Some(p) = pos else { return false };
+    if !flaeche.contains(p) {
+        return false;
+    }
+    !feld.map(|r| r.contains(p)).unwrap_or(true)
+}
+
+/// Rechtsklick in der Zeichenfläche?
+fn rechtsklick_in_der_flaeche(ctx: &egui::Context, flaeche: Rect) -> bool {
+    let (gedrueckt, pos) = ctx.input(|i| {
+        (
+            i.pointer.secondary_pressed(),
+            i.pointer.interact_pos(),
+        )
+    });
+    gedrueckt && pos.map(|p| flaeche.contains(p)).unwrap_or(false)
+}
+
 /// Eckpunkt des Eingabefelds auf dem Bildschirm (linke obere Ecke).
 ///
 /// Das Feld setzt seinen Inhalt **linksbündig**; die Ausrichtung entsteht
@@ -228,6 +260,13 @@ fn uebernehmen(app: &mut App, ctx: &egui::Context) {
     }
 }
 
+/// Übernimmt die laufende Eingabe — derselbe Weg wie Esc (nur für Tests).
+#[cfg(test)]
+pub(crate) fn uebernehmen_fuer_test(app: &mut App) {
+    let ctx = app.ctx.clone();
+    uebernehmen(app, &ctx);
+}
+
 /// Abbruch: der vorhandene Text bleibt unverändert, ein neuer entsteht nicht.
 fn abbrechen(app: &mut App, ctx: &egui::Context) {
     if app.ui.texteingabe.take().is_some() {
@@ -250,7 +289,9 @@ pub fn show(app: &mut App, ui: &mut Ui, rect: Rect, view: View) {
         uebernehmen(app, &ctx);
         return;
     }
-    if ctx.input(|i| i.pointer.secondary_pressed()) {
+    // Rechtsklick bricht ab — aber nur in der Zeichenfläche: im
+    // Eigenschaften-Panel (Höhe, Ausrichtung) hat er nichts mit dem Text zu tun.
+    if rechtsklick_in_der_flaeche(&ctx, rect) {
         abbrechen(app, &ctx);
         return;
     }
@@ -330,12 +371,11 @@ pub fn show(app: &mut App, ui: &mut Ui, rect: Rect, view: View) {
             }
         });
 
-    // Klick neben den Text übernimmt (wie in Office-Programmen).
-    let aussen_geklickt = ctx.input(|i| i.pointer.primary_pressed())
-        && ctx
-            .input(|i| i.pointer.interact_pos())
-            .map(|p| !t.flaeche.map(|r| r.contains(p)).unwrap_or(true))
-            .unwrap_or(false);
+    // Klick in der Zeichenfläche neben den Text übernimmt (wie in
+    // Office-Programmen). Ein Klick **außerhalb** der Zeichenfläche — etwa in
+    // das Eigenschaften-Panel, um Höhe oder Ausrichtung zu ändern — lässt die
+    // Eingabe offen (T0028).
+    let aussen_geklickt = klick_neben_dem_text(&ctx, rect, t.flaeche);
 
     app.ui.texteingabe = Some(t);
     if aussen_geklickt {
@@ -796,5 +836,99 @@ mod tests_eingabe_sichtbar {
                 anker.y
             );
         }
+    }
+}
+
+#[cfg(test)]
+mod tests_klick_neben_dem_text {
+    //! Während der Eingabe bleibt das Eigenschaften-Panel bedienbar (T0028):
+    //! ein Klick dort beendet den Text nicht, ein Klick in die Zeichenfläche
+    //! daneben schon.
+
+    use super::*;
+    use crate::app::App;
+
+    fn app_mm() -> App {
+        let ctx = egui::Context::default();
+        let mut app = App::with_ctx(ctx);
+        app.session_mut()
+            .execute("doc.settings", &json!({ "input_unit": "mm" }))
+            .expect("Einheit setzen");
+        app.options.text_height = 250.0;
+        app
+    }
+
+    fn flaeche() -> Rect {
+        Rect::from_min_size(Pos2::ZERO, Vec2::new(1100.0, 950.0))
+    }
+
+    fn view() -> View {
+        View {
+            center: V2::new(1000.0, 500.0),
+            zoom: 0.2,
+            rot: 0.0,
+        }
+    }
+
+    /// Ein Frame mit den angegebenen Ereignissen.
+    fn frame(app: &mut App, ctx: &egui::Context, ereignisse: Vec<egui::Event>, zeit: f64) {
+        let raw = egui::RawInput {
+            screen_rect: Some(flaeche()),
+            time: Some(zeit),
+            predicted_dt: 0.016,
+            events: ereignisse,
+            ..Default::default()
+        };
+        let _ = ctx.run(raw, |ctx| {
+            egui::CentralPanel::default().show(ctx, |ui| {
+                show(app, ui, flaeche(), view());
+            });
+        });
+    }
+
+    fn klick(x: f32, y: f32) -> Vec<egui::Event> {
+        let pos = Pos2::new(x, y);
+        vec![
+            egui::Event::PointerMoved(pos),
+            egui::Event::PointerButton {
+                pos,
+                button: egui::PointerButton::Primary,
+                pressed: true,
+                modifiers: Default::default(),
+            },
+            egui::Event::PointerButton {
+                pos,
+                button: egui::PointerButton::Primary,
+                pressed: false,
+                modifiers: Default::default(),
+            },
+        ]
+    }
+
+    #[test]
+    fn klick_ins_panel_beendet_die_eingabe_nicht() {
+        let ctx = egui::Context::default();
+        let mut app = app_mm();
+        start(&mut app, V2::new(1000.0, 500.0));
+        if let Some(t) = app.ui.texteingabe.as_mut() {
+            t.text = "Wohnen".to_string();
+        }
+        frame(&mut app, &ctx, Vec::new(), 1.0);
+
+        // Rechts neben der Zeichenfläche liegt das Eigenschaften-Panel.
+        frame(&mut app, &ctx, klick(1150.0, 300.0), 1.1);
+        assert!(
+            app.ui.texteingabe.is_some(),
+            "ein Klick ins Eigenschaften-Panel darf die Eingabe nicht beenden"
+        );
+        assert!(app.doc().ents().is_empty(), "noch kein Text angelegt");
+
+        // Klick in die Zeichenfläche, weit weg vom Text: übernimmt.
+        frame(&mut app, &ctx, klick(900.0, 850.0), 1.2);
+        assert!(
+            app.ui.texteingabe.is_none(),
+            "ein Klick daneben in der Zeichenfläche übernimmt"
+        );
+        assert_eq!(app.doc().ents().len(), 1, "der Text steht in der Zeichnung");
     }
 }

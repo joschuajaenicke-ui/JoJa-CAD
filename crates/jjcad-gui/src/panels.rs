@@ -337,9 +337,16 @@ pub fn properties(app: &mut App, ui: &mut Ui) {
     widgets::reset_rows();
     let sel = app.selection().to_vec();
     let tool_active = app.tool.is_some();
+    // Während ein Text in der Zeichnung getippt wird, gehört das Panel diesem
+    // Text (T0028): Höhe und Ausrichtung wirken sofort auf die Vorschau.
+    let text_eingabe = app.ui.texteingabe.is_some();
     egui::ScrollArea::vertical()
         .auto_shrink([false, false])
         .show(ui, |ui| {
+            if text_eingabe {
+                text_eingabe_props(app, ui);
+                return;
+            }
             if tool_active {
                 pending_props(app, ui);
                 if !sel.is_empty() {
@@ -359,6 +366,62 @@ pub fn properties(app: &mut App, ui: &mut Ui) {
                 }
             }
         });
+}
+
+/// Eigenschaften des Textes, **während** er in der Zeichnung getippt wird.
+///
+/// Ohne diesen Abschnitt wäre das Panel beim Editieren leer (kein Werkzeug, keine
+/// Auswahl) — Ausrichtung und Höhe ließen sich nicht mehr ändern, obwohl genau
+/// sie den Einfügepunkt und die Größe bestimmen. Beide Werte rechnet die Eingabe
+/// jeden Frame neu (`textedit::feld_lage`, Schriftgröße), sie wirken also sofort;
+/// beim Übernehmen gehen sie in `draw.text` (neuer Text) bzw. `modify.set`.
+fn text_eingabe_props(app: &mut App, ui: &mut Ui) {
+    let einheit = app.unit();
+    let (neu, hoehe, waagerecht, senkrecht) = {
+        let Some(t) = app.ui.texteingabe.as_mut() else {
+            return;
+        };
+        section_title(ui, "text", "Text");
+        ui.label(theme::dim(if t.id.is_some() {
+            "bearbeiteter Text"
+        } else {
+            "neuer Text"
+        }));
+        ui.add_space(6.0);
+        let mut h = t.height;
+        widgets::field_row(ui, "Höhe", |ui| {
+            if widgets::length_input(ui, &mut h, einheit, ui.available_width()) {
+                t.height = h;
+                // Die Eingabe wurde in diesem Frame **davor** gezeichnet —
+                // ohne Neuzeichnen bliebe die Vorschau in der alten Größe.
+                ui.ctx().request_repaint();
+            }
+        });
+        let mut ah = t.align;
+        let mut av = t.valign;
+        widgets::field_block(ui, "Ausrichtung", widgets::ALIGN_HOEHE, |ui| {
+            if widgets::align_matrix(ui, "eingabe_text_ausrichtung", &mut ah, &mut av) {
+                t.align = ah;
+                t.valign = av;
+                // Tastatur zurück ins Feld: der Klick lag im Panel, der Text
+                // wird gleich weitergetippt.
+                t.fokus = true;
+                // Die Vorschau steht schon im Bild dieses Frames (die Eingabe
+                // wird vor dem Panel gezeichnet) — sonst bliebe sie an der
+                // alten Stelle stehen, bis der nächste Klick ein Bild auslöst.
+                ui.ctx().request_repaint();
+            }
+        });
+        ui.add_space(6.0);
+        ui.label(theme::dim("Esc übernimmt · Enter neue Zeile · Rechtsklick bricht ab"));
+        (t.id.is_none(), t.height, t.align, t.valign)
+    };
+    // Bei einem neuen Text bleiben die Werte für das nächste Element stehen.
+    if neu {
+        app.options.text_height = hoehe;
+        app.options.text_align = waagerecht;
+        app.options.text_valign = senkrecht;
+    }
 }
 
 /// Eigenschaften für das nächste Element, während ein Werkzeug läuft.
@@ -3095,5 +3158,101 @@ mod tests_zeichnungs_info {
         assert_eq!(datei_groesse(900), "900 B");
         assert_eq!(datei_groesse(4 * 1024), "4,0 kB");
         assert_eq!(datei_groesse(3 * 1024 * 1024), "3,0 MB");
+    }
+}
+
+#[cfg(test)]
+mod tests_text_eingabe_panel {
+    //! Während ein Text in der Zeichnung getippt wird, zeigt das
+    //! Eigenschaften-Panel **diesen Text** (T0028): Höhe und Ausrichtung wirken
+    //! sofort auf die Vorschau. Vorher stand dort die Zeichen-Info, weil weder
+    //! Werkzeug noch Auswahl existierten.
+
+    use super::*;
+    use crate::app::App;
+
+    fn app_mm() -> App {
+        let ctx = egui::Context::default();
+        let mut app = App::with_ctx(ctx);
+        app.session_mut()
+            .execute("doc.settings", &json!({ "input_unit": "mm" }))
+            .expect("Einheit setzen");
+        app
+    }
+
+    /// Gezeichnete Beschriftungen eines Frames mit dem Eigenschaften-Panel.
+    fn panel_texte(app: &mut App, zeit: f64) -> Vec<String> {
+        let ctx = app.ctx.clone();
+        let raw = egui::RawInput {
+            screen_rect: Some(Rect::from_min_size(Pos2::ZERO, Vec2::new(1200.0, 950.0))),
+            time: Some(zeit),
+            predicted_dt: 0.016,
+            ..Default::default()
+        };
+        let out = ctx.run(raw, |ctx| {
+            egui::SidePanel::right("eigenschaften")
+                .exact_width(280.0)
+                .show(ctx, |ui| properties(app, ui));
+        });
+        out.shapes
+            .iter()
+            .filter_map(|cs| match &cs.shape {
+                egui::Shape::Text(t) => Some(t.galley.text().to_string()),
+                _ => None,
+            })
+            .collect()
+    }
+
+    fn enthaelt(texte: &[String], was: &str) -> bool {
+        texte.iter().any(|t| t.trim() == was)
+    }
+
+    #[test]
+    fn panel_zeigt_hoehe_und_ausrichtung_waehrend_der_eingabe() {
+        let mut app = app_mm();
+        let vorher = panel_texte(&mut app, 1.0);
+        assert!(
+            !enthaelt(&vorher, "Ausrichtung"),
+            "ohne Eingabe steht keine Ausrichtung im Panel: {vorher:?}"
+        );
+
+        crate::textedit::start(&mut app, jjcad_core::geom::Vec2::new(1000.0, 500.0));
+        // Erster Frame richtet das Feld ein, zweiter zeichnet das Panel.
+        let _ = panel_texte(&mut app, 1.1);
+        let texte = panel_texte(&mut app, 1.2);
+        assert!(
+            enthaelt(&texte, "Ausrichtung"),
+            "während der Eingabe fehlt die Ausrichtung: {texte:?}"
+        );
+        assert!(
+            enthaelt(&texte, "Höhe"),
+            "während der Eingabe fehlt die Höhe: {texte:?}"
+        );
+        assert!(
+            enthaelt(&texte, "neuer Text"),
+            "das Panel soll den bearbeiteten Text nennen: {texte:?}"
+        );
+    }
+
+    /// Änderungen im Panel landen in der Eingabe — und damit im Ergebnis.
+    #[test]
+    fn aenderung_im_panel_gilt_fuer_die_eingabe() {
+        let mut app = app_mm();
+        app.options.text_height = 250.0;
+        crate::textedit::start(&mut app, jjcad_core::geom::Vec2::new(1000.0, 500.0));
+        if let Some(t) = app.ui.texteingabe.as_mut() {
+            t.text = "Wohnen".to_string();
+            // So schreibt die Matrix im Panel (dieselben Felder).
+            t.align = TextAlignH::Right;
+            t.valign = TextAlignV::Top;
+        }
+        let _ = panel_texte(&mut app, 2.0);
+        // Esc übernimmt: derselbe Weg wie beim Klick daneben.
+        crate::textedit::uebernehmen_fuer_test(&mut app);
+        let e = app.doc().ents().last().cloned().expect("Text fehlt");
+        let EntityKind::Text { align, valign, .. } = &e.kind else {
+            panic!("kein Text");
+        };
+        assert_eq!((*align, *valign), (TextAlignH::Right, TextAlignV::Top));
     }
 }
