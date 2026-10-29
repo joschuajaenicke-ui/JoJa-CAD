@@ -17,7 +17,7 @@ use crate::app::{world_to_screen, App, View};
 use crate::theme::Palette;
 use egui::{Color32, FontId, Id, Pos2, Rect, Stroke, Ui, Vec2};
 use jjcad_core::geom::Vec2 as V2;
-use jjcad_core::model::{EntityKind, Id as EId, TextAlignH, TextAlignV};
+use jjcad_core::model::{EntityKind, Id as EId, TextAlignH, TextAlignV, TextRun};
 use jjcad_core::render;
 use jjcad_core::style::Color;
 use serde_json::json;
@@ -47,6 +47,9 @@ pub struct Texteingabe {
     pub id: Option<EId>,
     /// Farbe, in der der Text in der Zeichnung erscheint (Objekt- oder Layerfarbe)
     pub farbe: Color,
+    /// Auszeichnung je Lauf, aus dem bearbeiteten Text übernommen — beim
+    /// Übernehmen auf den neuen Text übertragen, damit Formatierung bleibt.
+    pub runs: Vec<TextRun>,
     /// Beim ersten Frame den Fokus (Cursor) holen
     pub fokus: bool,
     /// Bildschirmfläche des Feldes — ein Klick daneben übernimmt
@@ -73,6 +76,7 @@ impl Texteingabe {
             valign,
             id,
             farbe,
+            runs: Vec::new(),
             fokus: true,
             flaeche: None,
         }
@@ -84,11 +88,14 @@ pub fn start(app: &mut App, pos: V2) {
     app.tool = None;
     // Angezeigt wird der Text in der Layerfarbe (wie bei `draw.text` ohne
     // eigene Farbe) — die Eingabe soll nicht anders aussehen als das Ergebnis.
-    let farbe = app
-        .doc()
-        .layer(app.doc().current_layer)
-        .map(|l| l.color)
-        .unwrap_or(Color::BLACK);
+    // Eine im Panel gewählte Farbe gilt auch für den neuen Text, sonst die
+    // Layerfarbe (wie `draw.text` ohne eigene Farbe).
+    let farbe = app.options.text_color.unwrap_or_else(|| {
+        app.doc()
+            .layer(app.doc().current_layer)
+            .map(|l| l.color)
+            .unwrap_or(Color::BLACK)
+    });
     app.ui.texteingabe = Some(Texteingabe::neu(
         pos,
         app.options.text_height,
@@ -119,15 +126,20 @@ pub fn start_entitaet(app: &mut App, id: EId) -> bool {
     else {
         return false;
     };
+    let EntityKind::Text { runs, .. } = &e.kind else {
+        return false;
+    };
     let (p, text, height, angle) = (*p, text.clone(), *height, *angle);
     let (align, valign) = (*align, *valign);
+    let runs = runs.clone();
     let farbe = app.doc().effective_color(e);
     app.tool = None;
     // Ohne Auswahl: der blaue Auswahlrahmen des Textes würde sonst um den
     // bearbeiteten Text stehen — beim Schreiben soll nur der Text dastehen.
     app.session_mut().clear_selection();
-    app.ui.texteingabe =
-        Some(Texteingabe::neu(p, height, text, angle, align, valign, Some(id), farbe));
+    let mut e = Texteingabe::neu(p, height, text, angle, align, valign, Some(id), farbe);
+    e.runs = runs;
+    app.ui.texteingabe = Some(e);
     app.mitteilung("Text · Inhalt ändern (Esc übernimmt)");
     true
 }
@@ -230,23 +242,40 @@ fn uebernehmen(app: &mut App, ctx: &egui::Context) {
         return;
     }
     let unit = app.unit();
+    // Auszeichnung (Fett/Kursiv/…) bleibt beim Ändern an den Zeichen hängen.
+    let runs = jjcad_core::text::retarget_runs(
+        &t.text,
+        &t.runs,
+        &text,
+        jjcad_core::text::RunStyle::default(),
+    );
+    let runs_json = serde_json::to_value(&runs).unwrap_or(json!([]));
+    let farbe = t.farbe.to_hex();
     let (action, params, meldung) = match t.id {
         Some(id) => (
             "modify.set",
             json!({"ids": [id], "text": text, "height": unit.from_mm(t.height),
-                   "align": t.align.key(), "valign": t.valign.key()}),
+                   "align": t.align.key(), "valign": t.valign.key(),
+                   "runs": runs_json}),
             "Text · geändert",
         ),
-        None => (
-            "draw.text",
-            json!({"p": [unit.from_mm(t.pos.x), unit.from_mm(t.pos.y)],
-                   "text": text,
-                   "height": unit.from_mm(t.height),
-                   "angle": t.angle.to_degrees(),
-                   "align": t.align.key(),
-                   "valign": t.valign.key()}),
-            "Text · gesetzt",
-        ),
+        None => {
+            let mut params = json!({"p": [unit.from_mm(t.pos.x), unit.from_mm(t.pos.y)],
+                       "text": text,
+                       "height": unit.from_mm(t.height),
+                       "angle": t.angle.to_degrees(),
+                       "align": t.align.key(),
+                       "valign": t.valign.key(),
+                       "bold": app.options.text_bold,
+                       "italic": app.options.text_italic,
+                       "underline": app.options.text_underline,
+                       "superscript": app.options.text_superscript});
+            // Nur wenn eine Farbe gewählt wurde — sonst gilt die Layerfarbe.
+            if let Some(c) = app.options.text_color {
+                params["color"] = json!(c.to_hex());
+            }
+            ("draw.text", params, "Text · gesetzt")
+        }
     };
     match app.session_mut().execute(action, &params) {
         Ok(_) => {
@@ -396,6 +425,29 @@ mod tests {
             .execute("doc.settings", &json!({ "input_unit": "mm" }))
             .expect("Einheit setzen");
         app
+    }
+
+    /// Farbe und Auszeichnung aus dem Panel landen im erzeugten Text (T0032).
+    #[test]
+    fn neue_texte_uebernehmen_farbe_und_auszeichnung() {
+        let mut app = app_mm();
+        app.options.text_color = Some(Color::RED);
+        app.options.text_bold = true;
+        app.options.text_underline = true;
+        crate::textedit::start(&mut app, jjcad_core::geom::Vec2::new(1000.0, 500.0));
+        if let Some(t) = app.ui.texteingabe.as_mut() {
+            t.text = "Wohnen".to_string();
+        }
+        uebernehmen_fuer_test(&mut app);
+        let e = app.doc().ents().first().expect("Text erzeugt");
+        assert_eq!(e.style.color, Some(Color::RED), "Farbe fehlt");
+        let EntityKind::Text {
+            bold, underline, ..
+        } = &e.kind
+        else {
+            panic!("Text erwartet");
+        };
+        assert!(*bold && *underline, "Auszeichnung fehlt");
     }
 
     fn texte(app: &App) -> Vec<(String, f64)> {

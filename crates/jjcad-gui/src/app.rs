@@ -213,6 +213,13 @@ pub struct ToolOptions {
     /// Einfügepunkt dieser Ausrichtung.
     pub text_align: TextAlignH,
     pub text_valign: TextAlignV,
+    /// Farbe des nächsten Textes (None = Layerfarbe)
+    pub text_color: Option<Color>,
+    /// Auszeichnung des nächsten Textes
+    pub text_bold: bool,
+    pub text_italic: bool,
+    pub text_underline: bool,
+    pub text_superscript: bool,
     pub dim_axis: Option<DimAxis>,
     pub offset_dist: f64,
     pub elevation_z: f64,
@@ -285,6 +292,11 @@ impl ToolOptions {
             text: String::new(),
             text_align: TextAlignH::Left,
             text_valign: TextAlignV::Middle,
+            text_color: None,
+            text_bold: false,
+            text_italic: false,
+            text_underline: false,
+            text_superscript: false,
             dim_axis: None,
             offset_dist: doc.settings.wall_thickness,
             elevation_z: 0.0,
@@ -1023,6 +1035,43 @@ impl App {
                     );
                     e.style.color = Some(jjcad_core::style::Color::BLACK);
                     self.doc_mut().add_entity(e);
+                }
+                // Ausgewählter Text mit gemischter Auszeichnung, Panel sichtbar
+                // (Screenshot-Prüfung der Textbearbeitung, T0032)
+                "textpanel" => {
+                    let id = self.doc_mut().new_id();
+                    let layer = self.doc().current_layer;
+                    let runs = vec![
+                        jjcad_core::model::TextRun::plain("Raum "),
+                        jjcad_core::model::TextRun {
+                            text: "Wohnen".into(),
+                            bold: true,
+                            ..Default::default()
+                        },
+                    ];
+                    let text: String = runs.iter().map(|r| r.text.as_str()).collect();
+                    let mut e = Entity::new(
+                        id,
+                        layer,
+                        EntityKind::Text {
+                            p: jjcad_core::geom::v(1000.0, 1000.0),
+                            text,
+                            height: 250.0,
+                            angle: 0.0,
+                            align: TextAlignH::Left,
+                            valign: TextAlignV::Bottom,
+                            bold: false,
+                            italic: false,
+                            underline: false,
+                            superscript: false,
+                            runs,
+                        },
+                    );
+                    e.style.color = Some(jjcad_core::style::Color::BLACK);
+                    self.doc_mut().add_entity(e);
+                    self.ui.props_open = true;
+                    self.session_mut().select(vec![id]);
+                    self.fit_view();
                 }
                 // Offener Systemdialog (nur der Zustand, kein echter Dialog):
                 // zeigt Abdunklung und Hinweis für Screenshots.

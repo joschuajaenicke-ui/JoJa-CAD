@@ -144,3 +144,158 @@ pub fn fallback_advance_em(c: char) -> f64 {
         }
     }
 }
+
+// ---------------------------------------------------------------------------
+// Zeichenweise Auszeichnung (für die Textbearbeitung im Panel)
+// ---------------------------------------------------------------------------
+
+/// Auszeichnung eines Zeichens — ohne den Text selbst.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct RunStyle {
+    pub bold: bool,
+    pub italic: bool,
+    pub underline: bool,
+    pub superscript: bool,
+}
+
+impl RunStyle {
+    pub fn of(r: &TextRun) -> Self {
+        Self {
+            bold: r.bold,
+            italic: r.italic,
+            underline: r.underline,
+            superscript: r.superscript,
+        }
+    }
+
+    pub fn plain(self) -> bool {
+        !self.bold && !self.italic && !self.underline && !self.superscript
+    }
+}
+
+/// Auszeichnung je Zeichen des Textes (Länge = Zeichenzahl).
+///
+/// Läufe, die den Text nicht genau abdecken, werden aufgefüllt: fehlende Zeichen
+/// erben die Auszeichnung des vorigen Zeichens, überzählige Läufe fallen weg.
+pub fn char_styles(text: &str, runs: &[TextRun], fallback: RunStyle) -> Vec<RunStyle> {
+    let n = text.chars().count();
+    let mut out = Vec::with_capacity(n);
+    if runs.is_empty() {
+        return vec![fallback; n];
+    }
+    let mut letzte = fallback;
+    for r in runs {
+        let st = RunStyle::of(r);
+        for _ in r.text.chars() {
+            if out.len() >= n {
+                break;
+            }
+            out.push(st);
+            letzte = st;
+        }
+        if out.len() >= n {
+            break;
+        }
+    }
+    while out.len() < n {
+        out.push(letzte);
+    }
+    out
+}
+
+/// Läufe aus zeichenweiser Auszeichnung — gleiche Nachbarn werden zusammengefasst.
+pub fn runs_from_styles(text: &str, styles: &[RunStyle]) -> Vec<TextRun> {
+    let mut out: Vec<TextRun> = Vec::new();
+    for (i, c) in text.chars().enumerate() {
+        let st = styles.get(i).copied().unwrap_or_default();
+        match out.last_mut() {
+            Some(r) if RunStyle::of(r) == st => r.text.push(c),
+            _ => out.push(TextRun {
+                text: c.to_string(),
+                bold: st.bold,
+                italic: st.italic,
+                underline: st.underline,
+                superscript: st.superscript,
+            }),
+        }
+    }
+    out
+}
+
+/// Läufe auf einen geänderten Text übertragen.
+///
+/// Die Formatierung bleibt an den Zeichen hängen: gemeinsamer Anfang und
+/// gemeinsames Ende werden übernommen, eingefügte Zeichen erben die
+/// Auszeichnung des Zeichens davor (sonst `fallback`).
+pub fn retarget_runs(
+    text: &str,
+    runs: &[TextRun],
+    neu: &str,
+    fallback: RunStyle,
+) -> Vec<TextRun> {
+    if text == neu {
+        return runs.to_vec();
+    }
+    let alt: Vec<char> = text.chars().collect();
+    let neu_c: Vec<char> = neu.chars().collect();
+    let alt_st = char_styles(text, runs, fallback);
+
+    let max = alt.len().min(neu_c.len());
+    let mut prefix = 0;
+    while prefix < max && alt[prefix] == neu_c[prefix] {
+        prefix += 1;
+    }
+    let mut suffix = 0;
+    while suffix < max - prefix
+        && alt[alt.len() - 1 - suffix] == neu_c[neu_c.len() - 1 - suffix]
+    {
+        suffix += 1;
+    }
+
+    let mut styles: Vec<RunStyle> = Vec::with_capacity(neu_c.len());
+    styles.extend_from_slice(&alt_st[..prefix]);
+    let erb = if prefix > 0 {
+        alt_st[prefix - 1]
+    } else {
+        alt_st.first().copied().unwrap_or(fallback)
+    };
+    for _ in 0..(neu_c.len().saturating_sub(prefix + suffix)) {
+        styles.push(erb);
+    }
+    if suffix > 0 {
+        styles.extend_from_slice(&alt_st[alt.len() - suffix..]);
+    }
+    styles.truncate(neu_c.len());
+    runs_from_styles(neu, &styles)
+}
+
+/// Auszeichnung auf den Zeichenbereich `from..to` anwenden (Zeichenindizes).
+pub fn apply_style(
+    text: &str,
+    runs: &[TextRun],
+    from: usize,
+    to: usize,
+    st: RunStyle,
+) -> Vec<TextRun> {
+    let mut styles = char_styles(text, runs, RunStyle::default());
+    if styles.is_empty() {
+        return Vec::new();
+    }
+    let a = from.min(styles.len());
+    let b = to.max(a).min(styles.len());
+    if a == b {
+        // Leerer Bereich: nichts zu tun (der Aufrufer entscheidet, ob er den
+        // ganzen Text meint).
+        return runs_from_styles(text, &styles);
+    }
+    for s in styles.iter_mut().take(b).skip(a) {
+        *s = st;
+    }
+    runs_from_styles(text, &styles)
+}
+
+/// Läufe so zurechtschneiden, dass sie den Text genau abdecken.
+pub fn normalize_runs(text: &str, runs: &[TextRun], fallback: RunStyle) -> Vec<TextRun> {
+    let st = char_styles(text, runs, fallback);
+    runs_from_styles(text, &st)
+}
