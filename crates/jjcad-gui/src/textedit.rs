@@ -32,6 +32,18 @@ pub fn feld_id() -> Id {
     Id::new("texteingabe_feld")
 }
 
+/// Markierter Zeichenbereich im Editor (Zeichenindizes), falls das Feld den
+/// Fokus hat. Wird im Eigenschaften-Panel für die Umschalter gebraucht.
+pub fn markierung(ctx: &egui::Context) -> Option<(usize, usize)> {
+    egui::text_edit::TextEditState::load(ctx, feld_id())
+        .and_then(|st| st.cursor.char_range())
+        .map(|r| {
+            let (a, b) = (r.primary.index, r.secondary.index);
+            (a.min(b), a.max(b))
+        })
+        .filter(|(a, b)| b > a)
+}
+
 /// Laufende Texteingabe in der Zeichenfläche.
 pub struct Texteingabe {
     /// Einfügepunkt des Textes in Weltkoordinaten — die Stelle, die die
@@ -50,6 +62,11 @@ pub struct Texteingabe {
     /// Auszeichnung je Lauf, aus dem bearbeiteten Text übernommen — beim
     /// Übernehmen auf den neuen Text übertragen, damit Formatierung bleibt.
     pub runs: Vec<TextRun>,
+    /// Textstand des letzten Frames: daraus wird erkannt, was eingefügt wurde
+    /// (damit die vorgemerkte Auszeichnung dort ankommt).
+    letzter_text: String,
+    /// Auszeichnung für das nächste getippte Zeichen (Umschalter im Panel).
+    pub pending: Option<jjcad_core::text::RunStyle>,
     /// Beim ersten Frame den Fokus (Cursor) holen
     pub fokus: bool,
     /// Bildschirmfläche des Feldes — ein Klick daneben übernimmt
@@ -77,6 +94,8 @@ impl Texteingabe {
             id,
             farbe,
             runs: Vec::new(),
+            letzter_text: String::new(),
+            pending: None,
             fokus: true,
             flaeche: None,
         }
@@ -269,7 +288,8 @@ fn uebernehmen(app: &mut App, ctx: &egui::Context) {
                        "bold": app.options.text_bold,
                        "italic": app.options.text_italic,
                        "underline": app.options.text_underline,
-                       "superscript": app.options.text_superscript});
+                       "superscript": app.options.text_superscript,
+                       "runs": runs_json.clone()});
             // Nur wenn eine Farbe gewählt wurde — sonst gilt die Layerfarbe.
             if let Some(c) = app.options.text_color {
                 params["color"] = json!(c.to_hex());
@@ -336,13 +356,33 @@ pub fn show(app: &mut App, ui: &mut Ui, rect: Rect, view: View) {
     let zeilenhoehe = ctx.fonts(|f| f.row_height(&font));
     let anker = world_to_screen(rect, view, t.pos);
     let farbe = color32(t.farbe);
+
+    // Stand vor diesem Frame: daraus wird abgeleitet, welche Zeichen neu sind
+    // (sie bekommen die vorgemerkte Auszeichnung).
+    let text_vorher = t.text.clone();
+    let runs_vorher = t.runs.clone();
+    let pending = t.pending;
+    let text_fuer_setzer = std::sync::Arc::new(text_vorher.clone());
+    let runs_fuer_setzer = std::sync::Arc::new(runs_vorher.clone());
     // Breite aus der echten Schriftbreite: der Text darf beim Schreiben **nicht**
     // umbrechen — das tut der eingefügte Text auch nicht, sonst springt er beim
     // Übernehmen in eine andere Form.
-    let (textbreite, texthoehe) = ctx.fonts(|f| {
-        let g = f.layout_no_wrap(t.text.clone(), font.clone(), farbe);
-        (g.size().x, g.size().y)
-    });
+    let (textbreite, texthoehe) = {
+        let runs = jjcad_core::text::edit_runs(
+            &text_vorher,
+            &runs_vorher,
+            &t.text,
+            jjcad_core::text::RunStyle::default(),
+            pending,
+        );
+        let runs = jjcad_core::text::runs_for(&t.text, &runs, jjcad_core::text::RunStyle::default());
+        let mut job = crate::canvas::auszeichnungs_job(&runs, size, farbe);
+        job.wrap.max_width = f32::INFINITY;
+        ctx.fonts(|f| {
+            let g = f.layout_job(job);
+            (g.size().x, g.size().y)
+        })
+    };
     let breite = (textbreite + size * 1.5).max(if t.text.is_empty() { 20.0 } else { 8.0 });
     // Eigener Setzer: ohne Umbruch, nur echte Zeilenumbrüche (Enter).
     //
@@ -352,9 +392,25 @@ pub fn show(app: &mut App, ui: &mut Ui, rect: Rect, view: View) {
     // die Zeilen ragten damit zur Hälfte (bzw. ganz) links aus dem Feld und
     // wurden abgeschnitten („abcdefg" zeigte nur „defg", T0028 Turn 2). Die
     // Lage übernimmt stattdessen das Feld selbst (`feld_lage`).
-    let setzer_font = font.clone();
-    let mut setzer = move |ui: &egui::Ui, text: &str, _wrap: f32| {
-        ui.fonts(|f| f.layout_no_wrap(text.to_owned(), setzer_font.clone(), farbe))
+    // Der Setzer bekommt den **gerade** zu setzenden Text: die Läufe werden
+    // für genau diesen Text abgeleitet, sonst läge die Galley einen Frame hinter
+    // dem Feld und der Cursor spränge an den Anfang.
+    let mut setzer = move |ui: &egui::Ui, text_jetzt: &str, _wrap: f32| {
+        let runs = jjcad_core::text::edit_runs(
+            &text_fuer_setzer,
+            &runs_fuer_setzer,
+            text_jetzt,
+            jjcad_core::text::RunStyle::default(),
+            pending,
+        );
+        let runs = jjcad_core::text::runs_for(
+            text_jetzt,
+            &runs,
+            jjcad_core::text::RunStyle::default(),
+        );
+        let mut job = crate::canvas::auszeichnungs_job(&runs, size, farbe);
+        job.wrap.max_width = f32::INFINITY;
+        ui.fonts(|f| f.layout_job(job))
     };
     let block_h = texthoehe.max(zeilenhoehe);
     let lage = feld_lage(anker, t.align, t.valign, textbreite, block_h);
@@ -399,6 +455,18 @@ pub fn show(app: &mut App, ui: &mut Ui, rect: Rect, view: View) {
                 );
             }
         });
+
+    // Eingefügte Zeichen tragen jetzt die vorgemerkte Auszeichnung.
+    if t.text != text_vorher {
+        t.runs = jjcad_core::text::edit_runs(
+            &text_vorher,
+            &runs_vorher,
+            &t.text,
+            jjcad_core::text::RunStyle::default(),
+            pending,
+        );
+        t.letzter_text = t.text.clone();
+    }
 
     // Klick in der Zeichenfläche neben den Text übernimmt (wie in
     // Office-Programmen). Ein Klick **außerhalb** der Zeichenfläche — etwa in
@@ -500,7 +568,69 @@ mod tests {
         );
     }
 
-    /// Getippter Text wird mit Esc übernommen und steht danach in der Zeichnung.
+    /// Vorgemerkte Auszeichnung gilt für das nächste Getippte — nicht für den
+/// vorhandenen Text (T0033).
+#[test]
+fn vorgemerkte_auszeichnung_gilt_fuer_neue_zeichen() {
+    let ctx = egui::Context::default();
+    let mut app = App::with_ctx(ctx.clone());
+    app.session_mut()
+        .execute("doc.settings", &json!({ "input_unit": "mm" }))
+        .expect("Einheit setzen");
+    app.options.text_height = 250.0;
+    start(&mut app, V2::new(1000.0, 500.0));
+    let flaeche = Rect::from_min_size(Pos2::ZERO, Vec2::new(800.0, 600.0));
+    let view = View {
+        center: V2::new(1000.0, 500.0),
+        zoom: 0.2,
+        rot: 0.0,
+    };
+    let mut schritt = |app: &mut App, events: Vec<egui::Event>| {
+        let raw = egui::RawInput {
+            screen_rect: Some(flaeche),
+            events,
+            ..Default::default()
+        };
+        let _ = ctx.run(raw, |ctx| {
+            egui::CentralPanel::default().show(ctx, |ui| {
+                show(app, ui, flaeche, view);
+            });
+        });
+    };
+    schritt(&mut app, Vec::new());
+    schritt(&mut app, vec![egui::Event::Text("Raum ".into())]);
+    // Das Panel merkt Fett für das nächste Zeichen vor.
+    if let Some(t) = app.ui.texteingabe.as_mut() {
+        t.pending = Some(jjcad_core::text::RunStyle {
+            bold: true,
+            ..Default::default()
+        });
+    }
+    schritt(&mut app, vec![egui::Event::Text("Wohnen".into())]);
+    schritt(
+        &mut app,
+        vec![egui::Event::Key {
+            key: egui::Key::Escape,
+            physical_key: None,
+            pressed: true,
+            repeat: false,
+            modifiers: Default::default(),
+        }],
+    );
+    let e = app.doc().ents().first().expect("Text erzeugt");
+    let EntityKind::Text { text, runs, .. } = &e.kind else {
+        panic!("Text erwartet");
+    };
+    assert_eq!(text, "Raum Wohnen");
+    let muss: Vec<(String, bool)> = runs.iter().map(|r| (r.text.clone(), r.bold)).collect();
+    assert_eq!(
+        muss,
+        vec![("Raum ".to_string(), false), ("Wohnen".to_string(), true)],
+        "nur das Nachgetippte wird fett: {runs:?}"
+    );
+}
+
+/// Getippter Text wird mit Esc übernommen und steht danach in der Zeichnung.
     #[test]
     fn esc_uebernimmt_den_getippten_text() {
         let ctx = egui::Context::default();

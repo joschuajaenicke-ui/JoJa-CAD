@@ -299,3 +299,74 @@ pub fn normalize_runs(text: &str, runs: &[TextRun], fallback: RunStyle) -> Vec<T
     let st = char_styles(text, runs, fallback);
     runs_from_styles(text, &st)
 }
+
+/// Läufe nach einer Textänderung: die Auszeichnung bleibt an den Zeichen
+/// hängen, **eingefügte** Zeichen bekommen `einfuegen` (das ist die
+/// Auszeichnung, die der Umschalter für das nächste Getippte gesetzt hat).
+///
+/// Ohne `einfuegen` erben neue Zeichen die Auszeichnung des Zeichens davor —
+/// so verhält sich ein Textfeld ohne gesetzte Auszeichnung.
+pub fn edit_runs(
+    alt: &str,
+    runs: &[TextRun],
+    neu: &str,
+    fallback: RunStyle,
+    einfuegen: Option<RunStyle>,
+) -> Vec<TextRun> {
+    if alt == neu {
+        return runs.to_vec();
+    }
+    let alt_c: Vec<char> = alt.chars().collect();
+    let neu_c: Vec<char> = neu.chars().collect();
+    let alt_st = char_styles(alt, runs, fallback);
+
+    let max = alt_c.len().min(neu_c.len());
+    let mut prefix = 0;
+    while prefix < max && alt_c[prefix] == neu_c[prefix] {
+        prefix += 1;
+    }
+    let mut suffix = 0;
+    while suffix < max - prefix && alt_c[alt_c.len() - 1 - suffix] == neu_c[neu_c.len() - 1 - suffix]
+    {
+        suffix += 1;
+    }
+    let eingefuegt = neu_c.len().saturating_sub(prefix + suffix);
+    let erb = if prefix > 0 {
+        alt_st[prefix - 1]
+    } else {
+        alt_st.first().copied().unwrap_or(fallback)
+    };
+    let st_neu = einfuegen.unwrap_or(erb);
+
+    let mut styles: Vec<RunStyle> = Vec::with_capacity(neu_c.len());
+    styles.extend_from_slice(&alt_st[..prefix]);
+    styles.extend(std::iter::repeat(st_neu).take(eingefuegt));
+    if suffix > 0 {
+        styles.extend_from_slice(&alt_st[alt_st.len() - suffix..]);
+    }
+    styles.truncate(neu_c.len());
+    runs_from_styles(neu, &styles)
+}
+
+/// Läufe, die genau diesen Text abdecken — notfalls neu gebaut.
+///
+/// Ein Text ohne Läufe (Altbestand, nur `bold`) braucht für Anzeige und Satz
+/// einen einzigen Lauf über den ganzen Text; ein Text, dessen Läufe nicht mehr
+/// zur Länge passen, wird aufgefüllt.
+pub fn runs_for(text: &str, runs: &[TextRun], fallback: RunStyle) -> Vec<TextRun> {
+    let laenge = text.chars().count();
+    let abgedeckt: usize = runs.iter().map(|r| r.text.chars().count()).sum();
+    if !runs.is_empty() && abgedeckt == laenge {
+        return runs.to_vec();
+    }
+    if runs.is_empty() {
+        return vec![TextRun {
+            text: text.to_string(),
+            bold: fallback.bold,
+            italic: fallback.italic,
+            underline: fallback.underline,
+            superscript: fallback.superscript,
+        }];
+    }
+    normalize_runs(text, runs, fallback)
+}

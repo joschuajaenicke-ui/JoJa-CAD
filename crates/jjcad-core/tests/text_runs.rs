@@ -363,3 +363,28 @@ fn text_format_aktion_setzt_nur_den_bereich() {
     };
     assert!(runs.iter().all(|r| r.underline));
 }
+
+#[test]
+fn vorgemerkte_auszeichnung_gilt_fuer_eingefuegte_zeichen() {
+    let alt = "Raum ";
+    let runs = vec![TextRun::plain(alt)];
+    let fett = RunStyle {
+        bold: true,
+        ..Default::default()
+    };
+    // „Wohnen" wird angehängt, die Vormerkung gilt für genau diese Zeichen.
+    let neu = jjcad_core::text::edit_runs(alt, &runs, "Raum Wohnen", RunStyle::default(), Some(fett));
+    assert_eq!(
+        laeufe(&neu),
+        vec![
+            ("Raum ".to_string(), String::new()),
+            ("Wohnen".to_string(), "F".to_string()),
+        ]
+    );
+    // Ohne Vormerkung erbt das Neue die Auszeichnung davor (hier: mager).
+    let ohne = jjcad_core::text::edit_runs(alt, &runs, "Raum Wohnen", RunStyle::default(), None);
+    assert_eq!(laeufe(&ohne), vec![("Raum Wohnen".to_string(), String::new())]);
+    // Vormerkung aufheben: gesetzte Auszeichnung bleibt an den Zeichen.
+    let weg = jjcad_core::text::edit_runs(alt, &runs, "Raum", RunStyle::default(), Some(fett));
+    assert_eq!(laeufe(&weg), vec![("Raum".to_string(), String::new())]);
+}
