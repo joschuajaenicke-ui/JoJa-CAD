@@ -1325,6 +1325,8 @@ fn section_title(ui: &mut Ui, icon: &str, title: &str) {
 }
 
 fn entity_props(app: &mut App, ui: &mut Ui, id: Id) {
+    // Beschriftung entsteht auf der gewählten Ebene (T0039).
+    let ebene = app.doc().current_layer;
     let Some(e) = app.doc().entity(id).cloned() else {
         return;
     };
@@ -1992,7 +1994,10 @@ fn entity_props(app: &mut App, ui: &mut Ui, id: Id) {
             {
                 let _ = app
                     .session_mut()
-                    .execute("draw.stair.label", &json!({"id": id}));
+                    .execute(
+                        "draw.stair.label",
+                        &json!({"id": id, "layer": ebene}),
+                    );
                 app.mark_changed();
             }
 

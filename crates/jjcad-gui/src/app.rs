@@ -908,6 +908,9 @@ impl App {
     /// auswählen, zum Prüfen des direkten Ziehens) sowie `dateidialog` (offener
     /// Systemdialog mit Abdunklung, ohne echten Dialog).
     pub fn apply_demo_ui(&mut self) {
+        // Demoobjekte liegen auf der im Layer-Panel gewählten Ebene — dieselbe
+        // Ebene, die ein Werkzeug übergeben würde (T0039).
+        let ebene = self.doc().current_layer;
         let Ok(spec) = std::env::var("JJCAD_DEMO_UI") else { return };
         for part in spec.split(',') {
             match part.trim() {
@@ -1201,7 +1204,10 @@ impl App {
                         );
                         let _ = self
                             .session_mut()
-                            .execute("draw.stair.label", &serde_json::json!({ "id": id }));
+                            .execute(
+                                "draw.stair.label",
+                                &serde_json::json!({ "id": id, "layer": ebene }),
+                            );
                     }
                     self.fit_view();
                 }
@@ -1226,7 +1232,10 @@ impl App {
                         // dem Knopf „Beschriftung erzeugen".
                         let _ = self
                             .session_mut()
-                            .execute("draw.stair.label", &serde_json::json!({ "id": id }));
+                            .execute(
+                                "draw.stair.label",
+                                &serde_json::json!({ "id": id, "layer": ebene }),
+                            );
                         if part.trim() == "seltreppe" {
                             self.session_mut().selection = vec![id];
                         }
@@ -3738,6 +3747,8 @@ fn rail(ui: &mut egui::Ui, icon: &str, tooltip: &str, chevron: &str) -> bool {
                 "rot": g.rot.to_degrees(),
                 "mirror": g.mirror,
                 "scale": g.scale,
+                // Ebene des Layer-Panels (nicht die Standardebene „Möbel“).
+                "layer": self.doc().current_layer,
             });
             return match self.session_mut().execute("block.insert", &params) {
                 Ok(_) => {

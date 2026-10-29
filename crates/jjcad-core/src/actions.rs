@@ -573,8 +573,42 @@ fn require_pt(p: &Params, k: &str) -> Result<Vec2, String> {
         .ok_or_else(|| format!("Parameter '{k}' (Punkt [x,y]) fehlt"))
 }
 
-/// Layer aus Parameter `layer` (Name oder ID), sonst aktueller Layer.
-fn resolve_layer(doc: &mut Document, p: &Params) -> Id {
+/// Typgerechte Standardebene einer Zeichenaktion (T0039).
+///
+/// Ohne `layer` legt jede Zeichenaktion ihr Objekt auf die Ebene ihres Typs —
+/// ein Plan aus einem MCP-Batch bekommt damit seine Ebenenstruktur, ohne dass
+/// jeder einzelne Schritt `layer` mitschicken muss. Ein ausdrücklich
+/// übergebenes `layer` sticht die Vorgabe immer (siehe [`resolve_layer_in`]).
+///
+/// Die freie Geometrie (Punkt, Linie, Polylinie, Spline, Rechteck, Kreis,
+/// Bogen, Ellipse) ist Hilfsgeometrie — sie landet auf „Hilfslinien“.
+fn standard_ebene(action: &str) -> Option<&'static str> {
+    Some(match action {
+        "draw.wall" => "Wände",
+        "draw.door" => "Türen",
+        "draw.window" => "Fenster",
+        "draw.stair" | "draw.stair.label" => "Treppen",
+        "dim.linear" | "dim.chain" | "dim.elevation" => "Bemaßung",
+        "draw.text" => "Text",
+        "draw.fill" | "draw.fill.points" | "draw.fill.boundary" | "draw.fill.paint" | "draw.hatch" => {
+            "Schraffur"
+        }
+        // Ein Volumen ist ein Körper im Wandton (Füllung aus der Ebene) — es
+        // gehört deshalb zu den Wänden, nicht zur Schraffur.
+        "draw.volume" | "draw.volume.points" | "draw.volume.paint" => "Wände",
+        "block.insert" => "Möbel",
+        "draw.point" | "draw.line" | "draw.polyline" | "draw.spline" | "draw.rect"
+        | "draw.circle" | "draw.arc" | "draw.ellipse" => "Hilfslinien",
+        _ => return None,
+    })
+}
+
+/// Layer aus Parameter `layer` (Name oder ID), sonst die Standardebene der
+/// Aktion (`standard`), sonst der aktuelle Layer.
+///
+/// Ein ausdrücklich übergebenes `layer` gewinnt immer — auch als Name, der
+/// noch nicht existiert (dann wird die Ebene angelegt).
+fn resolve_layer_in(doc: &mut Document, p: &Params, standard: Option<&str>) -> Id {
     if let Some(val) = p.v.get("layer") {
         if let Some(id) = val.as_u64() {
             if doc.layer(id).is_some() {
@@ -586,12 +620,24 @@ fn resolve_layer(doc: &mut Document, p: &Params) -> Id {
                 return id;
             }
             // unbekannter Layer wird angelegt
-            if !name.is_empty() {
+            if !name.trim().is_empty() {
                 return doc.ensure_layer(name, Color::BLACK);
             }
         }
     }
+    if let Some(name) = standard {
+        if let Some(id) = doc.layer_id_by_name(name) {
+            return id;
+        }
+        // Die Standardebene wird bei Bedarf angelegt.
+        return doc.ensure_layer(name, Color::BLACK);
+    }
     doc.current_layer
+}
+
+/// Layer ohne typgerechte Vorgabe (Änderungs- und Import-Aktionen).
+fn resolve_layer(doc: &mut Document, p: &Params) -> Id {
+    resolve_layer_in(doc, p, None)
 }
 
 
@@ -947,6 +993,7 @@ fn add_fill(
     boundary: Vec<Vec2>,
     p: &Params,
     rand_vorgabe: bool,
+    ebene: Option<&str>,
 ) -> Result<Value, String> {
     // Inseln kommen als Ringe mit: der Farbeimer (`detect_boundary`) liefert
     // sie aus derselben Flutfüllung. Ohne sie würde er Schornstein, Treppe und
@@ -958,7 +1005,7 @@ fn add_fill(
         .filter(|h| h.len() >= 3)
         .collect();
     // Kein Randobjekt bekannt (Kontur aus Punkten): die Fläche wird angehängt.
-    add_fill_rings(doc, boundary, holes, p, rand_vorgabe, &[])
+    add_fill_rings(doc, boundary, holes, p, rand_vorgabe, &[], ebene)
 }
 
 /// Wie [`add_fill`], aber mit bereits ermittelten Ringen und einstellbarer
@@ -977,8 +1024,9 @@ fn add_fill_rings(
     p: &Params,
     rand_vorgabe: bool,
     unter: &[Id],
+    ebene: Option<&str>,
 ) -> Result<Value, String> {
-    add_filled(doc, boundary, holes, p, rand_vorgabe, unter, false)
+    add_filled(doc, boundary, holes, p, rand_vorgabe, unter, false, ebene)
 }
 
 /// Gemeinsamer Abschluss von Füllfläche und Volumen.
@@ -994,11 +1042,12 @@ fn add_filled(
     rand_vorgabe: bool,
     unter: &[Id],
     volumen: bool,
+    ebene: Option<&str>,
 ) -> Result<Value, String> {
     if boundary.len() < 3 {
         return Err("Füllfläche braucht mindestens drei Punkte".into());
     }
-    let layer = resolve_layer(doc, p);
+    let layer = resolve_layer_in(doc, p, ebene);
     let idn = doc.new_id();
     let pattern = p.fill_pattern("pattern").unwrap_or(if volumen {
         FillPattern::Solid
@@ -1161,12 +1210,14 @@ fn fit_werte(bbox: &BBox, w: f64, h: f64, margin: f64) -> (f64, Vec2, Option<Str
 /// Führt eine Aktion aus. Rückgabe: JSON mit Ergebnisdetails.
 pub fn execute(doc: &mut Document, id: &str, params: &Value) -> Result<Value, String> {
     let p = Params::new(params, doc.settings.input_unit);
+    // Typgerechte Standardebene dieser Aktion (None = keine Vorgabe).
+    let ebene = standard_ebene(id);
 
     match id {
         // ---------------- Zeichnen ----------------
         "draw.point" => {
             let pt = require_pt(&p, "p").or_else(|_| require_pt(&p, "at"))?;
-            let layer = resolve_layer(doc, &p);
+            let layer = resolve_layer_in(doc, &p, ebene);
             let id = doc.new_id();
             let mut e = Entity::new(id, layer, EntityKind::Point { p: pt });
             apply_common(doc, &mut e, &p, layer);
@@ -1176,7 +1227,7 @@ pub fn execute(doc: &mut Document, id: &str, params: &Value) -> Result<Value, St
         "draw.line" => {
             let a = require_pt(&p, "a")?;
             let b = require_pt(&p, "b")?;
-            let layer = resolve_layer(doc, &p);
+            let layer = resolve_layer_in(doc, &p, ebene);
             let id = doc.new_id();
             let mut e = Entity::new(id, layer, EntityKind::Line { a, b });
             apply_common(doc, &mut e, &p, layer);
@@ -1192,7 +1243,7 @@ pub fn execute(doc: &mut Document, id: &str, params: &Value) -> Result<Value, St
             } else {
                 return Err("Parameter 'r' (Radius) oder 'through' fehlt".into());
             };
-            let layer = resolve_layer(doc, &p);
+            let layer = resolve_layer_in(doc, &p, ebene);
             let id = doc.new_id();
             let mut e = Entity::new(id, layer, EntityKind::Circle { c, r });
             apply_common(doc, &mut e, &p, layer);
@@ -1206,7 +1257,7 @@ pub fn execute(doc: &mut Document, id: &str, params: &Value) -> Result<Value, St
                 .ok_or_else(|| "Parameter 'r' fehlt".to_string())?;
             let a0 = p.angle_or("a0", 0.0);
             let a1 = p.angle_or("a1", std::f64::consts::PI);
-            let layer = resolve_layer(doc, &p);
+            let layer = resolve_layer_in(doc, &p, ebene);
             let id = doc.new_id();
             let mut e = Entity::new(id, layer, EntityKind::Arc { c, r, a0, a1 });
             apply_common(doc, &mut e, &p, layer);
@@ -1218,7 +1269,7 @@ pub fn execute(doc: &mut Document, id: &str, params: &Value) -> Result<Value, St
             let rx = p.len("rx").unwrap_or(500.0);
             let ry = p.len("ry").unwrap_or(300.0);
             let rot = p.angle_or("rot", 0.0);
-            let layer = resolve_layer(doc, &p);
+            let layer = resolve_layer_in(doc, &p, ebene);
             let id = doc.new_id();
             let mut e = Entity::new(id, layer, EntityKind::Ellipse { c, rx, ry, rot });
             apply_common(doc, &mut e, &p, layer);
@@ -1269,7 +1320,7 @@ pub fn execute(doc: &mut Document, id: &str, params: &Value) -> Result<Value, St
             if pts.len() < 2 {
                 return Err("Mindestens zwei verschiedene Punkte nötig".into());
             }
-            let layer = resolve_layer(doc, &p);
+            let layer = resolve_layer_in(doc, &p, ebene);
             let idn = doc.new_id();
             let verts = pts.iter().map(|q| Vertex::new(*q)).collect();
             let mut e = Entity::new(
@@ -1300,7 +1351,7 @@ pub fn execute(doc: &mut Document, id: &str, params: &Value) -> Result<Value, St
             if pts.len() < 2 {
                 return Err("Mindestens zwei verschiedene Punkte nötig".into());
             }
-            let layer = resolve_layer(doc, &p);
+            let layer = resolve_layer_in(doc, &p, ebene);
             let idn = doc.new_id();
             let verts = pts.iter().map(|q| Vertex::new(*q)).collect();
             let mut e = Entity::new(idn, layer, EntityKind::Spline { verts, closed });
@@ -1322,14 +1373,14 @@ pub fn execute(doc: &mut Document, id: &str, params: &Value) -> Result<Value, St
                 .pts("boundary")
                 .or_else(|| p.pts("pts"))
                 .ok_or_else(|| "Parameter 'boundary' fehlt".to_string())?;
-            add_fill(doc, boundary, &p, true)
+            add_fill(doc, boundary, &p, true, ebene)
         }
         "draw.fill" | "draw.hatch" => {
             let boundary = p
                 .pts("boundary")
                 .or_else(|| p.pts("pts"))
                 .ok_or_else(|| "Parameter 'boundary' fehlt".to_string())?;
-            add_fill(doc, boundary, &p, false)
+            add_fill(doc, boundary, &p, false, ebene)
         }
         // Volumen: dieselben drei Eingaben wie bei der Füllfläche — Kontur
         // anklicken (`draw.volume`), Punktfolge (`draw.volume.points`) und
@@ -1349,7 +1400,7 @@ pub fn execute(doc: &mut Document, id: &str, params: &Value) -> Result<Value, St
             // Umrandung an: die Kontur, die hier übernommen wird (z. B. der
             // Wandkörper), verschwindet im Volumen — dessen eigene Kante wird
             // damit zur sichtbaren Kante.
-            add_filled(doc, boundary, holes, &p, true, &[], true)
+            add_filled(doc, boundary, holes, &p, true, &[], true, ebene)
         }
         "draw.volume.points" => {
             let boundary = p
@@ -1362,7 +1413,7 @@ pub fn execute(doc: &mut Document, id: &str, params: &Value) -> Result<Value, St
                 .into_iter()
                 .filter(|h| h.len() >= 3)
                 .collect();
-            add_filled(doc, boundary, holes, &p, true, &[], true)
+            add_filled(doc, boundary, holes, &p, true, &[], true, ebene)
         }
         "draw.volume.paint" => {
             let pt = require_pt(&p, "p")?;
@@ -1372,7 +1423,7 @@ pub fn execute(doc: &mut Document, id: &str, params: &Value) -> Result<Value, St
                 &crate::boundary::BoundaryOpts::default(),
             )
             .map_err(|e| e.message().to_string())?;
-            add_filled(doc, g.outer, g.holes, &p, false, &g.border_entities, true)
+            add_filled(doc, g.outer, g.holes, &p, false, &g.border_entities, true, ebene)
         }
         // Farbeimer: ein Klick in die leere Fläche, die Umgrenzung ermittelt der
         // Kern (`boundary::detect_boundary`) aus derselben Displayliste, die
@@ -1389,7 +1440,7 @@ pub fn execute(doc: &mut Document, id: &str, params: &Value) -> Result<Value, St
             .map_err(|e| e.message().to_string())?;
             // Die ermittelte Umgrenzung nennt ihre Objekte: unter denen liegt
             // die Fläche in der Zeichenreihenfolge (`border_entities`).
-            add_fill_rings(doc, g.outer, g.holes, &p, false, &g.border_entities)
+            add_fill_rings(doc, g.outer, g.holes, &p, false, &g.border_entities, ebene)
         }
         "draw.text" => {
             let pt = require_pt(&p, "p")?;
@@ -1397,7 +1448,7 @@ pub fn execute(doc: &mut Document, id: &str, params: &Value) -> Result<Value, St
             if text.is_empty() {
                 return Err("Parameter 'text' fehlt".into());
             }
-            let layer = resolve_layer(doc, &p);
+            let layer = resolve_layer_in(doc, &p, ebene);
             let idn = doc.new_id();
             let h = p.len_or("height", doc.settings.text_height);
             let mut e = Entity::new(
@@ -1442,7 +1493,7 @@ pub fn execute(doc: &mut Document, id: &str, params: &Value) -> Result<Value, St
             let a = require_pt(&p, "a")?;
             let b = require_pt(&p, "b")?;
             let thickness = p.len_or("thickness", doc.settings.wall_thickness);
-            let layer = resolve_layer(doc, &p);
+            let layer = resolve_layer_in(doc, &p, ebene);
             let idn = doc.new_id();
             let mut e = Entity::new(
                 idn,
@@ -1516,7 +1567,7 @@ pub fn execute(doc: &mut Document, id: &str, params: &Value) -> Result<Value, St
                     }
                 }
             }
-            let layer = resolve_layer(doc, &p);
+            let layer = resolve_layer_in(doc, &p, ebene);
             let swing_in = p.boolean_or("swing_in", true);
             let at = wall_at(doc, host, center);
             // Tür immer auf die vordere Wandkante (Blattseite) setzen
@@ -1583,7 +1634,7 @@ pub fn execute(doc: &mut Document, id: &str, params: &Value) -> Result<Value, St
                     }
                 }
             }
-            let layer = resolve_layer(doc, &p);
+            let layer = resolve_layer_in(doc, &p, ebene);
             let align = match p.text("align").unwrap_or_default().to_lowercase().as_str() {
                 "left" | "links" => crate::style::WallAlign::Left,
                 "right" | "rechts" => crate::style::WallAlign::Right,
@@ -1613,7 +1664,7 @@ pub fn execute(doc: &mut Document, id: &str, params: &Value) -> Result<Value, St
         "draw.stair" => {
             let a = require_pt(&p, "a")?;
             let b = require_pt(&p, "b")?;
-            let layer = resolve_layer(doc, &p);
+            let layer = resolve_layer_in(doc, &p, ebene);
             let idn = doc.new_id();
             let mut e = Entity::new(
                 idn,
@@ -1674,7 +1725,7 @@ pub fn execute(doc: &mut Document, id: &str, params: &Value) -> Result<Value, St
             // Anker ist die linke Kante des Textkastens (linksbündig) — so liegt
             // die rechte Kante genau `abstand` neben der Treppenkante.
             let anker = mid + nrm * (width * 0.5 + abstand + tw);
-            let layer = resolve_layer(doc, &p);
+            let layer = resolve_layer_in(doc, &p, ebene);
             let idn = doc.new_id();
             let mut t = Entity::new(
                 idn,
@@ -1714,10 +1765,7 @@ pub fn execute(doc: &mut Document, id: &str, params: &Value) -> Result<Value, St
                     DimAxis::Y
                 }
             });
-            let layer = p
-                .id("layer")
-                .or_else(|| doc.layer_id_by_name("Bemaßung"))
-                .unwrap_or(doc.current_layer);
+            let layer = resolve_layer_in(doc, &p, ebene);
             let idn = doc.new_id();
             let mut e = Entity::new(
                 idn,
@@ -1757,9 +1805,7 @@ pub fn execute(doc: &mut Document, id: &str, params: &Value) -> Result<Value, St
                     "Maßkette · Achse nicht bestimmbar — `axis` angeben".to_string()
                 })?,
             };
-            let layer = doc
-                .layer_id_by_name("Bemaßung")
-                .unwrap_or(doc.current_layer);
+            let layer = resolve_layer_in(doc, &p, ebene);
             let idn = doc.new_id();
             let mut e = Entity::new(
                 idn,
@@ -1772,9 +1818,7 @@ pub fn execute(doc: &mut Document, id: &str, params: &Value) -> Result<Value, St
         }
         "dim.elevation" => {
             let pt = require_pt(&p, "p")?;
-            let layer = doc
-                .layer_id_by_name("Bemaßung")
-                .unwrap_or(doc.current_layer);
+            let layer = resolve_layer_in(doc, &p, ebene);
             let idn = doc.new_id();
             let z = p.len_or("z", 0.0);
             let mut e = Entity::new(
@@ -2546,7 +2590,7 @@ pub fn execute(doc: &mut Document, id: &str, params: &Value) -> Result<Value, St
                 .ok_or_else(|| format!("Block '{name}' nicht gefunden"))?;
             let block_id = def.id.clone();
             let pos = p.pt("pos").or_else(|| p.pt("at")).unwrap_or(Vec2::ZERO);
-            let layer = resolve_layer(doc, &p);
+            let layer = resolve_layer_in(doc, &p, ebene);
             let idn = doc.new_id();
             let mut e = Entity::new(
                 idn,

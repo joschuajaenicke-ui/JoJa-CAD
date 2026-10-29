@@ -248,9 +248,14 @@ fn umrandung_ist_im_png_als_linie_messbar() {
     let mut s = Session::new();
     // Vollfläche ohne gesetzte Füllfarbe: die Fläche wird aufgehellt gezeichnet,
     // die Umrandung in der Linienfarbe (Schwarz) — messbar dunkel.
+    // Ebene ausdrücklich auf „Wände“: gemessen wird die dunkle Umrandung.
+    // Ohne Angabe läge die Fläche seit T0039 auf „Schraffur“ (hellgrau,
+    // 0,13 mm) — die Linie wäre da, aber nicht mehr als dunkler Pixel zu
+    // finden.
     s.execute(
         "draw.fill",
-        &json!({ "boundary": [[0.0, 0.0], [2.0, 0.0], [2.0, 1.0], [0.0, 1.0]], "pattern": "solid" }),
+        &json!({ "boundary": [[0.0, 0.0], [2.0, 0.0], [2.0, 1.0], [0.0, 1.0]], "pattern": "solid",
+                 "layer": "Wände" }),
     )
     .expect("Fläche anlegen");
     let id = s.doc.entities[0].id;
