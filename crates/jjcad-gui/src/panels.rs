@@ -2139,30 +2139,6 @@ fn entity_props(app: &mut App, ui: &mut Ui, id: Id) {
         let _ = app.session_mut().execute("modify.set", &params);
         app.mark_changed();
     }
-
-    ui.add_space(10.0);
-    widgets::hline(ui);
-    ui.add_space(8.0);
-    let dup_unit = app.unit();
-    ui.horizontal(|ui| {
-        if ui.button("Duplizieren").clicked() {
-            let dx = dup_unit.from_mm(300.0);
-            let dy = dup_unit.from_mm(-300.0);
-            let _ = app.session_mut().execute(
-                "modify.copy",
-                &json!({"ids": [id], "from": [0, 0], "to": [dx, dy]}),
-            );
-            app.mark_changed();
-        }
-        if ui
-            .button(egui::RichText::new("Löschen").color(Palette::DANGER))
-            .clicked()
-        {
-            let _ = app.session_mut().execute("modify.erase", &json!({"ids": [id]}));
-            app.session_mut().clear_selection();
-            app.mark_changed();
-        }
-    });
 }
 
 fn multi_props(app: &mut App, ui: &mut Ui, ids: &[Id]) {
@@ -2343,16 +2319,6 @@ fn multi_props(app: &mut App, ui: &mut Ui, ids: &[Id]) {
         }
         if ui.button("Spiegeln").clicked() {
             app.start_tool("modify.mirror");
-        }
-        if ui
-            .button(egui::RichText::new("Löschen").color(Palette::DANGER))
-            .clicked()
-        {
-            let _ = app
-                .session_mut()
-                .execute("modify.erase", &json!({"ids": ids}));
-            app.session_mut().clear_selection();
-            app.mark_changed();
         }
     });
 }
@@ -3250,5 +3216,94 @@ mod tests_text_eingabe_panel {
             panic!("kein Text");
         };
         assert_eq!((*align, *valign), (TextAlignH::Right, TextAlignV::Top));
+    }
+}
+
+/// Kein „Duplizieren“ und kein „Löschen“ im Eigenschaften-Panel (T0030).
+///
+/// Die beiden Schaltflächen standen bei Einzel- und Mehrfachauswahl unter den
+/// Eigenschaften. Dupliziert wird über die Zwischenablage (Kopieren + Einfüge-
+/// Vorschau), gelöscht über die Entf-Taste bzw. das Kontextmenü — im Panel
+/// gehören die Werte des Objekts hin, keine Befehle.
+mod tests_keine_befehle_im_panel {
+    use super::*;
+    use crate::app::App;
+
+    /// Zeichnet zwei Wände und gibt den App-Zustand samt Ids zurück.
+    fn app_mit_zwei_waenden() -> (App, Vec<Id>) {
+        let ctx = egui::Context::default();
+        let mut app = App::with_ctx(ctx);
+        app.session_mut()
+            .execute("doc.settings", &json!({ "input_unit": "mm" }))
+            .expect("Einheit setzen");
+        for x in [0.0, 1000.0] {
+            app.session_mut()
+                .execute(
+                    "draw.wall",
+                    &json!({ "a": [x, 0.0], "b": [x, 3000.0], "thickness": 100.0, "height": 2500.0 }),
+                )
+                .expect("Wand anlegen");
+        }
+        let ids: Vec<Id> = app.doc().entities.iter().map(|e| e.id).collect();
+        assert_eq!(ids.len(), 2, "zwei Wände erwartet");
+        (app, ids)
+    }
+
+    /// Gezeichnete Beschriftungen eines Frames mit dem Eigenschaften-Panel.
+    fn panel_texte(app: &mut App, zeit: f64) -> Vec<String> {
+        let ctx = app.ctx.clone();
+        let raw = egui::RawInput {
+            screen_rect: Some(Rect::from_min_size(Pos2::ZERO, Vec2::new(1200.0, 950.0))),
+            time: Some(zeit),
+            predicted_dt: 0.016,
+            ..Default::default()
+        };
+        let out = ctx.run(raw, |ctx| {
+            egui::SidePanel::right("eigenschaften")
+                .exact_width(280.0)
+                .show(ctx, |ui| properties(app, ui));
+        });
+        out.shapes
+            .iter()
+            .filter_map(|cs| match &cs.shape {
+                egui::Shape::Text(t) => Some(t.galley.text().to_string()),
+                _ => None,
+            })
+            .collect()
+    }
+
+    fn enthaelt(texte: &[String], was: &str) -> bool {
+        texte.iter().any(|t| t.trim() == was)
+    }
+
+    #[test]
+    fn einzelauswahl_hat_kein_duplizieren_und_kein_loeschen() {
+        let (mut app, ids) = app_mit_zwei_waenden();
+        app.session_mut().select(vec![ids[0]]);
+        let texte = panel_texte(&mut app, 1.0);
+        assert!(
+            !enthaelt(&texte, "Duplizieren"),
+            "„Duplizieren“ gehört nicht ins Panel: {texte:?}"
+        );
+        assert!(
+            !enthaelt(&texte, "Löschen"),
+            "„Löschen“ gehört nicht ins Panel: {texte:?}"
+        );
+        // Das Panel zeigt weiter die Eigenschaften der Wand.
+        assert!(enthaelt(&texte, "Dicke"), "Werte fehlen: {texte:?}");
+    }
+
+    #[test]
+    fn mehrfachauswahl_hat_kein_loeschen() {
+        let (mut app, ids) = app_mit_zwei_waenden();
+        app.session_mut().select(ids.clone());
+        let texte = panel_texte(&mut app, 1.0);
+        assert!(
+            !enthaelt(&texte, "Löschen"),
+            "„Löschen“ gehört nicht in die Mehrfachauswahl: {texte:?}"
+        );
+        // Die Werkzeugknöpfe für die Auswahl bleiben.
+        assert!(enthaelt(&texte, "Verschieben"), "Verschieben fehlt: {texte:?}");
+        assert!(enthaelt(&texte, "Drehen"), "Drehen fehlt: {texte:?}");
     }
 }
