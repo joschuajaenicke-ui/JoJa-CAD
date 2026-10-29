@@ -653,6 +653,15 @@ pub fn door_face_center(
     axis + n * (thickness * 0.5 * (wall_align.offset() + side))
 }
 
+/// Meldung, wenn eine Tür keinen Wandbezug hat — sie braucht die vordere
+/// Wandkante als Aufstandsfläche (T0038).
+pub const TUER_OHNE_WAND: &str =
+    "Tür · keine Wand an dieser Stelle — an eine Wand setzen oder 'host' angeben";
+
+/// Meldung, wenn ein Fenster keinen Wandbezug hat.
+pub const FENSTER_OHNE_WAND: &str =
+    "Fenster · keine Wand an dieser Stelle — an eine Wand setzen oder 'host' angeben";
+
 /// Länge längs der Wandachse ab Wandanfang (mm).
 fn wall_at(doc: &Document, host: Option<Id>, p: Vec2) -> Option<f64> {
     let hid = host?;
@@ -1491,6 +1500,15 @@ pub fn execute(doc: &mut Document, id: &str, params: &Value) -> Result<Value, St
                     }
                 }
             }
+            // Ohne Wand gibt es keine vordere Wandkante — dann entstünde eine
+            // freistehende Tür, die kein Bauteil ist. Das ist ein Fehler, kein
+            // stiller Erfolg (T0038).
+            let host = host.filter(|h| {
+                matches!(doc.entity(*h).map(|e| &e.kind), Some(EntityKind::Wall { .. }))
+            });
+            if host.is_none() {
+                return Err(TUER_OHNE_WAND.into());
+            }
             if angle.is_none() {
                 if let Some(h) = host {
                     if let Some(EntityKind::Wall { a, b, .. }) = doc.entity(h).map(|e| &e.kind) {
@@ -1549,6 +1567,14 @@ pub fn execute(doc: &mut Document, id: &str, params: &Value) -> Result<Value, St
                         angle = Some(wa);
                     }
                 }
+            }
+            // Ohne Wand gibt es keine Wanddicke, in der das Fenster läge —
+            // ein freistehendes Fenster ist kein Bauteil (T0038).
+            let host = host.filter(|h| {
+                matches!(doc.entity(*h).map(|e| &e.kind), Some(EntityKind::Wall { .. }))
+            });
+            if host.is_none() {
+                return Err(FENSTER_OHNE_WAND.into());
             }
             if angle.is_none() {
                 if let Some(h) = host {
@@ -1722,6 +1748,15 @@ pub fn execute(doc: &mut Document, id: &str, params: &Value) -> Result<Value, St
                     let b = BBox::from_points(&pts);
                     v(b.min.x, b.min.y - doc.settings.annotation_scale * 8.0)
                 });
+            // Achse ohne Angabe aus der Dominanz der Punktdifferenz bestimmen.
+            // Zwei verschiedene Punkte dürfen nie den Maßtext „0,0“ ergeben;
+            // eine gemischte Kette ohne brauchbare Achse ist ein Fehler (T0038).
+            let axis = match p.dim_axis("axis") {
+                Some(a) => a,
+                None => DimAxis::aus_kette(&pts).ok_or_else(|| {
+                    "Maßkette · Achse nicht bestimmbar — `axis` angeben".to_string()
+                })?,
+            };
             let layer = doc
                 .layer_id_by_name("Bemaßung")
                 .unwrap_or(doc.current_layer);
@@ -1729,11 +1764,7 @@ pub fn execute(doc: &mut Document, id: &str, params: &Value) -> Result<Value, St
             let mut e = Entity::new(
                 idn,
                 layer,
-                EntityKind::DimChain {
-                    pts,
-                    line_pos,
-                    axis: p.dim_axis("axis").unwrap_or(DimAxis::X),
-                },
+                EntityKind::DimChain { pts, line_pos, axis },
             );
             apply_common(doc, &mut e, &p, layer);
             doc.add_entity(e);

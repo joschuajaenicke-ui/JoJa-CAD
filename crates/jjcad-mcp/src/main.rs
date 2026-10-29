@@ -849,7 +849,47 @@ fn selftest() -> Result<(), String> {
     if reloaded.entities.len() != server.active().doc.entities.len() {
         return Err("Reload ergibt andere Objektzahl".into());
     }
+
+    // T0038: die beiden Repros aus dem Ticket dürfen nie wieder still
+    // „ok" melden — senkrechte Maßkette ohne `axis` misst senkrecht, eine Tür
+    // ohne Wand ist ein Fehler.
+    document_tool(
+        &mut server,
+        &json!({"action": "new", "units": "m", "name": "t0038"}),
+    )?;
+    let res = call_tool(
+        &mut server,
+        "jjcad_execute",
+        &json!({"action": "dim.chain",
+                "params": {"pts": [[0,0],[0,6.15],[0,8.76]], "line_pos": [-1.0, 0]}}),
+    )?;
+    let kette = ergebnis_text(&res);
+    if !kette.contains("\"ok\": true") {
+        return Err(format!("Maßkette ohne Achse abgelehnt: {kette}"));
+    }
+    // Eine abgelehnte Action kommt als Fehler aus `call_tool` (im MCP-Protokoll
+    // wird daraus `isError: true`) — genau das ist hier gewollt.
+    let tuer = match call_tool(
+        &mut server,
+        "jjcad_execute",
+        &json!({"action": "draw.door", "params": {"center": [50,50], "width": 1.0}}),
+    ) {
+        Ok(v) => return Err(format!("Tür ohne Wand meldet keinen Fehler: {v}")),
+        Err(e) => e,
+    };
+    println!("T0038: Maßkette senkrecht ok, Tür ohne Wand → Fehler: {tuer}");
     Ok(())
+}
+
+/// Textinhalt eines MCP-Werkzeugergebnisses (`content[0].text`).
+fn ergebnis_text(v: &Value) -> String {
+    v.get("content")
+        .and_then(|c| c.as_array())
+        .and_then(|a| a.first())
+        .and_then(|c| c.get("text"))
+        .and_then(|t| t.as_str())
+        .unwrap_or("")
+        .to_string()
 }
 
 fn main() {

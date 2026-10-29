@@ -3956,19 +3956,15 @@ pub fn finish_tool(app: &mut App, from_enter: bool) {
         }
         "dim.chain" => {
             if tool.pts.len() >= 2 {
-                let last = *tool.pts.last().unwrap();
                 let b = BBox::from_points(&tool.pts);
                 let line_pos = V2::new(b.min.x, b.min.y - app.doc().settings.annotation_scale * 8.0);
-                let axis = if (last.x - tool.pts[0].x).abs() >= (last.y - tool.pts[0].y).abs() {
-                    "x"
-                } else {
-                    "y"
-                };
+                // Achse bestimmt die Action selbst (Dominanz der Punktdifferenz) —
+                // eine hier geratene Achse ergäbe bei senkrechten Ketten „0,00" (T0038).
                 let _ = run(
                     app,
                     "dim.chain",
                     json!({"pts": tool.pts.iter().map(|p| [app.unit().from_mm(p.x), app.unit().from_mm(p.y)]).collect::<Vec<_>>(),
-                           "line_pos": [app.unit().from_mm(line_pos.x), app.unit().from_mm(line_pos.y)], "axis": axis}),
+                           "line_pos": [app.unit().from_mm(line_pos.x), app.unit().from_mm(line_pos.y)]}),
                 );
             }
             app.tool = None;
