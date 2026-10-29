@@ -1,0 +1,10 @@
+# Zeilenenden und Binärdateien erkennbar halten
+* text=auto eol=lf
+
+*.png binary
+*.pdf binary
+*.jjcad text eol=lf
+
+# Rust-Quellen immer mit LF
+*.rs text eol=lf
+*.toml text eol=lf
