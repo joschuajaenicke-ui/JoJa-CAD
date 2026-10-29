@@ -2817,41 +2817,67 @@ pub fn execute(doc: &mut Document, id: &str, params: &Value) -> Result<Value, St
             Ok(json!({"ok": true, "ids": ids}))
         }
         "select.query" => {
-            let layer = p.text("layer");
-            let typ = p.text("type");
-            let area = match (p.pt("a"), p.pt("b")) {
-                (Some(a), Some(b)) => Some(BBox::from_corners(a, b)),
-                _ => None,
-            };
-            let ids: Vec<Id> = doc
-                .ents()
-                .iter()
-                .filter(|e| {
-                    if let Some(l) = &layer {
-                        let name = doc.layer(e.layer).map(|x| x.name.clone()).unwrap_or_default();
-                        if !name.eq_ignore_ascii_case(l) && l != &e.layer.to_string() {
-                            return false;
-                        }
-                    }
-                    if let Some(t) = &typ {
-                        if !e.kind.type_name().to_lowercase().contains(&t.to_lowercase()) {
-                            return false;
-                        }
-                    }
-                    if let Some(b) = &area {
-                        if !render::entity_bbox(doc, e).intersects(b) {
-                            return false;
-                        }
-                    }
-                    true
-                })
-                .map(|e| e.id)
-                .collect();
+            let ids = query_ids(doc, params);
             Ok(json!({"ok": true, "ids": ids, "count": ids.len()}))
         }
 
         other => Err(format!("Aktion '{other}' ist in dieser Version nicht implementiert")),
     }
+}
+
+/// Objektfilter einer Abfrage: `ids`, `layer`, `type` und Bereich (`a`/`b`).
+///
+/// Eine Quelle für die Action `select.query` und `Session::query` (MCP-Werkzeug
+/// `jjcad_query`) — sonst wirbt die Abfrage mit Filtern, die eine der beiden
+/// Stellen still ignoriert. Unbekannte Werte (Typ, Ebene) treffen nichts, sie
+/// liefern 0 Treffer statt der ganzen Liste.
+pub fn query_ids(doc: &Document, params: &Value) -> Vec<Id> {
+    let p = Params::new(params, doc.settings.input_unit);
+    let ids = p.ids("ids");
+    let layer = p.text("layer").filter(|l| !l.trim().is_empty());
+    let typ = p.text("type").filter(|t| !t.trim().is_empty());
+    let area = match (p.pt("a"), p.pt("b")) {
+        (Some(a), Some(b)) => Some(BBox::from_corners(a, b)),
+        _ => None,
+    };
+    doc.ents()
+        .iter()
+        .filter(|e| {
+            if let Some(list) = &ids {
+                if !list.contains(&e.id) {
+                    return false;
+                }
+            }
+            if let Some(l) = &layer {
+                let name = doc.layer(e.layer).map(|x| x.name.clone()).unwrap_or_default();
+                if !name.eq_ignore_ascii_case(l) && l != &e.layer.to_string() {
+                    return false;
+                }
+            }
+            if let Some(t) = &typ {
+                let gesucht = t.to_lowercase();
+                // Der Typ wird auf Deutsch angezeigt (`type_name`), die
+                // Objektfelder tragen aber den Serde-Namen (`wall`, `dim`).
+                // Beide Schreibweisen sollen filtern — ein Agent liest den
+                // Namen aus dem Abfrageergebnis und fragt damit zurück.
+                let tag = serde_json::to_value(&e.kind)
+                    .ok()
+                    .and_then(|v| v.get("type").and_then(|x| x.as_str()).map(|s| s.to_lowercase()));
+                let passt = e.kind.type_name().to_lowercase().contains(&gesucht)
+                    || tag.map(|s| s.contains(&gesucht)).unwrap_or(false);
+                if !passt {
+                    return false;
+                }
+            }
+            if let Some(b) = &area {
+                if !render::entity_bbox(doc, e).intersects(b) {
+                    return false;
+                }
+            }
+            true
+        })
+        .map(|e| e.id)
+        .collect()
 }
 
 fn e_block_id(ents: &[Entity], id: Id) -> String {
