@@ -212,8 +212,11 @@ Mit dem Nutzer abgestimmt — nicht „verbessern“:
   die Anzeige rechnet daraus das Rechteck. Die vier Kantenmitten sind Griffe
   (Raute quer zur Kante): Ziehen verschiebt genau diese Kante **parallel**
   (`handles::apply_grip_tol`), die gegenüberliegende bleibt stehen;
-  Länge/Breite/Höhe stehen im Eigenschaften-Panel. Ein Klick in die Fläche
-  verschiebt die Treppe **nicht** (`App::maus_verschiebt` wie beim Text) — nur
+  Länge/Breite/Höhe stehen im Eigenschaften-Panel. Beim Ziehen an einer Kante
+  läuft die Maßangabe „Länge × Breite · n Stg“ am Zeiger mit
+  (`canvas::draw_grip_mass`, derselbe Text wie in der Einfüge-Vorschau).
+  Ein Klick in die Fläche verschiebt die Treppe **nicht**
+  (`App::maus_verschiebt` wie beim Text) — nur
   die Kantengriffe und das Werkzeug „Verschieben“ bewegen sie. Eine
   Laufrichtung (auf/ab) gibt es nicht: der Pfeil zeigt immer von `a` nach `b`. Die Höhe bestimmt über die Schrittmaßregel
   (2 S + A = 63 cm) die Stufenzahl: `n = (2 H + L) / 630`, gerundet; das Feld
