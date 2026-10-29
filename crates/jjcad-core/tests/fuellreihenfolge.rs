@@ -31,7 +31,12 @@ fn linie(s: &mut Session, a: (f64, f64), b: (f64, f64)) -> Id {
     let r = s
         .execute(
             "draw.line",
-            &json!({"a": [a.0 / 1000.0, a.1 / 1000.0], "b": [b.0 / 1000.0, b.1 / 1000.0]}),
+            // Ebene ausdrücklich auf „Wände“: die Randlinien müssen dunkel
+            // sein, damit das Pixelmaß „Linie über der Füllung“ trägt. Ohne
+            // Angabe läge eine Linie seit T0039 auf „Hilfslinien“ (hell,
+            // gestrichelt).
+            &json!({"a": [a.0 / 1000.0, a.1 / 1000.0], "b": [b.0 / 1000.0, b.1 / 1000.0],
+                    "layer": "Wände"}),
         )
         .expect("Linie");
     r["created"][0].as_u64().expect("ID der Linie") as Id

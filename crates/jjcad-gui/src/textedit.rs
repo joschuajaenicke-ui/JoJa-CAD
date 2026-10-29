@@ -297,7 +297,9 @@ fn uebernehmen(app: &mut App, ctx: &egui::Context) {
                        "underline": app.options.text_underline,
                        "superscript": app.options.text_superscript,
                        "font": t.font.key(),
-                       "runs": runs_json.clone()});
+                       "runs": runs_json.clone(),
+                       // Ebene des Layer-Panels, nicht die Standardebene „Text“.
+                       "layer": app.doc().current_layer});
             // Nur wenn eine Farbe gewählt wurde — sonst gilt die Layerfarbe.
             if let Some(c) = app.options.text_color {
                 params["color"] = json!(c.to_hex());

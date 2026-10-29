@@ -11,6 +11,9 @@ Befehls-Schicht vorbei.
 - Winkel in **Grad**.
 - Längen wie `thickness`, `width`, `height` ebenfalls in der Dokumenteinheit.
 - `layer` ist ein Layername (wird bei Bedarf angelegt) oder eine Layer-ID.
+  Fehlt er, legt jede Zeichenaktion ihr Objekt auf die **Standardebene ihres
+  Typs** (siehe „Standardebenen“); ein ausdrücklich übergebenes `layer` gewinnt
+  immer.
 - Farbe: `"#RRGGBB"` oder `"bylayer"`.
 - Rückgabe (MCP/JSON): `{"ok": true, "created": [ids], ...}` bzw. eine Fehlermeldung.
 
@@ -80,6 +83,28 @@ Typparameter für `modify.set`: `thickness`, `height`, `material` (Wand),
 `width`, `kind`, `hinge`, `swing_in` (Tür), `width`, `sill` (Fenster),
 `steps`, `direction` (Treppe), `text`, `angle`, `bold` (Text), `r` (Kreis),
 `axis`, `text` (Maß), `z` (Höhenkote).
+
+## Standardebenen
+
+Ohne `layer` zeichnet jede Aktion auf die Ebene ihres Typs. Die Ebene wird bei
+Bedarf angelegt — ein Plan aus einem Batch hat damit seine Ebenenstruktur, ohne
+dass jeder Schritt `layer` mitgeben muss.
+
+| Aktion | Standardebene |
+|---|---|
+| `draw.wall` | Wände |
+| `draw.door` | Türen |
+| `draw.window` | Fenster |
+| `draw.stair`, `draw.stair.label` | Treppen |
+| `dim.linear`, `dim.chain`, `dim.elevation` | Bemaßung |
+| `draw.text` | Text |
+| `draw.fill*`, `draw.hatch` | Schraffur |
+| `draw.volume*` | Wände (Körper im Wandton) |
+| `block.insert` | Möbel |
+| `draw.point`, `draw.line`, `draw.polyline`, `draw.spline`, `draw.rect`, `draw.circle`, `draw.arc`, `draw.ellipse` | Hilfslinien |
+
+In der Oberfläche übergibt jedes Werkzeug die im Layer-Panel gewählte Ebene —
+dort gilt weiterhin die Auswahl des Nutzers.
 
 ## Ebenen
 

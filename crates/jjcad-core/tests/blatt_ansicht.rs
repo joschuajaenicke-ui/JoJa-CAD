@@ -153,8 +153,14 @@ fn rechteck_ist_immer_papier_millimeter() {
 
 /// Rechteck 13 m × 15 m bei (0,0) in einem Meter-Dokument.
 fn zeichnung_13x15(sess: &mut Session) {
-    sess.execute("draw.rect", &json!({"a": [0, 0], "b": [13, 15]}))
-        .unwrap();
+    // Ebene ausdrücklich: hier zählt allein die Lage im Ansichtsfenster. Ohne
+    // Angabe läge das Rechteck seit T0039 auf „Hilfslinien“ (gestrichelt,
+    // 0,13 mm) — im PDF wäre die Kante nicht mehr als Tinte zu messen.
+    sess.execute(
+        "draw.rect",
+        &json!({"a": [0, 0], "b": [13, 15], "layer": "Wände"}),
+    )
+    .unwrap();
 }
 
 #[test]

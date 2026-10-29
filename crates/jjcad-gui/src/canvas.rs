@@ -4702,6 +4702,15 @@ fn run(app: &mut App, action: &str, params: serde_json::Value) -> bool {
     // Aktuelle Zeichen-Eigenschaften (Farbe/Stärke/Typ) an neue Elemente weitergeben
     let mut params = params;
     if action.starts_with("draw.") {
+        // Die im Layer-Panel gewählte Ebene gilt für Werkzeuge (der Nutzer
+        // wählt sie selbst). Ohne diese Angabe legt die Befehls-Schicht das
+        // Objekt auf die typgerechte Standardebene — richtig für MCP-Aufrufe
+        // ohne `layer`, für ein Werkzeug aber eine stille Umstellung (T0039).
+        if let Some(o) = params.as_object_mut() {
+            if !o.contains_key("layer") {
+                o.insert("layer".into(), serde_json::json!(app.doc().current_layer));
+            }
+        }
         if let Some(o) = params.as_object_mut() {
             let pend = app.ui.pending.clone();
             if !o.contains_key("color") {
