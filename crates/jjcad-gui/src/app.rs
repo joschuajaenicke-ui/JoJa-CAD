@@ -967,6 +967,36 @@ impl App {
                 // 4,64 m, Breite 1,00 m, Höhe 2,752 m ergeben 16 Stufen
                 // (17,2 / 29). `seltreppe` wählt sie zusätzlich aus, damit das
                 // Eigenschaften-Panel die Maße zeigt.
+                "treppenschnitt" => {
+                    // Prüfhilfe: oberer Teil der Treppe gestrichelt (eigene
+                    // Linien je Treppenteil), unterer durchgezogen.
+                    let u = self.unit().mm();
+                    let neu = self
+                        .session_mut()
+                        .execute(
+                            "draw.stair",
+                            &serde_json::json!({
+                                "a": [0.0, 0.0],
+                                "b": [0.0, 4640.0 / u],
+                                "width": 1000.0 / u,
+                                "height": 2752.0 / u,
+                                "auto": true,
+                            }),
+                        )
+                        .ok()
+                        .and_then(|r| r["created"][0].as_u64());
+                    if let Some(id) = neu {
+                        let _ = self.session_mut().execute(
+                            "modify.set",
+                            &serde_json::json!({"ids": [id], "type_oben": "dashed",
+                                                 "weight_oben": 0.18}),
+                        );
+                        let _ = self
+                            .session_mut()
+                            .execute("draw.stair.label", &serde_json::json!({ "id": id }));
+                    }
+                    self.fit_view();
+                }
                 "treppe" | "seltreppe" => {
                     let u = self.unit().mm();
                     let neu = self
@@ -3794,8 +3824,8 @@ pub(crate) fn commands_hint(tool: &Tool, opts: &ToolOptions) -> &'static str {
         "draw.door" => "Tür · in eine Wand klicken",
         "draw.window" => "Fenster · in eine Wand klicken",
         "draw.stair" => match tool.pts.len() {
-            0 => "Treppe · Lauflinie Anfang klicken",
-            1 => "Treppe · Lauflinie Ende klicken",
+            0 => "Treppe · Außenkante Anfang klicken",
+            1 => "Treppe · Außenkante Ende klicken",
             _ => "Treppe · Breite klicken",
         },
         "draw.fill" => "Füllfläche · Kontur anklicken",

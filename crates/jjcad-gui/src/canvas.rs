@@ -1760,19 +1760,26 @@ fn draw_tool_preview(
                     );
                 }
                 _ => {
+                    // Die ersten beiden Klicks liegen auf der **Außenkante**,
+                    // der dritte bestimmt die Tiefe dorthin, wo der Zeiger
+                    // steht. Die Anzeige zeigt die Treppe so, wie sie entsteht.
                     let a0 = tool.pts[0];
                     let b0 = tool.pts[1];
                     let laenge = a0.dist(b0);
-                    let breite = basis_hoehe(a0, b0, cursor).abs() * 2.0;
+                    let tiefe = basis_hoehe(a0, b0, cursor);
+                    let breite = tiefe.abs();
                     if laenge > 1.0 && breite > 1.0 {
                         let dir = (b0 - a0).normalized();
                         let nrm = dir.perp();
                         let hw = breite * 0.5;
+                        // Lauflinie = Mitte zwischen Außenkante und Zeiger
+                        let ma = a0 + nrm * (tiefe * 0.5);
+                        let mb = b0 + nrm * (tiefe * 0.5);
                         let quad = vec![
-                            w2s(a0 + nrm * hw),
-                            w2s(b0 + nrm * hw),
-                            w2s(b0 - nrm * hw),
-                            w2s(a0 - nrm * hw),
+                            w2s(ma + nrm * hw),
+                            w2s(mb + nrm * hw),
+                            w2s(mb - nrm * hw),
+                            w2s(ma - nrm * hw),
                         ];
                         p.add(Shape::closed_line(quad, stroke));
                         let stufen = if app.options.stair_auto {
@@ -1781,16 +1788,16 @@ fn draw_tool_preview(
                             app.options.stair_steps.max(1)
                         };
                         for i in 1..stufen {
-                            let q = a0.lerp(b0, i as f64 / stufen as f64);
+                            let q = ma.lerp(mb, i as f64 / stufen as f64);
                             p.line_segment([w2s(q + nrm * hw), w2s(q - nrm * hw)], dashed);
                         }
-                        p.line_segment([w2s(a0), w2s(b0)], stroke);
+                        p.line_segment([w2s(ma), w2s(mb)], stroke);
                         let ah = (laenge * 0.05).max(40.0);
                         for seite in [1.0, -1.0] {
                             p.line_segment(
                                 [
-                                    w2s(b0),
-                                    w2s(b0 - dir * (ah * 1.5) + nrm * (ah * 0.6 * seite)),
+                                    w2s(mb),
+                                    w2s(mb - dir * (ah * 1.5) + nrm * (ah * 0.6 * seite)),
                                 ],
                                 stroke,
                             );
@@ -4229,10 +4236,16 @@ fn tool_click_at(app: &mut App, w: V2, raw: V2) {
                     }
                 }
                 _ => {
-                    let a = tool.pts[0];
-                    let b = tool.pts[1];
-                    let breite = basis_hoehe(a, b, w).abs() * 2.0;
-                    if breite > 1.0 && a.dist(b) > 0.5 {
+                    // Erster und zweiter Klick: Außenkante. Der dritte Klick
+                    // setzt die Tiefe; die Lauflinie liegt in der Mitte.
+                    let a0 = tool.pts[0];
+                    let b0 = tool.pts[1];
+                    let tiefe = basis_hoehe(a0, b0, w);
+                    let breite = tiefe.abs();
+                    if breite > 1.0 && a0.dist(b0) > 0.5 {
+                        let nrm = (b0 - a0).normalized().perp();
+                        let a = a0 + nrm * (tiefe * 0.5);
+                        let b = b0 + nrm * (tiefe * 0.5);
                         let dir = match app.options.stair_dir {
                             StairDir::Up => "up",
                             StairDir::Down => "down",

@@ -96,6 +96,29 @@ fn fill_ring_mut(kind: &mut EntityKind, i: usize) -> Option<(&mut Vec<V2>, usize
     None
 }
 
+/// Ecken des Treppenrechtecks in Anzeigereihenfolge, dazu Richtung, Normale
+/// und halbe Breite.
+///
+/// Die Treppe ist von der Kontur her ein **Rechteck**: `a`→`b` ist die
+/// Lauflinie (Mitte), die Breite steht senkrecht darauf. Die vier Kanten sind
+/// damit festgelegt — Kante 0 = linke Längskante, 1 = Endkante, 2 = rechte
+/// Längskante, 3 = Startkante.
+fn stair_rechteck(a: V2, b: V2, width: f64) -> ([V2; 4], V2, V2, f64) {
+    let dir = if a.dist(b) > 1e-9 {
+        (b - a).normalized()
+    } else {
+        V2::new(1.0, 0.0)
+    };
+    let nrm = dir.perp();
+    let hw = width * 0.5;
+    (
+        [a + nrm * hw, b + nrm * hw, b - nrm * hw, a - nrm * hw],
+        dir,
+        nrm,
+        hw,
+    )
+}
+
 /// Alle Griffpunkte eines Elements mit ihrer Weltposition.
 pub fn grips_of(e: &Entity) -> Vec<(GripKind, V2)> {
     match &e.kind {
@@ -128,6 +151,18 @@ pub fn grips_of(e: &Entity) -> Vec<(GripKind, V2)> {
             (GripKind::ArcStart, *c + V2::polar(*a0, *r)),
             (GripKind::ArcEnd, *c + V2::polar(*a1, *r)),
         ],
+        // Treppe: die vier Kantenmitten des Rechtecks. Ziehen verschiebt genau
+        // diese Kante parallel — die gegenüberliegende bleibt stehen, Breite
+        // bzw. Länge ändern sich (T0027).
+        EntityKind::Stair { a, b, width, .. } => {
+            let (ecken, _, _, _) = stair_rechteck(*a, *b, *width);
+            (0..4)
+                .map(|i| {
+                    let p = (ecken[i] + ecken[(i + 1) % 4]) * 0.5;
+                    (GripKind::Edge(i), p)
+                })
+                .collect()
+        }
         // Füllfläche: die Ecken der Umgrenzung und der Inseln. Zwischenpunkte
         // einer geraden Kante fallen weg (`ist_ecke`) — der Farbeimer liefert
         // seinen Rand als dichten Punktzug.
@@ -219,6 +254,47 @@ pub fn apply_grip_tol(orig: &Entity, kind: GripKind, target: V2, tol: f64) -> Op
             verts[i].p = p1 + normal * d;
             verts[j].p = p2 + normal * d;
         }
+        // Treppenkante parallel verschieben. Die gegenüberliegende Kante bleibt
+        // stehen: Breite und Lage der Lauflinie folgen der halben Verschiebung.
+        (EntityKind::Stair { a, b, width, .. }, GripKind::Edge(i)) => {
+            let (_, dir, nrm, hw) = stair_rechteck(*a, *b, *width);
+            let mitte = (*a + *b) * 0.5;
+            const MIN: f64 = 100.0;
+            match i {
+                0 | 2 => {
+                    let kante = if i == 0 {
+                        mitte + nrm * hw
+                    } else {
+                        mitte - nrm * hw
+                    };
+                    let mut d = (target - kante).dot(nrm);
+                    if i == 0 {
+                        d = d.max(MIN - *width);
+                        *width += d;
+                    } else {
+                        d = d.min(*width - MIN);
+                        *width -= d;
+                    }
+                    *a = *a + nrm * (d * 0.5);
+                    *b = *b + nrm * (d * 0.5);
+                }
+                1 => {
+                    let t = (target - *b).dot(dir);
+                    if (*b + dir * t).dist(*a) < MIN {
+                        return None;
+                    }
+                    *b = *b + dir * t;
+                }
+                3 => {
+                    let t = (target - *a).dot(dir);
+                    if (*a + dir * t).dist(*b) < MIN {
+                        return None;
+                    }
+                    *a = *a + dir * t;
+                }
+                _ => return None,
+            }
+        }
         // Ecke einer Füllfläche: der flache Index zählt erst die Umgrenzung,
         // dann die Inseln (dieselbe Reihenfolge wie die Anzeige). Verschmolzen
         // wird erst beim Loslassen (`App::end_grip_drag`) — während des Zugs
@@ -266,6 +342,14 @@ pub fn moving_points(e: &Entity, kind: GripKind) -> Vec<V2> {
             }
             let j = (i + 1) % n;
             vec![verts[i].p, verts[j].p]
+        }
+        // Treppenkante: beide Enden der Kante wandern mit.
+        (EntityKind::Stair { a, b, width, .. }, GripKind::Edge(i)) => {
+            let (ecken, _, _, _) = stair_rechteck(*a, *b, *width);
+            if i >= 4 {
+                return Vec::new();
+            }
+            vec![ecken[i], ecken[(i + 1) % 4]]
         }
         // Füllfläche: flacher Eckindex, Umgrenzung zuerst.
         (EntityKind::Fill { boundary, holes, .. }
@@ -343,6 +427,10 @@ fn kantenmitten(e: &Entity) -> Vec<V2> {
             }
             out
         }
+        EntityKind::Stair { a, b, width, .. } => {
+            let (ecken, _, _, _) = stair_rechteck(*a, *b, *width);
+            (0..4).map(|i| mitte(ecken[i], ecken[(i + 1) % 4])).collect()
+        }
         EntityKind::Fill { boundary, holes, .. } => {
             let mut out = Vec::new();
             for ring in std::iter::once(boundary).chain(holes.iter()) {
@@ -379,6 +467,9 @@ fn eckpunkte(e: &Entity) -> Vec<V2> {
         // ohne sie fiele der Fang beim Ziehen eines Endpunkts aus (Flackern).
         EntityKind::Arc { c, r, a0, a1 } => {
             vec![*c, *c + V2::polar(*a0, *r), *c + V2::polar(*a1, *r)]
+        }
+        EntityKind::Stair { a, b, width, .. } => {
+            stair_rechteck(*a, *b, *width).0.to_vec()
         }
         EntityKind::Fill { boundary, holes, .. } => boundary
             .iter()
@@ -1008,6 +1099,87 @@ mod tests {
 }
 
 #[cfg(test)]
+mod tests_treppe {
+    use super::*;
+
+    fn treppe() -> Entity {
+        Entity::new(
+            3,
+            1,
+            EntityKind::Stair {
+                a: V2::new(0.0, 0.0),
+                b: V2::new(0.0, 4000.0),
+                width: 1000.0,
+                steps: 16,
+                direction: Default::default(),
+                height: 2750.0,
+                auto_steps: true,
+                cut: true,
+                unten: None,
+                oben: None,
+            },
+        )
+    }
+
+    fn masse(e: &Entity) -> (V2, V2, f64) {
+        match &e.kind {
+            EntityKind::Stair { a, b, width, .. } => (*a, *b, *width),
+            _ => panic!("keine Treppe"),
+        }
+    }
+
+    /// Vier Kantengriffe auf dem Rechteck (nicht auf der Lauflinie).
+    #[test]
+    fn treppe_hat_kantengriffe() {
+        let griffe = grips_of(&treppe());
+        assert_eq!(griffe.len(), 4, "vier Kantenmitten");
+        for (art, p) in griffe {
+            assert!(matches!(art, GripKind::Edge(_)));
+            // Rechteck 1000 breit, Lauflinie bei x = 0: die Längskanten liegen
+            // bei x = ±500, die Querkanten bei y = 0 und y = 4000.
+            assert!(
+                (p.x.abs() - 500.0).abs() < 0.01 || p.y.abs() < 0.01 || (p.y - 4000.0).abs() < 0.01,
+                "Griff {p:?} liegt nicht auf der Kontur"
+            );
+        }
+    }
+
+    /// Eine Längskante ziehen verschiebt nur diese Kante: die gegenüberliegende
+    /// bleibt stehen, Breite und Lauflinie folgen der halben Verschiebung.
+    #[test]
+    fn laengskante_verschiebt_parallel() {
+        let e = treppe();
+        // Kante 0 liegt auf x = -500 (Normale zeigt nach -x); 200 weiter nach
+        // außen ziehen.
+        let neu = apply_grip(&e, GripKind::Edge(0), V2::new(-700.0, 2000.0)).unwrap();
+        let (a, b, w) = masse(&neu);
+        assert!((w - 1200.0).abs() < 0.01, "Breite {w}");
+        assert!((a.x + 100.0).abs() < 0.01, "Lauflinie wandert 100 nach links: {a:?}");
+        assert!((b.x + 100.0).abs() < 0.01, "{b:?}");
+        assert!((a.y).abs() < 0.01 && (b.y - 4000.0).abs() < 0.01, "Länge bleibt");
+    }
+
+    /// Die Endkante zieht das Laufende mit — die Länge ist das Rechteckmaß.
+    #[test]
+    fn endkante_veraendert_die_laenge() {
+        let e = treppe();
+        let neu = apply_grip(&e, GripKind::Edge(1), V2::new(0.0, 3000.0)).unwrap();
+        let (a, b, w) = masse(&neu);
+        assert!((a.y).abs() < 0.01, "Anfang bleibt stehen");
+        assert!((b.y - 3000.0).abs() < 0.01, "Ende bei 3,00 m: {b:?}");
+        assert!((w - 1000.0).abs() < 0.01, "Breite bleibt");
+    }
+
+    /// Keine Kante darf die Treppe auf null schrumpfen.
+    #[test]
+    fn kantenziehen_haelt_die_mindestbreite() {
+        let e = treppe();
+        let neu = apply_grip(&e, GripKind::Edge(0), V2::new(900.0, 2000.0)).unwrap();
+        let (_, _, w) = masse(&neu);
+        assert!(w >= 99.9, "Breite {w} fällt unter das Minimum");
+    }
+}
+
 mod tests_volumen {
     use super::*;
 

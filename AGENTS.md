@@ -198,16 +198,21 @@ Mit dem Nutzer abgestimmt — nicht „verbessern“:
   *und* bei Auswahl; bei Mehrfachauswahl nur gemeinsame Felder, abweichende Werte
   als `*variiert*`; nicht editierbare Werte (Länge, Fläche) anzeigen.
 - **Polarfang** 45° (Toleranz 6°); Fangmodi END, SCHN, MIT, ZEN, QUA, LOT, NÄC, RAS, POL.
-- **Treppen** werden über die *Lauflinie* (zwei Punkte) und die **Breite**
-  (dritter Punkt, Abstand zur Lauflinie) gesetzt — die Lauflinie ist die Mitte
-  des Laufs. Die **Höhe** steht im Eigenschaften-Panel und bestimmt über die
-  Schrittmaßregel (2 S + A = 63 cm) die Stufenzahl:
-  `n = (2 H + L) / 630`, gerundet und begrenzt; das Feld „Stufen“ überschreibt
-  sie (Häkchen „Schrittmaß“ schaltet die Regel wieder ein). Anzeige wie im
-  Vorbild: Umriss, Stufenlinien, Lauflinie mit offenem Richtungspfeil und
-  Anfangsring, in der Laufmitte zwei Diagonalen als Abschnittslinie, die die
-  Stufenlinien unterbrechen. Der Knopf „Beschriftung erzeugen“ legt
-  `16 Stg / 17,2 / 29` als Textfeld links neben den Lauf (`draw.stair.label`).
+- **Treppen** sind von der Kontur her ein **Rechteck**: erster und zweiter Klick
+  liegen auf der **Außenkante** (Länge), der dritte setzt die Breite dorthin, wo
+  der Zeiger steht. Gespeichert ist die Lauflinie (`a`→`b`, Mitte) plus Breite —
+  die Anzeige rechnet daraus das Rechteck. Die vier Kantenmitten sind Griffe:
+  Ziehen verschiebt genau diese Kante **parallel** (`handles::apply_grip_tol`),
+  die gegenüberliegende bleibt stehen; Länge/Breite/Höhe stehen im
+  Eigenschaften-Panel. Die Höhe bestimmt über die Schrittmaßregel
+  (2 S + A = 63 cm) die Stufenzahl: `n = (2 H + L) / 630`, gerundet; das Feld
+  „Stufen“ überschreibt sie, das Häkchen „Schrittmaß“ schaltet die Regel zurück.
+  Der **Treppenschnitt** (zwei Diagonalen in der Laufmitte, die Stufenlinien
+  werden dort unterbrochen) ist abschaltbar — er symbolisiert **zwei Läufe
+  übereinander**. Mit Schnitt haben unterer und oberer Teil **eigene Linien**
+  (Farbe/Stärke/Typ; `unten`/`oben` im Modell, `None` = Objektstil). Der Knopf
+  „Beschriftung erzeugen“ legt `16 Stg / 17,2 / 29` als Textfeld links neben den
+  Lauf (`draw.stair.label`).
 - **Erweiterter Punktfang**: bleibt der Zeiger 400 ms auf einem diskreten Fangpunkt stehen
   (ohne Klick), wird dieser *gehalten* und bekommt zwei Hilfslinien — bei einem Punkt auf
   einer Linie Verlängerung und Normale, sonst Waagerechte und Senkrechte. Auf ihnen fängt

@@ -144,7 +144,7 @@ pub const ACTIONS: &[ActionDef] = &[
         Architektur,
         "stair",
         "b",
-        "Lauflinie aufziehen, dann die Breite klicken",
+        "Außenkante aufziehen, dann die Breite klicken",
         true
     ),
     act!(
@@ -798,6 +798,35 @@ fn realign_opening(
     axis + n * (thickness * 0.5 * shift)
 }
 
+/// Eigenen Linienstil eines Treppenteils aus den Parametern setzen.
+///
+/// `praefix` ist `unten` oder `oben`; gelesen werden `color_unten`,
+/// `weight_unten` und `type_unten` (bzw. `_oben`). Ohne eigene Werte bleibt der
+/// Teil beim Objektstil — `None` heißt genau das.
+fn stair_teil_setzen(ziel: &mut Option<EntityStyle>, basis: &EntityStyle, p: &Params, praefix: &str) {
+    let farbe = p.v.get(format!("color_{praefix}"));
+    let staerke = p.num(&format!("weight_{praefix}"));
+    let typ = p.linetype(&format!("type_{praefix}"));
+    if farbe.is_none() && staerke.is_none() && typ.is_none() {
+        return;
+    }
+    let mut st = ziel.clone().unwrap_or_else(|| basis.clone());
+    if let Some(v) = farbe {
+        st.color = match v.as_str() {
+            Some(s) if s.eq_ignore_ascii_case("bylayer") => None,
+            Some(s) => Color::from_hex(s).or(st.color),
+            None => st.color,
+        };
+    }
+    if let Some(w) = staerke {
+        st.line_weight = Some(w);
+    }
+    if let Some(t) = typ {
+        st.line_type = Some(t);
+    }
+    *ziel = Some(st);
+}
+
 fn apply_common(doc: &mut Document, e: &mut Entity, p: &Params, layer: Id) {
     e.layer = layer;
     if let Some(c) = p.color("color") {
@@ -1386,6 +1415,9 @@ pub fn execute(doc: &mut Document, id: &str, params: &Value) -> Result<Value, St
                     auto_steps: p
                         .boolean("auto")
                         .unwrap_or_else(|| p.raw("steps").is_none()),
+                    cut: p.boolean_or("cut", true),
+                    unten: None,
+                    oben: None,
                 },
             );
             apply_common(doc, &mut e, &p, layer);
@@ -1815,6 +1847,9 @@ pub fn execute(doc: &mut Document, id: &str, params: &Value) -> Result<Value, St
                     {
                         e.style.fill = None;
                     }
+                    // Objektstil als Rückfall für die Treppenteile, bevor
+                    // `kind` verliehen wird.
+                    let basis_stil = e.style.clone();
                     match &mut e.kind {
                         EntityKind::Wall { align, .. } => {
                             if let Some(wa) = align_new {
@@ -1948,15 +1983,19 @@ pub fn execute(doc: &mut Document, id: &str, params: &Value) -> Result<Value, St
                             }
                         }
                         EntityKind::Stair {
+                            a: sa,
+                            b: sb,
                             width: w,
                             steps: s,
                             direction,
                             height,
                             auto_steps,
-                            ..
+                            cut,
+                            unten: teil_unten,
+                            oben: teil_oben,
                         } => {
                             if let Some(v) = width {
-                                *w = v;
+                                *w = v.max(1.0);
                             }
                             if let Some(v) = height_new {
                                 *height = v.max(1.0);
@@ -1970,9 +2009,24 @@ pub fn execute(doc: &mut Document, id: &str, params: &Value) -> Result<Value, St
                             if let Some(v) = auto_new {
                                 *auto_steps = v;
                             }
+                            if let Some(v) = p.boolean("cut") {
+                                *cut = v;
+                            }
+                            // Länge des Laufs: der Endpunkt wandert auf der
+                            // Lauflinie, der Anfang bleibt stehen.
+                            if let Some(v) = p.len("len") {
+                                let d = *sb - *sa;
+                                if d.len() > 1e-6 {
+                                    *sb = *sa + d.normalized() * v.max(1.0);
+                                }
+                            }
                             if let Some(d) = p.stair_dir("direction") {
                                 *direction = d;
                             }
+                            // Linien der beiden Treppenteile (ober-/unterhalb
+                            // des Schnitts), getrennt einstellbar.
+                            stair_teil_setzen(teil_unten, &basis_stil, &p, "unten");
+                            stair_teil_setzen(teil_oben, &basis_stil, &p, "oben");
                         }
                         EntityKind::Text { text: t, height: h, angle, bold, .. } => {
                             if let Some(v) = text {
