@@ -50,6 +50,33 @@ pub struct TextPrim {
     pub align: TextAlignH,
     pub valign: TextAlignV,
     pub bold: bool,
+    pub italic: bool,
+    pub underline: bool,
+    pub superscript: bool,
+    /// Gemischte Auszeichnung; leer = die Felder oben gelten für den ganzen Text.
+    pub runs: Vec<TextRun>,
+}
+
+impl TextPrim {
+    /// Die Läufe, mit denen gesetzt wird: entweder die eigenen oder — ohne
+    /// gemischte Auszeichnung — ein einziger Lauf aus den Feldern des Objekts.
+    pub fn effective_runs(&self) -> Vec<TextRun> {
+        if !self.runs.is_empty() {
+            return self.runs.clone();
+        }
+        vec![TextRun {
+            text: self.text.clone(),
+            bold: self.bold,
+            italic: self.italic,
+            underline: self.underline,
+            superscript: self.superscript,
+        }]
+    }
+
+    /// Breite der breitesten Zeile in mm — dieselbe Rechnung wie beim Satz.
+    pub fn width(&self) -> f64 {
+        crate::text::width_em(&self.text, &self.effective_runs()) * self.height
+    }
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -726,6 +753,10 @@ pub fn render_entity(
             align,
             valign,
             bold,
+            italic,
+            underline,
+            superscript,
+            runs,
         } => {
             let txt = if ctx.resolve_text {
                 doc.resolve_text_scaled(text, ctx.sheet_scale)
@@ -743,7 +774,11 @@ pub fn render_entity(
                     angle: *angle + xf.rotation(),
                     align: *align,
                     valign: *valign,
-                    bold: *bold || st.width > 0.4,
+                    bold: *bold || (st.width > 0.4 && runs.is_empty()),
+                    italic: *italic,
+                    underline: *underline,
+                    superscript: *superscript,
+                    runs: runs.clone(),
                 }),
                 style: st,
                 entity: e.id,
@@ -811,6 +846,10 @@ pub fn render_entity(
                     align: TextAlignH::Left,
                     valign: TextAlignV::Bottom,
                     bold: false,
+                    italic: false,
+                    underline: false,
+                    superscript: false,
+                    runs: Vec::new(),
                 }),
                 style: st,
                 entity: e.id,
@@ -2429,6 +2468,10 @@ fn render_dim(
             align,
             valign: TextAlignV::Bottom,
             bold: false,
+            italic: false,
+            underline: false,
+            superscript: false,
+            runs: Vec::new(),
         }),
         style: *st,
         entity: e.id,
@@ -2588,6 +2631,10 @@ fn render_dim_chain(
                 align: TextAlignH::Center,
                 valign: TextAlignV::Bottom,
                 bold: false,
+                italic: false,
+                underline: false,
+                superscript: false,
+                runs: Vec::new(),
             }),
             style: *st,
             entity: e.id,

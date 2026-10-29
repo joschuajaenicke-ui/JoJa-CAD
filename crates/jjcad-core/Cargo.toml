@@ -11,3 +11,7 @@ serde_json = { workspace = true }
 # Headless-Rendering (PNG) und PDF-Export laufen ohne GUI.
 tiny-skia = { version = "0.11", default-features = false, features = ["std", "png-format"] }
 ab_glyph = "0.2"
+# PDF-Lesen (Import): Parser, Objektzugriff, FlateDecode
+lopdf = { version = "0.46", default-features = false }
+# PDF-Streams packen (FlateDecode) — liegt über lopdf ohnehin im Baum
+flate2 = "1"

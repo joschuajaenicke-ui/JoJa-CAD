@@ -107,6 +107,38 @@ impl DoorKind {
     }
 }
 
+/// Ein Lauf innerhalb eines Textes: ein Stück Text mit eigener Formatierung.
+///
+/// Mehrere Läufe in einem Objekt ergeben gemischte Auszeichnung (z. B.
+/// „Raum **3,20 m²** mit *Küche*"). Der schlichte Text des Objekts bleibt die
+/// Wahrheit für Suche und Bearbeitung; die Läufe beschreiben nur die Form.
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+pub struct TextRun {
+    pub text: String,
+    #[serde(default)]
+    pub bold: bool,
+    #[serde(default)]
+    pub italic: bool,
+    #[serde(default)]
+    pub underline: bool,
+    #[serde(default)]
+    pub superscript: bool,
+}
+
+impl TextRun {
+    pub fn plain(text: impl Into<String>) -> Self {
+        Self {
+            text: text.into(),
+            ..Default::default()
+        }
+    }
+
+    /// Ohne jede Auszeichnung? Dann genügt der schlichte Text.
+    pub fn is_plain(&self) -> bool {
+        !self.bold && !self.italic && !self.underline && !self.superscript
+    }
+}
+
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub enum TextAlignH {
     Left,
@@ -263,6 +295,18 @@ pub enum EntityKind {
         valign: TextAlignV,
         #[serde(default)]
         bold: bool,
+        /// Fett/Kursiv/Unterstrichen für den **ganzen** Text — gilt, solange
+        /// keine Läufe gesetzt sind.
+        #[serde(default)]
+        italic: bool,
+        #[serde(default)]
+        underline: bool,
+        /// Hochstellung des ganzen Textes (Fußnotenzeichen, Einheit).
+        #[serde(default)]
+        superscript: bool,
+        /// Gemischte Auszeichnung. Leer = die Felder oben gelten für alles.
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        runs: Vec<TextRun>,
     },
     /// Einzelmaß / Maßkette (linear).
     Dim {

@@ -404,6 +404,17 @@ impl Default for PendingStyle {
     }
 }
 
+/// Seitenwahl beim PDF-Einfügen (`file.import.pdf`).
+#[derive(Clone, Debug)]
+pub struct PdfImportWahl {
+    pub pfad: PathBuf,
+    /// Seiten im PDF (1-basiert gezählt)
+    pub seiten: usize,
+    pub seite: usize,
+    /// Als ein Element (Block) einfügen statt als Einzelobjekte
+    pub als_block: bool,
+}
+
 pub struct UiState {
     pub pending: PendingStyle,
     pub ribbon: RibbonTab,
@@ -430,6 +441,8 @@ pub struct UiState {
     /// Laufender Systemdialog (Betriebssystem) samt dem Modus, für den er
     /// geöffnet wurde
     pub systemdialog: Option<(FileMode, Systemdialog)>,
+    /// Seite für „PDF einfügen" bereits gewählt
+    pub pdf_import: Option<PdfImportWahl>,
     pub show_grid: bool,
     pub lineweights: bool,
     /// Vollbild gewünscht (maßgeblich ist der Fensterzustand, siehe
@@ -500,6 +513,7 @@ impl Default for UiState {
             preset_dialog: None,
             file_dialog: None,
             systemdialog: None,
+            pdf_import: None,
             show_grid: true,
             lineweights: true,
             fullscreen: false,
@@ -932,6 +946,83 @@ impl App {
                 "chathinweis" => {
                     self.start_tool("draw.polyline");
                     self.chat.sagen(0.0, "Polylinie: Startpunkt klicken");
+                }
+                // Seitenwahl „PDF einfügen" offen (Screenshot-Prüfung)
+                "pdfseite" => {
+                    let p = [
+                        "samples/Grundriss.pdf",
+                        "../../samples/Grundriss.pdf",
+                    ]
+                    .iter()
+                    .map(std::path::PathBuf::from)
+                    .find(|p| p.exists());
+                    if let Some(pfad) = p {
+                        self.pdf_import_oeffnen(pfad);
+                    }
+                }
+                // Text mit gemischter Auszeichnung (Screenshot-Prüfung der
+                // Textformatierung: fett, kursiv, unterstrichen, hochgestellt)
+                "textruns" => {
+                    let id = self.doc_mut().new_id();
+                    let layer = self.doc().current_layer;
+                    let runs = vec![
+                        jjcad_core::model::TextRun {
+                            text: "Raum ".into(),
+                            ..Default::default()
+                        },
+                        jjcad_core::model::TextRun {
+                            text: "Wohnen".into(),
+                            bold: true,
+                            ..Default::default()
+                        },
+                        jjcad_core::model::TextRun {
+                            text: " · ".into(),
+                            ..Default::default()
+                        },
+                        jjcad_core::model::TextRun {
+                            text: "Küche".into(),
+                            italic: true,
+                            ..Default::default()
+                        },
+                        jjcad_core::model::TextRun {
+                            text: " · ".into(),
+                            ..Default::default()
+                        },
+                        jjcad_core::model::TextRun {
+                            text: "32,4".into(),
+                            underline: true,
+                            ..Default::default()
+                        },
+                        jjcad_core::model::TextRun {
+                            text: " m".into(),
+                            ..Default::default()
+                        },
+                        jjcad_core::model::TextRun {
+                            text: "2".into(),
+                            superscript: true,
+                            ..Default::default()
+                        },
+                    ];
+                    let text: String = runs.iter().map(|r| r.text.as_str()).collect();
+                    let mut e = Entity::new(
+                        id,
+                        layer,
+                        EntityKind::Text {
+                            p: jjcad_core::geom::v(2000.0, 3000.0),
+                            text,
+                            height: 300.0,
+                            angle: 0.0,
+                            align: TextAlignH::Left,
+                            valign: TextAlignV::Bottom,
+                            bold: false,
+                            italic: false,
+                            underline: false,
+                            superscript: false,
+                            runs,
+                        },
+                    );
+                    e.style.color = Some(jjcad_core::style::Color::BLACK);
+                    self.doc_mut().add_entity(e);
                 }
                 // Offener Systemdialog (nur der Zustand, kein echter Dialog):
                 // zeigt Abdunklung und Hinweis für Screenshots.
@@ -1744,6 +1835,7 @@ impl App {
             "file.export_pdf" | "sheet.pdf" => self.open_file_dialog(FileMode::ExportPdf),
             "file.export_dxf" => self.open_file_dialog(FileMode::ExportDxf),
             "file.import_dxf" => self.open_file_dialog(FileMode::ImportDxf),
+            "file.import.pdf" => self.open_file_dialog(FileMode::ImportPdf),
             "file.export_png" => self.open_file_dialog(FileMode::ExportPng),
             "edit.undo" => {
                 if self.session_mut().undo() {
@@ -2186,6 +2278,75 @@ impl App {
         match raster::render_png(self.doc(), &opts, &path) {
             Ok(_) => self.toast(format!("PNG · exportiert: {}", path.display())),
             Err(e) => self.toast(e),
+        }
+    }
+
+    /// PDF ausgewählt: Seitenzahl lesen und die Seitenwahl öffnen.
+    pub fn pdf_import_oeffnen(&mut self, path: PathBuf) {
+        match jjcad_core::pdf_read::read_pdf(&path) {
+            Ok(pdf) => {
+                self.ui.pdf_import = Some(PdfImportWahl {
+                    pfad: path,
+                    seiten: pdf.pages.len(),
+                    seite: 1,
+                    als_block: true,
+                });
+            }
+            Err(e) => self.toast(format!("PDF · {e}")),
+        }
+    }
+
+    /// Gewählte Seite einfügen und das Ergebnis melden.
+    pub fn pdf_import_einfuegen(&mut self, wahl: &PdfImportWahl) {
+        let res = self.session_mut().execute(
+            "file.import.pdf",
+            &serde_json::json!({
+                "path": wahl.pfad.to_string_lossy(),
+                "page": wahl.seite,
+                "as_block": wahl.als_block,
+            }),
+        );
+        match res {
+            Ok(v) => {
+                self.mark_changed();
+                // Eingefügtes Blatt zeigen: das Papier liegt in
+                // Blattkoordinaten (0…420 mm) und wäre sonst winzig.
+                if let Some(id) = v["created"].as_array().and_then(|a| a.first()).and_then(|x| x.as_u64()) {
+                    self.session_mut().select(vec![id]);
+                }
+                self.fit_view();
+                let objekte = v["entities"].as_u64().unwrap_or(0);
+                let mut text = format!(
+                    "PDF · {} Objekte übernommen ({} Seite {})",
+                    objekte,
+                    wahl
+                        .pfad
+                        .file_name()
+                        .map(|n| n.to_string_lossy().into_owned())
+                        .unwrap_or_default(),
+                    wahl.seite
+                );
+                let warn: Vec<String> = v["warnings"]
+                    .as_array()
+                    .map(|a| {
+                        a.iter()
+                            .filter_map(|w| {
+                                Some(format!(
+                                    "{} {}",
+                                    w["art"].as_str()?,
+                                    w["anzahl"].as_u64()?
+                                ))
+                            })
+                            .collect()
+                    })
+                    .unwrap_or_default();
+                if !warn.is_empty() {
+                    text.push_str(" · nicht übernommen: ");
+                    text.push_str(&warn.join(", "));
+                }
+                self.toast(text);
+            }
+            Err(e) => self.toast(format!("PDF · {e}")),
         }
     }
 
@@ -2885,6 +3046,9 @@ fn rail(ui: &mut egui::Ui, icon: &str, tooltip: &str, chevron: &str) -> bool {
                         }
                         if widgets::ribbon_button(ui, "import", "Import", false).clicked() {
                             app.run_action(ui.ctx(), "file.import_dxf");
+                        }
+                        if widgets::ribbon_button(ui, "pdf", "PDF einfügen", false).clicked() {
+                            app.run_action(ui.ctx(), "file.import.pdf");
                         }
                     });
                     widgets::vline(ui, RIBBON_GROUP_H);
@@ -4380,6 +4544,7 @@ pub fn ext_for(mode: FileMode) -> &'static str {
     match mode {
         FileMode::Open | FileMode::SaveJjcad => "jjcad",
         FileMode::ImportDxf => "dxf",
+        FileMode::ImportPdf => "pdf",
         FileMode::ExportPdf => "pdf",
         FileMode::ExportDxf => "dxf",
         FileMode::ExportPng => "png",
