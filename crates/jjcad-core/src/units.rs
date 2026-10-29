@@ -116,6 +116,20 @@ impl Unit {
     }
 }
 
+/// Fläche (mm²) als Quadratmeter mit deutschem Komma und zwei
+/// Nachkommastellen, z. B. `12,00` — für das Abfragefeld `area_m2`.
+///
+/// Bewusst **ohne** Einheit und ohne Tausenderpunkt: der Wert steht in der
+/// MCP-Antwort unter einem Feld, das die Einheit schon im Namen trägt, und ein
+/// Agent soll ihn unverändert als Zahl weiterverwenden können. Die Einheit
+/// eines Dokuments ändert daran nichts — Quadratmeter bleiben Quadratmeter.
+pub fn format_area_m2(mm2: f64) -> String {
+    if !mm2.is_finite() {
+        return "–".to_string();
+    }
+    format!("{:.2}", mm2 / 1.0e6).replace('.', ",")
+}
+
 impl std::fmt::Display for Unit {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "{}", self.short())

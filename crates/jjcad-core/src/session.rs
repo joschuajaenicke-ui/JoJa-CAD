@@ -185,6 +185,15 @@ impl Session {
                     map.insert(key, val);
                 }
             }
+            // Fläche nur bei Objekten, die etwas umschließen — ein offener
+            // Linienzug bekommt kein Feld (und keinen 0-Wert).
+            if let Some(mm2) = crate::area::entity_area(e) {
+                map.insert(
+                    "area_m2".to_string(),
+                    json!(crate::units::format_area_m2(mm2)),
+                );
+                map.insert("area_mm2".to_string(), json!(mm2));
+            }
         }
         base
     }

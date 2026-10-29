@@ -11,10 +11,52 @@
 //!   Polygon trianguliert (egui kennt keine Löcher; siehe [`bridge_holes`]).
 
 use crate::geom::*;
+use crate::model::{Entity, EntityKind};
 
 /// Liegt der Punkt in der gefüllten Fläche? Löcher zählen als außen.
 pub fn point_in_area(p: Vec2, outer: &[Vec2], holes: &[Vec<Vec2>]) -> bool {
     point_in_polygon(p, outer) && !holes.iter().any(|h| point_in_polygon(p, h))
+}
+
+/// Fläche eines Objekts in mm² — `None`, wenn das Objekt nichts umschließt.
+///
+/// Eine Quelle für Anzeige (Eigenschaften-Panel) **und** Abfrage
+/// (`Session::describe_entity`, Aktion `select.area`): sonst rechnen Panel und
+/// MCP die Fläche getrennt und laufen auseinander. Offene Linienzüge, Texte,
+/// Maße und Bögen umschließen nichts und liefern `None` — nicht 0.
+pub fn entity_area(e: &Entity) -> Option<f64> {
+    let mm2 = match &e.kind {
+        EntityKind::Circle { r, .. } => std::f64::consts::PI * r * r,
+        EntityKind::Ellipse { rx, ry, .. } => std::f64::consts::PI * rx * ry,
+        EntityKind::Polyline { verts, closed } if *closed && verts.len() > 2 => {
+            let pl = crate::geom::Polyline {
+                verts: verts.clone(),
+                closed: true,
+            };
+            pl.area().abs()
+        }
+        EntityKind::Spline { verts, closed } if *closed && verts.len() > 2 => {
+            let sp = crate::geom::Spline {
+                verts: verts.clone(),
+                closed: true,
+            };
+            sp.area().abs()
+        }
+        EntityKind::Fill { boundary, holes, .. }
+        | EntityKind::Volume { boundary, holes, .. } => area_of(boundary, holes),
+        // Wandkörper: Länge × Dicke (Öffnungen zählen nicht ab, die Wand ist
+        // der Körper selbst).
+        EntityKind::Wall {
+            a, b, thickness, ..
+        } => a.dist(*b) * thickness.abs(),
+        _ => 0.0,
+    };
+    // 1 µm² — alles darunter ist entartet und keine Fläche.
+    if mm2.is_finite() && mm2 > 1e-6 {
+        Some(mm2)
+    } else {
+        None
+    }
 }
 
 /// Fläche in mm² (Außenring minus Löcher).

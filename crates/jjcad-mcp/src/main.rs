@@ -176,7 +176,7 @@ fn tool_list() -> Value {
         },
         {
             "name": "jjcad_query",
-            "description": "Fragt Objekte ab: alle, nach IDs, Layer, Typ oder Bereich. Liefert Typ, Layer, Farbe und typspezifische Parameter.",
+            "description": "Fragt Objekte ab: alle, nach IDs, Layer, Typ oder Bereich. Liefert Typ, Layer, Farbe, typspezifische Parameter und bei geschlossenen Objekten die Fläche area_m2 (m², deutsches Komma).",
             "inputSchema": {
                 "type": "object",
                 "properties": {

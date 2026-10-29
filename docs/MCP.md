@@ -39,7 +39,7 @@ Logs gehen ausschließlich nach **stderr** — stdout bleibt dem Protokoll vorbe
 | `jjcad_document` | `new`, `open`, `save`, `save_as`, `info`, `list`, `close`, `units` |
 | `jjcad_execute` | Eine Aktion ausführen (IDs siehe `jjcad_actions`) |
 | `jjcad_batch` | Viele Aktionen in einem Aufruf (mit Fehlerkontext) |
-| `jjcad_query` | Objekte nach ID, Layer, Typ oder Bereich abfragen |
+| `jjcad_query` | Objekte nach ID, Layer, Typ oder Bereich abfragen; geschlossene Objekte tragen `area_m2` |
 | `jjcad_export` | PDF, DXF oder PNG schreiben |
 | `jjcad_render` | PNG als **Bildinhalt** zurückgeben (visuelles Feedback) |
 | `jjcad_undo` / `jjcad_redo` | Historie |
@@ -48,6 +48,13 @@ Logs gehen ausschließlich nach **stderr** — stdout bleibt dem Protokoll vorbe
 
 Mehrere Dokumente werden über den optionalen Parameter `doc` (Name aus
 `jjcad_document list`) adressiert.
+
+**Flächen:** `jjcad_query` liefert bei geschlossenen Objekten (Polylinie/Rechteck,
+Kreis, Ellipse, geschlossene Füllfläche/Volumen, Wandkörper) `area_m2` als
+deutsche Zahl mit zwei Nachkommastellen (`"12,00"`) und `area_mm2`; offene
+Linienzüge, Texte und Maße tragen das Feld nicht. Für Raumgruppen summiert
+`jjcad_execute {"action":"select.area","params":{"ids":[…]}}` die Flächen
+(`sum_m2`) und nennt Objekte ohne Fläche in `without_area`.
 
 ## Typischer Ablauf
 
