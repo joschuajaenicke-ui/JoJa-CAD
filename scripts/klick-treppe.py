@@ -196,7 +196,7 @@ def main() -> int:
         time.sleep(0.8)
         schuss(f"{ziel}/treppe_auswahl.png", wid)
         # Knopf „Beschriftung erzeugen" im Eigenschaften-Panel
-        klick(1354, 826, wid)
+        klick(1354, 804, wid)
         time.sleep(0.8)
         schuss(f"{ziel}/treppe_beschriftet.png", wid)
         # Rechte Längskante nach rechts ziehen: nur diese Kante wandert
