@@ -1,7 +1,7 @@
 //! Kleine, wiederverwendbare UI-Bausteine im JoJa-CAD-Look.
 
 use crate::icons;
-use jjcad_core::model::{TextAlignH, TextAlignV};
+use jjcad_core::model::{TextAlignH, TextAlignV, TextFont};
 use crate::theme::Palette;
 use egui::{Shape, 
     Align2, Color32, FontId, Pos2, Rect, Response, Rounding, Sense, Stroke, Ui, Vec2,
@@ -608,6 +608,40 @@ pub fn window_frame() -> egui::Frame {
 pub fn flexible_number(s: &str) -> Option<f64> {
     let t = s.trim().replace(' ', "").replace(',', ".");
     t.parse::<f64>().ok()
+}
+
+/// Auswahl der Schriftart für Texte.
+///
+/// Nur Familien, die auf diesem Rechner vorhanden sind, stehen zur Wahl —
+/// mitgeliefert wird keine Schriftdatei, damit das Programm klein bleibt.
+/// Reihenfolge und Bezeichnung kommen aus dem Kern (`TextFont`).
+pub fn schrift_wahl(ui: &mut Ui, id: &str, font: &mut TextFont) -> bool {
+    let mut geaendert = false;
+    egui::ComboBox::from_id_salt(id)
+        .selected_text(font.label())
+        .width(ui.available_width().min(160.0))
+        .show_ui(ui, |ui| {
+            for f in TextFont::ALL {
+                let da = jjcad_core::fonts::verfuegbar(f);
+                if !da && f != *font {
+                    continue;
+                }
+                let text = if da {
+                    f.label().to_string()
+                } else {
+                    format!("{} — nicht installiert", f.label())
+                };
+                if ui
+                    .selectable_label(*font == f, text)
+                    .clicked()
+                    && *font != f
+                {
+                    *font = f;
+                    geaendert = true;
+                }
+            }
+        });
+    geaendert
 }
 
 #[cfg(test)]

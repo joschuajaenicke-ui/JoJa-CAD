@@ -455,7 +455,7 @@ pub(crate) fn text_galley(
 ) -> std::sync::Arc<egui::Galley> {
     let size = (t.height * scale * 1.32).max(3.0) as f32;
     let runs = t.effective_runs();
-    let mut job = auszeichnungs_job(&runs, size, col);
+    let mut job = auszeichnungs_job(p.ctx(), &runs, size, col, t.font);
     job.halign = halign(t.align);
     p.layout_job(job)
 }
@@ -466,19 +466,17 @@ pub(crate) fn text_galley(
 /// Wird von der Zeichenfläche, dem Textfeld im Eigenschaften-Panel und dem
 /// Editor in der Zeichnung benutzt: überall sieht der Text damit gleich aus.
 pub(crate) fn auszeichnungs_job(
+    ctx: &egui::Context,
     runs: &[jjcad_core::model::TextRun],
     size: f32,
     col: Color32,
+    font: jjcad_core::model::TextFont,
 ) -> egui::text::LayoutJob {
     let mut job = egui::text::LayoutJob::default();
     for r in runs {
         // Hochstellung: kleinere Schrift am Zeilenkopf statt auf der Grundlinie.
         let r_size = if r.superscript { size * 0.7 } else { size };
-        let family = if r.bold {
-            FontFamily::Name("bold".into())
-        } else {
-            FontFamily::Proportional
-        };
+        let family = schrift_familie(ctx, font, r.bold);
         let fmt = egui::TextFormat {
             font_id: FontId::new(r_size.max(2.0), family),
             color: col,
@@ -498,6 +496,34 @@ pub(crate) fn auszeichnungs_job(
         job.append(&r.text, 0.0, fmt);
     }
     job
+}
+
+/// egui-Familie zu Schriftart und Schnitt.
+///
+/// Die Familien werden in `theme` aus denselben Systemschriften angelegt, aus
+/// denen auch Raster und PDF zeichnen — sonst zeigte die Zeichenfläche etwas
+/// anderes als der Ausdruck.
+pub(crate) fn schrift_familie(
+    ctx: &egui::Context,
+    font: jjcad_core::model::TextFont,
+    bold: bool,
+) -> FontFamily {
+    let name = if bold {
+        format!("schrift_{}_fett", font.key())
+    } else {
+        format!("schrift_{}", font.key())
+    };
+    let familie = FontFamily::Name(name.into());
+    // Vor `theme::install` (und in Tests mit nacktem Kontext) ist die Familie
+    // nicht angemeldet — dann die Standardschrift, statt in egui abzustürzen.
+    let bekannt = ctx.fonts(|f| f.families().contains(&familie));
+    if bekannt {
+        familie
+    } else if bold {
+        FontFamily::Name("bold".into())
+    } else {
+        FontFamily::Proportional
+    }
 }
 
 /// Senkrechter Versatz des Textkastens gegenüber dem Anker (Bildschirm-px,
@@ -540,6 +566,7 @@ pub(crate) fn text_preview_prim(
         align,
         valign,
         jjcad_core::text::RunStyle::default(),
+        jjcad_core::model::TextFont::default(),
     )
 }
 
@@ -550,6 +577,7 @@ pub(crate) fn text_preview_prim_mit(
     align: TextAlignH,
     valign: TextAlignV,
     stil: jjcad_core::text::RunStyle,
+    font: jjcad_core::model::TextFont,
 ) -> render::TextPrim {
     let runs = if stil.plain() {
         Vec::new()
@@ -574,6 +602,7 @@ pub(crate) fn text_preview_prim_mit(
         italic: false,
         underline: false,
         superscript: false,
+        font,
     }
 }
 
@@ -2092,6 +2121,7 @@ fn draw_tool_preview(
                     app.options.text_align,
                     app.options.text_valign,
                     stil,
+                    app.options.text_font,
                 ),
                 w2s(cursor),
                 view.zoom,
@@ -7211,6 +7241,7 @@ mod tests_textausrichtung {
                 underline: false,
                 superscript: false,
                 runs: Vec::new(),
+                font: jjcad_core::model::TextFont::default(),
             };
             let g = text_galley(&p, &t, 1.0, Color32::WHITE);
             let (pos, _) = text_ort(&t, &g, BASIS, 0.0);

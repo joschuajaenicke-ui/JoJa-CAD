@@ -81,6 +81,7 @@ fn dokument_mit_laeufen() -> Document {
             underline: false,
             superscript: false,
             runs,
+            font: Default::default(),
         },
     );
     doc.add_entity(e);
@@ -117,7 +118,7 @@ fn satz_mischt_schnitte_und_hoehen() {
 
 /// Breite eines Textes in Em für einen Schnitt.
 fn text_breite(s: &str, st: jjcad_core::fonts::FontStyle) -> f64 {
-    jjcad_core::fonts::advance_em_str(st, s)
+    jjcad_core::fonts::advance_em_str(jjcad_core::model::TextFont::Sans, st, s)
 }
 
 #[test]
@@ -189,6 +190,7 @@ fn alter_text_ohne_laeufe_bleibt_lesbar() {
             underline: false,
             superscript: false,
             runs: Vec::new(),
+            font: Default::default(),
         },
     ));
     let pfad = ziel("jjcad-text-alt.pdf");

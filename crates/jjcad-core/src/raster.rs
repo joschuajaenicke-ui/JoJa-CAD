@@ -130,7 +130,7 @@ fn draw_text(pm: &mut Pixmap, t: &crate::render::TextPrim, prim: &Prim, map: &Ma
             if seg.text.is_empty() {
                 continue;
             }
-            let Some(data) = crate::fonts::ttf_bytes(seg.style) else {
+            let Some(data) = crate::fonts::ttf_bytes(t.font, seg.style) else {
                 continue;
             };
             let Ok(font) = FontRef::try_from_slice(data) else {
@@ -442,5 +442,5 @@ pub fn block_thumbnail(doc: &Document, block: &BlockDef, px: u32) -> Result<Vec<
 
 /// Prüft, ob Text rendern möglich ist (Schrift gefunden).
 pub fn has_font() -> bool {
-    crate::fonts::ttf_bytes(crate::fonts::FontStyle::Regular).is_some()
+    crate::fonts::ttf_bytes(crate::model::TextFont::Sans, crate::fonts::FontStyle::Regular).is_some()
 }

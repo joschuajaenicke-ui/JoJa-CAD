@@ -1,19 +1,25 @@
-//! Schriften: die eine Stelle, an der Schriftschnitte gefunden und vermessen
-//! werden.
+//! Schriften: die eine Stelle, an der Schriftfamilien und -schnitte gefunden
+//! und vermessen werden.
 //!
 //! Anzeige (`raster`), PDF-Schreiber und PDF-Import müssen dieselben Vorschübe
 //! benutzen, sonst sitzt Text in der einen Ausgabe anders als in der anderen.
 //! Deshalb liegt die Auswahl der Dateien und die Vermessung hier zentral.
 //!
-//! Bevorzugt wird die Familie **Liberation Sans**: sie ist metrisch identisch
-//! mit Helvetica und Arial, also passen alte Ausgaben (Helvetica) und neue
-//! (eingebettete Schrift) zusammen.
+//! **Keine Schriftdateien im Programm:** alle Familien werden zur Laufzeit aus
+//! dem System geladen. Das hält die Programmdatei klein; in ein PDF kommt nur
+//! die Schrift, die der Plan tatsächlich benutzt.
+//!
+//! Bevorzugt wird die Familie **Liberation**, weil sie metrisch identisch mit
+//! Helvetica/Arial/Times/Courier ist: alte Ausgaben (Helvetica) und neue
+//! (eingebettete Schrift) passen zusammen.
 
+use crate::model::TextFont;
 use ab_glyph::{Font, FontRef, GlyphId, ScaleFont};
-use std::sync::OnceLock;
+use std::collections::HashMap;
+use std::sync::{Mutex, OnceLock};
 
 /// Schriftschnitt eines Textlaufs.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum FontStyle {
     Regular,
     Bold,
@@ -47,138 +53,176 @@ impl FontStyle {
         }
     }
 
-    /// PostScript-Name, wie er im PDF als `/BaseFont` steht.
-    pub fn ps_name(self) -> &'static str {
+    pub fn suffix(self) -> &'static str {
         match self {
-            FontStyle::Regular => "LiberationSans",
-            FontStyle::Bold => "LiberationSans-Bold",
-            FontStyle::Italic => "LiberationSans-Italic",
-            FontStyle::BoldItalic => "LiberationSans-BoldItalic",
-        }
-    }
-
-    /// Suchpfade, in Reihenfolge. Die erste vorhandene Datei gewinnt.
-    fn candidates(self) -> &'static [&'static str] {
-        match self {
-            FontStyle::Regular => &[
-                "/usr/share/fonts/truetype/liberation/LiberationSans-Regular.ttf",
-                "/usr/share/fonts/liberation-sans/LiberationSans-Regular.ttf",
-                "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
-                "/usr/share/fonts/TTF/DejaVuSans.ttf",
-                "/usr/share/fonts/truetype/noto/NotoSans-Regular.ttf",
-                "C:\\Windows\\Fonts\\arial.ttf",
-                "/Library/Fonts/Arial.ttf",
-            ],
-            FontStyle::Bold => &[
-                "/usr/share/fonts/truetype/liberation/LiberationSans-Bold.ttf",
-                "/usr/share/fonts/liberation-sans/LiberationSans-Bold.ttf",
-                "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf",
-                "/usr/share/fonts/TTF/DejaVuSans-Bold.ttf",
-                "/usr/share/fonts/truetype/noto/NotoSans-Bold.ttf",
-                "C:\\Windows\\Fonts\\arialbd.ttf",
-                "/Library/Fonts/Arial Bold.ttf",
-            ],
-            FontStyle::Italic => &[
-                "/usr/share/fonts/truetype/liberation/LiberationSans-Italic.ttf",
-                "/usr/share/fonts/liberation-sans/LiberationSans-Italic.ttf",
-                "/usr/share/fonts/truetype/dejavu/DejaVuSans-Oblique.ttf",
-                "/usr/share/fonts/TTF/DejaVuSans-Oblique.ttf",
-                "/usr/share/fonts/truetype/noto/NotoSans-Italic.ttf",
-                "C:\\Windows\\Fonts\\ariali.ttf",
-                "/Library/Fonts/Arial Italic.ttf",
-            ],
-            FontStyle::BoldItalic => &[
-                "/usr/share/fonts/truetype/liberation/LiberationSans-BoldItalic.ttf",
-                "/usr/share/fonts/liberation-sans/LiberationSans-BoldItalic.ttf",
-                "/usr/share/fonts/truetype/dejavu/DejaVuSans-BoldOblique.ttf",
-                "/usr/share/fonts/TTF/DejaVuSans-BoldOblique.ttf",
-                "/usr/share/fonts/truetype/noto/NotoSans-BoldItalic.ttf",
-                "C:\\Windows\\Fonts\\arialbi.ttf",
-                "/Library/Fonts/Arial Bold Italic.ttf",
-            ],
+            FontStyle::Regular => "",
+            FontStyle::Bold => "-Bold",
+            FontStyle::Italic => "-Italic",
+            FontStyle::BoldItalic => "-BoldItalic",
         }
     }
 }
 
-/// Gelesene Schriftdatei — einmal je Schnitt, danach aus dem Zwischenspeicher.
+/// Dateinamen (ohne Endung) einer Familie je Schnitt, in Vorzugsreihenfolge.
+fn bases(font: TextFont) -> &'static [(&'static str, [&'static str; 4])] {
+    match font {
+        TextFont::Sans => &[
+            ("LiberationSans", ["-Regular", "-Bold", "-Italic", "-BoldItalic"]),
+            ("DejaVuSans", ["", "-Bold", "-Oblique", "-BoldOblique"]),
+            ("NotoSans", ["-Regular", "-Bold", "-Italic", "-BoldItalic"]),
+            ("FreeSans", ["", "-Bold", "-Oblique", "-BoldOblique"]),
+        ],
+        TextFont::Serif => &[
+            ("LiberationSerif", ["-Regular", "-Bold", "-Italic", "-BoldItalic"]),
+            ("DejaVuSerif", ["", "-Bold", "-Italic", "-BoldItalic"]),
+            ("NimbusRoman", ["", "-Bold", "-Italic", "-BoldItalic"]),
+            ("FreeSerif", ["", "-Bold", "-Italic", "-BoldItalic"]),
+        ],
+        TextFont::Mono => &[
+            ("LiberationMono", ["-Regular", "-Bold", "-Italic", "-BoldItalic"]),
+            ("DejaVuSansMono", ["", "-Bold", "-Oblique", "-BoldOblique"]),
+            ("NimbusMonoPS", ["", "-Bold", "-Italic", "-BoldItalic"]),
+            ("FreeMono", ["", "-Bold", "-Oblique", "-BoldOblique"]),
+        ],
+        TextFont::Narrow => &[
+            ("LiberationSansNarrow", ["-Regular", "-Bold", "-Italic", "-BoldItalic"]),
+            ("NimbusSansNarrow", ["", "-Bold", "-Italic", "-BoldItalic"]),
+            ("LiberationSans", ["-Regular", "-Bold", "-Italic", "-BoldItalic"]),
+        ],
+        TextFont::Rund => &[
+            // Quicksand hat nur Regular/Bold — kursiv gibt es nicht; dann wird
+            // der Grundschnitt genommen (Lage bleibt, die Schräge fehlt).
+            ("Quicksand", ["-Regular", "-Bold", "-Regular", "-Bold"]),
+        ],
+    }
+}
+
+/// Suchpfade für eine Familie und einen Schnitt — mit Rückfall auf den
+/// Grundschnitt, falls es den Schnitt nicht gibt.
+fn candidates(font: TextFont, style: FontStyle) -> Vec<String> {
+    const DIRS: [&str; 9] = [
+        "/usr/share/fonts/truetype/liberation/",
+        "/usr/share/fonts/liberation-sans/",
+        "/usr/share/fonts/truetype/quicksand/",
+        "/usr/share/fonts/truetype/dejavu/",
+        "/usr/share/fonts/TTF/",
+        "/usr/share/fonts/truetype/noto/",
+        "/usr/share/fonts/freefont/",
+        "C:\\Windows\\Fonts\\",
+        "/Library/Fonts/",
+    ];
+    let b = bases(font);
+    let mut namen: Vec<String> = b
+        .iter()
+        .map(|(base, suf)| format!("{base}{}", suf[style.index()]))
+        .collect();
+    // Manche Systeme nennen den Grundschnitt ohne Zusatz (`arial.ttf`).
+    if style == FontStyle::Regular {
+        for (base, suf) in b {
+            let mit = format!("{base}{}", suf[0]);
+            if mit.ends_with("-Regular") {
+                namen.push(mit.replace("-Regular", ""));
+            }
+        }
+    }
+    // Grundschnitt derselben Familie, dann Sans als letzter Rückfall.
+    for (base, suf) in b {
+        namen.push(format!("{base}{}", suf[0]));
+    }
+    if font != TextFont::Sans {
+        namen.push("LiberationSans".into());
+        namen.push("DejaVuSans".into());
+    }
+    let mut pfade = Vec::with_capacity(namen.len() * DIRS.len());
+    for n in namen {
+        for d in DIRS {
+            pfade.push(format!("{d}{n}.ttf"));
+        }
+    }
+    pfade
+}
+
+/// Gelesene Schriftdatei — einmal je Familie und Schnitt.
 struct Loaded {
     data: Vec<u8>,
     info: TtfInfo,
+    /// Dateiname ohne Endung — steht im PDF als `/BaseFont`.
+    ps_name: String,
 }
 
-static CACHE: OnceLock<[Option<Loaded>; 4]> = OnceLock::new();
+static CACHE: OnceLock<Mutex<HashMap<usize, Option<&'static Loaded>>>> = OnceLock::new();
 
-fn cache() -> &'static [Option<Loaded>; 4] {
-    CACHE.get_or_init(|| {
-        let lade = |st: FontStyle| -> Option<Loaded> {
-            for p in st.candidates() {
-                if let Ok(data) = std::fs::read(p) {
-                    if let Ok(info) = TtfInfo::parse(&data) {
-                        return Some(Loaded { data, info });
-                    }
-                }
-            }
-            // Notfall: irgendeine Sans-Schrift im Standardsystem.
-            for dir in [
-                "/usr/share/fonts/truetype/liberation",
-                "/usr/share/fonts/truetype/dejavu",
-            ] {
-                let Ok(entries) = std::fs::read_dir(dir) else {
-                    continue;
-                };
-                for e in entries.flatten() {
-                    let fp = e.path();
-                    let Some(name) = fp.file_name().and_then(|n| n.to_str()) else {
-                        continue;
-                    };
-                    let passt = match st {
-                        FontStyle::Regular => name.contains("Regular") || name == "DejaVuSans.ttf",
-                        FontStyle::Bold => name.contains("Bold") && !name.contains("Italic"),
-                        FontStyle::Italic => name.contains("Italic") || name.contains("Oblique"),
-                        FontStyle::BoldItalic => {
-                            name.contains("Bold") && (name.contains("Italic") || name.contains("Oblique"))
-                        }
-                    };
-                    if passt && name.ends_with(".ttf") {
-                        if let Ok(data) = std::fs::read(&fp) {
-                            if let Ok(info) = TtfInfo::parse(&data) {
-                                return Some(Loaded { data, info });
-                            }
-                        }
-                    }
-                }
-            }
-            None
-        };
-        [
-            lade(FontStyle::Regular),
-            lade(FontStyle::Bold),
-            lade(FontStyle::Italic),
-            lade(FontStyle::BoldItalic),
-        ]
-    })
+fn schluessel(font: TextFont, style: FontStyle) -> usize {
+    font.index() * 4 + style.index()
 }
 
-/// Rohdaten der Schriftdatei (TrueType) für den gewählten Schnitt.
-pub fn ttf_bytes(style: FontStyle) -> Option<&'static [u8]> {
-    cache()[style.index()].as_ref().map(|l| l.data.as_slice())
+/// Lädt (einmalig) und behält die Schrift im Speicher.
+fn lade(font: TextFont, style: FontStyle) -> Option<&'static Loaded> {
+    let cache = CACHE.get_or_init(|| Mutex::new(HashMap::new()));
+    let key = schluessel(font, style);
+    if let Ok(m) = cache.lock() {
+        if let Some(v) = m.get(&key) {
+            return *v;
+        }
+    }
+    let geladen = candidates(font, style)
+        .into_iter()
+        .find_map(|pfad| {
+            let data = std::fs::read(&pfad).ok()?;
+            let info = TtfInfo::parse(&data).ok()?;
+            let ps_name = std::path::Path::new(&pfad)
+                .file_stem()
+                .map(|s| s.to_string_lossy().replace(' ', ""))
+                .unwrap_or_else(|| "Schrift".into());
+            Some(Loaded {
+                data,
+                info,
+                ps_name,
+            })
+        })
+        .map(|l| &*Box::leak(Box::new(l)));
+    if let Ok(mut m) = cache.lock() {
+        m.insert(key, geladen);
+    }
+    geladen
+}
+
+/// Rohdaten der Schriftdatei für Familie und Schnitt.
+pub fn ttf_bytes(font: TextFont, style: FontStyle) -> Option<&'static [u8]> {
+    lade(font, style).map(|l| l.data.as_slice())
 }
 
 /// Kennwerte der Schriftdatei (Einheiten, Rahmen, Auf-/Abstieg).
-pub fn ttf_info(style: FontStyle) -> Option<&'static TtfInfo> {
-    cache()[style.index()].as_ref().map(|l| &l.info)
+pub fn ttf_info(font: TextFont, style: FontStyle) -> Option<&'static TtfInfo> {
+    lade(font, style).map(|l| &l.info)
+}
+
+/// PostScript-Name der geladenen Datei (für `/BaseFont` im PDF).
+pub fn ps_name(font: TextFont, style: FontStyle) -> String {
+    lade(font, style)
+        .map(|l| l.ps_name.clone())
+        .unwrap_or_else(|| format!("{}{}", font.key(), style.suffix()))
+}
+
+/// Ist diese Familie auf diesem Rechner vorhanden?
+pub fn verfuegbar(font: TextFont) -> bool {
+    ttf_bytes(font, FontStyle::Regular).is_some()
 }
 
 /// Arbeitet mit der geladenen Schrift (Vermessung, Glyphennummern).
-pub fn with_font<R>(style: FontStyle, f: impl FnOnce(&FontRef<'_>) -> R) -> Option<R> {
-    let data = ttf_bytes(style)?;
-    let font = FontRef::try_from_slice(data).ok()?;
-    Some(f(&font))
+pub fn with_font<R>(
+    font: TextFont,
+    style: FontStyle,
+    f: impl FnOnce(&FontRef<'_>) -> R,
+) -> Option<R> {
+    let data = ttf_bytes(font, style)?;
+    let fref = FontRef::try_from_slice(data).ok()?;
+    Some(f(&fref))
 }
 
 /// Vorschub eines Zeichens in Em (1.0 = Schrifthöhe).
-pub fn advance_em(style: FontStyle, c: char) -> f64 {
-    with_font(style, |f| {
+pub fn advance_em(font: TextFont, style: FontStyle, c: char) -> f64 {
+    with_font(font, style, |f| {
         let upem = f.units_per_em().unwrap_or(1000.0) as f64;
         let adv = f.as_scaled(upem as f32).h_advance(f.glyph_id(c)) as f64;
         adv / upem
@@ -187,8 +231,8 @@ pub fn advance_em(style: FontStyle, c: char) -> f64 {
 }
 
 /// Summe der Vorschübe eines Textes in Em.
-pub fn advance_em_str(style: FontStyle, s: &str) -> f64 {
-    with_font(style, |f| {
+pub fn advance_em_str(font: TextFont, style: FontStyle, s: &str) -> f64 {
+    with_font(font, style, |f| {
         let upem = f.units_per_em().unwrap_or(1000.0) as f64;
         let scaled = f.as_scaled(upem as f32);
         s.chars()
@@ -199,8 +243,8 @@ pub fn advance_em_str(style: FontStyle, s: &str) -> f64 {
 }
 
 /// Glyphennummer im Font (für Identity-H-Sätze im PDF).
-pub fn glyph_id(style: FontStyle, c: char) -> u16 {
-    with_font(style, |f| f.glyph_id(c).0).unwrap_or(0)
+pub fn glyph_id(font: TextFont, style: FontStyle, c: char) -> u16 {
+    with_font(font, style, |f| f.glyph_id(c).0).unwrap_or(0)
 }
 
 /// Kennwerte aus dem TrueType-Kopf — ohne zusätzliche Abhängigkeit gelesen.
@@ -236,7 +280,12 @@ impl TtfInfo {
                 break;
             }
             let tag = &data[off..off + 4];
-            let table_off = u32::from_be_bytes([data[off + 8], data[off + 9], data[off + 10], data[off + 11]]) as usize;
+            let table_off = u32::from_be_bytes([
+                data[off + 8],
+                data[off + 9],
+                data[off + 10],
+                data[off + 11],
+            ]) as usize;
             match tag {
                 b"head" => head = Some(table_off),
                 b"OS/2" => os2 = Some(table_off),
@@ -244,6 +293,7 @@ impl TtfInfo {
                 _ => {}
             }
         }
+        // Ohne `head` ist es keine TrueType-Datei (z. B. CFF/OTF) — nicht nehmen.
         let Some(h) = head else {
             return Err("Schrift ohne 'head'-Tabelle".into());
         };
@@ -306,3 +356,21 @@ pub fn font_from_bytes(data: &[u8]) -> Option<FontRef<'_>> {
 pub fn glyph_id_in(font: &FontRef<'_>, c: char) -> GlyphId {
     font.glyph_id(c)
 }
+
+/// Familie aus einem PDF-Schriftnamen raten (`LiberationSerif`,
+/// `Quicksand-Bold`, `Courier` …). Der Import kennt die Schrift nicht anders.
+pub fn font_from_ps_name(name: &str) -> TextFont {
+    let n = name.to_lowercase();
+    if n.contains("quicksand") {
+        TextFont::Rund
+    } else if n.contains("narrow") {
+        TextFont::Narrow
+    } else if n.contains("mono") || n.contains("courier") {
+        TextFont::Mono
+    } else if n.contains("serif") || n.contains("times") || n.contains("roman") {
+        TextFont::Serif
+    } else {
+        TextFont::Sans
+    }
+}
+

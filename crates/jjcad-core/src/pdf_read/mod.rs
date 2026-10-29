@@ -235,7 +235,11 @@ fn unterstreichungen_zuordnen(entities: &mut Vec<ImportedEntity>) {
         let mut getroffen = false;
         for e in entities.iter_mut() {
             let EntityKind::Text {
-                p, height, runs, ..
+                p,
+                height,
+                runs,
+                font,
+                ..
             } = &mut e.kind
             else {
                 continue;
@@ -261,7 +265,8 @@ fn unterstreichungen_zuordnen(entities: &mut Vec<ImportedEntity>) {
                     1.0
                 };
                 let style = crate::fonts::FontStyle::from_flags(r.bold, r.italic);
-                let w = crate::fonts::advance_em_str(style, &r.text) * h * scale;
+                let font = *font;
+                let w = crate::fonts::advance_em_str(font, style, &r.text) * h * scale;
                 let (x0, x1) = (x, x + w);
                 let ueberlappung = bb.max.x.min(x1) - bb.min.x.max(x0);
                 if ueberlappung > w * 0.4 && ueberlappung > 0.0 {

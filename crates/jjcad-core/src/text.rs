@@ -9,7 +9,7 @@
 //! unabhängig.
 
 use crate::fonts::{self, FontStyle};
-use crate::model::TextRun;
+use crate::model::{TextFont, TextRun};
 
 /// Aufschlag einer Hochstellung in Em über der Grundlinie.
 pub const SCRIPT_RISE_EM: f64 = 0.30;
@@ -44,8 +44,8 @@ pub struct Line {
 
 impl Line {
     /// Breite eines Stücks in Em (ohne Berücksichtigung des Größenfaktors).
-    pub fn seg_width_em(seg: &Seg) -> f64 {
-        fonts::advance_em_str(seg.style, &seg.text) * seg.scale
+    pub fn seg_width_em(seg: &Seg, font: TextFont) -> f64 {
+        fonts::advance_em_str(font, seg.style, &seg.text) * seg.scale
     }
 }
 
@@ -54,6 +54,12 @@ impl Line {
 /// `runs` darf leer sein — dann gilt der ganze `text` als ein Lauf; `bold`
 /// kommt in dem Fall vom Objekt (Altbestand ohne Läufe).
 pub fn layout(text: &str, runs: &[TextRun]) -> Vec<Line> {
+    layout_mit_schrift(text, runs, TextFont::Sans)
+}
+
+/// Wie [`layout`], aber mit der Schriftart des Textes: die Vorschübe hängen an
+/// der Familie (Serifen, nichtproportional, schmal sind breiter/anders).
+pub fn layout_mit_schrift(text: &str, runs: &[TextRun], font: TextFont) -> Vec<Line> {
     let mut lines: Vec<Line> = vec![Line::default()];
     let mut any = false;
     let mut push_run = |run: &TextRun, lines: &mut Vec<Line>| {
@@ -77,7 +83,7 @@ pub fn layout(text: &str, runs: &[TextRun]) -> Vec<Line> {
                 rise_em: rise,
                 scale,
             };
-            let w = Line::seg_width_em(&seg);
+            let w = Line::seg_width_em(&seg, font);
             if let Some(line) = lines.last_mut() {
                 line.width_em += w;
                 // Gleichartige Nachbarn zusammenfassen (weniger Stücke im PDF).
@@ -114,7 +120,12 @@ pub fn layout(text: &str, runs: &[TextRun]) -> Vec<Line> {
 
 /// Gesamtbreite eines Textes in Em (längste Zeile).
 pub fn width_em(text: &str, runs: &[TextRun]) -> f64 {
-    layout(text, runs)
+    width_em_mit_schrift(text, runs, TextFont::Sans)
+}
+
+/// Wie [`width_em`], mit Schriftart.
+pub fn width_em_mit_schrift(text: &str, runs: &[TextRun], font: TextFont) -> f64 {
+    layout_mit_schrift(text, runs, font)
         .iter()
         .map(|l| l.width_em)
         .fold(0.0, f64::max)

@@ -107,6 +107,96 @@ impl DoorKind {
     }
 }
 
+/// Schriftart eines Textes.
+///
+/// Es werden **keine** Schriftdateien mitgeliefert: alle Familien kommen aus
+/// dem System (Liberation/Quicksand). Das hält das Programm klein — der
+/// PDF-Export bettet nur die tatsächlich benutzte Schrift ein.
+///
+/// `explodierbar` ist eine Eigenschaft der Familie: konturierte Gebrauchs-
+/// schriften lassen sich sauber in Linien zerlegen, runde Zierschriften
+/// ergeben dabei sehr viele kleine Striche und sind deshalb ausgenommen.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
+pub enum TextFont {
+    /// Serifenlos (Liberation Sans) — metrisch wie Helvetica
+    #[default]
+    #[serde(rename = "sans")]
+    Sans,
+    /// Serifen (Liberation Serif)
+    #[serde(rename = "serif")]
+    Serif,
+    /// Nichtproportional (Liberation Mono)
+    #[serde(rename = "mono")]
+    Mono,
+    /// Schmal (Liberation Sans Narrow)
+    #[serde(rename = "narrow")]
+    Narrow,
+    /// Runde Zierschrift (Quicksand) — wird **nicht** in Linien zerlegt
+    #[serde(rename = "rund")]
+    Rund,
+}
+
+impl TextFont {
+    pub const ALL: [TextFont; 5] = [
+        TextFont::Sans,
+        TextFont::Serif,
+        TextFont::Mono,
+        TextFont::Narrow,
+        TextFont::Rund,
+    ];
+
+    pub fn label(self) -> &'static str {
+        match self {
+            TextFont::Sans => "Serifenlos",
+            TextFont::Serif => "Serifen",
+            TextFont::Mono => "Nichtproportional",
+            TextFont::Narrow => "Schmal",
+            TextFont::Rund => "Rund",
+        }
+    }
+
+    pub fn key(self) -> &'static str {
+        match self {
+            TextFont::Sans => "sans",
+            TextFont::Serif => "serif",
+            TextFont::Mono => "mono",
+            TextFont::Narrow => "narrow",
+            TextFont::Rund => "rund",
+        }
+    }
+
+    pub fn from_key(s: &str) -> Option<TextFont> {
+        TextFont::ALL
+            .into_iter()
+            .find(|f| f.key().eq_ignore_ascii_case(s))
+    }
+
+    pub fn index(self) -> usize {
+        match self {
+            TextFont::Sans => 0,
+            TextFont::Serif => 1,
+            TextFont::Mono => 2,
+            TextFont::Narrow => 3,
+            TextFont::Rund => 4,
+        }
+    }
+
+    /// Lässt sich Text dieser Schrift in Linien zerlegen?
+    pub fn explodierbar(self) -> bool {
+        !matches!(self, TextFont::Rund)
+    }
+
+    /// Kurze Begründung für die Oberfläche.
+    pub fn explode_hinweis(self) -> &'static str {
+        match self {
+            TextFont::Rund => {
+                "Runde Zierschrift — Zerlegen ergäbe sehr viele kleine Linien"
+            }
+            _ => "lässt sich in Linien zerlegen",
+        }
+    }
+}
+
 /// Ein Lauf innerhalb eines Textes: ein Stück Text mit eigener Formatierung.
 ///
 /// Mehrere Läufe in einem Objekt ergeben gemischte Auszeichnung (z. B.
@@ -307,6 +397,9 @@ pub enum EntityKind {
         /// Gemischte Auszeichnung. Leer = die Felder oben gelten für alles.
         #[serde(default, skip_serializing_if = "Vec::is_empty")]
         runs: Vec<TextRun>,
+        /// Schriftart des ganzen Textes (Standard: serifenlos).
+        #[serde(default)]
+        font: TextFont,
     },
     /// Einzelmaß / Maßkette (linear).
     Dim {
