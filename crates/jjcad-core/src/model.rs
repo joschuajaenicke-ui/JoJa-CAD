@@ -142,6 +142,46 @@ pub enum TextAlignV {
     Bottom,
 }
 
+impl TextAlignH {
+    pub const ALL: [TextAlignH; 3] = [TextAlignH::Left, TextAlignH::Center, TextAlignH::Right];
+    /// Name in der Oberfläche (Glossar: Linksbündig / Zentriert / Rechtsbündig)
+    pub fn label(self) -> &'static str {
+        match self {
+            TextAlignH::Left => "Linksbündig",
+            TextAlignH::Center => "Zentriert",
+            TextAlignH::Right => "Rechtsbündig",
+        }
+    }
+    /// Schlüssel in der Befehlsschicht (Parameter `align`)
+    pub fn key(self) -> &'static str {
+        match self {
+            TextAlignH::Left => "left",
+            TextAlignH::Center => "center",
+            TextAlignH::Right => "right",
+        }
+    }
+}
+
+impl TextAlignV {
+    pub const ALL: [TextAlignV; 3] = [TextAlignV::Top, TextAlignV::Middle, TextAlignV::Bottom];
+    /// Name in der Oberfläche (Glossar: Oben / Mitte / Unten)
+    pub fn label(self) -> &'static str {
+        match self {
+            TextAlignV::Top => "Oben",
+            TextAlignV::Middle => "Mitte",
+            TextAlignV::Bottom => "Unten",
+        }
+    }
+    /// Schlüssel in der Befehlsschicht (Parameter `valign`)
+    pub fn key(self) -> &'static str {
+        match self {
+            TextAlignV::Top => "top",
+            TextAlignV::Middle => "middle",
+            TextAlignV::Bottom => "bottom",
+        }
+    }
+}
+
 /// Alle Maße in Millimetern, Winkel im Bogenmaß.
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
 #[serde(tag = "type", rename_all = "snake_case")]

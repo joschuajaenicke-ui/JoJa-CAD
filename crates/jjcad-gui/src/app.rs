@@ -209,6 +209,11 @@ pub struct ToolOptions {
     pub stair_auto: bool,
     pub text_height: f64,
     pub text: String,
+    /// Ausrichtung des nächsten Textfelds (waagerecht: Linksbündig/Zentriert/
+    /// Rechtsbündig, senkrecht: Oben/Mitte/Unten). Der Klickpunkt ist der
+    /// Einfügepunkt dieser Ausrichtung.
+    pub text_align: TextAlignH,
+    pub text_valign: TextAlignV,
     pub dim_axis: Option<DimAxis>,
     pub offset_dist: f64,
     pub elevation_z: f64,
@@ -280,6 +285,8 @@ impl ToolOptions {
             stair_auto: true,
             text_height: doc.settings.text_height,
             text: String::new(),
+            text_align: TextAlignH::Left,
+            text_valign: TextAlignV::Middle,
             dim_axis: None,
             offset_dist: doc.settings.wall_thickness,
             elevation_z: 0.0,
@@ -2520,6 +2527,15 @@ impl App {
             return;
         }
         let base = base.or_else(|| {
+            // Ein **einzelnes** Textfeld führt seinen Einfügepunkt als
+            // Basispunkt mit: ein „Zentriert/Mitte" gesetzter Text landet beim
+            // Einfügen damit genau mittig auf dem Zielpunkt, nicht mit seiner
+            // linken unteren Rahmenecke.
+            if let [e] = ents.as_slice() {
+                if let EntityKind::Text { p, .. } = &e.kind {
+                    return Some(*p);
+                }
+            }
             let doc = self.doc();
             let mut bb = BBox::EMPTY;
             for e in &ents {
@@ -5742,6 +5758,47 @@ mod tests_kopieren {
         let neu = app.doc().entities.last().cloned().expect("eingefügtes Objekt");
         let bb = jjcad_core::render::entity_bbox(app.doc(), &neu);
         assert_eq!(bb.min, V2::new(4000.0, 5000.0), "Ecke unten links am Zeiger");
+    }
+
+    /// Ein einzelnes Textfeld führt seinen **Einfügepunkt** als Basispunkt mit:
+    /// ein „Zentriert/Mitte" gesetzter Text liegt beim Einfügen genau mittig
+    /// auf dem Zielpunkt, nicht mit seiner linken unteren Rahmenecke (T0028).
+    #[test]
+    fn kopierter_text_landet_mittig_auf_dem_zielpunkt() {
+        let ctx = egui::Context::default();
+        let mut app = App::with_ctx(ctx);
+        app.doc_mut().settings.input_unit = jjcad_core::units::Unit::Mm;
+        let r = app
+            .session_mut()
+            .execute(
+                "draw.text",
+                &serde_json::json!({"p": [1000, 500], "text": "Wohnen", "height": 250.0,
+                                    "align": "center", "valign": "middle"}),
+            )
+            .expect("Text anlegen");
+        let id = r["created"][0].as_u64().unwrap();
+        app.session_mut().select(vec![id]);
+        let ids = app.selection().to_vec();
+        app.merke_zwischenablage(&ids, None);
+        assert_eq!(
+            app.ui.clipboard.base,
+            Some(V2::new(1000.0, 500.0)),
+            "Basispunkt eines einzelnen Textes ist sein Einfügepunkt"
+        );
+
+        app.pointer_world = Some(V2::new(4000.0, 3000.0));
+        app.start_ghost_paste();
+        if let Some(g) = app.ghost.as_mut() {
+            g.pos = V2::new(4000.0, 3000.0);
+        }
+        assert!(app.commit_ghost(), "Einfügen muss einen Text anlegen");
+        let neu = app.doc().entities.last().cloned().expect("eingefügter Text");
+        let bb = jjcad_core::render::entity_bbox(app.doc(), &neu);
+        assert!(
+            (bb.center().x - 4000.0).abs() < 0.5 && (bb.center().y - 3000.0).abs() < 0.5,
+            "Textmitte muss auf dem Zielpunkt liegen: {:?}",
+            bb.center()
+        );
     }
 
     /// Einfügen nach „Kopieren mit Basispunkt": der gemerkte Basispunkt steht am

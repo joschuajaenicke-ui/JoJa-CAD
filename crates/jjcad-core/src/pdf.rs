@@ -152,6 +152,14 @@ impl Content {
         }
         let lines: Vec<&str> = t.text.split('\n').collect();
         let lh = size_pt * 1.25;
+        // Senkrechte Lage gilt für den **ganzen** Block: „Mitte" zentriert
+        // alle Zeilen um den Anker, „Unten" stellt die letzte Zeile darauf.
+        let n = lines.len() as f64;
+        let dy0 = match t.valign {
+            TextAlignV::Top => -size_pt * 0.8,
+            TextAlignV::Middle => -size_pt * 0.36 + (n - 1.0) * lh * 0.5,
+            TextAlignV::Bottom => (n - 1.0) * lh,
+        };
         for (i, line) in lines.iter().enumerate() {
             if line.is_empty() {
                 continue;
@@ -162,11 +170,7 @@ impl Content {
                 TextAlignH::Center => -w / 2.0,
                 TextAlignH::Right => -w,
             };
-            let dy = match t.valign {
-                TextAlignV::Top => -size_pt * 0.8,
-                TextAlignV::Middle => -size_pt * 0.36,
-                TextAlignV::Bottom => 0.0,
-            } - i as f64 * lh;
+            let dy = dy0 - i as f64 * lh;
             let (s, c) = t.angle.sin_cos();
             let x = t.pos.x * MM2PT + dx * c - dy * s;
             let y = t.pos.y * MM2PT + dx * s + dy * c;

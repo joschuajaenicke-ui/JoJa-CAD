@@ -527,6 +527,16 @@ impl<'a> Params<'a> {
             _ => None,
         }
     }
+
+    /// Senkrechte Ausrichtung von Textfeldern (`valign`).
+    pub fn text_valign(&self, k: &str) -> Option<TextAlignV> {
+        match self.text(k)?.to_lowercase().as_str() {
+            "top" | "oben" => Some(TextAlignV::Top),
+            "middle" | "mitte" | "zentriert" => Some(TextAlignV::Middle),
+            "bottom" | "unten" => Some(TextAlignV::Bottom),
+            _ => None,
+        }
+    }
 }
 
 fn require_pt(p: &Params, k: &str) -> Result<Vec2, String> {
@@ -1230,7 +1240,7 @@ pub fn execute(doc: &mut Document, id: &str, params: &Value) -> Result<Value, St
                     height: h,
                     angle: p.angle_or("angle", 0.0),
                     align: p.text_align("align").unwrap_or(TextAlignH::Left),
-                    valign: TextAlignV::Middle,
+                    valign: p.text_valign("valign").unwrap_or(TextAlignV::Middle),
                     bold: p.boolean_or("bold", false),
                 },
             );
@@ -2028,7 +2038,7 @@ pub fn execute(doc: &mut Document, id: &str, params: &Value) -> Result<Value, St
                             stair_teil_setzen(teil_unten, &basis_stil, &p, "unten");
                             stair_teil_setzen(teil_oben, &basis_stil, &p, "oben");
                         }
-                        EntityKind::Text { text: t, height: h, angle, bold, .. } => {
+                        EntityKind::Text { text: t, height: h, angle, align, valign, bold, .. } => {
                             if let Some(v) = text {
                                 *t = v;
                             }
@@ -2037,6 +2047,17 @@ pub fn execute(doc: &mut Document, id: &str, params: &Value) -> Result<Value, St
                             }
                             if let Some(v) = p.angle("angle") {
                                 *angle = v;
+                            }
+                            // Ausrichtung des Textfelds: waagerecht `align`
+                            // (Linksbündig/Zentriert/Rechtsbündig), senkrecht
+                            // `valign` (Oben/Mitte/Unten). `align` gilt sonst
+                            // für Wände und Öffnungen — getrennt wird am
+                            // Objekttyp, nicht am Schlüssel.
+                            if let Some(v) = p.text_align("align") {
+                                *align = v;
+                            }
+                            if let Some(v) = p.text_valign("valign") {
+                                *valign = v;
                             }
                             if let Some(b) = p.boolean("bold") {
                                 *bold = b;

@@ -177,7 +177,15 @@ Mit dem Nutzer abgestimmt — nicht „verbessern“:
   der gedrückten Maustaste verschoben — nur über das Werkzeug „Verschieben“. Der Kasten ist
   die Zeilenbox (`render::text_frame`: Höhe × 1,4, Breite nach Zeichenbreiten plus Rand), und
   die Vorschau des Textwerkzeugs läuft über `canvas::paint_text` — dieselbe Platzierung wie
-  der eingefügte Text (links, mittig), nicht mit der Grundlinie am Zeiger.
+  der eingefügte Text, nicht mit der Grundlinie am Zeiger.
+- **Textausrichtung** ist eine 3×3-Matrix im Eigenschaften-Panel: waagerecht
+  Linksbündig/Zentriert/Rechtsbündig (`align`), senkrecht Oben/Mitte/Unten (`valign`), je Knopf
+  ein Pfeil und ein Tooltip `<waagerecht> · <senkrecht>` (`widgets::align_matrix`, beim
+  Platzieren **und** bei Auswahl). Der **Einfügepunkt** ist der Klickpunkt — er liegt in der
+  Ecke/Kante/Mitte des Textkastens, die die Matrix zeigt; `render::text_corners` ist die eine
+  Quelle für Anzeige, Rahmen, Fang und Vorschau. Beim Kopieren eines **einzelnen** Textfeldes
+  ist dieser Einfügepunkt der Basispunkt: ein zentriert/mittig gesetzter Text landet beim
+  Einfügen genau mittig auf dem Zielpunkt.
 - **Raster-Chip** schaltet Anzeige *und* Rasterfang gemeinsam.
 - **Ansichtsfenster** wie Rechtecke, beweglich nur mit `V`, exakte Eingabe X/Y/B/H.
 - **Druckvorschau = Papierraum**: gleiche Werkzeuge wie im Modell. Der Bearbeitungsraum

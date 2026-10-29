@@ -396,40 +396,79 @@ fn paint_text(
     col: Color32,
     rot: f32,
 ) {
-    let size = (t.height * scale * 1.32).max(3.0) as f32;
-    let font = FontId::proportional(size);
-    // Mehrzeilig: `\n` trennt die Zeilen, und die waagerechte Ausrichtung gilt
-    // je Zeile — sonst stünde ein mittig ausgerichteter Text linksbündig im
-    // Rahmen (`layout_no_wrap` setzt immer links).
-    let mut job = egui::text::LayoutJob::simple(t.text.clone(), font, col, f32::INFINITY);
-    job.halign = match t.align {
+    let galley = text_galley(p, t, scale, col);
+    let (pos, winkel) = text_ort(t, &galley, base, rot);
+    if winkel.abs() < 0.001 {
+        p.galley(pos, galley, col);
+    } else {
+        let shape = egui::epaint::TextShape::new(pos, galley, col).with_angle(winkel);
+        p.add(shape);
+    }
+}
+
+/// Ort der Schrift und Drehwinkel für `paint_text` — die **eine** Stelle, die
+/// den Anker auf den Text anwendet.
+///
+/// Waagerecht wird nichts verschoben: die Zeilen hat der Satz schon um den
+/// Ursprung ausgerichtet (`halign`, siehe [`text_galley`]). Senkrecht hängt der
+/// Kasten am Anker (`text_senkrecht`), bei gedrehtem Text wandert dieser
+/// Versatz mit der Drehung mit.
+pub(crate) fn text_ort(
+    t: &render::TextPrim,
+    galley: &egui::Galley,
+    base: Pos2,
+    rot: f32,
+) -> (Pos2, f32) {
+    let vy = text_senkrecht(t.valign, galley.size().y);
+    let winkel = text_winkel(t.angle, rot);
+    if winkel.abs() < 0.001 {
+        (Pos2::new(base.x, base.y + vy), winkel)
+    } else {
+        let (sin, cos) = winkel.sin_cos();
+        (base + Vec2::new(-vy * sin, vy * cos), winkel)
+    }
+}
+
+/// Waagerechte Ausrichtung für den Satz — `halign` legt die Zeilen **um den
+/// Ursprung** der Galley (links ab 0, zentriert um 0, rechts endend bei 0).
+pub(crate) fn halign(a: TextAlignH) -> egui::Align {
+    match a {
         TextAlignH::Left => egui::Align::LEFT,
         TextAlignH::Center => egui::Align::Center,
         TextAlignH::Right => egui::Align::RIGHT,
-    };
-    let galley = p.layout_job(job);
-    let sz = galley.size();
-    let (dx, dy) = match t.align {
-        TextAlignH::Left => (0.0, 0.0),
-        TextAlignH::Center => (-sz.x / 2.0, 0.0),
-        TextAlignH::Right => (-sz.x, 0.0),
-    };
-    let vy = match t.valign {
+    }
+}
+
+/// Satz eines Textes: eine Galley, deren Anker im Ursprung liegt.
+///
+/// Mehrzeilig trennt `\n` die Zeilen; die waagerechte Ausrichtung gilt je
+/// Zeile über `halign`. Weil die Zeilen dort schon um den Ursprung ausgerichtet
+/// sind, verschiebt `paint_text` waagerecht **nichts** mehr — der frühere
+/// zweite Versatz (`-Breite/2`, `-Breite`) zog einen mittigen Text um die halbe
+/// Breite zu weit nach links (T0028).
+pub(crate) fn text_galley(
+    p: &Painter,
+    t: &render::TextPrim,
+    scale: f64,
+    col: Color32,
+) -> std::sync::Arc<egui::Galley> {
+    let size = (t.height * scale * 1.32).max(3.0) as f32;
+    let font = FontId::proportional(size);
+    let mut job = egui::text::LayoutJob::simple(t.text.clone(), font, col, f32::INFINITY);
+    job.halign = halign(t.align);
+    p.layout_job(job)
+}
+
+/// Senkrechter Versatz des Textkastens gegenüber dem Anker (Bildschirm-px,
+/// y nach unten): Oben 0, Mitte −Höhe/2, Unten −Höhe.
+///
+/// Dieselbe Lage, die `render::text_corners` für Rahmen und Fang rechnet: bei
+/// „Oben" hängt der Text unter dem Einfügepunkt, bei „Unten" steht er darüber.
+pub(crate) fn text_senkrecht(v: TextAlignV, hoehe: f32) -> f32 {
+    match v {
         TextAlignV::Top => 0.0,
-        TextAlignV::Middle => -sz.y / 2.0,
-        TextAlignV::Bottom => -sz.y,
-    };
-    let winkel = text_winkel(t.angle, rot);
-    if winkel.abs() < 0.001 {
-        let pos = Pos2::new(base.x + dx, base.y + dy + vy);
-        p.galley(pos, galley, col);
-    } else {
-        let (sin, cos) = winkel.sin_cos();
-        let u = dy + vy;
-        let off = Vec2::new(dx * cos - u * sin, dx * sin + u * cos);
-        let pos = base + off;
-        let shape = egui::epaint::TextShape::new(pos, galley, col).with_angle(winkel);
-        p.add(shape);
+        TextAlignV::Middle => -hoehe * 0.5,
+        TextAlignV::Bottom => -hoehe,
     }
 }
 
@@ -444,16 +483,23 @@ pub(crate) fn text_winkel(angle: f64, rot: f32) -> f32 {
 }
 
 /// Text, den das Textwerkzeug beim Klick anlegen wird — genau die Vorgaben der
-/// Action `draw.text` (links, mittig, ohne Drehung). Die Vorschau muss diesen
-/// Text zeichnen, damit sie dieselbe Lage zeigt wie das Ergebnis.
-pub(crate) fn text_preview_prim(text: String, height: f64) -> render::TextPrim {
+/// Action `draw.text` (Ausrichtung aus dem Eigenschaften-Panel, ohne Drehung).
+/// Die Vorschau muss diesen Text zeichnen, damit sie dieselbe Lage zeigt wie
+/// das Ergebnis: der Klickpunkt ist der Einfügepunkt der Ausrichtung, bei
+/// „Zentriert/Mitte" also die Mitte des Textes.
+pub(crate) fn text_preview_prim(
+    text: String,
+    height: f64,
+    align: TextAlignH,
+    valign: TextAlignV,
+) -> render::TextPrim {
     render::TextPrim {
         pos: V2::ZERO,
         text,
         height,
         angle: 0.0,
-        align: TextAlignH::Left,
-        valign: TextAlignV::Middle,
+        align,
+        valign,
         bold: false,
     }
 }
@@ -1878,10 +1924,10 @@ fn draw_tool_preview(
                 app.options.text.clone()
             };
             // Dieselbe Platzierung wie der Text, der beim Klick entsteht
-            // (links, mittig) — nicht mit der Grundlinie am Zeiger.
+            // (Ausrichtung aus dem Panel) — nicht mit der Grundlinie am Zeiger.
             paint_text(
                 p,
-                &text_preview_prim(txt, h),
+                &text_preview_prim(txt, h, app.options.text_align, app.options.text_valign),
                 w2s(cursor),
                 view.zoom,
                 col,
@@ -6885,7 +6931,12 @@ mod tests_textvorschau {
 
     #[test]
     fn vorschau_legt_den_text_wie_die_action_an() {
-        let vorschau = text_preview_prim("Hallo".to_string(), 250.0);
+        let vorschau = text_preview_prim(
+            "Hallo".to_string(),
+            250.0,
+            TextAlignH::Left,
+            TextAlignV::Middle,
+        );
 
         let mut app = App::with_ctx(egui::Context::default());
         app.session_mut()
@@ -6921,7 +6972,12 @@ mod tests_textvorschau {
     /// darauf — sonst zeigt die Vorschau eine andere Lage als das Ergebnis.
     #[test]
     fn vorschau_steht_mittig_auf_dem_zeiger() {
-        let t = text_preview_prim("Hallo".to_string(), 250.0);
+        let t = text_preview_prim(
+            "Hallo".to_string(),
+            250.0,
+            TextAlignH::Left,
+            TextAlignV::Middle,
+        );
         assert_eq!(t.valign, TextAlignV::Middle);
     }
 
@@ -6954,7 +7010,12 @@ mod tests_textvorschau {
         let out = ctx.run(egui::RawInput::default(), |ctx| {
             let layer = egui::LayerId::new(egui::Order::Background, egui::Id::new("vorschau"));
             let p = egui::Painter::new(ctx.clone(), layer, Rect::EVERYTHING);
-            let prim = text_preview_prim("Hallo".to_string(), 250.0);
+            let prim = text_preview_prim(
+                "Hallo".to_string(),
+                250.0,
+                TextAlignH::Left,
+                TextAlignV::Middle,
+            );
             let w2s = |q: V2| Pos2::new(q.x as f32, q.y as f32);
             ghost_shape(
                 &p,
@@ -6969,6 +7030,94 @@ mod tests_textvorschau {
             !out.shapes.is_empty(),
             "der Text fehlt in der Einfüge-Vorschau"
         );
+    }
+}
+
+#[cfg(test)]
+mod tests_textausrichtung {
+    //! Ausrichtung des **gemalten** Textes (T0028).
+    //!
+    //! `paint_text` richtete doppelt aus: `LayoutJob::halign` legt die Zeilen
+    //! schon um den Ursprung (links ab 0, zentriert um 0, rechts endend bei 0),
+    //! danach zog der Code noch einmal `-Breite/2` bzw. `-Breite` ab. Ein
+    //! mittiger Text stand dadurch eine halbe Textbreite zu weit links, ein
+    //! rechtsbündiger um eine ganze — der Auswahlrahmen (`render::text_corners`)
+    //! saß richtig, nur die Schrift nicht.
+    use super::*;
+
+    const BASIS: Pos2 = Pos2::new(300.0, 200.0);
+
+    /// Bildschirmkasten des gemalten Textes: Galley an ihrem Ort plus den
+    /// senkrechten Versatz, den `paint_text` anwendet.
+    fn gemalt(align: TextAlignH, valign: TextAlignV) -> Rect {
+        let ctx = egui::Context::default();
+        let mut ergebnis = Rect::NOTHING;
+        let _ = ctx.run(egui::RawInput::default(), |ctx| {
+            let layer = egui::LayerId::new(egui::Order::Background, egui::Id::new("text"));
+            let p = egui::Painter::new(ctx.clone(), layer, Rect::EVERYTHING);
+            let t = render::TextPrim {
+                pos: V2::ZERO,
+                text: "Hallo\nWelt".to_string(),
+                height: 250.0,
+                angle: 0.0,
+                align,
+                valign,
+                bold: false,
+            };
+            let g = text_galley(&p, &t, 1.0, Color32::WHITE);
+            let (pos, _) = text_ort(&t, &g, BASIS, 0.0);
+            ergebnis = g.rect.translate(pos.to_vec2());
+        });
+        ergebnis
+    }
+
+    fn nahe(a: f32, b: f32) -> bool {
+        (a - b).abs() < 0.01
+    }
+
+    /// Alle neun Fälle: die Kante, die die Ausrichtung benennt, liegt auf dem
+    /// Anker — die Mitte bei „Zentriert/Mitte", die Kante bei den übrigen.
+    #[test]
+    fn gemalter_text_haengt_an_seinem_anker() {
+        for h in TextAlignH::ALL {
+            for v in TextAlignV::ALL {
+                let r = gemalt(h, v);
+                let x = match h {
+                    TextAlignH::Left => r.left(),
+                    TextAlignH::Center => r.center().x,
+                    TextAlignH::Right => r.right(),
+                };
+                assert!(
+                    nahe(x, BASIS.x),
+                    "{}/{}: waagerecht bei {x}, erwartet {}",
+                    h.label(),
+                    v.label(),
+                    BASIS.x
+                );
+                match v {
+                    TextAlignV::Top => assert!(nahe(r.top(), BASIS.y), "Oben an der oberen Kante"),
+                    TextAlignV::Middle => {
+                        assert!(nahe(r.center().y, BASIS.y), "Mitte in der Mitte")
+                    }
+                    TextAlignV::Bottom => {
+                        assert!(nahe(r.bottom(), BASIS.y), "Unten an der unteren Kante")
+                    }
+                }
+            }
+        }
+    }
+
+    /// Der Kasten des gemalten Textes bleibt so hoch wie der Rahmen — die
+    /// senkrechte Ausrichtung verschiebt nur, sie verändert die Höhe nicht.
+    #[test]
+    fn senkrechte_ausrichtung_verschiebt_nur() {
+        let oben = gemalt(TextAlignH::Left, TextAlignV::Top);
+        let mitte = gemalt(TextAlignH::Left, TextAlignV::Middle);
+        let unten = gemalt(TextAlignH::Left, TextAlignV::Bottom);
+        assert!(nahe(oben.height(), mitte.height()) && nahe(mitte.height(), unten.height()));
+        // Unten steht die Schrift über dem Anker, Oben darunter.
+        assert!(unten.top() < oben.top() - 1.0);
+        assert!(nahe(unten.top(), oben.top() - oben.height()));
     }
 }
 
