@@ -394,15 +394,19 @@ fn frictionless_wall_chain() {
 #[test]
 fn door_kinds_render_differently() {
     let mut s = s();
+    // Eine Tür braucht ihre Wand (T0038) — hier eine durchgehende Wand für beide.
+    s.execute("draw.wall", &json!({"a": [0, 0], "b": [6, 0], "thickness": 0.2}))
+        .unwrap();
+    let wand = last_id(&s);
     s.execute(
         "draw.door",
-        &json!({"center": [0, 0], "angle": 0, "width": 1.0, "kind": "hinge"}),
+        &json!({"center": [1, 0], "angle": 0, "width": 1.0, "kind": "hinge", "host": [wand]}),
     )
     .unwrap();
     let hinge = jjcad_core::render::entity_bbox(&s.doc, s.doc.entities.last().unwrap());
     s.execute(
         "draw.door",
-        &json!({"center": [3, 0], "angle": 0, "width": 1.0, "kind": "sliding"}),
+        &json!({"center": [4, 0], "angle": 0, "width": 1.0, "kind": "sliding", "host": [wand]}),
     )
     .unwrap();
     let sliding = jjcad_core::render::entity_bbox(&s.doc, s.doc.entities.last().unwrap());

@@ -79,6 +79,45 @@ impl DimAxis {
             DimAxis::Aligned => "Parallel",
         }
     }
+
+    /// Achse einer Maßkette aus der Dominanz der Punktdifferenz bestimmen.
+    ///
+    /// Maßgeblich ist die über alle Segmente zurückgelegte Strecke je Richtung;
+    /// eine Achse zählt nur, wenn sie an **jedem** Segment einen Maßtext größer
+    /// als null ergibt. `None` heißt: die Kette läuft gemischt (z. B. erst
+    /// senkrecht, dann waagerecht) — dann muss der Aufrufer `axis` angeben,
+    /// sonst entstünde bei einem Segment der Maßtext „0,0“ (T0038).
+    pub fn aus_kette(pts: &[Vec2]) -> Option<DimAxis> {
+        let mut dx = 0.0;
+        let mut dy = 0.0;
+        for w in pts.windows(2) {
+            dx += (w[1].x - w[0].x).abs();
+            dy += (w[1].y - w[0].y).abs();
+        }
+        // Achse mit der größeren Strecke zuerst probieren.
+        let kandidaten = if dx >= dy {
+            [DimAxis::X, DimAxis::Y]
+        } else {
+            [DimAxis::Y, DimAxis::X]
+        };
+        kandidaten.into_iter().find(|achse| {
+            pts.windows(2).all(|w| {
+                let d = w[1] - w[0];
+                let len = d.len();
+                if len < 1e-9 {
+                    return true;
+                }
+                // Ein Anteil unter 1/1000 der Segmentlänge ist Rauschen
+                // (Handklick), kein Beitrag zum Maßtext.
+                let m = match achse {
+                    DimAxis::X => d.x.abs(),
+                    DimAxis::Y => d.y.abs(),
+                    DimAxis::Aligned => len,
+                };
+                m > len * 1e-3
+            })
+        })
+    }
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, Default)]
