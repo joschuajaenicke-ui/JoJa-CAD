@@ -113,10 +113,17 @@ Systemblöcke: `WC`, `Waschbecken`, `Dusche`, `Badewanne`, `Herd`, `Spüle`,
 | `sheet.new` | `paper` (`A4`…`A0`), `landscape`, `name`, `scale` |
 | `sheet.update` | `sheet`, `name`, `paper`, `landscape`, `scale`, `frame`, `show_title_block` |
 | `sheet.delete` | `sheet` |
-| `sheet.add_viewport` | `sheet`, `x`, `y`, `w`, `h`, `scale`, `center`, `show_frame` |
-| `sheet.update_viewport` | `sheet`, `viewport`, `x`, `y`, `w`, `h`, `scale`, `center`, `show_frame` |
+| `sheet.add_viewport` | `sheet`, `x`, `y`, `w`, `h` (oder `rect_mm`), `scale`, `center` oder `center_mm`, `show_frame` |
+| `sheet.update_viewport` | `sheet`, `viewport`, `x`, `y`, `w`, `h` (oder `rect_mm`), `scale`, `center` oder `center_mm`, `show_frame` |
+| `sheet.fit_viewport` | `sheet`, `viewport` (Vorgabe: erstes Fenster), `margin_mm` (Vorgabe 10), `scale` |
 | `sheet.remove_viewport` | `sheet`, `viewport` |
 | `sheet.viewport_tool` | – (GUI-Werkzeug: Rechteck für ein neues Ansichtsfenster aufziehen) |
+
+Ansichtsfenster mischen zwei Räume: `x`/`y`/`w`/`h` bzw. `rect_mm` sind
+**Papier-Millimeter**, `center` ist eine **Modellkoordinate in der Einheit
+`units`** (Vorgabe: Dokumenteinheit), `center_mm` dieselbe Lage in Millimetern.
+`sheet.fit_viewport` setzt die Mitte auf die Zeichnungs-BBox und den Maßstab aus
+der Fenstergröße (siehe `docs/MCP.md`).
 
 ## Auswahl und Abfragen
 

@@ -44,7 +44,7 @@ Logs gehen ausschließlich nach **stderr** — stdout bleibt dem Protokoll vorbe
 | `jjcad_render` | PNG als **Bildinhalt** zurückgeben (visuelles Feedback) |
 | `jjcad_undo` / `jjcad_redo` | Historie |
 | `jjcad_actions` | Aktionskatalog (ID, Gruppe, Hinweis) |
-| `jjcad_sheet` | Blätter und Ansichtsfenster verwalten |
+| `jjcad_sheet` | Blätter und Ansichtsfenster verwalten (Einheiten und Einpassen: siehe unten) |
 
 Mehrere Dokumente werden über den optionalen Parameter `doc` (Name aus
 `jjcad_document list`) adressiert.
@@ -110,6 +110,62 @@ Antwort (gekürzt):
 Agenten mit Bildverständnis können damit kontrollieren, ob Wände geschlossen,
 Türen richtig angeschlagen und Maße plausibel sind — der gleiche Renderer wie in
 der GUI und im PDF sorgt für Übereinstimmung.
+
+## Blätter und Ansichtsfenster
+
+`jjcad_sheet` verwaltet Blätter und die Ansichtsfenster darauf. Aktionen:
+`list`, `create`, `update`, `remove_viewport`, `add_viewport`,
+`update_viewport`, `fit_viewport`.
+
+**Zwei Räume, zwei Einheiten.** Ein Ansichtsfenster steht auf dem Papier, zeigt
+aber die Zeichnung. Deshalb steht die Einheit im Feldnamen:
+
+| Feld | Einheit | Bedeutung |
+|---|---|---|
+| `x`, `y`, `w`, `h` bzw. `rect_mm` | **Papier-Millimeter** | Lage und Größe des Fensters auf dem Blatt |
+| `center` | Einheit `units` (Vorgabe: Dokumenteinheit) | Modellpunkt in der Fenstermitte |
+| `center_mm` | **Millimeter** | derselbe Punkt, unabhängig von der Dokumenteinheit |
+| `scale` | — | Maßstab 1:`scale` |
+| `margin_mm` | Papier-Millimeter | Rand beim Einpassen (Vorgabe 10) |
+
+`units` wirkt wie bei `jjcad_execute`/`jjcad_batch`: es gilt für `center` des
+Aufrufs, nicht für das Dokument. `sheet list` gibt `units` und **beide**
+Schreibweisen des Mittelpunkts aus (`center` in der Dokumenteinheit,
+`center_mm` in Millimetern) — was man liest, kann man unverändert
+zurückschreiben. `center` und `center_mm` gleichzeitig ist ein Fehler.
+
+```json
+{"name":"jjcad_sheet","arguments":{
+  "action":"update_viewport","sheet":0,
+  "viewport":{"id":47,"rect_mm":[20,70,380,210],"scale":100,"center":[5618,7076]},
+  "units":"mm"}}
+```
+
+Ohne `units` gilt die Dokumenteinheit: in einem Meter-Dokument wäre
+`center: [5618, 7076]` 5618 m — das Fenster zeigte leere Fläche. Wer in
+Millimetern denkt, nimmt `center_mm` und ist von der Dokumenteinheit unabhängig.
+
+**Ansicht einpassen.** `fit_viewport` setzt den Mittelpunkt auf die Mitte der
+Zeichnungs-BBox und wählt den Maßstab aus der Fenstergröße (nächstgrößerer
+gängiger Maßstab, 5 % Luft):
+
+```json
+{"name":"jjcad_sheet","arguments":{"action":"fit_viewport","sheet":0,"margin_mm":10}}
+```
+
+Antwort (gekürzt):
+
+```json
+{"ok": true, "viewport": 51, "scale": 100,
+ "bbox_mm": [[0,0],[13000,15000]],
+ "gezeichnet_mm": [130, 150],
+ "viewport_info": {"rect_mm":[15,83,395,204],"center":..., "center_mm":[6500,7500]}}
+```
+
+`gezeichnet_mm` ist die Größe der Zeichnung **auf dem Papier**
+(BBox ÷ Maßstab) — passt sie nicht in `rect_mm`, ist das Blatt zu klein oder
+der Maßstab zu klein gewählt. Ohne Ansichtsfenster oder bei leerer Zeichnung
+meldet die Aktion einen Fehler statt still `ok`.
 
 ## Hinweise für Agenten
 

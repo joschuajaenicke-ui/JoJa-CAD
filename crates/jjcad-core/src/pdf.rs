@@ -788,7 +788,7 @@ fn draw_sheet_page(doc: &Document, sheet: &Sheet) -> Page {
     }
 }
 
-fn nice_scale(need: f64) -> f64 {
+pub(crate) fn nice_scale(need: f64) -> f64 {
     let list = [
         1.0, 2.0, 5.0, 10.0, 20.0, 25.0, 50.0, 75.0, 100.0, 125.0, 150.0, 200.0, 250.0, 500.0,
         1000.0,
