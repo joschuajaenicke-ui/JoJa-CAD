@@ -189,24 +189,15 @@ impl Session {
         base
     }
 
+    /// Objekte abfragen — dieselben Filter wie die Action `select.query`:
+    /// `ids`, `layer`, `type` und Bereich (`a`/`b`, vom MCP aus `bbox`).
     pub fn query(&self, params: &Value) -> Value {
-        let p = crate::actions::Params::new(params, self.doc.settings.input_unit);
-        let ids = p.ids("ids");
-        let ents: Vec<Value> = match ids {
-            Some(list) => self
-                .doc
-                .entities
-                .iter()
-                .filter(|e| list.contains(&e.id))
-                .map(|e| self.describe_entity(e))
-                .collect(),
-            None => self
-                .doc
-                .entities
-                .iter()
-                .map(|e| self.describe_entity(e))
-                .collect(),
-        };
+        let ids = actions::query_ids(&self.doc, params);
+        let ents: Vec<Value> = ids
+            .iter()
+            .filter_map(|id| self.doc.ents().iter().find(|e| e.id == *id))
+            .map(|e| self.describe_entity(e))
+            .collect();
         json!({"ok": true, "count": ents.len(), "entities": ents})
     }
 }
