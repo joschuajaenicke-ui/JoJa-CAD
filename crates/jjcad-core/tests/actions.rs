@@ -345,11 +345,16 @@ fn pdf_and_png_export() {
     let pdf_path = dir.join("out.pdf");
     jjcad_core::pdf::export_pdf(&s.doc, &pdf_path, Some(0)).unwrap();
     let pdf = std::fs::read(&pdf_path).unwrap();
-    assert!(pdf.starts_with(b"%PDF-1.4"));
+    assert!(pdf.starts_with(b"%PDF-1.7"));
     assert!(pdf.ends_with(b"%%EOF\n"));
-    // Umlaute müssen als WinAnsi-Oktalescape im Strom stehen
+    // Text geht als Identity-H mit eingebetteter Schrift und Zeichenzuordnung
+    // in die Datei (PDF-IMPORT.md, Abschnitt 3.6) — nur so überlebt er den
+    // Rückweg in den Import.
     let text = String::from_utf8_lossy(&pdf);
     assert!(text.contains("stream"));
+    assert!(text.contains("/Identity-H"), "Identity-H fehlt");
+    assert!(text.contains("/ToUnicode"), "ToUnicode fehlt");
+    assert!(text.contains("/FontFile2"), "Schrift nicht eingebettet");
 
     let png_path = dir.join("out.png");
     let opts = jjcad_core::export::RasterOptions {

@@ -52,6 +52,10 @@ impl TB {
                 align: TextAlignH::Left,
                 valign: TextAlignV::Top,
                 bold,
+                italic: false,
+                underline: false,
+                superscript: false,
+                runs: Vec::new(),
             },
         );
         e.style.color = Some(Color::BLACK);

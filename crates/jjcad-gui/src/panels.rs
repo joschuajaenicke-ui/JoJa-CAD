@@ -1932,12 +1932,18 @@ fn entity_props(app: &mut App, ui: &mut Ui, id: Id) {
             align,
             valign,
             bold,
+            italic,
+            underline,
+            superscript,
             ..
         } => {
             let mut t = text.clone();
             let mut h = *height;
             let mut a = angle.to_degrees();
             let mut b = *bold;
+            let mut it = *italic;
+            let mut un = *underline;
+            let mut ho = *superscript;
             let mut ah = *align;
             let mut av = *valign;
             ui.label(theme::dim("Text"));
@@ -1966,6 +1972,21 @@ fn entity_props(app: &mut App, ui: &mut Ui, id: Id) {
             widgets::field_row(ui, "Fett", |ui| {
                 if ui.checkbox(&mut b, "").changed() {
                     changed_params.insert("bold".into(), json!(b));
+                }
+            });
+            widgets::field_row(ui, "Kursiv", |ui| {
+                if ui.checkbox(&mut it, "").changed() {
+                    changed_params.insert("italic".into(), json!(it));
+                }
+            });
+            widgets::field_row(ui, "Unterstrichen", |ui| {
+                if ui.checkbox(&mut un, "").changed() {
+                    changed_params.insert("underline".into(), json!(un));
+                }
+            });
+            widgets::field_row(ui, "Hochgestellt", |ui| {
+                if ui.checkbox(&mut ho, "").changed() {
+                    changed_params.insert("superscript".into(), json!(ho));
                 }
             });
             ui.add_space(2.0);

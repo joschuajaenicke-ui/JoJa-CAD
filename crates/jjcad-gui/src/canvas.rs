@@ -5,7 +5,7 @@ use crate::app::{
     TabKind, Tool, ToolPhase, View,
 };
 use crate::theme::Palette;
-use egui::{Align2, Color32, FontId, Painter, Pos2, Rect, Response, Sense, Shape, Stroke, Ui, Vec2};
+use egui::{Align2, Color32, FontFamily, FontId, Painter, Pos2, Rect, Response, Sense, Shape, Stroke, Ui, Vec2};
 use jjcad_core::actions;
 use jjcad_core::boundary::{detect_boundary, BoundaryError, BoundaryOpts, FillBoundary};
 use jjcad_core::geom::*;
@@ -454,9 +454,39 @@ pub(crate) fn text_galley(
     col: Color32,
 ) -> std::sync::Arc<egui::Galley> {
     let size = (t.height * scale * 1.32).max(3.0) as f32;
-    let font = FontId::proportional(size);
-    let mut job = egui::text::LayoutJob::simple(t.text.clone(), font, col, f32::INFINITY);
+    // Läufe mit ihrer eigenen Auszeichnung setzen: Fett über die
+    // Fett-Schriftfamilie, Kursiv als Schrägstellung, Unterstrichen als Linie,
+    // Hochstellung als kleinere Schrift am Zeilenkopf. Eine Galley, damit
+    // Ausrichtung und Zeilenumbruch wie bisher funktionieren.
+    let runs = t.effective_runs();
+    let mut job = egui::text::LayoutJob::default();
     job.halign = halign(t.align);
+    for r in &runs {
+        let r_size = if r.superscript { size * 0.7 } else { size };
+        let family = if r.bold {
+            FontFamily::Name("bold".into())
+        } else {
+            FontFamily::Proportional
+        };
+        let fmt = egui::TextFormat {
+            font_id: FontId::new(r_size.max(2.0), family),
+            color: col,
+            italics: r.italic,
+            underline: if r.underline {
+                Stroke::new(1.0, col)
+            } else {
+                Stroke::NONE
+            },
+            // Hochstellung: kleiner am Zeilenkopf statt auf der Grundlinie.
+            valign: if r.superscript {
+                egui::Align::Min
+            } else {
+                egui::Align::Center
+            },
+            ..Default::default()
+        };
+        job.append(&r.text, 0.0, fmt);
+    }
     p.layout_job(job)
 }
 
@@ -502,6 +532,10 @@ pub(crate) fn text_preview_prim(
         align,
         valign,
         bold: false,
+        italic: false,
+        underline: false,
+        superscript: false,
+        runs: Vec::new(),
     }
 }
 
@@ -7116,6 +7150,10 @@ mod tests_textausrichtung {
                 align,
                 valign,
                 bold: false,
+                italic: false,
+                underline: false,
+                superscript: false,
+                runs: Vec::new(),
             };
             let g = text_galley(&p, &t, 1.0, Color32::WHITE);
             let (pos, _) = text_ort(&t, &g, BASIS, 0.0);

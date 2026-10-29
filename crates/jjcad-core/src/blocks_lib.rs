@@ -81,6 +81,10 @@ impl B {
             align: TextAlignH::Center,
             valign: TextAlignV::Middle,
             bold: false,
+            italic: false,
+            underline: false,
+            superscript: false,
+            runs: Vec::new(),
         });
     }
 

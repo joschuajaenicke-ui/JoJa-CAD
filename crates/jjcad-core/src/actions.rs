@@ -85,6 +85,15 @@ pub const ACTIONS: &[ActionDef] = &[
     act!("file.export_pdf", "PDF exportieren", Datei, "pdf", "ctrl+p", "Blatt als PDF exportieren", false),
     act!("file.export_dxf", "DXF exportieren", Datei, "dxf", "", "Zeichnung als DXF exportieren", false),
     act!("file.import_dxf", "DXF importieren", Datei, "import", "", "DXF-Datei importieren", false),
+    act!(
+        "file.import.pdf",
+        "PDF einfügen",
+        Datei,
+        "pdf",
+        "",
+        "PDF-Seite als ein Element einfügen (Block, zerlegbar)",
+        false
+    ),
     act!("file.export_png", "PNG exportieren", Datei, "image", "", "Ansicht als PNG rendern", false),
     act!("edit.undo", "Rückgängig", Aendern, "undo", "ctrl+z", "Letzten Schritt rückgängig", false),
     act!("edit.redo", "Wiederholen", Aendern, "redo", "ctrl+y", "Rückgängig machen rückgängig", false),
@@ -282,6 +291,7 @@ pub fn is_mutating(id: &str) -> bool {
             | "block.insert"
             | "block.update"
             | "block.delete"
+            | "file.import.pdf"
             | "sheet.new"
             | "sheet.update"
             | "sheet.delete"
@@ -1233,6 +1243,10 @@ pub fn execute(doc: &mut Document, id: &str, params: &Value) -> Result<Value, St
                     align: p.text_align("align").unwrap_or(TextAlignH::Left),
                     valign: p.text_valign("valign").unwrap_or(TextAlignV::Middle),
                     bold: p.boolean_or("bold", false),
+                    italic: p.boolean_or("italic", false),
+                    underline: p.boolean_or("underline", false),
+                    superscript: p.boolean_or("superscript", false),
+                    runs: Vec::new(),
                 },
             );
             apply_common(doc, &mut e, &p, layer);
@@ -1473,6 +1487,10 @@ pub fn execute(doc: &mut Document, id: &str, params: &Value) -> Result<Value, St
                     align: TextAlignH::Left,
                     valign: TextAlignV::Middle,
                     bold: false,
+                    italic: false,
+                    underline: false,
+                    superscript: false,
+                    runs: Vec::new(),
                 },
             );
             apply_common(doc, &mut t, &p, layer);
@@ -2024,9 +2042,25 @@ pub fn execute(doc: &mut Document, id: &str, params: &Value) -> Result<Value, St
                             stair_teil_setzen(teil_unten, &basis_stil, &p, "unten");
                             stair_teil_setzen(teil_oben, &basis_stil, &p, "oben");
                         }
-                        EntityKind::Text { text: t, height: h, angle, align, valign, bold, .. } => {
+                        EntityKind::Text {
+                            text: t,
+                            height: h,
+                            angle,
+                            align,
+                            valign,
+                            bold,
+                            italic,
+                            underline,
+                            superscript,
+                            runs,
+                            ..
+                        } => {
                             if let Some(v) = text {
                                 *t = v;
+                                // Geänderter Text macht gemischte Läufe
+                                // ungültig — sonst stünde im PDF etwas
+                                // anderes als im Objekt.
+                                runs.clear();
                             }
                             if let Some(v) = height {
                                 *h = v;
@@ -2047,6 +2081,15 @@ pub fn execute(doc: &mut Document, id: &str, params: &Value) -> Result<Value, St
                             }
                             if let Some(b) = p.boolean("bold") {
                                 *bold = b;
+                            }
+                            if let Some(b) = p.boolean("italic") {
+                                *italic = b;
+                            }
+                            if let Some(b) = p.boolean("underline") {
+                                *underline = b;
+                            }
+                            if let Some(b) = p.boolean("superscript") {
+                                *superscript = b;
                             }
                         }
                         EntityKind::Circle { r, .. } => {
@@ -2340,6 +2383,8 @@ pub fn execute(doc: &mut Document, id: &str, params: &Value) -> Result<Value, St
             doc.blocks.retain(|b| b.id != name && !b.name.eq_ignore_ascii_case(&name));
             Ok(json!({"ok": true}))
         }
+        // ---------------- PDF einfügen ----------------
+        "file.import.pdf" => import_pdf_action(doc, &p),
         "block.list" => {
             let blocks: Vec<Value> = doc
                 .blocks
@@ -3154,6 +3199,10 @@ pub fn explode_entity(doc: &mut Document, id: Id) -> Result<Vec<Id>, String> {
                 align: t.align,
                 valign: t.valign,
                 bold: t.bold,
+                italic: t.italic,
+                underline: t.underline,
+                superscript: t.superscript,
+                runs: t.runs.clone(),
             }),
         };
         if let Some(kind) = kind {
@@ -3173,6 +3222,207 @@ pub fn explode_entity(doc: &mut Document, id: Id) -> Result<Vec<Id>, String> {
     }
     doc.modified = true;
     Ok(created)
+}
+
+// ---------------------------------------------------------------------------
+// PDF einfügen
+// ---------------------------------------------------------------------------
+
+/// Skaliert die Geometrie eines importierten Objekts (Papier → Zeichnung).
+fn scale_kind(kind: &EntityKind, f: f64) -> EntityKind {
+    if (f - 1.0).abs() < 1e-12 {
+        return kind.clone();
+    }
+    let s = |p: &Vec2| Vec2::new(p.x * f, p.y * f);
+    match kind {
+        EntityKind::Line { a, b } => EntityKind::Line { a: s(a), b: s(b) },
+        EntityKind::Polyline { verts, closed } => EntityKind::Polyline {
+            verts: verts
+                .iter()
+                .map(|v| Vertex::new(Vec2::new(v.p.x * f, v.p.y * f)))
+                .collect(),
+            closed: *closed,
+        },
+        EntityKind::Circle { c, r } => EntityKind::Circle { c: s(c), r: r * f },
+        EntityKind::Arc { c, r, a0, a1 } => EntityKind::Arc {
+            c: s(c),
+            r: r * f,
+            a0: *a0,
+            a1: *a1,
+        },
+        EntityKind::Ellipse { c, rx, ry, rot } => EntityKind::Ellipse {
+            c: s(c),
+            rx: rx * f,
+            ry: ry * f,
+            rot: *rot,
+        },
+        EntityKind::Fill {
+            boundary,
+            holes,
+            pattern,
+            pattern_angle,
+            pattern_scale,
+            border,
+        } => EntityKind::Fill {
+            boundary: boundary.iter().map(s).collect(),
+            holes: holes.iter().map(|h| h.iter().map(s).collect()).collect(),
+            pattern: *pattern,
+            pattern_angle: *pattern_angle,
+            pattern_scale: *pattern_scale,
+            border: *border,
+        },
+        EntityKind::Text {
+            p,
+            text,
+            height,
+            angle,
+            align,
+            valign,
+            bold,
+            italic,
+            underline,
+            superscript,
+            runs,
+        } => EntityKind::Text {
+            p: s(p),
+            text: text.clone(),
+            height: height * f,
+            angle: *angle,
+            align: *align,
+            valign: *valign,
+            bold: *bold,
+            italic: *italic,
+            underline: *underline,
+            superscript: *superscript,
+            runs: runs.clone(),
+        },
+        other => other.clone(),
+    }
+}
+
+/// `file.import.pdf` — eine PDF-Seite als **ein** Element einfügen.
+///
+/// Parameter: `path`, `page` (1-basiert, Standard 1), `scale` (Maßstab der
+/// PDF-Seite, Standard = Zeichnungsmaßstab; `1` = maßstäblich in Papier-mm),
+/// `layer`, `as_block` (Standard `true` = BlockRef, sonst Einzelobjekte).
+fn import_pdf_action(doc: &mut Document, p: &Params) -> Result<Value, String> {
+    let path = p
+        .text("path")
+        .ok_or_else(|| "Parameter 'path' fehlt".to_string())?;
+    let page_nr = p.num_or("page", 1.0).max(1.0) as usize;
+    // Maßstab, in dem die PDF-Seite gezeichnet ist. Vorgabe ist der
+    // Zeichnungsmaßstab (1:100): dann liegt das eingefügte Blatt auf Papier
+    // genau so groß wie das Original, und Strichstärken stimmen — Linien sind
+    // in JoJa-CAD Papier-Millimeter und werden mit demselben Maßstab gerechnet.
+    let massstab = p
+        .num_or("scale", doc.settings.annotation_scale)
+        .abs()
+        .max(1e-9);
+    let as_block = p.boolean_or("as_block", true);
+    let liest = crate::pdf_read::read_pdf(std::path::Path::new(&path))?;
+    let seite = liest.page(page_nr).ok_or_else(|| {
+        format!(
+            "Seite {page_nr} gibt es nicht — das PDF hat {} Seite(n)",
+            liest.pages.len()
+        )
+    })?;
+    let layer = if p.v.get("layer").is_some() {
+        resolve_layer(doc, p)
+    } else {
+        // Eigene Ebene, damit sich der Import ausblenden und sperren lässt.
+        doc.ensure_layer("PDF-Import", Color::rgb(45, 105, 190))
+    };
+    let dateiname = std::path::Path::new(&path)
+        .file_name()
+        .map(|n| n.to_string_lossy().into_owned())
+        .unwrap_or_else(|| "PDF".to_string());
+
+    let mut ents: Vec<Entity> = Vec::with_capacity(seite.entities.len());
+    for (i, ie) in seite.entities.iter().enumerate() {
+        let kind = scale_kind(&ie.kind, massstab);
+        let mut e = Entity::new(i as Id + 1, layer, kind);
+        e.style.color = Some(ie.color);
+        e.style.line_weight = Some(ie.width.max(0.05));
+        e.style.line_type = Some(ie.line_type);
+        e.style.fill = ie.fill;
+        ents.push(e);
+    }
+    let objekte = ents.len();
+
+    let mut warn: Vec<Value> = seite
+        .warnings
+        .counts
+        .iter()
+        .map(|(art, anzahl)| json!({"art": art, "anzahl": anzahl}))
+        .collect();
+    warn.sort_by(|a, b| a["art"].as_str().cmp(&b["art"].as_str()));
+    // Andere Seiten interessieren nur, wenn sie etwas zu melden haben.
+    let mut weitere = 0;
+    for s in &liest.pages {
+        if s.number != page_nr && !s.warnings.is_empty() {
+            weitere += 1;
+        }
+    }
+
+    if !as_block {
+        let mut ids = Vec::with_capacity(ents.len());
+        for mut e in ents {
+            let id = doc.new_id();
+            e.id = id;
+            ids.push(id);
+            doc.add_entity(e);
+        }
+        doc.modified = true;
+        return Ok(json!({
+            "ok": true,
+            "created": ids,
+            "page": page_nr,
+            "size_mm": [seite.width_mm, seite.height_mm],
+            "warnings": warn,
+        }));
+    }
+
+    let block_id = format!("pdf:{}", crate::util::short_id());
+    let block_name = format!("PDF {} S.{page_nr}", dateiname);
+    doc.blocks.push(BlockDef {
+        id: block_id.clone(),
+        name: block_name.clone(),
+        category: "PDF-Import".to_string(),
+        source: BlockSource::Project,
+        description: format!(
+            "Aus {} eingefügt, Seite {page_nr}, {objekte} Objekte",
+            dateiname
+        ),
+        entities: ents,
+        icon: None,
+        base: Vec2::ZERO,
+    });
+    let idn = doc.new_id();
+    let mut inst = Entity::new(
+        idn,
+        layer,
+        EntityKind::BlockRef {
+            block: block_id.clone(),
+            pos: Vec2::ZERO,
+            rot: 0.0,
+            scale: v(1.0, 1.0),
+            mirror: false,
+        },
+    );
+    inst.style.color = None;
+    doc.add_entity(inst);
+    doc.modified = true;
+    Ok(json!({
+        "ok": true,
+        "created": [idn],
+        "block": block_name,
+        "page": page_nr,
+        "pages": liest.pages.len(),
+        "size_mm": [seite.width_mm, seite.height_mm],
+        "entities": objekte,
+        "warnings": warn,
+        "warnings_other_pages": weitere,
+    }))
 }
 
 // ---------------------------------------------------------------------------

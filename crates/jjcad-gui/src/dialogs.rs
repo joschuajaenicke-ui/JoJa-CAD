@@ -19,6 +19,8 @@ pub enum FileMode {
     Open,
     SaveJjcad,
     ImportDxf,
+    /// PDF einfügen (Plan `docs/PDF-IMPORT.md`)
+    ImportPdf,
     ExportPdf,
     ExportDxf,
     ExportPng,
@@ -29,6 +31,7 @@ impl FileMode {
         match self {
             FileMode::Open | FileMode::SaveJjcad => "jjcad",
             FileMode::ImportDxf | FileMode::ExportDxf => "dxf",
+            FileMode::ImportPdf => "pdf",
             FileMode::ExportPdf => "pdf",
             FileMode::ExportPng => "png",
         }
@@ -38,6 +41,7 @@ impl FileMode {
             FileMode::Open => "Zeichnung öffnen",
             FileMode::SaveJjcad => "Zeichnung speichern",
             FileMode::ImportDxf => "DXF importieren",
+            FileMode::ImportPdf => "PDF einfügen",
             FileMode::ExportPdf => "Als PDF exportieren",
             FileMode::ExportDxf => "Als DXF exportieren",
             FileMode::ExportPng => "Als PNG exportieren",
@@ -58,6 +62,7 @@ impl FileMode {
         match self {
             FileMode::Open | FileMode::SaveJjcad => "Zeichnung",
             FileMode::ImportDxf | FileMode::ExportDxf => "DXF-Zeichnung",
+            FileMode::ImportPdf => "PDF-Dokument",
             FileMode::ExportPdf => "PDF-Dokument",
             FileMode::ExportPng => "PNG-Bild",
         }
@@ -423,6 +428,7 @@ pub fn datei_gewaehlt(app: &mut App, mode: FileMode, path: std::path::PathBuf) {
             Err(e) => app.toast(e),
         },
         FileMode::ImportDxf => app.import_dxf_from(path),
+        FileMode::ImportPdf => app.pdf_import_oeffnen(path),
         FileMode::ExportPdf => app.export_pdf_to(path),
         FileMode::ExportDxf => app.export_dxf_to(path),
         FileMode::ExportPng => app.export_png_to(path),
@@ -730,6 +736,69 @@ pub fn show(app: &mut App, ctx: &egui::Context) {
         });
         if !open || ctx.input(|i| i.key_pressed(egui::Key::Escape)) {
             app.ui.project_dialog = false;
+        }
+    }
+
+    // PDF einfügen: Seitenwahl (docs/PDF-IMPORT.md)
+    if let Some(wahl) = app.ui.pdf_import.clone() {
+        dim_background(ctx);
+        // Fenster-Flag: startet offen, false = über das X geschlossen.
+        let mut win_open = true;
+        let mut seite = wahl.seite;
+        let mut als_block = wahl.als_block;
+        let mut einfuegen = false;
+        let mut abbrechen = false;
+        modal_window(ctx, "PDF einfügen", 470.0, &mut win_open).show(ctx, |ui| {
+            ui.set_width(450.0);
+            let name = wahl
+                .pfad
+                .file_name()
+                .map(|n| n.to_string_lossy().into_owned())
+                .unwrap_or_else(|| wahl.pfad.display().to_string());
+            ui.label(theme::bold(&name, 13.0));
+            ui.label(theme::dim(format!(
+                "{} Seite{} · Text, Linien und Flächen werden übernommen",
+                wahl.seiten,
+                if wahl.seiten == 1 { "" } else { "n" }
+            )));
+            ui.add_space(8.0);
+            widgets::field_row(ui, "Seite", |ui| {
+                if wahl.seiten > 1 {
+                    let mut s = seite as i64;
+                    if ui.add(crate::widgets::zahl(&mut s, 1.0, 1..=wahl.seiten as i64)).changed() {
+                        seite = s.clamp(1, wahl.seiten as i64) as usize;
+                    }
+                    ui.label(theme::dim(format!("von {}", wahl.seiten)));
+                } else {
+                    ui.label("1");
+                }
+            });
+            ui.add_space(4.0);
+            ui.checkbox(&mut als_block, "Als ein Element einfügen (Block, zerlegbar)");
+            ui.add_space(6.0);
+            ui.label(theme::dim(
+                "Bilder, Transparenz, Schattierungen, Muster und Beschnitt übernimmt JoJa-CAD nicht — sie werden gezählt und gemeldet.",
+            ));
+            ui.add_space(8.0);
+            button_row(ui, |ui| {
+                if ui.button("Einfügen").clicked() {
+                    einfuegen = true;
+                }
+                if ui.button("Abbrechen").clicked() {
+                    abbrechen = true;
+                }
+            });
+        });
+        let mut wahl = wahl;
+        wahl.seite = seite;
+        wahl.als_block = als_block;
+        if einfuegen {
+            app.pdf_import_einfuegen(&wahl);
+            app.ui.pdf_import = None;
+        } else if !win_open || abbrechen {
+            app.ui.pdf_import = None;
+        } else {
+            app.ui.pdf_import = Some(wahl);
         }
     }
 

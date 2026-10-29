@@ -11,61 +11,10 @@ use crate::tessellate::CurveQuality;
 use crate::export::RasterOptions;
 use ab_glyph::{Font, FontRef, ScaleFont};
 use std::path::Path;
-use std::sync::OnceLock;
 use tiny_skia::{
     FillRule, LineCap, LineJoin, Paint, PathBuilder, Pixmap, PixmapPaint, Stroke, StrokeDash,
     Transform,
 };
-
-const FONT_CANDIDATES: &[&str] = &[
-    "/usr/share/fonts/truetype/noto/NotoSans-Regular.ttf",
-    "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
-    "/usr/share/fonts/truetype/liberation/LiberationSans-Regular.ttf",
-    "/usr/share/fonts/TTF/DejaVuSans.ttf",
-    "/usr/share/fonts/liberation-sans/LiberationSans-Regular.ttf",
-    "C:\\Windows\\Fonts\\arial.ttf",
-    "C:\\Windows\\Fonts\\segoeui.ttf",
-    "/System/Library/Fonts/Supplemental/Arial.ttf",
-    "/Library/Fonts/Arial.ttf",
-];
-
-static FONT_DATA: OnceLock<Option<Vec<u8>>> = OnceLock::new();
-
-fn font_data() -> Option<&'static [u8]> {
-    FONT_DATA
-        .get_or_init(|| {
-            for p in FONT_CANDIDATES {
-                if let Ok(d) = std::fs::read(p) {
-                    return Some(d);
-                }
-            }
-            // Notfalls alle Schriften im Standardverzeichnis durchsuchen
-            if let Ok(entries) = std::fs::read_dir("/usr/share/fonts/truetype") {
-                for e in entries.flatten() {
-                    let path = e.path();
-                    if path.is_dir() {
-                        if let Ok(sub) = std::fs::read_dir(&path) {
-                            for f in sub.flatten() {
-                                let fp = f.path();
-                                if let Some(name) = fp.file_name().and_then(|n| n.to_str()) {
-                                    if name.ends_with(".ttf")
-                                        && (name.contains("Sans") || name.contains("sans"))
-                                        && !name.to_lowercase().contains("bold")
-                                    {
-                                        if let Ok(d) = std::fs::read(&fp) {
-                                            return Some(d);
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-            None
-        })
-        .as_deref()
-}
 
 struct Map {
     /// Pixel pro Welt-Millimeter
@@ -144,31 +93,19 @@ fn dash_for(lt: LineType, paper_px: f64) -> Option<StrokeDash> {
 }
 
 fn draw_text(pm: &mut Pixmap, t: &crate::render::TextPrim, prim: &Prim, map: &Map) {
-    let Some(data) = font_data() else { return };
-    let Ok(font) = FontRef::try_from_slice(data) else {
-        return;
-    };
     let size_px = (t.height * map.k) as f32;
     if size_px < 1.5 {
         return;
     }
-    let upem = font.units_per_em().unwrap_or(1000.0);
-    let unit = size_px / upem;
-    let scaled = font.as_scaled(size_px);
     let mut paint = Paint::default();
     paint.set_color(color_of(prim.style.color));
     paint.anti_alias = true;
 
-    let lines: Vec<&str> = t.text.split('\n').collect();
-    let line_h = size_px * 1.2;
-    let widths: Vec<f32> = lines
-        .iter()
-        .map(|l| {
-            l.chars()
-                .map(|c| scaled.h_advance(font.glyph_id(c)))
-                .sum::<f32>()
-        })
-        .collect();
+    // Satz mit Läufen: dieselbe Zerlegung wie im PDF, damit beide Ausgaben
+    // dieselben Vorschübe benutzen.
+    let runs = t.effective_runs();
+    let lines = crate::text::layout(&t.text, &runs);
+    let line_h = size_px * 1.25;
     let (cos, sin) = (t.angle.cos() as f32, t.angle.sin() as f32);
     let bx = map.ox + t.pos.x * map.k;
     let by = map.oy - t.pos.y * map.k;
@@ -176,72 +113,112 @@ fn draw_text(pm: &mut Pixmap, t: &crate::render::TextPrim, prim: &Prim, map: &Ma
     // Senkrechte Lage gilt für den ganzen Block (wie im PDF und in der Anzeige).
     let n = lines.len() as f32;
     let dy_erste = match t.valign {
-        TextAlignV::Top => -size_px * 0.78,
-        TextAlignV::Middle => -size_px * 0.34 + (n - 1.0) * line_h * 0.5,
+        TextAlignV::Top => -size_px * 0.8,
+        TextAlignV::Middle => -size_px * 0.36 + (n - 1.0) * line_h * 0.5,
         TextAlignV::Bottom => (n - 1.0) * line_h,
     };
     for (li, line) in lines.iter().enumerate() {
-        let w = widths[li];
+        let w = line.width_em as f32 * size_px;
         let dx0 = match t.align {
             TextAlignH::Left => 0.0,
             TextAlignH::Center => -w * 0.5,
             TextAlignH::Right => -w,
         };
-        let dy0 = dy_erste - li as f32 * line_h;
+        let dy_line = dy_erste - li as f32 * line_h;
         let mut pen = dx0;
-        for ch in line.chars() {
-            let gid = font.glyph_id(ch);
-            if ch != ' ' {
-                if let Some(outline) = font.outline(gid) {
-                    let mut pb = PathBuilder::new();
-                    let mut prev_end: Option<ab_glyph::Point> = None;
-                    for curve in &outline.curves {
-                        let tf = |p: ab_glyph::Point| -> (f32, f32) {
-                            let lx = pen + p.x * unit;
-                            let ly = dy0 + p.y * unit;
-                            let rx = lx * cos - ly * sin;
-                            let ry = lx * sin + ly * cos;
-                            ((bx + rx as f64) as f32, (by - ry as f64) as f32)
-                        };
-                        let (startp, endp) = match curve {
-                            ab_glyph::OutlineCurve::Line(p, b) => (*p, *b),
-                            ab_glyph::OutlineCurve::Quad(p, _, b) => (*p, *b),
-                            ab_glyph::OutlineCurve::Cubic(p, _, _, b) => (*p, *b),
-                        };
-                        // Neuer Teilpfad, wenn der vorherige nicht hier endet
-                        let new_contour = match prev_end {
-                            None => true,
-                            Some(e) => (e.x - startp.x).abs() > 0.01 || (e.y - startp.y).abs() > 0.01,
-                        };
-                        let (sx, sy) = tf(startp);
-                        if new_contour {
-                            pb.move_to(sx, sy);
+        for seg in &line.segs {
+            if seg.text.is_empty() {
+                continue;
+            }
+            let Some(data) = crate::fonts::ttf_bytes(seg.style) else {
+                continue;
+            };
+            let Ok(font) = FontRef::try_from_slice(data) else {
+                continue;
+            };
+            let seg_size = size_px * seg.scale as f32;
+            let upem = font.units_per_em().unwrap_or(1000.0);
+            let unit = seg_size / upem;
+            let scaled = font.as_scaled(seg_size);
+            let dy0 = dy_line + seg.rise_em as f32 * size_px;
+            let pen_start = pen;
+            for ch in seg.text.chars() {
+                let gid = font.glyph_id(ch);
+                if ch != ' ' {
+                    if let Some(outline) = font.outline(gid) {
+                        let mut pb = PathBuilder::new();
+                        let mut prev_end: Option<ab_glyph::Point> = None;
+                        for curve in &outline.curves {
+                            let tf = |p: ab_glyph::Point| -> (f32, f32) {
+                                let lx = pen + p.x * unit;
+                                let ly = dy0 + p.y * unit;
+                                let rx = lx * cos - ly * sin;
+                                let ry = lx * sin + ly * cos;
+                                ((bx + rx as f64) as f32, (by - ry as f64) as f32)
+                            };
+                            let (startp, endp) = match curve {
+                                ab_glyph::OutlineCurve::Line(p, b) => (*p, *b),
+                                ab_glyph::OutlineCurve::Quad(p, _, b) => (*p, *b),
+                                ab_glyph::OutlineCurve::Cubic(p, _, _, b) => (*p, *b),
+                            };
+                            // Neuer Teilpfad, wenn der vorherige nicht hier endet
+                            let new_contour = match prev_end {
+                                None => true,
+                                Some(e) => {
+                                    (e.x - startp.x).abs() > 0.01 || (e.y - startp.y).abs() > 0.01
+                                }
+                            };
+                            let (sx, sy) = tf(startp);
+                            if new_contour {
+                                pb.move_to(sx, sy);
+                            }
+                            prev_end = Some(endp);
+                            match curve {
+                                ab_glyph::OutlineCurve::Line(_, b) => {
+                                    let (ex, ey) = tf(*b);
+                                    pb.line_to(ex, ey);
+                                }
+                                ab_glyph::OutlineCurve::Quad(_, c, b) => {
+                                    let (cx, cy) = tf(*c);
+                                    let (ex, ey) = tf(*b);
+                                    pb.quad_to(cx, cy, ex, ey);
+                                }
+                                ab_glyph::OutlineCurve::Cubic(_, c1, c2, b) => {
+                                    let (x1, y1) = tf(*c1);
+                                    let (x2, y2) = tf(*c2);
+                                    let (ex, ey) = tf(*b);
+                                    pb.cubic_to(x1, y1, x2, y2, ex, ey);
+                                }
+                            }
                         }
-                        prev_end = Some(endp);
-                        match curve {
-                            ab_glyph::OutlineCurve::Line(_, b) => {
-                                let (ex, ey) = tf(*b);
-                                pb.line_to(ex, ey);
-                            }
-                            ab_glyph::OutlineCurve::Quad(_, c, b) => {
-                                let (cx, cy) = tf(*c);
-                                let (ex, ey) = tf(*b);
-                                pb.quad_to(cx, cy, ex, ey);
-                            }
-                            ab_glyph::OutlineCurve::Cubic(_, c1, c2, b) => {
-                                let (x1, y1) = tf(*c1);
-                                let (x2, y2) = tf(*c2);
-                                let (ex, ey) = tf(*b);
-                                pb.cubic_to(x1, y1, x2, y2, ex, ey);
-                            }
+                        if let Some(path) = pb.finish() {
+                            pm.fill_path(&path, &paint, FillRule::Winding, Transform::identity(), None);
                         }
-                    }
-                    if let Some(path) = pb.finish() {
-                        pm.fill_path(&path, &paint, FillRule::Winding, Transform::identity(), None);
                     }
                 }
+                pen += scaled.h_advance(gid);
             }
-            pen += scaled.h_advance(gid);
+            if seg.underline {
+                // Unterstreichung: kurzer Strich unter der Grundlinie.
+                let dick = (seg_size * 0.06).max(0.4);
+                let yy = dy_line - seg_size * 0.12;
+                let tf = |lx: f32, ly: f32| -> (f32, f32) {
+                    let rx = lx * cos - ly * sin;
+                    let ry = lx * sin + ly * cos;
+                    ((bx + rx as f64) as f32, (by - ry as f64) as f32)
+                };
+                let a = tf(pen_start, yy);
+                let b = tf(pen, yy);
+                let mut pb = PathBuilder::new();
+                pb.move_to(a.0, a.1);
+                pb.line_to(b.0, b.1);
+                if let Some(path) = pb.finish() {
+                    let mut st = Stroke::default();
+                    st.width = dick;
+                    st.line_cap = LineCap::Butt;
+                    pm.stroke_path(&path, &paint, &st, Transform::identity(), None);
+                }
+            }
         }
     }
 }
@@ -465,5 +442,5 @@ pub fn block_thumbnail(doc: &Document, block: &BlockDef, px: u32) -> Result<Vec<
 
 /// Prüft, ob Text rendern möglich ist (Schrift gefunden).
 pub fn has_font() -> bool {
-    font_data().is_some()
+    crate::fonts::ttf_bytes(crate::fonts::FontStyle::Regular).is_some()
 }

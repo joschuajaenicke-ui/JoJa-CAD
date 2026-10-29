@@ -136,6 +136,10 @@ pub fn transform_kind(k: &EntityKind, m: &Affine) -> EntityKind {
             align,
             valign,
             bold,
+            italic,
+            underline,
+            superscript,
+            runs,
         } => EntityKind::Text {
             p: m.apply(*p),
             text: text.clone(),
@@ -144,6 +148,10 @@ pub fn transform_kind(k: &EntityKind, m: &Affine) -> EntityKind {
             align: *align,
             valign: *valign,
             bold: *bold,
+            italic: *italic,
+            underline: *underline,
+            superscript: *superscript,
+            runs: runs.clone(),
         },
         EntityKind::Dim {
             a,
