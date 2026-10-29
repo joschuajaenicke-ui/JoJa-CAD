@@ -206,6 +206,12 @@ def main() -> int:
         klick(545, 500, wid)
         time.sleep(0.8)
         schuss(f"{ziel}/treppe_breiter.png", wid)
+        # Ein Klick in die Fläche darf die Treppe NICHT verschieben (nur die
+        # Griffe an den Kanten bewegen sie).
+        ziehen(470, 560, 550, 560, wid)
+        klick(550, 560, wid)
+        time.sleep(0.8)
+        schuss(f"{ziel}/treppe_klick_zieht_nicht.png", wid)
         print("Bilder:", ziel)
         return 0
     finally:

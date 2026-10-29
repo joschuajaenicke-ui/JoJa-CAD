@@ -851,7 +851,6 @@ pub fn render_entity(
             b: p1,
             width,
             steps,
-            direction,
             height,
             auto_steps,
             cut,
@@ -868,7 +867,6 @@ pub fn render_entity(
                 *steps,
                 *height,
                 *auto_steps,
-                *direction,
                 *cut,
                 unten.as_ref(),
                 oben.as_ref(),
@@ -1969,6 +1967,125 @@ fn stair_linie(dl: &mut DisplayList, e: &Entity, xf: Affine, stil: PrimStyle, p:
     });
 }
 
+/// Treppenschnitt: die beiden Diagonalen und die **Grenze** zwischen unterem
+/// und oberem Teil. Die Grenze ist die Parallele in der Mitte zwischen den
+/// beiden Diagonalen — an ihr wechseln die Linieneigenschaften, nicht an einer
+/// geraden Querlinie (T0027, Turn 3).
+struct Schnitt {
+    diagonalen: Vec<(Vec2, Vec2)>,
+    grenze: Option<(Vec2, Vec2)>,
+    /// Normale der Grenze, die zum oberen Teil (Laufende) zeigt.
+    oben: Vec2,
+}
+
+impl Schnitt {
+    fn ist_oben(&self, p: Vec2) -> bool {
+        match self.grenze {
+            Some((g, _)) => (p - g).dot(self.oben) >= 0.0,
+            None => false,
+        }
+    }
+}
+
+/// Treppenschnitt aufbauen. Ist er aus, bleibt alles ein Teil (keine
+/// Diagonalen, keine Grenze). Bei kurzen Treppen gibt es nichts zu verkürzen —
+/// dann liegt die Grenze gerade in der Laufmitte.
+fn schnitt_geometrie(
+    a: Vec2,
+    dir: Vec2,
+    nrm: Vec2,
+    hw: f64,
+    len: f64,
+    width: f64,
+    cut: bool,
+) -> Schnitt {
+    let mut s = Schnitt {
+        diagonalen: Vec::new(),
+        grenze: None,
+        oben: nrm,
+    };
+    if !cut {
+        return s;
+    }
+    let d = width * 0.8;
+    let abstand = width * 0.16;
+    if len >= d * 1.4 {
+        let t0 = (len - (d + abstand)) * 0.5;
+        for k in 0..2 {
+            let t = t0 + abstand * k as f64;
+            s.diagonalen
+                .push((a + dir * t - nrm * hw, a + dir * (t + d) + nrm * hw));
+        }
+        let (p, q) = s.diagonalen[0];
+        s.grenze = Some((p + dir * (abstand * 0.5), q + dir * (abstand * 0.5)));
+    } else {
+        s.grenze = Some((
+            a + dir * (len * 0.5) - nrm * hw,
+            a + dir * (len * 0.5) + nrm * hw,
+        ));
+    }
+    if let Some((g0, g1)) = s.grenze {
+        let mut n = (g1 - g0).normalized().perp();
+        if n.dot(dir) < 0.0 {
+            n = -n;
+        }
+        s.oben = n;
+    }
+    s
+}
+
+/// Eine Strecke der Treppe in Stücke zerlegen und jedem Stück seinen Linienstil
+/// geben.
+///
+/// `luecke` = `Some(halbe Lücke)`: an den beiden Diagonalen wird die Strecke
+/// unterbrochen (Stufenlinien). `None`: die Strecke läuft durch und wird nur an
+/// der Schnittgrenze geteilt (Umrisskanten, Lauflinie).
+fn stair_teile(
+    segs: &mut Vec<(Vec2, Vec2, PrimStyle)>,
+    schnitt: &Schnitt,
+    cut: bool,
+    st_unten: PrimStyle,
+    st_oben: PrimStyle,
+    p: Vec2,
+    q: Vec2,
+    luecke: Option<f64>,
+) {
+    let stil = |m: Vec2| {
+        if cut && schnitt.ist_oben(m) {
+            st_oben
+        } else {
+            st_unten
+        }
+    };
+    let teile: Vec<(Vec2, Vec2)> = match luecke {
+        Some(h) if !schnitt.diagonalen.is_empty() => {
+            let mut treffer: Vec<f64> = Vec::new();
+            for d in &schnitt.diagonalen {
+                if let Some(u) = kreuz_anteil(p, q, *d) {
+                    treffer.push(u);
+                }
+            }
+            stuecke(p, q, &treffer, h)
+        }
+        _ => {
+            let mut out = vec![(p, q)];
+            if let Some(g) = schnitt.grenze {
+                if let Some(u) = kreuz_anteil(p, q, g) {
+                    if u > 0.001 && u < 0.999 {
+                        let m = anteil_punkt(p, q, u);
+                        out = vec![(p, m), (m, q)];
+                    }
+                }
+            }
+            out
+        }
+    };
+    for (s0, s1) in teile {
+        let m = (s0 + s1) * 0.5;
+        segs.push((s0, s1, stil(m)));
+    }
+}
+
 #[allow(clippy::too_many_arguments)]
 fn render_stair(
     ctx: &RenderCtx,
@@ -1980,7 +2097,6 @@ fn render_stair(
     steps: u32,
     height: f64,
     auto_steps: bool,
-    direction: StairDir,
     cut: bool,
     unten: Option<&EntityStyle>,
     oben: Option<&EntityStyle>,
@@ -2009,80 +2125,65 @@ fn render_stair(
     } else {
         (*st, *st)
     };
-    // Der Schnitt liegt in der Laufmitte; er trennt unteren und oberen Teil.
-    let schnitt = len * 0.5;
-    let bruch = if cut {
-        abschnittslinien(a, dir, nrm, hw, len, width)
-    } else {
-        Vec::new()
+    let schnitt = schnitt_geometrie(a, dir, nrm, hw, len, width, cut);
+    let stil_bei = |p: Vec2| {
+        if cut && schnitt.ist_oben(p) {
+            st_oben
+        } else {
+            st_unten
+        }
     };
 
-    // Umriss als vier Kanten — nur so können die Längskanten am Schnitt ihre
-    // Linienart wechseln.
+    let mut segs: Vec<(Vec2, Vec2, PrimStyle)> = Vec::new();
+    // Umriss: Startkante (bei a), Endkante (bei b) und die beiden Längskanten,
+    // die an der Schnittgrenze ihre Linienart wechseln.
     let ecken = [a + nrm * hw, b + nrm * hw, b - nrm * hw, a - nrm * hw];
-    let mitte = a + dir * schnitt;
-    // Startkante (bei a) gehört zum unteren, Endkante (bei b) zum oberen Teil.
-    stair_linie(dl, e, xf, st_unten, ecken[3], ecken[0]);
-    stair_linie(dl, e, xf, st_oben, ecken[1], ecken[2]);
-    // Längskanten, am Schnitt geteilt
-    stair_linie(dl, e, xf, st_unten, ecken[0], mitte + nrm * hw);
-    stair_linie(dl, e, xf, st_oben, mitte + nrm * hw, ecken[1]);
-    stair_linie(dl, e, xf, st_unten, ecken[3], mitte - nrm * hw);
-    stair_linie(dl, e, xf, st_oben, mitte - nrm * hw, ecken[2]);
+    stair_teile(&mut segs, &schnitt, cut, st_unten, st_oben, ecken[3], ecken[0], None);
+    stair_teile(&mut segs, &schnitt, cut, st_unten, st_oben, ecken[1], ecken[2], None);
+    stair_teile(&mut segs, &schnitt, cut, st_unten, st_oben, ecken[0], ecken[1], None);
+    stair_teile(&mut segs, &schnitt, cut, st_unten, st_oben, ecken[3], ecken[2], None);
 
     // Stufenlinien; am Treppenschnitt unterbrechen die Diagonalen sie.
     for i in 1..n {
-        let t = run * i as f64;
-        let p = a + dir * t;
-        let s = p + nrm * hw;
-        let q = p - nrm * hw;
-        let stil = duenn(if t < schnitt { st_unten } else { st_oben });
-        let mut treffer: Vec<f64> = Vec::new();
-        for l in &bruch {
-            if let Some(u) = kreuz_anteil(s, q, *l) {
-                treffer.push(u);
-            }
-        }
-        for (q0, q1) in stuecke(s, q, &treffer, 0.06) {
-            stair_linie(dl, e, xf, stil, q0, q1);
-        }
+        let p = a + dir * (run * i as f64);
+        stair_teile(
+            &mut segs,
+            &schnitt,
+            cut,
+            duenn(st_unten),
+            duenn(st_oben),
+            p + nrm * hw,
+            p - nrm * hw,
+            Some(0.06),
+        );
+    }
+
+    // Lauflinie (Mitte) — sie wechselt an der Schnittgrenze die Linienart.
+    stair_teile(&mut segs, &schnitt, cut, st_unten, st_oben, a, b, None);
+
+    for (p, q, stil) in segs {
+        stair_linie(dl, e, xf, stil, p, q);
     }
 
     // Die beiden Diagonalen des Treppenschnitts
-    for (p0, p1) in &bruch {
+    for (p0, p1) in &schnitt.diagonalen {
         stair_linie(dl, e, xf, *st, *p0, *p1);
     }
 
-    // Lauflinie (Basispunkt a → b, mittig) mit Richtungspfeil und Anfangsring
-    stair_linie(dl, e, xf, st_unten, a, mitte);
-    stair_linie(dl, e, xf, st_oben, mitte, b);
+    // Richtungspfeil am Laufende (die Laufrichtung ist a → b)
     let ah = ctx.a(1.2).max(run * 0.35);
-    let pfeil = |dl: &mut DisplayList, tip: Vec2, rueck: Vec2, stil: PrimStyle| {
-        for seite in [1.0, -1.0] {
-            let back = tip - rueck * (ah * 1.5) + nrm * (ah * 0.6 * seite);
-            stair_linie(dl, e, xf, stil, tip, back);
-        }
-    };
-    match direction {
-        StairDir::Up => pfeil(dl, b, dir, st_oben),
-        StairDir::Down => pfeil(dl, a, -dir, st_unten),
-        StairDir::Both => {
-            pfeil(dl, b, dir, st_oben);
-            pfeil(dl, a, -dir, st_unten);
-        }
+    let stil_pfeil = stil_bei(b);
+    for seite in [1.0, -1.0] {
+        let back = b - dir * (ah * 1.5) + nrm * (ah * 0.6 * seite);
+        stair_linie(dl, e, xf, stil_pfeil, b, back);
     }
-    // Ring am Anfang des Laufs (Anfangspunkt der Treppe)
-    let (anfang, stil_anfang) = if direction == StairDir::Down {
-        (b, st_oben)
-    } else {
-        (a, st_unten)
-    };
+    // Ring am Anfang des Laufs
     dl.push(Prim {
         shape: Shape::Circle {
-            c: xf.apply(anfang),
+            c: xf.apply(a),
             r: (width * 0.06).max(ctx.a(0.5)) * xf.scale_factor(),
         },
-        style: stil_anfang,
+        style: stil_bei(a),
         entity: e.id,
         layer: e.layer,
     });
@@ -2133,35 +2234,6 @@ fn stuecke(s: Vec2, t: Vec2, schnitte: &[f64], halb: f64) -> Vec<(Vec2, Vec2)> {
         out.push((anteil_punkt(s, t, cur), t));
     }
     out
-}
-
-/// Die beiden Diagonalen der Abschnittslinie (Weltkoordinaten).
-///
-/// Sie laufen unter 45° über die Treppenbreite und liegen mittig im Lauf. Bei
-/// kurzen Treppen entfallen sie — dort ist nichts zu verkürzen.
-fn abschnittslinien(
-    a: Vec2,
-    dir: Vec2,
-    nrm: Vec2,
-    hw: f64,
-    len: f64,
-    width: f64,
-) -> Vec<(Vec2, Vec2)> {
-    let d = width * 0.8;
-    let abstand = width * 0.16;
-    if len < d * 1.4 {
-        return Vec::new();
-    }
-    let t0 = (len - (d + abstand)) * 0.5;
-    (0..2)
-        .map(|k| {
-            let t = t0 + abstand * k as f64;
-            (
-                a + dir * t - nrm * hw,
-                a + dir * (t + d) + nrm * hw,
-            )
-        })
-        .collect()
 }
 
 // ---------------------------------------------------------------------------

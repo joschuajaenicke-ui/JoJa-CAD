@@ -240,6 +240,8 @@ fn alte_datei_behaelt_ihre_stufen() {
         obj.remove("height");
         obj.remove("auto_steps");
         obj.insert("steps".into(), json!(13));
+        // Ältere Dateien tragen noch eine Laufrichtung — sie wird ignoriert.
+        obj.insert("direction".into(), json!("Up"));
     }
     let alt = serde_json::to_string(&datei).unwrap();
     let doc = jjcad_core::persist::from_json(&alt).expect("alte Datei lädt nicht");
@@ -292,8 +294,20 @@ fn schnitt_ist_abschaltbar() {
     assert_eq!(diagonalen(&anzeige(&s, id)), 2);
 }
 
+/// Liegt der Punkt im oberen Teil? Die Grenze zwischen den Treppenteilen ist
+/// die Parallele in der Mitte zwischen den beiden Diagonalen — bei 1,00 m
+/// Breite läuft sie von (+0,50 | 1,92) nach (-0,50 | 2,72) m.
+fn oberhalb(p: Vec2) -> bool {
+    let g = Vec2::new(BREITE * 0.5, 1920.0);
+    let d = Vec2::new(-BREITE, BREITE * 0.8);
+    let n = d.normalized().perp();
+    let n = if n.y < 0.0 { -n } else { n };
+    (p - g).dot(n) >= 0.0
+}
+
 /// Oberer und unterer Teil haben eigene Linien: eine Strichelung des oberen
-/// Teils darf die unteren Stufen nicht verändern.
+/// Teils darf die unteren Stufen nicht verändern — und die Grenze dazwischen
+/// läuft **schräg** mit dem Treppenschnitt, nicht als gerade Querlinie.
 #[test]
 fn obere_und_untere_linien_getrennt() {
     use jjcad_core::style::LineType;
@@ -306,18 +320,69 @@ fn obere_und_untere_linien_getrennt() {
     for p in &dl.prims {
         if let Shape::Line(a, b) = &p.shape {
             if (a.y - b.y).abs() < 0.01 && (a.x - b.x).abs() > BREITE * 0.25 {
-                let y = (a.y + b.y) * 0.5;
-                let erwartet = if y < LAENGE * 0.5 {
-                    LineType::Solid
-                } else {
+                let mitte = (*a + *b) * 0.5;
+                // Start-/Endkante (y = 0 bzw. Länge) sind keine Stufenlinien.
+                if mitte.y < 0.5 || mitte.y > LAENGE - 0.5 {
+                    continue;
+                }
+                let erwartet = if oberhalb(mitte) {
                     LineType::Dashed
+                } else {
+                    LineType::Solid
                 };
-                assert_eq!(p.style.line_type, erwartet, "Stufenlinie bei y = {y}");
+                assert_eq!(
+                    p.style.line_type, erwartet,
+                    "Stufenstück bei {mitte:?} hat die falsche Linienart"
+                );
                 geprueft += 1;
             }
         }
     }
-    assert!(geprueft >= 14, "zu wenige Stufenlinien geprüft: {geprueft}");
+    assert!(geprueft >= 14, "zu wenige Stufenstücke geprüft: {geprueft}");
+}
+
+/// Die Grenze zwischen den Treppenteilen verläuft entlang des Schnitts: die
+/// linke Längskante wechselt die Linienart bei einer anderen Höhe als die
+/// rechte (bei einer geraden Querlinie wären beide gleich).
+#[test]
+fn grenze_verlaeuft_schraeg() {
+    use jjcad_core::style::LineType;
+    let mut s = session();
+    let id = treppe(&mut s, json!({}));
+    s.execute("modify.set", &json!({"ids": [id], "type_oben": "dashed"}))
+        .unwrap();
+    let dl = anzeige(&s, id);
+    let wechsel = |x: f64| -> (f64, f64) {
+        let (mut solid, mut dash) = (f64::MIN, f64::MAX);
+        for p in &dl.prims {
+            if let Shape::Line(a, b) = &p.shape {
+                if (a.x - b.x).abs() < 0.01 && (a.x - x).abs() < 0.01 {
+                    match p.style.line_type {
+                        LineType::Solid => solid = solid.max(a.y.max(b.y)),
+                        LineType::Dashed => dash = dash.min(a.y.min(b.y)),
+                        _ => {}
+                    }
+                }
+            }
+        }
+        (solid, dash)
+    };
+    let (links_solid, links_dash) = wechsel(-BREITE * 0.5);
+    let (rechts_solid, rechts_dash) = wechsel(BREITE * 0.5);
+    assert!(
+        (links_solid - links_dash).abs() < 1.0,
+        "linke Kante: durchgezogen bis {links_solid}, gestrichelt ab {links_dash}"
+    );
+    assert!(
+        (rechts_solid - rechts_dash).abs() < 1.0,
+        "rechte Kante: durchgezogen bis {rechts_solid}, gestrichelt ab {rechts_dash}"
+    );
+    let versatz = (rechts_solid - links_solid).abs();
+    assert!(
+        (versatz - BREITE * 0.8).abs() < 1.0,
+        "der Wechsel muss schräg laufen (Versatz {versatz} statt {})",
+        BREITE * 0.8
+    );
 }
 
 /// Die Länge ist ein Rechteckmaß: sie verschiebt das Ende auf der Lauflinie,

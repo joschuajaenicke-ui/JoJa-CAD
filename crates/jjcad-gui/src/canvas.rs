@@ -4292,19 +4292,13 @@ fn tool_click_at(app: &mut App, w: V2, raw: V2) {
                         let nrm = (b0 - a0).normalized().perp();
                         let a = a0 + nrm * (tiefe * 0.5);
                         let b = b0 + nrm * (tiefe * 0.5);
-                        let dir = match app.options.stair_dir {
-                            StairDir::Up => "up",
-                            StairDir::Down => "down",
-                            StairDir::Both => "both",
-                        };
                         let _ = run(
                             app,
                             "draw.stair",
                             json!({"a": ax(a), "b": ax(b), "width": unit.from_mm(breite),
                                    "steps": app.options.stair_steps,
                                    "height": unit.from_mm(app.options.stair_height),
-                                   "auto": app.options.stair_auto,
-                                   "direction": dir}),
+                                   "auto": app.options.stair_auto}),
                         );
                     } else {
                         app.toast("Treppe · Breite zu klein");

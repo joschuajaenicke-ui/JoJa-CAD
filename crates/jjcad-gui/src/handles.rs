@@ -480,8 +480,26 @@ fn eckpunkte(e: &Entity) -> Vec<V2> {
     }
 }
 
-/// Richtung einer Polygonkante (normiert).
+/// Richtung einer Kante (normiert): Startpunkt und Einheitsrichtung.
+///
+/// Gilt für die Kanten einer geschlossenen Polylinie **und** für die vier
+/// Rechteckkanten einer Treppe — `canvas::draw_grips` zeichnet den Griff quer
+/// zur Kante, ohne Richtung gäbe es keinen Griff zu sehen (T0027, Turn 3).
 pub fn edge_dir(e: &Entity, i: usize) -> Option<(V2, V2)> {
+    if let EntityKind::Stair { a, b, width, .. } = &e.kind {
+        let (ecken, _, _, _) = stair_rechteck(*a, *b, *width);
+        if i >= 4 {
+            return None;
+        }
+        let p = ecken[i];
+        let q = ecken[(i + 1) % 4];
+        let d = q - p;
+        let l = d.len();
+        if l < 1e-9 {
+            return None;
+        }
+        return Some((p, d / l));
+    }
     if let EntityKind::Polyline { verts, closed } = &e.kind {
         let n = verts.len();
         if n < 2 || i >= n {
@@ -1111,7 +1129,6 @@ mod tests_treppe {
                 b: V2::new(0.0, 4000.0),
                 width: 1000.0,
                 steps: 16,
-                direction: Default::default(),
                 height: 2750.0,
                 auto_steps: true,
                 cut: true,
