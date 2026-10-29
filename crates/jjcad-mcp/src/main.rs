@@ -162,7 +162,7 @@ fn tool_list() -> Value {
         },
         {
             "name": "jjcad_batch",
-            "description": "Führt mehrere Aktionen nacheinander aus (eine Undo-Einheit pro Schritt). Bei stop_on_error=true wird beim ersten Fehler abgebrochen.",
+            "description": "Führt mehrere Aktionen nacheinander aus (eine Undo-Einheit pro Schritt). ACHTUNG: Der Batch bricht beim ersten fehlerhaften Schritt ab (Vorgabe stop_on_error=true) — alle folgenden Schritte werden NICHT ausgeführt. Ein Tippfehler in Schritt 12 verschluckt die Schritte 13–80, deshalb Batches in kleinen Gruppen (etwa 10–20 Schritte) schicken und nach jedem Batch das Ergebnis prüfen. Antwort: executed = erfolgreich ausgeführte Schritte, errors = Fehlschläge, aborted_at = Index des Fehlschlags (null ohne Abbruch), nicht_ausgefuehrt = Anzahl der nicht mehr ausgeführten Schritte.",
             "inputSchema": {
                 "type": "object",
                 "properties": {
@@ -337,12 +337,16 @@ fn call_tool(server: &mut Server, name: &str, args: &Value) -> Result<Value, Str
                 .unwrap_or(true);
             let units = args.get("units").and_then(|v| v.as_str());
             let mut results = Vec::new();
+            // Index des Schritts, an dem der Batch abgebrochen wurde. `None` =
+            // kein Abbruch (alle Schritte gelaufen oder `stop_on_error: false`).
+            let mut abgebrochen: Option<usize> = None;
             for (i, step) in steps.iter().enumerate() {
                 let action = match step.get("action").and_then(|v| v.as_str()) {
                     Some(a) => a.to_string(),
                     None => {
                         results.push(json!({"index": i, "ok": false, "error": "action fehlt"}));
                         if stop {
+                            abgebrochen = Some(i);
                             break;
                         }
                         continue;
@@ -359,6 +363,7 @@ fn call_tool(server: &mut Server, name: &str, args: &Value) -> Result<Value, Str
                     Err(e) => {
                         results.push(json!({"index": i, "action": action, "ok": false, "error": e}));
                         if stop {
+                            abgebrochen = Some(i);
                             break;
                         }
                     }
@@ -368,10 +373,19 @@ fn call_tool(server: &mut Server, name: &str, args: &Value) -> Result<Value, Str
                 .iter()
                 .filter(|r| r.get("ok").and_then(|v| v.as_bool()) == Some(false))
                 .count();
+            // `executed` zählt nur **erfolgreiche** Schritte — vorher zählte es
+            // auch den Fehlschlag mit, dann war der Zähler als Erfolgsmaß
+            // unbrauchbar (`executed - errors` stimmte nur zufällig).
+            let executed = results.len() - errors;
+            // Restliche Schritte hat der Batch gar nicht mehr angefasst; ihre
+            // Indizes sind `aborted_at + 1 … aborted_at + nicht_ausgefuehrt`.
+            let nicht_ausgefuehrt = steps.len() - results.len();
             Ok(ok_text(pretty(&json!({
                 "ok": errors == 0,
-                "executed": results.len(),
+                "executed": executed,
                 "errors": errors,
+                "aborted_at": abgebrochen,
+                "nicht_ausgefuehrt": nicht_ausgefuehrt,
                 "results": results,
                 "state": server.active().info(),
             }))))
@@ -890,6 +904,127 @@ fn ergebnis_text(v: &Value) -> String {
         .and_then(|t| t.as_str())
         .unwrap_or("")
         .to_string()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Werkzeugergebnis als JSON (die Antwort steckt als Text in `content[0]`).
+    fn antwort(res: &Value) -> Value {
+        serde_json::from_str(&ergebnis_text(res)).expect("Antwort ist kein JSON")
+    }
+
+    fn neues_dokument(server: &mut Server) {
+        document_tool(server, &json!({"action": "new", "units": "m"})).expect("neues Dokument");
+    }
+
+    /// Repro aus dem Ticket: drei Schritte, Schritt 2 ist unbekannt.
+    #[test]
+    fn batch_bricht_ab_und_zaehlt_nur_erfolge() {
+        let mut server = Server::new();
+        neues_dokument(&mut server);
+        let steps = json!([
+            {"action": "draw.line", "params": {"a": [0, 0], "b": [1, 0]}},
+            {"action": "gibt.es.nicht", "params": {}},
+            {"action": "draw.line", "params": {"a": [0, 1], "b": [1, 1]}},
+        ]);
+        let a = antwort(
+            &call_tool(&mut server, "jjcad_batch", &json!({"steps": steps})).expect("Batch"),
+        );
+        assert_eq!(a["ok"], json!(false), "Fehlschlag muss gemeldet werden");
+        // 1 Schritt erfolgreich, 1 fehlerhaft — vorher stand hier 2.
+        assert_eq!(a["executed"], json!(1));
+        assert_eq!(a["errors"], json!(1));
+        assert_eq!(a["aborted_at"], json!(1));
+        assert_eq!(a["nicht_ausgefuehrt"], json!(1));
+        assert_eq!(a["results"].as_array().map(|r| r.len()), Some(2));
+        // Der dritte Schritt wurde wirklich nicht ausgeführt.
+        assert_eq!(server.active().doc.entities.len(), 1);
+    }
+
+    /// `stop_on_error: false` führt weiter aus — dann gibt es keinen Abbruch.
+    #[test]
+    fn batch_ohne_stop_zaehlt_alle_erfolge() {
+        let mut server = Server::new();
+        neues_dokument(&mut server);
+        let steps = json!([
+            {"action": "draw.line", "params": {"a": [0, 0], "b": [1, 0]}},
+            {"action": "gibt.es.nicht", "params": {}},
+            {"action": "draw.line", "params": {"a": [0, 1], "b": [1, 1]}},
+        ]);
+        let a = antwort(
+            &call_tool(
+                &mut server,
+                "jjcad_batch",
+                &json!({"steps": steps, "stop_on_error": false}),
+            )
+            .expect("Batch"),
+        );
+        assert_eq!(a["executed"], json!(2));
+        assert_eq!(a["errors"], json!(1));
+        assert_eq!(a["aborted_at"], Value::Null);
+        assert_eq!(a["nicht_ausgefuehrt"], json!(0));
+        assert_eq!(server.active().doc.entities.len(), 2);
+    }
+
+    /// Repro aus dem Ticket: leere Zeichnung meldet keine Blöcke als Bestand.
+    #[test]
+    fn leere_zeichnung_meldet_null_bloecke() {
+        let mut server = Server::new();
+        neues_dokument(&mut server);
+        let info = antwort(
+            &call_tool(&mut server, "jjcad_document", &json!({"action": "info"}))
+                .expect("info"),
+        );
+        assert_eq!(info["summary"], json!("0 Objekte · 0 Wände · 0 Türen · 0 Fenster · 0 Blockinstanzen · 0 Sonstige"));
+        assert_eq!(info["zaehlung"]["blockinstanzen"], json!(0));
+        // Die Systembibliothek ist Programmausstattung und steht getrennt.
+        assert!(
+            info["systembloecke"].as_u64().unwrap_or(0) > 0,
+            "Systemblockbibliothek fehlt: {info}"
+        );
+        assert_eq!(info["blocks"], info["systembloecke"]);
+    }
+
+    /// Die Teilsummen der Zählung müssen die Gesamtzahl ergeben.
+    #[test]
+    fn summary_teilsummen_ergeben_die_objektzahl() {
+        let mut server = Server::new();
+        neues_dokument(&mut server);
+        let steps = json!([
+            {"action": "draw.wall", "params": {"a": [0,0], "b": [8,0], "thickness": 0.3, "layer": "Wände"}},
+            {"action": "draw.wall", "params": {"a": [8,0], "b": [8,6], "thickness": 0.3, "layer": "Wände"}},
+            {"action": "draw.wall", "params": {"a": [8,6], "b": [0,6], "thickness": 0.3, "layer": "Wände"}},
+            {"action": "draw.door", "params": {"center": [2,0], "width": 1.0, "layer": "Türen"}},
+            {"action": "draw.window", "params": {"center": [5,0], "width": 1.6, "layer": "Fenster"}},
+            {"action": "block.insert", "params": {"block": "Tisch", "pos": [4,3]}},
+            {"action": "draw.text", "params": {"p": [1,4], "text": "WOHNEN", "height": 0.3}},
+            {"action": "draw.line", "params": {"a": [0,0], "b": [8,6]}}
+        ]);
+        let a = antwort(
+            &call_tool(&mut server, "jjcad_batch", &json!({"steps": steps})).expect("Batch"),
+        );
+        assert_eq!(a["ok"], json!(true), "Batch: {a}");
+        assert_eq!(a["executed"], json!(8));
+
+        let info = antwort(
+            &call_tool(&mut server, "jjcad_document", &json!({"action": "info"}))
+                .expect("info"),
+        );
+        let z = &info["zaehlung"];
+        let n = |k: &str| z[k].as_u64().unwrap_or_else(|| panic!("Feld {k}: {z}"));
+        let summe = n("waende") + n("tueren") + n("fenster") + n("blockinstanzen") + n("sonstige");
+        assert_eq!(Some(summe), info["entities"].as_u64());
+        assert_eq!(Some(n("objekte")), info["entities"].as_u64());
+        assert_eq!(n("waende"), 3);
+        assert_eq!(n("tueren"), 1);
+        assert_eq!(n("fenster"), 1);
+        assert_eq!(n("blockinstanzen"), 1);
+        // Der Text in der summary nennt dieselben Zahlen.
+        let text = info["summary"].as_str().unwrap_or_default();
+        assert!(text.starts_with("8 Objekte · 3 Wände · 1 Türen · 1 Fenster · 1 Blockinstanzen · 2 Sonstige"), "{text}");
+    }
 }
 
 fn main() {

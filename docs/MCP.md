@@ -38,7 +38,7 @@ Logs gehen ausschließlich nach **stderr** — stdout bleibt dem Protokoll vorbe
 |---|---|
 | `jjcad_document` | `new`, `open`, `save`, `save_as`, `info`, `list`, `close`, `units` |
 | `jjcad_execute` | Eine Aktion ausführen (IDs siehe `jjcad_actions`) |
-| `jjcad_batch` | Viele Aktionen in einem Aufruf (mit Fehlerkontext) |
+| `jjcad_batch` | Viele Aktionen in einem Aufruf — **bricht beim ersten Fehler ab** (siehe [Batches](#batches-abbruch-beim-ersten-fehler)) |
 | `jjcad_query` | Objekte nach ID, Layer, Typ oder Bereich abfragen; geschlossene Objekte tragen `area_m2` |
 | `jjcad_export` | PDF, DXF oder PNG schreiben |
 | `jjcad_render` | PNG als **Bildinhalt** zurückgeben (visuelles Feedback) |
@@ -60,7 +60,8 @@ Linienzüge, Texte und Maße tragen das Feld nicht. Für Raumgruppen summiert
 
 1. `jjcad_actions` — Katalog lesen (oder `docs/BEFEHLE.md`).
 2. `jjcad_document {"action":"new","units":"m","project":{...}}`.
-3. `jjcad_batch` mit den Zeichenbefehlen.
+3. `jjcad_batch` mit den Zeichenbefehlen — in kleinen Gruppen (10–20 Schritte),
+   denn der Batch bricht beim ersten Fehler ab und schickt den Rest nicht mehr.
 4. `jjcad_render` — Bild prüfen, bei Bedarf korrigieren.
 5. `jjcad_export {"format":"pdf","path":"…/A-01.pdf"}` und
    `jjcad_document {"action":"save","path":"…/haus.jjcad"}`.
@@ -91,10 +92,54 @@ Linienzüge, Texte und Maße tragen das Feld nicht. Für Raumgruppen summiert
 Antwort (gekürzt):
 
 ```json
-{"ok": true, "executed": 7, "errors": 0,
+{"ok": true, "executed": 7, "errors": 0, "aborted_at": null, "nicht_ausgefuehrt": 0,
  "results": [{"index":0,"action":"draw.wall","ok":true,"result":{"created":[13],"length_mm":8000.0}}],
  "state": {"entities": 7, "bbox": {"min": [-150, -150], "max": [8150, 6150]}}}
 ```
+
+## Batches: Abbruch beim ersten Fehler
+
+`jjcad_batch` arbeitet die Schritte **der Reihe nach** ab und hält beim ersten
+fehlerhaften Schritt an. Die folgenden Schritte werden **nicht** ausgeführt —
+sie fehlen auch in `results`. Ein Tippfehler in Schritt 12 verschluckt also die
+Schritte 13–80, ohne dass irgendetwas davon im Dokument landet.
+
+Deshalb: **Batches in kleinen Gruppen schicken** (etwa 10–20 Schritte), das
+Ergebnis jedes Batches prüfen und erst dann den nächsten schicken. Wer 80
+Schritte in einem Aufruf schickt, erfährt sonst nur, dass irgendwo in der ersten
+Hälfte etwas schiefging.
+
+```json
+{"name":"jjcad_batch","arguments":{"steps":[
+  {"action":"draw.wall","params":{"a":[0,0],"b":[8,0],"thickness":0.3}},
+  {"action":"gibtesnicht","params":{}},
+  {"action":"draw.wall","params":{"a":[8,0],"b":[8,6],"thickness":0.3}}
+]}}
+```
+
+Antwort:
+
+```json
+{"ok": false, "executed": 1, "errors": 1, "aborted_at": 1, "nicht_ausgefuehrt": 1,
+ "results": [
+   {"index":0,"action":"draw.wall","ok":true,"result":{"created":[13]}},
+   {"index":1,"action":"gibtesnicht","ok":false,
+    "error":"Aktion 'gibtesnicht' ist in dieser Version nicht implementiert"}
+ ]}
+```
+
+| Feld | Bedeutung |
+|---|---|
+| `executed` | Anzahl **erfolgreich** ausgeführter Schritte (Fehlschläge zählen nicht mit) |
+| `errors` | Anzahl fehlgeschlagener Schritte (ohne `stop_on_error: false` höchstens 1) |
+| `aborted_at` | Index des Schritts, bei dem abgebrochen wurde; `null` ohne Abbruch |
+| `nicht_ausgefuehrt` | Anzahl der Schritte, die der Batch gar nicht mehr angefasst hat |
+
+Die nicht ausgeführten Schritte sind die Indizes `aborted_at + 1` bis
+`aborted_at + nicht_ausgefuehrt`. Mit `"stop_on_error": false` läuft der Batch
+weiter und meldet am Ende alle Fehler; dann ist `aborted_at` immer `null` und
+`nicht_ausgefuehrt` immer 0. Ein Schritt = eine Undo-Einheit, ein Abbruch lässt
+sich also schrittweise zurücknehmen.
 
 ## Bilder prüfen
 
@@ -167,6 +212,30 @@ Antwort (gekürzt):
 der Maßstab zu klein gewählt. Ohne Ansichtsfenster oder bei leerer Zeichnung
 meldet die Aktion einen Fehler statt still `ok`.
 
+## Zustand und Bestand (`jjcad_document info`)
+
+Jede Antwort trägt den Zustand des aktiven Dokuments mit. `info` liefert ihn
+ausführlich; für den Bestand gilt:
+
+```json
+{"entities": 8,
+ "summary": "8 Objekte · 3 Wände · 1 Türen · 1 Fenster · 1 Blockinstanzen · 2 Sonstige",
+ "zaehlung": {"objekte": 8, "waende": 3, "tueren": 1, "fenster": 1,
+              "blockinstanzen": 1, "sonstige": 2},
+ "blocks": 19, "systembloecke": 19}
+```
+
+- `summary` zählt **nur Objekte der Zeichnung**. Die Teile (`Wände`, `Türen`,
+  `Fenster`, `Blockinstanzen`, `Sonstige`) ergeben zusammen die Objektzahl;
+  `Sonstige` sind Linien, Maße, Texte und alles andere ohne eigene Spalte.
+- `blockinstanzen` sind **eingesetzte** Blöcke im Plan, nicht die Bibliothek.
+- `blocks` ist die Zahl der Block**definitionen** in der Datei, `systembloecke`
+  davon die mitgelieferten. Eine leere Zeichnung meldet `0 Blockinstanzen` und
+  trotzdem 19 Systemblöcke — die Bibliothek ist Programmausstattung, kein
+  Zeichnungsinhalt.
+- `zaehlung` ist dieselbe Zahl maschinenlesbar; `summary` ist die Zeile für den
+  Menschen (GUI „Über“/Zeichnungsinfo).
+
 ## Hinweise für Agenten
 
 - Koordinaten sind standardmäßig in **Metern** (`units:"mm"` für Millimeter).
@@ -176,7 +245,9 @@ meldet die Aktion einen Fehler statt still `ok`.
   Standardabstand gesetzt.
 - `modify.trim` erwartet `at` auf dem **zu entfernenden** Abschnitt.
 - Nach Änderungen liefert jede Antwort den aktuellen Zustand (`state`) mit.
-- Ein Schritt = eine Undo-Einheit; `jjcad_batch` ist daher gutmütig zu korrigieren.
+- Ein Schritt = eine Undo-Einheit; `jjcad_batch` ist daher gutmütig zu
+  korrigieren — aber nur bis zum Abbruch: was hinter dem Fehlschlag steht, ist
+  nicht gelaufen (siehe [Batches](#batches-abbruch-beim-ersten-fehler)).
 
 ## Ressourcen
 

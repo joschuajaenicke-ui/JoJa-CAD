@@ -1440,30 +1440,64 @@ impl Document {
         format!("{} Objekte", self.ents().len())
     }
 
+    /// Objektzählung der Zeichnung — nur Modellobjekte, keine Blockbibliothek.
+    pub fn zaehlung(&self) -> ObjektZaehlung {
+        ObjektZaehlung::erhebe(&self.entities)
+    }
+
+    /// Anzahl der mitgelieferten Systemblöcke in der Blockbibliothek.
+    ///
+    /// Sie gehören zum Programm, nicht zur Zeichnung — deshalb zählt `summary`
+    /// sie nicht als Objekte mit, sondern nennt sie getrennt.
+    pub fn system_blocks(&self) -> usize {
+        self.blocks
+            .iter()
+            .filter(|b| b.source == BlockSource::System)
+            .count()
+    }
+
+    /// Bestand als eine Zeile: alle Teile ergeben zusammen die Objektzahl.
     pub fn summary(&self) -> String {
-        let walls = self
-            .entities
-            .iter()
-            .filter(|e| matches!(e.kind, EntityKind::Wall { .. }))
-            .count();
-        let doors = self
-            .entities
-            .iter()
-            .filter(|e| matches!(e.kind, EntityKind::Door { .. }))
-            .count();
-        let windows = self
-            .entities
-            .iter()
-            .filter(|e| matches!(e.kind, EntityKind::Window { .. }))
-            .count();
+        let z = self.zaehlung();
         format!(
-            "{} Objekte · {} Wände · {} Türen · {} Fenster · {} Blöcke",
-            self.entities.len(),
-            walls,
-            doors,
-            windows,
-            self.blocks.len()
+            "{} Objekte · {} Wände · {} Türen · {} Fenster · {} Blockinstanzen · {} Sonstige",
+            z.objekte, z.waende, z.tueren, z.fenster, z.blockinstanzen, z.sonstige
         )
+    }
+}
+
+/// Zählung der Objekte einer Zeichnung.
+///
+/// Die Teile ergeben zusammen `objekte` — jede Objektart fällt in genau eine
+/// Zeile. Block**definitionen** (Bibliothek) sind kein Zeichnungsinhalt; gezählt
+/// werden nur eingesetzte Blockinstanzen (`EntityKind::BlockRef`).
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct ObjektZaehlung {
+    pub objekte: usize,
+    pub waende: usize,
+    pub tueren: usize,
+    pub fenster: usize,
+    pub blockinstanzen: usize,
+    /// Alles, was keine der vier Architekturarten ist: Linien, Maße, Texte, …
+    pub sonstige: usize,
+}
+
+impl ObjektZaehlung {
+    pub fn erhebe(ents: &[Entity]) -> Self {
+        let mut z = Self {
+            objekte: ents.len(),
+            ..Self::default()
+        };
+        for e in ents {
+            match &e.kind {
+                EntityKind::Wall { .. } => z.waende += 1,
+                EntityKind::Door { .. } => z.tueren += 1,
+                EntityKind::Window { .. } => z.fenster += 1,
+                EntityKind::BlockRef { .. } => z.blockinstanzen += 1,
+                _ => z.sonstige += 1,
+            }
+        }
+        z
     }
 }
 

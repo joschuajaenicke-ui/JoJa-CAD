@@ -142,6 +142,11 @@ impl Session {
     }
 
     pub fn info(&self) -> Value {
+        // Zählung einmal erheben: `summary` (Text für den Menschen) und
+        // `zaehlung` (maschinenlesbar) müssen dieselben Zahlen nennen.
+        // Systemblöcke sind Programmausstattung, kein Zeichnungsinhalt — sie
+        // stehen deshalb getrennt in `systembloecke` und nicht in der Summe.
+        let z = self.doc.zaehlung();
         json!({
             "name": self.doc.name,
             "path": self.doc.path,
@@ -163,6 +168,15 @@ impl Session {
                 "max": self.doc.bbox().max.to_array()
             },
             "summary": self.doc.summary(),
+            "zaehlung": {
+                "objekte": z.objekte,
+                "waende": z.waende,
+                "tueren": z.tueren,
+                "fenster": z.fenster,
+                "blockinstanzen": z.blockinstanzen,
+                "sonstige": z.sonstige,
+            },
+            "systembloecke": self.doc.system_blocks(),
         })
     }
 
