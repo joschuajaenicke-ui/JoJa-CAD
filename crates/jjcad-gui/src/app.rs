@@ -455,6 +455,9 @@ pub struct UiState {
     pub systemdialog: Option<(FileMode, Systemdialog)>,
     /// Seite für „PDF einfügen" bereits gewählt
     pub pdf_import: Option<PdfImportWahl>,
+    /// Auszeichnung, die für das **nächste getippte Zeichen** gilt (Umschalter
+    /// ohne Markierung im Textfeld), samt dem Text, zu dem sie gehört.
+    pub text_format_next: Option<(Id, jjcad_core::text::RunStyle)>,
     pub show_grid: bool,
     pub lineweights: bool,
     /// Vollbild gewünscht (maßgeblich ist der Fensterzustand, siehe
@@ -526,6 +529,7 @@ impl Default for UiState {
             file_dialog: None,
             systemdialog: None,
             pdf_import: None,
+            text_format_next: None,
             show_grid: true,
             lineweights: true,
             fullscreen: false,

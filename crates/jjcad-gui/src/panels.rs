@@ -368,6 +368,41 @@ pub fn properties(app: &mut App, ui: &mut Ui) {
         });
 }
 
+/// Umschaltreihe für die Auszeichnung — F fett, K kursiv, U unterstrichen,
+/// x² hochgestellt. Die Knöpfe zeigen ihre eigene Auszeichnung, damit man
+/// nicht raten muss, welcher was tut.
+fn auszeichnen_knoepfe(
+    ui: &mut Ui,
+    aktuel: jjcad_core::text::RunStyle,
+) -> Option<(&'static str, bool)> {
+    let mut klick = None;
+    ui.horizontal(|ui| {
+        ui.spacing_mut().item_spacing.x = 4.0;
+        for (schluessel, beschriftung, an, hinweis) in [
+            ("bold", "F", aktuel.bold, "Fett"),
+            ("italic", "K", aktuel.italic, "Kursiv"),
+            ("underline", "U", aktuel.underline, "Unterstrichen"),
+            ("superscript", "x²", aktuel.superscript, "Hochgestellt"),
+        ] {
+            let beschriftung = egui::RichText::new(beschriftung).size(13.0);
+            let beschriftung = match schluessel {
+                "bold" => beschriftung.strong(),
+                "italic" => beschriftung.italics(),
+                "underline" => beschriftung.underline(),
+                _ => beschriftung,
+            };
+            if ui
+                .add(egui::SelectableLabel::new(an, beschriftung))
+                .on_hover_text(hinweis)
+                .clicked()
+            {
+                klick = Some((schluessel, !an));
+            }
+        }
+    });
+    klick
+}
+
 /// Zeichenbereich, für den ein Umschalter gilt: die Markierung im Textfeld,
 /// sonst der ganze Text. Ohne Markierung wäre der Umschalter sonst wirkungslos.
 fn zeichenbereich(markierung: Option<(usize, usize)>, laenge: usize) -> (usize, usize) {
@@ -431,48 +466,41 @@ fn text_eingabe_props(app: &mut App, ui: &mut Ui) {
                 ui.ctx().request_repaint();
             }
         });
-        // Auszeichnung des Textes, der gerade getippt wird — auf den ganzen
-        // Text, weil es in der Zeichenfläche keine Zeichenauswahl gibt.
-        let stil = jjcad_core::text::char_styles(&t.text, &t.runs, jjcad_core::text::RunStyle::default())
-            .first()
+        // Auszeichnung: mit Markierung im Editor gilt sie für die markierten
+        // Zeichen, ohne Markierung für das, was als Nächstes getippt wird
+        // (wie in einem Textprogramm). Der vorhandene Text bleibt unberührt.
+        let markierung = crate::textedit::markierung(ui.ctx());
+        let stil = match markierung {
+            Some((a, _)) => jjcad_core::text::char_styles(
+                &t.text,
+                &t.runs,
+                jjcad_core::text::RunStyle::default(),
+            )
+            .get(a)
             .copied()
-            .unwrap_or_default();
-        let mut klick: Option<(usize, bool)> = None;
-        ui.horizontal(|ui| {
-            ui.spacing_mut().item_spacing.x = 4.0;
-            for (i, (beschriftung, an, hinweis)) in [
-                ("F", stil.bold, "Fett"),
-                ("K", stil.italic, "Kursiv"),
-                ("U", stil.underline, "Unterstrichen"),
-                ("x²", stil.superscript, "Hochgestellt"),
-            ]
-            .into_iter()
-            .enumerate()
-            {
-                let beschriftung = if i == 0 {
-                    theme::bold(beschriftung, 13.0)
-                } else {
-                    egui::RichText::new(beschriftung).size(13.0)
-                };
-                if ui
-                    .add(egui::SelectableLabel::new(an, beschriftung))
-                    .on_hover_text(hinweis)
-                    .clicked()
-                {
-                    klick = Some((i, !an));
-                }
-            }
-        });
-        if let Some((i, wert)) = klick {
+            .unwrap_or_default(),
+            None => t.pending.unwrap_or_default(),
+        };
+        let klick = auszeichnen_knoepfe(ui, stil);
+        ui.label(theme::faint(match markierung {
+            Some((a, b)) => format!("Zeichen {a}–{b}"),
+            None => "nächste Zeichen".to_string(),
+        }));
+        if let Some((schluessel, wert)) = klick {
             let mut neu = stil;
-            match i {
-                0 => neu.bold = wert,
-                1 => neu.italic = wert,
-                2 => neu.underline = wert,
+            match schluessel {
+                "bold" => neu.bold = wert,
+                "italic" => neu.italic = wert,
+                "underline" => neu.underline = wert,
                 _ => neu.superscript = wert,
             }
-            let n = t.text.chars().count();
-            t.runs = jjcad_core::text::apply_style(&t.text, &t.runs, 0, n, neu);
+            match markierung {
+                Some((a, b)) => {
+                    t.runs =
+                        jjcad_core::text::apply_style(&t.text, &t.runs, a, b, neu);
+                }
+                None => t.pending = Some(neu),
+            }
             ui.ctx().request_repaint();
         }
         ui.add_space(6.0);
@@ -847,40 +875,21 @@ fn pending_props(app: &mut App, ui: &mut Ui) {
         // ein Feld an dieser Stelle wäre ein zweiter, wirkungsloser Weg. Die
         // Auszeichnung gilt für den ganzen neuen Text und bleibt für das
         // nächste Element stehen.
-        ui.horizontal(|ui| {
-            ui.spacing_mut().item_spacing.x = 4.0;
-            for (schluessel, beschriftung, hinweis) in [
-                ("bold", "F", "Fett"),
-                ("italic", "K", "Kursiv"),
-                ("underline", "U", "Unterstrichen"),
-                ("superscript", "x²", "Hochgestellt"),
-            ] {
-                let an = match schluessel {
-                    "bold" => app.options.text_bold,
-                    "italic" => app.options.text_italic,
-                    "underline" => app.options.text_underline,
-                    _ => app.options.text_superscript,
-                };
-                let beschriftung = if schluessel == "bold" {
-                    theme::bold(beschriftung, 13.0)
-                } else {
-                    egui::RichText::new(beschriftung).size(13.0)
-                };
-                if ui
-                    .add(egui::SelectableLabel::new(an, beschriftung))
-                    .on_hover_text(hinweis)
-                    .clicked()
-                {
-                    match schluessel {
-                        "bold" => app.options.text_bold = !an,
-                        "italic" => app.options.text_italic = !an,
-                        "underline" => app.options.text_underline = !an,
-                        _ => app.options.text_superscript = !an,
-                    }
-                }
+        let stil = jjcad_core::text::RunStyle {
+            bold: app.options.text_bold,
+            italic: app.options.text_italic,
+            underline: app.options.text_underline,
+            superscript: app.options.text_superscript,
+        };
+        if let Some((schluessel, wert)) = auszeichnen_knoepfe(ui, stil) {
+            match schluessel {
+                "bold" => app.options.text_bold = wert,
+                "italic" => app.options.text_italic = wert,
+                "underline" => app.options.text_underline = wert,
+                _ => app.options.text_superscript = wert,
             }
-            ui.label(theme::faint("Auszeichnung"));
-        });
+        }
+        ui.label(theme::faint("Auszeichnung des neuen Textes"));
     }
 
     // ---- Bemaßung ----
@@ -2077,13 +2086,44 @@ fn entity_props(app: &mut App, ui: &mut Ui, id: Id) {
             };
             section_title(ui, "text", "Text");
 
-            // Textfeld und Auszeichnung gehören zusammen: erst der Inhalt,
-            // darunter die Umschalter für die **markierten** Zeichen.
-            // Feste Kennung: sonst verliert das Feld bei jeder Änderung seine
-            // Markierung, weil sich die automatische Widget-Kennung mit der
-            // Zahl der Zeilen davor verschiebt (bekannt aus egui 0.29).
+            // Auszeichnung, die für das **nächste Getippte** gilt (Umschalter
+            // ohne Markierung) — nur für diesen Text.
+            let pending = app
+                .ui
+                .text_format_next
+                .filter(|(pid, _)| *pid == id)
+                .map(|(_, st)| st);
+
+            // Läufe so, wie das Feld sie gerade zeigt: der Satz im Feld muss
+            // dem Text entsprechen, auch mitten im Tippen.
+            let text_vorher = text.clone();
+            let runs_vorher = runs.clone();
+            let anzeige = jjcad_core::text::runs_for(
+                &t,
+                &jjcad_core::text::edit_runs(&text_vorher, &runs_vorher, &t, vorgabe, pending),
+                vorgabe,
+            );
+            let size = egui::TextStyle::Body.resolve(ui.style()).size;
+            let feld_farbe = ui.visuals().text_color();
+            let satz_text = std::sync::Arc::new(text_vorher.clone());
+            let satz_runs = std::sync::Arc::new(runs_vorher.clone());
+            // Das Feld setzt die Auszeichnung selbst — Fett, Kursiv,
+            // Unterstrichen und Hochstellung sind damit im Panel sichtbar. Die
+            // Läufe werden für den **gerade** gesetzten Text abgeleitet, sonst
+            // läge die Galley einen Frame hinter dem Feld.
+            let mut setzer = move |ui: &Ui, text_jetzt: &str, wrap: f32| {
+                let runs = jjcad_core::text::runs_for(
+                    text_jetzt,
+                    &jjcad_core::text::edit_runs(&satz_text, &satz_runs, text_jetzt, vorgabe, pending),
+                    vorgabe,
+                );
+                let mut job = crate::canvas::auszeichnungs_job(&runs, size, feld_farbe);
+                job.wrap.max_width = wrap;
+                ui.fonts(|f| f.layout_job(job))
+            };
             let ausgabe = egui::TextEdit::multiline(&mut t)
                 .id(egui::Id::new("sel_text_inhalt"))
+                .layouter(&mut setzer)
                 .desired_rows(2)
                 .desired_width(f32::INFINITY)
                 .show(ui);
@@ -2104,60 +2144,78 @@ fn entity_props(app: &mut App, ui: &mut Ui, id: Id) {
                     })
                 });
             if ausgabe.response.changed() {
-                // Auszeichnung bleibt beim Tippen an den Zeichen hängen.
-                let neu = jjcad_core::text::retarget_runs(text, runs, &t, vorgabe);
+                // Nach dem Setzen neu ableiten: die eingefügten Zeichen tragen
+                // die vorgemerkte Auszeichnung.
+                let frisch = jjcad_core::text::runs_for(
+                    &t,
+                    &jjcad_core::text::edit_runs(&text_vorher, &runs_vorher, &t, vorgabe, pending),
+                    vorgabe,
+                );
                 changed_params.insert("text".into(), json!(t));
-                changed_params.insert("runs".into(), serde_json::to_value(&neu).unwrap_or(json!([])));
+                changed_params.insert(
+                    "runs".into(),
+                    serde_json::to_value(&frisch).unwrap_or(json!([])),
+                );
             }
 
-            // Zustand am Cursor — die Umschalter zeigen, was dort gilt.
+            // Was zeigen die Umschalter? Markierung: dort geltende Auszeichnung.
+            // Ohne Markierung: was für das nächste Zeichen gilt.
             let stile = jjcad_core::text::char_styles(text, runs, vorgabe);
-            let stelle = markierung.map(|(a, _)| a).unwrap_or(0).min(stile.len().saturating_sub(1));
-            let aktuell = stile.get(stelle).copied().unwrap_or(vorgabe);
+            let stelle = markierung
+                .map(|(a, _)| a)
+                .unwrap_or(0)
+                .min(stile.len().saturating_sub(1));
+            let am_cursor = stile.get(stelle).copied().unwrap_or(vorgabe);
+            let hat_markierung = markierung.map(|(a, b)| b > a).unwrap_or(false);
+            let angezeigt = if hat_markierung {
+                am_cursor
+            } else {
+                pending.unwrap_or(am_cursor)
+            };
             let (von, bis) = zeichenbereich(markierung, text.chars().count());
-            let mut klick: Option<(&'static str, bool)> = None;
+            let klick = auszeichnen_knoepfe(ui, angezeigt);
             ui.horizontal(|ui| {
-                ui.spacing_mut().item_spacing.x = 4.0;
-                for (schluessel, beschriftung, an, hinweis) in [
-                    ("bold", "F", aktuell.bold, "Fett"),
-                    ("italic", "K", aktuell.italic, "Kursiv"),
-                    ("underline", "U", aktuell.underline, "Unterstrichen"),
-                    ("superscript", "x²", aktuell.superscript, "Hochgestellt"),
-                ] {
-                    let text_widget = if schluessel == "bold" {
-                        theme::bold(beschriftung, 13.0)
-                    } else {
-                        egui::RichText::new(beschriftung).size(13.0)
-                    };
-                    if ui.add(egui::SelectableLabel::new(an, text_widget)).on_hover_text(hinweis).clicked() {
-                        klick = Some((schluessel, !an));
-                    }
-                }
-                // Kurz halten: die Zeile muss in 280 px passen.
-                ui.label(theme::faint(if markierung.map(|(a, b)| b > a).unwrap_or(false) {
-                    format!("{von}–{bis}")
+                ui.label(theme::faint(if hat_markierung {
+                    format!("Zeichen {von}–{bis}")
                 } else {
-                    "ganzer Text".to_string()
+                    "nächste Zeichen".to_string()
                 }))
-                .on_hover_text(if markierung.map(|(a, b)| b > a).unwrap_or(false) {
-                    "gilt für die markierten Zeichen"
+                .on_hover_text(if hat_markierung {
+                    "Gilt für die markierten Zeichen."
                 } else {
-                    "Ohne Markierung im Textfeld gilt der ganze Text"
+                    "Ohne Markierung gilt die Auszeichnung für das, was Sie als Nächstes tippen."
                 });
+                if pending.is_some() && !hat_markierung {
+                    ui.label(theme::dim("· vorgemerkt"));
+                }
             });
             if let Some((schluessel, wert)) = klick {
-                auszeichnen(app, id, von, bis, schluessel, wert);
-                // Markierung erhalten: sonst müsste man für die zweite
-                // Auszeichnung (z. B. zusätzlich kursiv) neu markieren.
-                // Fokus zurück ins Feld: ein Klick auf den Umschalter nimmt es
-                // dem Feld, und ohne Fokus verwirft egui die Markierung.
-                ui.memory_mut(|m| m.request_focus(feld_id));
-                let mut st = egui::text_edit::TextEditState::load(ui.ctx(), feld_id).unwrap_or_default();
-                st.cursor.set_char_range(Some(egui::text::CCursorRange::two(
-                    egui::text::CCursor::new(von),
-                    egui::text::CCursor::new(bis),
-                )));
-                st.store(ui.ctx(), feld_id);
+                let mut neu = angezeigt;
+                match schluessel {
+                    "bold" => neu.bold = wert,
+                    "italic" => neu.italic = wert,
+                    "underline" => neu.underline = wert,
+                    _ => neu.superscript = wert,
+                }
+                if hat_markierung {
+                    // Markierten Bereich sofort auszeichnen …
+                    auszeichnen(app, id, von, bis, schluessel, wert);
+                    app.ui.text_format_next = Some((id, neu));
+                    // … und die Markierung erhalten, damit die zweite
+                    // Auszeichnung nicht neu markiert werden muss.
+                    ui.memory_mut(|m| m.request_focus(feld_id));
+                    let mut st =
+                        egui::text_edit::TextEditState::load(ui.ctx(), feld_id).unwrap_or_default();
+                    st.cursor.set_char_range(Some(egui::text::CCursorRange::two(
+                        egui::text::CCursor::new(von),
+                        egui::text::CCursor::new(bis),
+                    )));
+                    st.store(ui.ctx(), feld_id);
+                } else {
+                    // … ohne Markierung nur vormerken (wie in Textprogrammen):
+                    // der vorhandene Text bleibt unverändert.
+                    app.ui.text_format_next = Some((id, neu));
+                }
                 ui.ctx().request_repaint();
             }
             ui.add_space(4.0);

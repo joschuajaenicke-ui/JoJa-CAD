@@ -454,14 +454,25 @@ pub(crate) fn text_galley(
     col: Color32,
 ) -> std::sync::Arc<egui::Galley> {
     let size = (t.height * scale * 1.32).max(3.0) as f32;
-    // Läufe mit ihrer eigenen Auszeichnung setzen: Fett über die
-    // Fett-Schriftfamilie, Kursiv als Schrägstellung, Unterstrichen als Linie,
-    // Hochstellung als kleinere Schrift am Zeilenkopf. Eine Galley, damit
-    // Ausrichtung und Zeilenumbruch wie bisher funktionieren.
     let runs = t.effective_runs();
-    let mut job = egui::text::LayoutJob::default();
+    let mut job = auszeichnungs_job(&runs, size, col);
     job.halign = halign(t.align);
-    for r in &runs {
+    p.layout_job(job)
+}
+
+/// Satzauftrag mit den Auszeichnungen der Läufe — die eine Stelle, an der
+/// Fett/Kursiv/Unterstrichen/Hochgestellt zu egui-Formaten werden.
+///
+/// Wird von der Zeichenfläche, dem Textfeld im Eigenschaften-Panel und dem
+/// Editor in der Zeichnung benutzt: überall sieht der Text damit gleich aus.
+pub(crate) fn auszeichnungs_job(
+    runs: &[jjcad_core::model::TextRun],
+    size: f32,
+    col: Color32,
+) -> egui::text::LayoutJob {
+    let mut job = egui::text::LayoutJob::default();
+    for r in runs {
+        // Hochstellung: kleinere Schrift am Zeilenkopf statt auf der Grundlinie.
         let r_size = if r.superscript { size * 0.7 } else { size };
         let family = if r.bold {
             FontFamily::Name("bold".into())
@@ -477,7 +488,6 @@ pub(crate) fn text_galley(
             } else {
                 Stroke::NONE
             },
-            // Hochstellung: kleiner am Zeilenkopf statt auf der Grundlinie.
             valign: if r.superscript {
                 egui::Align::Min
             } else {
@@ -487,7 +497,7 @@ pub(crate) fn text_galley(
         };
         job.append(&r.text, 0.0, fmt);
     }
-    p.layout_job(job)
+    job
 }
 
 /// Senkrechter Versatz des Textkastens gegenüber dem Anker (Bildschirm-px,

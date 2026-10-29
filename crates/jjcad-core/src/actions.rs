@@ -1286,6 +1286,17 @@ pub fn execute(doc: &mut Document, id: &str, params: &Value) -> Result<Value, St
                     runs: Vec::new(),
                 },
             );
+            // Gemischte Auszeichnung gleich beim Anlegen (Editor, MCP).
+            if let Some(v) = p.raw("runs") {
+                let liste = parse_runs(v).map_err(|e| format!("runs: {e}"))?;
+                if let EntityKind::Text { text, runs, .. } = &mut e.kind {
+                    *runs = crate::text::normalize_runs(
+                        text,
+                        &liste,
+                        crate::text::RunStyle::default(),
+                    );
+                }
+            }
             apply_common(doc, &mut e, &p, layer);
             doc.add_entity(e);
             Ok(json!({"ok": true, "created": [idn]}))
