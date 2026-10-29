@@ -263,6 +263,53 @@ Mit dem Nutzer abgestimmt — nicht „verbessern“:
 - **Zieh-Modi**: Einstellungen → Bedienung → „Ziehen“ (Gedrückthalten / Zwei
   Klicks), gespeichert in `prefs.json`, gilt für Auswahl *und* Griffe.
 
+## Zahlenfelder: Grenzen und Zuggeschwindigkeit (verbindlich)
+
+Jedes Zahlenfeld — Eigenschaften-Panel, Einstellungen, Statusleiste — ist ein
+`egui::DragValue`: Klick und Ziehen ändert den Wert, ein weiterer Klick tippt
+ihn. egui rechnet beim Ziehen `Wert += Punkte × speed` **in der Anzeigeeinheit**
+und klemmt auf `range`. Zwei Fehler sind damit möglich, beide sind passiert
+(T0029): `speed` aus der Einheit abgeleitet (Wandbreite in Metern sprang um
+500 m je Pixel) und `range` vergessen (negative Wandbreiten, Werte bis in
+Milliarden).
+
+Deshalb gibt es **genau zwei Bausteine** in `crates/jjcad-gui/src/widgets.rs`:
+
+| Baustein | Wofür | Grenzen |
+|---|---|---|
+| `widgets::length_field(ui, &mut mm, einheit, breite, min_mm, max_mm)` | jede Länge in mm | Pflichtargumente |
+| `widgets::zahl(&mut wert, speed, range)` | Winkel, Stückzahlen, Faktoren, Papier-mm | Pflichtargumente |
+
+Benannte Vorgaben (dieselbe Datei) statt Zahlen im Aufruf:
+
+- `MASS_MIN_MM` = 1 mm, `MASS_MAX_MM` = 100 m — Abmessungen (Wanddicke, Breite,
+  Höhe, Textgröße, Radius).
+- `ABSTAND_MIN_MM` = 0,1 mm, `ABSTAND_MAX_MM` = 10 m — Abstände, Muster,
+  Schraffurweiten.
+- `KOORD_MIN_MM` / `KOORD_MAX_MM` = ±1 km — Lagewerte (X/Y, Ansichtsfenster,
+  Höhenkoten); diese **dürfen negativ sein**.
+- `WINKEL_MIN` / `WINKEL_MAX` = ±360° — Drehungen, Füll- und Bogenwinkel.
+- Zuggeschwindigkeit von Längen: `ZUG_MM_JE_PUNKT` = 10 mm je Bildpunkt (1 cm;
+  Umschalt gedrückt = 1 mm) — **in mm, cm und m gleich**. Die Einheit ändert nur
+  die Anzeige, nicht das Ziehen; deshalb ist `speed` nie aus `unit.mm()`
+  abzuleiten.
+
+Regeln:
+
+1. Neue Zahlenfelder nur über diese zwei Bausteine. `egui::DragValue::new`
+   außerhalb von `widgets.rs` ist ein Fehler;
+   `widgets::zahltests::zahlenfelder_nur_ueber_widgets` bricht den Test, sobald
+   ein Panel wieder selbst ein Feld baut.
+2. Grenzen gehören zum Feld, nicht zur Aufrufstelle: `.speed(...)` und
+   `.range(...)` werden außerhalb von `widgets.rs` nicht aufgerufen.
+3. Untergrenze nur dann 0 oder kleiner, wenn der Wert fachlich negativ sein darf
+   (Lage, Kote, Drehung). Breiten, Dicken und Höhen beginnen bei `MASS_MIN_MM`.
+4. Ganzzahlige Felder (Stufenzahl, Nachkommastellen, Reihenfolge) mit
+   ganzzahligen Grenzen; `zahl` setzt `.max_decimals(0)` selbst.
+5. Eigene Grenzen nur, wenn der Bereich fachlich anders ist, mit Begründung im
+   Kommentar daneben (Beispiel: Rasterweite `GRID_STEP_MIN_MM`…`MAX_MM`,
+   Polarfenster 0…45°).
+
 ## Bericht an den Nutzer (Ergebnis im Ticket)
 
 Der Nutzer testet jedes Ergebnis selbst und will **keinen Roman**. Das Feld

@@ -3196,7 +3196,7 @@ fn rail(ui: &mut egui::Ui, icon: &str, tooltip: &str, chevron: &str) -> bool {
                                 });
                                 ui.horizontal(|ui| {
                                     ui.label(theme::dim("Maßstab"));
-                                    if ui.add_sized([54.0, 24.0], crate::widgets::dv(&mut scale).speed(1.0)).changed() {
+                                    if ui.add_sized([54.0, 24.0], crate::widgets::zahl(&mut scale, 1.0, 1.0..=1000.0)).changed() {
                                         let _ = app.session_mut().execute(
                                             "sheet.update",
                                             &serde_json::json!({"sheet": id, "scale": scale}),

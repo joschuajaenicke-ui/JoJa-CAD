@@ -390,7 +390,7 @@ fn text_eingabe_props(app: &mut App, ui: &mut Ui) {
         ui.add_space(6.0);
         let mut h = t.height;
         widgets::field_row(ui, "Höhe", |ui| {
-            if widgets::length_input(ui, &mut h, einheit, ui.available_width()) {
+            if widgets::length_field(ui, &mut h, einheit, ui.available_width(), widgets::MASS_MIN_MM, widgets::MASS_MAX_MM) {
                 t.height = h;
                 // Die Eingabe wurde in diesem Frame **davor** gezeichnet —
                 // ohne Neuzeichnen bliebe die Vorschau in der alten Größe.
@@ -540,13 +540,13 @@ fn pending_props(app: &mut App, ui: &mut Ui) {
     if is_wall {
         let mut t = app.options.wall_thickness;
         widgets::field_row(ui, "Dicke", |ui| {
-            if widgets::length_input(ui, &mut t, app.unit(), ui.available_width()) {
+            if widgets::length_field(ui, &mut t, app.unit(), ui.available_width(), widgets::MASS_MIN_MM, widgets::MASS_MAX_MM) {
                 app.options.wall_thickness = t;
             }
         });
         let mut h = app.options.wall_height;
         widgets::field_row(ui, "Höhe", |ui| {
-            if widgets::length_input(ui, &mut h, app.unit(), ui.available_width()) {
+            if widgets::length_field(ui, &mut h, app.unit(), ui.available_width(), widgets::MASS_MIN_MM, widgets::MASS_MAX_MM) {
                 app.options.wall_height = h;
             }
         });
@@ -619,7 +619,7 @@ fn pending_props(app: &mut App, ui: &mut Ui) {
         let mut winkel = app.options.fill_angle.to_degrees();
         widgets::field_row(ui, "Winkel", |ui| {
             if ui
-                .add(crate::widgets::dv(&mut winkel).speed(1.0).suffix("°"))
+                .add(crate::widgets::zahl(&mut winkel, 1.0, widgets::WINKEL_MIN..=widgets::WINKEL_MAX).suffix("°"))
                 .changed()
             {
                 app.options.fill_angle = winkel.to_radians();
@@ -627,7 +627,7 @@ fn pending_props(app: &mut App, ui: &mut Ui) {
         });
         let mut abstand = app.options.fill_scale;
         widgets::field_row(ui, "Abstand", |ui| {
-            if widgets::length_input(ui, &mut abstand, app.unit(), ui.available_width()) {
+            if widgets::length_field(ui, &mut abstand, app.unit(), ui.available_width(), widgets::ABSTAND_MIN_MM, widgets::ABSTAND_MAX_MM) {
                 app.options.fill_scale = abstand;
             }
         });
@@ -660,7 +660,7 @@ fn pending_props(app: &mut App, ui: &mut Ui) {
     if tool_id == "draw.door" {
         let mut w = app.options.door_width;
         widgets::field_row(ui, "Breite", |ui| {
-            if widgets::length_input(ui, &mut w, app.unit(), ui.available_width()) {
+            if widgets::length_field(ui, &mut w, app.unit(), ui.available_width(), widgets::MASS_MIN_MM, widgets::MASS_MAX_MM) {
                 app.options.door_width = w;
             }
         });
@@ -697,13 +697,13 @@ fn pending_props(app: &mut App, ui: &mut Ui) {
     if tool_id == "draw.window" {
         let mut w = app.options.window_width;
         widgets::field_row(ui, "Breite", |ui| {
-            if widgets::length_input(ui, &mut w, app.unit(), ui.available_width()) {
+            if widgets::length_field(ui, &mut w, app.unit(), ui.available_width(), widgets::MASS_MIN_MM, widgets::MASS_MAX_MM) {
                 app.options.window_width = w;
             }
         });
         let mut s = app.options.window_sill;
         widgets::field_row(ui, "Brüstung", |ui| {
-            if widgets::length_input(ui, &mut s, app.unit(), ui.available_width()) {
+            if widgets::length_field(ui, &mut s, app.unit(), ui.available_width(), 0.0, widgets::MASS_MAX_MM) {
                 app.options.window_sill = s;
             }
         });
@@ -715,7 +715,7 @@ fn pending_props(app: &mut App, ui: &mut Ui) {
         // stehen Höhe, Stufenzahl und Laufrichtung.
         let mut h = app.options.stair_height;
         widgets::field_row(ui, "Höhe", |ui| {
-            if widgets::length_input_between(ui, &mut h, app.unit(), ui.available_width(), 100.0, 100_000.0) {
+            if widgets::length_field(ui, &mut h, app.unit(), ui.available_width(), 100.0, widgets::MASS_MAX_MM) {
                 app.options.stair_height = h;
             }
         });
@@ -734,8 +734,7 @@ fn pending_props(app: &mut App, ui: &mut Ui) {
             ui.add_enabled_ui(!app.options.stair_auto, |ui| {
                 if ui
                     .add(
-                        crate::widgets::dv(&mut st)
-                            .range(jjcad_core::stair::STUFEN_MIN..=jjcad_core::stair::STUFEN_MAX),
+                        crate::widgets::zahl(&mut st, 1.0, jjcad_core::stair::STUFEN_MIN..=jjcad_core::stair::STUFEN_MAX),
                     )
                     .changed()
                 {
@@ -750,7 +749,7 @@ fn pending_props(app: &mut App, ui: &mut Ui) {
     if tool_id == "draw.text" {
         let mut h = app.options.text_height;
         widgets::field_row(ui, "Höhe", |ui| {
-            if widgets::length_input(ui, &mut h, app.unit(), ui.available_width()) {
+            if widgets::length_field(ui, &mut h, app.unit(), ui.available_width(), widgets::MASS_MIN_MM, widgets::MASS_MAX_MM) {
                 app.options.text_height = h;
             }
         });
@@ -802,7 +801,7 @@ fn pending_props(app: &mut App, ui: &mut Ui) {
         app.options.paint_pattern = p;
         let mut abstand = app.options.fill_scale;
         widgets::field_row(ui, "Abstand", |ui| {
-            if widgets::length_input(ui, &mut abstand, app.unit(), ui.available_width()) {
+            if widgets::length_field(ui, &mut abstand, app.unit(), ui.available_width(), widgets::ABSTAND_MIN_MM, widgets::ABSTAND_MAX_MM) {
                 app.options.fill_scale = abstand;
             }
         });
@@ -1056,9 +1055,7 @@ fn weight_combo(ui: &mut Ui, salt: &str, cur: f64, mixed: bool) -> Option<f64> {
         ui.horizontal(|ui| {
             if ui
                 .add(
-                    crate::widgets::dv(&mut v)
-                        .speed(0.01)
-                        .range(0.05..=3.0)
+                    crate::widgets::zahl(&mut v, 0.01, 0.05..=3.0)
                         .suffix(" mm"),
                 )
                 .changed()
@@ -1215,7 +1212,7 @@ fn entity_props(app: &mut App, ui: &mut Ui, id: Id) {
     let mut wunsch = pos as i32;
     widgets::field_row(ui, "Reihenfolge", |ui| {
         if ui
-            .add(crate::widgets::dv(&mut wunsch).range(1..=total.max(1) as i32))
+            .add(crate::widgets::zahl(&mut wunsch, 1.0, 1..=total.max(1) as i32))
             .changed()
         {
         }
@@ -1339,12 +1336,12 @@ fn entity_props(app: &mut App, ui: &mut Ui, id: Id) {
             let mut t = *thickness;
             let mut h = *height;
             widgets::field_row(ui, "Dicke", |ui| {
-                if widgets::length_input(ui, &mut t, unit, 100.0) {
+                if widgets::length_field(ui, &mut t, unit, 100.0, widgets::MASS_MIN_MM, widgets::MASS_MAX_MM) {
                     changed_params.insert("thickness".into(), json!(unit.from_mm(t)));
                 }
             });
             widgets::field_row(ui, "Höhe", |ui| {
-                if widgets::length_input(ui, &mut h, unit, 100.0) {
+                if widgets::length_field(ui, &mut h, unit, 100.0, widgets::MASS_MIN_MM, widgets::MASS_MAX_MM) {
                     changed_params.insert("height".into(), json!(unit.from_mm(h)));
                 }
             });
@@ -1464,14 +1461,14 @@ fn entity_props(app: &mut App, ui: &mut Ui, id: Id) {
             });
             widgets::field_row(ui, "Winkel", |ui| {
                 if ui
-                    .add(crate::widgets::dv(&mut winkel).speed(1.0).suffix("°"))
+                    .add(crate::widgets::zahl(&mut winkel, 1.0, widgets::WINKEL_MIN..=widgets::WINKEL_MAX).suffix("°"))
                     .changed()
                 {
                     changed_params.insert("pattern_angle".into(), json!(winkel));
                 }
             });
             widgets::field_row(ui, "Abstand", |ui| {
-                if widgets::length_input(ui, &mut abstand, unit, 100.0) {
+                if widgets::length_field(ui, &mut abstand, unit, 100.0, widgets::ABSTAND_MIN_MM, widgets::ABSTAND_MAX_MM) {
                     changed_params.insert("pattern_scale".into(), json!(unit.from_mm(abstand)));
                 }
             });
@@ -1547,7 +1544,7 @@ fn entity_props(app: &mut App, ui: &mut Ui, id: Id) {
                     .map(|c| (*c, c.label().to_string()))
                     .collect();
             widgets::field_row(ui, "Höhe", |ui| {
-                if widgets::length_input(ui, &mut hoehe, unit, 100.0) {
+                if widgets::length_field(ui, &mut hoehe, unit, 100.0, widgets::MASS_MIN_MM, widgets::MASS_MAX_MM) {
                     changed_params.insert("height".into(), json!(unit.from_mm(hoehe)));
                 }
             });
@@ -1558,14 +1555,14 @@ fn entity_props(app: &mut App, ui: &mut Ui, id: Id) {
             });
             widgets::field_row(ui, "Winkel", |ui| {
                 if ui
-                    .add(crate::widgets::dv(&mut winkel).speed(1.0).suffix("°"))
+                    .add(crate::widgets::zahl(&mut winkel, 1.0, widgets::WINKEL_MIN..=widgets::WINKEL_MAX).suffix("°"))
                     .changed()
                 {
                     changed_params.insert("pattern_angle".into(), json!(winkel));
                 }
             });
             widgets::field_row(ui, "Abstand", |ui| {
-                if widgets::length_input(ui, &mut abstand, unit, 100.0) {
+                if widgets::length_field(ui, &mut abstand, unit, 100.0, widgets::ABSTAND_MIN_MM, widgets::ABSTAND_MAX_MM) {
                     changed_params.insert("pattern_scale".into(), json!(unit.from_mm(abstand)));
                 }
             });
@@ -1627,7 +1624,7 @@ fn entity_props(app: &mut App, ui: &mut Ui, id: Id) {
             let mut hg = *hinge;
             let mut sw = *swing_in;
             widgets::field_row(ui, "Breite", |ui| {
-                if widgets::length_input(ui, &mut w, unit, 100.0) {
+                if widgets::length_field(ui, &mut w, unit, 100.0, widgets::MASS_MIN_MM, widgets::MASS_MAX_MM) {
                     changed_params.insert("width".into(), json!(unit.from_mm(w)));
                 }
             });
@@ -1697,17 +1694,17 @@ fn entity_props(app: &mut App, ui: &mut Ui, id: Id) {
                 .map(|a| (*a, a.label().to_string()))
                 .collect();
             widgets::field_row(ui, "Breite", |ui| {
-                if widgets::length_input(ui, &mut w, unit, 100.0) {
+                if widgets::length_field(ui, &mut w, unit, 100.0, widgets::MASS_MIN_MM, widgets::MASS_MAX_MM) {
                     changed_params.insert("width".into(), json!(unit.from_mm(w)));
                 }
             });
             widgets::field_row(ui, "Brüstung", |ui| {
-                if widgets::length_input(ui, &mut s, unit, 100.0) {
+                if widgets::length_field(ui, &mut s, unit, 100.0, 0.0, widgets::MASS_MAX_MM) {
                     changed_params.insert("sill".into(), json!(unit.from_mm(s)));
                 }
             });
             widgets::field_row(ui, "Höhe", |ui| {
-                if widgets::length_input(ui, &mut h, unit, 100.0) {
+                if widgets::length_field(ui, &mut h, unit, 100.0, widgets::MASS_MIN_MM, widgets::MASS_MAX_MM) {
                     changed_params.insert("height".into(), json!(unit.from_mm(h)));
                 }
             });
@@ -1755,17 +1752,17 @@ fn entity_props(app: &mut App, ui: &mut Ui, id: Id) {
             // die Lauflinie liegt in der Mitte.
             let mut l = laenge;
             widgets::field_row(ui, "Länge", |ui| {
-                if widgets::length_input_between(ui, &mut l, unit, 100.0, 100.0, 100_000.0) {
+                if widgets::length_field(ui, &mut l, unit, 100.0, 100.0, widgets::MASS_MAX_MM) {
                     changed_params.insert("len".into(), json!(unit.from_mm(l)));
                 }
             });
             widgets::field_row(ui, "Breite", |ui| {
-                if widgets::length_input_between(ui, &mut w, unit, 100.0, 100.0, 100_000.0) {
+                if widgets::length_field(ui, &mut w, unit, 100.0, 100.0, widgets::MASS_MAX_MM) {
                     changed_params.insert("width".into(), json!(unit.from_mm(w)));
                 }
             });
             widgets::field_row(ui, "Höhe", |ui| {
-                if widgets::length_input_between(ui, &mut h, unit, 100.0, 100.0, 100_000.0) {
+                if widgets::length_field(ui, &mut h, unit, 100.0, 100.0, widgets::MASS_MAX_MM) {
                     changed_params.insert("height".into(), json!(unit.from_mm(h)));
                 }
             });
@@ -1776,8 +1773,7 @@ fn entity_props(app: &mut App, ui: &mut Ui, id: Id) {
                 ui.add_enabled_ui(!auto_jetzt, |ui| {
                     if ui
                         .add(
-                            crate::widgets::dv(&mut st)
-                                .range(jjcad_core::stair::STUFEN_MIN..=jjcad_core::stair::STUFEN_MAX),
+                            crate::widgets::zahl(&mut st, 1.0, jjcad_core::stair::STUFEN_MIN..=jjcad_core::stair::STUFEN_MAX),
                         )
                         .changed()
                     {
@@ -1952,12 +1948,12 @@ fn entity_props(app: &mut App, ui: &mut Ui, id: Id) {
                 changed_params.insert("text".into(), json!(t));
             }
             widgets::field_row(ui, "Höhe", |ui| {
-                if widgets::length_input(ui, &mut h, unit, 100.0) {
+                if widgets::length_field(ui, &mut h, unit, 100.0, widgets::MASS_MIN_MM, widgets::MASS_MAX_MM) {
                     changed_params.insert("height".into(), json!(unit.from_mm(h)));
                 }
             });
             widgets::field_row(ui, "Drehung", |ui| {
-                if ui.add(crate::widgets::dv(&mut a).speed(1.0).suffix("°")).changed() {
+                if ui.add(crate::widgets::zahl(&mut a, 1.0, widgets::WINKEL_MIN..=widgets::WINKEL_MAX).suffix("°")).changed() {
                     changed_params.insert("angle".into(), json!(a));
                 }
             });
@@ -1980,7 +1976,7 @@ fn entity_props(app: &mut App, ui: &mut Ui, id: Id) {
         EntityKind::Circle { c, r } => {
             let mut rr = *r;
             widgets::field_row(ui, "Radius", |ui| {
-                if widgets::length_input_between(ui, &mut rr, unit, 110.0, 0.1, 1e7) {
+                if widgets::length_field(ui, &mut rr, unit, 110.0, 0.1, widgets::MASS_MAX_MM) {
                     changed_params.insert("r".into(), json!(unit.from_mm(rr)));
                 }
             });
@@ -2039,7 +2035,7 @@ fn entity_props(app: &mut App, ui: &mut Ui, id: Id) {
         EntityKind::Elevation { z, .. } => {
             let mut v = *z;
             widgets::field_row(ui, "Höhe", |ui| {
-                if widgets::length_input(ui, &mut v, unit, 100.0) {
+                if widgets::length_field(ui, &mut v, unit, 100.0, widgets::KOORD_MIN_MM, widgets::KOORD_MAX_MM) {
                     changed_params.insert("z".into(), json!(unit.from_mm(v)));
                 }
             });
@@ -2059,14 +2055,14 @@ fn entity_props(app: &mut App, ui: &mut Ui, id: Id) {
             let mut r = rot.to_degrees();
             let mut s = scale.x;
             widgets::field_row(ui, "Drehung", |ui| {
-                if ui.add(crate::widgets::dv(&mut r).speed(1.0).suffix("°")).changed() {
+                if ui.add(crate::widgets::zahl(&mut r, 1.0, widgets::WINKEL_MIN..=widgets::WINKEL_MAX).suffix("°")).changed() {
                     let _ = app
                         .session_mut()
                         .execute("modify.set", &json!({"ids": [id], "angle": r}));
                 }
             });
             widgets::field_row(ui, "Faktor", |ui| {
-                if ui.add(crate::widgets::dv(&mut s).speed(0.01)).changed() {
+                if ui.add(crate::widgets::zahl(&mut s, 0.01, 0.01..=1000.0)).changed() {
                     let _ = app.session_mut().execute(
                         "modify.set",
                         &json!({"ids": [id], "scale": s}),
@@ -2097,13 +2093,13 @@ fn entity_props(app: &mut App, ui: &mut Ui, id: Id) {
             let mut w0 = a0.to_degrees();
             let mut w1 = a1.to_degrees();
             widgets::field_row(ui, "Radius", |ui| {
-                if widgets::length_input_between(ui, &mut rr, unit, 110.0, 0.1, 1e7) {
+                if widgets::length_field(ui, &mut rr, unit, 110.0, 0.1, widgets::MASS_MAX_MM) {
                     changed_params.insert("r".into(), json!(unit.from_mm(rr)));
                 }
             });
             widgets::field_row(ui, "Startwinkel", |ui| {
                 if ui
-                    .add(crate::widgets::dv(&mut w0).speed(1.0).suffix("°"))
+                    .add(crate::widgets::zahl(&mut w0, 1.0, widgets::WINKEL_MIN..=widgets::WINKEL_MAX).suffix("°"))
                     .changed()
                 {
                     changed_params.insert("a0".into(), json!(w0));
@@ -2111,7 +2107,7 @@ fn entity_props(app: &mut App, ui: &mut Ui, id: Id) {
             });
             widgets::field_row(ui, "Endwinkel", |ui| {
                 if ui
-                    .add(crate::widgets::dv(&mut w1).speed(1.0).suffix("°"))
+                    .add(crate::widgets::zahl(&mut w1, 1.0, widgets::WINKEL_MIN..=widgets::WINKEL_MAX).suffix("°"))
                     .changed()
                 {
                     changed_params.insert("a1".into(), json!(w1));
@@ -2496,7 +2492,7 @@ fn sheet_props(app: &mut App, ui: &mut Ui, sid: Id) {
         app.mark_changed();
     }
     widgets::field_row(ui, "Maßstab", |ui| {
-        if ui.add_sized([70.0, 20.0], crate::widgets::dv(&mut scale).speed(1.0).range(1.0..=1000.0)).changed() {
+        if ui.add_sized([70.0, 20.0], crate::widgets::zahl(&mut scale, 1.0, 1.0..=1000.0)).changed() {
             let _ = app
                 .session_mut()
                 .execute("sheet.update", &json!({"sheet": sid, "scale": scale}));
@@ -2548,7 +2544,7 @@ fn sheet_props(app: &mut App, ui: &mut Ui, sid: Id) {
             ui.add_space(6.0);
             let mut vs = vp.scale;
             widgets::field_row(ui, "Ansicht", |ui| {
-                if ui.add_sized([70.0, 20.0], crate::widgets::dv(&mut vs).speed(1.0).range(1.0..=1000.0)).changed() {
+                if ui.add_sized([70.0, 20.0], crate::widgets::zahl(&mut vs, 1.0, 1.0..=1000.0)).changed() {
                     let _ = app.session_mut().execute(
                         "sheet.update_viewport",
                         &json!({"sheet": sid, "viewport": vid, "scale": vs}),
@@ -2563,12 +2559,12 @@ fn sheet_props(app: &mut App, ui: &mut Ui, sid: Id) {
             let mut vh = vp.h;
             let mut geom_changed = false;
             widgets::field_row(ui, "X / Y (mm)", |ui| {
-                geom_changed |= ui.add_sized([52.0, 20.0], crate::widgets::dv(&mut vx).speed(0.5).suffix("")).changed();
-                geom_changed |= ui.add_sized([52.0, 20.0], crate::widgets::dv(&mut vy).speed(0.5).suffix("")).changed();
+                geom_changed |= ui.add_sized([52.0, 20.0], crate::widgets::zahl(&mut vx, 1.0, widgets::KOORD_MIN_MM..=widgets::KOORD_MAX_MM)).changed();
+                geom_changed |= ui.add_sized([52.0, 20.0], crate::widgets::zahl(&mut vy, 1.0, widgets::KOORD_MIN_MM..=widgets::KOORD_MAX_MM)).changed();
             });
             widgets::field_row(ui, "B / H (mm)", |ui| {
-                geom_changed |= ui.add_sized([52.0, 20.0], crate::widgets::dv(&mut vw).speed(0.5).range(10.0..=2000.0)).changed();
-                geom_changed |= ui.add_sized([52.0, 20.0], crate::widgets::dv(&mut vh).speed(0.5).range(10.0..=2000.0)).changed();
+                geom_changed |= ui.add_sized([52.0, 20.0], crate::widgets::zahl(&mut vw, 0.5, 10.0..=2000.0)).changed();
+                geom_changed |= ui.add_sized([52.0, 20.0], crate::widgets::zahl(&mut vh, 0.5, 10.0..=2000.0)).changed();
             });
             if geom_changed {
                 let _ = app.session_mut().execute(
@@ -2786,12 +2782,12 @@ fn doc_props(app: &mut App, ui: &mut Ui) {
             });
     });
     widgets::field_row(ui, "Dezimalen", |ui| {
-        ui.add_sized([ui.available_width(), 20.0], crate::widgets::dv(&mut decimals).range(0..=4));
+        ui.add_sized([ui.available_width(), 20.0], crate::widgets::zahl(&mut decimals, 1.0, 0..=4));
     });
     widgets::field_row(ui, "Raster", |ui| {
         // Grenzen: 1 mm … 10 m. Ohne sie zog der Ziehpfeil ins Negative und in
         // Werte, bei denen kein Rasterfang mehr stattfindet.
-        if widgets::length_input_between(
+        if widgets::length_field(
             ui,
             &mut grid,
             unit,
@@ -2892,7 +2888,7 @@ pub(crate) fn dim_fields(app: &mut App, ui: &mut Ui) {
         if ui
             .add_sized(
                 [ui.available_width(), 20.0],
-                crate::widgets::dv(&mut h).speed(0.1).range(0.5..=20.0).suffix(" mm"),
+                crate::widgets::zahl(&mut h, 0.1, 0.5..=20.0).suffix(" mm"),
             )
             .changed()
         {
@@ -2909,7 +2905,7 @@ pub(crate) fn dim_fields(app: &mut App, ui: &mut Ui) {
         if ui
             .add_sized(
                 [ui.available_width(), 20.0],
-                crate::widgets::dv(&mut s).speed(1.0).range(1.0..=1000.0).prefix("1:"),
+                crate::widgets::zahl(&mut s, 1.0, 1.0..=1000.0).prefix("1:"),
             )
             .changed()
         {

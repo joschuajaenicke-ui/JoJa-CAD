@@ -51,17 +51,15 @@ fn panel_zeigt_keine_texthoehe_und_keine_wandstaerke() {
 #[test]
 fn rasterfeld_im_panel_hat_grenzen() {
     let panel = doc_props();
+    // Seit T0029 gibt es kein unbegrenztes Längenfeld mehr: `length_field`
+    // verlangt Unter- und Obergrenze als Argument.
     assert!(
-        panel.contains("length_input_between"),
-        "Rasterweite ohne Grenzen (length_input statt length_input_between)"
+        panel.contains("length_field"),
+        "Rasterweite ohne Eingabefeld"
     );
     assert!(
         panel.contains("GRID_STEP_MIN_MM") && panel.contains("GRID_STEP_MAX_MM"),
         "Grenzen der Rasterweite fehlen im Panel"
-    );
-    assert!(
-        !panel.contains("length_input(ui, &mut grid"),
-        "Rasterweite nutzt weiterhin das unbegrenzte Feld"
     );
 }
 
@@ -72,8 +70,8 @@ fn einstellungen_rasterweite_hat_dieselben_grenzen() {
     let rest = &dialogs[start..];
     let body = ohne_kommentare(&rest[..rest.find("\nfn ").unwrap_or(rest.len())]);
     assert!(
-        body.contains("length_input_between"),
-        "Rasterweite im Einstellungen-Dialog ohne Grenzen"
+        body.contains("length_field"),
+        "Rasterweite im Einstellungen-Dialog ohne Eingabefeld"
     );
     assert!(
         body.contains("GRID_STEP_MIN_MM") && body.contains("GRID_STEP_MAX_MM"),

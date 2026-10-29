@@ -161,7 +161,7 @@ fn panel_bietet_radius_fuer_kreis_und_bogen() {
         "Kreis-Panel ohne Feld \"Radius\""
     );
     assert!(
-        kreis.contains("length_input"),
+        kreis.contains("length_field"),
         "Kreis-Radius ist kein Eingabefeld"
     );
     assert!(
@@ -175,7 +175,7 @@ fn panel_bietet_radius_fuer_kreis_und_bogen() {
         "Bogen-Panel ohne Feld \"Radius\""
     );
     assert!(
-        bogen.contains("length_input"),
+        bogen.contains("length_field"),
         "Bogen-Radius ist kein Eingabefeld"
     );
     assert!(
