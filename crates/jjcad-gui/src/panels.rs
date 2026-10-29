@@ -680,17 +680,6 @@ fn pending_props(app: &mut App, ui: &mut Ui) {
                 }
             });
         });
-        let dir_items: Vec<(StairDir, String)> = StairDir::ALL
-            .iter()
-            .map(|d| (*d, d.label().to_string()))
-            .collect();
-        let mut dir = app.options.stair_dir;
-        widgets::field_row(ui, "Richtung", |ui| {
-            if let Some(d) = pick_combo(ui, "pend_stair_dir", dir, &dir_items) {
-                dir = d;
-            }
-        });
-        app.options.stair_dir = dir;
         ui.label(theme::faint("Dritter Klick setzt die Breite"));
     }
 
@@ -1687,7 +1676,6 @@ fn entity_props(app: &mut App, ui: &mut Ui, id: Id) {
             steps,
             height,
             auto_steps,
-            direction,
             cut,
             unten,
             oben,
@@ -1695,7 +1683,6 @@ fn entity_props(app: &mut App, ui: &mut Ui, id: Id) {
         } => {
             let mut h = *height;
             let mut w = *width;
-            let mut d = *direction;
             let mut schnitt = *cut;
             let auto_jetzt = *auto_steps;
             let laenge = a.dist(*b);
@@ -1749,22 +1736,6 @@ fn entity_props(app: &mut App, ui: &mut Ui, id: Id) {
                         changed_params.insert("auto_steps".into(), json!(false));
                         changed_params.insert("steps".into(), json!(mass.stufen));
                     }
-                }
-            });
-            widgets::field_row(ui, "Richtung", |ui| {
-                let items: Vec<(StairDir, String)> = StairDir::ALL
-                    .iter()
-                    .map(|c| (*c, c.label().to_string()))
-                    .collect();
-                if let Some(v) = pick_combo(ui, "stair_dir", d, &items) {
-                    changed_params.insert(
-                        "direction".into(),
-                        json!(match v {
-                            StairDir::Up => "up",
-                            StairDir::Down => "down",
-                            StairDir::Both => "both",
-                        }),
-                    );
                 }
             });
             // Treppenschnitt: die beiden Diagonalen. Er zeigt an, dass zwei

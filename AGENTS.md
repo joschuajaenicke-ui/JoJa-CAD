@@ -209,16 +209,21 @@ Mit dem Nutzer abgestimmt — nicht „verbessern“:
 - **Treppen** sind von der Kontur her ein **Rechteck**: erster und zweiter Klick
   liegen auf der **Außenkante** (Länge), der dritte setzt die Breite dorthin, wo
   der Zeiger steht. Gespeichert ist die Lauflinie (`a`→`b`, Mitte) plus Breite —
-  die Anzeige rechnet daraus das Rechteck. Die vier Kantenmitten sind Griffe:
-  Ziehen verschiebt genau diese Kante **parallel** (`handles::apply_grip_tol`),
-  die gegenüberliegende bleibt stehen; Länge/Breite/Höhe stehen im
-  Eigenschaften-Panel. Die Höhe bestimmt über die Schrittmaßregel
+  die Anzeige rechnet daraus das Rechteck. Die vier Kantenmitten sind Griffe
+  (Raute quer zur Kante): Ziehen verschiebt genau diese Kante **parallel**
+  (`handles::apply_grip_tol`), die gegenüberliegende bleibt stehen;
+  Länge/Breite/Höhe stehen im Eigenschaften-Panel. Ein Klick in die Fläche
+  verschiebt die Treppe **nicht** (`App::maus_verschiebt` wie beim Text) — nur
+  die Kantengriffe und das Werkzeug „Verschieben“ bewegen sie. Eine
+  Laufrichtung (auf/ab) gibt es nicht: der Pfeil zeigt immer von `a` nach `b`. Die Höhe bestimmt über die Schrittmaßregel
   (2 S + A = 63 cm) die Stufenzahl: `n = (2 H + L) / 630`, gerundet; das Feld
   „Stufen“ überschreibt sie, das Häkchen „Schrittmaß“ schaltet die Regel zurück.
   Der **Treppenschnitt** (zwei Diagonalen in der Laufmitte, die Stufenlinien
   werden dort unterbrochen) ist abschaltbar — er symbolisiert **zwei Läufe
   übereinander**. Mit Schnitt haben unterer und oberer Teil **eigene Linien**
-  (Farbe/Stärke/Typ; `unten`/`oben` im Modell, `None` = Objektstil). Der Knopf
+  (Farbe/Stärke/Typ; `unten`/`oben` im Modell, `None` = Objektstil); die Grenze
+  dazwischen ist die **Parallele zwischen den beiden Diagonalen**, sie läuft
+  also schräg über die Treppe (`render::schnitt_geometrie`). Der Knopf
   „Beschriftung erzeugen“ legt `16 Stg / 17,2 / 29` als Textfeld links neben den
   Lauf (`draw.stair.label`).
 - **Erweiterter Punktfang**: bleibt der Zeiger 400 ms auf einem diskreten Fangpunkt stehen

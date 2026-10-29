@@ -202,7 +202,6 @@ pub struct ToolOptions {
     pub window_sill: f64,
     pub stair_width: f64,
     pub stair_steps: u32,
-    pub stair_dir: StairDir,
     /// Treppenhöhe (Geschosshöhe) in mm — Grundlage der Schrittmaßregel.
     pub stair_height: f64,
     /// Stufenzahl aus Länge und Höhe bestimmen (statt fester Zahl).
@@ -280,7 +279,6 @@ impl ToolOptions {
             window_sill: 900.0,
             stair_width: doc.settings.stair_width,
             stair_steps: 17,
-            stair_dir: StairDir::Up,
             stair_height: jjcad_core::stair::HOEHE_VORGABE_MM,
             stair_auto: true,
             text_height: doc.settings.text_height,
@@ -4731,7 +4729,10 @@ impl App {
     pub fn maus_verschiebt(&self, id: Id) -> bool {
         self.doc()
             .entity(id)
-            .map(|e| !matches!(e.kind, EntityKind::Text { .. }))
+            // Text und Treppe wandern nicht mit der gedrückten Maustaste: bei
+            // der Treppe sitzen an den Kanten Griffe, ein Klick in die Fläche
+            // würde sonst die ganze Treppe verschieben (T0027, Turn 3).
+            .map(|e| !matches!(e.kind, EntityKind::Text { .. } | EntityKind::Stair { .. }))
             .unwrap_or(false)
     }
 
@@ -4820,6 +4821,58 @@ impl App {
         }
         self.mark_changed();
         self.mitteilung("Verschieben · abgebrochen");
+    }
+}
+
+#[cfg(test)]
+mod tests_treppe {
+    //! Die Treppe verhält sich wie ein Rechteck (T0027, Turn 3): Griffe an den
+    //! Kanten, aber kein Verschieben mit der gedrückten Maustaste.
+
+    use super::*;
+
+    fn app_mit_treppe() -> (App, Id) {
+        let mut app = App::with_ctx(egui::Context::default());
+        let r = app
+            .session_mut()
+            .execute(
+                "draw.stair",
+                &serde_json::json!({"a": [0.0, 0.0], "b": [0.0, 4000.0], "width": 1000.0}),
+            )
+            .expect("Treppe anlegen");
+        let id = r["created"][0].as_u64().unwrap();
+        (app, id)
+    }
+
+    /// Ein Klick in die Treppenfläche verschiebt die Treppe nicht — sonst
+    /// wandert sie beim Auswählen versehentlich mit.
+    #[test]
+    fn klick_verschiebt_die_treppe_nicht() {
+        let (mut app, id) = app_mit_treppe();
+        app.session_mut().select(vec![id]);
+        assert!(!app.maus_verschiebt(id), "Treppe hängt am Mauszug");
+        assert!(!app.begin_move_drag_bei_klick(id, V2::ZERO, 0.0));
+        assert!(app.move_drag.is_none(), "Verschieben wurde gestartet");
+    }
+
+    /// Die vier Kantengriffe brauchen eine Kantenrichtung — ohne sie zeichnet
+    /// `draw_grips` keinen Griff (die Treppe ließ sich ziehen, ohne dass man
+    /// die Punkte sah).
+    #[test]
+    fn treppe_hat_vier_sichtbare_kantengriffe() {
+        let (app, id) = app_mit_treppe();
+        let e = app.doc().entity(id).unwrap();
+        let griffe = crate::handles::grips_of(e);
+        assert_eq!(griffe.len(), 4, "vier Kantenmitten");
+        for (art, _) in griffe {
+            let crate::handles::GripKind::Edge(i) = art else {
+                panic!("Treppengriff ist keine Kante: {art:?}");
+            };
+            assert!(
+                crate::handles::edge_dir(e, i).is_some(),
+                "Kante {i} ohne Richtung — der Griff bliebe unsichtbar"
+            );
+        }
     }
 }
 

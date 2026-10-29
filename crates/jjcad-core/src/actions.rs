@@ -510,15 +510,6 @@ impl<'a> Params<'a> {
         }
     }
 
-    pub fn stair_dir(&self, k: &str) -> Option<StairDir> {
-        match self.text(k)?.to_lowercase().as_str() {
-            "up" | "auf" => Some(StairDir::Up),
-            "down" | "ab" => Some(StairDir::Down),
-            "both" | "beide" => Some(StairDir::Both),
-            _ => None,
-        }
-    }
-
     pub fn text_align(&self, k: &str) -> Option<TextAlignH> {
         match self.text(k)?.to_lowercase().as_str() {
             "left" | "links" => Some(TextAlignH::Left),
@@ -1418,7 +1409,6 @@ pub fn execute(doc: &mut Document, id: &str, params: &Value) -> Result<Value, St
                     b,
                     width: p.len_or("width", doc.settings.stair_width),
                     steps: p.num_or("steps", 16.0).max(1.0) as u32,
-                    direction: p.stair_dir("direction").unwrap_or(StairDir::Up),
                     height: p.len_or("height", crate::stair::HOEHE_VORGABE_MM),
                     // Ohne ausdrückliche Stufenzahl folgt die Treppe der
                     // Schrittmaßregel; ein `steps`-Wert gilt als Vorgabe.
@@ -1997,7 +1987,6 @@ pub fn execute(doc: &mut Document, id: &str, params: &Value) -> Result<Value, St
                             b: sb,
                             width: w,
                             steps: s,
-                            direction,
                             height,
                             auto_steps,
                             cut,
@@ -2029,9 +2018,6 @@ pub fn execute(doc: &mut Document, id: &str, params: &Value) -> Result<Value, St
                                 if d.len() > 1e-6 {
                                     *sb = *sa + d.normalized() * v.max(1.0);
                                 }
-                            }
-                            if let Some(d) = p.stair_dir("direction") {
-                                *direction = d;
                             }
                             // Linien der beiden Treppenteile (ober-/unterhalb
                             // des Schnitts), getrennt einstellbar.

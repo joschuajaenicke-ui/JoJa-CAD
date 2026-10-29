@@ -107,25 +107,6 @@ impl DoorKind {
     }
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, Default)]
-pub enum StairDir {
-    #[default]
-    Up,
-    Down,
-    Both,
-}
-
-impl StairDir {
-    pub const ALL: [StairDir; 3] = [StairDir::Up, StairDir::Down, StairDir::Both];
-    pub fn label(self) -> &'static str {
-        match self {
-            StairDir::Up => "Aufwärts",
-            StairDir::Down => "Abwärts",
-            StairDir::Both => "Beide",
-        }
-    }
-}
-
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub enum TextAlignH {
     Left,
@@ -373,8 +354,6 @@ pub enum EntityKind {
         width: f64,
         #[serde(default = "default_steps")]
         steps: u32,
-        #[serde(default)]
-        direction: StairDir,
         /// Treppenhöhe (Geschosshöhe) in mm — Grundlage der Schrittmaßregel.
         #[serde(default = "default_stair_height")]
         height: f64,

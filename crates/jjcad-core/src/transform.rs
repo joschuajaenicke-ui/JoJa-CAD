@@ -241,7 +241,6 @@ pub fn transform_kind(k: &EntityKind, m: &Affine) -> EntityKind {
             width,
             steps,
             height,
-            direction,
             auto_steps,
             cut,
             unten,
@@ -254,7 +253,6 @@ pub fn transform_kind(k: &EntityKind, m: &Affine) -> EntityKind {
             // Die Höhe ist eine Eigenschaft der Treppe, kein Maß des Grundrisses:
             // sie bleibt beim Skalieren/Verschieben unverändert.
             height: *height,
-            direction: *direction,
             auto_steps: *auto_steps,
             cut: *cut,
             unten: unten.clone(),

@@ -104,7 +104,7 @@ Jedes Objekt hat `id`, `kind`, `layer` und optional `style`:
 | `wall` | `a`, `b`, `thickness`, `height`, `material` | Achse + Dicke; Öffnungen kommen aus Türen/Fenstern mit `host` |
 | `door` | `center`, `angle`, `width`, `kind`, `hinge`, `swing_in`, `host` | `kind`: `Hinge`, `Sliding`, `Double`, `Opening` |
 | `window` | `center`, `angle`, `width`, `sill`, `height`, `host` | |
-| `stair` | `a`, `b`, `width`, `steps`, `direction`, `height`, `auto_steps`, `cut`, `unten`, `oben` | `a`/`b` = Lauflinie (Mitte des Rechtecks), Breite symmetrisch; `height` = Treppenhöhe; `auto_steps` = Stufenzahl aus 2 S + A = 63 cm statt `steps`; `cut` = Treppenschnitt zeichnen (zwei Läufe übereinander); `unten`/`oben` = eigene Linien der Treppenteile (`color`, `line_type`, `line_weight`), fehlt = Objektstil |
+| `stair` | `a`, `b`, `width`, `steps`, `height`, `auto_steps`, `cut`, `unten`, `oben` | `a`/`b` = Lauflinie (Mitte des Rechtecks), Breite symmetrisch; `height` = Treppenhöhe; `auto_steps` = Stufenzahl aus 2 S + A = 63 cm statt `steps`; `cut` = Treppenschnitt zeichnen (zwei Läufe übereinander; die Grenze zwischen unterem und oberem Teil läuft schräg mit ihm); `unten`/`oben` = eigene Linien der Treppenteile (`color`, `line_type`, `line_weight`), fehlt = Objektstil |
 | `block_ref` | `block`, `pos`, `rot`, `scale`, `mirror` | verweist auf `blocks[].id` |
 
 **Wände verhalten sich wie Linien mit Breite:** `a`/`b` beschreiben die Achse; die
