@@ -16,6 +16,7 @@ import ctypes.util
 import os
 import subprocess
 import sys
+import tempfile
 import time
 
 DISPLAY = ":97"
@@ -23,6 +24,8 @@ W, H = 1600, 1000
 BIN = os.environ.get("BIN", "target/debug/jjcad")
 DATEI = os.environ.get("FILE", "samples/Volumen.jjcad")
 MODE = os.environ.get("MODE", "points")
+# Wohin die Screenshots gehen: JJCAD_OUT_DIR, sonst das temporäre Verzeichnis.
+OUT = os.environ.get("JJCAD_OUT_DIR") or os.path.join(tempfile.gettempdir(), "jjcad-proben")
 
 x11 = ctypes.cdll.LoadLibrary(ctypes.util.find_library("X11"))
 xtst = ctypes.cdll.LoadLibrary(ctypes.util.find_library("Xtst"))
@@ -158,7 +161,7 @@ def schuss(pfad: str, wid: int) -> None:
 
 
 def main() -> int:
-    os.makedirs("/home/joschua/jjcad-live/wand-probe", exist_ok=True)
+    os.makedirs(OUT, exist_ok=True)
     xvfb = subprocess.Popen(
         ["Xvfb", DISPLAY, "-screen", "0", f"{W}x{H}x24"],
         stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
@@ -181,7 +184,7 @@ def main() -> int:
         if not wid:
             print("kein Fenster"); return 1
         time.sleep(3.0)
-        schuss("/home/joschua/jjcad-live/wand-probe/klick_vorher.png", wid)
+        schuss(os.path.join(OUT, "klick_vorher.png"), wid)
         # Reiter Architektur, dann die Volumen-Schaltfläche (Standardmodus)
         klick(345, 20, wid)
         time.sleep(0.6)
@@ -196,7 +199,7 @@ def main() -> int:
             # Volumen anklicken (auswählen), dann eine Ecke ziehen
             klick(430, 320, wid)
             time.sleep(0.6)
-            schuss(f"/home/joschua/jjcad-live/wand-probe/klick_griff_vorher.png", wid)
+            schuss(os.path.join(OUT, "klick_griff_vorher.png"), wid)
             ziehen(520, 250, 640, 190, wid)
         elif MODE == "contour":
             klick(400, 555, wid)  # auf die waagerechte Wand
@@ -206,7 +209,7 @@ def main() -> int:
                 klick(x, y, wid)
             taste("Return", wid)
         time.sleep(1.2)
-        schuss("/home/joschua/jjcad-live/wand-probe/klick_nachher.png", wid)
+        schuss(os.path.join(OUT, "klick_nachher.png"), wid)
         print(f"Screenshots ({MODE}): klick_vorher.png, klick_nachher.png")
     finally:
         app.terminate()

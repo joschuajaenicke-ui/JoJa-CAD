@@ -30,12 +30,17 @@ Layer, rechts die Eigenschaften, unten die Item-Slot-Hotbar.*
 
 ## Schnellstart
 
+Voraussetzungen: Rust 1.88 oder neuer (`rustup`). Getestet ist der Linux-Build
+(X11 und Wayland); für Linux müssen die üblichen Fenster- und GL-Bibliotheken
+installiert sein (Debian/Ubuntu: `libxkbcommon-dev libwayland-dev libx11-dev
+libgl1-mesa-dev`).
+
 ```bash
 cargo run --release -p jjcad-gui            # Anwendung starten
 cargo run --release -p jjcad-gui -- datei.jjcad
 cargo run -p jjcad-mcp -- --selftest        # Kern + Exporte prüfen
 cargo run -p jjcad-mcp                      # MCP-Server auf stdio
-cargo test                                  # 25 Tests
+cargo test                                  # 655 Tests
 ```
 
 Die Beispielwohnung inklusive PDF/DXF/PNG liegt in `samples/` und lässt sich mit
@@ -85,8 +90,8 @@ muss der weiße Streifen zwischen ihnen genauso breit sein wie die Linien selbst
     `ESC` bricht ab. Der Einfügepunkt ist exakt der Ankerpunkt der Vorschau.
 
 Der Zeiger ist über der Zeichenfläche ein durchgehendes Fadenkreuz; der Systemzeiger wird dort
-ausgeblendet. Die vollständige Tastenbelegung steht in [`TASTENBELEGUNG.md`](../TASTENBELEGUNG.md)
-und ist im Programm über den Tastatur-Editor frei änderbar.
+ausgeblendet. Die vollständige Tastenbelegung ist im Programm über den Tastatur-Editor einsehbar
+und dort frei änderbar (Ribbon ▸ Einstellungen).
 
 
 ## Oberfläche
@@ -145,5 +150,11 @@ gemeinsam nutzen — Bildschirm, Ausdruck und Vorschau können nicht auseinander
 
 ## Lizenz
 
-GPL-3.0-or-later — siehe `Cargo.toml`. Das Programm steht in der Tradition der Ideensammlung
-in `../SPEZIFIKATION.md`.
+GPL-3.0-or-later — vollständiger Text in [`LICENSE`](LICENSE). Wer JoJa-CAD weitergibt, gibt es unter derselben Lizenz weiter.
+
+## Beitragen
+
+Konventionen für Änderungen (Architekturregeln, Designentscheidungen, Zahlenfelder)
+stehen in [`AGENTS.md`](AGENTS.md). Kurz: `cargo test` muss grün sein, jede Änderung
+bekommt einen Test, Oberfläche und Code-Kommentare sind deutsch, Begriffe nach
+[`docs/GLOSSAR.md`](docs/GLOSSAR.md).

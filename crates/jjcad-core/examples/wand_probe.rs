@@ -226,8 +226,11 @@ fn messe(z: &Z, walls: &[W], naehte: &[Vec<Seam>]) -> (usize, f64, Vec<Vec2>, Ve
 }
 
 fn main() {
-    let dir = std::path::Path::new("/home/joschua/jjcad-live/wand-probe");
-    std::fs::create_dir_all(dir).unwrap();
+    // Probe-Bilder: `JJCAD_OUT_DIR`, sonst temporär.
+    let dir = std::env::var_os("JJCAD_OUT_DIR")
+        .map(std::path::PathBuf::from)
+        .unwrap_or_else(|| std::env::temp_dir().join("jjcad-proben"));
+    std::fs::create_dir_all(&dir).unwrap();
     for f in faelle() {
         let mut s = Session::new();
         s.execute("doc.settings", &json!({"input_unit": "m"})).unwrap();

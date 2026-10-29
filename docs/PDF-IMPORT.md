@@ -250,8 +250,8 @@ Toleranzen (PDF rundet, deshalb):
 - Import von `samples/Grundriss.pdf` in der GUI sichtbar korrekt, Zerlegen liefert
   wählbare Einzelobjekte.
 - Warnliste funktioniert (ein PDF mit Bild → Meldung „Bild nicht übernommen").
-- Auslieferung: `./scripts/ship-card.sh <ticket>`; Bericht mit: gemessene Toleranzen,
-  Pixel-Differenz, Binary-Größe vorher/nachher, Zahl der Entities, offene Punkte.
+- Auslieferung: berichtet werden gemessene Toleranzen, Pixel-Differenz,
+  Binary-Größe vorher/nachher, Zahl der Entities, offene Punkte.
 
 ---
 

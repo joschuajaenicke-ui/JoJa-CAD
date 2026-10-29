@@ -3,6 +3,7 @@ name = "jjcad-core"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
+description = "Kern von JoJa-CAD: Geometrie, Modell, Displayliste, PDF/DXF-Export"
 
 [dependencies]
 serde = { workspace = true }

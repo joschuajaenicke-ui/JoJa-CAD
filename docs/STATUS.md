@@ -1,7 +1,6 @@
 # JoJa-CAD v0.2 — Arbeitsstand
 
-Kurzer Übergabestand für neue Sitzungen. Nach jeder Änderung fortschreiben.
-Stand: 28.10.2026
+Fortlaufender Stand der Umsetzung. Stand: 29.10.2026
 
 ## Build & Start
 
@@ -144,48 +143,3 @@ offene Fensterinstanz zeigt weiterhin den alten Stand.
 5. Bemaßung: Griffe an Maßketten fehlen.
 6. ~~Wandfang-Schalter in der Oberfläche~~ — erledigt: Checkbox „Wandkanten" im
    Einstellungen-Dialog, Ribbon-Gruppe Fangen, Statusmenü Fang (inkl. „Alle an/aus").
-
-## Arbeitsweise (Lessons)
-
-- Rust-Änderungen mit dem **patch-Tool und exakten Ankern** machen, nicht mit
-  Python-String-Ersetzungen — die haben mehrfach Code zerschossen.
-- Nach jeder Änderung `cargo build`, sonst prüft die Abnahme den alten Stand.
-- Abnahme möglichst **messbar** machen: gespeicherte Datei prüfen
-  (`align`, Koordinaten) oder Pixel messen, nicht nur „sieht gut aus".
-
-## Paralleles Arbeiten (Test durch Joschua, Entwicklung durch Agent)
-
-**Regel 1 — getrennte Binaries.** Der Agent baut/startet nur eigene Kopien
-(`/tmp/jjcad-agent`, eigener Xvfb-Display) und beendet **nie** den Prozess des
-Nutzers. Kein `pkill -x jjcad` in Testskripten.
-
-**Regel 2 — Testkanal.** Der Nutzer testet ausschließlich
-
-```
-~/JoJa-CAD/JoJa-CAD_v0.2/scripts/build-live.sh    # baut + kopiert nach ~/jjcad-live/jjcad
-~/JoJa-CAD/JoJa-CAD_v0.2/scripts/start-live.sh [datei.jjcad]
-```
-
-`build-live.sh` gibt die Uhrzeit aus; passt sie nicht zur laufenden Instanz,
-ist es der alte Stand (Fenster schließen, neu starten).
-
-**Regel 3 — Tickets statt Zurufe.** Board `joja-cad` (`hermes kanban …`,
-Slash `/kanban`, Dashboard):
-
-```
-hermes kanban create "Titel" --body "Beschreibung" --workspace dir:$PWD
-hermes kanban list
-hermes kanban show t_xxxx
-hermes kanban comment t_xxxx "Details/Screenshot-Pfad"
-hermes kanban request-review t_xxxx      # fertig zum Testen
-hermes kanban request-changes t_xxxx     # Test negativ -> zurueck an die Entwicklung
-hermes kanban complete t_xxxx            # abgenommen
-```
-
-**Regel 4 — Git pro Ticket.** Ein Zweig je Ticket (`fix/t_xxxx`), Merge nach
-`main` erst nach Abnahme. Zwei gleichzeitig offene Tickets → `git worktree`
-mit eigenem `CARGO_TARGET_DIR`, damit sich Builds nicht behindern.
-
-**Ablauf pro Runde:** Karte anlegen → Agent claimt, implementiert, baut,
-`build-live.sh`, Kommentar „bereit" + `request-review` → Nutzer testet die
-Live-Binary → `complete` oder `request-changes` mit Befund.

@@ -5,6 +5,15 @@ use jjcad_core::wall::WallIndex;
 use jjcad_core::Session;
 use serde_json::json;
 
+/// Ausgabeverzeichnis der Probe-Bilder: `JJCAD_OUT_DIR`, sonst temporär.
+fn ausgabe_dir() -> std::path::PathBuf {
+    let dir = std::env::var_os("JJCAD_OUT_DIR")
+        .map(std::path::PathBuf::from)
+        .unwrap_or_else(|| std::env::temp_dir().join("jjcad-proben"));
+    std::fs::create_dir_all(&dir).unwrap();
+    dir
+}
+
 fn bau(name: &str, al_a: &str, al_b: &str, psi: f64, ta: f64, tb: f64, lb: f64) {
     let mut s = Session::new();
     s.execute("doc.settings", &json!({"input_unit": "m"})).unwrap();
@@ -18,7 +27,9 @@ fn bau(name: &str, al_a: &str, al_b: &str, psi: f64, ta: f64, tb: f64, lb: f64) 
     let l = s.doc.entities.iter().filter_map(|e| idx.seams_of(e.id).first().map(|s| s.inner.dist(s.outer))).next().unwrap_or(0.0);
     println!("{name:<26} Naht {n:?} Länge {l:6.0} mm");
     let opts = RasterOptions { width_px: 760, height_px: 560, bbox: None, paper: false, annot_scale: Some(1.0), sheet: None };
-    render_png(&s.doc, &opts, std::path::Path::new(&format!("/home/joschua/jjcad-live/wand-probe/bogen_{name}.png"))).unwrap();
+    let ziel = ausgabe_dir().join(format!("bogen_{name}.png"));
+    render_png(&s.doc, &opts, &ziel).unwrap();
+    println!("PNG: {}", ziel.display());
 }
 
 fn main() {

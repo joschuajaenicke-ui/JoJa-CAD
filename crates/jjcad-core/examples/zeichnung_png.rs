@@ -9,7 +9,13 @@ fn main() {
     let datei = std::env::args().nth(1).expect("datei.jjcad fehlt");
     let ziel = std::env::args()
         .nth(2)
-        .unwrap_or_else(|| "/home/joschua/jjcad-live/zeichnung.png".to_string());
+        .unwrap_or_else(|| {
+            // Ohne Ziel: neben die Eingabedatei, gleicher Name mit .png
+            std::path::Path::new(&datei)
+                .with_extension("png")
+                .to_string_lossy()
+                .to_string()
+        });
     let doc = persist::load_document(std::path::Path::new(&datei)).expect("Datei laden");
     let bb = visible_bbox(&doc);
     // Optionaler Ausschnitt: x0 y0 x1 y1 (Welt-mm)

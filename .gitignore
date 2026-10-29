@@ -2,3 +2,13 @@ target/
 *.tmp
 .jjcad.lock
 .worktrees/
+
+# Probeläufe der Beispiele (JJCAD_OUT_DIR), falls im Projektordner abgelegt
+/jjcad-proben/
+
+# Editor und Betriebssystem
+.DS_Store
+*.swp
+*~
+.idea/
+.vscode/

@@ -21,6 +21,15 @@ fn ring_segment(c: (f64, f64), r0: f64, r1: f64, a0: f64, a1: f64, n: usize) -> 
     b
 }
 
+/// Ausgabeverzeichnis der Probe-Bilder: `JJCAD_OUT_DIR`, sonst temporär.
+fn ausgabe_dir() -> std::path::PathBuf {
+    let dir = std::env::var_os("JJCAD_OUT_DIR")
+        .map(std::path::PathBuf::from)
+        .unwrap_or_else(|| std::env::temp_dir().join("jjcad-proben"));
+    std::fs::create_dir_all(&dir).unwrap();
+    dir
+}
+
 fn main() {
     let mut s = Session::new();
     s.execute("doc.settings", &json!({"input_unit": "m"})).unwrap();
@@ -51,12 +60,9 @@ fn main() {
         annot_scale: Some(1.0),
         sheet: None,
     };
-    render_png(
-        &s.doc,
-        &opts,
-        std::path::Path::new("/home/joschua/jjcad-live/wand-probe/volumen_bogen.png"),
-    )
-    .unwrap();
+    let ziel_png = ausgabe_dir().join("volumen_bogen.png");
+    render_png(&s.doc, &opts, &ziel_png).unwrap();
+    println!("PNG: {}", ziel_png.display());
     // Ausschnitt am Kämpfer: dort müssen die Endfläche des Bogens und die
     // Wandkante darunter verschwunden sein.
     let zoom = RasterOptions {
@@ -67,12 +73,9 @@ fn main() {
         annot_scale: Some(1.0),
         sheet: None,
     };
-    render_png(
-        &s.doc,
-        &zoom,
-        std::path::Path::new("/home/joschua/jjcad-live/wand-probe/volumen_zoom.png"),
-    )
-    .unwrap();
+    let zoom_png = ausgabe_dir().join("volumen_zoom.png");
+    render_png(&s.doc, &zoom, &zoom_png).unwrap();
+    println!("PNG: {}", zoom_png.display());
     for e in &s.doc.entities {
         println!("{}: {:?} m³", e.kind.type_name(), e.volume_m3());
     }

@@ -1,16 +1,10 @@
-# JoJa-CAD v0.2 — Projektkontext für Agenten
+# JoJa-CAD v0.2 — Konventionen
 
-**Lies dieses Dokument vollständig, bevor du ein Ticket bearbeitest.** Es enthält
-die verbindlichen Konventionen. Abweichungen gelten als Fehler.
-(Gleicher Inhalt als Kopie: `docs/AGENTEN.md`.)
-
-**Arbeitsablauf:** Tickets, Kategorien, Arbeitsplatz und Berichtsweg stehen in
-`~/Ticketbox/AGENTS.md` — dieses Dokument ergänzt es um die Projektregeln.
-Ticketbox löst Kanban ab; beides zusammen ist widerspruchsfrei.
+Verbindliche Konventionen für Beiträge am Projekt. Abweichungen gelten als Fehler.
 
 **Begriffe:** `docs/GLOSSAR.md` ist verbindlich. Ein Begriff, eine Bedeutung —
-Tickets, Kommentare, UI-Texte und Code-Kommentare benutzen die dortige linke
-Spalte. Abweichende Wörter gehören nicht in die Oberfläche.
+UI-Texte, Code-Kommentare und Dokumentation benutzen die dortige linke Spalte.
+Abweichende Wörter gehören nicht in die Oberfläche.
 
 ## Worum es geht
 
@@ -32,122 +26,42 @@ Architekturregeln:
   positiver Drehsinn. Ausgabe deutsch (Komma), `m²`.
 - **Oberfläche und Code-Kommentare auf Deutsch.**
 
-## Bauen, testen, ausliefern
+## Bauen und testen
 
 ```bash
 cargo build -p jjcad-gui            # Debug
 cargo build --release -p jjcad-gui  # Release
 cargo test                          # muss grün sein
-./scripts/build-live.sh             # Testbinary für den Nutzer, versioniert
+
+./target/release/jjcad samples/Wohnhaus.jjcad
 ```
 
 Das Binary trägt eine Build-Nummer in Fenstertitel und Statusleiste
-(`crates/jjcad-gui/build.rs`).
+(`crates/jjcad-gui/build.rs`); sie kommt aus der Git-Historie und ist ohne
+Repository `0`/`nogit`.
 
-### Build-Identität (verbindlich)
-
-Ein Buildname besteht aus Version, **Auslieferungszähler** `s<N>` und
-Commit-Kurzform:
-
-```
-~/jjcad-live/jjcad-0.2.0-s4-ab12cd3      <- Zähler + Commit
-~/jjcad-live/jjcad                       <- Symlink auf den neuesten
-~/jjcad-live/shipped.last                <- zuletzt ausgelieferter Commit + Zähler
-```
-
-Nicht der Commit-Zähler: zwei verschiedene Stände ergäben sonst dieselbe Nummer.
-
-`build-live.sh` bricht ab, wenn
-- der Zweig nicht `master` ist,
-- das Arbeitsverzeichnis ungesaubert ist,
-- ein Build mit gleichem Namen schon existiert,
-- der Stand **kein Nachfolger** des zuletzt ausgelieferten ist (Vorfahren-Prüfung;
-  verhindert, dass ein älterer Zweig gelöste Fehler zurückbringt).
-
-### Ausliefern ist Teil des Tickets (genau ein Befehl)
-
-Jeder Build entsteht **aus `master`** — nur so enthält er alle vorherigen Fixes.
-Deshalb liefert der Worker sein Ticket selbst aus, in seinem Worktree:
+Beispiele ohne GUI (schreiben ihre Bilder dorthin, wohin `JJCAD_OUT_DIR` zeigt,
+sonst in das temporäre Verzeichnis):
 
 ```bash
-./scripts/ship-card.sh T0042-cursor-polarfang
+cargo run --example zeichnung_png -- samples/Wohnhaus.jjcad /tmp/wohnhaus.png
+cargo run --example volumen_erzeugen
+cargo run --example wand_probe
 ```
 
-Das Skript läuft unter einer Sperre (`flock`): zwei Auslieferungen können sich
-nicht verschränken. Kennungen beider Formen werden akzeptiert — `T0042-…` für
-Ticketbox, `t_1234abcd` historisch für alte Karten.
+## Regeln für Änderungen
 
-Es
-- verweigert die Auslieferung, wenn der Zweig den aktuellen `master` nicht enthält
-  (dann erst im Worktree `git merge master`),
-- merged den Ticket-Zweig nach `master` (`--no-ff`; Tests müssen grün sein, sonst
-  automatischer Rückbau),
-- baut `master` und legt den Build in `~/jjcad-live/` ab,
-- gibt die Kennung `s<N>-<hash>` aus, die in `ergebnis.build` gehört.
-
-Ohne diese Kennung geht kein Ticket nach „Überprüfung“: der Nutzer wüsste nicht,
-welchen Build er testen soll. `build-live.sh` nie direkt aufrufen, nie aus einem
-Feature-Zweig bauen.
-
-
-## Wasserdichte Regeln (aus Schaden gelernt)
-
-Diese fünf Regeln verhindern, dass gelöste Fehler wieder auftauchen:
-
-1. **Nur ein Worker gleichzeitig.** Die Ticketbox startet genau einen Lauf,
-   solange „Bearbeitung“ belegt ist (Auto-Modus). Zwei parallele Worker haben
-   schon einmal verschiedene Stände gleichzeitig gebaut und dieselbe Datei
-   überschrieben. Manuell in „Bearbeitung“ geschobene Tickets sind die einzige
-   Ausnahme — dann gilt Regel 2 umso strenger.
-2. **Isolierter Zweig pro Ticket.** Jedes Ticket arbeitet in seinem eigenen
-   Worktree (`.worktrees/T0042-<slug>`, Zweig `fix/T0042-<slug>`), den die
-   Ticketbox vor dem Start anlegt und auf den aktuellen `master` zieht. Nie im
-   Hauptverzeichnis, nie auf `master` committen.
-3. **Merge nur über `scripts/ship-card.sh <Ticket-Kennung>`** — es merged mit
-   `--no-ff`, prüft die Tests und rollt bei Rot zurück. Kein `git merge` von Hand
-   auf `master`, kein `git checkout master` im Hauptverzeichnis.
-4. **Jeder Fix bekommt einen Test.** Ohne Test kann ein Fehler unbemerkt
-   zurückkommen; mit Test bricht der nächste Merge sofort. Das ist der einzige
-   echte Regressionsschutz.
-5. **Testkanal nur aus `master` und nur mit grünen Tests.** `build-live.sh` läuft
-   `cargo test` und liefert bei Rot nicht aus; Builds aus Zweigen sind gesperrt
-   (Vorfahren-Prüfung, Commit-Kurzform im Namen).
-
-## Regeln für parallele Arbeit
-
-1. **Erster Schritt: Stand prüfen.** Bevor du eine Zeile änderst:
-   `git merge-base --is-ancestor master HEAD && echo aktuell` im eigenen
-   Worktree. Nicht aktuell → `git merge master` (Konflikte lösen, Tests grün),
-   erst dann arbeiten. Die Ticketbox zieht den Worktree vor dem Start selbst
-   nach; ein von Hand angelegter Arbeitsplatz kann trotzdem veraltet sein.
-   Dann **nur im eigenen Workspace** arbeiten, nie in einem fremden Worktree.
-2. **Niemals die GUI auf dem Bildschirm des Nutzers starten** (kein
-   `DISPLAY=:0`, kein Start ohne Display-Angabe). Jedes Fenster, das auf seinem
-   Schreibtisch aufpoppt, stört ihn beim Testen. Immer auf einem eigenen,
-   unsichtbaren Xvfb-Display arbeiten:
-
-   ```bash
-   python3 scripts/qa-shot.py out.png          # startet Xvfb + App, macht Screenshot
-   ./scripts/gui-headless.sh --shot out.png    # dito als Shell-Variante
-   ```
-
-   Auf dem Bildschirm des Nutzers erscheint ausschließlich, was er selbst über
-   `scripts/start-live.sh` startet.
-3. **Niemals `pkill -x jjcad`** oder ähnliche Muster-Kills — das beendet seine
-   Instanz. Nur selbst gestartete Prozesse per PID beenden.
-4. **Nicht mergen, nicht direkt auf `master` committen.** Du arbeitest immer in
-   einem Ticket-Worktree und committest auf dessen Zweig. Ohne Worktree (z. B.
-   bei einer Nachfrage im Hauptprofil): erst `git checkout -b fix/T<NNNN>-<slug>`.
-5. **Kleine, prüfbare Schritte**: bauen, testen, dann committen. Kein Commit
+1. **Jede Änderung bekommt einen Test.** Ohne Test kann ein Fehler unbemerkt
+   zurückkommen; mit Test bricht der nächste Lauf sofort.
+2. **Kleine, prüfbare Schritte**: bauen, testen, dann committen. Kein Commit
    mit Compile-Fehlern.
-6. **Debug-Dateien löschen** (`examples/dbg_*.rs`, temporäre Testdateien),
-   bevor du abgibst.
-7. **Bericht zuerst, Politur danach.** Sobald der Fix committet ist,
-   `cargo test` grün läuft und ausgeliefert ist: **sofort** `ergebnis` in der
-   `ticket.json` schreiben. Screenshots, Doku oder Gegenproben danach als
-   Nacharbeit am Ticket. Sonst geht das Zeitbudget für Nebensächliches drauf und
-   der Lauf endet ohne Übergabe (schon passiert: t_9e6eb560, 150/150
-   Iterationen, Arbeit fertig, Übergabe fehlte).
+3. **Messbarer Nachweis statt „sieht gut aus“**: Test, geprüftes Feld in der
+   gespeicherten `.jjcad`-Datei (z. B. `align: "left"`, Koordinaten) oder ein
+   Pixelmaß.
+4. **Debug-Dateien löschen** (`examples/dbg_*.rs`, temporäre Testdateien), bevor
+   du abgibst.
+5. **Nur die Dateien anfassen, die zur Aufgabe gehören.** Andere Dateien nur,
+   wenn es zwingend nötig ist — und dann im Commit nennen.
 
 ## Verbindliche Designentscheidungen
 
@@ -291,7 +205,7 @@ Benannte Vorgaben (dieselbe Datei) statt Zahlen im Aufruf:
 - `WINKEL_MIN` / `WINKEL_MAX` = ±360° — Drehungen, Füll- und Bogenwinkel.
 - Zuggeschwindigkeit von Längen: `ZUG_MM_JE_PUNKT` = 10 mm je Bildpunkt (1 cm;
   Umschalt gedrückt = 1 mm) — **in mm, cm und m gleich**. Die Einheit ändert nur
-  die Anzeige, nicht das Ziehen; deshalb ist `speed` nie aus `unit.mm()`
+  die Anzeige, nicht das Ziehen; deshalb ist `speed` nie aus `unit.mm()` 
   abzuleiten.
 
 Regeln:
@@ -310,105 +224,11 @@ Regeln:
    Kommentar daneben (Beispiel: Rasterweite `GRID_STEP_MIN_MM`…`MAX_MM`,
    Polarfenster 0…45°).
 
-## Bericht an den Nutzer (Ergebnis im Ticket)
+## Entwicklungsumgebung
 
-Der Nutzer testet jedes Ergebnis selbst und will **keinen Roman**. Das Feld
-`ergebnis` in `~/Ticketbox/tickets/<Ticket>/ticket.json` hat genau diese Form,
-maximal 6 Zeilen, und beginnt mit der Kennung aus `ship-card.sh`:
-
-```
-TEST s<N>-<hash> — <eine Zeile: was jetzt anders ist>
-Umgesetzt: <2–4 Stichpunkte, was genau geändert wurde>
-Testen: <2–4 konkrete Schritte in der App>
-Erwartung: <was man sehen muss>
-```
-
-Das Wort `TEST` am Anfang ist Pflicht: daran erkennt der Mensch, welchen Build er
-in der App testet. Die volle Kennung (`jjcad-0.2.0-s<N>-<hash>`) gehört in
-`ergebnis.build`.
-
-Reihenfolge, nicht verhandelbar:
-
-1. Arbeit committen, `cargo test` grün.
-2. `./scripts/ship-card.sh <Ticket-Kennung>` → Build liegt in `~/jjcad-live/`,
-   Kennung notieren.
-3. **Erst dann** `ergebnis` schreiben (`build`, `gemacht`, `belege`, `offen`) und
-   `fertig` setzen. Die Ticketbox schiebt das Ticket nach „Überprüfung“.
-
-Ein Ticket in „Überprüfung“ ohne `ergebnis.build` ist ein Fehler: es ist in
-keinem Build und der Nutzer würde ins Leere testen. **Nur das jüngste Ergebnis
-zählt** — nach einer Nacharbeit ist der alte Stand ungültig; dann neu ausliefern
-und den neuen Build nennen.
-
-Beispiel:
-
-```
-TEST s12-4f2a9cd — Tür sitzt auf der vorderen Wandkante, Dropdown entfernt.
-Umgesetzt: Türanker auf Blattseite, Auswahlfeld "Ausrichtung" entfallen, Test tuer_kante.
-Testen: Wohnhaus.jjcad öffnen → Tür anklicken → Blatt Seite A/B umschalten.
-Erwartung: Tür springt auf die jeweilige Wandaußenseite, kein Feld "Ausrichtung".
-```
-
-Keine Implementierungserklärungen, keine Zwischenschritte, keine Testprotokolle
-in Prosa. Zahlen statt Adjektive.
-
-**Jedes Ergebnis muss einen Prüfweg enthalten, den der Mensch in zwei Minuten
-gehen kann.** Bei sichtbaren Änderungen: Klickschritte. Bei rein technischen
-Änderungen ohne Bedienelement (Speicherformat, Rendering-Grundlage): eine
-**Beispieldatei im Repo** (`samples/…jjcad`) oder ein MCP-Befehl, mit dem man
-das Ergebnis sieht. Ohne Prüfweg ist der Bericht wertlos — „fertig“ ist dann
-nicht überprüfbar.
-
-## Abnahme-System (verbindlich)
-
-Jede Kategorie hat **genau eine** Bedeutung:
-
-| Kategorie | Bedeutung | Wer arbeitet |
-|---|---|---|
-| Eingang | Warteschlange | Ticketbox, **immer nur ein Ticket** (Auto-Modus) |
-| Bearbeitung | Ein Agent arbeitet | Agent (genau ein Lauf) |
-| Überprüfung | **Wartet auf den Menschen**: Build ist ausgeliefert, Joschua testet in der App | niemand automatisch |
-| Abgeschlossen | Vom Nutzer abgenommen | — |
-
-Daraus folgen die Regeln:
-
-- **Strikt seriell.** Höchstens ein Ticket in „Bearbeitung“, egal wie viele im
-  Eingang warten. Nicht per Skript und nicht durch Zuweisungs-Trickserei
-  „optimieren“.
-- **„Überprüfung“ ist ausschließlich die Warteschlange des Menschen.** Kein
-  Agent bewegt ein Ticket von dort weg. Den Wechsel setzt die Ticketbox selbst,
-  sobald Prozessende und `ergebnis`/`fertig` vorliegen.
-- **Blockade ist kein Wartezustand.** Blockiert heißt:
-  `ergebnis.offen = "blockiert: <Grund>"`; über Nacharbeit entscheidet der Nutzer.
-- **Keine Selbstabnahme.** Nur der Nutzer entscheidet „Abschließen“ oder
-  „Nachforderung“ — auch bei Umbenennungen und Tippfehlern.
-
-## Umgang mit Rückmeldungen
-
-- **Nicht gelöst:** Der Nutzer fordert Nacharbeit an (Prüfvermerk). Das Ticket
-  kommt mit derselben Session zurück in „Bearbeitung“, der Vermerk steht in der
-  Aufgabenstellung. Ursache neu suchen statt am alten Fix zu flicken.
-- **Folgeproblem** (durch den Fix neu entstanden): ebenfalls Nacharbeit am selben
-  Ticket, im Bericht als Folgeproblem benennen.
-- **Anderes Thema:** neues Ticket, nicht in das laufende mischen.
-- Nach dem zweiten erfolglosen Anlauf: `ergebnis.offen = "blockiert: <Ursache und
-  offene Frage>"` statt weiterzuprobieren.
-
-## Abnahme (Definition of Done)
-
-„Sieht gut aus“ ist kein Nachweis. Jedes Ticket braucht:
-
-1. `cargo build --release` ohne Fehler, `cargo test` grün.
-2. Einen **messbaren** Nachweis: Test, geprüftes Feld in der gespeicherten
-   `.jjcad`-Datei (z. B. `align: "left"`, Koordinaten) oder Pixelmaß.
-3. Screenshot bei sichtbaren Änderungen, erzeugt mit
-   `python3 scripts/qa-shot.py --demo "<zustand>" out.png` — niemals die Instanz
-   des Nutzers dafür verwenden.
-4. `ergebnis` im Ticket: Build-Kennung, betroffene Dateien, Nachweis, Testanleitung.
-
-## Testergebnis des Nutzers
-
-Der Nutzer testet `~/jjcad-live/jjcad` (Build-Nummer im Fenstertitel). Sein
-Feedback kommt als Nacharbeit am Ticket (mit Prüfvermerk) oder als neues Ticket.
-Bei Rückfragen zur Geometrie hilft oft ein Screenshot mit eingezeichneter
-Hilfslinie.
+Dieses Repository wird lokal mit einem Ticketsystem und einem eigenen Testkanal
+bearbeitet; beides ist bewusst **nicht** Teil dieses Repos. Veröffentlicht wird
+ausschließlich `master`. Arbeits- und Testkanal-Skripte wie `scripts/ship-card.sh`,
+`scripts/build-live.sh` und `scripts/start-live.sh` werden dort gebraucht und
+bleiben im Repo, setzen aber einen solchen Kanal voraus — für Beiträge von außen
+sind `cargo build`, `cargo test` und `scripts/qa-shot.py` ausreichend.

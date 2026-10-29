@@ -27,9 +27,9 @@ cargo build --offline -p jjcad-gui       # Build 13
 
 GUI-Tests headless: eigenes `Xvfb :96`, eigene Binary-Instanz auf einer Kopie
 von `samples/Wohnhaus.jjcad` (`/tmp/jjcad-gui-wk.jjcad`), `LIBGL_ALWAYS_SOFTWARE=1`,
-`JJCAD_DEMO_UI=settings`. Die Instanz des Nutzers (`~/jjcad-live/...`) wurde
-nicht angefasst; beendet wurde ausschließlich der selbst gestartete Prozess
-(PID) über die Dateikennung.
+`JJCAD_DEMO_UI=settings`. Eine parallel laufende Instanz wurde nicht angefasst;
+beendet wurde ausschließlich der selbst gestartete Prozess (PID) über die
+Dateikennung.
 
 ## 2. Automatisierte Abnahmetests
 

@@ -12,6 +12,10 @@ version = "0.2.0"
 edition = "2021"
 authors = ["Joschua"]
 license = "GPL-3.0-or-later"
+description = "2D-CAD für Architektur- und Bauantragszeichnungen (Rust, egui)"
+readme = "README.md"
+keywords = ["cad", "drawing", "architecture", "dxf", "pdf"]
+categories = ["graphics", "visualization"]
 rust-version = "1.88"
 
 [workspace.dependencies]

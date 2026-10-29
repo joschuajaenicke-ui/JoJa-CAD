@@ -25,7 +25,7 @@ Logs gehen ausschließlich nach **stderr** — stdout bleibt dem Protokoll vorbe
 {
   "mcpServers": {
     "joja-cad": {
-      "command": "/home/joschua/JoJa-CAD/JoJa-CAD_v0.2/target/release/jjcad-mcp",
+      "command": "/pfad/zu/jjcad/target/release/jjcad-mcp",
       "args": []
     }
   }
