@@ -242,6 +242,7 @@ pub const ACTIONS: &[ActionDef] = &[
     act!("sheet.delete", "Blatt löschen", Blatt, "sheet", "", "Blatt entfernen", false),
     act!("sheet.update_viewport", "Ansicht ändern", Blatt, "viewport", "", "Ansichtsfenster anpassen", false),
     act!("sheet.remove_viewport", "Ansicht löschen", Blatt, "viewport", "", "Ansichtsfenster entfernen", false),
+    act!("sheet.fit_viewport", "Ansicht einpassen", Blatt, "viewport", "", "Ansichtsfenster auf die Zeichnung einpassen — Maßstab aus der Blattgröße", false),
     act!("doc.settings", "Zeichnungseinstellungen", Ansicht, "settings", "", "Einheiten, Raster, Vorgaben", false),
     act!("doc.project", "Projektdaten", Datei, "info", "", "Bauherr, Projekt, Plan-Nr.", false),
 ];
@@ -309,6 +310,7 @@ pub fn is_mutating(id: &str) -> bool {
             | "sheet.delete"
             | "sheet.add_viewport"
             | "sheet.update_viewport"
+            | "sheet.fit_viewport"
             | "sheet.remove_viewport"
             | "doc.settings"
             | "doc.project"
@@ -400,26 +402,40 @@ impl<'a> Params<'a> {
         self.text(k).unwrap_or_else(|| d.to_string())
     }
 
-    /// Punkt in mm: [x,y] oder {"x":..,"y":..}
+    /// Punkt in mm: [x,y] oder {"x":..,"y":..} — in der Einheit `units`
+    /// (Vorgabe: Dokumenteinheit).
     pub fn pt(&self, k: &str) -> Option<Vec2> {
+        self.pt_in(k, self.unit)
+    }
+
+    /// Punkt in **Papier-Millimetern**, unabhängig von `units`.
+    ///
+    /// Für Werte, die schon Millimeter sind (Rechteck und Mittelpunkt eines
+    /// Ansichtsfensters): sonst würde `center: [5618, 7076]` in einem Dokument
+    /// mit `units: "m"` als 5618 m gedeutet und das Blatt bliebe leer (T0037).
+    pub fn pt_mm(&self, k: &str) -> Option<Vec2> {
+        self.pt_in(k, Unit::Mm)
+    }
+
+    fn pt_in(&self, k: &str, unit: Unit) -> Option<Vec2> {
         let val = self.raw(k)?;
         if let Some(arr) = val.as_array() {
             if arr.len() >= 2 {
                 let x = arr[0].as_f64()?;
                 let y = arr[1].as_f64()?;
-                return Some(v(x * self.unit.mm(), y * self.unit.mm()));
+                return Some(v(x * unit.mm(), y * unit.mm()));
             }
         }
         if let Value::Object(o) = val {
             let x = o.get("x")?.as_f64()?;
             let y = o.get("y")?.as_f64()?;
-            return Some(v(x * self.unit.mm(), y * self.unit.mm()));
+            return Some(v(x * unit.mm(), y * unit.mm()));
         }
         if let Some(s) = val.as_str() {
             let parts: Vec<&str> = s.split([',', ';']).collect();
             if parts.len() == 2 {
-                let x = parse_length(parts[0], self.unit)?;
-                let y = parse_length(parts[1], self.unit)?;
+                let x = parse_length(parts[0], unit)?;
+                let y = parse_length(parts[1], unit)?;
                 return Some(v(x, y));
             }
         }
@@ -1023,6 +1039,110 @@ fn add_filled(
     doc.ents_mut().insert(ziel, e);
     doc.modified = true;
     Ok(json!({"ok": true, "created": [idn], "position": ziel + 1}))
+}
+
+// ---------------------------------------------------------------------------
+// Ansichtsfenster: eine Quelle für Einheiten und Darstellung
+// ---------------------------------------------------------------------------
+//
+// Ein Ansichtsfenster mischt zwei Räume, deshalb steht die Einheit **im Namen**
+// des Feldes: `x`/`y`/`w`/`h` bzw. `rect_mm` sind Papier-Millimeter, `center`
+// ist eine Modellkoordinate in der Einheit `units` (Vorgabe: Dokumenteinheit)
+// und `center_mm` dieselbe Lage in Millimetern. Gelesen wird genauso
+// (`viewport_info`), damit Hin- und Rückweg ohne Kopfrechnen zusammenpassen.
+
+/// Rechteck eines Ansichtsfensters übernehmen (`rect_mm` oder `x`/`y`/`w`/`h`).
+fn viewport_rect(p: &Params, vp: &mut Viewport) -> Result<(), String> {
+    if p.has("rect_mm") {
+        let arr = p
+            .raw("rect_mm")
+            .and_then(|v| v.as_array().cloned())
+            .ok_or_else(|| "rect_mm muss [x, y, b, h] sein".to_string())?;
+        if arr.len() < 4 {
+            return Err("rect_mm braucht vier Papier-Millimeter: [x, y, b, h]".into());
+        }
+        let n: Vec<f64> = arr[..4].iter().filter_map(|v| v.as_f64()).collect();
+        if n.len() < 4 {
+            return Err("rect_mm braucht vier Zahlen: [x, y, b, h]".into());
+        }
+        vp.x = n[0];
+        vp.y = n[1];
+        vp.w = n[2];
+        vp.h = n[3];
+    }
+    if let Some(x) = p.num("x") {
+        vp.x = x;
+    }
+    if let Some(y) = p.num("y") {
+        vp.y = y;
+    }
+    if let Some(w) = p.num("w") {
+        vp.w = w;
+    }
+    if let Some(h) = p.num("h") {
+        vp.h = h;
+    }
+    Ok(())
+}
+
+/// Mittelpunkt eines Ansichtsfensters übernehmen.
+///
+/// Beide Schreibweisen gleichzeitig ist ein Fehler: sonst müsste man raten,
+/// welche der beiden Zahlen gilt.
+fn viewport_center(p: &Params, vp: &mut Viewport) -> Result<(), String> {
+    let in_einheit = p.pt("center");
+    let in_mm = p.pt_mm("center_mm");
+    match (in_einheit, in_mm) {
+        (Some(_), Some(_)) => Err("center und center_mm nicht gleichzeitig angeben".into()),
+        (_, Some(mm)) => {
+            vp.center = mm;
+            Ok(())
+        }
+        (Some(c), None) => {
+            vp.center = c;
+            Ok(())
+        }
+        (None, None) => Ok(()),
+    }
+}
+
+/// Ansichtsfenster als JSON — eine Quelle für `sheet list` (MCP) und für die
+/// Antwort der Ansichts-Aktionen.
+///
+/// `rect_mm` sind Papier-Millimeter, `center` steht in der Dokumenteinheit
+/// (`units`), `center_mm` zusätzlich in Millimetern. Beide `center`-Felder
+/// lassen sich unverändert zurückschreiben.
+pub fn viewport_info(einheit: Unit, vp: &Viewport) -> Value {
+    let u = einheit;
+    json!({
+        "id": vp.id,
+        "name": vp.name,
+        "rect_mm": [vp.x, vp.y, vp.w, vp.h],
+        "scale": vp.scale,
+        "center": [u.from_mm(vp.center.x), u.from_mm(vp.center.y)],
+        "center_mm": vp.center.to_array(),
+        "units": u.short(),
+        "show_frame": vp.show_frame,
+    })
+}
+
+/// Maßstab und Mitte so wählen, dass die Zeichnung vollständig ins
+/// Ansichtsfenster passt.
+///
+/// Rückgabe `(scale, center, warnung)`. Der Maßstab kommt aus der Liste
+/// gängiger Maßstäbe (`pdf::nice_scale`), damit 1:50 herauskommt und nicht
+/// 1:47,3; `center` ist der Mittelpunkt der Zeichnungs-BBox.
+fn fit_werte(bbox: &BBox, w: f64, h: f64, margin: f64) -> (f64, Vec2, Option<String>) {
+    let avail_w = (w - 2.0 * margin).max(1.0);
+    let avail_h = (h - 2.0 * margin).max(1.0);
+    let need = (bbox.width() / avail_w).max(bbox.height() / avail_h);
+    let scale = crate::pdf::nice_scale(need * 1.05);
+    let warnung = if need * 1.05 > scale + 1e-9 {
+        Some("Zeichnung ist zu groß für dieses Blatt — Maßstab 1:1000 reicht nicht".to_string())
+    } else {
+        None
+    };
+    (scale, bbox.center(), warnung)
 }
 
 // ---------------------------------------------------------------------------
@@ -2604,62 +2724,94 @@ pub fn execute(doc: &mut Document, id: &str, params: &Value) -> Result<Value, St
                 s.size()
             };
             let mut vp = templates::default_viewport(doc, sw, sh);
-            if let Some(x) = p.num("x") {
-                vp.x = x;
-            }
-            if let Some(y) = p.num("y") {
-                vp.y = y;
-            }
-            if let Some(w) = p.num("w") {
-                vp.w = w;
-            }
-            if let Some(h) = p.num("h") {
-                vp.h = h;
-            }
-            if let Some(c) = p.pt("center") {
-                vp.center = c;
-            }
-            if let Some(s) = p.num("scale") {
+            viewport_rect(&p, &mut vp)?;
+            viewport_center(&p, &mut vp)?;
+            if let Some(s) = p.num("scale").filter(|s| *s > 0.0) {
                 vp.scale = s;
             }
             vp.show_frame = p.boolean_or("show_frame", true);
             let vid = vp.id;
+            let einheit = doc.settings.input_unit;
+            let info = viewport_info(einheit, &vp);
             if let Some(sh) = doc.sheet_mut(sid) {
                 sh.viewports.push(vp);
             }
-            Ok(json!({"ok": true, "viewport": vid}))
+            Ok(json!({"ok": true, "viewport": vid, "viewport_info": info}))
         }
         "sheet.update_viewport" => {
             let sid = p.id("sheet").unwrap_or(0);
             let vid = p.id("viewport").unwrap_or(0);
+            let einheit = doc.settings.input_unit;
             let sheet = doc.sheet_mut(sid).ok_or_else(|| "Blatt nicht gefunden".to_string())?;
             let vp = sheet
                 .viewports
                 .iter_mut()
                 .find(|v| v.id == vid)
                 .ok_or_else(|| "Ansichtsfenster nicht gefunden".to_string())?;
-            if let Some(x) = p.num("x") {
-                vp.x = x;
-            }
-            if let Some(y) = p.num("y") {
-                vp.y = y;
-            }
-            if let Some(w) = p.num("w") {
-                vp.w = w;
-            }
-            if let Some(h) = p.num("h") {
-                vp.h = h;
-            }
-            if let Some(s) = p.num("scale") {
+            viewport_rect(&p, vp)?;
+            if let Some(s) = p.num("scale").filter(|s| *s > 0.0) {
                 vp.scale = s;
             }
-            if let Some(c) = p.pt("center") {
-                vp.center = c;
-            }
+            viewport_center(&p, vp)?;
             if let Some(f) = p.boolean("show_frame") {
                 vp.show_frame = f;
             }
-            Ok(json!({"ok": true}))
+            let info = viewport_info(einheit, vp);
+            Ok(json!({"ok": true, "viewport": vid, "viewport_info": info}))
+        }
+        // Ansichtsfenster auf die Zeichnung einpassen: Mittelpunkt aus der
+        // Zeichnungs-BBox, Maßstab aus der Fenstergröße (T0037). Ohne diese
+        // Aktion stand das Fenster auf `center: [0,0]` und schnitt eine
+        // Zeichnung bei (0…13 m) am Blattrand ab.
+        "sheet.fit_viewport" => {
+            let sid = p.id("sheet").unwrap_or(0);
+            let vid = p.id("viewport");
+            let bbox = doc.bbox();
+            if !bbox.is_valid() || bbox.width() <= 0.0 || bbox.height() <= 0.0 {
+                return Err(
+                    "Die Zeichnung ist leer — eine Ansicht lässt sich nicht einpassen".into(),
+                );
+            }
+            // Rand in Papier-Millimetern; nicht in `params.unit`, weil er zum
+            // Blatt gehört und nicht zur Zeichnung.
+            let margin = p.num("margin_mm").unwrap_or(10.0).clamp(0.0, 100.0);
+            let scale_vorgabe = p.num("scale").filter(|s| *s > 0.0);
+            let einheit = doc.settings.input_unit;
+            let sheet = doc.sheet_mut(sid).ok_or_else(|| "Blatt nicht gefunden".to_string())?;
+            let vp = match vid {
+                Some(vid) => sheet
+                    .viewports
+                    .iter_mut()
+                    .find(|v| v.id == vid)
+                    .ok_or_else(|| "Ansichtsfenster nicht gefunden".to_string())?,
+                None => sheet.viewports.first_mut().ok_or_else(|| {
+                    "Blatt hat kein Ansichtsfenster — erst 'sheet.add_viewport'".to_string()
+                })?,
+            };
+            if vp.w - 2.0 * margin <= 1.0 || vp.h - 2.0 * margin <= 1.0 {
+                return Err(format!(
+                    "Ansichtsfenster {} × {} mm ist zu klein für einen Rand von {margin} mm",
+                    vp.w, vp.h
+                ));
+            }
+            let (scale, center, warnung) = fit_werte(&bbox, vp.w, vp.h, margin);
+            vp.scale = scale_vorgabe.unwrap_or(scale);
+            vp.center = center;
+            let info = viewport_info(einheit, vp);
+            // Der gezeichnete Bereich in Papier-Millimetern — damit der Aufrufer
+            // ohne Nachrechnen sieht, ob die Zeichnung ins Fenster passt.
+            let mut out = json!({
+                "ok": true,
+                "viewport": vp.id,
+                "scale": vp.scale,
+                "bbox_mm": [bbox.min.to_array(), bbox.max.to_array()],
+                "gezeichnet_mm": [bbox.width() / vp.scale, bbox.height() / vp.scale],
+                "viewport_info": info,
+            });
+            if let Some(w) = warnung {
+                out["warnung"] = json!(w);
+            }
+            Ok(out)
         }
         "sheet.remove_viewport" => {
             let sid = p.id("sheet").unwrap_or(0);

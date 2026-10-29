@@ -238,15 +238,32 @@ fn tool_list() -> Value {
         },
         {
             "name": "jjcad_sheet",
-            "description": "Blattverwaltung: list, create, update, add_viewport, update_viewport.",
+            "description": "Blattverwaltung: list, create, update, remove_viewport, add_viewport, update_viewport, fit_viewport. Ein Ansichtsfenster mischt zwei Räume: x/y/w/h bzw. rect_mm sind Papier-Millimeter, center ist eine Modellkoordinate in der Einheit units (Vorgabe: Dokumenteinheit), center_mm dieselbe Lage in Millimetern. fit_viewport passt das Fenster auf die Zeichnung ein.",
             "inputSchema": {
                 "type": "object",
                 "properties": {
-                    "action": {"type": "string", "enum": ["list","create","update","add_viewport","update_viewport"]},
-                    "sheet": {"type": "integer"},
-                    "paper": {"type": "string"},
-                    "scale": {"type": "number"},
-                    "viewport": {"type": "object"},
+                    "action": {"type": "string", "enum": ["list","create","update","remove_viewport","add_viewport","update_viewport","fit_viewport"]},
+                    "sheet": {"type": "integer", "description": "Blattindex (0 = erstes Blatt)"},
+                    "name": {"type": "string", "description": "Blattname bei create"},
+                    "paper": {"type": "string", "enum": ["A4","A3","A2","A1","A0"]},
+                    "scale": {"type": "number", "description": "Maßstab 1:scale — Blatt bei update, Ansichtsfenster bei den Ansichts-Aktionen"},
+                    "units": {"type": "string", "enum": ["mm","cm","m"], "description": "Einheit für center; Vorgabe: Dokumenteinheit"},
+                    "margin_mm": {"type": "number", "description": "Rand in Papier-Millimetern für fit_viewport (Vorgabe 10)"},
+                    "viewport": {
+                        "type": "object",
+                        "description": "Ansichtsfenster: id, x/y/w/h oder rect_mm (Papier-mm), center (in units) oder center_mm, scale, name, show_frame",
+                        "properties": {
+                            "id": {"type": "integer"},
+                            "name": {"type": "string"},
+                            "x": {"type": "number"}, "y": {"type": "number"},
+                            "w": {"type": "number"}, "h": {"type": "number"},
+                            "rect_mm": {"type": "array", "items": {"type": "number"}},
+                            "center": {"type": "array", "items": {"type": "number"}},
+                            "center_mm": {"type": "array", "items": {"type": "number"}},
+                            "scale": {"type": "number"},
+                            "show_frame": {"type": "boolean"}
+                        }
+                    },
                     "doc": {"type": "string"}
                 },
                 "required": ["action"]
@@ -575,6 +592,7 @@ fn sheet_tool(server: &mut Server, args: &Value) -> Result<Value, String> {
                 .iter()
                 .enumerate()
                 .map(|(i, s)| {
+                    let einheit = server.active().doc.settings.input_unit;
                     json!({
                         "index": i,
                         "id": s.id,
@@ -582,10 +600,10 @@ fn sheet_tool(server: &mut Server, args: &Value) -> Result<Value, String> {
                         "paper": s.paper.label(),
                         "landscape": s.landscape,
                         "scale": s.scale,
-                        "viewports": s.viewports.iter().map(|v| json!({
-                            "id": v.id, "name": v.name, "rect_mm": [v.x, v.y, v.w, v.h],
-                            "scale": v.scale, "center": v.center.to_array()
-                        })).collect::<Vec<_>>(),
+                        "units": einheit.short(),
+                        "viewports": s.viewports.iter()
+                            .map(|v| actions::viewport_info(einheit, v))
+                            .collect::<Vec<_>>(),
                     })
                 })
                 .collect();
@@ -621,7 +639,7 @@ fn sheet_tool(server: &mut Server, args: &Value) -> Result<Value, String> {
             let res = server.active_mut().execute("sheet.update", &params)?;
             Ok(ok_text(pretty(&res)))
         }
-        "add_viewport" | "update_viewport" => {
+        "add_viewport" | "update_viewport" | "fit_viewport" | "remove_viewport" => {
             let idx = args.get("sheet").and_then(|v| v.as_u64()).unwrap_or(0) as usize;
             let sid = server
                 .active()
@@ -631,19 +649,36 @@ fn sheet_tool(server: &mut Server, args: &Value) -> Result<Value, String> {
                 .map(|s| s.id)
                 .ok_or("Blatt nicht gefunden")?;
             let mut params = json!({"sheet": sid});
-            if let Some(vp) = args.get("viewport").and_then(|v| v.as_object()) {
-                for (k, v) in vp {
-                    params[k] = v.clone();
+            // Das Ansichtsfenster-Objekt wird unverändert durchgereicht; die
+            // Einheit seiner `center`-Angabe steht als `units` daneben — wie bei
+            // `jjcad_execute`/`jjcad_batch`. Ohne diesen Durchgriff deutete der
+            // Kern `center: [5618, 7076]` in einem Meter-Dokument als 5618 m,
+            // das Blatt blieb leer und die Antwort sagte trotzdem `ok: true`.
+            if let Some(vp) = args.get("viewport") {
+                if let Some(obj) = vp.as_object() {
+                    for (k, v) in obj {
+                        params[k] = v.clone();
+                    }
+                } else if let Some(idn) = vp.as_u64() {
+                    // `viewport: 47` adressiert ein vorhandenes Fenster.
+                    params["viewport"] = json!(idn);
                 }
             }
-            let res = server.active_mut().execute(
-                if action == "add_viewport" {
-                    "sheet.add_viewport"
-                } else {
-                    "sheet.update_viewport"
-                },
-                &params,
-            )?;
+            let mut durch = |k: &str| {
+                if let Some(v) = args.get(k) {
+                    params[k] = v.clone();
+                }
+            };
+            durch("units");
+            durch("margin_mm");
+            durch("scale");
+            let ziel = match action {
+                "add_viewport" => "sheet.add_viewport",
+                "update_viewport" => "sheet.update_viewport",
+                "fit_viewport" => "sheet.fit_viewport",
+                _ => "sheet.remove_viewport",
+            };
+            let res = server.active_mut().execute(ziel, &params)?;
             Ok(ok_text(pretty(&res)))
         }
         other => Err(format!("Unbekannte Blattaktion '{other}'")),
