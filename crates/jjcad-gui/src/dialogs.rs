@@ -841,7 +841,7 @@ fn settings_body(app: &mut App, ui: &mut Ui) {
                 }
             });
             widgets::field_row(ui, "Nachkommastellen", |ui| {
-                ui.add(crate::widgets::dv(&mut decimals).range(0..=4));
+                ui.add(crate::widgets::zahl(&mut decimals, 1.0, 0..=4));
             });
             // Maßketten-Werte gibt es nur an einer Stelle: rechts im Abschnitt
             // „Bemaßung" dieses Fensters. Hier steht nur der Weg dorthin.
@@ -857,7 +857,7 @@ fn settings_body(app: &mut App, ui: &mut Ui) {
             widgets::field_row(ui, "Rasterweite", |ui| {
                 // Dieselben Grenzen wie im Eigenschaften-Panel (1 mm … 10 m).
                 let mut g = grid_step;
-                if widgets::length_input_between(
+                if widgets::length_field(
                     ui,
                     &mut g,
                     unit,
@@ -895,27 +895,21 @@ fn settings_body(app: &mut App, ui: &mut Ui) {
             }
             widgets::field_row(ui, "Polarwinkel", |ui| {
                 ui.add(
-                    crate::widgets::dv(&mut polar_step)
-                        .speed(1.0)
-                        .range(1.0..=180.0)
+                    crate::widgets::zahl(&mut polar_step, 1.0, 1.0..=180.0)
                         .suffix("°"),
                 );
                 ui.label(theme::dim("Architektur: 45°"));
             });
             widgets::field_row(ui, "Polarfenster", |ui| {
                 ui.add(
-                    crate::widgets::dv(&mut polar_tol)
-                        .speed(0.5)
-                        .range(0.0..=45.0)
+                    crate::widgets::zahl(&mut polar_tol, 0.5, 0.0..=45.0)
                         .suffix("°"),
                 );
                 ui.label(theme::dim("nur innerhalb dieser Abweichung rastet Polar ein"));
             });
             widgets::field_row(ui, "Fangradius", |ui| {
                 ui.add(
-                    crate::widgets::dv(&mut tol_px)
-                        .speed(1.0)
-                        .range(1.0..=60.0)
+                    crate::widgets::zahl(&mut tol_px, 1.0, 1.0..=60.0)
                         .suffix(" px"),
                 );
             });
@@ -934,7 +928,7 @@ fn settings_body(app: &mut App, ui: &mut Ui) {
             ] {
                 widgets::field_row(ui, label, |ui| {
                     let mut v = *val;
-                    if widgets::length_input(ui, &mut v, unit, 90.0) {
+                    if widgets::length_field(ui, &mut v, unit, 90.0, widgets::MASS_MIN_MM, widgets::MASS_MAX_MM) {
                         *val = v;
                     }
                     if ui
@@ -951,8 +945,7 @@ fn settings_body(app: &mut App, ui: &mut Ui) {
             widgets::field_row(ui, "Pfeilgröße", |ui| {
                 if ui
                     .add(
-                        crate::widgets::dv(&mut ds.arrow_size)
-                            .speed(0.1)
+                        crate::widgets::zahl(&mut ds.arrow_size, 0.5, 0.1..=1000.0)
                             .suffix(" mm"),
                     )
                     .changed()
@@ -962,7 +955,7 @@ fn settings_body(app: &mut App, ui: &mut Ui) {
             });
             widgets::field_row(ui, "Nachkommastellen", |ui| {
                 let mut d = ds.decimals as i32;
-                if ui.add(crate::widgets::dv(&mut d).range(0..=4)).changed() {
+                if ui.add(crate::widgets::zahl(&mut d, 1.0, 0..=4)).changed() {
                     ds.decimals = d.max(0) as usize;
                     ds_changed = true;
                 }

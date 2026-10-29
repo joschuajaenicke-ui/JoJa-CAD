@@ -455,17 +455,63 @@ pub fn info_row(ui: &mut Ui, label: &str, value: &str, tip: Option<&str>) -> Res
     resp.on_hover_text(tip.unwrap_or(value))
 }
 
-/// Textfeld mit Einheitensuffix, für Längen in Dokumenteinheit.
-pub fn length_input(ui: &mut Ui, value_mm: &mut f64, unit: jjcad_core::units::Unit, width: f32) -> bool {
-    length_input_limited(ui, value_mm, unit, width, None)
-}
+// ---------------------------------------------------------------------------
+// Zahlenfelder — Grenzen und Zuggeschwindigkeit an genau einer Stelle
+// ---------------------------------------------------------------------------
+//
+// Jedes Zahlenfeld im Programm ist ein `egui::DragValue`: Klick und Ziehen
+// ändert den Wert, ein zweiter Klick tippt ihn. egui rechnet beim Ziehen
+// `Wert += Punkte × speed` **in der Anzeigeeinheit** und klemmt auf `range`.
+//
+// Zwei Fehler sind damit möglich und beide schon passiert (T0029):
+//   * `speed` aus der Einheit abgeleitet (früher `unit.mm() * 0.5`): in Metern
+//     verschob ein Pixel den Wert um 500 m — „springt um 1000 m“.
+//   * `range` vergessen: der Ziehpfeil lief ins Negative (negative Wandbreiten)
+//     und bis in Milliardenwerte.
+//
+// Deshalb gibt es nur noch zwei Bausteine, und **beide verlangen Grenzen und
+// Geschwindigkeit als Argument** — vergessen kann man sie nicht mehr, das
+// Programm übersetzt dann nicht:
+//   * `length_field` — Längen in mm, Anzeige in der Dokumenteinheit,
+//     Zuggeschwindigkeit fest `ZUG_MM_JE_PUNKT` (1 cm je Bildpunkt).
+//   * `zahl` — alles andere (Winkel, Stückzahlen, Faktoren, Papier-mm) mit
+//     ausdrücklich genanntem `speed` und `range`.
+// Die Grenzen stehen als benannte Vorgaben darunter (`MASS_*`, `ABSTAND_*`,
+// `KOORD_*`, `WINKEL_*`); eigener Wert nur, wenn ein Feld wirklich anders ist,
+// und dann mit Begründung im Kommentar. `DragValue::new` wird außerhalb dieser
+// Datei nirgends aufgerufen — `tests::zahlenfelder_nur_hier` wacht darüber.
 
-/// Längenfeld mit Grenzen (in mm), für Werte, bei denen negative oder beliebig
-/// große Eingaben sinnlos sind — etwa die Rasterweite: ohne Grenzen zog der
-/// Ziehpfeil ins Negative und in Werte, die kein Raster mehr ergeben.
-/// Die Grenzen werden in die Dokumenteinheit umgerechnet; der Ziehpfeil kann
-/// den Wert nicht mehr aus dem Bereich schieben, auch nicht beim Tippen.
-pub fn length_input_between(
+/// Zuggeschwindigkeit eines Längenfelds: Millimeter je Bildpunkt, unabhängig
+/// von der Anzeigeeinheit (Umschalt gedrückt = ein Zehntel, also 1 mm).
+///
+/// Bewusst **nicht** von `Unit::mm()` abgeleitet: die Anzeigeeinheit bestimmt
+/// nur, wie der Wert aussieht, nicht wie schnell er sich ziehen lässt.
+pub const ZUG_MM_JE_PUNKT: f64 = 10.0;
+
+/// Kleinste Abmessung, die ein Feld zulässt: 1 mm.
+pub const MASS_MIN_MM: f64 = 1.0;
+/// Größte Abmessung: 100 m — alles darüber ist ein Tippfehler, kein Bauwerk.
+pub const MASS_MAX_MM: f64 = 100_000.0;
+/// Kleinster Abstand bzw. Musterwert: 0,1 mm (feine Schraffur).
+pub const ABSTAND_MIN_MM: f64 = 0.1;
+/// Größter Abstand bzw. Musterwert: 10 m.
+pub const ABSTAND_MAX_MM: f64 = 10_000.0;
+/// Koordinaten und Höhenkoten dürfen negativ sein (Lage unter dem Nullpunkt).
+pub const KOORD_MIN_MM: f64 = -1_000_000.0;
+/// Gegenstück zu [`KOORD_MIN_MM`]: +1 km.
+pub const KOORD_MAX_MM: f64 = 1_000_000.0;
+/// Winkelbereich für Drehungen: ±360°, 1° je Bildpunkt.
+pub const WINKEL_MIN: f64 = -360.0;
+/// Gegenstück zu [`WINKEL_MIN`].
+pub const WINKEL_MAX: f64 = 360.0;
+
+/// Längenfeld mit Einheitensuffix, Grenzen in **Millimetern** und der
+/// Zuggeschwindigkeit aus [`ZUG_MM_JE_PUNKT`].
+///
+/// Grenzen werden in die Dokumenteinheit umgerechnet und gelten auch beim
+/// Tippen (egui klemmt auf `range`). `true`, wenn der Nutzer den Wert geändert
+/// hat.
+pub fn length_field(
     ui: &mut Ui,
     value_mm: &mut f64,
     unit: jjcad_core::units::Unit,
@@ -473,32 +519,17 @@ pub fn length_input_between(
     min_mm: f64,
     max_mm: f64,
 ) -> bool {
-    length_input_limited(ui, value_mm, unit, width, Some((min_mm, max_mm)))
-}
-
-fn length_input_limited(
-    ui: &mut Ui,
-    value_mm: &mut f64,
-    unit: jjcad_core::units::Unit,
-    width: f32,
-    limits_mm: Option<(f64, f64)>,
-) -> bool {
     let mut v = unit.from_mm(*value_mm);
     let decimals = unit.decimals();
     // Anzeige fest an der Einheit ausrichten statt an egui's automatischer
-    // Stellenzahl (die hängt an aim_radius/speed) und statt an min_decimals(0):
-    // sonst stand für 0,24 m nur „0 m“ im Feld. format_length_auto zeigt
-    // 0,24 m / 2,75 m / 240 mm und keine Tausenderpunkte (eindeutig lesbar).
-    let mut drag = egui::DragValue::new(&mut v)
-        .speed(unit.mm() * 0.5)
+    // Stellenzahl (die hängt an aim_radius/speed): sonst stand für 0,24 m nur
+    // „0 m“ im Feld. format_length_auto zeigt 0,24 m / 2,75 m / 240 mm und
+    // keine Tausenderpunkte (eindeutig lesbar).
+    let drag = zahlenkern(&mut v, ZUG_MM_JE_PUNKT / unit.mm(), unit.from_mm(min_mm)..=unit.from_mm(max_mm))
         .min_decimals(decimals)
         .max_decimals(decimals + 2)
-        .custom_parser(flexible_number)
         .custom_formatter(move |n, _| unit.format_length_auto(unit.to_mm(n)))
         .suffix(format!(" {}", unit.short()));
-    if let Some((min_mm, max_mm)) = limits_mm {
-        drag = drag.range(unit.from_mm(min_mm)..=unit.from_mm(max_mm));
-    }
     let resp = ui.add_sized([width, 20.0], drag);
     if resp.changed() {
         *value_mm = unit.to_mm(v);
@@ -506,6 +537,46 @@ fn length_input_limited(
     } else {
         false
     }
+}
+
+/// Zahlenfeld ohne Einheitenumrechnung: Winkel in Grad, Stückzahlen, Faktoren,
+/// Papier-Millimeter. `speed` ist der Zuwachs je Bildpunkt, `range` die harten
+/// Grenzen — beides Pflicht.
+pub fn zahl<'a, T: egui::emath::Numeric>(
+    v: &'a mut T,
+    speed: f64,
+    range: std::ops::RangeInclusive<T>,
+) -> egui::DragValue<'a> {
+    // Ganzzahlige Felder ohne Nachkommastellen, sonst lässt egui die Stellenzahl
+    // aus der Zuggeschwindigkeit ableiten (0,01 Faktor → zwei Stellen).
+    let drag = zahlenkern(v, speed, range);
+    if T::INTEGRAL {
+        drag.max_decimals(0)
+    } else {
+        drag
+    }
+}
+
+/// Gemeinsamer Kern: deutsches Zahlenformat, Komma **und** Punkt als
+/// Dezimaltrennzeichen, Grenzen und Zuggeschwindigkeit.
+fn zahlenkern<'a, T: egui::emath::Numeric>(
+    v: &'a mut T,
+    speed: f64,
+    range: std::ops::RangeInclusive<T>,
+) -> egui::DragValue<'a> {
+    egui::DragValue::new(v)
+        .speed(speed)
+        .range(range)
+        .custom_parser(flexible_number)
+        .custom_formatter(|n, decimals| {
+            let d = *decimals.start();
+            let s = format!("{:.*}", d, n);
+            if d == 0 {
+                s
+            } else {
+                s.replace('.', ",")
+            }
+        })
 }
 
 /// Trennlinie in der Horizontalen.
@@ -537,16 +608,6 @@ pub fn window_frame() -> egui::Frame {
 pub fn flexible_number(s: &str) -> Option<f64> {
     let t = s.trim().replace(' ', "").replace(',', ".");
     t.parse::<f64>().ok()
-}
-
-/// DragValue mit deutschem Zahlenformat (komma) und flexibler Eingabe.
-pub fn dv<'a, T: egui::emath::Numeric>(v: &'a mut T) -> egui::DragValue<'a> {
-    egui::DragValue::new(v)
-        .custom_parser(flexible_number)
-        .custom_formatter(|n, decimals| {
-            let d = *decimals.start();
-            format!("{:.*}", d, n).replace('.', ",")
-        })
 }
 
 #[cfg(test)]
@@ -602,7 +663,7 @@ mod zahltests {
                                 .max_rect(feld)
                                 .layout(egui::Layout::left_to_right(egui::Align::Center)),
                             |ui| {
-                                length_input_between(
+                                length_field(
                                     ui,
                                     &mut wert,
                                     jjcad_core::units::Unit::M,
@@ -622,5 +683,162 @@ mod zahltests {
         assert_eq!(ziehen(-2000.0), jjcad_core::model::GRID_STEP_MIN_MM);
         // Nach rechts weit über die Obergrenze hinaus: bleibt bei 10 m.
         assert_eq!(ziehen(2000.0), jjcad_core::model::GRID_STEP_MAX_MM);
+    }
+
+    /// Fährt einen Ziehzug (`dx` Punkte) über dem Widget und gibt den Wert
+    /// danach zurück. `feld` zeichnet das zu prüfende Zahlenfeld.
+    fn ziehe(
+        start_mm: f64,
+        einheit: jjcad_core::units::Unit,
+        min_mm: f64,
+        max_mm: f64,
+        dx: f32,
+    ) -> f64 {
+        let feld = Rect::from_min_size(Pos2::new(10.0, 10.0), Vec2::new(200.0, 20.0));
+        let mitte = feld.center();
+        let ctx = egui::Context::default();
+        let mut wert = start_mm;
+        let frames: Vec<Vec<egui::Event>> = vec![
+            Vec::new(),
+            vec![egui::Event::PointerMoved(mitte)],
+            vec![egui::Event::PointerButton {
+                pos: mitte,
+                button: egui::PointerButton::Primary,
+                pressed: true,
+                modifiers: Default::default(),
+            }],
+            vec![egui::Event::PointerMoved(egui::pos2(mitte.x + dx, mitte.y))],
+            vec![egui::Event::PointerButton {
+                pos: egui::pos2(mitte.x + dx, mitte.y),
+                button: egui::PointerButton::Primary,
+                pressed: false,
+                modifiers: Default::default(),
+            }],
+        ];
+        for events in frames {
+            let raw = egui::RawInput {
+                screen_rect: Some(Rect::from_min_size(Pos2::ZERO, Vec2::new(400.0, 60.0))),
+                events,
+                ..Default::default()
+            };
+            let _ = ctx.run(raw, |ctx| {
+                egui::CentralPanel::default().show(ctx, |ui| {
+                    ui.scope_builder(
+                        egui::UiBuilder::new()
+                            .max_rect(feld)
+                            .layout(egui::Layout::left_to_right(egui::Align::Center)),
+                        |ui| {
+                            length_field(ui, &mut wert, einheit, 200.0, min_mm, max_mm);
+                        },
+                    );
+                });
+            });
+        }
+        wert
+    }
+
+    /// Wandbreite in Metern (T0029): `speed` kam aus der Einheit, ein Pixel Zug
+    /// verschob den Wert um 500 m. Jetzt gilt in jeder Einheit 1 cm je Punkt —
+    /// und nach unten ist bei [`MASS_MIN_MM`] Schluss, keine negativen Breiten.
+    #[test]
+    fn wandbreite_zieht_im_zentimeter_schritt() {
+        // 60 Punkte Zug: rund 60 cm. Mit dem alten Faktor wären es 30 000 mm
+        // (an der Obergrenze), der Test fiele.
+        let nach = ziehe(240.0, jjcad_core::units::Unit::M, MASS_MIN_MM, MASS_MAX_MM, 60.0);
+        let zuwachs = nach - 240.0;
+        assert!(
+            (500.0..=700.0).contains(&zuwachs),
+            "60 Punkte Zug müssen ~60 cm ergeben, waren {zuwachs} mm"
+        );
+        assert!(zuwachs / 60.0 <= 20.0, "höchstens 2 cm je Punkt, war {}", zuwachs / 60.0);
+        // Weit nach links: bleibt an der Untergrenze, niemals negativ.
+        assert_eq!(
+            ziehe(240.0, jjcad_core::units::Unit::M, MASS_MIN_MM, MASS_MAX_MM, -300.0),
+            MASS_MIN_MM
+        );
+        // Dieselbe Zugrate in Zentimetern und Millimetern (Einheit ändert nur die Anzeige).
+        for einheit in [jjcad_core::units::Unit::Mm, jjcad_core::units::Unit::Cm] {
+            let v = ziehe(240.0, einheit, MASS_MIN_MM, MASS_MAX_MM, 60.0);
+            let d = v - 240.0;
+            assert!((500.0..=700.0).contains(&d), "60 Punkte in {einheit:?}: {d} mm");
+        }
+    }
+
+    /// Faktorfeld (Block skalieren) und Stückzahl: Grenzen gelten, auch nach
+    /// oben. `zahl` verlangt beides als Argument.
+    #[test]
+    fn zahlfeld_bleibt_in_den_grenzen() {
+        let feld = Rect::from_min_size(Pos2::new(10.0, 10.0), Vec2::new(120.0, 20.0));
+        let mitte = feld.center();
+        let mut wert: f64 = 1.0;
+        let ctx = egui::Context::default();
+        for events in vec![
+            Vec::<egui::Event>::new(),
+            vec![egui::Event::PointerMoved(mitte)],
+            vec![egui::Event::PointerButton {
+                pos: mitte,
+                button: egui::PointerButton::Primary,
+                pressed: true,
+                modifiers: Default::default(),
+            }],
+            vec![egui::Event::PointerMoved(egui::pos2(mitte.x - 5000.0, mitte.y))],
+            vec![egui::Event::PointerButton {
+                pos: egui::pos2(mitte.x - 5000.0, mitte.y),
+                button: egui::PointerButton::Primary,
+                pressed: false,
+                modifiers: Default::default(),
+            }],
+        ]
+        .into_iter()
+        {
+            let raw = egui::RawInput {
+                screen_rect: Some(Rect::from_min_size(Pos2::ZERO, Vec2::new(300.0, 60.0))),
+                events,
+                ..Default::default()
+            };
+            let _ = ctx.run(raw, |ctx| {
+                egui::CentralPanel::default().show(ctx, |ui| {
+                    let _ = ui.scope_builder(
+                        egui::UiBuilder::new()
+                            .max_rect(feld)
+                            .layout(egui::Layout::left_to_right(egui::Align::Center)),
+                        |ui| {
+                            ui.add_sized([120.0, 20.0], zahl(&mut wert, 0.01, 0.01..=1000.0));
+                        },
+                    );
+                });
+            });
+        }
+        assert_eq!(wert, 0.01, "Faktor bleibt an der Untergrenze");
+    }
+
+    /// Wächter: Zahlenfelder entstehen **nur** in dieser Datei und nur über
+    /// `zahl`/`length_field`. Ein rohes `DragValue::new` in einem Panel hat
+    /// (T0029) reihenweise Felder ohne Grenzen und mit sinnloser
+    /// Zuggeschwindigkeit erzeugt.
+    #[test]
+    fn zahlenfelder_nur_ueber_widgets() {
+        for (name, quelle) in [
+            ("panels.rs", include_str!("panels.rs")),
+            ("dialogs.rs", include_str!("dialogs.rs")),
+            ("app.rs", include_str!("app.rs")),
+            ("canvas.rs", include_str!("canvas.rs")),
+            ("hotbar.rs", include_str!("hotbar.rs")),
+            ("inventory.rs", include_str!("inventory.rs")),
+            ("textedit.rs", include_str!("textedit.rs")),
+        ] {
+            assert!(
+                !quelle.contains("DragValue"),
+                "{name}: Zahlenfelder nur über widgets::zahl bzw. widgets::length_field bauen"
+            );
+            assert!(
+                !quelle.contains(".speed("),
+                "{name}: Zuggeschwindigkeit gehört in widgets.rs, nicht an die Aufrufstelle"
+            );
+            assert!(
+                !quelle.contains(".range("),
+                "{name}: Grenzen gehören in widgets.rs, nicht an die Aufrufstelle"
+            );
+        }
     }
 }
