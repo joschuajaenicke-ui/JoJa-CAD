@@ -72,6 +72,10 @@ Steht rechts „nicht", dann ist das Wort im Projekt verpönt (auch in der Oberf
 | **Blockinstanz** | Ein eingesetzter Block im Plan (mit Position, Drehung, Spiegelung) | Block (wenn die Instanz gemeint ist) |
 | **Maßkette** | Mehrere Maße in einer Linie, fortlaufend | Bemaßungskette, Maßreihe |
 | **Höhenkote** | Höhenangabe als Text mit Bezug (±0,00) | Höhenmaß, Kote |
+| **Text** | Freier Text im Modell oder auf dem Blatt; Größe in mm, Ausrichtung, Auszeichnung | Beschriftung (das ist der Inhalt) |
+| **Textgröße** | Die Höhe eines Textes (Feld im Eigenschaften-Panel) | Schriftgröße in Punkt, Höhe |
+| **Auszeichnung** | Form einzelner Zeichen: fett, kursiv, unterstrichen, hochgestellt | Format, Stil |
+| **Lauf** | Zusammenhängende Zeichen mit gleicher Auszeichnung innerhalb eines Textes | Abschnitt, Run |
 | **Ansichtsfenster** | Fenster auf dem Blatt, das einen Ausschnitt der Zeichnung zeigt | Viewport, Ansicht |
 | **Schriftfeld** | Rahmen mit Feldern für Plan-Nr., Maßstab, Bauherr | Titelblock, Plankopf |
 | **Papierraum** | Bearbeitungsebene eines Blatts (Druckvorschau); enthält Schriftfeld, Texte und eigene Blattelemente | Layout, Paper Space |

@@ -181,6 +181,15 @@ pub const ACTIONS: &[ActionDef] = &[
     act!("modify.extend", "Verlängern", Aendern, "extend", "x", "Ende anklicken, das verlängert wird", true),
     act!("modify.erase", "Löschen", Aendern, "erase", "entf", "Auswahl löschen", false),
     act!("modify.explode", "Zerlegen", Aendern, "explode", "", "Blöcke/Bauteile in Einzelelemente zerlegen", false),
+    act!(
+        "text.format",
+        "Text auszeichnen",
+        Aendern,
+        "text",
+        "",
+        "Zeichenbereich eines Textes fett/kursiv/unterstrichen/hochgestellt setzen",
+        false
+    ),
     act!("modify.pickprops", "Eigenschaften aufnehmen", Aendern, "eyedropper", "q", "Eigenschaften von Objekt übernehmen", true),
 
     // Bemaßung
@@ -283,6 +292,7 @@ pub fn is_mutating(id: &str) -> bool {
             | "modify.extend"
             | "modify.erase"
             | "modify.explode"
+            | "text.format"
             | "modify.set"
             | "layer.create"
             | "layer.update"
@@ -861,6 +871,33 @@ fn apply_common(doc: &mut Document, e: &mut Entity, p: &Params, layer: Id) {
 
 fn ids_from(p: &Params, key: &str) -> Vec<Id> {
     p.ids(key).unwrap_or_default()
+}
+
+/// Läufe aus einem JSON-Array lesen: `[{"text": "…", "bold": true}, …]`.
+fn parse_runs(v: &Value) -> Result<Vec<TextRun>, String> {
+    let Some(arr) = v.as_array() else {
+        return Err("Liste erwartet".into());
+    };
+    let mut out = Vec::with_capacity(arr.len());
+    for item in arr {
+        let text = item
+            .get("text")
+            .and_then(|t| t.as_str())
+            .ok_or_else(|| "jeder Lauf braucht 'text'".to_string())?;
+        let flag = |k: &str| {
+            item.get(k)
+                .and_then(|x| x.as_bool())
+                .unwrap_or(false)
+        };
+        out.push(TextRun {
+            text: text.to_string(),
+            bold: flag("bold"),
+            italic: flag("italic"),
+            underline: flag("underline"),
+            superscript: flag("superscript"),
+        });
+    }
+    Ok(out)
 }
 
 /// Gemeinsamer Abschluss aller Füll-Werkzeuge: aus einer geschlossenen Kontur
@@ -1801,6 +1838,73 @@ pub fn execute(doc: &mut Document, id: &str, params: &Value) -> Result<Value, St
             doc.modified = true;
             Ok(json!({"ok": true, "created": created}))
         }
+        // ---------------- Text auszeichnen ----------------
+        // Setzt die Auszeichnung für einen Zeichenbereich (Indizes in Zeichen,
+        // 0-basiert, `to` ausschließend). Ohne brauchbaren Bereich gilt der
+        // ganze Text — so verhält sich auch das Panel ohne Markierung.
+        "text.format" => {
+            // Eine Kennung oder eine Liste — beides ist erlaubt.
+            let id = match p.raw("id").or_else(|| p.raw("ids")) {
+                Some(Value::Number(n)) => n.as_u64(),
+                Some(Value::Array(a)) => a.first().and_then(|x| x.as_u64()),
+                _ => None,
+            }
+            .ok_or_else(|| "Parameter 'id' fehlt".to_string())?;
+            let Some(e) = doc.entity_mut(id) else {
+                return Err(format!("Objekt {id} nicht gefunden"));
+            };
+            let EntityKind::Text {
+                text,
+                runs,
+                bold,
+                italic,
+                underline,
+                superscript,
+                ..
+            } = &mut e.kind
+            else {
+                return Err("Nur Text lässt sich auszeichnen".into());
+            };
+            let laenge = text.chars().count();
+            let mut von = p.num("from").unwrap_or(0.0).max(0.0) as usize;
+            let mut bis = p.num("to").unwrap_or(laenge as f64).max(0.0) as usize;
+            von = von.min(laenge);
+            bis = bis.min(laenge);
+            if bis <= von {
+                von = 0;
+                bis = laenge;
+            }
+            // Ausgangszustand: vorhandene Läufe, sonst die Felder des Objekts.
+            if runs.is_empty() {
+                *runs = vec![TextRun {
+                    text: text.clone(),
+                    bold: *bold,
+                    italic: *italic,
+                    underline: *underline,
+                    superscript: *superscript,
+                }];
+            }
+            let mut st = crate::text::char_styles(text, runs, crate::text::RunStyle::default())
+                .get(von)
+                .copied()
+                .unwrap_or_default();
+            if let Some(v) = p.boolean("bold") {
+                st.bold = v;
+            }
+            if let Some(v) = p.boolean("italic") {
+                st.italic = v;
+            }
+            if let Some(v) = p.boolean("underline") {
+                st.underline = v;
+            }
+            if let Some(v) = p.boolean("superscript") {
+                st.superscript = v;
+            }
+            *runs = crate::text::apply_style(text, runs, von, bis, st);
+            let anzahl = runs.len();
+            doc.modified = true;
+            Ok(json!({"ok": true, "from": von, "to": bis, "runs": anzahl}))
+        }
         "modify.set" => {
             let ids = ids_from(&p, "ids");
             let mut changed = 0;
@@ -2090,6 +2194,23 @@ pub fn execute(doc: &mut Document, id: &str, params: &Value) -> Result<Value, St
                             }
                             if let Some(b) = p.boolean("superscript") {
                                 *superscript = b;
+                            }
+                            // Gemischte Auszeichnung: eine Liste von Läufen.
+                            // Sie muss den Text genau abdecken; fehlende
+                            // Zeichen erben die vorige Auszeichnung.
+                            if let Some(v) = p.raw("runs") {
+                                match parse_runs(v) {
+                                    Ok(liste) => {
+                                        let vorgabe = crate::text::RunStyle {
+                                            bold: *bold,
+                                            italic: *italic,
+                                            underline: *underline,
+                                            superscript: *superscript,
+                                        };
+                                        *runs = crate::text::normalize_runs(t, &liste, vorgabe);
+                                    }
+                                    Err(e) => return Err(format!("runs: {e}")),
+                                }
                             }
                         }
                         EntityKind::Circle { r, .. } => {

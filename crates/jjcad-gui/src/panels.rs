@@ -368,6 +368,25 @@ pub fn properties(app: &mut App, ui: &mut Ui) {
         });
 }
 
+/// Zeichenbereich, für den ein Umschalter gilt: die Markierung im Textfeld,
+/// sonst der ganze Text. Ohne Markierung wäre der Umschalter sonst wirkungslos.
+fn zeichenbereich(markierung: Option<(usize, usize)>, laenge: usize) -> (usize, usize) {
+    match markierung {
+        Some((a, b)) if b > a => (a.min(laenge), b.min(laenge)),
+        _ => (0, laenge),
+    }
+}
+
+/// Auszeichnung über die Befehlsschicht setzen und das Dokument als geändert
+/// melden. Der eine Weg für alle Umschalter (Panel, Erzeugen, Eingabe).
+fn auszeichnen(app: &mut App, id: Id, von: usize, bis: usize, schluessel: &str, wert: bool) {
+    let _ = app.session_mut().execute(
+        "text.format",
+        &json!({"id": id, "from": von, "to": bis, schluessel: wert}),
+    );
+    app.mark_changed();
+}
+
 /// Eigenschaften des Textes, **während** er in der Zeichnung getippt wird.
 ///
 /// Ohne diesen Abschnitt wäre das Panel beim Editieren leer (kein Werkzeug, keine
@@ -389,7 +408,7 @@ fn text_eingabe_props(app: &mut App, ui: &mut Ui) {
         }));
         ui.add_space(6.0);
         let mut h = t.height;
-        widgets::field_row(ui, "Höhe", |ui| {
+        widgets::field_row(ui, "Textgröße", |ui| {
             if widgets::length_field(ui, &mut h, einheit, ui.available_width(), widgets::MASS_MIN_MM, widgets::MASS_MAX_MM) {
                 t.height = h;
                 // Die Eingabe wurde in diesem Frame **davor** gezeichnet —
@@ -412,6 +431,50 @@ fn text_eingabe_props(app: &mut App, ui: &mut Ui) {
                 ui.ctx().request_repaint();
             }
         });
+        // Auszeichnung des Textes, der gerade getippt wird — auf den ganzen
+        // Text, weil es in der Zeichenfläche keine Zeichenauswahl gibt.
+        let stil = jjcad_core::text::char_styles(&t.text, &t.runs, jjcad_core::text::RunStyle::default())
+            .first()
+            .copied()
+            .unwrap_or_default();
+        let mut klick: Option<(usize, bool)> = None;
+        ui.horizontal(|ui| {
+            ui.spacing_mut().item_spacing.x = 4.0;
+            for (i, (beschriftung, an, hinweis)) in [
+                ("F", stil.bold, "Fett"),
+                ("K", stil.italic, "Kursiv"),
+                ("U", stil.underline, "Unterstrichen"),
+                ("x²", stil.superscript, "Hochgestellt"),
+            ]
+            .into_iter()
+            .enumerate()
+            {
+                let beschriftung = if i == 0 {
+                    theme::bold(beschriftung, 13.0)
+                } else {
+                    egui::RichText::new(beschriftung).size(13.0)
+                };
+                if ui
+                    .add(egui::SelectableLabel::new(an, beschriftung))
+                    .on_hover_text(hinweis)
+                    .clicked()
+                {
+                    klick = Some((i, !an));
+                }
+            }
+        });
+        if let Some((i, wert)) = klick {
+            let mut neu = stil;
+            match i {
+                0 => neu.bold = wert,
+                1 => neu.italic = wert,
+                2 => neu.underline = wert,
+                _ => neu.superscript = wert,
+            }
+            let n = t.text.chars().count();
+            t.runs = jjcad_core::text::apply_style(&t.text, &t.runs, 0, n, neu);
+            ui.ctx().request_repaint();
+        }
         ui.add_space(6.0);
         ui.label(theme::dim("Esc übernimmt · Enter neue Zeile · Rechtsklick bricht ab"));
         (t.id.is_none(), t.height, t.align, t.valign)
@@ -475,38 +538,55 @@ fn pending_props(app: &mut App, ui: &mut Ui) {
         app.doc_mut().current_layer = new_layer;
     }
 
-    // Farbe der Linie (bei der Wand: Umrandung des Körpers)
+    // Farbe (bei der Wand: Umrandung des Körpers). Beim Text liegt sie in den
+    // Textvorgaben — nur so kommt sie im neuen Objekt an (T0032).
     let by_layer = app.ui.pending.color.is_none();
     let col = app.ui.pending.color.unwrap_or(Color::BLACK);
-    let mut picked_col: Option<Option<Color>> = None;
-    let color_label = if is_wall || is_fill { "Linienfarbe" } else { "Farbe" };
-    widgets::field_row(ui, color_label, |ui| {
-        picked_col = color_combo(ui, "pend_col", col, by_layer, false, "vom Layer");
-    });
-    if let Some(v) = picked_col {
-        app.ui.pending.color = v;
-    }
-
-    // Linienstärke
-    let lw = app.ui.pending.lineweight.unwrap_or(0.35);
-    let mut picked_w: Option<f64> = None;
-    widgets::field_row(ui, "Stärke", |ui| {
-        picked_w = weight_combo(ui, "pend_w", lw, false);
-    });
-    if let Some(w) = picked_w {
-        app.ui.pending.lineweight = Some(w);
-    }
-
-    // Linientyp
-    let mut lt = app.ui.pending.line_type.unwrap_or(LineType::Solid);
-    let lt_before = lt;
-    widgets::field_row(ui, "Linientyp", |ui| {
-        if let Some(c) = linetype_combo(ui, "pending_lt", lt, false) {
-            lt = c;
+    if tool_id == "draw.text" {
+        let by_layer = app.options.text_color.is_none();
+        let col = app.options.text_color.unwrap_or(Color::BLACK);
+        let mut picked: Option<Option<Color>> = None;
+        widgets::field_row(ui, "Farbe", |ui| {
+            picked = color_combo(ui, "pend_text_col", col, by_layer, false, "vom Layer");
+        });
+        if let Some(v) = picked {
+            app.options.text_color = v;
         }
-    });
-    if lt != lt_before {
-        app.ui.pending.line_type = Some(lt);
+    } else {
+        let mut picked_col: Option<Option<Color>> = None;
+        let color_label = if is_wall || is_fill { "Linienfarbe" } else { "Farbe" };
+        widgets::field_row(ui, color_label, |ui| {
+            picked_col = color_combo(ui, "pend_col", col, by_layer, false, "vom Layer");
+        });
+        if let Some(v) = picked_col {
+            app.ui.pending.color = v;
+        }
+    }
+
+    // Beim Text gibt es weder Strichstärke noch Strichart — ein Text hat keine
+    // Linie. Die Zeilen erscheinen deshalb gar nicht erst (T0032).
+    if tool_id != "draw.text" {
+        // Linienstärke
+        let lw = app.ui.pending.lineweight.unwrap_or(0.35);
+        let mut picked_w: Option<f64> = None;
+        widgets::field_row(ui, "Stärke", |ui| {
+            picked_w = weight_combo(ui, "pend_w", lw, false);
+        });
+        if let Some(w) = picked_w {
+            app.ui.pending.lineweight = Some(w);
+        }
+
+        // Linientyp
+        let mut lt = app.ui.pending.line_type.unwrap_or(LineType::Solid);
+        let lt_before = lt;
+        widgets::field_row(ui, "Linientyp", |ui| {
+            if let Some(c) = linetype_combo(ui, "pending_lt", lt, false) {
+                lt = c;
+            }
+        });
+        if lt != lt_before {
+            app.ui.pending.line_type = Some(lt);
+        }
     }
 
     // ---- Einfügemodus Rechteck/Ellipse ----
@@ -748,7 +828,7 @@ fn pending_props(app: &mut App, ui: &mut Ui) {
     // ---- Text ----
     if tool_id == "draw.text" {
         let mut h = app.options.text_height;
-        widgets::field_row(ui, "Höhe", |ui| {
+        widgets::field_row(ui, "Textgröße", |ui| {
             if widgets::length_field(ui, &mut h, app.unit(), ui.available_width(), widgets::MASS_MIN_MM, widgets::MASS_MAX_MM) {
                 app.options.text_height = h;
             }
@@ -764,7 +844,43 @@ fn pending_props(app: &mut App, ui: &mut Ui) {
             }
         });
         // Der Text selbst wird in der Zeichnung getippt (T0019), nicht hier:
-        // ein Feld an dieser Stelle wäre ein zweiter, wirkungsloser Weg.
+        // ein Feld an dieser Stelle wäre ein zweiter, wirkungsloser Weg. Die
+        // Auszeichnung gilt für den ganzen neuen Text und bleibt für das
+        // nächste Element stehen.
+        ui.horizontal(|ui| {
+            ui.spacing_mut().item_spacing.x = 4.0;
+            for (schluessel, beschriftung, hinweis) in [
+                ("bold", "F", "Fett"),
+                ("italic", "K", "Kursiv"),
+                ("underline", "U", "Unterstrichen"),
+                ("superscript", "x²", "Hochgestellt"),
+            ] {
+                let an = match schluessel {
+                    "bold" => app.options.text_bold,
+                    "italic" => app.options.text_italic,
+                    "underline" => app.options.text_underline,
+                    _ => app.options.text_superscript,
+                };
+                let beschriftung = if schluessel == "bold" {
+                    theme::bold(beschriftung, 13.0)
+                } else {
+                    egui::RichText::new(beschriftung).size(13.0)
+                };
+                if ui
+                    .add(egui::SelectableLabel::new(an, beschriftung))
+                    .on_hover_text(hinweis)
+                    .clicked()
+                {
+                    match schluessel {
+                        "bold" => app.options.text_bold = !an,
+                        "italic" => app.options.text_italic = !an,
+                        "underline" => app.options.text_underline = !an,
+                        _ => app.options.text_superscript = !an,
+                    }
+                }
+            }
+            ui.label(theme::faint("Auszeichnung"));
+        });
     }
 
     // ---- Bemaßung ----
@@ -1268,53 +1384,62 @@ fn entity_props(app: &mut App, ui: &mut Ui, id: Id) {
         app.mark_changed();
     }
 
-    // Linienstärke
-    let lw = e
-        .style
-        .line_weight
-        .unwrap_or_else(|| app.doc().effective_line_weight(&e));
-    let mut picked_w: Option<f64> = None;
-    widgets::field_row(ui, "Stärke", |ui| {
-        picked_w = weight_combo(ui, "ent_w", lw, false);
-    });
-    if let Some(w) = picked_w {
-        let _ = app
-            .session_mut()
-            .execute("modify.set", &json!({"ids": [id], "lineweight": w}));
-        app.mark_changed();
-    }
+    // Stärke und Linientyp gibt es beim Text nicht — ein Text hat keine Linie.
+    // Die Zeilen wegzulassen ist ehrlicher als Schalter, die nichts tun (T0032).
+    let ist_text = matches!(e.kind, EntityKind::Text { .. });
+    if !ist_text {
+        // Linienstärke
+        let lw = e
+            .style
+            .line_weight
+            .unwrap_or_else(|| app.doc().effective_line_weight(&e));
+        let mut picked_w: Option<f64> = None;
+        widgets::field_row(ui, "Stärke", |ui| {
+            picked_w = weight_combo(ui, "ent_w", lw, false);
+        });
+        if let Some(w) = picked_w {
+            let _ = app
+                .session_mut()
+                .execute("modify.set", &json!({"ids": [id], "lineweight": w}));
+            app.mark_changed();
+        }
 
-    // Linientyp
-    let lt = e.style.line_type.unwrap_or_else(|| app.doc().effective_line_type(&e));
-    let mut picked_lt: Option<LineType> = None;
-    widgets::field_row(ui, "Linientyp", |ui| {
-        picked_lt = linetype_combo(ui, "ent_lt", lt, false);
-    });
-    if let Some(new_lt) = picked_lt {
-        let name = match new_lt {
-            LineType::Solid => "solid",
-            LineType::Dashed => "dashed",
-            LineType::Dotted => "dotted",
-            LineType::DashDot => "dashdot",
-            LineType::Hidden => "hidden",
-        };
-        let _ = app
-            .session_mut()
-            .execute("modify.set", &json!({"ids": [id], "linetype": name}));
-        app.mark_changed();
+        // Linientyp
+        let lt = e.style.line_type.unwrap_or_else(|| app.doc().effective_line_type(&e));
+        let mut picked_lt: Option<LineType> = None;
+        widgets::field_row(ui, "Linientyp", |ui| {
+            picked_lt = linetype_combo(ui, "ent_lt", lt, false);
+        });
+        if let Some(new_lt) = picked_lt {
+            let name = match new_lt {
+                LineType::Solid => "solid",
+                LineType::Dashed => "dashed",
+                LineType::Dotted => "dotted",
+                LineType::DashDot => "dashdot",
+                LineType::Hidden => "hidden",
+            };
+            let _ = app
+                .session_mut()
+                .execute("modify.set", &json!({"ids": [id], "linetype": name}));
+            app.mark_changed();
+        }
     }
 
     ui.add_space(4.0);
     widgets::hline(ui);
     ui.add_space(4.0);
 
-    // Geometrie (nur Anzeige) — eine Quelle für alle Typen
-    section_title(ui, "info", "Geometrie");
+    // Geometrie (nur Anzeige) — eine Quelle für alle Typen. Ohne Zeilen (Text,
+    // Punkt) entfällt der Abschnitt: eine Überschrift ohne Inhalt sagt nichts.
     let unit = app.unit();
-    for (name, wert) in geo_rows(&e, unit) {
-        widgets::field_row(ui, name, |ui| {
-            ui.label(theme::mono(wert.clone()));
-        });
+    let geo = geo_rows(&e, unit);
+    if !geo.is_empty() {
+        section_title(ui, "info", "Geometrie");
+        for (name, wert) in geo {
+            widgets::field_row(ui, name, |ui| {
+                ui.label(theme::mono(wert.clone()));
+            });
+        }
     }
     ui.add_space(4.0);
     widgets::hline(ui);
@@ -1935,25 +2060,109 @@ fn entity_props(app: &mut App, ui: &mut Ui, id: Id) {
             italic,
             underline,
             superscript,
+            runs,
             ..
         } => {
             let mut t = text.clone();
             let mut h = *height;
             let mut a = angle.to_degrees();
-            let mut b = *bold;
-            let mut it = *italic;
-            let mut un = *underline;
-            let mut ho = *superscript;
             let mut ah = *align;
             let mut av = *valign;
-            ui.label(theme::dim("Text"));
-            if ui
-                .add_sized([ui.available_width(), 54.0], egui::TextEdit::multiline(&mut t).desired_rows(2))
-                .changed()
-            {
+            // Vorgabe des Objekts: gilt, solange keine Läufe gesetzt sind.
+            let vorgabe = jjcad_core::text::RunStyle {
+                bold: *bold,
+                italic: *italic,
+                underline: *underline,
+                superscript: *superscript,
+            };
+            section_title(ui, "text", "Text");
+
+            // Textfeld und Auszeichnung gehören zusammen: erst der Inhalt,
+            // darunter die Umschalter für die **markierten** Zeichen.
+            // Feste Kennung: sonst verliert das Feld bei jeder Änderung seine
+            // Markierung, weil sich die automatische Widget-Kennung mit der
+            // Zahl der Zeilen davor verschiebt (bekannt aus egui 0.29).
+            let ausgabe = egui::TextEdit::multiline(&mut t)
+                .id(egui::Id::new("sel_text_inhalt"))
+                .desired_rows(2)
+                .desired_width(f32::INFINITY)
+                .show(ui);
+            let feld_id = egui::Id::new("sel_text_inhalt");
+            // Die Markierung aus dem **gespeicherten** Zustand lesen: ein Klick
+            // auf einen Umschalter nimmt dem Feld im selben Frame den Fokus,
+            // dann wäre `cursor_range` schon leer.
+            let markierung = egui::text_edit::TextEditState::load(ui.ctx(), feld_id)
+                .and_then(|st| st.cursor.char_range())
+                .map(|r| {
+                    let (p1, p2) = (r.primary.index, r.secondary.index);
+                    (p1.min(p2), p1.max(p2))
+                })
+                .or_else(|| {
+                    ausgabe.cursor_range.map(|cr| {
+                        let (p1, p2) = (cr.primary.ccursor.index, cr.secondary.ccursor.index);
+                        (p1.min(p2), p1.max(p2))
+                    })
+                });
+            if ausgabe.response.changed() {
+                // Auszeichnung bleibt beim Tippen an den Zeichen hängen.
+                let neu = jjcad_core::text::retarget_runs(text, runs, &t, vorgabe);
                 changed_params.insert("text".into(), json!(t));
+                changed_params.insert("runs".into(), serde_json::to_value(&neu).unwrap_or(json!([])));
             }
-            widgets::field_row(ui, "Höhe", |ui| {
+
+            // Zustand am Cursor — die Umschalter zeigen, was dort gilt.
+            let stile = jjcad_core::text::char_styles(text, runs, vorgabe);
+            let stelle = markierung.map(|(a, _)| a).unwrap_or(0).min(stile.len().saturating_sub(1));
+            let aktuell = stile.get(stelle).copied().unwrap_or(vorgabe);
+            let (von, bis) = zeichenbereich(markierung, text.chars().count());
+            let mut klick: Option<(&'static str, bool)> = None;
+            ui.horizontal(|ui| {
+                ui.spacing_mut().item_spacing.x = 4.0;
+                for (schluessel, beschriftung, an, hinweis) in [
+                    ("bold", "F", aktuell.bold, "Fett"),
+                    ("italic", "K", aktuell.italic, "Kursiv"),
+                    ("underline", "U", aktuell.underline, "Unterstrichen"),
+                    ("superscript", "x²", aktuell.superscript, "Hochgestellt"),
+                ] {
+                    let text_widget = if schluessel == "bold" {
+                        theme::bold(beschriftung, 13.0)
+                    } else {
+                        egui::RichText::new(beschriftung).size(13.0)
+                    };
+                    if ui.add(egui::SelectableLabel::new(an, text_widget)).on_hover_text(hinweis).clicked() {
+                        klick = Some((schluessel, !an));
+                    }
+                }
+                // Kurz halten: die Zeile muss in 280 px passen.
+                ui.label(theme::faint(if markierung.map(|(a, b)| b > a).unwrap_or(false) {
+                    format!("{von}–{bis}")
+                } else {
+                    "ganzer Text".to_string()
+                }))
+                .on_hover_text(if markierung.map(|(a, b)| b > a).unwrap_or(false) {
+                    "gilt für die markierten Zeichen"
+                } else {
+                    "Ohne Markierung im Textfeld gilt der ganze Text"
+                });
+            });
+            if let Some((schluessel, wert)) = klick {
+                auszeichnen(app, id, von, bis, schluessel, wert);
+                // Markierung erhalten: sonst müsste man für die zweite
+                // Auszeichnung (z. B. zusätzlich kursiv) neu markieren.
+                // Fokus zurück ins Feld: ein Klick auf den Umschalter nimmt es
+                // dem Feld, und ohne Fokus verwirft egui die Markierung.
+                ui.memory_mut(|m| m.request_focus(feld_id));
+                let mut st = egui::text_edit::TextEditState::load(ui.ctx(), feld_id).unwrap_or_default();
+                st.cursor.set_char_range(Some(egui::text::CCursorRange::two(
+                    egui::text::CCursor::new(von),
+                    egui::text::CCursor::new(bis),
+                )));
+                st.store(ui.ctx(), feld_id);
+                ui.ctx().request_repaint();
+            }
+            ui.add_space(4.0);
+
+            widgets::field_row(ui, "Textgröße", |ui| {
                 if widgets::length_field(ui, &mut h, unit, 100.0, widgets::MASS_MIN_MM, widgets::MASS_MAX_MM) {
                     changed_params.insert("height".into(), json!(unit.from_mm(h)));
                 }
@@ -1967,26 +2176,6 @@ fn entity_props(app: &mut App, ui: &mut Ui, id: Id) {
                 if widgets::align_matrix(ui, "sel_text_ausrichtung", &mut ah, &mut av) {
                     changed_params.insert("align".into(), json!(ah.key()));
                     changed_params.insert("valign".into(), json!(av.key()));
-                }
-            });
-            widgets::field_row(ui, "Fett", |ui| {
-                if ui.checkbox(&mut b, "").changed() {
-                    changed_params.insert("bold".into(), json!(b));
-                }
-            });
-            widgets::field_row(ui, "Kursiv", |ui| {
-                if ui.checkbox(&mut it, "").changed() {
-                    changed_params.insert("italic".into(), json!(it));
-                }
-            });
-            widgets::field_row(ui, "Unterstrichen", |ui| {
-                if ui.checkbox(&mut un, "").changed() {
-                    changed_params.insert("underline".into(), json!(un));
-                }
-            });
-            widgets::field_row(ui, "Hochgestellt", |ui| {
-                if ui.checkbox(&mut ho, "").changed() {
-                    changed_params.insert("superscript".into(), json!(ho));
                 }
             });
             ui.add_space(2.0);
@@ -3208,13 +3397,87 @@ mod tests_text_eingabe_panel {
             "während der Eingabe fehlt die Ausrichtung: {texte:?}"
         );
         assert!(
-            enthaelt(&texte, "Höhe"),
-            "während der Eingabe fehlt die Höhe: {texte:?}"
+            enthaelt(&texte, "Textgröße"),
+            "während der Eingabe fehlt die Textgröße: {texte:?}"
         );
         assert!(
             enthaelt(&texte, "neuer Text"),
             "das Panel soll den bearbeiteten Text nennen: {texte:?}"
         );
+    }
+
+    /// Auswahl eines Textes: keine Zeilen für Stärke, Linientyp oder einen
+    /// leeren Abschnitt „Geometrie" — dafür Text, Textgröße und die
+    /// Umschalter der Auszeichnung (T0032).
+    #[test]
+    fn ausgewaehlter_text_hat_keine_linien_zeilen_und_keine_leere_geometrie() {
+        let mut app = app_mm();
+        app.session_mut()
+            .execute(
+                "draw.text",
+                &json!({"p": [1000, 500], "text": "Wohnen", "height": 250}),
+            )
+            .unwrap();
+        let id = app.doc().ents()[0].id;
+        app.session_mut().select(vec![id]);
+        let texte = panel_texte(&mut app, 2.0);
+        for unerwuenscht in ["Stärke", "Linientyp", "Geometrie", "Fett", "Kursiv"] {
+            assert!(
+                !enthaelt(&texte, unerwuenscht),
+                "{unerwuenscht} gehört nicht ins Text-Panel: {texte:?}"
+            );
+        }
+        for erwuenscht in ["Text", "Textgröße", "Drehung", "Ausrichtung", "F", "K"] {
+            assert!(
+                enthaelt(&texte, erwuenscht),
+                "{erwuenscht} fehlt im Text-Panel: {texte:?}"
+            );
+        }
+    }
+
+    /// Umschalter im Panel: nur die markierten Zeichen werden ausgezeichnet,
+    /// ohne Markierung der ganze Text (T0032).
+    #[test]
+    fn umschalter_zeichnet_nur_die_markierung_aus() {
+        let mut app = app_mm();
+        app.session_mut()
+            .execute(
+                "draw.text",
+                &json!({"p": [0, 0], "text": "Raum Wohnen", "height": 250}),
+            )
+            .unwrap();
+        let id = app.doc().ents()[0].id;
+
+        // Markierung „Wohnen" (Zeichen 5–11) — wie sie egui im Textfeld liefert.
+        let (von, bis) = zeichenbereich(Some((5, 11)), "Raum Wohnen".chars().count());
+        assert_eq!((von, bis), (5, 11));
+        auszeichnen(&mut app, id, von, bis, "bold", true);
+
+        let EntityKind::Text { runs, .. } = &app.doc().entity(id).unwrap().kind else {
+            panic!("Text erwartet");
+        };
+        assert_eq!(runs.len(), 2, "zwei Läufe erwartet: {runs:?}");
+        assert_eq!(runs[0].text, "Raum ");
+        assert!(!runs[0].bold, "Raum darf nicht fett werden");
+        assert_eq!(runs[1].text, "Wohnen");
+        assert!(runs[1].bold, "Wohnen muss fett sein");
+
+        // Ohne Markierung gilt der ganze Text.
+        let (von, bis) = zeichenbereich(None, "Raum Wohnen".chars().count());
+        assert_eq!((von, bis), (0, 11));
+    }
+
+    /// Werkzeug „Text": Stärke und Linientyp entfallen schon beim Erzeugen.
+    #[test]
+    fn textwerkzeug_zeigt_keine_linien_zeilen() {
+        let mut app = app_mm();
+        app.start_tool("draw.text");
+        let _ = panel_texte(&mut app, 3.0);
+        let texte = panel_texte(&mut app, 3.1);
+        assert!(!enthaelt(&texte, "Stärke"), "Stärke beim Text: {texte:?}");
+        assert!(!enthaelt(&texte, "Linientyp"), "Linientyp beim Text: {texte:?}");
+        assert!(enthaelt(&texte, "Textgröße"), "Textgröße fehlt: {texte:?}");
+        assert!(enthaelt(&texte, "Farbe"), "Farbe fehlt: {texte:?}");
     }
 
     /// Änderungen im Panel landen in der Eingabe — und damit im Ergebnis.

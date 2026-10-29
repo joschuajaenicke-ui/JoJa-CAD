@@ -524,7 +524,36 @@ pub(crate) fn text_preview_prim(
     align: TextAlignH,
     valign: TextAlignV,
 ) -> render::TextPrim {
+    text_preview_prim_mit(
+        text,
+        height,
+        align,
+        valign,
+        jjcad_core::text::RunStyle::default(),
+    )
+}
+
+/// Dasselbe mit Auszeichnung — die Vorschau zeigt, was der Klick erzeugt.
+pub(crate) fn text_preview_prim_mit(
+    text: String,
+    height: f64,
+    align: TextAlignH,
+    valign: TextAlignV,
+    stil: jjcad_core::text::RunStyle,
+) -> render::TextPrim {
+    let runs = if stil.plain() {
+        Vec::new()
+    } else {
+        vec![jjcad_core::model::TextRun {
+            text: text.clone(),
+            bold: stil.bold,
+            italic: stil.italic,
+            underline: stil.underline,
+            superscript: stil.superscript,
+        }]
+    };
     render::TextPrim {
+        runs,
         pos: V2::ZERO,
         text,
         height,
@@ -535,7 +564,6 @@ pub(crate) fn text_preview_prim(
         italic: false,
         underline: false,
         superscript: false,
-        runs: Vec::new(),
     }
 }
 
@@ -2033,12 +2061,31 @@ fn draw_tool_preview(
             };
             // Dieselbe Platzierung wie der Text, der beim Klick entsteht
             // (Ausrichtung aus dem Panel) — nicht mit der Grundlinie am Zeiger.
+            let stil = jjcad_core::text::RunStyle {
+                bold: app.options.text_bold,
+                italic: app.options.text_italic,
+                underline: app.options.text_underline,
+                superscript: app.options.text_superscript,
+            };
+            // Vorschau in der gewählten Farbe — sonst zeigte sie etwas anderes
+            // als der Klick erzeugt.
+            let vorschau_col = app
+                .options
+                .text_color
+                .map(color32)
+                .unwrap_or(col);
             paint_text(
                 p,
-                &text_preview_prim(txt, h, app.options.text_align, app.options.text_valign),
+                &text_preview_prim_mit(
+                    txt,
+                    h,
+                    app.options.text_align,
+                    app.options.text_valign,
+                    stil,
+                ),
                 w2s(cursor),
                 view.zoom,
-                col,
+                vorschau_col,
                 view.rot as f32,
             );
         }

@@ -228,3 +228,138 @@ fn txt_export_enthaelt_die_zeichen_als_text() {
     // muss pdftotext ihn über die ToUnicode-Zuordnung finden.
     let _ = Path::new("");
 }
+
+// ---------------------------------------------------------------------------
+// Zeichenformatierung (T0032): Bereiche auszeichnen, Formatierung beim
+// Bearbeiten behalten
+// ---------------------------------------------------------------------------
+
+use jjcad_core::text::{apply_style, retarget_runs, RunStyle};
+
+fn laeufe(runs: &[TextRun]) -> Vec<(String, String)> {
+    runs.iter()
+        .map(|r| {
+            let mut f = String::new();
+            if r.bold {
+                f.push('F');
+            }
+            if r.italic {
+                f.push('K');
+            }
+            if r.underline {
+                f.push('U');
+            }
+            if r.superscript {
+                f.push('H');
+            }
+            (r.text.clone(), f)
+        })
+        .collect()
+}
+
+#[test]
+fn auszeichnung_trifft_nur_den_bereich() {
+    let text = "Raum Wohnen";
+    let runs = vec![TextRun::plain(text)];
+    let neu = apply_style(
+        text,
+        &runs,
+        5,
+        11,
+        RunStyle {
+            bold: true,
+            ..Default::default()
+        },
+    );
+    assert_eq!(
+        laeufe(&neu),
+        vec![
+            ("Raum ".to_string(), String::new()),
+            ("Wohnen".to_string(), "F".to_string())
+        ]
+    );
+}
+
+#[test]
+fn auszeichnung_ueberschreibt_auch_und_setzt_zurueck() {
+    let text = "abcdef";
+    let runs = vec![TextRun {
+        text: text.into(),
+        bold: true,
+        ..Default::default()
+    }];
+    // Mitte aufheben (nicht fett), Rest bleibt fett
+    let neu = apply_style(text, &runs, 2, 4, RunStyle::default());
+    assert_eq!(
+        laeufe(&neu),
+        vec![
+            ("ab".to_string(), "F".to_string()),
+            ("cd".to_string(), String::new()),
+            ("ef".to_string(), "F".to_string()),
+        ]
+    );
+}
+
+#[test]
+fn formatierung_bleibt_beim_tippen_an_den_zeichen() {
+    let alt = "Raum Wohnen";
+    let runs = vec![
+        TextRun::plain("Raum "),
+        TextRun {
+            text: "Wohnen".into(),
+            bold: true,
+            ..Default::default()
+        },
+    ];
+    // Ein Zeichen mitten im fetten Wort einfügen
+    let neu = "Raum Woschnen";
+    let r2 = retarget_runs(alt, &runs, neu, RunStyle::default());
+    assert_eq!(
+        laeufe(&r2),
+        vec![
+            ("Raum ".to_string(), String::new()),
+            ("Woschnen".to_string(), "F".to_string()),
+        ],
+        "eingefügtes Zeichen muss die Auszeichnung des Vorgängers erben"
+    );
+    // Ende löschen: nichts bleibt hängen
+    let r3 = retarget_runs(alt, &runs, "Raum", RunStyle::default());
+    assert_eq!(laeufe(&r3), vec![("Raum".to_string(), String::new())]);
+}
+
+#[test]
+fn text_format_aktion_setzt_nur_den_bereich() {
+    let mut s = jjcad_core::Session::new();
+    s.execute("doc.settings", &json!({"input_unit": "mm"}))
+        .unwrap();
+    let r = s
+        .execute(
+            "draw.text",
+            &json!({"p": [0, 0], "text": "Raum Wohnen", "height": 250}),
+        )
+        .unwrap();
+    let id = r["created"][0].as_u64().unwrap();
+    s.execute(
+        "text.format",
+        &json!({"id": id, "from": 5, "to": 11, "italic": true}),
+    )
+    .unwrap();
+    let EntityKind::Text { text, runs, .. } = &s.doc.entity(id).unwrap().kind else {
+        panic!("Text erwartet");
+    };
+    assert_eq!(text, "Raum Wohnen");
+    assert_eq!(
+        laeufe(runs),
+        vec![
+            ("Raum ".to_string(), String::new()),
+            ("Wohnen".to_string(), "K".to_string()),
+        ]
+    );
+    // Ohne brauchbaren Bereich gilt der ganze Text.
+    s.execute("text.format", &json!({"id": id, "underline": true}))
+        .unwrap();
+    let EntityKind::Text { runs, .. } = &s.doc.entity(id).unwrap().kind else {
+        panic!("Text erwartet");
+    };
+    assert!(runs.iter().all(|r| r.underline));
+}
