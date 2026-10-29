@@ -40,6 +40,8 @@ Steht rechts „nicht", dann ist das Wort im Projekt verpönt (auch in der Oberf
 | **Gehrung** | Der geschlossene Übergang zweier Wände an einer Ecke; entsteht über die Winkelhalbierende | Ecke, Verbindung |
 | **Winkelhalbierende** | Hilfslinie, die den Innenwinkel zweier Wände halbiert; **nie sichtbar** im Plan | Halbierende, Mittellinie des Winkels |
 | **Ausrichtung** (Wand) | Lage des Körpers zur Achse: Links / Mittig / Rechts | Seite, Offset |
+| **Ausrichtung** (Text) | Lage des Textkastens zu seinem Einfügepunkt, zwei Achsen: waagerecht **Linksbündig / Zentriert / Rechtsbündig**, senkrecht **Oben / Mitte / Unten** | Absatz, Anker, Justierung |
+| **Einfügepunkt** (Text) | Der Punkt, den die Ausrichtung benennt — beim Anlegen der Klickpunkt, beim Kopieren der Basispunkt | Anker, Nullpunkt |
 | **Dicke** | Wandstärke quer zur Achse (mm) | Breite (bei Wänden) |
 | **Füllfläche** | Objekt, das eine geschlossene Fläche ausfüllt — Farbe oder Muster; **dasselbe Objekt** wie Schraffur | Fill, Fläche, Schraffur-Objekt |
 | **Schraffur** | Füllfläche mit Muster (Linien, Kreuz, Punkte, Dämmung) — gleiches Objekt, nur anderes Muster | Hatch, Musterfläche |

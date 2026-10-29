@@ -702,6 +702,16 @@ fn pending_props(app: &mut App, ui: &mut Ui) {
                 app.options.text_height = h;
             }
         });
+        // Ausrichtung des nächsten Textes: bestimmt zugleich den Einfügepunkt —
+        // der Klickpunkt ist die Ecke/Kante/Mitte, die die Matrix zeigt.
+        let mut ah = app.options.text_align;
+        let mut av = app.options.text_valign;
+        widgets::field_block(ui, "Ausrichtung", widgets::ALIGN_HOEHE, |ui| {
+            if widgets::align_matrix(ui, "pend_text_ausrichtung", &mut ah, &mut av) {
+                app.options.text_align = ah;
+                app.options.text_valign = av;
+            }
+        });
         // Der Text selbst wird in der Zeichnung getippt (T0019), nicht hier:
         // ein Feld an dieser Stelle wäre ein zweiter, wirkungsloser Weg.
     }
@@ -1889,6 +1899,8 @@ fn entity_props(app: &mut App, ui: &mut Ui, id: Id) {
             text,
             height,
             angle,
+            align,
+            valign,
             bold,
             ..
         } => {
@@ -1896,6 +1908,8 @@ fn entity_props(app: &mut App, ui: &mut Ui, id: Id) {
             let mut h = *height;
             let mut a = angle.to_degrees();
             let mut b = *bold;
+            let mut ah = *align;
+            let mut av = *valign;
             ui.label(theme::dim("Text"));
             if ui
                 .add_sized([ui.available_width(), 54.0], egui::TextEdit::multiline(&mut t).desired_rows(2))
@@ -1911,6 +1925,12 @@ fn entity_props(app: &mut App, ui: &mut Ui, id: Id) {
             widgets::field_row(ui, "Drehung", |ui| {
                 if ui.add(crate::widgets::dv(&mut a).speed(1.0).suffix("°")).changed() {
                     changed_params.insert("angle".into(), json!(a));
+                }
+            });
+            widgets::field_block(ui, "Ausrichtung", widgets::ALIGN_HOEHE, |ui| {
+                if widgets::align_matrix(ui, "sel_text_ausrichtung", &mut ah, &mut av) {
+                    changed_params.insert("align".into(), json!(ah.key()));
+                    changed_params.insert("valign".into(), json!(av.key()));
                 }
             });
             widgets::field_row(ui, "Fett", |ui| {

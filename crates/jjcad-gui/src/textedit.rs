@@ -17,7 +17,7 @@ use crate::app::{world_to_screen, App, View};
 use crate::theme::Palette;
 use egui::{Color32, FontId, Id, Pos2, Rect, Stroke, Ui, Vec2};
 use jjcad_core::geom::Vec2 as V2;
-use jjcad_core::model::{EntityKind, Id as EId};
+use jjcad_core::model::{EntityKind, Id as EId, TextAlignH, TextAlignV};
 use jjcad_core::render;
 use jjcad_core::style::Color;
 use serde_json::json;
@@ -34,11 +34,15 @@ pub fn feld_id() -> Id {
 
 /// Laufende Texteingabe in der Zeichenfläche.
 pub struct Texteingabe {
-    /// Anker des Textes in Weltkoordinaten (links, mittig — wie `draw.text`)
+    /// Einfügepunkt des Textes in Weltkoordinaten — die Stelle, die die
+    /// Ausrichtung (`align`/`valign`) benennt, nicht die linke untere Ecke.
     pub pos: V2,
     pub text: String,
     pub height: f64,
     pub angle: f64,
+    /// Ausrichtung des Textes (auch während des Schreibens schon wirksam)
+    pub align: TextAlignH,
+    pub valign: TextAlignV,
     /// `Some` = vorhandener Text wird geändert, `None` = neuer Text
     pub id: Option<EId>,
     /// Farbe, in der der Text in der Zeichnung erscheint (Objekt- oder Layerfarbe)
@@ -55,6 +59,8 @@ impl Texteingabe {
         height: f64,
         text: String,
         angle: f64,
+        align: TextAlignH,
+        valign: TextAlignV,
         id: Option<EId>,
         farbe: Color,
     ) -> Self {
@@ -63,6 +69,8 @@ impl Texteingabe {
             text,
             height,
             angle,
+            align,
+            valign,
             id,
             farbe,
             fokus: true,
@@ -86,6 +94,8 @@ pub fn start(app: &mut App, pos: V2) {
         app.options.text_height,
         String::new(),
         0.0,
+        app.options.text_align,
+        app.options.text_valign,
         None,
         farbe,
     ));
@@ -102,18 +112,22 @@ pub fn start_entitaet(app: &mut App, id: EId) -> bool {
         text,
         height,
         angle,
+        align,
+        valign,
         ..
     } = &e.kind
     else {
         return false;
     };
     let (p, text, height, angle) = (*p, text.clone(), *height, *angle);
+    let (align, valign) = (*align, *valign);
     let farbe = app.doc().effective_color(e);
     app.tool = None;
     // Ohne Auswahl: der blaue Auswahlrahmen des Textes würde sonst um den
     // bearbeiteten Text stehen — beim Schreiben soll nur der Text dastehen.
     app.session_mut().clear_selection();
-    app.ui.texteingabe = Some(Texteingabe::neu(p, height, text, angle, Some(id), farbe));
+    app.ui.texteingabe =
+        Some(Texteingabe::neu(p, height, text, angle, align, valign, Some(id), farbe));
     app.mitteilung("Text · Inhalt ändern (Esc übernimmt)");
     true
 }
@@ -160,7 +174,8 @@ fn uebernehmen(app: &mut App, ctx: &egui::Context) {
     let (action, params, meldung) = match t.id {
         Some(id) => (
             "modify.set",
-            json!({"ids": [id], "text": text, "height": unit.from_mm(t.height)}),
+            json!({"ids": [id], "text": text, "height": unit.from_mm(t.height),
+                   "align": t.align.key(), "valign": t.valign.key()}),
             "Text · geändert",
         ),
         None => (
@@ -168,7 +183,9 @@ fn uebernehmen(app: &mut App, ctx: &egui::Context) {
             json!({"p": [unit.from_mm(t.pos.x), unit.from_mm(t.pos.y)],
                    "text": text,
                    "height": unit.from_mm(t.height),
-                   "angle": t.angle.to_degrees()}),
+                   "angle": t.angle.to_degrees(),
+                   "align": t.align.key(),
+                   "valign": t.valign.key()}),
             "Text · gesetzt",
         ),
     };
@@ -230,21 +247,41 @@ pub fn show(app: &mut App, ui: &mut Ui, rect: Rect, view: View) {
         (g.size().x, g.size().y)
     });
     let breite = (textbreite + size * 1.5).max(if t.text.is_empty() { 20.0 } else { 8.0 });
-    // Eigener Setzer: ohne Umbruch, nur echte Zeilenumbrüche (Enter).
+    // Eigener Setzer: ohne Umbruch, nur echte Zeilenumbrüche (Enter). Die
+    // waagerechte Ausrichtung sitzt im Satz (`halign`) — genau wie in der
+    // Zeichnung, damit der Text beim Übernehmen nicht springt.
     let setzer_font = font.clone();
+    let ausrichtung = crate::canvas::halign(t.align);
     let mut setzer = move |ui: &egui::Ui, text: &str, _wrap: f32| {
-        ui.fonts(|f| f.layout_no_wrap(text.to_owned(), setzer_font.clone(), farbe))
+        ui.fonts(|f| {
+            let mut job = egui::text::LayoutJob::simple(
+                text.to_owned(),
+                setzer_font.clone(),
+                farbe,
+                f32::INFINITY,
+            );
+            job.halign = ausrichtung;
+            f.layout_job(job)
+        })
+    };
+    // Lage des Feldes: der Einfügepunkt der Ausrichtung steht am Anker.
+    let block_h = texthoehe.max(zeilenhoehe);
+    let dx = match t.align {
+        TextAlignH::Left => 0.0,
+        TextAlignH::Center => -breite * 0.5,
+        TextAlignH::Right => -breite,
+    };
+    let dy = match t.valign {
+        TextAlignV::Top => 0.0,
+        TextAlignV::Middle => -block_h * 0.5,
+        TextAlignV::Bottom => -block_h,
     };
 
     egui::Area::new(Id::new("texteingabe"))
         .order(egui::Order::Foreground)
-        // Senkrecht mittig am Anker wie die Anzeige (`paint_text`, valign Middle):
-        // bei mehreren Zeilen wächst der Block um die halbe Zeilenhöhe nach
-        // beiden Seiten, genau wie der eingefügte Text.
-        .fixed_pos(Pos2::new(
-            anker.x,
-            anker.y - texthoehe.max(zeilenhoehe) * 0.5,
-        ))
+        // Die Ausrichtung gilt schon beim Schreiben (`paint_text`): „Zentriert"
+        // wächst nach beiden Seiten, „Unten" steht über dem Anker.
+        .fixed_pos(Pos2::new(anker.x + dx, anker.y + dy))
         .show(&ctx, |ui| {
             // Keine Fläche, kein Rahmen: der Text steht frei in der Zeichnung
             // und sieht während der Eingabe genauso aus wie danach.

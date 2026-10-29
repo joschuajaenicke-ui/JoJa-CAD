@@ -1,6 +1,7 @@
 //! Kleine, wiederverwendbare UI-Bausteine im JoJa-CAD-Look.
 
 use crate::icons;
+use jjcad_core::model::{TextAlignH, TextAlignV};
 use crate::theme::Palette;
 use egui::{Shape, 
     Align2, Color32, FontId, Pos2, Rect, Response, Rounding, Sense, Stroke, Ui, Vec2,
@@ -277,6 +278,164 @@ pub fn field_row(ui: &mut Ui, label: &str, add: impl FnOnce(&mut Ui)) {
         },
     );
     let _ = ui;
+}
+
+/// Zeile wie [`field_row`], aber mit eigener Höhe für die Wertspalte.
+///
+/// Für Bausteine, die höher als eine Tabellenzeile sind (3×3-Matrix der
+/// Textausrichtung). Der Name steht oben in der Namensspalte, der Block beginnt
+/// an derselben linken Kante wie alle Eingabefelder.
+pub fn field_block(ui: &mut Ui, label: &str, hoehe: f32, add: impl FnOnce(&mut Ui)) {
+    let idx = ROW_IDX.with(|c| {
+        let v = c.get();
+        c.set(v + 1);
+        v
+    });
+    let w = ui.available_width();
+    let (row, _) = ui.allocate_exact_size(Vec2::new(w, hoehe), Sense::hover());
+    if idx % 2 == 1 {
+        ui.painter().rect_filled(
+            Rect::from_min_size(egui::pos2(row.left(), row.top()), Vec2::new(w, hoehe)),
+            Rounding::same(3.0),
+            Palette::PANEL_ALT.gamma_multiply(0.55),
+        );
+    }
+    ui.painter().text(
+        egui::pos2(row.left() + 4.0, row.top() + ROW_H * 0.5),
+        Align2::LEFT_CENTER,
+        label,
+        FontId::proportional(11.5),
+        Palette::TEXT_DIM,
+    );
+    let cell = Rect::from_min_size(
+        egui::pos2(row.left() + LABEL_W, row.top()),
+        Vec2::new(VAL_W.min(w - LABEL_W - 2.0), hoehe),
+    );
+    ui.scope_builder(
+        egui::UiBuilder::new()
+            .max_rect(cell)
+            .layout(egui::Layout::left_to_right(egui::Align::TOP)),
+        |ui| {
+            ui.set_max_width(cell.width());
+            add(ui);
+        },
+    );
+}
+
+/// Kantenlänge einer Zelle der Ausrichtungsmatrix (px).
+pub const ALIGN_ZELLE: f32 = 30.0;
+/// Höhe der ganzen Matrix: drei Zellen und zwei Abstände.
+pub const ALIGN_HOEHE: f32 = ALIGN_ZELLE * 3.0 + 2.0 * ALIGN_ABSTAND;
+const ALIGN_ABSTAND: f32 = 3.0;
+
+/// 3×3-Matrix der Textausrichtung.
+///
+/// Spalten = waagerecht (Linksbündig / Zentriert / Rechtsbündig), Zeilen =
+/// senkrecht (Oben / Mitte / Unten). Jede Zelle zeigt einen Pfeil in ihre
+/// Richtung (Ecken und Kanten als Pfeil, die Mitte als Quadrat — wie in der
+/// Prinzipskizze des Tickets) und nennt im Tooltip beide Werte. `true`, wenn
+/// der Nutzer eine andere Zelle gewählt hat.
+pub fn align_matrix(
+    ui: &mut Ui,
+    salt: &str,
+    h: &mut TextAlignH,
+    v: &mut TextAlignV,
+) -> bool {
+    let (bereich, _) = ui.allocate_exact_size(
+        Vec2::new(
+            ALIGN_ZELLE * 3.0 + 2.0 * ALIGN_ABSTAND,
+            ALIGN_HOEHE,
+        ),
+        Sense::hover(),
+    );
+    let mut geaendert = false;
+    for (zeile, wert_v) in TextAlignV::ALL.iter().enumerate() {
+        for (spalte, wert_h) in TextAlignH::ALL.iter().enumerate() {
+            let r = Rect::from_min_size(
+                Pos2::new(
+                    bereich.left() + spalte as f32 * (ALIGN_ZELLE + ALIGN_ABSTAND),
+                    bereich.top() + zeile as f32 * (ALIGN_ZELLE + ALIGN_ABSTAND),
+                ),
+                Vec2::splat(ALIGN_ZELLE),
+            );
+            let resp = ui.interact(r, ui.id().with((salt, zeile, spalte)), Sense::click());
+            let aktiv = *h == *wert_h && *v == *wert_v;
+            if ui.is_rect_visible(r) {
+                let p = ui.painter();
+                let (fuellung, rand, farbe) = if aktiv {
+                    (Palette::ACCENT_SOFT, Palette::ACCENT, Palette::ACCENT)
+                } else if resp.hovered() {
+                    (Palette::PANEL_ALT, Palette::ACCENT.gamma_multiply(0.7), Palette::TEXT)
+                } else {
+                    (Color32::TRANSPARENT, Palette::BORDER, Palette::TEXT_DIM)
+                };
+                p.rect_filled(r, Rounding::same(5.0), fuellung);
+                p.rect_stroke(r, Rounding::same(5.0), Stroke::new(1.0, rand));
+                align_pfeil(p, r.shrink(6.0), *wert_h, *wert_v, farbe);
+            }
+            let tip = format!("{} · {}", wert_h.label(), wert_v.label());
+            if resp.on_hover_text(tip).clicked() {
+                *h = *wert_h;
+                *v = *wert_v;
+                geaendert = true;
+            }
+        }
+    }
+    geaendert
+}
+
+/// Pfeil der Ausrichtungsmatrix: zeigt in die Richtung der gewählten Zelle.
+///
+/// Ecken: Pfeil zur Ecke plus Winkelklammer an der Ecke (wie in der Skizze),
+/// Kanten: Pfeil an die Kante, Mitte: kleines Quadrat.
+fn align_pfeil(p: &egui::Painter, r: Rect, h: TextAlignH, v: TextAlignV, col: Color32) {
+    let c = r.center();
+    let (hx, hy) = (r.width() * 0.5, r.height() * 0.5);
+    let dx = match h {
+        TextAlignH::Left => -1.0,
+        TextAlignH::Center => 0.0,
+        TextAlignH::Right => 1.0,
+    };
+    let dy = match v {
+        TextAlignV::Top => -1.0,
+        TextAlignV::Middle => 0.0,
+        TextAlignV::Bottom => 1.0,
+    };
+    let st = Stroke::new(1.6, col);
+    if dx == 0.0 && dy == 0.0 {
+        // Mitte: Quadrat (der Einfügepunkt sitzt in der Textmitte)
+        p.rect_stroke(
+            Rect::from_center_size(c, Vec2::new(hx * 1.15, hy * 1.15)),
+            Rounding::same(1.0),
+            st,
+        );
+        return;
+    }
+    // Ziel: Kante bzw. Ecke des Symbols
+    let ziel = Pos2::new(c.x + dx * hx * 0.92, c.y + dy * hy * 0.92);
+    // Winkelklammer an der Ecke — macht sie auch ohne Pfeil lesbar
+    if dx != 0.0 && dy != 0.0 {
+        let ecke = Pos2::new(c.x + dx * hx, c.y + dy * hy);
+        p.line_segment(
+            [Pos2::new(c.x + dx * hx * 0.35, ecke.y), ecke],
+            st,
+        );
+        p.line_segment(
+            [ecke, Pos2::new(ecke.x, c.y + dy * hy * 0.35)],
+            st,
+        );
+    }
+    let start = Pos2::new(c.x - dx * hx * 0.85, c.y - dy * hy * 0.85);
+    p.line_segment([start, ziel], st);
+    // Spitze: Dreieck in Richtung (dx, dy)
+    let l = Vec2::new(dx, dy).normalized();
+    let n = Vec2::new(-l.y, l.x);
+    let sp = 4.2;
+    p.add(Shape::convex_polygon(
+        vec![ziel + l * 1.2, ziel - l * sp + n * sp * 0.65, ziel - l * sp - n * sp * 0.65],
+        col,
+        Stroke::NONE,
+    ));
 }
 
 /// Zeile mit festem Namen und nicht editierbarem Wert.

@@ -173,6 +173,13 @@ fn draw_text(pm: &mut Pixmap, t: &crate::render::TextPrim, prim: &Prim, map: &Ma
     let bx = map.ox + t.pos.x * map.k;
     let by = map.oy - t.pos.y * map.k;
 
+    // Senkrechte Lage gilt für den ganzen Block (wie im PDF und in der Anzeige).
+    let n = lines.len() as f32;
+    let dy_erste = match t.valign {
+        TextAlignV::Top => -size_px * 0.78,
+        TextAlignV::Middle => -size_px * 0.34 + (n - 1.0) * line_h * 0.5,
+        TextAlignV::Bottom => (n - 1.0) * line_h,
+    };
     for (li, line) in lines.iter().enumerate() {
         let w = widths[li];
         let dx0 = match t.align {
@@ -180,11 +187,7 @@ fn draw_text(pm: &mut Pixmap, t: &crate::render::TextPrim, prim: &Prim, map: &Ma
             TextAlignH::Center => -w * 0.5,
             TextAlignH::Right => -w,
         };
-        let dy0 = match t.valign {
-            TextAlignV::Top => -size_px * 0.78,
-            TextAlignV::Middle => -size_px * 0.34,
-            TextAlignV::Bottom => 0.0,
-        } - li as f32 * line_h;
+        let dy0 = dy_erste - li as f32 * line_h;
         let mut pen = dx0;
         for ch in line.chars() {
             let gid = font.glyph_id(ch);
