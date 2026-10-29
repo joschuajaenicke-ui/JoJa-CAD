@@ -451,6 +451,14 @@ fn text_eingabe_props(app: &mut App, ui: &mut Ui) {
                 ui.ctx().request_repaint();
             }
         });
+        // Schriftart gilt sofort für das, was gerade im Feld steht.
+        let mut schrift = t.font;
+        widgets::field_row(ui, "Schriftart", |ui| {
+            if widgets::schrift_wahl(ui, "eingabe_text_schrift", &mut schrift) {
+                t.font = schrift;
+                ui.ctx().request_repaint();
+            }
+        });
         let mut ah = t.align;
         let mut av = t.valign;
         widgets::field_block(ui, "Ausrichtung", widgets::ALIGN_HOEHE, |ui| {
@@ -871,6 +879,16 @@ fn pending_props(app: &mut App, ui: &mut Ui) {
                 app.options.text_valign = av;
             }
         });
+        // Schriftart des neuen Textes — gilt auch für die Vorschau am Zeiger.
+        let mut font = app.options.text_font;
+        widgets::field_row(ui, "Schriftart", |ui| {
+            if widgets::schrift_wahl(ui, "pend_text_schrift", &mut font) {
+                app.options.text_font = font;
+            }
+        });
+        if !font.explodierbar() {
+            ui.label(theme::faint(font.explode_hinweis()));
+        }
         // Der Text selbst wird in der Zeichnung getippt (T0019), nicht hier:
         // ein Feld an dieser Stelle wäre ein zweiter, wirkungsloser Weg. Die
         // Auszeichnung gilt für den ganzen neuen Text und bleibt für das
@@ -2070,6 +2088,7 @@ fn entity_props(app: &mut App, ui: &mut Ui, id: Id) {
             underline,
             superscript,
             runs,
+            font,
             ..
         } => {
             let mut t = text.clone();
@@ -2077,6 +2096,8 @@ fn entity_props(app: &mut App, ui: &mut Ui, id: Id) {
             let mut a = angle.to_degrees();
             let mut ah = *align;
             let mut av = *valign;
+            let mut schrift = *font;
+            let schrift_kanon = *font;
             // Vorgabe des Objekts: gilt, solange keine Läufe gesetzt sind.
             let vorgabe = jjcad_core::text::RunStyle {
                 bold: *bold,
@@ -2117,7 +2138,8 @@ fn entity_props(app: &mut App, ui: &mut Ui, id: Id) {
                     &jjcad_core::text::edit_runs(&satz_text, &satz_runs, text_jetzt, vorgabe, pending),
                     vorgabe,
                 );
-                let mut job = crate::canvas::auszeichnungs_job(&runs, size, feld_farbe);
+                let mut job =
+                    crate::canvas::auszeichnungs_job(ui.ctx(), &runs, size, feld_farbe, schrift);
                 job.wrap.max_width = wrap;
                 ui.fonts(|f| f.layout_job(job))
             };
@@ -2225,6 +2247,14 @@ fn entity_props(app: &mut App, ui: &mut Ui, id: Id) {
                     changed_params.insert("height".into(), json!(unit.from_mm(h)));
                 }
             });
+            widgets::field_row(ui, "Schriftart", |ui| {
+                if widgets::schrift_wahl(ui, "sel_text_schrift", &mut schrift) {
+                    changed_params.insert("font".into(), json!(schrift.key()));
+                }
+            });
+            if !schrift_kanon.explodierbar() {
+                ui.label(theme::faint(schrift_kanon.explode_hinweis()));
+            }
             widgets::field_row(ui, "Drehung", |ui| {
                 if ui.add(crate::widgets::zahl(&mut a, 1.0, widgets::WINKEL_MIN..=widgets::WINKEL_MAX).suffix("°")).changed() {
                     changed_params.insert("angle".into(), json!(a));
@@ -3462,6 +3492,37 @@ mod tests_text_eingabe_panel {
             enthaelt(&texte, "neuer Text"),
             "das Panel soll den bearbeiteten Text nennen: {texte:?}"
         );
+        // Schriftart steht während der Eingabe zur Wahl (T0034).
+        assert!(
+            enthaelt(&texte, "Schriftart"),
+            "während der Eingabe fehlt die Schriftart: {texte:?}"
+        );
+    }
+
+    /// Die Schriftart des neuen Textes kommt in das Dokument (T0034): Auswahl
+    /// im Panel, Wert im erzeugten Text.
+    #[test]
+    fn schriftart_kommt_am_text_an() {
+        let mut app = app_mm();
+        app.options.text_font = jjcad_core::model::TextFont::Mono;
+        crate::textedit::start(&mut app, jjcad_core::geom::Vec2::new(1000.0, 500.0));
+        let _ = panel_texte(&mut app, 2.0);
+        // Text tippen und mit Esc übernehmen.
+        {
+            let t = app.ui.texteingabe.as_mut().expect("Eingabe läuft");
+            t.text = "Prüfung".into();
+        }
+        crate::textedit::uebernehmen_fuer_test(&mut app);
+        let font = app
+            .doc()
+            .ents()
+            .iter()
+            .find_map(|e| match &e.kind {
+                EntityKind::Text { font, .. } => Some(*font),
+                _ => None,
+            })
+            .expect("Text angelegt");
+        assert_eq!(font, jjcad_core::model::TextFont::Mono);
     }
 
     /// Auswahl eines Textes: keine Zeilen für Stärke, Linientyp oder einen

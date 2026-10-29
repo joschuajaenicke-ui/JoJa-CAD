@@ -62,6 +62,8 @@ struct TextAccum {
     angle: f64,
     /// Text wird mit der **Füllfarbe** gesetzt, nicht mit der Strichfarbe.
     color: Color,
+    /// Schriftart, aus dem PDF-Schriftnamen geraten.
+    font: crate::model::TextFont,
 }
 
 pub fn run(
@@ -403,7 +405,7 @@ impl<'a> Interp<'a> {
         &mut self,
         res: &Dictionary,
         bytes: &[u8],
-    ) -> Option<(String, usize, f64, crate::fonts::FontStyle)> {
+    ) -> Option<(String, usize, f64, crate::fonts::FontStyle, crate::model::TextFont)> {
         let name = self.gs.font.clone()?;
         if !self.fonts.contains_key(&name) {
             let info =
@@ -416,11 +418,14 @@ impl<'a> Interp<'a> {
         for code in fi.codes(bytes) {
             w_em += fi.advance(code);
         }
-        Some((text, fehlend, w_em, fi.style))
+        // Schriftart aus dem Namen raten — so kommt der Text mit derselben
+        // Familie zurück, mit der er geschrieben wurde.
+        let familie = crate::fonts::font_from_ps_name(&fi.base);
+        Some((text, fehlend, w_em, fi.style, familie))
     }
 
     fn show(&mut self, bytes: &[u8], res: &Dictionary) {
-        let Some((s, fehlend, w_em, style_flags)) = self.text_snapshot(res, bytes) else {
+        let Some((s, fehlend, w_em, style_flags, schrift)) = self.text_snapshot(res, bytes) else {
             self.warn.add("Schrift nicht lesbar");
             return;
         };
@@ -497,6 +502,7 @@ impl<'a> Interp<'a> {
                 height_mm: base_height,
                 angle,
                 color: self.gs.fill,
+                font: schrift,
             });
         }
 
@@ -534,6 +540,7 @@ impl<'a> Interp<'a> {
             underline: erster.underline,
             superscript: erster.superscript,
             runs: acc.runs,
+            font: acc.font,
         };
         self.push_color(kind, None, farbe);
     }

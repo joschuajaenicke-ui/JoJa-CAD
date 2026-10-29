@@ -55,6 +55,8 @@ pub struct TextPrim {
     pub superscript: bool,
     /// Gemischte Auszeichnung; leer = die Felder oben gelten für den ganzen Text.
     pub runs: Vec<TextRun>,
+    /// Schriftart des Textes (Familie für Satz und Linien).
+    pub font: TextFont,
 }
 
 impl TextPrim {
@@ -75,7 +77,7 @@ impl TextPrim {
 
     /// Breite der breitesten Zeile in mm — dieselbe Rechnung wie beim Satz.
     pub fn width(&self) -> f64 {
-        crate::text::width_em(&self.text, &self.effective_runs()) * self.height
+        crate::text::width_em_mit_schrift(&self.text, &self.effective_runs(), self.font) * self.height
     }
 }
 
@@ -757,6 +759,7 @@ pub fn render_entity(
             underline,
             superscript,
             runs,
+            font,
         } => {
             let txt = if ctx.resolve_text {
                 doc.resolve_text_scaled(text, ctx.sheet_scale)
@@ -779,6 +782,7 @@ pub fn render_entity(
                     underline: *underline,
                     superscript: *superscript,
                     runs: runs.clone(),
+                    font: *font,
                 }),
                 style: st,
                 entity: e.id,
@@ -850,6 +854,7 @@ pub fn render_entity(
                     underline: false,
                     superscript: false,
                     runs: Vec::new(),
+                    font: TextFont::Sans,
                 }),
                 style: st,
                 entity: e.id,
@@ -2472,6 +2477,7 @@ fn render_dim(
             underline: false,
             superscript: false,
             runs: Vec::new(),
+            font: TextFont::Sans,
         }),
         style: *st,
         entity: e.id,
@@ -2635,6 +2641,7 @@ fn render_dim_chain(
                 underline: false,
                 superscript: false,
                 runs: Vec::new(),
+                font: TextFont::Sans,
             }),
             style: *st,
             entity: e.id,

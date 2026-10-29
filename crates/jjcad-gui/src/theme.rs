@@ -2,6 +2,7 @@
 
 use egui::{Color32, FontFamily, FontId, Frame, Margin, Rounding, Stroke, TextStyle, Visuals};
 
+
 pub struct Palette;
 
 impl Palette {
@@ -97,6 +98,28 @@ pub fn install(ctx: &egui::Context) {
                 .or_default()
                 .push("app-bold".to_owned());
             break;
+        }
+    }
+    // Schriften für Texte der Zeichnung: je Familie ein eigener Satz, damit
+    // „Serifen", „Schmal" und „Rund" auch auf der Zeichenfläche so aussehen.
+    // Die Daten kommen aus dem Kern (Systemschriften, nichts eingebettet).
+    for font in jjcad_core::model::TextFont::ALL {
+        for (stil, anhang) in [
+            (jjcad_core::fonts::FontStyle::Regular, ""),
+            (jjcad_core::fonts::FontStyle::Bold, "_fett"),
+        ] {
+            let Some(bytes) = jjcad_core::fonts::ttf_bytes(font, stil) else {
+                continue;
+            };
+            let name = format!("schrift_{}{}", font.key(), anhang);
+            fonts
+                .font_data
+                .insert(name.clone(), egui::FontData::from_owned(bytes.to_vec()).into());
+            fonts
+                .families
+                .entry(egui::FontFamily::Name(name.clone().into()))
+                .or_default()
+                .push(name);
         }
     }
     ctx.set_fonts(fonts);

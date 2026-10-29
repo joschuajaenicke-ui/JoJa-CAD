@@ -220,6 +220,8 @@ pub struct ToolOptions {
     pub text_italic: bool,
     pub text_underline: bool,
     pub text_superscript: bool,
+    /// Schriftart des nächsten Textes (bleibt für das nächste Element stehen)
+    pub text_font: TextFont,
     pub dim_axis: Option<DimAxis>,
     pub offset_dist: f64,
     pub elevation_z: f64,
@@ -297,6 +299,7 @@ impl ToolOptions {
             text_italic: false,
             text_underline: false,
             text_superscript: false,
+            text_font: TextFont::default(),
             dim_axis: None,
             offset_dist: doc.settings.wall_thickness,
             elevation_z: 0.0,
@@ -1035,6 +1038,7 @@ impl App {
                             underline: false,
                             superscript: false,
                             runs,
+                            font: TextFont::default(),
                         },
                     );
                     e.style.color = Some(jjcad_core::style::Color::BLACK);
@@ -1069,12 +1073,67 @@ impl App {
                             underline: false,
                             superscript: false,
                             runs,
+                            font: TextFont::default(),
                         },
                     );
                     e.style.color = Some(jjcad_core::style::Color::BLACK);
                     self.doc_mut().add_entity(e);
                     self.ui.props_open = true;
                     self.session_mut().select(vec![id]);
+                    self.fit_view();
+                }
+                // Prüfhilfe T0034: je eine Zeile pro Schriftart, dazu ein
+                // zerlegter Text (Umrisse als Linien) — Screenshot-Prüfung.
+                "schriften" => {
+                    let layer = self.doc().current_layer;
+                    for (i, font) in jjcad_core::model::TextFont::ALL.iter().enumerate() {
+                        let id = self.doc_mut().new_id();
+                        let mut e = Entity::new(
+                            id,
+                            layer,
+                            EntityKind::Text {
+                                p: jjcad_core::geom::v(2000.0, 3000.0 - i as f64 * 500.0),
+                                text: format!("{} Wohnen 12,4 m²", font.label()),
+                                height: 250.0,
+                                angle: 0.0,
+                                align: TextAlignH::Left,
+                                valign: TextAlignV::Bottom,
+                                bold: false,
+                                italic: false,
+                                underline: false,
+                                superscript: false,
+                                runs: Vec::new(),
+                                font: *font,
+                            },
+                        );
+                        e.style.color = Some(jjcad_core::style::Color::BLACK);
+                        self.doc_mut().add_entity(e);
+                    }
+                    // Ein Text, der schon in Linien zerlegt ist (Serifen).
+                    let id = self.doc_mut().new_id();
+                    let mut e = Entity::new(
+                        id,
+                        layer,
+                        EntityKind::Text {
+                            p: jjcad_core::geom::v(2000.0, 600.0),
+                            text: "Zerlegt".into(),
+                            height: 400.0,
+                            angle: 0.0,
+                            align: TextAlignH::Left,
+                            valign: TextAlignV::Bottom,
+                            bold: false,
+                            italic: false,
+                            underline: false,
+                            superscript: false,
+                            runs: Vec::new(),
+                            font: jjcad_core::model::TextFont::Serif,
+                        },
+                    );
+                    e.style.color = Some(jjcad_core::style::Color::BLACK);
+                    self.doc_mut().add_entity(e);
+                    let _ = self
+                        .session_mut()
+                        .execute("modify.explode", &serde_json::json!({"ids": [id]}));
                     self.fit_view();
                 }
                 // Offener Systemdialog (nur der Zustand, kein echter Dialog):

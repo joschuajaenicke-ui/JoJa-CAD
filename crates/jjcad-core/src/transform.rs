@@ -140,6 +140,7 @@ pub fn transform_kind(k: &EntityKind, m: &Affine) -> EntityKind {
             underline,
             superscript,
             runs,
+            font,
         } => EntityKind::Text {
             p: m.apply(*p),
             text: text.clone(),
@@ -152,6 +153,7 @@ pub fn transform_kind(k: &EntityKind, m: &Affine) -> EntityKind {
             underline: *underline,
             superscript: *superscript,
             runs: runs.clone(),
+            font: *font,
         },
         EntityKind::Dim {
             a,

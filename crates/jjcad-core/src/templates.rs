@@ -56,6 +56,7 @@ impl TB {
                 underline: false,
                 superscript: false,
                 runs: Vec::new(),
+                font: TextFont::Sans,
             },
         );
         e.style.color = Some(Color::BLACK);

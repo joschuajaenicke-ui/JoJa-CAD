@@ -59,6 +59,8 @@ pub struct Texteingabe {
     pub id: Option<EId>,
     /// Farbe, in der der Text in der Zeichnung erscheint (Objekt- oder Layerfarbe)
     pub farbe: Color,
+    /// Schriftart — beim Ändern aus dem Text, beim Neuen aus dem Panel.
+    pub font: jjcad_core::model::TextFont,
     /// Auszeichnung je Lauf, aus dem bearbeiteten Text übernommen — beim
     /// Übernehmen auf den neuen Text übertragen, damit Formatierung bleibt.
     pub runs: Vec<TextRun>,
@@ -83,11 +85,13 @@ impl Texteingabe {
         valign: TextAlignV,
         id: Option<EId>,
         farbe: Color,
+        font: jjcad_core::model::TextFont,
     ) -> Self {
         Self {
             pos,
             text,
             height,
+            font,
             angle,
             align,
             valign,
@@ -124,6 +128,7 @@ pub fn start(app: &mut App, pos: V2) {
         app.options.text_valign,
         None,
         farbe,
+        app.options.text_font,
     ));
     app.mitteilung("Text · Text eingeben (Esc übernimmt)");
 }
@@ -145,9 +150,10 @@ pub fn start_entitaet(app: &mut App, id: EId) -> bool {
     else {
         return false;
     };
-    let EntityKind::Text { runs, .. } = &e.kind else {
+    let EntityKind::Text { runs, font, .. } = &e.kind else {
         return false;
     };
+    let font = *font;
     let (p, text, height, angle) = (*p, text.clone(), *height, *angle);
     let (align, valign) = (*align, *valign);
     let runs = runs.clone();
@@ -156,7 +162,7 @@ pub fn start_entitaet(app: &mut App, id: EId) -> bool {
     // Ohne Auswahl: der blaue Auswahlrahmen des Textes würde sonst um den
     // bearbeiteten Text stehen — beim Schreiben soll nur der Text dastehen.
     app.session_mut().clear_selection();
-    let mut e = Texteingabe::neu(p, height, text, angle, align, valign, Some(id), farbe);
+    let mut e = Texteingabe::neu(p, height, text, angle, align, valign, Some(id), farbe, font);
     e.runs = runs;
     app.ui.texteingabe = Some(e);
     app.mitteilung("Text · Inhalt ändern (Esc übernimmt)");
@@ -275,6 +281,7 @@ fn uebernehmen(app: &mut App, ctx: &egui::Context) {
             "modify.set",
             json!({"ids": [id], "text": text, "height": unit.from_mm(t.height),
                    "align": t.align.key(), "valign": t.valign.key(),
+                   "font": t.font.key(),
                    "runs": runs_json}),
             "Text · geändert",
         ),
@@ -289,6 +296,7 @@ fn uebernehmen(app: &mut App, ctx: &egui::Context) {
                        "italic": app.options.text_italic,
                        "underline": app.options.text_underline,
                        "superscript": app.options.text_superscript,
+                       "font": t.font.key(),
                        "runs": runs_json.clone()});
             // Nur wenn eine Farbe gewählt wurde — sonst gilt die Layerfarbe.
             if let Some(c) = app.options.text_color {
@@ -376,7 +384,7 @@ pub fn show(app: &mut App, ui: &mut Ui, rect: Rect, view: View) {
             pending,
         );
         let runs = jjcad_core::text::runs_for(&t.text, &runs, jjcad_core::text::RunStyle::default());
-        let mut job = crate::canvas::auszeichnungs_job(&runs, size, farbe);
+        let mut job = crate::canvas::auszeichnungs_job(&ctx, &runs, size, farbe, t.font);
         job.wrap.max_width = f32::INFINITY;
         ctx.fonts(|f| {
             let g = f.layout_job(job);
@@ -408,7 +416,7 @@ pub fn show(app: &mut App, ui: &mut Ui, rect: Rect, view: View) {
             &runs,
             jjcad_core::text::RunStyle::default(),
         );
-        let mut job = crate::canvas::auszeichnungs_job(&runs, size, farbe);
+        let mut job = crate::canvas::auszeichnungs_job(ui.ctx(), &runs, size, farbe, t.font);
         job.wrap.max_width = f32::INFINITY;
         ui.fonts(|f| f.layout_job(job))
     };

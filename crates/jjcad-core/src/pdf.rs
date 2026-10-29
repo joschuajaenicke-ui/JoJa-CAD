@@ -42,31 +42,31 @@ struct GlyphUse {
 /// eingebettet.
 #[derive(Clone, Debug, Default)]
 struct FontUse {
-    glyphs: [BTreeMap<u16, GlyphUse>; 4],
-    used: [bool; 4],
+    /// Je Familie und Schnitt die benutzten Glyphen (Schlüssel: Familie·4+Schnitt).
+    glyphs: BTreeMap<(TextFont, FontStyle), BTreeMap<u16, GlyphUse>>,
 }
 
 impl FontUse {
     fn merge(&mut self, other: &FontUse) {
-        for i in 0..4 {
-            if other.used[i] {
-                self.used[i] = true;
-                for (gid, g) in other.glyphs[i].iter() {
-                    self.glyphs[i].entry(*gid).or_insert(*g);
-                }
+        for (k, glyphs) in &other.glyphs {
+            let ziel = self.glyphs.entry(*k).or_default();
+            for (gid, g) in glyphs {
+                ziel.entry(*gid).or_insert(*g);
             }
         }
     }
 
-    fn note(&mut self, style: FontStyle, c: char) {
-        let i = style.index();
-        self.used[i] = true;
-        let gid = fonts::glyph_id(style, c);
+    fn note(&mut self, font: TextFont, style: FontStyle, c: char) {
+        let gid = fonts::glyph_id(font, style, c);
         if gid == 0 {
             return;
         }
-        let width = (fonts::advance_em(style, c) * 1000.0).round().max(1.0) as u16;
-        self.glyphs[i].entry(gid).or_insert(GlyphUse { width, ch: c });
+        let width = (fonts::advance_em(font, style, c) * 1000.0).round().max(1.0) as u16;
+        self.glyphs
+            .entry((font, style))
+            .or_default()
+            .entry(gid)
+            .or_insert(GlyphUse { width, ch: c });
     }
 }
 
@@ -99,24 +99,19 @@ fn esc(s: &str) -> String {
 }
 
 /// Text als Hex-Satz für `Identity-H`: zwei Byte je Zeichen, Code = Glyphennummer.
-fn hex_identity(c: &mut Content, style: FontStyle, s: &str) -> String {
+fn hex_identity(c: &mut Content, font: TextFont, style: FontStyle, s: &str) -> String {
     let mut out = String::with_capacity(s.chars().count() * 4);
     for ch in s.chars() {
-        let gid = fonts::glyph_id(style, ch);
-        c.fonts.note(style, ch);
+        let gid = fonts::glyph_id(font, style, ch);
+        c.fonts.note(font, style, ch);
         let _ = write!(out, "{gid:04X}");
     }
     out
 }
 
-/// Schriftname im Inhaltsstrom zu einem Schnitt (`/F1` … `/F4`).
-fn font_res(style: FontStyle) -> &'static str {
-    match style {
-        FontStyle::Regular => "/F1",
-        FontStyle::Bold => "/F2",
-        FontStyle::Italic => "/F3",
-        FontStyle::BoldItalic => "/F4",
-    }
+/// Schriftname im Inhaltsstrom: je Familie und Schnitt einer (`/F00`, `/F11` …).
+fn font_res(font: TextFont, style: FontStyle) -> String {
+    format!("/F{}{}", font.index(), style.index())
 }
 
 struct Page {
@@ -235,14 +230,14 @@ impl Content {
                     continue;
                 }
                 let seg_size = size_pt * seg.scale;
-                let seg_w = fonts::advance_em_str(seg.style, &seg.text) * seg_size;
+                let seg_w = fonts::advance_em_str(t.font, seg.style, &seg.text) * seg_size;
                 let (x, y) = platz(pen, dy);
-                if fonts::ttf_bytes(seg.style).is_some() {
-                    let hex = hex_identity(self, seg.style, &seg.text);
+                if fonts::ttf_bytes(t.font, seg.style).is_some() {
+                    let hex = hex_identity(self, t.font, seg.style, &seg.text);
                     let rise = seg.rise_em * size_pt;
                     let s_str = format!(
                         "BT {} {:.2} Tf {:.3} Ts {:.5} {:.5} {:.5} {:.5} {:.3} {:.3} Tm <{}> Tj ET",
-                        font_res(seg.style),
+                        font_res(t.font, seg.style),
                         seg_size,
                         rise,
                         c,
@@ -256,7 +251,7 @@ impl Content {
                     self.raw(&s_str);
                 } else {
                     // Ersatzweg ohne eingebettete Schrift: Helvetica/WinAnsi.
-                    let fname = if seg.style == FontStyle::Bold { "/F2" } else { "/F1" };
+                    let fname = font_res(t.font, seg.style);
                     let s_str = format!(
                         "BT {fname} {:.2} Tf {:.3} Ts {:.5} {:.5} {:.5} {:.5} {:.3} {:.3} Tm ({}) Tj ET",
                         seg_size,
@@ -582,16 +577,21 @@ fn to_unicode_cmap(glyphs: &[(u16, char)]) -> Vec<u8> {
 
 /// Alle Objekte für eine eingebettete Schrift; liefert die Nummer des
 /// Type0-Fonts, der im Seiten-`/Resources` steht.
-fn write_font(w: &mut PdfWriter, style: FontStyle, uses: &FontUse) -> Option<usize> {
-    let i = style.index();
-    let data = fonts::ttf_bytes(style)?;
-    let info = fonts::ttf_info(style)?;
+fn write_font(
+    w: &mut PdfWriter,
+    font: TextFont,
+    style: FontStyle,
+    uses: &FontUse,
+) -> Option<usize> {
+    let data = fonts::ttf_bytes(font, style)?;
+    let info = fonts::ttf_info(font, style)?;
+    let glyphs = uses.glyphs.get(&(font, style))?;
     let upem = info.units_per_em.max(1.0);
     // /W: je Glyphe ein Einzeleintrag — kurz genug und ohne Annahmen über
     // zusammenhängende Bereiche.
     let mut w_arr = String::from("[");
     let mut pairs: Vec<(u16, char)> = Vec::new();
-    for (gid, g) in uses.glyphs[i].iter() {
+    for (gid, g) in glyphs.iter() {
         let _ = write!(w_arr, " {gid} [{}]", g.width);
         pairs.push((*gid, g.ch));
     }
@@ -617,7 +617,7 @@ fn write_font(w: &mut PdfWriter, style: FontStyle, uses: &FontUse) -> Option<usi
         format!(
             "<< /Type /FontDescriptor /FontName /{} /Flags {} /FontBBox {} \
              /ItalicAngle {} /Ascent {:.0} /Descent {:.0} /CapHeight {:.0} /StemV {} /FontFile2 {} 0 R >>",
-            style.ps_name(),
+            fonts::ps_name(font, style),
             flags,
             bbox,
             if flags & 64 != 0 { -12 } else { 0 },
@@ -634,7 +634,7 @@ fn write_font(w: &mut PdfWriter, style: FontStyle, uses: &FontUse) -> Option<usi
             "<< /Type /Font /Subtype /CIDFontType2 /BaseFont /{} \
              /CIDSystemInfo << /Registry (Adobe) /Ordering (Identity) /Supplement 0 >> \
              /FontDescriptor {} 0 R /DW 1000 /W {} /CIDToGIDMap /Identity >>",
-            style.ps_name(),
+            fonts::ps_name(font, style),
             desc_idx,
             w_arr
         )
@@ -645,7 +645,7 @@ fn write_font(w: &mut PdfWriter, style: FontStyle, uses: &FontUse) -> Option<usi
         format!(
             "<< /Type /Font /Subtype /Type0 /BaseFont /{} /Encoding /Identity-H \
              /DescendantFonts [{} 0 R] /ToUnicode {} 0 R >>",
-            style.ps_name(),
+            fonts::ps_name(font, style),
             cid_idx,
             cmap_idx
         )
@@ -658,12 +658,12 @@ fn page_object(
     w: f64,
     h: f64,
     contents: usize,
-    fonts: &[(FontStyle, usize)],
+    fonts: &[(TextFont, FontStyle, usize)],
     parent: usize,
 ) -> Vec<u8> {
     let mut res = String::new();
-    for (st, idx) in fonts {
-        let _ = write!(res, "{} {} 0 R ", font_res(*st), idx);
+    for (font, st, idx) in fonts {
+        let _ = write!(res, "{} {} 0 R ", font_res(*font, *st), idx);
     }
     format!(
         "<< /Type /Page /Parent {parent} 0 R /MediaBox [0 0 {:.3} {:.3}] \
@@ -683,13 +683,10 @@ fn build_pdf(pages: Vec<Page>, title: &str) -> Vec<u8> {
     let mut w = PdfWriter::new();
     let catalog_idx = w.add(vec![]);
     let pages_idx = w.add(vec![]);
-    let mut font_objs: Vec<(FontStyle, usize)> = Vec::new();
-    for st in FontStyle::ALL {
-        if !uses.used[st.index()] {
-            continue;
-        }
-        if let Some(idx) = write_font(&mut w, st, &uses) {
-            font_objs.push((st, idx));
+    let mut font_objs: Vec<(TextFont, FontStyle, usize)> = Vec::new();
+    for (font, st) in uses.glyphs.keys().copied().collect::<Vec<_>>() {
+        if let Some(idx) = write_font(&mut w, font, st, &uses) {
+            font_objs.push((font, st, idx));
         }
     }
     // Ersatzweg ohne TrueType-Schrift: Helvetica (nicht eingebettet).
@@ -702,8 +699,8 @@ fn build_pdf(pages: Vec<Page>, title: &str) -> Vec<u8> {
             b"<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica-Bold /Encoding /WinAnsiEncoding >>"
                 .to_vec(),
         );
-        font_objs.push((FontStyle::Regular, reg));
-        font_objs.push((FontStyle::Bold, bold));
+        font_objs.push((TextFont::Sans, FontStyle::Regular, reg));
+        font_objs.push((TextFont::Sans, FontStyle::Bold, bold));
     }
     let mut kids = Vec::new();
     for p in pages {
@@ -871,7 +868,7 @@ pub fn pdf_bytes(doc: &Document, sheet_index: Option<usize>) -> Result<Vec<u8>, 
 
 /// Textbreite in mm — dieselbe Vermessung wie beim Setzen.
 pub fn measure_text(text: &str, height_mm: f64) -> f64 {
-    fonts::advance_em_str(FontStyle::Regular, text) * height_mm
+    fonts::advance_em_str(TextFont::Sans, FontStyle::Regular, text) * height_mm
 }
 
 /// Schriftgröße in Punkt für eine Höhe in mm.

@@ -4,6 +4,7 @@
 //! hat eine stabile Action-ID und ist über JSON-Parameter steuerbar.
 
 use crate::blocks_lib;
+use ab_glyph::{Font, ScaleFont};
 use crate::geom::*;
 use crate::model::*;
 use crate::render;
@@ -180,7 +181,7 @@ pub const ACTIONS: &[ActionDef] = &[
     act!("modify.trim", "Stutzen", Aendern, "trim", "s", "Zu stutzendes Segment anklicken", true),
     act!("modify.extend", "Verlängern", Aendern, "extend", "x", "Ende anklicken, das verlängert wird", true),
     act!("modify.erase", "Löschen", Aendern, "erase", "entf", "Auswahl löschen", false),
-    act!("modify.explode", "Zerlegen", Aendern, "explode", "", "Blöcke/Bauteile in Einzelelemente zerlegen", false),
+    act!("modify.explode", "Zerlegen", Aendern, "explode", "", "Blöcke/Bauteile in Einzelelemente, Text in Linien zerlegen", false),
     act!(
         "text.format",
         "Text auszeichnen",
@@ -1284,6 +1285,10 @@ pub fn execute(doc: &mut Document, id: &str, params: &Value) -> Result<Value, St
                     underline: p.boolean_or("underline", false),
                     superscript: p.boolean_or("superscript", false),
                     runs: Vec::new(),
+                    font: p
+                        .text("font")
+                        .and_then(|s| TextFont::from_key(&s))
+                        .unwrap_or_default(),
                 },
             );
             // Gemischte Auszeichnung gleich beim Anlegen (Editor, MCP).
@@ -1539,6 +1544,7 @@ pub fn execute(doc: &mut Document, id: &str, params: &Value) -> Result<Value, St
                     underline: false,
                     superscript: false,
                     runs: Vec::new(),
+                    font: TextFont::Sans,
                 },
             );
             apply_common(doc, &mut t, &p, layer);
@@ -2168,6 +2174,7 @@ pub fn execute(doc: &mut Document, id: &str, params: &Value) -> Result<Value, St
                             underline,
                             superscript,
                             runs,
+                            font,
                             ..
                         } => {
                             if let Some(v) = text {
@@ -2205,6 +2212,9 @@ pub fn execute(doc: &mut Document, id: &str, params: &Value) -> Result<Value, St
                             }
                             if let Some(b) = p.boolean("superscript") {
                                 *superscript = b;
+                            }
+                            if let Some(f) = p.text("font").and_then(|s| TextFont::from_key(&s)) {
+                                *font = f;
                             }
                             // Gemischte Auszeichnung: eine Liste von Läufen.
                             // Sie muss den Text genau abdecken; fehlende
@@ -3268,6 +3278,11 @@ pub fn explode_entity(doc: &mut Document, id: Id) -> Result<Vec<Id>, String> {
     }).is_none() {
         return Err("Blockdefinition fehlt".into());
     }
+    // Ein Text wird nicht über die Displayliste zerlegt, sondern über die
+    // Umrisse seiner Zeichen — und nur mit Schriften, die dafür vorgesehen sind.
+    if matches!(e.kind, EntityKind::Text { .. }) {
+        return explode_text(doc, &e);
+    }
     let ctx = render::RenderCtx::new(doc);
     let mut dl = render::DisplayList::default();
     render::render_entity(&ctx, &e, Affine::IDENTITY, &mut dl, 0);
@@ -3335,6 +3350,7 @@ pub fn explode_entity(doc: &mut Document, id: Id) -> Result<Vec<Id>, String> {
                 underline: t.underline,
                 superscript: t.superscript,
                 runs: t.runs.clone(),
+                font: t.font,
             }),
         };
         if let Some(kind) = kind {
@@ -3415,6 +3431,7 @@ fn scale_kind(kind: &EntityKind, f: f64) -> EntityKind {
             underline,
             superscript,
             runs,
+            font,
         } => EntityKind::Text {
             p: s(p),
             text: text.clone(),
@@ -3427,6 +3444,7 @@ fn scale_kind(kind: &EntityKind, f: f64) -> EntityKind {
             underline: *underline,
             superscript: *superscript,
             runs: runs.clone(),
+            font: TextFont::Sans,
         },
         other => other.clone(),
     }
@@ -3555,6 +3573,227 @@ fn import_pdf_action(doc: &mut Document, p: &Params) -> Result<Value, String> {
         "warnings": warn,
         "warnings_other_pages": weitere,
     }))
+}
+
+
+// ---------------------------------------------------------------------------
+// Text in Linien zerlegen
+// ---------------------------------------------------------------------------
+
+/// Zerlegt einen Text in die Umrisslinien seiner Zeichen.
+///
+/// Nur die dafür vorgesehenen Schriften lassen sich zerlegen: konturierte
+/// Gebrauchsschriften ergeben ein paar Polygonzüge je Zeichen, runde
+/// Zierschriften sehr viele kleine Striche — die werden mit klarer Meldung
+/// abgelehnt (siehe [`crate::model::TextFont::explodierbar`]).
+fn explode_text(doc: &mut Document, e: &Entity) -> Result<Vec<Id>, String> {
+    let EntityKind::Text {
+        font,
+        height,
+        p,
+        angle,
+        align,
+        valign,
+        text,
+        runs,
+        bold,
+        italic,
+        underline,
+        superscript,
+    } = &e.kind
+    else {
+        return Err("Kein Text".into());
+    };
+    if !font.explodierbar() {
+        return Err(format!(
+            "Schrift „{}“ lässt sich nicht in Linien zerlegen — {}",
+            font.label(),
+            font.explode_hinweis()
+        ));
+    }
+    // Läufe wie im Satz: dieselben Stücke, dieselben Vorschübe.
+    let runs_eff: Vec<TextRun> = if runs.is_empty() {
+        vec![TextRun {
+            text: text.clone(),
+            bold: *bold,
+            italic: *italic,
+            underline: *underline,
+            superscript: *superscript,
+        }]
+    } else {
+        runs.clone()
+    };
+    let zeilen = crate::text::layout_mit_schrift(text, &runs_eff, *font);
+    if zeilen.is_empty() {
+        return Err("Der Text ist leer".into());
+    }
+    let size = *height;
+    let lh = size * 1.25;
+    let n = zeilen.len() as f64;
+    let dy0 = match valign {
+        TextAlignV::Top => -size * 0.8,
+        TextAlignV::Middle => -size * 0.36 + (n - 1.0) * lh * 0.5,
+        TextAlignV::Bottom => (n - 1.0) * lh,
+    };
+    let (sin, cos) = angle.sin_cos();
+    let platz = |dx: f64, dy: f64| -> Vec2 {
+        v(
+            p.x + dx * cos - dy * sin,
+            p.y + dx * sin + dy * cos,
+        )
+    };
+
+    let mut konturen: Vec<(Vec<Vec2>, bool)> = Vec::new();
+    for (i, zeile) in zeilen.iter().enumerate() {
+        let breite = zeile.width_em * size;
+        let dx0 = match align {
+            TextAlignH::Left => 0.0,
+            TextAlignH::Center => -breite / 2.0,
+            TextAlignH::Right => -breite,
+        };
+        let mut pen = dx0;
+        let dy_zeile = dy0 - i as f64 * lh;
+        for seg in &zeile.segs {
+            let Some(data) = crate::fonts::ttf_bytes(*font, seg.style) else {
+                continue;
+            };
+            let Some(font_ref) = crate::fonts::font_from_bytes(data) else {
+                continue;
+            };
+            let seg_size = size * seg.scale;
+            let upem = font_ref.units_per_em().unwrap_or(1000.0) as f64;
+            let unit = seg_size / upem;
+            let scaled = font_ref.as_scaled(seg_size as f32);
+            let dy_seg = dy_zeile + seg.rise_em * size;
+            for ch in seg.text.chars() {
+                let gid = font_ref.glyph_id(ch);
+                if ch != ' ' {
+                    if let Some(outline) = font_ref.outline(gid) {
+                        let mut aktuell: Vec<Vec2> = Vec::new();
+                        let mut start: Option<Vec2> = None;
+                        let mut ende: Option<Vec2> = None;
+                        for curve in &outline.curves {
+                            // Alle Kurven in Welt-mm umrechnen (Drehung inklusive).
+                            let tf = |q: ab_glyph::Point| -> Vec2 {
+                                platz(pen + q.x as f64 * unit, dy_seg + q.y as f64 * unit)
+                            };
+                            let (a, b) = match curve {
+                                ab_glyph::OutlineCurve::Line(a, b) => (tf(*a), tf(*b)),
+                                ab_glyph::OutlineCurve::Quad(a, _, b) => (tf(*a), tf(*b)),
+                                ab_glyph::OutlineCurve::Cubic(a, _, _, b) => (tf(*a), tf(*b)),
+                            };
+                            // Neuer Teilpfad, wenn der vorige hier nicht endet.
+                            let neu = match ende {
+                                None => true,
+                                Some(x) => x.dist(a) > 1e-6,
+                            };
+                            if neu {
+                                if aktuell.len() >= 2 {
+                                    konturen.push((std::mem::take(&mut aktuell), false));
+                                }
+                                aktuell.clear();
+                                aktuell.push(a);
+                                start = Some(a);
+                            }
+                            match curve {
+                                ab_glyph::OutlineCurve::Line(_, b) => aktuell.push(tf(*b)),
+                                ab_glyph::OutlineCurve::Quad(_, c, b) => {
+                                    abflachen_quad(a, tf(*c), tf(*b), &mut aktuell)
+                                }
+                                ab_glyph::OutlineCurve::Cubic(_, c1, c2, b) => {
+                                    abflachen_kubisch(a, tf(*c1), tf(*c2), tf(*b), 0, &mut aktuell)
+                                }
+                            }
+                            ende = Some(b);
+                        }
+                        if let (Some(first), Some(last)) = (start, ende) {
+                            let geschlossen = first.dist(last) < seg_size * 0.02;
+                            if aktuell.len() >= 2 {
+                                konturen.push((aktuell, geschlossen));
+                            }
+                        }
+                    }
+                }
+                pen += scaled.h_advance(gid) as f64;
+            }
+        }
+    }
+    if konturen.is_empty() {
+        return Err("Der Text enthält keine zeichenbaren Umrisse".into());
+    }
+
+    let mut neue = Vec::with_capacity(konturen.len());
+    let mut created = Vec::with_capacity(konturen.len());
+    for (pts, geschlossen) in konturen {
+        if pts.len() < 2 {
+            continue;
+        }
+        let nid = doc.new_id();
+        let mut ne = Entity::new(
+            nid,
+            e.layer,
+            EntityKind::Polyline {
+                verts: pts.iter().map(|q| Vertex::new(*q)).collect(),
+                closed: geschlossen,
+            },
+        );
+        ne.style = e.style.clone();
+        // Umrisse statt gefüllter Zeichen: mit dem Layer-Stift (0,35 mm) wirkt
+        // ein kleiner Text wie ein schwarzer Block. Ein dünner Stift lässt die
+        // Linien als Linien erkennen; eine eigene Stärke am Objekt bleibt.
+        if ne.style.line_weight.is_none() {
+            ne.style.line_weight = Some(0.18);
+        }
+        neue.push(ne);
+        created.push(nid);
+    }
+    doc.remove_entity(e.id);
+    for ne in neue {
+        doc.ents_mut().push(ne);
+    }
+    doc.modified = true;
+    Ok(created)
+}
+
+/// Quadratische Kurve in Welt-mm abflachen (Toleranz 0,02 mm).
+fn abflachen_quad(a: Vec2, c: Vec2, b: Vec2, out: &mut Vec<Vec2>) {
+    let d = abstand(a, c, b);
+    if d <= 0.02 {
+        out.push(b);
+        return;
+    }
+    let ab = (a + c) * 0.5;
+    let bc = (c + b) * 0.5;
+    let m = (ab + bc) * 0.5;
+    abflachen_quad(a, ab, m, out);
+    abflachen_quad(m, bc, b, out);
+}
+
+/// Kubische Kurve in Welt-mm abflachen.
+fn abflachen_kubisch(a: Vec2, c1: Vec2, c2: Vec2, b: Vec2, tiefe: u32, out: &mut Vec<Vec2>) {
+    let d = abstand(a, c1, b).max(abstand(a, c2, b));
+    if d <= 0.02 || tiefe >= 10 {
+        out.push(b);
+        return;
+    }
+    let p01 = (a + c1) * 0.5;
+    let p12 = (c1 + c2) * 0.5;
+    let p23 = (c2 + b) * 0.5;
+    let p012 = (p01 + p12) * 0.5;
+    let p123 = (p12 + p23) * 0.5;
+    let m = (p012 + p123) * 0.5;
+    abflachen_kubisch(a, p01, p012, m, tiefe + 1, out);
+    abflachen_kubisch(m, p123, p23, b, tiefe + 1, out);
+}
+
+/// Abstand eines Kontrollpunkts von der Sehne a–b.
+fn abstand(a: Vec2, c: Vec2, b: Vec2) -> f64 {
+    let d = b - a;
+    let l = d.len();
+    if l < 1e-9 {
+        return c.dist(a);
+    }
+    ((d.x * (a.y - c.y) - (a.x - c.x) * d.y) / l).abs()
 }
 
 // ---------------------------------------------------------------------------
