@@ -124,6 +124,7 @@ Systemblöcke: `WC`, `Waschbecken`, `Dusche`, `Badewanne`, `Herd`, `Spüle`,
 |---|---|---|
 | `select.all` | — | alle sichtbaren, nicht gesperrten Objekte |
 | `select.query` | `layer`, `type`, `a`, `b` | Filter, liefert IDs |
+| `select.area` | `ids`, `layer`, `type`, `a`, `b` | Fläche je Objekt (`areas[].area_m2`) und Summe (`sum_m2`) in m², deutsches Komma; offene Objekte stehen in `without_area` |
 
 ## Beispiele
 

@@ -2689,28 +2689,12 @@ fn entity_length(e: &jjcad_core::model::Entity) -> f64 {
 }
 
 /// Fläche eines Elements in mm² (0, wenn nicht sinnvoll).
+///
+/// Die Rechnung steht in `jjcad_core::area::entity_area` — dieselbe Zahl
+/// liefert die MCP-Abfrage (`area_m2`, `select.area`). Hier nur der
+/// Zahlenwert für die Anzeige; 0 heißt „keine Fläche“.
 fn entity_area(e: &jjcad_core::model::Entity) -> f64 {
-    use jjcad_core::model::EntityKind as K;
-    match &e.kind {
-        K::Circle { r, .. } => std::f64::consts::PI * r * r,
-        K::Spline { verts, closed } if *closed && verts.len() > 2 => {
-            let sp = jjcad_core::geom::Spline {
-                verts: verts.clone(),
-                closed: *closed,
-            };
-            sp.area()
-        }
-        K::Polyline { verts, closed } if *closed && verts.len() > 2 => {
-            let mut s = 0.0;
-            for i in 0..verts.len() {
-                let a = verts[i].p;
-                let b = verts[(i + 1) % verts.len()].p;
-                s += a.x * b.y - b.x * a.y;
-            }
-            (s * 0.5).abs()
-        }
-        _ => 0.0,
-    }
+    jjcad_core::area::entity_area(e).unwrap_or(0.0)
 }
 
 fn sheet_props(app: &mut App, ui: &mut Ui, sid: Id) {

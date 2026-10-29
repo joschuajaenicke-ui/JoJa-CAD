@@ -234,6 +234,7 @@ pub const ACTIONS: &[ActionDef] = &[
     act!("layer.set_current", "Aktueller Layer", Ansicht, "layers", "", "Zeichenlayer wechseln", false),
     act!("select.all", "Alles auswählen", Aendern, "select", "ctrl+a", "Gesamte Zeichnung auswählen", false),
     act!("select.query", "Objekte abfragen", Aendern, "select", "", "Nach Layer/Typ/Bereich filtern", false),
+    act!("select.area", "Flächen ermitteln", Aendern, "select", "", "Fläche je Objekt und Summe — ids[], layer, type, a/b", false),
     act!("block.update", "Block aktualisieren", Bloecke, "blocknew", "", "Blockdefinition aus Auswahl ersetzen", false),
     act!("block.delete", "Block löschen", Bloecke, "library", "", "Blockdefinition entfernen", false),
     act!("block.list", "Blöcke auflisten", Bloecke, "library", "", "Alle Blöcke mit Anzahl", false),
@@ -2819,6 +2820,39 @@ pub fn execute(doc: &mut Document, id: &str, params: &Value) -> Result<Value, St
         "select.query" => {
             let ids = query_ids(doc, params);
             Ok(json!({"ok": true, "ids": ids, "count": ids.len()}))
+        }
+        // Flächen einer Auswahl: je Objekt und als Summe (Raumgruppen).
+        // Dieselben Filter wie `select.query` — ein Weg (`query_ids`). Objekte
+        // ohne Fläche stehen in `without_area`, sie bekommen keine 0.
+        "select.area" => {
+            let ids = query_ids(doc, params);
+            let mut sum = 0.0f64;
+            let mut areas = Vec::new();
+            let mut without = Vec::new();
+            for id in ids {
+                let Some(e) = doc.ents().iter().find(|e| e.id == id) else {
+                    continue;
+                };
+                match crate::area::entity_area(e) {
+                    Some(mm2) => {
+                        sum += mm2;
+                        areas.push(json!({
+                            "id": id,
+                            "area_m2": crate::units::format_area_m2(mm2),
+                            "area_mm2": mm2
+                        }));
+                    }
+                    None => without.push(id),
+                }
+            }
+            Ok(json!({
+                "ok": true,
+                "count": areas.len(),
+                "sum_m2": crate::units::format_area_m2(sum),
+                "sum_mm2": sum,
+                "areas": areas,
+                "without_area": without
+            }))
         }
 
         other => Err(format!("Aktion '{other}' ist in dieser Version nicht implementiert")),
