@@ -54,13 +54,18 @@ fn anzeige(s: &Session, id: u64) -> render::DisplayList {
 /// Die Abschnittslinie unterbricht einzelne Stufenlinien; die Stücke werden
 /// über ihre y-Lage zusammengefasst, damit die Zahl der **Stufen** zählt und
 /// nicht die Zahl der Linienstücke.
-fn stufenlagen(dl: &render::DisplayList) -> Vec<f64> {
+fn stufenlagen(dl: &render::DisplayList, laenge: f64) -> Vec<f64> {
+    // Start- und Endkante des Rechtecks liegen auf y = 0 bzw. y = Länge und
+    // sind keine Stufenlinien.
     let mut ys: Vec<f64> = dl
         .prims
         .iter()
         .filter_map(|p| match &p.shape {
             Shape::Line(a, b)
-                if (a.y - b.y).abs() < 0.01 && (a.x - b.x).abs() > BREITE * 0.25 =>
+                if (a.y - b.y).abs() < 0.01
+                    && (a.x - b.x).abs() > BREITE * 0.25
+                    && a.y > 0.5
+                    && a.y < laenge - 0.5 =>
             {
                 Some((a.y * 10.0).round() / 10.0)
             }
@@ -98,18 +103,26 @@ fn automatische_stufenzahl_aus_laenge_und_hoehe() {
     assert_eq!(steps, 16, "gespeicherte Vorgabe bleibt unangetastet");
 
     let dl = anzeige(&s, id);
-    let lagen = stufenlagen(&dl);
+    let lagen = stufenlagen(&dl, LAENGE);
     assert_eq!(lagen.len(), 15, "16 Stufen ergeben 15 Stufenlinien: {lagen:?}");
     // Gleichmäßige Teilung: erste Linie bei Länge/16.
     assert!((lagen[0] - LAENGE / 16.0).abs() < 0.5, "{lagen:?}");
-    assert_eq!(
-        dl.prims
-            .iter()
-            .filter(|p| matches!(p.shape, Shape::Poly(_, true)))
-            .count(),
-        1,
-        "genau ein Umriss"
-    );
+    // Der Umriss ist ein Rechteck aus vier Kanten (der Schnitt teilt die
+    // Längskanten, deshalb sechs Linien).
+    for ecke in [
+        Vec2::new(-BREITE * 0.5, 0.0),
+        Vec2::new(BREITE * 0.5, 0.0),
+        Vec2::new(BREITE * 0.5, LAENGE),
+        Vec2::new(-BREITE * 0.5, LAENGE),
+    ] {
+        assert!(
+            dl.prims.iter().any(|p| match &p.shape {
+                Shape::Line(a, b) => jjcad_core::geom::dist_point_segment(ecke, *a, *b) < 0.01,
+                _ => false,
+            }),
+            "Ecke {ecke:?} gehört zum Umriss"
+        );
+    }
 }
 
 /// Die Höhe ändert die Stufenzahl: 3,00 m hoch ergibt 17 Stufen.
@@ -120,7 +133,7 @@ fn hoehe_bestimmt_die_stufenzahl() {
     s.execute("modify.set", &json!({"ids": [id], "height": 3000.0}))
         .unwrap();
     let dl = anzeige(&s, id);
-    assert_eq!(stufenlagen(&dl).len(), 16, "17 Stufen ergeben 16 Linien");
+    assert_eq!(stufenlagen(&dl, LAENGE).len(), 16, "17 Stufen ergeben 16 Linien");
 }
 
 /// Eine ausdrückliche Stufenzahl überschreibt die Regel und bleibt stehen.
@@ -131,12 +144,12 @@ fn manuelle_stufenzahl_gilt() {
     let (steps, _, auto, _) = kind(&s, id);
     assert!(!auto, "steps im Aufruf schaltet die Regel ab");
     assert_eq!(steps, 12);
-    assert_eq!(stufenlagen(&anzeige(&s, id)).len(), 11);
+    assert_eq!(stufenlagen(&anzeige(&s, id), LAENGE).len(), 11);
 
     // Höhe ändern darf die feste Zahl nicht mehr verschieben.
     s.execute("modify.set", &json!({"ids": [id], "height": 3000.0}))
         .unwrap();
-    assert_eq!(stufenlagen(&anzeige(&s, id)).len(), 11);
+    assert_eq!(stufenlagen(&anzeige(&s, id), LAENGE).len(), 11);
 }
 
 /// „Automatisch" wieder einschalten — die Zahl folgt erneut der Regel.
@@ -149,7 +162,7 @@ fn automatisch_wieder_einschalten() {
         &json!({"ids": [id], "auto_steps": true}),
     )
     .unwrap();
-    assert_eq!(stufenlagen(&anzeige(&s, id)).len(), 15);
+    assert_eq!(stufenlagen(&anzeige(&s, id), LAENGE).len(), 15);
 }
 
 /// Die Beschriftungstaste erzeugt ein Textfeld links neben der Treppe.
@@ -242,4 +255,107 @@ fn alte_datei_behaelt_ihre_stufen() {
     assert_eq!(*steps, 13);
     assert!(!*auto_steps, "alte Treppe bleibt manuell");
     assert!((*height - jjcad_core::stair::HOEHE_VORGABE_MM).abs() < 0.01);
+}
+
+/// Diagonale Linien der Anzeige — das sind die beiden Striche des
+/// Treppenschnitts.
+fn diagonalen(dl: &render::DisplayList) -> usize {
+    // Nur die Diagonalen in der Laufmitte zählen — die Schenkel des
+    // Richtungspfeils sind auch schräg, sitzen aber am Laufende.
+    dl.prims
+        .iter()
+        .filter(|p| match &p.shape {
+            Shape::Line(a, b) => {
+                let mitte = (a.y + b.y) * 0.5;
+                (a.x - b.x).abs() > 1.0
+                    && (a.y - b.y).abs() > 1.0
+                    && mitte > LAENGE * 0.35
+                    && mitte < LAENGE * 0.65
+            }
+            _ => false,
+        })
+        .count()
+}
+
+/// Der Treppenschnitt ist abschaltbar: ohne ihn ist es eine einzelne Treppe,
+/// mit ihm zwei Läufe übereinander.
+#[test]
+fn schnitt_ist_abschaltbar() {
+    let mut s = session();
+    let id = treppe(&mut s, json!({}));
+    assert_eq!(diagonalen(&anzeige(&s, id)), 2, "Schnitt aus zwei Diagonalen");
+    s.execute("modify.set", &json!({"ids": [id], "cut": false}))
+        .unwrap();
+    assert_eq!(diagonalen(&anzeige(&s, id)), 0, "ohne Schnitt keine Diagonalen");
+    s.execute("modify.set", &json!({"ids": [id], "cut": true}))
+        .unwrap();
+    assert_eq!(diagonalen(&anzeige(&s, id)), 2);
+}
+
+/// Oberer und unterer Teil haben eigene Linien: eine Strichelung des oberen
+/// Teils darf die unteren Stufen nicht verändern.
+#[test]
+fn obere_und_untere_linien_getrennt() {
+    use jjcad_core::style::LineType;
+    let mut s = session();
+    let id = treppe(&mut s, json!({}));
+    s.execute("modify.set", &json!({"ids": [id], "type_oben": "dashed"}))
+        .unwrap();
+    let dl = anzeige(&s, id);
+    let mut geprueft = 0;
+    for p in &dl.prims {
+        if let Shape::Line(a, b) = &p.shape {
+            if (a.y - b.y).abs() < 0.01 && (a.x - b.x).abs() > BREITE * 0.25 {
+                let y = (a.y + b.y) * 0.5;
+                let erwartet = if y < LAENGE * 0.5 {
+                    LineType::Solid
+                } else {
+                    LineType::Dashed
+                };
+                assert_eq!(p.style.line_type, erwartet, "Stufenlinie bei y = {y}");
+                geprueft += 1;
+            }
+        }
+    }
+    assert!(geprueft >= 14, "zu wenige Stufenlinien geprüft: {geprueft}");
+}
+
+/// Die Länge ist ein Rechteckmaß: sie verschiebt das Ende auf der Lauflinie,
+/// der Anfang bleibt stehen — und die Stufenzahl folgt.
+#[test]
+fn laenge_verschiebt_das_ende() {
+    let mut s = session();
+    let id = treppe(&mut s, json!({}));
+    s.execute("modify.set", &json!({"ids": [id], "len": 2900.0}))
+        .unwrap();
+    let EntityKind::Stair { a, b, .. } = s.doc.entity(id).unwrap().kind.clone() else {
+        panic!("keine Treppe");
+    };
+    assert!(a.dist(Vec2::ZERO) < 0.01, "Anfang bleibt stehen: {a:?}");
+    assert!((b.y - 2900.0).abs() < 0.01, "Ende auf 2,90 m: {b:?}");
+    // n = (2 H + L) / 630 = (5504 + 2900) / 630 = 13,3 → 13
+    assert_eq!(stufenlagen(&anzeige(&s, id), 2900.0).len(), 12);
+}
+
+/// Teil-Linien überstehen das Speichern (Format .jjcad).
+#[test]
+fn teillinien_stehen_in_der_datei() {
+    let mut s = session();
+    let id = treppe(&mut s, json!({}));
+    s.execute(
+        "modify.set",
+        &json!({"ids": [id], "type_oben": "dotted", "weight_oben": 0.5}),
+    )
+    .unwrap();
+    let json_text = jjcad_core::persist::to_json(&s.doc).unwrap();
+    assert!(json_text.contains(r#""oben""#), "oberer Teil fehlt in der Datei");
+    assert!(json_text.contains("Dotted"));
+    let doc = jjcad_core::persist::from_json(&json_text).unwrap();
+    let EntityKind::Stair { oben, cut, .. } = doc.entities.last().unwrap().kind.clone() else {
+        panic!("keine Treppe");
+    };
+    assert!(cut, "Schnitt bleibt an");
+    let oben = oben.expect("oberer Teil verloren");
+    assert_eq!(oben.line_type, Some(jjcad_core::style::LineType::Dotted));
+    assert_eq!(oben.line_weight, Some(0.5));
 }

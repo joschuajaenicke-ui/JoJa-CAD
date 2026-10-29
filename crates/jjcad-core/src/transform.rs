@@ -243,6 +243,9 @@ pub fn transform_kind(k: &EntityKind, m: &Affine) -> EntityKind {
             height,
             direction,
             auto_steps,
+            cut,
+            unten,
+            oben,
         } => EntityKind::Stair {
             a: m.apply(*a),
             b: m.apply(*b),
@@ -253,6 +256,9 @@ pub fn transform_kind(k: &EntityKind, m: &Affine) -> EntityKind {
             height: *height,
             direction: *direction,
             auto_steps: *auto_steps,
+            cut: *cut,
+            unten: unten.clone(),
+            oben: oben.clone(),
         },
         EntityKind::BlockRef {
             block,

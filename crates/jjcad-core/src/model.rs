@@ -343,6 +343,16 @@ pub enum EntityKind {
         /// Feld behalten ihre gespeicherte Stufenzahl.
         #[serde(default)]
         auto_steps: bool,
+        /// Treppenschnitt (zwei Diagonalen) zeichnen. Er symbolisiert **zwei
+        /// Läufe übereinander**; ohne Schnitt ist es eine einzelne Treppe.
+        #[serde(default = "default_true")]
+        cut: bool,
+        /// Linien des unteren Teils (vor dem Schnitt). `None` = Objektstil.
+        #[serde(default)]
+        unten: Option<EntityStyle>,
+        /// Linien des oberen Teils (hinter dem Schnitt). `None` = Objektstil.
+        #[serde(default)]
+        oben: Option<EntityStyle>,
     },
     BlockRef {
         block: String,

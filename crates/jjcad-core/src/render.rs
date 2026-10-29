@@ -854,9 +854,26 @@ pub fn render_entity(
             direction,
             height,
             auto_steps,
+            cut,
+            unten,
+            oben,
         } => {
             render_stair(
-                ctx, e, &st, *p0, *p1, *width, *steps, *height, *auto_steps, *direction, xf, dl,
+                ctx,
+                e,
+                &st,
+                *p0,
+                *p1,
+                *width,
+                *steps,
+                *height,
+                *auto_steps,
+                *direction,
+                *cut,
+                unten.as_ref(),
+                oben.as_ref(),
+                xf,
+                dl,
             );
         }
         EntityKind::BlockRef {
@@ -1931,6 +1948,27 @@ fn render_window(
     }
 }
 
+/// Linien eines Treppenteils: eigene Werte überschreiben den Objektstil.
+fn halb_stil(st: &PrimStyle, teil: Option<&EntityStyle>) -> PrimStyle {
+    let Some(t) = teil else { return *st };
+    PrimStyle {
+        color: t.color.unwrap_or(st.color),
+        line_type: t.line_type.unwrap_or(st.line_type),
+        width: t.line_weight.unwrap_or(st.width),
+        fill: t.fill.or(st.fill),
+    }
+}
+
+/// Eine Linie der Treppe in die Displayliste legen.
+fn stair_linie(dl: &mut DisplayList, e: &Entity, xf: Affine, stil: PrimStyle, p: Vec2, q: Vec2) {
+    dl.push(Prim {
+        shape: Shape::Line(xf.apply(p), xf.apply(q)),
+        style: stil,
+        entity: e.id,
+        layer: e.layer,
+    });
+}
+
 #[allow(clippy::too_many_arguments)]
 fn render_stair(
     ctx: &RenderCtx,
@@ -1943,6 +1981,9 @@ fn render_stair(
     height: f64,
     auto_steps: bool,
     direction: StairDir,
+    cut: bool,
+    unten: Option<&EntityStyle>,
+    oben: Option<&EntityStyle>,
     xf: Affine,
     dl: &mut DisplayList,
 ) {
@@ -1956,93 +1997,92 @@ fn render_stair(
     let mass = crate::stair::treppenmass(len, height, steps, auto_steps);
     let n = mass.stufen.max(1) as usize;
     let run = len / n as f64;
-    let duenn = PrimStyle {
-        width: st.width * 0.75,
-        ..*st
+    let duenn = |s: PrimStyle| PrimStyle {
+        width: s.width * 0.75,
+        ..s
     };
 
-    // Umriss der Treppe
-    let quad = vec![
-        xf.apply(a + nrm * hw),
-        xf.apply(b + nrm * hw),
-        xf.apply(b - nrm * hw),
-        xf.apply(a - nrm * hw),
-    ];
-    dl.push(Prim {
-        shape: Shape::Poly(quad, true),
-        style: *st,
-        entity: e.id,
-        layer: e.layer,
-    });
+    // Oberer und unterer Teil: eigene Linien nur mit Treppenschnitt, sonst
+    // zeichnet der Objektstil die ganze Treppe.
+    let (st_unten, st_oben) = if cut {
+        (halb_stil(st, unten), halb_stil(st, oben))
+    } else {
+        (*st, *st)
+    };
+    // Der Schnitt liegt in der Laufmitte; er trennt unteren und oberen Teil.
+    let schnitt = len * 0.5;
+    let bruch = if cut {
+        abschnittslinien(a, dir, nrm, hw, len, width)
+    } else {
+        Vec::new()
+    };
 
-    // Abschnittslinie (Bruch) in der Laufmitte: sie unterbricht die
-    // Stufenlinien dort, wo eine der beiden Diagonalen sie kreuzt.
-    let bruch = abschnittslinien(a, dir, nrm, hw, len, width);
+    // Umriss als vier Kanten — nur so können die Längskanten am Schnitt ihre
+    // Linienart wechseln.
+    let ecken = [a + nrm * hw, b + nrm * hw, b - nrm * hw, a - nrm * hw];
+    let mitte = a + dir * schnitt;
+    // Startkante (bei a) gehört zum unteren, Endkante (bei b) zum oberen Teil.
+    stair_linie(dl, e, xf, st_unten, ecken[3], ecken[0]);
+    stair_linie(dl, e, xf, st_oben, ecken[1], ecken[2]);
+    // Längskanten, am Schnitt geteilt
+    stair_linie(dl, e, xf, st_unten, ecken[0], mitte + nrm * hw);
+    stair_linie(dl, e, xf, st_oben, mitte + nrm * hw, ecken[1]);
+    stair_linie(dl, e, xf, st_unten, ecken[3], mitte - nrm * hw);
+    stair_linie(dl, e, xf, st_oben, mitte - nrm * hw, ecken[2]);
+
+    // Stufenlinien; am Treppenschnitt unterbrechen die Diagonalen sie.
     for i in 1..n {
-        let p = a + dir * (run * i as f64);
+        let t = run * i as f64;
+        let p = a + dir * t;
         let s = p + nrm * hw;
-        let t = p - nrm * hw;
-        let mut schnitte: Vec<f64> = Vec::new();
+        let q = p - nrm * hw;
+        let stil = duenn(if t < schnitt { st_unten } else { st_oben });
+        let mut treffer: Vec<f64> = Vec::new();
         for l in &bruch {
-            if let Some(u) = kreuz_anteil(s, t, *l) {
-                schnitte.push(u);
+            if let Some(u) = kreuz_anteil(s, q, *l) {
+                treffer.push(u);
             }
         }
-        for (q0, q1) in stuecke(s, t, &schnitte, 0.06) {
-            dl.push(Prim {
-                shape: Shape::Line(xf.apply(q0), xf.apply(q1)),
-                style: duenn,
-                entity: e.id,
-                layer: e.layer,
-            });
+        for (q0, q1) in stuecke(s, q, &treffer, 0.06) {
+            stair_linie(dl, e, xf, stil, q0, q1);
         }
     }
 
-    // Die beiden Diagonalen der Abschnittslinie
+    // Die beiden Diagonalen des Treppenschnitts
     for (p0, p1) in &bruch {
-        dl.push(Prim {
-            shape: Shape::Line(xf.apply(*p0), xf.apply(*p1)),
-            style: *st,
-            entity: e.id,
-            layer: e.layer,
-        });
+        stair_linie(dl, e, xf, *st, *p0, *p1);
     }
 
     // Lauflinie (Basispunkt a → b, mittig) mit Richtungspfeil und Anfangsring
-    dl.push(Prim {
-        shape: Shape::Line(xf.apply(a), xf.apply(b)),
-        style: *st,
-        entity: e.id,
-        layer: e.layer,
-    });
+    stair_linie(dl, e, xf, st_unten, a, mitte);
+    stair_linie(dl, e, xf, st_oben, mitte, b);
     let ah = ctx.a(1.2).max(run * 0.35);
-    let mut pfeil_ende = |tip: Vec2, rueck: Vec2| {
+    let pfeil = |dl: &mut DisplayList, tip: Vec2, rueck: Vec2, stil: PrimStyle| {
         for seite in [1.0, -1.0] {
             let back = tip - rueck * (ah * 1.5) + nrm * (ah * 0.6 * seite);
-            dl.push(Prim {
-                shape: Shape::Line(xf.apply(tip), xf.apply(back)),
-                style: *st,
-                entity: e.id,
-                layer: e.layer,
-            });
+            stair_linie(dl, e, xf, stil, tip, back);
         }
     };
     match direction {
-        StairDir::Up => pfeil_ende(b, dir),
-        StairDir::Down => pfeil_ende(a, -dir),
+        StairDir::Up => pfeil(dl, b, dir, st_oben),
+        StairDir::Down => pfeil(dl, a, -dir, st_unten),
         StairDir::Both => {
-            pfeil_ende(b, dir);
-            pfeil_ende(a, -dir);
+            pfeil(dl, b, dir, st_oben);
+            pfeil(dl, a, -dir, st_unten);
         }
     }
     // Ring am Anfang des Laufs (Anfangspunkt der Treppe)
-    let anfang = if direction == StairDir::Down { b } else { a };
+    let (anfang, stil_anfang) = if direction == StairDir::Down {
+        (b, st_oben)
+    } else {
+        (a, st_unten)
+    };
     dl.push(Prim {
         shape: Shape::Circle {
             c: xf.apply(anfang),
             r: (width * 0.06).max(ctx.a(0.5)) * xf.scale_factor(),
         },
-        style: *st,
+        style: stil_anfang,
         entity: e.id,
         layer: e.layer,
     });

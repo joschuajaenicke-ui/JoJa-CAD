@@ -196,9 +196,16 @@ def main() -> int:
         time.sleep(0.8)
         schuss(f"{ziel}/treppe_auswahl.png", wid)
         # Knopf „Beschriftung erzeugen" im Eigenschaften-Panel
-        klick(1354, 762, wid)
+        klick(1354, 826, wid)
         time.sleep(0.8)
         schuss(f"{ziel}/treppe_beschriftet.png", wid)
+        # Rechte Längskante nach rechts ziehen: nur diese Kante wandert
+        # (Parallelverschiebung), die Treppe wird breiter.
+        ziehen(470, 500, 545, 500, wid)
+        # Im Modus „Zwei Klicks" beendet der nächste Klick den Zug.
+        klick(545, 500, wid)
+        time.sleep(0.8)
+        schuss(f"{ziel}/treppe_breiter.png", wid)
         print("Bilder:", ziel)
         return 0
     finally:

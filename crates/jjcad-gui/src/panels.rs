@@ -1678,15 +1678,32 @@ fn entity_props(app: &mut App, ui: &mut Ui, id: Id) {
             height,
             auto_steps,
             direction,
+            cut,
+            unten,
+            oben,
             ..
         } => {
-            let mut w = *width;
             let mut h = *height;
+            let mut w = *width;
             let mut d = *direction;
+            let mut schnitt = *cut;
             let auto_jetzt = *auto_steps;
             let laenge = a.dist(*b);
             let mass = jjcad_core::stair::treppenmass(laenge, *height, *steps, auto_jetzt);
 
+            // Die Treppe ist ein Rechteck: Länge und Breite sind seine Maße,
+            // die Lauflinie liegt in der Mitte.
+            let mut l = laenge;
+            widgets::field_row(ui, "Länge", |ui| {
+                if widgets::length_input_between(ui, &mut l, unit, 100.0, 100.0, 100_000.0) {
+                    changed_params.insert("len".into(), json!(unit.from_mm(l)));
+                }
+            });
+            widgets::field_row(ui, "Breite", |ui| {
+                if widgets::length_input_between(ui, &mut w, unit, 100.0, 100.0, 100_000.0) {
+                    changed_params.insert("width".into(), json!(unit.from_mm(w)));
+                }
+            });
             widgets::field_row(ui, "Höhe", |ui| {
                 if widgets::length_input_between(ui, &mut h, unit, 100.0, 100.0, 100_000.0) {
                     changed_params.insert("height".into(), json!(unit.from_mm(h)));
@@ -1694,17 +1711,17 @@ fn entity_props(app: &mut App, ui: &mut Ui, id: Id) {
             });
             // Die berechnete Stufenzahl steht als Wert da; ein eigener Eintrag
             // schaltet die Regel ab und gilt dann fest.
-            let mut s = mass.stufen;
+            let mut st = mass.stufen;
             widgets::field_row(ui, "Stufen", |ui| {
                 ui.add_enabled_ui(!auto_jetzt, |ui| {
                     if ui
                         .add(
-                            crate::widgets::dv(&mut s)
+                            crate::widgets::dv(&mut st)
                                 .range(jjcad_core::stair::STUFEN_MIN..=jjcad_core::stair::STUFEN_MAX),
                         )
                         .changed()
                     {
-                        changed_params.insert("steps".into(), json!(s));
+                        changed_params.insert("steps".into(), json!(st));
                     }
                 });
             });
@@ -1724,11 +1741,6 @@ fn entity_props(app: &mut App, ui: &mut Ui, id: Id) {
                     }
                 }
             });
-            widgets::field_row(ui, "Breite", |ui| {
-                if widgets::length_input(ui, &mut w, unit, 100.0) {
-                    changed_params.insert("width".into(), json!(unit.from_mm(w)));
-                }
-            });
             widgets::field_row(ui, "Richtung", |ui| {
                 let items: Vec<(StairDir, String)> = StairDir::ALL
                     .iter()
@@ -1745,6 +1757,17 @@ fn entity_props(app: &mut App, ui: &mut Ui, id: Id) {
                     );
                 }
             });
+            // Treppenschnitt: die beiden Diagonalen. Er zeigt an, dass zwei
+            // Läufe übereinander liegen — ohne ihn ist es eine einzelne Treppe.
+            widgets::field_row(ui, "Schnitt", |ui| {
+                let antwort = ui
+                    .checkbox(&mut schnitt, "zwei Läufe")
+                    .on_hover_text("Diagonalen in der Laufmitte; sie trennen oberen und unteren Teil");
+                if antwort.changed() {
+                    changed_params.insert("cut".into(), json!(schnitt));
+                }
+            });
+
             // Schrittmaß als Information — die Zahlen, die auch im Textfeld
             // der Treppe stehen.
             let cm = |mm: f64, stellen: usize| {
@@ -1765,6 +1788,7 @@ fn entity_props(app: &mut App, ui: &mut Ui, id: Id) {
                 &unit.format_area(mass.auftrittsflaeche(*width), 2),
                 Some("Auftritt × Treppenbreite"),
             );
+
             ui.add_space(6.0);
             if ui
                 .add_sized(
@@ -1779,6 +1803,87 @@ fn entity_props(app: &mut App, ui: &mut Ui, id: Id) {
                     .execute("draw.stair.label", &json!({"id": id}));
                 app.mark_changed();
             }
+
+            // Linien der beiden Teile — nur mit Schnitt gibt es oberen und
+            // unteren Teil.
+            if *cut {
+                ui.add_space(6.0);
+                widgets::hline(ui);
+                ui.add_space(4.0);
+                let basis = app
+                    .doc()
+                    .entity(id)
+                    .map(|e| {
+                        let c = e.style.color.unwrap_or_else(|| app.doc().effective_color(e));
+                        let lw = e
+                            .style
+                            .line_weight
+                            .unwrap_or_else(|| app.doc().effective_line_weight(e));
+                        let lt = e
+                            .style
+                            .line_type
+                            .unwrap_or_else(|| app.doc().effective_line_type(e));
+                        (e.style.clone(), c, lw, lt)
+                    })
+                    .unwrap_or_else(|| (EntityStyle::default(), Color::BLACK, 0.25, LineType::Solid));
+                let (basis_style, basis_farbe, basis_w, basis_lt) = basis;
+                for (name, praefix, teil) in [("unten", "unten", unten), ("oben", "oben", oben)] {
+                    let farbe = teil.as_ref().and_then(|t| t.color).or(basis_style.color);
+                    let mut neue_farbe: Option<Option<Color>> = None;
+                    widgets::field_row(ui, &format!("Farbe {name}"), |ui| {
+                        neue_farbe = color_combo(
+                            ui,
+                            &format!("stair_col_{praefix}"),
+                            farbe.unwrap_or(basis_farbe),
+                            farbe.is_none(),
+                            false,
+                            "vom Layer",
+                        );
+                    });
+                    if let Some(v) = neue_farbe {
+                        changed_params.insert(
+                            format!("color_{praefix}"),
+                            json!(match v {
+                                None => "bylayer".to_string(),
+                                Some(c) => c.to_hex(),
+                            }),
+                        );
+                    }
+                    let lw = teil
+                        .as_ref()
+                        .and_then(|t| t.line_weight)
+                        .or(basis_style.line_weight)
+                        .unwrap_or(basis_w);
+                    let mut picked_w: Option<f64> = None;
+                    widgets::field_row(ui, &format!("Stärke {name}"), |ui| {
+                        picked_w = weight_combo(ui, &format!("stair_w_{praefix}"), lw, false);
+                    });
+                    if let Some(v) = picked_w {
+                        changed_params.insert(format!("weight_{praefix}"), json!(v));
+                    }
+                    let lt = teil
+                        .as_ref()
+                        .and_then(|t| t.line_type)
+                        .or(basis_style.line_type)
+                        .unwrap_or(basis_lt);
+                    let mut picked_lt: Option<LineType> = None;
+                    widgets::field_row(ui, &format!("Typ {name}"), |ui| {
+                        picked_lt = linetype_combo(ui, &format!("stair_lt_{praefix}"), lt, false);
+                    });
+                    if let Some(v) = picked_lt {
+                        let key = match v {
+                            LineType::Solid => "solid",
+                            LineType::Dashed => "dashed",
+                            LineType::Dotted => "dotted",
+                            LineType::DashDot => "dashdot",
+                            LineType::Hidden => "hidden",
+                        };
+                        changed_params.insert(format!("type_{praefix}"), json!(key));
+                    }
+                    ui.add_space(4.0);
+                }
+            }
+
         }
         EntityKind::Text {
             text,
