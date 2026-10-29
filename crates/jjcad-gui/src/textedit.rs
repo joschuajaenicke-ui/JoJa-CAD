@@ -157,6 +157,33 @@ pub fn text_bei(app: &App, w: V2) -> Option<EId> {
     })
 }
 
+/// Eckpunkt des Eingabefelds auf dem Bildschirm (linke obere Ecke).
+///
+/// Das Feld setzt seinen Inhalt **linksbündig**; die Ausrichtung entsteht
+/// dadurch, dass das Feld entsprechend versetzt wird: bei „Zentriert" um die
+/// halbe Textbreite nach links, bei „Rechtsbündig" um die ganze — der Text
+/// steht dann genau dort, wo er nach dem Übernehmen erscheint. Senkrecht gilt
+/// dieselbe Lage wie in der Anzeige (`canvas::text_senkrecht`).
+pub(crate) fn feld_lage(
+    anker: Pos2,
+    align: TextAlignH,
+    valign: TextAlignV,
+    textbreite: f32,
+    blockhoehe: f32,
+) -> Pos2 {
+    let dx = match align {
+        TextAlignH::Left => 0.0,
+        TextAlignH::Center => -textbreite * 0.5,
+        TextAlignH::Right => -textbreite,
+    };
+    let dy = match valign {
+        TextAlignV::Top => 0.0,
+        TextAlignV::Middle => -blockhoehe * 0.5,
+        TextAlignV::Bottom => -blockhoehe,
+    };
+    Pos2::new(anker.x + dx, anker.y + dy)
+}
+
 /// Übernimmt den Text als Objekt (neu) bzw. ändert den vorhandenen.
 fn uebernehmen(app: &mut App, ctx: &egui::Context) {
     let Some(t) = app.ui.texteingabe.take() else {
@@ -247,41 +274,26 @@ pub fn show(app: &mut App, ui: &mut Ui, rect: Rect, view: View) {
         (g.size().x, g.size().y)
     });
     let breite = (textbreite + size * 1.5).max(if t.text.is_empty() { 20.0 } else { 8.0 });
-    // Eigener Setzer: ohne Umbruch, nur echte Zeilenumbrüche (Enter). Die
-    // waagerechte Ausrichtung sitzt im Satz (`halign`) — genau wie in der
-    // Zeichnung, damit der Text beim Übernehmen nicht springt.
+    // Eigener Setzer: ohne Umbruch, nur echte Zeilenumbrüche (Enter).
+    //
+    // **Im Feld wird immer linksbündig gesetzt**, auch wenn der Text später
+    // zentriert oder rechtsbündig steht: `LayoutJob::halign` legt die Zeilen um
+    // den Ursprung (zentriert ab −Breite/2), das Feld beginnt aber am Ursprung —
+    // die Zeilen ragten damit zur Hälfte (bzw. ganz) links aus dem Feld und
+    // wurden abgeschnitten („abcdefg" zeigte nur „defg", T0028 Turn 2). Die
+    // Lage übernimmt stattdessen das Feld selbst (`feld_lage`).
     let setzer_font = font.clone();
-    let ausrichtung = crate::canvas::halign(t.align);
     let mut setzer = move |ui: &egui::Ui, text: &str, _wrap: f32| {
-        ui.fonts(|f| {
-            let mut job = egui::text::LayoutJob::simple(
-                text.to_owned(),
-                setzer_font.clone(),
-                farbe,
-                f32::INFINITY,
-            );
-            job.halign = ausrichtung;
-            f.layout_job(job)
-        })
+        ui.fonts(|f| f.layout_no_wrap(text.to_owned(), setzer_font.clone(), farbe))
     };
-    // Lage des Feldes: der Einfügepunkt der Ausrichtung steht am Anker.
     let block_h = texthoehe.max(zeilenhoehe);
-    let dx = match t.align {
-        TextAlignH::Left => 0.0,
-        TextAlignH::Center => -breite * 0.5,
-        TextAlignH::Right => -breite,
-    };
-    let dy = match t.valign {
-        TextAlignV::Top => 0.0,
-        TextAlignV::Middle => -block_h * 0.5,
-        TextAlignV::Bottom => -block_h,
-    };
+    let lage = feld_lage(anker, t.align, t.valign, textbreite, block_h);
 
     egui::Area::new(Id::new("texteingabe"))
         .order(egui::Order::Foreground)
-        // Die Ausrichtung gilt schon beim Schreiben (`paint_text`): „Zentriert"
-        // wächst nach beiden Seiten, „Unten" steht über dem Anker.
-        .fixed_pos(Pos2::new(anker.x + dx, anker.y + dy))
+        // Die Ausrichtung gilt schon beim Schreiben: „Zentriert" wächst nach
+        // beiden Seiten, „Unten" steht über dem Anker.
+        .fixed_pos(lage)
         .show(&ctx, |ui| {
             // Keine Fläche, kein Rahmen: der Text steht frei in der Zeichnung
             // und sieht während der Eingabe genauso aus wie danach.
@@ -439,6 +451,34 @@ mod tests {
 
         assert!(app.ui.texteingabe.is_none(), "Eingabe abgeschlossen");
         assert_eq!(texte(&app), vec![("Wohnen".to_string(), 250.0)]);
+    }
+
+    /// Lage des Eingabefelds: der Einfügepunkt der Ausrichtung steht am Anker.
+    ///
+    /// Das Feld setzt linksbündig; zentriert/rechtsbündig entsteht durch den
+    /// Versatz des Feldes um die halbe bzw. ganze Textbreite.
+    #[test]
+    fn feld_lage_setzt_den_einfuegepunkt_auf_den_anker() {
+        let anker = Pos2::new(400.0, 300.0);
+        let breite = 120.0;
+        let hoehe = 40.0;
+        for h in TextAlignH::ALL {
+            for v in TextAlignV::ALL {
+                let p = feld_lage(anker, h, v, breite, hoehe);
+                let x = match h {
+                    TextAlignH::Left => p.x,
+                    TextAlignH::Center => p.x + breite / 2.0,
+                    TextAlignH::Right => p.x + breite,
+                };
+                let y = match v {
+                    TextAlignV::Top => p.y,
+                    TextAlignV::Middle => p.y + hoehe / 2.0,
+                    TextAlignV::Bottom => p.y + hoehe,
+                };
+                assert!((x - anker.x).abs() < 1e-4, "{}/{}: x {x}", h.label(), v.label());
+                assert!((y - anker.y).abs() < 1e-4, "{}/{}: y {y}", h.label(), v.label());
+            }
+        }
     }
 
     /// Doppelklick: der Treffer richtet sich nach dem Textkasten.
@@ -636,5 +676,125 @@ mod tests {
         abbrechen(&mut app, &ctx);
         assert!(app.ui.texteingabe.is_none());
         assert!(app.doc().ents().is_empty(), "kein Text angelegt");
+    }
+}
+
+#[cfg(test)]
+mod tests_eingabe_sichtbar {
+    //! Der ganze Text steht im Eingabefeld — auch zentriert und rechtsbündig
+    //! (T0028, Turn 2).
+    //!
+    //! Vorher setzte der Setzer den Text mit `halign` wie die Zeichnung; das Feld
+    //! beginnt aber am Ursprung der Galley, also lag ein zentrierter Text zur
+    //! Hälfte links außerhalb des Feldes (bei „abcdefg" war „abc" weg und „d"
+    //! halb). Jetzt setzt das Feld linksbündig und wandert selbst.
+
+    use super::*;
+    use crate::app::App;
+
+    fn app_mm() -> App {
+        let ctx = egui::Context::default();
+        let mut app = App::with_ctx(ctx);
+        app.session_mut()
+            .execute("doc.settings", &json!({ "input_unit": "mm" }))
+            .expect("Einheit setzen");
+        app.options.text_height = 250.0;
+        app
+    }
+
+    fn flaeche() -> Rect {
+        // Groß genug, dass das Feld nicht an den Fensterrand geschoben wird
+        // (ein `Area` bleibt im Bild, sonst wandert die Vorschau mit).
+        Rect::from_min_size(Pos2::ZERO, Vec2::new(1500.0, 950.0))
+    }
+
+    fn view() -> View {
+        View {
+            center: V2::new(1000.0, 500.0),
+            zoom: 0.2,
+            rot: 0.0,
+        }
+    }
+
+    /// Ein Frame Zeichnung; liefert (Text, Kasten, Clip) jedes gezeichneten
+    /// Textes.
+    fn bild(ctx: &egui::Context, app: &mut App, zeit: f64) -> Vec<(String, Rect, Rect)> {
+        let raw = egui::RawInput {
+            screen_rect: Some(flaeche()),
+            time: Some(zeit),
+            predicted_dt: 0.016,
+            ..Default::default()
+        };
+        let out = ctx.run(raw, |ctx| {
+            egui::CentralPanel::default().show(ctx, |ui| {
+                show(app, ui, flaeche(), view());
+            });
+        });
+        let mut gefunden = Vec::new();
+        for cs in &out.shapes {
+            if let egui::Shape::Text(t) = &cs.shape {
+                // `galley.rect` trägt den Versatz der Zeilenausrichtung
+                // (halign) — nur mit ihm ist der Kasten der *gemalten* Schrift
+                // richtig; `from_min_size(t.pos, size)` verschluckt ihn.
+                gefunden.push((
+                    t.galley.text().to_string(),
+                    t.galley.rect.translate(t.pos.to_vec2()),
+                    cs.clip_rect,
+                ));
+            }
+        }
+        gefunden
+    }
+
+    /// Getippter Text bleibt in allen drei waagerechten Ausrichtungen sichtbar
+    /// und steht dort, wo er nach dem Übernehmen erscheint.
+    #[test]
+    fn text_bleibt_im_feld_sichtbar() {
+        for align in TextAlignH::ALL {
+            let ctx = egui::Context::default();
+            let mut app = app_mm();
+            app.options.text_align = align;
+            app.options.text_valign = TextAlignV::Middle;
+            start(&mut app, V2::new(1000.0, 500.0));
+            if let Some(t) = app.ui.texteingabe.as_mut() {
+                t.text = "abcdefg".to_string();
+            }
+            // Erster Frame setzt den Inhalt, zweiter zeichnet ihn.
+            let _ = bild(&ctx, &mut app, 1.0);
+            let bilder = bild(&ctx, &mut app, 1.1);
+            let (_, kasten, clip) = bilder
+                .iter()
+                .find(|(t, _, _)| t == "abcdefg")
+                .unwrap_or_else(|| panic!("{}: Text nicht gezeichnet", align.label()));
+
+            assert!(kasten.width() > 1.0, "{}: leerer Kasten", align.label());
+            assert!(
+                clip.contains_rect(*kasten),
+                "{}: der Text ragt aus dem Feld ({:?} außerhalb von {:?})",
+                align.label(),
+                kasten,
+                clip
+            );
+            let anker = world_to_screen(flaeche(), view(), V2::new(1000.0, 500.0));
+            let x = match align {
+                TextAlignH::Left => kasten.left(),
+                TextAlignH::Center => kasten.center().x,
+                TextAlignH::Right => kasten.right(),
+            };
+            assert!(
+                (x - anker.x).abs() < 1.5,
+                "{}: Kante bei {:.1}, Anker bei {:.1}",
+                align.label(),
+                x,
+                anker.x
+            );
+            assert!(
+                (kasten.center().y - anker.y).abs() < 1.5,
+                "{}: Mitte bei {:.1}, Anker bei {:.1}",
+                align.label(),
+                kasten.center().y,
+                anker.y
+            );
+        }
     }
 }
