@@ -93,8 +93,12 @@ def klick(x: int, y: int, wid: int) -> None:
     time.sleep(0.5)
 
 
-def ziehen(x0: int, y0: int, x1: int, y1: int, wid: int) -> None:
-    """Griff ziehen: drücken, in Schritten bewegen, loslassen."""
+def ziehen(x0: int, y0: int, x1: int, y1: int, wid: int, bild: str = "") -> None:
+    """Griff ziehen: drücken, in Schritten bewegen, loslassen.
+
+    Mit `bild` wird **während** des Zugs (vor dem Loslassen) ein Screenshot
+    gemacht — so ist die Maßangabe am Zeiger zu sehen.
+    """
     dpy = display_oeffnen()
     x11.XSetInputFocus(ctypes.c_void_p(dpy), ctypes.c_ulong(wid), 2, 0)
     ox, oy = fenster_versatz(wid)
@@ -111,7 +115,9 @@ def ziehen(x0: int, y0: int, x1: int, y1: int, wid: int) -> None:
         xtst.XTestFakeMotionEvent(ctypes.c_void_p(dpy), -1, x + ox, y + oy, 0)
         x11.XFlush(ctypes.c_void_p(dpy))
         time.sleep(0.05)
-    time.sleep(0.15)
+    time.sleep(0.8)
+    if bild:
+        schuss(bild, wid)
     xtst.XTestFakeButtonEvent(ctypes.c_void_p(dpy), 1, 0, 0)
     x11.XFlush(ctypes.c_void_p(dpy))
     time.sleep(0.5)
@@ -196,12 +202,12 @@ def main() -> int:
         time.sleep(0.8)
         schuss(f"{ziel}/treppe_auswahl.png", wid)
         # Knopf „Beschriftung erzeugen" im Eigenschaften-Panel
-        klick(1354, 826, wid)
+        klick(1354, 804, wid)
         time.sleep(0.8)
         schuss(f"{ziel}/treppe_beschriftet.png", wid)
         # Rechte Längskante nach rechts ziehen: nur diese Kante wandert
         # (Parallelverschiebung), die Treppe wird breiter.
-        ziehen(470, 500, 545, 500, wid)
+        ziehen(470, 500, 545, 500, wid, bild=f"{ziel}/treppe_breiter.png")
         # Im Modus „Zwei Klicks" beendet der nächste Klick den Zug.
         klick(545, 500, wid)
         time.sleep(0.8)

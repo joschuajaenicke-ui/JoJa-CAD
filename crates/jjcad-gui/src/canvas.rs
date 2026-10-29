@@ -13,6 +13,7 @@ use jjcad_core::geom::Vec2 as V2;
 use jjcad_core::model::*;
 use jjcad_core::render::{self, DisplayList, Prim, Shape as PShape};
 use jjcad_core::snap;
+use jjcad_core::units::Unit;
 use jjcad_core::tessellate::CurveQuality;
 use jjcad_core::units::{format_number, format_scale};
 use serde_json::json;
@@ -927,6 +928,8 @@ pub fn show(app: &mut App, ui: &mut Ui) {
         if app.tool.is_some() {
             draw_tool_preview(app, &painter, rect, view_now, snapped, raw_world);
         }
+        // Maßangabe beim Ziehen an einer Treppenkante (T0027, Turn 4)
+        draw_grip_mass(app, ui, &painter, rect, view_now);
         draw_hilfslinien(app, &painter, rect, view_now);
         draw_text_rahmen(app, &painter, rect, view_now, &selected);
         draw_wand_basislinien(app, &painter, rect, view_now, &selected);
@@ -965,6 +968,8 @@ pub fn show(app: &mut App, ui: &mut Ui) {
         if app.tool.is_some() {
             draw_tool_preview(app, &painter, rect, view_now, snapped, raw_world);
         }
+        // Maßangabe beim Ziehen an einer Treppenkante (T0027, Turn 4)
+        draw_grip_mass(app, ui, &painter, rect, view_now);
         // Hilfslinien des erweiterten Punktfangs unter allem, was der Zeiger
         // selbst zeichnet (Vorschau, Griffe, Fadenkreuz).
         draw_hilfslinien(app, &painter, rect, view_now);
@@ -1329,6 +1334,80 @@ fn draw_fadenkreuz(p: &Painter, rect: Rect, pos: Option<Pos2>) {
     let c = Color32::from_rgba_unmultiplied(88, 98, 112, 160);
     p.line_segment(waagerecht, Stroke::new(1.0, c));
     p.line_segment(senkrecht, Stroke::new(1.0, c));
+}
+
+/// Beschriftung am Zeiger (dunkle Box, heller Text).
+///
+/// Eine Stelle für die Werkzeug-Vorschau — die Maßangabe beim Ziehen
+/// (`draw_grip_mass`) sieht genauso aus.
+fn paint_label(p: &Painter, rect: Rect, pos: Pos2, text: &str) {
+    let galley = p.layout_no_wrap(text.to_string(), FontId::proportional(11.0), Palette::TEXT);
+    // Box im Zeichenbereich halten: am unteren/äußeren Rand würde sie sonst
+    // abgeschnitten (Fehlermeldungen stehen genau dort, wo geklickt wird).
+    let groesse = galley.size() + Vec2::new(12.0, 6.0);
+    let min = Pos2::new(
+        (pos.x - 6.0)
+            .min(rect.right() - groesse.x - 4.0)
+            .max(rect.left() + 4.0),
+        (pos.y - 3.0)
+            .min(rect.bottom() - groesse.y - 4.0)
+            .max(rect.top() + 4.0),
+    );
+    let bg = Rect::from_min_size(min, groesse);
+    p.rect_filled(bg, 4.0, Color32::from_rgba_unmultiplied(24, 27, 32, 235));
+    p.rect_stroke(bg, 4.0, Stroke::new(1.0, Palette::BORDER));
+    p.galley(bg.min + Vec2::new(6.0, 3.0), galley, Palette::TEXT);
+}
+
+/// Maßangabe einer Treppe für die Beschriftung am Zeiger:
+/// „3,00 × 1,00 · 13 Stg" (Länge × Breite · Stufenzahl).
+pub(crate) fn stair_mass_text(unit: Unit, laenge: f64, breite: f64, stufen: u32) -> String {
+    format!(
+        "{} × {} · {} Stg",
+        unit.format_plain(laenge, unit.decimals()),
+        unit.format_plain(breite, unit.decimals()),
+        stufen
+    )
+}
+
+/// Maßangabe während des Griffzugs: beim Ziehen an einer Treppenkante laufen
+/// Länge, Breite und Stufenzahl mit — dieselbe Beschriftung wie beim Erstellen
+/// (T0027, Turn 4).
+fn draw_grip_mass(app: &App, ui: &Ui, p: &Painter, rect: Rect, view: View) {
+    let Some(drag) = app.grip_drag.as_ref() else {
+        return;
+    };
+    let Some(e) = app.doc().entity(drag.entity) else {
+        return;
+    };
+    let EntityKind::Stair {
+        a,
+        b,
+        width,
+        height,
+        steps,
+        auto_steps,
+        ..
+    } = &e.kind
+    else {
+        return;
+    };
+    // Ohne Zeiger (Screenshot-Zustand) steht die Angabe am gezogenen Griff.
+    let griff = crate::handles::grips_of(e)
+        .into_iter()
+        .find(|(art, _)| *art == drag.kind)
+        .map(|(_, g)| world_to_screen(rect, view, g));
+    let Some(pos) = ui
+        .ctx()
+        .pointer_hover_pos()
+        .filter(|q| rect.contains(*q))
+        .or(griff)
+    else {
+        return;
+    };
+    let mass = jjcad_core::stair::treppenmass(a.dist(*b), *height, *steps, *auto_steps);
+    let text = stair_mass_text(app.unit(), a.dist(*b), *width, mass.stufen);
+    paint_label(p, rect, pos + Vec2::new(14.0, -16.0), &text);
 }
 
 #[cfg(test)]
@@ -1848,12 +1927,7 @@ fn draw_tool_preview(
                                 stroke,
                             );
                         }
-                        label = format!(
-                            "{} × {} · {} Stg",
-                            unit.format_plain(laenge, unit.decimals()),
-                            unit.format_plain(breite, unit.decimals()),
-                            stufen
-                        );
+                        label = stair_mass_text(unit, laenge, breite, stufen);
                     } else {
                         label = "Treppe · Breite klicken".to_string();
                     }
@@ -2209,22 +2283,7 @@ fn draw_tool_preview(
     }
 
     if !label.is_empty() {
-        let galley = p.layout_no_wrap(label, FontId::proportional(11.0), Palette::TEXT);
-        // Box im Zeichenbereich halten: am unteren/äußeren Rand würde sie sonst
-        // abgeschnitten (Fehlermeldungen stehen genau dort, wo geklickt wird).
-        let groesse = galley.size() + Vec2::new(12.0, 6.0);
-        let min = Pos2::new(
-            (label_pos.x - 6.0)
-                .min(rect.right() - groesse.x - 4.0)
-                .max(rect.left() + 4.0),
-            (label_pos.y - 3.0)
-                .min(rect.bottom() - groesse.y - 4.0)
-                .max(rect.top() + 4.0),
-        );
-        let bg = Rect::from_min_size(min, groesse);
-        p.rect_filled(bg, 4.0, Color32::from_rgba_unmultiplied(24, 27, 32, 235));
-        p.rect_stroke(bg, 4.0, Stroke::new(1.0, Palette::BORDER));
-        p.galley(bg.min + Vec2::new(6.0, 3.0), galley, Palette::TEXT);
+        paint_label(p, rect, label_pos, &label);
     }
 
 }
@@ -7440,5 +7499,29 @@ mod tests_texteingabe_anzeige {
         // Eingabe weg: der Text ist wieder da.
         app.ui.texteingabe = None;
         assert!(sichtbar(&mut app, id), "nach dem Bearbeiten wieder sichtbar");
+    }
+}
+
+#[cfg(test)]
+mod tests_treppenmass {
+    //! Die Maßangabe am Zeiger ist beim Ziehen dieselbe wie beim Erstellen
+    //! (T0027, Turn 4) — eine Quelle für beide (`stair_mass_text`).
+
+    use super::*;
+
+    #[test]
+    fn massangabe_in_meter() {
+        assert_eq!(
+            stair_mass_text(Unit::M, 3000.0, 1000.0, 13),
+            "3,00 × 1,00 · 13 Stg"
+        );
+    }
+
+    #[test]
+    fn massangabe_in_millimeter() {
+        assert_eq!(
+            stair_mass_text(Unit::Mm, 3000.0, 1000.0, 13),
+            "3.000 × 1.000 · 13 Stg"
+        );
     }
 }
