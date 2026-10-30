@@ -10,7 +10,7 @@ members = [
 [workspace.package]
 version = "0.2.0"
 edition = "2021"
-authors = ["Joschua"]
+authors = ["Joschua Jaenicke <joschua.jaenicke@gmail.com>"]
 license = "GPL-3.0-or-later"
 description = "2D-CAD für Architektur- und Bauantragszeichnungen (Rust, egui)"
 readme = "README.md"

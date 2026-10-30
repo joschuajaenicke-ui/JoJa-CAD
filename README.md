@@ -1,160 +1,166 @@
 # JoJa-CAD
 
-**2D-CAD für Architektur und Bauantragszeichnungen** — bewusst minimal, DIN-orientiert,
-in Rust geschrieben, mit headless MCP-Schnittstelle für KI-Agenten.
-
-> Version 0.2 · Diese Fassung ist eine Neuentwicklung des Kerns und der Oberfläche.
+**2D-CAD für Architektur und Bauantragszeichnungen.** Bewusst minimal, kostenlos,
+quelloffen — für Linux und Windows.
 
 ![JoJa-CAD Oberfläche](samples/ui.png)
 
-*Grundriss mit Wänden, Öffnungen, Treppe, Bemaßung und Möbelblöcken — links die
-Layer, rechts die Eigenschaften, unten die Item-Slot-Hotbar.*
+*Die Demo-Zeichnung, die mit dem Programm ausgeliefert wird — Wände mit Öffnungen,
+Treppe, Bemaßung, Möbelblöcke; links die Layer, rechts die Eigenschaften, unten die Hotbar.*
 
-![Blatt mit Schriftfeld](samples/Blatt.png)
+## Die Idee
 
-## Was JoJa-CAD kann
+Wer für einen Bauantrag zeichnet, braucht kein Modellierprogramm mit tausend Werkzeugen,
+sondern ein sauberes Werkzeug für Grundriss, Schnitt und Blatt: Wände, Öffnungen,
+Bemaßung, Blöcke, Papierformat — und sonst nichts.
 
-| Bereich | Funktionen |
+- **Fokus Architektur und Bauantragszeichnung.** DIN-orientierte Bemaßung, Blätter mit
+  Rahmen und Schriftfeld, Maßstäbe, Linienstärken, die im Druck stimmen.
+- **Bewusst minimal.** Reduziert auf das, was eine Bauvorlage braucht. Keine Einstellungs-
+  wüste, keine versteckten Modi, keine Funktion, die niemand erklären kann.
+- **Kostenlos und quelloffen** — GPL-3.0-or-later, Dateiformat offen (JSON), kein Konto, keine
+  Cloud, keine Abhängigkeit von einem Hersteller.
+- **Linux und Windows.** Ein Rust-Programm ohne plattformspezifische Eigenheiten.
+- **Offen für KI-Steuerung.** Der komplette Befehlssatz liegt als MCP-Server vor —
+  ein KI-Agent kann zeichnen, ändern und exportieren, headless und ohne GUI.
+
+**Was es bewusst nicht ist:** kein 3D, kein Rendering, kein BIM-/IFC-Datenmodell, kein
+DWG-Import (proprietär). DXF ist der offene Weg — und der ist drin.
+
+## Wichtigste Funktionen
+
+| | |
 |---|---|
-| **Grundelemente** | Punkt, Linie, Polylinie, Rechteck, Kreis, Bogen, Ellipse, Schraffur, Text |
-| **Architektur** | Wand (mit Dicke, Öffnungen, Anschlüssen), Tür (Dreh-/Schiebe-/zweiflügelig/Öffnung), Fenster, Treppe — parametrisch und mit Linien-Werkzeugen bearbeitbar |
-| **Bemaßung** | Einzelmaß, Maßkette, Höhenkote — DIN 406/1356, Schrägstrich- oder Pfeilmarken, Maßtext in mm/cm/m |
-| **Blöcke** | Systembibliothek (Sanitär, Küche, Möbel, Symbole), Projektblöcke aus Auswahl, Instanzen mit Rotation/Spiegelung, Zerlegen, ByBlock/ByLayer |
-| **Bearbeiten** | Verschieben, Kopieren, Drehen, Spiegeln, Skalieren, Versetzen (Offset), Stutzen, Verlängern, Löschen, Zerlegen, Pipette, Undo/Redo |
-| **Fangen** | Endpunkt, Mittelpunkt, Zentrum, Schnittpunkt, Lot, nächster Punkt, Raster, Ortho, Polar (45°-Schritte, rastet nur innerhalb von ±6° — beides einstellbar) |
-| **Ebenen** | Farbe, Linienstärke, Linientyp, Sichtbarkeit, Sperre, Druckbarkeit |
-| **Blätter** | A4–A0, Rahmen, Schriftfeld (DIN 6771 angelehnt), mehrere Ansichtsfenster mit eigenem Maßstab |
-| **Ausgabe** | PDF (vektoriell, mit Schriftfeld), DXF (R12, Import + Export), PNG (headless) |
-| **Bedienung** | kompakter Ribbon (einklappbar), Zeichnungs-/Blattreiter, Hotbar (1–0) mit Vorlagen-Dropdown, Inventar (E), Layer- und Eigenschaften-Panel (beide einklappbar), Tastatur-Editor |
-| **KI-Steuerung** | MCP-Server mit 10 Werkzeugen, vollständig headless, inkl. Bild-Rückgabe |
+| **Grundelemente** | Punkt, Linie, Polylinie, Rechteck, Kreis, Bogen, Ellipse, Schraffur, Text — mit Griffen, Fangen, Ortho und 45°-Polarfang |
+| **Architektur** | Wand mit Dicke, Ausrichtung und Öffnungen; Tür (Dreh-, Schiebe-, zweiflügelig, Öffnung), Fenster, Treppe, Volumen — die Bauteile **verbinden sich dynamisch**: Gehrung an Wandanschlüssen, Öffnungen schneiden die Wand, Türen sitzen auf der Blattseite |
+| **Bemaßung** | Einzelmaß, Maßkette, Höhenkote nach DIN 406/1356 — Schrägstrich- oder Pfeilmarken, Maßtext in mm/cm/m, Bezugsmaßstab 1:N frei einstellbar |
+| **Blöcke** | umfangreiche Systembibliothek (Sanitär, Küche, Möbel, Symbole), eigene Projektblöcke aus der Auswahl, Instanzen mit Drehung/Spiegelung, Zerlegen, ByBlock/ByLayer — erweiterbar über Inventar und Hotbar-Vorlagen |
+| **Austausch** | **PDF** (vektoriell, mit Schriftfeld) und **PNG** schreiben, **PDF importieren** (Grundriss als Zeichnung), **DXF** R12 lesen und schreiben |
+| **KI-Steuerung** | MCP-Server mit 10 Werkzeugen (`jjcad_document`, `_execute`, `_batch`, `_query`, `_export`, `_render`, `_sheet`, `_actions`, `_undo`, `_redo`) — vollständig headless, inklusive Bild-Rückgabe; jede Funktion der Oberfläche ist auch über MCP erreichbar |
 
-## Schnellstart
+Ein Renderer für alles: Bildschirm, PDF und PNG entstehen aus derselben Displayliste —
+Vorschau, Ausdruck und Zeichnung können nicht auseinanderlaufen.
 
-Voraussetzungen: Rust 1.88 oder neuer (`rustup`). Getestet ist der Linux-Build
-(X11 und Wayland); für Linux müssen die üblichen Fenster- und GL-Bibliotheken
-installiert sein (Debian/Ubuntu: `libxkbcommon-dev libwayland-dev libx11-dev
-libgl1-mesa-dev`).
+## Hinweis zur Entstehung: dieses Projekt ist vollständig KI-generiert
 
-```bash
-cargo run --release -p jjcad-gui            # Anwendung starten
-cargo run --release -p jjcad-gui -- datei.jjcad
-cargo run -p jjcad-mcp -- --selftest        # Kern + Exporte prüfen
-cargo run -p jjcad-mcp                      # MCP-Server auf stdio
-cargo test                                  # 655 Tests
+> **Der gesamte Quelltext wurde zu 100 % von einer KI geschrieben** — „Vibe Coding“ im
+> wörtlichen Sinn. Geschrieben hat ihn Hermes Agent mit dem Modell **DeepSeek V4.1 Flash 1017**.
+> Der Mensch hinter dem Projekt hat keine Zeile selbst getippt: er hat das laufende Programm
+> getestet, Fehler gemeldet, Entscheidungen getroffen und korrigiert.
+
+Das steht hier absichtlich ganz oben und nicht im Kleingedruckten: KI-generierter Code ist
+zu Recht umstritten. Er kann plausibel aussehen und trotzdem falsch sein, und niemand hat
+jede Zeile „im Kopf“. Was dafür spricht, dass dieses Programm trotzdem benutzbar ist:
+
+- **655 automatisierte Tests** (`cargo test`) prüfen Geometrie, Wandanschlüsse, Bemaßung,
+  Dateiformat, PDF/DXF-Rundläufe und die Zahlenfelder der Oberfläche.
+- **Jede Änderung wird am laufenden Programm nachgemessen** — gespeicherte Datei, Pixelmaß,
+  Testfall —, nicht nur „sieht gut aus“.
+- Die Architekturregeln und Designentscheidungen stehen offen in
+  [`AGENTS.md`](AGENTS.md), damit Fehler nicht zufällig, sondern nachvollziehbar entstehen.
+
+Trotzdem: wer dieses Programm produktiv für Bauanträge einsetzt, sollte den Code und vor
+allem die Ergebnisse prüfen. Ein grüner Testlauf ist ein Sicherheitsnetz, kein Nachweis
+fachlicher Richtigkeit — die fachliche Abnahme macht ein Mensch.
+
+## Installation
+
+**Es gibt noch keine fertigen Pakete.** Das Projekt ist derzeit bei Version 0.2 und noch
+nicht öffentlich; die Installation ist erst mit der 1.0 vorgesehen. Wer jetzt schon
+hineinschauen will, baut aus dem Quellcode — siehe [Entwickeln](#entwickeln).
+
+### Linux — Platzhalter
+
+```text
+Noch kein Paket. Geplant: AppImage bzw. .deb, verteilt über die GitHub-Releases.
 ```
 
-Die Beispielwohnung inklusive PDF/DXF/PNG liegt in `samples/` und lässt sich mit
-`cargo run -p jjcad-core --example demo_plan -- samples` neu erzeugen.
+### Windows — Platzhalter
 
-Für Screenshots und automatisierte UI-Tests lässt sich ein Startzustand setzen:
-`JJCAD_DEMO_UI=arch,inventar,blatt ./target/release/jjcad` (siehe `apply_demo_ui`).
+```text
+Noch kein Paket. Geplant: Installer (.msi) bzw. portable .zip über die GitHub-Releases.
+```
 
-## Bedienung in 60 Sekunden
+## Bedienung
 
-1. **Wand** (`G`): Start- und Endpunkt klicken — die Wand läuft als Kette weiter, `ESC` beendet.
-2. **Tür** (`H`) / **Fenster** (`J`): in eine Wand klicken. Öffnung, Laibungen und Anschlag
-   entstehen automatisch, die Tür richtet sich an der Wand aus.
-3. **Maß** (`M`): zwei Punkte und die Maßlinie setzen. **Maßkette**: Punkte klicken, `Enter` beendet.
-4. **Hotbar**: Tasten `1`–`0`. Aktives Werkzeug + Klick auf einen leeren Slot verknüpft es.
-   Rechtsklick auf einen Slot: Leeren / Verknüpfen / Bearbeiten. Mittlere Taste leert.
-5. **Inventar** (`E`): Lager, Blockbibliothek und alle Funktionen — per Drag & Drop auf die Hotbar.
-6. **Navigieren**: Mausrad zoomt, mittlere Taste oder `Leertaste`+Ziehen schwenkt, `W A S D` ebenfalls.
-7. **Länge tippen**: nach dem ersten Klick Ziffern eingeben, `Enter` übernimmt den Abstand —
-   oder `x;y` für absolute Koordinaten (Semikolon trennt, Komma ist Dezimalzeichen: `2,5;3,0`).
-8. **Auswählen**: Klick wählt ein Objekt, `Umschalt`+Klick ergänzt. Ziehen von links nach rechts
-   wählt vollständig umschlossene Objekte (Fenster), von rechts nach links auch geschnittene
-   (Querfenster). `Strg+C` / `Strg+X` / `Strg+V` kopieren, schneiden aus und fügen 20 mm versetzt ein.
-9. **Statusleiste**: `Raster`, `Ortho` und `Fang` schalten per Linksklick; **Rechtsklick** öffnet
-   ein Menü mit den einzelnen Fangmodi (Endpunkt, Mittelpunkt, Zentrum, Schnittpunkt, Lot,
-   nächster Punkt) bzw. Raster- und Polaroptionen. Ganz rechts schaltet `Stärke`
-   zwischen **px** (Linienbreite immer gleich viele Bildschirmpixel, unabhängig vom Zoom) und
-   **DPI** (Breite wie im exportierten PDF: `Breite_mm × Pixel pro Papier-mm`, ohne Obergrenze —
-   beim Hineinzoomen werden die Linien im selben Verhältnis dicker wie die Zeichnung).
-   Die Wahl wird gespeichert.
+Die Oberfläche ist deutsch und an Office-Programmen orientiert: Ribbon oben, Zeichnung in
+der Mitte, Layer links, Eigenschaften rechts, Hotbar unten. Erste Schritte: **Wand** (`G`),
+**Tür** (`H`), **Fenster** (`J`), **Maß** (`M`) — jeweils Start- und Endpunkt klicken,
+`ESC` beendet das Werkzeug. Längen lassen sich nach dem ersten Klick tippen (`2,5` oder
+`x;y`), der Maßstab steht unten rechts.
 
-Prüfdatei für den DPI-Modus: `cargo run -p jjcad-core --example lw_test -- /tmp/lw.jjcad`
-erzeugt zwei parallele Linien (0,5 mm Strich, 100 mm Abstand, Maßstab 1:100) — im DPI-Modus
-muss der weiße Streifen zwischen ihnen genauso breit sein wie die Linien selbst.
-10. **Rechtsklick in die Zeichnung** öffnet das Objektmenü: Verschieben, Kopieren, Drehen,
-    Spiegeln, Zerlegen, Löschen und Eigenschaften für das angeklickte Element. Auf freier
-    Fläche erscheint das Flächenmenü (Einfügen, Alles auswählen, Auswahl aufheben, Ansicht
-    einpassen).
-11. **Ansichtsfenster**: auf einem Blatt über `Blatt ▸ Ansicht` als Rechteck aufziehen, per Klick
-    auswählen, mit `V` verschieben oder über `X`/`Y`/`B`/`H` im Panel exakt setzen.
-12. **Einstellungen** (Zahnrad) — Einheiten, Rasterweite, Rasterfang, Fangmodi, Polarwinkel,
-    Fangradius, Wandstärke, Tür-/Fenster-/Treppenbreite, Texthöhe, Bemaßungsstil und Darstellung.
-13. **Platzieren mit Vorschau**: Block aus dem Inventar wählen oder `Strg+V` drücken — die Vorschau
-    steht mit ihrer **unteren linken Ecke** am Mauszeiger (also oben rechts davon), folgt der Maus
-    und wird mit Klick gesetzt. `R` dreht in 90°-Schritten im Uhrzeigersinn
-    (`Umschalt+R` gegen den Uhrzeigersinn), `S` spiegelt,
-    `ESC` bricht ab. Der Einfügepunkt ist exakt der Ankerpunkt der Vorschau.
+Alle Werkzeuge, Fangmodi, Panels und Tastenkürzel: [`docs/BEDIENUNG.md`](docs/BEDIENUNG.md).
 
-Der Zeiger ist über der Zeichenfläche ein durchgehendes Fadenkreuz; der Systemzeiger wird dort
-ausgeblendet. Die vollständige Tastenbelegung ist im Programm über den Tastatur-Editor einsehbar
-und dort frei änderbar (Ribbon ▸ Einstellungen).
+## Stand
 
+Version 0.2 — Kern und Oberfläche sind neu geschrieben, die Grundfunktionen stehen. Was
+noch fehlt, steht offen in [`docs/STATUS.md`](docs/STATUS.md); die 1.0 gilt als erreicht,
+wenn die Grundfunktionalität vollständig ist.
 
-## Oberfläche
-
-- **Eigenschaften-Panel** (rechts): tabellarische Liste mit Layer, Farbe, Stärke, Linientyp und
-  nicht editierbaren Angaben (Länge, Radius, Fläche). Läuft ein Werkzeug, stehen oben die
-  Eigenschaften für das **nächste** Element — einmal gesetzt gilt das für alle folgenden Elemente.
-  Bei Mehrfachauswahl erscheinen nur gemeinsame Felder; abweichende Werte zeigen `*variiert*`,
-  Änderungen wirken auf die ganze Auswahl.
-- **Griffe**: Ausgewählte Elemente zeigen Griffe — Quadrate an Endpunkten und Ecken (Linie, Wand,
-  Polylinie, Rechteck; Mittelpunkt bei Kreis/Bogen/Ellipse) und Rauten in den Kantenmitten
-  geschlossener Polygone. Ziehen verschiebt den Punkt; bei einer Kante wird sie parallel
-  verschoben und die Nachbarkanten folgen, sodass sich Breite/Höhe eines Rechtecks direkt ändern
-  lassen. `ESC` bricht das Ziehen ab.
-- **Linien** werden als Kapsel gezeichnet: Rechteck plus Halbkreis an beiden Enden. Dadurch sind
-  auch die Übergänge in Polylinien, Bögen und an Wandanschlüssen rund statt eckig.
-
-- **Ribbon** lässt sich über den Pfeil rechts in der Kopfzeile einklappen; die Reiter bleiben sichtbar.
-- **Linkes Panel** (`Layers`) und **rechtes Panel** (`Eigenschaften`) klappen über den Pfeil in ihrer
-  Kopfzeile zu einer schmalen Leiste zusammen — ein Klick auf den Pfeil holt sie zurück.
-- Das rechte Panel zeigt die **Eigenschaften der Auswahl**; ohne Auswahl die der Datei bzw. des
-  Blatts. Die Werte stehen als Tabelle mit fester Namensspalte und Zebra-Streifen untereinander.
-- **Hotbar-Vorlagen** wählt man über das Dropdown unten links; dort lassen sich neue Vorlagen
-  anlegen (Kopie der aktuellen), umbenennen und löschen.
+- Getestet ist der **Linux-Build** (X11 und Wayland); Windows ist vorgesehen, aber noch
+  nicht geprüft.
+- Schraffuren sind Musterschraffuren (Linien/Kreuz/Punkte), Splines werden beim DXF-Import
+  als Polylinie genähert.
+- Die Zeichnungen in `samples/` sind **Platzhalter**: KI-generiert, nicht fachlich geprüft,
+  inhaltlich ohne baulichen Sinn. Sie zeigen, was das Programm kann — nicht, wie ein
+  korrekter Plan aussieht.
 
 ## Aufbau des Repositories
 
-```
-JoJa-CAD_v0.2/
+```text
+JoJa-CAD/
 ├── crates/
-│   ├── jjcad-core/     Geometrie, Modell, Renderer, Aktionen, Exporte (GUI-frei)
+│   ├── jjcad-core/     Geometrie, Modell, Renderer, Aktionen, PDF/DXF/PNG (GUI-frei)
 │   ├── jjcad-gui/      Desktop-Anwendung (egui/eframe)
 │   └── jjcad-mcp/      MCP-Server über stdio
-├── docs/               Format-, Befehls-, MCP- und Architekturdokumentation
-└── samples/            Beispielzeichnung, PDF, PNG, DXF
+├── docs/               Architektur, Dateiformat, Befehle, MCP, Bedienung, Stand
+├── samples/            Beispielzeichnungen, PDF, PNG, DXF (Platzhalter)
+└── scripts/            Hilfsskripte (headless starten, Screenshot, Roundtrip-Test)
 ```
-
-**Ein Renderer für alles:** Der Kern erzeugt eine Displayliste, die GUI, PDF und PNG
-gemeinsam nutzen — Bildschirm, Ausdruck und Vorschau können nicht auseinanderlaufen.
 
 ## Dokumentation
 
+- [`docs/BEDIENUNG.md`](docs/BEDIENUNG.md) — Werkzeuge, Panels, erste Schritte
 - [`docs/ARCHITEKTUR.md`](docs/ARCHITEKTUR.md) — Aufbau, Datenfluss, Entscheidungen
 - [`docs/FORMAT.md`](docs/FORMAT.md) — Dateiformat `.jjcad` (JSON, offen)
 - [`docs/BEFEHLE.md`](docs/BEFEHLE.md) — alle Aktionen mit Parametern
 - [`docs/MCP.md`](docs/MCP.md) — KI-Steuerung, Werkzeuge, Beispiele
-
-## Stand und Grenzen
-
-- **Kein** 3D, keine Renderings, kein IFC/BIM-Datenmodell — so gewollt.
-- DWG wird nicht importiert (proprietär); DXF deckt den offenen Weg ab.
-- Schraffuren sind Musterschraffuren (Linien/Kreuz/Punkte), keine freien Muster.
-- Splines werden beim DXF-Import als Polylinie genähert.
-- Windows/macOS sind vorgesehen (keine plattformspezifischen Abhängigkeiten),
-  getestet ist der Linux-Build.
+- [`docs/GLOSSAR.md`](docs/GLOSSAR.md) — Begriffe, verbindlich für Oberfläche und Code
+- [`docs/STATUS.md`](docs/STATUS.md) — Arbeitsstand und offene Punkte
 
 ## Lizenz
 
 GPL-3.0-or-later — vollständiger Text in [`LICENSE`](LICENSE). Wer JoJa-CAD weitergibt, gibt es unter derselben Lizenz weiter.
 
+## Entwickeln
+
+Voraussetzungen: **Rust 1.88** oder neuer (`rustup`). Unter Linux zusätzlich die
+Fenster- und GL-Bibliotheken (Debian/Ubuntu):
+
+```bash
+sudo apt install libxkbcommon-dev libwayland-dev libx11-dev libgl1-mesa-dev
+```
+
+```bash
+cargo run --release -p jjcad-gui            # Anwendung starten
+cargo run --release -p jjcad-gui -- datei.jjcad
+cargo run -p jjcad-mcp -- --selftest        # Kern + Exporte prüfen
+cargo test                                  # 655 Tests
+```
+
+Die Beispielzeichnungen lassen sich mit `cargo run -p jjcad-core --example demo_plan --
+samples` neu erzeugen. Für Screenshots und automatisierte UI-Prüfungen setzt
+`JJCAD_DEMO_UI=arch,inventar,blatt` einen Startzustand; `scripts/qa-shot.py` startet dafür
+eine eigene Instanz auf einem unsichtbaren Display und macht ein Bild.
+
 ## Beitragen
 
-Konventionen für Änderungen (Architekturregeln, Designentscheidungen, Zahlenfelder)
-stehen in [`AGENTS.md`](AGENTS.md). Kurz: `cargo test` muss grün sein, jede Änderung
-bekommt einen Test, Oberfläche und Code-Kommentare sind deutsch, Begriffe nach
-[`docs/GLOSSAR.md`](docs/GLOSSAR.md).
+Konventionen für Änderungen — Architekturregeln, verbindliche Designentscheidungen,
+Zahlenfelder, Begriffe — stehen in [`AGENTS.md`](AGENTS.md); die Begriffe selbst in
+[`docs/GLOSSAR.md`](docs/GLOSSAR.md). Kurzfassung: `cargo test` muss grün sein, jede
+Änderung bekommt einen Test, Oberfläche und Code-Kommentare sind deutsch, und ein Nachweis
+ist messbar (Datei, Pixelmaß, Test) — nicht „sieht gut aus“.
+
+Beiträge von Menschen sind willkommen, auch wenn dieses Projekt bisher ausschließlich von
+KI geschrieben wurde: gerade beim Prüfen und beim fachlichen Gegenlesen (Bauzeichnung,
+DIN, PDF/DXF) hilft echtes Fachwissen mehr als jede weitere Funktion.
