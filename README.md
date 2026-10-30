@@ -153,14 +153,30 @@ samples` neu erzeugen. Für Screenshots und automatisierte UI-Prüfungen setzt
 `JJCAD_DEMO_UI=arch,inventar,blatt` einen Startzustand; `scripts/qa-shot.py` startet dafür
 eine eigene Instanz auf einem unsichtbaren Display und macht ein Bild.
 
-## Beitragen
+## Fehler melden und Wünsche äußern
 
-Konventionen für Änderungen — Architekturregeln, verbindliche Designentscheidungen,
-Zahlenfelder, Begriffe — stehen in [`AGENTS.md`](AGENTS.md); die Begriffe selbst in
-[`docs/GLOSSAR.md`](docs/GLOSSAR.md). Kurzfassung: `cargo test` muss grün sein, jede
-Änderung bekommt einen Test, Oberfläche und Code-Kommentare sind deutsch, und ein Nachweis
-ist messbar (Datei, Pixelmaß, Test) — nicht „sieht gut aus“.
+Dieses Projekt nimmt **keine fremden Commits und keine Pull Requests** an. Der
+Betreiber prüft keinen fremden Code — ein Programm, das Bauanträge zeichnet, soll
+keine Stelle enthalten, die niemand verstanden hat. Willkommen sind dagegen:
 
-Beiträge von Menschen sind willkommen, auch wenn dieses Projekt bisher ausschließlich von
-KI geschrieben wurde: gerade beim Prüfen und beim fachlichen Gegenlesen (Bauzeichnung,
-DIN, PDF/DXF) hilft echtes Fachwissen mehr als jede weitere Funktion.
+- **Fehlerberichte** — was du gemacht hast, was passiert ist, was passieren sollte
+- **Feature-Wünsche** — welches Problem du lösen willst, nicht nur welche Schaltfläche fehlt
+
+Beides landet als Ticket in der eigenen Entwicklung und wird dort mit dem eigenen
+KI-Agenten umgesetzt, samt Test und Nachweis. Ein guter Fehlerbericht enthält:
+
+1. die **Build-Nummer** aus dem Fenstertitel (z. B. `0.2.0-s33-ab12cd3`) — ohne sie
+   ist nicht feststellbar, welcher Stand bei dir lief,
+2. die Datei (`.jjcad`) oder die genaue Klickfolge,
+3. Erwartung und tatsächliches Verhalten, bei sichtbaren Fehlern mit Screenshot.
+
+Forken und selbst weiterbauen ist mit der GPL ausdrücklich erlaubt — nur
+eben nicht als Pull Request einsenden. Die Konventionen für Änderungen stehen in
+[`AGENTS.md`](AGENTS.md), die Begriffe in [`docs/GLOSSAR.md`](docs/GLOSSAR.md):
+`cargo test` muss grün sein, jede Änderung bekommt einen Test, Oberfläche und
+Code-Kommentare sind deutsch, und ein Nachweis ist messbar (Datei, Pixelmaß, Test)
+— nicht „sieht gut aus“.
+
+Fachliches Gegenlesen hilft diesem Projekt mehr als jede weitere Funktion: ob eine
+Bemaßung der DIN entspricht oder ein PDF/DXF wirklich brauchbar herauskommt, kann
+nur beurteilen, wer damit arbeitet.
