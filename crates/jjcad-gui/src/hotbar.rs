@@ -18,12 +18,14 @@ use egui::{
 };
 use jjcad_core::units::format_scale;
 
-pub const SLOT: f32 = 34.0;
+/// Slot-Kante in Pixeln — die ursprüngliche Größe der Hotbar-Slots. Sie
+/// bestimmt die Höhe der Leiste (App::HOTBAR_H), nicht umgekehrt.
+pub const SLOT: f32 = 50.0;
 
 /// Runde Schaltfläche der linken und rechten Gruppe — gleiche Größe, gleicher
 /// Stil, damit Inventar, Tastatur, Hotbar-Auswahl, Stärke, Fang und Raster
 /// wie eine Familie aussehen.
-const KOPF: f32 = 28.0;
+const KOPF: f32 = 30.0;
 const ABSTAND: f32 = 4.0;
 
 pub fn show(app: &mut App, ui: &mut Ui) {
