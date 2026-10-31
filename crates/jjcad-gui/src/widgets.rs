@@ -112,6 +112,22 @@ pub fn check_cell(ui: &mut Ui, value: &mut bool, label: &str) -> Response {
     ui.add_sized([88.0, 24.0], egui::Checkbox::new(value, label))
 }
 
+/// Schriftgröße der Ribbon-Beschriftung im Regelfall.
+pub const RIBBON_TEXT: f32 = 10.5;
+
+/// Schriftgröße, mit der eine Beschriftung in `verfuegbar` Punkte passt.
+///
+/// `gemessen` ist die Breite bei `vorgabe` Punkten, gemessen vom Painter (nicht
+/// geschätzt: die Zeichenbreiten hängen an der Schrift). Unter 8 Punkte wird
+/// nicht verkleinert — darunter ist die Beschriftung nicht mehr lesbar, dann ist
+/// ein längerer Name die falsche Wahl.
+pub fn passende_schriftgroesse(gemessen: f32, verfuegbar: f32, vorgabe: f32) -> f32 {
+    if gemessen <= verfuegbar || gemessen <= 0.0 {
+        return vorgabe;
+    }
+    (vorgabe * verfuegbar / gemessen).max(8.0)
+}
+
 pub fn ribbon_button(ui: &mut Ui, icon_name: &str, label: &str, active: bool) -> Response {
     let w = 70.0;
     let h = 54.0;
@@ -131,12 +147,20 @@ pub fn ribbon_button(ui: &mut Ui, icon_name: &str, label: &str, active: bool) ->
             Vec2::splat(21.0),
         );
         icons::paint(p, ir, icon_name, color);
+        // Lange Beschriftungen („Schnellauswahl") liefen sonst über die
+        // Schaltfläche hinaus in die Nachbargruppe — die Schrift wird deshalb
+        // so weit verkleinert, wie es der Platz verlangt (T0060).
+        let textfarbe = if active { Palette::ACCENT } else { Palette::TEXT_DIM };
+        let gemessen = p
+            .layout_no_wrap(label.to_string(), FontId::proportional(RIBBON_TEXT), color)
+            .size()
+            .x;
         p.text(
             Pos2::new(rect.center().x, rect.bottom() - 10.0),
             Align2::CENTER_CENTER,
             label,
-            FontId::proportional(10.5),
-            if active { Palette::ACCENT } else { Palette::TEXT_DIM },
+            FontId::proportional(passende_schriftgroesse(gemessen, w - 6.0, RIBBON_TEXT)),
+            textfarbe,
         );
     }
     resp
@@ -1005,5 +1029,34 @@ mod icontests {
             .count();
         assert_eq!(felder, 8, "acht inaktive Zellen mit Feldgrund, gefunden {felder}");
         assert_eq!(aktiv, 1, "genau eine gewählte Zelle, gefunden {aktiv}");
+    }
+}
+
+#[cfg(test)]
+mod tests_ribbon_beschriftung {
+    //! T0060: „Schnellauswahl" ist länger als die 70-px-Schaltfläche bei
+    //! 10,5 Punkten — die Beschriftung lief in die Nachbargruppe. Gemessen wird
+    //! die Rechnung, die die Schrift verkleinert; die Breite selbst kommt vom
+    //! Painter (Zeichenbreiten, keine Schätzung).
+
+    use super::*;
+
+    #[test]
+    fn kurze_beschriftung_bleibt_gross() {
+        assert_eq!(passende_schriftgroesse(40.0, 64.0, RIBBON_TEXT), RIBBON_TEXT);
+    }
+
+    #[test]
+    fn lange_beschriftung_wird_kleiner_aber_lesbar() {
+        let s = passende_schriftgroesse(90.0, 64.0, RIBBON_TEXT);
+        assert!(s < RIBBON_TEXT, "zu breit: {s} Punkte");
+        // 90 → 64 verlangt 7,47 Punkte; unter 8 wird nicht verkleinert.
+        assert_eq!(s, 8.0, "Untergrenze der Lesbarkeit");
+    }
+
+    #[test]
+    fn mittlere_beschriftung_passt_genau() {
+        let s = passende_schriftgroesse(80.0, 64.0, RIBBON_TEXT);
+        assert!((s - 8.4).abs() < 1e-4, "erwartet 8,4 Punkte, war {s}");
     }
 }
