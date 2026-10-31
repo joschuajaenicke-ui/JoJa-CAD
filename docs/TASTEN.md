@@ -31,8 +31,8 @@ sie zuerst hier ein — nicht „irgendwie" in den Code.
    Die Funktionsweise aller weiteren Tasten (`Esc`, `Tab`, `Caps`, `Umschalt`,
    `Strg`, `Alt`, `AltGr`, `Enter`, `Rücktaste`, `Leertaste`, `Entf`, `F1` …
    `F12`) sowie aller **Tastenkombinationen** (z. B. `Strg+C`, `Strg+S`,
-   `Strg+Z`, `Strg+Umschalt+C`) ist **im Programm fest verdrahtet** und vom
-   Benutzer **nicht änderbar**. Sie stehen in `App::handle_shortcuts`
+   `Strg+Z`, `Strg+Umschalt+C`, `Umschalt+F3`) ist **im Programm fest verdrahtet**
+   und vom Benutzer **nicht änderbar**. Sie stehen in `App::handle_shortcuts`
    (`crates/jjcad-gui/src/app.rs`) und sind im Tastenbild ausgegraut bzw. in der
    Funktionsliste als „fest" gekennzeichnet.
 
@@ -54,6 +54,10 @@ fest.** Keine Taste gehört zwei Schichten.
   Eine alte `prefs.json` mit `Stutzen = S` wird beim Laden bereinigt.
 - **`V` gehört dem Verschieben** (`modify.move`, so steht es in der Bedienung);
   das Volumen liegt auf `Umschalt+V`. Auch das wird beim Laden bereinigt.
+- **`Umschalt+F3` schaltet die Leistungsanzeige** (T0068): Abstand und Rechenzeit
+  je Bild, Perzentile und die Aufteilung der Rechenzeit in Abschnitte. F3 allein
+  ist nicht belegt. Die Kombination ist fest verdrahtet, weil die Messwerte auch
+  bei laufendem Werkzeug erreichbar sein müssen.
 - **Drehen und Spiegeln der Einfüge-Vorschau** hängen an den Funktionen
   **„Drehen"** (`modify.rotate`, Vorgabe `R`) und **„Spiegeln"**
   (`modify.mirror`, Vorgabe `F`) — nicht an festen Tasten. Wer „Drehen" auf `Q`

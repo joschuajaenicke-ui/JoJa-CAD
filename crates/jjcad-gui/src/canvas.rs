@@ -4,6 +4,7 @@ use crate::app::{
     screen_to_world, visible_world_bounds, world_to_screen, App, DrawCacheKey, Einfuegemodus,
     TabKind, Tool, ToolPhase, View,
 };
+use crate::perf::Abschnitt;
 use crate::theme::Palette;
 use egui::{Align2, Color32, FontFamily, FontId, Painter, Pos2, Rect, Response, Sense, Shape, Stroke, Ui, Vec2};
 use jjcad_core::actions;
@@ -953,6 +954,9 @@ mod tests_haarnnaht {
 // ---------------------------------------------------------------------------
 
 pub fn show(app: &mut App, ui: &mut Ui) {
+    // Leistungsanzeige (T0068): mit der Zeichenfläche beginnt der Abschnitt
+    // „Fangen“ — Navigation, Zeigerlage und Fangpunkte werden hier ermittelt.
+    app.perf.abschnitt(Abschnitt::Fangen);
     let rect = ui.available_rect_before_wrap();
     let (resp, painter) = ui.allocate_painter(rect.size(), Sense::click_and_drag());
     let rect = resp.rect;
@@ -1035,8 +1039,12 @@ pub fn show(app: &mut App, ui: &mut Ui) {
     let paper_px = view_now.zoom * app.doc().settings.annotation_scale;
 
     if is_sheet {
+        // Leistungsanzeige: der Papierraum baut seine Ansichtsfenster selbst auf
+        // und zeichnet sie sofort — Aufbau und Zeichnen sind hier ein Abschnitt.
+        app.perf.abschnitt(Abschnitt::Zeichnen);
         // Druckvorschau: Blatt, Ansichtsfenster und Papierraum-Objekte.
         draw_sheet(app, &painter, rect, view_now, snapped);
+        app.perf.abschnitt(Abschnitt::Bedienung);
         // Danach dieselbe Bedien-Darstellung wie im Zeichenmodus — Werkzeug,
         // Griffe, Einfüge-Vorschau, Auswahlfenster und Fadenkreuz-Zeiger.
         if app.tool.is_some() {
@@ -1056,7 +1064,9 @@ pub fn show(app: &mut App, ui: &mut Ui) {
         }
         draw_cursor(app, ui, &painter, rect, view_now, snapped, raw_world);
     } else {
+        app.perf.abschnitt(Abschnitt::Displayliste);
         let dl = display_list(app);
+        app.perf.abschnitt(Abschnitt::Zeichnen);
         let pc = PaintCtx {
             selected: selected.clone(),
             hover,
@@ -1075,10 +1085,23 @@ pub fn show(app: &mut App, ui: &mut Ui) {
             draw_grid(app, &painter, rect, view_now);
         }
         let w2s = |p: V2| world_to_screen(rect, view_now, p);
-        for prim in &dl.prims {
-            paint_prim(&painter, prim, &w2s, view_now.zoom, &pc, 1.0);
+        if app.perf.an {
+            // Offene Leistungsanzeige: je Grafikelement die Zeit messen, damit
+            // sich „Zeichnen“ nach Füllung, Linie und Text aufteilen lässt. Die
+            // Uhr je Element kostet selbst Zeit — deshalb nur bei offener
+            // Anzeige.
+            for prim in &dl.prims {
+                let t = std::time::Instant::now();
+                paint_prim(&painter, prim, &w2s, view_now.zoom, &pc, 1.0);
+                app.perf.grafikelement(prim, t.elapsed());
+            }
+        } else {
+            for prim in &dl.prims {
+                paint_prim(&painter, prim, &w2s, view_now.zoom, &pc, 1.0);
+            }
         }
         // Fangmarker + Cursor
+        app.perf.abschnitt(Abschnitt::Bedienung);
         if app.tool.is_some() {
             draw_tool_preview(app, &painter, rect, view_now, snapped, raw_world);
         }
@@ -1192,16 +1215,18 @@ fn display_list(app: &mut App) -> DisplayList {
         annot: app.doc().settings.annotation_scale,
         space: app.session().space(),
     };
-    let mut dl = match &app.tab().cache {
-        Some((k, dl)) if k.matches(&key) => dl.clone(),
+    let (mut dl, neu) = match &app.tab().cache {
+        Some((k, dl)) if k.matches(&key) => (dl.clone(), false),
         _ => {
             let doc = app.doc().clone();
             let ctx = render::RenderCtx::new(&doc);
             let dl = render::render_document(&ctx);
             app.tab_mut().cache = Some((key, dl.clone()));
-            dl
+            (dl, true)
         }
     };
+    // Leistungsanzeige (T0068): Herkunft der Liste und Größe der Zeichnung.
+    app.perf.anzeigeliste(neu, app.doc().ents().len());
     ohne_texteingabe(app, &mut dl);
     dl
 }
