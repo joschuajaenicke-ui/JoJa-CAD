@@ -273,7 +273,6 @@ pub struct ToolOptions {
     /// erzeugte Objekt; das Eingabefeld in der Zeichenfläche bleibt dabei
     /// bildschirmparallel — wie in Textprogrammen üblich.
     pub text_angle: f64,
-    pub text: String,
     /// Ausrichtung des nächsten Textfelds (waagerecht: Linksbündig/Zentriert/
     /// Rechtsbündig, senkrecht: Oben/Mitte/Unten). Der Klickpunkt ist der
     /// Einfügepunkt dieser Ausrichtung.
@@ -367,7 +366,6 @@ impl ToolOptions {
             stair_cut: true,
             text_height: doc.settings.text_height,
             text_angle: 0.0,
-            text: String::new(),
             text_align: TextAlignH::Left,
             text_valign: TextAlignV::Middle,
             text_color: None,

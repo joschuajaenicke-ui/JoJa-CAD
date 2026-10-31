@@ -549,6 +549,12 @@ pub(crate) fn text_winkel(angle: f64, rot: f32) -> f32 {
     -(angle as f32 + rot)
 }
 
+/// Beispielwort der Textvorschau. Ein neues Textfeld beginnt **immer leer**
+/// (der Inhalt wird erst nach dem Klick getippt, `textedit::start`) — die
+/// Vorschau zeigt deshalb immer dieses Wort und nie den zuletzt gesetzten
+/// Text (T0066).
+pub(crate) const TEXT_VORSCHAU: &str = "Text";
+
 /// Text, den das Textwerkzeug beim Klick anlegen wird — genau die Vorgaben der
 /// Action `draw.text` (Ausrichtung aus dem Eigenschaften-Panel, ohne Drehung).
 /// Die Vorschau muss diesen Text zeichnen, damit sie dieselbe Lage zeigt wie
@@ -2140,11 +2146,10 @@ fn draw_tool_preview(
         }
         "draw.text" => {
             let h = app.options.text_height;
-            let txt = if app.options.text.is_empty() {
-                "Text".to_string()
-            } else {
-                app.options.text.clone()
-            };
+            // Immer das Beispielwort: ein neues Textfeld beginnt leer (der
+            // Inhalt wird erst nach dem Klick getippt, `textedit::start`) —
+            // der zuletzt gesetzte Text gehört nicht zur Vorschau (T0066).
+            let txt = TEXT_VORSCHAU.to_string();
             // Dieselbe Platzierung wie der Text, der beim Klick entsteht
             // (Ausrichtung aus dem Panel) — nicht mit der Grundlinie am Zeiger.
             let stil = jjcad_core::text::RunStyle {
@@ -7899,6 +7904,77 @@ mod tests_textvorschau {
         assert!(
             !out.shapes.is_empty(),
             "der Text fehlt in der Einfüge-Vorschau"
+        );
+    }
+
+    /// Alle gezeichneten Texte einer Vorschau (galley-Text, nicht die
+    /// Zeichnung) — so lässt sich prüfen, **was** die Vorschau schreibt.
+    fn vorschau_texte(app: &mut App) -> Vec<String> {
+        fn sammle(s: &egui::Shape, texte: &mut Vec<String>) {
+            match s {
+                egui::Shape::Text(t) => texte.push(t.galley.text().to_string()),
+                egui::Shape::Vec(v) => v.iter().for_each(|s| sammle(s, texte)),
+                _ => {}
+            }
+        }
+        let ctx = app.ctx.clone();
+        let out = ctx.run(egui::RawInput::default(), |ctx| {
+            let layer = egui::LayerId::new(egui::Order::Background, egui::Id::new("vorschau"));
+            let p = egui::Painter::new(ctx.clone(), layer, Rect::EVERYTHING);
+            let rect = Rect::from_min_size(Pos2::ZERO, Vec2::new(1000.0, 800.0));
+            let view = View {
+                center: V2::new(1000.0, 500.0),
+                zoom: 0.2,
+                rot: 0.0,
+            };
+            let cursor = V2::new(1200.0, 600.0);
+            draw_tool_preview(app, &p, rect, view, Some(cursor), Some(cursor));
+        });
+        let mut texte = Vec::new();
+        for cs in &out.shapes {
+            sammle(&cs.shape, &mut texte);
+        }
+        texte
+    }
+
+    /// Die Vorschau des Textwerkzeugs zeigt **immer** das Beispielwort „Text".
+    ///
+    /// Vorher merkte sich `ToolOptions` den zuletzt gesetzten Inhalt und die
+    /// Vorschau zeichnete ihn — jedes neue Textfeld kündigte sich mit dem alten
+    /// Text an, obwohl es leer beginnt (T0066).
+    #[test]
+    fn vorschau_zeigt_nach_einem_text_immer_das_beispielwort() {
+        let ctx = egui::Context::default();
+        let mut app = App::with_ctx(ctx.clone());
+        app.session_mut()
+            .execute("doc.settings", &json!({ "input_unit": "mm" }))
+            .expect("Einheit setzen");
+
+        // Wie im Betrieb: Textwerkzeug, tippen, Esc übernimmt.
+        crate::textedit::start(&mut app, V2::new(1000.0, 500.0));
+        app.ui
+            .texteingabe
+            .as_mut()
+            .expect("Eingabe läuft")
+            .text = "Wohnen".to_string();
+        crate::textedit::uebernehmen_fuer_test(&mut app);
+        assert!(
+            app.doc().ents().iter().any(|e| matches!(
+                &e.kind,
+                EntityKind::Text { text, .. } if text == "Wohnen"
+            )),
+            "der Text muss erst gesetzt sein"
+        );
+
+        app.start_tool("draw.text");
+        let texte = vorschau_texte(&mut app);
+        assert!(
+            texte.iter().any(|t| t == TEXT_VORSCHAU),
+            "Vorschau zeigt nicht „{TEXT_VORSCHAU}\": {texte:?}"
+        );
+        assert!(
+            !texte.iter().any(|t| t.contains("Wohnen")),
+            "der zuletzt gesetzte Inhalt darf nicht in der Vorschau stehen: {texte:?}"
         );
     }
 }
