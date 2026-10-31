@@ -3030,10 +3030,12 @@ impl App {
                 (egui::Key::Num0, "0"),
             ] {
                 if !tool_waiting && ctx.input(|i| i.key_pressed(key)) {
-                    if let Some(Some(action)) = self.prefs.slots().get(
-                        label.parse::<usize>().unwrap_or(0).saturating_sub(1) % 10,
-                    ) {
-                        run = Some(action.clone());
+                    // Ziffer → Slot über **eine** Quelle (`hotbar::taste_slot`):
+                    // „0" ist der letzte Slot, nicht der erste (T0065).
+                    if let Some(slot) = crate::hotbar::taste_slot(label) {
+                        if let Some(Some(action)) = self.prefs.slots().get(slot) {
+                            run = Some(action.clone());
+                        }
                     }
                 }
             }
@@ -5988,6 +5990,24 @@ mod tests_tastenbelegung {
             vorher,
             app.current_view().center
         );
+    }
+
+    /// T0065: Die Taste `0` startet den **letzten** Hotbar-Slot. Die Auswertung
+    /// rechnete früher `0 - 1` und landete damit auf dem ersten Element — `0` und
+    /// `1` starteten beide den ersten Slot.
+    #[test]
+    fn taste_0_startet_den_letzten_slot() {
+        for (key, erwartet, grund) in [
+            (egui::Key::Num0, "draw.wall", "0 gehört dem letzten Slot (Index 9)"),
+            (egui::Key::Num1, "draw.line", "1 gehört dem ersten Slot (Index 0)"),
+        ] {
+            let mut app = app_mit_zeichnung();
+            app.prefs.set_slot(0, Some("draw.line".into()));
+            app.prefs.set_slot(9, Some("draw.wall".into()));
+            assert_eq!(app.prefs.slots().len(), 10, "Hotbar hat zehn Slots");
+            frame_mit(&mut app, vec![druck(key)]);
+            assert_eq!(app.tool_id(), Some(erwartet), "{grund}");
+        }
     }
 
     /// Ein einzelner Druck (Hotbar, Kürzel) rückt die Ansicht einen Schritt

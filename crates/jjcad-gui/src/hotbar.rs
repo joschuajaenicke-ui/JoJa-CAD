@@ -31,6 +31,25 @@ const ABSTAND: f32 = 4.0;
 /// Schaltflächen lagen praktisch am Bildschirmrand und wirkten abgeschnitten.
 const RAND: f32 = 16.0;
 
+/// Taste, die einen Hotbar-Slot startet — die **eine** Quelle für die
+/// Beschriftung im Slot und die Auswertung des Tastendrucks (T0065).
+/// Der zehnte Slot trägt `0`, nicht `10`: die Ziffern `1` … `9` gehören den
+/// ersten neun Slots.
+pub fn slot_taste(slot: usize) -> String {
+    ((slot + 1) % 10).to_string()
+}
+
+/// Slot zu einer Zifferntaste — die Umkehrung von [`slot_taste`].
+/// `0` ist damit der **letzte** Slot, nicht der erste. Früher rechnete die
+/// Taste `0` über `saturating_sub(1)` und startete das erste Element (T0065).
+pub fn taste_slot(label: &str) -> Option<usize> {
+    let n: usize = label.trim().parse().ok()?;
+    if n > 9 {
+        return None;
+    }
+    Some((n + 9) % 10)
+}
+
 pub fn show(app: &mut App, ui: &mut Ui) {
     let bar = ui.max_rect();
     let slots = app.prefs.slots();
@@ -116,7 +135,7 @@ pub fn show(app: &mut App, ui: &mut Ui) {
                     .map(|a| app.tool_id() == Some(a.as_str()))
                     .unwrap_or(false);
                 let highlight = app.ui.bind_slot == Some(i);
-                let key = ((i + 1) % 10).to_string();
+                let key = slot_taste(i);
                 let resp = widgets::slot_button(
                     ui,
                     Vec2::splat(SLOT),
@@ -470,4 +489,38 @@ fn label_of(action: &str) -> &'static str {
     jjcad_core::actions::action(action)
         .map(|d| d.label)
         .unwrap_or("Werkzeug")
+}
+
+#[cfg(test)]
+mod tests_slot_tasten {
+    //! T0065: Die Zifferntaste gehört zu dem Slot, der sie anzeigt — `0` ist der
+    //! zehnte (letzte) Slot. Die Auswertung rechnete früher `0 - 1` und startete
+    //! damit das erste Element.
+
+    use super::*;
+
+    #[test]
+    fn taste_0_gehoert_dem_letzten_slot() {
+        assert_eq!(
+            taste_slot("0"),
+            Some(9),
+            "„0“ muss den letzten Slot starten, nicht den ersten"
+        );
+        assert_eq!(taste_slot("1"), Some(0), "„1“ gehört dem ersten Slot");
+        assert_eq!(taste_slot("9"), Some(8), "„9“ gehört dem neunten Slot");
+    }
+
+    #[test]
+    fn beschriftung_und_taste_passen_zusammen() {
+        for slot in 0..10 {
+            let taste = slot_taste(slot);
+            assert_eq!(
+                taste_slot(&taste),
+                Some(slot),
+                "Slot {slot} trägt die Taste „{taste}“, die aber woanders hin führt"
+            );
+        }
+        assert_eq!(slot_taste(0), "1", "erster Slot trägt die 1");
+        assert_eq!(slot_taste(9), "0", "letzter Slot trägt die 0");
+    }
 }
