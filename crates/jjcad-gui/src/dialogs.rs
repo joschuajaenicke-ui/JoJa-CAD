@@ -2234,10 +2234,24 @@ mod tests_tastatur {
     /// Bildzähler: egui blendet Fenster ein. Ohne laufende Zeit bleiben die
     /// Farben mit Teil-Alpha stehen — der Vergleich mit der Palette bräuchte
     /// dann eine eigene Rechnung.
+    ///
+    /// Der Zähler ist **je Testfaden** (alle Tests laufen in eigenen Fäden):
+    /// ein prozessweiter Zähler lief im Parallelauf so schnell weiter, dass
+    /// zwischen Drücken und Loslassen eines synthetischen Klicks mehr als
+    /// egui's `max_click_duration` (0,8 s) lag — der Klick wurde dann
+    /// stillschweigend verworfen und die Klicktests im Tastenbild fielen
+    /// zufällig aus.
     fn naechste_zeit() -> f64 {
-        use std::sync::atomic::{AtomicU64, Ordering};
-        static ZAEHLER: AtomicU64 = AtomicU64::new(0);
-        ZAEHLER.fetch_add(1, Ordering::Relaxed) as f64 * 0.25
+        use std::cell::Cell;
+        thread_local! {
+            static ZAEHLER: Cell<u64> = const { Cell::new(0) };
+        }
+        let n = ZAEHLER.with(|z| {
+            let n = z.get() + 1;
+            z.set(n);
+            n
+        });
+        n as f64 * 0.25
     }
 
     fn rahmen(ctx: &egui::Context, app: &mut App, events: Vec<egui::Event>) -> egui::FullOutput {
