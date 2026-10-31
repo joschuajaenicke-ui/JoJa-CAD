@@ -55,7 +55,11 @@ ausgeblendet.
   Polylinie, Rechteck; Mittelpunkt bei Kreis/Bogen/Ellipse) und Rauten in den Kantenmitten
   geschlossener Polygone. Ziehen verschiebt den Punkt; bei einer Kante wird sie parallel
   verschoben und die Nachbarkanten folgen, sodass sich Breite/Höhe eines Rechtecks direkt ändern
-  lassen. `ESC` bricht das Ziehen ab.
+  lassen. `ESC` bricht das Ziehen ab. Beim Ziehen gilt derselbe **Winkelfang** wie beim
+  Erstellen: `Ortho` hält den Punkt waagerecht/senkrecht und der Polarfang rastet auf seinen
+  Schrittweiten (45°) ein. Bezugspunkt der Richtung ist der ruhende Punkt des Elements — bei
+  Linie und Wand das andere Ende, bei Polylinie, Spline und Rechteck die Nachbarecke, bei
+  Fläche und Volumen der vorige Umrandungspunkt. Dasselbe gilt für das Verschieben mit der Maus.
 - **Linien** werden als Kapsel gezeichnet: Rechteck plus Halbkreis an beiden Enden. Dadurch sind
   auch die Übergänge in Polylinien, Bögen und an Wandanschlüssen rund statt eckig.
 - **Ribbon** lässt sich über den Pfeil rechts in der Kopfzeile einklappen; die Reiter bleiben sichtbar.

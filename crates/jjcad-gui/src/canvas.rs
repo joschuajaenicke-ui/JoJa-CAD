@@ -2529,6 +2529,24 @@ fn fang_radius_px(app: &App, zoom: f64) -> f64 {
     (app.doc().settings.snap.tolerance_px / zoom.max(1e-6)).max(0.5)
 }
 
+/// Bezugspunkt für Ortho und Polar (Winkelfang) in der aktuellen Lage.
+///
+/// Beim **Erstellen** ist das der zuletzt gesetzte Punkt. Beim **Manipulieren**
+/// fehlte er bisher ganz: der Griffzug hatte damit keine Zwangsrichtung und
+/// ließ sich nicht waagerecht, senkrecht oder unter 45° ausrichten (T0046).
+/// Deshalb liefert der laufende Griffzug den ruhenden Punkt des Elements
+/// (`handles::bezugspunkt`), die Maus-Verschiebung ihren Griffpunkt — dieselbe
+/// Regel, die das Werkzeug „Verschieben" über seinen Basispunkt schon hat.
+fn bezug_zeiger(app: &App) -> Option<V2> {
+    if let Some(t) = app.tool.as_ref() {
+        return t.pts.last().copied();
+    }
+    if let Some(drag) = app.grip_drag.as_ref() {
+        return crate::handles::bezugspunkt(&drag.orig, drag.kind);
+    }
+    app.move_drag.as_ref().map(|md| md.start)
+}
+
 /// Fang-Kette für den Zeiger in der aktuellen Werkzeuglage.
 ///
 /// Liefert den zu übernehmenden Weltpunkt und das Label für die Statuszeile.
@@ -2536,7 +2554,7 @@ fn fang_radius_px(app: &App, zoom: f64) -> f64 {
 /// laufen sie getrennt, weicht der gespeicherte Punkt vom sichtbaren
 /// Fangpunkt ab. Reihenfolge der Fänge: `snap::snap_constrained`.
 fn fang_zeiger(app: &App, w: V2, tol: f64) -> (V2, Option<&'static str>) {
-    let reference = app.tool.as_ref().and_then(|t| t.pts.last().copied());
+    let reference = bezug_zeiger(app);
     let regeln = fang_regeln(app);
     let vorschau = vorschau_punkte(app);
     // `snap_constrained_mit_halte`: die Haltepunkte des erweiterten Punktfangs
@@ -6814,6 +6832,151 @@ mod tests_fang_griff {
             })
             .expect("Füllfläche in der Datei");
         assert_eq!(geladen, 3, "Punktzahl steht so in der Datei");
+    }
+
+    // ---- Winkelfang (Ortho/Polar) beim Griffzug (T0046) ----
+
+    /// App mit eingeschalteter Zwangsrichtung; Ziehen als Gedrückthalten und
+    /// ohne Objektfang, damit nur Ortho/Polar den Punkt bestimmt.
+    fn app_mit_zwang(ortho: bool, polar: bool) -> App {
+        let mut app = App::with_ctx(egui::Context::default());
+        app.ui.drag_mode = DragMode::HoldAndDrag;
+        app.session_mut()
+            .execute(
+                "doc.settings",
+                &serde_json::json!({"input_unit": "mm",
+                                   "snap": {"ortho": ortho, "polar": polar,
+                                            "grid": false, "endpoint": false,
+                                            "midpoint": false, "center": false,
+                                            "intersection": false,
+                                            "perpendicular": false,
+                                            "nearest": false, "wall_edges": false}}),
+            )
+            .unwrap();
+        app
+    }
+
+    /// Linie (0;0) → (2000;0), ausgewählt.
+    fn szenario_linie(ortho: bool, polar: bool) -> (App, Id) {
+        let mut app = app_mit_zwang(ortho, polar);
+        app.session_mut()
+            .execute(
+                "draw.line",
+                &serde_json::json!({"a": [0.0, 0.0], "b": [2000.0, 0.0]}),
+            )
+            .unwrap();
+        let id = app.doc().entities[0].id;
+        app.session_mut().select(vec![id]);
+        (app, id)
+    }
+
+    /// Ortho hält das gezogene Linienende auf der Achse des anderen Endes.
+    /// Beim Erstellen galt das schon, beim Manipulieren fehlte der Bezug (T0046).
+    #[test]
+    fn griffzug_haelt_die_linie_in_der_zwangsachse() {
+        let (mut app, id) = szenario_linie(true, false);
+        app.begin_grip_drag(id, crate::handles::GripKind::Vert(1));
+
+        let (p, _) = fang_zeiger(&app, V2::new(2500.0, 300.0), 40.0);
+        assert_punkt(p, V2::new(2500.0, 0.0));
+    }
+
+    /// Polar rastet den Griff auf 45° ein, ohne die Länge zu verändern.
+    #[test]
+    fn griffzug_rastet_auf_dem_polarwinkel_ein() {
+        let (mut app, id) = szenario_linie(false, true);
+        app.begin_grip_drag(id, crate::handles::GripKind::Vert(1));
+
+        let roh = V2::new(2500.0, 2400.0);
+        let (p, label) = fang_zeiger(&app, roh, 40.0);
+        assert_eq!(label, Some("POL"), "Statuszeile zeigt den Polarfang");
+        assert!((p.x - p.y).abs() < 1e-6, "nicht auf 45°: {p:?}");
+        assert!(
+            (p.dist(V2::ZERO) - roh.dist(V2::ZERO)).abs() < 1e-6,
+            "Länge bleibt: {p:?}"
+        );
+    }
+
+    /// Polylinien-Ecke: die Kante zum vorigen Stützpunkt bleibt senkrecht.
+    #[test]
+    fn griffzug_der_polylinie_haelt_die_kante() {
+        let mut app = app_mit_zwang(true, false);
+        app.session_mut()
+            .execute(
+                "draw.polyline",
+                &serde_json::json!({"pts": [[0.0, 0.0], [2000.0, 0.0], [2000.0, 1500.0]]}),
+            )
+            .unwrap();
+        let id = app.doc().entities[0].id;
+        app.session_mut().select(vec![id]);
+        app.begin_grip_drag(id, crate::handles::GripKind::Vert(2));
+
+        let (p, _) = fang_zeiger(&app, V2::new(1900.0, 1400.0), 40.0);
+        assert_punkt(p, V2::new(2000.0, 1400.0));
+    }
+
+    /// Auch die Maus-Verschiebung eines Objekts läuft über die Zwangsachse:
+    /// „Manipulieren" schließt das Verschieben mit ein (T0046).
+    #[test]
+    fn verschieben_mit_der_maus_haelt_die_zwangsachse() {
+        let (mut app, _) = szenario_linie(true, false);
+        app.begin_move_drag(V2::ZERO, 0.0);
+        assert!(app.move_drag.is_some(), "Verschiebung muss laufen");
+
+        let (p, _) = fang_zeiger(&app, V2::new(300.0, 1900.0), 40.0);
+        assert_punkt(p, V2::new(0.0, 1900.0));
+    }
+
+    /// Gegenprobe: ohne Ortho und Polar folgt der Griff weiter dem Zeiger —
+    /// der Winkelfang ist eine Führung, kein Zwang (T0046).
+    #[test]
+    fn ohne_zwang_folgt_der_griff_dem_zeiger() {
+        let (mut app, id) = szenario_linie(false, false);
+        app.begin_grip_drag(id, crate::handles::GripKind::Vert(1));
+
+        let (p, label) = fang_zeiger(&app, V2::new(2500.0, 300.0), 40.0);
+        assert_eq!(label, None);
+        assert_punkt(p, V2::new(2500.0, 300.0));
+    }
+
+    /// Voller Mauszug durch die Oberfläche: der Endpunkt landet auf der
+    /// Zwangsachse, und genau diese Lage steht in der gespeicherten Datei.
+    #[test]
+    fn mauszug_speichert_die_ausgerichtete_lage() {
+        let (mut app, id) = szenario_linie(true, false);
+        frame(&mut app, vec![]);
+        let rect = app.ui.last_canvas;
+        let view = app.current_view();
+
+        let griff = world_to_screen(rect, view, V2::new(0.0, 0.0));
+        let ziel = world_to_screen(rect, view, V2::new(300.0, 1900.0));
+
+        frame(&mut app, vec![egui::Event::PointerMoved(griff)]);
+        frame(&mut app, vec![druck(griff)]);
+        assert!(app.grip_drag.is_some(), "Griffzug muss beginnen");
+
+        frame(&mut app, vec![egui::Event::PointerMoved(ziel)]);
+        frame(&mut app, vec![egui::Event::PointerMoved(ziel)]);
+        frame(&mut app, vec![loslassen(ziel)]);
+        assert!(app.grip_drag.is_none(), "Loslassen beendet den Zug");
+
+        // Senkrecht unter dem festen Ende: gleiche x-Lage, y = 1900.
+        let a = match &app.doc().entity(id).expect("Linie fehlt").kind {
+            EntityKind::Line { a, .. } => *a,
+            other => panic!("keine Linie: {other:?}"),
+        };
+        assert_punkt(a, V2::new(2000.0, 1900.0));
+
+        let json = jjcad_core::persist::to_json(app.doc()).expect("speichern");
+        let wieder = jjcad_core::persist::from_json(&json).expect("laden");
+        let geladen = wieder
+            .entity(id)
+            .and_then(|e| match &e.kind {
+                EntityKind::Line { a, .. } => Some(*a),
+                _ => None,
+            })
+            .expect("Linie in der Datei");
+        assert_punkt(geladen, V2::new(2000.0, 1900.0));
     }
 }
 

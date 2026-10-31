@@ -400,6 +400,70 @@ pub fn fang_sperre(e: &Entity, kind: GripKind) -> Vec<V2> {
         .collect()
 }
 
+/// Bezugspunkt für **Ortho und Polar** beim Ziehen eines Griffs.
+///
+/// Beim Erstellen ist der Bezug der zuletzt gesetzte Punkt, deshalb rastet die
+/// neue Strecke in Waagerechte, Senkrechte und 45° ein. Beim Ziehen an einem
+/// Griff fehlte dieser Bezug ganz — der Griff folgte dem Zeiger ohne
+/// Zwangsrichtung, und eine vorhandene Linie ließ sich nicht mehr klar
+/// ausrichten (T0046). Bezug ist der **ruhende** Punkt, an dem die Richtung
+/// gemessen wird:
+///
+/// * Linie und Wand: das andere Ende.
+/// * Polylinie, Spline und Rechteck (geschlossener Zug): die Nachbarecke im
+///   Zug — vorzugsweise die vorige, beim Anfang die nächste, im geschlossenen
+///   Ring der Vorgänger des Anfangs. Die Kante zum Nachbarn bleibt dadurch in
+///   der Zwangsrichtung.
+/// * Füllfläche und Volumen: der vorige Punkt desselben Rings. Bei dichten
+///   Farbeimer-Umrissen liegt er auf derselben Kante — die gezogene Ecke bleibt
+///   mit ihr fluchtend.
+///
+/// Kantenmitten (parallel verschieben), Mittelpunkte, Bogenenden und die
+/// Treppenkanten haben keinen Bezug: ihre Bewegung ist bereits eindimensional
+/// bzw. richtungslos.
+pub fn bezugspunkt(e: &Entity, kind: GripKind) -> Option<V2> {
+    match (&e.kind, kind) {
+        (EntityKind::Line { b, .. } | EntityKind::Wall { b, .. }, GripKind::Vert(0)) => Some(*b),
+        (EntityKind::Line { a, .. } | EntityKind::Wall { a, .. }, GripKind::Vert(1)) => Some(*a),
+        (
+            EntityKind::Polyline { verts, closed } | EntityKind::Spline { verts, closed },
+            GripKind::Vert(i),
+        ) => {
+            let n = verts.len();
+            if n < 2 || i >= n {
+                return None;
+            }
+            let j = if i > 0 {
+                i - 1
+            } else if *closed && n >= 3 {
+                n - 1
+            } else {
+                1
+            };
+            Some(verts[j].p)
+        }
+        (
+            EntityKind::Fill { boundary, holes, .. }
+            | EntityKind::Volume { boundary, holes, .. },
+            GripKind::Vert(i),
+        ) => {
+            let mut base = 0usize;
+            for ring in std::iter::once(boundary).chain(holes.iter()) {
+                let n = ring.len();
+                if i < base + n {
+                    if n < 2 {
+                        return None;
+                    }
+                    return Some(ring[(i - base + n - 1) % n]);
+                }
+                base += n;
+            }
+            None
+        }
+        _ => None,
+    }
+}
+
 /// Fangpunkte, die das Element selbst anbietet: Ecken und Kantenmitten.
 ///
 /// Liegt der gezogene Punkt auf einem davon, ist er das *Ziel* des Fangs und
@@ -1114,6 +1178,106 @@ mod tests {
         assert!(!closed);
         assert_eq!(pts.len(), 3);
     }
+
+    // ---- Bezugspunkt für Ortho/Polar beim Griffzug (T0046) ----
+
+    fn linie() -> Entity {
+        Entity::new(
+            1,
+            1,
+            EntityKind::Line {
+                a: V2::new(0.0, 0.0),
+                b: V2::new(2000.0, 1000.0),
+            },
+        )
+    }
+
+    /// Linie und Wand messen die Richtung am **anderen** Ende.
+    #[test]
+    fn bezug_der_linie_ist_das_andere_ende() {
+        let e = linie();
+        assert_eq!(bezugspunkt(&e, GripKind::Vert(0)), Some(V2::new(2000.0, 1000.0)));
+        assert_eq!(bezugspunkt(&e, GripKind::Vert(1)), Some(V2::new(0.0, 0.0)));
+
+        let w = Entity::new(
+            1,
+            1,
+            EntityKind::Wall {
+                a: V2::new(0.0, 0.0),
+                b: V2::new(2000.0, 1000.0),
+                thickness: 240.0,
+                height: 2750.0,
+                material: String::new(),
+                hatch: None,
+                align: jjcad_core::style::WallAlign::Center,
+            },
+        );
+        assert_eq!(bezugspunkt(&w, GripKind::Vert(0)), Some(V2::new(2000.0, 1000.0)));
+        assert_eq!(bezugspunkt(&w, GripKind::Vert(1)), Some(V2::new(0.0, 0.0)));
+    }
+
+    /// Offene Polylinie: der vorige Stützpunkt, am Anfang der nächste.
+    #[test]
+    fn bezug_der_offenen_polylinie_ist_die_nachbarecke() {
+        let e = offen(&[
+            V2::new(0.0, 0.0),
+            V2::new(2000.0, 0.0),
+            V2::new(2000.0, 1000.0),
+        ]);
+        assert_eq!(bezugspunkt(&e, GripKind::Vert(0)), Some(V2::new(2000.0, 0.0)));
+        assert_eq!(bezugspunkt(&e, GripKind::Vert(2)), Some(V2::new(2000.0, 0.0)));
+    }
+
+    /// Geschlossener Zug (Rechteck): auch der Anfang hat einen Vorgänger —
+    /// die letzte Ecke des Rings.
+    #[test]
+    fn bezug_des_geschlossenen_zugs_ist_die_ringecke() {
+        let mut e = offen(&[
+            V2::new(0.0, 0.0),
+            V2::new(2000.0, 0.0),
+            V2::new(2000.0, 1000.0),
+            V2::new(0.0, 1000.0),
+        ]);
+        if let EntityKind::Polyline { closed, .. } = &mut e.kind {
+            *closed = true;
+        }
+        assert_eq!(bezugspunkt(&e, GripKind::Vert(0)), Some(V2::new(0.0, 1000.0)));
+        assert_eq!(bezugspunkt(&e, GripKind::Vert(1)), Some(V2::new(0.0, 0.0)));
+    }
+
+    /// Füllfläche und Volumen: der vorige Punkt desselben Rings.
+    #[test]
+    fn bezug_der_flaeche_ist_der_vorige_ringpunkt() {
+        let e = quadrat();
+        assert_eq!(bezugspunkt(&e, GripKind::Vert(0)), Some(V2::new(0.0, 3000.0)));
+        assert_eq!(bezugspunkt(&e, GripKind::Vert(2)), Some(V2::new(4000.0, 0.0)));
+    }
+
+    /// Kantenmitten und Mittelpunkte bewegen eindimensional bzw. richtungslos —
+    /// dort gibt es keinen Bezug (sonst zöge Ortho sie aus ihrer Bahn).
+    #[test]
+    fn ohne_bezug_bei_kantenmitte_und_mittelpunkt() {
+        let mut e = offen(&[
+            V2::new(0.0, 0.0),
+            V2::new(2000.0, 0.0),
+            V2::new(2000.0, 1000.0),
+        ]);
+        if let EntityKind::Polyline { closed, .. } = &mut e.kind {
+            *closed = true;
+        }
+        assert_eq!(bezugspunkt(&e, GripKind::Edge(0)), None);
+        assert_eq!(bezugspunkt(&quadrat(), GripKind::Edge(0)), None);
+
+        let kreis = Entity::new(
+            1,
+            1,
+            EntityKind::Circle {
+                c: V2::new(0.0, 0.0),
+                r: 500.0,
+            },
+        );
+        assert_eq!(bezugspunkt(&kreis, GripKind::Vert(0)), None);
+    }
 }
 
 #[cfg(test)]
@@ -1288,4 +1452,5 @@ mod tests_volumen_drag {
             _ => panic!("kein Volumen mehr"),
         }
     }
+
 }
