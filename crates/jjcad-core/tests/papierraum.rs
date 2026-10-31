@@ -111,8 +111,11 @@ fn reihenfolge_im_papierraum() {
     // „nach vorn“ heißt: ans Ende der Liste (dort wird zuletzt gezeichnet).
     let liste: Vec<u64> = sess.doc.sheets[0].entities.iter().map(|e| e.id).collect();
     assert_eq!(liste.last().copied(), Some(a), "{liste:?}");
+    // `b` liegt vor `a`: seit T0048 ordnet sich eine neue Linie nach ihrem
+    // Zeichenrang ein (vor die Beschriftung des Schriftfelds) und hängt nicht
+    // mehr am Listenende. Die Reihenfolge-Action trifft trotzdem die Blattliste.
     let pos_b = liste.iter().position(|x| *x == b).unwrap();
-    assert_eq!(pos_b, liste.len() - 2, "{liste:?}");
+    assert!(pos_b + 1 < liste.len(), "{liste:?}");
 }
 
 #[test]

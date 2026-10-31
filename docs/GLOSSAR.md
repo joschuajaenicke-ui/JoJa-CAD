@@ -44,6 +44,7 @@ Steht rechts „nicht", dann ist das Wort im Projekt verpönt (auch in der Oberf
 | **Einfügepunkt** (Text) | Der Punkt, den die Ausrichtung benennt — beim Anlegen der Klickpunkt, beim Kopieren der Basispunkt | Anker, Nullpunkt |
 | **Dicke** | Wandstärke quer zur Achse (mm) | Breite (bei Wänden) |
 | **Füllfläche** | Objekt, das eine geschlossene Fläche ausfüllt — Farbe oder Muster; **dasselbe Objekt** wie Schraffur | Fill, Fläche, Schraffur-Objekt |
+| **Zeichenrang** | Klasse eines Objekts in der Zeichenreihenfolge: Fläche 0, Volumen 1, Bauteil 2, Linie 3, Beschriftung 4; neue Elemente ordnen sich danach ein | Z-Order, Layerreihenfolge, Ebene |
 | **Schraffur** | Füllfläche mit Muster (Linien, Kreuz, Punkte, Dämmung) — gleiches Objekt, nur anderes Muster | Hatch, Musterfläche |
 | **Dämmung** | Schraffurmuster als Mäanderlinie (Sinus), Amplitude = Wanddicke | Isolierung, Dämm-Muster |
 | **Insel** / **Loch** | Ausgesparte Fläche innerhalb einer Füllfläche (z. B. Stütze im Raum) | Lochung, Aussparung |

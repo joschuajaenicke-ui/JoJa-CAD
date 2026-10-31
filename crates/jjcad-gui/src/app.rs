@@ -3945,7 +3945,9 @@ fn rail(ui: &mut egui::Ui, icon: &str, tooltip: &str, chevron: &str) -> bool {
         for mut e in ents {
             e.id = self.doc_mut().new_id();
             ids.push(e.id);
-            self.doc_mut().ents_mut().push(e);
+            // Eingefügte Elemente ordnen sich nach ihrem Zeichenrang ein
+            // (`Document::insert_ranked`): Flächen hinter Linien und Wänden.
+            self.doc_mut().insert_ranked(e);
         }
         self.session_mut().select(ids);
         self.mark_changed();
