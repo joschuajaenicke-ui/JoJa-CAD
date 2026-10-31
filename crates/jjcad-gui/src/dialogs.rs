@@ -1163,9 +1163,11 @@ const KEY_GAP: f32 = 4.0;
 const KEY_UNITS: f32 = 15.0;
 /// Zahl der Tastenreihen.
 const KEY_ROWS: usize = 5;
-/// Beschriftung gesperrter Tasten: deutlich schwächer als `TEXT_FAINT`, damit
-/// „ausgegraut" auch im Bild erkennbar ist.
-const GESPERRT_TEXT: Color32 = Color32::from_rgb(0x45, 0x4C, 0x55);
+/// Fläche gesperrter Tasten: flaches Grau, deutlich heller als die freien
+/// Tasten (`BG`) — der Unterschied ist die Fläche, nicht nur die Schrift.
+const GESPERRT_FLAECHE: Color32 = Color32::from_rgb(0x2A, 0x2F, 0x36);
+/// Beschriftung gesperrter Tasten: schwächer als `TEXT_FAINT`.
+const GESPERRT_TEXT: Color32 = Color32::from_rgb(0x5C, 0x64, 0x6E);
 
 /// Tastenbild einer deutschen Tastatur: (Taste, Beschriftung, Zeile, Spalte,
 /// Breite). Zeile, Spalte und Breite rechnen in Tasteneinheiten (`KEY_W` +
@@ -1200,34 +1202,35 @@ const TASTEN: &[(&str, &str, usize, f32, f32)] = &[
     ("p", "P", 1, 10.5, 1.0),
     ("ü", "Ü", 1, 11.5, 1.0),
     ("+", "+", 1, 12.5, 2.5),
-    // Grundreihe
-    ("caps", "Caps", 2, 0.0, 1.5),
-    ("a", "A", 2, 1.5, 1.0),
-    ("s", "S", 2, 2.5, 1.0),
-    ("d", "D", 2, 3.5, 1.0),
-    ("f", "F", 2, 4.5, 1.0),
-    ("g", "G", 2, 5.5, 1.0),
-    ("h", "H", 2, 6.5, 1.0),
-    ("j", "J", 2, 7.5, 1.0),
-    ("k", "K", 2, 8.5, 1.0),
-    ("l", "L", 2, 9.5, 1.0),
-    ("ö", "Ö", 2, 10.5, 1.0),
-    ("ä", "Ä", 2, 11.5, 1.0),
-    ("#", "#", 2, 12.5, 1.0),
-    ("enter", "Enter", 2, 13.5, 1.5),
-    // Umschalt-Reihe
+    // Grundreihe — gegenüber der QWERTZ-Reihe um eine halbe Taste versetzt
+    ("caps", "Caps", 2, 0.0, 2.0),
+    ("a", "A", 2, 2.0, 1.0),
+    ("s", "S", 2, 3.0, 1.0),
+    ("d", "D", 2, 4.0, 1.0),
+    ("f", "F", 2, 5.0, 1.0),
+    ("g", "G", 2, 6.0, 1.0),
+    ("h", "H", 2, 7.0, 1.0),
+    ("j", "J", 2, 8.0, 1.0),
+    ("k", "K", 2, 9.0, 1.0),
+    ("l", "L", 2, 10.0, 1.0),
+    ("ö", "Ö", 2, 11.0, 1.0),
+    ("ä", "Ä", 2, 12.0, 1.0),
+    ("#", "#", 2, 13.0, 1.0),
+    ("enter", "Enter", 2, 14.0, 1.0),
+    // Umschalt-Reihe mit der Taste `<` links neben Y
     ("shift", "Shift", 3, 0.0, 1.5),
-    ("y", "Y", 3, 1.5, 1.0),
-    ("x", "X", 3, 2.5, 1.0),
-    ("c", "C", 3, 3.5, 1.0),
-    ("v", "V", 3, 4.5, 1.0),
-    ("b", "B", 3, 5.5, 1.0),
-    ("n", "N", 3, 6.5, 1.0),
-    ("m", "M", 3, 7.5, 1.0),
-    (",", ",", 3, 8.5, 1.0),
-    (".", ".", 3, 9.5, 1.0),
-    ("-", "-", 3, 10.5, 1.0),
-    ("shift_r", "Shift", 3, 11.5, 2.0),
+    ("<", "<", 3, 1.5, 1.0),
+    ("y", "Y", 3, 2.5, 1.0),
+    ("x", "X", 3, 3.5, 1.0),
+    ("c", "C", 3, 4.5, 1.0),
+    ("v", "V", 3, 5.5, 1.0),
+    ("b", "B", 3, 6.5, 1.0),
+    ("n", "N", 3, 7.5, 1.0),
+    ("m", "M", 3, 8.5, 1.0),
+    (",", ",", 3, 9.5, 1.0),
+    (".", ".", 3, 10.5, 1.0),
+    ("-", "-", 3, 11.5, 1.0),
+    ("shift_r", "Shift", 3, 12.5, 1.5),
     // Untere Reihe mit den rechten Steuerungstasten
     ("ctrl", "Strg", 4, 0.0, 1.75),
     ("alt", "Alt", 4, 1.75, 1.75),
@@ -1309,7 +1312,11 @@ fn keyboard_body(app: &mut App, ui: &mut Ui) {
                 Rounding::same(6.0),
                 if selected {
                     Palette::ACCENT_SOFT
-                } else if hovered && gesperrt.is_none() {
+                } else if gesperrt.is_some() {
+                    // Gesperrte Tasten sind eine eigene graue Fläche — nicht nur
+                    // eine schwächere Schrift. Das Schloss sagt warum.
+                    GESPERRT_FLAECHE
+                } else if hovered {
                     Palette::PANEL_ALT
                 } else {
                     Palette::BG
@@ -1352,6 +1359,13 @@ fn keyboard_body(app: &mut App, ui: &mut Ui) {
                         if selected { Palette::ACCENT } else { Palette::TEXT_DIM },
                     );
                 }
+            } else if gesperrt.is_some() {
+                crate::icons::paint(
+                    p,
+                    Rect::from_center_size(rect.center() - Vec2::new(0.0, 3.0), Vec2::splat(14.0)),
+                    "lock",
+                    GESPERRT_TEXT,
+                );
             }
         }
         if resp.clicked() && gesperrt.is_none() {
@@ -1632,7 +1646,7 @@ mod tests_tastatur {
         let (app, _ctx) = app_mit_tastatur();
         let tasten = app.ui.last_tasten.clone().expect("Tastenbild gezeichnet");
         for key in [
-            "+", "#", "shift_r", "ctrl_r", "altgr", "enter", "ü", "ö", "ä", ",", ".", "-",
+            "+", "#", "<", "shift_r", "ctrl_r", "altgr", "enter", "ü", "ö", "ä", ",", ".", "-",
         ] {
             taste_mit(&tasten, key);
         }
@@ -1749,6 +1763,84 @@ mod tests_tastatur {
             farbe("Q"),
             Some(Palette::TEXT_FAINT),
             "freie Taste hat die Farbe einer gesperrten Taste"
+        );
+    }
+
+    /// Die Taste `<` gehört links neben Y — sie fehlte im Tastenbild.
+    #[test]
+    fn taste_kleiner_als_steht_links_neben_y() {
+        let (app, _ctx) = app_mit_tastatur();
+        let tasten = app.ui.last_tasten.clone().expect("Tastenbild gezeichnet");
+        let (_, _, y) = *taste_mit(&tasten, "y");
+        let (_, _, kleiner) = *taste_mit(&tasten, "<");
+        let (_, _, shift) = *taste_mit(&tasten, "shift");
+        assert!(
+            (kleiner.right() + KEY_GAP - y.left()).abs() < 0.5,
+            "`<` endet bei {}, Y beginnt bei {}",
+            kleiner.right(),
+            y.left()
+        );
+        assert!(
+            (kleiner.top() - y.top()).abs() < 0.5 && (kleiner.height() - KEY_H).abs() < 0.5,
+            "`<` steht nicht in der Reihe von Y"
+        );
+        assert!(
+            (kleiner.left() - (shift.right() + KEY_GAP)).abs() < 0.5,
+            "`<` schließt nicht an den linken Umschalt an"
+        );
+    }
+
+    /// Die Grundreihe (a s d …) ist gegenüber der QWERTZ-Reihe um eine halbe
+    /// Taste versetzt — sonst stehen die Tasten genau untereinander.
+    #[test]
+    fn grundreihe_ist_um_eine_halbe_taste_versetzt() {
+        let (app, _ctx) = app_mit_tastatur();
+        let tasten = app.ui.last_tasten.clone().expect("Tastenbild gezeichnet");
+        for (oben, unten) in [("q", "a"), ("w", "s"), ("e", "d"), ("p", "ö")] {
+            let (_, _, o) = *taste_mit(&tasten, oben);
+            let (_, _, u) = *taste_mit(&tasten, unten);
+            let versatz = u.left() - o.left();
+            assert!(
+                (versatz - 0.5 * (KEY_W + KEY_GAP)).abs() < 0.5,
+                "{unten} steht {versatz} px neben {oben}, erwartet eine halbe Taste ({} px)",
+                0.5 * (KEY_W + KEY_GAP)
+            );
+        }
+    }
+
+    /// Gesperrte Tasten haben eine eigene Fläche, nicht nur eine schwächere
+    /// Beschriftung — der Unterschied ist im gezeichneten Bild messbar.
+    #[test]
+    fn gesperrte_tasten_haben_eigene_flaeche() {
+        let (mut app, ctx) = app_mit_tastatur();
+        let tasten = app.ui.last_tasten.clone().expect("Tastenbild gezeichnet");
+        let out = rahmen(&ctx, &mut app, vec![]);
+        let flaeche = |gesucht: Rect| {
+            out.shapes.iter().find_map(|cs| match &cs.shape {
+                egui::Shape::Rect(rs)
+                    if (rs.rect.min - gesucht.min).length() < 0.5
+                        && (rs.rect.max - gesucht.max).length() < 0.5 =>
+                {
+                    Some(rs.fill)
+                }
+                _ => None,
+            })
+        };
+        let (_, _, sieben) = *taste_mit(&tasten, "7");
+        let (_, _, q) = *taste_mit(&tasten, "q");
+        let (_, _, esc) = *taste_mit(&tasten, "esc");
+        assert_eq!(
+            flaeche(sieben),
+            Some(GESPERRT_FLAECHE),
+            "Ziffer 7 hat keine eigene Fläche"
+        );
+        assert_eq!(flaeche(esc), Some(GESPERRT_FLAECHE), "Esc hat keine eigene Fläche");
+        assert_eq!(flaeche(q), Some(Palette::BG), "freie Taste hat eine fremde Fläche");
+        // Der Unterschied ist auch als Helligkeit messbar, nicht nur im Namen.
+        let hell = |c: Color32| c.r() as i32 + c.g() as i32 + c.b() as i32;
+        assert!(
+            hell(GESPERRT_FLAECHE) - hell(Palette::BG) > 40,
+            "die graue Fläche hebt sich zu wenig von der freien Taste ab"
         );
     }
 }
