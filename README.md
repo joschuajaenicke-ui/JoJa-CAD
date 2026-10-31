@@ -121,6 +121,7 @@ JoJa-CAD/
 ## Dokumentation
 
 - [`docs/BEDIENUNG.md`](docs/BEDIENUNG.md) — Werkzeuge, Panels, erste Schritte
+- [`docs/TASTEN.md`](docs/TASTEN.md) — Tastenbelegung in drei Schichten (verbindlich)
 - [`docs/ARCHITEKTUR.md`](docs/ARCHITEKTUR.md) — Aufbau, Datenfluss, Entscheidungen
 - [`docs/FORMAT.md`](docs/FORMAT.md) — Dateiformat `.jjcad` (JSON, offen)
 - [`docs/BEFEHLE.md`](docs/BEFEHLE.md) — alle Aktionen mit Parametern

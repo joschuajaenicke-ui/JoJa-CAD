@@ -76,6 +76,27 @@ impl<'a> IconPainter<'a> {
         ));
     }
 
+    /// Pfeil aus Schaft und gefülltem Kopf — kräftig genug für die 16 px
+    /// Icons im Tastenbild. `arrow_head` hat einen weiten Öffnungswinkel und
+    /// verschwindet dort fast (T0056).
+    fn pfeil(&self, x1: f32, y1: f32, x2: f32, y2: f32) {
+        self.line(x1, y1, x2, y2);
+        let ang = (y2 - y1).atan2(x2 - x1);
+        let groesse = 7.5;
+        let halb = 0.6;
+        self.filled(&[
+            (x2, y2),
+            (
+                x2 - groesse * (ang - halb).cos(),
+                y2 - groesse * (ang - halb).sin(),
+            ),
+            (
+                x2 - groesse * (ang + halb).cos(),
+                y2 - groesse * (ang + halb).sin(),
+            ),
+        ]);
+    }
+
     fn arrow_head(&self, x: f32, y: f32, ang: f32, size: f32) {
         let a1 = ang + 2.6;
         let a2 = ang - 2.6;
@@ -446,6 +467,13 @@ pub fn paint(painter: &Painter, rect: Rect, name: &str, color: Color32) {
             i.line(15.0, 15.0, 21.0, 21.0);
             i.line(7.5, 10.5, 13.5, 10.5);
         }
+        // Umsetzen der Ansicht (T0056): ein Pfeil in der Schieberichtung, die
+        // Zeichnung wandert mit — deshalb zeigt der Pfeil zur Seite, in die
+        // die Ansicht geschoben wird.
+        "pan-left" => i.pfeil(21.0, 12.0, 4.0, 12.0),
+        "pan-right" => i.pfeil(3.0, 12.0, 20.0, 12.0),
+        "pan-up" => i.pfeil(12.0, 21.0, 12.0, 4.0),
+        "pan-down" => i.pfeil(12.0, 3.0, 12.0, 20.0),
         "fullscreen" => {
             // Vier Eckwinkel — das Zeichen für „Fenster ohne Rahmen".
             i.line(3.0, 8.0, 3.0, 3.0);
@@ -637,6 +665,37 @@ pub fn paint(painter: &Painter, rect: Rect, name: &str, color: Color32) {
         }
         _ => {
             i.circle(12.0, 12.0, 7.0);
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests_pan_icons {
+    //! T0056: Das Umsetzen der Ansicht sind Funktionen mit eigenem Icon; im
+    //! Tastenbild stehen sie damit sichtbar auf W/A/S/D.
+    //!
+    //! Ein unbekannter Icon-Name fällt nicht auf: `paint` zeichnet dafür still
+    //! einen Kreis (`_ =>`). Deshalb wird der Name am Quelltext geprüft.
+
+    #[test]
+    fn jede_schwenkrichtung_hat_ein_eigenes_icon() {
+        let quelle = include_str!("icons.rs");
+        let quelle = &quelle[..quelle.find("mod tests_pan_icons").unwrap_or(quelle.len())];
+        let mut namen: Vec<&str> = Vec::new();
+        for id in [
+            "view.pan_left",
+            "view.pan_right",
+            "view.pan_up",
+            "view.pan_down",
+        ] {
+            let def = jjcad_core::actions::action(id).expect("Action fehlt");
+            assert!(
+                quelle.contains(&format!("\"{}\" =>", def.icon)),
+                "Icon \"{}\" für {id} fehlt in `paint` — gezeichnet würde ein Kreis",
+                def.icon
+            );
+            assert!(!namen.contains(&def.icon), "Icon {} doppelt", def.icon);
+            namen.push(def.icon);
         }
     }
 }

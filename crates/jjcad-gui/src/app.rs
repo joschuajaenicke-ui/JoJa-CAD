@@ -39,6 +39,54 @@ pub const DOCTABS_H: f32 = 34.0;
 /// Höhe der einen unteren Leiste: Slot-Kante (50 px) + 2 × 5 px Rand
 pub const HOTBAR_H: f32 = 60.0;
 
+/// Weg eines einzelnen Schwenk-Schritts in Bildpunkten (T0056): ein Tastendruck
+/// rückt die Ansicht sichtbar weiter, ohne sie springen zu lassen.
+pub const SCHWENK_SCHRITT_PX: f32 = 60.0;
+
+/// Die Tasten, deren Funktion aus der **Tastaturbelegung** kommt — Buchstaben
+/// und Symbole (T0056, `docs/TASTEN.md`). Ziffern gehören der Hotbar,
+/// Steuerungstasten und Kombinationen dem festen Ablauf im Code; keine dieser
+/// Tasten steht deshalb in dieser Liste.
+///
+/// **Eine** Quelle für Kürzel-Auswertung (`handle_shortcuts`) und
+/// Ansichtsschwenk (`canvas::handle_navigation`) — sonst legt man eine Taste in
+/// der Belegung um und die eine Hälfte des Programms hört nicht darauf.
+pub const EINZELTASTEN: &[(egui::Key, &str)] = &[
+    (egui::Key::A, "a"),
+    (egui::Key::B, "b"),
+    (egui::Key::C, "c"),
+    (egui::Key::D, "d"),
+    (egui::Key::E, "e"),
+    (egui::Key::F, "f"),
+    (egui::Key::G, "g"),
+    (egui::Key::H, "h"),
+    (egui::Key::I, "i"),
+    (egui::Key::J, "j"),
+    (egui::Key::K, "k"),
+    (egui::Key::L, "l"),
+    (egui::Key::M, "m"),
+    (egui::Key::N, "n"),
+    (egui::Key::O, "o"),
+    (egui::Key::P, "p"),
+    (egui::Key::Q, "q"),
+    (egui::Key::R, "r"),
+    (egui::Key::S, "s"),
+    (egui::Key::T, "t"),
+    (egui::Key::U, "u"),
+    (egui::Key::V, "v"),
+    (egui::Key::W, "w"),
+    (egui::Key::X, "x"),
+    (egui::Key::Y, "y"),
+    (egui::Key::Z, "z"),
+    // Symbole mit eigener Taste: die übrigen Zeichen des Tastenbilds (`#`, `<`,
+    // `´`) sind zweite Ebene einer anderen Taste und deshalb nicht belegbar
+    // (`persist::FestBelegt::ZweiteEbene`).
+    (egui::Key::Comma, ","),
+    (egui::Key::Period, "."),
+    (egui::Key::Minus, "-"),
+    (egui::Key::Plus, "+"),
+];
+
 // ---------------------------------------------------------------------------
 // Ansicht / Reiter
 // ---------------------------------------------------------------------------
@@ -2237,6 +2285,13 @@ impl App {
             "view.zoom_extents" => self.fit_view(),
             "view.zoom_in" => self.zoom_by(1.25),
             "view.zoom_out" => self.zoom_by(0.8),
+            // Umsetzen der Ansicht: ein einzelner Aufruf (Hotbar, Kürzel aus
+            // einer anderen Quelle) rückt um einen Schritt weiter; gehalten
+            // läuft der Schwenk in `canvas::handle_navigation` (T0056).
+            "view.pan_left" => self.schwenk_schritt(-1.0, 0.0),
+            "view.pan_right" => self.schwenk_schritt(1.0, 0.0),
+            "view.pan_up" => self.schwenk_schritt(0.0, -1.0),
+            "view.pan_down" => self.schwenk_schritt(0.0, 1.0),
             "sheet.new" => {
                 let n = self.doc().sheets.len() + 1;
                 let paper = self
@@ -2765,17 +2820,17 @@ impl App {
         }
         let mut run: Option<String> = None;
 
-        // Vorschau: drehen, spiegeln, setzen
+        // Vorschau: drehen, spiegeln, setzen. Die beiden Griffe hängen an den
+        // **Funktionen** „Drehen" (`modify.rotate`) und „Spiegeln"
+        // (`modify.mirror`) — nicht an festen Tasten (T0056). Wer die Funktion
+        // umbelegt, dreht die Vorschau mit derselben Taste wie die Auswahl.
         if self.ghost.is_some() && !typing {
-            if ctx.input(|i| i.key_pressed(egui::Key::R)) {
-                // R dreht im Uhrzeigersinn (negativer Winkel), Umschalt+R
-                // gegen den Uhrzeigersinn — im Modell zeigt +y nach oben.
+            if self.taste_der_funktion(ctx, "modify.rotate") {
+                // Drehen im Uhrzeigersinn (negativer Winkel), Umschalt gegen den
+                // Uhrzeigersinn — im Modell zeigt +y nach oben.
                 self.rotate_ghost(App::ghost_drehgrad(shift));
             }
-            // Spiegeln: sowohl S als auch F (wie bei Türen/Blöcken üblich)
-            if ctx.input(|i| i.key_pressed(egui::Key::S))
-                || ctx.input(|i| i.key_pressed(egui::Key::F))
-            {
+            if self.taste_der_funktion(ctx, "modify.mirror") {
                 self.flip_ghost();
             }
             if ctx.input(|i| i.key_pressed(egui::Key::Enter)) {
@@ -2851,51 +2906,34 @@ impl App {
                 run = Some("select.all".into());
             }
         } else if !typing {
-            // Einzeltasten über die Belegung
-            let keys = [
-                (egui::Key::A, "a"),
-                (egui::Key::B, "b"),
-                (egui::Key::C, "c"),
-                (egui::Key::D, "d"),
-                (egui::Key::E, "e"),
-                (egui::Key::F, "f"),
-                (egui::Key::G, "g"),
-                (egui::Key::H, "h"),
-                (egui::Key::I, "i"),
-                (egui::Key::J, "j"),
-                (egui::Key::K, "k"),
-                (egui::Key::L, "l"),
-                (egui::Key::M, "m"),
-                (egui::Key::N, "n"),
-                (egui::Key::O, "o"),
-                (egui::Key::P, "p"),
-                (egui::Key::Q, "q"),
-                (egui::Key::R, "r"),
-                (egui::Key::S, "s"),
-                (egui::Key::T, "t"),
-                (egui::Key::U, "u"),
-                (egui::Key::V, "v"),
-                (egui::Key::W, "w"),
-                (egui::Key::X, "x"),
-                (egui::Key::Y, "y"),
-            ];
-            for (key, label) in keys {
+            // Einzeltasten über die Belegung (Buchstaben und Symbole, T0056)
+            for (key, label) in EINZELTASTEN {
                 // Einzeltasten gelten nur ohne Umschalt — sonst würde
                 // Umschalt+I zusätzlich die Belegung von "i" auslösen.
-                if !shift && ctx.input(|i| i.key_pressed(key)) {
+                if !shift && ctx.input(|i| i.key_pressed(*key)) {
                     if let Some(action) = self.prefs.action_for_key(label) {
-                        run = Some(action);
+                        // Der Ansichtsschwenk ist keine Aktion, die man
+                        // „auslöst": er läuft, solange die Taste gehalten wird
+                        // (`canvas::handle_navigation`). Ein Druck würde die
+                        // Ansicht sonst zweimal bewegen.
+                        if !action.starts_with("view.pan_") {
+                            run = Some(action);
+                        }
                     }
                 }
             }
-            // Kürzel mit Umschalt, in der Belegung als "shift+i" gespeichert
-            // (Umschalt+I: Füllfläche aus einer freien Punktfolge).
+            // Umschalt-Ebene: jede Taste kann ein zweites Kürzel tragen, in der
+            // Belegung als "shift+<Zeichen>" gespeichert (Umschalt+I =
+            // Füllfläche nach Punktfolge, Umschalt+V = Volumen). Gilt für alle
+            // Einzeltasten, nicht nur für eine fest eingetragene (T0056).
             if shift {
-                for (key, label) in [(egui::Key::I, "shift+i")] {
-                    if ctx.input(|i| i.key_pressed(key)) {
-                        if let Some(action) = self.prefs.action_for_key(label) {
-                            run = Some(action);
-                        }
+                for (key, label) in EINZELTASTEN {
+                    if !ctx.input(|i| i.key_pressed(*key)) {
+                        continue;
+                    }
+                    let kombi = format!("shift+{label}");
+                    if let Some(action) = self.prefs.action_for_key(&kombi) {
+                        run = Some(action);
                     }
                 }
             }
@@ -2952,6 +2990,51 @@ impl App {
         if let Some(id) = run {
             self.run_action(ctx, &id);
         }
+    }
+
+    /// Ist eine Taste gedrückt, die in der Belegung auf `action` steht? Damit
+    /// hängen Sonderfunktionen an einer **Funktion** statt an einer festen
+    /// Taste (T0056): drehen/spiegeln der Einfüge-Vorschau folgt „Drehen" und
+    /// „Spiegeln" aus der Tastaturbelegung.
+    fn taste_der_funktion(&self, ctx: &egui::Context, action: &str) -> bool {
+        EINZELTASTEN.iter().any(|(key, label)| {
+            self.prefs.action_for_key(label).as_deref() == Some(action)
+                && ctx.input(|i| i.key_pressed(*key))
+        })
+    }
+
+    /// Schieberichtung der gehaltenen Tasten in Bildschirmrichtung
+    /// (x nach rechts, y nach unten). Welche Taste welche Richtung schiebt,
+    /// steht in der **Tastaturbelegung** (`view.pan_*`) — nicht im Code (T0056).
+    pub fn schwenk_richtung(&self, ctx: &egui::Context) -> Vec2 {
+        let mut dir = Vec2::ZERO;
+        for (key, label) in EINZELTASTEN {
+            let Some(action) = self.prefs.action_for_key(label) else {
+                continue;
+            };
+            if !ctx.input(|i| i.key_down(*key)) {
+                continue;
+            }
+            match action.as_str() {
+                "view.pan_left" => dir.x -= 1.0,
+                "view.pan_right" => dir.x += 1.0,
+                "view.pan_up" => dir.y -= 1.0,
+                "view.pan_down" => dir.y += 1.0,
+                _ => {}
+            }
+        }
+        dir
+    }
+
+    /// Schiebt die Ansicht um einen Schritt (`SCHWENK_SCHRITT_PX` Bildpunkte) in
+    /// Bildschirmrichtung — die Umrechnung läuft über die gedrehte Ansicht,
+    /// damit der Schub auch bei gedrehter Zeichnung der Taste folgt.
+    pub fn schwenk_schritt(&mut self, dx: f32, dy: f32) {
+        let mut v = self.current_view();
+        let px = SCHWENK_SCHRITT_PX;
+        let w = v.screen_delta_to_world(Vec2::new(dx * px, dy * px));
+        v.center += w;
+        self.set_view(v);
     }
 
     fn tool_enter(&mut self) {
@@ -5678,6 +5761,198 @@ mod tests_ghost_drehrichtung {
             "Umschalt+R muss gegen den Uhrzeigersinn drehen (waagerecht nach rechts → nach oben), \
              Richtung war {d:?}"
         );
+    }
+}
+
+#[cfg(test)]
+mod tests_tastenbelegung {
+    //! T0056: Die Tastatur in drei Schichten (`docs/TASTEN.md`).
+    //!
+    //! 1. Ziffern `1` … `0` starten den Hotbar-Slot.
+    //! 2. Buchstaben und Symbole kommen aus der Tastaturbelegung.
+    //! 3. Steuerungstasten, Funktionstasten und Kombinationen sind fest.
+    //!
+    //! Geprüft wird das Verhalten, nicht nur die Belegung: der Schwenk folgt der
+    //! Belegung (vorher hing er an `Key::W`/`A`/`S`/`D` im Code), und Drehen und
+    //! Spiegeln der Einfüge-Vorschau hängen an den Funktionen „Drehen" und
+    //! „Spiegeln".
+
+    use super::*;
+
+    fn frame_mit(app: &mut App, events: Vec<egui::Event>) {
+        let ctx = app.ctx.clone();
+        let raw = egui::RawInput {
+            screen_rect: Some(Rect::from_min_size(Pos2::ZERO, Vec2::new(1500.0, 950.0))),
+            events,
+            ..Default::default()
+        };
+        let _ = ctx.run(raw, |ctx| app.ui(ctx));
+    }
+
+    fn druck(key: egui::Key) -> egui::Event {
+        egui::Event::Key {
+            key,
+            physical_key: None,
+            pressed: true,
+            repeat: false,
+            modifiers: egui::Modifiers::NONE,
+        }
+    }
+
+    /// App mit einer Zeichnung in der Mitte — damit der Schwenk messbar ist.
+    fn app_mit_zeichnung() -> App {
+        let mut app = App::with_ctx(egui::Context::default());
+        app.session_mut()
+            .execute(
+                "draw.line",
+                &serde_json::json!({"a": [0.0, 0.0], "b": [2000.0, 0.0]}),
+            )
+            .expect("Linie anlegen");
+        // Vorgabebelegung ausdrücklich setzen: `App::with_ctx` lädt die
+        // Einstellungen des Nutzers, die hier nicht stören dürfen.
+        app.prefs.reset_bindings();
+        app
+    }
+
+    #[test]
+    fn w_schwenkt_die_ansicht_nach_oben() {
+        let mut app = app_mit_zeichnung();
+        // Zwei Bilder ohne Taste: Ansicht steht, Grundlage für den Vergleich.
+        frame_mit(&mut app, vec![]);
+        let vorher = app.current_view().center;
+        frame_mit(&mut app, vec![druck(egui::Key::W)]);
+        frame_mit(&mut app, vec![]);
+        let nachher = app.current_view().center;
+        assert!(
+            nachher.y > vorher.y + 1.0 && (nachher.x - vorher.x).abs() < 1.0,
+            "W muss die Ansicht nach oben schieben (Welt-y wächst), vorher {vorher:?}, \
+             nachher {nachher:?}"
+        );
+    }
+
+    #[test]
+    fn s_schwenkt_nach_unten_und_stutzt_nicht() {
+        let mut app = app_mit_zeichnung();
+        frame_mit(&mut app, vec![]);
+        let vorher = app.current_view().center;
+        frame_mit(&mut app, vec![druck(egui::Key::S)]);
+        frame_mit(&mut app, vec![]);
+        let nachher = app.current_view().center;
+        assert!(
+            nachher.y < vorher.y - 1.0,
+            "S muss die Ansicht nach unten schieben, vorher {vorher:?}, nachher {nachher:?}"
+        );
+        assert!(
+            app.tool.is_none(),
+            "S darf kein Werkzeug starten — die Taste gehört dem Schwenk, nicht dem \
+             Stutzen: {:?}",
+            app.tool.as_ref().map(|t| t.action.clone())
+        );
+    }
+
+    /// Die Taste folgt der Belegung, nicht dem Buchstaben: liegt der Schwenk auf
+    /// `Z`, schiebt `Z` und `W` bleibt wirkungslos.
+    #[test]
+    fn schwenk_folgt_der_belegung() {
+        let mut app = app_mit_zeichnung();
+        app.prefs.bind("view.pan_up", "z");
+        assert_eq!(app.prefs.key_for("view.pan_up").as_deref(), Some("z"));
+        frame_mit(&mut app, vec![]);
+        let vorher = app.current_view().center;
+        frame_mit(&mut app, vec![druck(egui::Key::W)]);
+        frame_mit(&mut app, vec![]);
+        assert_eq!(
+            app.current_view().center,
+            vorher,
+            "W ist nicht mehr belegt und darf die Ansicht nicht bewegen"
+        );
+        frame_mit(&mut app, vec![druck(egui::Key::Z)]);
+        frame_mit(&mut app, vec![]);
+        assert!(
+            app.current_view().center.y > vorher.y + 1.0,
+            "Z schwenkt jetzt nach oben: {:?} → {:?}",
+            vorher,
+            app.current_view().center
+        );
+    }
+
+    /// Ein einzelner Druck (Hotbar, Kürzel) rückt die Ansicht einen Schritt
+    /// weiter — die Funktion ist auch ohne gehaltene Taste benutzbar.
+    #[test]
+    fn schwenkfunktion_rueckt_einen_schritt() {
+        let mut app = app_mit_zeichnung();
+        let vorher = app.current_view().center;
+        app.run_action(&app.ctx.clone(), "view.pan_right");
+        let nachher = app.current_view().center;
+        assert!(
+            nachher.x > vorher.x + 1.0 && (nachher.y - vorher.y).abs() < 1.0,
+            "„Ansicht rechts“ muss nach rechts schieben: {vorher:?} → {nachher:?}"
+        );
+    }
+
+    /// Drehen und Spiegeln der Einfüge-Vorschau hängen an den Funktionen
+    /// „Drehen" (`modify.rotate`) und „Spiegeln" (`modify.mirror`) — nicht an
+    /// den festen Tasten R und F (T0056).
+    #[test]
+    fn vorschau_dreht_und_spiegelt_mit_den_funktionen() {
+        let mut app = App::with_ctx(egui::Context::default());
+        app.session_mut()
+            .execute(
+                "draw.line",
+                &serde_json::json!({"a": [0.0, 0.0], "b": [2.0, 0.0]}),
+            )
+            .expect("Linie anlegen");
+        let id = app.doc().entities[0].id;
+        app.session_mut().select(vec![id]);
+        app.copy_selection(false);
+        app.pointer_world = Some(V2::new(0.0, 0.0));
+        app.start_ghost_paste();
+        app.prefs.reset_bindings();
+        assert_eq!(app.prefs.key_for("modify.rotate").as_deref(), Some("r"));
+        assert_eq!(app.prefs.key_for("modify.mirror").as_deref(), Some("f"));
+
+        // Drehen auf Q legen: R darf nichts mehr drehen, Q schon.
+        app.prefs.bind("modify.rotate", "q");
+        let vorher = app.ghost.as_ref().map(|g| g.rot).unwrap_or(0.0);
+        frame_mit(&mut app, vec![druck(egui::Key::R)]);
+        let nach_r = app.ghost.as_ref().map(|g| g.rot).unwrap_or(0.0);
+        assert!(
+            (nach_r - vorher).abs() < 1e-9,
+            "R ist nicht mehr „Drehen“ und darf die Vorschau nicht drehen"
+        );
+        frame_mit(&mut app, vec![druck(egui::Key::Q)]);
+        let nach_q = app.ghost.as_ref().map(|g| g.rot).unwrap_or(0.0);
+        assert!(
+            (nach_q - vorher).abs() > 0.1,
+            "Q dreht jetzt die Vorschau: {vorher} → {nach_q}"
+        );
+
+        // Spiegeln auf E legen: F wirkt nicht mehr, E spiegelt.
+        app.prefs.bind("modify.mirror", "e");
+        let gespiegelt_vorher = app.ghost.as_ref().map(|g| g.mirror).unwrap_or(false);
+        frame_mit(&mut app, vec![druck(egui::Key::F)]);
+        assert_eq!(
+            app.ghost.as_ref().map(|g| g.mirror).unwrap_or(false),
+            gespiegelt_vorher,
+            "F ist nicht mehr „Spiegeln“ und darf die Vorschau nicht spiegeln"
+        );
+        frame_mit(&mut app, vec![druck(egui::Key::E)]);
+        assert_ne!(
+            app.ghost.as_ref().map(|g| g.mirror).unwrap_or(false),
+            gespiegelt_vorher,
+            "E spiegelt jetzt die Vorschau"
+        );
+    }
+
+    /// Ein Druck auf eine Taste mit fester Kombination (Strg+S) bleibt beim
+    /// Speichern — die Funktion lässt sich nicht auf einen Buchstaben umlegen.
+    #[test]
+    fn kombinationen_bleiben_fest() {
+        let mut app = App::with_ctx(egui::Context::default());
+        app.prefs.bind("file.save", "k");
+        assert_eq!(app.prefs.key_for("file.save").as_deref(), Some("ctrl+s"));
+        assert_eq!(app.prefs.action_for_key("k").as_deref(), Some("draw.circle"));
+        assert!(!app.prefs.belegung_aenderbar("file.save"));
     }
 }
 

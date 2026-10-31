@@ -1347,16 +1347,15 @@ fn tasten_belegung(orig: Pos2) -> Vec<(&'static str, Rect)> {
 }
 
 fn keyboard_body(app: &mut App, ui: &mut Ui) {
-    ui.horizontal(|ui| {
+    // Der Hinweis nennt die drei Schichten aus `docs/TASTEN.md`. Er läuft über
+    // die ganze Breite und bricht um — in einer Zeile ragte er über den Rand
+    // des Dialogs hinaus.
+    ui.horizontal_wrapped(|ui| {
         ui.label(theme::dim(
-            "Taste anklicken, dann Funktion aus der Liste zuweisen. \
-             Ziffern und Steuerungstasten sind fest vergeben und ausgegraut.",
+            "Taste anklicken, dann Funktion aus der Liste zuweisen. Buchstaben und \
+             Symbole sind frei belegbar; Ziffern gehören der Hotbar; Steuerungstasten \
+             und Kombinationen sind fest verdrahtet und ausgegraut.",
         ));
-        ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-            if let Some(k) = app.ui.keymap_selected.clone() {
-                ui.label(theme::mono(format!("Taste: {k}")));
-            }
-        });
     });
     ui.add_space(6.0);
 
@@ -1493,6 +1492,7 @@ fn keyboard_body(app: &mut App, ui: &mut Ui) {
     ui.add_space(8.0);
     ui.horizontal(|ui| {
         if let Some(key) = app.ui.keymap_selected.clone() {
+            ui.label(theme::mono(format!("Taste: {key}")));
             if ui.button("Belegung dieser Taste entfernen").clicked() {
                 if let Some(a) = app.prefs.action_for_key(&key) {
                     app.prefs.bindings.remove(&a);
@@ -1520,6 +1520,10 @@ fn keyboard_body(app: &mut App, ui: &mut Ui) {
                     continue;
                 }
                 let current = app.prefs.key_for(def.id);
+                // Funktionen mit fest verdrahteter Taste (Strg+S, F1 …) sind
+                // nicht umbelegbar — sie stehen als Hinweis in der Liste, aber
+                // ohne Klickziel (T0056, `docs/TASTEN.md`).
+                let aenderbar = app.prefs.belegung_aenderbar(def.id);
                 let label = format!(
                     "{}{}",
                     def.label,
@@ -1528,6 +1532,16 @@ fn keyboard_body(app: &mut App, ui: &mut Ui) {
                         .map(|k| format!("   ({})", k.to_uppercase()))
                         .unwrap_or_default()
                 );
+                if !aenderbar {
+                    ui.add_enabled(
+                        false,
+                        egui::SelectableLabel::new(false, format!("{label}   · fest")),
+                    )
+                    .on_disabled_hover_text(
+                        "Tastenkombination oder Funktionstaste — im Programm fest vergeben",
+                    );
+                    continue;
+                }
                 if ui
                     .selectable_label(
                         app.prefs.action_for_key(&key).as_deref() == Some(def.id),
@@ -1553,10 +1567,11 @@ fn help_body(app: &mut App, ui: &mut Ui) {
     ui.add_space(4.0);
     for (k, v) in [
         ("Zeichnen", "Werkzeug wählen (Ribbon, Hotbar, Taste) und Punkte klicken. ESC bricht ab."),
-        ("Navigation", "Mausrad zoomt, mittlere Maustaste oder Leertaste+Ziehen schwenkt, W/A/S/D schwenkt ebenfalls."),
+        ("Navigation", "Mausrad zoomt, mittlere Maustaste oder Leertaste+Ziehen schwenkt. Die Tasten zum Schwenken (Vorgabe W/A/S/D) sind Funktionen der Tastaturbelegung."),
         ("Fangen", "Endpunkte, Mittelpunkte, Schnittpunkte und Raster werden automatisch gefangen (Statuszeile zeigt den Fangtyp)."),
         ("Eingabe", "Nach dem ersten Klick Länge tippen und Enter – oder \"x;y\" für absolute Koordinaten (Semikolon als Trenner, Komma ist Dezimalzeichen)."),
         ("Hotbar", "Tasten 1–0 starten die Slots. Aktives Werkzeug + Klick auf leeren Slot = Verknüpfung."),
+        ("Tasten", "Drei Schichten: Ziffern 1–0 = Hotbar, Buchstaben und Symbole = Tastaturbelegung (frei änderbar), Steuerungstasten und Kombinationen (Esc, F1–F12, Strg+C) = fest verdrahtet."),
         ("Inventar", "E öffnet und schließt Lager, Blockbibliothek und Funktionsliste. Alles ist per Drag & Drop auf die Hotbar ziehbar."),
         ("Auswahl", "Klick wählt, Ziehen von links nach rechts = Fenster, von rechts nach links = Querfenster, Shift ergänzt."),
         ("Blätter", "Reiter oben wechseln zwischen Modell und Blättern; PDF exportiert das aktuelle Blatt."),

@@ -2488,22 +2488,13 @@ fn handle_navigation(app: &mut App, ui: &mut Ui, resp: &Response, rect: Rect, vi
         v.center -= w;
         app.set_view(v);
     }
-    // WASD-Schwenk
+    // Schwenk mit der Tastatur. Die vier Richtungen sind **Funktionen** der
+    // Tastaturbelegung (`view.pan_left` … `view.pan_down`, Vorgabe W/A/S/D),
+    // keine festen Tasten (T0056): welche Taste schiebt, entscheidet die
+    // Belegung — dieselbe Liste wie in `App::handle_shortcuts`.
     if !ctx.wants_keyboard_input() {
         let dt = ctx.input(|i| i.stable_dt).min(0.1);
-        let mut dir = Vec2::ZERO;
-        if ctx.input(|i| i.key_down(egui::Key::A)) {
-            dir.x -= 1.0;
-        }
-        if ctx.input(|i| i.key_down(egui::Key::D)) {
-            dir.x += 1.0;
-        }
-        if ctx.input(|i| i.key_down(egui::Key::W)) {
-            dir.y -= 1.0;
-        }
-        if ctx.input(|i| i.key_down(egui::Key::S)) {
-            dir.y += 1.0;
-        }
+        let dir = app.schwenk_richtung(ctx);
         if dir != Vec2::ZERO {
             let mut v = app.current_view();
             let px = 700.0 * dt as f32;
