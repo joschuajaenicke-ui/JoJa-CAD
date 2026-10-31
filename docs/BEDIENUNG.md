@@ -98,6 +98,13 @@ ausgeblendet.
   Blatts. Die Werte stehen als Tabelle mit fester Namensspalte und Zebra-Streifen untereinander.
 - **Hotbar-Vorlagen** wählt man über das Dropdown unten links; dort lassen sich neue Vorlagen
   anlegen (Kopie der aktuellen), umbenennen und löschen.
+- **Leistungsanzeige** (Umschalt+F3, kleines Feld oben rechts in der Zeichenfläche): Abstand und
+  Rechenzeit der gezeichneten Bilder mit Perzentilen (p50 · p95 · p99) sowie die Aufteilung der
+  Rechenzeit in Abschnitte (Oberfläche, Displayliste, Fangen, Zeichnen, Bedienung, Fenster) mit
+  Anteil und den Posten Füllungen/Linien/Text. Darunter Zeichnungsgröße, Grafikelemente,
+  Trefferquote des Zwischenspeichers, Zoom, Speicher und Threads. Eine Bilder-pro-Sekunde-Zahl
+  gibt es bewusst nicht: JoJa-CAD zeichnet nur, wenn ein Bild gebraucht wird, Pausen sagen
+  nichts über die Zeichenzeit. Die Anzeige nimmt keine Klicks an.
 
 ## Nachweis für den DPI-Modus
 

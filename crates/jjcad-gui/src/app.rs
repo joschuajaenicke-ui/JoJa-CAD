@@ -936,6 +936,8 @@ pub struct App {
     pub halt: Vec<jjcad_core::snap::HaltPunkt>,
     /// Verweil-Erkennung, die `halt` füllt.
     pub verweil: crate::canvas::VerweilFang,
+    /// Leistungsanzeige (Umschalt+F3): Messwerte je Bild und ihr Verlauf
+    pub perf: crate::perf::Perf,
 }
 
 impl App {
@@ -1006,6 +1008,7 @@ impl App {
             paint: crate::canvas::PaintPreview::default(),
             halt: Vec::new(),
             verweil: crate::canvas::VerweilFang::default(),
+            perf: crate::perf::Perf::default(),
         };
         app.ui.show_grid = show_grid;
         app.ui.lineweights = lineweights;
@@ -1063,6 +1066,8 @@ impl App {
                     self.ui.inventory_tab = 2;
                 }
                 "keymap" => self.ui.keymap_open = true,
+                // Leistungsanzeige offen (Screenshot-Prüfung T0068)
+                "perf" | "leistung" => self.perf.an = true,
                 // Chat-Protokoll mit Beispielmeldungen (Screenshot-Prüfung)
                 "chat" => {
                     for t in [
@@ -2829,6 +2834,14 @@ impl App {
             self.toggle_fullscreen(ctx);
             return;
         }
+        // Umschalt+F3 schaltet die Leistungsanzeige (T0068) — wie das Vollbild
+        // unabhängig von Werkzeug und Tippeingabe: man braucht sie auch, wenn
+        // ein Werkzeug läuft und gerade etwas schlecht reagiert.
+        if ctx.input(|i| i.key_pressed(egui::Key::F3) && i.modifiers.shift) {
+            self.perf.an = !self.perf.an;
+            self.toast(if self.perf.an { "Leistung · an" } else { "Leistung · aus" });
+            return;
+        }
         // Text wird direkt in der Zeichnung geschrieben: solange geschrieben
         // wird, gehört die Tastatur dem Text — keine Kürzel, kein Esc-Abbruch.
         // Esc übernimmt und der Rechtsklick bricht ab; beides wertet
@@ -4162,6 +4175,10 @@ fn rail(ui: &mut egui::Ui, icon: &str, tooltip: &str, chevron: &str) -> bool {
     // ---- Rahmen ----
 
     pub fn ui(&mut self, ctx: &egui::Context) {
+        // Leistungsanzeige (T0068): Abschnittsgrenze vor dem Aufbau der
+        // Oberfläche. Der Wechsel gehört zum **vorigen** Abschnitt, deshalb
+        // steht er hier und nicht nach der Zeichenfläche.
+        self.perf.abschnitt(crate::perf::Abschnitt::Oberflaeche);
         // Offener Systemdialog ist modal: die Anwendung nimmt keine Eingaben an,
         // bis der Nutzer im Dialog wählt oder abbricht. Ohne das ließen sich
         // Zeichnung und Werkzeuge hinter dem Dialog weiterbedienen.
@@ -4255,6 +4272,9 @@ fn rail(ui: &mut egui::Ui, icon: &str, tooltip: &str, chevron: &str) -> bool {
                 canvas::show(self, ui);
             });
 
+        // Dialoge, Menüs, Inventar und Chat sind der letzte Abschnitt eines
+        // Bildes; `App::update` schließt ihn ab (`bild_beenden`).
+        self.perf.abschnitt(crate::perf::Abschnitt::Fenster);
         dialogs::show(self, ctx);
         // Geschlossene Tastaturbelegung lässt keinen Merker zurück (T0064):
         // sonst legte ein Klick auf eine leere Taste eine längst vergessene
@@ -4269,6 +4289,9 @@ fn rail(ui: &mut egui::Ui, icon: &str, tooltip: &str, chevron: &str) -> bool {
         crate::chat::fenster(self, ctx);
         // Systemdialog offen: Zeichnung abdunkeln und Hinweis zeigen
         dialogs::systemdialog_schleier(self, ctx);
+        // Leistungsanzeige zuletzt: sie zeigt die **abgeschlossenen** Bilder und
+        // gehört damit über alles andere.
+        crate::perf::overlay(self, ctx);
     }
 }
 
@@ -4880,6 +4903,10 @@ impl App {
 
 impl eframe::App for App {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
+        // Leistungsanzeige (T0068): Bild beginnen — Abstand zum vorigen Bild und
+        // die Abschnittsmarken messen. Das läuft immer mit; ein paar
+        // Uhrablesungen je Bild kosten nichts.
+        self.perf.bild_beginnen();
         self.ui(ctx);
         self.draw_menu(ctx);
         if self.started_at < 3.0 {
@@ -4907,6 +4934,13 @@ impl eframe::App for App {
             self.ui.sel_stamp = stamp;
             ctx.request_repaint();
         }
+        // Offene Leistungsanzeige: die Zahlen einmal je Sekunde nachziehen, auch
+        // wenn sonst nichts passiert. Solche Pausenbilder verlassen den Verlauf
+        // (`perf::PAUSE_MS`), die Perzentile bleiben also sauber.
+        if self.perf.an {
+            ctx.request_repaint_after(std::time::Duration::from_millis(1000));
+        }
+        self.perf.bild_beenden();
 }
 
     fn on_exit(&mut self, _gl: Option<&eframe::glow::Context>) {
@@ -7041,3 +7075,175 @@ mod tests_einfuegemodus {
         );
     }
 }
+
+mod tests_leistung {
+    //! T0068: Leistungsanzeige (Umschalt+F3).
+    //!
+    //! Geprüft wird der Weg über die Tastatur (feste Kombination) und dass die
+    //! Anzeige nur dann gezeichnet wird, wenn sie offen ist. Die Aufteilung der
+    //! Rechenzeit selbst prüft `perf::tests`.
+
+    use super::*;
+
+    /// Ein Bild wie in `App::update`: Messung beginnen, zeichnen, abschließen.
+    ///
+    /// Die Umschaltlage kommt in egui 0.29 aus `RawInput::modifiers` — aus den
+    /// `Event::Key`-Einträgen allein liest sie niemand (siehe `InputState`).
+    fn frame_mit(
+        ctx: &egui::Context,
+        app: &mut App,
+        events: Vec<egui::Event>,
+        mods: egui::Modifiers,
+    ) -> egui::FullOutput {
+        let raw = egui::RawInput {
+            screen_rect: Some(Rect::from_min_size(Pos2::ZERO, Vec2::new(1500.0, 950.0))),
+            events,
+            modifiers: mods,
+            ..Default::default()
+        };
+        app.perf.bild_beginnen();
+        let out = ctx.run(raw, |ctx| app.ui(ctx));
+        app.perf.bild_beenden();
+        out
+    }
+
+    fn frame(ctx: &egui::Context, app: &mut App) -> egui::FullOutput {
+        frame_mit(ctx, app, Vec::new(), egui::Modifiers::NONE)
+    }
+
+    /// Umschalt+F3 — die Umschaltlage steht zusätzlich im Rohzustand.
+    fn umschalt_f3(ctx: &egui::Context, app: &mut App) -> egui::FullOutput {
+        frame_mit(ctx, app, f3(true), egui::Modifiers::SHIFT)
+    }
+
+    fn f3(umschalt: bool) -> Vec<egui::Event> {
+        vec![egui::Event::Key {
+            key: egui::Key::F3,
+            physical_key: None,
+            pressed: true,
+            repeat: false,
+            modifiers: if umschalt {
+                egui::Modifiers::SHIFT
+            } else {
+                egui::Modifiers::NONE
+            },
+        }]
+    }
+
+    /// Alle gemalten Texte eines Bildes.
+    fn texte(out: &egui::FullOutput) -> Vec<String> {
+        out.shapes
+            .iter()
+            .filter_map(|cs| match &cs.shape {
+                egui::Shape::Text(t) => Some(t.galley.text().to_string()),
+                _ => None,
+            })
+            .collect()
+    }
+
+    /// Steht die Zeile im Bild? Die Einrückung der Anzeige zählt dabei nicht.
+    fn hat(out: &egui::FullOutput, text: &str) -> bool {
+        texte(out).iter().any(|t| t.trim() == text)
+    }
+
+    #[test]
+    fn umschalt_f3_schaltet_die_anzeige_ein_und_aus() {
+        let ctx = egui::Context::default();
+        let mut app = App::with_ctx(ctx.clone());
+        frame(&ctx, &mut app);
+        assert!(!app.perf.an, "die Anzeige darf nicht von selbst offen sein");
+        let out = frame(&ctx, &mut app);
+        assert!(!hat(&out, "Leistung"), "ohne Umschalt+F3 darf nichts stehen");
+
+        let _ = umschalt_f3(&ctx, &mut app);
+        assert!(app.perf.an, "Umschalt+F3 muss die Anzeige öffnen");
+        // Ein frisches `egui::Area` kennt seine Größe erst nach einem Bild — im
+        // Auslösebild bleibt es leer (gemessen), deshalb das nächste abwarten.
+        let out = frame(&ctx, &mut app);
+        assert!(hat(&out, "Leistung"), "die Anzeige muss im Bild stehen");
+        // Je Zeile der Aufschlüsselung eine Sonde — „Zeichnen" allein wäre
+        // nicht eindeutig (so heißt auch eine Registerkarte).
+        for name in [
+            "Abstand",
+            "Rechnen",
+            "außerhalb",
+            "Displayliste",
+            "Fangen",
+            "Bedienung",
+            "Fenster",
+            "Füllungen",
+            "Linien",
+        ] {
+            assert!(hat(&out, name), "Zeile „{name}\" fehlt in der Anzeige");
+        }
+
+        let _ = umschalt_f3(&ctx, &mut app);
+        assert!(!app.perf.an, "zweites Umschalt+F3 muss die Anzeige schließen");
+        let out = frame(&ctx, &mut app);
+        assert!(!hat(&out, "Leistung"), "geschlossen darf nichts stehen bleiben");
+    }
+
+    #[test]
+    fn f3_ohne_umschalt_schaltet_nichts() {
+        // F3 allein ist keine Belegung: die Kombination ist die Funktion.
+        let ctx = egui::Context::default();
+        let mut app = App::with_ctx(ctx.clone());
+        frame(&ctx, &mut app);
+        let out = frame_mit(&ctx, &mut app, f3(false), egui::Modifiers::NONE);
+        assert!(!app.perf.an, "F3 ohne Umschalt darf die Anzeige nicht öffnen");
+        assert!(!hat(&out, "Leistung"));
+    }
+
+    #[test]
+    fn anzeige_steht_ueber_der_zeichenflaeche_und_bleibt_im_bild() {
+        let ctx = egui::Context::default();
+        let mut app = App::with_ctx(ctx.clone());
+        app.perf.an = true;
+        for _ in 0..3 {
+            frame(&ctx, &mut app);
+        }
+        // Die Anzeige liegt in der Zeichenfläche (nicht über Ribbon oder Panel)
+        // und wird nicht abgeschnitten: ihre Textzeilen liegen im Fenster.
+        let out = frame(&ctx, &mut app);
+        let flaeche = app.ui.last_canvas;
+        let fenster = Rect::from_min_size(Pos2::ZERO, Vec2::new(1500.0, 950.0));
+        let mut gefunden = false;
+        for cs in &out.shapes {
+            if let egui::Shape::Text(t) = &cs.shape {
+                if t.galley.text() == "Leistung" {
+                    gefunden = true;
+                    let kasten = t.galley.rect.translate(t.pos.to_vec2());
+                    assert!(
+                        flaeche.contains_rect(kasten),
+                        "die Anzeige steht bei {kasten:?} außerhalb der Zeichenfläche {flaeche:?}"
+                    );
+                    assert!(fenster.contains_rect(kasten));
+                }
+            }
+        }
+        assert!(gefunden, "die Anzeige fehlt im Bild");
+    }
+
+    #[test]
+    fn anzeige_faengt_keine_klicks() {
+        // Sie liegt über der Zeichnung: ein Klick darauf muss die Zeichenfläche
+        // erreichen, sonst ist ein Stück Plan nicht mehr bedienbar.
+        let ctx = egui::Context::default();
+        let mut app = App::with_ctx(ctx.clone());
+        app.perf.an = true;
+        for _ in 0..3 {
+            frame(&ctx, &mut app);
+        }
+        let _ = frame(&ctx, &mut app);
+        let flaeche = app.ui.last_canvas;
+        let in_der_anzeige = egui::pos2(flaeche.right() - 120.0, flaeche.top() + 90.0);
+        let freie_flaeche = egui::pos2(flaeche.left() + 60.0, flaeche.bottom() - 60.0);
+        assert_eq!(
+            ctx.layer_id_at(in_der_anzeige).map(|l| l.order),
+            ctx.layer_id_at(freie_flaeche).map(|l| l.order),
+            "die Leistungsanzeige zieht eine eigene Klick-Ebene über die Zeichnung"
+        );
+    }
+
+}
+

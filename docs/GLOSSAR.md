@@ -109,6 +109,7 @@ Steht rechts „nicht", dann ist das Wort im Projekt verpönt (auch in der Oberf
 | **Protokoll** | Der geöffnete Chat: alle Meldungen, scrollbar, Zeichnung blass | Verlauf, Historie |
 | **Toast** | Kurze Meldung, die von selbst verschwindet — heute eine Zeile im Chat | Benachrichtigung, Popup |
 | **Zieh-Modus** | Wie gezogen wird: „Gedrückthalten" oder „Zwei Klicks" | Drag-Modus, Drag and Drop |
+| **Leistungsanzeige** | Feld oben rechts in der Zeichenfläche mit Abstand und Rechenzeit je Bild samt Abschnitten (Umschalt+F3) | Perf-Overlay, FPS-Anzeige, Debug-HUD |
 
 ## 6. Ausgabe
 

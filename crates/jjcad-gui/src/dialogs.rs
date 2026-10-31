@@ -2058,6 +2058,7 @@ fn help_body(app: &mut App, ui: &mut Ui) {
         ("Inventar", "E öffnet und schließt Lager, Blockbibliothek und Funktionsliste. Alles ist per Drag & Drop auf die Hotbar ziehbar."),
         ("Auswahl", "Klick wählt, Ziehen von links nach rechts = Fenster, von rechts nach links = Querfenster, Shift ergänzt."),
         ("Blätter", "Reiter oben wechseln zwischen Modell und Blättern; PDF exportiert das aktuelle Blatt."),
+        ("Leistung", "Umschalt+F3 zeigt Messwerte je Bild: Abstand, Rechenzeit und ihre Abschnitte (Fangen, Displayliste, Zeichnen, Bedienung) mit Perzentilen."),
     ] {
         ui.horizontal(|ui| {
             ui.allocate_ui_with_layout(Vec2::new(110.0, 18.0), Layout::left_to_right(Align::Center), |ui| {

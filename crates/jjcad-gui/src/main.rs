@@ -14,6 +14,7 @@ mod handles;
 mod icons;
 mod inventory;
 mod panels;
+mod perf;
 mod props;
 mod systemdialog;
 mod textedit;

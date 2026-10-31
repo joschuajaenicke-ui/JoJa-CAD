@@ -159,6 +159,21 @@ bearbeitet werden müssen.
   als Fenster dieser Anwendung über dem Hauptfenster erscheint. `ESC` bleibt als
   Notausstieg, falls das Portal nicht antwortet.
 
+- **Leistungsanzeige (T0068):** `crates/jjcad-gui/src/perf.rs` misst je Bild den
+  Abstand zum vorigen Bild und die Rechenzeit, zerlegt in die Abschnitte der
+  Anzeigekette: **Oberfläche** (Kopf, Ribbon, Reiter, Panels), **Displayliste**
+  (Aufbau bzw. Kopie aus dem Zwischenspeicher), **Fangen** (Navigation, Fangen,
+  Verweilfang), **Zeichnen** (Raster, Papier, Grafikelemente — nach Füllung,
+  Linie und Text getrennt) und **Bedienung** (Vorschau, Griffe, Fadenkreuz,
+  Eingabe); **Fenster** sind Dialoge, Menüs, Chat und die Anzeige selbst.
+  Die Marken setzt `App::ui`/`canvas::show` über `Perf::abschnitt`; die Summe
+  **muss** die Rechenzeit ergeben (`perf::tests::abschnitte_ergeben_die_rechenzeit`).
+  Tessellierung und GPU sind von der Anwendung aus nicht messbar — sie erscheinen
+  als „außerhalb“ (Abstand minus Rechenzeit). Perzentile laufen über einen Ring
+  der letzten 240 Bilder; Pausen (Abstand über 600 ms) zählen nicht mit, weil in
+  einer Pause nichts gerechnet wurde. Die Zerlegung je Grafikelement ist nur bei
+  offener Anzeige aktiv (eine Uhr je Element).
+
 ## Ausgabe
 
 - **PDF:** eigener Schreiber (kein Fremdpaket): Content-Streams, Helvetica mit
