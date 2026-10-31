@@ -26,7 +26,9 @@ einsehbar und dort frei änderbar (Ribbon ▸ Ansicht ▸ „Tasten").
 5. **Inventar** (`E`): Lager, Blockbibliothek und alle Funktionen — per Drag & Drop auf die Hotbar.
 6. **Navigieren**: Mausrad zoomt, mittlere Taste oder `Leertaste`+Ziehen schwenkt.
    `W A S D` schwenkt ebenfalls — als Funktionen „Ansicht oben/links/unten/rechts",
-   die in der Tastaturbelegung stehen und umbelegt werden können.
+   die in der Tastaturbelegung stehen und umbelegt werden können. Das Tempo steht in
+   den Einstellungen unter **Bedienung** in der Zeile **„Schwenk"** als Faktor
+   (0,1× bis 5×, Vorgabe 1×) und gilt für Halten wie für den Einzelschritt.
 7. **Länge tippen**: nach dem ersten Klick Ziffern eingeben, `Enter` übernimmt den Abstand —
    oder `x;y` für absolute Koordinaten (Semikolon trennt, Komma ist Dezimalzeichen: `2,5;3,0`).
 8. **Auswählen**: Klick wählt ein Objekt, `Umschalt`+Klick ergänzt. Ziehen von links nach rechts

@@ -974,6 +974,11 @@ pub(crate) const EINSTELLUNGSKATEGORIEN: &[Einstellungskategorie] = &[
             "Maus",
             "Maus verschiebt",
             "Verschieben",
+            "Schwenk",
+            "Bewegungsgeschwindigkeit",
+            "Geschwindigkeit",
+            "WASD",
+            "W A S D",
             "Dateidialog",
             "Bedienung",
         ],
@@ -1086,6 +1091,7 @@ fn settings_body(app: &mut App, ui: &mut Ui) {
     let mut show_props = app.ui.props_open;
     let mut marker = app.prefs.snap_marker;
     let mut mouse_move = app.prefs.mouse_move;
+    let mut pan_speed = app.prefs.pan_speed;
     let mut dateidialog_system = app.prefs.dateidialog_system();
 
     // Suche: Kategorien, deren Name oder eine ihrer Einstellungen passt.
@@ -1383,6 +1389,42 @@ fn settings_body(app: &mut App, ui: &mut Ui) {
                                         "aus: Objekte wandern nur über das Werkzeug „Verschieben“",
                                     ));
                                 }
+                                // T0067: Tempo der Schwenk-Funktionen (`view.pan_*`,
+                                // Vorgabe W/A/S/D) als Faktor auf das Grundtempo.
+                                zeile_mit(
+                                    &suche,
+                                    ui,
+                                    "Schwenk",
+                                    &[
+                                        "Bewegungsgeschwindigkeit",
+                                        "Geschwindigkeit",
+                                        "WASD",
+                                        "W A S D",
+                                        "Tempo",
+                                        "Ansicht",
+                                    ],
+                                    |ui| {
+                                        let antwort = ui.add_sized(
+                                            [widgets::VAL_W, 20.0],
+                                            widgets::zahl(
+                                                &mut pan_speed,
+                                                0.05,
+                                                jjcad_core::persist::SCHWENK_FAKTOR_MIN
+                                                    ..=jjcad_core::persist::SCHWENK_FAKTOR_MAX,
+                                            )
+                                            .max_decimals(2)
+                                            .suffix(" ×"),
+                                        );
+                                        antwort.on_hover_text(
+                                            "Faktor für den Schwenk mit W/A/S/D (1 × = Vorgabe)",
+                                        );
+                                    },
+                                );
+                                if suche.is_empty() {
+                                    ui.label(theme::faint(
+                                        "gilt für den Schwenk der Ansicht (W A S D)",
+                                    ));
+                                }
                                 zeile(&suche, ui, "Dateidialog", |ui| {
                                     let moeglich = crate::systemdialog::verfuegbar();
                                     ui.selectable_value(&mut dateidialog_system, true, "System")
@@ -1439,6 +1481,13 @@ fn settings_body(app: &mut App, ui: &mut Ui) {
     app.prefs.drag_mode = drag_mode;
     if app.prefs.mouse_move != mouse_move {
         app.prefs.mouse_move = mouse_move;
+        let _ = app.prefs.save();
+    }
+    if (app.prefs.pan_speed - pan_speed).abs() > 1e-6 {
+        app.prefs.pan_speed = pan_speed.clamp(
+            jjcad_core::persist::SCHWENK_FAKTOR_MIN,
+            jjcad_core::persist::SCHWENK_FAKTOR_MAX,
+        );
         let _ = app.prefs.save();
     }
     let dialog_neu = if dateidialog_system { "system" } else { "intern" };
@@ -2887,6 +2936,9 @@ mod tests_einstellungen {
         assert_eq!(treffer("Wandstärke"), vec!["Architektur"]);
         assert_eq!(treffer("dateidialog"), vec!["Bedienung"]);
         assert_eq!(treffer("maus verschiebt"), vec!["Bedienung"]);
+        // T0067: Die Bewegungsgeschwindigkeit ist unter „Bedienung“ zu finden.
+        assert_eq!(treffer("bewegungsgeschwindigkeit"), vec!["Bedienung"]);
+        assert_eq!(treffer("schwenk"), vec!["Bedienung"]);
         assert!(treffer("gibtesnicht").is_empty(), "Unbekannter Begriff liefert Treffer");
     }
 
@@ -2953,5 +3005,34 @@ mod tests_einstellungen {
             "Zeile „Maus verschiebt“ fehlt im Einstellungsfenster"
         );
         assert!(app.prefs.mouse_move, "Vorgabe: Maus verschiebt ist eingeschaltet");
+    }
+
+    /// T0067: Unter „Bedienung“ steht zusätzlich die Zeile „Schwenk“ für die
+    /// Bewegungsgeschwindigkeit der Schwenk-Funktionen (W A S D).
+    #[test]
+    fn bedienung_zeigt_die_schwenkgeschwindigkeit() {
+        let ctx = egui::Context::default();
+        let mut app = App::with_ctx(ctx.clone());
+        app.ui.settings_open = true;
+        app.ui.settings_kat = 5;
+        let bild = || egui::RawInput {
+            screen_rect: Some(Rect::from_min_size(Pos2::ZERO, Vec2::new(1500.0, 950.0))),
+            ..Default::default()
+        };
+        let mut out = ctx.run(bild(), |ctx| app.ui(ctx));
+        for _ in 0..3 {
+            out = ctx.run(bild(), |ctx| app.ui(ctx));
+        }
+        assert!(
+            out.shapes
+                .iter()
+                .any(|cs| matches!(&cs.shape,
+                    egui::Shape::Text(t) if t.galley.text() == "Schwenk")),
+            "Zeile „Schwenk“ fehlt im Einstellungsfenster"
+        );
+        assert!(
+            (app.prefs.pan_speed - 1.0).abs() < 1e-6,
+            "Vorgabe der Schwenkgeschwindigkeit ist 1×"
+        );
     }
 }
