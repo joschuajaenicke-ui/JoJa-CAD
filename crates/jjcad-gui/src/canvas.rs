@@ -7132,6 +7132,83 @@ mod tests_fang_griff {
         assert_punkt(p, V2::new(2000.0, 0.0));
     }
 
+    /// Polar nutzt **beide** Winkelkränze des Griffs (T0054): der Zeiger steht
+    /// näher am nächsten Stützpunkt, dort liegt aber keine Richtung im Fenster
+    /// — die Waagerechte des weiter entfernten Bezugs muss trotzdem fangen.
+    /// Vorher rastete nur der Kranz des näheren Nachbarn.
+    #[test]
+    fn griffzug_rastet_auf_den_polarwinkel_des_ferneren_nachbarn() {
+        let mut app = app_mit_zwang(false, true);
+        app.session_mut()
+            .execute(
+                "draw.polyline",
+                &serde_json::json!({"pts": [[0.0, 0.0], [2000.0, 1500.0], [2500.0, 0.0]]}),
+            )
+            .unwrap();
+        let id = app.doc().entities[0].id;
+        app.session_mut().select(vec![id]);
+        app.begin_grip_drag(id, crate::handles::GripKind::Vert(1));
+
+        // 200 mm über dem nächsten Stützpunkt (2500;0), 2600 mm vom vorigen:
+        // vom nächsten aus 63° (kein Fenster), vom vorigen aus 4,4°.
+        let roh = V2::new(2600.0, 200.0);
+        let (p, label) = fang_zeiger(&app, roh, 40.0);
+        assert_eq!(label, Some("POL"), "Statuszeile zeigt den Polarfang");
+        assert!(p.y.abs() < 1e-6, "nicht auf der Waagerechten: {p:?}");
+        assert!(
+            (p.dist(V2::ZERO) - roh.dist(V2::ZERO)).abs() < 1e-6,
+            "Länge bleibt: {p:?}"
+        );
+    }
+
+    /// Die Kreuzung der beiden Winkelkränze ist ein Punktziel (T0054): der
+    /// Griff landet genau im Schnittpunkt, und so steht er in der Datei.
+    #[test]
+    fn mauszug_faengt_die_kreuzung_der_polarwinkel_und_speichert() {
+        let mut app = app_mit_zwang(false, true);
+        app.session_mut()
+            .execute(
+                "draw.polyline",
+                &serde_json::json!({"pts": [[0.0, 0.0], [1500.0, 1500.0], [4000.0, 0.0]]}),
+            )
+            .unwrap();
+        let id = app.doc().entities[0].id;
+        app.session_mut().select(vec![id]);
+
+        frame(&mut app, vec![]);
+        let rect = app.ui.last_canvas;
+        let view = app.current_view();
+        let tol = fang_radius_px(&app, view.zoom);
+        let griff = world_to_screen(rect, view, V2::new(1500.0, 1500.0));
+        // 45° des vorigen (0;0) und 135° des nächsten (4000;0) kreuzen sich in
+        // (2000;2000); der Zeiger steht knapp daneben.
+        let kreuzung = V2::new(2000.0, 2000.0);
+        let ziel = world_to_screen(
+            rect,
+            view,
+            V2::new(kreuzung.x + tol * 0.6, kreuzung.y + tol * 0.6),
+        );
+
+        frame(&mut app, vec![egui::Event::PointerMoved(griff)]);
+        frame(&mut app, vec![druck(griff)]);
+        assert!(app.grip_drag.is_some(), "Griffzug muss beginnen");
+        frame(&mut app, vec![egui::Event::PointerMoved(ziel)]);
+        frame(&mut app, vec![egui::Event::PointerMoved(ziel)]);
+        frame(&mut app, vec![loslassen(ziel)]);
+        assert!(app.grip_drag.is_none(), "Loslassen beendet den Zug");
+
+        let json = jjcad_core::persist::to_json(app.doc()).expect("speichern");
+        let wieder = jjcad_core::persist::from_json(&json).expect("laden");
+        let geladen = wieder
+            .entity(id)
+            .and_then(|e| match &e.kind {
+                EntityKind::Polyline { verts, .. } => Some(verts[1].p),
+                _ => None,
+            })
+            .expect("Polylinie in der Datei");
+        assert_punkt(geladen, kreuzung);
+    }
+
     /// Derselbe Fall durch die Oberfläche: die ausgerichtete Ecke steht so in
     /// der gespeicherten Datei.
     #[test]

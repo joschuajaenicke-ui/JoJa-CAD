@@ -60,10 +60,12 @@ ausgeblendet.
   Schrittweiten (45°) ein. Bezug sind die ruhenden Punkte des Elements — bei Linie und Wand das
   andere Ende, bei Polylinie, Spline, Rechteck, Fläche und Volumen **beide** Nachbarn (voriger
   und nächster Stützpunkt). Beide Achsen stehen gleichzeitig zur Verfügung: der **Schnittpunkt**
-  beider Achsen ist ein eigenes Fangziel (eines Winkelfangs je Nachbar) und wird mit doppeltem
+  zweier Achsen verschiedener Nachbarn ist ein eigenes Fangziel und wird mit doppeltem
   Fangradius gefangen — dort stehen beide angrenzenden Linien zugleich gerade. Daneben rastet
-  jede Koordinate einzeln auf die nächstgelegene Achse. Dasselbe gilt für das Verschieben mit
-  der Maus.
+  jede Koordinate einzeln auf die nächstgelegene Achse. Beim **Polarfang** gilt dasselbe für
+  alle 45°-Richtungen **beider** Nachbarn: jede Richtung rastet ein (nicht nur die des näheren
+  Punkts), und die Kreuzung zweier Richtungen verschiedener Nachbarn ist ebenfalls ein Fangziel
+  mit doppeltem Fangradius. Dasselbe gilt für das Verschieben mit der Maus.
   Auch der **erweiterte Punktfang** arbeitet dabei: bleibt der Zeiger auf einem Fangpunkt
   stehen, wird dieser gehalten und seine Hilfslinien fangen den gezogenen Punkt.
 - **Linien** werden als Kapsel gezeichnet: Rechteck plus Halbkreis an beiden Enden. Dadurch sind

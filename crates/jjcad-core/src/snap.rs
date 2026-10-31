@@ -1038,8 +1038,10 @@ pub fn snap_constrained_mit_halte(
 ///   Liegen beide Koordinaten an Achsen — etwa in der Ecke eines Rechtecks —,
 ///   landet der Punkt auf deren Schnittpunkt, und beide Linien stehen
 ///   gleichzeitig im Zwang.
-/// * **Polar**: die Richtung kommt vom nächstgelegenen Bezug; gerastet wird
-///   wie bisher (Schrittweite und Winkel-Fenster).
+/// * **Polar**: jede Richtung des Winkelkranzes **jedes** Bezugs rastet ein
+///   (nicht nur der des nächstgelegenen), und die Kreuzung zweier Geraden
+///   verschiedener Bezüge ist ein eigenes Punktziel (T0054) — sonst ließ sich
+///   immer nur eine der beiden angrenzenden Linien in 45°-Schritten führen.
 ///
 /// Bei genau einem Bezug bleibt es beim harten Ortho des Erstellens — dort ist
 /// die Achse die einzige Führung und muss ohne Toleranz gelten.
@@ -1126,14 +1128,19 @@ pub fn snap_constrained_achsen(
                     source = SnapSource::Ortho;
                 }
             }
-        } else if let Some(r) = reference {
-            if s.polar && cursor.dist(r) > tol * 2.0 {
-                if let Some(p) =
-                    cursor.polar_snap_from_tol(r, s.polar_step.max(1.0), s.polar_tolerance)
-                {
-                    point = p;
-                    source = SnapSource::Polar;
-                }
+        } else if s.polar {
+            // **Alle** Bezüge liefern ihren Winkelkranz, nicht nur der
+            // nächstgelegene (T0054): sonst rastete nur die 45°-Schar des
+            // Nachbarn, der gerade näher am Zeiger liegt. Zuerst der
+            // Schnittpunkt zweier Polargeraden **verschiedener** Bezüge —
+            // ohne ihn wäre die Kreuzung der beiden Scharen nur auf den Pixel
+            // genau zu treffen, weil die Einzelgerade vorher greift.
+            if let Some(q) = polar_schnittpunkt(&s, cursor, achsen, tol * SCHNITTPUNKT_FAKTOR) {
+                point = q;
+                source = SnapSource::Polar;
+            } else if let Some(p) = polar_einzel(&s, cursor, achsen, tol) {
+                point = p;
+                source = SnapSource::Polar;
             }
         }
     } else if let Some(r) = reference {
@@ -1230,6 +1237,76 @@ fn achsen_koordinaten(achsen: &[Vec2], cursor: Vec2, tol: f64) -> (Option<f64>, 
         }
     }
     (x, y)
+}
+
+/// Polarrichtungen als unbegrenzte Geraden durch einen Bezugspunkt.
+///
+/// Ein Winkelkranz aus Vielfachen der Schrittweite (Vorgabe 45°) deckt alle
+/// acht Strahlen ab; für **Geraden** genügt die halbe Drehung, weil die
+/// Gegenrichtung dieselbe Linie ist. Der Schnittpunkt zweier Geraden darf
+/// deshalb auch hinter einem der Bezüge liegen (T0054).
+fn polar_richtungen(step_deg: f64) -> Vec<Vec2> {
+    let step = step_deg.max(1.0).to_radians();
+    let n = ((std::f64::consts::PI / step).floor() as usize).max(1);
+    (0..n).map(|k| Vec2::polar(k as f64 * step, 1.0)).collect()
+}
+
+/// Schnittpunkt zweier unbegrenzter Geraden (Ursprung + Richtung); `None` bei
+/// paralleler Lage.
+fn geraden_schnitt(a0: Vec2, ad: Vec2, b0: Vec2, bd: Vec2) -> Option<Vec2> {
+    let den = ad.x * bd.y - ad.y * bd.x;
+    if den.abs() < 1e-9 {
+        return None;
+    }
+    let w = b0 - a0;
+    let t = (w.x * bd.y - w.y * bd.x) / den;
+    Some(a0 + ad * t)
+}
+
+/// Nächstgelegener Schnittpunkt zweier Polarrichtungen **verschiedener**
+/// Bezugspunkte im Fenster `radius` (T0054).
+///
+/// Die Kreuzung der beiden Winkelkränze ist ein Punktziel: ohne eigenes
+/// Fangfenster wäre sie nur auf den Pixel genau zu treffen, weil die
+/// Einzelgerade vorher greift. Geraden desselben Bezugs bleiben außen vor —
+/// ihre Kreuzung ist der Bezug selbst und fängt als Endpunkt.
+fn polar_schnittpunkt(
+    s: &SnapSettings,
+    cursor: Vec2,
+    bezuege: &[Vec2],
+    radius: f64,
+) -> Option<Vec2> {
+    let richtungen = polar_richtungen(s.polar_step);
+    let mut best: Option<(f64, Vec2)> = None;
+    for (i, a) in bezuege.iter().enumerate() {
+        for b in bezuege.iter().skip(i + 1) {
+            for da in &richtungen {
+                for db in &richtungen {
+                    let Some(p) = geraden_schnitt(*a, *da, *b, *db) else {
+                        continue;
+                    };
+                    let d = p.dist(cursor);
+                    if d <= radius && best.map(|(bd, _)| d < bd).unwrap_or(true) {
+                        best = Some((d, p));
+                    }
+                }
+            }
+        }
+    }
+    best.map(|(_, p)| p)
+}
+
+/// Nächstgelegene Polarrichtung **aller** Bezüge, sofern der Zeiger im
+/// Winkel-Fenster liegt (T0054).
+///
+/// Ein Bezug, auf dem der Zeiger fast steht, bleibt außen vor — dort ist die
+/// Richtung nicht bestimmt.
+fn polar_einzel(s: &SnapSettings, cursor: Vec2, bezuege: &[Vec2], tol: f64) -> Option<Vec2> {
+    bezuege
+        .iter()
+        .filter(|r| cursor.dist(**r) > tol * 2.0)
+        .filter_map(|r| cursor.polar_snap_from_tol(*r, s.polar_step.max(1.0), s.polar_tolerance))
+        .min_by(|a, b| a.dist(cursor).total_cmp(&b.dist(cursor)))
 }
 
 /// Trefferprüfung (Auswahl per Klick).
