@@ -1735,7 +1735,9 @@ fn funktion_auf_taste(app: &mut App, funktion: &str, key: &str) -> bool {
     // Die gewählte Funktion hat ihr Ziel erreicht — das Werkzeug endet wie beim
     // Klick auf einen leeren Hotbar-Slot.
     app.tool = None;
-    app.toast(format!("{name} → {}", key.to_uppercase()));
+    // Chat-Schema `<Objekt> · <Zustand>` — der Pfeil fehlt in der Schrift des
+    // Protokolls und erscheint dort als leeres Kästchen.
+    app.toast(format!("{name} · Taste {}", key.to_uppercase()));
     true
 }
 
