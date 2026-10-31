@@ -108,6 +108,41 @@ impl<'a> IconPainter<'a> {
     }
 }
 
+/// Stützpunkte des Spline-Icons: unten → oben → unten → oben.
+///
+/// Die grobe Form „rauf, runter, rauf" bleibt, die Punkte liegen aber weiter
+/// aus der Mitte als beim Polygonzug-Icon daneben (T0058).
+const SPLINE_STOFF: [(f32, f32); 4] = [(3.0, 19.0), (9.0, 6.0), (15.0, 17.0), (21.0, 5.0)];
+
+/// Zughöhe der Tangenten im Spline-Icon (0,5 = Catmull-Rom, 1,0 = doppelt).
+/// Größer heißt stärker geschwungen — der Unterschied zum Polygonzug muss auf
+/// 16–20 px sichtbar bleiben, deshalb nicht wieder auf 0,5 zurückdrehen.
+const SPLINE_ZUG: f32 = 0.8;
+
+/// Die gezeichnete Kurve des Spline-Icons (Catmull-Rom durch `SPLINE_STOFF`).
+fn spline_weg() -> Vec<(f32, f32)> {
+    let stoff = SPLINE_STOFF;
+    let mut pts: Vec<(f32, f32)> = Vec::new();
+    for k in 0..=24 {
+        let t = k as f32 / 24.0 * 3.0;
+        let i = (t.floor() as usize).min(2);
+        let f = t - i as f32;
+        let p0 = stoff[i.saturating_sub(1)];
+        let p1 = stoff[i];
+        let p2 = stoff[i + 1];
+        let p3 = stoff[(i + 2).min(3)];
+        let h00 = 2.0 * f * f * f - 3.0 * f * f + 1.0;
+        let h10 = f * f * f - 2.0 * f * f + f;
+        let h01 = -2.0 * f * f * f + 3.0 * f * f;
+        let h11 = f * f * f - f * f;
+        pts.push((
+            h00 * p1.0 + h10 * (p2.0 - p0.0) * SPLINE_ZUG + h01 * p2.0 + h11 * (p3.0 - p1.0) * SPLINE_ZUG,
+            h00 * p1.1 + h10 * (p2.1 - p0.1) * SPLINE_ZUG + h01 * p2.1 + h11 * (p3.1 - p1.1) * SPLINE_ZUG,
+        ));
+    }
+    pts
+}
+
 /// Zeichnet ein Icon in `rect`.
 pub fn paint(painter: &Painter, rect: Rect, name: &str, color: Color32) {
     let w = (rect.width() / 13.0).clamp(1.1, 2.0);
@@ -129,28 +164,8 @@ pub fn paint(painter: &Painter, rect: Rect, name: &str, color: Color32) {
             i.dot(21.0, 6.0, 1.3);
         }
         "spline" => {
-            // Kurve durch vier Stützpunkte — Gegenstück zum Polygonzug-Icon.
-            let stoff = [(3.0f32, 18.0f32), (9.0, 7.0), (15.0, 16.0), (21.0, 6.0)];
-            let mut pts: Vec<(f32, f32)> = Vec::new();
-            for k in 0..=24 {
-                let t = k as f32 / 24.0 * 3.0;
-                let i = (t.floor() as usize).min(2);
-                let f = t - i as f32;
-                let p0 = stoff[i.saturating_sub(1)];
-                let p1 = stoff[i];
-                let p2 = stoff[i + 1];
-                let p3 = stoff[(i + 2).min(3)];
-                let h00 = 2.0 * f * f * f - 3.0 * f * f + 1.0;
-                let h10 = f * f * f - 2.0 * f * f + f;
-                let h01 = -2.0 * f * f * f + 3.0 * f * f;
-                let h11 = f * f * f - f * f;
-                pts.push((
-                    h00 * p1.0 + h10 * (p2.0 - p0.0) * 0.5 + h01 * p2.0 + h11 * (p3.0 - p1.0) * 0.5,
-                    h00 * p1.1 + h10 * (p2.1 - p0.1) * 0.5 + h01 * p2.1 + h11 * (p3.1 - p1.1) * 0.5,
-                ));
-            }
-            i.poly(&pts, false);
-            for (x, y) in stoff {
+            i.poly(&spline_weg(), false);
+            for (x, y) in SPLINE_STOFF {
                 i.dot(x, y, 1.2);
             }
         }
@@ -696,6 +711,71 @@ mod tests_pan_icons {
             );
             assert!(!namen.contains(&def.icon), "Icon {} doppelt", def.icon);
             namen.push(def.icon);
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests_spline_icon {
+    //! T0058: Das Spline-Icon war dem Polygonzug-Icon zu ähnlich. Gemessen wird
+    //! der Abstand der Kurve zum geraden Polygonzug an denselben Eckpunkten:
+    //! mit der alten Taste (0,5 / engere Stützpunkte) lag er bei 1,15 Einheiten,
+    //! jetzt bei rund 2,0. Die grobe Form „rauf, runter, rauf“ bleibt.
+
+    use super::*;
+
+    /// Der Polygonzug, an dem sich das Spline-Icon messen lassen muss.
+    const POLYZUG: [(f32, f32); 4] = [(3.0, 18.0), (9.0, 8.0), (15.0, 15.0), (21.0, 6.0)];
+
+    fn abstand_zu_strecke(p: (f32, f32), a: (f32, f32), b: (f32, f32)) -> f32 {
+        let (dx, dy) = (b.0 - a.0, b.1 - a.1);
+        let l = dx * dx + dy * dy;
+        let t = if l == 0.0 {
+            0.0
+        } else {
+            (((p.0 - a.0) * dx + (p.1 - a.1) * dy) / l).clamp(0.0, 1.0)
+        };
+        let (qx, qy) = (a.0 + t * dx, a.1 + t * dy);
+        ((p.0 - qx).powi(2) + (p.1 - qy).powi(2)).sqrt()
+    }
+
+    fn abweichung_vom_polyzug(kurve: &[(f32, f32)]) -> f32 {
+        kurve
+            .iter()
+            .map(|p| {
+                (0..POLYZUG.len() - 1)
+                    .map(|i| abstand_zu_strecke(*p, POLYZUG[i], POLYZUG[i + 1]))
+                    .fold(f32::INFINITY, f32::min)
+            })
+            .fold(0.0f32, f32::max)
+    }
+
+    #[test]
+    fn spline_icon_ist_deutlich_geschwungener_als_der_polygonzug() {
+        let abw = abweichung_vom_polyzug(&spline_weg());
+        assert!(
+            abw >= 1.8,
+            "Spline-Icon weicht nur {abw:.2} Einheiten vom Polygonzug ab — zu ähnlich (alt: 1,15)"
+        );
+        assert!(
+            abw <= 2.6,
+            "Spline-Icon schwingt mit {abw:.2} Einheiten zu weit aus (grobe Form geht verloren)"
+        );
+    }
+
+    #[test]
+    fn spline_icon_bleibt_rauf_runter_rauf() {
+        let s = SPLINE_STOFF;
+        assert!(
+            s.windows(2).all(|w| w[1].0 > w[0].0),
+            "Stützpunkte müssen von links nach rechts laufen"
+        );
+        assert!(s[0].1 > s[1].1 && s[1].1 < s[2].1 && s[2].1 > s[3].1, "Form rauf, runter, rauf fehlt");
+        for (x, y) in s {
+            assert!(
+                (2.0..=22.0).contains(&x) && (3.0..=21.0).contains(&y),
+                "Stützpunkt ({x}, {y}) liegt außerhalb des Icon-Kastens"
+            );
         }
     }
 }
