@@ -123,7 +123,7 @@ pub fn start(app: &mut App, pos: V2) {
         pos,
         app.options.text_height,
         String::new(),
-        0.0,
+        app.options.text_angle.to_radians(),
         app.options.text_align,
         app.options.text_valign,
         None,
@@ -280,6 +280,7 @@ fn uebernehmen(app: &mut App, ctx: &egui::Context) {
         Some(id) => (
             "modify.set",
             json!({"ids": [id], "text": text, "height": unit.from_mm(t.height),
+                   "angle": t.angle.to_degrees(),
                    "align": t.align.key(), "valign": t.valign.key(),
                    "font": t.font.key(),
                    "runs": runs_json}),
@@ -637,6 +638,62 @@ fn vorgemerkte_auszeichnung_gilt_fuer_neue_zeichen() {
         muss,
         vec![("Raum ".to_string(), false), ("Wohnen".to_string(), true)],
         "nur das Nachgetippte wird fett: {runs:?}"
+    );
+}
+
+/// Die im Eigenschaften-Panel eingestellte Drehung gilt für den neuen Text —
+/// das Eingabefeld bleibt beim Tippen bildschirmparallel (wie in einem
+/// Textprogramm), das Ergebnis ist gedreht.
+#[test]
+fn drehung_aus_dem_panel_gilt_fuer_den_neuen_text() {
+    let ctx = egui::Context::default();
+    let mut app = App::with_ctx(ctx.clone());
+    app.session_mut()
+        .execute("doc.settings", &json!({ "input_unit": "mm" }))
+        .expect("Einheit setzen");
+    app.options.text_height = 250.0;
+    app.options.text_angle = 30.0;
+    start(&mut app, V2::new(1000.0, 500.0));
+
+    let flaeche = Rect::from_min_size(Pos2::ZERO, Vec2::new(800.0, 600.0));
+    let view = View {
+        center: V2::new(1000.0, 500.0),
+        zoom: 0.2,
+        rot: 0.0,
+    };
+    let mut schritt = |app: &mut App, events: Vec<egui::Event>| {
+        let raw = egui::RawInput {
+            screen_rect: Some(flaeche),
+            events,
+            ..Default::default()
+        };
+        let _ = ctx.run(raw, |ctx| {
+            egui::CentralPanel::default().show(ctx, |ui| {
+                show(app, ui, flaeche, view);
+            });
+        });
+    };
+    schritt(&mut app, Vec::new());
+    schritt(&mut app, vec![egui::Event::Text("Gedreht".into())]);
+    schritt(
+        &mut app,
+        vec![egui::Event::Key {
+            key: egui::Key::Escape,
+            physical_key: None,
+            pressed: true,
+            repeat: false,
+            modifiers: Default::default(),
+        }],
+    );
+    let e = app.doc().ents().first().expect("Text erzeugt");
+    let EntityKind::Text { angle, text, .. } = &e.kind else {
+        panic!("Text erwartet");
+    };
+    assert_eq!(text, "Gedreht");
+    assert!(
+        (angle.to_degrees() - 30.0).abs() < 1e-6,
+        "Drehung nicht übernommen: {}°",
+        angle.to_degrees()
     );
 }
 

@@ -320,6 +320,9 @@ pub fn layer_color_popup(app: &mut App, ctx: &egui::Context) {
 // ---------------------------------------------------------------------------
 
 pub fn properties(app: &mut App, ui: &mut Ui) {
+    // Zeilenprotokoll für den Wächter-Test (props::text_hat_…): welche Zeilen
+    // dieses Bild gezeichnet wurden. Kostet ein paar Pushs je Bild.
+    crate::props::protokoll_start();
     ui.horizontal(|ui| {
         ui.label(
             RichText::new("EIGENSCHAFTEN")
@@ -337,18 +340,67 @@ pub fn properties(app: &mut App, ui: &mut Ui) {
     widgets::reset_rows();
     let sel = app.selection().to_vec();
     let tool_active = app.tool.is_some();
-    // Während ein Text in der Zeichnung getippt wird, gehört das Panel diesem
-    // Text (T0028): Höhe und Ausrichtung wirken sofort auf die Vorschau.
-    let text_eingabe = app.ui.texteingabe.is_some();
+    // Während ein Text in der Zeichenfläche getippt wird, zeigt das Panel
+    // **denselben** Text wie beim Bearbeiten (dieselben Zeilen aus `props`).
+    // Vorher hatte dieser Zustand ein eigenes, kürzeres Panel (T0028) — genau
+    // das ließ das Fenster beim Editieren anders aussehen.
+    let eingabe = app.ui.texteingabe.as_ref().map(|t| t.id);
     egui::ScrollArea::vertical()
         .auto_shrink([false, false])
         .show(ui, |ui| {
-            if text_eingabe {
-                text_eingabe_props(app, ui);
+            if let Some(id) = eingabe {
+                match id {
+                    Some(id) => crate::props::text(app, ui, crate::props::Ziel::Auswahl(id)),
+                    None => crate::props::text(app, ui, crate::props::Ziel::Neu),
+                }
+                // Panelwerte in die laufende Eingabe spiegeln: Größe, Schrift,
+                // Drehung und Ausrichtung wirken sofort auf die Vorschau.
+                crate::props::eingabe_spiegeln(app);
                 return;
             }
+            // Ein Erstellwerkzeug: das Panel gehört dem neuen Element. Die
+            // Auswahl bleibt in der Zeichnung markiert, ihre Eigenschaften
+            // erscheinen wieder, sobald das Werkzeug endet — sonst stünden zwei
+            // Eigenschafts-Blöcke übereinander.
+            let erzeugt_neues = app
+                .tool
+                .as_ref()
+                .map(|t| t.action.starts_with("draw.") || t.action.starts_with("dim."))
+                .unwrap_or(false);
             if tool_active {
-                pending_props(app, ui);
+                // **Alle** Erstellwerkzeuge zeichnen über `props` — eine Quelle
+                // für Erzeugen und Bearbeiten. Ein zweiter Maler existiert nicht
+                // mehr; neue Objektarten gehören in `props.rs`.
+                let tool_id = app
+                    .tool
+                    .as_ref()
+                    .map(|t| t.action.clone())
+                    .unwrap_or_default();
+                let ziel = crate::props::Ziel::Neu;
+                match tool_id.as_str() {
+                    "draw.text" => crate::props::text(app, ui, ziel),
+                    "draw.wall" => crate::props::wand(app, ui, ziel),
+                    "draw.door" => crate::props::tuer(app, ui, ziel),
+                    "draw.window" => crate::props::fenster(app, ui, ziel),
+                    "draw.stair" => crate::props::treppe(app, ui, ziel),
+                    "dim.linear" => crate::props::bemassung(app, ui, ziel),
+                    "draw.volume" | "draw.volume.points" | "draw.volume.paint" => {
+                        crate::props::volumen(app, ui, ziel)
+                    }
+                    "draw.fill" | "draw.hatch" | "draw.fill.boundary"
+                    | "draw.fill.points" | "draw.fill.paint" => {
+                        crate::props::fuellflaeche(app, ui, ziel)
+                    }
+                    other => match crate::props::Einfach::aus_werkzeug(other) {
+                        Some(art) => crate::props::einfach(app, ui, ziel, art),
+                        // Werkzeug ohne eigene Eigenschaften (Verschieben,
+                        // Drehen, Ansicht …): das Panel gehört der Auswahl.
+                        None => {}
+                    },
+                }
+                if erzeugt_neues {
+                    return;
+                }
                 if !sel.is_empty() {
                     ui.add_space(6.0);
                     widgets::hline(ui);
@@ -356,7 +408,40 @@ pub fn properties(app: &mut App, ui: &mut Ui) {
                 }
             }
             if sel.len() == 1 {
-                entity_props(app, ui, sel[0]);
+                let id = sel[0];
+                let art = app.doc().entity(id).map(|e| e.kind.clone());
+                let ziel = crate::props::Ziel::Auswahl(id);
+                match art {
+                    Some(jjcad_core::model::EntityKind::Text { .. }) => {
+                        crate::props::text(app, ui, ziel)
+                    }
+                    Some(jjcad_core::model::EntityKind::Wall { .. }) => {
+                        crate::props::wand(app, ui, ziel)
+                    }
+                    Some(jjcad_core::model::EntityKind::Door { .. }) => {
+                        crate::props::tuer(app, ui, ziel)
+                    }
+                    Some(jjcad_core::model::EntityKind::Window { .. }) => {
+                        crate::props::fenster(app, ui, ziel)
+                    }
+                    Some(jjcad_core::model::EntityKind::Fill { .. }) => {
+                        crate::props::fuellflaeche(app, ui, ziel)
+                    }
+                    Some(jjcad_core::model::EntityKind::Dim { .. }) => {
+                        crate::props::bemassung(app, ui, ziel)
+                    }
+                    Some(jjcad_core::model::EntityKind::Volume { .. }) => {
+                        crate::props::volumen(app, ui, ziel)
+                    }
+                    Some(jjcad_core::model::EntityKind::Stair { .. }) => {
+                        crate::props::treppe(app, ui, ziel)
+                    }
+                    Some(kind) => match crate::props::Einfach::aus_objekt(&kind) {
+                        Some(art) => crate::props::einfach(app, ui, ziel, art),
+                        None => {}
+                    },
+                    None => {}
+                }
             } else if sel.len() > 1 {
                 multi_props(app, ui, &sel);
             } else if !tool_active {
@@ -371,7 +456,7 @@ pub fn properties(app: &mut App, ui: &mut Ui) {
 /// Umschaltreihe für die Auszeichnung — F fett, K kursiv, U unterstrichen,
 /// x² hochgestellt. Die Knöpfe zeigen ihre eigene Auszeichnung, damit man
 /// nicht raten muss, welcher was tut.
-fn auszeichnen_knoepfe(
+pub(crate) fn auszeichnen_knoepfe(
     ui: &mut Ui,
     aktuel: jjcad_core::text::RunStyle,
 ) -> Option<(&'static str, bool)> {
@@ -414,7 +499,7 @@ fn zeichenbereich(markierung: Option<(usize, usize)>, laenge: usize) -> (usize, 
 
 /// Auszeichnung über die Befehlsschicht setzen und das Dokument als geändert
 /// melden. Der eine Weg für alle Umschalter (Panel, Erzeugen, Eingabe).
-fn auszeichnen(app: &mut App, id: Id, von: usize, bis: usize, schluessel: &str, wert: bool) {
+pub(crate) fn auszeichnen(app: &mut App, id: Id, von: usize, bis: usize, schluessel: &str, wert: bool) {
     let _ = app.session_mut().execute(
         "text.format",
         &json!({"id": id, "from": von, "to": bis, schluessel: wert}),
@@ -422,543 +507,9 @@ fn auszeichnen(app: &mut App, id: Id, von: usize, bis: usize, schluessel: &str, 
     app.mark_changed();
 }
 
-/// Eigenschaften des Textes, **während** er in der Zeichnung getippt wird.
-///
-/// Ohne diesen Abschnitt wäre das Panel beim Editieren leer (kein Werkzeug, keine
-/// Auswahl) — Ausrichtung und Höhe ließen sich nicht mehr ändern, obwohl genau
-/// sie den Einfügepunkt und die Größe bestimmen. Beide Werte rechnet die Eingabe
-/// jeden Frame neu (`textedit::feld_lage`, Schriftgröße), sie wirken also sofort;
-/// beim Übernehmen gehen sie in `draw.text` (neuer Text) bzw. `modify.set`.
-fn text_eingabe_props(app: &mut App, ui: &mut Ui) {
-    let einheit = app.unit();
-    let (neu, hoehe, waagerecht, senkrecht) = {
-        let Some(t) = app.ui.texteingabe.as_mut() else {
-            return;
-        };
-        section_title(ui, "text", "Text");
-        ui.label(theme::dim(if t.id.is_some() {
-            "bearbeiteter Text"
-        } else {
-            "neuer Text"
-        }));
-        ui.add_space(6.0);
-        let mut h = t.height;
-        widgets::field_row(ui, "Textgröße", |ui| {
-            if widgets::length_field(ui, &mut h, einheit, ui.available_width(), widgets::MASS_MIN_MM, widgets::MASS_MAX_MM) {
-                t.height = h;
-                // Die Eingabe wurde in diesem Frame **davor** gezeichnet —
-                // ohne Neuzeichnen bliebe die Vorschau in der alten Größe.
-                ui.ctx().request_repaint();
-            }
-        });
-        // Schriftart gilt sofort für das, was gerade im Feld steht.
-        let mut schrift = t.font;
-        widgets::field_row(ui, "Schriftart", |ui| {
-            if widgets::schrift_wahl(ui, "eingabe_text_schrift", &mut schrift) {
-                t.font = schrift;
-                ui.ctx().request_repaint();
-            }
-        });
-        let mut ah = t.align;
-        let mut av = t.valign;
-        widgets::field_block(ui, "Ausrichtung", widgets::ALIGN_HOEHE, |ui| {
-            if widgets::align_matrix(ui, "eingabe_text_ausrichtung", &mut ah, &mut av) {
-                t.align = ah;
-                t.valign = av;
-                // Tastatur zurück ins Feld: der Klick lag im Panel, der Text
-                // wird gleich weitergetippt.
-                t.fokus = true;
-                // Die Vorschau steht schon im Bild dieses Frames (die Eingabe
-                // wird vor dem Panel gezeichnet) — sonst bliebe sie an der
-                // alten Stelle stehen, bis der nächste Klick ein Bild auslöst.
-                ui.ctx().request_repaint();
-            }
-        });
-        // Auszeichnung: mit Markierung im Editor gilt sie für die markierten
-        // Zeichen, ohne Markierung für das, was als Nächstes getippt wird
-        // (wie in einem Textprogramm). Der vorhandene Text bleibt unberührt.
-        let markierung = crate::textedit::markierung(ui.ctx());
-        let stil = match markierung {
-            Some((a, _)) => jjcad_core::text::char_styles(
-                &t.text,
-                &t.runs,
-                jjcad_core::text::RunStyle::default(),
-            )
-            .get(a)
-            .copied()
-            .unwrap_or_default(),
-            None => t.pending.unwrap_or_default(),
-        };
-        let klick = auszeichnen_knoepfe(ui, stil);
-        ui.label(theme::faint(match markierung {
-            Some((a, b)) => format!("Zeichen {a}–{b}"),
-            None => "nächste Zeichen".to_string(),
-        }));
-        if let Some((schluessel, wert)) = klick {
-            let mut neu = stil;
-            match schluessel {
-                "bold" => neu.bold = wert,
-                "italic" => neu.italic = wert,
-                "underline" => neu.underline = wert,
-                _ => neu.superscript = wert,
-            }
-            match markierung {
-                Some((a, b)) => {
-                    t.runs =
-                        jjcad_core::text::apply_style(&t.text, &t.runs, a, b, neu);
-                }
-                None => t.pending = Some(neu),
-            }
-            ui.ctx().request_repaint();
-        }
-        ui.add_space(6.0);
-        ui.label(theme::dim("Esc übernimmt · Enter neue Zeile · Rechtsklick bricht ab"));
-        (t.id.is_none(), t.height, t.align, t.valign)
-    };
-    // Bei einem neuen Text bleiben die Werte für das nächste Element stehen.
-    if neu {
-        app.options.text_height = hoehe;
-        app.options.text_align = waagerecht;
-        app.options.text_valign = senkrecht;
-    }
-}
-
-/// Eigenschaften für das nächste Element, während ein Werkzeug läuft.
-fn pending_props(app: &mut App, ui: &mut Ui) {
-    let tool_id = app.tool.as_ref().map(|t| t.action.clone()).unwrap_or_default();
-    let is_wall = tool_id == "draw.wall";
-    // Alle Füllwerkzeuge tragen dieselben Typparameter (Muster, Winkel,
-    // Abstand, Umrandung) — Werte bleiben für das nächste Element stehen.
-    // Die Umrandung merkt sich jeder Erstellmodus getrennt.
-    let is_fill = matches!(
-        tool_id.as_str(),
-        "draw.fill" | "draw.hatch" | "draw.fill.boundary" | "draw.fill.points"
-    );
-    let label = app
-        .tool
-        .as_ref()
-        .and_then(|t| jjcad_core::actions::action(&t.action))
-        .map(|d| d.label.to_string())
-        .unwrap_or_else(|| "Werkzeug".to_string());
-    // Gleiche Kopfzeile wie bei einem ausgewaehlten Objekt
-    if is_wall {
-        section_title(ui, "wall", "Wand");
-    } else if is_fill {
-        section_title(ui, "fill", "Füllfläche");
-    } else {
-        section_title(ui, "tool", &label);
-    }
-    ui.label(theme::dim("gilt für das nächste Element"));
-    ui.add_space(4.0);
-
-    // Layer
-    let cur = app.doc().current_layer;
-    let cur_name = app
-        .doc()
-        .layer(cur)
-        .map(|l| l.name.clone())
-        .unwrap_or_default();
-    let mut new_layer = cur;
-    let layer_items: Vec<(Id, String)> = app
-        .doc()
-        .layers
-        .iter()
-        .map(|l| (l.id, l.name.clone()))
-        .collect();
-    widgets::field_row(ui, "Layer", |ui| {
-        if let Some(l) = pick_combo(ui, "pend_layer", new_layer, &layer_items) {
-            new_layer = l;
-        }
-    });
-    if new_layer != cur {
-        app.doc_mut().current_layer = new_layer;
-    }
-
-    // Farbe (bei der Wand: Umrandung des Körpers). Beim Text liegt sie in den
-    // Textvorgaben — nur so kommt sie im neuen Objekt an (T0032).
-    let by_layer = app.ui.pending.color.is_none();
-    let col = app.ui.pending.color.unwrap_or(Color::BLACK);
-    if tool_id == "draw.text" {
-        let by_layer = app.options.text_color.is_none();
-        let col = app.options.text_color.unwrap_or(Color::BLACK);
-        let mut picked: Option<Option<Color>> = None;
-        widgets::field_row(ui, "Farbe", |ui| {
-            picked = color_combo(ui, "pend_text_col", col, by_layer, false, "vom Layer");
-        });
-        if let Some(v) = picked {
-            app.options.text_color = v;
-        }
-    } else {
-        let mut picked_col: Option<Option<Color>> = None;
-        let color_label = if is_wall || is_fill { "Linienfarbe" } else { "Farbe" };
-        widgets::field_row(ui, color_label, |ui| {
-            picked_col = color_combo(ui, "pend_col", col, by_layer, false, "vom Layer");
-        });
-        if let Some(v) = picked_col {
-            app.ui.pending.color = v;
-        }
-    }
-
-    // Beim Text gibt es weder Strichstärke noch Strichart — ein Text hat keine
-    // Linie. Die Zeilen erscheinen deshalb gar nicht erst (T0032).
-    if tool_id != "draw.text" {
-        // Linienstärke
-        let lw = app.ui.pending.lineweight.unwrap_or(0.35);
-        let mut picked_w: Option<f64> = None;
-        widgets::field_row(ui, "Stärke", |ui| {
-            picked_w = weight_combo(ui, "pend_w", lw, false);
-        });
-        if let Some(w) = picked_w {
-            app.ui.pending.lineweight = Some(w);
-        }
-
-        // Linientyp
-        let mut lt = app.ui.pending.line_type.unwrap_or(LineType::Solid);
-        let lt_before = lt;
-        widgets::field_row(ui, "Linientyp", |ui| {
-            if let Some(c) = linetype_combo(ui, "pending_lt", lt, false) {
-                lt = c;
-            }
-        });
-        if lt != lt_before {
-            app.ui.pending.line_type = Some(lt);
-        }
-    }
-
-    // ---- Einfügemodus Rechteck/Ellipse ----
-    // Rechteck und Ellipse lassen sich achsenparallel oder über eine Linie
-    // beliebiger Lage einfügen (Basislinie + Höhe bzw. Mittelachse + Breite).
-    if tool_id == "draw.rect" || tool_id == "draw.ellipse" {
-        let cur = app.options.einfuegemodus(tool_id.as_str());
-        let items: Vec<(Einfuegemodus, String)> = Einfuegemodus::ALL
-            .iter()
-            .map(|m| (*m, m.label(tool_id.as_str()).to_string()))
-            .collect();
-        let mut picked: Option<Einfuegemodus> = None;
-        widgets::field_row(ui, "Einfügemodus", |ui| {
-            picked = pick_combo(ui, "pend_einfuegemodus", cur, &items);
-        });
-        if let Some(m) = picked {
-            *app.options.einfuegemodus_mut(tool_id.as_str()) = m;
-        }
-        if cur == Einfuegemodus::Basislinie {
-            let hinweis = if tool_id == "draw.ellipse" {
-                "Mittelachse klicken, dann die Breite"
-            } else {
-                "Basislinie klicken, dann die Höhe"
-            };
-            ui.add_space(2.0);
-            ui.label(theme::faint(hinweis));
-        }
-    }
-
-    // ---- Typparameter Wand (gleiche Reihenfolge wie im Objekt-Panel) ----
-    if is_wall {
-        let mut t = app.options.wall_thickness;
-        widgets::field_row(ui, "Dicke", |ui| {
-            if widgets::length_field(ui, &mut t, app.unit(), ui.available_width(), widgets::MASS_MIN_MM, widgets::MASS_MAX_MM) {
-                app.options.wall_thickness = t;
-            }
-        });
-        let mut h = app.options.wall_height;
-        widgets::field_row(ui, "Höhe", |ui| {
-            if widgets::length_field(ui, &mut h, app.unit(), ui.available_width(), widgets::MASS_MIN_MM, widgets::MASS_MAX_MM) {
-                app.options.wall_height = h;
-            }
-        });
-        let align_items: Vec<(jjcad_core::style::WallAlign, String)> =
-            jjcad_core::style::WallAlign::ALL
-                .iter()
-                .map(|c| (*c, c.label().to_string()))
-                .collect();
-        let cur_align = app.options.wall_align;
-        let mut picked_align: Option<jjcad_core::style::WallAlign> = None;
-        widgets::field_row(ui, "Ausrichtung", |ui| {
-            picked_align = pick_combo(ui, "pend_wall_align", cur_align, &align_items);
-        });
-        if let Some(c) = picked_align {
-            app.options.wall_align = c;
-        }
-
-        let cur_hatch = app
-            .options
-            .wall_hatch
-            .unwrap_or(jjcad_core::style::FillPattern::Solid);
-        let hatch_items: Vec<(jjcad_core::style::FillPattern, String)> =
-            jjcad_core::style::FillPattern::ALL
-                .iter()
-                .map(|c| (*c, c.label().to_string()))
-                .collect();
-        let mut picked_hatch: Option<jjcad_core::style::FillPattern> = None;
-        widgets::field_row(ui, "Schraffur", |ui| {
-            picked_hatch = pick_combo(ui, "pend_wall_hatch", cur_hatch, &hatch_items);
-        });
-        if let Some(hp) = picked_hatch {
-            app.options.wall_hatch = if hp == jjcad_core::style::FillPattern::Solid {
-                None
-            } else {
-                Some(hp)
-            };
-        }
-
-        // Füllfläche der Wand — eigene Farbe, unabhängig von der Linie
-        let fill_unset = app.ui.pending.fill.is_none();
-        let fill_cur = app
-            .ui
-            .pending
-            .fill
-            .unwrap_or_else(|| col.mix(Color::WHITE, 0.74));
-        let mut picked_fill: Option<Option<Color>> = None;
-        widgets::field_row(ui, "Füllfarbe", |ui| {
-            picked_fill = color_combo(ui, "pend_fill", fill_cur, fill_unset, false, "Standard");
-        });
-        if let Some(v) = picked_fill {
-            app.ui.pending.fill = v;
-        }
-
-        ui.add_space(2.0);
-        ui.label(theme::faint("Tab wechselt die Ausrichtung"));
-    }
-
-    // ---- Typparameter Füllfläche (gleiche Zeilen wie im Objekt-Panel) ----
-    if is_fill {
-        let pat_items: Vec<(jjcad_core::style::FillPattern, String)> =
-            jjcad_core::style::FillPattern::ALL
-                .iter()
-                .map(|c| (*c, c.label().to_string()))
-                .collect();
-        widgets::field_row(ui, "Muster", |ui| {
-            if let Some(p) = pick_combo(ui, "pend_fill_pattern", app.options.fill_pattern, &pat_items) {
-                app.options.fill_pattern = p;
-            }
-        });
-        let mut winkel = app.options.fill_angle.to_degrees();
-        widgets::field_row(ui, "Winkel", |ui| {
-            if ui
-                .add(crate::widgets::zahl(&mut winkel, 1.0, widgets::WINKEL_MIN..=widgets::WINKEL_MAX).suffix("°"))
-                .changed()
-            {
-                app.options.fill_angle = winkel.to_radians();
-            }
-        });
-        let mut abstand = app.options.fill_scale;
-        widgets::field_row(ui, "Abstand", |ui| {
-            if widgets::length_field(ui, &mut abstand, app.unit(), ui.available_width(), widgets::ABSTAND_MIN_MM, widgets::ABSTAND_MAX_MM) {
-                app.options.fill_scale = abstand;
-            }
-        });
-        // Umrandung: ein Wert je Erstellmodus — „Punkte setzen" an,
-        // „Kontur anklicken" aus. Der Name folgt dem Glossar.
-        let mut rand = app.options.fill_border_for(tool_id.as_str());
-        widgets::field_row(ui, "Umrandung", |ui| {
-            if ui.checkbox(&mut rand, "").changed() {
-                *app.options.fill_border_for_mut(tool_id.as_str()) = rand;
-            }
-        });
-
-        // Füllfarbe der Fläche — unabhängig von der Linienfarbe des Umrisses
-        let fill_unset = app.ui.pending.fill.is_none();
-        let fill_cur = app
-            .ui
-            .pending
-            .fill
-            .unwrap_or_else(|| col.mix(Color::WHITE, 0.72));
-        let mut picked_fill: Option<Option<Color>> = None;
-        widgets::field_row(ui, "Füllfarbe", |ui| {
-            picked_fill = color_combo(ui, "pend_fill_area", fill_cur, fill_unset, false, "Standard");
-        });
-        if let Some(v) = picked_fill {
-            app.ui.pending.fill = v;
-        }
-    }
-
-    // ---- Tür: gleiche Zeilen wie im Objekt-Panel ----
-    if tool_id == "draw.door" {
-        let mut w = app.options.door_width;
-        widgets::field_row(ui, "Breite", |ui| {
-            if widgets::length_field(ui, &mut w, app.unit(), ui.available_width(), widgets::MASS_MIN_MM, widgets::MASS_MAX_MM) {
-                app.options.door_width = w;
-            }
-        });
-        let kind_items: Vec<(DoorKind, String)> = DoorKind::ALL
-            .iter()
-            .map(|c| (*c, c.label().to_string()))
-            .collect();
-        let mut kind = app.options.door_kind;
-        widgets::field_row(ui, "Typ", |ui| {
-            if let Some(k) = pick_combo(ui, "pend_door_kind", kind, &kind_items) {
-                kind = k;
-            }
-        });
-        app.options.door_kind = kind;
-        widgets::field_row(ui, "Anschlag", |ui| {
-            if ui.selectable_value(&mut app.options.hinge, 1.0, "rechts").clicked() {}
-            if ui.selectable_value(&mut app.options.hinge, -1.0, "links").clicked() {}
-        });
-        widgets::field_row(ui, "Blatt", |ui| {
-            let mut sw = app.options.swing_in;
-            if ui.selectable_label(sw, "Seite A").clicked() {
-                sw = true;
-            }
-            if ui.selectable_label(!sw, "Seite B").clicked() {
-                sw = false;
-            }
-            app.options.swing_in = sw;
-        });
-        ui.add_space(2.0);
-        ui.label(theme::faint("R dreht die Öffnung, F spiegelt sie"));
-    }
-
-    // ---- Fenster ----
-    if tool_id == "draw.window" {
-        let mut w = app.options.window_width;
-        widgets::field_row(ui, "Breite", |ui| {
-            if widgets::length_field(ui, &mut w, app.unit(), ui.available_width(), widgets::MASS_MIN_MM, widgets::MASS_MAX_MM) {
-                app.options.window_width = w;
-            }
-        });
-        let mut s = app.options.window_sill;
-        widgets::field_row(ui, "Brüstung", |ui| {
-            if widgets::length_field(ui, &mut s, app.unit(), ui.available_width(), 0.0, widgets::MASS_MAX_MM) {
-                app.options.window_sill = s;
-            }
-        });
-    }
-
-    // ---- Treppe ----
-    if tool_id == "draw.stair" {
-        // Die Breite kommt aus dem dritten Klick (Abstand zur Lauflinie), hier
-        // stehen Höhe, Stufenzahl und Laufrichtung.
-        let mut h = app.options.stair_height;
-        widgets::field_row(ui, "Höhe", |ui| {
-            if widgets::length_field(ui, &mut h, app.unit(), ui.available_width(), 100.0, widgets::MASS_MAX_MM) {
-                app.options.stair_height = h;
-            }
-        });
-        let mut auto = app.options.stair_auto;
-        widgets::field_row(ui, "Automatisch", |ui| {
-            if ui
-                .checkbox(&mut auto, "Schrittmaß")
-                .on_hover_text("Stufenzahl aus Länge und Höhe nach 2 S + A = 63 cm")
-                .changed()
-            {
-                app.options.stair_auto = auto;
-            }
-        });
-        let mut st = app.options.stair_steps;
-        widgets::field_row(ui, "Stufen", |ui| {
-            ui.add_enabled_ui(!app.options.stair_auto, |ui| {
-                if ui
-                    .add(
-                        crate::widgets::zahl(&mut st, 1.0, jjcad_core::stair::STUFEN_MIN..=jjcad_core::stair::STUFEN_MAX),
-                    )
-                    .changed()
-                {
-                    app.options.stair_steps = st;
-                }
-            });
-        });
-        ui.label(theme::faint("Dritter Klick setzt die Breite"));
-    }
-
-    // ---- Text ----
-    if tool_id == "draw.text" {
-        let mut h = app.options.text_height;
-        widgets::field_row(ui, "Textgröße", |ui| {
-            if widgets::length_field(ui, &mut h, app.unit(), ui.available_width(), widgets::MASS_MIN_MM, widgets::MASS_MAX_MM) {
-                app.options.text_height = h;
-            }
-        });
-        // Ausrichtung des nächsten Textes: bestimmt zugleich den Einfügepunkt —
-        // der Klickpunkt ist die Ecke/Kante/Mitte, die die Matrix zeigt.
-        let mut ah = app.options.text_align;
-        let mut av = app.options.text_valign;
-        widgets::field_block(ui, "Ausrichtung", widgets::ALIGN_HOEHE, |ui| {
-            if widgets::align_matrix(ui, "pend_text_ausrichtung", &mut ah, &mut av) {
-                app.options.text_align = ah;
-                app.options.text_valign = av;
-            }
-        });
-        // Schriftart des neuen Textes — gilt auch für die Vorschau am Zeiger.
-        let mut font = app.options.text_font;
-        widgets::field_row(ui, "Schriftart", |ui| {
-            if widgets::schrift_wahl(ui, "pend_text_schrift", &mut font) {
-                app.options.text_font = font;
-            }
-        });
-        if !font.explodierbar() {
-            ui.label(theme::faint(font.explode_hinweis()));
-        }
-        // Der Text selbst wird in der Zeichnung getippt (T0019), nicht hier:
-        // ein Feld an dieser Stelle wäre ein zweiter, wirkungsloser Weg. Die
-        // Auszeichnung gilt für den ganzen neuen Text und bleibt für das
-        // nächste Element stehen.
-        let stil = jjcad_core::text::RunStyle {
-            bold: app.options.text_bold,
-            italic: app.options.text_italic,
-            underline: app.options.text_underline,
-            superscript: app.options.text_superscript,
-        };
-        if let Some((schluessel, wert)) = auszeichnen_knoepfe(ui, stil) {
-            match schluessel {
-                "bold" => app.options.text_bold = wert,
-                "italic" => app.options.text_italic = wert,
-                "underline" => app.options.text_underline = wert,
-                _ => app.options.text_superscript = wert,
-            }
-        }
-        ui.label(theme::faint("Auszeichnung des neuen Textes"));
-    }
-
-    // ---- Bemaßung ----
-    if tool_id == "dim.linear" {
-        let axis_items: Vec<(Option<DimAxis>, String)> = std::iter::once((None, "Automatisch".to_string()))
-            .chain(
-                DimAxis::ALL
-                    .iter()
-                    .map(|a| (Some(*a), a.label().to_string())),
-            )
-            .collect();
-        let mut cur = app.options.dim_axis;
-        widgets::field_row(ui, "Richtung", |ui| {
-            if let Some(a) = pick_combo(ui, "pend_dim_axis", cur, &axis_items) {
-                cur = a;
-            }
-        });
-        app.options.dim_axis = cur;
-    }
-
-    // ---- Farbeimer: eigenes Muster (startet mit Vollfläche) ----
-    if tool_id == "draw.fill.paint" {
-        let pat_items: Vec<(jjcad_core::style::FillPattern, String)> =
-            jjcad_core::style::FillPattern::ALL
-                .iter()
-                .map(|c| (*c, c.label().to_string()))
-                .collect();
-        let mut p = app.options.paint_pattern;
-        widgets::field_row(ui, "Muster", |ui| {
-            if let Some(v) = pick_combo(ui, "pend_paint_pattern", p, &pat_items) {
-                p = v;
-            }
-        });
-        app.options.paint_pattern = p;
-        let mut abstand = app.options.fill_scale;
-        widgets::field_row(ui, "Abstand", |ui| {
-            if widgets::length_field(ui, &mut abstand, app.unit(), ui.available_width(), widgets::ABSTAND_MIN_MM, widgets::ABSTAND_MAX_MM) {
-                app.options.fill_scale = abstand;
-            }
-        });
-        // Vorgabe aus — die Grenze des Eimers ist die Wand. Die Checkbox
-        // schaltet die Umrandung für neue Flächen zu.
-        let mut rand = app.options.fill_border_for(tool_id.as_str());
-        widgets::field_row(ui, "Umrandung", |ui| {
-            if ui.checkbox(&mut rand, "").changed() {
-                *app.options.fill_border_for_mut(tool_id.as_str()) = rand;
-            }
-        });
-    }
-}
-
+// Hinweis: Während ein Text in der Zeichenfläche getippt wird, zeichnet
+// `props::text` dasselbe Panel wie beim Bearbeiten — ein eigenes Panel für
+// die Eingabe gibt es nicht mehr (es sah immer anders aus).
 
 // ---------------------------------------------------------------------------
 // Vorgabewerte für Farbe und Linienstärke
@@ -1142,7 +693,7 @@ fn lt_preview(ui: &mut Ui, lt: LineType, col: egui::Color32) {
 }
 
 /// Auswahl der Linienart mit Mustervorschau.
-fn linetype_combo(ui: &mut Ui, salt: &str, cur: LineType, mixed: bool) -> Option<LineType> {
+pub(crate) fn linetype_combo(ui: &mut Ui, salt: &str, cur: LineType, mixed: bool) -> Option<LineType> {
     let cap = if mixed {
         "*variiert*".to_string()
     } else {
@@ -1189,7 +740,7 @@ pub(crate) fn pick_combo<T: PartialEq + Copy>(
 }
 
 /// Auswahl einer Strichstärke: Vorgaben aus der Liste, freier Wert inline.
-fn weight_combo(ui: &mut Ui, salt: &str, cur: f64, mixed: bool) -> Option<f64> {
+pub(crate) fn weight_combo(ui: &mut Ui, salt: &str, cur: f64, mixed: bool) -> Option<f64> {
     let eid = ui.make_persistent_id(("we", salt));
     let editing = ui.data(|d| d.get_temp::<bool>(eid)).unwrap_or(false);
     if editing {
@@ -1238,7 +789,7 @@ fn weight_combo(ui: &mut Ui, salt: &str, cur: f64, mixed: bool) -> Option<f64> {
 /// `unset_label` benennt den Zustand "kein eigener Wert". Für Linien ist das
 /// "vom Layer", für Wandflächen gibt es keine Layerfarbe — dort heißt der
 /// Zustand "Standard" (Fläche hellt aus der Linienfarbe auf).
-fn color_combo(
+pub(crate) fn color_combo(
     ui: &mut Ui,
     salt: &str,
     cur: Color,
@@ -1315,7 +866,7 @@ fn color_combo(
     })
 }
 
-fn section_title(ui: &mut Ui, icon: &str, title: &str) {
+pub(crate) fn section_title(ui: &mut Ui, icon: &str, title: &str) {
     ui.horizontal(|ui| {
         let (r, _) = ui.allocate_exact_size(Vec2::splat(16.0), Sense::hover());
         crate::icons::paint(ui.painter(), r, icon, Palette::ACCENT);
@@ -1324,1126 +875,13 @@ fn section_title(ui: &mut Ui, icon: &str, title: &str) {
     ui.add_space(4.0);
 }
 
-fn entity_props(app: &mut App, ui: &mut Ui, id: Id) {
-    // Beschriftung entsteht auf der gewählten Ebene (T0039).
-    let ebene = app.doc().current_layer;
-    let Some(e) = app.doc().entity(id).cloned() else {
-        return;
-    };
-    // Blattobjekte (Rahmen, Schriftfeld) liegen ohne Layer im Papierraum —
-    // ein leerer Layer-Name sähe im Panel wie ein Fehler aus.
-    let layer_name = app.doc().layer(e.layer).map(|l| l.name.clone()).unwrap_or_else(|| {
-        if e.layer == 0 {
-            "Blatt".to_string()
-        } else {
-            format!("#{}", e.layer)
-        }
-    });
-    section_title(ui, app::entity_kind_icon(&e.kind), e.kind.type_name());
-    ui.label(theme::dim(format!("#{} · Layer {}", e.id, layer_name)));
-    ui.add_space(6.0);
-
-    // Zeichenreihenfolge: der Listenplatz ist die Darstellungsposition.
-    // Ein Platz kann nur einmal belegt sein — die Zahl lässt sich direkt
-    // eintippen, das Element wandert dorthin und alles andere rückt auf.
-    let pos = app
-        .doc()
-        .ents()
-        .iter()
-        .position(|x| x.id == id)
-        .map(|i| i + 1)
-        .unwrap_or(0);
-    let total = app.doc().ents().len();
-    let mut wunsch = pos as i32;
-    widgets::field_row(ui, "Reihenfolge", |ui| {
-        if ui
-            .add(crate::widgets::zahl(&mut wunsch, 1.0, 1..=total.max(1) as i32))
-            .changed()
-        {
-        }
-        ui.label(theme::faint(format!("von {total}")));
-    });
-    if wunsch > 0 && wunsch as usize != pos {
-        let _ = app
-            .session_mut()
-            .execute("modify.order", &json!({"ids": [id], "to": wunsch}));
-        app.mark_changed();
-    }
-
-    // Layer
-    let mut new_layer = e.layer;
-    let layer_items: Vec<(Id, String)> = app
-        .doc()
-        .layers
-        .iter()
-        .map(|l| (l.id, l.name.clone()))
-        .collect();
-    widgets::field_row(ui, "Layer", |ui| {
-        if let Some(l) = pick_combo(ui, "ent_layer", new_layer, &layer_items) {
-            new_layer = l;
-        }
-    });
-    if new_layer != e.layer {
-        let _ = app
-            .session_mut()
-            .execute("modify.set", &json!({"ids": [id], "layer": new_layer}));
-        app.mark_changed();
-    }
-
-    // Farbe der Linie (bei Wand und Füllfläche: Umrandung bzw. Musterlinie)
-    let ist_wand = matches!(
-        e.kind,
-        EntityKind::Wall { .. } | EntityKind::Fill { .. }
-    );
-    let color = e.style.color.unwrap_or(app.doc().effective_color(&e));
-    let by_layer = e.style.color.is_none();
-    let mut picked_col: Option<Option<Color>> = None;
-    let color_label = if ist_wand { "Linienfarbe" } else { "Farbe" };
-    widgets::field_row(ui, color_label, |ui| {
-        picked_col = color_combo(ui, "ent_col", color, by_layer, false, "vom Layer");
-    });
-    if let Some(v) = picked_col {
-        let cval = match v {
-            None => "bylayer".to_string(),
-            Some(c) => c.to_hex(),
-        };
-        let _ = app
-            .session_mut()
-            .execute("modify.set", &json!({"ids": [id], "color": cval}));
-        app.mark_changed();
-    }
-
-    // Stärke und Linientyp gibt es beim Text nicht — ein Text hat keine Linie.
-    // Die Zeilen wegzulassen ist ehrlicher als Schalter, die nichts tun (T0032).
-    let ist_text = matches!(e.kind, EntityKind::Text { .. });
-    if !ist_text {
-        // Linienstärke
-        let lw = e
-            .style
-            .line_weight
-            .unwrap_or_else(|| app.doc().effective_line_weight(&e));
-        let mut picked_w: Option<f64> = None;
-        widgets::field_row(ui, "Stärke", |ui| {
-            picked_w = weight_combo(ui, "ent_w", lw, false);
-        });
-        if let Some(w) = picked_w {
-            let _ = app
-                .session_mut()
-                .execute("modify.set", &json!({"ids": [id], "lineweight": w}));
-            app.mark_changed();
-        }
-
-        // Linientyp
-        let lt = e.style.line_type.unwrap_or_else(|| app.doc().effective_line_type(&e));
-        let mut picked_lt: Option<LineType> = None;
-        widgets::field_row(ui, "Linientyp", |ui| {
-            picked_lt = linetype_combo(ui, "ent_lt", lt, false);
-        });
-        if let Some(new_lt) = picked_lt {
-            let name = match new_lt {
-                LineType::Solid => "solid",
-                LineType::Dashed => "dashed",
-                LineType::Dotted => "dotted",
-                LineType::DashDot => "dashdot",
-                LineType::Hidden => "hidden",
-            };
-            let _ = app
-                .session_mut()
-                .execute("modify.set", &json!({"ids": [id], "linetype": name}));
-            app.mark_changed();
-        }
-    }
-
-    ui.add_space(4.0);
-    widgets::hline(ui);
-    ui.add_space(4.0);
-
-    // Geometrie (nur Anzeige) — eine Quelle für alle Typen. Ohne Zeilen (Text,
-    // Punkt) entfällt der Abschnitt: eine Überschrift ohne Inhalt sagt nichts.
-    let unit = app.unit();
-    let geo = geo_rows(&e, unit);
-    if !geo.is_empty() {
-        section_title(ui, "info", "Geometrie");
-        for (name, wert) in geo {
-            widgets::field_row(ui, name, |ui| {
-                ui.label(theme::mono(wert.clone()));
-            });
-        }
-    }
-    ui.add_space(4.0);
-    widgets::hline(ui);
-    ui.add_space(4.0);
-
-    // Typspezifische Parameter
-    let unit = app.unit();
-    let mut changed_params = serde_json::Map::new();
-    match &e.kind {
-        EntityKind::Wall {
-            a,
-            b,
-            thickness,
-            height,
-            hatch,
-            align,
-            ..
-        } => {
-            let mut t = *thickness;
-            let mut h = *height;
-            widgets::field_row(ui, "Dicke", |ui| {
-                if widgets::length_field(ui, &mut t, unit, 100.0, widgets::MASS_MIN_MM, widgets::MASS_MAX_MM) {
-                    changed_params.insert("thickness".into(), json!(unit.from_mm(t)));
-                }
-            });
-            widgets::field_row(ui, "Höhe", |ui| {
-                if widgets::length_field(ui, &mut h, unit, 100.0, widgets::MASS_MIN_MM, widgets::MASS_MAX_MM) {
-                    changed_params.insert("height".into(), json!(unit.from_mm(h)));
-                }
-            });
-            // Ausrichtung des Wandkörpers zur Achse
-            let align_items: Vec<(jjcad_core::style::WallAlign, String)> =
-                jjcad_core::style::WallAlign::ALL
-                    .iter()
-                    .map(|c| (*c, c.label().to_string()))
-                    .collect();
-            let cur_align = *align;
-            let mut picked_align: Option<jjcad_core::style::WallAlign> = None;
-            widgets::field_row(ui, "Ausrichtung", |ui| {
-                picked_align = pick_combo(ui, "ent_wall_align", cur_align, &align_items);
-            });
-            if let Some(wa) = picked_align {
-                let name = match wa {
-                    jjcad_core::style::WallAlign::Left => "left",
-                    jjcad_core::style::WallAlign::Center => "center",
-                    jjcad_core::style::WallAlign::Right => "right",
-                };
-                let _ = app
-                    .session_mut()
-                    .execute("modify.set", &json!({"ids": [id], "align": name}));
-                app.mark_changed();
-            }
-
-            // Schraffur der Wandfläche
-            let cur_hatch = hatch.unwrap_or(jjcad_core::style::FillPattern::Solid);
-            let mut picked_hatch: Option<jjcad_core::style::FillPattern> = None;
-            let hatch_items: Vec<(jjcad_core::style::FillPattern, String)> =
-                jjcad_core::style::FillPattern::ALL
-                    .iter()
-                    .map(|c| (*c, c.label().to_string()))
-                    .collect();
-            widgets::field_row(ui, "Schraffur", |ui| {
-                picked_hatch = pick_combo(ui, "ent_wall_hatch", cur_hatch, &hatch_items);
-            });
-            if let Some(hp) = picked_hatch {
-                let name = match hp {
-                    jjcad_core::style::FillPattern::Solid => "none",
-                    jjcad_core::style::FillPattern::Lines => "lines",
-                    jjcad_core::style::FillPattern::Cross => "cross",
-                    jjcad_core::style::FillPattern::Dots => "dots",
-                    jjcad_core::style::FillPattern::Insulation => "insulation",
-                };
-                let _ = app
-                    .session_mut()
-                    .execute("modify.set", &json!({"ids": [id], "hatch": name}));
-                app.mark_changed();
-            }
-
-            // Füllfläche getrennt von der Umrandung
-            let fill_set = e.style.fill.is_some();
-            // Ohne eigene Füllfarbe zeigt der Farbwähler den tatsächlich
-            // gezeichneten Standard: Linienfarbe, 74 % Richtung Weiß.
-            let fill_cur = e.style.fill.unwrap_or_else(|| color.mix(Color::WHITE, 0.74));
-            let mut picked_fill: Option<Option<Color>> = None;
-            widgets::field_row(ui, "Füllfarbe", |ui| {
-                picked_fill = color_combo(ui, "wall_fill", fill_cur, !fill_set, false, "Standard");
-            });
-            if let Some(v) = picked_fill {
-                match v {
-                    Some(c) => {
-                        let _ = app.session_mut().execute(
-                            "modify.set",
-                            &json!({"ids": [id], "fill": c.to_hex()}),
-                        );
-                        app.mark_changed();
-                    }
-                    None => {
-                        // "Standard" = Fläche wieder aus der Linienfarbe aufhellen
-                        let _ = app.session_mut().execute(
-                            "modify.set",
-                            &json!({"ids": [id], "fill": "none"}),
-                        );
-                        app.mark_changed();
-                    }
-                }
-            }
-            ui.add_space(4.0);
-            ui.label(theme::dim(format!(
-                "Länge {} · Achse ({:.2}, {:.2}) → ({:.2}, {:.2})",
-                unit.format(a.dist(*b), unit.decimals()),
-                unit.from_mm(a.x),
-                unit.from_mm(a.y),
-                unit.from_mm(b.x),
-                unit.from_mm(b.y)
-            )));
-            // Körper-Kennzahl: die Wand ist ein Volumen (Länge × Dicke × Höhe).
-            ui.label(theme::dim(format!(
-                "Volumen {:.3} m³",
-                a.dist(*b) * *thickness * *height / 1e9
-            )));
-        }
-        // Füllfläche: dieselben Felder wie beim Platzieren (Muster, Winkel,
-        // Abstand, Randlinie) plus die beiden Farben.
-        EntityKind::Fill {
-            boundary,
-            holes,
-            pattern,
-            pattern_angle,
-            pattern_scale,
-            border,
-        } => {
-            let mut winkel = pattern_angle.to_degrees();
-            let mut abstand = *pattern_scale;
-            let mut rand = *border;
-            let pat_items: Vec<(jjcad_core::style::FillPattern, String)> =
-                jjcad_core::style::FillPattern::ALL
-                    .iter()
-                    .map(|c| (*c, c.label().to_string()))
-                    .collect();
-            widgets::field_row(ui, "Muster", |ui| {
-                if let Some(v) = pick_combo(ui, "fill_pattern", *pattern, &pat_items) {
-                    changed_params.insert("pattern".into(), json!(v.key()));
-                }
-            });
-            widgets::field_row(ui, "Winkel", |ui| {
-                if ui
-                    .add(crate::widgets::zahl(&mut winkel, 1.0, widgets::WINKEL_MIN..=widgets::WINKEL_MAX).suffix("°"))
-                    .changed()
-                {
-                    changed_params.insert("pattern_angle".into(), json!(winkel));
-                }
-            });
-            widgets::field_row(ui, "Abstand", |ui| {
-                if widgets::length_field(ui, &mut abstand, unit, 100.0, widgets::ABSTAND_MIN_MM, widgets::ABSTAND_MAX_MM) {
-                    changed_params.insert("pattern_scale".into(), json!(unit.from_mm(abstand)));
-                }
-            });
-            widgets::field_row(ui, "Umrandung", |ui| {
-                if ui.checkbox(&mut rand, "").changed() {
-                    // Direkt in das Objekt: die Fläche wird im nächsten Frame
-                    // ohne die Randlinie gezeichnet.
-                    changed_params.insert("border".into(), json!(rand));
-                }
-            });
-
-            // Fläche getrennt von der Umrandung — wie bei der Wand.
-            let fill_set = e.style.fill.is_some();
-            let fill_cur = e.style.fill.unwrap_or_else(|| color.mix(Color::WHITE, 0.72));
-            let mut picked_fill: Option<Option<Color>> = None;
-            widgets::field_row(ui, "Füllfarbe", |ui| {
-                picked_fill = color_combo(ui, "fill_area", fill_cur, !fill_set, false, "Standard");
-            });
-            if let Some(v) = picked_fill {
-                let wert = match v {
-                    Some(c) => json!(c.to_hex()),
-                    None => json!("none"),
-                };
-                let _ = app
-                    .session_mut()
-                    .execute("modify.set", &json!({"ids": [id], "fill": wert}));
-                app.mark_changed();
-            }
-            ui.add_space(4.0);
-            // Umriss = alle Ringe; die Inselkanten werden mitgezeichnet.
-            let umfang: f64 = std::iter::once(boundary)
-                .chain(holes.iter())
-                .map(|r| {
-                    r.iter()
-                        .zip(r.iter().cycle().skip(1))
-                        .take(r.len())
-                        .map(|(a, b)| a.dist(*b))
-                        .sum::<f64>()
-                })
-                .sum();
-            ui.label(theme::dim(format!(
-                "{} Punkte · Umriss {}",
-                boundary.len(),
-                unit.format(umfang, unit.decimals())
-            )));
-            if !holes.is_empty() {
-                ui.label(theme::dim(format!(
-                    "{} Inseln · Fläche {}",
-                    holes.len(),
-                    area_text(unit, jjcad_core::area::area_of(boundary, holes))
-                )));
-            }
-        }
-        // Volumen: dieselben Felder wie die Füllfläche, zusätzlich die Höhe und
-        // die daraus folgende Kennzahl (m³). Der Körper ist Mauerwerk — die
-        // Fläche wird deshalb standardmäßig im Wandton gefüllt.
-        EntityKind::Volume {
-            boundary,
-            holes,
-            pattern,
-            pattern_angle,
-            pattern_scale,
-            border,
-            height,
-        } => {
-            let mut winkel = pattern_angle.to_degrees();
-            let mut abstand = *pattern_scale;
-            let mut rand = *border;
-            let mut hoehe = *height;
-            let pat_items: Vec<(jjcad_core::style::FillPattern, String)> =
-                jjcad_core::style::FillPattern::ALL
-                    .iter()
-                    .map(|c| (*c, c.label().to_string()))
-                    .collect();
-            widgets::field_row(ui, "Höhe", |ui| {
-                if widgets::length_field(ui, &mut hoehe, unit, 100.0, widgets::MASS_MIN_MM, widgets::MASS_MAX_MM) {
-                    changed_params.insert("height".into(), json!(unit.from_mm(hoehe)));
-                }
-            });
-            widgets::field_row(ui, "Muster", |ui| {
-                if let Some(v) = pick_combo(ui, "volume_pattern", *pattern, &pat_items) {
-                    changed_params.insert("pattern".into(), json!(v.key()));
-                }
-            });
-            widgets::field_row(ui, "Winkel", |ui| {
-                if ui
-                    .add(crate::widgets::zahl(&mut winkel, 1.0, widgets::WINKEL_MIN..=widgets::WINKEL_MAX).suffix("°"))
-                    .changed()
-                {
-                    changed_params.insert("pattern_angle".into(), json!(winkel));
-                }
-            });
-            widgets::field_row(ui, "Abstand", |ui| {
-                if widgets::length_field(ui, &mut abstand, unit, 100.0, widgets::ABSTAND_MIN_MM, widgets::ABSTAND_MAX_MM) {
-                    changed_params.insert("pattern_scale".into(), json!(unit.from_mm(abstand)));
-                }
-            });
-            widgets::field_row(ui, "Umrandung", |ui| {
-                if ui.checkbox(&mut rand, "").changed() {
-                    changed_params.insert("border".into(), json!(rand));
-                }
-            });
-
-            // Füllfarbe: Standard ist der Wandton (74 % Richtung Weiß), damit
-            // der Übergang zur Wand keine Farbkante zeigt.
-            let fill_set = e.style.fill.is_some();
-            let fill_cur = e
-                .style
-                .fill
-                .unwrap_or_else(|| color.mix(Color::WHITE, jjcad_core::render::WALL_FILL_MIX));
-            let mut picked_fill: Option<Option<Color>> = None;
-            widgets::field_row(ui, "Füllfarbe", |ui| {
-                picked_fill =
-                    color_combo(ui, "volume_fill", fill_cur, !fill_set, false, "Wandton");
-            });
-            if let Some(v) = picked_fill {
-                let wert = match v {
-                    Some(c) => json!(c.to_hex()),
-                    None => json!("none"),
-                };
-                let _ = app
-                    .session_mut()
-                    .execute("modify.set", &json!({"ids": [id], "fill": wert}));
-                app.mark_changed();
-            }
-            ui.add_space(4.0);
-            let flaeche = jjcad_core::area::area_of(boundary, holes);
-            ui.label(theme::dim(format!(
-                "{} Punkte · Fläche {}",
-                boundary.len(),
-                area_text(unit, flaeche)
-            )));
-            if !holes.is_empty() {
-                ui.label(theme::dim(format!("{} Inseln", holes.len())));
-            }
-            ui.label(theme::dim(format!(
-                "Volumen {:.3} m³ (Höhe {})",
-                flaeche * hoehe / 1e9,
-                unit.format(hoehe, unit.decimals())
-            )));
-        }
-        EntityKind::Door {
-            width,
-            kind,
-            hinge,
-            swing_in,
-            center,
-            angle,
-            ..
-        } => {
-            let mut w = *width;
-            let mut k = *kind;
-            let mut hg = *hinge;
-            let mut sw = *swing_in;
-            widgets::field_row(ui, "Breite", |ui| {
-                if widgets::length_field(ui, &mut w, unit, 100.0, widgets::MASS_MIN_MM, widgets::MASS_MAX_MM) {
-                    changed_params.insert("width".into(), json!(unit.from_mm(w)));
-                }
-            });
-            widgets::field_row(ui, "Typ", |ui| {
-                let items: Vec<(DoorKind, String)> = DoorKind::ALL
-                    .iter()
-                    .map(|c| (*c, c.label().to_string()))
-                    .collect();
-                if let Some(v) = pick_combo(ui, "door_kind", k, &items) {
-                    let name = match v {
-                        DoorKind::Hinge => "hinge",
-                        DoorKind::Sliding => "sliding",
-                        DoorKind::Double => "double",
-                        DoorKind::Opening => "opening",
-                    };
-                    changed_params.insert("kind".into(), json!(name));
-                }
-            });
-            widgets::field_row(ui, "Anschlag", |ui| {
-                if ui.selectable_value(&mut hg, 1.0, "rechts").clicked()
-                    || ui.selectable_value(&mut hg, -1.0, "links").clicked()
-                {
-                    changed_params.insert("hinge".into(), json!(hg));
-                }
-            });
-            widgets::field_row(ui, "Blatt", |ui| {
-                if ui
-                    .selectable_label(sw, "Seite A")
-                    .on_hover_text("Blatt schlägt auf Seite A der Wand auf")
-                    .clicked()
-                {
-                    sw = true;
-                    changed_params.insert("swing_in".into(), json!(sw));
-                }
-                if ui
-                    .selectable_label(!sw, "Seite B")
-                    .on_hover_text("Blatt schlägt auf Seite B der Wand auf")
-                    .clicked()
-                {
-                    sw = false;
-                    changed_params.insert("swing_in".into(), json!(sw));
-                }
-            });
-            ui.add_space(4.0);
-            ui.label(theme::dim(format!(
-                "Position ({:.2}, {:.2}) · Richtung {:.0}°",
-                unit.from_mm(center.x),
-                unit.from_mm(center.y),
-                angle.to_degrees()
-            )));
-        }
-        EntityKind::Window {
-            width,
-            sill,
-            height,
-            align,
-            center,
-            angle,
-            ..
-        } => {
-            let mut w = *width;
-            let mut s = *sill;
-            let mut h = *height;
-            let align_cur = *align;
-            let align_items: Vec<(WallAlign, String)> = WallAlign::ALL
-                .iter()
-                .map(|a| (*a, a.label().to_string()))
-                .collect();
-            widgets::field_row(ui, "Breite", |ui| {
-                if widgets::length_field(ui, &mut w, unit, 100.0, widgets::MASS_MIN_MM, widgets::MASS_MAX_MM) {
-                    changed_params.insert("width".into(), json!(unit.from_mm(w)));
-                }
-            });
-            widgets::field_row(ui, "Brüstung", |ui| {
-                if widgets::length_field(ui, &mut s, unit, 100.0, 0.0, widgets::MASS_MAX_MM) {
-                    changed_params.insert("sill".into(), json!(unit.from_mm(s)));
-                }
-            });
-            widgets::field_row(ui, "Höhe", |ui| {
-                if widgets::length_field(ui, &mut h, unit, 100.0, widgets::MASS_MIN_MM, widgets::MASS_MAX_MM) {
-                    changed_params.insert("height".into(), json!(unit.from_mm(h)));
-                }
-            });
-            // Lage des Fensters innerhalb der Wanddicke
-            widgets::field_row(ui, "Ausrichtung", |ui| {
-                if let Some(v) = pick_combo(ui, "win_align", align_cur, &align_items) {
-                    changed_params.insert(
-                        "align".into(),
-                        json!(match v {
-                            WallAlign::Left => "left",
-                            WallAlign::Center => "center",
-                            WallAlign::Right => "right",
-                        }),
-                    );
-                }
-            });
-            ui.add_space(4.0);
-            ui.label(theme::dim(format!(
-                "Position ({:.2}, {:.2}) · Richtung {:.0}°",
-                unit.from_mm(center.x),
-                unit.from_mm(center.y),
-                angle.to_degrees()
-            )));
-        }
-        EntityKind::Stair {
-            a,
-            b,
-            width,
-            steps,
-            height,
-            auto_steps,
-            cut,
-            unten,
-            oben,
-            ..
-        } => {
-            let mut h = *height;
-            let mut w = *width;
-            let mut schnitt = *cut;
-            let auto_jetzt = *auto_steps;
-            let laenge = a.dist(*b);
-            let mass = jjcad_core::stair::treppenmass(laenge, *height, *steps, auto_jetzt);
-
-            // Die Treppe ist ein Rechteck: Länge und Breite sind seine Maße,
-            // die Lauflinie liegt in der Mitte.
-            let mut l = laenge;
-            widgets::field_row(ui, "Länge", |ui| {
-                if widgets::length_field(ui, &mut l, unit, 100.0, 100.0, widgets::MASS_MAX_MM) {
-                    changed_params.insert("len".into(), json!(unit.from_mm(l)));
-                }
-            });
-            widgets::field_row(ui, "Breite", |ui| {
-                if widgets::length_field(ui, &mut w, unit, 100.0, 100.0, widgets::MASS_MAX_MM) {
-                    changed_params.insert("width".into(), json!(unit.from_mm(w)));
-                }
-            });
-            widgets::field_row(ui, "Höhe", |ui| {
-                if widgets::length_field(ui, &mut h, unit, 100.0, 100.0, widgets::MASS_MAX_MM) {
-                    changed_params.insert("height".into(), json!(unit.from_mm(h)));
-                }
-            });
-            // Die berechnete Stufenzahl steht als Wert da; ein eigener Eintrag
-            // schaltet die Regel ab und gilt dann fest.
-            let mut st = mass.stufen;
-            widgets::field_row(ui, "Stufen", |ui| {
-                ui.add_enabled_ui(!auto_jetzt, |ui| {
-                    if ui
-                        .add(
-                            crate::widgets::zahl(&mut st, 1.0, jjcad_core::stair::STUFEN_MIN..=jjcad_core::stair::STUFEN_MAX),
-                        )
-                        .changed()
-                    {
-                        changed_params.insert("steps".into(), json!(st));
-                    }
-                });
-            });
-            widgets::field_row(ui, "Automatisch", |ui| {
-                let mut an = auto_jetzt;
-                let antwort = ui
-                    .checkbox(&mut an, "Schrittmaß")
-                    .on_hover_text("Stufenzahl aus Länge und Höhe nach 2 S + A = 63 cm");
-                if antwort.changed() {
-                    if an {
-                        changed_params.insert("auto_steps".into(), json!(true));
-                    } else {
-                        // Beim Abschalten die berechnete Zahl übernehmen, damit
-                        // die Treppe nicht springt.
-                        changed_params.insert("auto_steps".into(), json!(false));
-                        changed_params.insert("steps".into(), json!(mass.stufen));
-                    }
-                }
-            });
-            // Treppenschnitt: die beiden Diagonalen. Er zeigt an, dass zwei
-            // Läufe übereinander liegen — ohne ihn ist es eine einzelne Treppe.
-            widgets::field_row(ui, "Schnitt", |ui| {
-                let antwort = ui
-                    .checkbox(&mut schnitt, "zwei Läufe")
-                    .on_hover_text("Diagonalen in der Laufmitte; sie trennen oberen und unteren Teil");
-                if antwort.changed() {
-                    changed_params.insert("cut".into(), json!(schnitt));
-                }
-            });
-
-            // Schrittmaß als Information — die Zahlen, die auch im Textfeld
-            // der Treppe stehen.
-            let cm = |mm: f64, stellen: usize| {
-                format!("{:.*} cm", stellen, mm / 10.0).replace(".", ",")
-            };
-            ui.add_space(4.0);
-            widgets::info_row(ui, "Auftritt", &cm(mass.auftritt, 1), None);
-            widgets::info_row(ui, "Steigung", &cm(mass.steigung, 1), None);
-            widgets::info_row(
-                ui,
-                "2 S + A",
-                &cm(mass.regel(), 1),
-                Some("Sollwert nach Schrittmaßregel: 63,0 cm"),
-            );
-            widgets::info_row(
-                ui,
-                "Auftrittsfläche",
-                &unit.format_area(mass.auftrittsflaeche(*width), 2),
-                Some("Auftritt × Treppenbreite"),
-            );
-
-            ui.add_space(6.0);
-            if ui
-                .add_sized(
-                    [ui.available_width(), 24.0],
-                    egui::Button::new("Beschriftung erzeugen"),
-                )
-                .on_hover_text("Stufenzahl und Schrittmaß als Textfeld neben die Treppe setzen")
-                .clicked()
-            {
-                let _ = app
-                    .session_mut()
-                    .execute(
-                        "draw.stair.label",
-                        &json!({"id": id, "layer": ebene}),
-                    );
-                app.mark_changed();
-            }
-
-            // Linien der beiden Teile — nur mit Schnitt gibt es oberen und
-            // unteren Teil.
-            if *cut {
-                ui.add_space(6.0);
-                widgets::hline(ui);
-                ui.add_space(4.0);
-                let basis = app
-                    .doc()
-                    .entity(id)
-                    .map(|e| {
-                        let c = e.style.color.unwrap_or_else(|| app.doc().effective_color(e));
-                        let lw = e
-                            .style
-                            .line_weight
-                            .unwrap_or_else(|| app.doc().effective_line_weight(e));
-                        let lt = e
-                            .style
-                            .line_type
-                            .unwrap_or_else(|| app.doc().effective_line_type(e));
-                        (e.style.clone(), c, lw, lt)
-                    })
-                    .unwrap_or_else(|| (EntityStyle::default(), Color::BLACK, 0.25, LineType::Solid));
-                let (basis_style, basis_farbe, basis_w, basis_lt) = basis;
-                for (name, praefix, teil) in [("unten", "unten", unten), ("oben", "oben", oben)] {
-                    let farbe = teil.as_ref().and_then(|t| t.color).or(basis_style.color);
-                    let mut neue_farbe: Option<Option<Color>> = None;
-                    widgets::field_row(ui, &format!("Farbe {name}"), |ui| {
-                        neue_farbe = color_combo(
-                            ui,
-                            &format!("stair_col_{praefix}"),
-                            farbe.unwrap_or(basis_farbe),
-                            farbe.is_none(),
-                            false,
-                            "vom Layer",
-                        );
-                    });
-                    if let Some(v) = neue_farbe {
-                        changed_params.insert(
-                            format!("color_{praefix}"),
-                            json!(match v {
-                                None => "bylayer".to_string(),
-                                Some(c) => c.to_hex(),
-                            }),
-                        );
-                    }
-                    let lw = teil
-                        .as_ref()
-                        .and_then(|t| t.line_weight)
-                        .or(basis_style.line_weight)
-                        .unwrap_or(basis_w);
-                    let mut picked_w: Option<f64> = None;
-                    widgets::field_row(ui, &format!("Stärke {name}"), |ui| {
-                        picked_w = weight_combo(ui, &format!("stair_w_{praefix}"), lw, false);
-                    });
-                    if let Some(v) = picked_w {
-                        changed_params.insert(format!("weight_{praefix}"), json!(v));
-                    }
-                    let lt = teil
-                        .as_ref()
-                        .and_then(|t| t.line_type)
-                        .or(basis_style.line_type)
-                        .unwrap_or(basis_lt);
-                    let mut picked_lt: Option<LineType> = None;
-                    widgets::field_row(ui, &format!("Typ {name}"), |ui| {
-                        picked_lt = linetype_combo(ui, &format!("stair_lt_{praefix}"), lt, false);
-                    });
-                    if let Some(v) = picked_lt {
-                        let key = match v {
-                            LineType::Solid => "solid",
-                            LineType::Dashed => "dashed",
-                            LineType::Dotted => "dotted",
-                            LineType::DashDot => "dashdot",
-                            LineType::Hidden => "hidden",
-                        };
-                        changed_params.insert(format!("type_{praefix}"), json!(key));
-                    }
-                    ui.add_space(4.0);
-                }
-            }
-
-        }
-        EntityKind::Text {
-            text,
-            height,
-            angle,
-            align,
-            valign,
-            bold,
-            italic,
-            underline,
-            superscript,
-            runs,
-            font,
-            ..
-        } => {
-            let mut t = text.clone();
-            let mut h = *height;
-            let mut a = angle.to_degrees();
-            let mut ah = *align;
-            let mut av = *valign;
-            let mut schrift = *font;
-            let schrift_kanon = *font;
-            // Vorgabe des Objekts: gilt, solange keine Läufe gesetzt sind.
-            let vorgabe = jjcad_core::text::RunStyle {
-                bold: *bold,
-                italic: *italic,
-                underline: *underline,
-                superscript: *superscript,
-            };
-            section_title(ui, "text", "Text");
-
-            // Auszeichnung, die für das **nächste Getippte** gilt (Umschalter
-            // ohne Markierung) — nur für diesen Text.
-            let pending = app
-                .ui
-                .text_format_next
-                .filter(|(pid, _)| *pid == id)
-                .map(|(_, st)| st);
-
-            // Läufe so, wie das Feld sie gerade zeigt: der Satz im Feld muss
-            // dem Text entsprechen, auch mitten im Tippen.
-            let text_vorher = text.clone();
-            let runs_vorher = runs.clone();
-            let anzeige = jjcad_core::text::runs_for(
-                &t,
-                &jjcad_core::text::edit_runs(&text_vorher, &runs_vorher, &t, vorgabe, pending),
-                vorgabe,
-            );
-            let size = egui::TextStyle::Body.resolve(ui.style()).size;
-            let feld_farbe = ui.visuals().text_color();
-            let satz_text = std::sync::Arc::new(text_vorher.clone());
-            let satz_runs = std::sync::Arc::new(runs_vorher.clone());
-            // Das Feld setzt die Auszeichnung selbst — Fett, Kursiv,
-            // Unterstrichen und Hochstellung sind damit im Panel sichtbar. Die
-            // Läufe werden für den **gerade** gesetzten Text abgeleitet, sonst
-            // läge die Galley einen Frame hinter dem Feld.
-            let mut setzer = move |ui: &Ui, text_jetzt: &str, wrap: f32| {
-                let runs = jjcad_core::text::runs_for(
-                    text_jetzt,
-                    &jjcad_core::text::edit_runs(&satz_text, &satz_runs, text_jetzt, vorgabe, pending),
-                    vorgabe,
-                );
-                let mut job =
-                    crate::canvas::auszeichnungs_job(ui.ctx(), &runs, size, feld_farbe, schrift);
-                job.wrap.max_width = wrap;
-                ui.fonts(|f| f.layout_job(job))
-            };
-            let ausgabe = egui::TextEdit::multiline(&mut t)
-                .id(egui::Id::new("sel_text_inhalt"))
-                .layouter(&mut setzer)
-                .desired_rows(2)
-                .desired_width(f32::INFINITY)
-                .show(ui);
-            let feld_id = egui::Id::new("sel_text_inhalt");
-            // Die Markierung aus dem **gespeicherten** Zustand lesen: ein Klick
-            // auf einen Umschalter nimmt dem Feld im selben Frame den Fokus,
-            // dann wäre `cursor_range` schon leer.
-            let markierung = egui::text_edit::TextEditState::load(ui.ctx(), feld_id)
-                .and_then(|st| st.cursor.char_range())
-                .map(|r| {
-                    let (p1, p2) = (r.primary.index, r.secondary.index);
-                    (p1.min(p2), p1.max(p2))
-                })
-                .or_else(|| {
-                    ausgabe.cursor_range.map(|cr| {
-                        let (p1, p2) = (cr.primary.ccursor.index, cr.secondary.ccursor.index);
-                        (p1.min(p2), p1.max(p2))
-                    })
-                });
-            if ausgabe.response.changed() {
-                // Nach dem Setzen neu ableiten: die eingefügten Zeichen tragen
-                // die vorgemerkte Auszeichnung.
-                let frisch = jjcad_core::text::runs_for(
-                    &t,
-                    &jjcad_core::text::edit_runs(&text_vorher, &runs_vorher, &t, vorgabe, pending),
-                    vorgabe,
-                );
-                changed_params.insert("text".into(), json!(t));
-                changed_params.insert(
-                    "runs".into(),
-                    serde_json::to_value(&frisch).unwrap_or(json!([])),
-                );
-            }
-
-            // Was zeigen die Umschalter? Markierung: dort geltende Auszeichnung.
-            // Ohne Markierung: was für das nächste Zeichen gilt.
-            let stile = jjcad_core::text::char_styles(text, runs, vorgabe);
-            let stelle = markierung
-                .map(|(a, _)| a)
-                .unwrap_or(0)
-                .min(stile.len().saturating_sub(1));
-            let am_cursor = stile.get(stelle).copied().unwrap_or(vorgabe);
-            let hat_markierung = markierung.map(|(a, b)| b > a).unwrap_or(false);
-            let angezeigt = if hat_markierung {
-                am_cursor
-            } else {
-                pending.unwrap_or(am_cursor)
-            };
-            let (von, bis) = zeichenbereich(markierung, text.chars().count());
-            let klick = auszeichnen_knoepfe(ui, angezeigt);
-            ui.horizontal(|ui| {
-                ui.label(theme::faint(if hat_markierung {
-                    format!("Zeichen {von}–{bis}")
-                } else {
-                    "nächste Zeichen".to_string()
-                }))
-                .on_hover_text(if hat_markierung {
-                    "Gilt für die markierten Zeichen."
-                } else {
-                    "Ohne Markierung gilt die Auszeichnung für das, was Sie als Nächstes tippen."
-                });
-                if pending.is_some() && !hat_markierung {
-                    ui.label(theme::dim("· vorgemerkt"));
-                }
-            });
-            if let Some((schluessel, wert)) = klick {
-                let mut neu = angezeigt;
-                match schluessel {
-                    "bold" => neu.bold = wert,
-                    "italic" => neu.italic = wert,
-                    "underline" => neu.underline = wert,
-                    _ => neu.superscript = wert,
-                }
-                if hat_markierung {
-                    // Markierten Bereich sofort auszeichnen …
-                    auszeichnen(app, id, von, bis, schluessel, wert);
-                    app.ui.text_format_next = Some((id, neu));
-                    // … und die Markierung erhalten, damit die zweite
-                    // Auszeichnung nicht neu markiert werden muss.
-                    ui.memory_mut(|m| m.request_focus(feld_id));
-                    let mut st =
-                        egui::text_edit::TextEditState::load(ui.ctx(), feld_id).unwrap_or_default();
-                    st.cursor.set_char_range(Some(egui::text::CCursorRange::two(
-                        egui::text::CCursor::new(von),
-                        egui::text::CCursor::new(bis),
-                    )));
-                    st.store(ui.ctx(), feld_id);
-                } else {
-                    // … ohne Markierung nur vormerken (wie in Textprogrammen):
-                    // der vorhandene Text bleibt unverändert.
-                    app.ui.text_format_next = Some((id, neu));
-                }
-                ui.ctx().request_repaint();
-            }
-            ui.add_space(4.0);
-
-            widgets::field_row(ui, "Textgröße", |ui| {
-                if widgets::length_field(ui, &mut h, unit, 100.0, widgets::MASS_MIN_MM, widgets::MASS_MAX_MM) {
-                    changed_params.insert("height".into(), json!(unit.from_mm(h)));
-                }
-            });
-            widgets::field_row(ui, "Schriftart", |ui| {
-                if widgets::schrift_wahl(ui, "sel_text_schrift", &mut schrift) {
-                    changed_params.insert("font".into(), json!(schrift.key()));
-                }
-            });
-            if !schrift_kanon.explodierbar() {
-                ui.label(theme::faint(schrift_kanon.explode_hinweis()));
-            }
-            widgets::field_row(ui, "Drehung", |ui| {
-                if ui.add(crate::widgets::zahl(&mut a, 1.0, widgets::WINKEL_MIN..=widgets::WINKEL_MAX).suffix("°")).changed() {
-                    changed_params.insert("angle".into(), json!(a));
-                }
-            });
-            widgets::field_block(ui, "Ausrichtung", widgets::ALIGN_HOEHE, |ui| {
-                if widgets::align_matrix(ui, "sel_text_ausrichtung", &mut ah, &mut av) {
-                    changed_params.insert("align".into(), json!(ah.key()));
-                    changed_params.insert("valign".into(), json!(av.key()));
-                }
-            });
-            ui.add_space(2.0);
-            ui.label(theme::dim("Platzhalter: {DATUM} {PROJEKT} {MASSTAB} {PLAN}"));
-        }
-        // Kreis: der Radius ist hier einstellbar (T0022) — mit Untergrenze,
-        // damit der Ziehpfeil nicht in negative Werte läuft.
-        EntityKind::Circle { c, r } => {
-            let mut rr = *r;
-            widgets::field_row(ui, "Radius", |ui| {
-                if widgets::length_field(ui, &mut rr, unit, 110.0, 0.1, widgets::MASS_MAX_MM) {
-                    changed_params.insert("r".into(), json!(unit.from_mm(rr)));
-                }
-            });
-            ui.add_space(4.0);
-            ui.label(theme::dim(format!(
-                "Mittelpunkt ({:.2}, {:.2})",
-                unit.from_mm(c.x),
-                unit.from_mm(c.y)
-            )));
-        }
-        EntityKind::Dim {
-            axis,
-            override_text,
-            a,
-            b,
-            ..
-        } => {
-            let mut ax = *axis;
-            let mut txt = override_text.clone().unwrap_or_default();
-            widgets::field_row(ui, "Richtung", |ui| {
-                egui::ComboBox::from_id_salt(("da", id))
-                    .width(ui.available_width())
-                    .selected_text(ax.label())
-                    .show_ui(ui, |ui| {
-                        for cand in DimAxis::ALL {
-                            if ui.selectable_value(&mut ax, cand, cand.label()).changed() {
-                                changed_params.insert(
-                                    "axis".into(),
-                                    json!(match cand {
-                                        DimAxis::X => "x",
-                                        DimAxis::Y => "y",
-                                        DimAxis::Aligned => "aligned",
-                                    }),
-                                );
-                            }
-                        }
-                    });
-            });
-            widgets::field_row(ui, "Maßtext", |ui| {
-                if ui.add_sized([120.0, 20.0], egui::TextEdit::singleline(&mut txt).hint_text("automatisch")).changed() {
-                    changed_params.insert("text".into(), json!(txt));
-                }
-            });
-            ui.add_space(4.0);
-            let m = match axis {
-                DimAxis::X => (b.x - a.x).abs(),
-                DimAxis::Y => (b.y - a.y).abs(),
-                DimAxis::Aligned => a.dist(*b),
-            };
-            ui.label(theme::dim(format!(
-                "Maß: {} {}",
-                format_number(app.doc().settings.dim_unit.from_mm(m), app.doc().dim_style.decimals),
-                app.doc().settings.dim_unit.short()
-            )));
-        }
-        EntityKind::Elevation { z, .. } => {
-            let mut v = *z;
-            widgets::field_row(ui, "Höhe", |ui| {
-                if widgets::length_field(ui, &mut v, unit, 100.0, widgets::KOORD_MIN_MM, widgets::KOORD_MAX_MM) {
-                    changed_params.insert("z".into(), json!(unit.from_mm(v)));
-                }
-            });
-        }
-        EntityKind::BlockRef {
-            block,
-            rot,
-            scale,
-            ..
-        } => {
-            let name = app
-                .doc()
-                .block(block)
-                .map(|b| b.name.clone())
-                .unwrap_or_else(|| block.clone());
-            ui.label(theme::dim(format!("Block: {name}")));
-            let mut r = rot.to_degrees();
-            let mut s = scale.x;
-            widgets::field_row(ui, "Drehung", |ui| {
-                if ui.add(crate::widgets::zahl(&mut r, 1.0, widgets::WINKEL_MIN..=widgets::WINKEL_MAX).suffix("°")).changed() {
-                    let _ = app
-                        .session_mut()
-                        .execute("modify.set", &json!({"ids": [id], "angle": r}));
-                }
-            });
-            widgets::field_row(ui, "Faktor", |ui| {
-                if ui.add(crate::widgets::zahl(&mut s, 0.01, 0.01..=1000.0)).changed() {
-                    let _ = app.session_mut().execute(
-                        "modify.set",
-                        &json!({"ids": [id], "scale": s}),
-                    );
-                }
-            });
-            if ui.button("Blockdefinition bearbeiten").clicked() {
-                app.ui.inventory_open = true;
-                app.ui.inventory_tab = 1;
-            }
-        }
-        // Polylinien tragen keine eigenen Eingabefelder: Länge, Fläche,
-        // Stützpunktzahl und Geschlossenheit stehen schon im Abschnitt
-        // „Geometrie“ (siehe `geo_rows`).
-        EntityKind::Polyline { .. } | EntityKind::Spline { .. } => {}
-        EntityKind::Line { a, b } => {
-            ui.label(theme::dim(format!(
-                "Länge {} · Winkel {:.1}°",
-                unit.format(a.dist(*b), unit.decimals()),
-                (*b - *a).angle().to_degrees()
-            )));
-        }
-        // Bogen: Radius und beide Endwinkel sind einstellbar (T0022). Die
-        // Enden selbst sitzen als runde Griffe auf dem Bogen — dort zieht man
-        // sie mit der Maus.
-        EntityKind::Arc { c, r, a0, a1 } => {
-            let mut rr = *r;
-            let mut w0 = a0.to_degrees();
-            let mut w1 = a1.to_degrees();
-            widgets::field_row(ui, "Radius", |ui| {
-                if widgets::length_field(ui, &mut rr, unit, 110.0, 0.1, widgets::MASS_MAX_MM) {
-                    changed_params.insert("r".into(), json!(unit.from_mm(rr)));
-                }
-            });
-            widgets::field_row(ui, "Startwinkel", |ui| {
-                if ui
-                    .add(crate::widgets::zahl(&mut w0, 1.0, widgets::WINKEL_MIN..=widgets::WINKEL_MAX).suffix("°"))
-                    .changed()
-                {
-                    changed_params.insert("a0".into(), json!(w0));
-                }
-            });
-            widgets::field_row(ui, "Endwinkel", |ui| {
-                if ui
-                    .add(crate::widgets::zahl(&mut w1, 1.0, widgets::WINKEL_MIN..=widgets::WINKEL_MAX).suffix("°"))
-                    .changed()
-                {
-                    changed_params.insert("a1".into(), json!(w1));
-                }
-            });
-            ui.add_space(4.0);
-            let start = *c + jjcad_core::geom::Vec2::polar(*a0, *r);
-            let ende = *c + jjcad_core::geom::Vec2::polar(*a1, *r);
-            ui.label(theme::dim(format!(
-                "Mittelpunkt ({:.2}, {:.2}) · Start ({:.2}, {:.2}) · Ende ({:.2}, {:.2})",
-                unit.from_mm(c.x),
-                unit.from_mm(c.y),
-                unit.from_mm(start.x),
-                unit.from_mm(start.y),
-                unit.from_mm(ende.x),
-                unit.from_mm(ende.y)
-            )));
-        }
-        _ => {}
-    }
-
-    if !changed_params.is_empty() {
-        let mut params = json!({"ids": [id]});
-        if let Value::Object(map) = &mut params {
-            for (k, v) in changed_params {
-                map.insert(k, v);
-            }
-        }
-        let _ = app.session_mut().execute("modify.set", &params);
-        app.mark_changed();
-    }
-}
-
+/// Eigenschaften einer Mehrfachauswahl.
+///
+/// **Offener Punkt, bewusst als Altlast markiert:** Das ist der letzte eigene
+/// Maler neben `props.rs`. Er gehört auf denselben Renderer umgestellt —
+/// `props::*` mit einer Liste von Ids und dem Zustand „*variiert*“ für
+/// abweichende Werte. Bis dahin gilt: neue Eigenschaften **nicht** hier einzeln
+/// nachbauen, sondern `props` erweitern und diesen Maler mitziehen.
 fn multi_props(app: &mut App, ui: &mut Ui, ids: &[Id]) {
     let ents: Vec<jjcad_core::model::Entity> = ids
         .iter()
@@ -2632,7 +1070,7 @@ fn multi_props(app: &mut App, ui: &mut Ui, ids: &[Id]) {
 /// einen Namen und genau einen Wert. Deshalb taucht z. B. „Länge“ bei einer
 /// Polylinie nicht doppelt auf und die Flächeneinheit steht genau einmal im
 /// Text (vorher kam „m²“ aus `format_area` und noch einmal aus dem Aufrufer).
-fn geo_rows(e: &jjcad_core::model::Entity, unit: Unit) -> Vec<(&'static str, String)> {
+pub(crate) fn geo_rows(e: &jjcad_core::model::Entity, unit: Unit) -> Vec<(&'static str, String)> {
     use jjcad_core::model::EntityKind as K;
     let mut rows: Vec<(&'static str, String)> = Vec::new();
     let len = entity_length(e);
@@ -2655,7 +1093,7 @@ fn geo_rows(e: &jjcad_core::model::Entity, unit: Unit) -> Vec<(&'static str, Str
 
 /// Flächentext für die Anzeige: die Einheit kommt aus `format_area` und steht
 /// damit genau einmal im Text.
-fn area_text(unit: Unit, mm2: f64) -> String {
+pub(crate) fn area_text(unit: Unit, mm2: f64) -> String {
     unit.format_area(mm2, 2)
 }
 
@@ -3477,9 +1915,14 @@ mod tests_text_eingabe_panel {
             enthaelt(&texte, "Textgröße"),
             "während der Eingabe fehlt die Textgröße: {texte:?}"
         );
+        // Dasselbe Panel wie beim Erzeugen: Kopfzeile und alle Zeilen.
         assert!(
-            enthaelt(&texte, "neuer Text"),
-            "das Panel soll den bearbeiteten Text nennen: {texte:?}"
+            enthaelt(&texte, "gilt für das nächste Element"),
+            "die Kopfzeile des Erzeugen-Panels fehlt: {texte:?}"
+        );
+        assert!(
+            enthaelt(&texte, "Layer"),
+            "während der Eingabe fehlt der Layer: {texte:?}"
         );
         // Schriftart steht während der Eingabe zur Wahl (T0034).
         assert!(
@@ -3589,18 +2032,30 @@ mod tests_text_eingabe_panel {
     }
 
     /// Änderungen im Panel landen in der Eingabe — und damit im Ergebnis.
+    ///
+    /// Das Panel schreibt in die Vorgaben, `props::eingabe_spiegeln` reicht sie
+    /// an den laufenden Editor weiter (früher schrieb die Matrix direkt in den
+    /// Editor — deshalb gab es ein zweites Panel).
     #[test]
     fn aenderung_im_panel_gilt_fuer_die_eingabe() {
         let mut app = app_mm();
         app.options.text_height = 250.0;
+        app.options.text_align = TextAlignH::Right;
+        app.options.text_valign = TextAlignV::Top;
         crate::textedit::start(&mut app, jjcad_core::geom::Vec2::new(1000.0, 500.0));
         if let Some(t) = app.ui.texteingabe.as_mut() {
             t.text = "Wohnen".to_string();
-            // So schreibt die Matrix im Panel (dieselben Felder).
-            t.align = TextAlignH::Right;
-            t.valign = TextAlignV::Top;
         }
+        // Panel zeichnen: es spiegelt die Vorgaben in die Eingabe.
         let _ = panel_texte(&mut app, 2.0);
+        {
+            let t = app.ui.texteingabe.as_ref().expect("Eingabe läuft");
+            assert_eq!(
+                (t.align, t.valign),
+                (TextAlignH::Right, TextAlignV::Top),
+                "Panelwerte kommen nicht in der Eingabe an"
+            );
+        }
         // Esc übernimmt: derselbe Weg wie beim Klick daneben.
         crate::textedit::uebernehmen_fuer_test(&mut app);
         let e = app.doc().ents().last().cloned().expect("Text fehlt");
