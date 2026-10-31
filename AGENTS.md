@@ -149,7 +149,12 @@ Mit dem Nutzer abgestimmt — nicht „verbessern“:
   der nächste Punkt (`SnapKind::Tracking`, Statuszeile „Hilfslinie"), ebenso der
   **Schnittpunkt einer Hilfslinie mit einer bestehenden Linie** (Statuszeile „Schnittpunkt");
   höchstens zwei Haltepunkte, ein Klick löst sie. Diskrete Objektfänge (END, MIT, …) schlagen die
-  Hilfslinie, die Hilfslinie schlägt Nächster Punkt/Lot sowie Ortho, Polar und Raster.
+  Hilfslinie, die Hilfslinie schlägt Nächster Punkt/Lot und das Raster. **Ortho und Polar sind
+  keine Alternative zur Hilfslinie, sondern eine Bedingung**: liegt eine Hilfslinie im Fangradius
+  und greift zugleich Ortho bzw. Polar, wird der **Schnittpunkt beider** gefangen
+  (`snap::zwangsachse`, `hilfslinien_snap_mit_zwang`) — die Achse bleibt, die Hilfslinie wählt nur
+  die Lage auf ihr. Ohne das kippte die neue Linie je nach Abstand zur Hilfslinie aus der
+  Zwangsrichtung (T0042).
 - **Texteingabe** läuft direkt in der Zeichnung (kein Dialog, keine Eingabefläche): ein
   Klick mit dem Textwerkzeug setzt den Cursor an die Klickstelle, der Text erscheint sofort
   in der Zeichnung — gleiche Schrift, gleiche Lage, gleiche Farbe wie danach. Ein Doppelklick

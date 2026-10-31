@@ -7426,6 +7426,37 @@ mod tests_hilfslinien {
         assert_eq!(label, Some("Hilfslinie"));
     }
 
+    /// Werkzeug läuft, Ortho an, erster Punkt gesetzt (T0042): der Zeiger neben
+    /// der Senkrechten des Haltepunkts landet auf dem Schnittpunkt aus
+    /// Senkrechter und Zwangsachse — beide Fänge greifen zugleich. Ohne
+    /// Haltepunkt zieht allein Ortho den Zeiger auf die Achse (Gegenprobe).
+    #[test]
+    fn ortho_und_hilfslinie_fangen_in_der_app() {
+        let mut app = app();
+        let id = linie(&mut app);
+        app.session_mut()
+            .execute(
+                "doc.settings",
+                &serde_json::json!({"snap": {"ortho": true, "polar": false}}),
+            )
+            .unwrap();
+        app.start_tool("draw.line");
+        app.tool
+            .as_mut()
+            .unwrap()
+            .pts
+            .push(V2::new(0.0, -2000.0));
+        app.halt.push(halt_am_ende(&app, id));
+        // 4 mm neben der Senkrechten x = 2000, 1000 mm über der Achse y = -2000.
+        let (p, label) = fang_zeiger(&app, V2::new(2004.0, -1000.0), 30.0);
+        assert_punkt(p, V2::new(2000.0, -2000.0), "Schnittpunkt");
+        assert_eq!(label, Some("Hilfslinie"));
+
+        app.halt.clear();
+        let (p2, _) = fang_zeiger(&app, V2::new(2004.0, -1000.0), 30.0);
+        assert_punkt(p2, V2::new(2004.0, -2000.0), "nur Zwangsachse");
+    }
+
     /// Wo die Hilfslinie eine bestehende Linie kreuzt, rastet der Fang exakt
     /// auf der Kreuzung ein und die Statuszeile meldet „Schnittpunkt" (Turn 2).
     #[test]

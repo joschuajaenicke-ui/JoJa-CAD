@@ -118,6 +118,56 @@ pub struct Hilfslinie {
     pub dir: Vec2,
 }
 
+/// Zwangsachse des Zeigers: Ursprung ist der Bezugspunkt (der zuletzt gesetzte
+/// Punkt), `dir` die Richtung der Achse.
+///
+/// **Ortho** und **Polar** sind Bedingungen an den Punkt, kein Punktangebot.
+/// Genau darin liegt der Unterschied zu einer Hilfslinie: treffen beide
+/// zugleich, bleibt die Bedingung bestehen und der Fang wählt nur die Lage auf
+/// ihr — siehe [`hilfslinien_snap_innen`].
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Zwangsachse {
+    pub origin: Vec2,
+    pub dir: Vec2,
+}
+
+/// Die Zwangsachse, die der Zeiger gerade benutzt (sofern es einen
+/// Bezugspunkt gibt).
+///
+/// Gebaut aus denselben Regeln, die [`snap_constrained`] für den freien Zeiger
+/// anwendet, damit Anzeige und Fang nicht auseinanderlaufen:
+///
+/// * **Ortho** ist hart — waagerecht oder senkrecht durch den Bezugspunkt, je
+///   nachdem welche Richtung der Zeiger überwiegend nimmt.
+/// * **Polar** rastet nur innerhalb des Winkel-Fensters ein; außerhalb gibt es
+///   keine Achse.
+pub fn zwangsachse(
+    s: &SnapSettings,
+    cursor: Vec2,
+    reference: Option<Vec2>,
+    tol: f64,
+) -> Option<Zwangsachse> {
+    let r = reference?;
+    if s.ortho {
+        let d = cursor - r;
+        let dir = if d.x.abs() >= d.y.abs() {
+            v(1.0, 0.0)
+        } else {
+            v(0.0, 1.0)
+        };
+        return Some(Zwangsachse { origin: r, dir });
+    }
+    if s.polar && cursor.dist(r) > tol * 2.0 {
+        if let Some(p) = cursor.polar_snap_from_tol(r, s.polar_step.max(1.0), s.polar_tolerance) {
+            let dir = (p - r).normalized();
+            if dir.len() > 1e-9 {
+                return Some(Zwangsachse { origin: r, dir });
+            }
+        }
+    }
+    None
+}
+
 impl HaltPunkt {
     /// Halt aus einem Fangtreffer bauen — die Richtung kommt aus der Geometrie.
     pub fn neu(doc: &Document, hit: &SnapHit) -> Self {
@@ -207,6 +257,14 @@ fn fuss_auf_gerade(p: Vec2, origin: Vec2, dir: Vec2) -> Vec2 {
     origin + d * (p - origin).dot(d)
 }
 
+/// Element des Haltepunkts, zu dem diese Hilfslinie gehört.
+fn halt_entity(halte: &[HaltPunkt], l: &Hilfslinie) -> Option<Id> {
+    halte
+        .iter()
+        .find(|h| h.point.dist(l.origin) <= SNAP_DEDUP)
+        .and_then(|h| h.entity)
+}
+
 /// Ein Fangpunkt auf einer Hilfslinie: exakt oder nur der Fußpunkt.
 struct HilfsTreffer {
     dist: f64,
@@ -229,7 +287,7 @@ struct HilfsTreffer {
 /// [`hilfslinien_snap_mit_geometrie`] — dort kommt der Schnitt mit einer
 /// bestehenden Linie hinzu.
 pub fn hilfslinien_snap(halte: &[HaltPunkt], cursor: Vec2, tol: f64) -> Option<SnapHit> {
-    hilfslinien_snap_innen(halte, cursor, tol, &[])
+    hilfslinien_snap_innen(halte, cursor, tol, &[], None)
 }
 
 /// Fang auf den Hilfslinien **einschließlich ihrer Schnittpunkte mit
@@ -250,7 +308,31 @@ pub fn hilfslinien_snap_mit_geometrie(
     selected: &[Id],
 ) -> Option<SnapHit> {
     let segs = nahe_segmente(doc, cursor, tol, ignore, selected);
-    hilfslinien_snap_innen(halte, cursor, tol, &segs)
+    hilfslinien_snap_innen(halte, cursor, tol, &segs, None)
+}
+
+/// Wie [`hilfslinien_snap_mit_geometrie`], zusätzlich mit der **Zwangsachse**
+/// des Zeigers (Ortho/Polar).
+///
+/// Sie ist eine Bedingung, nicht eine Alternative: liegt eine Hilfslinie im
+/// Fangradius, wird ihr Fußpunkt auf die Achse gezogen — gefangen wird der
+/// **Schnittpunkt** beider, dadurch bleibt die neue Linie in der Zwangsrichtung
+/// (T0042). Ohne diesen Zweig sprang der Punkt je nach Abstand zur Hilfslinie
+/// zwischen Linienfang und Ortho, und die gezeichnete Linie stand schief.
+pub fn hilfslinien_snap_mit_zwang(
+    doc: &Document,
+    halte: &[HaltPunkt],
+    cursor: Vec2,
+    tol: f64,
+    ignore: &[Id],
+    selected: &[Id],
+    zwang: Option<Zwangsachse>,
+) -> Option<SnapHit> {
+    if zwang.is_none() {
+        return hilfslinien_snap_mit_geometrie(doc, halte, cursor, tol, ignore, selected);
+    }
+    let segs = nahe_segmente(doc, cursor, tol, ignore, selected);
+    hilfslinien_snap_innen(halte, cursor, tol, &segs, zwang)
 }
 
 /// Strecken in Fangreichweite — dieselbe Auswahl wie in der Fang-Engine
@@ -318,32 +400,74 @@ fn hilfslinien_snap_innen(
     cursor: Vec2,
     tol: f64,
     segs: &[(Seg, Id, bool)],
+    zwang: Option<Zwangsachse>,
 ) -> Option<SnapHit> {
     if halte.is_empty() || tol <= 0.0 {
         return None;
     }
     let linien = hilfslinien(halte);
     let tol = tol.max(1e-6);
+    let nach_abstand = |a: &HilfsTreffer, b: &HilfsTreffer| {
+        a.dist
+            .partial_cmp(&b.dist)
+            .unwrap_or(std::cmp::Ordering::Equal)
+    };
     // Exakte Punkte: Kreuzungen der Hilfslinien untereinander und mit
     // bestehenden Strecken.
     let mut exakt: Vec<HilfsTreffer> = Vec::new();
     // Fußpunkte des Zeigers auf einer Hilfslinie (gleiten mit).
     let mut fuesse: Vec<HilfsTreffer> = Vec::new();
 
+    // **Zwangsachse und Hilfslinie zugleich** (T0042): Die Achse ist eine
+    // Bedingung an den Punkt, die Hilfslinie nur ein Angebot. Liegt eine
+    // Hilfslinie im Fangradius, bleibt die Bedingung bestehen — der gemeinte
+    // Punkt ist der Schnitt beider, nicht der eine oder der andere. Vorher
+    // gewann je nach Abstand zur Hilfslinie der Linienfang oder Ortho, die
+    // Linie kippte dadurch aus der Zwangsrichtung. Gewählt wird die nächste
+    // Hilfslinie; ist sie zur Achse parallel, gibt es keinen Schnitt und die
+    // nächste kommt zum Zug.
+    if let Some(z) = zwang {
+        let mut kombi: Vec<HilfsTreffer> = Vec::new();
+        for l in &linien {
+            let d = fuss_auf_gerade(cursor, l.origin, l.dir).dist(cursor);
+            if d > tol {
+                continue;
+            }
+            if let Some(x) = line_line(
+                z.origin,
+                z.origin + z.dir,
+                l.origin,
+                l.origin + l.dir,
+                true,
+                true,
+            ) {
+                kombi.push(HilfsTreffer {
+                    dist: d,
+                    point: x,
+                    kind: SnapKind::Tracking,
+                    entity: halt_entity(halte, l),
+                });
+            }
+        }
+        kombi.sort_by(nach_abstand);
+        if let Some(t) = kombi.first() {
+            return Some(SnapHit {
+                point: t.point,
+                kind: t.kind,
+                entity: t.entity,
+            });
+        }
+    }
+
     for l in &linien {
         let f = fuss_auf_gerade(cursor, l.origin, l.dir);
         let d = f.dist(cursor);
         if d <= tol {
-            // Element des Haltepunkts, zu dem die Linie gehört.
-            let id = halte
-                .iter()
-                .find(|h| h.point.dist(l.origin) <= SNAP_DEDUP)
-                .and_then(|h| h.entity);
             fuesse.push(HilfsTreffer {
                 dist: d,
                 point: f,
                 kind: SnapKind::Tracking,
-                entity: id,
+                entity: halt_entity(halte, l),
             });
         }
         // Schnitt mit einer bestehenden Linie: nur an nicht ausgewählten
@@ -391,11 +515,6 @@ fn hilfslinien_snap_innen(
         }
     }
 
-    let nach_abstand = |a: &HilfsTreffer, b: &HilfsTreffer| {
-        a.dist
-            .partial_cmp(&b.dist)
-            .unwrap_or(std::cmp::Ordering::Equal)
-    };
     // Exakte Punkte vor den gleitenden Fußpunkten: stehen zwei Linien im
     // Fangradius, ist ihr Schnittpunkt gemeint, nicht die nähere Einzelachse.
     for liste in [&mut exakt, &mut fuesse] {
@@ -882,7 +1001,9 @@ fn snap_constrained_alle(
 /// 1. **diskrete** Objektfänge (Endpunkt, Mitte, Zentrum, Quadrant, Schnitt,
 ///    Blattecke) — ein echter Punkt auf der Geometrie ist immer die genauere
 ///    Wahl als eine Hilfslinie.
-/// 2. **Hilfslinien** der Haltepunkte (siehe [`hilfslinien_snap`]).
+/// 2. **Hilfslinien** der Haltepunkte (siehe [`hilfslinien_snap`]); greift
+///    zugleich Ortho oder Polar, ihr Schnittpunkt mit der Zwangsachse
+///    ([`hilfslinien_snap_mit_zwang`]).
 /// 3. kontinuierliche Objektfänge (Nächster Punkt, Lot) — sie hängen am Zeiger
 ///    und sind nur eine Notlösung; die Hilfslinie ist die ausdrückliche Wahl.
 /// 4. Ortho/Polar, zuletzt das Raster.
@@ -924,8 +1045,14 @@ pub fn snap_constrained_mit_halte(
 
     // 2. Hilfslinien des erweiterten Punktfangs — samt ihrem Schnitt mit
     //    bestehenden Linien (der Punkt, an dem eine Hilfslinie eine Wand
-    //    kreuzt, ist sonst nicht zu treffen).
-    if let Some(hit) = hilfslinien_snap_mit_geometrie(doc, halte, cursor, tol, ignore, selected) {
+    //    kreuzt, ist sonst nicht zu treffen). Greift zugleich Ortho oder Polar,
+    //    ist der Schnittpunkt aus Hilfslinie und Zwangsachse gemeint: die
+    //    Zwangsachse bleibt Bedingung, die Hilfslinie wählt die Lage auf ihr
+    //    (T0042).
+    let zwang = zwangsachse(&s, cursor, reference, tol);
+    if let Some(hit) =
+        hilfslinien_snap_mit_zwang(doc, halte, cursor, tol, ignore, selected, zwang)
+    {
         return SnapResolution {
             point: hit.point,
             source: SnapSource::Object(hit.kind),
