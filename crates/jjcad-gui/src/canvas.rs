@@ -983,7 +983,10 @@ pub fn show(app: &mut App, ui: &mut Ui) {
     // Erweiterter Punktfang: steht der Zeiger lange genug auf einem Fangpunkt,
     // wird dieser gehalten — von ihm gehen dann Hilfslinien aus, auf denen der
     // nächste Punkt fängt. Vor dem Fangen, weil der Fang die Haltepunkte nutzt.
-    if app.tool.is_some() {
+    // Gilt auch beim **Manipulieren** (Griffzug, Maus-Verschiebung): dort wird
+    // ebenso ein Punkt gesetzt, und ohne Haltepunkte ließ sich nichts mehr
+    // ausrichten (T0046, Turn 2).
+    if fang_aktiv(app) {
         let tol = fang_radius_px(app, app.current_view().zoom);
         let kandidat = raw_world.and_then(|w| verweil_kandidat(app, w, tol));
         let jetzt = std::time::Instant::now();
@@ -3659,6 +3662,17 @@ fn halt_merken(app: &mut App, h: snap::HaltPunkt) {
     app.halt.truncate(HALTE_MAX);
 }
 
+/// Entsteht gerade ein Punkt? Werkzeug, Griffzug oder Maus-Verschiebung —
+/// nur dann gibt es einen „nächsten Punkt", für den der erweiterte Punktfang
+/// (Verweilen, Hilfslinien) sinnvoll ist.
+///
+/// Der Griffzug war hier früher ausgenommen (nur `app.tool`): beim
+/// Manipulieren wurden die Haltepunkte jedes Bild geleert, der erweiterte
+/// Punktfang war damit tot (T0046, Turn 2).
+fn fang_aktiv(app: &App) -> bool {
+    app.tool.is_some() || app.grip_drag.is_some() || app.move_drag.is_some()
+}
+
 /// Fangpunkt unter dem Zeiger, über dem der erweiterte Punktfang auslösen darf.
 ///
 /// Nur **diskrete** Punkte (Endpunkt, Blattecke, Schnittpunkt, Mittelpunkt,
@@ -3666,7 +3680,9 @@ fn halt_merken(app: &mut App, h: snap::HaltPunkt) {
 /// liegt überall — beide stünden nie still und würden bei jedem Verweilen
 /// Hilfslinien erzeugen.
 fn verweil_kandidat(app: &App, w: V2, tol: f64) -> Option<snap::HaltPunkt> {
-    let reference = app.tool.as_ref().and_then(|t| t.pts.last().copied());
+    // Derselbe Bezug wie beim Fangen (`bezug_zeiger`): beim Griffzug der
+    // ruhende Punkt des Elements, sonst der zuletzt gesetzte.
+    let reference = bezug_zeiger(app);
     let regeln = fang_regeln(app);
     let vorschau = vorschau_punkte(app);
     snap::snap_candidates_mit_vorschau(
@@ -7696,6 +7712,87 @@ mod tests_hilfslinien {
         let auf_der_linie = world_to_screen(rect, view, V2::new(2000.0 + tol * 0.3, 700.0));
         frame(&mut app, vec![egui::Event::PointerMoved(auf_der_linie)]);
         assert_eq!(app.snap_label.as_deref(), Some("Hilfslinie"));
+    }
+
+    /// Zwei Linien: a (0;0) → (2000;0) wird gezogen, b endet bei (2000;1500).
+    fn szenario_zwei_linien() -> (App, Id) {
+        let mut app = app();
+        let s = app.session_mut();
+        s.execute(
+            "draw.line",
+            &serde_json::json!({"a": [0.0, 0.0], "b": [2000.0, 0.0]}),
+        )
+        .unwrap();
+        s.execute(
+            "draw.line",
+            &serde_json::json!({"a": [0.0, 1500.0], "b": [2000.0, 1500.0]}),
+        )
+        .unwrap();
+        let a = app.doc().entities[0].id;
+        app.session_mut().select(vec![a]);
+        (app, a)
+    }
+
+    // ---- Erweiterter Punktfang beim Manipulieren (T0046, Turn 2) ----
+
+    /// Beim Ziehen an einem Griff muss der erweiterte Punktfang wieder greifen:
+    /// vorher räumte die Zeichenfläche die Haltepunkte in jedem Bild ab, weil
+    /// sie nur ein laufendes Werkzeug kannte.
+    #[test]
+    fn griffzug_haelt_einen_fremden_punkt() {
+        let (mut app, a) = szenario_zwei_linien();
+        frame(&mut app, vec![]);
+        let rect = app.ui.last_canvas;
+        let view = app.current_view();
+        let ende_b = V2::new(2000.0, 1500.0);
+        let ziel = world_to_screen(rect, view, ende_b);
+        assert!(rect.contains(ziel), "Zielfläche {rect:?}, Punkt {ziel:?}");
+
+        app.begin_grip_drag(a, crate::handles::GripKind::Vert(1));
+        frame(&mut app, vec![egui::Event::PointerMoved(ziel)]);
+        assert!(app.halt.is_empty(), "nach einem Frame noch nicht gehalten");
+
+        std::thread::sleep(VERWEILDAUER + std::time::Duration::from_millis(120));
+        frame(&mut app, vec![egui::Event::PointerMoved(ziel)]);
+        assert_eq!(
+            app.halt.len(),
+            1,
+            "Verweilen hält das fremde Ende: {:?}",
+            app.halt
+        );
+        assert_punkt(app.halt[0].point, ende_b, "Haltepunkt");
+
+        // Zeiger auf die Senkrechte dieses Punktes: der gezogene Griff fängt.
+        let tol = fang_radius_px(&app, view.zoom);
+        let daneben = world_to_screen(rect, view, V2::new(2000.0 + tol * 0.3, 900.0));
+        frame(&mut app, vec![egui::Event::PointerMoved(daneben)]);
+        assert_eq!(app.snap_label.as_deref(), Some("Hilfslinie"));
+    }
+
+    /// Auch das Verschieben mit der Maus ist „Manipulieren": die Hilfslinien
+    /// bleiben stehen.
+    #[test]
+    fn verschieben_behaelt_die_hilfslinien() {
+        let (mut app, a) = szenario_zwei_linien();
+        app.halt.push(halt_am_ende(&app, a));
+        app.begin_move_drag(V2::ZERO, 0.0);
+        assert!(app.move_drag.is_some(), "Verschiebung muss laufen");
+        frame(&mut app, vec![]);
+        assert_eq!(
+            app.halt.len(),
+            1,
+            "Haltepunkte bleiben beim Verschieben stehen"
+        );
+    }
+
+    /// Gegenprobe: ohne Werkzeug und ohne laufenden Zug gibt es keine
+    /// Hilfslinien — der Fang gehört zum Punktesetzen, nicht zum Ruhezustand.
+    #[test]
+    fn ohne_bearbeitung_keine_hilfslinien() {
+        let (mut app, a) = szenario_zwei_linien();
+        app.halt.push(halt_am_ende(&app, a));
+        frame(&mut app, vec![]);
+        assert!(app.halt.is_empty(), "ohne Werkzeug und Zug keine Hilfslinien");
     }
 
     /// Ein gesetzter Punkt löst die Hilfslinien — sonst blieben sie für den
