@@ -661,9 +661,10 @@ pub fn show(app: &mut App, ctx: &egui::Context) {
         }
     }
 
-    // Tastatur
+    // Tastatur — bewusst **ohne** Abdunklung (T0064): das Ribbon bleibt
+    // bedienbar, damit eine Funktion angeklickt und gleich auf eine Taste
+    // gelegt werden kann.
     if app.ui.keymap_open {
-        dim_background(ctx);
         let mut open = true;
         modal_window(ctx, "Tastaturbelegung", 860.0, &mut open).show(ctx, |ui| {
             ui.set_width(840.0);
@@ -1714,6 +1715,30 @@ fn tasten_belegung(orig: Pos2) -> Vec<(&'static str, Rect)> {
         .collect()
 }
 
+/// Legt eine Funktion auf eine Taste der Tastaturbelegung (T0064).
+///
+/// Derselbe Weg wie „Funktion aus der Liste wählen": `UserPrefs::bind` prüft die
+/// Sperren und räumt eine alte Belegung derselben Taste weg. Liefert `false`,
+/// wenn die Funktion fest verdrahtet ist (Strg+S, F1 …) — dann bleibt die
+/// Belegung unverändert.
+fn funktion_auf_taste(app: &mut App, funktion: &str, key: &str) -> bool {
+    if !app.prefs.belegung_aenderbar(funktion) {
+        return false;
+    }
+    let name = actions::action(funktion)
+        .map(|d| d.label.to_string())
+        .unwrap_or_else(|| funktion.to_string());
+    app.prefs.bind(funktion, key);
+    let _ = app.prefs.save();
+    app.ui.keymap_funktion = None;
+    app.ui.keymap_selected = Some(key.to_lowercase());
+    // Die gewählte Funktion hat ihr Ziel erreicht — das Werkzeug endet wie beim
+    // Klick auf einen leeren Hotbar-Slot.
+    app.tool = None;
+    app.toast(format!("{name} → {}", key.to_uppercase()));
+    true
+}
+
 fn keyboard_body(app: &mut App, ui: &mut Ui) {
     // Der Hinweis nennt die drei Schichten aus `docs/TASTEN.md`. Er läuft über
     // die ganze Breite und bricht um — in einer Zeile ragte er über den Rand
@@ -1722,9 +1747,23 @@ fn keyboard_body(app: &mut App, ui: &mut Ui) {
         ui.label(theme::dim(
             "Taste anklicken, dann Funktion aus der Liste zuweisen. Buchstaben und \
              Symbole sind frei belegbar; Ziffern gehören der Hotbar; Steuerungstasten \
-             und Kombinationen sind fest verdrahtet und ausgegraut.",
+             und Kombinationen sind fest verdrahtet und ausgegraut. Das Ribbon bleibt \
+             bedienbar: Funktion anklicken, dann eine leere Taste — sie übernimmt sie.",
         ));
     });
+    // T0064: Die zuletzt gewählte Funktion steht hier, damit sichtbar ist, was
+    // eine leere Taste aufnimmt.
+    match app.ui.keymap_funktion.clone() {
+        Some(f) => {
+            let name = actions::action(&f).map(|d| d.label.to_string()).unwrap_or(f);
+            ui.label(theme::mono(format!("Bereit: {name} — leere Taste anklicken")));
+        }
+        None => {
+            ui.label(theme::dim(
+                "Noch keine Funktion gewählt — im Ribbon eine Funktion anklicken.",
+            ));
+        }
+    }
     ui.add_space(6.0);
 
     let (rahmen, _) = ui.allocate_exact_size(tastatur_flaeche(), Sense::hover());
@@ -1837,7 +1876,19 @@ fn keyboard_body(app: &mut App, ui: &mut Ui) {
             }
         }
         if resp.clicked() && gesperrt.is_none() {
-            app.ui.keymap_selected = Some(key.to_string());
+            // Wie die Hotbar (T0064): Ist eine Funktion gewählt und die Taste
+            // frei, übernimmt die Taste sie sofort — der Umweg über die Liste
+            // entfällt. Eine belegte Taste wird weiterhin nur ausgewählt.
+            match app.ui.keymap_funktion.clone() {
+                Some(f) if action.is_none() => {
+                    if !funktion_auf_taste(app, &f, key) {
+                        // Fest verdrahtete Funktionen (Strg+S, F1 …) lassen sich
+                        // nicht umbelegen; sie bleiben in der Liste gesperrt.
+                        app.toast("Funktion · fest belegt");
+                    }
+                }
+                _ => app.ui.keymap_selected = Some(key.to_string()),
+            }
         }
         match gesperrt {
             // Hinweis auf den Grund: Ziffern gehören der Hotbar, die übrigen
@@ -2123,6 +2174,165 @@ mod tests_tastatur {
         rahmen(ctx, app, vec![knopf(true)]);
         rahmen(ctx, app, vec![knopf(false)]);
         rahmen(ctx, app, vec![]);
+    }
+
+    /// `UserPrefs::save` folgt `XDG_CONFIG_HOME`. Die Tests unten belegen echte
+    /// Tasten und schreiben damit Voreinstellungen — ein Wegwerf-Verzeichnis
+    /// hält `~/.config/jjcad/prefs.json` des Nutzers unberührt. Die Sperre
+    /// serialisiert diese Tests, sonst überschreibt ein zweiter Test den
+    /// Umweg des ersten wieder mit dem echten Verzeichnis.
+    static KONFIG: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
+    struct WegwerfKonfig(Option<std::ffi::OsString>, std::path::PathBuf);
+
+    impl WegwerfKonfig {
+        fn neu(name: &str) -> Self {
+            let alt = std::env::var_os("XDG_CONFIG_HOME");
+            let dir = std::env::temp_dir().join(format!(
+                "jjcad-t0064-{}-{name}",
+                std::process::id()
+            ));
+            let _ = std::fs::remove_dir_all(&dir);
+            let _ = std::fs::create_dir_all(&dir);
+            std::env::set_var("XDG_CONFIG_HOME", &dir);
+            Self(alt, dir)
+        }
+    }
+
+    impl Drop for WegwerfKonfig {
+        fn drop(&mut self) {
+            match self.0.take() {
+                Some(v) => std::env::set_var("XDG_CONFIG_HOME", v),
+                None => std::env::remove_var("XDG_CONFIG_HOME"),
+            }
+            let _ = std::fs::remove_dir_all(&self.1);
+        }
+    }
+
+    /// Die Tastaturbelegung dunkelt den Hintergrund nicht mehr ab (T0064) —
+    /// das Ribbon muss bedienbar bleiben, sonst lässt sich keine Funktion mehr
+    /// anklicken.
+    #[test]
+    fn tastaturbelegung_dunkelt_nicht_ab() {
+        use egui::{Id, LayerId};
+        let (_app, ctx) = app_mit_tastatur();
+        let layer = |order, name| LayerId::new(order, Id::new(name));
+        assert!(
+            ctx.memory(|m| m.areas().is_visible(&layer(egui::Order::Middle, "Tastaturbelegung"))),
+            "das Fenster der Tastaturbelegung wird nicht gezeichnet"
+        );
+        assert!(
+            !ctx.memory(|m| m.areas().is_visible(&layer(egui::Order::Background, "modal_bg"))),
+            "die Tastaturbelegung dunkelt den Hintergrund weiterhin ab"
+        );
+    }
+
+    /// T0064: Eine Funktion im Ribbon anklicken, dann eine leere Taste — die
+    /// Taste übernimmt sie sofort, genau wie bei der Hotbar.
+    #[test]
+    fn leere_taste_uebernimmt_die_funktion_aus_dem_ribbon() {
+        let _sperre = KONFIG.lock().unwrap_or_else(|e| e.into_inner());
+        let _konfig = WegwerfKonfig::neu("belegen");
+        let (mut app, ctx) = app_mit_tastatur();
+        assert!(
+            app.prefs.action_for_key("t").is_none(),
+            "Testtaste t ist in der Werkseinstellung belegt"
+        );
+
+        // Ribbon-Knopf „Wand" — derselbe Weg wie der Klick im Ribbon.
+        app.run_action(&ctx, "draw.wall");
+        assert_eq!(
+            app.ui.keymap_funktion.as_deref(),
+            Some("draw.wall"),
+            "die gewählte Funktion wird nicht gemerkt"
+        );
+
+        let tasten = app.ui.last_tasten.clone().expect("Tastenbild gezeichnet");
+        let (_, _, t) = *taste_mit(&tasten, "t");
+        klick(&ctx, &mut app, t.center());
+
+        assert_eq!(
+            app.prefs.action_for_key("t").as_deref(),
+            Some("draw.wall"),
+            "die leere Taste hat die Funktion nicht übernommen"
+        );
+        assert_eq!(app.ui.keymap_selected.as_deref(), Some("t"));
+        assert!(app.ui.keymap_funktion.is_none(), "die Funktion bleibt gemerkt");
+        assert!(app.tool.is_none(), "das Werkzeug läuft nach dem Belegen weiter");
+
+        // Der Beleg steht in der Voreinstellungsdatei, nicht nur im Speicher.
+        let gespeichert = jjcad_core::persist::UserPrefs::load();
+        assert_eq!(
+            gespeichert.action_for_key("t").as_deref(),
+            Some("draw.wall"),
+            "die Belegung wurde nicht gespeichert"
+        );
+    }
+
+    /// Eine bereits belegte Taste behält ihre Funktion und wird nur ausgewählt —
+    /// sonst überschriebe jeder Klick im Tastenbild eine fremde Belegung.
+    #[test]
+    fn belegte_taste_behaelt_ihre_funktion() {
+        let _sperre = KONFIG.lock().unwrap_or_else(|e| e.into_inner());
+        let _konfig = WegwerfKonfig::neu("belegt");
+        let (mut app, ctx) = app_mit_tastatur();
+        let vorher = app.prefs.action_for_key("g").expect("G ist in der Werkseinstellung belegt");
+
+        app.run_action(&ctx, "draw.door");
+        let tasten = app.ui.last_tasten.clone().expect("Tastenbild gezeichnet");
+        let (_, _, g) = *taste_mit(&tasten, "g");
+        klick(&ctx, &mut app, g.center());
+
+        assert_eq!(app.prefs.action_for_key("g"), Some(vorher), "belegte Taste wurde überschrieben");
+        assert_eq!(app.ui.keymap_selected.as_deref(), Some("g"), "belegte Taste ist nicht ausgewählt");
+    }
+
+    /// Fest verdrahtete Funktionen (Strg+S, F1 …) lassen sich auch über den
+    /// Klickweg nicht umbelegen — die Taste bleibt dann leer.
+    #[test]
+    fn fest_verdrahtete_funktion_landet_nicht_auf_einer_taste() {
+        let _sperre = KONFIG.lock().unwrap_or_else(|e| e.into_inner());
+        let _konfig = WegwerfKonfig::neu("fest");
+        let (mut app, ctx) = app_mit_tastatur();
+        app.ui.keymap_funktion = Some("file.save".to_string());
+
+        let tasten = app.ui.last_tasten.clone().expect("Tastenbild gezeichnet");
+        let (_, _, t) = *taste_mit(&tasten, "t");
+        klick(&ctx, &mut app, t.center());
+
+        assert!(
+            app.prefs.action_for_key("t").is_none(),
+            "eine fest verdrahtete Funktion wurde auf eine Taste gelegt"
+        );
+        assert_eq!(
+            app.prefs.key_for("file.save").as_deref(),
+            Some("ctrl+s"),
+            "die feste Belegung der Funktion wurde verändert"
+        );
+    }
+
+    /// Ist die Tastaturbelegung zu, bleibt kein Merker zurück: ein späterer
+    /// Klick auf eine leere Taste legt sonst eine vergessene Funktion ab.
+    #[test]
+    fn geschlossene_tastaturbelegung_vergisst_die_funktion() {
+        let _sperre = KONFIG.lock().unwrap_or_else(|e| e.into_inner());
+        let _konfig = WegwerfKonfig::neu("zu");
+        let ctx = egui::Context::default();
+        let mut app = App::with_ctx(ctx.clone());
+        app.ui.keymap_open = true;
+        app.run_action(&ctx, "draw.wall");
+        assert!(app.ui.keymap_funktion.is_some());
+        app.ui.keymap_open = false;
+        let input = egui::RawInput {
+            screen_rect: Some(Rect::from_min_size(Pos2::ZERO, Vec2::new(1500.0, 950.0))),
+            time: Some(naechste_zeit()),
+            ..Default::default()
+        };
+        let _ = ctx.run(input, |ctx| app.ui(ctx));
+        assert!(
+            app.ui.keymap_funktion.is_none(),
+            "der Merker überlebt das Schließen der Tastaturbelegung"
+        );
     }
 
     #[test]

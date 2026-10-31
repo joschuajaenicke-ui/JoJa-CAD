@@ -577,6 +577,12 @@ pub struct UiState {
     pub bind_slot: Option<usize>,
     pub slot_drag: Option<(usize, String)>,
     pub keymap_selected: Option<String>,
+    /// Zuletzt gewählte Funktion für die Tastaturbelegung (T0064): Solange das
+    /// Fenster offen ist, merkt es sich, was im Ribbon (oder über Hotbar und
+    /// Taste) gestartet wurde — ein Klick auf eine leere Taste legt sie dort
+    /// ab, genau wie die Hotbar es macht. Beim Schließen wird der Merker
+    /// geleert, damit keine alte Funktion unbemerkt auf einer Taste landet.
+    pub keymap_funktion: Option<String>,
     pub search: String,
     pub new_layer_dialog: Option<String>,
     pub color_popup: Option<Id>,
@@ -654,6 +660,7 @@ impl Default for UiState {
             bind_slot: None,
             slot_drag: None,
             keymap_selected: None,
+            keymap_funktion: None,
             search: String::new(),
             new_layer_dialog: None,
             color_popup: None,
@@ -2207,6 +2214,13 @@ impl App {
         let Some(def) = actions::action(id) else {
             return;
         };
+        // Tastaturbelegung (T0064): Solange ihr Fenster offen ist, merkt sich
+        // das Programm die zuletzt gewählte Funktion. Ein Klick auf eine leere
+        // Taste legt sie dort ab — dasselbe Verhalten wie bei der Hotbar.
+        // „Tastaturbelegung" selbst ist keine belegbare Funktion.
+        if self.ui.keymap_open && id != "view.keymap" {
+            self.ui.keymap_funktion = Some(id.to_string());
+        }
         // Die Schnellauswahl ist ein **Schalter** (T0060): läuft ein Werkzeug,
         // beendet derselbe Aufruf es (wie ein Abbruch); läuft keines, wird sie
         // selbst aktiv. Deshalb vor dem allgemeinen Werkzeugstart.
@@ -2386,6 +2400,11 @@ impl App {
     pub fn start_tool(&mut self, id: &str) {
         if actions::action(id).is_none() {
             return;
+        }
+        // Tastaturbelegung (T0064): auch ein Werkzeug aus Hotbar oder Inventar
+        // ist damit die „aktive Funktion" für die nächste leere Taste.
+        if self.ui.keymap_open {
+            self.ui.keymap_funktion = Some(id.to_string());
         }
         self.ui.fill_active = None;
         // Optionen aus Dokument aktualisieren, falls noch nie gesetzt
@@ -4232,6 +4251,12 @@ fn rail(ui: &mut egui::Ui, icon: &str, tooltip: &str, chevron: &str) -> bool {
             });
 
         dialogs::show(self, ctx);
+        // Geschlossene Tastaturbelegung lässt keinen Merker zurück (T0064):
+        // sonst legte ein Klick auf eine leere Taste eine längst vergessene
+        // Funktion ab.
+        if !self.ui.keymap_open {
+            self.ui.keymap_funktion = None;
+        }
         inventory::show(self, ctx);
         hotbar::auswahl_fenster(self, ctx);
         panels::layer_color_popup(self, ctx);
