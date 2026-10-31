@@ -1170,73 +1170,79 @@ const GESPERRT_FLAECHE: Color32 = Color32::from_rgb(0x2A, 0x2F, 0x36);
 const GESPERRT_TEXT: Color32 = Color32::from_rgb(0x5C, 0x64, 0x6E);
 
 /// Tastenbild einer deutschen Tastatur: (Taste, Beschriftung, Zeile, Spalte,
-/// Breite). Zeile, Spalte und Breite rechnen in Tasteneinheiten (`KEY_W` +
-/// `KEY_GAP`), damit die Reihen rechtsbündig schließen. `enter` ist zwei
-/// Zeilen hoch und steht am rechten Rand neben `#` und dem rechten Umschalt —
-/// dort, wo die Enter-Taste einer deutschen Tastatur auch sitzt.
-const TASTEN: &[(&str, &str, usize, f32, f32)] = &[
-    // Ziffernreihe
-    ("esc", "Esc", 0, 0.0, 1.25),
-    ("1", "1", 0, 1.25, 1.0),
-    ("2", "2", 0, 2.25, 1.0),
-    ("3", "3", 0, 3.25, 1.0),
-    ("4", "4", 0, 4.25, 1.0),
-    ("5", "5", 0, 5.25, 1.0),
-    ("6", "6", 0, 6.25, 1.0),
-    ("7", "7", 0, 7.25, 1.0),
-    ("8", "8", 0, 8.25, 1.0),
-    ("9", "9", 0, 9.25, 1.0),
-    ("0", "0", 0, 10.25, 1.0),
-    ("backspace", "Bksp", 0, 11.25, 3.75),
-    // QWERTZ-Reihe
-    ("tab", "Tab", 1, 0.0, 1.5),
-    ("q", "Q", 1, 1.5, 1.0),
-    ("w", "W", 1, 2.5, 1.0),
-    ("e", "E", 1, 3.5, 1.0),
-    ("r", "R", 1, 4.5, 1.0),
-    ("t", "T", 1, 5.5, 1.0),
-    ("z", "Z", 1, 6.5, 1.0),
-    ("u", "U", 1, 7.5, 1.0),
-    ("i", "I", 1, 8.5, 1.0),
-    ("o", "O", 1, 9.5, 1.0),
-    ("p", "P", 1, 10.5, 1.0),
-    ("ü", "Ü", 1, 11.5, 1.0),
-    ("+", "+", 1, 12.5, 2.5),
-    // Grundreihe — gegenüber der QWERTZ-Reihe um eine halbe Taste versetzt
-    ("caps", "Caps", 2, 0.0, 2.0),
-    ("a", "A", 2, 2.0, 1.0),
-    ("s", "S", 2, 3.0, 1.0),
-    ("d", "D", 2, 4.0, 1.0),
-    ("f", "F", 2, 5.0, 1.0),
-    ("g", "G", 2, 6.0, 1.0),
-    ("h", "H", 2, 7.0, 1.0),
-    ("j", "J", 2, 8.0, 1.0),
-    ("k", "K", 2, 9.0, 1.0),
-    ("l", "L", 2, 10.0, 1.0),
-    ("ö", "Ö", 2, 11.0, 1.0),
-    ("ä", "Ä", 2, 12.0, 1.0),
-    ("#", "#", 2, 13.0, 1.0),
-    ("enter", "Enter", 2, 14.0, 1.0),
-    // Umschalt-Reihe mit der Taste `<` links neben Y
-    ("shift", "Shift", 3, 0.0, 1.5),
-    ("<", "<", 3, 1.5, 1.0),
-    ("y", "Y", 3, 2.5, 1.0),
-    ("x", "X", 3, 3.5, 1.0),
-    ("c", "C", 3, 4.5, 1.0),
-    ("v", "V", 3, 5.5, 1.0),
-    ("b", "B", 3, 6.5, 1.0),
-    ("n", "N", 3, 7.5, 1.0),
-    ("m", "M", 3, 8.5, 1.0),
-    (",", ",", 3, 9.5, 1.0),
-    (".", ".", 3, 10.5, 1.0),
-    ("-", "-", 3, 11.5, 1.0),
-    ("shift_r", "Shift", 3, 12.5, 1.5),
+/// Breite, untere Breite). Zeile, Spalte und Breite rechnen in Tasteneinheiten
+/// (`KEY_W` + `KEY_GAP`), damit die Reihen rechtsbündig schließen. `enter` ist
+/// zwei Zeilen hoch und steht am rechten Rand über der QWERTZ- und der
+/// Grundreihe — dort, wo die Enter-Taste einer deutschen Tastatur auch sitzt;
+/// seine untere Hälfte ist schmaler (`0` = so breit wie oben), damit `#` eine
+/// ganze Taste behält. Die Umschalt-Reihe läuft darunter bis zum Rand durch.
+const TASTEN: &[(&str, &str, usize, f32, f32, f32)] = &[
+    // Ziffernreihe — nach der Null folgt die Akut-Taste (´), dann Rücktaste
+    ("esc", "Esc", 0, 0.0, 1.25, 0.0),
+    ("1", "1", 0, 1.25, 1.0, 0.0),
+    ("2", "2", 0, 2.25, 1.0, 0.0),
+    ("3", "3", 0, 3.25, 1.0, 0.0),
+    ("4", "4", 0, 4.25, 1.0, 0.0),
+    ("5", "5", 0, 5.25, 1.0, 0.0),
+    ("6", "6", 0, 6.25, 1.0, 0.0),
+    ("7", "7", 0, 7.25, 1.0, 0.0),
+    ("8", "8", 0, 8.25, 1.0, 0.0),
+    ("9", "9", 0, 9.25, 1.0, 0.0),
+    ("0", "0", 0, 10.25, 1.0, 0.0),
+    ("´", "´", 0, 11.25, 1.0, 0.0),
+    ("backspace", "Bksp", 0, 12.25, 2.75, 0.0),
+    // QWERTZ-Reihe — die Plus-Taste ist eine normale Taste, der Rest der Reihe
+    // gehört dem zwei Reihen hohen Enter
+    ("tab", "Tab", 1, 0.0, 1.5, 0.0),
+    ("q", "Q", 1, 1.5, 1.0, 0.0),
+    ("w", "W", 1, 2.5, 1.0, 0.0),
+    ("e", "E", 1, 3.5, 1.0, 0.0),
+    ("r", "R", 1, 4.5, 1.0, 0.0),
+    ("t", "T", 1, 5.5, 1.0, 0.0),
+    ("z", "Z", 1, 6.5, 1.0, 0.0),
+    ("u", "U", 1, 7.5, 1.0, 0.0),
+    ("i", "I", 1, 8.5, 1.0, 0.0),
+    ("o", "O", 1, 9.5, 1.0, 0.0),
+    ("p", "P", 1, 10.5, 1.0, 0.0),
+    ("ü", "Ü", 1, 11.5, 1.0, 0.0),
+    ("+", "+", 1, 12.5, 1.0, 0.0),
+    ("enter", "Enter", 1, 13.5, 1.5, 1.0),
+    // Grundreihe — gegenüber der QWERTZ-Reihe um eine halbe Taste versetzt;
+    // `#` schließt an das Enter an
+    ("caps", "Caps", 2, 0.0, 2.0, 0.0),
+    ("a", "A", 2, 2.0, 1.0, 0.0),
+    ("s", "S", 2, 3.0, 1.0, 0.0),
+    ("d", "D", 2, 4.0, 1.0, 0.0),
+    ("f", "F", 2, 5.0, 1.0, 0.0),
+    ("g", "G", 2, 6.0, 1.0, 0.0),
+    ("h", "H", 2, 7.0, 1.0, 0.0),
+    ("j", "J", 2, 8.0, 1.0, 0.0),
+    ("k", "K", 2, 9.0, 1.0, 0.0),
+    ("l", "L", 2, 10.0, 1.0, 0.0),
+    ("ö", "Ö", 2, 11.0, 1.0, 0.0),
+    ("ä", "Ä", 2, 12.0, 1.0, 0.0),
+    ("#", "#", 2, 13.0, 1.0, 0.0),
+    // Umschalt-Reihe mit der Taste `<` links neben Y; der rechte Umschalt
+    // (`R-Shift`) reicht bis zum rechten Rand des Tastenbilds
+    ("shift", "Shift", 3, 0.0, 1.5, 0.0),
+    ("<", "<", 3, 1.5, 1.0, 0.0),
+    ("y", "Y", 3, 2.5, 1.0, 0.0),
+    ("x", "X", 3, 3.5, 1.0, 0.0),
+    ("c", "C", 3, 4.5, 1.0, 0.0),
+    ("v", "V", 3, 5.5, 1.0, 0.0),
+    ("b", "B", 3, 6.5, 1.0, 0.0),
+    ("n", "N", 3, 7.5, 1.0, 0.0),
+    ("m", "M", 3, 8.5, 1.0, 0.0),
+    (",", ",", 3, 9.5, 1.0, 0.0),
+    (".", ".", 3, 10.5, 1.0, 0.0),
+    ("-", "-", 3, 11.5, 1.0, 0.0),
+    ("shift_r", "R-Shift", 3, 12.5, 2.5, 0.0),
     // Untere Reihe mit den rechten Steuerungstasten
-    ("ctrl", "Strg", 4, 0.0, 1.75),
-    ("alt", "Alt", 4, 1.75, 1.75),
-    ("space", "Leertaste", 4, 3.5, 8.0),
-    ("altgr", "AltGr", 4, 11.5, 1.75),
-    ("ctrl_r", "Strg", 4, 13.25, 1.75),
+    ("ctrl", "Strg", 4, 0.0, 1.75, 0.0),
+    ("alt", "Alt", 4, 1.75, 1.75, 0.0),
+    ("space", "Leertaste", 4, 3.5, 8.0, 0.0),
+    ("altgr", "AltGr", 4, 11.5, 1.75, 0.0),
+    ("ctrl_r", "Strg", 4, 13.25, 1.75, 0.0),
 ];
 
 /// Wie viele Reihen eine Taste hoch ist — nur `enter` ist zwei Reihen hoch.
@@ -1252,22 +1258,90 @@ fn tastatur_flaeche() -> Vec2 {
     )
 }
 
+/// Rechteck einer Taste in Tasteneinheiten, bezogen auf `orig`.
+fn taste_rect(orig: Pos2, zeile: f32, spalte: f32, breite: f32, hoehe: f32) -> Rect {
+    let min = Pos2::new(
+        orig.x + spalte * (KEY_W + KEY_GAP),
+        orig.y + zeile * (KEY_H + KEY_GAP),
+    );
+    let size = Vec2::new(
+        breite * KEY_W + (breite - 1.0) * KEY_GAP,
+        hoehe * KEY_H + (hoehe - 1.0) * KEY_GAP,
+    );
+    Rect::from_min_size(min, size)
+}
+
+/// Die Flächen einer Taste. Eine L-förmige Taste (`unten` kleiner als `breite`)
+/// liefert zwei Rechtecke: die obere Hälfte in voller Breite, die untere
+/// rechtsbündig schmaler — so behält `#` seine ganze Taste neben dem Enter.
+fn taste_flaechen(
+    orig: Pos2,
+    key: &str,
+    zeile: usize,
+    spalte: f32,
+    breite: f32,
+    unten: f32,
+) -> Vec<Rect> {
+    let hoehe = tasten_hoehe(key);
+    if hoehe > 1.0 && unten > 0.0 && unten < breite {
+        return vec![
+            taste_rect(orig, zeile as f32, spalte, breite, 1.0),
+            taste_rect(
+                orig,
+                zeile as f32 + 1.0,
+                spalte + breite - unten,
+                unten,
+                1.0,
+            ),
+        ];
+    }
+    vec![taste_rect(orig, zeile as f32, spalte, breite, hoehe)]
+}
+
+/// Umriss einer L-förmigen Taste (sieben Ecken in einem Zug) — die Umrandung läuft in einem
+/// Zug um beide Hälften, sonst stünde eine Naht quer über der Taste.
+fn taste_umriss(flaechen: &[Rect]) -> Option<Vec<Pos2>> {
+    let [oben, unten] = flaechen else {
+        return None;
+    };
+    Some(vec![
+        oben.left_top(),
+        oben.right_top(),
+        oben.right_bottom(),
+        unten.right_bottom(),
+        unten.left_bottom(),
+        unten.left_top(),
+        oben.left_bottom(),
+    ])
+}
+
 /// Rechtecke aller Tasten, bezogen auf die linke obere Ecke `orig`.
-/// **Eine** Quelle für Zeichnen und Prüfung (`tests_tastatur`).
+/// **Eine** Quelle für Zeichnen und Prüfung (`tests_tastatur`); bei einer
+/// L-förmigen Taste ist es die umschließende Fläche.
 fn tasten_rechtecke(orig: Pos2) -> Vec<(&'static str, &'static str, Rect)> {
     TASTEN
         .iter()
-        .map(|(key, label, zeile, spalte, breite)| {
-            let h = tasten_hoehe(key);
-            let min = Pos2::new(
-                orig.x + spalte * (KEY_W + KEY_GAP),
-                orig.y + *zeile as f32 * (KEY_H + KEY_GAP),
-            );
-            let size = Vec2::new(
-                breite * KEY_W + (breite - 1.0) * KEY_GAP,
-                h * KEY_H + (h - 1.0) * KEY_GAP,
-            );
-            (*key, *label, Rect::from_min_size(min, size))
+        .map(|(key, label, zeile, spalte, breite, unten)| {
+            let flaechen = taste_flaechen(orig, key, *zeile, *spalte, *breite, *unten);
+            let rect = flaechen
+                .iter()
+                .skip(1)
+                .fold(flaechen[0], |a, b| a.union(*b));
+            (*key, *label, rect)
+        })
+        .collect()
+}
+
+/// Belegte Flächen je Taste — beim L-förmigen Enter zwei, sonst eine.
+/// Grundlage der Überlappungsprüfung: die umschließende Fläche des Enter würde
+/// die Ecke von `#` mit abdecken, obwohl dort `#` liegt.
+fn tasten_belegung(orig: Pos2) -> Vec<(&'static str, Rect)> {
+    TASTEN
+        .iter()
+        .flat_map(|(key, _, zeile, spalte, breite, unten)| {
+            taste_flaechen(orig, key, *zeile, *spalte, *breite, *unten)
+                .into_iter()
+                .map(move |r| (*key, r))
         })
         .collect()
 }
@@ -1289,7 +1363,9 @@ fn keyboard_body(app: &mut App, ui: &mut Ui) {
     let (rahmen, _) = ui.allocate_exact_size(tastatur_flaeche(), Sense::hover());
     let tasten = tasten_rechtecke(rahmen.min);
     app.ui.last_tasten = Some(tasten.clone());
-    for (key, label, rect) in tasten {
+    for (i, (key, label, zeile, spalte, breite, unten)) in TASTEN.iter().enumerate() {
+        let (_, _, rect) = tasten[i];
+        let flaechen = taste_flaechen(rahmen.min, key, *zeile, *spalte, *breite, *unten);
         let gesperrt = fest_belegt(key);
         // Gesperrte Tasten zeigen keine Belegung und nehmen keinen Klick an.
         let action = if gesperrt.is_none() {
@@ -1307,35 +1383,60 @@ fn keyboard_body(app: &mut App, ui: &mut Ui) {
         let hovered = resp.hovered();
         if ui.is_rect_visible(rect) {
             let p = ui.painter();
-            p.rect_filled(
-                rect,
-                Rounding::same(6.0),
+            let flaeche = if selected {
+                Palette::ACCENT_SOFT
+            } else if gesperrt.is_some() {
+                // Gesperrte Tasten sind eine eigene graue Fläche — nicht nur
+                // eine schwächere Schrift. Das Schloss sagt warum.
+                GESPERRT_FLAECHE
+            } else if hovered {
+                Palette::PANEL_ALT
+            } else {
+                Palette::BG
+            };
+            let strich = Stroke::new(
+                if selected { 1.5 } else { 1.0 },
                 if selected {
-                    Palette::ACCENT_SOFT
-                } else if gesperrt.is_some() {
-                    // Gesperrte Tasten sind eine eigene graue Fläche — nicht nur
-                    // eine schwächere Schrift. Das Schloss sagt warum.
-                    GESPERRT_FLAECHE
-                } else if hovered {
-                    Palette::PANEL_ALT
+                    Palette::ACCENT
+                } else if action.is_some() {
+                    Palette::BORDER
                 } else {
-                    Palette::BG
+                    Palette::BORDER_SOFT
                 },
             );
-            p.rect_stroke(
-                rect,
-                Rounding::same(6.0),
-                Stroke::new(
-                    if selected { 1.5 } else { 1.0 },
-                    if selected {
-                        Palette::ACCENT
-                    } else if action.is_some() {
-                        Palette::BORDER
-                    } else {
-                        Palette::BORDER_SOFT
-                    },
-                ),
-            );
+            match flaechen.as_slice() {
+                // L-förmige Taste: beide Hälften ohne Rundung an der Naht
+                // füllen, die Umrandung in einem Zug darum herum.
+                [oben, unten_teil] => {
+                    p.rect_filled(
+                        *oben,
+                        Rounding {
+                            nw: 6.0,
+                            ne: 6.0,
+                            sw: 0.0,
+                            se: 0.0,
+                        },
+                        flaeche,
+                    );
+                    p.rect_filled(
+                        *unten_teil,
+                        Rounding {
+                            nw: 0.0,
+                            ne: 0.0,
+                            sw: 6.0,
+                            se: 6.0,
+                        },
+                        flaeche,
+                    );
+                    if let Some(umriss) = taste_umriss(&flaechen) {
+                        p.add(egui::Shape::closed_line(umriss, strich));
+                    }
+                }
+                _ => {
+                    p.rect_filled(rect, Rounding::same(6.0), flaeche);
+                    p.rect_stroke(rect, Rounding::same(6.0), strich);
+                }
+            }
             p.text(
                 Pos2::new(rect.left() + 5.0, rect.top() + 4.0),
                 egui::Align2::LEFT_TOP,
@@ -1670,8 +1771,11 @@ mod tests_tastatur {
                 "Taste {key} liegt außerhalb des Tastenbilds"
             );
         }
-        for (i, (ka, _, a)) in tasten.iter().enumerate() {
-            for (kb, _, b) in tasten.iter().skip(i + 1) {
+        // Belegt sind die Flächen der Taste, nicht ihre umschließende Box —
+        // das L-förmige Enter deckt die Ecke von `#` sonst nur scheinbar ab.
+        let teile = tasten_belegung(tasten[0].2.min);
+        for (i, (ka, a)) in teile.iter().enumerate() {
+            for (kb, b) in teile.iter().skip(i + 1) {
                 let schnitt = a.intersect(*b);
                 assert!(
                     schnitt.width() < 0.5 || schnitt.height() < 0.5,
@@ -1681,15 +1785,22 @@ mod tests_tastatur {
         }
     }
 
-    /// Die Enter-Taste sitzt am rechten Rand über zwei Reihen — vorher stand sie
-    /// in der unteren Reihe hinter der Leertaste.
+    /// Die Enter-Taste sitzt am rechten Rand über der QWERTZ- und der
+    /// Grundreihe — dort, wo die Enter-Taste einer deutschen Tastatur auch
+    /// sitzt. Den Platz dafür gibt die Plus-Taste ab: sie ist nur noch eine
+    /// Einheit breit, der Rest der Reihe gehört dem Enter. Die untere Hälfte
+    /// ist schmaler (L-Form), damit `#` eine ganze Taste behält.
     #[test]
-    fn enter_steht_rechts_und_ist_zwei_reihen_hoch() {
+    fn enter_steht_rechts_ueber_zwei_reihen() {
         let (app, _ctx) = app_mit_tastatur();
         let tasten = app.ui.last_tasten.clone().expect("Tastenbild gezeichnet");
         let rechts = tasten[0].2.left() + tastatur_flaeche().x;
         let (_, _, enter) = *taste_mit(&tasten, "enter");
         let (_, _, raute) = *taste_mit(&tasten, "#");
+        let (_, _, plus) = *taste_mit(&tasten, "+");
+        let teile = taste_flaechen(tasten[0].2.min, "enter", 1, 13.5, 1.5, 1.0);
+        assert_eq!(teile.len(), 2, "Enter ist nicht L-förmig");
+        let (oben, unten) = (teile[0], teile[1]);
         assert!(
             (enter.right() - rechts).abs() < 0.5,
             "Enter endet bei {}, der rechte Rand liegt bei {rechts}",
@@ -1701,21 +1812,114 @@ mod tests_tastatur {
             enter.height()
         );
         assert!(
-            (enter.left() - (raute.right() + KEY_GAP)).abs() < 0.5,
-            "Enter steht nicht direkt rechts neben # ({} zu {}, Abstand {})",
-            enter.left(),
-            raute.right(),
-            enter.left() - raute.right()
+            (oben.width() - (1.5 * KEY_W + 0.5 * KEY_GAP)).abs() < 0.5,
+            "obere Hälfte des Enter ist {} px breit, erwartet 1,5 Tasten",
+            oben.width()
         );
         assert!(
-            (enter.top() - raute.top()).abs() < 0.5,
-            "Enter beginnt nicht in der Reihe von #"
+            (unten.left() - (raute.right() + KEY_GAP)).abs() < 0.5,
+            "untere Hälfte des Enter steht nicht direkt rechts neben # ({} zu {})",
+            unten.left(),
+            raute.right()
         );
-        // Der rechte Umschalt steht links neben dem unteren Teil des Enter.
+        assert!(
+            (unten.right() - rechts).abs() < 0.5 && (oben.right() - rechts).abs() < 0.5,
+            "Enter schließt nicht bündig am rechten Rand"
+        );
+        assert!(
+            (enter.top() - plus.top()).abs() < 0.5,
+            "Enter beginnt nicht in der Reihe der Plus-Taste"
+        );
+        assert!(
+            (raute.top() - (enter.top() + KEY_H + KEY_GAP)).abs() < 0.5
+                && (raute.bottom() - enter.bottom()).abs() < 0.5,
+            "# steht nicht in der zweiten Zeile des Enter"
+        );
+        // Der rechte Umschalt liegt unter dem Enter und beginnt an dessen Naht.
         let (_, _, shift_r) = *taste_mit(&tasten, "shift_r");
         assert!(
-            (shift_r.right() - (enter.left() - KEY_GAP)).abs() < 0.5 && shift_r.bottom() > enter.top(),
-            "rechter Umschalt sitzt nicht links neben Enter"
+            (shift_r.top() - (enter.bottom() + KEY_GAP)).abs() < 0.5,
+            "rechter Umschalt sitzt nicht unter dem Enter"
+        );
+    }
+
+    /// Die Plus-Taste ist eine normale, rechteckige Taste — kein breiter Klotz
+    /// mehr; der frei gewordene Platz gehört dem Enter.
+    #[test]
+    fn plus_taste_ist_eine_normale_taste() {
+        let (app, _ctx) = app_mit_tastatur();
+        let tasten = app.ui.last_tasten.clone().expect("Tastenbild gezeichnet");
+        let (_, _, plus) = *taste_mit(&tasten, "+");
+        let (_, _, ue) = *taste_mit(&tasten, "ü");
+        let (_, _, enter) = *taste_mit(&tasten, "enter");
+        assert!(
+            (plus.width() - KEY_W).abs() < 0.5,
+            "Plus-Taste ist {} px breit, erwartet eine Tasteneinheit ({KEY_W} px)",
+            plus.width()
+        );
+        assert!(
+            (plus.left() - (ue.right() + KEY_GAP)).abs() < 0.5,
+            "Plus-Taste schließt nicht an Ü an"
+        );
+        assert!(
+            (enter.left() - (plus.right() + KEY_GAP)).abs() < 0.5,
+            "Plus-Taste endet nicht direkt vor dem Enter"
+        );
+    }
+
+    /// Die Akut-Taste (`´`) fehlte in der Ziffernreihe — sie steht zwischen der
+    /// Null und der Rücktaste.
+    #[test]
+    fn akut_taste_steht_zwischen_null_und_ruecktaste() {
+        let (app, _ctx) = app_mit_tastatur();
+        let tasten = app.ui.last_tasten.clone().expect("Tastenbild gezeichnet");
+        let (_, beschriftung, akut) = *taste_mit(&tasten, "´");
+        let (_, _, null) = *taste_mit(&tasten, "0");
+        let (_, _, bksp) = *taste_mit(&tasten, "backspace");
+        assert_eq!(beschriftung, "´", "Akut-Taste trägt die falsche Beschriftung");
+        assert!(
+            (akut.width() - KEY_W).abs() < 0.5,
+            "Akut-Taste ist {} px breit, erwartet eine Tasteneinheit",
+            akut.width()
+        );
+        assert!(
+            (akut.left() - (null.right() + KEY_GAP)).abs() < 0.5,
+            "Akut-Taste schließt nicht an die Null an"
+        );
+        assert!(
+            (akut.right() + KEY_GAP - bksp.left()).abs() < 0.5,
+            "Akut-Taste endet nicht direkt vor der Rücktaste"
+        );
+        assert!(
+            (akut.top() - null.top()).abs() < 0.5,
+            "Akut-Taste steht nicht in der Ziffernreihe"
+        );
+    }
+
+    /// Der rechte Umschalt heißt `R-Shift` und reicht bis zum rechten Rand.
+    #[test]
+    fn rechter_umschalt_heisst_r_shift_und_endet_am_rand() {
+        let (mut app, ctx) = app_mit_tastatur();
+        let tasten = app.ui.last_tasten.clone().expect("Tastenbild gezeichnet");
+        let (_, beschriftung, shift_r) = *taste_mit(&tasten, "shift_r");
+        let rechts = tasten[0].2.left() + tastatur_flaeche().x;
+        assert_eq!(beschriftung, "R-Shift", "rechter Umschalt trägt den falschen Namen");
+        assert!(
+            (shift_r.right() - rechts).abs() < 0.5,
+            "R-Shift endet bei {}, der rechte Rand liegt bei {rechts}",
+            shift_r.right()
+        );
+        let (_, _, strg) = *taste_mit(&tasten, "ctrl_r");
+        assert!(
+            shift_r.width() > strg.width(),
+            "R-Shift ist nicht breiter als die rechte Strg-Taste"
+        );
+        // Die Beschriftung wird auch gezeichnet, nicht nur geführt.
+        let out = rahmen(&ctx, &mut app, vec![]);
+        assert!(
+            out.shapes.iter().any(|cs| matches!(&cs.shape,
+                egui::Shape::Text(t) if t.galley.text() == "R-Shift")),
+            "R-Shift steht nicht im gezeichneten Tastenbild"
         );
     }
 
