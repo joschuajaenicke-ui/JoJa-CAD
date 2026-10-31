@@ -648,13 +648,13 @@ pub fn show(app: &mut App, ctx: &egui::Context) {
     if app.ui.settings_open {
         dim_background(ctx);
         let mut open = true;
-        modal_window(ctx, "Einstellungen", 880.0, &mut open)
-            .default_height(640.0)
+        // Aufbau wie in der KDE-Systemsteuerung (T0061): Suche und Kategorien
+        // links, die Einstellungen der gewählten Kategorie rechts.
+        modal_window(ctx, "Einstellungen", 960.0, &mut open)
+            .default_height(660.0)
             .show(ctx, |ui| {
-                ui.set_width(860.0);
-                egui::ScrollArea::vertical().max_height(600.0).show(ui, |ui| {
-                    settings_body(app, ui);
-                });
+                ui.set_width(940.0);
+                settings_body(app, ui);
             });
         if !open || ctx.input(|i| i.key_pressed(egui::Key::Escape)) {
             app.ui.settings_open = false;
@@ -871,6 +871,186 @@ pub fn show(app: &mut App, ctx: &egui::Context) {
 // Einstellungen
 // ---------------------------------------------------------------------------
 
+/// Breite der Kategorienspalte im Einstellungsfenster (Vorbild: KDE, T0061).
+const SETTINGS_NAV_W: f32 = 220.0;
+/// Höhe einer Zeile der Kategorienliste.
+const SETTINGS_ZEILE_H: f32 = 30.0;
+/// Höhe des Einstellungsfensters unter dem Fenstertitel.
+const SETTINGS_HOEHE: f32 = 580.0;
+
+/// Eine Kategorie der Einstellungen: Name, Icon und die Namen der
+/// Einstellungen darin.
+///
+/// Die Stichworte sind die **eine** Quelle der Suche: wer hier eine Einstellung
+/// ergänzt, trägt ihren Namen in der Liste der Kategorie ein — sonst findet die
+/// Suche die Kategorie nicht und die Einstellung bleibt versteckt (T0061).
+pub(crate) struct Einstellungskategorie {
+    pub name: &'static str,
+    /// Iconname aus `icons::paint`
+    icon: &'static str,
+    stichworte: &'static [&'static str],
+}
+
+impl Einstellungskategorie {
+    /// Passt die Kategorie zum (klein geschriebenen) Suchbegriff? Gesucht wird
+    /// im Kategorienamen und in den Namen aller Einstellungen der Kategorie.
+    fn passt(&self, suche: &str) -> bool {
+        if suche.is_empty() {
+            return true;
+        }
+        self.name.to_lowercase().contains(suche)
+            || self
+                .stichworte
+                .iter()
+                .any(|w| w.to_lowercase().contains(suche))
+    }
+}
+
+/// Die Kategorien des Einstellungsfensters in der Reihenfolge der Liste links.
+pub(crate) const EINSTELLUNGSKATEGORIEN: &[Einstellungskategorie] = &[
+    Einstellungskategorie {
+        name: "Einheiten und Maßstab",
+        icon: "staerke",
+        stichworte: &["Eingabe", "Einheit", "Nachkommastellen", "Maßstab"],
+    },
+    Einstellungskategorie {
+        name: "Raster",
+        icon: "grid",
+        stichworte: &["Rasterweite", "Raster anzeigen", "Rasterfang", "Raster"],
+    },
+    Einstellungskategorie {
+        name: "Fangen",
+        icon: "snap",
+        stichworte: &[
+            "Endpunkt",
+            "Wandkanten",
+            "Mittelpunkt",
+            "Zentrum",
+            "Schnittpunkt",
+            "Lot",
+            "Nächster Punkt",
+            "Ortho",
+            "Polar",
+            "Polarwinkel",
+            "Polarfenster",
+            "Fangradius",
+            "Fangen",
+        ],
+    },
+    Einstellungskategorie {
+        name: "Architektur",
+        icon: "wall",
+        stichworte: &[
+            "Wandstärke",
+            "Türbreite",
+            "Fensterbreite",
+            "Treppenbreite",
+            "Texthöhe",
+            "Wand",
+            "Tür",
+            "Fenster",
+            "Treppe",
+        ],
+    },
+    Einstellungskategorie {
+        name: "Bemaßung",
+        icon: "dim",
+        stichworte: &[
+            "Pfeilgröße",
+            "Nachkommastellen",
+            "Maßeinheit",
+            "Textgröße",
+            "Bogensymbole",
+            "Maßstab",
+            "Bemaßung",
+        ],
+    },
+    Einstellungskategorie {
+        name: "Bedienung",
+        icon: "move",
+        stichworte: &["Ziehen", "Maus", "Dateidialog", "Bedienung"],
+    },
+    Einstellungskategorie {
+        name: "Darstellung",
+        icon: "eye",
+        stichworte: &[
+            "Linienstärken",
+            "Layer-Panel",
+            "Eigenschaften-Panel",
+            "Fangmarker",
+            "Lineale",
+            "Darstellung",
+        ],
+    },
+];
+
+/// Eine Zeile im Einstellungsfenster — während einer Suche nur, wenn ihr Name
+/// den Suchbegriff enthält.
+fn zeile(suche: &str, ui: &mut Ui, label: &str, add: impl FnOnce(&mut Ui)) {
+    zeile_mit(suche, ui, label, &[], add);
+}
+
+/// Wie `zeile`, aber mit weiteren Suchbegriffen: ein kurzer Zeilenname (die
+/// Labelspalte ist 96 px breit) bleibt trotzdem über den vollen Begriff
+/// auffindbar — „Dezimalstellen“ über „Nachkommastellen“.
+fn zeile_mit(
+    suche: &str,
+    ui: &mut Ui,
+    label: &str,
+    aliase: &[&str],
+    add: impl FnOnce(&mut Ui),
+) {
+    let passt = suche.is_empty()
+        || label.to_lowercase().contains(suche)
+        || aliase.iter().any(|a| a.to_lowercase().contains(suche));
+    if passt {
+        widgets::field_row(ui, label, add);
+    }
+}
+
+/// Abschnittsüberschrift; während einer Suche entfällt sie, damit nur die
+/// Treffer übrig bleiben.
+fn abschnitt(suche: &str, ui: &mut Ui, text: &str) {
+    if suche.is_empty() {
+        theme::section(ui, text);
+    }
+}
+
+/// Eine Zeile der Kategorienliste links: Icon, Name, Auswahlfarbe.
+/// Liefert `true`, wenn die Zeile angeklickt wurde.
+fn kategorie_zeile(ui: &mut Ui, kat: &Einstellungskategorie, gewaehlt: bool) -> bool {
+    let (rect, antwort) =
+        ui.allocate_exact_size(Vec2::new(ui.available_width(), SETTINGS_ZEILE_H), Sense::click());
+    if ui.is_rect_visible(rect) {
+        let p = ui.painter();
+        if gewaehlt {
+            p.rect_filled(rect, Rounding::same(6.0), Palette::SELECT.gamma_multiply(0.85));
+        } else if antwort.hovered() {
+            p.rect_filled(rect, Rounding::same(6.0), Palette::PANEL_ALT);
+        }
+        let farbe = if gewaehlt {
+            Color32::WHITE
+        } else if antwort.hovered() {
+            Palette::TEXT
+        } else {
+            Palette::TEXT_DIM
+        };
+        let icon = Rect::from_center_size(
+            egui::pos2(rect.left() + 18.0, rect.center().y),
+            Vec2::splat(16.0),
+        );
+        crate::icons::paint(p, icon, kat.icon, farbe);
+        p.text(
+            egui::pos2(rect.left() + 34.0, rect.center().y),
+            egui::Align2::LEFT_CENTER,
+            kat.name,
+            FontId::proportional(13.0),
+            farbe,
+        );
+    }
+    antwort.clicked()
+}
+
 fn settings_body(app: &mut App, ui: &mut Ui) {
     let unit = app.doc().settings.input_unit;
 
@@ -892,7 +1072,6 @@ fn settings_body(app: &mut App, ui: &mut Ui) {
     let mut rulers = cur.show_rulers;
     let mut ds = app.doc().dim_style.clone();
     let mut ds_changed = false;
-    let mut lw = app.ui.lineweights;
     let mut lw_scaled = app.ui.lineweights_scaled;
     let mut drag_mode = app.ui.drag_mode;
     let mut show_layers = app.ui.layers_open;
@@ -900,172 +1079,339 @@ fn settings_body(app: &mut App, ui: &mut Ui) {
     let mut marker = app.prefs.snap_marker;
     let mut dateidialog_system = app.prefs.dateidialog_system();
 
-    ui.columns(2, |cols| {
-        // ----------------------------- links -----------------------------
-        {
-            let ui = &mut cols[0];
-            theme::section(ui, "Einheiten und Maßstab");
-            widgets::field_row(ui, "Eingabe", |ui| {
-                for u in Unit::ALL {
-                    ui.selectable_value(&mut input, u, u.short());
-                }
-            });
-            widgets::field_row(ui, "Nachkommastellen", |ui| {
-                ui.add(crate::widgets::zahl(&mut decimals, 1.0, 0..=4));
-            });
-            // Maßketten-Werte gibt es nur an einer Stelle: rechts im Abschnitt
-            // „Bemaßung" dieses Fensters. Hier steht nur der Weg dorthin.
-            ui.add(
-                egui::Label::new(theme::faint(
-                    "Maßeinheit, Maßstab, Textgröße und Bogensymbole stehen rechts \
-                     im Abschnitt Bemaßung.",
-                ))
-                .wrap(),
+    // Suche: Kategorien, deren Name oder eine ihrer Einstellungen passt.
+    let suche = app.ui.settings_suche.trim().to_lowercase();
+    let treffer: Vec<usize> = EINSTELLUNGSKATEGORIEN
+        .iter()
+        .enumerate()
+        .filter(|(_, k)| k.passt(&suche))
+        .map(|(i, _)| i)
+        .collect();
+    let mut kat = app.ui.settings_kat.min(EINSTELLUNGSKATEGORIEN.len() - 1);
+    if !treffer.contains(&kat) {
+        if let Some(&erste) = treffer.first() {
+            kat = erste;
+        }
+    }
+
+    ui.horizontal_top(|ui| {
+        // ------------------------ Suche und Kategorien ------------------------
+        ui.vertical(|ui| {
+            ui.set_width(SETTINGS_NAV_W);
+            ui.spacing_mut().item_spacing.y = 0.0;
+            let antwort = ui.add_sized(
+                [SETTINGS_NAV_W, 26.0],
+                egui::TextEdit::singleline(&mut app.ui.settings_suche)
+                    .hint_text("Einstellungen durchsuchen …"),
             );
+            app.ui.last_settings_suche = Some(antwort.rect);
+            ui.add_space(8.0);
 
-            theme::section(ui, "Raster");
-            widgets::field_row(ui, "Rasterweite", |ui| {
-                // Dieselben Grenzen wie im Eigenschaften-Panel (1 mm … 10 m).
-                let mut g = grid_step;
-                if widgets::length_field(
-                    ui,
-                    &mut g,
-                    unit,
-                    90.0,
-                    jjcad_core::model::GRID_STEP_MIN_MM,
-                    jjcad_core::model::GRID_STEP_MAX_MM,
-                ) {
-                    grid_step = g;
-                }
-            });
-            widgets::field_row(ui, "Raster anzeigen", |ui| {
-                if ui.checkbox(&mut show_grid, "").changed() {
-                    snap.grid = show_grid;
-                }
-            });
-            widgets::field_row(ui, "Rasterfang", |ui| {
-                ui.checkbox(&mut snap.grid, "");
-            });
-
-            theme::section(ui, "Fangen");
-            for (label, field) in [
-                ("Endpunkt", &mut snap.endpoint),
-                ("Wandkanten", &mut snap.wall_edges),
-                ("Mittelpunkt", &mut snap.midpoint),
-                ("Zentrum", &mut snap.center),
-                ("Schnittpunkt", &mut snap.intersection),
-                ("Lot", &mut snap.perpendicular),
-                ("Nächster Punkt", &mut snap.nearest),
-                ("Ortho", &mut snap.ortho),
-                ("Polar", &mut snap.polar),
-            ] {
-                widgets::field_row(ui, label, |ui| {
-                    ui.checkbox(field, "");
-                });
-            }
-            widgets::field_row(ui, "Polarwinkel", |ui| {
-                ui.add(
-                    crate::widgets::zahl(&mut polar_step, 1.0, 1.0..=180.0)
-                        .suffix("°"),
-                );
-                ui.label(theme::dim("Architektur: 45°"));
-            });
-            widgets::field_row(ui, "Polarfenster", |ui| {
-                ui.add(
-                    crate::widgets::zahl(&mut polar_tol, 0.5, 0.0..=45.0)
-                        .suffix("°"),
-                );
-                ui.label(theme::dim("nur innerhalb dieser Abweichung rastet Polar ein"));
-            });
-            widgets::field_row(ui, "Fangradius", |ui| {
-                ui.add(
-                    crate::widgets::zahl(&mut tol_px, 1.0, 1.0..=60.0)
-                        .suffix(" px"),
-                );
-            });
-        }
-
-        // ----------------------------- rechts ----------------------------
-        {
-            let ui = &mut cols[1];
-            theme::section(ui, "Architektur");
-            for (label, val, def) in [
-                ("Wandstärke", &mut wall, 240.0),
-                ("Türbreite", &mut door, 885.0),
-                ("Fensterbreite", &mut win, 1200.0),
-                ("Treppenbreite", &mut stair, 1000.0),
-                ("Texthöhe", &mut th, 250.0),
-            ] {
-                widgets::field_row(ui, label, |ui| {
-                    let mut v = *val;
-                    if widgets::length_field(ui, &mut v, unit, 90.0, widgets::MASS_MIN_MM, widgets::MASS_MAX_MM) {
-                        *val = v;
+            let (nav_rect, _) = ui.allocate_exact_size(
+                Vec2::new(SETTINGS_NAV_W, SETTINGS_HOEHE - 34.0),
+                Sense::hover(),
+            );
+            app.ui.last_settings_nav = Some(nav_rect);
+            ui.scope_builder(
+                egui::UiBuilder::new()
+                    .max_rect(nav_rect)
+                    .layout(Layout::top_down(Align::Min)),
+                |ui| {
+                    let mut gewaehlt = None;
+                egui::ScrollArea::vertical()
+                    .id_salt("einstellungen_kategorien")
+                    .max_height(SETTINGS_HOEHE - 40.0)
+                    .auto_shrink([false, false])
+                    .show(ui, |ui| {
+                        ui.spacing_mut().item_spacing.y = 2.0;
+                        for &i in &treffer {
+                            if kategorie_zeile(ui, &EINSTELLUNGSKATEGORIEN[i], i == kat) {
+                                gewaehlt = Some(i);
+                            }
+                        }
+                        if treffer.is_empty() {
+                            ui.add_space(6.0);
+                            ui.label(theme::dim("Keine Einstellung gefunden"));
+                        }
+                    });
+                    if let Some(i) = gewaehlt {
+                        kat = i;
                     }
-                    if ui
-                        .add(egui::Button::new("Standard").small())
-                        .on_hover_text(format!("{:.0} mm", def))
-                        .clicked()
-                    {
-                        *val = def;
-                    }
-                });
-            }
+                },
+            );
+        });
 
-            theme::section(ui, "Bemaßung");
-            widgets::field_row(ui, "Pfeilgröße", |ui| {
-                if ui
-                    .add(
-                        crate::widgets::zahl(&mut ds.arrow_size, 0.5, 0.1..=1000.0)
-                            .suffix(" mm"),
-                    )
-                    .changed()
-                {
-                    ds_changed = true;
-                }
-            });
-            widgets::field_row(ui, "Nachkommastellen", |ui| {
-                let mut d = ds.decimals as i32;
-                if ui.add(crate::widgets::zahl(&mut d, 1.0, 0..=4)).changed() {
-                    ds.decimals = d.max(0) as usize;
-                    ds_changed = true;
-                }
-            });
-            // Maßeinheit, Maßstab, Textgröße und Bogensymbole: dieselbe
-            // Funktion wie im Eigenschaften-Panel zuvor — ein Wert, eine Stelle.
-            crate::panels::dim_fields(app, ui);
+        ui.add_space(12.0);
+        ui.separator();
+        ui.add_space(12.0);
 
-            theme::section(ui, "Bedienung");
-            widgets::field_row(ui, "Ziehen", |ui| {
-                for m in DragMode::ALL {
-                    ui.selectable_value(&mut drag_mode, m, m.label())
-                        .on_hover_text(m.hint());
-                }
-            });
-            ui.label(theme::faint("Gilt für Auswahl und Griffe"));
-            widgets::field_row(ui, "Dateidialog", |ui| {
-                let moeglich = crate::systemdialog::verfuegbar();
-                ui.selectable_value(&mut dateidialog_system, true, "System")
-                    .on_hover_text("Dialog des Betriebssystems (Dolphin, Dateien, Windows)");
-                ui.selectable_value(&mut dateidialog_system, false, "Eingebaut")
-                    .on_hover_text("Dialog von JoJa-CAD");
-                if !moeglich {
-                    ui.label(theme::dim("kein Systemdialog verfügbar"));
-                }
-            });
-
-            theme::section(ui, "Darstellung");
-            widgets::field_row(ui, "Linienstärken", |ui| {
-                let mut m = if lw_scaled { 1 } else { 0 };
-                ui.selectable_value(&mut m, 0, "px");
-                ui.selectable_value(&mut m, 1, "DPI");
-                lw_scaled = m == 1;
-            });
-            ui.checkbox(&mut show_layers, "Layer-Panel");
-            ui.checkbox(&mut show_props, "Eigenschaften-Panel");
-            ui.checkbox(&mut marker, "Fangmarker");
-            ui.checkbox(&mut rulers, "Lineale einblenden");
-        }
+        // --------------------------- Einstellungen ---------------------------
+        let (pane_rect, _) =
+            ui.allocate_exact_size(Vec2::new(ui.available_width(), SETTINGS_HOEHE), Sense::hover());
+        app.ui.last_settings_pane = Some(pane_rect);
+        ui.scope_builder(
+            egui::UiBuilder::new()
+                .max_rect(pane_rect)
+                .layout(Layout::top_down(Align::Min)),
+            |ui| {
+                ui.label(theme::bold(EINSTELLUNGSKATEGORIEN[kat].name, 18.0));
+                ui.add_space(6.0);
+                egui::ScrollArea::vertical()
+                    .id_salt("einstellungen_seite")
+                    .max_height(SETTINGS_HOEHE - 40.0)
+                    .auto_shrink([false, false])
+                    .show(ui, |ui| {
+                        ui.set_width(ui.available_width());
+                        if treffer.is_empty() {
+                            ui.label(theme::dim(
+                                "Keine Einstellung gefunden — Suchbegriff löschen, um alle \
+                                 Kategorien zu sehen.",
+                            ));
+                            return;
+                        }
+                        match kat {
+                            // ------------------------ Einheiten -------------------
+                            0 => {
+                                abschnitt(&suche, ui, "Einheiten");
+                                zeile(&suche, ui, "Eingabe", |ui| {
+                                    for u in Unit::ALL {
+                                        ui.selectable_value(&mut input, u, u.short());
+                                    }
+                                });
+                                zeile_mit(
+                                    &suche,
+                                    ui,
+                                    "Dezimalstellen",
+                                    &["Nachkommastellen"],
+                                    |ui| {
+                                        ui.add(crate::widgets::zahl(&mut decimals, 1.0, 0..=4));
+                                    },
+                                );
+                                if suche.is_empty() {
+                                    ui.add(
+                                        egui::Label::new(theme::faint(
+                                            "Maßeinheit, Maßstab, Textgröße und Bogensymbole \
+                                             stehen in der Kategorie Bemaßung.",
+                                        ))
+                                        .wrap(),
+                                    );
+                                }
+                            }
+                            // -------------------------- Raster --------------------
+                            1 => {
+                                abschnitt(&suche, ui, "Raster");
+                                zeile(&suche, ui, "Rasterweite", |ui| {
+                                    // Dieselben Grenzen wie im Eigenschaften-Panel (1 mm … 10 m).
+                                    let mut g = grid_step;
+                                    if widgets::length_field(
+                                        ui,
+                                        &mut g,
+                                        unit,
+                                        90.0,
+                                        jjcad_core::model::GRID_STEP_MIN_MM,
+                                        jjcad_core::model::GRID_STEP_MAX_MM,
+                                    ) {
+                                        grid_step = g;
+                                    }
+                                });
+                                zeile(&suche, ui, "Raster anzeigen", |ui| {
+                                    if ui.checkbox(&mut show_grid, "").changed() {
+                                        snap.grid = show_grid;
+                                    }
+                                });
+                                zeile(&suche, ui, "Rasterfang", |ui| {
+                                    ui.checkbox(&mut snap.grid, "");
+                                });
+                            }
+                            // -------------------------- Fangen --------------------
+                            2 => {
+                                abschnitt(&suche, ui, "Fangen");
+                                for (label, field) in [
+                                    ("Endpunkt", &mut snap.endpoint),
+                                    ("Wandkanten", &mut snap.wall_edges),
+                                    ("Mittelpunkt", &mut snap.midpoint),
+                                    ("Zentrum", &mut snap.center),
+                                    ("Schnittpunkt", &mut snap.intersection),
+                                    ("Lot", &mut snap.perpendicular),
+                                    ("Nächster Punkt", &mut snap.nearest),
+                                    ("Ortho", &mut snap.ortho),
+                                    ("Polar", &mut snap.polar),
+                                ] {
+                                    if !suche.is_empty() && !label.to_lowercase().contains(&suche) {
+                                        continue;
+                                    }
+                                    widgets::field_row(ui, label, |ui| {
+                                        ui.checkbox(field, "");
+                                    });
+                                }
+                                zeile(&suche, ui, "Polarwinkel", |ui| {
+                                    ui.add(
+                                        crate::widgets::zahl(&mut polar_step, 1.0, 1.0..=180.0)
+                                            .suffix("°"),
+                                    );
+                                    ui.label(theme::dim("Architektur: 45°"));
+                                });
+                                zeile(&suche, ui, "Polarfenster", |ui| {
+                                    ui.add(
+                                        crate::widgets::zahl(&mut polar_tol, 0.5, 0.0..=45.0)
+                                            .suffix("°"),
+                                    );
+                                    ui.label(theme::dim(
+                                        "nur innerhalb dieser Abweichung rastet Polar ein",
+                                    ));
+                                });
+                                zeile(&suche, ui, "Fangradius", |ui| {
+                                    ui.add(
+                                        crate::widgets::zahl(&mut tol_px, 1.0, 1.0..=60.0)
+                                            .suffix(" px"),
+                                    );
+                                });
+                            }
+                            // ------------------------ Architektur -----------------
+                            3 => {
+                                abschnitt(&suche, ui, "Architektur");
+                                for (label, val, def) in [
+                                    ("Wandstärke", &mut wall, 240.0),
+                                    ("Türbreite", &mut door, 885.0),
+                                    ("Fensterbreite", &mut win, 1200.0),
+                                    ("Treppenbreite", &mut stair, 1000.0),
+                                    ("Texthöhe", &mut th, 250.0),
+                                ] {
+                                    if !suche.is_empty() && !label.to_lowercase().contains(&suche) {
+                                        continue;
+                                    }
+                                    widgets::field_row(ui, label, |ui| {
+                                        let mut v = *val;
+                                        if widgets::length_field(
+                                            ui,
+                                            &mut v,
+                                            unit,
+                                            90.0,
+                                            widgets::MASS_MIN_MM,
+                                            widgets::MASS_MAX_MM,
+                                        ) {
+                                            *val = v;
+                                        }
+                                        if ui
+                                            .add(egui::Button::new("Standard").small())
+                                            .on_hover_text(format!("{:.0} mm", def))
+                                            .clicked()
+                                        {
+                                            *val = def;
+                                        }
+                                    });
+                                }
+                            }
+                            // -------------------------- Bemaßung ------------------
+                            4 => {
+                                abschnitt(&suche, ui, "Bemaßung");
+                                zeile(&suche, ui, "Pfeilgröße", |ui| {
+                                    if ui
+                                        .add(
+                                            crate::widgets::zahl(
+                                                &mut ds.arrow_size,
+                                                0.5,
+                                                0.1..=1000.0,
+                                            )
+                                            .suffix(" mm"),
+                                        )
+                                        .changed()
+                                    {
+                                        ds_changed = true;
+                                    }
+                                });
+                                zeile_mit(
+                                    &suche,
+                                    ui,
+                                    "Dezimalstellen",
+                                    &["Nachkommastellen"],
+                                    |ui| {
+                                        let mut d = ds.decimals as i32;
+                                        if ui.add(crate::widgets::zahl(&mut d, 1.0, 0..=4)).changed()
+                                        {
+                                            ds.decimals = d.max(0) as usize;
+                                            ds_changed = true;
+                                        }
+                                    },
+                                );
+                                // Maßeinheit, Maßstab, Textgröße und Bogensymbole: dieselbe
+                                // Funktion wie im Eigenschaften-Panel — ein Wert, eine Stelle.
+                                // Sie zeichnet mehrere Zeilen; während einer Suche bleibt der
+                                // Block sichtbar, sobald eine seiner Zeilen passt.
+                                let block_passt = suche.is_empty()
+                                    || [
+                                        "maßeinheit",
+                                        "maßstab",
+                                        "textgröße",
+                                        "bogensymbole",
+                                        "textgrösse",
+                                    ]
+                                    .iter()
+                                    .any(|w| w.contains(&suche));
+                                if block_passt {
+                                    crate::panels::dim_fields(app, ui);
+                                }
+                            }
+                            // ------------------------- Bedienung ------------------
+                            5 => {
+                                abschnitt(&suche, ui, "Bedienung");
+                                zeile(&suche, ui, "Ziehen", |ui| {
+                                    for m in DragMode::ALL {
+                                        ui.selectable_value(&mut drag_mode, m, m.label())
+                                            .on_hover_text(m.hint());
+                                    }
+                                });
+                                if suche.is_empty() {
+                                    ui.label(theme::faint("Gilt für Auswahl und Griffe"));
+                                }
+                                zeile(&suche, ui, "Dateidialog", |ui| {
+                                    let moeglich = crate::systemdialog::verfuegbar();
+                                    ui.selectable_value(&mut dateidialog_system, true, "System")
+                                        .on_hover_text(
+                                            "Dialog des Betriebssystems (Dolphin, Dateien, Windows)",
+                                        );
+                                    ui.selectable_value(
+                                        &mut dateidialog_system,
+                                        false,
+                                        "Eingebaut",
+                                    )
+                                    .on_hover_text("Dialog von JoJa-CAD");
+                                    if !moeglich {
+                                        ui.label(theme::dim("kein Systemdialog verfügbar"));
+                                    }
+                                });
+                            }
+                            // ------------------------ Darstellung -----------------
+                            _ => {
+                                abschnitt(&suche, ui, "Darstellung");
+                                zeile(&suche, ui, "Linienstärken", |ui| {
+                                    let mut m = if lw_scaled { 1 } else { 0 };
+                                    ui.selectable_value(&mut m, 0, "px");
+                                    ui.selectable_value(&mut m, 1, "DPI");
+                                    lw_scaled = m == 1;
+                                });
+                                // Häkchen mit vollem Text — die Labelspalte der
+                                // Zeilen (96 px) schnitte „Eigenschaften-Panel“ ab.
+                                for (name, wert) in [
+                                    ("Layer-Panel", &mut show_layers),
+                                    ("Eigenschaften-Panel", &mut show_props),
+                                    ("Fangmarker", &mut marker),
+                                    ("Lineale einblenden", &mut rulers),
+                                ] {
+                                    if !suche.is_empty() && !name.to_lowercase().contains(&suche) {
+                                        continue;
+                                    }
+                                    ui.add_space(2.0);
+                                    ui.checkbox(wert, name);
+                                }
+                            }
+                        }
+                    });
+            },
+        );
     });
+
+    app.ui.settings_kat = kat;
 
     // ------------------------------ anwenden -----------------------------
     app.ui.lineweights = true;
@@ -2060,6 +2406,163 @@ mod tests_tastatur {
         assert!(
             hell(GESPERRT_FLAECHE) - hell(Palette::BG) > 40,
             "die graue Fläche hebt sich zu wenig von der freien Taste ab"
+        );
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Einstellungen: Aufbau und Suche (T0061)
+// ---------------------------------------------------------------------------
+
+#[cfg(test)]
+mod tests_einstellungen {
+    //! T0061: Das Einstellungsfenster ist eine Kategorienliste links (mit Suche
+    //! darüber) und die Einstellungen der gewählten Kategorie rechts — Vorbild
+    //! ist die KDE-Systemsteuerung. Gemessen werden die Rechtecke, die das
+    //! Fenster selbst hinterlässt (`UiState::last_settings_*`).
+
+    use super::*;
+
+    fn frame(app: &mut App, ctx: &egui::Context) {
+        let raw = egui::RawInput {
+            screen_rect: Some(Rect::from_min_size(Pos2::ZERO, Vec2::new(1500.0, 950.0))),
+            ..Default::default()
+        };
+        let _ = ctx.run(raw, |ctx| app.ui(ctx));
+    }
+
+    /// Zeichnet das Einstellungsfenster ein paar Bilder lang (ein zentriertes,
+    /// selbstgroßes Fenster wächst erst nach mehreren Bildern) und liefert die
+    /// gemerkten Rechtecke.
+    fn lage(suche: &str) -> (Rect, Rect, Rect) {
+        let ctx = egui::Context::default();
+        let mut app = App::with_ctx(ctx.clone());
+        app.ui.settings_open = true;
+        app.ui.settings_suche = suche.to_string();
+        for _ in 0..4 {
+            frame(&mut app, &ctx);
+        }
+        (
+            app.ui.last_settings_suche.expect("Suchfeld gezeichnet"),
+            app.ui.last_settings_nav.expect("Kategorienliste gezeichnet"),
+            app.ui.last_settings_pane.expect("Einstellungsseite gezeichnet"),
+        )
+    }
+
+    #[test]
+    fn suche_steht_ueber_der_tabelle_und_einstellungen_rechts() {
+        let (suche, nav, pane) = lage("");
+        assert!(
+            suche.bottom() <= nav.top() + 1.0,
+            "Suchfeld endet bei y = {}, die Kategorienliste beginnt erst bei {} — \
+             die Suche steht nicht darüber",
+            suche.bottom(),
+            nav.top()
+        );
+        // Das Textfeld meldet seinen Rahmen um 4 px eingerückt — Toleranz 12 px.
+        assert!(
+            (suche.left() - nav.left()).abs() < 12.0
+                && (suche.width() - nav.width()).abs() < 12.0,
+            "Suchfeld ({}…{}) und Kategorienliste ({}…{}) stehen nicht übereinander",
+            suche.left(),
+            suche.right(),
+            nav.left(),
+            nav.right()
+        );
+        assert!(
+            nav.right() < pane.left(),
+            "die Kategorienliste endet bei x = {}, die Einstellungen beginnen bei {} — \
+             sie stehen nicht links neben den Einstellungen",
+            nav.right(),
+            pane.left()
+        );
+        assert!(
+            (nav.width() - SETTINGS_NAV_W).abs() < 1.0,
+            "Kategorienspalte ist {} px breit, erwartet {SETTINGS_NAV_W} px",
+            nav.width()
+        );
+        assert!(
+            nav.height() > 400.0 && (nav.bottom() - pane.bottom()).abs() < 1.5,
+            "Kategorienliste ({} … {}) und Einstellungsseite ({} … {}) enden nicht auf              derselben Höhe",
+            nav.top(),
+            nav.bottom(),
+            pane.top(),
+            pane.bottom()
+        );
+        assert!(
+            pane.width() > nav.width(),
+            "die Einstellungsseite ({} px) ist nicht breiter als die Kategorienspalte ({} px)",
+            pane.width(),
+            nav.width()
+        );
+    }
+
+    #[test]
+    fn jede_kategorie_hat_name_icon_und_stichworte() {
+        assert_eq!(EINSTELLUNGSKATEGORIEN.len(), 7, "Kategorienzahl");
+        for k in EINSTELLUNGSKATEGORIEN {
+            assert!(!k.name.is_empty(), "Kategorie ohne Namen");
+            assert!(!k.icon.is_empty(), "Kategorie „{}“ ohne Icon", k.name);
+            assert!(
+                k.stichworte.len() >= 2,
+                "Kategorie „{}“ hat zu wenige Stichworte — die Suche findet sie nicht",
+                k.name
+            );
+        }
+    }
+
+    /// Die Suche findet die Kategorie über den Namen einer Einstellung —
+    /// sonst bleibt eine Einstellung in einer anderen Kategorie versteckt.
+    #[test]
+    fn suche_findet_kategorien_ueber_ihre_einstellungen() {
+        let treffer = |s: &str| -> Vec<&'static str> {
+            EINSTELLUNGSKATEGORIEN
+                .iter()
+                .filter(|k| k.passt(&s.to_lowercase()))
+                .map(|k| k.name)
+                .collect()
+        };
+        assert_eq!(treffer(""), EINSTELLUNGSKATEGORIEN.iter().map(|k| k.name).collect::<Vec<_>>());
+        assert_eq!(treffer("polarwinkel"), vec!["Fangen"]);
+        assert_eq!(treffer("Wandstärke"), vec!["Architektur"]);
+        assert_eq!(treffer("dateidialog"), vec!["Bedienung"]);
+        assert!(treffer("gibtesnicht").is_empty(), "Unbekannter Begriff liefert Treffer");
+    }
+
+    /// Ein Suchbegriff außerhalb der gewählten Kategorie springt auf die erste
+    /// passende — sonst bliebe die rechte Seite leer.
+    #[test]
+    fn suche_waehlt_passende_kategorie_aus() {
+        let ctx = egui::Context::default();
+        let mut app = App::with_ctx(ctx.clone());
+        app.ui.settings_open = true;
+        app.ui.settings_kat = 0;
+        app.ui.settings_suche = "Polar".to_string();
+        for _ in 0..4 {
+            frame(&mut app, &ctx);
+        }
+        assert_eq!(
+            EINSTELLUNGSKATEGORIEN[app.ui.settings_kat].name,
+            "Fangen",
+            "die Suche hat die Kategorie nicht auf den Treffer gezogen"
+        );
+    }
+
+    /// Die Einstellungsseite ist kürzer als das Fenster: sie braucht eine eigene
+    /// Bildlaufleiste, damit auch die große Zahl künftiger Einstellungen
+    /// erreichbar bleibt.
+    #[test]
+    fn einstellungsseite_scrollt() {
+        let quelle = include_str!("dialogs.rs");
+        let anfang = quelle.find("fn settings_body").expect("settings_body");
+        let ende = quelle[anfang..]
+            .find("\nfn ")
+            .map(|i| anfang + i)
+            .unwrap_or(quelle.len());
+        let body = &quelle[anfang..ende];
+        assert!(
+            body.matches("ScrollArea::vertical()").count() >= 2,
+            "Kategorienliste und Einstellungsseite brauchen je eine eigene Bildlaufleiste"
         );
     }
 }

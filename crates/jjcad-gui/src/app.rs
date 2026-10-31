@@ -520,6 +520,16 @@ pub struct UiState {
     pub ribbon_collapsed: bool,
     pub keymap_open: bool,
     pub settings_open: bool,
+    /// Gewählte Kategorie im Einstellungsfenster (Index in
+    /// `dialogs::EINSTELLUNGSKATEGORIEN`)
+    pub settings_kat: usize,
+    /// Suchtext über der Kategorienliste im Einstellungsfenster
+    pub settings_suche: String,
+    /// Lage von Suchfeld, Kategorienliste und Einstellungsseite im zuletzt
+    /// gezeichneten Einstellungsfenster (Regressionstest T0061)
+    pub last_settings_suche: Option<Rect>,
+    pub last_settings_nav: Option<Rect>,
+    pub last_settings_pane: Option<Rect>,
     pub help_open: bool,
     pub about_open: bool,
     pub sheet_dialog: bool,
@@ -611,6 +621,11 @@ impl Default for UiState {
             ribbon_collapsed: false,
             keymap_open: false,
             settings_open: false,
+            settings_kat: 0,
+            settings_suche: String::new(),
+            last_settings_suche: None,
+            last_settings_nav: None,
+            last_settings_pane: None,
             help_open: false,
             about_open: false,
             sheet_dialog: false,
@@ -1339,6 +1354,19 @@ impl App {
                     }
                 }
                 "settings" => self.ui.settings_open = true,
+                // Einstellungen mit gewählter Kategorie (`settings:2`) oder mit
+                // Suchbegriff (`settings:Fenster`) — Prüfbild für T0061.
+                s if s.starts_with("settings:") => {
+                    self.ui.settings_open = true;
+                    let wahl = &s["settings:".len()..];
+                    match wahl.parse::<usize>() {
+                        Ok(n) => {
+                            self.ui.settings_kat =
+                                n.min(crate::dialogs::EINSTELLUNGSKATEGORIEN.len() - 1)
+                        }
+                        Err(_) => self.ui.settings_suche = wahl.to_string(),
+                    }
+                }
                 "help" => self.ui.help_open = true,
                 // Erweiterter Punktfang sichtbar machen: Werkzeug läuft, ein
                 // Wandende ist gehalten (Verweilen vorgetäuscht) — die

@@ -240,6 +240,13 @@ Mit dem Nutzer abgestimmt — nicht „verbessern“:
   (nicht den Fangpunkt).
 - **Zieh-Modi**: Einstellungen → Bedienung → „Ziehen“ (Gedrückthalten / Zwei
   Klicks), gespeichert in `prefs.json`, gilt für Auswahl *und* Griffe.
+- **Einstellungsfenster (T0061)**: links die Kategorienliste
+  (`dialogs::EINSTELLUNGSKATEGORIEN`, Icon + Name, Auswahl blau), darüber das Suchfeld,
+  rechts die Einstellungen der gewählten Kategorie. Beide Spalten scrollen getrennt.
+  Eine neue Einstellung wird in ihrer Kategorie über `dialogs::zeile`/`zeile_mit`
+  gezeichnet **und** ihr Name in den `stichworte`n der Kategorie eingetragen — sonst
+  findet die Suche sie nicht. Zeilennamen bleiben kurz (Labelspalte 96 px), lange
+  Begriffe kommen als Alias in `zeile_mit`; Häkchen ohne Wert stehen mit vollem Text.
 
 ## Zahlenfelder: Grenzen und Zuggeschwindigkeit (verbindlich)
 
