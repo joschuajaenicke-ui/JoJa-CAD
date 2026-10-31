@@ -2246,12 +2246,12 @@ mod tests_tastatur {
     /// hält `~/.config/jjcad/prefs.json` des Nutzers unberührt. Die Sperre
     /// serialisiert diese Tests, sonst überschreibt ein zweiter Test den
     /// Umweg des ersten wieder mit dem echten Verzeichnis.
-    static KONFIG: std::sync::Mutex<()> = std::sync::Mutex::new(());
+    pub(super) static KONFIG: std::sync::Mutex<()> = std::sync::Mutex::new(());
 
-    struct WegwerfKonfig(Option<std::ffi::OsString>, std::path::PathBuf);
+    pub(super) struct WegwerfKonfig(Option<std::ffi::OsString>, std::path::PathBuf);
 
     impl WegwerfKonfig {
-        fn neu(name: &str) -> Self {
+        pub(super) fn neu(name: &str) -> Self {
             let alt = std::env::var_os("XDG_CONFIG_HOME");
             let dir = std::env::temp_dir().join(format!(
                 "jjcad-t0064-{}-{name}",
@@ -2831,6 +2831,7 @@ mod tests_einstellungen {
     //! ist die KDE-Systemsteuerung. Gemessen werden die Rechtecke, die das
     //! Fenster selbst hinterlässt (`UiState::last_settings_*`).
 
+    use super::tests_tastatur::{WegwerfKonfig, KONFIG};
     use super::*;
 
     fn frame(app: &mut App, ctx: &egui::Context) {
@@ -3012,6 +3013,11 @@ mod tests_einstellungen {
     /// Bewegungsgeschwindigkeit der Schwenk-Funktionen (W A S D).
     #[test]
     fn bedienung_zeigt_die_schwenkgeschwindigkeit() {
+        // Der Test prüft die **Vorgabe** (1×). Ohne Wegwerf-Voreinstellungen
+        // liest `App::with_ctx` die `prefs.json` des Nutzers und der Test prüft
+        // dessen Schwenk-Wert (gesehen: 3,9 — rot, obwohl die Oberfläche stimmt).
+        let _sperre = KONFIG.lock().unwrap_or_else(|e| e.into_inner());
+        let _konfig = WegwerfKonfig::neu("schwenk");
         let ctx = egui::Context::default();
         let mut app = App::with_ctx(ctx.clone());
         app.ui.settings_open = true;
