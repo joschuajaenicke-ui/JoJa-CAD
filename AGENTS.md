@@ -129,7 +129,12 @@ Mit dem Nutzer abgestimmt — nicht „verbessern“:
   (0,0)…(B,H) fangen im Papierraum als „Blattecke“.
 - **Mauszeiger** ist ein durchgehendes Fadenkreuz bis zum Bildschirmrand.
 - **Einfügen** (Block/Zwischenablage): Vorschau oben rechts am Zeiger, `R` dreht,
-  `S` spiegelt, Klick bestätigt. Die Zwischenablage trägt ihren **Basispunkt** mit:
+  `S` spiegelt, Klick bestätigt. Beim Einfügen aus der Zwischenablage entscheidet
+  Einstellungen → Bedienung → „Drehpunkt" (`prefs.paste_pivot`), welcher Punkt am
+  Fadenkreuz steht: „Basispunkt" (Vorgabe) hält den mitkopierten Basispunkt dort —
+  die Vorschau dreht um ihren Mittelpunkt und springt dabei um das Fadenkreuz;
+  „Mittelpunkt" hält die untere linke Ecke der gedrehten Auswahl am Fadenkreuz,
+  sodass die Vorschau immer oben rechts davon bleibt (T0070). Die Zwischenablage trägt ihren **Basispunkt** mit:
   „Kopieren mit Basispunkt" nimmt den geklickten Punkt, „Kopieren" automatisch die
   untere linke Ecke der Auswahl — beim Einfügen steht dieser Punkt am Zeiger.
   **Kopieren setzt nie sofort eine Kopie ab** (auch nicht mit Basispunkt): es füllt

@@ -58,6 +58,12 @@ einsehbar und dort frei änderbar (Ribbon ▸ Ansicht ▸ „Tasten").
     „Spiegeln") spiegelt, `ESC` bricht ab. Beide Tasten folgen der
     Tastaturbelegung: wer „Drehen" umlegt, dreht auch die Vorschau mit der neuen
     Taste. Der Einfügepunkt ist exakt der Ankerpunkt der Vorschau.
+    Beim Einfügen aus der **Zwischenablage** bestimmt die Einstellung **Bedienung ▸
+    „Drehpunkt"**, welcher Punkt dabei am Fadenkreuz steht: **„Basispunkt"** (Vorgabe)
+    hält den mitkopierten Basispunkt dort — die Vorschau dreht um ihren Mittelpunkt
+    und springt deshalb beim Drehen um das Fadenkreuz; **„Mittelpunkt"** hält die
+    untere linke Ecke der gedrehten Auswahl am Fadenkreuz, die Vorschau bleibt also
+    immer oben rechts davon.
 
 Der Zeiger ist über der Zeichenfläche ein durchgehendes Fadenkreuz; der Systemzeiger wird dort
 ausgeblendet.

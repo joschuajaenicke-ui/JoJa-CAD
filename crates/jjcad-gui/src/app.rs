@@ -1568,6 +1568,25 @@ impl App {
                         }
                     }
                 }
+                // Prüfhilfe T0070: Einfüge-Vorschau um 90° gedreht, Anker am
+                // Zeiger. Das Bild zeigt, ob die Vorschau oben rechts bleibt
+                // (Drehpunkt „Mittelpunkt") oder um das Fadenkreuz springt
+                // („Basispunkt").
+                "drehvorschau" => {
+                    let wand = self
+                        .doc()
+                        .ents()
+                        .iter()
+                        .position(|e| matches!(e.kind, EntityKind::Wall { .. }));
+                    if let Some(i) = wand {
+                        let id = self.doc().ents()[i].id;
+                        self.merke_zwischenablage(&[id], None);
+                        self.start_ghost_paste();
+                        if let Some(g) = self.ghost.as_mut() {
+                            g.rotate(90.0);
+                        }
+                    }
+                }
                 // Prüfhilfe T0025: ersten Text kopieren und die Einfüge-Vorschau
                 // zeigen. Der Text muss in der Vorschau stehen — vorher fiel er
                 // in `canvas::ghost_shape` durch und nur der Anker war zu sehen.
@@ -4010,13 +4029,21 @@ fn rail(ui: &mut egui::Ui, icon: &str, tooltip: &str, chevron: &str) -> bool {
             .pointer_world
             .or_else(|| self.pointer_world_fallback())
             .unwrap_or_default();
-        self.ghost = Some(crate::ghost::Ghost::new(Some(block), pos));
+        self.ghost = Some(crate::ghost::Ghost::new(
+            Some(block),
+            pos,
+            self.prefs.paste_pivot,
+        ));
         self.tool = None;
         self.ui.inventory_open = false;
         self.release_keyboard_focus();
     }
 
     /// Startet die Vorschau für das Einfügen aus der Zwischenablage.
+    ///
+    /// Der Drehpunkt kommt aus den Einstellungen (T0070): „Basispunkt" (Vorgabe)
+    /// hält den Basispunkt am Fadenkreuz, „Mittelpunkt" hält die Vorschau oben
+    /// rechts davon.
     pub fn start_ghost_paste(&mut self) {
         if self.ui.clipboard.is_empty() {
             self.toast("Einfügen · Zwischenablage leer");
@@ -4029,7 +4056,7 @@ fn rail(ui: &mut egui::Ui, icon: &str, tooltip: &str, chevron: &str) -> bool {
             .pointer_world
             .or_else(|| self.pointer_world_fallback())
             .unwrap_or_default();
-        self.ghost = Some(crate::ghost::Ghost::new(None, pos));
+        self.ghost = Some(crate::ghost::Ghost::new(None, pos, self.prefs.paste_pivot));
         self.tool = None;
         self.session_mut().clear_selection();
         self.release_keyboard_focus();
@@ -7254,3 +7281,136 @@ mod tests_leistung {
 
 }
 
+
+#[cfg(test)]
+mod tests_drehpunkt_einfuegen {
+    //! T0070: Zwei Drehpunkte für das Einfügen aus der Zwischenablage.
+    //!
+    //! Vorgabe bleibt der **Basispunkt** am Fadenkreuz (bisheriges Verhalten).
+    //! Im Modus „Mittelpunkt" steht die untere linke Ecke der gedrehten Auswahl
+    //! am Fadenkreuz: die Vorschau dreht um ihren eigenen Mittelpunkt, springt
+    //! nicht mehr um das Fadenkreuz und bleibt immer oben rechts davon. Geprüft
+    //! wird an der Vorschau **und** am eingefügten Ergebnis — beide müssen
+    //! dieselbe Lage haben.
+
+    use super::*;
+
+    fn rechteck_app(pivot: jjcad_core::persist::PastePivot) -> App {
+        let ctx = egui::Context::default();
+        let mut app = App::with_ctx(ctx);
+        app.prefs.paste_pivot = pivot;
+        app.doc_mut().settings.input_unit = jjcad_core::units::Unit::Mm;
+        let r = app
+            .session_mut()
+            .execute(
+                "draw.rect",
+                &serde_json::json!({"a": [0, 0], "b": [2000, 800]}),
+            )
+            .expect("Rechteck");
+        let id = r["created"][0].as_u64().unwrap();
+        app.session_mut().select(vec![id]);
+        app
+    }
+
+    fn bbox_aller(app: &App, ids: &[Id]) -> BBox {
+        let mut bb = BBox::EMPTY;
+        for id in ids {
+            if let Some(e) = app.doc().entity(*id) {
+                bb.union(jjcad_core::render::entity_bbox(app.doc(), &e));
+            }
+        }
+        bb
+    }
+
+    /// Vorschau-Lage bei einer Vierteldrehung.
+    fn vorschau_bbox(app: &App) -> BBox {
+        let g = app.ghost.as_ref().expect("Vorschau offen");
+        let mut bb = BBox::EMPTY;
+        for e in crate::ghost::clipboard_entities(app.doc(), g, &app.ui.clipboard) {
+            bb.union(jjcad_core::render::entity_bbox(app.doc(), &e));
+        }
+        bb
+    }
+
+    #[test]
+    fn mittelpunkt_modus_haelt_die_vorschau_oben_rechts() {
+        let mut app = rechteck_app(jjcad_core::persist::PastePivot::Center);
+        app.copy_selection(false);
+        app.start_ghost_paste();
+        let zeiger = V2::new(6000.0, 4000.0);
+        if let Some(g) = app.ghost.as_mut() {
+            g.pos = zeiger;
+        }
+        app.rotate_ghost(App::ghost_drehgrad(false)); // R = im Uhrzeigersinn
+        let bb = vorschau_bbox(&app);
+        assert!(
+            (bb.min.x - zeiger.x).abs() < 1e-6 && (bb.min.y - zeiger.y).abs() < 1e-6,
+            "nach dem Drehen muss die untere linke Ecke am Fadenkreuz stehen, sie stand \
+             bei {:?} (Fadenkreuz {zeiger:?})",
+            bb.min
+        );
+        assert!(
+            bb.max.x > zeiger.x + 1.0 && bb.max.y > zeiger.y + 1.0,
+            "die Vorschau steht nicht oben rechts vom Fadenkreuz: {bb:?}"
+        );
+
+        // Eingefügt landet sie an derselben Stelle.
+        assert!(app.commit_ghost(), "Einfügen muss etwas anlegen");
+        let ids = app.selection().to_vec();
+        let eingefuegt = bbox_aller(&app, &ids);
+        assert!(
+            (eingefuegt.min.x - zeiger.x).abs() < 1e-6
+                && (eingefuegt.min.y - zeiger.y).abs() < 1e-6,
+            "das eingefügte Ergebnis steht nicht dort, wo die Vorschau stand: {:?}",
+            eingefuegt.min
+        );
+    }
+
+    /// Gegenprobe: der Basispunkt-Modus (Vorgabe) dreht weiter um das
+    /// Fadenkreuz — die Ecke springt beim Drehen weg.
+    #[test]
+    fn basispunkt_modus_dreht_weiter_um_das_fadenkreuz() {
+        let mut app = rechteck_app(jjcad_core::persist::PastePivot::BasePoint);
+        app.copy_selection(false);
+        app.start_ghost_paste();
+        let zeiger = V2::new(6000.0, 4000.0);
+        if let Some(g) = app.ghost.as_mut() {
+            g.pos = zeiger;
+        }
+        // Ohne Drehung steht die Ecke auch hier am Zeiger.
+        let vorher = vorschau_bbox(&app);
+        assert_eq!(vorher.min, zeiger, "ohne Drehung liegt die Ecke am Zeiger");
+        app.rotate_ghost(App::ghost_drehgrad(false));
+        let nachher = vorschau_bbox(&app);
+        assert!(
+            (nachher.min.x - zeiger.x).abs() > 100.0 || (nachher.min.y - zeiger.y).abs() > 100.0,
+            "im Modus Basispunkt muss die Ecke vom Fadenkreuz wegdrehen, sie stand bei {:?}",
+            nachher.min
+        );
+    }
+
+    /// Die Vorschau übernimmt den eingestellten Drehpunkt — nicht nur das
+    /// Einfügen, auch die Voranzeige arbeitet damit.
+    #[test]
+    fn vorschau_uebernimmt_den_eingestellten_drehpunkt() {
+        let mut app = rechteck_app(jjcad_core::persist::PastePivot::Center);
+        app.copy_selection(false);
+        app.start_ghost_paste();
+        let g = app.ghost.as_ref().expect("Vorschau offen");
+        assert_eq!(
+            g.pivot,
+            jjcad_core::persist::PastePivot::Center,
+            "die Vorschau kennt den eingestellten Drehpunkt nicht"
+        );
+
+        // Umschalten wirkt auf die nächste Vorschau, nicht rückwirkend auf eine
+        // laufende — der Modus wird beim Start der Vorschau übernommen.
+        app.cancel_ghost();
+        app.prefs.paste_pivot = jjcad_core::persist::PastePivot::BasePoint;
+        app.start_ghost_paste();
+        assert_eq!(
+            app.ghost.as_ref().map(|g| g.pivot),
+            Some(jjcad_core::persist::PastePivot::BasePoint)
+        );
+    }
+}
