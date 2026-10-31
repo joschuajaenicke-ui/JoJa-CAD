@@ -7259,6 +7259,74 @@ mod tests_leistung {
     }
 
     #[test]
+    fn spalten_springen_nicht_beim_wechsel_der_herkunft() {
+        // T0068, Turn 2: Die Herkunft der Displayliste („neu aufgebaut“ /
+        // „aus dem Zwischenspeicher“) stand als eigene Zeile **in** der Tabelle.
+        // Der längere Text bestimmte die Breite der Namensspalte, und beim
+        // Wechsel wanderte die ganze Tabelle — im Bild ein Flackern.
+        //
+        // Gemessen werden zwei Läufe: einer baut die Liste in **jedem** Bild neu
+        // auf (Herkunft dauerhaft „neu aufgebaut“), der andere zeichnet aus dem
+        // Zwischenspeicher. Die Spaltenköpfe müssen in beiden an derselben
+        // Stelle stehen.
+        let x = |out: &egui::FullOutput, text: &str| -> f32 {
+            out.shapes
+                .iter()
+                .find_map(|cs| match &cs.shape {
+                    egui::Shape::Text(t) if t.galley.text().trim() == text => Some(t.pos.x),
+                    _ => None,
+                })
+                .unwrap_or_else(|| panic!("Spaltenkopf „{text}“ fehlt"))
+        };
+
+        // Lauf „neu aufgebaut“: jeder Frame verwirft den Zwischenspeicher.
+        let ctx_neu = egui::Context::default();
+        let mut app_neu = App::with_ctx(ctx_neu.clone());
+        app_neu.perf.an = true;
+        let mut neu = None;
+        for _ in 0..4 {
+            app_neu.tab_mut().cache = None;
+            neu = Some(frame(&ctx_neu, &mut app_neu));
+        }
+        let neu = neu.expect("Bild gezeichnet");
+        assert!(
+            hat(&neu, "Displayliste: neu aufgebaut"),
+            "der Neubau wird nicht angezeigt"
+        );
+
+        // Lauf „aus dem Zwischenspeicher“: nach dem ersten Bild bleibt der Cache.
+        let ctx_kopie = egui::Context::default();
+        let mut app_kopie = App::with_ctx(ctx_kopie.clone());
+        app_kopie.perf.an = true;
+        let mut kopie = None;
+        for _ in 0..4 {
+            kopie = Some(frame(&ctx_kopie, &mut app_kopie));
+        }
+        let kopie = kopie.expect("Bild gezeichnet");
+        assert!(
+            hat(&kopie, "Displayliste: aus dem Zwischenspeicher"),
+            "die Herkunft der Liste fehlt"
+        );
+
+        for spalte in ["jetzt", "Anteil", "p50", "p95", "p99"] {
+            assert_eq!(
+                x(&kopie, spalte),
+                x(&neu, spalte),
+                "Spalte „{spalte}“ springt mit der Herkunft ({} gegen {} px)",
+                x(&kopie, spalte),
+                x(&neu, spalte)
+            );
+        }
+        for name in ["Displayliste", "Oberfläche", "Fangen"] {
+            assert_eq!(
+                x(&kopie, name),
+                x(&neu, name),
+                "Zeile „{name}“ wandert mit der Herkunft"
+            );
+        }
+    }
+
+    #[test]
     fn anzeige_faengt_keine_klicks() {
         // Sie liegt über der Zeichnung: ein Klick darauf muss die Zeichenfläche
         // erreichen, sonst ist ein Stück Plan nicht mehr bedienbar.
