@@ -534,6 +534,9 @@ pub struct UiState {
     /// Lage der Hotbar-Slots in der unteren Leiste (Regressionstest T0043:
     /// die Slots müssen mittig in der Leiste stehen)
     pub last_slots: Option<Rect>,
+    /// Tasten des Tastenbilds der Tastaturbelegung in Fensterkoordinaten
+    /// (Regressionstest T0045: gesperrte Tasten dürfen sich nicht belegen lassen)
+    pub last_tasten: Option<Vec<(&'static str, &'static str, Rect)>>,
     /// Breite des zuletzt gezeichneten Ribbon-Inhalts
     pub last_ribbon_content_w: f32,
     pub zoom_edit: Option<String>,
@@ -595,6 +598,7 @@ impl Default for UiState {
             last_canvas: Rect::from_min_size(Pos2::ZERO, Vec2::new(1000.0, 700.0)),
             last_ribbon_content_h: 0.0,
             last_slots: None,
+            last_tasten: None,
             last_ribbon_content_w: 0.0,
             zoom_edit: None,
             typed: String::new(),

@@ -363,13 +363,44 @@ fn default_true() -> bool {
     true
 }
 
+/// Tasten, die das Programm fest führt. Sie erscheinen in der
+/// Tastaturbelegung ausgegraut und lassen sich keiner Funktion zuweisen.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum FestBelegt {
+    /// Ziffer 1 … 0 — startet den Hotbar-Slot (`App::handle_shortcuts`).
+    Hotbar,
+    /// Esc, Tab, Caps, Umschalt, Strg, Enter, Rücktaste — fester Ablauf.
+    Steuerung,
+}
+
+impl FestBelegt {
+    /// Kurzhinweis für den Tooltip der Taste.
+    pub fn grund(self) -> &'static str {
+        match self {
+            FestBelegt::Hotbar => "Ziffer 1 … 0 startet die Hotbar — nicht belegbar",
+            FestBelegt::Steuerung => "Steuerungstaste — fest belegt, nicht zuweisbar",
+        }
+    }
+}
+
+/// Warum eine Taste nicht belegbar ist? `None` = frei zuweisbar.
+pub fn fest_belegt(key: &str) -> Option<FestBelegt> {
+    match key.to_lowercase().as_str() {
+        "1" | "2" | "3" | "4" | "5" | "6" | "7" | "8" | "9" | "0" => Some(FestBelegt::Hotbar),
+        "esc" | "tab" | "caps" | "shift" | "shift_r" | "ctrl" | "ctrl_r" | "enter"
+        | "backspace" => Some(FestBelegt::Steuerung),
+        _ => None,
+    }
+}
+
 impl Default for UserPrefs {
     fn default() -> Self {
         let mut bindings = BTreeMap::new();
         for a in actions::ACTIONS {
-            if !a.key.is_empty() {
-                bindings.insert(a.id.to_string(), a.key.to_string());
+            if a.key.is_empty() || fest_belegt(a.key).is_some() {
+                continue;
             }
+            bindings.insert(a.id.to_string(), a.key.to_string());
         }
         Self {
             hotbar_presets: vec![
@@ -485,6 +516,10 @@ impl UserPrefs {
         if self.bindings.is_empty() {
             self.bindings = UserPrefs::default().bindings;
         }
+        // T0045: Ziffern und Steuerungstasten gehören dem Programm. Ältere
+        // Belegungen (früher stand `modify.select` auf ESC) würden die Taste
+        // sonst stillschweigend belegen und im Tastenbild falsch aussehen.
+        self.bindings.retain(|_, k| fest_belegt(k).is_none());
         // T gehört seit T0009 dem Chat-Protokoll. Das Text-Werkzeug lag früher
         // auf dieser Taste; eine gespeicherte Belegung würde sie stillschweigend
         // weiter belegen und in der Tastaturbelegung falsch anzeigen.
@@ -578,8 +613,13 @@ impl UserPrefs {
             .map(|(a, _)| a.clone())
     }
 
+    /// Belegt `action` mit `key`. Gesperrte Tasten (`fest_belegt`) bleiben
+    /// unberührt — sie gehören dem Programm, nicht der Belegung.
     pub fn bind(&mut self, action: &str, key: &str) {
         let key = key.to_lowercase();
+        if fest_belegt(&key).is_some() {
+            return;
+        }
         // Konflikt: andere Aktion auf derselben Taste entfernen
         let conflict: Vec<String> = self
             .bindings
@@ -724,6 +764,44 @@ mod tests {
         );
         assert!(!UserPrefs::load_from(&p).dateidialog_system());
         std::fs::remove_dir_all(&dir).ok();
+    }
+
+    /// T0045: Ziffern gehören der Hotbar, die Steuerungstasten dem Ablauf.
+    /// Beide lassen sich nicht belegen — auch nicht über eine alte prefs.json,
+    /// die sie noch trägt (früher stand `modify.select` auf ESC).
+    #[test]
+    fn ziffern_und_steuerungstasten_sind_nicht_belegbar() {
+        assert_eq!(fest_belegt("7"), Some(FestBelegt::Hotbar));
+        assert_eq!(fest_belegt("ESC"), Some(FestBelegt::Steuerung));
+        assert_eq!(fest_belegt("shift_r"), Some(FestBelegt::Steuerung));
+        assert_eq!(fest_belegt("ctrl_r"), Some(FestBelegt::Steuerung));
+        assert_eq!(fest_belegt("q"), None);
+
+        let mut prefs = UserPrefs::default();
+        for key in ["1", "0", "tab", "caps", "shift", "shift_r", "ctrl", "ctrl_r", "enter", "backspace"] {
+            prefs.bind("draw.line", key);
+            assert!(
+                !prefs.bindings.values().any(|v| v.eq_ignore_ascii_case(key)),
+                "Taste {key} ist gesperrt, wurde aber belegt"
+            );
+        }
+        // Der Werkssatz belegt keine gesperrte Taste.
+        for (aktion, key) in &UserPrefs::default().bindings {
+            assert!(
+                fest_belegt(key).is_none(),
+                "{aktion} liegt auf der gesperrten Taste {key}"
+            );
+        }
+        // Alte Einstellungen: gesperrte Belegungen fallen beim Laden weg.
+        let mut alt = UserPrefs::default();
+        alt.bindings.insert("draw.line".into(), "tab".into());
+        alt.bindings.insert("draw.circle".into(), "k".into());
+        alt.ensure_defaults();
+        assert!(
+            !alt.bindings.values().any(|v| v.eq_ignore_ascii_case("tab")),
+            "alte Belegung auf Tab überlebt das Laden"
+        );
+        assert_eq!(alt.action_for_key("k").as_deref(), Some("draw.circle"));
     }
 
     #[test]

@@ -168,7 +168,9 @@ pub const ACTIONS: &[ActionDef] = &[
     ),
 
     // Ändern
-    act!("modify.select", "Auswählen", Aendern, "select", "esc", "Objekte anklicken oder Fenster aufziehen", false),
+    // Ohne Kürzel: ESC ist eine Steuerungstaste (bricht ab bzw. schließt eine
+    // Punktfolge ab, `App::escape_pressed`) und wird nicht vergeben (T0045).
+    act!("modify.select", "Auswählen", Aendern, "select", "", "Objekte anklicken oder Fenster aufziehen", false),
     act!("modify.move", "Verschieben", Aendern, "move", "v", "Auswahl, Basispunkt, Zielpunkt", true),
     act!("modify.order", "Reihenfolge", Aendern, "layers", "", "to = Platz in der Zeichenreihenfolge (1 = ganz hinten)", true),
     // Kopie versetzt absetzen: erst Basispunkt, dann Zielpunkt. Getrennt vom
