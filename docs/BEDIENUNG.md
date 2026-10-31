@@ -67,8 +67,10 @@ ausgeblendet.
 - **Eigenschaften-Panel** (rechts): tabellarische Liste mit Layer, Farbe, Stärke, Linientyp und
   nicht editierbaren Angaben (Länge, Radius, Fläche). Läuft ein Werkzeug, stehen oben die
   Eigenschaften für das **nächste** Element — einmal gesetzt gilt das für alle folgenden Elemente.
-  Bei Mehrfachauswahl erscheinen nur gemeinsame Felder; abweichende Werte zeigen `*variiert*`,
-  Änderungen wirken auf die ganze Auswahl.
+  Bei Mehrfachauswahl erscheint **je Objektart** ein Abschnitt mit genau den Feldern des
+  einzelnen Objekts (z. B. Dicke, Höhe, Schraffur, Füllfarbe bei Wänden); abweichende Werte
+  meldet die Kopfzeile als `*variiert*`, jede Änderung wirkt auf alle Objekte dieser Art in
+  der Auswahl.
 - **Griffe**: Ausgewählte Elemente zeigen Griffe — Quadrate an Endpunkten und Ecken (Linie, Wand,
   Polylinie, Rechteck; Mittelpunkt bei Kreis/Bogen/Ellipse, **jeder Basispunkt** bei Maß und
   Maßkette) und Rauten in den Kantenmitten

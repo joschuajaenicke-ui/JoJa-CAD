@@ -1,13 +1,13 @@
 //! Seitenpanels: Layer (links) und Eigenschaften (rechts).
 
-use crate::app::{self, App, Einfuegemodus, TabKind};
+use crate::app::{self, App, TabKind};
 use crate::theme::{self, Palette};
 use crate::widgets;
 use egui::{Align, Color32, FontId, Layout, Pos2, Rect, RichText, Rounding, Sense, Stroke, Ui, Vec2};
 use jjcad_core::model::*;
-use jjcad_core::style::{ArrowKind, Color, LineType, PaperSize, WallAlign};
+use jjcad_core::style::{ArrowKind, Color, LineType, PaperSize};
 use jjcad_core::units::{format_number, format_scale, Unit};
-use serde_json::{json, Value};
+use serde_json::json;
 
 // ---------------------------------------------------------------------------
 // Layer
@@ -338,6 +338,10 @@ pub fn properties(app: &mut App, ui: &mut Ui) {
     });
     ui.add_space(2.0);
     widgets::reset_rows();
+    // Das Ziel der Mehrfachauswahl gilt nur für dieses Bild — `props::mehrfach`
+    // setzt es beim Zeichnen der Gruppe. Bleibt nichts stehen, schreibt jede
+    // Zeile wieder nur an ihr eigenes Objekt.
+    app.mehrfach_ziel.clear();
     let sel = app.selection().to_vec();
     let tool_active = app.tool.is_some();
     // Während ein Text in der Zeichenfläche getippt wird, zeigt das Panel
@@ -443,7 +447,7 @@ pub fn properties(app: &mut App, ui: &mut Ui) {
                     None => {}
                 }
             } else if sel.len() > 1 {
-                multi_props(app, ui, &sel);
+                crate::props::mehrfach(app, ui, &sel);
             } else if !tool_active {
                 match app.tab().tab {
                     TabKind::Sheet(id) => sheet_props(app, ui, id),
@@ -875,195 +879,6 @@ pub(crate) fn section_title(ui: &mut Ui, icon: &str, title: &str) {
     ui.add_space(4.0);
 }
 
-/// Eigenschaften einer Mehrfachauswahl.
-///
-/// **Offener Punkt, bewusst als Altlast markiert:** Das ist der letzte eigene
-/// Maler neben `props.rs`. Er gehört auf denselben Renderer umgestellt —
-/// `props::*` mit einer Liste von Ids und dem Zustand „*variiert*“ für
-/// abweichende Werte. Bis dahin gilt: neue Eigenschaften **nicht** hier einzeln
-/// nachbauen, sondern `props` erweitern und diesen Maler mitziehen.
-fn multi_props(app: &mut App, ui: &mut Ui, ids: &[Id]) {
-    let ents: Vec<jjcad_core::model::Entity> = ids
-        .iter()
-        .filter_map(|i| app.doc().entity(*i).cloned())
-        .collect();
-    if ents.is_empty() {
-        return;
-    }
-    section_title(ui, "select", "Mehrfachauswahl");
-    ui.label(theme::dim(format!("{} Objekte", ents.len())));
-    // Wände und Füllflächen tragen eine eigene Fläche — nur dort heißen die
-    // beiden Farbeinstellungen "Linienfarbe" und "Füllfarbe".
-    let alle_waende = ents.iter().all(|e| {
-        matches!(
-            e.kind,
-            jjcad_core::model::EntityKind::Wall { .. } | jjcad_core::model::EntityKind::Fill { .. }
-        )
-    });
-    ui.add_space(2.0);
-
-    // ---- gemeinsame Felder ----
-    // Layer
-    let same_layer = ents.iter().all(|e| e.layer == ents[0].layer);
-    let mut picked: Option<Id> = None;
-    if same_layer {
-        // gleicher Layer in allen Objekten: normaler Dropdown
-        let layer_items: Vec<(Id, String)> = app
-            .doc()
-            .layers
-            .iter()
-            .map(|l| (l.id, l.name.clone()))
-            .collect();
-        let cur = ents[0].layer;
-        widgets::field_row(ui, "Layer", |ui| {
-            picked = pick_combo(ui, "multi_layer", cur, &layer_items);
-        });
-    } else {
-        // verschiedene Layer: Feld zeigt *variiert*, Auswahl setzt alle
-        let layer_items: Vec<(Id, String)> = app
-            .doc()
-            .layers
-            .iter()
-            .map(|l| (l.id, l.name.clone()))
-            .collect();
-        widgets::field_row(ui, "Layer", |ui| {
-            picked = dropdown(ui, "multi_layer", "*variiert*", None, |ui| {
-                let mut out = None;
-                for (id, name) in &layer_items {
-                    if ui.selectable_label(false, name).clicked() {
-                        out = Some(*id);
-                    }
-                }
-                out
-            });
-        });
-    }
-    if let Some(l) = picked {
-        let _ = app
-            .session_mut()
-            .execute("modify.set", &json!({"ids": ids, "layer": l}));
-        app.mark_changed();
-    }
-
-    // Farbe
-    let cols: Vec<Color> = ents.iter().map(|e| app.doc().effective_color(e)).collect();
-    let same_col = cols.iter().all(|c| *c == cols[0]);
-    let mut picked_col: Option<Option<Color>> = None;
-    let multi_color_label = if alle_waende { "Linienfarbe" } else { "Farbe" };
-    widgets::field_row(ui, multi_color_label, |ui| {
-        picked_col = color_combo(ui, "multi_col", cols[0], false, !same_col, "vom Layer");
-    });
-    if let Some(Some(c)) = picked_col {
-        let _ = app
-            .session_mut()
-            .execute("modify.set", &json!({"ids": ids, "color": c.to_hex()}));
-        app.mark_changed();
-    }
-
-    // Füllfarbe — nur wenn ausschließlich Wände gewählt sind; sonst wäre das
-    // Feld für Linien und Punkte ohne Bedeutung.
-    if alle_waende {
-        let fills: Vec<Option<Color>> = ents.iter().map(|e| e.style.fill).collect();
-        let same_fill = fills.iter().all(|f| *f == fills[0]);
-        let fill_unset = same_fill && fills[0].is_none();
-        let fill_cur = fills[0].unwrap_or_else(|| cols[0].mix(Color::WHITE, 0.74));
-        let mut picked_fill: Option<Option<Color>> = None;
-        widgets::field_row(ui, "Füllfarbe", |ui| {
-            picked_fill = color_combo(ui, "multi_fill", fill_cur, fill_unset, !same_fill, "Standard");
-        });
-        if let Some(v) = picked_fill {
-            let wert = match v {
-                Some(c) => json!(c.to_hex()),
-                None => json!("none"),
-            };
-            let _ = app
-                .session_mut()
-                .execute("modify.set", &json!({"ids": ids, "fill": wert}));
-            app.mark_changed();
-        }
-    }
-
-    // Linienstärke
-    let wts: Vec<f64> = ents
-        .iter()
-        .map(|e| app.doc().effective_line_weight(e))
-        .collect();
-    let same_w = wts.iter().all(|w| (w - wts[0]).abs() < 1e-6);
-    let mut new_w: Option<f64> = None;
-    let lw = if same_w { wts[0] } else { 0.35 };
-    widgets::field_row(ui, "Stärke", |ui| {
-        new_w = weight_combo(ui, "multi_w", lw, !same_w);
-    });
-    if let Some(w) = new_w {
-        let _ = app
-            .session_mut()
-            .execute("modify.set", &json!({"ids": ids, "lineweight": w}));
-        app.mark_changed();
-    }
-
-    // Linientyp
-    let lts: Vec<LineType> = ents
-        .iter()
-        .map(|e| app.doc().effective_line_type(e))
-        .collect();
-    let same_lt = lts.iter().all(|t| *t == lts[0]);
-    let mut new_lt: Option<LineType> = None;
-    let lt = if same_lt { lts[0] } else { LineType::Solid };
-    widgets::field_row(ui, "Linientyp", |ui| {
-        new_lt = linetype_combo(ui, "multi_lt", lt, !same_lt);
-    });
-    if let Some(t) = new_lt {
-        let name = match t {
-            LineType::Solid => "solid",
-            LineType::Dashed => "dashed",
-            LineType::Dotted => "dotted",
-            LineType::DashDot => "dashdot",
-            LineType::Hidden => "hidden",
-        };
-        let _ = app
-            .session_mut()
-            .execute("modify.set", &json!({"ids": ids, "linetype": name}));
-        app.mark_changed();
-    }
-
-    // ---- Auswertung ----
-    ui.add_space(4.0);
-    widgets::hline(ui);
-    ui.add_space(4.0);
-    let unit = app.unit();
-    let (mut total_len, mut total_area) = (0.0f64, 0.0f64);
-    for e in &ents {
-        total_len += entity_length(e);
-        total_area += entity_area(e);
-    }
-    if total_len > 0.0 {
-        widgets::field_row(ui, "Gesamtlänge", |ui| {
-            ui.label(theme::mono(unit.format(total_len, unit.decimals())));
-        });
-    }
-    if total_area > 0.0 {
-        widgets::field_row(ui, "Gesamtfläche", |ui| {
-            ui.label(theme::mono(area_text(unit, total_area)));
-        });
-    }
-
-    ui.add_space(6.0);
-    ui.horizontal_wrapped(|ui| {
-        if ui.button("Verschieben").clicked() {
-            app.start_tool("modify.move");
-        }
-        if ui.button("Kopieren mit Basispunkt").clicked() {
-            app.start_tool("modify.copy");
-        }
-        if ui.button("Drehen").clicked() {
-            app.start_tool("modify.rotate");
-        }
-        if ui.button("Spiegeln").clicked() {
-            app.start_tool("modify.mirror");
-        }
-    });
-}
-
 /// Anzeigezeilen des Abschnitts „Geometrie“ — für alle Typen dieselbe Quelle.
 ///
 /// Der Wert ist reiner Text (Einheit schon enthalten); jede Zeile hat genau
@@ -1125,7 +940,7 @@ pub(crate) fn area_text(unit: Unit, mm2: f64) -> String {
 }
 
 /// Länge eines Elements in mm (0, wenn nicht sinnvoll).
-fn entity_length(e: &jjcad_core::model::Entity) -> f64 {
+pub(crate) fn entity_length(e: &jjcad_core::model::Entity) -> f64 {
     use jjcad_core::model::EntityKind as K;
     match &e.kind {
         K::Line { a, b } | K::Wall { a, b, .. } => a.dist(*b),
@@ -1163,7 +978,7 @@ fn entity_length(e: &jjcad_core::model::Entity) -> f64 {
 /// Die Rechnung steht in `jjcad_core::area::entity_area` — dieselbe Zahl
 /// liefert die MCP-Abfrage (`area_m2`, `select.area`). Hier nur der
 /// Zahlenwert für die Anzeige; 0 heißt „keine Fläche“.
-fn entity_area(e: &jjcad_core::model::Entity) -> f64 {
+pub(crate) fn entity_area(e: &jjcad_core::model::Entity) -> f64 {
     jjcad_core::area::entity_area(e).unwrap_or(0.0)
 }
 

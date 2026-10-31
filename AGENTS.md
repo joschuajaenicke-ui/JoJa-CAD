@@ -165,9 +165,12 @@ Mit dem Nutzer abgestimmt — nicht „verbessern“:
   Anleitung im Kopf von `props.rs` eingetragen (Zeichnen, Werte holen, Anwenden,
   Zeilen anmelden, Routing, Test) — `props::tests::jede_objektart_hat_ein_panel`
   und `…::alle_erzeuger_zeigen_dieselben_zeilen_wie_das_objekt` erzwingen das.
-  Offen ist nur noch die **Mehrfachauswahl** (`panels::multi_props`): sie hat
-  ihren eigenen Maler und muss auf denselben Renderer mit „*variiert*“ umgestellt
-  werden.
+  Die **Mehrfachauswahl** (`props::mehrfach`) zeichnet **je Objektart** denselben
+  Abschnitt wie ein einzelnes Objekt und schickt jede Änderung über `props::setzen`
+  an **alle** Objekte der Gruppe (`App::mehrfach_ziel`). Damit gilt jede Eigenschaft
+  eines Objekts automatisch auch für die Auswahl — wer eine Zeile ergänzt, hat sie
+  in der Mehrfachauswahl schon. Abweichende Werte meldet die Kopfzeile als
+  `*variiert*`; ein zweiter Maler existiert nicht mehr.
 - **Zeichenrang (T0048)**: Neue Elemente ordnen sich beim Einfügen selbst in die
   Zeichenreihenfolge ein — Fläche (0) < Volumen (1) < Bauteil (2) < Linie (3) <
   Beschriftung (4), Konstanten `model::RANG_*`, Prüfung in
