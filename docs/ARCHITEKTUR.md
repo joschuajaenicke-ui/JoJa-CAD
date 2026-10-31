@@ -85,6 +85,43 @@ Bei Zeichnungsgrößen im Bauantragsbereich ist das unproblematisch und robuster
 als Delta-Patches. `modify.set` wird zusammengefasst, damit Schieberegler nicht
 die Historie fluten.
 
+### Zeichenrang: neue Elemente ordnen sich selbst ein (T0048)
+
+Die Objektliste `entities` **ist** die Zeichenreihenfolge: Index 0 liegt ganz
+hinten. Bisher hängte jedes neue Element am Ende der Liste und lag damit über
+allem anderen — eine zuletzt gezeichnete Füllfläche deckte Wände und Linien zu.
+
+Jede Objektart hat deshalb einen **Rang** (`model::EntityKind::zeichenrang`,
+Konstanten `model::RANG_*`):
+
+| Rang | Objektarten | liegt |
+|---|---|---|
+| 0 `RANG_FLAECHE` | Füllfläche (auch Schraffur) | ganz hinten |
+| 1 `RANG_VOLUMEN` | Volumen | über den Flächen |
+| 2 `RANG_BAUTEIL` | Wand, Tür, Fenster, Treppe, Block | über den Flächen, unter den Linien |
+| 3 `RANG_LINIE` | Punkt, Linie, Polylinie, Spline, Rechteck, Kreis, Bogen, Ellipse | über den Bauteilen |
+| 4 `RANG_BESCHRIFTUNG` | Text, Maß, Maßkette, Höhenkote | ganz vorn |
+
+Eingefügt wird über `Document::insert_ranked` (jeder Erzeuger, jede Kopie, jede
+Einfüge-Vorschau geht diesen Weg; `Document::add_entity` delegiert dorthin). Der
+Platz ist das Minimum aus **erster Stelle mit höherem Rang** und **direkt hinter
+dem letzten Objekt gleichen Rangs** (`Document::einfuege_index`):
+
+- Nichts Neues liegt über einer Linie oder Wand: die Klassengrenze ist die harte
+  Obergrenze.
+- Innerhalb der eigenen Klasse liegt das Neue oben auf — zwei Füllflächen
+  überdecken sich also nicht gegenseitig in der Zeichenreihenfolge.
+- **Bestehende Objekte werden nie umsortiert**, sie rücken nur um eine Stelle.
+  Eine von Hand verdrehte Reihenfolge (`modify.order`) bleibt damit erhalten; das
+  neue Element ordnet sich an der Grenze seiner Klasse ein, auch in einer
+  verdrehten Zeichnung (dann gewinnt „hinter höherem Rang" — nichts darf eine
+  Linie überdecken).
+
+Der Rang ist bewusst **keine** Geometrieprüfung (kein „berührt sich"): die Regel
+ist ohne Sonderfälle erklärbar, in einem Durchgang über die Liste gerechnet und
+in den meisten Fällen richtig. Wer eine Objektart ergänzt, ordnet sie in
+`zeichenrang` einer Klasse zu — der Compiler erzwingt den Zweig.
+
 ### Blöcke mit Namensräumen
 
 Block-IDs sind präfixiert (`sys:`, `prj:`, `dxf:`). Beim Import kollidierender

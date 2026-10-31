@@ -561,6 +561,69 @@ pub enum EntityKind {
     },
 }
 
+// ---------------------------------------------------------------------------
+// Zeichenrang (T0048)
+// ---------------------------------------------------------------------------
+//
+// Die Liste `entities` ist die Zeichenreihenfolge: Index 0 liegt ganz hinten.
+// Damit ein neu eingefügtes Element ohne Zutun des Nutzers richtig liegt, hat
+// jede Objektart einen **Rang**. Der Rang ordnet nur die Klassen, nicht die
+// einzelnen Objekte: innerhalb einer Klasse bleibt die Reihenfolge die des
+// Nutzers — auch eine von Hand verdrehte Zeichnung wird also nicht umsortiert,
+// es wird nur der Platz des neuen Elements bestimmt.
+//
+// Die Regel ist bewusst einfach und ohne Geometrieprüfung:
+//   Fläche < Volumen < Architekturbauteil < freie Linie < Beschriftung
+// Flächen liegen damit hinter allem, Linien über Wänden; Text und Bemaßung
+// sind vorn. Das gilt auch dann, wenn der Nutzer die Reihenfolge vorher
+// durcheinandergebracht hat: das neue Element ordnet sich an der Grenze seiner
+// Klasse ein (siehe `Document::einfuege_index`), bestehende Objekte rücken nur.
+
+/// Rang der Fläche (Füllfläche, Schraffur): ganz hinten.
+pub const RANG_FLAECHE: u8 = 0;
+/// Rang des Volumens: Fläche mit Höhe, gehört über die Füllflächen.
+pub const RANG_VOLUMEN: u8 = 1;
+/// Rang der Architekturbauteile (Wand, Tür, Fenster, Treppe, Block).
+pub const RANG_BAUTEIL: u8 = 2;
+/// Rang der freien Linien (Punkt, Linie, Polylinie, Spline, Rechteck, Kreis,
+/// Bogen, Ellipse) — sie sollen über Wänden liegen.
+pub const RANG_LINIE: u8 = 3;
+/// Rang der Beschriftung (Text, Maß, Höhenkote): immer vorn.
+pub const RANG_BESCHRIFTUNG: u8 = 4;
+
+impl EntityKind {
+    /// Zeichenrang dieser Objektart (siehe Konstanten `RANG_*`).
+    pub fn zeichenrang(&self) -> u8 {
+        match self {
+            EntityKind::Fill { .. } => RANG_FLAECHE,
+            EntityKind::Volume { .. } => RANG_VOLUMEN,
+            EntityKind::Wall { .. }
+            | EntityKind::Door { .. }
+            | EntityKind::Window { .. }
+            | EntityKind::Stair { .. }
+            | EntityKind::BlockRef { .. } => RANG_BAUTEIL,
+            EntityKind::Point { .. }
+            | EntityKind::Line { .. }
+            | EntityKind::Circle { .. }
+            | EntityKind::Arc { .. }
+            | EntityKind::Ellipse { .. }
+            | EntityKind::Polyline { .. }
+            | EntityKind::Spline { .. } => RANG_LINIE,
+            EntityKind::Text { .. }
+            | EntityKind::Dim { .. }
+            | EntityKind::DimChain { .. }
+            | EntityKind::Elevation { .. } => RANG_BESCHRIFTUNG,
+        }
+    }
+}
+
+impl Entity {
+    /// Zeichenrang dieses Objekts (siehe `EntityKind::zeichenrang`).
+    pub fn zeichenrang(&self) -> u8 {
+        self.kind.zeichenrang()
+    }
+}
+
 fn default_pattern_scale() -> f64 {
     100.0
 }
@@ -1286,7 +1349,33 @@ impl Document {
         }
     }
 
-    pub fn add_entity(&mut self, mut e: Entity) -> Id {
+    /// Platz für ein neu eingefügtes Element mit diesem Zeichenrang.
+    ///
+    /// Grundsatz: unter **allen** Objekten mit höherem Rang (nichts darf eine
+    /// Linie oder Wand überdecken), innerhalb des eigenen Rangs über den schon
+    /// vorhandenen. Der Platz ist deshalb das Minimum aus
+    /// - der ersten Stelle mit höherem Rang (Klassengrenze) und
+    /// - direkt hinter dem letzten Objekt gleichen Rangs.
+    ///
+    /// Bestehende Objekte werden nie umsortiert; sie rücken nur um eine Stelle.
+    /// Damit bleibt eine von Hand verdrehte Reihenfolge des Nutzers erhalten,
+    /// und das neue Element landet trotzdem hinter Flächen bzw. vor Linien.
+    pub fn einfuege_index(&self, rang: u8) -> usize {
+        let ents = self.ents();
+        let erster_hoeher = ents
+            .iter()
+            .position(|e| e.zeichenrang() > rang)
+            .unwrap_or(ents.len());
+        let letzter_gleich = ents.iter().rposition(|e| e.zeichenrang() == rang);
+        match letzter_gleich {
+            Some(i) => erster_hoeher.min(i + 1),
+            None => erster_hoeher,
+        }
+    }
+
+    /// Fügt ein neues Element ranggerecht ein und meldet Id und Platz
+    /// (1-basiert wie in `modify.order`).
+    pub fn insert_ranked(&mut self, mut e: Entity) -> (Id, usize) {
         if e.id == 0 {
             e.id = self.new_id();
         }
@@ -1294,9 +1383,17 @@ impl Document {
             e.layer = self.current_layer;
         }
         let id = e.id;
-        self.ents_mut().push(e);
+        let platz = self.einfuege_index(e.zeichenrang());
+        self.ents_mut().insert(platz, e);
         self.modified = true;
-        id
+        (id, platz)
+    }
+
+    /// Fügt ein neues Element ein. Der Platz kommt aus dem Zeichenrang
+    /// (`insert_ranked`) — neu gezeichnete Objekte ordnen sich damit von
+    /// selbst: Flächen nach hinten, Linien über Wände, Beschriftung nach vorn.
+    pub fn add_entity(&mut self, e: Entity) -> Id {
+        self.insert_ranked(e).0
     }
 
     pub fn remove_entity(&mut self, id: Id) -> Option<Entity> {

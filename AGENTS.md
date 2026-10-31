@@ -144,6 +144,13 @@ Mit dem Nutzer abgestimmt — nicht „verbessern“:
   Offen ist nur noch die **Mehrfachauswahl** (`panels::multi_props`): sie hat
   ihren eigenen Maler und muss auf denselben Renderer mit „*variiert*“ umgestellt
   werden.
+- **Zeichenrang (T0048)**: Neue Elemente ordnen sich beim Einfügen selbst in die
+  Zeichenreihenfolge ein — Fläche (0) < Volumen (1) < Bauteil (2) < Linie (3) <
+  Beschriftung (4), Konstanten `model::RANG_*`, Prüfung in
+  `EntityKind::zeichenrang`. Eingefügt wird **nur** über
+  `Document::insert_ranked` (bzw. `add_entity`, das dorthin delegiert); bestehende
+  Objekte werden nie umsortiert, sie rücken nur. Wer eine Objektart ergänzt, ordnet
+  sie dort einer Klasse zu. Details: `docs/ARCHITEKTUR.md` → „Zeichenrang“.
 - **Polarfang** 45° (Toleranz 6°); Fangmodi END, SCHN, MIT, ZEN, QUA, LOT, NÄC, RAS, POL.
 - **Treppen** sind von der Kontur her ein **Rechteck**: erster und zweiter Klick
   liegen auf der **Außenkante** (Länge), der dritte setzt die Breite dorthin, wo

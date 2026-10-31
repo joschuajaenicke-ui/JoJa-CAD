@@ -25,11 +25,17 @@ fn last_id(s: &Session) -> u64 {
 
 /// Zeichnet je ein Element jedes unterstützten Typs und gibt (Name, Id) zurück.
 fn alle_elemente(s: &mut Session) -> Vec<(&'static str, u64)> {
+    // Die Id kommt aus der Antwort der Action, nicht aus dem Listenplatz:
+    // seit T0048 ordnen sich neue Elemente nach ihrem Zeichenrang ein (T0048).
     macro_rules! zeichnen {
         ($s:ident, $out:ident, $name:expr, $action:expr, $params:expr) => {{
-            $s.execute($action, &$params)
+            let antwort = $s
+                .execute($action, &$params)
                 .unwrap_or_else(|e| panic!("{}: {e}", $action));
-            $out.push(($name, last_id($s)));
+            let id = antwort["created"][0]
+                .as_u64()
+                .unwrap_or_else(|| panic!("{}: kein 'created' in {}", $action, antwort));
+            $out.push(($name, id));
         }};
     }
     let mut out: Vec<(&'static str, u64)> = Vec::new();
@@ -93,7 +99,7 @@ fn alle_elemente(s: &mut Session) -> Vec<(&'static str, u64)> {
         "draw.wall",
         json!({"a": [0, 0], "b": [5, 0], "thickness": 0.30})
     );
-    let wand = last_id(s);
+    let wand = out.last().unwrap().1;
     zeichnen!(s, out, 
         "Tür",
         "draw.door",

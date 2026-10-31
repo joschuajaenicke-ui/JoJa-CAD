@@ -1007,7 +1007,7 @@ fn add_fill(
         .filter(|h| h.len() >= 3)
         .collect();
     // Kein Randobjekt bekannt (Kontur aus Punkten): die Fläche wird angehängt.
-    add_fill_rings(doc, boundary, holes, p, rand_vorgabe, &[], ebene)
+    add_fill_rings(doc, boundary, holes, p, rand_vorgabe, ebene)
 }
 
 /// Wie [`add_fill`], aber mit bereits ermittelten Ringen und einstellbarer
@@ -1025,10 +1025,9 @@ fn add_fill_rings(
     holes: Vec<Vec<Vec2>>,
     p: &Params,
     rand_vorgabe: bool,
-    unter: &[Id],
     ebene: Option<&str>,
 ) -> Result<Value, String> {
-    add_filled(doc, boundary, holes, p, rand_vorgabe, unter, false, ebene)
+    add_filled(doc, boundary, holes, p, rand_vorgabe, false, ebene)
 }
 
 /// Gemeinsamer Abschluss von Füllfläche und Volumen.
@@ -1042,7 +1041,6 @@ fn add_filled(
     holes: Vec<Vec<Vec2>>,
     p: &Params,
     rand_vorgabe: bool,
-    unter: &[Id],
     volumen: bool,
     ebene: Option<&str>,
 ) -> Result<Value, String> {
@@ -1084,20 +1082,11 @@ fn add_filled(
     };
     let mut e = Entity::new(idn, layer, kind);
     apply_common(doc, &mut e, p, layer);
-    // Zeichenreihenfolge: die Liste `entities` IST die Reihenfolge, Index 0
-    // liegt ganz hinten. Die Füllfläche gehört unter die Objekte, die sie
-    // begrenzen — sonst überdeckt ihre Fläche deren Linien und der Rand des
-    // Raums verschwindet. Sie kommt deshalb direkt hinter das vorderste
-    // Randobjekt, also an dessen Platz; die übrigen Objekte rücken nur nach
-    // hinten und behalten ihre relative Lage. Ohne Randobjekte (Kontur aus
-    // freien Punkten) bleibt es beim Anhängen wie bisher.
-    let ziel = unter
-        .iter()
-        .filter_map(|id| doc.ents().iter().position(|o| o.id == *id))
-        .min()
-        .unwrap_or(doc.ents().len());
-    doc.ents_mut().insert(ziel, e);
-    doc.modified = true;
+    // Zeichenreihenfolge: der Platz kommt aus dem Zeichenrang (T0048). Eine
+    // Füllfläche steht ganz hinten — ihre Umgrenzung (Wände, Linien) bleibt
+    // dadurch sichtbar, auch wenn sie über einer schon vorhandenen Fläche
+    // liegt. `idn` bleibt die vorab vergebene Id.
+    let (_, ziel) = doc.insert_ranked(e);
     Ok(json!({"ok": true, "created": [idn], "position": ziel + 1}))
 }
 
@@ -1402,7 +1391,7 @@ pub fn execute(doc: &mut Document, id: &str, params: &Value) -> Result<Value, St
             // Umrandung an: die Kontur, die hier übernommen wird (z. B. der
             // Wandkörper), verschwindet im Volumen — dessen eigene Kante wird
             // damit zur sichtbaren Kante.
-            add_filled(doc, boundary, holes, &p, true, &[], true, ebene)
+            add_filled(doc, boundary, holes, &p, true, true, ebene)
         }
         "draw.volume.points" => {
             let boundary = p
@@ -1415,7 +1404,7 @@ pub fn execute(doc: &mut Document, id: &str, params: &Value) -> Result<Value, St
                 .into_iter()
                 .filter(|h| h.len() >= 3)
                 .collect();
-            add_filled(doc, boundary, holes, &p, true, &[], true, ebene)
+            add_filled(doc, boundary, holes, &p, true, true, ebene)
         }
         "draw.volume.paint" => {
             let pt = require_pt(&p, "p")?;
@@ -1425,7 +1414,7 @@ pub fn execute(doc: &mut Document, id: &str, params: &Value) -> Result<Value, St
                 &crate::boundary::BoundaryOpts::default(),
             )
             .map_err(|e| e.message().to_string())?;
-            add_filled(doc, g.outer, g.holes, &p, false, &g.border_entities, true, ebene)
+            add_filled(doc, g.outer, g.holes, &p, false, true, ebene)
         }
         // Farbeimer: ein Klick in die leere Fläche, die Umgrenzung ermittelt der
         // Kern (`boundary::detect_boundary`) aus derselben Displayliste, die
@@ -1440,9 +1429,10 @@ pub fn execute(doc: &mut Document, id: &str, params: &Value) -> Result<Value, St
                 &crate::boundary::BoundaryOpts::default(),
             )
             .map_err(|e| e.message().to_string())?;
-            // Die ermittelte Umgrenzung nennt ihre Objekte: unter denen liegt
-            // die Fläche in der Zeichenreihenfolge (`border_entities`).
-            add_fill_rings(doc, g.outer, g.holes, &p, false, &g.border_entities, ebene)
+            // Die Fläche ordnet sich über den Zeichenrang ein (T0048): sie
+            // liegt hinter der ermittelten Umgrenzung (`border_entities`),
+            // deren Platz dafür nicht mehr gebraucht wird.
+            add_fill_rings(doc, g.outer, g.holes, &p, false, ebene)
         }
         "draw.text" => {
             let pt = require_pt(&p, "p")?;
@@ -1920,7 +1910,9 @@ pub fn execute(doc: &mut Document, id: &str, params: &Value) -> Result<Value, St
                     let mut ne = transform::transform_entity(&e, &m);
                     ne.id = doc.new_id();
                     new_ids.push(ne.id);
-                    doc.ents_mut().push(ne);
+                    // Kopien sind neue Elemente und ordnen sich nach ihrem
+                    // Zeichenrang ein (T0048).
+                    doc.insert_ranked(ne);
                 } else if let Some(em) = doc.entity_mut(*eid) {
                     *em = transform::transform_entity(em, &m);
                 }
@@ -1943,7 +1935,9 @@ pub fn execute(doc: &mut Document, id: &str, params: &Value) -> Result<Value, St
                     let mut ne = transform::transform_entity(&e, &m);
                     ne.id = doc.new_id();
                     new_ids.push(ne.id);
-                    doc.ents_mut().push(ne);
+                    // Kopien sind neue Elemente und ordnen sich nach ihrem
+                    // Zeichenrang ein (T0048).
+                    doc.insert_ranked(ne);
                 } else if let Some(em) = doc.entity_mut(*eid) {
                     *em = transform::transform_entity(em, &m);
                 }
@@ -1964,7 +1958,7 @@ pub fn execute(doc: &mut Document, id: &str, params: &Value) -> Result<Value, St
                     let mut ne = transform::transform_entity(&e, &m);
                     ne.id = doc.new_id();
                     new_ids.push(ne.id);
-                    doc.ents_mut().push(ne);
+                    doc.insert_ranked(ne);
                 } else if let Some(em) = doc.entity_mut(*eid) {
                     *em = transform::transform_entity(em, &m);
                 }
