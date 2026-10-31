@@ -938,6 +938,12 @@ pub struct App {
     pub verweil: crate::canvas::VerweilFang,
     /// Leistungsanzeige (Umschalt+F3): Messwerte je Bild und ihr Verlauf
     pub perf: crate::perf::Perf,
+    /// Objekte einer laufenden Mehrfachauswahl, für die das Eigenschaften-Panel
+    /// gerade zeichnet. Solange hier mehr als ein Objekt steht, schickt
+    /// `props::setzen` jede Eigenschaftsänderung an **alle** diese Objekte —
+    /// so gilt jede Eigenschaft eines einzelnen Objekts auch für die Auswahl.
+    /// Außerhalb des Panel-Zeichnens leer.
+    pub mehrfach_ziel: Vec<Id>,
 }
 
 impl App {
@@ -1009,6 +1015,7 @@ impl App {
             halt: Vec::new(),
             verweil: crate::canvas::VerweilFang::default(),
             perf: crate::perf::Perf::default(),
+            mehrfach_ziel: Vec::new(),
         };
         app.ui.show_grid = show_grid;
         app.ui.lineweights = lineweights;

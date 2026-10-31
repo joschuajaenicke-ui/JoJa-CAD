@@ -124,6 +124,50 @@ pub fn protokoll() -> Vec<&'static str> {
     PROTOKOLL.with(|p| p.borrow().clone())
 }
 
+/// Eine Eigenschaftsänderung aus dem Panel ausführen — **der eine Weg** für
+/// jedes `modify.set` aus dieser Datei.
+///
+/// Ist gerade eine Mehrfachauswahl im Panel (`App::mehrfach_ziel`), geht die
+/// Änderung an **alle** Objekte dieser Gruppe, nicht nur an das Objekt, dessen
+/// Werte angezeigt wurden. Genau dadurch gilt jede Eigenschaft, die ein
+/// einzelnes Objekt hat — Dicke, Schraffur, Füllfarbe, Muster, Breite, Höhe,
+/// Stufen, Schrift —, ohne eigenen Code auch für die Auswahl: die Zeichnung
+/// der Zeilen gibt es nur einmal, nur das Ziel der Änderung ist mehrfach.
+pub fn setzen(app: &mut App, params: &serde_json::Value) {
+    let mut params = params.clone();
+    let ids = app.mehrfach_ziel.clone();
+    if ids.len() > 1 {
+        if let Some(o) = params.as_object_mut() {
+            o.insert("ids".into(), serde_json::json!(ids));
+        }
+    }
+    let leer = params
+        .get("ids")
+        .and_then(|v| v.as_array())
+        .map(|a| a.is_empty())
+        .unwrap_or(true);
+    if leer {
+        return;
+    }
+    let _ = app.session_mut().execute("modify.set", &params);
+    app.mark_changed();
+}
+
+/// Unterscheiden sich die Objekte der laufenden Mehrfachauswahl? Verglichen
+/// wird das gespeicherte Objekt ohne Kennung (Art, Stil, Layer) — nur dann
+/// sind die angezeigten Werte des Referenzobjekts für alle gültig.
+pub fn mehrfach_abweichend(app: &App) -> bool {
+    let kurz = |e: &Entity| format!("{:?}|{:?}|{}", e.kind, e.style, e.layer);
+    let ids = &app.mehrfach_ziel;
+    let Some(erste) = ids.first().and_then(|id| app.doc().entity(*id)) else {
+        return false;
+    };
+    let muster = kurz(erste);
+    ids.iter()
+        .skip(1)
+        .any(|id| app.doc().entity(*id).map(kurz).is_some_and(|k| k != muster))
+}
+
 /// Eine Zeile anmelden. Jede Zeile im Panel ruft das genau einmal.
 fn zeile(key: &'static str) {
     PROTOKOLL.with(|p| p.borrow_mut().push(key));
@@ -161,13 +205,25 @@ pub fn kopf(app: &App, ui: &mut Ui, ziel: Ziel, titel: &str, icon: &str) {
             ui.label(theme::dim("gilt für das nächste Element"));
         }
         Ziel::Auswahl(id) => {
-            let layer_name = app
-                .doc()
-                .entity(id)
-                .map(|e| e.layer)
-                .and_then(|l| app.doc().layer(l).map(|l| l.name.clone()))
-                .unwrap_or_else(|| "Blatt".to_string());
-            ui.label(theme::dim(format!("#{id} · Layer {layer_name}")));
+            if app.mehrfach_ziel.len() > 1 {
+                // Mehrfachauswahl einer Art: das Referenzobjekt liefert die
+                // Werte, geändert wird an allen.
+                let n = app.mehrfach_ziel.len();
+                ui.label(theme::dim(format!("{n} Objekte · Änderung gilt für alle")));
+                if mehrfach_abweichend(app) {
+                    ui.label(theme::faint(
+                        "*variiert* — die Objekte unterscheiden sich; eine Änderung setzt alle gleich",
+                    ));
+                }
+            } else {
+                let layer_name = app
+                    .doc()
+                    .entity(id)
+                    .map(|e| e.layer)
+                    .and_then(|l| app.doc().layer(l).map(|l| l.name.clone()))
+                    .unwrap_or_else(|| "Blatt".to_string());
+                ui.label(theme::dim(format!("#{id} · Layer {layer_name}")));
+            }
         }
     }
     ui.add_space(6.0);
@@ -198,6 +254,11 @@ pub fn reihenfolge(app: &mut App, ui: &mut Ui, ziel: Ziel) {
             Ziel::Neu => {
                 ui.add_enabled(false, egui::Label::new(theme::mono("—")));
                 ui.label(theme::faint("nach dem Platzieren"));
+            }
+            // Mehrfachauswahl: eine gemeinsame Position gibt es nicht.
+            Ziel::Auswahl(_) if app.mehrfach_ziel.len() > 1 => {
+                ui.add_enabled(false, egui::Label::new(theme::mono("—")));
+                ui.label(theme::faint(format!("je Objekt · {total} im Blatt")));
             }
             Ziel::Auswahl(_) => {
                 ui.add(crate::widgets::zahl(&mut wunsch, 1.0, 1..=total.max(1) as i32));
@@ -273,6 +334,36 @@ pub fn gemein(
     farbe_label: &str,
 ) -> Gemein {
     let mut out = Gemein::default();
+    // Mehrfachauswahl: weichen die Werte ab, zeigen die Felder `*variiert*`
+    // statt des Werts des Referenzobjekts.
+    let viele: Vec<Id> = app.mehrfach_ziel.clone();
+    let mehrfach = viele.len() > 1;
+    let gleich_layer = !mehrfach
+        || viele
+            .iter()
+            .all(|i| app.doc().entity(*i).map(|e| e.layer) == Some(layer));
+    let gleich_farbe = !mehrfach
+        || viele.iter().all(|i| {
+            app.doc()
+                .entity(*i)
+                .map(|e| app.doc().effective_color(e))
+                .map(|c| Some(c) == Some(farbe_gezeigt))
+                .unwrap_or(false)
+        });
+    let gleich_staerke = !mehrfach
+        || viele.iter().all(|i| {
+            app.doc()
+                .entity(*i)
+                .map(|e| (app.doc().effective_line_weight(e) - staerke).abs() < 1e-6)
+                .unwrap_or(false)
+        });
+    let gleich_typ = !mehrfach
+        || viele.iter().all(|i| {
+            app.doc()
+                .entity(*i)
+                .map(|e| app.doc().effective_line_type(e) == linientyp)
+                .unwrap_or(false)
+        });
 
     // Layer
     zeile("layer");
@@ -284,7 +375,21 @@ pub fn gemein(
         .collect();
     let mut new_layer = layer;
     widgets::field_row(ui, "Layer", |ui| {
-        if let Some(l) = panels::pick_combo(ui, &ziel.salt("layer"), new_layer, &layer_items) {
+        let gewaehlt = if gleich_layer {
+            panels::pick_combo(ui, &ziel.salt("layer"), new_layer, &layer_items)
+        } else {
+            // verschiedene Layer: Feld zeigt *variiert*, Auswahl setzt alle
+            panels::dropdown(ui, &ziel.salt("layer"), "*variiert*", None, |ui| {
+                let mut out = None;
+                for (id, name) in &layer_items {
+                    if ui.selectable_label(false, name).clicked() {
+                        out = Some(*id);
+                    }
+                }
+                out
+            })
+        };
+        if let Some(l) = gewaehlt {
             new_layer = l;
         }
     });
@@ -294,10 +399,17 @@ pub fn gemein(
 
     // Farbe
     zeile("farbe");
-    let by_layer = farbe.is_none();
+    let by_layer = farbe.is_none() && gleich_farbe;
     let mut picked: Option<Option<Color>> = None;
     widgets::field_row(ui, farbe_label, |ui| {
-        picked = panels::color_combo(ui, &ziel.salt("farbe"), farbe_gezeigt, by_layer, false, "vom Layer");
+        picked = panels::color_combo(
+            ui,
+            &ziel.salt("farbe"),
+            farbe_gezeigt,
+            by_layer,
+            !gleich_farbe,
+            "vom Layer",
+        );
     });
     if let Some(v) = picked {
         out.farbe = Some(v);
@@ -308,7 +420,8 @@ pub fn gemein(
         zeile("staerke");
         let mut picked_w: Option<f64> = None;
         widgets::field_row(ui, "Stärke", |ui| {
-            picked_w = panels::weight_combo(ui, &ziel.salt("staerke"), staerke, false);
+            picked_w =
+                panels::weight_combo(ui, &ziel.salt("staerke"), staerke, !gleich_staerke);
         });
         if let Some(w) = picked_w {
             out.staerke = Some(w);
@@ -318,7 +431,8 @@ pub fn gemein(
         zeile("linientyp");
         let mut picked_lt: Option<jjcad_core::style::LineType> = None;
         widgets::field_row(ui, "Linientyp", |ui| {
-            picked_lt = panels::linetype_combo(ui, &ziel.salt("linientyp"), linientyp, false);
+            picked_lt =
+                panels::linetype_combo(ui, &ziel.salt("linientyp"), linientyp, !gleich_typ);
         });
         if let Some(lt) = picked_lt {
             out.linientyp = Some(lt);
@@ -368,8 +482,7 @@ pub fn gemein_nach_objekt(app: &mut App, id: Id, a: &Gemein) {
         }
     }
     if params.as_object().map(|m| m.len() > 1).unwrap_or(false) {
-        let _ = app.session_mut().execute("modify.set", &params);
-        app.mark_changed();
+        setzen(app, &params);
     }
 }
 
@@ -585,7 +698,16 @@ pub fn text(app: &mut App, ui: &mut Ui, ziel: Ziel) {
                 let mut neu = angezeigt;
                 setze_stil(&mut neu, schluessel, wert);
                 if hat_markierung {
-                    panels::auszeichnen(app, id, von, bis, schluessel, wert);
+                    // Mehrfachauswahl: die Auszeichnung gilt für jedes
+                    // ausgewählte Textfeld — nicht nur für das angezeigte.
+                    let ziele = if app.mehrfach_ziel.len() > 1 {
+                        app.mehrfach_ziel.clone()
+                    } else {
+                        vec![id]
+                    };
+                    for ziel_id in ziele {
+                        panels::auszeichnen(app, ziel_id, von, bis, schluessel, wert);
+                    }
                     // Markierung erhalten, damit die zweite Auszeichnung nicht
                     // neu markiert werden muss.
                     let feld_id = egui::Id::new("sel_text_inhalt");
@@ -706,8 +828,7 @@ pub fn text(app: &mut App, ui: &mut Ui, ziel: Ziel) {
                 }
             }
             if geaendert {
-                let _ = app.session_mut().execute("modify.set", &params);
-                app.mark_changed();
+                setzen(app, &params);
             }
         }
     }
@@ -1141,8 +1262,7 @@ pub fn wand(app: &mut App, ui: &mut Ui, ziel: Ziel) {
                 }
             }
             if geaendert {
-                let _ = app.session_mut().execute("modify.set", &params);
-                app.mark_changed();
+                setzen(app, &params);
             }
         }
     }
@@ -1324,8 +1444,7 @@ pub fn tuer(app: &mut App, ui: &mut Ui, ziel: Ziel) {
                 }
             }
             if geaendert {
-                let _ = app.session_mut().execute("modify.set", &params);
-                app.mark_changed();
+                setzen(app, &params);
             }
         }
     }
@@ -1503,8 +1622,7 @@ pub fn fenster(app: &mut App, ui: &mut Ui, ziel: Ziel) {
                 }
             }
             if geaendert {
-                let _ = app.session_mut().execute("modify.set", &params);
-                app.mark_changed();
+                setzen(app, &params);
             }
         }
     }
@@ -1734,8 +1852,7 @@ pub fn fuellflaeche(app: &mut App, ui: &mut Ui, ziel: Ziel) {
                 }
             }
             if geaendert {
-                let _ = app.session_mut().execute("modify.set", &params);
-                app.mark_changed();
+                setzen(app, &params);
             }
         }
     }
@@ -1927,8 +2044,7 @@ pub fn bemassung(app: &mut App, ui: &mut Ui, ziel: Ziel) {
                 }
             }
             if geaendert {
-                let _ = app.session_mut().execute("modify.set", &params);
-                app.mark_changed();
+                setzen(app, &params);
             }
         }
     }
@@ -2381,8 +2497,7 @@ pub fn einfach(app: &mut App, ui: &mut Ui, ziel: Ziel, art: Einfach) {
                 }
             }
             if geaendert {
-                let _ = app.session_mut().execute("modify.set", &params);
-                app.mark_changed();
+                setzen(app, &params);
             }
         }
     }
@@ -2622,8 +2737,7 @@ pub fn volumen(app: &mut App, ui: &mut Ui, ziel: Ziel) {
                 }
             }
             if geaendert {
-                let _ = app.session_mut().execute("modify.set", &params);
-                app.mark_changed();
+                setzen(app, &params);
             }
         }
     }
@@ -2987,11 +3101,126 @@ pub fn treppe(app: &mut App, ui: &mut Ui, ziel: Ziel) {
                 }
             }
             if geaendert {
-                let _ = app.session_mut().execute("modify.set", &params);
-                app.mark_changed();
+                setzen(app, &params);
             }
         }
     }
+}
+
+// ---------------------------------------------------------------------------
+// Mehrfachauswahl
+// ---------------------------------------------------------------------------
+
+/// Eigenschaften einer Mehrfachauswahl.
+///
+/// Gezeichnet wird **je Objektart** genau der Abschnitt, den dieselbe Funktion
+/// auch für ein einzelnes Objekt zeichnet (`wand`, `tuer`, `text`, …). Die
+/// angezeigten Werte stammen vom ersten Objekt der Gruppe, das Ziel einer
+/// Änderung ist die **ganze Gruppe**: [`setzen`] schickt jedes `modify.set` an
+/// alle Kennungen in `App::mehrfach_ziel`.
+///
+/// Damit gilt jede Eigenschaft, die ein einzelnes Objekt hat — Dicke, Höhe,
+/// Schraffur, Füllfarbe, Material, Ausrichtung, Breite, Muster, Stufen,
+/// Schriftgröße, Auszeichnung —, ohne eigenen Code auch für die Auswahl. Wer
+/// eine Eigenschaft ergänzt, ergänzt sie wie bisher **einmal** im Painter der
+/// Art; für die Mehrfachauswahl ist nichts nachzutragen.
+///
+/// Eine Auswahl über mehrere Arten hinweg zeigt je Art einen Abschnitt;
+/// geändert wird immer nur die Gruppe, zu der die Zeile gehört.
+pub fn mehrfach(app: &mut App, ui: &mut Ui, ids: &[Id]) {
+    let mut gruppen: Vec<(std::mem::Discriminant<EntityKind>, Vec<Id>)> = Vec::new();
+    for id in ids {
+        let Some(e) = app.doc().entity(*id) else { continue };
+        let d = std::mem::discriminant(&e.kind);
+        match gruppen.iter_mut().find(|(g, _)| *g == d) {
+            Some((_, liste)) => liste.push(*id),
+            None => gruppen.push((d, vec![*id])),
+        }
+    }
+    if gruppen.is_empty() {
+        return;
+    }
+
+    section_title(ui, "select", "Mehrfachauswahl");
+    let anzahl: usize = gruppen.iter().map(|(_, l)| l.len()).sum();
+    if gruppen.len() > 1 {
+        ui.label(theme::dim(format!(
+            "{anzahl} Objekte · {} Arten",
+            gruppen.len()
+        )));
+    } else {
+        ui.label(theme::dim(format!("{anzahl} Objekte")));
+    }
+
+    let vorher = std::mem::take(&mut app.mehrfach_ziel);
+    for (i, (_, liste)) in gruppen.iter().enumerate() {
+        if i > 0 {
+            ui.add_space(8.0);
+            widgets::hline(ui);
+            ui.add_space(6.0);
+        }
+        app.mehrfach_ziel = liste.clone();
+        let ziel = Ziel::Auswahl(liste[0]);
+        let art = app.doc().entity(liste[0]).map(|e| e.kind.clone());
+        match art {
+            Some(EntityKind::Text { .. }) => text(app, ui, ziel),
+            Some(EntityKind::Wall { .. }) => wand(app, ui, ziel),
+            Some(EntityKind::Door { .. }) => tuer(app, ui, ziel),
+            Some(EntityKind::Window { .. }) => fenster(app, ui, ziel),
+            Some(EntityKind::Fill { .. }) => fuellflaeche(app, ui, ziel),
+            Some(EntityKind::Dim { .. }) => bemassung(app, ui, ziel),
+            Some(EntityKind::Volume { .. }) => volumen(app, ui, ziel),
+            Some(EntityKind::Stair { .. }) => treppe(app, ui, ziel),
+            Some(kind) => {
+                if let Some(a) = Einfach::aus_objekt(&kind) {
+                    einfach(app, ui, ziel, a)
+                }
+            }
+            None => {}
+        }
+    }
+    app.mehrfach_ziel = vorher;
+
+    // ---- Auswertung über die ganze Auswahl ----
+    let ents: Vec<Entity> = ids
+        .iter()
+        .filter_map(|i| app.doc().entity(*i).cloned())
+        .collect();
+    let unit = app.unit();
+    ui.add_space(6.0);
+    widgets::hline(ui);
+    ui.add_space(4.0);
+    let (mut total_len, mut total_area) = (0.0f64, 0.0f64);
+    for e in &ents {
+        total_len += crate::panels::entity_length(e);
+        total_area += crate::panels::entity_area(e);
+    }
+    if total_len > 0.0 {
+        widgets::field_row(ui, "Gesamtlänge", |ui| {
+            ui.label(theme::mono(unit.format(total_len, unit.decimals())));
+        });
+    }
+    if total_area > 0.0 {
+        widgets::field_row(ui, "Gesamtfläche", |ui| {
+            ui.label(theme::mono(crate::panels::area_text(unit, total_area)));
+        });
+    }
+
+    ui.add_space(6.0);
+    ui.horizontal_wrapped(|ui| {
+        if ui.button("Verschieben").clicked() {
+            app.start_tool("modify.move");
+        }
+        if ui.button("Kopieren mit Basispunkt").clicked() {
+            app.start_tool("modify.copy");
+        }
+        if ui.button("Drehen").clicked() {
+            app.start_tool("modify.rotate");
+        }
+        if ui.button("Spiegeln").clicked() {
+            app.start_tool("modify.mirror");
+        }
+    });
 }
 
 // ---------------------------------------------------------------------------
@@ -3623,5 +3852,288 @@ mod tests {
                 "Objektart '{name}' hat kein Panel in props.rs"
             );
         }
+    }
+
+    // -----------------------------------------------------------------------
+    // Mehrfachauswahl (T0069)
+    // -----------------------------------------------------------------------
+
+    /// App mit zwei Wänden unterschiedlicher Dicke (in Metern gezeichnet,
+    /// gespeichert in mm) — der Fall „mehrere Wände, eine Dicke für alle“.
+    fn zwei_waende() -> (App, Id, Id) {
+        let mut app = App::with_ctx(egui::Context::default());
+        app.session_mut()
+            .execute("doc.settings", &json!({ "input_unit": "m" }))
+            .expect("Einheit");
+        app.session_mut()
+            .execute(
+                "draw.wall",
+                &json!({"a": [0.0, 0.0], "b": [3.0, 0.0], "thickness": 0.24,
+                        "hatch": "solid"}),
+            )
+            .expect("Wand 1");
+        let a = app.doc().ents().last().expect("Wand 1 fehlt").id;
+        app.session_mut()
+            .execute(
+                "draw.wall",
+                &json!({"a": [0.0, 2.0], "b": [4.0, 2.0], "thickness": 0.365,
+                        "hatch": "insulation"}),
+            )
+            .expect("Wand 2");
+        let b = app.doc().ents().last().expect("Wand 2 fehlt").id;
+        (app, a, b)
+    }
+
+    fn wand_dicke(app: &App, id: Id) -> f64 {
+        match &app.doc().entity(id).expect("Wand").kind {
+            EntityKind::Wall { thickness, .. } => *thickness,
+            k => panic!("keine Wand: {k:?}"),
+        }
+    }
+
+    fn wand_schraffur(app: &App, id: Id) -> Option<jjcad_core::style::FillPattern> {
+        match &app.doc().entity(id).expect("Wand").kind {
+            EntityKind::Wall { hatch, .. } => *hatch,
+            k => panic!("keine Wand: {k:?}"),
+        }
+    }
+
+    /// Eine Änderung aus dem Panel gilt für **alle** Objekte der Auswahl —
+    /// nicht nur für das Objekt, dessen Werte angezeigt werden.
+    #[test]
+    fn mehrfachauswahl_aendert_alle_waende() {
+        let (mut app, a, b) = zwei_waende();
+        app.mehrfach_ziel = vec![a, b];
+        setzen(
+            &mut app,
+            &json!({"ids": [a], "thickness": 0.30, "hatch": "insulation"}),
+        );
+        assert!((wand_dicke(&app, a) - 300.0).abs() < 1e-6, "Wand 1: {}", wand_dicke(&app, a));
+        assert!((wand_dicke(&app, b) - 300.0).abs() < 1e-6, "Wand 2: {}", wand_dicke(&app, b));
+        assert_eq!(
+            wand_schraffur(&app, a),
+            Some(jjcad_core::style::FillPattern::Insulation)
+        );
+        assert_eq!(
+            wand_schraffur(&app, b),
+            Some(jjcad_core::style::FillPattern::Insulation)
+        );
+    }
+
+    /// Gegenprobe: ohne laufende Mehrfachauswahl bleibt es beim einen Objekt.
+    #[test]
+    fn ohne_mehrfachauswahl_aendert_sich_nur_das_objekt() {
+        let (mut app, a, b) = zwei_waende();
+        setzen(&mut app, &json!({"ids": [a], "thickness": 0.30}));
+        assert!((wand_dicke(&app, a) - 300.0).abs() < 1e-6);
+        assert!((wand_dicke(&app, b) - 365.0).abs() < 1e-6, "Wand 2: {}", wand_dicke(&app, b));
+    }
+
+    /// Das Panel der Mehrfachauswahl zeichnet **dieselben Zeilen** wie das
+    /// Panel des einzelnen Objekts — für jede Objektart. Damit ist jede
+    /// Eigenschaft, die ein Objekt hat, auch in der Auswahl bedienbar; ein
+    /// zweiter Maler existiert nicht.
+    #[test]
+    fn mehrfachauswahl_zeigt_dieselben_zeilen_wie_das_objekt() {
+        use jjcad_core::geom::{v, Vec2, Vertex};
+        let arten: Vec<EntityKind> = vec![
+            EntityKind::Wall {
+                a: Vec2::ZERO,
+                b: v(3000.0, 0.0),
+                thickness: 240.0,
+                height: 2500.0,
+                align: jjcad_core::style::WallAlign::Center,
+                hatch: None,
+                material: String::new(),
+            },
+            EntityKind::Line { a: Vec2::ZERO, b: v(1000.0, 0.0) },
+            EntityKind::Polyline {
+                verts: vec![Vertex::new(Vec2::ZERO), Vertex::new(v(1000.0, 0.0))],
+                closed: false,
+            },
+            EntityKind::Spline {
+                verts: vec![Vertex::new(Vec2::ZERO), Vertex::new(v(1000.0, 0.0))],
+                closed: false,
+            },
+            EntityKind::Circle { c: Vec2::ZERO, r: 500.0 },
+            EntityKind::Arc { c: Vec2::ZERO, r: 500.0, a0: 0.0, a1: 1.5 },
+            EntityKind::Ellipse { c: Vec2::ZERO, rx: 800.0, ry: 400.0, rot: 0.0 },
+            EntityKind::Point { p: Vec2::ZERO },
+            EntityKind::Text {
+                p: Vec2::ZERO,
+                text: "Hallo".into(),
+                height: 250.0,
+                angle: 0.0,
+                align: TextAlignH::Left,
+                valign: TextAlignV::Top,
+                bold: false,
+                italic: false,
+                underline: false,
+                superscript: false,
+                runs: Vec::new(),
+                font: TextFont::default(),
+            },
+            EntityKind::Fill {
+                boundary: vec![Vec2::ZERO, v(1000.0, 0.0), v(1000.0, 1000.0)],
+                holes: Vec::new(),
+                pattern: jjcad_core::style::FillPattern::Solid,
+                pattern_angle: 0.0,
+                pattern_scale: 100.0,
+                border: true,
+            },
+            EntityKind::Volume {
+                boundary: vec![Vec2::ZERO, v(2000.0, 0.0), v(2000.0, 2000.0)],
+                holes: Vec::new(),
+                pattern: jjcad_core::style::FillPattern::Solid,
+                pattern_angle: 0.0,
+                pattern_scale: 100.0,
+                border: true,
+                height: 2750.0,
+            },
+            EntityKind::Stair {
+                a: Vec2::ZERO,
+                b: v(4640.0, 0.0),
+                width: 1000.0,
+                steps: 16,
+                height: 2750.0,
+                auto_steps: true,
+                cut: true,
+                unten: None,
+                oben: None,
+            },
+        ];
+
+        for (i, kind) in arten.into_iter().enumerate() {
+            let mut app = App::with_ctx(egui::Context::default());
+            app.session_mut()
+                .execute("doc.settings", &json!({ "input_unit": "m" }))
+                .expect("Einheit");
+            let layer = app.doc().current_layer;
+            let mut ids = Vec::new();
+            for _ in 0..2 {
+                let id = app.doc_mut().new_id();
+                app.doc_mut().add_entity(Entity::new(id, layer, kind.clone()));
+                ids.push(id);
+            }
+
+            // Einzelnes Objekt: sein eigenes Panel.
+            app.session_mut().selection = vec![ids[0]];
+            let einzeln = zeichne(&mut app);
+
+            // Beide: der Abschnitt derselben Art in der Mehrfachauswahl.
+            app.session_mut().selection = ids.clone();
+            let mehrfach_zeilen = zeichne(&mut app);
+
+            assert!(
+                !einzeln.is_empty(),
+                "Fall {i}: das Objekt hat gar keine Zeilen"
+            );
+            assert_eq!(
+                mehrfach_zeilen, einzeln,
+                "Fall {i} ({kind:?}): Mehrfachauswahl zeigt andere Zeilen als das Objekt"
+            );
+        }
+    }
+
+    /// Auswahl über mehrere Arten: je Art ein Abschnitt — die Zeilen beider
+    /// Arten stehen im Panel, geändert wird je Gruppe.
+    #[test]
+    fn gemischte_auswahl_zeigt_je_art_einen_abschnitt() {
+        let (mut app, a, b) = zwei_waende();
+        let line = app
+            .session_mut()
+            .execute(
+                "draw.line",
+                &json!({"a": [0.0, 5.0], "b": [2.0, 5.0]}),
+            )
+            .expect("Linie")["created"][0]
+            .as_u64()
+            .expect("Linien-Id");
+        app.session_mut().selection = vec![a, b, line];
+        let zeilen = zeichne(&mut app);
+        // Wandzeilen …
+        assert!(zeilen.contains(&"dicke"), "Dicke fehlt: {zeilen:?}");
+        assert!(zeilen.contains(&"schraffur"), "Schraffur fehlt: {zeilen:?}");
+        // … und die Zeilen der Linie (aus `Einfach`, hier `geometrie`).
+        assert!(
+            zeilen.contains(&"geometrie"),
+            "die Linie hat in der gemischten Auswahl keinen Abschnitt: {zeilen:?}"
+        );
+        // Der Abschnitt der Wand steht genau einmal (eine Gruppe), der der
+        // Linie genau einmal — nicht doppelt.
+        assert_eq!(
+            zeilen.iter().filter(|z| **z == "dicke").count(),
+            1,
+            "Wandabschnitt doppelt: {zeilen:?}"
+        );
+    }
+
+    /// Auch die gemeinsamen Zeilen (Farbe, Stärke, Linientyp) laufen über
+    /// `setzen` — eine Stelle für alle Eigenschaften.
+    #[test]
+    fn gemeinsame_zeilen_aendern_alle_objekte() {
+        let (mut app, a, b) = zwei_waende();
+        app.mehrfach_ziel = vec![a, b];
+        let mut aenderung = Gemein::default();
+        aenderung.farbe = Some(Some(Color::rgb(200, 30, 30)));
+        aenderung.staerke = Some(0.5);
+        gemein_nach_objekt(&mut app, a, &aenderung);
+        for id in [a, b] {
+            let e = app.doc().entity(id).expect("Wand");
+            assert_eq!(e.style.color, Some(Color::rgb(200, 30, 30)), "#{id}");
+            assert_eq!(e.style.line_weight, Some(0.5), "#{id}");
+        }
+    }
+
+    /// Das Ziel der Mehrfachauswahl gilt nur für das Bild, in dem das Panel
+    /// gezeichnet wurde — danach schreibt jede Zeile wieder an ihr Objekt.
+    #[test]
+    fn mehrfachziel_wird_nach_dem_zeichnen_zurueckgesetzt() {
+        let (mut app, a, b) = zwei_waende();
+        app.session_mut().selection = vec![a, b];
+        let _ = zeichne(&mut app);
+        assert!(
+            app.mehrfach_ziel.is_empty(),
+            "mehrfach_ziel bleibt stehen: {:?}",
+            app.mehrfach_ziel
+        );
+    }
+
+    /// Weichen die Werte ab, sagt das Panel es — `*variiert*`.
+    #[test]
+    fn abweichende_werte_werden_als_variiert_gezeigt() {
+        let (mut app, a, b) = zwei_waende();
+        app.session_mut().selection = vec![a, b];
+        let ctx = app.ctx.clone();
+        let raw = egui::RawInput {
+            screen_rect: Some(egui::Rect::from_min_size(
+                egui::Pos2::ZERO,
+                egui::Vec2::new(1200.0, 950.0),
+            )),
+            time: Some(1.0),
+            predicted_dt: 0.016,
+            ..Default::default()
+        };
+        let out = ctx.run(raw, |ctx| {
+            egui::SidePanel::right("eigenschaften")
+                .exact_width(280.0)
+                .show(ctx, |ui| crate::panels::properties(&mut app, ui));
+        });
+        let texte: Vec<String> = out
+            .shapes
+            .iter()
+            .filter_map(|cs| match &cs.shape {
+                egui::Shape::Text(t) => Some(t.galley.text().to_string()),
+                _ => None,
+            })
+            .collect();
+        assert!(
+            texte.iter().any(|t| t.contains("*variiert*")),
+            "kein *variiert* bei zwei verschiedenen Wänden: {texte:?}"
+        );
+        assert!(
+            texte.iter().any(|t| t.contains("2 Objekte")),
+            "die Anzahl der Auswahl fehlt: {texte:?}"
+        );
     }
 }
