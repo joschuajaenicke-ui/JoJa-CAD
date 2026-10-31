@@ -444,6 +444,13 @@ pub fn show(app: &mut App, ui: &mut Ui, rect: Rect, view: View) {
         // beiden Seiten, „Unten" steht über dem Anker.
         .fixed_pos(lage)
         .show(&ctx, |ui| {
+            // Die Eingabe gehört in die Zeichenfläche, nicht über die
+            // Oberfläche: das Feld liegt im Vordergrund über dem ganzen
+            // Fenster, ohne Beschnitt hing ein großer Text über Ribbon,
+            // Ebenen-Panel und Eigenschaften (T0047). Die Zeichnung selbst
+            // endet an derselben Kante — nach dem Übernehmen sieht der Text
+            // also genauso aus.
+            ui.set_clip_rect(ui.clip_rect().intersect(rect));
             // Keine Fläche, kein Rahmen: der Text steht frei in der Zeichnung
             // und sieht während der Eingabe genauso aus wie danach.
             ui.visuals_mut().text_cursor.stroke = Stroke::new(1.5_f32, Palette::ACCENT);
@@ -1360,5 +1367,75 @@ mod tests_neuer_text_leer {
             feld.bottom() - 2.0,
             anker.y
         );
+    }
+}
+
+#[cfg(test)]
+mod tests_beschnitt {
+    //! Die Eingabe bleibt in der Zeichenfläche (T0047).
+    //!
+    //! Vorher hing ein großer Text während der Bearbeitung über Ribbon,
+    //! Ebenen-Panel und Eigenschaften: das `egui::Area` der Eingabe liegt über
+    //! der ganzen Oberfläche und war nicht beschnitten.
+
+    use super::*;
+    use crate::app::App;
+
+    #[test]
+    fn eingabe_ragt_nicht_ueber_die_oberflaeche() {
+        let ctx = egui::Context::default();
+        let mut app = App::with_ctx(ctx.clone());
+        app.session_mut()
+            .execute("doc.settings", &json!({ "input_unit": "mm" }))
+            .expect("Einheit setzen");
+        // 2,50 m Schrifthöhe: der Text ist breiter als die Zeichenfläche.
+        app.options.text_height = 2500.0;
+        let fenster = Rect::from_min_size(Pos2::ZERO, Vec2::new(1500.0, 950.0));
+        // Zeichenfläche wie im Bild: links das Ebenen-Panel, rechts die
+        // Eigenschaften, oben das Ribbon.
+        let flaeche = Rect::from_min_max(Pos2::new(143.0, 100.0), Pos2::new(1100.0, 860.0));
+        let view = View {
+            center: V2::new(1000.0, 500.0),
+            zoom: 0.3,
+            rot: 0.0,
+        };
+        start(&mut app, V2::new(1000.0, 500.0));
+        if let Some(t) = app.ui.texteingabe.as_mut() {
+            t.text = "TEXTFELD".to_string();
+        }
+
+        let mut klipps = Vec::new();
+        for zeit in [1.0_f64, 1.1] {
+            let raw = egui::RawInput {
+                screen_rect: Some(fenster),
+                time: Some(zeit),
+                predicted_dt: 0.016,
+                ..Default::default()
+            };
+            let out = ctx.run(raw, |c| {
+                egui::CentralPanel::default().show(c, |ui| show(&mut app, ui, flaeche, view));
+            });
+            klipps.clear();
+            for cs in &out.shapes {
+                if matches!(&cs.shape, egui::Shape::Text(_)) {
+                    klipps.push((cs.clip_rect, cs.shape.visual_bounding_rect()));
+                }
+            }
+        }
+
+        assert!(!klipps.is_empty(), "Eingabetext nicht gezeichnet");
+        for (clip, kasten) in klipps {
+            assert!(
+                flaeche.contains_rect(clip),
+                "Beschnitt {:?} ragt aus der Zeichenfläche {:?}",
+                clip,
+                flaeche
+            );
+            assert!(
+                kasten.intersects(flaeche),
+                "Text liegt außerhalb der Zeichenfläche: {:?}",
+                kasten
+            );
+        }
     }
 }
