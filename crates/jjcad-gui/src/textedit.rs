@@ -312,8 +312,9 @@ fn uebernehmen(app: &mut App, ctx: &egui::Context) {
         Ok(_) => {
             app.mark_changed();
             app.mitteilung(meldung);
-            // Zuletzt gesetzte Werte bleiben für das nächste Element stehen.
-            app.options.text = text.clone();
+            // Zuletzt gesetzte Werte bleiben für das nächste Element stehen —
+            // aber **nicht** der Inhalt: ein neues Textfeld beginnt leer, und
+            // die Vorschau zeigt immer das Beispielwort (T0066).
             app.options.text_height = t.height;
         }
         Err(e) => app.toast(e),
