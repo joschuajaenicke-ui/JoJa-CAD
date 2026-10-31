@@ -12,7 +12,8 @@ sie zuerst hier ein — nicht „irgendwie" in den Code.
    (Funktion auf den Slot ziehen), im Rechtsklickmenü eines Slots
    (Leeren / Verknüpfen / Bearbeiten) oder durch Anlegen einer Hotbar-Vorlage.
    Die Tastaturbelegung fasst die Ziffern nicht an — im Tastenbild sind sie
-   ausgegraut.
+   ausgegraut. Die `0` gehört dem **zehnten (letzten)** Slot: `1` … `9` sind die
+   Slots eins bis neun (T0065).
 
 2. **Buchstaben und Symbole — Tastaturbelegung.**
    Alle Buchstaben und Symboltasten (`Q`, `W`, `Ü`, `,`, `.`, `-`, `+` …) werden
