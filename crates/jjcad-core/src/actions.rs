@@ -990,6 +990,20 @@ fn apply_common(doc: &mut Document, e: &mut Entity, p: &Params, layer: Id) {
     let _ = doc;
 }
 
+/// Neue Bemaßung ist **schwarz** (T0062).
+///
+/// Die Ebene „Bemaßung“ trägt als Vorgabe ein Rot, jede neue Maßkette erbte
+/// diese Farbe über „vom Layer“ — gewünscht ist Schwarz. Ein ausdrücklich
+/// mitgegebenes `color` sticht weiterhin (die Oberfläche reicht die Wahl aus
+/// dem Eigenschaften-Panel durch). Bis das Ebenen-System überarbeitet wird,
+/// ist das die einfache Regel; danach darf sie wieder verschwinden.
+fn bemasung_schwarz(p: &Params, e: &mut Entity) {
+    // Ein ausdrückliches `color` (auch "bylayer") bleibt unangetastet.
+    if p.v.get("color").is_none() && e.style.color.is_none() {
+        e.style.color = Some(Color::BLACK);
+    }
+}
+
 fn ids_from(p: &Params, key: &str) -> Vec<Id> {
     p.ids(key).unwrap_or_default()
 }
@@ -1817,6 +1831,7 @@ pub fn execute(doc: &mut Document, id: &str, params: &Value) -> Result<Value, St
                 },
             );
             apply_common(doc, &mut e, &p, layer);
+            bemasung_schwarz(&p, &mut e);
             doc.add_entity(e);
             Ok(json!({"ok": true, "created": [idn]}))
         }
@@ -1851,6 +1866,7 @@ pub fn execute(doc: &mut Document, id: &str, params: &Value) -> Result<Value, St
                 EntityKind::DimChain { pts, line_pos, axis },
             );
             apply_common(doc, &mut e, &p, layer);
+            bemasung_schwarz(&p, &mut e);
             doc.add_entity(e);
             Ok(json!({"ok": true, "created": [idn]}))
         }
@@ -1870,6 +1886,7 @@ pub fn execute(doc: &mut Document, id: &str, params: &Value) -> Result<Value, St
                 },
             );
             apply_common(doc, &mut e, &p, layer);
+            bemasung_schwarz(&p, &mut e);
             doc.add_entity(e);
             Ok(json!({"ok": true, "created": [idn], "z_mm": z}))
         }
