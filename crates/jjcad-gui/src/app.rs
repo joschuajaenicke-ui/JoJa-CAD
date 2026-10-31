@@ -17,7 +17,7 @@ use jjcad_core::persist::{self, DragMode, UserPrefs};
 use jjcad_core::render::DisplayList;
 use jjcad_core::session::Session;
 use jjcad_core::style::{Color, FillPattern};
-use jjcad_core::units::{format_number, format_scale, Unit};
+use jjcad_core::units::{format_number, Unit};
 use jjcad_core::{dxf, pdf, raster};
 use std::collections::HashMap;
 use std::path::PathBuf;
@@ -36,8 +36,8 @@ pub const RIBBON_CONTENT_H: f32 = RIBBON_H - 2.0 * RIBBON_PAD;
 pub const RIBBON_GROUP_H: f32 = 67.0;
 pub const HEADER_H: f32 = 38.0;
 pub const DOCTABS_H: f32 = 34.0;
-pub const STATUS_H: f32 = 26.0;
-pub const HOTBAR_H: f32 = 64.0;
+/// Höhe der einen unteren Leiste (Slots 34 px + 2 × 7 px Rand)
+pub const HOTBAR_H: f32 = 48.0;
 
 // ---------------------------------------------------------------------------
 // Ansicht / Reiter
@@ -452,6 +452,8 @@ pub struct UiState {
     pub block_name_dialog: Option<(String, bool)>,
     /// Hotbar-Vorlage: (None = neu, Some(index) = umbenennen), Name
     pub preset_dialog: Option<(Option<usize>, String)>,
+    /// Fenster „Hotbar-Vorlagen" offen (Auswahl der Leiste)
+    pub hotbar_picker_open: bool,
     pub file_dialog: Option<FileDialog>,
     /// Laufender Systemdialog (Betriebssystem) samt dem Modus, für den er
     /// geöffnet wurde
@@ -500,6 +502,9 @@ pub struct UiState {
     pub last_canvas: Rect,
     /// Höhe des zuletzt gezeichneten Ribbon-Inhalts (Regressionstest t_92b03440)
     pub last_ribbon_content_h: f32,
+    /// Lage der Hotbar-Slots in der unteren Leiste (Regressionstest T0043:
+    /// die Slots müssen mittig in der Leiste stehen)
+    pub last_slots: Option<Rect>,
     /// Breite des zuletzt gezeichneten Ribbon-Inhalts
     pub last_ribbon_content_w: f32,
     pub zoom_edit: Option<String>,
@@ -529,6 +534,7 @@ impl Default for UiState {
             texteingabe: None,
             block_name_dialog: None,
             preset_dialog: None,
+            hotbar_picker_open: false,
             file_dialog: None,
             systemdialog: None,
             pdf_import: None,
@@ -559,6 +565,7 @@ impl Default for UiState {
             confirm_quit: false,
             last_canvas: Rect::from_min_size(Pos2::ZERO, Vec2::new(1000.0, 700.0)),
             last_ribbon_content_h: 0.0,
+            last_slots: None,
             last_ribbon_content_w: 0.0,
             zoom_edit: None,
             typed: String::new(),
@@ -3799,139 +3806,6 @@ fn rail(ui: &mut egui::Ui, icon: &str, tooltip: &str, chevron: &str) -> bool {
     // ---- Werkzeugleiste (Optionen des aktiven Werkzeugs) ----
 
 
-    // ---- Statuszeile ----
-
-    fn status_bar(&mut self, ui: &mut egui::Ui) {
-        ui.horizontal_centered(|ui| {
-            ui.add_space(10.0);
-            let p = self.pointer_world.unwrap_or(V2::ZERO);
-            let unit = self.unit();
-            ui.label(theme::mono(format!(
-                "X {:<9} Y {:<9}",
-                unit.format_plain(p.x, unit.decimals()),
-                unit.format_plain(p.y, unit.decimals())
-            )));
-            ui.add_space(6.0);
-            if let Some(s) = &self.snap_label {
-                ui.label(
-                    RichText::new(format!("• {s}"))
-                        .size(10.5)
-                        .color(Palette::ACCENT),
-                );
-            }
-            // Raum und Auswahl: der Papierraum verhält sich wie das Modell,
-            // man muss aber sehen, wo man gerade zeichnet.
-            if let Some(sheet) = self.doc().space_sheet() {
-                ui.add_space(8.0);
-                ui.label(
-                    RichText::new(format!("Papierraum · {}", sheet.name))
-                        .size(10.5)
-                        .color(Palette::ACCENT),
-                );
-            }
-            let sel = self.selection().len();
-            if sel > 0 {
-                ui.add_space(8.0);
-                ui.label(theme::faint(format!("{sel} ausgewählt")));
-            }
-            ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-                ui.add_space(10.0);
-                ui.label(theme::faint(build_label()));
-                ui.add_space(10.0);
-                // Maßstab
-                ui.label(theme::mono(format_scale(self.doc().settings.annotation_scale)));
-                ui.add_space(8.0);
-                // Zoom
-                ui.label(theme::mono(format!("{:.0} %", (self.current_view().zoom * 100.0).max(1.0))));
-                ui.add_space(8.0);
-                ui.label(theme::faint("|"));
-                ui.add_space(4.0);
-                // Einheit
-                let mut u = self.unit();
-                egui::ComboBox::from_id_salt("unit")
-                    .width(46.0)
-                    .selected_text(u.short())
-                    .show_ui(ui, |ui| {
-                        for cand in Unit::ALL {
-                            if ui
-                                .selectable_value(&mut u, cand, format!("{} ({})", cand.short(), cand.label()))
-                                .clicked()
-                            {
-                                let _ = self.session_mut().execute(
-                                    "doc.settings",
-                                    &serde_json::json!({"input_unit": cand.short()}),
-                                );
-                                self.options.text_height = self.doc().settings.text_height;
-                            }
-                        }
-                    });
-                ui.add_space(4.0);
-                ui.label(theme::faint("|"));
-                ui.add_space(4.0);
-                // Rasteranzeige: Linksklick an/aus, Rechtsklick Menü
-                let resp = theme::chip_id(ui, "chip_raster", "Raster", self.ui.show_grid);
-                if resp.clicked() {
-                    self.ui.show_grid = !self.ui.show_grid;
-                    let v = self.ui.show_grid;
-                    let _ = self.session_mut().execute(
-                        "doc.settings",
-                        &serde_json::json!({"show_grid": v, "snap": {"grid": v}}),
-                    );
-                }
-                if resp.secondary_clicked() {
-                    let p = ui.ctx().pointer_latest_pos().unwrap_or(resp.rect.center());
-                    self.open_menu(MenuKind::Chip(StatusMenu::Raster), p);
-                }
-                resp.on_hover_text("Raster ein-/ausschalten · Rechtsklick: Optionen");
-
-                // Ortho
-                let snap_now = self.doc().settings.snap.clone();
-                let resp = theme::chip_id(ui, "chip_ortho", "Ortho", snap_now.ortho);
-                if resp.clicked() {
-                    self.set_snap("ortho", !snap_now.ortho);
-                }
-                if resp.secondary_clicked() {
-                    let p = ui.ctx().pointer_latest_pos().unwrap_or(resp.rect.center());
-                    self.open_menu(MenuKind::Chip(StatusMenu::Ortho), p);
-                }
-                resp.on_hover_text("Rechtwinklig zeichnen · Rechtsklick: Polar-Optionen");
-
-                // Fang
-                let resp = theme::chip_id(ui, "chip_fang", "Fang", snap_now.endpoint);
-                if resp.clicked() {
-                    self.set_snap("endpoint", !snap_now.endpoint);
-                }
-                if resp.secondary_clicked() {
-                    let p = ui.ctx().pointer_latest_pos().unwrap_or(resp.rect.center());
-                    self.open_menu(MenuKind::Chip(StatusMenu::Fang), p);
-                }
-                resp.on_hover_text("Fangen ein-/ausschalten · Rechtsklick: einzelne Fangmodi");
-
-                // Linienstärken: px (bildschirmkonstant) oder DPI (wie im PDF)
-                let scaled = self.ui.lineweights_scaled;
-                let label = if scaled { "Stärke DPI" } else { "Stärke px" };
-                let resp = theme::chip_id(ui, "chip_staerke", label, true);
-                if resp.clicked() {
-                    self.ui.lineweights = true;
-                    self.ui.lineweights_scaled = !scaled;
-                    self.prefs.lineweights_scaled = self.ui.lineweights_scaled;
-                    let _ = self.prefs.save();
-                }
-                if resp.secondary_clicked() {
-                    let p = ui.ctx().pointer_latest_pos().unwrap_or(resp.rect.center());
-                    self.open_menu(MenuKind::Chip(StatusMenu::Staerke), p);
-                }
-                resp.on_hover_text(
-                    "px: gleiche Breite auf dem Bildschirm · DPI: Breite wie im PDF (zoombhängig)",
-                );
-                ui.add_space(6.0);
-                ui.label(theme::faint("|"));
-                ui.add_space(4.0);
-                ui.label(theme::mono(self.doc().summary_short()));
-            });
-        });
-    }
-
     // ---- Rahmen ----
 
     pub fn ui(&mut self, ctx: &egui::Context) {
@@ -3972,11 +3846,6 @@ fn rail(ui: &mut egui::Ui, icon: &str, tooltip: &str, chevron: &str) -> bool {
             .exact_height(DOCTABS_H)
             .frame(Frame::none().fill(Palette::RIBBON))
             .show(ctx, |ui| self.doc_tabs(ui));
-
-        egui::TopBottomPanel::bottom("status")
-            .exact_height(STATUS_H)
-            .frame(Frame::none().fill(Palette::RIBBON))
-            .show(ctx, |ui| self.status_bar(ui));
 
         egui::TopBottomPanel::bottom("hotbar")
             .exact_height(HOTBAR_H)
@@ -4035,6 +3904,7 @@ fn rail(ui: &mut egui::Ui, icon: &str, tooltip: &str, chevron: &str) -> bool {
 
         dialogs::show(self, ctx);
         inventory::show(self, ctx);
+        hotbar::auswahl_fenster(self, ctx);
         panels::layer_color_popup(self, ctx);
         // Chat-Protokoll über der Zeichnung (unten links), mit T geöffnet
         crate::chat::fenster(self, ctx);
@@ -4352,12 +4222,22 @@ impl App {
             return;
         };
         let mut close = false;
-        let area = egui::Area::new(egui::Id::new("jjcad_menu"))
+        // Unten in der Zeichenfläche (z. B. auf den Schaltern der unteren
+        // Leiste) klappt das Menü nach oben auf — sonst liegt die untere Hälfte
+        // hinter dem Fensterrand und ist nicht erreichbar.
+        let unten = menu.pos.y > ctx.screen_rect().bottom() - 300.0;
+        let mut area = egui::Area::new(egui::Id::new("jjcad_menu"))
             .order(egui::Order::Tooltip)
             .interactable(true)
             .sense(egui::Sense::click())
-            .fixed_pos(menu.pos)
             .constrain(true);
+        if unten {
+            area = area
+                .pivot(egui::Align2::LEFT_BOTTOM)
+                .fixed_pos(egui::Pos2::new(menu.pos.x, menu.pos.y - 6.0));
+        } else {
+            area = area.fixed_pos(menu.pos);
+        }
         let shown = area.show(ctx, |ui| {
             egui::Frame::menu(&ctx.style()).show(ui, |ui| {
                 ui.set_min_width(210.0);
@@ -4564,6 +4444,23 @@ impl App {
                                 }
                                 close = true;
                             }
+                            // Ortho und Polar stehen seit T0043 hier, nicht mehr
+                            // als eigener Chip in der unteren Leiste.
+                            ui.separator();
+                            ui.label(theme::bold("Ausrichtung", 12.0));
+                            let mut o = self.doc().settings.snap.ortho;
+                            if ui.checkbox(&mut o, "Ortho (0°/90°)").changed() {
+                                self.set_snap("ortho", o);
+                            }
+                            let mut p = self.doc().settings.snap.polar;
+                            if ui.checkbox(&mut p, "Polar").changed() {
+                                self.set_snap("polar", p);
+                            }
+                            let st = self.doc().settings.snap.polar_step;
+                            let tol = self.doc().settings.snap.polar_tolerance;
+                            ui.label(theme::dim(format!(
+                                "Schrittweite {st:.0}°, Fenster ±{tol:.0}°"
+                            )));
                         }
                         StatusMenu::Staerke => {
                             ui.label(theme::bold("Linienstärken", 12.0));
@@ -5388,6 +5285,104 @@ mod tests_ribbon_hoehe {
                 );
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests_untere_leiste {
+    //! T0043: Hotbar und Statuszeile sind **eine** Leiste.
+    //!
+    //! Vorher standen zwei Panels untereinander (64 px Hotbar + 26 px
+    //! Statuszeile); die Statuszeile wiederholte Angaben, die schon im
+    //! Eigenschaften-Panel, im Fenstertitel und in den Einstellungen stehen
+    //! (Koordinaten, Objektzahl, Build-Kennung, Einheitenwahl). Gemessen wird
+    //! die echte Höhe über die Unterkante der Zeichenfläche.
+
+    use super::*;
+
+    fn frame(app: &mut App, ctx: &egui::Context, breite: f32, hoehe: f32) {
+        let raw = egui::RawInput {
+            screen_rect: Some(Rect::from_min_size(Pos2::ZERO, egui::vec2(breite, hoehe))),
+            ..Default::default()
+        };
+        let _ = ctx.run(raw, |ctx| app.ui(ctx));
+    }
+
+    #[test]
+    fn untere_leiste_ist_ein_element_und_niedriger() {
+        let ctx = egui::Context::default();
+        let mut app = App::with_ctx(ctx.clone());
+        let mut kante = 0.0;
+        for _ in 0..3 {
+            frame(&mut app, &ctx, 1500.0, 950.0);
+            kante = app.ui.last_canvas.bottom();
+        }
+        assert!(
+            (kante - (950.0 - HOTBAR_H)).abs() < 0.5,
+            "Zeichenfläche endet bei {kante} px, die untere Leiste ({HOTBAR_H} px) \
+             beginnt also nicht bei {} — es gibt mehr als eine untere Leiste",
+            950.0 - HOTBAR_H
+        );
+        assert!(
+            HOTBAR_H <= 50.0,
+            "untere Leiste ist {HOTBAR_H} px hoch, früher 64 + 26 = 90 px"
+        );
+    }
+
+    #[test]
+    fn hotbar_slots_stehen_mittig() {
+        let erwartet_breite = 10.0 * crate::hotbar::SLOT + 9.0 * 4.0;
+        // Mindestbreite der App (1080) und eine breite Fläche: in beiden Fällen
+        // muss die Slot-Mitte die Mitte der Leiste sein.
+        for breite in [1080.0, 1500.0, 1920.0] {
+            let ctx = egui::Context::default();
+            let mut app = App::with_ctx(ctx.clone());
+            for _ in 0..3 {
+                frame(&mut app, &ctx, breite, 950.0);
+            }
+            let slots = app.ui.last_slots.expect("Slots müssen gezeichnet werden");
+            assert!(
+                (slots.center().x - breite * 0.5).abs() < 1.0,
+                "{breite} px breit: Hotbar-Slots stehen bei x = {} statt in der Mitte ({}) \
+                 — links/rechts verschieben sie sich mit den Randgruppen",
+                slots.center().x,
+                breite * 0.5
+            );
+            assert!(
+                (slots.width() - erwartet_breite).abs() < 1.0,
+                "Slots sind {} px breit, erwartet {erwartet_breite} px (zehn Slots à {} px)",
+                slots.width(),
+                crate::hotbar::SLOT
+            );
+        }
+    }
+
+    /// Die entfernten Angaben dürfen nicht über einen zweiten Weg
+    /// zurückkommen, und die Vorlagenauswahl ist ein Fenster, kein Aufklappfeld.
+    #[test]
+    fn keine_doppelten_angaben_und_eigenes_vorlagenfenster() {
+        let app_quelle = include_str!("app.rs");
+        // Der Quelltext dieses Tests nennt die gesuchten Wörter selbst —
+        // für die Prüfung zählt nur der Code davor.
+        let app_quelle = &app_quelle[..app_quelle
+            .find("mod tests_untere_leiste")
+            .unwrap_or(app_quelle.len())];
+        let hotbar_quelle = include_str!("hotbar.rs");
+        for verboten in ["fn status_bar", "STATUS_H", "summary_short()", "build_label())"] {
+            assert!(
+                !app_quelle.contains(verboten),
+                "„{verboten}\" gehört nicht mehr in die Oberfläche — Koordinaten, \
+                 Objektzahl, Build-Kennung und Einheitenwahl stehen anderswo"
+            );
+        }
+        assert!(
+            !hotbar_quelle.contains("ComboBox"),
+            "Die Hotbar-Auswahl ist ein eigenes Fenster, kein Aufklappfeld"
+        );
+        assert!(
+            hotbar_quelle.contains("auswahl_fenster"),
+            "Fenster „Hotbar-Vorlagen\" fehlt"
+        );
     }
 }
 
