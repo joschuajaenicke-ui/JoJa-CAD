@@ -6688,6 +6688,44 @@ mod tests_fang_griff {
         }
     }
 
+    /// Voller Mauszug durch die Oberfläche: das Wandende folgt dem Zeiger und
+    /// landet nicht auf der eigenen Stirnecke; der gespeicherte Stand trägt die
+    /// Zeigerlage.
+    #[test]
+    fn mauszug_bewegt_das_wandende_ans_zeigerende() {
+        let (mut app, wand) = wand_szenario();
+        frame(&mut app, vec![]);
+        let rect = app.ui.last_canvas;
+        let view = app.current_view();
+
+        let griff = world_to_screen(rect, view, V2::new(4000.0, 0.0));
+        let ziel = world_to_screen(rect, view, V2::new(4000.0, 100.0));
+
+        frame(&mut app, vec![egui::Event::PointerMoved(griff)]);
+        frame(&mut app, vec![druck(griff)]);
+        assert!(app.grip_drag.is_some(), "Griffzug muss beginnen");
+
+        frame(&mut app, vec![egui::Event::PointerMoved(ziel)]);
+        frame(&mut app, vec![egui::Event::PointerMoved(ziel)]);
+        assert!(
+            wand_b(&app, wand).dist(V2::new(4000.0, 100.0)) < 2.0,
+            "Endpunkt {:?} folgt dem Zeiger",
+            wand_b(&app, wand)
+        );
+        frame(&mut app, vec![loslassen(ziel)]);
+        assert!(app.grip_drag.is_none(), "Loslassen beendet den Zug");
+
+        let json = jjcad_core::persist::to_json(app.doc()).expect("speichern");
+        let wieder = jjcad_core::persist::from_json(&json).expect("laden");
+        match &wieder.entity(wand).expect("Wand in der Datei").kind {
+            EntityKind::Wall { b, .. } => assert!(
+                b.dist(V2::new(4000.0, 100.0)) < 2.0,
+                "gespeichertes Ende {b:?}"
+            ),
+            other => panic!("keine Wand: {other:?}"),
+        }
+    }
+
     /// Gegenprobe: fremde Punkte fangen beim Wand-Griffzug weiterhin.
     #[test]
     fn wand_griffzug_faengt_weiterhin_fremde_punkte() {
