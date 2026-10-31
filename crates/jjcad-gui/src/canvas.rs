@@ -2636,6 +2636,10 @@ struct FangRegeln {
 ///   an den Anfangspunkt anschließen — Voraussetzung für geschlossene Züge);
 ///   allein der gezogene Punkt ist gesperrt, sonst fängt er sich selbst und
 ///   der Griff bleibt stehen (Karte t_eb950a21).
+/// * **Wand im Griffzug:** die Wand fällt ganz aus dem Fang. Ihre Stirn- und
+///   Gehrungsecken hängen am gezogenen Ende und wandern mit; der Fang zöge den
+///   Punkt auf eine Ecke, die dadurch weiterwandert — der Fang oszilliert
+///   (T0051).
 fn fang_regeln(app: &App) -> FangRegeln {
     let auswahl_wandert = app.move_drag.is_some()
         || app
@@ -2652,6 +2656,23 @@ fn fang_regeln(app: &App) -> FangRegeln {
         };
     }
     if let Some(drag) = app.grip_drag.as_ref() {
+        // Wand (T0051): Ihre Stirn- und Gehrungsecken hängen am gezogenen
+        // Endpunkt und wandern mit. Liegt der Griff im Fangradius einer
+        // solchen Ecke, zieht der Fang die Wand auf die Ecke, die Ecke wandert
+        // aus dem Radius, im Bild darauf greift sie wieder — der Punkt
+        // oszilliert. Eine Wand fängt beim Manipulieren deshalb **gar nicht**
+        // auf sich selbst, auch nicht mit ihren diskreten Ecken.
+        let eigene_wand = app
+            .doc()
+            .entity(drag.entity)
+            .map(|e| matches!(e.kind, EntityKind::Wall { .. }))
+            .unwrap_or(false);
+        if eigene_wand {
+            return FangRegeln {
+                ignore: vec![drag.entity],
+                ..FangRegeln::default()
+            };
+        }
         let gesperrt = app
             .doc()
             .entity(drag.entity)
@@ -6574,6 +6595,108 @@ mod tests_fang_griff {
         let (p, label) = fang_zeiger(&app, roh, 40.0);
         assert_eq!(label, None, "kein Fang in der Nähe außer dem eigenen Punkt");
         assert_punkt(p, roh);
+    }
+
+    // ---- Wand beim Manipulieren (T0051) ----
+
+    /// Wand (0;0)→(4000;0), Dicke 240 mm, ausgewählt; dazu eine freie Linie
+    /// (0;3000)→(4000;3000) als fremdes Fangziel.
+    fn wand_szenario() -> (App, Id) {
+        let mut app = app();
+        let s = app.session_mut();
+        s.execute(
+            "draw.wall",
+            &serde_json::json!({"a": [0.0, 0.0], "b": [4000.0, 0.0], "thickness": 240.0}),
+        )
+        .unwrap();
+        s.execute(
+            "draw.line",
+            &serde_json::json!({"a": [0.0, 3000.0], "b": [4000.0, 3000.0]}),
+        )
+        .unwrap();
+        let wand = app
+            .doc()
+            .entities
+            .iter()
+            .find(|e| matches!(e.kind, EntityKind::Wall { .. }))
+            .expect("Wand fehlt")
+            .id;
+        app.session_mut().select(vec![wand]);
+        (app, wand)
+    }
+
+    /// Ecken des Wandkörpers (Stirn- und Längskanten) aus derselben Quelle wie
+    /// die Anzeige.
+    fn wand_ecken(app: &App, id: Id) -> Vec<V2> {
+        let idx = render::WallIndex::build(app.doc(), app.doc().ents());
+        let e = app.doc().entity(id).expect("Wand fehlt");
+        render::wall_contour_segments_idx(&idx, e)
+            .into_iter()
+            .flat_map(|s| [s.start(), s.end()])
+            .collect()
+    }
+
+    /// Ende `b` der Wand.
+    fn wand_b(app: &App, id: Id) -> V2 {
+        match &app.doc().entity(id).expect("Wand fehlt").kind {
+            EntityKind::Wall { b, .. } => *b,
+            other => panic!("keine Wand: {other:?}"),
+        }
+    }
+
+    /// Die gezogene Wand fängt **nicht auf sich selbst**: keine ihrer Kanten
+    /// (Stirnecken, Längskanten) zieht den Griff an. Vorher galt die Wand als
+    /// „nur mit diskreten Punkten fangbar", und ihre mitwandernden Ecken
+    /// rissen den Punkt an sich (T0051).
+    #[test]
+    fn wand_greift_beim_griffzug_nicht_auf_sich_selbst() {
+        let (mut app, wand) = wand_szenario();
+        let ecken = wand_ecken(&app, wand);
+        assert_eq!(ecken.len(), 8, "vier Wandkanten mit je zwei Enden");
+        app.begin_grip_drag(wand, crate::handles::GripKind::Vert(1));
+
+        for ecke in ecken {
+            let roh = ecke + V2::new(4.0, 4.0);
+            let (p, label) = fang_zeiger(&app, roh, 40.0);
+            assert_eq!(label, None, "eigene Wandecke {ecke:?} fängt: {p:?}");
+            assert_punkt(p, roh);
+        }
+    }
+
+    /// Der Fall aus dem Ticket: die Stirnecke liegt 120 mm (= halbe Wanddicke)
+    /// neben dem Griff, die Toleranz ist etwas größer. Vorher zog der Fang den
+    /// Punkt auf die Ecke, die dadurch aus dem Radius wanderte, worauf der
+    /// Zeigerpunkt zurückkam — der Griff sprang in jedem Bild hin und her.
+    /// Jetzt bleibt der Endpunkt bei jedem Bild am Zeiger.
+    #[test]
+    fn wand_griffzug_oszilliert_nicht_an_der_eigenen_ecke() {
+        let (mut app, wand) = wand_szenario();
+        app.begin_grip_drag(wand, crate::handles::GripKind::Vert(1));
+
+        let roh = V2::new(4000.0, 100.0);
+        let mut lagen = Vec::new();
+        for _ in 0..6 {
+            let (p, _) = fang_zeiger(&app, roh, 130.0);
+            app.update_grip_drag(p);
+            lagen.push(wand_b(&app, wand));
+        }
+        for (i, b) in lagen.iter().enumerate() {
+            assert!(
+                b.dist(roh) < 1e-9,
+                "Bild {i}: Endpunkt {b:?} springt vom Zeiger {roh:?} weg — Lagen {lagen:?}"
+            );
+        }
+    }
+
+    /// Gegenprobe: fremde Punkte fangen beim Wand-Griffzug weiterhin.
+    #[test]
+    fn wand_griffzug_faengt_weiterhin_fremde_punkte() {
+        let (mut app, wand) = wand_szenario();
+        app.begin_grip_drag(wand, crate::handles::GripKind::Vert(1));
+
+        let (p, label) = fang_zeiger(&app, V2::new(3990.0, 3008.0), 60.0);
+        assert_eq!(label, Some("Endpunkt"));
+        assert_punkt(p, V2::new(4000.0, 3000.0));
     }
 
     // ---- Voller Mauszug durch die Oberfläche ----
