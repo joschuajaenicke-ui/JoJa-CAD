@@ -423,7 +423,19 @@ pub fn show(app: &mut App, ui: &mut Ui, rect: Rect, view: View) {
         job.wrap.max_width = f32::INFINITY;
         ui.fonts(|f| f.layout_job(job))
     };
-    let block_h = texthoehe.max(zeilenhoehe);
+    // Höhe des gezeichneten Textblocks — **nicht** die Zeilenhöhe der Schrift
+    // (`row_height`, rund 1,36 × Schriftgröße): die Anzeige legt den Text über
+    // die Höhe der Galley an den Anker (`canvas::text_ort`), und die ist bei
+    // einer Zeile kleiner (rund 1,15 ×). Mit der Zeilenhöhe stand eine
+    // einzeilige Bearbeitung deshalb sichtbar über dem Basispunkt, ein
+    // mehrzeiliger Text traf (T0044).
+    // Nur der **leere** Text hat keine Galley-Höhe (0): dort braucht der
+    // Cursor eine ganze Zeile, sonst stünde er unter dem Anker.
+    let block_h = if t.text.is_empty() {
+        zeilenhoehe
+    } else {
+        texthoehe
+    };
     let lage = feld_lage(anker, t.align, t.valign, textbreite, block_h);
 
     egui::Area::new(Id::new("texteingabe"))
@@ -1179,5 +1191,174 @@ mod tests_klick_neben_dem_text {
             "ein Klick daneben in der Zeichenfläche übernimmt"
         );
         assert_eq!(app.doc().ents().len(), 1, "der Text steht in der Zeichnung");
+    }
+}
+
+#[cfg(test)]
+mod tests_lage_beim_bearbeiten {
+    //! Der bearbeitete Text steht **pixelgleich** dort, wo die Zeichnung ihn
+    //! ablegt (T0044).
+    //!
+    //! Gemeldet: „so lange ein Textfeld editiert wird, bewegt es sich leicht
+    //! nach oben", nur bei **einzeiligen** Texten. Ursache war die Höhe des
+    //! Textblocks: das Feld hing an der Zeilenhöhe der Schrift
+    //! (`row_height`, hier 1,36 × Schriftgröße), die Anzeige aber an der Höhe
+    //! der gesetzten Galley (1,15 ×). Bei einer Zeile traf beides nicht
+    //! zusammen (13,9 px bei 66 px Schrift), bei zwei Zeilen überwog die
+    //! Galley und der Fehler blieb unsichtbar.
+    //!
+    //! Geprüft wird gegen die **gemalte** Schrift der Zeichenfläche (beide
+    //! entstehen aus `Shape::Text`, gemessen wird der Kasten der Galley), nicht
+    //! gegen eine im Test nachgebaute Lage.
+
+    use super::*;
+    use crate::app::App;
+
+    fn flaeche() -> Rect {
+        Rect::from_min_size(Pos2::ZERO, Vec2::new(1500.0, 950.0))
+    }
+
+    /// Kästen aller in einem Frame gemalten Texte (galley.rect + Position).
+    fn gemalt(app: &mut App, ctx: &egui::Context, zeit: f64) -> Vec<(String, Rect)> {
+        let raw = egui::RawInput {
+            screen_rect: Some(flaeche()),
+            time: Some(zeit),
+            predicted_dt: 0.016,
+            ..Default::default()
+        };
+        let out = ctx.run(raw, |c| app.ui(c));
+        let mut gefunden = Vec::new();
+        for cs in &out.shapes {
+            if let egui::Shape::Text(t) = &cs.shape {
+                gefunden.push((
+                    t.galley.text().to_string(),
+                    t.galley.rect.translate(t.pos.to_vec2()),
+                ));
+            }
+        }
+        gefunden
+    }
+
+    fn kasten(von: &[(String, Rect)], text: &str) -> Rect {
+        von.iter()
+            .find(|(t, _)| t == text)
+            .unwrap_or_else(|| panic!("{text:?} wurde nicht gezeichnet"))
+            .1
+    }
+
+    /// Ein Frame Zeichnung, dann ein Frame Bearbeitung: der Kasten des
+    /// bearbeiteten Textes muss auf dem der gezeichneten Schrift liegen.
+    fn pruefe(text: &str, align: TextAlignH, valign: TextAlignV) {
+        let ctx = egui::Context::default();
+        let mut app = App::with_ctx(ctx.clone());
+        app.session_mut()
+            .execute("doc.settings", &json!({ "input_unit": "mm" }))
+            .expect("Einheit setzen");
+        let mitte = app.current_view().center;
+        app.session_mut()
+            .execute(
+                "draw.text",
+                &json!({"p": [mitte.x, mitte.y], "text": text, "height": 250.0,
+                        "align": align.key(), "valign": valign.key()}),
+            )
+            .expect("Text anlegen");
+        let id = app.doc().ents()[0].id;
+
+        // Zwei Frames: der erste setzt Ansicht und Zwischenspeicher.
+        gemalt(&mut app, &ctx, 1.0);
+        let gezeichnet = kasten(&gemalt(&mut app, &ctx, 1.1), text);
+
+        assert!(start_entitaet(&mut app, id), "Bearbeiten startet");
+        gemalt(&mut app, &ctx, 1.2);
+        let bearbeitet = kasten(&gemalt(&mut app, &ctx, 1.3), text);
+
+        let name = format!("{text:?} {}/{}", align.label(), valign.label());
+        assert!(
+            (bearbeitet.left() - gezeichnet.left()).abs() < 0.6,
+            "{name}: waagerecht {:.2} px daneben (bearbeitet {:?}, gezeichnet {:?})",
+            bearbeitet.left() - gezeichnet.left(),
+            bearbeitet,
+            gezeichnet
+        );
+        assert!(
+            (bearbeitet.top() - gezeichnet.top()).abs() < 0.6,
+            "{name}: senkrecht {:.2} px daneben (bearbeitet {:?}, gezeichnet {:?})",
+            bearbeitet.top() - gezeichnet.top(),
+            bearbeitet,
+            gezeichnet
+        );
+    }
+
+    /// Einzeilig — der gemeldete Fall: der Text stand beim Bearbeiten oben.
+    #[test]
+    fn einzeilig_steht_wie_gezeichnet() {
+        for align in TextAlignH::ALL {
+            for valign in TextAlignV::ALL {
+                pruefe("Pruefwort", align, valign);
+            }
+        }
+    }
+
+    /// Mehrzeilig — traf schon vor dem Fix, darf nicht zurückfallen.
+    #[test]
+    fn mehrzeilig_steht_wie_gezeichnet() {
+        for align in TextAlignH::ALL {
+            for valign in TextAlignV::ALL {
+                pruefe("Pruefwort\nZeile2", align, valign);
+            }
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests_neuer_text_leer {
+    //! Ein **leerer** neuer Text hat keine Galley-Höhe; der Cursor braucht
+    //! trotzdem eine ganze Zeile. Sonst stünde er beim ersten Tippen unter dem
+    //! Basispunkt (Gegenprobe zu T0044: dort ist nicht die Galley maßgeblich,
+    //! sondern eine Zeile).
+
+    use super::*;
+    use crate::app::App;
+
+    #[test]
+    fn cursor_steht_auf_dem_basispunkt() {
+        let ctx = egui::Context::default();
+        let mut app = App::with_ctx(ctx.clone());
+        app.session_mut()
+            .execute("doc.settings", &json!({ "input_unit": "mm" }))
+            .expect("Einheit setzen");
+        app.options.text_height = 250.0;
+        app.options.text_valign = TextAlignV::Bottom;
+        let mitte = app.current_view().center;
+        let punkt = jjcad_core::geom::Vec2::new(mitte.x, mitte.y);
+        start(&mut app, punkt);
+
+        let flaeche = Rect::from_min_size(Pos2::ZERO, Vec2::new(1500.0, 950.0));
+        let mut frame = |app: &mut App, zeit: f64| {
+            let raw = egui::RawInput {
+                screen_rect: Some(flaeche),
+                time: Some(zeit),
+                predicted_dt: 0.016,
+                ..Default::default()
+            };
+            let _ = ctx.run(raw, |c| app.ui(c));
+        };
+        frame(&mut app, 1.0);
+        frame(&mut app, 1.1);
+
+        let anker = world_to_screen(app.ui.last_canvas, app.current_view(), punkt);
+        let feld = app
+            .ui
+            .texteingabe
+            .as_ref()
+            .and_then(|t| t.flaeche)
+            .expect("Feld liegt im Bild");
+        // `flaeche` ist um 2 px erweitert (Trefferfläche für „daneben klicken").
+        assert!(
+            ((feld.bottom() - 2.0) - anker.y).abs() < 1.5,
+            "Feldunterkante {:.1}, Basispunkt {:.1}",
+            feld.bottom() - 2.0,
+            anker.y
+        );
     }
 }
