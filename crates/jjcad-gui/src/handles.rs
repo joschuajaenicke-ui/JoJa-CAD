@@ -400,47 +400,58 @@ pub fn fang_sperre(e: &Entity, kind: GripKind) -> Vec<V2> {
         .collect()
 }
 
-/// Bezugspunkt für **Ortho und Polar** beim Ziehen eines Griffs.
+/// **Erster** Bezugspunkt für Ortho und Polar beim Ziehen eines Griffs.
 ///
 /// Beim Erstellen ist der Bezug der zuletzt gesetzte Punkt, deshalb rastet die
 /// neue Strecke in Waagerechte, Senkrechte und 45° ein. Beim Ziehen an einem
 /// Griff fehlte dieser Bezug ganz — der Griff folgte dem Zeiger ohne
 /// Zwangsrichtung, und eine vorhandene Linie ließ sich nicht mehr klar
 /// ausrichten (T0046). Bezug ist der **ruhende** Punkt, an dem die Richtung
-/// gemessen wird:
-///
-/// * Linie und Wand: das andere Ende.
-/// * Polylinie, Spline und Rechteck (geschlossener Zug): die Nachbarecke im
-///   Zug — vorzugsweise die vorige, beim Anfang die nächste, im geschlossenen
-///   Ring der Vorgänger des Anfangs. Die Kante zum Nachbarn bleibt dadurch in
-///   der Zwangsrichtung.
-/// * Füllfläche und Volumen: der vorige Punkt desselben Rings. Bei dichten
-///   Farbeimer-Umrissen liegt er auf derselben Kante — die gezogene Ecke bleibt
-///   mit ihr fluchtend.
+/// gemessen wird; an einem Stützpunkt sind das **zwei** (voriger und nächster)
+/// — siehe [`bezugspunkte`].
 ///
 /// Kantenmitten (parallel verschieben), Mittelpunkte, Bogenenden und die
 /// Treppenkanten haben keinen Bezug: ihre Bewegung ist bereits eindimensional
 /// bzw. richtungslos.
 pub fn bezugspunkt(e: &Entity, kind: GripKind) -> Option<V2> {
+    bezugspunkte(e, kind).into_iter().next()
+}
+
+/// **Alle** Bezugspunkte eines gezogenen Griffs — in der Regel zwei.
+///
+/// Ein Stützpunkt einer Polylinie, eines Splines, eines Rechtecks oder einer
+/// Fläche hängt an **zwei** Linien (zum vorigen und zum nächsten Punkt). Beim
+/// Ausrichten müssen beide gleichzeitig zur Verfügung stehen, sonst lässt sich
+/// immer nur eine von beiden in die Waagerechte/Senkrechte ziehen (T0046,
+/// Turn 3). Reihenfolge: voriger Punkt zuerst, dann der nächste — der erste
+/// ist der Bezug für den Polarfang und für Einzelbezüge.
+///
+/// Ein Endpunkt einer offenen Polylinie hat nur einen Nachbarn, Linie und Wand
+/// genau einen (das andere Ende), Kantenmitten und Mittelpunkte keinen.
+pub fn bezugspunkte(e: &Entity, kind: GripKind) -> Vec<V2> {
     match (&e.kind, kind) {
-        (EntityKind::Line { b, .. } | EntityKind::Wall { b, .. }, GripKind::Vert(0)) => Some(*b),
-        (EntityKind::Line { a, .. } | EntityKind::Wall { a, .. }, GripKind::Vert(1)) => Some(*a),
+        (EntityKind::Line { b, .. } | EntityKind::Wall { b, .. }, GripKind::Vert(0)) => vec![*b],
+        (EntityKind::Line { a, .. } | EntityKind::Wall { a, .. }, GripKind::Vert(1)) => vec![*a],
         (
             EntityKind::Polyline { verts, closed } | EntityKind::Spline { verts, closed },
             GripKind::Vert(i),
         ) => {
             let n = verts.len();
             if n < 2 || i >= n {
-                return None;
+                return Vec::new();
             }
-            let j = if i > 0 {
-                i - 1
+            let mut out = Vec::new();
+            if i > 0 {
+                out.push(verts[i - 1].p);
             } else if *closed && n >= 3 {
-                n - 1
-            } else {
-                1
-            };
-            Some(verts[j].p)
+                out.push(verts[n - 1].p);
+            }
+            if i + 1 < n {
+                out.push(verts[i + 1].p);
+            } else if *closed && n >= 2 {
+                out.push(verts[0].p);
+            }
+            out
         }
         (
             EntityKind::Fill { boundary, holes, .. }
@@ -452,15 +463,23 @@ pub fn bezugspunkt(e: &Entity, kind: GripKind) -> Option<V2> {
                 let n = ring.len();
                 if i < base + n {
                     if n < 2 {
-                        return None;
+                        return Vec::new();
                     }
-                    return Some(ring[(i - base + n - 1) % n]);
+                    let k = i - base;
+                    let mut out = Vec::new();
+                    if n >= 2 {
+                        out.push(ring[(k + n - 1) % n]);
+                    }
+                    if n >= 3 {
+                        out.push(ring[(k + 1) % n]);
+                    }
+                    return out;
                 }
                 base += n;
             }
-            None
+            Vec::new()
         }
-        _ => None,
+        _ => Vec::new(),
     }
 }
 

@@ -1020,6 +1020,43 @@ pub fn snap_constrained_mit_halte(
     halte: &[HaltPunkt],
     allow_grid: bool,
 ) -> SnapResolution {
+    snap_constrained_achsen(
+        doc, cursor, tol, reference.as_slice(), ignore, selected, gesperrt, vorschau, halte,
+        allow_grid,
+    )
+}
+
+/// Wie [`snap_constrained_mit_halte`], aber mit **mehreren** Bezugspunkten.
+///
+/// Ein gezogener Griff einer Polylinie, Fläche oder eines Volumens hängt an
+/// **zwei** Linien (zum vorigen und zum nächsten Stützpunkt). Mit nur einem
+/// Bezug ließ sich deshalb immer nur eine der beiden ausrichten (T0046,
+/// Turn 3). Bei zwei und mehr Bezügen gilt:
+///
+/// * **Ortho**: jede Koordinate rastet einzeln auf die Achse (Senkrechte bzw.
+///   Waagerechte) des nächstgelegenen Bezugs, sofern sie im Fangradius liegt.
+///   Liegen beide Koordinaten an Achsen — etwa in der Ecke eines Rechtecks —,
+///   landet der Punkt auf deren Schnittpunkt, und beide Linien stehen
+///   gleichzeitig im Zwang.
+/// * **Polar**: die Richtung kommt vom nächstgelegenen Bezug; gerastet wird
+///   wie bisher (Schrittweite und Winkel-Fenster).
+///
+/// Bei genau einem Bezug bleibt es beim harten Ortho des Erstellens — dort ist
+/// die Achse die einzige Führung und muss ohne Toleranz gelten.
+#[allow(clippy::too_many_arguments)]
+pub fn snap_constrained_achsen(
+    doc: &Document,
+    cursor: Vec2,
+    tol: f64,
+    achsen: &[Vec2],
+    ignore: &[Id],
+    selected: &[Id],
+    gesperrt: &[GesperrterPunkt],
+    vorschau: &[Vec2],
+    halte: &[HaltPunkt],
+    allow_grid: bool,
+) -> SnapResolution {
+    let reference = naechster_bezug(achsen, cursor);
     let s = doc.settings.snap.clone();
     let tol = tol.max(1e-6);
 
@@ -1070,7 +1107,26 @@ pub fn snap_constrained_mit_halte(
     // 4. Kein Objekt in Reichweite: Ortho bzw. Polar.
     let mut point = cursor;
     let mut source = SnapSource::Free;
-    if let Some(r) = reference {
+    if achsen.len() >= 2 {
+        // Zwei Linien am selben Griff: jede Koordinate einzeln rasten, damit
+        // beide Nachbarlinien ausgerichtet werden können (T0046, Turn 3).
+        if s.ortho {
+            let (x, y) = achsen_koordinaten(achsen, cursor, tol);
+            if x.is_some() || y.is_some() {
+                point = Vec2::new(x.unwrap_or(cursor.x), y.unwrap_or(cursor.y));
+                source = SnapSource::Ortho;
+            }
+        } else if let Some(r) = reference {
+            if s.polar && cursor.dist(r) > tol * 2.0 {
+                if let Some(p) =
+                    cursor.polar_snap_from_tol(r, s.polar_step.max(1.0), s.polar_tolerance)
+                {
+                    point = p;
+                    source = SnapSource::Polar;
+                }
+            }
+        }
+    } else if let Some(r) = reference {
         if s.ortho {
             point = cursor.ortho_from(r, false);
             source = SnapSource::Ortho;
@@ -1097,6 +1153,41 @@ pub fn snap_constrained_mit_halte(
         }
     }
     SnapResolution { point, source }
+}
+
+/// Nächstgelegener Bezugspunkt — für Lot, Polarfang und die Kombination mit
+/// Hilfslinien; bei einem einzigen Bezug ist es dieser selbst.
+fn naechster_bezug(achsen: &[Vec2], cursor: Vec2) -> Option<Vec2> {
+    achsen
+        .iter()
+        .copied()
+        .min_by(|a, b| a.dist(cursor).total_cmp(&b.dist(cursor)))
+}
+
+/// Koordinaten, die im Fangradius auf einer Achse eines Bezugspunkts liegen.
+///
+/// Liefert `x`, wenn eine **Senkrechte** `x = bezug.x` nahe genug ist, und `y`
+/// für eine **Waagerechte** `y = bezug.y` — unabhängig voneinander, weil an
+/// einem Griff zwei Linien hängen. Der Aufrufer setzt nur die gefundenen
+/// Koordinaten; beide zusammen ergeben den Schnittpunkt zweier Achsen.
+fn achsen_koordinaten(achsen: &[Vec2], cursor: Vec2, tol: f64) -> (Option<f64>, Option<f64>) {
+    let mut x: Option<f64> = None;
+    let mut y: Option<f64> = None;
+    let mut dx = f64::INFINITY;
+    let mut dy = f64::INFINITY;
+    for a in achsen {
+        let ax = (cursor.x - a.x).abs();
+        if ax <= tol && ax < dx {
+            dx = ax;
+            x = Some(a.x);
+        }
+        let ay = (cursor.y - a.y).abs();
+        if ay <= tol && ay < dy {
+            dy = ay;
+            y = Some(a.y);
+        }
+    }
+    (x, y)
 }
 
 /// Trefferprüfung (Auswahl per Klick).
