@@ -4099,6 +4099,92 @@ mod tests {
         );
     }
 
+    /// Ende-zu-Ende: ein **Zug am Feld „Dicke“** im Panel der
+    /// Mehrfachauswahl setzt die Dicke bei **beiden** Wänden. Der Weg ist
+    /// derselbe wie beim Nutzer: egui-Ereignisse auf das Feld, der Maler
+    /// schickt `modify.set` über `setzen`.
+    #[test]
+    fn dickezug_im_panel_aendert_alle_ausgewaehlten_waende() {
+        let (mut app, a, b) = zwei_waende();
+        app.session_mut().selection = vec![a, b];
+        let ctx = app.ctx.clone();
+        let bild = |app: &mut App,
+                    ereignisse: Vec<egui::Event>,
+                    zeit: f64|
+         -> egui::FullOutput {
+            let raw = egui::RawInput {
+                screen_rect: Some(egui::Rect::from_min_size(
+                    egui::Pos2::ZERO,
+                    egui::Vec2::new(1200.0, 950.0),
+                )),
+                time: Some(zeit),
+                predicted_dt: 0.016,
+                events: ereignisse,
+                ..Default::default()
+            };
+            ctx.run(raw, |ctx| {
+                egui::SidePanel::right("eigenschaften")
+                    .exact_width(280.0)
+                    .show(ctx, |ui| crate::panels::properties(app, ui));
+            })
+        };
+
+        // Erstes Bild: Position des Dicke-Feldes aus dem gezeichneten Wert.
+        let out = bild(&mut app, Vec::new(), 1.0);
+        let feld = out
+            .shapes
+            .iter()
+            .find_map(|cs| match &cs.shape {
+                egui::Shape::Text(t) if t.galley.text().trim() == "0,24 m" => Some(
+                    t.pos + egui::Vec2::new(t.galley.size().x / 2.0, t.galley.size().y / 2.0),
+                ),
+                _ => None,
+            })
+            .unwrap_or_else(|| {
+                let texte: Vec<String> = out
+                    .shapes
+                    .iter()
+                    .filter_map(|cs| match &cs.shape {
+                        egui::Shape::Text(t) => Some(t.galley.text().to_string()),
+                        _ => None,
+                    })
+                    .collect();
+                panic!("Feld „Dicke“ nicht im Panel gefunden: {texte:?}")
+            });
+
+        let mitte = feld;
+        let ziel = mitte + egui::Vec2::new(40.0, 0.0);
+        let knopf = |pos, pressed| egui::Event::PointerButton {
+            pos,
+            button: egui::PointerButton::Primary,
+            pressed,
+            modifiers: Default::default(),
+        };
+        for (i, ev) in vec![
+            vec![egui::Event::PointerMoved(mitte)],
+            vec![knopf(mitte, true)],
+            vec![egui::Event::PointerMoved(ziel)],
+            vec![knopf(ziel, false)],
+            Vec::new(),
+        ]
+        .into_iter()
+        .enumerate()
+        {
+            let _ = bild(&mut app, ev, 1.1 + i as f64 * 0.1);
+        }
+
+        let da = wand_dicke(&app, a);
+        let db = wand_dicke(&app, b);
+        assert!(
+            da > 250.0,
+            "der Zug am Feld hat die Dicke nicht verändert: {da}"
+        );
+        assert!(
+            (da - db).abs() < 1e-6,
+            "die beiden Wände haben verschiedene Dicken: {da} / {db}"
+        );
+    }
+
     /// Weichen die Werte ab, sagt das Panel es — `*variiert*`.
     #[test]
     fn abweichende_werte_werden_als_variiert_gezeigt() {
