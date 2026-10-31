@@ -60,6 +60,8 @@ ausgeblendet.
   Schrittweiten (45°) ein. Bezugspunkt der Richtung ist der ruhende Punkt des Elements — bei
   Linie und Wand das andere Ende, bei Polylinie, Spline und Rechteck die Nachbarecke, bei
   Fläche und Volumen der vorige Umrandungspunkt. Dasselbe gilt für das Verschieben mit der Maus.
+  Auch der **erweiterte Punktfang** arbeitet dabei: bleibt der Zeiger auf einem Fangpunkt
+  stehen, wird dieser gehalten und seine Hilfslinien fangen den gezogenen Punkt.
 - **Linien** werden als Kapsel gezeichnet: Rechteck plus Halbkreis an beiden Enden. Dadurch sind
   auch die Übergänge in Polylinien, Bögen und an Wandanschlüssen rund statt eckig.
 - **Ribbon** lässt sich über den Pfeil rechts in der Kopfzeile einklappen; die Reiter bleiben sichtbar.
