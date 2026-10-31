@@ -167,10 +167,14 @@ fn zwei_haltepunkte_kombinieren_x_und_y() {
 // Einordnung in die Fang-Kette
 // ---------------------------------------------------------------------------
 
-/// Die Hilfslinie schlägt Ortho: die Zwangsachse vom Bezugspunkt würde den
-/// Zeiger nach (3004; 0) ziehen, der gehaltene Punkt verlangt (3000; 800).
+/// Ortho und Hilfslinie greifen **gemeinsam** (T0042): die Zwangsachse bleibt
+/// Bedingung, die Hilfslinie wählt die Lage auf ihr. Bisher gewann je nach
+/// Abstand zur Hilfslinie das eine oder das andere — die Hilfslinie zog den
+/// Punkt auf (3000; 800), Ortho auf (3004; 0), und die gezeichnete Linie kippte
+/// aus der Zwangsrichtung. Jetzt ist der Schnittpunkt beider der gemeinte
+/// Punkt: (3000; 0).
 #[test]
-fn hilfslinie_schlaegt_ortho() {
+fn hilfslinie_und_ortho_bilden_den_schnittpunkt() {
     let mut s = s();
     s.execute("draw.line", &json!({ "a": [0.0, 0.0], "b": [3000.0, 0.0] }))
         .unwrap();
@@ -182,12 +186,79 @@ fn hilfslinie_schlaegt_ortho() {
     let h = halt(&s, v(2999.0, 2.0), 30.0);
     let r = fang(&s, v(3004.0, 800.0), 30.0, Some(v(0.0, 0.0)), &[h.clone()]);
     assert_eq!(r.source, SnapSource::Object(SnapKind::Tracking), "{r:?}");
-    assert_punkt(r.point, v(3000.0, 800.0), "Hilfslinie");
+    assert_punkt(r.point, v(3000.0, 0.0), "Schnittpunkt Hilfslinie × Ortho");
     assert_eq!(r.label(), Some("Hilfslinie"));
 
-    // Gegenprobe: ohne Haltepunkt zieht Ortho den Zeiger auf die Achse.
+    // Gegenprobe 1: ohne Haltepunkt zieht Ortho den Zeiger auf die Achse.
     let ohne = fang(&s, v(3004.0, 800.0), 30.0, Some(v(0.0, 0.0)), &[]);
     assert_eq!(ohne.source, SnapSource::Ortho, "{ohne:?}");
+    assert_punkt(ohne.point, v(3004.0, 0.0), "nur Ortho");
+}
+
+/// Ohne Ortho bleibt die Hilfslinie das, was sie war: der Fußpunkt des Zeigers
+/// auf ihr (Gegenprobe zum Schnittpunkt oben — der Unterschied kommt allein aus
+/// der Zwangsachse).
+#[test]
+fn ohne_ortho_bleibt_der_fusspunkt_der_hilfslinie() {
+    let mut s = s();
+    s.execute("draw.line", &json!({ "a": [0.0, 0.0], "b": [3000.0, 0.0] }))
+        .unwrap();
+    let h = halt(&s, v(2999.0, 2.0), 30.0);
+    let r = fang(&s, v(3004.0, 800.0), 30.0, Some(v(0.0, 0.0)), &[h]);
+    assert_eq!(r.source, SnapSource::Object(SnapKind::Tracking), "{r:?}");
+    assert_punkt(r.point, v(3000.0, 800.0), "Fußpunkt auf der Senkrechten");
+}
+
+/// Der Fall aus dem Ticket: eine neue Linie wird gezeichnet (Bezugspunkt unten
+/// rechts), ein Punkt ist gehalten — der Zeiger steht wenige Millimeter neben
+/// dessen Senkrechter und läuft waagerecht: gefangen wird die Kreuzung aus
+/// Senkrechter und Zwangsachse, also **beides** zugleich. Der Zeiger liegt
+/// dabei weit über der Achse; die Achse gilt trotzdem (Ortho ist hart).
+#[test]
+fn ortho_und_hilfslinie_fangen_die_kreuzung_auch_weit_abseits_der_achse() {
+    let mut s = s();
+    s.execute(
+        "draw.line",
+        &json!({ "a": [3000.0, 0.0], "b": [3000.0, 2000.0] }),
+    )
+    .unwrap();
+    s.execute(
+        "doc.settings",
+        &json!({ "snap": { "ortho": true, "polar": false } }),
+    )
+    .unwrap();
+    // Gehalten wird das untere Ende der Senkrechten: Verlängerung senkrecht,
+    // Normale waagerecht.
+    let h = halt(&s, v(3001.0, 1.0), 30.0);
+    assert_punkt(h.point, v(3000.0, 0.0), "gehaltenes Linienende");
+    // Bezugspunkt der neuen Linie (0; -1000), Zeiger 5 mm neben x = 3000 und
+    // 900 mm über der waagerechten Zwangsachse y = -1000.
+    let r = fang(&s, v(2995.0, -100.0), 30.0, Some(v(0.0, -1000.0)), &[h]);
+    assert_eq!(r.source, SnapSource::Object(SnapKind::Tracking), "{r:?}");
+    assert_punkt(r.point, v(3000.0, -1000.0), "Kreuzung Senkrechte × Ortho");
+}
+
+/// Polarfang genauso: rastet die Richtung ein, ist der Schnittpunkt der
+/// Polargeraden mit der Hilfslinie der Punkt — nicht der Fußpunkt daneben.
+#[test]
+fn polar_und_hilfslinie_bilden_den_schnittpunkt() {
+    let mut s = s();
+    s.execute("draw.line", &json!({ "a": [0.0, 0.0], "b": [3000.0, 0.0] }))
+        .unwrap();
+    s.execute(
+        "doc.settings",
+        &json!({ "snap": { "ortho": false, "polar": true } }),
+    )
+    .unwrap();
+    // Haltepunkt ist die Linienmitte (1500; 0): Verlängerung waagerecht,
+    // Normale senkrecht bei x = 1500.
+    let h = halt(&s, v(1501.0, 1.0), 30.0);
+    assert_punkt(h.point, v(1500.0, 0.0), "gehaltene Linienmitte");
+    // Bezugspunkt (0; -3000): die 45°-Gerade läuft durch (1500; -1500), der
+    // Zeiger steht 4 mm daneben auf der Senkrechten.
+    let r = fang(&s, v(1504.0, -1496.0), 30.0, Some(v(0.0, -3000.0)), &[h]);
+    assert_eq!(r.source, SnapSource::Object(SnapKind::Tracking), "{r:?}");
+    assert_punkt(r.point, v(1500.0, -1500.0), "Kreuzung Senkrechte × 45°");
 }
 
 /// Ein echter Endpunkt schlägt die Hilfslinie — der Punkt auf der Geometrie ist
