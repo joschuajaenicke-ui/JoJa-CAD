@@ -968,7 +968,14 @@ pub(crate) const EINSTELLUNGSKATEGORIEN: &[Einstellungskategorie] = &[
     Einstellungskategorie {
         name: "Bedienung",
         icon: "move",
-        stichworte: &["Ziehen", "Maus", "Dateidialog", "Bedienung"],
+        stichworte: &[
+            "Ziehen",
+            "Maus",
+            "Maus verschiebt",
+            "Verschieben",
+            "Dateidialog",
+            "Bedienung",
+        ],
     },
     Einstellungskategorie {
         name: "Darstellung",
@@ -1077,6 +1084,7 @@ fn settings_body(app: &mut App, ui: &mut Ui) {
     let mut show_layers = app.ui.layers_open;
     let mut show_props = app.ui.props_open;
     let mut marker = app.prefs.snap_marker;
+    let mut mouse_move = app.prefs.mouse_move;
     let mut dateidialog_system = app.prefs.dateidialog_system();
 
     // Suche: Kategorien, deren Name oder eine ihrer Einstellungen passt.
@@ -1364,6 +1372,16 @@ fn settings_body(app: &mut App, ui: &mut Ui) {
                                 if suche.is_empty() {
                                     ui.label(theme::faint("Gilt für Auswahl und Griffe"));
                                 }
+                                // T0063: Objekte mit der gedrückten Maustaste
+                                // verschieben — für alle Objektarten gemeinsam.
+                                zeile(&suche, ui, "Maus verschiebt", |ui| {
+                                    ui.checkbox(&mut mouse_move, "");
+                                });
+                                if suche.is_empty() {
+                                    ui.label(theme::faint(
+                                        "aus: Objekte wandern nur über das Werkzeug „Verschieben“",
+                                    ));
+                                }
                                 zeile(&suche, ui, "Dateidialog", |ui| {
                                     let moeglich = crate::systemdialog::verfuegbar();
                                     ui.selectable_value(&mut dateidialog_system, true, "System")
@@ -1418,6 +1436,10 @@ fn settings_body(app: &mut App, ui: &mut Ui) {
     app.ui.lineweights_scaled = lw_scaled;
     app.ui.drag_mode = drag_mode;
     app.prefs.drag_mode = drag_mode;
+    if app.prefs.mouse_move != mouse_move {
+        app.prefs.mouse_move = mouse_move;
+        let _ = app.prefs.save();
+    }
     let dialog_neu = if dateidialog_system { "system" } else { "intern" };
     if app.prefs.file_dialog != dialog_neu {
         app.prefs.file_dialog = dialog_neu.to_string();
@@ -2526,6 +2548,7 @@ mod tests_einstellungen {
         assert_eq!(treffer("polarwinkel"), vec!["Fangen"]);
         assert_eq!(treffer("Wandstärke"), vec!["Architektur"]);
         assert_eq!(treffer("dateidialog"), vec!["Bedienung"]);
+        assert_eq!(treffer("maus verschiebt"), vec!["Bedienung"]);
         assert!(treffer("gibtesnicht").is_empty(), "Unbekannter Begriff liefert Treffer");
     }
 
@@ -2564,5 +2587,33 @@ mod tests_einstellungen {
             body.matches("ScrollArea::vertical()").count() >= 2,
             "Kategorienliste und Einstellungsseite brauchen je eine eigene Bildlaufleiste"
         );
+    }
+
+    /// T0063: Unter „Bedienung“ steht die Einstellung „Maus verschiebt“ — sie
+    /// wird gezeichnet (nicht nur im Code geführt), und die Vorgabe ist an
+    /// (bisheriges Verhalten: die meisten Objekte folgten der Maus).
+    #[test]
+    fn bedienung_zeigt_die_einstellung_maus_verschiebt() {
+        let ctx = egui::Context::default();
+        let mut app = App::with_ctx(ctx.clone());
+        app.ui.settings_open = true;
+        app.ui.settings_kat = 5;
+        let bild = || egui::RawInput {
+            screen_rect: Some(Rect::from_min_size(Pos2::ZERO, Vec2::new(1500.0, 950.0))),
+            ..Default::default()
+        };
+        let mut out = ctx.run(bild(), |ctx| app.ui(ctx));
+        // Zentriertes Fenster: Größe und Zeilenlage stehen erst nach ein paar Bildern.
+        for _ in 0..3 {
+            out = ctx.run(bild(), |ctx| app.ui(ctx));
+        }
+        assert!(
+            out.shapes
+                .iter()
+                .any(|cs| matches!(&cs.shape,
+                    egui::Shape::Text(t) if t.galley.text() == "Maus verschiebt")),
+            "Zeile „Maus verschiebt“ fehlt im Einstellungsfenster"
+        );
+        assert!(app.prefs.mouse_move, "Vorgabe: Maus verschiebt ist eingeschaltet");
     }
 }
