@@ -360,6 +360,13 @@ impl Perf {
     pub fn letztes(&self) -> Option<Bild> {
         self.letzte
     }
+
+    /// Wurde die Displayliste in **diesem** Bild neu aufgebaut? Die Anzeige
+    /// zeichnet vor `bild_beenden`, deshalb der laufende Stand — sonst stünde
+    /// dort immer die Herkunft des vorigen Bildes.
+    pub fn liste_jetzt_neu(&self) -> bool {
+        self.laufend.liste_neu
+    }
 }
 
 /// Perzentil einer Messreihe (0…1). Nächstgelegene Stichprobe, nicht
@@ -455,12 +462,33 @@ fn zeit_farbe(ms: f32) -> Color32 {
     }
 }
 
+/// Feste Spaltenbreiten der Tabellen (px).
+///
+/// Ohne feste Breite bestimmt der **längste** Text einer Spalte ihre Breite —
+/// und damit wandert die ganze Tabelle, sobald sich ein Text ändert. Genau das
+/// war beim Wechsel „neu aufgebaut“ ↔ „aus dem Zwischenspeicher“ als Flackern
+/// zu sehen (T0068, Turn 2).
+const NAME_W: f32 = 92.0;
+/// Breite einer Zahlenspalte (px).
+const WERT_W: f32 = 50.0;
+/// Zeilenhöhe einer Tabellenzeile (px).
+const ZEILE_H: f32 = 14.0;
+
+/// Eine Zelle fester Breite: der Inhalt bestimmt die Spalte nicht mehr.
+fn zelle(ui: &mut egui::Ui, text: RichText, breite: f32) -> egui::Response {
+    ui.allocate_ui_with_layout(
+        egui::vec2(breite, ZEILE_H),
+        Layout::left_to_right(Align::Center),
+        |ui| ui.label(text),
+    )
+    .inner
+}
+
 /// Eine Zeile mit drei Zahlenspalten.
 fn zeile(ui: &mut egui::Ui, name: &str, werte: [String; 3], farbe: Color32, hinweis: &str) {
-    ui.label(theme_mono(name).color(Palette::TEXT_DIM))
-        .on_hover_text(hinweis);
+    zelle(ui, theme_mono(name).color(Palette::TEXT_DIM), NAME_W).on_hover_text(hinweis);
     for w in werte {
-        ui.label(theme_mono(&w).color(farbe));
+        zelle(ui, theme_mono(&w).color(farbe), WERT_W);
     }
     ui.end_row();
 }
@@ -470,11 +498,25 @@ fn theme_mono(text: &str) -> RichText {
 }
 
 fn kopf(ui: &mut egui::Ui, text: &str) {
-    ui.label(
+    zelle(
+        ui,
         RichText::new(text)
             .monospace()
             .size(10.0)
             .color(Palette::TEXT_FAINT),
+        NAME_W,
+    );
+}
+
+/// Kopf einer Zahlenspalte.
+fn kopf_wert(ui: &mut egui::Ui, text: &str) {
+    zelle(
+        ui,
+        RichText::new(text)
+            .monospace()
+            .size(10.0)
+            .color(Palette::TEXT_FAINT),
+        WERT_W,
     );
 }
 
@@ -543,9 +585,9 @@ fn inhalt(app: &App, ui: &mut egui::Ui) {
         .spacing([7.0, 2.0])
         .show(ui, |ui| {
             kopf(ui, "Bilder (ms)");
-            kopf(ui, "  p50");
-            kopf(ui, "  p95");
-            kopf(ui, "  p99");
+            kopf_wert(ui, "  p50");
+            kopf_wert(ui, "  p95");
+            kopf_wert(ui, "  p99");
             ui.end_row();
             let reihen: [(&str, fn(&Bild) -> f32, &str); 3] = [
                 (
@@ -589,8 +631,8 @@ fn inhalt(app: &App, ui: &mut egui::Ui) {
         .spacing([7.0, 2.0])
         .show(ui, |ui| {
             kopf(ui, "Abschnitte");
-            kopf(ui, "  jetzt");
-            kopf(ui, " Anteil");
+            kopf_wert(ui, "  jetzt");
+            kopf_wert(ui, " Anteil");
             ui.end_row();
             for a in Abschnitt::ALLE {
                 let (jetzt, anteil) = match letzt {
@@ -600,32 +642,16 @@ fn inhalt(app: &App, ui: &mut egui::Ui) {
                     ),
                     None => ("     —".to_string(), "     —".to_string()),
                 };
-                ui.label(theme_mono(a.name()).color(Palette::TEXT_DIM))
+                zelle(ui, theme_mono(a.name()).color(Palette::TEXT_DIM), NAME_W)
                     .on_hover_text(a.erklaerung());
-                ui.label(theme_mono(&jetzt).color(Palette::TEXT));
-                ui.label(
-                    RichText::new(anteil)
-                        .monospace()
-                        .size(10.5)
-                        .color(Palette::TEXT_FAINT),
+                zelle(ui, theme_mono(&jetzt).color(Palette::TEXT), WERT_W);
+                zelle(
+                    ui,
+                    theme_mono(&anteil).color(Palette::TEXT_FAINT),
+                    WERT_W,
                 );
                 ui.end_row();
-                // Der Aufbau der Displayliste ist nur bei jedem Wechsel der
-                // Zeichnung fällig — das steht dabei.
-                if a == Abschnitt::Displayliste {
-                    if let Some(b) = letzt {
-                        let herkunft = if b.liste_neu { "neu aufgebaut" } else { "aus dem Zwischenspeicher" };
-                        ui.label(
-                            RichText::new(format!("   {herkunft}"))
-                                .monospace()
-                                .size(9.5)
-                                .color(Palette::TEXT_FAINT),
-                        );
-                        ui.label("");
-                        ui.label("");
-                        ui.end_row();
-                    }
-                }
+                // Die Posten, in die „Zeichnen“ zerfällt.
                 if a == Abschnitt::Zeichnen {
                     if let Some(b) = letzt {
                         for k in [MalKlasse::Fuellung, MalKlasse::Linie, MalKlasse::Text] {
@@ -634,25 +660,31 @@ fn inhalt(app: &App, ui: &mut egui::Ui) {
                                 MalKlasse::Linie => "  Linien",
                                 MalKlasse::Text => "  Text",
                             };
-                            ui.label(
-                                RichText::new(name)
-                                    .monospace()
-                                    .size(10.5)
-                                    .color(Palette::TEXT_FAINT),
+                            zelle(ui, theme_mono(name).color(Palette::TEXT_FAINT), NAME_W);
+                            zelle(
+                                ui,
+                                theme_mono(&ms_text(b.malzeit(k))).color(Palette::TEXT_FAINT),
+                                WERT_W,
                             );
-                            ui.label(
-                                RichText::new(ms_text(b.malzeit(k)))
-                                    .monospace()
-                                    .size(10.5)
-                                    .color(Palette::TEXT_FAINT),
-                            );
-                            ui.label("");
+                            zelle(ui, theme_mono(""), WERT_W);
                             ui.end_row();
                         }
                     }
                 }
             }
         });
+
+    // Herkunft der Displayliste in einer **eigenen Zeile**: in einer
+    // Tabellenspalte verschob der wechselnde Text die ganze Tabelle, und beim
+    // häufigen Wechsel „neu aufgebaut“ ↔ „aus dem Zwischenspeicher“ sah das aus
+    // wie ein Flackern (T0068, Turn 2). Die Zeile steht immer da, damit auch die
+    // Höhe der Anzeige gleich bleibt.
+    let herkunft = if perf.liste_jetzt_neu() {
+        "Displayliste: neu aufgebaut"
+    } else {
+        "Displayliste: aus dem Zwischenspeicher"
+    };
+    ui.label(theme_mono(herkunft).color(Palette::TEXT_FAINT));
 
     ui.add_space(4.0);
     ui.separator();
