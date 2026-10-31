@@ -2290,134 +2290,121 @@ struct DimGeom {
     angle: f64,
 }
 
-/// Richtung einer Maßlinie und ihre linke Normale — die positive Richtung des
-/// Abstands, in der die Maßlinie vor den Basispunkten steht.
+/// Richtung einer Maßlinie und die Einheitsrichtung ihres **Abstands**.
 ///
 /// Eine Quelle für Anzeige (`dim_geometry`, `render_dim_chain`), Griffe
 /// (`handles`) und die Befehlsschicht (`modify.set` mit `offset`): sonst
 /// rechneten drei Stellen dieselbe Achse und der Griff liefe neben der Linie.
+///
+/// Der Abstand zählt von den Basispunkten **zur** Maßlinie: bei `X` nach oben
+/// (+Y), bei `Y` nach rechts (+X), bei `Aligned` links der Messrichtung. Das
+/// Vorzeichen ist damit anschaulich — positiv heißt „über“ bzw. „rechts“ der
+/// Messstrecke.
 pub fn dim_achse(pts: &[Vec2], axis: DimAxis) -> (Vec2, Vec2) {
-    let winkel = match axis {
-        DimAxis::X => 0.0,
-        DimAxis::Y => std::f64::consts::FRAC_PI_2,
+    match axis {
+        DimAxis::X => (v(1.0, 0.0), v(0.0, 1.0)),
+        DimAxis::Y => (v(0.0, 1.0), v(1.0, 0.0)),
         DimAxis::Aligned => {
-            let d = pts
-                .get(1)
-                .map(|b| *b - pts[0])
-                .unwrap_or(v(1.0, 0.0));
+            let d = pts.get(1).map(|b| *b - pts[0]).unwrap_or(v(1.0, 0.0));
             // Entartete Messstrecke: die Achse ist nicht bestimmt, dann bleibt
             // es bei waagerecht (die Anzeige zeigt ohnehin keinen Maßtext).
-            if d.len() < 1e-9 {
-                0.0
+            let dir = if d.len() < 1e-9 {
+                v(1.0, 0.0)
             } else {
-                d.angle()
-            }
+                d.normalized()
+            };
+            (dir, dir.perp())
         }
-    };
-    let dir = Vec2::polar(winkel, 1.0);
-    (dir, dir.perp())
+    }
 }
 
 /// Basispunkte auf die Maßlinie gelotet.
 ///
-/// Für `X` ist die Maßlinie waagerecht auf der Höhe von `line_pos`, für `Y`
-/// senkrecht auf dessen Breite, für `Aligned` parallel zur Messstrecke im
+/// Für `X` ist die Maßlinie waagerecht auf **einer** Höhe (`line_pos.y`), für
+/// `Y` senkrecht auf einer Breite, für `Aligned` parallel zur Messstrecke im
 /// Abstand von `line_pos`. Anzeige und Griff benutzen dieselbe Rechnung.
+///
+/// Achtung: bei `X`/`Y` wird die **Koordinate gesetzt**, nicht ein Versatz
+/// addiert. Ein Versatz je Basispunkt kippte die Maßlinie, sobald ein
+/// Basispunkt seitlich wanderte (T0055, Turn 1: Ziehen am Punkt drehte die
+/// Linie mit).
 pub fn dim_projiziert(pts: &[Vec2], line_pos: Vec2, axis: DimAxis) -> Vec<Vec2> {
-    if pts.is_empty() {
-        return Vec::new();
+    match axis {
+        DimAxis::X => pts.iter().map(|p| v(p.x, line_pos.y)).collect(),
+        DimAxis::Y => pts.iter().map(|p| v(line_pos.x, p.y)).collect(),
+        DimAxis::Aligned => {
+            if pts.is_empty() {
+                return Vec::new();
+            }
+            let (_, vers) = dim_achse(pts, axis);
+            let off = (line_pos - pts[0]).dot(vers);
+            pts.iter().map(|p| *p + vers * off).collect()
+        }
     }
-    let bezug = pts[0];
-    let (_, n) = dim_achse(pts, axis);
-    let off = (line_pos - bezug).dot(n);
-    pts.iter().map(|p| *p + n * off).collect()
+}
+
+/// Basispunkte eines Maßes/einer Maßkette mit Maßlinie und Achse — die eine
+/// Stelle, an der die Hülle eines Bemaßungsobjekts aufgemacht wird.
+fn dim_teile(kind: &EntityKind) -> Option<(Vec<Vec2>, Vec2, DimAxis)> {
+    match kind {
+        EntityKind::Dim {
+            a,
+            b,
+            line_pos,
+            axis,
+            ..
+        } => Some((vec![*a, *b], *line_pos, *axis)),
+        EntityKind::DimChain { pts, line_pos, axis } if pts.len() >= 2 => {
+            Some((pts.clone(), *line_pos, *axis))
+        }
+        _ => None,
+    }
 }
 
 /// Maßlinie eines Maßes oder einer Maßkette: Anfang und Ende der gezeichneten
 /// Linie in Weltkoordinaten.
 pub fn dim_line_span(kind: &EntityKind) -> Option<(Vec2, Vec2)> {
-    let (pts, line_pos, axis) = match kind {
-        EntityKind::Dim {
-            a,
-            b,
-            line_pos,
-            axis,
-            ..
-        } => (vec![*a, *b], *line_pos, *axis),
-        EntityKind::DimChain { pts, line_pos, axis } if pts.len() >= 2 => {
-            (pts.clone(), *line_pos, *axis)
-        }
-        _ => return None,
-    };
+    let (pts, line_pos, axis) = dim_teile(kind)?;
     let proj = dim_projiziert(&pts, line_pos, axis);
     Some((*proj.first()?, *proj.last()?))
 }
 
-/// Abstand der Maßlinie von den Basispunkten in mm, vorzeichenbehaftet
-/// (positiv = in Richtung `dim_achse`-Normale, also „links“ der Messrichtung).
+/// Abstand der Maßlinie vom **ersten** Basispunkt in mm, vorzeichenbehaftet
+/// (positiv in Richtung [`dim_achse`]-Versatz).
 pub fn dim_offset(kind: &EntityKind) -> Option<f64> {
-    let (pts, line_pos, axis) = match kind {
-        EntityKind::Dim {
-            a,
-            b,
-            line_pos,
-            axis,
-            ..
-        } => (vec![*a, *b], *line_pos, *axis),
-        EntityKind::DimChain { pts, line_pos, axis } if pts.len() >= 2 => {
-            (pts.clone(), *line_pos, *axis)
-        }
-        _ => return None,
-    };
-    let (_, n) = dim_achse(&pts, axis);
-    Some((line_pos - pts[0]).dot(n))
+    let (pts, line_pos, axis) = dim_teile(kind)?;
+    let (_, vers) = dim_achse(&pts, axis);
+    Some((line_pos - pts[0]).dot(vers))
 }
 
 /// Setzt den Abstand der Maßlinie. Liefert `false`, wenn das Objekt keine
 /// Bemaßung ist — ein stiller Vorgabewert wäre hier ein Fehler (T0038).
 pub fn dim_offset_set(kind: &mut EntityKind, off: f64) -> bool {
-    let (bezug, n) = match &*kind {
-        EntityKind::Dim { a, b, axis, .. } => {
-            let (_, n) = dim_achse(&[*a, *b], *axis);
-            (*a, n)
-        }
-        EntityKind::DimChain { pts, axis, .. } if pts.len() >= 2 => {
-            let (_, n) = dim_achse(pts, *axis);
-            (pts[0], n)
-        }
-        _ => return false,
-    };
-    let Some(line_pos) = (match kind {
-        EntityKind::Dim { line_pos, .. } | EntityKind::DimChain { line_pos, .. } => {
-            Some(line_pos)
-        }
-        _ => None,
-    }) else {
+    let Some((pts, _, axis)) = dim_teile(kind) else {
         return false;
     };
-    // Nur **längs** der Normalen verschieben: die Lage entlang der Maßlinie
-    // bleibt erhalten, dadurch ändert sich am gespeicherten Objekt nur das,
-    // was der Griff auch anfasst.
-    let alt = (*line_pos - bezug).dot(n);
-    *line_pos = *line_pos + n * (off - alt);
-    true
+    let (_, vers) = dim_achse(&pts, axis);
+    let bezug = pts[0];
+    match kind {
+        EntityKind::Dim { line_pos, .. } | EntityKind::DimChain { line_pos, .. } => {
+            // Nur längs des Versatzes schieben: die Lage entlang der Maßlinie
+            // bleibt erhalten, am Objekt ändert sich nur das Angefasste.
+            let alt = (*line_pos - bezug).dot(vers);
+            *line_pos = *line_pos + vers * (off - alt);
+            true
+        }
+        _ => false,
+    }
 }
 
 /// Zieht die Maßlinie senkrecht zu ihrer Richtung auf die Höhe von `ziel`.
 /// Liefert `false`, wenn das Objekt keine Bemaßung ist.
 pub fn dim_line_move(kind: &mut EntityKind, ziel: Vec2) -> bool {
-    let (bezug, n) = match &*kind {
-        EntityKind::Dim { a, b, axis, .. } => {
-            let (_, n) = dim_achse(&[*a, *b], *axis);
-            (*a, n)
-        }
-        EntityKind::DimChain { pts, axis, .. } if pts.len() >= 2 => {
-            let (_, n) = dim_achse(pts, *axis);
-            (pts[0], n)
-        }
-        _ => return false,
+    let Some((pts, _, axis)) = dim_teile(kind) else {
+        return false;
     };
-    dim_offset_set(kind, (ziel - bezug).dot(n))
+    let (_, vers) = dim_achse(&pts, axis);
+    dim_offset_set(kind, (ziel - pts[0]).dot(vers))
 }
 
 fn dim_geometry(
@@ -2620,7 +2607,9 @@ fn render_dim_chain(
     let arrow = ctx.a(style.arrow_size);
     let text_h = ctx.a(style.text_height);
     let text_gap = ctx.a(style.text_gap);
-    let (dir, n) = dim_achse(pts, axis);
+    let (dir, _) = dim_achse(pts, axis);
+    // Lage des Maßtextes: links der Messrichtung (nicht der Abstandsrichtung).
+    let n = dir.perp();
     let angle = dir.angle();
 
     // Maßlinie — dieselbe Lotrechnung wie der Griff an der Maßlinie

@@ -161,6 +161,13 @@ Mit dem Nutzer abgestimmt — nicht „verbessern“:
   `Document::insert_ranked` (bzw. `add_entity`, das dorthin delegiert); bestehende
   Objekte werden nie umsortiert, sie rücken nur. Wer eine Objektart ergänzt, ordnet
   sie dort einer Klasse zu. Details: `docs/ARCHITEKTUR.md` → „Zeichenrang“.
+- **Bemaßung beim Ändern**: Die Maßlinie behält ihre **Lage**. Ein waagerechtes
+  Maß liegt auf *einer* Höhe (`line_pos.y` für alle Basispunkte), ein senkrechtes
+  auf einer Breite — `render::dim_projiziert` **setzt** die Koordinate, es addiert
+  keinen Versatz je Punkt. Ein Versatz je Basispunkt kippte die Maßlinie, sobald
+  ein Punkt seitlich wanderte (T0055). Griffe: Quadrat je Basispunkt, Raute in der
+  Mitte der Maßlinie (verschiebt sie senkrecht zur Messrichtung, `render::dim_line_move`);
+  im Eigenschaften-Panel steht derselbe Wert als „Abstand“ (`render::dim_offset`).
 - **Polarfang** 45° (Toleranz 6°); Fangmodi END, SCHN, MIT, ZEN, QUA, LOT, NÄC, RAS, POL.
 - **Treppen** sind von der Kontur her ein **Rechteck**: erster und zweiter Klick
   liegen auf der **Außenkante** (Länge), der dritte setzt die Breite dorthin, wo
