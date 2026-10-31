@@ -3143,13 +3143,13 @@ pub fn mehrfach(app: &mut App, ui: &mut Ui, ids: &[Id]) {
 
     section_title(ui, "select", "Mehrfachauswahl");
     let anzahl: usize = gruppen.iter().map(|(_, l)| l.len()).sum();
+    // Bei einer einzigen Art nennt der Kopf des Abschnitts die Anzahl — hier
+    // stünde sie sonst zweimal untereinander.
     if gruppen.len() > 1 {
         ui.label(theme::dim(format!(
             "{anzahl} Objekte · {} Arten",
             gruppen.len()
         )));
-    } else {
-        ui.label(theme::dim(format!("{anzahl} Objekte")));
     }
 
     let vorher = std::mem::take(&mut app.mehrfach_ziel);
