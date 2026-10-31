@@ -367,11 +367,15 @@ pub fn align_matrix(
                 } else if resp.hovered() {
                     (Palette::PANEL_ALT, Palette::ACCENT.gamma_multiply(0.7), Palette::TEXT)
                 } else {
-                    (Color32::TRANSPARENT, Palette::BORDER, Palette::TEXT_DIM)
+                    // Wie die Eingabefelder: dunkler Feldgrund (`Palette::BG`,
+                    // #121418) statt der durchscheinenden Panel-Zeile
+                    // (`Palette::PANEL`, #1a1d22). Gleicher Rand und gleiche
+                    // Rundung wie die Felder daneben.
+                    (Palette::BG, Palette::PANEL_ALT.gamma_multiply(1.6), Palette::TEXT_DIM)
                 };
-                p.rect_filled(r, Rounding::same(5.0), fuellung);
-                p.rect_stroke(r, Rounding::same(5.0), Stroke::new(1.0, rand));
-                align_pfeil(p, r.shrink(6.0), *wert_h, *wert_v, farbe);
+                p.rect_filled(r, Rounding::same(4.0), fuellung);
+                p.rect_stroke(r, Rounding::same(4.0), Stroke::new(1.0, rand));
+                align_pfeil(p, r.center(), *wert_h, *wert_v, farbe);
             }
             let tip = format!("{} · {}", wert_h.label(), wert_v.label());
             if resp.on_hover_text(tip).clicked() {
@@ -384,13 +388,47 @@ pub fn align_matrix(
     geaendert
 }
 
+/// Strichstärke der Ausrichtungs-Icons (px) — bewusst fett, damit die Pfeile
+/// neben den 11-px-Beschriftungen stehen können.
+const ALIGN_STRICH: f32 = 2.6;
+/// Halbe Länge eines Pfeils (Spitze bei +L, Ende bei −L).
+const ALIGN_PFEIL_L: f32 = 6.5;
+/// Länge der Pfeilspitze.
+const ALIGN_KOPF_L: f32 = 4.2;
+/// Halbe Breite der Pfeilspitze.
+const ALIGN_KOPF_B: f32 = 3.6;
+/// Seitenlänge des Mittelquadrats.
+const ALIGN_QUADRAT: f32 = 8.5;
+
+/// Züge eines Ausrichtungspfeils: Schaft und Spitzendreieck.
+///
+/// Der Pfeil wird **in seiner eigenen Achse** aufgebaut (`l` = Richtung,
+/// `n` = Querachse) und erst dann in die Zellrichtung gedreht. Alle acht
+/// Richtungen haben dadurch dieselbe Form — der Diagonalpfeil ist eine exakte
+/// 45°-Drehung des waagerechten. Vorher wurden Länge und Breite je getrennt
+/// über die halbe Zellbreite bemessen (`dx * hx`, `dy * hy`), der diagonale
+/// Pfeil war damit √2-mal so lang und wuchtig wie die übrigen (T0041).
+fn align_pfeil_zuege(mitte: Pos2, richtung: Vec2) -> ([Pos2; 2], [Pos2; 3]) {
+    let l = richtung.normalized();
+    let n = Vec2::new(-l.y, l.x);
+    let spitze = mitte + l * ALIGN_PFEIL_L;
+    let ende = mitte - l * ALIGN_PFEIL_L;
+    let kopf = spitze - l * ALIGN_KOPF_L;
+    (
+        [ende, kopf + l * 0.6],
+        [
+            spitze,
+            kopf + n * ALIGN_KOPF_B,
+            kopf - n * ALIGN_KOPF_B,
+        ],
+    )
+}
+
 /// Pfeil der Ausrichtungsmatrix: zeigt in die Richtung der gewählten Zelle.
 ///
-/// Ecken: Pfeil zur Ecke plus Winkelklammer an der Ecke (wie in der Skizze),
-/// Kanten: Pfeil an die Kante, Mitte: kleines Quadrat.
-fn align_pfeil(p: &egui::Painter, r: Rect, h: TextAlignH, v: TextAlignV, col: Color32) {
-    let c = r.center();
-    let (hx, hy) = (r.width() * 0.5, r.height() * 0.5);
+/// Ecken und Kanten: derselbe Pfeil in acht Richtungen, Mitte: kleines
+/// Quadrat (der Einfügepunkt sitzt in der Textmitte).
+fn align_pfeil(p: &egui::Painter, mitte: Pos2, h: TextAlignH, v: TextAlignV, col: Color32) {
     let dx = match h {
         TextAlignH::Left => -1.0,
         TextAlignH::Center => 0.0,
@@ -401,41 +439,20 @@ fn align_pfeil(p: &egui::Painter, r: Rect, h: TextAlignH, v: TextAlignV, col: Co
         TextAlignV::Middle => 0.0,
         TextAlignV::Bottom => 1.0,
     };
-    let st = Stroke::new(1.6, col);
+    let st = Stroke::new(ALIGN_STRICH, col);
     if dx == 0.0 && dy == 0.0 {
         // Mitte: Quadrat (der Einfügepunkt sitzt in der Textmitte)
         p.rect_stroke(
-            Rect::from_center_size(c, Vec2::new(hx * 1.15, hy * 1.15)),
-            Rounding::same(1.0),
+            Rect::from_center_size(mitte, Vec2::splat(ALIGN_QUADRAT)),
+            Rounding::same(1.5),
             st,
         );
         return;
     }
-    // Ziel: Kante bzw. Ecke des Symbols
-    let ziel = Pos2::new(c.x + dx * hx * 0.92, c.y + dy * hy * 0.92);
-    // Winkelklammer an der Ecke — macht sie auch ohne Pfeil lesbar
-    if dx != 0.0 && dy != 0.0 {
-        let ecke = Pos2::new(c.x + dx * hx, c.y + dy * hy);
-        p.line_segment(
-            [Pos2::new(c.x + dx * hx * 0.35, ecke.y), ecke],
-            st,
-        );
-        p.line_segment(
-            [ecke, Pos2::new(ecke.x, c.y + dy * hy * 0.35)],
-            st,
-        );
-    }
-    let start = Pos2::new(c.x - dx * hx * 0.85, c.y - dy * hy * 0.85);
-    p.line_segment([start, ziel], st);
+    let (schaft, kopf) = align_pfeil_zuege(mitte, Vec2::new(dx, dy));
+    p.line_segment(schaft, st);
     // Spitze: Dreieck in Richtung (dx, dy)
-    let l = Vec2::new(dx, dy).normalized();
-    let n = Vec2::new(-l.y, l.x);
-    let sp = 4.2;
-    p.add(Shape::convex_polygon(
-        vec![ziel + l * 1.2, ziel - l * sp + n * sp * 0.65, ziel - l * sp - n * sp * 0.65],
-        col,
-        Stroke::NONE,
-    ));
+    p.add(Shape::convex_polygon(kopf.to_vec(), col, Stroke::NONE));
 }
 
 /// Zeile mit festem Namen und nicht editierbarem Wert.
@@ -874,5 +891,116 @@ mod zahltests {
                 "{name}: Grenzen gehören in widgets.rs, nicht an die Aufrufstelle"
             );
         }
+    }
+}
+
+#[cfg(test)]
+mod icontests {
+    use super::*;
+
+    /// Sammelt alle gefüllten Rechtecke eines Bildes (auch in Gruppen).
+    fn fuellflaechen(shape: &egui::Shape, out: &mut Vec<(Rect, Color32)>) {
+        match shape {
+            egui::Shape::Rect(r) => out.push((r.rect, r.fill)),
+            egui::Shape::Vec(v) => v.iter().for_each(|s| fuellflaechen(s, out)),
+            _ => {}
+        }
+    }
+
+    /// Die acht Pfeile der Ausrichtungsmatrix sind **eine** Form, nur gedreht.
+    /// Vorher wurden Länge und Breite je über die halbe Zellbreite bemessen
+    /// (`dx * hx`, `dy * hy`) — der Diagonalpfeil war damit √2-mal so lang und
+    /// wuchtig wie die übrigen (T0041).
+    #[test]
+    fn ausrichtungspfeile_sind_dieselbe_gedrehte_form() {
+        let mitte = Pos2::new(60.0, 60.0);
+        let (schaft, kopf) = align_pfeil_zuege(mitte, Vec2::new(1.0, 0.0));
+        let basis: Vec<Vec2> = schaft
+            .iter()
+            .chain(kopf.iter())
+            .map(|p| *p - mitte)
+            .collect();
+        let radius = basis.iter().map(|p| p.length()).fold(0.0f32, f32::max);
+
+        for (dx, dy) in [
+            (1.0f32, 0.0f32),
+            (1.0, 1.0),
+            (0.0, 1.0),
+            (-1.0, 1.0),
+            (-1.0, 0.0),
+            (-1.0, -1.0),
+            (0.0, -1.0),
+            (1.0, -1.0),
+        ] {
+            let (s, k) = align_pfeil_zuege(mitte, Vec2::new(dx, dy));
+            let punkte: Vec<Vec2> = s.iter().chain(k.iter()).map(|p| *p - mitte).collect();
+            // Gleiche Ausdehnung in jeder Richtung: die Diagonale ist nicht länger.
+            let r = punkte.iter().map(|p| p.length()).fold(0.0f32, f32::max);
+            assert!(
+                (r - radius).abs() < 1e-3,
+                "Richtung ({dx},{dy}): Länge {r} statt {radius}"
+            );
+            // Und zwar als exakte Drehung der waagerechten Form.
+            let winkel = dy.atan2(dx);
+            let (si, co) = (winkel.sin(), winkel.cos());
+            for b in &basis {
+                let gedreht = Vec2::new(b.x * co - b.y * si, b.x * si + b.y * co);
+                assert!(
+                    punkte.iter().any(|p| (*p - gedreht).length() < 1e-3),
+                    "Richtung ({dx},{dy}): gedrehter Punkt {gedreht:?} fehlt"
+                );
+            }
+        }
+    }
+
+    /// Die fetteren Pfeile bleiben im Vergleich zur alten Form deutlich
+    /// kräftiger: Strichstärke und Spitzenbreite sind größer als vorher
+    /// (1,6 px Strich, 2,7 px halbe Spitzenbreite).
+    #[test]
+    fn ausrichtungspfeile_sind_fetter() {
+        assert!(ALIGN_STRICH >= 2.2, "Strichstärke {}", ALIGN_STRICH);
+        assert!(ALIGN_KOPF_B >= 3.2, "halbe Spitzenbreite {}", ALIGN_KOPF_B);
+        assert!(
+            ALIGN_PFEIL_L * 2.0 <= ALIGN_ZELLE - 2.0 * 6.0,
+            "Pfeil passt in die Zelle"
+        );
+    }
+
+    /// Grund der Ausrichtungsfelder ist derselbe wie bei den Eingabefeldern
+    /// (`Palette::BG`, #121418). Vorher schien der Panel-Ton (#1a1d22) durch
+    /// die Zelle — die Knöpfe sahen anders aus als die Felder daneben (T0041).
+    #[test]
+    fn ausrichtungsfelder_haben_feldgrund() {
+        let ctx = egui::Context::default();
+        let mut h = TextAlignH::Left;
+        let mut v = TextAlignV::Top;
+        let out = ctx.run(
+            egui::RawInput {
+                screen_rect: Some(Rect::from_min_size(Pos2::ZERO, Vec2::new(400.0, 400.0))),
+                ..Default::default()
+            },
+            |ctx| {
+                egui::CentralPanel::default().show(ctx, |ui| {
+                    align_matrix(ui, "pruefung", &mut h, &mut v);
+                });
+            },
+        );
+        let mut flaechen = Vec::new();
+        for cs in &out.shapes {
+            fuellflaechen(&cs.shape, &mut flaechen);
+        }
+        let zelle = |r: &Rect| {
+            (r.width() - ALIGN_ZELLE).abs() < 0.1 && (r.height() - ALIGN_ZELLE).abs() < 0.1
+        };
+        let felder = flaechen
+            .iter()
+            .filter(|(r, f)| zelle(r) && *f == Palette::BG)
+            .count();
+        let aktiv = flaechen
+            .iter()
+            .filter(|(r, f)| zelle(r) && *f == Palette::ACCENT_SOFT)
+            .count();
+        assert_eq!(felder, 8, "acht inaktive Zellen mit Feldgrund, gefunden {felder}");
+        assert_eq!(aktiv, 1, "genau eine gewählte Zelle, gefunden {aktiv}");
     }
 }
