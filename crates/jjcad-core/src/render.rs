@@ -485,24 +485,23 @@ impl<'a> RenderCtx<'a> {
 // ---------------------------------------------------------------------------
 
 pub fn render_document(ctx: &RenderCtx) -> DisplayList {
-    // Wände zuerst als reine Füllflächen, danach alle Linien. So kann keine
-    // Wandfüllung die Umrandung einer anderen Wand überdecken.
+    // Die Objektliste ist die Zeichenreihenfolge (Index 0 = hinten). Innerhalb
+    // dieser Reihenfolge stehen **alle** Füllungen vor allen Linien: sonst
+    // deckt die Wandfüllung die Umrandung einer anderen Wand zu. Untereinander
+    // behalten die Füllungen ihre Stellung im Dokument — der Zeichenrang
+    // entscheidet also, welche Fläche oben liegt (Wand über Füllfläche, T0050).
     // Gerendert wird der aktive Bearbeitungsraum: Modell oder Papierraum.
     let mut fills = DisplayList::default();
     let mut rest = DisplayList::default();
     for e in ctx.ents() {
-        if matches!(e.kind, EntityKind::Wall { .. }) {
-            let mut tmp = DisplayList::default();
-            render_entity(ctx, e, Affine::IDENTITY, &mut tmp, 0);
-            for prim in tmp.prims {
-                if matches!(prim.shape, Shape::Fill { .. }) {
-                    fills.push(prim);
-                } else {
-                    rest.push(prim);
-                }
+        let mut tmp = DisplayList::default();
+        render_entity(ctx, e, Affine::IDENTITY, &mut tmp, 0);
+        for prim in tmp.prims {
+            if matches!(prim.shape, Shape::Fill { .. }) {
+                fills.push(prim);
+            } else {
+                rest.push(prim);
             }
-        } else {
-            render_entity(ctx, e, Affine::IDENTITY, &mut rest, 0);
         }
     }
     for prim in rest.prims {
@@ -534,16 +533,12 @@ pub fn preview_selection(doc: &Document, ids: &[Id], delta: Vec2) -> DisplayList
         let Some(e) = doc.entity(*id) else { continue };
         let mut tmp = DisplayList::default();
         render_entity(&ctx, e, xf, &mut tmp, 0);
-        if matches!(e.kind, EntityKind::Wall { .. }) {
-            for prim in tmp.prims {
-                if matches!(prim.shape, Shape::Fill { .. }) {
-                    fills.push(prim);
-                } else {
-                    rest.push(prim);
-                }
-            }
-        } else {
-            for prim in tmp.prims {
+        // Dieselbe Ordnung wie `render_document`: alle Füllungen vor allen
+        // Linien, untereinander in der Reihenfolge der Auswahl.
+        for prim in tmp.prims {
+            if matches!(prim.shape, Shape::Fill { .. }) {
+                fills.push(prim);
+            } else {
                 rest.push(prim);
             }
         }
