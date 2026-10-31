@@ -23,7 +23,7 @@ fn alte_t_belegung_wird_beim_laden_entfernt() {
     std::fs::create_dir_all(&dir).unwrap();
     let pfad = dir.join("prefs.json");
     let mut prefs = UserPrefs::default();
-    prefs.bindings.insert("draw.text".into(), "t".into());
+    prefs.bindings.insert("draw.text".into(), vec!["t".into()]);
     prefs.save_to(&pfad).unwrap();
 
     let geladen = UserPrefs::load_from(&pfad);

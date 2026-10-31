@@ -75,6 +75,18 @@ aus Ribbon, Hotbar oder Tastatur. Beim Schließen wird der Merker geleert. Die
 Alternative bleibt die Funktionsliste im Fenster (Taste wählen, Funktion
 aus der Liste).
 
+**Mehrere Tasten je Funktion:** Eine Funktion darf auf beliebig vielen Tasten
+liegen (`UserPrefs::bindings`: Action → Liste von Tasten). Ein zweiter Klick auf
+eine freie Taste **ergänzt** die Belegung und ersetzt sie nicht; die
+Funktionsliste zeigt alle Tasten in Klammern. Umgekehrt trägt eine Taste
+weiterhin genau eine Funktion — wer eine Funktion auf eine belegte Taste legt,
+nimmt sie der anderen weg. Eine Funktion verschieben heißt deshalb: neue Taste
+anklicken, alte mit der **mittleren Maustaste** leeren (oder „Belegung dieser
+Taste entfernen").
+
+Die Bedienung steht als Tooltip am kleinen **i** über dem Tastenbild — im
+Fenster selbst kein langer Hinweistext.
+
 ## Für Entwickler
 
 - **Neue Funktion mit Kürzel:** Action im Register (`actions.rs`) mit `key`
@@ -112,3 +124,7 @@ aus der Liste).
 | Belegte Taste bleibt belegt | `dialogs::tests_tastatur::belegte_taste_behaelt_ihre_funktion` |
 | Fest verdrahtete Funktion landet nicht auf einer Taste | `dialogs::tests_tastatur::fest_verdrahtete_funktion_landet_nicht_auf_einer_taste` |
 | Kein Abdunkeln beim offenen Fenster | `dialogs::tests_tastatur::tastaturbelegung_dunkelt_nicht_ab` |
+| Mittlere Maustaste leert eine Taste | `dialogs::tests_tastatur::mittlere_maustaste_entfernt_die_belegung` |
+| Funktion liegt auf mehreren Tasten | `dialogs::tests_tastatur::funktion_laesst_sich_mehrfach_platzieren` |
+| Bedienung nur als Tooltip am i | `dialogs::tests_tastatur::bedienung_steht_als_tooltip_am_info_symbol` |
+| Belegung: Liste je Funktion, alte Form wird gelesen | `persist::tests::funktion_laesst_sich_mehrfach_belegen`, `…::alte_einzelne_belegung_wird_als_liste_gelesen` |

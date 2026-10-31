@@ -1741,31 +1741,29 @@ fn funktion_auf_taste(app: &mut App, funktion: &str, key: &str) -> bool {
     true
 }
 
+/// Bedienung der Tastaturbelegung — steht im Tooltip am kleinen „i" über dem
+/// Tastenbild (T0064). Die Bedienung ist selbsterklärend; ein langer Hinweistext
+/// gehört nicht ins Fenster.
+const KEYMAP_HILFE: &str = "Taste anklicken und in der Liste eine Funktion wählen \
+— oder eine Funktion im Ribbon anklicken und danach eine leere Taste: sie \
+übernimmt sie. Eine Funktion darf auf mehreren Tasten liegen, eine Taste trägt \
+genau eine Funktion. Mittlere Maustaste leert eine Taste. Buchstaben und Symbole \
+sind frei belegbar; Ziffern gehören der Hotbar; Steuerungstasten und \
+Kombinationen sind fest verdrahtet und ausgegraut.";
+
 fn keyboard_body(app: &mut App, ui: &mut Ui) {
-    // Der Hinweis nennt die drei Schichten aus `docs/TASTEN.md`. Er läuft über
-    // die ganze Breite und bricht um — in einer Zeile ragte er über den Rand
-    // des Dialogs hinaus.
-    ui.horizontal_wrapped(|ui| {
-        ui.label(theme::dim(
-            "Taste anklicken, dann Funktion aus der Liste zuweisen. Buchstaben und \
-             Symbole sind frei belegbar; Ziffern gehören der Hotbar; Steuerungstasten \
-             und Kombinationen sind fest verdrahtet und ausgegraut. Das Ribbon bleibt \
-             bedienbar: Funktion anklicken, dann eine leere Taste — sie übernimmt sie.",
-        ));
-    });
-    // T0064: Die zuletzt gewählte Funktion steht hier, damit sichtbar ist, was
-    // eine leere Taste aufnimmt.
-    match app.ui.keymap_funktion.clone() {
-        Some(f) => {
+    ui.horizontal(|ui| {
+        let (rect, antwort) = ui.allocate_exact_size(Vec2::splat(16.0), Sense::hover());
+        widgets::icon(ui, rect, "info", Palette::TEXT_DIM);
+        antwort.on_hover_text(KEYMAP_HILFE);
+        // T0064: Die zuletzt gewählte Funktion steht daneben, damit sichtbar
+        // ist, was eine leere Taste gerade aufnimmt.
+        if let Some(f) = app.ui.keymap_funktion.clone() {
             let name = actions::action(&f).map(|d| d.label.to_string()).unwrap_or(f);
-            ui.label(theme::mono(format!("Bereit: {name} — leere Taste anklicken")));
+            ui.add_space(8.0);
+            ui.label(theme::mono(format!("Bereit: {name}")));
         }
-        None => {
-            ui.label(theme::dim(
-                "Noch keine Funktion gewählt — im Ribbon eine Funktion anklicken.",
-            ));
-        }
-    }
+    });
     ui.add_space(6.0);
 
     let (rahmen, _) = ui.allocate_exact_size(tastatur_flaeche(), Sense::hover());
@@ -1892,6 +1890,18 @@ fn keyboard_body(app: &mut App, ui: &mut Ui) {
                 _ => app.ui.keymap_selected = Some(key.to_string()),
             }
         }
+        // Mittlere Maustaste: Belegung dieser Taste entfernen (T0064) — wie bei
+        // den Slots der Hotbar.
+        if resp.clicked_by(egui::PointerButton::Middle) && gesperrt.is_none() {
+            match app.prefs.unbind_key(key) {
+                Some(a) => {
+                    let _ = app.prefs.save();
+                    let name = actions::action(&a).map(|d| d.label.to_string()).unwrap_or(a);
+                    app.toast(format!("{name} · Taste {} frei", key.to_uppercase()));
+                }
+                None => app.toast("Taste · nicht belegt"),
+            }
+        }
         match gesperrt {
             // Hinweis auf den Grund: Ziffern gehören der Hotbar, die übrigen
             // Steuerungstasten dem Ablauf (Esc/Enter/Rücktaste usw.).
@@ -1915,8 +1925,7 @@ fn keyboard_body(app: &mut App, ui: &mut Ui) {
         if let Some(key) = app.ui.keymap_selected.clone() {
             ui.label(theme::mono(format!("Taste: {key}")));
             if ui.button("Belegung dieser Taste entfernen").clicked() {
-                if let Some(a) = app.prefs.action_for_key(&key) {
-                    app.prefs.bindings.remove(&a);
+                if app.prefs.unbind_key(&key).is_some() {
                     let _ = app.prefs.save();
                 }
             }
@@ -1940,19 +1949,23 @@ fn keyboard_body(app: &mut App, ui: &mut Ui) {
                 {
                     continue;
                 }
-                let current = app.prefs.key_for(def.id);
+                // Eine Funktion darf auf mehreren Tasten liegen (T0064) — die
+                // Liste zeigt sie alle.
+                let current = {
+                    let keys = app.prefs.keys_for(def.id);
+                    if keys.is_empty() {
+                        String::new()
+                    } else {
+                        let namen: Vec<String> =
+                            keys.iter().map(|k| k.to_uppercase()).collect();
+                        format!("   ({})", namen.join(", "))
+                    }
+                };
                 // Funktionen mit fest verdrahteter Taste (Strg+S, F1 …) sind
                 // nicht umbelegbar — sie stehen als Hinweis in der Liste, aber
                 // ohne Klickziel (T0056, `docs/TASTEN.md`).
                 let aenderbar = app.prefs.belegung_aenderbar(def.id);
-                let label = format!(
-                    "{}{}",
-                    def.label,
-                    current
-                        .as_ref()
-                        .map(|k| format!("   ({})", k.to_uppercase()))
-                        .unwrap_or_default()
-                );
+                let label = format!("{}{current}", def.label);
                 if !aenderbar {
                     ui.add_enabled(
                         false,
@@ -2335,6 +2348,119 @@ mod tests_tastatur {
             app.ui.keymap_funktion.is_none(),
             "der Merker überlebt das Schließen der Tastaturbelegung"
         );
+    }
+
+    /// Klick mit der **mittleren** Maustaste (T0064: Belegung entfernen).
+    fn klick_mittel(ctx: &egui::Context, app: &mut App, pos: Pos2) {
+        let knopf = |pressed: bool| egui::Event::PointerButton {
+            pos,
+            button: egui::PointerButton::Middle,
+            pressed,
+            modifiers: egui::Modifiers::NONE,
+        };
+        rahmen(ctx, app, vec![egui::Event::PointerMoved(pos)]);
+        rahmen(ctx, app, vec![knopf(true)]);
+        rahmen(ctx, app, vec![knopf(false)]);
+        rahmen(ctx, app, vec![]);
+    }
+
+    /// T0064: Die mittlere Maustaste leert eine Taste — wie bei den Slots der
+    /// Hotbar. Die Funktion selbst bleibt erhalten.
+    #[test]
+    fn mittlere_maustaste_entfernt_die_belegung() {
+        let _sperre = KONFIG.lock().unwrap_or_else(|e| e.into_inner());
+        let _konfig = WegwerfKonfig::neu("mitte");
+        let (mut app, ctx) = app_mit_tastatur();
+        let vorher = app.prefs.action_for_key("g").expect("G ist im Werkssatz belegt");
+
+        let tasten = app.ui.last_tasten.clone().expect("Tastenbild gezeichnet");
+        let (_, _, g) = *taste_mit(&tasten, "g");
+        klick_mittel(&ctx, &mut app, g.center());
+
+        assert_eq!(
+            app.prefs.action_for_key("g"),
+            None,
+            "die mittlere Maustaste hat die Taste nicht geleert"
+        );
+        assert_eq!(
+            app.prefs.key_for(vorher.as_str()).as_deref(),
+            None,
+            "die Funktion darf nur ihre Taste verlieren, nicht selbst verschwinden"
+        );
+        assert_eq!(
+            app.prefs.action_for_key("t"),
+            None,
+            "eine fremde Taste wurde mitgeleert"
+        );
+        // Gesperrte Tasten lassen sich nicht leeren.
+        let tasten = app.ui.last_tasten.clone().expect("Tastenbild gezeichnet");
+        let (_, _, eins) = *taste_mit(&tasten, "1");
+        klick_mittel(&ctx, &mut app, eins.center());
+        assert!(app.prefs.unbind_key("1").is_none(), "Ziffer 1 war nie belegt");
+    }
+
+    /// T0064: Eine Funktion darf auf mehreren Tasten liegen — zweimal dieselbe
+    /// Funktion wählen, zweimal eine freie Taste anklicken.
+    #[test]
+    fn funktion_laesst_sich_mehrfach_platzieren() {
+        let _sperre = KONFIG.lock().unwrap_or_else(|e| e.into_inner());
+        let _konfig = WegwerfKonfig::neu("mehrfach");
+        let (mut app, ctx) = app_mit_tastatur();
+        let frei = ["t", "ä"];
+        for key in frei {
+            assert!(
+                app.prefs.action_for_key(key).is_none(),
+                "Testtaste {key} ist belegt: {:?}",
+                app.prefs.action_for_key(key)
+            );
+            app.run_action(&ctx, "draw.wall");
+            let tasten = app.ui.last_tasten.clone().expect("Tastenbild gezeichnet");
+            let (_, _, r) = *taste_mit(&tasten, key);
+            klick(&ctx, &mut app, r.center());
+            assert_eq!(
+                app.prefs.action_for_key(key).as_deref(),
+                Some("draw.wall"),
+                "Taste {key} hat die Funktion nicht übernommen"
+            );
+        }
+        assert_eq!(
+            app.prefs.keys_for("draw.wall"),
+            &["g".to_string(), "t".to_string(), "ä".to_string()],
+            "die Funktion muss auf allen drei Tasten liegen"
+        );
+        // Die Werkstaste G bleibt erhalten, die Auswertung findet beide.
+        assert_eq!(app.prefs.key_for("draw.wall").as_deref(), Some("g"));
+    }
+
+    /// T0064: Der lange Hinweistext steht nicht mehr im Fenster — er hängt als
+    /// Tooltip am kleinen „i" über dem Tastenbild.
+    #[test]
+    fn bedienung_steht_als_tooltip_am_info_symbol() {
+        let (mut app, ctx) = app_mit_tastatur();
+        let out = rahmen(&ctx, &mut app, vec![]);
+        let texte: Vec<&str> = out
+            .shapes
+            .iter()
+            .filter_map(|cs| match &cs.shape {
+                egui::Shape::Text(t) => Some(t.galley.text()),
+                _ => None,
+            })
+            .collect();
+        assert!(
+            !texte.iter().any(|t| t.starts_with("Taste anklicken, dann Funktion")),
+            "der lange Hinweistext steht noch im Fenster"
+        );
+        assert!(
+            !texte.iter().any(|t| t.contains("Noch keine Funktion gewählt")),
+            "der Hinweis auf die fehlende Funktion steht noch im Fenster"
+        );
+        // Der Tooltip erklärt die Bedienung vollständig.
+        for wort in ["Ribbon", "Mittlere Maustaste", "mehreren Tasten", "Hotbar"] {
+            assert!(
+                KEYMAP_HILFE.contains(wort),
+                "der Tooltip nennt „{wort}“ nicht"
+            );
+        }
     }
 
     #[test]
