@@ -57,9 +57,12 @@ ausgeblendet.
   verschoben und die Nachbarkanten folgen, sodass sich Breite/Höhe eines Rechtecks direkt ändern
   lassen. `ESC` bricht das Ziehen ab. Beim Ziehen gilt derselbe **Winkelfang** wie beim
   Erstellen: `Ortho` hält den Punkt waagerecht/senkrecht und der Polarfang rastet auf seinen
-  Schrittweiten (45°) ein. Bezugspunkt der Richtung ist der ruhende Punkt des Elements — bei
-  Linie und Wand das andere Ende, bei Polylinie, Spline und Rechteck die Nachbarecke, bei
-  Fläche und Volumen der vorige Umrandungspunkt. Dasselbe gilt für das Verschieben mit der Maus.
+  Schrittweiten (45°) ein. Bezug sind die ruhenden Punkte des Elements — bei Linie und Wand das
+  andere Ende, bei Polylinie, Spline, Rechteck, Fläche und Volumen **beide** Nachbarn (voriger
+  und nächster Stützpunkt). Beide Achsen stehen gleichzeitig zur Verfügung: jede Koordinate
+  rastet auf die nächstgelegene Achse, liegen beide im Fangradius, landet die Ecke auf ihrem
+  Schnittpunkt und beide angrenzenden Linien stehen gerade. Dasselbe gilt für das Verschieben
+  mit der Maus.
   Auch der **erweiterte Punktfang** arbeitet dabei: bleibt der Zeiger auf einem Fangpunkt
   stehen, wird dieser gehalten und seine Hilfslinien fangen den gezogenen Punkt.
 - **Linien** werden als Kapsel gezeichnet: Rechteck plus Halbkreis an beiden Enden. Dadurch sind

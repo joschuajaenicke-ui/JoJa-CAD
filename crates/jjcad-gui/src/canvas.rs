@@ -2532,22 +2532,27 @@ fn fang_radius_px(app: &App, zoom: f64) -> f64 {
     (app.doc().settings.snap.tolerance_px / zoom.max(1e-6)).max(0.5)
 }
 
-/// Bezugspunkt für Ortho und Polar (Winkelfang) in der aktuellen Lage.
+/// Bezugspunkte für Ortho und Polar (Winkelfang) in der aktuellen Lage.
 ///
 /// Beim **Erstellen** ist das der zuletzt gesetzte Punkt. Beim **Manipulieren**
 /// fehlte er bisher ganz: der Griffzug hatte damit keine Zwangsrichtung und
 /// ließ sich nicht waagerecht, senkrecht oder unter 45° ausrichten (T0046).
-/// Deshalb liefert der laufende Griffzug den ruhenden Punkt des Elements
-/// (`handles::bezugspunkt`), die Maus-Verschiebung ihren Griffpunkt — dieselbe
-/// Regel, die das Werkzeug „Verschieben" über seinen Basispunkt schon hat.
-fn bezug_zeiger(app: &App) -> Option<V2> {
+/// Deshalb liefert der laufende Griffzug die ruhenden Punkte des Elements
+/// (`handles::bezugspunkte`) — an einem Stützpunkt sind das **zwei** (voriger
+/// und nächster), damit beide angrenzenden Linien gleichzeitig fangen (Turn 3);
+/// die Maus-Verschiebung liefert ihren Griffpunkt, wie das Werkzeug
+/// „Verschieben" über seinen Basispunkt.
+fn bezug_achsen(app: &App) -> Vec<V2> {
     if let Some(t) = app.tool.as_ref() {
-        return t.pts.last().copied();
+        return t.pts.last().copied().into_iter().collect();
     }
     if let Some(drag) = app.grip_drag.as_ref() {
-        return crate::handles::bezugspunkt(&drag.orig, drag.kind);
+        return crate::handles::bezugspunkte(&drag.orig, drag.kind);
     }
-    app.move_drag.as_ref().map(|md| md.start)
+    app.move_drag
+        .as_ref()
+        .map(|md| vec![md.start])
+        .unwrap_or_default()
 }
 
 /// Fang-Kette für den Zeiger in der aktuellen Werkzeuglage.
@@ -2557,16 +2562,17 @@ fn bezug_zeiger(app: &App) -> Option<V2> {
 /// laufen sie getrennt, weicht der gespeicherte Punkt vom sichtbaren
 /// Fangpunkt ab. Reihenfolge der Fänge: `snap::snap_constrained`.
 fn fang_zeiger(app: &App, w: V2, tol: f64) -> (V2, Option<&'static str>) {
-    let reference = bezug_zeiger(app);
+    let achsen = bezug_achsen(app);
     let regeln = fang_regeln(app);
     let vorschau = vorschau_punkte(app);
-    // `snap_constrained_mit_halte`: die Haltepunkte des erweiterten Punktfangs
-    // liefern ihre Hilfslinien als zusätzliche Fangziele mit.
-    let res = snap::snap_constrained_mit_halte(
+    // `snap_constrained_achsen`: die Haltepunkte des erweiterten Punktfangs
+    // liefern ihre Hilfslinien als zusätzliche Fangziele mit; mehrere
+    // Bezugspunkte (beide Nachbarn eines Griffs) rasten getrennt je Koordinate.
+    let res = snap::snap_constrained_achsen(
         app.doc(),
         w,
         tol,
-        reference,
+        &achsen,
         &regeln.ignore,
         &regeln.keep,
         &regeln.gesperrt,
@@ -3680,9 +3686,9 @@ fn fang_aktiv(app: &App) -> bool {
 /// liegt überall — beide stünden nie still und würden bei jedem Verweilen
 /// Hilfslinien erzeugen.
 fn verweil_kandidat(app: &App, w: V2, tol: f64) -> Option<snap::HaltPunkt> {
-    // Derselbe Bezug wie beim Fangen (`bezug_zeiger`): beim Griffzug der
-    // ruhende Punkt des Elements, sonst der zuletzt gesetzte.
-    let reference = bezug_zeiger(app);
+    // Derselbe Bezug wie beim Fangen (`bezug_achsen`): beim Griffzug der
+    // nächstgelegene ruhende Punkt des Elements, sonst der zuletzt gesetzte.
+    let reference = bezug_achsen(app).into_iter().next();
     let regeln = fang_regeln(app);
     let vorschau = vorschau_punkte(app);
     snap::snap_candidates_mit_vorschau(
@@ -6941,6 +6947,75 @@ mod tests_fang_griff {
 
         let (p, _) = fang_zeiger(&app, V2::new(300.0, 1900.0), 40.0);
         assert_punkt(p, V2::new(0.0, 1900.0));
+    }
+
+    /// Polylinien-Ecke mit **zwei** Linien: beide Nachbarn stehen als Achsen
+    /// zur Verfügung, die Ecke rastet auf ihren Schnittpunkt — beide Linien
+    /// sind danach ausgerichtet (T0046, Turn 3).
+    #[test]
+    fn griffzug_richtet_beide_polylinienlinien_aus() {
+        let mut app = app_mit_zwang(true, false);
+        app.session_mut()
+            .execute(
+                "draw.polyline",
+                &serde_json::json!({"pts": [[0.0, 0.0], [2000.0, 1500.0], [2000.0, 4000.0]]}),
+            )
+            .unwrap();
+        let id = app.doc().entities[0].id;
+        app.session_mut().select(vec![id]);
+        app.begin_grip_drag(id, crate::handles::GripKind::Vert(1));
+
+        // 20 mm neben der Senkrechten des nächsten, 50 mm über der
+        // Waagerechten des vorigen Stützpunkts.
+        let (p, _) = fang_zeiger(&app, V2::new(1980.0, 50.0), 100.0);
+        assert_punkt(p, V2::new(2000.0, 0.0));
+    }
+
+    /// Derselbe Fall durch die Oberfläche: die ausgerichtete Ecke steht so in
+    /// der gespeicherten Datei.
+    #[test]
+    fn mauszug_richtet_beide_linien_aus_und_speichert() {
+        let mut app = app_mit_zwang(true, false);
+        app.session_mut()
+            .execute(
+                "draw.polyline",
+                &serde_json::json!({"pts": [[0.0, 0.0], [2000.0, 1500.0], [2000.0, 4000.0]]}),
+            )
+            .unwrap();
+        let id = app.doc().entities[0].id;
+        app.session_mut().select(vec![id]);
+
+        frame(&mut app, vec![]);
+        let rect = app.ui.last_canvas;
+        let view = app.current_view();
+        let tol = fang_radius_px(&app, view.zoom);
+        let griff = world_to_screen(rect, view, V2::new(2000.0, 1500.0));
+        let ziel = world_to_screen(rect, view, V2::new(2000.0 - tol * 0.3, tol * 0.3));
+
+        frame(&mut app, vec![egui::Event::PointerMoved(griff)]);
+        frame(&mut app, vec![druck(griff)]);
+        assert!(app.grip_drag.is_some(), "Griffzug muss beginnen");
+        frame(&mut app, vec![egui::Event::PointerMoved(ziel)]);
+        frame(&mut app, vec![egui::Event::PointerMoved(ziel)]);
+        frame(&mut app, vec![loslassen(ziel)]);
+        assert!(app.grip_drag.is_none(), "Loslassen beendet den Zug");
+
+        let pts = match &app.doc().entity(id).expect("Polylinie fehlt").kind {
+            EntityKind::Polyline { verts, .. } => verts.iter().map(|v| v.p).collect::<Vec<_>>(),
+            other => panic!("keine Polylinie: {other:?}"),
+        };
+        assert_punkt(pts[1], V2::new(2000.0, 0.0));
+
+        let json = jjcad_core::persist::to_json(app.doc()).expect("speichern");
+        let wieder = jjcad_core::persist::from_json(&json).expect("laden");
+        let geladen = wieder
+            .entity(id)
+            .and_then(|e| match &e.kind {
+                EntityKind::Polyline { verts, .. } => Some(verts[1].p),
+                _ => None,
+            })
+            .expect("Polylinie in der Datei");
+        assert_punkt(geladen, V2::new(2000.0, 0.0));
     }
 
     /// Gegenprobe: ohne Ortho und Polar folgt der Griff weiter dem Zeiger —
