@@ -36,8 +36,8 @@ pub const RIBBON_CONTENT_H: f32 = RIBBON_H - 2.0 * RIBBON_PAD;
 pub const RIBBON_GROUP_H: f32 = 67.0;
 pub const HEADER_H: f32 = 38.0;
 pub const DOCTABS_H: f32 = 34.0;
-/// Höhe der einen unteren Leiste (Slots 34 px + 2 × 7 px Rand)
-pub const HOTBAR_H: f32 = 48.0;
+/// Höhe der einen unteren Leiste: Slot-Kante (50 px) + 2 × 5 px Rand
+pub const HOTBAR_H: f32 = 60.0;
 
 // ---------------------------------------------------------------------------
 // Ansicht / Reiter
@@ -5477,8 +5477,10 @@ mod tests_untere_leiste {
             950.0 - HOTBAR_H
         );
         assert!(
-            HOTBAR_H <= 50.0,
-            "untere Leiste ist {HOTBAR_H} px hoch, früher 64 + 26 = 90 px"
+            HOTBAR_H >= crate::hotbar::SLOT + 8.0 && HOTBAR_H <= 64.0,
+            "untere Leiste ist {HOTBAR_H} px hoch, muss die {} px großen Slots \
+             fassen und darf die alte Hotbar (64 px) nicht übersteigen",
+            crate::hotbar::SLOT
         );
     }
 
