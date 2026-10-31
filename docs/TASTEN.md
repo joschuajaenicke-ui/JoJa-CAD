@@ -59,6 +59,21 @@ fest.** Keine Taste gehört zwei Schichten.
   legt, dreht die Vorschau mit `Q` und die Auswahl mit `Q`. `Umschalt` dreht
   gegen den Uhrzeigersinn.
 
+## Funktionen direkt auf eine Taste legen (T0064)
+
+Der Weg wie bei der Hotbar: **Funktion im Ribbon anklicken, dann im Fenster
+„Tastaturbelegung" eine leere Taste anklicken** — die Taste übernimmt sie sofort.
+Das Fenster dunkelt den Hintergrund dafür nicht mehr ab; das Ribbon bleibt
+bedienbar. Eine bereits belegte Taste wird dabei nur ausgewählt (ihre Funktion
+bleibt), fest verdrahtete Funktionen (`Strg+S`, `F1` …) lassen sich so nicht
+umbelegen.
+
+Welche Funktion bereitliegt, merkt sich das Programm, solange das Fenster offen
+ist (`UiState::keymap_funktion`): jede über `App::run_action` gestartete Funktion
+aus Ribbon, Hotbar oder Tastatur. Beim Schließen wird der Merker geleert. Die
+Alternative bleibt die Funktionsliste im Fenster (Taste wählen, Funktion
+aus der Liste).
+
 ## Für Entwickler
 
 - **Neue Funktion mit Kürzel:** Action im Register (`actions.rs`) mit `key`
@@ -92,3 +107,7 @@ fest.** Keine Taste gehört zwei Schichten.
 | Kombinationen bleiben fest | `persist::tests::feste_kombinationen_lassen_sich_nicht_umbelegen` |
 | Schwenk folgt der Belegung (Verhalten) | `app::tests_tastenbelegung::*` |
 | Icons der Schwenkrichtungen | `icons::tests_pan_icons` |
+| Leere Taste übernimmt die Ribbon-Funktion | `dialogs::tests_tastatur::leere_taste_uebernimmt_die_funktion_aus_dem_ribbon` |
+| Belegte Taste bleibt belegt | `dialogs::tests_tastatur::belegte_taste_behaelt_ihre_funktion` |
+| Fest verdrahtete Funktion landet nicht auf einer Taste | `dialogs::tests_tastatur::fest_verdrahtete_funktion_landet_nicht_auf_einer_taste` |
+| Kein Abdunkeln beim offenen Fenster | `dialogs::tests_tastatur::tastaturbelegung_dunkelt_nicht_ab` |
