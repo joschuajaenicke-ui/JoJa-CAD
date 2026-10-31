@@ -2869,6 +2869,7 @@ pub fn trefferbild(doc: &Document, e: &Entity) -> Trefferbild {
                     segmente.push(Seg::Line(pts[i], pts[(i + 1) % pts.len()]));
                 }
             }
+            Shape::Arc { c, r, a0, a1 } => segmente.push(Seg::Arc(Arc::new(*c, *r, *a0, *a1))),
             Shape::Text(t) => text_kaesten.push(text_corners(
                 t.pos, &t.text, t.height, t.angle, t.align, t.valign,
             )),
@@ -2976,13 +2977,14 @@ fn entity_segments_tief(doc: &Document, e: &Entity, depth: usize) -> Vec<Seg> {
                 }
             }
         }
-        EntityKind::Door { center, angle, width, .. } => {
-            let d = Vec2::polar(*angle, *width * 0.5);
-            out.push(Seg::Line(*center - d, *center + d));
-        }
-        EntityKind::Window { center, angle, width, .. } => {
-            let d = Vec2::polar(*angle, *width * 0.5);
-            out.push(Seg::Line(*center - d, *center + d));
+        EntityKind::Door { .. } | EntityKind::Window { .. } => {
+            // Tür und Fenster zeichnen **versetzt** zu den gespeicherten Werten:
+            // die Tür sitzt auf der vorderen Wandkante (Flügel senkrecht zur
+            // Wand, Schwungbogen daneben), das Fenster füllt die Wanddicke. Die
+            // frühere Strecke `center ± Breite/2` liegt dagegen unsichtbar auf
+            // der Wandachse — der Türflügel war damit nicht anklickbar (T0071).
+            // Trefferflächen deshalb aus der Anzeige, wie bei der Bemaßung.
+            out.extend(trefferbild(doc, e).segmente);
         }
         EntityKind::Text { p, .. } | EntityKind::Point { p } => {
             // Punktgeometrie über BBox
