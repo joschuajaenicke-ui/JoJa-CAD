@@ -120,6 +120,16 @@ Mit dem Nutzer abgestimmt — nicht „verbessern“:
   untere linke Ecke der Auswahl — beim Einfügen steht dieser Punkt am Zeiger.
   **Kopieren setzt nie sofort eine Kopie ab** (auch nicht mit Basispunkt): es füllt
   nur die Zwischenablage, platziert wird über die Einfüge-Vorschau.
+- **Tastenbelegung in drei Schichten (T0056, `docs/TASTEN.md` ist verbindlich)**:
+  Ziffern `1`–`0` gehören der **Hotbar**, Buchstaben und Symbole der
+  **Tastaturbelegung** (frei und dynamisch änderbar, je Taste genau eine
+  Funktion, Umschalt-Ebene als `shift+<Zeichen>`), alle übrigen Tasten
+  (`Esc`, `Strg`, `Enter`, `Entf`, `F1`–`F12` …) und Kombinationen (`Strg+C`,
+  `Strg+S`) sind **hardcodiert**. Eine Taste darf nie in zwei Schichten liegen:
+  der Ansichtsschwenk sind die Funktionen `view.pan_*` auf `W`/`A`/`S`/`D`
+  (Icon im Tastenbild), Drehen und Spiegeln der Einfüge-Vorschau hängen an
+  `modify.rotate`/`modify.mirror`. Kürzel nur über `app::EINZELTASTEN` und das
+  Action-Register auswerten, nicht zusätzlich im Code abfragen.
 - **Rechtsklickmenüs** bleiben offen, wenn der Zeiger in die Zeichenfläche kommt.
 - **Eigenschaften-Panel**: gleiche Zeilen (96 px Label, 150 px Wert) beim Platzieren
   *und* bei Auswahl; bei Mehrfachauswahl nur gemeinsame Felder, abweichende Werte

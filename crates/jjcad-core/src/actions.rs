@@ -119,12 +119,14 @@ pub const ACTIONS: &[ActionDef] = &[
 
     // Architektur
     act!("draw.wall", "Wand", Architektur, "wall", "g", "Wandachse: Start- und Endpunkt", true),
+    // V gehört dem Werkzeug „Verschieben" (modify.move, siehe BEDIENUNG);
+    // Volumen liegt deshalb auf Umschalt+V (T0056).
     act!(
         "draw.volume",
         "Volumen",
         Architektur,
         "volume",
-        "v",
+        "shift+v",
         "Geschlossene Kontur klicken — der Körper erhält eine Höhe",
         true
     ),
@@ -180,7 +182,7 @@ pub const ACTIONS: &[ActionDef] = &[
     act!("modify.mirror", "Spiegeln", Aendern, "mirror", "f", "Auswahl, Spiegelachse", true),
     act!("modify.scale", "Skalieren", Aendern, "scale", "", "Auswahl, Zentrum, Faktor", true),
     act!("modify.offset", "Versetzen", Aendern, "offset", "", "Abstand und Seite klicken", true),
-    act!("modify.trim", "Stutzen", Aendern, "trim", "s", "Zu stutzendes Segment anklicken", true),
+    act!("modify.trim", "Stutzen", Aendern, "trim", "", "Zu stutzendes Segment anklicken", true),
     act!("modify.extend", "Verlängern", Aendern, "extend", "x", "Ende anklicken, das verlängert wird", true),
     act!("modify.erase", "Löschen", Aendern, "erase", "entf", "Auswahl löschen", false),
     act!("modify.explode", "Zerlegen", Aendern, "explode", "", "Blöcke/Bauteile in Einzelelemente, Text in Linien zerlegen", false),
@@ -217,6 +219,15 @@ pub const ACTIONS: &[ActionDef] = &[
     act!("view.zoom_extents", "Alles zeigen", Ansicht, "zoomfit", "", "Zeichnung einpassen", false),
     act!("view.zoom_in", "Vergrößern", Ansicht, "zoomin", "", "Hineinzoomen", false),
     act!("view.zoom_out", "Verkleinern", Ansicht, "zoomout", "", "Herauszoomen", false),
+    // Umsetzen der Ansicht mit der Tastatur (T0056). Die vier Richtungen sind
+    // eigene Funktionen — nicht fest im Code — damit sie in der
+    // Tastaturbelegung stehen, ein Icon tragen und umbelegt werden können.
+    // Gehalten bewegt sich die Ansicht laufend, ein einzelner Druck rückt sie
+    // einen Schritt weiter.
+    act!("view.pan_left", "Ansicht links", Ansicht, "pan-left", "a", "Ansicht nach links schieben (Taste halten)", false),
+    act!("view.pan_right", "Ansicht rechts", Ansicht, "pan-right", "d", "Ansicht nach rechts schieben (Taste halten)", false),
+    act!("view.pan_up", "Ansicht oben", Ansicht, "pan-up", "w", "Ansicht nach oben schieben (Taste halten)", false),
+    act!("view.pan_down", "Ansicht unten", Ansicht, "pan-down", "s", "Ansicht nach unten schieben (Taste halten)", false),
     act!("view.inventory", "Inventar", Ansicht, "inventory", "e", "Inventar ein-/ausblenden (E)", false),
     act!("view.layers", "Layer", Ansicht, "layers", "", "Layerverwaltung", false),
     act!("view.keymap", "Tastaturbelegung", Ansicht, "keyboard", "", "Tastenbelegung bearbeiten", false),

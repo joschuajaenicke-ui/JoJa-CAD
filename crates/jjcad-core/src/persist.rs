@@ -363,14 +363,33 @@ fn default_true() -> bool {
     true
 }
 
-/// Tasten, die das Programm fest führt. Sie erscheinen in der
-/// Tastaturbelegung ausgegraut und lassen sich keiner Funktion zuweisen.
+/// Die drei Schichten der Tastatur (T0056, `docs/TASTEN.md`):
+///
+/// 1. **Ziffern `1` … `0`** starten den Hotbar-Slot — gesteuert über die
+///    Hotbar, nie über die Tastaturbelegung.
+/// 2. **Buchstaben und Symbole** sind frei zuweisbar (`UserPrefs::bindings`,
+///    Dialog „Tastaturbelegung").
+/// 3. **Funktionstasten, Steuerungstasten und Tastenkombinationen** sind
+///    hart verdrahtet: ihre Funktion steht im Code und lässt sich nicht
+///    umbelegen.
+///
+/// `fest_belegt` sagt, in welche Schicht eine Taste gehört; `None` heißt frei
+/// zuweisbar.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum FestBelegt {
     /// Ziffer 1 … 0 — startet den Hotbar-Slot (`App::handle_shortcuts`).
     Hotbar,
-    /// Esc, Tab, Caps, Umschalt, Strg, Enter, Rücktaste — fester Ablauf.
+    /// Esc, Tab, Caps, Umschalt, Strg, Alt, Enter, Rücktaste, Leertaste,
+    /// Entf — fester Ablauf im Code.
     Steuerung,
+    /// F1 … F12 — fester Ablauf im Code.
+    Funktion,
+    /// Tastenkombination mit `+` (Strg+C, Strg+S …) — fest im Code.
+    Kombination,
+    /// Zeichen der zweiten Ebene einer deutschen Tastatur (`#`, `<`, `´`):
+    /// Umschalt- bzw. AltGr-Zeichen eines anderen Keys. Sie kommen nie als
+    /// eigene Taste an und lassen sich deshalb nicht belegen.
+    ZweiteEbene,
 }
 
 impl FestBelegt {
@@ -379,16 +398,49 @@ impl FestBelegt {
         match self {
             FestBelegt::Hotbar => "Ziffer 1 … 0 startet die Hotbar — nicht belegbar",
             FestBelegt::Steuerung => "Steuerungstaste — fest belegt, nicht zuweisbar",
+            FestBelegt::Funktion => "Funktionstaste — fest belegt, nicht zuweisbar",
+            FestBelegt::Kombination => "Tastenkombination — fest belegt, nicht zuweisbar",
+            FestBelegt::ZweiteEbene => {
+                "Zeichen der zweiten Ebene (Umschalt/AltGr) — nicht einzeln belegbar"
+            }
         }
+    }
+
+    /// Darf diese Taste überhaupt einer Funktion gehören? Ziffern und
+    /// Steuerungstasten lösen eigene Abläufe aus (Hotbar-Slot, Abbrechen,
+    /// Bestätigen) und sind in keiner Belegung zu finden. Funktionstasten und
+    /// Kombinationen stehen dagegen als feste Belegung ihrer Funktion in
+    /// `bindings` — nur ändern lässt sich daran nichts.
+    pub fn ist_feste_belegung(self) -> bool {
+        matches!(self, FestBelegt::Funktion | FestBelegt::Kombination)
     }
 }
 
 /// Warum eine Taste nicht belegbar ist? `None` = frei zuweisbar.
 pub fn fest_belegt(key: &str) -> Option<FestBelegt> {
-    match key.to_lowercase().as_str() {
+    let k = key.to_lowercase();
+    // Kombinationen zuerst: "ctrl+s" ist keine Steuerungstaste, sondern eine
+    // Kombination aus Strg und einem Buchstaben.
+    // Tastenkombinationen mit Strg oder Alt sind fest verdrahtet. Umschalt
+    // gehört dagegen zur Taste: `Umschalt+I` ist die zweite Ebene des
+    // Buchstabens und bleibt wie dieser frei belegbar. Die Taste `+` selbst ist
+    // ein Zeichen, keine Kombination.
+    if k.starts_with("ctrl+") || k.starts_with("alt+") {
+        return Some(FestBelegt::Kombination);
+    }
+    match k.as_str() {
         "1" | "2" | "3" | "4" | "5" | "6" | "7" | "8" | "9" | "0" => Some(FestBelegt::Hotbar),
-        "esc" | "tab" | "caps" | "shift" | "shift_r" | "ctrl" | "ctrl_r" | "enter"
-        | "backspace" => Some(FestBelegt::Steuerung),
+        "esc" | "tab" | "caps" | "shift" | "shift_r" | "ctrl" | "ctrl_r" | "alt" | "altgr"
+        | "enter" | "backspace" | "space" | " " | "entf" | "delete" => {
+            Some(FestBelegt::Steuerung)
+        }
+        "f1" | "f2" | "f3" | "f4" | "f5" | "f6" | "f7" | "f8" | "f9" | "f10" | "f11" | "f12" => {
+            Some(FestBelegt::Funktion)
+        }
+        // Zweite Ebene der deutschen Tastatur: diese Zeichen teilen sich die
+        // Taste mit einem anderen (z. B. `#` mit der Taste rechts von Ä) und
+        // kommen nie als eigener Tastendruck an.
+        "´" | "#" | "<" => Some(FestBelegt::ZweiteEbene),
         _ => None,
     }
 }
@@ -397,7 +449,13 @@ impl Default for UserPrefs {
     fn default() -> Self {
         let mut bindings = BTreeMap::new();
         for a in actions::ACTIONS {
-            if a.key.is_empty() || fest_belegt(a.key).is_some() {
+            if a.key.is_empty() {
+                continue;
+            }
+            // Ziffern und Steuerungstasten gehören keiner Funktion; Funktions-
+            // tasten und Kombinationen sind dagegen genau ihre feste Belegung
+            // (T0056, `docs/TASTEN.md`).
+            if matches!(fest_belegt(a.key), Some(f) if !f.ist_feste_belegung()) {
                 continue;
             }
             bindings.insert(a.id.to_string(), a.key.to_string());
@@ -519,7 +577,41 @@ impl UserPrefs {
         // T0045: Ziffern und Steuerungstasten gehören dem Programm. Ältere
         // Belegungen (früher stand `modify.select` auf ESC) würden die Taste
         // sonst stillschweigend belegen und im Tastenbild falsch aussehen.
-        self.bindings.retain(|_, k| fest_belegt(k).is_none());
+        // Funktionstasten und Kombinationen bleiben dagegen stehen: sie sind die
+        // feste Belegung ihrer Funktion (T0056).
+        self.bindings.retain(|_, k| {
+            !matches!(fest_belegt(k), Some(f) if !f.ist_feste_belegung())
+        });
+        // T0056: `S` schwenkt die Ansicht nach unten (`view.pan_down`). Das
+        // Stutzen lag früher auf derselben Taste — eine gespeicherte Belegung
+        // würde dem Schwenk die Taste wegnehmen.
+        if self
+            .bindings
+            .get("modify.trim")
+            .map(|k| k.eq_ignore_ascii_case("s"))
+            .unwrap_or(false)
+        {
+            self.bindings.remove("modify.trim");
+        }
+        // T0056: `V` gehört dem Verschieben (so steht es in der Bedienung). Das
+        // Volumen lag früher auf derselben Taste und gewann dort die Auswertung —
+        // jetzt auf Umschalt+V.
+        if self
+            .bindings
+            .get("draw.volume")
+            .map(|k| k.eq_ignore_ascii_case("v"))
+            .unwrap_or(false)
+        {
+            self.bindings.insert("draw.volume".into(), "shift+v".into());
+        }
+        // T0056: Tastenkombinationen und Funktionstasten sind hart verdrahtet
+        // (`App::handle_shortcuts`) — eine gespeicherte Belegung darf sie nicht
+        // verschieben, sonst täte Strg+S etwas anderes als dokumentiert.
+        for a in actions::ACTIONS {
+            if matches!(fest_belegt(a.key), Some(f) if f.ist_feste_belegung()) {
+                self.bindings.insert(a.id.to_string(), a.key.to_string());
+            }
+        }
         // T gehört seit T0009 dem Chat-Protokoll. Das Text-Werkzeug lag früher
         // auf dieser Taste; eine gespeicherte Belegung würde sie stillschweigend
         // weiter belegen und in der Tastaturbelegung falsch anzeigen.
@@ -549,6 +641,9 @@ impl UserPrefs {
         // die Taste nicht schon einer anderen Aktion gehört.
         for a in actions::ACTIONS {
             if a.key.is_empty() || self.bindings.contains_key(a.id) {
+                continue;
+            }
+            if matches!(fest_belegt(a.key), Some(f) if !f.ist_feste_belegung()) {
                 continue;
             }
             let frei = !self
@@ -613,11 +708,22 @@ impl UserPrefs {
             .map(|(a, _)| a.clone())
     }
 
+    /// Ist die Belegung dieser Funktion änderbar? Nein, wenn sie auf einer
+    /// Funktionstaste oder einer Tastenkombination sitzt — die sind hart
+    /// verdrahtet (T0056, `docs/TASTEN.md`).
+    pub fn belegung_aenderbar(&self, action: &str) -> bool {
+        match self.bindings.get(action) {
+            Some(k) => !matches!(fest_belegt(k), Some(f) if f.ist_feste_belegung()),
+            None => true,
+        }
+    }
+
     /// Belegt `action` mit `key`. Gesperrte Tasten (`fest_belegt`) bleiben
-    /// unberührt — sie gehören dem Programm, nicht der Belegung.
+    /// unberührt — sie gehören dem Programm, nicht der Belegung. Funktionen mit
+    /// fest verdrahteter Taste lassen sich nicht umbelegen.
     pub fn bind(&mut self, action: &str, key: &str) {
         let key = key.to_lowercase();
-        if fest_belegt(&key).is_some() {
+        if fest_belegt(&key).is_some() || !self.belegung_aenderbar(action) {
             return;
         }
         // Konflikt: andere Aktion auf derselben Taste entfernen
@@ -785,10 +891,12 @@ mod tests {
                 "Taste {key} ist gesperrt, wurde aber belegt"
             );
         }
-        // Der Werkssatz belegt keine gesperrte Taste.
+        // Der Werkssatz belegt keine Ziffern- oder Steuerungstaste. Funktions-
+        // tasten und Kombinationen (Strg+S, F1) sind dagegen die feste Belegung
+        // ihrer Funktion (T0056) und stehen im Werkssatz.
         for (aktion, key) in &UserPrefs::default().bindings {
             assert!(
-                fest_belegt(key).is_none(),
+                !matches!(fest_belegt(key), Some(f) if !f.ist_feste_belegung()),
                 "{aktion} liegt auf der gesperrten Taste {key}"
             );
         }
@@ -802,6 +910,122 @@ mod tests {
             "alte Belegung auf Tab überlebt das Laden"
         );
         assert_eq!(alt.action_for_key("k").as_deref(), Some("draw.circle"));
+    }
+
+    /// T0056: Drei Schichten der Tastatur (`docs/TASTEN.md`). Ziffern gehören
+    /// der Hotbar, Buchstaben und Symbole der Tastaturbelegung, Steuerungstasten
+    /// und Kombinationen sind fest verdrahtet.
+    #[test]
+    fn drei_schichten_der_tastatur() {
+        assert_eq!(fest_belegt("3"), Some(FestBelegt::Hotbar));
+        assert_eq!(fest_belegt("esc"), Some(FestBelegt::Steuerung));
+        assert_eq!(fest_belegt(" "), Some(FestBelegt::Steuerung), "Leertaste");
+        assert_eq!(fest_belegt("entf"), Some(FestBelegt::Steuerung));
+        assert_eq!(fest_belegt("f1"), Some(FestBelegt::Funktion));
+        assert_eq!(fest_belegt("f11"), Some(FestBelegt::Funktion));
+        assert_eq!(fest_belegt("ctrl+c"), Some(FestBelegt::Kombination));
+        assert_eq!(fest_belegt("ctrl+shift+s"), Some(FestBelegt::Kombination));
+        // Buchstaben und Symbole bleiben frei — auch die Umlaute des Tastenbilds.
+        for frei in ["a", "w", "s", "d", "q", "ü", "ö", "ä", ",", ".", "-", "+"] {
+            assert_eq!(fest_belegt(frei), None, "Taste {frei} muss frei belegbar sein");
+        }
+        // `#`, `<` und `´` sind auf einer deutschen Tastatur Umschalt- bzw.
+        // AltGr-Zeichen einer anderen Taste — sie kommen nie einzeln an.
+        for zweite in ["#", "<", "´"] {
+            assert_eq!(
+                fest_belegt(zweite),
+                Some(FestBelegt::ZweiteEbene),
+                "Zeichen {zweite} gehört zur zweiten Ebene"
+            );
+        }
+        // Nur Ziffern und Steuerungstasten gehören keiner Funktion.
+        assert!(FestBelegt::Funktion.ist_feste_belegung());
+        assert!(FestBelegt::Kombination.ist_feste_belegung());
+        assert!(!FestBelegt::Hotbar.ist_feste_belegung());
+        assert!(!FestBelegt::Steuerung.ist_feste_belegung());
+    }
+
+    /// T0056: Das Umsetzen der Ansicht sind **Funktionen** auf W/A/S/D — nicht
+    /// fest verdrahtete Tasten. Vorher schwenkte `canvas` auf Key::WASD, egal was
+    /// in der Belegung stand; die Taste ließ sich also nicht umbelegen und das
+    /// Tastenbild zeigte die Funktion nicht.
+    #[test]
+    fn ansicht_schwenk_ist_belegbar() {
+        let prefs = UserPrefs::default();
+        for (aktion, taste) in [
+            ("view.pan_up", "w"),
+            ("view.pan_left", "a"),
+            ("view.pan_down", "s"),
+            ("view.pan_right", "d"),
+        ] {
+            assert_eq!(
+                prefs.key_for(aktion).as_deref(),
+                Some(taste),
+                "{aktion} muss im Werkssatz auf {taste} liegen"
+            );
+            assert_eq!(
+                prefs.action_for_key(taste).as_deref(),
+                Some(aktion),
+                "Taste {taste} gehört dem Schwenk"
+            );
+            let def = actions::action(aktion).expect("Action fehlt");
+            assert!(!def.icon.is_empty(), "{aktion} braucht ein Icon");
+            assert!(!def.tool, "{aktion} ist kein Zeichenwerkzeug");
+        }
+        // Das Stutzen lag früher ebenfalls auf S — eine Taste trägt genau eine
+        // Funktion, sonst schwenkt und stutzt ein Druck gleichzeitig.
+        assert_eq!(prefs.key_for("modify.trim"), None, "S gehört dem Schwenk");
+    }
+
+    /// T0056: Eine Taste trägt genau eine Funktion. Zwei Aktionen auf demselben
+    /// Buchstaben machten die Belegung unvorhersehbar (`action_for_key` nimmt
+    /// die erste Fundstelle der sortierten Liste).
+    #[test]
+    fn jede_taste_traegt_genau_eine_funktion() {
+        let prefs = UserPrefs::default();
+        let mut gesehen: BTreeMap<String, String> = BTreeMap::new();
+        for (aktion, key) in &prefs.bindings {
+            let k = key.to_lowercase();
+            // Kombinationen teilen sich den Buchstaben mit der Einzeltaste
+            // (Strg+S und S) — sie sind eine eigene Schicht.
+            if k.contains('+') {
+                continue;
+            }
+            if let Some(alt) = gesehen.insert(k.clone(), aktion.clone()) {
+                panic!("Taste {k} doppelt belegt: {alt} und {aktion}");
+            }
+        }
+        assert!(gesehen.len() >= 20, "zu wenige Einzeltasten: {}", gesehen.len());
+    }
+
+    /// T0056: Funktionen mit hart verdrahteter Taste lassen sich nicht umbelegen
+    /// — auch nicht über eine alte `prefs.json`.
+    #[test]
+    fn feste_kombinationen_lassen_sich_nicht_umbelegen() {
+        let mut prefs = UserPrefs::default();
+        assert!(!prefs.belegung_aenderbar("file.save"));
+        assert!(prefs.belegung_aenderbar("draw.line"));
+
+        prefs.bind("file.save", "k");
+        assert_eq!(
+            prefs.key_for("file.save").as_deref(),
+            Some("ctrl+s"),
+            "Strg+S muss auf Speichern bleiben"
+        );
+        assert_eq!(
+            prefs.action_for_key("k").as_deref(),
+            Some("draw.circle"),
+            "die Taste K darf dabei nicht umgehängt werden"
+        );
+
+        // Alte Datei: Speichern lag auf K, Stutzen auf S.
+        let mut alt = UserPrefs::default();
+        alt.bindings.insert("file.save".into(), "k".into());
+        alt.bindings.insert("modify.trim".into(), "s".into());
+        alt.ensure_defaults();
+        assert_eq!(alt.key_for("file.save").as_deref(), Some("ctrl+s"));
+        assert_eq!(alt.key_for("modify.trim"), None, "S gehört jetzt dem Schwenk");
+        assert_eq!(alt.action_for_key("s").as_deref(), Some("view.pan_down"));
     }
 
     #[test]

@@ -89,7 +89,8 @@ Steht rechts „nicht", dann ist das Wort im Projekt verpönt (auch in der Oberf
 |---|---|---|
 | **Ribbon** | Die Registerkartenleiste oben mit Gruppen und Schaltflächen | Menüleiste, Toolbar |
 | **Registerkarte** | Zeichnen / Architektur / Bemassung / Blöcke / Blatt / Ansicht | Tab (das sind Dokumente) |
-| **Hotbar** | Die Schnellzugriffleiste unten | Favoritenleiste |
+| **Hotbar** | Die Schnellzugriffleiste unten; ihre Slots starten die Zifferntasten `1`–`0` | Favoritenleiste |
+| **Tastaturbelegung** | Der Dialog, in dem Buchstaben und Symbole Funktionen zugewiesen bekommen (`docs/TASTEN.md`) | Tastenkürzel, Shortcuts |
 | **Inventar** | Seitliche Sammlung von Blöcken und Funktionen (mit `E`) | Bibliothek, Palette |
 | **Eigenschaften** | Das rechte Seitenpanel mit Feldern zum ausgewählten Objekt **oder** zum nächsten Element | Einstellungen (das ist der Dialog), Seitenleiste |
 | **Einstellungen** | Der Dialog (`Datei → Einstellungen`) für globale Vorgaben | Optionen, Preferences |

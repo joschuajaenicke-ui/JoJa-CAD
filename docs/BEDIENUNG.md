@@ -3,7 +3,17 @@
 Die Oberfläche ist deutsch und an Office-Programmen orientiert: Ribbon oben,
 Zeichnung in der Mitte, Layer links, Eigenschaften rechts, Hotbar unten.
 Die vollständige Tastenbelegung ist im Programm über den Tastatur-Editor
-einsehbar und dort frei änderbar (Ribbon ▸ Einstellungen).
+einsehbar und dort frei änderbar (Ribbon ▸ Ansicht ▸ „Tasten").
+
+**Drei Schichten von Tasten** (verbindlich, ausführlich in `docs/TASTEN.md`):
+
+1. **Ziffern `1` … `0`** starten die Hotbar-Slots — ihre Belegung steuert die
+   **Hotbar**, nicht die Tastaturbelegung.
+2. **Buchstaben und Symbole** kommen aus der **Tastaturbelegung** und sind vom
+   Benutzer frei und dynamisch änderbar.
+3. **Alle übrigen Tasten** (`Esc`, `Tab`, `Strg`, `Enter`, `Entf`, `F1`–`F12` …)
+   und **alle Tastenkombinationen** (`Strg+C`, `Strg+S`, `Strg+Z` …) sind
+   **hardcodiert** und nicht änderbar.
 
 ## Erste Schritte
 
@@ -14,7 +24,9 @@ einsehbar und dort frei änderbar (Ribbon ▸ Einstellungen).
 4. **Hotbar**: Tasten `1`–`0`. Aktives Werkzeug + Klick auf einen leeren Slot verknüpft es.
    Rechtsklick auf einen Slot: Leeren / Verknüpfen / Bearbeiten. Mittlere Taste leert.
 5. **Inventar** (`E`): Lager, Blockbibliothek und alle Funktionen — per Drag & Drop auf die Hotbar.
-6. **Navigieren**: Mausrad zoomt, mittlere Taste oder `Leertaste`+Ziehen schwenkt, `W A S D` ebenfalls.
+6. **Navigieren**: Mausrad zoomt, mittlere Taste oder `Leertaste`+Ziehen schwenkt.
+   `W A S D` schwenkt ebenfalls — als Funktionen „Ansicht oben/links/unten/rechts",
+   die in der Tastaturbelegung stehen und umbelegt werden können.
 7. **Länge tippen**: nach dem ersten Klick Ziffern eingeben, `Enter` übernimmt den Abstand —
    oder `x;y` für absolute Koordinaten (Semikolon trennt, Komma ist Dezimalzeichen: `2,5;3,0`).
 8. **Auswählen**: Klick wählt ein Objekt, `Umschalt`+Klick ergänzt. Ziehen von links nach rechts
@@ -37,9 +49,11 @@ einsehbar und dort frei änderbar (Ribbon ▸ Einstellungen).
     Fangradius, Wandstärke, Tür-/Fenster-/Treppenbreite, Texthöhe, Bemaßungsstil und Darstellung.
 13. **Platzieren mit Vorschau**: Block aus dem Inventar wählen oder `Strg+V` drücken — die Vorschau
     steht mit ihrer **unteren linken Ecke** am Mauszeiger (also oben rechts davon), folgt der Maus
-    und wird mit Klick gesetzt. `R` dreht in 90°-Schritten im Uhrzeigersinn
-    (`Umschalt+R` gegen den Uhrzeigersinn), `S` spiegelt,
-    `ESC` bricht ab. Der Einfügepunkt ist exakt der Ankerpunkt der Vorschau.
+    und wird mit Klick gesetzt. `R` (die Funktion „Drehen") dreht in 90°-Schritten im
+    Uhrzeigersinn (`Umschalt+R` gegen den Uhrzeigersinn), `F` (die Funktion
+    „Spiegeln") spiegelt, `ESC` bricht ab. Beide Tasten folgen der
+    Tastaturbelegung: wer „Drehen" umlegt, dreht auch die Vorschau mit der neuen
+    Taste. Der Einfügepunkt ist exakt der Ankerpunkt der Vorschau.
 
 Der Zeiger ist über der Zeichenfläche ein durchgehendes Fadenkreuz; der Systemzeiger wird dort
 ausgeblendet.
