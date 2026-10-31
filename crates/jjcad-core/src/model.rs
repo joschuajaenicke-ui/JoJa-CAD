@@ -148,9 +148,14 @@ impl DoorKind {
 
 /// Schriftart eines Textes.
 ///
-/// Es werden **keine** Schriftdateien mitgeliefert: alle Familien kommen aus
-/// dem System (Liberation/Quicksand). Das hält das Programm klein — der
-/// PDF-Export bettet nur die tatsächlich benutzte Schrift ein.
+/// Die **Gebrauchsschriften** kommen aus dem System (Liberation/Quicksand) —
+/// das hält das Programm klein, und der PDF-Export bettet nur die tatsächlich
+/// benutzte Schrift ein.
+///
+/// Die **technischen Schriften** DIN 1451 und EN ISO 3098 gibt es auf keinem
+/// üblichen Rechner; sie liegen deshalb mit im Programm
+/// (`crates/jjcad-core/fonts/`, OFL bzw. LGPL mit Schriftausnahme) und werden
+/// über `include_bytes!` geladen — siehe [`crate::fonts`].
 ///
 /// `explodierbar` ist eine Eigenschaft der Familie: konturierte Gebrauchs-
 /// schriften lassen sich sauber in Linien zerlegen, runde Zierschriften
@@ -167,21 +172,44 @@ pub enum TextFont {
     /// Nichtproportional (Liberation Mono)
     #[serde(rename = "mono")]
     Mono,
-    /// Schmal (Liberation Sans Narrow)
+    /// Schmal (Liberation Sans Narrow) — **nicht** die DIN 1451: die schmale
+    /// Gebrauchsschrift des Systems, ohne Bezug zur technischen Normschrift
     #[serde(rename = "narrow")]
     Narrow,
     /// Runde Zierschrift (Quicksand) — wird **nicht** in Linien zerlegt
     #[serde(rename = "rund")]
     Rund,
+    /// DIN 1451 Engschrift (mitgeliefert: D-DIN Condensed)
+    #[serde(rename = "din_eng")]
+    DinEng,
+    /// DIN 1451 Mittelschrift (mitgeliefert: D-DIN)
+    #[serde(rename = "din_mittel")]
+    DinMittel,
+    /// DIN 1451 Breitschrift (mitgeliefert: D-DIN Expanded)
+    #[serde(rename = "din_breit")]
+    DinBreit,
+    /// EN ISO 3098 Typ A — dünne technische Schrift, Strichstärke d = h/14
+    /// (mitgeliefert: osifont)
+    #[serde(rename = "iso_a")]
+    IsoA,
+    /// EN ISO 3098 Typ B — Strichstärke d = h/10; formgleich mit der
+    /// DIN-1451-Mittelschrift (mitgeliefert: D-DIN)
+    #[serde(rename = "iso_b")]
+    IsoB,
 }
 
 impl TextFont {
-    pub const ALL: [TextFont; 5] = [
+    pub const ALL: [TextFont; 10] = [
         TextFont::Sans,
         TextFont::Serif,
         TextFont::Mono,
         TextFont::Narrow,
         TextFont::Rund,
+        TextFont::DinEng,
+        TextFont::DinMittel,
+        TextFont::DinBreit,
+        TextFont::IsoA,
+        TextFont::IsoB,
     ];
 
     pub fn label(self) -> &'static str {
@@ -191,6 +219,11 @@ impl TextFont {
             TextFont::Mono => "Nichtproportional",
             TextFont::Narrow => "Schmal",
             TextFont::Rund => "Rund",
+            TextFont::DinEng => "DIN 1451 Engschrift",
+            TextFont::DinMittel => "DIN 1451 Mittelschrift",
+            TextFont::DinBreit => "DIN 1451 Breitschrift",
+            TextFont::IsoA => "EN ISO 3098 Typ A",
+            TextFont::IsoB => "EN ISO 3098 Typ B",
         }
     }
 
@@ -201,13 +234,34 @@ impl TextFont {
             TextFont::Mono => "mono",
             TextFont::Narrow => "narrow",
             TextFont::Rund => "rund",
+            TextFont::DinEng => "din_eng",
+            TextFont::DinMittel => "din_mittel",
+            TextFont::DinBreit => "din_breit",
+            TextFont::IsoA => "iso_a",
+            TextFont::IsoB => "iso_b",
         }
     }
 
+    /// Familie zu einem Schlüssel („din_eng") **oder** zu ihrer Bezeichnung
+    /// („DIN 1451 Engschrift") — MCP und PDF-Import reichen beides durch.
     pub fn from_key(s: &str) -> Option<TextFont> {
+        let roh = s.trim();
+        if let Some(f) = TextFont::ALL
+            .into_iter()
+            .find(|f| f.key().eq_ignore_ascii_case(roh))
+        {
+            return Some(f);
+        }
+        let norm = |t: &str| -> String {
+            t.chars()
+                .filter(|c| c.is_alphanumeric())
+                .flat_map(|c| c.to_lowercase())
+                .collect()
+        };
+        let gesucht = norm(roh);
         TextFont::ALL
             .into_iter()
-            .find(|f| f.key().eq_ignore_ascii_case(s))
+            .find(|f| norm(f.label()) == gesucht)
     }
 
     pub fn index(self) -> usize {
@@ -217,6 +271,11 @@ impl TextFont {
             TextFont::Mono => 2,
             TextFont::Narrow => 3,
             TextFont::Rund => 4,
+            TextFont::DinEng => 5,
+            TextFont::DinMittel => 6,
+            TextFont::DinBreit => 7,
+            TextFont::IsoA => 8,
+            TextFont::IsoB => 9,
         }
     }
 

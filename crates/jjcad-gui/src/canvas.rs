@@ -8519,3 +8519,40 @@ mod tests_werkzeug_zeiger {
         assert!(a.x > 100.0 && a.y > 200.0, "unten rechts vom Zeiger");
     }
 }
+
+#[cfg(test)]
+mod schrifttests {
+    use super::*;
+
+    /// Gleiche Texthöhe über alle Schriften (T0059): ein Text mit `height` mm
+    /// steht in jeder Familie gleich hoch. Die mitgelieferten technischen
+    /// Schriften haben andere Kennwerte (DIN 1451: `units_per_em` 1000,
+    /// Osifont: Auf-/Abstieg 1,66 Em) — ohne diese Prüfung fiele eine zu
+    /// kleine oder große Zeile erst im Bild auf.
+    #[test]
+    fn textzeile_ist_in_jeder_schrift_gleich_hoch() {
+        let ctx = egui::Context::default();
+        crate::theme::install(&ctx);
+        let _ = ctx.run(Default::default(), |_| {});
+        let hoehe = |f: jjcad_core::model::TextFont| -> f32 {
+            let familie = schrift_familie(&ctx, f, false);
+            let job = egui::text::LayoutJob::simple(
+                "H".to_owned(),
+                FontId::new(100.0, familie),
+                Color32::WHITE,
+                f32::INFINITY,
+            );
+            ctx.fonts(|fo| fo.layout_job(job)).size().y
+        };
+        let soll = hoehe(jjcad_core::model::TextFont::Sans);
+        assert!(soll > 50.0, "Sans-Zeile zu klein gemessen: {soll}");
+        for f in jjcad_core::model::TextFont::ALL {
+            let h = hoehe(f);
+            assert!(
+                (h - soll).abs() <= soll * 0.15,
+                "{} setzt die Zeile mit {h} statt {soll}",
+                f.label()
+            );
+        }
+    }
+}

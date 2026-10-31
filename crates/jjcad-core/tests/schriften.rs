@@ -55,6 +55,12 @@ fn familien_sind_unterscheidbar() {
         .collect();
     for (i, (fa, wa)) in masse.iter().enumerate() {
         for (fb, wb) in masse.iter().skip(i + 1) {
+            // EN ISO 3098 Typ B und DIN 1451 Mittelschrift sind formgleich
+            // (beide d = h/10) und setzen deshalb gleich — das ist die Norm,
+            // kein Fehler. Alle anderen Paare müssen messbar verschieden sein.
+            if formgleich(*fa, *fb) {
+                continue;
+            }
             assert!(
                 (wa - wb).abs() > wa.max(*wb) * 0.005,
                 "{} und {} setzen gleich ({wa:.3} / {wb:.3})",
@@ -194,7 +200,16 @@ fn zierschrift_wird_nicht_zerlegt() {
 
 #[test]
 fn schrift_ueberlebt_den_pdf_rundlauf() {
-    for font in [TextFont::Serif, TextFont::Mono, TextFont::Rund] {
+    for font in [
+        TextFont::Serif,
+        TextFont::Mono,
+        TextFont::Rund,
+        TextFont::DinEng,
+        TextFont::DinMittel,
+        TextFont::DinBreit,
+        TextFont::IsoA,
+        TextFont::IsoB,
+    ] {
         let mut doc = jjcad_core::model::Document::default();
         let layer = doc.current_layer;
         let id = doc.new_id();
@@ -242,4 +257,98 @@ fn schrift_ueberlebt_den_pdf_rundlauf() {
             font.label()
         );
     }
+}
+
+/// Zwei Familien mit denselben Formen (nur die Strichstärke unterscheidet sie).
+fn formgleich(a: TextFont, b: TextFont) -> bool {
+    use TextFont::*;
+    matches!(
+        (a, b),
+        (DinMittel, IsoB) | (IsoB, DinMittel)
+    )
+}
+
+#[test]
+fn technische_schriften_liegen_bei_und_sind_geordnet() {
+    // DIN 1451 und EN ISO 3098 sind auf keinem Rechner installiert — sie
+    // kommen aus `crates/jjcad-core/fonts/` (T0059). Fehlt eine, ist das ein
+    // Fehler und keine „Schrift nicht installiert"-Meldung.
+    for f in [
+        TextFont::DinEng,
+        TextFont::DinMittel,
+        TextFont::DinBreit,
+        TextFont::IsoA,
+        TextFont::IsoB,
+    ] {
+        assert!(
+            jjcad_core::fonts::verfuegbar(f),
+            "mitgelieferte Schrift {} fehlt",
+            f.label()
+        );
+    }
+    use jjcad_core::fonts::{advance_em_str, FontStyle};
+    let breite = |f: TextFont| advance_em_str(f, FontStyle::Regular, "Wohnen 12,4");
+    let eng = breite(TextFont::DinEng);
+    let mittel = breite(TextFont::DinMittel);
+    let breit = breite(TextFont::DinBreit);
+    assert!(
+        eng < mittel * 0.97 && mittel < breit * 0.97,
+        "DIN 1451 muss Eng < Mittel < Breit setzen: {eng:.3} / {mittel:.3} / {breit:.3}"
+    );
+    assert!(
+        (breite(TextFont::IsoA) - breite(TextFont::IsoB)).abs() > 1e-6,
+        "EN ISO 3098 Typ A und Typ B müssen sich unterscheiden"
+    );
+}
+
+#[test]
+fn technische_schriften_haben_die_deutschen_zeichen() {
+    // Umlaute, Eszett, Ziffern, Hoch-Zwei und Grad — ohne sie wäre eine
+    // Bauantragszeichnung nicht beschriftbar.
+    let probe = "ÄÖÜäöüß0123456789²³°€,.;:()/-";
+    for f in [
+        TextFont::DinEng,
+        TextFont::DinMittel,
+        TextFont::DinBreit,
+        TextFont::IsoA,
+        TextFont::IsoB,
+    ] {
+        for c in probe.chars() {
+            assert_ne!(
+                jjcad_core::fonts::glyph_id(f, jjcad_core::fonts::FontStyle::Regular, c),
+                0,
+                "{} hat kein Zeichen '{c}'",
+                f.label()
+            );
+        }
+    }
+}
+
+#[test]
+fn schriftart_ueberlebt_die_datei_und_den_schluessel() {
+    // Der Schlüssel steht in der `.jjcad`-Datei; die Bezeichnung darf man
+    // ebenso durchreichen (MCP, PDF-Import).
+    for f in TextFont::ALL {
+        assert_eq!(TextFont::from_key(f.key()), Some(f), "Schlüssel {}", f.key());
+        assert_eq!(TextFont::from_key(f.label()), Some(f), "Bezeichnung {}", f.label());
+    }
+    let mut s = Session::new();
+    let id = text_anlegen(&mut s, TextFont::DinEng);
+    let pfad = ziel("jjcad-schrift-din.jjcad");
+    jjcad_core::persist::save_document(&mut s.doc, &pfad).expect("Speichern");
+    let roh = std::fs::read_to_string(&pfad).expect("Datei");
+    assert!(
+        roh.contains("din_eng"),
+        "Schriftart steht nicht in der Datei: {roh}"
+    );
+    // Und sie kommt beim Laden wieder als DIN-Engschrift zurück.
+    let s2 = jjcad_core::persist::load_document(&pfad).expect("Öffnen");
+    let font = s2
+        .entity(id)
+        .and_then(|e| match &e.kind {
+            EntityKind::Text { font, .. } => Some(*font),
+            _ => None,
+        })
+        .expect("Text nach dem Laden");
+    assert_eq!(font, TextFont::DinEng);
 }

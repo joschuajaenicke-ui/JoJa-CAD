@@ -629,36 +629,39 @@ pub fn flexible_number(s: &str) -> Option<f64> {
 
 /// Auswahl der Schriftart für Texte.
 ///
-/// Nur Familien, die auf diesem Rechner vorhanden sind, stehen zur Wahl —
-/// mitgeliefert wird keine Schriftdatei, damit das Programm klein bleibt.
-/// Reihenfolge und Bezeichnung kommen aus dem Kern (`TextFont`).
+/// Jede Zeile steht **in ihrer eigenen Schrift** (Muster), damit die
+/// technischen Schriften ohne Probieren auseinanderzuhalten sind. Nur Familien,
+/// die es auf diesem Rechner gibt, stehen zur Wahl; DIN 1451 und EN ISO 3098
+/// liegen mit im Programm und sind deshalb immer da. Reihenfolge und
+/// Bezeichnung kommen aus dem Kern (`TextFont`).
 pub fn schrift_wahl(ui: &mut Ui, id: &str, font: &mut TextFont) -> bool {
-    let mut geaendert = false;
-    egui::ComboBox::from_id_salt(id)
-        .selected_text(font.label())
-        .width(ui.available_width().min(160.0))
-        .show_ui(ui, |ui| {
-            for f in TextFont::ALL {
-                let da = jjcad_core::fonts::verfuegbar(f);
-                if !da && f != *font {
-                    continue;
-                }
-                let text = if da {
-                    f.label().to_string()
-                } else {
-                    format!("{} — nicht installiert", f.label())
-                };
-                if ui
-                    .selectable_label(*font == f, text)
-                    .clicked()
-                    && *font != f
-                {
-                    *font = f;
-                    geaendert = true;
-                }
+    let gewaehlt = crate::panels::dropdown(ui, id, font.label(), None, |ui| {
+        let mut out = None;
+        for f in TextFont::ALL {
+            let da = jjcad_core::fonts::verfuegbar(f);
+            if !da && f != *font {
+                continue;
             }
-        });
-    geaendert
+            let text = if da {
+                f.label().to_string()
+            } else {
+                format!("{} — nicht installiert", f.label())
+            };
+            let familie = crate::canvas::schrift_familie(ui.ctx(), f, false);
+            let zeile = egui::RichText::new(text).font(FontId::new(13.0, familie));
+            if ui.selectable_label(*font == f, zeile).clicked() {
+                out = Some(f);
+            }
+        }
+        out
+    });
+    match gewaehlt {
+        Some(f) if f != *font => {
+            *font = f;
+            true
+        }
+        _ => false,
+    }
 }
 
 #[cfg(test)]
