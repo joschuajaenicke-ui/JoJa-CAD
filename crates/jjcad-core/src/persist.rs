@@ -319,6 +319,11 @@ pub struct UserPrefs {
         deserialize_with = "de_drag_mode_mit_altfeld"
     )]
     pub drag_mode: DragMode,
+    /// Objekte lassen sich mit der gedrückten Maustaste verschieben (T0063).
+    /// Ausgeschaltet wandert ausschließlich das Werkzeug „Verschieben“ — die
+    /// Einstellung gilt für **alle** Objektarten, auch Text und Treppe.
+    #[serde(default = "default_true")]
+    pub mouse_move: bool,
     /// Zuletzt benutzter Eingabemodus der Fuellflaechen-Schaltflaeche
     /// ("contour" | "points" | "paint")
     #[serde(default)]
@@ -515,6 +520,7 @@ impl Default for UserPrefs {
             show_lineweights: true,
             lineweights_scaled: false,
             drag_mode: DragMode::HoldAndDrag,
+            mouse_move: true,
             fill_input: "points".into(),
             hatch_input: "contour".into(),
             volume_input: "points".into(),
@@ -797,6 +803,22 @@ mod tests {
         assert_eq!(UserPrefs::default().drag_mode, DragMode::HoldAndDrag);
         assert!(!DragMode::HoldAndDrag.two_clicks());
         assert!(DragMode::TwoClicks.two_clicks());
+    }
+
+    /// T0063: „Maus verschiebt“ ist in der Vorgabe an (bisheriges Verhalten)
+    /// und überlebt Speichern und Laden; fehlt der Schlüssel, gilt ebenfalls an.
+    #[test]
+    fn maus_verschiebt_vorgabe_an_und_wird_gespeichert() {
+        assert!(UserPrefs::default().mouse_move);
+        let alt: UserPrefs = serde_json::from_str(r#"{"last_dir": "/tmp"}"#).unwrap();
+        assert!(alt.mouse_move, "Altbestand ohne Schlüssel muss eingeschaltet sein");
+
+        let mut prefs = UserPrefs::default();
+        prefs.mouse_move = false;
+        let roh = serde_json::to_string(&prefs).unwrap();
+        assert!(roh.contains("\"mouse_move\":false"), "Schlüssel fehlt: {roh}");
+        let wieder: UserPrefs = serde_json::from_str(&roh).unwrap();
+        assert!(!wieder.mouse_move, "Einstellung ging beim Laden verloren");
     }
 
     #[test]

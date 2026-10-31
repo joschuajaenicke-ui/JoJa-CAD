@@ -5237,23 +5237,19 @@ impl App {
 
     /// Lässt sich dieses Objekt durch Ziehen mit der Maus verschieben?
     ///
-    /// Text nicht: ein Klick auf den Text trifft über die ganze Textfläche, ein
-    /// versehentliches Ziehen würde ihn unbemerkt verrücken. Text wandert nur
-    /// über das Werkzeug „Verschieben".
+    /// Entscheidet die Einstellung „Maus verschiebt“ (Einstellungen →
+    /// Bedienung, `prefs.mouse_move`, Vorgabe an). Sie gilt für **alle**
+    /// Objektarten gleich — auch Text und Treppe (T0063). Ausgeschaltet wandert
+    /// ausschließlich das Werkzeug „Verschieben“; das ist der genaue Weg für
+    /// professionelles Arbeiten.
     pub fn maus_verschiebt(&self, id: Id) -> bool {
-        self.doc()
-            .entity(id)
-            // Text und Treppe wandern nicht mit der gedrückten Maustaste: bei
-            // der Treppe sitzen an den Kanten Griffe, ein Klick in die Fläche
-            // würde sonst die ganze Treppe verschieben (T0027, Turn 3).
-            .map(|e| !matches!(e.kind, EntityKind::Text { .. } | EntityKind::Stair { .. }))
-            .unwrap_or(false)
+        self.prefs.mouse_move && self.doc().entity(id).is_some()
     }
 
-    /// Beginnt das Maus-Verschieben nur, wenn das getroffene Objekt es zulässt.
+    /// Beginnt das Maus-Verschieben nur, wenn die Einstellung es zulässt.
     ///
-    /// Liefert `false`, wenn der Zug nicht startet (Text) — dann läuft die
-    /// übrige Zeigerauswertung weiter, statt die Auswahl zu verschieben.
+    /// Liefert `false`, wenn der Zug nicht startet — dann läuft die übrige
+    /// Zeigerauswertung weiter, statt die Auswahl zu verschieben.
     pub fn begin_move_drag_bei_klick(&mut self, hit: Id, at: V2, frame: f64) -> bool {
         if !self.maus_verschiebt(hit) {
             return false;
@@ -5315,6 +5311,23 @@ impl App {
         self.mark_changed();
     }
 
+    /// Verwirft eine begonnene Maus-Verschiebung ohne Meldung.
+    ///
+    /// Der zweite Druck eines Doppelklicks auf einem Text startet seit T0063
+    /// den Mauszug; der Klick gehört aber der Texteingabe. Chat-Meldung und
+    /// „abgebrochen“ wären hier falsch, es war kein Zug des Nutzers.
+    pub fn verwerfe_move_drag(&mut self) {
+        let Some(md) = self.move_drag.take() else {
+            return;
+        };
+        for e in &md.orig {
+            if let Some(dst) = self.doc_mut().entity_mut(e.id) {
+                *dst = e.clone();
+            }
+        }
+        self.mark_changed();
+    }
+
     pub fn end_move_drag(&mut self) {
         if self.move_drag.take().is_some() {
             self.mark_changed();
@@ -5358,15 +5371,30 @@ mod tests_treppe {
         (app, id)
     }
 
-    /// Ein Klick in die Treppenfläche verschiebt die Treppe nicht — sonst
-    /// wandert sie beim Auswählen versehentlich mit.
+    /// Mit ausgeschaltetem „Maus verschiebt“ (Einstellungen → Bedienung) startet
+    /// ein Klick in die Treppenfläche kein Verschieben — sonst wandert sie beim
+    /// Auswählen versehentlich mit. Die Treppe ist damit keine Sonderregel mehr:
+    /// sie folgt derselben Einstellung wie jedes andere Objekt (T0063).
     #[test]
-    fn klick_verschiebt_die_treppe_nicht() {
+    fn abgeschaltet_verschiebt_der_klick_die_treppe_nicht() {
         let (mut app, id) = app_mit_treppe();
+        app.prefs.mouse_move = false;
         app.session_mut().select(vec![id]);
-        assert!(!app.maus_verschiebt(id), "Treppe hängt am Mauszug");
+        assert!(!app.maus_verschiebt(id), "Treppe hing am Mauszug");
         assert!(!app.begin_move_drag_bei_klick(id, V2::ZERO, 0.0));
         assert!(app.move_drag.is_none(), "Verschieben wurde gestartet");
+    }
+
+    /// Eingeschaltet lässt sich auch die Treppe mit der Maus ziehen; die
+    /// Kantengriffe bleiben der genauere Weg, sind aber keine Bedingung.
+    #[test]
+    fn eingeschaltet_verschiebt_der_klick_die_treppe() {
+        let (mut app, id) = app_mit_treppe();
+        assert!(app.prefs.mouse_move, "Vorgabe ist eingeschaltet");
+        app.session_mut().select(vec![id]);
+        assert!(app.maus_verschiebt(id));
+        assert!(app.begin_move_drag_bei_klick(id, V2::ZERO, 0.0));
+        assert!(app.move_drag.is_some(), "Verschieben lief nicht an");
     }
 
     /// Die vier Kantengriffe brauchen eine Kantenrichtung — ohne sie zeichnet
@@ -6274,10 +6302,11 @@ mod tests_vollbild {
 
 #[cfg(test)]
 mod tests_text_ziehen {
-    //! Text wandert nicht mit der gedrückten Maustaste (Ticket T0010).
+    //! Text folgt seit T0063 derselben Einstellung wie jedes andere Objekt:
     //!
-    //! Ein Klick trifft beim Text die ganze Textfläche; beim Ziehen verschöbe er
-    //! sich unbemerkt. Verschoben wird Text nur über das Werkzeug „Verschieben".
+    //! Einstellungen → Bedienung → „Maus verschiebt“. Eingeschaltet wandert
+    //! auch der Text mit der gedrückten Maustaste, ausgeschaltet **kein**
+    //! Objekt — dann bleibt das Werkzeug „Verschieben“ der genaue Weg.
     //! Geprüft wird der Weg, den die Zeichenfläche beim Klick nimmt
     //! (`App::begin_move_drag_bei_klick`) — nicht nur ein Kennzeichen.
 
@@ -6314,21 +6343,35 @@ mod tests_text_ziehen {
         (app, text, linie)
     }
 
-    /// Ziehen auf dem ausgewählten Text startet kein Verschieben.
+    /// Abgeschaltet startet Ziehen auf dem ausgewählten Text kein Verschieben
+    /// (T0063: dieselbe Einstellung wie für Linie, Wand, Treppe …).
     #[test]
-    fn text_startet_kein_maus_verschieben() {
+    fn abgeschaltet_startet_text_kein_maus_verschieben() {
         let (mut app, text, _) = app_mit_text_und_linie();
+        app.prefs.mouse_move = false;
         app.session_mut().select(vec![text]);
 
         let gestartet = app.begin_move_drag_bei_klick(text, V2::new(0.0, 0.0), 1.0);
 
-        assert!(!gestartet, "Text darf kein Maus-Verschieben starten");
+        assert!(!gestartet, "Text darf bei abgeschalteter Einstellung nicht ziehen");
         assert!(app.move_drag.is_none(), "kein laufender Zug am Text");
         assert_eq!(app.selection(), &[text], "Text bleibt ausgewählt");
     }
 
-    /// Die Linie wandert weiterhin mit der Maus (Gegenprobe: die Sperre gilt
-    /// nur für Text, nicht für die Auswahl insgesamt).
+    /// Eingeschaltet wandert der Text wie jedes andere Objekt mit der Maus.
+    #[test]
+    fn eingeschaltet_startet_text_maus_verschieben() {
+        let (mut app, text, _) = app_mit_text_und_linie();
+        assert!(app.prefs.mouse_move, "Vorgabe ist eingeschaltet");
+        app.session_mut().select(vec![text]);
+
+        let gestartet = app.begin_move_drag_bei_klick(text, V2::new(0.0, 0.0), 1.0);
+
+        assert!(gestartet, "Text muss sich mit der Maus ziehen lassen");
+        assert!(app.move_drag.is_some(), "Zug läuft");
+    }
+
+    /// Die Linie wandert weiterhin mit der Maus.
     #[test]
     fn linie_startet_weiterhin_maus_verschieben() {
         let (mut app, _, linie) = app_mit_text_und_linie();
@@ -6338,6 +6381,41 @@ mod tests_text_ziehen {
 
         assert!(gestartet, "Linie muss sich ziehen lassen");
         assert!(app.move_drag.is_some(), "Zug läuft");
+    }
+
+    /// Abgeschaltet gilt die Sperre für **alle** Objektarten gleich, nicht nur
+    /// für Text: Linie, Wand, Treppe und Füllfläche starten dann keinen Zug.
+    #[test]
+    fn abgeschaltet_verschiebt_kein_objekt_mit_der_maus() {
+        let mut app = App::with_ctx(egui::Context::default());
+        app.prefs.mouse_move = false;
+        let mut ids = Vec::new();
+        for (action, params) in [
+            ("draw.line", serde_json::json!({"a": [0.0, 0.0], "b": [1000.0, 0.0]})),
+            ("draw.wall", serde_json::json!({"a": [0.0, 0.0], "b": [3000.0, 0.0]})),
+            ("draw.circle", serde_json::json!({"c": [0.0, 0.0], "r": 500.0})),
+            ("draw.text", serde_json::json!({"p": [0.0, 0.0], "text": "Hallo", "height": 250.0})),
+            ("draw.stair", serde_json::json!({"a": [0.0, 0.0], "b": [0.0, 4000.0], "width": 1000.0})),
+        ] {
+            let r = app
+                .session_mut()
+                .execute(action, &params)
+                .unwrap_or_else(|e| panic!("{action}: {e}"));
+            ids.push(r["created"][0].as_u64().expect("Id") as Id);
+        }
+        assert!(ids.len() >= 5);
+        for id in ids {
+            assert!(
+                !app.maus_verschiebt(id),
+                "Objekt {id} hängt noch am Mauszug"
+            );
+            app.session_mut().select(vec![id]);
+            assert!(
+                !app.begin_move_drag_bei_klick(id, V2::ZERO, 0.0),
+                "Objekt {id} startet trotzdem einen Zug"
+            );
+            assert!(app.move_drag.is_none());
+        }
     }
 }
 

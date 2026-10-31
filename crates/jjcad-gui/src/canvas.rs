@@ -2852,6 +2852,22 @@ fn handle_input(
         return;
     }
 
+    // Doppelklick auf einen Text: der zweite Druck hat einen Mauszug gestartet
+    // (T0063) — der Klick gehört der Texteingabe, der Zug wird still verworfen
+    // (T0019). Muss vor `laufender_drag` stehen, das den Zug sonst abschließt.
+    if app.tool.is_none()
+        && app.move_drag.is_some()
+        && resp.double_clicked_by(egui::PointerButton::Primary)
+    {
+        if let Some(p) = raw.or(snapped) {
+            if let Some(id) = crate::textedit::text_bei(app, p) {
+                app.verwerfe_move_drag();
+                crate::textedit::start_entitaet(app, id);
+                return;
+            }
+        }
+    }
+
     // Laufende Drags zuerst: sie müssen auch dann abschließen, wenn der Zeiger
     // die Zeichenfläche verlässt (Loslassen außerhalb).
     if laufender_drag(app, resp, snapped, raw) {
@@ -3047,13 +3063,27 @@ fn handle_input(
                 app.select_drag = None;
                 return;
             }
-            // Klick auf ein bereits ausgewaehltes Objekt: Auswahl verschieben.
-            // Text nicht — der wandert nur ueber das Werkzeug "Verschieben".
+            // Klick auf ein bereits ausgewaehltes Objekt: Auswahl verschieben —
+            // je nach Einstellung „Maus verschiebt“ (T0063). Der zweite Druck
+            // eines Doppelklicks auf einem Text startet keinen Zug: er oeffnet
+            // die Texteingabe (T0019), der Zug wuerde sie verschlucken.
             if let Some(r) = raw {
                 let tol2 = 10.0 / view.zoom.max(1e-6);
-                let frame = resp.ctx.input(|i| i.time);
+                let (frame, doppelklick_druck) = resp.ctx.input(|i| {
+                    (
+                        i.time,
+                        i.pointer.button_double_clicked(egui::PointerButton::Primary),
+                    )
+                });
                 if let Some(hit) = snap::hit_test(app.doc(), r, tol2, None) {
-                    if app.selection().contains(&hit) && app.begin_move_drag_bei_klick(hit, r, frame) {
+                    let text = matches!(
+                        app.doc().entity(hit).map(|e| &e.kind),
+                        Some(EntityKind::Text { .. })
+                    );
+                    if app.selection().contains(&hit)
+                        && !(text && doppelklick_druck)
+                        && app.begin_move_drag_bei_klick(hit, r, frame)
+                    {
                         app.select_drag = None;
                         return;
                     }

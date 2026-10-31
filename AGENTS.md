@@ -92,8 +92,12 @@ Mit dem Nutzer abgestimmt — nicht „verbessern“:
   Füllungen vor allen Linien zeichnen, damit keine Umrandung überdeckt wird.
 - **Auswahl** färbt nur blau ein — kein zusätzlicher Auswahlrahmen. **Ausnahme Text**:
   der Text hat einen unsichtbaren Rahmen (derselbe Kasten wie in der Einfüge-Vorschau), der
-  bei Auswahl gezeichnet wird und dessen Ecken/Kantenmitten fangen. Text wird **nicht** mit
-  der gedrückten Maustaste verschoben — nur über das Werkzeug „Verschieben“. Der Kasten ist
+  bei Auswahl gezeichnet wird und dessen Ecken/Kantenmitten fangen. Ob Text mit der
+  gedrückten Maustaste wandert, entscheidet die Einstellung „Maus verschiebt“ (T0063);
+  ausgeschaltet bleibt das Werkzeug „Verschieben“ der einzige Weg. Ein Doppelklick auf
+  einen Text öffnet dessen Inhalt **immer**, auch mit eingeschaltetem Mausverschieben
+  (`canvas::handle_input` verwirft dafür den eben gestarteten Zug, `App::verwerfe_move_drag`).
+  Der Kasten ist
   die Zeilenbox (`render::text_frame`: Höhe × 1,4, Breite nach Zeichenbreiten plus Rand), und
   die Vorschau des Textwerkzeugs läuft über `canvas::paint_text` — dieselbe Platzierung wie
   der eingefügte Text, nicht mit der Grundlinie am Zeiger.
@@ -188,9 +192,9 @@ Mit dem Nutzer abgestimmt — nicht „verbessern“:
   Länge/Breite/Höhe stehen im Eigenschaften-Panel. Beim Ziehen an einer Kante
   läuft die Maßangabe „Länge × Breite · n Stg“ am Zeiger mit
   (`canvas::draw_grip_mass`, derselbe Text wie in der Einfüge-Vorschau).
-  Ein Klick in die Fläche verschiebt die Treppe **nicht**
-  (`App::maus_verschiebt` wie beim Text) — nur
-  die Kantengriffe und das Werkzeug „Verschieben“ bewegen sie. Eine
+  Ein Klick in die Fläche verschiebt die Treppe nur, wenn die Einstellung
+  „Maus verschiebt“ an ist (`App::maus_verschiebt`, T0063) — sonst bewegen sie
+  nur die Kantengriffe und das Werkzeug „Verschieben“. Eine
   Laufrichtung (auf/ab) gibt es nicht: der Pfeil zeigt immer von `a` nach `b`. Die Höhe bestimmt über die Schrittmaßregel
   (2 S + A = 63 cm) die Stufenzahl: `n = (2 H + L) / 630`, gerundet; das Feld
   „Stufen“ überschreibt sie, das Häkchen „Schrittmaß“ schaltet die Regel zurück.
@@ -240,6 +244,12 @@ Mit dem Nutzer abgestimmt — nicht „verbessern“:
   (nicht den Fangpunkt).
 - **Zieh-Modi**: Einstellungen → Bedienung → „Ziehen“ (Gedrückthalten / Zwei
   Klicks), gespeichert in `prefs.json`, gilt für Auswahl *und* Griffe.
+- **Maus verschiebt (T0063)**: Einstellungen → Bedienung → Häkchen „Maus verschiebt“
+  (`prefs.mouse_move`, Vorgabe an). Es gilt für **alle** Objektarten gleich — Text und
+  Treppe haben keine Sonderregel mehr. Ausgeschaltet wandert ausschließlich das Werkzeug
+  „Verschieben“ (exakter Weg für professionelles Arbeiten). Die eine Auswertung ist
+  `App::maus_verschiebt`; wer eine Objektart besonders behandeln will, tut das dort —
+  nicht in einem zweiten `match` an der Zeichenfläche.
 - **Einstellungsfenster (T0061)**: links die Kategorienliste
   (`dialogs::EINSTELLUNGSKATEGORIEN`, Icon + Name, Auswahl blau), darüber das Suchfeld,
   rechts die Einstellungen der gewählten Kategorie. Beide Spalten scrollen getrennt.
