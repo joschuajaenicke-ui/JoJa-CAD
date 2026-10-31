@@ -2739,6 +2739,53 @@ pub fn render_viewport(doc: &Document, vp: &Viewport) -> DisplayList {
 // Hilfen für Auswahl / Fang
 // ---------------------------------------------------------------------------
 
+/// Trefferbild eines Objekts aus der Anzeige: die gezeichneten Strecken und
+/// die Zeilenboxen seiner Texte.
+///
+/// Eine Quelle für Anzeige und Treffer — was gezeichnet wird, lässt sich
+/// anklicken. Nötig für die Bemaßung: sie speichert ihre Basispunkte am
+/// Bauteil und zeichnet die Maßlinie versetzt daneben. Vorher prüften Klick
+/// und Fensterauswahl nur die Grundlinie zwischen den Basispunkten; die
+/// sichtbare Maßlinie und der Maßtext trafen nicht, ein Klick auf der
+/// unsichtbaren Grundlinie dagegen schon (T0052).
+pub struct Trefferbild {
+    pub segmente: Vec<Seg>,
+    pub text_kaesten: Vec<[Vec2; 4]>,
+}
+
+/// Baut das Trefferbild über den Renderer: Linien und Polygonkanten als
+/// Strecken, Texte als Zeilenbox ([`text_corners`] — derselbe Kasten wie
+/// Rahmen und Fang).
+pub fn trefferbild(doc: &Document, e: &Entity) -> Trefferbild {
+    let ctx = RenderCtx::for_entity(doc, e);
+    let mut dl = DisplayList::default();
+    render_entity(&ctx, e, Affine::IDENTITY, &mut dl, 0);
+    let mut segmente = Vec::new();
+    let mut text_kaesten = Vec::new();
+    for prim in &dl.prims {
+        match &prim.shape {
+            Shape::Line(a, b) => segmente.push(Seg::Line(*a, *b)),
+            Shape::Poly(pts, closed) => {
+                if pts.len() < 2 {
+                    continue;
+                }
+                let kanten = if *closed { pts.len() } else { pts.len() - 1 };
+                for i in 0..kanten {
+                    segmente.push(Seg::Line(pts[i], pts[(i + 1) % pts.len()]));
+                }
+            }
+            Shape::Text(t) => text_kaesten.push(text_corners(
+                t.pos, &t.text, t.height, t.angle, t.align, t.valign,
+            )),
+            _ => {}
+        }
+    }
+    Trefferbild {
+        segmente,
+        text_kaesten,
+    }
+}
+
 /// Zerlegt ein Objekt in Segmente (für Fang, Schnitt und Trefferprüfung).
 pub fn entity_segments(doc: &Document, e: &Entity) -> Vec<Seg> {
     entity_segments_tief(doc, e, 0)
@@ -2795,11 +2842,11 @@ fn entity_segments_tief(doc: &Document, e: &Entity, depth: usize) -> Vec<Seg> {
                 }
             }
         }
-        EntityKind::Dim { a, b, .. } => out.push(Seg::Line(*a, *b)),
-        EntityKind::DimChain { pts, .. } => {
-            for i in 0..pts.len().saturating_sub(1) {
-                out.push(Seg::Line(pts[i], pts[i + 1]));
-            }
+        EntityKind::Dim { .. } | EntityKind::DimChain { .. } => {
+            // Gezeichnete Bemaßung — Maßlinie, Hilfslinien und Markierungen
+            // versetzt neben den Basispunkten (T0052). Die Grundlinie zwischen
+            // den Basispunkten ist unsichtbar und deshalb keine Trefferfläche.
+            out.extend(trefferbild(doc, e).segmente);
         }
         EntityKind::Stair {
             a,

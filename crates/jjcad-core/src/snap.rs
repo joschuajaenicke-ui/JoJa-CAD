@@ -1251,6 +1251,24 @@ pub fn hit_test(doc: &Document, p: Vec2, tol: f64, layer_filter: Option<&[Id]>) 
         if !b.is_valid() {
             continue;
         }
+        // Bemaßung: der Maßtext ist Teil des sichtbaren Bereichs und zählt wie
+        // ein Text als Fläche; die Maßlinie trifft über die Segmente
+        // (`entity_segments` liefert seit T0052 die gezeichnete Geometrie).
+        if matches!(e.kind, EntityKind::Dim { .. } | EntityKind::DimChain { .. }) {
+            let tb = render::trefferbild(doc, e);
+            if tb
+                .text_kaesten
+                .iter()
+                .any(|k| BBox::from_points(k).expanded(tol).contains(p))
+            {
+                let d = b.center().dist(p);
+                let prio = 2;
+                if best.map(|(_, bd, bp)| prio < bp || (prio == bp && d < bd)).unwrap_or(true) {
+                    best = Some((e.id, d, prio));
+                }
+                continue;
+            }
+        }
         // Text/Punkt: über BBox
         let is_text = matches!(
             e.kind,
@@ -1370,6 +1388,35 @@ pub fn select_window(doc: &Document, a: Vec2, b: Vec2, crossing: bool) -> Vec<Id
         );
         if flaechig {
             if (crossing && bb.intersects(&rect)) || (!crossing && rect.contains_bbox(&bb)) {
+                out.push(e.id);
+            }
+            continue;
+        }
+        // Bemaßung: die Maßzahl ist ihre sichtbare Kennzeichnung. Ein Fenster
+        // (links→rechts) über der Zahl wählt die Kette, auch wenn Maßlinie und
+        // Hilfslinien darüber hinausreichen; das Querfenster berührt die
+        // gezeichneten Strecken oder den Maßtext (T0052).
+        if matches!(e.kind, EntityKind::Dim { .. } | EntityKind::DimChain { .. }) {
+            let tb = render::trefferbild(doc, e);
+            let text_trifft = tb.text_kaesten.iter().any(|k| {
+                let kb = BBox::from_points(k);
+                if crossing {
+                    kb.intersects(&rect)
+                } else {
+                    rect.contains_bbox(&kb)
+                }
+            });
+            let strecken_innen = !tb.segmente.is_empty()
+                && tb
+                    .segmente
+                    .iter()
+                    .flat_map(seg_points)
+                    .all(|q| rect.contains(q));
+            let strecken_treffen = tb.segmente.iter().any(|sg| {
+                let pts = seg_points(sg);
+                pts.windows(2).any(|w| seg_meets_rect(w[0], w[1], &rect))
+            });
+            if text_trifft || if crossing { strecken_treffen } else { strecken_innen } {
                 out.push(e.id);
             }
             continue;
