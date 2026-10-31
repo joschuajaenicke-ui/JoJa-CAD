@@ -843,6 +843,7 @@ pub fn show(app: &mut App, ctx: &egui::Context) {
             ui.set_width(460.0);
             ui.label(theme::bold("JoJa-CAD", 20.0));
             ui.label(theme::dim(format!("Version {}", env!("CARGO_PKG_VERSION"))));
+            ui.label(theme::mono(crate::app::build_label()));
             ui.add_space(8.0);
             ui.label("2D-CAD für Architektur und Bauantragszeichnungen.");
             ui.add_space(6.0);

@@ -582,6 +582,16 @@ pub fn paint(painter: &Painter, rect: Rect, name: &str, color: Color32) {
                 i.line(3.0, 3.0 + k as f32 * 6.0, 21.0, 3.0 + k as f32 * 6.0);
             }
         }
+        "staerke" => {
+            // Drei Linien zunehmender Stärke — Zeichen für die Linienstärke
+            for (k, w) in [1.0f32, 2.0, 3.4].iter().enumerate() {
+                let y = 7.0 + k as f32 * 5.0;
+                i.p.line_segment(
+                    [i.pt(3.0, y), i.pt(21.0, y)],
+                    Stroke::new(*w, color),
+                );
+            }
+        }
         "snap" => {
             i.circle(12.0, 12.0, 4.0);
             i.line(12.0, 2.0, 12.0, 7.0);
