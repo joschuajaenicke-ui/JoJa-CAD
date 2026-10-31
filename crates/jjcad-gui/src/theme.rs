@@ -101,8 +101,9 @@ pub fn install(ctx: &egui::Context) {
         }
     }
     // Schriften für Texte der Zeichnung: je Familie ein eigener Satz, damit
-    // „Serifen", „Schmal" und „Rund" auch auf der Zeichenfläche so aussehen.
-    // Die Daten kommen aus dem Kern (Systemschriften, nichts eingebettet).
+    // „Serifen", „Schmal", „Rund" und die technischen Schriften auch auf der
+    // Zeichenfläche so aussehen wie im Druck. Die Daten kommen aus dem Kern:
+    // Systemschriften und die mitgelieferten DIN 1451 / EN ISO 3098.
     for font in jjcad_core::model::TextFont::ALL {
         for (stil, anhang) in [
             (jjcad_core::fonts::FontStyle::Regular, ""),

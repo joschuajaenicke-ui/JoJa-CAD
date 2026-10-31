@@ -75,6 +75,9 @@ Steht rechts „nicht", dann ist das Wort im Projekt verpönt (auch in der Oberf
 | **Höhenkote** | Höhenangabe als Text mit Bezug (±0,00) | Höhenmaß, Kote |
 | **Text** | Freier Text im Modell oder auf dem Blatt; Größe in mm, Ausrichtung, Auszeichnung | Beschriftung (das ist der Inhalt) |
 | **Textgröße** | Die Höhe eines Textes (Feld im Eigenschaften-Panel) | Schriftgröße in Punkt, Höhe |
+| **Schriftart** | Die Familie eines Textes: Serifenlos, Serifen, Nichtproportional, Schmal, Rund sowie die technischen Schriften **DIN 1451** (Eng-, Mittel-, Breitschrift) und **EN ISO 3098** (Typ A, Typ B) | Font, Typeface |
+| **DIN 1451** | Deutsche technische Normschrift in drei Breiten: Engschrift (schmal), Mittelschrift, Breitschrift (breit); liegt mit im Programm | „DIN" (ohne Nummer), „Schmal" |
+| **EN ISO 3098** | Technische Schrift für Zeichnungen: Typ A mit dünner Strichstärke (d = h/14), Typ B mit d = h/10; liegt mit im Programm | ISO-Schrift, „Normschrift" (ohne Norm) |
 | **Auszeichnung** | Form einzelner Zeichen: fett, kursiv, unterstrichen, hochgestellt | Format, Stil |
 | **Lauf** | Zusammenhängende Zeichen mit gleicher Auszeichnung innerhalb eines Textes | Abschnitt, Run |
 | **Ansichtsfenster** | Fenster auf dem Blatt, das einen Ausschnitt der Zeichnung zeigt | Viewport, Ansicht |

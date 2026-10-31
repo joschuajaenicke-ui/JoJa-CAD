@@ -5,13 +5,20 @@
 //! benutzen, sonst sitzt Text in der einen Ausgabe anders als in der anderen.
 //! Deshalb liegt die Auswahl der Dateien und die Vermessung hier zentral.
 //!
-//! **Keine Schriftdateien im Programm:** alle Familien werden zur Laufzeit aus
-//! dem System geladen. Das hält die Programmdatei klein; in ein PDF kommt nur
-//! die Schrift, die der Plan tatsächlich benutzt.
+//! **Gebrauchsschriften aus dem System:** Serifenlos, Serifen, Nichtproportional,
+//! Schmal und Rund werden zur Laufzeit geladen. Das hält die Programmdatei
+//! klein; in ein PDF kommt nur die Schrift, die der Plan tatsächlich benutzt.
 //!
-//! Bevorzugt wird die Familie **Liberation**, weil sie metrisch identisch mit
-//! Helvetica/Arial/Times/Courier ist: alte Ausgaben (Helvetica) und neue
-//! (eingebettete Schrift) passen zusammen.
+//! **Technische Schriften liegen mit im Programm** (`crates/jjcad-core/fonts/`):
+//! DIN 1451 (Eng-, Mittel-, Breitschrift) und EN ISO 3098 (Typ A, Typ B) gibt
+//! es auf keinem üblichen Rechner, und aus einer Systemschrift lassen sie sich
+//! nicht ableiten. Sie kommen über `include_bytes!` mit — dieselbe Schrift steht
+//! damit in Tests, Rasterausgabe, PDF und GUI zur Verfügung, ohne dass jemand
+//! Dateien nachinstalliert. Herkunft und Lizenzen: `fonts/LIESMICH.md`.
+//!
+//! Bevorzugt wird bei den Systemschriften die Familie **Liberation**, weil sie
+//! metrisch identisch mit Helvetica/Arial/Times/Courier ist: alte Ausgaben
+//! (Helvetica) und neue (eingebettete Schrift) passen zusammen.
 
 use crate::model::TextFont;
 use ab_glyph::{Font, FontRef, GlyphId, ScaleFont};
@@ -94,7 +101,72 @@ fn bases(font: TextFont) -> &'static [(&'static str, [&'static str; 4])] {
             // der Grundschnitt genommen (Lage bleibt, die Schräge fehlt).
             ("Quicksand", ["-Regular", "-Bold", "-Regular", "-Bold"]),
         ],
+        // Die technischen Schriften kommen aus `fonts/` (siehe [`gebuendelt`]).
+        // Fehlt die Datei, bleibt die serifenlose Schrift als Rückfall — die
+        // Namen stehen hier bewusst nicht, damit keine Systemschrift
+        // versehentlich als DIN 1451 durchgeht.
+        TextFont::DinEng
+        | TextFont::DinMittel
+        | TextFont::DinBreit
+        | TextFont::IsoA
+        | TextFont::IsoB => &[],
     }
+}
+
+/// Eine mitgelieferte Schriftdatei.
+struct Gebuendelt {
+    daten: &'static [u8],
+    /// Waagerechte Streckung der Formen (1.0 = wie in der Datei).
+    ///
+    /// DIN 1451 ist **eine** Schrift in drei Breiten — Eng-, Mittel- und
+    /// Breitschrift sind dieselben Formen mit anderem Breitenverhältnis
+    /// (rund 0,82 : 1,0 : 1,25). Die mitgelieferten Dateien geben nur Eng- und
+    /// Mittelschnitt her; die Breitschrift entsteht durch Strecken, sonst wäre
+    /// sie von der Mittelschrift nicht zu unterscheiden (gemessen: 2 % breiter).
+    streckung: f32,
+    /// Name für `/BaseFont` im PDF. Je Familie verschieden, auch wenn zwei
+    /// Familien dieselbe Datei benutzen: zwei PDF-Schriften mit gleichem Namen,
+    /// aber eigenen Glyphentabellen verwirren den Betrachter.
+    ps: &'static str,
+}
+
+/// Mitgelieferte technische Schrift (DIN 1451, EN ISO 3098) — sonst `None`.
+///
+/// `include_bytes!` statt Dateisuche: die Schriften sind Teil des Programms.
+/// Zuordnung: Engschrift = D-DIN Condensed, Mittelschrift = D-DIN,
+/// Breitschrift = D-DIN Expanded; EN ISO 3098 Typ A = osifont (dünn, d = h/14),
+/// Typ B = D-DIN (d = h/10, formgleich mit der Mittelschrift).
+fn gebuendelt(font: TextFont) -> Option<Gebuendelt> {
+    Some(match font {
+        TextFont::DinEng => Gebuendelt {
+            daten: include_bytes!("../fonts/D-DINCondensed.ttf"),
+            streckung: 1.0,
+            ps: "D-DINCondensed",
+        },
+        TextFont::DinMittel => Gebuendelt {
+            daten: include_bytes!("../fonts/D-DIN.ttf"),
+            streckung: 1.0,
+            ps: "D-DIN",
+        },
+        TextFont::DinBreit => Gebuendelt {
+            daten: include_bytes!("../fonts/D-DIN.ttf"),
+            streckung: BREITSCHRIFT_STRECKUNG,
+            // Eigener Name: die OFL verbietet den reservierten Namen für
+            // Abwandlungen, und gestreckt ist eine Abwandlung.
+            ps: "JjcadDIN1451Breit",
+        },
+        TextFont::IsoA => Gebuendelt {
+            daten: include_bytes!("../fonts/osifont-lgpl3fe.ttf"),
+            streckung: 1.0,
+            ps: "osifont",
+        },
+        TextFont::IsoB => Gebuendelt {
+            daten: include_bytes!("../fonts/D-DIN.ttf"),
+            streckung: 1.0,
+            ps: "D-DIN-ISO3098-B",
+        },
+        _ => return None,
+    })
 }
 
 /// Suchpfade für eine Familie und einen Schnitt — mit Rückfall auf den
@@ -164,6 +236,25 @@ fn lade(font: TextFont, style: FontStyle) -> Option<&'static Loaded> {
         if let Some(v) = m.get(&key) {
             return *v;
         }
+    }
+    // Mitgelieferte Schrift: fett/kursiv gibt es in der technischen Schrift
+    // nicht, es bleibt beim Grundschnitt (gleiche Datei, gleiche Vorschübe).
+    if let Some(g) = gebuendelt(font) {
+        let daten = if (g.streckung - 1.0).abs() < 1e-3 {
+            g.daten.to_vec()
+        } else {
+            strecke(g.daten, g.streckung).unwrap_or_else(|| g.daten.to_vec())
+        };
+        let geladen = TtfInfo::parse(&daten).ok().map(|info| Loaded {
+            data: daten,
+            info,
+            ps_name: g.ps.to_string(),
+        });
+        let geladen = geladen.map(|l| &*Box::leak(Box::new(l)));
+        if let Ok(mut m) = cache.lock() {
+            m.insert(key, geladen);
+        }
+        return geladen;
     }
     let geladen = candidates(font, style)
         .into_iter()
@@ -363,6 +454,16 @@ pub fn font_from_ps_name(name: &str) -> TextFont {
     let n = name.to_lowercase();
     if n.contains("quicksand") {
         TextFont::Rund
+    } else if n.contains("osifont") {
+        TextFont::IsoA
+    } else if n.contains("iso3098") {
+        TextFont::IsoB
+    } else if n.contains("condensed") {
+        TextFont::DinEng
+    } else if n.contains("breit") || n.contains("expanded") || n.contains("d-dinexp") {
+        TextFont::DinBreit
+    } else if n.contains("d-din") || n.contains("ddin") {
+        TextFont::DinMittel
     } else if n.contains("narrow") {
         TextFont::Narrow
     } else if n.contains("mono") || n.contains("courier") {
@@ -374,3 +475,350 @@ pub fn font_from_ps_name(name: &str) -> TextFont {
     }
 }
 
+// ---------------------------------------------------------------------------
+// Waagerechte Streckung einer TrueType-Datei
+// ---------------------------------------------------------------------------
+//
+// DIN 1451 ist **eine** Schrift in drei Breiten: Eng-, Mittel- und Breitschrift
+// sind dieselben Formen mit anderem Breitenverhältnis. Damit die Breitschrift
+// nicht nur 2 % breiter ist als die Mittelschrift (gemessen an der Vorlage),
+// wird die Mittelschrift beim Laden waagerecht gestreckt. Geschieht das an der
+// Schriftdatei und nicht am Zeichner, wirkt es überall gleich: Zeichenfläche,
+// Rasterausgabe, PDF und „in Linien zerlegen".
+
+/// Breite der DIN 1451 Breitschrift gegenüber der Mittelschrift.
+pub const BREITSCHRIFT_STRECKUNG: f32 = 1.25;
+
+fn u16_at(d: &[u8], o: usize) -> Option<u16> {
+    Some(u16::from_be_bytes([*d.get(o)?, *d.get(o + 1)?]))
+}
+
+fn i16_at(d: &[u8], o: usize) -> Option<i16> {
+    Some(i16::from_be_bytes([*d.get(o)?, *d.get(o + 1)?]))
+}
+
+fn u32_at(d: &[u8], o: usize) -> Option<u32> {
+    Some(u32::from_be_bytes([
+        *d.get(o)?,
+        *d.get(o + 1)?,
+        *d.get(o + 2)?,
+        *d.get(o + 3)?,
+    ]))
+}
+
+fn set_u16(d: &mut [u8], o: usize, v: u16) {
+    d[o..o + 2].copy_from_slice(&v.to_be_bytes());
+}
+
+fn set_i16(d: &mut [u8], o: usize, v: i16) {
+    d[o..o + 2].copy_from_slice(&v.to_be_bytes());
+}
+
+/// Summe der 32-Bit-Wörter (Prüfsumme einer sfnt-Tabelle).
+fn pruefsumme(d: &[u8]) -> u32 {
+    let mut s: u32 = 0;
+    let mut i = 0;
+    while i < d.len() {
+        let mut wort = [0u8; 4];
+        for (k, b) in wort.iter_mut().enumerate() {
+            *b = d.get(i + k).copied().unwrap_or(0);
+        }
+        s = s.wrapping_add(u32::from_be_bytes(wort));
+        i += 4;
+    }
+    s
+}
+
+/// Setzt die waagerechten Koordinaten einer Glyphe um `f` auseinander.
+///
+/// Die x-Werte werden als vorzeichenbehaftete 16-Bit-Deltas neu geschrieben
+/// (die kurze 8-Bit-Form kann nach dem Strecken überlaufen), die
+/// TrueType-Instruktionen fallen weg — nach einer Streckung wären sie falsch,
+/// und keine der Ausgaben hintet.
+fn strecke_glyphe(g: &[u8], f: f64) -> Option<Vec<u8>> {
+    let nc = i16_at(g, 0)?;
+    let mut out = Vec::with_capacity(g.len() + 64);
+    out.extend_from_slice(g.get(..10)?);
+    let runden = |v: f64| -> i16 { v.round().clamp(-32768.0, 32767.0) as i16 };
+
+    if nc >= 0 {
+        let n = nc as usize;
+        let mut endp: Vec<u16> = Vec::with_capacity(n);
+        let mut np = 0usize;
+        for k in 0..n {
+            let v = u16_at(g, 10 + 2 * k)?;
+            endp.push(v);
+            np = np.max(v as usize + 1);
+        }
+        let mut p = 10 + 2 * n;
+        let il = u16_at(g, p)? as usize;
+        p += 2 + il; // Instruktionen werden nicht übernommen
+        let mut flags: Vec<u8> = Vec::with_capacity(np);
+        while flags.len() < np {
+            let fl = *g.get(p)?;
+            p += 1;
+            flags.push(fl);
+            if fl & 0x08 != 0 {
+                let r = *g.get(p)? as usize;
+                p += 1;
+                for _ in 0..r {
+                    flags.push(fl);
+                }
+            }
+        }
+        flags.truncate(np);
+        // x-Deltas (gestreckt) und y-Deltas (unverändert) auslesen
+        let mut xs: Vec<f64> = Vec::with_capacity(np);
+        let mut x = 0.0f64;
+        for fl in &flags {
+            let d = if fl & 0x02 != 0 {
+                let v = *g.get(p)? as f64;
+                p += 1;
+                if fl & 0x10 != 0 {
+                    v
+                } else {
+                    -v
+                }
+            } else if fl & 0x10 != 0 {
+                0.0
+            } else {
+                let v = i16_at(g, p)? as f64;
+                p += 2;
+                v
+            };
+            x += d;
+            xs.push(x);
+        }
+        let mut ydel: Vec<i16> = Vec::with_capacity(np);
+        for fl in &flags {
+            let d = if fl & 0x04 != 0 {
+                let v = *g.get(p)? as i32;
+                p += 1;
+                if fl & 0x20 != 0 {
+                    v
+                } else {
+                    -v
+                }
+            } else if fl & 0x20 != 0 {
+                0
+            } else {
+                let v = i16_at(g, p)? as i32;
+                p += 2;
+                v
+            };
+            ydel.push(d.clamp(-32768, 32767) as i16);
+        }
+        // neue Glyphe zusammensetzen
+        for e in &endp {
+            out.extend_from_slice(&e.to_be_bytes());
+        }
+        out.extend_from_slice(&0u16.to_be_bytes()); // keine Instruktionen
+        for fl in &flags {
+            // Nur „auf der Kurve" und „Überlappung" behalten: kurze Vektoren
+            // gibt es nach dem Neuschreiben nicht mehr.
+            out.push(fl & 0x41);
+        }
+        let mut prev = 0i32;
+        for x in &xs {
+            let v = runden(x * f) as i32;
+            out.extend_from_slice(&((v - prev).clamp(-32768, 32767) as i16).to_be_bytes());
+            prev = v;
+        }
+        for d in &ydel {
+            out.extend_from_slice(&d.to_be_bytes());
+        }
+        // Rahmen der Glyphe nachziehen
+        let xmin = runden(i16_at(g, 2)? as f64 * f);
+        let xmax = runden(i16_at(g, 6)? as f64 * f);
+        set_i16(&mut out, 2, xmin);
+        set_i16(&mut out, 6, xmax);
+        return Some(out);
+    }
+
+    // Zusammengesetzte Glyphe: Versätze strecken, Bausteine unverändert.
+    let mut p = 10usize;
+    loop {
+        let fl = u16_at(g, p)?;
+        let gi = u16_at(g, p + 2)?;
+        p += 4;
+        let words = fl & 0x0001 != 0;
+        let (a1, a2) = if words {
+            let a = i16_at(g, p)? as i32;
+            let b = i16_at(g, p + 2)? as i32;
+            p += 4;
+            (a, b)
+        } else {
+            let a = *g.get(p)? as i8 as i32;
+            let b = *g.get(p + 1)? as i8 as i32;
+            p += 2;
+            (a, b)
+        };
+        let mut breite = 0usize;
+        if fl & 0x0008 != 0 {
+            breite = 2;
+        } else if fl & 0x0040 != 0 {
+            breite = 4;
+        } else if fl & 0x0080 != 0 {
+            breite = 8;
+        }
+        let matrix = g.get(p..p + breite)?.to_vec();
+        p += breite;
+        let dx = if fl & 0x0002 != 0 {
+            (a1 as f64 * f).round() as i32
+        } else {
+            a1
+        };
+        out.extend_from_slice(&(fl | 0x0001).to_be_bytes());
+        out.extend_from_slice(&gi.to_be_bytes());
+        out.extend_from_slice(&(dx.clamp(-32768, 32767) as i16).to_be_bytes());
+        out.extend_from_slice(&(a2.clamp(-32768, 32767) as i16).to_be_bytes());
+        out.extend_from_slice(&matrix);
+        if fl & 0x0020 == 0 {
+            break;
+        }
+    }
+    let xmin = runden(i16_at(g, 2)? as f64 * f);
+    let xmax = runden(i16_at(g, 6)? as f64 * f);
+    set_i16(&mut out, 2, xmin);
+    set_i16(&mut out, 6, xmax);
+    Some(out)
+}
+
+/// Setzt eine TrueType-Datei waagerecht um `faktor` auseinander.
+fn strecke(data: &[u8], faktor: f32) -> Option<Vec<u8>> {
+    let num = u16_at(data, 4)? as usize;
+    let mut tabellen: Vec<([u8; 4], Vec<u8>)> = Vec::with_capacity(num);
+    for i in 0..num {
+        let o = 12 + i * 16;
+        let tag = [data.get(o)?, data.get(o + 1)?, data.get(o + 2)?, data.get(o + 3)?].map(|b| *b);
+        let off = u32_at(data, o + 8)? as usize;
+        let len = u32_at(data, o + 12)? as usize;
+        tabellen.push((tag, data.get(off..off + len)?.to_vec()));
+    }
+    let hole = |name: &[u8; 4]| -> Option<Vec<u8>> {
+        tabellen
+            .iter()
+            .find(|(t, _)| t == name)
+            .map(|(_, d)| d.clone())
+    };
+    let mut head = hole(b"head")?;
+    let mut hhea = hole(b"hhea")?;
+    let mut hmtx = hole(b"hmtx")?;
+    let maxp = hole(b"maxp")?;
+    let loca = hole(b"loca")?;
+    let glyf = hole(b"glyf")?;
+
+    let num_glyphs = u16_at(&maxp, 4)? as usize;
+    let num_h = u16_at(&hhea, 34)? as usize;
+    let lang = i16_at(&head, 50)? != 0;
+    let mut alt_loca: Vec<usize> = Vec::with_capacity(num_glyphs + 1);
+    for i in 0..=num_glyphs {
+        let v = if lang {
+            u32_at(&loca, 4 * i)? as usize
+        } else {
+            u16_at(&loca, 2 * i)? as usize * 2
+        };
+        if v > glyf.len() {
+            return None;
+        }
+        alt_loca.push(v);
+    }
+
+    let f = faktor as f64;
+    let mut neu_glyf: Vec<u8> = Vec::with_capacity(glyf.len() + 4096);
+    let mut neu_loca: Vec<u32> = Vec::with_capacity(num_glyphs + 1);
+    for i in 0..num_glyphs {
+        let (a, b) = (alt_loca[i], alt_loca[i + 1]);
+        neu_loca.push(neu_glyf.len() as u32);
+        if b > a {
+            let neu = strecke_glyphe(&glyf[a..b], f)?;
+            neu_glyf.extend_from_slice(&neu);
+            while neu_glyf.len() % 4 != 0 {
+                neu_glyf.push(0);
+            }
+        }
+    }
+    neu_loca.push(neu_glyf.len() as u32);
+    let mut neu_loca_bytes = Vec::with_capacity(4 * neu_loca.len());
+    for v in &neu_loca {
+        neu_loca_bytes.extend_from_slice(&v.to_be_bytes());
+    }
+
+    for i in 0..num_h.min(num_glyphs) {
+        let o = 4 * i;
+        let adv = u16_at(&hmtx, o)? as f64 * f;
+        let lsb = i16_at(&hmtx, o + 2)? as f64 * f;
+        set_u16(&mut hmtx, o, adv.round().clamp(0.0, 65535.0) as u16);
+        set_i16(&mut hmtx, o + 2, lsb.round().clamp(-32768.0, 32767.0) as i16);
+    }
+    // Kopf- und Maßtabellen nachziehen
+    set_u16(&mut head, 50, 1); // loca in langer Form
+    let xmin = i16_at(&head, 36)? as f64 * f;
+    let xmax = i16_at(&head, 40)? as f64 * f;
+    set_i16(&mut head, 36, xmin.round() as i16);
+    set_i16(&mut head, 40, xmax.round() as i16);
+    let awmax = (u16_at(&hhea, 10)? as f64 * f).round().clamp(0.0, 65535.0) as u16;
+    set_u16(&mut hhea, 10, awmax);
+    for o in [12usize, 14, 16] {
+        let v = i16_at(&hhea, o)? as f64 * f;
+        set_i16(&mut hhea, o, v.round().clamp(-32768.0, 32767.0) as i16);
+    }
+
+    for (tag, d) in tabellen.iter_mut() {
+        let t: &[u8; 4] = tag;
+        match t {
+            b"head" => *d = head.clone(),
+            b"hhea" => *d = hhea.clone(),
+            b"hmtx" => *d = hmtx.clone(),
+            b"loca" => *d = neu_loca_bytes.clone(),
+            b"glyf" => *d = neu_glyf.clone(),
+            _ => {}
+        }
+    }
+    Some(baue_sfnt(data.get(..4)?, tabellen))
+}
+
+/// Schreibt die Tabellen als sfnt-Datei (Verzeichnis, Prüfsummen, Ausgleich).
+fn baue_sfnt(version: &[u8], mut tabellen: Vec<([u8; 4], Vec<u8>)>) -> Vec<u8> {
+    tabellen.sort_by(|a, b| a.0.cmp(&b.0));
+    let n = tabellen.len() as u16;
+    let mut sr = 1u16;
+    while sr * 2 <= n {
+        sr *= 2;
+    }
+    let mut out = Vec::with_capacity(1024 + tabellen.iter().map(|(_, d)| d.len()).sum::<usize>());
+    out.extend_from_slice(version);
+    out.extend_from_slice(&n.to_be_bytes());
+    out.extend_from_slice(&(sr * 16).to_be_bytes());
+    out.extend_from_slice(&((sr as f32).log2() as u16).to_be_bytes());
+    out.extend_from_slice(&((n - sr) * 16).to_be_bytes());
+    let mut offset = 12 + 16 * n as usize;
+    let mut verzeichnis = Vec::with_capacity(16 * n as usize);
+    let mut daten: Vec<u8> = Vec::new();
+    let mut head_offset: Option<usize> = None;
+    for (tag, d) in &tabellen {
+        verzeichnis.extend_from_slice(tag);
+        verzeichnis.extend_from_slice(&pruefsumme(d).to_be_bytes());
+        verzeichnis.extend_from_slice(&(offset as u32).to_be_bytes());
+        verzeichnis.extend_from_slice(&(d.len() as u32).to_be_bytes());
+        if tag == b"head" {
+            head_offset = Some(offset);
+        }
+        daten.extend_from_slice(d);
+        while daten.len() % 4 != 0 {
+            daten.push(0);
+        }
+        offset += d.len() + (4 - d.len() % 4) % 4;
+    }
+    out.extend_from_slice(&verzeichnis);
+    out.extend_from_slice(&daten);
+    if let Some(ho) = head_offset {
+        if ho + 12 <= out.len() {
+            set_u16(&mut out, ho + 8, 0);
+            let summe = pruefsumme(&out);
+            let ausgleich = 0xB1B0_AFBAu32.wrapping_sub(summe);
+            out[ho + 8..ho + 12].copy_from_slice(&ausgleich.to_be_bytes());
+        }
+    }
+    out
+}

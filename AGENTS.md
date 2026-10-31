@@ -105,6 +105,16 @@ Mit dem Nutzer abgestimmt — nicht „verbessern“:
   Quelle für Anzeige, Rahmen, Fang und Vorschau. Beim Kopieren eines **einzelnen** Textfeldes
   ist dieser Einfügepunkt der Basispunkt: ein zentriert/mittig gesetzter Text landet beim
   Einfügen genau mittig auf dem Zielpunkt.
+- **Schriftarten (T0059)**: Gebrauchsschriften kommen aus dem System (Serifenlos, Serifen, Nichtproportional, Schmal, Rund). Die technischen Schriften
+  **DIN 1451** (Eng-, Mittel-, Breitschrift) und **EN ISO 3098** (Typ A, Typ B) liegen
+  mit im Programm (`crates/jjcad-core/fonts/`, OFL bzw. LGPL mit Schriftausnahme,
+  Herkunft in `fonts/LIESMICH.md`) — sie sind auf keinem Rechner installiert. Die
+  **Breitschrift** entsteht beim Laden durch waagerechtes Strecken der Mittelschrift
+  (`fonts::strecke`, × 1,25), weil DIN 1451 dieselben Formen in drei Breiten ist;
+  gestreckt wird die **Schriftdatei**, nicht der Zeichner — so stimmen Zeichenfläche,
+  Rasterausgabe, PDF und Zerlegen überein. „Schmal" ist Liberation Sans Narrow und
+  **nicht** die DIN 1451. Die Auswahl `widgets::schrift_wahl` zeigt jede Zeile in ihrer
+  eigenen Schrift und läuft über `panels::dropdown` (kein `egui::ComboBox`).
 - **Raster-Chip** schaltet Anzeige *und* Rasterfang gemeinsam.
 - **Ansichtsfenster** wie Rechtecke, beweglich nur mit `V`, exakte Eingabe X/Y/B/H.
 - **Druckvorschau = Papierraum**: gleiche Werkzeuge wie im Modell. Der Bearbeitungsraum

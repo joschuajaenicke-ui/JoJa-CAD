@@ -1189,8 +1189,8 @@ impl App {
                             id,
                             layer,
                             EntityKind::Text {
-                                p: jjcad_core::geom::v(2000.0, 3000.0 - i as f64 * 500.0),
-                                text: format!("{} Wohnen 12,4 m²", font.label()),
+                                p: jjcad_core::geom::v(2000.0, 4900.0 - i as f64 * 430.0),
+                                text: format!("{} · Wohnen 12,4 m²", font.label()),
                                 height: 250.0,
                                 angle: 0.0,
                                 align: TextAlignH::Left,
@@ -1212,7 +1212,7 @@ impl App {
                         id,
                         layer,
                         EntityKind::Text {
-                            p: jjcad_core::geom::v(2000.0, 600.0),
+                            p: jjcad_core::geom::v(2000.0, 400.0),
                             text: "Zerlegt".into(),
                             height: 400.0,
                             angle: 0.0,

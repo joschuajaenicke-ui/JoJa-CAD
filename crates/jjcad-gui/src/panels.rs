@@ -564,12 +564,12 @@ fn weight_text(w: f64) -> String {
 /// Eigener Dropdown: bleibt offen, während man im Popup arbeitet
 /// (Zahlenfeld, Farbwähler) und zeigt im geschlossenen Zustand ein Farbfeld.
 #[derive(Clone, Copy)]
-enum BtnIcon {
+pub(crate) enum BtnIcon {
     Color(Color),
     Line(LineType),
 }
 
-fn dropdown<R>(
+pub(crate) fn dropdown<R>(
     ui: &mut Ui,
     salt: &str,
     caption: &str,
