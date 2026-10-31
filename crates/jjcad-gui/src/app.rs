@@ -200,13 +200,31 @@ pub struct ToolOptions {
     pub swing_in: bool,
     pub window_width: f64,
     pub window_sill: f64,
+    /// Fensterhöhe in mm — gehört wie Breite und Brüstung zu den Eigenschaften,
+    /// die beim Erzeugen schon feststehen (gleiche Zeile wie beim Bearbeiten).
+    pub window_height: f64,
+    /// Höhe des nächsten Volumens in mm (Körperhöhe, nicht Geschosshöhe).
+    pub volume_height: f64,
+    /// Muster des nächsten Volumens — eigene Werte, damit ein Körper nicht die
+    /// Schraffur der Flächenwerkzeuge erbt (Standard: volle Fläche).
+    pub volume_pattern: FillPattern,
+    pub volume_angle: f64,
+    pub volume_scale: f64,
+    /// Lage des Fensters in der Wanddicke (Links/Mittig/Rechts).
+    pub window_align: jjcad_core::style::WallAlign,
     pub stair_width: f64,
     pub stair_steps: u32,
     /// Treppenhöhe (Geschosshöhe) in mm — Grundlage der Schrittmaßregel.
     pub stair_height: f64,
     /// Stufenzahl aus Länge und Höhe bestimmen (statt fester Zahl).
     pub stair_auto: bool,
+    /// Treppenschnitt (zwei Läufe übereinander) für die nächste Treppe.
+    pub stair_cut: bool,
     pub text_height: f64,
+    /// Drehung des nächsten Textes in Grad (0 = waagerecht). Gilt für das
+    /// erzeugte Objekt; das Eingabefeld in der Zeichenfläche bleibt dabei
+    /// bildschirmparallel — wie in Textprogrammen üblich.
+    pub text_angle: f64,
     pub text: String,
     /// Ausrichtung des nächsten Textfelds (waagerecht: Linksbündig/Zentriert/
     /// Rechtsbündig, senkrecht: Oben/Mitte/Unten). Der Klickpunkt ist der
@@ -223,6 +241,8 @@ pub struct ToolOptions {
     /// Schriftart des nächsten Textes (bleibt für das nächste Element stehen)
     pub text_font: TextFont,
     pub dim_axis: Option<DimAxis>,
+    /// Eigener Maßtext des nächsten Maßes (leer = automatisch berechnet).
+    pub dim_text: String,
     pub offset_dist: f64,
     pub elevation_z: f64,
     pub fill_pattern: FillPattern,
@@ -286,11 +306,19 @@ impl ToolOptions {
             swing_in: true,
             window_width: doc.settings.window_width,
             window_sill: 900.0,
+            window_height: 1250.0,
+            volume_height: 2750.0,
+            volume_pattern: FillPattern::Solid,
+            volume_angle: 0.0,
+            volume_scale: 100.0,
+            window_align: jjcad_core::style::WallAlign::Center,
             stair_width: doc.settings.stair_width,
             stair_steps: 17,
             stair_height: jjcad_core::stair::HOEHE_VORGABE_MM,
             stair_auto: true,
+            stair_cut: true,
             text_height: doc.settings.text_height,
+            text_angle: 0.0,
             text: String::new(),
             text_align: TextAlignH::Left,
             text_valign: TextAlignV::Middle,
@@ -301,6 +329,7 @@ impl ToolOptions {
             text_superscript: false,
             text_font: TextFont::default(),
             dim_axis: None,
+            dim_text: String::new(),
             offset_dist: doc.settings.wall_thickness,
             elevation_z: 0.0,
             fill_pattern: FillPattern::Lines,
@@ -1157,6 +1186,80 @@ impl App {
                         }),
                     ));
                 }
+                // Prüffläche: eine Füllfläche über der Zeichnung, damit das
+                // Eigenschaften-Panel der Fläche prüfbar ist (mit `flaechenpanel`
+                // wird sie ausgewählt).
+                "flaeche" => {
+                    let layer = self.doc().current_layer;
+                    let id = self.doc_mut().new_id();
+                    let e = Entity::new(
+                        id,
+                        layer,
+                        EntityKind::Fill {
+                            boundary: vec![
+                                jjcad_core::geom::v(2000.0, 1000.0),
+                                jjcad_core::geom::v(4000.0, 1000.0),
+                                jjcad_core::geom::v(4000.0, 3000.0),
+                                jjcad_core::geom::v(2000.0, 3000.0),
+                            ],
+                            holes: Vec::new(),
+                            pattern: jjcad_core::style::FillPattern::Lines,
+                            pattern_angle: std::f64::consts::FRAC_PI_4,
+                            pattern_scale: 100.0,
+                            border: true,
+                        },
+                    );
+                    self.doc_mut().add_entity(e);
+                }
+                // Text an Ort und Stelle bearbeiten (Panel-Prüfung: derselbe
+                // Aufbau wie bei Auswahl, nicht das frühere Kurzpanel).
+                "textbearbeiten" => {
+                    self.ui.props_open = true;
+                    let id = self
+                        .doc()
+                        .entities
+                        .iter()
+                        .find(|e| matches!(e.kind, EntityKind::Text { .. }))
+                        .map(|e| e.id);
+                    match id {
+                        Some(id) => {
+                            crate::textedit::start_entitaet(self, id);
+                        }
+                        None => {
+                            let p = jjcad_core::geom::v(2000.0, 2000.0);
+                            let layer = self.doc().current_layer;
+                            let id = self.doc_mut().new_id();
+                            let e = Entity::new(
+                                id,
+                                layer,
+                                EntityKind::Text {
+                                    p,
+                                    text: "Wohnen".into(),
+                                    height: 250.0,
+                                    angle: 0.0,
+                                    align: TextAlignH::Left,
+                                    valign: TextAlignV::Bottom,
+                                    bold: false,
+                                    italic: false,
+                                    underline: false,
+                                    superscript: false,
+                                    runs: Vec::new(),
+                                    font: jjcad_core::model::TextFont::Sans,
+                                },
+                            );
+                            self.doc_mut().add_entity(e);
+                            crate::textedit::start_entitaet(self, id);
+                        }
+                    }
+                }
+                // Prüfmaß: ein Maß über der Zeichnung (mit `dimpanel` auswählen).
+                "mass" => {
+                    let _ = self.session_mut().execute(
+                        "dim.linear",
+                        &serde_json::json!({"a": [0.0, 0.0], "b": [3.0, 0.0],
+                                            "line_pos": [1.5, -0.6]}),
+                    );
+                }
                 "settings" => self.ui.settings_open = true,
                 "help" => self.ui.help_open = true,
                 // Erweiterter Punktfang sichtbar machen: Werkzeug läuft, ein
@@ -1249,9 +1352,59 @@ impl App {
                     }
                     self.fit_view();
                 }
+                // Erstes Objekt der Art auswählen — Prüfhilfe für das
+                // Eigenschaften-Panel (Screenshot-Vergleich Erzeugen/Bearbeiten).
+                "wandpanel" | "tuerpanel" | "fensterpanel" | "flaechenpanel" | "dimpanel" => {
+                    self.ui.props_open = true;
+                    let name = part.trim();
+                    let passt = |k: &EntityKind| match name {
+                        "tuerpanel" => matches!(k, EntityKind::Door { .. }),
+                        "fensterpanel" => matches!(k, EntityKind::Window { .. }),
+                        "flaechenpanel" => matches!(k, EntityKind::Fill { .. }),
+                        "dimpanel" => matches!(k, EntityKind::Dim { .. }),
+                        _ => matches!(k, EntityKind::Wall { .. }),
+                    };
+                    if let Some(id) = self
+                        .doc()
+                        .entities
+                        .iter()
+                        .find(|e| passt(&e.kind))
+                        .map(|e| e.id)
+                    {
+                        self.session_mut().select(vec![id]);
+                    }
+                }
                 "wall" => self.start_tool("draw.wall"),
                 "paint" | "farbeimer" => self.start_tool("draw.fill.paint"),
                 "door" => self.start_tool("draw.door"),
+                "window" => self.start_tool("draw.window"),
+                "dimtool" => self.start_tool("dim.linear"),
+                "stairtool" => self.start_tool("draw.stair"),
+                "kreistool" => self.start_tool("draw.circle"),
+                "circlepanel" => {
+                    self.ui.props_open = true;
+                    if let Some(id) = self
+                        .doc()
+                        .entities
+                        .iter()
+                        .find(|e| matches!(e.kind, EntityKind::Circle { .. }))
+                        .map(|e| e.id)
+                    {
+                        self.session_mut().select(vec![id]);
+                    }
+                }
+                "volumenpanel" => {
+                    self.ui.props_open = true;
+                    if let Some(id) = self
+                        .doc()
+                        .entities
+                        .iter()
+                        .find(|e| matches!(e.kind, EntityKind::Volume { .. }))
+                        .map(|e| e.id)
+                    {
+                        self.session_mut().select(vec![id]);
+                    }
+                }
                 "text" => self.start_tool("draw.text"),
                 // Prüfhilfe: Füllwerkzeug über den jeweiligen Knopf starten
                 "fillarea" => {

@@ -567,10 +567,13 @@ pub(crate) fn text_preview_prim(
         valign,
         jjcad_core::text::RunStyle::default(),
         jjcad_core::model::TextFont::default(),
+        0.0,
     )
 }
 
-/// Dasselbe mit Auszeichnung — die Vorschau zeigt, was der Klick erzeugt.
+/// Dasselbe mit Auszeichnung und Drehung — die Vorschau zeigt, was der Klick
+/// erzeugt, auch wenn der Text im Panel gedreht eingestellt ist.
+#[allow(clippy::too_many_arguments)]
 pub(crate) fn text_preview_prim_mit(
     text: String,
     height: f64,
@@ -578,6 +581,7 @@ pub(crate) fn text_preview_prim_mit(
     valign: TextAlignV,
     stil: jjcad_core::text::RunStyle,
     font: jjcad_core::model::TextFont,
+    angle: f64,
 ) -> render::TextPrim {
     let runs = if stil.plain() {
         Vec::new()
@@ -595,7 +599,7 @@ pub(crate) fn text_preview_prim_mit(
         pos: V2::ZERO,
         text,
         height,
-        angle: 0.0,
+        angle,
         align,
         valign,
         bold: false,
@@ -2075,7 +2079,7 @@ fn draw_tool_preview(
                         center: cp,
                         angle: ang,
                         width,
-                        align: jjcad_core::style::WallAlign::Center,
+                        align: app.options.window_align,
                     };
                     if let Some(v) = render::preview_window(app.doc(), &spec) {
                         draw_opening_preview(app, p, view, &v, &w2s);
@@ -2122,6 +2126,7 @@ fn draw_tool_preview(
                     app.options.text_valign,
                     stil,
                     app.options.text_font,
+                    app.options.text_angle.to_radians(),
                 ),
                 w2s(cursor),
                 view.zoom,
@@ -3903,11 +3908,14 @@ fn finish_fill(app: &mut App, action: &str) -> bool {
            "scale": app.unit().from_mm(app.options.fill_scale),
            "border": app.options.fill_border_points});
     if action.starts_with("draw.volume") {
-        // Volumen: Höhe kommt aus dem Platzieren-Panel (Standard = Wandhöhe).
-        params["height"] = json!(app.unit().from_mm(app.options.wall_height));
-        // Ein Körper ist Mauerwerk: standardmäßig die volle Fläche in
-        // Wandfarbe, kein Muster.
-        params["pattern"] = json!("solid");
+        // Volumen: alle Werte kommen aus dem Platzieren-Panel (dieselben
+        // Zeilen wie am vorhandenen Objekt). Standard ist die volle Fläche im
+        // Wandton — ein Körper ist Mauerwerk.
+        params["height"] = json!(app.unit().from_mm(app.options.volume_height));
+        params["pattern"] = json!(app.options.volume_pattern.key());
+        params["angle"] = json!(app.options.volume_angle.to_degrees());
+        params["scale"] = json!(app.unit().from_mm(app.options.volume_scale));
+        params["border"] = json!(app.options.fill_border_for(action));
     }
     let ok = run_und_waehlen(app, action, params);
     if ok {
@@ -4439,7 +4447,14 @@ fn tool_click_at(app: &mut App, w: V2, raw: V2) {
                 app,
                 "draw.window",
                 json!({"center": ax(cp), "angle": wa, "host": [host.unwrap()],
-                       "width": unit.from_mm(app.options.window_width), "sill": unit.from_mm(app.options.window_sill)}),
+                       "width": unit.from_mm(app.options.window_width),
+                       "sill": unit.from_mm(app.options.window_sill),
+                       "height": unit.from_mm(app.options.window_height),
+                       "align": match app.options.window_align {
+                           jjcad_core::style::WallAlign::Left => "left",
+                           jjcad_core::style::WallAlign::Center => "center",
+                           jjcad_core::style::WallAlign::Right => "right",
+                       }}),
             );
         }
         "draw.stair" => {
@@ -4474,7 +4489,8 @@ fn tool_click_at(app: &mut App, w: V2, raw: V2) {
                             json!({"a": ax(a), "b": ax(b), "width": unit.from_mm(breite),
                                    "steps": app.options.stair_steps,
                                    "height": unit.from_mm(app.options.stair_height),
-                                   "auto": app.options.stair_auto}),
+                                   "auto": app.options.stair_auto,
+                                   "cut": app.options.stair_cut}),
                         );
                     } else {
                         app.toast("Treppe · Breite zu klein");
@@ -4499,11 +4515,13 @@ fn tool_click_at(app: &mut App, w: V2, raw: V2) {
                         }
                     }
                 };
-                let _ = run(
-                    app,
-                    "dim.linear",
-                    json!({"a": ax(a), "b": ax(b), "line_pos": ax(lp), "axis": axis}),
-                );
+                let mut params =
+                    json!({"a": ax(a), "b": ax(b), "line_pos": ax(lp), "axis": axis});
+                // Eigener Maßtext aus dem Panel (leer = automatisch berechnet).
+                if !app.options.dim_text.trim().is_empty() {
+                    params["text"] = json!(app.options.dim_text.clone());
+                }
+                let _ = run(app, "dim.linear", params);
                 app.tool = None;
             } else {
                 app.tool = Some(tool);

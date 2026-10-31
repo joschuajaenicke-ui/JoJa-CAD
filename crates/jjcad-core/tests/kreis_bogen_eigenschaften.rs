@@ -144,49 +144,48 @@ fn ohne_kommentare(src: &str) -> String {
         .join("\n")
 }
 
-/// Ausschnitt eines Typs aus dem Eigenschaften-Panel bis zum nächsten Typ.
-fn panel_arm(marker: &str) -> String {
-    let panels = std::fs::read_to_string(gui_dir().join("panels.rs")).expect("panels.rs");
-    let start = panels.find(marker).unwrap_or_else(|| panic!("{marker} fehlt"));
-    let rest = &panels[start + marker.len()..];
-    let ende = rest.find("\n        EntityKind::").unwrap_or(rest.len());
-    ohne_kommentare(&rest[..ende])
+/// Quelle des Eigenschaften-Panels. Seit dem Umbau liegt sie in `props.rs`:
+/// **eine** Funktion je Objektart, die Erzeugen und Bearbeiten zeichnet.
+fn panel_quelle() -> String {
+    let src = std::fs::read_to_string(gui_dir().join("props.rs")).expect("props.rs");
+    ohne_kommentare(&src)
 }
 
 #[test]
 fn panel_bietet_radius_fuer_kreis_und_bogen() {
-    let kreis = panel_arm("EntityKind::Circle { c, r } => {");
+    let panel = panel_quelle();
+
+    // Kreis: eigenes Feld „Radius“, das in modify.set landet.
     assert!(
-        kreis.contains("\"Radius\""),
+        panel.contains("zeile(\"radius\")"),
         "Kreis-Panel ohne Feld \"Radius\""
     );
     assert!(
-        kreis.contains("length_field"),
+        panel.contains("\"Radius\""),
+        "Kreis-Panel ohne Beschriftung \"Radius\""
+    );
+    assert!(
+        panel.contains("length_field"),
         "Kreis-Radius ist kein Eingabefeld"
     );
     assert!(
-        kreis.contains("\"r\".into()"),
+        panel.contains("\"r\".into()"),
         "Kreis-Radius landet nicht in modify.set"
     );
 
-    let bogen = panel_arm("EntityKind::Arc { c, r, a0, a1 } => {");
-    assert!(
-        bogen.contains("\"Radius\""),
-        "Bogen-Panel ohne Feld \"Radius\""
-    );
-    assert!(
-        bogen.contains("length_field"),
-        "Bogen-Radius ist kein Eingabefeld"
-    );
-    assert!(
-        bogen.contains("\"r\".into()"),
-        "Bogen-Radius landet nicht in modify.set"
-    );
-    // Endpunkte: die beiden Winkel sind einstellbar.
-    for name in ["\"Startwinkel\"", "\"Endwinkel\""] {
-        assert!(bogen.contains(name), "Bogen-Panel ohne Feld {name}");
+    // Bogen: Radius und beide Endwinkel.
+    for name in ["\"Radius\"", "\"Startwinkel\"", "\"Endwinkel\""] {
+        assert!(panel.contains(name), "Bogen-Panel ohne Feld {name}");
     }
-    assert!(bogen.contains("\"a0\".into()") && bogen.contains("\"a1\".into()"));
+    assert!(
+        panel.contains("(\"startwinkel\", \"Startwinkel\"")
+            && panel.contains("(\"endwinkel\", \"Endwinkel\""),
+        "Bogen-Panel meldet die Winkelzeilen nicht an"
+    );
+    assert!(
+        panel.contains("\"a0\".into()") && panel.contains("\"a1\".into()"),
+        "Bogen-Winkel landen nicht in modify.set"
+    );
 }
 
 /// Der Radius steht genau einmal im Panel: die Anzeigezeile in „Geometrie“

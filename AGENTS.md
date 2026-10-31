@@ -53,6 +53,11 @@ cargo run --example wand_probe
 
 1. **Jede Änderung bekommt einen Test.** Ohne Test kann ein Fehler unbemerkt
    zurückkommen; mit Test bricht der nächste Lauf sofort.
+   Für das Eigenschaften-Panel heißt das: `props::tests` prüft je Objektart, dass
+   Erzeugen und Bearbeiten **dieselben Zeilen in derselben Reihenfolge** zeigen
+   (Protokoll der gezeichneten Zeilen). Eine neue Objektart ohne Panel-Eintrag
+   lässt `jede_objektart_ist_eingetragen` fehlschlagen — bitte die Art dort
+   eintragen **und** in `props.rs` Zeilen zeichnen, nicht nur den Test anpassen.
 2. **Kleine, prüfbare Schritte**: bauen, testen, dann committen. Kein Commit
    mit Compile-Fehlern.
 3. **Messbarer Nachweis statt „sieht gut aus“**: Test, geprüftes Feld in der
@@ -119,6 +124,26 @@ Mit dem Nutzer abgestimmt — nicht „verbessern“:
 - **Eigenschaften-Panel**: gleiche Zeilen (96 px Label, 150 px Wert) beim Platzieren
   *und* bei Auswahl; bei Mehrfachauswahl nur gemeinsame Felder, abweichende Werte
   als `*variiert*`; nicht editierbare Werte (Länge, Fläche) anzeigen.
+  Umgesetzt ist das in `crates/jjcad-gui/src/props.rs`: **eine** Funktion je
+  Objektart zeichnet alle Zeilen, nur das Ziel der Änderung unterscheidet sich
+  (`props::Ziel::Neu` schreibt in `ToolOptions` — „gilt für das nächste Element“;
+  `props::Ziel::Auswahl(id)` schickt `modify.set` an das Objekt). Nie wieder eine
+  zweite Zeichnung derselben Eigenschaften in `panels::entity_props` oder
+  `panels::pending_props` anlegen. Zeilen, die ohne Objekt sinnlos sind
+  (Reihenfolge, Textinhalt, Kennzahlen), werden **deaktiviert gezeigt, nicht
+  weggelassen**. Ein **Erstellwerkzeug** (`draw.*`, `dim.*`) verdrängt die
+  Auswahl aus dem Panel: es zeigt nur das neue Element, die Auswahl bleibt in der
+  Zeichnung markiert. Und es gibt **kein eigenes Panel während der Texteingabe** —
+  auch dort zeichnet `props::text`; `props::eingabe_spiegeln` reicht die
+  Panelwerte an den Editor in der Zeichenfläche weiter.
+  **Alle** Erzeuger und alle Objektarten laufen über `props`; `panels` zeichnet
+  kein eigenes Eigenschaften-Panel mehr. Eine neue Objektart wird nach der
+  Anleitung im Kopf von `props.rs` eingetragen (Zeichnen, Werte holen, Anwenden,
+  Zeilen anmelden, Routing, Test) — `props::tests::jede_objektart_hat_ein_panel`
+  und `…::alle_erzeuger_zeigen_dieselben_zeilen_wie_das_objekt` erzwingen das.
+  Offen ist nur noch die **Mehrfachauswahl** (`panels::multi_props`): sie hat
+  ihren eigenen Maler und muss auf denselben Renderer mit „*variiert*“ umgestellt
+  werden.
 - **Polarfang** 45° (Toleranz 6°); Fangmodi END, SCHN, MIT, ZEN, QUA, LOT, NÄC, RAS, POL.
 - **Treppen** sind von der Kontur her ein **Rechteck**: erster und zweiter Klick
   liegen auf der **Außenkante** (Länge), der dritte setzt die Breite dorthin, wo
