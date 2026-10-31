@@ -42,6 +42,10 @@ pub const HOTBAR_H: f32 = 60.0;
 /// Weg eines einzelnen Schwenk-Schritts in Bildpunkten (T0056): ein Tastendruck
 /// rückt die Ansicht sichtbar weiter, ohne sie springen zu lassen.
 pub const SCHWENK_SCHRITT_PX: f32 = 60.0;
+/// Grundtempo des Schwenks mit gehaltener Taste in Bildpunkten je Sekunde
+/// (Vorgabe, T0067). Die Einstellung „Schwenk“ skaliert es über
+/// `UserPrefs::pan_speed`.
+pub const SCHWENK_PX_JE_SEKUNDE: f32 = 700.0;
 
 /// Die Tasten, deren Funktion aus der **Tastaturbelegung** kommt — Buchstaben
 /// und Symbole (T0056, `docs/TASTEN.md`). Ziffern gehören der Hotbar,
@@ -3110,7 +3114,8 @@ impl App {
     /// damit der Schub auch bei gedrehter Zeichnung der Taste folgt.
     pub fn schwenk_schritt(&mut self, dx: f32, dy: f32) {
         let mut v = self.current_view();
-        let px = SCHWENK_SCHRITT_PX;
+        // T0067: Der Einzelschritt folgt demselben Faktor wie das Halten.
+        let px = SCHWENK_SCHRITT_PX * self.prefs.pan_speed;
         let w = v.screen_delta_to_world(Vec2::new(dx * px, dy * px));
         v.center += w;
         self.set_view(v);
@@ -6013,6 +6018,29 @@ mod tests_tastenbelegung {
             frame_mit(&mut app, vec![druck(key)]);
             assert_eq!(app.tool_id(), Some(erwartet), "{grund}");
         }
+    }
+
+    /// T0067: Die Einstellung „Schwenk“ skaliert den Einzelschritt der
+    /// Schwenk-Funktion — doppelter Faktor heißt doppelter Weg.
+    #[test]
+    fn schwenkgeschwindigkeit_skaliert_den_schritt() {
+        let mut app = app_mit_zeichnung();
+        let start = app.current_view().center;
+        app.prefs.pan_speed = 1.0;
+        app.run_action(&app.ctx.clone(), "view.pan_right");
+        let weg_eins = (app.current_view().center.x - start.x).abs();
+
+        let mut app = app_mit_zeichnung();
+        let start = app.current_view().center;
+        app.prefs.pan_speed = 2.0;
+        app.run_action(&app.ctx.clone(), "view.pan_right");
+        let weg_zwei = (app.current_view().center.x - start.x).abs();
+
+        assert!(weg_eins > 1.0, "ein Schritt muss sichtbar sein: {weg_eins}");
+        assert!(
+            (weg_zwei / weg_eins - 2.0).abs() < 1e-3,
+            "doppelter Faktor muss doppelten Weg geben: {weg_eins} → {weg_zwei}"
+        );
     }
 
     /// Ein einzelner Druck (Hotbar, Kürzel) rückt die Ansicht einen Schritt

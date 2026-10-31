@@ -353,6 +353,12 @@ pub struct UserPrefs {
     /// Einstellung gilt für **alle** Objektarten, auch Text und Treppe.
     #[serde(default = "default_true")]
     pub mouse_move: bool,
+    /// Schwenkgeschwindigkeit der Ansicht mit den Schwenk-Funktionen
+    /// (`view.pan_left` … `view.pan_down`, Vorgabe W/A/S/D) als **Faktor**
+    /// auf das Grundtempo (T0067): 1,0 = Vorgabe, 2,0 = doppelt so schnell.
+    /// Gilt beim Halten (Bildlauf) und beim Einzelschritt der Funktion.
+    #[serde(default = "default_pan_speed")]
+    pub pan_speed: f32,
     /// Zuletzt benutzter Eingabemodus der Fuellflaechen-Schaltflaeche
     /// ("contour" | "points" | "paint")
     #[serde(default)]
@@ -396,6 +402,18 @@ fn default_preset_idx() -> usize {
 fn default_true() -> bool {
     true
 }
+
+/// Vorgabe der Schwenkgeschwindigkeit: unverändert das bisherige Tempo (T0067).
+fn default_pan_speed() -> f32 {
+    1.0
+}
+
+/// Grenzen der Schwenkgeschwindigkeit (T0067): höchstens ein Zehntel bis
+/// fünffach — darunter kriecht die Ansicht, darüber ist kein Ziel mehr zu
+/// treffen. Eigene Grenzen, weil der Wert kein Papier-Maß ist.
+pub const SCHWENK_FAKTOR_MIN: f32 = 0.1;
+/// Gegenstück zu [`SCHWENK_FAKTOR_MIN`].
+pub const SCHWENK_FAKTOR_MAX: f32 = 5.0;
 
 /// Die drei Schichten der Tastatur (T0056, `docs/TASTEN.md`):
 ///
@@ -550,6 +568,7 @@ impl Default for UserPrefs {
             lineweights_scaled: false,
             drag_mode: DragMode::HoldAndDrag,
             mouse_move: true,
+            pan_speed: default_pan_speed(),
             fill_input: "points".into(),
             hatch_input: "contour".into(),
             volume_input: "points".into(),
@@ -596,6 +615,13 @@ impl UserPrefs {
     }
 
     fn ensure_defaults(&mut self) {
+        // T0067: Ein alter oder fremder Wert darf die Ansicht weder einfrieren
+        // noch ins Nichts schießen — deshalb beim Laden auf die Grenzen klemmen.
+        self.pan_speed = if self.pan_speed.is_finite() {
+            self.pan_speed.clamp(SCHWENK_FAKTOR_MIN, SCHWENK_FAKTOR_MAX)
+        } else {
+            default_pan_speed()
+        };
         if self.hotbar_presets.is_empty() {
             self.hotbar_presets = UserPrefs::default().hotbar_presets;
         }
@@ -875,6 +901,43 @@ mod tests {
         assert!(roh.contains("\"mouse_move\":false"), "Schlüssel fehlt: {roh}");
         let wieder: UserPrefs = serde_json::from_str(&roh).unwrap();
         assert!(!wieder.mouse_move, "Einstellung ging beim Laden verloren");
+    }
+
+    /// T0067: Die Schwenkgeschwindigkeit ist ein Faktor mit Vorgabe 1,0, wird
+    /// gespeichert und beim Laden auf ihre Grenzen geklemmt.
+    #[test]
+    fn schwenkgeschwindigkeit_vorgabe_gespeichert_und_begrenzt() {
+        assert!((UserPrefs::default().pan_speed - 1.0).abs() < 1e-9);
+        // Altbestand ohne Schlüssel: unverändertes Tempo.
+        let alt: UserPrefs = serde_json::from_str(r#"{"last_dir": "/tmp"}"#).unwrap();
+        assert!((alt.pan_speed - 1.0).abs() < 1e-9);
+
+        let mut prefs = UserPrefs::default();
+        prefs.pan_speed = 2.5;
+        let roh = serde_json::to_string(&prefs).unwrap();
+        assert!(roh.contains("\"pan_speed\":2.5"), "Schlüssel fehlt: {roh}");
+        let wieder: UserPrefs = serde_json::from_str(&roh).unwrap();
+        assert!(
+            (wieder.pan_speed - 2.5).abs() < 1e-9,
+            "Einstellung ging beim Laden verloren"
+        );
+
+        // Unsinnige Werte werden auf die Grenzen gezogen.
+        for (eingabe, erwartet) in [
+            (0.0_f32, SCHWENK_FAKTOR_MIN),
+            (-3.0, SCHWENK_FAKTOR_MIN),
+            (99.0, SCHWENK_FAKTOR_MAX),
+            (f32::NAN, 1.0),
+        ] {
+            let mut p = UserPrefs::default();
+            p.pan_speed = eingabe;
+            p.ensure_defaults();
+            assert!(
+                (p.pan_speed - erwartet).abs() < 1e-9,
+                "{eingabe} ergibt {}, erwartet {erwartet}",
+                p.pan_speed
+            );
+        }
     }
 
     #[test]

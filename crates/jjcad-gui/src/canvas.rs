@@ -2542,7 +2542,8 @@ fn handle_navigation(app: &mut App, ui: &mut Ui, resp: &Response, rect: Rect, vi
         let dir = app.schwenk_richtung(ctx);
         if dir != Vec2::ZERO {
             let mut v = app.current_view();
-            let px = 700.0 * dt as f32;
+            // Grundtempo × Einstellung „Schwenk“ (T0067).
+            let px = crate::app::SCHWENK_PX_JE_SEKUNDE * app.prefs.pan_speed * dt as f32;
             let w = v.screen_delta_to_world(Vec2::new(dir.x * px, dir.y * px));
             v.center += w;
             app.set_view(v);
