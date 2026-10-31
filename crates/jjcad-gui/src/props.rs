@@ -1047,6 +1047,15 @@ pub fn wand(app: &mut App, ui: &mut Ui, ziel: Ziel) {
                     unit.from_mm(pb.x),
                     unit.from_mm(pb.y)
                 )));
+                // Relativer Abstand der Basispunkte — sichtbar ohne Scrollen.
+                if let Some((dx, dy)) = crate::panels::delta_xy(e, unit) {
+                    widgets::field_row(ui, "Delta X", |ui| {
+                        ui.label(theme::mono(dx.clone()));
+                    });
+                    widgets::field_row(ui, "Delta Y", |ui| {
+                        ui.label(theme::mono(dy.clone()));
+                    });
+                }
                 ui.label(theme::dim(format!(
                     "Volumen {:.3} m³",
                     pa.dist(*pb) * dicke * hoehe / 1e9

@@ -1077,13 +1077,9 @@ pub(crate) fn geo_rows(e: &jjcad_core::model::Entity, unit: Unit) -> Vec<(&'stat
     if len > 0.0 {
         rows.push(("Länge", unit.format(len, unit.decimals())));
     }
-    // Relativer Abstand zwischen den Basispunkten: Linie und Wand laufen von
-    // `a` nach `b`, Delta ist also `b - a` (vorzeichenbehaftet, damit die
-    // Richtung ablesbar bleibt).
-    if let K::Line { a, b } | K::Wall { a, b, .. } = &e.kind {
-        let d = *b - *a;
-        rows.push(("Delta X", unit.format(d.x, unit.decimals())));
-        rows.push(("Delta Y", unit.format(d.y, unit.decimals())));
+    if let Some((dx, dy)) = delta_xy(e, unit) {
+        rows.push(("Delta X", dx));
+        rows.push(("Delta Y", dy));
     }
     let area = entity_area(e);
     if area > 0.0 {
@@ -1097,6 +1093,29 @@ pub(crate) fn geo_rows(e: &jjcad_core::model::Entity, unit: Unit) -> Vec<(&'stat
         ));
     }
     rows
+}
+
+/// Relativer Abstand zwischen den Basispunkten einer Linie oder Wand
+/// (`b - a`, vorzeichenbehaftet — so bleibt die Richtung ablesbar).
+///
+/// Eine Quelle für die Geometrie-Zeilen (`geo_rows`) und die Kennzahlen der
+/// Wand im Eigenschaften-Panel: sonst rechneten zwei Stellen dasselbe und die
+/// Anzeige liefe auseinander.
+pub(crate) fn delta_xy(
+    e: &jjcad_core::model::Entity,
+    unit: Unit,
+) -> Option<(String, String)> {
+    use jjcad_core::model::EntityKind as K;
+    match &e.kind {
+        K::Line { a, b } | K::Wall { a, b, .. } => {
+            let d = *b - *a;
+            Some((
+                unit.format(d.x, unit.decimals()),
+                unit.format(d.y, unit.decimals()),
+            ))
+        }
+        _ => None,
+    }
 }
 
 /// Flächentext für die Anzeige: die Einheit kommt aus `format_area` und steht
@@ -2207,6 +2226,29 @@ mod tests_keine_befehle_im_panel {
         );
         // Das Panel zeigt weiter die Eigenschaften der Wand.
         assert!(enthaelt(&texte, "Dicke"), "Werte fehlen: {texte:?}");
+    }
+
+    /// Die Wand zeigt den relativen Abstand ihrer Basispunkte im Panel —
+    /// ohne Scrollen, direkt unter der Kennzahlenzeile (T0053).
+    #[test]
+    fn wandpanel_zeigt_delta_x_und_delta_y() {
+        let mut app = App::with_ctx(egui::Context::default());
+        app.session_mut()
+            .execute("doc.settings", &json!({ "input_unit": "m" }))
+            .expect("Einheit");
+        app.session_mut()
+            .execute(
+                "draw.wall",
+                &json!({ "a": [1.0, 2.0], "b": [4.0, 0.5], "thickness": 0.24 }),
+            )
+            .expect("Wand");
+        let id = app.doc().entities.last().expect("Wand fehlt").id;
+        app.session_mut().select(vec![id]);
+        let texte = panel_texte(&mut app, 1.0);
+        assert!(enthaelt(&texte, "Delta X"), "Delta X fehlt: {texte:?}");
+        assert!(enthaelt(&texte, "Delta Y"), "Delta Y fehlt: {texte:?}");
+        assert!(enthaelt(&texte, "3,00 m"), "Delta X falsch: {texte:?}");
+        assert!(enthaelt(&texte, "-1,50 m"), "Delta Y falsch: {texte:?}");
     }
 
     #[test]
