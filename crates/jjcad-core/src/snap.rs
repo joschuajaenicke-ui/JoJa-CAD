@@ -1108,13 +1108,23 @@ pub fn snap_constrained_achsen(
     let mut point = cursor;
     let mut source = SnapSource::Free;
     if achsen.len() >= 2 {
-        // Zwei Linien am selben Griff: jede Koordinate einzeln rasten, damit
-        // beide Nachbarlinien ausgerichtet werden können (T0046, Turn 3).
+        // Zwei Linien am selben Griff (T0046, Turn 3/4).
         if s.ortho {
-            let (x, y) = achsen_koordinaten(achsen, cursor, tol);
-            if x.is_some() || y.is_some() {
-                point = Vec2::new(x.unwrap_or(cursor.x), y.unwrap_or(cursor.y));
+            // Zuerst der **Schnittpunkt** zweier Achsen (eine je Nachbar):
+            // dort stehen beide Linien zugleich gerade. Er ist ein Punktziel
+            // wie ein Endpunkt und wird deshalb mit einem größeren Fenster
+            // gefangen — sonst träfe man ihn nur auf den Pixel genau, und die
+            // Einzelachse schnappte vorher („es rastet nur eine der beiden
+            // Linien ein").
+            if let Some(q) = achsen_schnittpunkt(achsen, cursor, tol * SCHNITTPUNKT_FAKTOR) {
+                point = q;
                 source = SnapSource::Ortho;
+            } else {
+                let (x, y) = achsen_koordinaten(achsen, cursor, tol);
+                if x.is_some() || y.is_some() {
+                    point = Vec2::new(x.unwrap_or(cursor.x), y.unwrap_or(cursor.y));
+                    source = SnapSource::Ortho;
+                }
             }
         } else if let Some(r) = reference {
             if s.polar && cursor.dist(r) > tol * 2.0 {
@@ -1162,6 +1172,38 @@ fn naechster_bezug(achsen: &[Vec2], cursor: Vec2) -> Option<Vec2> {
         .iter()
         .copied()
         .min_by(|a, b| a.dist(cursor).total_cmp(&b.dist(cursor)))
+}
+
+/// Wie weit das Fenster für den **Schnittpunkt** zweier Achsen über den
+/// normalen Fangradius hinausreicht (Faktor auf `tol`).
+///
+/// Der Schnittpunkt ist das Ziel, das man anvisiert („Ecke schließen"); die
+/// Einzelachsen greifen dagegen schon, sobald der Zeiger neben **einer** von
+/// ihnen steht. Mit demselben Radius verfehlte man den Schnittpunkt deshalb
+/// regelmäßig: die erste Achse zieht den Punkt weg, bevor beide Achsen im
+/// Radius liegen (T0046, Turn 4).
+pub const SCHNITTPUNKT_FAKTOR: f64 = 2.0;
+
+/// Schnittpunkt zweier Achsen **verschiedener** Bezugspunkte.
+///
+/// Achsen sind die Senkrechte und die Waagerechte durch einen Bezug; der
+/// Schnittpunkt zweier Bezüge ist damit `(a.x, b.y)` bzw. `(b.x, a.y)`. Der
+/// nächstgelegene im Fenster `radius` gewinnt — dort liegen beide
+/// Nachbarlinien gleichzeitig in der Zwangsrichtung. Fällt beides zusammen
+/// (gleiche x- oder y-Lage der Nachbarn), zählt der Punkt einmal.
+fn achsen_schnittpunkt(achsen: &[Vec2], cursor: Vec2, radius: f64) -> Option<Vec2> {
+    let mut best: Option<(f64, Vec2)> = None;
+    for (i, a) in achsen.iter().enumerate() {
+        for b in achsen.iter().skip(i + 1) {
+            for p in [Vec2::new(a.x, b.y), Vec2::new(b.x, a.y)] {
+                let d = p.dist(cursor);
+                if d <= radius && best.map(|(bd, _)| d < bd).unwrap_or(true) {
+                    best = Some((d, p));
+                }
+            }
+        }
+    }
+    best.map(|(_, p)| p)
 }
 
 /// Koordinaten, die im Fangradius auf einer Achse eines Bezugspunkts liegen.

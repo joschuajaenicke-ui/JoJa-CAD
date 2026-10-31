@@ -7018,6 +7018,87 @@ mod tests_fang_griff {
         assert_punkt(geladen, V2::new(2000.0, 0.0));
     }
 
+    /// Eine Ecke zwischen zwei Linien: der **Schnittpunkt** beider Achsen ist
+    /// auch dann zu fangen, wenn keine der Koordinaten allein im Fangradius
+    /// liegt — beide angrenzenden Linien stehen danach gerade (T0046, Turn 4).
+    #[test]
+    fn griffzug_faengt_den_schnittpunkt_beider_nachbarn() {
+        let mut app = app_mit_zwang(true, false);
+        app.session_mut()
+            .execute(
+                "draw.polyline",
+                &serde_json::json!({"pts": [[0.0, 0.0], [4000.0, 0.0], [4000.0, 3000.0],
+                                              [1500.0, 4500.0], [0.0, 3000.0]], "closed": true}),
+            )
+            .unwrap();
+        let id = app.doc().entities[0].id;
+        app.session_mut().select(vec![id]);
+        // Ecke (0;3000), Nachbarn (1500;4500) und (0;0) — Schnittpunkt (1500;0).
+        app.begin_grip_drag(id, crate::handles::GripKind::Vert(4));
+
+        // 110 mm neben dem Schnittpunkt in beiden Koordinaten (Radius 81).
+        let (p, _) = fang_zeiger(&app, V2::new(1610.0, 110.0), 81.0);
+        assert_punkt(p, V2::new(1500.0, 0.0));
+    }
+
+    /// Dasselbe durch die Oberfläche: die Ecke landet im Schnittpunkt der
+    /// beiden Nachbarachsen, und so steht sie in der gespeicherten Datei.
+    #[test]
+    fn mauszug_faengt_den_schnittpunkt_und_speichert_ihn() {
+        let mut app = app_mit_zwang(true, false);
+        app.session_mut()
+            .execute(
+                "draw.polyline",
+                &serde_json::json!({"pts": [[0.0, 0.0], [4000.0, 0.0], [4000.0, 3000.0],
+                                              [1500.0, 4500.0], [0.0, 3000.0]], "closed": true}),
+            )
+            .unwrap();
+        let id = app.doc().entities[0].id;
+        app.session_mut().select(vec![id]);
+
+        frame(&mut app, vec![]);
+        let rect = app.ui.last_canvas;
+        let view = app.current_view();
+        let tol = fang_radius_px(&app, view.zoom);
+        let griff = world_to_screen(rect, view, V2::new(0.0, 3000.0));
+        // 1,35 × Radius neben dem Schnittpunkt in beiden Koordinaten: keine
+        // Einzelachse greift, der Schnittpunkt (Abstand 1,9 × Radius) schon.
+        let ziel = world_to_screen(
+            rect,
+            view,
+            V2::new(1500.0 + tol * 1.35, 0.0 + tol * 1.35),
+        );
+
+        frame(&mut app, vec![egui::Event::PointerMoved(griff)]);
+        frame(&mut app, vec![druck(griff)]);
+        assert!(app.grip_drag.is_some(), "Griffzug muss beginnen");
+        frame(&mut app, vec![egui::Event::PointerMoved(ziel)]);
+        frame(&mut app, vec![egui::Event::PointerMoved(ziel)]);
+        frame(&mut app, vec![loslassen(ziel)]);
+        assert!(app.grip_drag.is_none(), "Loslassen beendet den Zug");
+
+        let pts = match &app.doc().entity(id).expect("Polylinie fehlt").kind {
+            EntityKind::Polyline { verts, .. } => verts.iter().map(|v| v.p).collect::<Vec<_>>(),
+            other => panic!("keine Polylinie: {other:?}"),
+        };
+        assert_punkt(pts[4], V2::new(1500.0, 0.0));
+        // Beide angrenzenden Linien stehen gerade: (1500;0)→(1500;4500)
+        // senkrecht, (1500;0)→(0;0) waagerecht.
+        assert!((pts[3].x - pts[4].x).abs() < 1e-9, "Kante zum Vorgänger senkrecht");
+        assert!((pts[0].y - pts[4].y).abs() < 1e-9, "Kante zum Nachfolger waagerecht");
+
+        let json = jjcad_core::persist::to_json(app.doc()).expect("speichern");
+        let wieder = jjcad_core::persist::from_json(&json).expect("laden");
+        let geladen = wieder
+            .entity(id)
+            .and_then(|e| match &e.kind {
+                EntityKind::Polyline { verts, .. } => Some(verts[4].p),
+                _ => None,
+            })
+            .expect("Polylinie in der Datei");
+        assert_punkt(geladen, V2::new(1500.0, 0.0));
+    }
+
     /// Gegenprobe: ohne Ortho und Polar folgt der Griff weiter dem Zeiger —
     /// der Winkelfang ist eine Führung, kein Zwang (T0046).
     #[test]

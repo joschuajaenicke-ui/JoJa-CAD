@@ -37,6 +37,32 @@ fn beide_achsen_rasten_gleichzeitig() {
     assert_eq!(quelle, SnapSource::Ortho);
 }
 
+/// Der **Schnittpunkt** zweier Achsen (eine je Nachbar) ist auch dann zu
+/// fangen, wenn keine der beiden Koordinaten allein im Radius liegt — er ist
+/// das Ziel, das man anvisiert (T0046, Turn 4).
+#[test]
+fn schnittpunkt_auch_ohne_einzelachse() {
+    let d = doc();
+    // Ecke zwischen Nachbarn (0;0) und (1500;4500): Schnittpunkte (1500;0)
+    // und (0;4500).
+    let achsen = [Vec2::new(0.0, 0.0), Vec2::new(1500.0, 4500.0)];
+    // 110 mm neben dem Schnittpunkt in beiden Koordinaten: keine Einzelachse
+    // im Radius (81), der Punkt aber im Schnittpunktfenster (162).
+    let (p, quelle) = fang(&d, Vec2::new(1610.0, 110.0), 81.0, &achsen);
+    assert!(p.dist(Vec2::new(1500.0, 0.0)) < 1e-9, "Punkt {p:?}");
+    assert_eq!(quelle, SnapSource::Ortho);
+}
+
+/// Weit außerhalb des Schnittpunktfensters bleibt der Zeiger frei.
+#[test]
+fn ausserhalb_des_schnittpunktfensters_frei() {
+    let d = doc();
+    let achsen = [Vec2::new(0.0, 0.0), Vec2::new(1500.0, 4500.0)];
+    let (p, quelle) = fang(&d, Vec2::new(1800.0, 300.0), 81.0, &achsen);
+    assert!(p.dist(Vec2::new(1800.0, 300.0)) < 1e-9, "Punkt {p:?}");
+    assert_eq!(quelle, SnapSource::Free);
+}
+
 /// Nur eine Koordinate liegt an einer Achse: die andere bleibt am Zeiger.
 #[test]
 fn eine_achse_reicht() {
