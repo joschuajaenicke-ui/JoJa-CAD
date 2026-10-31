@@ -4,10 +4,12 @@
 //! Bei Blöcken ist der Ankerpunkt die **untere linke Ecke** der Vorschau — sie
 //! steht damit oben rechts am Mauszeiger und verdeckt ihn nicht. Bei der
 //! Zwischenablage ist der Anker der mitkopierte **Basispunkt** (siehe
-//! [`Clipboard`]).
+//! [`Clipboard`]) oder — im Modus [`PastePivot::Center`] — die untere linke
+//! Ecke der gedrehten Auswahl (T0070).
 
 use jjcad_core::geom::{Affine, BBox, Vec2 as V2};
 use jjcad_core::model::{Document, Entity, EntityKind};
+use jjcad_core::persist::PastePivot;
 use jjcad_core::render::{self, Prim, RenderCtx};
 
 /// Zwischenablage: die kopierten Elemente **und** ihr Basispunkt.
@@ -45,16 +47,21 @@ pub struct Ghost {
     /// Gespiegelt an der senkrechten Achse durch den Anker.
     pub mirror: bool,
     pub scale: f64,
+    /// Welcher Punkt beim Einfügen aus der Zwischenablage am Fadenkreuz steht
+    /// (T0070). Gilt nur für die Zwischenablage — Blöcke ankern immer an ihrer
+    /// unteren linken Ecke.
+    pub pivot: PastePivot,
 }
 
 impl Ghost {
-    pub fn new(block: Option<String>, pos: V2) -> Self {
+    pub fn new(block: Option<String>, pos: V2, pivot: PastePivot) -> Self {
         Self {
             block,
             pos,
             rot: 0.0,
             mirror: false,
             scale: 1.0,
+            pivot,
         }
     }
 
@@ -85,6 +92,11 @@ pub struct GhostGeo {
 ///
 /// `g.pos` ist der Platz des **Basispunkts**: bei „Kopieren" die untere linke
 /// Ecke (wie ohne Basispunkt), bei „Kopieren mit Basispunkt" der geklickte Punkt.
+///
+/// Im Modus [`PastePivot::Center`] (Einstellungen → Bedienung → „Drehpunkt",
+/// T0070) steht stattdessen die untere linke Ecke der **gedrehten** Auswahl am
+/// Zeiger: die Vorschau dreht dann sichtbar um ihren Mittelpunkt, ohne um das
+/// Fadenkreuz zu springen — sie bleibt immer oben rechts davon.
 pub fn clipboard_entities(doc: &Document, g: &Ghost, clip: &Clipboard) -> Vec<Entity> {
     if clip.is_empty() {
         return Vec::new();
@@ -119,7 +131,14 @@ pub fn clipboard_entities(doc: &Document, g: &Ghost, clip: &Clipboard) -> Vec<En
     if !bb.is_valid() {
         return moved;
     }
-    let anker = clip.base.map(|b| m.apply(b)).unwrap_or(bb.min);
+    let anker = match g.pivot {
+        // Untere linke Ecke der gedrehten Auswahl am Zeiger: die Vorschau
+        // bleibt oben rechts vom Fadenkreuz (T0070).
+        PastePivot::Center => bb.min,
+        // Der Basispunkt wandert mit der Drehung und landet unter dem Zeiger,
+        // nicht die Ecke der gedrehten Auswahl.
+        PastePivot::BasePoint => clip.base.map(|b| m.apply(b)).unwrap_or(bb.min),
+    };
     let shift = Affine::translate(g.pos - anker);
     moved
         .iter()
@@ -258,7 +277,7 @@ mod tests_basispunkt {
     }
 
     fn verschoben(doc: &Document, clip: &Clipboard, pos: V2) -> BBox {
-        let g = Ghost::new(None, pos);
+        let g = Ghost::new(None, pos, PastePivot::BasePoint);
         let ents = clipboard_entities(doc, &g, clip);
         assert_eq!(ents.len(), 1, "ein Element eingefügt");
         let mut bb = BBox::EMPTY;
@@ -301,7 +320,7 @@ mod tests_basispunkt {
             ents,
             base: Some(V2::new(0.0, 0.0)),
         };
-        let mut g = Ghost::new(None, V2::new(3000.0, 4000.0));
+        let mut g = Ghost::new(None, V2::new(3000.0, 4000.0), PastePivot::BasePoint);
         g.rotate(90.0);
         let ents = clipboard_entities(&doc, &g, &clip);
         // Die Linie zeigt nach der Drehung nach oben; ihr Startpunkt (Basispunkt)
@@ -355,7 +374,7 @@ mod tests_wandvorschau {
             ents: vec![w],
             base: Some(V2::new(0.0, 0.0)),
         };
-        let g = Ghost::new(None, V2::new(8000.0, 5000.0));
+        let g = Ghost::new(None, V2::new(8000.0, 5000.0), PastePivot::BasePoint);
         let geo = geometry(&doc, &g, &clip);
         assert!(!geo.prims.is_empty(), "Vorschau ohne Geometrie");
         assert!(
@@ -379,7 +398,9 @@ mod tests_wandvorschau {
             base: Some(V2::new(0.0, 0.0)),
         };
         let ziel = V2::new(10_000.0, 10_000.0);
-        let vorschau = linien(&geometry(&doc, &Ghost::new(None, ziel), &clip).prims);
+        let vorschau = linien(
+            &geometry(&doc, &Ghost::new(None, ziel, PastePivot::BasePoint), &clip).prims,
+        );
 
         // Ergebnis: dieselben Wände im Dokument an der Zeigerstelle
         let mut ergebnis_doc = Document::default();
@@ -425,5 +446,131 @@ mod tests_wandvorschau {
 
     fn rund(p: V2) -> V2 {
         V2::new((p.x * 100.0).round() / 100.0, (p.y * 100.0).round() / 100.0)
+    }
+}
+
+#[cfg(test)]
+mod tests_drehpunkt {
+    //! T0070: Zweiter Drehpunkt für das Einfügen aus der Zwischenablage.
+    //!
+    //! Bisher blieb der **Basispunkt** am Fadenkreuz stehen und wanderte mit der
+    //! Drehung — die Auswahl sprang dadurch von Viertel zu Viertel um das
+    //! Fadenkreuz. Im Modus „Mittelpunkt" steht die untere linke Ecke der
+    //! gedrehten Auswahl am Fadenkreuz: die Vorschau dreht um ihren eigenen
+    //! Mittelpunkt und bleibt immer oben rechts davon.
+
+    use super::*;
+
+    /// Strecke 2000 × 800 mm mit Basispunkt in der unteren linken Ecke —
+    /// so, wie „Kopieren" ihn setzt.
+    fn doc_mit_strecke() -> (Document, Clipboard) {
+        let mut doc = Document::default();
+        let e = Entity::new(
+            doc.new_id(),
+            doc.current_layer,
+            EntityKind::Line {
+                a: V2::new(0.0, 0.0),
+                b: V2::new(2000.0, 800.0),
+            },
+        );
+        (
+            doc,
+            Clipboard {
+                ents: vec![e],
+                base: Some(V2::new(0.0, 0.0)),
+            },
+        )
+    }
+
+    fn umriss(doc: &Document, g: &Ghost, clip: &Clipboard) -> BBox {
+        let mut bb = BBox::EMPTY;
+        for e in clipboard_entities(doc, g, clip) {
+            bb.union(render::entity_bbox(doc, &e));
+        }
+        bb
+    }
+
+    /// Neue Einstellung: bei jeder Vierteldrehung sitzt die untere linke Ecke
+    /// der gedrehten Auswahl am Fadenkreuz, der Rest steht oben rechts davon.
+    #[test]
+    fn mittelpunkt_modus_bleibt_oben_rechts_am_fadenkreuz() {
+        let (doc, clip) = doc_mit_strecke();
+        let zeiger = V2::new(7000.0, 6000.0);
+        for (schritte, grad) in [(0, 0.0), (1, 90.0), (2, 180.0), (3, 270.0)] {
+            let mut g = Ghost::new(None, zeiger, PastePivot::Center);
+            for _ in 0..schritte {
+                g.rotate(90.0);
+            }
+            let bb = umriss(&doc, &g, &clip);
+            assert!(
+                (bb.min.x - zeiger.x).abs() < 1e-6 && (bb.min.y - zeiger.y).abs() < 1e-6,
+                "nach {grad}° muss die untere linke Ecke am Fadenkreuz stehen, \
+                 sie stand bei {:?} (Fadenkreuz {zeiger:?})",
+                bb.min
+            );
+            assert!(
+                bb.max.x > zeiger.x + 1.0 && bb.max.y > zeiger.y + 1.0,
+                "nach {grad}° steht die Vorschau nicht oben rechts vom Fadenkreuz: {bb:?}"
+            );
+        }
+    }
+
+    /// „Drehen um den Mittelpunkt" heißt: die Ausdehnung tauscht bei 90° die
+    /// Seiten, der Mittelpunkt bleibt in derselben Lage zum Anker.
+    #[test]
+    fn mittelpunkt_modus_dreht_die_ausdehnung() {
+        let (doc, clip) = doc_mit_strecke();
+        let zeiger = V2::new(0.0, 0.0);
+        let g0 = Ghost::new(None, zeiger, PastePivot::Center);
+        let b0 = umriss(&doc, &g0, &clip);
+        let (breite0, hoehe0) = (b0.max.x - b0.min.x, b0.max.y - b0.min.y);
+        let mut g90 = Ghost::new(None, zeiger, PastePivot::Center);
+        g90.rotate(90.0);
+        let b90 = umriss(&doc, &g90, &clip);
+        let (breite90, hoehe90) = (b90.max.x - b90.min.x, b90.max.y - b90.min.y);
+        assert!(
+            (breite0 - hoehe90).abs() < 1e-6 && (hoehe0 - breite90).abs() < 1e-6,
+            "90° muss die Seiten tauschen: vorher {breite0:.1} × {hoehe0:.1}, \
+             nachher {breite90:.1} × {hoehe90:.1}"
+        );
+        // Mittelpunkt der Auswahl liegt in beiden Lagen gleich weit vom Anker.
+        let m0 = V2::new(b0.min.x + breite0 / 2.0, b0.min.y + hoehe0 / 2.0);
+        let m90 = V2::new(b90.min.x + breite90 / 2.0, b90.min.y + hoehe90 / 2.0);
+        assert!(
+            (m0.dist(zeiger) - m90.dist(zeiger)).abs() < 1e-6,
+            "der Mittelpunkt wandert beim Drehen ({m0:?} / {m90:?}) — es wird nicht \
+             um den Mittelpunkt gedreht"
+        );
+    }
+
+    /// Bisheriges Verhalten bleibt die Vorgabe: der Basispunkt steht am
+    /// Fadenkreuz, die Ecke springt beim Drehen weg.
+    #[test]
+    fn basispunkt_modus_dreht_um_das_fadenkreuz() {
+        let (doc, clip) = doc_mit_strecke();
+        let zeiger = V2::new(7000.0, 6000.0);
+        let mut g = Ghost::new(None, zeiger, PastePivot::BasePoint);
+        g.rotate(90.0);
+        let bb = umriss(&doc, &g, &clip);
+        assert!(
+            (bb.min.x - zeiger.x).abs() > 100.0 || (bb.min.y - zeiger.y).abs() > 100.0,
+            "im Modus Basispunkt muss die Ecke vom Fadenkreuz wegdrehen, sie stand bei {:?}",
+            bb.min
+        );
+        // Der Basispunkt selbst sitzt aber weiter am Fadenkreuz.
+        let ents = clipboard_entities(&doc, &g, &clip);
+        match &ents[0].kind {
+            EntityKind::Line { a, .. } => assert!(
+                a.dist(zeiger) < 1e-6,
+                "Basispunkt muss am Fadenkreuz bleiben, war {a:?}"
+            ),
+            other => panic!("keine Linie: {other:?}"),
+        }
+    }
+
+    /// Die Vorgabe der Einstellung ist das bisherige Verhalten.
+    #[test]
+    fn vorgabe_ist_der_basispunkt() {
+        assert_eq!(PastePivot::default(), PastePivot::BasePoint);
     }
 }

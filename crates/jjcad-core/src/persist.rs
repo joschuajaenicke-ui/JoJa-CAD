@@ -270,6 +270,59 @@ impl DragMode {
     }
 }
 
+/// Ankerpunkt der Einfüge-Vorschau (T0070) — Einstellungen → Bedienung →
+/// „Drehpunkt“.
+///
+/// Die Auswahl dreht in **beiden** Modi um ihren eigenen Mittelpunkt; der Modus
+/// entscheidet, welcher Punkt danach am Fadenkreuz steht und damit, wo die
+/// Vorschau liegt:
+///
+/// - [`PastePivot::BasePoint`] (Vorgabe, bisheriges Verhalten): der mitkopierte
+///   Basispunkt. Er wandert mit der Drehung, die Vorschau springt deshalb von
+///   Viertel zu Viertel um das Fadenkreuz.
+/// - [`PastePivot::Center`]: die untere linke Ecke der **gedrehten** Auswahl —
+///   die Vorschau bleibt immer oben rechts am Fadenkreuz und deckt es nicht zu.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum PastePivot {
+    /// Basispunkt der Zwischenablage steht am Fadenkreuz
+    BasePoint,
+    /// Untere linke Ecke der gedrehten Auswahl steht am Fadenkreuz
+    Center,
+}
+
+impl Default for PastePivot {
+    fn default() -> Self {
+        PastePivot::BasePoint
+    }
+}
+
+impl PastePivot {
+    /// Beide Modi in Anzeigereihenfolge (Einstellungen).
+    pub const ALL: [PastePivot; 2] = [PastePivot::BasePoint, PastePivot::Center];
+
+    /// Deutsche Beschriftung für die Oberfläche.
+    pub fn label(self) -> &'static str {
+        match self {
+            PastePivot::BasePoint => "Basispunkt",
+            PastePivot::Center => "Mittelpunkt",
+        }
+    }
+
+    /// Kurze Erläuterung (Tooltip im Einstellungsfenster).
+    pub fn hint(self) -> &'static str {
+        match self {
+            PastePivot::BasePoint => {
+                "Der Basispunkt steht am Fadenkreuz — die Vorschau springt beim Drehen um das \
+                 Fadenkreuz (bisheriges Verhalten)"
+            }
+            PastePivot::Center => {
+                "Die Vorschau dreht um ihren Mittelpunkt und bleibt oben rechts am Fadenkreuz"
+            }
+        }
+    }
+}
+
 /// Liest den neuen Modus und übernimmt zusätzlich das alte Wahrheitsfeld
 /// `drag_two_clicks` (Build b7), damit eine bestehende `prefs.json` ihre
 /// Einstellung behält, statt still auf den Standard zurückzufallen.
@@ -359,6 +412,12 @@ pub struct UserPrefs {
     /// Gilt beim Halten (Bildlauf) und beim Einzelschritt der Funktion.
     #[serde(default = "default_pan_speed")]
     pub pan_speed: f32,
+    /// Drehpunkt und Anker der Einfüge-Vorschau aus der Zwischenablage (T0070):
+    /// `base_point` = Basispunkt steht am Fadenkreuz (Vorgabe, bisheriges
+    /// Verhalten), `center` = die Vorschau dreht um ihren Mittelpunkt und bleibt
+    /// oben rechts am Fadenkreuz.
+    #[serde(default)]
+    pub paste_pivot: PastePivot,
     /// Zuletzt benutzter Eingabemodus der Fuellflaechen-Schaltflaeche
     /// ("contour" | "points" | "paint")
     #[serde(default)]
@@ -569,6 +628,8 @@ impl Default for UserPrefs {
             drag_mode: DragMode::HoldAndDrag,
             mouse_move: true,
             pan_speed: default_pan_speed(),
+            // Bisheriges Verhalten: der Basispunkt steht am Fadenkreuz (T0070).
+            paste_pivot: PastePivot::BasePoint,
             fill_input: "points".into(),
             hatch_input: "contour".into(),
             volume_input: "points".into(),
@@ -938,6 +999,42 @@ mod tests {
                 p.pan_speed
             );
         }
+    }
+
+    /// T0070: Der Drehpunkt der Einfüge-Vorschau steht in `prefs.json`, ohne
+    /// Schlüssel gilt das bisherige Verhalten (Basispunkt).
+    #[test]
+    fn drehpunkt_der_einfuege_vorschau_wird_gespeichert() {
+        assert_eq!(PastePivot::default(), PastePivot::BasePoint);
+        assert_eq!(
+            serde_json::to_string(&PastePivot::Center).unwrap(),
+            "\"center\""
+        );
+        assert_eq!(
+            serde_json::to_string(&PastePivot::BasePoint).unwrap(),
+            "\"base_point\""
+        );
+        // Alte Datei ohne den Schlüssel → Basispunkt (nichts ändert sich).
+        let alt: UserPrefs = serde_json::from_str(r#"{"last_dir": "/tmp"}"#).unwrap();
+        assert_eq!(alt.paste_pivot, PastePivot::BasePoint);
+
+        let dir = test_dir("drehpunkt");
+        let p = dir.join("prefs.json");
+        let mut prefs = UserPrefs::default();
+        prefs.paste_pivot = PastePivot::Center;
+        prefs.save_to(&p).unwrap();
+        let roh = std::fs::read_to_string(&p).unwrap();
+        assert!(
+            roh.contains("\"paste_pivot\": \"center\""),
+            "prefs.json muss den Drehpunkt enthalten:\n{roh}"
+        );
+        let wieder = UserPrefs::load_from(&p);
+        assert_eq!(
+            wieder.paste_pivot,
+            PastePivot::Center,
+            "Einstellung ging beim Laden verloren"
+        );
+        std::fs::remove_dir_all(&dir).ok();
     }
 
     #[test]

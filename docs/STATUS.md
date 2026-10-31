@@ -15,6 +15,16 @@ offene Fensterinstanz zeigt weiterhin den alten Stand.
 
 ## Erledigt (verifiziert)
 
+- **Drehpunkt der Einfüge-Vorschau (T0070)**: Einstellungen → Bedienung → Zeile
+  „Drehpunkt" mit den Modi **Basispunkt** (Vorgabe, bisheriges Verhalten) und
+  **Mittelpunkt**; gespeichert als `UserPrefs.paste_pivot` (`base_point`/`center`)
+  in `prefs.json`. In beiden Modi dreht die Auswahl um ihren Mittelpunkt; der Modus
+  entscheidet, welcher Punkt am Fadenkreuz steht (`ghost::clipboard_entities`).
+  Mittelpunkt = untere linke Ecke der gedrehten Auswahl, sodass die Vorschau
+  immer oben rechts vom Fadenkreuz bleibt. Vorschau und eingefügtes Ergebnis
+  rechnen dieselbe Funktion. Tests: `ghost::tests_drehpunkt`,
+  `app::tests_drehpunkt_einfuegen`, `dialogs::tests_einstellungen::bedienung_zeigt_den_drehpunkt`,
+  `persist::tests::drehpunkt_der_einfuege_vorschau_wird_gespeichert`.
 - **Wandanschlüsse: allgemeine Gehrung** (`crates/jjcad-core/src/wall.rs`,
   Herleitung in `docs/WANDANSCHLUSS.md`): An einem verbundenen Ende wird jede
   Wand an der **Anschlussnaht** abgeschnitten — der Geraden durch die beiden

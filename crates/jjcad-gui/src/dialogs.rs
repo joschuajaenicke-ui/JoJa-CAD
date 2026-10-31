@@ -6,7 +6,7 @@ use crate::widgets;
 use egui::{Align, Color32, FontId, Layout, Pos2, Rect, RichText, Rounding, Sense, Stroke, Ui, Vec2};
 use jjcad_core::actions;
 use jjcad_core::geom::{Vec2 as V2};
-use jjcad_core::persist::{fest_belegt, DragMode};
+use jjcad_core::persist::{fest_belegt, DragMode, PastePivot};
 use jjcad_core::units::Unit;
 use serde_json::json;
 
@@ -979,6 +979,15 @@ pub(crate) const EINSTELLUNGSKATEGORIEN: &[Einstellungskategorie] = &[
             "Geschwindigkeit",
             "WASD",
             "W A S D",
+            "Drehpunkt",
+            "Einfügen",
+            "Vorschau",
+            "Rotieren",
+            "Drehen",
+            "Mittelpunkt",
+            "Basispunkt",
+            "Fadenkreuz",
+            "Zwischenablage",
             "Dateidialog",
             "Bedienung",
         ],
@@ -1093,6 +1102,8 @@ fn settings_body(app: &mut App, ui: &mut Ui) {
     let mut mouse_move = app.prefs.mouse_move;
     let mut pan_speed = app.prefs.pan_speed;
     let mut dateidialog_system = app.prefs.dateidialog_system();
+    // T0070: Drehpunkt der Einfüge-Vorschau (Basispunkt oder Mittelpunkt).
+    let mut paste_pivot = app.prefs.paste_pivot;
 
     // Suche: Kategorien, deren Name oder eine ihrer Einstellungen passt.
     let suche = app.ui.settings_suche.trim().to_lowercase();
@@ -1425,6 +1436,36 @@ fn settings_body(app: &mut App, ui: &mut Ui) {
                                         "gilt für den Schwenk der Ansicht (W A S D)",
                                     ));
                                 }
+                                // T0070: Drehpunkt beim Einfügen aus der Zwischenablage.
+                                // „Basispunkt" ist das bisherige Verhalten, „Mittelpunkt"
+                                // lässt die Vorschau oben rechts am Fadenkreuz stehen.
+                                zeile_mit(
+                                    &suche,
+                                    ui,
+                                    "Drehpunkt",
+                                    &[
+                                        "Einfügen",
+                                        "Vorschau",
+                                        "Rotieren",
+                                        "Drehen",
+                                        "Mittelpunkt",
+                                        "Basispunkt",
+                                        "Fadenkreuz",
+                                        "Zwischenablage",
+                                    ],
+                                    |ui| {
+                                        for m in PastePivot::ALL {
+                                            ui.selectable_value(&mut paste_pivot, m, m.label())
+                                                .on_hover_text(m.hint());
+                                        }
+                                    },
+                                );
+                                if suche.is_empty() {
+                                    ui.label(theme::faint(
+                                        "Basispunkt: Drehen um das Fadenkreuz · Mittelpunkt: \
+                                         Vorschau bleibt oben rechts",
+                                    ));
+                                }
                                 zeile(&suche, ui, "Dateidialog", |ui| {
                                     let moeglich = crate::systemdialog::verfuegbar();
                                     ui.selectable_value(&mut dateidialog_system, true, "System")
@@ -1488,6 +1529,10 @@ fn settings_body(app: &mut App, ui: &mut Ui) {
             jjcad_core::persist::SCHWENK_FAKTOR_MIN,
             jjcad_core::persist::SCHWENK_FAKTOR_MAX,
         );
+        let _ = app.prefs.save();
+    }
+    if app.prefs.paste_pivot != paste_pivot {
+        app.prefs.paste_pivot = paste_pivot;
         let _ = app.prefs.save();
     }
     let dialog_neu = if dateidialog_system { "system" } else { "intern" };
@@ -2941,6 +2986,8 @@ mod tests_einstellungen {
         // T0067: Die Bewegungsgeschwindigkeit ist unter „Bedienung“ zu finden.
         assert_eq!(treffer("bewegungsgeschwindigkeit"), vec!["Bedienung"]);
         assert_eq!(treffer("schwenk"), vec!["Bedienung"]);
+        // T0070: Der Drehpunkt der Einfüge-Vorschau steht unter „Bedienung“.
+        assert_eq!(treffer("drehpunkt"), vec!["Bedienung"]);
         assert!(treffer("gibtesnicht").is_empty(), "Unbekannter Begriff liefert Treffer");
     }
 
@@ -3040,6 +3087,46 @@ mod tests_einstellungen {
         assert!(
             (app.prefs.pan_speed - 1.0).abs() < 1e-6,
             "Vorgabe der Schwenkgeschwindigkeit ist 1×"
+        );
+    }
+
+    /// T0070: Unter „Bedienung“ steht die Zeile „Drehpunkt“ mit beiden Modi —
+    /// gezeichnet, nicht nur im Code geführt; die Vorgabe ist das bisherige
+    /// Verhalten (Basispunkt).
+    #[test]
+    fn bedienung_zeigt_den_drehpunkt() {
+        let _sperre = KONFIG.lock().unwrap_or_else(|e| e.into_inner());
+        let _konfig = WegwerfKonfig::neu("drehpunkt");
+        let ctx = egui::Context::default();
+        let mut app = App::with_ctx(ctx.clone());
+        app.ui.settings_open = true;
+        app.ui.settings_kat = 5;
+        let bild = || egui::RawInput {
+            screen_rect: Some(Rect::from_min_size(Pos2::ZERO, Vec2::new(1500.0, 950.0))),
+            ..Default::default()
+        };
+        let mut out = ctx.run(bild(), |ctx| app.ui(ctx));
+        for _ in 0..3 {
+            out = ctx.run(bild(), |ctx| app.ui(ctx));
+        }
+        let texte: Vec<&str> = out
+            .shapes
+            .iter()
+            .filter_map(|cs| match &cs.shape {
+                egui::Shape::Text(t) => Some(t.galley.text()),
+                _ => None,
+            })
+            .collect();
+        for erwartet in ["Drehpunkt", "Basispunkt", "Mittelpunkt"] {
+            assert!(
+                texte.iter().any(|t| *t == erwartet),
+                "„{erwartet}“ fehlt im Einstellungsfenster (gezeichnet: {texte:?})"
+            );
+        }
+        assert_eq!(
+            app.prefs.paste_pivot,
+            PastePivot::BasePoint,
+            "Vorgabe: der Basispunkt steht am Fadenkreuz (bisheriges Verhalten)"
         );
     }
 }
