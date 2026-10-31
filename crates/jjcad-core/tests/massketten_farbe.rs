@@ -108,3 +108,27 @@ fn ausdrueckliches_bylayer_bleibt_bylayer() {
         "Farbe kommt aus der Ebene"
     );
 }
+
+/// Der Wert steht so in der gespeicherten Datei — nicht nur im Speicher.
+#[test]
+fn schwarz_steht_in_der_gespeicherten_datei() {
+    let mut doc = Document::new();
+    let e = neu(
+        &mut doc,
+        "dim.chain",
+        json!({"pts": [[0, 0], [2, 0], [5, 0]], "line_pos": [0, -0.8]}),
+    );
+    let text = jjcad_core::persist::to_json(&doc).expect("Datei nicht schreibbar");
+    let json: Value = serde_json::from_str(&text).expect("JSON unlesbar");
+    let gespeichert = json["entities"]
+        .as_array()
+        .expect("entities fehlt")
+        .iter()
+        .find(|x| x["id"].as_u64() == Some(e.id))
+        .expect("Maßkette fehlt in der Datei");
+    assert_eq!(
+        gespeichert["style"]["color"].as_str(),
+        Some("#1C1F24"),
+        "gespeicherte Farbe der Maßkette"
+    );
+}
