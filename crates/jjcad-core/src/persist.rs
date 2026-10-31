@@ -290,6 +290,31 @@ where
     })
 }
 
+/// Liest die Tastenbelegung in beiden Formen: `"draw.line": "l"` (bis T0063)
+/// und `"draw.line": ["l", "t"]` (seit T0064, mehrere Tasten je Funktion).
+fn de_bindungen<'de, D>(d: D) -> Result<BTreeMap<String, Vec<String>>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    #[derive(Deserialize)]
+    #[serde(untagged)]
+    enum Roh {
+        Einzeln(String),
+        Liste(Vec<String>),
+    }
+    let roh: BTreeMap<String, Roh> = BTreeMap::deserialize(d)?;
+    Ok(roh
+        .into_iter()
+        .map(|(aktion, wert)| {
+            let tasten = match wert {
+                Roh::Einzeln(k) => vec![k],
+                Roh::Liste(l) => l,
+            };
+            (aktion, tasten)
+        })
+        .collect())
+}
+
 fn default_volume_input() -> String {
     "points".into()
 }
@@ -300,9 +325,13 @@ pub struct UserPrefs {
     pub hotbar_presets: Vec<HotbarPreset>,
     #[serde(default = "default_preset_idx")]
     pub active_preset: usize,
-    /// Action-ID → Tastenkürzel (z. B. "l", "ctrl+s", "1")
-    #[serde(default)]
-    pub bindings: BTreeMap<String, String>,
+    /// Action-ID → Tasten, die diese Funktion auslösen (z. B. `["l"]`,
+    /// `["ctrl+s"]`, `["g", "t"]`). Eine **Taste** trägt immer genau eine
+    /// Funktion; eine **Funktion** darf auf mehreren Tasten liegen (T0064).
+    /// Ältere Dateien tragen je Funktion eine einzelne Zeichenkette — der
+    /// Leser nimmt beides (`de_bindungen`).
+    #[serde(default, deserialize_with = "de_bindungen")]
+    pub bindings: BTreeMap<String, Vec<String>>,
     #[serde(default)]
     pub recent_files: Vec<String>,
     #[serde(default)]
@@ -463,7 +492,7 @@ impl Default for UserPrefs {
             if matches!(fest_belegt(a.key), Some(f) if !f.ist_feste_belegung()) {
                 continue;
             }
-            bindings.insert(a.id.to_string(), a.key.to_string());
+            bindings.insert(a.id.to_string(), vec![a.key.to_string()]);
         }
         Self {
             hotbar_presets: vec![
@@ -585,62 +614,56 @@ impl UserPrefs {
         // sonst stillschweigend belegen und im Tastenbild falsch aussehen.
         // Funktionstasten und Kombinationen bleiben dagegen stehen: sie sind die
         // feste Belegung ihrer Funktion (T0056).
-        self.bindings.retain(|_, k| {
-            !matches!(fest_belegt(k), Some(f) if !f.ist_feste_belegung())
+        self.bindings.retain(|_, keys| {
+            keys.retain(|k| !matches!(fest_belegt(k), Some(f) if !f.ist_feste_belegung()));
+            !keys.is_empty()
         });
         // T0056: `S` schwenkt die Ansicht nach unten (`view.pan_down`). Das
         // Stutzen lag früher auf derselben Taste — eine gespeicherte Belegung
         // würde dem Schwenk die Taste wegnehmen.
-        if self
-            .bindings
-            .get("modify.trim")
-            .map(|k| k.eq_ignore_ascii_case("s"))
-            .unwrap_or(false)
-        {
-            self.bindings.remove("modify.trim");
+        if let Some(keys) = self.bindings.get_mut("modify.trim") {
+            keys.retain(|k| !k.eq_ignore_ascii_case("s"));
         }
+        self.bindings.retain(|_, keys| !keys.is_empty());
         // T0056: `V` gehört dem Verschieben (so steht es in der Bedienung). Das
         // Volumen lag früher auf derselben Taste und gewann dort die Auswertung —
         // jetzt auf Umschalt+V.
-        if self
-            .bindings
-            .get("draw.volume")
-            .map(|k| k.eq_ignore_ascii_case("v"))
-            .unwrap_or(false)
-        {
-            self.bindings.insert("draw.volume".into(), "shift+v".into());
+        if let Some(keys) = self.bindings.get_mut("draw.volume") {
+            for k in keys.iter_mut() {
+                if k.eq_ignore_ascii_case("v") {
+                    *k = "shift+v".into();
+                }
+            }
         }
         // T0056: Tastenkombinationen und Funktionstasten sind hart verdrahtet
         // (`App::handle_shortcuts`) — eine gespeicherte Belegung darf sie nicht
         // verschieben, sonst täte Strg+S etwas anderes als dokumentiert.
         for a in actions::ACTIONS {
             if matches!(fest_belegt(a.key), Some(f) if f.ist_feste_belegung()) {
-                self.bindings.insert(a.id.to_string(), a.key.to_string());
+                self.bindings
+                    .insert(a.id.to_string(), vec![a.key.to_string()]);
             }
         }
         // T gehört seit T0009 dem Chat-Protokoll. Das Text-Werkzeug lag früher
         // auf dieser Taste; eine gespeicherte Belegung würde sie stillschweigend
         // weiter belegen und in der Tastaturbelegung falsch anzeigen.
-        if self
-            .bindings
-            .get("draw.text")
-            .map(|k| k.eq_ignore_ascii_case("t"))
-            .unwrap_or(false)
-        {
-            self.bindings.remove("draw.text");
+        if let Some(keys) = self.bindings.get_mut("draw.text") {
+            keys.retain(|k| !k.eq_ignore_ascii_case("t"));
         }
+        self.bindings.retain(|_, keys| !keys.is_empty());
         // T0012: „Kopieren" (Zwischenablage) und „Kopieren mit Basispunkt" sind
         // getrennte Funktionen. Ältere Belegungen tragen Strg+C noch an der
         // Basispunkt-Kopie — die Tasten kommen jetzt aus dem Register.
         let alt = self
             .bindings
             .get("modify.copy")
-            .map(|k| k.eq_ignore_ascii_case("ctrl+c"))
+            .map(|keys| keys.iter().any(|k| k.eq_ignore_ascii_case("ctrl+c")))
             .unwrap_or(false);
         if alt {
             self.bindings
-                .insert("modify.copy".into(), "ctrl+shift+c".into());
-            self.bindings.insert("edit.copy".into(), "ctrl+c".into());
+                .insert("modify.copy".into(), vec!["ctrl+shift+c".into()]);
+            self.bindings
+                .insert("edit.copy".into(), vec!["ctrl+c".into()]);
         }
         // T0060: „Eigenschaften aufnehmen" (`modify.pickprops`) ist ersetzt durch
         // die **Schnellauswahl**. Die alte Belegung würde `q` sonst für eine
@@ -661,9 +684,11 @@ impl UserPrefs {
             let frei = !self
                 .bindings
                 .values()
+                .flatten()
                 .any(|k| k.eq_ignore_ascii_case(a.key));
             if frei {
-                self.bindings.insert(a.id.to_string(), a.key.to_string());
+                self.bindings
+                    .insert(a.id.to_string(), vec![a.key.to_string()]);
             }
         }
         if self.active_preset >= self.hotbar_presets.len() {
@@ -707,48 +732,79 @@ impl UserPrefs {
         }
     }
 
-    pub fn key_for(&self, action: &str) -> Option<String> {
-        self.bindings.get(action).cloned()
+    /// Die Tasten einer Funktion in Belegungsreihenfolge (leer, wenn keine).
+    pub fn keys_for(&self, action: &str) -> &[String] {
+        self.bindings
+            .get(action)
+            .map(|v| v.as_slice())
+            .unwrap_or(&[])
     }
 
-    /// Aktion für eine Taste (ohne Modifier) — zuletzt definierte gewinnt.
+    /// Erste Taste einer Funktion — Anzeige in der Funktionsliste, Tests.
+    pub fn key_for(&self, action: &str) -> Option<String> {
+        self.keys_for(action).first().cloned()
+    }
+
+    /// Aktion für eine Taste (ohne Modifier). Jede Taste gehört genau einer
+    /// Funktion — die erste Fundstelle gewinnt, sollte eine alte Datei doch
+    /// zwei tragen.
     pub fn action_for_key(&self, key: &str) -> Option<String> {
         let k = key.to_lowercase();
         self.bindings
             .iter()
-            .find(|(_, v)| v.to_lowercase() == k)
+            .find(|(_, keys)| keys.iter().any(|v| v.to_lowercase() == k))
             .map(|(a, _)| a.clone())
     }
 
-    /// Ist die Belegung dieser Funktion änderbar? Nein, wenn sie auf einer
-    /// Funktionstaste oder einer Tastenkombination sitzt — die sind hart
-    /// verdrahtet (T0056, `docs/TASTEN.md`).
+    /// Ist die Belegung dieser Funktion änderbar? Nein, wenn eine ihrer Tasten
+    /// fest verdrahtet ist (Funktionstaste, Tastenkombination) — die stehen im
+    /// Code (T0056, `docs/TASTEN.md`).
     pub fn belegung_aenderbar(&self, action: &str) -> bool {
         match self.bindings.get(action) {
-            Some(k) => !matches!(fest_belegt(k), Some(f) if f.ist_feste_belegung()),
+            Some(keys) => !keys
+                .iter()
+                .any(|k| matches!(fest_belegt(k), Some(f) if f.ist_feste_belegung())),
             None => true,
         }
     }
 
-    /// Belegt `action` mit `key`. Gesperrte Tasten (`fest_belegt`) bleiben
+    /// Legt `action` **zusätzlich** auf `key` (T0064: eine Funktion darf auf
+    /// mehreren Tasten liegen). Gesperrte Tasten (`fest_belegt`) bleiben
     /// unberührt — sie gehören dem Programm, nicht der Belegung. Funktionen mit
     /// fest verdrahteter Taste lassen sich nicht umbelegen.
+    ///
+    /// Die Taste wird dabei einer anderen Funktion entzogen: eine Taste trägt
+    /// immer genau eine Funktion.
     pub fn bind(&mut self, action: &str, key: &str) {
         let key = key.to_lowercase();
         if fest_belegt(&key).is_some() || !self.belegung_aenderbar(action) {
             return;
         }
-        // Konflikt: andere Aktion auf derselben Taste entfernen
-        let conflict: Vec<String> = self
-            .bindings
-            .iter()
-            .filter(|(a, v)| v.to_lowercase() == key && a.as_str() != action)
-            .map(|(a, _)| a.clone())
-            .collect();
-        for c in conflict {
-            self.bindings.remove(&c);
+        for keys in self.bindings.values_mut() {
+            keys.retain(|k| k.to_lowercase() != key);
         }
-        self.bindings.insert(action.to_string(), key);
+        self.bindings.retain(|_, keys| !keys.is_empty());
+        let liste = self.bindings.entry(action.to_string()).or_default();
+        if !liste.iter().any(|k| k.to_lowercase() == key) {
+            liste.push(key);
+        }
+    }
+
+    /// Nimmt eine Taste aus der Belegung (mittlere Maustaste im Tastenbild) und
+    /// liefert die Funktion, die sie getragen hat.
+    pub fn unbind_key(&mut self, key: &str) -> Option<String> {
+        let k = key.to_lowercase();
+        let aktion = self.action_for_key(&k);
+        for keys in self.bindings.values_mut() {
+            keys.retain(|s| s.to_lowercase() != k);
+        }
+        self.bindings.retain(|_, keys| !keys.is_empty());
+        aktion
+    }
+
+    /// Nimmt der Funktion **alle** Tasten.
+    pub fn unbind_action(&mut self, action: &str) {
+        self.bindings.remove(action);
     }
 
     pub fn reset_bindings(&mut self) {
@@ -915,26 +971,36 @@ mod tests {
         for key in ["1", "0", "tab", "caps", "shift", "shift_r", "ctrl", "ctrl_r", "enter", "backspace"] {
             prefs.bind("draw.line", key);
             assert!(
-                !prefs.bindings.values().any(|v| v.eq_ignore_ascii_case(key)),
+                !prefs
+                    .bindings
+                    .values()
+                    .flatten()
+                    .any(|v| v.eq_ignore_ascii_case(key)),
                 "Taste {key} ist gesperrt, wurde aber belegt"
             );
         }
         // Der Werkssatz belegt keine Ziffern- oder Steuerungstaste. Funktions-
         // tasten und Kombinationen (Strg+S, F1) sind dagegen die feste Belegung
         // ihrer Funktion (T0056) und stehen im Werkssatz.
-        for (aktion, key) in &UserPrefs::default().bindings {
-            assert!(
-                !matches!(fest_belegt(key), Some(f) if !f.ist_feste_belegung()),
-                "{aktion} liegt auf der gesperrten Taste {key}"
-            );
+        for (aktion, keys) in &UserPrefs::default().bindings {
+            for key in keys {
+                assert!(
+                    !matches!(fest_belegt(key), Some(f) if !f.ist_feste_belegung()),
+                    "{aktion} liegt auf der gesperrten Taste {key}"
+                );
+            }
         }
         // Alte Einstellungen: gesperrte Belegungen fallen beim Laden weg.
         let mut alt = UserPrefs::default();
-        alt.bindings.insert("draw.line".into(), "tab".into());
-        alt.bindings.insert("draw.circle".into(), "k".into());
+        alt.bindings.insert("draw.line".into(), vec!["tab".into()]);
+        alt.bindings.insert("draw.circle".into(), vec!["k".into()]);
         alt.ensure_defaults();
         assert!(
-            !alt.bindings.values().any(|v| v.eq_ignore_ascii_case("tab")),
+            !alt
+                .bindings
+                .values()
+                .flatten()
+                .any(|v| v.eq_ignore_ascii_case("tab")),
             "alte Belegung auf Tab überlebt das Laden"
         );
         assert_eq!(alt.action_for_key("k").as_deref(), Some("draw.circle"));
@@ -1012,18 +1078,91 @@ mod tests {
     fn jede_taste_traegt_genau_eine_funktion() {
         let prefs = UserPrefs::default();
         let mut gesehen: BTreeMap<String, String> = BTreeMap::new();
-        for (aktion, key) in &prefs.bindings {
-            let k = key.to_lowercase();
-            // Kombinationen teilen sich den Buchstaben mit der Einzeltaste
-            // (Strg+S und S) — sie sind eine eigene Schicht.
-            if k.contains('+') {
-                continue;
-            }
-            if let Some(alt) = gesehen.insert(k.clone(), aktion.clone()) {
-                panic!("Taste {k} doppelt belegt: {alt} und {aktion}");
+        for (aktion, keys) in &prefs.bindings {
+            for key in keys {
+                let k = key.to_lowercase();
+                // Kombinationen teilen sich den Buchstaben mit der Einzeltaste
+                // (Strg+S und S) — sie sind eine eigene Schicht.
+                if k.contains('+') {
+                    continue;
+                }
+                if let Some(alt) = gesehen.insert(k.clone(), aktion.clone()) {
+                    panic!("Taste {k} doppelt belegt: {alt} und {aktion}");
+                }
             }
         }
         assert!(gesehen.len() >= 20, "zu wenige Einzeltasten: {}", gesehen.len());
+    }
+
+    /// T0064: Eine Funktion darf auf mehreren Tasten liegen; eine Taste trägt
+    /// weiterhin genau eine Funktion. Die Taste wird der anderen Funktion
+    /// entzogen, die alte Belegung der Funktion bleibt erhalten.
+    #[test]
+    fn funktion_laesst_sich_mehrfach_belegen() {
+        let mut prefs = UserPrefs::default();
+        assert_eq!(prefs.key_for("draw.wall").as_deref(), Some("g"));
+        // Q gehörte der Schnellauswahl — die Taste wandert zur Wand.
+        assert_eq!(prefs.action_for_key("q").as_deref(), Some("modify.quickselect"));
+        prefs.bind("draw.wall", "q");
+        assert_eq!(
+            prefs.keys_for("draw.wall"),
+            &["g".to_string(), "q".to_string()],
+            "die Wand muss auf beiden Tasten liegen"
+        );
+        assert_eq!(prefs.key_for("draw.wall").as_deref(), Some("g"));
+        assert_eq!(prefs.action_for_key("q").as_deref(), Some("draw.wall"));
+        assert!(
+            prefs.keys_for("modify.quickselect").is_empty(),
+            "die Taste darf nicht bei zwei Funktionen liegen"
+        );
+        assert_eq!(
+            prefs.key_for("modify.move").as_deref(),
+            Some("v"),
+            "fremde Belegungen bleiben unberührt"
+        );
+        // Dieselbe Taste noch einmal: keine Dublette.
+        prefs.bind("draw.wall", "q");
+        assert_eq!(prefs.keys_for("draw.wall").len(), 2);
+    }
+
+    /// T0064: Die mittlere Maustaste nimmt genau eine Taste aus der Belegung —
+    /// die übrigen Tasten derselben Funktion bleiben, die Funktion selbst auch.
+    #[test]
+    fn unbind_key_nimmt_nur_diese_taste_weg() {
+        let mut prefs = UserPrefs::default();
+        prefs.bind("draw.wall", "q");
+        assert_eq!(prefs.unbind_key("q").as_deref(), Some("draw.wall"));
+        assert_eq!(prefs.keys_for("draw.wall"), &["g".to_string()]);
+        assert_eq!(prefs.action_for_key("q"), None);
+        // Unbelegte Taste: nichts zu entfernen.
+        assert_eq!(prefs.unbind_key("q"), None);
+        // Alle Tasten einer Funktion entfernen.
+        prefs.unbind_action("draw.wall");
+        assert!(prefs.keys_for("draw.wall").is_empty());
+        assert_eq!(prefs.action_for_key("g"), None);
+        assert!(
+            prefs.belegung_aenderbar("draw.wall"),
+            "die Funktion bleibt umbelegbar"
+        );
+    }
+
+    /// T0064: Ältere `prefs.json` tragen je Funktion eine einzelne Zeichenkette.
+    /// Sie wird als einelementige Liste gelesen; gespeichert wird die Liste.
+    #[test]
+    fn alte_einzelne_belegung_wird_als_liste_gelesen() {
+        let alt: UserPrefs = serde_json::from_str(
+            r#"{"bindings": {"draw.line": "l", "draw.wall": ["g", "t"]}}"#,
+        )
+        .unwrap();
+        assert_eq!(alt.keys_for("draw.line"), &["l".to_string()]);
+        assert_eq!(alt.keys_for("draw.wall"), &["g".to_string(), "t".to_string()]);
+        let mut frisch = UserPrefs::default();
+        frisch.bind("draw.wall", "t");
+        let roh = serde_json::to_string(&frisch).unwrap();
+        assert!(
+            roh.contains(r#""draw.wall":["g","t"]"#),
+            "gespeichert wird eine Liste:\n{roh}"
+        );
     }
 
     /// T0056: Funktionen mit hart verdrahteter Taste lassen sich nicht umbelegen
@@ -1048,8 +1187,8 @@ mod tests {
 
         // Alte Datei: Speichern lag auf K, Stutzen auf S.
         let mut alt = UserPrefs::default();
-        alt.bindings.insert("file.save".into(), "k".into());
-        alt.bindings.insert("modify.trim".into(), "s".into());
+        alt.bindings.insert("file.save".into(), vec!["k".into()]);
+        alt.bindings.insert("modify.trim".into(), vec!["s".into()]);
         alt.ensure_defaults();
         assert_eq!(alt.key_for("file.save").as_deref(), Some("ctrl+s"));
         assert_eq!(alt.key_for("modify.trim"), None, "S gehört jetzt dem Schwenk");

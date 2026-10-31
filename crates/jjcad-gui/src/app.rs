@@ -5971,8 +5971,15 @@ mod tests_tastenbelegung {
     #[test]
     fn schwenk_folgt_der_belegung() {
         let mut app = app_mit_zeichnung();
+        // T0064: `bind` legt die Funktion **zusätzlich** auf Z — W muss
+        // deshalb ausdrücklich freigegeben werden, sonst schwenkte es weiter.
         app.prefs.bind("view.pan_up", "z");
-        assert_eq!(app.prefs.key_for("view.pan_up").as_deref(), Some("z"));
+        app.prefs.unbind_key("w");
+        assert_eq!(
+            app.prefs.keys_for("view.pan_up"),
+            &["z".to_string()],
+            "der Schwenk liegt jetzt allein auf Z"
+        );
         frame_mit(&mut app, vec![]);
         let vorher = app.current_view().center;
         frame_mit(&mut app, vec![druck(egui::Key::W)]);
@@ -6045,8 +6052,10 @@ mod tests_tastenbelegung {
         assert_eq!(app.prefs.key_for("modify.rotate").as_deref(), Some("r"));
         assert_eq!(app.prefs.key_for("modify.mirror").as_deref(), Some("f"));
 
-        // Drehen auf Q legen: R darf nichts mehr drehen, Q schon.
+        // Drehen auf Q legen (T0064: zusätzlich) und R freigeben: R darf nichts
+        // mehr drehen, Q schon.
         app.prefs.bind("modify.rotate", "q");
+        app.prefs.unbind_key("r");
         let vorher = app.ghost.as_ref().map(|g| g.rot).unwrap_or(0.0);
         frame_mit(&mut app, vec![druck(egui::Key::R)]);
         let nach_r = app.ghost.as_ref().map(|g| g.rot).unwrap_or(0.0);
@@ -6061,8 +6070,10 @@ mod tests_tastenbelegung {
             "Q dreht jetzt die Vorschau: {vorher} → {nach_q}"
         );
 
-        // Spiegeln auf E legen: F wirkt nicht mehr, E spiegelt.
+        // Spiegeln auf E legen (T0064: zusätzlich) und F freigeben: F wirkt
+        // nicht mehr, E spiegelt.
         app.prefs.bind("modify.mirror", "e");
+        app.prefs.unbind_key("f");
         let gespiegelt_vorher = app.ghost.as_ref().map(|g| g.mirror).unwrap_or(false);
         frame_mit(&mut app, vec![druck(egui::Key::F)]);
         assert_eq!(
@@ -6631,7 +6642,7 @@ mod tests_systemdialog_modal {
     fn app() -> (egui::Context, App) {
         let ctx = egui::Context::default();
         let mut app = App::with_ctx(ctx.clone());
-        app.prefs.bindings.insert("draw.line".into(), "l".into());
+        app.prefs.bindings.insert("draw.line".into(), vec!["l".into()]);
         (ctx, app)
     }
 
