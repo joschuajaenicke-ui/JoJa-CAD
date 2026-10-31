@@ -1093,6 +1093,10 @@ pub fn show(app: &mut App, ui: &mut Ui) {
         draw_cursor(app, ui, &painter, rect, view_now, snapped, raw_world);
     }
 
+    // Werkzeug-Icon am Zeiger — auch außerhalb der Zeichenfläche (T0057),
+    // deshalb auf eigener Ebene statt im beschnittenen Maler der Fläche.
+    draw_werkzeug_zeiger(app, ui.ctx());
+
     // Eingabe
     let pointer_pos = ui.ctx().pointer_hover_pos();
     if resp.hovered() && !chat_offen {
@@ -1576,7 +1580,7 @@ mod tests_fadenkreuz {
 }
 
 fn draw_cursor(
-    app: &mut App,
+    _app: &mut App,
     ui: &mut Ui,
     p: &Painter,
     rect: Rect,
@@ -1598,16 +1602,50 @@ fn draw_cursor(
     }
     // Fadenkreuz bis zu den Bildschirmrändern
     draw_fadenkreuz(p, rect, Some(pos));
+}
 
-    // Aktives Werkzeug am Mauszeiger
-    if let Some(t) = &app.tool {
-        if let Some(def) = actions::action(&t.action) {
-            let ir = Rect::from_center_size(pos + Vec2::new(22.0, 22.0), Vec2::splat(18.0));
-            p.circle_filled(ir.center(), 12.0, Color32::from_rgba_unmultiplied(20, 22, 26, 190));
-            p.circle_stroke(ir.center(), 12.0, Stroke::new(1.0, Palette::ACCENT.gamma_multiply(0.6)));
-            crate::icons::paint(p, ir.shrink(2.0), def.icon, Palette::ACCENT);
-        }
+/// Lage des Werkzeug-Icons am Mauszeiger (Bildschirmpunkte).
+///
+/// Eine Quelle für Zeichnen und Test: das Icon sitzt unten rechts neben dem
+/// Zeiger, egal in welchem Teil des Fensters er steht.
+pub fn werkzeug_zeiger_mitte(zeiger: Pos2) -> Pos2 {
+    zeiger + Vec2::new(22.0, 22.0)
+}
+
+/// Zeichnet das Icon des laufenden Werkzeugs am Mauszeiger — im **ganzen**
+/// Fenster, nicht nur über der Zeichenfläche (T0057).
+///
+/// Der Maler der Zeichenfläche ist auf ihr Rechteck beschnitten; über Ribbon,
+/// Eigenschaften-Panel oder Statusleiste wäre das Icon dort abgeschnitten.
+/// Deshalb eine eigene Ebene in `Order::Middle`: sie liegt über Zeichenfläche,
+/// Ribbon und Panels (alle `Order::Background`), aber unter Dialogen, Menüs,
+/// Protokoll und Tooltips (`Foreground`/`Tooltip`) — ein offenes Fenster
+/// verdeckt das Icon, statt dass es darüber schwebt. Bei offenem
+/// Chat-Protokoll ruht das Zeichnen, dort bleibt auch das Icon weg.
+pub fn draw_werkzeug_zeiger(app: &App, ctx: &egui::Context) {
+    if app.chat.offen {
+        return;
     }
+    let Some(t) = &app.tool else { return };
+    let Some(def) = actions::action(&t.action) else {
+        return;
+    };
+    let Some(pos) = ctx.pointer_hover_pos() else {
+        return;
+    };
+    // Nur im Fenster: außerhalb gibt es keinen Zeiger, an dem es hängen könnte.
+    if !ctx.screen_rect().contains(pos) {
+        return;
+    }
+    let p = ctx.layer_painter(egui::LayerId::new(
+        egui::Order::Middle,
+        egui::Id::new("werkzeug_zeiger"),
+    ));
+    let mitte = werkzeug_zeiger_mitte(pos);
+    let ir = Rect::from_center_size(mitte, Vec2::splat(18.0));
+    p.circle_filled(mitte, 12.0, Color32::from_rgba_unmultiplied(20, 22, 26, 190));
+    p.circle_stroke(mitte, 12.0, Stroke::new(1.0, Palette::ACCENT.gamma_multiply(0.6)));
+    crate::icons::paint(&p, ir.shrink(2.0), def.icon, Palette::ACCENT);
 }
 
 /// Zeichnet die Vorschau einer Öffnung (Tür oder Fenster).
@@ -8348,5 +8386,136 @@ mod tests_treppenmass {
             stair_mass_text(Unit::Mm, 3000.0, 1000.0, 13),
             "3.000 × 1.000 · 13 Stg"
         );
+    }
+}
+
+#[cfg(test)]
+mod tests_werkzeug_zeiger {
+    //! Werkzeug-Icon am Mauszeiger (T0057).
+    //!
+    //! Vorher zeichnete `draw_cursor` das Icon im beschnittenen Maler der
+    //! Zeichenfläche und stieg bei einem Zeiger außerhalb der Fläche sofort
+    //! aus — über Ribbon, Eigenschaften-Panel oder Statusleiste war es nicht
+    //! zu sehen. Jetzt zeichnet `draw_werkzeug_zeiger` es auf einer eigenen
+    //! Ebene im ganzen Fenster. Geprüft wird am gerenderten Bild (Kreise mit
+    //! dem Icon-Radius) und an ihrem Beschnitt: der Beschnitt der Zeichenfläche
+    //! wäre der Beweis für den alten Fehler.
+
+    use super::*;
+    use crate::app::App;
+
+    const FENSTER: Vec2 = Vec2::new(1500.0, 950.0);
+
+    fn rahmen(ctx: &egui::Context, app: &mut App, zeiger: Option<Pos2>) -> egui::FullOutput {
+        let mut raw = egui::RawInput {
+            screen_rect: Some(Rect::from_min_size(Pos2::ZERO, FENSTER)),
+            ..Default::default()
+        };
+        if let Some(p) = zeiger {
+            raw.events.push(egui::Event::PointerMoved(p));
+        }
+        ctx.run(raw, |ctx| app.ui(ctx))
+    }
+
+    /// Die Kreise des Icons (Füllung und Rand) an `mitte`.
+    fn icon_kreise(out: &egui::FullOutput, mitte: Pos2) -> Vec<egui::epaint::ClippedShape> {
+        out.shapes
+            .iter()
+            .filter(|cs| match &cs.shape {
+                egui::Shape::Circle(c) => {
+                    (c.radius - 12.0).abs() < 0.01 && c.center.distance(mitte) < 0.01
+                }
+                _ => false,
+            })
+            .cloned()
+            .collect()
+    }
+
+    fn app_mit_wandwerkzeug(ctx: &egui::Context) -> App {
+        let mut app = App::with_ctx(ctx.clone());
+        app.start_tool("draw.wall");
+        app
+    }
+
+    /// Zeiger über dem Ribbon: dort ist das Icon am Mauszeiger zu sehen, und
+    /// zwar ohne den Beschnitt der Zeichenfläche (sonst wäre es abgeschnitten).
+    #[test]
+    fn icon_haengt_auch_ueber_dem_ribbon_am_zeiger() {
+        let ctx = egui::Context::default();
+        let mut app = app_mit_wandwerkzeug(&ctx);
+        rahmen(&ctx, &mut app, None);
+        let flaeche = app.ui.last_canvas;
+        let zeiger = Pos2::new(700.0, flaeche.top() - 30.0);
+        assert!(
+            !flaeche.contains(zeiger),
+            "Prüfpunkt muss außerhalb der Zeichenfläche liegen ({flaeche:?})"
+        );
+
+        let out = rahmen(&ctx, &mut app, Some(zeiger));
+        let kreise = icon_kreise(&out, werkzeug_zeiger_mitte(zeiger));
+        assert_eq!(
+            kreise.len(),
+            2,
+            "Füllung und Rand des Werkzeug-Icons fehlen über dem Ribbon"
+        );
+        let fenster = Rect::from_min_size(Pos2::ZERO, FENSTER);
+        for c in &kreise {
+            assert!(
+                c.clip_rect.contains_rect(Rect::from_center_size(
+                    werkzeug_zeiger_mitte(zeiger),
+                    Vec2::splat(24.0)
+                )),
+                "Icon ist beschnitten ({:?}) — es muss im ganzen Fenster sichtbar sein",
+                c.clip_rect
+            );
+            assert!(
+                fenster.contains_rect(c.clip_rect),
+                "Beschnitt liegt außerhalb des Fensters ({:?})",
+                c.clip_rect
+            );
+        }
+    }
+
+    /// Über der Zeichenfläche bleibt es bei **einem** Icon — der Umzug auf
+    /// eine eigene Ebene darf es nicht doppelt zeichnen.
+    #[test]
+    fn icon_ueber_der_zeichenflaeche_genau_einmal() {
+        let ctx = egui::Context::default();
+        let mut app = app_mit_wandwerkzeug(&ctx);
+        rahmen(&ctx, &mut app, None);
+        let flaeche = app.ui.last_canvas;
+        let zeiger = flaeche.center();
+
+        let out = rahmen(&ctx, &mut app, Some(zeiger));
+        assert_eq!(
+            icon_kreise(&out, werkzeug_zeiger_mitte(zeiger)).len(),
+            2,
+            "genau ein Icon (Füllung + Rand), nicht zwei"
+        );
+    }
+
+    /// Ohne laufendes Werkzeug gibt es kein Icon — auch nicht über dem Ribbon.
+    #[test]
+    fn ohne_werkzeug_kein_icon() {
+        let ctx = egui::Context::default();
+        let mut app = App::with_ctx(ctx.clone());
+        rahmen(&ctx, &mut app, None);
+        let zeiger = Pos2::new(700.0, app.ui.last_canvas.top() - 30.0);
+
+        let out = rahmen(&ctx, &mut app, Some(zeiger));
+        assert!(
+            icon_kreise(&out, werkzeug_zeiger_mitte(zeiger)).is_empty(),
+            "ohne Werkzeug darf kein Icon am Zeiger hängen"
+        );
+    }
+
+    /// Das Icon sitzt immer unten rechts neben dem Zeiger, unabhängig davon,
+    /// wo im Fenster er steht.
+    #[test]
+    fn lage_ist_immer_derselbe_versatz() {
+        let a = werkzeug_zeiger_mitte(Pos2::new(100.0, 200.0));
+        let b = werkzeug_zeiger_mitte(Pos2::new(900.0, 40.0));
+        assert_eq!(a - Pos2::new(100.0, 200.0), b - Pos2::new(900.0, 40.0));
+        assert!(a.x > 100.0 && a.y > 200.0, "unten rechts vom Zeiger");
     }
 }
