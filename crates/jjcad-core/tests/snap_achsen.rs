@@ -118,3 +118,57 @@ fn polar_nimmt_den_naechsten_bezug() {
     assert!((p.x.abs() - p.y.abs()).abs() < 1e-6, "nicht auf 45°: {p:?}");
     assert!((p.dist(Vec2::new(0.0, 0.0)) - roh.dist(Vec2::new(0.0, 0.0))).abs() < 1e-6);
 }
+
+fn doc_polar() -> Document {
+    let mut d = Document::new();
+    d.settings.snap.ortho = false;
+    d.settings.snap.polar = true;
+    d.settings.snap.grid = false;
+    d
+}
+
+/// **Alle** Bezüge liefern ihren Winkelkranz, nicht nur der nächstgelegene
+/// (T0054): der Zeiger steht zwar näher am zweiten Bezug, dort liegt aber
+/// keine Richtung im Winkel-Fenster — die Waagerechte des ersten Bezugs muss
+/// trotzdem fangen.
+#[test]
+fn polar_rastet_auf_den_ferneren_bezug() {
+    let d = doc_polar();
+    // Voriger (0;0), nächster (2500;0). Zeiger (2600;200): Abstand 223 zum
+    // nächsten, 2608 zum vorigen. Vom nächsten aus 63° (kein Fenster), vom
+    // vorigen aus 4,4° an der Waagerechten.
+    let achsen = [Vec2::new(0.0, 0.0), Vec2::new(2500.0, 0.0)];
+    let roh = Vec2::new(2600.0, 200.0);
+    let (p, quelle) = fang(&d, roh, 40.0, &achsen);
+    assert_eq!(quelle, SnapSource::Polar, "Fang fehlt: {p:?}");
+    assert!(p.y.abs() < 1e-6, "nicht auf der Waagerechten: {p:?}");
+    assert!((p.dist(Vec2::ZERO) - roh.dist(Vec2::ZERO)).abs() < 1e-6);
+}
+
+/// Kreuzung zweier Polarrichtungen **verschiedener** Bezüge ist ein eigenes
+/// Punktziel (T0054): der Zeiger wird auf den Schnittpunkt gezogen, nicht nur
+/// auf die nähere Einzelgerade.
+#[test]
+fn polar_schnittpunkt_zweier_bezuege_rastet_ein() {
+    let d = doc_polar();
+    // Voriger (0;0), nächster (4000;0): 45° des ersten (y = x) schneidet 135°
+    // des zweiten (y = 4000 − x) in (2000;2000).
+    let achsen = [Vec2::new(0.0, 0.0), Vec2::new(4000.0, 0.0)];
+    // 36 mm neben der Kreuzung; die Einzelgerade läge 7 mm daneben am Zeiger.
+    let roh = Vec2::new(2030.0, 2020.0);
+    let (p, quelle) = fang(&d, roh, 40.0, &achsen);
+    assert_eq!(quelle, SnapSource::Polar);
+    assert!(p.dist(Vec2::new(2000.0, 2000.0)) < 1e-6, "nicht die Kreuzung: {p:?}");
+}
+
+/// Weit von jeder Kreuzung bleibt es beim Fang auf die Einzelgerade — der
+/// Schnittpunkt ist ein Punktziel, kein Flächenfang.
+#[test]
+fn ferne_kreuzung_faengt_nicht() {
+    let d = doc_polar();
+    let achsen = [Vec2::new(0.0, 0.0), Vec2::new(4000.0, 0.0)];
+    // 45°-Gerade des ersten Bezugs, 1200 mm von der Kreuzung entfernt.
+    let roh = Vec2::new(3200.0, 3200.0);
+    let (p, _) = fang(&d, roh, 40.0, &achsen);
+    assert!(p.dist(Vec2::new(2000.0, 2000.0)) > 1000.0, "{p:?}");
+}
