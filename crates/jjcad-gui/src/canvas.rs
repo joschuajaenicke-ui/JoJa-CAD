@@ -1101,8 +1101,10 @@ pub fn show(app: &mut App, ui: &mut Ui) {
     let pointer_pos = ui.ctx().pointer_hover_pos();
     if resp.hovered() && !chat_offen {
         if let Some(pos) = pointer_pos {
-            // Hover-Highlight (auch im Papierraum — dort auf Schriftfeld/Texten)
-            if app.tool.is_none() {
+            // Hover-Highlight (auch im Papierraum — dort auf Schriftfeld/Texten).
+            // Die Schnellauswahl arbeitet **mit** einem Werkzeug: das Objekt,
+            // das der nächste Klick trifft, muss schon vorher hervortreten.
+            if app.tool.is_none() || app.schnellauswahl_aktiv() {
                 if let Some(w) = snapped {
                     let tol = (8.0 / view_now.zoom).max(0.5);
                     let h = snap::hit_test(app.doc(), w, tol, None);
@@ -4781,6 +4783,31 @@ fn tool_click_at(app: &mut App, w: V2, raw: V2) {
                 "block.insert",
                 json!({"block": bid, "pos": ax(w), "rot": app.options.block_rot, "scale": app.options.block_scale}),
             );
+        }
+        "modify.quickselect" => {
+            // T0060: das angeklickte Objekt bestimmt das Werkzeug, das ein
+            // weiteres Objekt seiner Art erzeugt (`actions::erzeuger_fuer`).
+            // Ein Klick ins Leere lässt die Schnellauswahl stehen.
+            let tol = (8.0 / app.current_view().zoom).max(0.5);
+            let Some(id) = snap::hit_test(app.doc(), w, tol, None) else {
+                app.toast("Schnellauswahl · Objekt anklicken");
+                return;
+            };
+            let Some(kind) = app
+                .doc()
+                .ents()
+                .iter()
+                .find(|e| e.id == id)
+                .map(|e| e.kind.clone())
+            else {
+                return;
+            };
+            // Ein Block wird aus seiner eigenen Definition gesetzt — sonst
+            // landete der im Inventar zuletzt gewählte Block am Zeiger.
+            if let EntityKind::BlockRef { block, .. } = &kind {
+                app.options.block_id = Some(block.clone());
+            }
+            app.start_tool(actions::erzeuger_fuer(&kind));
         }
         "modify.select" => {}
         _ => {}
@@ -8554,5 +8581,78 @@ mod schrifttests {
                 f.label()
             );
         }
+    }
+}
+
+#[cfg(test)]
+mod tests_schnellauswahl {
+    //! T0060: In der Schnellauswahl bestimmt der **Klick** das Werkzeug.
+    //!
+    //! Geprüft über denselben Weg wie die Maus (`tool_click`) und am
+    //! laufenden Werkzeug — nicht an der Vorschau. Die Objekte entstehen über
+    //! die Befehlsschicht, damit die gemessene Art die gespeicherte ist.
+
+    use super::*;
+    use jjcad_core::units::Unit;
+
+    fn app_mit_objekten() -> App {
+        let mut app = App::with_ctx(egui::Context::default());
+        app.doc_mut().settings.input_unit = Unit::Mm;
+        let wand = app
+            .session_mut()
+            .execute(
+                "draw.wall",
+                &json!({"a": [0.0, 0.0], "b": [4000.0, 0.0], "thickness": 240.0, "height": 2500.0}),
+            )
+            .expect("Wand anlegen");
+        assert!(wand["ok"].as_bool().unwrap_or(false));
+        app.session_mut()
+            .execute(
+                "dim.chain",
+                &json!({"pts": [[0.0, -500.0], [2000.0, -500.0], [4000.0, -500.0]],
+                        "line_pos": [0.0, -800.0]}),
+            )
+            .expect("Maßkette anlegen");
+        app.start_tool("modify.quickselect");
+        app
+    }
+
+    /// Klick auf die Wandachse startet das Wandwerkzeug — ein weiteres Objekt
+    /// dieser Art entsteht mit den Standardeinstellungen.
+    #[test]
+    fn klick_auf_wand_startet_das_wandwerkzeug() {
+        let mut app = app_mit_objekten();
+        tool_click(&mut app, V2::new(2000.0, 0.0));
+        assert_eq!(
+            app.tool_id(),
+            Some("draw.wall"),
+            "die Schnellauswahl muss das Wandwerkzeug starten"
+        );
+        assert!(
+            app.tool.as_ref().map(|t| t.pts.is_empty()).unwrap_or(false),
+            "das gestartete Werkzeug beginnt ohne gesetzten Punkt"
+        );
+    }
+
+    /// Klick auf die Maßlinie einer Maßkette startet die Maßkette (nicht das
+    /// Einzelmaß) — die Zuordnung kommt aus `actions::erzeuger_fuer`.
+    #[test]
+    fn klick_auf_masskette_startet_die_masskette() {
+        let mut app = app_mit_objekten();
+        tool_click(&mut app, V2::new(2000.0, -800.0));
+        assert_eq!(
+            app.tool_id(),
+            Some("dim.chain"),
+            "die Schnellauswahl muss die Maßkette starten"
+        );
+    }
+
+    /// Ein Klick ins Leere beendet die Schnellauswahl nicht — sie wartet auf
+    /// das nächste Objekt.
+    #[test]
+    fn klick_ins_leere_bleibt_bei_der_schnellauswahl() {
+        let mut app = app_mit_objekten();
+        tool_click(&mut app, V2::new(9000.0, 9000.0));
+        assert_eq!(app.tool_id(), Some("modify.quickselect"));
     }
 }

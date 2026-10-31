@@ -1782,6 +1782,9 @@ impl App {
                 // Prüfhilfe: Verschieben-Werkzeug starten (Basispunkt-Fang an
                 // der ausgewählten Wand im Screenshot belegbar)
                 "movetool" => self.start_tool("modify.move"),
+                // T0060: Schnellauswahl aktiv — der nächste Klick startet den
+                // Erzeuger des angeklickten Objekts.
+                "schnellauswahl" | "quickselect" => self.start_tool("modify.quickselect"),
                 "selwindow" => {
                     if let Some(id) = self
                         .doc()
@@ -2176,6 +2179,13 @@ impl App {
         let Some(def) = actions::action(id) else {
             return;
         };
+        // Die Schnellauswahl ist ein **Schalter** (T0060): läuft ein Werkzeug,
+        // beendet derselbe Aufruf es (wie ein Abbruch); läuft keines, wird sie
+        // selbst aktiv. Deshalb vor dem allgemeinen Werkzeugstart.
+        if id == "modify.quickselect" {
+            self.schnellauswahl_umschalten();
+            return;
+        }
         // Werkzeuge
         if def.tool
             || matches!(
@@ -2450,6 +2460,28 @@ impl App {
         if matches!(self.ui.slot_drag, Some((usize::MAX, _))) {
             self.ui.slot_drag = None;
         }
+    }
+
+    /// Schnellauswahl (T0060): ein Aufruf schaltet sie.
+    ///
+    /// Läuft bereits eine Funktion, wirkt sie wie ein **Abbruch** — danach ist
+    /// keine Funktion aktiv. Läuft keine, wird die Schnellauswahl selbst aktiv;
+    /// der nächste Klick auf ein Objekt startet dessen Erzeugerwerkzeug
+    /// (`actions::erzeuger_fuer`). Bewusst nicht über ESC: der schließt eine
+    /// Punktfolge ab, hier wird verworfen.
+    pub fn schnellauswahl_umschalten(&mut self) {
+        if self.tool.is_some() {
+            self.cancel_tool();
+            return;
+        }
+        self.start_tool("modify.quickselect");
+    }
+
+    /// Ist die Schnellauswahl das laufende Werkzeug? Dann hebt die
+    /// Zeichenfläche das Objekt unter dem Zeiger hervor, obwohl ein Werkzeug
+    /// aktiv ist.
+    pub fn schnellauswahl_aktiv(&self) -> bool {
+        self.tool_id() == Some("modify.quickselect")
     }
 
     pub fn cancel_tool(&mut self) {
@@ -3624,11 +3656,12 @@ fn rail(ui: &mut egui::Ui, icon: &str, tooltip: &str, chevron: &str) -> bool {
                     widgets::vline(ui, RIBBON_GROUP_H);
                     self.group(ui, "Sonstiges", |ui, app| {
                         for (id, icon, label) in [
-                            ("modify.pickprops", "eyedropper", "Pipette"),
+                            ("modify.quickselect", "quickselect", "Schnellauswahl"),
                             ("edit.undo", "undo", "Zurück"),
                             ("edit.redo", "redo", "Vor"),
                         ] {
-                            if widgets::ribbon_button(ui, icon, label, false).clicked() {
+                            let aktiv = app.tool_id() == Some(id);
+                            if widgets::ribbon_button(ui, icon, label, aktiv).clicked() {
                                 app.run_action(ui.ctx(), id);
                             }
                         }
@@ -4346,7 +4379,7 @@ pub(crate) fn commands_hint(tool: &Tool, opts: &ToolOptions) -> &'static str {
         "modify.trim" => "Stutzen · Segment anklicken",
         "modify.extend" => "Verlängern · Ende anklicken",
         "modify.explode" => "Zerlegen · Objekt anklicken",
-        "modify.pickprops" => "Eigenschaften · Objekt anklicken",
+        "modify.quickselect" => "Schnellauswahl · Objekt anklicken",
         "modify.order" => "Reihenfolge · Objekt anklicken",
         "block.insert" => "Block · Position klicken",
         "sheet.viewport_tool" => "Ansichtsfenster · Rechteck aufziehen",
@@ -5957,6 +5990,86 @@ mod tests_tastenbelegung {
 }
 
 #[cfg(test)]
+mod tests_schnellauswahl_schalter {
+    //! T0060: Die Schnellauswahl ist **ein** Schalter auf `q`.
+    //!
+    //! Läuft ein Werkzeug, beendet der Druck es (Abbruch); läuft keines, wird
+    //! die Schnellauswahl aktiv. Beides über die Taste und über die Action —
+    //! Ribbon, Hotbar und Tastatur gehen denselben Weg (`App::run_action`).
+
+    use super::*;
+
+    fn frame_mit(app: &mut App, events: Vec<egui::Event>) {
+        let ctx = app.ctx.clone();
+        let raw = egui::RawInput {
+            screen_rect: Some(Rect::from_min_size(Pos2::ZERO, Vec2::new(1500.0, 950.0))),
+            events,
+            ..Default::default()
+        };
+        let _ = ctx.run(raw, |ctx| app.ui(ctx));
+    }
+
+    fn druck(key: egui::Key) -> egui::Event {
+        egui::Event::Key {
+            key,
+            physical_key: None,
+            pressed: true,
+            repeat: false,
+            modifiers: egui::Modifiers::NONE,
+        }
+    }
+
+    fn app() -> App {
+        let mut app = App::with_ctx(egui::Context::default());
+        app.prefs.reset_bindings();
+        app
+    }
+
+    #[test]
+    fn taste_q_bricht_ab_und_schaltet_wieder_ein() {
+        let mut app = app();
+        frame_mit(&mut app, vec![]);
+        app.run_action(&app.ctx.clone(), "draw.wall");
+        assert_eq!(app.tool_id(), Some("draw.wall"), "Wandwerkzeug läuft");
+
+        // Erster Druck: Abbruch — danach ist keine Funktion aktiv.
+        frame_mit(&mut app, vec![druck(egui::Key::Q)]);
+        assert!(
+            app.tool.is_none(),
+            "q muss das laufende Werkzeug beenden: {:?}",
+            app.tool_id()
+        );
+
+        // Zweiter Druck: die Schnellauswahl wird aktiv.
+        frame_mit(&mut app, vec![druck(egui::Key::Q)]);
+        assert_eq!(app.tool_id(), Some("modify.quickselect"), "Schnellauswahl aktiv");
+
+        // Dritter Druck: wieder aus — sie ist kein Dauerzustand.
+        frame_mit(&mut app, vec![druck(egui::Key::Q)]);
+        assert!(app.tool.is_none(), "q schaltet die Schnellauswahl auch aus");
+    }
+
+    /// Die Schnellauswahl hat auf `q` ihre Vorgabe — auch nach dem Laden einer
+    /// Belegung, in der noch die alte Funktion „Eigenschaften aufnehmen" stand.
+    #[test]
+    fn q_gehoert_der_schnellauswahl() {
+        let app = app();
+        assert_eq!(
+            app.prefs.key_for("modify.quickselect").as_deref(),
+            Some("q")
+        );
+        assert_eq!(
+            app.prefs.action_for_key("q").as_deref(),
+            Some("modify.quickselect")
+        );
+        assert!(
+            actions::action("modify.pickprops").is_none(),
+            "die alte Funktion „Eigenschaften aufnehmen“ gibt es nicht mehr"
+        );
+    }
+}
+
+#[cfg(test)]
 mod tests_vollbild {
     //! T0008: Vollbild (rahmenloses Fenster) über F11 und über den Knopf im
     //! Reiter „Ansicht".
@@ -6212,7 +6325,6 @@ mod tests_chat_texte {
     fn werkzeugname(id: &str) -> String {
         match id {
             "draw.fill" | "draw.fill.boundary" | "draw.fill.points" => "Füllfläche".into(),
-            "modify.pickprops" => "Eigenschaften".into(),
             "block.insert" => "Block".into(),
             "sheet.viewport_tool" => "Ansichtsfenster".into(),
             other => actions::action(other).map(|d| d.label).unwrap_or("?").to_string(),
@@ -6306,7 +6418,7 @@ mod tests_chat_texte {
             "modify.trim",
             "modify.extend",
             "modify.order",
-            "modify.pickprops",
+            "modify.quickselect",
         ] {
             assert_eq!(abschluss_meldung(id), None, "{id} meldet doppelt");
         }

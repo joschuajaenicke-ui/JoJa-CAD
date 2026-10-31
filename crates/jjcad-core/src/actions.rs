@@ -195,7 +195,10 @@ pub const ACTIONS: &[ActionDef] = &[
         "Zeichenbereich eines Textes fett/kursiv/unterstrichen/hochgestellt setzen",
         false
     ),
-    act!("modify.pickprops", "Eigenschaften aufnehmen", Aendern, "eyedropper", "q", "Eigenschaften von Objekt übernehmen", true),
+    // Schnellauswahl (T0060): ein Objekt anklicken und das Werkzeug starten,
+    // das ein weiteres Objekt derselben Art erzeugt. Ersetzt „Eigenschaften
+    // aufnehmen" vollständig — ein Schalter, kein zweiter Weg (`App::run_action`).
+    act!("modify.quickselect", "Schnellauswahl", Aendern, "quickselect", "q", "Objekt anklicken — dessen Erzeuger startet", true),
 
     // Bemaßung
     act!("dim.linear", "Maß", Bemassung, "dim", "m", "Zwei Punkte und Maßlinie setzen", true),
@@ -614,6 +617,38 @@ fn standard_ebene(action: &str) -> Option<&'static str> {
         | "draw.circle" | "draw.arc" | "draw.ellipse" => "Hilfslinien",
         _ => return None,
     })
+}
+
+/// Das Erzeugerwerkzeug zu einer Objektart — Grundlage der **Schnellauswahl**
+/// (T0060).
+///
+/// Die Schnellauswahl klickt ein vorhandenes Objekt an und startet das
+/// Werkzeug, das ein weiteres Objekt derselben Art erzeugt. Die Zuordnung steht
+/// hier bei den Aktionen und nicht in der Oberfläche: sie gehört zur
+/// Befehlsschicht und ist ohne GUI prüfbar. `match` ist erschöpfend — eine neue
+/// Objektart ohne Erzeuger fällt sofort beim Bauen auf, statt still nichts zu
+/// tun.
+pub fn erzeuger_fuer(kind: &EntityKind) -> &'static str {
+    match kind {
+        EntityKind::Point { .. } => "draw.point",
+        EntityKind::Line { .. } => "draw.line",
+        EntityKind::Circle { .. } => "draw.circle",
+        EntityKind::Arc { .. } => "draw.arc",
+        EntityKind::Ellipse { .. } => "draw.ellipse",
+        EntityKind::Polyline { .. } => "draw.polyline",
+        EntityKind::Spline { .. } => "draw.spline",
+        EntityKind::Fill { .. } => "draw.fill",
+        EntityKind::Volume { .. } => "draw.volume",
+        EntityKind::Text { .. } => "draw.text",
+        EntityKind::Dim { .. } => "dim.linear",
+        EntityKind::DimChain { .. } => "dim.chain",
+        EntityKind::Elevation { .. } => "dim.elevation",
+        EntityKind::Wall { .. } => "draw.wall",
+        EntityKind::Door { .. } => "draw.door",
+        EntityKind::Window { .. } => "draw.window",
+        EntityKind::Stair { .. } => "draw.stair",
+        EntityKind::BlockRef { .. } => "block.insert",
+    }
 }
 
 /// Layer aus Parameter `layer` (Name oder ID), sonst die Standardebene der
