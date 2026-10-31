@@ -27,6 +27,9 @@ pub const SLOT: f32 = 50.0;
 /// wie eine Familie aussehen.
 const KOPF: f32 = 30.0;
 const ABSTAND: f32 = 4.0;
+/// Abstand der Randgruppen zum Fensterrand. 8 px war zu knapp — die äußeren
+/// Schaltflächen lagen praktisch am Bildschirmrand und wirkten abgeschnitten.
+const RAND: f32 = 16.0;
 
 pub fn show(app: &mut App, ui: &mut Ui) {
     let bar = ui.max_rect();
@@ -38,12 +41,12 @@ pub fn show(app: &mut App, ui: &mut Ui) {
         Vec2::new(gesamt, SLOT),
     );
     let links_rect = Rect::from_min_max(
-        bar.min + Vec2::new(8.0, 0.0),
+        bar.min + Vec2::new(RAND, 0.0),
         Pos2::new((slots_rect.left() - 8.0).max(bar.left()), bar.max.y),
     );
     let rechts_rect = Rect::from_min_max(
         Pos2::new((slots_rect.right() + 8.0).min(bar.right()), bar.top()),
-        bar.max - Vec2::new(8.0, 0.0),
+        bar.max - Vec2::new(RAND, 0.0),
     );
 
     // ---- Links: Inventar · Tastaturbelegung · Hotbar-Vorlagen ----
@@ -52,20 +55,31 @@ pub fn show(app: &mut App, ui: &mut Ui) {
             .max_rect(links_rect)
             .layout(Layout::left_to_right(Align::Center)),
         |ui| {
-            ui.set_clip_rect(links_rect);
+            // Clip auf die ganze Leiste: ein Clip genau an der Gruppenkante
+            // schneidet die Antialiasing-Kante der äußeren Schaltfläche ab.
+            ui.set_clip_rect(bar);
             // Abstände macht die Leiste selbst — egui soll nicht zusätzlich
             // 8 px zwischen jedem Knopf setzen (sonst wandern die Slots aus
             // der Mitte).
             ui.spacing_mut().item_spacing.x = 0.0;
-            if widgets::icon_button(ui, "inventory", KOPF, app.ui.inventory_open, "Inventar (E)")
-                .clicked()
-            {
+            let mut kopf: Option<Rect> = None;
+            let mut merke = |r: Rect| {
+                kopf = Some(match kopf {
+                    Some(b) => b.union(r),
+                    None => r,
+                });
+            };
+            let resp =
+                widgets::icon_button(ui, "inventory", KOPF, app.ui.inventory_open, "Inventar (E)");
+            merke(resp.rect);
+            if resp.clicked() {
                 app.toggle_inventory();
             }
             ui.add_space(ABSTAND);
-            if widgets::icon_button(ui, "keyboard", KOPF, app.ui.keymap_open, "Tastaturbelegung")
-                .clicked()
-            {
+            let resp =
+                widgets::icon_button(ui, "keyboard", KOPF, app.ui.keymap_open, "Tastaturbelegung");
+            merke(resp.rect);
+            if resp.clicked() {
                 app.ui.keymap_open = !app.ui.keymap_open;
             }
             ui.add_space(ABSTAND);
@@ -76,9 +90,13 @@ pub fn show(app: &mut App, ui: &mut Ui) {
                 .map(|p| p.name.clone())
                 .unwrap_or_else(|| "Vorlage".to_string());
             let tip = format!("Hotbar · {vorlage} — Vorlage wählen");
-            if widgets::icon_button(ui, "hotbar", KOPF, app.ui.hotbar_picker_open, &tip).clicked() {
+            let resp =
+                widgets::icon_button(ui, "hotbar", KOPF, app.ui.hotbar_picker_open, &tip);
+            merke(resp.rect);
+            if resp.clicked() {
                 app.ui.hotbar_picker_open = !app.ui.hotbar_picker_open;
             }
+            app.ui.last_kopf_links = kopf;
         },
     );
 
@@ -196,8 +214,9 @@ pub fn show(app: &mut App, ui: &mut Ui) {
             .max_rect(rechts_rect)
             .layout(Layout::right_to_left(Align::Center)),
         |ui| {
-            ui.set_clip_rect(rechts_rect);
+            ui.set_clip_rect(bar);
             ui.spacing_mut().item_spacing.x = 0.0;
+            let mut kopf: Option<Rect> = None;
             // Raster: Linksklick an/aus, Rechtsklick Menü
             let resp = widgets::icon_button(
                 ui,
@@ -218,6 +237,7 @@ pub fn show(app: &mut App, ui: &mut Ui) {
                 let p = ui.ctx().pointer_latest_pos().unwrap_or(resp.rect.center());
                 app.open_menu(crate::app::MenuKind::Chip(crate::app::StatusMenu::Raster), p);
             }
+            kopf = Some(resp.rect);
             ui.add_space(ABSTAND);
 
             // Fang (Klick: ein/aus · Rechtsklick: Fangmodi und Ausrichtung)
@@ -235,6 +255,7 @@ pub fn show(app: &mut App, ui: &mut Ui) {
                 let p = ui.ctx().pointer_latest_pos().unwrap_or(resp.rect.center());
                 app.open_menu(crate::app::MenuKind::Chip(crate::app::StatusMenu::Fang), p);
             }
+            kopf = kopf.map(|b| b.union(resp.rect));
             ui.add_space(ABSTAND);
 
             // Linienstärken: px (bildschirmkonstant) oder DPI (wie im PDF).
@@ -267,6 +288,8 @@ pub fn show(app: &mut App, ui: &mut Ui) {
                 let p = ui.ctx().pointer_latest_pos().unwrap_or(resp.rect.center());
                 app.open_menu(crate::app::MenuKind::Chip(crate::app::StatusMenu::Staerke), p);
             }
+            kopf = kopf.map(|b| b.union(resp.rect));
+            app.ui.last_kopf_rechts = kopf;
 
             // Maßstab und Zoom: klein, links von den Schaltern
             ui.add_space(8.0);

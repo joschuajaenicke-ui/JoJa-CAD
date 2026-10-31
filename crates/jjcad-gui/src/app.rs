@@ -534,6 +534,10 @@ pub struct UiState {
     /// Lage der Hotbar-Slots in der unteren Leiste (Regressionstest T0043:
     /// die Slots müssen mittig in der Leiste stehen)
     pub last_slots: Option<Rect>,
+    /// Lage der linken und rechten Schaltergruppe der unteren Leiste — geprüft
+    /// wird der Abstand zum Fensterrand (`tests_untere_leiste`).
+    pub last_kopf_links: Option<Rect>,
+    pub last_kopf_rechts: Option<Rect>,
     /// Tasten des Tastenbilds der Tastaturbelegung in Fensterkoordinaten
     /// (Regressionstest T0045: gesperrte Tasten dürfen sich nicht belegen lassen)
     pub last_tasten: Option<Vec<(&'static str, &'static str, Rect)>>,
@@ -598,6 +602,8 @@ impl Default for UiState {
             last_canvas: Rect::from_min_size(Pos2::ZERO, Vec2::new(1000.0, 700.0)),
             last_ribbon_content_h: 0.0,
             last_slots: None,
+            last_kopf_links: None,
+            last_kopf_rechts: None,
             last_tasten: None,
             last_ribbon_content_w: 0.0,
             zoom_edit: None,
@@ -5512,6 +5518,33 @@ mod tests_untere_leiste {
                 "Slots sind {} px breit, erwartet {erwartet_breite} px (zehn Slots à {} px)",
                 slots.width(),
                 crate::hotbar::SLOT
+            );
+        }
+    }
+
+    /// Die äußeren Schaltflächen brauchen Luft zum Fensterrand (T0043, Turn 3):
+    /// mit 8 px lagen sie praktisch am Bildschirmrand und wirkten abgeschnitten.
+    #[test]
+    fn randgruppen_haben_abstand_zum_fensterrand() {
+        for breite in [1080.0, 1500.0, 1920.0] {
+            let ctx = egui::Context::default();
+            let mut app = App::with_ctx(ctx.clone());
+            for _ in 0..3 {
+                frame(&mut app, &ctx, breite, 950.0);
+            }
+            let l = app.ui.last_kopf_links.expect("linke Gruppe");
+            let r = app.ui.last_kopf_rechts.expect("rechte Gruppe");
+            assert!(
+                l.left() >= 12.0,
+                "{breite} px: linke Schaltergruppe beginnt bei x = {} — zu nah am Rand",
+                l.left()
+            );
+            assert!(
+                breite - r.right() >= 12.0,
+                "{breite} px: rechte Gruppe endet bei x = {} (Randabstand {} px) \
+                 — die äußere Schaltfläche liegt am Fensterrand",
+                r.right(),
+                breite - r.right()
             );
         }
     }
