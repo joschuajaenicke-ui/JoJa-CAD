@@ -52,8 +52,11 @@ ausgeblendet.
   Bei Mehrfachauswahl erscheinen nur gemeinsame Felder; abweichende Werte zeigen `*variiert*`,
   Änderungen wirken auf die ganze Auswahl.
 - **Griffe**: Ausgewählte Elemente zeigen Griffe — Quadrate an Endpunkten und Ecken (Linie, Wand,
-  Polylinie, Rechteck; Mittelpunkt bei Kreis/Bogen/Ellipse) und Rauten in den Kantenmitten
-  geschlossener Polygone. Ziehen verschiebt den Punkt; bei einer Kante wird sie parallel
+  Polylinie, Rechteck; Mittelpunkt bei Kreis/Bogen/Ellipse, **jeder Basispunkt** bei Maß und
+  Maßkette) und Rauten in den Kantenmitten
+  geschlossener Polygone sowie an der **Mitte der Maßlinie** eines Maßes oder einer Maßkette
+  (zieht sie senkrecht zur Messrichtung, die Basispunkte bleiben stehen). Ziehen verschiebt den
+  Punkt; bei einer Kante wird sie parallel
   verschoben und die Nachbarkanten folgen, sodass sich Breite/Höhe eines Rechtecks direkt ändern
   lassen. `ESC` bricht das Ziehen ab. Beim Ziehen gilt derselbe **Winkelfang** wie beim
   Erstellen: `Ortho` hält den Punkt waagerecht/senkrecht und der Polarfang rastet auf seinen

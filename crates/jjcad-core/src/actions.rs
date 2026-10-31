@@ -2444,12 +2444,57 @@ pub fn execute(doc: &mut Document, id: &str, params: &Value) -> Result<Value, St
                                 *a1 = v;
                             }
                         }
-                        EntityKind::Dim { override_text, axis, .. } => {
+                        // Bemaßung: Basispunkte, Lage der Maßlinie und ihr
+                        // Abstand sind änderbar — wie bei jedem anderen Objekt
+                        // (T0055). Der Abstand kommt zuletzt, er rechnet aus
+                        // dem (neuen) ersten Basispunkt.
+                        EntityKind::Dim {
+                            a,
+                            b,
+                            line_pos,
+                            axis,
+                            override_text,
+                        } => {
                             if let Some(v) = text {
                                 *override_text = Some(v);
                             }
                             if let Some(ax) = p.dim_axis("axis") {
                                 *axis = ax;
+                            }
+                            if let Some(q) = p.pt("a") {
+                                *a = q;
+                            }
+                            if let Some(q) = p.pt("b") {
+                                *b = q;
+                            }
+                            if let Some(q) = p.pt("line_pos") {
+                                *line_pos = q;
+                            }
+                            if let Some(off) = p.len("offset") {
+                                let (_, n) = crate::render::dim_achse(&[*a, *b], *axis);
+                                let alt = (*line_pos - *a).dot(n);
+                                *line_pos = *line_pos + n * (off - alt);
+                            }
+                        }
+                        EntityKind::DimChain { pts, line_pos, axis } => {
+                            if let Some(ax) = p.dim_axis("axis") {
+                                *axis = ax;
+                            }
+                            if let Some(q) = p.pts("pts") {
+                                if q.len() < 2 {
+                                    return Err(
+                                        "Maßkette braucht mindestens zwei Punkte".to_string()
+                                    );
+                                }
+                                *pts = q;
+                            }
+                            if let Some(q) = p.pt("line_pos") {
+                                *line_pos = q;
+                            }
+                            if let Some(off) = p.len("offset") {
+                                let (_, n) = crate::render::dim_achse(pts, *axis);
+                                let alt = (*line_pos - pts[0]).dot(n);
+                                *line_pos = *line_pos + n * (off - alt);
                             }
                         }
                         EntityKind::Elevation { z, override_text, .. } => {

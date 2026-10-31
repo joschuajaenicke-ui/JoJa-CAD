@@ -119,6 +119,28 @@ fn stair_rechteck(a: V2, b: V2, width: f64) -> ([V2; 4], V2, V2, f64) {
     )
 }
 
+/// Griffe einer Bemaßung: ein Quadrat je Basispunkt, eine Raute an der Mitte
+/// der Maßlinie.
+///
+/// Die Raute ([`GripKind::Edge(0)`]) zieht die Maßlinie **senkrecht** zu ihrer
+/// Richtung — die Basispunkte bleiben stehen. Ohne sie ließe sich die Lage der
+/// Bemaßung nur über das Eigenschaften-Panel ändern (T0055).
+fn dim_griffe(e: &Entity) -> Vec<(GripKind, V2)> {
+    let mut out: Vec<(GripKind, V2)> = match &e.kind {
+        EntityKind::Dim { a, b, .. } => vec![(GripKind::Vert(0), *a), (GripKind::Vert(1), *b)],
+        EntityKind::DimChain { pts, .. } => pts
+            .iter()
+            .enumerate()
+            .map(|(i, p)| (GripKind::Vert(i), *p))
+            .collect(),
+        _ => return Vec::new(),
+    };
+    if let Some((s, t)) = jjcad_core::render::dim_line_span(&e.kind) {
+        out.push((GripKind::Edge(0), (s + t) * 0.5));
+    }
+    out
+}
+
 /// Alle Griffpunkte eines Elements mit ihrer Weltposition.
 pub fn grips_of(e: &Entity) -> Vec<(GripKind, V2)> {
     match &e.kind {
@@ -163,6 +185,10 @@ pub fn grips_of(e: &Entity) -> Vec<(GripKind, V2)> {
                 })
                 .collect()
         }
+        // Bemaßung: jeder Basispunkt ist ein Griff, dazu die Mitte der
+        // Maßlinie (Raute, `GripKind::Edge(0)`) — Ziehen verschiebt sie
+        // senkrecht zur Messrichtung (T0055).
+        EntityKind::Dim { .. } | EntityKind::DimChain { .. } => dim_griffe(e),
         // Füllfläche: die Ecken der Umgrenzung und der Inseln. Zwischenpunkte
         // einer geraden Kante fallen weg (`ist_ecke`) — der Farbeimer liefert
         // seinen Rand als dichten Punktzug.
@@ -196,7 +222,28 @@ pub fn apply_grip(orig: &Entity, kind: GripKind, target: V2) -> Option<Entity> {
 /// (`model::polyline_points`).
 pub fn apply_grip_tol(orig: &Entity, kind: GripKind, target: V2, tol: f64) -> Option<Entity> {
     let mut e = orig.clone();
+    // Maßlinie einer Bemaßung: eigener Weg, weil die Bewegung nur senkrecht zur
+    // Messrichtung läuft und die Rechnung im Kern steht
+    // (`render::dim_line_move`) — so liegt der Griff auf der gezeichneten Linie.
+    if kind == GripKind::Edge(0)
+        && matches!(
+            orig.kind,
+            EntityKind::Dim { .. } | EntityKind::DimChain { .. }
+        )
+    {
+        return if jjcad_core::render::dim_line_move(&mut e.kind, target) {
+            Some(e)
+        } else {
+            None
+        };
+    }
     match (&mut e.kind, kind) {
+        // Bemaßung: Basispunkte ziehen, die Maßlinie bleibt an ihrer Höhe.
+        (EntityKind::Dim { a, .. }, GripKind::Vert(0)) => *a = target,
+        (EntityKind::Dim { b, .. }, GripKind::Vert(1)) => *b = target,
+        (EntityKind::DimChain { pts, .. }, GripKind::Vert(i)) => {
+            *pts.get_mut(i)? = target;
+        }
         (EntityKind::Line { a, .. }, GripKind::Vert(0)) => *a = target,
         (EntityKind::Line { b, .. }, GripKind::Vert(1)) => *b = target,
         (EntityKind::Wall { a, .. }, GripKind::Vert(0)) => *a = target,
@@ -332,6 +379,19 @@ pub fn moving_points(e: &Entity, kind: GripKind) -> Vec<V2> {
         | (EntityKind::Wall { a, .. }, GripKind::Vert(0)) => vec![*a],
         (EntityKind::Line { b, .. }, GripKind::Vert(1))
         | (EntityKind::Wall { b, .. }, GripKind::Vert(1)) => vec![*b],
+        // Bemaßung: der gezogene Basispunkt wandert, die übrigen stehen.
+        (EntityKind::Dim { a, .. }, GripKind::Vert(0)) => vec![*a],
+        (EntityKind::Dim { b, .. }, GripKind::Vert(1)) => vec![*b],
+        (EntityKind::DimChain { pts, .. }, GripKind::Vert(i)) => {
+            pts.get(i).map(|p| vec![*p]).unwrap_or_default()
+        }
+        // Maßlinie: beide Enden wandern mit (senkrecht zur Messrichtung).
+        (EntityKind::Dim { .. } | EntityKind::DimChain { .. }, GripKind::Edge(0)) => {
+            match jjcad_core::render::dim_line_span(&e.kind) {
+                Some((s, t)) => vec![s, t],
+                None => Vec::new(),
+            }
+        }
         (EntityKind::Polyline { verts, .. } | EntityKind::Spline { verts, .. }, GripKind::Vert(i)) => {
             verts.get(i).map(|v| vec![v.p]).unwrap_or_default()
         }
@@ -432,6 +492,23 @@ pub fn bezugspunkte(e: &Entity, kind: GripKind) -> Vec<V2> {
     match (&e.kind, kind) {
         (EntityKind::Line { b, .. } | EntityKind::Wall { b, .. }, GripKind::Vert(0)) => vec![*b],
         (EntityKind::Line { a, .. } | EntityKind::Wall { a, .. }, GripKind::Vert(1)) => vec![*a],
+        // Bemaßung: der Bezug für Ortho/Polar ist der Nachbarpunkt der Kette.
+        (EntityKind::Dim { b, .. }, GripKind::Vert(0)) => vec![*b],
+        (EntityKind::Dim { a, .. }, GripKind::Vert(1)) => vec![*a],
+        (EntityKind::DimChain { pts, .. }, GripKind::Vert(i)) => {
+            let n = pts.len();
+            if n < 2 || i >= n {
+                return Vec::new();
+            }
+            let mut out = Vec::new();
+            if i > 0 {
+                out.push(pts[i - 1]);
+            }
+            if i + 1 < n {
+                out.push(pts[i + 1]);
+            }
+            out
+        }
         (
             EntityKind::Polyline { verts, closed } | EntityKind::Spline { verts, closed },
             GripKind::Vert(i),
@@ -514,6 +591,13 @@ fn kantenmitten(e: &Entity) -> Vec<V2> {
             let (ecken, _, _, _) = stair_rechteck(*a, *b, *width);
             (0..4).map(|i| mitte(ecken[i], ecken[(i + 1) % 4])).collect()
         }
+        // Mitte der Maßlinie: dort sitzt der Griff, also ist sie auch ein
+        // Fangpunkt des eigenen Elements.
+        EntityKind::Dim { .. } | EntityKind::DimChain { .. } => {
+            jjcad_core::render::dim_line_span(&e.kind)
+                .map(|(s, t)| vec![mitte(s, t)])
+                .unwrap_or_default()
+        }
         EntityKind::Fill { boundary, holes, .. } => {
             let mut out = Vec::new();
             for ring in std::iter::once(boundary).chain(holes.iter()) {
@@ -554,6 +638,10 @@ fn eckpunkte(e: &Entity) -> Vec<V2> {
         EntityKind::Stair { a, b, width, .. } => {
             stair_rechteck(*a, *b, *width).0.to_vec()
         }
+        // Basispunkte der Bemaßung: der Fang darf sie beim Ziehen nicht sperren
+        // und beim Fangen nicht doppelt anbieten (T0055).
+        EntityKind::Dim { a, b, .. } => vec![*a, *b],
+        EntityKind::DimChain { pts, .. } => pts.clone(),
         EntityKind::Fill { boundary, holes, .. } => boundary
             .iter()
             .chain(holes.iter().flatten())
@@ -582,6 +670,17 @@ pub fn edge_dir(e: &Entity, i: usize) -> Option<(V2, V2)> {
             return None;
         }
         return Some((p, d / l));
+    }
+    // Maßlinie: Richtung der gezeichneten Linie — der Griff steht quer dazu
+    // und wandert senkrecht (T0055).
+    if matches!(e.kind, EntityKind::Dim { .. } | EntityKind::DimChain { .. }) {
+        let (s, t) = jjcad_core::render::dim_line_span(&e.kind)?;
+        let d = t - s;
+        let l = d.len();
+        if l < 1e-9 {
+            return None;
+        }
+        return Some((s, d / l));
     }
     if let EntityKind::Polyline { verts, closed } = &e.kind {
         let n = verts.len();
@@ -1472,4 +1571,206 @@ mod tests_volumen_drag {
         }
     }
 
+}
+
+#[cfg(test)]
+mod tests_masskette {
+    use super::*;
+    use jjcad_core::model::DimAxis;
+
+    /// Dreipunktige Maßkette auf der Waagerechten, Maßlinie 400 mm darunter.
+    fn kette() -> Entity {
+        Entity::new(
+            7,
+            1,
+            EntityKind::DimChain {
+                pts: vec![
+                    V2::new(0.0, 0.0),
+                    V2::new(2000.0, 0.0),
+                    V2::new(5000.0, 0.0),
+                ],
+                line_pos: V2::new(1000.0, -400.0),
+                axis: DimAxis::X,
+            },
+        )
+    }
+
+    /// Jeder Basispunkt **und** die Maßlinie sind Griffe — vorher hatte eine
+    /// Maßkette gar keinen (T0055).
+    #[test]
+    fn jeder_basispunkt_und_die_masslinie_haben_einen_griff() {
+        let e = kette();
+        let griffe = grips_of(&e);
+        assert_eq!(
+            griffe,
+            vec![
+                (GripKind::Vert(0), V2::new(0.0, 0.0)),
+                (GripKind::Vert(1), V2::new(2000.0, 0.0)),
+                (GripKind::Vert(2), V2::new(5000.0, 0.0)),
+                // Mitte der gezeichneten Maßlinie
+                (GripKind::Edge(0), V2::new(2500.0, -400.0)),
+            ]
+        );
+    }
+
+    /// Ein Basispunkt folgt dem Zeiger, die übrigen Punkte und die Maßlinie
+    /// bleiben stehen.
+    #[test]
+    fn basispunkt_zieht_nur_sich_selbst() {
+        let neu = apply_grip(&kette(), GripKind::Vert(1), V2::new(2600.0, 300.0)).unwrap();
+        match &neu.kind {
+            EntityKind::DimChain { pts, line_pos, .. } => {
+                assert_eq!(pts[1], V2::new(2600.0, 300.0));
+                assert_eq!(pts[0], V2::new(0.0, 0.0));
+                assert_eq!(pts[2], V2::new(5000.0, 0.0));
+                assert_eq!(*line_pos, V2::new(1000.0, -400.0), "Maßlinie wandert mit");
+            }
+            k => panic!("keine Maßkette mehr: {k:?}"),
+        }
+    }
+
+    /// Die Raute zieht nur die Maßlinie — senkrecht zur Messrichtung, die
+    /// Basispunkte bleiben.
+    #[test]
+    fn masslinie_wandert_senkrecht_ohne_basispunkte() {
+        let neu = apply_grip(&kette(), GripKind::Edge(0), V2::new(3000.0, 700.0)).unwrap();
+        match &neu.kind {
+            EntityKind::DimChain { pts, line_pos, .. } => {
+                assert_eq!(
+                    pts,
+                    &vec![
+                        V2::new(0.0, 0.0),
+                        V2::new(2000.0, 0.0),
+                        V2::new(5000.0, 0.0)
+                    ]
+                );
+                // nur die Höhe zählt, die waagerechte Lage bleibt
+                assert!((line_pos.y - 700.0).abs() < 1e-9, "{line_pos:?}");
+                assert!((line_pos.x - 1000.0).abs() < 1e-9, "{line_pos:?}");
+            }
+            k => panic!("keine Maßkette mehr: {k:?}"),
+        }
+    }
+
+    /// Der gezogene Basispunkt darf sich nicht selbst fangen (Flackern), die
+    /// Maßlinie als Ganzes ebenso wenig.
+    #[test]
+    fn gezogener_punkt_sperrt_sich_selbst() {
+        assert_eq!(
+            moving_points(&kette(), GripKind::Vert(1)),
+            vec![V2::new(2000.0, 0.0)]
+        );
+        assert_eq!(
+            moving_points(&kette(), GripKind::Edge(0)),
+            vec![V2::new(0.0, -400.0), V2::new(5000.0, -400.0)]
+        );
+    }
+
+    /// Ortho und Polar richten sich am Nachbarpunkt der Kette aus.
+    #[test]
+    fn bezug_ist_der_nachbarpunkt() {
+        assert_eq!(
+            bezugspunkt(&kette(), GripKind::Vert(1)),
+            Some(V2::new(0.0, 0.0))
+        );
+        assert_eq!(bezugspunkt(&kette(), GripKind::Vert(0)), Some(V2::new(2000.0, 0.0)));
+        // Die Maßlinie bewegt sich eindimensional — kein Bezug.
+        assert_eq!(bezugspunkt(&kette(), GripKind::Edge(0)), None);
+    }
+
+    /// Der Griff unter dem Zeiger wird gefunden, und der Zug landet im
+    /// **Dokument** (gespeicherter Basispunkt) — der Weg der Zeichenfläche.
+    #[test]
+    fn mauszug_bewegt_den_basispunkt() {
+        let mut app = App::with_ctx(egui::Context::default());
+        app.session_mut()
+            .execute(
+                "dim.chain",
+                &serde_json::json!({"pts": [[0.0, 0.0], [2.0, 0.0], [5.0, 0.0]],
+                                    "line_pos": [1.0, -0.4], "axis": "x"}),
+            )
+            .expect("Maßkette");
+        let id = app.doc().ents().last().map(|e| e.id).expect("Maßkette");
+        // Griffe gibt es nur in der Auswahl (`App::grip_at`).
+        app.session_mut().selection = vec![id];
+
+        let (gid, kind) = app
+            .grip_at(V2::new(2000.0, 0.0), 5.0)
+            .expect("kein Griff am Basispunkt");
+        assert_eq!(gid, id);
+        assert_eq!(kind, GripKind::Vert(1));
+        app.begin_grip_drag(gid, kind);
+        assert!(app.update_grip_drag(V2::new(2600.0, 300.0)), "Zug kam nicht an");
+        app.end_grip_drag();
+
+        match &app.doc().entity(id).unwrap().kind {
+            EntityKind::DimChain { pts, .. } => {
+                assert_eq!(pts[1], V2::new(2600.0, 300.0), "{pts:?}");
+                assert_eq!(pts[0], V2::new(0.0, 0.0));
+            }
+            k => panic!("keine Maßkette mehr: {k:?}"),
+        }
+    }
+
+    /// Dasselbe für die Raute an der Maßlinie: sie verschiebt nur die Linie.
+    #[test]
+    fn mauszug_bewegt_die_masslinie() {
+        let mut app = App::with_ctx(egui::Context::default());
+        app.session_mut()
+            .execute(
+                "dim.chain",
+                &serde_json::json!({"pts": [[0.0, 0.0], [2.0, 0.0], [5.0, 0.0]],
+                                    "line_pos": [1.0, -0.4], "axis": "x"}),
+            )
+            .expect("Maßkette");
+        let id = app.doc().ents().last().map(|e| e.id).expect("Maßkette");
+        app.session_mut().selection = vec![id];
+
+        // Die Mitte der Maßlinie liegt bei (2500, -400).
+        let (gid, kind) = app
+            .grip_at(V2::new(2500.0, -400.0), 5.0)
+            .expect("kein Griff an der Maßlinie");
+        assert_eq!((gid, kind), (id, GripKind::Edge(0)));
+        app.begin_grip_drag(gid, kind);
+        assert!(app.update_grip_drag(V2::new(2500.0, 700.0)), "Zug kam nicht an");
+        app.end_grip_drag();
+
+        match &app.doc().entity(id).unwrap().kind {
+            EntityKind::DimChain { pts, line_pos, .. } => {
+                assert!((line_pos.y - 700.0).abs() < 1e-9, "{line_pos:?}");
+                assert_eq!(pts[1], V2::new(2000.0, 0.0), "Basispunkt wandert mit");
+            }
+            k => panic!("keine Maßkette mehr: {k:?}"),
+        }
+    }
+
+    /// Ein Einzelmaß hat dieselben Griffe.
+    #[test]
+    fn einzelmass_hat_basispunkte_und_masslinie() {
+        let e = Entity::new(
+            8,
+            1,
+            EntityKind::Dim {
+                a: V2::new(0.0, 0.0),
+                b: V2::new(3000.0, 0.0),
+                line_pos: V2::new(1500.0, -300.0),
+                axis: DimAxis::X,
+                override_text: None,
+            },
+        );
+        let griffe = grips_of(&e);
+        assert_eq!(
+            griffe,
+            vec![
+                (GripKind::Vert(0), V2::new(0.0, 0.0)),
+                (GripKind::Vert(1), V2::new(3000.0, 0.0)),
+                (GripKind::Edge(0), V2::new(1500.0, -300.0)),
+            ]
+        );
+        let neu = apply_grip(&e, GripKind::Vert(1), V2::new(3500.0, 0.0)).unwrap();
+        match &neu.kind {
+            EntityKind::Dim { b, .. } => assert_eq!(*b, V2::new(3500.0, 0.0)),
+            k => panic!("kein Maß mehr: {k:?}"),
+        }
+    }
 }
