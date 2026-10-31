@@ -1077,6 +1077,14 @@ pub(crate) fn geo_rows(e: &jjcad_core::model::Entity, unit: Unit) -> Vec<(&'stat
     if len > 0.0 {
         rows.push(("Länge", unit.format(len, unit.decimals())));
     }
+    // Relativer Abstand zwischen den Basispunkten: Linie und Wand laufen von
+    // `a` nach `b`, Delta ist also `b - a` (vorzeichenbehaftet, damit die
+    // Richtung ablesbar bleibt).
+    if let K::Line { a, b } | K::Wall { a, b, .. } = &e.kind {
+        let d = *b - *a;
+        rows.push(("Delta X", unit.format(d.x, unit.decimals())));
+        rows.push(("Delta Y", unit.format(d.y, unit.decimals())));
+    }
     let area = entity_area(e);
     if area > 0.0 {
         rows.push(("Fläche", area_text(unit, area)));
@@ -1714,6 +1722,67 @@ mod tests_geometrie_zeilen {
         let e = poly(&[(0.0, 0.0), (2000.0, 0.0)], false);
         let z = zeilen(&e, Unit::M);
         assert_eq!(z.iter().filter(|(n, _)| n == "Länge").count(), 1);
+    }
+
+    fn linie(a: (f64, f64), b: (f64, f64)) -> jjcad_core::model::Entity {
+        jjcad_core::model::Entity::new(
+            1,
+            1,
+            EntityKind::Line {
+                a: jjcad_core::geom::Vec2::new(a.0, a.1),
+                b: jjcad_core::geom::Vec2::new(b.0, b.1),
+            },
+        )
+    }
+
+    fn wand(a: (f64, f64), b: (f64, f64)) -> jjcad_core::model::Entity {
+        jjcad_core::model::Entity::new(
+            1,
+            1,
+            EntityKind::Wall {
+                a: jjcad_core::geom::Vec2::new(a.0, a.1),
+                b: jjcad_core::geom::Vec2::new(b.0, b.1),
+                thickness: 240.0,
+                height: 2600.0,
+                material: String::new(),
+                hatch: None,
+                align: jjcad_core::style::WallAlign::Center,
+            },
+        )
+    }
+
+    #[test]
+    fn linie_zeigt_delta_x_und_delta_y_zwischen_den_basispunkten() {
+        // (1,00; 2,00) → (4,00; 0,50): Delta X = +3,00 m, Delta Y = −1,50 m.
+        let z = zeilen(&linie((1000.0, 2000.0), (4000.0, 500.0)), Unit::M);
+        let namen: Vec<&str> = z.iter().map(|(n, _)| n.as_str()).collect();
+        assert_eq!(namen, vec!["Länge", "Delta X", "Delta Y"]);
+        assert_eq!(z[1].1, "3,00 m");
+        assert_eq!(z[2].1, "-1,50 m");
+    }
+
+    #[test]
+    fn wand_zeigt_delta_x_und_delta_y_zwischen_den_basispunkten() {
+        // (0,00; 0,00) → (0,00; 1,50): Delta X = 0, Delta Y = +1,50 m.
+        let z = zeilen(&wand((0.0, 0.0), (0.0, 1500.0)), Unit::M);
+        let wert = |name: &str| {
+            z.iter()
+                .find(|(n, _)| *n == name)
+                .map(|(_, w)| w.clone())
+                .unwrap_or_else(|| panic!("Zeile {name} fehlt"))
+        };
+        assert_eq!(wert("Delta X"), "0,00 m");
+        assert_eq!(wert("Delta Y"), "1,50 m");
+        // Länge der Basislinie bleibt die Strecke — Delta ist kein Ersatz.
+        assert_eq!(wert("Länge"), "1,50 m");
+    }
+
+    #[test]
+    fn delta_zeilen_nur_bei_linie_und_wand() {
+        // Eine Polylinie hat keinen einzelnen Basispunkt-Paar-Abstand.
+        let e = poly(&[(0.0, 0.0), (1000.0, 0.0), (1000.0, 500.0)], false);
+        let z = zeilen(&e, Unit::M);
+        assert_eq!(z.iter().filter(|(n, _)| n.starts_with("Delta")).count(), 0);
     }
 
     #[test]
