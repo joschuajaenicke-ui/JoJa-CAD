@@ -6,7 +6,7 @@ use crate::widgets;
 use egui::{Align, Color32, FontId, Layout, Pos2, Rect, RichText, Rounding, Sense, Stroke, Ui, Vec2};
 use jjcad_core::actions;
 use jjcad_core::geom::{Vec2 as V2};
-use jjcad_core::persist::DragMode;
+use jjcad_core::persist::{fest_belegt, DragMode};
 use jjcad_core::units::Unit;
 use serde_json::json;
 
@@ -1153,74 +1153,127 @@ fn settings_body(app: &mut App, ui: &mut Ui) {
 // Tastaturbelegung
 // ---------------------------------------------------------------------------
 
-const ROWS: &[&[(&str, &str, f32)]] = &[
-    &[
-        ("esc", "Esc", 1.0),
-        ("1", "1", 1.0),
-        ("2", "2", 1.0),
-        ("3", "3", 1.0),
-        ("4", "4", 1.0),
-        ("5", "5", 1.0),
-        ("6", "6", 1.0),
-        ("7", "7", 1.0),
-        ("8", "8", 1.0),
-        ("9", "9", 1.0),
-        ("0", "0", 1.0),
-        ("backspace", "Bksp", 1.6),
-    ],
-    &[
-        ("tab", "Tab", 1.4),
-        ("q", "Q", 1.0),
-        ("w", "W", 1.0),
-        ("e", "E", 1.0),
-        ("r", "R", 1.0),
-        ("t", "T", 1.0),
-        ("z", "Z", 1.0),
-        ("u", "U", 1.0),
-        ("i", "I", 1.0),
-        ("o", "O", 1.0),
-        ("p", "P", 1.0),
-        ("ü", "Ü", 1.0),
-    ],
-    &[
-        ("caps", "Caps", 1.7),
-        ("a", "A", 1.0),
-        ("s", "S", 1.0),
-        ("d", "D", 1.0),
-        ("f", "F", 1.0),
-        ("g", "G", 1.0),
-        ("h", "H", 1.0),
-        ("j", "J", 1.0),
-        ("k", "K", 1.0),
-        ("l", "L", 1.0),
-        ("ö", "Ö", 1.0),
-        ("ä", "Ä", 1.0),
-    ],
-    &[
-        ("shift", "Shift", 2.0),
-        ("y", "Y", 1.0),
-        ("x", "X", 1.0),
-        ("c", "C", 1.0),
-        ("v", "V", 1.0),
-        ("b", "B", 1.0),
-        ("n", "N", 1.0),
-        ("m", "M", 1.0),
-        (",", ",", 1.0),
-        (".", ".", 1.0),
-        ("-", "-", 1.0),
-    ],
-    &[
-        ("ctrl", "Strg", 1.6),
-        ("alt", "Alt", 1.4),
-        ("space", "Leertaste", 6.0),
-        ("enter", "Enter", 1.8),
-    ],
+/// Eine Tasteneinheit — die Breite einer normalen Taste ohne Zwischenraum.
+const KEY_W: f32 = 44.0;
+/// Höhe einer Tastenreihe.
+const KEY_H: f32 = 42.0;
+/// Zwischenraum zwischen zwei Tasten.
+const KEY_GAP: f32 = 4.0;
+/// Breite des Tastenbilds in Tasteneinheiten — jede Reihe schließt rechts damit ab.
+const KEY_UNITS: f32 = 15.0;
+/// Zahl der Tastenreihen.
+const KEY_ROWS: usize = 5;
+/// Beschriftung gesperrter Tasten: deutlich schwächer als `TEXT_FAINT`, damit
+/// „ausgegraut" auch im Bild erkennbar ist.
+const GESPERRT_TEXT: Color32 = Color32::from_rgb(0x45, 0x4C, 0x55);
+
+/// Tastenbild einer deutschen Tastatur: (Taste, Beschriftung, Zeile, Spalte,
+/// Breite). Zeile, Spalte und Breite rechnen in Tasteneinheiten (`KEY_W` +
+/// `KEY_GAP`), damit die Reihen rechtsbündig schließen. `enter` ist zwei
+/// Zeilen hoch und steht am rechten Rand neben `#` und dem rechten Umschalt —
+/// dort, wo die Enter-Taste einer deutschen Tastatur auch sitzt.
+const TASTEN: &[(&str, &str, usize, f32, f32)] = &[
+    // Ziffernreihe
+    ("esc", "Esc", 0, 0.0, 1.25),
+    ("1", "1", 0, 1.25, 1.0),
+    ("2", "2", 0, 2.25, 1.0),
+    ("3", "3", 0, 3.25, 1.0),
+    ("4", "4", 0, 4.25, 1.0),
+    ("5", "5", 0, 5.25, 1.0),
+    ("6", "6", 0, 6.25, 1.0),
+    ("7", "7", 0, 7.25, 1.0),
+    ("8", "8", 0, 8.25, 1.0),
+    ("9", "9", 0, 9.25, 1.0),
+    ("0", "0", 0, 10.25, 1.0),
+    ("backspace", "Bksp", 0, 11.25, 3.75),
+    // QWERTZ-Reihe
+    ("tab", "Tab", 1, 0.0, 1.5),
+    ("q", "Q", 1, 1.5, 1.0),
+    ("w", "W", 1, 2.5, 1.0),
+    ("e", "E", 1, 3.5, 1.0),
+    ("r", "R", 1, 4.5, 1.0),
+    ("t", "T", 1, 5.5, 1.0),
+    ("z", "Z", 1, 6.5, 1.0),
+    ("u", "U", 1, 7.5, 1.0),
+    ("i", "I", 1, 8.5, 1.0),
+    ("o", "O", 1, 9.5, 1.0),
+    ("p", "P", 1, 10.5, 1.0),
+    ("ü", "Ü", 1, 11.5, 1.0),
+    ("+", "+", 1, 12.5, 2.5),
+    // Grundreihe
+    ("caps", "Caps", 2, 0.0, 1.5),
+    ("a", "A", 2, 1.5, 1.0),
+    ("s", "S", 2, 2.5, 1.0),
+    ("d", "D", 2, 3.5, 1.0),
+    ("f", "F", 2, 4.5, 1.0),
+    ("g", "G", 2, 5.5, 1.0),
+    ("h", "H", 2, 6.5, 1.0),
+    ("j", "J", 2, 7.5, 1.0),
+    ("k", "K", 2, 8.5, 1.0),
+    ("l", "L", 2, 9.5, 1.0),
+    ("ö", "Ö", 2, 10.5, 1.0),
+    ("ä", "Ä", 2, 11.5, 1.0),
+    ("#", "#", 2, 12.5, 1.0),
+    ("enter", "Enter", 2, 13.5, 1.5),
+    // Umschalt-Reihe
+    ("shift", "Shift", 3, 0.0, 1.5),
+    ("y", "Y", 3, 1.5, 1.0),
+    ("x", "X", 3, 2.5, 1.0),
+    ("c", "C", 3, 3.5, 1.0),
+    ("v", "V", 3, 4.5, 1.0),
+    ("b", "B", 3, 5.5, 1.0),
+    ("n", "N", 3, 6.5, 1.0),
+    ("m", "M", 3, 7.5, 1.0),
+    (",", ",", 3, 8.5, 1.0),
+    (".", ".", 3, 9.5, 1.0),
+    ("-", "-", 3, 10.5, 1.0),
+    ("shift_r", "Shift", 3, 11.5, 2.0),
+    // Untere Reihe mit den rechten Steuerungstasten
+    ("ctrl", "Strg", 4, 0.0, 1.75),
+    ("alt", "Alt", 4, 1.75, 1.75),
+    ("space", "Leertaste", 4, 3.5, 8.0),
+    ("altgr", "AltGr", 4, 11.5, 1.75),
+    ("ctrl_r", "Strg", 4, 13.25, 1.75),
 ];
+
+/// Wie viele Reihen eine Taste hoch ist — nur `enter` ist zwei Reihen hoch.
+fn tasten_hoehe(key: &str) -> f32 {
+    if key == "enter" { 2.0 } else { 1.0 }
+}
+
+/// Fläche des ganzen Tastenbilds.
+fn tastatur_flaeche() -> Vec2 {
+    Vec2::new(
+        KEY_UNITS * KEY_W + (KEY_UNITS - 1.0) * KEY_GAP,
+        KEY_ROWS as f32 * KEY_H + (KEY_ROWS as f32 - 1.0) * KEY_GAP,
+    )
+}
+
+/// Rechtecke aller Tasten, bezogen auf die linke obere Ecke `orig`.
+/// **Eine** Quelle für Zeichnen und Prüfung (`tests_tastatur`).
+fn tasten_rechtecke(orig: Pos2) -> Vec<(&'static str, &'static str, Rect)> {
+    TASTEN
+        .iter()
+        .map(|(key, label, zeile, spalte, breite)| {
+            let h = tasten_hoehe(key);
+            let min = Pos2::new(
+                orig.x + spalte * (KEY_W + KEY_GAP),
+                orig.y + *zeile as f32 * (KEY_H + KEY_GAP),
+            );
+            let size = Vec2::new(
+                breite * KEY_W + (breite - 1.0) * KEY_GAP,
+                h * KEY_H + (h - 1.0) * KEY_GAP,
+            );
+            (*key, *label, Rect::from_min_size(min, size))
+        })
+        .collect()
+}
 
 fn keyboard_body(app: &mut App, ui: &mut Ui) {
     ui.horizontal(|ui| {
         ui.label(theme::dim(
-            "Taste anklicken, dann Funktion aus der Liste zuweisen. Jede Taste ist ein Item-Slot.",
+            "Taste anklicken, dann Funktion aus der Liste zuweisen. \
+             Ziffern und Steuerungstasten sind fest vergeben und ausgegraut.",
         ));
         ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
             if let Some(k) = app.ui.keymap_selected.clone() {
@@ -1230,68 +1283,87 @@ fn keyboard_body(app: &mut App, ui: &mut Ui) {
     });
     ui.add_space(6.0);
 
-    let key_w = 46.0;
-    let key_h = 42.0;
-    let gap = 4.0;
-    for row in ROWS {
-        ui.horizontal(|ui| {
-            for (key, label, wf) in *row {
-                let w = key_w * wf + gap * (wf - 1.0);
-                let (rect, resp) = ui.allocate_exact_size(Vec2::new(w, key_h), Sense::click());
-                let action = app.prefs.action_for_key(key);
-                let selected = app.ui.keymap_selected.as_deref() == Some(*key);
-                let hovered = resp.hovered();
-                if ui.is_rect_visible(rect) {
-                    let p = ui.painter();
-                    p.rect_filled(
-                        rect,
-                        Rounding::same(6.0),
-                        if selected {
-                            Palette::ACCENT_SOFT
-                        } else if hovered {
-                            Palette::PANEL_ALT
-                        } else {
-                            Palette::BG
-                        },
-                    );
-                    p.rect_stroke(
-                        rect,
-                        Rounding::same(6.0),
-                        Stroke::new(
-                            if selected { 1.5 } else { 1.0 },
-                            if selected {
-                                Palette::ACCENT
-                            } else if action.is_some() {
-                                Palette::BORDER
-                            } else {
-                                Palette::BORDER_SOFT
-                            },
+    let (rahmen, _) = ui.allocate_exact_size(tastatur_flaeche(), Sense::hover());
+    let tasten = tasten_rechtecke(rahmen.min);
+    app.ui.last_tasten = Some(tasten.clone());
+    for (key, label, rect) in tasten {
+        let gesperrt = fest_belegt(key);
+        // Gesperrte Tasten zeigen keine Belegung und nehmen keinen Klick an.
+        let action = if gesperrt.is_none() {
+            app.prefs.action_for_key(key)
+        } else {
+            None
+        };
+        let selected = gesperrt.is_none() && app.ui.keymap_selected.as_deref() == Some(key);
+        let sense = if gesperrt.is_none() {
+            Sense::click()
+        } else {
+            Sense::hover()
+        };
+        let resp = ui.interact(rect, ui.id().with(("taste", key)), sense);
+        let hovered = resp.hovered();
+        if ui.is_rect_visible(rect) {
+            let p = ui.painter();
+            p.rect_filled(
+                rect,
+                Rounding::same(6.0),
+                if selected {
+                    Palette::ACCENT_SOFT
+                } else if hovered && gesperrt.is_none() {
+                    Palette::PANEL_ALT
+                } else {
+                    Palette::BG
+                },
+            );
+            p.rect_stroke(
+                rect,
+                Rounding::same(6.0),
+                Stroke::new(
+                    if selected { 1.5 } else { 1.0 },
+                    if selected {
+                        Palette::ACCENT
+                    } else if action.is_some() {
+                        Palette::BORDER
+                    } else {
+                        Palette::BORDER_SOFT
+                    },
+                ),
+            );
+            p.text(
+                Pos2::new(rect.left() + 5.0, rect.top() + 4.0),
+                egui::Align2::LEFT_TOP,
+                label,
+                FontId::proportional(9.0),
+                if gesperrt.is_some() {
+                    GESPERRT_TEXT
+                } else {
+                    Palette::TEXT_FAINT
+                },
+            );
+            if let Some(a) = &action {
+                if let Some(def) = actions::action(a) {
+                    crate::icons::paint(
+                        p,
+                        Rect::from_center_size(
+                            rect.center() - Vec2::new(0.0, 3.0),
+                            Vec2::splat(16.0),
                         ),
+                        def.icon,
+                        if selected { Palette::ACCENT } else { Palette::TEXT_DIM },
                     );
-                    p.text(
-                        Pos2::new(rect.left() + 5.0, rect.top() + 4.0),
-                        egui::Align2::LEFT_TOP,
-                        *label,
-                        FontId::proportional(9.0),
-                        Palette::TEXT_FAINT,
-                    );
-                    if let Some(a) = &action {
-                        if let Some(def) = actions::action(a) {
-                            crate::icons::paint(
-                                p,
-                                Rect::from_center_size(
-                                    rect.center() - Vec2::new(0.0, 3.0),
-                                    Vec2::splat(16.0),
-                                ),
-                                def.icon,
-                                if selected { Palette::ACCENT } else { Palette::TEXT_DIM },
-                            );
-                        }
-                    }
                 }
-                if resp.clicked() {
-                    app.ui.keymap_selected = Some(key.to_string());
-                }
+            }
+        }
+        if resp.clicked() && gesperrt.is_none() {
+            app.ui.keymap_selected = Some(key.to_string());
+        }
+        match gesperrt {
+            // Hinweis auf den Grund: Ziffern gehören der Hotbar, die übrigen
+            // Steuerungstasten dem Ablauf (Esc/Enter/Rücktaste usw.).
+            Some(grund) => {
+                resp.on_hover_text(grund.grund());
+            }
+            None => {
                 if let Some(a) = action {
                     resp.on_hover_text(
                         actions::action(&a)
@@ -1300,8 +1372,7 @@ fn keyboard_body(app: &mut App, ui: &mut Ui) {
                     );
                 }
             }
-        });
-        ui.add_space(gap);
+        }
     }
 
     ui.add_space(8.0);
@@ -1486,5 +1557,198 @@ mod modaltests {
         frame(&ctx, &mut app, vec![]);
         assert!(!fenster(&ctx, "Neue Zeichnung"));
         assert!(!abdunklung(&ctx));
+    }
+}
+
+#[cfg(test)]
+mod tests_tastatur {
+    //! T0045: Das Tastenbild ist eine vollständige deutsche Tastatur, und die
+    //! fest vergebenen Tasten (Hotbar-Ziffern, Steuerungstasten) sind ausgegraut
+    //! und lassen sich nicht belegen.
+    //!
+    //! Geprüft wird jeweils das Bild bzw. der gezeichnete Zustand, nicht eine
+    //! im Test nachgebaute Rechnung: die Rechtecke kommen aus
+    //! `tasten_rechtecke` (dieselbe Quelle wie das Zeichnen), die Klicks laufen
+    //! als echte egui-Ereignisse durch den Dialog.
+    use super::*;
+
+    /// Bildzähler: egui blendet Fenster ein. Ohne laufende Zeit bleiben die
+    /// Farben mit Teil-Alpha stehen — der Vergleich mit der Palette bräuchte
+    /// dann eine eigene Rechnung.
+    fn naechste_zeit() -> f64 {
+        use std::sync::atomic::{AtomicU64, Ordering};
+        static ZAEHLER: AtomicU64 = AtomicU64::new(0);
+        ZAEHLER.fetch_add(1, Ordering::Relaxed) as f64 * 0.25
+    }
+
+    fn rahmen(ctx: &egui::Context, app: &mut App, events: Vec<egui::Event>) -> egui::FullOutput {
+        let input = egui::RawInput {
+            screen_rect: Some(Rect::from_min_size(Pos2::ZERO, Vec2::new(1500.0, 950.0))),
+            time: Some(naechste_zeit()),
+            events,
+            ..Default::default()
+        };
+        ctx.run(input, |ctx| show(app, ctx))
+    }
+
+    fn app_mit_tastatur() -> (App, egui::Context) {
+        let ctx = egui::Context::default();
+        let mut app = App::with_ctx(ctx.clone());
+        app.ui.keymap_open = true;
+        // mehrere Bilder: das Fenster setzt Größe und Lage erst nach dem
+        // ersten Aufbau (sonst liegen die Tastenrechtecke noch falsch)
+        for _ in 0..4 {
+            rahmen(&ctx, &mut app, vec![]);
+        }
+        (app, ctx)
+    }
+
+    fn taste_mit<'a>(
+        tasten: &'a [(&'static str, &'static str, Rect)],
+        key: &str,
+    ) -> &'a (&'static str, &'static str, Rect) {
+        tasten
+            .iter()
+            .find(|(k, _, _)| *k == key)
+            .unwrap_or_else(|| panic!("Taste {key} fehlt im Tastenbild"))
+    }
+
+    /// Klick mit echten Ereignissen: Bewegen, Drücken, Loslassen.
+    fn klick(ctx: &egui::Context, app: &mut App, pos: Pos2) {
+        let knopf = |pressed: bool| egui::Event::PointerButton {
+            pos,
+            button: egui::PointerButton::Primary,
+            pressed,
+            modifiers: egui::Modifiers::NONE,
+        };
+        rahmen(ctx, app, vec![egui::Event::PointerMoved(pos)]);
+        rahmen(ctx, app, vec![knopf(true)]);
+        rahmen(ctx, app, vec![knopf(false)]);
+        rahmen(ctx, app, vec![]);
+    }
+
+    #[test]
+    fn bild_ist_eine_vollstaendige_deutsche_tastatur() {
+        let (app, _ctx) = app_mit_tastatur();
+        let tasten = app.ui.last_tasten.clone().expect("Tastenbild gezeichnet");
+        for key in [
+            "+", "#", "shift_r", "ctrl_r", "altgr", "enter", "ü", "ö", "ä", ",", ".", "-",
+        ] {
+            taste_mit(&tasten, key);
+        }
+        // Jede Taste genau einmal — ein doppelter Eintrag würde eine Taste
+        // überdecken und wäre im Bild nicht zu sehen.
+        let mut keys: Vec<&str> = tasten.iter().map(|(k, _, _)| *k).collect();
+        let anzahl = keys.len();
+        keys.sort_unstable();
+        keys.dedup();
+        assert_eq!(keys.len(), anzahl, "Tastenbild enthält eine Taste doppelt");
+    }
+
+    #[test]
+    fn tasten_stehen_im_raster_ohne_ueberlappung() {
+        let (app, _ctx) = app_mit_tastatur();
+        let tasten = app.ui.last_tasten.clone().expect("Tastenbild gezeichnet");
+        let flaeche = Rect::from_min_size(tasten[0].2.min, tastatur_flaeche());
+        for (key, _, rect) in &tasten {
+            assert!(
+                flaeche.contains_rect(*rect),
+                "Taste {key} liegt außerhalb des Tastenbilds"
+            );
+        }
+        for (i, (ka, _, a)) in tasten.iter().enumerate() {
+            for (kb, _, b) in tasten.iter().skip(i + 1) {
+                let schnitt = a.intersect(*b);
+                assert!(
+                    schnitt.width() < 0.5 || schnitt.height() < 0.5,
+                    "Tasten {ka} und {kb} überlappen sich"
+                );
+            }
+        }
+    }
+
+    /// Die Enter-Taste sitzt am rechten Rand über zwei Reihen — vorher stand sie
+    /// in der unteren Reihe hinter der Leertaste.
+    #[test]
+    fn enter_steht_rechts_und_ist_zwei_reihen_hoch() {
+        let (app, _ctx) = app_mit_tastatur();
+        let tasten = app.ui.last_tasten.clone().expect("Tastenbild gezeichnet");
+        let rechts = tasten[0].2.left() + tastatur_flaeche().x;
+        let (_, _, enter) = *taste_mit(&tasten, "enter");
+        let (_, _, raute) = *taste_mit(&tasten, "#");
+        assert!(
+            (enter.right() - rechts).abs() < 0.5,
+            "Enter endet bei {}, der rechte Rand liegt bei {rechts}",
+            enter.right()
+        );
+        assert!(
+            (enter.height() - (2.0 * KEY_H + KEY_GAP)).abs() < 0.5,
+            "Enter ist {} px hoch, erwartet zwei Reihen",
+            enter.height()
+        );
+        assert!(
+            (enter.left() - (raute.right() + KEY_GAP)).abs() < 0.5,
+            "Enter steht nicht direkt rechts neben # ({} zu {}, Abstand {})",
+            enter.left(),
+            raute.right(),
+            enter.left() - raute.right()
+        );
+        assert!(
+            (enter.top() - raute.top()).abs() < 0.5,
+            "Enter beginnt nicht in der Reihe von #"
+        );
+        // Der rechte Umschalt steht links neben dem unteren Teil des Enter.
+        let (_, _, shift_r) = *taste_mit(&tasten, "shift_r");
+        assert!(
+            (shift_r.right() - (enter.left() - KEY_GAP)).abs() < 0.5 && shift_r.bottom() > enter.top(),
+            "rechter Umschalt sitzt nicht links neben Enter"
+        );
+    }
+
+    #[test]
+    fn gesperrte_tasten_nehmen_keinen_klick_an() {
+        let (mut app, ctx) = app_mit_tastatur();
+        for key in [
+            "1", "2", "5", "7", "0", "esc", "tab", "caps", "shift", "shift_r", "ctrl", "ctrl_r",
+            "enter", "backspace",
+        ] {
+            let tasten = app.ui.last_tasten.clone().expect("Tastenbild gezeichnet");
+            let (_, _, rect) = *taste_mit(&tasten, key);
+            klick(&ctx, &mut app, rect.center());
+            assert!(
+                app.ui.keymap_selected.is_none(),
+                "Taste {key} ist gesperrt, wurde aber ausgewählt"
+            );
+        }
+        // Gegenprobe: eine freie Taste lässt sich weiterhin wählen.
+        let tasten = app.ui.last_tasten.clone().expect("Tastenbild gezeichnet");
+        let (_, _, q) = *taste_mit(&tasten, "q");
+        klick(&ctx, &mut app, q.center());
+        assert_eq!(
+            app.ui.keymap_selected.as_deref(),
+            Some("q"),
+            "freie Taste lässt sich nicht mehr wählen"
+        );
+    }
+
+    /// Gesperrte Tasten sind im Bild grauer als freie — die Ausgrauung ist eine
+    /// Eigenschaft der gezeichneten Beschriftung, nicht nur der Logik.
+    #[test]
+    fn gesperrte_tasten_sind_ausgegraut() {
+        let (mut app, ctx) = app_mit_tastatur();
+        let out = rahmen(&ctx, &mut app, vec![]);
+        let farbe = |text: &str| {
+            out.shapes.iter().find_map(|cs| match &cs.shape {
+                egui::Shape::Text(t) if t.galley.text() == text => Some(t.fallback_color),
+                _ => None,
+            })
+        };
+        assert_eq!(farbe("7"), Some(GESPERRT_TEXT), "Ziffer 7 ist nicht ausgegraut");
+        assert_eq!(farbe("Esc"), Some(GESPERRT_TEXT), "Esc ist nicht ausgegraut");
+        assert_eq!(
+            farbe("Q"),
+            Some(Palette::TEXT_FAINT),
+            "freie Taste hat die Farbe einer gesperrten Taste"
+        );
     }
 }
