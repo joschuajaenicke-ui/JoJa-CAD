@@ -4833,10 +4833,24 @@ fn run_und_waehlen(app: &mut App, action: &str, params: serde_json::Value) -> bo
     ok
 }
 
+/// Legt diese Action ein **neues** Objekt an?
+///
+/// Nur für Erzeuger gelten die Vorgaben aus dem Eigenschaften-Panel (Ebene,
+/// Farbe, Stärke, Linientyp) — bei Änderungsaktionen würden sie den Stil
+/// fremder Objekte überschreiben. Die Bemaßung war hier lange vergessen: ihre
+/// Erzeuger heißen `dim.*` und nicht `draw.*`, deshalb fiel jede neue Maßkette
+/// auf die Standardebene „Bemaßung“ (rot) zurück, obwohl das Panel die
+/// gewählte Ebene und Farbe anzeigte (T0062). `dim.style` ist **kein**
+/// Erzeuger — das sind Maßketten-Einstellungen.
+fn ist_erzeuger(action: &str) -> bool {
+    action.starts_with("draw.")
+        || matches!(action, "dim.linear" | "dim.chain" | "dim.elevation")
+}
+
 fn run(app: &mut App, action: &str, params: serde_json::Value) -> bool {
     // Aktuelle Zeichen-Eigenschaften (Farbe/Stärke/Typ) an neue Elemente weitergeben
     let mut params = params;
-    if action.starts_with("draw.") {
+    if ist_erzeuger(action) {
         // Die im Layer-Panel gewählte Ebene gilt für Werkzeuge (der Nutzer
         // wählt sie selbst). Ohne diese Angabe legt die Befehls-Schicht das
         // Objekt auf die typgerechte Standardebene — richtig für MCP-Aufrufe
@@ -8654,5 +8668,150 @@ mod tests_schnellauswahl {
         let mut app = app_mit_objekten();
         tool_click(&mut app, V2::new(9000.0, 9000.0));
         assert_eq!(app.tool_id(), Some("modify.quickselect"));
+    }
+}
+
+mod tests_massketten_farbe {
+    //! T0062: Neue Maßketten übernehmen Ebene und Farbe aus dem
+    //! Eigenschaften-Panel und sind von Haus aus **schwarz**.
+    //!
+    //! Der Fehler steckte in `canvas::run`: die Vorgaben (Ebene, Farbe, Stärke,
+    //! Linientyp) wurden nur für `draw.*` weitergegeben. Die Erzeuger der
+    //! Bemaßung heißen `dim.*`; ihre neuen Objekte fielen deshalb in der
+    //! Befehls-Schicht auf die Standardebene „Bemaßung“ zurück und erbten
+    //! deren Rot — egal was im Panel stand.
+
+    use super::*;
+    use jjcad_core::style::Color;
+    use jjcad_core::units::Unit;
+
+    fn app() -> App {
+        let mut app = App::with_ctx(egui::Context::default());
+        app.doc_mut().settings.input_unit = Unit::Mm;
+        app
+    }
+
+    /// Höhenkote/Maß/… über die Befehls-Schicht (derselbe Weg wie die Aktionen).
+    fn neu(app: &mut App, action: &str, params: serde_json::Value) -> Entity {
+        assert!(run(app, action, params), "{action} ist fehlgeschlagen");
+        app.doc()
+            .entities
+            .iter()
+            .rev()
+            .find(|e| {
+                matches!(
+                    e.kind,
+                    EntityKind::Dim { .. }
+                        | EntityKind::DimChain { .. }
+                        | EntityKind::Elevation { .. }
+                )
+            })
+            .cloned()
+            .expect("keine Bemaßung angelegt")
+    }
+
+    fn ebene_name(app: &App, e: &Entity) -> String {
+        app.doc()
+            .layer(e.layer)
+            .map(|l| l.name.clone())
+            .unwrap_or_default()
+    }
+
+    /// Ohne Farbwahl im Panel ist eine neue Maßkette schwarz — auch wenn die
+    /// Ebene „Bemaßung“ selbst rot ist.
+    #[test]
+    fn neue_masskette_ist_schwarz() {
+        let mut app = app();
+        let e = neu(
+            &mut app,
+            "dim.chain",
+            json!({"pts": [[0.0, 0.0], [2000.0, 0.0], [4000.0, 0.0]],
+                   "line_pos": [0.0, -800.0]}),
+        );
+        assert_eq!(
+            app.doc().effective_color(&e),
+            Color::BLACK,
+            "neue Maßkette muss schwarz sein, ist {}",
+            app.doc().effective_color(&e).to_hex()
+        );
+    }
+
+    /// Die im Panel gewählte Ebene gilt auch für die Bemaßung — nicht die
+    /// Standardebene „Bemaßung“.
+    #[test]
+    fn masskette_landet_auf_der_gewaehlten_ebene() {
+        let mut app = app();
+        let ziel = app
+            .doc()
+            .layer_id_by_name("Text")
+            .expect("Ebene „Text“ fehlt");
+        app.doc_mut().current_layer = ziel;
+        let e = neu(
+            &mut app,
+            "dim.chain",
+            json!({"pts": [[0.0, 0.0], [2000.0, 0.0]], "line_pos": [0.0, -800.0]}),
+        );
+        assert_eq!(e.layer, ziel, "Ebene aus dem Panel");
+        assert_eq!(ebene_name(&app, &e), "Text");
+    }
+
+    /// Auch eine Farbe aus dem Panel bleibt stehen (vorher überschrieb die
+    /// Standardebene sie mit ihrem Rot).
+    #[test]
+    fn masskette_haelt_die_farbe_aus_dem_panel() {
+        let mut app = app();
+        app.ui.pending.color = Some(Color::BLUE);
+        let e = neu(
+            &mut app,
+            "dim.chain",
+            json!({"pts": [[0.0, 0.0], [2000.0, 0.0]], "line_pos": [0.0, -800.0]}),
+        );
+        assert_eq!(e.style.color, Some(Color::BLUE), "Farbe aus dem Panel");
+        assert_eq!(app.doc().effective_color(&e), Color::BLUE);
+    }
+
+    /// Dasselbe für das Einzelmaß und die Höhenkote — alle drei Erzeuger
+    /// laufen über denselben Parameterweg.
+    #[test]
+    fn einzelmass_und_hoehenkote_nehmen_die_vorgaben() {
+        let mut app = app();
+        let ziel = app.doc().layer_id_by_name("Schraffur").expect("Ebene fehlt");
+        app.doc_mut().current_layer = ziel;
+        app.ui.pending.color = Some(Color::GREEN);
+        let mass = neu(
+            &mut app,
+            "dim.linear",
+            json!({"a": [0.0, 0.0], "b": [3000.0, 0.0], "line_pos": [0.0, -500.0]}),
+        );
+        assert_eq!(mass.layer, ziel);
+        assert_eq!(mass.style.color, Some(Color::GREEN));
+        let kote = neu(&mut app, "dim.elevation", json!({"p": [1000.0, 0.0], "z": 2500.0}));
+        assert_eq!(kote.layer, ziel);
+        assert_eq!(kote.style.color, Some(Color::GREEN));
+    }
+
+    /// Klickweg wie mit der Maus: drei Punkte, Enter beendet die Kette. Das
+    /// Ergebnis trägt die Vorgaben aus den Werkzeugoptionen (T0062).
+    #[test]
+    fn klickweg_der_masskette_nimmt_die_vorgaben() {
+        let mut app = app();
+        let ziel = app.doc().layer_id_by_name("Achsen").expect("Ebene fehlt");
+        app.doc_mut().current_layer = ziel;
+        app.ui.pending.color = Some(Color::PURPLE);
+        app.start_tool("dim.chain");
+        tool_click(&mut app, V2::new(0.0, 0.0));
+        tool_click(&mut app, V2::new(2000.0, 0.0));
+        tool_click(&mut app, V2::new(4000.0, 0.0));
+        finish_tool(&mut app, true);
+        assert!(app.tool.is_none(), "die Kette ist beendet");
+        let e = app
+            .doc()
+            .entities
+            .iter()
+            .find(|e| matches!(e.kind, EntityKind::DimChain { .. }))
+            .cloned()
+            .expect("keine Maßkette angelegt");
+        assert_eq!(e.layer, ziel, "Ebene der Werkzeugoptionen");
+        assert_eq!(e.style.color, Some(Color::PURPLE), "Farbe der Werkzeugoptionen");
     }
 }
