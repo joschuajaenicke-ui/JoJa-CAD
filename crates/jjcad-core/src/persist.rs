@@ -636,6 +636,12 @@ impl UserPrefs {
                 .insert("modify.copy".into(), "ctrl+shift+c".into());
             self.bindings.insert("edit.copy".into(), "ctrl+c".into());
         }
+        // T0060: „Eigenschaften aufnehmen" (`modify.pickprops`) ist ersetzt durch
+        // die **Schnellauswahl**. Die alte Belegung würde `q` sonst für eine
+        // Funktion belegen, die es nicht mehr gibt — und der neuen die Taste
+        // wegnehmen. Entfernen lässt sie der Nachzieh-Schritt unten wieder
+        // vergeben.
+        self.bindings.remove("modify.pickprops");
         // `bindings` wird als Ganzes gespeichert. Eine später ergänzte Aktion
         // bekäme ihre Werktaste sonst nie: fehlende Einträge nachziehen, solange
         // die Taste nicht schon einer anderen Aktion gehört.

@@ -415,11 +415,17 @@ pub fn paint(painter: &Painter, rect: Rect, name: &str, color: Color32) {
         "select" => {
             i.poly(&[(5.0, 3.0), (18.0, 12.0), (12.0, 13.5), (15.0, 20.0), (12.5, 21.0), (9.5, 14.5), (5.0, 18.0)], true);
         }
-        "eyedropper" => {
-            i.line(4.0, 20.0, 11.0, 13.0);
-            i.poly(&[(9.0, 11.0), (13.0, 7.0), (17.0, 11.0), (13.0, 15.0)], true);
-            i.line(14.0, 6.0, 18.0, 2.0);
-            i.dot(4.0, 20.0, 1.4);
+        // Schnellauswahl (T0060): gestrichelter Ring mit einem Stift, dessen
+        // Spitze in den Ring zeigt — „das Objekt unter dem Zeiger aufnehmen“.
+        // Ring und Stift stehen als eigene Funktionen neben der Zeichnung,
+        // damit ein Test Strichelung und Lage messen kann (`spline_weg`-Muster).
+        "quickselect" => {
+            for (a, b) in schnellauswahl_ring() {
+                i.line(a.0, a.1, b.0, b.1);
+            }
+            i.poly(&schnellauswahl_stift(), true);
+            let (a, b) = schnellauswahl_spitze();
+            i.line(a.0, a.1, b.0, b.1);
         }
         "new" => {
             i.poly(&[(6.0, 2.0), (15.0, 2.0), (19.0, 6.0), (19.0, 22.0), (6.0, 22.0)], true);
@@ -684,6 +690,73 @@ pub fn paint(painter: &Painter, rect: Rect, name: &str, color: Color32) {
     }
 }
 
+// ---------------------------------------------------------------------------
+// Schnellauswahl-Icon (T0060)
+// ---------------------------------------------------------------------------
+
+/// Mittelpunkt und Radius des gestrichelten Rings im 24×24-Raster.
+pub(crate) const SCHNELLAUSWAHL_RING: (f32, f32, f32) = (8.6, 9.4, 5.6);
+
+/// Anzahl der Striche im Ring.
+pub(crate) const SCHNELLAUSWAHL_STRICHE: usize = 10;
+
+/// Anteil eines Strichs an seinem Platz im Ring (Rest ist Lücke) — 0,45 heißt:
+/// deutlich gestrichelt, nicht gepunktet und nicht durchgezogen.
+pub(crate) const SCHNELLAUSWAHL_ANTEIL: f32 = 0.45;
+
+/// Die Striche des Rings als Sehnen im Icon-Raster (24 × 24, y nach unten).
+///
+/// Ein Kreis aus `circle_stroke` wäre durchgezogen; die Strichelung ist Teil
+/// der Bildsprache („hier wird ausgewählt“) und deshalb einzeln berechnet.
+pub(crate) fn schnellauswahl_ring() -> Vec<((f32, f32), (f32, f32))> {
+    let (cx, cy, r) = SCHNELLAUSWAHL_RING;
+    let schritt = std::f32::consts::TAU / SCHNELLAUSWAHL_STRICHE as f32;
+    let halb = SCHNELLAUSWAHL_ANTEIL * schritt * 0.5;
+    let mut out = Vec::with_capacity(SCHNELLAUSWAHL_STRICHE);
+    for k in 0..SCHNELLAUSWAHL_STRICHE {
+        let mitte = k as f32 * schritt - std::f32::consts::FRAC_PI_2;
+        let (a0, a1) = (mitte - halb, mitte + halb);
+        out.push((
+            (cx + r * a0.cos(), cy + r * a0.sin()),
+            (cx + r * a1.cos(), cy + r * a1.sin()),
+        ));
+    }
+    out
+}
+
+/// Vier Ecken des Stifts: schmaler Körper von der Spitze im Ring bis unten
+/// rechts aus dem Ring heraus.
+pub(crate) fn schnellauswahl_stift() -> [(f32, f32); 4] {
+    let (tx, ty) = SCHNELLAUSWAHL_SPITZE_PUNKT;
+    let d = std::f32::consts::FRAC_1_SQRT_2;
+    let (dx, dy) = (d, d);
+    let (nx, ny) = (-dy, dx);
+    let (bx, by) = (tx + dx * SCHNELLAUSWAHL_LAENGE, ty + dy * SCHNELLAUSWAHL_LAENGE);
+    let h = SCHNELLAUSWAHL_HALBBREITE;
+    [
+        (tx + nx * h, ty + ny * h),
+        (bx + nx * h, by + ny * h),
+        (bx - nx * h, by - ny * h),
+        (tx - nx * h, ty - ny * h),
+    ]
+}
+
+/// Spitze des Stifts (ein Ende, innerhalb des Rings) und halbe Breite.
+pub(crate) const SCHNELLAUSWAHL_SPITZE_PUNKT: (f32, f32) = (10.4, 7.2);
+pub(crate) const SCHNELLAUSWAHL_LAENGE: f32 = 10.4;
+pub(crate) const SCHNELLAUSWAHL_HALBBREITE: f32 = 1.7;
+
+/// Querstrich kurz hinter der Spitze — der abgesetzte „Griff“ des Stifts.
+pub(crate) fn schnellauswahl_spitze() -> ((f32, f32), (f32, f32)) {
+    let (tx, ty) = SCHNELLAUSWAHL_SPITZE_PUNKT;
+    let d = std::f32::consts::FRAC_1_SQRT_2;
+    let (nx, ny) = (-d, d);
+    let h = SCHNELLAUSWAHL_HALBBREITE;
+    let px = tx + d * 3.0;
+    let py = ty + d * 3.0;
+    ((px + nx * h, py + ny * h), (px - nx * h, py - ny * h))
+}
+
 #[cfg(test)]
 mod tests_pan_icons {
     //! T0056: Das Umsetzen der Ansicht sind Funktionen mit eigenem Icon; im
@@ -777,5 +850,94 @@ mod tests_spline_icon {
                 "Stützpunkt ({x}, {y}) liegt außerhalb des Icon-Kastens"
             );
         }
+    }
+}
+
+#[cfg(test)]
+mod tests_schnellauswahl_icon {
+    //! T0060: Das Icon „Schnellauswahl" ist ein **gestrichelter** Ring mit einem
+    //! Stift, dessen Spitze in den Ring zeigt (Vorlage: Screenshot im Ticket).
+    //!
+    //! Ein durchgezogener Kreis und ein Stift außerhalb des Rings wären beim
+    //! Zeichnen nicht zu unterscheiden — gemessen wird deshalb: jeder Strich
+    //! liegt auf dem Ringradius, zwischen zwei Strichen bleibt eine Lücke, und
+    //! die Spitze sitzt **innerhalb** des Rings.
+
+    use super::*;
+
+    type P = (f32, f32);
+
+    fn mitte(a: P, b: P) -> P {
+        ((a.0 + b.0) * 0.5, (a.1 + b.1) * 0.5)
+    }
+
+    fn abstand(a: P, b: P) -> f32 {
+        ((a.0 - b.0).powi(2) + (a.1 - b.1).powi(2)).sqrt()
+    }
+
+    #[test]
+    fn ring_ist_gestrichelt() {
+        let (cx, cy, r) = SCHNELLAUSWAHL_RING;
+        let striche = schnellauswahl_ring();
+        assert_eq!(
+            striche.len(),
+            SCHNELLAUSWAHL_STRICHE,
+            "jeder Platz im Ring braucht genau einen Strich"
+        );
+        for (a, b) in &striche {
+            let d = abstand(mitte(*a, *b), (cx, cy));
+            assert!(
+                (d - r).abs() < 0.1,
+                "Strich liegt nicht auf dem Ring: Abstand {d}, Radius {r}"
+            );
+        }
+        // Lücke zwischen zwei Strichen gegen die Strichlänge: eine
+        // durchgezogene Linie hätte hier 0.
+        let mut min_luecke = f32::MAX;
+        let mut max_strich: f32 = 0.0;
+        for k in 0..striche.len() {
+            let (a, b) = striche[k];
+            let (_, c) = striche[(k + 1) % striche.len()];
+            max_strich = max_strich.max(abstand(a, b));
+            min_luecke = min_luecke.min(abstand(b, c));
+        }
+        assert!(
+            min_luecke > max_strich * 1.1,
+            "Ring ist nicht gestrichelt: Lücke {min_luecke} gegen Strich {max_strich}"
+        );
+    }
+
+    #[test]
+    fn stift_spitze_zeigt_in_den_ring() {
+        let (cx, cy, r) = SCHNELLAUSWAHL_RING;
+        let ecken = schnellauswahl_stift();
+        let spitze = mitte(ecken[0], ecken[3]);
+        let ende = mitte(ecken[1], ecken[2]);
+        assert!(
+            abstand(spitze, (cx, cy)) < r,
+            "die Spitze muss im Ring liegen (Aufnehmen), war bei {spitze:?}"
+        );
+        assert!(
+            abstand(ende, (cx, cy)) > r + 1.0,
+            "der Stift muss aus dem Ring herausragen, war bei {ende:?}"
+        );
+        // Breite über die vier Ecken: zwei Seiten im Abstand der halben Breite.
+        let breite = abstand(ecken[0], ecken[3]);
+        assert!(
+            (breite - 2.0 * SCHNELLAUSWAHL_HALBBREITE).abs() < 0.01,
+            "Stiftbreite {breite} passt nicht zur halben Breite"
+        );
+    }
+
+    #[test]
+    fn icon_ist_im_zeichner_eingetragen() {
+        let def = jjcad_core::actions::action("modify.quickselect").expect("Aktion fehlt");
+        assert_eq!(def.icon, "quickselect");
+        let quelle = include_str!("icons.rs");
+        let quelle = &quelle[..quelle.find("mod tests_schnellauswahl_icon").unwrap_or(quelle.len())];
+        assert!(
+            quelle.contains("\"quickselect\" =>"),
+            "Icon \"quickselect\" fehlt in `paint` — gezeichnet würde ein Kreis"
+        );
     }
 }
