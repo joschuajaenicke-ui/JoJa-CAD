@@ -1748,6 +1748,11 @@ pub fn fuellflaeche(app: &mut App, ui: &mut Ui, ziel: Ziel) {
 /// Alle Zeilen einer Bemaßung — für Erzeugen und Bearbeiten dieselben.
 pub fn bemassung(app: &mut App, ui: &mut Ui, ziel: Ziel) {
     let e: Option<Entity> = ziel.id().and_then(|id| app.doc().entity(id).cloned());
+    let unit = app.unit();
+    // Abstand der Maßlinie zu den Basispunkten (vorzeichenbehaftet).
+    let mut abstand = e
+        .as_ref()
+        .and_then(|e| jjcad_core::render::dim_offset(&e.kind));
     let (layer, farbe, mut achse, mut masstext) = match &e {
         Some(e) => match &e.kind {
             EntityKind::Dim {
@@ -1828,6 +1833,27 @@ pub fn bemassung(app: &mut App, ui: &mut Ui, ziel: Ziel) {
         );
     });
 
+    // Lage der Maßlinie: derselbe Wert, den die Raute an der Maßlinie zieht
+    // (T0055). Beim Erzeugen bestimmen die Klicks die Lage.
+    zeile("abstand");
+    match abstand {
+        Some(alt) => {
+            let mut v = alt;
+            widgets::field_row(ui, "Abstand", |ui| {
+                widgets::length_field(
+                    ui,
+                    &mut v,
+                    unit,
+                    110.0,
+                    widgets::KOORD_MIN_MM,
+                    widgets::KOORD_MAX_MM,
+                );
+            });
+            abstand = Some(v);
+        }
+        None => gesperrt_zeile(ui, "Abstand", "aus den Klicks"),
+    }
+
     zeile("kennzahlen");
     ui.add_space(4.0);
     match (&e, ziel) {
@@ -1887,6 +1913,14 @@ pub fn bemassung(app: &mut App, ui: &mut Ui, ziel: Ziel) {
                                     }),
                                 );
                                 geaendert = true;
+                            }
+                        }
+                        if let Some(v) = abstand {
+                            if let Some(alt) = jjcad_core::render::dim_offset(&e.kind) {
+                                if (v - alt).abs() > 1e-6 {
+                                    map.insert("offset".into(), serde_json::json!(unit.from_mm(v)));
+                                    geaendert = true;
+                                }
                             }
                         }
                     }
@@ -2044,6 +2078,8 @@ pub fn einfach(app: &mut App, ui: &mut Ui, ziel: Ziel, art: Einfach) {
     let mut hoehe: Option<f64> = None;
     let mut drehung: Option<f64> = None;
     let mut faktor: Option<f64> = None;
+    // Lage der Maßlinie einer Maßkette (Abstand zu den Basispunkten).
+    let mut abstand: Option<f64> = None;
 
     match art {
         Einfach::Kreis => {
@@ -2139,6 +2175,33 @@ pub fn einfach(app: &mut App, ui: &mut Ui, ziel: Ziel, art: Einfach) {
                 }
             });
         }
+        // Maßkette: jeder Basispunkt hängt am Griff in der Zeichnung, die
+        // **Lage der Maßlinie** steht hier als Abstand (vorzeichenbehaftet,
+        // positiv = links der Messrichtung) — dieselbe Zahl zieht die Raute
+        // auf der Maßlinie (T0055).
+        Einfach::Masskette => {
+            let wert = e
+                .as_ref()
+                .and_then(|e| jjcad_core::render::dim_offset(&e.kind));
+            zeile("abstand");
+            match wert {
+                Some(alt) => {
+                    let mut v = alt;
+                    widgets::field_row(ui, "Abstand", |ui| {
+                        widgets::length_field(
+                            ui,
+                            &mut v,
+                            unit,
+                            110.0,
+                            widgets::KOORD_MIN_MM,
+                            widgets::KOORD_MAX_MM,
+                        );
+                    });
+                    abstand = Some(v);
+                }
+                None => gesperrt_zeile(ui, "Abstand", "aus den Klicks"),
+            }
+        }
         Einfach::Block => {
             let (r0, s0) = match &e {
                 Some(e) => match &e.kind {
@@ -2209,6 +2272,9 @@ pub fn einfach(app: &mut App, ui: &mut Ui, ziel: Ziel, art: Einfach) {
                 widgets::field_row(ui, name, |ui| {
                     ui.label(theme::mono(wert.clone()));
                 });
+            }
+            if let EntityKind::DimChain { pts, .. } = &e.kind {
+                ui.label(theme::dim(format!("{} Basispunkte", pts.len())));
             }
             if let EntityKind::BlockRef { block, .. } = &e.kind {
                 let name = app
@@ -2301,6 +2367,16 @@ pub fn einfach(app: &mut App, ui: &mut Ui, ziel: Ziel, art: Einfach) {
                             }
                         }
                         _ => {}
+                    }
+                }
+            }
+            // Maßlinie verschieben: `offset` in der Eingabeeinheit, der Kern
+            // rechnet ihn auf die Achse der Bemaßung um.
+            if let (Some(e0), Some(v)) = (&e, abstand) {
+                if let Some(alt) = jjcad_core::render::dim_offset(&e0.kind) {
+                    if (v - alt).abs() > 1e-6 {
+                        params["offset"] = serde_json::json!(unit.from_mm(v));
+                        geaendert = true;
                     }
                 }
             }
@@ -3117,6 +3193,33 @@ mod tests {
         app.start_tool("dim.linear");
         let neu = zeichne(&mut app);
         assert_eq!(neu, auswahl, "Bemaßung: Zeilen weichen ab");
+    }
+
+    /// Die Maßkette hat im Panel einen **Abstand** (Lage der Maßlinie) und
+    /// zeigt ihn beim Platzieren wie bei der Auswahl (T0055).
+    #[test]
+    fn masskette_panel_zeigt_den_abstand() {
+        let mut app = App::with_ctx(egui::Context::default());
+        app.session_mut()
+            .execute("doc.settings", &json!({ "input_unit": "m" }))
+            .expect("Einheit");
+        app.session_mut()
+            .execute(
+                "dim.chain",
+                &json!({"pts": [[0.0, 0.0], [2.0, 0.0], [5.0, 0.0]],
+                        "line_pos": [1.0, -0.4], "axis": "x"}),
+            )
+            .expect("Maßkette anlegen");
+        let id = app.doc().ents().last().expect("Maßkette fehlt").id;
+
+        app.session_mut().selection = vec![id];
+        let auswahl = zeichne(&mut app);
+        assert!(auswahl.contains(&"abstand"), "Maßkette ohne Abstand: {auswahl:?}");
+
+        app.session_mut().selection.clear();
+        app.start_tool("dim.chain");
+        let neu = zeichne(&mut app);
+        assert_eq!(neu, auswahl, "Maßkette: Zeilen weichen ab");
     }
 
     /// Ein laufendes Erstellwerkzeug verdrängt die Auswahl aus dem Panel —

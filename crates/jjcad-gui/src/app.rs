@@ -1270,6 +1270,26 @@ impl App {
                                             "line_pos": [1.5, -0.6]}),
                     );
                 }
+                // Maßkette anlegen und auswählen: Basispunkt-Griffe, Raute an
+                // der Maßlinie und der Abstand im Eigenschaften-Panel in einem
+                // Bild (T0055).
+                "masskette" => {
+                    // Die Id kommt aus der Antwort — `entities.last()` ist seit
+                    // dem Zeichenrang nicht mehr das zuletzt Erzeugte (T0048).
+                    let antwort = self.session_mut().execute(
+                        "dim.chain",
+                        &serde_json::json!({"pts": [[0.0, -1.2], [2.0, -1.2],
+                                                    [3.6, -1.2], [6.0, -1.2]],
+                                            "line_pos": [3.0, -2.0], "axis": "x"}),
+                    );
+                    self.ui.props_open = true;
+                    if let Some(id) = antwort
+                        .ok()
+                        .and_then(|r| r["created"][0].as_u64())
+                    {
+                        self.session_mut().select(vec![id]);
+                    }
+                }
                 "settings" => self.ui.settings_open = true,
                 "help" => self.ui.help_open = true,
                 // Erweiterter Punktfang sichtbar machen: Werkzeug läuft, ein
