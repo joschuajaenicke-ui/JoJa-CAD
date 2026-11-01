@@ -701,6 +701,7 @@ pub fn show(app: &mut App, ctx: &egui::Context) {
     if app.ui.keymap_open {
         keymap_window(app, ctx);
     }
+    keymap_wechsel_dialog(app, ctx);
     keymap_name_dialog(app, ctx);
 
     // Hilfe
@@ -1948,8 +1949,94 @@ fn keymap_window(app: &mut App, ctx: &egui::Context) {
             app.ui.keymap_pos = Some(r.response.rect.min + d);
         }
     }
-    if !offen || ctx.input(|i| i.key_pressed(egui::Key::Escape)) {
+    // ESC gehört einer offenen Rückfrage (Wechsel/Speichern), nicht dem Fenster.
+    let esc = ctx.input(|i| i.key_pressed(egui::Key::Escape))
+        && app.ui.keymap_wechsel.is_none()
+        && app.ui.keymap_name.is_none();
+    if !offen || esc {
         app.ui.keymap_open = false;
+    }
+}
+
+/// Wechselt auf ein gespeichertes Layout (T0076). Ist die aktuelle Belegung in
+/// keinem Layout gespeichert, kommt erst die Rückfrage „Abbrechen / Verwerfen /
+/// Speichern" — sonst ginge die Änderung beim Wechsel still verloren.
+fn layout_wechseln(app: &mut App, wahl: usize) {
+    if Some(wahl) == app.prefs.keymap_aktiv() {
+        return;
+    }
+    if app.prefs.keymap_ungespeichert() {
+        app.ui.keymap_wechsel = Some(wahl);
+        return;
+    }
+    if let Some(name) = app.prefs.keymap_anwenden(wahl) {
+        let _ = app.prefs.save();
+        app.toast(format!("Layout · {name}"));
+    }
+}
+
+/// Rückfrage vor dem Wechsel aus einer ungespeicherten Belegung (T0076).
+/// „Speichern" öffnet die Namensabfrage; der Wechsel wird danach ausgeführt.
+fn keymap_wechsel_dialog(app: &mut App, ctx: &egui::Context) {
+    let Some(ziel) = app.ui.keymap_wechsel else {
+        return;
+    };
+    // Während die Namensabfrage steht, wird diese Rückfrage nicht gezeichnet.
+    if app.ui.keymap_name.is_some() {
+        return;
+    }
+    let zielname = app
+        .prefs
+        .keymap_presets
+        .get(ziel)
+        .map(|p| p.name.clone())
+        .unwrap_or_default();
+
+    #[derive(Clone, Copy)]
+    enum Wahl {
+        Abbrechen,
+        Verwerfen,
+        Speichern,
+    }
+    let mut wahl = None;
+    dim_background(ctx);
+    let mut offen = true;
+    modal_window(ctx, "Layout wechseln", 460.0, &mut offen).show(ctx, |ui| {
+        ui.set_width(436.0);
+        ui.label(theme::bold("Belegung nicht gespeichert", 13.0));
+        ui.add_space(4.0);
+        ui.label(theme::dim(format!(
+            "Die aktuelle Belegung gehört zu keinem Layout. Beim Wechsel auf \
+             „{zielname}“ gehen ihre Änderungen verloren."
+        )));
+        ui.add_space(10.0);
+        ui.horizontal(|ui| {
+            if ui.button("Abbrechen").clicked() {
+                wahl = Some(Wahl::Abbrechen);
+            }
+            if ui.button("Verwerfen").clicked() {
+                wahl = Some(Wahl::Verwerfen);
+            }
+            if ui.button("Speichern").clicked() {
+                wahl = Some(Wahl::Speichern);
+            }
+        });
+    });
+    if !offen || ctx.input(|i| i.key_pressed(egui::Key::Escape)) {
+        wahl = Some(Wahl::Abbrechen);
+    }
+    match wahl {
+        None => {}
+        Some(Wahl::Abbrechen) => app.ui.keymap_wechsel = None,
+        Some(Wahl::Verwerfen) => {
+            app.ui.keymap_wechsel = None;
+            if let Some(name) = app.prefs.keymap_anwenden(ziel) {
+                let _ = app.prefs.save();
+                app.toast(format!("Layout · {name}"));
+            }
+        }
+        // Erst sichern, dann wechseln (die Namensabfrage merkt sich das Ziel).
+        Some(Wahl::Speichern) => app.ui.keymap_name = Some(String::new()),
     }
 }
 
@@ -1996,6 +2083,14 @@ fn keymap_name_dialog(app: &mut App, ctx: &egui::Context) {
                 let _ = app.prefs.save();
                 app.ui.keymap_name = None;
                 app.toast(format!("Layout · gespeichert: {name}"));
+                // War ein Wechsel offen, wird er jetzt ausgeführt — die
+                // Änderung ist gesichert (T0076).
+                if let Some(ziel) = app.ui.keymap_wechsel.take() {
+                    if let Some(zielname) = app.prefs.keymap_anwenden(ziel) {
+                        let _ = app.prefs.save();
+                        app.toast(format!("Layout · {zielname}"));
+                    }
+                }
             }
             // Ungültiger Name: das Feld bleibt offen, die Meldung nennt den Grund.
             Err(e) => {
@@ -2065,13 +2160,19 @@ fn keyboard_layouts(app: &mut App, ui: &mut Ui) {
             .map(|(_, n)| n.clone())
             .unwrap_or_default();
         let zeile_h = keymap_zeile_hoehe(ui);
+        // Das Menü wächst mit der Zahl der Layouts (bis DROPDOWN_MAX_H) —
+        // vorher zeigte es nur einen kleinen Ausschnitt (T0076).
+        let menue_h =
+            (eintraege.len() as f32 * (zeile_h + 2.0) + 10.0)
+                .min(crate::panels::DROPDOWN_MAX_H);
         let mut feld_flaeche = None;
-        if let Some(wahl) = crate::panels::dropdown_mit_hoehe_rect(
+        if let Some(wahl) = crate::panels::dropdown_mit_menue(
             ui,
             "keymap_layout",
             &beschriftung,
             None,
             zeile_h,
+            Some(menue_h),
             &mut feld_flaeche,
             |ui| {
                 let mut out = None;
@@ -2084,10 +2185,7 @@ fn keyboard_layouts(app: &mut App, ui: &mut Ui) {
             },
         ) {
             if wahl != usize::MAX && Some(wahl) != aktiv {
-                if let Some(name) = app.prefs.keymap_anwenden(wahl) {
-                    let _ = app.prefs.save();
-                    app.toast(format!("Layout · {name}"));
-                }
+                layout_wechseln(app, wahl);
             }
         }
         if let Some(r) = feld_flaeche {
@@ -3389,6 +3487,155 @@ mod tests_tastatur {
             "die Zeile ist nur {:.1} px hoch",
             erste.height()
         );
+    }
+
+    /// Mitte der gezeichneten Beschriftung `label` (Knopf einer Rückfrage).
+    fn text_mitte(out: &egui::FullOutput, label: &str) -> Option<Pos2> {
+        out.shapes.iter().find_map(|cs| match &cs.shape {
+            egui::Shape::Text(t) if t.galley.text() == label => {
+                Some(t.pos + t.galley.size() / 2.0)
+            }
+            _ => None,
+        })
+    }
+
+    /// T0076: Das Auswahlmenü wächst mit der Zahl der Layouts — es zeigt alle
+    /// Layouts (hier zehn) und bleibt dabei im Fenster.
+    #[test]
+    fn layoutmenue_waechst_mit_der_zahl_der_layouts() {
+        let (mut app, ctx) = app_mit_tastatur();
+        app.prefs.keymap_presets = (0..10)
+            .map(|i| jjcad_core::persist::KeymapPreset {
+                name: format!("Layout {i:02}"),
+                bindings: Default::default(),
+            })
+            .collect();
+        app.prefs.keymap_aktiv = Some(0);
+        let zeile = rahmen(&ctx, &mut app, vec![]);
+        let _ = zeile;
+        let feld = app
+            .ui
+            .last_keymap_zeile
+            .clone()
+            .expect("Layoutzeile gezeichnet")[0]
+            .1;
+        klick(&ctx, &mut app, feld.center());
+        let out = rahmen(&ctx, &mut app, vec![]);
+        let mut ys = Vec::new();
+        for i in 0..10 {
+            let name = format!("Layout {i:02}");
+            let mitte = text_mitte(&out, &name)
+                .unwrap_or_else(|| panic!("„{name}“ steht nicht im Menü"));
+            assert!(
+                mitte.y > 0.0 && mitte.y < 950.0,
+                "„{name}“ steht außerhalb des Fensters (y = {})",
+                mitte.y
+            );
+            ys.push(mitte.y);
+        }
+        let spanne = ys.iter().cloned().fold(f32::MIN, f32::max)
+            - ys.iter().cloned().fold(f32::MAX, f32::min);
+        assert!(
+            spanne > 8.0 * 20.0,
+            "das Menü zeigt nur einen Ausschnitt (Höhe der zehn Zeilen: {spanne:.0} px)"
+        );
+    }
+
+    /// T0076: Wechsel aus einer ungespeicherten Belegung fragt nach, statt die
+    /// Änderung still zu verwerfen.
+    #[test]
+    fn wechsel_aus_ungespeicherter_belegung_fragt_nach() {
+        let (mut app, _ctx) = app_mit_tastatur();
+        app.prefs.bind("draw.wall", "t");
+        assert!(app.prefs.keymap_ungespeichert());
+        layout_wechseln(&mut app, 0);
+        assert_eq!(
+            app.ui.keymap_wechsel,
+            Some(0),
+            "der Wechsel läuft ohne Rückfrage durch"
+        );
+        assert_eq!(
+            app.prefs.action_for_key("t").as_deref(),
+            Some("draw.wall"),
+            "die Belegung wurde schon verworfen"
+        );
+    }
+
+    /// T0076: „Abbrechen" lässt alles stehen, „Verwerfen" wechselt ohne Sichern.
+    #[test]
+    fn rueckfrage_abbrechen_und_verwerfen() {
+        let _sperre = KONFIG.lock().unwrap_or_else(|e| e.into_inner());
+        let _konfig = WegwerfKonfig::neu("wechsel-rueckfrage");
+        let (mut app, ctx) = app_mit_tastatur();
+        app.prefs.bind("draw.wall", "t");
+        layout_wechseln(&mut app, 0);
+        // Ein frisches Fenster (Area) ist erst im zweiten Bild sichtbar.
+        rahmen(&ctx, &mut app, vec![]);
+        let out = rahmen(&ctx, &mut app, vec![]);
+        // „Abbrechen": nichts ändert sich.
+        let abbrechen = text_mitte(&out, "Abbrechen").expect("kein Abbrechen-Knopf");
+        klick(&ctx, &mut app, abbrechen);
+        assert!(app.ui.keymap_wechsel.is_none(), "die Rückfrage bleibt stehen");
+        assert!(app.prefs.keymap_ungespeichert(), "die Änderung ging verloren");
+
+        // „Verwerfen": das Ziel wird angewendet, die Änderung fällt weg.
+        layout_wechseln(&mut app, 0);
+        rahmen(&ctx, &mut app, vec![]);
+        let out = rahmen(&ctx, &mut app, vec![]);
+        let verwerfen = text_mitte(&out, "Verwerfen").expect("kein Verwerfen-Knopf");
+        klick(&ctx, &mut app, verwerfen);
+        assert!(app.ui.keymap_wechsel.is_none());
+        assert_eq!(app.prefs.keymap_aktiv(), Some(0));
+        assert!(
+            app.prefs.action_for_key("t").is_none(),
+            "die ungespeicherte Taste blieb belegt"
+        );
+    }
+
+    /// T0076: „Speichern" sichert die Belegung und wechselt danach auf das Ziel.
+    #[test]
+    fn rueckfrage_speichern_sichert_und_wechselt() {
+        let _sperre = KONFIG.lock().unwrap_or_else(|e| e.into_inner());
+        let _konfig = WegwerfKonfig::neu("wechsel-speichern");
+        let (mut app, ctx) = app_mit_tastatur();
+        // Ein zweites, leeres Ziel anlegen, damit der Wechsel etwas zu tun hat.
+        app.prefs.keymap_presets.push(jjcad_core::persist::KeymapPreset {
+            name: "Ziel".to_string(),
+            bindings: Default::default(),
+        });
+        app.prefs.keymap_aktiv = Some(0);
+        app.prefs.bind("draw.wall", "t");
+        layout_wechseln(&mut app, 1);
+        rahmen(&ctx, &mut app, vec![]);
+        let out = rahmen(&ctx, &mut app, vec![]);
+        let sichern = text_mitte(&out, "Speichern").expect("kein Speichern-Knopf");
+        klick(&ctx, &mut app, sichern);
+        assert!(app.ui.keymap_name.is_some(), "die Namensabfrage fehlt");
+
+        // Der Nutzer tippt einen Namen und bestätigt.
+        app.ui.keymap_name = Some("Neu".to_string());
+        rahmen(&ctx, &mut app, vec![]);
+        rahmen(
+            &ctx,
+            &mut app,
+            vec![egui::Event::Key {
+                key: egui::Key::Enter,
+                physical_key: None,
+                pressed: true,
+                repeat: false,
+                modifiers: egui::Modifiers::NONE,
+            }],
+        );
+        assert!(
+            app.prefs.keymap_presets.iter().any(|p| p.name == "Neu"),
+            "das Layout wurde nicht gesichert"
+        );
+        assert_eq!(
+            app.prefs.keymap_aktiv(),
+            Some(1),
+            "nach dem Sichern wurde nicht auf das Ziel gewechselt"
+        );
+        assert!(app.ui.keymap_wechsel.is_none(), "der Wechsel bleibt offen");
     }
 
     /// T0076: „Speichern …" öffnet die Namensabfrage, Enter legt das Layout an —

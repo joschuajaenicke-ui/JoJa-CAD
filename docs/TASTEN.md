@@ -116,6 +116,14 @@ Knopf „Werkseinstellungen".
   Nach dem Speichern steht dort der gespeicherte Name, nach einer Änderung von
   Hand „Eigene Belegung". Ohne gemerkten Eintrag (alte `prefs.json`) gilt das
   Layout, dessen Belegung der aktuellen entspricht.
+- Das **Auswahlmenü wächst mit der Zahl der Layouts** (bis rund 15 Zeilen,
+  `panels::DROPDOWN_MAX_H`); reicht der Platz unter dem Feld nicht, öffnet es
+  nach oben. Darüber wird gerollt.
+- **Wechsel aus einer ungespeicherten Belegung** fragt nach: *Abbrechen*
+  (nichts ändern), *Verwerfen* (wechseln, Änderung fällt weg) oder *Speichern*
+  (Belegung sichern, danach wechseln — die Namensabfrage merkt sich das Ziel).
+  Ungespeichert heißt: die Belegung steht in **keinem** Layout
+  (`UserPrefs::keymap_ungespeichert`).
 - **Löschen** entfernt das in der Auswahl stehende gespeicherte Layout; die
   Tasten bleiben gültig, danach gilt „Eigene Belegung". Die Werkseinstellung
   lässt sich nicht löschen.
@@ -170,6 +178,10 @@ Knopf „Werkseinstellungen".
 | Export/Import (auch nackte Belegung) | `persist::tests::layout_wird_exportiert_und_importiert`, `…::import_nimmt_auch_eine_nackte_belegung` |
 | Fenster: keine Funktionsauswahl, Layoutzeile da | `dialogs::tests_tastatur::tastaturfenster_hat_keine_funktionsauswahl_mehr` |
 | Auswahlfeld und Knöpfe gleich hoch | `dialogs::tests_tastatur::layoutzeile_hat_fuer_alle_dieselbe_hoehe` |
+| Auswahlmenü wächst mit der Zahl der Layouts | `dialogs::tests_tastatur::layoutmenue_waechst_mit_der_zahl_der_layouts` |
+| Rückfrage: Abbrechen/Verwerfen | `dialogs::tests_tastatur::rueckfrage_abbrechen_und_verwerfen` |
+| Rückfrage: Speichern sichert und wechselt | `dialogs::tests_tastatur::rueckfrage_speichern_sichert_und_wechselt` |
+| Ungespeichert erkannt | `persist::tests::ungespeicherte_belegung_wird_erkannt` |
 | Gespeicherter Name steht in der Auswahl | `persist::tests::gespeichertes_layout_steht_auch_bei_gleicher_belegung_in_der_auswahl` |
 | Löschen über die Layoutzeile | `dialogs::tests_tastatur::loeschen_entfernt_das_gewaehlte_layout` |
 | Breite = Tastenbild, i links oben | `dialogs::tests_tastatur::fenster_ist_so_breit_wie_das_tastenbild`, `…::infosymbol_steht_links_in_der_oberen_leiste` |

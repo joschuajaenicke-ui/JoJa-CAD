@@ -585,6 +585,10 @@ pub struct UiState {
     pub keymap_selected: Option<String>,
     /// Name für „Layout speichern …" (T0076) — `Some` = das Eingabefenster steht.
     pub keymap_name: Option<String>,
+    /// Ziel-Layout, auf das gewechselt werden soll, während die aktuelle
+    /// Belegung ungespeichert ist (T0076): Solange das Feld steht, fragt die
+    /// Rückfrage „Abbrechen / Verwerfen / Speichern".
+    pub keymap_wechsel: Option<usize>,
     /// Lage des zuletzt gezogenen Tastaturfensters (T0076). `None` = zentriert;
     /// die Kopfleiste ist die Ziehfläche, weil das Fenster keine Titelleiste hat.
     pub keymap_pos: Option<egui::Pos2>,
@@ -685,6 +689,7 @@ impl Default for UiState {
             slot_drag: None,
             keymap_selected: None,
             keymap_name: None,
+            keymap_wechsel: None,
             keymap_pos: None,
             last_keymap_rect: None,
             last_keymap_info: None,
