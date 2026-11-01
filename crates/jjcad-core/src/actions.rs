@@ -3517,9 +3517,15 @@ fn polyline_seg_span(
 
 /// Welches Segment einer Polylinie der Klick trifft und welchen Abschnitt
 /// (Parameter 0…1 in Laufrichtung) er darin entfernt.
+///
+/// Schneidet sich die Polylinie **selbst**, sind ihre übrigen Segmente
+/// ebenfalls Schnittkanten — sonst hätte ein Klick auf dem kreuzenden Schenkel
+/// den ganzen Schenkel entfernt statt bis zum Kreuzungspunkt zu stutzen
+/// (T0077, Turn 2).
 fn polyline_trim(
     verts: &[Vertex],
     closed: bool,
+    id: Id,
     at: Vec2,
     cutters: &[(Seg, Id)],
 ) -> Option<(usize, f64, f64)> {
@@ -3539,9 +3545,17 @@ fn polyline_trim(
         }
     }
     let (i, _) = best?;
+    // Die eigenen Segmente als Schnittkanten — außer dem angeklickten selbst
+    // (es liegt unter dem Zeiger und schnitte sich nicht sinnvoll).
+    let mut schnitte: Vec<(Seg, Id)> = cutters.to_vec();
+    for (j, sg) in segs.iter().enumerate() {
+        if j != i {
+            schnitte.push((sg.clone(), id));
+        }
+    }
     let p0 = verts[i].p;
     let p1 = verts[(i + 1) % verts.len()].p;
-    let (t0, t1) = polyline_seg_span(p0, p1, verts[i].bulge, at, cutters)?;
+    let (t0, t1) = polyline_seg_span(p0, p1, verts[i].bulge, at, &schnitte)?;
     Some((i, t0, t1))
 }
 
@@ -3663,7 +3677,7 @@ pub fn trim_vorschau(doc: &Document, id: Id, at: Vec2, cutters: &[Id]) -> Vec<Se
             vec![Seg::Arc(Arc::new(*c, *r, a1, a0))]
         }
         EntityKind::Polyline { verts, closed } => {
-            let Some((i, t0, t1)) = polyline_trim(verts, *closed, at, &segs) else {
+            let Some((i, t0, t1)) = polyline_trim(verts, *closed, id, at, &segs) else {
                 return Vec::new();
             };
             let b = verts[i].bulge;
@@ -3803,7 +3817,7 @@ fn trim_entity(doc: &mut Document, id: Id, at: Vec2, cutters: &[Id]) -> Result<V
             Ok(vec![])
         }
         EntityKind::Polyline { verts, closed } => {
-            let Some((i, t0, t1)) = polyline_trim(verts, *closed, at, &segs) else {
+            let Some((i, t0, t1)) = polyline_trim(verts, *closed, id, at, &segs) else {
                 return Ok(vec![]);
             };
             let stuecke: Vec<EntityKind> = polyline_rest(verts, *closed, i, t0, t1)
