@@ -803,21 +803,45 @@ pub fn show(app: &mut App, ctx: &egui::Context) {
         }
     }
 
-    // Neue Zeichnung bestätigen
-    if app.ui.confirm_new {
+    // Datei-Reiter schließen (T0073): ungespeicherte Änderungen fragen nach.
+    if let Some(idx) = app.ui.confirm_close {
         dim_background(ctx);
         let mut close = false;
         // Fenster-Flag: startet offen, false = über das X geschlossen.
         let mut win_close = true;
-        let mut confirmed = false;
-        modal_window(ctx, "Neue Zeichnung", 420.0, &mut win_close).show(ctx, |ui| {
-            ui.set_width(400.0);
-            ui.label("Neue Zeichnung anlegen?");
-            ui.label(theme::dim("Nicht gespeicherte Änderungen der aktuellen Zeichnung bleiben in ihrem Reiter erhalten."));
+        let mut verwerfen = false;
+        let mut speichern = false;
+        let name = app
+            .tabs
+            .get(idx)
+            .map(|t| t.session.doc.name.clone())
+            .unwrap_or_default();
+        let hat_speicherort = app
+            .tabs
+            .get(idx)
+            .map(|t| t.session.doc.path.is_some())
+            .unwrap_or(false);
+        modal_window(ctx, "Datei schließen", 470.0, &mut win_close).show(ctx, |ui| {
+            ui.set_width(450.0);
+            ui.label(format!("„{name}“ ist nicht gespeichert."));
+            if hat_speicherort {
+                ui.label(theme::dim(
+                    "Speichern und schließen legt den Reiter ab, Verwerfen verwirft die Änderungen.",
+                ));
+            } else {
+                ui.label(theme::dim(
+                    "Für diese Zeichnung gibt es noch keinen Speicherort — sie lässt sich nur über „Speichern unter“ sichern.",
+                ));
+            }
             ui.add_space(8.0);
             button_row(ui, |ui| {
-                if ui.button("Anlegen").clicked() {
-                    confirmed = true;
+                if hat_speicherort
+                    && ui.button("Speichern und schließen").clicked()
+                {
+                    speichern = true;
+                }
+                if ui.button("Verwerfen").clicked() {
+                    verwerfen = true;
                 }
                 if ui.button("Abbrechen").clicked() {
                     close = true;
@@ -827,12 +851,14 @@ pub fn show(app: &mut App, ctx: &egui::Context) {
         if !win_close {
             close = true; // X im Fensterrahmen
         }
-        if confirmed {
-            app.new_document();
-            app.ui.confirm_new = false;
-        }
-        if close {
-            app.ui.confirm_new = false;
+        if speichern {
+            app.close_tab_speichern(idx);
+            app.ui.confirm_close = None;
+        } else if verwerfen {
+            app.close_tab(idx);
+            app.ui.confirm_close = None;
+        } else if close {
+            app.ui.confirm_close = None;
         }
     }
 
@@ -2181,12 +2207,20 @@ mod modaltests {
         assert!(fenster(&ctx, "Hotbar-Vorlage"));
         app.ui.preset_dialog = None;
 
-        app.ui.confirm_new = true;
+        // T0073: Das Schließen einer geänderten Datei fragt nach.
+        app.session_mut()
+            .execute(
+                "draw.line",
+                &serde_json::json!({"a": [0.0, 0.0], "b": [0.0, 1000.0]}),
+            )
+            .expect("Linie anlegen");
+        app.ui.confirm_close = Some(0);
         frame(&ctx, &mut app, vec![]);
-        assert!(fenster(&ctx, "Neue Zeichnung"));
-        app.ui.confirm_new = false;
         frame(&ctx, &mut app, vec![]);
-        assert!(!fenster(&ctx, "Neue Zeichnung"));
+        assert!(fenster(&ctx, "Datei schließen"));
+        app.ui.confirm_close = None;
+        frame(&ctx, &mut app, vec![]);
+        assert!(!fenster(&ctx, "Datei schließen"));
         assert!(!abdunklung(&ctx));
     }
 }

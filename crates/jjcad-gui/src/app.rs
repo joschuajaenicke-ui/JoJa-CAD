@@ -596,7 +596,8 @@ pub struct UiState {
     /// Zwischenablage: Elemente **und** Basispunkt (siehe `ghost::Clipboard`)
     pub clipboard: crate::ghost::Clipboard,
     pub clipboard_offset: f64,
-    pub confirm_new: bool,
+    /// Datei-Reiter, der auf die Rückfrage „ungespeicherte Änderungen“ wartet
+    pub confirm_close: Option<usize>,
     pub confirm_quit: bool,
     pub last_canvas: Rect,
     /// Höhe des zuletzt gezeichneten Ribbon-Inhalts (Regressionstest t_92b03440)
@@ -674,7 +675,7 @@ impl Default for UiState {
             rename_layer: None,
             clipboard: crate::ghost::Clipboard::default(),
             clipboard_offset: 20.0,
-            confirm_new: false,
+            confirm_close: None,
             confirm_quit: false,
             last_canvas: Rect::from_min_size(Pos2::ZERO, Vec2::new(1000.0, 700.0)),
             last_ribbon_content_h: 0.0,
@@ -1069,6 +1070,26 @@ impl App {
                 "vollbild" | "fullscreen" => self.ui.fullscreen = true,
                 "aendern" | "change" => self.ui.ribbon = RibbonTab::Aendern,
                 "inv" | "inventar" => self.ui.inventory_open = true,
+                // Mehrere Dateien: drei Reiter mit Namen (Screenshot-Prüfung T0073)
+                "dateien" | "mehrere" => {
+                    self.new_document();
+                    self.doc_mut().name = "Schnitt".into();
+                    self.new_document();
+                    self.doc_mut().name = "Ansicht".into();
+                    self.active = 0;
+                    self.datei_nachziehen();
+                    self.fit_view();
+                }
+                "schliessdialog" => {
+                    self.new_document();
+                    self.session_mut()
+                        .execute(
+                            "draw.line",
+                            &serde_json::json!({"a": [0.0, 0.0], "b": [0.0, 1000.0]}),
+                        )
+                        .ok();
+                    self.ui.confirm_close = Some(1);
+                }
                 "blocks-tab" => {
                     self.ui.inventory_open = true;
                     self.ui.inventory_tab = 1;
@@ -2277,7 +2298,8 @@ impl App {
             return;
         }
         match id {
-            "file.new" => self.ui.confirm_new = true,
+            // Ein neuer Reiter — die aktuelle Zeichnung bleibt offen (T0073)
+            "file.new" => self.new_document(),
             "file.open" => self.open_file_dialog(FileMode::Open),
             "file.save" => self.save_current(false),
             "file.save_as" => self.open_file_dialog(FileMode::SaveJjcad),
@@ -2656,6 +2678,17 @@ impl App {
     }
 
     pub fn load_document(&mut self, path: &PathBuf) {
+        crate::textedit::beenden(self);
+        // Dieselbe Datei nur einmal öffnen: zwei Reiter auf denselben Pfad
+        // überschreiben sich beim Speichern gegenseitig.
+        if let Some(i) = self.datei_reiter(path) {
+            self.switch_doc(i);
+            self.toast(format!(
+                "Datei · bereits offen: {}",
+                path.file_name().unwrap_or_default().to_string_lossy()
+            ));
+            return;
+        }
         match Session::open(path) {
             Ok(s) => {
                 let tab = DocTab {
@@ -2680,8 +2713,7 @@ impl App {
                     self.tabs.push(tab);
                     self.active = self.tabs.len() - 1;
                 }
-                self.options = ToolOptions::from_doc(self.doc());
-                self.ui.show_grid = self.doc().settings.show_grid;
+                self.datei_nachziehen();
                 self.prefs.add_recent(&path.to_string_lossy());
                 if let Some(p) = path.parent() {
                     self.prefs.last_dir = p.to_string_lossy().to_string();
@@ -2694,9 +2726,27 @@ impl App {
         }
     }
 
+    /// Liegt dieser Pfad schon in einem Reiter? Verglichen wird der echte Pfad
+    /// (`canonicalize`), damit „./a.jjcad“ und „/x/a.jjcad“ derselbe Reiter sind.
+    fn datei_reiter(&self, path: &PathBuf) -> Option<usize> {
+        let ziel = std::fs::canonicalize(path).unwrap_or_else(|_| path.clone());
+        self.tabs.iter().position(|t| {
+            t.session
+                .doc
+                .path
+                .as_ref()
+                .map(|p| std::fs::canonicalize(p).unwrap_or_else(|_| PathBuf::from(p)) == ziel)
+                .unwrap_or(false)
+        })
+    }
+
+    /// Einen leeren Datei-Reiter anlegen. Die bisherige Zeichnung bleibt in
+    /// ihrem Reiter stehen — „Neu“ schließt nichts mehr (T0073).
     pub fn new_document(&mut self) {
+        crate::textedit::beenden(self);
         let mut s = Session::new();
         s.doc.settings.snap.wall_edges = self.prefs.snap_wall_edges;
+        s.doc.name = self.freier_dateiname("Unbenannt");
         let tab = DocTab {
             session: s,
             tab: TabKind::Model,
@@ -2709,22 +2759,109 @@ impl App {
         };
         self.tabs.push(tab);
         self.active = self.tabs.len() - 1;
-        self.options = ToolOptions::from_doc(self.doc());
+        self.datei_nachziehen();
         self.fit_view();
         self.toast("Datei · neu");
     }
 
+    /// Name für eine neue, noch ungespeicherte Zeichnung, der im Reiterstreifen
+    /// nicht doppelt vorkommt („Unbenannt“, „Unbenannt 2“, …).
+    fn freier_dateiname(&self, basis: &str) -> String {
+        let belegt = |name: &str| self.tabs.iter().any(|t| t.session.doc.name == name);
+        if !belegt(basis) {
+            return basis.to_string();
+        }
+        for n in 2..=999 {
+            let kandidat = format!("{basis} {n}");
+            if !belegt(&kandidat) {
+                return kandidat;
+            }
+        }
+        basis.to_string()
+    }
+
+    /// Auf einen anderen Datei-Reiter wechseln.
+    pub fn switch_doc(&mut self, idx: usize) {
+        if idx >= self.tabs.len() || idx == self.active {
+            return;
+        }
+        crate::textedit::beenden(self);
+        self.active = idx;
+        self.datei_nachziehen();
+    }
+
+    /// Alles, was an der aktiven Datei hängt, nach einem Reiterwechsel
+    /// nachziehen: Werkzeug, Vorschau und Züge gehören zur alten Datei und
+    /// werden verworfen; Werkzeugvorgaben, Raster und Bearbeitungsraum kommen
+    /// aus der neuen. Die Auswahl bleibt je Datei erhalten (sie steckt in der
+    /// `Session` des Reiters).
+    fn datei_nachziehen(&mut self) {
+        self.tool = None;
+        self.ghost = None;
+        self.select_drag = None;
+        self.grip_drag = None;
+        self.move_drag = None;
+        self.halt.clear();
+        self.paint = crate::canvas::PaintPreview::default();
+        self.ui.order_pick = None;
+        self.options = ToolOptions::from_doc(self.doc());
+        self.ui.show_grid = self.doc().settings.show_grid;
+        self.sync_space();
+    }
+
+    /// Datei-Reiter schließen. Der letzte hinterlässt eine leere Zeichnung,
+    /// statt die Anwendung zu beenden.
     pub fn close_tab(&mut self, idx: usize) {
         if idx >= self.tabs.len() {
             return;
         }
+        crate::textedit::beenden(self);
         self.tabs.remove(idx);
         if self.tabs.is_empty() {
+            self.active = 0;
             self.new_document();
+            return;
+        }
+        if idx < self.active {
+            self.active -= 1;
         } else if self.active >= self.tabs.len() {
             self.active = self.tabs.len() - 1;
         }
-        self.tool = None;
+        self.datei_nachziehen();
+    }
+
+    /// Schließen anfordern: hat der Reiter ungespeicherte Änderungen, fragt der
+    /// Dialog „Datei schließen“ nach (`UiState::confirm_close`), sonst zu.
+    pub fn request_close_tab(&mut self, idx: usize) {
+        if idx >= self.tabs.len() {
+            return;
+        }
+        if self.tabs[idx].session.doc.modified {
+            self.ui.confirm_close = Some(idx);
+        } else {
+            self.close_tab(idx);
+        }
+    }
+
+    /// Datei speichern und den Reiter schließen. Ohne Speicherort gibt es nichts
+    /// zu speichern — der Dialog bietet dann nur „Verwerfen“ an.
+    pub fn close_tab_speichern(&mut self, idx: usize) {
+        if idx >= self.tabs.len() {
+            return;
+        }
+        let Some(pfad) = self.tabs[idx].session.doc.path.clone() else {
+            return;
+        };
+        let pfad = PathBuf::from(pfad);
+        match self.tabs[idx].session.save(&pfad) {
+            Ok(_) => {
+                self.prefs.add_recent(&pfad.to_string_lossy());
+                let _ = self.prefs.save();
+                self.toast(format!("Datei · gespeichert: {}", pfad.display()));
+                self.close_tab(idx);
+            }
+            Err(e) => self.toast(e),
+        }
     }
 
     pub fn export_pdf_to(&mut self, path: PathBuf) {
@@ -3275,82 +3412,83 @@ impl App {
         self.toast("Auswahl · eingefügt");
     }
 
-    // ---- Zeichnungstabs ----
+    // ---- Datei- und Blattreiter ----
 
+    /// Reiterstreifen: links die offenen **Dateien** (ein Reiter je Zeichnung),
+    /// dahinter die Blattreiter der aktiven Datei.
+    ///
+    /// „Neu“ hängt einen Datei-Reiter an, statt die aktuelle Zeichnung zu
+    /// ersetzen — der bisherige Stand bleibt im eigenen Reiter stehen (T0073).
     fn doc_tabs(&mut self, ui: &mut egui::Ui) {
-        let mut switch_to: Option<TabKind> = None;
-        let mut close_sheet: Option<Id> = None;
-        let mut new_sheet = false;
-        let tabs: Vec<(TabKind, String, bool)> = {
+        let mut wechsle_datei: Option<usize> = None;
+        let mut schliesse_datei: Option<usize> = None;
+        let mut wechsle_reiter: Option<TabKind> = None;
+        let mut schliesse_blatt: Option<Id> = None;
+        let mut neues_blatt = false;
+        let dateien: Vec<(usize, String, bool)> = self
+            .tabs
+            .iter()
+            .enumerate()
+            .map(|(i, t)| (i, t.session.doc.name.clone(), t.session.doc.modified))
+            .collect();
+        let aktiv = self.active;
+        let mehrere_dateien = dateien.len() > 1;
+        let reiter: Vec<(TabKind, String, bool)> = {
             let t = self.tab();
-            let mut v = vec![(TabKind::Model, t.session.doc.name.clone(), false)];
+            let mut v = vec![(TabKind::Model, "Modell".to_string(), false)];
             for s in &t.session.doc.sheets {
                 v.push((TabKind::Sheet(s.id), s.name.clone(), true));
             }
             v
         };
-        let current = self.tab().tab;
-        let doc_modified = self.doc().modified;
+        let aktuell = self.tab().tab;
         ui.horizontal_centered(|ui| {
             ui.add_space(6.0);
-            for (kind, name, closable) in &tabs {
-                let active = current == *kind;
-                let galley = ui.painter().layout_no_wrap(
-                    name.clone(),
-                    FontId::proportional(12.0),
-                    if active { Palette::TEXT } else { Palette::TEXT_DIM },
+            for (idx, name, modified) in &dateien {
+                let (geklickt, geschlossen) = Self::tab_knopf(
+                    ui,
+                    name,
+                    None,
+                    *idx == aktiv,
+                    mehrere_dateien,
+                    *modified,
+                    egui::Id::new(("datei", *idx)),
                 );
-                let w = galley.size().x + if *closable { 52.0 } else { 36.0 };
-                let (rect, resp) = ui.allocate_exact_size(Vec2::new(w, 26.0), Sense::click());
-                if active {
-                    ui.painter().rect_filled(rect, Rounding::same(7.0), Palette::PANEL_ALT);
-                } else if resp.hovered() {
-                    ui.painter().rect_filled(rect, Rounding::same(7.0), Palette::PANEL);
+                if geschlossen {
+                    schliesse_datei = Some(*idx);
+                } else if geklickt {
+                    wechsle_datei = Some(*idx);
                 }
-                crate::icons::paint(
-                    ui.painter(),
-                    Rect::from_min_size(rect.min + Vec2::new(7.0, 6.0), Vec2::splat(14.0)),
-                    match kind {
-                        TabKind::Model => "layers",
-                        TabKind::Sheet(_) => "sheet",
-                    },
-                    if active { Palette::ACCENT } else { Palette::TEXT_FAINT },
+            }
+            // Trenner: links die Dateien, rechts die Blätter der aktiven Datei.
+            let (trenner, _) = ui.allocate_exact_size(Vec2::new(11.0, 26.0), Sense::hover());
+            ui.painter().line_segment(
+                [
+                    Pos2::new(trenner.center().x, trenner.top() + 5.0),
+                    Pos2::new(trenner.center().x, trenner.bottom() - 5.0),
+                ],
+                Stroke::new(1.0_f32, Palette::BORDER),
+            );
+            for (kind, name, closable) in &reiter {
+                let icon = match kind {
+                    TabKind::Model => "layers",
+                    TabKind::Sheet(_) => "sheet",
+                };
+                let (geklickt, geschlossen) = Self::tab_knopf(
+                    ui,
+                    name,
+                    Some(icon),
+                    aktuell == *kind,
+                    *closable,
+                    false,
+                    egui::Id::new(("blatt", name)),
                 );
-                ui.painter().galley(
-                    Pos2::new(rect.left() + 26.0, rect.center().y - galley.size().y / 2.0),
-                    galley,
-                    if active { Palette::TEXT } else { Palette::TEXT_DIM },
-                );
-                if active && doc_modified && matches!(kind, TabKind::Model) {
-                    ui.painter().circle_filled(
-                        Pos2::new(rect.left() + 4.0, rect.center().y),
-                        2.2,
-                        Palette::ACCENT,
-                    );
-                }
-                if *closable {
-                    let xr = Rect::from_center_size(
-                        Pos2::new(rect.right() - 13.0, rect.center().y),
-                        Vec2::splat(16.0),
-                    );
-                    let xresp = ui.interact(xr, ui.id().with(("close", name)), Sense::click());
-                    if xresp.clicked() {
-                        if let TabKind::Sheet(id) = kind {
-                            close_sheet = Some(*id);
-                        }
+                if geschlossen {
+                    if let TabKind::Sheet(id) = kind {
+                        schliesse_blatt = Some(*id);
                     }
-                    let c = if xresp.hovered() { Palette::DANGER } else { Palette::TEXT_FAINT };
-                    ui.painter().line_segment(
-                        [xr.center() - Vec2::splat(3.5), xr.center() + Vec2::splat(3.5)],
-                        Stroke::new(1.4, c),
-                    );
-                    ui.painter().line_segment(
-                        [xr.center() + Vec2::new(3.5, -3.5), xr.center() + Vec2::new(-3.5, 3.5)],
-                        Stroke::new(1.4, c),
-                    );
-                }
-                if resp.clicked() {
-                    switch_to = Some(*kind);
+                } else if geklickt {
+                    wechsle_reiter = Some(*kind);
                 }
             }
             ui.add_space(4.0);
@@ -3365,14 +3503,22 @@ impl App {
                 if resp.hovered() { Palette::TEXT } else { Palette::TEXT_FAINT },
             );
             if resp.clicked() {
-                new_sheet = true;
+                neues_blatt = true;
             }
             resp.on_hover_text("Neues Blatt");
         });
-        if let Some(kind) = switch_to {
+        // Erst schließen, dann wechseln: ein geschlossener Reiter darf nicht
+        // als Ziel übrig bleiben.
+        if let Some(idx) = wechsle_datei {
+            self.switch_doc(idx);
+        }
+        if let Some(idx) = schliesse_datei {
+            self.request_close_tab(idx);
+        }
+        if let Some(kind) = wechsle_reiter {
             self.switch_tab(kind);
         }
-        if let Some(id) = close_sheet {
+        if let Some(id) = schliesse_blatt {
             if self.doc().sheets.len() > 1 {
                 let _ = self.session_mut().execute("sheet.delete", &serde_json::json!({"sheet": id}));
                 if self.tab().tab == TabKind::Sheet(id) {
@@ -3384,8 +3530,83 @@ impl App {
                 self.toast("Blatt · das letzte bleibt offen");
             }
         }
-        if new_sheet {
+        if neues_blatt {
             self.run_action(ui.ctx(), "sheet.new");
+        }
+    }
+
+    /// Ein Reiter im Streifen: Fläche, optionales Symbol, Name, Änderungspunkt
+    /// und Schließen-Kreuz. Gibt (angeklickt, Kreuz getroffen) zurück.
+    ///
+    /// `id` hält die Reiter auseinander — Datei- und Blattreiter können
+    /// denselben Namen tragen.
+    fn tab_knopf(
+        ui: &mut egui::Ui,
+        name: &str,
+        icon: Option<&str>,
+        active: bool,
+        closable: bool,
+        modified: bool,
+        id: egui::Id,
+    ) -> (bool, bool) {
+        let galley = ui.painter().layout_no_wrap(
+            name.to_string(),
+            FontId::proportional(12.0),
+            if active { Palette::TEXT } else { Palette::TEXT_DIM },
+        );
+        let links = if icon.is_some() { 26.0 } else { 12.0 };
+        let rechts = if closable { 24.0 } else { 12.0 };
+        let w = galley.size().x + links + rechts;
+        let (rect, resp) = ui.allocate_exact_size(Vec2::new(w.max(64.0), 26.0), Sense::click());
+        if active {
+            ui.painter().rect_filled(rect, Rounding::same(7.0), Palette::PANEL_ALT);
+        } else if resp.hovered() {
+            ui.painter().rect_filled(rect, Rounding::same(7.0), Palette::PANEL);
+        }
+        if modified {
+            ui.painter().circle_filled(
+                Pos2::new(rect.left() + 5.0, rect.center().y),
+                2.2,
+                Palette::ACCENT,
+            );
+        }
+        if let Some(icon) = icon {
+            crate::icons::paint(
+                ui.painter(),
+                Rect::from_min_size(rect.min + Vec2::new(7.0, 6.0), Vec2::splat(14.0)),
+                icon,
+                if active { Palette::ACCENT } else { Palette::TEXT_FAINT },
+            );
+        }
+        ui.painter().galley(
+            Pos2::new(rect.left() + links, rect.center().y - galley.size().y / 2.0),
+            galley,
+            if active { Palette::TEXT } else { Palette::TEXT_DIM },
+        );
+        let mut geschlossen = false;
+        if closable {
+            let xr = Rect::from_center_size(
+                Pos2::new(rect.right() - 13.0, rect.center().y),
+                Vec2::splat(16.0),
+            );
+            let xresp = ui.interact(xr, id.with("schliessen"), Sense::click());
+            if xresp.clicked() {
+                geschlossen = true;
+            }
+            let c = if xresp.hovered() { Palette::DANGER } else { Palette::TEXT_FAINT };
+            ui.painter().line_segment(
+                [xr.center() - Vec2::splat(3.5), xr.center() + Vec2::splat(3.5)],
+                Stroke::new(1.4, c),
+            );
+            ui.painter().line_segment(
+                [xr.center() + Vec2::new(3.5, -3.5), xr.center() + Vec2::new(-3.5, 3.5)],
+                Stroke::new(1.4, c),
+            );
+        }
+        if geschlossen {
+            (false, true)
+        } else {
+            (resp.clicked(), false)
         }
     }
 
@@ -7498,5 +7719,279 @@ mod tests_drehpunkt_einfuegen {
             app.ghost.as_ref().map(|g| g.pivot),
             Some(jjcad_core::persist::PastePivot::BasePoint)
         );
+    }
+}
+
+#[cfg(test)]
+mod tests_mehrere_dateien {
+    //! T0073: „Neu“ ersetzt die Zeichnung nicht mehr, sondern hängt einen
+    //! Datei-Reiter an. Geprüft werden der Zustand je Reiter und der
+    //! Reiterstreifen im Bild.
+
+    use super::*;
+
+    fn frame(ctx: &egui::Context, app: &mut App) -> egui::FullOutput {
+        let raw = egui::RawInput {
+            screen_rect: Some(Rect::from_min_size(Pos2::ZERO, Vec2::new(1500.0, 950.0))),
+            ..Default::default()
+        };
+        ctx.run(raw, |ctx| app.ui(ctx))
+    }
+
+    /// Alle gemalten Textzeilen eines Bildes mit ihrer Lage.
+    fn texte(out: &egui::FullOutput) -> Vec<(String, Pos2)> {
+        out.shapes
+            .iter()
+            .filter_map(|cs| match &cs.shape {
+                egui::Shape::Text(t) => Some((t.galley.text().trim().to_string(), t.pos)),
+                _ => None,
+            })
+            .collect()
+    }
+
+    fn linie(app: &mut App, x: f64) {
+        app.session_mut()
+            .execute(
+                "draw.line",
+                &serde_json::json!({"a": [x, 0.0], "b": [x, 1000.0]}),
+            )
+            .expect("Linie anlegen");
+    }
+
+    /// Eine neue Datei bekommt einen Reiter; die alte Zeichnung bleibt offen.
+    #[test]
+    fn neue_datei_haengt_einen_reiter_an() {
+        let mut app = App::with_ctx(egui::Context::default());
+        linie(&mut app, 0.0);
+        app.new_document();
+
+        assert_eq!(app.tabs.len(), 2, "der bisherige Reiter bleibt offen");
+        assert_eq!(app.active, 1, "der neue Reiter ist vorn");
+        assert_eq!(app.doc().entities.len(), 0, "der neue Reiter ist leer");
+        assert_eq!(
+            app.tabs[0].session.doc.entities.len(),
+            1,
+            "die erste Datei behält ihre Linie"
+        );
+        assert_eq!(app.doc().name, "Unbenannt 2", "eigener Name im Reiterstreifen");
+
+        app.new_document();
+        assert_eq!(app.doc().name, "Unbenannt 3", "Namen zählen weiter");
+    }
+
+    /// Jede Datei behält Inhalt, Auswahl und Ansicht für sich.
+    #[test]
+    fn reiterwechsel_zeigt_jede_datei_wieder() {
+        let mut app = App::with_ctx(egui::Context::default());
+        linie(&mut app, 0.0);
+        let erste_ansicht = View {
+            center: V2::new(1234.0, 5678.0),
+            zoom: 0.5,
+            rot: 0.0,
+        };
+        app.set_view(erste_ansicht);
+        app.new_document();
+        linie(&mut app, 1000.0);
+        linie(&mut app, 2000.0);
+        app.set_view(View::default());
+
+        app.switch_doc(0);
+        assert_eq!(app.active, 0);
+        assert_eq!(app.doc().entities.len(), 1, "die erste Datei hat eine Linie");
+        assert!(
+            (app.current_view().zoom - 0.5).abs() < 1e-9,
+            "die Ansicht der Datei bleibt erhalten"
+        );
+
+        app.switch_doc(1);
+        assert_eq!(app.doc().entities.len(), 2, "die zweite Datei hat zwei Linien");
+        assert!(
+            (app.current_view().zoom - View::default().zoom).abs() < 1e-9,
+            "die zweite Datei hat ihre eigene Ansicht"
+        );
+        assert_eq!(app.tabs.len(), 2, "Umschalten legt keinen Reiter an");
+    }
+
+    /// Ein laufendes Werkzeug gehört zur Datei, in der es begonnen wurde.
+    #[test]
+    fn werkzeug_gehoert_zur_datei() {
+        let mut app = App::with_ctx(egui::Context::default());
+        app.start_tool("draw.line");
+        assert!(app.tool.is_some(), "Werkzeug läuft");
+        app.new_document();
+        assert!(app.tool.is_none(), "der Reiterwechsel bricht das Werkzeug ab");
+
+        app.start_tool("draw.line");
+        app.switch_doc(0);
+        assert!(app.tool.is_none(), "auch das Umschalten bricht es ab");
+    }
+
+    /// Schließen nimmt nur den einen Reiter weg.
+    #[test]
+    fn schliessen_entfernt_nur_diesen_reiter() {
+        let mut app = App::with_ctx(egui::Context::default());
+        linie(&mut app, 0.0);
+        app.new_document();
+        linie(&mut app, 1000.0);
+
+        app.switch_doc(0);
+        app.close_tab(0);
+        assert_eq!(app.tabs.len(), 1, "ein Reiter bleibt");
+        assert_eq!(app.active, 0);
+        assert_eq!(
+            app.doc().entities.len(),
+            1,
+            "die verbliebene Datei behält ihren Inhalt"
+        );
+    }
+
+    /// Der letzte Reiter schließt nicht die Anwendung, sondern wird leer neu angelegt.
+    #[test]
+    fn letzter_reiter_bleibt_als_leere_zeichnung() {
+        let mut app = App::with_ctx(egui::Context::default());
+        linie(&mut app, 0.0);
+        app.close_tab(0);
+        assert_eq!(app.tabs.len(), 1);
+        assert_eq!(app.doc().entities.len(), 0, "leere Zeichnung");
+        assert_eq!(app.doc().name, "Unbenannt");
+        assert_eq!(app.active, 0);
+    }
+
+    /// Ungespeichert: erst nachfragen, nicht stillschweigend verwerfen.
+    #[test]
+    fn ungespeicherte_datei_fragt_vor_dem_schliessen() {
+        let mut app = App::with_ctx(egui::Context::default());
+        app.new_document();
+        linie(&mut app, 1000.0);
+        assert!(app.doc().modified, "die Datei hat Änderungen");
+
+        app.request_close_tab(1);
+        assert_eq!(app.ui.confirm_close, Some(1), "der Dialog muss nachfragen");
+        assert_eq!(app.tabs.len(), 2, "noch ist nichts geschlossen");
+
+        // „Verwerfen“ im Dialog
+        app.close_tab(1);
+        app.ui.confirm_close = None;
+        assert_eq!(app.tabs.len(), 1);
+    }
+
+    /// Gespeicherte Datei schließt ohne Rückfrage.
+    #[test]
+    fn gespeicherte_datei_schliesst_ohne_rueckfrage() {
+        let pfad = std::env::temp_dir().join("jjcad-t0073-gespeichert.jjcad");
+        let mut app = App::with_ctx(egui::Context::default());
+        app.session_mut().save(&pfad).expect("speichern");
+        app.new_document();
+        app.request_close_tab(0);
+        assert_eq!(app.ui.confirm_close, None, "ohne Änderungen keine Rückfrage");
+        assert_eq!(app.tabs.len(), 1, "der Reiter ist zu");
+        let _ = std::fs::remove_file(&pfad);
+    }
+
+    /// Dieselbe Datei landet nicht zweimal im Reiterstreifen.
+    #[test]
+    fn offene_datei_wird_erkannt() {
+        let ordner = std::env::temp_dir();
+        let pfad = ordner.join("jjcad-t0073-pfad.jjcad");
+        let mut app = App::with_ctx(egui::Context::default());
+        assert_eq!(app.datei_reiter(&pfad), None, "noch nicht offen");
+
+        app.doc_mut().path = Some(pfad.to_string_lossy().into());
+        assert_eq!(app.datei_reiter(&pfad), Some(0), "die Datei liegt im ersten Reiter");
+        assert_eq!(
+            app.datei_reiter(&ordner.join("jjcad-t0073-anderer.jjcad")),
+            None,
+            "ein anderer Pfad ist ein anderer Reiter"
+        );
+    }
+
+    /// Der Befehl „file.new“ (Ribbon „Neu“, Strg+N) legt einen Reiter an.
+    #[test]
+    fn befehl_neu_legt_einen_reiter_an() {
+        let ctx = egui::Context::default();
+        let mut app = App::with_ctx(ctx.clone());
+        linie(&mut app, 0.0);
+        app.run_action(&ctx, "file.new");
+
+        assert_eq!(app.tabs.len(), 2, "die Datei bleibt offen, der Reiter kommt dazu");
+        assert_eq!(app.active, 1, "der neue Reiter ist vorn");
+        assert_eq!(app.tabs[0].session.doc.entities.len(), 1, "die Linie bleibt");
+        assert_eq!(app.doc().entities.len(), 0);
+    }
+
+    /// Ein frischer Reiter gilt nicht als geändert: sonst wandert eine geöffnete
+    /// Datei in einen zweiten Reiter und jeder leere Reiter zeigt „ungespeichert“.
+    #[test]
+    fn frischer_reiter_gilt_nicht_als_geaendert() {
+        let app = App::with_ctx(egui::Context::default());
+        assert!(!app.doc().modified, "ein leerer Reiter ist unverändert");
+        assert!(app.doc().entities.is_empty());
+        assert!(app.doc().path.is_none());
+        assert!(
+            !app.doc().sheets.is_empty(),
+            "das Standardblatt gehört zum leeren Reiter"
+        );
+    }
+
+    /// Getippter Text landet in der Datei, in der er begonnen wurde.
+    #[test]
+    fn texteingabe_bleibt_bei_ihrer_datei() {
+        let mut app = App::with_ctx(egui::Context::default());
+        crate::textedit::start(&mut app, V2::new(1000.0, 1000.0));
+        app.ui.texteingabe.as_mut().expect("Eingabe läuft").text = "Notiz".into();
+        app.new_document();
+
+        assert!(app.ui.texteingabe.is_none(), "der Wechsel beendet die Eingabe");
+        assert_eq!(app.doc().entities.len(), 0, "der neue Reiter bleibt leer");
+        assert_eq!(
+            app.tabs[0].session.doc.entities.len(),
+            1,
+            "der Text ist in der ersten Datei"
+        );
+        let text = serde_json::to_string(&app.tabs[0].session.doc.entities[0]).unwrap();
+        assert!(text.contains("Notiz"), "Textinhalt: {text}");
+    }
+
+    /// Der Streifen zeigt jede Datei als eigenen Reiter, darüber die Blätter der
+    /// aktiven Datei.
+    #[test]
+    fn reiterstreifen_zeigt_beide_dateien() {
+        let ctx = egui::Context::default();
+        let mut app = App::with_ctx(ctx.clone());
+        app.doc_mut().name = "Grundriss.jjcad".into();
+        app.new_document();
+        app.doc_mut().name = "Schnitt.jjcad".into();
+        for _ in 0..2 {
+            let _ = frame(&ctx, &mut app);
+        }
+        let out = frame(&ctx, &mut app);
+        let zeilen = texte(&out);
+        // Der Dateiname steht auch in der Kopfzeile — gesucht ist der Reiter,
+        // also die Zeile unter Ribbon (y > 100).
+        let lage = |name: &str| {
+            zeilen
+                .iter()
+                .filter(|(t, p)| t == name && p.y > 100.0)
+                .map(|(_, p)| *p)
+                .next()
+                .unwrap_or_else(|| panic!("„{name}“ fehlt im Reiterstreifen: {zeilen:?}"))
+        };
+        let grundriss = lage("Grundriss.jjcad");
+        let schnitt = lage("Schnitt.jjcad");
+        assert!(
+            (grundriss.y - schnitt.y).abs() < 0.5,
+            "beide Dateien stehen in einer Reihe"
+        );
+        assert!(
+            grundriss.x < schnitt.x,
+            "die Reiter stehen in der Reihenfolge der Dateien"
+        );
+        assert!(
+            schnitt.y < app.ui.last_canvas.top(),
+            "der Streifen steht über der Zeichenfläche"
+        );
+        // Blattreiter gehören nur zur aktiven Datei.
+        assert!(zeilen.iter().any(|(t, _)| t == "Modell"), "Blattreiter fehlt");
+        assert!(zeilen.iter().any(|(t, _)| t == "Blatt 1"), "Blatt fehlt");
     }
 }

@@ -24,6 +24,14 @@ Architekturregeln:
   Bildschirm, PDF und PNG. Neue Linien/Füllungen dort erzeugen, nicht im Painter.
 - Interne Einheit **Millimeter**, Winkel im Bogenmaß, Nullrichtung +X, mathematisch
   positiver Drehsinn. Ausgabe deutsch (Komma), `m²`.
+- **Mehrere Dateien (T0073)**: Der Reiterstreifen zeigt links **eine Datei je Reiter**
+  (`App::tabs`, aktiv über `App::active`), rechts vom Trenner die Blattreiter der aktiven
+  Datei. „Neu“ hängt an (`App::new_document`), es ersetzt nichts; ein Wechsel läuft über
+  `App::switch_doc`, das Werkzeug, Vorschau, Züge und laufende Texteingabe abschließt
+  (`App::datei_nachziehen`, `textedit::beenden`) und Vorgaben/Raster/Raum aus der neuen
+  Datei zieht. Eine Datei liegt nur einmal offen (`App::datei_reiter`, echter Pfad); ein
+  frisches `Document` gilt **nicht** als geändert (sonst landet die geöffnete Datei in
+  einem zweiten Reiter).
 - **Oberfläche und Code-Kommentare auf Deutsch.**
 
 ## Bauen und testen
