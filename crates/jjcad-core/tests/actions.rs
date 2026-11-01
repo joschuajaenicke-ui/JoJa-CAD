@@ -270,6 +270,210 @@ fn trim_vorschau_zeigt_den_abschnitt_der_wegfaellt() {
     );
 }
 
+/// Stutzen einer Polylinie (T0077): der Abschnitt zwischen den beiden
+/// Schnittkanten fällt weg. Bleibt ein Stück mit zwei Punkten, ist es danach
+/// eine normale **Linie**, kein Zwei-Punkt-Polygonzug.
+#[test]
+fn polylinie_stutzen_teilt_den_zug() {
+    let mut s = s();
+    s.execute("draw.line", &json!({"a": [2, -1], "b": [2, 1]}))
+        .unwrap();
+    s.execute("draw.line", &json!({"a": [4, -1], "b": [4, 1]}))
+        .unwrap();
+    let res = s
+        .execute("draw.polyline", &json!({"pts": [[0, 0], [6, 0], [6, 4]]}))
+        .unwrap();
+    let id = res["created"][0].as_u64().unwrap();
+
+    let res = s
+        .execute("modify.trim", &json!({"ids": [id], "at": [3, 0]}))
+        .unwrap_or_else(|e| panic!("Stutzen der Polylinie: {e}"));
+    assert_eq!(
+        res["created"].as_array().unwrap().len(),
+        1,
+        "das zweite Stück ist ein neues Objekt: {res}"
+    );
+
+    let mut linien: Vec<(f64, f64)> = Vec::new();
+    let mut zuege: Vec<Vec<(f64, f64)>> = Vec::new();
+    for e in &s.doc.entities {
+        match &e.kind {
+            EntityKind::Line { a, b } if a.y.abs() < 1e-6 && b.y.abs() < 1e-6 => {
+                linien.push((a.x, b.x))
+            }
+            EntityKind::Polyline { verts, .. } => zuege.push(
+                verts
+                    .iter()
+                    .map(|q| (q.p.x, q.p.y))
+                    .collect::<Vec<_>>(),
+            ),
+            _ => {}
+        }
+    }
+    assert_eq!(
+        linien,
+        vec![(0.0, 2000.0)],
+        "das linke Stück (zwei Punkte) ist eine Linie: {linien:?}"
+    );
+    assert_eq!(zuege.len(), 1, "das rechte Stück bleibt Polygonzug");
+    assert_eq!(
+        zuege[0],
+        vec![(4000.0, 0.0), (6000.0, 0.0), (6000.0, 4000.0)],
+        "rechts bleibt der Zug ab der zweiten Kante"
+    );
+}
+
+/// Aus einer Polylinie mit zwei Punkten wird beim Stutzen eine einzelne
+/// normale Linie — das Objekt selbst bleibt, nur die Art wechselt.
+#[test]
+fn gestutzte_polylinie_wird_zur_linie() {
+    let mut s = s();
+    s.execute("draw.line", &json!({"a": [3, -1], "b": [3, 1]}))
+        .unwrap();
+    let res = s
+        .execute("draw.polyline", &json!({"pts": [[0, 0], [6, 0]]}))
+        .unwrap();
+    let id = res["created"][0].as_u64().unwrap();
+
+    s.execute("modify.trim", &json!({"ids": [id], "at": [1, 0]}))
+        .unwrap_or_else(|e| panic!("Stutzen: {e}"));
+    let e = s.doc.entity(id).expect("das Objekt bleibt stehen");
+    match &e.kind {
+        EntityKind::Line { a, b } => {
+            assert!(
+                (a.x - 3000.0).abs() < 1e-6 && a.y.abs() < 1e-6,
+                "Anfang liegt auf der Schnittkante: {a:?}"
+            );
+            assert!(
+                (b.x - 6000.0).abs() < 1e-6 && b.y.abs() < 1e-6,
+                "Ende bleibt am Objektende: {b:?}"
+            );
+        }
+        k => panic!("aus der Polylinie muss eine Linie werden: {k:?}"),
+    }
+    assert_eq!(s.doc.entities.len(), 2, "nur Schnittkante und Linie");
+}
+
+/// Geschlossene Polylinie: der Ring wird am Schnitt aufgetrennt, alles andere
+/// bleibt als **offener** Zug stehen.
+#[test]
+fn geschlossene_polylinie_wird_beim_stutzen_aufgetrennt() {
+    let mut s = s();
+    s.execute("draw.line", &json!({"a": [1, -1], "b": [1, 1]}))
+        .unwrap();
+    s.execute("draw.line", &json!({"a": [3, -1], "b": [3, 1]}))
+        .unwrap();
+    let res = s
+        .execute(
+            "draw.polyline",
+            &json!({"pts": [[0, 0], [4, 0], [4, 4], [0, 4]], "closed": true}),
+        )
+        .unwrap();
+    let id = res["created"][0].as_u64().unwrap();
+
+    s.execute("modify.trim", &json!({"ids": [id], "at": [2, 0]}))
+        .unwrap_or_else(|e| panic!("Stutzen des Rings: {e}"));
+    let e = s.doc.entity(id).expect("Objekt bleibt");
+    let EntityKind::Polyline { verts, closed } = &e.kind else {
+        panic!("Polygonzug erwartet: {:?}", e.kind);
+    };
+    assert!(!*closed, "der Ring ist aufgetrennt");
+    let pts: Vec<(f64, f64)> = verts.iter().map(|q| (q.p.x, q.p.y)).collect();
+    assert_eq!(
+        pts,
+        vec![
+            (3000.0, 0.0),
+            (4000.0, 0.0),
+            (4000.0, 4000.0),
+            (0.0, 4000.0),
+            (0.0, 0.0),
+            (1000.0, 0.0),
+        ],
+        "einmal herum vom Schnittende zum Schnittanfang"
+    );
+}
+
+/// Die Stutzen-Vorschau zeigt bei einer Polylinie genau das Stück, das der
+/// Klick danach entfernt — und ändert die Zeichnung nicht.
+#[test]
+fn stutzvorschau_zeigt_das_stueck_der_polylinie() {
+    let mut s = s();
+    s.execute("draw.line", &json!({"a": [2, -1], "b": [2, 1]}))
+        .unwrap();
+    s.execute("draw.line", &json!({"a": [4, -1], "b": [4, 1]}))
+        .unwrap();
+    let res = s
+        .execute("draw.polyline", &json!({"pts": [[0, 0], [6, 0], [6, 4]]}))
+        .unwrap();
+    let id = res["created"][0].as_u64().unwrap();
+
+    let segs = jjcad_core::actions::trim_vorschau(&s.doc, id, v(3000.0, 0.0), &[]);
+    assert_eq!(segs.len(), 1, "ein Abschnitt: {segs:?}");
+    let jjcad_core::geom::Seg::Line(a, b) = segs[0] else {
+        panic!("Strecke erwartet: {:?}", segs[0]);
+    };
+    assert!(
+        (a.x - 2000.0).abs() < 1e-6 && (b.x - 4000.0).abs() < 1e-6,
+        "Vorschau zwischen den Kanten: {a:?} {b:?}"
+    );
+    assert_eq!(s.doc.entities.len(), 3, "die Vorschau legt nichts an");
+}
+
+/// Bogensegment einer Polylinie: geschnitten wird auf dem **Bogen**, und die
+/// beiden Reste bleiben Bögen mit demselben Mittelpunkt und Radius.
+#[test]
+fn bogen_segment_einer_polylinie_laesst_sich_stutzen() {
+    use jjcad_core::geom::Vertex;
+    use jjcad_core::model::Entity;
+    let mut s = s();
+    s.execute("draw.line", &json!({"a": [1, -3], "b": [1, 1]}))
+        .unwrap();
+    s.execute("draw.line", &json!({"a": [3, -3], "b": [3, 1]}))
+        .unwrap();
+    // Halbkreis (bulge 1) von (0|0) nach (4|0), Mittelpunkt (2|0), r = 2000 mm
+    let verts = vec![Vertex::arc(v(0.0, 0.0), 1.0), Vertex::new(v(4000.0, 0.0))];
+    let layer = s.doc.current_layer;
+    let id = s
+        .doc
+        .add_entity(Entity::new(0, layer, EntityKind::Polyline { verts, closed: false }));
+
+    // Klick mitten auf dem Bogen: (2000 | −2000)
+    s.execute("modify.trim", &json!({"ids": [id], "at": [2, -2]}))
+        .unwrap_or_else(|e| panic!("Stutzen des Bogens: {e}"));
+
+    let mut boegen: Vec<(Vec2, f64)> = Vec::new();
+    for e in &s.doc.entities {
+        if let EntityKind::Arc { c, r, .. } = &e.kind {
+            boegen.push((*c, *r));
+        }
+    }
+    assert_eq!(boegen.len(), 2, "zwei Bogenstücke: {boegen:?}");
+    for (c, r) in &boegen {
+        assert!(
+            c.dist(v(2000.0, 0.0)) < 1e-3 && (r - 2000.0).abs() < 1e-3,
+            "beide Stücke liegen auf demselben Kreis: {c:?} r={r}"
+        );
+    }
+    // Die Reste enden auf den Schnittkanten x = 1000 und x = 3000.
+    let mut enden: Vec<f64> = Vec::new();
+    for e in &s.doc.entities {
+        if let EntityKind::Arc { c, r, a0, a1 } = &e.kind {
+            let arc = jjcad_core::geom::Arc::new(*c, *r, *a0, *a1);
+            enden.push(arc.start().x);
+            enden.push(arc.end().x);
+        }
+    }
+    enden.sort_by(|x, y| x.partial_cmp(y).unwrap());
+    assert!(
+        (enden[0]).abs() < 1e-3 && (enden[3] - 4000.0).abs() < 1e-3,
+        "die Außenenden bleiben: {enden:?}"
+    );
+    assert!(
+        (enden[1] - 1000.0).abs() < 1e-3 && (enden[2] - 3000.0).abs() < 1e-3,
+        "die Schnittenden liegen auf den Kanten: {enden:?}"
+    );
+}
+
 #[test]
 fn layers_and_blocks() {
     let mut s = s();

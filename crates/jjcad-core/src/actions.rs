@@ -3442,6 +3442,192 @@ fn trim_kreis_bogen(c: Vec2, r: f64, at: Vec2, segs: &[(Seg, Id)]) -> Option<(f6
     None
 }
 
+/// Punkt auf einem Polylinien-Segment beim Parameter `t` (0 = Segmentanfang
+/// `p0`, 1 = Segmentende `p1`) in **Laufrichtung** der Polylinie.
+fn polyline_punkt(p0: Vec2, p1: Vec2, bulge: f64, t: f64) -> Vec2 {
+    if bulge.abs() < 1e-12 {
+        return p0.lerp(p1, t);
+    }
+    let Some(arc) = arc_from_bulge(p0, p1, bulge) else {
+        return p0.lerp(p1, t);
+    };
+    // Bei negativem `bulge` läuft der gespeicherte Bogen andersherum als die
+    // Polylinie; die Lage des Anfangspunkts entscheidet die Richtung.
+    let vorwaerts = arc.start().dist(p0) <= arc.end().dist(p0);
+    arc.point_at(if vorwaerts { t } else { 1.0 - t })
+}
+
+/// Krümmung des Teilstücks zwischen zwei Parametern desselben Segments: der
+/// eingeschlossene Winkel wächst linear mit dem Parameter, also
+/// `tan(Δt · atan(bulge))` — bei `Δt = 1` kommt wieder der volle `bulge` heraus.
+fn polyline_teil_bulge(bulge: f64, von: f64, bis: f64) -> f64 {
+    if bulge.abs() < 1e-12 {
+        return 0.0;
+    }
+    ((bis - von) * bulge.atan()).tan()
+}
+
+/// Parameter (0…1 in Laufrichtung) eines Punktes, der auf dem Bogen liegt.
+fn polyline_param(p0: Vec2, arc: &Arc, p: Vec2) -> f64 {
+    let t = norm_angle((p - arc.c).angle() - arc.a0) / arc.sweep();
+    let vorwaerts = arc.start().dist(p0) <= arc.end().dist(p0);
+    if vorwaerts {
+        t
+    } else {
+        1.0 - t
+    }
+}
+
+/// Der Abschnitt eines Polylinien-Segments, den ein Klick bei `at` entfernt —
+/// Parameter `(t0, t1)` in Laufrichtung (0 = Segmentanfang, 1 = Segmentende).
+///
+/// Gerade Segmente laufen über [`trim_span`]; bei einem Bogen zählen die
+/// Schnittpunkte mit dem **Bogen**, nicht mit der Sehne.
+fn polyline_seg_span(
+    p0: Vec2,
+    p1: Vec2,
+    bulge: f64,
+    at: Vec2,
+    cutters: &[(Seg, Id)],
+) -> Option<(f64, f64)> {
+    if bulge.abs() < 1e-12 {
+        return trim_span(p0, p1, at, cutters);
+    }
+    let arc = arc_from_bulge(p0, p1, bulge)?;
+    if arc.r < 1e-9 || arc.sweep() < 1e-9 {
+        return trim_span(p0, p1, at, cutters);
+    }
+    let seg = Seg::Arc(arc);
+    let mut ts = vec![0.0, 1.0];
+    for (sg, _) in cutters {
+        for x in seg_seg(&seg, sg) {
+            let t = polyline_param(p0, &arc, x);
+            if t > 1e-6 && t < 1.0 - 1e-6 {
+                ts.push(t);
+            }
+        }
+    }
+    ts.sort_by(|x, y| x.partial_cmp(y).unwrap());
+    ts.dedup_by(|x, y| (*x - *y).abs() < 1e-6);
+    let tc = polyline_param(p0, &arc, at);
+    ts.windows(2)
+        .find(|w| tc >= w[0] - 1e-9 && tc <= w[1] + 1e-9)
+        .map(|w| (w[0], w[1]))
+}
+
+/// Welches Segment einer Polylinie der Klick trifft und welchen Abschnitt
+/// (Parameter 0…1 in Laufrichtung) er darin entfernt.
+fn polyline_trim(
+    verts: &[Vertex],
+    closed: bool,
+    at: Vec2,
+    cutters: &[(Seg, Id)],
+) -> Option<(usize, f64, f64)> {
+    if verts.len() < 2 {
+        return None;
+    }
+    let pl = Polyline {
+        verts: verts.to_vec(),
+        closed,
+    };
+    let segs = pl.segments();
+    let mut best: Option<(usize, f64)> = None;
+    for (i, s) in segs.iter().enumerate() {
+        let d = s.closest(at).1;
+        if best.map(|(_, bd)| d < bd).unwrap_or(true) {
+            best = Some((i, d));
+        }
+    }
+    let (i, _) = best?;
+    let p0 = verts[i].p;
+    let p1 = verts[(i + 1) % verts.len()].p;
+    let (t0, t1) = polyline_seg_span(p0, p1, verts[i].bulge, at, cutters)?;
+    Some((i, t0, t1))
+}
+
+/// Die Stücke, die von einer Polylinie übrig bleiben, wenn im Segment `i` der
+/// Abschnitt `(t0, t1)` wegfällt. Alle Stücke sind **offen** — ein
+/// geschlossener Zug wird durch den Schnitt aufgetrennt.
+fn polyline_rest(verts: &[Vertex], closed: bool, i: usize, t0: f64, t1: f64) -> Vec<Vec<Vertex>> {
+    let n = verts.len();
+    if n < 2 || i >= n {
+        return Vec::new();
+    }
+    let b = verts[i].bulge;
+    let p0 = verts[i].p;
+    let p1 = verts[(i + 1) % n].p;
+    let mut stuecke: Vec<Vec<Vertex>> = Vec::new();
+    if closed {
+        // Ein Zug vom Schnittende einmal herum bis zum Schnittanfang.
+        let mut v: Vec<Vertex> = Vec::new();
+        if t1 < 1.0 - 1e-9 {
+            let mut start = Vertex::new(polyline_punkt(p0, p1, b, t1));
+            start.bulge = polyline_teil_bulge(b, t1, 1.0);
+            v.push(start);
+        }
+        for k in 0..n {
+            v.push(verts[(i + 1 + k) % n]);
+        }
+        if t0 > 1e-9 {
+            let mut last = v.pop().expect("Zug hat mindestens einen Punkt");
+            last.bulge = polyline_teil_bulge(b, 0.0, t0);
+            v.push(last);
+            v.push(Vertex::new(polyline_punkt(p0, p1, b, t0)));
+        }
+        stuecke.push(v);
+    } else {
+        let mut links: Vec<Vertex> = verts[..=i].to_vec();
+        if t0 > 1e-9 {
+            let mut last = links.pop().expect("Segment hat einen Anfangspunkt");
+            last.bulge = polyline_teil_bulge(b, 0.0, t0);
+            links.push(last);
+            links.push(Vertex::new(polyline_punkt(p0, p1, b, t0)));
+        }
+        stuecke.push(links);
+        let mut rechts: Vec<Vertex> = Vec::new();
+        if t1 < 1.0 - 1e-9 {
+            let mut first = Vertex::new(polyline_punkt(p0, p1, b, t1));
+            first.bulge = polyline_teil_bulge(b, t1, 1.0);
+            rechts.push(first);
+        }
+        rechts.extend_from_slice(&verts[i + 1..]);
+        stuecke.push(rechts);
+    }
+    stuecke.retain(|v| v.len() >= 2);
+    stuecke
+}
+
+/// Ein Polylinien-Stück als Objektart: bleiben nur **zwei** Punkte übrig, wird
+/// daraus eine Linie (bzw. ein Bogen) — aus einer Polylinie entsteht so ein
+/// normales Einzelobjekt. Ab drei Punkten bleibt es ein Polygonzug.
+fn polyline_stueck_kind(verts: &[Vertex]) -> Option<EntityKind> {
+    if verts.len() < 2 {
+        return None;
+    }
+    if verts.len() == 2 {
+        let a = verts[0];
+        let b = verts[1];
+        if a.p.dist(b.p) < 1e-9 {
+            return None;
+        }
+        if a.bulge.abs() < 1e-12 {
+            return Some(EntityKind::Line { a: a.p, b: b.p });
+        }
+        if let Some(arc) = arc_from_bulge(a.p, b.p, a.bulge) {
+            return Some(EntityKind::Arc {
+                c: arc.c,
+                r: arc.r,
+                a0: arc.a0,
+                a1: arc.a1,
+            });
+        }
+    }
+    Some(EntityKind::Polyline {
+        verts: verts.to_vec(),
+        closed: false,
+    })
+}
+
 /// Was `modify.trim` an der Stelle `at` von `id` entfernen würde — **ohne**
 /// die Zeichnung zu ändern. Grundlage der Hervorhebung in der Zeichenfläche
 /// (T0075), damit der Nutzer vor dem Klick sieht, welcher Abschnitt wegfällt.
@@ -3475,6 +3661,21 @@ pub fn trim_vorschau(doc: &Document, id: Id, at: Vec2, cutters: &[Id]) -> Vec<Se
             };
             // Entfernt wird der andere Bogen — von `a1` zurück nach `a0`.
             vec![Seg::Arc(Arc::new(*c, *r, a1, a0))]
+        }
+        EntityKind::Polyline { verts, closed } => {
+            let Some((i, t0, t1)) = polyline_trim(verts, *closed, at, &segs) else {
+                return Vec::new();
+            };
+            let b = verts[i].bulge;
+            let p0 = verts[i].p;
+            let p1 = verts[(i + 1) % verts.len()].p;
+            let von = polyline_punkt(p0, p1, b, t0);
+            let bis = polyline_punkt(p0, p1, b, t1);
+            let teil = polyline_teil_bulge(b, t0, t1);
+            match arc_from_bulge(von, bis, teil) {
+                Some(arc) => vec![Seg::Arc(arc)],
+                None => vec![Seg::Line(von, bis)],
+            }
         }
         _ => Vec::new(),
     }
@@ -3600,6 +3801,36 @@ fn trim_entity(doc: &mut Document, id: Id, at: Vec2, cutters: &[Id]) -> Result<V
                 em.kind = EntityKind::Arc { c: *c, r: *r, a0, a1 };
             }
             Ok(vec![])
+        }
+        EntityKind::Polyline { verts, closed } => {
+            let Some((i, t0, t1)) = polyline_trim(verts, *closed, at, &segs) else {
+                return Ok(vec![]);
+            };
+            let stuecke: Vec<EntityKind> = polyline_rest(verts, *closed, i, t0, t1)
+                .iter()
+                .filter_map(|v| polyline_stueck_kind(v))
+                .collect();
+            if stuecke.is_empty() {
+                doc.remove_entity(id);
+                return Ok(vec![]);
+            }
+            // Das erste Stück bleibt am Objekt (Id, Ebene, Stil); weitere
+            // Stücke sind neue Elemente und ordnen sich nach ihrem Zeichenrang ein.
+            let mut it = stuecke.into_iter();
+            if let Some(erstes) = it.next() {
+                if let Some(em) = doc.entity_mut(id) {
+                    em.kind = erstes;
+                }
+            }
+            let mut created = Vec::new();
+            for kind in it {
+                let nid = doc.new_id();
+                let mut ne = Entity::new(nid, e.layer, kind);
+                ne.style = e.style.clone();
+                doc.insert_ranked(ne);
+                created.push(nid);
+            }
+            Ok(created)
         }
         _ => Err("Stutzen wird für diesen Objekttyp nicht unterstützt".into()),
     }
