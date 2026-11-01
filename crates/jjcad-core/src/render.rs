@@ -1792,13 +1792,20 @@ pub struct OpeningPreview {
 pub fn preview_door(doc: &Document, spec: &DoorSpec) -> Option<OpeningPreview> {
     let host = spec.host?;
     let host_e = host_wall_entity(doc, host)?;
+    // Die Tür liegt nur in der freien Wandstrecke (T0078): dieselbe Begrenzung
+    // wie in der Action `draw.door`, sonst zeigt die Vorschau eine Lage, die
+    // beim Klick nicht entsteht. Passt sie nicht in die Wand, gibt es keine
+    // Vorschau.
+    crate::actions::opening_span(doc, spec.host, spec.width)?;
+    let anschlusspunkt =
+        crate::actions::clamp_opening_center(doc, spec.host, spec.center, spec.width);
     // Tür immer auf der vorderen Wandkante — dieselbe Rechnung wie in der
     // Action `draw.door`, sonst springt die Tür beim Klick um die halbe
     // Wanddicke zur Seite.
     let center = crate::actions::door_face_center(
         doc,
         spec.host,
-        spec.center,
+        anschlusspunkt,
         spec.angle,
         spec.swing_in,
     );
@@ -1820,9 +1827,13 @@ pub fn preview_door(doc: &Document, spec: &DoorSpec) -> Option<OpeningPreview> {
 pub fn preview_window(doc: &Document, spec: &WindowSpec) -> Option<OpeningPreview> {
     let host = spec.host?;
     let host_e = host_wall_entity(doc, host)?;
+    // Nur in der freien Wandstrecke, wie die Action `draw.window` (T0078).
+    crate::actions::opening_span(doc, spec.host, spec.width)?;
+    let anschlusspunkt =
+        crate::actions::clamp_opening_center(doc, spec.host, spec.center, spec.width);
     // Lage in der Wanddicke wie in der Action `draw.window`.
     let center =
-        crate::actions::offset_opening(doc, spec.host, spec.center, spec.angle, spec.align);
+        crate::actions::offset_opening(doc, spec.host, anschlusspunkt, spec.angle, spec.align);
     let kind = EntityKind::Window {
         align: spec.align,
         center,

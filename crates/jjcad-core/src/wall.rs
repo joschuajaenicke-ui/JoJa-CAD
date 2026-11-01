@@ -781,6 +781,34 @@ impl<'a> WallIndex<'a> {
         out
     }
 
+    /// Nutzbare Strecke der Wand längs ihrer Achse (mm ab `a`) — die Strecke,
+    /// auf der ein Bauteil tatsächlich in Wand liegt.
+    ///
+    /// An einem verbundenen Ende endet sie an der **Anschlussnaht**: dort
+    /// schneiden die Gehrungspunkte der Umrandung den Wandkörper ab, die Wand
+    /// reicht nicht bis zur Stirnebene. Geprüft wird die ganze Wanddicke —
+    /// eine Öffnung, die über die Naht ragt, stünde mit einer Ecke außerhalb
+    /// des Körpers. Ohne Nachbarn bleibt die volle Länge. Türen und Fenster
+    /// dürfen nur innerhalb dieser Strecke liegen (T0078).
+    ///
+    /// `None`, wenn die Id keine (gezeichnete) Wand ist.
+    pub fn span(&self, id: Id) -> Option<(f64, f64)> {
+        let i = *self.by_id.get(&id)?;
+        let f = *self.frame(i)?;
+        let total = f.len();
+        let mut lo = 0.0f64;
+        let mut hi = total;
+        for s in self.seams(i, &f, true) {
+            seam_limit(&f, &s, &mut lo, &mut hi);
+        }
+        for s in self.seams(i, &f, false) {
+            seam_limit(&f, &s, &mut lo, &mut hi);
+        }
+        lo = lo.clamp(0.0, total);
+        hi = hi.clamp(0.0, total);
+        (hi > lo + 1e-6).then_some((lo, hi))
+    }
+
     /// Liegt `p` auf der Basislinie einer anderen Wand (Stichanschluss)?
     /// Dann endet die Wand dort im Nachbarkörper — ohne Stirnkante.
     fn on_baseline(&self, own: Id, p: Vec2) -> bool {
@@ -1009,3 +1037,41 @@ pub fn wall_contour_points(doc: &Document, e: &Entity) -> Vec<Vec2> {
 
 /// Toleranz, unterhalb derer zwei Konturpunkte als derselbe Punkt gelten (mm).
 const CONTOUR_DEDUP: f64 = 0.1;
+
+/// Grenze, die eine Anschlussnaht für die nutzbare Wandstrecke setzt.
+///
+/// Die Naht ist die Gerade durch die Gehrungspunkte; der Körper behält die
+/// Seite, in die `nrm` zeigt. Geschnitten wird sie mit **beiden** Längskanten
+/// (±h) — die Öffnung liegt nur dann ganz in Wand, wenn beide Kanten auf der
+/// behaltenen Seite liegen. Die Naht kreuzt die eine Kante `h` vor dem Knoten
+/// und die andere `h` dahinter; maßgeblich ist die engere. Bei gleich dicken,
+/// mittigen Wänden sind das genau die Projektionen der beiden
+/// Gehrungspunkte auf die Achse.
+fn seam_limit(f: &Frame, s: &Seam, lo: &mut f64, hi: &mut f64) {
+    let dn = f.dir.dot(s.nrm);
+    if dn.abs() < 1e-9 {
+        return;
+    }
+    // Laufrichtung `dir` führt in den Körper (dn > 0) → untere Grenze,
+    // andernfalls obere.
+    let mut t_lo = f64::MIN;
+    let mut t_hi = f64::MAX;
+    for side in [1.0, -1.0] {
+        let q = f.a + f.n * (f.h * side);
+        let t = (s.p - q).dot(s.nrm) / dn;
+        t_lo = t_lo.max(t);
+        t_hi = t_hi.min(t);
+    }
+    if dn > 0.0 {
+        *lo = lo.max(t_lo);
+    } else {
+        *hi = hi.min(t_hi);
+    }
+}
+
+/// Nutzbare Strecke einer Wand längs ihrer Achse (mm ab `a`) — für einen
+/// Einzelaufruf mit neu gebautem Index. Wer mehrere Wände fragt, nimmt
+/// [`WallIndex::span`].
+pub fn wall_span(doc: &Document, id: Id) -> Option<(f64, f64)> {
+    WallIndex::build(doc, doc.ents()).span(id)
+}

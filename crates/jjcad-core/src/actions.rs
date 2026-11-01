@@ -756,6 +756,68 @@ pub const TUER_OHNE_WAND: &str =
 pub const FENSTER_OHNE_WAND: &str =
     "Fenster · keine Wand an dieser Stelle — an eine Wand setzen oder 'host' angeben";
 
+/// Meldung, wenn eine Öffnung breiter ist als die freie Wandstrecke.
+pub const TUER_ZU_BREIT: &str = "Tür · passt nicht in die Wand";
+pub const FENSTER_ZU_BREIT: &str = "Fenster · passt nicht in die Wand";
+
+/// Zulässiger Längsbereich einer Öffnung in ihrer Wand (mm ab Wandanfang).
+///
+/// Die Wandstrecke kommt aus [`crate::wall::wall_span`] — an verbundenen Ecken
+/// begrenzen die Gehrungspunkte der Umrandung die Wand, sonst die Stirn. Um
+/// die halbe Öffnungsbreite eingerückt, damit die Öffnung **ganz** in der Wand
+/// liegt. `None` = keine Wand oder die Öffnung ist breiter als die Strecke.
+pub fn opening_span(doc: &Document, host: Option<Id>, width: f64) -> Option<(f64, f64)> {
+    let (t0, t1) = crate::wall::wall_span(doc, host?)?;
+    let hw = (width * 0.5).max(0.0);
+    if t1 - t0 + 1e-6 < width {
+        return None;
+    }
+    Some((t0 + hw, t1 - hw))
+}
+
+/// Längslage einer Öffnung in die freie Wandstrecke ziehen.
+///
+/// Passt die Öffnung nicht (Wand zu kurz), bleibt die Lage stehen — dann
+/// entscheidet der Aufrufer, ob das ein Fehler ist (Platzieren) oder die
+/// vorhandene Geometrie gilt.
+pub fn clamp_opening_at(doc: &Document, host: Option<Id>, width: f64, at: f64) -> f64 {
+    match opening_span(doc, host, width) {
+        Some((lo, hi)) => at.clamp(lo, hi),
+        None => at,
+    }
+}
+
+/// Punkt auf der Wandachse in Längslage `at` (mm ab Wandanfang).
+fn wall_axis_point(doc: &Document, host: Id, at: f64) -> Option<Vec2> {
+    let EntityKind::Wall { a, b, .. } = &doc.entity(host)?.kind else {
+        return None;
+    };
+    let dir = (*b - *a).normalized();
+    Some(*a + dir * at)
+}
+
+/// Auf die freie Wandstrecke gezogener Anschlusspunkt einer Öffnung.
+///
+/// Dieselbe Begrenzung wie beim Platzieren: der Punkt wird auf die Wandachse
+/// gelegt und längs in den Bereich zwischen den Anschlussnähten gezogen
+/// (T0078). Vorschau und Action teilen sie, damit der Klick genau das setzt,
+/// was zu sehen war.
+pub fn clamp_opening_center(
+    doc: &Document,
+    host: Option<Id>,
+    center: Vec2,
+    width: f64,
+) -> Vec2 {
+    let Some(hid) = host else {
+        return center;
+    };
+    let Some(t) = wall_at(doc, host, center) else {
+        return center;
+    };
+    let t = clamp_opening_at(doc, host, width, t);
+    wall_axis_point(doc, hid, t).unwrap_or(center)
+}
+
 /// Länge längs der Wandachse ab Wandanfang (mm).
 fn wall_at(doc: &Document, host: Option<Id>, p: Vec2) -> Option<f64> {
     let hid = host?;
@@ -802,12 +864,24 @@ fn opening_from_wall(
 pub fn resync_openings(doc: &mut Document) {
     let mut fix: Vec<(Id, f64)> = Vec::new();
     for e in &doc.entities {
-        if let EntityKind::Door { host, center, .. } | EntityKind::Window { host, center, .. } =
-            &e.kind
+        if let EntityKind::Door {
+            host,
+            center,
+            width,
+            ..
+        }
+        | EntityKind::Window {
+            host,
+            center,
+            width,
+            ..
+        } = &e.kind
         {
             if host.is_some() {
                 if let Some(t) = wall_at(&*doc, *host, *center) {
-                    fix.push((e.id, t));
+                    // Verschieben über das Wandende hinaus endet an der Naht —
+                    // die Öffnung liegt immer in Wand (T0078).
+                    fix.push((e.id, clamp_opening_at(&*doc, *host, *width, t)));
                 }
             }
         }
@@ -1621,7 +1695,23 @@ pub fn execute(doc: &mut Document, id: &str, params: &Value) -> Result<Value, St
             }
             let layer = resolve_layer_in(doc, &p, ebene);
             let swing_in = p.boolean_or("swing_in", true);
-            let at = wall_at(doc, host, center);
+            let width = p.len_or("width", doc.settings.door_width);
+            // Nur die freie Wandstrecke zählt: an verbundenen Ecken endet die
+            // Wand an der Anschlussnaht (Gehrungspunkte der Umrandung), nicht
+            // an der Stirnebene (T0078).
+            let at = match (host, opening_span(doc, host, width)) {
+                (_, Some((lo, hi))) => {
+                    Some(wall_at(doc, host, center).unwrap_or(lo).clamp(lo, hi))
+                }
+                (Some(_), None) => return Err(TUER_ZU_BREIT.into()),
+                (None, None) => None,
+            };
+            // Auf der begrenzten Längslage sitzen: sonst stünde die Tür
+            // außerhalb der Wand, obwohl ihre Lage gekappt ist.
+            let center = match (at, host) {
+                (Some(t), Some(h)) => wall_axis_point(doc, h, t).unwrap_or(center),
+                _ => center,
+            };
             // Tür immer auf die vordere Wandkante (Blattseite) setzen
             let center = door_face_center(doc, host, center, angle.unwrap_or(0.0), swing_in);
             let idn = doc.new_id();
@@ -1632,7 +1722,7 @@ pub fn execute(doc: &mut Document, id: &str, params: &Value) -> Result<Value, St
                     align: crate::style::WallAlign::Center,
                     center,
                     angle: angle.unwrap_or(0.0),
-                    width: p.len_or("width", doc.settings.door_width),
+                    width,
                     kind: p.door_kind("kind").unwrap_or(DoorKind::Hinge),
                     hinge: p.num_or("hinge", 1.0),
                     swing_in,
@@ -1692,7 +1782,20 @@ pub fn execute(doc: &mut Document, id: &str, params: &Value) -> Result<Value, St
                 "right" | "rechts" => crate::style::WallAlign::Right,
                 _ => crate::style::WallAlign::Center,
             };
-            let at = wall_at(doc, host, center);
+            let width = p.len_or("width", doc.settings.window_width);
+            // Wie bei der Tür: die freie Wandstrecke zwischen den
+            // Anschlussnähten ist die Grenze (T0078).
+            let at = match (host, opening_span(doc, host, width)) {
+                (_, Some((lo, hi))) => {
+                    Some(wall_at(doc, host, center).unwrap_or(lo).clamp(lo, hi))
+                }
+                (Some(_), None) => return Err(FENSTER_ZU_BREIT.into()),
+                (None, None) => None,
+            };
+            let center = match (at, host) {
+                (Some(t), Some(h)) => wall_axis_point(doc, h, t).unwrap_or(center),
+                _ => center,
+            };
             let center = offset_opening(doc, host, center, angle.unwrap_or(0.0), align);
             let idn = doc.new_id();
             let mut e = Entity::new(
@@ -1702,7 +1805,7 @@ pub fn execute(doc: &mut Document, id: &str, params: &Value) -> Result<Value, St
                     align,
                     center,
                     angle: angle.unwrap_or(0.0),
-                    width: p.len_or("width", doc.settings.window_width),
+                    width,
                     sill: p.len_or("sill", 900.0),
                     height: p.len_or("height", 1250.0),
                     host,
@@ -2217,6 +2320,15 @@ pub fn execute(doc: &mut Document, id: &str, params: &Value) -> Result<Value, St
                     }
                     _ => None,
                 };
+                // Wird die Öffnung breiter, darf sie nicht über die Naht bzw.
+                // das Wandende hinausragen — Längslage nachziehen (T0078).
+                let at_neu: Option<f64> = match doc.entity(*eid).map(|e| &e.kind) {
+                    Some(EntityKind::Door { host, at, .. })
+                    | Some(EntityKind::Window { host, at, .. }) => p
+                        .len("width")
+                        .and_then(|w| at.map(|t| clamp_opening_at(doc, *host, w, t))),
+                    _ => None,
+                };
                 if let Some(e) = doc.entity_mut(*eid) {
                     if let Some(lid) = new_layer {
                         e.layer = lid;
@@ -2306,10 +2418,18 @@ pub fn execute(doc: &mut Document, id: &str, params: &Value) -> Result<Value, St
                             }
                         }
                         EntityKind::Door {
-                            width: w, kind, hinge, swing_in, ..
+                            width: w,
+                            at,
+                            kind,
+                            hinge,
+                            swing_in,
+                            ..
                         } => {
                             if let Some(v) = width {
                                 *w = v;
+                            }
+                            if let Some(t) = at_neu {
+                                *at = Some(t);
                             }
                             if let Some(k) = p.door_kind("kind") {
                                 *kind = k;
@@ -2321,9 +2441,18 @@ pub fn execute(doc: &mut Document, id: &str, params: &Value) -> Result<Value, St
                                 *swing_in = b;
                             }
                         }
-                        EntityKind::Window { width: w, sill, height: h, .. } => {
+                        EntityKind::Window {
+                            width: w,
+                            at,
+                            sill,
+                            height: h,
+                            ..
+                        } => {
                             if let Some(v) = width {
                                 *w = v;
+                            }
+                            if let Some(t) = at_neu {
+                                *at = Some(t);
                             }
                             if let Some(v) = p.len("sill") {
                                 *sill = v;
