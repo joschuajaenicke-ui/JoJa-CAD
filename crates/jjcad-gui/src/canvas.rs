@@ -192,6 +192,21 @@ fn fill_too_thin(v: &[Pos2]) -> bool {
     jjcad_core::geom::polygon_min_width(&pts) < FILL_MIN_WIDTH_PX
 }
 
+/// Strichbreite eines Objekts auf dem Bildschirm — die **eine** Umrechnung von
+/// Papier-Millimetern in Pixel, für die Anzeige (`paint_prim`) und für Vorschauen
+/// wie die Stutzen-Hervorhebung (T0075).
+///
+/// Zwei Modi: `px` = bildschirmkonstant (Breite in Pixeln, unabhängig vom Zoom),
+/// `DPI` = wie im PDF (Breite_mm × Pixel je Papier-mm, ohne Obergrenze, damit
+/// Strichbreite und Abstand in jedem Zoom im selben Verhältnis stehen).
+fn linienbreite_px(width_mm: f64, paper_px: f64, scaled: bool) -> f64 {
+    if scaled {
+        (width_mm * paper_px).max(0.05)
+    } else {
+        (width_mm * PAPER_PX_PER_MM).clamp(0.7, 9.0)
+    }
+}
+
 fn paint_prim(p: &Painter, prim: &Prim, w2s: &dyn Fn(V2) -> Pos2, scale: f64, pc: &PaintCtx, alpha: f32) {
     let is_sel = !pc.preview && pc.selected.contains(&prim.entity) && prim.entity != 0;
     let is_hover = !pc.preview && pc.hover == Some(prim.entity) && prim.entity != 0 && !is_sel;
@@ -209,11 +224,7 @@ fn paint_prim(p: &Painter, prim: &Prim, w2s: &dyn Fn(V2) -> Pos2, scale: f64, pc
     //  "px"  = bildschirmkonstant (Breite in Pixeln, unabhängig vom Zoom)
     //  "DPI" = wie im PDF: Breite_mm * Pixel-pro-Papier-mm, ohne Obergrenze,
     //          damit Strichbreite und Abstand in jedem Zoom im selben Verhältnis stehen.
-    let base_w = if pc.lineweights_scaled {
-        (prim.style.width * pc.paper_px).max(0.05)
-    } else {
-        (prim.style.width * PAPER_PX_PER_MM).clamp(0.7, 9.0)
-    };
+    let base_w = linienbreite_px(prim.style.width, pc.paper_px, pc.lineweights_scaled);
     let _ = pc.lineweights;
     let w = if pc.preview {
         1.2
@@ -2503,6 +2514,9 @@ fn draw_trim_preview(app: &App, p: &Painter, rect: Rect, view: View, at: V2) {
     let Some(id) = snap::hit_test(app.doc(), at, tol, None) else {
         return;
     };
+    let Some(e) = app.doc().entity(id) else {
+        return;
+    };
     let segs = actions::trim_vorschau(app.doc(), id, at, &[]);
     if segs.is_empty() {
         return;
@@ -2532,7 +2546,16 @@ fn draw_trim_preview(app: &App, p: &Painter, rect: Rect, view: View, at: V2) {
             }
         }
     }
-    let strich = Stroke::new(3.0_f32, farbe);
+    // Die Hervorhebung folgt der Strichstärke des Objekts (T0075): bei fetten
+    // Linien deckt sie die Linie ab, im DPI-Modus wächst sie mit dem Zoom.
+    // Ein Mindestmaß hält sie auch auf dünnen Linien sichtbar, der Zuschlag
+    // lässt die Linie links und rechts darunter hervorschauen.
+    let breite = linienbreite_px(
+        app.doc().effective_line_weight(e),
+        view.zoom * app.doc().settings.annotation_scale,
+        app.ui.lineweights_scaled,
+    );
+    let strich = Stroke::new((breite + 1.0).max(3.0) as f32, farbe);
     for s in &segs {
         match s {
             Seg::Line(a, b) => {
@@ -9040,8 +9063,8 @@ mod tests_stutzvorschau {
         app
     }
 
-    /// Die Strecken der Warnfarbe, die `draw_trim_preview` malt.
-    fn stutz_strecken(app: &mut App, zeiger: Option<V2>) -> Vec<(Pos2, Pos2)> {
+    /// Die Strecken der Warnfarbe, die `draw_trim_preview` malt, mit Strichbreite.
+    fn stutz_strecken(app: &mut App, zeiger: Option<V2>) -> Vec<(Pos2, Pos2, f32)> {
         let view = app.current_view();
         let ctx = app.ctx.clone();
         let out = ctx.run(egui::RawInput::default(), |ctx| {
@@ -9053,11 +9076,21 @@ mod tests_stutzvorschau {
         for cs in &out.shapes {
             if let Shape::LineSegment { points, stroke } = &cs.shape {
                 if stroke.color == egui::epaint::ColorMode::Solid(Palette::DANGER) {
-                    v.push((points[0], points[1]));
+                    v.push((points[0], points[1], stroke.width));
                 }
             }
         }
         v
+    }
+
+    /// Strichstärke des Zielobjekts setzen (Papier-Millimeter).
+    fn staerke(app: &mut App, id: Id, mm: f64) {
+        let e = app.doc_mut().entities.iter_mut().find(|e| e.id == id).unwrap();
+        e.style.line_weight = Some(mm);
+    }
+
+    fn ziel_id(app: &App) -> Id {
+        app.doc().entities.last().unwrap().id
     }
 
     #[test]
@@ -9070,7 +9103,7 @@ mod tests_stutzvorschau {
             world_to_screen(RECT, view, V2::new(2000.0, 0.0)),
             world_to_screen(RECT, view, V2::new(4000.0, 0.0)),
         );
-        let (a, b) = strecken[0];
+        let (a, b, _breite) = strecken[0];
         assert!(
             (a.x - erwartet_a.x).abs() < 0.6 && (a.y - erwartet_a.y).abs() < 0.6,
             "Anfang an der ersten Kante: {a:?} statt {erwartet_a:?}"
@@ -9087,5 +9120,51 @@ mod tests_stutzvorschau {
         let mut app = app();
         let strecken = stutz_strecken(&mut app, Some(V2::new(3000.0, 900.0)));
         assert!(strecken.is_empty(), "kein Abschnitt ohne Linie: {strecken:?}");
+    }
+
+    /// Die Hervorhebung folgt der Linienstärke (Turn 2): eine fette Linie bekommt
+    /// einen breiteren roten Strich als eine dünne, sonst verschwindet sie darunter.
+    #[test]
+    fn hervorhebung_folgt_der_linienstaerke() {
+        let mut app = app();
+        let id = ziel_id(&app);
+        // Modus ausdrücklich setzen: er kommt sonst aus der echten `prefs.json`
+        // des Nutzers (hier steht DPI), und der Test hinge an seiner Einstellung.
+        app.ui.lineweights_scaled = false;
+        staerke(&mut app, id, 0.25);
+        let duenn = stutz_strecken(&mut app, Some(V2::new(3000.0, 0.0)))[0].2;
+        staerke(&mut app, id, 2.0);
+        let fett = stutz_strecken(&mut app, Some(V2::new(3000.0, 0.0)))[0].2;
+        assert!(
+            fett > duenn + 1.0,
+            "fette Linie braucht einen breiteren Strich: dünn {duenn}, fett {fett}"
+        );
+        // px-Modus: 2,0 mm × 3,2 px/mm + 1 px Zuschlag
+        assert!((fett - 7.4).abs() < 0.01, "Breite im px-Modus: {fett}");
+    }
+
+    /// Im DPI-Modus wächst die Hervorhebung mit dem Zoom — vorher blieb sie bei
+    /// 3 px stehen, während die Linie selbst breiter wurde.
+    #[test]
+    fn hervorhebung_skaliert_im_dpi_modus() {
+        let mut app = app();
+        let id = ziel_id(&app);
+        staerke(&mut app, id, 0.5);
+        app.ui.lineweights_scaled = true;
+        let mut view = app.current_view();
+        view.zoom = 0.08; // Papier-mm → 8 px
+        app.set_view(view);
+        let klein = stutz_strecken(&mut app, Some(V2::new(3000.0, 0.0)))[0].2;
+        view.zoom = 0.40; // Papier-mm → 40 px
+        app.set_view(view);
+        let gross = stutz_strecken(&mut app, Some(V2::new(4000.0 - 100.0, 0.0)))[0].2;
+        assert!(
+            (klein - 5.0).abs() < 0.01,
+            "0,5 mm bei 8 px/mm → 4 px + 1: {klein}"
+        );
+        assert!(
+            (gross - 21.0).abs() < 0.01,
+            "0,5 mm bei 40 px/mm → 20 px + 1: {gross}"
+        );
     }
 }
