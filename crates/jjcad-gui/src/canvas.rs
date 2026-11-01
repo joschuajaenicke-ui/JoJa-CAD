@@ -59,16 +59,30 @@ fn align_name(a: jjcad_core::style::WallAlign) -> &'static str {
 }
 
 /// Nächste Wand unter dem Punkt: liefert (Punkt auf der Achse, Wandwinkel, Wand-Id).
+///
+/// Der Punkt wird auf die **freie Wandstrecke** gezogen (T0078). An
+/// verbundenen Ecken beginnt sie erst an der Anschlussnaht — die
+/// Gehrungspunkte der Umrandung schneiden den Wandkörper dort ab, eine Tür
+/// stünde sonst mit einer Ecke neben der Wand.
 fn wall_under(app: &App, p: V2) -> Option<(V2, f64, jjcad_core::model::Id)> {
+    let doc = app.doc();
+    // Ein Index für alle Kandidaten — er muss die Nachbarwände am Knoten
+    // mitfassen (Naht), daher der weitere Bereich.
+    let idx = jjcad_core::wall::WallIndex::build_near(
+        doc,
+        &doc.entities,
+        &jjcad_core::geom::BBox::from_point(p).expanded(3000.0),
+    );
     let mut best: Option<(f64, V2, f64, jjcad_core::model::Id)> = None;
-    for e in &app.doc().entities {
+    for e in &doc.entities {
         if let jjcad_core::model::EntityKind::Wall { a, b, thickness, .. } = &e.kind {
             let d = jjcad_core::geom::dist_point_segment(p, *a, *b);
             if d > thickness * 0.5 + 600.0 {
                 continue;
             }
             let dir = (*b - *a).normalized();
-            let t = (p - *a).dot(dir).clamp(0.0, a.dist(*b));
+            let (lo, hi) = idx.span(e.id).unwrap_or((0.0, a.dist(*b)));
+            let t = (p - *a).dot(dir).clamp(lo, hi);
             let on_axis = *a + dir * t;
             if best.as_ref().map(|(bd, _, _, _)| d < *bd).unwrap_or(true) {
                 best = Some((d, on_axis, dir.angle(), e.id));
@@ -2143,8 +2157,13 @@ fn draw_tool_preview(
                     };
                     if let Some(v) = render::preview_door(app.doc(), &spec) {
                         draw_opening_preview(app, p, view, &v, &w2s);
+                        label = format!("Tür {}", unit.format_plain(width, 2));
+                    } else {
+                        // Die Tür passt nicht in die freie Wandstrecke — der
+                        // Klick ergäbe einen Fehler, also keine Vorschau (T0078).
+                        p.circle_stroke(w2s(cursor), 9.0, dashed);
+                        label = "Tür · Wand zu kurz".into();
                     }
-                    label = format!("Tür {}", unit.format_plain(width, 2));
                 }
                 None => {
                     // Eine Tür braucht eine Wand — ohne sie nur der Hinweis
@@ -2168,8 +2187,11 @@ fn draw_tool_preview(
                     };
                     if let Some(v) = render::preview_window(app.doc(), &spec) {
                         draw_opening_preview(app, p, view, &v, &w2s);
+                        label = format!("Fenster {}", unit.format_plain(width, 2));
+                    } else {
+                        p.circle_stroke(w2s(cursor), 9.0, dashed);
+                        label = "Fenster · Wand zu kurz".into();
                     }
-                    label = format!("Fenster {}", unit.format_plain(width, 2));
                 }
                 None => {
                     p.circle_stroke(w2s(cursor), 9.0, dashed);
@@ -9165,6 +9187,80 @@ mod tests_stutzvorschau {
         assert!(
             (gross - 21.0).abs() < 0.01,
             "0,5 mm bei 40 px/mm → 20 px + 1: {gross}"
+        );
+    }
+}
+
+#[cfg(test)]
+mod tests_tuer_position {
+    //! Tür und Fenster liegen in der Wand (T0078): der Zeiger auf der
+    //! verlängerten Achse wird auf die freie Wandstrecke gezogen, der Klick
+    //! setzt die Öffnung dort — nicht hinter dem Wandende.
+
+    use super::*;
+
+    fn app() -> App {
+        App::with_ctx(egui::Context::default())
+    }
+
+    fn wand(app: &mut App, a: (f64, f64), b: (f64, f64)) -> u64 {
+        let res = app
+            .session_mut()
+            .execute(
+                "draw.wall",
+                &serde_json::json!({"a": [a.0, a.1], "b": [b.0, b.1], "thickness": 0.3}),
+            )
+            .expect("Wand");
+        res["created"][0].as_u64().expect("keine Id")
+    }
+
+    fn tueren(app: &App) -> Vec<(Option<f64>, V2, f64)> {
+        app.doc()
+            .entities
+            .iter()
+            .filter_map(|e| match &e.kind {
+                EntityKind::Door {
+                    at,
+                    center,
+                    width,
+                    ..
+                } => Some((*at, *center, *width)),
+                _ => None,
+            })
+            .collect()
+    }
+
+    #[test]
+    fn zeiger_hinter_dem_wandende_bleibt_auf_der_wand() {
+        let mut app = app();
+        wand(&mut app, (0.0, 0.0), (6.0, 0.0));
+        let (p, _, _) = wall_under(&app, V2::new(6200.0, 0.0)).expect("keine Wand");
+        assert!(
+            (p.x - 6000.0).abs() < 0.5,
+            "der Punkt muss am Wandende liegen: {p:?}"
+        );
+    }
+
+    #[test]
+    fn klick_hinter_dem_ende_setzt_die_tuer_in_die_wand() {
+        let mut app = app();
+        let w = wand(&mut app, (0.0, 0.0), (6.0, 0.0));
+        app.start_tool("draw.door");
+        // 200 mm hinter dem Wandende geklickt.
+        tool_click(&mut app, V2::new(6200.0, 0.0));
+        let t = tueren(&app);
+        assert_eq!(t.len(), 1, "genau eine Tür");
+        let (at, center, breite) = t[0];
+        assert!(
+            (at.unwrap() - (6000.0 - breite * 0.5)).abs() < 0.5,
+            "at muss am Wandende enden: {at:?}"
+        );
+        assert!((center.x - (6000.0 - breite * 0.5)).abs() < 0.5);
+        let wand_e = app.doc().entity(w).unwrap();
+        let iv = jjcad_core::render::wall_opening_intervals(app.doc(), wand_e);
+        assert!(
+            (iv[0].1 - 6000.0).abs() < 0.5,
+            "Öffnung endet an der Wand: {iv:?}"
         );
     }
 }
