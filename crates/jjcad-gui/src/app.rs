@@ -1074,6 +1074,13 @@ impl App {
                 "dateien" | "mehrere" => {
                     self.new_document();
                     self.doc_mut().name = "Schnitt".into();
+                    // Eine Linie macht den Reiter „ungespeichert“ (Änderungspunkt).
+                    self.session_mut()
+                        .execute(
+                            "draw.line",
+                            &serde_json::json!({"a": [0.0, 0.0], "b": [4000.0, 2000.0]}),
+                        )
+                        .ok();
                     self.new_document();
                     self.doc_mut().name = "Ansicht".into();
                     self.active = 0;
@@ -2686,7 +2693,7 @@ impl App {
         crate::textedit::beenden(self);
         // Dieselbe Datei nur einmal öffnen: zwei Reiter auf denselben Pfad
         // überschreiben sich beim Speichern gegenseitig.
-        if let Some(i) = self.datei_reiter(path) {
+        if let Some(i) = self.reiter_der_datei(path) {
             self.switch_doc(i);
             self.toast(format!(
                 "Datei · bereits offen: {}",
@@ -2733,7 +2740,7 @@ impl App {
 
     /// Liegt dieser Pfad schon in einem Reiter? Verglichen wird der echte Pfad
     /// (`canonicalize`), damit „./a.jjcad“ und „/x/a.jjcad“ derselbe Reiter sind.
-    fn datei_reiter(&self, path: &PathBuf) -> Option<usize> {
+    fn reiter_der_datei(&self, path: &PathBuf) -> Option<usize> {
         let ziel = std::fs::canonicalize(path).unwrap_or_else(|_| path.clone());
         self.tabs.iter().position(|t| {
             t.session
@@ -3419,11 +3426,17 @@ impl App {
 
     // ---- Datei- und Blattreiter ----
 
-    /// Reiterstreifen: links die offenen **Dateien** (ein Reiter je Zeichnung),
-    /// dahinter die Blattreiter der aktiven Datei.
+    /// Reiterstreifen in **zwei Zonen** (T0073):
+    ///
+    /// Links die offenen **Dateien** — je Zeichnung ein Reiter mit Dateisymbol auf
+    /// eigenem, dunklerem Grund; der aktive steht als Karte mit Akzentlinie darin.
+    /// Rechts, in einer abgesetzten Fläche, die **Blätter** der aktiven Datei als
+    /// kleinere Chips samt `+` für ein neues Blatt. Die beiden Zonen unterscheiden
+    /// sich in Grund, Größe, Form und Beschriftung („Blätter“), damit niemand
+    /// Datei- und Blattreiter verwechselt.
     ///
     /// „Neu“ hängt einen Datei-Reiter an, statt die aktuelle Zeichnung zu
-    /// ersetzen — der bisherige Stand bleibt im eigenen Reiter stehen (T0073).
+    /// ersetzen — der bisherige Stand bleibt im eigenen Reiter stehen.
     fn doc_tabs(&mut self, ui: &mut egui::Ui) {
         let mut wechsle_datei: Option<usize> = None;
         let mut schliesse_datei: Option<usize> = None;
@@ -3447,16 +3460,56 @@ impl App {
             v
         };
         let aktuell = self.tab().tab;
+        // Beschriftungen der beiden Zonen — ihr Platz wird vor dem Messen gebraucht.
+        const DATEI_LABEL: &str = "Dateien";
+        const DATEI_LABEL_W: f32 = 44.0;
+        const BLATT_LABEL: &str = "Blätter";
+        const BLATT_LABEL_W: f32 = 40.0;
+
         ui.horizontal_centered(|ui| {
+            // Abstände hier von Hand: die Zonen sollen ohne egui-Polster anliegen.
+            ui.spacing_mut().item_spacing.x = 0.0;
             ui.add_space(6.0);
-            for (idx, name, modified) in &dateien {
-                let (geklickt, geschlossen) = Self::tab_knopf(
-                    ui,
+
+            // ---- Zone 1: Dateien (eigener, dunklerer Grund) ----
+            let breiten: Vec<f32> = dateien
+                .iter()
+                .map(|(_, name, _)| Self::datei_breite(ui, name, mehrere_dateien))
+                .collect();
+            let breite = 10.0 + DATEI_LABEL_W + 8.0 + breiten.iter().sum::<f32>() + 9.0;
+            let (zone, _) = ui.allocate_exact_size(Vec2::new(breite, DOCTABS_H), Sense::hover());
+            // Der Grund der Dateizone beginnt am Fensterrand — ein Band, kein Kasten
+            // mitten im Streifen.
+            let band = Rect::from_min_max(Pos2::new(ui.max_rect().left(), zone.top()), zone.max);
+            ui.painter().rect_filled(band, Rounding::ZERO, Palette::BG);
+            ui.painter().line_segment(
+                [
+                    Pos2::new(band.left(), band.bottom() - 0.5),
+                    Pos2::new(band.right(), band.bottom() - 0.5),
+                ],
+                Stroke::new(1.0_f32, Palette::BORDER_SOFT),
+            );
+            let mut datei_ui = ui.new_child(
+                egui::UiBuilder::new()
+                    .max_rect(zone)
+                    .layout(Layout::left_to_right(Align::Center)),
+            );
+            datei_ui.spacing_mut().item_spacing.x = 0.0;
+            datei_ui.add_space(10.0);
+            datei_ui.label(
+                RichText::new(DATEI_LABEL)
+                    .size(10.0)
+                    .color(Palette::TEXT_FAINT),
+            );
+            datei_ui.add_space(8.0);
+            for ((idx, name, geaendert), breite) in dateien.iter().zip(breiten) {
+                let (geklickt, geschlossen) = Self::datei_reiter(
+                    &mut datei_ui,
                     name,
-                    None,
+                    breite,
                     *idx == aktiv,
                     mehrere_dateien,
-                    *modified,
+                    *geaendert,
                     egui::Id::new(("datei", *idx)),
                 );
                 if geschlossen {
@@ -3465,27 +3518,60 @@ impl App {
                     wechsle_datei = Some(*idx);
                 }
             }
-            // Trenner: links die Dateien, rechts die Blätter der aktiven Datei.
-            let (trenner, _) = ui.allocate_exact_size(Vec2::new(11.0, 26.0), Sense::hover());
+
+            // Trenner an der Kante der Dateizone: die beiden Bereiche stoßen
+            // nicht bloß aneinander, sie sind durch eine Linie geschieden.
             ui.painter().line_segment(
                 [
-                    Pos2::new(trenner.center().x, trenner.top() + 5.0),
-                    Pos2::new(trenner.center().x, trenner.bottom() - 5.0),
+                    Pos2::new(zone.right() - 1.0, zone.top() + 6.0),
+                    Pos2::new(zone.right() - 1.0, zone.bottom() - 6.0),
                 ],
                 Stroke::new(1.0_f32, Palette::BORDER),
             );
-            for (kind, name, closable) in &reiter {
+            ui.add_space(8.0);
+
+            // ---- Zone 2: Blätter der aktiven Datei (eigene Fläche) ----
+            let blattbreiten: Vec<f32> = reiter
+                .iter()
+                .map(|(_, name, closable)| Self::blatt_breite(ui, name, *closable))
+                .collect();
+            let tray_breite =
+                10.0 + BLATT_LABEL_W + 4.0 + blattbreiten.iter().sum::<f32>() + 6.0 + 20.0 + 8.0;
+            let (tray, _) = ui.allocate_exact_size(
+                Vec2::new(tray_breite, DOCTABS_H - 6.0),
+                Sense::hover(),
+            );
+            ui.painter().rect_filled(tray, Rounding::same(9.0), Palette::PANEL);
+            ui.painter().rect_stroke(
+                tray,
+                Rounding::same(9.0),
+                Stroke::new(1.0_f32, Palette::BORDER_SOFT),
+            );
+            let mut blatt_ui = ui.new_child(
+                egui::UiBuilder::new()
+                    .max_rect(tray)
+                    .layout(Layout::left_to_right(Align::Center)),
+            );
+            blatt_ui.spacing_mut().item_spacing.x = 0.0;
+            blatt_ui.add_space(10.0);
+            blatt_ui.label(
+                RichText::new(BLATT_LABEL)
+                    .size(10.0)
+                    .color(Palette::TEXT_FAINT),
+            );
+            blatt_ui.add_space(8.0);
+            for ((kind, name, closable), breite) in reiter.iter().zip(blattbreiten) {
                 let icon = match kind {
                     TabKind::Model => "layers",
                     TabKind::Sheet(_) => "sheet",
                 };
-                let (geklickt, geschlossen) = Self::tab_knopf(
-                    ui,
+                let (geklickt, geschlossen) = Self::blatt_chip(
+                    &mut blatt_ui,
                     name,
-                    Some(icon),
+                    icon,
+                    breite,
                     aktuell == *kind,
                     *closable,
-                    false,
                     egui::Id::new(("blatt", name)),
                 );
                 if geschlossen {
@@ -3496,14 +3582,16 @@ impl App {
                     wechsle_reiter = Some(*kind);
                 }
             }
-            ui.add_space(4.0);
-            let (r, resp) = ui.allocate_exact_size(Vec2::splat(24.0), Sense::click());
+            blatt_ui.add_space(6.0);
+            let (r, resp) = blatt_ui.allocate_exact_size(Vec2::splat(20.0), Sense::click());
             if resp.hovered() {
-                ui.painter().rect_filled(r, Rounding::same(6.0), Palette::PANEL_ALT);
+                blatt_ui
+                    .painter()
+                    .rect_filled(r, Rounding::same(5.0), Palette::PANEL_ALT);
             }
             crate::icons::paint(
-                ui.painter(),
-                r.shrink(5.0),
+                blatt_ui.painter(),
+                r.shrink(4.0),
                 "plus",
                 if resp.hovered() { Palette::TEXT } else { Palette::TEXT_FAINT },
             );
@@ -3512,6 +3600,7 @@ impl App {
             }
             resp.on_hover_text("Neues Blatt");
         });
+
         // Erst schließen, dann wechseln: ein geschlossener Reiter darf nicht
         // als Ziel übrig bleiben.
         if let Some(idx) = wechsle_datei {
@@ -3540,79 +3629,160 @@ impl App {
         }
     }
 
-    /// Ein Reiter im Streifen: Fläche, optionales Symbol, Name, Änderungspunkt
-    /// und Schließen-Kreuz. Gibt (angeklickt, Kreuz getroffen) zurück.
-    ///
-    /// `id` hält die Reiter auseinander — Datei- und Blattreiter können
-    /// denselben Namen tragen.
-    fn tab_knopf(
-        ui: &mut egui::Ui,
-        name: &str,
-        icon: Option<&str>,
-        active: bool,
-        closable: bool,
-        modified: bool,
-        id: egui::Id,
-    ) -> (bool, bool) {
+    /// Breite eines Datei-Reiters — dieselben Polster wie in `datei_reiter`.
+    fn datei_breite(ui: &egui::Ui, name: &str, schliessbar: bool) -> f32 {
         let galley = ui.painter().layout_no_wrap(
             name.to_string(),
             FontId::proportional(12.0),
-            if active { Palette::TEXT } else { Palette::TEXT_DIM },
+            Palette::TEXT,
         );
-        let links = if icon.is_some() { 26.0 } else { 12.0 };
-        let rechts = if closable { 24.0 } else { 12.0 };
-        let w = galley.size().x + links + rechts;
-        let (rect, resp) = ui.allocate_exact_size(Vec2::new(w.max(64.0), 26.0), Sense::click());
-        if active {
-            ui.painter().rect_filled(rect, Rounding::same(7.0), Palette::PANEL_ALT);
+        (galley.size().x + 30.0 + if schliessbar { 26.0 } else { 12.0 }).max(78.0)
+    }
+
+    /// Breite eines Blatt-Chips — dieselben Polster wie in `blatt_chip`.
+    fn blatt_breite(ui: &egui::Ui, name: &str, schliessbar: bool) -> f32 {
+        let galley = ui.painter().layout_no_wrap(
+            name.to_string(),
+            FontId::proportional(11.0),
+            Palette::TEXT,
+        );
+        (galley.size().x + 24.0 + if schliessbar { 22.0 } else { 10.0 }).max(54.0)
+    }
+
+    /// Ein **Datei**-Reiter: volle Streifenhöhe, Dateisymbol, Name. Der aktive
+    /// liegt als Karte mit abgerundeter Oberkante im Streifen und trägt unten eine
+    /// Akzentlinie; ein Punkt links vom Symbol heißt „ungespeichert“.
+    /// Gibt (angeklickt, Kreuz getroffen) zurück.
+    fn datei_reiter(
+        ui: &mut egui::Ui,
+        name: &str,
+        breite: f32,
+        aktiv: bool,
+        schliessbar: bool,
+        geaendert: bool,
+        id: egui::Id,
+    ) -> (bool, bool) {
+        let (rect, _) = ui.allocate_exact_size(Vec2::new(breite, DOCTABS_H), Sense::hover());
+        let resp = ui.interact(rect, id, Sense::click());
+        let karte = Rect::from_min_max(rect.min + Vec2::new(0.0, 4.0), rect.max);
+        let rundung = Rounding {
+            nw: 7.0,
+            ne: 7.0,
+            sw: 0.0,
+            se: 0.0,
+        };
+        if aktiv {
+            ui.painter().rect_filled(karte, rundung, Palette::PANEL_ALT);
+            ui.painter().line_segment(
+                [
+                    Pos2::new(karte.left() + 8.0, karte.bottom() - 1.0),
+                    Pos2::new(karte.right() - 8.0, karte.bottom() - 1.0),
+                ],
+                Stroke::new(2.0, Palette::ACCENT),
+            );
         } else if resp.hovered() {
-            ui.painter().rect_filled(rect, Rounding::same(7.0), Palette::PANEL);
+            ui.painter().rect_filled(karte, rundung, Palette::PANEL);
         }
-        if modified {
+        if geaendert {
             ui.painter().circle_filled(
-                Pos2::new(rect.left() + 5.0, rect.center().y),
+                Pos2::new(rect.left() + 7.0, rect.center().y),
                 2.2,
                 Palette::ACCENT,
             );
         }
-        if let Some(icon) = icon {
-            crate::icons::paint(
-                ui.painter(),
-                Rect::from_min_size(rect.min + Vec2::new(7.0, 6.0), Vec2::splat(14.0)),
-                icon,
-                if active { Palette::ACCENT } else { Palette::TEXT_FAINT },
-            );
-        }
-        ui.painter().galley(
-            Pos2::new(rect.left() + links, rect.center().y - galley.size().y / 2.0),
-            galley,
-            if active { Palette::TEXT } else { Palette::TEXT_DIM },
+        crate::icons::paint(
+            ui.painter(),
+            Rect::from_min_size(
+                Pos2::new(rect.left() + 13.0, rect.center().y - 7.0),
+                Vec2::splat(14.0),
+            ),
+            "datei",
+            if aktiv { Palette::ACCENT } else { Palette::TEXT_FAINT },
         );
-        let mut geschlossen = false;
-        if closable {
-            let xr = Rect::from_center_size(
-                Pos2::new(rect.right() - 13.0, rect.center().y),
-                Vec2::splat(16.0),
-            );
-            let xresp = ui.interact(xr, id.with("schliessen"), Sense::click());
-            if xresp.clicked() {
-                geschlossen = true;
-            }
-            let c = if xresp.hovered() { Palette::DANGER } else { Palette::TEXT_FAINT };
-            ui.painter().line_segment(
-                [xr.center() - Vec2::splat(3.5), xr.center() + Vec2::splat(3.5)],
-                Stroke::new(1.4, c),
-            );
-            ui.painter().line_segment(
-                [xr.center() + Vec2::new(3.5, -3.5), xr.center() + Vec2::new(-3.5, 3.5)],
-                Stroke::new(1.4, c),
-            );
-        }
+        let farbe = if aktiv { Palette::TEXT } else { Palette::TEXT_DIM };
+        let galley = ui
+            .painter()
+            .layout_no_wrap(name.to_string(), FontId::proportional(12.0), farbe);
+        ui.painter().galley(
+            Pos2::new(rect.left() + 30.0, rect.center().y - galley.size().y / 2.0),
+            galley,
+            farbe,
+        );
+        let geschlossen = schliessbar && Self::kreuz(ui, rect, id);
         if geschlossen {
             (false, true)
         } else {
             (resp.clicked(), false)
         }
+    }
+
+    /// Ein **Blatt**-Chip: kleinere Höhe, kleinerer Text, eigene Fläche in der
+    /// Blattzone. Der aktive Chip trägt ebenfalls eine Akzentlinie unten.
+    /// Gibt (angeklickt, Kreuz getroffen) zurück.
+    fn blatt_chip(
+        ui: &mut egui::Ui,
+        name: &str,
+        icon: &str,
+        breite: f32,
+        aktiv: bool,
+        schliessbar: bool,
+        id: egui::Id,
+    ) -> (bool, bool) {
+        let (rect, _) = ui.allocate_exact_size(Vec2::new(breite, 22.0), Sense::hover());
+        let resp = ui.interact(rect, id, Sense::click());
+        if aktiv {
+            ui.painter().rect_filled(rect, Rounding::same(6.0), Palette::PANEL_ALT);
+            ui.painter().rect_stroke(
+                rect,
+                Rounding::same(6.0),
+                Stroke::new(1.0_f32, Palette::ACCENT),
+            );
+        } else if resp.hovered() {
+            ui.painter().rect_filled(rect, Rounding::same(6.0), Palette::PANEL_ALT);
+        }
+        crate::icons::paint(
+            ui.painter(),
+            Rect::from_min_size(
+                Pos2::new(rect.left() + 7.0, rect.center().y - 6.0),
+                Vec2::splat(12.0),
+            ),
+            icon,
+            if aktiv { Palette::ACCENT } else { Palette::TEXT_FAINT },
+        );
+        let farbe = if aktiv { Palette::TEXT } else { Palette::TEXT_DIM };
+        let galley = ui
+            .painter()
+            .layout_no_wrap(name.to_string(), FontId::proportional(11.0), farbe);
+        ui.painter().galley(
+            Pos2::new(rect.left() + 22.0, rect.center().y - galley.size().y / 2.0),
+            galley,
+            farbe,
+        );
+        let geschlossen = schliessbar && Self::kreuz(ui, rect, id);
+        if geschlossen {
+            (false, true)
+        } else {
+            (resp.clicked(), false)
+        }
+    }
+
+    /// Schließen-Kreuz am rechten Rand eines Reiters; `true`, wenn es getroffen wurde.
+    fn kreuz(ui: &mut egui::Ui, rect: Rect, id: egui::Id) -> bool {
+        let xr = Rect::from_center_size(
+            Pos2::new(rect.right() - 12.0, rect.center().y),
+            Vec2::splat(16.0),
+        );
+        let xresp = ui.interact(xr, id.with("schliessen"), Sense::click());
+        let c = if xresp.hovered() { Palette::DANGER } else { Palette::TEXT_FAINT };
+        ui.painter().line_segment(
+            [xr.center() - Vec2::splat(3.5), xr.center() + Vec2::splat(3.5)],
+            Stroke::new(1.4, c),
+        );
+        ui.painter().line_segment(
+            [xr.center() + Vec2::new(3.5, -3.5), xr.center() + Vec2::new(-3.5, 3.5)],
+            Stroke::new(1.4, c),
+        );
+        xresp.clicked()
     }
 
     // ---- Kopfzeile + Ribbon ----
@@ -7899,14 +8069,68 @@ mod tests_mehrere_dateien {
         let ordner = std::env::temp_dir();
         let pfad = ordner.join("jjcad-t0073-pfad.jjcad");
         let mut app = App::with_ctx(egui::Context::default());
-        assert_eq!(app.datei_reiter(&pfad), None, "noch nicht offen");
+        assert_eq!(app.reiter_der_datei(&pfad), None, "noch nicht offen");
 
         app.doc_mut().path = Some(pfad.to_string_lossy().into());
-        assert_eq!(app.datei_reiter(&pfad), Some(0), "die Datei liegt im ersten Reiter");
+        assert_eq!(app.reiter_der_datei(&pfad), Some(0), "die Datei liegt im ersten Reiter");
         assert_eq!(
-            app.datei_reiter(&ordner.join("jjcad-t0073-anderer.jjcad")),
+            app.reiter_der_datei(&ordner.join("jjcad-t0073-anderer.jjcad")),
             None,
             "ein anderer Pfad ist ein anderer Reiter"
+        );
+    }
+
+    /// Die zwei Bereiche sind auch im Bild geschieden: Dateien auf eigenem Grund
+    /// hinter ihrer Beschriftung, Blätter in einer abgesetzten Fläche.
+    #[test]
+    fn reiterstreifen_hat_zwei_zonen() {
+        let ctx = egui::Context::default();
+        let mut app = App::with_ctx(ctx.clone());
+        app.doc_mut().name = "Grundriss".into();
+        app.new_document();
+        app.doc_mut().name = "Schnitt".into();
+        for _ in 0..2 {
+            let _ = frame(&ctx, &mut app);
+        }
+        let out = frame(&ctx, &mut app);
+        let zeilen = texte(&out);
+        let lage = |name: &str| {
+            zeilen
+                .iter()
+                .filter(|(t, p)| t == name && p.y > 100.0)
+                .map(|(_, p)| *p)
+                .next()
+                .unwrap_or_else(|| panic!("„{name}“ fehlt im Streifen: {zeilen:?}"))
+        };
+        let datei_label = lage("Dateien");
+        let erste = lage("Grundriss");
+        let zweite = lage("Schnitt");
+        let blatt_label = lage("Blätter");
+        let modell = lage("Modell");
+        assert!(
+            datei_label.x < erste.x && erste.x < zweite.x && zweite.x < blatt_label.x,
+            "Dateizone: Beschriftung, dann die Dateien"
+        );
+        assert!(
+            blatt_label.x < modell.x,
+            "Blattzone: Beschriftung, dann die Blätter"
+        );
+
+        // Die Zone hat einen eigenen Grund (BG-Band) bzw. eine eigene Fläche
+        // (PANEL-Kasten); ohne sie wären beide Reiterarten nur verschiedene Größen.
+        let flach = |farbe: egui::Color32, punkt: Pos2| {
+            out.shapes.iter().any(|cs| match &cs.shape {
+                egui::Shape::Rect(r) => r.fill == farbe && r.rect.contains(punkt),
+                _ => false,
+            })
+        };
+        assert!(
+            flach(Palette::BG, erste),
+            "die Dateizone hat keinen eigenen Grund"
+        );
+        assert!(
+            flach(Palette::PANEL, blatt_label),
+            "die Blattzone hat keine eigene Fläche"
         );
     }
 

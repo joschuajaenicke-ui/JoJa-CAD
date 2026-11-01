@@ -24,9 +24,12 @@ Architekturregeln:
   Bildschirm, PDF und PNG. Neue Linien/Füllungen dort erzeugen, nicht im Painter.
 - Interne Einheit **Millimeter**, Winkel im Bogenmaß, Nullrichtung +X, mathematisch
   positiver Drehsinn. Ausgabe deutsch (Komma), `m²`.
-- **Mehrere Dateien (T0073)**: Der Reiterstreifen zeigt links **eine Datei je Reiter**
-  (`App::tabs`, aktiv über `App::active`), rechts vom Trenner die Blattreiter der aktiven
-  Datei. „Neu“ hängt an (`App::new_document`), es ersetzt nichts; ein Wechsel läuft über
+- **Mehrere Dateien (T0073)**: Der Reiterstreifen hat **zwei getrennte Bereiche**: links die
+  Dateien (`App::tabs`, aktiv über `App::active`) auf eigenem dunklem Band mit Beschriftung
+  „Dateien“, volle Streifenhöhe, Dateisymbol, aktiver Reiter als Karte mit Akzentlinie;
+  rechts in einer abgesetzten Fläche unter „Blätter“ die Blattreiter der aktiven Datei als
+  kleinere Chips (`doc_tabs`, `datei_reiter`, `blatt_chip`, `kreuz`). Datei- und Blattreiter
+  nie angleichen — die Unterscheidung ist der Sinn der zwei Zonen. „Neu“ hängt an (`App::new_document`), es ersetzt nichts; ein Wechsel läuft über
   `App::switch_doc`, das Werkzeug, Vorschau, Züge und laufende Texteingabe abschließt
   (`App::datei_nachziehen`, `textedit::beenden`) und Vorgaben/Raster/Raum aus der neuen
   Datei zieht. Eine Datei liegt nur einmal offen (`App::datei_reiter`, echter Pfad); ein

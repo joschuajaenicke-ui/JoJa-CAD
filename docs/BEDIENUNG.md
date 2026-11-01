@@ -100,8 +100,10 @@ ausgeblendet.
 - **Linien** werden als Kapsel gezeichnet: Rechteck plus Halbkreis an beiden Enden. Dadurch sind
   auch die Übergänge in Polylinien, Bögen und an Wandanschlüssen rund statt eckig.
 - **Ribbon** lässt sich über den Pfeil rechts in der Kopfzeile einklappen; die Reiter bleiben sichtbar.
-- **Dateireiter** (Streifen unter dem Ribbon): jede geöffnete Zeichnung belegt einen Reiter,
-  der aktive ist hervorgehoben. „Neu“ hängt einen Reiter an, statt die aktuelle Datei zu
+- **Dateireiter** (Streifen unter dem Ribbon, **zwei getrennte Bereiche**): links unter der
+  Beschriftung „Dateien“ auf dunklem Band jede geöffnete Zeichnung als Reiter mit Dateisymbol,
+  der aktive als Karte mit Akzentlinie; rechts, in einer abgesetzten Fläche unter „Blätter“,
+  die Blätter der aktiven Datei als kleinere Chips. „Neu“ hängt einen Reiter an, statt die aktuelle Datei zu
   schließen — der bisherige Stand bleibt in seinem Reiter stehen. `×` schließt einen Reiter;
   bei ungespeicherten Änderungen fragt „Datei schließen“ nach („Speichern und schließen“ nur,
   wenn es einen Speicherort gibt, sonst „Verwerfen“/„Abbrechen“). Rechts vom Trenner stehen

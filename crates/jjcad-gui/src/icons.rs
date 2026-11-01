@@ -561,6 +561,13 @@ pub fn paint(painter: &Painter, rect: Rect, name: &str, color: Color32) {
             i.rect(11.0, 13.0, 7.0, 5.0);
             i.line(3.0, 8.0, 21.0, 8.0);
         }
+        // Datei: Blatt mit umgelegter Ecke — kennzeichnet einen Datei-Reiter
+        "datei" => {
+            i.poly(&[(5.0, 3.0), (14.0, 3.0), (19.0, 8.0), (19.0, 21.0), (5.0, 21.0)], true);
+            i.poly(&[(14.0, 3.0), (14.0, 8.0), (19.0, 8.0)], false);
+            i.line(8.0, 12.0, 16.0, 12.0);
+            i.line(8.0, 16.0, 16.0, 16.0);
+        }
         "viewport" => {
             i.rect(2.5, 4.0, 19.0, 16.0);
             i.p.extend(egui::Shape::dashed_line(
