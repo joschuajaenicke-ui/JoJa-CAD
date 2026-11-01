@@ -75,9 +75,14 @@ umbelegen.
 
 Welche Funktion bereitliegt, merkt sich das Programm, solange das Fenster offen
 ist (`UiState::keymap_funktion`): jede über `App::run_action` gestartete Funktion
-aus Ribbon, Hotbar oder Tastatur. Beim Schließen wird der Merker geleert. Die
-Alternative bleibt die Funktionsliste im Fenster (Taste wählen, Funktion
-aus der Liste).
+aus Ribbon, Hotbar oder Tastatur. Beim Schließen wird der Merker geleert.
+
+**Eine Funktion auf eine Taste legen (T0072):** Eine freie Taste anklicken —
+das Inventar öffnet sich im Reiter **Funktionen**, die gewählte Funktion liegt
+danach auf der Taste. Dieselbe Bedienung wie ein leerer Hotbar-Slot; bei einer
+belegten Taste führt „Funktion wählen …" unter dem Tastenbild dorthin. Eine
+eigene Funktionsliste im Fenster gibt es nicht mehr; fest verdrahtete
+Funktionen stehen dort ausgegraut mit „· fest".
 
 **Mehrere Tasten je Funktion:** Eine Funktion darf auf beliebig vielen Tasten
 liegen (`UserPrefs::bindings`: Action → Liste von Tasten). Ein zweiter Klick auf

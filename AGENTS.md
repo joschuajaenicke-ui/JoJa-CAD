@@ -144,7 +144,10 @@ Mit dem Nutzer abgestimmt — nicht „verbessern“:
   **Tastaturbelegung** (frei und dynamisch änderbar, je Taste genau eine
   Funktion, Umschalt-Ebene als `shift+<Zeichen>`), alle übrigen Tasten
   (`Esc`, `Strg`, `Enter`, `Entf`, `F1`–`F12` …) und Kombinationen (`Strg+C`,
-  `Strg+S`) sind **hardcodiert**. Eine Taste darf nie in zwei Schichten liegen:
+  `Strg+S`) sind **hardcodiert**. Eine Funktion kommt wie bei der Hotbar ins
+  Tastenbild (T0072): freie Taste anklicken öffnet das Inventar im Reiter
+  „Funktionen" (`UiState::bind_key`) — es gibt **keine** eigene Funktionsliste
+  im Fenster der Tastaturbelegung. Eine Taste darf nie in zwei Schichten liegen:
   der Ansichtsschwenk sind die Funktionen `view.pan_*` auf `W`/`A`/`S`/`D`
   (Icon im Tastenbild), Drehen und Spiegeln der Einfüge-Vorschau hängen an
   `modify.rotate`/`modify.mirror`. Kürzel nur über `app::EINZELTASTEN` und das
