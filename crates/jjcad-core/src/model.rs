@@ -1280,6 +1280,11 @@ impl Document {
         doc.blocks = crate::blocks_lib::system_blocks(&mut doc.next_id);
         let sheet = crate::templates::new_sheet(&mut doc, PaperSize::A3, true, "Blatt 1");
         doc.sheets.push(sheet);
+        // Ebenen, Systemblöcke und Blatt vergeben nur Ids (`new_id` markiert
+        // „geändert“) — eine neue Zeichnung ist aber unverändert. Sonst meldet
+        // jeder frische Reiter ungespeicherte Änderungen, und eine Datei im
+        // leeren Startreiter landet in einem zweiten statt darin (T0073).
+        doc.modified = false;
         doc
     }
 

@@ -321,6 +321,17 @@ fn uebernehmen(app: &mut App, ctx: &egui::Context) {
     }
 }
 
+/// Laufende Eingabe abschließen, bevor der Reiter wechselt (T0073).
+///
+/// Getippter Text gehört in die Datei, in der er begonnen wurde — der Wechsel
+/// darf ihn nicht in den neuen Reiter schreiben und auch nicht still verwerfen.
+pub(crate) fn beenden(app: &mut App) {
+    if app.ui.texteingabe.is_some() {
+        let ctx = app.ctx.clone();
+        uebernehmen(app, &ctx);
+    }
+}
+
 /// Übernimmt die laufende Eingabe — derselbe Weg wie Esc (nur für Tests).
 #[cfg(test)]
 pub(crate) fn uebernehmen_fuer_test(app: &mut App) {
