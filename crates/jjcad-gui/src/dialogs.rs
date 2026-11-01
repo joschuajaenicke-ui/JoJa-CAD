@@ -2956,6 +2956,86 @@ mod tests_tastatur {
         );
     }
 
+    /// T0074: Die Funktionsliste im Inventar stand nur für **eine** Zuteilung
+    /// offen — nach dem Zuweisen schließt sie sich (Hotbar-Slot, Taste, Ribbon).
+    /// Ohne Zuteilung (fest verdrahtete Funktion) und beim Füllen des Lagers
+    /// bleibt sie offen.
+    #[test]
+    fn funktionsauswahl_schliesst_sich_nach_dem_zuteilen() {
+        let _sperre = KONFIG.lock().unwrap_or_else(|e| e.into_inner());
+        let _konfig = WegwerfKonfig::neu("t0074-zuteilen");
+        let (mut app, _ctx) = app_mit_tastatur();
+
+        // Ein leerer Hotbar-Slot wurde angeklickt: die Liste steht im Reiter
+        // „Funktionen" und wartet auf ein Element für Slot 3.
+        app.ui.bind_key = None;
+        app.ui.bind_slot = Some(3);
+        app.ui.inventory_open = true;
+        app.ui.inventory_tab = 2;
+        crate::inventory::funktion_gewaehlt(&mut app, "draw.line");
+
+        assert_eq!(
+            app.prefs.slots().get(3).cloned().flatten().as_deref(),
+            Some("draw.line"),
+            "die Funktion wurde nicht auf den Slot gelegt"
+        );
+        assert!(
+            !app.ui.inventory_open,
+            "die Funktionsliste bleibt nach dem Zuteilen auf den Slot offen"
+        );
+        assert!(app.ui.bind_slot.is_none(), "der Slot wartet weiter auf ein Element");
+
+        // Dasselbe für die Tastaturbelegung.
+        app.ui.bind_key = Some("t".to_string());
+        app.ui.bind_slot = None;
+        app.ui.inventory_open = true;
+        app.ui.inventory_tab = 2;
+        crate::inventory::funktion_gewaehlt(&mut app, "draw.wall");
+
+        assert_eq!(
+            app.prefs.action_for_key("t").as_deref(),
+            Some("draw.wall"),
+            "die Funktion liegt nicht auf der Taste"
+        );
+        assert!(
+            !app.ui.inventory_open,
+            "die Funktionsliste bleibt nach dem Zuteilen auf die Taste offen"
+        );
+
+        // Eine fest verdrahtete Funktion wird nicht zugeteilt — die Liste bleibt
+        // stehen, damit der nächste Klick greifen kann.
+        app.ui.bind_key = Some("t".to_string());
+        app.ui.inventory_open = true;
+        app.ui.inventory_tab = 2;
+        crate::inventory::funktion_gewaehlt(&mut app, "file.save");
+        assert!(
+            app.ui.inventory_open,
+            "ohne Zuteilung darf die Funktionsliste nicht zufallen"
+        );
+        assert_eq!(
+            app.prefs.action_for_key("t").as_deref(),
+            Some("draw.wall"),
+            "die feste Funktion hat die Taste überschrieben"
+        );
+
+        // Der Ribbon-Klick belegt den wartenden Slot ebenfalls und schließt die
+        // Liste (`App::start_tool` nimmt den Slot-Bezug auf).
+        app.ui.bind_key = None;
+        app.ui.bind_slot = Some(4);
+        app.ui.inventory_open = true;
+        app.start_tool("draw.circle");
+        assert_eq!(
+            app.prefs.slots().get(4).cloned().flatten().as_deref(),
+            Some("draw.circle"),
+            "der Ribbon-Klick hat den Slot nicht belegt"
+        );
+        assert!(
+            !app.ui.inventory_open,
+            "die Funktionsliste bleibt nach dem Ribbon-Klick offen"
+        );
+        assert!(app.tool.is_none(), "das Werkzeug läuft nach dem Zuteilen weiter");
+    }
+
     /// T0072: Die eigene Liste zum Hinzufügen ist aus dem Fenster verschwunden —
     /// unter dem Tastenbild steht nur noch die gewählte Taste mit ihren Knöpfen.
     #[test]
