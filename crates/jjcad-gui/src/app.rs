@@ -2496,6 +2496,9 @@ impl App {
             let slot = self.ui.bind_slot.take().unwrap();
             self.bind_slot_action(slot, Some(id.to_string()));
             self.tool = None;
+            // T0074: Der Slot ist vergeben — die Funktionsliste, aus der gewählt
+            // wurde, hat ihren Zweck erfüllt und schließt sich.
+            self.close_inventory();
             return;
         }
         // Auswahlmodus bei Aktionen, die eine Auswahl brauchen

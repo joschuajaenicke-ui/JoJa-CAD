@@ -369,9 +369,16 @@ fn truncate(s: &str, n: usize) -> String {
 /// Gewählte Funktion aus der Liste (T0072): Steht eine Taste bereit, belegt sie
 /// diese — sonst wie bisher den Hotbar-Slot bzw. das Lager. Der eine Weg für
 /// Klick und Tests.
+///
+/// T0074: Ist das Ziel erreicht (Taste oder Hotbar-Slot vergeben), schließt sich
+/// die Funktionsliste — sie stand nur für diese eine Zuteilung offen. Ohne
+/// Zuteilung (fest verdrahtete Funktion) und beim Lager bleibt sie offen: das
+/// Lager füllt der Nutzer im Raster und will die Liste weiter sehen.
 pub(crate) fn funktion_gewaehlt(app: &mut App, id: &str) {
     if let Some(key) = app.ui.bind_key.clone() {
-        if !crate::dialogs::funktion_auf_taste(app, id, &key) {
+        if crate::dialogs::funktion_auf_taste(app, id, &key) {
+            app.close_inventory();
+        } else {
             app.toast("Funktion · fest belegt");
         }
     } else if let Some(slot) = app.ui.bind_slot.take() {
@@ -383,6 +390,7 @@ pub(crate) fn funktion_gewaehlt(app: &mut App, id: &str) {
             }
         } else {
             app.bind_slot_action(slot, Some(id.to_string()));
+            app.close_inventory();
         }
     } else {
         app.start_tool(id);
