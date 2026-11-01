@@ -79,10 +79,10 @@ aus Ribbon, Hotbar oder Tastatur. Beim Schließen wird der Merker geleert.
 
 **Eine Funktion auf eine Taste legen (T0072):** Eine freie Taste anklicken —
 das Inventar öffnet sich im Reiter **Funktionen**, die gewählte Funktion liegt
-danach auf der Taste. Dieselbe Bedienung wie ein leerer Hotbar-Slot; bei einer
-belegten Taste führt „Funktion wählen …" unter dem Tastenbild dorthin. Eine
-eigene Funktionsliste im Fenster gibt es nicht mehr; fest verdrahtete
-Funktionen stehen dort ausgegraut mit „· fest".
+danach auf der Taste. Dieselbe Bedienung wie ein leerer Hotbar-Slot; auch eine
+belegte Taste lässt sich so umbelegen. Eine eigene Funktionsliste im Fenster
+gibt es nicht — und seit T0076 auch keine Knopfzeile darunter; fest verdrahtete
+Funktionen stehen im Inventar ausgegraut mit „· fest".
 
 **Mehrere Tasten je Funktion:** Eine Funktion darf auf beliebig vielen Tasten
 liegen (`UserPrefs::bindings`: Action → Liste von Tasten). Ein zweiter Klick auf
@@ -90,11 +90,34 @@ eine freie Taste **ergänzt** die Belegung und ersetzt sie nicht; die
 Funktionsliste zeigt alle Tasten in Klammern. Umgekehrt trägt eine Taste
 weiterhin genau eine Funktion — wer eine Funktion auf eine belegte Taste legt,
 nimmt sie der anderen weg. Eine Funktion verschieben heißt deshalb: neue Taste
-anklicken, alte mit der **mittleren Maustaste** leeren (oder „Belegung dieser
-Taste entfernen").
+anklicken, alte mit der **mittleren Maustaste** leeren.
 
-Die Bedienung steht als Tooltip am kleinen **i** über dem Tastenbild — im
-Fenster selbst kein langer Hinweistext.
+Die Bedienung steht als Tooltip am **i** in der oberen Leiste des Fensters —
+linksbündig, im Fenster selbst kein langer Hinweistext. Das Fenster ist genau so
+breit wie das Tastenbild (716 px); unter dem Tastenbild steht nur die
+Layoutzeile.
+
+## Layouts speichern, wechseln, aus- und einlesen (T0076)
+
+Unter dem Tastenbild steht die Layoutzeile: **Layout** (Auswahl), **Speichern …**,
+**Importieren …**, **Exportieren …**, **Löschen**. Sie ersetzt den früheren
+Knopf „Werkseinstellungen".
+
+- Das erste Layout heißt **Werkseinstellung** und trägt immer die
+  Vorgabebelegung. Es lässt sich nicht überschreiben (der Name ist belegt) und
+  nicht löschen — es ist der Rückweg auf die Werkseinstellung.
+- **Speichern …** legt die aktuelle Belegung unter einem Namen ab; ein
+  vorhandener Name wird überschrieben. Ein Layout ist eine Momentaufnahme: wer
+  danach eine Taste ändert, hat „Eigene Belegung", bis er wieder ein Layout
+  wählt.
+- **Wechseln** über die Auswahl: die Belegung des gewählten Layouts ersetzt die
+  aktuelle sofort. Die Auswahl zeigt den Namen nur, solange die Belegung
+  unverändert dazu passt — sonst „Eigene Belegung".
+- **Exportieren …** schreibt die **aktuelle** Belegung als `.json`
+  (`{"name": …, "bindings": {aktion: [tasten]}}`), **Importieren …** liest sie
+  wieder ein und wendet sie sofort an. Ein Import mit nackter Belegung
+  (`{"draw.line": ["l"]}`) ist erlaubt, der Name kommt dann vom Dateinamen.
+  Gespeichert wird in `prefs.json` unter `keymap_presets`.
 
 ## Für Entwickler
 
@@ -136,4 +159,9 @@ Fenster selbst kein langer Hinweistext.
 | Mittlere Maustaste leert eine Taste | `dialogs::tests_tastatur::mittlere_maustaste_entfernt_die_belegung` |
 | Funktion liegt auf mehreren Tasten | `dialogs::tests_tastatur::funktion_laesst_sich_mehrfach_platzieren` |
 | Bedienung nur als Tooltip am i | `dialogs::tests_tastatur::bedienung_steht_als_tooltip_am_info_symbol` |
+| Werkseinstellung ist das erste Layout | `persist::tests::werkseinstellung_ist_das_erste_layout` |
+| Speichern/Anwenden/Wechseln | `persist::tests::layout_wird_gespeichert_und_wieder_angewendet` |
+| Export/Import (auch nackte Belegung) | `persist::tests::layout_wird_exportiert_und_importiert`, `…::import_nimmt_auch_eine_nackte_belegung` |
+| Fenster: keine Funktionsauswahl, Layoutzeile da | `dialogs::tests_tastatur::tastaturfenster_hat_keine_funktionsauswahl_mehr` |
+| Breite = Tastenbild, i links oben | `dialogs::tests_tastatur::fenster_ist_so_breit_wie_das_tastenbild`, `…::infosymbol_steht_links_in_der_oberen_leiste` |
 | Belegung: Liste je Funktion, alte Form wird gelesen | `persist::tests::funktion_laesst_sich_mehrfach_belegen`, `…::alte_einzelne_belegung_wird_als_liste_gelesen` |

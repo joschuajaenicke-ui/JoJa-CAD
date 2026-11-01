@@ -372,6 +372,56 @@ fn default_volume_input() -> String {
     "points".into()
 }
 
+/// Name des eingebauten Tastaturlayouts (T0076). Es lässt sich nicht
+/// überschreiben und ist der Rückweg auf die Vorgabebelegung.
+pub const WERKSEINSTELLUNG: &str = "Werkseinstellung";
+
+/// Ein gespeichertes Tastaturlayout (T0076): Name und die vollständige
+/// Belegung (Aktion → Tasten). Ein Layout lässt sich benennen, wechseln und als
+/// Datei aus- und wieder einlesen; die „Werkseinstellung" ist das eingebaute
+/// erste Layout und ersetzt den früheren Knopf gleichen Namens.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct KeymapPreset {
+    #[serde(default)]
+    pub name: String,
+    #[serde(default, deserialize_with = "de_bindungen")]
+    pub bindings: BTreeMap<String, Vec<String>>,
+}
+
+impl KeymapPreset {
+    /// Dateiinhalt eines Layouts — dieselbe Form, die der Import wieder liest.
+    pub fn to_json(&self) -> Result<String, String> {
+        serde_json::to_string_pretty(self).map_err(|e| e.to_string())
+    }
+
+    /// Liest ein Layout aus einer Datei. Zwei Formen werden angenommen: das
+    /// vollständige Layout (`{"name": …, "bindings": {…}}`) und eine nackte
+    /// Belegung (`{"draw.line": ["l"]}`) — eine von Hand geschriebene Datei
+    /// soll nicht am fehlenden Rahmen scheitern.
+    pub fn from_json(text: &str, fallback_name: &str) -> Result<Self, String> {
+        #[derive(Deserialize)]
+        #[serde(untagged)]
+        enum Roh {
+            Layout(KeymapPreset),
+            NurBelegung(BTreeMap<String, Vec<String>>),
+        }
+        match serde_json::from_str::<Roh>(text) {
+            Ok(Roh::Layout(mut p)) => {
+                if p.name.trim().is_empty() {
+                    p.name = fallback_name.to_string();
+                }
+                Ok(p)
+            }
+            Ok(Roh::NurBelegung(bindings)) => Ok(KeymapPreset {
+                name: fallback_name.to_string(),
+                bindings,
+            }),
+            Err(e) => Err(format!("Kein Tastaturlayout: {e}")),
+        }
+    }
+}
+
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct UserPrefs {
     #[serde(default)]
@@ -385,6 +435,11 @@ pub struct UserPrefs {
     /// Leser nimmt beides (`de_bindungen`).
     #[serde(default, deserialize_with = "de_bindungen")]
     pub bindings: BTreeMap<String, Vec<String>>,
+    /// Gespeicherte Tastaturlayouts (T0076). Das erste trägt immer den Namen
+    /// „Werkseinstellung" und die Vorgabebelegung — es ist das eingebaute
+    /// Layout, auf das jederzeit zurückgeschaltet werden kann.
+    #[serde(default)]
+    pub keymap_presets: Vec<KeymapPreset>,
     #[serde(default)]
     pub recent_files: Vec<String>,
     #[serde(default)]
@@ -571,6 +626,10 @@ impl Default for UserPrefs {
             }
             bindings.insert(a.id.to_string(), vec![a.key.to_string()]);
         }
+        let werkseinstellung = KeymapPreset {
+            name: WERKSEINSTELLUNG.to_string(),
+            bindings: bindings.clone(),
+        };
         Self {
             hotbar_presets: vec![
                 HotbarPreset::filled(
@@ -621,6 +680,9 @@ impl Default for UserPrefs {
             ],
             active_preset: 0,
             bindings,
+            // Das eingebaute Layout: die Vorgabebelegung, auf die jederzeit
+            // zurückgeschaltet werden kann (früher der Knopf „Werkseinstellungen").
+            keymap_presets: vec![werkseinstellung],
             recent_files: Vec::new(),
             last_dir: String::new(),
             show_lineweights: true,
@@ -781,6 +843,25 @@ impl UserPrefs {
         if self.active_preset >= self.hotbar_presets.len() {
             self.active_preset = 0;
         }
+        // T0076: Das eingebaute Layout steht immer an erster Stelle und trägt
+        // immer die Vorgabebelegung — der Rückweg, den früher der Knopf
+        // „Werkseinstellungen" war. Eine alte prefs.json hat es noch nicht.
+        let werk = KeymapPreset {
+            name: WERKSEINSTELLUNG.to_string(),
+            bindings: UserPrefs::default().bindings,
+        };
+        match self
+            .keymap_presets
+            .iter()
+            .position(|p| p.name.eq_ignore_ascii_case(WERKSEINSTELLUNG))
+        {
+            Some(0) => self.keymap_presets[0] = werk,
+            Some(i) => {
+                self.keymap_presets.remove(i);
+                self.keymap_presets.insert(0, werk);
+            }
+            None => self.keymap_presets.insert(0, werk),
+        }
     }
 
     pub fn save(&self) -> Result<(), String> {
@@ -896,6 +977,122 @@ impl UserPrefs {
 
     pub fn reset_bindings(&mut self) {
         self.bindings = UserPrefs::default().bindings;
+    }
+
+    // ---- Tastaturlayouts (T0076) -------------------------------------------
+
+    /// Das gespeicherte Layout, das der **aktuellen** Belegung entspricht —
+    /// `None`, sobald der Nutzer eine Taste von Hand geändert hat („Eigene
+    /// Belegung"). So zeigt die Auswahl immer den wahren Stand.
+    pub fn keymap_passend(&self) -> Option<usize> {
+        self.keymap_presets
+            .iter()
+            .position(|p| p.bindings == self.bindings)
+    }
+
+    /// Schaltet auf ein gespeichertes Layout um und liefert seinen Namen.
+    /// Unbekannter Index oder ein fehlendes Layout ändern nichts.
+    pub fn keymap_anwenden(&mut self, idx: usize) -> Option<String> {
+        let p = self.keymap_presets.get(idx)?;
+        self.bindings = p.bindings.clone();
+        Some(p.name.clone())
+    }
+
+    /// Speichert die **aktuelle** Belegung unter `name`. Der Name
+    /// „Werkseinstellung" ist dem eingebauten Layout vorbehalten; ein
+    /// vorhandener Name wird überschrieben (kein zweiter Eintrag).
+    pub fn keymap_speichern(&mut self, name: &str) -> Result<String, String> {
+        let name = name.trim();
+        if name.is_empty() {
+            return Err("Bitte einen Namen angeben".into());
+        }
+        if name.eq_ignore_ascii_case(WERKSEINSTELLUNG) {
+            return Err("„Werkseinstellung“ ist das eingebaute Layout".into());
+        }
+        match self
+            .keymap_presets
+            .iter()
+            .position(|p| p.name.eq_ignore_ascii_case(name))
+        {
+            Some(i) => self.keymap_presets[i].bindings = self.bindings.clone(),
+            None => self.keymap_presets.push(KeymapPreset {
+                name: name.to_string(),
+                bindings: self.bindings.clone(),
+            }),
+        }
+        Ok(name.to_string())
+    }
+
+    /// Löscht ein gespeichertes Layout. Das eingebaute (erste) und das gerade
+    /// benutzte bleiben stehen.
+    pub fn keymap_loeschen(&mut self, idx: usize) -> bool {
+        if idx == 0 || idx >= self.keymap_presets.len() || Some(idx) == self.keymap_passend() {
+            return false;
+        }
+        self.keymap_presets.remove(idx);
+        true
+    }
+
+    /// Schreibt ein Layout als Datei — dieselbe Form, die
+    /// [`UserPrefs::keymap_importieren`] wieder liest.
+    pub fn keymap_exportieren(&self, idx: usize, path: &Path) -> Result<String, String> {
+        let p = self
+            .keymap_presets
+            .get(idx)
+            .ok_or_else(|| "Layout nicht gefunden".to_string())?;
+        if let Some(parent) = path.parent() {
+            std::fs::create_dir_all(parent).ok();
+        }
+        std::fs::write(path, p.to_json()?)
+            .map_err(|e| format!("Layout konnte nicht geschrieben werden: {e}"))?;
+        Ok(p.name.clone())
+    }
+
+    /// Schreibt die **aktuelle** Belegung als Datei — auch dann, wenn sie zu
+    /// keinem gespeicherten Layout gehört („Eigene Belegung"). Liefert den
+    /// Namen, unter dem sie in der Datei steht.
+    pub fn keymap_exportieren_aktuell(&self, path: &Path) -> Result<String, String> {
+        let name = self
+            .keymap_passend()
+            .map(|i| self.keymap_presets[i].name.clone())
+            .unwrap_or_else(|| "Eigene Belegung".to_string());
+        let p = KeymapPreset {
+            name: name.clone(),
+            bindings: self.bindings.clone(),
+        };
+        if let Some(parent) = path.parent() {
+            std::fs::create_dir_all(parent).ok();
+        }
+        std::fs::write(path, p.to_json()?)
+            .map_err(|e| format!("Layout konnte nicht geschrieben werden: {e}"))?;
+        Ok(name)
+    }
+
+    /// Liest ein Layout aus einer Datei und **wendet es sofort an**. Ein bereits
+    /// vorhandener Name wird überschrieben; die Werkseinstellung bleibt
+    /// unangetastet. Liefert den Namen des geladenen Layouts.
+    pub fn keymap_importieren(&mut self, path: &Path) -> Result<String, String> {
+        let text = std::fs::read_to_string(path)
+            .map_err(|e| format!("Layout konnte nicht gelesen werden: {e}"))?;
+        let stamm = path
+            .file_stem()
+            .map(|s| s.to_string_lossy().to_string())
+            .unwrap_or_default();
+        let mut p = KeymapPreset::from_json(&text, &stamm)?;
+        if p.name.eq_ignore_ascii_case(WERKSEINSTELLUNG) {
+            p.name = format!("{WERKSEINSTELLUNG} (importiert)");
+        }
+        let bindings = p.bindings.clone();
+        match self
+            .keymap_presets
+            .iter()
+            .position(|q| q.name.eq_ignore_ascii_case(&p.name))
+        {
+            Some(i) => self.keymap_presets[i] = p.clone(),
+            None => self.keymap_presets.push(p.clone()),
+        }
+        self.bindings = bindings;
+        Ok(p.name)
     }
 
     pub fn add_recent(&mut self, path: &str) {
@@ -1353,6 +1550,135 @@ mod tests {
         assert_eq!(alt.key_for("file.save").as_deref(), Some("ctrl+s"));
         assert_eq!(alt.key_for("modify.trim"), None, "S gehört jetzt dem Schwenk");
         assert_eq!(alt.action_for_key("s").as_deref(), Some("view.pan_down"));
+    }
+
+    // ---- Tastaturlayouts (T0076) -------------------------------------------
+
+    fn wegwerf_datei(name: &str) -> PathBuf {
+        let dir = std::env::temp_dir().join(format!("jjcad-t0076-{}-{}", std::process::id(), name));
+        let _ = std::fs::create_dir_all(&dir);
+        dir.join("layout.json")
+    }
+
+    /// Das eingebaute Layout steht an erster Stelle und trägt die
+    /// Vorgabebelegung; eine Änderung von Hand fällt aus ihm heraus.
+    #[test]
+    fn werkseinstellung_ist_das_erste_layout() {
+        let prefs = UserPrefs::default();
+        assert_eq!(prefs.keymap_presets[0].name, WERKSEINSTELLUNG);
+        assert_eq!(prefs.keymap_passend(), Some(0));
+
+        let mut geaendert = prefs.clone();
+        geaendert.bind("draw.wall", "t");
+        assert_eq!(
+            geaendert.keymap_passend(),
+            None,
+            "eine geänderte Belegung darf nicht als Werkseinstellung gelten"
+        );
+    }
+
+    /// Speichern, umschalten, zurück: das Layout trägt die Belegung, unter der
+    /// es gespeichert wurde — nicht die spätere.
+    #[test]
+    fn layout_wird_gespeichert_und_wieder_angewendet() {
+        let mut prefs = UserPrefs::default();
+        prefs.bind("draw.wall", "t");
+        let name = prefs.keymap_speichern("Meins").expect("Layout speichern");
+        assert_eq!(name, "Meins");
+        assert_eq!(prefs.keymap_passend(), Some(1));
+
+        // Weitere Änderung: die Belegung passt zu keinem gespeicherten Layout.
+        prefs.bind("draw.wall", "ä");
+        assert_eq!(prefs.keymap_passend(), None);
+
+        // Zurück auf das gespeicherte Layout.
+        assert_eq!(prefs.keymap_anwenden(1).as_deref(), Some("Meins"));
+        assert_eq!(prefs.action_for_key("t").as_deref(), Some("draw.wall"));
+        assert!(prefs.action_for_key("ä").is_none(), "die spätere Taste blieb belegt");
+
+        // Und zurück auf die Werkseinstellung (früher „Werkseinstellungen").
+        assert_eq!(prefs.keymap_anwenden(0).as_deref(), Some(WERKSEINSTELLUNG));
+        assert_eq!(prefs.key_for("draw.wall").as_deref(), Some("g"));
+        assert!(prefs.action_for_key("t").is_none());
+    }
+
+    #[test]
+    fn werkseinstellung_laesst_sich_nicht_ueberschreiben() {
+        let mut prefs = UserPrefs::default();
+        assert!(prefs.keymap_speichern("Werkseinstellung").is_err());
+        assert!(prefs.keymap_speichern("  ").is_err());
+        assert_eq!(prefs.keymap_presets.len(), 1);
+    }
+
+    /// Export und Import sind zueinander passend: die Datei trägt Name und
+    /// Belegung, der Import setzt sie sofort wieder.
+    #[test]
+    fn layout_wird_exportiert_und_importiert() {
+        let path = wegwerf_datei("export");
+        let mut prefs = UserPrefs::default();
+        prefs.bind("draw.wall", "t");
+        prefs.keymap_speichern("Geteilt").unwrap();
+        let idx = prefs.keymap_passend().unwrap();
+        prefs.keymap_exportieren(idx, &path).expect("Export");
+
+        let mut andere = UserPrefs::default();
+        let name = andere.keymap_importieren(&path).expect("Import");
+        assert_eq!(name, "Geteilt");
+        assert_eq!(andere.action_for_key("t").as_deref(), Some("draw.wall"));
+        assert_eq!(andere.keymap_passend().map(|i| andere.keymap_presets[i].name.clone()).as_deref(), Some("Geteilt"));
+        // Die Werkseinstellung bleibt dabei erhalten und an erster Stelle.
+        assert_eq!(andere.keymap_presets[0].name, WERKSEINSTELLUNG);
+        let _ = std::fs::remove_file(&path);
+    }
+
+    /// Eine von Hand geschriebene Datei ist nur die nackte Belegung — der Name
+    /// kommt dann vom Dateinamen.
+    #[test]
+    fn import_nimmt_auch_eine_nackte_belegung() {
+        let path = wegwerf_datei("nackt");
+        std::fs::write(&path, r#"{"draw.wall": ["t"], "draw.line": ["k"]}"#).unwrap();
+        let mut prefs = UserPrefs::default();
+        let name = prefs.keymap_importieren(&path).expect("Import");
+        assert_eq!(name, "layout");
+        assert_eq!(prefs.action_for_key("t").as_deref(), Some("draw.wall"));
+        assert_eq!(prefs.action_for_key("k").as_deref(), Some("draw.line"));
+        let _ = std::fs::remove_file(&path);
+
+        // Unsinn wird nicht stillschweigend geschluckt.
+        let kaputt = wegwerf_datei("kaputt");
+        std::fs::write(&kaputt, "kein JSON").unwrap();
+        assert!(UserPrefs::default().keymap_importieren(&kaputt).is_err());
+        let _ = std::fs::remove_file(&kaputt);
+    }
+
+    #[test]
+    fn layout_laesst_sich_loeschen_aber_nicht_das_benutzte() {
+        let mut prefs = UserPrefs::default();
+        prefs.bind("draw.wall", "t");
+        prefs.keymap_speichern("Eins").unwrap();
+        prefs.bind("draw.wall", "ä");
+        prefs.keymap_speichern("Zwei").unwrap();
+        assert_eq!(prefs.keymap_presets.len(), 3);
+        // „Zwei" ist das benutzte Layout — es bleibt stehen.
+        assert_eq!(prefs.keymap_passend(), Some(2));
+        assert!(!prefs.keymap_loeschen(2));
+        // Das eingebaute Layout ebenfalls.
+        assert!(!prefs.keymap_loeschen(0));
+        assert!(prefs.keymap_loeschen(1), "ein unbenutztes Layout muss weggehen");
+        assert_eq!(prefs.keymap_presets.len(), 2);
+    }
+
+    /// Die Layouts überleben den Weg durch die `prefs.json`.
+    #[test]
+    fn layouts_werden_mit_gespeichert() {
+        let mut prefs = UserPrefs::default();
+        prefs.bind("draw.wall", "t");
+        prefs.keymap_speichern("Mit").unwrap();
+        let roh = serde_json::to_string(&prefs).unwrap();
+        let wieder: UserPrefs = serde_json::from_str(&roh).unwrap();
+        assert_eq!(wieder.keymap_presets.len(), 2);
+        assert!(wieder.keymap_presets.iter().any(|p| p.name == "Mit"));
+        assert_eq!(wieder.keymap_presets[0].name, WERKSEINSTELLUNG);
     }
 
     #[test]
