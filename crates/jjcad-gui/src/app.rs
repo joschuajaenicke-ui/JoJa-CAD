@@ -593,6 +593,9 @@ pub struct UiState {
     /// „i" in der oberen Leiste links).
     pub last_keymap_rect: Option<Rect>,
     pub last_keymap_info: Option<Rect>,
+    /// Flächen der Bedienelemente der Layoutzeile (Regressionstest T0076:
+    /// Auswahlfeld und Knöpfe haben dieselbe Höhe).
+    pub last_keymap_zeile: Option<Vec<(String, Rect)>>,
     /// Zuletzt gewählte Funktion für die Tastaturbelegung (T0064): Solange das
     /// Fenster offen ist, merkt es sich, was im Ribbon (oder über Hotbar und
     /// Taste) gestartet wurde — ein Klick auf eine leere Taste legt sie dort
@@ -685,6 +688,7 @@ impl Default for UiState {
             keymap_pos: None,
             last_keymap_rect: None,
             last_keymap_info: None,
+            last_keymap_zeile: None,
             keymap_funktion: None,
             search: String::new(),
             new_layer_dialog: None,
@@ -2678,7 +2682,7 @@ impl App {
         if matches!(mode, FileMode::ImportKeymap | FileMode::ExportKeymap) {
             let name = self
                 .prefs
-                .keymap_passend()
+                .keymap_aktiv()
                 .map(|i| self.prefs.keymap_presets[i].name.clone())
                 .unwrap_or_else(|| "Tastaturlayout".to_string());
             return (dir, name);

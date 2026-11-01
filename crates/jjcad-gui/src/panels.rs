@@ -573,6 +573,9 @@ pub(crate) enum BtnIcon {
     Line(LineType),
 }
 
+/// Höhe eines Auswahlfelds in den Panels (dichte Zeilen).
+pub(crate) const DROPDOWN_H: f32 = 20.0;
+
 pub(crate) fn dropdown<R>(
     ui: &mut Ui,
     salt: &str,
@@ -580,9 +583,37 @@ pub(crate) fn dropdown<R>(
     icon: Option<BtnIcon>,
     add_contents: impl FnOnce(&mut Ui) -> Option<R>,
 ) -> Option<R> {
+    dropdown_mit_hoehe(ui, salt, caption, icon, DROPDOWN_H, add_contents)
+}
+
+/// Derselbe Auswahlknopf in einer vorgegebenen Höhe — für Zeilen mit normalen
+/// Knöpfen daneben, die alle dieselbe Höhe haben sollen (T0076).
+pub(crate) fn dropdown_mit_hoehe<R>(
+    ui: &mut Ui,
+    salt: &str,
+    caption: &str,
+    icon: Option<BtnIcon>,
+    hoehe: f32,
+    add_contents: impl FnOnce(&mut Ui) -> Option<R>,
+) -> Option<R> {
+    dropdown_mit_hoehe_rect(ui, salt, caption, icon, hoehe, &mut None, add_contents)
+}
+
+/// Wie [`dropdown_mit_hoehe`], meldet zusätzlich die Fläche des geschlossenen
+/// Felds (Prüfung: gleiche Höhe wie die Knöpfe daneben, T0076).
+pub(crate) fn dropdown_mit_hoehe_rect<R>(
+    ui: &mut Ui,
+    salt: &str,
+    caption: &str,
+    icon: Option<BtnIcon>,
+    hoehe: f32,
+    flaeche: &mut Option<Rect>,
+    add_contents: impl FnOnce(&mut Ui) -> Option<R>,
+) -> Option<R> {
     let id = ui.make_persistent_id(("dd", salt));
     let w = ui.available_width().min(crate::widgets::VAL_W);
-    let (rect, resp) = ui.allocate_exact_size(Vec2::new(w, 20.0), Sense::click());
+    let (rect, resp) = ui.allocate_exact_size(Vec2::new(w, hoehe), Sense::click());
+    *flaeche = Some(rect);
     let open = ui.memory(|m| m.is_popup_open(id));
     let hovered = resp.hovered();
     let pnt = ui.painter();
