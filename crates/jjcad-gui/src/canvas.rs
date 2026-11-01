@@ -2441,6 +2441,10 @@ fn draw_tool_preview(
                 label = "Objekt anklicken".into();
             }
         }
+        "modify.trim" => {
+            // Der Abschnitt, den ein Klick hier entfernen würde (T0075).
+            draw_trim_preview(app, p, rect, view, cursor);
+        }
         "block.insert" => {
             let name = app
                 .options
@@ -2485,6 +2489,63 @@ fn draw_tool_preview(
         paint_label(p, rect, label_pos, &label);
     }
 
+}
+
+/// Hervorhebung des Abschnitts, den „Stutzen“ an dieser Stelle entfernen würde
+/// (T0075): steht der Zeiger auf einer Linie, ist der Bereich zwischen den
+/// beiden Schnittkanten in der Warnfarbe zu sehen — vor dem Klick, ohne die
+/// Zeichnung zu ändern. Bei einer Wand als Körper, damit auch die Dicke stimmt.
+///
+/// Der Abschnitt kommt aus [`actions::trim_vorschau`] — derselben Rechnung,
+/// die der Klick in `modify.trim` schneidet.
+fn draw_trim_preview(app: &App, p: &Painter, rect: Rect, view: View, at: V2) {
+    let tol = (8.0 / view.zoom).max(0.5);
+    let Some(id) = snap::hit_test(app.doc(), at, tol, None) else {
+        return;
+    };
+    let segs = actions::trim_vorschau(app.doc(), id, at, &[]);
+    if segs.is_empty() {
+        return;
+    }
+    let w2s = |q: V2| world_to_screen(rect, view, q);
+    let farbe = Palette::DANGER;
+    if let Some(EntityKind::Wall {
+        thickness, align, ..
+    }) = app.doc().entity(id).map(|e| &e.kind)
+    {
+        let t = thickness * 0.5;
+        for s in &segs {
+            if let Seg::Line(a, b) = s {
+                let n = (*b - *a).normalized().perp();
+                let off = n * (t * align.offset());
+                let quad = vec![
+                    w2s(*a + off + n * t),
+                    w2s(*b + off + n * t),
+                    w2s(*b + off - n * t),
+                    w2s(*a + off - n * t),
+                ];
+                p.add(Shape::convex_polygon(
+                    quad,
+                    farbe.gamma_multiply(0.30),
+                    Stroke::NONE,
+                ));
+            }
+        }
+    }
+    let strich = Stroke::new(3.0_f32, farbe);
+    for s in &segs {
+        match s {
+            Seg::Line(a, b) => {
+                p.line_segment([w2s(*a), w2s(*b)], strich);
+            }
+            Seg::Arc(arc) => {
+                let pts: Vec<Pos2> = arc.flatten(1.0).iter().map(|q| w2s(*q)).collect();
+                if pts.len() >= 2 {
+                    p.add(Shape::line(pts, strich));
+                }
+            }
+        }
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -8945,5 +9006,86 @@ mod tests_massketten_farbe {
             .expect("keine Maßkette angelegt");
         assert_eq!(e.layer, ziel, "Ebene der Werkzeugoptionen");
         assert_eq!(e.style.color, Some(Color::PURPLE), "Farbe der Werkzeugoptionen");
+    }
+}
+
+#[cfg(test)]
+mod tests_stutzvorschau {
+    //! Vorschau des Stutzens (T0075): steht der Zeiger auf einer Linie, ist der
+    //! Abschnitt, den ein Klick entfernt, vorher in der Warnfarbe zu sehen.
+
+    use super::*;
+
+    const RECT: Rect = Rect {
+        min: Pos2::new(0.0, 0.0),
+        max: Pos2::new(1200.0, 800.0),
+    };
+
+    /// Zwei Schnittkanten bei x = 2000/4000 mm und eine Linie von 0 bis 6000 mm.
+    fn app() -> App {
+        let mut app = App::with_ctx(egui::Context::default());
+        app.session_mut()
+            .execute("doc.settings", &json!({ "input_unit": "m" }))
+            .expect("Einheit setzen");
+        for (a, b) in [
+            ([2, -1], [2, 1]),
+            ([4, -1], [4, 1]),
+            ([0, 0], [6, 0]),
+        ] {
+            app.session_mut()
+                .execute("draw.line", &json!({ "a": a, "b": b }))
+                .expect("Linie anlegen");
+        }
+        app.start_tool("modify.trim");
+        app
+    }
+
+    /// Die Strecken der Warnfarbe, die `draw_trim_preview` malt.
+    fn stutz_strecken(app: &mut App, zeiger: Option<V2>) -> Vec<(Pos2, Pos2)> {
+        let view = app.current_view();
+        let ctx = app.ctx.clone();
+        let out = ctx.run(egui::RawInput::default(), |ctx| {
+            let layer = egui::LayerId::new(egui::Order::Background, egui::Id::new("stutz"));
+            let p = egui::Painter::new(ctx.clone(), layer, Rect::EVERYTHING);
+            draw_tool_preview(app, &p, RECT, view, zeiger, zeiger);
+        });
+        let mut v = Vec::new();
+        for cs in &out.shapes {
+            if let Shape::LineSegment { points, stroke } = &cs.shape {
+                if stroke.color == egui::epaint::ColorMode::Solid(Palette::DANGER) {
+                    v.push((points[0], points[1]));
+                }
+            }
+        }
+        v
+    }
+
+    #[test]
+    fn abschnitt_zwischen_den_kanten_ist_hervorgehoben() {
+        let mut app = app();
+        let view = app.current_view();
+        let strecken = stutz_strecken(&mut app, Some(V2::new(3000.0, 0.0)));
+        assert_eq!(strecken.len(), 1, "genau ein Abschnitt: {strecken:?}");
+        let (erwartet_a, erwartet_b) = (
+            world_to_screen(RECT, view, V2::new(2000.0, 0.0)),
+            world_to_screen(RECT, view, V2::new(4000.0, 0.0)),
+        );
+        let (a, b) = strecken[0];
+        assert!(
+            (a.x - erwartet_a.x).abs() < 0.6 && (a.y - erwartet_a.y).abs() < 0.6,
+            "Anfang an der ersten Kante: {a:?} statt {erwartet_a:?}"
+        );
+        assert!(
+            (b.x - erwartet_b.x).abs() < 0.6 && (b.y - erwartet_b.y).abs() < 0.6,
+            "Ende an der zweiten Kante: {b:?} statt {erwartet_b:?}"
+        );
+    }
+
+    /// Neben der Linie (mehr als der Trefferradius) gibt es nichts hervorzuheben.
+    #[test]
+    fn neben_der_linie_keine_hervorhebung() {
+        let mut app = app();
+        let strecken = stutz_strecken(&mut app, Some(V2::new(3000.0, 900.0)));
+        assert!(strecken.is_empty(), "kein Abschnitt ohne Linie: {strecken:?}");
     }
 }
