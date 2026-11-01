@@ -183,6 +183,19 @@ fn candidates(font: TextFont, style: FontStyle) -> Vec<String> {
         "C:\\Windows\\Fonts\\",
         "/Library/Fonts/",
     ];
+    // Neben dem Programm mitgelieferte Schriften haben Vorrang — nur so ist
+    // die Windows-Fassung ohne Systeminstallation von Liberation/Quicksand zu
+    // gebrauchen.
+    let mut dirs: Vec<String> = Vec::with_capacity(DIRS.len() + 1);
+    if let Ok(exe) = std::env::current_exe() {
+        if let Some(eltern) = exe.parent() {
+            let mut d = eltern.join("fonts").to_string_lossy().to_string();
+            d.push(std::path::MAIN_SEPARATOR);
+            dirs.push(d);
+        }
+    }
+    dirs.extend(DIRS.iter().map(|d| (*d).to_string()));
+
     let b = bases(font);
     let mut namen: Vec<String> = b
         .iter()
@@ -205,9 +218,9 @@ fn candidates(font: TextFont, style: FontStyle) -> Vec<String> {
         namen.push("LiberationSans".into());
         namen.push("DejaVuSans".into());
     }
-    let mut pfade = Vec::with_capacity(namen.len() * DIRS.len());
+    let mut pfade = Vec::with_capacity(namen.len() * dirs.len());
     for n in namen {
-        for d in DIRS {
+        for d in &dirs {
             pfade.push(format!("{d}{n}.ttf"));
         }
     }
