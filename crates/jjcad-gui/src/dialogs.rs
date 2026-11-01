@@ -2020,15 +2020,33 @@ fn keymap_kurz(name: &str) -> String {
     }
 }
 
+/// Höhe aller Bedienelemente der Layoutzeile (T0076). Vorher war das
+/// Auswahlfeld 20 px hoch und die Knöpfe daneben 28 px — die Zeile wirkte
+/// schief. Die Höhe ist jetzt **die** Höhe eines Knopfes, nach derselben Regel,
+/// die egui selbst anwendet (`Button`: Texthöhe + zweimal Rand, mindestens die
+/// Bedienhöhe); das Auswahlfeld bekommt genau diesen Wert.
+fn keymap_zeile_hoehe(ui: &Ui) -> f32 {
+    (ui.text_style_height(&egui::TextStyle::Button) + 2.0 * ui.spacing().button_padding.y)
+        .max(ui.spacing().interact_size.y)
+}
+
+/// Knopf der Layoutzeile — natürliche Größe, also genau `keymap_zeile_hoehe`.
+fn zeilen_knopf(ui: &mut Ui, text: &str) -> egui::Response {
+    ui.button(text)
+}
+
 /// Layoutzeile unter dem Tastenbild (T0076): Auswahl der gespeicherten
 /// Layouts, Speichern, Import und Export. Sie ersetzt den früheren Knopf
 /// „Werkseinstellungen" — die Werkseinstellung ist das erste Layout der Liste.
 fn keyboard_layouts(app: &mut App, ui: &mut Ui) {
+    let mut zeile: Vec<(String, Rect)> = Vec::new();
     ui.horizontal(|ui| {
         ui.label(theme::dim("Layout"));
-        // `usize::MAX` steht für „kein gespeichertes Layout passt".
-        let aktiv = app.prefs.keymap_passend();
-        // Die Wertespalte des Dropdowns ist 150 px breit — lange Namen würden
+        // Das **ausdrücklich** gewählte Layout (`keymap_aktiv`), nicht das erste
+        // mit gleicher Belegung: sonst zeigte die Auswahl nach dem Speichern
+        // wieder „Werkseinstellung" (T0076).
+        let aktiv = app.prefs.keymap_aktiv();
+        // Die Wertespalte des Auswahlfelds ist 150 px breit — lange Namen würden
         // in die Knöpfe daneben laufen.
         let mut eintraege: Vec<(usize, String)> = app
             .prefs
@@ -2040,11 +2058,30 @@ fn keyboard_layouts(app: &mut App, ui: &mut Ui) {
         if aktiv.is_none() {
             eintraege.push((usize::MAX, "Eigene Belegung".to_string()));
         }
-        if let Some(wahl) = crate::panels::pick_combo(
+        let gezeigt = aktiv.unwrap_or(usize::MAX);
+        let beschriftung = eintraege
+            .iter()
+            .find(|(i, _)| *i == gezeigt)
+            .map(|(_, n)| n.clone())
+            .unwrap_or_default();
+        let zeile_h = keymap_zeile_hoehe(ui);
+        let mut feld_flaeche = None;
+        if let Some(wahl) = crate::panels::dropdown_mit_hoehe_rect(
             ui,
             "keymap_layout",
-            aktiv.unwrap_or(usize::MAX),
-            &eintraege,
+            &beschriftung,
+            None,
+            zeile_h,
+            &mut feld_flaeche,
+            |ui| {
+                let mut out = None;
+                for (i, name) in &eintraege {
+                    if ui.selectable_label(*i == gezeigt, name).clicked() {
+                        out = Some(*i);
+                    }
+                }
+                out
+            },
         ) {
             if wahl != usize::MAX && Some(wahl) != aktiv {
                 if let Some(name) = app.prefs.keymap_anwenden(wahl) {
@@ -2053,38 +2090,41 @@ fn keyboard_layouts(app: &mut App, ui: &mut Ui) {
                 }
             }
         }
-        if ui
-            .button("Speichern …")
-            .on_hover_text("Die aktuelle Belegung unter einem Namen ablegen")
-            .clicked()
-        {
+        if let Some(r) = feld_flaeche {
+            zeile.push(("Auswahl".to_string(), r));
+        }
+        let speichern = zeilen_knopf(ui, "Speichern …")
+            .on_hover_text("Die aktuelle Belegung unter einem Namen ablegen");
+        zeile.push(("Speichern".to_string(), speichern.rect));
+        if speichern.clicked() {
+            // Die Werkseinstellung ist nicht überschreibbar — sie darf deshalb
+            // nicht als Name im Feld stehen (das war der Grund, warum „Speichern"
+            // scheinbar nichts tat).
             app.ui.keymap_name = Some(
                 aktiv
+                    .filter(|i| *i > 0)
                     .map(|i| app.prefs.keymap_presets[i].name.clone())
                     .unwrap_or_default(),
             );
         }
-        if ui
-            .button("Importieren …")
-            .on_hover_text("Ein Layout aus einer Datei übernehmen")
-            .clicked()
-        {
+        let import = zeilen_knopf(ui, "Importieren …")
+            .on_hover_text("Ein Layout aus einer Datei übernehmen");
+        zeile.push(("Importieren".to_string(), import.rect));
+        if import.clicked() {
             app.open_file_dialog(FileMode::ImportKeymap);
         }
-        if ui
-            .button("Exportieren …")
-            .on_hover_text("Die aktuelle Belegung als Datei schreiben")
-            .clicked()
-        {
+        let export = zeilen_knopf(ui, "Exportieren …")
+            .on_hover_text("Die aktuelle Belegung als Datei schreiben");
+        zeile.push(("Exportieren".to_string(), export.rect));
+        if export.clicked() {
             app.open_file_dialog(FileMode::ExportKeymap);
         }
-        // Löschen: Werkseinstellung und das gerade benutzte Layout bleiben.
+        // Löschen: das in der Auswahl stehende gespeicherte Layout. Die
+        // Werkseinstellung bleibt.
         let loeschbar = matches!(aktiv, Some(i) if i > 0);
-        if ui
-            .add_enabled(loeschbar, egui::Button::new("Löschen"))
-            .on_hover_text("Ein gespeichertes Layout entfernen")
-            .clicked()
-        {
+        let loeschen = ui.add_enabled_ui(loeschbar, |ui| zeilen_knopf(ui, "Löschen"));
+        zeile.push(("Löschen".to_string(), loeschen.response.rect));
+        if loeschen.inner.clicked() {
             if let Some(i) = aktiv {
                 if app.prefs.keymap_loeschen(i) {
                     let _ = app.prefs.save();
@@ -2093,6 +2133,7 @@ fn keyboard_layouts(app: &mut App, ui: &mut Ui) {
             }
         }
     });
+    app.ui.last_keymap_zeile = Some(zeile);
 }
 
 fn keyboard_body(app: &mut App, ui: &mut Ui) {
@@ -3319,7 +3360,39 @@ mod tests_tastatur {
         );
     }
 
-    /// T0076: „Speichern …" öffnet die Namensabfrage, Enter legt das Layout an.
+    /// T0076: Auswahlfeld und Knöpfe der Layoutzeile sind gleich hoch und
+    /// stehen auf einer Zeile — vorher war das Feld 20 px und die Knöpfe 24 px.
+    #[test]
+    fn layoutzeile_hat_fuer_alle_dieselbe_hoehe() {
+        let (app, _ctx) = app_mit_tastatur();
+        let zeile = app
+            .ui
+            .last_keymap_zeile
+            .clone()
+            .expect("Layoutzeile gezeichnet");
+        assert_eq!(zeile.len(), 5, "die Layoutzeile hat nicht fünf Bedienelemente");
+        let (_, erste) = &zeile[0];
+        for (name, r) in &zeile {
+            assert!(
+                (r.height() - erste.height()).abs() < 0.5,
+                "„{name}“ ist {} px hoch, die Auswahl {:.1} px",
+                r.height(),
+                erste.height()
+            );
+            assert!(
+                (r.center().y - erste.center().y).abs() < 1.0,
+                "„{name}“ steht nicht auf derselben Zeile"
+            );
+        }
+        assert!(
+            erste.height() > 20.0,
+            "die Zeile ist nur {:.1} px hoch",
+            erste.height()
+        );
+    }
+
+    /// T0076: „Speichern …" öffnet die Namensabfrage, Enter legt das Layout an —
+    /// und der Name steht danach in der Auswahl der Layoutzeile.
     #[test]
     fn layout_speichern_ueber_die_namensabfrage() {
         let _sperre = KONFIG.lock().unwrap_or_else(|e| e.into_inner());
@@ -3344,6 +3417,66 @@ mod tests_tastatur {
             "die Belegung ging beim Speichern verloren"
         );
         assert!(app.ui.keymap_name.is_none(), "die Namensabfrage bleibt offen");
+
+        // Der gespeicherte Name erscheint in der Auswahl — auch dann, wenn die
+        // Belegung der Werkseinstellung entspricht (das war der Fehler).
+        rahmen(&ctx, &mut app, vec![]);
+        let out = rahmen(&ctx, &mut app, vec![]);
+        let texte: Vec<String> = out
+            .shapes
+            .iter()
+            .filter_map(|cs| match &cs.shape {
+                egui::Shape::Text(t) => Some(t.galley.text().to_string()),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(
+            app.prefs
+                .keymap_aktiv()
+                .map(|i| app.prefs.keymap_presets[i].name.clone())
+                .as_deref(),
+            Some("Büro"),
+            "die Auswahl steht nicht auf dem gespeicherten Layout"
+        );
+        assert!(
+            texte.iter().any(|t| t == "Büro"),
+            "der gespeicherte Name steht nicht in der Auswahl"
+        );
+    }
+
+    /// T0076: „Löschen" in der Layoutzeile entfernt das gewählte Layout; die
+    /// Taste, die es trug, bleibt belegt (danach „Eigene Belegung").
+    #[test]
+    fn loeschen_entfernt_das_gewaehlte_layout() {
+        let _sperre = KONFIG.lock().unwrap_or_else(|e| e.into_inner());
+        let _konfig = WegwerfKonfig::neu("layout-loeschen");
+        let (mut app, ctx) = app_mit_tastatur();
+        app.prefs.bind("draw.wall", "t");
+        app.prefs.keymap_speichern("Büro").expect("Layout speichern");
+        for _ in 0..2 {
+            rahmen(&ctx, &mut app, vec![]);
+        }
+        let zeile = app
+            .ui
+            .last_keymap_zeile
+            .clone()
+            .expect("Layoutzeile gezeichnet");
+        let (_, loeschen) = zeile
+            .iter()
+            .find(|(n, _)| n == "Löschen")
+            .expect("kein Löschen-Knopf");
+        klick(&ctx, &mut app, loeschen.center());
+
+        assert!(
+            !app.prefs.keymap_presets.iter().any(|p| p.name == "Büro"),
+            "das Layout wurde nicht gelöscht"
+        );
+        assert_eq!(app.prefs.keymap_aktiv(), None);
+        assert_eq!(
+            app.prefs.action_for_key("t").as_deref(),
+            Some("draw.wall"),
+            "die Tasten des gelöschten Layouts gingen verloren"
+        );
     }
 }
 

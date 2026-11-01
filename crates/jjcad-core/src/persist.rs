@@ -440,6 +440,13 @@ pub struct UserPrefs {
     /// Layout, auf das jederzeit zurückgeschaltet werden kann.
     #[serde(default)]
     pub keymap_presets: Vec<KeymapPreset>,
+    /// Welches Layout gerade gilt (Index in `keymap_presets`). `None` =
+    /// „Eigene Belegung": die Belegung wurde von Hand geändert oder das Layout
+    /// gelöscht. Ausdrücklich gespeichert, weil zwei Layouts dieselbe Belegung
+    /// tragen dürfen — die Auswahl muss trotzdem den Namen zeigen, den der
+    /// Nutzer zuletzt gespeichert oder gewählt hat (T0076).
+    #[serde(default)]
+    pub keymap_aktiv: Option<usize>,
     #[serde(default)]
     pub recent_files: Vec<String>,
     #[serde(default)]
@@ -683,6 +690,7 @@ impl Default for UserPrefs {
             // Das eingebaute Layout: die Vorgabebelegung, auf die jederzeit
             // zurückgeschaltet werden kann (früher der Knopf „Werkseinstellungen").
             keymap_presets: vec![werkseinstellung],
+            keymap_aktiv: Some(0),
             recent_files: Vec::new(),
             last_dir: String::new(),
             show_lineweights: true,
@@ -862,6 +870,16 @@ impl UserPrefs {
             }
             None => self.keymap_presets.insert(0, werk),
         }
+        // Der gemerkte Index muss auf ein vorhandenes Layout zeigen. Eine alte
+        // `prefs.json` kennt das Feld nicht — dann gilt das Layout, dessen
+        // Belegung der aktuellen entspricht (Vorgabe: die Werkseinstellung).
+        self.keymap_aktiv = match self.keymap_aktiv {
+            Some(i) if i < self.keymap_presets.len() => Some(i),
+            _ => self
+                .keymap_presets
+                .iter()
+                .position(|p| p.bindings == self.bindings),
+        };
     }
 
     pub fn save(&self) -> Result<(), String> {
@@ -948,6 +966,8 @@ impl UserPrefs {
         if fest_belegt(&key).is_some() || !self.belegung_aenderbar(action) {
             return;
         }
+        // Von Hand geändert: das gemerkte Layout gilt nicht mehr (T0076).
+        self.keymap_aktiv = None;
         for keys in self.bindings.values_mut() {
             keys.retain(|k| k.to_lowercase() != key);
         }
@@ -963,6 +983,9 @@ impl UserPrefs {
     pub fn unbind_key(&mut self, key: &str) -> Option<String> {
         let k = key.to_lowercase();
         let aktion = self.action_for_key(&k);
+        if aktion.is_some() {
+            self.keymap_aktiv = None;
+        }
         for keys in self.bindings.values_mut() {
             keys.retain(|s| s.to_lowercase() != k);
         }
@@ -972,30 +995,35 @@ impl UserPrefs {
 
     /// Nimmt der Funktion **alle** Tasten.
     pub fn unbind_action(&mut self, action: &str) {
-        self.bindings.remove(action);
+        if self.bindings.remove(action).is_some() {
+            self.keymap_aktiv = None;
+        }
     }
 
     pub fn reset_bindings(&mut self) {
         self.bindings = UserPrefs::default().bindings;
+        self.keymap_aktiv = Some(0);
     }
 
     // ---- Tastaturlayouts (T0076) -------------------------------------------
 
-    /// Das gespeicherte Layout, das der **aktuellen** Belegung entspricht —
-    /// `None`, sobald der Nutzer eine Taste von Hand geändert hat („Eigene
-    /// Belegung"). So zeigt die Auswahl immer den wahren Stand.
-    pub fn keymap_passend(&self) -> Option<usize> {
-        self.keymap_presets
-            .iter()
-            .position(|p| p.bindings == self.bindings)
+    /// Das gerade gültige Layout — `None` = „Eigene Belegung" (von Hand
+    /// geändert). Immer der **ausdrücklich** gemerkte Eintrag, nicht der erste
+    /// mit gleicher Belegung: zwei Layouts dürfen dieselben Tasten tragen, die
+    /// Auswahl muss trotzdem den zuletzt gespeicherten Namen zeigen (T0076).
+    pub fn keymap_aktiv(&self) -> Option<usize> {
+        self.keymap_aktiv
+            .filter(|i| *i < self.keymap_presets.len())
     }
 
     /// Schaltet auf ein gespeichertes Layout um und liefert seinen Namen.
     /// Unbekannter Index oder ein fehlendes Layout ändern nichts.
     pub fn keymap_anwenden(&mut self, idx: usize) -> Option<String> {
         let p = self.keymap_presets.get(idx)?;
+        let name = p.name.clone();
         self.bindings = p.bindings.clone();
-        Some(p.name.clone())
+        self.keymap_aktiv = Some(idx);
+        Some(name)
     }
 
     /// Speichert die **aktuelle** Belegung unter `name`. Der Name
@@ -1009,27 +1037,42 @@ impl UserPrefs {
         if name.eq_ignore_ascii_case(WERKSEINSTELLUNG) {
             return Err("„Werkseinstellung“ ist das eingebaute Layout".into());
         }
-        match self
+        let idx = match self
             .keymap_presets
             .iter()
             .position(|p| p.name.eq_ignore_ascii_case(name))
         {
-            Some(i) => self.keymap_presets[i].bindings = self.bindings.clone(),
-            None => self.keymap_presets.push(KeymapPreset {
-                name: name.to_string(),
-                bindings: self.bindings.clone(),
-            }),
-        }
+            Some(i) => {
+                self.keymap_presets[i].bindings = self.bindings.clone();
+                i
+            }
+            None => {
+                self.keymap_presets.push(KeymapPreset {
+                    name: name.to_string(),
+                    bindings: self.bindings.clone(),
+                });
+                self.keymap_presets.len() - 1
+            }
+        };
+        // Ab jetzt gilt genau dieses Layout — auch wenn seine Belegung mit
+        // einem anderen Eintrag übereinstimmt.
+        self.keymap_aktiv = Some(idx);
         Ok(name.to_string())
     }
 
-    /// Löscht ein gespeichertes Layout. Das eingebaute (erste) und das gerade
-    /// benutzte bleiben stehen.
+    /// Löscht ein gespeichertes Layout. Das eingebaute (erste) bleibt stehen.
+    /// Wird das gerade benutzte gelöscht, bleiben dessen Tasten gültig, aber es
+    /// gilt danach „Eigene Belegung".
     pub fn keymap_loeschen(&mut self, idx: usize) -> bool {
-        if idx == 0 || idx >= self.keymap_presets.len() || Some(idx) == self.keymap_passend() {
+        if idx == 0 || idx >= self.keymap_presets.len() {
             return false;
         }
         self.keymap_presets.remove(idx);
+        self.keymap_aktiv = match self.keymap_aktiv {
+            Some(a) if a == idx => None,
+            Some(a) if a > idx => Some(a - 1),
+            other => other,
+        };
         true
     }
 
@@ -1053,7 +1096,7 @@ impl UserPrefs {
     /// Namen, unter dem sie in der Datei steht.
     pub fn keymap_exportieren_aktuell(&self, path: &Path) -> Result<String, String> {
         let name = self
-            .keymap_passend()
+            .keymap_aktiv()
             .map(|i| self.keymap_presets[i].name.clone())
             .unwrap_or_else(|| "Eigene Belegung".to_string());
         let p = KeymapPreset {
@@ -1083,15 +1126,22 @@ impl UserPrefs {
             p.name = format!("{WERKSEINSTELLUNG} (importiert)");
         }
         let bindings = p.bindings.clone();
-        match self
+        let idx = match self
             .keymap_presets
             .iter()
             .position(|q| q.name.eq_ignore_ascii_case(&p.name))
         {
-            Some(i) => self.keymap_presets[i] = p.clone(),
-            None => self.keymap_presets.push(p.clone()),
-        }
+            Some(i) => {
+                self.keymap_presets[i] = p.clone();
+                i
+            }
+            None => {
+                self.keymap_presets.push(p.clone());
+                self.keymap_presets.len() - 1
+            }
+        };
         self.bindings = bindings;
+        self.keymap_aktiv = Some(idx);
         Ok(p.name)
     }
 
@@ -1566,14 +1616,14 @@ mod tests {
     fn werkseinstellung_ist_das_erste_layout() {
         let prefs = UserPrefs::default();
         assert_eq!(prefs.keymap_presets[0].name, WERKSEINSTELLUNG);
-        assert_eq!(prefs.keymap_passend(), Some(0));
+        assert_eq!(prefs.keymap_aktiv(), Some(0));
 
         let mut geaendert = prefs.clone();
         geaendert.bind("draw.wall", "t");
         assert_eq!(
-            geaendert.keymap_passend(),
+            geaendert.keymap_aktiv(),
             None,
-            "eine geänderte Belegung darf nicht als Werkseinstellung gelten"
+            "eine geänderte Belegung gilt als eigene Belegung"
         );
     }
 
@@ -1585,11 +1635,11 @@ mod tests {
         prefs.bind("draw.wall", "t");
         let name = prefs.keymap_speichern("Meins").expect("Layout speichern");
         assert_eq!(name, "Meins");
-        assert_eq!(prefs.keymap_passend(), Some(1));
+        assert_eq!(prefs.keymap_aktiv(), Some(1));
 
-        // Weitere Änderung: die Belegung passt zu keinem gespeicherten Layout.
+        // Weitere Änderung von Hand: kein Layout gilt mehr.
         prefs.bind("draw.wall", "ä");
-        assert_eq!(prefs.keymap_passend(), None);
+        assert_eq!(prefs.keymap_aktiv(), None);
 
         // Zurück auf das gespeicherte Layout.
         assert_eq!(prefs.keymap_anwenden(1).as_deref(), Some("Meins"));
@@ -1618,14 +1668,14 @@ mod tests {
         let mut prefs = UserPrefs::default();
         prefs.bind("draw.wall", "t");
         prefs.keymap_speichern("Geteilt").unwrap();
-        let idx = prefs.keymap_passend().unwrap();
+        let idx = prefs.keymap_aktiv().unwrap();
         prefs.keymap_exportieren(idx, &path).expect("Export");
 
         let mut andere = UserPrefs::default();
         let name = andere.keymap_importieren(&path).expect("Import");
         assert_eq!(name, "Geteilt");
         assert_eq!(andere.action_for_key("t").as_deref(), Some("draw.wall"));
-        assert_eq!(andere.keymap_passend().map(|i| andere.keymap_presets[i].name.clone()).as_deref(), Some("Geteilt"));
+        assert_eq!(andere.keymap_aktiv().map(|i| andere.keymap_presets[i].name.clone()).as_deref(), Some("Geteilt"));
         // Die Werkseinstellung bleibt dabei erhalten und an erster Stelle.
         assert_eq!(andere.keymap_presets[0].name, WERKSEINSTELLUNG);
         let _ = std::fs::remove_file(&path);
@@ -1659,13 +1709,60 @@ mod tests {
         prefs.bind("draw.wall", "ä");
         prefs.keymap_speichern("Zwei").unwrap();
         assert_eq!(prefs.keymap_presets.len(), 3);
-        // „Zwei" ist das benutzte Layout — es bleibt stehen.
-        assert_eq!(prefs.keymap_passend(), Some(2));
-        assert!(!prefs.keymap_loeschen(2));
-        // Das eingebaute Layout ebenfalls.
-        assert!(!prefs.keymap_loeschen(0));
-        assert!(prefs.keymap_loeschen(1), "ein unbenutztes Layout muss weggehen");
+        // „Zwei" ist das benutzte Layout; es lässt sich löschen, danach gilt
+        // „Eigene Belegung" — die Tasten bleiben unverändert gültig.
+        assert_eq!(prefs.keymap_aktiv(), Some(2));
+        assert!(!prefs.keymap_loeschen(0), "die Werkseinstellung bleibt stehen");
+        assert!(prefs.keymap_loeschen(2), "das benutzte Layout muss weggehen");
+        assert_eq!(prefs.keymap_aktiv(), None);
+        assert_eq!(prefs.action_for_key("ä").as_deref(), Some("draw.wall"));
         assert_eq!(prefs.keymap_presets.len(), 2);
+    }
+
+    /// T0076: „Speichern" nimmt das neue Layout auch dann in die Auswahl auf,
+    /// wenn seine Belegung mit einem vorhandenen Eintrag übereinstimmt — der
+    /// Name, den der Nutzer gespeichert hat, muss dort stehen.
+    #[test]
+    fn gespeichertes_layout_steht_auch_bei_gleicher_belegung_in_der_auswahl() {
+        let mut prefs = UserPrefs::default();
+        // Unveränderte Belegung = Werkseinstellung, gespeichert als „Mein".
+        prefs.keymap_speichern("Mein").unwrap();
+        assert_eq!(prefs.keymap_aktiv(), Some(1));
+        assert_eq!(
+            prefs
+                .keymap_aktiv()
+                .map(|i| prefs.keymap_presets[i].name.clone())
+                .as_deref(),
+            Some("Mein"),
+            "die Auswahl zeigt die Werkseinstellung statt des gespeicherten Namens"
+        );
+
+        // Ein zweiter Name mit derselben Belegung wird ebenso übernommen.
+        prefs.keymap_speichern("Mein 2").unwrap();
+        assert_eq!(prefs.keymap_aktiv(), Some(2));
+
+        // Und der Weg durch die Datei behält ihn.
+        let roh = serde_json::to_string(&prefs).unwrap();
+        let wieder: UserPrefs = serde_json::from_str(&roh).unwrap();
+        assert_eq!(
+            wieder
+                .keymap_aktiv()
+                .map(|i| wieder.keymap_presets[i].name.clone())
+                .as_deref(),
+            Some("Mein 2")
+        );
+    }
+
+    /// T0076: Ein von Hand geänderter Belegungseintrag fällt auf „Eigene
+    /// Belegung" zurück; wird er wieder gespeichert, steht er wieder in der Auswahl.
+    #[test]
+    fn handaenderung_gilt_als_eigene_belegung() {
+        let mut prefs = UserPrefs::default();
+        prefs.keymap_speichern("Mein").unwrap();
+        prefs.bind("draw.line", "t");
+        assert_eq!(prefs.keymap_aktiv(), None);
+        prefs.keymap_speichern("Mein").unwrap();
+        assert_eq!(prefs.keymap_aktiv(), Some(1));
     }
 
     /// Die Layouts überleben den Weg durch die `prefs.json`.

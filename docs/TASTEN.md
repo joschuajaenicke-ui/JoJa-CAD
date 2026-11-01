@@ -111,8 +111,14 @@ Knopf „Werkseinstellungen".
   danach eine Taste ändert, hat „Eigene Belegung", bis er wieder ein Layout
   wählt.
 - **Wechseln** über die Auswahl: die Belegung des gewählten Layouts ersetzt die
-  aktuelle sofort. Die Auswahl zeigt den Namen nur, solange die Belegung
-  unverändert dazu passt — sonst „Eigene Belegung".
+  aktuelle sofort. Die Auswahl zeigt, welches Layout **ausdrücklich** gilt
+  (`UserPrefs::keymap_aktiv`) — auch wenn zwei Layouts dieselben Tasten tragen.
+  Nach dem Speichern steht dort der gespeicherte Name, nach einer Änderung von
+  Hand „Eigene Belegung". Ohne gemerkten Eintrag (alte `prefs.json`) gilt das
+  Layout, dessen Belegung der aktuellen entspricht.
+- **Löschen** entfernt das in der Auswahl stehende gespeicherte Layout; die
+  Tasten bleiben gültig, danach gilt „Eigene Belegung". Die Werkseinstellung
+  lässt sich nicht löschen.
 - **Exportieren …** schreibt die **aktuelle** Belegung als `.json`
   (`{"name": …, "bindings": {aktion: [tasten]}}`), **Importieren …** liest sie
   wieder ein und wendet sie sofort an. Ein Import mit nackter Belegung
@@ -163,5 +169,8 @@ Knopf „Werkseinstellungen".
 | Speichern/Anwenden/Wechseln | `persist::tests::layout_wird_gespeichert_und_wieder_angewendet` |
 | Export/Import (auch nackte Belegung) | `persist::tests::layout_wird_exportiert_und_importiert`, `…::import_nimmt_auch_eine_nackte_belegung` |
 | Fenster: keine Funktionsauswahl, Layoutzeile da | `dialogs::tests_tastatur::tastaturfenster_hat_keine_funktionsauswahl_mehr` |
+| Auswahlfeld und Knöpfe gleich hoch | `dialogs::tests_tastatur::layoutzeile_hat_fuer_alle_dieselbe_hoehe` |
+| Gespeicherter Name steht in der Auswahl | `persist::tests::gespeichertes_layout_steht_auch_bei_gleicher_belegung_in_der_auswahl` |
+| Löschen über die Layoutzeile | `dialogs::tests_tastatur::loeschen_entfernt_das_gewaehlte_layout` |
 | Breite = Tastenbild, i links oben | `dialogs::tests_tastatur::fenster_ist_so_breit_wie_das_tastenbild`, `…::infosymbol_steht_links_in_der_oberen_leiste` |
 | Belegung: Liste je Funktion, alte Form wird gelesen | `persist::tests::funktion_laesst_sich_mehrfach_belegen`, `…::alte_einzelne_belegung_wird_als_liste_gelesen` |
