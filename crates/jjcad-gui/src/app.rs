@@ -583,6 +583,16 @@ pub struct UiState {
     pub bind_key: Option<String>,
     pub slot_drag: Option<(usize, String)>,
     pub keymap_selected: Option<String>,
+    /// Name für „Layout speichern …" (T0076) — `Some` = das Eingabefenster steht.
+    pub keymap_name: Option<String>,
+    /// Lage des zuletzt gezogenen Tastaturfensters (T0076). `None` = zentriert;
+    /// die Kopfleiste ist die Ziehfläche, weil das Fenster keine Titelleiste hat.
+    pub keymap_pos: Option<egui::Pos2>,
+    /// Fläche des zuletzt gezeichneten Tastaturfensters und Lage des
+    /// Informationssymbols darin (Regressionstest T0076: Breite = Tastenbild,
+    /// „i" in der oberen Leiste links).
+    pub last_keymap_rect: Option<Rect>,
+    pub last_keymap_info: Option<Rect>,
     /// Zuletzt gewählte Funktion für die Tastaturbelegung (T0064): Solange das
     /// Fenster offen ist, merkt es sich, was im Ribbon (oder über Hotbar und
     /// Taste) gestartet wurde — ein Klick auf eine leere Taste legt sie dort
@@ -668,6 +678,10 @@ impl Default for UiState {
             bind_key: None,
             slot_drag: None,
             keymap_selected: None,
+            keymap_name: None,
+            keymap_pos: None,
+            last_keymap_rect: None,
+            last_keymap_info: None,
             keymap_funktion: None,
             search: String::new(),
             new_layer_dialog: None,
@@ -2637,7 +2651,7 @@ impl App {
             return;
         }
         if self.prefs.dateidialog_system() && crate::systemdialog::verfuegbar() {
-            let (dir, base) = self.starthilfe();
+            let (dir, base) = self.starthilfe_fuer(mode);
             let anfrage = mode.anfrage(dir, &base);
             self.ui.systemdialog =
                 Some((mode, Systemdialog::starten(anfrage, self.elternfenster.as_ref())));
@@ -2649,8 +2663,23 @@ impl App {
     /// Der eingebaute Dateidialog (auch der Rückfall, wenn der Systemdialog
     /// nicht zustande kommt).
     pub fn open_own_file_dialog(&mut self, mode: FileMode) {
-        let (start_dir, base) = self.starthilfe();
+        let (start_dir, base) = self.starthilfe_fuer(mode);
         self.ui.file_dialog = Some(FileDialog::new(mode, start_dir, &base));
+    }
+
+    /// Vorschlagsname für den Dateidialog. Ein Tastaturlayout (T0076) heißt wie
+    /// das Layout, nicht wie die Zeichnung.
+    fn starthilfe_fuer(&self, mode: FileMode) -> (PathBuf, String) {
+        let (dir, base) = self.starthilfe();
+        if matches!(mode, FileMode::ImportKeymap | FileMode::ExportKeymap) {
+            let name = self
+                .prefs
+                .keymap_passend()
+                .map(|i| self.prefs.keymap_presets[i].name.clone())
+                .unwrap_or_else(|| "Tastaturlayout".to_string());
+            return (dir, name);
+        }
+        (dir, base)
     }
 
     /// Startordner (letzter Ordner) und Name der Zeichnung für Dateidialoge.
@@ -5395,14 +5424,8 @@ impl eframe::App for App {
 
 /// Dateiendungen für Dialoge.
 pub fn ext_for(mode: FileMode) -> &'static str {
-    match mode {
-        FileMode::Open | FileMode::SaveJjcad => "jjcad",
-        FileMode::ImportDxf => "dxf",
-        FileMode::ImportPdf => "pdf",
-        FileMode::ExportPdf => "pdf",
-        FileMode::ExportDxf => "dxf",
-        FileMode::ExportPng => "png",
-    }
+    // Eine Quelle: die Endung steht in `FileMode::ext` (T0076).
+    mode.ext()
 }
 
 pub fn color_to_egui(c: Color) -> Color32 {

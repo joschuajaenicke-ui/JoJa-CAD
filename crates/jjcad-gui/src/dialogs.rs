@@ -24,6 +24,10 @@ pub enum FileMode {
     ExportPdf,
     ExportDxf,
     ExportPng,
+    /// Tastaturlayout als Datei einlesen (T0076)
+    ImportKeymap,
+    /// Tastaturlayout als Datei schreiben (T0076)
+    ExportKeymap,
 }
 
 impl FileMode {
@@ -34,6 +38,7 @@ impl FileMode {
             FileMode::ImportPdf => "pdf",
             FileMode::ExportPdf => "pdf",
             FileMode::ExportPng => "png",
+            FileMode::ImportKeymap | FileMode::ExportKeymap => "json",
         }
     }
     fn title(self) -> &'static str {
@@ -45,17 +50,26 @@ impl FileMode {
             FileMode::ExportPdf => "Als PDF exportieren",
             FileMode::ExportDxf => "Als DXF exportieren",
             FileMode::ExportPng => "Als PNG exportieren",
+            FileMode::ImportKeymap => "Tastaturlayout importieren",
+            FileMode::ExportKeymap => "Tastaturlayout exportieren",
         }
     }
     fn action_label(self) -> &'static str {
         match self {
             FileMode::Open => "Öffnen",
-            FileMode::ImportDxf => "Importieren",
+            FileMode::ImportDxf | FileMode::ImportKeymap => "Importieren",
             _ => "Speichern",
         }
     }
     fn is_save(self) -> bool {
-        matches!(self, FileMode::SaveJjcad | FileMode::ExportPdf | FileMode::ExportDxf | FileMode::ExportPng)
+        matches!(
+            self,
+            FileMode::SaveJjcad
+                | FileMode::ExportPdf
+                | FileMode::ExportDxf
+                | FileMode::ExportPng
+                | FileMode::ExportKeymap
+        )
     }
     /// Anzeigename des Dateifilters (ohne Endung) für den Systemdialog.
     fn filter_name(self) -> &'static str {
@@ -65,6 +79,7 @@ impl FileMode {
             FileMode::ImportPdf => "PDF-Dokument",
             FileMode::ExportPdf => "PDF-Dokument",
             FileMode::ExportPng => "PNG-Bild",
+            FileMode::ImportKeymap | FileMode::ExportKeymap => "Tastaturlayout",
         }
     }
     /// Anfrage an den Systemdialog des Betriebssystems.
@@ -140,6 +155,9 @@ impl FileDialog {
                         continue;
                     }
                     if self.mode == FileMode::ImportDxf && ext != "dxf" {
+                        continue;
+                    }
+                    if self.mode == FileMode::ImportKeymap && ext != "json" {
                         continue;
                     }
                 }
@@ -311,7 +329,10 @@ impl FileDialog {
             self.error = Some("Bitte einen Dateinamen angeben".into());
             return None;
         }
-        if self.mode.is_save() || self.mode == FileMode::ImportDxf {
+        if self.mode.is_save()
+            || self.mode == FileMode::ImportDxf
+            || self.mode == FileMode::ImportKeymap
+        {
             let ext = self.mode.ext();
             if !n.to_lowercase().ends_with(&format!(".{ext}")) {
                 n = format!("{n}.{ext}");
@@ -432,6 +453,19 @@ pub fn datei_gewaehlt(app: &mut App, mode: FileMode, path: std::path::PathBuf) {
         FileMode::ExportPdf => app.export_pdf_to(path),
         FileMode::ExportDxf => app.export_dxf_to(path),
         FileMode::ExportPng => app.export_png_to(path),
+        // Tastaturlayouts (T0076): Import übernimmt das Layout sofort, Export
+        // schreibt die gerade gültige Belegung.
+        FileMode::ImportKeymap => match app.prefs.keymap_importieren(&path) {
+            Ok(name) => {
+                let _ = app.prefs.save();
+                app.toast(format!("Layout · importiert: {name}"));
+            }
+            Err(e) => app.toast(e),
+        },
+        FileMode::ExportKeymap => match app.prefs.keymap_exportieren_aktuell(&path) {
+            Ok(name) => app.toast(format!("Layout · exportiert: {name}")),
+            Err(e) => app.toast(e),
+        },
     }
 }
 
@@ -665,23 +699,9 @@ pub fn show(app: &mut App, ctx: &egui::Context) {
     // bedienbar, damit eine Funktion angeklickt und gleich auf eine Taste
     // gelegt werden kann.
     if app.ui.keymap_open {
-        let mut open = true;
-        modal_window(ctx, "Tastaturbelegung", 860.0, &mut open).show(ctx, |ui| {
-            ui.set_width(840.0);
-            keyboard_body(app, ui);
-            ui.add_space(8.0);
-            ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-                if ui.button("Werkseinstellungen").clicked() {
-                    app.prefs.reset_bindings();
-                    let _ = app.prefs.save();
-                    app.toast("Tastenbelegung zurückgesetzt");
-                }
-            });
-        });
-        if !open || ctx.input(|i| i.key_pressed(egui::Key::Escape)) {
-            app.ui.keymap_open = false;
-        }
+        keymap_window(app, ctx);
     }
+    keymap_name_dialog(app, ctx);
 
     // Hilfe
     if app.ui.help_open {
@@ -1873,21 +1893,209 @@ Funktion. Mittlere Maustaste leert eine Taste. Buchstaben und Symbole sind frei 
 belegbar; Ziffern gehören der Hotbar; Steuerungstasten und Kombinationen sind \
 fest verdrahtet und ausgegraut.";
 
-fn keyboard_body(app: &mut App, ui: &mut Ui) {
+/// Das Fenster der Tastaturbelegung (T0076): eigene Kopfleiste mit dem
+/// Informationssymbol **links** und dem Schließen rechts, darunter das
+/// Tastenbild, unten die Layoutauswahl. Die Breite ist genau die Breite des
+/// Tastenbilds — rechts bleibt kein leerer Rand.
+fn keymap_window(app: &mut App, ctx: &egui::Context) {
+    let breite = tastatur_flaeche().x;
+    let mut offen = true;
+    let mut zug: Option<Vec2> = None;
+    let mut fenster = egui::Window::new("Tastaturbelegung")
+        .title_bar(false)
+        .collapsible(false)
+        .resizable(false)
+        .default_width(breite)
+        .frame(theme::dialog_frame());
+    fenster = match app.ui.keymap_pos {
+        Some(pos) => fenster.current_pos(pos),
+        None => fenster.anchor(egui::Align2::CENTER_CENTER, Vec2::ZERO),
+    };
+    let ergebnis = fenster.show(ctx, |ui| {
+        ui.set_width(breite);
+        // Obere Leiste: „i" linksbündig, Titel, offene Funktion, Schließen.
+        ui.horizontal(|ui| {
+            let (rect, antwort) = ui.allocate_exact_size(Vec2::splat(18.0), Sense::hover());
+            widgets::icon(ui, rect, "info", Palette::TEXT_DIM);
+            antwort.on_hover_text(KEYMAP_HILFE);
+            app.ui.last_keymap_info = Some(rect);
+            ui.add_space(4.0);
+            let titel = ui.add(
+                egui::Label::new(theme::bold("Tastaturbelegung", 14.0)).sense(Sense::drag()),
+            );
+            if titel.dragged() {
+                zug = Some(titel.drag_delta());
+            }
+            // T0064: Die zuletzt gewählte Funktion steht in der Leiste, damit
+            // sichtbar ist, was eine leere Taste gerade aufnimmt.
+            ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+                if widgets::icon_button(ui, "close", 20.0, false, "Schließen").clicked() {
+                    offen = false;
+                }
+                if let Some(f) = app.ui.keymap_funktion.clone() {
+                    let name = actions::action(&f).map(|d| d.label.to_string()).unwrap_or(f);
+                    ui.label(theme::mono(format!("Bereit: {name}")));
+                }
+            });
+        });
+        ui.add_space(2.0);
+        ui.separator();
+        keyboard_body(app, ui);
+    });
+    if let Some(r) = &ergebnis {
+        app.ui.last_keymap_rect = Some(r.response.rect);
+        if let Some(d) = zug {
+            app.ui.keymap_pos = Some(r.response.rect.min + d);
+        }
+    }
+    if !offen || ctx.input(|i| i.key_pressed(egui::Key::Escape)) {
+        app.ui.keymap_open = false;
+    }
+}
+
+/// Namen für ein neues Layout erfragen (T0076) — „Speichern …" in der
+/// Layoutzeile.
+fn keymap_name_dialog(app: &mut App, ctx: &egui::Context) {
+    let Some(mut buf) = app.ui.keymap_name.clone() else {
+        return;
+    };
+    let mut offen = true;
+    let mut speichern = false;
+    let mut abbrechen = false;
+    modal_window(ctx, "Layout speichern", 380.0, &mut offen).show(ctx, |ui| {
+        ui.set_width(356.0);
+        ui.label(theme::dim(
+            "Name des Layouts. Ist der Name schon vergeben, wird er überschrieben.",
+        ));
+        ui.add_space(6.0);
+        let feld = ui.add_sized(
+            [356.0, 24.0],
+            egui::TextEdit::singleline(&mut buf).hint_text("z. B. Architektur"),
+        );
+        feld.request_focus();
+        if ui.input(|i| i.key_pressed(egui::Key::Enter)) {
+            speichern = true;
+        }
+        ui.add_space(8.0);
+        ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+            if ui.button("Speichern").clicked() {
+                speichern = true;
+            }
+            if ui.button("Abbrechen").clicked() {
+                abbrechen = true;
+            }
+        });
+    });
+    if !offen || abbrechen {
+        app.ui.keymap_name = None;
+        return;
+    }
+    if speichern {
+        match app.prefs.keymap_speichern(&buf) {
+            Ok(name) => {
+                let _ = app.prefs.save();
+                app.ui.keymap_name = None;
+                app.toast(format!("Layout · gespeichert: {name}"));
+            }
+            // Ungültiger Name: das Feld bleibt offen, die Meldung nennt den Grund.
+            Err(e) => {
+                app.toast(e);
+                app.ui.keymap_name = Some(buf);
+            }
+        }
+    } else {
+        app.ui.keymap_name = Some(buf);
+    }
+}
+
+/// Name eines Layouts, gekürzt auf die Breite der Dropdown-Wertespalte.
+fn keymap_kurz(name: &str) -> String {
+    const MAX: usize = 20;
+    if name.chars().count() > MAX {
+        let mut s: String = name.chars().take(MAX - 1).collect();
+        s.push('…');
+        s
+    } else {
+        name.to_string()
+    }
+}
+
+/// Layoutzeile unter dem Tastenbild (T0076): Auswahl der gespeicherten
+/// Layouts, Speichern, Import und Export. Sie ersetzt den früheren Knopf
+/// „Werkseinstellungen" — die Werkseinstellung ist das erste Layout der Liste.
+fn keyboard_layouts(app: &mut App, ui: &mut Ui) {
     ui.horizontal(|ui| {
-        let (rect, antwort) = ui.allocate_exact_size(Vec2::splat(16.0), Sense::hover());
-        widgets::icon(ui, rect, "info", Palette::TEXT_DIM);
-        antwort.on_hover_text(KEYMAP_HILFE);
-        // T0064: Die zuletzt gewählte Funktion steht daneben, damit sichtbar
-        // ist, was eine leere Taste gerade aufnimmt.
-        if let Some(f) = app.ui.keymap_funktion.clone() {
-            let name = actions::action(&f).map(|d| d.label.to_string()).unwrap_or(f);
-            ui.add_space(8.0);
-            ui.label(theme::mono(format!("Bereit: {name}")));
+        ui.label(theme::dim("Layout"));
+        // `usize::MAX` steht für „kein gespeichertes Layout passt".
+        let aktiv = app.prefs.keymap_passend();
+        // Die Wertespalte des Dropdowns ist 150 px breit — lange Namen würden
+        // in die Knöpfe daneben laufen.
+        let mut eintraege: Vec<(usize, String)> = app
+            .prefs
+            .keymap_presets
+            .iter()
+            .enumerate()
+            .map(|(i, p)| (i, keymap_kurz(&p.name)))
+            .collect();
+        if aktiv.is_none() {
+            eintraege.push((usize::MAX, "Eigene Belegung".to_string()));
+        }
+        if let Some(wahl) = crate::panels::pick_combo(
+            ui,
+            "keymap_layout",
+            aktiv.unwrap_or(usize::MAX),
+            &eintraege,
+        ) {
+            if wahl != usize::MAX && Some(wahl) != aktiv {
+                if let Some(name) = app.prefs.keymap_anwenden(wahl) {
+                    let _ = app.prefs.save();
+                    app.toast(format!("Layout · {name}"));
+                }
+            }
+        }
+        if ui
+            .button("Speichern …")
+            .on_hover_text("Die aktuelle Belegung unter einem Namen ablegen")
+            .clicked()
+        {
+            app.ui.keymap_name = Some(
+                aktiv
+                    .map(|i| app.prefs.keymap_presets[i].name.clone())
+                    .unwrap_or_default(),
+            );
+        }
+        if ui
+            .button("Importieren …")
+            .on_hover_text("Ein Layout aus einer Datei übernehmen")
+            .clicked()
+        {
+            app.open_file_dialog(FileMode::ImportKeymap);
+        }
+        if ui
+            .button("Exportieren …")
+            .on_hover_text("Die aktuelle Belegung als Datei schreiben")
+            .clicked()
+        {
+            app.open_file_dialog(FileMode::ExportKeymap);
+        }
+        // Löschen: Werkseinstellung und das gerade benutzte Layout bleiben.
+        let loeschbar = matches!(aktiv, Some(i) if i > 0);
+        if ui
+            .add_enabled(loeschbar, egui::Button::new("Löschen"))
+            .on_hover_text("Ein gespeichertes Layout entfernen")
+            .clicked()
+        {
+            if let Some(i) = aktiv {
+                if app.prefs.keymap_loeschen(i) {
+                    let _ = app.prefs.save();
+                    app.toast("Layout · gelöscht");
+                }
+            }
         }
     });
-    ui.add_space(6.0);
+}
 
+fn keyboard_body(app: &mut App, ui: &mut Ui) {
     let (rahmen, _) = ui.allocate_exact_size(tastatur_flaeche(), Sense::hover());
     let tasten = tasten_rechtecke(rahmen.min);
     app.ui.last_tasten = Some(tasten.clone());
@@ -2051,24 +2259,8 @@ fn keyboard_body(app: &mut App, ui: &mut Ui) {
     }
 
     ui.add_space(8.0);
-    ui.horizontal(|ui| {
-        if let Some(key) = app.ui.keymap_selected.clone() {
-            ui.label(theme::mono(format!("Taste: {key}")));
-            if ui.button("Funktion wählen …").clicked() {
-                taste_belegen(app, &key);
-            }
-            ui.add_space(10.0);
-            if ui.button("Belegung dieser Taste entfernen").clicked() {
-                if app.prefs.unbind_key(&key).is_some() {
-                    let _ = app.prefs.save();
-                }
-            }
-        } else {
-            ui.label(theme::dim(
-                "Noch keine Taste gewählt — freie Taste anklicken, um eine Funktion zu wählen.",
-            ));
-        }
-    });
+    ui.separator();
+    keyboard_layouts(app, ui);
 }
 
 /// Belegen vorbereiten (T0072): öffnet das Inventar im Reiter „Funktionen".
@@ -3036,10 +3228,12 @@ mod tests_tastatur {
         assert!(app.tool.is_none(), "das Werkzeug läuft nach dem Zuteilen weiter");
     }
 
-    /// T0072: Die eigene Liste zum Hinzufügen ist aus dem Fenster verschwunden —
-    /// unter dem Tastenbild steht nur noch die gewählte Taste mit ihren Knöpfen.
+    /// T0076: Unter dem Tastenbild steht **keine** Funktionsauswahl mehr —
+    /// weder die gewählte Taste noch „Funktion wählen …" oder „Belegung dieser
+    /// Taste entfernen". Belegt wird über einen Klick auf die Taste (Inventar),
+    /// geleert über die mittlere Maustaste.
     #[test]
-    fn tastaturfenster_hat_keine_eigene_funktionsliste_mehr() {
+    fn tastaturfenster_hat_keine_funktionsauswahl_mehr() {
         let (mut app, ctx) = app_mit_tastatur();
         let tasten = app.ui.last_tasten.clone().expect("Tastenbild gezeichnet");
         let (_, _, q) = *taste_mit(&tasten, "q");
@@ -3053,18 +3247,103 @@ mod tests_tastatur {
                 _ => None,
             })
             .collect();
-        assert!(
-            texte.iter().any(|t| t.contains("Taste: q")),
-            "die gewählte Taste steht nicht im Fenster"
-        );
-        assert!(
-            texte.iter().any(|t| t.contains("Funktion wählen")),
-            "der Weg ins Inventar fehlt"
-        );
+        for weg in [
+            "Taste: q",
+            "Funktion wählen",
+            "Belegung dieser Taste entfernen",
+            "Werkseinstellungen",
+        ] {
+            assert!(
+                !texte.iter().any(|t| t.contains(weg)),
+                "„{weg}“ steht weiterhin im Fenster"
+            );
+        }
         assert!(
             !texte.iter().any(|t| t == "Wand"),
             "die alte Funktionsliste steht weiterhin im Fenster"
         );
+        // Die Layoutzeile ist der Ersatz: Auswahl der gespeicherten Layouts.
+        assert!(
+            texte.iter().any(|t| t == "Layout"),
+            "die Layoutauswahl fehlt unter dem Tastenbild"
+        );
+        assert!(
+            texte.iter().any(|t| t.contains("Werkseinstellung")),
+            "die Werkseinstellung steht nicht in der Auswahl"
+        );
+    }
+
+    /// T0076: Das Fenster ist genau so breit wie das Tastenbild — rechts bleibt
+    /// kein leerer Rand (vorher 860 statt 716 px).
+    #[test]
+    fn fenster_ist_so_breit_wie_das_tastenbild() {
+        let (app, _ctx) = app_mit_tastatur();
+        let fenster = app.ui.last_keymap_rect.expect("Fenster gezeichnet");
+        let tasten = app.ui.last_tasten.clone().expect("Tastenbild gezeichnet");
+        let bild = tastatur_flaeche();
+        // Der Rahmen des Fensters kommt zur Inhaltsbreite hinzu; mehr als ein
+        // schmaler Rahmen darf es nicht sein.
+        let rand = fenster.width() - bild.x;
+        assert!(
+            (0.0..=40.0).contains(&rand),
+            "Fenster ist {} px breit, das Tastenbild {} px — Rand {rand}",
+            fenster.width(),
+            bild.x
+        );
+        let rechts = tasten[0].2.left() + bild.x;
+        assert!(
+            (rechts - (fenster.right() - rand / 2.0)).abs() < 1.0,
+            "das Tastenbild sitzt nicht mittig im Fenster"
+        );
+    }
+
+    /// T0076: Das Informationssymbol steht in der oberen Leiste, linksbündig —
+    /// nicht mehr über dem Tastenbild und nicht rechts.
+    #[test]
+    fn infosymbol_steht_links_in_der_oberen_leiste() {
+        let (app, _ctx) = app_mit_tastatur();
+        let fenster = app.ui.last_keymap_rect.expect("Fenster gezeichnet");
+        let info = app.ui.last_keymap_info.expect("Infosymbol gezeichnet");
+        let tasten = app.ui.last_tasten.clone().expect("Tastenbild gezeichnet");
+        assert!(
+            info.center().y < tasten[0].2.top(),
+            "das Infosymbol steht nicht über dem Tastenbild"
+        );
+        assert!(
+            info.center().y < fenster.top() + 40.0,
+            "das Infosymbol steht nicht in der oberen Leiste"
+        );
+        assert!(
+            info.left() < fenster.left() + 30.0,
+            "das Infosymbol steht nicht linksbündig"
+        );
+    }
+
+    /// T0076: „Speichern …" öffnet die Namensabfrage, Enter legt das Layout an.
+    #[test]
+    fn layout_speichern_ueber_die_namensabfrage() {
+        let _sperre = KONFIG.lock().unwrap_or_else(|e| e.into_inner());
+        let _konfig = WegwerfKonfig::neu("layout-speichern");
+        let (mut app, ctx) = app_mit_tastatur();
+        app.prefs.bind("draw.wall", "t");
+        app.ui.keymap_name = Some("Büro".to_string());
+        let eingabe = egui::Event::Key {
+            key: egui::Key::Enter,
+            physical_key: None,
+            pressed: true,
+            repeat: false,
+            modifiers: egui::Modifiers::NONE,
+        };
+        rahmen(&ctx, &mut app, vec![eingabe]);
+        assert!(
+            app.prefs.keymap_presets.iter().any(|p| p.name == "Büro"),
+            "das Layout wurde nicht angelegt"
+        );
+        assert!(
+            app.prefs.action_for_key("t").as_deref() == Some("draw.wall"),
+            "die Belegung ging beim Speichern verloren"
+        );
+        assert!(app.ui.keymap_name.is_none(), "die Namensabfrage bleibt offen");
     }
 }
 

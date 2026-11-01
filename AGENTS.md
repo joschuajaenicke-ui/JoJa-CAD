@@ -163,6 +163,15 @@ Mit dem Nutzer abgestimmt — nicht „verbessern“:
   (Icon im Tastenbild), Drehen und Spiegeln der Einfüge-Vorschau hängen an
   `modify.rotate`/`modify.mirror`. Kürzel nur über `app::EINZELTASTEN` und das
   Action-Register auswerten, nicht zusätzlich im Code abfragen.
+- **Fenster „Tastaturbelegung" (T0076)**: eigene Kopfleiste statt Titelleiste —
+  **i** linksbündig (Bedienung als Tooltip), Titel daneben, Schließen rechts;
+  darunter das Tastenbild, darunter **nur** die Layoutzeile. Das Fenster ist
+  genau so breit wie das Tastenbild (`tastatur_flaeche().x` = 716 px), keine
+  Knopfzeile unter der Tastatur. Layouts liegen in `UserPrefs::keymap_presets`
+  (erstes = „Werkseinstellung", nicht überschreibbar, nicht löschbar), Wechsel
+  über `keymap_anwenden`, Export/Import über `keymap_exportieren_aktuell` /
+  `keymap_importieren`. Die Auswahl zeigt den passenden Namen oder „Eigene
+  Belegung" (`keymap_passend`) — keinen gespeicherten Zustand raten.
 - **Rechtsklickmenüs** bleiben offen, wenn der Zeiger in die Zeichenfläche kommt.
 - **Eigenschaften-Panel**: gleiche Zeilen (96 px Label, 150 px Wert) beim Platzieren
   *und* bei Auswahl; bei Mehrfachauswahl nur gemeinsame Felder, abweichende Werte
