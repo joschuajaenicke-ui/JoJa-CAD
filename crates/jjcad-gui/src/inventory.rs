@@ -366,6 +366,30 @@ fn truncate(s: &str, n: usize) -> String {
 // Funktionsliste
 // ---------------------------------------------------------------------------
 
+/// Gewählte Funktion aus der Liste (T0072): Steht eine Taste bereit, belegt sie
+/// diese — sonst wie bisher den Hotbar-Slot bzw. das Lager. Der eine Weg für
+/// Klick und Tests.
+pub(crate) fn funktion_gewaehlt(app: &mut App, id: &str) {
+    if let Some(key) = app.ui.bind_key.clone() {
+        if !crate::dialogs::funktion_auf_taste(app, id, &key) {
+            app.toast("Funktion · fest belegt");
+        }
+    } else if let Some(slot) = app.ui.bind_slot.take() {
+        if slot == usize::MAX {
+            if let Some(free) = app.prefs.inventory.iter().position(|x| x.is_none()) {
+                app.prefs.inventory[free] = Some(id.to_string());
+                let _ = app.prefs.save();
+                app.toast("Ins Lager gelegt");
+            }
+        } else {
+            app.bind_slot_action(slot, Some(id.to_string()));
+        }
+    } else {
+        app.start_tool(id);
+        app.ui.inventory_open = false;
+    }
+}
+
 fn functions_tab(app: &mut App, ui: &mut Ui) {
     ui.horizontal(|ui| {
         ui.label(theme::dim("Alle Befehle – anklicken zum Starten, auf Hotbar ziehen zum Belegen."));
@@ -376,8 +400,20 @@ fn functions_tab(app: &mut App, ui: &mut Ui) {
             );
         });
     });
-    if app.ui.bind_slot.is_some() {
-        let slot = app.ui.bind_slot.unwrap();
+    // Ziel des nächsten Klicks: Taste (T0072), Hotbar-Slot oder Lager.
+    if let Some(key) = app.ui.bind_key.clone() {
+        ui.add_space(4.0);
+        ui.horizontal(|ui| {
+            ui.label(
+                RichText::new(format!("Funktion für Taste {} wählen", key.to_uppercase()))
+                    .color(Palette::ACCENT)
+                    .size(11.5),
+            );
+            if ui.button("Abbrechen").clicked() {
+                app.ui.bind_key = None;
+            }
+        });
+    } else if let Some(slot) = app.ui.bind_slot {
         ui.add_space(4.0);
         ui.horizontal(|ui| {
             ui.label(
@@ -427,6 +463,9 @@ fn functions_tab(app: &mut App, ui: &mut Ui) {
             );
             ui.add_space(3.0);
             for a in items {
+                // Fest verdrahtete Funktionen (Strg+S, F1 …) lassen sich keiner
+                // Taste zuweisen — sie stehen sichtbar, aber ohne Klickziel.
+                let fest = app.ui.bind_key.is_some() && !app.prefs.belegung_aenderbar(a.id);
                 let (rect, resp) = ui.allocate_exact_size(
                     Vec2::new(ui.available_width(), 28.0),
                     Sense::click_and_drag(),
@@ -447,7 +486,15 @@ fn functions_tab(app: &mut App, ui: &mut Ui) {
                         FontId::proportional(12.0),
                         Palette::TEXT,
                     );
-                    if let Some(k) = app.prefs.key_for(a.id) {
+                    if fest {
+                        ui.painter().text(
+                            Pos2::new(rect.right() - 8.0, rect.center().y),
+                            egui::Align2::RIGHT_CENTER,
+                            "· fest",
+                            FontId::proportional(9.5),
+                            Palette::TEXT_FAINT,
+                        );
+                    } else if let Some(k) = app.prefs.key_for(a.id) {
                         ui.painter().text(
                             Pos2::new(rect.right() - 8.0, rect.center().y),
                             egui::Align2::RIGHT_CENTER,
@@ -464,21 +511,8 @@ fn functions_tab(app: &mut App, ui: &mut Ui) {
                         Palette::TEXT_FAINT,
                     );
                 }
-                if resp.clicked() {
-                    if let Some(slot) = app.ui.bind_slot.take() {
-                        if slot == usize::MAX {
-                            if let Some(free) = app.prefs.inventory.iter().position(|x| x.is_none()) {
-                                app.prefs.inventory[free] = Some(a.id.to_string());
-                                let _ = app.prefs.save();
-                                app.toast("Ins Lager gelegt");
-                            }
-                        } else {
-                            app.bind_slot_action(slot, Some(a.id.to_string()));
-                        }
-                    } else {
-                        app.start_tool(a.id);
-                        app.ui.inventory_open = false;
-                    }
+                if resp.clicked() && !fest {
+                    funktion_gewaehlt(app, a.id);
                 }
                 if resp.drag_started() {
                     app.ui.slot_drag = Some((usize::MAX, a.id.to_string()));

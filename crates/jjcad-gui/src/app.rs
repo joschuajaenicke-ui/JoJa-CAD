@@ -577,6 +577,10 @@ pub struct UiState {
     /// (Some(true) = davor, Some(false) = dahinter)
     pub order_pick: Option<bool>,
     pub bind_slot: Option<usize>,
+    /// Taste, die auf eine Funktion wartet (T0072): Wie ein leerer Hotbar-Slot
+    /// öffnet ein Klick auf eine freie Taste das Inventar im Reiter
+    /// „Funktionen"; die gewählte Funktion landet auf dieser Taste.
+    pub bind_key: Option<String>,
     pub slot_drag: Option<(usize, String)>,
     pub keymap_selected: Option<String>,
     /// Zuletzt gewählte Funktion für die Tastaturbelegung (T0064): Solange das
@@ -660,6 +664,7 @@ impl Default for UiState {
             menu: None,
             order_pick: None,
             bind_slot: None,
+            bind_key: None,
             slot_drag: None,
             keymap_selected: None,
             keymap_funktion: None,
@@ -2535,6 +2540,9 @@ impl App {
     /// und Fensterkreuz, damit kein Zustand aus dem Inventar hängen bleibt.
     pub fn close_inventory(&mut self) {
         self.ui.inventory_open = false;
+        // Ein offenes Belegen (Hotbar-Slot oder Taste) endet mit dem Inventar —
+        // sonst landete die nächste gewählte Funktion in einem unsichtbaren Ziel.
+        self.ui.bind_key = None;
         // Nur Zieh-Vorgänge, die im Inventar begonnen haben, verwerfen —
         // eine Hotbar-Umbelegung per Ziehen läuft unabhängig weiter.
         if matches!(self.ui.slot_drag, Some((usize::MAX, _))) {
@@ -2885,6 +2893,9 @@ impl App {
             if self.ui.order_pick.is_some() {
                 self.ui.order_pick = None;
                 self.toast("Reihenfolge · kein Objekt gewählt");
+            } else if self.ui.bind_key.is_some() {
+                self.ui.bind_key = None;
+                self.toast("Tastatur · belegen abgebrochen");
             } else if self.ui.bind_slot.is_some() {
                 self.ui.bind_slot = None;
                 self.toast("Hotbar · verknüpfen abgebrochen");
@@ -5488,6 +5499,9 @@ mod tests_treppe {
     #[test]
     fn eingeschaltet_verschiebt_der_klick_die_treppe() {
         let (mut app, id) = app_mit_treppe();
+        // Der Test prüft die eingeschaltete Einstellung, nicht die Vorgabe des
+        // Rechners — eine gespeicherte `prefs.json` darf ihn nicht verfälschen.
+        app.prefs.mouse_move = true;
         assert!(app.prefs.mouse_move, "Vorgabe ist eingeschaltet");
         app.session_mut().select(vec![id]);
         assert!(app.maus_verschiebt(id));
@@ -6512,6 +6526,7 @@ mod tests_text_ziehen {
     #[test]
     fn eingeschaltet_startet_text_maus_verschieben() {
         let (mut app, text, _) = app_mit_text_und_linie();
+        app.prefs.mouse_move = true;
         assert!(app.prefs.mouse_move, "Vorgabe ist eingeschaltet");
         app.session_mut().select(vec![text]);
 
@@ -6525,6 +6540,7 @@ mod tests_text_ziehen {
     #[test]
     fn linie_startet_weiterhin_maus_verschieben() {
         let (mut app, _, linie) = app_mit_text_und_linie();
+        app.prefs.mouse_move = true;
         app.session_mut().select(vec![linie]);
 
         let gestartet = app.begin_move_drag_bei_klick(linie, V2::new(500.0, 2000.0), 1.0);
@@ -6960,6 +6976,7 @@ mod tests_kopieren {
     fn kopierter_text_landet_mittig_auf_dem_zielpunkt() {
         let ctx = egui::Context::default();
         let mut app = App::with_ctx(ctx);
+        app.prefs.paste_pivot = jjcad_core::persist::PastePivot::BasePoint;
         app.doc_mut().settings.input_unit = jjcad_core::units::Unit::Mm;
         let r = app
             .session_mut()
@@ -6999,6 +7016,7 @@ mod tests_kopieren {
     #[test]
     fn einfuegen_nach_basispunkt_setzt_den_basispunkt_an_den_zeiger() {
         let mut app = app_mit_rechteck(true);
+        app.prefs.paste_pivot = jjcad_core::persist::PastePivot::BasePoint;
         let ids = app.selection().to_vec();
         app.merke_zwischenablage(&ids, Some(V2::new(250.0, 100.0)));
         app.pointer_world = Some(V2::new(4000.0, 5000.0));

@@ -1811,11 +1811,11 @@ fn tasten_belegung(orig: Pos2) -> Vec<(&'static str, Rect)> {
 
 /// Legt eine Funktion auf eine Taste der Tastaturbelegung (T0064).
 ///
-/// Derselbe Weg wie „Funktion aus der Liste wählen": `UserPrefs::bind` prüft die
-/// Sperren und räumt eine alte Belegung derselben Taste weg. Liefert `false`,
-/// wenn die Funktion fest verdrahtet ist (Strg+S, F1 …) — dann bleibt die
-/// Belegung unverändert.
-fn funktion_auf_taste(app: &mut App, funktion: &str, key: &str) -> bool {
+/// Derselbe Weg wie „Funktion im Inventar wählen" (T0072): `UserPrefs::bind`
+/// prüft die Sperren und räumt eine alte Belegung derselben Taste weg. Liefert
+/// `false`, wenn die Funktion fest verdrahtet ist (Strg+S, F1 …) — dann bleibt
+/// die Belegung unverändert.
+pub(crate) fn funktion_auf_taste(app: &mut App, funktion: &str, key: &str) -> bool {
     if !app.prefs.belegung_aenderbar(funktion) {
         return false;
     }
@@ -1825,6 +1825,7 @@ fn funktion_auf_taste(app: &mut App, funktion: &str, key: &str) -> bool {
     app.prefs.bind(funktion, key);
     let _ = app.prefs.save();
     app.ui.keymap_funktion = None;
+    app.ui.bind_key = None;
     app.ui.keymap_selected = Some(key.to_lowercase());
     // Die gewählte Funktion hat ihr Ziel erreicht — das Werkzeug endet wie beim
     // Klick auf einen leeren Hotbar-Slot.
@@ -1838,12 +1839,13 @@ fn funktion_auf_taste(app: &mut App, funktion: &str, key: &str) -> bool {
 /// Bedienung der Tastaturbelegung — steht im Tooltip am kleinen „i" über dem
 /// Tastenbild (T0064). Die Bedienung ist selbsterklärend; ein langer Hinweistext
 /// gehört nicht ins Fenster.
-const KEYMAP_HILFE: &str = "Taste anklicken und in der Liste eine Funktion wählen \
-— oder eine Funktion im Ribbon anklicken und danach eine leere Taste: sie \
-übernimmt sie. Eine Funktion darf auf mehreren Tasten liegen, eine Taste trägt \
-genau eine Funktion. Mittlere Maustaste leert eine Taste. Buchstaben und Symbole \
-sind frei belegbar; Ziffern gehören der Hotbar; Steuerungstasten und \
-Kombinationen sind fest verdrahtet und ausgegraut.";
+const KEYMAP_HILFE: &str = "Leere Taste anklicken — das Inventar öffnet sich mit \
+dem Reiter Funktionen; die gewählte Funktion liegt danach auf der Taste. Oder \
+eine Funktion im Ribbon anklicken und danach eine leere Taste: sie übernimmt \
+sie. Eine Funktion darf auf mehreren Tasten liegen, eine Taste trägt genau eine \
+Funktion. Mittlere Maustaste leert eine Taste. Buchstaben und Symbole sind frei \
+belegbar; Ziffern gehören der Hotbar; Steuerungstasten und Kombinationen sind \
+fest verdrahtet und ausgegraut.";
 
 fn keyboard_body(app: &mut App, ui: &mut Ui) {
     ui.horizontal(|ui| {
@@ -1977,11 +1979,19 @@ fn keyboard_body(app: &mut App, ui: &mut Ui) {
                 Some(f) if action.is_none() => {
                     if !funktion_auf_taste(app, &f, key) {
                         // Fest verdrahtete Funktionen (Strg+S, F1 …) lassen sich
-                        // nicht umbelegen; sie bleiben in der Liste gesperrt.
+                        // nicht umbelegen; sie bleiben im Inventar gesperrt.
                         app.toast("Funktion · fest belegt");
                     }
                 }
-                _ => app.ui.keymap_selected = Some(key.to_string()),
+                _ => {
+                    app.ui.keymap_selected = Some(key.to_string());
+                    // T0072: Dieselbe Bedienung wie ein leerer Hotbar-Slot —
+                    // freie Taste anklicken öffnet das Inventar im Reiter
+                    // „Funktionen". Die Liste im Fenster gibt es nicht mehr.
+                    if action.is_none() {
+                        taste_belegen(app, key);
+                    }
+                }
             }
         }
         // Mittlere Maustaste: Belegung dieser Taste entfernen (T0064) — wie bei
@@ -2018,72 +2028,34 @@ fn keyboard_body(app: &mut App, ui: &mut Ui) {
     ui.horizontal(|ui| {
         if let Some(key) = app.ui.keymap_selected.clone() {
             ui.label(theme::mono(format!("Taste: {key}")));
+            if ui.button("Funktion wählen …").clicked() {
+                taste_belegen(app, &key);
+            }
+            ui.add_space(10.0);
             if ui.button("Belegung dieser Taste entfernen").clicked() {
                 if app.prefs.unbind_key(&key).is_some() {
                     let _ = app.prefs.save();
                 }
             }
-            ui.add_space(10.0);
-            ui.add_sized(
-                [200.0, 22.0],
-                egui::TextEdit::singleline(&mut app.ui.search).hint_text("Funktion suchen …"),
-            );
         } else {
-            ui.label(theme::dim("Noch keine Taste gewählt."));
+            ui.label(theme::dim(
+                "Noch keine Taste gewählt — freie Taste anklicken, um eine Funktion zu wählen.",
+            ));
         }
     });
-    ui.add_space(4.0);
-    if let Some(key) = app.ui.keymap_selected.clone() {
-        egui::ScrollArea::vertical().max_height(150.0).show(ui, |ui| {
-            let search = app.ui.search.to_lowercase();
-            for def in actions::ACTIONS {
-                if !search.is_empty()
-                    && !def.label.to_lowercase().contains(&search)
-                    && !def.id.contains(&search)
-                {
-                    continue;
-                }
-                // Eine Funktion darf auf mehreren Tasten liegen (T0064) — die
-                // Liste zeigt sie alle.
-                let current = {
-                    let keys = app.prefs.keys_for(def.id);
-                    if keys.is_empty() {
-                        String::new()
-                    } else {
-                        let namen: Vec<String> =
-                            keys.iter().map(|k| k.to_uppercase()).collect();
-                        format!("   ({})", namen.join(", "))
-                    }
-                };
-                // Funktionen mit fest verdrahteter Taste (Strg+S, F1 …) sind
-                // nicht umbelegbar — sie stehen als Hinweis in der Liste, aber
-                // ohne Klickziel (T0056, `docs/TASTEN.md`).
-                let aenderbar = app.prefs.belegung_aenderbar(def.id);
-                let label = format!("{}{current}", def.label);
-                if !aenderbar {
-                    ui.add_enabled(
-                        false,
-                        egui::SelectableLabel::new(false, format!("{label}   · fest")),
-                    )
-                    .on_disabled_hover_text(
-                        "Tastenkombination oder Funktionstaste — im Programm fest vergeben",
-                    );
-                    continue;
-                }
-                if ui
-                    .selectable_label(
-                        app.prefs.action_for_key(&key).as_deref() == Some(def.id),
-                        label,
-                    )
-                    .clicked()
-                {
-                    app.prefs.bind(def.id, &key);
-                    let _ = app.prefs.save();
-                    app.toast(format!("{} → {}", def.label, key.to_uppercase()));
-                }
-            }
-        });
-    }
+}
+
+/// Belegen vorbereiten (T0072): öffnet das Inventar im Reiter „Funktionen".
+/// Dieselbe Bedienung wie ein leerer Hotbar-Slot — die Funktion wird dort
+/// gewählt; `funktion_auf_taste` schreibt sie anschließend auf die Taste.
+fn taste_belegen(app: &mut App, key: &str) {
+    app.ui.bind_key = Some(key.to_string());
+    app.ui.bind_slot = None;
+    app.ui.keymap_selected = Some(key.to_string());
+    app.ui.inventory_open = true;
+    app.ui.inventory_tab = 2;
+    app.ui.search.clear();
+    app.toast("Funktion für die Taste wählen");
 }
 
 // ---------------------------------------------------------------------------
@@ -2875,6 +2847,109 @@ mod tests_tastatur {
         assert!(
             hell(GESPERRT_FLAECHE) - hell(Palette::BG) > 40,
             "die graue Fläche hebt sich zu wenig von der freien Taste ab"
+        );
+    }
+
+    /// T0072: Eine freie Taste öffnet das Inventar im Reiter „Funktionen" —
+    /// dieselbe Bedienung wie ein leerer Hotbar-Slot. Die eigene Liste im
+    /// Fenster gibt es nicht mehr; die Auswahl im Inventar belegt die Taste.
+    #[test]
+    fn freie_taste_oeffnet_das_inventar_und_die_auswahl_belegt_sie() {
+        let _sperre = KONFIG.lock().unwrap_or_else(|e| e.into_inner());
+        let _konfig = WegwerfKonfig::neu("inventar");
+        let (mut app, ctx) = app_mit_tastatur();
+        assert!(
+            app.prefs.action_for_key("t").is_none(),
+            "Testtaste t ist in der Werkseinstellung belegt"
+        );
+
+        let tasten = app.ui.last_tasten.clone().expect("Tastenbild gezeichnet");
+        let (_, _, t) = *taste_mit(&tasten, "t");
+        klick(&ctx, &mut app, t.center());
+
+        assert_eq!(app.ui.keymap_selected.as_deref(), Some("t"));
+        assert_eq!(
+            app.ui.bind_key.as_deref(),
+            Some("t"),
+            "die Taste wartet nicht auf eine Funktion aus dem Inventar"
+        );
+        assert!(app.ui.inventory_open, "das Inventar wurde nicht geöffnet");
+        assert_eq!(
+            app.ui.inventory_tab, 2,
+            "das Inventar steht nicht im Reiter Funktionen"
+        );
+
+        // Der Klick auf eine Zeile im Reiter „Funktionen" läuft über diesen Weg.
+        crate::inventory::funktion_gewaehlt(&mut app, "draw.wall");
+
+        assert_eq!(
+            app.prefs.action_for_key("t").as_deref(),
+            Some("draw.wall"),
+            "die gewählte Funktion liegt nicht auf der Taste"
+        );
+        assert!(app.ui.bind_key.is_none(), "das Belegen bleibt offen");
+        assert!(app.tool.is_none(), "das Werkzeug läuft nach dem Belegen weiter");
+        let gespeichert = jjcad_core::persist::UserPrefs::load();
+        assert_eq!(
+            gespeichert.action_for_key("t").as_deref(),
+            Some("draw.wall"),
+            "die Belegung wurde nicht gespeichert"
+        );
+    }
+
+    /// T0072: Fest verdrahtete Funktionen (Strg+S, F1 …) lassen sich auch aus
+    /// dem Inventar nicht auf eine Taste legen.
+    #[test]
+    fn feste_funktion_aus_dem_inventar_belegt_keine_taste() {
+        let _sperre = KONFIG.lock().unwrap_or_else(|e| e.into_inner());
+        let _konfig = WegwerfKonfig::neu("inventar-fest");
+        let (mut app, ctx) = app_mit_tastatur();
+        let tasten = app.ui.last_tasten.clone().expect("Tastenbild gezeichnet");
+        let (_, _, t) = *taste_mit(&tasten, "t");
+        klick(&ctx, &mut app, t.center());
+        assert_eq!(app.ui.bind_key.as_deref(), Some("t"));
+
+        crate::inventory::funktion_gewaehlt(&mut app, "file.save");
+
+        assert!(
+            app.prefs.action_for_key("t").is_none(),
+            "eine fest verdrahtete Funktion wurde auf eine Taste gelegt"
+        );
+        assert_eq!(
+            app.prefs.key_for("file.save").as_deref(),
+            Some("ctrl+s"),
+            "die feste Belegung der Funktion wurde verändert"
+        );
+    }
+
+    /// T0072: Die eigene Liste zum Hinzufügen ist aus dem Fenster verschwunden —
+    /// unter dem Tastenbild steht nur noch die gewählte Taste mit ihren Knöpfen.
+    #[test]
+    fn tastaturfenster_hat_keine_eigene_funktionsliste_mehr() {
+        let (mut app, ctx) = app_mit_tastatur();
+        let tasten = app.ui.last_tasten.clone().expect("Tastenbild gezeichnet");
+        let (_, _, q) = *taste_mit(&tasten, "q");
+        klick(&ctx, &mut app, q.center());
+        let out = rahmen(&ctx, &mut app, vec![]);
+        let texte: Vec<String> = out
+            .shapes
+            .iter()
+            .filter_map(|cs| match &cs.shape {
+                egui::Shape::Text(t) => Some(t.galley.text().to_string()),
+                _ => None,
+            })
+            .collect();
+        assert!(
+            texte.iter().any(|t| t.contains("Taste: q")),
+            "die gewählte Taste steht nicht im Fenster"
+        );
+        assert!(
+            texte.iter().any(|t| t.contains("Funktion wählen")),
+            "der Weg ins Inventar fehlt"
+        );
+        assert!(
+            !texte.iter().any(|t| t == "Wand"),
+            "die alte Funktionsliste steht weiterhin im Fenster"
         );
     }
 }
