@@ -576,6 +576,10 @@ pub(crate) enum BtnIcon {
 /// Höhe eines Auswahlfelds in den Panels (dichte Zeilen).
 pub(crate) const DROPDOWN_H: f32 = 20.0;
 
+/// Höchsthöhe des aufgeklappten Auswahlmenüs (rund 15 Zeilen). Darüber wird
+/// gerollt — bis dahin wächst das Menü mit der Zahl der Einträge (T0076).
+pub(crate) const DROPDOWN_MAX_H: f32 = 420.0;
+
 pub(crate) fn dropdown<R>(
     ui: &mut Ui,
     salt: &str,
@@ -607,6 +611,22 @@ pub(crate) fn dropdown_mit_hoehe_rect<R>(
     caption: &str,
     icon: Option<BtnIcon>,
     hoehe: f32,
+    flaeche: &mut Option<Rect>,
+    add_contents: impl FnOnce(&mut Ui) -> Option<R>,
+) -> Option<R> {
+    dropdown_mit_menue(ui, salt, caption, icon, hoehe, None, flaeche, add_contents)
+}
+
+/// Wie [`dropdown_mit_hoehe_rect`], zusätzlich mit der gewünschten Höhe des
+/// aufgeklappten Menüs (T0076: das Layoutmenü wächst mit der Zahl der Layouts).
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn dropdown_mit_menue<R>(
+    ui: &mut Ui,
+    salt: &str,
+    caption: &str,
+    icon: Option<BtnIcon>,
+    hoehe: f32,
+    menue_hoehe: Option<f32>,
     flaeche: &mut Option<Rect>,
     add_contents: impl FnOnce(&mut Ui) -> Option<R>,
 ) -> Option<R> {
@@ -681,15 +701,28 @@ pub(crate) fn dropdown_mit_hoehe_rect<R>(
 
     let mut out = None;
     if ui.memory(|m| m.is_popup_open(id)) {
-        egui::popup_below_widget(
+        // Das Menü wächst mit seinem Inhalt bis `DROPDOWN_MAX_H`. Reicht der
+        // Platz unter dem Feld nicht, öffnet es nach oben — sonst stünde die
+        // halbe Liste außerhalb des Fensters (T0076).
+        let menue_h = menue_hoehe.unwrap_or(DROPDOWN_MAX_H).min(DROPDOWN_MAX_H);
+        let bildschirm = ui.ctx().screen_rect();
+        let platz_unten = bildschirm.bottom() - resp.rect.bottom() - 12.0;
+        let platz_oben = resp.rect.top() - bildschirm.top() - 12.0;
+        let lage = if platz_unten >= menue_h || platz_unten >= platz_oben {
+            egui::AboveOrBelow::Below
+        } else {
+            egui::AboveOrBelow::Above
+        };
+        egui::popup_above_or_below_widget(
             ui,
             id,
             &resp,
+            lage,
             egui::PopupCloseBehavior::CloseOnClickOutside,
             |ui| {
                 ui.set_min_width(330.0);
                 egui::ScrollArea::vertical()
-                    .max_height(560.0)
+                    .max_height(menue_h)
                     .show(ui, |ui| {
                         ui.set_min_width(316.0);
                         ui.spacing_mut().item_spacing.y = 1.0;

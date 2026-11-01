@@ -1016,6 +1016,18 @@ impl UserPrefs {
             .filter(|i| *i < self.keymap_presets.len())
     }
 
+    /// Trägt die aktuelle Belegung ein Layout, das noch nicht gespeichert ist?
+    /// Dann fragt der Wechsel auf ein anderes Layout nach (Abbrechen, Verwerfen,
+    /// Speichern — T0076). Eine gelöschte Belegung, die zufällig einem anderen
+    /// Layout entspricht, gilt als gespeichert.
+    pub fn keymap_ungespeichert(&self) -> bool {
+        self.keymap_aktiv().is_none()
+            && !self
+                .keymap_presets
+                .iter()
+                .any(|p| p.bindings == self.bindings)
+    }
+
     /// Schaltet auf ein gespeichertes Layout um und liefert seinen Namen.
     /// Unbekannter Index oder ein fehlendes Layout ändern nichts.
     pub fn keymap_anwenden(&mut self, idx: usize) -> Option<String> {
@@ -1763,6 +1775,27 @@ mod tests {
         assert_eq!(prefs.keymap_aktiv(), None);
         prefs.keymap_speichern("Mein").unwrap();
         assert_eq!(prefs.keymap_aktiv(), Some(1));
+    }
+
+    /// T0076: Nur eine Belegung, die in keinem Layout steht, gilt als
+    /// ungespeichert — sie löst die Rückfrage vor dem Wechsel aus.
+    #[test]
+    fn ungespeicherte_belegung_wird_erkannt() {
+        let mut prefs = UserPrefs::default();
+        assert!(!prefs.keymap_ungespeichert(), "frisch = Werkseinstellung");
+        prefs.bind("draw.wall", "t");
+        assert!(prefs.keymap_ungespeichert());
+        prefs.keymap_speichern("Meins").unwrap();
+        assert!(!prefs.keymap_ungespeichert());
+        // Ein Layout löschen, dessen Tasten kein anderes trägt: eigene Belegung.
+        prefs.bind("draw.wall", "ä");
+        prefs.keymap_speichern("Zwei").unwrap();
+        assert!(!prefs.keymap_ungespeichert());
+        assert!(prefs.keymap_loeschen(2));
+        assert!(
+            prefs.keymap_ungespeichert(),
+            "nach dem Löschen ist die Belegung in keinem Layout"
+        );
     }
 
     /// Die Layouts überleben den Weg durch die `prefs.json`.
