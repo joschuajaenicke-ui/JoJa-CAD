@@ -615,6 +615,9 @@ pub struct UiState {
     /// Lage der Hotbar-Slots in der unteren Leiste (Regressionstest T0043:
     /// die Slots müssen mittig in der Leiste stehen)
     pub last_slots: Option<Rect>,
+    /// Rechtecke der Blatt-Chips im Reiterstreifen (T0073) — geprüft wird, dass
+    /// die Umrisse zweier Chips sich nicht berühren (`tests_mehrere_dateien`).
+    pub last_blattrechtecke: Option<Vec<Rect>>,
     /// Lage der linken und rechten Schaltergruppe der unteren Leiste — geprüft
     /// wird der Abstand zum Fensterrand (`tests_untere_leiste`).
     pub last_kopf_links: Option<Rect>,
@@ -694,6 +697,7 @@ impl Default for UiState {
             last_canvas: Rect::from_min_size(Pos2::ZERO, Vec2::new(1000.0, 700.0)),
             last_ribbon_content_h: 0.0,
             last_slots: None,
+            last_blattrechtecke: None,
             last_kopf_links: None,
             last_kopf_rechts: None,
             last_tasten: None,
@@ -3461,8 +3465,8 @@ impl App {
     /// eigenem, dunklerem Grund; der aktive steht als Karte mit Akzentlinie darin.
     /// Rechts, in einer abgesetzten Fläche, die **Blätter** der aktiven Datei als
     /// kleinere Chips samt `+` für ein neues Blatt. Die beiden Zonen unterscheiden
-    /// sich in Grund, Größe, Form und Beschriftung („Blätter“), damit niemand
-    /// Datei- und Blattreiter verwechselt.
+    /// sich in Grund, Größe und Form; Beschriftungen („Dateien“/„Blätter“) sind
+    /// bewusst nicht da — sie erklärten, was die Formen schon sagen.
     ///
     /// „Neu“ hängt einen Datei-Reiter an, statt die aktuelle Zeichnung zu
     /// ersetzen — der bisherige Stand bleibt im eigenen Reiter stehen.
@@ -3489,11 +3493,10 @@ impl App {
             v
         };
         let aktuell = self.tab().tab;
-        // Beschriftungen der beiden Zonen — ihr Platz wird vor dem Messen gebraucht.
-        const DATEI_LABEL: &str = "Dateien";
-        const DATEI_LABEL_W: f32 = 44.0;
-        const BLATT_LABEL: &str = "Blätter";
-        const BLATT_LABEL_W: f32 = 40.0;
+        // Luft zwischen den Blatt-Chips: ohne sie stoßen die Umrisse zweier
+        // Chips aneinander und überlappen um ein bis drei Pixel.
+        const BLATT_ABSTAND: f32 = 4.0;
+        let mut blatt_rechtecke: Vec<Rect> = Vec::new();
 
         ui.horizontal_centered(|ui| {
             // Abstände hier von Hand: die Zonen sollen ohne egui-Polster anliegen.
@@ -3505,7 +3508,7 @@ impl App {
                 .iter()
                 .map(|(_, name, _)| Self::datei_breite(ui, name, mehrere_dateien))
                 .collect();
-            let breite = 10.0 + DATEI_LABEL_W + 8.0 + breiten.iter().sum::<f32>() + 9.0;
+            let breite = 12.0 + breiten.iter().sum::<f32>() + 9.0;
             let (zone, _) = ui.allocate_exact_size(Vec2::new(breite, DOCTABS_H), Sense::hover());
             // Der Grund der Dateizone beginnt am Fensterrand — ein Band, kein Kasten
             // mitten im Streifen.
@@ -3524,13 +3527,7 @@ impl App {
                     .layout(Layout::left_to_right(Align::Center)),
             );
             datei_ui.spacing_mut().item_spacing.x = 0.0;
-            datei_ui.add_space(10.0);
-            datei_ui.label(
-                RichText::new(DATEI_LABEL)
-                    .size(10.0)
-                    .color(Palette::TEXT_FAINT),
-            );
-            datei_ui.add_space(8.0);
+            datei_ui.add_space(12.0);
             for ((idx, name, geaendert), breite) in dateien.iter().zip(breiten) {
                 let (geklickt, geschlossen) = Self::datei_reiter(
                     &mut datei_ui,
@@ -3564,8 +3561,12 @@ impl App {
                 .iter()
                 .map(|(_, name, closable)| Self::blatt_breite(ui, name, *closable))
                 .collect();
-            let tray_breite =
-                10.0 + BLATT_LABEL_W + 4.0 + blattbreiten.iter().sum::<f32>() + 6.0 + 20.0 + 8.0;
+            let tray_breite = 12.0
+                + blattbreiten.iter().sum::<f32>()
+                + BLATT_ABSTAND * (blattbreiten.len().saturating_sub(1)) as f32
+                + 8.0
+                + 20.0
+                + 10.0;
             let (tray, _) = ui.allocate_exact_size(
                 Vec2::new(tray_breite, DOCTABS_H - 6.0),
                 Sense::hover(),
@@ -3582,19 +3583,18 @@ impl App {
                     .layout(Layout::left_to_right(Align::Center)),
             );
             blatt_ui.spacing_mut().item_spacing.x = 0.0;
-            blatt_ui.add_space(10.0);
-            blatt_ui.label(
-                RichText::new(BLATT_LABEL)
-                    .size(10.0)
-                    .color(Palette::TEXT_FAINT),
-            );
-            blatt_ui.add_space(8.0);
-            for ((kind, name, closable), breite) in reiter.iter().zip(blattbreiten) {
+            blatt_ui.add_space(12.0);
+            for (i, ((kind, name, closable), breite)) in
+                reiter.iter().zip(blattbreiten).enumerate()
+            {
+                if i > 0 {
+                    blatt_ui.add_space(BLATT_ABSTAND);
+                }
                 let icon = match kind {
                     TabKind::Model => "layers",
                     TabKind::Sheet(_) => "sheet",
                 };
-                let (geklickt, geschlossen) = Self::blatt_chip(
+                let (geklickt, geschlossen, rechteck) = Self::blatt_chip(
                     &mut blatt_ui,
                     name,
                     icon,
@@ -3603,6 +3603,7 @@ impl App {
                     *closable,
                     egui::Id::new(("blatt", name)),
                 );
+                blatt_rechtecke.push(rechteck);
                 if geschlossen {
                     if let TabKind::Sheet(id) = kind {
                         schliesse_blatt = Some(*id);
@@ -3629,6 +3630,9 @@ impl App {
             }
             resp.on_hover_text("Neues Blatt");
         });
+        if !blatt_rechtecke.is_empty() {
+            self.ui.last_blattrechtecke = Some(blatt_rechtecke);
+        }
 
         // Erst schließen, dann wechseln: ein geschlossener Reiter darf nicht
         // als Ziel übrig bleiben.
@@ -3746,8 +3750,9 @@ impl App {
     }
 
     /// Ein **Blatt**-Chip: kleinere Höhe, kleinerer Text, eigene Fläche in der
-    /// Blattzone. Der aktive Chip trägt ebenfalls eine Akzentlinie unten.
-    /// Gibt (angeklickt, Kreuz getroffen) zurück.
+    /// Blattzone. Der aktive Chip trägt einen Akzentumriss um die ganze Fläche.
+    /// Gibt (angeklickt, Kreuz getroffen, eigenes Rechteck) zurück — die Fläche
+    /// braucht `doc_tabs` für die Abstandsprüfung.
     fn blatt_chip(
         ui: &mut egui::Ui,
         name: &str,
@@ -3756,7 +3761,7 @@ impl App {
         aktiv: bool,
         schliessbar: bool,
         id: egui::Id,
-    ) -> (bool, bool) {
+    ) -> (bool, bool, Rect) {
         let (rect, _) = ui.allocate_exact_size(Vec2::new(breite, 22.0), Sense::hover());
         let resp = ui.interact(rect, id, Sense::click());
         if aktiv {
@@ -3789,9 +3794,9 @@ impl App {
         );
         let geschlossen = schliessbar && Self::kreuz(ui, rect, id);
         if geschlossen {
-            (false, true)
+            (false, true, rect)
         } else {
-            (resp.clicked(), false)
+            (resp.clicked(), false, rect)
         }
     }
 
@@ -8103,8 +8108,10 @@ mod tests_mehrere_dateien {
         );
     }
 
-    /// Die zwei Bereiche sind auch im Bild geschieden: Dateien auf eigenem Grund
-    /// hinter ihrer Beschriftung, Blätter in einer abgesetzten Fläche.
+    /// Die zwei Bereiche bleiben im Bild geschieden: Dateien auf eigenem Grund,
+    /// Blätter in einer abgesetzten Fläche — ohne Beschriftung, denn die Formen
+    /// sagen es. Die Chips haben Luft zueinander, damit sich ihre Umrisse nicht
+    /// überschneiden (T0073, Turn 3).
     #[test]
     fn reiterstreifen_hat_zwei_zonen() {
         let ctx = egui::Context::default();
@@ -8112,10 +8119,14 @@ mod tests_mehrere_dateien {
         app.doc_mut().name = "Grundriss".into();
         app.new_document();
         app.doc_mut().name = "Schnitt".into();
+        // Zwei weitere Blätter, damit mehrere Chips nebeneinander liegen.
+        app.run_action(&ctx, "sheet.new");
+        app.run_action(&ctx, "sheet.new");
         for _ in 0..2 {
             let _ = frame(&ctx, &mut app);
         }
         let out = frame(&ctx, &mut app);
+
         let zeilen = texte(&out);
         let lage = |name: &str| {
             zeilen
@@ -8125,19 +8136,20 @@ mod tests_mehrere_dateien {
                 .next()
                 .unwrap_or_else(|| panic!("„{name}“ fehlt im Streifen: {zeilen:?}"))
         };
-        let datei_label = lage("Dateien");
-        let erste = lage("Grundriss");
-        let zweite = lage("Schnitt");
-        let blatt_label = lage("Blätter");
+        let datei = lage("Schnitt");
         let modell = lage("Modell");
         assert!(
-            datei_label.x < erste.x && erste.x < zweite.x && zweite.x < blatt_label.x,
-            "Dateizone: Beschriftung, dann die Dateien"
+            datei.x < modell.x,
+            "Dateien stehen links, die Blätter rechts"
         );
-        assert!(
-            blatt_label.x < modell.x,
-            "Blattzone: Beschriftung, dann die Blätter"
-        );
+        for wort in ["Dateien", "Blätter"] {
+            assert!(
+                !zeilen
+                    .iter()
+                    .any(|(t, p)| t == wort && p.y > 100.0 && p.y < 160.0),
+                "die Beschriftung „{wort}“ gehört nicht in den Reiterstreifen"
+            );
+        }
 
         // Die Zone hat einen eigenen Grund (BG-Band) bzw. eine eigene Fläche
         // (PANEL-Kasten); ohne sie wären beide Reiterarten nur verschiedene Größen.
@@ -8148,13 +8160,33 @@ mod tests_mehrere_dateien {
             })
         };
         assert!(
-            flach(Palette::BG, erste),
+            flach(Palette::BG, datei),
             "die Dateizone hat keinen eigenen Grund"
         );
         assert!(
-            flach(Palette::PANEL, blatt_label),
+            flach(Palette::PANEL, modell),
             "die Blattzone hat keine eigene Fläche"
         );
+
+        // Kein Aneinanderstoßen der Chip-Umrisse: zwischen zwei Chips muss Luft
+        // stehen (gemeldet war eine Überschneidung von 2–3 px).
+        let rechtecke = app
+            .ui
+            .last_blattrechtecke
+            .clone()
+            .expect("die Blattreiter wurden nicht gezeichnet");
+        assert!(
+            rechtecke.len() >= 3,
+            "Modell und zwei Blätter erwartet, gezeichnet: {}",
+            rechtecke.len()
+        );
+        for paar in rechtecke.windows(2) {
+            let luft = paar[1].left() - paar[0].right();
+            assert!(
+                luft >= 3.0,
+                "Blattreiter stehen zu nah aneinander: {luft} px Luft"
+            );
+        }
     }
 
     /// Der Befehl „file.new“ (Ribbon „Neu“, Strg+N) legt einen Reiter an.
