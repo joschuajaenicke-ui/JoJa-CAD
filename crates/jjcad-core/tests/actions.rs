@@ -213,6 +213,63 @@ fn trim_and_extend() {
         .unwrap_or_else(|e| panic!("Verlängern: {e}"));
 }
 
+/// Vorschau des Stutzens (T0075): der hervorgehobene Abschnitt ist genau das
+/// Stück, das der Klick danach entfernt — nicht die ganze Linie.
+#[test]
+fn trim_vorschau_zeigt_den_abschnitt_der_wegfaellt() {
+    let mut s = s();
+    // Schnittkanten bei x = 2000 und x = 4000 mm, Linie von 0 bis 6000 mm
+    s.execute("draw.line", &json!({"a": [2, -1], "b": [2, 1]}))
+        .unwrap();
+    s.execute("draw.line", &json!({"a": [4, -1], "b": [4, 1]}))
+        .unwrap();
+    s.execute("draw.line", &json!({"a": [0, 0], "b": [6, 0]}))
+        .unwrap();
+    let id = last_id(&s);
+
+    let segs = jjcad_core::actions::trim_vorschau(&s.doc, id, v(3000.0, 0.0), &[]);
+    assert_eq!(segs.len(), 1, "ein Abschnitt: {segs:?}");
+    let jjcad_core::geom::Seg::Line(a, b) = segs[0] else {
+        panic!("Linie muss einen Streckenabschnitt liefern: {:?}", segs[0]);
+    };
+    assert!(
+        (a.x - 2000.0).abs() < 1e-6 && a.y.abs() < 1e-6,
+        "Anfang an der ersten Kante: {a:?}"
+    );
+    assert!(
+        (b.x - 4000.0).abs() < 1e-6 && b.y.abs() < 1e-6,
+        "Ende an der zweiten Kante: {b:?}"
+    );
+
+    // Links der ersten Kante: nur das erste Stück
+    let segs = jjcad_core::actions::trim_vorschau(&s.doc, id, v(1000.0, 0.0), &[]);
+    let jjcad_core::geom::Seg::Line(a, b) = segs[0] else {
+        panic!("Strecke erwartet");
+    };
+    assert!((a.x).abs() < 1e-6 && (b.x - 2000.0).abs() < 1e-6, "{a:?} {b:?}");
+
+    // Die Vorschau ändert die Zeichnung nicht.
+    assert_eq!(s.doc.entities.len(), 3, "Vorschau legt nichts an");
+
+    // Und der Schnitt entfernt genau diesen Bereich.
+    s.execute("modify.trim", &json!({"ids": [id], "at": [3, 0]}))
+        .unwrap();
+    let mut rest: Vec<(f64, f64)> = Vec::new();
+    for e in &s.doc.entities {
+        if let EntityKind::Line { a, b } = &e.kind {
+            if a.y.abs() < 1e-6 && b.y.abs() < 1e-6 && a.x < b.x {
+                rest.push((a.x, b.x));
+            }
+        }
+    }
+    rest.sort_by(|x, y| x.0.partial_cmp(&y.0).unwrap());
+    assert_eq!(
+        rest,
+        vec![(0.0, 2000.0), (4000.0, 6000.0)],
+        "der hervorgehobene Abschnitt ist weg, der Rest bleibt"
+    );
+}
+
 #[test]
 fn layers_and_blocks() {
     let mut s = s();

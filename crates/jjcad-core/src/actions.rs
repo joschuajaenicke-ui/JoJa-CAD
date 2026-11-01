@@ -3371,6 +3371,115 @@ fn cutter_segments(doc: &Document, exclude: &[Id]) -> Vec<(Seg, Id)> {
     out
 }
 
+/// Der Abschnitt der Strecke `a`→`b`, den ein Klick bei `at` entfernt: der
+/// Bereich zwischen den beiden Schnittkanten, in dem `at` liegt — als
+/// Parameter `(t0, t1)` mit 0 = `a` und 1 = `b`.
+///
+/// Eine Quelle für [`trim_entity`] (schneidet) und [`trim_vorschau`] (zeigt
+/// vorher, was wegfällt) — sonst liefen Anzeige und Schnitt auseinander.
+fn trim_span(a: Vec2, b: Vec2, at: Vec2, segs: &[(Seg, Id)]) -> Option<(f64, f64)> {
+    let len = a.dist(b);
+    if len < 1e-6 {
+        return None;
+    }
+    let dir = (b - a).normalized();
+    let mut ts = vec![0.0, 1.0];
+    for (sg, _) in segs {
+        match sg {
+            Seg::Line(c, d) => {
+                if let Some(x) = line_line(a, b, *c, *d, false, false) {
+                    let t = (x - a).dot(dir) / len;
+                    if t > 1e-6 && t < 1.0 - 1e-6 {
+                        ts.push(t);
+                    }
+                }
+            }
+            Seg::Arc(arc) => {
+                for x in line_circle(a, b, arc.c, arc.r) {
+                    if angle_in_arc((x - arc.c).angle(), arc.a0, arc.a1) {
+                        let t = (x - a).dot(dir) / len;
+                        if t > 1e-6 && t < 1.0 - 1e-6 {
+                            ts.push(t);
+                        }
+                    }
+                }
+            }
+        }
+    }
+    ts.sort_by(|x, y| x.partial_cmp(y).unwrap());
+    ts.dedup_by(|x, y| (*x - *y).abs() < 1e-6);
+    let tclick = (at - a).dot(dir) / len;
+    ts.windows(2)
+        .find(|w| tclick >= w[0] - 1e-9 && tclick <= w[1] + 1e-9)
+        .map(|w| (w[0], w[1]))
+}
+
+/// Winkelbereich des Kreisbogens, der beim Stutzen **bleibt**: der Bereich
+/// zwischen zwei Schnittkanten, der den Klickwinkel **nicht** enthält.
+fn trim_kreis_bogen(c: Vec2, r: f64, at: Vec2, segs: &[(Seg, Id)]) -> Option<(f64, f64)> {
+    let mut hits = Vec::new();
+    for (sg, _) in segs {
+        if let Seg::Line(a, b) = sg {
+            for x in line_circle(*a, *b, c, r) {
+                hits.push((x - c).angle());
+            }
+        }
+    }
+    hits.sort_by(|x, y| x.partial_cmp(y).unwrap());
+    hits.dedup_by(|x, y| (*x - *y).abs() < 1e-6);
+    if hits.len() < 2 {
+        return None;
+    }
+    let aclick = (at - c).angle();
+    for i in 0..hits.len() {
+        let a0 = hits[i];
+        let a1 = hits[(i + 1) % hits.len()];
+        // Dieser Bogen enthält den Klickwinkel nicht — er bleibt stehen.
+        if !angle_in_arc(aclick, a0, a1) {
+            return Some((a0, a1));
+        }
+    }
+    None
+}
+
+/// Was `modify.trim` an der Stelle `at` von `id` entfernen würde — **ohne**
+/// die Zeichnung zu ändern. Grundlage der Hervorhebung in der Zeichenfläche
+/// (T0075), damit der Nutzer vor dem Klick sieht, welcher Abschnitt wegfällt.
+///
+/// Leer, wenn das Objekt nicht gestutzt werden kann oder keine Schnittkante
+/// den Klickbereich begrenzt.
+pub fn trim_vorschau(doc: &Document, id: Id, at: Vec2, cutters: &[Id]) -> Vec<Seg> {
+    let Some(e) = doc.entity(id) else {
+        return Vec::new();
+    };
+    // Dieselbe Auswahl der Schnittkanten wie in `trim_entity`: ohne `cutters`
+    // ist jedes andere sichtbare Objekt eine Schnittkante.
+    let exclude: Vec<Id> = if cutters.is_empty() {
+        vec![id]
+    } else {
+        let mut v = vec![id];
+        v.extend_from_slice(cutters);
+        v
+    };
+    let segs = cutter_segments(doc, &exclude);
+    match &e.kind {
+        EntityKind::Line { a, b } | EntityKind::Wall { a, b, .. } => {
+            let Some((t0, t1)) = trim_span(*a, *b, at, &segs) else {
+                return Vec::new();
+            };
+            vec![Seg::Line(a.lerp(*b, t0), a.lerp(*b, t1))]
+        }
+        EntityKind::Circle { c, r } => {
+            let Some((a0, a1)) = trim_kreis_bogen(*c, *r, at, &segs) else {
+                return Vec::new();
+            };
+            // Entfernt wird der andere Bogen — von `a1` zurück nach `a0`.
+            vec![Seg::Arc(Arc::new(*c, *r, a1, a0))]
+        }
+        _ => Vec::new(),
+    }
+}
+
 fn trim_entity(doc: &mut Document, id: Id, at: Vec2, cutters: &[Id]) -> Result<Vec<Id>, String> {
     let Some(e) = doc.entity(id).cloned() else {
         return Err(format!("Objekt {id} nicht gefunden"));
@@ -3393,42 +3502,10 @@ fn trim_entity(doc: &mut Document, id: Id, at: Vec2, cutters: &[Id]) -> Result<V
 
     match &e.kind {
         EntityKind::Line { a, b } => {
-            let len = a.dist(*b);
-            if len < 1e-6 {
+            if a.dist(*b) < 1e-6 {
                 return Ok(vec![]);
             }
-            let dir = (*b - *a).normalized();
-            let mut ts = vec![0.0, 1.0];
-            for (sg, _) in &segs {
-                if let Seg::Line(c, d) = sg {
-                    if let Some(x) = line_line(*a, *b, *c, *d, false, false) {
-                        let t = (x - *a).dot(dir) / len;
-                        if t > 1e-6 && t < 1.0 - 1e-6 {
-                            ts.push(t);
-                        }
-                    }
-                } else if let Seg::Arc(arc) = sg {
-                    for x in line_circle(*a, *b, arc.c, arc.r) {
-                        if angle_in_arc((x - arc.c).angle(), arc.a0, arc.a1) {
-                            let t = (x - *a).dot(dir) / len;
-                            if t > 1e-6 && t < 1.0 - 1e-6 {
-                                ts.push(t);
-                            }
-                        }
-                    }
-                }
-            }
-            ts.sort_by(|x, y| x.partial_cmp(y).unwrap());
-            ts.dedup_by(|x, y| (*x - *y).abs() < 1e-6);
-            let tclick = (at - *a).dot(dir) / len;
-            let mut span: Option<(f64, f64)> = None;
-            for w in ts.windows(2) {
-                if tclick >= w[0] - 1e-9 && tclick <= w[1] + 1e-9 {
-                    span = Some((w[0], w[1]));
-                    break;
-                }
-            }
-            let Some((t0, t1)) = span else {
+            let Some((t0, t1)) = trim_span(*a, *b, at, &segs) else {
                 return Ok(vec![]);
             };
             if t0 <= 1e-9 && t1 >= 1.0 - 1e-9 {
@@ -3475,33 +3552,10 @@ fn trim_entity(doc: &mut Document, id: Id, at: Vec2, cutters: &[Id]) -> Result<V
             hatch,
             align,
         } => {
-            let len = a.dist(*b);
-            if len < 1e-6 {
+            if a.dist(*b) < 1e-6 {
                 return Ok(vec![]);
             }
-            let dir = (*b - *a).normalized();
-            let mut ts = vec![0.0, 1.0];
-            for (sg, _) in &segs {
-                if let Seg::Line(c, d) = sg {
-                    if let Some(x) = line_line(*a, *b, *c, *d, false, false) {
-                        let t = (x - *a).dot(dir) / len;
-                        if t > 1e-6 && t < 1.0 - 1e-6 {
-                            ts.push(t);
-                        }
-                    }
-                }
-            }
-            ts.sort_by(|x, y| x.partial_cmp(y).unwrap());
-            ts.dedup_by(|x, y| (*x - *y).abs() < 1e-6);
-            let tclick = (at - *a).dot(dir) / len;
-            let mut span: Option<(f64, f64)> = None;
-            for w in ts.windows(2) {
-                if tclick >= w[0] - 1e-9 && tclick <= w[1] + 1e-9 {
-                    span = Some((w[0], w[1]));
-                    break;
-                }
-            }
-            let Some((t0, t1)) = span else {
+            let Some((t0, t1)) = trim_span(*a, *b, at, &segs) else {
                 return Ok(vec![]);
             };
             if t0 <= 1e-9 && t1 >= 1.0 - 1e-9 {
@@ -3539,46 +3593,11 @@ fn trim_entity(doc: &mut Document, id: Id, at: Vec2, cutters: &[Id]) -> Result<V
             Ok(created)
         }
         EntityKind::Circle { c, r } => {
-            let mut hits = Vec::new();
-            for (sg, _) in &segs {
-                for x in seg_seg(&Seg::Line(*c, *c + v(1.0, 0.0)), sg) {
-                    let _ = x;
-                }
-                match sg {
-                    Seg::Line(a, b) => {
-                        for x in line_circle(*a, *b, *c, *r) {
-                            hits.push((x - *c).angle());
-                        }
-                    }
-                    Seg::Arc(_) => {}
-                }
-            }
-            hits.sort_by(|x, y| x.partial_cmp(y).unwrap());
-            hits.dedup_by(|x, y| (*x - *y).abs() < 1e-6);
-            if hits.len() < 2 {
+            let Some((a0, a1)) = trim_kreis_bogen(*c, *r, at, &segs) else {
                 return Err("Kreis braucht zwei Schnittpunkte zum Stutzen".into());
-            }
-            // Bogen wählen, der den Klickwinkel nicht enthält
-            let aclick = (at - *c).angle();
-            let mut best: Option<(f64, f64)> = None;
-            for i in 0..hits.len() {
-                let a0 = hits[i];
-                let a1 = hits[(i + 1) % hits.len()];
-                let contains = angle_in_arc(aclick, a0, a1);
-                if !contains {
-                    best = Some((a0, a1));
-                    break;
-                }
-            }
-            if let Some((a0, a1)) = best {
-                if let Some(em) = doc.entity_mut(id) {
-                    em.kind = EntityKind::Arc {
-                        c: *c,
-                        r: *r,
-                        a0,
-                        a1,
-                    };
-                }
+            };
+            if let Some(em) = doc.entity_mut(id) {
+                em.kind = EntityKind::Arc { c: *c, r: *r, a0, a1 };
             }
             Ok(vec![])
         }
