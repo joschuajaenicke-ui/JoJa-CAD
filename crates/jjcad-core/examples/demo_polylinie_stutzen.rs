@@ -6,6 +6,9 @@
 //! (y = 3,5). Mit dem Werkzeug „Stutzen" lässt sich der Zug an jeder dieser
 //! Stellen kürzen. Bleibt dabei ein Stück mit nur zwei Punkten übrig, wird
 //! daraus eine Linie.
+//!
+//! Rechts liegt zusätzlich ein Polygonzug, der sich **selbst kreuzt** — beide
+//! Schenkel sind füreinander Schnittkante.
 
 use jjcad_core::model::Document;
 use jjcad_core::persist;
@@ -50,6 +53,19 @@ fn main() -> Result<(), String> {
             "color": "#9AA3AD",
             "lineweight": 0.25,
             "linetype": "Dashed"
+        }),
+    )?;
+    // Zweiter Fall (T0077, Turn 2): ein Zug, der sich selbst kreuzt. Der
+    // Schenkel (9|2)→(12|5) wird vom Schenkel (9|5)→(12|2) bei (10,5|3,5)
+    // gekreuzt — Stutzen schneidet dort, ohne den ganzen Schenkel zu entfernen.
+    jjcad_core::actions::execute(
+        &mut doc,
+        "draw.polyline",
+        &json!({
+            "pts": [[9.0, 2.0], [12.0, 5.0], [9.0, 5.0], [12.0, 2.0]],
+            "color": "#23262C",
+            "lineweight": 0.5,
+            "layer": "Wände"
         }),
     )?;
     let path = Path::new("samples/Polylinie-Stutzen.jjcad");

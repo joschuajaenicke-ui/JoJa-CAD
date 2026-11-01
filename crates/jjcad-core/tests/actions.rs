@@ -474,6 +474,124 @@ fn bogen_segment_einer_polylinie_laesst_sich_stutzen() {
     );
 }
 
+/// Polylinie, die sich selbst kreuzt (T0077, Turn 2): der eigene kreuzende
+/// Schenkel ist eine Schnittkante. Gestutzt wird bis zum Kreuzungspunkt —
+/// früher fiel der ganze Schenkel weg.
+#[test]
+fn selbst_gekreuzte_polylinie_stutzt_am_kreuzungspunkt() {
+    let mut s = s();
+    // Ein „X": (0|0)→(3|3)→(0|3)→(3|0); Schenkel 0 und 2 kreuzen sich bei (1,5|1,5).
+    let res = s
+        .execute(
+            "draw.polyline",
+            &json!({"pts": [[0, 0], [3, 3], [0, 3], [3, 0]]}),
+        )
+        .unwrap();
+    let id = res["created"][0].as_u64().unwrap();
+
+    // Klick auf dem ersten Schenkel, vor dem Kreuzungspunkt.
+    s.execute("modify.trim", &json!({"ids": [id], "at": [0.75, 0.75]}))
+        .unwrap_or_else(|e| panic!("Stutzen: {e}"));
+
+    assert_eq!(s.doc.entities.len(), 1, "nur die gestutzte Polylinie");
+    let e = s.doc.entity(id).expect("Objekt bleibt");
+    let EntityKind::Polyline { verts, .. } = &e.kind else {
+        panic!("Polygonzug erwartet: {:?}", e.kind);
+    };
+    let pts: Vec<(f64, f64)> = verts.iter().map(|q| (q.p.x, q.p.y)).collect();
+    let soll = [
+        (1500.0, 1500.0),
+        (3000.0, 3000.0),
+        (0.0, 3000.0),
+        (3000.0, 0.0),
+    ];
+    assert_eq!(pts.len(), soll.len(), "Punkte: {pts:?}");
+    for (i, (ist, erwartet)) in pts.iter().zip(soll.iter()).enumerate() {
+        assert!(
+            (ist.0 - erwartet.0).abs() < 1e-6 && (ist.1 - erwartet.1).abs() < 1e-6,
+            "Punkt {i}: {ist:?} statt {erwartet:?} (alle: {pts:?})"
+        );
+    }
+    // Der erste Punkt liegt auf der eigenen Kreuzung der Schenkel.
+    assert!(
+        pts[0].0.abs() - pts[0].1.abs() < 1e-6,
+        "Kreuzung der Schenkel liegt auf der Winkelhalbierenden: {pts:?}"
+    );
+}
+
+/// Die Vorschau zeigt bei einer selbst gekreuzten Polylinie dasselbe Stück
+/// (Anfang bis Kreuzungspunkt), das der Klick danach entfernt.
+#[test]
+fn selbst_gekreuzte_polylinie_zeigt_die_vorschau_bis_zur_kreuzung() {
+    let mut s = s();
+    let res = s
+        .execute(
+            "draw.polyline",
+            &json!({"pts": [[0, 0], [3, 3], [0, 3], [3, 0]]}),
+        )
+        .unwrap();
+    let id = res["created"][0].as_u64().unwrap();
+
+    let segs = jjcad_core::actions::trim_vorschau(&s.doc, id, v(750.0, 750.0), &[]);
+    assert_eq!(segs.len(), 1, "ein Abschnitt: {segs:?}");
+    let jjcad_core::geom::Seg::Line(a, b) = segs[0] else {
+        panic!("Strecke erwartet: {:?}", segs[0]);
+    };
+    assert!(
+        a.dist(v(0.0, 0.0)) < 1e-6 && b.dist(v(1500.0, 1500.0)) < 1e-6,
+        "Vorschau vom Anfang bis zur Kreuzung: {a:?} {b:?}"
+    );
+    assert_eq!(s.doc.entities.len(), 1, "die Vorschau legt nichts an");
+}
+
+/// Zwei eigene Kreuzungen auf einem Schenkel: das Stück dazwischen fällt weg,
+/// links bleibt eine Linie, rechts der restliche Polygonzug.
+#[test]
+fn zwei_eigene_kreuzungen_schneiden_das_mittelstueck_heraus() {
+    let mut s = s();
+    // Der waagerechte Schenkel 0 wird von Schenkel 2 (x=5) und Schenkel 4 (x=2)
+    // gekreuzt.
+    let res = s
+        .execute(
+            "draw.polyline",
+            &json!({"pts": [[0, 0], [6, 0], [6, -2], [4, 2], [2, 2], [2, -3]]}),
+        )
+        .unwrap();
+    let id = res["created"][0].as_u64().unwrap();
+
+    s.execute("modify.trim", &json!({"ids": [id], "at": [3.5, 0]}))
+        .unwrap_or_else(|e| panic!("Stutzen: {e}"));
+
+    let mut linien: Vec<(f64, f64)> = Vec::new();
+    let mut zuege: Vec<Vec<(f64, f64)>> = Vec::new();
+    for e in &s.doc.entities {
+        match &e.kind {
+            EntityKind::Line { a, b } => linien.push((a.x, b.x)),
+            EntityKind::Polyline { verts, .. } => zuege.push(
+                verts
+                    .iter()
+                    .map(|q| (q.p.x, q.p.y))
+                    .collect::<Vec<_>>(),
+            ),
+            _ => {}
+        }
+    }
+    assert_eq!(linien, vec![(0.0, 2000.0)], "links bis zur ersten Kreuzung");
+    assert_eq!(zuege.len(), 1, "rechts bleibt ein Polygonzug");
+    assert_eq!(
+        zuege[0],
+        vec![
+            (5000.0, 0.0),
+            (6000.0, 0.0),
+            (6000.0, -2000.0),
+            (4000.0, 2000.0),
+            (2000.0, 2000.0),
+            (2000.0, -3000.0),
+        ],
+        "rechts ab der zweiten Kreuzung"
+    );
+}
+
 #[test]
 fn layers_and_blocks() {
     let mut s = s();

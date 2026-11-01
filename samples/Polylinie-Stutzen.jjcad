@@ -170,6 +170,51 @@
         "fill": null
       },
       "by_block": false
+    },
+    {
+      "id": 7,
+      "kind": {
+        "type": "polyline",
+        "verts": [
+          {
+            "p": {
+              "x": 9000.0,
+              "y": 2000.0
+            },
+            "bulge": 0.0
+          },
+          {
+            "p": {
+              "x": 12000.0,
+              "y": 5000.0
+            },
+            "bulge": 0.0
+          },
+          {
+            "p": {
+              "x": 9000.0,
+              "y": 5000.0
+            },
+            "bulge": 0.0
+          },
+          {
+            "p": {
+              "x": 12000.0,
+              "y": 2000.0
+            },
+            "bulge": 0.0
+          }
+        ],
+        "closed": false
+      },
+      "layer": 1,
+      "style": {
+        "color": "#23262C",
+        "line_type": null,
+        "line_weight": 0.5,
+        "fill": null
+      },
+      "by_block": false
     }
   ],
   "sheets": [],
@@ -185,5 +230,5 @@
     "decimals": 2,
     "unit_divisor": 1000.0
   },
-  "next_id": 7
+  "next_id": 8
 }
