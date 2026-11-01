@@ -1876,6 +1876,8 @@ impl App {
                 // Prüfhilfe: Verschieben-Werkzeug starten (Basispunkt-Fang an
                 // der ausgewählten Wand im Screenshot belegbar)
                 "movetool" => self.start_tool("modify.move"),
+                // Stutzen läuft: Prüfbild der Abschnitts-Hervorhebung (T0075)
+                "stutzen" | "trim" => self.start_tool("modify.trim"),
                 // T0060: Schnellauswahl aktiv — der nächste Klick startet den
                 // Erzeuger des angeklickten Objekts.
                 "schnellauswahl" | "quickselect" => self.start_tool("modify.quickselect"),
