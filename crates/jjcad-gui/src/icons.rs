@@ -384,6 +384,18 @@ pub fn paint(painter: &Painter, rect: Rect, name: &str, color: Color32) {
             i.line(13.0, 18.0, 17.0, 18.0);
             i.arrow_head(17.5, 18.0, 0.0, 3.2);
         }
+        "intersect" => {
+            // Zwei Linien, die erst im Schnittpunkt zusammenkommen: die
+            // verlängerte Strecke ist gestrichelt.
+            i.line(3.0, 18.0, 12.0, 18.0);
+            i.line(12.0, 18.0, 20.0, 5.0);
+            i.p.extend(egui::Shape::dashed_line(
+                &[i.pt(12.0, 18.0), i.pt(21.0, 18.0)],
+                Stroke::new(1.0, color.gamma_multiply(0.45)),
+                3.0,
+                3.0,
+            ));
+        }
         "erase" => {
             i.poly(&[(5.0, 20.0), (14.0, 4.0), (21.0, 9.0), (13.0, 20.0)], true);
             i.line(5.0, 20.0, 21.0, 20.0);

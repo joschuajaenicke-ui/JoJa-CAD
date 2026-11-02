@@ -201,6 +201,10 @@ pub struct DocTab {
 pub struct Tool {
     pub action: String,
     pub pts: Vec<V2>,
+    /// Erstes angeklicktes Objekt bei Werkzeugen, die ein **Paar** brauchen
+    /// (Verschneiden, T0082). Der Punktpuffer `pts` reicht dafür nicht: die
+    /// Action braucht die Kennung, nicht die Klickstelle.
+    pub obj: Option<Id>,
     pub selecting: bool,
     pub phase: ToolPhase,
 }
@@ -1914,6 +1918,20 @@ impl App {
                 "stutzen" | "trim" => self.start_tool("modify.trim"),
                 // Verlängern läuft: Prüfbild der Strecke, die angesetzt würde (T0081)
                 "verlaengern" | "extend" => self.start_tool("modify.extend"),
+                // Verschneiden läuft (T0082): das erste Objekt ist gemerkt,
+                // damit die Vorschau auf dem zweiten im Prüfbild zu sehen ist.
+                "verschneiden" | "intersect" => {
+                    self.start_tool("modify.intersect");
+                    let erstes = self
+                        .doc()
+                        .entities
+                        .iter()
+                        .find(|e| matches!(e.kind, EntityKind::Line { .. } | EntityKind::Wall { .. }))
+                        .map(|e| e.id);
+                    if let Some(t) = self.tool.as_mut() {
+                        t.obj = erstes;
+                    }
+                }
                 // T0060: Schnellauswahl aktiv — der nächste Klick startet den
                 // Erzeuger des angeklickten Objekts.
                 "schnellauswahl" | "quickselect" => self.start_tool("modify.quickselect"),
@@ -2509,6 +2527,7 @@ impl App {
         self.tool = Some(Tool {
             action: id.to_string(),
             pts: Vec::new(),
+            obj: None,
             selecting: self.session().selection.is_empty()
                 && matches!(
                     id,
@@ -4140,6 +4159,7 @@ fn rail(ui: &mut egui::Ui, icon: &str, tooltip: &str, chevron: &str) -> bool {
                             ("modify.offset", "offset", "Versetzen"),
                             ("modify.trim", "trim", "Stutzen"),
                             ("modify.extend", "extend", "Verlängern"),
+                            ("modify.intersect", "intersect", "Verschneiden"),
                             ("modify.explode", "explode", "Zerlegen"),
                             ("modify.erase", "erase", "Löschen"),
                         ] {
@@ -4945,6 +4965,13 @@ pub(crate) fn commands_hint(tool: &Tool, opts: &ToolOptions) -> &'static str {
         }
         "modify.trim" => "Stutzen · Segment anklicken",
         "modify.extend" => "Verlängern · Ende anklicken",
+        "modify.intersect" => {
+            if tool.obj.is_some() {
+                "Verschneiden · zweites Objekt anklicken"
+            } else {
+                "Verschneiden · erstes Objekt anklicken"
+            }
+        }
         "modify.explode" => "Zerlegen · Objekt anklicken",
         "modify.quickselect" => "Schnellauswahl · Objekt anklicken",
         "modify.order" => "Reihenfolge · Objekt anklicken",
@@ -4990,6 +5017,7 @@ pub(crate) fn abschluss_meldung(action: &str) -> Option<&'static str> {
         "modify.scale" => "Auswahl · skaliert",
         "modify.offset" => "Auswahl · versetzt",
         "modify.explode" => "Objekt · zerlegt",
+        "modify.intersect" => "Verschneiden · Ecke gesetzt",
         "block.insert" => "Block · eingefügt",
         "sheet.viewport_tool" => "Ansichtsfenster · angelegt",
         _ => return None,
@@ -7047,6 +7075,7 @@ mod tests_chat_texte {
                         out.push(Tool {
                             action: a.id.to_string(),
                             pts: vec![V2::ZERO; anzahl],
+                            obj: None,
                             selecting,
                             phase,
                         });
