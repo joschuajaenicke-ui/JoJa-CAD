@@ -2424,13 +2424,29 @@ pub fn einfach(app: &mut App, ui: &mut Ui, ziel: Ziel, art: Einfach) {
     // Einfügemodus: eine Eigenschaft des **Werkzeugs**, keine des Objekts.
     // Er steht nur beim Platzieren im Panel und wird deshalb nicht als
     // Objektzeile protokolliert.
-    if matches!(art, Einfach::Rechteck | Einfach::Ellipse) && ziel.ist_neu() {
+    if matches!(art, Einfach::Rechteck | Einfach::Ellipse | Einfach::Bogen) && ziel.ist_neu() {
         let tool_id = app
             .tool
             .as_ref()
             .map(|t| t.action.clone())
             .unwrap_or_default();
-        if tool_id == "draw.rect" || tool_id == "draw.ellipse" {
+        if tool_id == "draw.arc" {
+            // Eingabemodus des Bogens: drei Punkte oder Mittelpunkt, Start
+            // und Ende (T0085). Wie beim Rechteck eine Werkzeugeinstellung.
+            zeile_nur_neu("bogenmodus");
+            let cur = app.options.arc_mode;
+            let items: Vec<(crate::app::Bogenmodus, String)> = crate::app::Bogenmodus::ALL
+                .iter()
+                .map(|m| (*m, m.label().to_string()))
+                .collect();
+            let mut picked = None;
+            widgets::field_row(ui, "Eingabemodus", |ui| {
+                picked = panels::pick_combo(ui, &ziel.salt("bogenmodus"), cur, &items);
+            });
+            if let Some(m) = picked {
+                app.options.arc_mode = m;
+            }
+        } else if tool_id == "draw.rect" || tool_id == "draw.ellipse" {
             zeile_nur_neu("einfuegemodus");
             let cur = app.options.einfuegemodus(&tool_id);
             let items: Vec<(crate::app::Einfuegemodus, String)> = crate::app::Einfuegemodus::ALL
