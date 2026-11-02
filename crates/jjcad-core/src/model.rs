@@ -410,6 +410,20 @@ pub enum EntityKind {
         ry: f64,
         rot: f64,
     },
+    /// Abschnitt einer Ellipse — entsteht beim Stutzen einer Ellipse, wie der
+    /// Bogen beim Stutzen eines Kreises (T0084).
+    ///
+    /// `a0`/`a1` sind **Parameterwinkel** im ungedrehten Ellipsenraum (siehe
+    /// [`crate::geom::Ellipse`]), keine Polarkoordinaten. Der Bogen läuft von
+    /// `a0` gegen den Uhrzeigersinn bis `a1`.
+    EllipseArc {
+        c: Vec2,
+        rx: f64,
+        ry: f64,
+        rot: f64,
+        a0: f64,
+        a1: f64,
+    },
     Polyline {
         verts: Vec<Vertex>,
         closed: bool,
@@ -666,6 +680,7 @@ impl EntityKind {
             | EntityKind::Circle { .. }
             | EntityKind::Arc { .. }
             | EntityKind::Ellipse { .. }
+            | EntityKind::EllipseArc { .. }
             | EntityKind::Polyline { .. }
             | EntityKind::Spline { .. } => RANG_LINIE,
             EntityKind::Text { .. }
@@ -716,6 +731,7 @@ impl EntityKind {
             EntityKind::Circle { .. } => "Kreis",
             EntityKind::Arc { .. } => "Bogen",
             EntityKind::Ellipse { .. } => "Ellipse",
+            EntityKind::EllipseArc { .. } => "Ellipsenbogen",
             EntityKind::Polyline { .. } => "Polylinie",
             EntityKind::Spline { .. } => "Spline",
             EntityKind::Fill { .. } => "Füllfläche",

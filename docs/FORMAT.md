@@ -94,6 +94,7 @@ Jedes Objekt hat `id`, `kind`, `layer` und optional `style`:
 | `circle` | `c`, `r` | Kreis |
 | `arc` | `c`, `r`, `a0`, `a1` | Bogen gegen den Uhrzeigersinn |
 | `ellipse` | `c`, `rx`, `ry`, `rot` | gedrehte Ellipse |
+| `ellipse_arc` | `c`, `rx`, `ry`, `rot`, `a0`, `a1` | Abschnitt einer Ellipse (entsteht beim Stutzen); `a0`/`a1` sind **Parameterwinkel** im ungedrehten Ellipsenraum, der Bogen läuft gegen den Uhrzeigersinn |
 | `polyline` | `verts[{p,bulge}]`, `closed` | `bulge = tan(θ/4)`, 0 = Gerade |
 | `spline` | `verts[{p,bulge}]`, `closed` | Catmull-Rom-Kurve durch `verts`, zentripetal; `bulge` ungenutzt |
 | `hatch` | `boundary[]`, `pattern`, `angle`, `spacing`, `filled` | Muster: `Solid`, `Lines`, `Cross`, `Dots` |

@@ -2071,6 +2071,8 @@ pub enum Einfach {
     Kreis,
     Bogen,
     Ellipse,
+    /// Abschnitt einer Ellipse — entsteht beim Stutzen (T0084).
+    Ellipsenbogen,
     Masskette,
     Hoehenkote,
     Block,
@@ -2105,6 +2107,7 @@ impl Einfach {
             EntityKind::Circle { .. } => Self::Kreis,
             EntityKind::Arc { .. } => Self::Bogen,
             EntityKind::Ellipse { .. } => Self::Ellipse,
+            EntityKind::EllipseArc { .. } => Self::Ellipsenbogen,
             EntityKind::DimChain { .. } => Self::Masskette,
             EntityKind::Elevation { .. } => Self::Hoehenkote,
             EntityKind::BlockRef { .. } => Self::Block,
@@ -2122,6 +2125,7 @@ impl Einfach {
             Self::Kreis => "Kreis",
             Self::Bogen => "Bogen",
             Self::Ellipse => "Ellipse",
+            Self::Ellipsenbogen => "Ellipsenbogen",
             Self::Masskette => "Maßkette",
             Self::Hoehenkote => "Höhenkote",
             Self::Block => "Block",
@@ -2137,6 +2141,7 @@ impl Einfach {
             Self::Kreis => "circle",
             Self::Bogen => "arc",
             Self::Ellipse => "ellipse",
+            Self::Ellipsenbogen => "arc",
             Self::Masskette => "dim",
             Self::Hoehenkote => "elevation",
             Self::Block => "blocknew",
@@ -2189,6 +2194,8 @@ pub fn einfach(app: &mut App, ui: &mut Ui, ziel: Ziel, art: Einfach) {
 
     // ---- Art-eigene Zeilen ----
     let mut radius: Option<f64> = None;
+    let mut halbachse_x: Option<f64> = None;
+    let mut halbachse_y: Option<f64> = None;
     let mut startwinkel: Option<f64> = None;
     let mut endwinkel: Option<f64> = None;
     let mut hoehe: Option<f64> = None;
@@ -2260,6 +2267,68 @@ pub fn einfach(app: &mut App, ui: &mut Ui, ziel: Ziel, art: Einfach) {
                 });
                 match key {
                     "radius" => radius = Some(v),
+                    "startwinkel" => startwinkel = Some(v),
+                    _ => endwinkel = Some(v),
+                }
+            }
+        }
+        // Ellipsenbogen: beide Halbachsen, Drehlage und die Parameterwinkel.
+        // Achsen und Drehung lassen sich hier ändern, die Winkel begrenzen den
+        // Abschnitt — dieselben Werte, die das Stutzen erzeugt.
+        Einfach::Ellipsenbogen => {
+            let (rx0, ry0, rot0, w0, w1) = match &e {
+                Some(e) => match &e.kind {
+                    EntityKind::EllipseArc { rx, ry, rot, a0, a1, .. } => {
+                        (*rx, *ry, rot.to_degrees(), a0.to_degrees(), a1.to_degrees())
+                    }
+                    _ => (0.0, 0.0, 0.0, 0.0, 0.0),
+                },
+                None => (0.0, 0.0, 0.0, 0.0, 0.0),
+            };
+            halbachse_x = Some(rx0);
+            halbachse_y = Some(ry0);
+            drehung = Some(rot0);
+            startwinkel = Some(w0);
+            endwinkel = Some(w1);
+            let gesperrt = e.is_none();
+            for (key, label, wert) in [
+                ("halbachse_x", "Halbachse X", rx0),
+                ("halbachse_y", "Halbachse Y", ry0),
+            ] {
+                zeile(key);
+                if gesperrt {
+                    gesperrt_zeile(ui, label, "aus den Klicks");
+                    continue;
+                }
+                let mut v = wert;
+                widgets::field_row(ui, label, |ui| {
+                    widgets::length_field(ui, &mut v, unit, 110.0, 0.1, widgets::MASS_MAX_MM);
+                });
+                if key == "halbachse_x" {
+                    halbachse_x = Some(v);
+                } else {
+                    halbachse_y = Some(v);
+                }
+            }
+            for (key, label, wert) in [
+                ("drehung", "Drehung", rot0),
+                ("startwinkel", "Startwinkel", w0),
+                ("endwinkel", "Endwinkel", w1),
+            ] {
+                zeile(key);
+                if gesperrt {
+                    gesperrt_zeile(ui, label, "aus den Klicks");
+                    continue;
+                }
+                let mut v = wert;
+                widgets::field_row(ui, label, |ui| {
+                    ui.add(
+                        crate::widgets::zahl(&mut v, 1.0, widgets::WINKEL_MIN..=widgets::WINKEL_MAX)
+                            .suffix("°"),
+                    );
+                });
+                match key {
+                    "drehung" => drehung = Some(v),
                     "startwinkel" => startwinkel = Some(v),
                     _ => endwinkel = Some(v),
                 }
@@ -2437,6 +2506,41 @@ pub fn einfach(app: &mut App, ui: &mut Ui, ziel: Ziel, art: Einfach) {
             let mut geaendert = false;
             if let Some(map) = params.as_object_mut() {
                 if let Some(e) = &e {
+                    // Ellipsenbogen: Achsen, Drehlage und beide Parameterwinkel
+                    // (T0084). Geht vor der gemeinsamen Schleife, weil hier fünf
+                    // Werte zusammen gehören — keine andere Art nutzt sie.
+                    if let EntityKind::EllipseArc { rx, ry, rot, a0, a1, .. } = &e.kind {
+                        if let Some(v) = halbachse_x {
+                            if (v - *rx).abs() > 1e-9 {
+                                map.insert("rx".into(), serde_json::json!(unit.from_mm(v)));
+                                geaendert = true;
+                            }
+                        }
+                        if let Some(v) = halbachse_y {
+                            if (v - *ry).abs() > 1e-9 {
+                                map.insert("ry".into(), serde_json::json!(unit.from_mm(v)));
+                                geaendert = true;
+                            }
+                        }
+                        if let Some(v) = drehung {
+                            if (v - rot.to_degrees()).abs() > 1e-9 {
+                                map.insert("rot".into(), serde_json::json!(v));
+                                geaendert = true;
+                            }
+                        }
+                        if let Some(v) = startwinkel {
+                            if (v - a0.to_degrees()).abs() > 1e-9 {
+                                map.insert("a0".into(), serde_json::json!(v));
+                                geaendert = true;
+                            }
+                        }
+                        if let Some(v) = endwinkel {
+                            if (v - a1.to_degrees()).abs() > 1e-9 {
+                                map.insert("a1".into(), serde_json::json!(v));
+                                geaendert = true;
+                            }
+                        }
+                    }
                     match (&e.kind, radius, startwinkel, endwinkel, hoehe, drehung, faktor) {
                         (EntityKind::Circle { r, .. }, Some(v), _, _, _, _, _)
                             if (v - *r).abs() > 1e-9 =>
@@ -3746,6 +3850,14 @@ mod tests {
                 rx: 1.0,
                 ry: 1.0,
                 rot: 0.0,
+            },
+            EntityKind::EllipseArc {
+                c: jjcad_core::geom::Vec2::ZERO,
+                rx: 1000.0,
+                ry: 500.0,
+                rot: 0.0,
+                a0: 0.0,
+                a1: 1.0,
             },
             EntityKind::Text {
                 p: jjcad_core::geom::Vec2::ZERO,

@@ -69,6 +69,7 @@ Steht rechts „nicht", dann ist das Wort im Projekt verpönt (auch in der Oberf
 | **Anschlag** | Auf welcher Seite der Öffnung das Blatt angeschlagen ist: links / rechts | Band, Scharnierseite |
 | **Fenster** | Öffnung mit Rahmen; Lage in der Wanddicke wählbar (Links/Mittig/Rechts) | Fensterobjekt |
 | **Treppe** | Treppenobjekt mit Stufen, Breite, Richtung (auf/ab/beide) | Stiege |
+| **Ellipsenbogen** | Abschnitt einer Ellipse — entsteht beim Stutzen einer Ellipse, wie der Bogen beim Stutzen eines Kreises | Ellipsenteil, Teil-Ellipse |
 | **Block** | Wiederverwendbare Zeichnung (Definition) | Symbol, Bauteil |
 | **Blockinstanz** | Ein eingesetzter Block im Plan (mit Position, Drehung, Spiegelung) | Block (wenn die Instanz gemeint ist) |
 | **Maßkette** | Mehrere Maße in einer Linie, fortlaufend | Bemaßungskette, Maßreihe |

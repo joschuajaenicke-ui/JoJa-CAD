@@ -5484,6 +5484,7 @@ pub fn entity_kind_icon(kind: &EntityKind) -> &'static str {
         EntityKind::Circle { .. } => "circle",
         EntityKind::Arc { .. } => "arc",
         EntityKind::Ellipse { .. } => "ellipse",
+        EntityKind::EllipseArc { .. } => "arc",
         EntityKind::Polyline { .. } => "polyline",
         EntityKind::Spline { .. } => "spline",
         EntityKind::Fill { .. } => "fill",
@@ -6352,6 +6353,10 @@ mod tests_ghost_drehrichtung {
 
     fn app_mit_vorschau() -> App {
         let mut app = App::with_ctx(egui::Context::default());
+        // `R` gehört `modify.rotate` — ausdrücklich setzen, nicht auf die
+        // `prefs.json` des Rechners verlassen: der Nutzer belegt seine Tasten
+        // um, und der Test fiel dann grundlos (gesehen beim Ausliefern).
+        app.prefs.bind("modify.rotate", "r");
         app.session_mut()
             .execute(
                 "draw.line",
@@ -6658,9 +6663,12 @@ mod tests_tastenbelegung {
     #[test]
     fn kombinationen_bleiben_fest() {
         let mut app = App::with_ctx(egui::Context::default());
+        // Welche Funktion heute auf `k` liegt, hängt von der Belegung des
+        // Rechners ab — gemerkt wird sie trotzdem, das ist der Prüfpunkt.
+        let vorher = app.prefs.action_for_key("k");
         app.prefs.bind("file.save", "k");
         assert_eq!(app.prefs.key_for("file.save").as_deref(), Some("ctrl+s"));
-        assert_eq!(app.prefs.action_for_key("k").as_deref(), Some("draw.circle"));
+        assert_eq!(app.prefs.action_for_key("k"), vorher);
         assert!(!app.prefs.belegung_aenderbar("file.save"));
     }
 }

@@ -101,6 +101,16 @@ pub enum Shape {
         ry: f64,
         rot: f64,
     },
+    /// Abschnitt einer Ellipse (Ellipsenbogen): `a0`→`a1` gegen den
+    /// Uhrzeigersinn, Winkel sind Parameterwinkel im ungedrehten Ellipsenraum.
+    EllipseArc {
+        c: Vec2,
+        rx: f64,
+        ry: f64,
+        rot: f64,
+        a0: f64,
+        a1: f64,
+    },
     /// Gefüllte Fläche: Außenring plus Löcher (Inseln).
     ///
     /// Gefüllt wird nach der Even-Odd-Regel — die Löcher sind Aussparungen,
@@ -140,6 +150,14 @@ impl Prim {
                 let dy = (ex.y * ex.y + ey.y * ey.y).sqrt();
                 BBox::new(*c - v(dx, dy), *c + v(dx, dy))
             }
+            Shape::EllipseArc {
+                c,
+                rx,
+                ry,
+                rot,
+                a0,
+                a1,
+            } => crate::geom::Ellipse::new(*c, *rx, *ry, *rot).arc_bbox(*a0, *a1),
             Shape::Fill { outer, .. } => BBox::from_points(outer),
             Shape::Dot { p, r } => BBox::new(*p - v(*r, *r), *p + v(*r, *r)),
             Shape::Text(t) => BBox::from_points(&text_corners(
@@ -693,6 +711,31 @@ pub fn render_entity(
                     rx: *rx * f,
                     ry: *ry * f,
                     rot: *rot + xf.rotation(),
+                },
+                style: st,
+                entity: e.id,
+                layer: e.layer,
+            });
+        }
+        // Ellipsenbogen: Parameterwinkel liegen im **ungedrehten** Ellipsenraum,
+        // deshalb dreht nur `rot` mit; gespiegelt laufen die Parameter
+        // andersherum (`-u`) und die Drehlage kehrt sich um.
+        EntityKind::EllipseArc { c, rx, ry, rot, a0, a1 } => {
+            let f = xf.scale_factor();
+            let uhr = xf.rotation();
+            let (aa, ab, r) = if xf.is_mirrored() {
+                (-*a1, -*a0, uhr - *rot)
+            } else {
+                (*a0, *a1, *rot + uhr)
+            };
+            dl.push(Prim {
+                shape: Shape::EllipseArc {
+                    c: xf.apply(*c),
+                    rx: *rx * f,
+                    ry: *ry * f,
+                    rot: r,
+                    a0: aa,
+                    a1: ab,
                 },
                 style: st,
                 entity: e.id,
@@ -2918,6 +2961,16 @@ fn entity_segments_tief(doc: &Document, e: &Entity, depth: usize) -> Vec<Seg> {
                 out.push(Seg::Line(pts[i], pts[(i + 1) % n]));
             }
         }
+        // Ellipsenbogen: dieselbe Zerlegung wie die Anzeige (kurze Sehnen),
+        // damit Fang und Treffer auf der sichtbaren Kurve liegen. Die
+        // Toleranz ist fest — Segmente sind Weltgeometrie.
+        EntityKind::EllipseArc { c, rx, ry, rot, a0, a1 } => {
+            let el = crate::geom::Ellipse::new(*c, *rx, *ry, *rot);
+            let pts = el.arc_points(*a0, *a1, 0.2);
+            for w in pts.windows(2) {
+                out.push(Seg::Line(w[0], w[1]));
+            }
+        }
         EntityKind::Polyline { verts, closed } => {
             let pl = Polyline {
                 verts: verts.clone(),
@@ -3040,6 +3093,7 @@ pub fn entity_centers(doc: &Document, e: &Entity) -> Vec<Vec2> {
         EntityKind::Circle { c, .. } => vec![*c],
         EntityKind::Arc { c, .. } => vec![*c],
         EntityKind::Ellipse { c, .. } => vec![*c],
+        EntityKind::EllipseArc { c, .. } => vec![*c],
         EntityKind::Polyline { verts, closed } => {
             let pl = Polyline {
                 verts: verts.clone(),
