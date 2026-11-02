@@ -2513,6 +2513,10 @@ fn draw_tool_preview(
             // Die Strecke, die ein Klick hier ansetzen würde (T0081).
             draw_extend_preview(app, p, rect, view, cursor);
         }
+        "modify.intersect" => {
+            // Nach dem ersten Klick: beide Strecken bis zum Schnittpunkt (T0082).
+            draw_verschneiden_preview(app, p, rect, view, cursor);
+        }
         "block.insert" => {
             let name = app
                 .options
@@ -2585,6 +2589,28 @@ fn draw_extend_preview(app: &App, p: &Painter, rect: Rect, view: View, at: V2) {
         return;
     };
     draw_abschnitt_preview(app, p, rect, view, id, &segs, Palette::OK);
+}
+
+/// Hervorhebung beim Verschneiden (T0082): ist das erste Objekt gemerkt und
+/// steht der Zeiger auf dem zweiten, sind beide Strecken bis zum gemeinsamen
+/// Schnittpunkt in der Erfolgsfarbe zu sehen — vor dem Klick.
+///
+/// Die Strecken kommen aus [`actions::verschneiden_vorschau`] — derselben
+/// Rechnung, die der Klick in `modify.intersect` ausführt.
+fn draw_verschneiden_preview(app: &App, p: &Painter, rect: Rect, view: View, at: V2) {
+    let Some(erstes) = app.tool.as_ref().and_then(|t| t.obj) else {
+        return;
+    };
+    let tol = (8.0 / view.zoom).max(0.5);
+    let Some(zweites) = snap::hit_test(app.doc(), at, tol, None) else {
+        return;
+    };
+    if zweites == erstes {
+        return;
+    }
+    for (id, segs) in actions::verschneiden_vorschau(app.doc(), erstes, zweites) {
+        draw_abschnitt_preview(app, p, rect, view, id, &segs, Palette::OK);
+    }
 }
 
 /// Das Objekt unter dem Zeiger und die Strecken, die seine Vorschau markiert.
@@ -4384,6 +4410,7 @@ fn restart_tool(app: &mut App, action: &str) {
     app.tool = Some(Tool {
         action: action.to_string(),
         pts: Vec::new(),
+        obj: None,
         selecting: false,
         phase: ToolPhase::Collecting,
     });
@@ -4457,6 +4484,7 @@ fn tool_click_at(app: &mut App, w: V2, raw: V2) {
                     app.tool = Some(Tool {
                         action: "draw.line".into(),
                         pts: vec![w],
+                        obj: None,
                         selecting: false,
                         phase: ToolPhase::Collecting,
                     });
@@ -4481,6 +4509,7 @@ fn tool_click_at(app: &mut App, w: V2, raw: V2) {
                     app.tool = Some(Tool {
                         action: "draw.wall".into(),
                         pts: vec![w],
+                        obj: None,
                         selecting: false,
                         phase: ToolPhase::Collecting,
                     });
@@ -5015,6 +5044,34 @@ fn tool_click_at(app: &mut App, w: V2, raw: V2) {
                 let _ = run(app, &action, json!({"ids": [id], "at": ax(w)}));
             }
             // Werkzeug bleibt aktiv für weitere Schnitte
+        }
+        // Verschneiden (T0082): erstes Objekt merken, zweites verschnitten.
+        // Der Punktpuffer taugt dafür nicht — die Action braucht die Kennung.
+        "modify.intersect" => {
+            let tol = (8.0 / app.current_view().zoom).max(0.5);
+            let Some(id) = snap::hit_test(app.doc(), w, tol, None) else {
+                app.toast("Verschneiden · Objekt anklicken");
+                return;
+            };
+            match tool.obj {
+                None => {
+                    tool.obj = Some(id);
+                    app.tool = Some(tool);
+                    app.session_mut().select(vec![id]);
+                }
+                Some(erstes) if erstes == id => {
+                    app.toast("Verschneiden · zweites Objekt anklicken");
+                }
+                Some(erstes) => {
+                    if run(app, "modify.intersect", json!({"ids": [erstes, id]})) {
+                        app.session_mut().select(vec![erstes, id]);
+                    }
+                    // Werkzeug bleibt für das nächste Paar aktiv.
+                    if let Some(t) = app.tool.as_mut() {
+                        t.obj = None;
+                    }
+                }
+            }
         }
         "modify.explode" => {
             let tol = (8.0 / app.current_view().zoom).max(0.5);
@@ -9576,5 +9633,131 @@ mod tests_kreis_kontur {
     #[test]
     fn kontur_liegt_mittig_px_modus() {
         pruefe_mittig(4.0, 2.0, false);
+    }
+}
+
+#[cfg(test)]
+mod tests_verschneiden {
+    //! Verschneiden (T0082): erstes Objekt anklicken, zweites anklicken — beide
+    //! treffen sich im Schnittpunkt. Die Vorschau zeigt die Strecken vorher.
+
+    use super::*;
+
+    const RECT: Rect = Rect {
+        min: Pos2::new(0.0, 0.0),
+        max: Pos2::new(1200.0, 800.0),
+    };
+
+    /// Waagerechte Linie 0…1000 mm und senkrechte bei x = 2000 mm, y 1000…2000.
+    fn app() -> App {
+        let mut app = App::with_ctx(egui::Context::default());
+        app.session_mut()
+            .execute("doc.settings", &json!({ "input_unit": "m" }))
+            .expect("Einheit setzen");
+        for (a, b) in [([0, 0], [1, 0]), ([2, 1], [2, 2])] {
+            app.session_mut()
+                .execute("draw.line", &json!({ "a": a, "b": b }))
+                .expect("Linie anlegen");
+        }
+        app.start_tool("modify.intersect");
+        app
+    }
+
+    fn ids(app: &App) -> (Id, Id) {
+        let mut it = app.doc().entities.iter().map(|e| e.id);
+        (it.next().unwrap(), it.next().unwrap())
+    }
+
+    fn enden(app: &App, id: Id) -> (V2, V2) {
+        match &app.doc().entity(id).expect("Objekt fehlt").kind {
+            EntityKind::Line { a, b } => (*a, *b),
+            other => panic!("Linie erwartet: {other:?}"),
+        }
+    }
+
+    /// Die Strecken der Erfolgsfarbe, die `draw_verschneiden_preview` malt.
+    fn vorschau_strecken(app: &mut App, zeiger: Option<V2>) -> Vec<(Pos2, Pos2)> {
+        let view = app.current_view();
+        let ctx = app.ctx.clone();
+        let out = ctx.run(egui::RawInput::default(), |ctx| {
+            let layer = egui::LayerId::new(egui::Order::Background, egui::Id::new("verschneiden"));
+            let p = egui::Painter::new(ctx.clone(), layer, Rect::EVERYTHING);
+            draw_tool_preview(app, &p, RECT, view, zeiger, zeiger);
+        });
+        let mut v = Vec::new();
+        for cs in &out.shapes {
+            if let Shape::LineSegment { points, stroke } = &cs.shape {
+                if stroke.color == egui::epaint::ColorMode::Solid(Palette::OK) {
+                    v.push((points[0], points[1]));
+                }
+            }
+        }
+        v
+    }
+
+    #[test]
+    fn zwei_klicks_verschneiden_die_linien() {
+        let mut app = app();
+        let (links, rechts) = ids(&app);
+
+        tool_click(&mut app, V2::new(500.0, 0.0));
+        assert_eq!(
+            app.tool.as_ref().and_then(|t| t.obj),
+            Some(links),
+            "der erste Klick merkt sich das Objekt"
+        );
+        assert_eq!(app.selection(), &[links], "das gemerkte Objekt ist markiert");
+
+        tool_click(&mut app, V2::new(2000.0, 1500.0));
+
+        let (a, b) = enden(&app, links);
+        assert!(a.dist(V2::new(0.0, 0.0)) < 1e-6, "Anfang bleibt: {a:?}");
+        assert!(
+            b.dist(V2::new(2000.0, 0.0)) < 1e-6,
+            "Ende am Schnittpunkt: {b:?}"
+        );
+        let (a, b) = enden(&app, rechts);
+        assert!(
+            a.dist(V2::new(2000.0, 0.0)) < 1e-6,
+            "Anfang am Schnittpunkt: {a:?}"
+        );
+        assert!(b.dist(V2::new(2000.0, 2000.0)) < 1e-6, "Ende bleibt: {b:?}");
+
+        assert!(
+            app.tool.as_ref().and_then(|t| t.obj).is_none(),
+            "der Partner ist verbraucht"
+        );
+        assert_eq!(
+            app.tool_id(),
+            Some("modify.intersect"),
+            "das Werkzeug bleibt für das nächste Paar aktiv"
+        );
+        assert_eq!(app.selection(), &[links, rechts], "beide bleiben markiert");
+    }
+
+    #[test]
+    fn vorschau_zeigt_beide_strecken_zum_schnittpunkt() {
+        let mut app = app();
+        tool_click(&mut app, V2::new(500.0, 0.0));
+        let strecken = vorschau_strecken(&mut app, Some(V2::new(2000.0, 1500.0)));
+        assert_eq!(strecken.len(), 2, "beide Objekte zeigen ihre Strecke");
+        let ziel = world_to_screen(RECT, app.current_view(), V2::new(2000.0, 0.0));
+        for (a, b) in strecken {
+            assert!(
+                (a.x - ziel.x).abs() < 0.6 && (a.y - ziel.y).abs() < 0.6
+                    || (b.x - ziel.x).abs() < 0.6 && (b.y - ziel.y).abs() < 0.6,
+                "eine Seite endet im Schnittpunkt: {a:?}–{b:?} statt {ziel:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn ohne_erstes_objekt_gibt_es_keine_vorschau() {
+        let mut app = app();
+        let strecken = vorschau_strecken(&mut app, Some(V2::new(2000.0, 1500.0)));
+        assert!(
+            strecken.is_empty(),
+            "vor dem ersten Klick nichts zu zeigen: {strecken:?}"
+        );
     }
 }

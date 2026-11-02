@@ -187,6 +187,15 @@ pub const ACTIONS: &[ActionDef] = &[
     act!("modify.offset", "Versetzen", Aendern, "offset", "", "Abstand und Seite klicken", true),
     act!("modify.trim", "Stutzen", Aendern, "trim", "c", "Zu stutzendes Segment anklicken", true),
     act!("modify.extend", "Verlängern", Aendern, "extend", "x", "Ende anklicken, das verlängert wird", true),
+    act!(
+        "modify.intersect",
+        "Verschneiden",
+        Aendern,
+        "intersect",
+        "",
+        "Zwei Linien oder Wände anklicken — sie treffen sich im Schnittpunkt",
+        true
+    ),
     act!("modify.erase", "Löschen", Aendern, "erase", "entf", "Auswahl löschen", false),
     act!("modify.explode", "Zerlegen", Aendern, "explode", "z", "Blöcke/Bauteile in Einzelelemente, Text in Linien zerlegen", false),
     act!(
@@ -2197,6 +2206,18 @@ pub fn execute(doc: &mut Document, id: &str, params: &Value) -> Result<Value, St
             doc.modified = true;
             Ok(json!({"ok": true}))
         }
+        "modify.intersect" => {
+            // Zwei gerade Objekte — Reihenfolge egal, es zählt nur das Paar.
+            let ids = ids_from(&p, "ids");
+            if ids.len() < 2 {
+                return Err("Verschneiden braucht zwei Objekte".into());
+            }
+            let punkt = verschneiden(doc, ids[0], ids[1])?;
+            Ok(json!({
+                "ok": true,
+                "point": [punkt.x / 1000.0, punkt.y / 1000.0]
+            }))
+        }
         "modify.erase" => {
             let ids = ids_from(&p, "ids");
             let mut n = 0;
@@ -4078,6 +4099,102 @@ fn extend_entity(doc: &mut Document, id: Id, at: Vec2, cutters: &[Id]) -> Result
         }
     }
     Ok(())
+}
+
+// ---------------------------------------------------------------------------
+// Verschneiden
+// ---------------------------------------------------------------------------
+
+/// Die Achse eines geraden Objekts — Linie oder Wand.
+///
+/// Alles andere (Bogen, Kreis, Polylinie, Text …) hat keine Gerade, auf der
+/// sich ein Schnittpunkt bestimmen ließe.
+fn gerade(doc: &Document, id: Id) -> Result<(Vec2, Vec2), String> {
+    let Some(e) = doc.entity(id) else {
+        return Err(format!("Objekt {id} nicht gefunden"));
+    };
+    match &e.kind {
+        EntityKind::Line { a, b } | EntityKind::Wall { a, b, .. } => Ok((*a, *b)),
+        _ => Err("Verschneiden geht nur mit Linien und Wänden".into()),
+    }
+}
+
+/// Der gemeinsame Schnittpunkt der unendlich verlängerten Achsen zweier
+/// gerader Objekte.
+fn treffpunkt(doc: &Document, a: Id, b: Id) -> Result<Vec2, String> {
+    if a == b {
+        return Err("Verschneiden braucht zwei verschiedene Objekte".into());
+    }
+    let (a1, a2) = gerade(doc, a)?;
+    let (b1, b2) = gerade(doc, b)?;
+    if a1.dist(a2) < 1e-9 || b1.dist(b2) < 1e-9 {
+        return Err("Objekt ohne Länge".into());
+    }
+    // Beide Achsen als unendliche Geraden: der Schnittpunkt darf außerhalb
+    // beider Strecken liegen, sonst gäbe es nichts zu verlängern.
+    line_line(a1, a2, b1, b2, true, true).ok_or_else(|| "Linien sind parallel".to_string())
+}
+
+/// Das Ende, das zum Schnittpunkt wandert, und das andere, das stehen bleibt.
+///
+/// Gewandert wird das **nähere** Ende: liegt der Schnittpunkt dahinter, ist das
+/// eine Verlängerung, liegt er davor, eine Kürzung auf die Ecke.
+fn verschnitt_enden(pa: Vec2, pb: Vec2, ziel: Vec2) -> (Vec2, Vec2) {
+    if pa.dist(ziel) > pb.dist(ziel) {
+        (pb, pa)
+    } else {
+        (pa, pb)
+    }
+}
+
+/// Zieht zwei gerade Objekte auf ihren gemeinsamen Schnittpunkt — die Action
+/// `modify.intersect`.
+///
+/// Je Objekt wandert das Ende, das dem Schnittpunkt **näher** liegt, auf den
+/// Schnittpunkt. Liegt er hinter diesem Ende, wird verlängert; liegt er
+/// zwischen den Enden, wird auf die Ecke gekürzt. Beides ergibt denselben
+/// sauberen Anschluss, deshalb braucht der Nutzer dafür keinen zweiten Befehl.
+/// Zurück kommt der Schnittpunkt.
+pub fn verschneiden(doc: &mut Document, a: Id, b: Id) -> Result<Vec2, String> {
+    let ziel = treffpunkt(doc, a, b)?;
+    for id in [a, b] {
+        let Some(em) = doc.entity_mut(id) else {
+            continue;
+        };
+        match &mut em.kind {
+            EntityKind::Line { a, b } | EntityKind::Wall { a, b, .. } => {
+                let (wandernd, _) = verschnitt_enden(*a, *b, ziel);
+                if wandernd.dist(*a) < 1e-9 {
+                    *a = ziel;
+                } else {
+                    *b = ziel;
+                }
+            }
+            _ => {}
+        }
+    }
+    doc.modified = true;
+    Ok(ziel)
+}
+
+/// Die beiden Strecken, die [`verschneiden`] setzen würde — je Objekt vom
+/// stehenden Ende zum Schnittpunkt, **ohne** die Zeichnung zu ändern.
+///
+/// Grundlage der Hervorhebung in der Zeichenfläche: der Nutzer sieht nach dem
+/// ersten Klick, wohin das zweite Objekt gezogen wird.
+pub fn verschneiden_vorschau(doc: &Document, a: Id, b: Id) -> Vec<(Id, Vec<Seg>)> {
+    let Ok(ziel) = treffpunkt(doc, a, b) else {
+        return Vec::new();
+    };
+    let mut out = Vec::new();
+    for id in [a, b] {
+        let Ok((pa, pb)) = gerade(doc, id) else {
+            continue;
+        };
+        let (_, fest) = verschnitt_enden(pa, pb, ziel);
+        out.push((id, vec![Seg::Line(fest, ziel)]));
+    }
+    out
 }
 
 // ---------------------------------------------------------------------------
