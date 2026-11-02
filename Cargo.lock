@@ -1305,6 +1305,7 @@ dependencies = [
  "eframe",
  "egui",
  "jjcad-core",
+ "png 0.17.16",
  "raw-window-handle",
  "rfd",
  "serde",

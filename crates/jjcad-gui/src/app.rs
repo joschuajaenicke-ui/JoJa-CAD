@@ -1453,6 +1453,8 @@ impl App {
                     }
                 }
                 "help" => self.ui.help_open = true,
+                // Über-Dialog mit Markenzeichen (Screenshot-Prüfung T0083)
+                "ueber" | "about" => self.ui.about_open = true,
                 // Erweiterter Punktfang sichtbar machen: Werkzeug läuft, ein
                 // Wandende ist gehalten (Verweilen vorgetäuscht) — die
                 // Hilfslinien stehen dann im Screenshot.
@@ -3854,22 +3856,13 @@ impl App {
     fn header(&mut self, ui: &mut egui::Ui) {
         ui.horizontal_centered(|ui| {
             ui.add_space(10.0);
-            // Logo
-            let (r, _) = ui.allocate_exact_size(Vec2::new(24.0, 24.0), Sense::hover());
-            ui.painter().rect_filled(r, Rounding::same(6.0), Palette::ACCENT);
-            ui.painter().rect_stroke(r, Rounding::same(6.0), Stroke::new(1.0, Palette::ACCENT));
-            ui.painter().line_segment(
-                [r.center() + Vec2::new(-6.0, -5.0), r.center() + Vec2::new(6.0, -5.0)],
-                Stroke::new(2.0, Palette::ACCENT_TEXT),
-            );
-            ui.painter().line_segment(
-                [r.center() + Vec2::new(-6.0, 0.0), r.center() + Vec2::new(3.0, 0.0)],
-                Stroke::new(2.0, Palette::ACCENT_TEXT),
-            );
-            ui.painter().line_segment(
-                [r.center() + Vec2::new(-6.0, 5.0), r.center() + Vec2::new(6.0, 5.0)],
-                Stroke::new(2.0, Palette::ACCENT_TEXT),
-            );
+            // Markenzeichen (T0083): dasselbe Bild wie Fenstericon und Über-Dialog,
+            // 24 px wie der bisher gezeichnete Platzhalter (Kopfzeile bleibt gleich hoch).
+            let marke = crate::icon::textur_klein(ui.ctx());
+            ui.add(egui::Image::new(egui::load::SizedTexture::new(
+                marke.id(),
+                Vec2::new(30.0, 30.0),
+            )));
             ui.add_space(4.0);
             ui.label(theme::bold("JoJa-CAD", 14.0));
             ui.label(

@@ -202,6 +202,14 @@ Mit dem Nutzer abgestimmt — nicht „verbessern“:
   eines Objekts automatisch auch für die Auswahl — wer eine Zeile ergänzt, hat sie
   in der Mehrfachauswahl schon. Abweichende Werte meldet die Kopfzeile als
   `*variiert*`; ein zweiter Maler existiert nicht mehr.
+- **Markenzeichen (T0083)**: Das Icon aus `branding/` ist **eine** Bilddatei
+  (`crates/jjcad-gui/assets/jjc-icon-512.png`, per `include_bytes!` im Programm wie die
+  technischen Schriften). Drei Stellen zeigen es über `icon::textur`/`icon::textur_klein`/
+  `icon::fenster_icon`: Fenstertitel, Kopfzeile (30 px, dafür die 32-px-Rasterung — bei
+  24 px verwaschen die weißen Linien) und der Über-Dialog (64 px). Kein zweites gezeichnetes
+  Ersatzlogo daneben. Unter **Wayland** überträgt winit kein Fenstericon: Taskleiste und
+  Startmenü holen es aus `~/.local/share/applications/jjcad.desktop` (Name = App-ID `jjcad`),
+  angelegt mit `scripts/install-desktop.sh`.
 - **Zeichenrang (T0048)**: Neue Elemente ordnen sich beim Einfügen selbst in die
   Zeichenreihenfolge ein — Fläche (0) < Volumen (1) < Bauteil (2) < Linie (3) <
   Beschriftung (4), Konstanten `model::RANG_*`, Prüfung in
