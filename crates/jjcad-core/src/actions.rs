@@ -3827,6 +3827,20 @@ pub fn trim_vorschau(doc: &Document, id: Id, at: Vec2, cutters: &[Id]) -> Vec<Se
     }
 }
 
+/// Die Strecke, die `modify.extend` an der Stelle `at` an das Objekt ansetzen
+/// würde — **ohne** die Zeichnung zu ändern. Grundlage der Hervorhebung in der
+/// Zeichenfläche (T0081), damit der Nutzer vor dem Klick sieht, wohin
+/// verlängert wird.
+///
+/// Leer, wenn das Objekt nicht verlängert werden kann oder keine Schnittkante
+/// hinter dem Ende liegt.
+pub fn extend_vorschau(doc: &Document, id: Id, at: Vec2, cutters: &[Id]) -> Vec<Seg> {
+    match verlaengerung(doc, id, at, cutters) {
+        Ok(v) => vec![Seg::Line(v.wandernd, v.ziel)],
+        Err(_) => Vec::new(),
+    }
+}
+
 fn trim_entity(doc: &mut Document, id: Id, at: Vec2, cutters: &[Id]) -> Result<Vec<Id>, String> {
     let Some(e) = doc.entity(id).cloned() else {
         return Err(format!("Objekt {id} nicht gefunden"));
@@ -3982,8 +3996,23 @@ fn trim_entity(doc: &mut Document, id: Id, at: Vec2, cutters: &[Id]) -> Result<V
     }
 }
 
-fn extend_entity(doc: &mut Document, id: Id, at: Vec2, cutters: &[Id]) -> Result<(), String> {
-    let Some(e) = doc.entity(id).cloned() else {
+/// Ziel einer Verlängerung: das stehende Ende, das wandernde Ende und der
+/// Schnittpunkt, bis zu dem verlängert wird.
+struct Verlaengerung {
+    /// Das Ende, das zum Ziel wandert (das Ende näher am Klick).
+    wandernd: Vec2,
+    /// Der Punkt, bis zu dem verlängert wird.
+    ziel: Vec2,
+    /// Das wandernde Ende ist das `b`-Ende.
+    ende_b: bool,
+}
+
+/// Wie weit [`extend_entity`] das Objekt an der Stelle `at` verlängern würde —
+/// ohne die Zeichnung zu ändern. Eine Quelle für die Action (verlängert) und
+/// [`extend_vorschau`] (zeigt vorher, was hinzukommt); sonst liefen Anzeige
+/// und Ergebnis auseinander (T0081).
+fn verlaengerung(doc: &Document, id: Id, at: Vec2, cutters: &[Id]) -> Result<Verlaengerung, String> {
+    let Some(e) = doc.entity(id) else {
         return Err(format!("Objekt {id} nicht gefunden"));
     };
     let exclude = vec![id];
@@ -3995,59 +4024,60 @@ fn extend_entity(doc: &mut Document, id: Id, at: Vec2, cutters: &[Id]) -> Result
             .filter(|(_, sid)| cutters.contains(sid))
             .collect()
     };
-    match &e.kind {
-        EntityKind::Line { a, b } | EntityKind::Wall { a, b, .. } => {
-            let near_b = at.dist(*b) <= at.dist(*a);
-            let (fixed, moving) = if near_b { (*a, *b) } else { (*b, *a) };
-            let dir = (moving - fixed).normalized();
-            let ray_end = fixed + dir * (fixed.dist(moving) * 1000.0 + 1e9);
-            let mut best: Option<(f64, Vec2)> = None;
-            for (sg, _) in &segs {
-                let hits = match sg {
-                    Seg::Line(c, d) => line_line(fixed, ray_end, *c, *d, true, false)
-                        .into_iter()
-                        .collect::<Vec<_>>(),
-                    Seg::Arc(arc) => line_circle(fixed, ray_end, arc.c, arc.r)
-                        .into_iter()
-                        .filter(|p| angle_in_arc((*p - arc.c).angle(), arc.a0, arc.a1))
-                        .collect(),
-                };
-                for h in hits {
-                    let t = (h - fixed).dot(dir);
-                    let t0 = (moving - fixed).dot(dir);
-                    if t > t0 + 1e-6 {
-                        if best.map(|(bt, _)| t < bt).unwrap_or(true) {
-                            best = Some((t, h));
-                        }
-                    }
+    let (a, b) = match &e.kind {
+        EntityKind::Line { a, b } | EntityKind::Wall { a, b, .. } => (*a, *b),
+        _ => return Err("Verlängern wird für diesen Objekttyp nicht unterstützt".into()),
+    };
+    let ende_b = at.dist(b) <= at.dist(a);
+    let (fest, wandernd) = if ende_b { (a, b) } else { (b, a) };
+    let dir = (wandernd - fest).normalized();
+    let ray_end = fest + dir * (fest.dist(wandernd) * 1000.0 + 1e9);
+    let mut best: Option<(f64, Vec2)> = None;
+    for (sg, _) in &segs {
+        let hits = match sg {
+            Seg::Line(c, d) => line_line(fest, ray_end, *c, *d, true, false)
+                .into_iter()
+                .collect::<Vec<_>>(),
+            Seg::Arc(arc) => line_circle(fest, ray_end, arc.c, arc.r)
+                .into_iter()
+                .filter(|p| angle_in_arc((*p - arc.c).angle(), arc.a0, arc.a1))
+                .collect(),
+        };
+        for h in hits {
+            let t = (h - fest).dot(dir);
+            let t0 = (wandernd - fest).dot(dir);
+            if t > t0 + 1e-6 {
+                if best.map(|(bt, _)| t < bt).unwrap_or(true) {
+                    best = Some((t, h));
                 }
             }
-            let Some((_, hp)) = best else {
-                return Err("Keine Schnittkante zum Verlängern gefunden".into());
-            };
-            if let Some(em) = doc.entity_mut(id) {
-                match &mut em.kind {
-                    EntityKind::Line { a, b } => {
-                        if near_b {
-                            *b = hp;
-                        } else {
-                            *a = hp;
-                        }
-                    }
-                    EntityKind::Wall { a, b, .. } => {
-                        if near_b {
-                            *b = hp;
-                        } else {
-                            *a = hp;
-                        }
-                    }
-                    _ => {}
-                }
-            }
-            Ok(())
         }
-        _ => Err("Verlängern wird für diesen Objekttyp nicht unterstützt".into()),
     }
+    let Some((_, ziel)) = best else {
+        return Err("Keine Schnittkante zum Verlängern gefunden".into());
+    };
+    Ok(Verlaengerung {
+        wandernd,
+        ziel,
+        ende_b,
+    })
+}
+
+fn extend_entity(doc: &mut Document, id: Id, at: Vec2, cutters: &[Id]) -> Result<(), String> {
+    let v = verlaengerung(doc, id, at, cutters)?;
+    if let Some(em) = doc.entity_mut(id) {
+        match &mut em.kind {
+            EntityKind::Line { a, b } | EntityKind::Wall { a, b, .. } => {
+                if v.ende_b {
+                    *b = v.ziel;
+                } else {
+                    *a = v.ziel;
+                }
+            }
+            _ => {}
+        }
+    }
+    Ok(())
 }
 
 // ---------------------------------------------------------------------------
