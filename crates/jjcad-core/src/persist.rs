@@ -372,9 +372,29 @@ fn default_volume_input() -> String {
     "points".into()
 }
 
-/// Name des eingebauten Tastaturlayouts (T0076). Es lässt sich nicht
+/// Die eingebauten Tastaturvorlagen (T0079), in Anzeigereihenfolge. Sie stehen
+/// immer als **erste** Einträge in [`UserPrefs::keymap_presets`], lassen sich
+/// weder überschreiben noch löschen — der Rückweg auf eine bekannte Belegung.
+/// Die erste Vorlage ist zugleich die Werkseinstellung.
+pub const VORLAGEN: [&str; 4] = [
+    "Vorlage JoJa-CAD",
+    "Vorlage Allplan",
+    "Vorlage ArchiCAD",
+    "Vorlage AutoCAD",
+];
+
+/// Name des eingebauten Tastaturlayouts (T0076/T0079). Es lässt sich nicht
 /// überschreiben und ist der Rückweg auf die Vorgabebelegung.
-pub const WERKSEINSTELLUNG: &str = "Werkseinstellung";
+pub const WERKSEINSTELLUNG: &str = VORLAGEN[0];
+
+/// Trägt der Name eine eingebaute Vorlage (oder den früheren Namen der ersten,
+/// „Werkseinstellung" bis T0079)? Solche Namen gehören nicht dem Nutzer: sie
+/// lassen sich nicht speichern, nicht löschen und werden beim Laden aus den
+/// Vorlagen neu aufgebaut.
+pub fn ist_vorlage(name: &str) -> bool {
+    VORLAGEN.iter().any(|v| v.eq_ignore_ascii_case(name))
+        || name.eq_ignore_ascii_case("Werkseinstellung")
+}
 
 /// Ein gespeichertes Tastaturlayout (T0076): Name und die vollständige
 /// Belegung (Aktion → Tasten). Ein Layout lässt sich benennen, wechseln und als
@@ -435,9 +455,10 @@ pub struct UserPrefs {
     /// Leser nimmt beides (`de_bindungen`).
     #[serde(default, deserialize_with = "de_bindungen")]
     pub bindings: BTreeMap<String, Vec<String>>,
-    /// Gespeicherte Tastaturlayouts (T0076). Das erste trägt immer den Namen
-    /// „Werkseinstellung" und die Vorgabebelegung — es ist das eingebaute
-    /// Layout, auf das jederzeit zurückgeschaltet werden kann.
+    /// Gespeicherte Tastaturlayouts (T0076/T0079). Die ersten vier Einträge
+    /// sind die **eingebauten Vorlagen** ([`VORLAGEN`]) — JoJa-CAD, Allplan,
+    /// ArchiCAD, AutoCAD; sie lassen sich nicht überschreiben und nicht
+    /// löschen. Eigene Layouts des Nutzers stehen dahinter.
     #[serde(default)]
     pub keymap_presets: Vec<KeymapPreset>,
     /// Welches Layout gerade gilt (Index in `keymap_presets`). `None` =
@@ -618,25 +639,161 @@ pub fn fest_belegt(key: &str) -> Option<FestBelegt> {
     }
 }
 
+/// Die Belegung der Vorlage JoJa-CAD: alle Kürzel aus dem Action-Register,
+/// soweit sie in die freie Schicht gehören (T0056).
+fn werkseinstellung_bindungen() -> BTreeMap<String, Vec<String>> {
+    let mut bindings = BTreeMap::new();
+    for a in actions::ACTIONS {
+        if a.key.is_empty() {
+            continue;
+        }
+        // Ziffern und Steuerungstasten gehören keiner Funktion; Funktions-
+        // tasten und Kombinationen sind dagegen genau ihre feste Belegung
+        // (T0056, `docs/TASTEN.md`).
+        if matches!(fest_belegt(a.key), Some(f) if !f.ist_feste_belegung()) {
+            continue;
+        }
+        bindings.insert(a.id.to_string(), vec![a.key.to_string()]);
+    }
+    bindings
+}
+
+/// Baut eine Vorlage aus der JoJa-CAD-Belegung und den Abweichungen eines
+/// fremden Programms (`Aktion → Taste`). Eine Taste trägt genau eine Funktion:
+/// die Zuweisung nimmt sie deshalb jeder anderen Funktion weg. Eine leere Taste
+/// nimmt der Aktion ihr Kürzel (die Funktion bleibt über Ribbon und Inventar
+/// erreichbar).
+fn vorlage(name: &str, abweichungen: &[(&str, &str)]) -> KeymapPreset {
+    let mut p = KeymapPreset {
+        name: name.to_string(),
+        bindings: werkseinstellung_bindungen(),
+    };
+    for (aktion, taste) in abweichungen {
+        p.bindings.remove(*aktion);
+        if taste.is_empty() {
+            continue;
+        }
+        let taste = taste.to_lowercase();
+        for keys in p.bindings.values_mut() {
+            keys.retain(|k| k.to_lowercase() != taste);
+        }
+        p.bindings
+            .entry((*aktion).to_string())
+            .or_default()
+            .push(taste);
+    }
+    p.bindings.retain(|_, keys| !keys.is_empty());
+    p
+}
+
+/// Abweichungen der Vorlage Allplan. Quelle: Allplan-Kurzanleitung „Shortcuts"
+/// (deutsch): Linie `Strg+L`, Maßlinie `Strg+M`, Wand `Strg+W`, Decke `Strg+D`,
+/// Tür `Strg+T`, Fenster `Strg+F`. Tastenkombinationen sind in JoJa-CAD fest
+/// verdrahtet (`docs/TASTEN.md`) — die Vorlage nimmt den Buchstaben dahinter.
+/// Text liegt deshalb auf `Umschalt+T`, Spiegeln auf `Umschalt+F`, und der
+/// Ansichtsschwenk wandert auf die Umschalt-Ebene.
+const VORLAGE_ALLPLAN: &[(&str, &str)] = &[
+    ("draw.line", "l"),
+    ("draw.wall", "w"),
+    ("draw.door", "t"),
+    ("draw.window", "f"),
+    ("draw.text", "shift+t"),
+    ("draw.fill", "d"),
+    ("dim.linear", "m"),
+    ("modify.mirror", "shift+f"),
+    ("modify.trim", "c"),
+    ("modify.explode", "z"),
+    ("view.pan_up", "shift+w"),
+    ("view.pan_left", "shift+a"),
+    ("view.pan_down", "shift+s"),
+    ("view.pan_right", "shift+d"),
+];
+
+/// Abweichungen der Vorlage ArchiCAD. Quelle: „ARCHICAD Default Keyboard
+/// Shortcuts" (Graphisoft): Wand `W`, Fenster `,`, Tür `M`, Linie
+/// `Umschalt+L`, Polylinie `L`, Text `K`, Maß `J`, Höhenkote `Umschalt+J`,
+/// Versetzen `O`, Verschieben (Drag) `Strg+D`, Kopieren `Strg+Umschalt+D`,
+/// Drehen `Strg+E`, Spiegeln `Strg+M`, Zoom `+`/`-`. `;` (Bogen/Kreis) und
+/// `’` (Füllung) sind in JoJa-CAD nicht belegbar (zweite Ebene) — der Kreis
+/// liegt deshalb auf `C`, die Füllung auf `H`.
+const VORLAGE_ARCHICAD: &[(&str, &str)] = &[
+    ("draw.wall", "w"),
+    ("draw.window", ","),
+    ("draw.door", "m"),
+    ("draw.stair", "."),
+    ("draw.polyline", "l"),
+    ("draw.line", "shift+l"),
+    ("draw.text", "k"),
+    ("draw.circle", "c"),
+    ("draw.fill.paint", "h"),
+    ("dim.linear", "j"),
+    ("dim.elevation", "shift+j"),
+    ("modify.offset", "o"),
+    ("modify.move", "d"),
+    ("modify.copy", "shift+c"),
+    ("modify.rotate", "shift+e"),
+    ("modify.mirror", "shift+m"),
+    ("modify.explode", "z"),
+    ("view.zoom_in", "+"),
+    ("view.zoom_out", "-"),
+    ("view.pan_up", "shift+w"),
+    ("view.pan_left", "shift+a"),
+    ("view.pan_down", "shift+s"),
+    ("view.pan_right", "shift+d"),
+];
+
+/// Abweichungen der Vorlage AutoCAD. Quelle: AutoCAD-Befehlskürzel (`acad.pgp`
+/// und Shortcuts-Guide): `LINE`=L, `PLINE`=P, `ARC`=A, `CIRCLE`=C, `TEXT`/
+/// `MTEXT`=T, `MOVE`=M, `ROTATE`=R, `OFFSET`=O, `SCALE`=S, `EXPLODE`=X,
+/// `HATCH`=H, `DIM`=D, `ZOOM`=Z, `INSERT`=I, `BLOCK`=B. Mehrbuchstabige
+/// Kürzel (`TR`, `CO`, `MI`, `EX`) sind nicht tippbar; die Vorlage nimmt die
+/// Umschalt-Ebene (`Umschalt+T` Stutzen, `Umschalt+C` Kopieren, `Umschalt+M`
+/// Spiegeln) bzw. den ersten Buchstaben (`E` Verlängern).
+const VORLAGE_AUTOCAD: &[(&str, &str)] = &[
+    ("draw.line", "l"),
+    ("draw.polyline", "p"),
+    ("draw.arc", "a"),
+    ("draw.circle", "c"),
+    ("draw.text", "t"),
+    ("draw.fill.paint", "h"),
+    ("draw.door", "shift+h"),
+    ("draw.point", ""),
+    ("block.insert", "i"),
+    ("block.create", "b"),
+    ("modify.move", "m"),
+    ("modify.copy", "shift+c"),
+    ("modify.rotate", "r"),
+    ("modify.mirror", "shift+m"),
+    ("modify.offset", "o"),
+    ("modify.scale", "s"),
+    ("modify.extend", "shift+e"),
+    ("modify.explode", "x"),
+    ("modify.trim", "shift+t"),
+    ("dim.linear", "d"),
+    ("view.zoom_extents", "z"),
+    ("view.pan_up", "shift+w"),
+    ("view.pan_left", "shift+a"),
+    ("view.pan_down", "shift+s"),
+    ("view.pan_right", "shift+d"),
+];
+
+/// Die vier eingebauten Vorlagen (T0079): erst die eigene Belegung, dann die
+/// angenäherten Vorgaben von Allplan, ArchiCAD und AutoCAD.
+pub fn vorlagen() -> Vec<KeymapPreset> {
+    vec![
+        KeymapPreset {
+            name: VORLAGEN[0].to_string(),
+            bindings: werkseinstellung_bindungen(),
+        },
+        vorlage(VORLAGEN[1], VORLAGE_ALLPLAN),
+        vorlage(VORLAGEN[2], VORLAGE_ARCHICAD),
+        vorlage(VORLAGEN[3], VORLAGE_AUTOCAD),
+    ]
+}
+
 impl Default for UserPrefs {
     fn default() -> Self {
-        let mut bindings = BTreeMap::new();
-        for a in actions::ACTIONS {
-            if a.key.is_empty() {
-                continue;
-            }
-            // Ziffern und Steuerungstasten gehören keiner Funktion; Funktions-
-            // tasten und Kombinationen sind dagegen genau ihre feste Belegung
-            // (T0056, `docs/TASTEN.md`).
-            if matches!(fest_belegt(a.key), Some(f) if !f.ist_feste_belegung()) {
-                continue;
-            }
-            bindings.insert(a.id.to_string(), vec![a.key.to_string()]);
-        }
-        let werkseinstellung = KeymapPreset {
-            name: WERKSEINSTELLUNG.to_string(),
-            bindings: bindings.clone(),
-        };
+        let bindings = werkseinstellung_bindungen();
         Self {
             hotbar_presets: vec![
                 HotbarPreset::filled(
@@ -687,9 +844,9 @@ impl Default for UserPrefs {
             ],
             active_preset: 0,
             bindings,
-            // Das eingebaute Layout: die Vorgabebelegung, auf die jederzeit
-            // zurückgeschaltet werden kann (früher der Knopf „Werkseinstellungen").
-            keymap_presets: vec![werkseinstellung],
+            // Die vier eingebauten Vorlagen (T0079); die erste ist die
+            // Vorgabebelegung, auf die jederzeit zurückgeschaltet werden kann.
+            keymap_presets: vorlagen(),
             keymap_aktiv: Some(0),
             recent_files: Vec::new(),
             last_dir: String::new(),
@@ -801,11 +958,18 @@ impl UserPrefs {
                     .insert(a.id.to_string(), vec![a.key.to_string()]);
             }
         }
-        // T gehört seit T0009 dem Chat-Protokoll. Das Text-Werkzeug lag früher
-        // auf dieser Taste; eine gespeicherte Belegung würde sie stillschweigend
-        // weiter belegen und in der Tastaturbelegung falsch anzeigen.
-        if let Some(keys) = self.bindings.get_mut("draw.text") {
-            keys.retain(|k| !k.eq_ignore_ascii_case("t"));
+        // T0079: `C` ist das Stutzen, `T` der Text, `Z` das Zerlegen (so steht es
+        // in der Aufgabenstellung). Der Farbeimer lag früher auf `C` und wandert
+        // deshalb auf Umschalt+C — sonst nähme seine gespeicherte Belegung dem
+        // Stutzen die Taste weg. `T` gehörte bis T0009 dem Chat-Protokoll; das
+        // liegt inzwischen auf `^`, eine alte Belegung darf den Text also nicht
+        // mehr von der Taste verdrängen.
+        if let Some(keys) = self.bindings.get_mut("draw.fill.paint") {
+            for k in keys.iter_mut() {
+                if k.eq_ignore_ascii_case("c") {
+                    *k = "shift+c".into();
+                }
+            }
         }
         self.bindings.retain(|_, keys| !keys.is_empty());
         // T0012: „Kopieren" (Zwischenablage) und „Kopieren mit Basispunkt" sind
@@ -851,25 +1015,27 @@ impl UserPrefs {
         if self.active_preset >= self.hotbar_presets.len() {
             self.active_preset = 0;
         }
-        // T0076: Das eingebaute Layout steht immer an erster Stelle und trägt
+        // T0079: Die vier eingebauten Vorlagen stehen immer vorn und tragen
         // immer die Vorgabebelegung — der Rückweg, den früher der Knopf
-        // „Werkseinstellungen" war. Eine alte prefs.json hat es noch nicht.
-        let werk = KeymapPreset {
-            name: WERKSEINSTELLUNG.to_string(),
-            bindings: UserPrefs::default().bindings,
-        };
-        match self
+        // „Werkseinstellungen" war. Eine alte `prefs.json` kennt nur
+        // „Werkseinstellung"; eigene Layouts des Nutzers bleiben **hinter** den
+        // Vorlagen stehen und ihre Reihenfolge bleibt erhalten.
+        let aktiv_vorher = self
+            .keymap_aktiv
+            .and_then(|i| self.keymap_presets.get(i))
+            .map(|p| p.name.clone());
+        let mut eigene: Vec<KeymapPreset> = self
             .keymap_presets
-            .iter()
-            .position(|p| p.name.eq_ignore_ascii_case(WERKSEINSTELLUNG))
-        {
-            Some(0) => self.keymap_presets[0] = werk,
-            Some(i) => {
-                self.keymap_presets.remove(i);
-                self.keymap_presets.insert(0, werk);
-            }
-            None => self.keymap_presets.insert(0, werk),
-        }
+            .drain(..)
+            .filter(|p| !ist_vorlage(&p.name))
+            .collect();
+        let mut presets = vorlagen();
+        presets.append(&mut eigene);
+        self.keymap_presets = presets;
+        // Der gemerkte Index verschiebt sich durch die Vorlagen — über den
+        // Namen wiederfinden, nicht über die alte Zahl.
+        self.keymap_aktiv = aktiv_vorher
+            .and_then(|name| self.keymap_presets.iter().position(|p| p.name == name));
         // Der gemerkte Index muss auf ein vorhandenes Layout zeigen. Eine alte
         // `prefs.json` kennt das Feld nicht — dann gilt das Layout, dessen
         // Belegung der aktuellen entspricht (Vorgabe: die Werkseinstellung).
@@ -1038,16 +1204,16 @@ impl UserPrefs {
         Some(name)
     }
 
-    /// Speichert die **aktuelle** Belegung unter `name`. Der Name
-    /// „Werkseinstellung" ist dem eingebauten Layout vorbehalten; ein
-    /// vorhandener Name wird überschrieben (kein zweiter Eintrag).
+    /// Speichert die **aktuelle** Belegung unter `name`. Die Namen der
+    /// eingebauten Vorlagen sind belegt (T0079); ein anderer vorhandener Name
+    /// wird überschrieben (kein zweiter Eintrag).
     pub fn keymap_speichern(&mut self, name: &str) -> Result<String, String> {
         let name = name.trim();
         if name.is_empty() {
             return Err("Bitte einen Namen angeben".into());
         }
-        if name.eq_ignore_ascii_case(WERKSEINSTELLUNG) {
-            return Err("„Werkseinstellung“ ist das eingebaute Layout".into());
+        if ist_vorlage(name) {
+            return Err(format!("„{name}“ ist eine eingebaute Vorlage"));
         }
         let idx = match self
             .keymap_presets
@@ -1072,11 +1238,11 @@ impl UserPrefs {
         Ok(name.to_string())
     }
 
-    /// Löscht ein gespeichertes Layout. Das eingebaute (erste) bleibt stehen.
-    /// Wird das gerade benutzte gelöscht, bleiben dessen Tasten gültig, aber es
-    /// gilt danach „Eigene Belegung".
+    /// Löscht ein gespeichertes Layout. Die eingebauten Vorlagen bleiben
+    /// stehen (T0079). Wird das gerade benutzte Layout gelöscht, bleiben dessen
+    /// Tasten gültig, aber es gilt danach „Eigene Belegung".
     pub fn keymap_loeschen(&mut self, idx: usize) -> bool {
-        if idx == 0 || idx >= self.keymap_presets.len() {
+        if idx < VORLAGEN.len() || idx >= self.keymap_presets.len() {
             return false;
         }
         self.keymap_presets.remove(idx);
@@ -1134,8 +1300,8 @@ impl UserPrefs {
             .map(|s| s.to_string_lossy().to_string())
             .unwrap_or_default();
         let mut p = KeymapPreset::from_json(&text, &stamm)?;
-        if p.name.eq_ignore_ascii_case(WERKSEINSTELLUNG) {
-            p.name = format!("{WERKSEINSTELLUNG} (importiert)");
+        if ist_vorlage(&p.name) {
+            p.name = format!("{} (importiert)", p.name);
         }
         let bindings = p.bindings.clone();
         let idx = match self
@@ -1486,8 +1652,13 @@ mod tests {
             assert!(!def.tool, "{aktion} ist kein Zeichenwerkzeug");
         }
         // Das Stutzen lag früher ebenfalls auf S — eine Taste trägt genau eine
-        // Funktion, sonst schwenkt und stutzt ein Druck gleichzeitig.
-        assert_eq!(prefs.key_for("modify.trim"), None, "S gehört dem Schwenk");
+        // Funktion, sonst schwenkt und stutzt ein Druck gleichzeitig. Seit
+        // T0079 liegt es auf C („c: Stutzen“ aus der Aufgabenstellung).
+        assert_eq!(
+            prefs.key_for("modify.trim").as_deref(),
+            Some("c"),
+            "das Stutzen gehört auf C"
+        );
     }
 
     /// T0056: Eine Taste trägt genau eine Funktion. Zwei Aktionen auf demselben
@@ -1610,7 +1781,11 @@ mod tests {
         alt.bindings.insert("modify.trim".into(), vec!["s".into()]);
         alt.ensure_defaults();
         assert_eq!(alt.key_for("file.save").as_deref(), Some("ctrl+s"));
-        assert_eq!(alt.key_for("modify.trim"), None, "S gehört jetzt dem Schwenk");
+        assert_eq!(
+            alt.key_for("modify.trim").as_deref(),
+            Some("c"),
+            "S fällt weg, C kommt aus der Vorgabe nach"
+        );
         assert_eq!(alt.action_for_key("s").as_deref(), Some("view.pan_down"));
     }
 
@@ -1631,7 +1806,7 @@ mod tests {
         assert_eq!(prefs.keymap_aktiv(), Some(0));
 
         let mut geaendert = prefs.clone();
-        geaendert.bind("draw.wall", "t");
+        geaendert.bind("draw.wall", "ä");
         assert_eq!(
             geaendert.keymap_aktiv(),
             None,
@@ -1644,32 +1819,40 @@ mod tests {
     #[test]
     fn layout_wird_gespeichert_und_wieder_angewendet() {
         let mut prefs = UserPrefs::default();
-        prefs.bind("draw.wall", "t");
+        prefs.bind("draw.wall", "ä");
         let name = prefs.keymap_speichern("Meins").expect("Layout speichern");
         assert_eq!(name, "Meins");
-        assert_eq!(prefs.keymap_aktiv(), Some(1));
+        // Hinter den vier eingebauten Vorlagen (T0079).
+        assert_eq!(prefs.keymap_aktiv(), Some(4));
 
         // Weitere Änderung von Hand: kein Layout gilt mehr.
-        prefs.bind("draw.wall", "ä");
+        prefs.bind("draw.wall", "ü");
         assert_eq!(prefs.keymap_aktiv(), None);
 
         // Zurück auf das gespeicherte Layout.
-        assert_eq!(prefs.keymap_anwenden(1).as_deref(), Some("Meins"));
-        assert_eq!(prefs.action_for_key("t").as_deref(), Some("draw.wall"));
-        assert!(prefs.action_for_key("ä").is_none(), "die spätere Taste blieb belegt");
+        assert_eq!(prefs.keymap_anwenden(4).as_deref(), Some("Meins"));
+        assert_eq!(prefs.action_for_key("ä").as_deref(), Some("draw.wall"));
+        assert!(prefs.action_for_key("ü").is_none(), "die spätere Taste blieb belegt");
 
-        // Und zurück auf die Werkseinstellung (früher „Werkseinstellungen").
+        // Und zurück auf die Vorlage JoJa-CAD (früher „Werkseinstellungen").
         assert_eq!(prefs.keymap_anwenden(0).as_deref(), Some(WERKSEINSTELLUNG));
         assert_eq!(prefs.key_for("draw.wall").as_deref(), Some("g"));
-        assert!(prefs.action_for_key("t").is_none());
+        assert!(prefs.action_for_key("ä").is_none());
     }
 
     #[test]
     fn werkseinstellung_laesst_sich_nicht_ueberschreiben() {
         let mut prefs = UserPrefs::default();
+        for name in VORLAGEN {
+            assert!(
+                prefs.keymap_speichern(name).is_err(),
+                "die Vorlage {name} darf nicht überschreibbar sein"
+            );
+        }
+        // Der frühere Name der ersten Vorlage bleibt ebenfalls gesperrt.
         assert!(prefs.keymap_speichern("Werkseinstellung").is_err());
         assert!(prefs.keymap_speichern("  ").is_err());
-        assert_eq!(prefs.keymap_presets.len(), 1);
+        assert_eq!(prefs.keymap_presets.len(), VORLAGEN.len());
     }
 
     /// Export und Import sind zueinander passend: die Datei trägt Name und
@@ -1678,7 +1861,7 @@ mod tests {
     fn layout_wird_exportiert_und_importiert() {
         let path = wegwerf_datei("export");
         let mut prefs = UserPrefs::default();
-        prefs.bind("draw.wall", "t");
+        prefs.bind("draw.wall", "ä");
         prefs.keymap_speichern("Geteilt").unwrap();
         let idx = prefs.keymap_aktiv().unwrap();
         prefs.keymap_exportieren(idx, &path).expect("Export");
@@ -1686,7 +1869,7 @@ mod tests {
         let mut andere = UserPrefs::default();
         let name = andere.keymap_importieren(&path).expect("Import");
         assert_eq!(name, "Geteilt");
-        assert_eq!(andere.action_for_key("t").as_deref(), Some("draw.wall"));
+        assert_eq!(andere.action_for_key("ä").as_deref(), Some("draw.wall"));
         assert_eq!(andere.keymap_aktiv().map(|i| andere.keymap_presets[i].name.clone()).as_deref(), Some("Geteilt"));
         // Die Werkseinstellung bleibt dabei erhalten und an erster Stelle.
         assert_eq!(andere.keymap_presets[0].name, WERKSEINSTELLUNG);
@@ -1716,19 +1899,25 @@ mod tests {
     #[test]
     fn layout_laesst_sich_loeschen_aber_nicht_das_benutzte() {
         let mut prefs = UserPrefs::default();
-        prefs.bind("draw.wall", "t");
-        prefs.keymap_speichern("Eins").unwrap();
         prefs.bind("draw.wall", "ä");
+        prefs.keymap_speichern("Eins").unwrap();
+        prefs.bind("draw.wall", "ü");
         prefs.keymap_speichern("Zwei").unwrap();
-        assert_eq!(prefs.keymap_presets.len(), 3);
+        assert_eq!(prefs.keymap_presets.len(), 6);
         // „Zwei" ist das benutzte Layout; es lässt sich löschen, danach gilt
         // „Eigene Belegung" — die Tasten bleiben unverändert gültig.
-        assert_eq!(prefs.keymap_aktiv(), Some(2));
-        assert!(!prefs.keymap_loeschen(0), "die Werkseinstellung bleibt stehen");
-        assert!(prefs.keymap_loeschen(2), "das benutzte Layout muss weggehen");
+        assert_eq!(prefs.keymap_aktiv(), Some(5));
+        for i in 0..VORLAGEN.len() {
+            assert!(
+                !prefs.keymap_loeschen(i),
+                "die eingebaute Vorlage {} bleibt stehen",
+                VORLAGEN[i]
+            );
+        }
+        assert!(prefs.keymap_loeschen(5), "das benutzte Layout muss weggehen");
         assert_eq!(prefs.keymap_aktiv(), None);
-        assert_eq!(prefs.action_for_key("ä").as_deref(), Some("draw.wall"));
-        assert_eq!(prefs.keymap_presets.len(), 2);
+        assert_eq!(prefs.action_for_key("ü").as_deref(), Some("draw.wall"));
+        assert_eq!(prefs.keymap_presets.len(), 5);
     }
 
     /// T0076: „Speichern" nimmt das neue Layout auch dann in die Auswahl auf,
@@ -1739,19 +1928,19 @@ mod tests {
         let mut prefs = UserPrefs::default();
         // Unveränderte Belegung = Werkseinstellung, gespeichert als „Mein".
         prefs.keymap_speichern("Mein").unwrap();
-        assert_eq!(prefs.keymap_aktiv(), Some(1));
+        assert_eq!(prefs.keymap_aktiv(), Some(4));
         assert_eq!(
             prefs
                 .keymap_aktiv()
                 .map(|i| prefs.keymap_presets[i].name.clone())
                 .as_deref(),
             Some("Mein"),
-            "die Auswahl zeigt die Werkseinstellung statt des gespeicherten Namens"
+            "die Auswahl zeigt die erste Vorlage statt des gespeicherten Namens"
         );
 
         // Ein zweiter Name mit derselben Belegung wird ebenso übernommen.
         prefs.keymap_speichern("Mein 2").unwrap();
-        assert_eq!(prefs.keymap_aktiv(), Some(2));
+        assert_eq!(prefs.keymap_aktiv(), Some(5));
 
         // Und der Weg durch die Datei behält ihn.
         let roh = serde_json::to_string(&prefs).unwrap();
@@ -1771,10 +1960,10 @@ mod tests {
     fn handaenderung_gilt_als_eigene_belegung() {
         let mut prefs = UserPrefs::default();
         prefs.keymap_speichern("Mein").unwrap();
-        prefs.bind("draw.line", "t");
+        prefs.bind("draw.line", "ä");
         assert_eq!(prefs.keymap_aktiv(), None);
         prefs.keymap_speichern("Mein").unwrap();
-        assert_eq!(prefs.keymap_aktiv(), Some(1));
+        assert_eq!(prefs.keymap_aktiv(), Some(4));
     }
 
     /// T0076: Nur eine Belegung, die in keinem Layout steht, gilt als
@@ -1782,16 +1971,16 @@ mod tests {
     #[test]
     fn ungespeicherte_belegung_wird_erkannt() {
         let mut prefs = UserPrefs::default();
-        assert!(!prefs.keymap_ungespeichert(), "frisch = Werkseinstellung");
-        prefs.bind("draw.wall", "t");
+        assert!(!prefs.keymap_ungespeichert(), "frisch = Vorlage JoJa-CAD");
+        prefs.bind("draw.wall", "ä");
         assert!(prefs.keymap_ungespeichert());
         prefs.keymap_speichern("Meins").unwrap();
         assert!(!prefs.keymap_ungespeichert());
         // Ein Layout löschen, dessen Tasten kein anderes trägt: eigene Belegung.
-        prefs.bind("draw.wall", "ä");
+        prefs.bind("draw.wall", "ü");
         prefs.keymap_speichern("Zwei").unwrap();
         assert!(!prefs.keymap_ungespeichert());
-        assert!(prefs.keymap_loeschen(2));
+        assert!(prefs.keymap_loeschen(5));
         assert!(
             prefs.keymap_ungespeichert(),
             "nach dem Löschen ist die Belegung in keinem Layout"
@@ -1802,13 +1991,217 @@ mod tests {
     #[test]
     fn layouts_werden_mit_gespeichert() {
         let mut prefs = UserPrefs::default();
-        prefs.bind("draw.wall", "t");
+        prefs.bind("draw.wall", "ä");
         prefs.keymap_speichern("Mit").unwrap();
         let roh = serde_json::to_string(&prefs).unwrap();
         let wieder: UserPrefs = serde_json::from_str(&roh).unwrap();
-        assert_eq!(wieder.keymap_presets.len(), 2);
+        assert_eq!(wieder.keymap_presets.len(), VORLAGEN.len() + 1);
         assert!(wieder.keymap_presets.iter().any(|p| p.name == "Mit"));
         assert_eq!(wieder.keymap_presets[0].name, WERKSEINSTELLUNG);
+    }
+
+    /// T0079: Die vier Vorlagen stehen in fester Reihenfolge vorn — JoJa-CAD,
+    /// Allplan, ArchiCAD, AutoCAD.
+    #[test]
+    fn vier_vorlagen_stehen_vorn() {
+        let prefs = UserPrefs::default();
+        let namen: Vec<&str> = prefs
+            .keymap_presets
+            .iter()
+            .map(|p| p.name.as_str())
+            .collect();
+        assert_eq!(namen, VORLAGEN.to_vec());
+        // Jede Vorlage ist eine eigene Belegung — sonst wäre sie überflüssig.
+        for i in 0..VORLAGEN.len() {
+            for j in (i + 1)..VORLAGEN.len() {
+                assert_ne!(
+                    prefs.keymap_presets[i].bindings, prefs.keymap_presets[j].bindings,
+                    "Vorlage {} und {} sind identisch",
+                    VORLAGEN[i], VORLAGEN[j]
+                );
+            }
+        }
+    }
+
+    /// T0079: Die Werkseinstellung belegt `c` mit Stutzen, `t` mit Text und `z`
+    /// mit Zerlegen (Aufgabenstellung). Der Farbeimer lag auf `C` und weicht
+    /// deshalb auf Umschalt+C aus.
+    #[test]
+    fn vorlage_jjcad_belegt_c_t_z() {
+        let prefs = UserPrefs::default();
+        for (taste, aktion) in [
+            ("c", "modify.trim"),
+            ("t", "draw.text"),
+            ("z", "modify.explode"),
+            ("shift+c", "draw.fill.paint"),
+        ] {
+            assert_eq!(
+                prefs.action_for_key(taste).as_deref(),
+                Some(aktion),
+                "Taste {taste} muss {aktion} tragen"
+            );
+            assert_eq!(
+                prefs.key_for(aktion).as_deref(),
+                Some(taste),
+                "{aktion} muss auf {taste} liegen"
+            );
+        }
+    }
+
+    /// T0079: Jede Vorlage gehorcht der Regel „eine Taste, eine Funktion" —
+    /// der Zusammenbau nimmt der vorherigen Funktion die Taste weg. Geprüft
+    /// wird der **ganze** Schlüssel, auch `shift+…` und Kombinationen.
+    #[test]
+    fn jede_vorlage_belegt_jede_taste_genau_einmal() {
+        for p in vorlagen() {
+            let mut gesehen: BTreeMap<String, String> = BTreeMap::new();
+            for (aktion, keys) in &p.bindings {
+                for key in keys {
+                    let k = key.to_lowercase();
+                    if let Some(alt) = gesehen.insert(k.clone(), aktion.clone()) {
+                        panic!("Vorlage {}: Taste {k} doppelt ({alt}, {aktion})", p.name);
+                    }
+                }
+            }
+            assert!(
+                gesehen.len() >= 15,
+                "Vorlage {} belegt nur {} Tasten",
+                p.name,
+                gesehen.len()
+            );
+        }
+    }
+
+    /// T0079: Die Vorlagen belegen nur Tasten, die auch ankommen — Einzelzeichen,
+    /// Umschalt+Zeichen (Schicht 2) oder die feste Belegung (Schicht 3).
+    /// `;` oder `=` (ArchiCAD, AutoCAD) sind auf einer deutschen Tastatur
+    /// Umschaltzeichen einer anderen Taste und werden nie ausgewertet.
+    #[test]
+    fn vorlagen_belegen_nur_erreichbare_tasten() {
+        for p in vorlagen() {
+            for (aktion, keys) in &p.bindings {
+                for key in keys {
+                    let k = key.to_lowercase();
+                    let erreichbar = match k.strip_prefix("shift+") {
+                        Some(rest) => rest.chars().count() == 1,
+                        None => k.chars().count() == 1 || fest_belegt(&k).is_some(),
+                    };
+                    assert!(
+                        erreichbar,
+                        "Vorlage {}: {aktion} trägt die nicht erreichbare Taste {key}",
+                        p.name
+                    );
+                }
+            }
+        }
+    }
+
+    /// T0079: Stichproben der fremden Vorgaben. Quellen stehen in den
+    /// Kommentaren über den Abweichungstabellen (`VORLAGE_ALLPLAN` usw.).
+    #[test]
+    fn vorlagen_folgen_den_vorgaben_der_fremden_programme() {
+        let v = vorlagen();
+        let traeger = |idx: usize, key: &str| -> Option<String> {
+            v[idx]
+                .bindings
+                .iter()
+                .find(|(_, keys)| keys.iter().any(|k| k.eq_ignore_ascii_case(key)))
+                .map(|(aktion, _)| aktion.clone())
+        };
+        // Allplan: Strg+W Wand, Strg+T Tür, Strg+F Fenster, Strg+L Linie,
+        // Strg+M Maßlinie.
+        for (key, aktion) in [
+            ("w", "draw.wall"),
+            ("t", "draw.door"),
+            ("f", "draw.window"),
+            ("l", "draw.line"),
+            ("m", "dim.linear"),
+            ("shift+t", "draw.text"),
+        ] {
+            assert_eq!(traeger(1, key).as_deref(), Some(aktion), "Allplan · {key}");
+        }
+        // ArchiCAD: W Wand, , Fenster, M Tür, L Polylinie, Umschalt+L Linie,
+        // K Text, J Maß, O Versetzen, D Verschieben, Umschalt+C Kopieren.
+        for (key, aktion) in [
+            ("w", "draw.wall"),
+            (",", "draw.window"),
+            ("m", "draw.door"),
+            ("l", "draw.polyline"),
+            ("shift+l", "draw.line"),
+            ("k", "draw.text"),
+            ("j", "dim.linear"),
+            ("o", "modify.offset"),
+            ("d", "modify.move"),
+            ("shift+c", "modify.copy"),
+        ] {
+            assert_eq!(traeger(2, key).as_deref(), Some(aktion), "ArchiCAD · {key}");
+        }
+        // AutoCAD: L Linie, P Polylinie, A Bogen, C Kreis, T Text, M Move,
+        // O Offset, S Scale, X Explode, H Hatch, I Insert, D Bemaßung, Z Zoom.
+        for (key, aktion) in [
+            ("l", "draw.line"),
+            ("p", "draw.polyline"),
+            ("a", "draw.arc"),
+            ("c", "draw.circle"),
+            ("t", "draw.text"),
+            ("m", "modify.move"),
+            ("r", "modify.rotate"),
+            ("o", "modify.offset"),
+            ("s", "modify.scale"),
+            ("x", "modify.explode"),
+            ("h", "draw.fill.paint"),
+            ("i", "block.insert"),
+            ("d", "dim.linear"),
+            ("z", "view.zoom_extents"),
+        ] {
+            assert_eq!(traeger(3, key).as_deref(), Some(aktion), "AutoCAD · {key}");
+        }
+    }
+
+    /// T0079: Eine alte `prefs.json` (Stutzen ohne Taste, Farbeimer auf C, Text
+    /// ohne T, Zerlegen ohne Taste) bekommt beim Laden die neuen Werkstasten.
+    #[test]
+    fn alte_belegung_uebernimmt_die_neuen_werkstasten() {
+        let mut alt = UserPrefs::default();
+        alt.bindings.remove("modify.trim");
+        alt.bindings.remove("modify.explode");
+        alt.bindings.remove("draw.text");
+        alt.bindings.insert("draw.fill.paint".into(), vec!["c".into()]);
+        alt.ensure_defaults();
+        assert_eq!(
+            alt.action_for_key("c").as_deref(),
+            Some("modify.trim"),
+            "C muss das Stutzen tragen"
+        );
+        assert_eq!(alt.key_for("draw.fill.paint").as_deref(), Some("shift+c"));
+        assert_eq!(alt.action_for_key("t").as_deref(), Some("draw.text"));
+        assert_eq!(alt.action_for_key("z").as_deref(), Some("modify.explode"));
+    }
+
+    /// T0079: Eigene Layouts bleiben **hinter** den Vorlagen, und die Auswahl
+    /// wandert mit — sonst zeigte sie nach dem Laden auf eine fremde Vorlage.
+    #[test]
+    fn eigene_layouts_bleiben_hinter_den_vorlagen() {
+        let mut prefs = UserPrefs::default();
+        prefs.bind("draw.wall", "ä");
+        prefs.keymap_speichern("Büro").unwrap();
+        // Datei aus der Zeit vor T0079: „Werkseinstellung" und „Büro".
+        let mut roh = serde_json::to_value(&prefs).unwrap();
+        roh["keymap_presets"] = serde_json::json!([
+            {"name": "Werkseinstellung", "bindings": prefs.bindings},
+            {"name": "Büro", "bindings": prefs.bindings},
+        ]);
+        roh["keymap_aktiv"] = serde_json::json!(1);
+        let mut wieder: UserPrefs = serde_json::from_value(roh).unwrap();
+        wieder.ensure_defaults();
+        assert_eq!(wieder.keymap_presets.len(), VORLAGEN.len() + 1);
+        assert_eq!(wieder.keymap_presets[0].name, WERKSEINSTELLUNG);
+        assert_eq!(wieder.keymap_presets[4].name, "Büro");
+        assert_eq!(
+            wieder.keymap_aktiv(),
+            Some(4),
+            "die Auswahl zeigt auf eine Vorlage statt auf das eigene Layout"
+        );
     }
 
     #[test]

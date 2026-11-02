@@ -49,9 +49,12 @@ fest.** Keine Taste gehört zwei Schichten.
   sich nicht umbelegen und war im Tastenbild unsichtbar.
   Gehalten bewegt die Taste die Ansicht laufend; ein einzelner Aufruf (Hotbar,
   MCP-freier Weg über `App::run_action`) rückt sie um `SCHWENK_SCHRITT_PX` weiter.
-- **`S` gehört dem Schwenk, nicht dem Stutzen.** `modify.trim` hat deshalb kein
-  Werkkürzel mehr (erreichbar über Ribbon, Inventar, Hotbar, Tastaturbelegung).
-  Eine alte `prefs.json` mit `Stutzen = S` wird beim Laden bereinigt.
+- **`S` gehört dem Schwenk, nicht dem Stutzen** — das Stutzen liegt seit T0079
+  auf `C`. Eine alte `prefs.json` mit `Stutzen = S` wird beim Laden bereinigt.
+- **`C` = Stutzen, `T` = Text, `Z` = Zerlegen** (T0079). Der Farbeimer lag
+  vorher auf `C` und weicht deshalb auf `Umschalt+C`; seine alte Belegung wird
+  beim Laden umgeschrieben. `T` lag zwischenzeitlich beim Chat-Protokoll — das
+  sitzt seit T0009 auf `^` (Taste unter ESC).
 - **`V` gehört dem Verschieben** (`modify.move`, so steht es in der Bedienung);
   das Volumen liegt auf `Umschalt+V`. Auch das wird beim Laden bereinigt.
 - **`Umschalt+F3` schaltet die Leistungsanzeige** (T0068): Abstand und Rechenzeit
@@ -103,9 +106,13 @@ Unter dem Tastenbild steht die Layoutzeile: **Layout** (Auswahl), **Speichern �
 **Importieren …**, **Exportieren …**, **Löschen**. Sie ersetzt den früheren
 Knopf „Werkseinstellungen".
 
-- Das erste Layout heißt **Werkseinstellung** und trägt immer die
-  Vorgabebelegung. Es lässt sich nicht überschreiben (der Name ist belegt) und
-  nicht löschen — es ist der Rückweg auf die Werkseinstellung.
+- Die **ersten vier Layouts sind eingebaute Vorlagen** (T0079): *Vorlage
+  JoJa-CAD*, *Vorlage Allplan*, *Vorlage ArchiCAD*, *Vorlage AutoCAD*. Sie
+  tragen immer die unten aufgeführten Belegungen, lassen sich nicht
+  überschreiben (die Namen sind belegt) und nicht löschen — sie sind der
+  Rückweg auf eine bekannte Belegung. Eigene Layouts stehen dahinter.
+  Der frühere Name *Werkseinstellung* bleibt ebenfalls gesperrt und wird beim
+  Laden durch *Vorlage JoJa-CAD* ersetzt.
 - **Speichern …** legt die aktuelle Belegung unter einem Namen ab; ein
   vorhandener Name wird überschrieben. Ein Layout ist eine Momentaufnahme: wer
   danach eine Taste ändert, hat „Eigene Belegung", bis er wieder ein Layout
@@ -125,13 +132,56 @@ Knopf „Werkseinstellungen".
   Ungespeichert heißt: die Belegung steht in **keinem** Layout
   (`UserPrefs::keymap_ungespeichert`).
 - **Löschen** entfernt das in der Auswahl stehende gespeicherte Layout; die
-  Tasten bleiben gültig, danach gilt „Eigene Belegung". Die Werkseinstellung
-  lässt sich nicht löschen.
+  Tasten bleiben gültig, danach gilt „Eigene Belegung". Die eingebauten
+  Vorlagen lassen sich nicht löschen.
 - **Exportieren …** schreibt die **aktuelle** Belegung als `.json`
   (`{"name": …, "bindings": {aktion: [tasten]}}`), **Importieren …** liest sie
   wieder ein und wendet sie sofort an. Ein Import mit nackter Belegung
   (`{"draw.line": ["l"]}`) ist erlaubt, der Name kommt dann vom Dateinamen.
   Gespeichert wird in `prefs.json` unter `keymap_presets`.
+
+## Die vier Vorlagen (T0079)
+
+Ausgangspunkt jeder Vorlage ist die Belegung von JoJa-CAD; die fremden Vorlagen
+tragen nur die Tasten, in denen sich Allplan, ArchiCAD und AutoCAD unterscheiden
+(`persist::VORLAGE_*`, Quellen in den Kommentaren dort). Tastenkombinationen
+(`Strg+L` …) sind in JoJa-CAD fest verdrahtet — wo ein fremdes Programm eine
+Kombination vorgibt, nimmt die Vorlage den Buchstaben dahinter bzw. die
+Umschalt-Ebene.
+
+| Funktion | JoJa-CAD | Allplan | ArchiCAD | AutoCAD |
+|---|---|---|---|---|
+| Linie | `L` | `L` | `Umschalt+L` | `L` |
+| Polylinie | `O` | `O` | `L` | `P` |
+| Kreis | `K` | `K` | `C` | `C` |
+| Bogen | – | – | – | `A` |
+| Text | `T` | `Umschalt+T` | `K` | `T` |
+| Maß | `M` | `M` | `J` | `D` |
+| Wand | `G` | `W` | `W` | `G` |
+| Tür | `H` | `T` | `M` | `Umschalt+H` |
+| Fenster | `J` | `F` | `,` | `J` |
+| Treppe | `B` | `B` | `.` | – (Block `B`) |
+| Farbeimer | `Umschalt+C` | `Umschalt+C` | `H` | `H` |
+| Verschieben | `V` | `V` | `D` | `M` |
+| Kopieren (Basispunkt) | `Strg+Umschalt+C` | `Strg+Umschalt+C` | `Umschalt+C` | `Umschalt+C` |
+| Drehen | `R` | `R` | `Umschalt+E` | `R` |
+| Spiegeln | `F` | `Umschalt+F` | `Umschalt+M` | `Umschalt+M` |
+| Stutzen | `C` | `C` | – | `Umschalt+T` |
+| Verlängern | `X` | `X` | `X` | `Umschalt+E` |
+| Versetzen | – | – | `O` | `O` |
+| Zerlegen | `Z` | `Z` | `Z` | `X` |
+| Skalieren | – | – | – | `S` |
+| Zoom | – | – | `+` / `-` | `Z` (Alles zeigen) |
+| Ansichtsschwenk | `W` `A` `S` `D` | `Umschalt+…` | `Umschalt+…` | `Umschalt+…` |
+
+Quellen: Allplan-Kurzanleitung „Shortcuts" (deutsch: Linie `Strg+L`, Maßlinie
+`Strg+M`, Wand `Strg+W`, Decke `Strg+D`, Tür `Strg+T`, Fenster `Strg+F`);
+„ARCHICAD Default Keyboard Shortcuts" von Graphisoft (Wand `W`, Tür `M`,
+Fenster `,`, Polylinie `L`, Linie `Umschalt+L`, Text `K`, Maß `J`, Versetzen
+`O`); AutoCAD-Befehlskürzel (`LINE`=L, `PLINE`=P, `ARC`=A, `CIRCLE`=C,
+`MOVE`=M, `OFFSET`=O, `SCALE`=S, `EXPLODE`=X, `HATCH`=H, `DIM`=D, `ZOOM`=Z).
+Zeichen, die JoJa-CAD nicht auswertet (`;`, `=`, `’`), sind bewusst nicht
+übernommen.
 
 ## Für Entwickler
 
@@ -174,6 +224,15 @@ Knopf „Werkseinstellungen".
 | Funktion liegt auf mehreren Tasten | `dialogs::tests_tastatur::funktion_laesst_sich_mehrfach_platzieren` |
 | Bedienung nur als Tooltip am i | `dialogs::tests_tastatur::bedienung_steht_als_tooltip_am_info_symbol` |
 | Werkseinstellung ist das erste Layout | `persist::tests::werkseinstellung_ist_das_erste_layout` |
+| Vier Vorlagen stehen vorn | `persist::tests::vier_vorlagen_stehen_vorn` |
+| Werkstasten `C`/`T`/`Z` | `persist::tests::vorlage_jjcad_belegt_c_t_z` |
+| Eine Taste = eine Funktion in jeder Vorlage | `persist::tests::jede_vorlage_belegt_jede_taste_genau_einmal` |
+| Vorlagen belegen nur erreichbare Tasten | `persist::tests::vorlagen_belegen_nur_erreichbare_tasten` |
+| Fremde Vorgaben (Stichproben) | `persist::tests::vorlagen_folgen_den_vorgaben_der_fremden_programme` |
+| Alte Belegung bekommt `C`/`T`/`Z` nach | `persist::tests::alte_belegung_uebernimmt_die_neuen_werkstasten` |
+| Eigene Layouts bleiben hinter den Vorlagen | `persist::tests::eigene_layouts_bleiben_hinter_den_vorlagen` |
+| Menü zeigt die vier Vorlagen | `dialogs::tests_tastatur::layoutmenue_zeigt_die_vier_vorlagen` |
+| Eingebaute Vorlage nicht löschbar | `dialogs::tests_tastatur::eingebaute_vorlage_laesst_sich_nicht_loeschen` |
 | Speichern/Anwenden/Wechseln | `persist::tests::layout_wird_gespeichert_und_wieder_angewendet` |
 | Export/Import (auch nackte Belegung) | `persist::tests::layout_wird_exportiert_und_importiert`, `…::import_nimmt_auch_eine_nackte_belegung` |
 | Fenster: keine Funktionsauswahl, Layoutzeile da | `dialogs::tests_tastatur::tastaturfenster_hat_keine_funktionsauswahl_mehr` |

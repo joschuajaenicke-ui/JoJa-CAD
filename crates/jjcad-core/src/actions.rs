@@ -113,8 +113,8 @@ pub const ACTIONS: &[ActionDef] = &[
     act!("draw.fill", "Füllfläche", Zeichnen, "fill", "", "Geschlossene Kontur klicken", true),
     act!("draw.fill.boundary", "Fläche nach Umriss", Zeichnen, "fill", "i", "Umriss abfahren: Punkte klicken, Enter beendet", true),
     act!("draw.fill.points", "Fläche nach Punktfolge", Zeichnen, "fill", "shift+i", "Punkte klicken, Enter schließt die Fläche", true),
-    act!("draw.fill.paint", "Farbeimer", Zeichnen, "fill", "c", "In eine leere Fläche klicken — die Umgrenzung wird ermittelt", true),
-    act!("draw.text", "Text", Zeichnen, "text", "", "Position klicken, dann Text eingeben", true),
+    act!("draw.fill.paint", "Farbeimer", Zeichnen, "fill", "shift+c", "In eine leere Fläche klicken — die Umgrenzung wird ermittelt", true),
+    act!("draw.text", "Text", Zeichnen, "text", "t", "Position klicken, dann Text eingeben", true),
     act!("draw.ellipse", "Ellipse", Zeichnen, "ellipse", "", "Mittelpunkt und Achsen klicken", true),
 
     // Architektur
@@ -130,12 +130,15 @@ pub const ACTIONS: &[ActionDef] = &[
         "Geschlossene Kontur klicken — der Körper erhält eine Höhe",
         true
     ),
+    // Kein eigenes Kürzel: `shift+v` gehört `draw.volume` (T0079). Eine Taste
+    // darf nur eine Funktion tragen — vorher stand die Punktfolge auf derselben
+    // Taste und war über sie nie erreichbar.
     act!(
         "draw.volume.points",
         "Volumen nach Punktfolge",
         Architektur,
         "volume",
-        "shift+v",
+        "",
         "Punkte klicken, Enter schließt den Körper",
         true
     ),
@@ -182,10 +185,10 @@ pub const ACTIONS: &[ActionDef] = &[
     act!("modify.mirror", "Spiegeln", Aendern, "mirror", "f", "Auswahl, Spiegelachse", true),
     act!("modify.scale", "Skalieren", Aendern, "scale", "", "Auswahl, Zentrum, Faktor", true),
     act!("modify.offset", "Versetzen", Aendern, "offset", "", "Abstand und Seite klicken", true),
-    act!("modify.trim", "Stutzen", Aendern, "trim", "", "Zu stutzendes Segment anklicken", true),
+    act!("modify.trim", "Stutzen", Aendern, "trim", "c", "Zu stutzendes Segment anklicken", true),
     act!("modify.extend", "Verlängern", Aendern, "extend", "x", "Ende anklicken, das verlängert wird", true),
     act!("modify.erase", "Löschen", Aendern, "erase", "entf", "Auswahl löschen", false),
-    act!("modify.explode", "Zerlegen", Aendern, "explode", "", "Blöcke/Bauteile in Einzelelemente, Text in Linien zerlegen", false),
+    act!("modify.explode", "Zerlegen", Aendern, "explode", "z", "Blöcke/Bauteile in Einzelelemente, Text in Linien zerlegen", false),
     act!(
         "text.format",
         "Text auszeichnen",
