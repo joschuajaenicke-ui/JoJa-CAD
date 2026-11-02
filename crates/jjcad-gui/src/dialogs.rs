@@ -2614,6 +2614,12 @@ mod tests_tastatur {
     fn app_mit_tastatur() -> (App, egui::Context) {
         let ctx = egui::Context::default();
         let mut app = App::with_ctx(ctx.clone());
+        // `App::with_ctx` liest die `prefs.json` **des Rechners**. Die Tests dieser
+        // Gruppe prüfen die Werkseinstellung (eingebaute Vorlagen, feste Belegung);
+        // steht beim Nutzer „Eigene Belegung“ (`keymap_aktiv = None`) oder ein
+        // eigenes Layout, schlugen sie fehl — und `ship-card.sh` rollte `master`
+        // zurück (T0083). Deshalb hier die Vorgaben selbst setzen.
+        app.prefs = jjcad_core::persist::UserPrefs::default();
         app.ui.keymap_open = true;
         // mehrere Bilder: das Fenster setzt Größe und Lage erst nach dem
         // ersten Aufbau (sonst liegen die Tastenrechtecke noch falsch)
