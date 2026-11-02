@@ -4568,6 +4568,18 @@ fn rail(ui: &mut egui::Ui, icon: &str, tooltip: &str, chevron: &str) -> bool {
         self.release_keyboard_focus();
     }
 
+    /// Setzt den Drehpunkt der Einfüge-Vorschau (T0087).
+    ///
+    /// Die Einstellung wirkt **sofort**, auch auf eine laufende Vorschau: sonst
+    /// bliebe ein im Einstellungsfenster umgestellter Modus unsichtbar, bis der
+    /// Nutzer das Einfügen erneut startet — er hielte die Einstellung für wirkungslos.
+    pub fn set_paste_pivot(&mut self, pivot: jjcad_core::persist::PastePivot) {
+        self.prefs.paste_pivot = pivot;
+        if let Some(g) = self.ghost.as_mut() {
+            g.pivot = pivot;
+        }
+    }
+
     fn pointer_world_fallback(&self) -> Option<V2> {
         Some(self.current_view().center)
     }
@@ -8037,7 +8049,9 @@ mod tests_drehpunkt_einfuegen {
     }
 
     /// Die Vorschau übernimmt den eingestellten Drehpunkt — nicht nur das
-    /// Einfügen, auch die Voranzeige arbeitet damit.
+    /// Einfügen, auch die Voranzeige arbeitet damit. T0087: das Umschalten wirkt
+    /// **sofort**, auch auf eine laufende Vorschau — sonst hielte der Nutzer die
+    /// Einstellung im Einstellungsfenster für wirkungslos.
     #[test]
     fn vorschau_uebernimmt_den_eingestellten_drehpunkt() {
         let mut app = rechteck_app(jjcad_core::persist::PastePivot::Center);
@@ -8050,14 +8064,17 @@ mod tests_drehpunkt_einfuegen {
             "die Vorschau kennt den eingestellten Drehpunkt nicht"
         );
 
-        // Umschalten wirkt auf die nächste Vorschau, nicht rückwirkend auf eine
-        // laufende — der Modus wird beim Start der Vorschau übernommen.
-        app.cancel_ghost();
-        app.prefs.paste_pivot = jjcad_core::persist::PastePivot::BasePoint;
-        app.start_ghost_paste();
+        // Umschalten bei laufender Vorschau nimmt die Vorschau sofort mit.
+        app.set_paste_pivot(jjcad_core::persist::PastePivot::BasePoint);
         assert_eq!(
             app.ghost.as_ref().map(|g| g.pivot),
-            Some(jjcad_core::persist::PastePivot::BasePoint)
+            Some(jjcad_core::persist::PastePivot::BasePoint),
+            "die laufende Vorschau behält den alten Drehpunkt"
+        );
+        assert_eq!(
+            app.prefs.paste_pivot,
+            jjcad_core::persist::PastePivot::BasePoint,
+            "die Einstellung wurde nicht übernommen"
         );
     }
 }

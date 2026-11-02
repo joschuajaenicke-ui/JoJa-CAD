@@ -59,11 +59,12 @@ einsehbar und dort frei änderbar (Ribbon ▸ Ansicht ▸ „Tasten").
     Tastaturbelegung: wer „Drehen" umlegt, dreht auch die Vorschau mit der neuen
     Taste. Der Einfügepunkt ist exakt der Ankerpunkt der Vorschau.
     Beim Einfügen aus der **Zwischenablage** bestimmt die Einstellung **Bedienung ▸
-    „Drehpunkt"**, welcher Punkt dabei am Fadenkreuz steht: **„Basispunkt"** (Vorgabe)
-    hält den mitkopierten Basispunkt dort — die Vorschau dreht um ihren Mittelpunkt
-    und springt deshalb beim Drehen um das Fadenkreuz; **„Mittelpunkt"** hält die
-    untere linke Ecke der gedrehten Auswahl am Fadenkreuz, die Vorschau bleibt also
-    immer oben rechts davon.
+    „Drehpunkt"**, welcher Punkt dabei am Fadenkreuz steht: **„Mittelpunkt"** (Vorgabe)
+    hält die untere linke Ecke der gedrehten Auswahl am Fadenkreuz, die Vorschau bleibt
+    also immer oben rechts davon; **„Basispunkt"** hält den mitkopierten Basispunkt dort —
+    die Vorschau dreht um ihren Mittelpunkt und springt deshalb beim Drehen um das
+    Fadenkreuz. Ein Wechsel in den Einstellungen wirkt sofort, auch auf eine bereits
+    laufende Vorschau.
 14. **Bogen**: der Pfeil am Ribbon-Knopf „Bogen" öffnet die beiden Eingabemodi — **„Drei Punkte"**
     (Start, Ende, Punkt auf dem Bogen, Vorgabe) und **„Mittelpunkt, Start, Ende"**: erst der
     Mittelpunkt, dann der Startpunkt, der zugleich den **Radius** festlegt, zuletzt der Endpunkt.

@@ -4,7 +4,7 @@
 //! Bei Blöcken ist der Ankerpunkt die **untere linke Ecke** der Vorschau — sie
 //! steht damit oben rechts am Mauszeiger und verdeckt ihn nicht. Bei der
 //! Zwischenablage ist der Anker der mitkopierte **Basispunkt** (siehe
-//! [`Clipboard`]) oder — im Modus [`PastePivot::Center`] — die untere linke
+//! [`Clipboard`]) oder — im Modus [`PastePivot::Center`] (Vorgabe) — die untere linke
 //! Ecke der gedrehten Auswahl (T0070).
 
 use jjcad_core::geom::{Affine, BBox, Vec2 as V2};
@@ -453,11 +453,12 @@ mod tests_wandvorschau {
 mod tests_drehpunkt {
     //! T0070: Zweiter Drehpunkt für das Einfügen aus der Zwischenablage.
     //!
-    //! Bisher blieb der **Basispunkt** am Fadenkreuz stehen und wanderte mit der
-    //! Drehung — die Auswahl sprang dadurch von Viertel zu Viertel um das
-    //! Fadenkreuz. Im Modus „Mittelpunkt" steht die untere linke Ecke der
-    //! gedrehten Auswahl am Fadenkreuz: die Vorschau dreht um ihren eigenen
-    //! Mittelpunkt und bleibt immer oben rechts davon.
+    //! Ohne den zweiten Modus blieb der **Basispunkt** am Fadenkreuz stehen und
+    //! wanderte mit der Drehung — die Auswahl sprang dadurch von Viertel zu
+    //! Viertel um das Fadenkreuz. Im Modus „Mittelpunkt" (Vorgabe seit T0087)
+    //! steht die untere linke Ecke der gedrehten Auswahl am Fadenkreuz: die
+    //! Vorschau dreht um ihren eigenen Mittelpunkt und bleibt immer oben rechts
+    //! davon.
 
     use super::*;
 
@@ -568,9 +569,15 @@ mod tests_drehpunkt {
         }
     }
 
-    /// Die Vorgabe der Einstellung ist das bisherige Verhalten.
+    /// T0087: Der Programmstandard ist der Mittelpunkt — die Vorschau bleibt
+    /// oben rechts am Fadenkreuz, ohne ihn zuzudecken.
     #[test]
-    fn vorgabe_ist_der_basispunkt() {
-        assert_eq!(PastePivot::default(), PastePivot::BasePoint);
+    fn vorgabe_ist_der_mittelpunkt() {
+        assert_eq!(PastePivot::default(), PastePivot::Center);
+        assert_eq!(
+            jjcad_core::persist::UserPrefs::default().paste_pivot,
+            PastePivot::Center,
+            "die Werkseinstellung der Voreinstellungen weicht ab"
+        );
     }
 }
