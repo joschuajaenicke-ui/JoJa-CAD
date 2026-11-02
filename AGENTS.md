@@ -143,10 +143,11 @@ Mit dem Nutzer abgestimmt — nicht „verbessern“:
 - **Einfügen** (Block/Zwischenablage): Vorschau oben rechts am Zeiger, `R` dreht,
   `S` spiegelt, Klick bestätigt. Beim Einfügen aus der Zwischenablage entscheidet
   Einstellungen → Bedienung → „Drehpunkt" (`prefs.paste_pivot`), welcher Punkt am
-  Fadenkreuz steht: „Basispunkt" (Vorgabe) hält den mitkopierten Basispunkt dort —
-  die Vorschau dreht um ihren Mittelpunkt und springt dabei um das Fadenkreuz;
-  „Mittelpunkt" hält die untere linke Ecke der gedrehten Auswahl am Fadenkreuz,
-  sodass die Vorschau immer oben rechts davon bleibt (T0070). Die Zwischenablage trägt ihren **Basispunkt** mit:
+  Fadenkreuz steht: „Mittelpunkt" (Vorgabe seit T0087) hält die untere linke Ecke
+  der gedrehten Auswahl am Fadenkreuz, sodass die Vorschau immer oben rechts davon
+  bleibt; „Basispunkt" hält den mitkopierten Basispunkt dort — die Vorschau dreht um
+  ihren Mittelpunkt und springt dabei um das Fadenkreuz (T0070). Ein Wechsel wirkt
+  sofort, auch auf eine laufende Vorschau (`App::set_paste_pivot`). Die Zwischenablage trägt ihren **Basispunkt** mit:
   „Kopieren mit Basispunkt" nimmt den geklickten Punkt, „Kopieren" automatisch die
   untere linke Ecke der Auswahl — beim Einfügen steht dieser Punkt am Zeiger.
   **Kopieren setzt nie sofort eine Kopie ab** (auch nicht mit Basispunkt): es füllt

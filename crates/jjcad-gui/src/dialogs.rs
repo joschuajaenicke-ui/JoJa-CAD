@@ -1588,7 +1588,8 @@ fn settings_body(app: &mut App, ui: &mut Ui) {
         let _ = app.prefs.save();
     }
     if app.prefs.paste_pivot != paste_pivot {
-        app.prefs.paste_pivot = paste_pivot;
+        // T0087: sofort übernehmen — auch für eine bereits laufende Vorschau.
+        app.set_paste_pivot(paste_pivot);
         let _ = app.prefs.save();
     }
     let dialog_neu = if dateidialog_system { "system" } else { "intern" };
@@ -4019,8 +4020,8 @@ mod tests_einstellungen {
     }
 
     /// T0070: Unter „Bedienung“ steht die Zeile „Drehpunkt“ mit beiden Modi —
-    /// gezeichnet, nicht nur im Code geführt; die Vorgabe ist das bisherige
-    /// Verhalten (Basispunkt).
+    /// gezeichnet, nicht nur im Code geführt; die Vorgabe ist der Mittelpunkt
+    /// (T0087).
     #[test]
     fn bedienung_zeigt_den_drehpunkt() {
         let _sperre = KONFIG.lock().unwrap_or_else(|e| e.into_inner());
@@ -4053,8 +4054,80 @@ mod tests_einstellungen {
         }
         assert_eq!(
             app.prefs.paste_pivot,
+            PastePivot::Center,
+            "Vorgabe: der Mittelpunkt ist der Programmstandard (T0087)"
+        );
+    }
+
+    /// T0087: Der Drehpunkt lässt sich in den Einstellungen in **beide**
+    /// Richtungen stellen. Der Klick läuft über echte Ereignisse auf das
+    /// gezeichnete Feld — einmal von „Mittelpunkt“ auf „Basispunkt“ und wieder
+    /// zurück.
+    #[test]
+    fn drehpunkt_laesst_sich_umschalten() {
+        let _sperre = KONFIG.lock().unwrap_or_else(|e| e.into_inner());
+        let _konfig = WegwerfKonfig::neu("drehpunkt-umschalten");
+        let ctx = egui::Context::default();
+        let mut app = App::with_ctx(ctx.clone());
+        app.prefs.paste_pivot = PastePivot::Center;
+        app.ui.settings_open = true;
+        app.ui.settings_kat = 5;
+        let bild = || egui::RawInput {
+            screen_rect: Some(Rect::from_min_size(Pos2::ZERO, Vec2::new(1500.0, 950.0))),
+            ..Default::default()
+        };
+        let mut out = ctx.run(bild(), |ctx| app.ui(ctx));
+        for _ in 0..3 {
+            out = ctx.run(bild(), |ctx| app.ui(ctx));
+        }
+        // Der Wert eines gezeichneten Feldes als Klickstelle.
+        let stelle = |out: &egui::FullOutput, text: &str| -> Pos2 {
+            out.shapes
+                .iter()
+                .find_map(|cs| match &cs.shape {
+                    egui::Shape::Text(t) if t.galley.text() == text => {
+                        Some(t.pos + t.galley.rect.center().to_vec2())
+                    }
+                    _ => None,
+                })
+                .unwrap_or_else(|| panic!("„{text}“ fehlt im Einstellungsfenster"))
+        };
+        let knopf = |pos: Pos2, pressed: bool| egui::Event::PointerButton {
+            pos,
+            button: egui::PointerButton::Primary,
+            pressed,
+            modifiers: egui::Modifiers::NONE,
+        };
+        let mut klick = |app: &mut App, pos: Pos2| {
+            for events in [
+                vec![egui::Event::PointerMoved(pos)],
+                vec![knopf(pos, true)],
+                vec![knopf(pos, false)],
+                vec![],
+            ] {
+                let _ = ctx.run(
+                    egui::RawInput {
+                        events,
+                        ..bild()
+                    },
+                    |ctx| app.ui(ctx),
+                );
+            }
+        };
+
+        klick(&mut app, stelle(&out, "Basispunkt"));
+        assert_eq!(
+            app.prefs.paste_pivot,
             PastePivot::BasePoint,
-            "Vorgabe: der Basispunkt steht am Fadenkreuz (bisheriges Verhalten)"
+            "Klick auf „Basispunkt“ stellt den alten Drehpunkt nicht wieder her"
+        );
+
+        out = ctx.run(bild(), |ctx| app.ui(ctx));
+        klick(&mut app, stelle(&out, "Mittelpunkt"));
+        assert_eq!(
+            app.prefs.paste_pivot,
+            PastePivot::Center,
+            "Klick auf „Mittelpunkt“ stellt den Standard nicht her"
         );
     }
 }
