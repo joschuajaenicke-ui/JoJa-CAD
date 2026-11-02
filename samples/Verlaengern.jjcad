@@ -1,0 +1,200 @@
+{
+  "format": "jjcad",
+  "version": 2,
+  "name": "",
+  "project": {
+    "project": "",
+    "client": "",
+    "planner": "",
+    "plan_no": "",
+    "plan_title": "",
+    "address": "",
+    "note": "",
+    "date": "",
+    "revision": ""
+  },
+  "settings": {
+    "input_unit": "M",
+    "dim_unit": "M",
+    "decimals": 2,
+    "annotation_scale": 50.0,
+    "snap": {
+      "endpoint": true,
+      "midpoint": true,
+      "center": true,
+      "intersection": true,
+      "perpendicular": true,
+      "nearest": true,
+      "grid": true,
+      "ortho": false,
+      "polar": true,
+      "wall_edges": true,
+      "grid_step": 100.0,
+      "tolerance_px": 12.0,
+      "polar_step": 45.0,
+      "polar_tolerance": 6.0
+    },
+    "text_height": 250.0,
+    "wall_thickness": 240.0,
+    "door_width": 885.0,
+    "window_width": 1200.0,
+    "stair_width": 1000.0,
+    "show_grid": true,
+    "show_rulers": true
+  },
+  "layers": [
+    {
+      "id": 1,
+      "name": "Wände",
+      "color": "#1C1F24",
+      "line_weight": 0.25,
+      "line_type": "Solid",
+      "visible": true,
+      "locked": false,
+      "printable": true
+    },
+    {
+      "id": 3,
+      "name": "Hilfslinien",
+      "color": "#1C1F24",
+      "line_weight": 0.25,
+      "line_type": "Solid",
+      "visible": true,
+      "locked": false,
+      "printable": true
+    }
+  ],
+  "current_layer": 0,
+  "blocks": [],
+  "entities": [
+    {
+      "id": 6,
+      "kind": {
+        "type": "wall",
+        "a": {
+          "x": 0.0,
+          "y": 3000.0
+        },
+        "b": {
+          "x": 2000.0,
+          "y": 3000.0
+        },
+        "thickness": 240.0,
+        "height": 2750.0,
+        "material": "Mauerwerk",
+        "hatch": null,
+        "align": "Center"
+      },
+      "layer": 1,
+      "style": {
+        "color": null,
+        "line_type": null,
+        "line_weight": null,
+        "fill": null
+      },
+      "by_block": false
+    },
+    {
+      "id": 2,
+      "kind": {
+        "type": "line",
+        "a": {
+          "x": 0.0,
+          "y": 0.0
+        },
+        "b": {
+          "x": 1000.0,
+          "y": 0.0
+        }
+      },
+      "layer": 1,
+      "style": {
+        "color": "#23262C",
+        "line_type": null,
+        "line_weight": 0.5,
+        "fill": null
+      },
+      "by_block": false
+    },
+    {
+      "id": 4,
+      "kind": {
+        "type": "line",
+        "a": {
+          "x": 2000.0,
+          "y": -600.0
+        },
+        "b": {
+          "x": 2000.0,
+          "y": 600.0
+        }
+      },
+      "layer": 3,
+      "style": {
+        "color": "#9AA3AD",
+        "line_type": "Dashed",
+        "line_weight": 0.25,
+        "fill": null
+      },
+      "by_block": false
+    },
+    {
+      "id": 5,
+      "kind": {
+        "type": "line",
+        "a": {
+          "x": 4000.0,
+          "y": -600.0
+        },
+        "b": {
+          "x": 4000.0,
+          "y": 600.0
+        }
+      },
+      "layer": 3,
+      "style": {
+        "color": "#9AA3AD",
+        "line_type": "Dashed",
+        "line_weight": 0.25,
+        "fill": null
+      },
+      "by_block": false
+    },
+    {
+      "id": 7,
+      "kind": {
+        "type": "line",
+        "a": {
+          "x": 5000.0,
+          "y": 2400.0
+        },
+        "b": {
+          "x": 5000.0,
+          "y": 3600.0
+        }
+      },
+      "layer": 3,
+      "style": {
+        "color": "#9AA3AD",
+        "line_type": "Dashed",
+        "line_weight": 0.25,
+        "fill": null
+      },
+      "by_block": false
+    }
+  ],
+  "sheets": [],
+  "dim_style": {
+    "text_height": 2.5,
+    "arrow_size": 2.0,
+    "arrow": "Slash",
+    "text_gap": 0.8,
+    "ext_gap": 1.5,
+    "ext_overshoot": 1.5,
+    "chain_gap": 8.0,
+    "text_pos": "Above",
+    "decimals": 2,
+    "unit_divisor": 1000.0
+  },
+  "next_id": 8
+}

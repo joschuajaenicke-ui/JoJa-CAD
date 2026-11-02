@@ -2509,6 +2509,10 @@ fn draw_tool_preview(
             // Der Abschnitt, den ein Klick hier entfernen würde (T0075).
             draw_trim_preview(app, p, rect, view, cursor);
         }
+        "modify.extend" => {
+            // Die Strecke, die ein Klick hier ansetzen würde (T0081).
+            draw_extend_preview(app, p, rect, view, cursor);
+        }
         "block.insert" => {
             let name = app
                 .options
@@ -2558,30 +2562,78 @@ fn draw_tool_preview(
 /// Hervorhebung des Abschnitts, den „Stutzen“ an dieser Stelle entfernen würde
 /// (T0075): steht der Zeiger auf einer Linie, ist der Bereich zwischen den
 /// beiden Schnittkanten in der Warnfarbe zu sehen — vor dem Klick, ohne die
-/// Zeichnung zu ändern. Bei einer Wand als Körper, damit auch die Dicke stimmt.
+/// Zeichnung zu ändern.
 ///
 /// Der Abschnitt kommt aus [`actions::trim_vorschau`] — derselben Rechnung,
 /// die der Klick in `modify.trim` schneidet.
 fn draw_trim_preview(app: &App, p: &Painter, rect: Rect, view: View, at: V2) {
+    let Some((id, segs)) = vorschau_objekt(app, view, at, actions::trim_vorschau) else {
+        return;
+    };
+    draw_abschnitt_preview(app, p, rect, view, id, &segs, Palette::DANGER);
+}
+
+/// Hervorhebung der Strecke, die „Verlängern“ an dieser Stelle ansetzen würde
+/// (T0081): steht der Zeiger auf einem Ende, ist der Weg bis zur nächsten
+/// Schnittkante vorher in der Erfolgsfarbe zu sehen — vor dem Klick, ohne die
+/// Zeichnung zu ändern.
+///
+/// Die Strecke kommt aus [`actions::extend_vorschau`] — derselben Rechnung,
+/// die der Klick in `modify.extend` ausführt.
+fn draw_extend_preview(app: &App, p: &Painter, rect: Rect, view: View, at: V2) {
+    let Some((id, segs)) = vorschau_objekt(app, view, at, actions::extend_vorschau) else {
+        return;
+    };
+    draw_abschnitt_preview(app, p, rect, view, id, &segs, Palette::OK);
+}
+
+/// Das Objekt unter dem Zeiger und die Strecken, die seine Vorschau markiert.
+///
+/// Stutzen und Verlängern teilen den Weg: Treffer am Zeiger, dann die
+/// Vorschau-Rechnung der jeweiligen Aktion. Ohne Treffer oder ohne Strecke
+/// gibt es nichts zu zeigen.
+fn vorschau_objekt(
+    app: &App,
+    view: View,
+    at: V2,
+    rechnung: fn(&Document, Id, V2, &[Id]) -> Vec<Seg>,
+) -> Option<(Id, Vec<Seg>)> {
     let tol = (8.0 / view.zoom).max(0.5);
-    let Some(id) = snap::hit_test(app.doc(), at, tol, None) else {
-        return;
-    };
-    let Some(e) = app.doc().entity(id) else {
-        return;
-    };
-    let segs = actions::trim_vorschau(app.doc(), id, at, &[]);
-    if segs.is_empty() {
-        return;
+    let id = snap::hit_test(app.doc(), at, tol, None)?;
+    if app.doc().entity(id).is_none() {
+        return None;
     }
+    let segs = rechnung(app.doc(), id, at, &[]);
+    if segs.is_empty() {
+        None
+    } else {
+        Some((id, segs))
+    }
+}
+
+/// Zeichnet die Strecken einer Vorschau in einer Farbe: bei einer Wand als
+/// Körper, damit auch die Dicke stimmt, sonst als Linie.
+///
+/// Der Strich folgt der Strichstärke des Objekts (T0075): bei fetten Linien
+/// deckt er die Linie ab, im DPI-Modus wächst er mit dem Zoom. Ein Mindestmaß
+/// hält ihn auch auf dünnen Linien sichtbar, der Zuschlag lässt die Linie
+/// links und rechts darunter hervorschauen.
+fn draw_abschnitt_preview(
+    app: &App,
+    p: &Painter,
+    rect: Rect,
+    view: View,
+    id: Id,
+    segs: &[Seg],
+    farbe: Color32,
+) {
     let w2s = |q: V2| world_to_screen(rect, view, q);
-    let farbe = Palette::DANGER;
     if let Some(EntityKind::Wall {
         thickness, align, ..
     }) = app.doc().entity(id).map(|e| &e.kind)
     {
         let t = thickness * 0.5;
-        for s in &segs {
+        for s in segs {
             if let Seg::Line(a, b) = s {
                 let n = (*b - *a).normalized().perp();
                 let off = n * (t * align.offset());
@@ -2599,17 +2651,16 @@ fn draw_trim_preview(app: &App, p: &Painter, rect: Rect, view: View, at: V2) {
             }
         }
     }
-    // Die Hervorhebung folgt der Strichstärke des Objekts (T0075): bei fetten
-    // Linien deckt sie die Linie ab, im DPI-Modus wächst sie mit dem Zoom.
-    // Ein Mindestmaß hält sie auch auf dünnen Linien sichtbar, der Zuschlag
-    // lässt die Linie links und rechts darunter hervorschauen.
+    let Some(e) = app.doc().entity(id) else {
+        return;
+    };
     let breite = linienbreite_px(
         app.doc().effective_line_weight(e),
         view.zoom * app.doc().settings.annotation_scale,
         app.ui.lineweights_scaled,
     );
     let strich = Stroke::new((breite + 1.0).max(3.0) as f32, farbe);
-    for s in &segs {
+    for s in segs {
         match s {
             Seg::Line(a, b) => {
                 p.line_segment([w2s(*a), w2s(*b)], strich);
@@ -9218,6 +9269,116 @@ mod tests_stutzvorschau {
         assert!(
             (gross - 21.0).abs() < 0.01,
             "0,5 mm bei 40 px/mm → 20 px + 1: {gross}"
+        );
+    }
+}
+
+#[cfg(test)]
+mod tests_verlaengernvorschau {
+    //! Vorschau des Verlängerns (T0081): steht der Zeiger auf einem Ende, ist
+    //! die Strecke bis zur nächsten Schnittkante vorher in der Erfolgsfarbe zu
+    //! sehen.
+
+    use super::*;
+
+    const RECT: Rect = Rect {
+        min: Pos2::new(0.0, 0.0),
+        max: Pos2::new(1200.0, 800.0),
+    };
+
+    /// Schnittkanten bei x = 2000/4000 mm und eine Linie von 0 bis 1000 mm.
+    fn app() -> App {
+        let mut app = App::with_ctx(egui::Context::default());
+        app.session_mut()
+            .execute("doc.settings", &json!({ "input_unit": "m" }))
+            .expect("Einheit setzen");
+        for (a, b) in [([2, -1], [2, 1]), ([4, -1], [4, 1]), ([0, 0], [1, 0])] {
+            app.session_mut()
+                .execute("draw.line", &json!({ "a": a, "b": b }))
+                .expect("Linie anlegen");
+        }
+        app.start_tool("modify.extend");
+        app
+    }
+
+    /// Die Strecken der Erfolgsfarbe, die `draw_extend_preview` malt.
+    fn vorschau_strecken(app: &mut App, zeiger: Option<V2>) -> Vec<(Pos2, Pos2, f32)> {
+        let view = app.current_view();
+        let ctx = app.ctx.clone();
+        let out = ctx.run(egui::RawInput::default(), |ctx| {
+            let layer = egui::LayerId::new(egui::Order::Background, egui::Id::new("verlaengern"));
+            let p = egui::Painter::new(ctx.clone(), layer, Rect::EVERYTHING);
+            draw_tool_preview(app, &p, RECT, view, zeiger, zeiger);
+        });
+        let mut v = Vec::new();
+        for cs in &out.shapes {
+            if let Shape::LineSegment { points, stroke } = &cs.shape {
+                if stroke.color == egui::epaint::ColorMode::Solid(Palette::OK) {
+                    v.push((points[0], points[1], stroke.width));
+                }
+            }
+        }
+        v
+    }
+
+    fn ziel_id(app: &App) -> Id {
+        app.doc().entities.last().unwrap().id
+    }
+
+    #[test]
+    fn strecke_bis_zur_naechsten_kante_ist_hervorgehoben() {
+        let mut app = app();
+        let view = app.current_view();
+        let strecken = vorschau_strecken(&mut app, Some(V2::new(1000.0, 0.0)));
+        assert_eq!(strecken.len(), 1, "genau eine Strecke: {strecken:?}");
+        let (erwartet_a, erwartet_b) = (
+            world_to_screen(RECT, view, V2::new(1000.0, 0.0)),
+            world_to_screen(RECT, view, V2::new(2000.0, 0.0)),
+        );
+        let (a, b, _breite) = strecken[0];
+        assert!(
+            (a.x - erwartet_a.x).abs() < 0.6 && (a.y - erwartet_a.y).abs() < 0.6,
+            "Anfang am wandernden Ende: {a:?} statt {erwartet_a:?}"
+        );
+        assert!(
+            (b.x - erwartet_b.x).abs() < 0.6 && (b.y - erwartet_b.y).abs() < 0.6,
+            "Ende an der nächsten Kante: {b:?} statt {erwartet_b:?}"
+        );
+    }
+
+    /// Neben der Linie (mehr als der Trefferradius) gibt es nichts zu zeigen.
+    #[test]
+    fn neben_der_linie_keine_hervorhebung() {
+        let mut app = app();
+        let strecken = vorschau_strecken(&mut app, Some(V2::new(1000.0, 900.0)));
+        assert!(strecken.is_empty(), "keine Strecke ohne Linie: {strecken:?}");
+    }
+
+    /// Die Vorschau zeigt genau die Strecke, die der Klick danach ansetzt.
+    #[test]
+    fn vorschau_und_ergebnis_sind_dieselbe_strecke() {
+        let mut app = app();
+        let id = ziel_id(&app);
+        let vorschau = vorschau_strecken(&mut app, Some(V2::new(1000.0, 0.0)));
+        assert_eq!(vorschau.len(), 1, "eine Strecke: {vorschau:?}");
+
+        tool_click(&mut app, V2::new(1000.0, 0.0));
+
+        let e = app.doc().entity(id).expect("Linie fehlt").clone();
+        let EntityKind::Line { a, b } = e.kind else {
+            panic!("Linie erwartet");
+        };
+        assert!(
+            a.x.abs() < 1e-6 && (b.x - 2000.0).abs() < 1e-6,
+            "der Klick setzt bis zur Kante an: {a:?} nach {b:?}"
+        );
+        let view = app.current_view();
+        let erwartet = world_to_screen(RECT, view, b);
+        let (_, vorschau_ende, _) = vorschau[0];
+        assert!(
+            (vorschau_ende.x - erwartet.x).abs() < 0.6
+                && (vorschau_ende.y - erwartet.y).abs() < 0.6,
+            "die Vorschau endet am gesetzten Punkt: {vorschau_ende:?} statt {erwartet:?}"
         );
     }
 }

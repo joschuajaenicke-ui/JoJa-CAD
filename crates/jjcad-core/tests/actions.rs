@@ -270,6 +270,119 @@ fn trim_vorschau_zeigt_den_abschnitt_der_wegfaellt() {
     );
 }
 
+/// Vorschau des Verlängerns (T0081): die hervorgehobene Strecke ist genau das
+/// Stück, das der Klick danach ansetzt — bis zur **nächsten** Schnittkante und
+/// nur am angeklickten Ende.
+#[test]
+fn extend_vorschau_zeigt_die_strecke_die_hinzukommt() {
+    let mut s = s();
+    // Schnittkanten bei x = 2000 und x = 4000 mm
+    s.execute("draw.line", &json!({"a": [2, -1], "b": [2, 1]}))
+        .unwrap();
+    s.execute("draw.line", &json!({"a": [4, -1], "b": [4, 1]}))
+        .unwrap();
+    // Die zu verlängernde Linie endet bei 1000 mm.
+    s.execute("draw.line", &json!({"a": [0, 0], "b": [1, 0]}))
+        .unwrap();
+    let id = last_id(&s);
+
+    let segs = jjcad_core::actions::extend_vorschau(&s.doc, id, v(1000.0, 0.0), &[]);
+    assert_eq!(segs.len(), 1, "eine Strecke: {segs:?}");
+    let jjcad_core::geom::Seg::Line(a, b) = segs[0] else {
+        panic!("Strecke erwartet: {:?}", segs[0]);
+    };
+    assert!(
+        (a.x - 1000.0).abs() < 1e-6 && a.y.abs() < 1e-6,
+        "Anfang am wandernden Ende: {a:?}"
+    );
+    assert!(
+        (b.x - 2000.0).abs() < 1e-6 && b.y.abs() < 1e-6,
+        "Ende an der naechsten Kante: {b:?}"
+    );
+    // Die Vorschau ändert die Zeichnung nicht.
+    assert_eq!(s.doc.entities.len(), 3, "Vorschau legt nichts an");
+
+    // Und der Klick setzt genau diese Strecke an.
+    s.execute(
+        "modify.extend",
+        &json!({"ids": [id], "at": [1, 0], "cutters": []}),
+    )
+    .unwrap_or_else(|e| panic!("Verlängern: {e}"));
+    let e = s.doc.entity(id).expect("Linie fehlt");
+    let EntityKind::Line { a, b } = &e.kind else {
+        panic!("Linie erwartet");
+    };
+    assert!(
+        (b.x - 2000.0).abs() < 1e-6 && b.y.abs() < 1e-6,
+        "das Ergebnis endet wie die Vorschau: {b:?}"
+    );
+    assert!(a.x.abs() < 1e-6, "das andere Ende bleibt stehen: {a:?}");
+
+    // Klick am linken Ende: es wandert nach links, bis zur Kante bei 4000.
+    s.execute("draw.line", &json!({"a": [5, 0], "b": [6, 0]}))
+        .unwrap();
+    let links = last_id(&s);
+    let segs = jjcad_core::actions::extend_vorschau(&s.doc, links, v(5000.0, 0.0), &[]);
+    let jjcad_core::geom::Seg::Line(a, b) = segs[0] else {
+        panic!("Strecke erwartet: {segs:?}");
+    };
+    assert!(
+        (a.x - 5000.0).abs() < 1e-6 && (b.x - 4000.0).abs() < 1e-6,
+        "das angeklickte Ende wandert: {a:?} nach {b:?}"
+    );
+
+    // Ohne Schnittkante hinter dem Ende gibt es nichts zu zeigen.
+    s.execute("draw.line", &json!({"a": [7, 0], "b": [8, 0]}))
+        .unwrap();
+    let frei = last_id(&s);
+    assert!(
+        jjcad_core::actions::extend_vorschau(&s.doc, frei, v(8000.0, 0.0), &[]).is_empty(),
+        "ohne Kante keine Vorschau"
+    );
+}
+
+/// Vorschau des Verlängerns bei einer Wand (T0081): die Strecke läuft bis zur
+/// Basislinie der Nachbarwand — Schnittkanten sind die Basislienen der Wände
+/// (`render::entity_segments`), also landet die verlängerte Wand im Knoten.
+#[test]
+fn extend_vorschau_verlaengert_eine_wand_bis_zur_nachbarwand() {
+    let mut s = s();
+    s.execute(
+        "draw.wall",
+        &json!({"a": [0, 3], "b": [2, 3], "thickness": 0.24}),
+    )
+    .unwrap();
+    let id = last_id(&s);
+    s.execute(
+        "draw.wall",
+        &json!({"a": [5, 1.5], "b": [5, 4.5], "thickness": 0.24}),
+    )
+    .unwrap();
+
+    let segs = jjcad_core::actions::extend_vorschau(&s.doc, id, v(2000.0, 3000.0), &[]);
+    let jjcad_core::geom::Seg::Line(a, b) = segs[0] else {
+        panic!("Strecke erwartet: {segs:?}");
+    };
+    assert!((a.x - 2000.0).abs() < 1e-6, "Anfang am Wandende: {a:?}");
+    assert!(
+        (b.x - 5000.0).abs() < 1e-6 && (b.y - 3000.0).abs() < 1e-6,
+        "Ende auf der Basislinie der Nachbarwand: {b:?}"
+    );
+
+    s.execute(
+        "modify.extend",
+        &json!({"ids": [id], "at": [2, 3], "cutters": []}),
+    )
+    .unwrap_or_else(|e| panic!("Verlängern: {e}"));
+    let EntityKind::Wall { b, .. } = &s.doc.entity(id).expect("Wand fehlt").kind else {
+        panic!("Wand erwartet");
+    };
+    assert!(
+        (b.x - 5000.0).abs() < 1e-6,
+        "die Wand endet wie die Vorschau: {b:?}"
+    );
+}
+
 /// Stutzen einer Polylinie (T0077): der Abschnitt zwischen den beiden
 /// Schnittkanten fällt weg. Bleibt ein Stück mit zwei Punkten, ist es danach
 /// eine normale **Linie**, kein Zwei-Punkt-Polygonzug.
