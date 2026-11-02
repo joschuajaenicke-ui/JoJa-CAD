@@ -3587,34 +3587,114 @@ fn trim_span(a: Vec2, b: Vec2, at: Vec2, segs: &[(Seg, Id)]) -> Option<(f64, f64
         .map(|w| (w[0], w[1]))
 }
 
-/// Winkelbereich des Kreisbogens, der beim Stutzen **bleibt**: der Bereich
-/// zwischen zwei Schnittkanten, der den Klickwinkel **nicht** enthält.
-fn trim_kreis_bogen(c: Vec2, r: f64, at: Vec2, segs: &[(Seg, Id)]) -> Option<(f64, f64)> {
-    let mut hits = Vec::new();
+/// Winkel aller Schnittpunkte eines Kreises mit den Schnittkanten.
+///
+/// Gerade Kanten schneiden über [`line_circle`], **Bögen und Kreise** über
+/// [`circle_circle`] — mit Prüfung, ob der Punkt auf dem schneidenden Bogen
+/// liegt. Vorher wurden nur Geraden betrachtet: ein Kreis ließ sich deshalb
+/// nicht von einem anderen Kreis oder Bogen schneiden, obwohl die Schnittpunkte
+/// sichtbar auf der Kurve lagen (T0084, Turn 2).
+fn kreis_schnittwinkel(c: Vec2, r: f64, segs: &[(Seg, Id)]) -> Vec<f64> {
+    let mut hits: Vec<f64> = Vec::new();
     for (sg, _) in segs {
-        if let Seg::Line(a, b) = sg {
-            for x in line_circle(*a, *b, c, r) {
-                hits.push((x - c).angle());
+        match sg {
+            Seg::Line(a, b) => {
+                for x in line_circle(*a, *b, c, r) {
+                    hits.push((x - c).angle());
+                }
+            }
+            Seg::Arc(arc) => {
+                for x in circle_circle(c, r, arc.c, arc.r) {
+                    if angle_in_arc((x - arc.c).angle(), arc.a0, arc.a1) {
+                        hits.push((x - c).angle());
+                    }
+                }
             }
         }
     }
-    hits.sort_by(|x, y| x.partial_cmp(y).unwrap());
-    hits.dedup_by(|x, y| (*x - *y).abs() < 1e-6);
+    for a in hits.iter_mut() {
+        *a = norm_angle(*a);
+    }
+    hits.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
+    hits.dedup_by(|a, b| winkel_abstand(*a, *b) < 1e-7);
+    // 0 und 2π sind derselbe Punkt — der kleinere bleibt.
+    if hits.len() > 1 {
+        let first = hits[0];
+        let last = hits[hits.len() - 1];
+        if winkel_abstand(first, last) < 1e-7 {
+            hits.pop();
+        }
+    }
+    hits
+}
+
+/// Die Abschnitte eines **Kreises** beim Stutzen an der Stelle `at`: was stehen
+/// bleibt (a0, a1 je gegen den Uhrzeigersinn) und der Abschnitt, der wegfällt.
+///
+/// `None`, wenn weniger als zwei Schnittkanten den Kreis teilen.
+fn kreis_trim_stuecke(
+    c: Vec2,
+    r: f64,
+    at: Vec2,
+    segs: &[(Seg, Id)],
+) -> Option<(Vec<(f64, f64)>, (f64, f64))> {
+    let hits = kreis_schnittwinkel(c, r, segs);
     if hits.len() < 2 {
         return None;
     }
-    let aclick = (at - c).angle();
-    for i in 0..hits.len() {
-        let a0 = hits[i];
-        let a1 = hits[(i + 1) % hits.len()];
-        // Dieser Bogen enthält den Klickwinkel nicht — er bleibt stehen.
-        if !angle_in_arc(aclick, a0, a1) {
-            return Some((a0, a1));
-        }
-    }
-    None
+    let n = hits.len();
+    let a = norm_angle((at - c).angle());
+    let mut stuecke: Vec<(f64, f64)> = (0..n).map(|i| (hits[i], hits[(i + 1) % n])).collect();
+    let idx = stuecke
+        .iter()
+        .position(|(a0, a1)| angle_in_arc(a, *a0, *a1))?;
+    let weg = stuecke.remove(idx);
+    Some((stuecke, weg))
 }
 
+/// Die Abschnitte eines **Bogens** beim Stutzen an der Stelle `at`.
+///
+/// Die Schnitte werden in Laufrichtung des Bogens (0 = Anfang) einsortiert;
+/// der angeklickte Abschnitt fällt weg, die übrigen bleiben als eigene Bögen
+/// stehen (T0084, Turn 2).
+fn bogen_trim_stuecke(
+    c: Vec2,
+    r: f64,
+    a0: f64,
+    a1: f64,
+    at: Vec2,
+    segs: &[(Seg, Id)],
+) -> Option<(Vec<(f64, f64)>, (f64, f64))> {
+    let sweep = Arc::new(c, r, a0, a1).sweep();
+    if sweep >= std::f64::consts::TAU - 1e-9 {
+        return kreis_trim_stuecke(c, r, at, segs);
+    }
+    let mut innen: Vec<f64> = kreis_schnittwinkel(c, r, segs)
+        .into_iter()
+        .map(|u| norm_angle(u - a0))
+        .filter(|t| *t > 1e-7 && *t < sweep - 1e-7)
+        .collect();
+    innen.sort_by(|x, y| x.partial_cmp(y).unwrap_or(std::cmp::Ordering::Equal));
+    innen.dedup_by(|x, y| (*x - *y).abs() < 1e-7);
+    if innen.is_empty() {
+        return None;
+    }
+    let mut grenzen = vec![0.0];
+    grenzen.extend(innen);
+    grenzen.push(sweep);
+    let t = norm_angle((at - c).angle() - a0);
+    let mut stuecke: Vec<(f64, f64)> = grenzen.windows(2).map(|w| (w[0], w[1])).collect();
+    let idx = stuecke
+        .iter()
+        .position(|(s, e)| t >= *s - 1e-9 && t <= *e + 1e-9)?;
+    let weg = stuecke.remove(idx);
+    let bleibt = stuecke
+        .into_iter()
+        .filter(|(s, e)| e - s > 1e-7)
+        .map(|(s, e)| (norm_angle(a0 + s), norm_angle(a0 + e)))
+        .collect();
+    Some((bleibt, (norm_angle(a0 + weg.0), norm_angle(a0 + weg.1))))
+}
 
 /// Parameterwinkel aller Schnittpunkte einer Ellipse mit den Schnittkanten.
 ///
@@ -3962,11 +4042,18 @@ pub fn trim_vorschau(doc: &Document, id: Id, at: Vec2, cutters: &[Id]) -> Vec<Se
             vec![Seg::Line(a.lerp(*b, t0), a.lerp(*b, t1))]
         }
         EntityKind::Circle { c, r } => {
-            let Some((a0, a1)) = trim_kreis_bogen(*c, *r, at, &segs) else {
+            let Some((_, weg)) = kreis_trim_stuecke(*c, *r, at, &segs) else {
                 return Vec::new();
             };
-            // Entfernt wird der andere Bogen — von `a1` zurück nach `a0`.
-            vec![Seg::Arc(Arc::new(*c, *r, a1, a0))]
+            vec![Seg::Arc(Arc::new(*c, *r, weg.0, weg.1))]
+        }
+        // Bogen: derselbe Weg wie beim Kreis, nur auf den vorhandenen Abschnitt
+        // begrenzt (T0084, Turn 2).
+        EntityKind::Arc { c, r, a0, a1 } => {
+            let Some((_, weg)) = bogen_trim_stuecke(*c, *r, *a0, *a1, at, &segs) else {
+                return Vec::new();
+            };
+            vec![Seg::Arc(Arc::new(*c, *r, weg.0, weg.1))]
         }
         // Ellipse: entfernt wird der angeklickte Abschnitt (T0084).
         EntityKind::Ellipse { c, rx, ry, rot } => {
@@ -4014,6 +4101,39 @@ pub fn extend_vorschau(doc: &Document, id: Id, at: Vec2, cutters: &[Id]) -> Vec<
         Ok(v) => vec![Seg::Line(v.wandernd, v.ziel)],
         Err(_) => Vec::new(),
     }
+}
+
+/// Übernimmt die beim Stutzen eines Kreises oder Bogens bleibenden Abschnitte:
+/// der erste bleibt am Objekt (Id, Ebene, Stil), weitere werden neue Objekte
+/// und ordnen sich nach ihrem Zeichenrang ein. Ohne Stück verschwindet das
+/// Objekt.
+fn kreis_stuecke_uebernehmen(
+    doc: &mut Document,
+    id: Id,
+    e: &Entity,
+    c: Vec2,
+    r: f64,
+    stuecke: Vec<(f64, f64)>,
+) -> Vec<Id> {
+    if stuecke.is_empty() {
+        doc.remove_entity(id);
+        return Vec::new();
+    }
+    let mut it = stuecke.into_iter();
+    if let Some((a0, a1)) = it.next() {
+        if let Some(em) = doc.entity_mut(id) {
+            em.kind = EntityKind::Arc { c, r, a0, a1 };
+        }
+    }
+    let mut created = Vec::new();
+    for (a0, a1) in it {
+        let nid = doc.new_id();
+        let mut ne = Entity::new(nid, e.layer, EntityKind::Arc { c, r, a0, a1 });
+        ne.style = e.style.clone();
+        doc.insert_ranked(ne);
+        created.push(nid);
+    }
+    created
 }
 
 /// Übernimmt die beim Stutzen einer Ellipse bleibenden Abschnitte: der erste
@@ -4162,14 +4282,21 @@ fn trim_entity(doc: &mut Document, id: Id, at: Vec2, cutters: &[Id]) -> Result<V
             }
             Ok(created)
         }
+        // Kreis: der Klick schneidet einen Abschnitt heraus, der Rest bleibt als
+        // **Bogen** stehen. Mehrere Schnittkanten ergeben mehrere Bögen — vorher
+        // blieb nur einer übrig und Bogen/Kreis als Schnittkante fehlten ganz
+        // (T0084, Turn 2).
         EntityKind::Circle { c, r } => {
-            let Some((a0, a1)) = trim_kreis_bogen(*c, *r, at, &segs) else {
+            let Some((bleibt, _)) = kreis_trim_stuecke(*c, *r, at, &segs) else {
                 return Err("Kreis braucht zwei Schnittpunkte zum Stutzen".into());
             };
-            if let Some(em) = doc.entity_mut(id) {
-                em.kind = EntityKind::Arc { c: *c, r: *r, a0, a1 };
-            }
-            Ok(vec![])
+            Ok(kreis_stuecke_uebernehmen(doc, id, &e, *c, *r, bleibt))
+        }
+        EntityKind::Arc { c, r, a0, a1 } => {
+            let Some((bleibt, _)) = bogen_trim_stuecke(*c, *r, *a0, *a1, at, &segs) else {
+                return Ok(vec![]);
+            };
+            Ok(kreis_stuecke_uebernehmen(doc, id, &e, *c, *r, bleibt))
         }
         // Ellipse: der Klick schneidet einen Abschnitt heraus, der Rest bleibt
         // als **Ellipsenbogen** stehen — wie beim Kreis (dort wird daraus ein
