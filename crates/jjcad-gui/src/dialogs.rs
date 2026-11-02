@@ -889,9 +889,18 @@ pub fn show(app: &mut App, ctx: &egui::Context) {
         let mut open = true;
         modal_window(ctx, "Über JoJa-CAD", 480.0, &mut open).show(ctx, |ui| {
             ui.set_width(460.0);
-            ui.label(theme::bold("JoJa-CAD", 20.0));
-            ui.label(theme::dim(format!("Version {}", env!("CARGO_PKG_VERSION"))));
-            ui.label(theme::mono(crate::app::build_label()));
+            // Kopf mit Markenzeichen (T0083) — dasselbe Bild wie das Fenstericon.
+            ui.horizontal(|ui| {
+                let marke = crate::icon::textur(ui.ctx());
+                let kante = egui::vec2(64.0, 64.0);
+                ui.add(egui::Image::new(egui::load::SizedTexture::new(marke.id(), kante)));
+                ui.add_space(6.0);
+                ui.vertical(|ui| {
+                    ui.label(theme::bold("JoJa-CAD", 20.0));
+                    ui.label(theme::dim(format!("Version {}", env!("CARGO_PKG_VERSION"))));
+                    ui.label(theme::mono(crate::app::build_label()));
+                });
+            });
             ui.add_space(8.0);
             ui.label("2D-CAD für Architektur und Bauantragszeichnungen.");
             ui.add_space(6.0);

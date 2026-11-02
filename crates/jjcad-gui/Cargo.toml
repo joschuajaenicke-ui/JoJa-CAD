@@ -20,6 +20,8 @@ eframe = { version = "0.29", default-features = false, features = [
     "x11",
 ] }
 egui = "0.29"
+# Markenzeichen: die PNG-Datei unter assets/ wird zur Laufzeit dekodiert
+png = "0.17"
 # Systemweiter Dateidialog (Linux: XDG-Portal, Windows: Win32, macOS: NSOpenPanel)
 rfd = "0.17"
 # Fensterkennung des Hauptfensters, damit der Systemdialog an diesem Fenster hängt
