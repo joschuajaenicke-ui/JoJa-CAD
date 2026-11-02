@@ -73,7 +73,7 @@ Ohne `host` sucht `draw.door`/`draw.window` die nächste Wand im Umfeld und
 | `modify.mirror` | `ids[]`, `p1`, `p2`, `keep_original` | Achse durch zwei Punkte |
 | `modify.scale` | `ids[]`, `center`, `factor` | Faktor > 0 |
 | `modify.offset` | `ids[]`, `distance`, `side` | `side` = Punkt auf der Zielseite |
-| `modify.trim` | `ids[]`, `at`, `cutters[]` | `at` = Punkt auf dem zu entfernenden Stück; Linie, Wand, Kreis (→ Bogen), Ellipse (→ Ellipsenbogen), Polylinie |
+| `modify.trim` | `ids[]`, `at`, `cutters[]` | `at` = Punkt auf dem zu entfernenden Stück; Linie, Wand, Kreis (→ Bogen), Bogen, Ellipse (→ Ellipsenbogen), Ellipsenbogen, Polylinie. Schnittkanten sind Geraden **und** Bögen/Kreise |
 | `modify.extend` | `ids[]`, `at`, `cutters[]` | verlängert das nahe Ende bis zur nächsten Kante |
 | `modify.intersect` | `ids[]` (zwei Linien oder Wände) | zieht beide Objekte auf ihren gemeinsamen Schnittpunkt — verlängert oder kürzt das jeweils nähere Ende |
 | `modify.erase` | `ids[]` | löschen |
