@@ -428,6 +428,27 @@ pub fn png_bytes(doc: &Document, opts: &RasterOptions) -> Result<Vec<u8>, String
         .map_err(|e| format!("PNG-Kodierung fehlgeschlagen: {e}"))
 }
 
+/// PNG-Bytes aus einem fertigen RGBA-Bild (Bildschirmfotos der Oberfläche).
+///
+/// Der Aufrufer liefert die Pixel in der Reihenfolge R,G,B,A je Punkt, wie sie
+/// aus dem Framebuffer kommen; hier landen sie unverändert in einem PNG.
+pub fn rgba_png(breite: u32, hoehe: u32, rgba: &[u8]) -> Result<Vec<u8>, String> {
+    let mut pm = Pixmap::new(breite, hoehe)
+        .ok_or_else(|| "Bild konnte nicht angelegt werden".to_string())?;
+    let ziel = pm.data_mut();
+    if rgba.len() != ziel.len() {
+        return Err(format!(
+            "Bildgröße passt nicht: {} Bytes für {}x{}",
+            rgba.len(),
+            breite,
+            hoehe
+        ));
+    }
+    ziel.copy_from_slice(rgba);
+    pm.encode_png()
+        .map_err(|e| format!("PNG-Kodierung fehlgeschlagen: {e}"))
+}
+
 /// Blockvorschau als PNG (für Blockmanager, sofern kein Live-Rendering genutzt wird).
 pub fn block_thumbnail(doc: &Document, block: &BlockDef, px: u32) -> Result<Vec<u8>, String> {
     let bbox = block.bbox();

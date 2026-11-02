@@ -206,6 +206,14 @@ pub fn install(ctx: &egui::Context) {
     style.spacing.scroll.floating = true;
     style.animation_time = 0.10;
     ctx.set_style(style);
+
+    // `JJCAD_UI_FEATHER=0` schaltet die weiche Kante der Flächen ab. Auf
+    // Rechnern, deren Treiber an halbtransparenten Kanten helle Fugen zeigt
+    // (Windows 11 mit krummer Skalierung), ist das ein Notausgang ohne neuen
+    // Build: die Flächen enden dann hart auf dem Pixel.
+    if std::env::var("JJCAD_UI_FEATHER").ok().as_deref() == Some("0") {
+        ctx.tessellation_options_mut(|o| o.feathering = false);
+    }
 }
 
 /// Kleine Überschrift in Panels.

@@ -7,6 +7,7 @@
 mod app;
 mod canvas;
 mod chat;
+mod diag;
 mod dialogs;
 mod ghost;
 mod hotbar;
@@ -35,7 +36,7 @@ fn main() -> eframe::Result<()> {
             // Fenster über den .desktop-Eintrag „jjcad“ zu)
             .with_app_id("jjcad")
             .with_icon(icon::fenster_icon()),
-        vsync: true,
+        vsync: crate::diag::vsync(),
         ..Default::default()
     };
 

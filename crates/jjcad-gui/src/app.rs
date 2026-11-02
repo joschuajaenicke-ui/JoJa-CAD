@@ -39,6 +39,20 @@ pub const DOCTABS_H: f32 = 34.0;
 /// Höhe der einen unteren Leiste: Slot-Kante (50 px) + 2 × 5 px Rand
 pub const HOTBAR_H: f32 = 60.0;
 
+/// Auf ganze Bildschirm-Pixel runden.
+///
+/// Bei krummer Skalierung (125 %, 150 %, 175 %) liegen Panelkanten sonst auf
+/// halben Pixeln: die Fläche endet dort halbtransparent, und zwischen zwei
+/// Flächen bleibt eine 1 px breite Fuge, durch die der Grund scheint. Auf
+/// ganze Pixel gerundete Höhen und Breiten schließen sie.
+pub fn auf_pixel(ctx: &egui::Context, wert: f32) -> f32 {
+    let ppp = ctx.pixels_per_point();
+    if ppp <= 0.0 {
+        return wert;
+    }
+    (wert * ppp).round() / ppp
+}
+
 /// Weg eines einzelnen Schwenk-Schritts in Bildpunkten (T0056): ein Tastendruck
 /// rückt die Ansicht sichtbar weiter, ohne sie springen zu lassen.
 pub const SCHWENK_SCHRITT_PX: f32 = 60.0;
@@ -963,6 +977,8 @@ impl CopyInput {
 
 pub struct App {
     pub tabs: Vec<DocTab>,
+    /// Selbstdiagnose für Anzeigefehler (F12 nimmt ein Bildschirmfoto auf).
+    pub diag: crate::diag::Diagnose,
     /// Kennung des eigenen Fensters für den Systemdialog (None in Tests, die
     /// ohne Fenster laufen)
     pub elternfenster: Option<crate::systemdialog::Elternfenster>,
@@ -1055,6 +1071,7 @@ impl App {
         let props_open = prefs.show_properties;
         let mut app = Self {
             tabs: vec![tab],
+            diag: crate::diag::Diagnose::new(),
             elternfenster: None,
             active: 0,
             prefs,
@@ -4749,13 +4766,13 @@ fn rail(ui: &mut egui::Ui, icon: &str, tooltip: &str, chevron: &str) -> bool {
         self.handle_shortcuts(ctx);
 
         egui::TopBottomPanel::top("header")
-            .exact_height(HEADER_H)
+            .exact_height(auf_pixel(ctx, HEADER_H))
             .frame(Frame::none().fill(Palette::RIBBON))
             .show(ctx, |ui| self.header(ui));
 
         if !self.ui.ribbon_collapsed {
             egui::TopBottomPanel::top("ribbon")
-                .exact_height(RIBBON_H)
+                .exact_height(auf_pixel(ctx, RIBBON_H))
                 .frame(
                     Frame::none()
                         .fill(Palette::PANEL)
@@ -4765,12 +4782,12 @@ fn rail(ui: &mut egui::Ui, icon: &str, tooltip: &str, chevron: &str) -> bool {
         }
 
         egui::TopBottomPanel::top("doctabs")
-            .exact_height(DOCTABS_H)
+            .exact_height(auf_pixel(ctx, DOCTABS_H))
             .frame(Frame::none().fill(Palette::RIBBON))
             .show(ctx, |ui| self.doc_tabs(ui));
 
         egui::TopBottomPanel::bottom("hotbar")
-            .exact_height(HOTBAR_H)
+            .exact_height(auf_pixel(ctx, HOTBAR_H))
             .frame(Frame::none().fill(Palette::PANEL))
             .show(ctx, |ui| hotbar::show(self, ui));
 
@@ -4778,7 +4795,7 @@ fn rail(ui: &mut egui::Ui, icon: &str, tooltip: &str, chevron: &str) -> bool {
             let collapsed = self.ui.layers_collapsed;
             let (w, margin) = if collapsed { (28.0, 0.0) } else { (232.0, 10.0) };
             egui::SidePanel::left("layers")
-                .exact_width(w)
+                .exact_width(auf_pixel(ctx, w))
                 .resizable(false)
                 .frame(
                     Frame::none()
@@ -4799,7 +4816,7 @@ fn rail(ui: &mut egui::Ui, icon: &str, tooltip: &str, chevron: &str) -> bool {
             let collapsed = self.ui.props_collapsed;
             let (w, margin) = if collapsed { (28.0, 0.0) } else { (292.0, 10.0) };
             egui::SidePanel::right("props")
-                .exact_width(w)
+                .exact_width(auf_pixel(ctx, w))
                 .resizable(false)
                 .frame(
                     Frame::none()
@@ -5472,11 +5489,36 @@ impl App {
 
 
 impl eframe::App for App {
-    fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
+    /// Grundfarbe des Fensters.
+    ///
+    /// eframe gibt hier planmäßig ein dunkelgraues, halbtransparentes Grau vor
+    /// (Alpha 180) — es ist nur als Unterlage für Schatten gedacht. Bleibt bei
+    /// krummer Bildschirmskalierung zwischen zwei Flächen ein Pixel unbedeckt,
+    /// schimmert dort dieser Grund durch und erscheint als helle Fuge. Deckend
+    /// in Fensterfarbe ist die Fuge unsichtbar.
+    fn clear_color(&self, _visuals: &egui::Visuals) -> [f32; 4] {
+        let bg = Palette::BG;
+        [
+            bg.r() as f32 / 255.0,
+            bg.g() as f32 / 255.0,
+            bg.b() as f32 / 255.0,
+            1.0,
+        ]
+    }
+
+    fn update(&mut self, ctx: &egui::Context, frame: &mut eframe::Frame) {
         // Leistungsanzeige (T0068): Bild beginnen — Abstand zum vorigen Bild und
         // die Abschnittsmarken messen. Das läuft immer mit; ein paar
         // Uhrablesungen je Bild kosten nichts.
         self.perf.bild_beginnen();
+        // Grundfläche unter allem: bleibt zwischen zwei Flächen ein Pixel
+        // unbedeckt (krumme Bildschirmskalierung), steht dort die Fensterfarbe
+        // und nicht der Grund des Fenstersystems.
+        ctx.layer_painter(egui::LayerId::background()).rect_filled(
+            ctx.screen_rect(),
+            egui::Rounding::ZERO,
+            Palette::BG,
+        );
         self.ui(ctx);
         self.draw_menu(ctx);
         if self.started_at < 3.0 {
@@ -5509,6 +5551,17 @@ impl eframe::App for App {
         // (`perf::PAUSE_MS`), die Perzentile bleiben also sauber.
         if self.perf.an {
             ctx.request_repaint_after(std::time::Duration::from_millis(1000));
+        }
+        // Selbstdiagnose: F12 (oder Start mit JJCAD_UI_DIAG=1) hält das Bild
+        // samt Kennwerten fest, damit sich Anzeigefehler fremder Rechner
+        // zuordnen lassen.
+        self.diag.tasten(ctx);
+        self.diag.von_selbst(ctx, ctx.input(|i| i.time));
+        if let Some(ergebnis) = self.diag.einsammeln(ctx, frame.gl()) {
+            self.status_msg = match ergebnis {
+                Ok(pfad) => format!("Diagnose gespeichert: {}", pfad.display()),
+                Err(e) => format!("Diagnose fehlgeschlagen: {e}"),
+            };
         }
         self.perf.bild_beenden();
 }
