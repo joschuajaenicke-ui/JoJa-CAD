@@ -178,6 +178,31 @@ fn capsule(p: &Painter, a: Pos2, b: Pos2, w: f32, col: Color32) {
 }
 
 /// Polylinie aus Kapseln — dadurch sind auch die Übergänge rund.
+/// Kreis als **geschlossenen Zug** mit mittiger Kontur zeichnen.
+///
+/// `Painter::circle_stroke` legt die Strichbreite bei egui/epaint nach **außen**
+/// (`PathStroke::outside` in `tessellate_circle`): die Kontur steht dann von `r`
+/// bis `r + w`. Der Kreis wirkt dadurch um die halbe Strichbreite größer als sein
+/// Durchmesser, der Punktfang (auf `r`) sitzt am Innenrand der Linie, und Bild
+/// und PDF/PNG laufen auseinander — die zeichnen mittig. Die Punkte liegen
+/// deshalb auf dem Radius und die Kontur wird wie bei Bogen (`Shape::line`) und
+/// Ellipse (`stroke_pts`) zentriert gestrichen (T0080).
+pub(crate) fn kreis_zug(center: Pos2, radius: f32, stroke: Stroke) -> egui::Shape {
+    if radius <= 0.0 {
+        return egui::Shape::Noop;
+    }
+    // Segmentzahl nach derselben Pfeilhöhen-Regel wie alle Bögen.
+    let arc = Arc::new(V2::new(0.0, 0.0), radius as f64, 0.0, std::f64::consts::TAU);
+    let n = CurveQuality::SCREEN.segments(&arc, 1.0).max(8);
+    let pts: Vec<Pos2> = (0..n)
+        .map(|i| {
+            let a = i as f64 / n as f64 * std::f64::consts::TAU;
+            center + Vec2::new(radius * a.cos() as f32, radius * a.sin() as f32)
+        })
+        .collect();
+    egui::Shape::closed_line(pts, stroke)
+}
+
 fn stroke_pts(p: &Painter, pts: &[Pos2], w: f32, col: Color32) {
     if pts.len() == 1 {
         p.circle_filled(pts[0], (w * 0.5).max(0.4), col);
@@ -358,7 +383,13 @@ fn paint_prim(p: &Painter, prim: &Prim, w2s: &dyn Fn(V2) -> Pos2, scale: f64, pc
             }
         }
         PShape::Circle { c, r } => {
-            p.circle_stroke(w2s(*c), (*r * scale) as f32, stroke);
+            let rr = (*r * scale) as f32;
+            if rr < 0.4 {
+                // Auf dem Schirm punktförmiger Kreis
+                p.circle_filled(w2s(*c), (w as f32 * 0.5).max(0.5), col);
+            } else {
+                p.add(kreis_zug(w2s(*c), rr, stroke));
+            }
             center_mark(p, w2s(*c), col);
         }
         PShape::Arc { c, r, a0, a1 } => {
@@ -1992,7 +2023,7 @@ fn draw_tool_preview(
         "draw.circle" => {
             if let Some(c) = last {
                 let r = c.dist(cursor);
-                p.circle_stroke(w2s(c), (r * view.zoom) as f32, stroke);
+                p.add(kreis_zug(w2s(c), (r * view.zoom) as f32, stroke));
                 p.line_segment([w2s(c), w2s(cursor)], dashed);
                 label = format!("⌀ {}", unit.format_plain(r * 2.0, unit.decimals()));
             }
@@ -3702,7 +3733,7 @@ fn ghost_shape(
             p.add(egui::Shape::line(v, stroke));
         }
         PShape::Circle { c, r } => {
-            p.circle_stroke(w2s(*c), (*r * zoom) as f32, stroke);
+            p.add(kreis_zug(w2s(*c), (*r * zoom) as f32, stroke));
         }
         PShape::Arc { c, r, a0, a1 } => {
             let arc = Arc::new(*c, *r, *a0, *a1);
@@ -9262,5 +9293,127 @@ mod tests_tuer_position {
             (iv[0].1 - 6000.0).abs() < 0.5,
             "Öffnung endet an der Wand: {iv:?}"
         );
+    }
+}
+
+#[cfg(test)]
+mod tests_kreis_kontur {
+    //! Die Kreiskontur liegt **mittig** auf dem Radius (T0080).
+    //!
+    //! `Painter::circle_stroke` legt die Strichbreite bei egui nach außen
+    //! (`PathStroke::outside` in `tessellate_circle`): der Kreis erschien um die
+    //! halbe Strichbreite zu groß, und der Punktfang (er rechnet mit `r`) saß am
+    //! Innenrand der Linie. Gemessen wird am gezeichneten Rand (Mesh-Eckpunkte),
+    //! nicht am Quelltext: die Strichmitte muss auf `r` liegen und die Kontur
+    //! nach innen und außen gleich weit reichen.
+
+    use super::*;
+
+    const MITTE: Pos2 = Pos2::new(200.0, 200.0);
+    /// Kreisradius in Welt-mm (2,5 cm Radius = 5 cm Durchmesser).
+    const RADIUS_MM: f64 = 25.0;
+
+    /// Radiale Ausdehnung der gezeichneten Kontur (min, max) in Bildpunkten.
+    ///
+    /// Punkte dichter als 20 px an der Mitte gehören dem Mittelkreuz, nicht der
+    /// Kontur.
+    fn ausdehnung(shapes: Vec<egui::epaint::ClippedShape>) -> (f32, f32) {
+        let ctx = egui::Context::default();
+        // Schrift laden: `tessellate` setzt einen gelaufenen Durchgang voraus.
+        let _ = ctx.run(
+            egui::RawInput {
+                screen_rect: Some(Rect::from_min_size(Pos2::ZERO, Vec2::new(400.0, 400.0))),
+                ..Default::default()
+            },
+            |_| {},
+        );
+        let mut min = f32::INFINITY;
+        let mut max = f32::NEG_INFINITY;
+        for cp in ctx.tessellate(shapes, 1.0) {
+            if let egui::epaint::Primitive::Mesh(m) = &cp.primitive {
+                for v in &m.vertices {
+                    let d = v.pos.distance(MITTE);
+                    if d > 20.0 {
+                        min = min.min(d);
+                        max = max.max(d);
+                    }
+                }
+            }
+        }
+        (min, max)
+    }
+
+    /// Der Kreis über den Weg der Zeichenfläche zeichnen (`paint_prim`) und die
+    /// Ausdehnung seiner Kontur messen.
+    fn band_von_paint_prim(scale: f64, breite_mm: f64, skalierte_breiten: bool) -> (f32, f32) {
+        let ctx = egui::Context::default();
+        let raw = egui::RawInput {
+            screen_rect: Some(Rect::from_min_size(Pos2::ZERO, Vec2::new(400.0, 400.0))),
+            ..Default::default()
+        };
+        let pc = PaintCtx {
+            selected: Vec::new(),
+            hover: None,
+            lineweights: skalierte_breiten,
+            lineweights_scaled: skalierte_breiten,
+            paper_px: scale,
+            preview: false,
+            rot: 0.0,
+        };
+        let prim = Prim {
+            shape: PShape::Circle {
+                c: V2::new(0.0, 0.0),
+                r: RADIUS_MM,
+            },
+            style: jjcad_core::render::PrimStyle {
+                color: jjcad_core::style::Color::BLACK,
+                line_type: jjcad_core::style::LineType::Solid,
+                width: breite_mm,
+                fill: None,
+            },
+            entity: 0,
+            layer: 0,
+        };
+        let w2s = |q: V2| {
+            Pos2::new(
+                MITTE.x + q.x as f32 * scale as f32,
+                MITTE.y - q.y as f32 * scale as f32,
+            )
+        };
+        let out = ctx.run(raw, |ctx| {
+            let painter = ctx.layer_painter(egui::LayerId::background());
+            paint_prim(&painter, &prim, &w2s, scale, &pc, 1.0);
+        });
+        ausdehnung(out.shapes)
+    }
+
+    /// Strichmitte auf dem Radius, Kontur beidseitig gleich breit.
+    fn pruefe_mittig(scale: f64, breite_mm: f64, skalierte_breiten: bool) {
+        let (min, max) = band_von_paint_prim(scale, breite_mm, skalierte_breiten);
+        let r = (RADIUS_MM * scale) as f32;
+        let mitte = (min + max) * 0.5;
+        assert!(
+            (mitte - r).abs() < 0.6,
+            "Strichmitte {mitte:.2} px statt Radius {r:.2} px (Kontur {min:.2}…{max:.2}) — \
+             der Kreis steht um die halbe Strichbreite neben dem Durchmesser"
+        );
+        let aussen = max - r;
+        let innen = r - min;
+        assert!(
+            (aussen - innen).abs() < 1.0,
+            "Kontur reicht nach außen {aussen:.2} px, nach innen {innen:.2} px — sie muss mittig liegen"
+        );
+        assert!(aussen > 2.0, "gemessene Kontur ist zu schmal ({min:.2}…{max:.2})");
+    }
+
+    #[test]
+    fn kontur_liegt_mittig_dpi_modus() {
+        // 4 px je mm, 2 mm Strich → 8 px; Fang und Anzeige teilen den Radius.
+        pruefe_mittig(4.0, 2.0, true);
+    }
+
+    #[test]
+    fn kontur_liegt_mittig_px_modus() {
+        pruefe_mittig(4.0, 2.0, false);
     }
 }

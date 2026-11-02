@@ -306,7 +306,7 @@ pub fn draw_block_preview(app: &App, p: &egui::Painter, rect: Rect, b: &BlockDef
                 p.add(egui::Shape::line(v, stroke));
             }
             PShape::Circle { c, r } => {
-                p.circle_stroke(w2s(*c), *r as f32 * k, stroke);
+                p.add(crate::canvas::kreis_zug(w2s(*c), *r as f32 * k, stroke));
             }
             PShape::Arc { c, r, a0, a1 } => {
                 let arc = jjcad_core::geom::Arc::new(*c, *r, *a0, *a1);
