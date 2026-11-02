@@ -179,6 +179,22 @@ impl Content {
     fn stroke(&mut self) {
         self.raw("S");
     }
+
+    /// Runde Linienenden und runde Übergänge (`1 J 1 j`).
+    ///
+    /// PDF streicht mit **stumpfen** Enden (`0 J`) und Gehrungsecken (`0 j`):
+    /// eine Linie ist dann ein exaktes Rechteck, und zwei Linien in einer Ecke
+    /// stoßen als zwei Rechtecke zusammen — die Verbindung wirkt kantig.
+    /// Zeichenfläche (`canvas::capsule`) und Rasterbild (`raster.rs`,
+    /// `LineCap::Round`/`LineJoin::Round`) zeichnen dagegen Kapseln. Dieselbe
+    /// Darstellung hier: ein Halbkreis am Ende, runde Übergänge — die Linie
+    /// bleibt dabei **ein** Pfad, es kommt kein zweites Element hinzu.
+    ///
+    /// Die Einstellung gehört zum Grafikzustand und gilt bis zum Seitenende;
+    /// `q`/`Q` (Ansichtsfenster) tragen sie mit.
+    fn runde_enden(&mut self) {
+        self.raw("1 J 1 j");
+    }
     fn fill(&mut self) {
         self.raw("f");
     }
@@ -769,12 +785,22 @@ fn write_pdf(pages: Vec<Page>, path: &Path, title: &str) -> Result<(), String> {
 // Blatt zeichnen
 // ---------------------------------------------------------------------------
 
-fn draw_sheet_page(doc: &Document, sheet: &Sheet) -> Page {
-    let (pw, ph) = sheet.size();
+/// Neuer Seiteninhalt: weißer Grund und **runde Linienenden** (T0086).
+///
+/// Beide Seitenwege (Blatt und Modellzeichnung) beginnen hier — sonst müsste
+/// die Einstellung an zwei Stellen gepflegt werden und einer der Exporte
+/// zeichnete wieder Rechtecke.
+fn seite(pw: f64, ph: f64) -> Content {
     let mut c = Content::new();
-    // Weißer Hintergrund
     c.fill_color(Color::rgb(255, 255, 255));
     c.raw(&format!("0 0 {:.3} {:.3} re f", pw * MM2PT, ph * MM2PT));
+    c.runde_enden();
+    c
+}
+
+fn draw_sheet_page(doc: &Document, sheet: &Sheet) -> Page {
+    let (pw, ph) = sheet.size();
+    let mut c = seite(pw, ph);
 
     // Papierraum: Rahmen, Schriftfeld und eigene Blattelemente sind Objekte
     // des Blatts (T0004) — gedruckt wird genau das, was auf dem Blatt steht.
@@ -827,9 +853,7 @@ pub fn export_model_pdf(doc: &Document, path: &Path, paper: PaperSize) -> Result
     // Modellseite: immer die Zeichnung, auch wenn gerade ein Blatt offen ist.
     let ctx = render::RenderCtx::model_scaled(doc, scale);
     let dl = render::render_document(&ctx);
-    let mut c = Content::new();
-    c.fill_color(Color::rgb(255, 255, 255));
-    c.raw(&format!("0 0 {:.3} {:.3} re f", pw * MM2PT, ph * MM2PT));
+    let mut c = seite(pw, ph);
     let s = 1.0 / scale;
     let offset = v(pw * 0.5, ph * 0.5) - center * s;
     let xf = Xf { scale: s, offset };
@@ -889,4 +913,56 @@ pub fn measure_text(text: &str, height_mm: f64) -> f64 {
 /// Schriftgröße in Punkt für eine Höhe in mm.
 pub fn mm_to_pt(mm: f64) -> f64 {
     mm * MM2PT
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::io::Read as _;
+
+    /// Der Seiteninhalt setzt runde Enden und Übergänge (T0086).
+    #[test]
+    fn seite_setzt_runde_linienenden() {
+        let c = seite(420.0, 297.0);
+        assert!(
+            c.buf.contains("1 J 1 j"),
+            "Seiteninhalt ohne runde Linienenden:\n{}",
+            c.buf
+        );
+    }
+
+    /// Auch die Modellseite trägt die Einstellung. Geprüft wird im
+    /// **entpackten** Inhaltsstrom der geschriebenen Datei — der Strom selbst
+    /// ist gepackt und in der Datei nicht lesbar.
+    #[test]
+    fn modellseite_setzt_runde_linienenden() {
+        let mut sess = crate::session::Session::new();
+        sess.execute(
+            "draw.line",
+            &serde_json::json!({"a": [0, 0], "b": [100, 0]}),
+        )
+        .unwrap();
+        let pfad = std::env::temp_dir().join("jjcad-t0086-modell.pdf");
+        export_model_pdf(&sess.doc, &pfad, PaperSize::A3).unwrap();
+        let bytes = std::fs::read(&pfad).unwrap();
+
+        let start = bytes
+            .windows(7)
+            .position(|w| w == b"stream\n")
+            .expect("kein Inhaltsstrom")
+            + 7;
+        let ende = start
+            + bytes[start..]
+                .windows(10)
+                .position(|w| w == b"\nendstream")
+                .expect("Stromende fehlt");
+        let mut entpackt = String::new();
+        flate2::read::ZlibDecoder::new(&bytes[start..ende])
+            .read_to_string(&mut entpackt)
+            .expect("Inhaltsstrom nicht entpackbar");
+        assert!(
+            entpackt.contains("1 J 1 j"),
+            "Modellseite ohne runde Linienenden:\n{entpackt}"
+        );
+    }
 }
