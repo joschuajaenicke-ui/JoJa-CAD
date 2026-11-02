@@ -21,6 +21,15 @@ pub const ICON_512: &[u8] = include_bytes!("../assets/jjc-icon-512.png");
 /// gerastert, damit die weißen Linien dort nicht zu Grau verwaschen (T0083).
 pub const ICON_32: &[u8] = include_bytes!("../assets/jjc-icon-32.png");
 
+/// 128 × 128 für das Fenstericon (`_NET_WM_ICON`). Das ist **nicht** die
+/// 512er-Datei: 512 × 512 × 4 Byte ergibt eine X11-Eigenschaft von 1 MB, 256 px
+/// schon 262 144 Byte — beides über der Höchstlänge einer X-Anfrage (65 535
+/// Wörter = 262 140 Byte ohne BIG-REQUESTS), und winit verwirft den `BadLength`
+/// still: im Fenster stand dann **gar kein** Icon (gemessen: `xprop
+/// _NET_WM_ICON` leer bei 512 und 256, „Icon (128 x 128)" bei 128). Nachgemessen
+/// mit `xprop -id <fenster> _NET_WM_ICON`, nicht am Bild.
+pub const ICON_128: &[u8] = include_bytes!("../assets/jjc-icon-128.png");
+
 /// Dunkelton des Markenzeichens — Rückfall, falls das Bild nicht lesbar ist.
 const DUNKEL: Color32 = Color32::from_rgb(0x12, 0x14, 0x18);
 
@@ -58,7 +67,7 @@ pub fn bild(png: &[u8]) -> Result<ColorImage, String> {
 /// Fenster soll auch dann aufgehen, wenn am Markenzeichen etwas kaputt ist.
 /// `tests::fenstericon_ist_das_markenzeichen` hält den Normalfall fest.
 pub fn fenster_icon() -> egui::IconData {
-    match rgba(ICON_512) {
+    match rgba(ICON_128) {
         Ok((w, h, bytes)) => egui::IconData {
             rgba: bytes,
             width: w as u32,
@@ -132,8 +141,8 @@ mod tests {
     #[test]
     fn fenstericon_ist_das_markenzeichen() {
         let i = fenster_icon();
-        assert_eq!((i.width, i.height), (512, 512));
-        assert_eq!(i.rgba.len(), 512 * 512 * 4);
+        assert_eq!((i.width, i.height), (128, 128));
+        assert_eq!(i.rgba.len(), 128 * 128 * 4);
     }
 
     /// Die Textur kommt einmal und bleibt (kein Neuanlegen je Bild).

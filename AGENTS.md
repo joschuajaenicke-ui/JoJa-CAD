@@ -205,9 +205,12 @@ Mit dem Nutzer abgestimmt — nicht „verbessern“:
 - **Markenzeichen (T0083)**: Das Icon aus `branding/` ist **eine** Bilddatei
   (`crates/jjcad-gui/assets/jjc-icon-512.png`, per `include_bytes!` im Programm wie die
   technischen Schriften). Drei Stellen zeigen es über `icon::textur`/`icon::textur_klein`/
-  `icon::fenster_icon`: Fenstertitel, Kopfzeile (30 px, dafür die 32-px-Rasterung — bei
-  24 px verwaschen die weißen Linien) und der Über-Dialog (64 px). Kein zweites gezeichnetes
-  Ersatzlogo daneben. Unter **Wayland** überträgt winit kein Fenstericon: Taskleiste und
+  `icon::fenster_icon`: Fenstertitel (128 px, größer geht unter X11 nicht — siehe unten),
+  Kopfzeile (30 px, dafür die 32-px-Rasterung; bei 24 px verwaschen die weißen Linien) und
+  der Über-Dialog (64 px). Kein zweites gezeichnetes Ersatzlogo daneben.
+  **`_NET_WM_ICON` ist höchstens 262 140 Byte lang** (65 535 Wörter einer X-Anfrage):
+  256×256×4 = 262 144 Byte passt schon nicht mehr, winit verwirft den `BadLength` still und
+  das Fenster bleibt ohne Icon. Größe mit `xprop -id <fenster> _NET_WM_ICON` prüfen. Unter **Wayland** überträgt winit kein Fenstericon: Taskleiste und
   Startmenü holen es aus `~/.local/share/applications/jjcad.desktop` (Name = App-ID `jjcad`),
   angelegt mit `scripts/install-desktop.sh`.
 - **Zeichenrang (T0048)**: Neue Elemente ordnen sich beim Einfügen selbst in die
