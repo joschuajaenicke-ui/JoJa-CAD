@@ -5484,6 +5484,7 @@ pub fn entity_kind_icon(kind: &EntityKind) -> &'static str {
         EntityKind::Circle { .. } => "circle",
         EntityKind::Arc { .. } => "arc",
         EntityKind::Ellipse { .. } => "ellipse",
+        EntityKind::EllipseArc { .. } => "arc",
         EntityKind::Polyline { .. } => "polyline",
         EntityKind::Spline { .. } => "spline",
         EntityKind::Fill { .. } => "fill",

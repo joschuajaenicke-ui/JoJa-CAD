@@ -721,6 +721,137 @@ impl Arc {
 }
 
 // ---------------------------------------------------------------------------
+// Ellipse
+// ---------------------------------------------------------------------------
+
+/// Ellipse mit Drehlage und **Parameterwinkel**.
+///
+/// `u` ist der Parameter im ungedrehten Ellipsenraum: der Punkt ist
+/// `c + ((rx·cos u, ry·sin u) gedreht um rot)`. Bei `rx ≠ ry` ist das **nicht**
+/// die Richtung des Punktes — Parameter- und Polarwinkel fallen auseinander.
+/// Alles, was auf der Ellipse rechnet (Anzeige, Stutzen, Griffe), benutzt
+/// deshalb diese eine Umrechnung.
+#[derive(Clone, Copy, Debug, Serialize, Deserialize, PartialEq)]
+pub struct Ellipse {
+    pub c: Vec2,
+    pub rx: f64,
+    pub ry: f64,
+    /// Drehlage der ersten Halbachse (Bogenmaß, CCW)
+    pub rot: f64,
+}
+
+impl Ellipse {
+    pub fn new(c: Vec2, rx: f64, ry: f64, rot: f64) -> Self {
+        Self { c, rx, ry, rot }
+    }
+
+    /// Punkt am Parameterwinkel `u`.
+    pub fn point_at(&self, u: f64) -> Vec2 {
+        self.c + Vec2::new(self.rx * u.cos(), self.ry * u.sin()).rotated(self.rot)
+    }
+
+    /// Punkt im auf die Einheitsellipse normierten, ungedrehten System —
+    /// dort ist die Ellipse der Einheitskreis und `atan2(y, x)` der Parameter.
+    fn einheit(&self, p: Vec2) -> Vec2 {
+        let q = (p - self.c).rotated(-self.rot);
+        Vec2::new(q.x / self.rx, q.y / self.ry)
+    }
+
+    /// Parameterwinkel eines Punktes. Liegt der Punkt neben der Kurve, ist es
+    /// der Parameter des nächstgelegenen normierten Punktes — genügt für den
+    /// Klick auf der Linie (Trefferradius deckt den Rest ab).
+    pub fn param_of(&self, p: Vec2) -> f64 {
+        if self.rx.abs() < 1e-12 || self.ry.abs() < 1e-12 {
+            return 0.0;
+        }
+        let q = self.einheit(p);
+        q.y.atan2(q.x)
+    }
+
+    /// Schnittpunkte mit der **Strecke** `a`→`b` als (Parameterwinkel, Punkt).
+    ///
+    /// Im normierten System ist die Ellipse der Einheitskreis, eine Strecke
+    /// bleibt eine Strecke — der Schnitt ist eine quadratische Gleichung.
+    pub fn line_hits(&self, a: Vec2, b: Vec2) -> Vec<(f64, Vec2)> {
+        if self.rx.abs() < 1e-9 || self.ry.abs() < 1e-9 {
+            return Vec::new();
+        }
+        let pa = self.einheit(a);
+        let pb = self.einheit(b);
+        let d = pb - pa;
+        let aa = d.dot(d);
+        if aa < 1e-18 {
+            return Vec::new();
+        }
+        let bb = 2.0 * pa.dot(d);
+        let cc = pa.dot(pa) - 1.0;
+        let disc = bb * bb - 4.0 * aa * cc;
+        if disc < 0.0 {
+            return Vec::new();
+        }
+        let sq = disc.sqrt();
+        let mut out: Vec<(f64, Vec2)> = Vec::new();
+        for t in [(-bb - sq) / (2.0 * aa), (-bb + sq) / (2.0 * aa)] {
+            if !(-1e-9..=1.0 + 1e-9).contains(&t) {
+                continue;
+            }
+            let q = pa + d * t;
+            let u = q.y.atan2(q.x);
+            let p = self.point_at(u);
+            if !out.iter().any(|(_, x)| x.dist(p) < 1e-7) {
+                out.push((u, p));
+            }
+        }
+        out
+    }
+
+    /// Punktfolge des Abschnitts `a0`→`a1` (CCW) mit höchstens `tol` Pfeilhöhe.
+    pub fn arc_points(&self, a0: f64, a1: f64, tol: f64) -> Vec<Vec2> {
+        let sweep = self.sweep(a0, a1);
+        let rmax = self.rx.abs().max(self.ry.abs());
+        let n = if rmax <= tol.max(1e-9) {
+            8
+        } else {
+            let c = (1.0 - tol / rmax).clamp(-1.0, 1.0);
+            (sweep / (2.0 * c.acos())).ceil().clamp(4.0, 2048.0) as usize
+        };
+        (0..=n)
+            .map(|i| self.point_at(a0 + sweep * i as f64 / n as f64))
+            .collect()
+    }
+
+    /// Überstrichener Winkel des Abschnitts `a0`→`a1` (0 = voller Umlauf).
+    pub fn sweep(&self, a0: f64, a1: f64) -> f64 {
+        let s = norm_angle(a1 - a0);
+        if s < 1e-12 {
+            TAU
+        } else {
+            s
+        }
+    }
+
+    /// Umriss eines Abschnitts: Endpunkte plus die Extremstellen von x und y
+    /// innerhalb des Bogens.
+    pub fn arc_bbox(&self, a0: f64, a1: f64) -> BBox {
+        let mut b = BBox::from_point(self.point_at(a0));
+        b.add_point(self.point_at(a1));
+        // x(u) = c.x + rx·cos u·cos rot − ry·sin u·sin rot
+        // y(u) = c.y + rx·cos u·sin rot + ry·sin u·cos rot
+        let ux = (-self.ry * self.rot.sin()).atan2(self.rx * self.rot.cos());
+        let uy = (self.ry * self.rot.cos()).atan2(self.rx * self.rot.sin());
+        for u0 in [ux, uy] {
+            for k in 0..2 {
+                let u = u0 + k as f64 * PI;
+                if angle_in_arc(u, a0, a1) {
+                    b.add_point(self.point_at(u));
+                }
+            }
+        }
+        b
+    }
+}
+
+// ---------------------------------------------------------------------------
 // Segment (Linie oder Bogen)
 // ---------------------------------------------------------------------------
 

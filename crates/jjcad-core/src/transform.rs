@@ -62,6 +62,30 @@ pub fn transform_kind(k: &EntityKind, m: &Affine) -> EntityKind {
             ry: ry * sy(m),
             rot: rot + m.rotation(),
         },
+        // Ellipsenbogen wie der Bogen: Parameter laufen im ungedrehten
+        // Ellipsenraum, gespiegelt kehren sie sich um (u → −u).
+        EntityKind::EllipseArc {
+            c,
+            rx,
+            ry,
+            rot,
+            a0,
+            a1,
+        } => {
+            let (aa, ab, r) = if m.is_mirrored() {
+                (-*a1, -*a0, m.rotation() - *rot)
+            } else {
+                (*a0, *a1, *rot + m.rotation())
+            };
+            EntityKind::EllipseArc {
+                c: m.apply(*c),
+                rx: rx * sx(m),
+                ry: ry * sy(m),
+                rot: r,
+                a0: aa,
+                a1: ab,
+            }
+        }
         EntityKind::Polyline { verts, closed } => {
             let mirrored = m.is_mirrored();
             let verts = verts

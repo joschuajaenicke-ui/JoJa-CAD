@@ -1,7 +1,7 @@
 //! Direktes Bearbeiten über Griffe: Endpunkte, Ecken und Parallelverschiebung.
 
 use crate::app::App;
-use jjcad_core::geom::Vec2 as V2;
+use jjcad_core::geom::{Ellipse, Vec2 as V2};
 use jjcad_core::model::{Entity, EntityKind, Id};
 
 /// Art eines Griffpunkts.
@@ -173,6 +173,17 @@ pub fn grips_of(e: &Entity) -> Vec<(GripKind, V2)> {
             (GripKind::ArcStart, *c + V2::polar(*a0, *r)),
             (GripKind::ArcEnd, *c + V2::polar(*a1, *r)),
         ],
+        // Ellipsenbogen: Mittelpunkt (verschiebt) und beide Enden. Ein Ende
+        // läuft auf der Ellipse mit, gezogen wird der Parameterwinkel; Achsen
+        // und Drehlage bleiben stehen (T0084).
+        EntityKind::EllipseArc { c, rx, ry, rot, a0, a1 } => {
+            let el = Ellipse::new(*c, *rx, *ry, *rot);
+            vec![
+                (GripKind::Vert(0), *c),
+                (GripKind::ArcStart, el.point_at(*a0)),
+                (GripKind::ArcEnd, el.point_at(*a1)),
+            ]
+        }
         // Treppe: die vier Kantenmitten des Rechtecks. Ziehen verschiebt genau
         // diese Kante parallel — die gegenüberliegende bleibt stehen, Breite
         // bzw. Länge ändern sich (T0027).
@@ -261,6 +272,13 @@ pub fn apply_grip_tol(orig: &Entity, kind: GripKind, target: V2, tol: f64) -> Op
             }
             *a0 = d.angle();
         }
+        // Ellipsenbogen-Ende: der Punkt folgt dem Zeiger, gesetzt wird der
+        // Parameterwinkel (`Ellipse::param_of`); Achsen bleiben unverändert.
+        (EntityKind::EllipseArc { c, rx, ry, rot, a0, .. }, GripKind::ArcStart)
+        | (EntityKind::EllipseArc { c, rx, ry, rot, a1: a0, .. }, GripKind::ArcEnd) => {
+            *a0 = Ellipse::new(*c, *rx, *ry, *rot).param_of(target);
+        }
+        (EntityKind::EllipseArc { c, .. }, GripKind::Vert(_)) => *c = target,
         (EntityKind::Ellipse { c, .. }, GripKind::Vert(_)) => *c = target,
         (EntityKind::Polyline { verts, closed } | EntityKind::Spline { verts, closed }, GripKind::Vert(i)) => {
             let n = verts.len();
@@ -429,9 +447,16 @@ pub fn moving_points(e: &Entity, kind: GripKind) -> Vec<V2> {
             EntityKind::Circle { c, .. }
             | EntityKind::Arc { c, .. }
             | EntityKind::Ellipse { c, .. }
+            | EntityKind::EllipseArc { c, .. }
             | EntityKind::Point { p: c },
             GripKind::Vert(_),
         ) => vec![*c],
+        (EntityKind::EllipseArc { c, rx, ry, rot, a0, .. }, GripKind::ArcStart) => {
+            vec![Ellipse::new(*c, *rx, *ry, *rot).point_at(*a0)]
+        }
+        (EntityKind::EllipseArc { c, rx, ry, rot, a1, .. }, GripKind::ArcEnd) => {
+            vec![Ellipse::new(*c, *rx, *ry, *rot).point_at(*a1)]
+        }
         // Bogenenden: der Punkt selbst wandert, der Mittelpunkt bleibt.
         (EntityKind::Arc { c, r, a0, .. }, GripKind::ArcStart) => vec![*c + V2::polar(*a0, *r)],
         (EntityKind::Arc { c, r, a1, .. }, GripKind::ArcEnd) => vec![*c + V2::polar(*a1, *r)],
@@ -634,6 +659,10 @@ fn eckpunkte(e: &Entity) -> Vec<V2> {
         // ohne sie fiele der Fang beim Ziehen eines Endpunkts aus (Flackern).
         EntityKind::Arc { c, r, a0, a1 } => {
             vec![*c, *c + V2::polar(*a0, *r), *c + V2::polar(*a1, *r)]
+        }
+        EntityKind::EllipseArc { c, rx, ry, rot, a0, a1 } => {
+            let el = Ellipse::new(*c, *rx, *ry, *rot);
+            vec![*c, el.point_at(*a0), el.point_at(*a1)]
         }
         EntityKind::Stair { a, b, width, .. } => {
             stair_rechteck(*a, *b, *width).0.to_vec()

@@ -560,6 +560,18 @@ impl Gitter {
                         .collect();
                     self.ring(&ring);
                 }
+                Shape::EllipseArc {
+                    c,
+                    rx,
+                    ry,
+                    rot,
+                    a0,
+                    a1,
+                } => {
+                    let pts = crate::geom::Ellipse::new(*c, *rx, *ry, *rot)
+                        .arc_points(*a0, *a1, 0.2 / self.k);
+                    self.polyline(&pts);
+                }
                 // Punkt und Text sind Beschriftung, keine Begrenzung.
                 Shape::Dot { .. } | Shape::Text(_) => {}
             }

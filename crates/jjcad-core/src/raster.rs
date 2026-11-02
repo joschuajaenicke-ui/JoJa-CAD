@@ -284,6 +284,19 @@ fn draw_prim(pm: &mut Pixmap, prim: &Prim, map: &Map, paper_px: f64) {
                 pm.stroke_path(&path, &paint, &stroke, Transform::identity(), None);
             }
         }
+        Shape::EllipseArc {
+            c,
+            rx,
+            ry,
+            rot,
+            a0,
+            a1,
+        } => {
+            let pts = crate::geom::Ellipse::new(*c, *rx, *ry, *rot).arc_points(*a0, *a1, 0.1);
+            if let Some(path) = build_path(&pts, false, map) {
+                pm.stroke_path(&path, &paint, &stroke, Transform::identity(), None);
+            }
+        }
         Shape::Dot { p, r } => {
             let rp = (*r * map.k) as f32;
             if rp > 0.3 {

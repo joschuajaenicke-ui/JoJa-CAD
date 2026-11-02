@@ -380,6 +380,25 @@ fn write_shape(out: &mut W, layer: &str, prim: &render::Prim) {
             out.f(41, 0.0);
             out.f(42, std::f64::consts::TAU);
         }
+        // Ellipsenbogen: DXF-ELLIPSE mit Start-/Endparameter (40 = Verhältnis
+        // Haupt-/Nebenachse, 41/42 = Parameter in Grad).
+        render::Shape::EllipseArc {
+            c,
+            rx,
+            ry,
+            rot,
+            a0,
+            a1,
+        } => {
+            out.g(0, "ELLIPSE");
+            out.g(8, layer);
+            out.p(10, *c, 0.0);
+            let major = Vec2::polar(*rot, *rx);
+            out.p(11, maybe_major(major), 0.0);
+            out.f(40, if *rx > 1e-9 { rx / ry } else { 1.0 });
+            out.f(41, to_deg(norm_angle(*a0)));
+            out.f(42, to_deg(norm_angle(*a1)));
+        }
         // DXF kennt kein SOLID mit Aussparungen; hier steht deshalb nur der
         // Außenring. Bildschirm, PDF und PNG zeigen die Löcher (Even-Odd).
         render::Shape::Fill { outer, .. } => {

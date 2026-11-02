@@ -647,6 +647,7 @@ pub fn erzeuger_fuer(kind: &EntityKind) -> &'static str {
         EntityKind::Circle { .. } => "draw.circle",
         EntityKind::Arc { .. } => "draw.arc",
         EntityKind::Ellipse { .. } => "draw.ellipse",
+        EntityKind::EllipseArc { .. } => "draw.ellipse",
         EntityKind::Polyline { .. } => "draw.polyline",
         EntityKind::Spline { .. } => "draw.spline",
         EntityKind::Fill { .. } => "draw.fill",
@@ -2660,6 +2661,25 @@ pub fn execute(doc: &mut Document, id: &str, params: &Value) -> Result<Value, St
                                 *a1 = v;
                             }
                         }
+                        // Ellipsenbogen: beide Halbachsen, Drehlage und die
+                        // Parameterwinkel des Abschnitts (T0084).
+                        EntityKind::EllipseArc { rx, ry, rot, a0, a1, .. } => {
+                            if let Some(v) = p.len("rx") {
+                                *rx = v.max(0.001);
+                            }
+                            if let Some(v) = p.len("ry") {
+                                *ry = v.max(0.001);
+                            }
+                            if let Some(v) = p.angle("rot") {
+                                *rot = v;
+                            }
+                            if let Some(v) = p.angle("a0") {
+                                *a0 = v;
+                            }
+                            if let Some(v) = p.angle("a1") {
+                                *a1 = v;
+                            }
+                        }
                         // Bemaßung: Basispunkte, Lage der Maßlinie und ihr
                         // Abstand sind änderbar — wie bei jedem anderen Objekt
                         // (T0055). Der Abstand kommt zuletzt, er rechnet aus
@@ -3595,6 +3615,125 @@ fn trim_kreis_bogen(c: Vec2, r: f64, at: Vec2, segs: &[(Seg, Id)]) -> Option<(f6
     None
 }
 
+
+/// Parameterwinkel aller Schnittpunkte einer Ellipse mit den Schnittkanten.
+///
+/// Gerade Kanten schneiden exakt (quadratische Gleichung im normierten
+/// Ellipsenraum, [`Ellipse::line_hits`]). Ein Bogen ist keine Gerade: er wird in
+/// kurze Sehnen zerlegt, sonst gäbe es keine geschlossene Lösung.
+fn ellipse_schnittwinkel(el: &Ellipse, segs: &[(Seg, Id)]) -> Vec<f64> {
+    let mut hits: Vec<f64> = Vec::new();
+    for (sg, _) in segs {
+        let punkte: Vec<f64> = match sg {
+            Seg::Line(a, b) => el.line_hits(*a, *b).into_iter().map(|(u, _)| u).collect(),
+            Seg::Arc(arc) => {
+                let tol = (arc.r * 1e-4).max(0.01);
+                let pts = arc.flatten(tol);
+                pts.windows(2)
+                    .flat_map(|w| el.line_hits(w[0], w[1]))
+                    .map(|(u, _)| u)
+                    .collect()
+            }
+        };
+        hits.extend(punkte);
+    }
+    for u in hits.iter_mut() {
+        *u = norm_angle(*u);
+    }
+    hits.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
+    hits.dedup_by(|a, b| winkel_abstand(*a, *b) < 1e-7);
+    // 0 und 2π sind derselbe Punkt — der kleinere bleibt.
+    if hits.len() > 1 {
+        let first = hits[0];
+        let last = hits[hits.len() - 1];
+        if winkel_abstand(first, last) < 1e-7 {
+            hits.pop();
+        }
+    }
+    hits
+}
+
+/// Abstand zweier Parameterwinkel auf dem Kreis (0…π), unabhängig vom Umlauf.
+fn winkel_abstand(a: f64, b: f64) -> f64 {
+    let d = norm_angle(a - b);
+    d.min(std::f64::consts::TAU - d)
+}
+
+/// Die Abschnitte einer **geschlossenen** Ellipse beim Stutzen an der Stelle
+/// `at`: was stehen bleibt (a0, a1 je gegen den Uhrzeigersinn) und der
+/// Abschnitt, der wegfällt.
+///
+/// `None`, wenn weniger als zwei Schnittkanten die Ellipse teilen — dann gibt es
+/// keinen Bereich, den ein Klick bestimmt.
+fn ellipse_trim_stuecke(
+    el: &Ellipse,
+    at: Vec2,
+    segs: &[(Seg, Id)],
+) -> Option<(Vec<(f64, f64)>, (f64, f64))> {
+    let hits = ellipse_schnittwinkel(el, segs);
+    if hits.len() < 2 {
+        return None;
+    }
+    let n = hits.len();
+    let u = norm_angle(el.param_of(at));
+    let mut stuecke: Vec<(f64, f64)> = (0..n).map(|i| (hits[i], hits[(i + 1) % n])).collect();
+    let idx = stuecke
+        .iter()
+        .position(|(a0, a1)| angle_in_arc(u, *a0, *a1))?;
+    let weg = stuecke.remove(idx);
+    Some((stuecke, weg))
+}
+
+/// Die Abschnitte eines **Ellipsenbogens** beim Stutzen an der Stelle `at`.
+///
+/// Die Schnitte werden in Laufrichtung des Bogens (0 = Anfang) einsortiert;
+/// der angeklickte Abschnitt fällt weg, die übrigen bleiben als eigene
+/// Ellipsenbögen stehen (T0084).
+fn ellipsearc_trim_stuecke(
+    el: &Ellipse,
+    a0: f64,
+    a1: f64,
+    at: Vec2,
+    segs: &[(Seg, Id)],
+) -> Option<(Vec<(f64, f64)>, (f64, f64))> {
+    let sweep = el.sweep(a0, a1);
+    if sweep >= std::f64::consts::TAU - 1e-9 {
+        return ellipse_trim_stuecke(el, at, segs);
+    }
+    let mut innen: Vec<f64> = ellipse_schnittwinkel(el, segs)
+        .into_iter()
+        .map(|u| norm_angle(u - a0))
+        .filter(|t| *t > 1e-7 && *t < sweep - 1e-7)
+        .collect();
+    innen.sort_by(|x, y| x.partial_cmp(y).unwrap_or(std::cmp::Ordering::Equal));
+    innen.dedup_by(|x, y| (*x - *y).abs() < 1e-7);
+    if innen.is_empty() {
+        return None;
+    }
+    let mut grenzen = vec![0.0];
+    grenzen.extend(innen);
+    grenzen.push(sweep);
+    let t = norm_angle(el.param_of(at) - a0);
+    let mut stuecke: Vec<(f64, f64)> = grenzen.windows(2).map(|w| (w[0], w[1])).collect();
+    let idx = stuecke
+        .iter()
+        .position(|(s, e)| t >= *s - 1e-9 && t <= *e + 1e-9)?;
+    let weg = stuecke.remove(idx);
+    let bleibt = stuecke
+        .into_iter()
+        .filter(|(s, e)| e - s > 1e-7)
+        .map(|(s, e)| (norm_angle(a0 + s), norm_angle(a0 + e)))
+        .collect();
+    Some((bleibt, (norm_angle(a0 + weg.0), norm_angle(a0 + weg.1))))
+}
+
+/// Die Strecken, die von einem Ellipsen-Abschnitt wegfällt — für die Vorschau
+/// des Stutzens (kurze Sehnen, dieselbe Kurve wie die Anzeige).
+fn ellipse_sehnen(el: &Ellipse, a0: f64, a1: f64) -> Vec<Seg> {
+    let pts = el.arc_points(a0, a1, 0.1);
+    pts.windows(2).map(|w| Seg::Line(w[0], w[1])).collect()
+}
+
 /// Punkt auf einem Polylinien-Segment beim Parameter `t` (0 = Segmentanfang
 /// `p0`, 1 = Segmentende `p1`) in **Laufrichtung** der Polylinie.
 fn polyline_punkt(p0: Vec2, p1: Vec2, bulge: f64, t: f64) -> Vec2 {
@@ -3829,6 +3968,21 @@ pub fn trim_vorschau(doc: &Document, id: Id, at: Vec2, cutters: &[Id]) -> Vec<Se
             // Entfernt wird der andere Bogen — von `a1` zurück nach `a0`.
             vec![Seg::Arc(Arc::new(*c, *r, a1, a0))]
         }
+        // Ellipse: entfernt wird der angeklickte Abschnitt (T0084).
+        EntityKind::Ellipse { c, rx, ry, rot } => {
+            let el = Ellipse::new(*c, *rx, *ry, *rot);
+            let Some((_, weg)) = ellipse_trim_stuecke(&el, at, &segs) else {
+                return Vec::new();
+            };
+            ellipse_sehnen(&el, weg.0, weg.1)
+        }
+        EntityKind::EllipseArc { c, rx, ry, rot, a0, a1 } => {
+            let el = Ellipse::new(*c, *rx, *ry, *rot);
+            let Some((_, weg)) = ellipsearc_trim_stuecke(&el, *a0, *a1, at, &segs) else {
+                return Vec::new();
+            };
+            ellipse_sehnen(&el, weg.0, weg.1)
+        }
         EntityKind::Polyline { verts, closed } => {
             let Some((i, t0, t1)) = polyline_trim(verts, *closed, id, at, &segs) else {
                 return Vec::new();
@@ -3860,6 +4014,40 @@ pub fn extend_vorschau(doc: &Document, id: Id, at: Vec2, cutters: &[Id]) -> Vec<
         Ok(v) => vec![Seg::Line(v.wandernd, v.ziel)],
         Err(_) => Vec::new(),
     }
+}
+
+/// Übernimmt die beim Stutzen einer Ellipse bleibenden Abschnitte: der erste
+/// bleibt am Objekt (Id, Ebene, Stil), weitere werden neue Objekte und ordnen
+/// sich nach ihrem Zeichenrang ein. Ohne Stück verschwindet das Objekt.
+fn bogen_stuecke_uebernehmen(
+    doc: &mut Document,
+    id: Id,
+    e: &Entity,
+    c: Vec2,
+    rx: f64,
+    ry: f64,
+    rot: f64,
+    stuecke: Vec<(f64, f64)>,
+) -> Vec<Id> {
+    if stuecke.is_empty() {
+        doc.remove_entity(id);
+        return Vec::new();
+    }
+    let mut it = stuecke.into_iter();
+    if let Some((a0, a1)) = it.next() {
+        if let Some(em) = doc.entity_mut(id) {
+            em.kind = EntityKind::EllipseArc { c, rx, ry, rot, a0, a1 };
+        }
+    }
+    let mut created = Vec::new();
+    for (a0, a1) in it {
+        let nid = doc.new_id();
+        let mut ne = Entity::new(nid, e.layer, EntityKind::EllipseArc { c, rx, ry, rot, a0, a1 });
+        ne.style = e.style.clone();
+        doc.insert_ranked(ne);
+        created.push(nid);
+    }
+    created
 }
 
 fn trim_entity(doc: &mut Document, id: Id, at: Vec2, cutters: &[Id]) -> Result<Vec<Id>, String> {
@@ -3982,6 +4170,23 @@ fn trim_entity(doc: &mut Document, id: Id, at: Vec2, cutters: &[Id]) -> Result<V
                 em.kind = EntityKind::Arc { c: *c, r: *r, a0, a1 };
             }
             Ok(vec![])
+        }
+        // Ellipse: der Klick schneidet einen Abschnitt heraus, der Rest bleibt
+        // als **Ellipsenbogen** stehen — wie beim Kreis (dort wird daraus ein
+        // Bogen). Mehrere Schnittkanten ergeben mehrere Teile (T0084).
+        EntityKind::Ellipse { c, rx, ry, rot } => {
+            let el = Ellipse::new(*c, *rx, *ry, *rot);
+            let Some((bleibt, _)) = ellipse_trim_stuecke(&el, at, &segs) else {
+                return Err("Ellipse braucht zwei Schnittpunkte zum Stutzen".into());
+            };
+            Ok(bogen_stuecke_uebernehmen(doc, id, &e, *c, *rx, *ry, *rot, bleibt))
+        }
+        EntityKind::EllipseArc { c, rx, ry, rot, a0, a1 } => {
+            let el = Ellipse::new(*c, *rx, *ry, *rot);
+            let Some((bleibt, _)) = ellipsearc_trim_stuecke(&el, *a0, *a1, at, &segs) else {
+                return Ok(vec![]);
+            };
+            Ok(bogen_stuecke_uebernehmen(doc, id, &e, *c, *rx, *ry, *rot, bleibt))
         }
         EntityKind::Polyline { verts, closed } => {
             let Some((i, t0, t1)) = polyline_trim(verts, *closed, id, at, &segs) else {
@@ -4254,6 +4459,21 @@ pub fn explode_entity(doc: &mut Document, id: Id) -> Result<Vec<Id>, String> {
                 ry: *ry,
                 rot: *rot,
             }),
+            Shape::EllipseArc {
+                c,
+                rx,
+                ry,
+                rot,
+                a0,
+                a1,
+            } => Some(EntityKind::EllipseArc {
+                c: *c,
+                rx: *rx,
+                ry: *ry,
+                rot: *rot,
+                a0: *a0,
+                a1: *a1,
+            }),
             Shape::Fill { outer, holes } => {
                 if outer.len() >= 3 {
                     Some(EntityKind::Fill {
@@ -4337,6 +4557,21 @@ fn scale_kind(kind: &EntityKind, f: f64) -> EntityKind {
             rx: rx * f,
             ry: ry * f,
             rot: *rot,
+        },
+        EntityKind::EllipseArc {
+            c,
+            rx,
+            ry,
+            rot,
+            a0,
+            a1,
+        } => EntityKind::EllipseArc {
+            c: s(c),
+            rx: rx * f,
+            ry: ry * f,
+            rot: *rot,
+            a0: *a0,
+            a1: *a1,
         },
         EntityKind::Fill {
             boundary,

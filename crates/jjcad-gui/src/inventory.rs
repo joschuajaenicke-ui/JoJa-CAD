@@ -326,6 +326,15 @@ pub fn draw_block_preview(app: &App, p: &egui::Painter, rect: Rect, b: &BlockDef
                     .collect();
                 p.add(egui::Shape::line(pts, stroke));
             }
+            PShape::EllipseArc { c, rx, ry, rot, a0, a1 } => {
+                let el = jjcad_core::geom::Ellipse::new(*c, *rx, *ry, *rot);
+                let pts: Vec<Pos2> = el
+                    .arc_points(*a0, *a1, 0.3 / (k as f64).max(1e-9))
+                    .iter()
+                    .map(|q| w2s(*q))
+                    .collect();
+                p.add(egui::Shape::line(pts, stroke));
+            }
             PShape::Fill { outer, holes } => {
                 let v: Vec<Pos2> = outer.iter().map(|q| w2s(*q)).collect();
                 p.add(egui::Shape::convex_polygon(

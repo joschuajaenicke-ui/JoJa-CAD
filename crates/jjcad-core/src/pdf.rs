@@ -407,6 +407,21 @@ fn draw_prim(c: &mut Content, prim: &Prim, xf: &Xf, paper_scale: f64) {
             push_polyline(c, &pts, true, xf);
             c.stroke();
         }
+        Shape::EllipseArc {
+            c: cc,
+            rx,
+            ry,
+            rot,
+            a0,
+            a1,
+        } => {
+            c.stroke_color(prim.style.color);
+            c.line_width(prim.style.width);
+            c.dash(prim.style.line_type);
+            let pts = crate::geom::Ellipse::new(*cc, *rx, *ry, *rot).arc_points(*a0, *a1, 0.1);
+            push_polyline(c, &pts, false, xf);
+            c.stroke();
+        }
         Shape::Dot { p, r } => {
             c.fill_color(prim.style.color);
             let rr = r * xf.scale;

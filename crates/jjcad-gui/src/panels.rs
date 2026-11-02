@@ -1016,6 +1016,13 @@ pub(crate) fn entity_length(e: &jjcad_core::model::Entity) -> f64 {
             }
             d * r
         }
+        // Ellipsenbogen: Länge des Abschnitts als Summe der Sehnen (ein
+        // Ellipsenbogen hat kein geschlossenes Längenmaß).
+        K::EllipseArc { c, rx, ry, rot, a0, a1 } => {
+            let el = jjcad_core::geom::Ellipse::new(*c, *rx, *ry, *rot);
+            let pts = el.arc_points(*a0, *a1, 0.05);
+            pts.windows(2).map(|w| w[0].dist(w[1])).sum()
+        }
         K::Spline { verts, closed } => {
             let sp = jjcad_core::geom::Spline {
                 verts: verts.clone(),

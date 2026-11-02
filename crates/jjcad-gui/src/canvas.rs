@@ -429,6 +429,18 @@ fn paint_prim(p: &Painter, prim: &Prim, w2s: &dyn Fn(V2) -> Pos2, scale: f64, pc
             stroke_pts(p, &pts, w as f32, col);
             center_mark(p, w2s(*c), col);
         }
+        // Ellipsenbogen: dieselbe Pfeilhöhen-Regel wie Bogen und Kreis
+        // (Gerätemaß 0,15 px), damit die Kurve in jedem Zoom glatt bleibt.
+        PShape::EllipseArc { c, rx, ry, rot, a0, a1 } => {
+            let el = jjcad_core::geom::Ellipse::new(*c, *rx, *ry, *rot);
+            let pts: Vec<Pos2> = el
+                .arc_points(*a0, *a1, 0.15 / scale.max(1e-9))
+                .iter()
+                .map(|q| w2s(*q))
+                .collect();
+            stroke_pts(p, &pts, w as f32, col);
+            center_mark(p, w2s(*c), col);
+        }
         PShape::Dot { p: pos, r } => {
             p.circle_filled(w2s(*pos), ((*r * scale) as f32).max(1.2), col);
         }
@@ -3827,6 +3839,15 @@ fn ghost_shape(
                     let t = i as f64 / 72.0 * std::f64::consts::TAU;
                     w2s(*c + V2::new(rx * t.cos(), ry * t.sin()).rotated(*rot))
                 })
+                .collect();
+            p.add(egui::Shape::line(pts, stroke));
+        }
+        PShape::EllipseArc { c, rx, ry, rot, a0, a1 } => {
+            let el = jjcad_core::geom::Ellipse::new(*c, *rx, *ry, *rot);
+            let pts: Vec<Pos2> = el
+                .arc_points(*a0, *a1, 0.15 / zoom.max(1e-9))
+                .iter()
+                .map(|q| w2s(*q))
                 .collect();
             p.add(egui::Shape::line(pts, stroke));
         }
