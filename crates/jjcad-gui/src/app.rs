@@ -244,6 +244,32 @@ impl Einfuegemodus {
     }
 }
 
+/// Eingabemodus des Bogens (`draw.arc`).
+///
+/// `DreiPunkte` ist der bisherige Weg: Start, Ende und ein Punkt auf dem Bogen
+/// legen den Kreis fest. `Mittelpunkt` fragt Mittelpunkt, Startpunkt und
+/// Endpunkt ab — der Startpunkt bestimmt zugleich den Radius, der Bogen läuft
+/// von dort im mathematisch positiven Drehsinn zum Endpunkt.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum Bogenmodus {
+    /// Start, Ende, Punkt auf dem Bogen.
+    DreiPunkte,
+    /// Mittelpunkt, Startpunkt (Radius), Endpunkt.
+    Mittelpunkt,
+}
+
+impl Bogenmodus {
+    pub const ALL: [Bogenmodus; 2] = [Bogenmodus::DreiPunkte, Bogenmodus::Mittelpunkt];
+
+    /// Beschriftung im Dropdown und im Ribbon-Menü.
+    pub fn label(self) -> &'static str {
+        match self {
+            Bogenmodus::DreiPunkte => "Drei Punkte",
+            Bogenmodus::Mittelpunkt => "Mittelpunkt, Start, Ende",
+        }
+    }
+}
+
 #[derive(Clone)]
 pub struct ToolOptions {
     pub wall_thickness: f64,
@@ -325,6 +351,8 @@ pub struct ToolOptions {
     pub rect_mode: Einfuegemodus,
     /// Einfügemodus der Ellipse (`draw.ellipse`)
     pub ellipse_mode: Einfuegemodus,
+    /// Eingabemodus des Bogens (`draw.arc`)
+    pub arc_mode: Bogenmodus,
 }
 
 impl ToolOptions {
@@ -398,6 +426,7 @@ impl ToolOptions {
             block_scale: 1.0,
             rect_mode: Einfuegemodus::Achsenparallel,
             ellipse_mode: Einfuegemodus::Achsenparallel,
+            arc_mode: Bogenmodus::DreiPunkte,
         }
     }
 
@@ -1763,6 +1792,12 @@ impl App {
                     self.ui.ribbon = RibbonTab::Zeichnen;
                     self.options.ellipse_mode = Einfuegemodus::Basislinie;
                     self.start_tool("draw.ellipse");
+                }
+                // Bogen über Mittelpunkt, Startpunkt und Endpunkt (T0085).
+                "bogenmittelpunkt" | "bogenmitte" => {
+                    self.ui.ribbon = RibbonTab::Zeichnen;
+                    self.options.arc_mode = Bogenmodus::Mittelpunkt;
+                    self.start_tool("draw.arc");
                 }
                 "selpoly" => {
                     // erste (geschlossene) Polylinie auswählen: Eigenschaften-
@@ -4083,6 +4118,12 @@ fn rail(ui: &mut egui::Ui, icon: &str, tooltip: &str, chevron: &str) -> bool {
                                 app.einfuege_group_button(ui, "draw.rect");
                                 continue;
                             }
+                            // Der Bogen trägt zwei Eingabemodi (drei Punkte /
+                            // Mittelpunkt, Start, Ende) — der Pfeil öffnet sie.
+                            if id == "draw.arc" {
+                                app.bogen_group_button(ui);
+                                continue;
+                            }
                             if widgets::ribbon_button(ui, icon, label, app.tool_id() == Some(id)).clicked() {
                                 app.start_tool(id);
                             }
@@ -4859,11 +4900,21 @@ pub(crate) fn commands_hint(tool: &Tool, opts: &ToolOptions) -> &'static str {
             (_, 0) => "Ellipse · Mittelpunkt klicken",
             _ => "Ellipse · Achsen aufziehen",
         },
-        "draw.arc" => match tool.pts.len() {
-            0 => "Bogen · Startpunkt klicken",
-            1 => "Bogen · Endpunkt klicken",
-            _ => "Bogen · Punkt auf dem Bogen klicken",
-        },
+        "draw.arc" => {
+            if opts.arc_mode == Bogenmodus::Mittelpunkt {
+                match tool.pts.len() {
+                    0 => "Bogen · Mittelpunkt klicken",
+                    1 => "Bogen · Startpunkt klicken",
+                    _ => "Bogen · Endpunkt klicken",
+                }
+            } else {
+                match tool.pts.len() {
+                    0 => "Bogen · Startpunkt klicken",
+                    1 => "Bogen · Endpunkt klicken",
+                    _ => "Bogen · Punkt auf dem Bogen klicken",
+                }
+            }
+        }
         "draw.point" => "Punkt · Position klicken",
         "draw.text" => "Text · Position klicken",
         "draw.wall" => {
@@ -5526,6 +5577,89 @@ impl App {
         self.start_tool(tool_id);
     }
 
+    /// Wählt den Eingabemodus des Bogens und startet das Werkzeug.
+    pub fn waehle_bogenmodus(&mut self, modus: Bogenmodus) {
+        self.options.arc_mode = modus;
+        self.start_tool("draw.arc");
+    }
+
+    /// Geteilte Schaltfläche mit einer Liste von Eingabemodi.
+    ///
+    /// Der Hauptknopf startet das Werkzeug im zuletzt gewählten Modus, der
+    /// Pfeil öffnet die Modi. Ein Weg für Ribbon-Menü und Tests: der Modus
+    /// steht in `ToolOptions` (dieselbe Quelle, die auch das
+    /// Eigenschaften-Panel zeigt).
+    fn modus_group_button(
+        &mut self,
+        ui: &mut egui::Ui,
+        tool_id: &'static str,
+        icon: &str,
+        label: &str,
+        cur: usize,
+        items: &[&str],
+        demo: &[&str],
+    ) -> Option<usize> {
+        let active = self.tool_id() == Some(tool_id);
+        let (main, arrow) = widgets::ribbon_split_button(ui, icon, label, active);
+        let popup_id = ui.make_persistent_id(("moduspop", tool_id));
+        let now = ui.input(|i| i.time);
+        if arrow.clicked() {
+            ui.memory_mut(|m| m.toggle_popup(popup_id));
+            ui.memory_mut(|m| m.data.insert_temp(popup_id.with("opened"), now));
+        } else if main.clicked() {
+            self.start_tool(tool_id);
+        }
+        // Prüfhilfe: Menü für einen Screenshot offen halten (nur mit Env-Variable)
+        if let Ok(welches) = std::env::var("JJCAD_DEMO_MENU") {
+            if demo.contains(&welches.as_str()) {
+                ui.memory_mut(|m| m.open_popup(popup_id));
+            }
+        }
+        // Der Klick, der das Menü öffnet, darf nicht sofort einen Eintrag wählen
+        let geoeffnet = ui
+            .memory(|m| m.data.get_temp::<f64>(popup_id.with("opened")).unwrap_or(0.0));
+        let bereit = now - geoeffnet > 0.25;
+        let mut gewaehlt: Option<usize> = None;
+        egui::popup_below_widget(
+            ui,
+            popup_id,
+            &arrow,
+            egui::PopupCloseBehavior::CloseOnClickOutside,
+            |ui| {
+                ui.set_min_width(230.0);
+                ui.spacing_mut().item_spacing.y = 1.0;
+                for (i, name) in items.iter().enumerate() {
+                    let (rect, resp) = ui.allocate_exact_size(
+                        egui::Vec2::new(ui.available_width().max(226.0), 26.0),
+                        egui::Sense::click(),
+                    );
+                    if resp.hovered() || i == cur {
+                        ui.painter().rect_filled(
+                            rect,
+                            egui::Rounding::same(4.0),
+                            Palette::PANEL_ALT,
+                        );
+                    }
+                    let farbe = if i == cur { Palette::ACCENT } else { Palette::TEXT };
+                    ui.painter().text(
+                        egui::Pos2::new(rect.left() + 10.0, rect.center().y),
+                        egui::Align2::LEFT_CENTER,
+                        *name,
+                        egui::FontId::proportional(12.5),
+                        farbe,
+                    );
+                    if bereit && resp.clicked() {
+                        gewaehlt = Some(i);
+                    }
+                }
+            },
+        );
+        if gewaehlt.is_some() {
+            ui.memory_mut(|mm| mm.close_popup());
+        }
+        gewaehlt
+    }
+
     /// Geteilte Schaltfläche für Rechteck und Ellipse.
     ///
     /// Der Hauptknopf startet das Werkzeug im zuletzt gewählten Modus, der
@@ -5540,69 +5674,31 @@ impl App {
             ("rect", "Rechteck")
         };
         let cur = self.options.einfuegemodus(tool_id);
-        let active = self.tool_id() == Some(tool_id);
-        let (main, arrow) = widgets::ribbon_split_button(ui, icon, label, active);
-        let popup_id = ui.make_persistent_id(("einfuegepop", tool_id));
-        let now = ui.input(|i| i.time);
-        if arrow.clicked() {
-            ui.memory_mut(|m| m.toggle_popup(popup_id));
-            ui.memory_mut(|m| m.data.insert_temp(popup_id.with("opened"), now));
-        } else if main.clicked() {
-            self.start_tool(tool_id);
+        let idx = Einfuegemodus::ALL
+            .iter()
+            .position(|m| *m == cur)
+            .unwrap_or(0);
+        let items: Vec<&str> = Einfuegemodus::ALL.iter().map(|m| m.label(tool_id)).collect();
+        let demo: &[&str] = if ellipse {
+            &["ellipse"]
+        } else {
+            &["rect", "rechteck"]
+        };
+        if let Some(i) = self.modus_group_button(ui, tool_id, icon, label, idx, &items, demo) {
+            self.waehle_einfuegemodus(tool_id, Einfuegemodus::ALL[i]);
         }
-        // Prüfhilfe: Menü für einen Screenshot offen halten (nur mit Env-Variable)
-        if let Ok(welches) = std::env::var("JJCAD_DEMO_MENU") {
-            let passt = match welches.as_str() {
-                "ellipse" => ellipse,
-                "rect" | "rechteck" => !ellipse,
-                _ => false,
-            };
-            if passt {
-                ui.memory_mut(|m| m.open_popup(popup_id));
-            }
-        }
-        // Der Klick, der das Menü öffnet, darf nicht sofort einen Eintrag wählen
-        let geoeffnet = ui
-            .memory(|m| m.data.get_temp::<f64>(popup_id.with("opened")).unwrap_or(0.0));
-        let bereit = now - geoeffnet > 0.25;
-        let mut gewaehlt: Option<Einfuegemodus> = None;
-        egui::popup_below_widget(
-            ui,
-            popup_id,
-            &arrow,
-            egui::PopupCloseBehavior::CloseOnClickOutside,
-            |ui| {
-                ui.set_min_width(230.0);
-                ui.spacing_mut().item_spacing.y = 1.0;
-                for m in Einfuegemodus::ALL {
-                    let (rect, resp) = ui.allocate_exact_size(
-                        egui::Vec2::new(ui.available_width().max(226.0), 26.0),
-                        egui::Sense::click(),
-                    );
-                    if resp.hovered() || m == cur {
-                        ui.painter().rect_filled(
-                            rect,
-                            egui::Rounding::same(4.0),
-                            Palette::PANEL_ALT,
-                        );
-                    }
-                    let farbe = if m == cur { Palette::ACCENT } else { Palette::TEXT };
-                    ui.painter().text(
-                        egui::Pos2::new(rect.left() + 10.0, rect.center().y),
-                        egui::Align2::LEFT_CENTER,
-                        m.label(tool_id),
-                        egui::FontId::proportional(12.5),
-                        farbe,
-                    );
-                    if bereit && resp.clicked() {
-                        gewaehlt = Some(m);
-                    }
-                }
-            },
-        );
-        if let Some(m) = gewaehlt {
-            self.waehle_einfuegemodus(tool_id, m);
-            ui.memory_mut(|mm| mm.close_popup());
+    }
+
+    /// Geteilte Schaltfläche für den Bogen: drei Punkte oder Mittelpunkt,
+    /// Startpunkt und Endpunkt (T0085).
+    fn bogen_group_button(&mut self, ui: &mut egui::Ui) {
+        let cur = self.options.arc_mode;
+        let idx = Bogenmodus::ALL.iter().position(|m| *m == cur).unwrap_or(0);
+        let items: Vec<&str> = Bogenmodus::ALL.iter().map(|m| m.label()).collect();
+        if let Some(i) =
+            self.modus_group_button(ui, "draw.arc", "arc", "Bogen", idx, &items, &["bogen", "arc"])
+        {
+            self.waehle_bogenmodus(Bogenmodus::ALL[i]);
         }
     }
 

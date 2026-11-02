@@ -64,6 +64,11 @@ einsehbar und dort frei änderbar (Ribbon ▸ Ansicht ▸ „Tasten").
     und springt deshalb beim Drehen um das Fadenkreuz; **„Mittelpunkt"** hält die
     untere linke Ecke der gedrehten Auswahl am Fadenkreuz, die Vorschau bleibt also
     immer oben rechts davon.
+14. **Bogen**: der Pfeil am Ribbon-Knopf „Bogen" öffnet die beiden Eingabemodi — **„Drei Punkte"**
+    (Start, Ende, Punkt auf dem Bogen, Vorgabe) und **„Mittelpunkt, Start, Ende"**: erst der
+    Mittelpunkt, dann der Startpunkt, der zugleich den **Radius** festlegt, zuletzt der Endpunkt.
+    Der Bogen läuft vom Startpunkt im mathematisch positiven Drehsinn zum Endpunkt. Derselbe
+    Modus steht beim Platzieren im Eigenschaften-Panel unter **„Eingabemodus"**.
 
 Der Zeiger ist über der Zeichenfläche ein durchgehendes Fadenkreuz; der Systemzeiger wird dort
 ausgeblendet.

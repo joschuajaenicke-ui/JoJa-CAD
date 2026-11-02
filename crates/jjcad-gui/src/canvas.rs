@@ -1,8 +1,8 @@
 //! Zeichnungsfläche: Anzeige, Fang, Werkzeugbedienung, Navigation.
 
 use crate::app::{
-    screen_to_world, visible_world_bounds, world_to_screen, App, DrawCacheKey, Einfuegemodus,
-    TabKind, Tool, ToolPhase, View,
+    screen_to_world, visible_world_bounds, world_to_screen, App, Bogenmodus, DrawCacheKey,
+    Einfuegemodus, TabKind, Tool, ToolPhase, View,
 };
 use crate::perf::Abschnitt;
 use crate::theme::Palette;
@@ -2099,7 +2099,41 @@ fn draw_tool_preview(
             }
         }
         "draw.arc" => {
-            if tool.pts.len() == 1 {
+            if app.options.arc_mode == Bogenmodus::Mittelpunkt {
+                // Mittelpunkt, Startpunkt (Radius), Endpunkt: der Startpunkt
+                // legt den Radius fest, der Bogen läuft von dort im
+                // mathematisch positiven Drehsinn zum Zeiger.
+                match tool.pts.len() {
+                    0 => {}
+                    1 => {
+                        let c = tool.pts[0];
+                        let r = c.dist(cursor);
+                        p.line_segment([w2s(c), w2s(cursor)], dashed);
+                        if r > 0.5 {
+                            p.add(kreis_zug(w2s(c), (r * view.zoom) as f32, stroke));
+                            label = format!("r {}", unit.format_plain(r, unit.decimals()));
+                        }
+                    }
+                    _ => {
+                        let c = tool.pts[0];
+                        let s0 = tool.pts[1];
+                        let r = c.dist(s0);
+                        p.line_segment([w2s(c), w2s(cursor)], dashed);
+                        if r > 0.5 {
+                            let a0 = (s0 - c).angle();
+                            let a1 = (cursor - c).angle();
+                            let arc = Arc::new(c, r, a0, a1);
+                            let pts: Vec<Pos2> = CurveQuality::SCREEN
+                                .flatten(&arc, view.zoom)
+                                .iter()
+                                .map(|q| w2s(*q))
+                                .collect();
+                            p.add(Shape::line(pts, stroke));
+                            label = format!("r {}", unit.format_plain(r, unit.decimals()));
+                        }
+                    }
+                }
+            } else if tool.pts.len() == 1 {
                 p.line_segment([w2s(tool.pts[0]), w2s(cursor)], dashed);
             } else if tool.pts.len() >= 2 {
                 let p0 = tool.pts[0];
@@ -4697,6 +4731,38 @@ fn tool_click_at(app: &mut App, w: V2, raw: V2) {
             }
         }
         "draw.arc" => {
+            if app.options.arc_mode == Bogenmodus::Mittelpunkt {
+                // Mittelpunkt, Startpunkt (Radius), Endpunkt. Ein Klick auf
+                // die zuletzt gesetzte Stelle zählt nicht doppelt.
+                if tool.pts.len() < 2 {
+                    let doppelt = tool
+                        .pts
+                        .last()
+                        .map(|q| q.dist(w) <= 0.5)
+                        .unwrap_or(false);
+                    if !doppelt {
+                        tool.pts.push(w);
+                        app.tool = Some(tool);
+                    }
+                } else {
+                    let c = tool.pts[0];
+                    let s0 = tool.pts[1];
+                    let r = c.dist(s0);
+                    // Endpunkt auf dem Startpunkt: kein Bogen (der nächste
+                    // Klick zählt als Endpunkt).
+                    if r > 0.5 && s0.dist(w) > 0.5 {
+                        let a0 = (s0 - c).angle();
+                        let a1 = (w - c).angle();
+                        let _ = run(
+                            app,
+                            "draw.arc",
+                            json!({"c": ax(c), "r": unit.from_mm(r), "a0": a0.to_degrees(), "a1": a1.to_degrees()}),
+                        );
+                        app.tool = None;
+                    }
+                }
+                return;
+            }
             tool.pts.push(w);
             if tool.pts.len() == 3 {
                 let (p0, p1, pm) = (tool.pts[0], tool.pts[1], tool.pts[2]);
@@ -6140,6 +6206,126 @@ mod tests_werkzeug_bleibt_aktiv {
         tool_click(&mut app, V2::new(0.0, 0.0));
         tool_click(&mut app, V2::new(2000.0, 1000.0));
         assert_eq!(polylinien(&app).len(), 1, "zwei Klicks genügen weiterhin");
+    }
+}
+
+#[cfg(test)]
+mod tests_bogen_mittelpunkt {
+    //! T0085: Bogen über Mittelpunkt, Startpunkt und Endpunkt.
+    //!
+    //! Der Startpunkt bestimmt den Radius, der Bogen läuft von dort im
+    //! mathematisch positiven Drehsinn zum Endpunkt. Geprüft wird über den
+    //! Klickpfad `tool_click` — denselben Weg, den die Maus geht — und am
+    //! gespeicherten Objekt, nicht an der Vorschau.
+
+    use super::*;
+
+    fn app() -> App {
+        App::with_ctx(egui::Context::default())
+    }
+
+    /// Bögen als (Mittelpunkt, Radius, Startwinkel, Endwinkel) in Grad.
+    fn boegen(app: &App) -> Vec<(V2, f64, f64, f64)> {
+        app.doc()
+            .entities
+            .iter()
+            .filter_map(|e| match &e.kind {
+                EntityKind::Arc { c, r, a0, a1 } => {
+                    Some((*c, *r, a0.to_degrees(), a1.to_degrees()))
+                }
+                _ => None,
+            })
+            .collect()
+    }
+
+    /// Mittelpunkt, Startpunkt (Radius) und Endpunkt ergeben den Bogen; der
+    /// Radius kommt aus dem Startpunkt, nicht aus dem Endpunkt.
+    #[test]
+    fn mittelpunkt_start_und_ende_ergeben_den_bogen() {
+        let mut app = app();
+        app.options.arc_mode = Bogenmodus::Mittelpunkt;
+        app.start_tool("draw.arc");
+        tool_click(&mut app, V2::new(0.0, 0.0)); // Mittelpunkt
+        tool_click(&mut app, V2::new(1000.0, 0.0)); // Startpunkt = Radius
+        assert!(boegen(&app).is_empty(), "ohne Endpunkt entsteht nichts");
+        // Der Endpunkt liegt doppelt so weit weg — der Radius bleibt 1000.
+        tool_click(&mut app, V2::new(0.0, 2000.0));
+
+        let alle = boegen(&app);
+        assert_eq!(alle.len(), 1, "Bogen angelegt");
+        let (c, r, a0, a1) = alle[0];
+        assert!(c.dist(V2::new(0.0, 0.0)) < 1e-6, "Mittelpunkt: {c:?}");
+        assert!((r - 1000.0).abs() < 1e-6, "Radius aus dem Startpunkt: {r}");
+        assert!(a0.abs() < 1e-6, "Startwinkel: {a0}");
+        assert!((a1 - 90.0).abs() < 1e-6, "Endwinkel: {a1}");
+        assert!(app.tool.is_none(), "Werkzeug ist nach dem Bogen beendet");
+    }
+
+    /// Ein zweiter Klick auf den Mittelpunkt legt keinen Radius fest — der
+    /// nächste Klick zählt als Startpunkt.
+    #[test]
+    fn mittelpunkt_ohne_radius_behaelt_den_mittelpunkt() {
+        let mut app = app();
+        app.options.arc_mode = Bogenmodus::Mittelpunkt;
+        app.start_tool("draw.arc");
+        tool_click(&mut app, V2::new(0.0, 0.0));
+        tool_click(&mut app, V2::new(0.0, 0.0));
+        assert!(boegen(&app).is_empty(), "Radius null legt nichts an");
+        assert_eq!(app.tool.as_ref().unwrap().pts.len(), 1, "Mittelpunkt bleibt");
+
+        tool_click(&mut app, V2::new(500.0, 0.0));
+        tool_click(&mut app, V2::new(0.0, 500.0));
+        assert_eq!(boegen(&app).len(), 1, "der nächste Klick setzt den Radius");
+    }
+
+    /// Ein Endpunkt auf dem Startpunkt ergibt keinen Bogen; die beiden
+    /// gesetzten Punkte bleiben stehen.
+    #[test]
+    fn endpunkt_auf_dem_startpunkt_behaelt_die_punkte() {
+        let mut app = app();
+        app.options.arc_mode = Bogenmodus::Mittelpunkt;
+        app.start_tool("draw.arc");
+        tool_click(&mut app, V2::new(0.0, 0.0));
+        tool_click(&mut app, V2::new(1000.0, 0.0));
+        tool_click(&mut app, V2::new(1000.0, 0.0));
+        assert!(boegen(&app).is_empty(), "gleicher Punkt legt nichts an");
+        assert_eq!(app.tool.as_ref().unwrap().pts.len(), 2, "Punkte bleiben");
+
+        tool_click(&mut app, V2::new(0.0, 1000.0));
+        assert_eq!(boegen(&app).len(), 1, "der nächste Klick setzt das Ende");
+    }
+
+    /// Ohne Umschalten bleibt der bisherige Weg (Start, Ende, Bogenpunkt).
+    #[test]
+    fn drei_punkte_bleiben_die_vorgabe() {
+        let mut app = app();
+        assert_eq!(app.options.arc_mode, Bogenmodus::DreiPunkte);
+        app.start_tool("draw.arc");
+        tool_click(&mut app, V2::new(0.0, 0.0));
+        tool_click(&mut app, V2::new(2000.0, 0.0));
+        tool_click(&mut app, V2::new(1000.0, 1000.0));
+        let alle = boegen(&app);
+        assert_eq!(alle.len(), 1, "Bogen aus drei Punkten");
+        let (c, r, _, _) = alle[0];
+        assert!(c.dist(V2::new(1000.0, 0.0)) < 1e-6, "Mittelpunkt: {c:?}");
+        assert!((r - 1000.0).abs() < 1e-6, "Radius: {r}");
+    }
+
+    /// Die Aufforderung nennt im neuen Modus die drei Schritte.
+    #[test]
+    fn aufforderung_nennt_mittelpunkt_start_und_ende() {
+        let mut app = app();
+        app.options.arc_mode = Bogenmodus::Mittelpunkt;
+        app.start_tool("draw.arc");
+        let hint = |app: &App| {
+            let t = app.tool.as_ref().unwrap();
+            crate::app::commands_hint(t, &app.options)
+        };
+        assert_eq!(hint(&app), "Bogen · Mittelpunkt klicken");
+        tool_click(&mut app, V2::new(0.0, 0.0));
+        assert_eq!(hint(&app), "Bogen · Startpunkt klicken");
+        tool_click(&mut app, V2::new(1000.0, 0.0));
+        assert_eq!(hint(&app), "Bogen · Endpunkt klicken");
     }
 }
 
