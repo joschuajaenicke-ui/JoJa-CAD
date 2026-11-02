@@ -2130,16 +2130,17 @@ fn zeilen_knopf(ui: &mut Ui, text: &str) -> egui::Response {
     ui.button(text)
 }
 
-/// Layoutzeile unter dem Tastenbild (T0076): Auswahl der gespeicherten
-/// Layouts, Speichern, Import und Export. Sie ersetzt den früheren Knopf
-/// „Werkseinstellungen" — die Werkseinstellung ist das erste Layout der Liste.
+/// Layoutzeile unter dem Tastenbild (T0076/T0079): Auswahl der Layouts,
+/// Speichern, Import und Export. Sie ersetzt den früheren Knopf
+/// „Werkseinstellungen" — die erste Zeile ist die Vorlage JoJa-CAD, daneben
+/// stehen die Vorlagen Allplan, ArchiCAD und AutoCAD.
 fn keyboard_layouts(app: &mut App, ui: &mut Ui) {
     let mut zeile: Vec<(String, Rect)> = Vec::new();
     ui.horizontal(|ui| {
         ui.label(theme::dim("Layout"));
         // Das **ausdrücklich** gewählte Layout (`keymap_aktiv`), nicht das erste
         // mit gleicher Belegung: sonst zeigte die Auswahl nach dem Speichern
-        // wieder „Werkseinstellung" (T0076).
+        // wieder die erste Vorlage (T0076).
         let aktiv = app.prefs.keymap_aktiv();
         // Die Wertespalte des Auswahlfelds ist 150 px breit — lange Namen würden
         // in die Knöpfe daneben laufen.
@@ -2195,12 +2196,12 @@ fn keyboard_layouts(app: &mut App, ui: &mut Ui) {
             .on_hover_text("Die aktuelle Belegung unter einem Namen ablegen");
         zeile.push(("Speichern".to_string(), speichern.rect));
         if speichern.clicked() {
-            // Die Werkseinstellung ist nicht überschreibbar — sie darf deshalb
-            // nicht als Name im Feld stehen (das war der Grund, warum „Speichern"
-            // scheinbar nichts tat).
+            // Die eingebauten Vorlagen sind nicht überschreibbar — sie dürfen
+            // deshalb nicht als Name im Feld stehen (das war der Grund, warum
+            // „Speichern" scheinbar nichts tat).
             app.ui.keymap_name = Some(
                 aktiv
-                    .filter(|i| *i > 0)
+                    .filter(|i| *i >= jjcad_core::persist::VORLAGEN.len())
                     .map(|i| app.prefs.keymap_presets[i].name.clone())
                     .unwrap_or_default(),
             );
@@ -2218,8 +2219,8 @@ fn keyboard_layouts(app: &mut App, ui: &mut Ui) {
             app.open_file_dialog(FileMode::ExportKeymap);
         }
         // Löschen: das in der Auswahl stehende gespeicherte Layout. Die
-        // Werkseinstellung bleibt.
-        let loeschbar = matches!(aktiv, Some(i) if i > 0);
+        // eingebauten Vorlagen bleiben (T0079).
+        let loeschbar = matches!(aktiv, Some(i) if i >= jjcad_core::persist::VORLAGEN.len());
         let loeschen = ui.add_enabled_ui(loeschbar, |ui| zeilen_knopf(ui, "Löschen"));
         zeile.push(("Löschen".to_string(), loeschen.response.rect));
         if loeschen.inner.clicked() {
@@ -2442,7 +2443,7 @@ fn help_body(app: &mut App, ui: &mut Ui) {
         });
     }
     ui.add_space(10.0);
-    ui.label(theme::bold("Tastenbelegung (Werkseinstellung)", 15.0));
+    ui.label(theme::bold("Tastenbelegung (Vorlage JoJa-CAD)", 15.0));
     ui.add_space(4.0);
     egui::Grid::new("helpkeys")
         .num_columns(2)
@@ -2696,8 +2697,8 @@ mod tests_tastatur {
         let _konfig = WegwerfKonfig::neu("belegen");
         let (mut app, ctx) = app_mit_tastatur();
         assert!(
-            app.prefs.action_for_key("t").is_none(),
-            "Testtaste t ist in der Werkseinstellung belegt"
+            app.prefs.action_for_key(",").is_none(),
+            "Testtaste Komma ist in der Vorlage JoJa-CAD belegt"
         );
 
         // Ribbon-Knopf „Wand" — derselbe Weg wie der Klick im Ribbon.
@@ -2709,22 +2710,22 @@ mod tests_tastatur {
         );
 
         let tasten = app.ui.last_tasten.clone().expect("Tastenbild gezeichnet");
-        let (_, _, t) = *taste_mit(&tasten, "t");
+        let (_, _, t) = *taste_mit(&tasten, ",");
         klick(&ctx, &mut app, t.center());
 
         assert_eq!(
-            app.prefs.action_for_key("t").as_deref(),
+            app.prefs.action_for_key(",").as_deref(),
             Some("draw.wall"),
             "die leere Taste hat die Funktion nicht übernommen"
         );
-        assert_eq!(app.ui.keymap_selected.as_deref(), Some("t"));
+        assert_eq!(app.ui.keymap_selected.as_deref(), Some(","));
         assert!(app.ui.keymap_funktion.is_none(), "die Funktion bleibt gemerkt");
         assert!(app.tool.is_none(), "das Werkzeug läuft nach dem Belegen weiter");
 
         // Der Beleg steht in der Voreinstellungsdatei, nicht nur im Speicher.
         let gespeichert = jjcad_core::persist::UserPrefs::load();
         assert_eq!(
-            gespeichert.action_for_key("t").as_deref(),
+            gespeichert.action_for_key(",").as_deref(),
             Some("draw.wall"),
             "die Belegung wurde nicht gespeichert"
         );
@@ -2737,7 +2738,7 @@ mod tests_tastatur {
         let _sperre = KONFIG.lock().unwrap_or_else(|e| e.into_inner());
         let _konfig = WegwerfKonfig::neu("belegt");
         let (mut app, ctx) = app_mit_tastatur();
-        let vorher = app.prefs.action_for_key("g").expect("G ist in der Werkseinstellung belegt");
+        let vorher = app.prefs.action_for_key("g").expect("G ist in der Vorlage JoJa-CAD belegt");
 
         app.run_action(&ctx, "draw.door");
         let tasten = app.ui.last_tasten.clone().expect("Tastenbild gezeichnet");
@@ -2758,11 +2759,11 @@ mod tests_tastatur {
         app.ui.keymap_funktion = Some("file.save".to_string());
 
         let tasten = app.ui.last_tasten.clone().expect("Tastenbild gezeichnet");
-        let (_, _, t) = *taste_mit(&tasten, "t");
+        let (_, _, t) = *taste_mit(&tasten, ",");
         klick(&ctx, &mut app, t.center());
 
         assert!(
-            app.prefs.action_for_key("t").is_none(),
+            app.prefs.action_for_key(",").is_none(),
             "eine fest verdrahtete Funktion wurde auf eine Taste gelegt"
         );
         assert_eq!(
@@ -2834,7 +2835,7 @@ mod tests_tastatur {
             "die Funktion darf nur ihre Taste verlieren, nicht selbst verschwinden"
         );
         assert_eq!(
-            app.prefs.action_for_key("t"),
+            app.prefs.action_for_key(","),
             None,
             "eine fremde Taste wurde mitgeleert"
         );
@@ -2852,7 +2853,7 @@ mod tests_tastatur {
         let _sperre = KONFIG.lock().unwrap_or_else(|e| e.into_inner());
         let _konfig = WegwerfKonfig::neu("mehrfach");
         let (mut app, ctx) = app_mit_tastatur();
-        let frei = ["t", "ä"];
+        let frei = [",", "ä"];
         for key in frei {
             assert!(
                 app.prefs.action_for_key(key).is_none(),
@@ -2871,7 +2872,7 @@ mod tests_tastatur {
         }
         assert_eq!(
             app.prefs.keys_for("draw.wall"),
-            &["g".to_string(), "t".to_string(), "ä".to_string()],
+            &["g".to_string(), ",".to_string(), "ä".to_string()],
             "die Funktion muss auf allen drei Tasten liegen"
         );
         // Die Werkstaste G bleibt erhalten, die Auswertung findet beide.
@@ -3224,18 +3225,18 @@ mod tests_tastatur {
         let _konfig = WegwerfKonfig::neu("inventar");
         let (mut app, ctx) = app_mit_tastatur();
         assert!(
-            app.prefs.action_for_key("t").is_none(),
-            "Testtaste t ist in der Werkseinstellung belegt"
+            app.prefs.action_for_key(",").is_none(),
+            "Testtaste Komma ist in der Vorlage JoJa-CAD belegt"
         );
 
         let tasten = app.ui.last_tasten.clone().expect("Tastenbild gezeichnet");
-        let (_, _, t) = *taste_mit(&tasten, "t");
+        let (_, _, t) = *taste_mit(&tasten, ",");
         klick(&ctx, &mut app, t.center());
 
-        assert_eq!(app.ui.keymap_selected.as_deref(), Some("t"));
+        assert_eq!(app.ui.keymap_selected.as_deref(), Some(","));
         assert_eq!(
             app.ui.bind_key.as_deref(),
-            Some("t"),
+            Some(","),
             "die Taste wartet nicht auf eine Funktion aus dem Inventar"
         );
         assert!(app.ui.inventory_open, "das Inventar wurde nicht geöffnet");
@@ -3248,7 +3249,7 @@ mod tests_tastatur {
         crate::inventory::funktion_gewaehlt(&mut app, "draw.wall");
 
         assert_eq!(
-            app.prefs.action_for_key("t").as_deref(),
+            app.prefs.action_for_key(",").as_deref(),
             Some("draw.wall"),
             "die gewählte Funktion liegt nicht auf der Taste"
         );
@@ -3256,7 +3257,7 @@ mod tests_tastatur {
         assert!(app.tool.is_none(), "das Werkzeug läuft nach dem Belegen weiter");
         let gespeichert = jjcad_core::persist::UserPrefs::load();
         assert_eq!(
-            gespeichert.action_for_key("t").as_deref(),
+            gespeichert.action_for_key(",").as_deref(),
             Some("draw.wall"),
             "die Belegung wurde nicht gespeichert"
         );
@@ -3270,14 +3271,14 @@ mod tests_tastatur {
         let _konfig = WegwerfKonfig::neu("inventar-fest");
         let (mut app, ctx) = app_mit_tastatur();
         let tasten = app.ui.last_tasten.clone().expect("Tastenbild gezeichnet");
-        let (_, _, t) = *taste_mit(&tasten, "t");
+        let (_, _, t) = *taste_mit(&tasten, ",");
         klick(&ctx, &mut app, t.center());
-        assert_eq!(app.ui.bind_key.as_deref(), Some("t"));
+        assert_eq!(app.ui.bind_key.as_deref(), Some(","));
 
         crate::inventory::funktion_gewaehlt(&mut app, "file.save");
 
         assert!(
-            app.prefs.action_for_key("t").is_none(),
+            app.prefs.action_for_key(",").is_none(),
             "eine fest verdrahtete Funktion wurde auf eine Taste gelegt"
         );
         assert_eq!(
@@ -3317,14 +3318,14 @@ mod tests_tastatur {
         assert!(app.ui.bind_slot.is_none(), "der Slot wartet weiter auf ein Element");
 
         // Dasselbe für die Tastaturbelegung.
-        app.ui.bind_key = Some("t".to_string());
+        app.ui.bind_key = Some(",".to_string());
         app.ui.bind_slot = None;
         app.ui.inventory_open = true;
         app.ui.inventory_tab = 2;
         crate::inventory::funktion_gewaehlt(&mut app, "draw.wall");
 
         assert_eq!(
-            app.prefs.action_for_key("t").as_deref(),
+            app.prefs.action_for_key(",").as_deref(),
             Some("draw.wall"),
             "die Funktion liegt nicht auf der Taste"
         );
@@ -3335,7 +3336,7 @@ mod tests_tastatur {
 
         // Eine fest verdrahtete Funktion wird nicht zugeteilt — die Liste bleibt
         // stehen, damit der nächste Klick greifen kann.
-        app.ui.bind_key = Some("t".to_string());
+        app.ui.bind_key = Some(",".to_string());
         app.ui.inventory_open = true;
         app.ui.inventory_tab = 2;
         crate::inventory::funktion_gewaehlt(&mut app, "file.save");
@@ -3344,7 +3345,7 @@ mod tests_tastatur {
             "ohne Zuteilung darf die Funktionsliste nicht zufallen"
         );
         assert_eq!(
-            app.prefs.action_for_key("t").as_deref(),
+            app.prefs.action_for_key(",").as_deref(),
             Some("draw.wall"),
             "die feste Funktion hat die Taste überschrieben"
         );
@@ -3406,9 +3407,11 @@ mod tests_tastatur {
             texte.iter().any(|t| t == "Layout"),
             "die Layoutauswahl fehlt unter dem Tastenbild"
         );
+        // T0079: Die Auswahl zeigt die erste Vorlage („Vorlage JoJa-CAD") —
+        // die fremden Vorlagen stehen im aufgeklappten Menü (eigener Test).
         assert!(
-            texte.iter().any(|t| t.contains("Werkseinstellung")),
-            "die Werkseinstellung steht nicht in der Auswahl"
+            texte.iter().any(|t| t.contains("Vorlage JoJa-CAD")),
+            "die Vorlage JoJa-CAD steht nicht in der Auswahl"
         );
     }
 
@@ -3541,12 +3544,60 @@ mod tests_tastatur {
         );
     }
 
+    /// T0079: Das Auswahlmenü führt die vier eingebauten Vorlagen.
+    #[test]
+    fn layoutmenue_zeigt_die_vier_vorlagen() {
+        let (mut app, ctx) = app_mit_tastatur();
+        for _ in 0..2 {
+            rahmen(&ctx, &mut app, vec![]);
+        }
+        let feld = app
+            .ui
+            .last_keymap_zeile
+            .clone()
+            .expect("Layoutzeile gezeichnet")[0]
+            .1;
+        klick(&ctx, &mut app, feld.center());
+        let out = rahmen(&ctx, &mut app, vec![]);
+        for name in jjcad_core::persist::VORLAGEN {
+            let _ = text_mitte(&out, name)
+                .unwrap_or_else(|| panic!("„{name}“ steht nicht im Menü"));
+        }
+    }
+
+    /// T0079: Die eingebauten Vorlagen lassen sich nicht löschen — der Knopf
+    /// ist ausgegraut und ein Klick ändert nichts.
+    #[test]
+    fn eingebaute_vorlage_laesst_sich_nicht_loeschen() {
+        let (mut app, ctx) = app_mit_tastatur();
+        for _ in 0..2 {
+            rahmen(&ctx, &mut app, vec![]);
+        }
+        assert_eq!(app.prefs.keymap_aktiv(), Some(0));
+        let zeile = app
+            .ui
+            .last_keymap_zeile
+            .clone()
+            .expect("Layoutzeile gezeichnet");
+        let (_, loeschen) = zeile
+            .iter()
+            .find(|(n, _)| n == "Löschen")
+            .expect("kein Löschen-Knopf");
+        klick(&ctx, &mut app, loeschen.center());
+        assert_eq!(
+            app.prefs.keymap_presets.len(),
+            jjcad_core::persist::VORLAGEN.len(),
+            "eine eingebaute Vorlage wurde gelöscht"
+        );
+        assert_eq!(app.prefs.keymap_aktiv(), Some(0));
+    }
+
     /// T0076: Wechsel aus einer ungespeicherten Belegung fragt nach, statt die
     /// Änderung still zu verwerfen.
     #[test]
     fn wechsel_aus_ungespeicherter_belegung_fragt_nach() {
         let (mut app, _ctx) = app_mit_tastatur();
-        app.prefs.bind("draw.wall", "t");
+        app.prefs.bind("draw.wall", ",");
         assert!(app.prefs.keymap_ungespeichert());
         layout_wechseln(&mut app, 0);
         assert_eq!(
@@ -3555,7 +3606,7 @@ mod tests_tastatur {
             "der Wechsel läuft ohne Rückfrage durch"
         );
         assert_eq!(
-            app.prefs.action_for_key("t").as_deref(),
+            app.prefs.action_for_key(",").as_deref(),
             Some("draw.wall"),
             "die Belegung wurde schon verworfen"
         );
@@ -3567,7 +3618,7 @@ mod tests_tastatur {
         let _sperre = KONFIG.lock().unwrap_or_else(|e| e.into_inner());
         let _konfig = WegwerfKonfig::neu("wechsel-rueckfrage");
         let (mut app, ctx) = app_mit_tastatur();
-        app.prefs.bind("draw.wall", "t");
+        app.prefs.bind("draw.wall", ",");
         layout_wechseln(&mut app, 0);
         // Ein frisches Fenster (Area) ist erst im zweiten Bild sichtbar.
         rahmen(&ctx, &mut app, vec![]);
@@ -3587,7 +3638,7 @@ mod tests_tastatur {
         assert!(app.ui.keymap_wechsel.is_none());
         assert_eq!(app.prefs.keymap_aktiv(), Some(0));
         assert!(
-            app.prefs.action_for_key("t").is_none(),
+            app.prefs.action_for_key(",").is_none(),
             "die ungespeicherte Taste blieb belegt"
         );
     }
@@ -3604,7 +3655,7 @@ mod tests_tastatur {
             bindings: Default::default(),
         });
         app.prefs.keymap_aktiv = Some(0);
-        app.prefs.bind("draw.wall", "t");
+        app.prefs.bind("draw.wall", ",");
         layout_wechseln(&mut app, 1);
         rahmen(&ctx, &mut app, vec![]);
         let out = rahmen(&ctx, &mut app, vec![]);
@@ -3645,7 +3696,7 @@ mod tests_tastatur {
         let _sperre = KONFIG.lock().unwrap_or_else(|e| e.into_inner());
         let _konfig = WegwerfKonfig::neu("layout-speichern");
         let (mut app, ctx) = app_mit_tastatur();
-        app.prefs.bind("draw.wall", "t");
+        app.prefs.bind("draw.wall", ",");
         app.ui.keymap_name = Some("Büro".to_string());
         let eingabe = egui::Event::Key {
             key: egui::Key::Enter,
@@ -3660,13 +3711,13 @@ mod tests_tastatur {
             "das Layout wurde nicht angelegt"
         );
         assert!(
-            app.prefs.action_for_key("t").as_deref() == Some("draw.wall"),
+            app.prefs.action_for_key(",").as_deref() == Some("draw.wall"),
             "die Belegung ging beim Speichern verloren"
         );
         assert!(app.ui.keymap_name.is_none(), "die Namensabfrage bleibt offen");
 
         // Der gespeicherte Name erscheint in der Auswahl — auch dann, wenn die
-        // Belegung der Werkseinstellung entspricht (das war der Fehler).
+        // Belegung der Vorlage JoJa-CAD entspricht (das war der Fehler).
         rahmen(&ctx, &mut app, vec![]);
         let out = rahmen(&ctx, &mut app, vec![]);
         let texte: Vec<String> = out
@@ -3698,7 +3749,7 @@ mod tests_tastatur {
         let _sperre = KONFIG.lock().unwrap_or_else(|e| e.into_inner());
         let _konfig = WegwerfKonfig::neu("layout-loeschen");
         let (mut app, ctx) = app_mit_tastatur();
-        app.prefs.bind("draw.wall", "t");
+        app.prefs.bind("draw.wall", ",");
         app.prefs.keymap_speichern("Büro").expect("Layout speichern");
         for _ in 0..2 {
             rahmen(&ctx, &mut app, vec![]);
@@ -3720,7 +3771,7 @@ mod tests_tastatur {
         );
         assert_eq!(app.prefs.keymap_aktiv(), None);
         assert_eq!(
-            app.prefs.action_for_key("t").as_deref(),
+            app.prefs.action_for_key(",").as_deref(),
             Some("draw.wall"),
             "die Tasten des gelöschten Layouts gingen verloren"
         );

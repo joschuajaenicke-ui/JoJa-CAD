@@ -169,7 +169,9 @@ Mit dem Nutzer abgestimmt — nicht „verbessern“:
   darunter das Tastenbild, darunter **nur** die Layoutzeile. Das Fenster ist
   genau so breit wie das Tastenbild (`tastatur_flaeche().x` = 716 px), keine
   Knopfzeile unter der Tastatur. Layouts liegen in `UserPrefs::keymap_presets`
-  (erstes = „Werkseinstellung", nicht überschreibbar, nicht löschbar), Wechsel
+  — die **ersten vier sind eingebaute Vorlagen** (T0079: „Vorlage JoJa-CAD",
+  „Vorlage Allplan", „Vorlage ArchiCAD", „Vorlage AutoCAD"; nicht
+  überschreibbar, nicht löschbar, eigene Layouts stehen dahinter), Wechsel
   über `keymap_anwenden`, Export/Import über `keymap_exportieren_aktuell` /
   `keymap_importieren`. Die Auswahl zeigt den passenden Namen oder „Eigene
   Belegung" (`keymap_passend`) — keinen gespeicherten Zustand raten.
