@@ -9451,6 +9451,33 @@ mod tests_stutzvorschau {
         v
     }
 
+    /// Alle Formen der Warnfarbe (auch Pfade — ein Bogen wird als Linienzug
+    /// gezeichnet, nicht als einzelne Strecke).
+    fn stutz_formen(app: &mut App, zeiger: Option<V2>) -> Vec<usize> {
+        let view = app.current_view();
+        let ctx = app.ctx.clone();
+        let out = ctx.run(egui::RawInput::default(), |ctx| {
+            let layer = egui::LayerId::new(egui::Order::Background, egui::Id::new("stutz"));
+            let p = egui::Painter::new(ctx.clone(), layer, Rect::EVERYTHING);
+            draw_tool_preview(app, &p, RECT, view, zeiger, zeiger);
+        });
+        let mut v = Vec::new();
+        for cs in &out.shapes {
+            let farbe = match &cs.shape {
+                Shape::LineSegment { stroke, .. } => Some(stroke.color.clone()),
+                Shape::Path(p) => Some(p.stroke.color.clone()),
+                _ => None,
+            };
+            if farbe == Some(egui::epaint::ColorMode::Solid(Palette::DANGER)) {
+                v.push(match &cs.shape {
+                    Shape::Path(p) => p.points.len(),
+                    _ => 2,
+                });
+            }
+        }
+        v
+    }
+
     /// Strichstärke des Zielobjekts setzen (Papier-Millimeter).
     fn staerke(app: &mut App, id: Id, mm: f64) {
         let e = app.doc_mut().entities.iter_mut().find(|e| e.id == id).unwrap();
@@ -9459,6 +9486,29 @@ mod tests_stutzvorschau {
 
     fn ziel_id(app: &App) -> Id {
         app.doc().entities.last().unwrap().id
+    }
+
+    /// Kreis, der von einem zweiten Kreis geschnitten wird (T0084, Turn 2):
+    /// die Vorschau zeigt die Kappe zwischen den beiden Schnittpunkten.
+    #[test]
+    fn kreisvorschau_zeigt_die_kappe_zwischen_zwei_kreisen() {
+        let mut app = App::with_ctx(egui::Context::default());
+        app.session_mut()
+            .execute("doc.settings", &json!({ "input_unit": "m" }))
+            .expect("Einheit setzen");
+        for c in [[0, 0], [2, 0]] {
+            app.session_mut()
+                .execute("draw.circle", &json!({ "c": c, "r": 2 }))
+                .expect("Kreis anlegen");
+        }
+        app.start_tool("modify.trim");
+        // Punkt auf dem rechten Scheitel des ersten Kreises (45°).
+        let formen = stutz_formen(&mut app, Some(V2::new(1414.0, 1414.0)));
+        assert!(!formen.is_empty(), "Vorschau fehlt: {formen:?}");
+        assert!(
+            formen.iter().any(|n| *n > 4),
+            "Bogen als Linienzug erwartet: {formen:?}"
+        );
     }
 
     #[test]
