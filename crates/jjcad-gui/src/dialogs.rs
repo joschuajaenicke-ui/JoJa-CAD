@@ -2568,7 +2568,7 @@ mod modaltests {
 }
 
 #[cfg(test)]
-mod tests_tastatur {
+pub(crate) mod tests_tastatur {
     //! T0045: Das Tastenbild ist eine vollständige deutsche Tastatur, und die
     //! fest vergebenen Tasten (Hotbar-Ziffern, Steuerungstasten) sind ausgegraut
     //! und lassen sich nicht belegen.
@@ -2659,12 +2659,12 @@ mod tests_tastatur {
     /// hält `~/.config/jjcad/prefs.json` des Nutzers unberührt. Die Sperre
     /// serialisiert diese Tests, sonst überschreibt ein zweiter Test den
     /// Umweg des ersten wieder mit dem echten Verzeichnis.
-    pub(super) static KONFIG: std::sync::Mutex<()> = std::sync::Mutex::new(());
+    pub(crate) static KONFIG: std::sync::Mutex<()> = std::sync::Mutex::new(());
 
-    pub(super) struct WegwerfKonfig(Option<std::ffi::OsString>, std::path::PathBuf);
+    pub(crate) struct WegwerfKonfig(Option<std::ffi::OsString>, std::path::PathBuf);
 
     impl WegwerfKonfig {
-        pub(super) fn neu(name: &str) -> Self {
+        pub(crate) fn neu(name: &str) -> Self {
             let alt = std::env::var_os("XDG_CONFIG_HOME");
             let dir = std::env::temp_dir().join(format!(
                 "jjcad-t0064-{}-{name}",

@@ -679,6 +679,10 @@ pub struct UiState {
     /// Tasten des Tastenbilds der Tastaturbelegung in Fensterkoordinaten
     /// (Regressionstest T0045: gesperrte Tasten dürfen sich nicht belegen lassen)
     pub last_tasten: Option<Vec<(&'static str, &'static str, Rect)>>,
+    /// Plätze des Inventar-Lagers in Fensterkoordinaten samt ihrem Index —
+    /// geprüft wird, dass die mittlere Maustaste genau den getroffenen Platz
+    /// leert (T0088, wie bei den Hotbar-Slots).
+    pub last_lager: Option<Vec<(usize, Rect)>>,
     /// Breite des zuletzt gezeichneten Ribbon-Inhalts
     pub last_ribbon_content_w: f32,
     pub zoom_edit: Option<String>,
@@ -757,6 +761,7 @@ impl Default for UiState {
             last_kopf_links: None,
             last_kopf_rechts: None,
             last_tasten: None,
+            last_lager: None,
             last_ribbon_content_w: 0.0,
             zoom_edit: None,
             typed: String::new(),
