@@ -11,6 +11,7 @@ use jjcad_core::render::{self, DisplayList, Shape as PShape};
 
 pub fn show(app: &mut App, ctx: &egui::Context) {
     if !app.ui.inventory_open {
+        app.ui.last_lager = None;
         return;
     }
     let mut open = true;
@@ -93,7 +94,7 @@ pub fn show(app: &mut App, ctx: &egui::Context) {
 fn storage_tab(app: &mut App, ui: &mut Ui) {
     ui.horizontal(|ui| {
         ui.label(theme::dim(
-            "Freies Raster – Elemente und Funktionen zwischenlagern. Auf einen Hotbar-Slot ziehen zum Belegen.",
+            "Freies Raster – Elemente und Funktionen zwischenlagern. Auf einen Hotbar-Slot ziehen zum Belegen, mittlere Maustaste leert.",
         ));
     });
     ui.add_space(6.0);
@@ -101,6 +102,7 @@ fn storage_tab(app: &mut App, ui: &mut Ui) {
         let cols = 9;
         let size = 58.0;
         let rows = (app.prefs.inventory.len() + cols - 1) / cols;
+        let mut plaetze: Vec<(usize, Rect)> = Vec::new();
         for row in 0..rows {
             ui.horizontal(|ui| {
                 for col in 0..cols {
@@ -125,11 +127,20 @@ fn storage_tab(app: &mut App, ui: &mut Ui) {
                             app.toast("Werkzeug wählen, dann leeren Lagerplatz anklicken");
                         }
                     }
+                    // Mittlere Maustaste: Platz leeren — dieselbe Geste wie in
+                    // der Hotbar (T0088). Die linke Taste startet weiterhin das
+                    // Element; `clicked()` gilt in egui nur der linken.
+                    if resp.clicked_by(egui::PointerButton::Middle) && item.is_some() {
+                        app.prefs.inventory[idx] = None;
+                        let _ = app.prefs.save();
+                        app.toast("Lager · geleert");
+                    }
                     if resp.drag_started() {
                         if let Some(a) = &item {
                             app.ui.slot_drag = Some((usize::MAX, a.clone()));
                         }
                     }
+                    plaetze.push((idx, resp.rect));
                     resp.context_menu(|ui| {
                         if item.is_some() {
                             if ui.button("Leeren").clicked() {
@@ -154,6 +165,7 @@ fn storage_tab(app: &mut App, ui: &mut Ui) {
                 }
             });
         }
+        app.ui.last_lager = Some(plaetze);
         ui.add_space(8.0);
         if ui.button("+ Weitere Reihe").clicked() {
             for _ in 0..9 {
@@ -545,4 +557,133 @@ fn functions_tab(app: &mut App, ui: &mut Ui) {
             app.doc().entities.len()
         )));
     });
+}
+
+#[cfg(test)]
+mod tests_lager {
+    //! T0088: Die mittlere Maustaste leert einen Platz im Inventar-Lager —
+    //! dieselbe Geste, die die Hotbar schon seit T0064 kennt. Geprüft wird über
+    //! echte Zeigerereignisse am gezeichneten Raster, nicht über einen Aufruf
+    //! der Löschfunktion: sonst bliebe ein fehlender Mauszweig unbemerkt.
+
+    use super::*;
+    use crate::dialogs::tests_tastatur::{WegwerfKonfig, KONFIG};
+
+    thread_local! {
+        /// egui-Zeit je Testfaden — ein prozessweiter Zähler lief im
+        /// Parallelauf davon und ließ Klicks verfallen (siehe T0076).
+        static ZEIT: std::cell::Cell<f64> = const { std::cell::Cell::new(0.0) };
+    }
+
+    fn naechste_zeit() -> f64 {
+        ZEIT.with(|z| {
+            let t = z.get() + 0.25;
+            z.set(t);
+            t
+        })
+    }
+
+    fn rahmen(ctx: &egui::Context, app: &mut App, events: Vec<egui::Event>) {
+        let input = egui::RawInput {
+            screen_rect: Some(Rect::from_min_size(Pos2::ZERO, Vec2::new(1500.0, 950.0))),
+            time: Some(naechste_zeit()),
+            events,
+            ..Default::default()
+        };
+        let _ = ctx.run(input, |ctx| app.ui(ctx));
+    }
+
+    fn klick(ctx: &egui::Context, app: &mut App, pos: Pos2, button: egui::PointerButton) {
+        let knopf = |pressed: bool| egui::Event::PointerButton {
+            pos,
+            button,
+            pressed,
+            modifiers: egui::Modifiers::NONE,
+        };
+        rahmen(ctx, app, vec![egui::Event::PointerMoved(pos)]);
+        rahmen(ctx, app, vec![knopf(true)]);
+        rahmen(ctx, app, vec![knopf(false)]);
+        rahmen(ctx, app, vec![]);
+    }
+
+    /// Lager mit zwei belegten Plätzen (0 und 4), offen im Reiter „Lager“.
+    fn app_mit_lager() -> (App, egui::Context) {
+        let ctx = egui::Context::default();
+        let mut app = App::with_ctx(ctx.clone());
+        app.prefs.inventory = vec![None; 40];
+        app.prefs.inventory[0] = Some("draw.wall".into());
+        app.prefs.inventory[4] = Some("draw.line".into());
+        app.ui.inventory_open = true;
+        app.ui.inventory_tab = 0;
+        // Zwei Bilder: ein frisches Fenster kennt seine Größe erst danach.
+        rahmen(&ctx, &mut app, vec![]);
+        rahmen(&ctx, &mut app, vec![]);
+        (app, ctx)
+    }
+
+    fn platz(app: &App, idx: usize) -> Rect {
+        let plaetze = app.ui.last_lager.clone().expect("Lager gezeichnet");
+        plaetze
+            .iter()
+            .find(|(i, _)| *i == idx)
+            .map(|(_, r)| *r)
+            .unwrap_or_else(|| panic!("Lagerplatz {idx} wurde nicht gezeichnet"))
+    }
+
+    #[test]
+    fn mittlere_maustaste_leert_den_lagerplatz() {
+        let _sperre = KONFIG.lock().unwrap_or_else(|e| e.into_inner());
+        let _konfig = WegwerfKonfig::neu("lager-mitte");
+        let (mut app, ctx) = app_mit_lager();
+
+        let ziel = platz(&app, 0).center();
+        klick(&ctx, &mut app, ziel, egui::PointerButton::Middle);
+
+        assert_eq!(
+            app.prefs.inventory[0], None,
+            "die mittlere Maustaste hat den Lagerplatz nicht geleert"
+        );
+        assert_eq!(
+            app.prefs.inventory[4].as_deref(),
+            Some("draw.line"),
+            "ein fremder Lagerplatz wurde mitgeleert"
+        );
+        assert_eq!(
+            app.tool_id(),
+            None,
+            "das Leeren darf das Element nicht zusätzlich starten"
+        );
+        assert_eq!(app.prefs.inventory.len(), 40, "das Raster bleibt vollständig");
+    }
+
+    #[test]
+    fn linke_taste_startet_weiterhin_und_leere_plaetze_bleiben_leer() {
+        let _sperre = KONFIG.lock().unwrap_or_else(|e| e.into_inner());
+        let _konfig = WegwerfKonfig::neu("lager-links");
+        let (mut app, ctx) = app_mit_lager();
+
+        // Platz 1 ist leer: die mittlere Taste hat dort nichts zu leeren.
+        let leer = platz(&app, 1).center();
+        klick(&ctx, &mut app, leer, egui::PointerButton::Middle);
+        assert_eq!(
+            app.prefs.inventory[0].as_deref(),
+            Some("draw.wall"),
+            "ein Leerklick hat einen anderen Platz geleert"
+        );
+        assert_eq!(app.prefs.inventory[1], None, "Platz 1 war und bleibt leer");
+
+        // Die linke Taste startet das Element wie bisher.
+        let belegt = platz(&app, 4).center();
+        klick(&ctx, &mut app, belegt, egui::PointerButton::Primary);
+        assert_eq!(
+            app.tool_id(),
+            Some("draw.line"),
+            "die linke Taste startet das Element nicht mehr"
+        );
+        assert_eq!(
+            app.prefs.inventory[4].as_deref(),
+            Some("draw.line"),
+            "die linke Taste hat den Platz geleert"
+        );
+    }
 }
