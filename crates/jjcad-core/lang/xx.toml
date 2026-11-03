@@ -1,0 +1,1402 @@
+# JoJa-CAD — leere Vorlage für eine weitere Sprache (T0105)
+#
+# So wird daraus eine Sprache (ausführlich: docs/I18N.md):
+#   1. Diese Datei kopieren:  lang/fr.toml
+#   2. Zeilen auskommentieren heißt übersetzen: das „# “ am Zeilenanfang
+#      entfernen und den deutschen Text durch die Übersetzung ersetzen.
+#      Nicht übersetzte Zeilen dürfen auskommentiert bleiben — dann erscheint
+#      der deutsche Text (Rückfall).
+#   3. Schlüssel NIE ändern, nur die Texte rechts vom „=“.
+#   4. Prüfen:  python3 scripts/i18n-check.py
+#   5. In crates/jjcad-core/src/i18n.rs eintragen (KATALOG_QUELLEN, Lang).
+#
+# English: copy this file to lang/<code>.toml, uncomment a line and replace the
+# German text on the right of „=“. Never change a key. Missing entries fall back
+# to German. Then run scripts/i18n-check.py and register the file in
+# crates/jjcad-core/src/i18n.rs (KATALOG_QUELLEN and the Lang enum).
+#
+# Platzhalter wie {name} müssen erhalten bleiben — sie werden zur Laufzeit
+# gefüllt; die Reihenfolge darf sich ändern, der Name nicht.
+
+#
+# --- action ------------------------------------------------------
+#
+# Aktionen: Beschriftung (.label) und Kurzhinweis (.hint) von Ribbon,
+# Inventar und MCP. Der Hinweis steht als Tooltip und in der Statuszeile.
+#
+[action.file.new]
+# hint = "Neue Zeichnung anlegen"
+# label = "Neu"
+#
+[action.file.open]
+# hint = "Zeichnung (.jjcad) öffnen"
+# label = "Öffnen"
+#
+[action.file.save]
+# hint = "Zeichnung speichern"
+# label = "Speichern"
+#
+[action.file.save_as]
+# hint = "Speichern unter …"
+# label = "Speichern unter"
+#
+[action.file.export_pdf]
+# hint = "Blatt als PDF exportieren"
+# label = "PDF exportieren"
+#
+[action.file.export_dxf]
+# hint = "Zeichnung als DXF exportieren"
+# label = "DXF exportieren"
+#
+[action.file.import_dxf]
+# hint = "DXF-Datei importieren"
+# label = "DXF importieren"
+#
+[action.file.import.pdf]
+# hint = "PDF-Seite als ein Element einfügen (Block, zerlegbar)"
+# label = "PDF einfügen"
+#
+[action.file.export_png]
+# hint = "Ansicht als PNG rendern"
+# label = "PNG exportieren"
+#
+[action.edit.undo]
+# hint = "Letzten Schritt rückgängig"
+# label = "Rückgängig"
+#
+[action.edit.redo]
+# hint = "Rückgängig machen rückgängig"
+# label = "Wiederholen"
+#
+[action.edit.copy]
+# hint = "Auswahl in die Zwischenablage"
+# label = "Kopieren"
+#
+[action.draw.line]
+# hint = "Start- und Endpunkt klicken"
+# label = "Linie"
+#
+[action.draw.polyline]
+# hint = "Punkte klicken, Klick auf den Startpunkt schließt, Enter beendet"
+# label = "Polylinie"
+#
+[action.draw.spline]
+# hint = "Punkte klicken, Klick auf den Startpunkt schließt, Enter beendet"
+# label = "Spline"
+#
+[action.draw.rect]
+# hint = "Zwei Ecken klicken"
+# label = "Rechteck"
+#
+[action.draw.circle]
+# hint = "Mittelpunkt und Radius klicken"
+# label = "Kreis"
+#
+[action.draw.arc]
+# hint = "Start, Ende, Bogenpunkt klicken"
+# label = "Bogen"
+#
+[action.draw.point]
+# hint = "Punkt setzen"
+# label = "Punkt"
+#
+[action.draw.fill]
+# hint = "Geschlossene Kontur klicken"
+# label = "Füllfläche"
+#
+[action.draw.fill.boundary]
+# hint = "Umriss abfahren: Punkte klicken, Enter beendet"
+# label = "Fläche nach Umriss"
+#
+[action.draw.fill.points]
+# hint = "Punkte klicken, Enter schließt die Fläche"
+# label = "Fläche nach Punktfolge"
+#
+[action.draw.fill.paint]
+# hint = "In eine leere Fläche klicken — die Umgrenzung wird ermittelt"
+# label = "Farbeimer"
+#
+[action.draw.text]
+# hint = "Position klicken, dann Text eingeben"
+# label = "Text"
+#
+[action.draw.ellipse]
+# hint = "Mittelpunkt und Achsen klicken"
+# label = "Ellipse"
+#
+[action.draw.wall]
+# hint = "Wandachse: Start- und Endpunkt"
+# label = "Wand"
+#
+[action.draw.volume]
+# hint = "Geschlossene Kontur klicken — der Körper erhält eine Höhe"
+# label = "Volumen"
+#
+[action.draw.volume.points]
+# hint = "Punkte klicken, Enter schließt den Körper"
+# label = "Volumen nach Punktfolge"
+#
+[action.draw.volume.paint]
+# hint = "In eine leere Fläche klicken — die Umgrenzung wird ermittelt"
+# label = "Volumen füllen"
+#
+[action.draw.door]
+# hint = "In eine Wand klicken"
+# label = "Tür"
+#
+[action.draw.window]
+# hint = "In eine Wand klicken"
+# label = "Fenster"
+#
+[action.draw.stair]
+# hint = "Außenkante aufziehen, dann die Breite klicken"
+# label = "Treppe"
+#
+[action.draw.stair.label]
+# hint = "Stufenzahl und Schrittmaß als Textfeld neben die Treppe setzen"
+# label = "Treppenbeschriftung"
+#
+[action.modify.select]
+# hint = "Objekte anklicken oder Fenster aufziehen"
+# label = "Auswählen"
+#
+[action.modify.move]
+# hint = "Auswahl, Basispunkt, Zielpunkt"
+# label = "Verschieben"
+#
+[action.modify.order]
+# hint = "to = Platz in der Zeichenreihenfolge (1 = ganz hinten)"
+# label = "Reihenfolge"
+#
+[action.modify.copy]
+# hint = "Auswahl und Basispunkt — Kopie in die Zwischenablage"
+# label = "Kopieren mit Basispunkt"
+#
+[action.modify.rotate]
+# hint = "Auswahl, Zentrum, Winkel"
+# label = "Drehen"
+#
+[action.modify.mirror]
+# hint = "Auswahl, Spiegelachse"
+# label = "Spiegeln"
+#
+[action.modify.scale]
+# hint = "Auswahl, Zentrum, Faktor"
+# label = "Skalieren"
+#
+[action.modify.offset]
+# hint = "Abstand und Seite klicken"
+# label = "Versetzen"
+#
+[action.modify.trim]
+# hint = "Zu stutzendes Segment anklicken"
+# label = "Stutzen"
+#
+[action.modify.extend]
+# hint = "Ende anklicken, das verlängert wird"
+# label = "Verlängern"
+#
+[action.modify.intersect]
+# hint = "Zwei Linien oder Wände anklicken — sie treffen sich im Schnittpunkt"
+# label = "Verschneiden"
+#
+[action.modify.area.union]
+# hint = "Zwei oder mehr angrenzende Füllflächen auswählen — sie werden eine"
+# label = "Flächen vereinigen"
+#
+[action.modify.area.split]
+# hint = "Punkte der Schnittlinie klicken, Enter teilt die Fläche"
+# label = "Fläche schneiden"
+#
+[action.modify.erase]
+# hint = "Auswahl löschen"
+# label = "Löschen"
+#
+[action.modify.explode]
+# hint = "Blöcke/Bauteile in Einzelelemente, Text in Linien zerlegen"
+# label = "Zerlegen"
+#
+[action.text.format]
+# hint = "Zeichenbereich eines Textes fett/kursiv/unterstrichen/hochgestellt setzen"
+# label = "Text auszeichnen"
+#
+[action.modify.quickselect]
+# hint = "Objekt anklicken — dessen Erzeuger startet"
+# label = "Schnellauswahl"
+#
+[action.dim.linear]
+# hint = "Zwei Punkte und Maßlinie setzen"
+# label = "Maß"
+#
+[action.dim.chain]
+# hint = "Punkte klicken, Enter beendet"
+# label = "Maßkette"
+#
+[action.dim.elevation.plan]
+# hint = "Punkt klicken — Höhe im Eigenschaften-Panel"
+# label = "Grundriss-Kote"
+#
+[action.dim.elevation.section]
+# hint = "Punkte klicken, Enter beendet — erster Punkt ist ±0,00"
+# label = "Schnitt-Kote"
+#
+[action.dim.room]
+# hint = "Raumumriss klicken, Enter setzt den Stempel"
+# label = "Raumstempel"
+#
+[action.dim.style]
+# hint = "Bemaßungsstil bearbeiten"
+# label = "Bemaßungsstil"
+#
+[action.block.insert]
+# hint = "Block aus Inventar platzieren"
+# label = "Block einfügen"
+#
+[action.block.create]
+# hint = "Auswahl zu Projektblock machen"
+# label = "Block aus Auswahl"
+#
+[action.block.explode]
+# hint = "Blockinstanzen auflösen"
+# label = "Block zerlegen"
+#
+[action.block.manager]
+# hint = "Blockbibliothek öffnen"
+# label = "Block-Manager"
+#
+[action.sheet.new]
+# hint = "Blatt anlegen"
+# label = "Neues Blatt"
+#
+[action.sheet.pdf]
+# hint = "Aktuelles Blatt als PDF"
+# label = "Blatt → PDF"
+#
+[action.sheet.add_viewport]
+# hint = "Ansichtsfenster hinzufügen"
+# label = "Ansichtsfenster"
+#
+[action.sheet.viewport_tool]
+# hint = "Rechteck für ein Ansichtsfenster aufziehen"
+# label = "Ansicht aufziehen"
+#
+[action.view.zoom_extents]
+# hint = "Zeichnung einpassen"
+# label = "Alles zeigen"
+#
+[action.view.zoom_in]
+# hint = "Hineinzoomen"
+# label = "Vergrößern"
+#
+[action.view.zoom_out]
+# hint = "Herauszoomen"
+# label = "Verkleinern"
+#
+[action.view.pan_left]
+# hint = "Ansicht einen Schritt nach links schieben"
+# label = "Ansicht links"
+#
+[action.view.pan_right]
+# hint = "Ansicht einen Schritt nach rechts schieben"
+# label = "Ansicht rechts"
+#
+[action.view.pan_up]
+# hint = "Ansicht einen Schritt nach oben schieben"
+# label = "Ansicht oben"
+#
+[action.view.pan_down]
+# hint = "Ansicht einen Schritt nach unten schieben"
+# label = "Ansicht unten"
+#
+[action.view.inventory]
+# hint = "Inventar ein-/ausblenden (E)"
+# label = "Inventar"
+#
+[action.view.layers]
+# hint = "Layerverwaltung"
+# label = "Layer"
+#
+[action.view.keymap]
+# hint = "Tastenbelegung bearbeiten"
+# label = "Tastaturbelegung"
+#
+[action.view.settings]
+# hint = "Einheiten und Raster"
+# label = "Einstellungen"
+#
+[action.view.hotbar_next]
+# hint = "Nächste Hotbar-Vorlage"
+# label = "Hotbar-Vorlage"
+#
+[action.view.help]
+# hint = "Tastenbelegung und Kurzhilfe"
+# label = "Hilfe"
+#
+[action.view.fullscreen]
+# hint = "Vollbild ein-/ausschalten (F11)"
+# label = "Vollbild"
+#
+[action.view.rotate_tool]
+# hint = "Ansicht um ein Drehzentrum drehen (drei Klicks)"
+# label = "Ansicht drehen"
+#
+[action.edit.repeat]
+# hint = "Letzten Befehl wiederholen"
+# label = "Wiederholen"
+#
+[action.modify.set]
+# hint = "Layer, Farbe, Maße setzen"
+# label = "Eigenschaften ändern"
+#
+[action.layer.create]
+# hint = "Neuen Layer anlegen"
+# label = "Layer anlegen"
+#
+[action.layer.update]
+# hint = "Layer umbenennen/ändern"
+# label = "Layer ändern"
+#
+[action.layer.delete]
+# hint = "Leeren Layer löschen"
+# label = "Layer löschen"
+#
+[action.layer.list]
+# hint = "Alle Layer mit Eigenschaften"
+# label = "Layer auflisten"
+#
+[action.layer.set_current]
+# hint = "Zeichenlayer wechseln"
+# label = "Aktueller Layer"
+#
+[action.select.all]
+# hint = "Gesamte Zeichnung auswählen"
+# label = "Alles auswählen"
+#
+[action.select.query]
+# hint = "Nach Layer/Typ/Bereich filtern"
+# label = "Objekte abfragen"
+#
+[action.select.area]
+# hint = "Fläche je Objekt und Summe — ids[], layer, type, a/b"
+# label = "Flächen ermitteln"
+#
+[action.block.update]
+# hint = "Blockdefinition aus Auswahl ersetzen"
+# label = "Block aktualisieren"
+#
+[action.block.delete]
+# hint = "Blockdefinition entfernen"
+# label = "Block löschen"
+#
+[action.block.list]
+# hint = "Alle Blöcke mit Anzahl"
+# label = "Blöcke auflisten"
+#
+[action.sheet.update]
+# hint = "Blattgröße, Maßstab, Rahmen"
+# label = "Blatt bearbeiten"
+#
+[action.sheet.delete]
+# hint = "Blatt entfernen"
+# label = "Blatt löschen"
+#
+[action.sheet.update_viewport]
+# hint = "Ansichtsfenster anpassen"
+# label = "Ansicht ändern"
+#
+[action.sheet.remove_viewport]
+# hint = "Ansichtsfenster entfernen"
+# label = "Ansicht löschen"
+#
+[action.sheet.fit_viewport]
+# hint = "Ansichtsfenster auf die Zeichnung einpassen — Maßstab aus der Blattgröße"
+# label = "Ansicht einpassen"
+#
+[action.doc.settings]
+# hint = "Einheiten, Raster, Vorgaben"
+# label = "Zeichnungseinstellungen"
+#
+[action.doc.project]
+# hint = "Bauherr, Projekt, Plan-Nr."
+# label = "Projektdaten"
+#
+# --- group -------------------------------------------------------
+#
+# Gruppenüberschrift der Aktionen (ActionGroup::key) — kurz halten.
+#
+[group]
+# aendern = "Ändern"
+# ansicht = "Ansicht"
+# architektur = "Architektur"
+# bemassung = "Bemaßung"
+# blatt = "Blatt"
+# bloecke = "Blöcke"
+# datei = "Datei"
+# hilfe = "Hilfe"
+# zeichnen = "Zeichnen"
+#
+# --- ribbon ------------------------------------------------------
+#
+# Menüband: Reiter, Gruppen und einzelne Schaltflächen. Sehr kurze
+# Texte, die Schaltfläche ist 70 px breit.
+#
+[ribbon.tab]
+# aendern = "Ändern"
+# ansicht = "Ansicht"
+# architektur = "Architektur"
+# bemassung = "Bemaßung"
+# blatt = "Blatt"
+# bloecke = "Blöcke"
+# start = "Start"
+# zeichnen = "Zeichnen"
+#
+[ribbon.group]
+# ansicht = "Ansicht"
+# ausgabe = "Ausgabe"
+# bauteile = "Bauteile"
+# bearbeiten = "Bearbeiten"
+# bibliothek = "Bibliothek"
+# blaetter = "Blätter"
+# blatteinstellungen = "Blatteinstellungen"
+# drehen = "Drehen"
+# fangen = "Fangen"
+# fenster = "Fenster"
+# fuellen = "Füllen"
+# geometrie = "Geometrie"
+# grundelemente = "Grundelemente"
+# masse = "Maße"
+# massketten = "Maßketten"
+# panels = "Panels"
+# papierraum = "Papierraum"
+# projekt = "Projekt"
+# reihenfolge = "Reihenfolge"
+# schnellzugriff = "Schnellzugriff"
+# sonstiges = "Sonstiges"
+# weitere = "Weitere"
+# zeichnung = "Zeichnung"
+# zoom = "Zoom"
+# zwischenablage = "Zwischenablage"
+#
+[ribbon]
+# block_from_selection = "Aus Auswahl"
+# block_insert = "Einfügen"
+# block_manager = "Block-Manager"
+# cut = "Ausschneiden"
+# dxf = "DXF"
+# explode = "Zerlegen"
+# fullscreen = "Vollbild"
+# grid = "Raster"
+# hotbar = "Hotbar"
+# import = "Import"
+# inventory = "Inventar"
+# keys = "Tasten"
+# layers = "Layer"
+# new = "Neu"
+# open = "Öffnen"
+# paste = "Einfügen"
+# pdf = "PDF"
+# pdf_insert = "PDF einfügen"
+# png = "PNG"
+# project = "Projektdaten"
+# properties = "Eigenschaften"
+# rotate = "Drehen"
+# save = "Speichern"
+# settings = "Einstellungen"
+# sheet_new = "Neues Blatt"
+# sheet_pdf = "Blatt-PDF"
+# split = "Schneiden"
+# union = "Vereinigen"
+# viewport = "Ansicht"
+# zoom_all = "Alles"
+# zoom_in = "Größer"
+# zoom_out = "Kleiner"
+#
+# --- settings ----------------------------------------------------
+#
+# Einstellungsfenster: Titel, Suchfeld, Kategorien.
+#
+[settings]
+# category_architektur = "Architektur"
+# category_bedienung = "Bedienung"
+# category_bemassung = "Bemaßung"
+# category_darstellung = "Darstellung"
+# category_einheiten = "Einheiten und Maßstab"
+# category_fangen = "Fangen"
+# category_raster = "Raster"
+# language_hint = "gilt sofort, ohne Neustart"
+# none_found = "Keine Einstellung gefunden"
+# search = "Einstellungen durchsuchen …"
+# title = "Einstellungen"
+#
+# --- test --------------------------------------------------------
+#
+# Nur für die Tests des Sprachbaukastens — NICHT übersetzen.
+#
+[test]
+# nur_deutsch = "Nur auf Deutsch"
+#
+# --- ui ----------------------------------------------------------
+#
+# Auswahlwerte in Auswahllisten (Einfügemodus, Bogenmodus, Füllart …).
+#
+[ui.einfuegemodus]
+# basislinie = "Basislinie + Höhe"
+# ecken = "Über Ecken"
+# mittelachse = "Mittelachse + Breite"
+# mittelpunkt = "Über Mittelpunkt"
+#
+[ui.bogenmodus]
+# drei_punkte = "Drei Punkte"
+# mittelpunkt_start_ende = "Mittelpunkt, Start, Ende"
+#
+[ui.fillkind]
+# flaeche = "Fläche"
+# schraffur = "Schraffur"
+# volumen = "Volumen"
+#
+[ui.fillinput]
+# farbeimer = "Farbeimer"
+# kontur = "Kontur anklicken"
+# punkte = "Punkte setzen"
+#
+[ui.copyinput]
+# basispunkt = "Kopieren mit Basispunkt"
+# kopieren = "Kopieren"
+#
+# --- gui ---------------------------------------------------------
+#
+# Meldungen und Beschriftungen der Oberfläche, je Quelldatei ein
+# Abschnitt (gui.app, gui.canvas, gui.panels …). Platzhalter wie {name}
+# und {wert1} stehen für Werte, die das Programm einsetzt.
+#
+[gui.app]
+# abgebrochen = "Abgebrochen"
+# alle_an = "Alle an"
+# alle_aus = "Alle aus"
+# alles_auswaehlen = "Alles auswählen"
+# anschlag_links = "Anschlag links"
+# anschlag_rechts = "Anschlag rechts"
+# ansicht_ausgangslage = "Ansicht · Ausgangslage"
+# ansicht_drehen_abgebrochen = "Ansicht drehen · abgebrochen"
+# ansicht_drehen_bezugspunkt_klicken = "Ansicht drehen · Bezugspunkt klicken"
+# ansicht_drehen_richtung_klicken = "Ansicht drehen · Richtung klicken"
+# ansicht_drehen_zentrum_klicken = "Ansicht drehen · Zentrum klicken"
+# ansicht_einpassen = "Ansicht einpassen"
+# ansichtsfenster_angelegt = "Ansichtsfenster · angelegt"
+# ansichtsfenster_rechteck_aufziehen = "Ansichtsfenster · Rechteck aufziehen"
+# ausrichtung = "Ausrichtung"
+# auswaehlen_objekte_oder_fenster = "Auswählen · Objekte oder Fenster"
+# auswahl_aufheben = "Auswahl aufheben"
+# auswahl_ausgeschnitten = "Auswahl · ausgeschnitten"
+# auswahl_eingefuegt = "Auswahl · eingefügt"
+# auswahl_ganz_nach_hinten = "Auswahl ganz nach hinten — zuerst gezeichnet"
+# auswahl_ganz_nach_vorn = "Auswahl ganz nach vorn — zuletzt gezeichnet"
+# auswahl_gespiegelt = "Auswahl · gespiegelt"
+# auswahl_hinter_ein_element = "Auswahl hinter ein Element setzen — danach das Element anklicken"
+# auswahl_kopiert = "Auswahl · kopiert"
+# auswahl_leer = "Auswahl · leer"
+# auswahl_skaliert = "Auswahl · skaliert"
+# auswahl_verschoben = "Auswahl · verschoben"
+# auswahl_versetzt = "Auswahl · versetzt"
+# auswahl_vor_ein_element = "Auswahl vor ein Element setzen — danach das Element anklicken"
+# auswahl_zerlegt = "Auswahl · zerlegt"
+# blatt_das_letzte_bleibt_offen = "Blatt · das letzte bleibt offen"
+# blatt_oeffnen_dann_zeichnen = "Blatt öffnen, dann zeichnen"
+# blatt_zuerst_ein_blatt_oeffnen = "Blatt · zuerst ein Blatt öffnen"
+# block_eingefuegt = "Block · eingefügt"
+# block_position_klicken = "Block · Position klicken"
+# bogen_endpunkt_klicken = "Bogen · Endpunkt klicken"
+# bogen_gesetzt = "Bogen · gesetzt"
+# bogen_mittelpunkt_klicken = "Bogen · Mittelpunkt klicken"
+# bogen_punkt_auf_dem_bogen_klicken = "Bogen · Punkt auf dem Bogen klicken"
+# bogen_startpunkt_klicken = "Bogen · Startpunkt klicken"
+# datei_bereits_offen_x = "Datei · bereits offen: {wert1}"
+# datei_geoeffnet_x = "Datei · geöffnet: {wert1}"
+# datei_gespeichert_x = "Datei · gespeichert: {wert1}"
+# datei_neu = "Datei · neu"
+# demo_kueche = "Küche"
+# demo_naechster_punkt_klicken = "Nächster Punkt klicken – Enter beendet"
+# dpi_wie_im_pdf_zoombhaengig = "DPI — wie im PDF (zoombhängig)"
+# drehen = "Drehen"
+# drehen_bezugspunkt_klicken = "Drehen · Bezugspunkt klicken"
+# drehen_neuen_punkt_klicken = "Drehen · neuen Punkt klicken"
+# drehen_zentrum_klicken = "Drehen · Zentrum klicken"
+# dxf_exportiert_x = "DXF · exportiert: {wert1}"
+# dxf_x_objekte_importiert = "DXF · {n} Objekte importiert"
+# eigenschaften_im_panel = "Eigenschaften im Panel"
+# einfuegen = "Einfügen"
+# einfuegen_zwischenablage_leer = "Einfügen · Zwischenablage leer"
+# einstellungen = "Einstellungen"
+# element_anklicken_hinter_das_die_auswahl_soll_esc_bricht = "Element anklicken, HINTER das die Auswahl soll — ESC bricht ab"
+# element_anklicken_vor_das_die_auswahl_soll_esc_bricht_ab = "Element anklicken, VOR das die Auswahl soll — ESC bricht ab"
+# ellipse_achsen_aufziehen = "Ellipse · Achsen aufziehen"
+# ellipse_breite_klicken = "Ellipse · Breite klicken"
+# ellipse_gesetzt = "Ellipse · gesetzt"
+# ellipse_mittelachse_anfang_klicken = "Ellipse · Mittelachse Anfang klicken"
+# ellipse_mittelachse_ende_klicken = "Ellipse · Mittelachse Ende klicken"
+# ellipse_mittelpunkt_klicken = "Ellipse · Mittelpunkt klicken"
+# endpunkt = "Endpunkt"
+# fangmodi = "Fangmodi"
+# fangraster = "Fangraster"
+# farbeimer_flaeche_anklicken = "Farbeimer · Fläche anklicken"
+# fenster_eingefuegt = "Fenster · eingefügt"
+# fenster_in_eine_wand_klicken = "Fenster · in eine Wand klicken"
+# flaeche_entlang_einer_punktfolge_in_zwei_teile_schneiden = "Fläche entlang einer Punktfolge in zwei Teile schneiden"
+# flaeche_schneiden_naechster_punkt_enter = "Fläche schneiden · nächster Punkt (Enter)"
+# flaeche_schneiden_randpunkt_klicken = "Fläche schneiden · Randpunkt klicken"
+# format = "Format"
+# fuellflaeche_enter_schliesst = "Füllfläche · Enter schließt"
+# fuellflaeche_gesetzt = "Füllfläche · gesetzt"
+# fuellflaeche_geteilt = "Füllfläche · geteilt"
+# fuellflaeche_kontur_anklicken = "Füllfläche · Kontur anklicken"
+# fuellflaeche_naechster_umrisspunkt_enter = "Füllfläche · nächster Umrisspunkt (Enter)"
+# fuellflaeche_punkt_klicken_mind_3 = "Füllfläche · Punkt klicken (mind. 3)"
+# fuellflaeche_umriss_abfahren = "Füllfläche · Umriss abfahren"
+# fuellflaeche_vereinigt = "Füllfläche · vereinigt"
+# fuellflaeche_verworfen = "Füllfläche · verworfen"
+# ganz_nach_hinten = "Ganz nach hinten"
+# ganz_nach_vorn = "Ganz nach vorn"
+# grundriss_kote_gesetzt = "Grundriss-Kote · gesetzt"
+# grundriss_kote_punkt_klicken = "Grundriss-Kote · Punkt klicken"
+# hilfe_f1 = "Hilfe (F1)"
+# hinter_element = "Hinter Element …"
+# hotbar_slot_x_belegt_x = "Hotbar · Slot {wert1} belegt ({name})"
+# hotbar_verknuepfen_abgebrochen = "Hotbar · verknüpfen abgebrochen"
+# hotbar_x = "Hotbar · {name}"
+# in_beiden_modi_bleiben_die_linienstaerken_sichtbar = "In beiden Modi bleiben die Linienstärken sichtbar."
+# in_den_hintergrund = "In den Hintergrund"
+# in_den_vordergrund = "In den Vordergrund"
+# joja_cad = "JoJa-CAD"
+# joja_cad_zwischenablage_x_objekte = "JoJa-CAD · Zwischenablage ({wert1} Objekte)"
+# kein_blatt_aktiv_oben_auf_einen_blatt_reiter_wechseln = "Kein Blatt aktiv – oben auf einen Blatt-Reiter wechseln."
+# kopieren_mit_basispunkt = "Kopieren mit Basispunkt"
+# kopieren_mit_basispunkt_basispunkt_klicken = "Kopieren mit Basispunkt · Basispunkt klicken"
+# kopieren_mit_basispunkt_objekte_waehlen = "Kopieren mit Basispunkt · Objekte wählen"
+# kreis_gesetzt = "Kreis · gesetzt"
+# kreis_mittelpunkt_klicken = "Kreis · Mittelpunkt klicken"
+# kreis_radius_klicken = "Kreis · Radius klicken"
+# leistung_an = "Leistung · an"
+# leistung_aus = "Leistung · aus"
+# linie_endpunkt_klicken = "Linie · Endpunkt klicken"
+# linie_gesetzt = "Linie · gesetzt"
+# linie_startpunkt_klicken = "Linie · Startpunkt klicken"
+# linienstaerken = "Linienstärken"
+# loeschen = "Löschen"
+# loeschen_erst_objekte_waehlen = "Löschen · erst Objekte wählen"
+# lot = "Lot"
+# mass_erster_punkt = "Maß · erster Punkt"
+# mass_gesetzt = "Maß · gesetzt"
+# mass_masslinie_platzieren = "Maß · Maßlinie platzieren"
+# mass_zweiter_punkt = "Maß · zweiter Punkt"
+# masskette_erster_punkt = "Maßkette · erster Punkt"
+# masskette_gesetzt = "Maßkette · gesetzt"
+# masskette_naechster_punkt_enter_beendet = "Maßkette · nächster Punkt (Enter beendet)"
+# massstab = "Maßstab"
+# meldung_x_polylinie_naechster_punkt_klicken = "Meldung {i} – Polylinie: nächster Punkt klicken"
+# mitte = "Mitte"
+# mittelpunkt = "Mittelpunkt"
+# naechster_punkt = "Nächster Punkt"
+# neues_blatt = "Neues Blatt"
+# nicht_uebernommen = " · nicht übernommen: "
+# objekt_zerlegt = "Objekt · zerlegt"
+# oeffnet_zur_wandaussenseite = "Öffnet zur Wandaußenseite"
+# oeffnet_zur_wandinnenseite = "Öffnet zur Wandinnenseite"
+# ortho = "Ortho"
+# ortho_0_90 = "Ortho (0°/90°)"
+# pdf_exportiert_x = "PDF · exportiert: {wert1}"
+# pdf_x = "PDF · {e}"
+# pdf_x_objekte_uebernommen_x_seite_x = "PDF · {wert1} Objekte übernommen ({wert2} Seite {wert3})"
+# platzieren_abgebrochen = "Platzieren · abgebrochen"
+# png_exportiert_x = "PNG · exportiert: {wert1}"
+# polar = "Polar"
+# polarwinkel_aendern = "Polarwinkel ändern …"
+# polylinie_abgeschlossen = "Polylinie · abgeschlossen"
+# polylinie_naechster_punkt_enter_beendet = "Polylinie · nächster Punkt (Enter beendet)"
+# polylinie_startpunkt_klicken = "Polylinie · Startpunkt klicken"
+# polylinie_startpunkt_klicken_chat = "Polylinie: Startpunkt klicken"
+# punkt_gesetzt = "Punkt · gesetzt"
+# punkt_position_klicken = "Punkt · Position klicken"
+# px_bildschirmkonstant = "px — bildschirmkonstant"
+# quer = "quer"
+# raster = "Raster"
+# raster_anzeigen = "Raster anzeigen"
+# rasterfang = "Rasterfang"
+# rasterweite_x_mm = "Rasterweite: {wert1} mm"
+# raumstempel_enter_setzt_den_stempel = "Raumstempel · Enter setzt den Stempel"
+# raumstempel_gesetzt = "Raumstempel · gesetzt"
+# rechteck_basislinie_anfang_klicken = "Rechteck · Basislinie Anfang klicken"
+# rechteck_basislinie_ende_klicken = "Rechteck · Basislinie Ende klicken"
+# rechteck_erste_ecke_klicken = "Rechteck · erste Ecke klicken"
+# rechteck_gesetzt = "Rechteck · gesetzt"
+# rechteck_hoehe_klicken = "Rechteck · Höhe klicken"
+# rechteck_zweite_ecke_klicken = "Rechteck · zweite Ecke klicken"
+# reihenfolge = "Reihenfolge"
+# reihenfolge_erst_ein_element_waehlen = "Reihenfolge · erst ein Element wählen"
+# reihenfolge_kein_objekt_gewaehlt = "Reihenfolge · kein Objekt gewählt"
+# reihenfolge_objekt_anklicken = "Reihenfolge · Objekt anklicken"
+# rueckgaengig_strg_z = "Rückgängig (Strg+Z)"
+# schnellauswahl_objekt_anklicken = "Schnellauswahl · Objekt anklicken"
+# schnitt = "Schnitt"
+# schnitt_kote_erster_punkt_0_00 = "Schnitt-Kote · erster Punkt (±0,00)"
+# schnitt_kote_gesetzt = "Schnitt-Kote · gesetzt"
+# schnitt_kote_naechster_punkt_enter_beendet = "Schnitt-Kote · nächster Punkt (Enter beendet)"
+# schnittpunkt = "Schnittpunkt"
+# schraffur_gesetzt = "Schraffur · gesetzt"
+# schraffur_kontur_anklicken = "Schraffur · Kontur anklicken"
+# schrittweite_x_fenster_x = "Schrittweite {wert1}°, Fenster ±{wert2}°"
+# schrittweite_x_fenster_x_2 = "Schrittweite {st}°, Fenster ±{tol}°"
+# skalieren_bezugspunkt_klicken = "Skalieren · Bezugspunkt klicken"
+# skalieren_faktor_klicken = "Skalieren · Faktor klicken"
+# spiegeln = "Spiegeln"
+# spiegeln_punkt_der_achse_klicken = "Spiegeln · Punkt der Achse klicken"
+# spiegeln_zweiten_achspunkt_klicken = "Spiegeln · zweiten Achspunkt klicken"
+# spline_abgeschlossen = "Spline · abgeschlossen"
+# spline_naechster_punkt_enter_beendet = "Spline · nächster Punkt (Enter beendet)"
+# spline_startpunkt_klicken = "Spline · Startpunkt klicken"
+# stutzen_segment_anklicken = "Stutzen · Segment anklicken"
+# tastatur_belegen_abgebrochen = "Tastatur · belegen abgebrochen"
+# tastaturbelegung = "Tastaturbelegung"
+# text_gesetzt = "Text · gesetzt"
+# text_position_klicken = "Text · Position klicken"
+# text_text_eingeben_esc_uebernimmt = "Text · Text eingeben (Esc übernimmt)"
+# treppe_aussenkante_anfang_klicken = "Treppe · Außenkante Anfang klicken"
+# treppe_aussenkante_ende_klicken = "Treppe · Außenkante Ende klicken"
+# treppe_breite_klicken = "Treppe · Breite klicken"
+# treppe_gesetzt = "Treppe · gesetzt"
+# tuer_eingefuegt = "Tür · eingefügt"
+# tuer_in_eine_wand_klicken = "Tür · in eine Wand klicken"
+# vereinigen_mindestens_zwei_flaechen_waehlen = "Vereinigen · mindestens zwei Flächen wählen"
+# verlaengern_ende_anklicken = "Verlängern · Ende anklicken"
+# verlauf_wiederholt = "Verlauf · wiederholt"
+# verlauf_wiederholt_x = "Verlauf · wiederholt: {wert1}"
+# verlauf_zurueck = "Verlauf · zurück"
+# verschieben = "Verschieben"
+# verschieben_abgebrochen = "Verschieben · abgebrochen"
+# verschieben_basispunkt_klicken = "Verschieben · Basispunkt klicken"
+# verschieben_objekte_waehlen_enter = "Verschieben · Objekte wählen (Enter)"
+# verschieben_zielpunkt_klicken = "Verschieben · Zielpunkt klicken"
+# verschneiden_ecke_gesetzt = "Verschneiden · Ecke gesetzt"
+# verschneiden_erstes_objekt_anklicken = "Verschneiden · erstes Objekt anklicken"
+# verschneiden_zweites_objekt_anklicken = "Verschneiden · zweites Objekt anklicken"
+# versetzen_objekt_anklicken = "Versetzen · Objekt anklicken"
+# versetzen_seite_klicken = "Versetzen · Seite klicken"
+# volumen_fuellen_leere_flaeche_anklicken = "Volumen füllen · leere Fläche anklicken"
+# volumen_kontur_anklicken = "Volumen · Kontur anklicken"
+# volumen_nach_punktfolge_enter_schliesst = "Volumen nach Punktfolge · Enter schließt"
+# volumen_nach_punktfolge_punkt_klicken = "Volumen nach Punktfolge · Punkt klicken"
+# vor_element = "Vor Element"
+# vx = "v{wert1}"
+# wand_anfang_klicken = "Wand · Anfang klicken"
+# wand_ende_klicken = "Wand · Ende klicken"
+# wand_gesetzt = "Wand · gesetzt"
+# wandausrichtung_x = "Wandausrichtung: {wert1}"
+# wandkanten = "Wandkanten"
+# weitere_einstellungen = "Weitere Einstellungen …"
+# werkzeug_aktion_waehlen = "Werkzeug · Aktion wählen"
+# wiederholen_strg_y = "Wiederholen (Strg+Y)"
+# x_hinweise = ", {warn} Hinweise"
+# zeichenflaeche = "Zeichenfläche"
+# zentrum = "Zentrum"
+# zerlegen = "Zerlegen"
+# zerlegen_objekt_anklicken = "Zerlegen · Objekt anklicken"
+# zwei_oder_mehr_angrenzende_fuellflaechen_zu_einer_verein = "Zwei oder mehr angrenzende Füllflächen zu einer vereinigen"
+#
+[gui.canvas]
+# abgebrochen = "Abgebrochen"
+# abstand_zum_drehzentrum_noetig = "Abstand zum Drehzentrum nötig"
+# ansicht_drehen_abstand_zum_zentrum_noetig = "Ansicht drehen · Abstand zum Zentrum nötig"
+# ansicht_gedreht_x = "Ansicht · gedreht {wert1}°"
+# ansicht_x = "Ansicht {wert1}°"
+# auswahl_kopiert = "Auswahl · kopiert"
+# bezug_x = "Bezug {wert1}°"
+# bis_abstand_zum_drehzentrum_noetig = "bis: Abstand zum Drehzentrum nötig"
+# block_im_inventar_waehlen_e = "Block · im Inventar wählen (E)"
+# drehen_abstand_zum_zentrum = "Drehen · Abstand zum Zentrum nötig"
+# drehen_x = "Drehen · {wert1}°"
+# drehen_x_2 = "Drehen · {wert1}°"
+# einfuegen_klick_setzt_ab = "Einfügen · Klick setzt ab (R dreht, S spiegelt)"
+# faktor_x = "Faktor {wert1}"
+# fenster_nur_auf_einer_wand = "Fenster · nur auf einer Wand"
+# fenster_wand_zu_kurz = "Fenster · Wand zu kurz"
+# fenster_x = "Fenster {wert1}"
+# flaeche_ermitteln = "Fläche ermitteln …"
+# flaeche_x = "Fläche {wert1}"
+# fuellflaeche_geschlossene_kontur_anklicken = "Füllfläche · geschlossene Kontur anklicken"
+# fuellflaeche_mindestens_3_punkte = "Füllfläche · mindestens 3 Punkte"
+# gespiegelt = "gespiegelt"
+# hinter_element_gesetzt = "Hinter Element gesetzt"
+# kontur_anklicken = "Kontur anklicken"
+# kopieren_mit_basispunkt_erst_objekte_waehlen = "Kopieren mit Basispunkt · erst Objekte wählen"
+# kote_x = "Kote {wert1}"
+# objekt_anklicken = "Objekt anklicken"
+# papierraum_zeichnen_und_aendern_wie_im_modell_ansicht_an = "Papierraum: zeichnen und ändern wie im Modell · Ansicht anklicken, verschieben mit V"
+# r_x = "r {wert1}"
+# raumstempel_mindestens_3_punkte = "Raumstempel · mindestens 3 Punkte"
+# reihenfolge_kein_element_getroffen = "Reihenfolge · kein Element getroffen"
+# schliessen = "schließen"
+# schnellauswahl_objekt_anklicken = "Schnellauswahl · Objekt anklicken"
+# seite_waehlen_x_mm = "Seite wählen ({wert1} mm)"
+# treppe_breite_klicken = "Treppe · Breite klicken"
+# treppe_breite_zu_klein = "Treppe · Breite zu klein"
+# tuer_nur_auf_einer_wand = "Tür · nur auf einer Wand"
+# tuer_wand_zu_kurz = "Tür · Wand zu kurz"
+# tuer_x = "Tür {wert1}"
+# verschneiden_objekt_anklicken = "Verschneiden · Objekt anklicken"
+# verschneiden_zweites_objekt_anklicken = "Verschneiden · zweites Objekt anklicken"
+# versetzen_objekt_anklicken = "Versetzen · Objekt anklicken"
+# volumen_geschlossene_kontur_anklicken = "Volumen · geschlossene Kontur anklicken"
+# von_x = "von {wert1}°"
+# vor_element_gesetzt = "Vor Element gesetzt"
+# x_enter_laenge = "{eingabe}  [Enter] Länge"
+# x_punkte = "{wert1} Punkte"
+# x_punkte_x = "{wert1} Punkte · {wert2}"
+# x_stuetzpunkte = "{wert1} Stützpunkte"
+# x_x_mm = "{wert1} × {wert2} mm"
+#
+[gui.chat]
+# mausrad_blaettert = "Mausrad blättert"
+# oder_esc_schliesst_x_enter_schickt_ab_und_schliesst = "^ oder ESC schließt · {oben} · Enter schickt ab und schließt"
+# protokoll = "^ · Protokoll"
+# x_zeilen_zurueck = "{anzahl} Zeilen zurück, Mausrad blättert"
+#
+[gui.diag]
+# ansichtsflaeche_x_x_x = "Ansichtsfläche: {wert1} x {wert2}\n"
+# bildrate_interval_vsync_x = "Bildrate-Interval (vsync): {wert1}\n"
+# bitte_das_png_nicht_das_betriebssystem_fenster_an_das_ti = "Bitte das PNG (nicht das Betriebssystem-Fenster) an das Ticket hängen.\n"
+# die_streifen_stecken_also_im_bild_das_dieses_programm_ze = "Die Streifen stecken also im Bild, das dieses Programm zeichnet.\n"
+# fenster_x_x_x_bildpunkte = "Fenster: {w} x {h} Bildpunkte\n"
+# grafiktreiber_unbekannt_kein_glow_kontext = "Grafiktreiber: unbekannt (kein glow-Kontext)\n"
+# grafiktreiber_x_x_x = "Grafiktreiber: {wert1} | {wert2} | {wert3}\n"
+# helle_1_px_spalten_im_eigenen_bild = "\nHelle 1-px-Spalten im eigenen Bild\n"
+# joja_cad_selbstdiagnose_der_oberflaeche = "JoJa-CAD — Selbstdiagnose der Oberfläche\n"
+# plattform_x_x_windows_version_x = "Plattform: {wert1} {wert2} (Windows-Version: {wert3})\n"
+# skalierung_pixels_per_point_x_anzeige_x = "Skalierung: pixels_per_point = {wert1} (Anzeige: {wert2} %)\n"
+# spalte_x_x_x_der_zeilen_hell_farbe_xxx = "  Spalte x = {x}: {wert1} % der Zeilen hell, Farbe #{wert2}{wert3}{wert4}\n"
+# version_x_build_x_x = "Version {wert1} · Build {wert2} ({wert3})\n"
+#
+[gui.dialogs]
+# 2d_cad_fuer_architektur_und_bauantragszeichnungen = "2D-CAD für Architektur und Bauantragszeichnungen."
+# abbrechen = "Abbrechen"
+# adresse = "Adresse"
+# als_dxf_exportieren = "Als DXF exportieren"
+# als_ein_element_einfuegen_block_zerlegbar = "Als ein Element einfügen (Block, zerlegbar)"
+# als_pdf_exportieren = "Als PDF exportieren"
+# als_png_exportieren = "Als PNG exportieren"
+# anlegen = "Anlegen"
+# architektur = "Architektur"
+# architektur_45 = "Architektur: 45°"
+# aus_objekte_wandern_nur_ueber_das_werkzeug_verschieben = "aus: Objekte wandern nur über das Werkzeug „Verschieben“"
+# auswahl = "Auswahl"
+# basispunkt_drehen_um_das_fadenkreuz_mittelpunkt_vorschau = "Basispunkt: Drehen um das Fadenkreuz · Mittelpunkt: Vorschau bleibt oben rechts"
+# bauherr = "Bauherr"
+# bedienung = "Bedienung"
+# belegung_nicht_gespeichert = "Belegung nicht gespeichert"
+# bemassung = "Bemaßung"
+# bereit_x = "Bereit: {name}"
+# bilder_transparenz_schattierungen_muster_und_beschnitt_u = "Bilder, Transparenz, Schattierungen, Muster und Beschnitt übernimmt JoJa-CAD nicht — sie werden gezählt und gemeldet."
+# bitte_einen_dateinamen_angeben = "Bitte einen Dateinamen angeben"
+# blaetter = "Blätter"
+# block_aus_auswahl = "Block aus Auswahl"
+# block_x_angelegt = "Block '{name}' angelegt"
+# blockname = "Blockname"
+# darstellung = "Darstellung"
+# datei_existiert_nicht = "Datei existiert nicht"
+# datei_gespeichert_x = "Datei · gespeichert: {wert1}"
+# datei_schliessen = "Datei schließen"
+# dateidialog = "Dateidialog"
+# dateiname = "Dateiname"
+# der_dateidialog_des_systems_ist_geoeffnet_datei_waehlen_ = "Der Dateidialog des Systems ist geöffnet. Datei wählen oder abbrechen."
+# dezimalstellen = "Dezimalstellen"
+# dialog_des_betriebssystems_dolphin_dateien_windows = "Dialog des Betriebssystems (Dolphin, Dateien, Windows)"
+# dialog_von_joja_cad = "Dialog von JoJa-CAD"
+# die_aktuelle_belegung_als_datei_schreiben = "Die aktuelle Belegung als Datei schreiben"
+# die_aktuelle_belegung_gehoert_zu_keinem_layout_beim_wech = "Die aktuelle Belegung gehört zu keinem Layout. Beim Wechsel auf „{zielname}“ gehen ihre Änderungen verloren."
+# die_aktuelle_belegung_unter_einem_namen_ablegen = "Die aktuelle Belegung unter einem Namen ablegen"
+# die_auswahl_wird_zur_blockdefinition_und_als_instanz_ein = "Die Auswahl wird zur Blockdefinition und als Instanz eingefügt."
+# diese_angaben_fuellen_das_schriftfeld_und_dynamische_tex = "Diese Angaben füllen das Schriftfeld und dynamische Textfelder."
+# dokument_x_x = "Dokument: {wert1} · {wert2}"
+# dokumente = "Dokumente"
+# dpi = "DPI"
+# drehpunkt = "Drehpunkt"
+# dxf_importieren = "DXF importieren"
+# ein_layout_aus_einer_datei_uebernehmen = "Ein Layout aus einer Datei übernehmen"
+# einfuegen = "Einfügen"
+# eingabe = "Eingabe"
+# eingebaut = "Eingebaut"
+# einheiten = "Einheiten"
+# endpunkt = "Endpunkt"
+# esc_schliesst_den_hinweis_wenn_das_system_nicht_antworte = "ESC schließt den Hinweis, wenn das System nicht antwortet."
+# faktor_fuer_den_schwenk_mit_w_a_s_d_1_vorgabe = "Faktor für den Schwenk mit W/A/S/D (1 × = Vorgabe)"
+# fangen = "Fangen"
+# fangmarker = "Fangmarker"
+# fangradius = "Fangradius"
+# fensterbreite = "Fensterbreite"
+# fuer_diese_zeichnung_gibt_es_noch_keinen_speicherort_sie = "Für diese Zeichnung gibt es noch keinen Speicherort — sie lässt sich nur über „Speichern unter“ sichern."
+# funktion_fest_belegt = "Funktion · fest belegt"
+# funktion_fuer_die_taste_waehlen = "Funktion für die Taste wählen"
+# gilt_fuer_auswahl_und_griffe = "Gilt für Auswahl und Griffe"
+# gilt_fuer_den_schwenk_der_ansicht_w_a_s_d = "gilt für den Schwenk der Ansicht (W A S D)"
+# hilfe = "Hilfe"
+# hilfe_auswahl = "Klick wählt, Ziehen von links nach rechts = Fenster, von rechts nach links = Querfenster, Shift ergänzt."
+# hilfe_blaetter = "Reiter oben wechseln zwischen Modell und Blättern; PDF exportiert das aktuelle Blatt."
+# hilfe_eingabe = "Nach dem ersten Klick Länge tippen und Enter – oder \"x;y\" für absolute Koordinaten (Semikolon als Trenner, Komma ist Dezimalzeichen)."
+# hilfe_fangen = "Endpunkte, Mittelpunkte, Schnittpunkte und Raster werden automatisch gefangen (Statuszeile zeigt den Fangtyp)."
+# hilfe_hotbar = "Tasten 1–0 starten die Slots. Aktives Werkzeug + Klick auf leeren Slot = Verknüpfung."
+# hilfe_inventar = "E öffnet und schließt Lager, Blockbibliothek und Funktionsliste. Alles ist per Drag & Drop auf die Hotbar ziehbar."
+# hilfe_leistung = "Umschalt+F3 zeigt Messwerte je Bild: Abstand, Rechenzeit und ihre Abschnitte (Fangen, Displayliste, Zeichnen, Bedienung) mit Perzentilen."
+# hilfe_navigation = "Mausrad zoomt, mittlere Maustaste oder Leertaste+Ziehen schwenkt. Die Tasten zum Schwenken (Vorgabe W/A/S/D) sind Funktionen der Tastaturbelegung."
+# hilfe_tasten = "Drei Schichten: Ziffern 1–0 = Hotbar, Buchstaben und Symbole = Tastaturbelegung (frei änderbar), Steuerungstasten und Kombinationen (Esc, F1–F12, Strg+C) = fest verdrahtet."
+# hilfe_zeichnen = "Werkzeug wählen (Ribbon, Hotbar, Taste) und Punkte klicken. ESC bricht ab."
+# home = "Home"
+# hotbar = "Hotbar"
+# hotbar_vorlage = "Hotbar-Vorlage"
+# importieren = "Importieren"
+# inventar = "Inventar"
+# joja_cad = "JoJa-CAD"
+# joja_cad_x_x_aktionen_x_bloecke_in_der_bibliothek = "JoJa-CAD {wert1} · {wert2} Aktionen · {wert3} Blöcke in der Bibliothek"
+# kein_systemdialog_verfuegbar = "kein Systemdialog verfügbar"
+# keine_einstellung_gefunden_suchbegriff_loeschen_um_alle_ = "Keine Einstellung gefunden — Suchbegriff löschen, um alle Kategorien zu sehen."
+# keymap_hilfe = "Leere Taste anklicken — das Inventar öffnet sich mit dem Reiter Funktionen; die gewählte Funktion liegt danach auf der Taste. Oder eine Funktion im Ribbon anklicken und danach eine leere Taste: sie übernimmt sie. Eine Funktion darf auf mehreren Tasten liegen, eine Taste trägt genau eine Funktion. Mittlere Maustaste leert eine Taste. Buchstaben und Symbole sind frei belegbar; Ziffern gehören der Hotbar; Steuerungstasten und Kombinationen sind fest verdrahtet und ausgegraut."
+# layout = "Layout"
+# layout_exportiert_x = "Layout · exportiert: {name}"
+# layout_geloescht = "Layout · gelöscht"
+# layout_gespeichert_x = "Layout · gespeichert: {name}"
+# layout_importiert_x = "Layout · importiert: {name}"
+# layout_speichern = "Layout speichern"
+# layout_wechseln = "Layout wechseln"
+# layout_x = "Layout · {name}"
+# layout_x_2 = "Layout · {zielname}"
+# leistung = "Leistung"
+# linienstaerken = "Linienstärken"
+# lizenz_mit_format_jjcad_json_offen_dokumentiert = "Lizenz: MIT · Format: .jjcad (JSON, offen dokumentiert)"
+# loeschen = "Löschen"
+# lot = "Lot"
+# masseinheit_massstab_textgroesse_und_bogensymbole_stehen = "Maßeinheit, Maßstab, Textgröße und Bogensymbole stehen in der Kategorie Bemaßung."
+# maus_verschiebt = "Maus verschiebt"
+# mittelpunkt = "Mittelpunkt"
+# naechster_punkt = "Nächster Punkt"
+# name_der_vorlage = "Name der Vorlage"
+# name_des_layouts_ist_der_name_schon_vergeben_wird_er_ueb = "Name des Layouts. Ist der Name schon vergeben, wird er überschrieben."
+# name_x = "name.{wert1}"
+# navigation = "Navigation"
+# neue_vorlage_aus_der_aktuellen_anlegen = "Neue Vorlage aus der aktuellen anlegen"
+# nur_innerhalb_dieser_abweichung_rastet_polar_ein = "nur innerhalb dieser Abweichung rastet Polar ein"
+# oeffnen = "Öffnen"
+# ok = "OK"
+# ortho = "Ortho"
+# pdf_einfuegen = "PDF einfügen"
+# pfeilgroesse = "Pfeilgröße"
+# planinhalt = "Planinhalt"
+# planung_buero = "Planung / Büro"
+# polar = "Polar"
+# polarfenster = "Polarfenster"
+# polarwinkel = "Polarwinkel"
+# projekt = "Projekt"
+# projektdaten = "Projektdaten"
+# projekte = "Projekte"
+# px = "px"
+# raster = "Raster"
+# raster_anzeigen = "Raster anzeigen"
+# rasterfang = "Rasterfang"
+# rasterweite = "Rasterweite"
+# revision = "Revision"
+# rust_egui_eigener_pdf_und_dxf_export_mcp_schnittstelle_f = "Rust · egui · eigener PDF- und DXF-Export · MCP-Schnittstelle für KI-Agenten"
+# schliessen = "Schließen"
+# schnittpunkt = "Schnittpunkt"
+# schreibtisch = "Schreibtisch"
+# schwenk = "Schwenk"
+# seite = "Seite"
+# speichern = "Speichern"
+# speichern_und_schliessen = "Speichern und schließen"
+# speichern_und_schliessen_legt_den_reiter_ab_verwerfen_ve = "Speichern und schließen legt den Reiter ab, Verwerfen verwirft die Änderungen."
+# sprache = "Sprache"
+# system = "System"
+# tastaturbelegung = "Tastaturbelegung"
+# tastaturlayout = "Tastaturlayout"
+# tastaturlayout_exportieren = "Tastaturlayout exportieren"
+# tastaturlayout_importieren = "Tastaturlayout importieren"
+# taste_nicht_belegt = "Taste · nicht belegt"
+# tasten = "Tasten"
+# tastenbelegung_vorlage_joja_cad = "Tastenbelegung (Vorlage JoJa-CAD)"
+# texthoehe = "Texthöhe"
+# treppenbreite = "Treppenbreite"
+# tuerbreite = "Türbreite"
+# ueber_joja_cad = "Über JoJa-CAD"
+# uebergeordnet = "..  (übergeordnet)"
+# uebergeordneter_ordner = "Übergeordneter Ordner"
+# version_x = "Version {wert1}"
+# verwerfen = "Verwerfen"
+# von_x = "von {wert1}"
+# vorlage_gespeichert = "Vorlage gespeichert"
+# vorlage_umbenennen = "Vorlage umbenennen"
+# wandkanten = "Wandkanten"
+# wandstaerke = "Wandstärke"
+# x_ist_nicht_gespeichert = "„{name}“ ist nicht gespeichert."
+# x_mm = "{wert1} mm"
+# x_seitex_text_linien_und_flaechen_werden_uebernommen = "{wert1} Seite{wert2} · Text, Linien und Flächen werden übernommen"
+# x_taste_x = "{name} · Taste {wert1}"
+# x_taste_x_frei = "{name} · Taste {wert1} frei"
+# z_b_architektur = "z. B. Architektur"
+# zeichnen = "Zeichnen"
+# zeichnung = "Zeichnung"
+# zeichnung_oeffnen = "Zeichnung öffnen"
+# zeichnung_speichern = "Zeichnung speichern"
+# zentrum = "Zentrum"
+# ziehen = "Ziehen"
+#
+[gui.handles]
+# fuellflaeche_punkt_verbunden = "Füllfläche · Punkt verbunden"
+# griff_gesetzt = "Griff · gesetzt"
+# griff_ziehen = "Griff · ziehen"
+#
+[gui.hotbar]
+# bearbeiten = "Bearbeiten"
+# d = "D"
+# fang_an_endpunkt_rechtsklick_fangmodi_und_ausrichtung = "Fang · an (Endpunkt) · Rechtsklick: Fangmodi und Ausrichtung"
+# fang_aus_rechtsklick_fangmodi_und_ausrichtung = "Fang · aus · Rechtsklick: Fangmodi und Ausrichtung"
+# funktion_fuer_den_slot_waehlen = "Funktion für den Slot wählen"
+# hotbar_slot_x_belegt = "Hotbar · Slot {wert1} belegt"
+# hotbar_vorlagen = "Hotbar-Vorlagen"
+# hotbar_x = "Hotbar · {name}"
+# hotbar_x_vorlage_waehlen = "Hotbar · {vorlage} — Vorlage wählen"
+# inventar_e = "Inventar (E)"
+# leeren = "Leeren"
+# linienstaerke_dpi_wie_im_pdf_klick_px_rechtsklick_auswah = "Linienstärke · DPI (wie im PDF) · Klick: px · Rechtsklick: Auswahl"
+# linienstaerke_px_bildschirmkonstant_klick_dpi_rechtsklic = "Linienstärke · px (bildschirmkonstant) · Klick: DPI · Rechtsklick: Auswahl"
+# loeschen = "Löschen"
+# neu = "Neu …"
+# p = "p"
+# raster_klick_ein_aus_rechtsklick_optionen = "Raster · Klick: ein/aus · Rechtsklick: Optionen"
+# schliessen = "Schließen"
+# tastaturbelegung = "Tastaturbelegung"
+# umbenennen = "Umbenennen …"
+# verknuepfen = "Verknüpfen …"
+# vorlage_geloescht = "Vorlage gelöscht"
+# x_auf_slot_x_gelegt = "{wert1} auf Slot {wert2} gelegt"
+# x_slots = "{wert1} Slots"
+#
+[gui.inventory]
+# abbrechen = "Abbrechen"
+# alle_befehle_anklicken_zum_starten_auf_hotbar_ziehen_zum = "Alle Befehle – anklicken zum Starten, auf Hotbar ziehen zum Belegen."
+# block_aus_auswahl = "Block aus Auswahl"
+# blockbibliothek = "Blockbibliothek"
+# bloecke = "Blöcke"
+# einfuegen = "Einfügen"
+# element_fuer_das_lager_waehlen = "Element für das Lager wählen"
+# element_fuer_slot_x_waehlen = "Element für Slot {wert1} wählen"
+# fest = "· fest"
+# freies_raster_elemente_und_funktionen_zwischenlagern_auf = "Freies Raster – Elemente und Funktionen zwischenlagern. Auf einen Hotbar-Slot ziehen zum Belegen, mittlere Maustaste leert."
+# funktion_fest_belegt = "Funktion · fest belegt"
+# funktion_fuer_taste_x_waehlen = "Funktion für Taste {wert1} wählen"
+# funktionen = "Funktionen"
+# in_lager_legen = "In Lager legen"
+# ins_lager_gelegt = "Ins Lager gelegt"
+# inventar = "Inventar"
+# lager = "Lager"
+# lager_geleert = "Lager · geleert"
+# leeren = "Leeren"
+# loeschen = "Löschen"
+# projekt = "Projekt"
+# schliessen_e = "Schließen (E)"
+# suchen = "Suchen …"
+# system = "System"
+# verknuepfen = "Verknüpfen …"
+# weitere_reihe = "+ Weitere Reihe"
+# werkzeug_waehlen_dann_leeren_lagerplatz_anklicken = "Werkzeug wählen, dann leeren Lagerplatz anklicken"
+# x_bloecke_x_funktionen_x_objekte = "{wert1} Blöcke · {wert2} Funktionen · {wert3} Objekte"
+#
+[gui.panels]
+# abbrechen = "Abbrechen"
+# adresse = "Adresse"
+# aktueller_layer = "Aktueller Layer"
+# ansicht = "Ansicht"
+# ansichtsfenster = "Ansichtsfenster"
+# ansichtsfenster_hinzufuegen = "Ansichtsfenster hinzufügen"
+# auf_zeichnung_zentrieren = "Auf Zeichnung zentrieren"
+# ausdehnung = "Ausdehnung"
+# b_h_mm = "B / H (mm)"
+# bauherr = "Bauherr"
+# bedeutung_abbruch = "Abbruch"
+# bedeutung_bestand = "Bestand"
+# bedeutung_neubau = "Neubau"
+# bestand_x = "Bestand: {wert1}"
+# blaetter = "Blätter"
+# bogensymbole = "Bogensymbole"
+# datei = "Datei"
+# dezimalen = "Dezimalen"
+# eigene_farbe = "Eigene Farbe"
+# eigenschaften = "EIGENSCHAFTEN"
+# ein_block = "Block"
+# ein_fenster = "Fenster"
+# ein_flaeche = "Fläche"
+# ein_mass = "Maß"
+# ein_text = "Text"
+# ein_treppe = "Treppe"
+# ein_tuer = "Tür"
+# ein_wand = "Wand"
+# einheit = "Einheit"
+# einklappen = "Einklappen"
+# entfernen = "Entfernen"
+# farbe_blau = "Blau"
+# farbe_braun = "Braun"
+# farbe_cyan = "Cyan"
+# farbe_gelb = "Gelb"
+# farbe_grau = "Grau"
+# farbe_grau_25 = "Grau 25 %"
+# farbe_grau_50 = "Grau 50 %"
+# farbe_grau_75 = "Grau 75 %"
+# farbe_gruen = "Grün"
+# farbe_hellgrau = "Hellgrau"
+# farbe_ocker = "Ocker"
+# farbe_orange = "Orange"
+# farbe_rot = "Rot"
+# farbe_schwarz = "Schwarz"
+# farbe_tinte = "Tinte"
+# farbe_tuerkis = "Türkis"
+# farbe_violett = "Violett"
+# farbe_weiss = "Weiß"
+# fensterrahmen_zeigen = "Fensterrahmen zeigen"
+# flaeche = "Fläche"
+# format = "Format"
+# freie_farbe = "Freie Farbe …"
+# freier_wert = "Freier Wert …"
+# geaendert_nicht_gespeichert = "geändert (nicht gespeichert)"
+# geschlossen = "Geschlossen"
+# groesse = "Größe"
+# ja = "Ja"
+# laenge = "Länge"
+# layer = "LAYER"
+# layer_geloescht = "Layer gelöscht"
+# layer_name = "Layer-Name"
+# layer_verwalten = "Layer verwalten"
+# layer_x_angelegt = "Layer '{n}' angelegt"
+# liste = "Liste"
+# loeschen = "Löschen"
+# masseinheit = "Maßeinheit"
+# massstab = "Maßstab"
+# n_blaetter_x = "{anzahl} Blätter: {liste}"
+# n_objekt = "{anzahl} {objekt}"
+# name = "Name"
+# nein = "Nein"
+# neuer_layer = "Neuer Layer"
+# nicht_gespeichert = "nicht gespeichert"
+# ohne = "Ohne"
+# ok = "OK"
+# pfeil = "Pfeil"
+# planinhalt = "Planinhalt"
+# planung = "Planung"
+# platzhalter_in_texten_x_x_x_x_x_x = "Platzhalter in Texten: {DATUM} {PROJEKT} {BAUHERR} {PLAN} {MASSTAB} {ADRESSE}"
+# projekt = "Projekt"
+# projektdaten = "Projektdaten"
+# punkt = "Punkt"
+# quer = "quer"
+# rahmen_und_schriftfeld_sind_normale_objekte_im_papierrau = "Rahmen und Schriftfeld sind normale Objekte — im Papierraum anklicken."
+# raster = "Raster"
+# revision = "Revision"
+# schliessen = "Schließen"
+# schraegstrich = "Schrägstrich"
+# staerke_dick = "Dick"
+# staerke_duenn = "Dünn"
+# staerke_mittel = "Mittel"
+# stand = "Stand"
+# stuetzpunkte = "Stützpunkte"
+# textgroesse = "Textgröße"
+# umbenennen = "Umbenennen"
+# v = "v"
+# viele_bloecke = "Blöcke"
+# viele_fenster = "Fenster"
+# viele_flaechen = "Flächen"
+# viele_masse = "Maße"
+# viele_texte = "Texte"
+# viele_treppen = "Treppen"
+# viele_tueren = "Türen"
+# viele_waende = "Wände"
+# vorgaben_anzeigen = "Vorgaben anzeigen"
+# x_layer_aktuell_x = "{wert1} Layer · aktuell: {wert2}"
+# x_x_mm_x = "{wert1} · {wert2} mm · {wert3}"
+# x_x_objekte_layer_x = "{wert1} · {wert2} Objekte · Layer {wert3}"
+# x_x_x_mm_x = "{wert1} · {wert2} × {wert3} mm · {wert4}"
+# x_y_mm = "X / Y (mm)"
+# zeichnung = "Zeichnung"
+#
+[gui.props]
+# 2_s_a = "2 S + A"
+# abstand = "Abstand"
+# achsen_entstehen_aus_den_klicks = "Achsen entstehen aus den Klicks"
+# am_platzierten_objekt = "am platzierten Objekt"
+# anschlag = "Anschlag"
+# auftritt = "Auftritt"
+# auftritt_treppenbreite = "Auftritt × Treppenbreite"
+# auftrittsflaeche = "Auftrittsfläche"
+# aus_den_klicks = "aus den Klicks"
+# ausrichtung = "Ausrichtung"
+# auszeichnung_des_neuen_textes = "Auszeichnung des neuen Textes"
+# automatisch = "automatisch"
+# automatisch_2 = "Automatisch"
+# basispunkt = "Basispunkt"
+# bemassung = "Bemaßung"
+# blatt = "Blatt"
+# blatt_schlaegt_auf_seite_a_der_wand_auf = "Blatt schlägt auf Seite A der Wand auf"
+# blatt_schlaegt_auf_seite_b_der_wand_auf = "Blatt schlägt auf Seite B der Wand auf"
+# block = "Block"
+# block_x = "Block: {name}"
+# blocklage_entsteht_aus_dem_klick = "Blocklage entsteht aus dem Klick"
+# bogen = "Bogen"
+# breite = "Breite"
+# bruestung = "Brüstung"
+# delta_x = "Delta X"
+# delta_y = "Delta Y"
+# diagonalen_in_der_laufmitte_sie_trennen_oberen_und_unter = "Diagonalen in der Laufmitte; sie trennen oberen und unteren Teil"
+# dicke = "Dicke"
+# drehen = "Drehen"
+# drehung = "Drehung"
+# einfuegemodus = "Einfügemodus"
+# eingabemodus = "Eingabemodus"
+# ellipse = "Ellipse"
+# ellipsenbogen = "Ellipsenbogen"
+# faktor = "Faktor"
+# farbe_x = "Farbe {name}"
+# fenster = "Fenster"
+# flaeche_und_text_entstehen_beim_abschluss_der_punktfolge = "Fläche und Text entstehen beim Abschluss der Punktfolge"
+# flaeche_und_volumen_erscheinen_am_platzierten_objekt = "Fläche und Volumen erscheinen am platzierten Objekt"
+# fuellfarbe = "Füllfarbe"
+# fuellflaeche = "Füllfläche"
+# gesamtflaeche = "Gesamtfläche"
+# gesamtlaenge = "Gesamtlänge"
+# gilt_fuer_das_naechste_element = "gilt für das nächste Element"
+# gilt_fuer_die_markierten_zeichen = "Gilt für die markierten Zeichen."
+# hoehe = "Höhe"
+# hoehe_steht_im_eigenschaften_panel = "Höhe steht im Eigenschaften-Panel"
+# hoehen = "Höhen"
+# hoehen_entstehen_aus_der_y_differenz_zum_ersten_punkt = "Höhen entstehen aus der Y-Differenz zum ersten Punkt"
+# im_zeichenbereich = "im Zeichenbereich"
+# je_objekt_x_im_blatt = "je Objekt · {total} im Blatt"
+# koordinate_entsteht_aus_dem_klick = "Koordinate entsteht aus dem Klick"
+# kopieren_mit_basispunkt = "Kopieren mit Basispunkt"
+# kreis = "Kreis"
+# laenge = "Länge"
+# laenge_flaeche_und_stuetzpunkte_entstehen_aus_den_klicks = "Länge, Fläche und Stützpunkte entstehen aus den Klicks"
+# laenge_und_volumen_erscheinen_am_platzierten_objekt = "Länge und Volumen erscheinen am platzierten Objekt"
+# laenge_und_winkel_entstehen_aus_den_klicks = "Länge und Winkel entstehen aus den Klicks"
+# laenge_x_achse_x_x_x_x = "Länge {wert1} · Achse ({wert2}, {wert3}) – ({wert4}, {wert5})"
+# lage_in_der_wanddicke_links_mittig_rechts = "Lage in der Wanddicke: Links / Mittig / Rechts"
+# layer = "Layer"
+# linie = "Linie"
+# linientyp = "Linientyp"
+# links = "links"
+# mass_und_masstext_erscheinen_am_platzierten_objekt = "Maß und Maßtext erscheinen am platzierten Objekt"
+# mass_x_x = "Maß: {wert1} {wert2}"
+# masse_entstehen_aus_den_klicks = "Maße entstehen aus den Klicks"
+# masskette = "Maßkette"
+# masstext = "Maßtext"
+# mehrfachauswahl = "Mehrfachauswahl"
+# muster = "Muster"
+# nach_dem_platzieren = "nach dem Platzieren"
+# naechste_zeichen = "nächste Zeichen"
+# ohne_markierung_gilt_die_auszeichnung_fuer_das_was_sie_a = "Ohne Markierung gilt die Auszeichnung für das, was Sie als Nächstes tippen."
+# platzhalter_x_x_x_x = "Platzhalter: {DATUM} {PROJEKT} {MASSTAB} {PLAN}"
+# polylinie = "Polylinie"
+# position_x_x_richtung_x = "Position ({wert1}, {wert2}) · Richtung {wert3}°"
+# punkt = "Punkt"
+# punkte = "Punkte"
+# punkte_flaeche_und_umriss_erscheinen_am_platzierten_obje = "Punkte, Fläche und Umriss erscheinen am platzierten Objekt"
+# r_dreht_die_oeffnung_f_spiegelt_sie = "R dreht die Öffnung, F spiegelt sie"
+# radius = "Radius"
+# radius_und_mittelpunkt_entstehen_aus_den_klicks = "Radius und Mittelpunkt entstehen aus den Klicks"
+# radius_und_winkel_entstehen_aus_den_klicks = "Radius und Winkel entstehen aus den Klicks"
+# raumstempel = "Raumstempel"
+# rechteck = "Rechteck"
+# rechts = "rechts"
+# reihenfolge = "Reihenfolge"
+# richtung = "Richtung"
+# schnitt = "Schnitt"
+# schraffur = "Schraffur"
+# schriftart = "Schriftart"
+# schrittmass = "Schrittmaß"
+# seite_a = "Seite A"
+# seite_b = "Seite B"
+# sitzt_auf_der_vorderen_wandkante = "sitzt auf der vorderen Wandkante"
+# sollwert_nach_schrittmassregel_63_0_cm = "Sollwert nach Schrittmaßregel: 63,0 cm"
+# spiegeln = "Spiegeln"
+# spline = "Spline"
+# staerke = "Stärke"
+# staerke_x = "Stärke {name}"
+# steigung = "Steigung"
+# stufen = "Stufen"
+# stufenzahl_aus_laenge_und_hoehe_nach_2_s_a_63_cm = "Stufenzahl aus Länge und Höhe nach 2 S + A = 63 cm"
+# stufenzahl_und_schrittmass_als_textfeld_neben_die_treppe = "Stufenzahl und Schrittmaß als Textfeld neben die Treppe setzen"
+# text = "Text"
+# textgroesse = "Textgröße"
+# textlage_am_runden_griff_in_der_zeichnung = "Textlage am runden Griff in der Zeichnung"
+# treppe = "Treppe"
+# tuer = "Tür"
+# typ = "Typ"
+# typ_x = "Typ {name}"
+# ueberschrift = "Überschrift"
+# umrandung = "Umrandung"
+# variiert_die_objekte_unterscheiden_sich_eine_aenderung_s = "*variiert* — die Objekte unterscheiden sich; eine Änderung setzt alle gleich"
+# verschieben = "Verschieben"
+# volumen = "Volumen"
+# volumen_x_m3 = "Volumen {wert1} m³"
+# volumen_x_m3_hoehe_x = "Volumen {wert1} m³ (Höhe {wert2})"
+# von_x = "von {total}"
+# vorgemerkt = "· vorgemerkt"
+# wand = "Wand"
+# winkel = "Winkel"
+# x_basispunkte = "{wert1} Basispunkte"
+# x_inseln = "{wert1} Inseln"
+# x_layer_x = "#{id} · Layer {layer_name}"
+# x_objekte_aenderung_gilt_fuer_alle = "{n} Objekte · Änderung gilt für alle"
+# x_objekte_x_arten = "{anzahl} Objekte · {wert1} Arten"
+# x_punkte = "{wert1} Punkte"
+# x_punkte_flaeche_x = "{wert1} Punkte · Fläche {wert2}"
+# zeichen_xx = "Zeichen {von}–{bis}"
+# zwei_laeufe = "zwei Läufe"
+#
+[gui.textedit]
+# esc_uebernimmt_hinweis = "Esc übernimmt · Enter neue Zeile · Rechtsklick bricht ab"
+# text_abgebrochen = "Text · abgebrochen"
+# text_geaendert = "Text · geändert"
+# text_inhalt_aendern_esc_uebernimmt = "Text · Inhalt ändern (Esc übernimmt)"
+# text_text_eingeben_esc_uebernimmt = "Text · Text eingeben (Esc übernimmt)"
+#
+[gui.perf]
+# abstand = "Abstand"
+# ausserhalb = "außerhalb"
+# bedienung = "Bedienung"
+# bilder_entstehen_nur_bei_bedarf_kein_fester_takt = "Bilder entstehen nur bei Bedarf — kein fester Takt."
+# dialoge_menues_chat_diese_anzeige = "Dialoge, Menüs, Chat, diese Anzeige"
+# displayliste = "Displayliste"
+# displayliste_aus_dem_zwischenspeicher = "Displayliste: aus dem Zwischenspeicher"
+# displayliste_neu_aufgebaut = "Displayliste: neu aufgebaut"
+# displayliste_x_prozent_zwischenspeicher = "Displayliste {anteil} % aus dem Zwischenspeicher"
+# fangen = "Fangen"
+# fenster = "Fenster"
+# fuellungen = "  Füllungen"
+# fuellungen_x_linien_x_text_x = "Füllungen {fuellungen} · Linien {linien} · Text {texte}"
+# hinweis_abstand = "Millisekunden zwischen zwei gezeichneten Bildern — in Ruhe groß"
+# hinweis_ausserhalb = "Nicht messbar im Programm: Tessellierung, GPU und das Warten auf den Bildwechsel (Abstand minus Rechenzeit)"
+# hinweis_rechnen = "Rechenzeit eines Bildes, Summe der Abschnitte darunter"
+# leistung = "Leistung"
+# linien = "  Linien"
+# liste_x = " (Liste: {wert1})"
+# navigation_fangen_verweilfang = "Navigation, Fangen, Verweilfang"
+# oberflaeche = "Oberfläche"
+# raster_papier_grafikelemente = "Raster, Papier, Grafikelemente"
+# rechnen = "Rechnen"
+# ribbon_reiter_panels_leisten = "Ribbon, Reiter, Panels, Leisten"
+# text = "  Text"
+# umschalt_f3 = "Umschalt+F3"
+# verlauf_x_bilder_x_pausen = "Verlauf: {wert1} Bilder · {wert2} Pausen"
+# vorschau_griffe_fadenkreuz_eingabe = "Vorschau, Griffe, Fadenkreuz, Eingabe"
+# x_grafikelemente = " · {wert1} Grafikelemente"
+# x_mb = " · {wert1} MB"
+# x_threads = " · {wert1} Threads"
+# zeichnen = "Zeichnen"
+#
+[gui.widgets]
+# x_nicht_installiert = "{schrift} — nicht installiert"
+#
+[gui.icon]
+# markenzeichen_nicht_lesbar = "Markenzeichen nicht lesbar: {e}"
+# markenzeichen_puffergroesse = "Markenzeichen hat eine unerwartete Puffergröße"

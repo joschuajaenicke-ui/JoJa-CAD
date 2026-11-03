@@ -381,12 +381,10 @@ layers = "Layers"
 properties = "Properties"
 grid = "Grid"
 fullscreen = "Full screen"
-sheet_open = "Open a sheet, then draw"
 
 [settings]
 title = "Settings"
 search = "Search settings …"
-language = "Language"
 language_hint = "applies at once, no restart"
 category_einheiten = "Units and scale"
 category_raster = "Grid"

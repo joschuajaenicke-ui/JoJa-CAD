@@ -91,6 +91,18 @@ der Mitte, Layer links, Eigenschaften rechts, Hotbar unten. Erste Schritte: **Wa
 
 Alle Werkzeuge, Fangmodi, Panels und Tastenkürzel: [`docs/BEDIENUNG.md`](docs/BEDIENUNG.md).
 
+### Sprache
+
+Die Oberfläche ist auf Deutsch und lässt sich auf Englisch umstellen
+(Einstellungen ▸ Bedienung ▸ „Sprache“, wirkt sofort und wird gespeichert). Die
+Texte liegen nicht im Code, sondern in Sprachdateien unter
+`crates/jjcad-core/lang/` — eine weitere Sprache ist damit eine Textdatei plus
+sieben Zeilen in `crates/jjcad-core/src/i18n.rs`; fehlende Einträge fallen auf
+Deutsch zurück. `scripts/i18n-check.py` prüft den Katalog gegen den Code
+(fehlende, verwaiste und doppelte Schlüssel, Platzhalter, leere Werte) und läuft
+in `cargo test` mit, damit er nicht unbemerkt verrottet. Schritt für Schritt:
+[`docs/I18N.md`](docs/I18N.md).
+
 ## Stand
 
 Version 0.2 — Kern und Oberfläche sind neu geschrieben, die Grundfunktionen stehen. Was
@@ -121,6 +133,7 @@ JoJa-CAD/
 ## Dokumentation
 
 - [`docs/BEDIENUNG.md`](docs/BEDIENUNG.md) — Werkzeuge, Panels, erste Schritte
+- [`docs/I18N.md`](docs/I18N.md) — Sprachen: Übersetzungen, neue Sprache anlegen, Prüfskript
 - [`docs/TASTEN.md`](docs/TASTEN.md) — Tastenbelegung in drei Schichten (verbindlich)
 - [`docs/ARCHITEKTUR.md`](docs/ARCHITEKTUR.md) — Aufbau, Datenfluss, Entscheidungen
 - [`docs/FORMAT.md`](docs/FORMAT.md) — Dateiformat `.jjcad` (JSON, offen)
