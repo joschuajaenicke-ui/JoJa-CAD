@@ -3064,13 +3064,14 @@ fn stuecke(s: Vec2, t: Vec2, schnitte: &[f64], halb: f64) -> Vec<(Vec2, Vec2)> {
 /// Maßhilfslinie mit etwa 0,6 h und die Maßhilfslinie nur ein kurzes Stück
 /// über die Maßlinie hinaus.
 pub const DIM_MARKE_H: f64 = 1.2;
-pub const DIM_UEBERSTAND_H: f64 = 0.6;
+/// Überstand der Maßlinie über die äußere Maßhilfslinie.
+pub const DIM_UEBERSTAND_H: f64 = 1.2;
 /// Abstand des Textankers über der Maßlinie (Unterkante der Zeilenbox).
-pub const DIM_TEXT_ABSTAND_H: f64 = 0.9;
-/// Länge der Maßhilfslinie am Bauteil (Abstand) und über die Maßlinie hinaus —
-/// Obergrenzen; kleinere Werte aus `dim_style` gelten weiter.
-pub const DIM_EXT_GAP_H: f64 = 0.4;
-pub const DIM_EXT_UEBER_H: f64 = 0.25;
+pub const DIM_TEXT_ABSTAND_H: f64 = 0.6;
+/// Abstand der Maßhilfslinie vom Maßpunkt — **Untergrenze**, ein größerer Wert
+/// aus `dim_style` gilt weiter. Die Maßhilfslinie wird an dieser Seite
+/// gekürzt, nicht an der Maßlinie.
+pub const DIM_EXT_GAP_H: f64 = 0.8;
 
 struct DimGeom {
     /// zu bemaßende Punkte am Bauteil
@@ -3287,8 +3288,8 @@ fn render_dim(
     let style = &ctx.doc.dim_style;
     // Maßhilfslinie: kurz am Bauteil und nur ein Stück über die Maßlinie hinaus
     // (Bild 3/Bild 4). Die Werte in `dim_style` sind Obergrenzen.
-    let ext_gap = ctx.a(style.ext_gap.min(style.text_height * DIM_EXT_GAP_H));
-    let over = ctx.a(style.ext_overshoot.min(style.text_height * DIM_EXT_UEBER_H));
+    let ext_gap = ctx.a(style.ext_gap.max(style.text_height * DIM_EXT_GAP_H));
+    let over = ctx.a(style.ext_overshoot);
     let arrow = ctx.a(style.arrow_size);
     let text_h = ctx.a(style.text_height);
     // Bild 3: Begrenzungsstrich und Überstand hängen an der Texthöhe, nicht an
@@ -3427,8 +3428,8 @@ fn render_dim_chain(
     }
     let style = &ctx.doc.dim_style;
     let a = ctx.a(1.0);
-    let ext_gap = ctx.a(style.ext_gap.min(style.text_height * DIM_EXT_GAP_H));
-    let over = ctx.a(style.ext_overshoot.min(style.text_height * DIM_EXT_UEBER_H));
+    let ext_gap = ctx.a(style.ext_gap.max(style.text_height * DIM_EXT_GAP_H));
+    let over = ctx.a(style.ext_overshoot);
     let arrow = ctx.a(style.arrow_size);
     let text_h = ctx.a(style.text_height);
     // Bild 3: Begrenzungsstrich, Überstand der Maßlinie und Textabstand sind
