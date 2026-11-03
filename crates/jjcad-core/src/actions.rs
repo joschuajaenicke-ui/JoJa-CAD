@@ -196,6 +196,24 @@ pub const ACTIONS: &[ActionDef] = &[
         "Zwei Linien oder Wände anklicken — sie treffen sich im Schnittpunkt",
         true
     ),
+    act!(
+        "modify.area.union",
+        "Flächen vereinigen",
+        Aendern,
+        "union",
+        "",
+        "Zwei oder mehr angrenzende Füllflächen auswählen — sie werden eine",
+        false
+    ),
+    act!(
+        "modify.area.split",
+        "Fläche schneiden",
+        Aendern,
+        "split",
+        "",
+        "Punkte der Schnittlinie klicken, Enter teilt die Fläche",
+        true
+    ),
     act!("modify.erase", "Löschen", Aendern, "erase", "entf", "Auswahl löschen", false),
     act!("modify.explode", "Zerlegen", Aendern, "explode", "z", "Blöcke/Bauteile in Einzelelemente, Text in Linien zerlegen", false),
     act!(
@@ -323,6 +341,8 @@ pub fn is_mutating(id: &str) -> bool {
             | "modify.extend"
             | "modify.erase"
             | "modify.explode"
+            | "modify.area.union"
+            | "modify.area.split"
             | "text.format"
             | "modify.set"
             | "layer.create"
@@ -2218,6 +2238,142 @@ pub fn execute(doc: &mut Document, id: &str, params: &Value) -> Result<Value, St
                 "ok": true,
                 "point": [punkt.x / 1000.0, punkt.y / 1000.0]
             }))
+        }
+        // Flächen vereinigen: zwei oder mehr angrenzende Füllflächen werden
+        // eine. Die Geometrie rechnet `flaeche::vereinigen`; Muster, Rand, Stil
+        // und Ebene kommen von der ersten Fläche, die übrigen verschwinden.
+        "modify.area.union" => {
+            let ids = ids_from(&p, "ids");
+            if ids.len() < 2 {
+                return Err("Vereinigen braucht mindestens zwei Flächen".into());
+            }
+            let mut geometrien = Vec::new();
+            let mut vorlage: Option<Entity> = None;
+            for id in &ids {
+                let Some(e) = doc.entity(*id).cloned() else {
+                    return Err(format!("Objekt {id} nicht gefunden"));
+                };
+                match &e.kind {
+                    EntityKind::Fill { boundary, holes, .. } => {
+                        geometrien.push(crate::flaeche::Flaeche {
+                            outer: boundary.clone(),
+                            holes: holes.clone(),
+                        });
+                        if vorlage.is_none() {
+                            vorlage = Some(e);
+                        }
+                    }
+                    _ => return Err("Vereinigen geht nur mit Füllflächen".into()),
+                }
+            }
+            let Some(vorlage) = vorlage else {
+                return Err("Keine Füllfläche ausgewählt".into());
+            };
+            let ziel = crate::flaeche::vereinigen(&geometrien)?;
+            let EntityKind::Fill {
+                pattern,
+                pattern_angle,
+                pattern_scale,
+                border,
+                ..
+            } = vorlage.kind.clone()
+            else {
+                return Err("Keine Füllfläche ausgewählt".into());
+            };
+            let idn = doc.new_id();
+            let mut e = Entity::new(
+                idn,
+                vorlage.layer,
+                EntityKind::Fill {
+                    boundary: ziel.outer,
+                    holes: ziel.holes,
+                    pattern,
+                    pattern_angle,
+                    pattern_scale,
+                    border,
+                },
+            );
+            e.style = vorlage.style.clone();
+            e.by_block = vorlage.by_block;
+            for id in &ids {
+                doc.remove_entity(*id);
+            }
+            doc.insert_ranked(e);
+            doc.modified = true;
+            Ok(json!({"ok": true, "created": [idn], "deleted": ids.len()}))
+        }
+        // Fläche schneiden: die Punktfolge ist die Schnittlinie. Sie zerlegt
+        // die Füllfläche in zwei; das Original wird durch die beiden Teile
+        // ersetzt, Muster, Rand, Stil und Ebene bleiben.
+        "modify.area.split" => {
+            let pts = p
+                .pts("pts")
+                .ok_or_else(|| "Parameter 'pts' (Punktfolge) fehlt".to_string())?;
+            let ids = ids_from(&p, "ids");
+            // Zielfläche: die ausdrücklich genannte, sonst die Fläche, in der
+            // die Schnittlinie liegt.
+            let ziel_id = match ids.first().copied() {
+                Some(id) => id,
+                None => doc
+                    .ents()
+                    .iter()
+                    .find(|e| match &e.kind {
+                        EntityKind::Fill { boundary, holes, .. } => pts
+                            .iter()
+                            .any(|q| crate::area::point_in_area(*q, boundary, holes)),
+                        _ => false,
+                    })
+                    // Sonst die Fläche, deren Umgrenzung die Linie kreuzt —
+                    // die Schnittlinie darf außerhalb beginnen und enden.
+                    .or_else(|| {
+                        doc.ents().iter().find(|e| match &e.kind {
+                            EntityKind::Fill { boundary, .. } => {
+                                crate::flaeche::kreuzt_ring(boundary, &pts)
+                            }
+                            _ => false,
+                        })
+                    })
+                    .map(|e| e.id)
+                    .ok_or_else(|| "Keine Fläche unter der Schnittlinie".to_string())?,
+            };
+            let Some(vorlage) = doc.entity(ziel_id).cloned() else {
+                return Err(format!("Objekt {ziel_id} nicht gefunden"));
+            };
+            let EntityKind::Fill {
+                boundary,
+                holes,
+                pattern,
+                pattern_angle,
+                pattern_scale,
+                border,
+            } = vorlage.kind.clone()
+            else {
+                return Err("Schneiden geht nur mit Füllflächen".into());
+            };
+            let (a, b) = crate::flaeche::teilen(&boundary, &holes, &pts)?;
+            let mut created = Vec::new();
+            for teil in [a, b] {
+                let idn = doc.new_id();
+                let mut e = Entity::new(
+                    idn,
+                    vorlage.layer,
+                    EntityKind::Fill {
+                        boundary: teil.outer,
+                        holes: teil.holes,
+                        pattern,
+                        pattern_angle,
+                        pattern_scale,
+                        border,
+                    },
+                );
+                e.style = vorlage.style.clone();
+                e.by_block = vorlage.by_block;
+                doc.insert_ranked(e);
+                created.push(idn);
+            }
+            doc.remove_entity(ziel_id);
+            doc.modified = true;
+            Ok(json!({"ok": true, "created": created, "deleted": 1}))
         }
         "modify.erase" => {
             let ids = ids_from(&p, "ids");

@@ -76,6 +76,8 @@ Ohne `host` sucht `draw.door`/`draw.window` die nächste Wand im Umfeld und
 | `modify.trim` | `ids[]`, `at`, `cutters[]` | `at` = Punkt auf dem zu entfernenden Stück; Linie, Wand, Kreis (→ Bogen), Bogen, Ellipse (→ Ellipsenbogen), Ellipsenbogen, Polylinie. Schnittkanten sind Geraden **und** Bögen/Kreise |
 | `modify.extend` | `ids[]`, `at`, `cutters[]` | verlängert das nahe Ende bis zur nächsten Kante |
 | `modify.intersect` | `ids[]` (zwei Linien oder Wände) | zieht beide Objekte auf ihren gemeinsamen Schnittpunkt — verlängert oder kürzt das jeweils nähere Ende |
+| `modify.area.union` | `ids[]` (zwei oder mehr Füllflächen) | vereinigt **angrenzende** Flächen zu einer; Muster, Rand, Stil und Ebene kommen von der ersten. Getrennte Flächen sind ein Fehler |
+| `modify.area.split` | `pts[]`, `ids[]` (optional) | teilt eine Füllfläche entlang der Punktfolge in zwei; ohne `ids` bestimmt die Linie die Fläche. Kreuzt sie den Rand mehrfach oder eine Insel, ist das ein Fehler |
 | `modify.erase` | `ids[]` | löschen |
 | `modify.explode` | `ids[]` | Blöcke, Wände, Türen, Bemaßung → Grundelemente |
 | `modify.set` | `ids[]`, `layer`, `color`, `linetype`, `lineweight`, `fill`, Typparameter | Eigenschaften ändern |

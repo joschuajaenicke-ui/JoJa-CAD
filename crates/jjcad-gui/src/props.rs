@@ -342,26 +342,37 @@ pub fn gemein(
         || viele
             .iter()
             .all(|i| app.doc().entity(*i).map(|e| e.layer) == Some(layer));
+    // Bezug des Vergleichs ist das **erste** Objekt der Gruppe, nicht der
+    // angezeigte Vorgabewert: eine Füllfläche zeigt 0,35 mm, ihre wirksame
+    // Stärke kommt aber aus der Ebene. Der Vergleich gegen den Vorgabewert
+    // meldete „*variiert*“ für zwei gleiche Flächen (T0090).
+    let referenz = viele.first().and_then(|i| app.doc().entity(*i));
+    let ref_farbe = referenz.map(|e| app.doc().effective_color(e));
+    let ref_staerke = referenz
+        .map(|e| app.doc().effective_line_weight(e))
+        .unwrap_or(staerke);
+    let ref_typ = referenz
+        .map(|e| app.doc().effective_line_type(e))
+        .unwrap_or(linientyp);
     let gleich_farbe = !mehrfach
         || viele.iter().all(|i| {
             app.doc()
                 .entity(*i)
-                .map(|e| app.doc().effective_color(e))
-                .map(|c| Some(c) == Some(farbe_gezeigt))
+                .map(|e| Some(app.doc().effective_color(e)) == ref_farbe)
                 .unwrap_or(false)
         });
     let gleich_staerke = !mehrfach
         || viele.iter().all(|i| {
             app.doc()
                 .entity(*i)
-                .map(|e| (app.doc().effective_line_weight(e) - staerke).abs() < 1e-6)
+                .map(|e| (app.doc().effective_line_weight(e) - ref_staerke).abs() < 1e-6)
                 .unwrap_or(false)
         });
     let gleich_typ = !mehrfach
         || viele.iter().all(|i| {
             app.doc()
                 .entity(*i)
-                .map(|e| app.doc().effective_line_type(e) == linientyp)
+                .map(|e| app.doc().effective_line_type(e) == ref_typ)
                 .unwrap_or(false)
         });
 
@@ -4350,4 +4361,55 @@ mod tests {
             "die Anzahl der Auswahl fehlt: {texte:?}"
         );
     }
+    /// Zwei gleiche Füllflächen — etwa die zwei Teile eines Schnitts — zeigen
+    /// **kein** „*variiert*“ in der Stärke. Der Vergleich läuft gegen das erste
+    /// Objekt der Gruppe, nicht gegen den angezeigten Vorgabewert 0,35 mm
+    /// (T0090).
+    #[test]
+    fn zwei_gleiche_flaechen_zeigen_kein_variiert_in_der_staerke() {
+        let mut app = App::with_ctx(egui::Context::default());
+        let mut ids = Vec::new();
+        for pts in [
+            [[0.0, 0.0], [4.0, 0.0], [4.0, 3.0], [0.0, 3.0]],
+            [[4.0, 0.0], [8.0, 0.0], [8.0, 3.0], [4.0, 3.0]],
+        ] {
+            let v = app
+                .session_mut()
+                .execute("draw.fill.points", &serde_json::json!({"pts": pts}))
+                .expect("Füllfläche");
+            ids.push(v["created"][0].as_u64().expect("Id"));
+        }
+        app.session_mut().selection = ids;
+        let ctx = app.ctx.clone();
+        let raw = egui::RawInput {
+            screen_rect: Some(egui::Rect::from_min_size(
+                egui::Pos2::ZERO,
+                egui::Vec2::new(1200.0, 950.0),
+            )),
+            time: Some(1.0),
+            predicted_dt: 0.016,
+            ..Default::default()
+        };
+        let out = ctx.run(raw, |ctx| {
+            egui::SidePanel::right("eigenschaften")
+                .exact_width(280.0)
+                .show(ctx, |ui| crate::panels::properties(&mut app, ui));
+        });
+        let texte: Vec<String> = out
+            .shapes
+            .iter()
+            .filter_map(|cs| match &cs.shape {
+                egui::Shape::Text(t) => Some(t.galley.text().to_string()),
+                _ => None,
+            })
+            .collect();
+        // Einmal steht „*variiert*“ in der Kopfzeile (die Umgrenzungen sind
+        // verschieden) — ein zweites Mal wäre die Stärkezeile.
+        let anzahl = texte.iter().filter(|t| t.contains("*variiert*")).count();
+        assert_eq!(
+            anzahl, 1,
+            "Stärke meldet *variiert* bei zwei gleichen Flächen: {texte:?}"
+        );
+    }
+
 }

@@ -221,6 +221,15 @@ Mit dem Nutzer abgestimmt — nicht „verbessern“:
   `Document::insert_ranked` (bzw. `add_entity`, das dorthin delegiert); bestehende
   Objekte werden nie umsortiert, sie rücken nur. Wer eine Objektart ergänzt, ordnet
   sie dort einer Klasse zu. Details: `docs/ARCHITEKTUR.md` → „Zeichenrang“.
+- **Flächen schneiden und vereinigen (T0090)**: `modify.area.split` teilt eine
+  Füllfläche entlang einer Punktfolge in zwei Teilflächen, `modify.area.union`
+  verschmilzt zwei oder mehr **angrenzende** Füllflächen zu einer. Die Geometrie
+  steht in `crates/jjcad-core/src/flaeche.rs` (ebenes Netz: Kanten an Kreuzungen
+  und Stößen teilen, gemeinsame und innenliegende Kanten fallen weg, Ringe neu
+  zusammensetzen) — nicht in der Oberfläche nachbauen. Beide Aktionen ersetzen die
+  Ausgangsflächen und übernehmen Muster, Randlinie, Stil und Ebene von der ersten.
+  Getrennte Flächen, mehrfacher Randkontakt und eine gekreuzte Insel sind Fehler
+  (kein stiller Erfolg). Ribbon: Zeichnen ▸ Füllen ▸ „Vereinigen" / „Schneiden".
 - **Bemaßung beim Ändern**: Die Maßlinie behält ihre **Lage**. Ein waagerechtes
   Maß liegt auf *einer* Höhe (`line_pos.y` für alle Basispunkte), ein senkrechtes
   auf einer Breite — `render::dim_projiziert` **setzt** die Koordinate, es addiert
