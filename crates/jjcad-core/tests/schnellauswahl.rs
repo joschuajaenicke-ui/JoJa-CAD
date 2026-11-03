@@ -174,6 +174,7 @@ fn jede_objektart_startet_ihren_erzeuger() {
             align: WallAlign::Center,
             host: Some(1),
             at: Some(0.0),
+            base: DoorBase::Left,
         },
         "draw.door",
     );

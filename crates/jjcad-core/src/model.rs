@@ -146,6 +146,57 @@ impl DoorKind {
     }
 }
 
+/// Lage des Basispunktes einer Tür längs ihrer Breite (T0091).
+///
+/// Der Basispunkt ist der Punkt, an dem eine **neue** Tür am Mauszeiger
+/// hängt: „Links" setzt das linke Türblattende (in Wandrichtung) an den
+/// Klickpunkt, „Mitte" die Türmitte, „Rechts" das rechte Ende. Vorgabe ist
+/// „Links" — die Tür wächst vom Klickpunkt aus nach rechts.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[serde(rename_all = "lowercase")]
+pub enum DoorBase {
+    #[default]
+    Left,
+    Center,
+    Right,
+}
+
+impl DoorBase {
+    pub const ALL: [DoorBase; 3] = [DoorBase::Left, DoorBase::Center, DoorBase::Right];
+    pub fn label(self) -> &'static str {
+        match self {
+            DoorBase::Left => "Links",
+            DoorBase::Center => "Mitte",
+            DoorBase::Right => "Rechts",
+        }
+    }
+    /// Versatz des Basispunktes vom Türzentrum, in Türbreiten.
+    pub fn offset(self) -> f64 {
+        match self {
+            DoorBase::Left => -0.5,
+            DoorBase::Center => 0.0,
+            DoorBase::Right => 0.5,
+        }
+    }
+    /// Schlüssel für die Befehlsschicht (`base`).
+    pub fn key(self) -> &'static str {
+        match self {
+            DoorBase::Left => "left",
+            DoorBase::Center => "center",
+            DoorBase::Right => "right",
+        }
+    }
+    /// Aus dem Text der Befehlsschicht (`base`).
+    pub fn from_text(t: &str) -> Option<DoorBase> {
+        match t.trim().to_lowercase().as_str() {
+            "left" | "links" => Some(DoorBase::Left),
+            "center" | "centre" | "mitte" | "mittig" => Some(DoorBase::Center),
+            "right" | "rechts" => Some(DoorBase::Right),
+            _ => None,
+        }
+    }
+}
+
 /// Schriftart eines Textes.
 ///
 /// Die **Gebrauchsschriften** kommen aus dem System (Liberation/Quicksand) —
@@ -579,6 +630,9 @@ pub enum EntityKind {
         /// Lage längs der Wand in mm ab Wandanfang — die Tür folgt der Wand.
         #[serde(default)]
         at: Option<f64>,
+        /// Lage des Basispunktes längs der Türbreite (T0091).
+        #[serde(default)]
+        base: DoorBase,
     },
     Window {
         center: Vec2,

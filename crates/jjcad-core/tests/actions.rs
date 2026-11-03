@@ -1027,7 +1027,7 @@ fn door_sits_on_front_wall_face() {
     let wall = last_id(&s);
     s.execute(
         "draw.door",
-        &json!({"center": [2, 0], "width": 0.9, "host": [wall]}),
+        &json!({"center": [2, 0], "width": 0.9, "host": [wall], "base": "center"}),
     )
     .unwrap();
     let door = last_id(&s);
@@ -1093,7 +1093,7 @@ fn opening_follows_wall() {
     let wall = last_id(&s);
     s.execute(
         "draw.door",
-        &json!({"center": [2, 0], "width": 0.9, "host": [wall]}),
+        &json!({"center": [2, 0], "width": 0.9, "host": [wall], "base": "center"}),
     )
     .unwrap();
     let door = last_id(&s);
@@ -1123,7 +1123,7 @@ fn moved_opening_stays_on_wall() {
     let wall = last_id(&s);
     s.execute(
         "draw.door",
-        &json!({"center": [2, 0], "width": 0.9, "host": [wall]}),
+        &json!({"center": [2, 0], "width": 0.9, "host": [wall], "base": "center"}),
     )
     .unwrap();
     let door = last_id(&s);

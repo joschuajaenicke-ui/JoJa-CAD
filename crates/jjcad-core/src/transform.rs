@@ -239,6 +239,7 @@ pub fn transform_kind(k: &EntityKind, m: &Affine) -> EntityKind {
             swing_in,
             host,
             at,
+            base,
         } => EntityKind::Door {
             align: *align,
             center: m.apply(*center),
@@ -249,6 +250,7 @@ pub fn transform_kind(k: &EntityKind, m: &Affine) -> EntityKind {
             swing_in: *swing_in,
             host: *host,
             at: *at,
+            base: *base,
         },
         EntityKind::Window {
             center,

@@ -34,7 +34,7 @@ fn tuer_zeichnung() -> (Session, Id) {
     let wall = last_id(&s);
     s.execute(
         "draw.door",
-        &json!({"center": [2, 0], "width": 0.9, "host": [wall]}),
+        &json!({"center": [2, 0], "width": 0.9, "host": [wall], "base": "center"}),
     )
     .unwrap();
     let door = last_id(&s);

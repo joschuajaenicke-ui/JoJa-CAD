@@ -1123,6 +1123,7 @@ pub fn show(app: &mut App, ui: &mut Ui) {
         draw_hilfslinien(app, &painter, rect, view_now);
         draw_text_rahmen(app, &painter, rect, view_now, &selected);
         draw_wand_basislinien(app, &painter, rect, view_now, &selected);
+        draw_tuer_basispunkte(app, &painter, rect, view_now, &selected);
         draw_grips(app, &painter, rect, view_now, &selected);
         if app.ghost.is_some() {
             draw_ghost(app, &painter, rect, view_now);
@@ -1180,6 +1181,7 @@ pub fn show(app: &mut App, ui: &mut Ui) {
         draw_hilfslinien(app, &painter, rect, view_now);
         draw_text_rahmen(app, &painter, rect, view_now, &selected);
         draw_wand_basislinien(app, &painter, rect, view_now, &selected);
+        draw_tuer_basispunkte(app, &painter, rect, view_now, &selected);
         draw_grips(app, &painter, rect, view_now, &selected);
         if app.ghost.is_some() {
             draw_ghost(app, &painter, rect, view_now);
@@ -2231,9 +2233,14 @@ fn draw_tool_preview(
                         kind: app.options.door_kind,
                         hinge: app.options.hinge,
                         swing_in: app.options.swing_in,
+                        base: app.options.door_base,
                     };
                     if let Some(v) = render::preview_door(app.doc(), &spec) {
                         draw_opening_preview(app, p, view, &v, &w2s);
+                        // Basispunkt sichtbar machen (T0091): hier hängt die Tür am Zeiger.
+                        if let Some(bp) = v.base {
+                            draw_basispunkt_marke(p, w2s(bp));
+                        }
                         label = format!("Tür {}", unit.format_plain(width, 2));
                     } else {
                         // Die Tür passt nicht in die freie Wandstrecke — der
@@ -3727,6 +3734,30 @@ fn draw_wand_basislinien(app: &App, p: &Painter, rect: Rect, view: View, selecte
     }
 }
 
+/// Marke für einen Basispunkt (T0091): kleiner Kreis mit Fadenkreuz.
+fn draw_basispunkt_marke(p: &Painter, c: Pos2) {
+    let stroke = Stroke::new(1.4, Palette::ACCENT);
+    p.circle_stroke(c, 5.0, stroke);
+    p.line_segment([c - Vec2::new(9.0, 0.0), c + Vec2::new(9.0, 0.0)], stroke);
+    p.line_segment([c - Vec2::new(0.0, 9.0), c + Vec2::new(0.0, 9.0)], stroke);
+}
+
+/// Basispunkt ausgewählter Türen (T0091) — der Punkt, an dem eine neue Tür
+/// am Mauszeiger hängt.
+fn draw_tuer_basispunkte(app: &App, p: &Painter, rect: Rect, view: View, selected: &[Id]) {
+    if selected.is_empty() || selected.len() > 60 {
+        return;
+    }
+    let doc = app.doc();
+    for id in selected {
+        let Some(e) = doc.entity(*id) else { continue };
+        let Some(bp) = render::door_base_point(e) else {
+            continue;
+        };
+        draw_basispunkt_marke(p, world_to_screen(rect, view, bp));
+    }
+}
+
 fn draw_grips(app: &App, p: &Painter, rect: Rect, view: View, selected: &[Id]) {
     if selected.is_empty() || selected.len() > 60 {
         return;
@@ -4916,7 +4947,8 @@ fn tool_click_at(app: &mut App, w: V2, raw: V2) {
                 "draw.door",
                 json!({"center": ax(cp), "angle": wa, "host": [host.unwrap()],
                        "width": unit.from_mm(app.options.door_width),
-                       "kind": kind, "hinge": app.options.hinge, "swing_in": app.options.swing_in}),
+                       "kind": kind, "hinge": app.options.hinge, "swing_in": app.options.swing_in,
+                       "base": app.options.door_base.key()}),
             );
         }
         "draw.window" => {

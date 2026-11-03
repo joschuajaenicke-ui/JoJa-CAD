@@ -59,7 +59,7 @@
 
 use egui::Ui;
 use jjcad_core::model::{
-    DimAxis, DoorKind, Entity, EntityKind, Id, TextFont, TextRun,
+    DimAxis, DoorBase, DoorKind, Entity, EntityKind, Id, TextFont, TextRun,
 };
 use jjcad_core::style::Color;
 use jjcad_core::text::RunStyle;
@@ -1287,15 +1287,24 @@ pub fn wand(app: &mut App, ui: &mut Ui, ziel: Ziel) {
 pub fn tuer(app: &mut App, ui: &mut Ui, ziel: Ziel) {
     let unit = app.unit();
     let e: Option<Entity> = ziel.id().and_then(|id| app.doc().entity(id).cloned());
-    let (layer, farbe, mut breite, mut art, mut anschlag, mut blatt) = match &e {
+    let (layer, farbe, mut breite, mut art, mut anschlag, mut blatt, mut basis) = match &e {
         Some(e) => match &e.kind {
             EntityKind::Door {
                 width,
                 kind,
                 hinge,
                 swing_in,
+                base,
                 ..
-            } => (e.layer, e.style.color, *width, *kind, *hinge, *swing_in),
+            } => (
+                e.layer,
+                e.style.color,
+                *width,
+                *kind,
+                *hinge,
+                *swing_in,
+                *base,
+            ),
             _ => return,
         },
         None => (
@@ -1305,6 +1314,7 @@ pub fn tuer(app: &mut App, ui: &mut Ui, ziel: Ziel) {
             app.options.door_kind,
             app.options.hinge,
             app.options.swing_in,
+            app.options.door_base,
         ),
     };
     let farbe_gezeigt = farbe.unwrap_or_else(|| {
@@ -1386,6 +1396,19 @@ pub fn tuer(app: &mut App, ui: &mut Ui, ziel: Ziel) {
         }
     });
 
+    zeile("basispunkt");
+    let basis_items: Vec<(DoorBase, String)> = DoorBase::ALL
+        .iter()
+        .map(|b| (*b, b.label().to_string()))
+        .collect();
+    let mut picked_basis = None;
+    widgets::field_row(ui, "Basispunkt", |ui| {
+        picked_basis = panels::pick_combo(ui, &ziel.salt("tuer_basis"), basis, &basis_items);
+    });
+    if let Some(v) = picked_basis {
+        basis = v;
+    }
+
     zeile("kennzahlen");
     ui.add_space(4.0);
     match (&e, ziel) {
@@ -1412,6 +1435,7 @@ pub fn tuer(app: &mut App, ui: &mut Ui, ziel: Ziel) {
             app.options.door_kind = art;
             app.options.hinge = anschlag;
             app.options.swing_in = blatt;
+            app.options.door_base = basis;
         }
         Ziel::Auswahl(id) => {
             gemein_nach_objekt(app, id, &a);
@@ -1424,6 +1448,7 @@ pub fn tuer(app: &mut App, ui: &mut Ui, ziel: Ziel) {
                         kind,
                         hinge,
                         swing_in,
+                        base,
                         ..
                     } = &e.kind
                     {
@@ -1449,6 +1474,10 @@ pub fn tuer(app: &mut App, ui: &mut Ui, ziel: Ziel) {
                         }
                         if blatt != *swing_in {
                             map.insert("swing_in".into(), serde_json::json!(blatt));
+                            geaendert = true;
+                        }
+                        if basis != *base {
+                            map.insert("base".into(), serde_json::json!(basis.key()));
                             geaendert = true;
                         }
                     }
@@ -3475,6 +3504,10 @@ mod tests {
         app.session_mut().selection = vec![tuer];
         let auswahl = zeichne(&mut app);
         assert!(auswahl.contains(&"anschlag"), "Tür ohne Anschlag: {auswahl:?}");
+        assert!(
+            auswahl.contains(&"basispunkt"),
+            "Tür ohne Basispunkt-Zeile: {auswahl:?}"
+        );
 
         app.session_mut().selection.clear();
         app.start_tool("draw.door");
@@ -3936,6 +3969,7 @@ mod tests {
                 align: jjcad_core::style::WallAlign::Center,
                 host: None,
                 at: None,
+                base: DoorBase::Left,
             },
             EntityKind::Window {
                 center: jjcad_core::geom::Vec2::ZERO,

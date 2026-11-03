@@ -277,6 +277,7 @@ fn vorschau_zeigt_dieselbe_lage_wie_der_klick() {
         kind: jjcad_core::model::DoorKind::Hinge,
         hinge: 1.0,
         swing_in: true,
+        base: jjcad_core::model::DoorBase::Left,
     };
     let vor = jjcad_core::render::preview_door(&s.doc, &spec).expect("keine Vorschau");
     // Vorschau-Loch auf die Wandachse projizieren.
