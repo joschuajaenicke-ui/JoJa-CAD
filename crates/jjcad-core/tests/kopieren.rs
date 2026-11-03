@@ -14,12 +14,12 @@ fn kopieren_und_kopieren_mit_basispunkt_sind_getrennt() {
     let kopieren = action("edit.copy").expect("Action edit.copy fehlt");
     let mit_basispunkt = action("modify.copy").expect("Action modify.copy fehlt");
 
-    assert_eq!(kopieren.label, "Kopieren");
+    assert_eq!(kopieren.label(), "Kopieren");
     assert_eq!(kopieren.key, "ctrl+c", "Strg+C ist reines Kopieren");
     assert!(!kopieren.tool, "Kopieren in die Zwischenablage braucht keine Punkte");
     assert_eq!(kopieren.icon, "copy");
 
-    assert_eq!(mit_basispunkt.label, "Kopieren mit Basispunkt");
+    assert_eq!(mit_basispunkt.label(), "Kopieren mit Basispunkt");
     assert_eq!(
         mit_basispunkt.key, "ctrl+shift+c",
         "Kopieren mit Basispunkt liegt auf Strg+Umschalt+C"

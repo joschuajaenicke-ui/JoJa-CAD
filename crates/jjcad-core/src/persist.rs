@@ -533,6 +533,11 @@ pub struct UserPrefs {
     /// "intern" = eigener Dialog der Anwendung
     #[serde(default = "default_dateidialog")]
     pub file_dialog: String,
+    /// Sprache der Oberfläche (T0103), gespeichert als Sprachcode (`de`, `en`).
+    /// Deutsch ist Quellsprache und Rückfall; die Umschaltung wirkt sofort,
+    /// ohne Neustart (`jjcad_core::i18n::set_language`).
+    #[serde(default)]
+    pub language: crate::i18n::Lang,
 }
 
 fn default_dateidialog() -> String {
@@ -871,6 +876,7 @@ impl Default for UserPrefs {
             show_layers: true,
             inventory: vec![None; 40],
             file_dialog: default_dateidialog(),
+            language: crate::i18n::Lang::Deutsch,
         }
     }
 }
@@ -1388,6 +1394,27 @@ mod tests {
         assert!(roh.contains("\"mouse_move\":false"), "Schlüssel fehlt: {roh}");
         let wieder: UserPrefs = serde_json::from_str(&roh).unwrap();
         assert!(!wieder.mouse_move, "Einstellung ging beim Laden verloren");
+    }
+
+    /// T0103: Die Sprache der Oberfläche steht in den Voreinstellungen, wird
+    /// als Sprachcode gespeichert und überlebt Laden und Speichern. Ein
+    /// Altbestand ohne Schlüssel gilt als Deutsch.
+    #[test]
+    fn sprache_wird_gespeichert_und_gelesen() {
+        assert_eq!(UserPrefs::default().language, crate::i18n::Lang::Deutsch);
+        let alt: UserPrefs = serde_json::from_str(r#"{"last_dir": "/tmp"}"#).unwrap();
+        assert_eq!(alt.language, crate::i18n::Lang::Deutsch);
+
+        let mut prefs = UserPrefs::default();
+        prefs.language = crate::i18n::Lang::Englisch;
+        let roh = serde_json::to_string(&prefs).unwrap();
+        assert!(roh.contains("\"language\":\"en\""), "Schlüssel fehlt: {roh}");
+        let wieder: UserPrefs = serde_json::from_str(&roh).unwrap();
+        assert_eq!(
+            wieder.language,
+            crate::i18n::Lang::Englisch,
+            "Sprachwahl ging beim Laden verloren"
+        );
     }
 
     /// T0067: Die Schwenkgeschwindigkeit ist ein Faktor mit Vorgabe 1,0, wird

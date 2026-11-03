@@ -17,6 +17,7 @@ pub mod flaeche;
 pub mod fonts;
 pub mod geom;
 pub mod history;
+pub mod i18n;
 pub mod model;
 pub mod pdf;
 pub mod pdf_read;

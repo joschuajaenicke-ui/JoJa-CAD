@@ -684,7 +684,7 @@ pub fn show(app: &mut App, ctx: &egui::Context) {
         let mut open = true;
         // Aufbau wie in der KDE-Systemsteuerung (T0061): Suche und Kategorien
         // links, die Einstellungen der gewählten Kategorie rechts.
-        modal_window(ctx, "Einstellungen", 960.0, &mut open)
+        modal_window(ctx, jjcad_core::i18n::tr("settings.title"), 960.0, &mut open)
             .default_height(660.0)
             .show(ctx, |ui| {
                 ui.set_width(940.0);
@@ -942,20 +942,26 @@ const SETTINGS_HOEHE: f32 = 580.0;
 /// ergänzt, trägt ihren Namen in der Liste der Kategorie ein — sonst findet die
 /// Suche die Kategorie nicht und die Einstellung bleibt versteckt (T0061).
 pub(crate) struct Einstellungskategorie {
-    pub name: &'static str,
+    /// Katalogschlüssel des Namens (T0103) — der Text folgt der Sprache.
+    pub key: &'static str,
     /// Iconname aus `icons::paint`
     icon: &'static str,
     stichworte: &'static [&'static str],
 }
 
 impl Einstellungskategorie {
+    /// Name der Kategorie in der eingestellten Sprache.
+    pub fn name(&self) -> &'static str {
+        jjcad_core::i18n::tr(self.key)
+    }
+
     /// Passt die Kategorie zum (klein geschriebenen) Suchbegriff? Gesucht wird
     /// im Kategorienamen und in den Namen aller Einstellungen der Kategorie.
     fn passt(&self, suche: &str) -> bool {
         if suche.is_empty() {
             return true;
         }
-        self.name.to_lowercase().contains(suche)
+        self.name().to_lowercase().contains(suche)
             || self
                 .stichworte
                 .iter()
@@ -966,17 +972,17 @@ impl Einstellungskategorie {
 /// Die Kategorien des Einstellungsfensters in der Reihenfolge der Liste links.
 pub(crate) const EINSTELLUNGSKATEGORIEN: &[Einstellungskategorie] = &[
     Einstellungskategorie {
-        name: "Einheiten und Maßstab",
+        key: "settings.category_einheiten",
         icon: "staerke",
         stichworte: &["Eingabe", "Einheit", "Nachkommastellen", "Maßstab"],
     },
     Einstellungskategorie {
-        name: "Raster",
+        key: "settings.category_raster",
         icon: "grid",
         stichworte: &["Rasterweite", "Raster anzeigen", "Rasterfang", "Raster"],
     },
     Einstellungskategorie {
-        name: "Fangen",
+        key: "settings.category_fangen",
         icon: "snap",
         stichworte: &[
             "Endpunkt",
@@ -995,7 +1001,7 @@ pub(crate) const EINSTELLUNGSKATEGORIEN: &[Einstellungskategorie] = &[
         ],
     },
     Einstellungskategorie {
-        name: "Architektur",
+        key: "settings.category_architektur",
         icon: "wall",
         stichworte: &[
             "Wandstärke",
@@ -1010,7 +1016,7 @@ pub(crate) const EINSTELLUNGSKATEGORIEN: &[Einstellungskategorie] = &[
         ],
     },
     Einstellungskategorie {
-        name: "Bemaßung",
+        key: "settings.category_bemassung",
         icon: "dim",
         stichworte: &[
             "Pfeilgröße",
@@ -1023,7 +1029,7 @@ pub(crate) const EINSTELLUNGSKATEGORIEN: &[Einstellungskategorie] = &[
         ],
     },
     Einstellungskategorie {
-        name: "Bedienung",
+        key: "settings.category_bedienung",
         icon: "move",
         stichworte: &[
             "Ziehen",
@@ -1045,11 +1051,14 @@ pub(crate) const EINSTELLUNGSKATEGORIEN: &[Einstellungskategorie] = &[
             "Fadenkreuz",
             "Zwischenablage",
             "Dateidialog",
+            "Sprache",
+            "Englisch",
+            "Language",
             "Bedienung",
         ],
     },
     Einstellungskategorie {
-        name: "Darstellung",
+        key: "settings.category_darstellung",
         icon: "eye",
         stichworte: &[
             "Linienstärken",
@@ -1121,7 +1130,7 @@ fn kategorie_zeile(ui: &mut Ui, kat: &Einstellungskategorie, gewaehlt: bool) -> 
         p.text(
             egui::pos2(rect.left() + 34.0, rect.center().y),
             egui::Align2::LEFT_CENTER,
-            kat.name,
+            kat.name(),
             FontId::proportional(13.0),
             farbe,
         );
@@ -1184,7 +1193,7 @@ fn settings_body(app: &mut App, ui: &mut Ui) {
             let antwort = ui.add_sized(
                 [SETTINGS_NAV_W, 26.0],
                 egui::TextEdit::singleline(&mut app.ui.settings_suche)
-                    .hint_text("Einstellungen durchsuchen …"),
+                    .hint_text(jjcad_core::i18n::tr("settings.search")),
             );
             app.ui.last_settings_suche = Some(antwort.rect);
             ui.add_space(8.0);
@@ -1213,7 +1222,7 @@ fn settings_body(app: &mut App, ui: &mut Ui) {
                         }
                         if treffer.is_empty() {
                             ui.add_space(6.0);
-                            ui.label(theme::dim("Keine Einstellung gefunden"));
+                            ui.label(theme::dim(jjcad_core::i18n::tr("settings.none_found")));
                         }
                     });
                     if let Some(i) = gewaehlt {
@@ -1236,7 +1245,7 @@ fn settings_body(app: &mut App, ui: &mut Ui) {
                 .max_rect(pane_rect)
                 .layout(Layout::top_down(Align::Min)),
             |ui| {
-                ui.label(theme::bold(EINSTELLUNGSKATEGORIEN[kat].name, 18.0));
+                ui.label(theme::bold(EINSTELLUNGSKATEGORIEN[kat].name(), 18.0));
                 ui.add_space(6.0);
                 egui::ScrollArea::vertical()
                     .id_salt("einstellungen_seite")
@@ -1522,7 +1531,34 @@ fn settings_body(app: &mut App, ui: &mut Ui) {
                                          Vorschau bleibt oben rechts",
                                     ));
                                 }
-                                zeile(&suche, ui, "Dateidialog", |ui| {
+                                // T0103: Sprache der Oberfläche — wirkt sofort, ohne Neustart.
+                zeile_mit(
+                    &suche,
+                    ui,
+                    "Sprache",
+                    &["Language", "Deutsch", "Englisch", "English", "Übersetzung"],
+                    |ui| {
+                        let mut gewaehlt = jjcad_core::i18n::language();
+                        let vorher = gewaehlt;
+                        for l in jjcad_core::i18n::Lang::ALL {
+                            ui.selectable_value(&mut gewaehlt, l, l.name());
+                        }
+                        if gewaehlt != vorher {
+                            jjcad_core::i18n::set_language(gewaehlt);
+                            app.prefs.language = gewaehlt;
+                            let _ = app.prefs.save();
+                            // Der Wechsel gilt ab dem nächsten Bild — ohne
+                            // Anforderung bliebe die Oberfläche stehen.
+                            ui.ctx().request_repaint();
+                        }
+                    },
+                );
+                if suche.is_empty() {
+                    ui.label(theme::faint(
+                        jjcad_core::i18n::tr("settings.language_hint"),
+                    ));
+                }
+                zeile(&suche, ui, "Dateidialog", |ui| {
                                     let moeglich = crate::systemdialog::verfuegbar();
                                     ui.selectable_value(&mut dateidialog_system, true, "System")
                                         .on_hover_text(
@@ -1877,7 +1913,7 @@ pub(crate) fn funktion_auf_taste(app: &mut App, funktion: &str, key: &str) -> bo
         return false;
     }
     let name = actions::action(funktion)
-        .map(|d| d.label.to_string())
+        .map(|d| d.label().to_string())
         .unwrap_or_else(|| funktion.to_string());
     app.prefs.bind(funktion, key);
     let _ = app.prefs.save();
@@ -1944,7 +1980,7 @@ fn keymap_window(app: &mut App, ctx: &egui::Context) {
                     offen = false;
                 }
                 if let Some(f) = app.ui.keymap_funktion.clone() {
-                    let name = actions::action(&f).map(|d| d.label.to_string()).unwrap_or(f);
+                    let name = actions::action(&f).map(|d| d.label().to_string()).unwrap_or(f);
                     ui.label(theme::mono(format!("Bereit: {name}")));
                 }
             });
@@ -2384,7 +2420,7 @@ fn keyboard_body(app: &mut App, ui: &mut Ui) {
             match app.prefs.unbind_key(key) {
                 Some(a) => {
                     let _ = app.prefs.save();
-                    let name = actions::action(&a).map(|d| d.label.to_string()).unwrap_or(a);
+                    let name = actions::action(&a).map(|d| d.label().to_string()).unwrap_or(a);
                     app.toast(format!("{name} · Taste {} frei", key.to_uppercase()));
                 }
                 None => app.toast("Taste · nicht belegt"),
@@ -2400,7 +2436,7 @@ fn keyboard_body(app: &mut App, ui: &mut Ui) {
                 if let Some(a) = action {
                     resp.on_hover_text(
                         actions::action(&a)
-                            .map(|d| format!("{} — {}", d.label, d.hint))
+                            .map(|d| format!("{} — {}", d.label(), d.hint()))
                             .unwrap_or(a),
                     );
                 }
@@ -2476,7 +2512,7 @@ fn help_body(app: &mut App, ui: &mut Ui) {
                 for a in actions::actions_in_group(g) {
                     if let Some(k) = app.prefs.key_for(a.id) {
                         ui.label(theme::mono(k.to_uppercase()));
-                        ui.label(theme::dim(a.label));
+                        ui.label(theme::dim(a.label()));
                         ui.end_row();
                     }
                 }
@@ -3886,12 +3922,12 @@ mod tests_einstellungen {
     fn jede_kategorie_hat_name_icon_und_stichworte() {
         assert_eq!(EINSTELLUNGSKATEGORIEN.len(), 7, "Kategorienzahl");
         for k in EINSTELLUNGSKATEGORIEN {
-            assert!(!k.name.is_empty(), "Kategorie ohne Namen");
-            assert!(!k.icon.is_empty(), "Kategorie „{}“ ohne Icon", k.name);
+            assert!(!k.name().is_empty(), "Kategorie ohne Namen");
+            assert!(!k.icon.is_empty(), "Kategorie „{}“ ohne Icon", k.name());
             assert!(
                 k.stichworte.len() >= 2,
                 "Kategorie „{}“ hat zu wenige Stichworte — die Suche findet sie nicht",
-                k.name
+                k.name()
             );
         }
     }
@@ -3904,10 +3940,10 @@ mod tests_einstellungen {
             EINSTELLUNGSKATEGORIEN
                 .iter()
                 .filter(|k| k.passt(&s.to_lowercase()))
-                .map(|k| k.name)
+                .map(|k| k.name())
                 .collect()
         };
-        assert_eq!(treffer(""), EINSTELLUNGSKATEGORIEN.iter().map(|k| k.name).collect::<Vec<_>>());
+        assert_eq!(treffer(""), EINSTELLUNGSKATEGORIEN.iter().map(|k| k.name()).collect::<Vec<_>>());
         assert_eq!(treffer("polarwinkel"), vec!["Fangen"]);
         assert_eq!(treffer("Wandstärke"), vec!["Architektur"]);
         assert_eq!(treffer("dateidialog"), vec!["Bedienung"]);
@@ -3933,7 +3969,7 @@ mod tests_einstellungen {
             frame(&mut app, &ctx);
         }
         assert_eq!(
-            EINSTELLUNGSKATEGORIEN[app.ui.settings_kat].name,
+            EINSTELLUNGSKATEGORIEN[app.ui.settings_kat].name(),
             "Fangen",
             "die Suche hat die Kategorie nicht auf den Treffer gezogen"
         );
@@ -4056,6 +4092,47 @@ mod tests_einstellungen {
             app.prefs.paste_pivot,
             PastePivot::Center,
             "Vorgabe: der Mittelpunkt ist der Programmstandard (T0087)"
+        );
+    }
+
+    /// T0103: Unter „Bedienung" steht die Sprachwahl. Der Test prüft die
+    /// gezeichneten Texte und die gespeicherte Auswahl — die globale Sprache
+    /// stellt er **nicht** um, sonst liefen die übrigen Tests dieser Datei
+    /// (die deutsche Beschriftungen prüfen) kreuz und quer.
+    #[test]
+    fn bedienung_zeigt_die_sprachwahl() {
+        let _sperre = KONFIG.lock().unwrap_or_else(|e| e.into_inner());
+        let _konfig = WegwerfKonfig::neu("sprachwahl");
+        let ctx = egui::Context::default();
+        let mut app = App::with_ctx(ctx.clone());
+        app.ui.settings_open = true;
+        app.ui.settings_kat = 5;
+        let bild = || egui::RawInput {
+            screen_rect: Some(Rect::from_min_size(Pos2::ZERO, Vec2::new(1500.0, 950.0))),
+            ..Default::default()
+        };
+        let mut out = ctx.run(bild(), |ctx| app.ui(ctx));
+        for _ in 0..3 {
+            out = ctx.run(bild(), |ctx| app.ui(ctx));
+        }
+        let texte: Vec<&str> = out
+            .shapes
+            .iter()
+            .filter_map(|cs| match &cs.shape {
+                egui::Shape::Text(t) => Some(t.galley.text()),
+                _ => None,
+            })
+            .collect();
+        for erwartet in ["Sprache", "Deutsch", "English"] {
+            assert!(
+                texte.iter().any(|t| *t == erwartet),
+                "„{erwartet}“ fehlt in den Einstellungen (gezeichnet: {texte:?})"
+            );
+        }
+        assert_eq!(
+            app.prefs.language,
+            jjcad_core::i18n::Lang::Deutsch,
+            "Vorgabe ist Deutsch"
         );
     }
 

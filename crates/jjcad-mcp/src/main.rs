@@ -283,9 +283,9 @@ fn action_catalog(group: Option<&str>) -> Value {
         .map(|a| {
             json!({
                 "id": a.id,
-                "label": a.label,
+                "label": a.label(),
                 "group": a.group.label(),
-                "hint": a.hint,
+                "hint": a.hint(),
                 "tool": a.tool,
                 "key": a.key,
             })

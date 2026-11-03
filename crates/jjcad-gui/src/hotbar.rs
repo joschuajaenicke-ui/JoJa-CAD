@@ -487,7 +487,7 @@ pub fn auswahl_fenster(app: &mut App, ctx: &egui::Context) {
 
 fn label_of(action: &str) -> &'static str {
     jjcad_core::actions::action(action)
-        .map(|d| d.label)
+        .map(|d| d.label())
         .unwrap_or("Werkzeug")
 }
 

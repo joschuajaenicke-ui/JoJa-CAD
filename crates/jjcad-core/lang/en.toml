@@ -1,0 +1,422 @@
+# JoJa-CAD — English language catalogue (T0103)
+#
+# Keys are neutral and stable; a missing entry falls back to the German text.
+# Placeholders are named ({name}), so a translation may reorder them.
+
+[action.file.new]
+label = "New"
+
+[action.file.open]
+label = "Open"
+
+[action.file.save]
+label = "Save"
+
+[action.file.save_as]
+label = "Save as"
+
+[action.file.export_pdf]
+label = "Export PDF"
+
+[action.file.export_dxf]
+label = "Export DXF"
+
+[action.file.import_dxf]
+label = "Import DXF"
+
+[action.file.import.pdf]
+label = "Insert PDF"
+
+[action.file.export_png]
+label = "Export PNG"
+
+[action.edit.undo]
+label = "Undo"
+
+[action.edit.redo]
+label = "Redo"
+
+[action.edit.copy]
+label = "Copy"
+
+[action.draw.line]
+label = "Line"
+
+[action.draw.polyline]
+label = "Polyline"
+
+[action.draw.spline]
+label = "Spline"
+
+[action.draw.rect]
+label = "Rectangle"
+
+[action.draw.circle]
+label = "Circle"
+
+[action.draw.arc]
+label = "Arc"
+
+[action.draw.point]
+label = "Point"
+
+[action.draw.fill]
+label = "Fill area"
+
+[action.draw.fill.boundary]
+label = "Area by outline"
+
+[action.draw.fill.points]
+label = "Area by points"
+
+[action.draw.fill.paint]
+label = "Paint bucket"
+
+[action.draw.text]
+label = "Text"
+
+[action.draw.ellipse]
+label = "Ellipse"
+
+[action.draw.wall]
+label = "Wall"
+
+[action.draw.volume]
+label = "Volume"
+
+[action.draw.volume.points]
+label = "Volume by points"
+
+[action.draw.volume.paint]
+label = "Fill volume"
+
+[action.draw.door]
+label = "Door"
+
+[action.draw.window]
+label = "Window"
+
+[action.draw.stair]
+label = "Stair"
+
+[action.draw.stair.label]
+label = "Stair label"
+
+[action.modify.select]
+label = "Select"
+
+[action.modify.move]
+label = "Move"
+
+[action.modify.order]
+label = "Draw order"
+
+[action.modify.copy]
+label = "Copy with base point"
+
+[action.modify.rotate]
+label = "Rotate"
+
+[action.modify.mirror]
+label = "Mirror"
+
+[action.modify.scale]
+label = "Scale"
+
+[action.modify.offset]
+label = "Offset"
+
+[action.modify.trim]
+label = "Trim"
+
+[action.modify.extend]
+label = "Extend"
+
+[action.modify.intersect]
+label = "Intersect"
+
+[action.modify.area.union]
+label = "Unite areas"
+
+[action.modify.area.split]
+label = "Split area"
+
+[action.modify.erase]
+label = "Delete"
+
+[action.modify.explode]
+label = "Explode"
+
+[action.text.format]
+label = "Format text"
+
+[action.modify.quickselect]
+label = "Quick select"
+
+[action.dim.linear]
+label = "Dimension"
+
+[action.dim.chain]
+label = "Dimension chain"
+
+[action.dim.elevation.plan]
+label = "Plan level"
+
+[action.dim.elevation.section]
+label = "Section level"
+
+[action.dim.room]
+label = "Room stamp"
+
+[action.dim.style]
+label = "Dimension style"
+
+[action.block.insert]
+label = "Insert block"
+
+[action.block.create]
+label = "Block from selection"
+
+[action.block.explode]
+label = "Explode block"
+
+[action.block.manager]
+label = "Block manager"
+
+[action.sheet.new]
+label = "New sheet"
+
+[action.sheet.pdf]
+label = "Sheet → PDF"
+
+[action.sheet.add_viewport]
+label = "Viewport"
+
+[action.sheet.viewport_tool]
+label = "Draw viewport"
+
+[action.view.zoom_extents]
+label = "Zoom extents"
+
+[action.view.zoom_in]
+label = "Zoom in"
+
+[action.view.zoom_out]
+label = "Zoom out"
+
+[action.view.pan_left]
+label = "Pan left"
+
+[action.view.pan_right]
+label = "Pan right"
+
+[action.view.pan_up]
+label = "Pan up"
+
+[action.view.pan_down]
+label = "Pan down"
+
+[action.view.inventory]
+label = "Inventory"
+
+[action.view.layers]
+label = "Layers"
+
+[action.view.keymap]
+label = "Keyboard layout"
+
+[action.view.settings]
+label = "Settings"
+
+[action.view.hotbar_next]
+label = "Hotbar preset"
+
+[action.view.help]
+label = "Help"
+
+[action.view.fullscreen]
+label = "Fullscreen"
+
+[action.view.rotate_tool]
+label = "Rotate view"
+
+[action.edit.repeat]
+label = "Repeat"
+
+[action.modify.set]
+label = "Change properties"
+
+[action.layer.create]
+label = "Create layer"
+
+[action.layer.update]
+label = "Edit layer"
+
+[action.layer.delete]
+label = "Delete layer"
+
+[action.layer.list]
+label = "List layers"
+
+[action.layer.set_current]
+label = "Current layer"
+
+[action.select.all]
+label = "Select all"
+
+[action.select.query]
+label = "Query objects"
+
+[action.select.area]
+label = "Measure areas"
+
+[action.block.update]
+label = "Update block"
+
+[action.block.delete]
+label = "Delete block"
+
+[action.block.list]
+label = "List blocks"
+
+[action.sheet.update]
+label = "Edit sheet"
+
+[action.sheet.delete]
+label = "Delete sheet"
+
+[action.sheet.update_viewport]
+label = "Edit viewport"
+
+[action.sheet.remove_viewport]
+label = "Delete viewport"
+
+[action.sheet.fit_viewport]
+label = "Fit viewport"
+
+[action.doc.settings]
+label = "Drawing settings"
+
+[action.doc.project]
+label = "Project data"
+
+[group]
+datei = "File"
+zeichnen = "Draw"
+architektur = "Architecture"
+aendern = "Modify"
+bemassung = "Dimension"
+bloecke = "Blocks"
+blatt = "Sheet"
+ansicht = "View"
+hilfe = "Help"
+
+[ribbon.tab]
+start = "Home"
+zeichnen = "Draw"
+architektur = "Architecture"
+aendern = "Modify"
+bemassung = "Dimension"
+bloecke = "Blocks"
+blatt = "Sheet"
+ansicht = "View"
+
+[ribbon.group]
+zeichnung = "Drawing"
+ausgabe = "Output"
+zwischenablage = "Clipboard"
+projekt = "Project"
+ansicht = "View"
+grundelemente = "Basic shapes"
+fuellen = "Fill"
+weitere = "More"
+bauteile = "Building parts"
+bearbeiten = "Edit"
+geometrie = "Geometry"
+reihenfolge = "Draw order"
+sonstiges = "Other"
+masse = "Dimensions"
+massketten = "Chains"
+bibliothek = "Library"
+schnellzugriff = "Quick access"
+blaetter = "Sheets"
+papierraum = "Paper space"
+blatteinstellungen = "Sheet settings"
+zoom = "Zoom"
+drehen = "Rotate"
+panels = "Panels"
+fenster = "Window"
+fangen = "Snap"
+
+[ribbon]
+new = "New"
+open = "Open"
+save = "Save"
+pdf = "PDF"
+dxf = "DXF"
+png = "PNG"
+import = "Import"
+pdf_insert = "Insert PDF"
+paste = "Paste"
+cut = "Cut"
+project = "Project data"
+settings = "Settings"
+inventory = "Inventory"
+keys = "Keys"
+hotbar = "Hotbar"
+union = "Unite"
+split = "Split"
+block_manager = "Block manager"
+block_insert = "Insert"
+block_from_selection = "From selection"
+explode = "Explode"
+sheet_new = "New sheet"
+viewport = "Viewport"
+sheet_pdf = "Sheet PDF"
+zoom_all = "All"
+zoom_in = "In"
+zoom_out = "Out"
+rotate = "Rotate"
+layers = "Layers"
+properties = "Properties"
+grid = "Grid"
+fullscreen = "Full screen"
+sheet_open = "Open a sheet, then draw"
+
+[settings]
+title = "Settings"
+search = "Search settings …"
+language = "Language"
+language_hint = "applies at once, no restart"
+category_einheiten = "Units and scale"
+category_raster = "Grid"
+category_fangen = "Snapping"
+category_architektur = "Architecture"
+category_bemassung = "Dimensioning"
+category_bedienung = "Operation"
+category_darstellung = "Appearance"
+none_found = "No setting found"
+
+[ui.einfuegemodus]
+ecken = "By corners"
+mittelpunkt = "By center"
+mittelachse = "Center axis + width"
+basislinie = "Baseline + height"
+
+[ui.bogenmodus]
+drei_punkte = "Three points"
+mittelpunkt_start_ende = "Center, start, end"
+
+[ui.fillkind]
+flaeche = "Area"
+schraffur = "Hatch"
+volumen = "Volume"
+
+[ui.fillinput]
+kontur = "Pick contour"
+punkte = "Set points"
+farbeimer = "Paint bucket"
+
+[ui.copyinput]
+kopieren = "Copy"
+basispunkt = "Copy with base point"

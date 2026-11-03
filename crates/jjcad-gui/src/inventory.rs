@@ -158,7 +158,7 @@ fn storage_tab(app: &mut App, ui: &mut Ui) {
                     if let Some(a) = &item {
                         resp.on_hover_text(
                             jjcad_core::actions::action(a)
-                                .map(|d| d.label.to_string())
+                                .map(|d| d.label().to_string())
                                 .unwrap_or_else(|| a.clone()),
                         );
                     }
@@ -476,7 +476,7 @@ fn functions_tab(app: &mut App, ui: &mut Ui) {
                 .into_iter()
                 .filter(|a| {
                     search.is_empty()
-                        || a.label.to_lowercase().contains(&search)
+                        || a.label().to_lowercase().contains(&search)
                         || a.id.to_lowercase().contains(&search)
                 })
                 .collect();
@@ -511,7 +511,7 @@ fn functions_tab(app: &mut App, ui: &mut Ui) {
                     ui.painter().text(
                         Pos2::new(rect.left() + 32.0, rect.center().y),
                         egui::Align2::LEFT_CENTER,
-                        a.label,
+                        a.label(),
                         FontId::proportional(12.0),
                         Palette::TEXT,
                     );
@@ -535,7 +535,7 @@ fn functions_tab(app: &mut App, ui: &mut Ui) {
                     ui.painter().text(
                         Pos2::new(rect.right() - 54.0, rect.center().y),
                         egui::Align2::RIGHT_CENTER,
-                        &a.hint,
+                        &a.hint(),
                         FontId::proportional(9.5),
                         Palette::TEXT_FAINT,
                     );
@@ -546,7 +546,7 @@ fn functions_tab(app: &mut App, ui: &mut Ui) {
                 if resp.drag_started() {
                     app.ui.slot_drag = Some((usize::MAX, a.id.to_string()));
                 }
-                resp.on_hover_text(a.hint);
+                resp.on_hover_text(a.hint());
             }
         }
         ui.add_space(12.0);

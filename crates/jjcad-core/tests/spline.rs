@@ -38,7 +38,7 @@ fn spline(s: &Session) -> (Vec<Vec2>, bool) {
 #[test]
 fn aktion_ist_im_register() {
     let a = jjcad_core::actions::action("draw.spline").expect("draw.spline fehlt im Register");
-    assert_eq!(a.label, "Spline");
+    assert_eq!(a.label(), "Spline");
     assert!(a.tool, "Spline ist ein interaktives Werkzeug");
 }
 
