@@ -90,8 +90,9 @@ fn masslinie_hat_ueberstand_an_beiden_enden() {
     assert!((x1 - 4150.0).abs() < 0.5, "Überstand rechts fehlt: {x1}");
 }
 
-/// Begrenzungsstrich: 45°, 0,6 h lang — Bild 3 ist das Maß der Darstellung,
-/// nicht die Pfeilgröße (die gilt nur für Pfeil und Punkt).
+/// Begrenzungsstrich: 45° und deutlich länger als die Ziffern hoch sind
+/// (1,2 h — Bild 3/Bild 4); nicht die Pfeilgröße (die gilt nur für Pfeil und
+/// Punkt).
 #[test]
 fn schraegstrich_ist_eine_texthoehen_laenge_lang() {
     let (s, id) = kette(&[[0.0, 0.0], [2.0, 0.0], [4.0, 0.0]], [0.0, -1.2], "x");
@@ -106,14 +107,14 @@ fn schraegstrich_ist_eine_texthoehen_laenge_lang() {
     assert_eq!(striche.len(), 3, "Strichzahl: {striche:?}");
     for len in &striche {
         assert!(
-            (len - 150.0).abs() < 0.5,
-            "Schrägstrich muss 0,6 × 2,5 mm × 100 = 150 mm lang sein, ist {len}"
+            (len - 300.0).abs() < 0.5,
+            "Schrägstrich muss 1,2 × 2,5 mm × 100 = 300 mm lang sein, ist {len}"
         );
     }
     // 45°: gleiche Waagerecht- und Senkrechtausdehnung.
     let strich = l
         .iter()
-        .find(|e| (e.0 - 150.0).abs() < 0.5)
+        .find(|e| (e.0 - 300.0).abs() < 0.5)
         .expect("Strich");
     let dx = (strich.2 .0 - strich.1 .0).abs();
     let dy = (strich.2 .1 - strich.1 .1).abs();
@@ -169,10 +170,10 @@ fn masszahl_steht_ueber_der_masslinie() {
     assert_eq!(t.len(), 2, "zwei Maßzahlen erwartet: {t:?}");
     for (x, y, angle, text) in &t {
         assert!((*angle).abs() < 1e-6, "waagerechte Kette bleibt waagerecht: {text}");
-        // Maßlinie liegt auf y = -1200; Anker 0,6 × 2,5 mm × 100 = 150 mm
-        // darüber (die Ziffern stehen dadurch rund 0,7 h über der Linie).
+        // Maßlinie liegt auf y = -1200; Anker 0,9 × 2,5 mm × 100 = 225 mm
+        // darüber (Bild 4: die Zahl steht frei über der Linie).
         assert!(
-            (y - (-1050.0)).abs() < 0.5,
+            (y - (-975.0)).abs() < 0.5,
             "Maßzahl „{text}“ sitzt nicht über der Maßlinie: y {y}"
         );
         assert!(*x > 0.0 && *x < 4000.0, "Maßzahl außerhalb der Kette: {x}");
@@ -191,9 +192,9 @@ fn senkrechte_kette_liest_von_rechts() {
         (angle - std::f64::consts::FRAC_PI_2).abs() < 1e-6,
         "senkrechte Maßzahl muss um 90° gedreht sein: {angle}"
     );
-    // Maßlinie auf x = +1200; Text links davon, 150 mm entfernt.
+    // Maßlinie auf x = +1200; Text links davon, 225 mm entfernt.
     assert!(
-        (x - 1050.0).abs() < 0.5,
+        (x - 975.0).abs() < 0.5,
         "Maßzahl „{text}“ muss links der Maßlinie stehen: x {x}"
     );
     assert!((y - 1500.0).abs() < 50.0, "Maßzahl nicht mittig: y {y}");
@@ -211,12 +212,12 @@ fn einzelmass_folgt_denselben_regeln() {
         "Einzelmaß ohne Überstand: {}",
         masslinie.0
     );
-    let striche = l.iter().filter(|e| (e.0 - 150.0).abs() < 0.5).count();
+    let striche = l.iter().filter(|e| (e.0 - 300.0).abs() < 0.5).count();
     assert_eq!(striche, 2, "zwei Begrenzungsstriche am Einzelmaß");
     let t = texte(&s, id);
     assert_eq!(t.len(), 1);
     assert!(
-        (t[0].1 - (-600.0 + 150.0)).abs() < 0.5,
+        (t[0].1 - (-600.0 + 225.0)).abs() < 0.5,
         "Maßzahl nicht über der Maßlinie: y {}",
         t[0].1
     );
@@ -233,5 +234,64 @@ fn groesserer_textabstand_bleibt_erhalten() {
         (t[0].1 - (-1200.0 + 400.0)).abs() < 0.5,
         "text_gap 4 mm muss 400 mm über der Maßlinie ergeben: y {}",
         t[0].1
+    );
+}
+
+/// Maßzahl nach Tabelle 4: der halbe Zentimeter steht als **Hochzahl** im
+/// zweiten Lauf des Textes („2,88“ + hochgestellte „5“).
+#[test]
+fn halber_zentimeter_steht_als_hochzahl() {
+    let (s, id) = kette(&[[0.0, 0.0], [2.885, 0.0]], [0.0, -1.2], "x");
+    let dl = render_document(&RenderCtx::new(&s.doc));
+    let t = dl
+        .prims
+        .iter()
+        .filter(|p| p.entity == id)
+        .find_map(|p| match &p.shape {
+            Shape::Text(t) => Some(t.clone()),
+            _ => None,
+        })
+        .expect("Maßzahl");
+    assert_eq!(t.text, "2,885", "Hauptzahl samt Hochzahl: {}", t.text);
+    assert_eq!(t.runs.len(), 2, "Hauptzahl und Hochzahl: {:?}", t.runs);
+    assert_eq!(t.runs[0].text, "2,88");
+    assert!(t.runs[0].superscript == false);
+    assert_eq!(t.runs[1].text, "5");
+    assert!(t.runs[1].superscript, "die 5 muss hochgestellt sein");
+    // Exakte Werte bekommen keine Hochzahl
+    let (s2, id2) = kette(&[[0.0, 0.0], [4.25, 0.0]], [0.0, -1.2], "x");
+    let dl2 = render_document(&RenderCtx::new(&s2.doc));
+    let t2 = dl2
+        .prims
+        .iter()
+        .filter(|p| p.entity == id2)
+        .find_map(|p| match &p.shape {
+            Shape::Text(t) => Some(t.clone()),
+            _ => None,
+        })
+        .expect("Maßzahl");
+    assert_eq!(t2.text, "4,25");
+    assert_eq!(t2.runs.len(), 1);
+}
+
+/// Maßhilfslinie: kurz am Bauteil und nur ein Stück über die Maßlinie hinaus
+/// (Bild 3/Bild 4) — die Werte aus `dim_style` sind Obergrenzen.
+#[test]
+fn hilfslinien_sind_kurz() {
+    let (s, id) = kette(&[[0.0, 0.0], [2.0, 0.0]], [0.0, -1.2], "x");
+    let l = linien(&s, id);
+    // Reine Hilfslinie: von y = -100 (Abstand 0,4 h = 1 mm) bis -1200 - 62,5.
+    let hilfs = l
+        .iter()
+        .find(|e| (e.1 .0 - e.2 .0).abs() < 0.5 && e.0 > 500.0)
+        .expect("Hilfslinie am Basispunkt");
+    let (y0, y1) = (hilfs.1 .1.min(hilfs.2 .1), hilfs.1 .1.max(hilfs.2 .1));
+    assert!(
+        (y1 - (-100.0)).abs() < 0.5,
+        "Abstand am Bauteil muss 1 mm sein, ist {y1}"
+    );
+    assert!(
+        (y0 - (-1262.5)).abs() < 0.5,
+        "Überstand über die Maßlinie muss 0,625 mm sein, ist {y0}"
     );
 }
