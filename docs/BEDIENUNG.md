@@ -71,6 +71,13 @@ einsehbar und dort frei änderbar (Ribbon ▸ Ansicht ▸ „Tasten").
     Mittelpunkt, dann der Startpunkt, der zugleich den **Radius** festlegt, zuletzt der Endpunkt.
     Der Bogen läuft vom Startpunkt im mathematisch positiven Drehsinn zum Endpunkt. Derselbe
     Modus steht beim Platzieren im Eigenschaften-Panel unter **„Eingabemodus"**.
+15. **Flächen schneiden und vereinigen** (Ribbon ▸ Zeichnen ▸ Gruppe „Füllen"):
+    **„Schneiden"** fragt Punkte für die Schnittlinie ab — `Enter` (oder `ESC`) teilt die
+    Füllfläche in zwei Teilflächen. Die Linie darf außerhalb der Fläche beginnen und enden;
+    sie muss den Rand an genau zwei Stellen übertreten. **„Vereinigen"** wirkt sofort auf die
+    Auswahl: zwei oder mehr **angrenzende** Füllflächen werden eine, Muster, Randlinie und
+    Ebene kommen von der ersten. Getrennte Flächen melden einen Fehler, statt still zwei
+    Flächen zu erzeugen.
 
 Der Zeiger ist über der Zeichenfläche ein durchgehendes Fadenkreuz; der Systemzeiger wird dort
 ausgeblendet.

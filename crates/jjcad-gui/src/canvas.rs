@@ -2563,6 +2563,21 @@ fn draw_tool_preview(
             // Nach dem ersten Klick: beide Strecken bis zum Schnittpunkt (T0082).
             draw_verschneiden_preview(app, p, rect, view, cursor);
         }
+        "modify.area.split" => {
+            // Die Schnittlinie als Polygonzug; ab dem ersten Punkt zeigt die
+            // gestrichelte Strecke, wie sie weiterläuft.
+            for pair in tool.pts.windows(2) {
+                p.line_segment([w2s(pair[0]), w2s(pair[1])], stroke);
+            }
+            if let Some(start) = last {
+                p.line_segment([w2s(start), w2s(cursor)], dashed);
+                label = format!(
+                    "{} {}",
+                    unit.format_plain(start.dist(cursor), unit.decimals()),
+                    unit.short()
+                );
+            }
+        }
         "block.insert" => {
             let name = app
                 .options
@@ -3036,6 +3051,7 @@ fn handle_input(
             let punktfolge = ist_fuell_punkte(&t.action);
             if matches!(t.action.as_str(), "draw.polyline" | "draw.spline" | "dim.chain")
                 || punktfolge
+                || t.action == "modify.area.split"
             {
                 if t.pts.len() >= 2 {
                     finish_tool(app, true);
@@ -4372,6 +4388,30 @@ pub fn finish_tool(app: &mut App, from_enter: bool) {
             // Füllfläche, nur als Körper mit Höhe.
             finish_fill(app, &tool.action);
         }
+        "modify.area.split" => {
+            // Die Punktfolge ist die Schnittlinie. Ausgewählte Füllflächen
+            // bestimmen das Ziel; ohne Auswahl findet die Action die Fläche
+            // unter der Linie selbst.
+            if tool.pts.len() >= 2 {
+                let ids: Vec<Id> = app
+                    .selection()
+                    .iter()
+                    .copied()
+                    .filter(|id| {
+                        matches!(
+                            app.doc().entity(*id).map(|e| &e.kind),
+                            Some(EntityKind::Fill { .. })
+                        )
+                    })
+                    .collect();
+                let _ = run(
+                    app,
+                    "modify.area.split",
+                    json!({"pts": tool.pts.iter().map(|p| [app.unit().from_mm(p.x), app.unit().from_mm(p.y)]).collect::<Vec<_>>(), "ids": ids}),
+                );
+            }
+            app.tool = None;
+        }
         "dim.chain" => {
             if tool.pts.len() >= 2 {
                 let b = BBox::from_points(&tool.pts);
@@ -5153,6 +5193,20 @@ fn tool_click_at(app: &mut App, w: V2, raw: V2) {
             if let Some(id) = snap::hit_test(app.doc(), w, tol, None) {
                 let _ = run(app, "modify.explode", json!({"ids": [id]}));
             }
+        }
+        // Fläche schneiden (T0090): Punkte sammeln wie bei einer Polylinie,
+        // Enter (oder ESC) führt den Schnitt aus.
+        "modify.area.split" => {
+            if tool
+                .pts
+                .last()
+                .map(|q| q.dist(w) < 0.5)
+                .unwrap_or(false)
+            {
+                return;
+            }
+            tool.pts.push(w);
+            app.tool = Some(tool);
         }
         "block.insert" => {
             let Some(bid) = app.options.block_id.clone() else {
@@ -10004,5 +10058,110 @@ mod tests_verschneiden {
             strecken.is_empty(),
             "vor dem ersten Klick nichts zu zeigen: {strecken:?}"
         );
+    }
+}
+
+#[cfg(test)]
+mod tests_flaechen_bearbeiten {
+    //! Flächen vereinigen und schneiden über den Werkzeugweg (T0090).
+    //!
+    //! Die Geometrie selbst prüft `jjcad_core::flaeche`; hier zählt der Weg
+    //! vom Klick bzw. von der Auswahl bis zum Objekt in der Zeichnung.
+
+    use super::*;
+
+    fn app() -> App {
+        App::with_ctx(egui::Context::default())
+    }
+
+    fn fills(app: &App) -> Vec<(Vec<V2>, f64)> {
+        app.doc()
+            .entities
+            .iter()
+            .filter_map(|e| match &e.kind {
+                EntityKind::Fill { boundary, .. } => {
+                    Some((boundary.clone(), polygon_area(boundary).abs()))
+                }
+                _ => None,
+            })
+            .collect()
+    }
+
+    fn flaeche_anlegen(app: &mut App, pts: [[f64; 2]; 4]) -> u64 {
+        let antwort = app
+            .session_mut()
+            .execute("draw.fill.points", &json!({ "pts": pts }))
+            .expect("Füllfläche");
+        antwort["created"][0].as_u64().expect("Id")
+    }
+
+    /// Zwei Klicks quer über die Fläche und Enter: die Fläche ist geteilt.
+    #[test]
+    fn zwei_klicks_und_enter_teilen_die_flaeche() {
+        let mut app = app();
+        flaeche_anlegen(&mut app, [[0.0, 0.0], [4.0, 0.0], [4.0, 3.0], [0.0, 3.0]]);
+        app.start_tool("modify.area.split");
+        tool_click(&mut app, V2::new(2000.0, -500.0));
+        tool_click(&mut app, V2::new(2000.0, 3500.0));
+        finish_tool(&mut app, true);
+
+        let teile = fills(&app);
+        assert_eq!(teile.len(), 2, "zwei Teilflächen");
+        for (_, a) in &teile {
+            assert!(
+                (a - 6_000_000.0).abs() < 1.0,
+                "Teilfläche {} mm² statt 6 m²",
+                a
+            );
+        }
+        assert!(app.tool.is_none(), "Werkzeug beendet");
+    }
+
+    /// Ein einzelner Punkt reicht nicht — es bleibt bei der einen Fläche.
+    #[test]
+    fn ein_punkt_schneidet_nichts() {
+        let mut app = app();
+        flaeche_anlegen(&mut app, [[0.0, 0.0], [4.0, 0.0], [4.0, 3.0], [0.0, 3.0]]);
+        app.start_tool("modify.area.split");
+        tool_click(&mut app, V2::new(2000.0, 1500.0));
+        finish_tool(&mut app, true);
+        assert_eq!(fills(&app).len(), 1, "nichts geteilt");
+    }
+
+    /// Vereinigen wirkt auf die Auswahl: aus zwei angrenzenden Flächen wird
+    /// eine, und sie ist danach ausgewählt.
+    #[test]
+    fn vereinigen_aus_der_auswahl_ergibt_eine_flaeche() {
+        let ctx = egui::Context::default();
+        let mut app = App::with_ctx(ctx.clone());
+        let a = flaeche_anlegen(&mut app, [[0.0, 0.0], [4.0, 0.0], [4.0, 3.0], [0.0, 3.0]]);
+        let b = flaeche_anlegen(&mut app, [[4.0, 0.0], [8.0, 0.0], [8.0, 3.0], [4.0, 3.0]]);
+        app.session_mut().select(vec![a, b]);
+        app.run_action(&ctx, "modify.area.union");
+
+        let flaechen = fills(&app);
+        assert_eq!(flaechen.len(), 1, "eine Fläche");
+        assert!((flaechen[0].1 - 24_000_000.0).abs() < 1.0, "24 m²");
+        assert_eq!(app.selection().len(), 1, "Ergebnis ist ausgewählt");
+        assert_eq!(
+            app.doc().entity(app.selection()[0]).map(|e| &e.kind),
+            app.doc()
+                .entities
+                .iter()
+                .find(|e| matches!(e.kind, EntityKind::Fill { .. }))
+                .map(|e| &e.kind),
+            "die Auswahl ist die neue Fläche"
+        );
+    }
+
+    /// Ohne Auswahl passiert nichts — die Fläche bleibt, wie sie ist.
+    #[test]
+    fn vereinigen_ohne_auswahl_aendert_nichts() {
+        let ctx = egui::Context::default();
+        let mut app = App::with_ctx(ctx.clone());
+        flaeche_anlegen(&mut app, [[0.0, 0.0], [4.0, 0.0], [4.0, 3.0], [0.0, 3.0]]);
+        app.session_mut().select(Vec::new());
+        app.run_action(&ctx, "modify.area.union");
+        assert_eq!(fills(&app).len(), 1);
     }
 }

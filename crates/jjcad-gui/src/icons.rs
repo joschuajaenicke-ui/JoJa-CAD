@@ -396,6 +396,24 @@ pub fn paint(painter: &Painter, rect: Rect, name: &str, color: Color32) {
                 3.0,
             ));
         }
+        // Flächen vereinigen: zwei Flächen wachsen an der gemeinsamen Kante
+        // zusammen (der Steg dazwischen ist die Verbindung).
+        "union" => {
+            i.rect(2.5, 6.0, 8.5, 12.0);
+            i.rect(13.0, 6.0, 8.5, 12.0);
+            i.line(11.0, 10.0, 13.0, 10.0);
+            i.line(11.0, 14.0, 13.0, 14.0);
+        }
+        // Fläche schneiden: eine Fläche, quer durchtrennt (gestrichelt).
+        "split" => {
+            i.poly(&[(3.0, 4.0), (21.0, 4.0), (21.0, 20.0), (3.0, 20.0)], true);
+            i.p.extend(egui::Shape::dashed_line(
+                &[i.pt(12.0, 1.5), i.pt(12.0, 22.5)],
+                Stroke::new(1.0, color.gamma_multiply(0.5)),
+                3.0,
+                3.0,
+            ));
+        }
         "erase" => {
             i.poly(&[(5.0, 20.0), (14.0, 4.0), (21.0, 9.0), (13.0, 20.0)], true);
             i.line(5.0, 20.0, 21.0, 20.0);

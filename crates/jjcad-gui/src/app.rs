@@ -1117,6 +1117,30 @@ impl App {
     }
 
     /// Erlaubt das Setzen eines Startzustands für Screenshots/automatisierte UI-Tests:
+    /// Prüfhilfe (T0090): eine Füllfläche in Metern anlegen.
+    fn demo_flaeche(&mut self, pts: [[f64; 2]; 4]) -> Option<u64> {
+        let r = self.session_mut().execute(
+            "draw.fill.points",
+            &serde_json::json!({
+                "pts": pts,
+                "pattern": "lines",
+                "angle": 45.0,
+                "scale": 0.25,
+                "border": true,
+                "fill": "#d8e4f0",
+            }),
+        );
+        r.ok().and_then(|v| v["created"][0].as_u64())
+    }
+
+    /// Prüfhilfe (T0090): Ausschnitt auf die 8 × 3 m große Probe legen.
+    fn demo_ausschnitt(&mut self) {
+        let mut v = self.current_view();
+        v.center = V2::new(4000.0, 1500.0);
+        v.zoom = 0.08;
+        self.set_view(v);
+    }
+
     /// `JJCAD_DEMO_UI=arch,inv,sheet,wall,text` — für die Verschiebe-Vorschau
     /// zusätzlich `moveline`, `movewall`, `movedoor`, `moveall` (Auswahl setzen
     /// und Werkzeug „Verschieben" mit Basispunkt starten) sowie `selall` (nur
@@ -1990,6 +2014,59 @@ impl App {
                         t.obj = erstes;
                     }
                 }
+                // Flächen schneiden (T0090): frische Zeichnung mit einer
+                // Füllfläche, entlang einer Punktfolge geteilt — Prüfbild des
+                // Ergebnisses samt Auswahl.
+                "flaechenschnitt" | "areasplit" => {
+                    self.ui.ribbon = RibbonTab::Zeichnen;
+                    self.new_document();
+                    let id = self.demo_flaeche([[0.0, 0.0], [4.0, 0.0], [4.0, 3.0], [0.0, 3.0]]);
+                    if let Some(id) = id {
+                        let _ = self.session_mut().execute(
+                            "modify.area.split",
+                            &serde_json::json!({
+                                "ids": [id],
+                                "pts": [[2.0, -1.0], [2.0, 4.0]],
+                            }),
+                        );
+                        self.session_mut().selection = self
+                            .doc()
+                            .entities
+                            .iter()
+                            .filter(|e| matches!(e.kind, EntityKind::Fill { .. }))
+                            .map(|e| e.id)
+                            .collect();
+                    }
+                    self.demo_ausschnitt();
+                }
+                // Flächen vereinigen (T0090): zwei angrenzende Füllflächen,
+                // danach eine — Prüfbild des Ergebnisses.
+                "flaechenvereinigung" | "areaunion" => {
+                    self.ui.ribbon = RibbonTab::Zeichnen;
+                    self.new_document();
+                    let mut ids = Vec::new();
+                    if let Some(id) =
+                        self.demo_flaeche([[0.0, 0.0], [4.0, 0.0], [4.0, 3.0], [0.0, 3.0]])
+                    {
+                        ids.push(id);
+                    }
+                    if let Some(id) =
+                        self.demo_flaeche([[4.0, 0.0], [8.0, 0.0], [8.0, 3.0], [4.0, 3.0]])
+                    {
+                        ids.push(id);
+                    }
+                    let _ = self
+                        .session_mut()
+                        .execute("modify.area.union", &serde_json::json!({"ids": ids}));
+                    self.session_mut().selection = self
+                        .doc()
+                        .entities
+                        .iter()
+                        .filter(|e| matches!(e.kind, EntityKind::Fill { .. }))
+                        .map(|e| e.id)
+                        .collect();
+                    self.demo_ausschnitt();
+                }
                 // T0060: Schnellauswahl aktiv — der nächste Klick startet den
                 // Erzeuger des angeklickten Objekts.
                 "schnellauswahl" | "quickselect" => self.start_tool("modify.quickselect"),
@@ -2401,6 +2478,31 @@ impl App {
             self.schnellauswahl_umschalten();
             return;
         }
+        // Flächen vereinigen (T0090): wirkt sofort auf die Auswahl — kein
+        // Klickwerkzeug, deshalb hier vor dem Werkzeugzweig.
+        if id == "modify.area.union" {
+            let ids = self.selection().to_vec();
+            if ids.len() < 2 {
+                self.toast("Vereinigen · mindestens zwei Flächen wählen");
+                return;
+            }
+            match self
+                .session_mut()
+                .execute("modify.area.union", &serde_json::json!({"ids": ids}))
+            {
+                Ok(v) => {
+                    self.mark_changed();
+                    let neu = v
+                        .get("created")
+                        .and_then(|c| c.get(0))
+                        .and_then(|x| x.as_u64());
+                    self.session_mut().select(neu.into_iter().collect());
+                    self.toast("Füllfläche · vereinigt");
+                }
+                Err(e) => self.toast(e),
+            }
+            return;
+        }
         // Werkzeuge
         if def.tool
             || matches!(
@@ -2640,7 +2742,7 @@ impl App {
             .map(|t| {
                 let punktfolge = matches!(
                     t.action.as_str(),
-                    "draw.polyline" | "draw.spline" | "dim.chain"
+                    "draw.polyline" | "draw.spline" | "dim.chain" | "modify.area.split"
                 ) || crate::canvas::ist_fuell_punkte(&t.action);
                 punktfolge && t.pts.len() >= 2
             })
@@ -4135,6 +4237,27 @@ fn rail(ui: &mut egui::Ui, icon: &str, tooltip: &str, chevron: &str) -> bool {
                         // den zuletzt benutzten — das Icon zeigt ihn an.
                         app.fill_group_button(ui, FillKind::Area);
                         app.fill_group_button(ui, FillKind::Hatch);
+                        // Flächen bearbeiten (T0090): Vereinigen wirkt auf die
+                        // Auswahl, Schneiden fragt eine Punktfolge ab.
+                        if widgets::ribbon_button(ui, "union", "Vereinigen", false)
+                            .on_hover_text(
+                                "Zwei oder mehr angrenzende Füllflächen zu einer vereinigen",
+                            )
+                            .clicked()
+                        {
+                            app.run_action(ui.ctx(), "modify.area.union");
+                        }
+                        if widgets::ribbon_button(
+                            ui,
+                            "split",
+                            "Schneiden",
+                            app.tool_id() == Some("modify.area.split"),
+                        )
+                        .on_hover_text("Fläche entlang einer Punktfolge in zwei Teile schneiden")
+                        .clicked()
+                        {
+                            app.start_tool("modify.area.split");
+                        }
                     });
                     widgets::vline(ui, RIBBON_GROUP_H);
                     self.group(ui, "Weitere", |ui, app| {
@@ -5028,6 +5151,13 @@ pub(crate) fn commands_hint(tool: &Tool, opts: &ToolOptions) -> &'static str {
             }
         }
         "modify.explode" => "Zerlegen · Objekt anklicken",
+        "modify.area.split" => {
+            if lebt {
+                "Fläche schneiden · nächster Punkt (Enter)"
+            } else {
+                "Fläche schneiden · Randpunkt klicken"
+            }
+        }
         "modify.quickselect" => "Schnellauswahl · Objekt anklicken",
         "modify.order" => "Reihenfolge · Objekt anklicken",
         "block.insert" => "Block · Position klicken",
@@ -5073,6 +5203,8 @@ pub(crate) fn abschluss_meldung(action: &str) -> Option<&'static str> {
         "modify.offset" => "Auswahl · versetzt",
         "modify.explode" => "Objekt · zerlegt",
         "modify.intersect" => "Verschneiden · Ecke gesetzt",
+        "modify.area.union" => "Füllfläche · vereinigt",
+        "modify.area.split" => "Füllfläche · geteilt",
         "block.insert" => "Block · eingefügt",
         "sheet.viewport_tool" => "Ansichtsfenster · angelegt",
         _ => return None,
@@ -7156,6 +7288,28 @@ mod tests_vollbild {
         assert!(
             breite <= 1080.0,
             "Reiter Ansicht braucht {breite} px und passt nicht in die Mindestbreite 1080 px"
+        );
+    }
+
+    /// Der Reiter „Zeichnen" trägt seit T0090 „Vereinigen" und „Schneiden" in
+    /// der Gruppe „Füllen" — er muss weiter in die Mindestbreite passen.
+    #[test]
+    fn reiter_zeichnen_passt_in_die_mindestbreite() {
+        let ctx = egui::Context::default();
+        let mut app = App::with_ctx(ctx.clone());
+        app.ui.ribbon = RibbonTab::Zeichnen;
+        let mut breite = 0.0;
+        for _ in 0..3 {
+            let raw = egui::RawInput {
+                screen_rect: Some(Rect::from_min_size(Pos2::ZERO, Vec2::new(1080.0, 700.0))),
+                ..Default::default()
+            };
+            let _ = ctx.run(raw, |ctx| app.ui(ctx));
+            breite = app.ui.last_ribbon_content_w;
+        }
+        assert!(
+            breite <= 1080.0,
+            "Reiter Zeichnen braucht {breite} px und passt nicht in die Mindestbreite 1080 px"
         );
     }
 

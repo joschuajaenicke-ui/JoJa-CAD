@@ -13,6 +13,7 @@ pub mod blocks_lib;
 pub mod boundary;
 pub mod dxf;
 pub mod export;
+pub mod flaeche;
 pub mod fonts;
 pub mod geom;
 pub mod history;
