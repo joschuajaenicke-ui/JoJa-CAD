@@ -59,6 +59,10 @@ einsehbar und dort frei änderbar (Ribbon ▸ Ansicht ▸ „Tasten").
     „Spiegeln") spiegelt, `ESC` bricht ab. Beide Tasten folgen der
     Tastaturbelegung: wer „Drehen" umlegt, dreht auch die Vorschau mit der neuen
     Taste. Der Einfügepunkt ist exakt der Ankerpunkt der Vorschau.
+    Wird während der Vorschau eine **andere Funktion** aktiviert (Ribbon, Hotbar,
+    Inventar oder die Schnellauswahl), bricht das Einfügen ab — Vorschau und
+    Werkzeug laufen nie gleichzeitig. Die Schnellauswahl wirkt dabei nur als
+    Abbruch und wird nicht selbst aktiv.
     Beim Einfügen aus der **Zwischenablage** bestimmt die Einstellung **Bedienung ▸
     „Drehpunkt"**, welcher Punkt dabei am Fadenkreuz steht: **„Mittelpunkt"** (Vorgabe)
     hält die untere linke Ecke der gedrehten Auswahl am Fadenkreuz, die Vorschau bleibt

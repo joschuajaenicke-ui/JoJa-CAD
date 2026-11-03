@@ -2706,6 +2706,10 @@ impl App {
         if actions::action(id).is_none() {
             return;
         }
+        // T0094: Eine andere Funktion beendet das Einfügen. Sonst liefen Vorschau
+        // und Werkzeug gleichzeitig — der nächste Klick setzte die Kopie ab,
+        // während das Werkzeug auf seinen Punkt wartete.
+        self.cancel_ghost();
         // Zerlegen (T0093): steht etwas in der Auswahl, wird es sofort zerlegt.
         // Das Werkzeug gibt es nur ohne Auswahl — dort zerlegt jeder Klick das
         // Objekt unter dem Zeiger (vorher hebt die Vorschau es rot hervor).
@@ -2837,6 +2841,13 @@ impl App {
     pub fn schnellauswahl_umschalten(&mut self) {
         if self.tool.is_some() {
             self.cancel_tool();
+            return;
+        }
+        // T0094: Auch das Einfügen ist eine laufende Eingabe. Die Schnellauswahl
+        // bricht sie ab und wird dabei **nicht** selbst aktiv — genau wie beim
+        // Werkzeug-Abbruch oben.
+        if self.ghost.is_some() {
+            self.cancel_ghost();
             return;
         }
         self.start_tool("modify.quickselect");
@@ -3373,8 +3384,14 @@ impl App {
             }
             if ctx.input(|i| i.key_pressed(egui::Key::Enter)) {
                 self.commit_ghost();
+                return;
             }
-            return;
+            // T0094: Jede **andere** Funktion bricht das Einfügen ab. Der Druck
+            // läuft unten weiter und startet sie über `start_tool`; die Vorschau
+            // verschwindet dabei, statt neben dem Werkzeug stehen zu bleiben.
+            // Früher kehrte die Auswertung hier immer zurück — eine Funktionstaste
+            // wirkte während des Einfügens gar nicht, und ein Klick auf Ribbon
+            // oder Hotbar ließ beides gleichzeitig laufen.
         }
 
         // Wand platzieren: Tab wechselt die Ausrichtung
@@ -3536,11 +3553,26 @@ impl App {
     /// hängen Sonderfunktionen an einer **Funktion** statt an einer festen
     /// Taste (T0056): drehen/spiegeln der Einfüge-Vorschau folgt „Drehen" und
     /// „Spiegeln" aus der Tastaturbelegung.
+    ///
+    /// Der Druck wird dabei **verbraucht** (T0094): sonst läse ihn die
+    /// Auswertung weiter unten noch einmal und startete dieselbe Funktion als
+    /// Werkzeug — das Einfügen bräche ab, obwohl der Nutzer nur drehen wollte.
     fn taste_der_funktion(&self, ctx: &egui::Context, action: &str) -> bool {
-        EINZELTASTEN.iter().any(|(key, label)| {
-            self.prefs.action_for_key(label).as_deref() == Some(action)
-                && ctx.input(|i| i.key_pressed(*key))
-        })
+        let lage = ctx.input(|i| i.modifiers);
+        let mut getroffen = false;
+        for (key, label) in EINZELTASTEN {
+            if self.prefs.action_for_key(label).as_deref() != Some(action) {
+                continue;
+            }
+            if !ctx.input(|i| i.key_pressed(*key)) {
+                continue;
+            }
+            ctx.input_mut(|i| {
+                i.consume_key(lage, *key);
+            });
+            getroffen = true;
+        }
+        getroffen
     }
 
     /// Schiebt die Ansicht um einen Schritt (`SCHWENK_SCHRITT_PX` Bildpunkte) in
@@ -7165,6 +7197,149 @@ mod tests_schnellauswahl_schalter {
         assert!(
             actions::action("modify.pickprops").is_none(),
             "die alte Funktion „Eigenschaften aufnehmen“ gibt es nicht mehr"
+        );
+    }
+}
+
+#[cfg(test)]
+mod tests_einfuegen_abbrechen {
+    //! T0094: Wird während des Einfügens eine andere Funktion aktiviert, bricht
+    //! das Einfügen ab.
+    //!
+    //! Vorher blieb die Vorschau stehen, während das Werkzeug daneben lief: der
+    //! nächste Klick setzte die Kopie ab, statt den Punkt des Werkzeugs zu
+    //! nehmen. Die Schnellauswahl ist dabei ein reiner **Abbruch** — wie bei
+    //! jedem laufenden Werkzeug wird sie nicht selbst aktiv.
+
+    use super::*;
+
+    /// App mit einer Linie in der Zwischenablage und laufender Einfüge-Vorschau.
+    fn app_mit_einfuegen() -> App {
+        let mut app = App::with_ctx(egui::Context::default());
+        // Vorgabe-Belegung selbst setzen — die echte `prefs.json` des Rechners
+        // darf den Prüfpunkt nicht verschieben.
+        app.prefs.reset_bindings();
+        let id = app.doc_mut().new_id();
+        let ebene = app.doc().current_layer;
+        app.doc_mut().entities.push(Entity::new(
+            id,
+            ebene,
+            EntityKind::Line {
+                a: V2::new(0.0, 0.0),
+                b: V2::new(1000.0, 0.0),
+            },
+        ));
+        app.session_mut().select(vec![id]);
+        let ids = app.selection().to_vec();
+        app.merke_zwischenablage(&ids, None);
+        app.pointer_world = Some(V2::new(3000.0, 2000.0));
+        app.start_ghost_paste();
+        assert!(app.ghost.is_some(), "die Einfüge-Vorschau muss laufen");
+        app
+    }
+
+    /// Ein Werkzeug aus Ribbon, Hotbar oder Inventar beendet das Einfügen — es
+    /// läuft allein weiter, die Vorschau ist weg.
+    #[test]
+    fn werkzeug_start_bricht_das_einfuegen_ab() {
+        let mut app = app_mit_einfuegen();
+        let ctx = app.ctx.clone();
+        app.run_action(&ctx, "draw.wall");
+
+        assert!(app.ghost.is_none(), "die Vorschau muss verschwunden sein");
+        assert_eq!(
+            app.tool_id(),
+            Some("draw.wall"),
+            "die gewählte Funktion läuft"
+        );
+        assert_eq!(
+            app.doc().entities.len(),
+            1,
+            "abgebrochen heißt: nichts eingefügt"
+        );
+    }
+
+    /// Die Schnellauswahl bricht das Einfügen ab und wird dabei nicht selbst
+    /// aktiv — genau wie bei einem laufenden Werkzeug.
+    #[test]
+    fn schnellauswahl_bricht_das_einfuegen_ab() {
+        let mut app = app_mit_einfuegen();
+        let ctx = app.ctx.clone();
+        app.run_action(&ctx, "modify.quickselect");
+
+        assert!(app.ghost.is_none(), "die Vorschau muss verschwunden sein");
+        assert!(
+            app.tool.is_none(),
+            "die Schnellauswahl wird beim Abbruch nicht aktiv: {:?}",
+            app.tool_id()
+        );
+        assert_eq!(app.doc().entities.len(), 1, "nichts eingefügt");
+    }
+
+    /// Ohne Funktionswechsel bleibt die Vorschau stehen und setzt wie gewohnt
+    /// ab — der Abbruch greift nur beim Wechsel.
+    #[test]
+    fn ohne_funktionswechsel_setzt_der_klick_ab() {
+        let mut app = app_mit_einfuegen();
+        assert!(app.ghost.is_some(), "die Vorschau läuft weiter");
+        assert!(app.commit_ghost(), "der Klick muss die Kopie absetzen");
+        assert_eq!(app.doc().entities.len(), 2, "eine Kopie eingefügt");
+    }
+
+    fn frame_mit(app: &mut App, events: Vec<egui::Event>) {
+        let ctx = app.ctx.clone();
+        let raw = egui::RawInput {
+            screen_rect: Some(Rect::from_min_size(Pos2::ZERO, Vec2::new(1500.0, 950.0))),
+            events,
+            ..Default::default()
+        };
+        let _ = ctx.run(raw, |ctx| app.ui(ctx));
+    }
+
+    fn druck(key: egui::Key) -> egui::Event {
+        egui::Event::Key {
+            key,
+            physical_key: None,
+            pressed: true,
+            repeat: false,
+            modifiers: egui::Modifiers::NONE,
+        }
+    }
+
+    /// Die Taste der Schnellauswahl (`q`) bricht das Einfügen ab — sie wird
+    /// dabei nicht selbst aktiv, genau wie bei einem laufenden Werkzeug.
+    #[test]
+    fn taste_der_schnellauswahl_bricht_das_einfuegen_ab() {
+        let mut app = app_mit_einfuegen();
+        assert_eq!(
+            app.prefs.action_for_key("q").as_deref(),
+            Some("modify.quickselect"),
+            "Vorgabe: q gehört der Schnellauswahl"
+        );
+        frame_mit(&mut app, vec![druck(egui::Key::Q)]);
+        assert!(app.ghost.is_none(), "q bricht das Einfügen ab");
+        assert!(
+            app.tool.is_none(),
+            "die Schnellauswahl wird beim Abbruch nicht aktiv: {:?}",
+            app.tool_id()
+        );
+    }
+
+    /// Die Drehtaste dreht weiterhin **nur** die Vorschau: sie startet kein
+    /// Werkzeug und bricht das Einfügen deshalb nicht ab.
+    #[test]
+    fn drehtaste_dreht_die_vorschau_ohne_abzubrechen() {
+        let mut app = app_mit_einfuegen();
+        frame_mit(&mut app, vec![druck(egui::Key::R)]);
+        let g = app
+            .ghost
+            .as_ref()
+            .expect("die Vorschau läuft nach dem Drehen weiter");
+        assert_eq!(g.rot_deg(), 270.0, "R dreht im Uhrzeigersinn um 90°");
+        assert!(
+            app.tool.is_none(),
+            "Drehen der Vorschau startet kein Werkzeug: {:?}",
+            app.tool_id()
         );
     }
 }
