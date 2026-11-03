@@ -42,14 +42,14 @@ fn rgba(png: &[u8]) -> Result<(usize, usize, Vec<u8>), String> {
     decoder.set_transformations(png::Transformations::EXPAND | png::Transformations::ALPHA);
     let mut reader = decoder
         .read_info()
-        .map_err(|e| format!("Markenzeichen nicht lesbar: {e}"))?;
+        .map_err(|e| jjcad_core::i18n::t_args_owned("gui.icon.markenzeichen_nicht_lesbar", &[("fehler", format!("{}", e))]))?;
     let mut puffer = vec![0; reader.output_buffer_size()];
     let info = reader
         .next_frame(&mut puffer)
-        .map_err(|e| format!("Markenzeichen nicht lesbar: {e}"))?;
+        .map_err(|e| jjcad_core::i18n::t_args_owned("gui.icon.markenzeichen_nicht_lesbar", &[("fehler", format!("{}", e))]))?;
     let bytes = puffer[..info.buffer_size()].to_vec();
     if bytes.len() != (info.width as usize) * (info.height as usize) * 4 {
-        return Err("Markenzeichen hat eine unerwartete Puffergröße".into());
+        return Err(jjcad_core::i18n::tr("gui.icon.markenzeichen_puffergroesse").into());
     }
     Ok((info.width as usize, info.height as usize, bytes))
 }

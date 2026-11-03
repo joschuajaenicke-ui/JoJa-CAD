@@ -816,7 +816,7 @@ impl App {
             kind,
             orig,
         });
-        self.mitteilung("Griff · ziehen");
+        self.mitteilung(jjcad_core::i18n::tr("gui.handles.griff_ziehen"));
     }
 
     /// Verschiebt den Griff auf die Weltposition `target`.
@@ -868,9 +868,9 @@ impl App {
             }
         }
         if verbunden {
-            self.mitteilung("Füllfläche · Punkt verbunden");
+            self.mitteilung(jjcad_core::i18n::tr("gui.handles.fuellflaeche_punkt_verbunden"));
         } else {
-            self.mitteilung("Griff · gesetzt");
+            self.mitteilung(jjcad_core::i18n::tr("gui.handles.griff_gesetzt"));
         }
     }
 

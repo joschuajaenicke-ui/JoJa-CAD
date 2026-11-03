@@ -43,22 +43,22 @@ impl FileMode {
     }
     fn title(self) -> &'static str {
         match self {
-            FileMode::Open => "Zeichnung öffnen",
-            FileMode::SaveJjcad => "Zeichnung speichern",
-            FileMode::ImportDxf => "DXF importieren",
-            FileMode::ImportPdf => "PDF einfügen",
-            FileMode::ExportPdf => "Als PDF exportieren",
-            FileMode::ExportDxf => "Als DXF exportieren",
-            FileMode::ExportPng => "Als PNG exportieren",
-            FileMode::ImportKeymap => "Tastaturlayout importieren",
-            FileMode::ExportKeymap => "Tastaturlayout exportieren",
+            FileMode::Open => jjcad_core::i18n::tr("gui.dialogs.zeichnung_oeffnen"),
+            FileMode::SaveJjcad => jjcad_core::i18n::tr("gui.dialogs.zeichnung_speichern"),
+            FileMode::ImportDxf => jjcad_core::i18n::tr("gui.dialogs.dxf_importieren"),
+            FileMode::ImportPdf => jjcad_core::i18n::tr("gui.dialogs.pdf_einfuegen"),
+            FileMode::ExportPdf => jjcad_core::i18n::tr("gui.dialogs.als_pdf_exportieren"),
+            FileMode::ExportDxf => jjcad_core::i18n::tr("gui.dialogs.als_dxf_exportieren"),
+            FileMode::ExportPng => jjcad_core::i18n::tr("gui.dialogs.als_png_exportieren"),
+            FileMode::ImportKeymap => jjcad_core::i18n::tr("gui.dialogs.tastaturlayout_importieren"),
+            FileMode::ExportKeymap => jjcad_core::i18n::tr("gui.dialogs.tastaturlayout_exportieren"),
         }
     }
     fn action_label(self) -> &'static str {
         match self {
-            FileMode::Open => "Öffnen",
-            FileMode::ImportDxf | FileMode::ImportKeymap => "Importieren",
-            _ => "Speichern",
+            FileMode::Open => jjcad_core::i18n::tr("gui.dialogs.oeffnen"),
+            FileMode::ImportDxf | FileMode::ImportKeymap => jjcad_core::i18n::tr("gui.dialogs.importieren"),
+            _ => jjcad_core::i18n::tr("gui.dialogs.speichern"),
         }
     }
     fn is_save(self) -> bool {
@@ -74,17 +74,17 @@ impl FileMode {
     /// Anzeigename des Dateifilters (ohne Endung) für den Systemdialog.
     fn filter_name(self) -> &'static str {
         match self {
-            FileMode::Open | FileMode::SaveJjcad => "Zeichnung",
+            FileMode::Open | FileMode::SaveJjcad => jjcad_core::i18n::tr("gui.dialogs.zeichnung"),
             FileMode::ImportDxf | FileMode::ExportDxf => "DXF-Zeichnung",
             FileMode::ImportPdf => "PDF-Dokument",
             FileMode::ExportPdf => "PDF-Dokument",
             FileMode::ExportPng => "PNG-Bild",
-            FileMode::ImportKeymap | FileMode::ExportKeymap => "Tastaturlayout",
+            FileMode::ImportKeymap | FileMode::ExportKeymap => jjcad_core::i18n::tr("gui.dialogs.tastaturlayout"),
         }
     }
     /// Anfrage an den Systemdialog des Betriebssystems.
     pub fn anfrage(self, start_dir: std::path::PathBuf, base: &str) -> crate::systemdialog::Anfrage {
-        let name = if base.trim().is_empty() { "Zeichnung" } else { base.trim() };
+        let name = if base.trim().is_empty() { jjcad_core::i18n::tr("gui.dialogs.zeichnung") } else { base.trim() };
         let dateiname = if self.is_save() {
             Some(format!("{}.{}", name, self.ext()))
         } else {
@@ -119,7 +119,7 @@ pub struct FileDialog {
 
 impl FileDialog {
     pub fn new(mode: FileMode, dir: std::path::PathBuf, base: &str) -> Self {
-        let base = if base.trim().is_empty() { "Zeichnung" } else { base };
+        let base = if base.trim().is_empty() { jjcad_core::i18n::tr("gui.dialogs.zeichnung") } else { base };
         let name = if mode.is_save() {
             format!("{}.{}", base, mode.ext())
         } else {
@@ -195,19 +195,19 @@ impl FileDialog {
                 ui.set_width(700.0);
                 // Pfadzeile
                 ui.horizontal(|ui| {
-                    if widgets::icon_button(ui, "chevron_right", 26.0, false, "Übergeordneter Ordner").clicked() {
+                    if widgets::icon_button(ui, "chevron_right", 26.0, false, jjcad_core::i18n::tr("gui.dialogs.uebergeordneter_ordner")).clicked() {
                         if let Some(p) = self.dir.parent() {
                             self.dir = p.to_path_buf();
                             self.dirty = true;
                         }
                     }
-                    if ui.button("Home").clicked() {
+                    if ui.button(jjcad_core::i18n::tr("gui.dialogs.home")).clicked() {
                         if let Ok(h) = std::env::var("HOME") {
                             self.dir = std::path::PathBuf::from(h);
                             self.dirty = true;
                         }
                     }
-                    if ui.button("Projekte").clicked() {
+                    if ui.button(jjcad_core::i18n::tr("gui.dialogs.projekte")).clicked() {
                         self.dir = std::env::current_dir().unwrap_or_else(|_| self.dir.clone());
                         self.dirty = true;
                     }
@@ -226,7 +226,7 @@ impl FileDialog {
                         if self.dir.parent().is_some() {
                             let resp = ui.add_sized(
                                 [ui.available_width(), 24.0],
-                                egui::SelectableLabel::new(false, "..  (übergeordnet)"),
+                                egui::SelectableLabel::new(false, jjcad_core::i18n::tr("gui.dialogs.uebergeordnet")),
                             );
                             if resp.double_clicked() || resp.clicked() {
                                 if let Some(p) = self.dir.parent() {
@@ -268,10 +268,10 @@ impl FileDialog {
                     });
                 ui.separator();
                 ui.horizontal(|ui| {
-                    ui.label(theme::dim("Dateiname"));
+                    ui.label(theme::dim(jjcad_core::i18n::tr("gui.dialogs.dateiname")));
                     let resp = ui.add_sized(
                         [420.0, 24.0],
-                        egui::TextEdit::singleline(&mut self.name).hint_text(format!("name.{}", self.mode.ext())),
+                        egui::TextEdit::singleline(&mut self.name).hint_text(jjcad_core::i18n::t_args_owned("gui.dialogs.name_x", &[("wert1", format!("{}", self.mode.ext()))])),
                     );
                     if resp.changed() {
                         self.error = None;
@@ -299,13 +299,13 @@ impl FileDialog {
                             result = Some(p);
                         }
                     }
-                    if ui.button("Abbrechen").clicked() {
+                    if ui.button(jjcad_core::i18n::tr("gui.dialogs.abbrechen")).clicked() {
                         close = true;
                     }
                     if self.mode == FileMode::Open {
                         for (label, dir) in [
-                            ("Dokumente", dirs::documents()),
-                            ("Schreibtisch", dirs::desktop()),
+                            (jjcad_core::i18n::tr("gui.dialogs.dokumente"), dirs::documents()),
+                            (jjcad_core::i18n::tr("gui.dialogs.schreibtisch"), dirs::desktop()),
                         ] {
                             if let Some(d) = dir {
                                 if ui.button(label).clicked() {
@@ -326,7 +326,7 @@ impl FileDialog {
     fn resolve_path(&mut self) -> Option<std::path::PathBuf> {
         let mut n = self.name.trim().to_string();
         if n.is_empty() {
-            self.error = Some("Bitte einen Dateinamen angeben".into());
+            self.error = Some(jjcad_core::i18n::tr("gui.dialogs.bitte_einen_dateinamen_angeben").into());
             return None;
         }
         if self.mode.is_save()
@@ -340,7 +340,7 @@ impl FileDialog {
         }
         let p = self.dir.join(n);
         if self.mode == FileMode::Open && !p.exists() {
-            self.error = Some("Datei existiert nicht".into());
+            self.error = Some(jjcad_core::i18n::tr("gui.dialogs.datei_existiert_nicht").into());
             return None;
         }
         Some(p)
@@ -444,7 +444,7 @@ pub fn datei_gewaehlt(app: &mut App, mode: FileMode, path: std::path::PathBuf) {
                 app.prefs.last_dir =
                     path.parent().map(|p| p.to_string_lossy().to_string()).unwrap_or_default();
                 let _ = app.prefs.save();
-                app.toast(format!("Datei · gespeichert: {}", path.display()));
+                app.toast(jjcad_core::i18n::t_args_owned("gui.dialogs.datei_gespeichert_x", &[("wert1", format!("{}", path.display()))]));
             }
             Err(e) => app.toast(e),
         },
@@ -458,12 +458,12 @@ pub fn datei_gewaehlt(app: &mut App, mode: FileMode, path: std::path::PathBuf) {
         FileMode::ImportKeymap => match app.prefs.keymap_importieren(&path) {
             Ok(name) => {
                 let _ = app.prefs.save();
-                app.toast(format!("Layout · importiert: {name}"));
+                app.toast(jjcad_core::i18n::t_args_owned("gui.dialogs.layout_importiert_x", &[("name", format!("{}", name))]));
             }
             Err(e) => app.toast(e),
         },
         FileMode::ExportKeymap => match app.prefs.keymap_exportieren_aktuell(&path) {
-            Ok(name) => app.toast(format!("Layout · exportiert: {name}")),
+            Ok(name) => app.toast(jjcad_core::i18n::t_args_owned("gui.dialogs.layout_exportiert_x", &[("name", format!("{}", name))])),
             Err(e) => app.toast(e),
         },
     }
@@ -531,9 +531,9 @@ pub fn systemdialog_schleier(app: &App, ctx: &egui::Context) {
                     ui.label(theme::bold(mode.title(), 15.0));
                     ui.add_space(2.0);
                     ui.label(theme::dim(
-                        "Der Dateidialog des Systems ist geöffnet. Datei wählen oder abbrechen.",
+                        jjcad_core::i18n::tr("gui.dialogs.der_dateidialog_des_systems_ist_geoeffnet_datei_waehlen_"),
                     ));
-                    ui.label(theme::faint("ESC schließt den Hinweis, wenn das System nicht antwortet."));
+                    ui.label(theme::faint(jjcad_core::i18n::tr("gui.dialogs.esc_schliesst_den_hinweis_wenn_das_system_nicht_antworte")));
                 });
             });
         });
@@ -570,18 +570,18 @@ pub fn show(app: &mut App, ctx: &egui::Context) {
         let mut btn_close = false;
         let mut create = false;
         if let Some((name, _)) = app.ui.block_name_dialog.as_mut() {
-            modal_window(ctx, "Block aus Auswahl", 420.0, &mut win_open).show(ctx, |ui| {
+            modal_window(ctx, jjcad_core::i18n::tr("gui.dialogs.block_aus_auswahl"), 420.0, &mut win_open).show(ctx, |ui| {
                 ui.set_width(400.0);
-                ui.label(theme::dim("Die Auswahl wird zur Blockdefinition und als Instanz eingefügt."));
+                ui.label(theme::dim(jjcad_core::i18n::tr("gui.dialogs.die_auswahl_wird_zur_blockdefinition_und_als_instanz_ein")));
                 ui.add_space(4.0);
-                let resp = ui.add_sized([380.0, 24.0], egui::TextEdit::singleline(name).hint_text("Blockname"));
+                let resp = ui.add_sized([380.0, 24.0], egui::TextEdit::singleline(name).hint_text(jjcad_core::i18n::tr("gui.dialogs.blockname")));
                 resp.request_focus();
                 ui.add_space(8.0);
                 button_row(ui, |ui| {
-                    if ui.button("Anlegen").clicked() {
+                    if ui.button(jjcad_core::i18n::tr("gui.dialogs.anlegen")).clicked() {
                         create = true;
                     }
-                    if ui.button("Abbrechen").clicked() {
+                    if ui.button(jjcad_core::i18n::tr("gui.dialogs.abbrechen")).clicked() {
                         btn_close = true;
                     }
                 });
@@ -603,7 +603,7 @@ pub fn show(app: &mut App, ctx: &egui::Context) {
                     match app.session_mut().execute("block.create", &json!({"name": name, "ids": ids})) {
                         Ok(_) => {
                             app.mark_changed();
-                            app.toast(format!("Block '{name}' angelegt"));
+                            app.toast(jjcad_core::i18n::t_args_owned("gui.dialogs.block_x_angelegt", &[("name", format!("{}", name))]));
                         }
                         Err(e) => app.toast(e),
                     }
@@ -624,25 +624,25 @@ pub fn show(app: &mut App, ctx: &egui::Context) {
         let mut btn_close = false;
         let mut ok = false;
         let mut buf = name.clone();
-        modal_window(ctx, "Hotbar-Vorlage", 400.0, &mut win_close).show(ctx, |ui| {
+        modal_window(ctx, jjcad_core::i18n::tr("gui.dialogs.hotbar_vorlage"), 400.0, &mut win_close).show(ctx, |ui| {
             ui.set_width(380.0);
             ui.label(theme::dim(if idx.is_some() {
-                "Vorlage umbenennen"
+                jjcad_core::i18n::tr("gui.dialogs.vorlage_umbenennen")
             } else {
-                "Neue Vorlage aus der aktuellen anlegen"
+                jjcad_core::i18n::tr("gui.dialogs.neue_vorlage_aus_der_aktuellen_anlegen")
             }));
             ui.add_space(4.0);
             let resp = ui.add_sized(
                 [360.0, 24.0],
-                egui::TextEdit::singleline(&mut buf).hint_text("Name der Vorlage"),
+                egui::TextEdit::singleline(&mut buf).hint_text(jjcad_core::i18n::tr("gui.dialogs.name_der_vorlage")),
             );
             resp.request_focus();
             ui.add_space(8.0);
             button_row(ui, |ui| {
-                if ui.button("OK").clicked() {
+                if ui.button(jjcad_core::i18n::tr("gui.dialogs.ok")).clicked() {
                     ok = true;
                 }
-                if ui.button("Abbrechen").clicked() {
+                if ui.button(jjcad_core::i18n::tr("gui.dialogs.abbrechen")).clicked() {
                     btn_close = true;
                 }
             });
@@ -672,7 +672,7 @@ pub fn show(app: &mut App, ctx: &egui::Context) {
             }
             let _ = app.prefs.save();
             app.ui.preset_dialog = None;
-            app.toast("Vorlage gespeichert");
+            app.toast(jjcad_core::i18n::tr("gui.dialogs.vorlage_gespeichert"));
         } else if close {
             app.ui.preset_dialog = None;
         }
@@ -708,7 +708,7 @@ pub fn show(app: &mut App, ctx: &egui::Context) {
     if app.ui.help_open {
         dim_background(ctx);
         let mut open = true;
-        modal_window(ctx, "Hilfe", 760.0, &mut open).show(ctx, |ui| {
+        modal_window(ctx, jjcad_core::i18n::tr("gui.dialogs.hilfe"), 760.0, &mut open).show(ctx, |ui| {
             ui.set_width(740.0);
             egui::ScrollArea::vertical().max_height(560.0).show(ui, |ui| {
                 help_body(app, ui);
@@ -724,19 +724,19 @@ pub fn show(app: &mut App, ctx: &egui::Context) {
         dim_background(ctx);
         let mut open = true;
         let mut p = app.doc().project.clone();
-        modal_window(ctx, "Projektdaten", 520.0, &mut open).show(ctx, |ui| {
+        modal_window(ctx, jjcad_core::i18n::tr("gui.dialogs.projektdaten"), 520.0, &mut open).show(ctx, |ui| {
             ui.set_width(500.0);
-            ui.label(theme::dim("Diese Angaben füllen das Schriftfeld und dynamische Textfelder."));
+            ui.label(theme::dim(jjcad_core::i18n::tr("gui.dialogs.diese_angaben_fuellen_das_schriftfeld_und_dynamische_tex")));
             ui.add_space(6.0);
             let mut changed = false;
             for (label, field) in [
-                ("Projekt", &mut p.project),
-                ("Bauherr", &mut p.client),
-                ("Planung / Büro", &mut p.planner),
-                ("Adresse", &mut p.address),
+                (jjcad_core::i18n::tr("gui.dialogs.projekt"), &mut p.project),
+                (jjcad_core::i18n::tr("gui.dialogs.bauherr"), &mut p.client),
+                (jjcad_core::i18n::tr("gui.dialogs.planung_buero"), &mut p.planner),
+                (jjcad_core::i18n::tr("gui.dialogs.adresse"), &mut p.address),
                 ("Plan-Nr.", &mut p.plan_no),
-                ("Planinhalt", &mut p.plan_title),
-                ("Revision", &mut p.revision),
+                (jjcad_core::i18n::tr("gui.dialogs.planinhalt"), &mut p.plan_title),
+                (jjcad_core::i18n::tr("gui.dialogs.revision"), &mut p.revision),
             ] {
                 widgets::field_row(ui, label, |ui| {
                     if ui.add_sized([330.0, 22.0], egui::TextEdit::singleline(field)).changed() {
@@ -770,7 +770,7 @@ pub fn show(app: &mut App, ctx: &egui::Context) {
         let mut als_block = wahl.als_block;
         let mut einfuegen = false;
         let mut abbrechen = false;
-        modal_window(ctx, "PDF einfügen", 470.0, &mut win_open).show(ctx, |ui| {
+        modal_window(ctx, jjcad_core::i18n::tr("gui.dialogs.pdf_einfuegen"), 470.0, &mut win_open).show(ctx, |ui| {
             ui.set_width(450.0);
             let name = wahl
                 .pfad
@@ -778,35 +778,31 @@ pub fn show(app: &mut App, ctx: &egui::Context) {
                 .map(|n| n.to_string_lossy().into_owned())
                 .unwrap_or_else(|| wahl.pfad.display().to_string());
             ui.label(theme::bold(&name, 13.0));
-            ui.label(theme::dim(format!(
-                "{} Seite{} · Text, Linien und Flächen werden übernommen",
-                wahl.seiten,
-                if wahl.seiten == 1 { "" } else { "n" }
-            )));
+            ui.label(theme::dim(jjcad_core::i18n::t_args_owned("gui.dialogs.x_seitex_text_linien_und_flaechen_werden_uebernommen", &[("wert1", format!("{}", wahl.seiten)), ("wert2", format!("{}", if wahl.seiten == 1 { "" } else { "n" }))])));
             ui.add_space(8.0);
-            widgets::field_row(ui, "Seite", |ui| {
+            widgets::field_row(ui, jjcad_core::i18n::tr("gui.dialogs.seite"), |ui| {
                 if wahl.seiten > 1 {
                     let mut s = seite as i64;
                     if ui.add(crate::widgets::zahl(&mut s, 1.0, 1..=wahl.seiten as i64)).changed() {
                         seite = s.clamp(1, wahl.seiten as i64) as usize;
                     }
-                    ui.label(theme::dim(format!("von {}", wahl.seiten)));
+                    ui.label(theme::dim(jjcad_core::i18n::t_args_owned("gui.dialogs.von_x", &[("wert1", format!("{}", wahl.seiten))])));
                 } else {
                     ui.label("1");
                 }
             });
             ui.add_space(4.0);
-            ui.checkbox(&mut als_block, "Als ein Element einfügen (Block, zerlegbar)");
+            ui.checkbox(&mut als_block, jjcad_core::i18n::tr("gui.dialogs.als_ein_element_einfuegen_block_zerlegbar"));
             ui.add_space(6.0);
             ui.label(theme::dim(
-                "Bilder, Transparenz, Schattierungen, Muster und Beschnitt übernimmt JoJa-CAD nicht — sie werden gezählt und gemeldet.",
+                jjcad_core::i18n::tr("gui.dialogs.bilder_transparenz_schattierungen_muster_und_beschnitt_u"),
             ));
             ui.add_space(8.0);
             button_row(ui, |ui| {
-                if ui.button("Einfügen").clicked() {
+                if ui.button(jjcad_core::i18n::tr("gui.dialogs.einfuegen")).clicked() {
                     einfuegen = true;
                 }
-                if ui.button("Abbrechen").clicked() {
+                if ui.button(jjcad_core::i18n::tr("gui.dialogs.abbrechen")).clicked() {
                     abbrechen = true;
                 }
             });
@@ -842,29 +838,29 @@ pub fn show(app: &mut App, ctx: &egui::Context) {
             .get(idx)
             .map(|t| t.session.doc.path.is_some())
             .unwrap_or(false);
-        modal_window(ctx, "Datei schließen", 470.0, &mut win_close).show(ctx, |ui| {
+        modal_window(ctx, jjcad_core::i18n::tr("gui.dialogs.datei_schliessen"), 470.0, &mut win_close).show(ctx, |ui| {
             ui.set_width(450.0);
-            ui.label(format!("„{name}“ ist nicht gespeichert."));
+            ui.label(jjcad_core::i18n::t_args_owned("gui.dialogs.x_ist_nicht_gespeichert", &[("name", format!("{}", name))]));
             if hat_speicherort {
                 ui.label(theme::dim(
-                    "Speichern und schließen legt den Reiter ab, Verwerfen verwirft die Änderungen.",
+                    jjcad_core::i18n::tr("gui.dialogs.speichern_und_schliessen_legt_den_reiter_ab_verwerfen_ve"),
                 ));
             } else {
                 ui.label(theme::dim(
-                    "Für diese Zeichnung gibt es noch keinen Speicherort — sie lässt sich nur über „Speichern unter“ sichern.",
+                    jjcad_core::i18n::tr("gui.dialogs.fuer_diese_zeichnung_gibt_es_noch_keinen_speicherort_sie"),
                 ));
             }
             ui.add_space(8.0);
             button_row(ui, |ui| {
                 if hat_speicherort
-                    && ui.button("Speichern und schließen").clicked()
+                    && ui.button(jjcad_core::i18n::tr("gui.dialogs.speichern_und_schliessen")).clicked()
                 {
                     speichern = true;
                 }
-                if ui.button("Verwerfen").clicked() {
+                if ui.button(jjcad_core::i18n::tr("gui.dialogs.verwerfen")).clicked() {
                     verwerfen = true;
                 }
-                if ui.button("Abbrechen").clicked() {
+                if ui.button(jjcad_core::i18n::tr("gui.dialogs.abbrechen")).clicked() {
                     close = true;
                 }
             });
@@ -887,7 +883,7 @@ pub fn show(app: &mut App, ctx: &egui::Context) {
     if app.ui.about_open {
         dim_background(ctx);
         let mut open = true;
-        modal_window(ctx, "Über JoJa-CAD", 480.0, &mut open).show(ctx, |ui| {
+        modal_window(ctx, jjcad_core::i18n::tr("gui.dialogs.ueber_joja_cad"), 480.0, &mut open).show(ctx, |ui| {
             ui.set_width(460.0);
             // Kopf mit Markenzeichen (T0083) — dasselbe Bild wie das Fenstericon.
             ui.horizontal(|ui| {
@@ -896,23 +892,19 @@ pub fn show(app: &mut App, ctx: &egui::Context) {
                 ui.add(egui::Image::new(egui::load::SizedTexture::new(marke.id(), kante)));
                 ui.add_space(6.0);
                 ui.vertical(|ui| {
-                    ui.label(theme::bold("JoJa-CAD", 20.0));
-                    ui.label(theme::dim(format!("Version {}", env!("CARGO_PKG_VERSION"))));
+                    ui.label(theme::bold(jjcad_core::i18n::tr("gui.dialogs.joja_cad"), 20.0));
+                    ui.label(theme::dim(jjcad_core::i18n::t_args_owned("gui.dialogs.version_x", &[("wert1", format!("{}", env!("CARGO_PKG_VERSION")))])));
                     ui.label(theme::mono(crate::app::build_label()));
                 });
             });
             ui.add_space(8.0);
-            ui.label("2D-CAD für Architektur und Bauantragszeichnungen.");
+            ui.label(jjcad_core::i18n::tr("gui.dialogs.2d_cad_fuer_architektur_und_bauantragszeichnungen"));
             ui.add_space(6.0);
-            ui.label(theme::dim("Rust · egui · eigener PDF- und DXF-Export · MCP-Schnittstelle für KI-Agenten"));
+            ui.label(theme::dim(jjcad_core::i18n::tr("gui.dialogs.rust_egui_eigener_pdf_und_dxf_export_mcp_schnittstelle_f")));
             ui.add_space(6.0);
-            ui.label(theme::dim("Lizenz: MIT · Format: .jjcad (JSON, offen dokumentiert)"));
+            ui.label(theme::dim(jjcad_core::i18n::tr("gui.dialogs.lizenz_mit_format_jjcad_json_offen_dokumentiert")));
             ui.add_space(8.0);
-            ui.label(theme::dim(format!(
-                "Dokument: {} · {}",
-                app.doc().name,
-                app.doc().summary()
-            )));
+            ui.label(theme::dim(jjcad_core::i18n::t_args_owned("gui.dialogs.dokument_x_x", &[("wert1", format!("{}", app.doc().name)), ("wert2", format!("{}", app.doc().summary()))])));
             if let Some(p) = &app.doc().path {
                 ui.label(theme::mono(p.clone()));
             }
@@ -1255,16 +1247,15 @@ fn settings_body(app: &mut App, ui: &mut Ui) {
                         ui.set_width(ui.available_width());
                         if treffer.is_empty() {
                             ui.label(theme::dim(
-                                "Keine Einstellung gefunden — Suchbegriff löschen, um alle \
-                                 Kategorien zu sehen.",
+                                jjcad_core::i18n::tr("gui.dialogs.keine_einstellung_gefunden_suchbegriff_loeschen_um_alle_"),
                             ));
                             return;
                         }
                         match kat {
                             // ------------------------ Einheiten -------------------
                             0 => {
-                                abschnitt(&suche, ui, "Einheiten");
-                                zeile(&suche, ui, "Eingabe", |ui| {
+                                abschnitt(&suche, ui, jjcad_core::i18n::tr("gui.dialogs.einheiten"));
+                                zeile(&suche, ui, jjcad_core::i18n::tr("gui.dialogs.eingabe"), |ui| {
                                     for u in Unit::ALL {
                                         ui.selectable_value(&mut input, u, u.short());
                                     }
@@ -1272,7 +1263,7 @@ fn settings_body(app: &mut App, ui: &mut Ui) {
                                 zeile_mit(
                                     &suche,
                                     ui,
-                                    "Dezimalstellen",
+                                    jjcad_core::i18n::tr("gui.dialogs.dezimalstellen"),
                                     &["Nachkommastellen"],
                                     |ui| {
                                         ui.add(crate::widgets::zahl(&mut decimals, 1.0, 0..=4));
@@ -1281,8 +1272,7 @@ fn settings_body(app: &mut App, ui: &mut Ui) {
                                 if suche.is_empty() {
                                     ui.add(
                                         egui::Label::new(theme::faint(
-                                            "Maßeinheit, Maßstab, Textgröße und Bogensymbole \
-                                             stehen in der Kategorie Bemaßung.",
+                                            jjcad_core::i18n::tr("gui.dialogs.masseinheit_massstab_textgroesse_und_bogensymbole_stehen"),
                                         ))
                                         .wrap(),
                                     );
@@ -1290,8 +1280,8 @@ fn settings_body(app: &mut App, ui: &mut Ui) {
                             }
                             // -------------------------- Raster --------------------
                             1 => {
-                                abschnitt(&suche, ui, "Raster");
-                                zeile(&suche, ui, "Rasterweite", |ui| {
+                                abschnitt(&suche, ui, jjcad_core::i18n::tr("gui.dialogs.raster"));
+                                zeile(&suche, ui, jjcad_core::i18n::tr("gui.dialogs.rasterweite"), |ui| {
                                     // Dieselben Grenzen wie im Eigenschaften-Panel (1 mm … 10 m).
                                     let mut g = grid_step;
                                     if widgets::length_field(
@@ -1305,28 +1295,28 @@ fn settings_body(app: &mut App, ui: &mut Ui) {
                                         grid_step = g;
                                     }
                                 });
-                                zeile(&suche, ui, "Raster anzeigen", |ui| {
+                                zeile(&suche, ui, jjcad_core::i18n::tr("gui.dialogs.raster_anzeigen"), |ui| {
                                     if ui.checkbox(&mut show_grid, "").changed() {
                                         snap.grid = show_grid;
                                     }
                                 });
-                                zeile(&suche, ui, "Rasterfang", |ui| {
+                                zeile(&suche, ui, jjcad_core::i18n::tr("gui.dialogs.rasterfang"), |ui| {
                                     ui.checkbox(&mut snap.grid, "");
                                 });
                             }
                             // -------------------------- Fangen --------------------
                             2 => {
-                                abschnitt(&suche, ui, "Fangen");
+                                abschnitt(&suche, ui, jjcad_core::i18n::tr("gui.dialogs.fangen"));
                                 for (label, field) in [
-                                    ("Endpunkt", &mut snap.endpoint),
-                                    ("Wandkanten", &mut snap.wall_edges),
-                                    ("Mittelpunkt", &mut snap.midpoint),
-                                    ("Zentrum", &mut snap.center),
-                                    ("Schnittpunkt", &mut snap.intersection),
-                                    ("Lot", &mut snap.perpendicular),
-                                    ("Nächster Punkt", &mut snap.nearest),
-                                    ("Ortho", &mut snap.ortho),
-                                    ("Polar", &mut snap.polar),
+                                    (jjcad_core::i18n::tr("gui.dialogs.endpunkt"), &mut snap.endpoint),
+                                    (jjcad_core::i18n::tr("gui.dialogs.wandkanten"), &mut snap.wall_edges),
+                                    (jjcad_core::i18n::tr("gui.dialogs.mittelpunkt"), &mut snap.midpoint),
+                                    (jjcad_core::i18n::tr("gui.dialogs.zentrum"), &mut snap.center),
+                                    (jjcad_core::i18n::tr("gui.dialogs.schnittpunkt"), &mut snap.intersection),
+                                    (jjcad_core::i18n::tr("gui.dialogs.lot"), &mut snap.perpendicular),
+                                    (jjcad_core::i18n::tr("gui.dialogs.naechster_punkt"), &mut snap.nearest),
+                                    (jjcad_core::i18n::tr("gui.dialogs.ortho"), &mut snap.ortho),
+                                    (jjcad_core::i18n::tr("gui.dialogs.polar"), &mut snap.polar),
                                 ] {
                                     if !suche.is_empty() && !label.to_lowercase().contains(&suche) {
                                         continue;
@@ -1335,23 +1325,23 @@ fn settings_body(app: &mut App, ui: &mut Ui) {
                                         ui.checkbox(field, "");
                                     });
                                 }
-                                zeile(&suche, ui, "Polarwinkel", |ui| {
+                                zeile(&suche, ui, jjcad_core::i18n::tr("gui.dialogs.polarwinkel"), |ui| {
                                     ui.add(
                                         crate::widgets::zahl(&mut polar_step, 1.0, 1.0..=180.0)
                                             .suffix("°"),
                                     );
-                                    ui.label(theme::dim("Architektur: 45°"));
+                                    ui.label(theme::dim(jjcad_core::i18n::tr("gui.dialogs.architektur_45")));
                                 });
-                                zeile(&suche, ui, "Polarfenster", |ui| {
+                                zeile(&suche, ui, jjcad_core::i18n::tr("gui.dialogs.polarfenster"), |ui| {
                                     ui.add(
                                         crate::widgets::zahl(&mut polar_tol, 0.5, 0.0..=45.0)
                                             .suffix("°"),
                                     );
                                     ui.label(theme::dim(
-                                        "nur innerhalb dieser Abweichung rastet Polar ein",
+                                        jjcad_core::i18n::tr("gui.dialogs.nur_innerhalb_dieser_abweichung_rastet_polar_ein"),
                                     ));
                                 });
-                                zeile(&suche, ui, "Fangradius", |ui| {
+                                zeile(&suche, ui, jjcad_core::i18n::tr("gui.dialogs.fangradius"), |ui| {
                                     ui.add(
                                         crate::widgets::zahl(&mut tol_px, 1.0, 1.0..=60.0)
                                             .suffix(" px"),
@@ -1360,13 +1350,13 @@ fn settings_body(app: &mut App, ui: &mut Ui) {
                             }
                             // ------------------------ Architektur -----------------
                             3 => {
-                                abschnitt(&suche, ui, "Architektur");
+                                abschnitt(&suche, ui, jjcad_core::i18n::tr("gui.dialogs.architektur"));
                                 for (label, val, def) in [
-                                    ("Wandstärke", &mut wall, 240.0),
-                                    ("Türbreite", &mut door, 885.0),
-                                    ("Fensterbreite", &mut win, 1200.0),
-                                    ("Treppenbreite", &mut stair, 1000.0),
-                                    ("Texthöhe", &mut th, 250.0),
+                                    (jjcad_core::i18n::tr("gui.dialogs.wandstaerke"), &mut wall, 240.0),
+                                    (jjcad_core::i18n::tr("gui.dialogs.tuerbreite"), &mut door, 885.0),
+                                    (jjcad_core::i18n::tr("gui.dialogs.fensterbreite"), &mut win, 1200.0),
+                                    (jjcad_core::i18n::tr("gui.dialogs.treppenbreite"), &mut stair, 1000.0),
+                                    (jjcad_core::i18n::tr("gui.dialogs.texthoehe"), &mut th, 250.0),
                                 ] {
                                     if !suche.is_empty() && !label.to_lowercase().contains(&suche) {
                                         continue;
@@ -1385,7 +1375,7 @@ fn settings_body(app: &mut App, ui: &mut Ui) {
                                         }
                                         if ui
                                             .add(egui::Button::new("Standard").small())
-                                            .on_hover_text(format!("{:.0} mm", def))
+                                            .on_hover_text(jjcad_core::i18n::t_args_owned("gui.dialogs.x_mm", &[("wert1", format!("{:.0}", def))]))
                                             .clicked()
                                         {
                                             *val = def;
@@ -1395,8 +1385,8 @@ fn settings_body(app: &mut App, ui: &mut Ui) {
                             }
                             // -------------------------- Bemaßung ------------------
                             4 => {
-                                abschnitt(&suche, ui, "Bemaßung");
-                                zeile(&suche, ui, "Pfeilgröße", |ui| {
+                                abschnitt(&suche, ui, jjcad_core::i18n::tr("gui.dialogs.bemassung"));
+                                zeile(&suche, ui, jjcad_core::i18n::tr("gui.dialogs.pfeilgroesse"), |ui| {
                                     if ui
                                         .add(
                                             crate::widgets::zahl(
@@ -1414,7 +1404,7 @@ fn settings_body(app: &mut App, ui: &mut Ui) {
                                 zeile_mit(
                                     &suche,
                                     ui,
-                                    "Dezimalstellen",
+                                    jjcad_core::i18n::tr("gui.dialogs.dezimalstellen"),
                                     &["Nachkommastellen"],
                                     |ui| {
                                         let mut d = ds.decimals as i32;
@@ -1445,24 +1435,24 @@ fn settings_body(app: &mut App, ui: &mut Ui) {
                             }
                             // ------------------------- Bedienung ------------------
                             5 => {
-                                abschnitt(&suche, ui, "Bedienung");
-                                zeile(&suche, ui, "Ziehen", |ui| {
+                                abschnitt(&suche, ui, jjcad_core::i18n::tr("gui.dialogs.bedienung"));
+                                zeile(&suche, ui, jjcad_core::i18n::tr("gui.dialogs.ziehen"), |ui| {
                                     for m in DragMode::ALL {
                                         ui.selectable_value(&mut drag_mode, m, m.label())
                                             .on_hover_text(m.hint());
                                     }
                                 });
                                 if suche.is_empty() {
-                                    ui.label(theme::faint("Gilt für Auswahl und Griffe"));
+                                    ui.label(theme::faint(jjcad_core::i18n::tr("gui.dialogs.gilt_fuer_auswahl_und_griffe")));
                                 }
                                 // T0063: Objekte mit der gedrückten Maustaste
                                 // verschieben — für alle Objektarten gemeinsam.
-                                zeile(&suche, ui, "Maus verschiebt", |ui| {
+                                zeile(&suche, ui, jjcad_core::i18n::tr("gui.dialogs.maus_verschiebt"), |ui| {
                                     ui.checkbox(&mut mouse_move, "");
                                 });
                                 if suche.is_empty() {
                                     ui.label(theme::faint(
-                                        "aus: Objekte wandern nur über das Werkzeug „Verschieben“",
+                                        jjcad_core::i18n::tr("gui.dialogs.aus_objekte_wandern_nur_ueber_das_werkzeug_verschieben"),
                                     ));
                                 }
                                 // T0067: Tempo der Schwenk-Funktionen (`view.pan_*`,
@@ -1470,7 +1460,7 @@ fn settings_body(app: &mut App, ui: &mut Ui) {
                                 zeile_mit(
                                     &suche,
                                     ui,
-                                    "Schwenk",
+                                    jjcad_core::i18n::tr("gui.dialogs.schwenk"),
                                     &[
                                         "Bewegungsgeschwindigkeit",
                                         "Geschwindigkeit",
@@ -1492,13 +1482,13 @@ fn settings_body(app: &mut App, ui: &mut Ui) {
                                             .suffix(" ×"),
                                         );
                                         antwort.on_hover_text(
-                                            "Faktor für den Schwenk mit W/A/S/D (1 × = Vorgabe)",
+                                            jjcad_core::i18n::tr("gui.dialogs.faktor_fuer_den_schwenk_mit_w_a_s_d_1_vorgabe"),
                                         );
                                     },
                                 );
                                 if suche.is_empty() {
                                     ui.label(theme::faint(
-                                        "gilt für den Schwenk der Ansicht (W A S D)",
+                                        jjcad_core::i18n::tr("gui.dialogs.gilt_fuer_den_schwenk_der_ansicht_w_a_s_d"),
                                     ));
                                 }
                                 // T0070: Drehpunkt beim Einfügen aus der Zwischenablage.
@@ -1507,7 +1497,7 @@ fn settings_body(app: &mut App, ui: &mut Ui) {
                                 zeile_mit(
                                     &suche,
                                     ui,
-                                    "Drehpunkt",
+                                    jjcad_core::i18n::tr("gui.dialogs.drehpunkt"),
                                     &[
                                         "Einfügen",
                                         "Vorschau",
@@ -1527,15 +1517,14 @@ fn settings_body(app: &mut App, ui: &mut Ui) {
                                 );
                                 if suche.is_empty() {
                                     ui.label(theme::faint(
-                                        "Basispunkt: Drehen um das Fadenkreuz · Mittelpunkt: \
-                                         Vorschau bleibt oben rechts",
+                                        jjcad_core::i18n::tr("gui.dialogs.basispunkt_drehen_um_das_fadenkreuz_mittelpunkt_vorschau"),
                                     ));
                                 }
                                 // T0103: Sprache der Oberfläche — wirkt sofort, ohne Neustart.
                 zeile_mit(
                     &suche,
                     ui,
-                    "Sprache",
+                    jjcad_core::i18n::tr("gui.dialogs.sprache"),
                     &["Language", "Deutsch", "Englisch", "English", "Übersetzung"],
                     |ui| {
                         let mut gewaehlt = jjcad_core::i18n::language();
@@ -1558,30 +1547,30 @@ fn settings_body(app: &mut App, ui: &mut Ui) {
                         jjcad_core::i18n::tr("settings.language_hint"),
                     ));
                 }
-                zeile(&suche, ui, "Dateidialog", |ui| {
+                zeile(&suche, ui, jjcad_core::i18n::tr("gui.dialogs.dateidialog"), |ui| {
                                     let moeglich = crate::systemdialog::verfuegbar();
-                                    ui.selectable_value(&mut dateidialog_system, true, "System")
+                                    ui.selectable_value(&mut dateidialog_system, true, jjcad_core::i18n::tr("gui.dialogs.system"))
                                         .on_hover_text(
-                                            "Dialog des Betriebssystems (Dolphin, Dateien, Windows)",
+                                            jjcad_core::i18n::tr("gui.dialogs.dialog_des_betriebssystems_dolphin_dateien_windows"),
                                         );
                                     ui.selectable_value(
                                         &mut dateidialog_system,
                                         false,
-                                        "Eingebaut",
+                                        jjcad_core::i18n::tr("gui.dialogs.eingebaut"),
                                     )
-                                    .on_hover_text("Dialog von JoJa-CAD");
+                                    .on_hover_text(jjcad_core::i18n::tr("gui.dialogs.dialog_von_joja_cad"));
                                     if !moeglich {
-                                        ui.label(theme::dim("kein Systemdialog verfügbar"));
+                                        ui.label(theme::dim(jjcad_core::i18n::tr("gui.dialogs.kein_systemdialog_verfuegbar")));
                                     }
                                 });
                             }
                             // ------------------------ Darstellung -----------------
                             _ => {
-                                abschnitt(&suche, ui, "Darstellung");
-                                zeile(&suche, ui, "Linienstärken", |ui| {
+                                abschnitt(&suche, ui, jjcad_core::i18n::tr("gui.dialogs.darstellung"));
+                                zeile(&suche, ui, jjcad_core::i18n::tr("gui.dialogs.linienstaerken"), |ui| {
                                     let mut m = if lw_scaled { 1 } else { 0 };
-                                    ui.selectable_value(&mut m, 0, "px");
-                                    ui.selectable_value(&mut m, 1, "DPI");
+                                    ui.selectable_value(&mut m, 0, jjcad_core::i18n::tr("gui.dialogs.px"));
+                                    ui.selectable_value(&mut m, 1, jjcad_core::i18n::tr("gui.dialogs.dpi"));
                                     lw_scaled = m == 1;
                                 });
                                 // Häkchen mit vollem Text — die Labelspalte der
@@ -1589,7 +1578,7 @@ fn settings_body(app: &mut App, ui: &mut Ui) {
                                 for (name, wert) in [
                                     ("Layer-Panel", &mut show_layers),
                                     ("Eigenschaften-Panel", &mut show_props),
-                                    ("Fangmarker", &mut marker),
+                                    (jjcad_core::i18n::tr("gui.dialogs.fangmarker"), &mut marker),
                                     ("Lineale einblenden", &mut rulers),
                                 ] {
                                     if !suche.is_empty() && !name.to_lowercase().contains(&suche) {
@@ -1925,20 +1914,16 @@ pub(crate) fn funktion_auf_taste(app: &mut App, funktion: &str, key: &str) -> bo
     app.tool = None;
     // Chat-Schema `<Objekt> · <Zustand>` — der Pfeil fehlt in der Schrift des
     // Protokolls und erscheint dort als leeres Kästchen.
-    app.toast(format!("{name} · Taste {}", key.to_uppercase()));
+    app.toast(jjcad_core::i18n::t_args_owned("gui.dialogs.x_taste_x", &[("name", format!("{}", name)), ("wert1", format!("{}", key.to_uppercase()))]));
     true
 }
 
 /// Bedienung der Tastaturbelegung — steht im Tooltip am kleinen „i" über dem
 /// Tastenbild (T0064). Die Bedienung ist selbsterklärend; ein langer Hinweistext
 /// gehört nicht ins Fenster.
-const KEYMAP_HILFE: &str = "Leere Taste anklicken — das Inventar öffnet sich mit \
-dem Reiter Funktionen; die gewählte Funktion liegt danach auf der Taste. Oder \
-eine Funktion im Ribbon anklicken und danach eine leere Taste: sie übernimmt \
-sie. Eine Funktion darf auf mehreren Tasten liegen, eine Taste trägt genau eine \
-Funktion. Mittlere Maustaste leert eine Taste. Buchstaben und Symbole sind frei \
-belegbar; Ziffern gehören der Hotbar; Steuerungstasten und Kombinationen sind \
-fest verdrahtet und ausgegraut.";
+fn keymap_hilfe() -> &'static str {
+    jjcad_core::i18n::tr("gui.dialogs.keymap_hilfe")
+}
 
 /// Das Fenster der Tastaturbelegung (T0076): eigene Kopfleiste mit dem
 /// Informationssymbol **links** und dem Schließen rechts, darunter das
@@ -1964,11 +1949,11 @@ fn keymap_window(app: &mut App, ctx: &egui::Context) {
         ui.horizontal(|ui| {
             let (rect, antwort) = ui.allocate_exact_size(Vec2::splat(18.0), Sense::hover());
             widgets::icon(ui, rect, "info", Palette::TEXT_DIM);
-            antwort.on_hover_text(KEYMAP_HILFE);
+            antwort.on_hover_text(keymap_hilfe());
             app.ui.last_keymap_info = Some(rect);
             ui.add_space(4.0);
             let titel = ui.add(
-                egui::Label::new(theme::bold("Tastaturbelegung", 14.0)).sense(Sense::drag()),
+                egui::Label::new(theme::bold(jjcad_core::i18n::tr("gui.dialogs.tastaturbelegung"), 14.0)).sense(Sense::drag()),
             );
             if titel.dragged() {
                 zug = Some(titel.drag_delta());
@@ -1976,12 +1961,12 @@ fn keymap_window(app: &mut App, ctx: &egui::Context) {
             // T0064: Die zuletzt gewählte Funktion steht in der Leiste, damit
             // sichtbar ist, was eine leere Taste gerade aufnimmt.
             ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-                if widgets::icon_button(ui, "close", 20.0, false, "Schließen").clicked() {
+                if widgets::icon_button(ui, "close", 20.0, false, jjcad_core::i18n::tr("gui.dialogs.schliessen")).clicked() {
                     offen = false;
                 }
                 if let Some(f) = app.ui.keymap_funktion.clone() {
                     let name = actions::action(&f).map(|d| d.label().to_string()).unwrap_or(f);
-                    ui.label(theme::mono(format!("Bereit: {name}")));
+                    ui.label(theme::mono(jjcad_core::i18n::t_args_owned("gui.dialogs.bereit_x", &[("name", format!("{}", name))])));
                 }
             });
         });
@@ -2017,7 +2002,7 @@ fn layout_wechseln(app: &mut App, wahl: usize) {
     }
     if let Some(name) = app.prefs.keymap_anwenden(wahl) {
         let _ = app.prefs.save();
-        app.toast(format!("Layout · {name}"));
+        app.toast(jjcad_core::i18n::t_args_owned("gui.dialogs.layout_x", &[("name", format!("{}", name))]));
     }
 }
 
@@ -2047,23 +2032,20 @@ fn keymap_wechsel_dialog(app: &mut App, ctx: &egui::Context) {
     let mut wahl = None;
     dim_background(ctx);
     let mut offen = true;
-    modal_window(ctx, "Layout wechseln", 460.0, &mut offen).show(ctx, |ui| {
+    modal_window(ctx, jjcad_core::i18n::tr("gui.dialogs.layout_wechseln"), 460.0, &mut offen).show(ctx, |ui| {
         ui.set_width(436.0);
-        ui.label(theme::bold("Belegung nicht gespeichert", 13.0));
+        ui.label(theme::bold(jjcad_core::i18n::tr("gui.dialogs.belegung_nicht_gespeichert"), 13.0));
         ui.add_space(4.0);
-        ui.label(theme::dim(format!(
-            "Die aktuelle Belegung gehört zu keinem Layout. Beim Wechsel auf \
-             „{zielname}“ gehen ihre Änderungen verloren."
-        )));
+        ui.label(theme::dim(jjcad_core::i18n::t_args_owned("gui.dialogs.die_aktuelle_belegung_gehoert_zu_keinem_layout_beim_wech", &[("zielname", format!("{}", zielname))])));
         ui.add_space(10.0);
         ui.horizontal(|ui| {
-            if ui.button("Abbrechen").clicked() {
+            if ui.button(jjcad_core::i18n::tr("gui.dialogs.abbrechen")).clicked() {
                 wahl = Some(Wahl::Abbrechen);
             }
-            if ui.button("Verwerfen").clicked() {
+            if ui.button(jjcad_core::i18n::tr("gui.dialogs.verwerfen")).clicked() {
                 wahl = Some(Wahl::Verwerfen);
             }
-            if ui.button("Speichern").clicked() {
+            if ui.button(jjcad_core::i18n::tr("gui.dialogs.speichern")).clicked() {
                 wahl = Some(Wahl::Speichern);
             }
         });
@@ -2078,7 +2060,7 @@ fn keymap_wechsel_dialog(app: &mut App, ctx: &egui::Context) {
             app.ui.keymap_wechsel = None;
             if let Some(name) = app.prefs.keymap_anwenden(ziel) {
                 let _ = app.prefs.save();
-                app.toast(format!("Layout · {name}"));
+                app.toast(jjcad_core::i18n::t_args_owned("gui.dialogs.layout_x", &[("name", format!("{}", name))]));
             }
         }
         // Erst sichern, dann wechseln (die Namensabfrage merkt sich das Ziel).
@@ -2095,15 +2077,15 @@ fn keymap_name_dialog(app: &mut App, ctx: &egui::Context) {
     let mut offen = true;
     let mut speichern = false;
     let mut abbrechen = false;
-    modal_window(ctx, "Layout speichern", 380.0, &mut offen).show(ctx, |ui| {
+    modal_window(ctx, jjcad_core::i18n::tr("gui.dialogs.layout_speichern"), 380.0, &mut offen).show(ctx, |ui| {
         ui.set_width(356.0);
         ui.label(theme::dim(
-            "Name des Layouts. Ist der Name schon vergeben, wird er überschrieben.",
+            jjcad_core::i18n::tr("gui.dialogs.name_des_layouts_ist_der_name_schon_vergeben_wird_er_ueb"),
         ));
         ui.add_space(6.0);
         let feld = ui.add_sized(
             [356.0, 24.0],
-            egui::TextEdit::singleline(&mut buf).hint_text("z. B. Architektur"),
+            egui::TextEdit::singleline(&mut buf).hint_text(jjcad_core::i18n::tr("gui.dialogs.z_b_architektur")),
         );
         feld.request_focus();
         if ui.input(|i| i.key_pressed(egui::Key::Enter)) {
@@ -2111,10 +2093,10 @@ fn keymap_name_dialog(app: &mut App, ctx: &egui::Context) {
         }
         ui.add_space(8.0);
         ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-            if ui.button("Speichern").clicked() {
+            if ui.button(jjcad_core::i18n::tr("gui.dialogs.speichern")).clicked() {
                 speichern = true;
             }
-            if ui.button("Abbrechen").clicked() {
+            if ui.button(jjcad_core::i18n::tr("gui.dialogs.abbrechen")).clicked() {
                 abbrechen = true;
             }
         });
@@ -2128,13 +2110,13 @@ fn keymap_name_dialog(app: &mut App, ctx: &egui::Context) {
             Ok(name) => {
                 let _ = app.prefs.save();
                 app.ui.keymap_name = None;
-                app.toast(format!("Layout · gespeichert: {name}"));
+                app.toast(jjcad_core::i18n::t_args_owned("gui.dialogs.layout_gespeichert_x", &[("name", format!("{}", name))]));
                 // War ein Wechsel offen, wird er jetzt ausgeführt — die
                 // Änderung ist gesichert (T0076).
                 if let Some(ziel) = app.ui.keymap_wechsel.take() {
                     if let Some(zielname) = app.prefs.keymap_anwenden(ziel) {
                         let _ = app.prefs.save();
-                        app.toast(format!("Layout · {zielname}"));
+                        app.toast(jjcad_core::i18n::t_args_owned("gui.dialogs.layout_x_2", &[("zielname", format!("{}", zielname))]));
                     }
                 }
             }
@@ -2183,7 +2165,7 @@ fn zeilen_knopf(ui: &mut Ui, text: &str) -> egui::Response {
 fn keyboard_layouts(app: &mut App, ui: &mut Ui) {
     let mut zeile: Vec<(String, Rect)> = Vec::new();
     ui.horizontal(|ui| {
-        ui.label(theme::dim("Layout"));
+        ui.label(theme::dim(jjcad_core::i18n::tr("gui.dialogs.layout")));
         // Das **ausdrücklich** gewählte Layout (`keymap_aktiv`), nicht das erste
         // mit gleicher Belegung: sonst zeigte die Auswahl nach dem Speichern
         // wieder die erste Vorlage (T0076).
@@ -2239,7 +2221,7 @@ fn keyboard_layouts(app: &mut App, ui: &mut Ui) {
             zeile.push(("Auswahl".to_string(), r));
         }
         let speichern = zeilen_knopf(ui, "Speichern …")
-            .on_hover_text("Die aktuelle Belegung unter einem Namen ablegen");
+            .on_hover_text(jjcad_core::i18n::tr("gui.dialogs.die_aktuelle_belegung_unter_einem_namen_ablegen"));
         zeile.push(("Speichern".to_string(), speichern.rect));
         if speichern.clicked() {
             // Die eingebauten Vorlagen sind nicht überschreibbar — sie dürfen
@@ -2253,13 +2235,13 @@ fn keyboard_layouts(app: &mut App, ui: &mut Ui) {
             );
         }
         let import = zeilen_knopf(ui, "Importieren …")
-            .on_hover_text("Ein Layout aus einer Datei übernehmen");
+            .on_hover_text(jjcad_core::i18n::tr("gui.dialogs.ein_layout_aus_einer_datei_uebernehmen"));
         zeile.push(("Importieren".to_string(), import.rect));
         if import.clicked() {
             app.open_file_dialog(FileMode::ImportKeymap);
         }
         let export = zeilen_knopf(ui, "Exportieren …")
-            .on_hover_text("Die aktuelle Belegung als Datei schreiben");
+            .on_hover_text(jjcad_core::i18n::tr("gui.dialogs.die_aktuelle_belegung_als_datei_schreiben"));
         zeile.push(("Exportieren".to_string(), export.rect));
         if export.clicked() {
             app.open_file_dialog(FileMode::ExportKeymap);
@@ -2267,13 +2249,13 @@ fn keyboard_layouts(app: &mut App, ui: &mut Ui) {
         // Löschen: das in der Auswahl stehende gespeicherte Layout. Die
         // eingebauten Vorlagen bleiben (T0079).
         let loeschbar = matches!(aktiv, Some(i) if i >= jjcad_core::persist::VORLAGEN.len());
-        let loeschen = ui.add_enabled_ui(loeschbar, |ui| zeilen_knopf(ui, "Löschen"));
-        zeile.push(("Löschen".to_string(), loeschen.response.rect));
+        let loeschen = ui.add_enabled_ui(loeschbar, |ui| zeilen_knopf(ui, jjcad_core::i18n::tr("gui.dialogs.loeschen")));
+        zeile.push((jjcad_core::i18n::tr("gui.dialogs.loeschen").to_string(), loeschen.response.rect));
         if loeschen.inner.clicked() {
             if let Some(i) = aktiv {
                 if app.prefs.keymap_loeschen(i) {
                     let _ = app.prefs.save();
-                    app.toast("Layout · gelöscht");
+                    app.toast(jjcad_core::i18n::tr("gui.dialogs.layout_geloescht"));
                 }
             }
         }
@@ -2400,7 +2382,7 @@ fn keyboard_body(app: &mut App, ui: &mut Ui) {
                     if !funktion_auf_taste(app, &f, key) {
                         // Fest verdrahtete Funktionen (Strg+S, F1 …) lassen sich
                         // nicht umbelegen; sie bleiben im Inventar gesperrt.
-                        app.toast("Funktion · fest belegt");
+                        app.toast(jjcad_core::i18n::tr("gui.dialogs.funktion_fest_belegt"));
                     }
                 }
                 _ => {
@@ -2421,9 +2403,9 @@ fn keyboard_body(app: &mut App, ui: &mut Ui) {
                 Some(a) => {
                     let _ = app.prefs.save();
                     let name = actions::action(&a).map(|d| d.label().to_string()).unwrap_or(a);
-                    app.toast(format!("{name} · Taste {} frei", key.to_uppercase()));
+                    app.toast(jjcad_core::i18n::t_args_owned("gui.dialogs.x_taste_x_frei", &[("name", format!("{}", name)), ("wert1", format!("{}", key.to_uppercase()))]));
                 }
-                None => app.toast("Taste · nicht belegt"),
+                None => app.toast(jjcad_core::i18n::tr("gui.dialogs.taste_nicht_belegt")),
             }
         }
         match gesperrt {
@@ -2459,7 +2441,7 @@ fn taste_belegen(app: &mut App, key: &str) {
     app.ui.inventory_open = true;
     app.ui.inventory_tab = 2;
     app.ui.search.clear();
-    app.toast("Funktion für die Taste wählen");
+    app.toast(jjcad_core::i18n::tr("gui.dialogs.funktion_fuer_die_taste_waehlen"));
 }
 
 // ---------------------------------------------------------------------------
@@ -2467,19 +2449,19 @@ fn taste_belegen(app: &mut App, key: &str) {
 // ---------------------------------------------------------------------------
 
 fn help_body(app: &mut App, ui: &mut Ui) {
-    ui.label(theme::bold("Bedienung", 15.0));
+    ui.label(theme::bold(jjcad_core::i18n::tr("gui.dialogs.bedienung"), 15.0));
     ui.add_space(4.0);
     for (k, v) in [
-        ("Zeichnen", "Werkzeug wählen (Ribbon, Hotbar, Taste) und Punkte klicken. ESC bricht ab."),
-        ("Navigation", "Mausrad zoomt, mittlere Maustaste oder Leertaste+Ziehen schwenkt. Die Tasten zum Schwenken (Vorgabe W/A/S/D) sind Funktionen der Tastaturbelegung."),
-        ("Fangen", "Endpunkte, Mittelpunkte, Schnittpunkte und Raster werden automatisch gefangen (Statuszeile zeigt den Fangtyp)."),
-        ("Eingabe", "Nach dem ersten Klick Länge tippen und Enter – oder \"x;y\" für absolute Koordinaten (Semikolon als Trenner, Komma ist Dezimalzeichen)."),
-        ("Hotbar", "Tasten 1–0 starten die Slots. Aktives Werkzeug + Klick auf leeren Slot = Verknüpfung."),
-        ("Tasten", "Drei Schichten: Ziffern 1–0 = Hotbar, Buchstaben und Symbole = Tastaturbelegung (frei änderbar), Steuerungstasten und Kombinationen (Esc, F1–F12, Strg+C) = fest verdrahtet."),
-        ("Inventar", "E öffnet und schließt Lager, Blockbibliothek und Funktionsliste. Alles ist per Drag & Drop auf die Hotbar ziehbar."),
-        ("Auswahl", "Klick wählt, Ziehen von links nach rechts = Fenster, von rechts nach links = Querfenster, Shift ergänzt."),
-        ("Blätter", "Reiter oben wechseln zwischen Modell und Blättern; PDF exportiert das aktuelle Blatt."),
-        ("Leistung", "Umschalt+F3 zeigt Messwerte je Bild: Abstand, Rechenzeit und ihre Abschnitte (Fangen, Displayliste, Zeichnen, Bedienung) mit Perzentilen."),
+        (jjcad_core::i18n::tr("gui.dialogs.zeichnen"), jjcad_core::i18n::tr("gui.dialogs.hilfe_zeichnen")),
+        (jjcad_core::i18n::tr("gui.dialogs.navigation"), jjcad_core::i18n::tr("gui.dialogs.hilfe_navigation")),
+        (jjcad_core::i18n::tr("gui.dialogs.fangen"), jjcad_core::i18n::tr("gui.dialogs.hilfe_fangen")),
+        (jjcad_core::i18n::tr("gui.dialogs.eingabe"), jjcad_core::i18n::tr("gui.dialogs.hilfe_eingabe")),
+        (jjcad_core::i18n::tr("gui.dialogs.hotbar"), jjcad_core::i18n::tr("gui.dialogs.hilfe_hotbar")),
+        (jjcad_core::i18n::tr("gui.dialogs.tasten"), jjcad_core::i18n::tr("gui.dialogs.hilfe_tasten")),
+        (jjcad_core::i18n::tr("gui.dialogs.inventar"), jjcad_core::i18n::tr("gui.dialogs.hilfe_inventar")),
+        (jjcad_core::i18n::tr("gui.dialogs.auswahl"), jjcad_core::i18n::tr("gui.dialogs.hilfe_auswahl")),
+        (jjcad_core::i18n::tr("gui.dialogs.blaetter"), jjcad_core::i18n::tr("gui.dialogs.hilfe_blaetter")),
+        (jjcad_core::i18n::tr("gui.dialogs.leistung"), jjcad_core::i18n::tr("gui.dialogs.hilfe_leistung")),
     ] {
         ui.horizontal(|ui| {
             ui.allocate_ui_with_layout(Vec2::new(110.0, 18.0), Layout::left_to_right(Align::Center), |ui| {
@@ -2489,7 +2471,7 @@ fn help_body(app: &mut App, ui: &mut Ui) {
         });
     }
     ui.add_space(10.0);
-    ui.label(theme::bold("Tastenbelegung (Vorlage JoJa-CAD)", 15.0));
+    ui.label(theme::bold(jjcad_core::i18n::tr("gui.dialogs.tastenbelegung_vorlage_joja_cad"), 15.0));
     ui.add_space(4.0);
     egui::Grid::new("helpkeys")
         .num_columns(2)
@@ -2519,14 +2501,9 @@ fn help_body(app: &mut App, ui: &mut Ui) {
             }
         });
     ui.add_space(10.0);
-    ui.label(theme::dim(format!(
-        "JoJa-CAD {} · {} Aktionen · {} Blöcke in der Bibliothek",
-        env!("CARGO_PKG_VERSION"),
-        actions::ACTIONS.len(),
-        app.doc().blocks.len()
-    )));
+    ui.label(theme::dim(jjcad_core::i18n::t_args_owned("gui.dialogs.joja_cad_x_x_aktionen_x_bloecke_in_der_bibliothek", &[("wert1", format!("{}", env!("CARGO_PKG_VERSION"))), ("wert2", format!("{}", actions::ACTIONS.len())), ("wert3", format!("{}", app.doc().blocks.len()))])));
     ui.add_space(6.0);
-    if ui.button("Über JoJa-CAD").clicked() {
+    if ui.button(jjcad_core::i18n::tr("gui.dialogs.ueber_joja_cad")).clicked() {
         app.ui.about_open = true;
     }
 }
@@ -2956,7 +2933,7 @@ pub(crate) mod tests_tastatur {
         // Der Tooltip erklärt die Bedienung vollständig.
         for wort in ["Ribbon", "Mittlere Maustaste", "mehreren Tasten", "Hotbar"] {
             assert!(
-                KEYMAP_HILFE.contains(wort),
+                keymap_hilfe().contains(wort),
                 "der Tooltip nennt „{wort}“ nicht"
             );
         }

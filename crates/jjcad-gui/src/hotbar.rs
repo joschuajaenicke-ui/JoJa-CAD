@@ -89,14 +89,14 @@ pub fn show(app: &mut App, ui: &mut Ui) {
                 });
             };
             let resp =
-                widgets::icon_button(ui, "inventory", KOPF, app.ui.inventory_open, "Inventar (E)");
+                widgets::icon_button(ui, "inventory", KOPF, app.ui.inventory_open, jjcad_core::i18n::tr("gui.hotbar.inventar_e"));
             merke(resp.rect);
             if resp.clicked() {
                 app.toggle_inventory();
             }
             ui.add_space(ABSTAND);
             let resp =
-                widgets::icon_button(ui, "keyboard", KOPF, app.ui.keymap_open, "Tastaturbelegung");
+                widgets::icon_button(ui, "keyboard", KOPF, app.ui.keymap_open, jjcad_core::i18n::tr("gui.hotbar.tastaturbelegung"));
             merke(resp.rect);
             if resp.clicked() {
                 app.ui.keymap_open = !app.ui.keymap_open;
@@ -108,7 +108,7 @@ pub fn show(app: &mut App, ui: &mut Ui) {
                 .get(app.prefs.active_preset.min(app.prefs.hotbar_presets.len().saturating_sub(1)))
                 .map(|p| p.name.clone())
                 .unwrap_or_else(|| "Vorlage".to_string());
-            let tip = format!("Hotbar · {vorlage} — Vorlage wählen");
+            let tip = jjcad_core::i18n::t_args_owned("gui.hotbar.hotbar_x_vorlage_waehlen", &[("vorlage", format!("{}", vorlage))]);
             let resp =
                 widgets::icon_button(ui, "hotbar", KOPF, app.ui.hotbar_picker_open, &tip);
             merke(resp.rect);
@@ -152,12 +152,12 @@ pub fn show(app: &mut App, ui: &mut Ui) {
                     } else if let Some(t) = app.tool.clone() {
                         app.bind_slot_action(i, Some(t.action.clone()));
                         app.tool = None;
-                        app.toast(format!("{} auf Slot {} gelegt", label_of(&t.action), i + 1));
+                        app.toast(jjcad_core::i18n::t_args_owned("gui.hotbar.x_auf_slot_x_gelegt", &[("wert1", format!("{}", label_of(&t.action))), ("wert2", format!("{}", i + 1))]));
                     } else {
                         app.ui.bind_slot = Some(i);
                         app.ui.inventory_open = true;
                         app.ui.inventory_tab = 2;
-                        app.toast("Funktion für den Slot wählen");
+                        app.toast(jjcad_core::i18n::tr("gui.hotbar.funktion_fuer_den_slot_waehlen"));
                     }
                 }
 
@@ -177,7 +177,7 @@ pub fn show(app: &mut App, ui: &mut Ui) {
                         if from == usize::MAX {
                             app.prefs.set_slot(i, Some(a.clone()));
                             let _ = app.prefs.save();
-                            app.toast(format!("Hotbar · Slot {} belegt", i + 1));
+                            app.toast(jjcad_core::i18n::t_args_owned("gui.hotbar.hotbar_slot_x_belegt", &[("wert1", format!("{}", i + 1))]));
                         } else if from != i {
                             app.prefs.set_slot(i, Some(a.clone()));
                             app.prefs.set_slot(from, action.clone());
@@ -190,11 +190,11 @@ pub fn show(app: &mut App, ui: &mut Ui) {
                 // Kontextmenü
                 resp.context_menu(|ui| {
                     if action.is_some() {
-                        if ui.button("Leeren").clicked() {
+                        if ui.button(jjcad_core::i18n::tr("gui.hotbar.leeren")).clicked() {
                             app.bind_slot_action(i, None);
                             ui.close_menu();
                         }
-                        if ui.button("Bearbeiten").clicked() {
+                        if ui.button(jjcad_core::i18n::tr("gui.hotbar.bearbeiten")).clicked() {
                             if let Some(a) = &action {
                                 if a == "block.insert" {
                                     app.ui.inventory_open = true;
@@ -206,7 +206,7 @@ pub fn show(app: &mut App, ui: &mut Ui) {
                             ui.close_menu();
                         }
                     }
-                    if ui.button("Verknüpfen …").clicked() {
+                    if ui.button(jjcad_core::i18n::tr("gui.hotbar.verknuepfen")).clicked() {
                         app.ui.bind_slot = Some(i);
                         app.ui.inventory_open = true;
                         app.ui.inventory_tab = 2;
@@ -242,7 +242,7 @@ pub fn show(app: &mut App, ui: &mut Ui) {
                 "grid",
                 KOPF,
                 app.ui.show_grid,
-                "Raster · Klick: ein/aus · Rechtsklick: Optionen",
+                jjcad_core::i18n::tr("gui.hotbar.raster_klick_ein_aus_rechtsklick_optionen"),
             );
             if resp.clicked() {
                 app.ui.show_grid = !app.ui.show_grid;
@@ -262,9 +262,9 @@ pub fn show(app: &mut App, ui: &mut Ui) {
             // Fang (Klick: ein/aus · Rechtsklick: Fangmodi und Ausrichtung)
             let snap_now = app.doc().settings.snap.clone();
             let tip = if snap_now.endpoint {
-                "Fang · an (Endpunkt) · Rechtsklick: Fangmodi und Ausrichtung"
+                jjcad_core::i18n::tr("gui.hotbar.fang_an_endpunkt_rechtsklick_fangmodi_und_ausrichtung")
             } else {
-                "Fang · aus · Rechtsklick: Fangmodi und Ausrichtung"
+                jjcad_core::i18n::tr("gui.hotbar.fang_aus_rechtsklick_fangmodi_und_ausrichtung")
             };
             let resp = widgets::icon_button(ui, "snap", KOPF, snap_now.endpoint, tip);
             if resp.clicked() {
@@ -281,15 +281,15 @@ pub fn show(app: &mut App, ui: &mut Ui) {
             // Das Zeichen rechts unten nennt den Modus, der Tooltip den Rest.
             let scaled = app.ui.lineweights_scaled;
             let tip = if scaled {
-                "Linienstärke · DPI (wie im PDF) · Klick: px · Rechtsklick: Auswahl"
+                jjcad_core::i18n::tr("gui.hotbar.linienstaerke_dpi_wie_im_pdf_klick_px_rechtsklick_auswah")
             } else {
-                "Linienstärke · px (bildschirmkonstant) · Klick: DPI · Rechtsklick: Auswahl"
+                jjcad_core::i18n::tr("gui.hotbar.linienstaerke_px_bildschirmkonstant_klick_dpi_rechtsklic")
             };
             let resp = widgets::icon_button(ui, "staerke", KOPF, scaled, tip);
             ui.painter().text(
                 Pos2::new(resp.rect.right() - 2.0, resp.rect.bottom() - 1.0),
                 egui::Align2::RIGHT_BOTTOM,
-                if scaled { "D" } else { "p" },
+                if scaled { jjcad_core::i18n::tr("gui.hotbar.d") } else { jjcad_core::i18n::tr("gui.hotbar.p") },
                 FontId::proportional(8.0),
                 if scaled {
                     Palette::ACCENT
@@ -375,9 +375,9 @@ pub fn auswahl_fenster(app: &mut App, ctx: &egui::Context) {
             ui.horizontal(|ui| {
                 let (r, _) = ui.allocate_exact_size(Vec2::splat(18.0), Sense::hover());
                 crate::icons::paint(ui.painter(), r, "hotbar", Palette::ACCENT);
-                ui.label(theme::bold("Hotbar-Vorlagen", 13.0));
+                ui.label(theme::bold(jjcad_core::i18n::tr("gui.hotbar.hotbar_vorlagen"), 13.0));
                 ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-                    if widgets::icon_button(ui, "close", 22.0, false, "Schließen").clicked() {
+                    if widgets::icon_button(ui, "close", 22.0, false, jjcad_core::i18n::tr("gui.hotbar.schliessen")).clicked() {
                         offen = false;
                     }
                 });
@@ -428,7 +428,7 @@ pub fn auswahl_fenster(app: &mut App, ctx: &egui::Context) {
                 p2.text(
                     Pos2::new(rect.right() - 8.0, rect.center().y),
                     egui::Align2::RIGHT_CENTER,
-                    format!("{} Slots", p.slots.len()),
+                    jjcad_core::i18n::t_args_owned("gui.hotbar.x_slots", &[("wert1", format!("{}", p.slots.len()))]),
                     FontId::proportional(10.0),
                     Palette::TEXT_FAINT,
                 );
@@ -441,14 +441,14 @@ pub fn auswahl_fenster(app: &mut App, ctx: &egui::Context) {
             widgets::hline(ui);
             ui.add_space(6.0);
             ui.horizontal(|ui| {
-                if ui.button("Neu …").clicked() {
+                if ui.button(jjcad_core::i18n::tr("gui.hotbar.neu")).clicked() {
                     neu = true;
                 }
-                if ui.button("Umbenennen …").clicked() {
+                if ui.button(jjcad_core::i18n::tr("gui.hotbar.umbenennen")).clicked() {
                     umbenennen = Some(cur);
                 }
                 let mehrere = app.prefs.hotbar_presets.len() > 1;
-                if ui.add_enabled(mehrere, egui::Button::new("Löschen")).clicked() {
+                if ui.add_enabled(mehrere, egui::Button::new(jjcad_core::i18n::tr("gui.hotbar.loeschen"))).clicked() {
                     loeschen = Some(cur);
                 }
             });
@@ -458,7 +458,7 @@ pub fn auswahl_fenster(app: &mut App, ctx: &egui::Context) {
         app.prefs.active_preset = i;
         let _ = app.prefs.save();
         let name = app.prefs.hotbar_presets[i].name.clone();
-        app.toast(format!("Hotbar · {name}"));
+        app.toast(jjcad_core::i18n::t_args_owned("gui.hotbar.hotbar_x", &[("name", format!("{}", name))]));
         app.ui.hotbar_picker_open = false;
     }
     if neu {
@@ -478,7 +478,7 @@ pub fn auswahl_fenster(app: &mut App, ctx: &egui::Context) {
         app.prefs.hotbar_presets.remove(i);
         app.prefs.active_preset = i.saturating_sub(1);
         let _ = app.prefs.save();
-        app.toast("Vorlage gelöscht");
+        app.toast(jjcad_core::i18n::tr("gui.hotbar.vorlage_geloescht"));
     }
     if !offen {
         app.ui.hotbar_picker_open = false;

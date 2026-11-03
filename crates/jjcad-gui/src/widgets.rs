@@ -669,7 +669,7 @@ pub fn schrift_wahl(ui: &mut Ui, id: &str, font: &mut TextFont) -> bool {
             let text = if da {
                 f.label().to_string()
             } else {
-                format!("{} — nicht installiert", f.label())
+                jjcad_core::i18n::t_args_owned("gui.widgets.x_nicht_installiert", &[("schrift", f.label().to_string())])
             };
             let familie = crate::canvas::schrift_familie(ui.ctx(), f, false);
             let zeile = egui::RichText::new(text).font(FontId::new(13.0, familie));

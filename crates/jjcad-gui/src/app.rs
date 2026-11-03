@@ -1250,7 +1250,7 @@ impl App {
                 "chat" => {
                     for t in [
                         "Polylinie: Startpunkt klicken",
-                        "Nächster Punkt klicken – Enter beendet",
+                        jjcad_core::i18n::tr("gui.app.demo_naechster_punkt_klicken"),
                         "Polylinie abgeschlossen",
                         "Kreis: Mittelpunkt klicken",
                     ] {
@@ -1261,14 +1261,14 @@ impl App {
                 // Langes Protokoll (Blättern/Screenshot-Prüfung)
                 "chatlang" => {
                     for i in 1..=40 {
-                        self.chat.sagen(0.0, format!("Meldung {i} – Polylinie: nächster Punkt klicken"));
+                        self.chat.sagen(0.0, jjcad_core::i18n::t_args_owned("gui.app.meldung_x_polylinie_naechster_punkt_klicken", &[("i", format!("{}", i))]));
                     }
                     self.chat.offen = true;
                 }
                 // Hinweis im geschlossenen Chat (verblassende Meldung)
                 "chathinweis" => {
                     self.start_tool("draw.polyline");
-                    self.chat.sagen(0.0, "Polylinie: Startpunkt klicken");
+                    self.chat.sagen(0.0, jjcad_core::i18n::tr("gui.app.polylinie_startpunkt_klicken_chat"));
                 }
                 // Seitenwahl „PDF einfügen" offen (Screenshot-Prüfung)
                 "pdfseite" => {
@@ -1303,7 +1303,7 @@ impl App {
                             ..Default::default()
                         },
                         jjcad_core::model::TextRun {
-                            text: "Küche".into(),
+                            text: jjcad_core::i18n::tr("gui.app.demo_kueche").into(),
                             italic: true,
                             ..Default::default()
                         },
@@ -2498,7 +2498,7 @@ impl App {
     pub fn order_selection_to(&mut self, front: bool) {
         let ids = self.selection().to_vec();
         if ids.is_empty() {
-            self.toast("Auswahl · leer");
+            self.toast(jjcad_core::i18n::tr("gui.app.auswahl_leer"));
             return;
         }
         self.order_to(front, ids);
@@ -2514,21 +2514,21 @@ impl App {
             .session_mut()
             .execute("modify.order", &serde_json::json!({"ids": ids, "where": where_}));
         self.mark_changed();
-        self.toast(if front { "Ganz nach vorn" } else { "Ganz nach hinten" });
+        self.toast(if front { jjcad_core::i18n::tr("gui.app.ganz_nach_vorn") } else { jjcad_core::i18n::tr("gui.app.ganz_nach_hinten") });
     }
 
     /// „Vor/Hinter Element“: der nächste Klick in die Zeichenfläche bestimmt das
     /// Referenzobjekt (ausgewertet in `canvas`). Braucht eine Auswahl.
     pub fn order_pick_start(&mut self, above: bool) {
         if self.selection().is_empty() {
-            self.toast("Reihenfolge · erst ein Element wählen");
+            self.toast(jjcad_core::i18n::tr("gui.app.reihenfolge_erst_ein_element_waehlen"));
             return;
         }
         self.ui.order_pick = Some(above);
         self.status_msg = if above {
-            "Element anklicken, VOR das die Auswahl soll — ESC bricht ab"
+            jjcad_core::i18n::tr("gui.app.element_anklicken_vor_das_die_auswahl_soll_esc_bricht_ab")
         } else {
-            "Element anklicken, HINTER das die Auswahl soll — ESC bricht ab"
+            jjcad_core::i18n::tr("gui.app.element_anklicken_hinter_das_die_auswahl_soll_esc_bricht")
         }
         .into();
     }
@@ -2638,7 +2638,7 @@ impl App {
         if id == "modify.area.union" {
             let ids = self.selection().to_vec();
             if ids.len() < 2 {
-                self.toast("Vereinigen · mindestens zwei Flächen wählen");
+                self.toast(jjcad_core::i18n::tr("gui.app.vereinigen_mindestens_zwei_flaechen_waehlen"));
                 return;
             }
             match self
@@ -2652,7 +2652,7 @@ impl App {
                         .and_then(|c| c.get(0))
                         .and_then(|x| x.as_u64());
                     self.session_mut().select(neu.into_iter().collect());
-                    self.toast("Füllfläche · vereinigt");
+                    self.toast(jjcad_core::i18n::tr("gui.app.fuellflaeche_vereinigt"));
                 }
                 Err(e) => self.toast(e),
             }
@@ -2682,13 +2682,13 @@ impl App {
             "edit.undo" => {
                 if self.session_mut().undo() {
                     self.mark_changed();
-                    self.toast("Verlauf · zurück");
+                    self.toast(jjcad_core::i18n::tr("gui.app.verlauf_zurueck"));
                 }
             }
             "edit.redo" => {
                 if self.session_mut().redo() {
                     self.mark_changed();
-                    self.toast("Verlauf · wiederholt");
+                    self.toast(jjcad_core::i18n::tr("gui.app.verlauf_wiederholt"));
                 }
             }
             "edit.copy" => self.copy_selection(false),
@@ -2696,7 +2696,7 @@ impl App {
                 let ids = self.selection().to_vec();
                 if ids.is_empty() {
                     self.start_tool("modify.select");
-                    self.toast("Löschen · erst Objekte wählen");
+                    self.toast(jjcad_core::i18n::tr("gui.app.loeschen_erst_objekte_waehlen"));
                 } else {
                     let _ = self.session_mut().execute("modify.erase", &serde_json::json!({ "ids": ids }));
                     self.mark_changed();
@@ -2715,7 +2715,7 @@ impl App {
                     {
                         Ok(_) => {
                             self.mark_changed();
-                            self.toast("Objekt · zerlegt");
+                            self.toast(jjcad_core::i18n::tr("gui.app.objekt_zerlegt"));
                         }
                         Err(e) => self.toast(e),
                     }
@@ -2723,7 +2723,7 @@ impl App {
             }
             "block.create" => {
                 if self.selection().is_empty() {
-                    self.toast("Auswahl · leer");
+                    self.toast(jjcad_core::i18n::tr("gui.app.auswahl_leer"));
                 } else {
                     self.ui.block_name_dialog = Some((String::new(), false));
                 }
@@ -2748,7 +2748,7 @@ impl App {
                     .get(self.prefs.active_preset)
                     .map(|p| p.name.clone())
                     .unwrap_or_default();
-                self.toast(format!("Hotbar · {name}"));
+                self.toast(jjcad_core::i18n::t_args_owned("gui.app.hotbar_x", &[("name", format!("{}", name))]));
                 let _ = self.prefs.save();
             }
             "edit.repeat" => {
@@ -2760,7 +2760,7 @@ impl App {
                         match self.session_mut().execute(&last, &params) {
                             Ok(_) => {
                                 self.mark_changed();
-                                self.toast(format!("Verlauf · wiederholt: {}", actions::action(&last).map(|d| d.label()).unwrap_or("")));
+                                self.toast(jjcad_core::i18n::t_args_owned("gui.app.verlauf_wiederholt_x", &[("wert1", format!("{}", actions::action(&last).map(|d| d.label()).unwrap_or("")))]));
                             }
                             Err(e) => self.toast(e),
                         }
@@ -2809,7 +2809,7 @@ impl App {
                     match r {
                         Ok(_) => {
                             self.mark_changed();
-                            self.toast("Ansichtsfenster · angelegt");
+                            self.toast(jjcad_core::i18n::tr("gui.app.ansichtsfenster_angelegt"));
                         }
                         Err(e) => self.toast(e),
                     }
@@ -2846,7 +2846,7 @@ impl App {
                 // sonst zeigte das Eigenschaften-Panel gelöschte Objekte.
                 self.session_mut().clear_selection();
                 self.mark_changed();
-                self.mitteilung("Auswahl · zerlegt");
+                self.mitteilung(jjcad_core::i18n::tr("gui.app.auswahl_zerlegt"));
             }
             Err(e) => self.toast(e),
         }
@@ -3013,10 +3013,10 @@ impl App {
     pub fn cancel_tool(&mut self) {
         if self.tool.is_some() {
             self.tool = None;
-            self.mitteilung("Abgebrochen");
+            self.mitteilung(jjcad_core::i18n::tr("gui.app.abgebrochen"));
         }
         if self.ghost.take().is_some() {
-            self.mitteilung("Platzieren · abgebrochen");
+            self.mitteilung(jjcad_core::i18n::tr("gui.app.platzieren_abgebrochen"));
         }
         // Laufendes Ziehen der Auswahl zurücknehmen (keine halb verschobene
         // Geometrie zurücklassen)
@@ -3030,7 +3030,7 @@ impl App {
         self.prefs.set_slot(slot, action);
         let name = self.prefs.hotbar_presets[self.prefs.active_preset].name.clone();
         let _ = self.prefs.save();
-        self.toast(format!("Hotbar · Slot {} belegt ({name})", slot + 1));
+        self.toast(jjcad_core::i18n::t_args_owned("gui.app.hotbar_slot_x_belegt_x", &[("wert1", format!("{}", slot + 1)), ("name", format!("{}", name))]));
     }
 
     // ---- Dateien ----
@@ -3102,7 +3102,7 @@ impl App {
             Ok(_) => {
                 self.prefs.add_recent(&path.to_string_lossy());
                 let _ = self.prefs.save();
-                self.toast(format!("Datei · gespeichert: {}", path.display()));
+                self.toast(jjcad_core::i18n::t_args_owned("gui.app.datei_gespeichert_x", &[("wert1", format!("{}", path.display()))]));
             }
             Err(e) => self.toast(e),
         }
@@ -3114,10 +3114,7 @@ impl App {
         // überschreiben sich beim Speichern gegenseitig.
         if let Some(i) = self.reiter_der_datei(path) {
             self.switch_doc(i);
-            self.toast(format!(
-                "Datei · bereits offen: {}",
-                path.file_name().unwrap_or_default().to_string_lossy()
-            ));
+            self.toast(jjcad_core::i18n::t_args_owned("gui.app.datei_bereits_offen_x", &[("wert1", format!("{}", path.file_name().unwrap_or_default().to_string_lossy()))]));
             return;
         }
         match Session::open(path) {
@@ -3151,7 +3148,7 @@ impl App {
                 }
                 let _ = self.prefs.save();
                 self.fit_view();
-                self.toast(format!("Datei · geöffnet: {}", path.file_name().unwrap_or_default().to_string_lossy()));
+                self.toast(jjcad_core::i18n::t_args_owned("gui.app.datei_geoeffnet_x", &[("wert1", format!("{}", path.file_name().unwrap_or_default().to_string_lossy()))]));
             }
             Err(e) => self.toast(e),
         }
@@ -3192,7 +3189,7 @@ impl App {
         self.active = self.tabs.len() - 1;
         self.datei_nachziehen();
         self.fit_view();
-        self.toast("Datei · neu");
+        self.toast(jjcad_core::i18n::tr("gui.app.datei_neu"));
     }
 
     /// Name für eine neue, noch ungespeicherte Zeichnung, der im Reiterstreifen
@@ -3288,7 +3285,7 @@ impl App {
             Ok(_) => {
                 self.prefs.add_recent(&pfad.to_string_lossy());
                 let _ = self.prefs.save();
-                self.toast(format!("Datei · gespeichert: {}", pfad.display()));
+                self.toast(jjcad_core::i18n::t_args_owned("gui.app.datei_gespeichert_x", &[("wert1", format!("{}", pfad.display()))]));
                 self.close_tab(idx);
             }
             Err(e) => self.toast(e),
@@ -3306,14 +3303,14 @@ impl App {
             pdf::export_all_sheets_pdf(self.doc(), &path)
         };
         match res {
-            Ok(_) => self.toast(format!("PDF · exportiert: {}", path.display())),
+            Ok(_) => self.toast(jjcad_core::i18n::t_args_owned("gui.app.pdf_exportiert_x", &[("wert1", format!("{}", path.display()))])),
             Err(e) => self.toast(e),
         }
     }
 
     pub fn export_dxf_to(&mut self, path: PathBuf) {
         match dxf::export_dxf(self.doc(), &path) {
-            Ok(_) => self.toast(format!("DXF · exportiert: {}", path.display())),
+            Ok(_) => self.toast(jjcad_core::i18n::t_args_owned("gui.app.dxf_exportiert_x", &[("wert1", format!("{}", path.display()))])),
             Err(e) => self.toast(e),
         }
     }
@@ -3330,7 +3327,7 @@ impl App {
             ..Default::default()
         };
         match raster::render_png(self.doc(), &opts, &path) {
-            Ok(_) => self.toast(format!("PNG · exportiert: {}", path.display())),
+            Ok(_) => self.toast(jjcad_core::i18n::t_args_owned("gui.app.png_exportiert_x", &[("wert1", format!("{}", path.display()))])),
             Err(e) => self.toast(e),
         }
     }
@@ -3346,7 +3343,7 @@ impl App {
                     als_block: true,
                 });
             }
-            Err(e) => self.toast(format!("PDF · {e}")),
+            Err(e) => self.toast(jjcad_core::i18n::t_args_owned("gui.app.pdf_x", &[("e", format!("{}", e))])),
         }
     }
 
@@ -3370,16 +3367,11 @@ impl App {
                 }
                 self.fit_view();
                 let objekte = v["entities"].as_u64().unwrap_or(0);
-                let mut text = format!(
-                    "PDF · {} Objekte übernommen ({} Seite {})",
-                    objekte,
-                    wahl
+                let mut text = jjcad_core::i18n::t_args_owned("gui.app.pdf_x_objekte_uebernommen_x_seite_x", &[("wert1", format!("{}", objekte)), ("wert2", format!("{}", wahl
                         .pfad
                         .file_name()
                         .map(|n| n.to_string_lossy().into_owned())
-                        .unwrap_or_default(),
-                    wahl.seite
-                );
+                        .unwrap_or_default())), ("wert3", format!("{}", wahl.seite))]);
                 let warn: Vec<String> = v["warnings"]
                     .as_array()
                     .map(|a| {
@@ -3395,12 +3387,12 @@ impl App {
                     })
                     .unwrap_or_default();
                 if !warn.is_empty() {
-                    text.push_str(" · nicht übernommen: ");
+                    text.push_str(jjcad_core::i18n::tr("gui.app.nicht_uebernommen"));
                     text.push_str(&warn.join(", "));
                 }
                 self.toast(text);
             }
-            Err(e) => self.toast(format!("PDF · {e}")),
+            Err(e) => self.toast(jjcad_core::i18n::t_args_owned("gui.app.pdf_x", &[("e", format!("{}", e))])),
         }
     }
 
@@ -3412,9 +3404,9 @@ impl App {
                 let merged = dxf::import::merge_into(self.doc_mut(), res);
                 self.mark_changed();
                 self.fit_view();
-                let mut msg = format!("DXF · {n} Objekte importiert");
+                let mut msg = jjcad_core::i18n::t_args_owned("gui.app.dxf_x_objekte_importiert", &[("n", format!("{}", n))]);
                 if warn > 0 {
-                    msg.push_str(&format!(", {warn} Hinweise"));
+                    msg.push_str(&jjcad_core::i18n::t_args_owned("gui.app.x_hinweise", &[("warn", format!("{}", warn))]));
                 }
                 if let Some(w) = merged.warnings.first() {
                     msg.push_str(&format!(" – {w}"));
@@ -3441,7 +3433,7 @@ impl App {
         // ein Werkzeug läuft und gerade etwas schlecht reagiert.
         if ctx.input(|i| i.key_pressed(egui::Key::F3) && i.modifiers.shift) {
             self.perf.an = !self.perf.an;
-            self.toast(if self.perf.an { "Leistung · an" } else { "Leistung · aus" });
+            self.toast(if self.perf.an { jjcad_core::i18n::tr("gui.app.leistung_an") } else { jjcad_core::i18n::tr("gui.app.leistung_aus") });
             return;
         }
         // Text wird direkt in der Zeichnung geschrieben: solange geschrieben
@@ -3460,13 +3452,13 @@ impl App {
             }
             if self.ui.order_pick.is_some() {
                 self.ui.order_pick = None;
-                self.toast("Reihenfolge · kein Objekt gewählt");
+                self.toast(jjcad_core::i18n::tr("gui.app.reihenfolge_kein_objekt_gewaehlt"));
             } else if self.ui.bind_key.is_some() {
                 self.ui.bind_key = None;
-                self.toast("Tastatur · belegen abgebrochen");
+                self.toast(jjcad_core::i18n::tr("gui.app.tastatur_belegen_abgebrochen"));
             } else if self.ui.bind_slot.is_some() {
                 self.ui.bind_slot = None;
-                self.toast("Hotbar · verknüpfen abgebrochen");
+                self.toast(jjcad_core::i18n::tr("gui.app.hotbar_verknuepfen_abgebrochen"));
             } else {
                 self.escape_pressed();
             }
@@ -3555,7 +3547,7 @@ impl App {
                         jjcad_core::style::WallAlign::Left => jjcad_core::style::WallAlign::Right,
                         jjcad_core::style::WallAlign::Right => jjcad_core::style::WallAlign::Center,
                     };
-                    self.toast(format!("Wandausrichtung: {}", self.options.wall_align.label()));
+                    self.toast(jjcad_core::i18n::t_args_owned("gui.app.wandausrichtung_x", &[("wert1", format!("{}", self.options.wall_align.label()))]));
                     ctx.memory_mut(|m| m.stop_text_input());
                     return;
                 }
@@ -3569,18 +3561,18 @@ impl App {
                     if ctx.input(|i| i.key_pressed(egui::Key::R)) {
                         self.options.swing_in = !self.options.swing_in;
                         self.toast(if self.options.swing_in {
-                            "Öffnet zur Wandinnenseite"
+                            jjcad_core::i18n::tr("gui.app.oeffnet_zur_wandinnenseite")
                         } else {
-                            "Öffnet zur Wandaußenseite"
+                            jjcad_core::i18n::tr("gui.app.oeffnet_zur_wandaussenseite")
                         });
                         return;
                     }
                     if ctx.input(|i| i.key_pressed(egui::Key::F)) {
                         self.options.hinge = -self.options.hinge;
                         self.toast(if self.options.hinge >= 0.0 {
-                            "Anschlag rechts"
+                            jjcad_core::i18n::tr("gui.app.anschlag_rechts")
                         } else {
-                            "Anschlag links"
+                            jjcad_core::i18n::tr("gui.app.anschlag_links")
                         });
                         return;
                     }
@@ -3680,7 +3672,7 @@ impl App {
                 // Zahl/Länge statt das Werkzeug zu beenden.
                 if self.ui.typed.is_empty() && self.fill_points_running() {
                     self.cancel_tool();
-                    self.toast("Füllfläche · verworfen");
+                    self.toast(jjcad_core::i18n::tr("gui.app.fuellflaeche_verworfen"));
                 } else {
                     let ids = self.selection().to_vec();
                     if !ids.is_empty() {
@@ -3811,17 +3803,14 @@ impl App {
         if self.ui.clipboard.is_empty() {
             return;
         }
-        let msg = format!(
-            "JoJa-CAD · Zwischenablage ({} Objekte)",
-            self.ui.clipboard.len()
-        );
+        let msg = jjcad_core::i18n::t_args_owned("gui.app.joja_cad_zwischenablage_x_objekte", &[("wert1", format!("{}", self.ui.clipboard.len()))]);
         self.ctx.copy_text(msg);
         if cut {
             let _ = self.session_mut().execute("modify.erase", &serde_json::json!({"ids": ids}));
             self.session_mut().clear_selection();
             self.mark_changed();
         }
-        self.toast(if cut { "Auswahl · ausgeschnitten" } else { "Auswahl · kopiert" });
+        self.toast(if cut { jjcad_core::i18n::tr("gui.app.auswahl_ausgeschnitten") } else { jjcad_core::i18n::tr("gui.app.auswahl_kopiert") });
     }
 
     pub fn paste_clipboard(&mut self) {
@@ -3840,7 +3829,7 @@ impl App {
         self.mark_changed();
         self.session_mut().select(new_ids);
         self.ui.clipboard_offset += 20.0;
-        self.toast("Auswahl · eingefügt");
+        self.toast(jjcad_core::i18n::tr("gui.app.auswahl_eingefuegt"));
     }
 
     // ---- Datei- und Blattreiter ----
@@ -4014,7 +4003,7 @@ impl App {
             if resp.clicked() {
                 neues_blatt = true;
             }
-            resp.on_hover_text("Neues Blatt");
+            resp.on_hover_text(jjcad_core::i18n::tr("gui.app.neues_blatt"));
         });
         if !blatt_rechtecke.is_empty() {
             self.ui.last_blattrechtecke = Some(blatt_rechtecke);
@@ -4040,7 +4029,7 @@ impl App {
                 self.tab_mut().sheet_views.remove(&id);
                 self.mark_changed();
             } else {
-                self.toast("Blatt · das letzte bleibt offen");
+                self.toast(jjcad_core::i18n::tr("gui.app.blatt_das_letzte_bleibt_offen"));
             }
         }
         if neues_blatt {
@@ -4218,9 +4207,9 @@ impl App {
                 Vec2::new(30.0, 30.0),
             )));
             ui.add_space(4.0);
-            ui.label(theme::bold("JoJa-CAD", 14.0));
+            ui.label(theme::bold(jjcad_core::i18n::tr("gui.app.joja_cad"), 14.0));
             ui.label(
-                RichText::new(format!("v{}", env!("CARGO_PKG_VERSION")))
+                RichText::new(jjcad_core::i18n::t_args_owned("gui.app.vx", &[("wert1", format!("{}", env!("CARGO_PKG_VERSION")))]))
                     .size(9.5)
                     .color(Palette::TEXT_FAINT),
             );
@@ -4270,23 +4259,23 @@ impl App {
                 if widgets::icon_button(ui, ric, 26.0, self.ui.ribbon_collapsed, rtip).clicked() {
                     self.ui.ribbon_collapsed = !self.ui.ribbon_collapsed;
                 }
-                if widgets::icon_button(ui, "help", 26.0, false, "Hilfe (F1)").clicked() {
+                if widgets::icon_button(ui, "help", 26.0, false, jjcad_core::i18n::tr("gui.app.hilfe_f1")).clicked() {
                     self.ui.help_open = true;
                 }
-                if widgets::icon_button(ui, "keyboard", 26.0, self.ui.keymap_open, "Tastaturbelegung").clicked() {
+                if widgets::icon_button(ui, "keyboard", 26.0, self.ui.keymap_open, jjcad_core::i18n::tr("gui.app.tastaturbelegung")).clicked() {
                     self.ui.keymap_open = !self.ui.keymap_open;
                 }
-                if widgets::icon_button(ui, "settings", 26.0, self.ui.settings_open, "Einstellungen").clicked() {
+                if widgets::icon_button(ui, "settings", 26.0, self.ui.settings_open, jjcad_core::i18n::tr("gui.app.einstellungen")).clicked() {
                     self.ui.settings_open = !self.ui.settings_open;
                 }
                 ui.add_space(6.0);
                 widgets::vline(ui, 20.0);
                 let can_redo = self.session().history.can_redo();
                 let can_undo = self.session().history.can_undo();
-                if widgets::icon_button(ui, "redo", 26.0, false, "Wiederholen (Strg+Y)").clicked() && can_redo {
+                if widgets::icon_button(ui, "redo", 26.0, false, jjcad_core::i18n::tr("gui.app.wiederholen_strg_y")).clicked() && can_redo {
                     self.run_action(ui.ctx(), "edit.redo");
                 }
-                if widgets::icon_button(ui, "undo", 26.0, false, "Rückgängig (Strg+Z)").clicked() && can_undo {
+                if widgets::icon_button(ui, "undo", 26.0, false, jjcad_core::i18n::tr("gui.app.rueckgaengig_strg_z")).clicked() && can_undo {
                     self.run_action(ui.ctx(), "edit.undo");
                 }
                 ui.add_space(6.0);
@@ -4460,7 +4449,7 @@ fn rail(ui: &mut egui::Ui, icon: &str, tooltip: &str, chevron: &str) -> bool {
                         // Auswahl, Schneiden fragt eine Punktfolge ab.
                         if widgets::ribbon_button(ui, "union", rb("ribbon.union"), false)
                             .on_hover_text(
-                                "Zwei oder mehr angrenzende Füllflächen zu einer vereinigen",
+                                jjcad_core::i18n::tr("gui.app.zwei_oder_mehr_angrenzende_fuellflaechen_zu_einer_verein"),
                             )
                             .clicked()
                         {
@@ -4472,7 +4461,7 @@ fn rail(ui: &mut egui::Ui, icon: &str, tooltip: &str, chevron: &str) -> bool {
                             rb("ribbon.split"),
                             app.tool_id() == Some("modify.area.split"),
                         )
-                        .on_hover_text("Fläche entlang einer Punktfolge in zwei Teile schneiden")
+                        .on_hover_text(jjcad_core::i18n::tr("gui.app.flaeche_entlang_einer_punktfolge_in_zwei_teile_schneiden"))
                         .clicked()
                         {
                             app.start_tool("modify.area.split");
@@ -4555,13 +4544,13 @@ fn rail(ui: &mut egui::Ui, icon: &str, tooltip: &str, chevron: &str) -> bool {
                             (
                                 "order-front",
                                 "Vordergrund",
-                                "Auswahl ganz nach vorn — zuletzt gezeichnet",
+                                jjcad_core::i18n::tr("gui.app.auswahl_ganz_nach_vorn"),
                                 true,
                             ),
                             (
                                 "order-back",
                                 "Hintergrund",
-                                "Auswahl ganz nach hinten — zuerst gezeichnet",
+                                jjcad_core::i18n::tr("gui.app.auswahl_ganz_nach_hinten"),
                                 false,
                             ),
                         ] {
@@ -4575,14 +4564,14 @@ fn rail(ui: &mut egui::Ui, icon: &str, tooltip: &str, chevron: &str) -> bool {
                         for (icon, label, tip, above) in [
                             (
                                 "order-above",
-                                "Vor Element",
-                                "Auswahl vor ein Element setzen — danach das Element anklicken",
+                                jjcad_core::i18n::tr("gui.app.vor_element"),
+                                jjcad_core::i18n::tr("gui.app.auswahl_vor_ein_element"),
                                 true,
                             ),
                             (
                                 "order-below",
                                 "Hinter Element",
-                                "Auswahl hinter ein Element setzen — danach das Element anklicken",
+                                jjcad_core::i18n::tr("gui.app.auswahl_hinter_ein_element"),
                                 false,
                             ),
                         ] {
@@ -4677,9 +4666,9 @@ fn rail(ui: &mut egui::Ui, icon: &str, tooltip: &str, chevron: &str) -> bool {
                         if widgets::ribbon_button(ui, "viewport", rb("ribbon.viewport"), app.tool_id() == Some("sheet.viewport_tool")).clicked() {
                             if matches!(app.tab().tab, TabKind::Sheet(_)) {
                                 app.start_tool("sheet.viewport_tool");
-                                app.toast("Ansichtsfenster · Rechteck aufziehen");
+                                app.toast(jjcad_core::i18n::tr("gui.app.ansichtsfenster_rechteck_aufziehen"));
                             } else {
-                                app.toast("Blatt · zuerst ein Blatt öffnen");
+                                app.toast(jjcad_core::i18n::tr("gui.app.blatt_zuerst_ein_blatt_oeffnen"));
                             }
                         }
                         if widgets::ribbon_button(ui, "pdf", rb("ribbon.sheet_pdf"), false).clicked() {
@@ -4702,7 +4691,7 @@ fn rail(ui: &mut egui::Ui, icon: &str, tooltip: &str, chevron: &str) -> bool {
                                 }
                             }
                         } else {
-                            ui.label(theme::dim("Blatt öffnen, dann zeichnen"));
+                            ui.label(theme::dim(jjcad_core::i18n::tr("gui.app.blatt_oeffnen_dann_zeichnen")));
                         }
                     });
                     widgets::vline(ui, RIBBON_GROUP_H);
@@ -4715,7 +4704,7 @@ fn rail(ui: &mut egui::Ui, icon: &str, tooltip: &str, chevron: &str) -> bool {
                                 // Zwei Zeilen à 24 px (Abstand 6) = 54 px — wie eine
                                 // Knopfreihe, damit der Reiter dieselbe Höhe hat.
                                 ui.horizontal(|ui| {
-                                    ui.label(theme::dim("Format"));
+                                    ui.label(theme::dim(jjcad_core::i18n::tr("gui.app.format")));
                                     egui::ComboBox::from_id_salt("paper")
                                         .width(64.0)
                                         .selected_text(paper.label())
@@ -4724,7 +4713,7 @@ fn rail(ui: &mut egui::Ui, icon: &str, tooltip: &str, chevron: &str) -> bool {
                                                 ui.selectable_value(&mut paper, p, p.label());
                                             }
                                         });
-                                    if ui.checkbox(&mut landscape, "quer").changed() {
+                                    if ui.checkbox(&mut landscape, jjcad_core::i18n::tr("gui.app.quer")).changed() {
                                         let _ = app.session_mut().execute(
                                             "sheet.update",
                                             &serde_json::json!({"sheet": id, "paper": paper.label(), "landscape": landscape, "scale": scale}),
@@ -4733,7 +4722,7 @@ fn rail(ui: &mut egui::Ui, icon: &str, tooltip: &str, chevron: &str) -> bool {
                                     }
                                 });
                                 ui.horizontal(|ui| {
-                                    ui.label(theme::dim("Maßstab"));
+                                    ui.label(theme::dim(jjcad_core::i18n::tr("gui.app.massstab")));
                                     if ui.add_sized([54.0, 24.0], crate::widgets::zahl(&mut scale, 1.0, 1.0..=1000.0)).changed() {
                                         let _ = app.session_mut().execute(
                                             "sheet.update",
@@ -4745,7 +4734,7 @@ fn rail(ui: &mut egui::Ui, icon: &str, tooltip: &str, chevron: &str) -> bool {
                             });
                         } else {
                             ui.add_space(8.0);
-                            ui.label(theme::dim("Kein Blatt aktiv – oben auf einen Blatt-Reiter wechseln."));
+                            ui.label(theme::dim(jjcad_core::i18n::tr("gui.app.kein_blatt_aktiv_oben_auf_einen_blatt_reiter_wechseln")));
                         }
                     });
                 }
@@ -4773,10 +4762,10 @@ fn rail(ui: &mut egui::Ui, icon: &str, tooltip: &str, chevron: &str) -> bool {
                                 v.zurueck_drehen();
                                 app.set_view(v);
                                 app.tool = None;
-                                app.toast("Ansicht · Ausgangslage");
+                                app.toast(jjcad_core::i18n::tr("gui.app.ansicht_ausgangslage"));
                             } else if laeuft {
                                 app.tool = None;
-                                app.toast("Ansicht drehen · abgebrochen");
+                                app.toast(jjcad_core::i18n::tr("gui.app.ansicht_drehen_abgebrochen"));
                             } else {
                                 app.start_tool("view.rotate_tool");
                             }
@@ -4816,15 +4805,15 @@ fn rail(ui: &mut egui::Ui, icon: &str, tooltip: &str, chevron: &str) -> bool {
                             let mut snap = app.doc().settings.snap.clone();
                             let mut changed = false;
                             ui.horizontal(|ui| {
-                                changed |= widgets::check_cell(ui, &mut snap.endpoint, "Endpunkt").changed();
-                                changed |= widgets::check_cell(ui, &mut snap.intersection, "Schnitt").changed();
-                                changed |= widgets::check_cell(ui, &mut snap.midpoint, "Mitte").changed();
-                                changed |= widgets::check_cell(ui, &mut snap.center, "Zentrum").changed();
+                                changed |= widgets::check_cell(ui, &mut snap.endpoint, jjcad_core::i18n::tr("gui.app.endpunkt")).changed();
+                                changed |= widgets::check_cell(ui, &mut snap.intersection, jjcad_core::i18n::tr("gui.app.schnitt")).changed();
+                                changed |= widgets::check_cell(ui, &mut snap.midpoint, jjcad_core::i18n::tr("gui.app.mitte")).changed();
+                                changed |= widgets::check_cell(ui, &mut snap.center, jjcad_core::i18n::tr("gui.app.zentrum")).changed();
                             });
                             ui.horizontal(|ui| {
-                                changed |= widgets::check_cell(ui, &mut snap.grid, "Fangraster").changed();
-                                changed |= widgets::check_cell(ui, &mut snap.ortho, "Ortho").changed();
-                                changed |= widgets::check_cell(ui, &mut snap.wall_edges, "Wandkanten").changed();
+                                changed |= widgets::check_cell(ui, &mut snap.grid, jjcad_core::i18n::tr("gui.app.fangraster")).changed();
+                                changed |= widgets::check_cell(ui, &mut snap.ortho, jjcad_core::i18n::tr("gui.app.ortho")).changed();
+                                changed |= widgets::check_cell(ui, &mut snap.wall_edges, jjcad_core::i18n::tr("gui.app.wandkanten")).changed();
                             });
                             if changed {
                                 let _ = app.session_mut().execute(
@@ -4905,7 +4894,7 @@ fn rail(ui: &mut egui::Ui, icon: &str, tooltip: &str, chevron: &str) -> bool {
     /// rechts davon.
     pub fn start_ghost_paste(&mut self) {
         if self.ui.clipboard.is_empty() {
-            self.toast("Einfügen · Zwischenablage leer");
+            self.toast(jjcad_core::i18n::tr("gui.app.einfuegen_zwischenablage_leer"));
             return;
         }
         if self.ghost.is_some() {
@@ -5004,7 +4993,7 @@ fn rail(ui: &mut egui::Ui, icon: &str, tooltip: &str, chevron: &str) -> bool {
 
     pub fn cancel_ghost(&mut self) {
         if self.ghost.take().is_some() {
-            self.toast("Platzieren · abgebrochen");
+            self.toast(jjcad_core::i18n::tr("gui.app.platzieren_abgebrochen"));
         }
     }
 
@@ -5058,7 +5047,7 @@ fn rail(ui: &mut egui::Ui, icon: &str, tooltip: &str, chevron: &str) -> bool {
         self.session_mut().select(ids);
         self.mark_changed();
         self.ghost = None;
-        self.toast("Auswahl · eingefügt");
+        self.toast(jjcad_core::i18n::tr("gui.app.auswahl_eingefuegt"));
         true
     }
 
@@ -5209,7 +5198,9 @@ fn rail(ui: &mut egui::Ui, icon: &str, tooltip: &str, chevron: &str) -> bool {
 ///
 /// Der Werkzeugname ist immer die Beschriftung aus dem Aktionsregister, damit
 /// Ribbon, Hotbar und Chat dasselbe Wort benutzen.
-pub const HINWEIS_UNBEKANNT: &str = "Werkzeug · Aktion wählen";
+pub fn hinweis_unbekannt() -> &'static str {
+    jjcad_core::i18n::tr("gui.app.werkzeug_aktion_waehlen")
+}
 
 /// Aufforderung des laufenden Werkzeugs — ein Text pro Bedienschritt.
 ///
@@ -5218,201 +5209,201 @@ pub const HINWEIS_UNBEKANNT: &str = "Werkzeug · Aktion wählen";
 pub(crate) fn commands_hint(tool: &Tool, opts: &ToolOptions) -> &'static str {
     // Textwerkzeug: nach dem Klick wird getippt, nicht mehr geklickt.
     if tool.action == "draw.text" && tool.phase == ToolPhase::TextInput {
-        return "Text · Text eingeben (Esc übernimmt)";
+        return jjcad_core::i18n::tr("gui.app.text_text_eingeben_esc_uebernimmt");
     }
     let lebt = !tool.pts.is_empty();
     let modus = opts.einfuegemodus(&tool.action);
     match tool.action.as_str() {
         "draw.line" => {
             if lebt {
-                "Linie · Endpunkt klicken"
+                jjcad_core::i18n::tr("gui.app.linie_endpunkt_klicken")
             } else {
-                "Linie · Startpunkt klicken"
+                jjcad_core::i18n::tr("gui.app.linie_startpunkt_klicken")
             }
         }
         "draw.polyline" => {
             if lebt {
-                "Polylinie · nächster Punkt (Enter beendet)"
+                jjcad_core::i18n::tr("gui.app.polylinie_naechster_punkt_enter_beendet")
             } else {
-                "Polylinie · Startpunkt klicken"
+                jjcad_core::i18n::tr("gui.app.polylinie_startpunkt_klicken")
             }
         }
         "draw.spline" => {
             if lebt {
-                "Spline · nächster Punkt (Enter beendet)"
+                jjcad_core::i18n::tr("gui.app.spline_naechster_punkt_enter_beendet")
             } else {
-                "Spline · Startpunkt klicken"
+                jjcad_core::i18n::tr("gui.app.spline_startpunkt_klicken")
             }
         }
         "draw.rect" => match (modus, tool.pts.len()) {
-            (Einfuegemodus::Basislinie, 0) => "Rechteck · Basislinie Anfang klicken",
-            (Einfuegemodus::Basislinie, 1) => "Rechteck · Basislinie Ende klicken",
-            (Einfuegemodus::Basislinie, _) => "Rechteck · Höhe klicken",
-            (_, 0) => "Rechteck · erste Ecke klicken",
-            _ => "Rechteck · zweite Ecke klicken",
+            (Einfuegemodus::Basislinie, 0) => jjcad_core::i18n::tr("gui.app.rechteck_basislinie_anfang_klicken"),
+            (Einfuegemodus::Basislinie, 1) => jjcad_core::i18n::tr("gui.app.rechteck_basislinie_ende_klicken"),
+            (Einfuegemodus::Basislinie, _) => jjcad_core::i18n::tr("gui.app.rechteck_hoehe_klicken"),
+            (_, 0) => jjcad_core::i18n::tr("gui.app.rechteck_erste_ecke_klicken"),
+            _ => jjcad_core::i18n::tr("gui.app.rechteck_zweite_ecke_klicken"),
         },
         "draw.circle" => {
             if lebt {
-                "Kreis · Radius klicken"
+                jjcad_core::i18n::tr("gui.app.kreis_radius_klicken")
             } else {
-                "Kreis · Mittelpunkt klicken"
+                jjcad_core::i18n::tr("gui.app.kreis_mittelpunkt_klicken")
             }
         }
         "draw.ellipse" => match (modus, tool.pts.len()) {
-            (Einfuegemodus::Basislinie, 0) => "Ellipse · Mittelachse Anfang klicken",
-            (Einfuegemodus::Basislinie, 1) => "Ellipse · Mittelachse Ende klicken",
-            (Einfuegemodus::Basislinie, _) => "Ellipse · Breite klicken",
-            (_, 0) => "Ellipse · Mittelpunkt klicken",
-            _ => "Ellipse · Achsen aufziehen",
+            (Einfuegemodus::Basislinie, 0) => jjcad_core::i18n::tr("gui.app.ellipse_mittelachse_anfang_klicken"),
+            (Einfuegemodus::Basislinie, 1) => jjcad_core::i18n::tr("gui.app.ellipse_mittelachse_ende_klicken"),
+            (Einfuegemodus::Basislinie, _) => jjcad_core::i18n::tr("gui.app.ellipse_breite_klicken"),
+            (_, 0) => jjcad_core::i18n::tr("gui.app.ellipse_mittelpunkt_klicken"),
+            _ => jjcad_core::i18n::tr("gui.app.ellipse_achsen_aufziehen"),
         },
         "draw.arc" => {
             if opts.arc_mode == Bogenmodus::Mittelpunkt {
                 match tool.pts.len() {
-                    0 => "Bogen · Mittelpunkt klicken",
-                    1 => "Bogen · Startpunkt klicken",
-                    _ => "Bogen · Endpunkt klicken",
+                    0 => jjcad_core::i18n::tr("gui.app.bogen_mittelpunkt_klicken"),
+                    1 => jjcad_core::i18n::tr("gui.app.bogen_startpunkt_klicken"),
+                    _ => jjcad_core::i18n::tr("gui.app.bogen_endpunkt_klicken"),
                 }
             } else {
                 match tool.pts.len() {
-                    0 => "Bogen · Startpunkt klicken",
-                    1 => "Bogen · Endpunkt klicken",
-                    _ => "Bogen · Punkt auf dem Bogen klicken",
+                    0 => jjcad_core::i18n::tr("gui.app.bogen_startpunkt_klicken"),
+                    1 => jjcad_core::i18n::tr("gui.app.bogen_endpunkt_klicken"),
+                    _ => jjcad_core::i18n::tr("gui.app.bogen_punkt_auf_dem_bogen_klicken"),
                 }
             }
         }
-        "draw.point" => "Punkt · Position klicken",
-        "draw.text" => "Text · Position klicken",
+        "draw.point" => jjcad_core::i18n::tr("gui.app.punkt_position_klicken"),
+        "draw.text" => jjcad_core::i18n::tr("gui.app.text_position_klicken"),
         "draw.wall" => {
             if lebt {
-                "Wand · Ende klicken"
+                jjcad_core::i18n::tr("gui.app.wand_ende_klicken")
             } else {
-                "Wand · Anfang klicken"
+                jjcad_core::i18n::tr("gui.app.wand_anfang_klicken")
             }
         }
-        "draw.door" => "Tür · in eine Wand klicken",
-        "draw.window" => "Fenster · in eine Wand klicken",
+        "draw.door" => jjcad_core::i18n::tr("gui.app.tuer_in_eine_wand_klicken"),
+        "draw.window" => jjcad_core::i18n::tr("gui.app.fenster_in_eine_wand_klicken"),
         "draw.stair" => match tool.pts.len() {
-            0 => "Treppe · Außenkante Anfang klicken",
-            1 => "Treppe · Außenkante Ende klicken",
-            _ => "Treppe · Breite klicken",
+            0 => jjcad_core::i18n::tr("gui.app.treppe_aussenkante_anfang_klicken"),
+            1 => jjcad_core::i18n::tr("gui.app.treppe_aussenkante_ende_klicken"),
+            _ => jjcad_core::i18n::tr("gui.app.treppe_breite_klicken"),
         },
-        "draw.fill" => "Füllfläche · Kontur anklicken",
+        "draw.fill" => jjcad_core::i18n::tr("gui.app.fuellflaeche_kontur_anklicken"),
         "draw.fill.boundary" => {
             if lebt {
-                "Füllfläche · nächster Umrisspunkt (Enter)"
+                jjcad_core::i18n::tr("gui.app.fuellflaeche_naechster_umrisspunkt_enter")
             } else {
-                "Füllfläche · Umriss abfahren"
+                jjcad_core::i18n::tr("gui.app.fuellflaeche_umriss_abfahren")
             }
         }
         "draw.fill.points" => {
             if tool.pts.len() < 3 {
-                "Füllfläche · Punkt klicken (mind. 3)"
+                jjcad_core::i18n::tr("gui.app.fuellflaeche_punkt_klicken_mind_3")
             } else {
-                "Füllfläche · Enter schließt"
+                jjcad_core::i18n::tr("gui.app.fuellflaeche_enter_schliesst")
             }
         }
-        "draw.fill.paint" => "Farbeimer · Fläche anklicken",
-        "draw.volume" => "Volumen · Kontur anklicken",
+        "draw.fill.paint" => jjcad_core::i18n::tr("gui.app.farbeimer_flaeche_anklicken"),
+        "draw.volume" => jjcad_core::i18n::tr("gui.app.volumen_kontur_anklicken"),
         "draw.volume.points" => {
             if tool.pts.len() < 3 {
-                "Volumen nach Punktfolge · Punkt klicken"
+                jjcad_core::i18n::tr("gui.app.volumen_nach_punktfolge_punkt_klicken")
             } else {
-                "Volumen nach Punktfolge · Enter schließt"
+                jjcad_core::i18n::tr("gui.app.volumen_nach_punktfolge_enter_schliesst")
             }
         }
-        "draw.volume.paint" => "Volumen füllen · leere Fläche anklicken",
-        "draw.hatch" => "Schraffur · Kontur anklicken",
+        "draw.volume.paint" => jjcad_core::i18n::tr("gui.app.volumen_fuellen_leere_flaeche_anklicken"),
+        "draw.hatch" => jjcad_core::i18n::tr("gui.app.schraffur_kontur_anklicken"),
         "dim.linear" => match tool.pts.len() {
-            0 => "Maß · erster Punkt",
-            1 => "Maß · zweiter Punkt",
-            _ => "Maß · Maßlinie platzieren",
+            0 => jjcad_core::i18n::tr("gui.app.mass_erster_punkt"),
+            1 => jjcad_core::i18n::tr("gui.app.mass_zweiter_punkt"),
+            _ => jjcad_core::i18n::tr("gui.app.mass_masslinie_platzieren"),
         },
         "dim.chain" => {
             if lebt {
-                "Maßkette · nächster Punkt (Enter beendet)"
+                jjcad_core::i18n::tr("gui.app.masskette_naechster_punkt_enter_beendet")
             } else {
-                "Maßkette · erster Punkt"
+                jjcad_core::i18n::tr("gui.app.masskette_erster_punkt")
             }
         }
-        "dim.elevation.plan" => "Grundriss-Kote · Punkt klicken",
+        "dim.elevation.plan" => jjcad_core::i18n::tr("gui.app.grundriss_kote_punkt_klicken"),
         "dim.elevation.section" => {
             if lebt {
-                "Schnitt-Kote · nächster Punkt (Enter beendet)"
+                jjcad_core::i18n::tr("gui.app.schnitt_kote_naechster_punkt_enter_beendet")
             } else {
-                "Schnitt-Kote · erster Punkt (±0,00)"
+                jjcad_core::i18n::tr("gui.app.schnitt_kote_erster_punkt_0_00")
             }
         }
         "dim.room" => {
             if tool.pts.len() < 3 {
                 "Raumstempel · Raumecken klicken (mind. 3)"
             } else {
-                "Raumstempel · Enter setzt den Stempel"
+                jjcad_core::i18n::tr("gui.app.raumstempel_enter_setzt_den_stempel")
             }
         }
-        "modify.select" => "Auswählen · Objekte oder Fenster",
+        "modify.select" => jjcad_core::i18n::tr("gui.app.auswaehlen_objekte_oder_fenster"),
         "modify.move" => match (tool.selecting, lebt) {
-            (true, _) => "Verschieben · Objekte wählen (Enter)",
-            (false, true) => "Verschieben · Zielpunkt klicken",
-            (false, false) => "Verschieben · Basispunkt klicken",
+            (true, _) => jjcad_core::i18n::tr("gui.app.verschieben_objekte_waehlen_enter"),
+            (false, true) => jjcad_core::i18n::tr("gui.app.verschieben_zielpunkt_klicken"),
+            (false, false) => jjcad_core::i18n::tr("gui.app.verschieben_basispunkt_klicken"),
         },
         // Kein Zielpunkt: der Klick setzt nur den Basispunkt der Zwischenablage.
         "modify.copy" => match tool.selecting {
-            true => "Kopieren mit Basispunkt · Objekte wählen",
-            false => "Kopieren mit Basispunkt · Basispunkt klicken",
+            true => jjcad_core::i18n::tr("gui.app.kopieren_mit_basispunkt_objekte_waehlen"),
+            false => jjcad_core::i18n::tr("gui.app.kopieren_mit_basispunkt_basispunkt_klicken"),
         },
         "modify.rotate" => match tool.pts.len() {
-            0 => "Drehen · Zentrum klicken",
-            1 => "Drehen · Bezugspunkt klicken",
-            _ => "Drehen · neuen Punkt klicken",
+            0 => jjcad_core::i18n::tr("gui.app.drehen_zentrum_klicken"),
+            1 => jjcad_core::i18n::tr("gui.app.drehen_bezugspunkt_klicken"),
+            _ => jjcad_core::i18n::tr("gui.app.drehen_neuen_punkt_klicken"),
         },
         "modify.mirror" => {
             if lebt {
-                "Spiegeln · zweiten Achspunkt klicken"
+                jjcad_core::i18n::tr("gui.app.spiegeln_zweiten_achspunkt_klicken")
             } else {
-                "Spiegeln · Punkt der Achse klicken"
+                jjcad_core::i18n::tr("gui.app.spiegeln_punkt_der_achse_klicken")
             }
         }
         "modify.scale" => {
             if lebt {
-                "Skalieren · Faktor klicken"
+                jjcad_core::i18n::tr("gui.app.skalieren_faktor_klicken")
             } else {
-                "Skalieren · Bezugspunkt klicken"
+                jjcad_core::i18n::tr("gui.app.skalieren_bezugspunkt_klicken")
             }
         }
         "modify.offset" => {
             if lebt {
-                "Versetzen · Seite klicken"
+                jjcad_core::i18n::tr("gui.app.versetzen_seite_klicken")
             } else {
-                "Versetzen · Objekt anklicken"
+                jjcad_core::i18n::tr("gui.app.versetzen_objekt_anklicken")
             }
         }
-        "modify.trim" => "Stutzen · Segment anklicken",
-        "modify.extend" => "Verlängern · Ende anklicken",
+        "modify.trim" => jjcad_core::i18n::tr("gui.app.stutzen_segment_anklicken"),
+        "modify.extend" => jjcad_core::i18n::tr("gui.app.verlaengern_ende_anklicken"),
         "modify.intersect" => {
             if tool.obj.is_some() {
-                "Verschneiden · zweites Objekt anklicken"
+                jjcad_core::i18n::tr("gui.app.verschneiden_zweites_objekt_anklicken")
             } else {
-                "Verschneiden · erstes Objekt anklicken"
+                jjcad_core::i18n::tr("gui.app.verschneiden_erstes_objekt_anklicken")
             }
         }
-        "modify.explode" => "Zerlegen · Objekt anklicken",
+        "modify.explode" => jjcad_core::i18n::tr("gui.app.zerlegen_objekt_anklicken"),
         "modify.area.split" => {
             if lebt {
-                "Fläche schneiden · nächster Punkt (Enter)"
+                jjcad_core::i18n::tr("gui.app.flaeche_schneiden_naechster_punkt_enter")
             } else {
-                "Fläche schneiden · Randpunkt klicken"
+                jjcad_core::i18n::tr("gui.app.flaeche_schneiden_randpunkt_klicken")
             }
         }
-        "modify.quickselect" => "Schnellauswahl · Objekt anklicken",
-        "modify.order" => "Reihenfolge · Objekt anklicken",
-        "block.insert" => "Block · Position klicken",
-        "sheet.viewport_tool" => "Ansichtsfenster · Rechteck aufziehen",
+        "modify.quickselect" => jjcad_core::i18n::tr("gui.app.schnellauswahl_objekt_anklicken"),
+        "modify.order" => jjcad_core::i18n::tr("gui.app.reihenfolge_objekt_anklicken"),
+        "block.insert" => jjcad_core::i18n::tr("gui.app.block_position_klicken"),
+        "sheet.viewport_tool" => jjcad_core::i18n::tr("gui.app.ansichtsfenster_rechteck_aufziehen"),
         "view.rotate_tool" => match tool.pts.len() {
-            0 => "Ansicht drehen · Zentrum klicken",
-            1 => "Ansicht drehen · Bezugspunkt klicken",
-            _ => "Ansicht drehen · Richtung klicken",
+            0 => jjcad_core::i18n::tr("gui.app.ansicht_drehen_zentrum_klicken"),
+            1 => jjcad_core::i18n::tr("gui.app.ansicht_drehen_bezugspunkt_klicken"),
+            _ => jjcad_core::i18n::tr("gui.app.ansicht_drehen_richtung_klicken"),
         },
-        _ => HINWEIS_UNBEKANNT,
+        _ => hinweis_unbekannt(),
     }
 }
 
@@ -5421,39 +5412,39 @@ pub(crate) fn commands_hint(tool: &Tool, opts: &ToolOptions) -> &'static str {
 /// Reihenfolge) oder braucht keine Rückmeldung.
 pub(crate) fn abschluss_meldung(action: &str) -> Option<&'static str> {
     Some(match action {
-        "draw.line" => "Linie · gesetzt",
-        "draw.polyline" => "Polylinie · abgeschlossen",
-        "draw.spline" => "Spline · abgeschlossen",
-        "draw.rect" => "Rechteck · gesetzt",
-        "draw.circle" => "Kreis · gesetzt",
-        "draw.ellipse" => "Ellipse · gesetzt",
-        "draw.arc" => "Bogen · gesetzt",
-        "draw.point" => "Punkt · gesetzt",
-        "draw.text" => "Text · gesetzt",
-        "draw.wall" => "Wand · gesetzt",
-        "draw.door" => "Tür · eingefügt",
-        "draw.window" => "Fenster · eingefügt",
-        "draw.stair" => "Treppe · gesetzt",
+        "draw.line" => jjcad_core::i18n::tr("gui.app.linie_gesetzt"),
+        "draw.polyline" => jjcad_core::i18n::tr("gui.app.polylinie_abgeschlossen"),
+        "draw.spline" => jjcad_core::i18n::tr("gui.app.spline_abgeschlossen"),
+        "draw.rect" => jjcad_core::i18n::tr("gui.app.rechteck_gesetzt"),
+        "draw.circle" => jjcad_core::i18n::tr("gui.app.kreis_gesetzt"),
+        "draw.ellipse" => jjcad_core::i18n::tr("gui.app.ellipse_gesetzt"),
+        "draw.arc" => jjcad_core::i18n::tr("gui.app.bogen_gesetzt"),
+        "draw.point" => jjcad_core::i18n::tr("gui.app.punkt_gesetzt"),
+        "draw.text" => jjcad_core::i18n::tr("gui.app.text_gesetzt"),
+        "draw.wall" => jjcad_core::i18n::tr("gui.app.wand_gesetzt"),
+        "draw.door" => jjcad_core::i18n::tr("gui.app.tuer_eingefuegt"),
+        "draw.window" => jjcad_core::i18n::tr("gui.app.fenster_eingefuegt"),
+        "draw.stair" => jjcad_core::i18n::tr("gui.app.treppe_gesetzt"),
         "draw.fill" | "draw.fill.boundary" | "draw.fill.points" | "draw.fill.paint" => {
-            "Füllfläche · gesetzt"
+            jjcad_core::i18n::tr("gui.app.fuellflaeche_gesetzt")
         }
-        "draw.hatch" => "Schraffur · gesetzt",
-        "dim.linear" => "Maß · gesetzt",
-        "dim.chain" => "Maßkette · gesetzt",
-        "dim.elevation.plan" => "Grundriss-Kote · gesetzt",
-        "dim.elevation.section" => "Schnitt-Kote · gesetzt",
-        "dim.room" => "Raumstempel · gesetzt",
-        "modify.move" => "Auswahl · verschoben",
-        "modify.copy" => "Auswahl · kopiert",
-        "modify.mirror" => "Auswahl · gespiegelt",
-        "modify.scale" => "Auswahl · skaliert",
-        "modify.offset" => "Auswahl · versetzt",
-        "modify.explode" => "Objekt · zerlegt",
-        "modify.intersect" => "Verschneiden · Ecke gesetzt",
-        "modify.area.union" => "Füllfläche · vereinigt",
-        "modify.area.split" => "Füllfläche · geteilt",
-        "block.insert" => "Block · eingefügt",
-        "sheet.viewport_tool" => "Ansichtsfenster · angelegt",
+        "draw.hatch" => jjcad_core::i18n::tr("gui.app.schraffur_gesetzt"),
+        "dim.linear" => jjcad_core::i18n::tr("gui.app.mass_gesetzt"),
+        "dim.chain" => jjcad_core::i18n::tr("gui.app.masskette_gesetzt"),
+        "dim.elevation.plan" => jjcad_core::i18n::tr("gui.app.grundriss_kote_gesetzt"),
+        "dim.elevation.section" => jjcad_core::i18n::tr("gui.app.schnitt_kote_gesetzt"),
+        "dim.room" => jjcad_core::i18n::tr("gui.app.raumstempel_gesetzt"),
+        "modify.move" => jjcad_core::i18n::tr("gui.app.auswahl_verschoben"),
+        "modify.copy" => jjcad_core::i18n::tr("gui.app.auswahl_kopiert"),
+        "modify.mirror" => jjcad_core::i18n::tr("gui.app.auswahl_gespiegelt"),
+        "modify.scale" => jjcad_core::i18n::tr("gui.app.auswahl_skaliert"),
+        "modify.offset" => jjcad_core::i18n::tr("gui.app.auswahl_versetzt"),
+        "modify.explode" => jjcad_core::i18n::tr("gui.app.objekt_zerlegt"),
+        "modify.intersect" => jjcad_core::i18n::tr("gui.app.verschneiden_ecke_gesetzt"),
+        "modify.area.union" => jjcad_core::i18n::tr("gui.app.fuellflaeche_vereinigt"),
+        "modify.area.split" => jjcad_core::i18n::tr("gui.app.fuellflaeche_geteilt"),
+        "block.insert" => jjcad_core::i18n::tr("gui.app.block_eingefuegt"),
+        "sheet.viewport_tool" => jjcad_core::i18n::tr("gui.app.ansichtsfenster_angelegt"),
         _ => return None,
     })
 }
@@ -5599,10 +5590,10 @@ impl App {
                         ui.label(theme::dim(layer));
                         ui.separator();
                         for (label, action) in [
-                            ("Verschieben", "modify.move"),
-                            ("Kopieren mit Basispunkt", "modify.copy"),
-                            ("Drehen", "modify.rotate"),
-                            ("Spiegeln", "modify.mirror"),
+                            (jjcad_core::i18n::tr("gui.app.verschieben"), "modify.move"),
+                            (jjcad_core::i18n::tr("gui.app.kopieren_mit_basispunkt"), "modify.copy"),
+                            (jjcad_core::i18n::tr("gui.app.drehen"), "modify.rotate"),
+                            (jjcad_core::i18n::tr("gui.app.spiegeln"), "modify.mirror"),
                         ] {
                             if ui.button(label).clicked() {
                                 self.start_tool(action);
@@ -5611,27 +5602,27 @@ impl App {
                         }
                         ui.separator();
                         // Zeichenreihenfolge: Position in der Objektliste
-                        ui.label(theme::faint("Reihenfolge"));
-                        if ui.button("In den Vordergrund").clicked() {
+                        ui.label(theme::faint(jjcad_core::i18n::tr("gui.app.reihenfolge")));
+                        if ui.button(jjcad_core::i18n::tr("gui.app.in_den_vordergrund")).clicked() {
                             self.order_to(true, vec![id]);
                             close = true;
                         }
-                        if ui.button("In den Hintergrund").clicked() {
+                        if ui.button(jjcad_core::i18n::tr("gui.app.in_den_hintergrund")).clicked() {
                             self.order_to(false, vec![id]);
                             close = true;
                         }
-                        if ui.button("Vor Element …").clicked() {
+                        if ui.button(jjcad_core::i18n::tr("gui.app.vor_element")).clicked() {
                             self.session_mut().select(vec![id]);
                             self.order_pick_start(true);
                             close = true;
                         }
-                        if ui.button("Hinter Element …").clicked() {
+                        if ui.button(jjcad_core::i18n::tr("gui.app.hinter_element")).clicked() {
                             self.session_mut().select(vec![id]);
                             self.order_pick_start(false);
                             close = true;
                         }
                         ui.separator();
-                        if ui.button("Zerlegen").clicked() {
+                        if ui.button(jjcad_core::i18n::tr("gui.app.zerlegen")).clicked() {
                             let _ = self.session_mut().execute(
                                 "modify.explode",
                                 &serde_json::json!({"ids": [id]}),
@@ -5639,7 +5630,7 @@ impl App {
                             self.mark_changed();
                             close = true;
                         }
-                        if ui.button("Löschen").clicked() {
+                        if ui.button(jjcad_core::i18n::tr("gui.app.loeschen")).clicked() {
                             let _ = self
                                 .session_mut()
                                 .execute("modify.erase", &serde_json::json!({"ids": [id]}));
@@ -5648,44 +5639,44 @@ impl App {
                             close = true;
                         }
                         ui.separator();
-                        if ui.button("Eigenschaften im Panel").clicked() {
+                        if ui.button(jjcad_core::i18n::tr("gui.app.eigenschaften_im_panel")).clicked() {
                             self.ui.props_open = true;
                             self.session_mut().select(vec![id]);
                             close = true;
                         }
                     }
                     MenuKind::Canvas => {
-                        ui.label(theme::bold("Zeichenfläche", 12.0));
+                        ui.label(theme::bold(jjcad_core::i18n::tr("gui.app.zeichenflaeche"), 12.0));
                         ui.separator();
                         let has_clip = !self.ui.clipboard.is_empty();
                         if ui
-                            .add_enabled(has_clip, egui::Button::new("Einfügen"))
+                            .add_enabled(has_clip, egui::Button::new(jjcad_core::i18n::tr("gui.app.einfuegen")))
                             .clicked()
                         {
                             self.start_ghost_paste();
                             close = true;
                         }
-                        if ui.button("Alles auswählen").clicked() {
+                        if ui.button(jjcad_core::i18n::tr("gui.app.alles_auswaehlen")).clicked() {
                             let ids: Vec<Id> = self.doc().ents().iter().map(|e| e.id).collect();
                             self.session_mut().select(ids);
                             close = true;
                         }
-                        if ui.button("Auswahl aufheben").clicked() {
+                        if ui.button(jjcad_core::i18n::tr("gui.app.auswahl_aufheben")).clicked() {
                             self.session_mut().clear_selection();
                             close = true;
                         }
                         ui.separator();
-                        if ui.button("Ansicht einpassen").clicked() {
+                        if ui.button(jjcad_core::i18n::tr("gui.app.ansicht_einpassen")).clicked() {
                             self.fit_view();
                             close = true;
                         }
                     }
                     MenuKind::Chip(kind) => match kind {
                         StatusMenu::Raster => {
-                            ui.label(theme::bold("Raster", 12.0));
+                            ui.label(theme::bold(jjcad_core::i18n::tr("gui.app.raster"), 12.0));
                             ui.add_space(2.0);
                             let mut show = self.ui.show_grid;
-                            if ui.checkbox(&mut show, "Raster anzeigen").changed() {
+                            if ui.checkbox(&mut show, jjcad_core::i18n::tr("gui.app.raster_anzeigen")).changed() {
                                 self.ui.show_grid = show;
                                 let _ = self.session_mut().execute(
                                     "doc.settings",
@@ -5693,52 +5684,49 @@ impl App {
                                 );
                             }
                             let mut g = self.doc().settings.snap.grid;
-                            if ui.checkbox(&mut g, "Rasterfang").changed() {
+                            if ui.checkbox(&mut g, jjcad_core::i18n::tr("gui.app.rasterfang")).changed() {
                                 self.set_snap("grid", g);
                             }
                             let step = self.doc().settings.snap.grid_step;
-                            ui.label(theme::dim(format!("Rasterweite: {:.0} mm", step)));
+                            ui.label(theme::dim(jjcad_core::i18n::t_args_owned("gui.app.rasterweite_x_mm", &[("wert1", format!("{:.0}", step))])));
                             ui.separator();
-                            if ui.button("Weitere Einstellungen …").clicked() {
+                            if ui.button(jjcad_core::i18n::tr("gui.app.weitere_einstellungen")).clicked() {
                                 self.ui.settings_open = true;
                                 close = true;
                             }
                         }
                         StatusMenu::Ortho => {
-                            ui.label(theme::bold("Ausrichtung", 12.0));
+                            ui.label(theme::bold(jjcad_core::i18n::tr("gui.app.ausrichtung"), 12.0));
                             ui.add_space(2.0);
                             let mut o = self.doc().settings.snap.ortho;
-                            if ui.checkbox(&mut o, "Ortho (0°/90°)").changed() {
+                            if ui.checkbox(&mut o, jjcad_core::i18n::tr("gui.app.ortho_0_90")).changed() {
                                 self.set_snap("ortho", o);
                             }
                             let mut p = self.doc().settings.snap.polar;
-                            if ui.checkbox(&mut p, "Polar").changed() {
+                            if ui.checkbox(&mut p, jjcad_core::i18n::tr("gui.app.polar")).changed() {
                                 self.set_snap("polar", p);
                             }
                             let st = self.doc().settings.snap.polar_step;
                             let tol = self.doc().settings.snap.polar_tolerance;
-                            ui.label(theme::dim(format!(
-                                "Schrittweite {:.0}°, Fenster ±{:.0}°",
-                                st, tol
-                            )));
+                            ui.label(theme::dim(jjcad_core::i18n::t_args_owned("gui.app.schrittweite_x_fenster_x", &[("wert1", format!("{:.0}", st)), ("wert2", format!("{:.0}", tol))])));
                             ui.separator();
-                            if ui.button("Polarwinkel ändern …").clicked() {
+                            if ui.button(jjcad_core::i18n::tr("gui.app.polarwinkel_aendern")).clicked() {
                                 self.ui.settings_open = true;
                                 close = true;
                             }
                         }
                         StatusMenu::Fang => {
-                            ui.label(theme::bold("Fangmodi", 12.0));
+                            ui.label(theme::bold(jjcad_core::i18n::tr("gui.app.fangmodi"), 12.0));
                             ui.add_space(2.0);
                             let s0 = self.doc().settings.snap.clone();
                             for (label, key, val) in [
-                                ("Endpunkt", "endpoint", s0.endpoint),
-                                ("Wandkanten", "wall_edges", s0.wall_edges),
-                                ("Mittelpunkt", "midpoint", s0.midpoint),
-                                ("Zentrum", "center", s0.center),
-                                ("Schnittpunkt", "intersection", s0.intersection),
-                                ("Lot", "perpendicular", s0.perpendicular),
-                                ("Nächster Punkt", "nearest", s0.nearest),
+                                (jjcad_core::i18n::tr("gui.app.endpunkt"), "endpoint", s0.endpoint),
+                                (jjcad_core::i18n::tr("gui.app.wandkanten"), "wall_edges", s0.wall_edges),
+                                (jjcad_core::i18n::tr("gui.app.mittelpunkt"), "midpoint", s0.midpoint),
+                                (jjcad_core::i18n::tr("gui.app.zentrum"), "center", s0.center),
+                                (jjcad_core::i18n::tr("gui.app.schnittpunkt"), "intersection", s0.intersection),
+                                (jjcad_core::i18n::tr("gui.app.lot"), "perpendicular", s0.perpendicular),
+                                (jjcad_core::i18n::tr("gui.app.naechster_punkt"), "nearest", s0.nearest),
                             ] {
                                 let mut v = val;
                                 if ui.checkbox(&mut v, label).changed() {
@@ -5746,7 +5734,7 @@ impl App {
                                 }
                             }
                             ui.separator();
-                            if ui.button("Alle an").clicked() {
+                            if ui.button(jjcad_core::i18n::tr("gui.app.alle_an")).clicked() {
                                 for k in [
                                     "endpoint",
                                     "wall_edges",
@@ -5760,7 +5748,7 @@ impl App {
                                 }
                                 close = true;
                             }
-                            if ui.button("Alle aus").clicked() {
+                            if ui.button(jjcad_core::i18n::tr("gui.app.alle_aus")).clicked() {
                                 for k in [
                                     "endpoint",
                                     "wall_edges",
@@ -5777,27 +5765,25 @@ impl App {
                             // Ortho und Polar stehen seit T0043 hier, nicht mehr
                             // als eigener Chip in der unteren Leiste.
                             ui.separator();
-                            ui.label(theme::bold("Ausrichtung", 12.0));
+                            ui.label(theme::bold(jjcad_core::i18n::tr("gui.app.ausrichtung"), 12.0));
                             let mut o = self.doc().settings.snap.ortho;
-                            if ui.checkbox(&mut o, "Ortho (0°/90°)").changed() {
+                            if ui.checkbox(&mut o, jjcad_core::i18n::tr("gui.app.ortho_0_90")).changed() {
                                 self.set_snap("ortho", o);
                             }
                             let mut p = self.doc().settings.snap.polar;
-                            if ui.checkbox(&mut p, "Polar").changed() {
+                            if ui.checkbox(&mut p, jjcad_core::i18n::tr("gui.app.polar")).changed() {
                                 self.set_snap("polar", p);
                             }
                             let st = self.doc().settings.snap.polar_step;
                             let tol = self.doc().settings.snap.polar_tolerance;
-                            ui.label(theme::dim(format!(
-                                "Schrittweite {st:.0}°, Fenster ±{tol:.0}°"
-                            )));
+                            ui.label(theme::dim(jjcad_core::i18n::t_args_owned("gui.app.schrittweite_x_fenster_x_2", &[("st", format!("{:.0}", st)), ("tol", format!("{:.0}", tol))])));
                         }
                         StatusMenu::Staerke => {
-                            ui.label(theme::bold("Linienstärken", 12.0));
+                            ui.label(theme::bold(jjcad_core::i18n::tr("gui.app.linienstaerken"), 12.0));
                             ui.add_space(2.0);
                             let mut m = if self.ui.lineweights_scaled { 1 } else { 0 };
                             if ui
-                                .radio_value(&mut m, 0, "px — bildschirmkonstant")
+                                .radio_value(&mut m, 0, jjcad_core::i18n::tr("gui.app.px_bildschirmkonstant"))
                                 .clicked()
                             {
                                 self.ui.lineweights = true;
@@ -5805,7 +5791,7 @@ impl App {
                                 close = true;
                             }
                             if ui
-                                .radio_value(&mut m, 1, "DPI — wie im PDF (zoombhängig)")
+                                .radio_value(&mut m, 1, jjcad_core::i18n::tr("gui.app.dpi_wie_im_pdf_zoombhaengig"))
                                 .clicked()
                             {
                                 self.ui.lineweights = true;
@@ -5814,7 +5800,7 @@ impl App {
                             }
                             ui.separator();
                             ui.label(theme::dim(
-                                "In beiden Modi bleiben die Linienstärken sichtbar.",
+                                jjcad_core::i18n::tr("gui.app.in_beiden_modi_bleiben_die_linienstaerken_sichtbar"),
                             ));
                         }
                     },
@@ -6366,7 +6352,7 @@ impl App {
             orig,
             recorded: false,
         });
-        self.mitteilung("Verschieben · Basispunkt klicken");
+        self.mitteilung(jjcad_core::i18n::tr("gui.app.verschieben_basispunkt_klicken"));
     }
 
     /// Verschiebt die Auswahl live mit (Ausgangsgeometrie bleibt gespeichert).
@@ -6422,7 +6408,7 @@ impl App {
     pub fn end_move_drag(&mut self) {
         if self.move_drag.take().is_some() {
             self.mark_changed();
-            self.mitteilung("Auswahl · verschoben");
+            self.mitteilung(jjcad_core::i18n::tr("gui.app.auswahl_verschoben"));
         }
     }
 
@@ -6438,7 +6424,7 @@ impl App {
             }
         }
         self.mark_changed();
-        self.mitteilung("Verschieben · abgebrochen");
+        self.mitteilung(jjcad_core::i18n::tr("gui.app.verschieben_abgebrochen"));
     }
 }
 
@@ -7890,7 +7876,7 @@ mod tests_chat_texte {
         for t in werkzeuge() {
             let h = commands_hint(&t, &opts);
             assert_ne!(
-                h, HINWEIS_UNBEKANNT,
+                h, hinweis_unbekannt(),
                 "{} ({} Punkte) hat keinen Hinweis",
                 t.action,
                 t.pts.len()

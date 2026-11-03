@@ -1228,7 +1228,7 @@ pub fn show(app: &mut App, ui: &mut Ui) {
         // den Chat. Nur bei geändertem Text, sonst stünde sie 60-mal pro
         // Sekunde im Protokoll.
         if app.ghost.is_some() {
-            app.mitteilung_wenn_neu("Einfügen · Klick setzt ab (R dreht, S spiegelt)");
+            app.mitteilung_wenn_neu(jjcad_core::i18n::tr("gui.canvas.einfuegen_klick_setzt_ab"));
         } else if let Some(t) = app.tool.clone() {
             let hinweis = crate::app::commands_hint(&t, &app.options);
             app.mitteilung_wenn_neu(hinweis);
@@ -1507,7 +1507,7 @@ fn draw_sheet(app: &mut App, p: &Painter, rect: Rect, view: View, cursor: Option
                 p.text(
                     Pos2::new(r.left() + 4.0, r.top() + 3.0),
                     Align2::LEFT_TOP,
-                    format!("{:.0} × {:.0} mm", r.width(), r.height()),
+                    jjcad_core::i18n::t_args_owned("gui.canvas.x_x_mm", &[("wert1", format!("{:.0}", r.width())), ("wert2", format!("{:.0}", r.height()))]),
                     FontId::proportional(10.5),
                     Palette::SELECT,
                 );
@@ -1519,7 +1519,7 @@ fn draw_sheet(app: &mut App, p: &Painter, rect: Rect, view: View, cursor: Option
     p.text(
         Pos2::new(rect.left() + 12.0, rect.top() + 34.0),
         Align2::LEFT_TOP,
-        "Papierraum: zeichnen und ändern wie im Modell · Ansicht anklicken, verschieben mit V",
+        jjcad_core::i18n::tr("gui.canvas.papierraum_zeichnen_und_aendern_wie_im_modell_ansicht_an"),
         FontId::proportional(10.5),
         Palette::TEXT_FAINT,
     );
@@ -1881,7 +1881,7 @@ fn draw_tool_preview(
                         .unwrap_or(false);
                 if schliesst {
                     p.line_segment([w2s(start), w2s(cursor)], stroke);
-                    label = "schließen".to_string();
+                    label = jjcad_core::i18n::tr("gui.canvas.schliessen").to_string();
                 } else {
                     p.line_segment([w2s(start), w2s(cursor)], dashed);
                     if tool.pts.len() >= 2 {
@@ -1910,7 +1910,7 @@ fn draw_tool_preview(
                     .unwrap_or(false);
             let mut pts = tool.pts.clone();
             if am_start {
-                label = "schließen".to_string();
+                label = jjcad_core::i18n::tr("gui.canvas.schliessen").to_string();
             } else {
                 pts.push(cursor);
             }
@@ -1935,7 +1935,7 @@ fn draw_tool_preview(
                 p.circle_stroke(w2s(*q), 2.0, Stroke::new(1.0, Palette::ACCENT));
             }
             if label.is_empty() {
-                label = format!("{} Stützpunkte", tool.pts.len() + 1);
+                label = jjcad_core::i18n::t_args_owned("gui.canvas.x_stuetzpunkte", &[("wert1", format!("{}", tool.pts.len() + 1))]);
             }
         }
         // Raumstempel: Umriss bis zum Zeiger, keine Füllung — die Fläche des
@@ -1954,13 +1954,9 @@ fn draw_tool_preview(
             let mut umriss = tool.pts.clone();
             umriss.push(cursor);
             if let Some(pts) = fill_boundary_points(&umriss) {
-                label = format!(
-                    "{} Punkte · {}",
-                    pts.len(),
-                    unit.format_area(polygon_area(&pts).abs(), 2)
-                );
+                label = jjcad_core::i18n::t_args_owned("gui.canvas.x_punkte_x", &[("wert1", format!("{}", pts.len())), ("wert2", format!("{}", unit.format_area(polygon_area(&pts).abs(), 2)))]);
             } else {
-                label = format!("{} Punkte", tool.pts.len() + 1);
+                label = jjcad_core::i18n::t_args_owned("gui.canvas.x_punkte", &[("wert1", format!("{}", tool.pts.len() + 1))]);
             }
         }
         "draw.fill.boundary" | "draw.fill.points" | "draw.volume.points" => {
@@ -1979,13 +1975,9 @@ fn draw_tool_preview(
             umriss.push(cursor);
             draw_fill_ghost(app, p, rect, view, &umriss);
             if let Some(pts) = fill_boundary_points(&umriss) {
-                label = format!(
-                    "{} Punkte · {}",
-                    pts.len(),
-                    unit.format_area(polygon_area(&pts).abs(), 2)
-                );
+                label = jjcad_core::i18n::t_args_owned("gui.canvas.x_punkte_x", &[("wert1", format!("{}", pts.len())), ("wert2", format!("{}", unit.format_area(polygon_area(&pts).abs(), 2)))]);
             } else {
-                label = format!("{} Punkte", tool.pts.len() + 1);
+                label = jjcad_core::i18n::t_args_owned("gui.canvas.x_punkte", &[("wert1", format!("{}", tool.pts.len() + 1))]);
             }
         }
         "draw.fill.paint" | "draw.volume.paint" => {
@@ -2001,7 +1993,7 @@ fn draw_tool_preview(
             match app.paint.ergebnis(zeiger) {
                 Some(Ok(g)) => {
                     draw_paint_ghost(app, p, rect, view, &g.outer, &g.holes);
-                    label = format!("Fläche {}", unit.format_area(g.area(), 2));
+                    label = jjcad_core::i18n::t_args_owned("gui.canvas.flaeche_x", &[("wert1", format!("{}", unit.format_area(g.area(), 2)))]);
                 }
                 Some(Err(e)) => {
                     // Kein Dialog: der Grund steht am Zeiger und beim Klick
@@ -2012,7 +2004,7 @@ fn draw_tool_preview(
                     // Auf die Ruhezeit warten — ohne neuen Eingabe-Impuls zeichnet
                     // egui nicht neu, die Vorschau käme sonst nie.
                     p.ctx().request_repaint_after(PAINT_RUHE);
-                    label = "Fläche ermitteln …".into();
+                    label = jjcad_core::i18n::tr("gui.canvas.flaeche_ermitteln").into();
                 }
             }
         }
@@ -2138,7 +2130,7 @@ fn draw_tool_preview(
                         p.line_segment([w2s(c), w2s(cursor)], dashed);
                         if r > 0.5 {
                             p.add(kreis_zug(w2s(c), (r * view.zoom) as f32, stroke));
-                            label = format!("r {}", unit.format_plain(r, unit.decimals()));
+                            label = jjcad_core::i18n::t_args_owned("gui.canvas.r_x", &[("wert1", format!("{}", unit.format_plain(r, unit.decimals())))]);
                         }
                     }
                     _ => {
@@ -2156,7 +2148,7 @@ fn draw_tool_preview(
                                 .map(|q| w2s(*q))
                                 .collect();
                             p.add(Shape::line(pts, stroke));
-                            label = format!("r {}", unit.format_plain(r, unit.decimals()));
+                            label = jjcad_core::i18n::t_args_owned("gui.canvas.r_x", &[("wert1", format!("{}", unit.format_plain(r, unit.decimals())))]);
                         }
                     }
                 }
@@ -2237,7 +2229,7 @@ fn draw_tool_preview(
                         }
                         label = stair_mass_text(unit, laenge, breite, stufen);
                     } else {
-                        label = "Treppe · Breite klicken".to_string();
+                        label = jjcad_core::i18n::tr("gui.canvas.treppe_breite_klicken").to_string();
                     }
                 }
             }
@@ -2266,18 +2258,18 @@ fn draw_tool_preview(
                         if let Some(bp) = v.base {
                             draw_basispunkt_marke(p, w2s(bp));
                         }
-                        label = format!("Tür {}", unit.format_plain(width, 2));
+                        label = jjcad_core::i18n::t_args_owned("gui.canvas.tuer_x", &[("wert1", format!("{}", unit.format_plain(width, 2)))]);
                     } else {
                         // Die Tür passt nicht in die freie Wandstrecke — der
                         // Klick ergäbe einen Fehler, also keine Vorschau (T0078).
                         p.circle_stroke(w2s(cursor), 9.0, dashed);
-                        label = "Tür · Wand zu kurz".into();
+                        label = jjcad_core::i18n::tr("gui.canvas.tuer_wand_zu_kurz").into();
                     }
                 }
                 None => {
                     // Eine Tür braucht eine Wand — ohne sie nur der Hinweis
                     p.circle_stroke(w2s(cursor), 9.0, dashed);
-                    label = "Tür · nur auf einer Wand".into();
+                    label = jjcad_core::i18n::tr("gui.canvas.tuer_nur_auf_einer_wand").into();
                 }
             }
         }
@@ -2296,15 +2288,15 @@ fn draw_tool_preview(
                     };
                     if let Some(v) = render::preview_window(app.doc(), &spec) {
                         draw_opening_preview(app, p, view, &v, &w2s);
-                        label = format!("Fenster {}", unit.format_plain(width, 2));
+                        label = jjcad_core::i18n::t_args_owned("gui.canvas.fenster_x", &[("wert1", format!("{}", unit.format_plain(width, 2)))]);
                     } else {
                         p.circle_stroke(w2s(cursor), 9.0, dashed);
-                        label = "Fenster · Wand zu kurz".into();
+                        label = jjcad_core::i18n::tr("gui.canvas.fenster_wand_zu_kurz").into();
                     }
                 }
                 None => {
                     p.circle_stroke(w2s(cursor), 9.0, dashed);
-                    label = "Fenster · nur auf einer Wand".into();
+                    label = jjcad_core::i18n::tr("gui.canvas.fenster_nur_auf_einer_wand").into();
                 }
             }
         }
@@ -2351,7 +2343,7 @@ fn draw_tool_preview(
         }
         "draw.fill" | "draw.hatch" | "draw.volume" => {
             p.circle_stroke(w2s(cursor), 9.0, dashed);
-            label = "Kontur anklicken".into();
+            label = jjcad_core::i18n::tr("gui.canvas.kontur_anklicken").into();
         }
         "dim.linear" => {
             if tool.pts.len() == 1 {
@@ -2424,10 +2416,7 @@ fn draw_tool_preview(
                 [Pos2::new(c.x, c.y - arm), Pos2::new(c.x, c.y + arm)],
                 dashed,
             );
-            label = format!(
-                "Kote {}",
-                jjcad_core::units::elevation_text(app.options.elevation_z)
-            );
+            label = jjcad_core::i18n::t_args_owned("gui.canvas.kote_x", &[("wert1", format!("{}", jjcad_core::units::elevation_text(app.options.elevation_z)))]);
         }
         // Schnitt-Kote: Dreiecke der gesetzten Punkte, der Zeiger zeigt den
         // nächsten Punkt. Der erste Punkt ist ±0,00.
@@ -2448,10 +2437,7 @@ fn draw_tool_preview(
                 p.line_segment([dreieck(q)[1], dreieck(q)[2]], dashed);
                 p.line_segment([dreieck(q)[2], dreieck(q)[0]], dashed);
             }
-            label = format!(
-                "Kote {}",
-                jjcad_core::units::elevation_section_text(cursor.y - basis)
-            );
+            label = jjcad_core::i18n::t_args_owned("gui.canvas.kote_x", &[("wert1", format!("{}", jjcad_core::units::elevation_section_text(cursor.y - basis)))]);
         }
         "modify.move" => {
             if let Some(base) = last {
@@ -2477,10 +2463,7 @@ fn draw_tool_preview(
                             p.line_segment([w2s(c), w2s(cursor)], dashed);
                         }
                         p.circle_stroke(w2s(cursor), 5.0, stroke);
-                        label = format!(
-                            "von {}°",
-                            format_number((cursor - c).angle().to_degrees(), 1)
-                        );
+                        label = jjcad_core::i18n::t_args_owned("gui.canvas.von_x", &[("wert1", format!("{}", format_number((cursor - c).angle().to_degrees(), 1)))]);
                     }
                     Some(from) => {
                         let v0 = from - c;
@@ -2525,11 +2508,11 @@ fn draw_tool_preview(
                                         view.rot as f32,
                                     );
                                 }
-                                label = format!("Drehen {}°", format_number(angle, 1));
+                                label = jjcad_core::i18n::t_args_owned("gui.canvas.drehen_x", &[("wert1", format!("{}", format_number(angle, 1)))]);
                             }
                             None => {
                                 // Bis-Punkt liegt auf dem Zentrum: keine Richtung
-                                label = "bis: Abstand zum Drehzentrum nötig".into();
+                                label = jjcad_core::i18n::tr("gui.canvas.bis_abstand_zum_drehzentrum_noetig").into();
                             }
                         }
                     }
@@ -2547,10 +2530,7 @@ fn draw_tool_preview(
                             p.line_segment([w2s(c), w2s(cursor)], dashed);
                         }
                         p.circle_stroke(w2s(cursor), 5.0, stroke);
-                        label = format!(
-                            "Bezug {}°",
-                            format_number((cursor - c).angle().to_degrees(), 1)
-                        );
+                        label = jjcad_core::i18n::t_args_owned("gui.canvas.bezug_x", &[("wert1", format!("{}", format_number((cursor - c).angle().to_degrees(), 1)))]);
                     }
                     Some(from) => {
                         let v0 = from - c;
@@ -2573,9 +2553,9 @@ fn draw_tool_preview(
                                 }
                                 // Das Drehzentrum bleibt beim Drehen stehen
                                 p.circle_stroke(w2s(c), 9.0, dashed);
-                                label = format!("Ansicht {}°", format_number(angle, 1));
+                                label = jjcad_core::i18n::t_args_owned("gui.canvas.ansicht_x", &[("wert1", format!("{}", format_number(angle, 1)))]);
                             }
-                            None => label = "Abstand zum Drehzentrum nötig".into(),
+                            None => label = jjcad_core::i18n::tr("gui.canvas.abstand_zum_drehzentrum_noetig").into(),
                         }
                     }
                 }
@@ -2612,16 +2592,16 @@ fn draw_tool_preview(
             if let Some(c) = last {
                 let f = (c.dist(cursor) / 1000.0).max(0.05);
                 p.line_segment([w2s(c), w2s(cursor)], stroke);
-                label = format!("Faktor {:.2}", f);
+                label = jjcad_core::i18n::t_args_owned("gui.canvas.faktor_x", &[("wert1", format!("{:.2}", f))]);
             }
         }
         "modify.offset" => {
             if let Some(a) = last {
                 p.line_segment([w2s(a), w2s(cursor)], dashed);
-                label = format!("Seite wählen ({} mm)", app.options.offset_dist);
+                label = jjcad_core::i18n::t_args_owned("gui.canvas.seite_waehlen_x_mm", &[("wert1", format!("{}", app.options.offset_dist))]);
             } else {
                 p.circle_stroke(w2s(cursor), 8.0, dashed);
-                label = "Objekt anklicken".into();
+                label = jjcad_core::i18n::tr("gui.canvas.objekt_anklicken").into();
             }
         }
         "modify.trim" => {
@@ -3293,7 +3273,7 @@ fn handle_input(
                 if text.contains(';') {
                     format!("{}  [Enter] Punkt x;y", text)
                 } else {
-                    format!("{}  [Enter] Länge", text)
+                    jjcad_core::i18n::t_args_owned("gui.canvas.x_enter_laenge", &[("eingabe", format!("{}", text))])
                 },
                 FontId::proportional(13.0),
                 Palette::ACCENT,
@@ -3414,10 +3394,10 @@ fn handle_input(
                         );
                         app.mark_changed();
                         app.toast(
-                            if above { "Vor Element gesetzt" } else { "Hinter Element gesetzt" }.to_string(),
+                            if above { jjcad_core::i18n::tr("gui.canvas.vor_element_gesetzt") } else { jjcad_core::i18n::tr("gui.canvas.hinter_element_gesetzt") }.to_string(),
                         );
                     }
-                    None => app.toast("Reihenfolge · kein Element getroffen".to_string()),
+                    None => app.toast(jjcad_core::i18n::tr("gui.canvas.reihenfolge_kein_element_getroffen").to_string()),
                 }
                 app.ui.order_pick = None;
             }
@@ -3543,7 +3523,7 @@ fn handle_input(
                         finish_tool(app, true);
                     } else {
                         app.tool = None;
-                        app.mitteilung("Abgebrochen");
+                        app.mitteilung(jjcad_core::i18n::tr("gui.canvas.abgebrochen"));
                     }
                 }
                 _ => {
@@ -4080,7 +4060,7 @@ fn draw_ghost(app: &App, p: &Painter, rect: Rect, view: View) {
         badge.push_str(&format!("{:.0}°  ", g.rot_deg()));
     }
     if g.mirror {
-        badge.push_str("gespiegelt");
+        badge.push_str(jjcad_core::i18n::tr("gui.canvas.gespiegelt"));
     }
     if !badge.is_empty() {
         p.text(
@@ -4577,7 +4557,7 @@ fn finish_fill(app: &mut App, action: &str) -> bool {
         return false;
     };
     let Some(boundary) = fill_boundary_points(&tool.pts) else {
-        app.toast("Füllfläche · mindestens 3 Punkte");
+        app.toast(jjcad_core::i18n::tr("gui.canvas.fuellflaeche_mindestens_3_punkte"));
         return false;
     };
     let pts: Vec<[f64; 2]> = boundary
@@ -4617,7 +4597,7 @@ fn finish_room(app: &mut App) -> bool {
         return false;
     };
     let Some(boundary) = fill_boundary_points(&tool.pts) else {
-        app.toast("Raumstempel · mindestens 3 Punkte");
+        app.toast(jjcad_core::i18n::tr("gui.canvas.raumstempel_mindestens_3_punkte"));
         return false;
     };
     let pts: Vec<[f64; 2]> = boundary
@@ -4763,7 +4743,7 @@ pub fn rotate_step(pts: &[V2], w: V2) -> RotateStep {
     if pts.len() < 2 {
         if let Some(c) = pts.first().copied() {
             if c.dist(w) < jjcad_core::transform::ANGLE_MIN_RADIUS {
-                return RotateStep::Reject("Drehen · Abstand zum Zentrum nötig");
+                return RotateStep::Reject(jjcad_core::i18n::tr("gui.canvas.drehen_abstand_zum_zentrum"));
             }
         }
         return RotateStep::Collect { point: w };
@@ -4774,7 +4754,7 @@ pub fn rotate_step(pts: &[V2], w: V2) -> RotateStep {
             from: pts[1],
             angle,
         },
-        None => RotateStep::Reject("Drehen · Abstand zum Zentrum nötig"),
+        None => RotateStep::Reject(jjcad_core::i18n::tr("gui.canvas.drehen_abstand_zum_zentrum")),
     }
 }
 
@@ -5198,9 +5178,9 @@ fn tool_click_at(app: &mut App, w: V2, raw: V2) {
                             );
                         }
                         None => app.toast(if vol {
-                            "Volumen · geschlossene Kontur anklicken"
+                            jjcad_core::i18n::tr("gui.canvas.volumen_geschlossene_kontur_anklicken")
                         } else {
-                            "Füllfläche · geschlossene Kontur anklicken"
+                            jjcad_core::i18n::tr("gui.canvas.fuellflaeche_geschlossene_kontur_anklicken")
                         }),
                     }
                 }
@@ -5219,7 +5199,7 @@ fn tool_click_at(app: &mut App, w: V2, raw: V2) {
                 None => (w, 0.0, None),
             };
             if host.is_none() {
-                app.toast("Tür · nur auf einer Wand");
+                app.toast(jjcad_core::i18n::tr("gui.canvas.tuer_nur_auf_einer_wand"));
                 return;
             }
             let _ = run(
@@ -5237,7 +5217,7 @@ fn tool_click_at(app: &mut App, w: V2, raw: V2) {
                 None => (w, 0.0, None),
             };
             if host.is_none() {
-                app.toast("Fenster · nur auf einer Wand");
+                app.toast(jjcad_core::i18n::tr("gui.canvas.fenster_nur_auf_einer_wand"));
                 return;
             }
             let _ = run(
@@ -5290,7 +5270,7 @@ fn tool_click_at(app: &mut App, w: V2, raw: V2) {
                                    "cut": app.options.stair_cut}),
                         );
                     } else {
-                        app.toast("Treppe · Breite zu klein");
+                        app.toast(jjcad_core::i18n::tr("gui.canvas.treppe_breite_zu_klein"));
                     }
                     app.tool = None;
                 }
@@ -5362,12 +5342,12 @@ fn tool_click_at(app: &mut App, w: V2, raw: V2) {
         "modify.copy" => {
             let ids = app.selection().to_vec();
             if ids.is_empty() {
-                app.toast("Kopieren mit Basispunkt · erst Objekte wählen");
+                app.toast(jjcad_core::i18n::tr("gui.canvas.kopieren_mit_basispunkt_erst_objekte_waehlen"));
                 return;
             }
             app.merke_zwischenablage(&ids, Some(w));
             app.tool = None;
-            app.toast("Auswahl · kopiert");
+            app.toast(jjcad_core::i18n::tr("gui.canvas.auswahl_kopiert"));
         }
         "modify.rotate" => {
             // Drei Klicks: Drehzentrum, „von"-Punkt, „bis"-Punkt. Der Winkel ist
@@ -5389,7 +5369,7 @@ fn tool_click_at(app: &mut App, w: V2, raw: V2) {
                         "modify.rotate",
                         json!({"ids": ids, "center": ax(center), "angle": angle}),
                     );
-                    app.toast(&format!("Drehen · {}°", format_number(angle, 1)));
+                    app.toast(&jjcad_core::i18n::t_args_owned("gui.canvas.drehen_x_2", &[("wert1", format!("{}", format_number(angle, 1)))]));
                     app.tool = None;
                 }
                 RotateStep::Reject(msg) => app.toast(msg),
@@ -5409,10 +5389,10 @@ fn tool_click_at(app: &mut App, w: V2, raw: V2) {
                     v.rotate_about(center, angle.to_radians());
                     app.set_view(v);
                     app.tool = None;
-                    app.toast(&format!("Ansicht · gedreht {}°", format_number(angle, 1)));
+                    app.toast(&jjcad_core::i18n::t_args_owned("gui.canvas.ansicht_gedreht_x", &[("wert1", format!("{}", format_number(angle, 1)))]));
                 }
                 RotateStep::Reject(_) => {
-                    app.toast("Ansicht drehen · Abstand zum Zentrum nötig")
+                    app.toast(jjcad_core::i18n::tr("gui.canvas.ansicht_drehen_abstand_zum_zentrum_noetig"))
                 }
             }
         }
@@ -5455,7 +5435,7 @@ fn tool_click_at(app: &mut App, w: V2, raw: V2) {
                     app.tool = Some(tool);
                     app.session_mut().select(vec![id]);
                 } else {
-                    app.toast("Versetzen · Objekt anklicken");
+                    app.toast(jjcad_core::i18n::tr("gui.canvas.versetzen_objekt_anklicken"));
                 }
             } else {
                 let ids = app.selection().to_vec();
@@ -5481,7 +5461,7 @@ fn tool_click_at(app: &mut App, w: V2, raw: V2) {
         "modify.intersect" => {
             let tol = (8.0 / app.current_view().zoom).max(0.5);
             let Some(id) = snap::hit_test(app.doc(), w, tol, None) else {
-                app.toast("Verschneiden · Objekt anklicken");
+                app.toast(jjcad_core::i18n::tr("gui.canvas.verschneiden_objekt_anklicken"));
                 return;
             };
             match tool.obj {
@@ -5491,7 +5471,7 @@ fn tool_click_at(app: &mut App, w: V2, raw: V2) {
                     app.session_mut().select(vec![id]);
                 }
                 Some(erstes) if erstes == id => {
-                    app.toast("Verschneiden · zweites Objekt anklicken");
+                    app.toast(jjcad_core::i18n::tr("gui.canvas.verschneiden_zweites_objekt_anklicken"));
                 }
                 Some(erstes) => {
                     if run(app, "modify.intersect", json!({"ids": [erstes, id]})) {
@@ -5529,7 +5509,7 @@ fn tool_click_at(app: &mut App, w: V2, raw: V2) {
         }
         "block.insert" => {
             let Some(bid) = app.options.block_id.clone() else {
-                app.toast("Block · im Inventar wählen (E)");
+                app.toast(jjcad_core::i18n::tr("gui.canvas.block_im_inventar_waehlen_e"));
                 return;
             };
             let _ = run(
@@ -5544,7 +5524,7 @@ fn tool_click_at(app: &mut App, w: V2, raw: V2) {
             // Ein Klick ins Leere lässt die Schnellauswahl stehen.
             let tol = (8.0 / app.current_view().zoom).max(0.5);
             let Some(id) = snap::hit_test(app.doc(), w, tol, None) else {
-                app.toast("Schnellauswahl · Objekt anklicken");
+                app.toast(jjcad_core::i18n::tr("gui.canvas.schnellauswahl_objekt_anklicken"));
                 return;
             };
             let Some(kind) = app

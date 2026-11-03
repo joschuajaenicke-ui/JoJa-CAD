@@ -102,6 +102,18 @@ pub fn deutsch_hat(key: &str) -> bool {
     katalog(Lang::Deutsch).contains_key(key)
 }
 
+/// Schlüssel, dessen deutscher Text genau `text` ist.
+///
+/// Für Prüfungen am Quelltext: seit T0104 steht der sichtbare Text im Katalog,
+/// im Quelltext nur der Schlüssel. Ein Test, der „diese Zeile gibt es" prüfen
+/// will, sucht den Schlüssel zu seinem Text.
+pub fn schluessel_fuer_text(text: &str) -> Option<&'static str> {
+    katalog(Lang::Deutsch)
+        .iter()
+        .find(|(_, t)| **t == text)
+        .map(|(k, _)| *k)
+}
+
 /// Alle Schlüssel des deutschen Katalogs, sortiert — Grundlage der Prüfung
 /// „jeder im Code benutzte Schlüssel existiert in `de.toml`".
 pub fn schluessel() -> Vec<&'static str> {
@@ -150,6 +162,16 @@ pub fn tr(key: &'static str) -> &'static str {
 /// Wert bleibt stehen (kein Panic, Warnung im Debug-Bau).
 pub fn t_args(key: &'static str, werte: &[(&str, &str)]) -> String {
     fuellen(tr(key), werte)
+}
+
+/// Wie [`t_args`], nimmt die Werte aber als `String`.
+///
+/// Für Stellen, die den Wert erst aufbereiten müssen (`format!("{:.2}", x)`)
+/// und dafür keine eigene Bindung im Umfeld anlegen wollen — die Oberfläche
+/// ruft so ihre Meldungen mit Platzhaltern ab (T0104).
+pub fn t_args_owned(key: &'static str, werte: &[(&str, String)]) -> String {
+    let paare: Vec<(&str, &str)> = werte.iter().map(|(n, w)| (*n, w.as_str())).collect();
+    fuellen(tr(key), &paare)
 }
 
 /// Setzt benannte Platzhalter `{name}` in einen Text ein.
