@@ -293,6 +293,16 @@ Mit dem Nutzer abgestimmt — nicht „verbessern“:
   — `app::tests_chat_texte` prüft Aufforderung und Ergebnis für jedes Werkzeug.
 - Wände: Farbe (Linie) und Füllung (Fläche) getrennt; Schraffuren inklusive
   **Dämmung** (Mäander); Ausrichtung Links/Mittig/Rechts.
+- **Schraffuren (T0095)**: Die Muster sind die Kennzeichnungen der Schnittflächen nach
+  DIN 1356-1:2026-09, Tabelle 5 (18 Zeilen, `style::FillPattern`, `ALL` in der
+  Reihenfolge der Norm); die früheren Muster heißen nach ihrem Baustoff (Mauerwerk,
+  Kunststoffe, Sand, Dämmstoffe). Gezeichnet werden **alle** Muster an einer Stelle
+  (`render::push_muster`) — Füllfläche, Volumen und Wandschraffur teilen sie, keine
+  zweite Musterzeichnung. Schlüssel über `FillPattern::key`/`from_key`, die alten
+  Schlüssel `lines`/`cross`/`dots`/`insulation` bleiben gültig (alte Dateien).
+  Ein neues Muster: Variante und `ALL` in `style.rs`, Zweig in `push_muster`,
+  Bezeichnung in `TABELLE_5` des Tests `tests/schraffuren_din.rs` — der Test bricht,
+  wenn ein Muster fehlt, nichts zeichnet oder wie ein anderes aussieht.
 - **Auswahl über Rechteck** prüft echte Geometrie (Segmente, Wandkörper),
   nicht die achsenparallele Bounding-Box.
 - **Griffe** haben 8–12 px Trefferradius, geprüft gegen die *rohe* Zeigerposition

@@ -15,7 +15,7 @@ const FELD_B: f64 = 1500.0;
 const FELD_H: f64 = 750.0;
 const SPALTE: usize = 3;
 /// Abstand der Felder (Platz für die Beschriftung).
-const LUFT: f64 = 450.0;
+const LUFT: f64 = 700.0;
 
 fn main() {
     let mut s = Session::new();
@@ -34,7 +34,7 @@ fn main() {
             &json!({
                 "p": [x, y + 120.0],
                 "text": p.label(),
-                "height": 220.0,
+                "height": 150.0,
                 "layer": "Wände"
             }),
         )
