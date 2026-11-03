@@ -304,10 +304,11 @@ Mit dem Nutzer abgestimmt — nicht „verbessern“:
   findet die Suche sie nicht. Zeilennamen bleiben kurz (Labelspalte 96 px), lange
   Begriffe kommen als Alias in `zeile_mit`; Häkchen ohne Wert stehen mit vollem Text.
 - **Schwenkgeschwindigkeit (T0067)**: Einstellungen → Bedienung → „Schwenk" ist ein
-  Faktor (`prefs.pan_speed`, 0,1…5, Vorgabe 1) auf das Grundtempo der
-  Schwenk-Funktionen (`app::SCHWENK_PX_JE_SEKUNDE` = 700 px/s beim Halten,
-  `SCHWENK_SCHRITT_PX` = 60 px je Einzelschritt). Beide Wege lesen denselben Faktor —
-  wer einen dritten Schwenkweg ergänzt, skaliert ihn dort mit.
+  Faktor (`prefs.pan_speed`, 0,1…5, Vorgabe 1) auf den Schritt der
+  Schwenk-Funktionen (`app::SCHWENK_SCHRITT_PX` = 60 px). **Ein** Weg: die Funktion
+  `view.pan_*` aus Taste, Hotbar oder Ribbon ruft `App::schwenk_schritt` — ein Druck
+  ist ein Schritt (T0089). Keinen zweiten Dauerlauf auf `key_down` daneben bauen;
+  der bewegte die Ansicht auch bei Strg+S und unabhängig von der Hotbar.
 
 ## Zahlenfelder: Grenzen und Zuggeschwindigkeit (verbindlich)
 

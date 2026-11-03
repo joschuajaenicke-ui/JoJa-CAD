@@ -237,12 +237,12 @@ pub const ACTIONS: &[ActionDef] = &[
     // Umsetzen der Ansicht mit der Tastatur (T0056). Die vier Richtungen sind
     // eigene Funktionen — nicht fest im Code — damit sie in der
     // Tastaturbelegung stehen, ein Icon tragen und umbelegt werden können.
-    // Gehalten bewegt sich die Ansicht laufend, ein einzelner Druck rückt sie
-    // einen Schritt weiter.
-    act!("view.pan_left", "Ansicht links", Ansicht, "pan-left", "a", "Ansicht nach links schieben (Taste halten)", false),
-    act!("view.pan_right", "Ansicht rechts", Ansicht, "pan-right", "d", "Ansicht nach rechts schieben (Taste halten)", false),
-    act!("view.pan_up", "Ansicht oben", Ansicht, "pan-up", "w", "Ansicht nach oben schieben (Taste halten)", false),
-    act!("view.pan_down", "Ansicht unten", Ansicht, "pan-down", "s", "Ansicht nach unten schieben (Taste halten)", false),
+    // Wie jede andere Funktion: ein Druck rückt um einen Schritt weiter, aus
+    // Taste, Hotbar und Ribbon gleich (T0089).
+    act!("view.pan_left", "Ansicht links", Ansicht, "pan-left", "a", "Ansicht einen Schritt nach links schieben", false),
+    act!("view.pan_right", "Ansicht rechts", Ansicht, "pan-right", "d", "Ansicht einen Schritt nach rechts schieben", false),
+    act!("view.pan_up", "Ansicht oben", Ansicht, "pan-up", "w", "Ansicht einen Schritt nach oben schieben", false),
+    act!("view.pan_down", "Ansicht unten", Ansicht, "pan-down", "s", "Ansicht einen Schritt nach unten schieben", false),
     act!("view.inventory", "Inventar", Ansicht, "inventory", "e", "Inventar ein-/ausblenden (E)", false),
     act!("view.layers", "Layer", Ansicht, "layers", "", "Layerverwaltung", false),
     act!("view.keymap", "Tastaturbelegung", Ansicht, "keyboard", "", "Tastenbelegung bearbeiten", false),

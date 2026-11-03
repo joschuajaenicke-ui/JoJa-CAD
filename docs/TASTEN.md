@@ -47,8 +47,11 @@ fest.** Keine Taste gehört zwei Schichten.
   und stehen damit sichtbar im Tastenbild der Tastaturbelegung. Vorher schwenkte
   `canvas::handle_navigation` fest auf `Key::W`/`A`/`S`/`D` — die Taste ließ
   sich nicht umbelegen und war im Tastenbild unsichtbar.
-  Gehalten bewegt die Taste die Ansicht laufend; ein einzelner Aufruf (Hotbar,
-  MCP-freier Weg über `App::run_action`) rückt sie um `SCHWENK_SCHRITT_PX` weiter.
+  Sie sind **gewöhnliche Funktionen** (T0089): ein Druck rückt die Ansicht um
+  `SCHWENK_SCHRITT_PX` weiter — gleich ob von der Taste, aus der Hotbar oder aus
+  dem Ribbon. Gehalten bewegt sich nichts weiter, außer das Betriebssystem
+  wiederholt den Druck. Ein Dauerlauf auf `key_down` daneben ist ein Fehler: er
+  schwenkte auch bei `Strg+S` und unabhängig von der Hotbar.
 - **`S` gehört dem Schwenk, nicht dem Stutzen** — das Stutzen liegt seit T0079
   auf `C`. Eine alte `prefs.json` mit `Stutzen = S` wird beim Laden bereinigt.
 - **`C` = Stutzen, `T` = Text, `Z` = Zerlegen** (T0079). Der Farbeimer lag

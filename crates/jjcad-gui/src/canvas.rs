@@ -2818,23 +2818,11 @@ fn handle_navigation(app: &mut App, ui: &mut Ui, resp: &Response, rect: Rect, vi
         v.center -= w;
         app.set_view(v);
     }
-    // Schwenk mit der Tastatur. Die vier Richtungen sind **Funktionen** der
-    // Tastaturbelegung (`view.pan_left` … `view.pan_down`, Vorgabe W/A/S/D),
-    // keine festen Tasten (T0056): welche Taste schiebt, entscheidet die
-    // Belegung — dieselbe Liste wie in `App::handle_shortcuts`.
-    if !ctx.wants_keyboard_input() {
-        let dt = ctx.input(|i| i.stable_dt).min(0.1);
-        let dir = app.schwenk_richtung(ctx);
-        if dir != Vec2::ZERO {
-            let mut v = app.current_view();
-            // Grundtempo × Einstellung „Schwenk“ (T0067).
-            let px = crate::app::SCHWENK_PX_JE_SEKUNDE * app.prefs.pan_speed * dt as f32;
-            let w = v.screen_delta_to_world(Vec2::new(dir.x * px, dir.y * px));
-            v.center += w;
-            app.set_view(v);
-            ctx.request_repaint();
-        }
-    }
+    // Der Schwenk mit der Tastatur läuft **nicht** hier: die vier Richtungen
+    // sind gewöhnliche Funktionen der Tastaturbelegung (`view.pan_*`, Vorgabe
+    // W/A/S/D) und werden wie jede andere Funktion in `App::handle_shortcuts`
+    // ausgelöst (T0089). Ein Dauerlauf auf `key_down` bewegte die Ansicht
+    // zusätzlich — auch bei Strg+S und unabhängig von der Hotbar.
     // Zoom per Doppelklick auf Mitteltaste = alles zeigen
     if resp.double_clicked_by(egui::PointerButton::Middle) {
         app.fit_view();
