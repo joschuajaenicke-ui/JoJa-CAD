@@ -1619,6 +1619,15 @@ impl App {
                     {
                         self.session_mut().select(vec![id]);
                     }
+                    // Ansicht auf den ganzen Raum stellen: „Einpassen" kennt
+                    // nur das Textfeld (die Fläche ist unsichtbar), das Bild
+                    // zeigte sonst die Schrift riesig und ohne Eckgriffe.
+                    // Das Start-Einpassen der ersten Bilder wird übersprungen.
+                    self.started_at = 3.0;
+                    let mut v = self.current_view();
+                    v.center = jjcad_core::geom::Vec2::new(0.0, 0.0);
+                    v.zoom = 0.15;
+                    self.set_view(v);
                 }
                 // Werkzeug läuft: Punktfolge bis zur dritten Ecke, damit die
                 // Aufforderung „Enter setzt den Stempel" im Chat steht.
