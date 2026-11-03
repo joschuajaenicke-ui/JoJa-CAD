@@ -179,6 +179,19 @@ pub fn transform_kind(k: &EntityKind, m: &Affine) -> EntityKind {
             runs: runs.clone(),
             font: *font,
         },
+        // Raumstempel: Umgrenzung und Textfeld wandern mit, der Text bleibt
+        // abgeleitet (Fläche und Beschriftung stimmen danach von selbst).
+        EntityKind::Room {
+            boundary,
+            label,
+            height,
+            heading,
+        } => EntityKind::Room {
+            boundary: boundary.iter().map(|p| m.apply(*p)).collect(),
+            label: m.apply(*label),
+            height: height * f,
+            heading: heading.clone(),
+        },
         EntityKind::Dim {
             a,
             b,

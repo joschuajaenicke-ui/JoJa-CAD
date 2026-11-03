@@ -1938,6 +1938,31 @@ fn draw_tool_preview(
                 label = format!("{} Stützpunkte", tool.pts.len() + 1);
             }
         }
+        // Raumstempel: Umriss bis zum Zeiger, keine Füllung — die Fläche des
+        // Stempels bleibt unsichtbar. Am Zeiger steht die Fläche, die der
+        // Stempel später beschriftet.
+        "dim.room" => {
+            for pair in tool.pts.windows(2) {
+                p.line_segment([w2s(pair[0]), w2s(pair[1])], stroke);
+            }
+            if let Some(start) = last {
+                p.line_segment([w2s(start), w2s(cursor)], stroke);
+                if let Some(first) = tool.pts.first() {
+                    p.line_segment([w2s(cursor), w2s(*first)], dashed);
+                }
+            }
+            let mut umriss = tool.pts.clone();
+            umriss.push(cursor);
+            if let Some(pts) = fill_boundary_points(&umriss) {
+                label = format!(
+                    "{} Punkte · {}",
+                    pts.len(),
+                    unit.format_area(polygon_area(&pts).abs(), 2)
+                );
+            } else {
+                label = format!("{} Punkte", tool.pts.len() + 1);
+            }
+        }
         "draw.fill.boundary" | "draw.fill.points" | "draw.volume.points" => {
             // Polygonzug bis zum Zeiger — der Umriss, der beim Klick entsteht.
             for pair in tool.pts.windows(2) {
@@ -3181,8 +3206,10 @@ fn handle_input(
     {
         if let Some(t) = app.tool.clone() {
             let punktfolge = ist_fuell_punkte(&t.action);
-            if matches!(t.action.as_str(), "draw.polyline" | "draw.spline" | "dim.chain")
-                || punktfolge
+            if matches!(
+                t.action.as_str(),
+                "draw.polyline" | "draw.spline" | "dim.chain" | "dim.room"
+            ) || punktfolge
                 || t.action == "modify.area.split"
             {
                 if t.pts.len() >= 2 {
@@ -3451,7 +3478,7 @@ fn handle_input(
     if resp.clicked_by(egui::PointerButton::Secondary) {
         if let Some(tool) = app.tool.clone() {
             match tool.action.as_str() {
-                "draw.polyline" | "draw.spline" | "dim.chain" => {
+                "draw.polyline" | "draw.spline" | "dim.chain" | "dim.room" => {
                     finish_tool(app, true);
                 }
                 // Füllflächen aus Punkten: Rechtsklick schließt wie Enter. Bei
@@ -3915,6 +3942,25 @@ fn draw_grips(app: &App, p: &Painter, rect: Rect, view: View, selected: &[Id]) {
                         if hot { Palette::TEXT } else { Palette::ACCENT },
                     );
                     p.circle_stroke(c, size * 0.55, Stroke::new(1.2_f32, Palette::BG));
+                }
+                // Raumstempel: runder Griff mit Kreuz — verschiebt nur die
+                // Beschriftung, die Fläche bleibt stehen (T0097).
+                crate::handles::GripKind::Label => {
+                    p.circle_filled(
+                        c,
+                        size * 0.7,
+                        if hot { Palette::TEXT } else { Palette::ACCENT },
+                    );
+                    p.circle_stroke(c, size * 0.7, Stroke::new(1.2_f32, Palette::BG));
+                    let r = size * 0.7;
+                    p.line_segment(
+                        [c - Vec2::new(r * 0.6, 0.0), c + Vec2::new(r * 0.6, 0.0)],
+                        Stroke::new(1.2_f32, Palette::BG),
+                    );
+                    p.line_segment(
+                        [c - Vec2::new(0.0, r * 0.6), c + Vec2::new(0.0, r * 0.6)],
+                        Stroke::new(1.2_f32, Palette::BG),
+                    );
                 }
                 crate::handles::GripKind::Edge(i) => {
                     let Some((_, dir)) = crate::handles::edge_dir(e, i) else {
@@ -4506,6 +4552,36 @@ fn finish_fill(app: &mut App, action: &str) -> bool {
     ok
 }
 
+/// Schließt einen Raumstempel aus der geklickten Punktfolge.
+///
+/// Die Eckpunkte entstehen mit [`fill_boundary_points`] (doppelte Punkte,
+/// Schluss auf dem Start), die Beschriftung setzt die Action selbst in den
+/// „Pole of Inaccessibility". Höhe und Überschrift kommen aus dem
+/// Eigenschaften-Panel — dieselben Zeilen wie am vorhandenen Stempel.
+fn finish_room(app: &mut App) -> bool {
+    let Some(tool) = app.tool.clone() else {
+        return false;
+    };
+    let Some(boundary) = fill_boundary_points(&tool.pts) else {
+        app.toast("Raumstempel · mindestens 3 Punkte");
+        return false;
+    };
+    let pts: Vec<[f64; 2]> = boundary
+        .iter()
+        .map(|p| [app.unit().from_mm(p.x), app.unit().from_mm(p.y)])
+        .collect();
+    let params = json!({
+        "pts": pts,
+        "height": app.unit().from_mm(app.options.room_height),
+        "heading": app.options.room_heading,
+    });
+    let ok = run_und_waehlen(app, "dim.room", params);
+    if ok {
+        app.tool = None;
+    }
+    ok
+}
+
 pub fn finish_tool(app: &mut App, from_enter: bool) {
     let Some(tool) = app.tool.clone() else { return };
     match tool.action.as_str() {
@@ -4543,6 +4619,9 @@ pub fn finish_tool(app: &mut App, from_enter: bool) {
             // selben Code). `draw.volume` erzeugt dasselbe Objekt wie eine
             // Füllfläche, nur als Körper mit Höhe.
             finish_fill(app, &tool.action);
+        }
+        "dim.room" => {
+            finish_room(app);
         }
         "modify.area.split" => {
             // Die Punktfolge ist die Schnittlinie. Ausgewählte Füllflächen
@@ -4787,6 +4866,18 @@ fn tool_click_at(app: &mut App, w: V2, raw: V2) {
         // werden Punkte, nur das Ende erzeugt eine Füllfläche statt einer Linie.
         // Gilt für beide Füll-Werkzeuge (`draw.fill.boundary` und
         // `draw.fill.points`), damit sich die Eingabe nicht unterscheidet.
+        // Raumstempel: dieselbe Punktfolge wie die Fläche, nur entsteht beim
+        // Abschluss eine unsichtbare Fläche mit Textfeld.
+        "dim.room" => {
+            let doppelt = tool.pts.last().map(|q| q.dist(w) <= 0.5).unwrap_or(false);
+            let am_start = tool.pts.first().map(|q| q.dist(w) <= 0.5).unwrap_or(false);
+            if tool.pts.len() >= 3 && (doppelt || am_start) {
+                finish_tool(app, true);
+            } else {
+                tool.pts.push(w);
+                app.tool = Some(tool);
+            }
+        }
         "draw.fill.boundary" | "draw.fill.points" | "draw.volume.points" => {
             // Klick auf den letzten Punkt (Doppelklick) oder auf den Startpunkt
             // schließt den Umriss — wie Enter, nur mit der Maus.
@@ -5439,7 +5530,10 @@ fn run_und_waehlen(app: &mut App, action: &str, params: serde_json::Value) -> bo
 /// Erzeuger — das sind Maßketten-Einstellungen.
 fn ist_erzeuger(action: &str) -> bool {
     action.starts_with("draw.")
-        || matches!(action, "dim.linear" | "dim.chain" | "dim.elevation")
+        || matches!(
+            action,
+            "dim.linear" | "dim.chain" | "dim.elevation" | "dim.room"
+        )
 }
 
 fn run(app: &mut App, action: &str, params: serde_json::Value) -> bool {
@@ -10447,5 +10541,64 @@ mod tests_zerlegen {
 
         let neben_der_wand = warnformen(&mut app, Some(V2::new(2000.0, 5000.0)));
         assert_eq!(neben_der_wand, 0, "ohne Objekt keine Hervorhebung");
+    }
+}
+
+#[cfg(test)]
+mod tests_raumstempel {
+    //! T0097: Werkzeugweg des Raumstempels — Punkte sammeln, Abschluss legt
+    //! die unsichtbare Fläche samt Textfeld in ihrer Mitte an.
+
+    use super::*;
+    use jjcad_core::units::Unit;
+
+    fn app() -> App {
+        let mut app = App::with_ctx(egui::Context::default());
+        app.doc_mut().settings.input_unit = Unit::Mm;
+        app
+    }
+
+    fn mit_punkten(mut app: App, pts: Vec<V2>) -> App {
+        app.start_tool("dim.room");
+        let mut t = app.tool.clone().expect("Werkzeug startet nicht");
+        t.pts = pts;
+        app.tool = Some(t);
+        app
+    }
+
+    /// Vier Klicks + Abschluss: ein Stempel, Text in der Flächenmitte, Objekt
+    /// ausgewählt, Werkzeug beendet.
+    #[test]
+    fn werkzeug_legt_stempel_in_der_flaechenmitte_an() {
+        let mut app = mit_punkten(
+            app(),
+            vec![
+                V2::new(0.0, 0.0),
+                V2::new(4000.0, 0.0),
+                V2::new(4000.0, 3000.0),
+                V2::new(0.0, 3000.0),
+            ],
+        );
+        finish_tool(&mut app, true);
+
+        assert!(app.tool.is_none(), "Werkzeug blieb stehen");
+        assert_eq!(app.doc().entities.len(), 1, "genau ein Objekt");
+        match &app.doc().entities[0].kind {
+            EntityKind::Room { boundary, label, .. } => {
+                assert_eq!(boundary.len(), 4, "vier Ecken");
+                assert!(label.dist(V2::new(2000.0, 1500.0)) < 1.0, "Textlage {label:?}");
+            }
+            k => panic!("kein Raumstempel: {}", k.type_name()),
+        }
+        assert_eq!(app.selection().len(), 1, "der neue Stempel wird ausgewählt");
+    }
+
+    /// Unter drei Ecken entsteht kein Stempel — das Werkzeug bleibt stehen,
+    /// damit der gesetzte Punkt nicht verloren ist (ESC verwirft).
+    #[test]
+    fn zu_wenige_punkte_legen_nichts_an() {
+        let mut app = mit_punkten(app(), vec![V2::new(0.0, 0.0), V2::new(1000.0, 0.0)]);
+        finish_tool(&mut app, true);
+        assert!(app.doc().entities.is_empty(), "es wurde trotzdem etwas angelegt");
     }
 }
