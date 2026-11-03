@@ -100,7 +100,7 @@ Konstanten `model::RANG_*`):
 | 1 `RANG_VOLUMEN` | Volumen | über den Flächen |
 | 2 `RANG_BAUTEIL` | Wand, Tür, Fenster, Treppe, Block | über den Flächen, unter den Linien |
 | 3 `RANG_LINIE` | Punkt, Linie, Polylinie, Spline, Rechteck, Kreis, Bogen, Ellipse | über den Bauteilen |
-| 4 `RANG_BESCHRIFTUNG` | Text, Maß, Maßkette, Höhenkote | ganz vorn |
+| 4 `RANG_BESCHRIFTUNG` | Text, Maß, Maßkette, Grundriss- und Schnitt-Kote | ganz vorn |
 
 Eingefügt wird über `Document::insert_ranked` (jeder Erzeuger, jede Kopie, jede
 Einfüge-Vorschau geht diesen Weg; `Document::add_entity` delegiert dorthin). Der

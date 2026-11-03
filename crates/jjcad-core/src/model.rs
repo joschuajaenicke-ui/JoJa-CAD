@@ -584,14 +584,24 @@ pub enum EntityKind {
         #[serde(default)]
         axis: DimAxis,
     },
-    Elevation {
+    /// Grundriss-Kote: Kreis-Symbol mit verknüpftem Höhenwert daneben.
+    ///
+    /// Der Kreismittelpunkt sitzt auf `p`; der Höhenwert steht rechts davon
+    /// und gehört zum Symbol (kein eigenes Textfeld). Die Höhe gibt der
+    /// Nutzer im Eigenschaften-Panel an.
+    #[serde(rename = "elevation_plan", alias = "elevation")]
+    ElevationPlan {
         p: Vec2,
         /// Höhe in mm über ±0,00.
         z: f64,
-        #[serde(default)]
-        angle: f64,
-        #[serde(default)]
-        override_text: Option<String>,
+    },
+    /// Schnitt-Kote: Punktfolge aus Dreieck und Höhenangabe je Punkt.
+    ///
+    /// Der **erste** Punkt ist die Bezugshöhe ±0,00; alle weiteren Höhen
+    /// ergeben sich aus der Y-Differenz zum ersten Punkt (Modell-mm).
+    #[serde(rename = "elevation_section")]
+    ElevationSection {
+        pts: Vec<Vec2>,
     },
     Wall {
         a: Vec2,
@@ -740,7 +750,8 @@ impl EntityKind {
             EntityKind::Text { .. }
             | EntityKind::Dim { .. }
             | EntityKind::DimChain { .. }
-            | EntityKind::Elevation { .. } => RANG_BESCHRIFTUNG,
+            | EntityKind::ElevationPlan { .. }
+            | EntityKind::ElevationSection { .. } => RANG_BESCHRIFTUNG,
         }
     }
 }
@@ -793,7 +804,8 @@ impl EntityKind {
             EntityKind::Text { .. } => "Text",
             EntityKind::Dim { .. } => "Maß",
             EntityKind::DimChain { .. } => "Maßkette",
-            EntityKind::Elevation { .. } => "Höhenkote",
+            EntityKind::ElevationPlan { .. } => "Grundriss-Kote",
+            EntityKind::ElevationSection { .. } => "Schnitt-Kote",
             EntityKind::Wall { .. } => "Wand",
             EntityKind::Door { .. } => "Tür",
             EntityKind::Window { .. } => "Fenster",
@@ -816,7 +828,10 @@ impl EntityKind {
     pub fn is_dimension(&self) -> bool {
         matches!(
             self,
-            EntityKind::Dim { .. } | EntityKind::DimChain { .. } | EntityKind::Elevation { .. }
+            EntityKind::Dim { .. }
+                | EntityKind::DimChain { .. }
+                | EntityKind::ElevationPlan { .. }
+                | EntityKind::ElevationSection { .. }
         )
     }
 }

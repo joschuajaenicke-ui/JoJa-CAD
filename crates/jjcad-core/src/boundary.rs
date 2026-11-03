@@ -1037,7 +1037,8 @@ pub fn detect_boundary(
                 e.kind,
                 crate::model::EntityKind::Text { .. }
                     | crate::model::EntityKind::Point { .. }
-                    | crate::model::EntityKind::Elevation { .. }
+                    | crate::model::EntityKind::ElevationPlan { .. }
+                    | crate::model::EntityKind::ElevationSection { .. }
             ) {
                 return Err(BoundaryError::OnLine);
             }

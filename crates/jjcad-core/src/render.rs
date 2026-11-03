@@ -7,7 +7,7 @@ use crate::geom::*;
 use crate::model::*;
 use crate::style::*;
 use crate::transform;
-use crate::units::{dim_text, elevation_text, format_number, format_scale};
+use crate::units::{dim_text, elevation_section_text, elevation_text, format_number, format_scale};
 use crate::wall;
 use std::cell::OnceCell;
 
@@ -839,54 +839,76 @@ pub fn render_entity(
         EntityKind::DimChain { pts, line_pos, axis } => {
             render_dim_chain(ctx, e, &st, pts, *line_pos, *axis, xf, dl);
         }
-        EntityKind::Elevation {
-            p,
-            z,
-            angle,
-            override_text,
-        } => {
+        // Grundriss-Kote: Kreis mit Fadenkreuz, zwei gegenüberliegende Viertel
+        // gefüllt; der Höhenwert steht rechts daneben und gehört zum Symbol.
+        EntityKind::ElevationPlan { p, z } => {
             let h = ctx.a(doc.dim_style.text_height);
-            let s = ctx.a(doc.dim_style.arrow_size * 1.3);
             let p = xf.apply(*p);
-            let dir = Vec2::polar(*angle, 1.0);
-            let n = dir.perp();
-            // Bezugslinie
+            let r = h * 0.55;
+            let arm = r * 1.4;
+            // Gefüllte Viertel: oben links und unten rechts (wie die Marke im
+            // Grundriss). Als Fläche, damit sie unter den Linien liegt.
+            for a0 in [
+                std::f64::consts::FRAC_PI_2,
+                -std::f64::consts::FRAC_PI_2,
+            ] {
+                let n = 12;
+                let mut pts = Vec::with_capacity(n + 2);
+                pts.push(p);
+                for i in 0..=n {
+                    let a = a0 + std::f64::consts::FRAC_PI_2 * i as f64 / n as f64;
+                    pts.push(p + Vec2::polar(a, r));
+                }
+                dl.push(Prim {
+                    shape: Shape::Fill {
+                        outer: pts,
+                        holes: Vec::new(),
+                    },
+                    style: PrimStyle {
+                        fill: Some(st.color),
+                        ..st
+                    },
+                    entity: e.id,
+                    layer: e.layer,
+                });
+            }
             dl.push(Prim {
-                shape: Shape::Line(p, p + dir * (s * 2.2)),
+                shape: Shape::Arc {
+                    c: p,
+                    r,
+                    a0: 0.0,
+                    a1: 0.0,
+                },
                 style: st,
                 entity: e.id,
                 layer: e.layer,
             });
-            // Dreieck (DIN-Höhenkote)
+            // Fadenkreuz, etwas über den Kreis hinaus
             dl.push(Prim {
-                shape: Shape::Poly(
-                    vec![
-                        p,
-                        p - dir * s + n * (s * 0.5),
-                        p - dir * s - n * (s * 0.5),
-                    ],
-                    true,
-                ),
+                shape: Shape::Line(Vec2::new(p.x - arm, p.y), Vec2::new(p.x + arm, p.y)),
                 style: st,
                 entity: e.id,
                 layer: e.layer,
             });
-            let txt = override_text
-                .clone()
-                .unwrap_or_else(|| elevation_text(*z));
+            dl.push(Prim {
+                shape: Shape::Line(Vec2::new(p.x, p.y - arm), Vec2::new(p.x, p.y + arm)),
+                style: st,
+                entity: e.id,
+                layer: e.layer,
+            });
             let txt = if ctx.resolve_text {
-                doc.resolve_text_scaled(&txt, ctx.sheet_scale)
+                doc.resolve_text_scaled(&elevation_text(*z), ctx.sheet_scale)
             } else {
-                txt
+                elevation_text(*z)
             };
             dl.push(Prim {
                 shape: Shape::Text(TextPrim {
-                    pos: p + dir * (s * 2.2),
+                    pos: p + Vec2::new(arm + h * 0.3, 0.0),
                     text: txt,
                     height: h,
                     angle: 0.0,
                     align: TextAlignH::Left,
-                    valign: TextAlignV::Bottom,
+                    valign: TextAlignV::Middle,
                     bold: false,
                     italic: false,
                     underline: false,
@@ -898,6 +920,67 @@ pub fn render_entity(
                 entity: e.id,
                 layer: e.layer,
             });
+        }
+        // Schnitt-Kote: Dreieck mit Höhenangabe je Punkt. Der erste Punkt ist
+        // ±0,00 (offenes Dreieck), alle weiteren Höhen kommen aus der
+        // Y-Differenz zu ihm und sind gefüllt.
+        EntityKind::ElevationSection { pts } => {
+            let h = ctx.a(doc.dim_style.text_height);
+            let basis = pts.first().map(|p| p.y).unwrap_or(0.0);
+            for (i, pt) in pts.iter().enumerate() {
+                let p = xf.apply(*pt);
+                let w2 = h * 0.45;
+                let ht = h * 0.9;
+                let dreieck = vec![
+                    p,
+                    Vec2::new(p.x - w2, p.y + ht),
+                    Vec2::new(p.x + w2, p.y + ht),
+                ];
+                if i > 0 {
+                    dl.push(Prim {
+                        shape: Shape::Fill {
+                            outer: dreieck.clone(),
+                            holes: Vec::new(),
+                        },
+                        style: PrimStyle {
+                            fill: Some(st.color),
+                            ..st
+                        },
+                        entity: e.id,
+                        layer: e.layer,
+                    });
+                }
+                dl.push(Prim {
+                    shape: Shape::Poly(dreieck, true),
+                    style: st,
+                    entity: e.id,
+                    layer: e.layer,
+                });
+                let txt = if ctx.resolve_text {
+                    doc.resolve_text_scaled(&elevation_section_text(pt.y - basis), ctx.sheet_scale)
+                } else {
+                    elevation_section_text(pt.y - basis)
+                };
+                dl.push(Prim {
+                    shape: Shape::Text(TextPrim {
+                        pos: p + Vec2::new(0.0, ht + h * 0.25),
+                        text: txt,
+                        height: h,
+                        angle: 0.0,
+                        align: TextAlignH::Center,
+                        valign: TextAlignV::Bottom,
+                        bold: false,
+                        italic: false,
+                        underline: false,
+                        superscript: false,
+                        runs: Vec::new(),
+                        font: TextFont::Sans,
+                    }),
+                    style: st,
+                    entity: e.id,
+                    layer: e.layer,
+                });
+            }
         }
         EntityKind::Wall {
             a: p0,
@@ -3687,7 +3770,11 @@ fn entity_segments_tief(doc: &Document, e: &Entity, depth: usize) -> Vec<Seg> {
             // Punktgeometrie über BBox
             out.push(Seg::Line(*p, *p));
         }
-        EntityKind::Elevation { p, .. } => out.push(Seg::Line(*p, *p)),
+        // Koten zeichnen versetzt zu ihren gespeicherten Punkten (Kreis,
+        // Dreieck, Höhenwert) — Trefferflächen kommen deshalb aus der Anzeige.
+        EntityKind::ElevationPlan { .. } | EntityKind::ElevationSection { .. } => {
+            out.extend(trefferbild(doc, e).segmente);
+        }
         EntityKind::BlockRef {
             block,
             pos,

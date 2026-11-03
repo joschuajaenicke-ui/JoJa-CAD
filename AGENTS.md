@@ -329,6 +329,22 @@ Mit dem Nutzer abgestimmt — nicht „verbessern“:
   ist ein Schritt (T0089). Keinen zweiten Dauerlauf auf `key_down` daneben bauen;
   der bewegte die Ansicht auch bei Strg+S und unabhängig von der Hotbar.
 
+- **Höhenkoten (T0096)**: Zwei getrennte Objektarten ersetzen die frühere eine
+  Höhenkote. Die **Grundriss-Kote** (`EntityKind::ElevationPlan`) ist ein
+  Kreis-Symbol mit Fadenkreuz und zwei gefüllten Vierteln; der Höhenwert steht
+  rechts daneben und gehört zum Symbol, die Höhe gibt der Nutzer im
+  Eigenschaften-Panel an (`z` in mm, `elevation_text` mit zwei Stellen in
+  Metern). Die **Schnitt-Kote** (`EntityKind::ElevationSection`) ist eine
+  Punktfolge aus Dreieck und Höhenangabe je Punkt: der **erste** Punkt ist
+  ±0,00 (offenes Dreieck, ±0,00 als Text), alle weiteren Höhen rechnet der
+  Renderer aus der Y-Differenz zum ersten Punkt und schreibt sie dreistellig
+  (`elevation_section_text`, z. B. `+1,200`). Werkzeuge:
+  `dim.elevation.plan` (ein Objekt je Klick) und `dim.elevation.section`
+  (Punkte klicken, Enter beendet). Trefferflächen beider Koten kommen aus
+  `render::trefferbild` — über die Bounding-Box wäre die ganze Fläche zwischen
+  den Punkten anklickbar. Alte Zeichnungen mit `elevation` werden über einen
+  Serde-Alias als Grundriss-Kote gelesen; der frühere Zusatztext entfällt.
+
 ## Zahlenfelder: Grenzen und Zuggeschwindigkeit (verbindlich)
 
 Jedes Zahlenfeld — Eigenschaften-Panel, Einstellungen, Statusleiste — ist ein

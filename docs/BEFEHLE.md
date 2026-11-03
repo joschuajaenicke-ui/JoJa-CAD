@@ -61,7 +61,8 @@ Ohne `host` sucht `draw.door`/`draw.window` die nächste Wand im Umfeld und
 |---|---|---|
 | `dim.linear` | `a`, `b`, `line_pos`, `axis`, `text` | `axis`: `x`, `y`, `aligned`; ohne Angabe automatisch nach Dominanz |
 | `dim.chain` | `pts[]`, `line_pos`, `axis` | Eine Maßkette über mehrere Punkte |
-| `dim.elevation` | `p`, `z`, `angle`, `text` | Höhenkote, `z` in mm über ±0,00 |
+| `dim.elevation.plan` | `p`, `z` | Grundriss-Kote (Kreis-Symbol), `z` in mm über ±0,00 |
+| `dim.elevation.section` | `pts[]` | Schnitt-Kote; der erste Punkt ist ±0,00, alle weiteren Höhen rechnet der Renderer aus der Y-Differenz |
 
 ## Ändern
 
@@ -85,7 +86,7 @@ Ohne `host` sucht `draw.door`/`draw.window` die nächste Wand im Umfeld und
 Typparameter für `modify.set`: `thickness`, `height`, `material` (Wand),
 `width`, `kind`, `hinge`, `swing_in` (Tür), `width`, `sill` (Fenster),
 `steps`, `direction` (Treppe), `text`, `angle`, `bold` (Text), `r` (Kreis),
-`axis`, `text` (Maß), `z` (Höhenkote).
+`axis`, `text` (Maß), `z` (Grundriss-Kote), `pts` (Schnitt-Kote).
 
 ## Standardebenen
 
@@ -99,7 +100,7 @@ dass jeder Schritt `layer` mitgeben muss.
 | `draw.door` | Türen |
 | `draw.window` | Fenster |
 | `draw.stair`, `draw.stair.label` | Treppen |
-| `dim.linear`, `dim.chain`, `dim.elevation` | Bemaßung |
+| `dim.linear`, `dim.chain`, `dim.elevation.plan`, `dim.elevation.section` | Bemaßung |
 | `draw.text` | Text |
 | `draw.fill*`, `draw.hatch` | Schraffur |
 | `draw.volume*` | Wände (Körper im Wandton) |

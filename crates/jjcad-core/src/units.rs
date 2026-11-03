@@ -224,7 +224,22 @@ pub fn dim_text(mm: f64, unit: Unit, decimals: usize) -> String {
     format_number(unit.from_mm(mm), decimals)
 }
 
-/// Höhenkote formatieren: ±0,00 / +3,50 / -1,20 (immer in Metern, 2 Stellen).
+/// Höhenkote im Schnitt formatieren: ±0,00 für die Bezugshöhe, sonst drei
+/// Stellen in Metern (+0,185 / -0,185) — Höhen aus der Y-Differenz sind
+/// millimetergenau, zwei Stellen würden sie auf Zentimeter runden.
+pub fn elevation_section_text(z_mm: f64) -> String {
+    let m = z_mm / 1000.0;
+    if m.abs() < 0.0005 {
+        "±0,00".to_string()
+    } else if m > 0.0 {
+        format!("+{:.3}", m).replace('.', ",")
+    } else {
+        format!("{:.3}", m).replace('.', ",")
+    }
+}
+
+/// Höhenkote im Grundriss formatieren: ±0,00 / +3,50 / -1,20 (in Metern,
+/// 2 Stellen — der Nutzer gibt die Höhe selbst vor).
 pub fn elevation_text(z_mm: f64) -> String {
     let m = z_mm / 1000.0;
     if m.abs() < 0.0005 {
