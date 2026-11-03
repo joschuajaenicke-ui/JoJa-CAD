@@ -293,6 +293,8 @@ pub struct ToolOptions {
     pub door_kind: DoorKind,
     pub hinge: f64,
     pub swing_in: bool,
+    /// Lage des Basispunktes einer neuen Tür (T0091): Links/Mitte/Rechts.
+    pub door_base: DoorBase,
     pub window_width: f64,
     pub window_sill: f64,
     /// Fensterhöhe in mm — gehört wie Breite und Brüstung zu den Eigenschaften,
@@ -400,6 +402,7 @@ impl ToolOptions {
             door_kind: DoorKind::Hinge,
             hinge: 1.0,
             swing_in: true,
+            door_base: DoorBase::Left,
             window_width: doc.settings.window_width,
             window_sill: 900.0,
             window_height: 1250.0,

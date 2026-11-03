@@ -851,6 +851,37 @@ pub fn clamp_opening_center(
     wall_axis_point(doc, hid, t).unwrap_or(center)
 }
 
+/// Längslage des Türzentrums aus dem Basispunkt (T0091).
+///
+/// Der Klickpunkt ist der Basispunkt der Tür — Links/Mitte/Rechts längs der
+/// Wand. Das Zentrum liegt um den Versatz daneben und wird auf die freie
+/// Wandstrecke begrenzt. Action `draw.door` und Vorschau teilen die Rechnung,
+/// sonst springt die Tür beim Klick.
+pub fn door_at_from_base(
+    doc: &Document,
+    host: Option<Id>,
+    base_pt: Vec2,
+    width: f64,
+    base: crate::model::DoorBase,
+) -> Option<f64> {
+    let t = wall_at(doc, host, base_pt)? - base.offset() * width;
+    Some(clamp_opening_at(doc, host, width, t))
+}
+
+/// Türzentrum aus dem Basispunkt (T0091) — dieselbe Rechnung wie
+/// [`door_at_from_base`], nur als Punkt auf der Wandachse.
+pub fn door_center_from_base(
+    doc: &Document,
+    host: Option<Id>,
+    base_pt: Vec2,
+    width: f64,
+    base: crate::model::DoorBase,
+) -> Option<Vec2> {
+    let hid = host?;
+    let t = door_at_from_base(doc, host, base_pt, width, base)?;
+    wall_axis_point(doc, hid, t)
+}
+
 /// Länge längs der Wandachse ab Wandanfang (mm).
 fn wall_at(doc: &Document, host: Option<Id>, p: Vec2) -> Option<f64> {
     let hid = host?;
@@ -1729,12 +1760,18 @@ pub fn execute(doc: &mut Document, id: &str, params: &Value) -> Result<Value, St
             let layer = resolve_layer_in(doc, &p, ebene);
             let swing_in = p.boolean_or("swing_in", true);
             let width = p.len_or("width", doc.settings.door_width);
+            // Basispunkt der Tür (T0091): der Klickpunkt ist Links/Mitte/Rechts
+            // der Türbreite, das Zentrum liegt um den Versatz daneben.
+            let base = p
+                .text("base")
+                .and_then(|t| crate::model::DoorBase::from_text(&t))
+                .unwrap_or_default();
             // Nur die freie Wandstrecke zählt: an verbundenen Ecken endet die
             // Wand an der Anschlussnaht (Gehrungspunkte der Umrandung), nicht
             // an der Stirnebene (T0078).
             let at = match (host, opening_span(doc, host, width)) {
-                (_, Some((lo, hi))) => {
-                    Some(wall_at(doc, host, center).unwrap_or(lo).clamp(lo, hi))
+                (_, Some((lo, _hi))) => {
+                    Some(door_at_from_base(doc, host, center, width, base).unwrap_or(lo))
                 }
                 (Some(_), None) => return Err(TUER_ZU_BREIT.into()),
                 (None, None) => None,
@@ -1761,6 +1798,7 @@ pub fn execute(doc: &mut Document, id: &str, params: &Value) -> Result<Value, St
                     swing_in,
                     host,
                     at,
+                    base,
                 },
             );
             apply_common(doc, &mut e, &p, layer);
@@ -2478,6 +2516,10 @@ pub fn execute(doc: &mut Document, id: &str, params: &Value) -> Result<Value, St
                     _ => crate::style::WallAlign::Center,
                 });
             let swing_new = p.boolean("swing_in");
+            // Basispunkt der Tür (T0091) — verschiebt nur die Marke, nicht die Tür.
+            let base_new = p
+                .text("base")
+                .and_then(|t| crate::model::DoorBase::from_text(&t));
             for eid in &ids {
                 // Öffnungen: neue Lage berechnen, solange das Dokument nur
                 // lesend geliehen ist
@@ -2604,6 +2646,7 @@ pub fn execute(doc: &mut Document, id: &str, params: &Value) -> Result<Value, St
                             kind,
                             hinge,
                             swing_in,
+                            base,
                             ..
                         } => {
                             if let Some(v) = width {
@@ -2620,6 +2663,9 @@ pub fn execute(doc: &mut Document, id: &str, params: &Value) -> Result<Value, St
                             }
                             if let Some(b) = p.boolean("swing_in") {
                                 *swing_in = b;
+                            }
+                            if let Some(b) = base_new {
+                                *base = b;
                             }
                         }
                         EntityKind::Window {

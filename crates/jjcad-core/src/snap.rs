@@ -1634,6 +1634,7 @@ mod tests {
                 align: crate::style::WallAlign::Center,
                 host: Some(id),
                 at: Some(2000.0),
+                base: crate::model::DoorBase::Left,
             },
             style: Default::default(),
             by_block: false,

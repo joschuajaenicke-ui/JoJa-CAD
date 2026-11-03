@@ -46,6 +46,7 @@ fn spec(hinge: f64, swing_in: bool) -> DoorSpec {
         kind: jjcad_core::model::DoorKind::Hinge,
         hinge,
         swing_in,
+        base: jjcad_core::model::DoorBase::Center,
     }
 }
 
@@ -110,7 +111,7 @@ fn vorschau_tuer_gleich_platzierter_tuer() {
                 "draw.door",
                 &json!({"center": [KLICK.0, KLICK.1], "angle": 0.0, "width": BREITE,
                         "host": [host], "hinge": hinge, "swing_in": swing_in,
-                        "kind": "hinge"}),
+                        "kind": "hinge", "base": "center"}),
             )
             .unwrap();
             let platziert = s.doc.entities.last().unwrap().clone();
@@ -279,7 +280,8 @@ fn vorschau_wand_gleich_wand_mit_tuer() {
     s.execute(
         "draw.door",
         &json!({"center": [KLICK.0, KLICK.1], "angle": 0.0, "width": BREITE,
-                "host": [host], "hinge": 1.0, "swing_in": true, "kind": "hinge"}),
+                "host": [host], "hinge": 1.0, "swing_in": true, "kind": "hinge",
+                "base": "center"}),
     )
     .unwrap();
     let mut dl = render::DisplayList::default();

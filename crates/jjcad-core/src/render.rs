@@ -1794,6 +1794,9 @@ pub struct DoorSpec {
     /// Öffnungsseite; bestimmt zusammen mit der Anschlagseite die vordere
     /// Wandkante, auf der das Blatt sitzt.
     pub swing_in: bool,
+    /// Lage des Basispunktes längs der Türbreite (T0091) — der Klickpunkt
+    /// hängt an diesem Punkt der Tür.
+    pub base: DoorBase,
 }
 
 /// Lage und Form eines Fensters, das gerade platziert wird.
@@ -1829,6 +1832,9 @@ pub struct OpeningPreview {
     /// Vorschau wird **über** die vorhandene Wand gezeichnet; ohne Freilegen
     /// bliebe das Loch unsichtbar, weil die Wand darunter weiterläuft.
     pub loch: Vec<Vec<Vec2>>,
+    /// Basispunkt der Tür (T0091) — die Zeichenfläche markiert ihn in der
+    /// Vorschau, damit sichtbar ist, wo die Tür am Zeiger hängt.
+    pub base: Option<Vec2>,
 }
 
 /// Vorschau der Tür, die beim Klick entsteht.
@@ -1840,9 +1846,17 @@ pub fn preview_door(doc: &Document, spec: &DoorSpec) -> Option<OpeningPreview> {
     // beim Klick nicht entsteht. Passt sie nicht in die Wand, gibt es keine
     // Vorschau.
     crate::actions::opening_span(doc, spec.host, spec.width)?;
-    let anschlusspunkt =
-        crate::actions::clamp_opening_center(doc, spec.host, spec.center, spec.width);
-    // Tür immer auf der vorderen Wandkante — dieselbe Rechnung wie in der
+    // Der Klickpunkt ist der Basispunkt der Tür (Links/Mitte/Rechts) — dieselbe
+    // Rechnung wie in der Action `draw.door` (T0091).
+    let anschlusspunkt = crate::actions::door_center_from_base(
+        doc,
+        spec.host,
+        spec.center,
+        spec.width,
+        spec.base,
+    )
+    .unwrap_or(spec.center);
+    // Tür immer auf die vordere Wandkante — dieselbe Rechnung wie in der
     // Action `draw.door`, sonst springt die Tür beim Klick um die halbe
     // Wanddicke zur Seite.
     let center = crate::actions::door_face_center(
@@ -1862,8 +1876,31 @@ pub fn preview_door(doc: &Document, spec: &DoorSpec) -> Option<OpeningPreview> {
         swing_in: spec.swing_in,
         host: spec.host,
         at: None,
+        base: spec.base,
     };
-    opening_preview(doc, host, &host_e, kind, center, spec.width)
+    let mut v = opening_preview(doc, host, &host_e, kind, center, spec.width)?;
+    // Basispunkt der Vorschau: derselbe Punkt, den die Tür nach dem Klick trägt.
+    v.base = Some(center + Vec2::polar(spec.angle, 1.0) * (spec.base.offset() * spec.width));
+    Some(v)
+}
+
+/// Basispunkt einer Tür in Weltkoordinaten (T0091).
+///
+/// Das ist der Punkt, an dem eine neue Tür am Mauszeiger hängt und den die
+/// Zeichenfläche als Marke zeichnet — Links/Mitte/Rechts längs der Türbreite.
+pub fn door_base_point(e: &Entity) -> Option<Vec2> {
+    let EntityKind::Door {
+        center,
+        angle,
+        width,
+        base,
+        ..
+    } = &e.kind
+    else {
+        return None;
+    };
+    let dir = Vec2::polar(*angle, 1.0);
+    Some(*center + dir * (base.offset() * *width))
 }
 
 /// Vorschau des Fensters, die beim Klick entsteht.
@@ -1943,6 +1980,7 @@ fn opening_preview(
         symbol: symbol_dl,
         wall: wall_dl,
         loch,
+        base: None,
     })
 }
 
