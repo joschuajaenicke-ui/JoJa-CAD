@@ -53,22 +53,21 @@ pub fn auf_pixel(ctx: &egui::Context, wert: f32) -> f32 {
     (wert * ppp).round() / ppp
 }
 
-/// Weg eines einzelnen Schwenk-Schritts in Bildpunkten (T0056): ein Tastendruck
-/// rückt die Ansicht sichtbar weiter, ohne sie springen zu lassen.
+/// Weg eines einzelnen Schwenk-Schritts in Bildpunkten (T0056): ein Aufruf der
+/// Funktion rückt die Ansicht sichtbar weiter, ohne sie springen zu lassen.
+/// Der Schwenk ist eine **gewöhnliche Funktion** (T0089): ein Druck bewegt,
+/// gehalten wiederholt das Betriebssystem den Druck wie bei jeder anderen Taste.
+/// Die Einstellung „Schwenk“ skaliert den Schritt über `UserPrefs::pan_speed`.
 pub const SCHWENK_SCHRITT_PX: f32 = 60.0;
-/// Grundtempo des Schwenks mit gehaltener Taste in Bildpunkten je Sekunde
-/// (Vorgabe, T0067). Die Einstellung „Schwenk“ skaliert es über
-/// `UserPrefs::pan_speed`.
-pub const SCHWENK_PX_JE_SEKUNDE: f32 = 700.0;
 
 /// Die Tasten, deren Funktion aus der **Tastaturbelegung** kommt — Buchstaben
 /// und Symbole (T0056, `docs/TASTEN.md`). Ziffern gehören der Hotbar,
 /// Steuerungstasten und Kombinationen dem festen Ablauf im Code; keine dieser
 /// Tasten steht deshalb in dieser Liste.
 ///
-/// **Eine** Quelle für Kürzel-Auswertung (`handle_shortcuts`) und
-/// Ansichtsschwenk (`canvas::handle_navigation`) — sonst legt man eine Taste in
-/// der Belegung um und die eine Hälfte des Programms hört nicht darauf.
+/// **Eine** Quelle für die Kürzel-Auswertung (`handle_shortcuts`) — sonst legt
+/// man eine Taste in der Belegung um und die eine Hälfte des Programms hört
+/// nicht darauf.
 pub const EINZELTASTEN: &[(egui::Key, &str)] = &[
     (egui::Key::A, "a"),
     (egui::Key::B, "b"),
@@ -2512,9 +2511,8 @@ impl App {
             "view.zoom_extents" => self.fit_view(),
             "view.zoom_in" => self.zoom_by(1.25),
             "view.zoom_out" => self.zoom_by(0.8),
-            // Umsetzen der Ansicht: ein einzelner Aufruf (Hotbar, Kürzel aus
-            // einer anderen Quelle) rückt um einen Schritt weiter; gehalten
-            // läuft der Schwenk in `canvas::handle_navigation` (T0056).
+            // Umsetzen der Ansicht: ein Aufruf rückt um einen Schritt weiter —
+            // aus der Hotbar, von der Taste und aus dem Ribbon gleich (T0089).
             "view.pan_left" => self.schwenk_schritt(-1.0, 0.0),
             "view.pan_right" => self.schwenk_schritt(1.0, 0.0),
             "view.pan_up" => self.schwenk_schritt(0.0, -1.0),
@@ -3313,14 +3311,14 @@ impl App {
                 // Einzeltasten gelten nur ohne Umschalt — sonst würde
                 // Umschalt+I zusätzlich die Belegung von "i" auslösen.
                 if !shift && ctx.input(|i| i.key_pressed(*key)) {
+                    // Auch der Ansichtsschwenk ist eine gewöhnliche Funktion
+                    // (T0089): der Druck löst sie einmal aus, gehalten
+                    // wiederholt das Betriebssystem den Druck wie bei jeder
+                    // anderen Taste. Früher lief er daneben als Dauerlauf auf
+                    // `key_down` — auch mit Strg (Strg+S schwenkte mit) und
+                    // unabhängig davon, was in der Hotbar lag.
                     if let Some(action) = self.prefs.action_for_key(label) {
-                        // Der Ansichtsschwenk ist keine Aktion, die man
-                        // „auslöst": er läuft, solange die Taste gehalten wird
-                        // (`canvas::handle_navigation`). Ein Druck würde die
-                        // Ansicht sonst zweimal bewegen.
-                        if !action.starts_with("view.pan_") {
-                            run = Some(action);
-                        }
+                        run = Some(action);
                     }
                 }
             }
@@ -3407,35 +3405,14 @@ impl App {
         })
     }
 
-    /// Schieberichtung der gehaltenen Tasten in Bildschirmrichtung
-    /// (x nach rechts, y nach unten). Welche Taste welche Richtung schiebt,
-    /// steht in der **Tastaturbelegung** (`view.pan_*`) — nicht im Code (T0056).
-    pub fn schwenk_richtung(&self, ctx: &egui::Context) -> Vec2 {
-        let mut dir = Vec2::ZERO;
-        for (key, label) in EINZELTASTEN {
-            let Some(action) = self.prefs.action_for_key(label) else {
-                continue;
-            };
-            if !ctx.input(|i| i.key_down(*key)) {
-                continue;
-            }
-            match action.as_str() {
-                "view.pan_left" => dir.x -= 1.0,
-                "view.pan_right" => dir.x += 1.0,
-                "view.pan_up" => dir.y -= 1.0,
-                "view.pan_down" => dir.y += 1.0,
-                _ => {}
-            }
-        }
-        dir
-    }
-
     /// Schiebt die Ansicht um einen Schritt (`SCHWENK_SCHRITT_PX` Bildpunkte) in
     /// Bildschirmrichtung — die Umrechnung läuft über die gedrehte Ansicht,
     /// damit der Schub auch bei gedrehter Zeichnung der Taste folgt.
+    /// **Der einzige** Weg des Schwenks: Taste, Hotbar und Ribbon rufen ihn über
+    /// die Funktion `view.pan_*` auf (T0089).
     pub fn schwenk_schritt(&mut self, dx: f32, dy: f32) {
         let mut v = self.current_view();
-        // T0067: Der Einzelschritt folgt demselben Faktor wie das Halten.
+        // T0067: Die Einstellung „Schwenk“ skaliert den Schritt.
         let px = SCHWENK_SCHRITT_PX * self.prefs.pan_speed;
         let w = v.screen_delta_to_world(Vec2::new(dx * px, dy * px));
         v.center += w;
@@ -6608,9 +6585,17 @@ mod tests_tastenbelegung {
     use super::*;
 
     fn frame_mit(app: &mut App, events: Vec<egui::Event>) {
+        frame_mit_lage(app, events, egui::Modifiers::NONE);
+    }
+
+    /// Ein Bild mit ausdrücklicher Modifier-Lage: egui 0.29 liest
+    /// `InputState::modifiers` aus `RawInput::modifiers`, nicht aus dem
+    /// Tastenereignis (T0068) — Strg+S kommt sonst nie als Kombination an.
+    fn frame_mit_lage(app: &mut App, events: Vec<egui::Event>, modifiers: egui::Modifiers) {
         let ctx = app.ctx.clone();
         let raw = egui::RawInput {
             screen_rect: Some(Rect::from_min_size(Pos2::ZERO, Vec2::new(1500.0, 950.0))),
+            modifiers,
             events,
             ..Default::default()
         };
@@ -6675,6 +6660,103 @@ mod tests_tastenbelegung {
             "S darf kein Werkzeug starten — die Taste gehört dem Schwenk, nicht dem \
              Stutzen: {:?}",
             app.tool.as_ref().map(|t| t.action.clone())
+        );
+    }
+
+    /// T0089: Der Schwenk ist eine **gewöhnliche Funktion** — ein Druck rückt
+    /// um genau einen Schritt. Die Taste weiter gedrückt zu halten bewegt
+    /// nichts mehr; bei jeder anderen Taste wiederholt allein das
+    /// Betriebssystem den Druck. Vorher lief daneben ein Dauerlauf auf
+    /// `key_down`, der auch ohne neuen Tastendruck weiterschob.
+    #[test]
+    fn gehaltene_schwenktaste_rueckt_nur_einen_schritt() {
+        let mut app = app_mit_zeichnung();
+        app.prefs.pan_speed = 1.0;
+        frame_mit(&mut app, vec![]);
+        let vorher = app.current_view().center;
+        frame_mit(&mut app, vec![druck(egui::Key::W)]);
+        let nach_druck = app.current_view().center;
+        assert!(
+            nach_druck.y > vorher.y + 1.0,
+            "ein Druck muss die Ansicht sichtbar schieben: {vorher:?} → {nach_druck:?}"
+        );
+        // Zwanzig Bilder ohne neues Tastenereignis: die Taste gilt weiter als
+        // gedrückt (`keys_down` bleibt stehen), die Ansicht darf ruhen.
+        for _ in 0..20 {
+            frame_mit(&mut app, vec![]);
+        }
+        assert_eq!(
+            app.current_view().center,
+            nach_druck,
+            "die gehaltene Taste darf nicht weiterschieben — der Schwenk ist ein Schritt, kein Dauerlauf"
+        );
+    }
+
+    /// T0089: `Strg+S` speichert — es schwenkt nicht. Vorher wertete der
+    /// Dauerlauf in `canvas::handle_navigation` nur `key_down` aus und sah die
+    /// Strg-Taste nicht.
+    #[test]
+    fn strg_s_schwenkt_nicht() {
+        let mut app = app_mit_zeichnung();
+        app.prefs.pan_speed = 1.0;
+        // Der eingebaute Dateidialog: `Strg+S` löst `file.save` aus und die
+        // Zeichnung ist unbenannt. Mit dem Systemdialog ginge ein echtes
+        // Speichern-Fenster der Sitzung auf (XDG-Portal) — im Test unzulässig.
+        app.prefs.file_dialog = "intern".into();
+        frame_mit(&mut app, vec![]);
+        let vorher = app.current_view().center;
+        let strg_s = egui::Event::Key {
+            key: egui::Key::S,
+            physical_key: None,
+            pressed: true,
+            repeat: false,
+            modifiers: egui::Modifiers::COMMAND,
+        };
+        frame_mit_lage(&mut app, vec![strg_s], egui::Modifiers::COMMAND);
+        frame_mit_lage(&mut app, vec![], egui::Modifiers::COMMAND);
+        assert_eq!(
+            app.current_view().center, vorher,
+            "Strg+S darf die Ansicht nicht bewegen"
+        );
+        // Gegenprobe an einer frischen App: ohne Strg schiebt dieselbe Taste
+        // (in der ersten App steht nach Strg+S der Speicherdialog offen — der
+        // nimmt die Tastatur zu Recht für sich).
+        let mut frisch = app_mit_zeichnung();
+        frisch.prefs.pan_speed = 1.0;
+        frame_mit(&mut frisch, vec![]);
+        let start = frisch.current_view().center;
+        frame_mit(&mut frisch, vec![druck(egui::Key::S)]);
+        assert!(
+            frisch.current_view().center.y < start.y - 1.0,
+            "S allein muss nach unten schieben: {start:?} → {:?}",
+            frisch.current_view().center
+        );
+    }
+
+    /// T0089: Auch aus der **Hotbar** ist der Schwenk eine gewöhnliche
+    /// Funktion — ein Druck auf den Slot rückt um einen Schritt, gehalten
+    /// (Ziffer bleibt gedrückt) nicht weiter.
+    #[test]
+    fn schwenk_aus_der_hotbar_rueckt_einen_schritt() {
+        let mut app = app_mit_zeichnung();
+        app.prefs.pan_speed = 1.0;
+        app.prefs.set_slot(0, Some("view.pan_right".into()));
+        frame_mit(&mut app, vec![]);
+        let vorher = app.current_view().center;
+        frame_mit(&mut app, vec![druck(egui::Key::Num1)]);
+        let nachher = app.current_view().center;
+        assert!(
+            nachher.x > vorher.x + 1.0 && (nachher.y - vorher.y).abs() < 1.0,
+            "Slot 1 mit „Ansicht rechts“ muss nach rechts schieben: {vorher:?} → {nachher:?}"
+        );
+        assert!(app.tool.is_none(), "der Schwenk ist kein Werkzeug");
+        for _ in 0..10 {
+            frame_mit(&mut app, vec![]);
+        }
+        assert_eq!(
+            app.current_view().center,
+            nachher,
+            "die gehaltene Ziffer darf nicht weiterschieben"
         );
     }
 
