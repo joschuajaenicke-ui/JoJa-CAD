@@ -2371,6 +2371,20 @@ fn stuecke(s: Vec2, t: Vec2, schnitte: &[f64], halb: f64) -> Vec<(Vec2, Vec2)> {
 // Bemaßung (DIN 406 / DIN 1356)
 // ---------------------------------------------------------------------------
 
+/// Darstellung der Bemaßung nach DIN 1356-1:2026-09, Bild 3 — Länge des
+/// Begrenzungsstrichs (Schrägstrich) und Überstand der Maßlinie über die
+/// äußere Maßhilfslinie.
+///
+/// Bild 3 zeichnet bei 2,5 mm Texthöhe rund 1,5 mm Strich und 1,5 mm
+/// Überstand, also etwa 0,6 h. Anteile der Texthöhe statt fester
+/// Millimeter: sonst stimmt die Darstellung nur für eine Schriftgröße.
+pub const DIM_MARKE_H: f64 = 0.6;
+pub const DIM_UEBERSTAND_H: f64 = 0.6;
+/// Abstand des Textankers über der Maßlinie. Der Anker ist die Unterkante der
+/// Zeilenbox (Unterlängen), deshalb 0,6 h: die Ziffern stehen damit rund 0,7 h
+/// über der Linie — so wie in Bild 3.
+pub const DIM_TEXT_ABSTAND_H: f64 = 0.6;
+
 struct DimGeom {
     /// zu bemaßende Punkte am Bauteil
     wa: Vec2,
@@ -2562,42 +2576,45 @@ fn render_dim(
     let over = ctx.a(style.ext_overshoot);
     let arrow = ctx.a(style.arrow_size);
     let text_h = ctx.a(style.text_height);
-    let text_gap = ctx.a(style.text_gap);
+    // Bild 3: Begrenzungsstrich und Überstand hängen an der Texthöhe, nicht an
+    // der Pfeilgröße; der Text steht deutlich über der Linie.
+    let marke = ctx.a(style.text_height * DIM_MARKE_H);
+    let ueberstand = ctx.a(style.text_height * DIM_UEBERSTAND_H);
+    let text_gap = ctx.a(style.text_gap)
+        .max(ctx.a(style.text_height * DIM_TEXT_ABSTAND_H));
+    let dir = Vec2::polar(g.angle, 1.0);
 
-    // Hilfslinien
+    // Hilfslinien — Volllinie schmal wie die Maßlinie (Tabelle 2, 01.1.8)
     for (w, d) in [(g.wa, g.da), (g.wb, g.db)] {
-        let dir = (d - w).normalized();
-        let s = w + dir * ext_gap.min(w.dist(d) * 0.5);
-        let t = d + dir * over;
+        let dd = (d - w).normalized();
+        let s = w + dd * ext_gap.min(w.dist(d) * 0.5);
+        let t = d + dd * over;
         dl.push(Prim {
             shape: Shape::Line(xf.apply(s), xf.apply(t)),
-            style: PrimStyle {
-                width: st.width * 0.8,
-                ..*st
-            },
+            style: *st,
             entity: e.id,
             layer: e.layer,
         });
     }
-    // Maßlinie
+    // Maßlinie mit Überstand über die Maßhilfslinien (§9.1: „Auf den Überstand
+    // der Maßlinie über die Maßhilfslinie hinaus darf verzichtet werden“)
     dl.push(Prim {
-        shape: Shape::Line(xf.apply(g.da), xf.apply(g.db)),
+        shape: Shape::Line(
+            xf.apply(g.da - dir * ueberstand),
+            xf.apply(g.db + dir * ueberstand),
+        ),
         style: *st,
         entity: e.id,
         layer: e.layer,
     });
     // Markierungen
-    let dir = Vec2::polar(g.angle, 1.0);
     match style.arrow {
         ArrowKind::Slash => {
-            let d = Vec2::polar(g.angle + std::f64::consts::FRAC_PI_4, arrow * 0.7);
+            let d = Vec2::polar(g.angle + std::f64::consts::FRAC_PI_4, marke * 0.5);
             for p in [g.da, g.db] {
                 dl.push(Prim {
                     shape: Shape::Line(xf.apply(p - d), xf.apply(p + d)),
-                    style: PrimStyle {
-                        width: st.width * 1.2,
-                        ..*st
-                    },
+                    style: *st,
                     entity: e.id,
                     layer: e.layer,
                 });
@@ -2656,7 +2673,7 @@ fn render_dim(
         // Text passt nicht: außerhalb platzieren
         (g.db + dir * (text_w * 0.5 + ctx.a(1.5)), TextAlignH::Center)
     } else {
-        (mid + n * (text_gap + text_h * 0.15), TextAlignH::Center)
+        (mid + n * text_gap, TextAlignH::Center)
     };
     dl.push(Prim {
         shape: Shape::Text(TextPrim {
@@ -2698,35 +2715,75 @@ fn render_dim_chain(
     let over = ctx.a(style.ext_overshoot);
     let arrow = ctx.a(style.arrow_size);
     let text_h = ctx.a(style.text_height);
-    let text_gap = ctx.a(style.text_gap);
+    // Bild 3: Begrenzungsstrich, Überstand der Maßlinie und Textabstand sind
+    // Anteile der Texthöhe (die Pfeilgröße gilt nur für Pfeil und Punkt).
+    let marke = ctx.a(style.text_height * DIM_MARKE_H);
+    let ueberstand = ctx.a(style.text_height * DIM_UEBERSTAND_H);
+    let text_gap = ctx.a(style.text_gap)
+        .max(ctx.a(style.text_height * DIM_TEXT_ABSTAND_H));
     let (dir, _) = dim_achse(pts, axis);
     // Lage des Maßtextes: links der Messrichtung (nicht der Abstandsrichtung).
     let n = dir.perp();
     let angle = dir.angle();
 
     // Maßlinie — dieselbe Lotrechnung wie der Griff an der Maßlinie
-    // (`render::dim_projiziert`).
+    // (`render::dim_projiziert`), mit Überstand über die äußeren
+    // Maßhilfslinien (§9.1, Bild 3).
     let projected: Vec<Vec2> = dim_projiziert(pts, line_pos, axis);
     dl.push(Prim {
-        shape: Shape::Line(xf.apply(projected[0]), xf.apply(*projected.last().unwrap())),
+        shape: Shape::Line(
+            xf.apply(projected[0] - dir * ueberstand),
+            xf.apply(*projected.last().unwrap() + dir * ueberstand),
+        ),
         style: *st,
         entity: e.id,
         layer: e.layer,
     });
-    // Hilfslinien an allen Punkten
+    // Hilfslinien an allen Punkten — schmal wie die Maßlinie (Tabelle 2, 01.1.8)
     for (w, d) in pts.iter().zip(projected.iter()) {
         let dd = (*d - *w).normalized();
         let s = *w + dd * ext_gap.min(w.dist(*d) * 0.5);
         let t = *d + dd * over;
         dl.push(Prim {
             shape: Shape::Line(xf.apply(s), xf.apply(t)),
-            style: PrimStyle {
-                width: st.width * 0.8,
-                ..*st
-            },
+            style: *st,
             entity: e.id,
             layer: e.layer,
         });
+    }
+    // Begrenzungszeichen **einmal je Basispunkt**: liegen zwei Segmente
+    // aneinander, standen bisher zwei Striche (bei Pfeil und Punkt sichtbar
+    // als Doppelmarke) auf demselben Punkt.
+    match style.arrow {
+        ArrowKind::Slash => {
+            let d = Vec2::polar(angle + std::f64::consts::FRAC_PI_4, marke * 0.5);
+            for p in &projected {
+                dl.push(Prim {
+                    shape: Shape::Line(xf.apply(*p - d), xf.apply(*p + d)),
+                    style: *st,
+                    entity: e.id,
+                    layer: e.layer,
+                });
+            }
+        }
+        ArrowKind::Dot => {
+            for p in &projected {
+                dl.push(Prim {
+                    shape: Shape::Dot {
+                        p: xf.apply(*p),
+                        r: arrow * 0.3,
+                    },
+                    style: PrimStyle {
+                        color: st.color,
+                        fill: Some(st.color),
+                        ..*st
+                    },
+                    entity: e.id,
+                    layer: e.layer,
+                });
+            }
+        }
+        ArrowKind::Arrow | ArrowKind::None => {}
     }
     // Segmente + Text
     for i in 0..projected.len() - 1 {
@@ -2743,39 +2800,9 @@ fn render_dim_chain(
         } else {
             txt
         };
-        // Markierungen
+        // Pfeile nur an den Segmentenden (Schrägstrich und Punkt stehen
+        // bereits einmal je Basispunkt oben)
         match style.arrow {
-            ArrowKind::Slash => {
-                let d = Vec2::polar(angle + std::f64::consts::FRAC_PI_4, arrow * 0.7);
-                for p in [p0, p1] {
-                    dl.push(Prim {
-                        shape: Shape::Line(xf.apply(p - d), xf.apply(p + d)),
-                        style: PrimStyle {
-                            width: st.width * 1.2,
-                            ..*st
-                        },
-                        entity: e.id,
-                        layer: e.layer,
-                    });
-                }
-            }
-            ArrowKind::Dot => {
-                for p in [p0, p1] {
-                    dl.push(Prim {
-                        shape: Shape::Dot {
-                            p: xf.apply(p),
-                            r: arrow * 0.28,
-                        },
-                        style: PrimStyle {
-                            color: st.color,
-                            fill: Some(st.color),
-                            ..*st
-                        },
-                        entity: e.id,
-                        layer: e.layer,
-                    });
-                }
-            }
             ArrowKind::Arrow => {
                 for (p, s) in [(p0, -1.0), (p1, 1.0)] {
                     let d = dir * s;
@@ -2796,7 +2823,8 @@ fn render_dim_chain(
                     });
                 }
             }
-            ArrowKind::None => {}
+            // Schrägstrich und Punkt stehen schon oben, einmal je Basispunkt.
+            ArrowKind::Slash | ArrowKind::Dot | ArrowKind::None => {}
         }
         let mid = (p0 + p1) * 0.5;
         let text_w = estimate_text_width(&txt, text_h);
@@ -2806,9 +2834,11 @@ fn render_dim_chain(
             ta += std::f64::consts::PI;
         }
         let pos = if text_w + a > span {
-            p1 + dir * (text_w * 0.5 + a * 1.5)
+            // Zu schmal für die Maßzahl: außerhalb des Segments, damit sie
+            // nicht auf dem Begrenzungsstrich des Nachbarsegments liegt.
+            p1 + dir * (text_w * 0.5 + marke * 0.5 + a)
         } else {
-            mid + n * (text_gap + text_h * 0.15)
+            mid + n * text_gap
         };
         dl.push(Prim {
             shape: Shape::Text(TextPrim {

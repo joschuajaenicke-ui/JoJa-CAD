@@ -171,14 +171,20 @@ schneidet die Öffnung aus der Wand und zeichnet die Laibungen.
 Alle Werte in **Papier-Millimetern**; der Renderer multipliziert sie mit dem
 Zeichnungsmaßstab.
 
+Einige Elemente der Bemaßung sind nach DIN 1356-1:2026-09, Bild 3 **Anteile
+der Texthöhe** und wachsen deshalb mit `text_height` (`render::DIM_MARKE_H` =
+0,6 h Begrenzungsstrich und Maßlinien-Überstand, `DIM_TEXT_ABSTAND_H` = 0,7 h
+Abstand der Maßzahl über der Maßlinie). Bei 2,5 mm Texthöhe sind das 1,5 mm
+Strich/Überstand und 1,75 mm Textabstand.
+
 | Feld | Standard | Bedeutung |
 |---|---|---|
 | `text_height` | 2.5 | Texthöhe |
-| `arrow_size` | 2.0 | Größe der Markierung |
+| `arrow_size` | 2.0 | Größe von Pfeil und Punkt (der Schrägstrich folgt der Texthöhe) |
 | `arrow` | `"Slash"` | `Slash` (DIN 1356), `Arrow`, `Dot`, `None` |
-| `text_gap` | 0.8 | Abstand Maßlinie → Text |
+| `text_gap` | 0.8 | **Mindest**abstand Maßlinie → Maßzahl; unter 0,7 h greift der Normwert |
 | `ext_gap` | 1.5 | Abstand Bauteil → Hilfslinie |
-| `ext_overshoot` | 1.5 | Überstand der Hilfslinie |
+| `ext_overshoot` | 1.5 | Überstand der Hilfslinie über die Maßlinie |
 | `chain_gap` | 8.0 | Abstand zwischen Maßketten |
 | `decimals` | 2 | Nachkommastellen |
 
