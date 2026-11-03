@@ -31,9 +31,16 @@ pub fn show(app: &mut App, ctx: &egui::Context) {
             ui.horizontal(|ui| {
                 let (r, _) = ui.allocate_exact_size(Vec2::splat(22.0), Sense::hover());
                 crate::icons::paint(ui.painter(), r, "inventory", Palette::ACCENT);
-                ui.label(theme::bold("Inventar", 16.0));
+                ui.label(theme::bold(jjcad_core::i18n::tr("gui.inventory.inventar"), 16.0));
                 ui.add_space(10.0);
-                for (i, name) in ["Lager", "Blöcke", "Funktionen"].iter().enumerate() {
+                for (i, name) in [
+                    jjcad_core::i18n::tr("gui.inventory.lager"),
+                    jjcad_core::i18n::tr("gui.inventory.bloecke"),
+                    jjcad_core::i18n::tr("gui.inventory.funktionen"),
+                ]
+                .iter()
+                .enumerate()
+                {
                     let active = app.ui.inventory_tab == i;
                     let galley = ui.painter().layout_no_wrap(
                         name.to_string(),
@@ -67,7 +74,7 @@ pub fn show(app: &mut App, ctx: &egui::Context) {
                     }
                 }
                 ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-                    if widgets::icon_button(ui, "close", 26.0, false, "Schließen (E)").clicked() {
+                    if widgets::icon_button(ui, "close", 26.0, false, jjcad_core::i18n::tr("gui.inventory.schliessen_e")).clicked() {
                         app.close_inventory();
                     }
                 });
@@ -94,7 +101,7 @@ pub fn show(app: &mut App, ctx: &egui::Context) {
 fn storage_tab(app: &mut App, ui: &mut Ui) {
     ui.horizontal(|ui| {
         ui.label(theme::dim(
-            "Freies Raster – Elemente und Funktionen zwischenlagern. Auf einen Hotbar-Slot ziehen zum Belegen, mittlere Maustaste leert.",
+            jjcad_core::i18n::tr("gui.inventory.freies_raster_elemente_und_funktionen_zwischenlagern_auf"),
         ));
     });
     ui.add_space(6.0);
@@ -122,9 +129,9 @@ fn storage_tab(app: &mut App, ui: &mut Ui) {
                         } else if let Some(t) = app.tool.clone() {
                             app.prefs.inventory[idx] = Some(t.action.clone());
                             let _ = app.prefs.save();
-                            app.toast("Ins Lager gelegt");
+                            app.toast(jjcad_core::i18n::tr("gui.inventory.ins_lager_gelegt"));
                         } else {
-                            app.toast("Werkzeug wählen, dann leeren Lagerplatz anklicken");
+                            app.toast(jjcad_core::i18n::tr("gui.inventory.werkzeug_waehlen_dann_leeren_lagerplatz_anklicken"));
                         }
                     }
                     // Mittlere Maustaste: Platz leeren — dieselbe Geste wie in
@@ -133,7 +140,7 @@ fn storage_tab(app: &mut App, ui: &mut Ui) {
                     if resp.clicked_by(egui::PointerButton::Middle) && item.is_some() {
                         app.prefs.inventory[idx] = None;
                         let _ = app.prefs.save();
-                        app.toast("Lager · geleert");
+                        app.toast(jjcad_core::i18n::tr("gui.inventory.lager_geleert"));
                     }
                     if resp.drag_started() {
                         if let Some(a) = &item {
@@ -143,13 +150,13 @@ fn storage_tab(app: &mut App, ui: &mut Ui) {
                     plaetze.push((idx, resp.rect));
                     resp.context_menu(|ui| {
                         if item.is_some() {
-                            if ui.button("Leeren").clicked() {
+                            if ui.button(jjcad_core::i18n::tr("gui.inventory.leeren")).clicked() {
                                 app.prefs.inventory[idx] = None;
                                 let _ = app.prefs.save();
                                 ui.close_menu();
                             }
                         }
-                        if ui.button("Verknüpfen …").clicked() {
+                        if ui.button(jjcad_core::i18n::tr("gui.inventory.verknuepfen")).clicked() {
                             app.ui.bind_slot = Some(usize::MAX);
                             app.ui.inventory_tab = 2;
                             ui.close_menu();
@@ -167,7 +174,7 @@ fn storage_tab(app: &mut App, ui: &mut Ui) {
         }
         app.ui.last_lager = Some(plaetze);
         ui.add_space(8.0);
-        if ui.button("+ Weitere Reihe").clicked() {
+        if ui.button(jjcad_core::i18n::tr("gui.inventory.weitere_reihe")).clicked() {
             for _ in 0..9 {
                 app.prefs.inventory.push(None);
             }
@@ -183,12 +190,12 @@ fn storage_tab(app: &mut App, ui: &mut Ui) {
 fn blocks_tab(app: &mut App, ui: &mut Ui) {
     ui.horizontal(|ui| {
         ui.label(
-            RichText::new("Blockbibliothek")
+            RichText::new(jjcad_core::i18n::tr("gui.inventory.blockbibliothek"))
                 .size(12.0)
                 .color(Palette::TEXT_DIM),
         );
         ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-            if ui.button("Block aus Auswahl").clicked() {
+            if ui.button(jjcad_core::i18n::tr("gui.inventory.block_aus_auswahl")).clicked() {
                 app.run_action(ui.ctx(), "block.create");
             }
         });
@@ -252,7 +259,7 @@ fn block_tile(app: &mut App, ui: &mut Ui, b: &BlockDef) {
         p.text(
             Pos2::new(rect.center().x, rect.bottom() - 13.0),
             egui::Align2::CENTER_CENTER,
-            if b.source == jjcad_core::model::BlockSource::System { "System" } else { "Projekt" },
+            if b.source == jjcad_core::model::BlockSource::System { jjcad_core::i18n::tr("gui.inventory.system") } else { jjcad_core::i18n::tr("gui.inventory.projekt") },
             FontId::proportional(9.0),
             Palette::TEXT_FAINT,
         );
@@ -264,18 +271,18 @@ fn block_tile(app: &mut App, ui: &mut Ui, b: &BlockDef) {
         app.ui.slot_drag = Some((usize::MAX, format!("block:{}", b.id)));
     }
     resp.context_menu(|ui| {
-        if ui.button("Einfügen").clicked() {
+        if ui.button(jjcad_core::i18n::tr("gui.inventory.einfuegen")).clicked() {
             app.start_ghost_block(b.id.clone());
             ui.close_menu();
         }
-        if ui.button("In Lager legen").clicked() {
+        if ui.button(jjcad_core::i18n::tr("gui.inventory.in_lager_legen")).clicked() {
             if let Some(free) = app.prefs.inventory.iter().position(|x| x.is_none()) {
                 app.prefs.inventory[free] = Some(format!("block:{}", b.id));
                 let _ = app.prefs.save();
             }
             ui.close_menu();
         }
-        if b.source != jjcad_core::model::BlockSource::System && ui.button("Löschen").clicked() {
+        if b.source != jjcad_core::model::BlockSource::System && ui.button(jjcad_core::i18n::tr("gui.inventory.loeschen")).clicked() {
             let _ = app.session_mut().execute("block.delete", &serde_json::json!({"block": b.id}));
             app.mark_changed();
             ui.close_menu();
@@ -400,14 +407,14 @@ pub(crate) fn funktion_gewaehlt(app: &mut App, id: &str) {
         if crate::dialogs::funktion_auf_taste(app, id, &key) {
             app.close_inventory();
         } else {
-            app.toast("Funktion · fest belegt");
+            app.toast(jjcad_core::i18n::tr("gui.inventory.funktion_fest_belegt"));
         }
     } else if let Some(slot) = app.ui.bind_slot.take() {
         if slot == usize::MAX {
             if let Some(free) = app.prefs.inventory.iter().position(|x| x.is_none()) {
                 app.prefs.inventory[free] = Some(id.to_string());
                 let _ = app.prefs.save();
-                app.toast("Ins Lager gelegt");
+                app.toast(jjcad_core::i18n::tr("gui.inventory.ins_lager_gelegt"));
             }
         } else {
             app.bind_slot_action(slot, Some(id.to_string()));
@@ -421,11 +428,11 @@ pub(crate) fn funktion_gewaehlt(app: &mut App, id: &str) {
 
 fn functions_tab(app: &mut App, ui: &mut Ui) {
     ui.horizontal(|ui| {
-        ui.label(theme::dim("Alle Befehle – anklicken zum Starten, auf Hotbar ziehen zum Belegen."));
+        ui.label(theme::dim(jjcad_core::i18n::tr("gui.inventory.alle_befehle_anklicken_zum_starten_auf_hotbar_ziehen_zum")));
         ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
             ui.add_sized(
                 [180.0, 22.0],
-                egui::TextEdit::singleline(&mut app.ui.search).hint_text("Suchen …"),
+                egui::TextEdit::singleline(&mut app.ui.search).hint_text(jjcad_core::i18n::tr("gui.inventory.suchen")),
             );
         });
     });
@@ -434,11 +441,11 @@ fn functions_tab(app: &mut App, ui: &mut Ui) {
         ui.add_space(4.0);
         ui.horizontal(|ui| {
             ui.label(
-                RichText::new(format!("Funktion für Taste {} wählen", key.to_uppercase()))
+                RichText::new(jjcad_core::i18n::t_args_owned("gui.inventory.funktion_fuer_taste_x_waehlen", &[("wert1", format!("{}", key.to_uppercase()))]))
                     .color(Palette::ACCENT)
                     .size(11.5),
             );
-            if ui.button("Abbrechen").clicked() {
+            if ui.button(jjcad_core::i18n::tr("gui.inventory.abbrechen")).clicked() {
                 app.ui.bind_key = None;
             }
         });
@@ -447,14 +454,14 @@ fn functions_tab(app: &mut App, ui: &mut Ui) {
         ui.horizontal(|ui| {
             ui.label(
                 RichText::new(if slot == usize::MAX {
-                    "Element für das Lager wählen".to_string()
+                    jjcad_core::i18n::tr("gui.inventory.element_fuer_das_lager_waehlen").to_string()
                 } else {
-                    format!("Element für Slot {} wählen", slot + 1)
+                    jjcad_core::i18n::t_args_owned("gui.inventory.element_fuer_slot_x_waehlen", &[("wert1", format!("{}", slot + 1))])
                 })
                 .color(Palette::ACCENT)
                 .size(11.5),
             );
-            if ui.button("Abbrechen").clicked() {
+            if ui.button(jjcad_core::i18n::tr("gui.inventory.abbrechen")).clicked() {
                 app.ui.bind_slot = None;
             }
         });
@@ -519,7 +526,7 @@ fn functions_tab(app: &mut App, ui: &mut Ui) {
                         ui.painter().text(
                             Pos2::new(rect.right() - 8.0, rect.center().y),
                             egui::Align2::RIGHT_CENTER,
-                            "· fest",
+                            jjcad_core::i18n::tr("gui.inventory.fest"),
                             FontId::proportional(9.5),
                             Palette::TEXT_FAINT,
                         );
@@ -550,12 +557,7 @@ fn functions_tab(app: &mut App, ui: &mut Ui) {
             }
         }
         ui.add_space(12.0);
-        ui.label(theme::dim(format!(
-            "{} Blöcke · {} Funktionen · {} Objekte",
-            app.doc().blocks.len(),
-            actions::ACTIONS.len(),
-            app.doc().entities.len()
-        )));
+        ui.label(theme::dim(jjcad_core::i18n::t_args_owned("gui.inventory.x_bloecke_x_funktionen_x_objekte", &[("wert1", format!("{}", app.doc().blocks.len())), ("wert2", format!("{}", actions::ACTIONS.len())), ("wert3", format!("{}", app.doc().entities.len()))])));
     });
 }
 

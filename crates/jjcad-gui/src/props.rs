@@ -202,17 +202,17 @@ pub fn kopf(app: &App, ui: &mut Ui, ziel: Ziel, titel: &str, icon: &str) {
     section_title(ui, icon, titel);
     match ziel {
         Ziel::Neu => {
-            ui.label(theme::dim("gilt für das nächste Element"));
+            ui.label(theme::dim(jjcad_core::i18n::tr("gui.props.gilt_fuer_das_naechste_element")));
         }
         Ziel::Auswahl(id) => {
             if app.mehrfach_ziel.len() > 1 {
                 // Mehrfachauswahl einer Art: das Referenzobjekt liefert die
                 // Werte, geändert wird an allen.
                 let n = app.mehrfach_ziel.len();
-                ui.label(theme::dim(format!("{n} Objekte · Änderung gilt für alle")));
+                ui.label(theme::dim(jjcad_core::i18n::t_args_owned("gui.props.x_objekte_aenderung_gilt_fuer_alle", &[("n", format!("{}", n))])));
                 if mehrfach_abweichend(app) {
                     ui.label(theme::faint(
-                        "*variiert* — die Objekte unterscheiden sich; eine Änderung setzt alle gleich",
+                        jjcad_core::i18n::tr("gui.props.variiert_die_objekte_unterscheiden_sich_eine_aenderung_s"),
                     ));
                 }
             } else {
@@ -222,7 +222,7 @@ pub fn kopf(app: &App, ui: &mut Ui, ziel: Ziel, titel: &str, icon: &str) {
                     .map(|e| e.layer)
                     .and_then(|l| app.doc().layer(l).map(|l| l.name.clone()))
                     .unwrap_or_else(|| "Blatt".to_string());
-                ui.label(theme::dim(format!("#{id} · Layer {layer_name}")));
+                ui.label(theme::dim(jjcad_core::i18n::t_args_owned("gui.props.x_layer_x", &[("id", format!("{}", id)), ("layer_name", format!("{}", layer_name))])));
             }
         }
     }
@@ -247,22 +247,22 @@ pub fn reihenfolge(app: &mut App, ui: &mut Ui, ziel: Ziel) {
         }
     };
     let mut wunsch = pos as i32;
-    widgets::field_row(ui, "Reihenfolge", |ui| {
+    widgets::field_row(ui, jjcad_core::i18n::tr("gui.props.reihenfolge"), |ui| {
         match ziel {
             // Noch kein Objekt: kein Platz, also keine Zahl — die Zeile bleibt
             // trotzdem stehen, damit das Panel nicht springt.
             Ziel::Neu => {
                 ui.add_enabled(false, egui::Label::new(theme::mono("—")));
-                ui.label(theme::faint("nach dem Platzieren"));
+                ui.label(theme::faint(jjcad_core::i18n::tr("gui.props.nach_dem_platzieren")));
             }
             // Mehrfachauswahl: eine gemeinsame Position gibt es nicht.
             Ziel::Auswahl(_) if app.mehrfach_ziel.len() > 1 => {
                 ui.add_enabled(false, egui::Label::new(theme::mono("—")));
-                ui.label(theme::faint(format!("je Objekt · {total} im Blatt")));
+                ui.label(theme::faint(jjcad_core::i18n::t_args_owned("gui.props.je_objekt_x_im_blatt", &[("total", format!("{}", total))])));
             }
             Ziel::Auswahl(_) => {
                 ui.add(crate::widgets::zahl(&mut wunsch, 1.0, 1..=total.max(1) as i32));
-                ui.label(theme::faint(format!("von {total}")));
+                ui.label(theme::faint(jjcad_core::i18n::t_args_owned("gui.props.von_x", &[("total", format!("{}", total))])));
             }
         }
     });
@@ -385,7 +385,7 @@ pub fn gemein(
         .map(|l| (l.id, l.name.clone()))
         .collect();
     let mut new_layer = layer;
-    widgets::field_row(ui, "Layer", |ui| {
+    widgets::field_row(ui, jjcad_core::i18n::tr("gui.props.layer"), |ui| {
         let gewaehlt = if gleich_layer {
             panels::pick_combo(ui, &ziel.salt("layer"), new_layer, &layer_items)
         } else {
@@ -430,7 +430,7 @@ pub fn gemein(
         // Linienstärke
         zeile("staerke");
         let mut picked_w: Option<f64> = None;
-        widgets::field_row(ui, "Stärke", |ui| {
+        widgets::field_row(ui, jjcad_core::i18n::tr("gui.props.staerke"), |ui| {
             picked_w =
                 panels::weight_combo(ui, &ziel.salt("staerke"), staerke, !gleich_staerke);
         });
@@ -441,7 +441,7 @@ pub fn gemein(
         // Linientyp
         zeile("linientyp");
         let mut picked_lt: Option<jjcad_core::style::LineType> = None;
-        widgets::field_row(ui, "Linientyp", |ui| {
+        widgets::field_row(ui, jjcad_core::i18n::tr("gui.props.linientyp"), |ui| {
             picked_lt =
                 panels::linetype_combo(ui, &ziel.salt("linientyp"), linientyp, !gleich_typ);
         });
@@ -595,7 +595,7 @@ pub fn text(app: &mut App, ui: &mut Ui, ziel: Ziel) {
     widgets::hline(ui);
     ui.add_space(4.0);
 
-    section_title(ui, icon, "Text");
+    section_title(ui, icon, jjcad_core::i18n::tr("gui.props.text"));
     zeile("textkopf");
 
     // ---- Inhalt ----
@@ -612,7 +612,7 @@ pub fn text(app: &mut App, ui: &mut Ui, ziel: Ziel) {
             ui.add_enabled_ui(false, |ui| {
                 egui::TextEdit::multiline(&mut leer)
                     .id(egui::Id::new("sel_text_inhalt_gesperrt"))
-                    .hint_text("im Zeichenbereich")
+                    .hint_text(jjcad_core::i18n::tr("gui.props.im_zeichenbereich"))
                     .desired_rows(2)
                     .desired_width(f32::INFINITY)
                     .show(ui);
@@ -654,7 +654,7 @@ pub fn text(app: &mut App, ui: &mut Ui, ziel: Ziel) {
             ui.add_enabled_ui(false, |ui| {
                 let ausgabe = egui::TextEdit::multiline(&mut leer)
                     .id(egui::Id::new("neu_text_inhalt"))
-                    .hint_text("im Zeichenbereich")
+                    .hint_text(jjcad_core::i18n::tr("gui.props.im_zeichenbereich"))
                     .desired_rows(2)
                     .desired_width(f32::INFINITY)
                     .show(ui);
@@ -668,7 +668,7 @@ pub fn text(app: &mut App, ui: &mut Ui, ziel: Ziel) {
     match ziel {
         Ziel::Neu => {
             let klick = panels::auszeichnen_knoepfe(ui, stil);
-            ui.label(theme::faint("Auszeichnung des neuen Textes"));
+            ui.label(theme::faint(jjcad_core::i18n::tr("gui.props.auszeichnung_des_neuen_textes")));
             if let Some((schluessel, wert)) = klick {
                 setze_stil(&mut stil, schluessel, wert);
             }
@@ -692,17 +692,17 @@ pub fn text(app: &mut App, ui: &mut Ui, ziel: Ziel) {
             let klick = panels::auszeichnen_knoepfe(ui, angezeigt);
             ui.horizontal(|ui| {
                 ui.label(theme::faint(if hat_markierung {
-                    format!("Zeichen {von}–{bis}")
+                    jjcad_core::i18n::t_args_owned("gui.props.zeichen_xx", &[("von", format!("{}", von)), ("bis", format!("{}", bis))])
                 } else {
-                    "nächste Zeichen".to_string()
+                    jjcad_core::i18n::tr("gui.props.naechste_zeichen").to_string()
                 }))
                 .on_hover_text(if hat_markierung {
-                    "Gilt für die markierten Zeichen."
+                    jjcad_core::i18n::tr("gui.props.gilt_fuer_die_markierten_zeichen")
                 } else {
-                    "Ohne Markierung gilt die Auszeichnung für das, was Sie als Nächstes tippen."
+                    jjcad_core::i18n::tr("gui.props.ohne_markierung_gilt_die_auszeichnung_fuer_das_was_sie_a")
                 });
                 if pending.is_some() && !hat_markierung {
-                    ui.label(theme::dim("· vorgemerkt"));
+                    ui.label(theme::dim(jjcad_core::i18n::tr("gui.props.vorgemerkt")));
                 }
             });
             if let Some((schluessel, wert)) = klick {
@@ -741,7 +741,7 @@ pub fn text(app: &mut App, ui: &mut Ui, ziel: Ziel) {
 
     // ---- Größe, Schrift, Drehung, Ausrichtung ----
     zeile("textgroesse");
-    widgets::field_row(ui, "Textgröße", |ui| {
+    widgets::field_row(ui, jjcad_core::i18n::tr("gui.props.textgroesse"), |ui| {
         widgets::length_field(
             ui,
             &mut hoehe,
@@ -753,7 +753,7 @@ pub fn text(app: &mut App, ui: &mut Ui, ziel: Ziel) {
     });
 
     zeile("schriftart");
-    widgets::field_row(ui, "Schriftart", |ui| {
+    widgets::field_row(ui, jjcad_core::i18n::tr("gui.props.schriftart"), |ui| {
         widgets::schrift_wahl(ui, &ziel.salt("schrift"), &mut schrift);
     });
     if !schrift.explodierbar() {
@@ -761,7 +761,7 @@ pub fn text(app: &mut App, ui: &mut Ui, ziel: Ziel) {
     }
 
     zeile("drehung");
-    widgets::field_row(ui, "Drehung", |ui| {
+    widgets::field_row(ui, jjcad_core::i18n::tr("gui.props.drehung"), |ui| {
         ui.add(
             crate::widgets::zahl(&mut drehung, 1.0, widgets::WINKEL_MIN..=widgets::WINKEL_MAX)
                 .suffix("°"),
@@ -775,7 +775,7 @@ pub fn text(app: &mut App, ui: &mut Ui, ziel: Ziel) {
 
     ui.add_space(2.0);
     zeile("platzhalter");
-    ui.label(theme::dim("Platzhalter: {DATUM} {PROJEKT} {MASSTAB} {PLAN}"));
+    ui.label(theme::dim(jjcad_core::i18n::tr("gui.props.platzhalter_x_x_x_x")));
 
     // ---- Anwenden ----
     match ziel {
@@ -1060,7 +1060,7 @@ pub fn wand(app: &mut App, ui: &mut Ui, ziel: Ziel) {
             .map(|l| l.color)
             .unwrap_or(Color::BLACK)
     });
-    kopf(app, ui, ziel, "Wand", "wall");
+    kopf(app, ui, ziel, jjcad_core::i18n::tr("gui.props.wand"), "wall");
     reihenfolge(app, ui, ziel);
     let (staerke, linientyp) = linienwerte(app, &e);
 
@@ -1080,11 +1080,11 @@ pub fn wand(app: &mut App, ui: &mut Ui, ziel: Ziel) {
     ui.add_space(4.0);
     widgets::hline(ui);
     ui.add_space(4.0);
-    section_title(ui, "wall", "Wand");
+    section_title(ui, "wall", jjcad_core::i18n::tr("gui.props.wand"));
     zeile("wandkopf");
 
     zeile("dicke");
-    widgets::field_row(ui, "Dicke", |ui| {
+    widgets::field_row(ui, jjcad_core::i18n::tr("gui.props.dicke"), |ui| {
         widgets::length_field(
             ui,
             &mut dicke,
@@ -1095,7 +1095,7 @@ pub fn wand(app: &mut App, ui: &mut Ui, ziel: Ziel) {
         );
     });
     zeile("hoehe");
-    widgets::field_row(ui, "Höhe", |ui| {
+    widgets::field_row(ui, jjcad_core::i18n::tr("gui.props.hoehe"), |ui| {
         widgets::length_field(
             ui,
             &mut hoehe,
@@ -1112,7 +1112,7 @@ pub fn wand(app: &mut App, ui: &mut Ui, ziel: Ziel) {
             .map(|c| (*c, c.label().to_string()))
             .collect();
     let mut picked_align = None;
-    widgets::field_row(ui, "Ausrichtung", |ui| {
+    widgets::field_row(ui, jjcad_core::i18n::tr("gui.props.ausrichtung"), |ui| {
         picked_align = panels::pick_combo(
             ui,
             &ziel.salt("wand_ausrichtung"),
@@ -1131,7 +1131,7 @@ pub fn wand(app: &mut App, ui: &mut Ui, ziel: Ziel) {
             .map(|c| (*c, c.label().to_string()))
             .collect();
     let mut picked_hatch = None;
-    widgets::field_row(ui, "Schraffur", |ui| {
+    widgets::field_row(ui, jjcad_core::i18n::tr("gui.props.schraffur"), |ui| {
         picked_hatch = panels::pick_combo(
             ui,
             &ziel.salt("wand_schraffur"),
@@ -1151,7 +1151,7 @@ pub fn wand(app: &mut App, ui: &mut Ui, ziel: Ziel) {
     let fill_unset = fuellfarbe.is_none();
     let fill_cur = fuellfarbe.unwrap_or_else(|| farbe_gezeigt.mix(Color::WHITE, 0.74));
     let mut picked_fill: Option<Option<Color>> = None;
-    widgets::field_row(ui, "Füllfarbe", |ui| {
+    widgets::field_row(ui, jjcad_core::i18n::tr("gui.props.fuellfarbe"), |ui| {
         picked_fill = panels::color_combo(
             ui,
             &ziel.salt("wand_fuellfarbe"),
@@ -1171,32 +1171,22 @@ pub fn wand(app: &mut App, ui: &mut Ui, ziel: Ziel) {
         (Some(e), Ziel::Auswahl(_)) => {
             if let EntityKind::Wall { a: pa, b: pb, .. } = &e.kind {
                 ui.add_space(4.0);
-                ui.label(theme::dim(format!(
-                    "Länge {} · Achse ({:.2}, {:.2}) – ({:.2}, {:.2})",
-                    unit.format(pa.dist(*pb), unit.decimals()),
-                    unit.from_mm(pa.x),
-                    unit.from_mm(pa.y),
-                    unit.from_mm(pb.x),
-                    unit.from_mm(pb.y)
-                )));
+                ui.label(theme::dim(jjcad_core::i18n::t_args_owned("gui.props.laenge_x_achse_x_x_x_x", &[("wert1", format!("{}", unit.format(pa.dist(*pb), unit.decimals()))), ("wert2", format!("{:.2}", unit.from_mm(pa.x))), ("wert3", format!("{:.2}", unit.from_mm(pa.y))), ("wert4", format!("{:.2}", unit.from_mm(pb.x))), ("wert5", format!("{:.2}", unit.from_mm(pb.y)))])));
                 // Relativer Abstand der Basispunkte — sichtbar ohne Scrollen.
                 if let Some((dx, dy)) = crate::panels::delta_xy(e, unit) {
-                    widgets::field_row(ui, "Delta X", |ui| {
+                    widgets::field_row(ui, jjcad_core::i18n::tr("gui.props.delta_x"), |ui| {
                         ui.label(theme::mono(dx.clone()));
                     });
-                    widgets::field_row(ui, "Delta Y", |ui| {
+                    widgets::field_row(ui, jjcad_core::i18n::tr("gui.props.delta_y"), |ui| {
                         ui.label(theme::mono(dy.clone()));
                     });
                 }
-                ui.label(theme::dim(format!(
-                    "Volumen {:.3} m³",
-                    pa.dist(*pb) * dicke * hoehe / 1e9
-                )));
+                ui.label(theme::dim(jjcad_core::i18n::t_args_owned("gui.props.volumen_x_m3", &[("wert1", format!("{:.3}", pa.dist(*pb) * dicke * hoehe / 1e9))])));
             }
         }
         _ => {
             ui.add_space(4.0);
-            ui.label(theme::faint("Länge und Volumen erscheinen am platzierten Objekt"));
+            ui.label(theme::faint(jjcad_core::i18n::tr("gui.props.laenge_und_volumen_erscheinen_am_platzierten_objekt")));
         }
     }
 
@@ -1322,7 +1312,7 @@ pub fn tuer(app: &mut App, ui: &mut Ui, ziel: Ziel) {
             .unwrap_or(Color::BLACK)
     });
 
-    kopf(app, ui, ziel, "Tür", "door");
+    kopf(app, ui, ziel, jjcad_core::i18n::tr("gui.props.tuer"), "door");
     reihenfolge(app, ui, ziel);
     let (staerke, linientyp) = linienwerte(app, &e);
 
@@ -1342,11 +1332,11 @@ pub fn tuer(app: &mut App, ui: &mut Ui, ziel: Ziel) {
     ui.add_space(4.0);
     widgets::hline(ui);
     ui.add_space(4.0);
-    section_title(ui, "door", "Tür");
+    section_title(ui, "door", jjcad_core::i18n::tr("gui.props.tuer"));
     zeile("tuerkopf");
 
     zeile("breite");
-    widgets::field_row(ui, "Breite", |ui| {
+    widgets::field_row(ui, jjcad_core::i18n::tr("gui.props.breite"), |ui| {
         widgets::length_field(
             ui,
             &mut breite,
@@ -1363,7 +1353,7 @@ pub fn tuer(app: &mut App, ui: &mut Ui, ziel: Ziel) {
         .map(|c| (*c, c.label().to_string()))
         .collect();
     let mut picked_typ = None;
-    widgets::field_row(ui, "Typ", |ui| {
+    widgets::field_row(ui, jjcad_core::i18n::tr("gui.props.typ"), |ui| {
         picked_typ = panels::pick_combo(ui, &ziel.salt("tuer_typ"), art, &typ_items);
     });
     if let Some(v) = picked_typ {
@@ -1371,23 +1361,23 @@ pub fn tuer(app: &mut App, ui: &mut Ui, ziel: Ziel) {
     }
 
     zeile("anschlag");
-    widgets::field_row(ui, "Anschlag", |ui| {
-        if ui.selectable_value(&mut anschlag, 1.0, "rechts").clicked() {}
-        if ui.selectable_value(&mut anschlag, -1.0, "links").clicked() {}
+    widgets::field_row(ui, jjcad_core::i18n::tr("gui.props.anschlag"), |ui| {
+        if ui.selectable_value(&mut anschlag, 1.0, jjcad_core::i18n::tr("gui.props.rechts")).clicked() {}
+        if ui.selectable_value(&mut anschlag, -1.0, jjcad_core::i18n::tr("gui.props.links")).clicked() {}
     });
 
     zeile("blatt");
-    widgets::field_row(ui, "Blatt", |ui| {
+    widgets::field_row(ui, jjcad_core::i18n::tr("gui.props.blatt"), |ui| {
         if ui
-            .selectable_label(blatt, "Seite A")
-            .on_hover_text("Blatt schlägt auf Seite A der Wand auf")
+            .selectable_label(blatt, jjcad_core::i18n::tr("gui.props.seite_a"))
+            .on_hover_text(jjcad_core::i18n::tr("gui.props.blatt_schlaegt_auf_seite_a_der_wand_auf"))
             .clicked()
         {
             blatt = true;
         }
         if ui
-            .selectable_label(!blatt, "Seite B")
-            .on_hover_text("Blatt schlägt auf Seite B der Wand auf")
+            .selectable_label(!blatt, jjcad_core::i18n::tr("gui.props.seite_b"))
+            .on_hover_text(jjcad_core::i18n::tr("gui.props.blatt_schlaegt_auf_seite_b_der_wand_auf"))
             .clicked()
         {
             blatt = false;
@@ -1400,7 +1390,7 @@ pub fn tuer(app: &mut App, ui: &mut Ui, ziel: Ziel) {
         .map(|b| (*b, b.label().to_string()))
         .collect();
     let mut picked_basis = None;
-    widgets::field_row(ui, "Basispunkt", |ui| {
+    widgets::field_row(ui, jjcad_core::i18n::tr("gui.props.basispunkt"), |ui| {
         picked_basis = panels::pick_combo(ui, &ziel.salt("tuer_basis"), basis, &basis_items);
     });
     if let Some(v) = picked_basis {
@@ -1412,17 +1402,12 @@ pub fn tuer(app: &mut App, ui: &mut Ui, ziel: Ziel) {
     match (&e, ziel) {
         (Some(e), Ziel::Auswahl(_)) => {
             if let EntityKind::Door { center, angle, .. } = &e.kind {
-                ui.label(theme::dim(format!(
-                    "Position ({:.2}, {:.2}) · Richtung {:.0}°",
-                    unit.from_mm(center.x),
-                    unit.from_mm(center.y),
-                    angle.to_degrees()
-                )));
+                ui.label(theme::dim(jjcad_core::i18n::t_args_owned("gui.props.position_x_x_richtung_x", &[("wert1", format!("{:.2}", unit.from_mm(center.x))), ("wert2", format!("{:.2}", unit.from_mm(center.y))), ("wert3", format!("{:.0}", angle.to_degrees()))])));
             }
         }
         _ => {
-            ui.label(theme::faint("sitzt auf der vorderen Wandkante"));
-            ui.label(theme::faint("R dreht die Öffnung, F spiegelt sie"));
+            ui.label(theme::faint(jjcad_core::i18n::tr("gui.props.sitzt_auf_der_vorderen_wandkante")));
+            ui.label(theme::faint(jjcad_core::i18n::tr("gui.props.r_dreht_die_oeffnung_f_spiegelt_sie")));
         }
     }
 
@@ -1530,7 +1515,7 @@ pub fn fenster(app: &mut App, ui: &mut Ui, ziel: Ziel) {
             .unwrap_or(Color::BLACK)
     });
 
-    kopf(app, ui, ziel, "Fenster", "window");
+    kopf(app, ui, ziel, jjcad_core::i18n::tr("gui.props.fenster"), "window");
     reihenfolge(app, ui, ziel);
     let (staerke, linientyp) = linienwerte(app, &e);
 
@@ -1550,11 +1535,11 @@ pub fn fenster(app: &mut App, ui: &mut Ui, ziel: Ziel) {
     ui.add_space(4.0);
     widgets::hline(ui);
     ui.add_space(4.0);
-    section_title(ui, "window", "Fenster");
+    section_title(ui, "window", jjcad_core::i18n::tr("gui.props.fenster"));
     zeile("fensterkopf");
 
     zeile("breite");
-    widgets::field_row(ui, "Breite", |ui| {
+    widgets::field_row(ui, jjcad_core::i18n::tr("gui.props.breite"), |ui| {
         widgets::length_field(
             ui,
             &mut breite,
@@ -1565,11 +1550,11 @@ pub fn fenster(app: &mut App, ui: &mut Ui, ziel: Ziel) {
         );
     });
     zeile("bruestung");
-    widgets::field_row(ui, "Brüstung", |ui| {
+    widgets::field_row(ui, jjcad_core::i18n::tr("gui.props.bruestung"), |ui| {
         widgets::length_field(ui, &mut bruestung, unit, ui.available_width(), 0.0, widgets::MASS_MAX_MM);
     });
     zeile("hoehe");
-    widgets::field_row(ui, "Höhe", |ui| {
+    widgets::field_row(ui, jjcad_core::i18n::tr("gui.props.hoehe"), |ui| {
         widgets::length_field(
             ui,
             &mut hoehe,
@@ -1586,7 +1571,7 @@ pub fn fenster(app: &mut App, ui: &mut Ui, ziel: Ziel) {
             .map(|a| (*a, a.label().to_string()))
             .collect();
     let mut picked_lage = None;
-    widgets::field_row(ui, "Ausrichtung", |ui| {
+    widgets::field_row(ui, jjcad_core::i18n::tr("gui.props.ausrichtung"), |ui| {
         picked_lage = panels::pick_combo(ui, &ziel.salt("fenster_lage"), lage, &lage_items);
     });
     if let Some(v) = picked_lage {
@@ -1598,16 +1583,11 @@ pub fn fenster(app: &mut App, ui: &mut Ui, ziel: Ziel) {
     match (&e, ziel) {
         (Some(e), Ziel::Auswahl(_)) => {
             if let EntityKind::Window { center, angle, .. } = &e.kind {
-                ui.label(theme::dim(format!(
-                    "Position ({:.2}, {:.2}) · Richtung {:.0}°",
-                    unit.from_mm(center.x),
-                    unit.from_mm(center.y),
-                    angle.to_degrees()
-                )));
+                ui.label(theme::dim(jjcad_core::i18n::t_args_owned("gui.props.position_x_x_richtung_x", &[("wert1", format!("{:.2}", unit.from_mm(center.x))), ("wert2", format!("{:.2}", unit.from_mm(center.y))), ("wert3", format!("{:.0}", angle.to_degrees()))])));
             }
         }
         _ => {
-            ui.label(theme::faint("Lage in der Wanddicke: Links / Mittig / Rechts"));
+            ui.label(theme::faint(jjcad_core::i18n::tr("gui.props.lage_in_der_wanddicke_links_mittig_rechts")));
         }
     }
 
@@ -1727,7 +1707,7 @@ pub fn fuellflaeche(app: &mut App, ui: &mut Ui, ziel: Ziel) {
             .unwrap_or(Color::BLACK)
     });
 
-    kopf(app, ui, ziel, "Füllfläche", "fill");
+    kopf(app, ui, ziel, jjcad_core::i18n::tr("gui.props.fuellflaeche"), "fill");
     reihenfolge(app, ui, ziel);
 
     let a = gemein(
@@ -1746,7 +1726,7 @@ pub fn fuellflaeche(app: &mut App, ui: &mut Ui, ziel: Ziel) {
     ui.add_space(4.0);
     widgets::hline(ui);
     ui.add_space(4.0);
-    section_title(ui, "fill", "Füllfläche");
+    section_title(ui, "fill", jjcad_core::i18n::tr("gui.props.fuellflaeche"));
     zeile("fuellkopf");
 
     zeile("muster");
@@ -1756,7 +1736,7 @@ pub fn fuellflaeche(app: &mut App, ui: &mut Ui, ziel: Ziel) {
             .map(|c| (*c, c.label().to_string()))
             .collect();
     let mut picked = None;
-    widgets::field_row(ui, "Muster", |ui| {
+    widgets::field_row(ui, jjcad_core::i18n::tr("gui.props.muster"), |ui| {
         picked = panels::pick_combo(ui, &ziel.salt("fuell_muster"), muster, &muster_items);
     });
     if let Some(v) = picked {
@@ -1764,7 +1744,7 @@ pub fn fuellflaeche(app: &mut App, ui: &mut Ui, ziel: Ziel) {
     }
 
     zeile("winkel");
-    widgets::field_row(ui, "Winkel", |ui| {
+    widgets::field_row(ui, jjcad_core::i18n::tr("gui.props.winkel"), |ui| {
         ui.add(
             crate::widgets::zahl(&mut winkel, 1.0, widgets::WINKEL_MIN..=widgets::WINKEL_MAX)
                 .suffix("°"),
@@ -1772,7 +1752,7 @@ pub fn fuellflaeche(app: &mut App, ui: &mut Ui, ziel: Ziel) {
     });
 
     zeile("abstand");
-    widgets::field_row(ui, "Abstand", |ui| {
+    widgets::field_row(ui, jjcad_core::i18n::tr("gui.props.abstand"), |ui| {
         widgets::length_field(
             ui,
             &mut abstand,
@@ -1784,7 +1764,7 @@ pub fn fuellflaeche(app: &mut App, ui: &mut Ui, ziel: Ziel) {
     });
 
     zeile("umrandung");
-    widgets::field_row(ui, "Umrandung", |ui| {
+    widgets::field_row(ui, jjcad_core::i18n::tr("gui.props.umrandung"), |ui| {
         ui.checkbox(&mut rand, "");
     });
 
@@ -1792,7 +1772,7 @@ pub fn fuellflaeche(app: &mut App, ui: &mut Ui, ziel: Ziel) {
     let fill_unset = fuellfarbe.is_none();
     let fill_cur = fuellfarbe.unwrap_or_else(|| farbe_gezeigt.mix(Color::WHITE, 0.72));
     let mut picked_fill: Option<Option<Color>> = None;
-    widgets::field_row(ui, "Füllfarbe", |ui| {
+    widgets::field_row(ui, jjcad_core::i18n::tr("gui.props.fuellfarbe"), |ui| {
         picked_fill = panels::color_combo(
             ui,
             &ziel.salt("fuell_farbe"),
@@ -1815,14 +1795,14 @@ pub fn fuellflaeche(app: &mut App, ui: &mut Ui, ziel: Ziel) {
                 boundary, holes, ..
             } = &e.kind
             {
-                ui.label(theme::dim(format!("{} Punkte", boundary.len())));
+                ui.label(theme::dim(jjcad_core::i18n::t_args_owned("gui.props.x_punkte", &[("wert1", format!("{}", boundary.len()))])));
                 if !holes.is_empty() {
-                    ui.label(theme::dim(format!("{} Inseln", holes.len())));
+                    ui.label(theme::dim(jjcad_core::i18n::t_args_owned("gui.props.x_inseln", &[("wert1", format!("{}", holes.len()))])));
                 }
             }
         }
         _ => {
-            ui.label(theme::faint("Punkte, Fläche und Umriss erscheinen am platzierten Objekt"));
+            ui.label(theme::faint(jjcad_core::i18n::tr("gui.props.punkte_flaeche_und_umriss_erscheinen_am_platzierten_obje")));
         }
     }
 
@@ -1936,7 +1916,7 @@ pub fn bemassung(app: &mut App, ui: &mut Ui, ziel: Ziel) {
             .unwrap_or(Color::BLACK)
     });
 
-    kopf(app, ui, ziel, "Bemaßung", "dim");
+    kopf(app, ui, ziel, jjcad_core::i18n::tr("gui.props.bemassung"), "dim");
     reihenfolge(app, ui, ziel);
 
     let (staerke, linientyp) = linienwerte(app, &e);
@@ -1956,7 +1936,7 @@ pub fn bemassung(app: &mut App, ui: &mut Ui, ziel: Ziel) {
     ui.add_space(4.0);
     widgets::hline(ui);
     ui.add_space(4.0);
-    section_title(ui, "dim", "Bemaßung");
+    section_title(ui, "dim", jjcad_core::i18n::tr("gui.props.bemassung"));
     zeile("dimkopf");
 
     zeile("richtung");
@@ -1973,7 +1953,7 @@ pub fn bemassung(app: &mut App, ui: &mut Ui, ziel: Ziel) {
     )
     .collect();
     let mut picked = None;
-    widgets::field_row(ui, "Richtung", |ui| {
+    widgets::field_row(ui, jjcad_core::i18n::tr("gui.props.richtung"), |ui| {
         picked = panels::pick_combo(ui, &ziel.salt("dim_achse"), achse, &axis_items);
     });
     if let Some(v) = picked {
@@ -1981,10 +1961,10 @@ pub fn bemassung(app: &mut App, ui: &mut Ui, ziel: Ziel) {
     }
 
     zeile("masstext");
-    widgets::field_row(ui, "Maßtext", |ui| {
+    widgets::field_row(ui, jjcad_core::i18n::tr("gui.props.masstext"), |ui| {
         ui.add_sized(
             [120.0, 20.0],
-            egui::TextEdit::singleline(&mut masstext).hint_text("automatisch"),
+            egui::TextEdit::singleline(&mut masstext).hint_text(jjcad_core::i18n::tr("gui.props.automatisch")),
         );
     });
 
@@ -1994,7 +1974,7 @@ pub fn bemassung(app: &mut App, ui: &mut Ui, ziel: Ziel) {
     match abstand {
         Some(alt) => {
             let mut v = alt;
-            widgets::field_row(ui, "Abstand", |ui| {
+            widgets::field_row(ui, jjcad_core::i18n::tr("gui.props.abstand"), |ui| {
                 widgets::length_field(
                     ui,
                     &mut v,
@@ -2006,7 +1986,7 @@ pub fn bemassung(app: &mut App, ui: &mut Ui, ziel: Ziel) {
             });
             abstand = Some(v);
         }
-        None => gesperrt_zeile(ui, "Abstand", "aus den Klicks"),
+        None => gesperrt_zeile(ui, jjcad_core::i18n::tr("gui.props.abstand"), jjcad_core::i18n::tr("gui.props.aus_den_klicks")),
     }
 
     zeile("kennzahlen");
@@ -2019,18 +1999,14 @@ pub fn bemassung(app: &mut App, ui: &mut Ui, ziel: Ziel) {
                     DimAxis::Y => (b.y - a.y).abs(),
                     DimAxis::Aligned => a.dist(*b),
                 };
-                ui.label(theme::dim(format!(
-                    "Maß: {} {}",
-                    jjcad_core::units::format_number(
+                ui.label(theme::dim(jjcad_core::i18n::t_args_owned("gui.props.mass_x_x", &[("wert1", format!("{}", jjcad_core::units::format_number(
                         app.doc().settings.dim_unit.from_mm(m),
                         app.doc().dim_style.decimals
-                    ),
-                    app.doc().settings.dim_unit.short()
-                )));
+                    ))), ("wert2", format!("{}", app.doc().settings.dim_unit.short()))])));
             }
         }
         _ => {
-            ui.label(theme::faint("Maß und Maßtext erscheinen am platzierten Objekt"));
+            ui.label(theme::faint(jjcad_core::i18n::tr("gui.props.mass_und_masstext_erscheinen_am_platzierten_objekt")));
         }
     }
 
@@ -2160,19 +2136,19 @@ impl Einfach {
 
     fn titel(self) -> &'static str {
         match self {
-            Self::Punkt => "Punkt",
-            Self::Linie => "Linie",
-            Self::Polylinie => "Polylinie",
-            Self::Spline => "Spline",
-            Self::Rechteck => "Rechteck",
-            Self::Kreis => "Kreis",
-            Self::Bogen => "Bogen",
-            Self::Ellipse => "Ellipse",
-            Self::Ellipsenbogen => "Ellipsenbogen",
-            Self::Masskette => "Maßkette",
+            Self::Punkt => jjcad_core::i18n::tr("gui.props.punkt"),
+            Self::Linie => jjcad_core::i18n::tr("gui.props.linie"),
+            Self::Polylinie => jjcad_core::i18n::tr("gui.props.polylinie"),
+            Self::Spline => jjcad_core::i18n::tr("gui.props.spline"),
+            Self::Rechteck => jjcad_core::i18n::tr("gui.props.rechteck"),
+            Self::Kreis => jjcad_core::i18n::tr("gui.props.kreis"),
+            Self::Bogen => jjcad_core::i18n::tr("gui.props.bogen"),
+            Self::Ellipse => jjcad_core::i18n::tr("gui.props.ellipse"),
+            Self::Ellipsenbogen => jjcad_core::i18n::tr("gui.props.ellipsenbogen"),
+            Self::Masskette => jjcad_core::i18n::tr("gui.props.masskette"),
             Self::Grundrisskote => "Grundriss-Kote",
             Self::Schnittkote => "Schnitt-Kote",
-            Self::Block => "Block",
+            Self::Block => jjcad_core::i18n::tr("gui.props.block"),
         }
     }
 
@@ -2230,7 +2206,7 @@ pub fn raumstempel(app: &mut App, ui: &mut Ui, ziel: Ziel) {
             .unwrap_or(Color::BLACK)
     });
 
-    kopf(app, ui, ziel, "Raumstempel", "room");
+    kopf(app, ui, ziel, jjcad_core::i18n::tr("gui.props.raumstempel"), "room");
     reihenfolge(app, ui, ziel);
     // Ein Raumstempel hat keine Linie: Stärke und Linientyp entfallen in
     // beiden Fällen (wie beim Text).
@@ -2250,11 +2226,11 @@ pub fn raumstempel(app: &mut App, ui: &mut Ui, ziel: Ziel) {
     ui.add_space(4.0);
     widgets::hline(ui);
     ui.add_space(4.0);
-    section_title(ui, "room", "Raumstempel");
+    section_title(ui, "room", jjcad_core::i18n::tr("gui.props.raumstempel"));
     zeile("artkopf");
 
     zeile("ueberschrift");
-    widgets::field_row(ui, "Überschrift", |ui| {
+    widgets::field_row(ui, jjcad_core::i18n::tr("gui.props.ueberschrift"), |ui| {
         ui.add(
             egui::TextEdit::singleline(&mut kopf_text)
                 .id(egui::Id::new(ziel.salt("ueberschrift")))
@@ -2263,7 +2239,7 @@ pub fn raumstempel(app: &mut App, ui: &mut Ui, ziel: Ziel) {
     });
 
     zeile("textgroesse");
-    widgets::field_row(ui, "Textgröße", |ui| {
+    widgets::field_row(ui, jjcad_core::i18n::tr("gui.props.textgroesse"), |ui| {
         widgets::length_field(
             ui,
             &mut hoehe,
@@ -2280,17 +2256,13 @@ pub fn raumstempel(app: &mut App, ui: &mut Ui, ziel: Ziel) {
         (Some(e), Ziel::Auswahl(_)) => {
             if let EntityKind::Room { boundary, .. } = &e.kind {
                 let flaeche = jjcad_core::area::area_of(boundary, &[]);
-                ui.label(theme::dim(format!(
-                    "{} Punkte · Fläche {}",
-                    boundary.len(),
-                    panels::area_text(unit, flaeche)
-                )));
+                ui.label(theme::dim(jjcad_core::i18n::t_args_owned("gui.props.x_punkte_flaeche_x", &[("wert1", format!("{}", boundary.len())), ("wert2", format!("{}", panels::area_text(unit, flaeche)))])));
             }
-            ui.label(theme::faint("Textlage am runden Griff in der Zeichnung"));
+            ui.label(theme::faint(jjcad_core::i18n::tr("gui.props.textlage_am_runden_griff_in_der_zeichnung")));
         }
         _ => {
             ui.label(theme::faint(
-                "Fläche und Text entstehen beim Abschluss der Punktfolge",
+                jjcad_core::i18n::tr("gui.props.flaeche_und_text_entstehen_beim_abschluss_der_punktfolge"),
             ));
         }
     }
@@ -2386,9 +2358,9 @@ pub fn einfach(app: &mut App, ui: &mut Ui, ziel: Ziel, art: Einfach) {
             radius = Some(wert);
             zeile("radius");
             if e.is_none() {
-                gesperrt_zeile(ui, "Radius", "aus den Klicks");
+                gesperrt_zeile(ui, jjcad_core::i18n::tr("gui.props.radius"), jjcad_core::i18n::tr("gui.props.aus_den_klicks"));
             } else {
-                widgets::field_row(ui, "Radius", |ui| {
+                widgets::field_row(ui, jjcad_core::i18n::tr("gui.props.radius"), |ui| {
                     let mut v = wert;
                     if widgets::length_field(ui, &mut v, unit, 110.0, 0.1, widgets::MASS_MAX_MM) {
                         radius = Some(v);
@@ -2417,7 +2389,7 @@ pub fn einfach(app: &mut App, ui: &mut Ui, ziel: Ziel, art: Einfach) {
             ] {
                 zeile(key);
                 if gesperrt {
-                    gesperrt_zeile(ui, label, "aus den Klicks");
+                    gesperrt_zeile(ui, label, jjcad_core::i18n::tr("gui.props.aus_den_klicks"));
                     continue;
                 }
                 let mut v = wert;
@@ -2467,7 +2439,7 @@ pub fn einfach(app: &mut App, ui: &mut Ui, ziel: Ziel, art: Einfach) {
             ] {
                 zeile(key);
                 if gesperrt {
-                    gesperrt_zeile(ui, label, "aus den Klicks");
+                    gesperrt_zeile(ui, label, jjcad_core::i18n::tr("gui.props.aus_den_klicks"));
                     continue;
                 }
                 let mut v = wert;
@@ -2487,7 +2459,7 @@ pub fn einfach(app: &mut App, ui: &mut Ui, ziel: Ziel, art: Einfach) {
             ] {
                 zeile(key);
                 if gesperrt {
-                    gesperrt_zeile(ui, label, "aus den Klicks");
+                    gesperrt_zeile(ui, label, jjcad_core::i18n::tr("gui.props.aus_den_klicks"));
                     continue;
                 }
                 let mut v = wert;
@@ -2515,7 +2487,7 @@ pub fn einfach(app: &mut App, ui: &mut Ui, ziel: Ziel, art: Einfach) {
             };
             hoehe = Some(z0);
             zeile("hoehe");
-            widgets::field_row(ui, "Höhe", |ui| {
+            widgets::field_row(ui, jjcad_core::i18n::tr("gui.props.hoehe"), |ui| {
                 let mut v = z0;
                 if widgets::length_field(
                     ui,
@@ -2549,7 +2521,7 @@ pub fn einfach(app: &mut App, ui: &mut Ui, ziel: Ziel, art: Einfach) {
                     .unwrap_or_default(),
             };
             zeile("punkte");
-            widgets::field_row(ui, "Punkte", |ui| {
+            widgets::field_row(ui, jjcad_core::i18n::tr("gui.props.punkte"), |ui| {
                 ui.label(theme::mono(pts.len().to_string()));
             });
             let basis = pts.first().map(|p| p.y).unwrap_or(0.0);
@@ -2570,7 +2542,7 @@ pub fn einfach(app: &mut App, ui: &mut Ui, ziel: Ziel, art: Einfach) {
             } else {
                 format!("{} Werte", pts.len())
             };
-            widgets::field_row(ui, "Höhen", |ui| {
+            widgets::field_row(ui, jjcad_core::i18n::tr("gui.props.hoehen"), |ui| {
                 ui.label(theme::mono(kurz.clone()));
             });
             ui.label(theme::dim(liste.clone()));
@@ -2587,7 +2559,7 @@ pub fn einfach(app: &mut App, ui: &mut Ui, ziel: Ziel, art: Einfach) {
             match wert {
                 Some(alt) => {
                     let mut v = alt;
-                    widgets::field_row(ui, "Abstand", |ui| {
+                    widgets::field_row(ui, jjcad_core::i18n::tr("gui.props.abstand"), |ui| {
                         widgets::length_field(
                             ui,
                             &mut v,
@@ -2599,7 +2571,7 @@ pub fn einfach(app: &mut App, ui: &mut Ui, ziel: Ziel, art: Einfach) {
                     });
                     abstand = Some(v);
                 }
-                None => gesperrt_zeile(ui, "Abstand", "aus den Klicks"),
+                None => gesperrt_zeile(ui, jjcad_core::i18n::tr("gui.props.abstand"), jjcad_core::i18n::tr("gui.props.aus_den_klicks")),
             }
         }
         Einfach::Block => {
@@ -2613,7 +2585,7 @@ pub fn einfach(app: &mut App, ui: &mut Ui, ziel: Ziel, art: Einfach) {
             drehung = Some(r0);
             faktor = Some(s0);
             zeile("drehung");
-            widgets::field_row(ui, "Drehung", |ui| {
+            widgets::field_row(ui, jjcad_core::i18n::tr("gui.props.drehung"), |ui| {
                 let mut v = r0;
                 if ui
                     .add(
@@ -2626,7 +2598,7 @@ pub fn einfach(app: &mut App, ui: &mut Ui, ziel: Ziel, art: Einfach) {
                 }
             });
             zeile("faktor");
-            widgets::field_row(ui, "Faktor", |ui| {
+            widgets::field_row(ui, jjcad_core::i18n::tr("gui.props.faktor"), |ui| {
                 let mut v = s0;
                 if ui.add(crate::widgets::zahl(&mut v, 0.01, 0.01..=1000.0)).changed() {
                     faktor = Some(v);
@@ -2655,7 +2627,7 @@ pub fn einfach(app: &mut App, ui: &mut Ui, ziel: Ziel, art: Einfach) {
                 .map(|m| (*m, m.label().to_string()))
                 .collect();
             let mut picked = None;
-            widgets::field_row(ui, "Eingabemodus", |ui| {
+            widgets::field_row(ui, jjcad_core::i18n::tr("gui.props.eingabemodus"), |ui| {
                 picked = panels::pick_combo(ui, &ziel.salt("bogenmodus"), cur, &items);
             });
             if let Some(m) = picked {
@@ -2669,7 +2641,7 @@ pub fn einfach(app: &mut App, ui: &mut Ui, ziel: Ziel, art: Einfach) {
                 .map(|m| (*m, m.label(&tool_id).to_string()))
                 .collect();
             let mut picked = None;
-            widgets::field_row(ui, "Einfügemodus", |ui| {
+            widgets::field_row(ui, jjcad_core::i18n::tr("gui.props.einfuegemodus"), |ui| {
                 picked = panels::pick_combo(ui, &ziel.salt("einfuegemodus"), cur, &items);
             });
             if let Some(m) = picked {
@@ -2690,7 +2662,7 @@ pub fn einfach(app: &mut App, ui: &mut Ui, ziel: Ziel, art: Einfach) {
                 });
             }
             if let EntityKind::DimChain { pts, .. } = &e.kind {
-                ui.label(theme::dim(format!("{} Basispunkte", pts.len())));
+                ui.label(theme::dim(jjcad_core::i18n::t_args_owned("gui.props.x_basispunkte", &[("wert1", format!("{}", pts.len()))])));
             }
             if let EntityKind::BlockRef { block, .. } = &e.kind {
                 let name = app
@@ -2698,25 +2670,25 @@ pub fn einfach(app: &mut App, ui: &mut Ui, ziel: Ziel, art: Einfach) {
                     .block(block)
                     .map(|b| b.name.clone())
                     .unwrap_or_else(|| block.clone());
-                ui.label(theme::dim(format!("Block: {name}")));
+                ui.label(theme::dim(jjcad_core::i18n::t_args_owned("gui.props.block_x", &[("name", format!("{}", name))])));
             }
         }
         _ => {
             ui.label(theme::faint(match art {
-                Einfach::Kreis => "Radius und Mittelpunkt entstehen aus den Klicks",
-                Einfach::Bogen => "Radius und Winkel entstehen aus den Klicks",
-                Einfach::Linie => "Länge und Winkel entstehen aus den Klicks",
+                Einfach::Kreis => jjcad_core::i18n::tr("gui.props.radius_und_mittelpunkt_entstehen_aus_den_klicks"),
+                Einfach::Bogen => jjcad_core::i18n::tr("gui.props.radius_und_winkel_entstehen_aus_den_klicks"),
+                Einfach::Linie => jjcad_core::i18n::tr("gui.props.laenge_und_winkel_entstehen_aus_den_klicks"),
                 Einfach::Polylinie | Einfach::Spline | Einfach::Rechteck => {
-                    "Länge, Fläche und Stützpunkte entstehen aus den Klicks"
+                    jjcad_core::i18n::tr("gui.props.laenge_flaeche_und_stuetzpunkte_entstehen_aus_den_klicks")
                 }
-                Einfach::Ellipse => "Achsen entstehen aus den Klicks",
-                Einfach::Punkt => "Koordinate entsteht aus dem Klick",
-                Einfach::Grundrisskote => "Höhe steht im Eigenschaften-Panel",
+                Einfach::Ellipse => jjcad_core::i18n::tr("gui.props.achsen_entstehen_aus_den_klicks"),
+                Einfach::Punkt => jjcad_core::i18n::tr("gui.props.koordinate_entsteht_aus_dem_klick"),
+                Einfach::Grundrisskote => jjcad_core::i18n::tr("gui.props.hoehe_steht_im_eigenschaften_panel"),
                 Einfach::Schnittkote => {
-                    "Höhen entstehen aus der Y-Differenz zum ersten Punkt"
+                    jjcad_core::i18n::tr("gui.props.hoehen_entstehen_aus_der_y_differenz_zum_ersten_punkt")
                 }
-                Einfach::Block => "Blocklage entsteht aus dem Klick",
-                _ => "Maße entstehen aus den Klicks",
+                Einfach::Block => jjcad_core::i18n::tr("gui.props.blocklage_entsteht_aus_dem_klick"),
+                _ => jjcad_core::i18n::tr("gui.props.masse_entstehen_aus_den_klicks"),
             }));
         }
     }
@@ -2897,7 +2869,7 @@ pub fn volumen(app: &mut App, ui: &mut Ui, ziel: Ziel) {
     });
     let (staerke, linientyp) = linienwerte(app, &e);
 
-    kopf(app, ui, ziel, "Volumen", "volume");
+    kopf(app, ui, ziel, jjcad_core::i18n::tr("gui.props.volumen"), "volume");
     reihenfolge(app, ui, ziel);
 
     let a = gemein(
@@ -2916,11 +2888,11 @@ pub fn volumen(app: &mut App, ui: &mut Ui, ziel: Ziel) {
     ui.add_space(4.0);
     widgets::hline(ui);
     ui.add_space(4.0);
-    section_title(ui, "volume", "Volumen");
+    section_title(ui, "volume", jjcad_core::i18n::tr("gui.props.volumen"));
     zeile("volumenkopf");
 
     zeile("hoehe");
-    widgets::field_row(ui, "Höhe", |ui| {
+    widgets::field_row(ui, jjcad_core::i18n::tr("gui.props.hoehe"), |ui| {
         widgets::length_field(
             ui,
             &mut hoehe,
@@ -2937,21 +2909,21 @@ pub fn volumen(app: &mut App, ui: &mut Ui, ziel: Ziel) {
             .map(|c| (*c, c.label().to_string()))
             .collect();
     let mut picked = None;
-    widgets::field_row(ui, "Muster", |ui| {
+    widgets::field_row(ui, jjcad_core::i18n::tr("gui.props.muster"), |ui| {
         picked = panels::pick_combo(ui, &ziel.salt("volumen_muster"), muster, &muster_items);
     });
     if let Some(v) = picked {
         muster = v;
     }
     zeile("winkel");
-    widgets::field_row(ui, "Winkel", |ui| {
+    widgets::field_row(ui, jjcad_core::i18n::tr("gui.props.winkel"), |ui| {
         ui.add(
             crate::widgets::zahl(&mut winkel, 1.0, widgets::WINKEL_MIN..=widgets::WINKEL_MAX)
                 .suffix("°"),
         );
     });
     zeile("abstand");
-    widgets::field_row(ui, "Abstand", |ui| {
+    widgets::field_row(ui, jjcad_core::i18n::tr("gui.props.abstand"), |ui| {
         widgets::length_field(
             ui,
             &mut abstand,
@@ -2962,7 +2934,7 @@ pub fn volumen(app: &mut App, ui: &mut Ui, ziel: Ziel) {
         );
     });
     zeile("umrandung");
-    widgets::field_row(ui, "Umrandung", |ui| {
+    widgets::field_row(ui, jjcad_core::i18n::tr("gui.props.umrandung"), |ui| {
         ui.checkbox(&mut rand, "");
     });
     zeile("fuellfarbe");
@@ -2970,7 +2942,7 @@ pub fn volumen(app: &mut App, ui: &mut Ui, ziel: Ziel) {
     let fill_cur = fuellfarbe
         .unwrap_or_else(|| farbe_gezeigt.mix(Color::WHITE, jjcad_core::render::WALL_FILL_MIX));
     let mut picked_fill: Option<Option<Color>> = None;
-    widgets::field_row(ui, "Füllfarbe", |ui| {
+    widgets::field_row(ui, jjcad_core::i18n::tr("gui.props.fuellfarbe"), |ui| {
         picked_fill = panels::color_combo(
             ui,
             &ziel.salt("volumen_farbe"),
@@ -2993,20 +2965,12 @@ pub fn volumen(app: &mut App, ui: &mut Ui, ziel: Ziel) {
             } = &e.kind
             {
                 let flaeche = jjcad_core::area::area_of(boundary, holes);
-                ui.label(theme::dim(format!(
-                    "{} Punkte · Fläche {}",
-                    boundary.len(),
-                    panels::area_text(unit, flaeche)
-                )));
-                ui.label(theme::dim(format!(
-                    "Volumen {:.3} m³ (Höhe {})",
-                    flaeche * hoehe / 1e9,
-                    unit.format(hoehe, unit.decimals())
-                )));
+                ui.label(theme::dim(jjcad_core::i18n::t_args_owned("gui.props.x_punkte_flaeche_x", &[("wert1", format!("{}", boundary.len())), ("wert2", format!("{}", panels::area_text(unit, flaeche)))])));
+                ui.label(theme::dim(jjcad_core::i18n::t_args_owned("gui.props.volumen_x_m3_hoehe_x", &[("wert1", format!("{:.3}", flaeche * hoehe / 1e9)), ("wert2", format!("{}", unit.format(hoehe, unit.decimals())))])));
             }
         }
         _ => {
-            ui.label(theme::faint("Fläche und Volumen erscheinen am platzierten Objekt"));
+            ui.label(theme::faint(jjcad_core::i18n::tr("gui.props.flaeche_und_volumen_erscheinen_am_platzierten_objekt")));
         }
     }
 
@@ -3150,7 +3114,7 @@ pub fn treppe(app: &mut App, ui: &mut Ui, ziel: Ziel) {
     let rechen_laenge = if laenge > 1.0 { laenge } else { 4640.0 };
     let mass = jjcad_core::stair::treppenmass(rechen_laenge, hoehe, stuen, auto);
 
-    kopf(app, ui, ziel, "Treppe", "stair");
+    kopf(app, ui, ziel, jjcad_core::i18n::tr("gui.props.treppe"), "stair");
     reihenfolge(app, ui, ziel);
 
     let a = gemein(
@@ -3169,33 +3133,33 @@ pub fn treppe(app: &mut App, ui: &mut Ui, ziel: Ziel) {
     ui.add_space(4.0);
     widgets::hline(ui);
     ui.add_space(4.0);
-    section_title(ui, "stair", "Treppe");
+    section_title(ui, "stair", jjcad_core::i18n::tr("gui.props.treppe"));
     zeile("treppenkopf");
 
     let gesperrt = e.is_none();
     zeile("laenge");
     if gesperrt {
-        gesperrt_zeile(ui, "Länge", "aus den Klicks");
+        gesperrt_zeile(ui, jjcad_core::i18n::tr("gui.props.laenge"), jjcad_core::i18n::tr("gui.props.aus_den_klicks"));
     } else {
-        widgets::field_row(ui, "Länge", |ui| {
+        widgets::field_row(ui, jjcad_core::i18n::tr("gui.props.laenge"), |ui| {
             widgets::length_field(ui, &mut laenge, unit, 100.0, 100.0, widgets::MASS_MAX_MM);
         });
     }
     zeile("breite");
     if gesperrt {
-        gesperrt_zeile(ui, "Breite", "aus den Klicks");
+        gesperrt_zeile(ui, jjcad_core::i18n::tr("gui.props.breite"), jjcad_core::i18n::tr("gui.props.aus_den_klicks"));
     } else {
-        widgets::field_row(ui, "Breite", |ui| {
+        widgets::field_row(ui, jjcad_core::i18n::tr("gui.props.breite"), |ui| {
             widgets::length_field(ui, &mut breite, unit, 100.0, 100.0, widgets::MASS_MAX_MM);
         });
     }
     zeile("hoehe");
-    widgets::field_row(ui, "Höhe", |ui| {
+    widgets::field_row(ui, jjcad_core::i18n::tr("gui.props.hoehe"), |ui| {
         widgets::length_field(ui, &mut hoehe, unit, 100.0, 100.0, widgets::MASS_MAX_MM);
     });
     zeile("stufen");
     let mut stufen_neu = mass.stufen;
-    widgets::field_row(ui, "Stufen", |ui| {
+    widgets::field_row(ui, jjcad_core::i18n::tr("gui.props.stufen"), |ui| {
         ui.add_enabled_ui(!auto, |ui| {
             ui.add(crate::widgets::zahl(
                 &mut stufen_neu,
@@ -3206,9 +3170,9 @@ pub fn treppe(app: &mut App, ui: &mut Ui, ziel: Ziel) {
     });
     zeile("automatisch");
     let auto_vorher = auto;
-    widgets::field_row(ui, "Automatisch", |ui| {
-        ui.checkbox(&mut auto, "Schrittmaß")
-            .on_hover_text("Stufenzahl aus Länge und Höhe nach 2 S + A = 63 cm");
+    widgets::field_row(ui, jjcad_core::i18n::tr("gui.props.automatisch_2"), |ui| {
+        ui.checkbox(&mut auto, jjcad_core::i18n::tr("gui.props.schrittmass"))
+            .on_hover_text(jjcad_core::i18n::tr("gui.props.stufenzahl_aus_laenge_und_hoehe_nach_2_s_a_63_cm"));
     });
     if auto_vorher && !auto {
         // Beim Abschalten die berechnete Zahl übernehmen, damit die Treppe
@@ -3216,32 +3180,32 @@ pub fn treppe(app: &mut App, ui: &mut Ui, ziel: Ziel) {
         stufen_neu = mass.stufen;
     }
     zeile("schnitt");
-    widgets::field_row(ui, "Schnitt", |ui| {
-        ui.checkbox(&mut schnitt, "zwei Läufe")
-            .on_hover_text("Diagonalen in der Laufmitte; sie trennen oberen und unteren Teil");
+    widgets::field_row(ui, jjcad_core::i18n::tr("gui.props.schnitt"), |ui| {
+        ui.checkbox(&mut schnitt, jjcad_core::i18n::tr("gui.props.zwei_laeufe"))
+            .on_hover_text(jjcad_core::i18n::tr("gui.props.diagonalen_in_der_laufmitte_sie_trennen_oberen_und_unter"));
     });
 
     // Schrittmaß als Information — die Zahlen, die auch im Textfeld stehen.
     zeile("schrittmass");
     let cm = |mm: f64, stellen: usize| format!("{:.*} cm", stellen, mm / 10.0).replace(".", ",");
     ui.add_space(4.0);
-    widgets::field_row(ui, "Auftritt", |ui| {
+    widgets::field_row(ui, jjcad_core::i18n::tr("gui.props.auftritt"), |ui| {
         ui.label(theme::mono(cm(mass.auftritt, 1)));
     });
-    widgets::field_row(ui, "Steigung", |ui| {
+    widgets::field_row(ui, jjcad_core::i18n::tr("gui.props.steigung"), |ui| {
         ui.label(theme::mono(cm(mass.steigung, 1)));
     });
-    widgets::field_row(ui, "2 S + A", |ui| {
+    widgets::field_row(ui, jjcad_core::i18n::tr("gui.props.2_s_a"), |ui| {
         ui.label(theme::mono(cm(mass.regel(), 1)))
-            .on_hover_text("Sollwert nach Schrittmaßregel: 63,0 cm");
+            .on_hover_text(jjcad_core::i18n::tr("gui.props.sollwert_nach_schrittmassregel_63_0_cm"));
     });
     if breite > 1.0 {
-        widgets::field_row(ui, "Auftrittsfläche", |ui| {
+        widgets::field_row(ui, jjcad_core::i18n::tr("gui.props.auftrittsflaeche"), |ui| {
             ui.label(theme::mono(unit.format_area(mass.auftrittsflaeche(breite), 2)))
-                .on_hover_text("Auftritt × Treppenbreite");
+                .on_hover_text(jjcad_core::i18n::tr("gui.props.auftritt_treppenbreite"));
         });
     } else {
-        gesperrt_zeile(ui, "Auftrittsfläche", "aus den Klicks");
+        gesperrt_zeile(ui, jjcad_core::i18n::tr("gui.props.auftrittsflaeche"), jjcad_core::i18n::tr("gui.props.aus_den_klicks"));
     }
 
     // Linien der beiden Teile — nur mit Schnitt gibt es oberen und unteren Teil.
@@ -3287,7 +3251,7 @@ pub fn treppe(app: &mut App, ui: &mut Ui, ziel: Ziel) {
         for (name, praefix, teil) in [("unten", "unten", unten), ("oben", "oben", oben)] {
             let farbe_teil = teil.as_ref().and_then(|t| t.color).or(basis_style.color);
             let mut neue_farbe: Option<Option<Color>> = None;
-            widgets::field_row(ui, &format!("Farbe {name}"), |ui| {
+            widgets::field_row(ui, &jjcad_core::i18n::t_args_owned("gui.props.farbe_x", &[("name", format!("{}", name))]), |ui| {
                 ui.add_enabled_ui(!gesperrt, |ui| {
                     neue_farbe = panels::color_combo(
                         ui,
@@ -3314,7 +3278,7 @@ pub fn treppe(app: &mut App, ui: &mut Ui, ziel: Ziel) {
                 .or(basis_style.line_weight)
                 .unwrap_or(basis_w);
             let mut picked_w: Option<f64> = None;
-            widgets::field_row(ui, &format!("Stärke {name}"), |ui| {
+            widgets::field_row(ui, &jjcad_core::i18n::t_args_owned("gui.props.staerke_x", &[("name", format!("{}", name))]), |ui| {
                 ui.add_enabled_ui(!gesperrt, |ui| {
                     picked_w = panels::weight_combo(
                         ui,
@@ -3333,7 +3297,7 @@ pub fn treppe(app: &mut App, ui: &mut Ui, ziel: Ziel) {
                 .or(basis_style.line_type)
                 .unwrap_or(basis_lt);
             let mut picked_lt: Option<jjcad_core::style::LineType> = None;
-            widgets::field_row(ui, &format!("Typ {name}"), |ui| {
+            widgets::field_row(ui, &jjcad_core::i18n::t_args_owned("gui.props.typ_x", &[("name", format!("{}", name))]), |ui| {
                 ui.add_enabled_ui(!gesperrt, |ui| {
                     picked_lt = panels::linetype_combo(
                         ui,
@@ -3366,7 +3330,7 @@ pub fn treppe(app: &mut App, ui: &mut Ui, ziel: Ziel) {
             !gesperrt,
             egui::Button::new("Beschriftung erzeugen").min_size(egui::Vec2::new(0.0, 24.0)),
         )
-        .on_hover_text("Stufenzahl und Schrittmaß als Textfeld neben die Treppe setzen")
+        .on_hover_text(jjcad_core::i18n::tr("gui.props.stufenzahl_und_schrittmass_als_textfeld_neben_die_treppe"))
         .clicked();
     if klick {
         if let Ziel::Auswahl(id) = ziel {
@@ -3378,7 +3342,7 @@ pub fn treppe(app: &mut App, ui: &mut Ui, ziel: Ziel) {
         }
     }
     if gesperrt {
-        ui.label(theme::faint("am platzierten Objekt"));
+        ui.label(theme::faint(jjcad_core::i18n::tr("gui.props.am_platzierten_objekt")));
     }
 
     // ---- Anwenden ----
@@ -3480,15 +3444,12 @@ pub fn mehrfach(app: &mut App, ui: &mut Ui, ids: &[Id]) {
         return;
     }
 
-    section_title(ui, "select", "Mehrfachauswahl");
+    section_title(ui, "select", jjcad_core::i18n::tr("gui.props.mehrfachauswahl"));
     let anzahl: usize = gruppen.iter().map(|(_, l)| l.len()).sum();
     // Bei einer einzigen Art nennt der Kopf des Abschnitts die Anzahl — hier
     // stünde sie sonst zweimal untereinander.
     if gruppen.len() > 1 {
-        ui.label(theme::dim(format!(
-            "{anzahl} Objekte · {} Arten",
-            gruppen.len()
-        )));
+        ui.label(theme::dim(jjcad_core::i18n::t_args_owned("gui.props.x_objekte_x_arten", &[("anzahl", format!("{}", anzahl)), ("wert1", format!("{}", gruppen.len()))])));
     }
 
     let vorher = std::mem::take(&mut app.mehrfach_ziel);
@@ -3536,28 +3497,28 @@ pub fn mehrfach(app: &mut App, ui: &mut Ui, ids: &[Id]) {
         total_area += crate::panels::entity_area(e);
     }
     if total_len > 0.0 {
-        widgets::field_row(ui, "Gesamtlänge", |ui| {
+        widgets::field_row(ui, jjcad_core::i18n::tr("gui.props.gesamtlaenge"), |ui| {
             ui.label(theme::mono(unit.format(total_len, unit.decimals())));
         });
     }
     if total_area > 0.0 {
-        widgets::field_row(ui, "Gesamtfläche", |ui| {
+        widgets::field_row(ui, jjcad_core::i18n::tr("gui.props.gesamtflaeche"), |ui| {
             ui.label(theme::mono(crate::panels::area_text(unit, total_area)));
         });
     }
 
     ui.add_space(6.0);
     ui.horizontal_wrapped(|ui| {
-        if ui.button("Verschieben").clicked() {
+        if ui.button(jjcad_core::i18n::tr("gui.props.verschieben")).clicked() {
             app.start_tool("modify.move");
         }
-        if ui.button("Kopieren mit Basispunkt").clicked() {
+        if ui.button(jjcad_core::i18n::tr("gui.props.kopieren_mit_basispunkt")).clicked() {
             app.start_tool("modify.copy");
         }
-        if ui.button("Drehen").clicked() {
+        if ui.button(jjcad_core::i18n::tr("gui.props.drehen")).clicked() {
             app.start_tool("modify.rotate");
         }
-        if ui.button("Spiegeln").clicked() {
+        if ui.button(jjcad_core::i18n::tr("gui.props.spiegeln")).clicked() {
             app.start_tool("modify.mirror");
         }
     });

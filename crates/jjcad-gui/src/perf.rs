@@ -85,24 +85,24 @@ impl Abschnitt {
     /// Beschriftung in der Anzeige.
     pub fn name(self) -> &'static str {
         match self {
-            Abschnitt::Oberflaeche => "Oberfläche",
-            Abschnitt::Displayliste => "Displayliste",
-            Abschnitt::Fangen => "Fangen",
-            Abschnitt::Zeichnen => "Zeichnen",
-            Abschnitt::Bedienung => "Bedienung",
-            Abschnitt::Fenster => "Fenster",
+            Abschnitt::Oberflaeche => jjcad_core::i18n::tr("gui.perf.oberflaeche"),
+            Abschnitt::Displayliste => jjcad_core::i18n::tr("gui.perf.displayliste"),
+            Abschnitt::Fangen => jjcad_core::i18n::tr("gui.perf.fangen"),
+            Abschnitt::Zeichnen => jjcad_core::i18n::tr("gui.perf.zeichnen"),
+            Abschnitt::Bedienung => jjcad_core::i18n::tr("gui.perf.bedienung"),
+            Abschnitt::Fenster => jjcad_core::i18n::tr("gui.perf.fenster"),
         }
     }
 
     /// Kurze Erläuterung (Tooltip / Fußzeile).
     pub fn erklaerung(self) -> &'static str {
         match self {
-            Abschnitt::Oberflaeche => "Ribbon, Reiter, Panels, Leisten",
+            Abschnitt::Oberflaeche => jjcad_core::i18n::tr("gui.perf.ribbon_reiter_panels_leisten"),
             Abschnitt::Displayliste => "Displayliste aufbauen bzw. kopieren",
-            Abschnitt::Fangen => "Navigation, Fangen, Verweilfang",
-            Abschnitt::Zeichnen => "Raster, Papier, Grafikelemente",
-            Abschnitt::Bedienung => "Vorschau, Griffe, Fadenkreuz, Eingabe",
-            Abschnitt::Fenster => "Dialoge, Menüs, Chat, diese Anzeige",
+            Abschnitt::Fangen => jjcad_core::i18n::tr("gui.perf.navigation_fangen_verweilfang"),
+            Abschnitt::Zeichnen => jjcad_core::i18n::tr("gui.perf.raster_papier_grafikelemente"),
+            Abschnitt::Bedienung => jjcad_core::i18n::tr("gui.perf.vorschau_griffe_fadenkreuz_eingabe"),
+            Abschnitt::Fenster => jjcad_core::i18n::tr("gui.perf.dialoge_menues_chat_diese_anzeige"),
         }
     }
 }
@@ -557,14 +557,14 @@ fn inhalt(app: &App, ui: &mut egui::Ui) {
 
     ui.horizontal(|ui| {
         ui.label(
-            RichText::new("Leistung")
+            RichText::new(jjcad_core::i18n::tr("gui.perf.leistung"))
                 .size(12.0)
                 .color(Palette::ACCENT)
                 .strong(),
         );
         ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
             ui.label(
-                RichText::new("Umschalt+F3")
+                RichText::new(jjcad_core::i18n::tr("gui.perf.umschalt_f3"))
                     .size(10.0)
                     .color(Palette::TEXT_FAINT),
             );
@@ -573,7 +573,7 @@ fn inhalt(app: &App, ui: &mut egui::Ui) {
 
     ui.add_space(2.0);
     ui.label(
-        RichText::new("Bilder entstehen nur bei Bedarf — kein fester Takt.")
+        RichText::new(jjcad_core::i18n::tr("gui.perf.bilder_entstehen_nur_bei_bedarf_kein_fester_takt"))
             .size(10.0)
             .color(Palette::TEXT_FAINT),
     );
@@ -591,19 +591,19 @@ fn inhalt(app: &App, ui: &mut egui::Ui) {
             ui.end_row();
             let reihen: [(&str, fn(&Bild) -> f32, &str); 3] = [
                 (
-                    "Abstand",
+                    jjcad_core::i18n::tr("gui.perf.abstand"),
                     |b: &Bild| b.abstand,
-                    "Millisekunden zwischen zwei gezeichneten Bildern — in Ruhe groß",
+                    jjcad_core::i18n::tr("gui.perf.hinweis_abstand"),
                 ),
                 (
-                    "Rechnen",
+                    jjcad_core::i18n::tr("gui.perf.rechnen"),
                     |b: &Bild| b.cpu,
-                    "Rechenzeit eines Bildes, Summe der Abschnitte darunter",
+                    jjcad_core::i18n::tr("gui.perf.hinweis_rechnen"),
                 ),
                 (
-                    "außerhalb",
+                    jjcad_core::i18n::tr("gui.perf.ausserhalb"),
                     |b: &Bild| b.ausserhalb(),
-                    "Nicht messbar im Programm: Tessellierung, GPU und das Warten auf den Bildwechsel (Abstand minus Rechenzeit)",
+                    jjcad_core::i18n::tr("gui.perf.hinweis_ausserhalb"),
                 ),
             ];
             for (name, f, hinweis) in reihen {
@@ -656,9 +656,9 @@ fn inhalt(app: &App, ui: &mut egui::Ui) {
                     if let Some(b) = letzt {
                         for k in [MalKlasse::Fuellung, MalKlasse::Linie, MalKlasse::Text] {
                             let name = match k {
-                                MalKlasse::Fuellung => "  Füllungen",
-                                MalKlasse::Linie => "  Linien",
-                                MalKlasse::Text => "  Text",
+                                MalKlasse::Fuellung => jjcad_core::i18n::tr("gui.perf.fuellungen"),
+                                MalKlasse::Linie => jjcad_core::i18n::tr("gui.perf.linien"),
+                                MalKlasse::Text => jjcad_core::i18n::tr("gui.perf.text"),
                             };
                             zelle(ui, theme_mono(name).color(Palette::TEXT_FAINT), NAME_W);
                             zelle(
@@ -680,9 +680,9 @@ fn inhalt(app: &App, ui: &mut egui::Ui) {
     // wie ein Flackern (T0068, Turn 2). Die Zeile steht immer da, damit auch die
     // Höhe der Anzeige gleich bleibt.
     let herkunft = if perf.liste_jetzt_neu() {
-        "Displayliste: neu aufgebaut"
+        jjcad_core::i18n::tr("gui.perf.displayliste_neu_aufgebaut")
     } else {
-        "Displayliste: aus dem Zwischenspeicher"
+        jjcad_core::i18n::tr("gui.perf.displayliste_aus_dem_zwischenspeicher")
     };
     ui.label(theme_mono(herkunft).color(Palette::TEXT_FAINT));
 
@@ -695,26 +695,31 @@ fn inhalt(app: &App, ui: &mut egui::Ui) {
     let mut zeile1 = format!("{} Objekte", zahl_text(objekte));
     if let Some(b) = letzt {
         if b.objekte > 0 && b.objekte != objekte {
-            zeile1.push_str(&format!(" (Liste: {})", zahl_text(b.objekte)));
+            zeile1.push_str(&jjcad_core::i18n::t_args_owned("gui.perf.liste_x", &[("wert1", format!("{}", zahl_text(b.objekte)))]));
         }
-        zeile1.push_str(&format!(" · {} Grafikelemente", zahl_text(b.grafikelemente)));
+        zeile1.push_str(&jjcad_core::i18n::t_args_owned("gui.perf.x_grafikelemente", &[("wert1", format!("{}", zahl_text(b.grafikelemente)))]));
     }
     ui.label(theme_mono(&zeile1).color(Palette::TEXT_DIM));
     if let Some(b) = letzt {
         ui.label(
-            theme_mono(&format!(
-                "Füllungen {} · Linien {} · Text {}",
-                zahl_text(b.fuellungen),
-                zahl_text(b.linien),
-                zahl_text(b.texte)
+            theme_mono(&jjcad_core::i18n::t_args_owned(
+                "gui.perf.fuellungen_x_linien_x_text_x",
+                &[
+                    ("fuellungen", zahl_text(b.fuellungen).to_string()),
+                    ("linien", zahl_text(b.linien).to_string()),
+                    ("texte", zahl_text(b.texte).to_string()),
+                ],
             ))
             .color(Palette::TEXT_FAINT),
         );
     }
     ui.label(
-        theme_mono(&format!(
-            "Displayliste {:.0} % aus dem Zwischenspeicher",
-            perf.aus_dem_zwischenspeicher() * 100.0
+        theme_mono(&jjcad_core::i18n::t_args_owned(
+            "gui.perf.displayliste_x_prozent_zwischenspeicher",
+            &[(
+                "anteil",
+                format!("{:.0}", perf.aus_dem_zwischenspeicher() * 100.0),
+            )],
         ))
         .color(Palette::TEXT_FAINT),
     );
@@ -728,20 +733,16 @@ fn inhalt(app: &App, ui: &mut egui::Ui) {
         format!("Zoom {} px/mm", format!("{zoom:.2}").replace('.', ","))
     };
     if perf.speicher_mb() > 0.0 {
-        zeile2.push_str(&format!(" · {:.0} MB", perf.speicher_mb()));
+        zeile2.push_str(&jjcad_core::i18n::t_args_owned("gui.perf.x_mb", &[("wert1", format!("{:.0}", perf.speicher_mb()))]));
     }
     if perf.threads() > 0 {
-        zeile2.push_str(&format!(" · {} Threads", perf.threads()));
+        zeile2.push_str(&jjcad_core::i18n::t_args_owned("gui.perf.x_threads", &[("wert1", format!("{}", perf.threads()))]));
     }
     ui.label(theme_mono(&zeile2).color(Palette::TEXT_FAINT));
 
     ui.add_space(2.0);
     ui.label(
-        RichText::new(format!(
-            "Verlauf: {} Bilder · {} Pausen",
-            perf.ring.len(),
-            perf.pausen
-        ))
+        RichText::new(jjcad_core::i18n::t_args_owned("gui.perf.verlauf_x_bilder_x_pausen", &[("wert1", format!("{}", perf.ring.len())), ("wert2", format!("{}", perf.pausen))]))
         .size(9.5)
         .color(Palette::TEXT_FAINT),
     );

@@ -16,20 +16,20 @@ use serde_json::json;
 pub fn layers(app: &mut App, ui: &mut Ui) {
     ui.horizontal(|ui| {
         ui.label(
-            RichText::new("LAYER")
+            RichText::new(jjcad_core::i18n::tr("gui.panels.layer"))
                 .size(10.0)
                 .color(Palette::TEXT_FAINT)
                 .strong(),
         );
         ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-            if widgets::icon_button(ui, "plus", 22.0, false, "Neuer Layer").clicked() {
+            if widgets::icon_button(ui, "plus", 22.0, false, jjcad_core::i18n::tr("gui.panels.neuer_layer")).clicked() {
                 let n = app.doc().layers.len() + 1;
                 app.ui.new_layer_dialog = Some(format!("Layer {n}"));
             }
-            if widgets::icon_button(ui, "layers", 22.0, false, "Layer verwalten").clicked() {
+            if widgets::icon_button(ui, "layers", 22.0, false, jjcad_core::i18n::tr("gui.panels.layer_verwalten")).clicked() {
                 app.ui.layers_open = !app.ui.layers_open;
             }
-            if widgets::icon_button(ui, "chevron_left", 20.0, false, "Einklappen").clicked() {
+            if widgets::icon_button(ui, "chevron_left", 20.0, false, jjcad_core::i18n::tr("gui.panels.einklappen")).clicked() {
                 app.ui.layers_collapsed = true;
             }
         });
@@ -39,13 +39,13 @@ pub fn layers(app: &mut App, ui: &mut Ui) {
     if let Some(name) = app.ui.new_layer_dialog.clone() {
         ui.horizontal(|ui| {
             let mut n = name;
-            let resp = ui.add_sized([150.0, 22.0], egui::TextEdit::singleline(&mut n).hint_text("Layer-Name"));
-            let ok = ui.button("OK").clicked() || (resp.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter)));
+            let resp = ui.add_sized([150.0, 22.0], egui::TextEdit::singleline(&mut n).hint_text(jjcad_core::i18n::tr("gui.panels.layer_name")));
+            let ok = ui.button(jjcad_core::i18n::tr("gui.panels.ok")).clicked() || (resp.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter)));
             if ok {
                 match app.session_mut().execute("layer.create", &json!({"name": n})) {
                     Ok(_) => {
                         app.mark_changed();
-                        app.toast(format!("Layer '{n}' angelegt"));
+                        app.toast(jjcad_core::i18n::t_args_owned("gui.panels.layer_x_angelegt", &[("n", format!("{}", n))]));
                     }
                     Err(e) => app.toast(e),
                 }
@@ -53,7 +53,7 @@ pub fn layers(app: &mut App, ui: &mut Ui) {
             } else {
                 app.ui.new_layer_dialog = Some(n);
             }
-            if ui.button("Abbrechen").clicked() {
+            if ui.button(jjcad_core::i18n::tr("gui.panels.abbrechen")).clicked() {
                 app.ui.new_layer_dialog = None;
             }
         });
@@ -160,20 +160,20 @@ pub fn layers(app: &mut App, ui: &mut Ui) {
                 if resp.secondary_clicked() {
                     app.ui.color_popup = Some(l.id);
                 }
-                let hover_text = format!("{} · {:.2} mm · {}", l.name, l.line_weight, l.line_type.label());
+                let hover_text = jjcad_core::i18n::t_args_owned("gui.panels.x_x_mm_x", &[("wert1", format!("{}", l.name)), ("wert2", format!("{:.2}", l.line_weight)), ("wert3", format!("{}", l.line_type.label()))]);
                 resp.clone().on_hover_text(hover_text);
                 resp.context_menu(|ui| {
                     ui.label(theme::dim(&l.name));
                     ui.separator();
-                    if ui.button("Aktueller Layer").clicked() {
+                    if ui.button(jjcad_core::i18n::tr("gui.panels.aktueller_layer")).clicked() {
                         set_current = Some(l.id);
                         ui.close_menu();
                     }
-                    if ui.button("Umbenennen").clicked() {
+                    if ui.button(jjcad_core::i18n::tr("gui.panels.umbenennen")).clicked() {
                         rename = Some((l.id, l.name.clone()));
                         ui.close_menu();
                     }
-                    if ui.button("Löschen").clicked() {
+                    if ui.button(jjcad_core::i18n::tr("gui.panels.loeschen")).clicked() {
                         delete = Some(l.id);
                         ui.close_menu();
                     }
@@ -184,15 +184,11 @@ pub fn layers(app: &mut App, ui: &mut Ui) {
                 }
             }
             ui.add_space(6.0);
-            ui.label(theme::dim(format!(
-                "{} Layer · aktuell: {}",
-                layers.len(),
-                layers
+            ui.label(theme::dim(jjcad_core::i18n::t_args_owned("gui.panels.x_layer_aktuell_x", &[("wert1", format!("{}", layers.len())), ("wert2", format!("{}", layers
                     .iter()
                     .find(|l| l.id == current)
                     .map(|l| l.name.clone())
-                    .unwrap_or_default()
-            )));
+                    .unwrap_or_default()))])));
         });
 
     if let Some(id) = set_current {
@@ -225,7 +221,7 @@ pub fn layers(app: &mut App, ui: &mut Ui) {
         match app.session_mut().execute("layer.delete", &json!({"layer": id})) {
             Ok(_) => {
                 app.mark_changed();
-                app.toast("Layer gelöscht");
+                app.toast(jjcad_core::i18n::tr("gui.panels.layer_geloescht"));
             }
             Err(e) => app.toast(e),
         }
@@ -250,18 +246,18 @@ pub fn layer_color_popup(app: &mut App, ctx: &egui::Context) {
                 ui.label(theme::bold(&layer.name, 12.0));
                 ui.add_space(4.0);
                 let palette = [
-                    ("Schwarz", Color::BLACK),
-                    ("Grau", Color::GREY),
-                    ("Hellgrau", Color::LIGHT_GREY),
-                    ("Rot", Color::RED),
-                    ("Orange", Color::ORANGE),
-                    ("Grün", Color::GREEN),
-                    ("Blau", Color::BLUE),
-                    ("Cyan", Color::CYAN),
-                    ("Violett", Color::PURPLE),
-                    ("Braun", Color::rgb(120, 85, 55)),
-                    ("Ocker", Color::rgb(190, 160, 90)),
-                    ("Tinte", Color::rgb(40, 45, 52)),
+                    ("gui.panels.farbe_schwarz", Color::BLACK),
+                    ("gui.panels.farbe_grau", Color::GREY),
+                    ("gui.panels.farbe_hellgrau", Color::LIGHT_GREY),
+                    ("gui.panels.farbe_rot", Color::RED),
+                    ("gui.panels.farbe_orange", Color::ORANGE),
+                    ("gui.panels.farbe_gruen", Color::GREEN),
+                    ("gui.panels.farbe_blau", Color::BLUE),
+                    ("gui.panels.farbe_cyan", Color::CYAN),
+                    ("gui.panels.farbe_violett", Color::PURPLE),
+                    ("gui.panels.farbe_braun", Color::rgb(120, 85, 55)),
+                    ("gui.panels.farbe_ocker", Color::rgb(190, 160, 90)),
+                    ("gui.panels.farbe_tinte", Color::rgb(40, 45, 52)),
                 ];
                 for row in palette.chunks(4) {
                     ui.horizontal(|ui| {
@@ -285,13 +281,13 @@ pub fn layer_color_popup(app: &mut App, ctx: &egui::Context) {
                 ui.add_space(6.0);
                 let mut rgb = [layer.color.r, layer.color.g, layer.color.b];
                 ui.horizontal(|ui| {
-                    ui.label(theme::dim("Eigene Farbe"));
+                    ui.label(theme::dim(jjcad_core::i18n::tr("gui.panels.eigene_farbe")));
                     if ui.color_edit_button_srgb(&mut rgb).changed() {
                         chosen = Some(Color::rgb(rgb[0], rgb[1], rgb[2]));
                     }
                 });
                 ui.add_space(4.0);
-                if ui.button("Schließen").clicked() {
+                if ui.button(jjcad_core::i18n::tr("gui.panels.schliessen")).clicked() {
                     open = false;
                 }
             });
@@ -325,13 +321,13 @@ pub fn properties(app: &mut App, ui: &mut Ui) {
     crate::props::protokoll_start();
     ui.horizontal(|ui| {
         ui.label(
-            RichText::new("EIGENSCHAFTEN")
+            RichText::new(jjcad_core::i18n::tr("gui.panels.eigenschaften"))
                 .size(10.0)
                 .color(Palette::TEXT_FAINT)
                 .strong(),
         );
         ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-            if widgets::icon_button(ui, "chevron_right", 20.0, false, "Einklappen").clicked() {
+            if widgets::icon_button(ui, "chevron_right", 20.0, false, jjcad_core::i18n::tr("gui.panels.einklappen")).clicked() {
                 app.ui.props_collapsed = true;
             }
         });
@@ -525,26 +521,26 @@ pub(crate) fn auszeichnen(app: &mut App, id: Id, von: usize, bis: usize, schlues
 
 /// Strichstärken nach DIN 1356 / Bauzeichnung
 pub const WEIGHT_PRESETS: [(f64, &str); 3] = [
-    (0.50, "Dick"),
-    (0.35, "Mittel"),
-    (0.25, "Dünn"),
+    (0.50, "gui.panels.staerke_dick"),
+    (0.35, "gui.panels.staerke_mittel"),
+    (0.25, "gui.panels.staerke_duenn"),
 ];
 
 /// Farbvorgaben: (Name, Bedeutung, RGB)
 pub const COLOR_PRESETS: [(&str, &str, u32); 13] = [
-    ("Schwarz", "Bestand", 0x000000),
-    ("Rot", "Neubau", 0xFF0000),
-    ("Gelb", "Abbruch", 0xFFFF00),
-    ("Blau", "", 0x2E5FA3),
-    ("Grün", "", 0x2E7D4F),
-    ("Orange", "", 0xD9822B),
-    ("Violett", "", 0x6A4C93),
-    ("Türkis", "", 0x2A9D8F),
-    ("Grau 25 %", "", 0x404040),
-    ("Grau 50 %", "", 0x808080),
-    ("Grau 75 %", "", 0xBFBFBF),
-    ("Hellgrau", "", 0xD9D9D9),
-    ("Weiß", "", 0xFFFFFF),
+    ("gui.panels.farbe_schwarz", "gui.panels.bedeutung_bestand", 0x000000),
+    ("gui.panels.farbe_rot", "gui.panels.bedeutung_neubau", 0xFF0000),
+    ("gui.panels.farbe_gelb", "gui.panels.bedeutung_abbruch", 0xFFFF00),
+    ("gui.panels.farbe_blau", "", 0x2E5FA3),
+    ("gui.panels.farbe_gruen", "", 0x2E7D4F),
+    ("gui.panels.farbe_orange", "", 0xD9822B),
+    ("gui.panels.farbe_violett", "", 0x6A4C93),
+    ("gui.panels.farbe_tuerkis", "", 0x2A9D8F),
+    ("gui.panels.farbe_grau_25", "", 0x404040),
+    ("gui.panels.farbe_grau_50", "", 0x808080),
+    ("gui.panels.farbe_grau_75", "", 0xBFBFBF),
+    ("gui.panels.farbe_hellgrau", "", 0xD9D9D9),
+    ("gui.panels.farbe_weiss", "", 0xFFFFFF),
 ];
 
 fn preset_color(rgb: u32) -> Color {
@@ -563,7 +559,7 @@ fn swatch(ui: &mut Ui, c: Color) {
 fn weight_text(w: f64) -> String {
     for (val, name) in WEIGHT_PRESETS {
         if (w - val).abs() < 1e-6 {
-            return format!("{:.2} mm · {}", val, name).replace('.', ",");
+            return format!("{:.2} mm · {}", val, jjcad_core::i18n::tr(name)).replace('.', ",");
         }
     }
     format!("{:.2} mm", w).replace('.', ",")
@@ -694,7 +690,7 @@ pub(crate) fn dropdown_mit_menue<R>(
     pnt.text(
         egui::pos2(rect.right() - 7.0, rect.center().y),
         egui::Align2::RIGHT_CENTER,
-        "v",
+        jjcad_core::i18n::tr("gui.panels.v"),
         FontId::proportional(9.0),
         Palette::TEXT_DIM,
     );
@@ -828,7 +824,7 @@ pub(crate) fn weight_combo(ui: &mut Ui, salt: &str, cur: f64, mixed: bool) -> Op
             {
                 out = Some(v);
             }
-            if ui.small_button("Liste").on_hover_text("Vorgaben anzeigen").clicked() {
+            if ui.small_button(jjcad_core::i18n::tr("gui.panels.liste")).on_hover_text(jjcad_core::i18n::tr("gui.panels.vorgaben_anzeigen")).clicked() {
                 ui.data_mut(|d| d.insert_temp(eid, false));
             }
         });
@@ -842,13 +838,13 @@ pub(crate) fn weight_combo(ui: &mut Ui, salt: &str, cur: f64, mixed: bool) -> Op
     dropdown(ui, salt, &cap, None, |ui| {
         let mut out = None;
         for (val, name) in WEIGHT_PRESETS {
-            let txt = format!("{:.2} mm · {}", val, name).replace('.', ",");
+            let txt = format!("{:.2} mm · {}", val, jjcad_core::i18n::tr(name)).replace('.', ",");
             if ui.selectable_label((cur - val).abs() < 1e-6, txt).clicked() {
                 out = Some(val);
             }
         }
         ui.separator();
-        if ui.selectable_label(false, "Freier Wert …").clicked() {
+        if ui.selectable_label(false, jjcad_core::i18n::tr("gui.panels.freier_wert")).clicked() {
             ui.data_mut(|d| d.insert_temp(eid, true));
             out = Some(cur);
         }
@@ -880,7 +876,7 @@ pub(crate) fn color_combo(
             }
             let hex = format!("#{:02X}{:02X}{:02X}", arr[0], arr[1], arr[2]);
             ui.label(theme::mono(hex));
-            if ui.small_button("Liste").on_hover_text("Vorgaben anzeigen").clicked() {
+            if ui.small_button(jjcad_core::i18n::tr("gui.panels.liste")).on_hover_text(jjcad_core::i18n::tr("gui.panels.vorgaben_anzeigen")).clicked() {
                 ui.data_mut(|d| d.insert_temp(eid, false));
             }
         });
@@ -897,9 +893,13 @@ pub(crate) fn color_combo(
             .find(|(_, _, rgb)| preset_color(*rgb).to_hex() == hex)
             .map(|(n, m, _)| {
                 if m.is_empty() {
-                    n.to_string()
+                    jjcad_core::i18n::tr(n).to_string()
                 } else {
-                    format!("{} · {}", n, m)
+                    format!(
+                        "{} · {}",
+                        jjcad_core::i18n::tr(n),
+                        jjcad_core::i18n::tr(m)
+                    )
                 }
             })
             .unwrap_or_else(|| format!("eigene {}", hex));
@@ -913,6 +913,8 @@ pub(crate) fn color_combo(
         ui.separator();
         ui.columns(2, |cols| {
             for (i, (name, meaning, rgb)) in COLOR_PRESETS.iter().enumerate() {
+            let name = jjcad_core::i18n::tr(name);
+            let meaning = jjcad_core::i18n::tr(meaning);
                 let cell = &mut cols[i % 2];
                 let c = preset_color(*rgb);
                 let sel = !unset && cur.to_hex() == c.to_hex();
@@ -930,7 +932,7 @@ pub(crate) fn color_combo(
             }
         });
         ui.separator();
-        if ui.selectable_label(false, "Freie Farbe …").clicked() {
+        if ui.selectable_label(false, jjcad_core::i18n::tr("gui.panels.freie_farbe")).clicked() {
             ui.data_mut(|d| d.insert_temp(eid, true));
             out = Some(Some(cur));
         }
@@ -958,7 +960,7 @@ pub(crate) fn geo_rows(e: &jjcad_core::model::Entity, unit: Unit) -> Vec<(&'stat
     let mut rows: Vec<(&'static str, String)> = Vec::new();
     let len = entity_length(e);
     if len > 0.0 {
-        rows.push(("Länge", unit.format(len, unit.decimals())));
+        rows.push((jjcad_core::i18n::tr("gui.panels.laenge"), unit.format(len, unit.decimals())));
     }
     if let Some((dx, dy)) = delta_xy(e, unit) {
         rows.push(("Delta X", dx));
@@ -966,13 +968,18 @@ pub(crate) fn geo_rows(e: &jjcad_core::model::Entity, unit: Unit) -> Vec<(&'stat
     }
     let area = entity_area(e);
     if area > 0.0 {
-        rows.push(("Fläche", area_text(unit, area)));
+        rows.push((jjcad_core::i18n::tr("gui.panels.flaeche"), area_text(unit, area)));
     }
     if let K::Polyline { verts, closed } | K::Spline { verts, closed } = &e.kind {
-        rows.push(("Stützpunkte", verts.len().to_string()));
+        rows.push((jjcad_core::i18n::tr("gui.panels.stuetzpunkte"), verts.len().to_string()));
         rows.push((
-            "Geschlossen",
-            if *closed { "Ja" } else { "Nein" }.to_string(),
+            jjcad_core::i18n::tr("gui.panels.geschlossen"),
+            if *closed {
+                jjcad_core::i18n::tr("gui.panels.ja")
+            } else {
+                jjcad_core::i18n::tr("gui.panels.nein")
+            }
+            .to_string(),
         ));
     }
     rows
@@ -1061,17 +1068,11 @@ fn sheet_props(app: &mut App, ui: &mut Ui, sid: Id) {
     let Some(sheet) = app.doc().sheet(sid).cloned() else { return };
     section_title(ui, "sheet", &sheet.name);
     let (pw, ph) = sheet.size();
-    ui.label(theme::dim(format!(
-        "{} · {:.0} × {:.0} mm · {}",
-        sheet.paper.label(),
-        pw,
-        ph,
-        format_scale(sheet.scale)
-    )));
+    ui.label(theme::dim(jjcad_core::i18n::t_args_owned("gui.panels.x_x_x_mm_x", &[("wert1", format!("{}", sheet.paper.label())), ("wert2", format!("{:.0}", pw)), ("wert3", format!("{:.0}", ph)), ("wert4", format!("{}", format_scale(sheet.scale)))])));
     ui.add_space(8.0);
 
     let mut name = sheet.name.clone();
-    widgets::field_row(ui, "Name", |ui| {
+    widgets::field_row(ui, jjcad_core::i18n::tr("gui.panels.name"), |ui| {
         if ui.add_sized([140.0, 20.0], egui::TextEdit::singleline(&mut name)).changed() {
             let _ = app
                 .session_mut()
@@ -1081,7 +1082,7 @@ fn sheet_props(app: &mut App, ui: &mut Ui, sid: Id) {
     let mut paper = sheet.paper;
     let mut landscape = sheet.landscape;
     let mut scale = sheet.scale;
-    widgets::field_row(ui, "Format", |ui| {
+    widgets::field_row(ui, jjcad_core::i18n::tr("gui.panels.format"), |ui| {
         egui::ComboBox::from_id_salt("shpaper")
             .width(70.0)
             .selected_text(paper.label())
@@ -1090,7 +1091,7 @@ fn sheet_props(app: &mut App, ui: &mut Ui, sid: Id) {
                     ui.selectable_value(&mut paper, p, p.label());
                 }
             });
-        ui.checkbox(&mut landscape, "quer");
+        ui.checkbox(&mut landscape, jjcad_core::i18n::tr("gui.panels.quer"));
     });
     if paper != sheet.paper || landscape != sheet.landscape {
         let _ = app.session_mut().execute(
@@ -1099,7 +1100,7 @@ fn sheet_props(app: &mut App, ui: &mut Ui, sid: Id) {
         );
         app.mark_changed();
     }
-    widgets::field_row(ui, "Maßstab", |ui| {
+    widgets::field_row(ui, jjcad_core::i18n::tr("gui.panels.massstab"), |ui| {
         if ui.add_sized([70.0, 20.0], crate::widgets::zahl(&mut scale, 1.0, 1.0..=1000.0)).changed() {
             let _ = app
                 .session_mut()
@@ -1111,16 +1112,16 @@ fn sheet_props(app: &mut App, ui: &mut Ui, sid: Id) {
     // Papierraum angeklickt und geändert wie jede Linie und jeder Text. Ein
     // Schalter dafür wäre irreführend — hier steht deshalb nur der Hinweis.
     ui.label(theme::dim(
-        "Rahmen und Schriftfeld sind normale Objekte — im Papierraum anklicken.",
+        jjcad_core::i18n::tr("gui.panels.rahmen_und_schriftfeld_sind_normale_objekte_im_papierrau"),
     ));
 
     ui.add_space(10.0);
     widgets::hline(ui);
     ui.add_space(6.0);
     ui.horizontal(|ui| {
-        ui.label(theme::bold("Ansichtsfenster", 12.0));
+        ui.label(theme::bold(jjcad_core::i18n::tr("gui.panels.ansichtsfenster"), 12.0));
         ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-            if widgets::icon_button(ui, "plus", 20.0, false, "Ansichtsfenster hinzufügen").clicked() {
+            if widgets::icon_button(ui, "plus", 20.0, false, jjcad_core::i18n::tr("gui.panels.ansichtsfenster_hinzufuegen")).clicked() {
                 app.run_action(ui.ctx(), "sheet.add_viewport");
             }
         });
@@ -1151,7 +1152,7 @@ fn sheet_props(app: &mut App, ui: &mut Ui, sid: Id) {
         if let Some(vp) = sheet.viewports.iter().find(|v| v.id == vid) {
             ui.add_space(6.0);
             let mut vs = vp.scale;
-            widgets::field_row(ui, "Ansicht", |ui| {
+            widgets::field_row(ui, jjcad_core::i18n::tr("gui.panels.ansicht"), |ui| {
                 if ui.add_sized([70.0, 20.0], crate::widgets::zahl(&mut vs, 1.0, 1.0..=1000.0)).changed() {
                     let _ = app.session_mut().execute(
                         "sheet.update_viewport",
@@ -1166,11 +1167,11 @@ fn sheet_props(app: &mut App, ui: &mut Ui, sid: Id) {
             let mut vw = vp.w;
             let mut vh = vp.h;
             let mut geom_changed = false;
-            widgets::field_row(ui, "X / Y (mm)", |ui| {
+            widgets::field_row(ui, jjcad_core::i18n::tr("gui.panels.x_y_mm"), |ui| {
                 geom_changed |= ui.add_sized([52.0, 20.0], crate::widgets::zahl(&mut vx, 1.0, widgets::KOORD_MIN_MM..=widgets::KOORD_MAX_MM)).changed();
                 geom_changed |= ui.add_sized([52.0, 20.0], crate::widgets::zahl(&mut vy, 1.0, widgets::KOORD_MIN_MM..=widgets::KOORD_MAX_MM)).changed();
             });
-            widgets::field_row(ui, "B / H (mm)", |ui| {
+            widgets::field_row(ui, jjcad_core::i18n::tr("gui.panels.b_h_mm"), |ui| {
                 geom_changed |= ui.add_sized([52.0, 20.0], crate::widgets::zahl(&mut vw, 0.5, 10.0..=2000.0)).changed();
                 geom_changed |= ui.add_sized([52.0, 20.0], crate::widgets::zahl(&mut vh, 0.5, 10.0..=2000.0)).changed();
             });
@@ -1182,7 +1183,7 @@ fn sheet_props(app: &mut App, ui: &mut Ui, sid: Id) {
                 app.mark_changed();
             }
             ui.horizontal(|ui| {
-                if ui.button("Auf Zeichnung zentrieren").clicked() {
+                if ui.button(jjcad_core::i18n::tr("gui.panels.auf_zeichnung_zentrieren")).clicked() {
                     let c = app.doc().bbox();
                     let u = app.unit();
                     if c.is_valid() {
@@ -1195,7 +1196,7 @@ fn sheet_props(app: &mut App, ui: &mut Ui, sid: Id) {
                         app.mark_changed();
                     }
                 }
-                if ui.button("Entfernen").clicked() {
+                if ui.button(jjcad_core::i18n::tr("gui.panels.entfernen")).clicked() {
                     let _ = app.session_mut().execute(
                         "sheet.remove_viewport",
                         &json!({"sheet": sid, "viewport": vid}),
@@ -1205,7 +1206,7 @@ fn sheet_props(app: &mut App, ui: &mut Ui, sid: Id) {
                 }
             });
             let mut show_frame = vp.show_frame;
-            if ui.checkbox(&mut show_frame, "Fensterrahmen zeigen").changed() {
+            if ui.checkbox(&mut show_frame, jjcad_core::i18n::tr("gui.panels.fensterrahmen_zeigen")).changed() {
                 let _ = app.session_mut().execute(
                     "sheet.update_viewport",
                     &json!({"sheet": sid, "viewport": vid, "show_frame": show_frame}),
@@ -1239,7 +1240,7 @@ fn zeichnungs_info(
             zeilen.push((
                 "Stand",
                 if doc.modified {
-                    "geändert (nicht gespeichert)"
+                    jjcad_core::i18n::tr("gui.panels.geaendert_nicht_gespeichert")
                 } else {
                     "gespeichert"
                 }
@@ -1247,16 +1248,20 @@ fn zeichnungs_info(
                 None,
             ));
             let bytes = std::fs::metadata(pfad).map(|m| m.len()).unwrap_or(0);
-            zeilen.push(("Größe", datei_groesse(bytes), None));
+            zeilen.push((jjcad_core::i18n::tr("gui.panels.groesse"), datei_groesse(bytes), None));
         }
         None => {
-            zeilen.push(("Datei", "nicht gespeichert".to_string(), None));
-            zeilen.push(("Stand", "–".to_string(), None));
-            zeilen.push(("Größe", "–".to_string(), None));
+            zeilen.push((
+                jjcad_core::i18n::tr("gui.panels.datei"),
+                jjcad_core::i18n::tr("gui.panels.nicht_gespeichert").to_string(),
+                None,
+            ));
+            zeilen.push((jjcad_core::i18n::tr("gui.panels.stand"), "–".to_string(), None));
+            zeilen.push((jjcad_core::i18n::tr("gui.panels.groesse"), "–".to_string(), None));
         }
     }
-    zeilen.push(("Ausdehnung", ausdehnung_text(doc, unit), None));
-    zeilen.push(("Blätter", blatt_text(doc), None));
+    zeilen.push((jjcad_core::i18n::tr("gui.panels.ausdehnung"), ausdehnung_text(doc, unit), None));
+    zeilen.push((jjcad_core::i18n::tr("gui.panels.blaetter"), blatt_text(doc), None));
     zeilen
 }
 
@@ -1301,7 +1306,7 @@ fn blatt_text(doc: &Document) -> String {
         1 => format!("1 × {}", beschreibung(&doc.sheets[0])),
         n => {
             let liste: Vec<String> = doc.sheets.iter().map(beschreibung).collect();
-            format!("{n} Blätter: {}", liste.join(", "))
+            jjcad_core::i18n::t_args_owned("gui.panels.n_blaetter_x", &[("anzahl", format!("{}", n)), ("liste", liste.join(", "))])
         }
     }
 }
@@ -1328,18 +1333,24 @@ fn bestand_text(doc: &Document) -> String {
     }
     // Einzahl/Mehrzahl getrennt: „1 Tür", aber „3 Türen".
     let teile: Vec<String> = [
-        (waende, "Wand", "Wände"),
-        (tueren, "Tür", "Türen"),
-        (fenster, "Fenster", "Fenster"),
-        (treppen, "Treppe", "Treppen"),
-        (masse, "Maß", "Maße"),
-        (texte, "Text", "Texte"),
-        (flaechen, "Fläche", "Flächen"),
-        (bloecke, "Block", "Blöcke"),
+        (waende, "gui.panels.ein_wand", "gui.panels.viele_waende"),
+        (tueren, "gui.panels.ein_tuer", "gui.panels.viele_tueren"),
+        (fenster, "gui.panels.ein_fenster", "gui.panels.viele_fenster"),
+        (treppen, "gui.panels.ein_treppe", "gui.panels.viele_treppen"),
+        (masse, "gui.panels.ein_mass", "gui.panels.viele_masse"),
+        (texte, "gui.panels.ein_text", "gui.panels.viele_texte"),
+        (flaechen, "gui.panels.ein_flaeche", "gui.panels.viele_flaechen"),
+        (bloecke, "gui.panels.ein_block", "gui.panels.viele_bloecke"),
     ]
     .iter()
     .filter(|(n, _, _)| *n > 0)
-    .map(|(n, ein, viel)| format!("{n} {}", if *n == 1 { ein } else { viel }))
+    .map(|(n, ein, viel)| {
+        let wort = jjcad_core::i18n::tr(if *n == 1 { ein } else { viel });
+        jjcad_core::i18n::t_args_owned(
+            "gui.panels.n_objekt",
+            &[("anzahl", format!("{}", n)), ("objekt", wort.to_string())],
+        )
+    })
     .collect();
     if teile.is_empty() {
         "keine Objekte".to_string()
@@ -1349,14 +1360,9 @@ fn bestand_text(doc: &Document) -> String {
 }
 
 fn doc_props(app: &mut App, ui: &mut Ui) {
-    section_title(ui, "settings", "Zeichnung");
+    section_title(ui, "settings", jjcad_core::i18n::tr("gui.panels.zeichnung"));
     let unit = app.doc().settings.input_unit;
-    ui.label(theme::dim(format!(
-        "{} · {} Objekte · Layer {}",
-        app.doc().name,
-        app.doc().entities.len(),
-        app.doc().layers.len()
-    )));
+    ui.label(theme::dim(jjcad_core::i18n::t_args_owned("gui.panels.x_x_objekte_layer_x", &[("wert1", format!("{}", app.doc().name)), ("wert2", format!("{}", app.doc().entities.len())), ("wert3", format!("{}", app.doc().layers.len()))])));
     ui.add_space(8.0);
 
     // Informationen über die Zeichnungsdatei selbst — reine Anzeige.
@@ -1367,7 +1373,7 @@ fn doc_props(app: &mut App, ui: &mut Ui) {
     // Der Bestand ist zu lang für die 150-px-Wertespalte — als umbrechende
     // Zeile darunter, damit nichts abgeschnitten wird.
     ui.add_space(4.0);
-    ui.label(theme::dim(format!("Bestand: {}", bestand_text(app.doc()))));
+    ui.label(theme::dim(jjcad_core::i18n::t_args_owned("gui.panels.bestand_x", &[("wert1", format!("{}", bestand_text(app.doc())))])));
 
     ui.add_space(10.0);
     widgets::hline(ui);
@@ -1380,7 +1386,7 @@ fn doc_props(app: &mut App, ui: &mut Ui) {
     let mut decimals = app.doc().settings.decimals as i32;
     let mut grid = app.doc().settings.snap.grid_step;
 
-    widgets::field_row(ui, "Einheit", |ui| {
+    widgets::field_row(ui, jjcad_core::i18n::tr("gui.panels.einheit"), |ui| {
         egui::ComboBox::from_id_salt("inpunit")
             .width(ui.available_width())
             .selected_text(input.label())
@@ -1390,10 +1396,10 @@ fn doc_props(app: &mut App, ui: &mut Ui) {
                 }
             });
     });
-    widgets::field_row(ui, "Dezimalen", |ui| {
+    widgets::field_row(ui, jjcad_core::i18n::tr("gui.panels.dezimalen"), |ui| {
         ui.add_sized([ui.available_width(), 20.0], crate::widgets::zahl(&mut decimals, 1.0, 0..=4));
     });
-    widgets::field_row(ui, "Raster", |ui| {
+    widgets::field_row(ui, jjcad_core::i18n::tr("gui.panels.raster"), |ui| {
         // Grenzen: 1 mm … 10 m. Ohne sie zog der Ziehpfeil ins Negative und in
         // Werte, bei denen kein Rasterfang mehr stattfindet.
         if widgets::length_field(
@@ -1424,17 +1430,17 @@ fn doc_props(app: &mut App, ui: &mut Ui) {
     ui.add_space(10.0);
     widgets::hline(ui);
     ui.add_space(6.0);
-    section_title(ui, "info", "Projektdaten");
+    section_title(ui, "info", jjcad_core::i18n::tr("gui.panels.projektdaten"));
     let mut project = app.doc().project.clone();
     let mut changed = false;
     for (label, field) in [
-        ("Projekt", &mut project.project),
-        ("Bauherr", &mut project.client),
-        ("Planung", &mut project.planner),
-        ("Adresse", &mut project.address),
+        (jjcad_core::i18n::tr("gui.panels.projekt"), &mut project.project),
+        (jjcad_core::i18n::tr("gui.panels.bauherr"), &mut project.client),
+        (jjcad_core::i18n::tr("gui.panels.planung"), &mut project.planner),
+        (jjcad_core::i18n::tr("gui.panels.adresse"), &mut project.address),
         ("Plan-Nr.", &mut project.plan_no),
-        ("Planinhalt", &mut project.plan_title),
-        ("Revision", &mut project.revision),
+        (jjcad_core::i18n::tr("gui.panels.planinhalt"), &mut project.plan_title),
+        (jjcad_core::i18n::tr("gui.panels.revision"), &mut project.revision),
     ] {
         widgets::field_row(ui, label, |ui| {
             if ui
@@ -1459,7 +1465,7 @@ fn doc_props(app: &mut App, ui: &mut Ui) {
     }
 
     ui.add_space(10.0);
-    ui.label(theme::dim("Platzhalter in Texten: {DATUM} {PROJEKT} {BAUHERR} {PLAN} {MASSTAB} {ADRESSE}"));
+    ui.label(theme::dim(jjcad_core::i18n::tr("gui.panels.platzhalter_in_texten_x_x_x_x_x_x")));
 }
 
 /// Maßketten: Maßeinheit, Textgröße, Maßstab und Bogensymbole.
@@ -1481,7 +1487,7 @@ pub(crate) fn dim_fields(app: &mut App, ui: &mut Ui) {
         .map(|u| (*u, u.label().to_string()))
         .collect();
     let mut picked_unit = None;
-    widgets::field_row(ui, "Maßeinheit", |ui| {
+    widgets::field_row(ui, jjcad_core::i18n::tr("gui.panels.masseinheit"), |ui| {
         picked_unit = pick_combo(ui, "dim_unit", cur_unit, &unit_items);
     });
     if let Some(u) = picked_unit {
@@ -1493,7 +1499,7 @@ pub(crate) fn dim_fields(app: &mut App, ui: &mut Ui) {
 
     // Textgröße der Maßzahl in Papier-mm
     let mut h = app.doc().dim_style.text_height;
-    widgets::field_row(ui, "Textgröße", |ui| {
+    widgets::field_row(ui, jjcad_core::i18n::tr("gui.panels.textgroesse"), |ui| {
         if ui
             .add_sized(
                 [ui.available_width(), 20.0],
@@ -1510,7 +1516,7 @@ pub(crate) fn dim_fields(app: &mut App, ui: &mut Ui) {
 
     // Bezugsmaßstab (1:N) — alle Papiergrößen der Bemaßung hängen daran
     let mut s = app.doc().settings.annotation_scale;
-    widgets::field_row(ui, "Maßstab", |ui| {
+    widgets::field_row(ui, jjcad_core::i18n::tr("gui.panels.massstab"), |ui| {
         if ui
             .add_sized(
                 [ui.available_width(), 20.0],
@@ -1529,7 +1535,7 @@ pub(crate) fn dim_fields(app: &mut App, ui: &mut Ui) {
     // Form (die DIN-Angabe passt nicht in die Wertespalte), im Menü der volle Name.
     let cur_arrow = app.doc().dim_style.arrow;
     let mut picked_arrow = None;
-    widgets::field_row(ui, "Bogensymbole", |ui| {
+    widgets::field_row(ui, jjcad_core::i18n::tr("gui.panels.bogensymbole"), |ui| {
         picked_arrow = dropdown(ui, "dim_arrow", arrow_caption(cur_arrow), None, |ui| {
             let mut out = None;
             for cand in ArrowKind::ALL {
@@ -1557,10 +1563,10 @@ pub(crate) fn dim_fields(app: &mut App, ui: &mut Ui) {
 /// Kurzform der Bogensymbole für das geschlossene Auswahlfeld.
 fn arrow_caption(a: ArrowKind) -> &'static str {
     match a {
-        ArrowKind::Slash => "Schrägstrich",
-        ArrowKind::Arrow => "Pfeil",
-        ArrowKind::Dot => "Punkt",
-        ArrowKind::None => "Ohne",
+        ArrowKind::Slash => jjcad_core::i18n::tr("gui.panels.schraegstrich"),
+        ArrowKind::Arrow => jjcad_core::i18n::tr("gui.panels.pfeil"),
+        ArrowKind::Dot => jjcad_core::i18n::tr("gui.panels.punkt"),
+        ArrowKind::None => jjcad_core::i18n::tr("gui.panels.ohne"),
     }
 }
 

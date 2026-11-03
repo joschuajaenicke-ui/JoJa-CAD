@@ -33,10 +33,31 @@ fn doc_props() -> String {
     ohne_kommentare(&rest[..ende])
 }
 
+/// Kommt das Wort in diesem Quelltext-Ausschnitt vor — wörtlich oder im Text
+/// eines dort benutzten Katalogschlüssels? Seit T0104 steht der sichtbare Text
+/// in `lang/de.toml`, im Quelltext nur der Schlüssel (`jjcad_core::i18n::tr`).
+fn zeigt_wort(quelle: &str, wort: &str) -> bool {
+    if quelle.contains(wort) {
+        return true;
+    }
+    let katalog = jjcad_core::i18n::katalog(jjcad_core::i18n::Lang::Deutsch);
+    jjcad_core::i18n::schluessel()
+        .into_iter()
+        .filter(|k| quelle.contains(&format!("\"{k}\"")))
+        .filter_map(|k| katalog.get(k).copied())
+        .any(|text| text.contains(wort))
+}
+
 #[test]
 fn panel_zeigt_keine_texthoehe_und_keine_wandstaerke() {
     let panel = doc_props();
-    for verboten in ["Texthöhe", "Wandstärke", "text_height", "wall_thickness"] {
+    for verboten in ["Texthöhe", "Wandstärke"] {
+        assert!(
+            !zeigt_wort(&panel, verboten),
+            "Eigenschaften-Panel der Zeichnung enthält weiterhin {verboten}"
+        );
+    }
+    for verboten in ["text_height", "wall_thickness"] {
         assert!(
             !panel.contains(verboten),
             "Eigenschaften-Panel der Zeichnung enthält weiterhin {verboten}"
@@ -44,7 +65,7 @@ fn panel_zeigt_keine_texthoehe_und_keine_wandstaerke() {
     }
     // Einheit, Dezimalen und Rasterweite bleiben (zeichnungsweite Anzeigewerte).
     for erlaubt in ["Einheit", "Dezimalen", "Raster"] {
-        assert!(panel.contains(erlaubt), "Zeile {erlaubt} fehlt im Panel");
+        assert!(zeigt_wort(&panel, erlaubt), "Zeile {erlaubt} fehlt im Panel");
     }
 }
 

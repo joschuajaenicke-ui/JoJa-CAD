@@ -130,7 +130,7 @@ pub fn start(app: &mut App, pos: V2) {
         farbe,
         app.options.text_font,
     ));
-    app.mitteilung("Text · Text eingeben (Esc übernimmt)");
+    app.mitteilung(jjcad_core::i18n::tr("gui.textedit.text_text_eingeben_esc_uebernimmt"));
 }
 
 /// Inhalt eines vorhandenen Textes bearbeiten (Doppelklick).
@@ -165,7 +165,7 @@ pub fn start_entitaet(app: &mut App, id: EId) -> bool {
     let mut e = Texteingabe::neu(p, height, text, angle, align, valign, Some(id), farbe, font);
     e.runs = runs;
     app.ui.texteingabe = Some(e);
-    app.mitteilung("Text · Inhalt ändern (Esc übernimmt)");
+    app.mitteilung(jjcad_core::i18n::tr("gui.textedit.text_inhalt_aendern_esc_uebernimmt"));
     true
 }
 
@@ -263,7 +263,7 @@ fn uebernehmen(app: &mut App, ctx: &egui::Context) {
     // Textkasten eine leere Zeile.
     let text = t.text.trim_end_matches('\n').to_string();
     if text.trim().is_empty() {
-        app.mitteilung("Text · abgebrochen");
+        app.mitteilung(jjcad_core::i18n::tr("gui.textedit.text_abgebrochen"));
         return;
     }
     let unit = app.unit();
@@ -284,7 +284,7 @@ fn uebernehmen(app: &mut App, ctx: &egui::Context) {
                    "align": t.align.key(), "valign": t.valign.key(),
                    "font": t.font.key(),
                    "runs": runs_json}),
-            "Text · geändert",
+            jjcad_core::i18n::tr("gui.textedit.text_geaendert"),
         ),
         None => {
             let mut params = json!({"p": [unit.from_mm(t.pos.x), unit.from_mm(t.pos.y)],
@@ -343,7 +343,7 @@ pub(crate) fn uebernehmen_fuer_test(app: &mut App) {
 fn abbrechen(app: &mut App, ctx: &egui::Context) {
     if app.ui.texteingabe.take().is_some() {
         ctx.memory_mut(|m| m.stop_text_input());
-        app.mitteilung("Text · abgebrochen");
+        app.mitteilung(jjcad_core::i18n::tr("gui.textedit.text_abgebrochen"));
     }
 }
 
@@ -491,7 +491,7 @@ pub fn show(app: &mut App, ui: &mut Ui, rect: Rect, view: View) {
             // der Text dastehen. Er steht unter dem Text, nicht dahinter.
             if t.text.is_empty() {
                 ui.label(
-                    egui::RichText::new("Esc übernimmt · Enter neue Zeile · Rechtsklick bricht ab")
+                    egui::RichText::new(jjcad_core::i18n::tr("gui.textedit.esc_uebernimmt_hinweis"))
                         .size(10.0)
                         .color(Palette::TEXT_FAINT),
                 );

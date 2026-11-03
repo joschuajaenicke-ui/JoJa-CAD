@@ -233,7 +233,7 @@ pub fn zeichnen_geschlossen(chat: &Chat, p: &Painter, rect: Rect, jetzt: f64) {
     p.text(
         Pos2::new(rect.left() + RAND_X, rect.bottom() - 8.0),
         Align2::LEFT_BOTTOM,
-        "^ · Protokoll",
+        jjcad_core::i18n::tr("gui.chat.protokoll"),
         FontId::proportional(10.0),
         Color32::from_rgba_unmultiplied(0x1A, 0x1D, 0x22, 70),
     );
@@ -255,14 +255,14 @@ pub fn zeichnen_offen(chat: &Chat, p: &Painter, rect: Rect) {
     // Hinweiszeile: blättern, schließen, Eingaben werden nur mitgeschrieben
     // Keine Pfeil-Glyphen: die Systemschrift hat sie nicht (leere Kästen).
     let oben = if chat.scroll > 0 {
-        format!("{} Zeilen zurück, Mausrad blättert", chat.scroll)
+        jjcad_core::i18n::t_args_owned("gui.chat.x_zeilen_zurueck", &[("anzahl", format!("{}", chat.scroll))])
     } else {
-        "Mausrad blättert".to_string()
+        jjcad_core::i18n::tr("gui.chat.mausrad_blaettert").to_string()
     };
     p.text(
         Pos2::new(rect.left() + RAND_X, rect.bottom() - 8.0),
         Align2::LEFT_BOTTOM,
-        format!("^ oder ESC schließt · {oben} · Enter schickt ab und schließt"),
+        jjcad_core::i18n::t_args_owned("gui.chat.oder_esc_schliesst_x_enter_schickt_ab_und_schliesst", &[("oben", format!("{}", oben))]),
         FontId::proportional(10.0),
         Color32::from_rgba_unmultiplied(0x1A, 0x1D, 0x22, 90),
     );

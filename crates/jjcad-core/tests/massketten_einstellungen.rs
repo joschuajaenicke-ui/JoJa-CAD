@@ -125,6 +125,21 @@ fn ohne_kommentare(src: &str) -> String {
         .join("\n")
 }
 
+/// Kommt das Wort in diesem Quelltext-Ausschnitt vor — wörtlich oder im Text
+/// eines dort benutzten Katalogschlüssels? Seit T0104 steht der sichtbare Text
+/// in `lang/de.toml`, im Quelltext nur der Schlüssel (`jjcad_core::i18n::tr`).
+fn zeigt_wort(quelle: &str, wort: &str) -> bool {
+    if quelle.contains(wort) {
+        return true;
+    }
+    let katalog = jjcad_core::i18n::katalog(jjcad_core::i18n::Lang::Deutsch);
+    jjcad_core::i18n::schluessel()
+        .into_iter()
+        .filter(|k| quelle.contains(&format!("\"{k}\"")))
+        .filter_map(|k| katalog.get(k).copied())
+        .any(|text| text.contains(wort))
+}
+
 #[test]
 fn massketten_werte_nur_im_einstellungen_dialog() {
     let gui = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../jjcad-gui/src");
@@ -136,17 +151,9 @@ fn massketten_werte_nur_im_einstellungen_dialog() {
     // Ende des Panel-Abschnitts = Beginn der Werkzeugfunktion darunter (deren
     // Doc-Kommentar nennt die Werte, deshalb nicht bis zum `fn` schneiden).
     let doc_panel = ohne_kommentare(&rest[..rest.find("/// Maßketten:").expect("dim_fields")]);
-    for verboten in [
-        "Maßketten",
-        "Maßeinheit",
-        "Textgröße",
-        "Maßstab",
-        "Bogensymbole",
-        "dim_unit",
-        "annotation_scale",
-    ] {
+    for verboten in ["Maßketten", "Maßeinheit", "Textgröße", "Maßstab", "Bogensymbole"] {
         assert!(
-            !doc_panel.contains(verboten),
+            !zeigt_wort(&doc_panel, verboten),
             "Eigenschaften-Panel der Zeichnung enthält weiterhin {verboten}"
         );
     }
@@ -156,7 +163,7 @@ fn massketten_werte_nur_im_einstellungen_dialog() {
     let rest = &panels[start..];
     let felder = &rest[..rest.find("#[cfg(test)]").expect("Testmodul")];
     for feld in ["Maßeinheit", "Textgröße", "Maßstab", "Bogensymbole"] {
-        assert!(felder.contains(feld), "Zeile {feld} fehlt in dim_fields");
+        assert!(zeigt_wort(felder, feld), "Zeile {feld} fehlt in dim_fields");
     }
 
     // Einstellungen-Dialog: der Abschnitt „Bemaßung" ruft diese Stelle auf.

@@ -140,65 +140,33 @@ impl Diagnose {
         rgba: &[u8],
     ) -> String {
         let mut s = String::new();
-        s.push_str("JoJa-CAD — Selbstdiagnose der Oberfläche\n");
+        s.push_str(jjcad_core::i18n::tr("gui.diag.joja_cad_selbstdiagnose_der_oberflaeche"));
         s.push_str("=======================================\n");
-        s.push_str(&format!(
-            "Version {} · Build {} ({})\n",
-            env!("CARGO_PKG_VERSION"),
-            env!("JJCAD_BUILD"),
-            env!("JJCAD_HASH")
-        ));
-        s.push_str(&format!(
-            "Plattform: {} {} (Windows-Version: {})\n",
-            std::env::consts::OS,
-            std::env::consts::ARCH,
-            windows_version()
-        ));
-        s.push_str(&format!("Fenster: {w} x {h} Bildpunkte\n"));
-        s.push_str(&format!(
-            "Skalierung: pixels_per_point = {:.4} (Anzeige: {:.0} %)\n",
-            ctx.pixels_per_point(),
-            ctx.pixels_per_point() * 100.0
-        ));
-        s.push_str(&format!(
-            "Ansichtsfläche: {:.2} x {:.2}\n",
-            ctx.screen_rect().width(),
-            ctx.screen_rect().height()
-        ));
-        s.push_str(&format!(
-            "Bildrate-Interval (vsync): {}\n",
-            if vsync() { "an" } else { "aus" }
-        ));
+        s.push_str(&jjcad_core::i18n::t_args_owned("gui.diag.version_x_build_x_x", &[("wert1", format!("{}", env!("CARGO_PKG_VERSION"))), ("wert2", format!("{}", env!("JJCAD_BUILD"))), ("wert3", format!("{}", env!("JJCAD_HASH")))]));
+        s.push_str(&jjcad_core::i18n::t_args_owned("gui.diag.plattform_x_x_windows_version_x", &[("wert1", format!("{}", std::env::consts::OS)), ("wert2", format!("{}", std::env::consts::ARCH)), ("wert3", format!("{}", windows_version()))]));
+        s.push_str(&jjcad_core::i18n::t_args_owned("gui.diag.fenster_x_x_x_bildpunkte", &[("w", format!("{}", w)), ("h", format!("{}", h))]));
+        s.push_str(&jjcad_core::i18n::t_args_owned("gui.diag.skalierung_pixels_per_point_x_anzeige_x", &[("wert1", format!("{:.4}", ctx.pixels_per_point())), ("wert2", format!("{:.0}", ctx.pixels_per_point() * 100.0))]));
+        s.push_str(&jjcad_core::i18n::t_args_owned("gui.diag.ansichtsflaeche_x_x_x", &[("wert1", format!("{:.2}", ctx.screen_rect().width())), ("wert2", format!("{:.2}", ctx.screen_rect().height()))]));
+        s.push_str(&jjcad_core::i18n::t_args_owned("gui.diag.bildrate_interval_vsync_x", &[("wert1", format!("{}", if vsync() { "an" } else { "aus" }))]));
         if let Some(gl) = gl {
             unsafe {
-                s.push_str(&format!(
-                    "Grafiktreiber: {} | {} | {}\n",
-                    gl.get_parameter_string(eframe::glow::VENDOR),
-                    gl.get_parameter_string(eframe::glow::RENDERER),
-                    gl.get_parameter_string(eframe::glow::VERSION)
-                ));
+                s.push_str(&jjcad_core::i18n::t_args_owned("gui.diag.grafiktreiber_x_x_x", &[("wert1", format!("{}", gl.get_parameter_string(eframe::glow::VENDOR))), ("wert2", format!("{}", gl.get_parameter_string(eframe::glow::RENDERER))), ("wert3", format!("{}", gl.get_parameter_string(eframe::glow::VERSION)))]));
             }
         } else {
-            s.push_str("Grafiktreiber: unbekannt (kein glow-Kontext)\n");
+            s.push_str(jjcad_core::i18n::tr("gui.diag.grafiktreiber_unbekannt_kein_glow_kontext"));
         }
 
-        s.push_str("\nHelle 1-px-Spalten im eigenen Bild\n");
+        s.push_str(jjcad_core::i18n::tr("gui.diag.helle_1_px_spalten_im_eigenen_bild"));
         s.push_str("---------------------------------\n");
         let (spalten, hinweis) = helle_spalten(rgba, w, h);
         s.push_str(&hinweis);
         if !spalten.is_empty() {
-            s.push_str("Die Streifen stecken also im Bild, das dieses Programm zeichnet.\n");
+            s.push_str(jjcad_core::i18n::tr("gui.diag.die_streifen_stecken_also_im_bild_das_dieses_programm_ze"));
             for (x, anteil, farbe) in spalten.iter().take(24) {
-                s.push_str(&format!(
-                    "  Spalte x = {x}: {:.0} % der Zeilen hell, Farbe #{:02X}{:02X}{:02X}\n",
-                    anteil * 100.0,
-                    farbe[0],
-                    farbe[1],
-                    farbe[2]
-                ));
+                s.push_str(&jjcad_core::i18n::t_args_owned("gui.diag.spalte_x_x_x_der_zeilen_hell_farbe_xxx", &[("x", format!("{}", x)), ("wert1", format!("{:.0}", anteil * 100.0)), ("wert2", format!("{:02X}", farbe[0])), ("wert3", format!("{:02X}", farbe[1])), ("wert4", format!("{:02X}", farbe[2]))]));
             }
             s.push_str(
-                "Bitte das PNG (nicht das Betriebssystem-Fenster) an das Ticket hängen.\n",
+                jjcad_core::i18n::tr("gui.diag.bitte_das_png_nicht_das_betriebssystem_fenster_an_das_ti"),
             );
         }
         s
