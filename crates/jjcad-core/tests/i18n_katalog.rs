@@ -134,3 +134,73 @@ fn englisch_hat_eigene_beschriftungen_und_deutsch_bleibt_der_rueckfall() {
     // Ein Schlüssel, den nur der deutsche Katalog kennt, liegt nicht in `en`.
     assert!(!katalog_en.contains_key("test.nur_deutsch"));
 }
+
+/// T0105 — ein Platzhalter ohne Namen (`{}`) wird von `i18n::fuellen` **nicht**
+/// ersetzt: die Klammer bleibt im Text stehen. Genau so stand „{}  [Enter]
+/// Länge“ in der Statuszeile, weil die Aufrufstelle `{eingabe}` übergibt.
+#[test]
+fn platzhalter_tragen_einen_namen() {
+    let mut falsch: Vec<String> = Vec::new();
+    for key in i18n::schluessel() {
+        let text = i18n::katalog(i18n::Lang::Deutsch)
+            .get(key)
+            .copied()
+            .unwrap_or("");
+        let mut rest = text;
+        while let Some(auf) = rest.find('{') {
+            let nach = &rest[auf + 1..];
+            let Some(zu) = nach.find('}') else { break };
+            let name = &nach[..zu];
+            let gueltig = name
+                .chars()
+                .next()
+                .map(|c| c.is_ascii_alphabetic() || c == '_')
+                .unwrap_or(false)
+                && name.chars().all(|c| c.is_ascii_alphanumeric() || c == '_');
+            if !gueltig {
+                falsch.push(format!("{key}: {{{name}}}"));
+            }
+            rest = &nach[zu + 1..];
+        }
+    }
+    assert!(
+        falsch.is_empty(),
+        "Platzhalter ohne Namen (bleiben als Klammer stehen):\n{}",
+        falsch.join("\n")
+    );
+}
+
+/// T0105 — die leere Vorlage `lang/xx.toml` liegt neben den Katalogen, ist aber
+/// keine Sprache: sie wird nicht geladen, nicht angeboten und enthält keinen
+/// aktiven Eintrag (alle Zeilen auskommentiert).
+#[test]
+fn vorlage_xx_wird_nicht_als_sprache_angeboten() {
+    let lang = Path::new(env!("CARGO_MANIFEST_DIR")).join("lang");
+    let text = std::fs::read_to_string(lang.join("xx.toml"))
+        .expect("Vorlage crates/jjcad-core/lang/xx.toml fehlt");
+    assert!(
+        !i18n::Lang::ALL.iter().any(|l| l.code() == "xx"),
+        "xx darf nicht in Lang::ALL stehen"
+    );
+    assert_eq!(i18n::Lang::from_code("xx"), i18n::Lang::Deutsch);
+    let aktive: Vec<&str> = text
+        .lines()
+        .map(str::trim)
+        .filter(|z| !z.is_empty() && !z.starts_with('#') && !z.starts_with('['))
+        .collect();
+    assert!(
+        aktive.is_empty(),
+        "Vorlage enthält aktive Einträge: {:?}",
+        &aktive[..aktive.len().min(3)]
+    );
+    let vorlage_zeilen = text
+        .lines()
+        .filter(|z| z.trim_start().starts_with("# ") && z.contains(" = \""))
+        .count();
+    let schluessel = i18n::schluessel().len();
+    assert!(
+        vorlage_zeilen >= schluessel,
+        "Vorlage ist veraltet: {vorlage_zeilen} Zeilen für {schluessel} Schlüssel — \
+         neu erzeugen mit „python3 scripts/i18n-check.py --vorlage crates/jjcad-core/lang/xx.toml“"
+    );
+}
