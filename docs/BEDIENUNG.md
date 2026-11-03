@@ -118,6 +118,15 @@ ausgeblendet.
 - **Linien** werden als Kapsel gezeichnet: Rechteck plus Halbkreis an beiden Enden. Dadurch sind
   auch die Übergänge in Polylinien, Bögen und an Wandanschlüssen rund statt eckig.
 - **Ribbon** lässt sich über den Pfeil rechts in der Kopfzeile einklappen; die Reiter bleiben sichtbar.
+- **Fenster ohne Titelleiste** (Einstellungen ▸ Bedienung ▸ „Fensterrahmen", *experimentell*): meldet
+  dem Fenstermanager „keine Dekoration" — unter KDE/X11 über `_MOTIF_WM_HINTS`, unter
+  KDE/Wayland über die Anfrage nach *client-seitiger* Dekoration, unter Windows als rahmenloses
+  Fenster. Dann fehlen die Knöpfe der Titelleiste, und JoJa-CAD übernimmt sie selbst: ganz oben
+  rechts **Minimieren**, **Vergrößern/Wiederherstellen** und **Schließen**; ein Zug auf die
+  Kopfzeile verschiebt das Fenster, ein Doppelklick vergrößert bzw. stellt wieder her, und die
+  fünf Pixel breiten Zonen am Fensterrand ändern die Größe (der Zeiger zeigt dort den
+  Größenpfeil). Die Wahl steht in `prefs.json` (`fensterrahmen: system | ohne_titelleiste`) und
+  wirkt beim Umschalten sofort, ohne Neustart.
 - **Dateireiter** (Streifen unter dem Ribbon, **zwei getrennte Bereiche**): links auf dunklem
   Band jede geöffnete Zeichnung als Reiter mit Dateisymbol, der aktive als Karte mit
   Akzentlinie; rechts in einer abgesetzten Fläche die Blätter der aktiven Datei als kleinere

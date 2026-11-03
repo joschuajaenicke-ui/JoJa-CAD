@@ -15,6 +15,17 @@ offene Fensterinstanz zeigt weiterhin den alten Stand.
 
 ## Erledigt (verifiziert)
 
+- **Fenster ohne Titelleiste (T0098)**: Einstellungen → Bedienung → Zeile
+  „Fensterrahmen“ mit **System** (Vorgabe) und **Ohne Titelleiste** (experimentell,
+  unter KDE geprüft). Gespeichert als `UserPrefs.fensterrahmen` (`system` /
+  `ohne_titelleiste`) in `prefs.json`; die Erzeugung des Fensters liest sie schon
+  vor dem Start (`ViewportBuilder::with_decorations`), ein Wechsel im Dialog
+  schickt `ViewportCommand::Decorations` sofort nach. Ohne Titelleiste zeichnet
+  die Kopfzeile oben rechts **Minimieren**, **Vergrößern/Wiederherstellen** und
+  **Schließen**, ein Zug verschiebt das Fenster (`StartDrag`), ein Doppelklick
+  schaltet die Größe um, die Kantenzonen (5 px) ändern sie (`BeginResize`).
+  Tests: `app::tests_fensterrahmen` (7), `dialogs::tests_einstellungen::fensterrahmen_laesst_sich_umschalten`,
+  `persist::tests::fensterrahmen_vorgabe_und_gespeichert`.
 - **Drehpunkt der Einfüge-Vorschau (T0070)**: Einstellungen → Bedienung → Zeile
   „Drehpunkt" mit den Modi **Mittelpunkt** (Vorgabe seit T0087) und
   **Basispunkt**; gespeichert als `UserPrefs.paste_pivot` (`base_point`/`center`)

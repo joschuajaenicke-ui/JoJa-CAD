@@ -570,6 +570,10 @@
 # und {wert1} stehen für Werte, die das Programm einsetzt.
 #
 [gui.app]
+# fenster_minimieren = "Minimieren"
+# fenster_vergroessern = "Vergrößern"
+# fenster_wiederherstellen = "Wiederherstellen"
+# fenster_schliessen = "Schließen"
 # abgebrochen = "Abgebrochen"
 # alle_an = "Alle an"
 # alle_aus = "Alle aus"
@@ -904,6 +908,8 @@
 # datei_gespeichert_x = "Datei · gespeichert: {wert1}"
 # datei_schliessen = "Datei schließen"
 # dateidialog = "Dateidialog"
+# fensterrahmen = "Fensterrahmen"
+# ohne_titelleiste_minimieren_vergroessern_und_schliessen = "Ohne Titelleiste: Minimieren, Vergrößern und Schließen oben rechts · die Kopfzeile verschiebt das Fenster · die Kanten ändern die Größe (experimentell, unter KDE geprüft)"
 # dateiname = "Dateiname"
 # der_dateidialog_des_systems_ist_geoeffnet_datei_waehlen_ = "Der Dateidialog des Systems ist geöffnet. Datei wählen oder abbrechen."
 # dezimalstellen = "Dezimalstellen"

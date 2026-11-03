@@ -38,6 +38,13 @@ pub const HEADER_H: f32 = 38.0;
 pub const DOCTABS_H: f32 = 34.0;
 /// Höhe der einen unteren Leiste: Slot-Kante (50 px) + 2 × 5 px Rand
 pub const HOTBAR_H: f32 = 60.0;
+/// Breite eines selbst gezeichneten Fensterknopfs (T0098) — ohne Titelleiste
+/// sitzen Minimieren, Vergrößern und Schließen oben rechts in der Kopfzeile.
+pub const FENSTERKNOPF_W: f32 = 46.0;
+/// Breite der Zone an den Fensterkanten, in der ein Zug die Größe ändert
+/// (T0098). Schmal genug, um die Zeichenfläche nicht zu stören, breit genug,
+/// um sie ohne Zielen zu treffen.
+pub const FENSTERKANTE_PX: f32 = 5.0;
 
 /// Auf ganze Bildschirm-Pixel runden.
 ///
@@ -702,6 +709,12 @@ pub struct UiState {
     pub last_lager: Option<Vec<(usize, Rect)>>,
     /// Breite des zuletzt gezeichneten Ribbon-Inhalts
     pub last_ribbon_content_w: f32,
+    /// Rechtecke der selbst gezeichneten Fensterknöpfe (T0098) in der
+    /// Reihenfolge Minimieren, Vergrößern/Wiederherstellen, Schließen —
+    /// `None`, solange die Titelleiste des Fenstermanagers da ist.
+    pub last_fenster_knoepfe: Option<[Rect; 3]>,
+    /// Zonen zum Ziehen der Fensterkanten (T0098) mit ihrer Richtung
+    pub last_fensterkanten: Option<Vec<(&'static str, Rect)>>,
     pub zoom_edit: Option<String>,
     pub typed: String,
     /// Signatur der Auswahl für die letzte Zeichnung (Panel-Aktualisierung)
@@ -780,6 +793,8 @@ impl Default for UiState {
             last_tasten: None,
             last_lager: None,
             last_ribbon_content_w: 0.0,
+            last_fenster_knoepfe: None,
+            last_fensterkanten: None,
             zoom_edit: None,
             typed: String::new(),
             sel_stamp: 0,
@@ -1666,6 +1681,11 @@ impl App {
                     }
                 }
                 "settings" => self.ui.settings_open = true,
+                // T0098: Fenster ohne Titelleiste — die drei Fensterknöpfe
+                // stehen dann oben rechts in der Kopfzeile (Prüfbild).
+                "fensterrahmen" | "titelleiste" => {
+                    self.prefs.fensterrahmen = jjcad_core::persist::Fensterrahmen::OhneTitelleiste;
+                }
                 // Einstellungen mit gewählter Kategorie (`settings:2`) oder mit
                 // Suchbegriff (`settings:Fenster`) — Prüfbild für T0061.
                 s if s.starts_with("settings:") => {
@@ -4197,6 +4217,10 @@ impl App {
     // ---- Kopfzeile + Ribbon ----
 
     fn header(&mut self, ui: &mut egui::Ui) {
+        // T0098: Ohne Titelleiste ist die Kopfzeile der Griff, mit dem das
+        // Fenster über den Desktop wandert.
+        self.fensterkopf_griff(ui);
+        let ohne_titelleiste = self.fenster_ohne_titelleiste();
         ui.horizontal_centered(|ui| {
             ui.add_space(10.0);
             // Markenzeichen (T0083): dasselbe Bild wie Fenstericon und Über-Dialog,
@@ -4250,6 +4274,13 @@ impl App {
             }
 
             ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+                // T0098: Ohne Titelleiste stehen die drei Fensterknöpfe ganz
+                // rechts (im Rechts-nach-links-Layout ist der zuerst gelegte
+                // der äußerste, also Schließen).
+                if ohne_titelleiste {
+                    self.fenster_knoepfe(ui);
+                    widgets::vline(ui, 20.0);
+                }
                 ui.add_space(8.0);
                 let (ric, rtip) = if self.ui.ribbon_collapsed {
                     ("chevron_down", "Ribbon ausklappen")
@@ -4288,6 +4319,244 @@ impl App {
                 );
             });
         });
+    }
+
+    /// `true`, wenn JoJa-CAD ein Fenster ohne Titelleiste führt (T0098).
+    pub fn fenster_ohne_titelleiste(&self) -> bool {
+        self.prefs.fensterrahmen.ohne_titelleiste()
+    }
+
+    /// Griff der Kopfzeile (T0098).
+    ///
+    /// Ohne Titelleiste gibt es keinen Fenstergriff: ein Zug auf die Kopfzeile
+    /// verschiebt das Fenster (`ViewportCommand::StartDrag` — winit schickt
+    /// `_NET_WM_MOVERESIZE` unter X11, `xdg_toplevel.move` unter Wayland und
+    /// `WM_NCLBUTTONDOWN`/`HTCAPTION` unter Windows), ein Doppelklick
+    /// vergrößert und stellt wieder her.
+    ///
+    /// Die Fläche wird **vor** Reitern und Knöpfen angelegt und liegt damit
+    /// darunter: egui nimmt bei überlappenden Elementen das zuletzt angelegte,
+    /// die Schaltflächen der Kopfzeile bleiben also bedienbar.
+    fn fensterkopf_griff(&mut self, ui: &mut egui::Ui) {
+        if !self.fenster_ohne_titelleiste() {
+            return;
+        }
+        let griff = ui.interact(
+            ui.max_rect(),
+            egui::Id::new("fensterkopf_griff"),
+            Sense::click_and_drag(),
+        );
+        let ctx = ui.ctx().clone();
+        if griff.drag_started() {
+            ctx.send_viewport_cmd(egui::ViewportCommand::StartDrag);
+        }
+        if griff.double_clicked() {
+            let maximiert = ctx.input(|i| i.viewport().maximized.unwrap_or(false));
+            ctx.send_viewport_cmd(egui::ViewportCommand::Maximized(!maximiert));
+        }
+    }
+
+    /// Die drei Fensterknöpfe oben rechts (T0098) — Minimieren, Vergrößern
+    /// (bzw. Wiederherstellen, wenn das Fenster schon groß ist) und Schließen.
+    fn fenster_knoepfe(&mut self, ui: &mut egui::Ui) {
+        let hoehe = ui.available_height().max(HEADER_H);
+        let maximiert = ui.ctx().input(|i| i.viewport().maximized.unwrap_or(false));
+        let mut rects = [Rect::NOTHING; 3];
+        // Die drei Knöpfe stoßen aneinander wie in einer Titelleiste — ohne
+        // Abstand dazwischen (egui setzt sonst 8 px).
+        let abstand = ui.spacing().item_spacing.x;
+        ui.spacing_mut().item_spacing.x = 0.0;
+
+        // Im Rechts-nach-links-Layout zuerst gelegt = am weitesten rechts.
+        let (r, resp) = Self::fenster_knopf(
+            ui,
+            "close",
+            jjcad_core::i18n::tr("gui.app.fenster_schliessen"),
+            hoehe,
+            true,
+        );
+        rects[2] = r;
+        if resp.clicked() {
+            ui.ctx().send_viewport_cmd(egui::ViewportCommand::Close);
+        }
+        let (icon, tip) = if maximiert {
+            (
+                "window_restore",
+                jjcad_core::i18n::tr("gui.app.fenster_wiederherstellen"),
+            )
+        } else {
+            (
+                "window_max",
+                jjcad_core::i18n::tr("gui.app.fenster_vergroessern"),
+            )
+        };
+        let (r, resp) = Self::fenster_knopf(ui, icon, tip, hoehe, false);
+        rects[1] = r;
+        if resp.clicked() {
+            ui.ctx()
+                .send_viewport_cmd(egui::ViewportCommand::Maximized(!maximiert));
+        }
+        let (r, resp) = Self::fenster_knopf(
+            ui,
+            "window_min",
+            jjcad_core::i18n::tr("gui.app.fenster_minimieren"),
+            hoehe,
+            false,
+        );
+        rects[0] = r;
+        if resp.clicked() {
+            ui.ctx()
+                .send_viewport_cmd(egui::ViewportCommand::Minimized(true));
+        }
+        ui.spacing_mut().item_spacing.x = abstand;
+        self.ui.last_fenster_knoepfe = Some(rects);
+    }
+
+    /// Ein Fensterknopf: volle Höhe der Kopfzeile, ohne Rundung, Hover-Fläche;
+    /// Schließen färbt rot.
+    fn fenster_knopf(
+        ui: &mut egui::Ui,
+        icon: &str,
+        tooltip: &str,
+        hoehe: f32,
+        schliessen: bool,
+    ) -> (Rect, egui::Response) {
+        let (rect, resp) =
+            ui.allocate_exact_size(Vec2::new(FENSTERKNOPF_W, hoehe), Sense::click());
+        let hover_flaeche = if schliessen {
+            Palette::DANGER
+        } else {
+            Palette::PANEL_ALT
+        };
+        if ui.is_rect_visible(rect) {
+            let p = ui.painter();
+            if resp.hovered() {
+                p.rect_filled(rect, Rounding::ZERO, hover_flaeche.gamma_multiply(0.55));
+            }
+            crate::icons::paint(
+                p,
+                Rect::from_center_size(rect.center(), Vec2::splat(16.0)),
+                icon,
+                if resp.hovered() {
+                    Palette::TEXT
+                } else {
+                    Palette::TEXT_DIM
+                },
+            );
+        }
+        (rect, resp.on_hover_text(tooltip))
+    }
+
+    /// Ziehen an den Fensterkanten (T0098).
+    ///
+    /// Ohne Titelleiste fehlt der Rahmen, an dem der Fenstermanager sonst die
+    /// Größe ändert. Acht schmale Zonen in `Order::Foreground` nehmen den Druck
+    /// an und schicken `BeginResize`; winit leitet das an den Fenstermanager
+    /// weiter (`_NET_WM_MOVERESIZE` unter X11, `xdg_toplevel.resize` unter
+    /// Wayland, `WM_NCLBUTTONDOWN` unter Windows). Die Zonen liegen über allen
+    /// Flächen, damit ein Zug am Rand nicht zugleich in der Zeichnung landet.
+    fn fensterkanten(&mut self, ctx: &egui::Context) {
+        self.ui.last_fensterkanten = None;
+        if !self.fenster_ohne_titelleiste() || self.ui.fullscreen {
+            return;
+        }
+        let f = ctx.screen_rect();
+        let b = FENSTERKANTE_PX;
+        let e = b * 3.0;
+        if f.width() <= 4.0 * e || f.height() <= 4.0 * e {
+            return;
+        }
+        let zonen: [(&'static str, Rect, egui::ResizeDirection, egui::CursorIcon); 8] = [
+            (
+                "nw",
+                Rect::from_min_max(f.min, egui::pos2(f.left() + e, f.top() + e)),
+                egui::ResizeDirection::NorthWest,
+                egui::CursorIcon::ResizeNwSe,
+            ),
+            (
+                "no",
+                Rect::from_min_max(
+                    egui::pos2(f.right() - e, f.top()),
+                    egui::pos2(f.right(), f.top() + e),
+                ),
+                egui::ResizeDirection::NorthEast,
+                egui::CursorIcon::ResizeNeSw,
+            ),
+            (
+                "sw",
+                Rect::from_min_max(
+                    egui::pos2(f.left(), f.bottom() - e),
+                    egui::pos2(f.left() + e, f.bottom()),
+                ),
+                egui::ResizeDirection::SouthWest,
+                egui::CursorIcon::ResizeNeSw,
+            ),
+            (
+                "so",
+                Rect::from_min_max(
+                    egui::pos2(f.right() - e, f.bottom() - e),
+                    egui::pos2(f.right(), f.bottom()),
+                ),
+                egui::ResizeDirection::SouthEast,
+                egui::CursorIcon::ResizeNwSe,
+            ),
+            (
+                "n",
+                Rect::from_min_max(
+                    egui::pos2(f.left() + e, f.top()),
+                    egui::pos2(f.right() - e, f.top() + b),
+                ),
+                egui::ResizeDirection::North,
+                egui::CursorIcon::ResizeVertical,
+            ),
+            (
+                "s",
+                Rect::from_min_max(
+                    egui::pos2(f.left() + e, f.bottom() - b),
+                    egui::pos2(f.right() - e, f.bottom()),
+                ),
+                egui::ResizeDirection::South,
+                egui::CursorIcon::ResizeVertical,
+            ),
+            (
+                "w",
+                Rect::from_min_max(
+                    egui::pos2(f.left(), f.top() + e),
+                    egui::pos2(f.left() + b, f.bottom() - e),
+                ),
+                egui::ResizeDirection::West,
+                egui::CursorIcon::ResizeHorizontal,
+            ),
+            (
+                "o",
+                Rect::from_min_max(
+                    egui::pos2(f.right() - b, f.top() + e),
+                    egui::pos2(f.right(), f.bottom() - e),
+                ),
+                egui::ResizeDirection::East,
+                egui::CursorIcon::ResizeHorizontal,
+            ),
+        ];
+        let mut lagen = Vec::with_capacity(zonen.len());
+        for (name, rect, richtung, cursor) in zonen {
+            let antwort = egui::Area::new(egui::Id::new(("fensterkante", name)))
+                .fixed_pos(rect.min)
+                .order(egui::Order::Foreground)
+                .show(ctx, |ui| {
+                    ui.allocate_exact_size(rect.size(), Sense::click_and_drag()).1
+                })
+                .inner;
+            if antwort.hovered() {
+                ctx.set_cursor_icon(cursor);
+                // Nur der Druck beginnt den Zug — ein Dauerlauf über
+                // `is_pointer_button_down_on` würde ihn jeden Frame neu starten.
+                if ctx.input(|i| i.pointer.primary_pressed()) {
+                    ctx.send_viewport_cmd(egui::ViewportCommand::BeginResize(richtung));
+                }
+            }
+            lagen.push((name, rect));
+        }
+        self.ui.last_fensterkanten = Some(lagen);
     }
 
 /// Schmale Leiste eines eingeklappten Seitenpanels.
@@ -5089,6 +5358,8 @@ fn rail(ui: &mut egui::Ui, icon: &str, tooltip: &str, chevron: &str) -> bool {
         // der Druckvorschau. Alle Befehle arbeiten danach im selben Raum.
         self.sync_space();
         self.handle_shortcuts(ctx);
+        // T0098: Ohne Titelleiste ändern die Fensterkanten die Größe.
+        self.fensterkanten(ctx);
 
         egui::TopBottomPanel::top("header")
             .exact_height(auf_pixel(ctx, HEADER_H))
@@ -9104,5 +9375,259 @@ mod tests_mehrere_dateien {
         // Blattreiter gehören nur zur aktiven Datei.
         assert!(zeilen.iter().any(|(t, _)| t == "Modell"), "Blattreiter fehlt");
         assert!(zeilen.iter().any(|(t, _)| t == "Blatt 1"), "Blatt fehlt");
+    }
+}
+
+#[cfg(test)]
+mod tests_fensterrahmen {
+    //! T0098 — Fenster ohne Titelleiste.
+    //!
+    //! Ohne Titelleiste fehlen die Knöpfe und der Griff des Fenstermanagers:
+    //! JoJa-CAD zeichnet Minimieren, Vergrößern/Wiederherstellen und Schließen
+    //! selbst oben rechts, die Kopfzeile verschiebt das Fenster
+    //! (`ViewportCommand::StartDrag`) und die Fensterkanten ändern die Größe
+    //! (`ViewportCommand::BeginResize`). Geprüft wird der Befehl, den
+    //! eframe/winit ausführt — im Test gibt es kein echtes Fenster.
+
+    use super::*;
+
+    fn bild(
+        app: &mut App,
+        ctx: &egui::Context,
+        events: Vec<egui::Event>,
+        maximiert: Option<bool>,
+    ) -> egui::FullOutput {
+        let mut raw = egui::RawInput {
+            screen_rect: Some(Rect::from_min_size(Pos2::ZERO, Vec2::new(1500.0, 950.0))),
+            events,
+            ..Default::default()
+        };
+        raw.viewports.insert(
+            egui::ViewportId::ROOT,
+            egui::ViewportInfo {
+                maximized: maximiert,
+                ..Default::default()
+            },
+        );
+        ctx.run(raw, |ctx| app.ui(ctx))
+    }
+
+    fn befehle(out: &egui::FullOutput) -> Vec<egui::ViewportCommand> {
+        out.viewport_output
+            .get(&egui::ViewportId::ROOT)
+            .map(|v| v.commands.clone())
+            .unwrap_or_default()
+    }
+
+    /// App auf **demselben** Kontext — nur dort sind die Schriftfamilien
+    /// eingerichtet (`theme::install`); ein zweiter `Context::default()` kennt
+    /// „bold“ nicht und paniert beim Zeichnen der Kopfzeile.
+    fn ohne_titelleiste(ctx: egui::Context) -> App {
+        let mut app = App::with_ctx(ctx);
+        app.prefs.fensterrahmen = jjcad_core::persist::Fensterrahmen::OhneTitelleiste;
+        app
+    }
+
+    fn knopf(pos: Pos2, pressed: bool) -> egui::Event {
+        egui::Event::PointerButton {
+            pos,
+            button: egui::PointerButton::Primary,
+            pressed,
+            modifiers: egui::Modifiers::NONE,
+        }
+    }
+
+    fn klick(
+        app: &mut App,
+        ctx: &egui::Context,
+        pos: Pos2,
+        maximiert: Option<bool>,
+    ) -> Vec<egui::ViewportCommand> {
+        let mut cmds = Vec::new();
+        for events in [
+            vec![egui::Event::PointerMoved(pos)],
+            vec![knopf(pos, true)],
+            vec![knopf(pos, false)],
+            vec![],
+        ] {
+            let out = bild(app, ctx, events, maximiert);
+            cmds.extend(befehle(&out));
+        }
+        cmds
+    }
+
+    #[test]
+    fn mit_titelleiste_zeichnet_die_app_keine_fensterknoepfe() {
+        let ctx = egui::Context::default();
+        let mut app = App::with_ctx(ctx.clone());
+        // Der Test setzt die Vorgabe selbst — die echte `prefs.json` des
+        // Nutzers darf das Ergebnis nicht verschieben.
+        app.prefs.fensterrahmen = jjcad_core::persist::Fensterrahmen::System;
+        for _ in 0..3 {
+            bild(&mut app, &ctx, Vec::new(), None);
+        }
+        assert!(
+            app.ui.last_fenster_knoepfe.is_none(),
+            "mit Titelleiste gehören die Fensterknöpfe dem Fenstermanager, \
+             die Anwendung darf keine zweiten zeichnen"
+        );
+        assert!(
+            app.ui.last_fensterkanten.is_none(),
+            "ohne eigenen Rahmen sind auch keine Kantenzonen nötig"
+        );
+    }
+
+    #[test]
+    fn ohne_titelleiste_stehen_drei_knoepfe_oben_rechts() {
+        let ctx = egui::Context::default();
+        let mut app = ohne_titelleiste(ctx.clone());
+        for _ in 0..3 {
+            bild(&mut app, &ctx, Vec::new(), None);
+        }
+        let r = app
+            .ui
+            .last_fenster_knoepfe
+            .expect("ohne Titelleiste müssen die drei Fensterknöpfe gezeichnet werden");
+        for (i, rect) in r.iter().enumerate() {
+            assert!(
+                (rect.width() - FENSTERKNOPF_W).abs() < 0.5,
+                "Knopf {i} ist {:.1} px breit, erwartet {FENSTERKNOPF_W}",
+                rect.width()
+            );
+            assert!(
+                rect.bottom() <= HEADER_H + 0.5 && rect.top() >= -0.5,
+                "Knopf {i} liegt nicht in der Kopfzeile (0…{HEADER_H}): {rect:?}"
+            );
+        }
+        assert!(
+            (r[2].right() - 1500.0).abs() < 0.5,
+            "Schließen sitzt nicht am rechten Fensterrand: {r:?}"
+        );
+        assert!(
+            r[0].right() <= r[1].left() + 0.5 && r[1].right() <= r[2].left() + 0.5,
+            "die Knöpfe stehen nicht in der Reihenfolge Minimieren · Vergrößern · Schließen: {r:?}"
+        );
+    }
+
+    #[test]
+    fn schliessen_knopf_schickt_close() {
+        let ctx = egui::Context::default();
+        let mut app = ohne_titelleiste(ctx.clone());
+        for _ in 0..3 {
+            bild(&mut app, &ctx, Vec::new(), None);
+        }
+        let r = app.ui.last_fenster_knoepfe.expect("Knöpfe fehlen");
+        let cmds = klick(&mut app, &ctx, r[2].center(), None);
+        assert!(
+            cmds.iter().any(|c| matches!(c, egui::ViewportCommand::Close)),
+            "Klick auf Schließen muss das Fenster schließen (Befehle: {cmds:?})"
+        );
+    }
+
+    #[test]
+    fn vergroessern_knopf_schaltet_das_fenster_um() {
+        let ctx = egui::Context::default();
+        let mut app = ohne_titelleiste(ctx.clone());
+        for _ in 0..3 {
+            bild(&mut app, &ctx, Vec::new(), Some(false));
+        }
+        let r = app.ui.last_fenster_knoepfe.expect("Knöpfe fehlen");
+        let cmds = klick(&mut app, &ctx, r[1].center(), Some(false));
+        assert!(
+            cmds.iter()
+                .any(|c| matches!(c, egui::ViewportCommand::Maximized(true))),
+            "Klick auf Vergrößern muss das Fenster vergrößern (Befehle: {cmds:?})"
+        );
+
+        // Ist das Fenster schon groß, stellt derselbe Knopf wieder her.
+        let mut app = ohne_titelleiste(ctx.clone());
+        for _ in 0..3 {
+            bild(&mut app, &ctx, Vec::new(), Some(true));
+        }
+        let r = app.ui.last_fenster_knoepfe.expect("Knöpfe fehlen");
+        let cmds = klick(&mut app, &ctx, r[1].center(), Some(true));
+        assert!(
+            cmds.iter()
+                .any(|c| matches!(c, egui::ViewportCommand::Maximized(false))),
+            "Klick auf Wiederherstellen muss das Fenster verkleinern (Befehle: {cmds:?})"
+        );
+    }
+
+    #[test]
+    fn minimieren_knopf_schickt_minimized() {
+        let ctx = egui::Context::default();
+        let mut app = ohne_titelleiste(ctx.clone());
+        for _ in 0..3 {
+            bild(&mut app, &ctx, Vec::new(), None);
+        }
+        let r = app.ui.last_fenster_knoepfe.expect("Knöpfe fehlen");
+        let cmds = klick(&mut app, &ctx, r[0].center(), None);
+        assert!(
+            cmds.iter()
+                .any(|c| matches!(c, egui::ViewportCommand::Minimized(true))),
+            "Klick auf Minimieren muss das Fenster minimieren (Befehle: {cmds:?})"
+        );
+    }
+
+    /// Ein Zug auf die Kopfzeile verschiebt das Fenster. Der Griff liegt
+    /// **unter** den Reitern und Knöpfen; geprüft wird in der freien Mitte
+    /// zwischen den Reitern und der rechten Knopfgruppe (am Fensterrand läge
+    /// die Zone zum Ziehen der Fensterkante darüber).
+    #[test]
+    fn zug_auf_die_kopfzeile_verschiebt_das_fenster() {
+        let ctx = egui::Context::default();
+        let mut app = ohne_titelleiste(ctx.clone());
+        for _ in 0..3 {
+            bild(&mut app, &ctx, Vec::new(), None);
+        }
+        let start = Pos2::new(750.0, HEADER_H * 0.5);
+        bild(&mut app, &ctx, vec![egui::Event::PointerMoved(start)], None);
+        bild(&mut app, &ctx, vec![knopf(start, true)], None);
+        let out = bild(
+            &mut app,
+            &ctx,
+            vec![egui::Event::PointerMoved(start + Vec2::new(30.0, 0.0))],
+            None,
+        );
+        let cmds = befehle(&out);
+        assert!(
+            cmds.iter().any(|c| matches!(c, egui::ViewportCommand::StartDrag)),
+            "Zug auf die Kopfzeile muss das Fenster verschieben (Befehle: {cmds:?})"
+        );
+    }
+
+    #[test]
+    fn fensterkanten_stehen_an_den_raendern() {
+        let ctx = egui::Context::default();
+        let mut app = ohne_titelleiste(ctx.clone());
+        for _ in 0..3 {
+            bild(&mut app, &ctx, Vec::new(), None);
+        }
+        let kanten = app
+            .ui
+            .last_fensterkanten
+            .clone()
+            .expect("ohne Titelleiste braucht das Fenster Kantenzonen");
+        assert_eq!(kanten.len(), 8, "vier Kanten und vier Ecken erwartet");
+        let ost = kanten
+            .iter()
+            .find(|(n, _)| *n == "o")
+            .expect("rechte Kante fehlt")
+            .1;
+        assert!(
+            (ost.right() - 1500.0).abs() < 0.5 && (ost.width() - FENSTERKANTE_PX).abs() < 0.5,
+            "die Ziehzone der rechten Kante liegt nicht am Fensterrand: {ost:?}"
+        );
+
+        // Druck auf die Kante fordert das Ziehen der Größe an.
+        let pos = ost.center();
+        bild(&mut app, &ctx, vec![egui::Event::PointerMoved(pos)], None);
+        let out = bild(&mut app, &ctx, vec![knopf(pos, true)], None);
+        let cmds = befehle(&out);
+        assert!(
+            cmds.iter()
+                .any(|c| matches!(c, egui::ViewportCommand::BeginResize(egui::ResizeDirection::East))),
+            "Druck auf die rechte Fensterkante muss das Größe-Ziehen beginnen (Befehle: {cmds:?})"
+        );
     }
 }
