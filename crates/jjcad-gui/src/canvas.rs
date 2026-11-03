@@ -2570,6 +2570,10 @@ fn draw_tool_preview(
             // Nach dem ersten Klick: beide Strecken bis zum Schnittpunkt (T0082).
             draw_verschneiden_preview(app, p, rect, view, cursor);
         }
+        "modify.explode" => {
+            // Das Objekt unter dem Zeiger, das ein Klick auflösen würde (T0093).
+            draw_explode_preview(app, p, rect, view, cursor);
+        }
         "modify.area.split" => {
             // Die Schnittlinie als Polygonzug; ab dem ersten Punkt zeigt die
             // gestrichelte Strecke, wie sie weiterläuft.
@@ -2678,6 +2682,127 @@ fn draw_verschneiden_preview(app: &App, p: &Painter, rect: Rect, view: View, at:
     }
     for (id, segs) in actions::verschneiden_vorschau(app.doc(), erstes, zweites) {
         draw_abschnitt_preview(app, p, rect, view, id, &segs, Palette::OK);
+    }
+}
+
+/// Hebt das Objekt hervor, das ein Klick mit „Zerlegen“ auflösen würde (T0093).
+///
+/// Ohne Auswahl ist Zerlegen ein Klick-Werkzeug: jedes angeklickte Objekt wird
+/// in seine Einzelteile zerlegt. Vor dem Klick zeigt die Warnfarbe der
+/// Stutzen-Vorschau ([`Palette::DANGER`]), welches Objekt der Zeiger trifft.
+fn draw_explode_preview(app: &App, p: &Painter, rect: Rect, view: View, at: V2) {
+    let tol = (8.0 / view.zoom).max(0.5);
+    let Some(id) = snap::hit_test(app.doc(), at, tol, None) else {
+        return;
+    };
+    let Some(e) = app.doc().entity(id) else {
+        return;
+    };
+    // Was sich nicht zerlegen lässt, wird nicht angekündigt: runde Zierschrift und
+    // ein Block ohne Definition melden ihren Grund erst beim Klick.
+    match &e.kind {
+        EntityKind::Text { font, .. } if !font.explodierbar() => return,
+        EntityKind::BlockRef { block, .. } if app.doc().block(block).is_none() => return,
+        _ => {}
+    }
+    draw_objekt_hervorhebung(app, p, rect, view, e, Palette::DANGER);
+}
+
+/// Zeichnet ein Objekt vollständig in einer Farbe über die Zeichnung.
+///
+/// Grundlage ist die Displayliste des Objekts — dieselbe Geometrie, die auch
+/// angezeigt und beim Zerlegen in Einzelteile aufgelöst wird. Der Strich ist
+/// dicker als der des Objekts, damit die Hervorhebung auch auf dünnen Linien
+/// auffällt (dieselbe Regel wie bei der Stutzen-Vorschau).
+fn draw_objekt_hervorhebung(
+    app: &App,
+    p: &Painter,
+    rect: Rect,
+    view: View,
+    e: &Entity,
+    farbe: Color32,
+) {
+    let ctx = render::RenderCtx::for_entity(app.doc(), e);
+    let mut dl = render::DisplayList::default();
+    render::render_entity(&ctx, e, Affine::IDENTITY, &mut dl, 0);
+    let w2s = |q: V2| world_to_screen(rect, view, q);
+    let breite = linienbreite_px(
+        app.doc().effective_line_weight(e),
+        view.zoom * app.doc().settings.annotation_scale,
+        app.ui.lineweights_scaled,
+    );
+    let strich = Stroke::new((breite + 1.0).max(3.0) as f32, farbe);
+    for prim in &dl.prims {
+        match &prim.shape {
+            PShape::Line(a, b) => {
+                p.line_segment([w2s(*a), w2s(*b)], strich);
+            }
+            PShape::Poly(pts, closed) => {
+                if pts.len() < 2 {
+                    continue;
+                }
+                let mut v: Vec<Pos2> = pts.iter().map(|q| w2s(*q)).collect();
+                if *closed {
+                    v.push(v[0]);
+                }
+                stroke_pts(p, &v, strich.width, farbe);
+            }
+            // Flächen: nur der Umriss (Umgrenzung und Inseln), damit die Zeichnung
+            // darunter sichtbar bleibt.
+            PShape::Fill { outer, holes } => {
+                for ring in std::iter::once(outer).chain(holes.iter()) {
+                    if ring.len() < 2 {
+                        continue;
+                    }
+                    let mut v: Vec<Pos2> = ring.iter().map(|q| w2s(*q)).collect();
+                    v.push(v[0]);
+                    stroke_pts(p, &v, strich.width, farbe);
+                }
+            }
+            PShape::Circle { c, r } => {
+                p.add(kreis_zug(w2s(*c), (*r * view.zoom) as f32, strich));
+            }
+            PShape::Arc { c, r, a0, a1 } => {
+                let arc = Arc::new(*c, *r, *a0, *a1);
+                let pts: Vec<Pos2> = CurveQuality::SCREEN
+                    .flatten(&arc, view.zoom)
+                    .iter()
+                    .map(|q| w2s(*q))
+                    .collect();
+                if pts.len() >= 2 {
+                    p.add(Shape::line(pts, strich));
+                }
+            }
+            PShape::Ellipse { c, rx, ry, rot } => {
+                let pts: Vec<Pos2> = (0..=72)
+                    .map(|i| {
+                        let t = i as f64 / 72.0 * std::f64::consts::TAU;
+                        w2s(*c + V2::new(rx * t.cos(), ry * t.sin()).rotated(*rot))
+                    })
+                    .collect();
+                stroke_pts(p, &pts, strich.width, farbe);
+            }
+            PShape::EllipseArc { c, rx, ry, rot, a0, a1 } => {
+                let el = Ellipse::new(*c, *rx, *ry, *rot);
+                let pts: Vec<Pos2> = el
+                    .arc_points(*a0, *a1, 0.15 / view.zoom.max(1e-9))
+                    .iter()
+                    .map(|q| w2s(*q))
+                    .collect();
+                stroke_pts(p, &pts, strich.width, farbe);
+            }
+            PShape::Dot { p: pos, .. } => {
+                p.circle_filled(w2s(*pos), 3.0, farbe);
+            }
+            // Text: der Kasten, den auch Auswahlrahmen und Einfüge-Vorschau benutzen
+            // (`render::text_corners`).
+            PShape::Text(t) => {
+                let kasten =
+                    render::text_corners(t.pos, &t.text, t.height, t.angle, t.align, t.valign);
+                let pts: Vec<Pos2> = kasten.iter().map(|q| w2s(*q)).collect();
+                p.add(Shape::closed_line(pts, strich));
+            }
+        }
     }
 }
 
@@ -5220,6 +5345,9 @@ fn tool_click_at(app: &mut App, w: V2, raw: V2) {
                 }
             }
         }
+        // Zerlegen ohne Auswahl (T0093): jeder Klick löst das Objekt unter dem
+        // Zeiger auf; das Werkzeug bleibt für das nächste bereit. Welches
+        // Objekt es trifft, zeigt die Vorschau vorher in der Warnfarbe.
         "modify.explode" => {
             let tol = (8.0 / app.current_view().zoom).max(0.5);
             if let Some(id) = snap::hit_test(app.doc(), w, tol, None) {
@@ -10195,5 +10323,129 @@ mod tests_flaechen_bearbeiten {
         app.session_mut().select(Vec::new());
         app.run_action(&ctx, "modify.area.union");
         assert_eq!(fills(&app).len(), 1);
+    }
+}
+
+#[cfg(test)]
+mod tests_zerlegen {
+    //! Zerlegen (T0093): steht etwas in der Auswahl, wird es beim Start sofort
+    //! zerlegt. Ohne Auswahl löst jeder Klick das Objekt unter dem Zeiger auf —
+    //! vorher hebt die Vorschau es in der Warnfarbe der Stutzen-Funktion hervor.
+
+    use super::*;
+
+    const RECT: Rect = Rect {
+        min: Pos2::new(0.0, 0.0),
+        max: Pos2::new(1200.0, 800.0),
+    };
+
+    /// Eine Wand von (0;0) nach (4;0) in Metern, 240 mm dick.
+    fn app_mit_wand() -> (App, Id) {
+        let mut app = App::with_ctx(egui::Context::default());
+        app.session_mut()
+            .execute("doc.settings", &json!({ "input_unit": "m" }))
+            .expect("Einheit setzen");
+        let r = app
+            .session_mut()
+            .execute(
+                "draw.wall",
+                &json!({ "a": [0, 0], "b": [4, 0], "thickness": 0.24 }),
+            )
+            .expect("Wand anlegen");
+        let id = r["created"][0].as_u64().expect("Wand-Kennung");
+        (app, id)
+    }
+
+    fn wand_steht(app: &App) -> bool {
+        app.doc()
+            .ents()
+            .iter()
+            .any(|e| matches!(e.kind, EntityKind::Wall { .. }))
+    }
+
+    /// Alle Formen der Warnfarbe aus der Werkzeug-Vorschau (Strecken und Pfade).
+    fn warnformen(app: &mut App, zeiger: Option<V2>) -> usize {
+        let view = app.current_view();
+        let ctx = app.ctx.clone();
+        let out = ctx.run(egui::RawInput::default(), |ctx| {
+            let layer = egui::LayerId::new(egui::Order::Background, egui::Id::new("zerlegen"));
+            let p = egui::Painter::new(ctx.clone(), layer, Rect::EVERYTHING);
+            draw_tool_preview(app, &p, RECT, view, zeiger, zeiger);
+        });
+        out.shapes
+            .iter()
+            .filter(|cs| match &cs.shape {
+                Shape::LineSegment { stroke, .. } => {
+                    stroke.color == egui::epaint::ColorMode::Solid(Palette::DANGER)
+                }
+                Shape::Path(p) => p.stroke.color == egui::epaint::ColorMode::Solid(Palette::DANGER),
+                _ => false,
+            })
+            .count()
+    }
+
+    /// Der Start mit Auswahl ist eine Ausführung: die Wand ist danach zerlegt,
+    /// kein Klick-Werkzeug wartet auf Eingaben.
+    #[test]
+    fn start_zerlegt_die_auswahl_sofort() {
+        let (mut app, id) = app_mit_wand();
+        app.session_mut().select(vec![id]);
+        app.start_tool("modify.explode");
+
+        assert!(!wand_steht(&app), "die Wand in der Auswahl muss zerlegt sein");
+        assert!(
+            app.doc().ents().len() > 1,
+            "es müssen Einzelteile entstanden sein: {}",
+            app.doc().ents().len()
+        );
+        assert!(app.tool.is_none(), "mit Auswahl startet kein Klick-Werkzeug");
+        assert!(
+            app.selection().is_empty(),
+            "die Kennungen der zerlegten Objekte sind weg"
+        );
+    }
+
+    /// Ohne Auswahl wird das Werkzeug aktiv, und der Klick zerlegt — er sammelt
+    /// nicht in der Auswahl (das war der gemeldete Fehler).
+    #[test]
+    fn ohne_auswahl_zerlegt_der_klick_das_objekt() {
+        let (mut app, _id) = app_mit_wand();
+        assert!(app.selection().is_empty());
+        app.start_tool("modify.explode");
+        assert_eq!(app.tool_id(), Some("modify.explode"), "Werkzeug läuft");
+        assert!(
+            !app.tool.as_ref().map(|t| t.selecting).unwrap_or(true),
+            "der Klick darf nicht nur auswählen"
+        );
+
+        tool_click(&mut app, V2::new(2000.0, 0.0));
+
+        assert!(!wand_steht(&app), "der Klick muss die Wand zerlegen");
+        assert!(
+            app.selection().is_empty(),
+            "der Klick sammelt nicht in der Auswahl"
+        );
+        assert_eq!(
+            app.tool_id(),
+            Some("modify.explode"),
+            "bleibt für das nächste Objekt aktiv"
+        );
+    }
+
+    /// Die Vorschau hebt das Objekt unter dem Zeiger in derselben Warnfarbe wie
+    /// die Stutzen-Vorschau hervor — und nur dort.
+    #[test]
+    fn vorschau_hebt_das_objekt_unter_dem_zeiger_hervor() {
+        let (mut app, _id) = app_mit_wand();
+        app.start_tool("modify.explode");
+
+        let auf_der_wand = warnformen(&mut app, Some(V2::new(2000.0, 0.0)));
+        assert!(
+            auf_der_wand > 0,
+            "die Wand unter dem Zeiger muss hervorgehoben sein"
+        );
+
+        let neben_der_wand = warnformen(&mut app, Some(V2::new(2000.0, 5000.0)));
+        assert_eq!(neben_der_wand, 0, "ohne Objekt keine Hervorhebung");
     }
 }
