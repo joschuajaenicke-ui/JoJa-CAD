@@ -33,7 +33,7 @@ DWG-Import (proprietär). DXF ist der offene Weg — und der ist drin.
 |---|---|
 | **Grundelemente** | Punkt, Linie, Polylinie, Rechteck, Kreis, Bogen, Ellipse, Schraffur, Text — mit Griffen, Fangen, Ortho und 45°-Polarfang |
 | **Architektur** | Wand mit Dicke, Ausrichtung und Öffnungen; Tür (Dreh-, Schiebe-, zweiflügelig, Öffnung), Fenster, Treppe, Volumen — die Bauteile **verbinden sich dynamisch**: Gehrung an Wandanschlüssen, Öffnungen schneiden die Wand, Türen sitzen auf der Blattseite |
-| **Bemaßung** | Einzelmaß, Maßkette, Höhenkote nach DIN 406/1356 — Schrägstrich- oder Pfeilmarken, Maßtext in mm/cm/m, Bezugsmaßstab 1:N frei einstellbar |
+| **Bemaßung** | Einzelmaß, Maßkette, Grundriss- und Schnitt-Kote nach DIN 406/1356 — Schrägstrich- oder Pfeilmarken, Maßtext in mm/cm/m, Bezugsmaßstab 1:N frei einstellbar |
 | **Blöcke** | umfangreiche Systembibliothek (Sanitär, Küche, Möbel, Symbole), eigene Projektblöcke aus der Auswahl, Instanzen mit Drehung/Spiegelung, Zerlegen, ByBlock/ByLayer — erweiterbar über Inventar und Hotbar-Vorlagen |
 | **Austausch** | **PDF** (vektoriell, mit Schriftfeld) und **PNG** schreiben, **PDF importieren** (Grundriss als Zeichnung), **DXF** R12 lesen und schreiben |
 | **KI-Steuerung** | MCP-Server mit 10 Werkzeugen (`jjcad_document`, `_execute`, `_batch`, `_query`, `_export`, `_render`, `_sheet`, `_actions`, `_undo`, `_redo`) — vollständig headless, inklusive Bild-Rückgabe; jede Funktion der Oberfläche ist auch über MCP erreichbar |

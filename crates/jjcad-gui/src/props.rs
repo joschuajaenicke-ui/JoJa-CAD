@@ -2112,7 +2112,10 @@ pub enum Einfach {
     /// Abschnitt einer Ellipse — entsteht beim Stutzen (T0084).
     Ellipsenbogen,
     Masskette,
-    Hoehenkote,
+    /// Grundriss-Kote: Kreis-Symbol, Höhe im Panel.
+    Grundrisskote,
+    /// Schnitt-Kote: Punktfolge, Höhen aus der Y-Differenz.
+    Schnittkote,
     Block,
 }
 
@@ -2129,7 +2132,8 @@ impl Einfach {
             "draw.arc" => Self::Bogen,
             "draw.ellipse" => Self::Ellipse,
             "dim.chain" => Self::Masskette,
-            "dim.elevation" => Self::Hoehenkote,
+            "dim.elevation.plan" => Self::Grundrisskote,
+            "dim.elevation.section" => Self::Schnittkote,
             "block.insert" => Self::Block,
             _ => return None,
         })
@@ -2147,7 +2151,8 @@ impl Einfach {
             EntityKind::Ellipse { .. } => Self::Ellipse,
             EntityKind::EllipseArc { .. } => Self::Ellipsenbogen,
             EntityKind::DimChain { .. } => Self::Masskette,
-            EntityKind::Elevation { .. } => Self::Hoehenkote,
+            EntityKind::ElevationPlan { .. } => Self::Grundrisskote,
+            EntityKind::ElevationSection { .. } => Self::Schnittkote,
             EntityKind::BlockRef { .. } => Self::Block,
             _ => return None,
         })
@@ -2165,7 +2170,8 @@ impl Einfach {
             Self::Ellipse => "Ellipse",
             Self::Ellipsenbogen => "Ellipsenbogen",
             Self::Masskette => "Maßkette",
-            Self::Hoehenkote => "Höhenkote",
+            Self::Grundrisskote => "Grundriss-Kote",
+            Self::Schnittkote => "Schnitt-Kote",
             Self::Block => "Block",
         }
     }
@@ -2181,7 +2187,8 @@ impl Einfach {
             Self::Ellipse => "ellipse",
             Self::Ellipsenbogen => "arc",
             Self::Masskette => "dim",
-            Self::Hoehenkote => "elevation",
+            Self::Grundrisskote => "elevation",
+            Self::Schnittkote => "elevation-section",
             Self::Block => "blocknew",
         }
     }
@@ -2497,10 +2504,11 @@ pub fn einfach(app: &mut App, ui: &mut Ui, ziel: Ziel, art: Einfach) {
                 }
             }
         }
-        Einfach::Hoehenkote => {
+        // Grundriss-Kote: die Höhe ist die einzige Eingabe des Nutzers.
+        Einfach::Grundrisskote => {
             let z0 = match &e {
                 Some(e) => match &e.kind {
-                    EntityKind::Elevation { z, .. } => *z,
+                    EntityKind::ElevationPlan { z, .. } => *z,
                     _ => 0.0,
                 },
                 None => app.options.elevation_z,
@@ -2522,6 +2530,50 @@ pub fn einfach(app: &mut App, ui: &mut Ui, ziel: Ziel, art: Einfach) {
                     hoehe = Some(z0);
                 }
             });
+        }
+        // Schnitt-Kote: keine Höheneingabe — der erste Punkt ist ±0,00, alle
+        // weiteren Höhen folgen aus der Y-Differenz. Punktzahl und die sich
+        // ergebenden Höhen stehen als Anzeige da.
+        Einfach::Schnittkote => {
+            let pts: Vec<jjcad_core::geom::Vec2> = match &e {
+                Some(e) => match &e.kind {
+                    EntityKind::ElevationSection { pts } => pts.clone(),
+                    _ => Vec::new(),
+                },
+                // Beim Platzieren steht die Punktfolge im laufenden Werkzeug.
+                None => app
+                    .tool
+                    .as_ref()
+                    .filter(|t| t.action == "dim.elevation.section")
+                    .map(|t| t.pts.clone())
+                    .unwrap_or_default(),
+            };
+            zeile("punkte");
+            widgets::field_row(ui, "Punkte", |ui| {
+                ui.label(theme::mono(pts.len().to_string()));
+            });
+            let basis = pts.first().map(|p| p.y).unwrap_or(0.0);
+            let liste = if pts.is_empty() {
+                "—".to_string()
+            } else {
+                pts.iter()
+                    .map(|p| jjcad_core::units::elevation_section_text(p.y - basis))
+                    .collect::<Vec<_>>()
+                    .join(" · ")
+            };
+            zeile("hoehen");
+            // Die Wertespalte ist 150 px breit — die Höhen stehen deshalb als
+            // umbrechende Zeile unter der Anzahl, sonst wäre die Liste
+            // abgeschnitten.
+            let kurz = if pts.is_empty() {
+                "—".to_string()
+            } else {
+                format!("{} Werte", pts.len())
+            };
+            widgets::field_row(ui, "Höhen", |ui| {
+                ui.label(theme::mono(kurz.clone()));
+            });
+            ui.label(theme::dim(liste.clone()));
         }
         // Maßkette: jeder Basispunkt hängt am Griff in der Zeichnung, die
         // **Lage der Maßlinie** steht hier als Abstand (vorzeichenbehaftet,
@@ -2659,6 +2711,10 @@ pub fn einfach(app: &mut App, ui: &mut Ui, ziel: Ziel, art: Einfach) {
                 }
                 Einfach::Ellipse => "Achsen entstehen aus den Klicks",
                 Einfach::Punkt => "Koordinate entsteht aus dem Klick",
+                Einfach::Grundrisskote => "Höhe steht im Eigenschaften-Panel",
+                Einfach::Schnittkote => {
+                    "Höhen entstehen aus der Y-Differenz zum ersten Punkt"
+                }
                 Einfach::Block => "Blocklage entsteht aus dem Klick",
                 _ => "Maße entstehen aus den Klicks",
             }));
@@ -2749,7 +2805,7 @@ pub fn einfach(app: &mut App, ui: &mut Ui, ziel: Ziel, art: Einfach) {
                                 geaendert = true;
                             }
                         }
-                        (EntityKind::Elevation { z, .. }, _, _, _, Some(v), _, _)
+                        (EntityKind::ElevationPlan { z, .. }, _, _, _, Some(v), _, _)
                             if (v - *z).abs() > 1e-9 =>
                         {
                             map.insert("z".into(), serde_json::json!(unit.from_mm(v)));
@@ -3880,12 +3936,16 @@ mod tests {
                 },
             ),
             (
-                "dim.elevation",
-                EntityKind::Elevation {
+                "dim.elevation.plan",
+                EntityKind::ElevationPlan {
                     p: jjcad_core::geom::Vec2::ZERO,
                     z: 1200.0,
-                    angle: 0.0,
-                    override_text: None,
+                },
+            ),
+            (
+                "dim.elevation.section",
+                EntityKind::ElevationSection {
+                    pts: vec![jjcad_core::geom::Vec2::ZERO, v(0.0, 1200.0)],
                 },
             ),
             (
@@ -4149,11 +4209,12 @@ mod tests {
                 line_pos: jjcad_core::geom::Vec2::ZERO,
                 axis: DimAxis::X,
             },
-            EntityKind::Elevation {
+            EntityKind::ElevationPlan {
                 p: jjcad_core::geom::Vec2::ZERO,
                 z: 0.0,
-                angle: 0.0,
-                override_text: None,
+            },
+            EntityKind::ElevationSection {
+                pts: vec![jjcad_core::geom::Vec2::ZERO],
             },
             EntityKind::BlockRef {
                 block: "Test".into(),

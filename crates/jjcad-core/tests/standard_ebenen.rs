@@ -85,8 +85,14 @@ fn batch_ohne_layer_landet_je_typ_auf_seiner_standardebene() {
     );
     assert_eq!(ebene(&d, kette), "Bemaßung");
 
-    let kote = neu(&mut d, "dim.elevation", json!({"p": [0, 0], "z": 1.0}));
+    let kote = neu(&mut d, "dim.elevation.plan", json!({"p": [0, 0], "z": 1.0}));
+    let schnitt = neu(
+        &mut d,
+        "dim.elevation.section",
+        json!({"pts": [[0, 0], [0, 1.5]]}),
+    );
     assert_eq!(ebene(&d, kote), "Bemaßung");
+    assert_eq!(ebene(&d, schnitt), "Bemaßung");
 
     let text = neu(&mut d, "draw.text", json!({"p": [1, 1], "text": "X", "height": 0.3}));
     assert_eq!(ebene(&d, text), "Text");

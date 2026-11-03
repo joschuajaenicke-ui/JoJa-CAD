@@ -1501,6 +1501,88 @@ impl App {
                                             "line_pos": [1.5, -0.6]}),
                     );
                 }
+                // Prüfbild der Höhenkoten (T0096): Grundriss-Kote mit
+                // Kreis-Symbol und Schnitt-Kote mit Dreiecken. Die Höhen der
+                // Schnitt-Kote folgen aus der Y-Differenz zum ersten Punkt.
+                "kote" | "hoehenkoten" => {
+                    let u = self.unit();
+                    let ax = |x: f64, y: f64| [u.from_mm(x), u.from_mm(y)];
+                    let _ = self.session_mut().execute(
+                        "dim.elevation.plan",
+                        &serde_json::json!({"p": ax(600.0, 800.0), "z": u.from_mm(0.0)}),
+                    );
+                    let _ = self.session_mut().execute(
+                        "dim.elevation.section",
+                        &serde_json::json!({"pts": [
+                            ax(3000.0, 0.0), ax(4000.0, 1200.0),
+                            ax(5000.0, 2600.0), ax(6000.0, 3500.0)
+                        ]}),
+                    );
+                    self.ui.ribbon = RibbonTab::Bemassung;
+                }
+                // Grundriss-Kote auswählen: Eigenschaften-Panel mit dem Feld
+                // „Höhe“.
+                "selkoteplan" => {
+                    self.ui.props_open = true;
+                    let vorhanden = self
+                        .doc()
+                        .entities
+                        .iter()
+                        .find(|e| matches!(e.kind, EntityKind::ElevationPlan { .. }))
+                        .map(|e| e.id);
+                    let id = match vorhanden {
+                        Some(id) => Some(id),
+                        None => {
+                            let u = self.unit();
+                            self.session_mut()
+                                .execute(
+                                    "dim.elevation.plan",
+                                    &serde_json::json!({
+                                        "p": [u.from_mm(1200.0), u.from_mm(2600.0)],
+                                        "z": u.from_mm(0.0)
+                                    }),
+                                )
+                                .ok()
+                                .and_then(|r| r["created"][0].as_u64())
+                        }
+                    };
+                    if let Some(id) = id {
+                        self.session_mut().select(vec![id]);
+                    }
+                }
+                // Schnitt-Kote auswählen: Eigenschaften-Panel mit Punktzahl und
+                // den gerechneten Höhen.
+                "selkote" => {
+                    self.ui.props_open = true;
+                    // Vorhandene Schnitt-Kote der Zeichnung wählen (Prüfbild mit
+                    // Panel); nur ohne eine solche eine anlegen.
+                    let vorhanden = self
+                        .doc()
+                        .entities
+                        .iter()
+                        .find(|e| matches!(e.kind, EntityKind::ElevationSection { .. }))
+                        .map(|e| e.id);
+                    let id = match vorhanden {
+                        Some(id) => Some(id),
+                        None => {
+                            let u = self.unit();
+                            let ax = |x: f64, y: f64| [u.from_mm(x), u.from_mm(y)];
+                            self.session_mut()
+                                .execute(
+                                    "dim.elevation.section",
+                                    &serde_json::json!({"pts": [
+                                        ax(3000.0, 0.0), ax(4000.0, 1200.0),
+                                        ax(5000.0, 2600.0), ax(6000.0, 3500.0)
+                                    ]}),
+                                )
+                                .ok()
+                                .and_then(|r| r["created"][0].as_u64())
+                        }
+                    };
+                    if let Some(id) = id {
+                        self.session_mut().select(vec![id]);
+                    }
+                }
                 // Maßkette anlegen und auswählen: Basispunkt-Griffe, Raute an
                 // der Maßlinie und der Abstand im Eigenschaften-Panel in einem
                 // Bild (T0055).
@@ -4494,7 +4576,8 @@ fn rail(ui: &mut egui::Ui, icon: &str, tooltip: &str, chevron: &str) -> bool {
                         for (id, icon, label) in [
                             ("dim.linear", "dim", "Maß"),
                             ("dim.chain", "dimchain", "Maßkette"),
-                            ("dim.elevation", "elevation", "Höhenkote"),
+                            ("dim.elevation.plan", "elevation", "Grundriss-Kote"),
+                            ("dim.elevation.section", "elevation-section", "Schnitt-Kote"),
                             ("dim.room", "room", "Raumstempel"),
                         ] {
                             if widgets::ribbon_button(ui, icon, label, app.tool_id() == Some(id)).clicked() {
@@ -5207,7 +5290,14 @@ pub(crate) fn commands_hint(tool: &Tool, opts: &ToolOptions) -> &'static str {
                 "Maßkette · erster Punkt"
             }
         }
-        "dim.elevation" => "Höhenkote · Punkt klicken",
+        "dim.elevation.plan" => "Grundriss-Kote · Punkt klicken",
+        "dim.elevation.section" => {
+            if lebt {
+                "Schnitt-Kote · nächster Punkt (Enter beendet)"
+            } else {
+                "Schnitt-Kote · erster Punkt (±0,00)"
+            }
+        }
         "dim.room" => {
             if tool.pts.len() < 3 {
                 "Raumstempel · Raumecken klicken (mind. 3)"
@@ -5306,7 +5396,8 @@ pub(crate) fn abschluss_meldung(action: &str) -> Option<&'static str> {
         "draw.hatch" => "Schraffur · gesetzt",
         "dim.linear" => "Maß · gesetzt",
         "dim.chain" => "Maßkette · gesetzt",
-        "dim.elevation" => "Höhenkote · gesetzt",
+        "dim.elevation.plan" => "Grundriss-Kote · gesetzt",
+        "dim.elevation.section" => "Schnitt-Kote · gesetzt",
         "dim.room" => "Raumstempel · gesetzt",
         "modify.move" => "Auswahl · verschoben",
         "modify.copy" => "Auswahl · kopiert",
@@ -5833,7 +5924,8 @@ pub fn entity_kind_icon(kind: &EntityKind) -> &'static str {
         EntityKind::Volume { .. } => "volume",
         EntityKind::Text { .. } => "text",
         EntityKind::Dim { .. } | EntityKind::DimChain { .. } => "dim",
-        EntityKind::Elevation { .. } => "elevation",
+        EntityKind::ElevationPlan { .. } => "elevation",
+        EntityKind::ElevationSection { .. } => "elevation-section",
         EntityKind::Room { .. } => "room",
         EntityKind::Wall { .. } => "wall",
         EntityKind::Door { .. } => "door",

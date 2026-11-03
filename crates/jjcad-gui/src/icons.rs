@@ -318,11 +318,21 @@ pub fn paint(painter: &Painter, rect: Rect, name: &str, color: Color32) {
             i.line(3.0, 14.0, 4.5, 12.5);
             i.line(15.0, 14.0, 16.5, 12.5);
         }
+        // Grundriss-Kote: Kreis mit Fadenkreuz, zwei gegenüberliegende Viertel
+        // gefüllt — dasselbe Symbol, das die Zeichnung zeigt.
         "elevation" => {
-            i.line(4.0, 17.0, 20.0, 17.0);
-            i.poly(&[(12.0, 17.0), (9.5, 20.0), (14.5, 20.0)], true);
-            i.line(12.0, 17.0, 12.0, 8.0);
-            i.line(12.0, 8.0, 20.0, 8.0);
+            i.circle(12.0, 12.0, 6.0);
+            i.line(2.0, 12.0, 22.0, 12.0);
+            i.line(12.0, 2.0, 12.0, 22.0);
+            i.filled(&[(12.0, 12.0), (12.0, 6.6), (8.4, 7.0), (6.6, 9.0), (6.4, 12.0)]);
+            i.filled(&[(12.0, 12.0), (12.0, 17.4), (15.6, 17.0), (17.4, 15.0), (17.6, 12.0)]);
+        }
+        // Schnitt-Kote: gefülltes Dreieck auf der Grundlinie mit Höhenstrich.
+        "elevation-section" => {
+            i.line(3.0, 20.0, 21.0, 20.0);
+            i.filled(&[(12.0, 20.0), (8.2, 13.5), (15.8, 13.5)]);
+            i.line(12.0, 13.5, 12.0, 5.0);
+            i.line(12.0, 5.0, 20.0, 5.0);
         }
         // Raumstempel: Raumkontur mit Flächenbeschriftung in der Mitte.
         "room" => {

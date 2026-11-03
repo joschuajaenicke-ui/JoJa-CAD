@@ -93,7 +93,7 @@ fn alle_elemente(s: &mut Session) -> Vec<(&'static str, u64)> {
         "dim.chain",
         json!({"pts": [[0, 0], [1, 0], [2, 0]], "line_pos": [0, -0.5]})
     );
-    zeichnen!(s, out, "Kote", "dim.elevation", json!({"p": [0, 0], "z": 0.5}));
+    zeichnen!(s, out, "Kote", "dim.elevation.plan", json!({"p": [0, 0], "z": 0.5}));
     zeichnen!(s, out, 
         "Wand",
         "draw.wall",

@@ -233,7 +233,8 @@ pub const ACTIONS: &[ActionDef] = &[
     // Bemaßung
     act!("dim.linear", "Maß", Bemassung, "dim", "m", "Zwei Punkte und Maßlinie setzen", true),
     act!("dim.chain", "Maßkette", Bemassung, "dimchain", "", "Punkte klicken, Enter beendet", true),
-    act!("dim.elevation", "Höhenkote", Bemassung, "elevation", "n", "Punkt klicken, Höhe eingeben", true),
+    act!("dim.elevation.plan", "Grundriss-Kote", Bemassung, "elevation", "n", "Punkt klicken — Höhe im Eigenschaften-Panel", true),
+    act!("dim.elevation.section", "Schnitt-Kote", Bemassung, "elevation-section", "", "Punkte klicken, Enter beendet — erster Punkt ist ±0,00", true),
     act!(
         "dim.room",
         "Raumstempel",
@@ -337,7 +338,8 @@ pub fn is_mutating(id: &str) -> bool {
             | "draw.stair"
             | "dim.linear"
             | "dim.chain"
-            | "dim.elevation"
+            | "dim.elevation.plan"
+            | "dim.elevation.section"
             | "dim.room"
             | "dim.style"
             | "modify.move"
@@ -646,7 +648,11 @@ fn standard_ebene(action: &str) -> Option<&'static str> {
         "draw.door" => "Türen",
         "draw.window" => "Fenster",
         "draw.stair" | "draw.stair.label" => "Treppen",
-        "dim.linear" | "dim.chain" | "dim.elevation" | "dim.room" => "Bemaßung",
+        "dim.linear"
+        | "dim.chain"
+        | "dim.elevation.plan"
+        | "dim.elevation.section"
+        | "dim.room" => "Bemaßung",
         "draw.text" => "Text",
         "draw.fill" | "draw.fill.points" | "draw.fill.boundary" | "draw.fill.paint" | "draw.hatch" => {
             "Schraffur"
@@ -685,7 +691,8 @@ pub fn erzeuger_fuer(kind: &EntityKind) -> &'static str {
         EntityKind::Text { .. } => "draw.text",
         EntityKind::Dim { .. } => "dim.linear",
         EntityKind::DimChain { .. } => "dim.chain",
-        EntityKind::Elevation { .. } => "dim.elevation",
+        EntityKind::ElevationPlan { .. } => "dim.elevation.plan",
+        EntityKind::ElevationSection { .. } => "dim.elevation.section",
         EntityKind::Room { .. } => "dim.room",
         EntityKind::Wall { .. } => "draw.wall",
         EntityKind::Door { .. } => "draw.door",
@@ -2053,25 +2060,35 @@ pub fn execute(doc: &mut Document, id: &str, params: &Value) -> Result<Value, St
             doc.add_entity(e);
             Ok(json!({"ok": true, "created": [idn]}))
         }
-        "dim.elevation" => {
+        // Grundriss-Kote: Kreis-Symbol, Höhe kommt aus dem Panel.
+        "dim.elevation.plan" => {
             let pt = require_pt(&p, "p")?;
             let layer = resolve_layer_in(doc, &p, ebene);
             let idn = doc.new_id();
             let z = p.len_or("z", 0.0);
-            let mut e = Entity::new(
-                idn,
-                layer,
-                EntityKind::Elevation {
-                    p: pt,
-                    z,
-                    angle: p.angle_or("angle", 0.0),
-                    override_text: p.text("text"),
-                },
-            );
+            let mut e = Entity::new(idn, layer, EntityKind::ElevationPlan { p: pt, z });
             apply_common(doc, &mut e, &p, layer);
             bemasung_schwarz(&p, &mut e);
             doc.add_entity(e);
             Ok(json!({"ok": true, "created": [idn], "z_mm": z}))
+        }
+        // Schnitt-Kote: eine Punktfolge. Der erste Punkt ist ±0,00, die
+        // übrigen Höhen rechnet der Renderer aus der Y-Differenz — hier wird
+        // nur die Punktfolge geprüft und abgelegt.
+        "dim.elevation.section" => {
+            let pts = p
+                .pts("pts")
+                .ok_or_else(|| "Parameter 'pts' fehlt".to_string())?;
+            if pts.is_empty() {
+                return Err("Schnitt-Kote braucht mindestens einen Punkt".to_string());
+            }
+            let layer = resolve_layer_in(doc, &p, ebene);
+            let idn = doc.new_id();
+            let mut e = Entity::new(idn, layer, EntityKind::ElevationSection { pts });
+            apply_common(doc, &mut e, &p, layer);
+            bemasung_schwarz(&p, &mut e);
+            doc.add_entity(e);
+            Ok(json!({"ok": true, "created": [idn]}))
         }
         // Raumstempel: die Umgrenzung kommt als Punktfolge (wie die Fläche
         // nach Punktfolge). Die Beschriftung setzt die Action selbst in den
@@ -3014,12 +3031,22 @@ pub fn execute(doc: &mut Document, id: &str, params: &Value) -> Result<Value, St
                                 *line_pos = *line_pos + n * (off - alt);
                             }
                         }
-                        EntityKind::Elevation { z, override_text, .. } => {
+                        EntityKind::ElevationPlan { z, .. } => {
                             if let Some(v) = p.len("z") {
                                 *z = v;
                             }
-                            if let Some(v) = text {
-                                *override_text = Some(v);
+                        }
+                        // Punkte der Schnitt-Kote lassen sich verschieben/ersetzen;
+                        // die Höhen folgen daraus neu.
+                        EntityKind::ElevationSection { pts } => {
+                            if let Some(q) = p.pts("pts") {
+                                if q.is_empty() {
+                                    return Err(
+                                        "Schnitt-Kote braucht mindestens einen Punkt"
+                                            .to_string(),
+                                    );
+                                }
+                                *pts = q;
                             }
                         }
                         _ => {}
