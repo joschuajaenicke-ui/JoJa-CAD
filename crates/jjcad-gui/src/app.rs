@@ -336,6 +336,10 @@ pub struct ToolOptions {
     pub text_superscript: bool,
     /// Schriftart des nächsten Textes (bleibt für das nächste Element stehen)
     pub text_font: TextFont,
+    /// Textgröße des nächsten Raumstempels in mm.
+    pub room_height: f64,
+    /// Überschrift über dem Flächeninhalt des nächsten Raumstempels.
+    pub room_heading: String,
     pub dim_axis: Option<DimAxis>,
     /// Eigener Maßtext des nächsten Maßes (leer = automatisch berechnet).
     pub dim_text: String,
@@ -426,6 +430,8 @@ impl ToolOptions {
             text_underline: false,
             text_superscript: false,
             text_font: TextFont::default(),
+            room_height: doc.settings.text_height,
+            room_heading: "Zimmer".to_string(),
             dim_axis: None,
             dim_text: String::new(),
             offset_dist: doc.settings.wall_thickness,
@@ -1595,6 +1601,35 @@ impl App {
                         .and_then(|r| r["created"][0].as_u64())
                     {
                         self.session_mut().select(vec![id]);
+                    }
+                }
+                // Raumstempel (T0097): ein Stempel über einem 4 × 3 m großen
+                // Raum, ausgewählt — die Ecken der unsichtbaren Fläche und der
+                // Textgriff sind damit im Bild.
+                "raumstempel" => {
+                    let antwort = self.session_mut().execute(
+                        "dim.room",
+                        &serde_json::json!({"pts": [[-2.0, -1.5], [2.0, -1.5],
+                                                    [2.0, 1.5], [-2.0, 1.5]]}),
+                    );
+                    self.ui.props_open = true;
+                    if let Some(id) = antwort
+                        .ok()
+                        .and_then(|r| r["created"][0].as_u64())
+                    {
+                        self.session_mut().select(vec![id]);
+                    }
+                }
+                // Werkzeug läuft: Punktfolge bis zur dritten Ecke, damit die
+                // Aufforderung „Enter setzt den Stempel" im Chat steht.
+                "raumstempelwerkzeug" => {
+                    self.start_tool("dim.room");
+                    if let Some(t) = self.tool.as_mut() {
+                        t.pts = vec![
+                            jjcad_core::geom::Vec2::new(-2000.0, -1500.0),
+                            jjcad_core::geom::Vec2::new(2000.0, -1500.0),
+                            jjcad_core::geom::Vec2::new(2000.0, 1500.0),
+                        ];
                     }
                 }
                 "settings" => self.ui.settings_open = true,
@@ -4543,6 +4578,7 @@ fn rail(ui: &mut egui::Ui, icon: &str, tooltip: &str, chevron: &str) -> bool {
                             ("dim.chain", "dimchain", "Maßkette"),
                             ("dim.elevation.plan", "elevation", "Grundriss-Kote"),
                             ("dim.elevation.section", "elevation-section", "Schnitt-Kote"),
+                            ("dim.room", "room", "Raumstempel"),
                         ] {
                             if widgets::ribbon_button(ui, icon, label, app.tool_id() == Some(id)).clicked() {
                                 app.start_tool(id);
@@ -5262,6 +5298,13 @@ pub(crate) fn commands_hint(tool: &Tool, opts: &ToolOptions) -> &'static str {
                 "Schnitt-Kote · erster Punkt (±0,00)"
             }
         }
+        "dim.room" => {
+            if tool.pts.len() < 3 {
+                "Raumstempel · Raumecken klicken (mind. 3)"
+            } else {
+                "Raumstempel · Enter setzt den Stempel"
+            }
+        }
         "modify.select" => "Auswählen · Objekte oder Fenster",
         "modify.move" => match (tool.selecting, lebt) {
             (true, _) => "Verschieben · Objekte wählen (Enter)",
@@ -5355,6 +5398,7 @@ pub(crate) fn abschluss_meldung(action: &str) -> Option<&'static str> {
         "dim.chain" => "Maßkette · gesetzt",
         "dim.elevation.plan" => "Grundriss-Kote · gesetzt",
         "dim.elevation.section" => "Schnitt-Kote · gesetzt",
+        "dim.room" => "Raumstempel · gesetzt",
         "modify.move" => "Auswahl · verschoben",
         "modify.copy" => "Auswahl · kopiert",
         "modify.mirror" => "Auswahl · gespiegelt",
@@ -5882,6 +5926,7 @@ pub fn entity_kind_icon(kind: &EntityKind) -> &'static str {
         EntityKind::Dim { .. } | EntityKind::DimChain { .. } => "dim",
         EntityKind::ElevationPlan { .. } => "elevation",
         EntityKind::ElevationSection { .. } => "elevation-section",
+        EntityKind::Room { .. } => "room",
         EntityKind::Wall { .. } => "wall",
         EntityKind::Door { .. } => "door",
         EntityKind::Window { .. } => "window",

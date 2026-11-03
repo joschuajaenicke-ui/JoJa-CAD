@@ -387,6 +387,7 @@ pub fn properties(app: &mut App, ui: &mut Ui) {
                     "draw.door" => crate::props::tuer(app, ui, ziel),
                     "draw.window" => crate::props::fenster(app, ui, ziel),
                     "draw.stair" => crate::props::treppe(app, ui, ziel),
+                    "dim.room" => crate::props::raumstempel(app, ui, ziel),
                     "dim.linear" => crate::props::bemassung(app, ui, ziel),
                     "draw.volume" | "draw.volume.points" | "draw.volume.paint" => {
                         crate::props::volumen(app, ui, ziel)
@@ -439,6 +440,9 @@ pub fn properties(app: &mut App, ui: &mut Ui) {
                     }
                     Some(jjcad_core::model::EntityKind::Stair { .. }) => {
                         crate::props::treppe(app, ui, ziel)
+                    }
+                    Some(jjcad_core::model::EntityKind::Room { .. }) => {
+                        crate::props::raumstempel(app, ui, ziel)
                     }
                     Some(kind) => match crate::props::Einfach::aus_objekt(&kind) {
                         Some(art) => crate::props::einfach(app, ui, ziel, art),

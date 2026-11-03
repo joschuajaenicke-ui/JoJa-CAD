@@ -564,6 +564,25 @@ pub enum EntityKind {
         #[serde(default)]
         font: TextFont,
     },
+    /// Raumstempel: unsichtbare Raumfläche mit verknüpfter Beschriftung.
+    ///
+    /// Die Umgrenzung ist die Fläche des Raums. Sie wird **nicht** gezeichnet
+    /// und ist nicht anklickbar — sichtbar ist allein das Textfeld an `label`
+    /// mit der Überschrift `heading` und dem Flächeninhalt. Der Text wird bei
+    /// jeder Anzeige aus der Umgrenzung gerechnet (`room_text`), damit er nach
+    /// dem Ziehen einer Ecke sofort stimmt. `label` ist von der Fläche
+    /// unabhängig: das Textfeld lässt sich verschieben, ohne den Raum zu
+    /// bewegen (T0097).
+    Room {
+        boundary: Vec<Vec2>,
+        /// Ankerpunkt des Textfeldes (Mitte des Textes).
+        label: Vec2,
+        #[serde(default = "default_text_height")]
+        height: f64,
+        /// Überschrift über dem Flächeninhalt.
+        #[serde(default = "default_room_heading")]
+        heading: String,
+    },
     /// Einzelmaß / Maßkette (linear).
     Dim {
         a: Vec2,
@@ -748,6 +767,7 @@ impl EntityKind {
             | EntityKind::Polyline { .. }
             | EntityKind::Spline { .. } => RANG_LINIE,
             EntityKind::Text { .. }
+            | EntityKind::Room { .. }
             | EntityKind::Dim { .. }
             | EntityKind::DimChain { .. }
             | EntityKind::ElevationPlan { .. }
@@ -763,6 +783,9 @@ impl Entity {
     }
 }
 
+fn default_room_heading() -> String {
+    "Zimmer".to_string()
+}
 fn default_pattern_scale() -> f64 {
     100.0
 }
@@ -802,6 +825,7 @@ impl EntityKind {
             EntityKind::Fill { .. } => "Füllfläche",
             EntityKind::Volume { .. } => "Volumen",
             EntityKind::Text { .. } => "Text",
+            EntityKind::Room { .. } => "Raumstempel",
             EntityKind::Dim { .. } => "Maß",
             EntityKind::DimChain { .. } => "Maßkette",
             EntityKind::ElevationPlan { .. } => "Grundriss-Kote",
@@ -833,6 +857,28 @@ impl EntityKind {
                 | EntityKind::ElevationPlan { .. }
                 | EntityKind::ElevationSection { .. }
         )
+    }
+}
+
+/// Beschriftung eines Raumstempels: Überschrift und Flächeninhalt.
+///
+/// Der Text ist **abgeleitet**, nie gespeichert: so stimmt er nach jeder
+/// Änderung der Umgrenzung ohne Nachziehen. Eine Quelle für Anzeige,
+/// Eigenschaften-Panel und Prüfungen — wer den Text woanders zusammenbaut,
+/// zeigt bei der nächsten Änderung etwas anderes an.
+pub fn room_text(
+    heading: &str,
+    boundary: &[Vec2],
+    unit: crate::units::Unit,
+    decimals: usize,
+) -> String {
+    let flaeche = crate::area::area_of(boundary, &[]);
+    let wert = unit.format_area(flaeche, decimals);
+    let kopf = heading.trim();
+    if kopf.is_empty() {
+        wert
+    } else {
+        format!("{kopf}\n{wert}")
     }
 }
 

@@ -584,7 +584,7 @@ pub fn entity_bbox(doc: &Document, e: &Entity) -> BBox {
 /// Der Kasten ist **gedreht wie der Text** (Viereck, keine achsenparallele
 /// Box) und bei mehrzeiligen Texten so hoch wie alle Zeilen zusammen.
 pub fn text_frame(doc: &Document, e: &Entity) -> Option<[Vec2; 4]> {
-    if !matches!(e.kind, EntityKind::Text { .. }) {
+    if !matches!(e.kind, EntityKind::Text { .. } | EntityKind::Room { .. }) {
         return None;
     }
     // Über die Anzeige gehen: dort steht der aufgelöste Text samt tatsächlicher
@@ -821,6 +821,42 @@ pub fn render_entity(
                     superscript: *superscript,
                     runs: runs.clone(),
                     font: *font,
+                }),
+                style: st,
+                entity: e.id,
+                layer: e.layer,
+            });
+        }
+        // Raumstempel: nur das Textfeld wird gezeichnet. Die Umgrenzung ist
+        // unsichtbar und nicht anklickbar; der Text entsteht bei jeder Anzeige
+        // neu aus ihr (`model::room_text`) und steht damit nach jeder
+        // Eckenänderung richtig.
+        EntityKind::Room {
+            boundary,
+            label,
+            height,
+            heading,
+        } => {
+            let txt = crate::model::room_text(
+                heading,
+                boundary,
+                doc.settings.dim_unit,
+                doc.settings.decimals,
+            );
+            dl.push(Prim {
+                shape: Shape::Text(TextPrim {
+                    pos: xf.apply(*label),
+                    text: txt,
+                    height: *height * xf.scale_factor(),
+                    angle: xf.rotation(),
+                    align: TextAlignH::Center,
+                    valign: TextAlignV::Middle,
+                    bold: false,
+                    italic: false,
+                    underline: false,
+                    superscript: false,
+                    runs: Vec::new(),
+                    font: TextFont::Sans,
                 }),
                 style: st,
                 entity: e.id,
@@ -3775,6 +3811,10 @@ fn entity_segments_tief(doc: &Document, e: &Entity, depth: usize) -> Vec<Seg> {
         EntityKind::ElevationPlan { .. } | EntityKind::ElevationSection { .. } => {
             out.extend(trefferbild(doc, e).segmente);
         }
+        // Raumstempel: die Fläche ist unsichtbar und damit keine Trefferfläche.
+        // Getroffen wird ausschließlich das Textfeld (Ankerpunkt, Rahmen kommt
+        // aus `text_frame_segments`).
+        EntityKind::Room { label, .. } => out.push(Seg::Line(*label, *label)),
         EntityKind::BlockRef {
             block,
             pos,

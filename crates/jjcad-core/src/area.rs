@@ -44,6 +44,9 @@ pub fn entity_area(e: &Entity) -> Option<f64> {
         }
         EntityKind::Fill { boundary, holes, .. }
         | EntityKind::Volume { boundary, holes, .. } => area_of(boundary, holes),
+        // Raumstempel: seine Umgrenzung ist eine Fläche, auch wenn sie nicht
+        // gezeichnet wird — Panel, Abfrage und Beschriftung rechnen damit.
+        EntityKind::Room { boundary, .. } => area_of(boundary, &[]),
         // Wandkörper: Länge × Dicke (Öffnungen zählen nicht ab, die Wand ist
         // der Körper selbst).
         EntityKind::Wall {
@@ -359,4 +362,140 @@ mod tests {
             (polygon_area(&ring).abs() - area_of(&aussen(), &[loch])).abs();
         assert!(diff < 1e-3, "Ringfläche weicht um {diff} mm² ab");
     }
+}
+
+
+// ---------------------------------------------------------------------------
+// Pole of Inaccessibility (T0097)
+// ---------------------------------------------------------------------------
+
+/// Abstand des Punktes zur nächsten Kante der Fläche — positiv **innerhalb**,
+/// negativ außerhalb.
+///
+/// Löcher zählen als Kante: die Mitte eines Raums mit Insel liegt nicht in
+/// der Insel, sondern im größten freien Bereich.
+pub fn signed_distance(p: Vec2, outer: &[Vec2], holes: &[Vec<Vec2>]) -> f64 {
+    let mut d = f64::INFINITY;
+    for ring in std::iter::once(outer).chain(holes.iter().map(|h| h.as_slice())) {
+        let n = ring.len();
+        if n < 2 {
+            continue;
+        }
+        for i in 0..n {
+            d = d.min(dist_point_segment(p, ring[i], ring[(i + 1) % n]));
+        }
+    }
+    if !d.is_finite() {
+        return 0.0;
+    }
+    if point_in_area(p, outer, holes) {
+        d
+    } else {
+        -d
+    }
+}
+
+/// Zelle der Suche nach dem „Pole of Inaccessibility".
+///
+/// `max` ist die größtmögliche Distanz, die ein Punkt dieser Zelle noch haben
+/// kann (`d + h·√2`); sie ordnet die Warteschlange — die Zelle mit dem größten
+/// möglichen Wert wird zuerst geteilt (Mapbox-polylabel-Verfahren).
+#[derive(Clone, Copy, Debug)]
+struct Zelle {
+    x: f64,
+    y: f64,
+    h: f64,
+    d: f64,
+    max: f64,
+}
+
+impl PartialEq for Zelle {
+    fn eq(&self, other: &Self) -> bool {
+        self.max.total_cmp(&other.max) == std::cmp::Ordering::Equal
+    }
+}
+impl Eq for Zelle {}
+impl PartialOrd for Zelle {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        Some(self.cmp(other))
+    }
+}
+impl Ord for Zelle {
+    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+        // Größter `max`-Wert zuerst (BinaryHeap ist ein Max-Heap).
+        self.max.total_cmp(&other.max)
+    }
+}
+
+/// Punkt in der Fläche mit dem größten Abstand zu allen Kanten.
+///
+/// Das ist der „Pole of Inaccessibility" — die Stelle, an der eine
+/// Raumbeschriftung am wenigsten von Wänden bedrängt wird. Die Suche beginnt
+/// beim Flächenschwerpunkt (liegt er außerhalb, an der ersten Ecke), legt ein
+/// Zellenraster über die Bounding-Box und teilt immer die Zelle mit dem
+/// größten möglichen Abstand, bis `precision` (mm) erreicht ist.
+///
+/// Eine Quelle für die Action `dim.room` und die Vorschau: der Stempel darf
+/// beim Abschluss nicht springen, weil zwei Stellen verschiedene Punkte
+/// rechnen.
+pub fn pole_of_inaccessibility(outer: &[Vec2], holes: &[Vec<Vec2>], precision: f64) -> Vec2 {
+    if outer.len() < 3 {
+        return outer.first().copied().unwrap_or(Vec2::ZERO);
+    }
+    let bbox = BBox::from_points(outer);
+    let breite = bbox.max.x - bbox.min.x;
+    let hoehe = bbox.max.y - bbox.min.y;
+    let mut beste = polygon_centroid(outer);
+    let mut bester = signed_distance(beste, outer, holes);
+    if !bester.is_finite() || bester <= 0.0 {
+        beste = outer[0];
+        bester = 0.0;
+    }
+    let zellweite = breite.min(hoehe);
+    if !zellweite.is_finite() || zellweite <= 1e-6 {
+        return beste;
+    }
+    let h = zellweite * 0.5;
+    let mut heap: std::collections::BinaryHeap<Zelle> = std::collections::BinaryHeap::new();
+    let mut x = bbox.min.x;
+    while x < bbox.max.x {
+        let mut y = bbox.min.y;
+        while y < bbox.max.y {
+            let (cx, cy) = (x + h, y + h);
+            let d = signed_distance(Vec2::new(cx, cy), outer, holes);
+            heap.push(Zelle {
+                x: cx,
+                y: cy,
+                h,
+                d,
+                max: d + h * std::f64::consts::SQRT_2,
+            });
+            y += zellweite;
+        }
+        x += zellweite;
+    }
+    let precision = precision.max(1e-3);
+    while let Some(z) = heap.pop() {
+        if z.d > bester {
+            beste = Vec2::new(z.x, z.y);
+            bester = z.d;
+        }
+        // Der Rest der Warteschlange kann den besten Wert nicht mehr schlagen.
+        if z.max - bester <= precision {
+            break;
+        }
+        let h2 = z.h * 0.5;
+        for (dx, dy) in [(-1.0, -1.0), (1.0, -1.0), (-1.0, 1.0), (1.0, 1.0)] {
+            let (cx, cy) = (z.x + dx * h2, z.y + dy * h2);
+            let d = signed_distance(Vec2::new(cx, cy), outer, holes);
+            heap.push(Zelle {
+                x: cx,
+                y: cy,
+                h: h2,
+                d,
+                max: d + h2 * std::f64::consts::SQRT_2,
+            });
+        }
+    }
+    beste
 }
