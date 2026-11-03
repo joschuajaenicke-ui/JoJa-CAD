@@ -172,22 +172,30 @@ schneidet die Öffnung aus der Wand und zeichnet die Laibungen.
 Alle Werte in **Papier-Millimetern**; der Renderer multipliziert sie mit dem
 Zeichnungsmaßstab.
 
-Einige Elemente der Bemaßung sind nach DIN 1356-1:2026-09, Bild 3 **Anteile
-der Texthöhe** und wachsen deshalb mit `text_height` (`render::DIM_MARKE_H` =
-0,6 h Begrenzungsstrich und Maßlinien-Überstand, `DIM_TEXT_ABSTAND_H` = 0,7 h
-Abstand der Maßzahl über der Maßlinie). Bei 2,5 mm Texthöhe sind das 1,5 mm
-Strich/Überstand und 1,75 mm Textabstand.
+Einige Elemente der Bemaßung sind nach DIN 1356-1:2026-09, Bild 3/Bild 4
+**Anteile der Texthöhe** und wachsen deshalb mit `text_height`
+(`render::DIM_MARKE_H` = 1,2 h Begrenzungsstrich, `DIM_UEBERSTAND_H` = 0,6 h
+Überstand der Maßlinie, `DIM_TEXT_ABSTAND_H` = 0,9 h Abstand der Maßzahl über
+der Maßlinie, `DIM_EXT_GAP_H`/`DIM_EXT_UEBER_H` = 0,4 h/0,25 h Maßhilfslinie).
+Bei 2,5 mm Texthöhe: 3,0 mm Strich, 1,5 mm Überstand, 2,25 mm Textabstand,
+1,0 mm Abstand am Bauteil und 0,625 mm über die Maßlinie hinaus.
+
+Die **Maßzahl** folgt DIN 1356-1, Tabelle 4, Zeile 2 („m und cm“): auf 5 mm
+gerundet, unter 1 m in Zentimetern, der halbe Zentimeter als **Hochzahl** —
+`11⁵` (11,5 cm), `1,12⁵` (1,125 m), `4,25`. Mit `dim_unit` = `cm` gilt Zeile 1
+(`88,5`), mit `mm` Zeile 3 (`3 885`, Tausendertrennung als Leerzeichen).
+Die Zahlen werden in DIN 1451 Mittelschrift gesetzt (§8.4).
 
 | Feld | Standard | Bedeutung |
 |---|---|---|
 | `text_height` | 2.5 | Texthöhe |
 | `arrow_size` | 2.0 | Größe von Pfeil und Punkt (der Schrägstrich folgt der Texthöhe) |
 | `arrow` | `"Slash"` | `Slash` (DIN 1356), `Arrow`, `Dot`, `None` |
-| `text_gap` | 0.8 | **Mindest**abstand Maßlinie → Maßzahl; unter 0,7 h greift der Normwert |
-| `ext_gap` | 1.5 | Abstand Bauteil → Hilfslinie |
-| `ext_overshoot` | 1.5 | Überstand der Hilfslinie über die Maßlinie |
+| `text_gap` | 0.8 | **Mindest**abstand Maßlinie → Maßzahl; unter 0,9 h greift der Normwert |
+| `ext_gap` | 1.5 | **Obergrenze** für den Abstand Bauteil → Hilfslinie (Normwert 0,4 h) |
+| `ext_overshoot` | 1.5 | **Obergrenze** für den Überstand über die Maßlinie (Normwert 0,25 h) |
 | `chain_gap` | 8.0 | Abstand zwischen Maßketten |
-| `decimals` | 2 | Nachkommastellen |
+| `decimals` | 2 | ohne Wirkung auf die Maßzahl (Tabelle 4 gibt die Stellen vor) |
 
 ## Dynamische Textfelder
 

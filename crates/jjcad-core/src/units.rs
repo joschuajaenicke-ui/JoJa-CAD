@@ -218,10 +218,84 @@ pub fn format_scale(scale: f64) -> String {
     }
 }
 
-/// Maßtext für Bemaßung: in der Anzeigeeinheit, ohne Einheitensuffix,
-/// mit führender Null bei Werten < 1 (DIN-üblich: 0,85).
-pub fn dim_text(mm: f64, unit: Unit, decimals: usize) -> String {
-    format_number(unit.from_mm(mm), decimals)
+/// Maßzahl nach DIN 1356-1:2026-09, Tabelle 4 — die Millimeter werden auf
+/// 5 mm **gerundet**, der halbe Zentimeter steht als **Hochzahl**.
+///
+/// | Einheit | Zeile | unter 1 m | über 1 m |
+/// |---|---|---|---|
+/// | `M`  | 2 „m und cm“ | 11,5 cm ▸ „11“ + „5“ | 1,125 m ▸ „1,12“ + „5“ |
+/// | `Cm` | 1 „cm“       | 88,5 ▸ „88,5“         | 388,5 ▸ „388,5“       |
+/// | `Mm` | 3 „mm“       | 885 ▸ „885“           | 3 885 ▸ „3 885“       |
+///
+/// Rückgabe: Hauptzahl und Hochzahl getrennt — der Satz stellt die Hochzahl
+/// kleiner und höher (`TextRun::superscript`).
+pub fn dim_zahl(mm: f64, unit: Unit) -> (String, Option<String>) {
+    // Feinste Stufe ist der halbe Zentimeter: alles auf 5 mm runden.
+    let gerundet = (mm / 5.0).round() * 5.0;
+    let vorzeichen = if gerundet < 0.0 { "-" } else { "" };
+    let betrag = gerundet.abs();
+    let hoch = |rest_mm: f64| {
+        if rest_mm > 0.01 {
+            Some("5".to_string())
+        } else {
+            None
+        }
+    };
+    match unit {
+        Unit::Mm => (format!("{vorzeichen}{}", tausender(betrag.round() as i64)), None),
+        Unit::Cm => {
+            let cm = betrag / 10.0;
+            let text = if (cm - cm.round()).abs() < 0.01 {
+                format!("{vorzeichen}{:.0}", cm)
+            } else {
+                format!("{vorzeichen}{:.1}", cm).replace('.', ",")
+            };
+            (text, None)
+        }
+        Unit::M => {
+            if betrag < 1000.0 - 0.01 {
+                // Unter einem Meter: Zentimeter, der halbe als Hochzahl („88 5“).
+                let cm = (betrag / 10.0).floor();
+                (format!("{vorzeichen}{:.0}", cm), hoch(betrag - cm * 10.0))
+            } else {
+                // Meter, zwei Ziffern Zentimeter, der halbe als Hochzahl („3,88 5“).
+                let meter = (betrag / 1000.0).floor();
+                let rest = betrag - meter * 1000.0;
+                let cm = (rest / 10.0).floor();
+                (
+                    format!("{vorzeichen}{:.0},{:02.0}", meter, cm),
+                    hoch(rest - cm * 10.0),
+                )
+            }
+        }
+    }
+}
+
+/// Tausendertrennung mit schmalem Leerzeichen (DIN 1356-1, Tabelle 4:
+/// „3 885“ — kein Tausenderpunkt).
+fn tausender(n: i64) -> String {
+    let s = n.abs().to_string();
+    let mut out = String::new();
+    for (i, c) in s.chars().enumerate() {
+        if i > 0 && (s.len() - i) % 3 == 0 {
+            out.push('\u{00a0}');
+        }
+        out.push(c);
+    }
+    if n < 0 {
+        out.insert(0, '-');
+    }
+    out
+}
+
+/// Maßtext für Bemaßung als eine Zeichenkette (Hochzahl angehängt) — für
+/// Breite, Auswahl und Anzeige ohne Auszeichnung.
+pub fn dim_text(mm: f64, unit: Unit, _decimals: usize) -> String {
+    let (haupt, hoch) = dim_zahl(mm, unit);
+    match hoch {
+        Some(h) => format!("{haupt}{h}"),
+        None => haupt,
+    }
 }
 
 /// Höhenkote im Schnitt formatieren: ±0,00 für die Bezugshöhe, sonst drei
@@ -262,6 +336,45 @@ mod tests {
         assert_eq!(parse_length("350", Unit::Cm), Some(3500.0));
         assert_eq!(parse_length("350mm", Unit::M), Some(350.0));
         assert_eq!(parse_length("-1,2", Unit::M), Some(-1200.0));
+    }
+
+    #[test]
+    fn masszahl_nach_din_1356_tabelle_4() {
+        // „m und cm“: unter 1 m Zentimeter, der halbe Zentimeter als Hochzahl
+        assert_eq!(dim_zahl(240.0, Unit::M), ("24".to_string(), None));
+        assert_eq!(
+            dim_zahl(885.0, Unit::M),
+            ("88".to_string(), Some("5".to_string()))
+        );
+        assert_eq!(
+            dim_zahl(115.0, Unit::M),
+            ("11".to_string(), Some("5".to_string()))
+        );
+        assert_eq!(
+            dim_zahl(3885.0, Unit::M),
+            ("3,88".to_string(), Some("5".to_string()))
+        );
+        assert_eq!(
+            dim_zahl(1125.0, Unit::M),
+            ("1,12".to_string(), Some("5".to_string()))
+        );
+        assert_eq!(dim_zahl(4250.0, Unit::M), ("4,25".to_string(), None));
+        // Auf 5 mm runden: 1 123 und 1 127 → 1,12 5; 1 128 → 1,13
+        assert_eq!(
+            dim_zahl(1123.0, Unit::M),
+            ("1,12".to_string(), Some("5".to_string()))
+        );
+        assert_eq!(
+            dim_zahl(1127.0, Unit::M),
+            ("1,12".to_string(), Some("5".to_string()))
+        );
+        assert_eq!(dim_zahl(1128.0, Unit::M), ("1,13".to_string(), None));
+        // Zeile 1 (cm) und Zeile 3 (mm, Tausendertrennung als Leerzeichen)
+        assert_eq!(dim_zahl(885.0, Unit::Cm), ("88,5".to_string(), None));
+        assert_eq!(dim_zahl(240.0, Unit::Cm), ("24".to_string(), None));
+        assert_eq!(dim_zahl(3885.0, Unit::Mm).0, "3\u{00a0}885");
+        // Der schlichte Text hängt die Hochzahl an.
+        assert_eq!(dim_text(3885.0, Unit::M, 2), "3,885");
     }
 
     #[test]

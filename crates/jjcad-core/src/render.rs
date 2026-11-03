@@ -7,7 +7,7 @@ use crate::geom::*;
 use crate::model::*;
 use crate::style::*;
 use crate::transform;
-use crate::units::{dim_text, elevation_section_text, elevation_text, format_number, format_scale};
+use crate::units::{dim_text, dim_zahl, elevation_section_text, elevation_text, format_number, format_scale};
 use crate::wall;
 use std::cell::OnceCell;
 
@@ -3055,19 +3055,22 @@ fn stuecke(s: Vec2, t: Vec2, schnitte: &[f64], halb: f64) -> Vec<(Vec2, Vec2)> {
 // Bemaßung (DIN 406 / DIN 1356)
 // ---------------------------------------------------------------------------
 
-/// Darstellung der Bemaßung nach DIN 1356-1:2026-09, Bild 3 — Länge des
-/// Begrenzungsstrichs (Schrägstrich) und Überstand der Maßlinie über die
-/// äußere Maßhilfslinie.
+/// Darstellung der Bemaßung nach DIN 1356-1:2026-09, Bild 3 und Bild 4.
+/// Alle Anteile beziehen sich auf die **Texthöhe h** — feste Millimeter
+/// stimmten nur für eine Schriftgröße.
 ///
-/// Bild 3 zeichnet bei 2,5 mm Texthöhe rund 1,5 mm Strich und 1,5 mm
-/// Überstand, also etwa 0,6 h. Anteile der Texthöhe statt fester
-/// Millimeter: sonst stimmt die Darstellung nur für eine Schriftgröße.
-pub const DIM_MARKE_H: f64 = 0.6;
+/// Bild 3/Bild 4 zeichnen den 45°-Begrenzungsstrich deutlich länger als die
+/// Ziffern hoch sind (rund 1,2 h), den Überstand der Maßlinie über die äußere
+/// Maßhilfslinie mit etwa 0,6 h und die Maßhilfslinie nur ein kurzes Stück
+/// über die Maßlinie hinaus.
+pub const DIM_MARKE_H: f64 = 1.2;
 pub const DIM_UEBERSTAND_H: f64 = 0.6;
-/// Abstand des Textankers über der Maßlinie. Der Anker ist die Unterkante der
-/// Zeilenbox (Unterlängen), deshalb 0,6 h: die Ziffern stehen damit rund 0,7 h
-/// über der Linie — so wie in Bild 3.
-pub const DIM_TEXT_ABSTAND_H: f64 = 0.6;
+/// Abstand des Textankers über der Maßlinie (Unterkante der Zeilenbox).
+pub const DIM_TEXT_ABSTAND_H: f64 = 0.9;
+/// Länge der Maßhilfslinie am Bauteil (Abstand) und über die Maßlinie hinaus —
+/// Obergrenzen; kleinere Werte aus `dim_style` gelten weiter.
+pub const DIM_EXT_GAP_H: f64 = 0.4;
+pub const DIM_EXT_UEBER_H: f64 = 0.25;
 
 struct DimGeom {
     /// zu bemaßende Punkte am Bauteil
@@ -3077,8 +3080,35 @@ struct DimGeom {
     da: Vec2,
     db: Vec2,
     text: String,
+    /// Läufe mit Hochzahl (halber Zentimeter, Tabelle 4)
+    runs: Vec<TextRun>,
     angle: f64,
 }
+
+/// Maßzahl samt Läufen: die Hochzahl des halben Zentimeters wird kleiner und
+/// höher gesetzt (DIN 1356-1:2026-09, Tabelle 4, Zeile „m und cm“).
+fn dim_text_runs(measure: f64, doc: &Document, resolve: bool) -> (String, Vec<TextRun>) {
+    let (haupt, hoch) = dim_zahl(measure, doc.settings.dim_unit);
+    let haupt: String = if resolve {
+        doc.resolve_text(&haupt)
+    } else {
+        haupt
+    };
+    let mut runs = vec![TextRun::plain(haupt.clone())];
+    let text = match hoch {
+        Some(h) => {
+            runs.push(TextRun {
+                text: h.clone(),
+                superscript: true,
+                ..Default::default()
+            });
+            format!("{haupt}{h}")
+        }
+        None => haupt,
+    };
+    (text, runs)
+}
+
 
 /// Richtung einer Maßlinie und die Einheitsrichtung ihres **Abstands**.
 ///
@@ -3216,26 +3246,25 @@ fn dim_geometry(
         DimAxis::Aligned => p0.dist(p1),
     };
     let angle = dir.angle();
-    let text = override_text
-        .map(|s| s.to_string())
-        .unwrap_or_else(|| {
-            dim_text(
-                measure,
-                doc.settings.dim_unit,
-                doc.dim_style.decimals,
-            )
-        });
+    let (text, runs) = match override_text {
+        Some(t) => {
+            let t = if ctx.resolve_text {
+                doc.resolve_text(t)
+            } else {
+                t.to_string()
+            };
+            (t.clone(), vec![TextRun::plain(t)])
+        }
+        None => dim_text_runs(measure, doc, ctx.resolve_text),
+    };
     let _ = format_number;
     DimGeom {
         wa,
         wb,
         da,
         db,
-        text: if ctx.resolve_text {
-            doc.resolve_text(&text)
-        } else {
-            text
-        },
+        text,
+        runs,
         angle,
     }
 }
@@ -3256,8 +3285,10 @@ fn render_dim(
     let g = dim_geometry(ctx, p0, p1, line_pos, axis, override_text);
     let a = ctx.a(1.0);
     let style = &ctx.doc.dim_style;
-    let ext_gap = ctx.a(style.ext_gap);
-    let over = ctx.a(style.ext_overshoot);
+    // Maßhilfslinie: kurz am Bauteil und nur ein Stück über die Maßlinie hinaus
+    // (Bild 3/Bild 4). Die Werte in `dim_style` sind Obergrenzen.
+    let ext_gap = ctx.a(style.ext_gap.min(style.text_height * DIM_EXT_GAP_H));
+    let over = ctx.a(style.ext_overshoot.min(style.text_height * DIM_EXT_UEBER_H));
     let arrow = ctx.a(style.arrow_size);
     let text_h = ctx.a(style.text_height);
     // Bild 3: Begrenzungsstrich und Überstand hängen an der Texthöhe, nicht an
@@ -3371,8 +3402,9 @@ fn render_dim(
             italic: false,
             underline: false,
             superscript: false,
-            runs: Vec::new(),
-            font: TextFont::Sans,
+            runs: g.runs,
+            // Bauzeichnungsschrift nach DIN 1356-1, §8.4 (DIN 1451)
+            font: TextFont::DinMittel,
         }),
         style: *st,
         entity: e.id,
@@ -3395,8 +3427,8 @@ fn render_dim_chain(
     }
     let style = &ctx.doc.dim_style;
     let a = ctx.a(1.0);
-    let ext_gap = ctx.a(style.ext_gap);
-    let over = ctx.a(style.ext_overshoot);
+    let ext_gap = ctx.a(style.ext_gap.min(style.text_height * DIM_EXT_GAP_H));
+    let over = ctx.a(style.ext_overshoot.min(style.text_height * DIM_EXT_UEBER_H));
     let arrow = ctx.a(style.arrow_size);
     let text_h = ctx.a(style.text_height);
     // Bild 3: Begrenzungsstrich, Überstand der Maßlinie und Textabstand sind
@@ -3478,12 +3510,7 @@ fn render_dim_chain(
             DimAxis::Y => (p1.y - p0.y).abs(),
             DimAxis::Aligned => p0.dist(p1),
         };
-        let txt = dim_text(measure, ctx.doc.settings.dim_unit, style.decimals);
-        let txt = if ctx.resolve_text {
-            ctx.doc.resolve_text(&txt)
-        } else {
-            txt
-        };
+        let (txt, runs) = dim_text_runs(measure, ctx.doc, ctx.resolve_text);
         // Pfeile nur an den Segmentenden (Schrägstrich und Punkt stehen
         // bereits einmal je Basispunkt oben)
         match style.arrow {
@@ -3536,8 +3563,9 @@ fn render_dim_chain(
                 italic: false,
                 underline: false,
                 superscript: false,
-                runs: Vec::new(),
-                font: TextFont::Sans,
+                runs,
+                // Bauzeichnungsschrift nach DIN 1356-1, §8.4 (DIN 1451)
+                font: TextFont::DinMittel,
             }),
             style: *st,
             entity: e.id,
