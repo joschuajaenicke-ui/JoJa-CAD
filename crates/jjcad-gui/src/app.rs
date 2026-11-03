@@ -249,10 +249,12 @@ impl Einfuegemodus {
     /// andere Bedeutung hat (Basislinie des Rechtecks, Mittelachse der Ellipse).
     pub fn label(self, tool_id: &str) -> &'static str {
         match (self, tool_id) {
-            (Einfuegemodus::Achsenparallel, "draw.ellipse") => "Über Mittelpunkt",
-            (Einfuegemodus::Achsenparallel, _) => "Über Ecken",
-            (Einfuegemodus::Basislinie, "draw.ellipse") => "Mittelachse + Breite",
-            (Einfuegemodus::Basislinie, _) => "Basislinie + Höhe",
+            (Einfuegemodus::Achsenparallel, "draw.ellipse") => {
+                rb("ui.einfuegemodus.mittelpunkt")
+            }
+            (Einfuegemodus::Achsenparallel, _) => rb("ui.einfuegemodus.ecken"),
+            (Einfuegemodus::Basislinie, "draw.ellipse") => rb("ui.einfuegemodus.mittelachse"),
+            (Einfuegemodus::Basislinie, _) => rb("ui.einfuegemodus.basislinie"),
         }
     }
 }
@@ -277,8 +279,8 @@ impl Bogenmodus {
     /// Beschriftung im Dropdown und im Ribbon-Menü.
     pub fn label(self) -> &'static str {
         match self {
-            Bogenmodus::DreiPunkte => "Drei Punkte",
-            Bogenmodus::Mittelpunkt => "Mittelpunkt, Start, Ende",
+            Bogenmodus::DreiPunkte => rb("ui.bogenmodus.drei_punkte"),
+            Bogenmodus::Mittelpunkt => rb("ui.bogenmodus.mittelpunkt_start_ende"),
         }
     }
 }
@@ -474,13 +476,15 @@ impl ToolOptions {
 /// „Auswählen" steht bewusst nicht in der Liste: Klicken auf der Zeichenfläche
 /// wählt ohnehin aus, der Knopf war ohne Funktion (t_2b62367d). Der Befehl
 /// `modify.select` bleibt für Tastatur, Inventar und MCP erhalten.
-pub const RIBBON_BEARBEITEN: [(&str, &str, &str); 5] = [
-    ("modify.move", "move", "Verschieben"),
+/// Werkzeuge des Reiters „Ändern" — nur Id und Symbol; die Beschriftung kommt
+/// beim Zeichnen aus dem Sprachkatalog (T0103), damit sie der Sprache folgt.
+pub const RIBBON_BEARBEITEN: [(&str, &str); 5] = [
+    ("modify.move", "move"),
     // Kopieren ist eine geteilte Schaltfläche (siehe `copy_group_button`)
-    ("modify.copy", "copy-base", "Kopieren mit Basispunkt"),
-    ("modify.rotate", "rotate", "Drehen"),
-    ("modify.mirror", "mirror", "Spiegeln"),
-    ("modify.scale", "scale", "Skalieren"),
+    ("modify.copy", "copy-base"),
+    ("modify.rotate", "rotate"),
+    ("modify.mirror", "mirror"),
+    ("modify.scale", "scale"),
 ];
 
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -506,17 +510,22 @@ impl RibbonTab {
         RibbonTab::Blatt,
         RibbonTab::Ansicht,
     ];
-    pub fn label(self) -> &'static str {
+    /// Katalogschlüssel der Reiterbeschriftung (T0103).
+    pub fn key(self) -> &'static str {
         match self {
-            RibbonTab::Datei => "Start",
-            RibbonTab::Zeichnen => "Zeichnen",
-            RibbonTab::Architektur => "Architektur",
-            RibbonTab::Aendern => "Ändern",
-            RibbonTab::Bemassung => "Bemaßung",
-            RibbonTab::Bloecke => "Blöcke",
-            RibbonTab::Blatt => "Blatt",
-            RibbonTab::Ansicht => "Ansicht",
+            RibbonTab::Datei => "ribbon.tab.start",
+            RibbonTab::Zeichnen => "ribbon.tab.zeichnen",
+            RibbonTab::Architektur => "ribbon.tab.architektur",
+            RibbonTab::Aendern => "ribbon.tab.aendern",
+            RibbonTab::Bemassung => "ribbon.tab.bemassung",
+            RibbonTab::Bloecke => "ribbon.tab.bloecke",
+            RibbonTab::Blatt => "ribbon.tab.blatt",
+            RibbonTab::Ansicht => "ribbon.tab.ansicht",
         }
+    }
+
+    pub fn label(self) -> &'static str {
+        jjcad_core::i18n::tr(self.key())
     }
     pub fn group(self) -> ActionGroup {
         match self {
@@ -806,6 +815,19 @@ pub fn build_id() -> String {
 }
 
 /// Anzeige der Build-Kennung, z. B. "v0.2.42 (9b34136)".
+/// Kurzform für einen Katalogtext (T0103) — hält die Ribbon-Zeilen lesbar.
+pub fn rb(key: &'static str) -> &'static str {
+    jjcad_core::i18n::tr(key)
+}
+
+/// Beschriftung einer Action in der eingestellten Sprache (T0103). Der Text
+/// wird beim Zeichnen nachgeschlagen — eine Umschaltung wirkt ohne Neustart.
+pub fn aktion_label(id: &str) -> &'static str {
+    jjcad_core::actions::action(id)
+        .map(|d| d.label())
+        .unwrap_or("")
+}
+
 pub fn build_label() -> String {
     format!("v{} ({} · {})", VERSION, build_id(), BUILD_HASH)
 }
@@ -865,9 +887,9 @@ impl FillKind {
 
     pub fn label(self) -> &'static str {
         match self {
-            FillKind::Area => "Fläche",
-            FillKind::Hatch => "Schraffur",
-            FillKind::Volume => "Volumen",
+            FillKind::Area => rb("ui.fillkind.flaeche"),
+            FillKind::Hatch => rb("ui.fillkind.schraffur"),
+            FillKind::Volume => rb("ui.fillkind.volumen"),
         }
     }
 
@@ -893,9 +915,9 @@ impl FillInput {
 
     pub fn label(self) -> &'static str {
         match self {
-            Self::Contour => "Kontur anklicken",
-            Self::Points => "Punkte setzen",
-            Self::Paint => "Farbeimer",
+            Self::Contour => rb("ui.fillinput.kontur"),
+            Self::Points => rb("ui.fillinput.punkte"),
+            Self::Paint => rb("ui.fillinput.farbeimer"),
         }
     }
 
@@ -953,8 +975,8 @@ impl CopyInput {
 
     pub fn label(self) -> &'static str {
         match self {
-            Self::Clipboard => "Kopieren",
-            Self::BasePoint => "Kopieren mit Basispunkt",
+            Self::Clipboard => rb("ui.copyinput.kopieren"),
+            Self::BasePoint => rb("ui.copyinput.basispunkt"),
         }
     }
 
@@ -1060,6 +1082,8 @@ impl App {
     pub fn with_ctx(ctx: egui::Context) -> Self {
         theme::install(&ctx);
         let prefs = UserPrefs::load();
+        // T0103: die gespeicherte Sprache gilt ab dem ersten Bild.
+        jjcad_core::i18n::set_language(prefs.language);
         let mut s = Session::new();
         s.doc.name = "Unbenannt".into();
         // App-weite Vorliebe für den Wandkontur-Fang übernehmen, damit die
@@ -2736,7 +2760,7 @@ impl App {
                         match self.session_mut().execute(&last, &params) {
                             Ok(_) => {
                                 self.mark_changed();
-                                self.toast(format!("Verlauf · wiederholt: {}", actions::action(&last).map(|d| d.label).unwrap_or("")));
+                                self.toast(format!("Verlauf · wiederholt: {}", actions::action(&last).map(|d| d.label()).unwrap_or("")));
                             }
                             Err(e) => self.toast(e),
                         }
@@ -4333,80 +4357,81 @@ fn rail(ui: &mut egui::Ui, icon: &str, tooltip: &str, chevron: &str) -> bool {
             ui.add_space(8.0);
             match tab {
                 RibbonTab::Datei => {
-                    self.group(ui, "Zeichnung", |ui, app| {
-                        if widgets::ribbon_button(ui, "new", "Neu", false).clicked() {
+                    self.group(ui, "ribbon.group.zeichnung", |ui, app| {
+                        if widgets::ribbon_button(ui, "new", rb("ribbon.new"), false).clicked() {
                             app.run_action(ui.ctx(), "file.new");
                         }
-                        if widgets::ribbon_button(ui, "open", "Öffnen", false).clicked() {
+                        if widgets::ribbon_button(ui, "open", rb("ribbon.open"), false).clicked() {
                             app.run_action(ui.ctx(), "file.open");
                         }
-                        if widgets::ribbon_button(ui, "save", "Speichern", false).clicked() {
+                        if widgets::ribbon_button(ui, "save", rb("ribbon.save"), false).clicked() {
                             app.run_action(ui.ctx(), "file.save");
                         }
                     });
                     widgets::vline(ui, RIBBON_GROUP_H);
-                    self.group(ui, "Ausgabe", |ui, app| {
-                        if widgets::ribbon_button(ui, "pdf", "PDF", false).clicked() {
+                    self.group(ui, "ribbon.group.ausgabe", |ui, app| {
+                        if widgets::ribbon_button(ui, "pdf", rb("ribbon.pdf"), false).clicked() {
                             app.run_action(ui.ctx(), "file.export_pdf");
                         }
-                        if widgets::ribbon_button(ui, "dxf", "DXF", false).clicked() {
+                        if widgets::ribbon_button(ui, "dxf", rb("ribbon.dxf"), false).clicked() {
                             app.run_action(ui.ctx(), "file.export_dxf");
                         }
-                        if widgets::ribbon_button(ui, "image", "PNG", false).clicked() {
+                        if widgets::ribbon_button(ui, "image", rb("ribbon.png"), false).clicked() {
                             app.run_action(ui.ctx(), "file.export_png");
                         }
-                        if widgets::ribbon_button(ui, "import", "Import", false).clicked() {
+                        if widgets::ribbon_button(ui, "import", rb("ribbon.import"), false).clicked() {
                             app.run_action(ui.ctx(), "file.import_dxf");
                         }
-                        if widgets::ribbon_button(ui, "pdf", "PDF einfügen", false).clicked() {
+                        if widgets::ribbon_button(ui, "pdf", rb("ribbon.pdf_insert"), false).clicked() {
                             app.run_action(ui.ctx(), "file.import.pdf");
                         }
                     });
                     widgets::vline(ui, RIBBON_GROUP_H);
-                    self.group(ui, "Zwischenablage", |ui, app| {
+                    self.group(ui, "ribbon.group.zwischenablage", |ui, app| {
                         // Kopieren ist eine geteilte Schaltfläche: Hauptfläche
                         // führt den zuletzt gewählten Modus aus, der Pfeil
                         // öffnet die Auswahl (Zwischenablage / Basispunkt).
                         app.copy_group_button(ui);
-                        if widgets::ribbon_button(ui, "import", "Einfügen", false).clicked() {
+                        if widgets::ribbon_button(ui, "import", rb("ribbon.paste"), false).clicked() {
                             app.paste_clipboard();
                         }
-                        if widgets::ribbon_button(ui, "erase", "Ausschneiden", false).clicked() {
+                        if widgets::ribbon_button(ui, "erase", rb("ribbon.cut"), false).clicked() {
                             app.copy_selection(true);
                         }
                     });
                     widgets::vline(ui, RIBBON_GROUP_H);
-                    self.group(ui, "Projekt", |ui, app| {
-                        if widgets::ribbon_button(ui, "info", "Projektdaten", false).clicked() {
+                    self.group(ui, "ribbon.group.projekt", |ui, app| {
+                        if widgets::ribbon_button(ui, "info", rb("ribbon.project"), false).clicked() {
                             app.ui.project_dialog = true;
                         }
-                        if widgets::ribbon_button(ui, "settings", "Einstellungen", false).clicked() {
+                        if widgets::ribbon_button(ui, "settings", rb("ribbon.settings"), false).clicked() {
                             app.ui.settings_open = true;
                         }
                     });
                     widgets::vline(ui, RIBBON_GROUP_H);
-                    self.group(ui, "Ansicht", |ui, app| {
-                        if widgets::ribbon_button(ui, "inventory", "Inventar", app.ui.inventory_open).clicked() {
+                    self.group(ui, "ribbon.group.ansicht", |ui, app| {
+                        if widgets::ribbon_button(ui, "inventory", rb("ribbon.inventory"), app.ui.inventory_open).clicked() {
                             app.run_action(ui.ctx(), "view.inventory");
                         }
-                        if widgets::ribbon_button(ui, "keyboard", "Tasten", app.ui.keymap_open).clicked() {
+                        if widgets::ribbon_button(ui, "keyboard", rb("ribbon.keys"), app.ui.keymap_open).clicked() {
                             app.ui.keymap_open = !app.ui.keymap_open;
                         }
-                        if widgets::ribbon_button(ui, "hotbar", "Hotbar", false).clicked() {
+                        if widgets::ribbon_button(ui, "hotbar", rb("ribbon.hotbar"), false).clicked() {
                             app.run_action(ui.ctx(), "view.hotbar_next");
                         }
                     });
                 }
                 RibbonTab::Zeichnen => {
-                    self.group(ui, "Grundelemente", |ui, app| {
-                        for (id, icon, label) in [
-                            ("draw.line", "line", "Linie"),
-                            ("draw.polyline", "polyline", "Polylinie"),
-                            ("draw.spline", "spline", "Spline"),
-                            ("draw.rect", "rect", "Rechteck"),
-                            ("draw.circle", "circle", "Kreis"),
-                            ("draw.arc", "arc", "Bogen"),
+                    self.group(ui, "ribbon.group.grundelemente", |ui, app| {
+                        for (id, icon) in [
+                            ("draw.line", "line"),
+                            ("draw.polyline", "polyline"),
+                            ("draw.spline", "spline"),
+                            ("draw.rect", "rect"),
+                            ("draw.circle", "circle"),
+                            ("draw.arc", "arc"),
                         ] {
+                            let label = aktion_label(id);
                             // Rechteck trägt zwei Einfügemodi — der Pfeil am
                             // Knopf öffnet sie (Über Ecken / Basislinie + Höhe).
                             if id == "draw.rect" {
@@ -4425,7 +4450,7 @@ fn rail(ui: &mut egui::Ui, icon: &str, tooltip: &str, chevron: &str) -> bool {
                         }
                     });
                     widgets::vline(ui, RIBBON_GROUP_H);
-                    self.group(ui, "Füllen", |ui, app| {
+                    self.group(ui, "ribbon.group.fuellen", |ui, app| {
                         // Zwei geteilte Schaltflächen: Fläche und Schraffur.
                         // Der Pfeil öffnet die Eingabemodi, der Knopf startet
                         // den zuletzt benutzten — das Icon zeigt ihn an.
@@ -4433,7 +4458,7 @@ fn rail(ui: &mut egui::Ui, icon: &str, tooltip: &str, chevron: &str) -> bool {
                         app.fill_group_button(ui, FillKind::Hatch);
                         // Flächen bearbeiten (T0090): Vereinigen wirkt auf die
                         // Auswahl, Schneiden fragt eine Punktfolge ab.
-                        if widgets::ribbon_button(ui, "union", "Vereinigen", false)
+                        if widgets::ribbon_button(ui, "union", rb("ribbon.union"), false)
                             .on_hover_text(
                                 "Zwei oder mehr angrenzende Füllflächen zu einer vereinigen",
                             )
@@ -4444,7 +4469,7 @@ fn rail(ui: &mut egui::Ui, icon: &str, tooltip: &str, chevron: &str) -> bool {
                         if widgets::ribbon_button(
                             ui,
                             "split",
-                            "Schneiden",
+                            rb("ribbon.split"),
                             app.tool_id() == Some("modify.area.split"),
                         )
                         .on_hover_text("Fläche entlang einer Punktfolge in zwei Teile schneiden")
@@ -4454,12 +4479,13 @@ fn rail(ui: &mut egui::Ui, icon: &str, tooltip: &str, chevron: &str) -> bool {
                         }
                     });
                     widgets::vline(ui, RIBBON_GROUP_H);
-                    self.group(ui, "Weitere", |ui, app| {
-                        for (id, icon, label) in [
-                            ("draw.ellipse", "ellipse", "Ellipse"),
-                            ("draw.point", "point", "Punkt"),
-                            ("draw.text", "text", "Text"),
+                    self.group(ui, "ribbon.group.weitere", |ui, app| {
+                        for (id, icon) in [
+                            ("draw.ellipse", "ellipse"),
+                            ("draw.point", "point"),
+                            ("draw.text", "text"),
                         ] {
+                            let label = aktion_label(id);
                             // Ellipse ebenfalls mit zwei Einfügemodi (Über
                             // Mittelpunkt / Mittelachse + Breite).
                             if id == "draw.ellipse" {
@@ -4473,13 +4499,14 @@ fn rail(ui: &mut egui::Ui, icon: &str, tooltip: &str, chevron: &str) -> bool {
                     });
                 }
                 RibbonTab::Architektur => {
-                    self.group(ui, "Bauteile", |ui, app| {
-                        for (id, icon, label) in [
-                            ("draw.wall", "wall", "Wand"),
-                            ("draw.door", "door", "Tür"),
-                            ("draw.window", "window", "Fenster"),
-                            ("draw.stair", "stair", "Treppe"),
+                    self.group(ui, "ribbon.group.bauteile", |ui, app| {
+                        for (id, icon) in [
+                            ("draw.wall", "wall"),
+                            ("draw.door", "door"),
+                            ("draw.window", "window"),
+                            ("draw.stair", "stair"),
                         ] {
+                            let label = aktion_label(id);
                             if widgets::ribbon_button(ui, icon, label, app.tool_id() == Some(id)).clicked() {
                                 app.start_tool(id);
                             }
@@ -4489,8 +4516,9 @@ fn rail(ui: &mut egui::Ui, icon: &str, tooltip: &str, chevron: &str) -> bool {
                     });
                 }
                 RibbonTab::Aendern => {
-                    self.group(ui, "Bearbeiten", |ui, app| {
-                        for (id, icon, label) in RIBBON_BEARBEITEN {
+                    self.group(ui, "ribbon.group.bearbeiten", |ui, app| {
+                        for (id, icon) in RIBBON_BEARBEITEN {
+                            let label = aktion_label(id);
                             // Kopieren ist eine geteilte Schaltfläche (zwei
                             // Kopierfunktionen) — Platz und Reihenfolge bleiben
                             // wie in der Liste vorgegeben.
@@ -4504,15 +4532,16 @@ fn rail(ui: &mut egui::Ui, icon: &str, tooltip: &str, chevron: &str) -> bool {
                         }
                     });
                     widgets::vline(ui, RIBBON_GROUP_H);
-                    self.group(ui, "Geometrie", |ui, app| {
-                        for (id, icon, label) in [
-                            ("modify.offset", "offset", "Versetzen"),
-                            ("modify.trim", "trim", "Stutzen"),
-                            ("modify.extend", "extend", "Verlängern"),
-                            ("modify.intersect", "intersect", "Verschneiden"),
-                            ("modify.explode", "explode", "Zerlegen"),
-                            ("modify.erase", "erase", "Löschen"),
+                    self.group(ui, "ribbon.group.geometrie", |ui, app| {
+                        for (id, icon) in [
+                            ("modify.offset", "offset"),
+                            ("modify.trim", "trim"),
+                            ("modify.extend", "extend"),
+                            ("modify.intersect", "intersect"),
+                            ("modify.explode", "explode"),
+                            ("modify.erase", "erase"),
                         ] {
+                            let label = aktion_label(id);
                             if widgets::ribbon_button(ui, icon, label, app.tool_id() == Some(id)).clicked() {
                                 app.start_tool(id);
                             }
@@ -4521,7 +4550,7 @@ fn rail(ui: &mut egui::Ui, icon: &str, tooltip: &str, chevron: &str) -> bool {
                     widgets::vline(ui, RIBBON_GROUP_H);
                     // Zeichenreihenfolge: dieselben vier Funktionen wie im
                     // Objekt-Kontextmenü, hier für die aktuelle Auswahl.
-                    self.group(ui, "Reihenfolge", |ui, app| {
+                    self.group(ui, "ribbon.group.reihenfolge", |ui, app| {
                         for (icon, label, tip, front) in [
                             (
                                 "order-front",
@@ -4567,12 +4596,13 @@ fn rail(ui: &mut egui::Ui, icon: &str, tooltip: &str, chevron: &str) -> bool {
                         }
                     });
                     widgets::vline(ui, RIBBON_GROUP_H);
-                    self.group(ui, "Sonstiges", |ui, app| {
-                        for (id, icon, label) in [
-                            ("modify.quickselect", "quickselect", "Schnellauswahl"),
-                            ("edit.undo", "undo", "Zurück"),
-                            ("edit.redo", "redo", "Vor"),
+                    self.group(ui, "ribbon.group.sonstiges", |ui, app| {
+                        for (id, icon) in [
+                            ("modify.quickselect", "quickselect"),
+                            ("edit.undo", "undo"),
+                            ("edit.redo", "redo"),
                         ] {
+                            let label = aktion_label(id);
                             let aktiv = app.tool_id() == Some(id);
                             if widgets::ribbon_button(ui, icon, label, aktiv).clicked() {
                                 app.run_action(ui.ctx(), id);
@@ -4581,47 +4611,48 @@ fn rail(ui: &mut egui::Ui, icon: &str, tooltip: &str, chevron: &str) -> bool {
                     });
                 }
                 RibbonTab::Bemassung => {
-                    self.group(ui, "Maße", |ui, app| {
-                        for (id, icon, label) in [
-                            ("dim.linear", "dim", "Maß"),
-                            ("dim.chain", "dimchain", "Maßkette"),
-                            ("dim.elevation.plan", "elevation", "Grundriss-Kote"),
-                            ("dim.elevation.section", "elevation-section", "Schnitt-Kote"),
-                            ("dim.room", "room", "Raumstempel"),
+                    self.group(ui, "ribbon.group.masse", |ui, app| {
+                        for (id, icon) in [
+                            ("dim.linear", "dim"),
+                            ("dim.chain", "dimchain"),
+                            ("dim.elevation.plan", "elevation"),
+                            ("dim.elevation.section", "elevation-section"),
+                            ("dim.room", "room"),
                         ] {
+                            let label = aktion_label(id);
                             if widgets::ribbon_button(ui, icon, label, app.tool_id() == Some(id)).clicked() {
                                 app.start_tool(id);
                             }
                         }
                     });
                     widgets::vline(ui, RIBBON_GROUP_H);
-                    self.group(ui, "Maßketten", |ui, app| {
+                    self.group(ui, "ribbon.group.massketten", |ui, app| {
                         // Maßeinheit, Textgröße, Maßstab und Bogensymbole stehen
                         // ausschließlich im Einstellungen-Dialog (Abschnitt
                         // „Bemaßung") — eine Stelle für jeden Wert.
-                        if widgets::ribbon_button(ui, "settings", "Einstellungen", false).clicked() {
+                        if widgets::ribbon_button(ui, "settings", rb("ribbon.settings"), false).clicked() {
                             app.ui.settings_open = true;
                         }
                     });
                 }
                 RibbonTab::Bloecke => {
-                    self.group(ui, "Bibliothek", |ui, app| {
-                        if widgets::ribbon_button(ui, "library", "Block-Manager", app.ui.inventory_open && app.ui.inventory_tab == 1).clicked() {
+                    self.group(ui, "ribbon.group.bibliothek", |ui, app| {
+                        if widgets::ribbon_button(ui, "library", rb("ribbon.block_manager"), app.ui.inventory_open && app.ui.inventory_tab == 1).clicked() {
                             app.ui.inventory_open = true;
                             app.ui.inventory_tab = 1;
                         }
-                        if widgets::ribbon_button(ui, "block", "Einfügen", app.tool_id() == Some("block.insert")).clicked() {
+                        if widgets::ribbon_button(ui, "block", rb("ribbon.block_insert"), app.tool_id() == Some("block.insert")).clicked() {
                             app.start_tool("block.insert");
                         }
-                        if widgets::ribbon_button(ui, "blocknew", "Aus Auswahl", false).clicked() {
+                        if widgets::ribbon_button(ui, "blocknew", rb("ribbon.block_from_selection"), false).clicked() {
                             app.run_action(ui.ctx(), "block.create");
                         }
-                        if widgets::ribbon_button(ui, "explode", "Zerlegen", false).clicked() {
+                        if widgets::ribbon_button(ui, "explode", rb("ribbon.explode"), false).clicked() {
                             app.run_action(ui.ctx(), "modify.explode");
                         }
                     });
                     widgets::vline(ui, RIBBON_GROUP_H);
-                    self.group(ui, "Schnellzugriff", |ui, app| {
+                    self.group(ui, "ribbon.group.schnellzugriff", |ui, app| {
                         let blocks: Vec<(String, String)> = app
                             .doc()
                             .blocks
@@ -4639,11 +4670,11 @@ fn rail(ui: &mut egui::Ui, icon: &str, tooltip: &str, chevron: &str) -> bool {
                     });
                 }
                 RibbonTab::Blatt => {
-                    self.group(ui, "Blätter", |ui, app| {
-                        if widgets::ribbon_button(ui, "sheet", "Neues Blatt", false).clicked() {
+                    self.group(ui, "ribbon.group.blaetter", |ui, app| {
+                        if widgets::ribbon_button(ui, "sheet", rb("ribbon.sheet_new"), false).clicked() {
                             app.run_action(ui.ctx(), "sheet.new");
                         }
-                        if widgets::ribbon_button(ui, "viewport", "Ansicht", app.tool_id() == Some("sheet.viewport_tool")).clicked() {
+                        if widgets::ribbon_button(ui, "viewport", rb("ribbon.viewport"), app.tool_id() == Some("sheet.viewport_tool")).clicked() {
                             if matches!(app.tab().tab, TabKind::Sheet(_)) {
                                 app.start_tool("sheet.viewport_tool");
                                 app.toast("Ansichtsfenster · Rechteck aufziehen");
@@ -4651,20 +4682,21 @@ fn rail(ui: &mut egui::Ui, icon: &str, tooltip: &str, chevron: &str) -> bool {
                                 app.toast("Blatt · zuerst ein Blatt öffnen");
                             }
                         }
-                        if widgets::ribbon_button(ui, "pdf", "Blatt-PDF", false).clicked() {
+                        if widgets::ribbon_button(ui, "pdf", rb("ribbon.sheet_pdf"), false).clicked() {
                             app.run_action(ui.ctx(), "sheet.pdf");
                         }
                     });
                     widgets::vline(ui, RIBBON_GROUP_H);
                     // Papierraum: dieselben Zeichenwerkzeuge wie im Modell.
                     // Der Plankopf besteht aus normalen Linien und Textfeldern.
-                    self.group(ui, "Papierraum", |ui, app| {
+                    self.group(ui, "ribbon.group.papierraum", |ui, app| {
                         if matches!(app.tab().tab, TabKind::Sheet(_)) {
-                            for (icon, label, action) in [
-                                ("line", "Linie", "draw.line"),
-                                ("rect", "Rechteck", "draw.rect"),
-                                ("text", "Text", "draw.text"),
+                            for (icon, action) in [
+                                ("line", "draw.line"),
+                                ("rect", "draw.rect"),
+                                ("text", "draw.text"),
                             ] {
+                                let label = aktion_label(action);
                                 if widgets::ribbon_button(ui, icon, label, app.tool_id() == Some(action)).clicked() {
                                     app.start_tool(action);
                                 }
@@ -4674,7 +4706,7 @@ fn rail(ui: &mut egui::Ui, icon: &str, tooltip: &str, chevron: &str) -> bool {
                         }
                     });
                     widgets::vline(ui, RIBBON_GROUP_H);
-                    self.group(ui, "Blatteinstellungen", |ui, app| {
+                    self.group(ui, "ribbon.group.blatteinstellungen", |ui, app| {
                         if let TabKind::Sheet(id) = app.tab().tab {
                             let mut paper = app.doc().sheet(id).map(|s| s.paper).unwrap_or_default();
                             let mut landscape = app.doc().sheet(id).map(|s| s.landscape).unwrap_or(true);
@@ -4718,24 +4750,24 @@ fn rail(ui: &mut egui::Ui, icon: &str, tooltip: &str, chevron: &str) -> bool {
                     });
                 }
                 RibbonTab::Ansicht => {
-                    self.group(ui, "Zoom", |ui, app| {
-                        if widgets::ribbon_button(ui, "zoomfit", "Alles", false).clicked() {
+                    self.group(ui, "ribbon.group.zoom", |ui, app| {
+                        if widgets::ribbon_button(ui, "zoomfit", rb("ribbon.zoom_all"), false).clicked() {
                             app.fit_view();
                         }
-                        if widgets::ribbon_button(ui, "zoomin", "Größer", false).clicked() {
+                        if widgets::ribbon_button(ui, "zoomin", rb("ribbon.zoom_in"), false).clicked() {
                             app.zoom_by(1.25);
                         }
-                        if widgets::ribbon_button(ui, "zoomout", "Kleiner", false).clicked() {
+                        if widgets::ribbon_button(ui, "zoomout", rb("ribbon.zoom_out"), false).clicked() {
                             app.zoom_by(0.8);
                         }
                     });
                     widgets::vline(ui, RIBBON_GROUP_H);
-                    self.group(ui, "Drehen", |ui, app| {
+                    self.group(ui, "ribbon.group.drehen", |ui, app| {
                         // Bleibt gedrückt, solange die Ansicht gedreht ist; ein
                         // zweiter Klick stellt die Ausgangsorientierung her.
                         let gedreht = app.current_view().ist_gedreht();
                         let laeuft = app.tool_id() == Some("view.rotate_tool");
-                        if widgets::ribbon_button(ui, "rotate", "Drehen", gedreht || laeuft).clicked() {
+                        if widgets::ribbon_button(ui, "rotate", rb("ribbon.rotate"), gedreht || laeuft).clicked() {
                             if gedreht {
                                 let mut v = app.current_view();
                                 v.zurueck_drehen();
@@ -4751,14 +4783,14 @@ fn rail(ui: &mut egui::Ui, icon: &str, tooltip: &str, chevron: &str) -> bool {
                         }
                     });
                     widgets::vline(ui, RIBBON_GROUP_H);
-                    self.group(ui, "Panels", |ui, app| {
-                        if widgets::ribbon_button(ui, "layers", "Layer", app.ui.layers_open).clicked() {
+                    self.group(ui, "ribbon.group.panels", |ui, app| {
+                        if widgets::ribbon_button(ui, "layers", rb("ribbon.layers"), app.ui.layers_open).clicked() {
                             app.ui.layers_open = !app.ui.layers_open;
                         }
-                        if widgets::ribbon_button(ui, "properties", "Eigenschaften", app.ui.props_open).clicked() {
+                        if widgets::ribbon_button(ui, "properties", rb("ribbon.properties"), app.ui.props_open).clicked() {
                             app.ui.props_open = !app.ui.props_open;
                         }
-                        if widgets::ribbon_button(ui, "grid", "Raster", app.ui.show_grid).clicked() {
+                        if widgets::ribbon_button(ui, "grid", rb("ribbon.grid"), app.ui.show_grid).clicked() {
                             app.ui.show_grid = !app.ui.show_grid;
                             let v = app.ui.show_grid;
                             let _ = app.session_mut().execute(
@@ -4768,14 +4800,14 @@ fn rail(ui: &mut egui::Ui, icon: &str, tooltip: &str, chevron: &str) -> bool {
                         }
                     });
                     widgets::vline(ui, RIBBON_GROUP_H);
-                    self.group(ui, "Fenster", |ui, app| {
+                    self.group(ui, "ribbon.group.fenster", |ui, app| {
                         let voll = app.is_fullscreen(ui.ctx());
-                        if widgets::ribbon_button(ui, "fullscreen", "Vollbild", voll).clicked() {
+                        if widgets::ribbon_button(ui, "fullscreen", rb("ribbon.fullscreen"), voll).clicked() {
                             app.run_action(ui.ctx(), "view.fullscreen");
                         }
                     });
                     widgets::vline(ui, RIBBON_GROUP_H);
-                    self.group(ui, "Fangen", |ui, app| {
+                    self.group(ui, "ribbon.group.fangen", |ui, app| {
                         ui.vertical(|ui| {
                             // Zwei Zeilen à vier Felder: die Gruppe bleibt damit
                             // genau so hoch wie eine Knopfreihe (54 px), sodass
@@ -4814,7 +4846,10 @@ fn rail(ui: &mut egui::Ui, icon: &str, tooltip: &str, chevron: &str) -> bool {
         });
     }
 
-    fn group(&mut self, ui: &mut egui::Ui, label: &str, body: impl FnOnce(&mut egui::Ui, &mut App)) {
+    /// Eine Gruppe im Menüband. `key` ist ein Katalogschlüssel (T0103) — die
+    /// Überschrift folgt damit der Sprache, ohne dass hier Text steht.
+    fn group(&mut self, ui: &mut egui::Ui, key: &'static str, body: impl FnOnce(&mut egui::Ui, &mut App)) {
+        let label = rb(key);
         ui.vertical(|ui| {
             ui.spacing_mut().item_spacing.y = 2.0;
             ui.horizontal(|ui| {
@@ -6217,7 +6252,8 @@ impl App {
     fn copy_group_button(&mut self, ui: &mut egui::Ui) {
         let cur = self.ui.copy_input;
         let aktiv = self.tool_id() == Some(cur.action());
-        let (main, arrow) = widgets::ribbon_split_button(ui, cur.icon(), "Kopieren", aktiv);
+        let (main, arrow) =
+            widgets::ribbon_split_button(ui, cur.icon(), rb("ui.copyinput.kopieren"), aktiv);
         let popup_id = ui.make_persistent_id("copypop");
         let now = ui.input(|i| i.time);
         if arrow.clicked() {
@@ -6572,7 +6608,7 @@ mod tests_ribbon_bearbeiten {
 
     #[test]
     fn auswaehlen_ist_nicht_im_ribbon() {
-        let ids: Vec<&str> = RIBBON_BEARBEITEN.iter().map(|(id, _, _)| *id).collect();
+        let ids: Vec<&str> = RIBBON_BEARBEITEN.iter().map(|(id, _)| *id).collect();
         assert!(
             !ids.contains(&"modify.select"),
             "Auswählen gehört nicht mehr in den Ribbon: {ids:?}"
@@ -6588,8 +6624,8 @@ mod tests_ribbon_bearbeiten {
             ],
             "übrige Bearbeiten-Werkzeuge unverändert"
         );
-        for (_, icon, label) in RIBBON_BEARBEITEN {
-            assert!(!icon.is_empty() && !label.is_empty());
+        for (id, icon) in RIBBON_BEARBEITEN {
+            assert!(!icon.is_empty() && !super::aktion_label(id).is_empty());
         }
     }
 
@@ -7673,7 +7709,7 @@ mod tests_vollbild {
     #[test]
     fn action_steht_im_reiter_ansicht_mit_f11() {
         let a = actions::action("view.fullscreen").expect("Action view.fullscreen fehlt");
-        assert_eq!(a.label, "Vollbild");
+        assert_eq!(a.label(), "Vollbild");
         assert_eq!(a.group, ActionGroup::Ansicht);
         assert_eq!(a.key, "f11");
         assert!(!a.tool, "Vollbild ist kein Zeichenwerkzeug");
@@ -7822,7 +7858,7 @@ mod tests_chat_texte {
             "draw.fill" | "draw.fill.boundary" | "draw.fill.points" => "Füllfläche".into(),
             "block.insert" => "Block".into(),
             "sheet.viewport_tool" => "Ansichtsfenster".into(),
-            other => actions::action(other).map(|d| d.label).unwrap_or("?").to_string(),
+            other => actions::action(other).map(|d| d.label()).unwrap_or("?").to_string(),
         }
     }
 

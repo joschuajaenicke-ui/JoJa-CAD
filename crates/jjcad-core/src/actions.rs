@@ -33,45 +33,68 @@ pub enum ActionGroup {
 }
 
 impl ActionGroup {
-    pub fn label(self) -> &'static str {
+    /// Katalogschlüssel der Gruppenbeschriftung (T0103).
+    pub fn key(self) -> &'static str {
         match self {
-            ActionGroup::Datei => "Datei",
-            ActionGroup::Zeichnen => "Zeichnen",
-            ActionGroup::Architektur => "Architektur",
-            ActionGroup::Aendern => "Ändern",
-            ActionGroup::Bemassung => "Bemaßung",
-            ActionGroup::Bloecke => "Blöcke",
-            ActionGroup::Blatt => "Blatt",
-            ActionGroup::Ansicht => "Ansicht",
-            ActionGroup::Hilfe => "Hilfe",
+            ActionGroup::Datei => "group.datei",
+            ActionGroup::Zeichnen => "group.zeichnen",
+            ActionGroup::Architektur => "group.architektur",
+            ActionGroup::Aendern => "group.aendern",
+            ActionGroup::Bemassung => "group.bemassung",
+            ActionGroup::Bloecke => "group.bloecke",
+            ActionGroup::Blatt => "group.blatt",
+            ActionGroup::Ansicht => "group.ansicht",
+            ActionGroup::Hilfe => "group.hilfe",
         }
+    }
+
+    /// Beschriftung in der eingestellten Sprache.
+    pub fn label(self) -> &'static str {
+        crate::i18n::tr(self.key())
     }
 }
 
 #[derive(Clone, Copy, Debug)]
 pub struct ActionDef {
     pub id: &'static str,
-    pub label: &'static str,
+    /// Katalogschlüssel der Beschriftung (T0103) — der Text wird beim Zeichnen
+    /// über [`crate::i18n`] nachgeschlagen, damit die Sprache zur Laufzeit
+    /// wechseln kann. Eine `const`-Tabelle kann keinen `String` tragen.
+    pub label_key: &'static str,
     pub group: ActionGroup,
     /// Icon-Name für den GUI-Zeichner
     pub icon: &'static str,
     /// Standard-Tastenkürzel ("" = keins)
     pub key: &'static str,
-    /// Kurzhinweis / Bedienung
-    pub hint: &'static str,
+    /// Katalogschlüssel des Kurzhinweises (T0103)
+    pub hint_key: &'static str,
     /// Interaktives Werkzeug (braucht Punkt-Eingaben)?
     pub tool: bool,
+}
+
+impl ActionDef {
+    /// Beschriftung in der eingestellten Sprache (T0103). Der Text wird hier
+    /// nachgeschlagen, nicht in der Tabelle gespeichert — nur so wirkt eine
+    /// Sprachumschaltung ohne Neustart.
+    pub fn label(&self) -> &'static str {
+        crate::i18n::tr(self.label_key)
+    }
+
+    /// Kurzhinweis in der eingestellten Sprache.
+    pub fn hint(&self) -> &'static str {
+        crate::i18n::tr(self.hint_key)
+    }
 }
 
 macro_rules! act {
     ($id:expr, $label:expr, $group:ident, $icon:expr, $key:expr, $hint:expr, $tool:expr) => {
         ActionDef {
             id: $id,
-            label: $label,
+            label_key: $label,
             group: ActionGroup::$group,
             icon: $icon,
             key: $key,
-            hint: $hint,
+            hint_key: $hint,
             tool: $tool,
         }
     };
@@ -79,55 +102,55 @@ macro_rules! act {
 
 pub const ACTIONS: &[ActionDef] = &[
     // Datei
-    act!("file.new", "Neu", Datei, "new", "ctrl+n", "Neue Zeichnung anlegen", false),
-    act!("file.open", "Öffnen", Datei, "open", "ctrl+o", "Zeichnung (.jjcad) öffnen", false),
-    act!("file.save", "Speichern", Datei, "save", "ctrl+s", "Zeichnung speichern", false),
-    act!("file.save_as", "Speichern unter", Datei, "save", "ctrl+shift+s", "Speichern unter …", false),
-    act!("file.export_pdf", "PDF exportieren", Datei, "pdf", "ctrl+p", "Blatt als PDF exportieren", false),
-    act!("file.export_dxf", "DXF exportieren", Datei, "dxf", "", "Zeichnung als DXF exportieren", false),
-    act!("file.import_dxf", "DXF importieren", Datei, "import", "", "DXF-Datei importieren", false),
+    act!("file.new", "action.file.new.label", Datei, "new", "ctrl+n", "action.file.new.hint", false),
+    act!("file.open", "action.file.open.label", Datei, "open", "ctrl+o", "action.file.open.hint", false),
+    act!("file.save", "action.file.save.label", Datei, "save", "ctrl+s", "action.file.save.hint", false),
+    act!("file.save_as", "action.file.save_as.label", Datei, "save", "ctrl+shift+s", "action.file.save_as.hint", false),
+    act!("file.export_pdf", "action.file.export_pdf.label", Datei, "pdf", "ctrl+p", "action.file.export_pdf.hint", false),
+    act!("file.export_dxf", "action.file.export_dxf.label", Datei, "dxf", "", "action.file.export_dxf.hint", false),
+    act!("file.import_dxf", "action.file.import_dxf.label", Datei, "import", "", "action.file.import_dxf.hint", false),
     act!(
         "file.import.pdf",
-        "PDF einfügen",
+        "action.file.import.pdf.label",
         Datei,
         "pdf",
         "",
-        "PDF-Seite als ein Element einfügen (Block, zerlegbar)",
+        "action.file.import.pdf.hint",
         false
     ),
-    act!("file.export_png", "PNG exportieren", Datei, "image", "", "Ansicht als PNG rendern", false),
-    act!("edit.undo", "Rückgängig", Aendern, "undo", "ctrl+z", "Letzten Schritt rückgängig", false),
-    act!("edit.redo", "Wiederholen", Aendern, "redo", "ctrl+y", "Rückgängig machen rückgängig", false),
+    act!("file.export_png", "action.file.export_png.label", Datei, "image", "", "action.file.export_png.hint", false),
+    act!("edit.undo", "action.edit.undo.label", Aendern, "undo", "ctrl+z", "action.edit.undo.hint", false),
+    act!("edit.redo", "action.edit.redo.label", Aendern, "redo", "ctrl+y", "action.edit.redo.hint", false),
     // Kopieren ohne Basispunkt: legt die Auswahl nur in die Zwischenablage.
     // Eingefügt wird danach mit der Vorschau (Strg+V, Knopf „Einfügen").
-    act!("edit.copy", "Kopieren", Aendern, "copy", "ctrl+c", "Auswahl in die Zwischenablage", false),
+    act!("edit.copy", "action.edit.copy.label", Aendern, "copy", "ctrl+c", "action.edit.copy.hint", false),
 
     // Zeichnen
-    act!("draw.line", "Linie", Zeichnen, "line", "l", "Start- und Endpunkt klicken", true),
-    act!("draw.polyline", "Polylinie", Zeichnen, "polyline", "o", "Punkte klicken, Klick auf den Startpunkt schließt, Enter beendet", true),
-    act!("draw.spline", "Spline", Zeichnen, "spline", "u", "Punkte klicken, Klick auf den Startpunkt schließt, Enter beendet", true),
-    act!("draw.rect", "Rechteck", Zeichnen, "rect", "", "Zwei Ecken klicken", true),
-    act!("draw.circle", "Kreis", Zeichnen, "circle", "k", "Mittelpunkt und Radius klicken", true),
-    act!("draw.arc", "Bogen", Zeichnen, "arc", "", "Start, Ende, Bogenpunkt klicken", true),
-    act!("draw.point", "Punkt", Zeichnen, "point", "p", "Punkt setzen", true),
-    act!("draw.fill", "Füllfläche", Zeichnen, "fill", "", "Geschlossene Kontur klicken", true),
-    act!("draw.fill.boundary", "Fläche nach Umriss", Zeichnen, "fill", "i", "Umriss abfahren: Punkte klicken, Enter beendet", true),
-    act!("draw.fill.points", "Fläche nach Punktfolge", Zeichnen, "fill", "shift+i", "Punkte klicken, Enter schließt die Fläche", true),
-    act!("draw.fill.paint", "Farbeimer", Zeichnen, "fill", "shift+c", "In eine leere Fläche klicken — die Umgrenzung wird ermittelt", true),
-    act!("draw.text", "Text", Zeichnen, "text", "t", "Position klicken, dann Text eingeben", true),
-    act!("draw.ellipse", "Ellipse", Zeichnen, "ellipse", "", "Mittelpunkt und Achsen klicken", true),
+    act!("draw.line", "action.draw.line.label", Zeichnen, "line", "l", "action.draw.line.hint", true),
+    act!("draw.polyline", "action.draw.polyline.label", Zeichnen, "polyline", "o", "action.draw.polyline.hint", true),
+    act!("draw.spline", "action.draw.spline.label", Zeichnen, "spline", "u", "action.draw.spline.hint", true),
+    act!("draw.rect", "action.draw.rect.label", Zeichnen, "rect", "", "action.draw.rect.hint", true),
+    act!("draw.circle", "action.draw.circle.label", Zeichnen, "circle", "k", "action.draw.circle.hint", true),
+    act!("draw.arc", "action.draw.arc.label", Zeichnen, "arc", "", "action.draw.arc.hint", true),
+    act!("draw.point", "action.draw.point.label", Zeichnen, "point", "p", "action.draw.point.hint", true),
+    act!("draw.fill", "action.draw.fill.label", Zeichnen, "fill", "", "action.draw.fill.hint", true),
+    act!("draw.fill.boundary", "action.draw.fill.boundary.label", Zeichnen, "fill", "i", "action.draw.fill.boundary.hint", true),
+    act!("draw.fill.points", "action.draw.fill.points.label", Zeichnen, "fill", "shift+i", "action.draw.fill.points.hint", true),
+    act!("draw.fill.paint", "action.draw.fill.paint.label", Zeichnen, "fill", "shift+c", "action.draw.fill.paint.hint", true),
+    act!("draw.text", "action.draw.text.label", Zeichnen, "text", "t", "action.draw.text.hint", true),
+    act!("draw.ellipse", "action.draw.ellipse.label", Zeichnen, "ellipse", "", "action.draw.ellipse.hint", true),
 
     // Architektur
-    act!("draw.wall", "Wand", Architektur, "wall", "g", "Wandachse: Start- und Endpunkt", true),
+    act!("draw.wall", "action.draw.wall.label", Architektur, "wall", "g", "action.draw.wall.hint", true),
     // V gehört dem Werkzeug „Verschieben" (modify.move, siehe BEDIENUNG);
     // Volumen liegt deshalb auf Umschalt+V (T0056).
     act!(
         "draw.volume",
-        "Volumen",
+        "action.draw.volume.label",
         Architektur,
         "volume",
         "shift+v",
-        "Geschlossene Kontur klicken — der Körper erhält eine Höhe",
+        "action.draw.volume.hint",
         true
     ),
     // Kein eigenes Kürzel: `shift+v` gehört `draw.volume` (T0079). Eine Taste
@@ -135,172 +158,172 @@ pub const ACTIONS: &[ActionDef] = &[
     // Taste und war über sie nie erreichbar.
     act!(
         "draw.volume.points",
-        "Volumen nach Punktfolge",
+        "action.draw.volume.points.label",
         Architektur,
         "volume",
         "",
-        "Punkte klicken, Enter schließt den Körper",
+        "action.draw.volume.points.hint",
         true
     ),
     act!(
         "draw.volume.paint",
-        "Volumen füllen",
+        "action.draw.volume.paint.label",
         Architektur,
         "volume",
         "",
-        "In eine leere Fläche klicken — die Umgrenzung wird ermittelt",
+        "action.draw.volume.paint.hint",
         true
     ),
-    act!("draw.door", "Tür", Architektur, "door", "h", "In eine Wand klicken", true),
-    act!("draw.window", "Fenster", Architektur, "window", "j", "In eine Wand klicken", true),
+    act!("draw.door", "action.draw.door.label", Architektur, "door", "h", "action.draw.door.hint", true),
+    act!("draw.window", "action.draw.window.label", Architektur, "window", "j", "action.draw.window.hint", true),
     act!(
         "draw.stair",
-        "Treppe",
+        "action.draw.stair.label",
         Architektur,
         "stair",
         "b",
-        "Außenkante aufziehen, dann die Breite klicken",
+        "action.draw.stair.hint",
         true
     ),
     act!(
         "draw.stair.label",
-        "Treppenbeschriftung",
+        "action.draw.stair.label.label",
         Architektur,
         "text",
         "",
-        "Stufenzahl und Schrittmaß als Textfeld neben die Treppe setzen",
+        "action.draw.stair.label.hint",
         false
     ),
 
     // Ändern
     // Ohne Kürzel: ESC ist eine Steuerungstaste (bricht ab bzw. schließt eine
     // Punktfolge ab, `App::escape_pressed`) und wird nicht vergeben (T0045).
-    act!("modify.select", "Auswählen", Aendern, "select", "", "Objekte anklicken oder Fenster aufziehen", false),
-    act!("modify.move", "Verschieben", Aendern, "move", "v", "Auswahl, Basispunkt, Zielpunkt", true),
-    act!("modify.order", "Reihenfolge", Aendern, "layers", "", "to = Platz in der Zeichenreihenfolge (1 = ganz hinten)", true),
+    act!("modify.select", "action.modify.select.label", Aendern, "select", "", "action.modify.select.hint", false),
+    act!("modify.move", "action.modify.move.label", Aendern, "move", "v", "action.modify.move.hint", true),
+    act!("modify.order", "action.modify.order.label", Aendern, "layers", "", "action.modify.order.hint", true),
     // Kopie versetzt absetzen: erst Basispunkt, dann Zielpunkt. Getrennt vom
     // reinen Kopieren in die Zwischenablage (`edit.copy`, Strg+C).
-    act!("modify.copy", "Kopieren mit Basispunkt", Aendern, "copy-base", "ctrl+shift+c", "Auswahl und Basispunkt — Kopie in die Zwischenablage", true),
-    act!("modify.rotate", "Drehen", Aendern, "rotate", "r", "Auswahl, Zentrum, Winkel", true),
-    act!("modify.mirror", "Spiegeln", Aendern, "mirror", "f", "Auswahl, Spiegelachse", true),
-    act!("modify.scale", "Skalieren", Aendern, "scale", "", "Auswahl, Zentrum, Faktor", true),
-    act!("modify.offset", "Versetzen", Aendern, "offset", "", "Abstand und Seite klicken", true),
-    act!("modify.trim", "Stutzen", Aendern, "trim", "c", "Zu stutzendes Segment anklicken", true),
-    act!("modify.extend", "Verlängern", Aendern, "extend", "x", "Ende anklicken, das verlängert wird", true),
+    act!("modify.copy", "action.modify.copy.label", Aendern, "copy-base", "ctrl+shift+c", "action.modify.copy.hint", true),
+    act!("modify.rotate", "action.modify.rotate.label", Aendern, "rotate", "r", "action.modify.rotate.hint", true),
+    act!("modify.mirror", "action.modify.mirror.label", Aendern, "mirror", "f", "action.modify.mirror.hint", true),
+    act!("modify.scale", "action.modify.scale.label", Aendern, "scale", "", "action.modify.scale.hint", true),
+    act!("modify.offset", "action.modify.offset.label", Aendern, "offset", "", "action.modify.offset.hint", true),
+    act!("modify.trim", "action.modify.trim.label", Aendern, "trim", "c", "action.modify.trim.hint", true),
+    act!("modify.extend", "action.modify.extend.label", Aendern, "extend", "x", "action.modify.extend.hint", true),
     act!(
         "modify.intersect",
-        "Verschneiden",
+        "action.modify.intersect.label",
         Aendern,
         "intersect",
         "",
-        "Zwei Linien oder Wände anklicken — sie treffen sich im Schnittpunkt",
+        "action.modify.intersect.hint",
         true
     ),
     act!(
         "modify.area.union",
-        "Flächen vereinigen",
+        "action.modify.area.union.label",
         Aendern,
         "union",
         "",
-        "Zwei oder mehr angrenzende Füllflächen auswählen — sie werden eine",
+        "action.modify.area.union.hint",
         false
     ),
     act!(
         "modify.area.split",
-        "Fläche schneiden",
+        "action.modify.area.split.label",
         Aendern,
         "split",
         "",
-        "Punkte der Schnittlinie klicken, Enter teilt die Fläche",
+        "action.modify.area.split.hint",
         true
     ),
-    act!("modify.erase", "Löschen", Aendern, "erase", "entf", "Auswahl löschen", false),
-    act!("modify.explode", "Zerlegen", Aendern, "explode", "z", "Blöcke/Bauteile in Einzelelemente, Text in Linien zerlegen", false),
+    act!("modify.erase", "action.modify.erase.label", Aendern, "erase", "entf", "action.modify.erase.hint", false),
+    act!("modify.explode", "action.modify.explode.label", Aendern, "explode", "z", "action.modify.explode.hint", false),
     act!(
         "text.format",
-        "Text auszeichnen",
+        "action.text.format.label",
         Aendern,
         "text",
         "",
-        "Zeichenbereich eines Textes fett/kursiv/unterstrichen/hochgestellt setzen",
+        "action.text.format.hint",
         false
     ),
     // Schnellauswahl (T0060): ein Objekt anklicken und das Werkzeug starten,
     // das ein weiteres Objekt derselben Art erzeugt. Ersetzt „Eigenschaften
     // aufnehmen" vollständig — ein Schalter, kein zweiter Weg (`App::run_action`).
-    act!("modify.quickselect", "Schnellauswahl", Aendern, "quickselect", "q", "Objekt anklicken — dessen Erzeuger startet", true),
+    act!("modify.quickselect", "action.modify.quickselect.label", Aendern, "quickselect", "q", "action.modify.quickselect.hint", true),
 
     // Bemaßung
-    act!("dim.linear", "Maß", Bemassung, "dim", "m", "Zwei Punkte und Maßlinie setzen", true),
-    act!("dim.chain", "Maßkette", Bemassung, "dimchain", "", "Punkte klicken, Enter beendet", true),
-    act!("dim.elevation.plan", "Grundriss-Kote", Bemassung, "elevation", "n", "Punkt klicken — Höhe im Eigenschaften-Panel", true),
-    act!("dim.elevation.section", "Schnitt-Kote", Bemassung, "elevation-section", "", "Punkte klicken, Enter beendet — erster Punkt ist ±0,00", true),
+    act!("dim.linear", "action.dim.linear.label", Bemassung, "dim", "m", "action.dim.linear.hint", true),
+    act!("dim.chain", "action.dim.chain.label", Bemassung, "dimchain", "", "action.dim.chain.hint", true),
+    act!("dim.elevation.plan", "action.dim.elevation.plan.label", Bemassung, "elevation", "n", "action.dim.elevation.plan.hint", true),
+    act!("dim.elevation.section", "action.dim.elevation.section.label", Bemassung, "elevation-section", "", "action.dim.elevation.section.hint", true),
     act!(
         "dim.room",
-        "Raumstempel",
+        "action.dim.room.label",
         Bemassung,
         "room",
         "",
-        "Raumumriss klicken, Enter setzt den Stempel",
+        "action.dim.room.hint",
         true
     ),
-    act!("dim.style", "Bemaßungsstil", Bemassung, "style", "", "Bemaßungsstil bearbeiten", false),
+    act!("dim.style", "action.dim.style.label", Bemassung, "style", "", "action.dim.style.hint", false),
 
     // Blöcke
-    act!("block.insert", "Block einfügen", Bloecke, "block", "", "Block aus Inventar platzieren", true),
-    act!("block.create", "Block aus Auswahl", Bloecke, "blocknew", "", "Auswahl zu Projektblock machen", false),
-    act!("block.explode", "Block zerlegen", Bloecke, "explode", "", "Blockinstanzen auflösen", false),
-    act!("block.manager", "Block-Manager", Bloecke, "library", "", "Blockbibliothek öffnen", false),
+    act!("block.insert", "action.block.insert.label", Bloecke, "block", "", "action.block.insert.hint", true),
+    act!("block.create", "action.block.create.label", Bloecke, "blocknew", "", "action.block.create.hint", false),
+    act!("block.explode", "action.block.explode.label", Bloecke, "explode", "", "action.block.explode.hint", false),
+    act!("block.manager", "action.block.manager.label", Bloecke, "library", "", "action.block.manager.hint", false),
 
     // Blatt
-    act!("sheet.new", "Neues Blatt", Blatt, "sheet", "", "Blatt anlegen", false),
-    act!("sheet.pdf", "Blatt → PDF", Blatt, "pdf", "", "Aktuelles Blatt als PDF", false),
-    act!("sheet.add_viewport", "Ansichtsfenster", Blatt, "viewport", "", "Ansichtsfenster hinzufügen", false),
-    act!("sheet.viewport_tool", "Ansicht aufziehen", Blatt, "viewport", "", "Rechteck für ein Ansichtsfenster aufziehen", true),
+    act!("sheet.new", "action.sheet.new.label", Blatt, "sheet", "", "action.sheet.new.hint", false),
+    act!("sheet.pdf", "action.sheet.pdf.label", Blatt, "pdf", "", "action.sheet.pdf.hint", false),
+    act!("sheet.add_viewport", "action.sheet.add_viewport.label", Blatt, "viewport", "", "action.sheet.add_viewport.hint", false),
+    act!("sheet.viewport_tool", "action.sheet.viewport_tool.label", Blatt, "viewport", "", "action.sheet.viewport_tool.hint", true),
 
     // Ansicht
-    act!("view.zoom_extents", "Alles zeigen", Ansicht, "zoomfit", "", "Zeichnung einpassen", false),
-    act!("view.zoom_in", "Vergrößern", Ansicht, "zoomin", "", "Hineinzoomen", false),
-    act!("view.zoom_out", "Verkleinern", Ansicht, "zoomout", "", "Herauszoomen", false),
+    act!("view.zoom_extents", "action.view.zoom_extents.label", Ansicht, "zoomfit", "", "action.view.zoom_extents.hint", false),
+    act!("view.zoom_in", "action.view.zoom_in.label", Ansicht, "zoomin", "", "action.view.zoom_in.hint", false),
+    act!("view.zoom_out", "action.view.zoom_out.label", Ansicht, "zoomout", "", "action.view.zoom_out.hint", false),
     // Umsetzen der Ansicht mit der Tastatur (T0056). Die vier Richtungen sind
     // eigene Funktionen — nicht fest im Code — damit sie in der
     // Tastaturbelegung stehen, ein Icon tragen und umbelegt werden können.
     // Wie jede andere Funktion: ein Druck rückt um einen Schritt weiter, aus
     // Taste, Hotbar und Ribbon gleich (T0089).
-    act!("view.pan_left", "Ansicht links", Ansicht, "pan-left", "a", "Ansicht einen Schritt nach links schieben", false),
-    act!("view.pan_right", "Ansicht rechts", Ansicht, "pan-right", "d", "Ansicht einen Schritt nach rechts schieben", false),
-    act!("view.pan_up", "Ansicht oben", Ansicht, "pan-up", "w", "Ansicht einen Schritt nach oben schieben", false),
-    act!("view.pan_down", "Ansicht unten", Ansicht, "pan-down", "s", "Ansicht einen Schritt nach unten schieben", false),
-    act!("view.inventory", "Inventar", Ansicht, "inventory", "e", "Inventar ein-/ausblenden (E)", false),
-    act!("view.layers", "Layer", Ansicht, "layers", "", "Layerverwaltung", false),
-    act!("view.keymap", "Tastaturbelegung", Ansicht, "keyboard", "", "Tastenbelegung bearbeiten", false),
-    act!("view.settings", "Einstellungen", Ansicht, "settings", "", "Einheiten und Raster", false),
-    act!("view.hotbar_next", "Hotbar-Vorlage", Ansicht, "hotbar", "y", "Nächste Hotbar-Vorlage", false),
-    act!("view.help", "Hilfe", Hilfe, "help", "f1", "Tastenbelegung und Kurzhilfe", false),
-    act!("view.fullscreen", "Vollbild", Ansicht, "fullscreen", "f11", "Vollbild ein-/ausschalten (F11)", false),
-    act!("view.rotate_tool", "Ansicht drehen", Ansicht, "rotate", "", "Ansicht um ein Drehzentrum drehen (drei Klicks)", true),
-    act!("edit.repeat", "Wiederholen", Aendern, "repeat", " ", "Letzten Befehl wiederholen", false),
+    act!("view.pan_left", "action.view.pan_left.label", Ansicht, "pan-left", "a", "action.view.pan_left.hint", false),
+    act!("view.pan_right", "action.view.pan_right.label", Ansicht, "pan-right", "d", "action.view.pan_right.hint", false),
+    act!("view.pan_up", "action.view.pan_up.label", Ansicht, "pan-up", "w", "action.view.pan_up.hint", false),
+    act!("view.pan_down", "action.view.pan_down.label", Ansicht, "pan-down", "s", "action.view.pan_down.hint", false),
+    act!("view.inventory", "action.view.inventory.label", Ansicht, "inventory", "e", "action.view.inventory.hint", false),
+    act!("view.layers", "action.view.layers.label", Ansicht, "layers", "", "action.view.layers.hint", false),
+    act!("view.keymap", "action.view.keymap.label", Ansicht, "keyboard", "", "action.view.keymap.hint", false),
+    act!("view.settings", "action.view.settings.label", Ansicht, "settings", "", "action.view.settings.hint", false),
+    act!("view.hotbar_next", "action.view.hotbar_next.label", Ansicht, "hotbar", "y", "action.view.hotbar_next.hint", false),
+    act!("view.help", "action.view.help.label", Hilfe, "help", "f1", "action.view.help.hint", false),
+    act!("view.fullscreen", "action.view.fullscreen.label", Ansicht, "fullscreen", "f11", "action.view.fullscreen.hint", false),
+    act!("view.rotate_tool", "action.view.rotate_tool.label", Ansicht, "rotate", "", "action.view.rotate_tool.hint", true),
+    act!("edit.repeat", "action.edit.repeat.label", Aendern, "repeat", " ", "action.edit.repeat.hint", false),
 
     // Interne/fortgeschrittene Aktionen (MCP + Eigenschaften-Panel)
-    act!("modify.set", "Eigenschaften ändern", Aendern, "properties", "", "Layer, Farbe, Maße setzen", false),
-    act!("layer.create", "Layer anlegen", Ansicht, "layers", "", "Neuen Layer anlegen", false),
-    act!("layer.update", "Layer ändern", Ansicht, "layers", "", "Layer umbenennen/ändern", false),
-    act!("layer.delete", "Layer löschen", Ansicht, "layers", "", "Leeren Layer löschen", false),
-    act!("layer.list", "Layer auflisten", Ansicht, "layers", "", "Alle Layer mit Eigenschaften", false),
-    act!("layer.set_current", "Aktueller Layer", Ansicht, "layers", "", "Zeichenlayer wechseln", false),
-    act!("select.all", "Alles auswählen", Aendern, "select", "ctrl+a", "Gesamte Zeichnung auswählen", false),
-    act!("select.query", "Objekte abfragen", Aendern, "select", "", "Nach Layer/Typ/Bereich filtern", false),
-    act!("select.area", "Flächen ermitteln", Aendern, "select", "", "Fläche je Objekt und Summe — ids[], layer, type, a/b", false),
-    act!("block.update", "Block aktualisieren", Bloecke, "blocknew", "", "Blockdefinition aus Auswahl ersetzen", false),
-    act!("block.delete", "Block löschen", Bloecke, "library", "", "Blockdefinition entfernen", false),
-    act!("block.list", "Blöcke auflisten", Bloecke, "library", "", "Alle Blöcke mit Anzahl", false),
-    act!("sheet.update", "Blatt bearbeiten", Blatt, "sheet", "", "Blattgröße, Maßstab, Rahmen", false),
-    act!("sheet.delete", "Blatt löschen", Blatt, "sheet", "", "Blatt entfernen", false),
-    act!("sheet.update_viewport", "Ansicht ändern", Blatt, "viewport", "", "Ansichtsfenster anpassen", false),
-    act!("sheet.remove_viewport", "Ansicht löschen", Blatt, "viewport", "", "Ansichtsfenster entfernen", false),
-    act!("sheet.fit_viewport", "Ansicht einpassen", Blatt, "viewport", "", "Ansichtsfenster auf die Zeichnung einpassen — Maßstab aus der Blattgröße", false),
-    act!("doc.settings", "Zeichnungseinstellungen", Ansicht, "settings", "", "Einheiten, Raster, Vorgaben", false),
-    act!("doc.project", "Projektdaten", Datei, "info", "", "Bauherr, Projekt, Plan-Nr.", false),
+    act!("modify.set", "action.modify.set.label", Aendern, "properties", "", "action.modify.set.hint", false),
+    act!("layer.create", "action.layer.create.label", Ansicht, "layers", "", "action.layer.create.hint", false),
+    act!("layer.update", "action.layer.update.label", Ansicht, "layers", "", "action.layer.update.hint", false),
+    act!("layer.delete", "action.layer.delete.label", Ansicht, "layers", "", "action.layer.delete.hint", false),
+    act!("layer.list", "action.layer.list.label", Ansicht, "layers", "", "action.layer.list.hint", false),
+    act!("layer.set_current", "action.layer.set_current.label", Ansicht, "layers", "", "action.layer.set_current.hint", false),
+    act!("select.all", "action.select.all.label", Aendern, "select", "ctrl+a", "action.select.all.hint", false),
+    act!("select.query", "action.select.query.label", Aendern, "select", "", "action.select.query.hint", false),
+    act!("select.area", "action.select.area.label", Aendern, "select", "", "action.select.area.hint", false),
+    act!("block.update", "action.block.update.label", Bloecke, "blocknew", "", "action.block.update.hint", false),
+    act!("block.delete", "action.block.delete.label", Bloecke, "library", "", "action.block.delete.hint", false),
+    act!("block.list", "action.block.list.label", Bloecke, "library", "", "action.block.list.hint", false),
+    act!("sheet.update", "action.sheet.update.label", Blatt, "sheet", "", "action.sheet.update.hint", false),
+    act!("sheet.delete", "action.sheet.delete.label", Blatt, "sheet", "", "action.sheet.delete.hint", false),
+    act!("sheet.update_viewport", "action.sheet.update_viewport.label", Blatt, "viewport", "", "action.sheet.update_viewport.hint", false),
+    act!("sheet.remove_viewport", "action.sheet.remove_viewport.label", Blatt, "viewport", "", "action.sheet.remove_viewport.hint", false),
+    act!("sheet.fit_viewport", "action.sheet.fit_viewport.label", Blatt, "viewport", "", "action.sheet.fit_viewport.hint", false),
+    act!("doc.settings", "action.doc.settings.label", Ansicht, "settings", "", "action.doc.settings.hint", false),
+    act!("doc.project", "action.doc.project.label", Datei, "info", "", "action.doc.project.hint", false),
 ];
 
 pub fn action(id: &str) -> Option<&'static ActionDef> {
@@ -5426,7 +5449,7 @@ pub fn catalog_markdown() -> String {
         for a in actions_in_group(g) {
             s.push_str(&format!(
                 "- `{}` — {} — {}\n",
-                a.id, a.label, a.hint
+                a.id, a.label(), a.hint()
             ));
         }
         s.push('\n');

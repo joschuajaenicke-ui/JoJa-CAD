@@ -392,7 +392,7 @@ fn fuellflaeche(s: &Session) -> (Vec<Vec2>, Vec<Vec<Vec2>>, jjcad_core::style::F
 #[test]
 fn farbeimer_ist_registriert_und_liegt_auf_umschalt_c() {
     let def = jjcad_core::actions::action("draw.fill.paint").expect("Action registriert");
-    assert_eq!(def.label, "Farbeimer");
+    assert_eq!(def.label(), "Farbeimer");
     assert_eq!(def.key, "shift+c", "Tastenkuerzel Umschalt+C");
     assert!(jjcad_core::actions::is_mutating("draw.fill.paint"));
     let stutzen = jjcad_core::actions::action("modify.trim").expect("Stutzen fehlt");

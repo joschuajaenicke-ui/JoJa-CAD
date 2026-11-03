@@ -1,0 +1,534 @@
+# JoJa-CAD — deutscher Sprachkatalog (Quellsprache und Rückfall), T0103
+#
+# Aufbau: eine Tabelle je Schlüssel, darin `label` und `hint`.
+#   [action.draw.wall]      -> Schlüssel action.draw.wall.label / .hint
+#   [ribbon.group]          -> Schlüssel ribbon.group.<name>
+# Schlüssel sind neutral und stabil (nicht der deutsche Text). Fehlt ein
+# Schlüssel in einer Übersetzung, erscheint dieser deutsche Text; fehlt er
+# auch hier, bleibt der Schlüssel stehen und das Programm warnt im Debug-Bau.
+#
+# Eine weitere Sprache: Datei lang/<code>.toml anlegen, in
+# crates/jjcad-core/src/i18n.rs eintragen (KATALOG_QUELLEN), fertig.
+#
+# Platzhalter sind benannt: {name} — eine Übersetzung darf die Reihenfolge
+# ändern.
+
+[action.file.new]
+label = "Neu"
+hint = "Neue Zeichnung anlegen"
+
+[action.file.open]
+label = "Öffnen"
+hint = "Zeichnung (.jjcad) öffnen"
+
+[action.file.save]
+label = "Speichern"
+hint = "Zeichnung speichern"
+
+[action.file.save_as]
+label = "Speichern unter"
+hint = "Speichern unter …"
+
+[action.file.export_pdf]
+label = "PDF exportieren"
+hint = "Blatt als PDF exportieren"
+
+[action.file.export_dxf]
+label = "DXF exportieren"
+hint = "Zeichnung als DXF exportieren"
+
+[action.file.import_dxf]
+label = "DXF importieren"
+hint = "DXF-Datei importieren"
+
+[action.file.import.pdf]
+label = "PDF einfügen"
+hint = "PDF-Seite als ein Element einfügen (Block, zerlegbar)"
+
+[action.file.export_png]
+label = "PNG exportieren"
+hint = "Ansicht als PNG rendern"
+
+[action.edit.undo]
+label = "Rückgängig"
+hint = "Letzten Schritt rückgängig"
+
+[action.edit.redo]
+label = "Wiederholen"
+hint = "Rückgängig machen rückgängig"
+
+[action.edit.copy]
+label = "Kopieren"
+hint = "Auswahl in die Zwischenablage"
+
+[action.draw.line]
+label = "Linie"
+hint = "Start- und Endpunkt klicken"
+
+[action.draw.polyline]
+label = "Polylinie"
+hint = "Punkte klicken, Klick auf den Startpunkt schließt, Enter beendet"
+
+[action.draw.spline]
+label = "Spline"
+hint = "Punkte klicken, Klick auf den Startpunkt schließt, Enter beendet"
+
+[action.draw.rect]
+label = "Rechteck"
+hint = "Zwei Ecken klicken"
+
+[action.draw.circle]
+label = "Kreis"
+hint = "Mittelpunkt und Radius klicken"
+
+[action.draw.arc]
+label = "Bogen"
+hint = "Start, Ende, Bogenpunkt klicken"
+
+[action.draw.point]
+label = "Punkt"
+hint = "Punkt setzen"
+
+[action.draw.fill]
+label = "Füllfläche"
+hint = "Geschlossene Kontur klicken"
+
+[action.draw.fill.boundary]
+label = "Fläche nach Umriss"
+hint = "Umriss abfahren: Punkte klicken, Enter beendet"
+
+[action.draw.fill.points]
+label = "Fläche nach Punktfolge"
+hint = "Punkte klicken, Enter schließt die Fläche"
+
+[action.draw.fill.paint]
+label = "Farbeimer"
+hint = "In eine leere Fläche klicken — die Umgrenzung wird ermittelt"
+
+[action.draw.text]
+label = "Text"
+hint = "Position klicken, dann Text eingeben"
+
+[action.draw.ellipse]
+label = "Ellipse"
+hint = "Mittelpunkt und Achsen klicken"
+
+[action.draw.wall]
+label = "Wand"
+hint = "Wandachse: Start- und Endpunkt"
+
+[action.draw.volume]
+label = "Volumen"
+hint = "Geschlossene Kontur klicken — der Körper erhält eine Höhe"
+
+[action.draw.volume.points]
+label = "Volumen nach Punktfolge"
+hint = "Punkte klicken, Enter schließt den Körper"
+
+[action.draw.volume.paint]
+label = "Volumen füllen"
+hint = "In eine leere Fläche klicken — die Umgrenzung wird ermittelt"
+
+[action.draw.door]
+label = "Tür"
+hint = "In eine Wand klicken"
+
+[action.draw.window]
+label = "Fenster"
+hint = "In eine Wand klicken"
+
+[action.draw.stair]
+label = "Treppe"
+hint = "Außenkante aufziehen, dann die Breite klicken"
+
+[action.draw.stair.label]
+label = "Treppenbeschriftung"
+hint = "Stufenzahl und Schrittmaß als Textfeld neben die Treppe setzen"
+
+[action.modify.select]
+label = "Auswählen"
+hint = "Objekte anklicken oder Fenster aufziehen"
+
+[action.modify.move]
+label = "Verschieben"
+hint = "Auswahl, Basispunkt, Zielpunkt"
+
+[action.modify.order]
+label = "Reihenfolge"
+hint = "to = Platz in der Zeichenreihenfolge (1 = ganz hinten)"
+
+[action.modify.copy]
+label = "Kopieren mit Basispunkt"
+hint = "Auswahl und Basispunkt — Kopie in die Zwischenablage"
+
+[action.modify.rotate]
+label = "Drehen"
+hint = "Auswahl, Zentrum, Winkel"
+
+[action.modify.mirror]
+label = "Spiegeln"
+hint = "Auswahl, Spiegelachse"
+
+[action.modify.scale]
+label = "Skalieren"
+hint = "Auswahl, Zentrum, Faktor"
+
+[action.modify.offset]
+label = "Versetzen"
+hint = "Abstand und Seite klicken"
+
+[action.modify.trim]
+label = "Stutzen"
+hint = "Zu stutzendes Segment anklicken"
+
+[action.modify.extend]
+label = "Verlängern"
+hint = "Ende anklicken, das verlängert wird"
+
+[action.modify.intersect]
+label = "Verschneiden"
+hint = "Zwei Linien oder Wände anklicken — sie treffen sich im Schnittpunkt"
+
+[action.modify.area.union]
+label = "Flächen vereinigen"
+hint = "Zwei oder mehr angrenzende Füllflächen auswählen — sie werden eine"
+
+[action.modify.area.split]
+label = "Fläche schneiden"
+hint = "Punkte der Schnittlinie klicken, Enter teilt die Fläche"
+
+[action.modify.erase]
+label = "Löschen"
+hint = "Auswahl löschen"
+
+[action.modify.explode]
+label = "Zerlegen"
+hint = "Blöcke/Bauteile in Einzelelemente, Text in Linien zerlegen"
+
+[action.text.format]
+label = "Text auszeichnen"
+hint = "Zeichenbereich eines Textes fett/kursiv/unterstrichen/hochgestellt setzen"
+
+[action.modify.quickselect]
+label = "Schnellauswahl"
+hint = "Objekt anklicken — dessen Erzeuger startet"
+
+[action.dim.linear]
+label = "Maß"
+hint = "Zwei Punkte und Maßlinie setzen"
+
+[action.dim.chain]
+label = "Maßkette"
+hint = "Punkte klicken, Enter beendet"
+
+[action.dim.elevation.plan]
+label = "Grundriss-Kote"
+hint = "Punkt klicken — Höhe im Eigenschaften-Panel"
+
+[action.dim.elevation.section]
+label = "Schnitt-Kote"
+hint = "Punkte klicken, Enter beendet — erster Punkt ist ±0,00"
+
+[action.dim.room]
+label = "Raumstempel"
+hint = "Raumumriss klicken, Enter setzt den Stempel"
+
+[action.dim.style]
+label = "Bemaßungsstil"
+hint = "Bemaßungsstil bearbeiten"
+
+[action.block.insert]
+label = "Block einfügen"
+hint = "Block aus Inventar platzieren"
+
+[action.block.create]
+label = "Block aus Auswahl"
+hint = "Auswahl zu Projektblock machen"
+
+[action.block.explode]
+label = "Block zerlegen"
+hint = "Blockinstanzen auflösen"
+
+[action.block.manager]
+label = "Block-Manager"
+hint = "Blockbibliothek öffnen"
+
+[action.sheet.new]
+label = "Neues Blatt"
+hint = "Blatt anlegen"
+
+[action.sheet.pdf]
+label = "Blatt → PDF"
+hint = "Aktuelles Blatt als PDF"
+
+[action.sheet.add_viewport]
+label = "Ansichtsfenster"
+hint = "Ansichtsfenster hinzufügen"
+
+[action.sheet.viewport_tool]
+label = "Ansicht aufziehen"
+hint = "Rechteck für ein Ansichtsfenster aufziehen"
+
+[action.view.zoom_extents]
+label = "Alles zeigen"
+hint = "Zeichnung einpassen"
+
+[action.view.zoom_in]
+label = "Vergrößern"
+hint = "Hineinzoomen"
+
+[action.view.zoom_out]
+label = "Verkleinern"
+hint = "Herauszoomen"
+
+[action.view.pan_left]
+label = "Ansicht links"
+hint = "Ansicht einen Schritt nach links schieben"
+
+[action.view.pan_right]
+label = "Ansicht rechts"
+hint = "Ansicht einen Schritt nach rechts schieben"
+
+[action.view.pan_up]
+label = "Ansicht oben"
+hint = "Ansicht einen Schritt nach oben schieben"
+
+[action.view.pan_down]
+label = "Ansicht unten"
+hint = "Ansicht einen Schritt nach unten schieben"
+
+[action.view.inventory]
+label = "Inventar"
+hint = "Inventar ein-/ausblenden (E)"
+
+[action.view.layers]
+label = "Layer"
+hint = "Layerverwaltung"
+
+[action.view.keymap]
+label = "Tastaturbelegung"
+hint = "Tastenbelegung bearbeiten"
+
+[action.view.settings]
+label = "Einstellungen"
+hint = "Einheiten und Raster"
+
+[action.view.hotbar_next]
+label = "Hotbar-Vorlage"
+hint = "Nächste Hotbar-Vorlage"
+
+[action.view.help]
+label = "Hilfe"
+hint = "Tastenbelegung und Kurzhilfe"
+
+[action.view.fullscreen]
+label = "Vollbild"
+hint = "Vollbild ein-/ausschalten (F11)"
+
+[action.view.rotate_tool]
+label = "Ansicht drehen"
+hint = "Ansicht um ein Drehzentrum drehen (drei Klicks)"
+
+[action.edit.repeat]
+label = "Wiederholen"
+hint = "Letzten Befehl wiederholen"
+
+[action.modify.set]
+label = "Eigenschaften ändern"
+hint = "Layer, Farbe, Maße setzen"
+
+[action.layer.create]
+label = "Layer anlegen"
+hint = "Neuen Layer anlegen"
+
+[action.layer.update]
+label = "Layer ändern"
+hint = "Layer umbenennen/ändern"
+
+[action.layer.delete]
+label = "Layer löschen"
+hint = "Leeren Layer löschen"
+
+[action.layer.list]
+label = "Layer auflisten"
+hint = "Alle Layer mit Eigenschaften"
+
+[action.layer.set_current]
+label = "Aktueller Layer"
+hint = "Zeichenlayer wechseln"
+
+[action.select.all]
+label = "Alles auswählen"
+hint = "Gesamte Zeichnung auswählen"
+
+[action.select.query]
+label = "Objekte abfragen"
+hint = "Nach Layer/Typ/Bereich filtern"
+
+[action.select.area]
+label = "Flächen ermitteln"
+hint = "Fläche je Objekt und Summe — ids[], layer, type, a/b"
+
+[action.block.update]
+label = "Block aktualisieren"
+hint = "Blockdefinition aus Auswahl ersetzen"
+
+[action.block.delete]
+label = "Block löschen"
+hint = "Blockdefinition entfernen"
+
+[action.block.list]
+label = "Blöcke auflisten"
+hint = "Alle Blöcke mit Anzahl"
+
+[action.sheet.update]
+label = "Blatt bearbeiten"
+hint = "Blattgröße, Maßstab, Rahmen"
+
+[action.sheet.delete]
+label = "Blatt löschen"
+hint = "Blatt entfernen"
+
+[action.sheet.update_viewport]
+label = "Ansicht ändern"
+hint = "Ansichtsfenster anpassen"
+
+[action.sheet.remove_viewport]
+label = "Ansicht löschen"
+hint = "Ansichtsfenster entfernen"
+
+[action.sheet.fit_viewport]
+label = "Ansicht einpassen"
+hint = "Ansichtsfenster auf die Zeichnung einpassen — Maßstab aus der Blattgröße"
+
+[action.doc.settings]
+label = "Zeichnungseinstellungen"
+hint = "Einheiten, Raster, Vorgaben"
+
+[action.doc.project]
+label = "Projektdaten"
+hint = "Bauherr, Projekt, Plan-Nr."
+
+[group]
+datei = "Datei"
+zeichnen = "Zeichnen"
+architektur = "Architektur"
+aendern = "Ändern"
+bemassung = "Bemaßung"
+bloecke = "Blöcke"
+blatt = "Blatt"
+ansicht = "Ansicht"
+hilfe = "Hilfe"
+
+[ribbon.tab]
+start = "Start"
+zeichnen = "Zeichnen"
+architektur = "Architektur"
+aendern = "Ändern"
+bemassung = "Bemaßung"
+bloecke = "Blöcke"
+blatt = "Blatt"
+ansicht = "Ansicht"
+
+[ribbon.group]
+zeichnung = "Zeichnung"
+ausgabe = "Ausgabe"
+zwischenablage = "Zwischenablage"
+projekt = "Projekt"
+ansicht = "Ansicht"
+grundelemente = "Grundelemente"
+fuellen = "Füllen"
+weitere = "Weitere"
+bauteile = "Bauteile"
+bearbeiten = "Bearbeiten"
+geometrie = "Geometrie"
+reihenfolge = "Reihenfolge"
+sonstiges = "Sonstiges"
+masse = "Maße"
+massketten = "Maßketten"
+bibliothek = "Bibliothek"
+schnellzugriff = "Schnellzugriff"
+blaetter = "Blätter"
+papierraum = "Papierraum"
+blatteinstellungen = "Blatteinstellungen"
+zoom = "Zoom"
+drehen = "Drehen"
+panels = "Panels"
+fenster = "Fenster"
+fangen = "Fangen"
+
+[ribbon]
+new = "Neu"
+open = "Öffnen"
+save = "Speichern"
+pdf = "PDF"
+dxf = "DXF"
+png = "PNG"
+import = "Import"
+pdf_insert = "PDF einfügen"
+paste = "Einfügen"
+cut = "Ausschneiden"
+project = "Projektdaten"
+settings = "Einstellungen"
+inventory = "Inventar"
+keys = "Tasten"
+hotbar = "Hotbar"
+union = "Vereinigen"
+split = "Schneiden"
+block_manager = "Block-Manager"
+block_insert = "Einfügen"
+block_from_selection = "Aus Auswahl"
+explode = "Zerlegen"
+sheet_new = "Neues Blatt"
+viewport = "Ansicht"
+sheet_pdf = "Blatt-PDF"
+zoom_all = "Alles"
+zoom_in = "Größer"
+zoom_out = "Kleiner"
+rotate = "Drehen"
+layers = "Layer"
+properties = "Eigenschaften"
+grid = "Raster"
+fullscreen = "Vollbild"
+sheet_open = "Blatt öffnen, dann zeichnen"
+
+[settings]
+title = "Einstellungen"
+search = "Einstellungen durchsuchen …"
+language = "Sprache"
+language_hint = "gilt sofort, ohne Neustart"
+category_einheiten = "Einheiten und Maßstab"
+category_raster = "Raster"
+category_fangen = "Fangen"
+category_architektur = "Architektur"
+category_bemassung = "Bemaßung"
+category_bedienung = "Bedienung"
+category_darstellung = "Darstellung"
+none_found = "Keine Einstellung gefunden"
+
+[test]
+nur_deutsch = "Nur auf Deutsch"
+
+[ui.einfuegemodus]
+ecken = "Über Ecken"
+mittelpunkt = "Über Mittelpunkt"
+mittelachse = "Mittelachse + Breite"
+basislinie = "Basislinie + Höhe"
+
+[ui.bogenmodus]
+drei_punkte = "Drei Punkte"
+mittelpunkt_start_ende = "Mittelpunkt, Start, Ende"
+
+[ui.fillkind]
+flaeche = "Fläche"
+schraffur = "Schraffur"
+volumen = "Volumen"
+
+[ui.fillinput]
+kontur = "Kontur anklicken"
+punkte = "Punkte setzen"
+farbeimer = "Farbeimer"
+
+[ui.copyinput]
+kopieren = "Kopieren"
+basispunkt = "Kopieren mit Basispunkt"
