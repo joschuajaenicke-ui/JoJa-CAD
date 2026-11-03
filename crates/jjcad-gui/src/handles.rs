@@ -168,6 +168,15 @@ pub fn grips_of(e: &Entity) -> Vec<(GripKind, V2)> {
         EntityKind::Circle { c, .. }
         | EntityKind::Ellipse { c, .. }
         | EntityKind::Point { p: c } => vec![(GripKind::Vert(0), *c)],
+        // Grundriss-Kote: das Symbol sitzt am Kreismittelpunkt.
+        EntityKind::ElevationPlan { p, .. } => vec![(GripKind::Vert(0), *p)],
+        // Schnitt-Kote: jeder Punkt ist ein Griff; Ziehen ändert die Höhe
+        // (Y-Differenz zum ersten Punkt).
+        EntityKind::ElevationSection { pts } => pts
+            .iter()
+            .enumerate()
+            .map(|(i, p)| (GripKind::Vert(i), *p))
+            .collect(),
         // Bogen: Mittelpunkt (verschiebt den Bogen) und beide Enden. Ein
         // Endpunkt läuft auf dem Kreis mit, gezogen wird der Winkel; der
         // Radius bleibt dabei stehen (T0022).
@@ -268,6 +277,10 @@ pub fn apply_grip_tol(orig: &Entity, kind: GripKind, target: V2, tol: f64) -> Op
         (EntityKind::Dim { a, .. }, GripKind::Vert(0)) => *a = target,
         (EntityKind::Dim { b, .. }, GripKind::Vert(1)) => *b = target,
         (EntityKind::DimChain { pts, .. }, GripKind::Vert(i)) => {
+            *pts.get_mut(i)? = target;
+        }
+        (EntityKind::ElevationPlan { p, .. }, GripKind::Vert(_)) => *p = target,
+        (EntityKind::ElevationSection { pts }, GripKind::Vert(i)) => {
             *pts.get_mut(i)? = target;
         }
         (EntityKind::Line { a, .. }, GripKind::Vert(0)) => *a = target,
@@ -427,6 +440,10 @@ pub fn moving_points(e: &Entity, kind: GripKind) -> Vec<V2> {
         (EntityKind::Dim { a, .. }, GripKind::Vert(0)) => vec![*a],
         (EntityKind::Dim { b, .. }, GripKind::Vert(1)) => vec![*b],
         (EntityKind::DimChain { pts, .. }, GripKind::Vert(i)) => {
+            pts.get(i).map(|p| vec![*p]).unwrap_or_default()
+        }
+        (EntityKind::ElevationPlan { p, .. }, GripKind::Vert(_)) => vec![*p],
+        (EntityKind::ElevationSection { pts }, GripKind::Vert(i)) => {
             pts.get(i).map(|p| vec![*p]).unwrap_or_default()
         }
         // Maßlinie: beide Enden wandern mit (senkrecht zur Messrichtung).

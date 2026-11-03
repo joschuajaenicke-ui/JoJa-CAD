@@ -141,13 +141,17 @@ fn jede_objektart_startet_ihren_erzeuger() {
         "dim.chain",
     );
     pruefe(
-        &EntityKind::Elevation {
+        &EntityKind::ElevationPlan {
             p: v(0.0, 0.0),
             z: 2500.0,
-            angle: 0.0,
-            override_text: None,
         },
-        "dim.elevation",
+        "dim.elevation.plan",
+    );
+    pruefe(
+        &EntityKind::ElevationSection {
+            pts: vec![v(0.0, 0.0), v(0.0, 2500.0)],
+        },
+        "dim.elevation.section",
     );
 
     // Architektur

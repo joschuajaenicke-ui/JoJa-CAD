@@ -73,7 +73,9 @@ Steht rechts „nicht", dann ist das Wort im Projekt verpönt (auch in der Oberf
 | **Block** | Wiederverwendbare Zeichnung (Definition) | Symbol, Bauteil |
 | **Blockinstanz** | Ein eingesetzter Block im Plan (mit Position, Drehung, Spiegelung) | Block (wenn die Instanz gemeint ist) |
 | **Maßkette** | Mehrere Maße in einer Linie, fortlaufend | Bemaßungskette, Maßreihe |
-| **Höhenkote** | Höhenangabe als Text mit Bezug (±0,00) | Höhenmaß, Kote |
+| **Höhenkote** | Oberbegriff der beiden Höhenmarken; nicht mehr als eigene Objektart verwendet | Höhenmaß, Kote |
+| **Grundriss-Kote** | Höhenkote im Grundriss: Kreis-Symbol mit Fadenkreuz und verknüpftem Höhenwert; die Höhe gibt der Nutzer im Eigenschaften-Panel an | Plankote, Kreiskote |
+| **Schnitt-Kote** | Höhenkote im Schnitt: Dreieck mit Höhenangabe je Punkt; der erste Punkt ist ±0,00, alle weiteren Höhen folgen aus der Y-Differenz | Schnitthöhe, Dreieckskote |
 | **Text** | Freier Text im Modell oder auf dem Blatt; Größe in mm, Ausrichtung, Auszeichnung | Beschriftung (das ist der Inhalt) |
 | **Textgröße** | Die Höhe eines Textes (Feld im Eigenschaften-Panel) | Schriftgröße in Punkt, Höhe |
 | **Schriftart** | Die Familie eines Textes: Serifenlos, Serifen, Nichtproportional, Schmal, Rund sowie die technischen Schriften **DIN 1451** (Eng-, Mittel-, Breitschrift) und **EN ISO 3098** (Typ A, Typ B) | Font, Typeface |

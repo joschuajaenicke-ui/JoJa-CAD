@@ -214,16 +214,16 @@ pub fn transform_kind(k: &EntityKind, m: &Affine) -> EntityKind {
             line_pos: m.apply(*line_pos),
             axis: *axis,
         },
-        EntityKind::Elevation {
-            p,
-            z,
-            angle,
-            override_text,
-        } => EntityKind::Elevation {
+        EntityKind::ElevationPlan { p, z } => EntityKind::ElevationPlan {
             p: m.apply(*p),
             z: *z,
-            angle: angle + m.rotation(),
-            override_text: override_text.clone(),
+        },
+        // Die Höhen der Schnitt-Kote hängen an der Y-Differenz zum ersten
+        // Punkt. Nach Drehen/Spiegeln rechnen sie sich deshalb neu — das ist
+        // gewollt: die Kote beschreibt die Lage in der Zeichnung, nicht einen
+        // gespeicherten Höhenwert.
+        EntityKind::ElevationSection { pts } => EntityKind::ElevationSection {
+            pts: pts.iter().map(|p| m.apply(*p)).collect(),
         },
         EntityKind::Wall {
             a,

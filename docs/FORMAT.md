@@ -101,7 +101,8 @@ Jedes Objekt hat `id`, `kind`, `layer` und optional `style`:
 | `text` | `p`, `text`, `height`, `angle`, `align`, `valign`, `bold` | `{DATUM}` usw. werden ersetzt |
 | `dim` | `a`, `b`, `line_pos`, `axis`, `override_text` | `axis`: `X`, `Y`, `Aligned` |
 | `dim_chain` | `pts[]`, `line_pos`, `axis` | Maßkette |
-| `elevation` | `p`, `z`, `angle`, `override_text` | Höhenkote, `z` in mm über ±0,00 |
+| `elevation_plan` | `p`, `z` | Grundriss-Kote: Kreis-Symbol, Höhenwert rechts daneben; `z` in mm über ±0,00 |
+| `elevation_section` | `pts[]` | Schnitt-Kote: Dreieck und Höhenangabe je Punkt; der **erste** Punkt ist ±0,00, alle weiteren Höhen folgen aus der Y-Differenz zu ihm (Modell-mm) |
 | `wall` | `a`, `b`, `thickness`, `height`, `material` | Achse + Dicke; Öffnungen kommen aus Türen/Fenstern mit `host` |
 | `door` | `center`, `angle`, `width`, `kind`, `hinge`, `swing_in`, `host` | `kind`: `Hinge`, `Sliding`, `Double`, `Opening` |
 | `window` | `center`, `angle`, `width`, `sill`, `height`, `host` | |

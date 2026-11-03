@@ -2408,9 +2408,50 @@ fn draw_tool_preview(
                 );
             }
         }
-        "dim.elevation" => {
-            p.circle_stroke(w2s(cursor), 8.0, dashed);
-            label = format!("Kote {:.2} m", app.options.elevation_z / 1000.0);
+        // Grundriss-Kote: Kreis mit Fadenkreuz, Größe wie das eingefügte
+        // Symbol (Textgröße der Bemaßung).
+        "dim.elevation.plan" => {
+            let r_welt = app.doc().dim_style.text_height * 0.55;
+            let r = (r_welt * view.zoom) as f32;
+            p.circle_stroke(w2s(cursor), r, dashed);
+            let arm = r * 1.4;
+            let c = w2s(cursor);
+            p.line_segment(
+                [Pos2::new(c.x - arm, c.y), Pos2::new(c.x + arm, c.y)],
+                dashed,
+            );
+            p.line_segment(
+                [Pos2::new(c.x, c.y - arm), Pos2::new(c.x, c.y + arm)],
+                dashed,
+            );
+            label = format!(
+                "Kote {}",
+                jjcad_core::units::elevation_text(app.options.elevation_z)
+            );
+        }
+        // Schnitt-Kote: Dreiecke der gesetzten Punkte, der Zeiger zeigt den
+        // nächsten Punkt. Der erste Punkt ist ±0,00.
+        "dim.elevation.section" => {
+            let h = app.doc().dim_style.text_height;
+            let basis = tool.pts.first().map(|q| q.y).unwrap_or(cursor.y);
+            let dreieck = |q: V2| {
+                let w2 = h * 0.45;
+                let ht = h * 0.9;
+                vec![
+                    w2s(q),
+                    w2s(V2::new(q.x - w2, q.y + ht)),
+                    w2s(V2::new(q.x + w2, q.y + ht)),
+                ]
+            };
+            for q in tool.pts.iter().copied().chain(std::iter::once(cursor)) {
+                p.line_segment([dreieck(q)[0], dreieck(q)[1]], dashed);
+                p.line_segment([dreieck(q)[1], dreieck(q)[2]], dashed);
+                p.line_segment([dreieck(q)[2], dreieck(q)[0]], dashed);
+            }
+            label = format!(
+                "Kote {}",
+                jjcad_core::units::elevation_section_text(cursor.y - basis)
+            );
         }
         "modify.move" => {
             if let Some(base) = last {
@@ -3217,6 +3258,12 @@ fn handle_input(
                     return;
                 }
             }
+            // Schnitt-Kote: schon ein Punkt ist ein vollständiges Objekt
+            // (erster Punkt = ±0,00).
+            if t.action == "dim.elevation.section" && !t.pts.is_empty() {
+                finish_tool(app, true);
+                return;
+            }
         }
     }
 
@@ -3480,6 +3527,13 @@ fn handle_input(
             match tool.action.as_str() {
                 "draw.polyline" | "draw.spline" | "dim.chain" | "dim.room" => {
                     finish_tool(app, true);
+                }
+                "dim.elevation.section" => {
+                    if tool.pts.is_empty() {
+                        app.tool = None;
+                    } else {
+                        finish_tool(app, true);
+                    }
                 }
                 // Füllflächen aus Punkten: Rechtsklick schließt wie Enter. Bei
                 // zu wenigen Punkten gibt es nichts zu schließen — dann bricht
@@ -4647,6 +4701,16 @@ pub fn finish_tool(app: &mut App, from_enter: bool) {
             }
             app.tool = None;
         }
+        "dim.elevation.section" => {
+            if !tool.pts.is_empty() {
+                let _ = run(
+                    app,
+                    "dim.elevation.section",
+                    json!({"pts": tool.pts.iter().map(|p| [app.unit().from_mm(p.x), app.unit().from_mm(p.y)]).collect::<Vec<_>>() }),
+                );
+            }
+            app.tool = None;
+        }
         "dim.chain" => {
             if tool.pts.len() >= 2 {
                 let b = BBox::from_points(&tool.pts);
@@ -5264,13 +5328,17 @@ fn tool_click_at(app: &mut App, w: V2, raw: V2) {
             tool.pts.push(w);
             app.tool = Some(tool);
         }
-        "dim.elevation" => {
+        "dim.elevation.plan" => {
             let z = app.options.elevation_z;
             let _ = run(
                 app,
-                "dim.elevation",
+                "dim.elevation.plan",
                 json!({"p": ax(w), "z": unit.from_mm(z)}),
             );
+        }
+        "dim.elevation.section" => {
+            tool.pts.push(w);
+            app.tool = Some(tool);
         }
         "modify.move" => {
             if tool.pts.is_empty() {
@@ -5532,7 +5600,11 @@ fn ist_erzeuger(action: &str) -> bool {
     action.starts_with("draw.")
         || matches!(
             action,
-            "dim.linear" | "dim.chain" | "dim.elevation" | "dim.room"
+            "dim.linear"
+                | "dim.chain"
+                | "dim.elevation.plan"
+                | "dim.elevation.section"
+                | "dim.room"
         )
 }
 
@@ -9583,7 +9655,8 @@ mod tests_massketten_farbe {
                     e.kind,
                     EntityKind::Dim { .. }
                         | EntityKind::DimChain { .. }
-                        | EntityKind::Elevation { .. }
+                        | EntityKind::ElevationPlan { .. }
+                        | EntityKind::ElevationSection { .. }
                 )
             })
             .cloned()
@@ -9665,7 +9738,11 @@ mod tests_massketten_farbe {
         );
         assert_eq!(mass.layer, ziel);
         assert_eq!(mass.style.color, Some(Color::GREEN));
-        let kote = neu(&mut app, "dim.elevation", json!({"p": [1000.0, 0.0], "z": 2500.0}));
+        let kote = neu(
+            &mut app,
+            "dim.elevation.plan",
+            json!({"p": [1000.0, 0.0], "z": 2500.0}),
+        );
         assert_eq!(kote.layer, ziel);
         assert_eq!(kote.style.color, Some(Color::GREEN));
     }
@@ -9693,6 +9770,81 @@ mod tests_massketten_farbe {
             .expect("keine Maßkette angelegt");
         assert_eq!(e.layer, ziel, "Ebene der Werkzeugoptionen");
         assert_eq!(e.style.color, Some(Color::PURPLE), "Farbe der Werkzeugoptionen");
+    }
+}
+
+#[cfg(test)]
+mod tests_hoehenkoten {
+    //! T0096: Klickweg der beiden Koten.
+    //!
+    //! Die Grundriss-Kote setzt ein Objekt pro Klick, die Schnitt-Kote sammelt
+    //! beliebig viele Punkte und schließt mit Enter. Geprüft wird über denselben
+    //! Weg wie die Maus (`tool_click` + `finish_tool`).
+
+    use super::*;
+
+    fn app() -> App {
+        let mut app = App::with_ctx(egui::Context::default());
+        app.doc_mut().settings.input_unit = jjcad_core::units::Unit::Mm;
+        app
+    }
+
+    /// Ein Klick setzt eine Grundriss-Kote; das Werkzeug bleibt für weitere
+    /// Marken stehen.
+    #[test]
+    fn grundriss_kote_setzt_ein_symbol_pro_klick() {
+        let mut app = app();
+        app.options.elevation_z = 1200.0;
+        app.start_tool("dim.elevation.plan");
+        tool_click(&mut app, V2::new(1000.0, 500.0));
+        tool_click(&mut app, V2::new(3000.0, 500.0));
+        let koten: Vec<_> = app
+            .doc()
+            .entities
+            .iter()
+            .filter(|e| matches!(e.kind, EntityKind::ElevationPlan { .. }))
+            .collect();
+        assert_eq!(koten.len(), 2, "zwei Grundriss-Koten erwartet");
+        assert!(
+            matches!(koten[0].kind, EntityKind::ElevationPlan { z, .. } if (z - 1200.0).abs() < 1e-9),
+            "Höhe aus den Werkzeugoptionen"
+        );
+        assert_eq!(
+            app.tool_id(),
+            Some("dim.elevation.plan"),
+            "das Werkzeug bleibt für die nächste Kote stehen"
+        );
+    }
+
+    /// Die Schnitt-Kote sammelt Punkte; Enter schließt die Folge ab.
+    #[test]
+    fn schnitt_kote_sammelt_punkte_und_schliesst_mit_enter() {
+        let mut app = app();
+        app.start_tool("dim.elevation.section");
+        tool_click(&mut app, V2::new(0.0, 0.0));
+        tool_click(&mut app, V2::new(0.0, 1200.0));
+        tool_click(&mut app, V2::new(1000.0, -350.0));
+        assert_eq!(
+            app.tool.as_ref().map(|t| t.pts.len()),
+            Some(3),
+            "drei Punkte im Werkzeug"
+        );
+        finish_tool(&mut app, true);
+        assert!(app.tool.is_none(), "Enter beendet die Schnitt-Kote");
+        let e = app
+            .doc()
+            .entities
+            .iter()
+            .find(|e| matches!(e.kind, EntityKind::ElevationSection { .. }))
+            .cloned()
+            .expect("keine Schnitt-Kote angelegt");
+        match e.kind {
+            EntityKind::ElevationSection { pts } => {
+                assert_eq!(pts.len(), 3);
+                assert!((pts[1].y - 1200.0).abs() < 1e-9, "Punktlage gespeichert");
+            }
+            k => panic!("falsche Objektart: {k:?}"),
+        }
     }
 }
 

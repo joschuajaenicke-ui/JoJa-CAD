@@ -41,7 +41,12 @@ fn ohne_farbe(doc: &mut Document) -> Vec<Entity> {
             "dim.chain",
             json!({"pts": [[0, 0], [2, 0], [5, 0]], "line_pos": [0, -0.8]}),
         ),
-        neu(doc, "dim.elevation", json!({"p": [0, 0], "z": 1.0})),
+        neu(doc, "dim.elevation.plan", json!({"p": [0, 0], "z": 1.0})),
+        neu(
+            doc,
+            "dim.elevation.section",
+            json!({"pts": [[0, 0], [0, 1.5]]}),
+        ),
     ]
 }
 
@@ -57,7 +62,7 @@ fn neue_bemassung_ist_schwarz() {
     assert_ne!(rot, Color::BLACK, "Ausgangslage: die Ebene trägt Rot");
 
     let erzeugt = ohne_farbe(&mut doc);
-    assert_eq!(erzeugt.len(), 3);
+    assert_eq!(erzeugt.len(), 4);
     for e in &erzeugt {
         assert_eq!(
             doc.effective_color(e),
@@ -66,7 +71,9 @@ fn neue_bemassung_ist_schwarz() {
             match e.kind {
                 EntityKind::Dim { .. } => "Einzelmaß",
                 EntityKind::DimChain { .. } => "Maßkette",
-                _ => "Höhenkote",
+                EntityKind::ElevationPlan { .. } => "Grundriss-Kote",
+                EntityKind::ElevationSection { .. } => "Schnitt-Kote",
+                _ => "unbekannt",
             },
             ebene(&doc, e),
             doc.effective_color(e).to_hex()

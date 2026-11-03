@@ -132,8 +132,8 @@ fn main() {
 
     // ---- Höhenkote ----
     run!(
-        "dim.elevation",
-        json!({"p": [-0.2, 0.0], "z": 0.0, "angle": 180, "layer": "Bemaßung"}),
+        "dim.elevation.plan",
+        json!({"p": [-0.2, 0.0], "z": 0.0, "layer": "Bemaßung"}),
     );
 
     // ---- Blöcke ----

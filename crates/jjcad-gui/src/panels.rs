@@ -1316,9 +1316,10 @@ fn bestand_text(doc: &Document) -> String {
             EntityKind::Door { .. } => tueren += 1,
             EntityKind::Window { .. } => fenster += 1,
             EntityKind::Stair { .. } => treppen += 1,
-            EntityKind::Dim { .. } | EntityKind::DimChain { .. } | EntityKind::Elevation { .. } => {
-                masse += 1
-            }
+            EntityKind::Dim { .. }
+            | EntityKind::DimChain { .. }
+            | EntityKind::ElevationPlan { .. }
+            | EntityKind::ElevationSection { .. } => masse += 1,
             EntityKind::Text { .. } => texte += 1,
             EntityKind::Fill { .. } => flaechen += 1,
             EntityKind::BlockRef { .. } => bloecke += 1,

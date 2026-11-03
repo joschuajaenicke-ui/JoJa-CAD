@@ -1331,7 +1331,13 @@ pub fn hit_test(doc: &Document, p: Vec2, tol: f64, layer_filter: Option<&[Id]>) 
         // Bemaßung: der Maßtext ist Teil des sichtbaren Bereichs und zählt wie
         // ein Text als Fläche; die Maßlinie trifft über die Segmente
         // (`entity_segments` liefert seit T0052 die gezeichnete Geometrie).
-        if matches!(e.kind, EntityKind::Dim { .. } | EntityKind::DimChain { .. }) {
+        if matches!(
+            e.kind,
+            EntityKind::Dim { .. }
+                | EntityKind::DimChain { .. }
+                | EntityKind::ElevationPlan { .. }
+                | EntityKind::ElevationSection { .. }
+        ) {
             let tb = render::trefferbild(doc, e);
             if tb
                 .text_kaesten
@@ -1347,10 +1353,7 @@ pub fn hit_test(doc: &Document, p: Vec2, tol: f64, layer_filter: Option<&[Id]>) 
             }
         }
         // Text/Punkt: über BBox
-        let is_text = matches!(
-            e.kind,
-            EntityKind::Text { .. } | EntityKind::Point { .. } | EntityKind::Elevation { .. }
-        );
+        let is_text = matches!(e.kind, EntityKind::Text { .. } | EntityKind::Point { .. });
         if is_text {
             if b.expanded(tol).contains(p) {
                 let d = b.center().dist(p);
@@ -1461,7 +1464,6 @@ pub fn select_window(doc: &Document, a: Vec2, b: Vec2, crossing: bool) -> Vec<Id
                 | EntityKind::Stair { .. }
                 | EntityKind::Text { .. }
                 | EntityKind::Point { .. }
-                | EntityKind::Elevation { .. }
         );
         if flaechig {
             if (crossing && bb.intersects(&rect)) || (!crossing && rect.contains_bbox(&bb)) {
@@ -1473,7 +1475,13 @@ pub fn select_window(doc: &Document, a: Vec2, b: Vec2, crossing: bool) -> Vec<Id
         // (links→rechts) über der Zahl wählt die Kette, auch wenn Maßlinie und
         // Hilfslinien darüber hinausreichen; das Querfenster berührt die
         // gezeichneten Strecken oder den Maßtext (T0052).
-        if matches!(e.kind, EntityKind::Dim { .. } | EntityKind::DimChain { .. }) {
+        if matches!(
+            e.kind,
+            EntityKind::Dim { .. }
+                | EntityKind::DimChain { .. }
+                | EntityKind::ElevationPlan { .. }
+                | EntityKind::ElevationSection { .. }
+        ) {
             let tb = render::trefferbild(doc, e);
             let text_trifft = tb.text_kaesten.iter().any(|k| {
                 let kb = BBox::from_points(k);
