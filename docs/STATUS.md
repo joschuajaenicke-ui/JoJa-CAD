@@ -97,7 +97,16 @@ offene Fensterinstanz zeigt weiterhin den alten Stand.
     (Vektor **und** Pixelbild), gleicher Ton wie die Wand, Höhe/Volumen in m³,
     Höhenänderung über `modify.set`, Speichern/Laden, alle drei Eingaben
     (`volumen_drei_eingaben`, Farbeimer über `detect_boundary`).
-- **Wandschraffur**: `hatch` an der Wand (Vollfläche, 45°, Kreuz, Punkte,
+- **Schraffuren nach DIN 1356-1:2026-09, Tabelle 5** (T0095): alle 18
+  Kennzeichnungen der Schnittflächen als Muster in `style::FillPattern`
+  (`ALL` in der Reihenfolge der Norm); die früheren Muster heißen jetzt nach
+  ihrem Baustoff (Mauerwerk, Kunststoffe, Sand, Dämmstoffe). Ein Generator
+  (`render::push_muster`) zeichnet sie für Füllfläche, Volumen **und**
+  Wandschraffur; Schlüssel und Bezeichnung finden jedes Muster wieder, die
+  alten Dateinamen bleiben gültig. Prüfblatt `samples/Schraffuren.jjcad`
+  (Erzeuger `examples/schraffuren_erzeugen.rs`), Test
+  `crates/jjcad-core/tests/schraffuren_din.rs`.
+- **Wandschraffur**: `hatch` an der Wand (alle Muster der Tabelle 5,
   **Dämmung = Mäander**), gezeichnet als Displaylisten-Primitive.
 - **Wandausrichtung**: `WallAlign` (Links/Mittig/Rechts), Versatz ±Dicke/2,
   Tab wechselt beim Platzieren (Zyklus, `consume_key`), Wert landet in `draw.wall`.

@@ -1217,27 +1217,7 @@ pub fn render_fill(
         };
         let spacing = (pattern_scale * scale).max(0.5);
         let angle = pattern_angle + xf.rotation();
-        match pattern {
-            FillPattern::Lines => {
-                push_pattern_lines(dl, e, &thin, &pts, &loecher, &[angle], spacing)
-            }
-            FillPattern::Cross => {
-                push_pattern_lines(
-                    dl,
-                    e,
-                    &thin,
-                    &pts,
-                    &loecher,
-                    &[angle, angle + std::f64::consts::FRAC_PI_2],
-                    spacing,
-                )
-            }
-            FillPattern::Dots => push_pattern_dots(dl, e, &thin, &pts, &loecher, angle, spacing),
-            FillPattern::Insulation => {
-                push_pattern_meander(dl, e, &thin, &pts, &loecher, angle, spacing)
-            }
-            FillPattern::Solid => {}
-        }
+        push_muster(dl, e, &thin, &pts, &loecher, pattern, angle, spacing);
     }
 
     if border {
@@ -1269,9 +1249,264 @@ fn fill_diag(pts: &[Vec2]) -> f64 {
     (bb.max.x - bb.min.x).hypot(bb.max.y - bb.min.y)
 }
 
-/// Parallele Musterlinien in mehreren Richtungen über eine Kontur legen und
-/// am Polygon beschneiden — Löcher bleiben frei.
-fn push_pattern_lines(
+// ---------------------------------------------------------------------------
+// Muster (DIN 1356-1:2026-09, Tabelle 5)
+// ---------------------------------------------------------------------------
+//
+// Alle Muster entstehen hier — Füllfläche, Volumen und Wandschraffur rufen
+// `push_muster` auf. Die Figuren (Striche, Punkte, Wellen, Schleifen, Felder)
+// werden an der Kontur beschnitten; Löcher bleiben frei.
+
+/// Musterstück als Linie in die Displayliste legen.
+fn muster_linie(
+    dl: &mut DisplayList,
+    e: &Entity,
+    st: &PrimStyle,
+    a: Vec2,
+    b: Vec2,
+) {
+    if a.dist(b) < 0.05 {
+        return;
+    }
+    dl.push(Prim {
+        shape: Shape::Line(a, b),
+        style: *st,
+        entity: e.id,
+        layer: e.layer,
+    });
+}
+
+/// Eine Strecke an der Kontur beschneiden und als Musterlinie(n) ausgeben.
+fn muster_abschnitt(
+    dl: &mut DisplayList,
+    e: &Entity,
+    st: &PrimStyle,
+    a: Vec2,
+    b: Vec2,
+    pts: &[Vec2],
+    holes: &[Vec<Vec2>],
+) {
+    for (q0, q1) in crate::area::clip_line_area(a, b, pts, holes) {
+        muster_linie(dl, e, st, q0, q1);
+    }
+}
+
+/// Feste Streuung 0…1 aus dem Rasterindex. Unregelmäßige Muster (Sand, Putz,
+/// Kies) sehen damit gestreut aus, bleiben aber bei jedem Aufbau gleich —
+/// ein Zufallsgenerator würde das Bild bei jedem Zoom neu würfeln.
+fn streuung(i: i64, j: i64, salz: u64) -> f64 {
+    let mut h = (i as u64)
+        .wrapping_mul(0x9E37_79B9_7F4A_7C15)
+        .wrapping_add((j as u64).wrapping_mul(0xC2B2_AE3D_27D4_EB4F))
+        .wrapping_add(salz.wrapping_mul(0x1656_67B1_9E37_79F9));
+    h ^= h >> 33;
+    h = h.wrapping_mul(0xFF51_AFD7_ED55_8CCD);
+    h ^= h >> 29;
+    (h % 10_000) as f64 / 10_000.0
+}
+
+/// Muster über eine Kontur legen — **die eine** Stelle für alle Muster.
+///
+/// `spacing` ist der Musterabstand (Objektwert, in mm); jede Figur rechnet
+/// ihre Abmessungen daraus ab. `angle` ist die Musterrichtung inklusive
+/// Objektwinkel und Ansichtsdrehung.
+fn push_muster(
+    dl: &mut DisplayList,
+    e: &Entity,
+    st: &PrimStyle,
+    pts: &[Vec2],
+    holes: &[Vec<Vec2>],
+    pattern: FillPattern,
+    angle: f64,
+    spacing: f64,
+) {
+    let s = spacing.max(0.5);
+    match pattern {
+        FillPattern::Solid => {}
+        // Nr. 9 Mauerwerk: eine Linienschar im Musterwinkel
+        FillPattern::Lines => muster_linien(dl, e, st, pts, holes, &[angle], s, None, 0.0, 0.0),
+        // Nr. 17 Kunststoffe: zwei Linienscharen im rechten Winkel
+        FillPattern::Cross => muster_linien(
+            dl,
+            e,
+            st,
+            pts,
+            holes,
+            &[angle, angle + std::f64::consts::FRAC_PI_2],
+            s,
+            None,
+            0.0,
+            0.0,
+        ),
+        // Nr. 4 Sand: feine, gestreute Punkte
+        FillPattern::Dots => muster_punkte(dl, e, st, pts, holes, angle, s, 1.0, 1.0, 0.035, 0.55),
+        // Nr. 13 Putz: gröbere, gestreute Punkte
+        FillPattern::Plaster => {
+            muster_punkte(dl, e, st, pts, holes, angle, s * 1.9, 1.0, 1.9, 0.07, 0.6)
+        }
+        // Nr. 14 Dämmstoffe, Zickzackform: Mäanderlinie
+        FillPattern::Insulation => muster_wellen(dl, e, st, pts, holes, angle, s, 1.0, 0.45, 2.0),
+        // Nr. 1 Boden unverändert: Zickzackschraffur
+        FillPattern::GroundPlain => muster_zickzack(dl, e, st, pts, holes, angle, s),
+        // Nr. 2 Boden verändert: Längsstriche mit Querstrichen
+        FillPattern::GroundChanged => muster_boden_veraendert(dl, e, st, pts, holes, angle, s),
+        // Nr. 3 Kies: Kieselsteine
+        FillPattern::Gravel => muster_kiesel(dl, e, st, pts, holes, angle, s),
+        // Nr. 5 Beton unbewehrt: gestrichelte Linien, Reihen versetzt
+        FillPattern::ConcretePlain => muster_linien(
+            dl,
+            e,
+            st,
+            pts,
+            holes,
+            &[angle],
+            s,
+            Some(&[(0.85, 0.55)]),
+            0.0,
+            0.5,
+        ),
+        // Nr. 6 Beton bewehrt: durchgehende Linien, dazwischen kurze Striche
+        FillPattern::ConcreteReinforced => {
+            muster_linien(dl, e, st, pts, holes, &[angle], s * 2.0, None, 0.0, 0.0);
+            muster_linien(
+                dl,
+                e,
+                st,
+                pts,
+                holes,
+                &[angle],
+                s * 2.0,
+                Some(&[(0.9, 0.6)]),
+                0.5,
+                0.0,
+            );
+        }
+        // Nr. 7 WU-Beton: durchgehende Linien, dazwischen lange Striche
+        FillPattern::ConcreteWatertight => {
+            muster_linien(dl, e, st, pts, holes, &[angle], s * 2.0, None, 0.0, 0.0);
+            muster_linien(
+                dl,
+                e,
+                st,
+                pts,
+                holes,
+                &[angle],
+                s * 2.0,
+                Some(&[(1.55, 0.45)]),
+                0.5,
+                0.0,
+            );
+        }
+        // Nr. 8 Textilbeton: Linien mit Pfeilen dazwischen
+        FillPattern::TextileConcrete => {
+            muster_linien(dl, e, st, pts, holes, &[angle], s * 2.0, None, 0.0, 0.0);
+            muster_pfeile(dl, e, st, pts, holes, angle, s);
+        }
+        // Nr. 10 Vollholz quer: gewellte Linien quer zum Musterwinkel
+        FillPattern::WoodAcross => {
+            muster_wellen(dl, e, st, pts, holes, angle, s, 1.0, 0.10, 2.6)
+        }
+        // Nr. 11 Vollholz längs: gewellte Linien waagerecht (Vorgabe 45° − 45°)
+        FillPattern::WoodAlong => muster_wellen(
+            dl,
+            e,
+            st,
+            pts,
+            holes,
+            angle - std::f64::consts::FRAC_PI_4,
+            s,
+            1.0,
+            0.10,
+            2.6,
+        ),
+        // Nr. 12 Metall: weite Linien, dazwischen kurze Striche
+        FillPattern::Metal => {
+            muster_linien(dl, e, st, pts, holes, &[angle], s * 2.0, None, 0.0, 0.0);
+            muster_linien(
+                dl,
+                e,
+                st,
+                pts,
+                holes,
+                &[angle],
+                s * 2.0,
+                Some(&[(1.25, 1.55)]),
+                0.5,
+                0.0,
+            );
+        }
+        // Nr. 14 Dämmstoffe, Schlaufenform: Reihen geschlossener Schleifen
+        FillPattern::InsulationLoops => muster_schlaufen(dl, e, st, pts, holes, angle, s),
+        // Nr. 15 Abdichtungen: einlagig / mehrlagig / mit Aufkantung
+        FillPattern::SealSingle => muster_abdichtung(
+            dl,
+            e,
+            st,
+            pts,
+            holes,
+            angle - std::f64::consts::FRAC_PI_4,
+            s,
+            1,
+            false,
+        ),
+        FillPattern::SealMulti => muster_abdichtung(
+            dl,
+            e,
+            st,
+            pts,
+            holes,
+            angle - std::f64::consts::FRAC_PI_4,
+            s,
+            2,
+            false,
+        ),
+        FillPattern::SealUpstand => muster_abdichtung(
+            dl,
+            e,
+            st,
+            pts,
+            holes,
+            angle - std::f64::consts::FRAC_PI_4,
+            s,
+            2,
+            true,
+        ),
+        // Nr. 16 Dichtstoffe: enges Kreuzraster
+        FillPattern::Sealant => muster_linien(
+            dl,
+            e,
+            st,
+            pts,
+            holes,
+            &[angle, angle + std::f64::consts::FRAC_PI_2],
+            s * 0.45,
+            None,
+            0.0,
+            0.0,
+        ),
+        // Nr. 18 Glas: Gruppen aus drei kurzen Strichen
+        FillPattern::Glass => muster_linien(
+            dl,
+            e,
+            st,
+            pts,
+            holes,
+            &[angle],
+            s,
+            Some(&[(0.45, 0.12), (0.45, 0.12), (0.45, 1.05)]),
+            0.0,
+            0.5,
+        ),
+    }
+}
+
+/// Parallele Musterlinien über eine Kontur, optional gestrichelt.
+///
+/// `versatz` ist die Lage der ersten Linie in Einheiten von `spacing`
+/// (0,5 legt sie zwischen zwei Linien), `staffel` versetzt das Strichmuster
+/// jeder zweiten Reihe — so entstehen die gestaffelten Reihen der Norm.
+#[allow(clippy::too_many_arguments)]
+fn muster_linien(
     dl: &mut DisplayList,
     e: &Entity,
     st: &PrimStyle,
@@ -1279,33 +1514,79 @@ fn push_pattern_lines(
     holes: &[Vec<Vec2>],
     angles: &[f64],
     spacing: f64,
+    striche: Option<&[(f64, f64)]>,
+    versatz: f64,
+    staffel: f64,
 ) {
+    let spacing = spacing.max(0.5);
     let origin = BBox::from_points(pts).center();
     let reach = fill_diag(pts) * 0.5 + spacing;
     // Genug Linien für die ganze Kontur, aber begrenzt — ein sehr kleiner
     // Abstand darf das Zeichnen nicht lahmlegen.
-    let n = ((reach / spacing).ceil() as i64 + 1).clamp(1, 4000);
+    let n = ((reach / spacing).ceil() as i64 + 2).clamp(1, 4000);
     for &ang in angles {
         let nrm = Vec2::polar(ang + std::f64::consts::FRAC_PI_2, 1.0);
         let dir = Vec2::polar(ang, 1.0);
         for i in -n..=n {
-            let off = nrm * (i as f64 * spacing);
+            let off = nrm * ((i as f64 + versatz) * spacing);
             let a = origin + off - dir * reach;
             let b = origin + off + dir * reach;
+            let phase = if i.rem_euclid(2) == 1 { staffel } else { 0.0 };
             for (q0, q1) in crate::area::clip_line_area(a, b, pts, holes) {
-                dl.push(Prim {
-                    shape: Shape::Line(q0, q1),
-                    style: *st,
-                    entity: e.id,
-                    layer: e.layer,
-                });
+                match striche {
+                    Some(muster) => muster_striche(dl, e, st, q0, q1, spacing, muster, phase),
+                    None => muster_linie(dl, e, st, q0, q1),
+                }
             }
         }
     }
 }
 
+/// Strichmuster auf einer Strecke: `muster` ist eine Folge aus (Strich, Lücke)
+/// in Einheiten von `spacing`. Mehr als ein Paar ergibt Gruppen (Glas: drei
+/// Striche, dann eine lange Lücke).
+fn muster_striche(
+    dl: &mut DisplayList,
+    e: &Entity,
+    st: &PrimStyle,
+    a: Vec2,
+    b: Vec2,
+    spacing: f64,
+    muster: &[(f64, f64)],
+    phase: f64,
+) {
+    let len = a.dist(b);
+    if len < 0.05 || muster.is_empty() {
+        return;
+    }
+    let zyklus: f64 = muster.iter().map(|(an, aus)| an + aus).sum::<f64>() * spacing;
+    if zyklus < 1e-6 {
+        return;
+    }
+    let dir = (b - a).normalized();
+    let mut t = -(phase * zyklus);
+    let mut idx = 0usize;
+    let mut schutz = 0;
+    while t < len && schutz < 20_000 {
+        schutz += 1;
+        let (an, aus) = muster[idx % muster.len()];
+        let t0 = t.max(0.0);
+        let t1 = (t + an * spacing).min(len);
+        if t1 > t0 {
+            muster_linie(dl, e, st, a + dir * t0, a + dir * t1);
+        }
+        t += (an + aus) * spacing;
+        idx += 1;
+    }
+}
+
 /// Punktraster im gedrehten Musterraster, nur innerhalb der Kontur.
-fn push_pattern_dots(
+///
+/// `reihen` ist der Reihenabstand in Einheiten von `spacing`, `groesse` der
+/// Punktradius in Einheiten von `spacing` (vor der Streuung), `streu` der
+/// Anteil der Rasterweite, um den ein Punkt wandert.
+#[allow(clippy::too_many_arguments)]
+fn muster_punkte(
     dl: &mut DisplayList,
     e: &Entity,
     st: &PrimStyle,
@@ -1313,27 +1594,49 @@ fn push_pattern_dots(
     holes: &[Vec<Vec2>],
     angle: f64,
     spacing: f64,
+    reihen: f64,
+    groesse: f64,
+    radius: f64,
+    streu: f64,
 ) {
+    let spacing = spacing.max(0.5);
     let origin = BBox::from_points(pts).center();
     let dir = Vec2::polar(angle, 1.0);
     let nrm = dir.perp();
+    let reihe = (spacing * reihen).max(0.5);
+    let half = fill_diag(pts) * 0.5 + spacing;
     // Rasterweite notfalls vergröbern, damit eine große Fläche bei kleinem
     // Abstand nicht zehntausende Punkte erzeugt.
-    let mut spacing = spacing;
-    let half = fill_diag(pts) * 0.5 + spacing;
-    while (2.0 * half / spacing).powi(2) > 30000.0 {
-        spacing *= 1.5;
+    let mut sp = spacing;
+    while (2.0 * half / sp).powi(2) > 30_000.0 {
+        sp *= 1.4;
     }
-    let r = (spacing * 0.055).max(st.width * 0.9).max(0.05);
-    let n = ((half / spacing).ceil() as i64 + 1).clamp(1, 4000);
+    let r = ((sp * radius) * groesse.max(0.1)).max(st.width * 0.9).max(0.05);
+    let n = ((half / sp).ceil() as i64 + 3).clamp(1, 4000);
+    let m = ((half / reihe).ceil() as i64 + 3).clamp(1, 4000);
     for i in -n..=n {
-        for j in -n..=n {
-            let p = origin + dir * (i as f64 * spacing) + nrm * (j as f64 * spacing);
+        for j in -m..=m {
+            let jx = if streu > 0.0 {
+                (streuung(i, j, 1) - 0.5) * streu * sp
+            } else {
+                0.0
+            };
+            let jy = if streu > 0.0 {
+                (streuung(i, j, 2) - 0.5) * streu * reihe
+            } else {
+                0.0
+            };
+            let p = origin + dir * (i as f64 * sp + jx) + nrm * (j as f64 * reihe + jy);
             if !crate::area::point_in_area(p, pts, holes) {
                 continue;
             }
+            let rr = if streu > 0.0 {
+                r * (0.7 + 0.6 * streuung(i, j, 3))
+            } else {
+                r
+            };
             dl.push(Prim {
-                shape: Shape::Dot { p, r },
+                shape: Shape::Dot { p, r: rr },
                 style: *st,
                 entity: e.id,
                 layer: e.layer,
@@ -1342,9 +1645,10 @@ fn push_pattern_dots(
     }
 }
 
-/// Dämmung: Mäanderlinien (Mineralwolle) entlang der Musterrichtung, am
-/// Polygon beschnitten — Löcher bleiben frei.
-fn push_pattern_meander(
+/// Wellenlinien entlang der Musterrichtung, am Polygon beschnitten —
+/// Dämmstoffe (Zickzackform) und Vollholz. `amp` ist die Amplitude, `periode`
+/// die Wellenlänge, beide in Einheiten von `spacing`.
+fn muster_wellen(
     dl: &mut DisplayList,
     e: &Entity,
     st: &PrimStyle,
@@ -1352,22 +1656,24 @@ fn push_pattern_meander(
     holes: &[Vec<Vec2>],
     angle: f64,
     spacing: f64,
+    reihen: f64,
+    amp: f64,
+    periode: f64,
 ) {
+    let spacing = (spacing * reihen).max(0.5);
     let origin = BBox::from_points(pts).center();
     let dir = Vec2::polar(angle, 1.0);
     let nrm = dir.perp();
-    // Rasterweite notfalls vergröbern, damit die Zahl der Wellensegmente
-    // begrenzt bleibt (die Displayliste wird je Stand einmal gebaut).
     let mut spacing = spacing;
     let mut half = fill_diag(pts) * 0.5 + spacing;
-    while (2.0 * half / spacing) * (2.0 * half / (spacing * 2.0 / 10.0)) > 40000.0 {
+    // Die Zahl der Wellensegmente begrenzen (die Displayliste wird je Stand
+    // einmal gebaut).
+    while (2.0 * half / spacing) * (2.0 * half / (spacing * periode / 10.0)) > 40_000.0 {
         spacing *= 1.5;
         half = fill_diag(pts) * 0.5 + spacing;
     }
-    let amp = spacing * 0.45;
-    let period = spacing * 2.0;
-    // Auflösung so wählen, dass die Welle glatt bleibt und die Zahl der
-    // Segmente trotzdem begrenzt ist.
+    let amplitude = spacing * amp;
+    let period = spacing * periode.max(0.5);
     let step = (period / 10.0).max(half / 400.0).max(0.2);
     let steps = ((half * 2.0) / step).ceil() as i64;
     let n = ((half / spacing).ceil() as i64 + 1).clamp(1, 400);
@@ -1376,19 +1682,300 @@ fn push_pattern_meander(
         let mut prev: Option<Vec2> = None;
         for k in 0..=steps {
             let s = -half + k as f64 * step;
-            let off = ((s / period) * std::f64::consts::TAU).sin() * amp;
+            let off = ((s / period) * std::f64::consts::TAU).sin() * amplitude;
             let p = base + dir * s + nrm * off;
             if let Some(q) = prev {
-                for (q0, q1) in crate::area::clip_line_area(q, p, pts, holes) {
+                muster_abschnitt(dl, e, st, q, p, pts, holes);
+            }
+            prev = Some(p);
+        }
+    }
+}
+
+/// Nr. 1 Boden/Gelände unverändert: Zickzackschraffur (Dreiecke) unter der
+/// Geländekante.
+fn muster_zickzack(
+    dl: &mut DisplayList,
+    e: &Entity,
+    st: &PrimStyle,
+    pts: &[Vec2],
+    holes: &[Vec<Vec2>],
+    angle: f64,
+    spacing: f64,
+) {
+    let s = spacing.max(0.5);
+    let origin = BBox::from_points(pts).center();
+    let dir = Vec2::polar(angle, 1.0);
+    let nrm = dir.perp();
+    let reihe = s * 1.3;
+    let half = fill_diag(pts) * 0.5 + reihe;
+    let zahn = s;
+    let amp = s * 0.75;
+    let m = ((half / reihe).ceil() as i64 + 1).clamp(1, 400);
+    let n = ((half / (zahn * 0.5)).ceil() as i64 + 2).clamp(1, 4000);
+    for j in -m..=m {
+        let base = origin + nrm * (j as f64 * reihe);
+        let mut prev: Option<Vec2> = None;
+        for k in -n..=n {
+            let x = k as f64 * zahn * 0.5;
+            let y = if k.rem_euclid(2) == 0 { -amp } else { amp };
+            let p = base + dir * x + nrm * y;
+            if let Some(q) = prev {
+                muster_abschnitt(dl, e, st, q, p, pts, holes);
+            }
+            prev = Some(p);
+        }
+    }
+}
+
+/// Nr. 2 Boden/Gelände verändert: Längsstriche zwischen Querstrichen.
+fn muster_boden_veraendert(
+    dl: &mut DisplayList,
+    e: &Entity,
+    st: &PrimStyle,
+    pts: &[Vec2],
+    holes: &[Vec<Vec2>],
+    angle: f64,
+    spacing: f64,
+) {
+    let s = spacing.max(0.5);
+    let origin = BBox::from_points(pts).center();
+    let dir = Vec2::polar(angle, 1.0);
+    let nrm = dir.perp();
+    let reihe = s * 2.0;
+    let half = fill_diag(pts) * 0.5 + reihe;
+    let m = ((half / reihe).ceil() as i64 + 1).clamp(1, 400);
+    let n = ((half / s).ceil() as i64 + 2).clamp(1, 4000);
+    for j in -m..=m {
+        let base = origin + nrm * (j as f64 * reihe);
+        for k in -n..=n {
+            let p = base + dir * (k as f64 * s);
+            // Querstrich über die halbe Reihenhöhe
+            muster_abschnitt(dl, e, st, p - nrm * (s * 0.55), p + nrm * (s * 0.55), pts, holes);
+            // Zwei Längsstriche in der folgenden Zelle
+            for v in [-0.28f64, 0.28] {
+                let a = p + dir * (s * 0.22) + nrm * (s * v);
+                let b = p + dir * (s * 0.78) + nrm * (s * v);
+                muster_abschnitt(dl, e, st, a, b, pts, holes);
+            }
+        }
+    }
+}
+
+/// Nr. 3 Kies: Kieselsteine als geschlossene Kreise wechselnder Größe.
+fn muster_kiesel(
+    dl: &mut DisplayList,
+    e: &Entity,
+    st: &PrimStyle,
+    pts: &[Vec2],
+    holes: &[Vec<Vec2>],
+    angle: f64,
+    spacing: f64,
+) {
+    let s = spacing.max(0.5);
+    let origin = BBox::from_points(pts).center();
+    let dir = Vec2::polar(angle, 1.0);
+    let nrm = dir.perp();
+    let reihe = s * 1.5;
+    let sp = s * 1.5;
+    let half = fill_diag(pts) * 0.5 + sp;
+    let n = ((half / sp).ceil() as i64 + 2).clamp(1, 400);
+    let m = ((half / reihe).ceil() as i64 + 2).clamp(1, 2000);
+    for i in -n..=n {
+        for j in -m..=m {
+            let jx = (streuung(i, j, 4) - 0.5) * sp * 0.5;
+            let jy = (streuung(i, j, 5) - 0.5) * reihe * 0.5;
+            let p = origin + dir * (i as f64 * sp + jx) + nrm * (j as f64 * reihe + jy);
+            if !crate::area::point_in_area(p, pts, holes) {
+                continue;
+            }
+            let r = s * (0.34 + 0.34 * streuung(i, j, 6));
+            // Nur Steine zeichnen, die ganz in der Fläche liegen — sonst ragen
+            // sie über die Umgrenzung hinaus.
+            let passt = (0..8).all(|k| {
+                let a = k as f64 / 8.0 * std::f64::consts::TAU;
+                crate::area::point_in_area(p + Vec2::polar(a, r), pts, holes)
+            });
+            if !passt {
+                continue;
+            }
+            dl.push(Prim {
+                shape: Shape::Circle { c: p, r },
+                style: *st,
+                entity: e.id,
+                layer: e.layer,
+            });
+        }
+    }
+}
+
+/// Nr. 8 Textilbeton: Pfeile zwischen den Musterlinien, in Musterrichtung.
+fn muster_pfeile(
+    dl: &mut DisplayList,
+    e: &Entity,
+    st: &PrimStyle,
+    pts: &[Vec2],
+    holes: &[Vec<Vec2>],
+    angle: f64,
+    spacing: f64,
+) {
+    let s = spacing.max(0.5);
+    let origin = BBox::from_points(pts).center();
+    let dir = Vec2::polar(angle, 1.0);
+    let nrm = dir.perp();
+    let reihe = s * 2.0;
+    let half = fill_diag(pts) * 0.5 + reihe;
+    let m = ((half / reihe).ceil() as i64 + 1).clamp(1, 400);
+    let n = ((half / reihe).ceil() as i64 + 2).clamp(1, 400);
+    for j in -m..=m {
+        for i in -n..=n {
+            let p = origin
+                + nrm * ((j as f64 + 0.5) * reihe)
+                + dir * ((i as f64 + 0.5) * reihe);
+            if !crate::area::point_in_area(p, pts, holes) {
+                continue;
+            }
+            let lang = s * 0.55;
+            let spitz = p + dir * (lang * 0.5);
+            let fuss = p - dir * (lang * 0.5);
+            muster_abschnitt(dl, e, st, fuss, spitz, pts, holes);
+            for seite in [-1.0f64, 1.0] {
+                let ende = spitz - Vec2::polar(angle + seite * 0.7, lang * 0.42);
+                muster_abschnitt(dl, e, st, spitz, ende, pts, holes);
+            }
+        }
+    }
+}
+
+/// Nr. 14 Dämmstoffe, Schlaufenform: Reihen geschlossener Schlaufen.
+fn muster_schlaufen(
+    dl: &mut DisplayList,
+    e: &Entity,
+    st: &PrimStyle,
+    pts: &[Vec2],
+    holes: &[Vec<Vec2>],
+    angle: f64,
+    spacing: f64,
+) {
+    let s = spacing.max(0.5);
+    let origin = BBox::from_points(pts).center();
+    let dir = Vec2::polar(angle, 1.0);
+    let nrm = dir.perp();
+    // Eine Reihe ist ein Band aus aneinanderstoßenden Schlaufen: Schlaufe
+    // 0,9 s breit, 1,9 s hoch, Reihen im Abstand einer Schlaufe.
+    let rx = s * 0.46;
+    let ry = s * 0.95;
+    let schritt = rx * 2.0;
+    let reihe = ry * 2.0;
+    let half = fill_diag(pts) * 0.5 + reihe;
+    let m = ((half / reihe).ceil() as i64 + 1).clamp(1, 400);
+    let n = ((half / schritt).ceil() as i64 + 2).clamp(1, 2000);
+    for j in -m..=m {
+        for i in -n..=n {
+            let p = origin + nrm * (j as f64 * reihe) + dir * (i as f64 * schritt);
+            // Schlaufen nur ganz zeichnen — eine angeschnittene Schleife sähe
+            // an der Umgrenzung wie ein Fehler aus.
+            let passt = (0..8).all(|k| {
+                let a = k as f64 / 8.0 * std::f64::consts::TAU;
+                let q = p + dir * (rx * a.cos()) + nrm * (ry * a.sin());
+                crate::area::point_in_area(q, pts, holes)
+            });
+            if !passt {
+                continue;
+            }
+            dl.push(Prim {
+                shape: Shape::Ellipse {
+                    c: p,
+                    rx,
+                    ry,
+                    rot: angle,
+                },
+                style: *st,
+                entity: e.id,
+                layer: e.layer,
+            });
+        }
+    }
+}
+
+/// Nr. 15 Abdichtungen: Bänder aus Feldern, die abwechselnd voll sind.
+///
+/// Die Norm zeichnet ein Band entlang der abgedichteten Fläche (einlagig eine
+/// Lage, mehrlagig zwei versetzte Lagen, Aufkantung mit betonten Kanten). In
+/// einer Füllfläche wiederholt sich das Band im Musterabstand; die Bandlängs-
+/// richtung ist bei Vorgabe **waagerecht** (Musterwinkel − 45°), denn eine
+/// Abdichtung liegt auf der Bauteilfläche, nicht schräg dazu.
+fn muster_abdichtung(
+    dl: &mut DisplayList,
+    e: &Entity,
+    st: &PrimStyle,
+    pts: &[Vec2],
+    holes: &[Vec<Vec2>],
+    angle: f64,
+    spacing: f64,
+    lagen: usize,
+    kanten: bool,
+) {
+    let s = spacing.max(0.5);
+    let origin = BBox::from_points(pts).center();
+    let dir = Vec2::polar(angle, 1.0);
+    let nrm = dir.perp();
+    // Lagenhöhe, Abstand zweier Lagen und Zellenlänge in Musterrichtung.
+    let lage_h = s * 0.42;
+    let lage_abstand = lage_h + s * 0.05;
+    let zelle = s * 1.3;
+    let band = lage_h * lagen as f64 + lage_abstand * (lagen.saturating_sub(1)) as f64;
+    let abstand = band + s * 0.9;
+    let half = fill_diag(pts) * 0.5 + abstand;
+    let m = ((half / abstand).ceil() as i64 + 1).clamp(1, 400);
+    let n = ((half / zelle).ceil() as i64 + 2).clamp(1, 2000);
+    let mut gefuellt = *st;
+    gefuellt.fill = Some(st.color);
+    for j in -m..=m {
+        let band_anfang = j as f64 * abstand;
+        for lage in 0..lagen {
+            let y0 = band_anfang + lage as f64 * lage_abstand;
+            // Die zweite Lage liegt um eine halbe Zelle versetzt.
+            let versatz = if lage % 2 == 1 { 0.5 } else { 0.0 };
+            for i in -n - 1..=n {
+                let x0 = (i as f64 + versatz) * zelle;
+                let ecken = [
+                    origin + dir * x0 + nrm * y0,
+                    origin + dir * (x0 + zelle) + nrm * y0,
+                    origin + dir * (x0 + zelle) + nrm * (y0 + lage_h),
+                    origin + dir * x0 + nrm * (y0 + lage_h),
+                ];
+                let drin = ecken
+                    .iter()
+                    .all(|q| crate::area::point_in_area(*q, pts, holes));
+                if !drin {
+                    continue;
+                }
+                // Die weißen Felder der Norm sind umrandet, jedes zweite Feld
+                // ist voll.
+                for k in 0..4 {
+                    muster_linie(dl, e, st, ecken[k], ecken[(k + 1) % 4]);
+                }
+                if i.rem_euclid(2) == 0 {
                     dl.push(Prim {
-                        shape: Shape::Line(q0, q1),
-                        style: *st,
+                        shape: Shape::Fill {
+                            outer: ecken.to_vec(),
+                            holes: Vec::new(),
+                        },
+                        style: gefuellt,
                         entity: e.id,
                         layer: e.layer,
                     });
                 }
             }
-            prev = Some(p);
+        }
+        if kanten {
+            // Aufkantung: die Bandkanten laufen als durchgehende Linie mit.
+            for y in [band_anfang, band_anfang + band] {
+                let a = origin - dir * half + nrm * y;
+                let b = origin + dir * half + nrm * y;
+                muster_abschnitt(dl, e, st, a, b, pts, holes);
+            }
         }
     }
 }
@@ -1664,34 +2251,12 @@ fn push_wall_hatch(
             }
         }
         _ => {
-            let mut angles = vec![std::f64::consts::FRAC_PI_4];
-            if hp == FillPattern::Cross {
-                angles.push(std::f64::consts::FRAC_PI_4 + std::f64::consts::FRAC_PI_2);
-            }
+            // Alle übrigen Muster (DIN 1356-1:2026-09, Tabelle 5) entstehen im
+            // selben Mustergenerator wie die Füllfläche — je Wandstück
+            // beschnitten, damit an Gehrung und Öffnung nichts übersteht.
             let sp = (thickness * 0.25).max(12.0);
-            let pts: Vec<Vec2> = flechen.iter().flatten().cloned().collect();
-            if pts.is_empty() {
-                return;
-            }
-            let origin = BBox::from_points(&pts).center();
-            for ang in angles {
-                let nrm = Vec2::polar(ang + std::f64::consts::FRAC_PI_2, 1.0);
-                let dirh = Vec2::polar(ang, 1.0);
-                for i in -80..=80 {
-                    let off = nrm * (i as f64 * sp);
-                    let p_start = origin + off - dirh * 4000.0;
-                    let p_end = origin + off + dirh * 4000.0;
-                    for fl in &flechen {
-                        for (q0, q1) in clip_line_polygon(p_start, p_end, fl) {
-                            dl.push(Prim {
-                                shape: Shape::Line(q0, q1),
-                                style: thin,
-                                entity: e.id,
-                                layer: e.layer,
-                            });
-                        }
-                    }
-                }
+            for fl in &flechen {
+                push_muster(dl, e, &thin, fl, &[], hp, std::f64::consts::FRAC_PI_4, sp);
             }
         }
     }

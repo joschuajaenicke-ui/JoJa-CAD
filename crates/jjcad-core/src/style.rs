@@ -229,59 +229,195 @@ impl Default for DimStyle {
 
 /// Muster einer Füllfläche. Gilt für den Objekttyp `Fill` **und** für die
 /// Wandschraffur (`Wall.hatch`) — ein Muster, eine Bedeutung.
+///
+/// Die Namen folgen DIN 1356-1:2026-09, Tabelle 5 „Kennzeichnung der
+/// Schnittflächen von Baustoffen“ (18 Schraffuren). Die schon vorhandenen
+/// Muster tragen seitdem den Namen der Zeile, die sie abbilden: `Lines` ist
+/// Mauerwerk, `Cross` Kunststoffe, `Dots` Sand, `Insulation` Dämmstoffe
+/// (Zickzackform). Die zweite Form einer Zeile steht als eigene Variante
+/// daneben (`InsulationLoops`, `SealSingle`/`SealMulti`/`SealUpstand`).
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, Default)]
 pub enum FillPattern {
     /// Fläche in der Füllfarbe
     #[default]
     Solid,
-    /// Parallele Linien (Standard 45°)
+    /// Parallele Linien im Musterwinkel (Vorgabe 45°) — Tabelle 5, Nr. 9
+    /// „Mauerwerk“.
     Lines,
-    /// Zwei Linienscharen im rechten Winkel
+    /// Zwei Linienscharen im rechten Winkel — Nr. 17 „Kunststoffe“.
     Cross,
-    /// Punktraster
+    /// Punktraster — Nr. 4 „Sand“.
     Dots,
-    /// Dämmung: Mäanderlinie (Mineralwolle) — typisch für Bauzeichnungen
+    /// Mäanderlinie (Mineralwolle) — Nr. 14 „Dämmstoffe“, Zickzackform.
     Insulation,
+    /// Nr. 1 „Boden/Gelände unverändert“: Zickzackschraffur unter der
+    /// Geländekante.
+    GroundPlain,
+    /// Nr. 2 „Boden/Gelände verändert“: Längsstriche mit Querstrichen.
+    GroundChanged,
+    /// Nr. 3 „Kies“: Kieselsteine als Kreise wechselnder Größe.
+    Gravel,
+    /// Nr. 5 „Beton (unbewehrt)“: gestrichelte Musterlinien, Reihen versetzt.
+    ConcretePlain,
+    /// Nr. 6 „Beton (bewehrt)“: durchgehende Linien mit kurzen Strichen
+    /// dazwischen.
+    ConcreteReinforced,
+    /// Nr. 7 „WU-Beton“: durchgehende Linien mit langen Strichen dazwischen.
+    ConcreteWatertight,
+    /// Nr. 8 „Textilbeton“: Linien mit Pfeilen dazwischen.
+    TextileConcrete,
+    /// Nr. 10 „Vollholz, quer“: gewellte Linien (Faser quer zum Musterwinkel).
+    WoodAcross,
+    /// Nr. 11 „Vollholz, längs“: gewellte Linien waagerecht (längs der Faser).
+    WoodAlong,
+    /// Nr. 12 „Metall“: weite Musterlinien, dazwischen kurze Striche.
+    Metal,
+    /// Nr. 13 „Putz“: gröberes, unregelmäßiges Punktraster.
+    Plaster,
+    /// Nr. 14 „Dämmstoffe“, Schlaufenform: Reihen geschlossener Schlaufen.
+    InsulationLoops,
+    /// Nr. 15 „Abdichtungen“, einlagig: eine Lage, Felder abwechselnd voll.
+    SealSingle,
+    /// Nr. 15 „Abdichtungen“, mehrlagig: zwei Lagen, Felder versetzt.
+    SealMulti,
+    /// Nr. 15 „Abdichtungen“, mehrlagig mit Aufkantung: zwei Lagen, Kanten
+    /// betont.
+    SealUpstand,
+    /// Nr. 16 „Dichtstoffe“: enges Kreuzraster.
+    Sealant,
+    /// Nr. 18 „Glas“: Gruppen aus drei kurzen Strichen.
+    Glass,
 }
 
 impl FillPattern {
-    pub const ALL: [FillPattern; 5] = [
+    /// Alle Muster in der Reihenfolge der Norm (Tabelle 5, Nr. 1–18) —
+    /// dieselbe Reihenfolge zeigt die Auswahl im Eigenschaften-Panel.
+    pub const ALL: &'static [FillPattern] = &[
         FillPattern::Solid,
-        FillPattern::Lines,
-        FillPattern::Cross,
+        FillPattern::GroundPlain,
+        FillPattern::GroundChanged,
+        FillPattern::Gravel,
         FillPattern::Dots,
+        FillPattern::ConcretePlain,
+        FillPattern::ConcreteReinforced,
+        FillPattern::ConcreteWatertight,
+        FillPattern::TextileConcrete,
+        FillPattern::Lines,
+        FillPattern::WoodAcross,
+        FillPattern::WoodAlong,
+        FillPattern::Metal,
+        FillPattern::Plaster,
         FillPattern::Insulation,
+        FillPattern::InsulationLoops,
+        FillPattern::SealSingle,
+        FillPattern::SealMulti,
+        FillPattern::SealUpstand,
+        FillPattern::Sealant,
+        FillPattern::Cross,
+        FillPattern::Glass,
     ];
 
+    /// Bezeichnung nach DIN 1356-1:2026-09, Tabelle 5. Kurz genug für die
+    /// 150-px-Wertespalte des Eigenschaften-Panels.
     pub fn label(self) -> &'static str {
         match self {
             FillPattern::Solid => "Vollfläche",
-            FillPattern::Lines => "Schraffur 45°",
-            FillPattern::Cross => "Kreuzschraffur",
-            FillPattern::Dots => "Punktraster",
-            FillPattern::Insulation => "Dämmung",
+            FillPattern::Lines => "Mauerwerk",
+            FillPattern::Cross => "Kunststoffe",
+            FillPattern::Dots => "Sand",
+            FillPattern::Insulation => "Dämmstoffe",
+            FillPattern::GroundPlain => "Boden unverändert",
+            FillPattern::GroundChanged => "Boden verändert",
+            FillPattern::Gravel => "Kies",
+            FillPattern::ConcretePlain => "Beton unbewehrt",
+            FillPattern::ConcreteReinforced => "Beton bewehrt",
+            FillPattern::ConcreteWatertight => "WU-Beton",
+            FillPattern::TextileConcrete => "Textilbeton",
+            FillPattern::WoodAcross => "Vollholz quer",
+            FillPattern::WoodAlong => "Vollholz längs",
+            FillPattern::Metal => "Metall",
+            FillPattern::Plaster => "Putz",
+            FillPattern::InsulationLoops => "Dämmstoffe Schlaufen",
+            FillPattern::SealSingle => "Abdichtung 1-lagig",
+            FillPattern::SealMulti => "Abdichtung 2-lagig",
+            FillPattern::SealUpstand => "Abdichtung Aufkantung",
+            FillPattern::Sealant => "Dichtstoffe",
+            FillPattern::Glass => "Glas",
         }
     }
 
-    /// Schlüssel für Action-Parameter (`draw.fill`, `modify.set`).
+    /// Schlüssel für Action-Parameter (`draw.fill`, `modify.set`) und für die
+    /// gespeicherte Vorgabe in `prefs.json`.
     pub fn key(self) -> &'static str {
         match self {
             FillPattern::Solid => "solid",
-            FillPattern::Lines => "lines",
-            FillPattern::Cross => "cross",
-            FillPattern::Dots => "dots",
-            FillPattern::Insulation => "insulation",
+            FillPattern::Lines => "mauerwerk",
+            FillPattern::Cross => "kunststoffe",
+            FillPattern::Dots => "sand",
+            FillPattern::Insulation => "daemmstoffe",
+            FillPattern::GroundPlain => "boden_unveraendert",
+            FillPattern::GroundChanged => "boden_veraendert",
+            FillPattern::Gravel => "kies",
+            FillPattern::ConcretePlain => "beton_unbewehrt",
+            FillPattern::ConcreteReinforced => "beton_bewehrt",
+            FillPattern::ConcreteWatertight => "wu_beton",
+            FillPattern::TextileConcrete => "textilbeton",
+            FillPattern::WoodAcross => "vollholz_quer",
+            FillPattern::WoodAlong => "vollholz_laengs",
+            FillPattern::Metal => "metall",
+            FillPattern::Plaster => "putz",
+            FillPattern::InsulationLoops => "daemmung_schlaufen",
+            FillPattern::SealSingle => "abdichtung_einlagig",
+            FillPattern::SealMulti => "abdichtung_mehrlagig",
+            FillPattern::SealUpstand => "abdichtung_aufkantung",
+            FillPattern::Sealant => "dichtstoffe",
+            FillPattern::Glass => "glas",
         }
     }
 
-    /// Muster aus einem Action-Parameter lesen (deutsch und englisch).
+    /// Muster aus einem Action-Parameter lesen (deutsch und englisch, auch die
+    /// alten Schlüssel `lines`/`cross`/`dots`/`insulation`).
     pub fn from_key(s: &str) -> Option<FillPattern> {
-        Some(match s.trim().to_lowercase().as_str() {
-            "solid" | "voll" | "vollflaeche" | "vollfläche" => FillPattern::Solid,
-            "lines" | "line" | "linien" | "schraffur" | "45" => FillPattern::Lines,
-            "cross" | "kreuz" | "kreuzschraffur" => FillPattern::Cross,
-            "dots" | "punkte" | "punktraster" => FillPattern::Dots,
-            "insulation" | "daemmung" | "dämmung" => FillPattern::Insulation,
+        let k = s.trim().to_lowercase().replace([' ', '-', '/'], "_");
+        Some(match k.as_str() {
+            "solid" | "voll" | "vollflaeche" | "vollfläche" | "voll_fläche" => FillPattern::Solid,
+            // Mauerwerk (Nr. 9) — hieß früher „Schraffur 45°“
+            "mauerwerk" | "lines" | "line" | "linien" | "schraffur" | "45" => FillPattern::Lines,
+            // Kunststoffe (Nr. 17) — hieß früher „Kreuzschraffur“
+            "kunststoffe" | "cross" | "kreuz" | "kreuzschraffur" => FillPattern::Cross,
+            // Sand (Nr. 4) — hieß früher „Punktraster“
+            "sand" | "dots" | "punkte" | "punktraster" => FillPattern::Dots,
+            // Dämmstoffe, Zickzack (Nr. 14) — hieß früher „Dämmung“
+            "daemmstoffe" | "dämmstoffe" | "insulation" | "daemmung" | "dämmung" => {
+                FillPattern::Insulation
+            }
+            "boden_unveraendert" | "boden_unverändert" | "boden" => {
+                FillPattern::GroundPlain
+            }
+            "boden_veraendert" | "boden_verändert" => {
+                FillPattern::GroundChanged
+            }
+            "kies" | "gravel" => FillPattern::Gravel,
+            "beton_unbewehrt" | "beton" | "concrete" => FillPattern::ConcretePlain,
+            "beton_bewehrt" | "stahlbeton" | "concrete_reinforced" => {
+                FillPattern::ConcreteReinforced
+            }
+            "wu_beton" | "wasserdichter_beton" => FillPattern::ConcreteWatertight,
+            "textilbeton" | "textile_concrete" => FillPattern::TextileConcrete,
+            "vollholz_quer" | "holz_quer" | "wood_across" => FillPattern::WoodAcross,
+            "vollholz_laengs" | "vollholz_längs" | "holz_laengs" | "wood_along" => {
+                FillPattern::WoodAlong
+            }
+            "metall" | "metal" => FillPattern::Metal,
+            "putz" | "plaster" => FillPattern::Plaster,
+            "daemmung_schlaufen" | "dämmung_schlaufen" | "daemmstoffe_schlaufen"
+            | "dämmstoffe_schlaufen" => FillPattern::InsulationLoops,
+            "abdichtung_einlagig" | "abdichtung_1_lagig" | "abdichtung" | "abdichtungen"
+            | "seal_single" => FillPattern::SealSingle,
+            "abdichtung_mehrlagig" | "abdichtung_2_lagig" | "seal_multi" => FillPattern::SealMulti,
+            "abdichtung_aufkantung" | "seal_upstand" => FillPattern::SealUpstand,
+            "dichtstoffe" | "sealant" => FillPattern::Sealant,
+            "glas" | "glass" => FillPattern::Glass,
             _ => return None,
         })
     }

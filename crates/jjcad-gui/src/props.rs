@@ -1248,13 +1248,11 @@ pub fn wand(app: &mut App, ui: &mut Ui, ziel: Ziel) {
                         if schraffur != *hatch {
                             map.insert(
                                 "hatch".into(),
+                                // Schlüssel aus `FillPattern::key` — dieselbe
+                                // Quelle, die auch gelesen wird.
                                 serde_json::json!(match schraffur {
                                     None => "none",
-                                    Some(jjcad_core::style::FillPattern::Solid) => "none",
-                                    Some(jjcad_core::style::FillPattern::Lines) => "lines",
-                                    Some(jjcad_core::style::FillPattern::Cross) => "cross",
-                                    Some(jjcad_core::style::FillPattern::Dots) => "dots",
-                                    Some(jjcad_core::style::FillPattern::Insulation) => "insulation",
+                                    Some(hp) => hp.key(),
                                 }),
                             );
                             geaendert = true;
