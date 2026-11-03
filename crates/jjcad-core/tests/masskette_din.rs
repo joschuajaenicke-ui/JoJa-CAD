@@ -1,0 +1,237 @@
+//! Darstellung von Maßketten und Einzelmaßen nach DIN 1356-1:2026-09.
+//!
+//! Die Norm (§9.1, Bild 3) legt die Elemente der Bemaßung fest:
+//! durchgezogene Maßlinie, Begrenzung durch Schrägstrich oder Punkt,
+//! Maßhilfslinie mit Abstand zum Bauteil, Maßzahl **über** der Maßlinie.
+//! Bild 3 zeichnet bei 2,5 mm Texthöhe einen Begrenzungsstrich von rund
+//! 1,5 mm und denselben Überstand der Maßlinie über die äußere Maßhilfslinie
+//! (0,6 h), die Maßzahl sitzt etwa 1,75 mm (0,7 h) über der Linie.
+//!
+//! Geprüft wird an der Displayliste — das ist die eine Quelle für Anzeige,
+//! PDF und PNG. Die Weltwerte sind Papier-Millimeter × Maßstab (hier 1:100).
+
+use jjcad_core::render::{render_document, RenderCtx, Shape};
+use jjcad_core::session::Session;
+use serde_json::json;
+
+fn kette(pts: &[[f64; 2]], line_pos: [f64; 2], axis: &str) -> (Session, u64) {
+    let mut s = Session::new();
+    s.execute("doc.settings", &json!({ "input_unit": "m" }))
+        .expect("Einheit");
+    let r = s
+        .execute(
+            "dim.chain",
+            &json!({ "pts": pts, "line_pos": line_pos, "axis": axis }),
+        )
+        .expect("Maßkette");
+    (s, r["created"][0].as_u64().expect("id"))
+}
+
+fn einzelmass() -> (Session, u64) {
+    let mut s = Session::new();
+    s.execute("doc.settings", &json!({ "input_unit": "m" }))
+        .expect("Einheit");
+    let r = s
+        .execute(
+            "dim.linear",
+            &json!({ "a": [0.0, 0.0], "b": [3.0, 0.0], "line_pos": [1.5, -0.6] }),
+        )
+        .expect("Maß");
+    (s, r["created"][0].as_u64().expect("id"))
+}
+
+/// Linien der Bemaßung, sortiert nach Länge (Welt-mm).
+fn linien(s: &Session, id: u64) -> Vec<(f64, (f64, f64), (f64, f64))> {
+    let dl = render_document(&RenderCtx::new(&s.doc));
+    let mut out: Vec<(f64, (f64, f64), (f64, f64))> = dl
+        .prims
+        .iter()
+        .filter(|p| p.entity == id)
+        .filter_map(|p| match &p.shape {
+            Shape::Line(a, b) => Some((a.dist(*b), (a.x, a.y), (b.x, b.y))),
+            _ => None,
+        })
+        .collect();
+    out.sort_by(|a, b| a.0.partial_cmp(&b.0).unwrap());
+    out
+}
+
+fn texte(s: &Session, id: u64) -> Vec<(f64, f64, f64, String)> {
+    let dl = render_document(&RenderCtx::new(&s.doc));
+    dl.prims
+        .iter()
+        .filter(|p| p.entity == id)
+        .filter_map(|p| match &p.shape {
+            Shape::Text(t) => Some((t.pos.x, t.pos.y, t.angle, t.text.clone())),
+            _ => None,
+        })
+        .collect()
+}
+
+/// Maßlinie: durchgezogen über alle Basispunkte **mit Überstand** an beiden
+/// Enden (§9.1: „Auf den Überstand der Maßlinie über die Maßhilfslinie hinaus
+/// darf verzichtet werden“ — Bild 3 zeichnet ihn).
+#[test]
+fn masslinie_hat_ueberstand_an_beiden_enden() {
+    let (s, id) = kette(&[[0.0, 0.0], [2.0, 0.0], [4.0, 0.0]], [0.0, -1.2], "x");
+    let l = linien(&s, id);
+    let masslinie = l.last().expect("Maßlinie");
+    // Basispunkte 0…4000 mm, Überstand 0,6 × 2,5 mm × 100 = 150 mm je Ende.
+    assert!(
+        (masslinie.0 - 4300.0).abs() < 0.5,
+        "Maßlinie ohne Überstand: Länge {}, Enden {:?} {:?}",
+        masslinie.0,
+        masslinie.1,
+        masslinie.2
+    );
+    let x0 = masslinie.1 .0.min(masslinie.2 .0);
+    let x1 = masslinie.1 .0.max(masslinie.2 .0);
+    assert!((x0 + 150.0).abs() < 0.5, "Überstand links fehlt: {x0}");
+    assert!((x1 - 4150.0).abs() < 0.5, "Überstand rechts fehlt: {x1}");
+}
+
+/// Begrenzungsstrich: 45°, 0,6 h lang — Bild 3 ist das Maß der Darstellung,
+/// nicht die Pfeilgröße (die gilt nur für Pfeil und Punkt).
+#[test]
+fn schraegstrich_ist_eine_texthoehen_laenge_lang() {
+    let (s, id) = kette(&[[0.0, 0.0], [2.0, 0.0], [4.0, 0.0]], [0.0, -1.2], "x");
+    let l = linien(&s, id);
+    let mut striche: Vec<f64> = l
+        .iter()
+        .map(|e| e.0)
+        .filter(|len| *len < 500.0) // Striche; Maß- und Hilfslinien sind länger
+        .collect();
+    striche.sort_by(|a, b| a.partial_cmp(b).unwrap());
+    // Drei Basispunkte → drei Striche à 150 mm; die Hilfslinien sind länger.
+    assert_eq!(striche.len(), 3, "Strichzahl: {striche:?}");
+    for len in &striche {
+        assert!(
+            (len - 150.0).abs() < 0.5,
+            "Schrägstrich muss 0,6 × 2,5 mm × 100 = 150 mm lang sein, ist {len}"
+        );
+    }
+    // 45°: gleiche Waagerecht- und Senkrechtausdehnung.
+    let strich = l
+        .iter()
+        .find(|e| (e.0 - 150.0).abs() < 0.5)
+        .expect("Strich");
+    let dx = (strich.2 .0 - strich.1 .0).abs();
+    let dy = (strich.2 .1 - strich.1 .1).abs();
+    assert!((dx - dy).abs() < 0.01, "kein 45°-Strich: dx {dx}, dy {dy}");
+}
+
+/// Ein Punkt zweier Segmente trägt **eine** Marke, nicht zwei übereinander.
+#[test]
+fn ein_begrenzungsstrich_je_basispunkt() {
+    let (s, id) = kette(&[[0.0, 0.0], [2.0, 0.0], [4.0, 0.0]], [0.0, -1.2], "x");
+    let l = linien(&s, id);
+    // Eine Maßlinie + drei Hilfslinien + drei Begrenzungsstriche.
+    assert_eq!(l.len(), 7, "Linienzahl der Kette: {l:?}");
+    // Punkt-Marken ebenso: drei Punkte, nicht vier.
+    let mut s2 = s;
+    s2.execute("dim.style", &json!({ "arrow": "dot" })).unwrap();
+    let dl = render_document(&RenderCtx::new(&s2.doc));
+    let punkte = dl
+        .prims
+        .iter()
+        .filter(|p| p.entity == id)
+        .filter(|p| matches!(p.shape, Shape::Dot { .. }))
+        .count();
+    assert_eq!(punkte, 3, "Punktmarken je Basispunkt, nicht je Segmentende");
+}
+
+/// Maßhilfslinien sind Volllinien **schmal** wie die Maßlinie (Tabelle 2,
+/// 01.1.8 „Maßlinien und ihre Begrenzung“) — nicht dünner gezeichnet.
+#[test]
+fn hilfslinien_sind_so_breit_wie_die_masslinie() {
+    let (s, id) = kette(&[[0.0, 0.0], [2.0, 0.0], [4.0, 0.0]], [0.0, -1.2], "x");
+    let dl = render_document(&RenderCtx::new(&s.doc));
+    let breiten: Vec<f64> = dl
+        .prims
+        .iter()
+        .filter(|p| p.entity == id)
+        .filter(|p| matches!(p.shape, Shape::Line(..)))
+        .map(|p| p.style.width)
+        .collect();
+    let min = breiten.iter().cloned().fold(f64::MAX, f64::min);
+    let max = breiten.iter().cloned().fold(0.0, f64::max);
+    assert!(
+        (max - min).abs() < 0.001,
+        "Maßlinie/Hilfslinie/Strich müssen eine Strichstärke haben: {breiten:?}"
+    );
+}
+
+/// Maßzahl: mittig **über** der Maßlinie, Unterkante 0,7 h über der Linie.
+#[test]
+fn masszahl_steht_ueber_der_masslinie() {
+    let (s, id) = kette(&[[0.0, 0.0], [2.0, 0.0], [4.0, 0.0]], [0.0, -1.2], "x");
+    let t = texte(&s, id);
+    assert_eq!(t.len(), 2, "zwei Maßzahlen erwartet: {t:?}");
+    for (x, y, angle, text) in &t {
+        assert!((*angle).abs() < 1e-6, "waagerechte Kette bleibt waagerecht: {text}");
+        // Maßlinie liegt auf y = -1200; Anker 0,6 × 2,5 mm × 100 = 150 mm
+        // darüber (die Ziffern stehen dadurch rund 0,7 h über der Linie).
+        assert!(
+            (y - (-1050.0)).abs() < 0.5,
+            "Maßzahl „{text}“ sitzt nicht über der Maßlinie: y {y}"
+        );
+        assert!(*x > 0.0 && *x < 4000.0, "Maßzahl außerhalb der Kette: {x}");
+    }
+}
+
+/// Senkrechte Kette: Maßzahl um 90° gedreht (**von rechts lesbar**) und links
+/// der Maßlinie — „über der Maßlinie“ heißt in Leserichtung.
+#[test]
+fn senkrechte_kette_liest_von_rechts() {
+    let (s, id) = kette(&[[0.0, 0.0], [0.0, 3.0]], [1.2, 1.5], "y");
+    let t = texte(&s, id);
+    assert_eq!(t.len(), 1, "eine Maßzahl erwartet: {t:?}");
+    let (x, y, angle, text) = &t[0];
+    assert!(
+        (angle - std::f64::consts::FRAC_PI_2).abs() < 1e-6,
+        "senkrechte Maßzahl muss um 90° gedreht sein: {angle}"
+    );
+    // Maßlinie auf x = +1200; Text links davon, 150 mm entfernt.
+    assert!(
+        (x - 1050.0).abs() < 0.5,
+        "Maßzahl „{text}“ muss links der Maßlinie stehen: x {x}"
+    );
+    assert!((y - 1500.0).abs() < 50.0, "Maßzahl nicht mittig: y {y}");
+}
+
+/// Einzelmaß folgt denselben Regeln wie die Kette (eine Darstellung).
+#[test]
+fn einzelmass_folgt_denselben_regeln() {
+    let (s, id) = einzelmass();
+    let l = linien(&s, id);
+    let masslinie = l.last().expect("Maßlinie");
+    // Basispunkte 0…3000, Überstand 150 mm je Ende.
+    assert!(
+        (masslinie.0 - 3300.0).abs() < 0.5,
+        "Einzelmaß ohne Überstand: {}",
+        masslinie.0
+    );
+    let striche = l.iter().filter(|e| (e.0 - 150.0).abs() < 0.5).count();
+    assert_eq!(striche, 2, "zwei Begrenzungsstriche am Einzelmaß");
+    let t = texte(&s, id);
+    assert_eq!(t.len(), 1);
+    assert!(
+        (t[0].1 - (-600.0 + 150.0)).abs() < 0.5,
+        "Maßzahl nicht über der Maßlinie: y {}",
+        t[0].1
+    );
+}
+
+/// `text_gap` bleibt wirksam, wenn es **größer** als der DIN-Anteil ist —
+/// der Normwert ist die Untergrenze, kein starrer Wert.
+#[test]
+fn groesserer_textabstand_bleibt_erhalten() {
+    let (mut s, id) = kette(&[[0.0, 0.0], [2.0, 0.0]], [0.0, -1.2], "x");
+    s.execute("dim.style", &json!({ "text_gap": 4.0 })).unwrap();
+    let t = texte(&s, id);
+    assert!(
+        (t[0].1 - (-1200.0 + 400.0)).abs() < 0.5,
+        "text_gap 4 mm muss 400 mm über der Maßlinie ergeben: y {}",
+        t[0].1
+    );
+}
