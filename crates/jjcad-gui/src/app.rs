@@ -2000,6 +2000,8 @@ impl App {
                 // der ausgewählten Wand im Screenshot belegbar)
                 "movetool" => self.start_tool("modify.move"),
                 // Stutzen läuft: Prüfbild der Abschnitts-Hervorhebung (T0075)
+                // Zerlegen ohne Auswahl: Klick-Werkzeug mit roter Hervorhebung (T0093)
+                "zerlegen" | "explode" => self.start_tool("modify.explode"),
                 "stutzen" | "trim" => self.start_tool("modify.trim"),
                 // Verlängern läuft: Prüfbild der Strecke, die angesetzt würde (T0081)
                 "verlaengern" | "extend" => self.start_tool("modify.extend"),
@@ -2550,10 +2552,12 @@ impl App {
                     self.mark_changed();
                 }
             }
-            "modify.explode" | "block.explode" => {
+            // Zerlegen mit Auswahl läuft über `start_tool` (T0093) — hier nur
+            // noch der Blockbefehl aus Menü/Inventar.
+            "block.explode" => {
                 let ids = self.selection().to_vec();
                 if ids.is_empty() {
-                    self.toast("Blöcke · erst auswählen");
+                    self.start_tool("modify.explode");
                 } else {
                     match self
                         .session_mut()
@@ -2675,8 +2679,38 @@ impl App {
         }
     }
 
+    /// Zerlegt alles, was in der Auswahl steht (T0093).
+    ///
+    /// „Zerlegen“ mit Auswahl ist keine Werkzeug-Phase, sondern eine
+    /// Ausführung: ein Aufruf, ein Ergebnis. Erst **ohne** Auswahl startet
+    /// das Klick-Werkzeug ([`App::start_tool`]), das jedes angeklickte Objekt
+    /// auflöst und es vorher rot hervorhebt.
+    fn zerlege_auswahl(&mut self) {
+        let ids = self.selection().to_vec();
+        match self
+            .session_mut()
+            .execute("modify.explode", &serde_json::json!({ "ids": ids }))
+        {
+            Ok(_) => {
+                // Die Kennungen der zerlegten Objekte gibt es nicht mehr —
+                // sonst zeigte das Eigenschaften-Panel gelöschte Objekte.
+                self.session_mut().clear_selection();
+                self.mark_changed();
+                self.mitteilung("Auswahl · zerlegt");
+            }
+            Err(e) => self.toast(e),
+        }
+    }
+
     pub fn start_tool(&mut self, id: &str) {
         if actions::action(id).is_none() {
+            return;
+        }
+        // Zerlegen (T0093): steht etwas in der Auswahl, wird es sofort zerlegt.
+        // Das Werkzeug gibt es nur ohne Auswahl — dort zerlegt jeder Klick das
+        // Objekt unter dem Zeiger (vorher hebt die Vorschau es rot hervor).
+        if id == "modify.explode" && !self.selection().is_empty() {
+            self.zerlege_auswahl();
             return;
         }
         // Tastaturbelegung (T0064): auch ein Werkzeug aus Hotbar oder Inventar
@@ -2699,7 +2733,6 @@ impl App {
                         | "modify.mirror"
                         | "modify.scale"
                         | "modify.offset"
-                        | "modify.explode"
                 ),
             phase: ToolPhase::Collecting,
         });
