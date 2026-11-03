@@ -233,3 +233,50 @@ fn flaeche_steht_in_der_objektabfrage() {
             < 1e-6
     );
 }
+
+/// Die Datei trägt die Umgrenzung, die Textlage und die Überschrift — nach dem
+/// Laden steht derselbe Stempel wieder da.
+#[test]
+fn stempel_ueberlebt_speichern_und_laden() {
+    let mut s = Session::new();
+    s.execute("doc.settings", &json!({ "input_unit": "m" }))
+        .unwrap();
+    let antwort = s
+        .execute(
+            "dim.room",
+            &json!({ "pts": [[0.0, 0.0], [4.0, 0.0], [4.0, 3.0], [0.0, 3.0]],
+                    "heading": "Küche" }),
+        )
+        .unwrap();
+    let id = antwort["created"][0].as_u64().unwrap();
+    let json_text = jjcad_core::persist::to_json(&s.doc).expect("schreiben");
+    assert!(json_text.contains("\"type\": \"room\""), "kein room in der Datei");
+    assert!(json_text.contains("\"heading\": \"Küche\""), "Überschrift fehlt");
+
+    let geladen = jjcad_core::persist::from_json(&json_text).expect("laden");
+    let e = geladen.entity(id).expect("Stempel fehlt nach dem Laden");
+    match &e.kind {
+        EntityKind::Room {
+            boundary,
+            heading,
+            ..
+        } => {
+            assert_eq!(boundary.len(), 4);
+            assert_eq!(heading, "Küche");
+        }
+        k => panic!("kein Raumstempel: {}", k.type_name()),
+    }
+    let text = {
+        let ctx = render::RenderCtx::for_entity(&geladen, e);
+        let mut dl = render::DisplayList::default();
+        render::render_entity(&ctx, e, jjcad_core::geom::Affine::IDENTITY, &mut dl, 0);
+        dl.prims
+            .iter()
+            .find_map(|p| match &p.shape {
+                render::Shape::Text(t) => Some(t.text.clone()),
+                _ => None,
+            })
+            .unwrap_or_default()
+    };
+    assert!(text.contains("12,00 m²"), "Fläche nach dem Laden: {text:?}");
+}
