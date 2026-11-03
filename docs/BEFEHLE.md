@@ -40,7 +40,7 @@ Befehls-Schicht vorbei.
 | `draw.circle` | `c`, `r` oder `through` | `{"c":[2,2],"r":0.75}` |
 | `draw.arc` | `c`, `r`, `a0`, `a1` (Grad, CCW) | `{"c":[0,0],"r":2,"a0":0,"a1":90}` |
 | `draw.ellipse` | `c`, `rx`, `ry`, `rot` (Grad, CCW) | `{"c":[0,0],"rx":1,"ry":0.5}`; Mittelachse + Breite = `c` = Achsenmitte, `rx` = halbe Achsenlänge, `ry` = halbe Breite, `rot` = Achsenwinkel |
-| `draw.hatch` | `boundary[]`, `pattern` (`solid`/`lines`/`cross`/`dots`), `angle`, `spacing` | |
+| `draw.hatch` | `boundary[]`, `pattern`, `angle`, `spacing` | Muster nach DIN 1356-1:2026-09, Tabelle 5 — Schlüssel: `solid`, `mauerwerk` (45°-Linien), `kunststoffe` (Kreuz), `sand` (Punkte), `daemmstoffe` (Zickzack), `boden_unveraendert`, `boden_veraendert`, `kies`, `beton_unbewehrt`, `beton_bewehrt`, `wu_beton`, `textilbeton`, `vollholz_quer`, `vollholz_laengs`, `metall`, `putz`, `daemmung_schlaufen`, `abdichtung_einlagig`, `abdichtung_mehrlagig`, `abdichtung_aufkantung`, `dichtstoffe`, `glas`; die alten Schlüssel `lines`/`cross`/`dots`/`insulation` gelten weiter |
 | `draw.text` | `p`, `text`, `height`, `angle`, `align`, `bold` | `{"p":[1,2],"text":"Wohnen","height":0.3}` |
 
 ## Architektur

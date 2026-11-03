@@ -1694,13 +1694,11 @@ pub fn execute(doc: &mut Document, id: &str, params: &Value) -> Result<Value, St
                     thickness,
                     height: p.len_or("height", 2750.0),
                     material: p.text_or("material", "Mauerwerk"),
-                    hatch: match p.text("hatch").unwrap_or_default().to_lowercase().as_str() {
-                        "lines" => Some(crate::style::FillPattern::Lines),
-                        "cross" => Some(crate::style::FillPattern::Cross),
-                        "dots" => Some(crate::style::FillPattern::Dots),
-                        "insulation" => Some(crate::style::FillPattern::Insulation),
-                        _ => None,
-                    },
+                    // Schraffur der Wand: derselbe Parameterschlüssel wie bei
+                    // der Füllfläche (`FillPattern::from_key`).
+                    hatch: p
+                        .fill_pattern("hatch")
+                        .filter(|hp| *hp != crate::style::FillPattern::Solid),
                     align: match p.text("align").unwrap_or_default().to_lowercase().as_str() {
                         "left" | "links" => crate::style::WallAlign::Left,
                         "right" | "rechts" => crate::style::WallAlign::Right,
@@ -2601,15 +2599,19 @@ pub fn execute(doc: &mut Document, id: &str, params: &Value) -> Result<Value, St
                         _ => {}
                     }
                     if let Some(h) = p.text("hatch") {
-                        let hp = match h.to_lowercase().as_str() {
-                            "none" | "solid" | "" => None,
-                            "lines" => Some(crate::style::FillPattern::Lines),
-                            "cross" => Some(crate::style::FillPattern::Cross),
-                            "dots" => Some(crate::style::FillPattern::Dots),
-                            "insulation" | "daemmung" | "dämmung" => {
-                                Some(crate::style::FillPattern::Insulation)
+                        // Leerer Wert, „none“/„aus“ schalten die Schraffur ab,
+                        // „solid“ ebenso (Vollfläche an der Wand = keine
+                        // Schraffur). Alles andere liest `FillPattern::from_key`.
+                        let roh = h.trim().to_lowercase();
+                        let hp = if roh.is_empty()
+                            || matches!(roh.as_str(), "none" | "aus" | "keine" | "solid")
+                        {
+                            None
+                        } else {
+                            match crate::style::FillPattern::from_key(&roh) {
+                                Some(crate::style::FillPattern::Solid) | None => None,
+                                Some(x) => Some(x),
                             }
-                            _ => None,
                         };
                         if let EntityKind::Wall { hatch, .. } = &mut e.kind {
                             *hatch = hp;
