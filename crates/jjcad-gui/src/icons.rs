@@ -679,6 +679,19 @@ pub fn paint(painter: &Painter, rect: Rect, name: &str, color: Color32) {
         "chevron_up" => {
             i.poly(&[(7.0, 14.0), (12.0, 9.0), (17.0, 14.0)], false);
         }
+        // Fensterknöpfe ohne Titelleiste (T0098) — Strichbilder wie in einer
+        // Titelleiste: Strich (Minimieren), Rechteck (Vergrößern), zwei
+        // versetzte Rechtecke (Wiederherstellen).
+        "window_min" => {
+            i.line(6.0, 12.5, 18.0, 12.5);
+        }
+        "window_max" => {
+            i.rect(6.0, 6.0, 12.0, 12.0);
+        }
+        "window_restore" => {
+            i.rect(5.0, 9.0, 10.0, 10.0);
+            i.poly(&[(9.0, 6.0), (19.0, 6.0), (19.0, 15.0)], false);
+        }
         "grid" => {
             for k in 0..4 {
                 i.line(3.0 + k as f32 * 6.0, 3.0, 3.0 + k as f32 * 6.0, 21.0);

@@ -27,11 +27,19 @@ fn main() -> eframe::Result<()> {
     let args: Vec<String> = std::env::args().collect();
     let file = args.get(1).filter(|a| !a.starts_with("--")).cloned();
 
+    // T0098: Der Fensterrahmen steht schon vor dem Fenster fest — ob der
+    // Fenstermanager eine Titelleiste zeichnet, entscheidet die Erzeugung
+    // (`with_decorations`), nicht ein späterer Befehl.
+    let prefs = jjcad_core::persist::UserPrefs::load();
+    let titelleiste = !prefs.fensterrahmen.ohne_titelleiste();
+
     let options = eframe::NativeOptions {
         viewport: egui::ViewportBuilder::default()
             .with_inner_size([1500.0, 950.0])
             .with_min_inner_size([1080.0, 680.0])
             .with_title(app::window_title())
+            // Ohne Titelleiste: Knöpfe und Ziehen zeichnet die Anwendung selbst
+            .with_decorations(titelleiste)
             // Fenstername für Taskleiste und Startmenü (KDE/GNOME ordnen das
             // Fenster über den .desktop-Eintrag „jjcad“ zu)
             .with_app_id("jjcad")

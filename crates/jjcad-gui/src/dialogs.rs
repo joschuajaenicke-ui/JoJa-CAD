@@ -6,7 +6,7 @@ use crate::widgets;
 use egui::{Align, Color32, FontId, Layout, Pos2, Rect, RichText, Rounding, Sense, Stroke, Ui, Vec2};
 use jjcad_core::actions;
 use jjcad_core::geom::{Vec2 as V2};
-use jjcad_core::persist::{fest_belegt, DragMode, PastePivot};
+use jjcad_core::persist::{fest_belegt, DragMode, Fensterrahmen, PastePivot};
 use jjcad_core::units::Unit;
 use serde_json::json;
 
@@ -1043,6 +1043,13 @@ pub(crate) const EINSTELLUNGSKATEGORIEN: &[Einstellungskategorie] = &[
             "Fadenkreuz",
             "Zwischenablage",
             "Dateidialog",
+            "Fensterrahmen",
+            "Titelleiste",
+            "Minimieren",
+            "Vergrößern",
+            "Schließen",
+            "Rahmen",
+            "Fenster",
             "Sprache",
             "Englisch",
             "Language",
@@ -1161,6 +1168,8 @@ fn settings_body(app: &mut App, ui: &mut Ui) {
     let mut dateidialog_system = app.prefs.dateidialog_system();
     // T0070: Drehpunkt der Einfüge-Vorschau (Basispunkt oder Mittelpunkt).
     let mut paste_pivot = app.prefs.paste_pivot;
+    // T0098: Fensterrahmen — experimentell auch ohne Titelleiste.
+    let mut fensterrahmen = app.prefs.fensterrahmen;
 
     // Suche: Kategorien, deren Name oder eine ihrer Einstellungen passt.
     let suche = app.ui.settings_suche.trim().to_lowercase();
@@ -1563,6 +1572,39 @@ fn settings_body(app: &mut App, ui: &mut Ui) {
                                         ui.label(theme::dim(jjcad_core::i18n::tr("gui.dialogs.kein_systemdialog_verfuegbar")));
                                     }
                                 });
+                                // T0098: Fenster ohne Titelleiste. Ohne Rahmen des
+                                // Fenstermanagers zeichnet JoJa-CAD Minimieren,
+                                // Vergrößern und Schließen selbst; die Kopfzeile
+                                // verschiebt das Fenster.
+                                zeile_mit(
+                                    &suche,
+                                    ui,
+                                    jjcad_core::i18n::tr("gui.dialogs.fensterrahmen"),
+                                    &[
+                                        "Titelleiste",
+                                        "Fenster",
+                                        "Rahmen",
+                                        "Minimieren",
+                                        "Vergrößern",
+                                        "Maximieren",
+                                        "Schließen",
+                                        "KDE",
+                                        "Windows",
+                                    ],
+                                    |ui| {
+                                        for m in Fensterrahmen::ALL {
+                                            ui.selectable_value(&mut fensterrahmen, m, m.label())
+                                                .on_hover_text(m.hint());
+                                        }
+                                    },
+                                );
+                                if suche.is_empty() {
+                                    ui.label(theme::faint(
+                                        jjcad_core::i18n::tr(
+                                            "gui.dialogs.ohne_titelleiste_minimieren_vergroessern_und_schliessen",
+                                        ),
+                                    ));
+                                }
                             }
                             // ------------------------ Darstellung -----------------
                             _ => {
@@ -1616,6 +1658,19 @@ fn settings_body(app: &mut App, ui: &mut Ui) {
         // T0087: sofort übernehmen — auch für eine bereits laufende Vorschau.
         app.set_paste_pivot(paste_pivot);
         let _ = app.prefs.save();
+    }
+    if app.prefs.fensterrahmen != fensterrahmen {
+        // T0098: sofort umschalten — der Fenstermanager bekommt „keine
+        // Dekoration“ über denselben Weg wie beim Start (`with_decorations`).
+        app.prefs.fensterrahmen = fensterrahmen;
+        let _ = app.prefs.save();
+        ui.ctx()
+            .send_viewport_cmd(egui::ViewportCommand::Decorations(
+                !fensterrahmen.ohne_titelleiste(),
+            ));
+        // Ohne diese Anforderung bliebe die Kopfzeile im alten Zustand stehen,
+        // bis der nächste Klick ein Bild auslöst.
+        ui.ctx().request_repaint();
     }
     let dialog_neu = if dateidialog_system { "system" } else { "intern" };
     if app.prefs.file_dialog != dialog_neu {
@@ -4182,6 +4237,95 @@ mod tests_einstellungen {
             app.prefs.paste_pivot,
             PastePivot::Center,
             "Klick auf „Mittelpunkt“ stellt den Standard nicht her"
+        );
+    }
+
+    /// T0098: Unter „Bedienung“ steht der Fensterrahmen. Der Klick auf
+    /// „Ohne Titelleiste“ schaltet die Dekoration ab (`Decorations(false)`) und
+    /// merkt sich die Wahl in den Voreinstellungen — dieselbe Umschaltung wie
+    /// beim Start (`with_decorations`), nur ohne Neustart.
+    #[test]
+    fn fensterrahmen_laesst_sich_umschalten() {
+        let _sperre = KONFIG.lock().unwrap_or_else(|e| e.into_inner());
+        let _konfig = WegwerfKonfig::neu("fensterrahmen");
+        let ctx = egui::Context::default();
+        let mut app = App::with_ctx(ctx.clone());
+        app.prefs.fensterrahmen = Fensterrahmen::System;
+        app.ui.settings_open = true;
+        app.ui.settings_kat = 5;
+        // Die Seite scrollt: mit dem Suchbegriff steht die Zeile oben im Bild
+        // und ist anklickbar (Suchbegriff zugleich mitgeprüft).
+        app.ui.settings_suche = "Fensterrahmen".to_string();
+        let bild = || egui::RawInput {
+            screen_rect: Some(Rect::from_min_size(Pos2::ZERO, Vec2::new(1500.0, 950.0))),
+            ..Default::default()
+        };
+        let mut out = ctx.run(bild(), |ctx| app.ui(ctx));
+        for _ in 0..3 {
+            out = ctx.run(bild(), |ctx| app.ui(ctx));
+        }
+        let texte: Vec<&str> = out
+            .shapes
+            .iter()
+            .filter_map(|cs| match &cs.shape {
+                egui::Shape::Text(t) => Some(t.galley.text()),
+                _ => None,
+            })
+            .collect();
+        for erwartet in ["Fensterrahmen", "System", "Ohne Titelleiste"] {
+            assert!(
+                texte.iter().any(|t| *t == erwartet),
+                "„{erwartet}“ fehlt im Einstellungsfenster (gezeichnet: {texte:?})"
+            );
+        }
+
+        let stelle = |out: &egui::FullOutput, text: &str| -> Pos2 {
+            out.shapes
+                .iter()
+                .find_map(|cs| match &cs.shape {
+                    egui::Shape::Text(t) if t.galley.text() == text => {
+                        Some(t.pos + t.galley.rect.center().to_vec2())
+                    }
+                    _ => None,
+                })
+                .unwrap_or_else(|| panic!("„{text}“ fehlt im Einstellungsfenster"))
+        };
+        let knopf = |pos: Pos2, pressed: bool| egui::Event::PointerButton {
+            pos,
+            button: egui::PointerButton::Primary,
+            pressed,
+            modifiers: egui::Modifiers::NONE,
+        };
+        let mut cmds = Vec::new();
+        for events in [
+            vec![egui::Event::PointerMoved(stelle(&out, "Ohne Titelleiste"))],
+            vec![knopf(stelle(&out, "Ohne Titelleiste"), true)],
+            vec![knopf(stelle(&out, "Ohne Titelleiste"), false)],
+            vec![],
+        ] {
+            let o = ctx.run(
+                egui::RawInput {
+                    events,
+                    ..bild()
+                },
+                |ctx| app.ui(ctx),
+            );
+            cmds.extend(
+                o.viewport_output
+                    .get(&egui::ViewportId::ROOT)
+                    .map(|v| v.commands.clone())
+                    .unwrap_or_default(),
+            );
+        }
+        assert_eq!(
+            app.prefs.fensterrahmen,
+            Fensterrahmen::OhneTitelleiste,
+            "Klick auf „Ohne Titelleiste“ wurde nicht gespeichert"
+        );
+        assert!(
+            cmds.iter()
+                .any(|c| matches!(c, egui::ViewportCommand::Decorations(false))),
+            "der Fenstermanager muss die Dekoration abbestellen (Befehle: {cmds:?})"
         );
     }
 }

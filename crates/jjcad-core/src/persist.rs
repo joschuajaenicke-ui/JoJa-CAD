@@ -324,6 +324,67 @@ impl PastePivot {
     }
 }
 
+/// Fensterrahmen (T0098) — experimentell, Einstellungen → Bedienung →
+/// „Fensterrahmen“.
+///
+/// `System` ist das bisherige Verhalten: der Fenstermanager (KWin, Windows,
+/// …) zeichnet Titelleiste, Rahmen und die drei Fensterknöpfe.
+///
+/// `OhneTitelleiste` meldet dem Fenstermanager „keine Dekoration“
+/// (`ViewportBuilder::with_decorations(false)`):
+///
+/// * **X11 (KDE/X11, jedes andere X11-Desktop):** winit setzt
+///   `_MOTIF_WM_HINTS` — KWin entfernt Rahmen und Titel.
+/// * **Wayland (KDE/Wayland):** winit fordert *Client-seitige* Dekoration an
+///   (`xdg-decoration`, `RequestClient`); KWin zeichnet dann nichts, und
+///   winit zeichnet ebenfalls nichts — das Fenster ist rahmenlos.
+/// * **Windows:** rahmenloses Fenster (`WS_POPUP`).
+///
+/// Ohne Titelleiste fehlen die Knöpfe und der Griff: JoJa-CAD zeichnet
+/// Minimieren, Vergrößern/Wiederherstellen und Schließen selbst oben rechts,
+/// die Kopfzeile verschiebt das Fenster (`ViewportCommand::StartDrag`) und die
+/// Fensterkanten ändern die Größe (`ViewportCommand::BeginResize`).
+#[derive(Clone, Copy, PartialEq, Eq, Debug, Default, serde::Serialize, serde::Deserialize)]
+pub enum Fensterrahmen {
+    /// Titelleiste und Rahmen vom Fenstermanager (bisheriges Verhalten)
+    #[default]
+    #[serde(rename = "system")]
+    System,
+    /// Eigenes Fenster ohne Titelleiste — Knöpfe und Ziehen zeichnet JoJa-CAD
+    #[serde(rename = "ohne_titelleiste")]
+    OhneTitelleiste,
+}
+
+impl Fensterrahmen {
+    /// Beide Modi in Anzeigereihenfolge (Einstellungen).
+    pub const ALL: [Fensterrahmen; 2] = [Fensterrahmen::System, Fensterrahmen::OhneTitelleiste];
+
+    /// Deutsche Beschriftung für die Oberfläche.
+    pub fn label(self) -> &'static str {
+        match self {
+            Fensterrahmen::System => "System",
+            Fensterrahmen::OhneTitelleiste => "Ohne Titelleiste",
+        }
+    }
+
+    /// Kurze Erläuterung (Tooltip im Einstellungsfenster).
+    pub fn hint(self) -> &'static str {
+        match self {
+            Fensterrahmen::System => "Titelleiste und Rahmen zeichnet der Fenstermanager",
+            Fensterrahmen::OhneTitelleiste => {
+                "Experimentell: Knöpfe für Minimieren, Vergrößern und Schließen oben rechts, \
+                 die Kopfzeile verschiebt das Fenster, die Kanten ändern die Größe \
+                 (geprüft unter KDE)"
+            }
+        }
+    }
+
+    /// `true`, wenn JoJa-CAD die Fensterknöpfe und das Ziehen selbst übernimmt.
+    pub fn ohne_titelleiste(self) -> bool {
+        matches!(self, Fensterrahmen::OhneTitelleiste)
+    }
+}
+
 /// Liest den neuen Modus und übernimmt zusätzlich das alte Wahrheitsfeld
 /// `drag_two_clicks` (Build b7), damit eine bestehende `prefs.json` ihre
 /// Einstellung behält, statt still auf den Standard zurückzufallen.
@@ -538,6 +599,11 @@ pub struct UserPrefs {
     /// ohne Neustart (`jjcad_core::i18n::set_language`).
     #[serde(default)]
     pub language: crate::i18n::Lang,
+    /// Fensterrahmen (T0098) — experimentell: Fenster **ohne Titelleiste**.
+    /// Dann zeichnet JoJa-CAD Minimieren, Vergrößern und Schließen selbst oben
+    /// rechts und die Kopfzeile verschiebt das Fenster (`prefs.json`).
+    #[serde(default)]
+    pub fensterrahmen: Fensterrahmen,
 }
 
 fn default_dateidialog() -> String {
@@ -877,6 +943,7 @@ impl Default for UserPrefs {
             inventory: vec![None; 40],
             file_dialog: default_dateidialog(),
             language: crate::i18n::Lang::Deutsch,
+            fensterrahmen: Fensterrahmen::System,
         }
     }
 }
@@ -1394,6 +1461,36 @@ mod tests {
         assert!(roh.contains("\"mouse_move\":false"), "Schlüssel fehlt: {roh}");
         let wieder: UserPrefs = serde_json::from_str(&roh).unwrap();
         assert!(!wieder.mouse_move, "Einstellung ging beim Laden verloren");
+    }
+
+    /// T0098: Der Fensterrahmen steht in den Voreinstellungen. Vorgabe ist die
+    /// Titelleiste des Fenstermanagers; ein Altbestand ohne den Schlüssel
+    /// bleibt dabei, der Modus „ohne Titelleiste“ überlebt Speichern und Laden.
+    #[test]
+    fn fensterrahmen_vorgabe_und_gespeichert() {
+        assert_eq!(Fensterrahmen::default(), Fensterrahmen::System);
+        assert!(!UserPrefs::default().fensterrahmen.ohne_titelleiste());
+        let alt: UserPrefs = serde_json::from_str(r#"{"last_dir": "/tmp"}"#).unwrap();
+        assert_eq!(
+            alt.fensterrahmen,
+            Fensterrahmen::System,
+            "Altbestand ohne Schlüssel behält die Titelleiste"
+        );
+
+        let mut prefs = UserPrefs::default();
+        prefs.fensterrahmen = Fensterrahmen::OhneTitelleiste;
+        let roh = serde_json::to_string(&prefs).unwrap();
+        assert!(
+            roh.contains("\"fensterrahmen\":\"ohne_titelleiste\""),
+            "Schlüssel fehlt oder ist unlesbar: {roh}"
+        );
+        let wieder: UserPrefs = serde_json::from_str(&roh).unwrap();
+        assert_eq!(
+            wieder.fensterrahmen,
+            Fensterrahmen::OhneTitelleiste,
+            "der Fensterrahmen ging beim Laden verloren"
+        );
+        assert!(Fensterrahmen::OhneTitelleiste.ohne_titelleiste());
     }
 
     /// T0103: Die Sprache der Oberfläche steht in den Voreinstellungen, wird
