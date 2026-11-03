@@ -76,9 +76,9 @@ fn masslinie_hat_ueberstand_an_beiden_enden() {
     let (s, id) = kette(&[[0.0, 0.0], [2.0, 0.0], [4.0, 0.0]], [0.0, -1.2], "x");
     let l = linien(&s, id);
     let masslinie = l.last().expect("Maßlinie");
-    // Basispunkte 0…4000 mm, Überstand 0,6 × 2,5 mm × 100 = 150 mm je Ende.
+    // Basispunkte 0…4000 mm, Überstand 1,2 × 2,5 mm × 100 = 300 mm je Ende.
     assert!(
-        (masslinie.0 - 4300.0).abs() < 0.5,
+        (masslinie.0 - 4600.0).abs() < 0.5,
         "Maßlinie ohne Überstand: Länge {}, Enden {:?} {:?}",
         masslinie.0,
         masslinie.1,
@@ -86,8 +86,8 @@ fn masslinie_hat_ueberstand_an_beiden_enden() {
     );
     let x0 = masslinie.1 .0.min(masslinie.2 .0);
     let x1 = masslinie.1 .0.max(masslinie.2 .0);
-    assert!((x0 + 150.0).abs() < 0.5, "Überstand links fehlt: {x0}");
-    assert!((x1 - 4150.0).abs() < 0.5, "Überstand rechts fehlt: {x1}");
+    assert!((x0 + 300.0).abs() < 0.5, "Überstand links fehlt: {x0}");
+    assert!((x1 - 4300.0).abs() < 0.5, "Überstand rechts fehlt: {x1}");
 }
 
 /// Begrenzungsstrich: 45° und deutlich länger als die Ziffern hoch sind
@@ -170,10 +170,10 @@ fn masszahl_steht_ueber_der_masslinie() {
     assert_eq!(t.len(), 2, "zwei Maßzahlen erwartet: {t:?}");
     for (x, y, angle, text) in &t {
         assert!((*angle).abs() < 1e-6, "waagerechte Kette bleibt waagerecht: {text}");
-        // Maßlinie liegt auf y = -1200; Anker 0,9 × 2,5 mm × 100 = 225 mm
-        // darüber (Bild 4: die Zahl steht frei über der Linie).
+        // Maßlinie liegt auf y = -1200; Anker 0,6 × 2,5 mm × 100 = 150 mm
+        // darüber.
         assert!(
-            (y - (-975.0)).abs() < 0.5,
+            (y - (-1050.0)).abs() < 0.5,
             "Maßzahl „{text}“ sitzt nicht über der Maßlinie: y {y}"
         );
         assert!(*x > 0.0 && *x < 4000.0, "Maßzahl außerhalb der Kette: {x}");
@@ -192,9 +192,9 @@ fn senkrechte_kette_liest_von_rechts() {
         (angle - std::f64::consts::FRAC_PI_2).abs() < 1e-6,
         "senkrechte Maßzahl muss um 90° gedreht sein: {angle}"
     );
-    // Maßlinie auf x = +1200; Text links davon, 225 mm entfernt.
+    // Maßlinie auf x = +1200; Text links davon, 150 mm entfernt.
     assert!(
-        (x - 975.0).abs() < 0.5,
+        (x - 1050.0).abs() < 0.5,
         "Maßzahl „{text}“ muss links der Maßlinie stehen: x {x}"
     );
     assert!((y - 1500.0).abs() < 50.0, "Maßzahl nicht mittig: y {y}");
@@ -206,9 +206,9 @@ fn einzelmass_folgt_denselben_regeln() {
     let (s, id) = einzelmass();
     let l = linien(&s, id);
     let masslinie = l.last().expect("Maßlinie");
-    // Basispunkte 0…3000, Überstand 150 mm je Ende.
+    // Basispunkte 0…3000, Überstand 300 mm je Ende.
     assert!(
-        (masslinie.0 - 3300.0).abs() < 0.5,
+        (masslinie.0 - 3600.0).abs() < 0.5,
         "Einzelmaß ohne Überstand: {}",
         masslinie.0
     );
@@ -217,7 +217,7 @@ fn einzelmass_folgt_denselben_regeln() {
     let t = texte(&s, id);
     assert_eq!(t.len(), 1);
     assert!(
-        (t[0].1 - (-600.0 + 225.0)).abs() < 0.5,
+        (t[0].1 - (-600.0 + 150.0)).abs() < 0.5,
         "Maßzahl nicht über der Maßlinie: y {}",
         t[0].1
     );
@@ -274,24 +274,24 @@ fn halber_zentimeter_steht_als_hochzahl() {
     assert_eq!(t2.runs.len(), 1);
 }
 
-/// Maßhilfslinie: kurz am Bauteil und nur ein Stück über die Maßlinie hinaus
-/// (Bild 3/Bild 4) — die Werte aus `dim_style` sind Obergrenzen.
+/// Maßhilfslinie: mit deutlichem Abstand am Maßpunkt (dort wird gekürzt) und
+/// ein Stück über die Maßlinie hinaus (Wert aus `dim_style`).
 #[test]
 fn hilfslinien_sind_kurz() {
     let (s, id) = kette(&[[0.0, 0.0], [2.0, 0.0]], [0.0, -1.2], "x");
     let l = linien(&s, id);
-    // Reine Hilfslinie: von y = -100 (Abstand 0,4 h = 1 mm) bis -1200 - 62,5.
+    // Reine Hilfslinie: von y = -200 (Abstand 0,8 h = 2 mm) bis -1200 - 150.
     let hilfs = l
         .iter()
         .find(|e| (e.1 .0 - e.2 .0).abs() < 0.5 && e.0 > 500.0)
         .expect("Hilfslinie am Basispunkt");
     let (y0, y1) = (hilfs.1 .1.min(hilfs.2 .1), hilfs.1 .1.max(hilfs.2 .1));
     assert!(
-        (y1 - (-100.0)).abs() < 0.5,
-        "Abstand am Bauteil muss 1 mm sein, ist {y1}"
+        (y1 - (-200.0)).abs() < 0.5,
+        "Abstand am Maßpunkt muss 2 mm sein, ist {y1}"
     );
     assert!(
-        (y0 - (-1262.5)).abs() < 0.5,
-        "Überstand über die Maßlinie muss 0,625 mm sein, ist {y0}"
+        (y0 - (-1350.0)).abs() < 0.5,
+        "Überstand über die Maßlinie muss 1,5 mm sein, ist {y0}"
     );
 }
