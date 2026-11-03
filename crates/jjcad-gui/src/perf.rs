@@ -584,7 +584,7 @@ fn inhalt(app: &App, ui: &mut egui::Ui) {
         .num_columns(4)
         .spacing([7.0, 2.0])
         .show(ui, |ui| {
-            kopf(ui, "Bilder (ms)");
+            kopf(ui, jjcad_core::i18n::tr("gui.perf.bilder_ms"));
             kopf_wert(ui, "  p50");
             kopf_wert(ui, "  p95");
             kopf_wert(ui, "  p99");
@@ -630,9 +630,9 @@ fn inhalt(app: &App, ui: &mut egui::Ui) {
         .num_columns(3)
         .spacing([7.0, 2.0])
         .show(ui, |ui| {
-            kopf(ui, "Abschnitte");
-            kopf_wert(ui, "  jetzt");
-            kopf_wert(ui, " Anteil");
+            kopf(ui, jjcad_core::i18n::tr("gui.perf.abschnitte"));
+            kopf_wert(ui, jjcad_core::i18n::tr("gui.perf.jetzt"));
+            kopf_wert(ui, jjcad_core::i18n::tr("gui.perf.anteil"));
             ui.end_row();
             for a in Abschnitt::ALLE {
                 let (jetzt, anteil) = match letzt {
@@ -692,7 +692,7 @@ fn inhalt(app: &App, ui: &mut egui::Ui) {
 
     // Zeichnung und Prozess
     let objekte = app.doc().ents().len();
-    let mut zeile1 = format!("{} Objekte", zahl_text(objekte));
+    let mut zeile1 = jjcad_core::i18n::t_args_owned("gui.perf.x_objekte", &[("wert1", zahl_text(objekte))]);
     if let Some(b) = letzt {
         if b.objekte > 0 && b.objekte != objekte {
             zeile1.push_str(&jjcad_core::i18n::t_args_owned("gui.perf.liste_x", &[("wert1", format!("{}", zahl_text(b.objekte)))]));

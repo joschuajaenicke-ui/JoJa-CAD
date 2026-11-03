@@ -75,10 +75,10 @@ impl FileMode {
     fn filter_name(self) -> &'static str {
         match self {
             FileMode::Open | FileMode::SaveJjcad => jjcad_core::i18n::tr("gui.dialogs.zeichnung"),
-            FileMode::ImportDxf | FileMode::ExportDxf => "DXF-Zeichnung",
-            FileMode::ImportPdf => "PDF-Dokument",
-            FileMode::ExportPdf => "PDF-Dokument",
-            FileMode::ExportPng => "PNG-Bild",
+            FileMode::ImportDxf | FileMode::ExportDxf => jjcad_core::i18n::tr("gui.dialogs.dxf_zeichnung"),
+            FileMode::ImportPdf => jjcad_core::i18n::tr("gui.dialogs.pdf_dokument"),
+            FileMode::ExportPdf => jjcad_core::i18n::tr("gui.dialogs.pdf_dokument"),
+            FileMode::ExportPng => jjcad_core::i18n::tr("gui.dialogs.png_bild"),
             FileMode::ImportKeymap | FileMode::ExportKeymap => jjcad_core::i18n::tr("gui.dialogs.tastaturlayout"),
         }
     }
@@ -1383,7 +1383,7 @@ fn settings_body(app: &mut App, ui: &mut Ui) {
                                             *val = v;
                                         }
                                         if ui
-                                            .add(egui::Button::new("Standard").small())
+                                            .add(egui::Button::new(jjcad_core::i18n::tr("gui.props.standard")).small())
                                             .on_hover_text(jjcad_core::i18n::t_args_owned("gui.dialogs.x_mm", &[("wert1", format!("{:.0}", def))]))
                                             .clicked()
                                         {
@@ -1447,8 +1447,8 @@ fn settings_body(app: &mut App, ui: &mut Ui) {
                                 abschnitt(&suche, ui, jjcad_core::i18n::tr("gui.dialogs.bedienung"));
                                 zeile(&suche, ui, jjcad_core::i18n::tr("gui.dialogs.ziehen"), |ui| {
                                     for m in DragMode::ALL {
-                                        ui.selectable_value(&mut drag_mode, m, m.label())
-                                            .on_hover_text(m.hint());
+                                        ui.selectable_value(&mut drag_mode, m, m.text())
+                                            .on_hover_text(m.tip());
                                     }
                                 });
                                 if suche.is_empty() {
@@ -1519,8 +1519,8 @@ fn settings_body(app: &mut App, ui: &mut Ui) {
                                     ],
                                     |ui| {
                                         for m in PastePivot::ALL {
-                                            ui.selectable_value(&mut paste_pivot, m, m.label())
-                                                .on_hover_text(m.hint());
+                                            ui.selectable_value(&mut paste_pivot, m, m.text())
+                                                .on_hover_text(m.tip());
                                         }
                                     },
                                 );
@@ -1593,8 +1593,8 @@ fn settings_body(app: &mut App, ui: &mut Ui) {
                                     ],
                                     |ui| {
                                         for m in Fensterrahmen::ALL {
-                                            ui.selectable_value(&mut fensterrahmen, m, m.label())
-                                                .on_hover_text(m.hint());
+                                            ui.selectable_value(&mut fensterrahmen, m, m.text())
+                                                .on_hover_text(m.tip());
                                         }
                                     },
                                 );
@@ -2187,6 +2187,26 @@ fn keymap_name_dialog(app: &mut App, ctx: &egui::Context) {
 }
 
 /// Name eines Layouts, gekürzt auf die Breite der Dropdown-Wertespalte.
+/// Anzeigename einer eingebauten Vorlage (T0106). Gespeichert und verglichen
+/// wird der deutsche Name (`persist::VORLAGEN`) — nur die Oberfläche übersetzt.
+fn preset_anzeige(name: &str) -> String {
+    if jjcad_core::persist::ist_vorlage(name) {
+        let kurz = name.trim_start_matches("Vorlage ").trim();
+        return jjcad_core::i18n::t_args_owned("gui.dialogs.vorlage_x", &[("name", kurz.to_string())]);
+    }
+    name.to_string()
+}
+
+/// Beschriftung einer Taste im Tastenbild (T0106) — `Strg` und `Leertaste`
+/// sind deutsche Tastennamen, die englische Oberfläche sagt Ctrl und Space.
+fn taste_beschriftung(label: &'static str) -> &'static str {
+    match label {
+        "Strg" => jjcad_core::i18n::tr("gui.dialogs.key_ctrl"),
+        "Leertaste" => jjcad_core::i18n::tr("gui.dialogs.key_space"),
+        other => other,
+    }
+}
+
 fn keymap_kurz(name: &str) -> String {
     const MAX: usize = 20;
     if name.chars().count() > MAX {
@@ -2232,10 +2252,10 @@ fn keyboard_layouts(app: &mut App, ui: &mut Ui) {
             .keymap_presets
             .iter()
             .enumerate()
-            .map(|(i, p)| (i, keymap_kurz(&p.name)))
+            .map(|(i, p)| (i, keymap_kurz(&preset_anzeige(&p.name))))
             .collect();
         if aktiv.is_none() {
-            eintraege.push((usize::MAX, "Eigene Belegung".to_string()));
+            eintraege.push((usize::MAX, jjcad_core::i18n::tr("gui.dialogs.eigene_belegung").to_string()));
         }
         let gezeigt = aktiv.unwrap_or(usize::MAX);
         let beschriftung = eintraege
@@ -2273,11 +2293,11 @@ fn keyboard_layouts(app: &mut App, ui: &mut Ui) {
             }
         }
         if let Some(r) = feld_flaeche {
-            zeile.push(("Auswahl".to_string(), r));
+            zeile.push((jjcad_core::i18n::tr("gui.dialogs.auswahl").to_string(), r));
         }
-        let speichern = zeilen_knopf(ui, "Speichern …")
+        let speichern = zeilen_knopf(ui, jjcad_core::i18n::tr("gui.dialogs.speichern_punkte"))
             .on_hover_text(jjcad_core::i18n::tr("gui.dialogs.die_aktuelle_belegung_unter_einem_namen_ablegen"));
-        zeile.push(("Speichern".to_string(), speichern.rect));
+        zeile.push((jjcad_core::i18n::tr("gui.dialogs.speichern").to_string(), speichern.rect));
         if speichern.clicked() {
             // Die eingebauten Vorlagen sind nicht überschreibbar — sie dürfen
             // deshalb nicht als Name im Feld stehen (das war der Grund, warum
@@ -2289,15 +2309,15 @@ fn keyboard_layouts(app: &mut App, ui: &mut Ui) {
                     .unwrap_or_default(),
             );
         }
-        let import = zeilen_knopf(ui, "Importieren …")
+        let import = zeilen_knopf(ui, jjcad_core::i18n::tr("gui.dialogs.importieren_punkte"))
             .on_hover_text(jjcad_core::i18n::tr("gui.dialogs.ein_layout_aus_einer_datei_uebernehmen"));
-        zeile.push(("Importieren".to_string(), import.rect));
+        zeile.push((jjcad_core::i18n::tr("gui.dialogs.importieren").to_string(), import.rect));
         if import.clicked() {
             app.open_file_dialog(FileMode::ImportKeymap);
         }
-        let export = zeilen_knopf(ui, "Exportieren …")
+        let export = zeilen_knopf(ui, jjcad_core::i18n::tr("gui.dialogs.exportieren_punkte"))
             .on_hover_text(jjcad_core::i18n::tr("gui.dialogs.die_aktuelle_belegung_als_datei_schreiben"));
-        zeile.push(("Exportieren".to_string(), export.rect));
+        zeile.push((jjcad_core::i18n::tr("gui.dialogs.exportieren").to_string(), export.rect));
         if export.clicked() {
             app.open_file_dialog(FileMode::ExportKeymap);
         }
@@ -2323,6 +2343,7 @@ fn keyboard_body(app: &mut App, ui: &mut Ui) {
     let tasten = tasten_rechtecke(rahmen.min);
     app.ui.last_tasten = Some(tasten.clone());
     for (i, (key, label, zeile, spalte, breite, unten)) in TASTEN.iter().enumerate() {
+        let label = taste_beschriftung(label);
         let (_, _, rect) = tasten[i];
         let flaechen = taste_flaechen(rahmen.min, key, *zeile, *spalte, *breite, *unten);
         let gesperrt = fest_belegt(key);

@@ -35,6 +35,23 @@ impl SnapKind {
             SnapKind::Tracking => "Hilfslinie",
         }
     }
+    /// Beschriftung in der gewählten Sprache (T0106). `label()` bleibt der
+    /// deutsche Name — Dateien und Action-Parameter dürfen sich nicht ändern.
+    pub fn text(self) -> &'static str {
+        match self {
+            SnapKind::Endpoint => crate::i18n::tr("ui.snapkind.endpoint"),
+            SnapKind::SheetCorner => crate::i18n::tr("ui.snapkind.sheet_corner"),
+            SnapKind::Intersection => crate::i18n::tr("ui.snapkind.intersection"),
+            SnapKind::Midpoint => crate::i18n::tr("ui.snapkind.midpoint"),
+            SnapKind::Center => crate::i18n::tr("ui.snapkind.center"),
+            SnapKind::Quadrant => crate::i18n::tr("ui.snapkind.quadrant"),
+            SnapKind::Perpendicular => crate::i18n::tr("ui.snapkind.perpendicular"),
+            SnapKind::Nearest => crate::i18n::tr("ui.snapkind.nearest"),
+            SnapKind::Grid => crate::i18n::tr("ui.snapkind.grid"),
+            SnapKind::Tracking => crate::i18n::tr("ui.snapkind.tracking"),
+        }
+    }
+
 
     pub fn short(self) -> &'static str {
         match self {
@@ -882,6 +899,15 @@ impl SnapSource {
             SnapSource::Ortho | SnapSource::Free => None,
         }
     }
+
+    /// Dasselbe Label in der gewählten Sprache (T0106) — `POL` bleibt Kürzel.
+    pub fn text(self) -> Option<&'static str> {
+        match self {
+            SnapSource::Object(k) => Some(k.text()),
+            SnapSource::Polar => Some("POL"),
+            SnapSource::Ortho | SnapSource::Free => None,
+        }
+    }
 }
 
 /// Ergebnis der Fang-Kette für einen Zeigerpunkt.
@@ -899,6 +925,11 @@ impl SnapResolution {
 
     pub fn label(&self) -> Option<&'static str> {
         self.source.label()
+    }
+
+    /// Label der Statuszeile in der gewählten Sprache (T0106).
+    pub fn text(&self) -> Option<&'static str> {
+        self.source.text()
     }
 }
 

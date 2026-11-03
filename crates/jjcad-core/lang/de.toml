@@ -539,7 +539,141 @@ punkte = "Punkte setzen"
 basispunkt = "Kopieren mit Basispunkt"
 kopieren = "Kopieren"
 
+[ui.dimaxis]
+x = "Waagerecht"
+y = "Senkrecht"
+aligned = "Parallel"
+
+[ui.doorkind]
+hinge = "Drehtür"
+sliding = "Schiebetür"
+double = "Zweiflügelig"
+opening = "Öffnung"
+
+[ui.doorbase]
+left = "Links"
+center = "Mitte"
+right = "Rechts"
+
+[ui.textfont]
+sans = "Serifenlos"
+serif = "Serifen"
+mono = "Nichtproportional"
+narrow = "Schmal"
+rund = "Rund"
+din_eng = "DIN 1451 Engschrift"
+din_mittel = "DIN 1451 Mittelschrift"
+din_breit = "DIN 1451 Breitschrift"
+iso_a = "EN ISO 3098 Typ A"
+iso_b = "EN ISO 3098 Typ B"
+
+[ui.textalignh]
+left = "Linksbündig"
+center = "Zentriert"
+right = "Rechtsbündig"
+
+[ui.textalignv]
+top = "Oben"
+middle = "Mitte"
+bottom = "Unten"
+
+[ui.blocksource]
+system = "System"
+project = "Projekt"
+user = "Benutzer"
+
+[ui.dragmode]
+hold = "Gedrückthalten"
+two_clicks = "Zwei Klicks"
+hint_hold = "Taste drücken, ziehen, loslassen"
+hint_two_clicks = "Klick setzt den Basispunkt, Bewegung zeigt die Vorschau, zweiter Klick bestätigt"
+
+[ui.pastepivot]
+base = "Basispunkt"
+center = "Mittelpunkt"
+hint_base = "Der Basispunkt steht am Fadenkreuz — die Vorschau springt beim Drehen um das Fadenkreuz (bisheriges Verhalten)"
+hint_center = "Die Vorschau dreht um ihren Mittelpunkt und bleibt oben rechts am Fadenkreuz"
+
+[ui.fensterrahmen]
+system = "System"
+ohne_titelleiste = "Ohne Titelleiste"
+hint_system = "Titelleiste und Rahmen zeichnet der Fenstermanager"
+hint_ohne_titelleiste = "Experimentell: Knöpfe für Minimieren, Vergrößern und Schließen oben rechts, die Kopfzeile verschiebt das Fenster, die Kanten ändern die Größe (geprüft unter KDE)"
+
+[ui.snapkind]
+endpoint = "Endpunkt"
+sheet_corner = "Blattecke"
+intersection = "Schnittpunkt"
+midpoint = "Mittelpunkt"
+center = "Zentrum"
+quadrant = "Quadrant"
+perpendicular = "Lot"
+nearest = "Nächster Punkt"
+grid = "Raster"
+tracking = "Hilfslinie"
+
+[ui.linetype]
+solid = "Durchgezogen"
+dashed = "Gestrichelt"
+dotted = "Gepunktet"
+dash_dot = "Strichpunkt"
+hidden = "Verdeckt"
+
+[ui.arrowkind]
+slash = "Schrägstrich (DIN 1356)"
+arrow = "Pfeil (DIN 406)"
+dot = "Punkt"
+none = "Ohne"
+
+[ui.fillpattern]
+solid = "Vollfläche"
+lines = "Mauerwerk"
+cross = "Kunststoffe"
+dots = "Sand"
+insulation = "Dämmstoffe"
+ground_plain = "Boden unverändert"
+ground_changed = "Boden verändert"
+gravel = "Kies"
+concrete_plain = "Beton unbewehrt"
+concrete_reinforced = "Beton bewehrt"
+concrete_watertight = "WU-Beton"
+textile_concrete = "Textilbeton"
+wood_across = "Vollholz quer"
+wood_along = "Vollholz längs"
+metal = "Metall"
+plaster = "Putz"
+insulation_loops = "Dämmstoffe Schlaufen"
+seal_single = "Abdichtung 1-lagig"
+seal_multi = "Abdichtung 2-lagig"
+seal_upstand = "Abdichtung Aufkantung"
+sealant = "Dichtstoffe"
+glass = "Glas"
+
+[ui.papersize]
+a4 = "A4"
+a3 = "A3"
+a2 = "A2"
+a1 = "A1"
+a0 = "A0"
+
+[ui.wallalign]
+left = "Links"
+center = "Mittig"
+right = "Rechts"
+
+[ui.unit]
+mm = "Millimeter"
+cm = "Zentimeter"
+m = "Meter"
+
 [gui.app]
+vordergrund = "Vordergrund"
+hintergrund = "Hintergrund"
+modell = "Modell"
+ribbon_ausklappen = "Ribbon ausklappen"
+ribbon_einklappen = "Ribbon einklappen"
+layers_ausklappen = "Layers ausklappen"
+eigenschaften_ausklappen = "Eigenschaften ausklappen"
 fenster_minimieren = "Minimieren"
 fenster_vergroessern = "Vergrößern"
 fenster_wiederherstellen = "Wiederherstellen"
@@ -849,6 +983,9 @@ spalte_x_x_x_der_zeilen_hell_farbe_xxx = "  Spalte x = {x}: {wert1} % der Zeilen
 version_x_build_x_x = "Version {wert1} · Build {wert2} ({wert3})\n"
 
 [gui.dialogs]
+dxf_zeichnung = "DXF-Zeichnung"
+pdf_dokument = "PDF-Dokument"
+png_bild = "PNG-Bild"
 2d_cad_fuer_architektur_und_bauantragszeichnungen = "2D-CAD für Architektur und Bauantragszeichnungen."
 abbrechen = "Abbrechen"
 adresse = "Adresse"
@@ -1020,12 +1157,27 @@ zeichnung_speichern = "Zeichnung speichern"
 zentrum = "Zentrum"
 ziehen = "Ziehen"
 
+speichern_punkte = "Speichern …"
+importieren_punkte = "Importieren …"
+exportieren_punkte = "Exportieren …"
+eigene_belegung = "Eigene Belegung"
+vorlage_x = "Vorlage {name}"
+key_ctrl = "Strg"
+key_space = "Leertaste"
+
+exportieren = "Exportieren"
+
+bestand_x_objekte = "{anzahl} Objekte"
+bestand_zeile = "{objekte} Objekte · {waende} Wände · {tueren} Türen · {fenster} Fenster · {bloecke} Blockinstanzen · {sonstige} Sonstige"
+
 [gui.handles]
 fuellflaeche_punkt_verbunden = "Füllfläche · Punkt verbunden"
 griff_gesetzt = "Griff · gesetzt"
 griff_ziehen = "Griff · ziehen"
 
 [gui.hotbar]
+vorlage = "Vorlage"
+werkzeug = "Werkzeug"
 bearbeiten = "Bearbeiten"
 d = "D"
 fang_an_endpunkt_rechtsklick_fangmodi_und_ausrichtung = "Fang · an (Endpunkt) · Rechtsklick: Fangmodi und Ausrichtung"
@@ -1195,6 +1347,15 @@ x_x_x_mm_x = "{wert1} · {wert2} × {wert3} mm · {wert4}"
 x_y_mm = "X / Y (mm)"
 zeichnung = "Zeichnung"
 
+fett = "Fett"
+kursiv = "Kursiv"
+unterstrichen = "Unterstrichen"
+hochgestellt = "Hochgestellt"
+gespeichert = "gespeichert"
+leer = "leer"
+hoch = "hoch"
+keine = "keine"
+
 [gui.props]
 2_s_a = "2 S + A"
 abstand = "Abstand"
@@ -1329,6 +1490,17 @@ x_punkte_flaeche_x = "{wert1} Punkte · Fläche {wert2}"
 zeichen_xx = "Zeichen {von}–{bis}"
 zwei_laeufe = "zwei Läufe"
 
+farbe = "Farbe"
+linienfarbe = "Linienfarbe"
+vom_layer = "vom Layer"
+standard = "Standard"
+startwinkel = "Startwinkel"
+endwinkel = "Endwinkel"
+halbachse_x = "Halbachse X"
+halbachse_y = "Halbachse Y"
+
+wandton = "Wandton"
+
 [gui.textedit]
 esc_uebernimmt_hinweis = "Esc übernimmt · Enter neue Zeile · Rechtsklick bricht ab"
 text_abgebrochen = "Text · abgebrochen"
@@ -1369,6 +1541,13 @@ x_grafikelemente = " · {wert1} Grafikelemente"
 x_mb = " · {wert1} MB"
 x_threads = " · {wert1} Threads"
 zeichnen = "Zeichnen"
+
+abschnitte = "Abschnitte"
+jetzt = "  jetzt"
+anteil = " Anteil"
+
+bilder_ms = "Bilder (ms)"
+x_objekte = "{wert1} Objekte"
 
 [gui.widgets]
 x_nicht_installiert = "{schrift} — nicht installiert"

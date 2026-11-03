@@ -1412,7 +1412,7 @@ impl App {
                             layer,
                             EntityKind::Text {
                                 p: jjcad_core::geom::v(2000.0, 4900.0 - i as f64 * 430.0),
-                                text: format!("{} · Wohnen 12,4 m²", font.label()),
+                                text: format!("{} · Wohnen 12,4 m²", font.text()),
                                 height: 250.0,
                                 angle: 0.0,
                                 align: TextAlignH::Left,
@@ -3086,7 +3086,7 @@ impl App {
                 .prefs
                 .keymap_aktiv()
                 .map(|i| self.prefs.keymap_presets[i].name.clone())
-                .unwrap_or_else(|| "Tastaturlayout".to_string());
+                .unwrap_or_else(|| jjcad_core::i18n::tr("gui.dialogs.tastaturlayout").to_string());
             return (dir, name);
         }
         (dir, base)
@@ -3567,7 +3567,7 @@ impl App {
                         jjcad_core::style::WallAlign::Left => jjcad_core::style::WallAlign::Right,
                         jjcad_core::style::WallAlign::Right => jjcad_core::style::WallAlign::Center,
                     };
-                    self.toast(jjcad_core::i18n::t_args_owned("gui.app.wandausrichtung_x", &[("wert1", format!("{}", self.options.wall_align.label()))]));
+                    self.toast(jjcad_core::i18n::t_args_owned("gui.app.wandausrichtung_x", &[("wert1", format!("{}", self.options.wall_align.text()))]));
                     ctx.memory_mut(|m| m.stop_text_input());
                     return;
                 }
@@ -3881,7 +3881,7 @@ impl App {
         let mehrere_dateien = dateien.len() > 1;
         let reiter: Vec<(TabKind, String, bool)> = {
             let t = self.tab();
-            let mut v = vec![(TabKind::Model, "Modell".to_string(), false)];
+            let mut v = vec![(TabKind::Model, jjcad_core::i18n::tr("gui.app.modell").to_string(), false)];
             for s in &t.session.doc.sheets {
                 v.push((TabKind::Sheet(s.id), s.name.clone(), true));
             }
@@ -4283,9 +4283,9 @@ impl App {
                 }
                 ui.add_space(8.0);
                 let (ric, rtip) = if self.ui.ribbon_collapsed {
-                    ("chevron_down", "Ribbon ausklappen")
+                    ("chevron_down", jjcad_core::i18n::tr("gui.app.ribbon_ausklappen"))
                 } else {
-                    ("chevron_up", "Ribbon einklappen")
+                    ("chevron_up", jjcad_core::i18n::tr("gui.app.ribbon_einklappen"))
                 };
                 if widgets::icon_button(ui, ric, 26.0, self.ui.ribbon_collapsed, rtip).clicked() {
                     self.ui.ribbon_collapsed = !self.ui.ribbon_collapsed;
@@ -4812,13 +4812,13 @@ fn rail(ui: &mut egui::Ui, icon: &str, tooltip: &str, chevron: &str) -> bool {
                         for (icon, label, tip, front) in [
                             (
                                 "order-front",
-                                "Vordergrund",
+                                jjcad_core::i18n::tr("gui.app.vordergrund"),
                                 jjcad_core::i18n::tr("gui.app.auswahl_ganz_nach_vorn"),
                                 true,
                             ),
                             (
                                 "order-back",
-                                "Hintergrund",
+                                jjcad_core::i18n::tr("gui.app.hintergrund"),
                                 jjcad_core::i18n::tr("gui.app.auswahl_ganz_nach_hinten"),
                                 false,
                             ),
@@ -4839,7 +4839,7 @@ fn rail(ui: &mut egui::Ui, icon: &str, tooltip: &str, chevron: &str) -> bool {
                             ),
                             (
                                 "order-below",
-                                "Hinter Element",
+                                jjcad_core::i18n::tr("gui.app.hinter_element"),
                                 jjcad_core::i18n::tr("gui.app.auswahl_hinter_ein_element"),
                                 false,
                             ),
@@ -5400,7 +5400,7 @@ fn rail(ui: &mut egui::Ui, icon: &str, tooltip: &str, chevron: &str) -> bool {
                 )
                 .show(ctx, |ui| {
                     if collapsed {
-                        if Self::rail(ui, "layers", "Layers ausklappen", "chevron_right") {
+                        if Self::rail(ui, "layers", jjcad_core::i18n::tr("gui.app.layers_ausklappen"), "chevron_right") {
                             self.ui.layers_collapsed = false;
                         }
                     } else {
@@ -5421,7 +5421,7 @@ fn rail(ui: &mut egui::Ui, icon: &str, tooltip: &str, chevron: &str) -> bool {
                 )
                 .show(ctx, |ui| {
                     if collapsed {
-                        if Self::rail(ui, "properties", "Eigenschaften ausklappen", "chevron_left") {
+                        if Self::rail(ui, "properties", jjcad_core::i18n::tr("gui.app.eigenschaften_ausklappen"), "chevron_left") {
                             self.ui.props_collapsed = false;
                         }
                     } else {
@@ -6354,9 +6354,9 @@ impl App {
     fn einfuege_group_button(&mut self, ui: &mut egui::Ui, tool_id: &'static str) {
         let ellipse = tool_id == "draw.ellipse";
         let (icon, label) = if ellipse {
-            ("ellipse", "Ellipse")
+            ("ellipse", jjcad_core::i18n::tr("gui.props.ellipse"))
         } else {
-            ("rect", "Rechteck")
+            ("rect", jjcad_core::i18n::tr("gui.props.rechteck"))
         };
         let cur = self.options.einfuegemodus(tool_id);
         let idx = Einfuegemodus::ALL
@@ -6381,7 +6381,7 @@ impl App {
         let idx = Bogenmodus::ALL.iter().position(|m| *m == cur).unwrap_or(0);
         let items: Vec<&str> = Bogenmodus::ALL.iter().map(|m| m.label()).collect();
         if let Some(i) =
-            self.modus_group_button(ui, "draw.arc", "arc", "Bogen", idx, &items, &["bogen", "arc"])
+            self.modus_group_button(ui, "draw.arc", "arc", jjcad_core::i18n::tr("gui.props.bogen"), idx, &items, &["bogen", "arc"])
         {
             self.waehle_bogenmodus(Bogenmodus::ALL[i]);
         }

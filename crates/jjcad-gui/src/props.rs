@@ -221,7 +221,7 @@ pub fn kopf(app: &App, ui: &mut Ui, ziel: Ziel, titel: &str, icon: &str) {
                     .entity(id)
                     .map(|e| e.layer)
                     .and_then(|l| app.doc().layer(l).map(|l| l.name.clone()))
-                    .unwrap_or_else(|| "Blatt".to_string());
+                    .unwrap_or_else(|| "—".to_string());
                 ui.label(theme::dim(jjcad_core::i18n::t_args_owned("gui.props.x_layer_x", &[("id", format!("{}", id)), ("layer_name", format!("{}", layer_name))])));
             }
         }
@@ -419,7 +419,7 @@ pub fn gemein(
             farbe_gezeigt,
             by_layer,
             !gleich_farbe,
-            "vom Layer",
+            jjcad_core::i18n::tr("gui.props.vom_layer"),
         );
     });
     if let Some(v) = picked {
@@ -588,7 +588,7 @@ pub fn text(app: &mut App, ui: &mut Ui, ziel: Ziel) {
         0.35,
         jjcad_core::style::LineType::Solid,
         false,
-        "Farbe",
+        jjcad_core::i18n::tr("gui.props.farbe"),
     );
 
     ui.add_space(4.0);
@@ -1074,7 +1074,7 @@ pub fn wand(app: &mut App, ui: &mut Ui, ziel: Ziel) {
         staerke,
         linientyp,
         true,
-        "Linienfarbe",
+        jjcad_core::i18n::tr("gui.props.linienfarbe"),
     );
 
     ui.add_space(4.0);
@@ -1109,7 +1109,7 @@ pub fn wand(app: &mut App, ui: &mut Ui, ziel: Ziel) {
     let align_items: Vec<(jjcad_core::style::WallAlign, String)> =
         jjcad_core::style::WallAlign::ALL
             .iter()
-            .map(|c| (*c, c.label().to_string()))
+            .map(|c| (*c, c.text().to_string()))
             .collect();
     let mut picked_align = None;
     widgets::field_row(ui, jjcad_core::i18n::tr("gui.props.ausrichtung"), |ui| {
@@ -1128,7 +1128,7 @@ pub fn wand(app: &mut App, ui: &mut Ui, ziel: Ziel) {
     let hatch_items: Vec<(jjcad_core::style::FillPattern, String)> =
         jjcad_core::style::FillPattern::ALL
             .iter()
-            .map(|c| (*c, c.label().to_string()))
+            .map(|c| (*c, c.text().to_string()))
             .collect();
     let mut picked_hatch = None;
     widgets::field_row(ui, jjcad_core::i18n::tr("gui.props.schraffur"), |ui| {
@@ -1158,7 +1158,7 @@ pub fn wand(app: &mut App, ui: &mut Ui, ziel: Ziel) {
             fill_cur,
             fill_unset,
             false,
-            "Standard",
+            jjcad_core::i18n::tr("gui.props.standard"),
         );
     });
     if let Some(v) = picked_fill {
@@ -1326,7 +1326,7 @@ pub fn tuer(app: &mut App, ui: &mut Ui, ziel: Ziel) {
         staerke,
         linientyp,
         true,
-        "Farbe",
+        jjcad_core::i18n::tr("gui.props.farbe"),
     );
 
     ui.add_space(4.0);
@@ -1350,7 +1350,7 @@ pub fn tuer(app: &mut App, ui: &mut Ui, ziel: Ziel) {
     zeile("typ");
     let typ_items: Vec<(DoorKind, String)> = DoorKind::ALL
         .iter()
-        .map(|c| (*c, c.label().to_string()))
+        .map(|c| (*c, c.text().to_string()))
         .collect();
     let mut picked_typ = None;
     widgets::field_row(ui, jjcad_core::i18n::tr("gui.props.typ"), |ui| {
@@ -1387,7 +1387,7 @@ pub fn tuer(app: &mut App, ui: &mut Ui, ziel: Ziel) {
     zeile("basispunkt");
     let basis_items: Vec<(DoorBase, String)> = DoorBase::ALL
         .iter()
-        .map(|b| (*b, b.label().to_string()))
+        .map(|b| (*b, b.text().to_string()))
         .collect();
     let mut picked_basis = None;
     widgets::field_row(ui, jjcad_core::i18n::tr("gui.props.basispunkt"), |ui| {
@@ -1529,7 +1529,7 @@ pub fn fenster(app: &mut App, ui: &mut Ui, ziel: Ziel) {
         staerke,
         linientyp,
         true,
-        "Farbe",
+        jjcad_core::i18n::tr("gui.props.farbe"),
     );
 
     ui.add_space(4.0);
@@ -1568,7 +1568,7 @@ pub fn fenster(app: &mut App, ui: &mut Ui, ziel: Ziel) {
     let lage_items: Vec<(jjcad_core::style::WallAlign, String)> =
         jjcad_core::style::WallAlign::ALL
             .iter()
-            .map(|a| (*a, a.label().to_string()))
+            .map(|a| (*a, a.text().to_string()))
             .collect();
     let mut picked_lage = None;
     widgets::field_row(ui, jjcad_core::i18n::tr("gui.props.ausrichtung"), |ui| {
@@ -1720,7 +1720,7 @@ pub fn fuellflaeche(app: &mut App, ui: &mut Ui, ziel: Ziel) {
         0.35,
         jjcad_core::style::LineType::Solid,
         true,
-        "Linienfarbe",
+        jjcad_core::i18n::tr("gui.props.linienfarbe"),
     );
 
     ui.add_space(4.0);
@@ -1733,7 +1733,7 @@ pub fn fuellflaeche(app: &mut App, ui: &mut Ui, ziel: Ziel) {
     let muster_items: Vec<(jjcad_core::style::FillPattern, String)> =
         jjcad_core::style::FillPattern::ALL
             .iter()
-            .map(|c| (*c, c.label().to_string()))
+            .map(|c| (*c, c.text().to_string()))
             .collect();
     let mut picked = None;
     widgets::field_row(ui, jjcad_core::i18n::tr("gui.props.muster"), |ui| {
@@ -1779,7 +1779,7 @@ pub fn fuellflaeche(app: &mut App, ui: &mut Ui, ziel: Ziel) {
             fill_cur,
             fill_unset,
             false,
-            "Standard",
+            jjcad_core::i18n::tr("gui.props.standard"),
         );
     });
     if let Some(v) = picked_fill {
@@ -1930,7 +1930,7 @@ pub fn bemassung(app: &mut App, ui: &mut Ui, ziel: Ziel) {
         staerke,
         linientyp,
         true,
-        "Farbe",
+        jjcad_core::i18n::tr("gui.props.farbe"),
     );
 
     ui.add_space(4.0);
@@ -1944,12 +1944,12 @@ pub fn bemassung(app: &mut App, ui: &mut Ui, ziel: Ziel) {
     // längeren Richtung); ein vorhandenes Maß hat immer eine feste Achse.
     let axis_items: Vec<(Option<DimAxis>, String)> = std::iter::once((
         None,
-        "Automatisch".to_string(),
+        jjcad_core::i18n::tr("gui.props.automatisch_2").to_string(),
     ))
     .chain(
         DimAxis::ALL
             .iter()
-            .map(|a| (Some(*a), a.label().to_string())),
+            .map(|a| (Some(*a), a.text().to_string())),
     )
     .collect();
     let mut picked = None;
@@ -2220,7 +2220,7 @@ pub fn raumstempel(app: &mut App, ui: &mut Ui, ziel: Ziel) {
         0.35,
         jjcad_core::style::LineType::Solid,
         false,
-        "Farbe",
+        jjcad_core::i18n::tr("gui.props.farbe"),
     );
 
     ui.add_space(4.0);
@@ -2325,7 +2325,7 @@ pub fn einfach(app: &mut App, ui: &mut Ui, ziel: Ziel, art: Einfach) {
         staerke,
         linientyp,
         art.mit_linie(),
-        "Farbe",
+        jjcad_core::i18n::tr("gui.props.farbe"),
     );
 
     ui.add_space(4.0);
@@ -2383,9 +2383,9 @@ pub fn einfach(app: &mut App, ui: &mut Ui, ziel: Ziel, art: Einfach) {
             endwinkel = Some(a1);
             let gesperrt = e.is_none();
             for (key, label, wert) in [
-                ("radius", "Radius", r0),
-                ("startwinkel", "Startwinkel", a0),
-                ("endwinkel", "Endwinkel", a1),
+                ("radius", jjcad_core::i18n::tr("gui.props.radius"), r0),
+                ("startwinkel", jjcad_core::i18n::tr("gui.props.startwinkel"), a0),
+                ("endwinkel", jjcad_core::i18n::tr("gui.props.endwinkel"), a1),
             ] {
                 zeile(key);
                 if gesperrt {
@@ -2434,8 +2434,8 @@ pub fn einfach(app: &mut App, ui: &mut Ui, ziel: Ziel, art: Einfach) {
             endwinkel = Some(w1);
             let gesperrt = e.is_none();
             for (key, label, wert) in [
-                ("halbachse_x", "Halbachse X", rx0),
-                ("halbachse_y", "Halbachse Y", ry0),
+                ("halbachse_x", jjcad_core::i18n::tr("gui.props.halbachse_x"), rx0),
+                ("halbachse_y", jjcad_core::i18n::tr("gui.props.halbachse_y"), ry0),
             ] {
                 zeile(key);
                 if gesperrt {
@@ -2453,9 +2453,9 @@ pub fn einfach(app: &mut App, ui: &mut Ui, ziel: Ziel, art: Einfach) {
                 }
             }
             for (key, label, wert) in [
-                ("drehung", "Drehung", rot0),
-                ("startwinkel", "Startwinkel", w0),
-                ("endwinkel", "Endwinkel", w1),
+                ("drehung", jjcad_core::i18n::tr("gui.props.drehung"), rot0),
+                ("startwinkel", jjcad_core::i18n::tr("gui.props.startwinkel"), w0),
+                ("endwinkel", jjcad_core::i18n::tr("gui.props.endwinkel"), w1),
             ] {
                 zeile(key);
                 if gesperrt {
@@ -2882,7 +2882,7 @@ pub fn volumen(app: &mut App, ui: &mut Ui, ziel: Ziel) {
         staerke,
         linientyp,
         true,
-        "Linienfarbe",
+        jjcad_core::i18n::tr("gui.props.linienfarbe"),
     );
 
     ui.add_space(4.0);
@@ -2906,7 +2906,7 @@ pub fn volumen(app: &mut App, ui: &mut Ui, ziel: Ziel) {
     let muster_items: Vec<(jjcad_core::style::FillPattern, String)> =
         jjcad_core::style::FillPattern::ALL
             .iter()
-            .map(|c| (*c, c.label().to_string()))
+            .map(|c| (*c, c.text().to_string()))
             .collect();
     let mut picked = None;
     widgets::field_row(ui, jjcad_core::i18n::tr("gui.props.muster"), |ui| {
@@ -2949,7 +2949,7 @@ pub fn volumen(app: &mut App, ui: &mut Ui, ziel: Ziel) {
             fill_cur,
             fill_unset,
             false,
-            "Wandton",
+            jjcad_core::i18n::tr("gui.props.wandton"),
         );
     });
     if let Some(v) = picked_fill {
@@ -3127,7 +3127,7 @@ pub fn treppe(app: &mut App, ui: &mut Ui, ziel: Ziel) {
         staerke,
         linientyp,
         true,
-        "Farbe",
+        jjcad_core::i18n::tr("gui.props.farbe"),
     );
 
     ui.add_space(4.0);
@@ -3259,7 +3259,7 @@ pub fn treppe(app: &mut App, ui: &mut Ui, ziel: Ziel) {
                         farbe_teil.unwrap_or(basis_farbe),
                         farbe_teil.is_none(),
                         false,
-                        "vom Layer",
+                        jjcad_core::i18n::tr("gui.props.vom_layer"),
                     );
                 });
             });

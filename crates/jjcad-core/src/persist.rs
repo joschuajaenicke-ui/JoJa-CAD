@@ -253,6 +253,15 @@ impl DragMode {
             DragMode::TwoClicks => "Zwei Klicks",
         }
     }
+    /// Beschriftung in der gewählten Sprache (T0106). `label()` bleibt der
+    /// deutsche Name — Dateien und Action-Parameter dürfen sich nicht ändern.
+    pub fn text(self) -> &'static str {
+        match self {
+            DragMode::HoldAndDrag => crate::i18n::tr("ui.dragmode.hold"),
+            DragMode::TwoClicks => crate::i18n::tr("ui.dragmode.two_clicks"),
+        }
+    }
+
 
     /// Kurze Erläuterung (Tooltip bzw. Hilfetext im Dialog).
     pub fn hint(self) -> &'static str {
@@ -263,6 +272,14 @@ impl DragMode {
             }
         }
     }
+    /// Tooltip in der gewählten Sprache (T0106).
+    pub fn tip(self) -> &'static str {
+        match self {
+            DragMode::HoldAndDrag => crate::i18n::tr("ui.dragmode.hint_hold"),
+            DragMode::TwoClicks => crate::i18n::tr("ui.dragmode.hint_two_clicks"),
+        }
+    }
+
 
     /// true, wenn mit zwei Klicks gezogen wird.
     pub fn two_clicks(self) -> bool {
@@ -309,6 +326,15 @@ impl PastePivot {
             PastePivot::Center => "Mittelpunkt",
         }
     }
+    /// Beschriftung in der gewählten Sprache (T0106). `label()` bleibt der
+    /// deutsche Name — Dateien und Action-Parameter dürfen sich nicht ändern.
+    pub fn text(self) -> &'static str {
+        match self {
+            PastePivot::BasePoint => crate::i18n::tr("ui.pastepivot.base"),
+            PastePivot::Center => crate::i18n::tr("ui.pastepivot.center"),
+        }
+    }
+
 
     /// Kurze Erläuterung (Tooltip im Einstellungsfenster).
     pub fn hint(self) -> &'static str {
@@ -322,6 +348,14 @@ impl PastePivot {
             }
         }
     }
+    /// Tooltip in der gewählten Sprache (T0106).
+    pub fn tip(self) -> &'static str {
+        match self {
+            PastePivot::BasePoint => crate::i18n::tr("ui.pastepivot.hint_base"),
+            PastePivot::Center => crate::i18n::tr("ui.pastepivot.hint_center"),
+        }
+    }
+
 }
 
 /// Fensterrahmen (T0098) — experimentell, Einstellungen → Bedienung →
@@ -366,6 +400,15 @@ impl Fensterrahmen {
             Fensterrahmen::OhneTitelleiste => "Ohne Titelleiste",
         }
     }
+    /// Beschriftung in der gewählten Sprache (T0106). `label()` bleibt der
+    /// deutsche Name — Dateien und Action-Parameter dürfen sich nicht ändern.
+    pub fn text(self) -> &'static str {
+        match self {
+            Fensterrahmen::System => crate::i18n::tr("ui.fensterrahmen.system"),
+            Fensterrahmen::OhneTitelleiste => crate::i18n::tr("ui.fensterrahmen.ohne_titelleiste"),
+        }
+    }
+
 
     /// Kurze Erläuterung (Tooltip im Einstellungsfenster).
     pub fn hint(self) -> &'static str {
@@ -378,6 +421,14 @@ impl Fensterrahmen {
             }
         }
     }
+    /// Tooltip in der gewählten Sprache (T0106).
+    pub fn tip(self) -> &'static str {
+        match self {
+            Fensterrahmen::System => crate::i18n::tr("ui.fensterrahmen.hint_system"),
+            Fensterrahmen::OhneTitelleiste => crate::i18n::tr("ui.fensterrahmen.hint_ohne_titelleiste"),
+        }
+    }
+
 
     /// `true`, wenn JoJa-CAD die Fensterknöpfe und das Ziehen selbst übernimmt.
     pub fn ohne_titelleiste(self) -> bool {

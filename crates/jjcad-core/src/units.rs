@@ -40,6 +40,16 @@ impl Unit {
             Unit::M => "Meter",
         }
     }
+    /// Beschriftung in der gewählten Sprache (T0106). `label()` bleibt der
+    /// deutsche Name — Dateien und Action-Parameter dürfen sich nicht ändern.
+    pub fn text(self) -> &'static str {
+        match self {
+            Unit::Mm => crate::i18n::tr("ui.unit.mm"),
+            Unit::Cm => crate::i18n::tr("ui.unit.cm"),
+            Unit::M => crate::i18n::tr("ui.unit.m"),
+        }
+    }
+
 
     /// Sinnvolle Nachkommastellen für Anzeige.
     pub fn decimals(self) -> usize {

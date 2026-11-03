@@ -79,6 +79,16 @@ impl DimAxis {
             DimAxis::Aligned => "Parallel",
         }
     }
+    /// Beschriftung in der gewählten Sprache (T0106). `label()` bleibt der
+    /// deutsche Name — Dateien und Action-Parameter dürfen sich nicht ändern.
+    pub fn text(self) -> &'static str {
+        match self {
+            DimAxis::X => crate::i18n::tr("ui.dimaxis.x"),
+            DimAxis::Y => crate::i18n::tr("ui.dimaxis.y"),
+            DimAxis::Aligned => crate::i18n::tr("ui.dimaxis.aligned"),
+        }
+    }
+
 
     /// Achse einer Maßkette aus der Dominanz der Punktdifferenz bestimmen.
     ///
@@ -144,6 +154,17 @@ impl DoorKind {
             DoorKind::Opening => "Öffnung",
         }
     }
+    /// Beschriftung in der gewählten Sprache (T0106). `label()` bleibt der
+    /// deutsche Name — Dateien und Action-Parameter dürfen sich nicht ändern.
+    pub fn text(self) -> &'static str {
+        match self {
+            DoorKind::Hinge => crate::i18n::tr("ui.doorkind.hinge"),
+            DoorKind::Sliding => crate::i18n::tr("ui.doorkind.sliding"),
+            DoorKind::Double => crate::i18n::tr("ui.doorkind.double"),
+            DoorKind::Opening => crate::i18n::tr("ui.doorkind.opening"),
+        }
+    }
+
 }
 
 /// Lage des Basispunktes einer Tür längs ihrer Breite (T0091).
@@ -170,6 +191,16 @@ impl DoorBase {
             DoorBase::Right => "Rechts",
         }
     }
+    /// Beschriftung in der gewählten Sprache (T0106). `label()` bleibt der
+    /// deutsche Name — Dateien und Action-Parameter dürfen sich nicht ändern.
+    pub fn text(self) -> &'static str {
+        match self {
+            DoorBase::Left => crate::i18n::tr("ui.doorbase.left"),
+            DoorBase::Center => crate::i18n::tr("ui.doorbase.center"),
+            DoorBase::Right => crate::i18n::tr("ui.doorbase.right"),
+        }
+    }
+
     /// Versatz des Basispunktes vom Türzentrum, in Türbreiten.
     pub fn offset(self) -> f64 {
         match self {
@@ -277,6 +308,23 @@ impl TextFont {
             TextFont::IsoB => "EN ISO 3098 Typ B",
         }
     }
+    /// Beschriftung in der gewählten Sprache (T0106). `label()` bleibt der
+    /// deutsche Name — Dateien und Action-Parameter dürfen sich nicht ändern.
+    pub fn text(self) -> &'static str {
+        match self {
+            TextFont::Sans => crate::i18n::tr("ui.textfont.sans"),
+            TextFont::Serif => crate::i18n::tr("ui.textfont.serif"),
+            TextFont::Mono => crate::i18n::tr("ui.textfont.mono"),
+            TextFont::Narrow => crate::i18n::tr("ui.textfont.narrow"),
+            TextFont::Rund => crate::i18n::tr("ui.textfont.rund"),
+            TextFont::DinEng => crate::i18n::tr("ui.textfont.din_eng"),
+            TextFont::DinMittel => crate::i18n::tr("ui.textfont.din_mittel"),
+            TextFont::DinBreit => crate::i18n::tr("ui.textfont.din_breit"),
+            TextFont::IsoA => crate::i18n::tr("ui.textfont.iso_a"),
+            TextFont::IsoB => crate::i18n::tr("ui.textfont.iso_b"),
+        }
+    }
+
 
     pub fn key(self) -> &'static str {
         match self {
@@ -404,6 +452,16 @@ impl TextAlignH {
             TextAlignH::Right => "Rechtsbündig",
         }
     }
+    /// Beschriftung in der gewählten Sprache (T0106). `label()` bleibt der
+    /// deutsche Name — Dateien und Action-Parameter dürfen sich nicht ändern.
+    pub fn text(self) -> &'static str {
+        match self {
+            TextAlignH::Left => crate::i18n::tr("ui.textalignh.left"),
+            TextAlignH::Center => crate::i18n::tr("ui.textalignh.center"),
+            TextAlignH::Right => crate::i18n::tr("ui.textalignh.right"),
+        }
+    }
+
     /// Schlüssel in der Befehlsschicht (Parameter `align`)
     pub fn key(self) -> &'static str {
         match self {
@@ -424,6 +482,16 @@ impl TextAlignV {
             TextAlignV::Bottom => "Unten",
         }
     }
+    /// Beschriftung in der gewählten Sprache (T0106). `label()` bleibt der
+    /// deutsche Name — Dateien und Action-Parameter dürfen sich nicht ändern.
+    pub fn text(self) -> &'static str {
+        match self {
+            TextAlignV::Top => crate::i18n::tr("ui.textalignv.top"),
+            TextAlignV::Middle => crate::i18n::tr("ui.textalignv.middle"),
+            TextAlignV::Bottom => crate::i18n::tr("ui.textalignv.bottom"),
+        }
+    }
+
     /// Schlüssel in der Befehlsschicht (Parameter `valign`)
     pub fn key(self) -> &'static str {
         match self {
@@ -1034,6 +1102,16 @@ impl BlockSource {
             BlockSource::User => "Benutzer",
         }
     }
+    /// Beschriftung in der gewählten Sprache (T0106). `label()` bleibt der
+    /// deutsche Name — Dateien und Action-Parameter dürfen sich nicht ändern.
+    pub fn text(self) -> &'static str {
+        match self {
+            BlockSource::System => crate::i18n::tr("ui.blocksource.system"),
+            BlockSource::Project => crate::i18n::tr("ui.blocksource.project"),
+            BlockSource::User => crate::i18n::tr("ui.blocksource.user"),
+        }
+    }
+
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
@@ -1729,7 +1807,10 @@ impl Document {
 
     /// Kurzfassung für die Statuszeile — zählt den aktiven Raum.
     pub fn summary_short(&self) -> String {
-        format!("{} Objekte", self.ents().len())
+        crate::i18n::t_args_owned(
+            "gui.dialogs.bestand_x_objekte",
+            &[("anzahl", format!("{}", self.ents().len()))],
+        )
     }
 
     /// Objektzählung der Zeichnung — nur Modellobjekte, keine Blockbibliothek.
@@ -1751,9 +1832,16 @@ impl Document {
     /// Bestand als eine Zeile: alle Teile ergeben zusammen die Objektzahl.
     pub fn summary(&self) -> String {
         let z = self.zaehlung();
-        format!(
-            "{} Objekte · {} Wände · {} Türen · {} Fenster · {} Blockinstanzen · {} Sonstige",
-            z.objekte, z.waende, z.tueren, z.fenster, z.blockinstanzen, z.sonstige
+        crate::i18n::t_args_owned(
+            "gui.dialogs.bestand_zeile",
+            &[
+                ("objekte", format!("{}", z.objekte)),
+                ("waende", format!("{}", z.waende)),
+                ("tueren", format!("{}", z.tueren)),
+                ("fenster", format!("{}", z.fenster)),
+                ("bloecke", format!("{}", z.blockinstanzen)),
+                ("sonstige", format!("{}", z.sonstige)),
+            ],
         )
     }
 }

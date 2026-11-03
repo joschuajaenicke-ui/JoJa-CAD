@@ -107,7 +107,7 @@ pub fn show(app: &mut App, ui: &mut Ui) {
                 .hotbar_presets
                 .get(app.prefs.active_preset.min(app.prefs.hotbar_presets.len().saturating_sub(1)))
                 .map(|p| p.name.clone())
-                .unwrap_or_else(|| "Vorlage".to_string());
+                .unwrap_or_else(|| jjcad_core::i18n::tr("gui.hotbar.vorlage").to_string());
             let tip = jjcad_core::i18n::t_args_owned("gui.hotbar.hotbar_x_vorlage_waehlen", &[("vorlage", format!("{}", vorlage))]);
             let resp =
                 widgets::icon_button(ui, "hotbar", KOPF, app.ui.hotbar_picker_open, &tip);
@@ -488,7 +488,7 @@ pub fn auswahl_fenster(app: &mut App, ctx: &egui::Context) {
 fn label_of(action: &str) -> &'static str {
     jjcad_core::actions::action(action)
         .map(|d| d.label())
-        .unwrap_or("Werkzeug")
+        .unwrap_or(jjcad_core::i18n::tr("gui.hotbar.werkzeug"))
 }
 
 #[cfg(test)]

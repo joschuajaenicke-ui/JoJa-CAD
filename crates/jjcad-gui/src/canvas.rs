@@ -3083,7 +3083,7 @@ fn fang_zeiger(app: &App, w: V2, tol: f64) -> (V2, Option<&'static str>) {
         &app.halt,
         app.ui.show_grid,
     );
-    (res.point, res.label())
+    (res.point, res.text())
 }
 
 /// Stützpunkte des gerade gezeichneten Zuges als zusätzliche Fangziele.
