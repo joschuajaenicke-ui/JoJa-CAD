@@ -128,6 +128,18 @@ impl LineType {
             LineType::Hidden => "Verdeckt",
         }
     }
+    /// Beschriftung in der gewählten Sprache (T0106). `label()` bleibt der
+    /// deutsche Name — Dateien und Action-Parameter dürfen sich nicht ändern.
+    pub fn text(self) -> &'static str {
+        match self {
+            LineType::Solid => crate::i18n::tr("ui.linetype.solid"),
+            LineType::Dashed => crate::i18n::tr("ui.linetype.dashed"),
+            LineType::Dotted => crate::i18n::tr("ui.linetype.dotted"),
+            LineType::DashDot => crate::i18n::tr("ui.linetype.dash_dot"),
+            LineType::Hidden => crate::i18n::tr("ui.linetype.hidden"),
+        }
+    }
+
 
     /// Muster in Papier-Millimetern (Strich, Lücke, …). Leer = durchgezogen.
     pub fn pattern(self) -> &'static [f64] {
@@ -173,6 +185,17 @@ impl ArrowKind {
             ArrowKind::None => "Ohne",
         }
     }
+    /// Beschriftung in der gewählten Sprache (T0106). `label()` bleibt der
+    /// deutsche Name — Dateien und Action-Parameter dürfen sich nicht ändern.
+    pub fn text(self) -> &'static str {
+        match self {
+            ArrowKind::Slash => crate::i18n::tr("ui.arrowkind.slash"),
+            ArrowKind::Arrow => crate::i18n::tr("ui.arrowkind.arrow"),
+            ArrowKind::Dot => crate::i18n::tr("ui.arrowkind.dot"),
+            ArrowKind::None => crate::i18n::tr("ui.arrowkind.none"),
+        }
+    }
+
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, Default)]
@@ -345,6 +368,35 @@ impl FillPattern {
             FillPattern::Glass => "Glas",
         }
     }
+    /// Beschriftung in der gewählten Sprache (T0106). `label()` bleibt der
+    /// deutsche Name — Dateien und Action-Parameter dürfen sich nicht ändern.
+    pub fn text(self) -> &'static str {
+        match self {
+            FillPattern::Solid => crate::i18n::tr("ui.fillpattern.solid"),
+            FillPattern::Lines => crate::i18n::tr("ui.fillpattern.lines"),
+            FillPattern::Cross => crate::i18n::tr("ui.fillpattern.cross"),
+            FillPattern::Dots => crate::i18n::tr("ui.fillpattern.dots"),
+            FillPattern::Insulation => crate::i18n::tr("ui.fillpattern.insulation"),
+            FillPattern::GroundPlain => crate::i18n::tr("ui.fillpattern.ground_plain"),
+            FillPattern::GroundChanged => crate::i18n::tr("ui.fillpattern.ground_changed"),
+            FillPattern::Gravel => crate::i18n::tr("ui.fillpattern.gravel"),
+            FillPattern::ConcretePlain => crate::i18n::tr("ui.fillpattern.concrete_plain"),
+            FillPattern::ConcreteReinforced => crate::i18n::tr("ui.fillpattern.concrete_reinforced"),
+            FillPattern::ConcreteWatertight => crate::i18n::tr("ui.fillpattern.concrete_watertight"),
+            FillPattern::TextileConcrete => crate::i18n::tr("ui.fillpattern.textile_concrete"),
+            FillPattern::WoodAcross => crate::i18n::tr("ui.fillpattern.wood_across"),
+            FillPattern::WoodAlong => crate::i18n::tr("ui.fillpattern.wood_along"),
+            FillPattern::Metal => crate::i18n::tr("ui.fillpattern.metal"),
+            FillPattern::Plaster => crate::i18n::tr("ui.fillpattern.plaster"),
+            FillPattern::InsulationLoops => crate::i18n::tr("ui.fillpattern.insulation_loops"),
+            FillPattern::SealSingle => crate::i18n::tr("ui.fillpattern.seal_single"),
+            FillPattern::SealMulti => crate::i18n::tr("ui.fillpattern.seal_multi"),
+            FillPattern::SealUpstand => crate::i18n::tr("ui.fillpattern.seal_upstand"),
+            FillPattern::Sealant => crate::i18n::tr("ui.fillpattern.sealant"),
+            FillPattern::Glass => crate::i18n::tr("ui.fillpattern.glass"),
+        }
+    }
+
 
     /// Schlüssel für Action-Parameter (`draw.fill`, `modify.set`) und für die
     /// gespeicherte Vorgabe in `prefs.json`.
@@ -455,6 +507,18 @@ impl PaperSize {
             PaperSize::A0 => "A0",
         }
     }
+    /// Beschriftung in der gewählten Sprache (T0106). `label()` bleibt der
+    /// deutsche Name — Dateien und Action-Parameter dürfen sich nicht ändern.
+    pub fn text(self) -> &'static str {
+        match self {
+            PaperSize::A4 => crate::i18n::tr("ui.papersize.a4"),
+            PaperSize::A3 => crate::i18n::tr("ui.papersize.a3"),
+            PaperSize::A2 => crate::i18n::tr("ui.papersize.a2"),
+            PaperSize::A1 => crate::i18n::tr("ui.papersize.a1"),
+            PaperSize::A0 => crate::i18n::tr("ui.papersize.a0"),
+        }
+    }
+
 
     /// Maße in mm (Hochformat).
     pub fn size(self) -> (f64, f64) {
@@ -519,6 +583,16 @@ impl WallAlign {
             WallAlign::Right => "Rechts",
         }
     }
+    /// Beschriftung in der gewählten Sprache (T0106). `label()` bleibt der
+    /// deutsche Name — Dateien und Action-Parameter dürfen sich nicht ändern.
+    pub fn text(self) -> &'static str {
+        match self {
+            WallAlign::Left => crate::i18n::tr("ui.wallalign.left"),
+            WallAlign::Center => crate::i18n::tr("ui.wallalign.center"),
+            WallAlign::Right => crate::i18n::tr("ui.wallalign.right"),
+        }
+    }
+
     /// Versatz des Körpers in Richtung der Wandnormalen (in halben Dicken)
     pub fn offset(self) -> f64 {
         match self {

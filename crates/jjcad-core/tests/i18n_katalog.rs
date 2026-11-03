@@ -204,3 +204,29 @@ fn vorlage_xx_wird_nicht_als_sprache_angeboten() {
          neu erzeugen mit „python3 scripts/i18n-check.py --vorlage crates/jjcad-core/lang/xx.toml“"
     );
 }
+
+/// T0106 — Beschriftungen der Kern-Aufzählungswerte (Türart, Muster, Achse …)
+/// standen fest deutsch im Code und blieben deshalb in der englischen
+/// Oberfläche deutsch. `text()` schlägt den Katalog nach, `label()` bleibt
+/// unverändert der deutsche Name (Dateien und Action-Parameter hängen daran).
+#[test]
+fn beschriftungen_der_kern_werte_folgen_der_sprache() {
+    use jjcad_core::model::{DimAxis, DoorKind, TextFont};
+    use jjcad_core::style::{FillPattern, WallAlign};
+
+    i18n::set_language(i18n::Lang::Englisch);
+    assert_eq!(DimAxis::X.text(), "Horizontal");
+    assert_eq!(DoorKind::Hinge.text(), "Hinged door");
+    assert_eq!(FillPattern::Insulation.text(), "Insulation");
+    assert_eq!(WallAlign::Center.text(), "Centre");
+    assert_eq!(TextFont::DinMittel.text(), "DIN 1451 medium");
+
+    i18n::set_language(i18n::Lang::Deutsch);
+    assert_eq!(DimAxis::X.text(), "Waagerecht");
+    assert_eq!(DoorKind::Hinge.text(), "Drehtür");
+    assert_eq!(FillPattern::Insulation.text(), "Dämmstoffe");
+
+    // Der deutsche Name bleibt die Kennung für Datei und Befehlsschicht.
+    assert_eq!(FillPattern::Insulation.label(), "Dämmstoffe");
+    assert_eq!(DoorKind::Hinge.label(), "Drehtür");
+}

@@ -161,8 +161,8 @@ fn panel_bietet_radius_fuer_kreis_und_bogen() {
         "Kreis-Panel ohne Feld \"Radius\""
     );
     assert!(
-        panel.contains("\"Radius\""),
-        "Kreis-Panel ohne Beschriftung \"Radius\""
+        panel.contains("tr(\"gui.props.radius\")"),
+        "Kreis-Panel ohne Beschriftung \"Radius\" (gui.props.radius)"
     );
     assert!(
         panel.contains("length_field"),
@@ -174,12 +174,14 @@ fn panel_bietet_radius_fuer_kreis_und_bogen() {
     );
 
     // Bogen: Radius und beide Endwinkel.
-    for name in ["\"Radius\"", "\"Startwinkel\"", "\"Endwinkel\""] {
-        assert!(panel.contains(name), "Bogen-Panel ohne Feld {name}");
+    // T0106: die Beschriftungen stehen im Katalog — der Code nennt den Schlüssel.
+    for key in ["gui.props.radius", "gui.props.startwinkel", "gui.props.endwinkel"] {
+        let muster = format!("tr(\"{key}\")");
+        assert!(panel.contains(&muster), "Bogen-Panel ohne Feld {key}");
     }
     assert!(
-        panel.contains("(\"startwinkel\", \"Startwinkel\"")
-            && panel.contains("(\"endwinkel\", \"Endwinkel\""),
+        panel.contains("(\"startwinkel\", jjcad_core::i18n::tr(\"gui.props.startwinkel\")")
+            && panel.contains("(\"endwinkel\", jjcad_core::i18n::tr(\"gui.props.endwinkel\")"),
         "Bogen-Panel meldet die Winkelzeilen nicht an"
     );
     assert!(
@@ -198,7 +200,7 @@ fn radius_steht_nicht_doppelt_im_panel() {
     let ende = rest[1..].find("\nfn ").map(|i| i + 1).unwrap_or(rest.len());
     let geo = ohne_kommentare(&rest[..ende]);
     assert!(
-        !geo.contains("\"Radius\""),
+        !geo.contains("\"Radius\"") && !geo.contains("gui.props.radius"),
         "geo_rows zeigt Radius weiterhin an — doppelte Zeile"
     );
 }

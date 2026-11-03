@@ -401,7 +401,7 @@ pub fn align_matrix(
                 p.rect_stroke(r, Rounding::same(4.0), Stroke::new(1.0, rand));
                 align_pfeil(p, r.center(), *wert_h, *wert_v, farbe);
             }
-            let tip = format!("{} · {}", wert_h.label(), wert_v.label());
+            let tip = format!("{} · {}", wert_h.text(), wert_v.text());
             if resp.on_hover_text(tip).clicked() {
                 *h = *wert_h;
                 *v = *wert_v;
@@ -659,7 +659,7 @@ pub fn flexible_number(s: &str) -> Option<f64> {
 /// liegen mit im Programm und sind deshalb immer da. Reihenfolge und
 /// Bezeichnung kommen aus dem Kern (`TextFont`).
 pub fn schrift_wahl(ui: &mut Ui, id: &str, font: &mut TextFont) -> bool {
-    let gewaehlt = crate::panels::dropdown(ui, id, font.label(), None, |ui| {
+    let gewaehlt = crate::panels::dropdown(ui, id, font.text(), None, |ui| {
         let mut out = None;
         for f in TextFont::ALL {
             let da = jjcad_core::fonts::verfuegbar(f);
@@ -667,9 +667,9 @@ pub fn schrift_wahl(ui: &mut Ui, id: &str, font: &mut TextFont) -> bool {
                 continue;
             }
             let text = if da {
-                f.label().to_string()
+                f.text().to_string()
             } else {
-                jjcad_core::i18n::t_args_owned("gui.widgets.x_nicht_installiert", &[("schrift", f.label().to_string())])
+                jjcad_core::i18n::t_args_owned("gui.widgets.x_nicht_installiert", &[("schrift", f.text().to_string())])
             };
             let familie = crate::canvas::schrift_familie(ui.ctx(), f, false);
             let zeile = egui::RichText::new(text).font(FontId::new(13.0, familie));

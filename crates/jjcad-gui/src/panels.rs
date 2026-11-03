@@ -160,7 +160,7 @@ pub fn layers(app: &mut App, ui: &mut Ui) {
                 if resp.secondary_clicked() {
                     app.ui.color_popup = Some(l.id);
                 }
-                let hover_text = jjcad_core::i18n::t_args_owned("gui.panels.x_x_mm_x", &[("wert1", format!("{}", l.name)), ("wert2", format!("{:.2}", l.line_weight)), ("wert3", format!("{}", l.line_type.label()))]);
+                let hover_text = jjcad_core::i18n::t_args_owned("gui.panels.x_x_mm_x", &[("wert1", format!("{}", l.name)), ("wert2", format!("{:.2}", l.line_weight)), ("wert3", format!("{}", l.line_type.text()))]);
                 resp.clone().on_hover_text(hover_text);
                 resp.context_menu(|ui| {
                     ui.label(theme::dim(&l.name));
@@ -468,10 +468,10 @@ pub(crate) fn auszeichnen_knoepfe(
     ui.horizontal(|ui| {
         ui.spacing_mut().item_spacing.x = 4.0;
         for (schluessel, beschriftung, an, hinweis) in [
-            ("bold", "F", aktuel.bold, "Fett"),
-            ("italic", "K", aktuel.italic, "Kursiv"),
-            ("underline", "U", aktuel.underline, "Unterstrichen"),
-            ("superscript", "x²", aktuel.superscript, "Hochgestellt"),
+            ("bold", "F", aktuel.bold, jjcad_core::i18n::tr("gui.panels.fett")),
+            ("italic", "K", aktuel.italic, jjcad_core::i18n::tr("gui.panels.kursiv")),
+            ("underline", "U", aktuel.underline, jjcad_core::i18n::tr("gui.panels.unterstrichen")),
+            ("superscript", "x²", aktuel.superscript, jjcad_core::i18n::tr("gui.panels.hochgestellt")),
         ] {
             let beschriftung = egui::RichText::new(beschriftung).size(13.0);
             let beschriftung = match schluessel {
@@ -765,7 +765,7 @@ pub(crate) fn linetype_combo(ui: &mut Ui, salt: &str, cur: LineType, mixed: bool
     let cap = if mixed {
         "*variiert*".to_string()
     } else {
-        cur.label().to_string()
+        cur.text().to_string()
     };
     let icon = if mixed { None } else { Some(BtnIcon::Line(cur)) };
     dropdown(ui, salt, &cap, icon, |ui| {
@@ -1236,13 +1236,13 @@ fn zeichnungs_info(
                 .file_name()
                 .map(|n| n.to_string_lossy().to_string())
                 .unwrap_or_else(|| pfad.to_string());
-            zeilen.push(("Datei", name, Some(pfad.to_string())));
+            zeilen.push((jjcad_core::i18n::tr("gui.panels.datei"), name, Some(pfad.to_string())));
             zeilen.push((
-                "Stand",
+                jjcad_core::i18n::tr("gui.panels.stand"),
                 if doc.modified {
                     jjcad_core::i18n::tr("gui.panels.geaendert_nicht_gespeichert")
                 } else {
-                    "gespeichert"
+                    jjcad_core::i18n::tr("gui.panels.gespeichert")
                 }
                 .to_string(),
                 None,
@@ -1280,7 +1280,7 @@ fn datei_groesse(bytes: u64) -> String {
 fn ausdehnung_text(doc: &Document, unit: Unit) -> String {
     let b = doc.bbox();
     if !b.is_valid() {
-        return "leer".to_string();
+        return jjcad_core::i18n::tr("gui.panels.leer").to_string();
     }
     let s = b.size();
     let d = unit.decimals();
@@ -1298,11 +1298,15 @@ fn blatt_text(doc: &Document) -> String {
         format!(
             "{} {}",
             s.paper.label(),
-            if s.landscape { "quer" } else { "hoch" }
+            if s.landscape {
+                jjcad_core::i18n::tr("gui.panels.quer")
+            } else {
+                jjcad_core::i18n::tr("gui.panels.hoch")
+            }
         )
     };
     match doc.sheets.len() {
-        0 => "keine".to_string(),
+        0 => jjcad_core::i18n::tr("gui.panels.keine").to_string(),
         1 => format!("1 × {}", beschreibung(&doc.sheets[0])),
         n => {
             let liste: Vec<String> = doc.sheets.iter().map(beschreibung).collect();
@@ -1484,7 +1488,7 @@ pub(crate) fn dim_fields(app: &mut App, ui: &mut Ui) {
     let cur_unit = app.doc().settings.dim_unit;
     let unit_items: Vec<(Unit, String)> = Unit::ALL
         .iter()
-        .map(|u| (*u, u.label().to_string()))
+        .map(|u| (*u, u.text().to_string()))
         .collect();
     let mut picked_unit = None;
     widgets::field_row(ui, jjcad_core::i18n::tr("gui.panels.masseinheit"), |ui| {
