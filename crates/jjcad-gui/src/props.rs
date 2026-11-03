@@ -2192,6 +2192,131 @@ impl Einfach {
     }
 }
 
+/// Raumstempel: Überschrift, Textgröße und die Kennzahlen der unsichtbaren
+/// Fläche — dieselben Zeilen beim Erzeugen und beim Bearbeiten.
+///
+/// Die Lage des Textfeldes steht **nicht** hier: sie wird in der Zeichnung am
+/// runden Griff verschoben (Fläche bleibt stehen, T0097). Die Fläche selbst hat
+/// keine eigene Einstellung — sie ist die Umgrenzung, deren Ecken die Griffe
+/// zeigen.
+pub fn raumstempel(app: &mut App, ui: &mut Ui, ziel: Ziel) {
+    let unit = app.unit();
+    let e: Option<Entity> = ziel.id().and_then(|id| app.doc().entity(id).cloned());
+    let (layer, farbe, mut hoehe, mut kopf_text) = match &e {
+        Some(e) => match &e.kind {
+            EntityKind::Room { height, heading, .. } => {
+                (e.layer, e.style.color, *height, heading.clone())
+            }
+            _ => return,
+        },
+        None => (
+            app.doc().current_layer,
+            app.ui.pending.color,
+            app.options.room_height,
+            app.options.room_heading.clone(),
+        ),
+    };
+    let farbe_gezeigt = farbe.unwrap_or_else(|| {
+        app.doc()
+            .layer(layer)
+            .map(|l| l.color)
+            .unwrap_or(Color::BLACK)
+    });
+
+    kopf(app, ui, ziel, "Raumstempel", "room");
+    reihenfolge(app, ui, ziel);
+    // Ein Raumstempel hat keine Linie: Stärke und Linientyp entfallen in
+    // beiden Fällen (wie beim Text).
+    let a = gemein(
+        app,
+        ui,
+        ziel,
+        layer,
+        farbe,
+        farbe_gezeigt,
+        0.35,
+        jjcad_core::style::LineType::Solid,
+        false,
+        "Farbe",
+    );
+
+    ui.add_space(4.0);
+    widgets::hline(ui);
+    ui.add_space(4.0);
+    section_title(ui, "room", "Raumstempel");
+    zeile("artkopf");
+
+    zeile("ueberschrift");
+    widgets::field_row(ui, "Überschrift", |ui| {
+        ui.add(
+            egui::TextEdit::singleline(&mut kopf_text)
+                .id(egui::Id::new(ziel.salt("ueberschrift")))
+                .desired_width(ui.available_width()),
+        );
+    });
+
+    zeile("textgroesse");
+    widgets::field_row(ui, "Textgröße", |ui| {
+        widgets::length_field(
+            ui,
+            &mut hoehe,
+            unit,
+            110.0,
+            widgets::MASS_MIN_MM,
+            widgets::MASS_MAX_MM,
+        );
+    });
+
+    zeile("kennzahlen");
+    ui.add_space(4.0);
+    match (&e, ziel) {
+        (Some(e), Ziel::Auswahl(_)) => {
+            if let EntityKind::Room { boundary, .. } = &e.kind {
+                let flaeche = jjcad_core::area::area_of(boundary, &[]);
+                ui.label(theme::dim(format!(
+                    "{} Punkte · Fläche {}",
+                    boundary.len(),
+                    panels::area_text(unit, flaeche)
+                )));
+            }
+            ui.label(theme::faint("Textlage am runden Griff in der Zeichnung"));
+        }
+        _ => {
+            ui.label(theme::faint(
+                "Fläche und Text entstehen beim Abschluss der Punktfolge",
+            ));
+        }
+    }
+
+    match ziel {
+        Ziel::Neu => {
+            gemein_nach_optionen(app, &a);
+            app.options.room_height = hoehe;
+            app.options.room_heading = kopf_text;
+        }
+        Ziel::Auswahl(id) => {
+            gemein_nach_objekt(app, id, &a);
+            let mut params = serde_json::json!({"ids": [id]});
+            let mut geaendert = false;
+            if let Some(e) = &e {
+                if let EntityKind::Room { height, heading, .. } = &e.kind {
+                    if (hoehe - *height).abs() > 1e-9 {
+                        params["height"] = serde_json::json!(unit.from_mm(hoehe));
+                        geaendert = true;
+                    }
+                    if kopf_text != *heading {
+                        params["text"] = serde_json::json!(kopf_text);
+                        geaendert = true;
+                    }
+                }
+            }
+            if geaendert {
+                setzen(app, &params);
+            }
+        }
+    }
+}
+
 /// Alle Zeilen einer Klick-Art — für Erzeugen und Bearbeiten dieselben.
 pub fn einfach(app: &mut App, ui: &mut Ui, ziel: Ziel, art: Einfach) {
     let unit = app.unit();
@@ -3329,6 +3454,7 @@ pub fn mehrfach(app: &mut App, ui: &mut Ui, ids: &[Id]) {
             Some(EntityKind::Dim { .. }) => bemassung(app, ui, ziel),
             Some(EntityKind::Volume { .. }) => volumen(app, ui, ziel),
             Some(EntityKind::Stair { .. }) => treppe(app, ui, ziel),
+            Some(EntityKind::Room { .. }) => raumstempel(app, ui, ziel),
             Some(kind) => {
                 if let Some(a) = Einfach::aus_objekt(&kind) {
                     einfach(app, ui, ziel, a)
@@ -3763,6 +3889,20 @@ mod tests {
                 },
             ),
             (
+                "dim.room",
+                EntityKind::Room {
+                    boundary: vec![
+                        jjcad_core::geom::Vec2::ZERO,
+                        v(4000.0, 0.0),
+                        v(4000.0, 3000.0),
+                        v(0.0, 3000.0),
+                    ],
+                    label: v(2000.0, 1500.0),
+                    height: 250.0,
+                    heading: "Zimmer".into(),
+                },
+            ),
+            (
                 "block.insert",
                 EntityKind::BlockRef {
                     block: "Test".into(),
@@ -3874,6 +4014,7 @@ mod tests {
                     | EntityKind::Dim { .. }
                     | EntityKind::Volume { .. }
                     | EntityKind::Stair { .. }
+                    | EntityKind::Room { .. }
             ) || Einfach::aus_objekt(kind).is_some()
         }
 
@@ -3916,6 +4057,12 @@ mod tests {
                 rot: 0.0,
                 a0: 0.0,
                 a1: 1.0,
+            },
+            EntityKind::Room {
+                boundary: vec![],
+                label: jjcad_core::geom::Vec2::ZERO,
+                height: 250.0,
+                heading: "Zimmer".into(),
             },
             EntityKind::Text {
                 p: jjcad_core::geom::Vec2::ZERO,

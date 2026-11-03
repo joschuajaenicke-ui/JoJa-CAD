@@ -324,6 +324,13 @@ pub fn paint(painter: &Painter, rect: Rect, name: &str, color: Color32) {
             i.line(12.0, 17.0, 12.0, 8.0);
             i.line(12.0, 8.0, 20.0, 8.0);
         }
+        // Raumstempel: Raumkontur mit Flächenbeschriftung in der Mitte.
+        "room" => {
+            i.poly(&[(3.0, 5.0), (21.0, 5.0), (21.0, 19.0), (3.0, 19.0)], true);
+            i.line(7.5, 10.0, 16.5, 10.0);
+            i.line(9.0, 13.0, 15.0, 13.0);
+            i.dot(12.0, 16.0, 1.1);
+        }
         "style" => {
             i.circle(9.0, 9.0, 5.0);
             i.line(12.0, 12.0, 20.0, 20.0);

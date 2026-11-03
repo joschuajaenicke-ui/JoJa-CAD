@@ -234,6 +234,15 @@ pub const ACTIONS: &[ActionDef] = &[
     act!("dim.linear", "Maß", Bemassung, "dim", "m", "Zwei Punkte und Maßlinie setzen", true),
     act!("dim.chain", "Maßkette", Bemassung, "dimchain", "", "Punkte klicken, Enter beendet", true),
     act!("dim.elevation", "Höhenkote", Bemassung, "elevation", "n", "Punkt klicken, Höhe eingeben", true),
+    act!(
+        "dim.room",
+        "Raumstempel",
+        Bemassung,
+        "room",
+        "",
+        "Raumumriss klicken, Enter setzt den Stempel",
+        true
+    ),
     act!("dim.style", "Bemaßungsstil", Bemassung, "style", "", "Bemaßungsstil bearbeiten", false),
 
     // Blöcke
@@ -329,6 +338,7 @@ pub fn is_mutating(id: &str) -> bool {
             | "dim.linear"
             | "dim.chain"
             | "dim.elevation"
+            | "dim.room"
             | "dim.style"
             | "modify.move"
             | "modify.order"
@@ -636,7 +646,7 @@ fn standard_ebene(action: &str) -> Option<&'static str> {
         "draw.door" => "Türen",
         "draw.window" => "Fenster",
         "draw.stair" | "draw.stair.label" => "Treppen",
-        "dim.linear" | "dim.chain" | "dim.elevation" => "Bemaßung",
+        "dim.linear" | "dim.chain" | "dim.elevation" | "dim.room" => "Bemaßung",
         "draw.text" => "Text",
         "draw.fill" | "draw.fill.points" | "draw.fill.boundary" | "draw.fill.paint" | "draw.hatch" => {
             "Schraffur"
@@ -676,6 +686,7 @@ pub fn erzeuger_fuer(kind: &EntityKind) -> &'static str {
         EntityKind::Dim { .. } => "dim.linear",
         EntityKind::DimChain { .. } => "dim.chain",
         EntityKind::Elevation { .. } => "dim.elevation",
+        EntityKind::Room { .. } => "dim.room",
         EntityKind::Wall { .. } => "draw.wall",
         EntityKind::Door { .. } => "draw.door",
         EntityKind::Window { .. } => "draw.window",
@@ -2062,6 +2073,48 @@ pub fn execute(doc: &mut Document, id: &str, params: &Value) -> Result<Value, St
             doc.add_entity(e);
             Ok(json!({"ok": true, "created": [idn], "z_mm": z}))
         }
+        // Raumstempel: die Umgrenzung kommt als Punktfolge (wie die Fläche
+        // nach Punktfolge). Die Beschriftung setzt die Action selbst in den
+        // „Pole of Inaccessibility" — den Punkt der Fläche mit dem größten
+        // Abstand zu allen Kanten. Eine Fläche ohne Ausdehnung ist ein Fehler
+        // (T0038), kein Stempel im Ursprung.
+        "dim.room" => {
+            let pts = p
+                .pts("pts")
+                .or_else(|| p.pts("boundary"))
+                .ok_or_else(|| "Parameter 'pts' fehlt".to_string())?;
+            let (boundary, _) = crate::model::polyline_points(
+                &pts,
+                true,
+                crate::model::POINT_EPS_MM,
+            );
+            if boundary.len() < 3 {
+                return Err("Raumstempel braucht mindestens drei Punkte".into());
+            }
+            let flaeche = crate::area::area_of(&boundary, &[]);
+            if !(flaeche > 1.0) {
+                return Err("Die Umgrenzung umschließt keine Fläche".into());
+            }
+            let label = p
+                .pt("label")
+                .unwrap_or_else(|| crate::area::pole_of_inaccessibility(&boundary, &[], 0.5));
+            let layer = resolve_layer_in(doc, &p, ebene);
+            let idn = doc.new_id();
+            let mut e = Entity::new(
+                idn,
+                layer,
+                EntityKind::Room {
+                    boundary,
+                    label,
+                    height: p.len_or("height", doc.settings.text_height),
+                    heading: p.text_or("heading", "Zimmer"),
+                },
+            );
+            apply_common(doc, &mut e, &p, layer);
+            bemasung_schwarz(&p, &mut e);
+            doc.add_entity(e);
+            Ok(json!({"ok": true, "created": [idn]}))
+        }
 
         // ---------------- Ändern ----------------
         // Zeichenreihenfolge: die Liste der Objekte IST die Reihenfolge, der
@@ -2844,6 +2897,30 @@ pub fn execute(doc: &mut Document, id: &str, params: &Value) -> Result<Value, St
                                         *runs = crate::text::normalize_runs(t, &liste, vorgabe);
                                     }
                                     Err(e) => return Err(format!("runs: {e}")),
+                                }
+                            }
+                        }
+                        // Raumstempel: Textlage getrennt von der Fläche
+                        // (`label` verschiebt nur das Textfeld), Überschrift,
+                        // Textgröße und die Umgrenzung selbst.
+                        EntityKind::Room {
+                            boundary,
+                            label,
+                            height: h,
+                            heading,
+                        } => {
+                            if let Some(v) = text {
+                                *heading = v;
+                            }
+                            if let Some(v) = height_new {
+                                *h = v.max(1.0);
+                            }
+                            if let Some(v) = p.pt("label") {
+                                *label = v;
+                            }
+                            if let Some(pts) = p.pts("boundary") {
+                                if pts.len() >= 3 {
+                                    *boundary = pts;
                                 }
                             }
                         }

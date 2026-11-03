@@ -15,6 +15,9 @@ pub enum GripKind {
     ArcStart,
     /// Endpunkt eines Bogens: zieht den Endwinkel um den Mittelpunkt.
     ArcEnd,
+    /// Textfeld eines Raumstempels: verschiebt **nur** die Beschriftung,
+    /// die Umgrenzung bleibt stehen (T0097).
+    Label,
 }
 
 #[derive(Clone, Debug)]
@@ -200,6 +203,18 @@ pub fn grips_of(e: &Entity) -> Vec<(GripKind, V2)> {
         // Maßlinie (Raute, `GripKind::Edge(0)`) — Ziehen verschiebt sie
         // senkrecht zur Messrichtung (T0055).
         EntityKind::Dim { .. } | EntityKind::DimChain { .. } => dim_griffe(e),
+        // Raumstempel: die Ecken der (unsichtbaren) Umgrenzung erscheinen erst
+        // mit der Auswahl des Textfeldes — genau dann ist das Objekt gewählt.
+        // Der runde Griff am Textfeld verschiebt nur die Beschriftung.
+        EntityKind::Room { boundary, label, .. } => {
+            let mut out: Vec<(GripKind, V2)> = boundary
+                .iter()
+                .enumerate()
+                .map(|(i, p)| (GripKind::Vert(i), *p))
+                .collect();
+            out.push((GripKind::Label, *label));
+            out
+        }
         // Füllfläche: die Ecken der Umgrenzung und der Inseln. Zwischenpunkte
         // einer geraden Kante fallen weg (`ist_ecke`) — der Farbeimer liefert
         // seinen Rand als dichten Punktzug.
@@ -360,6 +375,12 @@ pub fn apply_grip_tol(orig: &Entity, kind: GripKind, target: V2, tol: f64) -> Op
                 _ => return None,
             }
         }
+        // Raumstempel: eine Ecke ändert die Fläche (der Text rechnet sich neu),
+        // der Textgriff verschiebt nur die Beschriftung — die Fläche bleibt.
+        (EntityKind::Room { boundary, .. }, GripKind::Vert(i)) => {
+            *boundary.get_mut(i)? = target;
+        }
+        (EntityKind::Room { label, .. }, GripKind::Label) => *label = target,
         // Ecke einer Füllfläche: der flache Index zählt erst die Umgrenzung,
         // dann die Inseln (dieselbe Reihenfolge wie die Anzeige). Verschmolzen
         // wird erst beim Loslassen (`App::end_grip_drag`) — während des Zugs
@@ -397,6 +418,11 @@ pub fn moving_points(e: &Entity, kind: GripKind) -> Vec<V2> {
         | (EntityKind::Wall { a, .. }, GripKind::Vert(0)) => vec![*a],
         (EntityKind::Line { b, .. }, GripKind::Vert(1))
         | (EntityKind::Wall { b, .. }, GripKind::Vert(1)) => vec![*b],
+        // Raumstempel: die gezogene Ecke bzw. das gezogene Textfeld wandert.
+        (EntityKind::Room { boundary, .. }, GripKind::Vert(i)) => {
+            boundary.get(i).map(|p| vec![*p]).unwrap_or_default()
+        }
+        (EntityKind::Room { label, .. }, GripKind::Label) => vec![*label],
         // Bemaßung: der gezogene Basispunkt wandert, die übrigen stehen.
         (EntityKind::Dim { a, .. }, GripKind::Vert(0)) => vec![*a],
         (EntityKind::Dim { b, .. }, GripKind::Vert(1)) => vec![*b],
@@ -555,6 +581,19 @@ pub fn bezugspunkte(e: &Entity, kind: GripKind) -> Vec<V2> {
             }
             out
         }
+        // Raumstempel-Ecke: Bezug sind die beiden Nachbarecken im Ring.
+        (EntityKind::Room { boundary, .. }, GripKind::Vert(i)) => {
+            let n = boundary.len();
+            if n < 2 || i >= n {
+                return Vec::new();
+            }
+            let mut out = Vec::new();
+            out.push(boundary[(i + n - 1) % n]);
+            if n >= 3 {
+                out.push(boundary[(i + 1) % n]);
+            }
+            out
+        }
         (
             EntityKind::Fill { boundary, holes, .. }
             | EntityKind::Volume { boundary, holes, .. },
@@ -676,6 +715,11 @@ fn eckpunkte(e: &Entity) -> Vec<V2> {
             .chain(holes.iter().flatten())
             .copied()
             .collect(),
+        EntityKind::Room { boundary, label, .. } => {
+            let mut out: Vec<V2> = boundary.clone();
+            out.push(*label);
+            out
+        }
         _ => Vec::new(),
     }
 }
@@ -1424,6 +1468,89 @@ mod tests {
             },
         );
         assert_eq!(bezugspunkt(&kreis, GripKind::Vert(0)), None);
+    }
+}
+
+#[cfg(test)]
+mod tests_raumstempel {
+    use super::*;
+
+    fn stempel() -> Entity {
+        Entity::new(
+            5,
+            1,
+            EntityKind::Room {
+                boundary: vec![
+                    V2::new(0.0, 0.0),
+                    V2::new(4000.0, 0.0),
+                    V2::new(4000.0, 3000.0),
+                    V2::new(0.0, 3000.0),
+                ],
+                label: V2::new(2000.0, 1500.0),
+                height: 250.0,
+                heading: "Zimmer".into(),
+            },
+        )
+    }
+
+    fn teile(e: &Entity) -> (Vec<V2>, V2) {
+        match &e.kind {
+            EntityKind::Room { boundary, label, .. } => (boundary.clone(), *label),
+            _ => panic!("kein Raumstempel"),
+        }
+    }
+
+    /// Vier Eckgriffe plus der Textgriff — die Fläche selbst ist unsichtbar,
+    /// ihre Ecken erscheinen mit der Auswahl.
+    #[test]
+    fn raumstempel_hat_eck_und_textgriffe() {
+        let griffe = grips_of(&stempel());
+        assert_eq!(griffe.len(), 5, "vier Ecken und ein Textgriff");
+        assert_eq!(
+            griffe.iter().filter(|(k, _)| *k == GripKind::Label).count(),
+            1
+        );
+        assert!(griffe.contains(&(GripKind::Label, V2::new(2000.0, 1500.0))));
+    }
+
+    /// Der Textgriff verschiebt nur die Beschriftung — die Umgrenzung bleibt
+    /// unverändert (die Fläche wandert nicht mit).
+    #[test]
+    fn textgriff_verschiebt_nur_die_beschriftung() {
+        let e = stempel();
+        let (vorher, _) = teile(&e);
+        let neu = apply_grip(&e, GripKind::Label, V2::new(500.0, 2500.0)).expect("Griff");
+        let (nachher, label) = teile(&neu);
+        assert_eq!(vorher, nachher, "die Fläche ist mitgewandert");
+        assert_eq!(label, V2::new(500.0, 2500.0));
+    }
+
+    /// Eine Ecke ziehen ändert die Fläche; nur dieser Punkt wandert, der Text
+    /// bleibt an seiner Stelle (der Inhalt rechnet sich neu).
+    #[test]
+    fn ecke_ziehen_aendert_nur_diesen_punkt() {
+        let e = stempel();
+        let neu = apply_grip(&e, GripKind::Vert(2), V2::new(6000.0, 4000.0)).expect("Griff");
+        let (rand, label) = teile(&neu);
+        assert_eq!(rand[2], V2::new(6000.0, 4000.0));
+        assert_eq!(rand[0], V2::new(0.0, 0.0));
+        assert_eq!(rand[1], V2::new(4000.0, 0.0));
+        assert_eq!(rand[3], V2::new(0.0, 3000.0));
+        assert_eq!(label, V2::new(2000.0, 1500.0), "Textlage bleibt stehen");
+    }
+
+    /// Der gezogene Punkt wird beim Fangen gesperrt, die Nachbarecken bleiben
+    /// Fangziel — sonst flackerte der Griff (T0018).
+    #[test]
+    fn ecke_ziehen_sperrt_nur_den_gezogenen_punkt() {
+        let e = stempel();
+        assert_eq!(
+            moving_points(&e, GripKind::Vert(1)),
+            vec![V2::new(4000.0, 0.0)]
+        );
+        assert_eq!(moving_points(&e, GripKind::Label), vec![V2::new(2000.0, 1500.0)]);
+        let bezug = bezugspunkte(&e, GripKind::Vert(0));
+        assert_eq!(bezug.len(), 2, "voriger und nächster Punkt");
     }
 }
 
