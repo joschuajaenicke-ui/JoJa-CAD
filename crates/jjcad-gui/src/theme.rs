@@ -8,8 +8,8 @@
 //! dann gilt das helle oder dunkle Farbschema des Betriebssystems.
 
 use egui::{Color32, FontFamily, FontId, Frame, Margin, Rounding, Stroke, TextStyle, Visuals};
-use jjcad_core::persist::Design;
-use std::sync::atomic::{AtomicBool, Ordering};
+use jjcad_core::persist::{Design, Farbakzent};
+use std::sync::atomic::{AtomicBool, AtomicU8, Ordering};
 
 /// Alle Farben eines Designs. Eine Zeile je Aufgabe — Flächen von außen nach
 /// innen, dann Schrift, dann die Bedienfarben.
@@ -26,9 +26,6 @@ struct Farben {
     text: Color32,
     text_dim: Color32,
     text_faint: Color32,
-    accent: Color32,
-    accent_soft: Color32,
-    accent_text: Color32,
     danger: Color32,
     ok: Color32,
     paper: Color32,
@@ -60,9 +57,6 @@ const DUNKEL: Farben = Farben {
     text: Color32::from_rgb(0xE7, 0xE9, 0xEC),
     text_dim: Color32::from_rgb(0x99, 0xA2, 0xAD),
     text_faint: Color32::from_rgb(0x6C, 0x75, 0x81),
-    accent: Color32::from_rgb(0xE3, 0xA2, 0x3D),
-    accent_soft: Color32::from_rgb(0x3A, 0x2E, 0x1B),
-    accent_text: Color32::from_rgb(0x1A, 0x15, 0x0C),
     danger: Color32::from_rgb(0xD8, 0x60, 0x4F),
     ok: Color32::from_rgb(0x5A, 0xB5, 0x82),
     paper: Color32::from_rgb(0xFB, 0xFA, 0xF6),
@@ -92,9 +86,6 @@ const HELL: Farben = Farben {
     text: Color32::from_rgb(0x1C, 0x20, 0x26),
     text_dim: Color32::from_rgb(0x53, 0x5B, 0x66),
     text_faint: Color32::from_rgb(0x7E, 0x86, 0x91),
-    accent: Color32::from_rgb(0xA9, 0x6C, 0x0B),
-    accent_soft: Color32::from_rgb(0xF7, 0xE7, 0xC4),
-    accent_text: Color32::from_rgb(0xFF, 0xFB, 0xF2),
     danger: Color32::from_rgb(0xBE, 0x3A, 0x2B),
     ok: Color32::from_rgb(0x2C, 0x8A, 0x5C),
     paper: Color32::from_rgb(0xFB, 0xFA, 0xF6),
@@ -110,6 +101,83 @@ const HELL: Farben = Farben {
     hinweis_flaeche: Color32::from_rgba_premultiplied(241, 243, 246, 245),
     schwebend: Color32::from_rgba_premultiplied(255, 255, 255, 240),
 };
+
+/// Die drei Akzentfarben einer Wahl (T0111).
+#[derive(Clone, Copy)]
+struct Akzentfarben {
+    accent: Color32,
+    /// Fläche hinter Akzenttext (aktive Reiter, Chips, Schalter)
+    accent_soft: Color32,
+    /// Schrift **auf** der Akzentfläche
+    accent_text: Color32,
+}
+
+/// Akzenttöne je Wahl und Design.
+///
+/// Bernstein trägt **genau** die bisherigen Werte und ist damit unverändert
+/// das Aussehen bis T0110. Jede andere Wahl hat einen eigenen Ton für das
+/// dunkle und das helle Design: im dunklen leuchtet er, im hellen ist er
+/// dunkler, damit er sich vom hellen Papier abhebt.
+fn akzentfarben(akzent: Farbakzent, hell: bool) -> Akzentfarben {
+    let (accent, soft, text) = match (akzent, hell) {
+        (Farbakzent::Bernstein, false) => (0xE3A23D, 0x3A2E1B, 0x1A150C),
+        (Farbakzent::Bernstein, true) => (0xA96C0B, 0xF7E7C4, 0xFFFBF2),
+        (Farbakzent::Blau, false) => (0x4C9AE8, 0x16283C, 0x08131F),
+        (Farbakzent::Blau, true) => (0x1F6FD2, 0xD8E8FA, 0xF6FAFF),
+        (Farbakzent::Tuerkis, false) => (0x35C0B2, 0x11332F, 0x051C1A),
+        (Farbakzent::Tuerkis, true) => (0x0E7F76, 0xD3F0EC, 0xF3FFFD),
+        (Farbakzent::Gruen, false) => (0x5FC57A, 0x17351F, 0x071C0D),
+        (Farbakzent::Gruen, true) => (0x2C7D4A, 0xDCEFE2, 0xF4FFF7),
+        (Farbakzent::Rot, false) => (0xE06A5A, 0x3B1E1A, 0x200C09),
+        (Farbakzent::Rot, true) => (0xB83A2B, 0xF8DFDA, 0xFFF6F4),
+        (Farbakzent::Violett, false) => (0xB48CE8, 0x2A223B, 0x160F22),
+        (Farbakzent::Violett, true) => (0x6B45B0, 0xE8E0F7, 0xF8F4FF),
+    };
+    let farbe = |v: u32| Color32::from_rgb((v >> 16) as u8, (v >> 8) as u8, v as u8);
+    Akzentfarben {
+        accent: farbe(accent),
+        accent_soft: farbe(soft),
+        accent_text: farbe(text),
+    }
+}
+
+/// Der gewählte Farbakzent, prozessweit (wie das Design).
+static AKZENT_AKTIV: AtomicU8 = AtomicU8::new(0);
+
+thread_local! {
+    /// Akzent des **eigenen Fadens**, sobald dieser ihn selbst umgestellt hat
+    /// — dieselbe Absicherung wie beim Design: Tests laufen in Fäden
+    /// nebeneinander und stellen die Wahl um (T0099).
+    static AKZENT_IM_FADEN: std::cell::Cell<Option<Farbakzent>> =
+        const { std::cell::Cell::new(None) };
+}
+
+/// Stelle einer Wahl in [`Farbakzent::ALL`].
+fn akzent_index(akzent: Farbakzent) -> u8 {
+    Farbakzent::ALL
+        .iter()
+        .position(|a| *a == akzent)
+        .unwrap_or(0) as u8
+}
+
+fn akzent_aus_index(i: u8) -> Farbakzent {
+    *Farbakzent::ALL
+        .get(i as usize)
+        .unwrap_or(&Farbakzent::Bernstein)
+}
+
+/// Gilt welcher Akzent in diesem Faden?
+fn akzent_jetzt() -> Farbakzent {
+    AKZENT_IM_FADEN
+        .with(|z| z.get())
+        .unwrap_or_else(|| akzent_aus_index(AKZENT_AKTIV.load(Ordering::Relaxed)))
+}
+
+/// Akzent setzen — prozessweit **und** für den aufrufenden Faden.
+fn setze_akzent(akzent: Farbakzent) {
+    AKZENT_AKTIV.store(akzent_index(akzent), Ordering::Relaxed);
+    AKZENT_IM_FADEN.with(|z| z.set(Some(akzent)));
+}
 
 /// Steht das Design auf hell? Prozessweit wie die Sprache (T0103) — alle
 /// Zeichenwege lesen denselben Wert.
@@ -192,13 +260,13 @@ impl Palette {
         farben().text_faint
     }
     pub fn accent() -> Color32 {
-        farben().accent
+        akzentfarben(akzent_jetzt(), hell_jetzt()).accent
     }
     pub fn accent_soft() -> Color32 {
-        farben().accent_soft
+        akzentfarben(akzent_jetzt(), hell_jetzt()).accent_soft
     }
     pub fn accent_text() -> Color32 {
-        farben().accent_text
+        akzentfarben(akzent_jetzt(), hell_jetzt()).accent_text
     }
     pub fn danger() -> Color32 {
         farben().danger
@@ -397,6 +465,27 @@ pub fn set_design(design: Design, ctx: &egui::Context) {
     merke_pruefung(ctx, system_hell);
     stil(ctx);
     ctx.request_repaint();
+}
+
+/// Farbakzent umstellen (Einstellungen → Darstellung → „Farbakzente“, T0111).
+///
+/// Gilt ab dem nächsten Bild; der Stil wird neu gesetzt, damit auch die
+/// egui-Widgets (Auswahl, aktive Schalter) den neuen Ton tragen.
+pub fn set_akzent(akzent: Farbakzent, ctx: &egui::Context) {
+    setze_akzent(akzent);
+    stil(ctx);
+    ctx.request_repaint();
+}
+
+/// Der gerade geltende Akzent.
+pub fn aktueller_akzent() -> Farbakzent {
+    akzent_jetzt()
+}
+
+/// Akzentton einer Wahl im gerade gezeichneten Design — für die Farbprobe
+/// neben der Auswahl im Einstellungsfenster.
+pub fn akzent_probe(akzent: Farbakzent) -> Color32 {
+    akzentfarben(akzent, hell_jetzt()).accent
 }
 
 fn merke_pruefung(ctx: &egui::Context, system_hell: bool) {
@@ -858,5 +947,115 @@ mod tests {
         assert!(!ist_hell());
         assert_eq!(Palette::bg(), dunkel_bg, "zurück im dunklen Design");
         assert_eq!(Palette::text(), dunkel_text);
+    }
+
+    /// T0111: Bernstein bleibt der Programmstandard und trägt **genau** die
+    /// bisherigen Werte — im dunklen wie im hellen Design. Wer die Tabelle
+    /// ändert, verschiebt das Aussehen aller Bestandsnutzer.
+    #[test]
+    fn bernstein_bleibt_der_programmstandard() {
+        let ctx = egui::Context::default();
+        set_design(Design::Dunkel, &ctx);
+        set_akzent(Farbakzent::Bernstein, &ctx);
+        assert_eq!(Palette::accent(), Color32::from_rgb(0xE3, 0xA2, 0x3D));
+        assert_eq!(Palette::accent_soft(), Color32::from_rgb(0x3A, 0x2E, 0x1B));
+        assert_eq!(Palette::accent_text(), Color32::from_rgb(0x1A, 0x15, 0x0C));
+
+        set_design(Design::Hell, &ctx);
+        assert_eq!(Palette::accent(), Color32::from_rgb(0xA9, 0x6C, 0x0B));
+        assert_eq!(Palette::accent_soft(), Color32::from_rgb(0xF7, 0xE7, 0xC4));
+        assert_eq!(Palette::accent_text(), Color32::from_rgb(0xFF, 0xFB, 0xF2));
+
+        set_design(Design::Dunkel, &ctx);
+    }
+
+    /// T0111: Jede Wahl färbt die Akzentstellen um — die Töne unterscheiden
+    /// sich, Schrift und Fläche bleiben lesbar, und die Wahl überlebt einen
+    /// Designwechsel (die Akzenttöne hängen am Design, nicht umgekehrt).
+    #[test]
+    fn jeder_farbakzent_faerbt_die_bedienung() {
+        let ctx = egui::Context::default();
+        set_design(Design::Dunkel, &ctx);
+        let mut gesehen: Vec<Color32> = Vec::new();
+        for a in Farbakzent::ALL {
+            set_akzent(a, &ctx);
+            let dunkel = akzentfarben(a, false);
+            assert_eq!(Palette::accent(), dunkel.accent, "{a:?}: Akzent fehlt");
+            assert_eq!(
+                Palette::accent_soft(),
+                dunkel.accent_soft,
+                "{a:?}: Akzentfläche fehlt"
+            );
+            assert_eq!(
+                Palette::accent_text(),
+                dunkel.accent_text,
+                "{a:?}: Akzenttext fehlt"
+            );
+            // Der Akzent hebt sich von der Panelfläche ab und die Schrift auf
+            // der Akzentfläche bleibt lesbar — in beiden Designs.
+            for (name, f, panel) in [
+                ("dunkel", akzentfarben(a, false), DUNKEL.panel),
+                ("hell", akzentfarben(a, true), HELL.panel),
+            ] {
+                let abstand = (helligkeit(f.accent) - helligkeit(panel)).abs();
+                assert!(
+                    abstand > 90.0,
+                    "{a:?} ({name}): Akzent und Fläche liegen zu nah beieinander ({abstand:.0})"
+                );
+                let lesbar = (helligkeit(f.accent_text) - helligkeit(f.accent)).abs();
+                assert!(
+                    lesbar > 90.0,
+                    "{a:?} ({name}): Schrift auf dem Akzent ist nicht lesbar ({lesbar:.0})"
+                );
+            }
+            gesehen.push(dunkel.accent);
+        }
+        // Sechs Wahlen = sechs verschiedene Töne (keine stille Doppelung).
+        for i in 0..gesehen.len() {
+            for j in (i + 1)..gesehen.len() {
+                assert_ne!(
+                    gesehen[i], gesehen[j],
+                    "{:?} und {:?} tragen denselben Ton",
+                    Farbakzent::ALL[i],
+                    Farbakzent::ALL[j]
+                );
+            }
+        }
+
+        // Designwechsel bei gewähltem Blau: der Ton folgt dem Design.
+        set_akzent(Farbakzent::Blau, &ctx);
+        assert_eq!(Palette::accent(), Color32::from_rgb(0x4C, 0x9A, 0xE8));
+        set_design(Design::Hell, &ctx);
+        assert_eq!(
+            Palette::accent(),
+            Color32::from_rgb(0x1F, 0x6F, 0xD2),
+            "das helle Design hat keinen eigenen Blauton"
+        );
+        assert_eq!(aktueller_akzent(), Farbakzent::Blau, "die Wahl ging verloren");
+        set_design(Design::Dunkel, &ctx);
+        assert_eq!(Palette::accent(), Color32::from_rgb(0x4C, 0x9A, 0xE8));
+
+        // Ausgangszustand für die übrigen Tests.
+        set_akzent(Farbakzent::Bernstein, &ctx);
+        assert_eq!(Palette::accent(), Color32::from_rgb(0xE3, 0xA2, 0x3D));
+    }
+
+    /// T0111: Der Akzent wirkt sofort im **Stil** — die egui-Widgets (Auswahl,
+    /// aktive Schalter) tragen denselben Ton, nicht nur `Palette::accent()`.
+    #[test]
+    fn akzent_umschalten_setzt_den_stil_neu() {
+        let ctx = egui::Context::default();
+        set_design(Design::Dunkel, &ctx);
+        set_akzent(Farbakzent::Violett, &ctx);
+        let v = ctx.style().visuals.clone();
+        assert_eq!(v.selection.bg_fill, Palette::accent_soft());
+        assert_eq!(v.selection.stroke.color, Palette::accent());
+        assert_eq!(Palette::accent(), Color32::from_rgb(0xB4, 0x8C, 0xE8));
+
+        set_akzent(Farbakzent::Bernstein, &ctx);
+        assert_eq!(
+            ctx.style().visuals.selection.stroke.color,
+            Color32::from_rgb(0xE3, 0xA2, 0x3D)
+        );
     }
 }
