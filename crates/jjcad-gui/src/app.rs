@@ -9769,8 +9769,9 @@ mod tests_fensterrahmen {
         );
     }
 
-    /// T0098 (Turn 5): Alle acht Zonen beginnen das Größe-Ziehen mit der
-    /// richtigen Richtung — vier Kanten und vier Ecken.
+    /// T0098 (Turn 5): Jede Ziehzone beginnt das Größe-Ziehen mit der
+    /// richtigen Richtung — vier Kanten und drei Ecken (die Ecke oben rechts
+    /// gehört den Fensterknöpfen).
     #[test]
     fn jede_kante_beginnt_das_groesse_ziehen() {
         let ctx = egui::Context::default();
