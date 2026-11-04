@@ -33,11 +33,14 @@ offene Fensterinstanz zeigt weiterhin den alten Stand.
   schickt `ViewportCommand::Decorations` sofort nach. Ohne Titelleiste zeichnet
   die Kopfzeile oben rechts **Minimieren**, **Vergrößern/Wiederherstellen** und
   **Schließen**, ein Zug verschiebt das Fenster (`StartDrag`), ein Doppelklick
-  schaltet die Größe um, die Kantenzonen (5 px) ändern sie (`BeginResize`).
+  schaltet die Größe um, die Kantenzonen (8 px, Ecken 24 px) ändern sie
+  (`BeginResize`): der Zeiger zeigt dort den Größenpfeil, die Kante leuchtet auf,
+  unten rechts sitzt ein sichtbarer Griff. Die Ecke oben rechts gehört den
+  Fensterknöpfen (Turn 5: 5 px waren unsichtbar und nicht auffindbar).
   Nach dem Zug beendet `Context::stop_dragging` egui's Zieh-Zustand: der
   Fenstermanager übernimmt den Zeiger und schickt das Loslassen an niemanden,
   sonst bliebe egui „am Ziehen“ und **jeder zweite** Zug verschöbe nichts (Turn 3).
-  Tests: `app::tests_fensterrahmen` (8), `dialogs::tests_einstellungen::fensterrahmen_laesst_sich_umschalten`,
+  Tests: `app::tests_fensterrahmen` (12), `dialogs::tests_einstellungen::fensterrahmen_laesst_sich_umschalten`,
   `persist::tests::fensterrahmen_vorgabe_und_gespeichert`.
 - **Drehpunkt der Einfüge-Vorschau (T0070)**: Einstellungen → Bedienung → Zeile
   „Drehpunkt" mit den Modi **Mittelpunkt** (Vorgabe seit T0087) und
