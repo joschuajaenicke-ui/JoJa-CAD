@@ -47,6 +47,12 @@ pub const FENSTERKNOPF_W: f32 = 46.0;
 pub const FENSTERKANTE_PX: f32 = 8.0;
 /// Kantenlänge der Ecken, in denen zwei Richtungen zugleich greifen.
 pub const FENSTERECKE_PX: f32 = 24.0;
+/// Verweildauer, bis die Kante unter dem Zeiger aufleuchtet (T0098, Turn 7).
+///
+/// Ohne Verzögerung blitzte die Markierung bei jeder schnellen Zeigerbewegung
+/// über den Rand auf und lenkte ab. Sie erscheint erst, wenn der Zeiger
+/// bewusst am Rand stehen bleibt.
+pub const KANTEN_VERWEILDAUER: f64 = 0.4;
 
 /// Auf ganze Bildschirm-Pixel runden.
 ///
@@ -719,6 +725,11 @@ pub struct UiState {
     pub last_fensterkanten: Option<Vec<(&'static str, Rect)>>,
     /// Lage des sichtbaren Größen-Griffs in der Ecke unten rechts (T0098)
     pub last_fenster_griff: Option<Rect>,
+    /// Kante unter dem Zeiger samt Zeitpunkt des Ankommens (T0098, Turn 7) —
+    /// daraus entsteht die Verzögerung, bis die Kante aufleuchtet.
+    pub kanten_verweil: Option<(&'static str, f64)>,
+    /// Kante, die in diesem Bild hervorgehoben wird (nach der Verweildauer)
+    pub kanten_leuchten: Option<&'static str>,
     pub zoom_edit: Option<String>,
     pub typed: String,
     /// Signatur der Auswahl für die letzte Zeichnung (Panel-Aktualisierung)
@@ -800,6 +811,8 @@ impl Default for UiState {
             last_fenster_knoepfe: None,
             last_fensterkanten: None,
             last_fenster_griff: None,
+            kanten_verweil: None,
+            kanten_leuchten: None,
             zoom_edit: None,
             typed: String::new(),
             sel_stamp: 0,
@@ -4581,35 +4594,64 @@ impl App {
         // Sichtbare Andeutung: die Kante unter dem Zeiger wird hervorgehoben,
         // unten rechts steht ein Größen-Griff. Ohne diese Anzeige war die
         // Fläche unsichtbar — sie wurde schlicht nicht gefunden (T0098).
+        //
+        // Die Markierung erscheint **erst nach kurzem Verweilen** (Turn 7): ein
+        // Zeiger, der nur über den Rand streicht, soll nichts aufblitzen lassen.
+        let jetzt = ctx.input(|i| i.time);
+        let kante_unter_zeiger = zeiger.and_then(|p| {
+            lagen
+                .iter()
+                .find(|(name, rect)| name.len() == 1 && rect.contains(p) && !ueber_knopf(p))
+                .map(|(name, _)| *name)
+        });
+        match (kante_unter_zeiger, self.ui.kanten_verweil) {
+            (Some(neu), Some((alt, _))) if neu == alt => {}
+            (Some(neu), _) => self.ui.kanten_verweil = Some((neu, jetzt)),
+            (None, _) => self.ui.kanten_verweil = None,
+        }
+        let leuchten = self
+            .ui
+            .kanten_verweil
+            .filter(|(_, seit)| jetzt - seit >= KANTEN_VERWEILDAUER)
+            .map(|(name, _)| name);
+        self.ui.kanten_leuchten = leuchten;
+        if leuchten.is_none() {
+            if let Some((_, seit)) = self.ui.kanten_verweil {
+                // Ohne Anforderung käme kein Bild mehr, solange der Zeiger ruht —
+                // die Markierung erschiene erst beim nächsten Klick.
+                ctx.request_repaint_after(std::time::Duration::from_secs_f64(
+                    (KANTEN_VERWEILDAUER - (jetzt - seit)).max(0.0),
+                ));
+            }
+        }
         let painter = ctx.layer_painter(egui::LayerId::new(
             egui::Order::Foreground,
             egui::Id::new("fensterkanten_anzeige"),
         ));
-        if let Some(zeiger) = zeiger {
-            for (name, rect) in lagen.iter() {
-                if name.len() > 1 || !rect.contains(zeiger) || ueber_knopf(zeiger) {
-                    continue;
-                }
-                let strich = match *name {
-                    "n" => [
-                        egui::pos2(f.left() + e, f.top() + 1.0),
-                        egui::pos2(f.right() - e, f.top() + 1.0),
-                    ],
-                    "s" => [
-                        egui::pos2(f.left() + e, f.bottom() - 1.0),
-                        egui::pos2(f.right() - e, f.bottom() - 1.0),
-                    ],
-                    "w" => [
-                        egui::pos2(f.left() + 1.0, f.top() + e),
-                        egui::pos2(f.left() + 1.0, f.bottom() - e),
-                    ],
-                    _ => [
-                        egui::pos2(f.right() - 1.0, f.top() + e),
-                        egui::pos2(f.right() - 1.0, f.bottom() - e),
-                    ],
-                };
-                painter.line_segment(strich, egui::Stroke::new(2.0, Palette::accent()));
-            }
+        if let Some(name) = leuchten {
+            let strich = match name {
+                "n" => [
+                    egui::pos2(f.left() + e, f.top() + 1.0),
+                    egui::pos2(f.right() - e, f.top() + 1.0),
+                ],
+                "s" => [
+                    egui::pos2(f.left() + e, f.bottom() - 1.0),
+                    egui::pos2(f.right() - e, f.bottom() - 1.0),
+                ],
+                "w" => [
+                    egui::pos2(f.left() + 1.0, f.top() + e),
+                    egui::pos2(f.left() + 1.0, f.bottom() - e),
+                ],
+                _ => [
+                    egui::pos2(f.right() - 1.0, f.top() + e),
+                    egui::pos2(f.right() - 1.0, f.bottom() - e),
+                ],
+            };
+            // Zurückhaltend: dünner und halbtransparent statt voller Akzentfarbe.
+            painter.line_segment(
+                strich,
+                egui::Stroke::new(1.5, Palette::accent().gamma_multiply(0.55)),
+            );
         }
         let griff = Rect::from_min_size(
             egui::pos2(f.right() - FENSTERECKE_PX, f.bottom() - FENSTERECKE_PX),
@@ -9504,6 +9546,30 @@ mod tests_fensterrahmen {
         ctx.run(raw, |ctx| app.ui(ctx))
     }
 
+    /// Ein Bild mit **fester Zeit** — nur so lässt sich die Verweildauer der
+    /// Kantenmarkierung prüfen (T0098, Turn 7).
+    fn bild_zeit(
+        app: &mut App,
+        ctx: &egui::Context,
+        events: Vec<egui::Event>,
+        zeit: f64,
+    ) -> egui::FullOutput {
+        let mut raw = egui::RawInput {
+            screen_rect: Some(Rect::from_min_size(Pos2::ZERO, Vec2::new(1500.0, 950.0))),
+            events,
+            time: Some(zeit),
+            ..Default::default()
+        };
+        raw.viewports.insert(
+            egui::ViewportId::ROOT,
+            egui::ViewportInfo {
+                maximized: None,
+                ..Default::default()
+            },
+        );
+        ctx.run(raw, |ctx| app.ui(ctx))
+    }
+
     fn befehle(out: &egui::FullOutput) -> Vec<egui::ViewportCommand> {
         out.viewport_output
             .get(&egui::ViewportId::ROOT)
@@ -9832,6 +9898,74 @@ mod tests_fensterrahmen {
                 "bei {pos:?} muss der Größen-Pfeil stehen"
             );
         }
+    }
+
+    /// T0098 (Turn 7): Die Kante leuchtet erst, wenn der Zeiger dort stehen
+    /// bleibt — nicht schon beim Darüberstreichen.
+    #[test]
+    fn kante_leuchtet_erst_nach_verweilen() {
+        let ctx = egui::Context::default();
+        let mut app = ohne_titelleiste(ctx.clone());
+        for _ in 0..3 {
+            bild(&mut app, &ctx, Vec::new(), None);
+        }
+        let kante = Pos2::new(1497.0, 500.0);
+        bild_zeit(&mut app, &ctx, vec![egui::Event::PointerMoved(kante)], 10.0);
+        assert_eq!(
+            app.ui.kanten_leuchten, None,
+            "die Kante darf im Ankunftbild nicht leuchten"
+        );
+        bild_zeit(&mut app, &ctx, Vec::new(), 10.2);
+        assert_eq!(
+            app.ui.kanten_leuchten, None,
+            "nach 200 ms darf die Kante noch nicht leuchten"
+        );
+        bild_zeit(&mut app, &ctx, Vec::new(), 10.45);
+        assert_eq!(
+            app.ui.kanten_leuchten,
+            Some("o"),
+            "nach {KANTEN_VERWEILDAUER} s muss die rechte Kante leuchten"
+        );
+        bild_zeit(
+            &mut app,
+            &ctx,
+            vec![egui::Event::PointerMoved(Pos2::new(700.0, 500.0))],
+            10.6,
+        );
+        assert_eq!(
+            app.ui.kanten_leuchten, None,
+            "verlässt der Zeiger die Kante, hört die Markierung auf"
+        );
+    }
+
+    /// T0098 (Turn 7): Ein schneller Durchzug über den Rand bleibt unsichtbar.
+    #[test]
+    fn schneller_durchzug_leuchtet_nicht() {
+        let ctx = egui::Context::default();
+        let mut app = ohne_titelleiste(ctx.clone());
+        for _ in 0..3 {
+            bild(&mut app, &ctx, Vec::new(), None);
+        }
+        bild_zeit(
+            &mut app,
+            &ctx,
+            vec![egui::Event::PointerMoved(Pos2::new(1497.0, 500.0))],
+            20.0,
+        );
+        bild_zeit(
+            &mut app,
+            &ctx,
+            vec![egui::Event::PointerMoved(Pos2::new(1200.0, 500.0))],
+            20.1,
+        );
+        assert_eq!(
+            app.ui.kanten_leuchten, None,
+            "ein Durchzug von 100 ms darf keine Markierung zeigen"
+        );
+        assert!(
+            app.ui.kanten_verweil.is_none(),
+            "nach dem Verlassen ist der Verweil-Zustand zurückgesetzt"
+        );
     }
 
     /// T0098 (Turn 5): In der Ecke unten rechts steht ein sichtbarer Griff —

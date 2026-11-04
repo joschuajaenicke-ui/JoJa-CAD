@@ -130,8 +130,9 @@ ausgeblendet.
   rechts **Minimieren**, **Vergrößern/Wiederherstellen** und **Schließen**; ein Zug auf die
   Kopfzeile verschiebt das Fenster, ein Doppelklick vergrößert bzw. stellt wieder her. Die
   **Größe** ändert ein Zug an den acht Pixel breiten Zonen am Fensterrand: der Zeiger wird dort
-  zum Größenpfeil und die Kante leuchtet auf; in der Ecke unten rechts steht ein sichtbarer
-  Griff. Die Ecke oben rechts gehört den Fensterknöpfen (kein Größe-Ziehen, sonst wäre
+  sofort zum Größenpfeil, die Kante leuchtet erst nach kurzem Verweilen auf (0,4 s — ein Zeiger,
+  der nur über den Rand streicht, soll nichts aufblitzen lassen); in der Ecke unten rechts steht
+  ein sichtbarer Griff. Die Ecke oben rechts gehört den Fensterknöpfen (kein Größe-Ziehen, sonst wäre
   „Schließen“ nicht zu treffen). Die Wahl steht in `prefs.json`
   (`fensterrahmen: system | ohne_titelleiste`) und wirkt beim Umschalten sofort, ohne Neustart.
 - **Dateireiter** (Streifen unter dem Ribbon, **zwei getrennte Bereiche**): links auf dunklem
