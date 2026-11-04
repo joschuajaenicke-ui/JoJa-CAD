@@ -6,7 +6,7 @@ use crate::widgets;
 use egui::{Align, Color32, FontId, Layout, Pos2, Rect, RichText, Rounding, Sense, Stroke, Ui, Vec2};
 use jjcad_core::actions;
 use jjcad_core::geom::{Vec2 as V2};
-use jjcad_core::persist::{fest_belegt, DragMode, Fensterrahmen, PastePivot};
+use jjcad_core::persist::{fest_belegt, Design, DragMode, Fensterrahmen, PastePivot};
 use jjcad_core::units::Unit;
 use serde_json::json;
 
@@ -290,7 +290,7 @@ impl FileDialog {
                     }
                 });
                 if let Some(err) = &self.error {
-                    ui.label(RichText::new(err).color(Palette::DANGER).size(11.5));
+                    ui.label(RichText::new(err).color(Palette::danger()).size(11.5));
                 }
                 ui.add_space(6.0);
                 ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
@@ -1065,6 +1065,15 @@ pub(crate) const EINSTELLUNGSKATEGORIEN: &[Einstellungskategorie] = &[
             "Eigenschaften-Panel",
             "Fangmarker",
             "Lineale",
+            "Design",
+            "Farbschema",
+            "Erscheinungsbild",
+            "Aussehen",
+            "Hell",
+            "Dunkel",
+            "Nachtmodus",
+            "System",
+            "Betriebssystem",
             "Darstellung",
         ],
     },
@@ -1110,16 +1119,16 @@ fn kategorie_zeile(ui: &mut Ui, kat: &Einstellungskategorie, gewaehlt: bool) -> 
     if ui.is_rect_visible(rect) {
         let p = ui.painter();
         if gewaehlt {
-            p.rect_filled(rect, Rounding::same(6.0), Palette::SELECT.gamma_multiply(0.85));
+            p.rect_filled(rect, Rounding::same(6.0), Palette::select().gamma_multiply(0.85));
         } else if antwort.hovered() {
-            p.rect_filled(rect, Rounding::same(6.0), Palette::PANEL_ALT);
+            p.rect_filled(rect, Rounding::same(6.0), Palette::panel_alt());
         }
         let farbe = if gewaehlt {
             Color32::WHITE
         } else if antwort.hovered() {
-            Palette::TEXT
+            Palette::text()
         } else {
-            Palette::TEXT_DIM
+            Palette::text_dim()
         };
         let icon = Rect::from_center_size(
             egui::pos2(rect.left() + 18.0, rect.center().y),
@@ -1170,6 +1179,8 @@ fn settings_body(app: &mut App, ui: &mut Ui) {
     let mut paste_pivot = app.prefs.paste_pivot;
     // T0098: Fensterrahmen — experimentell auch ohne Titelleiste.
     let mut fensterrahmen = app.prefs.fensterrahmen;
+    // T0102: Farbschema der Oberfläche (hell, dunkel oder wie das System).
+    let mut design = app.prefs.design;
 
     // Suche: Kategorien, deren Name oder eine ihrer Einstellungen passt.
     let suche = app.ui.settings_suche.trim().to_lowercase();
@@ -1609,6 +1620,36 @@ fn settings_body(app: &mut App, ui: &mut Ui) {
                             // ------------------------ Darstellung -----------------
                             _ => {
                                 abschnitt(&suche, ui, jjcad_core::i18n::tr("gui.dialogs.darstellung"));
+                                // T0102: Hell, Dunkel oder wie das Betriebssystem —
+                                // die Wahl wirkt sofort (Palette und Stil neu).
+                                zeile_mit(
+                                    &suche,
+                                    ui,
+                                    jjcad_core::i18n::tr("gui.dialogs.design"),
+                                    &[
+                                        "Farbschema",
+                                        "Erscheinungsbild",
+                                        "Aussehen",
+                                        "Hell",
+                                        "Dunkel",
+                                        "Nachtmodus",
+                                        "System",
+                                        "Betriebssystem",
+                                    ],
+                                    |ui| {
+                                        let mut gewaehlt = design;
+                                        for m in Design::ALL {
+                                            ui.selectable_value(&mut gewaehlt, m, m.text())
+                                                .on_hover_text(m.tip());
+                                        }
+                                        design = gewaehlt;
+                                    },
+                                );
+                                if suche.is_empty() {
+                                    ui.label(theme::faint(
+                                        jjcad_core::i18n::tr("settings.design_hint"),
+                                    ));
+                                }
                                 zeile(&suche, ui, jjcad_core::i18n::tr("gui.dialogs.linienstaerken"), |ui| {
                                     let mut m = if lw_scaled { 1 } else { 0 };
                                     ui.selectable_value(&mut m, 0, jjcad_core::i18n::tr("gui.dialogs.px"));
@@ -1671,6 +1712,11 @@ fn settings_body(app: &mut App, ui: &mut Ui) {
         // Ohne diese Anforderung bliebe die Kopfzeile im alten Zustand stehen,
         // bis der nächste Klick ein Bild auslöst.
         ui.ctx().request_repaint();
+    }
+    if app.prefs.design != design {
+        // T0102: sofort umschalten — Palette und Stil werden neu gesetzt,
+        // die Wahl steht in `prefs.json`.
+        app.set_design(design, ui.ctx());
     }
     let dialog_neu = if dateidialog_system { "system" } else { "intern" };
     if app.prefs.file_dialog != dialog_neu {
@@ -1763,11 +1809,17 @@ const KEY_GAP: f32 = 4.0;
 const KEY_UNITS: f32 = 15.0;
 /// Zahl der Tastenreihen.
 const KEY_ROWS: usize = 5;
-/// Fläche gesperrter Tasten: flaches Grau, deutlich heller als die freien
-/// Tasten (`BG`) — der Unterschied ist die Fläche, nicht nur die Schrift.
-const GESPERRT_FLAECHE: Color32 = Color32::from_rgb(0x2A, 0x2F, 0x36);
-/// Beschriftung gesperrter Tasten: schwächer als `TEXT_FAINT`.
-const GESPERRT_TEXT: Color32 = Color32::from_rgb(0x5C, 0x64, 0x6E);
+/// Fläche gesperrter Tasten: flaches Grau, deutlich abgesetzt von den freien
+/// Tasten (`Palette::bg()`) — der Unterschied ist die Fläche, nicht nur die
+/// Schrift. Der Wert kommt aus dem Design (T0102), damit die Sperre auch im
+/// hellen Design als Sperre zu erkennen ist.
+fn gesperrt_flaeche() -> Color32 {
+    Palette::taste_gesperrt()
+}
+/// Beschriftung gesperrter Tasten: schwächer als `Palette::text_faint()`.
+fn gesperrt_text() -> Color32 {
+    Palette::taste_gesperrt_text()
+}
 
 /// Tastenbild einer deutschen Tastatur: (Taste, Beschriftung, Zeile, Spalte,
 /// Breite, untere Breite). Zeile, Spalte und Breite rechnen in Tasteneinheiten
@@ -2003,7 +2055,7 @@ fn keymap_window(app: &mut App, ctx: &egui::Context) {
         // Obere Leiste: „i" linksbündig, Titel, offene Funktion, Schließen.
         ui.horizontal(|ui| {
             let (rect, antwort) = ui.allocate_exact_size(Vec2::splat(18.0), Sense::hover());
-            widgets::icon(ui, rect, "info", Palette::TEXT_DIM);
+            widgets::icon(ui, rect, "info", Palette::text_dim());
             antwort.on_hover_text(keymap_hilfe());
             app.ui.last_keymap_info = Some(rect);
             ui.add_space(4.0);
@@ -2364,24 +2416,24 @@ fn keyboard_body(app: &mut App, ui: &mut Ui) {
         if ui.is_rect_visible(rect) {
             let p = ui.painter();
             let flaeche = if selected {
-                Palette::ACCENT_SOFT
+                Palette::accent_soft()
             } else if gesperrt.is_some() {
                 // Gesperrte Tasten sind eine eigene graue Fläche — nicht nur
                 // eine schwächere Schrift. Das Schloss sagt warum.
-                GESPERRT_FLAECHE
+                gesperrt_flaeche()
             } else if hovered {
-                Palette::PANEL_ALT
+                Palette::panel_alt()
             } else {
-                Palette::BG
+                Palette::bg()
             };
             let strich = Stroke::new(
                 if selected { 1.5 } else { 1.0 },
                 if selected {
-                    Palette::ACCENT
+                    Palette::accent()
                 } else if action.is_some() {
-                    Palette::BORDER
+                    Palette::border()
                 } else {
-                    Palette::BORDER_SOFT
+                    Palette::border_soft()
                 },
             );
             match flaechen.as_slice() {
@@ -2423,9 +2475,9 @@ fn keyboard_body(app: &mut App, ui: &mut Ui) {
                 label,
                 FontId::proportional(9.0),
                 if gesperrt.is_some() {
-                    GESPERRT_TEXT
+                    gesperrt_text()
                 } else {
-                    Palette::TEXT_FAINT
+                    Palette::text_faint()
                 },
             );
             if let Some(a) = &action {
@@ -2437,7 +2489,7 @@ fn keyboard_body(app: &mut App, ui: &mut Ui) {
                             Vec2::splat(16.0),
                         ),
                         def.icon,
-                        if selected { Palette::ACCENT } else { Palette::TEXT_DIM },
+                        if selected { Palette::accent() } else { Palette::text_dim() },
                     );
                 }
             } else if gesperrt.is_some() {
@@ -2445,7 +2497,7 @@ fn keyboard_body(app: &mut App, ui: &mut Ui) {
                     p,
                     Rect::from_center_size(rect.center() - Vec2::new(0.0, 3.0), Vec2::splat(14.0)),
                     "lock",
-                    GESPERRT_TEXT,
+                    gesperrt_text(),
                 );
             }
         }
@@ -2563,7 +2615,7 @@ fn help_body(app: &mut App, ui: &mut Ui) {
                 ui.label(
                     RichText::new(g.label().to_uppercase())
                         .size(9.5)
-                        .color(Palette::TEXT_FAINT),
+                        .color(Palette::text_faint()),
                 );
                 ui.label("");
                 ui.end_row();
@@ -3234,11 +3286,11 @@ pub(crate) mod tests_tastatur {
                 _ => None,
             })
         };
-        assert_eq!(farbe("7"), Some(GESPERRT_TEXT), "Ziffer 7 ist nicht ausgegraut");
-        assert_eq!(farbe("Esc"), Some(GESPERRT_TEXT), "Esc ist nicht ausgegraut");
+        assert_eq!(farbe("7"), Some(gesperrt_text()), "Ziffer 7 ist nicht ausgegraut");
+        assert_eq!(farbe("Esc"), Some(gesperrt_text()), "Esc ist nicht ausgegraut");
         assert_eq!(
             farbe("Q"),
-            Some(Palette::TEXT_FAINT),
+            Some(Palette::text_faint()),
             "freie Taste hat die Farbe einer gesperrten Taste"
         );
     }
@@ -3308,15 +3360,17 @@ pub(crate) mod tests_tastatur {
         let (_, _, esc) = *taste_mit(&tasten, "esc");
         assert_eq!(
             flaeche(sieben),
-            Some(GESPERRT_FLAECHE),
+            Some(gesperrt_flaeche()),
             "Ziffer 7 hat keine eigene Fläche"
         );
-        assert_eq!(flaeche(esc), Some(GESPERRT_FLAECHE), "Esc hat keine eigene Fläche");
-        assert_eq!(flaeche(q), Some(Palette::BG), "freie Taste hat eine fremde Fläche");
+        assert_eq!(flaeche(esc), Some(gesperrt_flaeche()), "Esc hat keine eigene Fläche");
+        assert_eq!(flaeche(q), Some(Palette::bg()), "freie Taste hat eine fremde Fläche");
         // Der Unterschied ist auch als Helligkeit messbar, nicht nur im Namen.
+        // Der Betrag gilt für beide Designs: im dunklen ist die Sperrfläche
+        // heller, im hellen dunkler als die freie Taste (T0102).
         let hell = |c: Color32| c.r() as i32 + c.g() as i32 + c.b() as i32;
         assert!(
-            hell(GESPERRT_FLAECHE) - hell(Palette::BG) > 40,
+            (hell(gesperrt_flaeche()) - hell(Palette::bg())).abs() > 40,
             "die graue Fläche hebt sich zu wenig von der freien Taste ab"
         );
     }
@@ -4007,6 +4061,95 @@ mod tests_einstellungen {
         // T0070: Der Drehpunkt der Einfüge-Vorschau steht unter „Bedienung“.
         assert_eq!(treffer("drehpunkt"), vec!["Bedienung"]);
         assert!(treffer("gibtesnicht").is_empty(), "Unbekannter Begriff liefert Treffer");
+    }
+
+    /// Mitte der gezeichneten Beschriftung `label` (Knopf, Chip, Zeilenwert).
+    fn text_mitte(out: &egui::FullOutput, label: &str) -> Option<Pos2> {
+        out.shapes.iter().find_map(|cs| match &cs.shape {
+            egui::Shape::Text(t) if t.galley.text() == label => Some(t.pos + t.galley.size() / 2.0),
+            _ => None,
+        })
+    }
+
+    /// Ein linker Mausklick auf `pos` (Drücken und Loslassen in eigenen Bildern).
+    fn klick(app: &mut App, ctx: &egui::Context, pos: Pos2) {
+        let knopf = |pressed: bool| egui::Event::PointerButton {
+            pos,
+            button: egui::PointerButton::Primary,
+            pressed,
+            modifiers: egui::Modifiers::NONE,
+        };
+        for events in [
+            vec![egui::Event::PointerMoved(pos)],
+            vec![knopf(true)],
+            vec![knopf(false)],
+            vec![],
+        ] {
+            let raw = egui::RawInput {
+                screen_rect: Some(Rect::from_min_size(Pos2::ZERO, Vec2::new(1500.0, 950.0))),
+                events,
+                ..Default::default()
+            };
+            let _ = ctx.run(raw, |ctx| app.ui(ctx));
+        }
+    }
+
+    /// T0102: Unter „Darstellung“ steht die Zeile „Design“ mit den drei Wahlen.
+    /// Ein Klick auf „Hell“ stellt die Farben sofort um und schreibt die Wahl in
+    /// die Voreinstellungen (`prefs.json`). Der Test stellt am Ende das dunkle
+    /// Design wieder her — die Palette gilt prozessweit (wie die Sprache).
+    #[test]
+    fn design_zeile_schaltet_das_helle_design() {
+        let _sperre = KONFIG.lock().unwrap_or_else(|e| e.into_inner());
+        let _konfig = WegwerfKonfig::neu("design");
+        let ctx = egui::Context::default();
+        let mut app = App::with_ctx(ctx.clone());
+        app.set_design(Design::Dunkel, &ctx);
+        let dunkel_bg = Palette::bg();
+        assert!(!theme::ist_hell(), "Ausgangslage ist nicht dunkel");
+
+        let kat = EINSTELLUNGSKATEGORIEN
+            .iter()
+            .position(|k| k.name() == "Darstellung")
+            .expect("Kategorie Darstellung");
+        app.ui.settings_open = true;
+        app.ui.settings_kat = kat;
+        app.ui.settings_suche = "Design".to_string();
+        let bild = || egui::RawInput {
+            screen_rect: Some(Rect::from_min_size(Pos2::ZERO, Vec2::new(1500.0, 950.0))),
+            ..Default::default()
+        };
+        let mut out = ctx.run(bild(), |ctx| app.ui(ctx));
+        for _ in 0..3 {
+            out = ctx.run(bild(), |ctx| app.ui(ctx));
+        }
+        for wort in ["Design", "System", "Hell", "Dunkel"] {
+            assert!(
+                text_mitte(&out, wort).is_some(),
+                "„{wort}“ fehlt im Einstellungsfenster"
+            );
+        }
+
+        let hell = text_mitte(&out, "Hell").expect("„Hell“ steht nicht im Fenster");
+        klick(&mut app, &ctx, hell);
+
+        assert_eq!(
+            app.prefs.design,
+            Design::Hell,
+            "die Wahl steht nicht in den Voreinstellungen"
+        );
+        assert!(theme::ist_hell(), "die Oberfläche blieb im dunklen Design");
+        assert_ne!(Palette::bg(), dunkel_bg, "die Flächenfarbe blieb gleich");
+        assert_eq!(
+            jjcad_core::persist::UserPrefs::load().design,
+            Design::Hell,
+            "die Wahl wurde nicht gespeichert"
+        );
+
+        // Ausgangszustand für die übrigen Tests wiederherstellen.
+        app.set_design(Design::Dunkel, &ctx);
+        assert!(!theme::ist_hell());
+        assert_eq!(Palette::bg(), dunkel_bg);
     }
 
     /// Ein Suchbegriff außerhalb der gewählten Kategorie springt auf die erste

@@ -15,6 +15,16 @@ offene Fensterinstanz zeigt weiterhin den alten Stand.
 
 ## Erledigt (verifiziert)
 
+- **Helles und dunkles Design (T0102)**: Einstellungen → Darstellung → Zeile „Design“
+  mit **System** (Vorgabe), **Hell** und **Dunkel**; gespeichert als
+  `UserPrefs.design` (`system`/`hell`/`dunkel`) in `prefs.json`, Wechsel wirkt
+  sofort ohne Neustart. Die Farben stehen in zwei Tabellen in `theme.rs`; alle
+  Zeichenwege lesen `Palette::…()`. „System“ folgt dem Betriebssystem
+  (`ctx.system_theme()`, unter Linux `kdeglobals`/GTK-`settings.ini`/Umgebung) und
+  zieht einen Wechsel höchstens alle 2 s nach. Papier und Raster bleiben in beiden
+  Designs gleich. Tests: `theme::tests` (3), `persist::tests::design_wird_gespeichert_und_gelesen`,
+  `dialogs::tests_einstellungen::design_zeile_schaltet_das_helle_design`.
+
 - **Fenster ohne Titelleiste (T0098)**: Einstellungen → Bedienung → Zeile
   „Fensterrahmen“ mit **System** (Vorgabe) und **Ohne Titelleiste** (experimentell,
   unter KDE geprüft). Gespeichert als `UserPrefs.fensterrahmen` (`system` /

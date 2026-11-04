@@ -293,6 +293,21 @@ Mit dem Nutzer abgestimmt — nicht „verbessern“:
   — `app::tests_chat_texte` prüft Aufforderung und Ergebnis für jedes Werkzeug.
 - Wände: Farbe (Linie) und Füllung (Fläche) getrennt; Schraffuren inklusive
   **Dämmung** (Mäander); Ausrichtung Links/Mittig/Rechts.
+- **Helles und dunkles Design (T0102)**: Die Farben stehen in **zwei** Tabellen in
+  `theme.rs` (`DUNKEL`, `HELL`); `Palette::bg()` & Co. liefern die Werte des eingestellten
+  Designs — im Zeichenweg wird **keine** Farbe festgehalten, sonst bleibt beim Umschalten ein
+  Teil der Oberfläche im alten Design. Einstellungen ▸ Darstellung ▸ „Design“ bietet
+  **System** (Programmstandard), **Hell**, **Dunkel**; gespeichert als `UserPrefs.design`
+  (`system`/`hell`/`dunkel`), der Wechsel wirkt sofort (`App::set_design` →
+  `theme::set_design`, Stil neu, Anzeigelisten verworfen). „System“ fragt zuerst
+  `ctx.system_theme()` (Windows/macOS); unter Linux meldet winit nichts, dort entscheiden
+  `kdeglobals` (`[Colors:Window] BackgroundNormal`, sonst `ColorScheme`), dann GTK
+  `settings.ini`, dann `GTK_THEME`/`COLORFGBG`; ohne Auskunft bleibt es dunkel. Ein Wechsel
+  am Betriebssystem wird höchstens alle 2 s nachgezogen (`theme::system_nachziehen`).
+  **Papier und Raster bleiben in beiden Designs gleich** — die Zeichnung sieht aus wie im
+  Druck, nur die Bedienoberfläche wechselt (auch die Beschriftungsbox am Zeiger,
+  `Palette::hinweis_flaeche`).
+
 - **Schraffuren (T0095)**: Die Muster sind die Kennzeichnungen der Schnittflächen nach
   DIN 1356-1:2026-09, Tabelle 5 (18 Zeilen, `style::FillPattern`, `ALL` in der
   Reihenfolge der Norm); die früheren Muster heißen nach ihrem Baustoff (Mauerwerk,

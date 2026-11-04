@@ -292,9 +292,9 @@ pub fn show(app: &mut App, ui: &mut Ui) {
                 if scaled { jjcad_core::i18n::tr("gui.hotbar.d") } else { jjcad_core::i18n::tr("gui.hotbar.p") },
                 FontId::proportional(8.0),
                 if scaled {
-                    Palette::ACCENT
+                    Palette::accent()
                 } else {
-                    Palette::TEXT_FAINT
+                    Palette::text_faint()
                 },
             );
             if resp.clicked() {
@@ -322,7 +322,7 @@ pub fn show(app: &mut App, ui: &mut Ui) {
             widgets::vline(ui, 18.0);
             ui.add_space(6.0);
             if let Some(s) = app.snap_label.clone() {
-                ui.label(RichText::new(s).size(10.5).color(Palette::ACCENT));
+                ui.label(RichText::new(s).size(10.5).color(Palette::accent()));
             }
         },
     );
@@ -334,12 +334,12 @@ pub fn show(app: &mut App, ui: &mut Ui) {
             ui.painter().rect_filled(
                 r,
                 Rounding::same(9.0),
-                Color32::from_rgba_unmultiplied(30, 34, 40, 230),
+                Palette::schwebend(),
             );
             ui.painter()
-                .rect_stroke(r, Rounding::same(9.0), Stroke::new(1.0, Palette::ACCENT));
+                .rect_stroke(r, Rounding::same(9.0), Stroke::new(1.0, Palette::accent()));
             if let Some(def) = jjcad_core::actions::action(&a) {
-                crate::icons::paint(ui.painter(), r.shrink(8.0), def.icon, Palette::ACCENT);
+                crate::icons::paint(ui.painter(), r.shrink(8.0), def.icon, Palette::accent());
             }
         }
     }
@@ -374,7 +374,7 @@ pub fn auswahl_fenster(app: &mut App, ctx: &egui::Context) {
             ui.set_min_width(250.0);
             ui.horizontal(|ui| {
                 let (r, _) = ui.allocate_exact_size(Vec2::splat(18.0), Sense::hover());
-                crate::icons::paint(ui.painter(), r, "hotbar", Palette::ACCENT);
+                crate::icons::paint(ui.painter(), r, "hotbar", Palette::accent());
                 ui.label(theme::bold(jjcad_core::i18n::tr("gui.hotbar.hotbar_vorlagen"), 13.0));
                 ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
                     if widgets::icon_button(ui, "close", 22.0, false, jjcad_core::i18n::tr("gui.hotbar.schliessen")).clicked() {
@@ -396,12 +396,12 @@ pub fn auswahl_fenster(app: &mut App, ctx: &egui::Context) {
                     ui.allocate_exact_size(Vec2::new(ui.available_width(), 30.0), Sense::click());
                 let p2 = ui.painter();
                 if aktiv {
-                    p2.rect_filled(rect, Rounding::same(7.0), Palette::PANEL_ALT);
+                    p2.rect_filled(rect, Rounding::same(7.0), Palette::panel_alt());
                 } else if resp.hovered() {
                     p2.rect_filled(
                         rect,
                         Rounding::same(7.0),
-                        Palette::PANEL_ALT.gamma_multiply(0.6),
+                        Palette::panel_alt().gamma_multiply(0.6),
                     );
                 }
                 if aktiv {
@@ -411,7 +411,7 @@ pub fn auswahl_fenster(app: &mut App, ctx: &egui::Context) {
                             Pos2::new(rect.left() + 5.5, rect.bottom() - 6.0),
                         ),
                         Rounding::same(1.0),
-                        Palette::ACCENT,
+                        Palette::accent(),
                     );
                 }
                 p2.text(
@@ -420,9 +420,9 @@ pub fn auswahl_fenster(app: &mut App, ctx: &egui::Context) {
                     &p.name,
                     FontId::proportional(12.0),
                     if aktiv {
-                        Palette::TEXT
+                        Palette::text()
                     } else {
-                        Palette::TEXT_DIM
+                        Palette::text_dim()
                     },
                 );
                 p2.text(
@@ -430,7 +430,7 @@ pub fn auswahl_fenster(app: &mut App, ctx: &egui::Context) {
                     egui::Align2::RIGHT_CENTER,
                     jjcad_core::i18n::t_args_owned("gui.hotbar.x_slots", &[("wert1", format!("{}", p.slots.len()))]),
                     FontId::proportional(10.0),
-                    Palette::TEXT_FAINT,
+                    Palette::text_faint(),
                 );
                 if resp.clicked() {
                     waehle = Some(i);

@@ -1099,6 +1099,9 @@ impl App {
         let prefs = UserPrefs::load();
         // T0103: die gespeicherte Sprache gilt ab dem ersten Bild.
         jjcad_core::i18n::set_language(prefs.language);
+        // T0102: ebenso das Design — bei „System“ entscheidet das
+        // Betriebssystem (hell/dunkel), sonst die gespeicherte Wahl.
+        theme::set_design(prefs.design, &ctx);
         let mut s = Session::new();
         s.doc.name = "Unbenannt".into();
         // App-weite Vorliebe für den Wandkontur-Fang übernehmen, damit die
@@ -3908,13 +3911,13 @@ impl App {
             // Der Grund der Dateizone beginnt am Fensterrand — ein Band, kein Kasten
             // mitten im Streifen.
             let band = Rect::from_min_max(Pos2::new(ui.max_rect().left(), zone.top()), zone.max);
-            ui.painter().rect_filled(band, Rounding::ZERO, Palette::BG);
+            ui.painter().rect_filled(band, Rounding::ZERO, Palette::bg());
             ui.painter().line_segment(
                 [
                     Pos2::new(band.left(), band.bottom() - 0.5),
                     Pos2::new(band.right(), band.bottom() - 0.5),
                 ],
-                Stroke::new(1.0_f32, Palette::BORDER_SOFT),
+                Stroke::new(1.0_f32, Palette::border_soft()),
             );
             let mut datei_ui = ui.new_child(
                 egui::UiBuilder::new()
@@ -3947,7 +3950,7 @@ impl App {
                     Pos2::new(zone.right() - 1.0, zone.top() + 6.0),
                     Pos2::new(zone.right() - 1.0, zone.bottom() - 6.0),
                 ],
-                Stroke::new(1.0_f32, Palette::BORDER),
+                Stroke::new(1.0_f32, Palette::border()),
             );
             ui.add_space(8.0);
 
@@ -3966,11 +3969,11 @@ impl App {
                 Vec2::new(tray_breite, DOCTABS_H - 6.0),
                 Sense::hover(),
             );
-            ui.painter().rect_filled(tray, Rounding::same(9.0), Palette::PANEL);
+            ui.painter().rect_filled(tray, Rounding::same(9.0), Palette::panel());
             ui.painter().rect_stroke(
                 tray,
                 Rounding::same(9.0),
-                Stroke::new(1.0_f32, Palette::BORDER_SOFT),
+                Stroke::new(1.0_f32, Palette::border_soft()),
             );
             let mut blatt_ui = ui.new_child(
                 egui::UiBuilder::new()
@@ -4012,13 +4015,13 @@ impl App {
             if resp.hovered() {
                 blatt_ui
                     .painter()
-                    .rect_filled(r, Rounding::same(5.0), Palette::PANEL_ALT);
+                    .rect_filled(r, Rounding::same(5.0), Palette::panel_alt());
             }
             crate::icons::paint(
                 blatt_ui.painter(),
                 r.shrink(4.0),
                 "plus",
-                if resp.hovered() { Palette::TEXT } else { Palette::TEXT_FAINT },
+                if resp.hovered() { Palette::text() } else { Palette::text_faint() },
             );
             if resp.clicked() {
                 neues_blatt = true;
@@ -4062,7 +4065,7 @@ impl App {
         let galley = ui.painter().layout_no_wrap(
             name.to_string(),
             FontId::proportional(12.0),
-            Palette::TEXT,
+            Palette::text(),
         );
         (galley.size().x + 30.0 + if schliessbar { 26.0 } else { 12.0 }).max(78.0)
     }
@@ -4072,7 +4075,7 @@ impl App {
         let galley = ui.painter().layout_no_wrap(
             name.to_string(),
             FontId::proportional(11.0),
-            Palette::TEXT,
+            Palette::text(),
         );
         (galley.size().x + 24.0 + if schliessbar { 22.0 } else { 10.0 }).max(54.0)
     }
@@ -4100,22 +4103,22 @@ impl App {
             se: 0.0,
         };
         if aktiv {
-            ui.painter().rect_filled(karte, rundung, Palette::PANEL_ALT);
+            ui.painter().rect_filled(karte, rundung, Palette::panel_alt());
             ui.painter().line_segment(
                 [
                     Pos2::new(karte.left() + 8.0, karte.bottom() - 1.0),
                     Pos2::new(karte.right() - 8.0, karte.bottom() - 1.0),
                 ],
-                Stroke::new(2.0, Palette::ACCENT),
+                Stroke::new(2.0, Palette::accent()),
             );
         } else if resp.hovered() {
-            ui.painter().rect_filled(karte, rundung, Palette::PANEL);
+            ui.painter().rect_filled(karte, rundung, Palette::panel());
         }
         if geaendert {
             ui.painter().circle_filled(
                 Pos2::new(rect.left() + 7.0, rect.center().y),
                 2.2,
-                Palette::ACCENT,
+                Palette::accent(),
             );
         }
         crate::icons::paint(
@@ -4125,9 +4128,9 @@ impl App {
                 Vec2::splat(14.0),
             ),
             "datei",
-            if aktiv { Palette::ACCENT } else { Palette::TEXT_FAINT },
+            if aktiv { Palette::accent() } else { Palette::text_faint() },
         );
-        let farbe = if aktiv { Palette::TEXT } else { Palette::TEXT_DIM };
+        let farbe = if aktiv { Palette::text() } else { Palette::text_dim() };
         let galley = ui
             .painter()
             .layout_no_wrap(name.to_string(), FontId::proportional(12.0), farbe);
@@ -4160,14 +4163,14 @@ impl App {
         let (rect, _) = ui.allocate_exact_size(Vec2::new(breite, 22.0), Sense::hover());
         let resp = ui.interact(rect, id, Sense::click());
         if aktiv {
-            ui.painter().rect_filled(rect, Rounding::same(6.0), Palette::PANEL_ALT);
+            ui.painter().rect_filled(rect, Rounding::same(6.0), Palette::panel_alt());
             ui.painter().rect_stroke(
                 rect,
                 Rounding::same(6.0),
-                Stroke::new(1.0_f32, Palette::ACCENT),
+                Stroke::new(1.0_f32, Palette::accent()),
             );
         } else if resp.hovered() {
-            ui.painter().rect_filled(rect, Rounding::same(6.0), Palette::PANEL_ALT);
+            ui.painter().rect_filled(rect, Rounding::same(6.0), Palette::panel_alt());
         }
         crate::icons::paint(
             ui.painter(),
@@ -4176,9 +4179,9 @@ impl App {
                 Vec2::splat(12.0),
             ),
             icon,
-            if aktiv { Palette::ACCENT } else { Palette::TEXT_FAINT },
+            if aktiv { Palette::accent() } else { Palette::text_faint() },
         );
-        let farbe = if aktiv { Palette::TEXT } else { Palette::TEXT_DIM };
+        let farbe = if aktiv { Palette::text() } else { Palette::text_dim() };
         let galley = ui
             .painter()
             .layout_no_wrap(name.to_string(), FontId::proportional(11.0), farbe);
@@ -4202,7 +4205,7 @@ impl App {
             Vec2::splat(16.0),
         );
         let xresp = ui.interact(xr, id.with("schliessen"), Sense::click());
-        let c = if xresp.hovered() { Palette::DANGER } else { Palette::TEXT_FAINT };
+        let c = if xresp.hovered() { Palette::danger() } else { Palette::text_faint() };
         ui.painter().line_segment(
             [xr.center() - Vec2::splat(3.5), xr.center() + Vec2::splat(3.5)],
             Stroke::new(1.4, c),
@@ -4235,7 +4238,7 @@ impl App {
             ui.label(
                 RichText::new(jjcad_core::i18n::t_args_owned("gui.app.vx", &[("wert1", format!("{}", env!("CARGO_PKG_VERSION")))]))
                     .size(9.5)
-                    .color(Palette::TEXT_FAINT),
+                    .color(Palette::text_faint()),
             );
             ui.add_space(14.0);
             widgets::vline(ui, 24.0);
@@ -4247,7 +4250,7 @@ impl App {
                 let galley = ui.painter().layout_no_wrap(
                     rt.label().to_string(),
                     FontId::proportional(12.5),
-                    if active { Palette::TEXT } else { Palette::TEXT_DIM },
+                    if active { Palette::text() } else { Palette::text_dim() },
                 );
                 let w = galley.size().x + 22.0;
                 let (rect, resp) = ui.allocate_exact_size(Vec2::new(w, HEADER_H - 4.0), Sense::click());
@@ -4258,15 +4261,15 @@ impl App {
                             Pos2::new(rect.right(), rect.bottom()),
                         ),
                         Rounding::ZERO,
-                        Palette::ACCENT,
+                        Palette::accent(),
                     );
                 } else if resp.hovered() {
-                    ui.painter().rect_filled(rect, Rounding::same(6.0), Palette::PANEL);
+                    ui.painter().rect_filled(rect, Rounding::same(6.0), Palette::panel());
                 }
                 ui.painter().galley(
                     Pos2::new(rect.center().x - galley.size().x / 2.0, rect.center().y - galley.size().y / 2.0 - 1.0),
                     galley,
-                    if active { Palette::TEXT } else { Palette::TEXT_DIM },
+                    if active { Palette::text() } else { Palette::text_dim() },
                 );
                 if resp.clicked() {
                     self.ui.ribbon = rt;
@@ -4315,7 +4318,7 @@ impl App {
                 ui.label(
                     RichText::new(format!("{}{}", name, if modified { " •" } else { "" }))
                         .size(11.5)
-                        .color(Palette::TEXT_DIM),
+                        .color(Palette::text_dim()),
                 );
             });
         });
@@ -4429,9 +4432,9 @@ impl App {
         let (rect, resp) =
             ui.allocate_exact_size(Vec2::new(FENSTERKNOPF_W, hoehe), Sense::click());
         let hover_flaeche = if schliessen {
-            Palette::DANGER
+            Palette::danger()
         } else {
-            Palette::PANEL_ALT
+            Palette::panel_alt()
         };
         if ui.is_rect_visible(rect) {
             let p = ui.painter();
@@ -4443,9 +4446,9 @@ impl App {
                 Rect::from_center_size(rect.center(), Vec2::splat(16.0)),
                 icon,
                 if resp.hovered() {
-                    Palette::TEXT
+                    Palette::text()
                 } else {
-                    Palette::TEXT_DIM
+                    Palette::text_dim()
                 },
             );
         }
@@ -4574,7 +4577,7 @@ fn rail(ui: &mut egui::Ui, icon: &str, tooltip: &str, chevron: &str) -> bool {
         }
         ui.add_space(10.0);
         let (r, resp) = ui.allocate_exact_size(Vec2::splat(18.0), Sense::click());
-        crate::icons::paint(ui.painter(), r, icon, Palette::TEXT_DIM);
+        crate::icons::paint(ui.painter(), r, icon, Palette::text_dim());
         if resp.clicked() {
             clicked = true;
         }
@@ -5129,14 +5132,14 @@ fn rail(ui: &mut egui::Ui, icon: &str, tooltip: &str, chevron: &str) -> bool {
                 let galley = ui.painter().layout_no_wrap(
                     label.to_uppercase(),
                     FontId::proportional(9.0),
-                    Palette::TEXT_DIM,
+                    Palette::text_dim(),
                 );
                 let w = galley.size().x;
                 let h = galley.size().y;
                 ui.painter().galley(
                     Pos2::new(rect.center().x - w * 0.5, rect.center().y - h * 0.5),
                     galley,
-                    Palette::TEXT_DIM,
+                    Palette::text_dim(),
                 );
             }
         });
@@ -5194,6 +5197,22 @@ fn rail(ui: &mut egui::Ui, icon: &str, tooltip: &str, chevron: &str) -> bool {
         if let Some(g) = self.ghost.as_mut() {
             g.pivot = pivot;
         }
+    }
+
+    /// Design umstellen (Einstellungen → Darstellung → „Design“, T0102).
+    ///
+    /// Die Wahl wird gespeichert und gilt ab dem nächsten Bild. Die
+    /// Anzeigelisten der Reiter werden verworfen: sie tragen zwar die
+    /// Objektfarben, aber Papier und Hintergrund werden neu bestimmt — ein
+    /// Neuaufbau ist billiger als eine Sonderbehandlung.
+    pub fn set_design(&mut self, design: jjcad_core::persist::Design, ctx: &egui::Context) {
+        theme::set_design(design, ctx);
+        self.prefs.design = design;
+        let _ = self.prefs.save();
+        for t in &mut self.tabs {
+            t.cache = None;
+        }
+        ctx.request_repaint();
     }
 
     fn pointer_world_fallback(&self) -> Option<V2> {
@@ -5368,7 +5387,7 @@ fn rail(ui: &mut egui::Ui, icon: &str, tooltip: &str, chevron: &str) -> bool {
 
         egui::TopBottomPanel::top("header")
             .exact_height(auf_pixel(ctx, HEADER_H))
-            .frame(Frame::none().fill(Palette::RIBBON))
+            .frame(Frame::none().fill(Palette::ribbon()))
             .show(ctx, |ui| self.header(ui));
 
         if !self.ui.ribbon_collapsed {
@@ -5376,7 +5395,7 @@ fn rail(ui: &mut egui::Ui, icon: &str, tooltip: &str, chevron: &str) -> bool {
                 .exact_height(auf_pixel(ctx, RIBBON_H))
                 .frame(
                     Frame::none()
-                        .fill(Palette::PANEL)
+                        .fill(Palette::panel())
                         .inner_margin(Margin::symmetric(0.0, RIBBON_PAD)),
                 )
                 .show(ctx, |ui| self.ribbon(ui));
@@ -5384,12 +5403,12 @@ fn rail(ui: &mut egui::Ui, icon: &str, tooltip: &str, chevron: &str) -> bool {
 
         egui::TopBottomPanel::top("doctabs")
             .exact_height(auf_pixel(ctx, DOCTABS_H))
-            .frame(Frame::none().fill(Palette::RIBBON))
+            .frame(Frame::none().fill(Palette::ribbon()))
             .show(ctx, |ui| self.doc_tabs(ui));
 
         egui::TopBottomPanel::bottom("hotbar")
             .exact_height(auf_pixel(ctx, HOTBAR_H))
-            .frame(Frame::none().fill(Palette::PANEL))
+            .frame(Frame::none().fill(Palette::panel()))
             .show(ctx, |ui| hotbar::show(self, ui));
 
         if self.ui.layers_open {
@@ -5400,7 +5419,7 @@ fn rail(ui: &mut egui::Ui, icon: &str, tooltip: &str, chevron: &str) -> bool {
                 .resizable(false)
                 .frame(
                     Frame::none()
-                        .fill(Palette::PANEL)
+                        .fill(Palette::panel())
                         .inner_margin(Margin::symmetric(margin, if collapsed { 0.0 } else { 8.0 })),
                 )
                 .show(ctx, |ui| {
@@ -5421,7 +5440,7 @@ fn rail(ui: &mut egui::Ui, icon: &str, tooltip: &str, chevron: &str) -> bool {
                 .resizable(false)
                 .frame(
                     Frame::none()
-                        .fill(Palette::PANEL)
+                        .fill(Palette::panel())
                         .inner_margin(Margin::symmetric(margin, if collapsed { 0.0 } else { 8.0 })),
                 )
                 .show(ctx, |ui| {
@@ -5436,7 +5455,7 @@ fn rail(ui: &mut egui::Ui, icon: &str, tooltip: &str, chevron: &str) -> bool {
         }
 
         egui::CentralPanel::default()
-            .frame(Frame::none().fill(Palette::BG))
+            .frame(Frame::none().fill(Palette::bg()))
             .show(ctx, |ui| {
                 self.ui.last_canvas = ui.available_rect_before_wrap();
                 canvas::show(self, ui);
@@ -5842,9 +5861,9 @@ impl App {
                 v.inactive.weak_bg_fill = egui::Color32::TRANSPARENT;
                 v.inactive.bg_fill = egui::Color32::TRANSPARENT;
                 v.inactive.bg_stroke = egui::Stroke::NONE;
-                v.hovered.weak_bg_fill = Palette::PANEL_ALT;
+                v.hovered.weak_bg_fill = Palette::panel_alt();
                 v.hovered.bg_stroke = egui::Stroke::NONE;
-                v.active.weak_bg_fill = Palette::PANEL_ALT;
+                v.active.weak_bg_fill = Palette::panel_alt();
                 v.active.bg_stroke = egui::Stroke::NONE;
 
                 match menu.kind {
@@ -6120,7 +6139,7 @@ impl eframe::App for App {
     /// schimmert dort dieser Grund durch und erscheint als helle Fuge. Deckend
     /// in Fensterfarbe ist die Fuge unsichtbar.
     fn clear_color(&self, _visuals: &egui::Visuals) -> [f32; 4] {
-        let bg = Palette::BG;
+        let bg = Palette::bg();
         [
             bg.r() as f32 / 255.0,
             bg.g() as f32 / 255.0,
@@ -6134,13 +6153,19 @@ impl eframe::App for App {
         // die Abschnittsmarken messen. Das läuft immer mit; ein paar
         // Uhrablesungen je Bild kosten nichts.
         self.perf.bild_beginnen();
+        // T0102: Bei der Wahl „System“ folgt das Design dem Betriebssystem auch
+        // im Betrieb (Wechsel hell ↔ dunkel am Abend). `system_nachziehen`
+        // sieht höchstens alle zwei Sekunden nach.
+        if self.prefs.design == jjcad_core::persist::Design::System {
+            theme::system_nachziehen(ctx);
+        }
         // Grundfläche unter allem: bleibt zwischen zwei Flächen ein Pixel
         // unbedeckt (krumme Bildschirmskalierung), steht dort die Fensterfarbe
         // und nicht der Grund des Fenstersystems.
         ctx.layer_painter(egui::LayerId::background()).rect_filled(
             ctx.screen_rect(),
             egui::Rounding::ZERO,
-            Palette::BG,
+            Palette::bg(),
         );
         self.ui(ctx);
         self.draw_menu(ctx);
@@ -6327,10 +6352,10 @@ impl App {
                         ui.painter().rect_filled(
                             rect,
                             egui::Rounding::same(4.0),
-                            Palette::PANEL_ALT,
+                            Palette::panel_alt(),
                         );
                     }
-                    let farbe = if i == cur { Palette::ACCENT } else { Palette::TEXT };
+                    let farbe = if i == cur { Palette::accent() } else { Palette::text() };
                     ui.painter().text(
                         egui::Pos2::new(rect.left() + 10.0, rect.center().y),
                         egui::Align2::LEFT_CENTER,
@@ -6448,7 +6473,7 @@ impl App {
                         ui.painter().rect_filled(
                             rect,
                             egui::Rounding::same(4.0),
-                            Palette::PANEL_ALT,
+                            Palette::panel_alt(),
                         );
                     }
                     crate::icons::paint(
@@ -6458,14 +6483,14 @@ impl App {
                             egui::Vec2::splat(18.0),
                         ),
                         m.icon(hatch),
-                        if m == cur { Palette::ACCENT } else { Palette::TEXT },
+                        if m == cur { Palette::accent() } else { Palette::text() },
                     );
                     ui.painter().text(
                         egui::Pos2::new(rect.left() + 32.0, rect.center().y),
                         egui::Align2::LEFT_CENTER,
                         m.label(),
                         egui::FontId::proportional(12.5),
-                        if m == cur { Palette::ACCENT } else { Palette::TEXT },
+                        if m == cur { Palette::accent() } else { Palette::text() },
                     );
                     if bereit && resp.clicked() {
                         match kind {
@@ -6550,7 +6575,7 @@ impl App {
                         ui.painter().rect_filled(
                             rect,
                             egui::Rounding::same(4.0),
-                            Palette::PANEL_ALT,
+                            Palette::panel_alt(),
                         );
                     }
                     crate::icons::paint(
@@ -6560,21 +6585,21 @@ impl App {
                             egui::Vec2::splat(18.0),
                         ),
                         m.icon(),
-                        if m == cur { Palette::ACCENT } else { Palette::TEXT },
+                        if m == cur { Palette::accent() } else { Palette::text() },
                     );
                     ui.painter().text(
                         egui::Pos2::new(rect.left() + 32.0, rect.center().y),
                         egui::Align2::LEFT_CENTER,
                         m.label(),
                         egui::FontId::proportional(12.5),
-                        if m == cur { Palette::ACCENT } else { Palette::TEXT },
+                        if m == cur { Palette::accent() } else { Palette::text() },
                     );
                     ui.painter().text(
                         egui::Pos2::new(rect.right() - 8.0, rect.center().y),
                         egui::Align2::RIGHT_CENTER,
                         m.key_label(),
                         egui::FontId::proportional(11.0),
-                        Palette::TEXT_FAINT,
+                        Palette::text_faint(),
                     );
                     if bereit && resp.clicked() {
                         self.ui.copy_input = m;
@@ -9263,11 +9288,11 @@ mod tests_mehrere_dateien {
             })
         };
         assert!(
-            flach(Palette::BG, datei),
+            flach(Palette::bg(), datei),
             "die Dateizone hat keinen eigenen Grund"
         );
         assert!(
-            flach(Palette::PANEL, modell),
+            flach(Palette::panel(), modell),
             "die Blattzone hat keine eigene Fläche"
         );
 

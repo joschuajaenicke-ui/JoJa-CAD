@@ -1,53 +1,426 @@
 //! Farben, Schriften und Grundstile der Benutzeroberfläche.
+//!
+//! **Ein helles und ein dunkles Design (T0102).** Die Farben stehen in genau
+//! zwei Tabellen ([`DUNKEL`], [`HELL`]); `Palette::…()` liefert den Wert des
+//! gerade eingestellten Designs. Kein Zeichenweg hält eine Farbe fest — sonst
+//! bliebe beim Umschalten ein Teil der Oberfläche im alten Design stehen.
+//! Die Wahl selbst liegt in `prefs.json` (`Design`), Vorgabe ist „System“:
+//! dann gilt das helle oder dunkle Farbschema des Betriebssystems.
 
 use egui::{Color32, FontFamily, FontId, Frame, Margin, Rounding, Stroke, TextStyle, Visuals};
+use jjcad_core::persist::Design;
+use std::sync::atomic::{AtomicBool, Ordering};
 
+/// Alle Farben eines Designs. Eine Zeile je Aufgabe — Flächen von außen nach
+/// innen, dann Schrift, dann die Bedienfarben.
+#[derive(Clone, Copy)]
+struct Farben {
+    bg: Color32,
+    panel: Color32,
+    panel_alt: Color32,
+    ribbon: Color32,
+    border: Color32,
+    border_soft: Color32,
+    /// Rand eines Eingabefelds (etwas kräftiger als `border_soft`)
+    feld_rand: Color32,
+    text: Color32,
+    text_dim: Color32,
+    text_faint: Color32,
+    accent: Color32,
+    accent_soft: Color32,
+    accent_text: Color32,
+    danger: Color32,
+    ok: Color32,
+    paper: Color32,
+    paper_shadow: Color32,
+    select: Color32,
+    hover: Color32,
+    track: Color32,
+    grid_minor: Color32,
+    grid_major: Color32,
+    /// Fläche gesperrter Tasten im Tastenbild
+    taste_gesperrt: Color32,
+    /// Beschriftung gesperrter Tasten
+    taste_gesperrt_text: Color32,
+    /// Fläche der Beschriftung am Zeiger (dunkle bzw. helle Box)
+    hinweis_flaeche: Color32,
+    /// Fläche des schwebenden Kachels beim Ziehen aus der Hotbar
+    schwebend: Color32,
+}
 
+/// Bisheriges Aussehen: dunkle Flächen, helle Schrift.
+const DUNKEL: Farben = Farben {
+    bg: Color32::from_rgb(0x12, 0x14, 0x18),
+    panel: Color32::from_rgb(0x1A, 0x1D, 0x22),
+    panel_alt: Color32::from_rgb(0x21, 0x25, 0x2B),
+    ribbon: Color32::from_rgb(0x17, 0x1A, 0x1F),
+    border: Color32::from_rgb(0x2C, 0x32, 0x3A),
+    border_soft: Color32::from_rgb(0x24, 0x29, 0x30),
+    feld_rand: Color32::from_rgb(0x35, 0x3B, 0x43),
+    text: Color32::from_rgb(0xE7, 0xE9, 0xEC),
+    text_dim: Color32::from_rgb(0x99, 0xA2, 0xAD),
+    text_faint: Color32::from_rgb(0x6C, 0x75, 0x81),
+    accent: Color32::from_rgb(0xE3, 0xA2, 0x3D),
+    accent_soft: Color32::from_rgb(0x3A, 0x2E, 0x1B),
+    accent_text: Color32::from_rgb(0x1A, 0x15, 0x0C),
+    danger: Color32::from_rgb(0xD8, 0x60, 0x4F),
+    ok: Color32::from_rgb(0x5A, 0xB5, 0x82),
+    paper: Color32::from_rgb(0xFB, 0xFA, 0xF6),
+    paper_shadow: Color32::from_rgb(0x0A, 0x0B, 0x0D),
+    select: Color32::from_rgb(0x2F, 0x8C, 0xF0),
+    hover: Color32::from_rgb(0x59, 0xA8, 0xFF),
+    track: Color32::from_rgb(0x24, 0xB6, 0xA0),
+    grid_minor: Color32::from_rgb(0xE9, 0xE7, 0xE0),
+    grid_major: Color32::from_rgb(0xD8, 0xD5, 0xCB),
+    taste_gesperrt: Color32::from_rgb(0x2A, 0x2F, 0x36),
+    taste_gesperrt_text: Color32::from_rgb(0x5C, 0x64, 0x6E),
+    hinweis_flaeche: Color32::from_rgba_premultiplied(24, 27, 32, 235),
+    schwebend: Color32::from_rgba_premultiplied(30, 34, 40, 230),
+};
+
+/// Helles Design: helle Flächen, dunkle Schrift. Die Zeichenfläche bleibt in
+/// beiden Designs Papier (weiß) — nur die Bedienoberfläche wechselt, damit die
+/// Zeichnung so aussieht wie im Druck.
+const HELL: Farben = Farben {
+    bg: Color32::from_rgb(0xE4, 0xE7, 0xEB),
+    panel: Color32::from_rgb(0xF7, 0xF8, 0xFA),
+    panel_alt: Color32::from_rgb(0xEB, 0xEE, 0xF2),
+    ribbon: Color32::from_rgb(0xFC, 0xFC, 0xFD),
+    border: Color32::from_rgb(0xC3, 0xC9, 0xD1),
+    border_soft: Color32::from_rgb(0xD7, 0xDC, 0xE2),
+    feld_rand: Color32::from_rgb(0xC9, 0xCF, 0xD6),
+    text: Color32::from_rgb(0x1C, 0x20, 0x26),
+    text_dim: Color32::from_rgb(0x53, 0x5B, 0x66),
+    text_faint: Color32::from_rgb(0x7E, 0x86, 0x91),
+    accent: Color32::from_rgb(0xA9, 0x6C, 0x0B),
+    accent_soft: Color32::from_rgb(0xF7, 0xE7, 0xC4),
+    accent_text: Color32::from_rgb(0xFF, 0xFB, 0xF2),
+    danger: Color32::from_rgb(0xBE, 0x3A, 0x2B),
+    ok: Color32::from_rgb(0x2C, 0x8A, 0x5C),
+    paper: Color32::from_rgb(0xFB, 0xFA, 0xF6),
+    paper_shadow: Color32::from_rgb(0x9A, 0xA1, 0xAA),
+    select: Color32::from_rgb(0x1F, 0x6F, 0xD2),
+    hover: Color32::from_rgb(0x1B, 0x77, 0xE0),
+    track: Color32::from_rgb(0x0E, 0x8B, 0x79),
+    // Raster und Achsen liegen auf dem Papier — in beiden Designs gleich.
+    grid_minor: Color32::from_rgb(0xE9, 0xE7, 0xE0),
+    grid_major: Color32::from_rgb(0xD8, 0xD5, 0xCB),
+    taste_gesperrt: Color32::from_rgb(0xAE, 0xB6, 0xC0),
+    taste_gesperrt_text: Color32::from_rgb(0x9A, 0xA2, 0xAC),
+    hinweis_flaeche: Color32::from_rgba_premultiplied(241, 243, 246, 245),
+    schwebend: Color32::from_rgba_premultiplied(255, 255, 255, 240),
+};
+
+/// Steht das Design auf hell? Prozessweit wie die Sprache (T0103) — alle
+/// Zeichenwege lesen denselben Wert.
+static HELL_AKTIV: AtomicBool = AtomicBool::new(false);
+
+/// Letzte Prüfung des Betriebssystem-Farbschemas: (Zeitpunkt, war es hell?).
+/// Ohne Drosselung würde jede Bildschleife die Konfigurationsdateien lesen.
+static LETZTE_PRUEFUNG: std::sync::Mutex<(f64, bool)> = std::sync::Mutex::new((0.0, false));
+
+fn farben() -> Farben {
+    if HELL_AKTIV.load(Ordering::Relaxed) {
+        HELL
+    } else {
+        DUNKEL
+    }
+}
+
+/// Die Farben des eingestellten Designs.
+///
+/// Aufruf über `Palette::bg()` & Co. — bewusst Methoden statt Konstanten: die
+/// Werte hängen an der Einstellung und dürfen nicht in `const`-Kontexte
+/// wandern (dort bliebe das Design beim Umschalten stehen).
 pub struct Palette;
 
 impl Palette {
-    pub const BG: Color32 = Color32::from_rgb(0x12, 0x14, 0x18);
-    pub const PANEL: Color32 = Color32::from_rgb(0x1A, 0x1D, 0x22);
-    pub const PANEL_ALT: Color32 = Color32::from_rgb(0x21, 0x25, 0x2B);
-    pub const RIBBON: Color32 = Color32::from_rgb(0x17, 0x1A, 0x1F);
-    pub const BORDER: Color32 = Color32::from_rgb(0x2C, 0x32, 0x3A);
-    pub const BORDER_SOFT: Color32 = Color32::from_rgb(0x24, 0x29, 0x30);
-    pub const TEXT: Color32 = Color32::from_rgb(0xE7, 0xE9, 0xEC);
-    pub const TEXT_DIM: Color32 = Color32::from_rgb(0x99, 0xA2, 0xAD);
-    pub const TEXT_FAINT: Color32 = Color32::from_rgb(0x6C, 0x75, 0x81);
-    pub const ACCENT: Color32 = Color32::from_rgb(0xE3, 0xA2, 0x3D);
-    pub const ACCENT_SOFT: Color32 = Color32::from_rgb(0x3A, 0x2E, 0x1B);
-    pub const ACCENT_TEXT: Color32 = Color32::from_rgb(0x1A, 0x15, 0x0C);
-    pub const DANGER: Color32 = Color32::from_rgb(0xD8, 0x60, 0x4F);
-    pub const OK: Color32 = Color32::from_rgb(0x5A, 0xB5, 0x82);
-    pub const PAPER: Color32 = Color32::from_rgb(0xFB, 0xFA, 0xF6);
-    pub const PAPER_SHADOW: Color32 = Color32::from_rgb(0x0A, 0x0B, 0x0D);
-    pub const SELECT: Color32 = Color32::from_rgb(0x2F, 0x8C, 0xF0);
-    pub const HOVER: Color32 = Color32::from_rgb(0x59, 0xA8, 0xFF);
-    /// Hilfslinien des erweiterten Punktfangs: eigener Ton, damit sie weder mit
-    /// der Auswahl (blau) noch mit dem Fangmarker (Akzent) verwechselt werden.
-    pub const TRACK: Color32 = Color32::from_rgb(0x24, 0xB6, 0xA0);
-    pub const GRID_MINOR: Color32 = Color32::from_rgb(0xE9, 0xE7, 0xE0);
-    pub const GRID_MAJOR: Color32 = Color32::from_rgb(0xD8, 0xD5, 0xCB);
+    pub fn bg() -> Color32 {
+        farben().bg
+    }
+    pub fn panel() -> Color32 {
+        farben().panel
+    }
+    pub fn panel_alt() -> Color32 {
+        farben().panel_alt
+    }
+    pub fn ribbon() -> Color32 {
+        farben().ribbon
+    }
+    pub fn border() -> Color32 {
+        farben().border
+    }
+    pub fn border_soft() -> Color32 {
+        farben().border_soft
+    }
+    pub fn feld_rand() -> Color32 {
+        farben().feld_rand
+    }
+    pub fn text() -> Color32 {
+        farben().text
+    }
+    pub fn text_dim() -> Color32 {
+        farben().text_dim
+    }
+    pub fn text_faint() -> Color32 {
+        farben().text_faint
+    }
+    pub fn accent() -> Color32 {
+        farben().accent
+    }
+    pub fn accent_soft() -> Color32 {
+        farben().accent_soft
+    }
+    pub fn accent_text() -> Color32 {
+        farben().accent_text
+    }
+    pub fn danger() -> Color32 {
+        farben().danger
+    }
+    pub fn ok() -> Color32 {
+        farben().ok
+    }
+    pub fn paper() -> Color32 {
+        farben().paper
+    }
+    pub fn paper_shadow() -> Color32 {
+        farben().paper_shadow
+    }
+    pub fn select() -> Color32 {
+        farben().select
+    }
+    pub fn hover() -> Color32 {
+        farben().hover
+    }
+    pub fn track() -> Color32 {
+        farben().track
+    }
+    pub fn grid_minor() -> Color32 {
+        farben().grid_minor
+    }
+    pub fn grid_major() -> Color32 {
+        farben().grid_major
+    }
+    pub fn taste_gesperrt() -> Color32 {
+        farben().taste_gesperrt
+    }
+    pub fn taste_gesperrt_text() -> Color32 {
+        farben().taste_gesperrt_text
+    }
+    pub fn hinweis_flaeche() -> Color32 {
+        farben().hinweis_flaeche
+    }
+    pub fn schwebend() -> Color32 {
+        farben().schwebend
+    }
 }
 
+/// Ist das gerade gezeichnete Design hell?
+pub fn ist_hell() -> bool {
+    HELL_AKTIV.load(Ordering::Relaxed)
+}
+
+/// Auflösen der Wahl: `System` folgt dem Betriebssystem, Hell und Dunkel sind
+/// fest. Reine Rechnung — damit prüfbar ohne Fenster.
+pub fn aufloesen(design: Design, system_hell: bool) -> bool {
+    match design {
+        Design::Hell => true,
+        Design::Dunkel => false,
+        Design::System => system_hell,
+    }
+}
+
+/// Will das Betriebssystem ein helles Farbschema?
+///
+/// Zuerst die Meldung der Fensterbibliothek (`ctx.system_theme()`) — sie kommt
+/// auf Windows und macOS an. Unter Linux meldet winit nichts (`None`), dort
+/// entscheiden die Einstellungen des Desktops: KDE (`kdeglobals`), GTK
+/// (`settings.ini`), dann die Umgebung. Ohne Auskunft bleibt es dunkel — das
+/// bisherige Aussehen.
+pub fn system_ist_hell(ctx: &egui::Context) -> bool {
+    if let Some(theme) = ctx.system_theme() {
+        return theme == egui::Theme::Light;
+    }
+    betriebssystem_ist_hell()
+}
+
+#[cfg(target_os = "linux")]
+fn betriebssystem_ist_hell() -> bool {
+    if let Some(hell) = kde_ist_hell() {
+        return hell;
+    }
+    if let Some(hell) = gtk_ist_hell() {
+        return hell;
+    }
+    if let Ok(gtk) = std::env::var("GTK_THEME") {
+        let gtk = gtk.to_lowercase();
+        if gtk.contains("dark") {
+            return false;
+        }
+        if gtk.contains("light") {
+            return true;
+        }
+    }
+    // `COLORFGBG` = „Vordergrund;Hintergrund“ in ANSI-Nummern: 7/15 ist Weiß.
+    if let Ok(fg) = std::env::var("COLORFGBG") {
+        if let Some(bg) = fg.rsplit(';').next() {
+            if let Ok(n) = bg.trim().parse::<u32>() {
+                return n == 7 || n == 15;
+            }
+        }
+    }
+    false
+}
+
+#[cfg(not(target_os = "linux"))]
+fn betriebssystem_ist_hell() -> bool {
+    false
+}
+
+/// Konfigurationsverzeichnis des Nutzers (`$XDG_CONFIG_HOME` oder `~/.config`).
+#[cfg(target_os = "linux")]
+fn konfig_datei(relativ: &str) -> Option<std::path::PathBuf> {
+    let basis = match std::env::var_os("XDG_CONFIG_HOME") {
+        Some(p) if !p.is_empty() => std::path::PathBuf::from(p),
+        _ => std::path::PathBuf::from(std::env::var_os("HOME")?).join(".config"),
+    };
+    Some(basis.join(relativ))
+}
+
+/// KDE schreibt die Hintergrundfarbe der Fenster nach `kdeglobals`. Helle
+/// Fläche = helles Design; das ist genauer als der Name des Farbschemas
+/// („BreezeDark“ enthält „dark“, ein eigenes Schema vielleicht nicht).
+#[cfg(target_os = "linux")]
+fn kde_ist_hell() -> Option<bool> {
+    let text = std::fs::read_to_string(konfig_datei("kdeglobals")?).ok()?;
+    let mut abschnitt = String::new();
+    let mut farbschema = None;
+    for zeile in text.lines() {
+        let zeile = zeile.trim();
+        if zeile.starts_with('[') {
+            abschnitt = zeile.trim_matches(['[', ']']).to_string();
+            continue;
+        }
+        if abschnitt == "Colors:Window" {
+            if let Some(wert) = zeile.strip_prefix("BackgroundNormal=") {
+                if let Some(hell) = rgb_ist_hell(wert) {
+                    return Some(hell);
+                }
+            }
+        }
+        if abschnitt == "General" {
+            if let Some(wert) = zeile.strip_prefix("ColorScheme=") {
+                farbschema = Some(wert.trim().to_lowercase());
+            }
+        }
+    }
+    let name = farbschema?;
+    if name.contains("dark") {
+        Some(false)
+    } else if name.contains("light") {
+        Some(true)
+    } else {
+        None
+    }
+}
+
+/// `r,g,b` → ist die Fläche hell? (Wahrnehmungshelligkeit, nicht Mittelwert.)
+#[cfg(target_os = "linux")]
+fn rgb_ist_hell(wert: &str) -> Option<bool> {
+    let teile: Vec<f32> = wert
+        .split(',')
+        .filter_map(|t| t.trim().parse::<f32>().ok())
+        .collect();
+    if teile.len() < 3 {
+        return None;
+    }
+    let h = 0.299 * teile[0] + 0.587 * teile[1] + 0.114 * teile[2];
+    Some(h > 128.0)
+}
+
+/// GTK: „prefer dark“ in `settings.ini` (GNOME, XFCE, …). Ohne Datei oder
+/// ohne Aussage `None`.
+#[cfg(target_os = "linux")]
+fn gtk_ist_hell() -> Option<bool> {
+    for rel in ["gtk-4.0/settings.ini", "gtk-3.0/settings.ini"] {
+        let Ok(text) = std::fs::read_to_string(konfig_datei(rel)?) else {
+            continue;
+        };
+        let mut dunkel = None;
+        for zeile in text.lines() {
+            let zeile = zeile.trim();
+            if let Some(wert) = zeile.strip_prefix("gtk-application-prefer-dark-theme=") {
+                dunkel = Some(!wert.trim().eq_ignore_ascii_case("true"));
+            } else if let Some(wert) = zeile.strip_prefix("gtk-theme-name=") {
+                if dunkel.is_none() {
+                    dunkel = Some(!wert.to_lowercase().contains("dark"));
+                }
+            }
+        }
+        if let Some(hell) = dunkel {
+            return Some(hell);
+        }
+    }
+    None
+}
+
+/// Design umstellen — gilt ab dem nächsten Bild, ohne Neustart.
+pub fn set_design(design: Design, ctx: &egui::Context) {
+    let system_hell = system_ist_hell(ctx);
+    HELL_AKTIV.store(aufloesen(design, system_hell), Ordering::Relaxed);
+    merke_pruefung(ctx, system_hell);
+    stil(ctx);
+    ctx.request_repaint();
+}
+
+fn merke_pruefung(ctx: &egui::Context, system_hell: bool) {
+    let jetzt = ctx.input(|i| i.time);
+    if let Ok(mut zelle) = LETZTE_PRUEFUNG.lock() {
+        *zelle = (jetzt, system_hell);
+    }
+}
+
+/// Bei der Wahl „System“: hat das Betriebssystem sein Farbschema gewechselt?
+///
+/// Höchstens alle zwei Sekunden nachsehen — die Konfigurationsdateien zu lesen
+/// kostet mehr als ein Bild. Wird nur bei `Design::System` gerufen.
+pub fn system_nachziehen(ctx: &egui::Context) {
+    let jetzt = ctx.input(|i| i.time);
+    let Ok(mut zelle) = LETZTE_PRUEFUNG.lock() else {
+        return;
+    };
+    if jetzt - zelle.0 < 2.0 {
+        return;
+    }
+    let system_hell = system_ist_hell(ctx);
+    zelle.0 = jetzt;
+    if system_hell != zelle.1 {
+        zelle.1 = system_hell;
+        HELL_AKTIV.store(system_hell, Ordering::Relaxed);
+        drop(zelle);
+        stil(ctx);
+        ctx.request_repaint();
+    }
+}
+
+
 pub fn paper_frame() -> Frame {
-    Frame::none().fill(Palette::PANEL).inner_margin(Margin::same(0.0))
+    Frame::none().fill(Palette::panel()).inner_margin(Margin::same(0.0))
 }
 
 pub fn card() -> Frame {
     Frame::none()
-        .fill(Palette::PANEL_ALT)
+        .fill(Palette::panel_alt())
         .rounding(Rounding::same(8.0))
-        .stroke(Stroke::new(1.0, Palette::BORDER_SOFT))
+        .stroke(Stroke::new(1.0, Palette::border_soft()))
         .inner_margin(Margin::symmetric(10.0, 8.0))
 }
 
 pub fn dialog_frame() -> Frame {
     Frame::none()
-        .fill(Palette::PANEL)
+        .fill(Palette::panel())
         .rounding(Rounding::same(12.0))
-        .stroke(Stroke::new(1.0, Palette::BORDER))
+        .stroke(Stroke::new(1.0, Palette::border()))
         .inner_margin(Margin::same(18.0))
         .shadow(egui::epaint::Shadow {
             offset: egui::vec2(0.0, 12.0),
@@ -57,7 +430,15 @@ pub fn dialog_frame() -> Frame {
         })
 }
 
+/// Schriften und Grundstil einrichten — einmal beim Start.
 pub fn install(ctx: &egui::Context) {
+    schriften(ctx);
+    stil(ctx);
+}
+
+/// Die Schriften. Sie hängen nicht am Design und werden nur beim Start gesetzt
+/// (ein erneutes `set_fonts` würde die Texturen neu bauen).
+fn schriften(ctx: &egui::Context) {
     let mut fonts = egui::FontDefinitions::default();
     // Systemschrift laden (falls vorhanden), sonst egui-Standardschrift
     for path in [
@@ -124,7 +505,11 @@ pub fn install(ctx: &egui::Context) {
         }
     }
     ctx.set_fonts(fonts);
+}
 
+/// Der Stil des eingestellten Designs: Flächen, Rahmen, Schriftfarben und die
+/// Maße der Bedienelemente. Läuft beim Start **und** bei jedem Designwechsel.
+pub fn stil(ctx: &egui::Context) {
     let mut style = (*ctx.style()).clone();
     style.text_styles = [
         (TextStyle::Heading, FontId::proportional(19.0)),
@@ -135,12 +520,16 @@ pub fn install(ctx: &egui::Context) {
     ]
     .into();
 
-    let mut v = Visuals::dark();
-    v.override_text_color = Some(Palette::TEXT);
-    v.panel_fill = Palette::PANEL;
-    v.window_fill = Palette::PANEL;
-    v.extreme_bg_color = Palette::BG;
-    v.faint_bg_color = Palette::PANEL_ALT;
+    let mut v = if ist_hell() {
+        Visuals::light()
+    } else {
+        Visuals::dark()
+    };
+    v.override_text_color = Some(Palette::text());
+    v.panel_fill = Palette::panel();
+    v.window_fill = Palette::panel();
+    v.extreme_bg_color = Palette::bg();
+    v.faint_bg_color = Palette::panel_alt();
     v.window_rounding = Rounding::same(12.0);
     v.menu_rounding = Rounding::same(8.0);
     v.window_shadow = egui::epaint::Shadow {
@@ -155,23 +544,23 @@ pub fn install(ctx: &egui::Context) {
         spread: 0.0,
         color: Color32::from_black_alpha(120),
     };
-    v.window_stroke = Stroke::new(1.0, Palette::BORDER);
-    v.selection.bg_fill = Palette::ACCENT.gamma_multiply(0.35);
-    v.selection.stroke = Stroke::new(1.0, Palette::ACCENT);
-    v.widgets.noninteractive.bg_fill = Palette::PANEL;
-    v.widgets.noninteractive.bg_stroke = Stroke::new(1.0, Palette::BORDER_SOFT);
-    v.widgets.noninteractive.fg_stroke = Stroke::new(1.0, Palette::TEXT_DIM);
-    v.widgets.inactive.bg_fill = Palette::PANEL_ALT;
-    v.widgets.inactive.bg_stroke = Stroke::new(1.0, Palette::BORDER_SOFT);
-    v.widgets.inactive.fg_stroke = Stroke::new(1.0, Palette::TEXT);
+    v.window_stroke = Stroke::new(1.0, Palette::border());
+    v.selection.bg_fill = Palette::accent_soft();
+    v.selection.stroke = Stroke::new(1.0, Palette::accent());
+    v.widgets.noninteractive.bg_fill = Palette::panel();
+    v.widgets.noninteractive.bg_stroke = Stroke::new(1.0, Palette::border_soft());
+    v.widgets.noninteractive.fg_stroke = Stroke::new(1.0, Palette::text_dim());
+    v.widgets.inactive.bg_fill = Palette::panel_alt();
+    v.widgets.inactive.bg_stroke = Stroke::new(1.0, Palette::border_soft());
+    v.widgets.inactive.fg_stroke = Stroke::new(1.0, Palette::text());
     v.widgets.hovered.bg_fill = Color32::from_rgb(0x2B, 0x31, 0x39);
-    v.widgets.hovered.bg_stroke = Stroke::new(1.0, Palette::BORDER);
-    v.widgets.hovered.fg_stroke = Stroke::new(1.0, Palette::TEXT);
-    v.widgets.active.bg_fill = Palette::ACCENT_SOFT;
-    v.widgets.active.bg_stroke = Stroke::new(1.0, Palette::ACCENT);
-    v.widgets.active.fg_stroke = Stroke::new(1.0, Palette::ACCENT);
-    v.widgets.open.bg_fill = Palette::PANEL_ALT;
-    v.widgets.open.bg_stroke = Stroke::new(1.0, Palette::BORDER);
+    v.widgets.hovered.bg_stroke = Stroke::new(1.0, Palette::border());
+    v.widgets.hovered.fg_stroke = Stroke::new(1.0, Palette::text());
+    v.widgets.active.bg_fill = Palette::accent_soft();
+    v.widgets.active.bg_stroke = Stroke::new(1.0, Palette::accent());
+    v.widgets.active.fg_stroke = Stroke::new(1.0, Palette::accent());
+    v.widgets.open.bg_fill = Palette::panel_alt();
+    v.widgets.open.bg_stroke = Stroke::new(1.0, Palette::border());
     v.button_frame = true;
     v.striped = false;
     v.slider_trailing_fill = true;
@@ -183,19 +572,19 @@ pub fn install(ctx: &egui::Context) {
         &mut v.widgets.open,
     ] {
         w.rounding = Rounding::same(4.0);
-        w.bg_fill = Palette::BG;
-        w.weak_bg_fill = Palette::BG;
+        w.bg_fill = Palette::bg();
+        w.weak_bg_fill = Palette::bg();
     }
-    v.widgets.inactive.bg_stroke = Stroke::new(1.0, Palette::PANEL_ALT.gamma_multiply(1.6));
-    v.widgets.inactive.fg_stroke = Stroke::new(1.0, Palette::TEXT);
-    v.widgets.hovered.bg_fill = Palette::PANEL_ALT;
-    v.widgets.hovered.weak_bg_fill = Palette::PANEL_ALT;
-    v.widgets.hovered.bg_stroke = Stroke::new(1.0, Palette::ACCENT);
-    v.widgets.open.bg_fill = Palette::PANEL_ALT;
-    v.widgets.open.weak_bg_fill = Palette::PANEL_ALT;
-    v.widgets.open.bg_stroke = Stroke::new(1.0, Palette::ACCENT);
-    v.widgets.active.bg_fill = Palette::PANEL_ALT;
-    v.widgets.active.weak_bg_fill = Palette::PANEL_ALT;
+    v.widgets.inactive.bg_stroke = Stroke::new(1.0, Palette::feld_rand());
+    v.widgets.inactive.fg_stroke = Stroke::new(1.0, Palette::text());
+    v.widgets.hovered.bg_fill = Palette::panel_alt();
+    v.widgets.hovered.weak_bg_fill = Palette::panel_alt();
+    v.widgets.hovered.bg_stroke = Stroke::new(1.0, Palette::accent());
+    v.widgets.open.bg_fill = Palette::panel_alt();
+    v.widgets.open.weak_bg_fill = Palette::panel_alt();
+    v.widgets.open.bg_stroke = Stroke::new(1.0, Palette::accent());
+    v.widgets.active.bg_fill = Palette::panel_alt();
+    v.widgets.active.weak_bg_fill = Palette::panel_alt();
 
     style.visuals = v;
 
@@ -222,7 +611,7 @@ pub fn section(ui: &mut egui::Ui, text: &str) {
     ui.label(
         egui::RichText::new(text.to_uppercase())
             .size(10.5)
-            .color(Palette::TEXT_FAINT)
+            .color(Palette::text_faint())
             .strong(),
     );
     ui.add_space(2.0);
@@ -237,20 +626,20 @@ pub fn bold(text: impl Into<String>, size: f32) -> egui::RichText {
 pub fn dim(text: impl Into<String>) -> egui::RichText {
     egui::RichText::new(text.into())
         .size(11.5)
-        .color(Palette::TEXT_DIM)
+        .color(Palette::text_dim())
 }
 
 pub fn faint(text: impl Into<String>) -> egui::RichText {
     egui::RichText::new(text.into())
         .size(11.0)
-        .color(Palette::TEXT_FAINT)
+        .color(Palette::text_faint())
 }
 
 pub fn mono(text: impl Into<String>) -> egui::RichText {
     egui::RichText::new(text.into())
         .monospace()
         .size(11.5)
-        .color(Palette::TEXT_DIM)
+        .color(Palette::text_dim())
 }
 
 /// Einheitlicher "Chip"/Badge.
@@ -262,9 +651,9 @@ pub fn chip_id(ui: &mut egui::Ui, id: &str, text: &str, active: bool) -> egui::R
 
 pub fn chip(ui: &mut egui::Ui, text: &str, active: bool) -> egui::Response {
     let (bg, fg, stroke) = if active {
-        (Palette::ACCENT_SOFT, Palette::ACCENT, Stroke::new(1.0, Palette::ACCENT))
+        (Palette::accent_soft(), Palette::accent(), Stroke::new(1.0, Palette::accent()))
     } else {
-        (Palette::PANEL_ALT, Palette::TEXT_DIM, Stroke::new(1.0, Palette::BORDER_SOFT))
+        (Palette::panel_alt(), Palette::text_dim(), Stroke::new(1.0, Palette::border_soft()))
     };
     let galley = ui.painter().layout_no_wrap(
         text.to_string(),
@@ -284,4 +673,100 @@ pub fn chip(ui: &mut egui::Ui, text: &str, active: bool) -> egui::Response {
         );
     }
     resp
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Wahrnehmungshelligkeit einer Farbe (0…255) — Grundlage der Prüfungen
+    /// „hell ist heller als dunkel“.
+    fn helligkeit(c: Color32) -> f32 {
+        0.299 * c.r() as f32 + 0.587 * c.g() as f32 + 0.114 * c.b() as f32
+    }
+
+    /// T0102: „System“ folgt dem Betriebssystem, Hell und Dunkel sind fest.
+    /// Ohne diese Rechnung hinge die Vorgabe an einem Zufall des Systems.
+    #[test]
+    fn design_aufloesen_folgt_dem_system() {
+        assert!(aufloesen(Design::System, true), "System hell → hell");
+        assert!(!aufloesen(Design::System, false), "System dunkel → dunkel");
+        assert!(aufloesen(Design::Hell, false), "Hell überstimmt das System");
+        assert!(!aufloesen(Design::Dunkel, true), "Dunkel überstimmt das System");
+    }
+
+    /// Beide Farbsätze sind vollständig und unterscheiden sich dort, wo das
+    /// Design wirkt: Flächen, Schrift, Auswahlfarben. Papier und Raster bleiben
+    /// gleich — die Zeichnung soll in beiden Designs wie im Druck aussehen.
+    #[test]
+    fn beide_designs_haben_eigene_flaechen_und_schrift() {
+        // Helles Design: Flächen hell, Schrift dunkel — und umgekehrt.
+        assert!(
+            helligkeit(HELL.bg) > helligkeit(DUNKEL.bg) + 100.0,
+            "die Fläche des hellen Designs ist nicht deutlich heller"
+        );
+        assert!(
+            helligkeit(HELL.panel) > helligkeit(DUNKEL.panel) + 100.0,
+            "die Panelfläche des hellen Designs ist nicht deutlich heller"
+        );
+        assert!(
+            helligkeit(HELL.text) < helligkeit(DUNKEL.text) - 100.0,
+            "die Schrift des hellen Designs ist nicht deutlich dunkler"
+        );
+        // Lesbarkeit: Schrift gegen Fläche (grober Abstand, kein Farbton).
+        for (name, f) in [("hell", HELL), ("dunkel", DUNKEL)] {
+            let abstand = (helligkeit(f.text) - helligkeit(f.bg)).abs();
+            assert!(
+                abstand > 90.0,
+                "{name}: Schrift und Fläche liegen zu nah beieinander ({abstand:.0})"
+            );
+            // Das Papier ist die Zeichenfläche — heller als die Bedienfläche,
+            // sonst wäre die Zeichnung der Hintergrund.
+            assert!(
+                helligkeit(f.paper) > helligkeit(f.bg),
+                "{name}: das Papier hebt sich nicht von der Fläche ab"
+            );
+            assert_eq!(f.paper, DUNKEL.paper, "{name}: das Papier wechselt das Design");
+        }
+        // Gesperrte Tasten bleiben als Sperre erkennbar (eigene Fläche).
+        // Im dunklen Design ist die Fläche heller, im hellen dunkler als die
+        // freie Taste — gemessen am Betrag der Summe der Kanäle.
+        let summe = |c: Color32| c.r() as i32 + c.g() as i32 + c.b() as i32;
+        for (name, f) in [("hell", HELL), ("dunkel", DUNKEL)] {
+            assert!(
+                (summe(f.taste_gesperrt) - summe(f.bg)).abs() > 40,
+                "{name}: gesperrte Tasten sind nicht abgesetzt"
+            );
+            // Die Beschriftung gesperrter Tasten tritt zurück: ihr Abstand zur
+            // Panelfläche ist kleiner als der von `text_faint`.
+            let abstand = |c: Color32| (summe(c) - summe(f.panel)).abs();
+            assert!(
+                abstand(f.taste_gesperrt_text) < abstand(f.text_faint),
+                "{name}: die Beschriftung gesperrter Tasten ist nicht schwächer"
+            );
+        }
+    }
+
+    /// T0102: Umschalten tauscht die Farben sofort aus — `Palette::…()` liefert
+    /// danach die Werte des anderen Designs. Der Test stellt den Ausgangszustand
+    /// wieder her: die Wahl ist prozessweit (wie die Sprache, T0103).
+    #[test]
+    fn umschalten_tauscht_die_farben() {
+        let ctx = egui::Context::default();
+        set_design(Design::Dunkel, &ctx);
+        let (dunkel_bg, dunkel_text, papier) = (Palette::bg(), Palette::text(), Palette::paper());
+        assert!(!ist_hell());
+
+        set_design(Design::Hell, &ctx);
+        assert!(ist_hell(), "das helle Design wurde nicht übernommen");
+        assert_ne!(Palette::bg(), dunkel_bg, "die Fläche blieb im alten Design");
+        assert!(helligkeit(Palette::bg()) > helligkeit(dunkel_bg));
+        assert!(helligkeit(Palette::text()) < helligkeit(dunkel_text));
+        assert_eq!(Palette::paper(), papier, "das Papier wechselt mit");
+
+        set_design(Design::Dunkel, &ctx);
+        assert!(!ist_hell());
+        assert_eq!(Palette::bg(), dunkel_bg, "zurück im dunklen Design");
+        assert_eq!(Palette::text(), dunkel_text);
+    }
 }

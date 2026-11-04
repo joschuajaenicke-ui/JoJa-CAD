@@ -248,7 +248,7 @@ pub fn paint(painter: &Painter, rect: Rect, name: &str, color: Color32) {
             let plate = IconPainter {
                 p: i.p,
                 r: i.r,
-                color: crate::theme::Palette::BG,
+                color: crate::theme::Palette::bg(),
                 w: i.w,
             };
             plate.filled(&[(1.0, 22.0), (13.5, 22.0), (13.5, 10.0), (1.0, 10.0)]);

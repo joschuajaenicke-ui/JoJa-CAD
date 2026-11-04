@@ -18,7 +18,7 @@ pub fn layers(app: &mut App, ui: &mut Ui) {
         ui.label(
             RichText::new(jjcad_core::i18n::tr("gui.panels.layer"))
                 .size(10.0)
-                .color(Palette::TEXT_FAINT)
+                .color(Palette::text_faint())
                 .strong(),
         );
         ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
@@ -81,14 +81,14 @@ pub fn layers(app: &mut App, ui: &mut Ui) {
                 if ui.is_rect_visible(rect) {
                     let p = ui.painter();
                     if is_current {
-                        p.rect_filled(rect, Rounding::same(6.0), Palette::PANEL_ALT);
+                        p.rect_filled(rect, Rounding::same(6.0), Palette::panel_alt());
                         p.rect_filled(
                             Rect::from_min_size(rect.left_top(), Vec2::new(2.0, rect.height())),
                             Rounding::same(1.0),
-                            Palette::ACCENT,
+                            Palette::accent(),
                         );
                     } else if resp.hovered() {
-                        p.rect_filled(rect, Rounding::same(6.0), Palette::PANEL_ALT.gamma_multiply(0.6));
+                        p.rect_filled(rect, Rounding::same(6.0), Palette::panel_alt().gamma_multiply(0.6));
                     }
                     // Farbpunkt
                     let dot = Rect::from_center_size(
@@ -101,7 +101,7 @@ pub fn layers(app: &mut App, ui: &mut Ui) {
                     let max_w = rect.width() - 92.0;
                     let mut name = l.name.clone();
                     while p
-                        .layout_no_wrap(name.clone(), FontId::proportional(12.0), Palette::TEXT)
+                        .layout_no_wrap(name.clone(), FontId::proportional(12.0), Palette::text())
                         .size()
                         .x
                         > max_w
@@ -118,7 +118,7 @@ pub fn layers(app: &mut App, ui: &mut Ui) {
                         egui::Align2::LEFT_CENTER,
                         name,
                         FontId::proportional(12.0),
-                        if is_current { Palette::TEXT } else { Palette::TEXT_DIM },
+                        if is_current { Palette::text() } else { Palette::text_dim() },
                     );
                     // Sichtbarkeit / Sperre
                     let eye = Rect::from_center_size(
@@ -129,7 +129,7 @@ pub fn layers(app: &mut App, ui: &mut Ui) {
                         p,
                         eye.shrink(3.0),
                         if l.visible { "eye" } else { "eye_off" },
-                        if l.visible { Palette::TEXT_DIM } else { Palette::TEXT_FAINT },
+                        if l.visible { Palette::text_dim() } else { Palette::text_faint() },
                     );
                     let lock = Rect::from_center_size(
                         Pos2::new(rect.right() - 19.0, rect.center().y),
@@ -139,7 +139,7 @@ pub fn layers(app: &mut App, ui: &mut Ui) {
                         p,
                         lock.shrink(4.0),
                         if l.locked { "lock" } else { "unlock" },
-                        if l.locked { Palette::ACCENT } else { Palette::TEXT_FAINT },
+                        if l.locked { Palette::accent() } else { Palette::text_faint() },
                     );
                 }
                 // Interaktion
@@ -268,7 +268,7 @@ pub fn layer_color_popup(app: &mut App, ctx: &egui::Context) {
                                 ui.painter().circle_stroke(
                                     r.center(),
                                     12.5,
-                                    Stroke::new(1.5, Palette::ACCENT),
+                                    Stroke::new(1.5, Palette::accent()),
                                 );
                             }
                             if resp.clicked() {
@@ -323,7 +323,7 @@ pub fn properties(app: &mut App, ui: &mut Ui) {
         ui.label(
             RichText::new(jjcad_core::i18n::tr("gui.panels.eigenschaften"))
                 .size(10.0)
-                .color(Palette::TEXT_FAINT)
+                .color(Palette::text_faint())
                 .strong(),
         );
         ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
@@ -552,7 +552,7 @@ fn swatch(ui: &mut Ui, c: Color) {
     ui.painter()
         .rect_filled(r, Rounding::same(2.0), egui::Color32::from_rgb(c.r, c.g, c.b));
     ui.painter()
-        .rect_stroke(r, Rounding::same(2.0), Stroke::new(0.7, Palette::TEXT_FAINT));
+        .rect_stroke(r, Rounding::same(2.0), Stroke::new(0.7, Palette::text_faint()));
     ui.add_space(4.0);
 }
 
@@ -640,7 +640,7 @@ pub(crate) fn dropdown_mit_menue<R>(
     pnt.rect_filled(
         rect,
         egui::Rounding::same(4.0),
-        if open || hovered { Palette::PANEL_ALT } else { Palette::BG },
+        if open || hovered { Palette::panel_alt() } else { Palette::bg() },
     );
     pnt.rect_stroke(
         rect,
@@ -648,9 +648,9 @@ pub(crate) fn dropdown_mit_menue<R>(
         Stroke::new(
             1.0,
             if open {
-                Palette::ACCENT
+                Palette::accent()
             } else {
-                Palette::PANEL_ALT.gamma_multiply(1.6)
+                Palette::panel_alt().gamma_multiply(1.6)
             },
         ),
     );
@@ -659,7 +659,7 @@ pub(crate) fn dropdown_mit_menue<R>(
         Some(BtnIcon::Color(c)) => {
             let r = Rect::from_min_size(egui::pos2(x, rect.center().y - 5.0), Vec2::splat(10.0));
             pnt.rect_filled(r, egui::Rounding::same(2.0), egui::Color32::from_rgb(c.r, c.g, c.b));
-            pnt.rect_stroke(r, egui::Rounding::same(2.0), Stroke::new(0.8, Palette::TEXT_FAINT));
+            pnt.rect_stroke(r, egui::Rounding::same(2.0), Stroke::new(0.8, Palette::text_faint()));
             x += 16.0;
         }
         Some(BtnIcon::Line(lt)) => {
@@ -669,11 +669,11 @@ pub(crate) fn dropdown_mit_menue<R>(
             match crate::canvas::dash_pattern(lt, 3.2, false) {
                 Some(pat) => {
                     for seg in crate::canvas::dashed_segments(a, b, &pat) {
-                        pnt.line_segment(seg, Stroke::new(1.3, Palette::TEXT_DIM));
+                        pnt.line_segment(seg, Stroke::new(1.3, Palette::text_dim()));
                     }
                 }
                 None => {
-                    pnt.line_segment([a, b], Stroke::new(1.3, Palette::TEXT_DIM));
+                    pnt.line_segment([a, b], Stroke::new(1.3, Palette::text_dim()));
                 }
             }
             x += 27.0;
@@ -685,14 +685,14 @@ pub(crate) fn dropdown_mit_menue<R>(
         egui::Align2::LEFT_CENTER,
         caption,
         FontId::proportional(11.5),
-        Palette::TEXT,
+        Palette::text(),
     );
     pnt.text(
         egui::pos2(rect.right() - 7.0, rect.center().y),
         egui::Align2::RIGHT_CENTER,
         jjcad_core::i18n::tr("gui.panels.v"),
         FontId::proportional(9.0),
-        Palette::TEXT_DIM,
+        Palette::text_dim(),
     );
 
     if resp.clicked() {
@@ -773,7 +773,7 @@ pub(crate) fn linetype_combo(ui: &mut Ui, salt: &str, cur: LineType, mixed: bool
         for cand in LineType::ALL {
             let sel = !mixed && cand == cur;
             ui.horizontal(|ui| {
-                lt_preview(ui, cand, if sel { Palette::ACCENT } else { Palette::TEXT_DIM });
+                lt_preview(ui, cand, if sel { Palette::accent() } else { Palette::text_dim() });
                 if ui.selectable_label(sel, cand.label()).clicked() {
                     out = Some(cand);
                 }
@@ -943,7 +943,7 @@ pub(crate) fn color_combo(
 pub(crate) fn section_title(ui: &mut Ui, icon: &str, title: &str) {
     ui.horizontal(|ui| {
         let (r, _) = ui.allocate_exact_size(Vec2::splat(16.0), Sense::hover());
-        crate::icons::paint(ui.painter(), r, icon, Palette::ACCENT);
+        crate::icons::paint(ui.painter(), r, icon, Palette::accent());
         ui.label(theme::bold(title, 12.5));
     });
     ui.add_space(4.0);
@@ -1134,14 +1134,14 @@ fn sheet_props(app: &mut App, ui: &mut Ui, sid: Id) {
         let (rect, resp) = ui.allocate_exact_size(Vec2::new(ui.available_width(), 24.0), Sense::click());
         if ui.is_rect_visible(rect) {
             if sel {
-                ui.painter().rect_filled(rect, Rounding::same(4.0), Palette::ACCENT_SOFT);
+                ui.painter().rect_filled(rect, Rounding::same(4.0), Palette::accent_soft());
             }
             ui.painter().text(
                 Pos2::new(rect.left() + 6.0, rect.center().y),
                 egui::Align2::LEFT_CENTER,
                 format!("{} · {}", vp.name, format_scale(vp.scale)),
                 FontId::proportional(11.0),
-                if sel { Palette::ACCENT } else { Palette::TEXT_DIM },
+                if sel { Palette::accent() } else { Palette::text_dim() },
             );
         }
         if resp.clicked() {

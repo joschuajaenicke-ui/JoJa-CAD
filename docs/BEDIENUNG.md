@@ -118,6 +118,11 @@ ausgeblendet.
 - **Linien** werden als Kapsel gezeichnet: Rechteck plus Halbkreis an beiden Enden. Dadurch sind
   auch die Übergänge in Polylinien, Bögen und an Wandanschlüssen rund statt eckig.
 - **Ribbon** lässt sich über den Pfeil rechts in der Kopfzeile einklappen; die Reiter bleiben sichtbar.
+- **Helles und dunkles Design** (Einstellungen ▸ Darstellung ▸ „Design"): **System** ist der
+  Programmstandard und folgt dem hellen oder dunklen Farbschema des Betriebssystems (unter KDE
+  dessen Fensterhintergrund, unter GTK „prefer dark"), **Hell** und **Dunkel** überstimmen es.
+  Die Wahl wirkt sofort und steht in `prefs.json` (`design: system | hell | dunkel`). Die
+  Zeichenfläche bleibt in beiden Designs Papier — es wechselt nur die Bedienoberfläche.
 - **Fenster ohne Titelleiste** (Einstellungen ▸ Bedienung ▸ „Fensterrahmen", *experimentell*): meldet
   dem Fenstermanager „keine Dekoration" — unter KDE/X11 über `_MOTIF_WM_HINTS`, unter
   KDE/Wayland über die Anfrage nach *client-seitiger* Dekoration, unter Windows als rahmenloses
