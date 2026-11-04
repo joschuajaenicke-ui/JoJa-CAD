@@ -951,7 +951,7 @@ fn sheet_title_block_uses_sheet_scale() {
         .unwrap();
     let bbox = s.doc.bbox();
     let center = bbox.center();
-    let vid = s.doc.sheets[0].viewports[0].id;
+    let vid = s.doc.sheets[0].viewports().next().map(|(e, _)| e.id).expect("Ansichtsfenster");
     s.execute(
         "sheet.update_viewport",
         &json!({"sheet": sheet_id, "viewport": vid, "scale": 50, "center": [center.x / 1000.0, center.y / 1000.0]}),

@@ -156,6 +156,12 @@ Ansichtsfenster mischen zwei Räume: `x`/`y`/`w`/`h` bzw. `rect_mm` sind
 `sheet.fit_viewport` setzt die Mitte auf die Zeichnungs-BBox und den Maßstab aus
 der Fenstergröße (siehe `docs/MCP.md`).
 
+Ein Ansichtsfenster ist seit T0109 ein **normales Blattobjekt**
+(`EntityKind::Viewport`): `modify.move`, `modify.erase` und `modify.set`
+(`x`, `y`, `w`, `h`, `scale`, `center`, `show_frame`, `name`) arbeiten darauf wie
+auf jeder Linie. Die Aktionen `sheet.*_viewport` bleiben für MCP und ältere
+Aufrufer bestehen und ändern dasselbe Objekt.
+
 ## Auswahl und Abfragen
 
 | ID | Parameter | Hinweise |

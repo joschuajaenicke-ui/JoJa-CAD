@@ -1383,6 +1383,20 @@ pub fn hit_test(doc: &Document, p: Vec2, tol: f64, layer_filter: Option<&[Id]>) 
                 continue;
             }
         }
+        // Ansichtsfenster: die ganze Fläche zählt — es ist der Hintergrund des
+        // Blatts, ein Klick in die Mitte muss es wählen (T0109). Objekte
+        // darüber (Rahmen, Schriftfeld, Texte) haben Vorrang, deshalb
+        // Priorität wie ein Textfeld.
+        if let EntityKind::Viewport(vp) = &e.kind {
+            if vp.rect().contains(p) {
+                let d = b.center().dist(p);
+                let prio = 2;
+                if best.map(|(_, bd, bp)| prio < bp || (prio == bp && d < bd)).unwrap_or(true) {
+                    best = Some((e.id, d, prio));
+                }
+            }
+            continue;
+        }
         // Bild: die ganze Fläche zählt — der Rahmen ist nicht gezeichnet, ein
         // Klick auf die Bildmitte muss das Bild wählen. Objekte darüber (Wand,
         // Linie, Text) haben Vorrang, deshalb Priorität wie ein Textfeld.
@@ -1530,6 +1544,8 @@ pub fn select_window(doc: &Document, a: Vec2, b: Vec2, crossing: bool) -> Vec<Id
                 // Bild: die Fläche ist das Rechteck — dieselbe Trefferfläche
                 // wie beim Klick (T0100).
                 | EntityKind::Image { .. }
+                // Ansichtsfenster: die Fläche ist das Rechteck (T0109).
+                | EntityKind::Viewport(_)
         );
         if flaechig {
             if (crossing && bb.intersects(&rect)) || (!crossing && rect.contains_bbox(&bb)) {

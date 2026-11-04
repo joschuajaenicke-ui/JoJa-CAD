@@ -615,8 +615,8 @@ fn sheet_tool(server: &mut Server, args: &Value) -> Result<Value, String> {
                         "landscape": s.landscape,
                         "scale": s.scale,
                         "units": einheit.short(),
-                        "viewports": s.viewports.iter()
-                            .map(|v| actions::viewport_info(einheit, v))
+                        "viewports": s.viewports()
+                            .map(|(_, v)| actions::viewport_info(einheit, v))
                             .collect::<Vec<_>>(),
                     })
                 })

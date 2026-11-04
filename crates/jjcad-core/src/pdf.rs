@@ -898,8 +898,9 @@ fn draw_sheet_page(doc: &Document, sheet: &Sheet) -> Page {
     };
     draw_display_list(&mut c, &dl, &page_xf, 1.0);
 
-    // Ansichtsfenster
-    for vp in &sheet.viewports {
+    // Ansichtsfenster: der Inhalt liegt über dem Blatt, wird aber auf das
+    // Fenster beschnitten — Rahmen und Schriftfeld bleiben sichtbar.
+    for (_, vp) in sheet.viewports() {
         let vl = render::render_viewport(doc, vp);
         c.save();
         c.clip_rect(vp.x, vp.y, vp.w, vp.h);
@@ -909,6 +910,7 @@ fn draw_sheet_page(doc: &Document, sheet: &Sheet) -> Page {
         draw_display_list(&mut c, &vl, &xf, scale);
         c.restore();
     }
+
     Page {
         width_pt: pw * MM2PT,
         height_pt: ph * MM2PT,

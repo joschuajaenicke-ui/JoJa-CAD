@@ -153,20 +153,25 @@ schneidet die Öffnung aus der Wand und zeichnet die Laibungen.
   "scale": 50.0,
   "frame": true,
   "show_title_block": true,
-  "viewports": [
-    { "id": 61, "name": "Ansicht", "x": 15.0, "y": 83.0, "w": 395.0, "h": 204.0,
-      "center": { "x": 5250.0, "y": 4100.0 }, "scale": 50.0,
-      "show_frame": false, "locked": false, "layers": null }
-  ],
-  "entities": [ "...": "Schriftfeld im Papierraum (mm)" ]
+  "entities": [
+    { "id": 61, "kind": { "type": "viewport", "id": 61, "name": "Ansicht",
+        "x": 15.0, "y": 83.0, "w": 395.0, "h": 204.0,
+        "center": { "x": 5250.0, "y": 4100.0 }, "scale": 50.0,
+        "show_frame": false, "locked": false, "layers": null } },
+    "...": "Schriftfeld im Papierraum (mm)"
+  ]
 }
 ```
 
-- `x/y/w/h` sind **Papierkoordinaten in mm**, Ursprung unten links.
-- `center` ist die Weltkoordinate in der Mitte des Fensters, `scale` der
-  Fenstermaßstab (1:`scale`).
 - `entities` im Blatt sind normale Zeichenobjekte im Papierraum — das Schriftfeld
   ist damit frei gestaltbar und kann ersetzt werden.
+- Ein **Ansichtsfenster** ist seit T0109 ebenfalls ein Objekt
+  (`"type": "viewport"`). `x/y/w/h` sind **Papierkoordinaten in mm**, Ursprung
+  unten links; `center` ist die Weltkoordinate in der Mitte des Fensters,
+  `scale` der Fenstermaßstab (1:`scale`).
+- Das frühere Feld `sheets[].viewports` wird nur noch **gelesen**: beim Laden
+  wandert jedes Fenster als Objekt in `entities`
+  (`persist::normalize_sheet_viewports`). Geschrieben wird es nicht mehr.
 
 ## `dim_style`
 

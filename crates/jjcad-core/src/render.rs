@@ -582,6 +582,11 @@ pub fn preview_selection(doc: &Document, ids: &[Id], delta: Vec2) -> DisplayList
 }
 
 pub fn entity_bbox(doc: &Document, e: &Entity) -> BBox {
+    // Ansichtsfenster: die Fläche ist das Rechteck, auch wenn der Rahmen
+    // abgeschaltet ist (dann zeichnet der Renderer nichts).
+    if let EntityKind::Viewport(vp) = &e.kind {
+        return vp.rect();
+    }
     let ctx = RenderCtx::for_entity(doc, e);
     let mut dl = DisplayList::default();
     render_entity(&ctx, e, Affine::IDENTITY, &mut dl, 0);
@@ -1183,6 +1188,25 @@ pub fn render_entity(
                 entity: e.id,
                 layer: e.layer,
             });
+        }
+        // Ansichtsfenster: nur der Rahmen. Den Inhalt (die Zeichnung im
+        // Maßstab) legt der Aufrufer darunter — er braucht den Modell-Durchgang
+        // und den Beschnitt, den ein einzelnes Objekt nicht kennt.
+        EntityKind::Viewport(vp) => {
+            if vp.show_frame {
+                let ecken = [
+                    xf.apply(v(vp.x, vp.y)),
+                    xf.apply(v(vp.x + vp.w, vp.y)),
+                    xf.apply(v(vp.x + vp.w, vp.y + vp.h)),
+                    xf.apply(v(vp.x, vp.y + vp.h)),
+                ];
+                dl.push(Prim {
+                    shape: Shape::Poly(vec![ecken[0], ecken[1], ecken[2], ecken[3], ecken[0]], false),
+                    style: st,
+                    entity: e.id,
+                    layer: e.layer,
+                });
+            }
         }
     }
 }
@@ -3826,30 +3850,9 @@ pub fn render_viewport(doc: &Document, vp: &Viewport) -> DisplayList {
         volumes: OnceCell::new(),
         wall_edges: OnceCell::new(),
     };
-    let mut dl = render_document(&ctx);
-    // Auf Fensterfläche beschneiden: Primitive werden bei Bedarf gekürzt.
-    if vp.show_frame {
-        dl.push(Prim {
-            shape: Shape::Poly(
-                vec![
-                    v(vp.x, vp.y),
-                    v(vp.x + vp.w, vp.y),
-                    v(vp.x + vp.w, vp.y + vp.h),
-                    v(vp.x, vp.y + vp.h),
-                ],
-                true,
-            ),
-            style: PrimStyle {
-                color: Color::GREY,
-                line_type: LineType::Solid,
-                width: 0.18,
-                fill: None,
-            },
-            entity: 0,
-            layer: 0,
-        });
-    }
-    dl
+    // Der Rahmen des Fensters ist ein Blattobjekt (`EntityKind::Viewport`) und
+    // kommt aus `render_sheet` — hier nur der Inhalt, in Modellkoordinaten.
+    render_document(&ctx)
 }
 
 // ---------------------------------------------------------------------------
@@ -4069,6 +4072,20 @@ fn entity_segments_tief(doc: &Document, e: &Entity, depth: usize) -> Vec<Seg> {
         // das Bild, die Fläche selbst bleibt (wie bei Füllflächen) außen vor.
         EntityKind::Image { a, b, .. } => {
             let ecken = crate::bild::ecken(*a, *b);
+            for i in 0..4 {
+                out.push(Seg::Line(ecken[i], ecken[(i + 1) % 4]));
+            }
+        }
+        // Ansichtsfenster: die vier Kanten des Rechtecks — dieselbe Fläche,
+        // die der Rahmen zeigt (auch bei abgeschaltetem Rahmen, sonst wäre das
+        // Fenster nicht mehr anzuklicken).
+        EntityKind::Viewport(vp) => {
+            let ecken = [
+                v(vp.x, vp.y),
+                v(vp.x + vp.w, vp.y),
+                v(vp.x + vp.w, vp.y + vp.h),
+                v(vp.x, vp.y + vp.h),
+            ];
             for i in 0..4 {
                 out.push(Seg::Line(ecken[i], ecken[(i + 1) % 4]));
             }

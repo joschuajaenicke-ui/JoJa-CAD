@@ -797,6 +797,15 @@ pub enum EntityKind {
         #[serde(default)]
         data: String,
     },
+    /// Ansichtsfenster im Papierraum (T0109).
+    ///
+    /// Bis dahin lag es in einer eigenen Liste (`Sheet::viewports`) mit
+    /// eigenem Auswahlfeld, eigenem Verschieben und ohne Griffe — es ließ sich
+    /// weder über ein Auswahlfenster wählen noch löschen. Jetzt ist es ein
+    /// **normales Blattobjekt**: Rechteck in Papier-Millimetern, vier
+    /// Eckgriffe, verschiebbar und löschbar wie jede Linie. Der Inhalt
+    /// (die Zeichnung im Maßstab) wird weiterhin aus dem Modell gerendert.
+    Viewport(Viewport),
 }
 
 // ---------------------------------------------------------------------------
@@ -837,6 +846,9 @@ impl EntityKind {
             // Ein Bild ist ein Hintergrund: es liegt hinter Flächen und Linien
             // (eingescannte Pläne, Lagepläne), wie eine Füllfläche.
             EntityKind::Image { .. } => RANG_FLAECHE,
+            // Ein Ansichtsfenster ist der Hintergrund des Blatts: es liegt
+            // hinter Rahmen, Schriftfeld und allem, was darauf gezeichnet ist.
+            EntityKind::Viewport(_) => RANG_FLAECHE,
             EntityKind::Volume { .. } => RANG_VOLUMEN,
             EntityKind::Wall { .. }
             | EntityKind::Door { .. }
@@ -921,6 +933,7 @@ impl EntityKind {
             EntityKind::Stair { .. } => "Treppe",
             EntityKind::BlockRef { .. } => "Block",
             EntityKind::Image { .. } => "Bild",
+            EntityKind::Viewport(_) => "Ansichtsfenster",
         }
     }
 
@@ -1210,8 +1223,11 @@ pub struct Sheet {
     pub frame: bool,
     #[serde(default)]
     pub show_title_block: bool,
-    #[serde(default)]
-    pub viewports: Vec<Viewport>,
+    /// Altbestand: Ansichtsfenster lagen bis T0109 in einer eigenen Liste.
+    /// Beim Laden werden sie zu Objekten (`persist::normalize_sheet_viewports`);
+    /// geschrieben wird die Liste nicht mehr.
+    #[serde(rename = "viewports", default, skip_serializing)]
+    pub viewports_alt: Vec<Viewport>,
     /// Zeichnungselemente im Papierraum (Schriftfeld etc.)
     #[serde(default)]
     pub entities: Vec<Entity>,
@@ -1229,8 +1245,16 @@ impl Sheet {
         let (w, h) = self.size();
         BBox::new(v(0.0, 0.0), v(w, h))
     }
+    /// Ansichtsfenster des Blatts als Objekte, in Zeichenreihenfolge.
+    pub fn viewports(&self) -> impl Iterator<Item = (&Entity, &Viewport)> {
+        self.entities.iter().filter_map(|e| match &e.kind {
+            EntityKind::Viewport(vp) => Some((e, vp)),
+            _ => None,
+        })
+    }
+
     pub fn viewport(&self, id: Id) -> Option<&Viewport> {
-        self.viewports.iter().find(|v| v.id == id)
+        self.viewports().find(|(e, _)| e.id == id).map(|(_, vp)| vp)
     }
 }
 

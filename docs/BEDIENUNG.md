@@ -53,8 +53,11 @@ einsehbar und dort frei änderbar (Ribbon ▸ Ansicht ▸ „Tasten").
     Spiegeln, Zerlegen, Löschen und Eigenschaften für das angeklickte Element. Auf freier
     Fläche erscheint das Flächenmenü (Einfügen, Alles auswählen, Auswahl aufheben, Ansicht
     einpassen).
-11. **Ansichtsfenster**: auf einem Blatt über `Blatt ▸ Ansicht` als Rechteck aufziehen, per Klick
-    auswählen, mit `V` verschieben oder über `X`/`Y`/`B`/`H` im Panel exakt setzen.
+11. **Ansichtsfenster**: auf einem Blatt über `Blatt ▸ Ansicht` als Rechteck aufziehen. Es ist
+    ein normales Blattobjekt: per Klick oder Auswahlfenster wählen, an den vier Eckgriffen
+    aufziehen, mit der Maus verschieben (Einstellungen ▸ Bedienung ▸ „Maus verschiebt") oder
+    mit dem Werkzeug „Verschieben" über einen Richtungsvektor, mit `Entf` löschen. `X`/`Y`/`B`/`H`
+    stehen im Eigenschaften-Panel.
 12. **Einstellungen** (Zahnrad) — links eine Tabelle der Kategorien (Einheiten und Maßstab,
     Raster, Fangen, Architektur, Bemaßung, Bedienung, Darstellung), darüber die Suche, rechts die
     Einstellungen der gewählten Kategorie. Die Suche filtert Kategorien **und** Zeilen und springt

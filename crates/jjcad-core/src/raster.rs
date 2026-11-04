@@ -416,7 +416,7 @@ pub fn render_sheet_pixmap(doc: &Document, sheet: &Sheet, opts: &RasterOptions) 
     let dl = crate::render::render_sheet(doc, sheet);
     draw_dl(&mut pm, &dl, &map, k);
 
-    for vp in &sheet.viewports {
+    for (_, vp) in sheet.viewports() {
         let sub_w = (vp.w * k).round().max(1.0) as u32;
         let sub_h = (vp.h * k).round().max(1.0) as u32;
         let Some(mut sub) = Pixmap::new(sub_w, sub_h) else {

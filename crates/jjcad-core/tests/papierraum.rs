@@ -151,8 +151,14 @@ fn plankopf_besteht_aus_linien_und_textfeldern() {
         .count();
     assert!(linien >= 10, "Rahmenlinien fehlen: {linien}");
     assert!(texte >= 8, "Textfelder fehlen: {texte}");
-    // Kein anderes Element im Plankopf: er besteht nur aus Linien und Texten.
-    assert_eq!(linien + texte, sheet.entities.len());
+    // Kein anderes Element im Plankopf: er besteht nur aus Linien und Texten —
+    // dazu das Ansichtsfenster, das seit T0109 ein normales Blattobjekt ist.
+    let fenster = sheet
+        .entities
+        .iter()
+        .filter(|e| matches!(e.kind, EntityKind::Viewport(_)))
+        .count();
+    assert_eq!(linien + texte + fenster, sheet.entities.len());
 
     // Eigene, eindeutige IDs — sonst kollidieren Auswahl und Bearbeitung.
     let mut ids: Vec<u64> = sheet.entities.iter().map(|e| e.id).collect();
@@ -246,7 +252,7 @@ fn ansichtsfenster_zeigt_weiter_die_zeichnung() {
     let modell_id = sess.doc.entities[0].id;
     in_papierraum(&mut sess);
 
-    let vp = sess.doc.sheets[0].viewports[0].clone();
+    let vp = sess.doc.sheets[0].viewports().next().map(|(_, v)| v.clone()).expect("Ansichtsfenster");
     let dl = jjcad_core::render::render_viewport(&sess.doc, &vp);
     assert!(
         dl.prims.iter().any(|p| p.entity == modell_id),

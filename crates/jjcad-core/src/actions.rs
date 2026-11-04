@@ -742,6 +742,7 @@ pub fn erzeuger_fuer(kind: &EntityKind) -> &'static str {
         EntityKind::Stair { .. } => "draw.stair",
         EntityKind::BlockRef { .. } => "block.insert",
         EntityKind::Image { .. } => "draw.image",
+        EntityKind::Viewport(_) => "sheet.viewport_tool",
     }
 }
 
@@ -1358,6 +1359,31 @@ fn add_filled(
 // ist eine Modellkoordinate in der Einheit `units` (Vorgabe: Dokumenteinheit)
 // und `center_mm` dieselbe Lage in Millimetern. Gelesen wird genauso
 // (`viewport_info`), damit Hin- und Rückweg ohne Kopfrechnen zusammenpassen.
+
+/// Ansichtsfenster-Objekt eines Blatts (T0109).
+///
+/// Seit T0109 ist ein Ansichtsfenster ein normales Blattobjekt
+/// (`EntityKind::Viewport`) — die Aktionen suchen es deshalb in
+/// `sheet.entities`, nicht mehr in einer eigenen Liste.
+fn viewport_mut(sheet: &mut Sheet, id: Id) -> Option<&mut Viewport> {
+    sheet.entities.iter_mut().find_map(|e| {
+        if e.id != id {
+            return None;
+        }
+        match &mut e.kind {
+            EntityKind::Viewport(vp) => Some(vp),
+            _ => None,
+        }
+    })
+}
+
+/// Erstes Ansichtsfenster eines Blatts (für Aktionen ohne `viewport`-Angabe).
+fn erster_viewport_mut(sheet: &mut Sheet) -> Option<&mut Viewport> {
+    sheet.entities.iter_mut().find_map(|e| match &mut e.kind {
+        EntityKind::Viewport(vp) => Some(vp),
+        _ => None,
+    })
+}
 
 /// Rechteck eines Ansichtsfensters übernehmen (`rect_mm` oder `x`/`y`/`w`/`h`).
 fn viewport_rect(p: &Params, vp: &mut Viewport) -> Result<(), String> {
@@ -3130,6 +3156,35 @@ pub fn execute(doc: &mut Document, id: &str, params: &Value) -> Result<Value, St
                                 *pts = q;
                             }
                         }
+                        // Ansichtsfenster (T0109): Papierlage und -größe in
+                        // Millimetern (wie `sheet.update_viewport`), Maßstab,
+                        // Modellmitte und Rahmen.
+                        EntityKind::Viewport(vp) => {
+                            if let Some(v) = p.num("x") {
+                                vp.x = v;
+                            }
+                            if let Some(v) = p.num("y") {
+                                vp.y = v;
+                            }
+                            if let Some(v) = p.num("w") {
+                                vp.w = v.max(1.0);
+                            }
+                            if let Some(v) = p.num("h") {
+                                vp.h = v.max(1.0);
+                            }
+                            if let Some(v) = p.num("scale").filter(|s| *s > 0.0) {
+                                vp.scale = v;
+                            }
+                            if let Some(q) = p.pt("center") {
+                                vp.center = q;
+                            }
+                            if let Some(b) = p.boolean("show_frame") {
+                                vp.show_frame = b;
+                            }
+                            if let Some(n) = p.text("name") {
+                                vp.name = n;
+                            }
+                        }
                         _ => {}
                     }
                     changed += 1;
@@ -3474,8 +3529,11 @@ pub fn execute(doc: &mut Document, id: &str, params: &Value) -> Result<Value, St
             let vid = vp.id;
             let einheit = doc.settings.input_unit;
             let info = viewport_info(einheit, &vp);
+            let mut e = Entity::new(vid, 0, EntityKind::Viewport(vp));
+            e.style.color = Some(Color::BLACK);
             if let Some(sh) = doc.sheet_mut(sid) {
-                sh.viewports.push(vp);
+                // Hinter allem, was schon auf dem Blatt steht.
+                sh.entities.insert(0, e);
             }
             Ok(json!({"ok": true, "viewport": vid, "viewport_info": info}))
         }
@@ -3484,10 +3542,7 @@ pub fn execute(doc: &mut Document, id: &str, params: &Value) -> Result<Value, St
             let vid = p.id("viewport").unwrap_or(0);
             let einheit = doc.settings.input_unit;
             let sheet = doc.sheet_mut(sid).ok_or_else(|| "Blatt nicht gefunden".to_string())?;
-            let vp = sheet
-                .viewports
-                .iter_mut()
-                .find(|v| v.id == vid)
+            let vp = viewport_mut(sheet, vid)
                 .ok_or_else(|| "Ansichtsfenster nicht gefunden".to_string())?;
             viewport_rect(&p, vp)?;
             if let Some(s) = p.num("scale").filter(|s| *s > 0.0) {
@@ -3520,12 +3575,9 @@ pub fn execute(doc: &mut Document, id: &str, params: &Value) -> Result<Value, St
             let einheit = doc.settings.input_unit;
             let sheet = doc.sheet_mut(sid).ok_or_else(|| "Blatt nicht gefunden".to_string())?;
             let vp = match vid {
-                Some(vid) => sheet
-                    .viewports
-                    .iter_mut()
-                    .find(|v| v.id == vid)
+                Some(vid) => viewport_mut(sheet, vid)
                     .ok_or_else(|| "Ansichtsfenster nicht gefunden".to_string())?,
-                None => sheet.viewports.first_mut().ok_or_else(|| {
+                None => erster_viewport_mut(sheet).ok_or_else(|| {
                     "Blatt hat kein Ansichtsfenster — erst 'sheet.add_viewport'".to_string()
                 })?,
             };
@@ -3558,7 +3610,7 @@ pub fn execute(doc: &mut Document, id: &str, params: &Value) -> Result<Value, St
             let sid = p.id("sheet").unwrap_or(0);
             let vid = p.id("viewport").unwrap_or(0);
             if let Some(sh) = doc.sheet_mut(sid) {
-                sh.viewports.retain(|v| v.id != vid);
+                sh.entities.retain(|e| e.id != vid);
             }
             Ok(json!({"ok": true}))
         }

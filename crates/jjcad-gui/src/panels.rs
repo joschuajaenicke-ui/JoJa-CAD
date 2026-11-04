@@ -385,6 +385,7 @@ pub fn properties(app: &mut App, ui: &mut Ui) {
                     "draw.stair" => crate::props::treppe(app, ui, ziel),
                     "dim.room" => crate::props::raumstempel(app, ui, ziel),
                     "dim.linear" => crate::props::bemassung(app, ui, ziel),
+                    "sheet.viewport_tool" => crate::props::viewport(app, ui, ziel),
                     "draw.volume" | "draw.volume.points" | "draw.volume.paint" => {
                         crate::props::volumen(app, ui, ziel)
                     }
@@ -439,6 +440,9 @@ pub fn properties(app: &mut App, ui: &mut Ui) {
                     }
                     Some(jjcad_core::model::EntityKind::Room { .. }) => {
                         crate::props::raumstempel(app, ui, ziel)
+                    }
+                    Some(jjcad_core::model::EntityKind::Viewport(_)) => {
+                        crate::props::viewport(app, ui, ziel)
                     }
                     Some(kind) => match crate::props::Einfach::aus_objekt(&kind) {
                         Some(art) => crate::props::einfach(app, ui, ziel, art),
@@ -1128,93 +1132,11 @@ fn sheet_props(app: &mut App, ui: &mut Ui, sid: Id) {
     });
     ui.add_space(4.0);
 
-    let selected_vp = app.tab().selected_viewport;
-    for vp in &sheet.viewports {
-        let sel = selected_vp == Some(vp.id);
-        let (rect, resp) = ui.allocate_exact_size(Vec2::new(ui.available_width(), 24.0), Sense::click());
-        if ui.is_rect_visible(rect) {
-            if sel {
-                ui.painter().rect_filled(rect, Rounding::same(4.0), Palette::accent_soft());
-            }
-            ui.painter().text(
-                Pos2::new(rect.left() + 6.0, rect.center().y),
-                egui::Align2::LEFT_CENTER,
-                format!("{} · {}", vp.name, format_scale(vp.scale)),
-                FontId::proportional(11.0),
-                if sel { Palette::accent() } else { Palette::text_dim() },
-            );
-        }
-        if resp.clicked() {
-            app.tab_mut().selected_viewport = Some(vp.id);
-        }
-    }
-    if let Some(vid) = selected_vp {
-        if let Some(vp) = sheet.viewports.iter().find(|v| v.id == vid) {
-            ui.add_space(6.0);
-            let mut vs = vp.scale;
-            widgets::field_row(ui, jjcad_core::i18n::tr("gui.panels.ansicht"), |ui| {
-                if ui.add_sized([70.0, 20.0], crate::widgets::zahl(&mut vs, 1.0, 1.0..=1000.0)).changed() {
-                    let _ = app.session_mut().execute(
-                        "sheet.update_viewport",
-                        &json!({"sheet": sid, "viewport": vid, "scale": vs}),
-                    );
-                    app.mark_changed();
-                }
-            });
-            // Exakte Papierlage und Größe
-            let mut vx = vp.x;
-            let mut vy = vp.y;
-            let mut vw = vp.w;
-            let mut vh = vp.h;
-            let mut geom_changed = false;
-            widgets::field_row(ui, jjcad_core::i18n::tr("gui.panels.x_y_mm"), |ui| {
-                geom_changed |= ui.add_sized([52.0, 20.0], crate::widgets::zahl(&mut vx, 1.0, widgets::KOORD_MIN_MM..=widgets::KOORD_MAX_MM)).changed();
-                geom_changed |= ui.add_sized([52.0, 20.0], crate::widgets::zahl(&mut vy, 1.0, widgets::KOORD_MIN_MM..=widgets::KOORD_MAX_MM)).changed();
-            });
-            widgets::field_row(ui, jjcad_core::i18n::tr("gui.panels.b_h_mm"), |ui| {
-                geom_changed |= ui.add_sized([52.0, 20.0], crate::widgets::zahl(&mut vw, 0.5, 10.0..=2000.0)).changed();
-                geom_changed |= ui.add_sized([52.0, 20.0], crate::widgets::zahl(&mut vh, 0.5, 10.0..=2000.0)).changed();
-            });
-            if geom_changed {
-                let _ = app.session_mut().execute(
-                    "sheet.update_viewport",
-                    &json!({"sheet": sid, "viewport": vid, "x": vx, "y": vy, "w": vw, "h": vh}),
-                );
-                app.mark_changed();
-            }
-            ui.horizontal(|ui| {
-                if ui.button(jjcad_core::i18n::tr("gui.panels.auf_zeichnung_zentrieren")).clicked() {
-                    let c = app.doc().bbox();
-                    let u = app.unit();
-                    if c.is_valid() {
-                        let cx = u.from_mm(c.center().x);
-                        let cy = u.from_mm(c.center().y);
-                        let _ = app.session_mut().execute(
-                            "sheet.update_viewport",
-                            &json!({"sheet": sid, "viewport": vid, "center": [cx, cy]}),
-                        );
-                        app.mark_changed();
-                    }
-                }
-                if ui.button(jjcad_core::i18n::tr("gui.panels.entfernen")).clicked() {
-                    let _ = app.session_mut().execute(
-                        "sheet.remove_viewport",
-                        &json!({"sheet": sid, "viewport": vid}),
-                    );
-                    app.tab_mut().selected_viewport = None;
-                    app.mark_changed();
-                }
-            });
-            let mut show_frame = vp.show_frame;
-            if ui.checkbox(&mut show_frame, jjcad_core::i18n::tr("gui.panels.fensterrahmen_zeigen")).changed() {
-                let _ = app.session_mut().execute(
-                    "sheet.update_viewport",
-                    &json!({"sheet": sid, "viewport": vid, "show_frame": show_frame}),
-                );
-                app.mark_changed();
-            }
-        }
-    }
+    // Ein Ansichtsfenster ist seit T0109 ein normales Blattobjekt: es wird im
+    // Papierraum angeklickt und im Eigenschaften-Panel geändert wie jede Linie.
+    ui.label(theme::dim(jjcad_core::i18n::tr(
+        "gui.panels.ansichtsfenster_sind_normale_objekte_im_papierraum",
+    )));
 }
 
 /// Anzeigezeilen des Abschnitts „Zeichnung": alles, was die Zeichnungsdatei

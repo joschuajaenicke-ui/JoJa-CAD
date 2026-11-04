@@ -21,6 +21,19 @@ pub fn transform_kind(k: &EntityKind, m: &Affine) -> EntityKind {
     let f = m.scale_factor();
     let nonuniform = ((sx(m) - sy(m)).abs() > 1e-9).then_some((sx(m), sy(m)));
     match k {
+        // Ansichtsfenster: das Rechteck folgt der Abbildung (Verschieben,
+        // Drehen, Spiegeln) und bleibt achsenparallel — die Bounding-Box der
+        // abgebildeten Ecken. Maßstab und Modellmitte bleiben stehen.
+        EntityKind::Viewport(vp) => {
+            let a = m.apply(v(vp.x, vp.y));
+            let b = m.apply(v(vp.x + vp.w, vp.y + vp.h));
+            let mut neu = vp.clone();
+            neu.x = a.x.min(b.x);
+            neu.y = a.y.min(b.y);
+            neu.w = (a.x - b.x).abs().max(1.0);
+            neu.h = (a.y - b.y).abs().max(1.0);
+            EntityKind::Viewport(neu)
+        }
         EntityKind::Point { p } => EntityKind::Point { p: m.apply(*p) },
         EntityKind::Line { a, b } => EntityKind::Line {
             a: m.apply(*a),

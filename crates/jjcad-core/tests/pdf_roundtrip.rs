@@ -147,19 +147,28 @@ fn rundlauf(pdf_name: &str) -> (Document, Document, PathBuf) {
     // in Papierkoordinaten.
     if let Some(sheet) = s.doc.sheets.first_mut() {
         let (pw, ph) = sheet.size();
-        sheet.viewports = vec![Viewport {
-            id: 1,
-            name: "Import 1:1".to_string(),
-            x: 0.0,
-            y: 0.0,
-            w: pw,
-            h: ph,
-            center: v(pw * 0.5, ph * 0.5),
-            scale: 1.0,
-            show_frame: false,
-            locked: false,
-            layers: None,
-        }];
+        // Ansichtsfenster ist seit T0109 ein normales Blattobjekt.
+        sheet.entities.retain(|e| !matches!(e.kind, EntityKind::Viewport(_)));
+        sheet.entities.insert(
+            0,
+            Entity::new(
+                1,
+                0,
+                EntityKind::Viewport(Viewport {
+                    id: 1,
+                    name: "Import 1:1".to_string(),
+                    x: 0.0,
+                    y: 0.0,
+                    w: pw,
+                    h: ph,
+                    center: v(pw * 0.5, ph * 0.5),
+                    scale: 1.0,
+                    show_frame: false,
+                    locked: false,
+                    layers: None,
+                }),
+            ),
+        );
     }
     (original, s.doc, pfad)
 }

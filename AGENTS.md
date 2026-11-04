@@ -132,7 +132,13 @@ Mit dem Nutzer abgestimmt — nicht „verbessern“:
   **nicht** die DIN 1451. Die Auswahl `widgets::schrift_wahl` zeigt jede Zeile in ihrer
   eigenen Schrift und läuft über `panels::dropdown` (kein `egui::ComboBox`).
 - **Raster-Chip** schaltet Anzeige *und* Rasterfang gemeinsam.
-- **Ansichtsfenster** wie Rechtecke, beweglich nur mit `V`, exakte Eingabe X/Y/B/H.
+- **Ansichtsfenster (T0109)** sind **normale Blattobjekte** (`EntityKind::Viewport` in
+  `sheet.entities`, nicht mehr `Sheet::viewports`): vier Eckgriffe wie ein Rechteck, Auswahl per
+  Klick und Auswahlfenster, Verschieben per Maus („Maus verschiebt") oder Werkzeug „Verschieben",
+  Löschen mit `Entf`, Eigenschaften im Panel (`props::viewport`). Die alte Liste
+  `Sheet::viewports_alt` wird nur noch beim Laden gelesen (`persist::normalize_sheet_viewports`).
+  Den Inhalt (die Zeichnung im Maßstab) rendert weiterhin `render::render_viewport`; der Rahmen
+  kommt aus `render_sheet`.
 - **Druckvorschau = Papierraum**: gleiche Werkzeuge wie im Modell. Der Bearbeitungsraum
   steckt in `Document::space` (`None` = Modell, `Some(Blatt)` = Papierraum); alle Actions
   laufen über `doc.ents()`/`doc.ents_mut()`. Rahmen und Schriftfeld sind normale Linien und
