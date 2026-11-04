@@ -541,6 +541,7 @@ impl<'a> Interp<'a> {
             superscript: erster.superscript,
             runs: acc.runs,
             font: acc.font,
+            line_spacing: 1.0,
         };
         self.push_color(kind, None, farbe);
     }

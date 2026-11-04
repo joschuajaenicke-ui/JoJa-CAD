@@ -57,6 +57,8 @@ pub struct TextPrim {
     pub runs: Vec<TextRun>,
     /// Schriftart des Textes (Familie für Satz und Linien).
     pub font: TextFont,
+    /// Zeilenabstand als Vielfaches der Zeilenhöhe der Schrift (1 = Vorgabe).
+    pub line_spacing: f64,
 }
 
 impl TextPrim {
@@ -75,9 +77,53 @@ impl TextPrim {
         }]
     }
 
-    /// Breite der breitesten Zeile in mm — dieselbe Rechnung wie beim Satz.
+    /// Zeilenhöhe der Schrift in Em (Aufstieg, Abstieg, Durchschuss).
+    ///
+    /// Genommen wird der größte der benutzten Schnitte — ein fetter Lauf hat
+    /// eine eigene Datei mit eigenen Maßen.
+    pub fn line_height_em(&self) -> f64 {
+        self.effective_runs()
+            .iter()
+            .map(|r| {
+                crate::fonts::line_height_em(
+                    self.font,
+                    crate::fonts::FontStyle::from_flags(r.bold, r.italic),
+                )
+            })
+            .fold(0.0, f64::max)
+            .max(0.5)
+    }
+
+    /// Zeilenhöhe in Welt-mm: Schriftgröße × Zeilenhöhe der Familie ×
+    /// Zeilenabstand des Objekts.
+    ///
+    /// Dieselbe Zeile setzt die Zeichenfläche (`TextFormat::line_height`) —
+    /// Rahmen und Schrift können damit nicht auseinanderlaufen.
+    pub fn line_height(&self) -> f64 {
+        self.height
+            * TEXT_GROESSE_FAKTOR
+            * self.line_height_em()
+            * self.line_spacing.clamp(0.1, 10.0)
+    }
+
+    /// Breite der breitesten Zeile in mm — aus den **echten** Vorschüben der
+    /// Schrift (Em-Einheiten der Datei), nicht aus einem Mittelwert je Zeichen.
     pub fn width(&self) -> f64 {
-        crate::text::width_em_mit_schrift(&self.text, &self.effective_runs(), self.font) * self.height
+        crate::text::width_em_mit_schrift(&self.text, &self.effective_runs(), self.font)
+            * self.height
+            * TEXT_GROESSE_FAKTOR
+    }
+
+    /// Zahl der Zeilen des gesetzten Textes (leere Zeilen zählen mit).
+    pub fn lines(&self) -> usize {
+        crate::text::layout_mit_schrift(&self.text, &self.effective_runs(), self.font)
+            .len()
+            .max(1)
+    }
+
+    /// Breite und Höhe des Textkastens in Welt-mm.
+    pub fn box_size(&self) -> (f64, f64) {
+        (self.width(), self.line_height() * self.lines() as f64)
     }
 }
 
@@ -174,9 +220,7 @@ impl Prim {
             Shape::Image { a, b, .. } => {
                 BBox::new(v(a.x.min(b.x), a.y.min(b.y)), v(a.x.max(b.x), a.y.max(b.y)))
             }
-            Shape::Text(t) => BBox::from_points(&text_corners(
-                t.pos, &t.text, t.height, t.angle, t.align, t.valign,
-            )),
+            Shape::Text(t) => BBox::from_points(&text_corners(t)),
         }
     }
 }
@@ -189,95 +233,86 @@ pub fn estimate_text_width(text: &str, height: f64) -> f64 {
     text.chars().count() as f64 * height * 0.58
 }
 
-/// Höhe der Textzeile (Kasten um den Text) in Welt-mm.
+/// Em-Größe je Texthöhe: die Texthöhe eines Textfeldes ist die Versalhöhe, die
+/// gezeichnete Schrift steht 1,32-mal so groß da.
 ///
-/// Die Anzeige setzt die Schrift auf `Höhe × 1,32` und legt die Zeile mit
-/// ihrem Zeilenabstand (× 1,2) um den Anker. Der Kasten ist deshalb höher als
-/// die reine Texthöhe: sonst lägen Unterlängen (g, p, j) außerhalb des Rahmens
-/// und der Rahmen schnitte die Schrift an.
-pub fn text_line_height(height: f64) -> f64 {
-    height * 1.4
-}
-
-/// Breite des Textkastens: enger am gezeichneten Text als
-/// [`estimate_text_width`], weil der Rahmen die Schrift wirklich umschließen
-/// muss.
-///
-/// Ein fester Faktor je Zeichen schneidet breite Buchstaben ab — „WOHNEN“ war
-/// im Rahmen sichtbar zu schmal, das letzte N lag außerhalb. Deshalb grobe
-/// Breitenklassen in Vielfachen der Texthöhe; lieber eine Spur zu breit als
-/// durch die Buchstaben geschnitten.
-pub fn text_box_width(text: &str, height: f64) -> f64 {
-    // Kleiner Rand je Seite (5 % der Höhe): die Schätzung liegt bei einzelnen
-    // Wörtern wenige Prozent daneben, und ein Rahmen darf die Schrift nicht
-    // schneiden.
-    let rand = height * 0.1;
-    text.chars().map(|c| char_width_factor(c) * height).sum::<f64>() + rand
-}
-
-/// Breite eines Zeichens in Vielfachen der Texthöhe (Noto Sans, grob).
-fn char_width_factor(c: char) -> f64 {
-    match c {
-        ' ' => 0.50,
-        'i' | 'l' | 'j' | 't' | 'f' | 'r' | 'I' | '1' | '.' | ',' | ';' | ':' | '\'' | '|' | '!' => {
-            0.40
-        }
-        'm' | 'w' => 1.05,
-        'M' | 'W' => 1.15,
-        c if c.is_ascii_digit() || c.is_uppercase() => 0.90,
-        c if c.is_lowercase() => 0.72,
-        _ => 0.60,
-    }
-}
-
-/// Zahl der Zeilen eines Textes — `\n` trennt, auch leere Zeilen zählen mit.
-pub fn text_lines(text: &str) -> usize {
-    text.split('\n').count().max(1)
-}
+/// Dieselbe Umrechnung benutzt die Zeichenfläche (`Höhe · Zoom · 1,32`) und der
+/// Editor in der Zeichnung. Rahmen, Fang und Vorschau müssen deshalb mit
+/// diesem Faktor rechnen, sonst umschließen sie die Schrift nicht (T0110).
+pub const TEXT_GROESSE_FAKTOR: f64 = 1.32;
 
 /// Breite und Höhe des Textkastens in Welt-mm.
 ///
-/// Mehrzeilig bestimmt die **breiteste Zeile** die Breite (nicht die Summe
-/// aller Zeichen), und die Zahl der Zeilen die Höhe. Vorher lief beides über
-/// den ganzen Text: bei zwei Zeilen war der Rahmen zu breit und nur eine
-/// Zeile hoch (T0025).
+/// Beides kommt aus den **echten** Schriftmaßen: die Breite aus den Vorschüben
+/// der breitesten Zeile, die Höhe aus der Zeilenhöhe der Familie (Aufstieg,
+/// Abstieg, Durchschuss) mal Zeilenzahl. Der Kasten wächst damit je Schrift
+/// verschieden — eine breite Schnittschrift bekommt einen breiteren Rahmen als
+/// eine schmale, und eine Familie mit großem Zeilenmaß (Rund 1,25 Em gegen
+/// DIN 1451 1,09 Em) höhere Zeilen (T0110). Ein Mittelwert je Zeichen schätzte
+/// das früher und schnitt die Schrift ab.
+pub fn text_box_mit(
+    text: &str,
+    runs: &[TextRun],
+    font: TextFont,
+    height: f64,
+    line_spacing: f64,
+) -> (f64, f64) {
+    text_prim(text, runs, font, height, line_spacing).box_size()
+}
+
+/// Wie [`text_box_mit`] ohne Läufe und in der Vorgabeschrift (serifenlos).
 pub fn text_box(text: &str, height: f64) -> (f64, f64) {
-    let breite = text
-        .split('\n')
-        .map(|zeile| text_box_width(zeile, height))
-        .fold(0.0_f64, f64::max);
-    (breite, text_line_height(height) * text_lines(text) as f64)
+    text_box_mit(text, &[], TextFont::default(), height, 1.0)
+}
+
+/// Textprim ohne Lage und Drehung — nur zum Messen des Kastens.
+fn text_prim(
+    text: &str,
+    runs: &[TextRun],
+    font: TextFont,
+    height: f64,
+    line_spacing: f64,
+) -> TextPrim {
+    TextPrim {
+        pos: Vec2::new(0.0, 0.0),
+        text: text.to_string(),
+        height,
+        angle: 0.0,
+        align: TextAlignH::Left,
+        valign: TextAlignV::Middle,
+        bold: false,
+        italic: false,
+        underline: false,
+        superscript: false,
+        runs: runs.to_vec(),
+        font,
+        line_spacing,
+    }
 }
 
 /// Die vier Ecken des Textkastens in Weltkoordinaten:
 /// links unten, rechts unten, rechts oben, links oben.
 ///
-/// Der Kasten hängt am Anker `pos` (waagerecht nach `align`, senkrecht nach
-/// `valign`) und wird um genau diesen Anker gedreht — dieselbe Lage, die die
-/// Anzeige zeichnet. Eine Quelle für Bounding-Box, Rahmen, Fang und Vorschau;
-/// deshalb ist der Rahmen eines gedrehten Textes ein **gedrehtes Viereck** und
-/// keine achsenparallele Box.
-pub fn text_corners(
-    pos: Vec2,
-    text: &str,
-    height: f64,
-    angle: f64,
-    align: TextAlignH,
-    valign: TextAlignV,
-) -> [Vec2; 4] {
-    let (w, h) = text_box(text, height);
-    let dx = match align {
+/// Der Kasten hängt am Anker `t.pos` (waagerecht nach `t.align`, senkrecht
+/// nach `t.valign`) und wird um genau diesen Anker gedreht — dieselbe Lage, die
+/// die Anzeige zeichnet. Gerechnet wird aus dem Textprim selbst (Text, Läufe,
+/// Schrift und Zeilenabstand): eine Quelle für Bounding-Box, Rahmen, Fang und
+/// Vorschau. Deshalb ist der Rahmen eines gedrehten Textes ein **gedrehtes
+/// Viereck** und keine achsenparallele Box.
+pub fn text_corners(t: &TextPrim) -> [Vec2; 4] {
+    let (w, h) = t.box_size();
+    let dx = match t.align {
         TextAlignH::Left => 0.0,
         TextAlignH::Center => -w * 0.5,
         TextAlignH::Right => -w,
     };
-    let dy = match valign {
+    let dy = match t.valign {
         TextAlignV::Top => -h,
         TextAlignV::Middle => -h * 0.5,
         TextAlignV::Bottom => 0.0,
     };
-    let base = pos + Vec2::new(dx, dy);
-    let rot = Affine::rotate_about(pos, angle);
+    let base = t.pos + Vec2::new(dx, dy);
+    let rot = Affine::rotate_about(t.pos, t.angle);
     [
         rot.apply(base),
         rot.apply(base + Vec2::new(w, 0.0)),
@@ -613,9 +648,7 @@ pub fn text_frame(doc: &Document, e: &Entity) -> Option<[Vec2; 4]> {
     render_entity(&ctx, e, Affine::IDENTITY, &mut dl, 0);
     for prim in &dl.prims {
         if let Shape::Text(t) = &prim.shape {
-            return Some(text_corners(
-                t.pos, &t.text, t.height, t.angle, t.align, t.valign,
-            ));
+            return Some(text_corners(t));
         }
     }
     None
@@ -817,6 +850,7 @@ pub fn render_entity(
             superscript,
             runs,
             font,
+            line_spacing,
         } => {
             let txt = if ctx.resolve_text {
                 doc.resolve_text_scaled(text, ctx.sheet_scale)
@@ -840,6 +874,7 @@ pub fn render_entity(
                     superscript: *superscript,
                     runs: runs.clone(),
                     font: *font,
+                    line_spacing: *line_spacing,
                 }),
                 style: st,
                 entity: e.id,
@@ -876,6 +911,7 @@ pub fn render_entity(
                     superscript: false,
                     runs: Vec::new(),
                     font: TextFont::Sans,
+                    line_spacing: 1.0,
                 }),
                 style: st,
                 entity: e.id,
@@ -970,6 +1006,7 @@ pub fn render_entity(
                     superscript: false,
                     runs: Vec::new(),
                     font: TextFont::Sans,
+                    line_spacing: 1.0,
                 }),
                 style: st,
                 entity: e.id,
@@ -1030,6 +1067,7 @@ pub fn render_entity(
                         superscript: false,
                         runs: Vec::new(),
                         font: TextFont::Sans,
+                        line_spacing: 1.0,
                     }),
                     style: st,
                     entity: e.id,
@@ -3617,6 +3655,7 @@ fn render_dim(
             runs: g.runs,
             // Bauzeichnungsschrift nach DIN 1356-1, §8.4 (DIN 1451)
             font: TextFont::DinMittel,
+            line_spacing: 1.0,
         }),
         style: *st,
         entity: e.id,
@@ -3778,6 +3817,7 @@ fn render_dim_chain(
                 runs,
                 // Bauzeichnungsschrift nach DIN 1356-1, §8.4 (DIN 1451)
                 font: TextFont::DinMittel,
+                line_spacing: 1.0,
             }),
             style: *st,
             entity: e.id,
@@ -3895,9 +3935,7 @@ pub fn trefferbild(doc: &Document, e: &Entity) -> Trefferbild {
                 }
             }
             Shape::Arc { c, r, a0, a1 } => segmente.push(Seg::Arc(Arc::new(*c, *r, *a0, *a1))),
-            Shape::Text(t) => text_kaesten.push(text_corners(
-                t.pos, &t.text, t.height, t.angle, t.align, t.valign,
-            )),
+            Shape::Text(t) => text_kaesten.push(text_corners(t)),
             Shape::Image { a, b, .. } => {
                 let ecken = crate::bild::ecken(*a, *b);
                 for i in 0..4 {

@@ -119,6 +119,7 @@ fn jede_objektart_startet_ihren_erzeuger() {
             superscript: false,
             runs: Vec::new(),
             font: TextFont::Sans,
+            line_spacing: 1.0,
         },
         "draw.text",
     );

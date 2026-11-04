@@ -82,6 +82,7 @@ fn dokument_mit_laeufen() -> Document {
             superscript: false,
             runs,
             font: Default::default(),
+            line_spacing: 1.0,
         },
     );
     doc.add_entity(e);
@@ -191,6 +192,7 @@ fn alter_text_ohne_laeufe_bleibt_lesbar() {
             superscript: false,
             runs: Vec::new(),
             font: Default::default(),
+            line_spacing: 1.0,
         },
     ));
     let pfad = ziel("jjcad-text-alt.pdf");

@@ -61,6 +61,8 @@ pub struct Texteingabe {
     pub farbe: Color,
     /// Schriftart — beim Ändern aus dem Text, beim Neuen aus dem Panel.
     pub font: jjcad_core::model::TextFont,
+    /// Zeilenabstand als Vielfaches der Zeilenhöhe der Schrift.
+    pub line_spacing: f64,
     /// Auszeichnung je Lauf, aus dem bearbeiteten Text übernommen — beim
     /// Übernehmen auf den neuen Text übertragen, damit Formatierung bleibt.
     pub runs: Vec<TextRun>,
@@ -86,6 +88,7 @@ impl Texteingabe {
         id: Option<EId>,
         farbe: Color,
         font: jjcad_core::model::TextFont,
+        line_spacing: f64,
     ) -> Self {
         Self {
             pos,
@@ -98,6 +101,7 @@ impl Texteingabe {
             id,
             farbe,
             runs: Vec::new(),
+            line_spacing,
             letzter_text: String::new(),
             pending: None,
             fokus: true,
@@ -129,6 +133,7 @@ pub fn start(app: &mut App, pos: V2) {
         None,
         farbe,
         app.options.text_font,
+        app.options.text_line_spacing,
     ));
     app.mitteilung(jjcad_core::i18n::tr("gui.textedit.text_text_eingeben_esc_uebernimmt"));
 }
@@ -150,10 +155,17 @@ pub fn start_entitaet(app: &mut App, id: EId) -> bool {
     else {
         return false;
     };
-    let EntityKind::Text { runs, font, .. } = &e.kind else {
+    let EntityKind::Text {
+        runs,
+        font,
+        line_spacing,
+        ..
+    } = &e.kind
+    else {
         return false;
     };
     let font = *font;
+    let line_spacing = *line_spacing;
     let (p, text, height, angle) = (*p, text.clone(), *height, *angle);
     let (align, valign) = (*align, *valign);
     let runs = runs.clone();
@@ -162,7 +174,18 @@ pub fn start_entitaet(app: &mut App, id: EId) -> bool {
     // Ohne Auswahl: der blaue Auswahlrahmen des Textes würde sonst um den
     // bearbeiteten Text stehen — beim Schreiben soll nur der Text dastehen.
     app.session_mut().clear_selection();
-    let mut e = Texteingabe::neu(p, height, text, angle, align, valign, Some(id), farbe, font);
+    let mut e = Texteingabe::neu(
+        p,
+        height,
+        text,
+        angle,
+        align,
+        valign,
+        Some(id),
+        farbe,
+        font,
+        line_spacing,
+    );
     e.runs = runs;
     app.ui.texteingabe = Some(e);
     app.mitteilung(jjcad_core::i18n::tr("gui.textedit.text_inhalt_aendern_esc_uebernimmt"));
@@ -283,6 +306,7 @@ fn uebernehmen(app: &mut App, ctx: &egui::Context) {
                    "angle": t.angle.to_degrees(),
                    "align": t.align.key(), "valign": t.valign.key(),
                    "font": t.font.key(),
+                   "line_spacing": t.line_spacing,
                    "runs": runs_json}),
             jjcad_core::i18n::tr("gui.textedit.text_geaendert"),
         ),
@@ -298,6 +322,7 @@ fn uebernehmen(app: &mut App, ctx: &egui::Context) {
                        "underline": app.options.text_underline,
                        "superscript": app.options.text_superscript,
                        "font": t.font.key(),
+                       "line_spacing": t.line_spacing,
                        "runs": runs_json.clone(),
                        // Ebene des Layer-Panels, nicht die Standardebene „Text“.
                        "layer": app.doc().current_layer});
@@ -316,6 +341,7 @@ fn uebernehmen(app: &mut App, ctx: &egui::Context) {
             // aber **nicht** der Inhalt: ein neues Textfeld beginnt leer, und
             // die Vorschau zeigt immer das Beispielwort (T0066).
             app.options.text_height = t.height;
+            app.options.text_line_spacing = t.line_spacing;
         }
         Err(e) => app.toast(e),
     }
@@ -374,9 +400,21 @@ pub fn show(app: &mut App, ui: &mut Ui, rect: Rect, view: View) {
     };
 
     // Genau die Schrift der Zeichnung (`canvas::paint_text`): Höhe × Zoom × 1,32.
-    let size = (t.height * view.zoom * 1.32).max(3.0) as f32;
-    let font = FontId::proportional(size);
-    let zeilenhoehe = ctx.fonts(|f| f.row_height(&font));
+    let size = (t.height * view.zoom * render::TEXT_GROESSE_FAKTOR).max(3.0) as f32;
+    // Die Schrift des Textes auch für das Feld: egui nimmt sie für die
+    // Zeilenhöhe der leeren Zeile (Cursorstand). Mit der Ersatzschrift stand
+    // der Cursor eines leeren Textes neben dem Anker (T0110).
+    let font = FontId::new(size, crate::canvas::schrift_familie(&ctx, t.font, false));
+    // Zeilenhöhe wie Rahmen und Zeichnung: die der Schriftfamilie mal
+    // Zeilenabstand. Vorher kam sie von `row_height` der Ersatzschrift — das
+    // traf nur, solange die Schrift zufällig dieselbe Zeilenhöhe hatte (T0110).
+    let lh_em = jjcad_core::fonts::line_height_em(t.font, jjcad_core::fonts::FontStyle::Regular) as f32;
+    // Höhe der leeren Zeile im Feld: egui nimmt für das Feld die Zeilenhöhe der
+    // Schrift, mindestens unseren Zeilenabstand — sonst säße der Cursor eines
+    // leeren Textes neben dem Anker.
+    let zeilenhoehe = ctx
+        .fonts(|f| f.row_height(&font))
+        .max(size * lh_em * t.line_spacing.clamp(0.1, 10.0) as f32);
     let anker = world_to_screen(rect, view, t.pos);
     let farbe = color32(t.farbe);
 
@@ -401,6 +439,7 @@ pub fn show(app: &mut App, ui: &mut Ui, rect: Rect, view: View) {
         let runs = jjcad_core::text::runs_for(&t.text, &runs, jjcad_core::text::RunStyle::default());
         let mut job = crate::canvas::auszeichnungs_job(&ctx, &runs, size, farbe, t.font);
         job.wrap.max_width = f32::INFINITY;
+        crate::canvas::zeilenhoehe_setzen(&mut job, size, lh_em, t.line_spacing);
         ctx.fonts(|f| {
             let g = f.layout_job(job);
             (g.size().x, g.size().y)
@@ -433,6 +472,7 @@ pub fn show(app: &mut App, ui: &mut Ui, rect: Rect, view: View) {
         );
         let mut job = crate::canvas::auszeichnungs_job(ui.ctx(), &runs, size, farbe, t.font);
         job.wrap.max_width = f32::INFINITY;
+        crate::canvas::zeilenhoehe_setzen(&mut job, size, lh_em, t.line_spacing);
         ui.fonts(|f| f.layout_job(job))
     };
     // Höhe des gezeichneten Textblocks — **nicht** die Zeilenhöhe der Schrift

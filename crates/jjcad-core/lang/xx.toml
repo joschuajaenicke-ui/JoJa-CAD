@@ -1419,10 +1419,12 @@
 # keine = "keine"
 #
 [gui.props]
+# zeilenabstand = "Zeilenabstand"
+# zeilenabstand_hinweis = "Zeilenabstand als Vielfaches der Zeilenhöhe der Schrift"
 # massstab = "Maßstab"
 # x_y_mm = "X / Y (mm)"
 # b_h_mm = "B / H (mm)"
-# fensterrahmen_zeigen = "Fensterrahmen zeigen"
+# fensterrahmen_zeigen = "Rahmen"
 # name = "Name"
 # ansichtsfenster = "Ansichtsfenster"
 # 2_s_a = "2 S + A"

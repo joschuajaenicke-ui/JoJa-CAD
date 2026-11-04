@@ -631,6 +631,13 @@ pub enum EntityKind {
         /// Schriftart des ganzen Textes (Standard: serifenlos).
         #[serde(default)]
         font: TextFont,
+        /// Zeilenabstand als Vielfaches der Zeilenhöhe der Schrift.
+        ///
+        /// 1 = die Zeilenhöhe der Schrift selbst (Aufstieg, Abstieg,
+        /// Durchschuss der Datei). Mehrzeilige Texte bekommen damit je nach
+        /// Schriftart verschieden hohe Zeilen; der Rahmen folgt (`render::text_box`).
+        #[serde(default = "default_one")]
+        line_spacing: f64,
     },
     /// Raumstempel: unsichtbare Raumfläche mit verknüpfter Beschriftung.
     ///

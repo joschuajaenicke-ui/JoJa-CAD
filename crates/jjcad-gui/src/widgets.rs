@@ -541,6 +541,15 @@ pub const ABSTAND_MAX_MM: f64 = 10_000.0;
 pub const KOORD_MIN_MM: f64 = -1_000_000.0;
 /// Gegenstück zu [`KOORD_MIN_MM`]: +1 km.
 pub const KOORD_MAX_MM: f64 = 1_000_000.0;
+
+/// Zeilenabstand eines Textes als Vielfaches der Zeilenhöhe der Schrift.
+///
+/// Ein Faktor, keine Länge: 1 = Zeilenhöhe der Schrift selbst, 0,5 staucht
+/// die Zeilen, 3,0 streckt sie auf das Dreifache. Der Textrahmen folgt dem
+/// Wert (`render::TextPrim::line_height`).
+pub const ZEILENABSTAND_MIN: f64 = 0.5;
+pub const ZEILENABSTAND_MAX: f64 = 3.0;
+
 /// Winkelbereich für Drehungen: ±360°, 1° je Bildpunkt.
 pub const WINKEL_MIN: f64 = -360.0;
 /// Gegenstück zu [`WINKEL_MIN`].
