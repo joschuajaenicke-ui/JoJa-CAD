@@ -620,7 +620,18 @@ pub fn stil(ctx: &egui::Context) {
     style.spacing.scroll.bar_width = 8.0;
     style.spacing.scroll.floating = true;
     style.animation_time = 0.10;
-    ctx.set_style(style);
+    // egui hält zwei Stile (hell/dunkel) und wählt je Bild den zum Farbschema
+    // des Betriebssystems. Unser Design bringt seine Farben selbst mit, also
+    // bekommt **beide** Plätze derselben Stil. Steht er nur im gerade aktiven
+    // Platz, zeichnet egui auf einem Rechner mit **hellem** Systemdesign seine
+    // eigenen hellen Widgets über unsere dunklen Flächen: weiße Eingabefelder,
+    // helle Trennstreifen zwischen den Panels (Windows 11, gemeldet als
+    // „weiße Balken, sobald das System auf hell steht“).
+    let stil = std::sync::Arc::new(style);
+    ctx.options_mut(|o| {
+        o.dark_style = stil.clone();
+        o.light_style = stil;
+    });
 
     // `JJCAD_UI_FEATHER=0` schaltet die weiche Kante der Flächen ab. Auf
     // Rechnern, deren Treiber an halbtransparenten Kanten helle Fugen zeigt
@@ -709,6 +720,59 @@ mod tests {
     /// „hell ist heller als dunkel“.
     fn helligkeit(c: Color32) -> f32 {
         0.299 * c.r() as f32 + 0.587 * c.g() as f32 + 0.114 * c.b() as f32
+    }
+
+    /// Ein helles Farbschema des Betriebssystems darf das eingestellte Design
+    /// nicht umschalten.
+    ///
+    /// egui hält zwei Stile (hell/dunkel) und wählt sie je Bild nach der
+    /// Meldung des Systems. Steht unser Stil nur im dunklen Platz, zeichnet
+    /// egui auf einem Rechner mit **hellem** Systemdesign seine eigenen hellen
+    /// Widgets über unsere dunklen Flächen: weiße Eingabefelder und helle
+    /// Trennstreifen zwischen den Panels (gemeldet von Windows 11).
+    #[test]
+    fn helles_systemdesign_ueberschreibt_das_design_nicht() {
+        let ctx = egui::Context::default();
+        setze_hell(false);
+        install(&ctx);
+        // Ein Bild, in dem das System „hell“ meldet — so kommt es bei Windows
+        // und macOS an, unter Linux bleibt die Meldung aus.
+        let _ = ctx.run(
+            egui::RawInput {
+                system_theme: Some(egui::Theme::Light),
+                ..Default::default()
+            },
+            |_ctx| {},
+        );
+        let v = ctx.style().visuals.clone();
+        assert_eq!(
+            v.panel_fill,
+            Palette::panel(),
+            "Panelfläche kommt nicht aus dem Design"
+        );
+        assert_eq!(
+            v.extreme_bg_color,
+            Palette::bg(),
+            "Feldhintergrund folgt dem Systemdesign statt dem Design"
+        );
+        assert_eq!(
+            v.widgets.inactive.bg_fill,
+            Palette::bg(),
+            "Widget-Fläche folgt dem Systemdesign statt dem Design"
+        );
+        // Gegenprobe mit dunklem Systemdesign: derselbe Stil.
+        let _ = ctx.run(
+            egui::RawInput {
+                system_theme: Some(egui::Theme::Dark),
+                ..Default::default()
+            },
+            |_ctx| {},
+        );
+        assert_eq!(
+            ctx.style().visuals.panel_fill,
+            Palette::panel(),
+            "dunkles Systemdesign verliert das Design"
+        );
     }
 
     /// T0102: „System“ folgt dem Betriebssystem, Hell und Dunkel sind fest.
