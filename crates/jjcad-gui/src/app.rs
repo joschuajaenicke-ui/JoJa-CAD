@@ -397,6 +397,9 @@ pub struct ToolOptions {
     pub text_superscript: bool,
     /// Schriftart des nächsten Textes (bleibt für das nächste Element stehen)
     pub text_font: TextFont,
+    /// Zeilenabstand des nächsten Textes als Vielfaches der Zeilenhöhe der
+    /// Schrift (1 = Zeilenhöhe der Schrift selbst).
+    pub text_line_spacing: f64,
     /// Textgröße des nächsten Raumstempels in mm.
     pub room_height: f64,
     /// Überschrift über dem Flächeninhalt des nächsten Raumstempels.
@@ -502,6 +505,7 @@ impl ToolOptions {
             text_underline: false,
             text_superscript: false,
             text_font: TextFont::default(),
+            text_line_spacing: 1.0,
             room_height: doc.settings.text_height,
             room_heading: "Zimmer".to_string(),
             dim_axis: None,
@@ -1449,6 +1453,7 @@ impl App {
                             superscript: false,
                             runs,
                             font: TextFont::default(),
+                            line_spacing: 1.0,
                         },
                     );
                     e.style.color = Some(jjcad_core::style::Color::BLACK);
@@ -1484,6 +1489,7 @@ impl App {
                             superscript: false,
                             runs,
                             font: TextFont::default(),
+                            line_spacing: 1.0,
                         },
                     );
                     e.style.color = Some(jjcad_core::style::Color::BLACK);
@@ -1514,6 +1520,7 @@ impl App {
                                 superscript: false,
                                 runs: Vec::new(),
                                 font: *font,
+                                line_spacing: 1.0,
                             },
                         );
                         e.style.color = Some(jjcad_core::style::Color::BLACK);
@@ -1537,6 +1544,7 @@ impl App {
                             superscript: false,
                             runs: Vec::new(),
                             font: jjcad_core::model::TextFont::Serif,
+                            line_spacing: 1.0,
                         },
                     );
                     e.style.color = Some(jjcad_core::style::Color::BLACK);
@@ -1616,6 +1624,7 @@ impl App {
                                     superscript: false,
                                     runs: Vec::new(),
                                     font: jjcad_core::model::TextFont::Sans,
+                                    line_spacing: 1.0,
                                 },
                             );
                             self.doc_mut().add_entity(e);

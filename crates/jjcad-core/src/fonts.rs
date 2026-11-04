@@ -21,7 +21,7 @@
 //! (Helvetica) und neue (eingebettete Schrift) passen zusammen.
 
 use crate::model::TextFont;
-use ab_glyph::{Font, FontRef, GlyphId, ScaleFont};
+use ab_glyph::{Font, FontRef, GlyphId};
 use std::collections::HashMap;
 use std::sync::{Mutex, OnceLock};
 
@@ -324,26 +324,54 @@ pub fn with_font<R>(
     Some(f(&fref))
 }
 
-/// Vorschub eines Zeichens in Em (1.0 = Schrifthöhe).
+/// Vorschub eines Zeichens in Em (1,0 = Em-Quadrat, also `units_per_em`).
+///
+/// Gelesen wird der **unskalierte** Vorschub der Datei: genau so setzen die
+/// Zeichenfläche (`egui`) und der PDF-Leser die Zeichen. `as_scaled(x)`
+/// bezieht Vorschübe dagegen auf Aufstieg − Abstieg statt auf das Em-Quadrat —
+/// bei Liberation Sans wären alle Breiten damit 12 % zu schmal (T0110).
 pub fn advance_em(font: TextFont, style: FontStyle, c: char) -> f64 {
     with_font(font, style, |f| {
         let upem = f.units_per_em().unwrap_or(1000.0) as f64;
-        let adv = f.as_scaled(upem as f32).h_advance(f.glyph_id(c)) as f64;
-        adv / upem
+        f.h_advance_unscaled(f.glyph_id(c)) as f64 / upem
     })
     .unwrap_or_else(|| crate::text::fallback_advance_em(c))
 }
 
-/// Summe der Vorschübe eines Textes in Em.
+/// Summe der Vorschübe eines Textes in Em — dieselben Werte wie [`advance_em`].
 pub fn advance_em_str(font: TextFont, style: FontStyle, s: &str) -> f64 {
     with_font(font, style, |f| {
         let upem = f.units_per_em().unwrap_or(1000.0) as f64;
-        let scaled = f.as_scaled(upem as f32);
         s.chars()
-            .map(|c| scaled.h_advance(f.glyph_id(c)) as f64 / upem)
+            .map(|c| f.h_advance_unscaled(f.glyph_id(c)) as f64 / upem)
             .sum()
     })
     .unwrap_or_else(|| s.chars().map(crate::text::fallback_advance_em).sum())
+}
+
+/// Zeilenhöhe einer Familie in Vielfachen der Schriftgröße (Em).
+///
+/// Aufstieg, Abstieg und Durchschuss der **unskalierten** Datei, geteilt durch
+/// `units_per_em` — genau das Maß, mit dem die Zeichenfläche eine Zeile setzt.
+/// Es hängt an der Schriftdatei (Serifenlos 1,150 / DIN 1451 1,086 / EN ISO 3098
+/// Typ A 1,091 / Monospace 1,133) und ist deshalb je Familie verschieden: eine
+/// feste Annahme (früher 1,4 für den Rahmen, 1,25 für Druck) trifft nur eine
+/// davon (T0110).
+pub fn line_height_em(font: TextFont, style: FontStyle) -> f64 {
+    let wert = with_font(font, style, |f| {
+        let upem = f.units_per_em().unwrap_or(1000.0) as f64;
+        let (a, d, g) = (
+            f.ascent_unscaled() as f64,
+            f.descent_unscaled() as f64,
+            f.line_gap_unscaled() as f64,
+        );
+        if upem <= 0.0 {
+            return 1.2;
+        }
+        (a - d + g) / upem
+    })
+    .unwrap_or(1.2);
+    wert.clamp(0.5, 4.0)
 }
 
 /// Glyphennummer im Font (für Identity-H-Sätze im PDF).
@@ -361,6 +389,8 @@ pub struct TtfInfo {
     pub y_max: f64,
     pub ascent: f64,
     pub descent: f64,
+    /// Durchschuss aus `hhea` (Zeilenvorschub zwischen zwei Zeilen).
+    pub line_gap: f64,
     pub cap_height: f64,
     pub italic_angle: f64,
     pub weight_class: u16,
@@ -369,6 +399,19 @@ pub struct TtfInfo {
 }
 
 impl TtfInfo {
+    /// Zeilenhöhe der Schrift in Em: Aufstieg, Abstieg und Durchschuss.
+    ///
+    /// Dasselbe Maß, mit dem die Anzeige (egui über ab_glyph) eine Zeile setzt:
+    /// `ascent − descent + line_gap`. Es hängt an der Datei und ist damit je
+    /// Familie verschieden (EN ISO 3098 Typ A liegt bei 1,66 Em, DIN 1451 bei
+    /// 1,09 Em) — der Textrahmen muss es deshalb je Schrift rechnen.
+    pub fn line_height(&self) -> f64 {
+        if self.units_per_em <= 0.0 {
+            return 1.2;
+        }
+        (self.ascent - self.descent + self.line_gap) / self.units_per_em
+    }
+
     /// Liest `head` und `OS/2`. Fehlt eine Tabelle, bleiben Näherungswerte.
     pub fn parse(data: &[u8]) -> Result<TtfInfo, String> {
         if data.len() < 12 {
@@ -427,6 +470,7 @@ impl TtfInfo {
         if let Some(hh) = hhea {
             info.ascent = rd_i16(hh + 4);
             info.descent = rd_i16(hh + 6);
+            info.line_gap = rd_i16(hh + 8);
         }
         if info.ascent == 0.0 {
             info.ascent = info.units_per_em * 0.8;

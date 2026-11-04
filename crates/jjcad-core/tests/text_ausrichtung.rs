@@ -37,14 +37,11 @@ fn text(s: &Session) -> (Vec2, TextAlignH, TextAlignV, f64) {
     (*p, *align, *valign, *height)
 }
 
-/// Kasten des letzten Textes als (min, max).
+/// Kasten des letzten Textes als (min, max) — über `render::text_frame`,
+/// denselben Weg wie Anzeige und Fang.
 fn kasten(s: &Session) -> (Vec2, Vec2) {
-    let (p, align, valign, h) = text(s);
     let e = s.doc.ents().last().unwrap();
-    let EntityKind::Text { text, angle, .. } = &e.kind else {
-        panic!("kein Text");
-    };
-    let ecken = render::text_corners(p, text, h, *angle, align, valign);
+    let ecken = render::text_frame(&s.doc, e).expect("Text ohne Rahmen");
     let min = Vec2::new(
         ecken.iter().map(|q| q.x).fold(f64::INFINITY, f64::min),
         ecken.iter().map(|q| q.y).fold(f64::INFINITY, f64::min),

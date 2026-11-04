@@ -9,7 +9,7 @@ use crate::render::{DisplayList, Prim, Shape};
 use crate::style::LineType;
 use crate::tessellate::CurveQuality;
 use crate::export::RasterOptions;
-use ab_glyph::{Font, FontRef, ScaleFont};
+use ab_glyph::{Font, FontRef};
 use std::path::Path;
 use tiny_skia::{
     FillRule, FilterQuality, LineCap, LineJoin, Paint, PathBuilder, Pattern, Pixmap, PixmapPaint,
@@ -104,8 +104,11 @@ fn draw_text(pm: &mut Pixmap, t: &crate::render::TextPrim, prim: &Prim, map: &Ma
     // Satz mit Läufen: dieselbe Zerlegung wie im PDF, damit beide Ausgaben
     // dieselben Vorschübe benutzen.
     let runs = t.effective_runs();
-    let lines = crate::text::layout(&t.text, &runs);
-    let line_h = size_px * 1.25;
+    let lines = crate::text::layout_mit_schrift(&t.text, &runs, t.font);
+    // Zeilenhöhe der Familie (früher fest 1,25): je Schrift verschieden, wie im
+    // Rahmen. Ohne das überlappen Zeilen einer Familie mit großem Durchschuss.
+    let zeilenhoehe_em = t.line_height_em() as f32;
+    let line_h = size_px * zeilenhoehe_em * t.line_spacing.clamp(0.1, 10.0) as f32;
     let (cos, sin) = (t.angle.cos() as f32, t.angle.sin() as f32);
     let bx = map.ox + t.pos.x * map.k;
     let by = map.oy - t.pos.y * map.k;
@@ -139,7 +142,6 @@ fn draw_text(pm: &mut Pixmap, t: &crate::render::TextPrim, prim: &Prim, map: &Ma
             let seg_size = size_px * seg.scale as f32;
             let upem = font.units_per_em().unwrap_or(1000.0);
             let unit = seg_size / upem;
-            let scaled = font.as_scaled(seg_size);
             let dy0 = dy_line + seg.rise_em as f32 * size_px;
             let pen_start = pen;
             for ch in seg.text.chars() {
@@ -196,7 +198,11 @@ fn draw_text(pm: &mut Pixmap, t: &crate::render::TextPrim, prim: &Prim, map: &Ma
                         }
                     }
                 }
-                pen += scaled.h_advance(gid);
+                // Vorschub in Em-Einheiten der Datei (dieselbe Umrechnung wie
+                // die Umrisse: `unit = seg_size / units_per_em`). `as_scaled`
+                // bezöge ihn auf Aufstieg − Abstieg, dann stünden die Zeichen
+                // 12 % enger als ihre eigenen Umrisse (T0110).
+                pen += font.h_advance_unscaled(gid) as f32 * unit;
             }
             if seg.underline {
                 // Unterstreichung: kurzer Strich unter der Grundlinie.

@@ -1409,6 +1409,8 @@ hoch = "hoch"
 keine = "keine"
 
 [gui.props]
+zeilenabstand = "Zeilenabstand"
+zeilenabstand_hinweis = "Zeilenabstand als Vielfaches der Zeilenhöhe der Schrift"
 massstab = "Maßstab"
 x_y_mm = "X / Y (mm)"
 b_h_mm = "B / H (mm)"

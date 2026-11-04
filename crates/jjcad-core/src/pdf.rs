@@ -215,11 +215,13 @@ impl Content {
             return;
         }
         let runs = t.effective_runs();
-        let lines = text::layout(&t.text, &runs);
+        let lines = text::layout_mit_schrift(&t.text, &runs, t.font);
         if lines.is_empty() {
             return;
         }
-        let lh = size_pt * 1.25;
+        // Zeilenhöhe der Familie (früher fest 1,25) und der Zeilenabstand des
+        // Textes — dieselbe Rechnung wie Rahmen und Zeichenfläche.
+        let lh = size_pt * t.line_height_em() * t.line_spacing.clamp(0.1, 10.0);
         let n = lines.len() as f64;
         // Senkrechte Lage gilt für den **ganzen** Block: „Mitte" zentriert
         // alle Zeilen um den Anker, „Unten" stellt die letzte Zeile darauf.
