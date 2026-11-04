@@ -454,11 +454,11 @@ fn zahl_text(n: usize) -> String {
 /// darüber rot (dann ruckelt selbst das Ziehen).
 fn zeit_farbe(ms: f32) -> Color32 {
     if ms <= 8.0 {
-        Palette::OK
+        Palette::ok()
     } else if ms <= 16.7 {
-        Palette::ACCENT
+        Palette::accent()
     } else {
-        Palette::DANGER
+        Palette::danger()
     }
 }
 
@@ -486,7 +486,7 @@ fn zelle(ui: &mut egui::Ui, text: RichText, breite: f32) -> egui::Response {
 
 /// Eine Zeile mit drei Zahlenspalten.
 fn zeile(ui: &mut egui::Ui, name: &str, werte: [String; 3], farbe: Color32, hinweis: &str) {
-    zelle(ui, theme_mono(name).color(Palette::TEXT_DIM), NAME_W).on_hover_text(hinweis);
+    zelle(ui, theme_mono(name).color(Palette::text_dim()), NAME_W).on_hover_text(hinweis);
     for w in werte {
         zelle(ui, theme_mono(&w).color(farbe), WERT_W);
     }
@@ -503,7 +503,7 @@ fn kopf(ui: &mut egui::Ui, text: &str) {
         RichText::new(text)
             .monospace()
             .size(10.0)
-            .color(Palette::TEXT_FAINT),
+            .color(Palette::text_faint()),
         NAME_W,
     );
 }
@@ -515,7 +515,7 @@ fn kopf_wert(ui: &mut egui::Ui, text: &str) {
         RichText::new(text)
             .monospace()
             .size(10.0)
-            .color(Palette::TEXT_FAINT),
+            .color(Palette::text_faint()),
         WERT_W,
     );
 }
@@ -540,8 +540,8 @@ pub fn overlay(app: &App, ctx: &egui::Context) {
         .fixed_pos(pos)
         .show(ctx, |ui| {
             egui::Frame::none()
-                .fill(Palette::PANEL)
-                .stroke(Stroke::new(1.0_f32, Palette::BORDER))
+                .fill(Palette::panel())
+                .stroke(Stroke::new(1.0_f32, Palette::border()))
                 .rounding(egui::Rounding::same(4.0))
                 .inner_margin(egui::Margin::symmetric(10.0, 8.0))
                 .show(ui, |ui| {
@@ -559,14 +559,14 @@ fn inhalt(app: &App, ui: &mut egui::Ui) {
         ui.label(
             RichText::new(jjcad_core::i18n::tr("gui.perf.leistung"))
                 .size(12.0)
-                .color(Palette::ACCENT)
+                .color(Palette::accent())
                 .strong(),
         );
         ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
             ui.label(
                 RichText::new(jjcad_core::i18n::tr("gui.perf.umschalt_f3"))
                     .size(10.0)
-                    .color(Palette::TEXT_FAINT),
+                    .color(Palette::text_faint()),
             );
         });
     });
@@ -575,7 +575,7 @@ fn inhalt(app: &App, ui: &mut egui::Ui) {
     ui.label(
         RichText::new(jjcad_core::i18n::tr("gui.perf.bilder_entstehen_nur_bei_bedarf_kein_fester_takt"))
             .size(10.0)
-            .color(Palette::TEXT_FAINT),
+            .color(Palette::text_faint()),
     );
     ui.add_space(4.0);
 
@@ -615,7 +615,7 @@ fn inhalt(app: &App, ui: &mut egui::Ui) {
                 let farbe = if name == "Rechnen" {
                     zeit_farbe(perf.perzentil_von(0.95, f))
                 } else {
-                    Palette::TEXT
+                    Palette::text()
                 };
                 zeile(ui, name, werte, farbe, hinweis);
             }
@@ -642,12 +642,12 @@ fn inhalt(app: &App, ui: &mut egui::Ui) {
                     ),
                     None => ("     —".to_string(), "     —".to_string()),
                 };
-                zelle(ui, theme_mono(a.name()).color(Palette::TEXT_DIM), NAME_W)
+                zelle(ui, theme_mono(a.name()).color(Palette::text_dim()), NAME_W)
                     .on_hover_text(a.erklaerung());
-                zelle(ui, theme_mono(&jetzt).color(Palette::TEXT), WERT_W);
+                zelle(ui, theme_mono(&jetzt).color(Palette::text()), WERT_W);
                 zelle(
                     ui,
-                    theme_mono(&anteil).color(Palette::TEXT_FAINT),
+                    theme_mono(&anteil).color(Palette::text_faint()),
                     WERT_W,
                 );
                 ui.end_row();
@@ -660,10 +660,10 @@ fn inhalt(app: &App, ui: &mut egui::Ui) {
                                 MalKlasse::Linie => jjcad_core::i18n::tr("gui.perf.linien"),
                                 MalKlasse::Text => jjcad_core::i18n::tr("gui.perf.text"),
                             };
-                            zelle(ui, theme_mono(name).color(Palette::TEXT_FAINT), NAME_W);
+                            zelle(ui, theme_mono(name).color(Palette::text_faint()), NAME_W);
                             zelle(
                                 ui,
-                                theme_mono(&ms_text(b.malzeit(k))).color(Palette::TEXT_FAINT),
+                                theme_mono(&ms_text(b.malzeit(k))).color(Palette::text_faint()),
                                 WERT_W,
                             );
                             zelle(ui, theme_mono(""), WERT_W);
@@ -684,7 +684,7 @@ fn inhalt(app: &App, ui: &mut egui::Ui) {
     } else {
         jjcad_core::i18n::tr("gui.perf.displayliste_aus_dem_zwischenspeicher")
     };
-    ui.label(theme_mono(herkunft).color(Palette::TEXT_FAINT));
+    ui.label(theme_mono(herkunft).color(Palette::text_faint()));
 
     ui.add_space(4.0);
     ui.separator();
@@ -699,7 +699,7 @@ fn inhalt(app: &App, ui: &mut egui::Ui) {
         }
         zeile1.push_str(&jjcad_core::i18n::t_args_owned("gui.perf.x_grafikelemente", &[("wert1", format!("{}", zahl_text(b.grafikelemente)))]));
     }
-    ui.label(theme_mono(&zeile1).color(Palette::TEXT_DIM));
+    ui.label(theme_mono(&zeile1).color(Palette::text_dim()));
     if let Some(b) = letzt {
         ui.label(
             theme_mono(&jjcad_core::i18n::t_args_owned(
@@ -710,7 +710,7 @@ fn inhalt(app: &App, ui: &mut egui::Ui) {
                     ("texte", zahl_text(b.texte).to_string()),
                 ],
             ))
-            .color(Palette::TEXT_FAINT),
+            .color(Palette::text_faint()),
         );
     }
     ui.label(
@@ -721,7 +721,7 @@ fn inhalt(app: &App, ui: &mut egui::Ui) {
                 format!("{:.0}", perf.aus_dem_zwischenspeicher() * 100.0),
             )],
         ))
-        .color(Palette::TEXT_FAINT),
+        .color(Palette::text_faint()),
     );
 
     let zoom = app.current_view().zoom;
@@ -738,13 +738,13 @@ fn inhalt(app: &App, ui: &mut egui::Ui) {
     if perf.threads() > 0 {
         zeile2.push_str(&jjcad_core::i18n::t_args_owned("gui.perf.x_threads", &[("wert1", format!("{}", perf.threads()))]));
     }
-    ui.label(theme_mono(&zeile2).color(Palette::TEXT_FAINT));
+    ui.label(theme_mono(&zeile2).color(Palette::text_faint()));
 
     ui.add_space(2.0);
     ui.label(
         RichText::new(jjcad_core::i18n::t_args_owned("gui.perf.verlauf_x_bilder_x_pausen", &[("wert1", format!("{}", perf.ring.len())), ("wert2", format!("{}", perf.pausen))]))
         .size(9.5)
-        .color(Palette::TEXT_FAINT),
+        .color(Palette::text_faint()),
     );
 }
 

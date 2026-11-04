@@ -465,7 +465,7 @@ pub fn show(app: &mut App, ui: &mut Ui, rect: Rect, view: View) {
             ui.set_clip_rect(ui.clip_rect().intersect(rect));
             // Keine Fläche, kein Rahmen: der Text steht frei in der Zeichnung
             // und sieht während der Eingabe genauso aus wie danach.
-            ui.visuals_mut().text_cursor.stroke = Stroke::new(1.5_f32, Palette::ACCENT);
+            ui.visuals_mut().text_cursor.stroke = Stroke::new(1.5_f32, Palette::accent());
             // Cursor ohne Blinken: er ist die einzige Markierung der
             // Schreibstelle.
             ui.visuals_mut().text_cursor.blink = false;
@@ -493,7 +493,7 @@ pub fn show(app: &mut App, ui: &mut Ui, rect: Rect, view: View) {
                 ui.label(
                     egui::RichText::new(jjcad_core::i18n::tr("gui.textedit.esc_uebernimmt_hinweis"))
                         .size(10.0)
-                        .color(Palette::TEXT_FAINT),
+                        .color(Palette::text_faint()),
                 );
             }
         });

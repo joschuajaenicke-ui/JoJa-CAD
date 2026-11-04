@@ -524,6 +524,7 @@
 # category_fangen = "Fangen"
 # category_raster = "Raster"
 # language_hint = "gilt sofort, ohne Neustart"
+# design_hint = "gilt sofort; „System“ folgt dem hellen oder dunklen Farbschema des Betriebssystems"
 # none_found = "Keine Einstellung gefunden"
 # search = "Einstellungen durchsuchen …"
 # title = "Einstellungen"
@@ -617,6 +618,14 @@
 # center = "Mittelpunkt"
 # hint_base = "Der Basispunkt steht am Fadenkreuz — die Vorschau springt beim Drehen um das Fadenkreuz (bisheriges Verhalten)"
 # hint_center = "Die Vorschau dreht um ihren Mittelpunkt und bleibt oben rechts am Fadenkreuz"
+#
+[ui.design]
+# system = "System"
+# hell = "Hell"
+# dunkel = "Dunkel"
+# hint_system = "Folgt dem hellen oder dunklen Farbschema des Betriebssystems"
+# hint_hell = "Helle Flächen, dunkle Schrift — unabhängig vom Betriebssystem"
+# hint_dunkel = "Dunkle Flächen, helle Schrift — bisheriges Aussehen"
 #
 [ui.fensterrahmen]
 # system = "System"
@@ -1153,6 +1162,7 @@
 # speichern_und_schliessen = "Speichern und schließen"
 # speichern_und_schliessen_legt_den_reiter_ab_verwerfen_ve = "Speichern und schließen legt den Reiter ab, Verwerfen verwirft die Änderungen."
 # sprache = "Sprache"
+# design = "Design"
 # system = "System"
 # tastaturbelegung = "Tastaturbelegung"
 # tastaturlayout = "Tastaturlayout"

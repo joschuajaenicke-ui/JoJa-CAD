@@ -252,11 +252,11 @@ fn paint_prim(p: &Painter, prim: &Prim, w2s: &dyn Fn(V2) -> Pos2, scale: f64, pc
     let mut col = color32(prim.style.color);
     if pc.preview {
         // Wie die Einfüge-Vorschau (ghost): durchgezogene Akzentkontur
-        col = Palette::ACCENT;
+        col = Palette::accent();
     } else if is_sel {
-        col = Palette::SELECT;
+        col = Palette::select();
     } else if is_hover {
-        col = Palette::HOVER;
+        col = Palette::hover();
     }
     let col = col.gamma_multiply(alpha);
     // Zwei Modi:
@@ -335,11 +335,11 @@ fn paint_prim(p: &Painter, prim: &Prim, w2s: &dyn Fn(V2) -> Pos2, scale: f64, pc
             let fill = prim.style.fill.unwrap_or(prim.style.color);
             let c = if pc.preview {
                 // Nur andeuten: die Vorschau darf den Plan darunter nicht verdecken
-                Palette::ACCENT.gamma_multiply(0.12)
+                Palette::accent().gamma_multiply(0.12)
             } else if is_sel {
-                Palette::SELECT.gamma_multiply(0.25)
+                Palette::select().gamma_multiply(0.25)
             } else if is_hover {
-                Palette::HOVER.gamma_multiply(0.2)
+                Palette::hover().gamma_multiply(0.2)
             } else {
                 color32(fill)
             };
@@ -1042,7 +1042,7 @@ pub fn show(app: &mut App, ui: &mut Ui) {
     let is_sheet = matches!(app.tab().tab, TabKind::Sheet(_));
 
     // Hintergrund
-    painter.rect_filled(rect, 0.0, Palette::BG);
+    painter.rect_filled(rect, 0.0, Palette::bg());
 
     // Chat-Protokoll offen: die Zeichenfläche ist gesperrt (Navigation,
     // Werkzeug und Zeichnen ruhen), damit man im Protokoll lesen und
@@ -1149,7 +1149,7 @@ pub fn show(app: &mut App, ui: &mut Ui) {
             draw_grid(app, &painter, rect, view_now);
         }
         // Papierfläche
-        painter.rect_filled(rect, 0.0, Palette::PAPER);
+        painter.rect_filled(rect, 0.0, Palette::paper());
         if app.ui.show_grid {
             draw_grid(app, &painter, rect, view_now);
         }
@@ -1251,7 +1251,7 @@ pub fn show(app: &mut App, ui: &mut Ui) {
                     Align2::LEFT_TOP,
                     format!("{} · {} · {}", sheet.name, sheet.paper.label(), format_scale(sheet.scale)),
                     FontId::proportional(11.0),
-                    Palette::TEXT_FAINT,
+                    Palette::text_faint(),
                 );
             }
         }
@@ -1349,8 +1349,8 @@ fn draw_grid(app: &App, p: &Painter, rect: Rect, view: View) {
             );
         }
     };
-    draw_set(minor, Palette::GRID_MINOR, 1.0, p);
-    draw_set(major, Palette::GRID_MAJOR, 1.0, p);
+    draw_set(minor, Palette::grid_minor(), 1.0, p);
+    draw_set(major, Palette::grid_major(), 1.0, p);
     // Achsen
     let achse = Stroke::new(1.2, Color32::from_rgb(0xC9, 0xC2, 0xB0));
     if x0 <= 0.0 && 0.0 <= x1 {
@@ -1387,8 +1387,8 @@ fn draw_sheet(app: &mut App, p: &Painter, rect: Rect, view: View, cursor: Option
     let Some(sheet) = app.doc().sheet(sid).cloned() else {
         return;
     };
-    // Arbeitsfläche
-    p.rect_filled(rect, 0.0, Color32::from_rgb(0x0E, 0x10, 0x13));
+    // Arbeitsfläche um das Blatt — folgt dem Design (T0102).
+    p.rect_filled(rect, 0.0, Palette::bg());
     let (pw, ph) = sheet.size();
     // Das Blatt ist ein Rechteck in Papierkoordinaten — bei gedrehter Ansicht
     // sind seine vier Ecken ein gedrehtes Viereck, keine achsenparallele Box.
@@ -1404,7 +1404,7 @@ fn draw_sheet(app: &mut App, p: &Painter, rect: Rect, view: View, cursor: Option
         Color32::from_black_alpha(90),
         Stroke::NONE,
     ));
-    p.add(Shape::convex_polygon(ecken.to_vec(), Palette::PAPER, Stroke::NONE));
+    p.add(Shape::convex_polygon(ecken.to_vec(), Palette::paper(), Stroke::NONE));
     let w2s = |q: V2| world_to_screen(rect, view, q);
 
     // 1. Inhalt der Ansichtsfenster (liegt unter dem Papierraum)
@@ -1449,9 +1449,9 @@ fn draw_sheet(app: &mut App, p: &Painter, rect: Rect, view: View, cursor: Option
         );
         let sel = selected_vp == Some(vp.id);
         let stroke = if sel {
-            Stroke::new(2.0, Palette::SELECT)
+            Stroke::new(2.0, Palette::select())
         } else if vp.show_frame {
-            Stroke::new(1.0, Palette::TEXT_FAINT)
+            Stroke::new(1.0, Palette::text_faint())
         } else {
             Stroke::new(1.0, Color32::from_rgba_unmultiplied(0x99, 0x99, 0x99, 60))
         };
@@ -1464,7 +1464,7 @@ fn draw_sheet(app: &mut App, p: &Painter, rect: Rect, view: View, cursor: Option
                 vp_rect.left_bottom(),
                 vp_rect.right_bottom(),
             ] {
-                p.rect_filled(Rect::from_center_size(c, Vec2::splat(7.0)), 1.0, Palette::SELECT);
+                p.rect_filled(Rect::from_center_size(c, Vec2::splat(7.0)), 1.0, Palette::select());
             }
         }
         p.text(
@@ -1503,13 +1503,13 @@ fn draw_sheet(app: &mut App, p: &Painter, rect: Rect, view: View, cursor: Option
                     0.0,
                     Color32::from_rgba_unmultiplied(0x2F, 0x8C, 0xF0, 26),
                 );
-                p.rect_stroke(r, 0.0, Stroke::new(1.4, Palette::SELECT));
+                p.rect_stroke(r, 0.0, Stroke::new(1.4, Palette::select()));
                 p.text(
                     Pos2::new(r.left() + 4.0, r.top() + 3.0),
                     Align2::LEFT_TOP,
                     jjcad_core::i18n::t_args_owned("gui.canvas.x_x_mm", &[("wert1", format!("{:.0}", r.width())), ("wert2", format!("{:.0}", r.height()))]),
                     FontId::proportional(10.5),
-                    Palette::SELECT,
+                    Palette::select(),
                 );
             }
         }
@@ -1521,7 +1521,7 @@ fn draw_sheet(app: &mut App, p: &Painter, rect: Rect, view: View, cursor: Option
         Align2::LEFT_TOP,
         jjcad_core::i18n::tr("gui.canvas.papierraum_zeichnen_und_aendern_wie_im_modell_ansicht_an"),
         FontId::proportional(10.5),
-        Palette::TEXT_FAINT,
+        Palette::text_faint(),
     );
 }
 
@@ -1556,7 +1556,7 @@ fn draw_fadenkreuz(p: &Painter, rect: Rect, pos: Option<Pos2>) {
 /// Eine Stelle für die Werkzeug-Vorschau — die Maßangabe beim Ziehen
 /// (`draw_grip_mass`) sieht genauso aus.
 fn paint_label(p: &Painter, rect: Rect, pos: Pos2, text: &str) {
-    let galley = p.layout_no_wrap(text.to_string(), FontId::proportional(11.0), Palette::TEXT);
+    let galley = p.layout_no_wrap(text.to_string(), FontId::proportional(11.0), Palette::text());
     // Box im Zeichenbereich halten: am unteren/äußeren Rand würde sie sonst
     // abgeschnitten (Fehlermeldungen stehen genau dort, wo geklickt wird).
     let groesse = galley.size() + Vec2::new(12.0, 6.0);
@@ -1569,9 +1569,9 @@ fn paint_label(p: &Painter, rect: Rect, pos: Pos2, text: &str) {
             .max(rect.top() + 4.0),
     );
     let bg = Rect::from_min_size(min, groesse);
-    p.rect_filled(bg, 4.0, Color32::from_rgba_unmultiplied(24, 27, 32, 235));
-    p.rect_stroke(bg, 4.0, Stroke::new(1.0, Palette::BORDER));
-    p.galley(bg.min + Vec2::new(6.0, 3.0), galley, Palette::TEXT);
+    p.rect_filled(bg, 4.0, Palette::hinweis_flaeche());
+    p.rect_stroke(bg, 4.0, Stroke::new(1.0, Palette::border()));
+    p.galley(bg.min + Vec2::new(6.0, 3.0), galley, Palette::text());
 }
 
 /// Maßangabe einer Treppe für die Beschriftung am Zeiger:
@@ -1697,10 +1697,10 @@ fn draw_cursor(
     if let Some(w) = snapped {
         let s = world_to_screen(rect, view, w);
         let r = 5.0;
-        p.line_segment([s - Vec2::new(r, 0.0), s + Vec2::new(r, 0.0)], Stroke::new(1.2, Palette::ACCENT));
-        p.line_segment([s - Vec2::new(0.0, r), s + Vec2::new(0.0, r)], Stroke::new(1.2, Palette::ACCENT));
+        p.line_segment([s - Vec2::new(r, 0.0), s + Vec2::new(r, 0.0)], Stroke::new(1.2, Palette::accent()));
+        p.line_segment([s - Vec2::new(0.0, r), s + Vec2::new(0.0, r)], Stroke::new(1.2, Palette::accent()));
         if raw.map(|q| q.dist(w)).unwrap_or(0.0) * view.zoom > 1.0 {
-            p.circle_stroke(s, 7.0, Stroke::new(1.0, Palette::ACCENT.gamma_multiply(0.7)));
+            p.circle_stroke(s, 7.0, Stroke::new(1.0, Palette::accent().gamma_multiply(0.7)));
         }
     }
     // Fadenkreuz bis zu den Bildschirmrändern
@@ -1747,8 +1747,8 @@ pub fn draw_werkzeug_zeiger(app: &App, ctx: &egui::Context) {
     let mitte = werkzeug_zeiger_mitte(pos);
     let ir = Rect::from_center_size(mitte, Vec2::splat(18.0));
     p.circle_filled(mitte, 12.0, Color32::from_rgba_unmultiplied(20, 22, 26, 190));
-    p.circle_stroke(mitte, 12.0, Stroke::new(1.0, Palette::ACCENT.gamma_multiply(0.6)));
-    crate::icons::paint(&p, ir.shrink(2.0), def.icon, Palette::ACCENT);
+    p.circle_stroke(mitte, 12.0, Stroke::new(1.0, Palette::accent().gamma_multiply(0.6)));
+    crate::icons::paint(&p, ir.shrink(2.0), def.icon, Palette::accent());
 }
 
 /// Zeichnet die Vorschau einer Öffnung (Tür oder Fenster).
@@ -1766,7 +1766,7 @@ fn draw_opening_preview(
 ) {
     for quad in &v.loch {
         let pts: Vec<Pos2> = quad.iter().map(|q| w2s(*q)).collect();
-        p.add(egui::Shape::convex_polygon(pts, Palette::PAPER, Stroke::NONE));
+        p.add(egui::Shape::convex_polygon(pts, Palette::paper(), Stroke::NONE));
     }
     let paper_px = view.zoom * app.doc().settings.annotation_scale;
     let wand_ctx = PaintCtx {
@@ -1815,7 +1815,7 @@ fn draw_tool_preview(
         return;
     };
     let Some(tool) = app.tool.clone() else { return };
-    let col = Palette::ACCENT.gamma_multiply(0.9);
+    let col = Palette::accent().gamma_multiply(0.9);
     let stroke = Stroke::new(1.4, col);
     let dashed = Stroke::new(1.0, col.gamma_multiply(0.55));
     let w2s = |q: V2| world_to_screen(rect, view, q);
@@ -1856,7 +1856,7 @@ fn draw_tool_preview(
                     ];
                     p.add(egui::Shape::convex_polygon(
                         quad,
-                        Palette::SELECT.gamma_multiply(0.18),
+                        Palette::select().gamma_multiply(0.18),
                         Stroke::NONE,
                     ));
                     p.line_segment([w2s(a0 + nrm * t), w2s(b0 + nrm * t)], stroke);
@@ -1932,7 +1932,7 @@ fn draw_tool_preview(
                 }
             }
             for q in &tool.pts {
-                p.circle_stroke(w2s(*q), 2.0, Stroke::new(1.0, Palette::ACCENT));
+                p.circle_stroke(w2s(*q), 2.0, Stroke::new(1.0, Palette::accent()));
             }
             if label.is_empty() {
                 label = jjcad_core::i18n::t_args_owned("gui.canvas.x_stuetzpunkte", &[("wert1", format!("{}", tool.pts.len() + 1))]);
@@ -2455,7 +2455,7 @@ fn draw_tool_preview(
             // Winkelwahl über „von"/„bis": der Winkel ist die Differenz der
             // beiden vom Drehzentrum aus gesehenen Richtungen.
             if let Some(&c) = tool.pts.first() {
-                center_mark(p, w2s(c), Palette::ACCENT);
+                center_mark(p, w2s(c), Palette::accent());
                 match tool.pts.get(1).copied() {
                     None => {
                         // Von-Richtung (Bezugsrichtung) wird gesetzt
@@ -2497,7 +2497,7 @@ fn draw_tool_preview(
                                         render::render_entity(&rctx, e, m, &mut dl, 0);
                                     }
                                 }
-                                let pre = Stroke::new(1.1, Palette::SELECT.gamma_multiply(0.85));
+                                let pre = Stroke::new(1.1, Palette::select().gamma_multiply(0.85));
                                 for prim in &dl.prims {
                                     ghost_shape(
                                         p,
@@ -2523,7 +2523,7 @@ fn draw_tool_preview(
             // Gleiche Winkelwahl wie beim Drehen (Zentrum, Bezugspunkt, neue
             // Richtung) — gedreht wird aber die Ansicht, nicht die Auswahl.
             if let Some(&c) = tool.pts.first() {
-                center_mark(p, w2s(c), Palette::ACCENT);
+                center_mark(p, w2s(c), Palette::accent());
                 match tool.pts.get(1).copied() {
                     None => {
                         if c.dist(cursor) > 1e-6 {
@@ -2568,7 +2568,7 @@ fn draw_tool_preview(
                 let far = 100000.0;
                 p.line_segment(
                     [w2s(p0 - dir * far), w2s(p0 + dir * far)],
-                    Stroke::new(1.0, Palette::SELECT),
+                    Stroke::new(1.0, Palette::select()),
                 );
                 let drag = cursor - p0;
                 let m = Affine::mirror(p0, cursor);
@@ -2656,7 +2656,7 @@ fn draw_tool_preview(
                         render::render_entity(&ctx, e, m, &mut dl, 0);
                     }
                     for prim in &dl.prims {
-                        let stroke2 = Stroke::new(1.2, Palette::SELECT.gamma_multiply(0.8));
+                        let stroke2 = Stroke::new(1.2, Palette::select().gamma_multiply(0.8));
                         if let PShape::Line(a, b) = &prim.shape {
                             p.line_segment([w2s(*a), w2s(*b)], stroke2);
                         }
@@ -2692,7 +2692,7 @@ fn draw_trim_preview(app: &App, p: &Painter, rect: Rect, view: View, at: V2) {
     let Some((id, segs)) = vorschau_objekt(app, view, at, actions::trim_vorschau) else {
         return;
     };
-    draw_abschnitt_preview(app, p, rect, view, id, &segs, Palette::DANGER);
+    draw_abschnitt_preview(app, p, rect, view, id, &segs, Palette::danger());
 }
 
 /// Hervorhebung der Strecke, die „Verlängern“ an dieser Stelle ansetzen würde
@@ -2706,7 +2706,7 @@ fn draw_extend_preview(app: &App, p: &Painter, rect: Rect, view: View, at: V2) {
     let Some((id, segs)) = vorschau_objekt(app, view, at, actions::extend_vorschau) else {
         return;
     };
-    draw_abschnitt_preview(app, p, rect, view, id, &segs, Palette::OK);
+    draw_abschnitt_preview(app, p, rect, view, id, &segs, Palette::ok());
 }
 
 /// Hervorhebung beim Verschneiden (T0082): ist das erste Objekt gemerkt und
@@ -2727,7 +2727,7 @@ fn draw_verschneiden_preview(app: &App, p: &Painter, rect: Rect, view: View, at:
         return;
     }
     for (id, segs) in actions::verschneiden_vorschau(app.doc(), erstes, zweites) {
-        draw_abschnitt_preview(app, p, rect, view, id, &segs, Palette::OK);
+        draw_abschnitt_preview(app, p, rect, view, id, &segs, Palette::ok());
     }
 }
 
@@ -2735,7 +2735,7 @@ fn draw_verschneiden_preview(app: &App, p: &Painter, rect: Rect, view: View, at:
 ///
 /// Ohne Auswahl ist Zerlegen ein Klick-Werkzeug: jedes angeklickte Objekt wird
 /// in seine Einzelteile zerlegt. Vor dem Klick zeigt die Warnfarbe der
-/// Stutzen-Vorschau ([`Palette::DANGER`]), welches Objekt der Zeiger trifft.
+/// Stutzen-Vorschau ([`Palette::danger()`]), welches Objekt der Zeiger trifft.
 fn draw_explode_preview(app: &App, p: &Painter, rect: Rect, view: View, at: V2) {
     let tol = (8.0 / view.zoom).max(0.5);
     let Some(id) = snap::hit_test(app.doc(), at, tol, None) else {
@@ -2751,7 +2751,7 @@ fn draw_explode_preview(app: &App, p: &Painter, rect: Rect, view: View, at: V2) 
         EntityKind::BlockRef { block, .. } if app.doc().block(block).is_none() => return,
         _ => {}
     }
-    draw_objekt_hervorhebung(app, p, rect, view, e, Palette::DANGER);
+    draw_objekt_hervorhebung(app, p, rect, view, e, Palette::danger());
 }
 
 /// Zeichnet ein Objekt vollständig in einer Farbe über die Zeichnung.
@@ -3276,15 +3276,15 @@ fn handle_input(
                     jjcad_core::i18n::t_args_owned("gui.canvas.x_enter_laenge", &[("eingabe", format!("{}", text))])
                 },
                 FontId::proportional(13.0),
-                Palette::ACCENT,
+                Palette::accent(),
             );
             let bg = Rect::from_min_size(
                 pos + Vec2::new(16.0, 18.0),
                 galley.size() + Vec2::new(12.0, 6.0),
             );
-            painter.rect_filled(bg, 4.0, Color32::from_rgba_unmultiplied(24, 27, 32, 240));
-            painter.rect_stroke(bg, 4.0, Stroke::new(1.0, Palette::ACCENT));
-            painter.galley(pos + Vec2::new(22.0, 21.0), galley, Palette::ACCENT);
+            painter.rect_filled(bg, 4.0, Palette::hinweis_flaeche());
+            painter.rect_stroke(bg, 4.0, Stroke::new(1.0, Palette::accent()));
+            painter.galley(pos + Vec2::new(22.0, 21.0), galley, Palette::accent());
         }
         if ctx.input(|i| i.key_pressed(egui::Key::Enter)) {
             if let (Some(w), Some(last)) = (snapped, app.tool.as_ref().and_then(|t| t.pts.last().copied())) {
@@ -3865,7 +3865,7 @@ fn draw_auswahlfenster(p: &Painter, rect: Rect, view: View, start: V2, cur: V2) 
     p.rect_stroke(
         r,
         0.0,
-        Stroke::new(1.2, if crossing { Palette::OK } else { Palette::SELECT }),
+        Stroke::new(1.2, if crossing { Palette::ok() } else { Palette::select() }),
     );
 }
 
@@ -3887,7 +3887,7 @@ fn draw_text_rahmen(app: &App, p: &Painter, rect: Rect, view: View, selected: &[
         let pts: Vec<Pos2> = ecken.iter().map(|q| world_to_screen(rect, view, *q)).collect();
         p.add(Shape::closed_line(
             pts,
-            Stroke::new(1.0, Palette::SELECT.gamma_multiply(0.55)),
+            Stroke::new(1.0, Palette::select().gamma_multiply(0.55)),
         ));
     }
 }
@@ -3905,7 +3905,7 @@ fn draw_wand_basislinien(app: &App, p: &Painter, rect: Rect, view: View, selecte
         return;
     }
     let doc = app.doc();
-    let stroke = Stroke::new(1.2, Palette::ACCENT);
+    let stroke = Stroke::new(1.2, Palette::accent());
     for id in selected {
         let Some(e) = doc.entity(*id) else { continue };
         let EntityKind::Wall { a, b, .. } = &e.kind else {
@@ -3915,14 +3915,14 @@ fn draw_wand_basislinien(app: &App, p: &Painter, rect: Rect, view: View, selecte
         let pb = world_to_screen(rect, view, *b);
         p.extend(Shape::dashed_line(&[pa, pb], stroke, 9.0, 5.0));
         for q in [pa, pb] {
-            p.circle_filled(q, 2.2, Palette::ACCENT);
+            p.circle_filled(q, 2.2, Palette::accent());
         }
     }
 }
 
 /// Marke für einen Basispunkt (T0091): kleiner Kreis mit Fadenkreuz.
 fn draw_basispunkt_marke(p: &Painter, c: Pos2) {
-    let stroke = Stroke::new(1.4, Palette::ACCENT);
+    let stroke = Stroke::new(1.4, Palette::accent());
     p.circle_stroke(c, 5.0, stroke);
     p.line_segment([c - Vec2::new(9.0, 0.0), c + Vec2::new(9.0, 0.0)], stroke);
     p.line_segment([c - Vec2::new(0.0, 9.0), c + Vec2::new(0.0, 9.0)], stroke);
@@ -3964,18 +3964,18 @@ fn draw_grips(app: &App, p: &Painter, rect: Rect, view: View, selected: &[Id]) {
                     p.rect_filled(
                         r,
                         egui::Rounding::same(1.5),
-                        if hot { Palette::TEXT } else { Palette::ACCENT },
+                        if hot { Palette::text() } else { Palette::accent() },
                     );
-                    p.rect_stroke(r, egui::Rounding::same(1.5), Stroke::new(1.2_f32, Palette::BG));
+                    p.rect_stroke(r, egui::Rounding::same(1.5), Stroke::new(1.2_f32, Palette::bg()));
                 }
                 // Bogenenden: runder Griff — der Punkt läuft auf dem Kreis mit
                 crate::handles::GripKind::ArcStart | crate::handles::GripKind::ArcEnd => {
                     p.circle_filled(
                         c,
                         size * 0.55,
-                        if hot { Palette::TEXT } else { Palette::ACCENT },
+                        if hot { Palette::text() } else { Palette::accent() },
                     );
-                    p.circle_stroke(c, size * 0.55, Stroke::new(1.2_f32, Palette::BG));
+                    p.circle_stroke(c, size * 0.55, Stroke::new(1.2_f32, Palette::bg()));
                 }
                 // Raumstempel: runder Griff mit Kreuz — verschiebt nur die
                 // Beschriftung, die Fläche bleibt stehen (T0097).
@@ -3983,17 +3983,17 @@ fn draw_grips(app: &App, p: &Painter, rect: Rect, view: View, selected: &[Id]) {
                     p.circle_filled(
                         c,
                         size * 0.7,
-                        if hot { Palette::TEXT } else { Palette::ACCENT },
+                        if hot { Palette::text() } else { Palette::accent() },
                     );
-                    p.circle_stroke(c, size * 0.7, Stroke::new(1.2_f32, Palette::BG));
+                    p.circle_stroke(c, size * 0.7, Stroke::new(1.2_f32, Palette::bg()));
                     let r = size * 0.7;
                     p.line_segment(
                         [c - Vec2::new(r * 0.6, 0.0), c + Vec2::new(r * 0.6, 0.0)],
-                        Stroke::new(1.2_f32, Palette::BG),
+                        Stroke::new(1.2_f32, Palette::bg()),
                     );
                     p.line_segment(
                         [c - Vec2::new(0.0, r * 0.6), c + Vec2::new(0.0, r * 0.6)],
-                        Stroke::new(1.2_f32, Palette::BG),
+                        Stroke::new(1.2_f32, Palette::bg()),
                     );
                 }
                 crate::handles::GripKind::Edge(i) => {
@@ -4009,15 +4009,15 @@ fn draw_grips(app: &App, p: &Painter, rect: Rect, view: View, selected: &[Id]) {
                         c - d * 7.0,
                         c - n * 5.0,
                     ];
-                    p.add(Shape::convex_polygon(pts, Palette::ACCENT, Stroke::new(1.2_f32, Palette::BG)));
+                    p.add(Shape::convex_polygon(pts, Palette::accent(), Stroke::new(1.2_f32, Palette::bg())));
                     // zwei kurze Pfeile in Normalenrichtung
                     p.line_segment(
                         [c + n * 7.0, c + n * 11.0],
-                        Stroke::new(1.4_f32, Palette::ACCENT),
+                        Stroke::new(1.4_f32, Palette::accent()),
                     );
                     p.line_segment(
                         [c - n * 7.0, c - n * 11.0],
-                        Stroke::new(1.4_f32, Palette::ACCENT),
+                        Stroke::new(1.4_f32, Palette::accent()),
                     );
                 }
             }
@@ -4031,7 +4031,7 @@ fn draw_ghost(app: &App, p: &Painter, rect: Rect, view: View) {
     let w2s = |q: V2| world_to_screen(rect, view, q);
     let zoom = view.zoom;
 
-    let stroke = Stroke::new(1.5, Palette::ACCENT);
+    let stroke = Stroke::new(1.5, Palette::accent());
     let mut dl = jjcad_core::render::DisplayList::default();
     dl.prims = geo.prims.clone();
     for prim in &dl.prims {
@@ -4046,11 +4046,11 @@ fn draw_ghost(app: &App, p: &Painter, rect: Rect, view: View) {
         p.rect_stroke(
             r,
             0.0,
-            Stroke::new(1.0, Palette::SELECT.gamma_multiply(0.55)),
+            Stroke::new(1.0, Palette::select().gamma_multiply(0.55)),
         );
     }
     let anchor = w2s(g.pos);
-    let c = Palette::ACCENT;
+    let c = Palette::accent();
     p.line_segment([anchor - Vec2::new(6.0, 0.0), anchor + Vec2::new(6.0, 0.0)], Stroke::new(1.4, c));
     p.line_segment([anchor - Vec2::new(0.0, 6.0), anchor + Vec2::new(0.0, 6.0)], Stroke::new(1.4, c));
 
@@ -4068,7 +4068,7 @@ fn draw_ghost(app: &App, p: &Painter, rect: Rect, view: View) {
             Align2::LEFT_BOTTOM,
             badge,
             FontId::proportional(11.0),
-            Palette::ACCENT,
+            Palette::accent(),
         );
     }
 }
@@ -4128,7 +4128,7 @@ fn ghost_shape(
         // Text war hier nicht gezeichnet: die Einfüge-Vorschau zeigte bei
         // kopierten Textfeldern nur den Anker, keinen Text (T0025). Gezeichnet
         // über `paint_text` — dieselbe Lage, Schrift und Drehung wie danach.
-        PShape::Text(t) => paint_text(p, t, w2s(t.pos), zoom, Palette::ACCENT, rot),
+        PShape::Text(t) => paint_text(p, t, w2s(t.pos), zoom, Palette::accent(), rot),
         PShape::Dot { p: pos, r } => {
             p.circle_filled(w2s(*pos), ((*r * zoom) as f32).max(1.2), stroke.color);
         }
@@ -4335,7 +4335,7 @@ fn draw_hilfslinien(app: &App, p: &Painter, rect: Rect, view: View) {
     if app.halt.is_empty() {
         return;
     }
-    let col = Palette::TRACK;
+    let col = Palette::track();
     let muster = [6.0, 4.0];
     let lang = rect.width().max(rect.height()) * 1.2;
     let mut shapes: Vec<Shape> = Vec::new();
@@ -4427,7 +4427,7 @@ fn draw_fill_ghost(app: &App, p: &Painter, rect: Rect, view: View, umriss: &[V2]
     // Fläche andeuten — der Plan darunter bleibt lesbar
     let screen: Vec<Pos2> = boundary.iter().map(|q| w2s(*q)).collect();
     if !fill_too_thin(&screen) {
-        let c = Palette::ACCENT.gamma_multiply(0.14);
+        let c = Palette::accent().gamma_multiply(0.14);
         for tri in triangulate(&screen) {
             p.add(Shape::convex_polygon(tri.to_vec(), c, Stroke::NONE));
         }
@@ -4527,7 +4527,7 @@ fn draw_paint_ghost(
     // Fläche nicht ohne Kante steht. Mit Umrandung zeichnet der Renderer sie
     // bereits — eine zweite Linie würde sie nur dicker machen.
     if !app.options.fill_border_paint {
-        let stroke = Stroke::new(1.2, Palette::ACCENT.gamma_multiply(0.85));
+        let stroke = Stroke::new(1.2, Palette::accent().gamma_multiply(0.85));
         for ring in std::iter::once(boundary).chain(holes.iter().map(|h| h.as_slice())) {
             if ring.len() < 2 {
                 continue;
@@ -8723,7 +8723,7 @@ mod tests_textvorschau {
                 &PShape::Text(prim),
                 &w2s,
                 1.0,
-                Stroke::new(1.5, Palette::ACCENT),
+                Stroke::new(1.5, Palette::accent()),
                 0.0,
                 );
         });
@@ -9871,7 +9871,7 @@ mod tests_stutzvorschau {
         let mut v = Vec::new();
         for cs in &out.shapes {
             if let Shape::LineSegment { points, stroke } = &cs.shape {
-                if stroke.color == egui::epaint::ColorMode::Solid(Palette::DANGER) {
+                if stroke.color == egui::epaint::ColorMode::Solid(Palette::danger()) {
                     v.push((points[0], points[1], stroke.width));
                 }
             }
@@ -9896,7 +9896,7 @@ mod tests_stutzvorschau {
                 Shape::Path(p) => Some(p.stroke.color.clone()),
                 _ => None,
             };
-            if farbe == Some(egui::epaint::ColorMode::Solid(Palette::DANGER)) {
+            if farbe == Some(egui::epaint::ColorMode::Solid(Palette::danger())) {
                 v.push(match &cs.shape {
                     Shape::Path(p) => p.points.len(),
                     _ => 2,
@@ -10055,7 +10055,7 @@ mod tests_verlaengernvorschau {
         let mut v = Vec::new();
         for cs in &out.shapes {
             if let Shape::LineSegment { points, stroke } = &cs.shape {
-                if stroke.color == egui::epaint::ColorMode::Solid(Palette::OK) {
+                if stroke.color == egui::epaint::ColorMode::Solid(Palette::ok()) {
                     v.push((points[0], points[1], stroke.width));
                 }
             }
@@ -10372,7 +10372,7 @@ mod tests_verschneiden {
         let mut v = Vec::new();
         for cs in &out.shapes {
             if let Shape::LineSegment { points, stroke } = &cs.shape {
-                if stroke.color == egui::epaint::ColorMode::Solid(Palette::OK) {
+                if stroke.color == egui::epaint::ColorMode::Solid(Palette::ok()) {
                     v.push((points[0], points[1]));
                 }
             }
@@ -10602,9 +10602,9 @@ mod tests_zerlegen {
             .iter()
             .filter(|cs| match &cs.shape {
                 Shape::LineSegment { stroke, .. } => {
-                    stroke.color == egui::epaint::ColorMode::Solid(Palette::DANGER)
+                    stroke.color == egui::epaint::ColorMode::Solid(Palette::danger())
                 }
-                Shape::Path(p) => p.stroke.color == egui::epaint::ColorMode::Solid(Palette::DANGER),
+                Shape::Path(p) => p.stroke.color == egui::epaint::ColorMode::Solid(Palette::danger()),
                 _ => false,
             })
             .count()
