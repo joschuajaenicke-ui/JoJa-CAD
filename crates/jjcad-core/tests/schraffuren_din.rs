@@ -209,3 +209,211 @@ fn jede_schraffur_sieht_anders_aus() {
     }
     assert_eq!(gesehen.len(), TABELLE_5.len(), "21 Muster geprüft");
 }
+
+// ---------------------------------------------------------------------------
+// Globales Muster-Raster (T0095, Turn 2)
+// ---------------------------------------------------------------------------
+
+/// Fläche mit einem Muster füllen und ihre Displaylisten-Primitive liefern.
+/// `rechteck` = (x0, y0, x1, y1) in mm.
+fn prims(rechteck: [f64; 4], p: FillPattern) -> Vec<Prim> {
+    let [x0, y0, x1, y1] = rechteck;
+    let kontur = [[x0, y0], [x1, y0], [x1, y1], [x0, y1]];
+    let mut s = Session::new();
+    s.execute("doc.settings", &json!({ "input_unit": "mm" }))
+        .expect("Eingabe in Millimetern");
+    let a = s
+        .execute(
+            "draw.fill.points",
+            &json!({
+                "boundary": kontur,
+                "pattern": p.key(),
+                "scale": 100.0,
+                "border": false,
+                "layer": "Wände"
+            }),
+        )
+        .unwrap_or_else(|e| panic!("{}: Füllfläche: {e}", p.label()));
+    let id = a["created"][0].as_u64().expect("Id");
+    render_document(&RenderCtx::model(&s.doc))
+        .prims
+        .into_iter()
+        .filter(|pr| pr.entity == id)
+        .collect()
+}
+
+/// Startpunkte aller Musterstriche, auf die Musterrichtung projiziert und auf
+/// 5 mm gerundet (Toleranz gegen Rechenrauschen).
+fn strich_start(p: FillPattern, kontur: [f64; 4]) -> Vec<i64> {
+    let winkel = std::f64::consts::FRAC_PI_4;
+    let dir = jjcad_core::geom::v(winkel.cos(), winkel.sin());
+    let [x0, y0, x1, y1] = kontur;
+    let drin = |q: jjcad_core::geom::Vec2| {
+        q.x > x0 + 1.0 && q.x < x1 - 1.0 && q.y > y0 + 1.0 && q.y < y1 - 1.0
+    };
+    let mut out = Vec::new();
+    for pr in prims(kontur, p) {
+        if let Shape::Line(a, b) = pr.shape {
+            // Nur Striche **innerhalb** der Fläche: am Rand schneidet die
+            // Kontur das Muster ab, dort beginnt ein Strich an der Kante.
+            if drin(a) && drin(b) {
+                out.push((a.dot(dir) / 5.0).round() as i64);
+            }
+        }
+    }
+    out.sort_unstable();
+    out.dedup();
+    out
+}
+
+#[test]
+fn unterteilungen_haengen_am_globalen_raster() {
+    // Gestrichelte Muster der Tabelle 5: Beton (unbewehrt/bewehrt), WU-Beton,
+    // Metall und Glas. Zwei Flächen mit **verschiedenen** Rändern, dieselbe
+    // Musterlage: die Striche der inneren Fläche müssen auf demselben Raster
+    // liegen wie die der äußeren. Vor dem Umbau begann jede Linie ihr Muster
+    // am Rand des beschnittenen Stücks — dann liegen die Striche überall.
+    let aussen = [0.0, 0.0, 1400.0, 700.0];
+    let innen = [300.0, 100.0, 1100.0, 600.0];
+    for p in [
+        FillPattern::ConcretePlain,
+        FillPattern::ConcreteReinforced,
+        FillPattern::ConcreteWatertight,
+        FillPattern::Metal,
+        FillPattern::Glass,
+    ] {
+        let gross = strich_start(p, aussen);
+        let klein = strich_start(p, innen);
+        assert!(!klein.is_empty(), "{}: kein Strich gezeichnet", p.label());
+        for u in &klein {
+            assert!(
+                gross.contains(u),
+                "{}: Strich bei u = {} mm liegt nicht auf dem Raster der großen Fläche",
+                p.label(),
+                u * 5
+            );
+        }
+        // Und die Striche liegen nicht alle auf einer Höhe: das Muster ist
+        // gestaffelt (sonst wäre es eine durchgehende Linie).
+        assert!(
+            gross.len() > 1,
+            "{}: nur eine Strichlage — keine Unterteilung",
+            p.label()
+        );
+    }
+}
+
+#[test]
+fn figuren_sitzen_auf_dem_raster() {
+    // Kies (Kreise), Dämmstoffe Schlaufen (Ellipsen) und Textilbeton (Pfeile)
+    // sitzen in Rasterzellen, nicht an der Bounding-Box der Fläche.
+    let aussen = [0.0, 0.0, 1400.0, 700.0];
+    let innen = [300.0, 100.0, 1100.0, 600.0];
+    for p in [
+        FillPattern::Gravel,
+        FillPattern::InsulationLoops,
+        FillPattern::TextileConcrete,
+    ] {
+        let gross: Vec<(i64, i64)> = figuren(p, aussen);
+        let klein: Vec<(i64, i64)> = figuren(p, innen);
+        assert!(!klein.is_empty(), "{}: nichts gezeichnet", p.label());
+        for k in &klein {
+            assert!(
+                gross.contains(k),
+                "{}: Figur bei {k:?} liegt nicht auf dem Raster der großen Fläche",
+                p.label()
+            );
+        }
+    }
+}
+
+/// Figuren einer Fläche als gerundete Lagen (1 mm) — nur Primitive, die ganz
+/// innerhalb liegen (am Rand wird das Muster beschnitten).
+fn figuren(p: FillPattern, rechteck: [f64; 4]) -> Vec<(i64, i64)> {
+    let [x0, y0, x1, y1] = rechteck;
+    let mut out: Vec<(i64, i64)> = prims(rechteck, p)
+        .iter()
+        .filter(|pr| {
+            let bb = pr.bbox();
+            bb.min.x > x0 + 1.0 && bb.max.x < x1 - 1.0 && bb.min.y > y0 + 1.0 && bb.max.y < y1 - 1.0
+        })
+        .map(punkt_key)
+        .collect();
+    out.sort_unstable();
+    out.dedup();
+    out
+}
+
+/// Lage eines Primitivs als gerundeter Schlüssel (1 mm), damit zwei Flächen
+/// verglichen werden können.
+fn punkt_key(pr: &Prim) -> (i64, i64) {
+    let p = match pr.shape {
+        Shape::Circle { c, .. } => c,
+        Shape::Ellipse { c, .. } => c,
+        _ => pr.bbox().center(),
+    };
+    ((p.x).round() as i64, (p.y).round() as i64)
+}
+
+
+#[test]
+fn unterteilungen_sind_in_jeder_reihe_gleichmaessig() {
+    // Der eigentliche Vorwurf (T0095, Turn 2): die Unterteilungen einer Linie
+    // lagen „mal alle auf einer Höhe und mal nicht“. Innerhalb einer Reihe
+    // müssen die Abstände der Striche deshalb gleich sein — und über alle
+    // Reihen derselbe Takt gelten.
+    let dir = jjcad_core::geom::v(
+        std::f64::consts::FRAC_PI_4.cos(),
+        std::f64::consts::FRAC_PI_4.sin(),
+    );
+    let nrm = dir.perp();
+    // Groß genug, dass auch lange Striche mehrere Unterteilungen je Reihe haben.
+    let [x0, y0, x1, y1] = [0.0, 0.0, 3200.0, 2200.0];
+    // Muster mit **einem** Strichpaar je Zyklus: dort muss der Abstand zweier
+    // Striche in einer Reihe überall gleich sein. (Glas hat bewusst Gruppen
+    // aus drei Strichen — dafür gilt der Rastertest oben.)
+    for p in [
+        FillPattern::ConcretePlain,
+        FillPattern::ConcreteReinforced,
+        FillPattern::ConcreteWatertight,
+        FillPattern::Metal,
+    ] {
+        let mut reihen: std::collections::BTreeMap<i64, Vec<f64>> = Default::default();
+        for pr in prims([x0, y0, x1, y1], p) {
+            let Shape::Line(a, b) = pr.shape else { continue };
+            let drin = |q: jjcad_core::geom::Vec2| {
+                q.x > x0 + 1.0 && q.x < x1 - 1.0 && q.y > y0 + 1.0 && q.y < y1 - 1.0
+            };
+            if !drin(a) || !drin(b) {
+                continue;
+            }
+            reihen.entry((a.dot(nrm)).round() as i64).or_default().push(a.dot(dir));
+        }
+        let mut takte = Vec::new();
+        for (v, mut us) in reihen {
+            if us.len() < 2 {
+                continue;
+            }
+            us.sort_by(|a, b| a.partial_cmp(b).unwrap());
+            let diff: Vec<f64> = us.windows(2).map(|w| w[1] - w[0]).collect();
+            let erste = diff[0];
+            for d in &diff {
+                assert!(
+                    (d - erste).abs() < 0.5,
+                    "{}: Reihe v={v} hat ungleiche Abstände ({d:.1} statt {erste:.1} mm)",
+                    p.label()
+                );
+            }
+            takte.push(erste);
+        }
+        assert!(takte.len() >= 2, "{}: zu wenige Reihen geprüft", p.label());
+        let erster = takte[0];
+        for t in &takte {
+            assert!(
+                (t - erster).abs() < 0.5,
+                "{}: Reihen haben verschiedene Takte ({t:.1} statt {erster:.1} mm)",
+                p.label()
+            );
+        }
+    }
+}

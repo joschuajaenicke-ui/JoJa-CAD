@@ -1359,15 +1359,6 @@ pub fn render_fill(
     }
 }
 
-/// Bereich einer Kontur als Bounding-Box-Maß (Diagonale).
-fn fill_diag(pts: &[Vec2]) -> f64 {
-    if pts.is_empty() {
-        return 0.0;
-    }
-    let bb = BBox::from_points(pts);
-    (bb.max.x - bb.min.x).hypot(bb.max.y - bb.min.y)
-}
-
 // ---------------------------------------------------------------------------
 // Muster (DIN 1356-1:2026-09, Tabelle 5)
 // ---------------------------------------------------------------------------
@@ -1619,11 +1610,67 @@ fn push_muster(
     }
 }
 
+/// Das Muster-Raster: ein **fester Ursprung in der Zeichnung** (der
+/// Weltnullpunkt) mit zwei Achsen — Musterrichtung und Normale.
+///
+/// Alle Muster hängen an diesem einen Raster. Damit gilt für jede Linie
+/// dieselbe Taktung: die Unterteilungen liegen auf gemeinsamen Höhen, und
+/// zwei benachbarte Füllflächen zeigen dasselbe Strichbild ohne Sprung an der
+/// gemeinsamen Kante (T0095, Turn 2).
+#[derive(Clone, Copy)]
+struct Raster {
+    dir: Vec2,
+    nrm: Vec2,
+}
+
+impl Raster {
+    fn new(angle: f64) -> Raster {
+        Raster {
+            dir: Vec2::polar(angle, 1.0),
+            nrm: Vec2::polar(angle + std::f64::consts::FRAC_PI_2, 1.0),
+        }
+    }
+
+    /// Rasterkoordinaten eines Punktes: `u` längs, `v` quer.
+    fn uv(&self, p: Vec2) -> (f64, f64) {
+        (p.dot(self.dir), p.dot(self.nrm))
+    }
+
+    /// Punkt zu Rasterkoordinaten.
+    fn punkt(&self, u: f64, v: f64) -> Vec2 {
+        self.dir * u + self.nrm * v
+    }
+
+    /// Bereich der Kontur im Raster: (u_min, u_max, v_min, v_max).
+    fn bereich(&self, pts: &[Vec2]) -> (f64, f64, f64, f64) {
+        let mut u0 = f64::INFINITY;
+        let mut u1 = f64::NEG_INFINITY;
+        let mut v0 = f64::INFINITY;
+        let mut v1 = f64::NEG_INFINITY;
+        for p in pts {
+            let (u, v) = self.uv(*p);
+            if u < u0 {
+                u0 = u;
+            }
+            if u > u1 {
+                u1 = u;
+            }
+            if v < v0 {
+                v0 = v;
+            }
+            if v > v1 {
+                v1 = v;
+            }
+        }
+        (u0, u1, v0, v1)
+    }
+}
+
 /// Parallele Musterlinien über eine Kontur, optional gestrichelt.
 ///
 /// `versatz` ist die Lage der ersten Linie in Einheiten von `spacing`
 /// (0,5 legt sie zwischen zwei Linien), `staffel` versetzt das Strichmuster
-/// jeder zweiten Reihe — so entstehen die gestaffelten Reihen der Norm.
+/// jeder zweiten Reihe um diesen Anteil eines Strichzyklus.
 #[allow(clippy::too_many_arguments)]
 fn muster_linien(
     dl: &mut DisplayList,
@@ -1638,22 +1685,23 @@ fn muster_linien(
     staffel: f64,
 ) {
     let spacing = spacing.max(0.5);
-    let origin = BBox::from_points(pts).center();
-    let reach = fill_diag(pts) * 0.5 + spacing;
-    // Genug Linien für die ganze Kontur, aber begrenzt — ein sehr kleiner
-    // Abstand darf das Zeichnen nicht lahmlegen.
-    let n = ((reach / spacing).ceil() as i64 + 2).clamp(1, 4000);
     for &ang in angles {
-        let nrm = Vec2::polar(ang + std::f64::consts::FRAC_PI_2, 1.0);
-        let dir = Vec2::polar(ang, 1.0);
-        for i in -n..=n {
-            let off = nrm * ((i as f64 + versatz) * spacing);
-            let a = origin + off - dir * reach;
-            let b = origin + off + dir * reach;
+        let r = Raster::new(ang);
+        let (umin, umax, vmin, vmax) = r.bereich(pts);
+        // Lage der Linien kommt aus dem Raster: v = (i + versatz) · spacing.
+        let i0 = ((vmin / spacing) - versatz).floor() as i64 - 1;
+        let i1 = ((vmax / spacing) - versatz).ceil() as i64 + 1;
+        if i1 - i0 > 4000 {
+            continue;
+        }
+        for i in i0..=i1 {
+            let v = (i as f64 + versatz) * spacing;
+            let a = r.punkt(umin - spacing, v);
+            let b = r.punkt(umax + spacing, v);
             let phase = if i.rem_euclid(2) == 1 { staffel } else { 0.0 };
             for (q0, q1) in crate::area::clip_line_area(a, b, pts, holes) {
                 match striche {
-                    Some(muster) => muster_striche(dl, e, st, q0, q1, spacing, muster, phase),
+                    Some(muster) => muster_striche(dl, e, st, q0, q1, &r, spacing, muster, phase),
                     None => muster_linie(dl, e, st, q0, q1),
                 }
             }
@@ -1664,12 +1712,19 @@ fn muster_linien(
 /// Strichmuster auf einer Strecke: `muster` ist eine Folge aus (Strich, Lücke)
 /// in Einheiten von `spacing`. Mehr als ein Paar ergibt Gruppen (Glas: drei
 /// Striche, dann eine lange Lücke).
+///
+/// Die Striche sitzen auf dem **globalen Takt** des Rasters (`u` ab
+/// Weltnullpunkt), nicht am Anfang des an der Kontur abgeschnittenen Stücks.
+/// Vorher begann jedes Stück sein Muster bei 0 — dadurch lagen die
+/// Unterteilungen der Linien auf verschiedenen Höhen, je nachdem wo die
+/// Kontur sie beschnitt (T0095, Turn 2).
 fn muster_striche(
     dl: &mut DisplayList,
     e: &Entity,
     st: &PrimStyle,
     a: Vec2,
     b: Vec2,
+    r: &Raster,
     spacing: f64,
     muster: &[(f64, f64)],
     phase: f64,
@@ -1682,24 +1737,35 @@ fn muster_striche(
     if zyklus < 1e-6 {
         return;
     }
-    let dir = (b - a).normalized();
-    let mut t = -(phase * zyklus);
-    let mut idx = 0usize;
+    let ua = r.uv(a).0;
+    // Reihenversatz: jede zweite Reihe beginnt einen halben Zyklus später.
+    let ph = phase * zyklus;
+    let mut k = ((ua - ph) / zyklus).floor() as i64 - 1;
     let mut schutz = 0;
-    while t < len && schutz < 20_000 {
+    while schutz < 20_000 {
         schutz += 1;
-        let (an, aus) = muster[idx % muster.len()];
-        let t0 = t.max(0.0);
-        let t1 = (t + an * spacing).min(len);
-        if t1 > t0 {
-            muster_linie(dl, e, st, a + dir * t0, a + dir * t1);
+        let basis = k as f64 * zyklus + ph;
+        if basis > ua + len {
+            break;
         }
-        t += (an + aus) * spacing;
-        idx += 1;
+        let mut cum = 0.0;
+        for (an, aus) in muster {
+            let s0 = basis + cum;
+            let s1 = s0 + an * spacing;
+            let t0 = (s0 - ua).max(0.0);
+            let t1 = (s1 - ua).min(len);
+            if t1 > t0 + 0.02 {
+                let p0 = a + (b - a) * (t0 / len);
+                let p1 = a + (b - a) * (t1 / len);
+                muster_linie(dl, e, st, p0, p1);
+            }
+            cum += (an + aus) * spacing;
+        }
+        k += 1;
     }
 }
 
-/// Punktraster im gedrehten Musterraster, nur innerhalb der Kontur.
+/// Punktraster im Muster-Raster, nur innerhalb der Kontur.
 ///
 /// `reihen` ist der Reihenabstand in Einheiten von `spacing`, `groesse` der
 /// Punktradius in Einheiten von `spacing` (vor der Streuung), `streu` der
@@ -1719,22 +1785,28 @@ fn muster_punkte(
     streu: f64,
 ) {
     let spacing = spacing.max(0.5);
-    let origin = BBox::from_points(pts).center();
-    let dir = Vec2::polar(angle, 1.0);
-    let nrm = dir.perp();
+    let r = Raster::new(angle);
+    let (umin, umax, vmin, vmax) = r.bereich(pts);
     let reihe = (spacing * reihen).max(0.5);
-    let half = fill_diag(pts) * 0.5 + spacing;
     // Rasterweite notfalls vergröbern, damit eine große Fläche bei kleinem
     // Abstand nicht zehntausende Punkte erzeugt.
     let mut sp = spacing;
-    while (2.0 * half / sp).powi(2) > 30_000.0 {
+    let flaeche = ((umax - umin) / sp + 2.0) * ((vmax - vmin) / reihe + 2.0);
+    while flaeche / (spacing / sp) > 30_000.0 {
         sp *= 1.4;
     }
-    let r = ((sp * radius) * groesse.max(0.1)).max(st.width * 0.9).max(0.05);
-    let n = ((half / sp).ceil() as i64 + 3).clamp(1, 4000);
-    let m = ((half / reihe).ceil() as i64 + 3).clamp(1, 4000);
-    for i in -n..=n {
-        for j in -m..=m {
+    let rad = ((sp * radius) * groesse.max(0.1))
+        .max(st.width * 0.9)
+        .max(0.05);
+    let i0 = (umin / sp).floor() as i64;
+    let i1 = (umax / sp).ceil() as i64;
+    let j0 = (vmin / reihe).floor() as i64;
+    let j1 = (vmax / reihe).ceil() as i64;
+    if (i1 - i0) * (j1 - j0) > 400_000 {
+        return;
+    }
+    for i in i0..=i1 {
+        for j in j0..=j1 {
             let jx = if streu > 0.0 {
                 (streuung(i, j, 1) - 0.5) * streu * sp
             } else {
@@ -1745,14 +1817,14 @@ fn muster_punkte(
             } else {
                 0.0
             };
-            let p = origin + dir * (i as f64 * sp + jx) + nrm * (j as f64 * reihe + jy);
+            let p = r.punkt(i as f64 * sp + jx, j as f64 * reihe + jy);
             if !crate::area::point_in_area(p, pts, holes) {
                 continue;
             }
             let rr = if streu > 0.0 {
-                r * (0.7 + 0.6 * streuung(i, j, 3))
+                rad * (0.7 + 0.6 * streuung(i, j, 3))
             } else {
-                r
+                rad
             };
             dl.push(Prim {
                 shape: Shape::Dot { p, r: rr },
@@ -1767,6 +1839,10 @@ fn muster_punkte(
 /// Wellenlinien entlang der Musterrichtung, am Polygon beschnitten —
 /// Dämmstoffe (Zickzackform) und Vollholz. `amp` ist die Amplitude, `periode`
 /// die Wellenlänge, beide in Einheiten von `spacing`.
+///
+/// Die Reihen liegen auf dem Muster-Raster, und die Welle beginnt bei einem
+/// Vielfachen der Wellenlänge ab dem Weltnullpunkt — damit laufen zwei
+/// benachbarte Flächen in derselben Phase weiter.
 fn muster_wellen(
     dl: &mut DisplayList,
     e: &Entity,
@@ -1779,30 +1855,40 @@ fn muster_wellen(
     amp: f64,
     periode: f64,
 ) {
-    let spacing = (spacing * reihen).max(0.5);
-    let origin = BBox::from_points(pts).center();
-    let dir = Vec2::polar(angle, 1.0);
-    let nrm = dir.perp();
-    let mut spacing = spacing;
-    let mut half = fill_diag(pts) * 0.5 + spacing;
+    let r = Raster::new(angle);
+    let (umin, umax, vmin, vmax) = r.bereich(pts);
+    let ri = (spacing * reihen).max(0.5);
+    let period = (ri * periode.max(0.5)).max(1.0);
     // Die Zahl der Wellensegmente begrenzen (die Displayliste wird je Stand
     // einmal gebaut).
-    while (2.0 * half / spacing) * (2.0 * half / (spacing * periode / 10.0)) > 40_000.0 {
-        spacing *= 1.5;
-        half = fill_diag(pts) * 0.5 + spacing;
+    let mut ri = ri;
+    let mut period = period;
+    while ((umax - umin) / period * 10.0 + 10.0)
+        * ((vmax - vmin) / ri + 3.0)
+        > 40_000.0
+    {
+        ri *= 1.5;
+        period *= 1.5;
     }
-    let amplitude = spacing * amp;
-    let period = spacing * periode.max(0.5);
-    let step = (period / 10.0).max(half / 400.0).max(0.2);
-    let steps = ((half * 2.0) / step).ceil() as i64;
-    let n = ((half / spacing).ceil() as i64 + 1).clamp(1, 400);
-    for i in -n..=n {
-        let base = origin + nrm * (i as f64 * spacing);
+    let amplitude = ri * amp;
+    let step = (period / 10.0).max(0.2);
+    // Start auf einem Vielfachen der Wellenlänge (gleiche Phase in jeder
+    // Fläche), Ende am letzten Vielfachen hinter dem Rand.
+    let u0 = (umin / period).floor() * period;
+    let u1 = (umax / period).ceil() * period;
+    let steps = (((u1 - u0) / step).ceil() as i64).clamp(1, 4000);
+    let j0 = (vmin / ri).floor() as i64 - 1;
+    let j1 = (vmax / ri).ceil() as i64 + 1;
+    if j1 - j0 > 400 {
+        return;
+    }
+    for j in j0..=j1 {
+        let v = j as f64 * ri;
         let mut prev: Option<Vec2> = None;
         for k in 0..=steps {
-            let s = -half + k as f64 * step;
-            let off = ((s / period) * std::f64::consts::TAU).sin() * amplitude;
-            let p = base + dir * s + nrm * off;
+            let u = u0 + k as f64 * step;
+            let off = ((u / period) * std::f64::consts::TAU).sin() * amplitude;
+            let p = r.punkt(u, v + off);
             if let Some(q) = prev {
                 muster_abschnitt(dl, e, st, q, p, pts, holes);
             }
@@ -1812,7 +1898,7 @@ fn muster_wellen(
 }
 
 /// Nr. 1 Boden/Gelände unverändert: Zickzackschraffur (Dreiecke) unter der
-/// Geländekante.
+/// Geländekante. Zähne und Reihen sitzen auf dem Muster-Raster.
 fn muster_zickzack(
     dl: &mut DisplayList,
     e: &Entity,
@@ -1823,22 +1909,25 @@ fn muster_zickzack(
     spacing: f64,
 ) {
     let s = spacing.max(0.5);
-    let origin = BBox::from_points(pts).center();
-    let dir = Vec2::polar(angle, 1.0);
-    let nrm = dir.perp();
+    let r = Raster::new(angle);
+    let (umin, umax, vmin, vmax) = r.bereich(pts);
     let reihe = s * 1.3;
-    let half = fill_diag(pts) * 0.5 + reihe;
-    let zahn = s;
+    let zahnh = s * 0.5;
     let amp = s * 0.75;
-    let m = ((half / reihe).ceil() as i64 + 1).clamp(1, 400);
-    let n = ((half / (zahn * 0.5)).ceil() as i64 + 2).clamp(1, 4000);
-    for j in -m..=m {
-        let base = origin + nrm * (j as f64 * reihe);
+    let j0 = (vmin / reihe).floor() as i64 - 1;
+    let j1 = (vmax / reihe).ceil() as i64 + 1;
+    let k0 = (umin / zahnh).floor() as i64 - 1;
+    let k1 = (umax / zahnh).ceil() as i64 + 1;
+    if j1 - j0 > 400 || k1 - k0 > 4000 {
+        return;
+    }
+    for j in j0..=j1 {
+        let v = j as f64 * reihe;
         let mut prev: Option<Vec2> = None;
-        for k in -n..=n {
-            let x = k as f64 * zahn * 0.5;
-            let y = if k.rem_euclid(2) == 0 { -amp } else { amp };
-            let p = base + dir * x + nrm * y;
+        for k in k0..=k1 {
+            let u = k as f64 * zahnh;
+            let dv = if k.rem_euclid(2) == 0 { -amp } else { amp };
+            let p = r.punkt(u, v + dv);
             if let Some(q) = prev {
                 muster_abschnitt(dl, e, st, q, p, pts, holes);
             }
@@ -1847,7 +1936,8 @@ fn muster_zickzack(
     }
 }
 
-/// Nr. 2 Boden/Gelände verändert: Längsstriche zwischen Querstrichen.
+/// Nr. 2 Boden/Gelände verändert: Längsstriche zwischen Querstrichen. Jedes
+/// Teil hängt am Raster, die Striche liegen dadurch auf gemeinsamen Höhen.
 fn muster_boden_veraendert(
     dl: &mut DisplayList,
     e: &Entity,
@@ -1858,30 +1948,48 @@ fn muster_boden_veraendert(
     spacing: f64,
 ) {
     let s = spacing.max(0.5);
-    let origin = BBox::from_points(pts).center();
-    let dir = Vec2::polar(angle, 1.0);
-    let nrm = dir.perp();
+    let r = Raster::new(angle);
+    let (umin, umax, vmin, vmax) = r.bereich(pts);
     let reihe = s * 2.0;
-    let half = fill_diag(pts) * 0.5 + reihe;
-    let m = ((half / reihe).ceil() as i64 + 1).clamp(1, 400);
-    let n = ((half / s).ceil() as i64 + 2).clamp(1, 4000);
-    for j in -m..=m {
-        let base = origin + nrm * (j as f64 * reihe);
-        for k in -n..=n {
-            let p = base + dir * (k as f64 * s);
-            // Querstrich über die halbe Reihenhöhe
-            muster_abschnitt(dl, e, st, p - nrm * (s * 0.55), p + nrm * (s * 0.55), pts, holes);
+    let j0 = (vmin / reihe).floor() as i64;
+    let j1 = (vmax / reihe).ceil() as i64;
+    let k0 = (umin / s).floor() as i64 - 1;
+    let k1 = (umax / s).ceil() as i64 + 1;
+    if j1 - j0 > 400 || k1 - k0 > 4000 {
+        return;
+    }
+    for j in j0..=j1 {
+        let v = j as f64 * reihe;
+        for k in k0..=k1 {
+            let u = k as f64 * s;
+            // Querstrich über die halbe Reihenhöhe (fest am Raster)
+            muster_abschnitt(
+                dl,
+                e,
+                st,
+                r.punkt(u, v - s * 0.55),
+                r.punkt(u, v + s * 0.55),
+                pts,
+                holes,
+            );
             // Zwei Längsstriche in der folgenden Zelle
-            for v in [-0.28f64, 0.28] {
-                let a = p + dir * (s * 0.22) + nrm * (s * v);
-                let b = p + dir * (s * 0.78) + nrm * (s * v);
-                muster_abschnitt(dl, e, st, a, b, pts, holes);
+            for dv in [-0.28f64, 0.28] {
+                muster_abschnitt(
+                    dl,
+                    e,
+                    st,
+                    r.punkt(u + s * 0.22, v + s * dv),
+                    r.punkt(u + s * 0.78, v + s * dv),
+                    pts,
+                    holes,
+                );
             }
         }
     }
 }
 
-/// Nr. 3 Kies: Kieselsteine als geschlossene Kreise wechselnder Größe.
+/// Nr. 3 Kies: Kieselsteine als geschlossene Kreise wechselnder Größe, jeder
+/// in seiner Rasterzelle (die Streuung bleibt innerhalb der Zelle).
 fn muster_kiesel(
     dl: &mut DisplayList,
     e: &Entity,
@@ -1892,34 +2000,37 @@ fn muster_kiesel(
     spacing: f64,
 ) {
     let s = spacing.max(0.5);
-    let origin = BBox::from_points(pts).center();
-    let dir = Vec2::polar(angle, 1.0);
-    let nrm = dir.perp();
+    let r = Raster::new(angle);
+    let (umin, umax, vmin, vmax) = r.bereich(pts);
     let reihe = s * 1.5;
     let sp = s * 1.5;
-    let half = fill_diag(pts) * 0.5 + sp;
-    let n = ((half / sp).ceil() as i64 + 2).clamp(1, 400);
-    let m = ((half / reihe).ceil() as i64 + 2).clamp(1, 2000);
-    for i in -n..=n {
-        for j in -m..=m {
-            let jx = (streuung(i, j, 4) - 0.5) * sp * 0.5;
-            let jy = (streuung(i, j, 5) - 0.5) * reihe * 0.5;
-            let p = origin + dir * (i as f64 * sp + jx) + nrm * (j as f64 * reihe + jy);
+    let i0 = (umin / sp).floor() as i64;
+    let i1 = (umax / sp).ceil() as i64;
+    let j0 = (vmin / reihe).floor() as i64;
+    let j1 = (vmax / reihe).ceil() as i64;
+    if (i1 - i0) * (j1 - j0) > 40_000 {
+        return;
+    }
+    for i in i0..=i1 {
+        for j in j0..=j1 {
+            let ju = (streuung(i, j, 4) - 0.5) * sp * 0.5;
+            let jv = (streuung(i, j, 5) - 0.5) * reihe * 0.5;
+            let p = r.punkt(i as f64 * sp + ju, j as f64 * reihe + jv);
             if !crate::area::point_in_area(p, pts, holes) {
                 continue;
             }
-            let r = s * (0.34 + 0.34 * streuung(i, j, 6));
+            let rad = s * (0.34 + 0.34 * streuung(i, j, 6));
             // Nur Steine zeichnen, die ganz in der Fläche liegen — sonst ragen
             // sie über die Umgrenzung hinaus.
             let passt = (0..8).all(|k| {
                 let a = k as f64 / 8.0 * std::f64::consts::TAU;
-                crate::area::point_in_area(p + Vec2::polar(a, r), pts, holes)
+                crate::area::point_in_area(p + Vec2::polar(a, rad), pts, holes)
             });
             if !passt {
                 continue;
             }
             dl.push(Prim {
-                shape: Shape::Circle { c: p, r },
+                shape: Shape::Circle { c: p, r: rad },
                 style: *st,
                 entity: e.id,
                 layer: e.layer,
@@ -1929,6 +2040,7 @@ fn muster_kiesel(
 }
 
 /// Nr. 8 Textilbeton: Pfeile zwischen den Musterlinien, in Musterrichtung.
+/// Die Pfeile sitzen in der Mitte jeder Rasterzelle (halbe Zelle versetzt).
 fn muster_pfeile(
     dl: &mut DisplayList,
     e: &Entity,
@@ -1939,34 +2051,47 @@ fn muster_pfeile(
     spacing: f64,
 ) {
     let s = spacing.max(0.5);
-    let origin = BBox::from_points(pts).center();
-    let dir = Vec2::polar(angle, 1.0);
-    let nrm = dir.perp();
-    let reihe = s * 2.0;
-    let half = fill_diag(pts) * 0.5 + reihe;
-    let m = ((half / reihe).ceil() as i64 + 1).clamp(1, 400);
-    let n = ((half / reihe).ceil() as i64 + 2).clamp(1, 400);
-    for j in -m..=m {
-        for i in -n..=n {
-            let p = origin
-                + nrm * ((j as f64 + 0.5) * reihe)
-                + dir * ((i as f64 + 0.5) * reihe);
-            if !crate::area::point_in_area(p, pts, holes) {
-                continue;
-            }
-            let lang = s * 0.55;
+    let r = Raster::new(angle);
+    let (umin, umax, vmin, vmax) = r.bereich(pts);
+    let zelle = s * 2.0;
+    let i0 = (umin / zelle).floor() as i64;
+    let i1 = (umax / zelle).ceil() as i64;
+    let j0 = (vmin / zelle).floor() as i64;
+    let j1 = (vmax / zelle).ceil() as i64;
+    if (i1 - i0) * (j1 - j0) > 40_000 {
+        return;
+    }
+    let dir = r.dir;
+    let lang = s * 0.55;
+    for j in j0..=j1 {
+        for i in i0..=i1 {
+            let p = r.punkt((i as f64 + 0.5) * zelle, (j as f64 + 0.5) * zelle);
             let spitz = p + dir * (lang * 0.5);
             let fuss = p - dir * (lang * 0.5);
-            muster_abschnitt(dl, e, st, fuss, spitz, pts, holes);
+            // Nur ganze Pfeile zeichnen — ein angeschnittener Pfeil sähe an
+            // der Umgrenzung wie ein Fehler aus (wie bei Kies und Schlaufen).
+            let mut ecken = vec![fuss, spitz];
             for seite in [-1.0f64, 1.0] {
-                let ende = spitz - Vec2::polar(angle + seite * 0.7, lang * 0.42);
-                muster_abschnitt(dl, e, st, spitz, ende, pts, holes);
+                ecken.push(spitz - Vec2::polar(angle + seite * 0.7, lang * 0.42));
+            }
+            if !ecken
+                .iter()
+                .all(|q| crate::area::point_in_area(*q, pts, holes))
+            {
+                continue;
+            }
+            for w in ecken.windows(2).take(1) {
+                muster_linie(dl, e, st, w[0], w[1]);
+            }
+            for ende in &ecken[2..] {
+                muster_linie(dl, e, st, spitz, *ende);
             }
         }
     }
 }
 
-/// Nr. 14 Dämmstoffe, Schlaufenform: Reihen geschlossener Schlaufen.
+/// Nr. 14 Dämmstoffe, Schlaufenform: Reihen geschlossener Schlaufen, jede in
+/// ihrer Rasterzelle.
 fn muster_schlaufen(
     dl: &mut DisplayList,
     e: &Entity,
@@ -1977,21 +2102,25 @@ fn muster_schlaufen(
     spacing: f64,
 ) {
     let s = spacing.max(0.5);
-    let origin = BBox::from_points(pts).center();
-    let dir = Vec2::polar(angle, 1.0);
-    let nrm = dir.perp();
+    let r = Raster::new(angle);
+    let (umin, umax, vmin, vmax) = r.bereich(pts);
     // Eine Reihe ist ein Band aus aneinanderstoßenden Schlaufen: Schlaufe
-    // 0,9 s breit, 1,9 s hoch, Reihen im Abstand einer Schlaufe.
+    // 0,92 s breit, 1,9 s hoch, Reihen im Abstand einer Schlaufe.
     let rx = s * 0.46;
     let ry = s * 0.95;
     let schritt = rx * 2.0;
     let reihe = ry * 2.0;
-    let half = fill_diag(pts) * 0.5 + reihe;
-    let m = ((half / reihe).ceil() as i64 + 1).clamp(1, 400);
-    let n = ((half / schritt).ceil() as i64 + 2).clamp(1, 2000);
-    for j in -m..=m {
-        for i in -n..=n {
-            let p = origin + nrm * (j as f64 * reihe) + dir * (i as f64 * schritt);
+    let i0 = (umin / schritt).floor() as i64;
+    let i1 = (umax / schritt).ceil() as i64;
+    let j0 = (vmin / reihe).floor() as i64;
+    let j1 = (vmax / reihe).ceil() as i64;
+    if (i1 - i0) * (j1 - j0) > 40_000 {
+        return;
+    }
+    let (dir, nrm) = (r.dir, r.nrm);
+    for j in j0..=j1 {
+        for i in i0..=i1 {
+            let p = r.punkt(i as f64 * schritt, j as f64 * reihe);
             // Schlaufen nur ganz zeichnen — eine angeschnittene Schleife sähe
             // an der Umgrenzung wie ein Fehler aus.
             let passt = (0..8).all(|k| {
@@ -2036,33 +2165,36 @@ fn muster_abdichtung(
     kanten: bool,
 ) {
     let s = spacing.max(0.5);
-    let origin = BBox::from_points(pts).center();
-    let dir = Vec2::polar(angle, 1.0);
-    let nrm = dir.perp();
+    let r = Raster::new(angle);
+    let (umin, umax, vmin, vmax) = r.bereich(pts);
     // Lagenhöhe, Abstand zweier Lagen und Zellenlänge in Musterrichtung.
     let lage_h = s * 0.42;
     let lage_abstand = lage_h + s * 0.05;
     let zelle = s * 1.3;
     let band = lage_h * lagen as f64 + lage_abstand * (lagen.saturating_sub(1)) as f64;
     let abstand = band + s * 0.9;
-    let half = fill_diag(pts) * 0.5 + abstand;
-    let m = ((half / abstand).ceil() as i64 + 1).clamp(1, 400);
-    let n = ((half / zelle).ceil() as i64 + 2).clamp(1, 2000);
+    let j0 = (vmin / abstand).floor() as i64;
+    let j1 = (vmax / abstand).ceil() as i64;
+    let i0 = (umin / zelle).floor() as i64 - 1;
+    let i1 = (umax / zelle).ceil() as i64 + 1;
+    if j1 - j0 > 400 || i1 - i0 > 4000 {
+        return;
+    }
     let mut gefuellt = *st;
     gefuellt.fill = Some(st.color);
-    for j in -m..=m {
+    for j in j0..=j1 {
         let band_anfang = j as f64 * abstand;
         for lage in 0..lagen {
-            let y0 = band_anfang + lage as f64 * lage_abstand;
+            let v0 = band_anfang + lage as f64 * lage_abstand;
             // Die zweite Lage liegt um eine halbe Zelle versetzt.
             let versatz = if lage % 2 == 1 { 0.5 } else { 0.0 };
-            for i in -n - 1..=n {
-                let x0 = (i as f64 + versatz) * zelle;
+            for i in i0..=i1 {
+                let u0 = (i as f64 + versatz) * zelle;
                 let ecken = [
-                    origin + dir * x0 + nrm * y0,
-                    origin + dir * (x0 + zelle) + nrm * y0,
-                    origin + dir * (x0 + zelle) + nrm * (y0 + lage_h),
-                    origin + dir * x0 + nrm * (y0 + lage_h),
+                    r.punkt(u0, v0),
+                    r.punkt(u0 + zelle, v0),
+                    r.punkt(u0 + zelle, v0 + lage_h),
+                    r.punkt(u0, v0 + lage_h),
                 ];
                 let drin = ecken
                     .iter()
@@ -2090,10 +2222,16 @@ fn muster_abdichtung(
         }
         if kanten {
             // Aufkantung: die Bandkanten laufen als durchgehende Linie mit.
-            for y in [band_anfang, band_anfang + band] {
-                let a = origin - dir * half + nrm * y;
-                let b = origin + dir * half + nrm * y;
-                muster_abschnitt(dl, e, st, a, b, pts, holes);
+            for v in [band_anfang, band_anfang + band] {
+                muster_abschnitt(
+                    dl,
+                    e,
+                    st,
+                    r.punkt(umin - s, v),
+                    r.punkt(umax + s, v),
+                    pts,
+                    holes,
+                );
             }
         }
     }
