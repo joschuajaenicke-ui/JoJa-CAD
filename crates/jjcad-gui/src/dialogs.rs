@@ -4491,6 +4491,29 @@ mod tests_einstellungen {
                 })
                 .unwrap_or_else(|| panic!("„{text}“ fehlt im Einstellungsfenster"))
         };
+        // Nicht nur gezeichnet, sondern **sichtbar**: die Zeile darf nicht
+        // unterhalb der Bildlaufgrenze liegen (T0098) — der Beschnitt des
+        // gezeichneten Textes muss seinen Kasten enthalten.
+        let sichtbar = |text: &str| -> Rect {
+            out.shapes
+                .iter()
+                .find_map(|cs| match &cs.shape {
+                    egui::Shape::Text(t) if t.galley.text() == text => {
+                        let r = Rect::from_min_size(t.pos, t.galley.size());
+                        Some(r.intersect(cs.clip_rect))
+                    }
+                    _ => None,
+                })
+                .unwrap_or_else(|| panic!("„{text}“ fehlt im Einstellungsfenster"))
+        };
+        for text in ["Verschieben", "Kontinuierlich", "Sprunghaft"] {
+            let ganz = kasten(text);
+            let sicht = sichtbar(text);
+            assert!(
+                sicht.width() > ganz.width() - 1.0 && sicht.height() > ganz.height() - 1.0,
+                "„{text}“ liegt hinter der Bildlaufgrenze ({ganz:?} beschnitten auf {sicht:?})"
+            );
+        }
         let (a, b) = (kasten("Kontinuierlich"), kasten("Sprunghaft"));
         assert!(
             a.right() + 2.0 < b.left() || b.right() + 2.0 < a.left(),
