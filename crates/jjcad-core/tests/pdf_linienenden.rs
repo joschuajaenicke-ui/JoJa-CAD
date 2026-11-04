@@ -31,8 +31,8 @@ fn s_mm() -> Session {
 fn leeres_blatt(sess: &mut Session) {
     let id = sess.doc.sheets[0].id;
     sess.set_space(Some(id));
+    // `entities.clear()` nimmt seit T0109 auch das Ansichtsfenster mit.
     sess.doc.sheets[0].entities.clear();
-    sess.doc.sheets[0].viewports.clear();
 }
 
 /// Zwei Linien in L-Form, 3 mm stark, Ecke bei (150, 50).

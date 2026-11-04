@@ -3488,6 +3488,139 @@ pub fn treppe(app: &mut App, ui: &mut Ui, ziel: Ziel) {
 ///
 /// Eine Auswahl über mehrere Arten hinweg zeigt je Art einen Abschnitt;
 /// geändert wird immer nur die Gruppe, zu der die Zeile gehört.
+/// Ansichtsfenster im Papierraum (T0109).
+///
+/// Es ist ein normales Blattobjekt: dieselben Zeilen beim Aufziehen und beim
+/// Bearbeiten. Die Papierlage steht in Millimetern (das Blatt ist in mm
+/// gezeichnet), der Maßstab ist das Verhältnis Zeichnung : Papier.
+pub fn viewport(app: &mut App, ui: &mut Ui, ziel: Ziel) {
+    let e: Option<Entity> = ziel.id().and_then(|id| app.doc().entity(id).cloned());
+    let vp = match &e {
+        Some(e) => match &e.kind {
+            EntityKind::Viewport(vp) => Some(vp.clone()),
+            _ => None,
+        },
+        None => None,
+    };
+    kopf(app, ui, ziel, jjcad_core::i18n::tr("gui.props.ansichtsfenster"), "viewport");
+    reihenfolge(app, ui, ziel);
+
+    ui.add_space(4.0);
+    widgets::hline(ui);
+    ui.add_space(4.0);
+    section_title(ui, "viewport", jjcad_core::i18n::tr("gui.props.ansichtsfenster"));
+    zeile("artkopf");
+
+    let gesperrt = vp.is_none();
+    let (mut name, mut scale, mut x, mut y, mut w, mut h, mut rahmen) = match &vp {
+        Some(v) => (v.name.clone(), v.scale, v.x, v.y, v.w, v.h, v.show_frame),
+        None => (String::new(), 100.0, 0.0, 0.0, 100.0, 100.0, true),
+    };
+
+    zeile("name");
+    if gesperrt {
+        gesperrt_zeile(ui, jjcad_core::i18n::tr("gui.props.name"), jjcad_core::i18n::tr("gui.props.aus_den_klicks"));
+    } else {
+        widgets::field_row(ui, jjcad_core::i18n::tr("gui.props.name"), |ui| {
+            ui.add_sized([150.0, 20.0], egui::TextEdit::singleline(&mut name));
+        });
+    }
+
+    zeile("massstab");
+    if gesperrt {
+        gesperrt_zeile(ui, jjcad_core::i18n::tr("gui.props.massstab"), jjcad_core::i18n::tr("gui.props.aus_den_klicks"));
+    } else {
+        widgets::field_row(ui, jjcad_core::i18n::tr("gui.props.massstab"), |ui| {
+            ui.add_sized([70.0, 20.0], widgets::zahl(&mut scale, 1.0, 1.0..=1000.0));
+        });
+    }
+
+    zeile("lage");
+    if gesperrt {
+        gesperrt_zeile(ui, jjcad_core::i18n::tr("gui.props.x_y_mm"), jjcad_core::i18n::tr("gui.props.aus_den_klicks"));
+    } else {
+        widgets::field_row(ui, jjcad_core::i18n::tr("gui.props.x_y_mm"), |ui| {
+            ui.add_sized([52.0, 20.0], widgets::zahl(&mut x, 1.0, widgets::KOORD_MIN_MM..=widgets::KOORD_MAX_MM));
+            ui.add_sized([52.0, 20.0], widgets::zahl(&mut y, 1.0, widgets::KOORD_MIN_MM..=widgets::KOORD_MAX_MM));
+        });
+    }
+
+    zeile("groesse");
+    if gesperrt {
+        gesperrt_zeile(ui, jjcad_core::i18n::tr("gui.props.b_h_mm"), jjcad_core::i18n::tr("gui.props.aus_den_klicks"));
+    } else {
+        widgets::field_row(ui, jjcad_core::i18n::tr("gui.props.b_h_mm"), |ui| {
+            ui.add_sized([52.0, 20.0], widgets::zahl(&mut w, 0.5, 10.0..=2000.0));
+            ui.add_sized([52.0, 20.0], widgets::zahl(&mut h, 0.5, 10.0..=2000.0));
+        });
+    }
+
+    zeile("rahmen");
+    if gesperrt {
+        gesperrt_zeile(ui, jjcad_core::i18n::tr("gui.props.fensterrahmen_zeigen"), jjcad_core::i18n::tr("gui.props.aus_den_klicks"));
+    } else {
+        widgets::field_row(ui, jjcad_core::i18n::tr("gui.props.fensterrahmen_zeigen"), |ui| {
+            ui.checkbox(&mut rahmen, "");
+        });
+    }
+
+    zeile("aktionen");
+    if let Some(id) = ziel.id() {
+        ui.horizontal(|ui| {
+            if ui.button(jjcad_core::i18n::tr("gui.panels.auf_zeichnung_zentrieren")).clicked() {
+                let c = app.doc().bbox();
+                let u = app.unit();
+                if c.is_valid() {
+                    let cx = u.from_mm(c.center().x);
+                    let cy = u.from_mm(c.center().y);
+                    setzen(app, &serde_json::json!({"ids": [id], "center": [cx, cy]}));
+                }
+            }
+            if ui.button(jjcad_core::i18n::tr("gui.panels.entfernen")).clicked() {
+                let _ = app
+                    .session_mut()
+                    .execute("modify.erase", &serde_json::json!({"ids": [id]}));
+                app.session_mut().clear_selection();
+                app.mark_changed();
+            }
+        });
+    } else {
+        ui.label(theme::faint(jjcad_core::i18n::tr("gui.props.aus_den_klicks")));
+    }
+
+    if let Some(id) = ziel.id() {
+        let mut params = serde_json::json!({"ids": [id]});
+        let mut geaendert = false;
+        if let Some(v) = &vp {
+            if name != v.name {
+                params["name"] = serde_json::json!(name);
+                geaendert = true;
+            }
+            if (scale - v.scale).abs() > 1e-9 {
+                params["scale"] = serde_json::json!(scale);
+                geaendert = true;
+            }
+            if (x - v.x).abs() > 1e-9 || (y - v.y).abs() > 1e-9 {
+                params["x"] = serde_json::json!(x);
+                params["y"] = serde_json::json!(y);
+                geaendert = true;
+            }
+            if (w - v.w).abs() > 1e-9 || (h - v.h).abs() > 1e-9 {
+                params["w"] = serde_json::json!(w);
+                params["h"] = serde_json::json!(h);
+                geaendert = true;
+            }
+            if rahmen != v.show_frame {
+                params["show_frame"] = serde_json::json!(rahmen);
+                geaendert = true;
+            }
+        }
+        if geaendert {
+            setzen(app, &params);
+        }
+    }
+}
+
 pub fn mehrfach(app: &mut App, ui: &mut Ui, ids: &[Id]) {
     let mut gruppen: Vec<(std::mem::Discriminant<EntityKind>, Vec<Id>)> = Vec::new();
     for id in ids {
@@ -4030,6 +4163,24 @@ mod tests {
                     oben: None,
                 },
             ),
+            (
+                // Ansichtsfenster: dieselben Zeilen beim Aufziehen und beim
+                // Bearbeiten (T0109).
+                "sheet.viewport_tool",
+                EntityKind::Viewport(jjcad_core::model::Viewport {
+                    id: 1,
+                    name: "Ansicht".into(),
+                    x: 15.0,
+                    y: 83.0,
+                    w: 380.0,
+                    h: 200.0,
+                    center: jjcad_core::geom::Vec2::ZERO,
+                    scale: 100.0,
+                    show_frame: true,
+                    locked: false,
+                    layers: None,
+                }),
+            ),
         ];
 
         for (tool, kind) in faelle {
@@ -4103,6 +4254,7 @@ mod tests {
                     | EntityKind::Volume { .. }
                     | EntityKind::Stair { .. }
                     | EntityKind::Room { .. }
+                    | EntityKind::Viewport(_)
             ) || Einfach::aus_objekt(kind).is_some()
         }
 
@@ -4257,6 +4409,19 @@ mod tests {
                 name: "Bild".into(),
                 data: String::new(),
             },
+            EntityKind::Viewport(jjcad_core::model::Viewport {
+                id: 1,
+                name: "Ansicht".into(),
+                x: 15.0,
+                y: 83.0,
+                w: 380.0,
+                h: 200.0,
+                center: jjcad_core::geom::Vec2::ZERO,
+                scale: 100.0,
+                show_frame: true,
+                locked: false,
+                layers: None,
+            }),
         ];
         for k in &arten {
             let name = k.type_name();

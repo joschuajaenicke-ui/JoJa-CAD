@@ -168,7 +168,7 @@ pub fn new_sheet(doc: &mut Document, paper: PaperSize, landscape: bool, name: &s
         // Renderer-Sonderfall mehr.
         frame: false,
         show_title_block: false,
-        viewports: Vec::new(),
+        viewports_alt: Vec::new(),
         entities: Vec::new(),
     };
     // Rahmen und Schriftfeld bestehen aus normalen Linien und Textfeldern —
@@ -204,7 +204,7 @@ pub fn new_sheet(doc: &mut Document, paper: PaperSize, landscape: bool, name: &s
         100.0
     };
     sheet.scale = scale;
-    sheet.viewports.push(Viewport {
+    let vp = Viewport {
         id: doc.new_id(),
         name: "Ansicht".to_string(),
         x: vp_x,
@@ -216,7 +216,12 @@ pub fn new_sheet(doc: &mut Document, paper: PaperSize, landscape: bool, name: &s
         show_frame: false,
         locked: false,
         layers: None,
-    });
+    };
+    // Das Ansichtsfenster ist ein normales Blattobjekt (T0109) — es liegt
+    // hinter Rahmen und Schriftfeld, damit beide sichtbar bleiben.
+    let mut e = Entity::new(vp.id, 0, EntityKind::Viewport(vp));
+    e.style.color = Some(Color::BLACK);
+    sheet.entities.insert(0, e);
     sheet
 }
 

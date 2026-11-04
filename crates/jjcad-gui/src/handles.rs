@@ -224,6 +224,14 @@ pub fn grips_of(e: &Entity) -> Vec<(GripKind, V2)> {
             out.push((GripKind::Label, *label));
             out
         }
+        // Ansichtsfenster: die vier Ecken des Rechtecks. Ziehen spannt das
+        // Fenster neu auf, die gegenüberliegende Ecke bleibt stehen — wie bei
+        // einem Rechteck (T0109).
+        EntityKind::Viewport(vp) => viewport_ecken(vp)
+            .iter()
+            .enumerate()
+            .map(|(i, p)| (GripKind::Vert(i), *p))
+            .collect(),
         // Bild: die vier Ecken des Rahmens. Ziehen spannt das Bild neu auf,
         // die gegenüberliegende Ecke bleibt stehen (wie beim Rechteck).
         EntityKind::Image { a, b, .. } => jjcad_core::bild::ecken(*a, *b)
@@ -250,6 +258,17 @@ pub fn grips_of(e: &Entity) -> Vec<(GripKind, V2)> {
         }
         _ => Vec::new(),
     }
+}
+
+/// Die vier Ecken eines Ansichtsfensters (links unten, rechts unten, rechts
+/// oben, links oben) — dieselbe Reihenfolge wie `bild::ecken`.
+fn viewport_ecken(vp: &jjcad_core::model::Viewport) -> [V2; 4] {
+    [
+        V2::new(vp.x, vp.y),
+        V2::new(vp.x + vp.w, vp.y),
+        V2::new(vp.x + vp.w, vp.y + vp.h),
+        V2::new(vp.x, vp.y + vp.h),
+    ]
 }
 
 /// Wendet eine Griffbewegung auf eine Kopie des Elements an.
@@ -394,6 +413,27 @@ pub fn apply_grip_tol(orig: &Entity, kind: GripKind, target: V2, tol: f64) -> Op
                 }
                 _ => return None,
             }
+        }
+        // Ansichtsfenster: eine Ecke verschiebt genau diese Rechteckecke, die
+        // gegenüberliegende bleibt stehen. Eine entartete Kante (unter 10 mm)
+        // wird nicht übernommen — ein Fenster ohne Fläche wäre nicht mehr zu
+        // fassen.
+        (EntityKind::Viewport(vp), GripKind::Vert(i)) => {
+            // Die gegenüberliegende Ecke bleibt stehen — das neue Rechteck
+            // spannt sich zwischen ihr und dem Zeiger auf.
+            let ecken = viewport_ecken(vp);
+            let fest = *ecken.get((i + 2) % 4)?;
+            let x0 = target.x.min(fest.x);
+            let x1 = target.x.max(fest.x);
+            let y0 = target.y.min(fest.y);
+            let y1 = target.y.max(fest.y);
+            if x1 - x0 < 10.0 || y1 - y0 < 10.0 {
+                return None;
+            }
+            vp.x = x0;
+            vp.y = y0;
+            vp.w = x1 - x0;
+            vp.h = y1 - y0;
         }
         // Bild: eine Ecke verschiebt genau diese Rahmenecke. Aus den vier
         // Ecken entsteht das neue Rechteck; eine entartete Kante (unter 1 mm)
@@ -1973,5 +2013,68 @@ mod tests_masskette {
             EntityKind::Dim { b, .. } => assert_eq!(*b, V2::new(3500.0, 0.0)),
             k => panic!("kein Maß mehr: {k:?}"),
         }
+    }
+}
+
+#[cfg(test)]
+mod tests_ansichtsfenster {
+    use super::*;
+
+    fn fenster() -> Entity {
+        Entity::new(
+            7,
+            1,
+            EntityKind::Viewport(jjcad_core::model::Viewport {
+                id: 7,
+                name: "Ansicht".into(),
+                x: 15.0,
+                y: 83.0,
+                w: 380.0,
+                h: 200.0,
+                center: V2::ZERO,
+                scale: 100.0,
+                show_frame: true,
+                locked: false,
+                layers: None,
+            }),
+        )
+    }
+
+    /// Vier Eckgriffe wie bei einem Rechteck (T0109).
+    #[test]
+    fn ansichtsfenster_hat_vier_eckgriffe() {
+        let griffe = grips_of(&fenster());
+        assert_eq!(
+            griffe,
+            vec![
+                (GripKind::Vert(0), V2::new(15.0, 83.0)),
+                (GripKind::Vert(1), V2::new(395.0, 83.0)),
+                (GripKind::Vert(2), V2::new(395.0, 283.0)),
+                (GripKind::Vert(3), V2::new(15.0, 283.0)),
+            ]
+        );
+    }
+
+    /// Eine gezogene Ecke spannt das Fenster neu auf, die gegenüberliegende
+    /// bleibt stehen — wie beim Rechteck.
+    #[test]
+    fn ecke_zieht_das_fenster_auf() {
+        let neu = apply_grip(&fenster(), GripKind::Vert(2), V2::new(500.0, 300.0)).unwrap();
+        match &neu.kind {
+            EntityKind::Viewport(vp) => {
+                assert_eq!((vp.x, vp.y, vp.w, vp.h), (15.0, 83.0, 485.0, 217.0));
+                // Maßstab und Modellmitte bleiben.
+                assert_eq!(vp.scale, 100.0);
+                assert_eq!(vp.center, V2::ZERO);
+            }
+            k => panic!("kein Ansichtsfenster mehr: {k:?}"),
+        }
+    }
+
+    /// Eine entartete Kante wird nicht übernommen — sonst wäre das Fenster
+    /// nicht mehr zu fassen.
+    #[test]
+    fn entartete_kante_wird_verworfen() {
+        assert!(apply_grip(&fenster(), GripKind::Vert(2), V2::new(20.0, 90.0)).is_none());
     }
 }

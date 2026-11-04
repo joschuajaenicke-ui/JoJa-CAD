@@ -162,7 +162,7 @@ fn main() {
     // ---- Blatt aktualisieren ----
     let sheet_id = s.doc.sheets[0].id;
     run!("sheet.update", json!({"sheet": sheet_id, "scale": 60.0}));
-    let vp_id = s.doc.sheets[0].viewports[0].id;
+    let vp_id = s.doc.sheets[0].viewports().next().map(|(e, _)| e.id).expect("Ansichtsfenster");
     run!(
         "sheet.update_viewport",
         json!({"sheet": sheet_id, "viewport": vp_id, "scale": 60.0, "center": [5.25, 4.1]})

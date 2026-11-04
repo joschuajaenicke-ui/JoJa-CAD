@@ -55,6 +55,8 @@ pub fn from_json(s: &str) -> Result<Document, String> {
     actions::normalize_openings(&mut doc);
     // Blattrahmen älterer Dateien zu normalen Linien machen
     normalize_sheet_frames(&mut doc);
+    // Ansichtsfenster älterer Dateien zu normalen Blattobjekten machen (T0109)
+    normalize_sheet_viewports(&mut doc);
     doc.modified = false;
     Ok(doc)
 }
@@ -83,6 +85,25 @@ pub fn normalize_sheet_frames(doc: &mut Document) {
         sheet.entities = rahmen;
         sheet.frame = false;
         sheet.show_title_block = false;
+    }
+}
+
+/// Ansichtsfenster zu normalen Blattobjekten machen (T0109).
+///
+/// Bis dahin standen sie in `Sheet::viewports` — mit eigenem Auswahlfeld,
+/// eigenem Verschieben und ohne Griffe. Jetzt ist jedes Fenster ein
+/// `EntityKind::Viewport` in `sheet.entities`; die alte Liste wird beim Laden
+/// geleert und nie wieder geschrieben.
+pub fn normalize_sheet_viewports(doc: &mut Document) {
+    for sheet in doc.sheets.iter_mut() {
+        let alt = std::mem::take(&mut sheet.viewports_alt);
+        for vp in alt {
+            let id = vp.id;
+            let mut e = crate::model::Entity::new(id, 0, crate::model::EntityKind::Viewport(vp));
+            e.style.color = Some(crate::style::Color::BLACK);
+            // Hinter allem, was schon auf dem Blatt steht.
+            sheet.entities.insert(0, e);
+        }
     }
 }
 

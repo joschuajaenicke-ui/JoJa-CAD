@@ -29,7 +29,27 @@ fn s_meter() -> Session {
 fn ziele() -> (u64, u64) {
     let sess = s_meter();
     let s = &sess.doc.sheets[0];
-    (s.id, s.viewports[0].id)
+    (s.id, vp(&sess).id)
+}
+
+/// Erstes Ansichtsfenster des Blatts — seit T0109 ein normales Blattobjekt.
+fn vp(sess: &Session) -> &jjcad_core::model::Viewport {
+    sess.doc.sheets[0]
+        .viewports()
+        .next()
+        .map(|(_, v)| v)
+        .expect("Ansichtsfenster")
+}
+
+fn vp_mut(sess: &mut Session) -> &mut jjcad_core::model::Viewport {
+    sess.doc.sheets[0]
+        .entities
+        .iter_mut()
+        .find_map(|e| match &mut e.kind {
+            jjcad_core::model::EntityKind::Viewport(v) => Some(v),
+            _ => None,
+        })
+        .expect("Ansichtsfenster")
 }
 
 fn nah(a: f64, b: f64, tol: f64) -> bool {
@@ -53,7 +73,7 @@ fn center_folgt_der_einheit_center_mm_ist_immer_mm() {
         &json!({"sheet": sid, "viewport": vid, "center": [5618, 7076]}),
     )
     .unwrap();
-    let c = sess.doc.sheets[0].viewports[0].center;
+    let c = vp(&sess).center;
     assert!(
         nah(c.x, 5_618_000.0, 1e-6) && nah(c.y, 7_076_000.0, 1e-6),
         "center muss in Metern gedeutet werden, war {:?}",
@@ -67,7 +87,7 @@ fn center_folgt_der_einheit_center_mm_ist_immer_mm() {
         &json!({"sheet": sid, "viewport": vid, "center_mm": [5618, 7076]}),
     )
     .unwrap();
-    let c = sess.doc.sheets[0].viewports[0].center;
+    let c = vp(&sess).center;
     assert!(
         nah(c.x, 5618.0, 1e-9) && nah(c.y, 7076.0, 1e-9),
         "center_mm muss in Millimetern ankommen, war {:?}",
@@ -80,7 +100,7 @@ fn center_folgt_der_einheit_center_mm_ist_immer_mm() {
         &json!({"units": "mm", "sheet": sid, "viewport": vid, "center": [1, 2]}),
     )
     .unwrap();
-    let c = sess.doc.sheets[0].viewports[0].center;
+    let c = vp(&sess).center;
     assert!(nah(c.x, 1.0, 1e-9) && nah(c.y, 2.0, 1e-9));
 
     // Zwei Angaben für dieselbe Lage sind ein Fehler, keine stille Vorliebe.
@@ -105,7 +125,7 @@ fn anzeige_und_eingabe_nutzen_dieselbe_einheit() {
     .unwrap();
 
     let einheit = sess.doc.settings.input_unit;
-    let info = actions::viewport_info(einheit, &sess.doc.sheets[0].viewports[0]);
+    let info = actions::viewport_info(einheit, vp(&sess));
     assert_eq!(info["units"], "m");
     assert!(nah(info["center"][0].as_f64().unwrap(), 5.618, 1e-9));
     assert!(nah(info["center"][1].as_f64().unwrap(), 7.076, 1e-9));
@@ -118,7 +138,7 @@ fn anzeige_und_eingabe_nutzen_dieselbe_einheit() {
         &json!({"sheet": sid, "viewport": vid, "center": info["center"].clone()}),
     )
     .unwrap();
-    let c = sess.doc.sheets[0].viewports[0].center;
+    let c = vp(&sess).center;
     assert!(
         nah(c.x, 5618.0, 1e-6) && nah(c.y, 7076.0, 1e-6),
         "Rundlauf über `center` verlor die Lage: {:?}",
@@ -139,9 +159,9 @@ fn rechteck_ist_immer_papier_millimeter() {
         .unwrap();
     let vid = r["viewport"].as_u64().unwrap();
     let vp = sess.doc.sheets[0]
-        .viewports
-        .iter()
-        .find(|v| v.id == vid)
+        .viewports()
+        .find(|(e, _)| e.id == vid)
+        .map(|(_, v)| v)
         .unwrap();
     assert_eq!((vp.x, vp.y, vp.w, vp.h), (20.0, 70.0, 380.0, 210.0));
     assert_eq!(vp.scale, 50.0);
@@ -176,7 +196,7 @@ fn fit_viewport_setzt_mitte_und_masstab() {
     assert_eq!(r["viewport"].as_u64().unwrap(), vid);
 
     let bbox = sess.doc.bbox();
-    let vp = &sess.doc.sheets[0].viewports[0];
+    let vp = vp(&sess);
     // Mitte = BBox-Mitte
     assert!(nah(vp.center.x, bbox.center().x, 1e-6));
     assert!(nah(vp.center.y, bbox.center().y, 1e-6));
@@ -289,11 +309,14 @@ fn pdf_zeichnet_bbox_geteilt_durch_masstab() {
 
     // Nur die Zeichnung soll Tinte machen: Rahmen und Schriftfeld raus,
     // Fensterrahmen aus. Sonst misst man den Blattrahmen mit.
-    sess.doc.sheets[0].entities.clear();
-    sess.doc.sheets[0].viewports[0].show_frame = false;
+    // Alles außer dem Ansichtsfenster raus (es ist seit T0109 ein Blattobjekt).
+    sess.doc.sheets[0]
+        .entities
+        .retain(|e| matches!(e.kind, jjcad_core::model::EntityKind::Viewport(_)));
+    vp_mut(&mut sess).show_frame = false;
 
     let bbox = sess.doc.bbox();
-    let vp = sess.doc.sheets[0].viewports[0].clone();
+    let vp = vp(&sess).clone();
     let (pw, ph) = sess.doc.sheets[0].size();
 
     let pdf_datei = ziel("jjcad-t0037-blatt.pdf");

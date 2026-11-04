@@ -267,7 +267,6 @@ pub struct DocTab {
     pub rev: u64,
     pub cache: Option<(DrawCacheKey, DisplayList)>,
     pub hover: Option<Id>,
-    pub selected_viewport: Option<Id>,
 }
 
 #[derive(Clone)]
@@ -1196,7 +1195,6 @@ impl App {
             rev: 0,
             cache: None,
             hover: None,
-            selected_viewport: None,
         };
         let options = ToolOptions::from_doc(&tab.session.doc);
         let show_grid = tab.session.doc.settings.show_grid;
@@ -2408,6 +2406,20 @@ impl App {
                         self.switch_tab(TabKind::Sheet(s));
                     }
                 }
+                // Prüfbild: Ansichtsfenster im Papierraum ausgewählt — es zeigt
+                // dann seine vier Eckgriffe wie jedes andere Objekt (T0109).
+                "selviewport" => {
+                    if let Some(s) = self.doc().sheets.first().map(|s| s.id) {
+                        self.switch_tab(TabKind::Sheet(s));
+                        if let Some(id) = self
+                            .doc()
+                            .sheet(s)
+                            .and_then(|sh| sh.viewports().next().map(|(e, _)| e.id))
+                        {
+                            self.session_mut().select(vec![id]);
+                        }
+                    }
+                }
                 "toolpreview" => {
                     self.start_tool("draw.wall");
                     if let Some(t) = &mut self.tool {
@@ -2569,7 +2581,6 @@ impl App {
             self.session_mut().set_space(raum);
             self.tool = None;
             self.ghost = None;
-            self.tab_mut().selected_viewport = None;
             self.tab_mut().hover = None;
             // Die Anzeigeliste des alten Raums gilt hier nicht mehr.
             self.tab_mut().cache = None;
@@ -2941,7 +2952,15 @@ impl App {
                         &serde_json::json!({"sheet": sid, "show_frame": true}),
                     );
                     match r {
-                        Ok(_) => {
+                        Ok(antwort) => {
+                            // Das neue Fenster ist ausgewählt — wie ein frisch
+                            // gezeichnetes Objekt (T0109).
+                            if let Some(id) = antwort
+                                .get("viewport")
+                                .and_then(|v| v.as_u64())
+                            {
+                                self.session_mut().select(vec![id]);
+                            }
                             self.mark_changed();
                             self.toast(jjcad_core::i18n::tr("gui.app.ansichtsfenster_angelegt"));
                         }
@@ -3261,7 +3280,6 @@ impl App {
                     rev: 0,
                     cache: None,
                     hover: None,
-                    selected_viewport: None,
                 };
                 // Unbenutzten Startreiter ersetzen statt einen zweiten anzulegen
                 let pristine = self.tabs.len() == 1
@@ -3317,7 +3335,6 @@ impl App {
             rev: 0,
             cache: None,
             hover: None,
-            selected_viewport: None,
         };
         self.tabs.push(tab);
         self.active = self.tabs.len() - 1;
@@ -6102,7 +6119,9 @@ pub(crate) fn abschluss_meldung(action: &str) -> Option<&'static str> {
         "modify.area.union" => jjcad_core::i18n::tr("gui.app.fuellflaeche_vereinigt"),
         "modify.area.split" => jjcad_core::i18n::tr("gui.app.fuellflaeche_geteilt"),
         "block.insert" => jjcad_core::i18n::tr("gui.app.block_eingefuegt"),
-        "sheet.viewport_tool" => jjcad_core::i18n::tr("gui.app.ansichtsfenster_angelegt"),
+        "sheet.viewport_tool" | "sheet.add_viewport" => {
+            jjcad_core::i18n::tr("gui.app.ansichtsfenster_angelegt")
+        }
         _ => return None,
     })
 }
@@ -6627,6 +6646,7 @@ pub fn entity_kind_icon(kind: &EntityKind) -> &'static str {
         EntityKind::Stair { .. } => "stair",
         EntityKind::BlockRef { .. } => "block",
         EntityKind::Image { .. } => "image",
+        EntityKind::Viewport(_) => "viewport",
     }
 }
 

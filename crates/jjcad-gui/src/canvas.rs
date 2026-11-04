@@ -1281,7 +1281,7 @@ pub fn show(app: &mut App, ui: &mut Ui) {
         painter.rect_filled(flaeche, 0.0, farbe);
         crate::chat::zeichnen_offen(&app.chat, &painter, rect);
     } else {
-        handle_input(app, ui, &resp, rect, &painter, is_sheet, snapped, raw_world);
+        handle_input(app, ui, &resp, rect, &painter, snapped, raw_world);
         // Aufforderung des laufenden Werkzeugs (bzw. der Einfüge-Vorschau) in
         // den Chat. Nur bei geändertem Text, sonst stünde sie 60-mal pro
         // Sekunde im Protokoll.
@@ -1466,7 +1466,7 @@ fn draw_sheet(app: &mut App, p: &Painter, rect: Rect, view: View, cursor: Option
     let w2s = |q: V2| world_to_screen(rect, view, q);
 
     // 1. Inhalt der Ansichtsfenster (liegt unter dem Papierraum)
-    for vp in &sheet.viewports {
+    for (_, vp) in sheet.viewports() {
         let vp_rect = Rect::from_min_max(
             w2s(V2::new(vp.x, vp.y + vp.h)),
             w2s(V2::new(vp.x + vp.w, vp.y)),
@@ -1498,33 +1498,15 @@ fn draw_sheet(app: &mut App, p: &Painter, rect: Rect, view: View, cursor: Option
         }
     }
 
-    // 2. Rahmen der Ansichtsfenster
-    let selected_vp = app.tab().selected_viewport;
-    for vp in &sheet.viewports {
+    // 2. Beschriftung der Ansichtsfenster. Rahmen, Auswahlfarbe und Griffe
+    //    kommen aus der normalen Objektbehandlung (`render_sheet` +
+    //    `draw_grips`) — ein Ansichtsfenster ist seit T0109 ein Blattobjekt.
+    for (e, vp) in sheet.viewports() {
         let vp_rect = Rect::from_min_max(
             w2s(V2::new(vp.x, vp.y + vp.h)),
             w2s(V2::new(vp.x + vp.w, vp.y)),
         );
-        let sel = selected_vp == Some(vp.id);
-        let stroke = if sel {
-            Stroke::new(2.0, Palette::select())
-        } else if vp.show_frame {
-            Stroke::new(1.0, Palette::text_faint())
-        } else {
-            Stroke::new(1.0, Color32::from_rgba_unmultiplied(0x99, 0x99, 0x99, 60))
-        };
-        p.rect_stroke(vp_rect, 0.0, stroke);
-        // Griffmarkierung
-        if sel {
-            for c in [
-                vp_rect.left_top(),
-                vp_rect.right_top(),
-                vp_rect.left_bottom(),
-                vp_rect.right_bottom(),
-            ] {
-                p.rect_filled(Rect::from_center_size(c, Vec2::splat(7.0)), 1.0, Palette::select());
-            }
-        }
+        let sel = app.selection().contains(&e.id);
         p.text(
             Pos2::new(vp_rect.left() + 4.0, vp_rect.top() + 2.0),
             Align2::LEFT_TOP,
@@ -3286,7 +3268,6 @@ fn handle_input(
     resp: &Response,
     rect: Rect,
     painter: &Painter,
-    is_sheet: bool,
     snapped: Option<V2>,
     raw: Option<V2>,
 ) {
@@ -3407,13 +3388,6 @@ fn handle_input(
     // wird wegen der Zeigerposition abgebrochen, das Auswahlfenster blieb sonst
     // dauerhaft stehen (T0023).
     if auswahl_abschliessen(app, ctx, resp, rect, view) {
-        return;
-    }
-
-    // Papierraum: Ansichtsfenster (auswählen, aufziehen, mit V verschieben)
-    // haben Vorrang vor der Objektbearbeitung — alles andere läuft wie im
-    // Modell über dieselben Werkzeuge.
-    if is_sheet && sheet_viewport_input(app, resp, rect, view) {
         return;
     }
 
@@ -3785,146 +3759,6 @@ fn fertig_erkennen(resp: &Response, zwei_klicks: bool, start_frame: f64, frame: 
         resp.ctx
             .input(|i| i.pointer.any_released() || !i.pointer.has_pointer())
     }
-}
-
-/// Ansichtsfenster im Papierraum: aufziehen, anklicken, mit `V` verschieben.
-///
-/// Liefert `true`, wenn der Klick/Zug hier verbraucht wurde. Papierraum-Objekte
-/// (Schriftfeld, Texte, eigene Linien) werden nicht angefasst — die laufen
-/// durch dieselbe Werkzeug- und Auswahlbehandlung wie im Modell.
-fn sheet_viewport_input(app: &mut App, resp: &Response, rect: Rect, view: View) -> bool {
-    let Some(sid) = (match app.tab().tab {
-        TabKind::Sheet(id) => Some(id),
-        _ => None,
-    }) else {
-        return false;
-    };
-    let Some(pos) = resp.ctx.pointer_hover_pos() else {
-        return false;
-    };
-    if !rect.contains(pos) {
-        return false;
-    }
-    let w = screen_to_world(rect, view, pos);
-
-    // Werkzeug "Ansicht aufziehen": Rechteck in Papierkoordinaten
-    if let Some(tool) = app.tool.clone() {
-        if tool.action == "sheet.viewport_tool" {
-            if resp.clicked_by(egui::PointerButton::Primary) {
-                let mut t = tool.clone();
-                t.pts.push(w);
-                if t.pts.len() >= 2 {
-                    let (a, b) = (t.pts[0], t.pts[1]);
-                    // auf das Blatt begrenzen und auf 0,5 mm runden
-                    let (sw, sh) = app
-                        .doc()
-                        .sheet(sid)
-                        .map(|s| s.size())
-                        .unwrap_or((420.0, 297.0));
-                    let mut x = a.x.min(b.x);
-                    let mut y = a.y.min(b.y);
-                    let mut ww = (a.x - b.x).abs();
-                    let mut hh = (a.y - b.y).abs();
-                    x = x.clamp(0.0, sw - 10.0);
-                    y = y.clamp(0.0, sh - 10.0);
-                    ww = ww.min(sw - x);
-                    hh = hh.min(sh - y);
-                    x = (x * 2.0).round() / 2.0;
-                    y = (y * 2.0).round() / 2.0;
-                    ww = (ww * 2.0).round() / 2.0;
-                    hh = (hh * 2.0).round() / 2.0;
-                    if ww > 8.0 && hh > 8.0 {
-                        let center = app.doc().bbox().center();
-                        let scale = app.doc().sheet(sid).map(|s| s.scale).unwrap_or(100.0);
-                        let u = app.unit();
-                        let cx = u.from_mm(center.x);
-                        let cy = u.from_mm(center.y);
-                        let _ = app.session_mut().execute(
-                            "sheet.add_viewport",
-                            &json!({"sheet": sid, "x": x, "y": y, "w": ww, "h": hh,
-                                    "scale": scale, "show_frame": true,
-                                    "center": [cx, cy]}),
-                        );
-                        app.mark_changed();
-                        app.tab_mut().selected_viewport = app
-                            .doc()
-                            .sheet(sid)
-                            .and_then(|s| s.viewports.last().map(|v| v.id));
-                    }
-                    app.tool = None;
-                } else {
-                    app.tool = Some(t);
-                }
-            }
-            return true;
-        }
-    }
-
-    // Klick: Papierraum-Objekt hat Vorrang, sonst wird das Fenster gewählt.
-    // Während ein Zeichenwerkzeug läuft, wird nichts ausgewählt — sonst
-    // markiert jeder Klick ins Fenster zusätzlich das Ansichtsfenster.
-    if resp.clicked_by(egui::PointerButton::Primary) && app.tool.is_none() {
-        let tol = (8.0 / view.zoom).max(0.5);
-        let objekt = snap::hit_test(app.doc(), w, tol, None);
-        if objekt.is_none() {
-            let vps: Vec<(Id, f64, f64, f64, f64)> = app
-                .doc()
-                .sheet(sid)
-                .map(|s| {
-                    s.viewports
-                        .iter()
-                        .map(|v| (v.id, v.x, v.y, v.w, v.h))
-                        .collect()
-                })
-                .unwrap_or_default();
-            let mut hit = None;
-            for (id, x, y, vw, vh) in vps {
-                if w.x >= x && w.x <= x + vw && w.y >= y && w.y <= y + vh {
-                    hit = Some(id);
-                }
-            }
-            if hit.is_some() {
-                app.tab_mut().selected_viewport = hit;
-                app.session_mut().clear_selection();
-            } else {
-                // Klick auf freies Papier: Fensterauswahl aufheben, damit
-                // Werkzeuge und Objektauswahl wieder greifen.
-                app.tab_mut().selected_viewport = None;
-            }
-        } else {
-            app.tab_mut().selected_viewport = None;
-        }
-    }
-
-    // Verschieben nur mit aktivem Verschieben-Werkzeug (V) und ohne Objektauswahl
-    let move_tool = app.tool_id() == Some("modify.move");
-    let fenster_gewaehlt = app.tab().selected_viewport.is_some();
-    if move_tool && fenster_gewaehlt && app.selection().is_empty() {
-        if resp.drag_started_by(egui::PointerButton::Primary) {
-            let snapshot = app.doc().clone();
-            app.session_mut().history.record(&snapshot);
-        }
-        if resp.dragged_by(egui::PointerButton::Primary) {
-            if let Some(vid) = app.tab().selected_viewport {
-                let d = resp.drag_delta();
-                let w = view.screen_delta_to_world(d);
-                let dx = w.x;
-                let dy = w.y;
-                if let Some(sheet) = app.doc_mut().sheet_mut(sid) {
-                    if let Some(vp) = sheet.viewports.iter_mut().find(|v| v.id == vid) {
-                        vp.x = ((vp.x + dx) * 2.0).round() / 2.0;
-                        vp.y = ((vp.y + dy) * 2.0).round() / 2.0;
-                    }
-                }
-                app.mark_changed();
-            }
-        }
-        // Klicks nicht an die Werkzeuge weitergeben, solange das Fenster steht
-        if resp.clicked_by(egui::PointerButton::Primary) || resp.dragged_by(egui::PointerButton::Primary) {
-            return true;
-        }
-    }
-    false
 }
 
 // ---------------------------------------------------------------------------
@@ -5437,6 +5271,55 @@ fn tool_click_at(app: &mut App, w: V2, raw: V2) {
             tool.pts.push(w);
             app.tool = Some(tool);
         }
+        // Ansichtsfenster aufziehen: zwei Klicks spannen das Rechteck auf.
+        // Es entsteht als normales Blattobjekt (`sheet.add_viewport`) und ist
+        // danach ausgewählt — Griffe, Verschieben und Löschen wie bei jedem
+        // anderen Objekt.
+        "sheet.viewport_tool" => {
+            if tool.pts.is_empty() {
+                tool.pts.push(w);
+                app.tool = Some(tool);
+            } else {
+                let a = tool.pts[0];
+                let b = w;
+                let sid = match app.tab().tab {
+                    TabKind::Sheet(id) => id,
+                    _ => {
+                        app.tool = None;
+                        return;
+                    }
+                };
+                let (sw, sh) = app
+                    .doc()
+                    .sheet(sid)
+                    .map(|s| s.size())
+                    .unwrap_or((420.0, 297.0));
+                let x = a.x.min(b.x).clamp(0.0, sw - 10.0);
+                let y = a.y.min(b.y).clamp(0.0, sh - 10.0);
+                let ww = (a.x - b.x).abs().min(sw - x);
+                let hh = (a.y - b.y).abs().min(sh - y);
+                // Auf 0,5 mm runden — Papier-Millimeter, keine Zeichnungsmaße.
+                let runde = |v: f64| (v * 2.0).round() / 2.0;
+                let (x, y, ww, hh) = (runde(x), runde(y), runde(ww), runde(hh));
+                if ww > 8.0 && hh > 8.0 {
+                    let center = app.doc().bbox().center();
+                    let scale = app.doc().sheet(sid).map(|s| s.scale).unwrap_or(100.0);
+                    let u = app.unit();
+                    let cx = u.from_mm(center.x);
+                    let cy = u.from_mm(center.y);
+                    // Das neue Fenster ist danach ausgewählt — wie ein frisch
+                    // gezeichnetes Objekt.
+                    let _ = run_und_waehlen(
+                        app,
+                        "sheet.add_viewport",
+                        json!({"sheet": sid, "x": x, "y": y, "w": ww, "h": hh,
+                               "scale": scale, "show_frame": true,
+                               "center": [cx, cy]}),
+                    );
+                }
+                app.tool = None;
+            }
+        }
         "modify.move" => {
             if tool.pts.is_empty() {
                 tool.pts.push(w);
@@ -5668,12 +5551,14 @@ fn tool_click_at(app: &mut App, w: V2, raw: V2) {
 /// Wie [`run`], wählt aber das neu entstandene Objekt aus — damit sich seine
 /// Eckpunkte sofort greifen lassen (Füllfläche, Volumen).
 fn run_und_waehlen(app: &mut App, action: &str, params: serde_json::Value) -> bool {
-    let vorher: Vec<Id> = app.doc().entities.iter().map(|e| e.id).collect();
+    // Im **aktiven Raum** suchen: im Papierraum entsteht das Objekt in
+    // `sheet.entities`, nicht in der Modellliste (T0109).
+    let vorher: Vec<Id> = app.doc().ents().iter().map(|e| e.id).collect();
     let ok = run(app, action, params);
     if ok {
         if let Some(id) = app
             .doc()
-            .entities
+            .ents()
             .iter()
             .find(|e| !vorher.contains(&e.id))
             .map(|e| e.id)
@@ -7802,6 +7687,77 @@ mod tests_fang_griff {
             ),
             other => panic!("keine Wand: {other:?}"),
         }
+    }
+
+    /// Ansichtsfenster im Papierraum (T0109): Klick wählt es, Ziehen
+    /// verschiebt es bei eingeschaltetem „Maus verschiebt" — wie jedes andere
+    /// Objekt. Vorher ging das nur mit dem Werkzeug „Verschieben".
+    #[test]
+    fn ansichtsfenster_waehlt_und_zieht_wie_ein_objekt() {
+        let mut app = app();
+        app.prefs.mouse_move = true;
+        let sid = app.doc().sheets[0].id;
+        app.switch_tab(TabKind::Sheet(sid));
+        frame(&mut app, vec![]);
+        let vid = app
+            .doc()
+            .sheets[0]
+            .viewports()
+            .next()
+            .map(|(e, _)| e.id)
+            .expect("Ansichtsfenster");
+        let vp = app.doc().sheets[0].viewport(vid).expect("Fenster").clone();
+        let rect = app.ui.last_canvas;
+        let view = app.current_view();
+        let mitte = world_to_screen(rect, view, vp.rect().center());
+
+        // Klick in die Fläche wählt das Fenster.
+        frame(&mut app, vec![egui::Event::PointerMoved(mitte)]);
+        frame(&mut app, vec![druck(mitte)]);
+        frame(&mut app, vec![loslassen(mitte)]);
+        assert_eq!(app.selection(), &[vid], "Klick muss das Fenster wählen");
+
+        // Ziehen verschiebt es (Maus verschiebt = an).
+        let ziel = mitte + egui::vec2(40.0, 20.0);
+        frame(&mut app, vec![egui::Event::PointerMoved(mitte)]);
+        frame(&mut app, vec![druck(mitte)]);
+        assert!(app.move_drag.is_some(), "Zug muss beginnen");
+        frame(&mut app, vec![egui::Event::PointerMoved(ziel)]);
+        frame(&mut app, vec![egui::Event::PointerMoved(ziel)]);
+        frame(&mut app, vec![loslassen(ziel)]);
+        let nachher = app.doc().sheets[0].viewport(vid).expect("Fenster").clone();
+        // Bildschirm +y zeigt nach unten, die Zeichnung rechnet nach oben.
+        assert!(
+            nachher.x > vp.x + 1.0 && nachher.y < vp.y - 1.0,
+            "Fenster muss dem Zeiger folgen: vorher {:?}, nachher {:?}",
+            (vp.x, vp.y),
+            (nachher.x, nachher.y)
+        );
+        // Größe bleibt beim Verschieben.
+        assert!((nachher.w - vp.w).abs() < 1e-6 && (nachher.h - vp.h).abs() < 1e-6);
+    }
+
+    /// Werkzeug „Ansichtsfenster": zwei Klicks spannen das Rechteck auf, das
+    /// neue Fenster ist danach ausgewählt (T0109).
+    #[test]
+    fn ansichtsfenster_aufziehen_legt_ein_ausgewaehltes_objekt_an() {
+        let mut app = app();
+        let sid = app.doc().sheets[0].id;
+        app.switch_tab(TabKind::Sheet(sid));
+        frame(&mut app, vec![]);
+        let vorher = app.doc().sheets[0].viewports().count();
+        app.start_tool("sheet.viewport_tool");
+        tool_click_at(&mut app, V2::new(30.0, 100.0), V2::new(30.0, 100.0));
+        tool_click_at(&mut app, V2::new(200.0, 200.0), V2::new(200.0, 200.0));
+        assert!(app.tool.is_none(), "zweiter Klick beendet das Werkzeug");
+        let fenster: Vec<_> = app.doc().sheets[0].viewports().collect();
+        assert_eq!(fenster.len(), vorher + 1, "ein Fenster mehr");
+        // Das neue Fenster liegt als Hintergrund vorn in der Liste.
+        let (e, vp) = fenster
+            .iter()
+            .find(|(_, v)| (v.x, v.y, v.w, v.h) == (30.0, 100.0, 170.0, 100.0))
+            .expect("neues Fenster");
+        assert_eq!(app.selection(), &[e.id], "neues Fenster ist ausgewählt");
     }
 
     /// Gegenprobe: fremde Punkte fangen beim Wand-Griffzug weiterhin.
