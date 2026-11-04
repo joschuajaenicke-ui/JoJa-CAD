@@ -1487,14 +1487,30 @@ pub fn select_window(doc: &Document, a: Vec2, b: Vec2, crossing: bool) -> Vec<Id
         if !bb.is_valid() {
             continue;
         }
-        // Flächige Elemente: Fläche zählt, BBox ist hier korrekt
+        // Füllfläche und Volumen: geprüft wird die gefüllte Geometrie, nicht die
+        // Bounding-Box. Bei einer konkaven Fläche deckt die Box auch die
+        // Aussparung ab — ein Querfenster darin wählte die Fläche mit, obwohl
+        // dort nichts gezeichnet ist (T0099). Vollständig enthalten heißt
+        // weiterhin: die Box liegt im Fenster (bei einem Rechteck gleichwertig
+        // zur Punktprobe, weil das Fenster konvex ist).
+        if let EntityKind::Fill { boundary, holes, .. }
+        | EntityKind::Volume { boundary, holes, .. } = &e.kind
+        {
+            let trifft = if crossing {
+                crate::area::flaeche_beruehrt_rechteck(boundary, holes, &rect)
+            } else {
+                rect.contains_bbox(&bb)
+            };
+            if trifft {
+                out.push(e.id);
+            }
+            continue;
+        }
+        // Punkt, Text und Treppe: die Bounding-Box ist ihre Trefferfläche
+        // (Punkt ohne Ausdehnung, Text als Zeilenbox, Treppe als Rechteck).
         let flaechig = matches!(
             e.kind,
-            EntityKind::Fill { .. }
-                | EntityKind::Volume { .. }
-                | EntityKind::Stair { .. }
-                | EntityKind::Text { .. }
-                | EntityKind::Point { .. }
+            EntityKind::Stair { .. } | EntityKind::Text { .. } | EntityKind::Point { .. }
         );
         if flaechig {
             if (crossing && bb.intersects(&rect)) || (!crossing && rect.contains_bbox(&bb)) {
