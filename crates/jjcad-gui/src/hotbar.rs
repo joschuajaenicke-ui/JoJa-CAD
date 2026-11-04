@@ -16,6 +16,7 @@ use egui::{
     Align, Color32, FontId, Layout, Pos2, Rect, RichText, Rounding, Sense, Stroke, Ui, UiBuilder,
     Vec2,
 };
+use jjcad_core::persist::PastePivot;
 use jjcad_core::units::format_scale;
 
 /// Slot-Kante in Pixeln — die ursprüngliche Größe der Hotbar-Slots. Sie
@@ -308,6 +309,60 @@ pub fn show(app: &mut App, ui: &mut Ui) {
                 app.open_menu(crate::app::MenuKind::Chip(crate::app::StatusMenu::Staerke), p);
             }
             kopf = kopf.map(|b| b.union(resp.rect));
+            ui.add_space(ABSTAND);
+
+            // Drehpunkt beim Einfügen (T0108): Basispunkt oder Mittelpunkt —
+            // dieselbe Einstellung wie Einstellungen → Bedienung → „Drehpunkt“
+            // (`prefs.paste_pivot`). Das Zeichen rechts unten nennt den Modus,
+            // hervorgehoben ist der vom Programmstandard abweichende
+            // (Basispunkt), wie beim Schalter für die Linienstärke.
+            let pivot = app.prefs.paste_pivot;
+            let basis = pivot == PastePivot::BasePoint;
+            let tip = if basis {
+                jjcad_core::i18n::tr("gui.hotbar.drehpunkt_basispunkt")
+            } else {
+                jjcad_core::i18n::tr("gui.hotbar.drehpunkt_mittelpunkt")
+            };
+            let resp = widgets::icon_button(ui, "pivot", KOPF, basis, tip);
+            ui.painter().text(
+                Pos2::new(resp.rect.right() - 2.0, resp.rect.bottom() - 1.0),
+                egui::Align2::RIGHT_BOTTOM,
+                if basis {
+                    jjcad_core::i18n::tr("gui.hotbar.b")
+                } else {
+                    jjcad_core::i18n::tr("gui.hotbar.m")
+                },
+                FontId::proportional(8.0),
+                if basis {
+                    Palette::accent()
+                } else {
+                    Palette::text_faint()
+                },
+            );
+            if resp.clicked() {
+                app.umschalte_paste_pivot();
+                let _ = app.prefs.save();
+            }
+            app.ui.last_chip_drehpunkt = Some(resp.rect);
+            kopf = kopf.map(|b| b.union(resp.rect));
+            ui.add_space(ABSTAND);
+
+            // Verschieben (T0108): „Maus verschiebt“ ein/aus — dieselbe
+            // Einstellung wie Einstellungen → Bedienung (`prefs.mouse_move`).
+            // Ausgeschaltet wandert nur noch das Werkzeug „Verschieben“.
+            let maus = app.prefs.mouse_move;
+            let tip = if maus {
+                jjcad_core::i18n::tr("gui.hotbar.verschieben_maus_an")
+            } else {
+                jjcad_core::i18n::tr("gui.hotbar.verschieben_maus_aus")
+            };
+            let resp = widgets::icon_button(ui, "move", KOPF, maus, tip);
+            if resp.clicked() {
+                app.set_mouse_move(!maus);
+                let _ = app.prefs.save();
+            }
+            app.ui.last_chip_verschieben = Some(resp.rect);
+            kopf = kopf.map(|b| b.union(resp.rect));
             app.ui.last_kopf_rechts = kopf;
 
             // Maßstab und Zoom: klein, links von den Schaltern
@@ -522,5 +577,191 @@ mod tests_slot_tasten {
         }
         assert_eq!(slot_taste(0), "1", "erster Slot trägt die 1");
         assert_eq!(slot_taste(9), "0", "letzter Slot trägt die 0");
+    }
+}
+
+#[cfg(test)]
+mod tests_chips {
+    //! T0108: Zwei weitere Schalter in der rechten Gruppe der unteren Leiste —
+    //! „Verschieben“ (Maus verschiebt ein/aus) und „Drehpunkt“ (Basispunkt /
+    //! Mittelpunkt beim Einfügen).
+    //!
+    //! Geprüft wird der **Klick auf die gezeichnete Schaltfläche**, nicht nur
+    //! der gesetzte Wert: die Lage kommt aus `UiState::last_chip_*`, also aus
+    //! demselben Durchgang, den der Nutzer sieht.
+
+    use super::*;
+    use crate::dialogs::tests_tastatur::{WegwerfKonfig, KONFIG};
+
+    fn frame_out(
+        app: &mut App,
+        ctx: &egui::Context,
+        breite: f32,
+        ereignisse: Vec<egui::Event>,
+        zeit: f64,
+    ) -> egui::FullOutput {
+        let raw = egui::RawInput {
+            screen_rect: Some(Rect::from_min_size(Pos2::ZERO, Vec2::new(breite, 950.0))),
+            time: Some(zeit),
+            predicted_dt: 0.016,
+            events: ereignisse,
+            ..Default::default()
+        };
+        ctx.run(raw, |ctx| app.ui(ctx))
+    }
+
+    fn frame(
+        app: &mut App,
+        ctx: &egui::Context,
+        breite: f32,
+        ereignisse: Vec<egui::Event>,
+        zeit: f64,
+    ) {
+        let _ = frame_out(app, ctx, breite, ereignisse, zeit);
+    }
+
+    fn klick(app: &mut App, ctx: &egui::Context, pos: Pos2, zeit: f64) {
+        let knopf = |pressed| egui::Event::PointerButton {
+            pos,
+            button: egui::PointerButton::Primary,
+            pressed,
+            modifiers: Default::default(),
+        };
+        frame(app, ctx, 1500.0, vec![egui::Event::PointerMoved(pos)], zeit);
+        frame(app, ctx, 1500.0, vec![knopf(true)], zeit + 0.05);
+        frame(app, ctx, 1500.0, vec![knopf(false)], zeit + 0.10);
+        frame(app, ctx, 1500.0, Vec::new(), zeit + 0.15);
+    }
+
+    fn app_mit_leiste() -> (App, egui::Context) {
+        let ctx = egui::Context::default();
+        let mut app = App::with_ctx(ctx.clone());
+        for i in 0..3 {
+            frame(&mut app, &ctx, 1500.0, Vec::new(), 1.0 + i as f64 * 0.1);
+        }
+        (app, ctx)
+    }
+
+    #[test]
+    fn verschieben_schalter_kippt_die_einstellung() {
+        let _sperre = KONFIG.lock().unwrap_or_else(|e| e.into_inner());
+        let _konfig = WegwerfKonfig::neu("t0108-verschieben");
+        let (mut app, ctx) = app_mit_leiste();
+        app.set_mouse_move(true);
+        frame(&mut app, &ctx, 1500.0, Vec::new(), 2.0);
+
+        let r = app
+            .ui
+            .last_chip_verschieben
+            .expect("Schalter „Verschieben“ fehlt in der unteren Leiste");
+        klick(&mut app, &ctx, r.center(), 3.0);
+        assert!(
+            !app.prefs.mouse_move,
+            "der Klick muss „Maus verschiebt“ ausschalten"
+        );
+
+        let r = app.ui.last_chip_verschieben.expect("Schalter fehlt");
+        klick(&mut app, &ctx, r.center(), 4.0);
+        assert!(
+            app.prefs.mouse_move,
+            "der zweite Klick muss „Maus verschiebt“ wieder einschalten"
+        );
+    }
+
+    #[test]
+    fn drehpunkt_schalter_kippt_den_modus_und_die_laufende_vorschau() {
+        let _sperre = KONFIG.lock().unwrap_or_else(|e| e.into_inner());
+        let _konfig = WegwerfKonfig::neu("t0108-drehpunkt");
+        let (mut app, ctx) = app_mit_leiste();
+        app.set_paste_pivot(PastePivot::Center);
+        app.ghost = Some(crate::ghost::Ghost::new(
+            None,
+            jjcad_core::geom::Vec2::new(0.0, 0.0),
+            PastePivot::Center,
+        ));
+        frame(&mut app, &ctx, 1500.0, Vec::new(), 2.0);
+
+        let r = app
+            .ui
+            .last_chip_drehpunkt
+            .expect("Schalter „Drehpunkt“ fehlt in der unteren Leiste");
+        klick(&mut app, &ctx, r.center(), 3.0);
+        assert_eq!(
+            app.prefs.paste_pivot,
+            PastePivot::BasePoint,
+            "der Klick muss von Mittelpunkt auf Basispunkt stellen"
+        );
+        assert_eq!(
+            app.ghost.as_ref().map(|g| g.pivot),
+            Some(PastePivot::BasePoint),
+            "eine laufende Einfüge-Vorschau muss sofort mitziehen"
+        );
+
+        let r = app.ui.last_chip_drehpunkt.expect("Schalter fehlt");
+        klick(&mut app, &ctx, r.center(), 4.0);
+        assert_eq!(
+            app.prefs.paste_pivot,
+            PastePivot::Center,
+            "der zweite Klick muss zurück auf Mittelpunkt stellen"
+        );
+    }
+
+    /// Die beiden Schalter gehören in die rechte Gruppe und dürfen bei der
+    /// Mindestfensterbreite (1080 px) nicht in die Hotbar-Slots laufen — auch
+    /// die Maßstab-/Zoom-Angaben links von ihnen nicht.
+    #[test]
+    fn schalter_liegen_rechts_und_ueberdecken_die_slots_nicht() {
+        for breite in [1080.0, 1500.0, 1920.0] {
+            let ctx = egui::Context::default();
+            let mut app = App::with_ctx(ctx.clone());
+            let mut out = None;
+            for i in 0..3 {
+                out = Some(frame_out(
+                    &mut app,
+                    &ctx,
+                    breite,
+                    Vec::new(),
+                    1.0 + i as f64 * 0.1,
+                ));
+            }
+            let out = out.expect("Bild");
+            let v = app.ui.last_chip_verschieben.expect("Schalter „Verschieben“");
+            let d = app.ui.last_chip_drehpunkt.expect("Schalter „Drehpunkt“");
+            let gruppe = app.ui.last_kopf_rechts.expect("rechte Gruppe");
+            let slots = app.ui.last_slots.expect("Hotbar-Slots");
+            assert!(
+                gruppe.contains_rect(v) && gruppe.contains_rect(d),
+                "{breite} px: die Schalter liegen außerhalb der rechten Gruppe"
+            );
+            assert!(
+                !v.intersects(d),
+                "{breite} px: die beiden Schalter überdecken sich"
+            );
+            assert!(
+                gruppe.left() > slots.right(),
+                "{breite} px: die rechte Gruppe beginnt bei x = {} und läuft in die \
+                 Hotbar-Slots (bis x = {}) — zwei Schalter zu viel für die Mindestbreite",
+                gruppe.left(),
+                slots.right()
+            );
+
+            // Auch die Schrift links von den Schaltern (Maßstab, Zoom) muss
+            // rechts der Slots bleiben — sie hängt nicht in `last_kopf_rechts`.
+            let leiste_oben = 950.0 - crate::app::HOTBAR_H;
+            let mut links = f32::MAX;
+            for cs in &out.shapes {
+                if let egui::Shape::Text(t) = &cs.shape {
+                    if t.pos.y >= leiste_oben && t.pos.x > slots.right() {
+                        links = links.min(t.pos.x);
+                    }
+                }
+            }
+            assert!(
+                links > slots.right(),
+                "{breite} px: die Angaben der rechten Gruppe beginnen bei x = {links} \
+                 und laufen in die Hotbar-Slots (bis x = {})",
+                slots.right()
+            );
+        }
     }
 }

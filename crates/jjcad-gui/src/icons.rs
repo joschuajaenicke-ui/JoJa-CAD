@@ -347,12 +347,15 @@ pub fn paint(painter: &Painter, rect: Rect, name: &str, color: Color32) {
             i.line(17.0, 17.0, 20.0, 14.0);
         }
         "move" => {
-            i.line(12.0, 3.0, 12.0, 21.0);
-            i.line(3.0, 12.0, 21.0, 12.0);
-            i.arrow_head(12.0, 3.0, -1.57, 3.4);
-            i.arrow_head(12.0, 21.0, 1.57, 3.4);
-            i.arrow_head(3.0, 12.0, 3.14, 3.4);
-            i.arrow_head(21.0, 12.0, 0.0, 3.4);
+            // Vierfach-Pfeil. Die Köpfe sind bewusst groß: in der unteren
+            // Leiste steht das Icon auf 30 px, mit 3,4 Einheiten verschmolzen
+            // sie mit dem Schaft zu einem einfachen Kreuz (T0108).
+            i.line(12.0, 4.5, 12.0, 19.5);
+            i.line(4.5, 12.0, 19.5, 12.0);
+            i.arrow_head(12.0, 2.5, -1.57, 5.2);
+            i.arrow_head(12.0, 21.5, 1.57, 5.2);
+            i.arrow_head(2.5, 12.0, 3.14, 5.2);
+            i.arrow_head(21.5, 12.0, 0.0, 5.2);
         }
         "copy" => {
             i.rect(3.0, 3.0, 12.0, 12.0);
@@ -714,6 +717,16 @@ pub fn paint(painter: &Painter, rect: Rect, name: &str, color: Color32) {
             i.line(12.0, 17.0, 12.0, 22.0);
             i.line(2.0, 12.0, 7.0, 12.0);
             i.line(17.0, 12.0, 22.0, 12.0);
+        }
+        // Drehpunkt beim Einfügen (T0108): die Auswahl als Quadrat, darin das
+        // Fadenkreuz mit dem gefüllten Punkt — der Punkt, der am Zeiger steht.
+        "pivot" => {
+            i.rect(4.0, 4.0, 16.0, 16.0);
+            i.line(12.0, 1.5, 12.0, 7.0);
+            i.line(12.0, 17.0, 12.0, 22.5);
+            i.line(1.5, 12.0, 7.0, 12.0);
+            i.line(17.0, 12.0, 22.5, 12.0);
+            i.dot(12.0, 12.0, 2.0);
         }
         // Zeichenreihenfolge: zwei Blätter, das hervorgehobene (gefüllte) liegt
         // vorn bzw. hinten; ein Pfeil zeigt die Richtung an.

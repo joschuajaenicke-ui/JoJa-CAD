@@ -720,6 +720,10 @@ pub struct UiState {
     /// wird der Abstand zum Fensterrand (`tests_untere_leiste`).
     pub last_kopf_links: Option<Rect>,
     pub last_kopf_rechts: Option<Rect>,
+    /// Lage der beiden Schalter „Verschieben“ und „Drehpunkt“ in der rechten
+    /// Gruppe der unteren Leiste (T0108) — der Test klickt sie an.
+    pub last_chip_verschieben: Option<Rect>,
+    pub last_chip_drehpunkt: Option<Rect>,
     /// Tasten des Tastenbilds der Tastaturbelegung in Fensterkoordinaten
     /// (Regressionstest T0045: gesperrte Tasten dürfen sich nicht belegen lassen)
     pub last_tasten: Option<Vec<(&'static str, &'static str, Rect)>>,
@@ -817,6 +821,8 @@ impl Default for UiState {
             last_blattrechtecke: None,
             last_kopf_links: None,
             last_kopf_rechts: None,
+            last_chip_verschieben: None,
+            last_chip_drehpunkt: None,
             last_tasten: None,
             last_lager: None,
             last_ribbon_content_w: 0.0,
@@ -5372,6 +5378,26 @@ fn rail(ui: &mut egui::Ui, icon: &str, tooltip: &str, chevron: &str) -> bool {
         if let Some(g) = self.ghost.as_mut() {
             g.pivot = pivot;
         }
+    }
+
+    /// Schaltet „Maus verschiebt“ um (T0108) — derselbe Wert wie
+    /// Einstellungen → Bedienung → „Maus verschiebt“ (`prefs.mouse_move`).
+    ///
+    /// Der Schalter in der unteren Leiste ist nur ein zweiter Zugang zur
+    /// Einstellung; gespeichert wird sie wie dort über `prefs.save()`.
+    pub fn set_mouse_move(&mut self, an: bool) {
+        self.prefs.mouse_move = an;
+    }
+
+    /// Schaltet den Drehpunkt der Einfüge-Vorschau um (T0108):
+    /// Basispunkt ⇄ Mittelpunkt. Wirkt sofort, auch auf eine laufende
+    /// Vorschau — dafür sorgt [`App::set_paste_pivot`].
+    pub fn umschalte_paste_pivot(&mut self) {
+        let neu = match self.prefs.paste_pivot {
+            jjcad_core::persist::PastePivot::BasePoint => jjcad_core::persist::PastePivot::Center,
+            jjcad_core::persist::PastePivot::Center => jjcad_core::persist::PastePivot::BasePoint,
+        };
+        self.set_paste_pivot(neu);
     }
 
     /// Design umstellen (Einstellungen → Darstellung → „Design“, T0102).
