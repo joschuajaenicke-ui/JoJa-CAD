@@ -1192,6 +1192,9 @@ impl App {
         // T0102: ebenso das Design — bei „System“ entscheidet das
         // Betriebssystem (hell/dunkel), sonst die gespeicherte Wahl.
         theme::set_design(prefs.design, &ctx);
+        // T0111: und der Farbakzent (Vorgabe Bernstein) — er färbt alle
+        // Akzentstellen der Bedienung ab dem ersten Bild.
+        theme::set_akzent(prefs.farbakzent, &ctx);
         let mut s = Session::new();
         s.doc.name = "Unbenannt".into();
         // App-weite Vorliebe für den Wandkontur-Fang übernehmen, damit die
@@ -5610,6 +5613,26 @@ fn rail(ui: &mut egui::Ui, icon: &str, tooltip: &str, chevron: &str) -> bool {
     pub fn set_design(&mut self, design: jjcad_core::persist::Design, ctx: &egui::Context) {
         theme::set_design(design, ctx);
         self.prefs.design = design;
+        let _ = self.prefs.save();
+        for t in &mut self.tabs {
+            t.cache = None;
+        }
+        ctx.request_repaint();
+    }
+
+    /// Farbakzent umstellen (Einstellungen → Darstellung → „Farbakzente“,
+    /// T0111).
+    ///
+    /// Die Wahl wird gespeichert und gilt ab dem nächsten Bild. Die
+    /// Anzeigelisten der Reiter werden verworfen: die Zeichnung selbst bleibt
+    /// zwar gleich, aber Rahmen und Auswahlflächen tragen den Akzent.
+    pub fn set_akzent(
+        &mut self,
+        akzent: jjcad_core::persist::Farbakzent,
+        ctx: &egui::Context,
+    ) {
+        theme::set_akzent(akzent, ctx);
+        self.prefs.farbakzent = akzent;
         let _ = self.prefs.save();
         for t in &mut self.tabs {
             t.cache = None;
