@@ -77,6 +77,10 @@ impl FontUse {
 struct Content {
     buf: String,
     fonts: FontUse,
+    /// Bilder der Seite, nach Kennung. Der Inhalt verweist auf sie als
+    /// `/Im<Kennung>`; die Objekte entstehen erst in [`build_pdf`], weil dort
+    /// die Objektnummern vergeben werden.
+    bilder: BTreeMap<u64, std::sync::Arc<crate::bild::Bild>>,
 }
 
 fn esc(s: &str) -> String {
@@ -125,6 +129,7 @@ impl Content {
         Self {
             buf: String::with_capacity(8192),
             fonts: FontUse::default(),
+            bilder: BTreeMap::new(),
         }
     }
 
@@ -463,6 +468,31 @@ fn draw_prim(c: &mut Content, prim: &Prim, xf: &Xf, paper_scale: f64) {
             }
             c.fill();
         }
+        Shape::Image { a, b, bild } => {
+            // Das Bild wird als XObject eingebettet (RGB, auf Weiß gelegt —
+            // PDF-Bilder dieses Schreibers tragen keinen Alphakanal) und über
+            // eine cm-Matrix in das Rechteck gespannt.
+            let ecken = crate::bild::ecken(*a, *b);
+            let q0 = xf.map(ecken[0]);
+            let q1 = xf.map(ecken[2]);
+            let (x0, x1) = (q0.x.min(q1.x), q0.x.max(q1.x));
+            let (y0, y1) = (q0.y.min(q1.y), q0.y.max(q1.y));
+            let (bw, bh) = ((x1 - x0) * MM2PT, (y1 - y0) * MM2PT);
+            if bw <= 0.01 || bh <= 0.01 {
+                return;
+            }
+            c.bilder.insert(bild.kennung, bild.clone());
+            c.raw("q");
+            c.raw(&format!(
+                "{:.4} 0 0 {:.4} {:.4} {:.4} cm",
+                bw,
+                bh,
+                x0 * MM2PT,
+                y0 * MM2PT
+            ));
+            c.raw(&format!("/{} Do", bild_res(bild.kennung)));
+            c.raw("Q");
+        }
         Shape::Text(t) => {
             c.fill_color(prim.style.color);
             let size_pt = t.height * xf.scale * MM2PT;
@@ -471,6 +501,35 @@ fn draw_prim(c: &mut Content, prim: &Prim, xf: &Xf, paper_scale: f64) {
             c.text(&tt, size_pt);
         }
     }
+}
+
+/// Ressourcenname eines Bildes im Seiteninhalt.
+fn bild_res(kennung: u64) -> String {
+    format!("Im{kennung:016X}")
+}
+
+/// Bild als PDF-XObject: RGB, FlateDecode, Alphakanal auf Weiß gelegt.
+fn bild_obj(w: &mut PdfWriter, bild: &crate::bild::Bild) -> usize {
+    let mut rgb = Vec::with_capacity((bild.breite as usize * bild.hoehe as usize) * 3);
+    for px in bild.rgba.chunks_exact(4) {
+        let a = px[3] as u32;
+        let rest = 255 - a;
+        for kanal in &px[0..3] {
+            rgb.push((((*kanal as u32) * a + 255 * rest) / 255) as u8);
+        }
+    }
+    let daten = compress(&rgb);
+    let mut body = format!(
+        "<< /Type /XObject /Subtype /Image /Width {} /Height {} /ColorSpace /DeviceRGB \
+         /BitsPerComponent 8 /Filter /FlateDecode /Length {} >>\nstream\n",
+        bild.breite,
+        bild.hoehe,
+        daten.len()
+    )
+    .into_bytes();
+    body.extend_from_slice(&daten);
+    body.extend_from_slice(b"\nendstream");
+    w.add(body)
 }
 
 fn draw_display_list(c: &mut Content, dl: &DisplayList, xf: &Xf, paper_scale: f64) {
@@ -690,15 +749,25 @@ fn page_object(
     h: f64,
     contents: usize,
     fonts: &[(TextFont, FontStyle, usize)],
+    bilder: &[(u64, usize)],
     parent: usize,
 ) -> Vec<u8> {
     let mut res = String::new();
     for (font, st, idx) in fonts {
         let _ = write!(res, "{} {} 0 R ", font_res(*font, *st), idx);
     }
+    let mut xobj = String::new();
+    for (kennung, idx) in bilder {
+        let _ = write!(xobj, "/{} {} 0 R ", bild_res(*kennung), idx);
+    }
+    let xobj = if xobj.is_empty() {
+        String::new()
+    } else {
+        format!("/XObject << {xobj}>> ")
+    };
     format!(
         "<< /Type /Page /Parent {parent} 0 R /MediaBox [0 0 {:.3} {:.3}] \
-         /Resources << /Font << {res}>> >> /Contents {contents} 0 R >>",
+         /Resources << /Font << {res}>> {xobj}>> /Contents {contents} 0 R >>",
         w * MM2PT,
         h * MM2PT
     )
@@ -733,14 +802,32 @@ fn build_pdf(pages: Vec<Page>, title: &str) -> Vec<u8> {
         font_objs.push((TextFont::Sans, FontStyle::Regular, reg));
         font_objs.push((TextFont::Sans, FontStyle::Bold, bold));
     }
+    // Bilder einmal je Kennung einbetten — dieselbe Datei kann auf mehreren
+    // Seiten und in mehreren Ansichtsfenstern liegen.
+    let mut bild_objs: BTreeMap<u64, usize> = BTreeMap::new();
+    for p in &pages {
+        for (kennung, bild) in &p.content.bilder {
+            if !bild_objs.contains_key(kennung) {
+                let idx = bild_obj(&mut w, bild);
+                bild_objs.insert(*kennung, idx);
+            }
+        }
+    }
     let mut kids = Vec::new();
     for p in pages {
         let content_idx = w.add(stream_obj(p.content.buf.as_bytes()));
+        let seite_bilder: Vec<(u64, usize)> = p
+            .content
+            .bilder
+            .keys()
+            .filter_map(|k| bild_objs.get(k).map(|i| (*k, *i)))
+            .collect();
         let page_idx = w.add(page_object(
             p.width_pt / MM2PT,
             p.height_pt / MM2PT,
             content_idx,
             &font_objs,
+            &seite_bilder,
             pages_idx,
         ));
         kids.push(page_idx);

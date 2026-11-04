@@ -83,6 +83,14 @@ einsehbar und dort frei änderbar (Ribbon ▸ Ansicht ▸ „Tasten").
     Ebene kommen von der ersten. Getrennte Flächen melden einen Fehler, statt still zwei
     Flächen zu erzeugen.
 
+16. **Bild einfügen** (Ribbon ▸ Start ▸ Ausgabe ▸ „Bild einfügen"): PNG oder JPEG auswählen,
+    dann **zwei gegenüberliegende Ecken** des Rechtecks klicken — sie bestimmen Lage und Größe,
+    das Bild wird auf das Rechteck gestreckt. Die Bilddatei wird **in die Zeichnung
+    eingebettet** (Base64), die `.jjcad`-Datei bleibt also gültig, wenn die Vorlage verschoben
+    oder gelöscht wird. Das Bild liegt als Hintergrund hinter Flächen und Linien (eigene
+    Ebene „Bilder", soweit die Ebene nicht selbst gewählt wurde); seine vier Rahmenecken sind
+    Griffe, an denen es neu aufgespannt wird. Ein Bild lässt sich nicht zerlegen.
+
 Der Zeiger ist über der Zeichenfläche ein durchgehendes Fadenkreuz; der Systemzeiger wird dort
 ausgeblendet.
 

@@ -224,6 +224,13 @@ pub fn grips_of(e: &Entity) -> Vec<(GripKind, V2)> {
             out.push((GripKind::Label, *label));
             out
         }
+        // Bild: die vier Ecken des Rahmens. Ziehen spannt das Bild neu auf,
+        // die gegenüberliegende Ecke bleibt stehen (wie beim Rechteck).
+        EntityKind::Image { a, b, .. } => jjcad_core::bild::ecken(*a, *b)
+            .iter()
+            .enumerate()
+            .map(|(i, p)| (GripKind::Vert(i), *p))
+            .collect(),
         // Füllfläche: die Ecken der Umgrenzung und der Inseln. Zwischenpunkte
         // einer geraden Kante fallen weg (`ist_ecke`) — der Farbeimer liefert
         // seinen Rand als dichten Punktzug.
@@ -387,6 +394,22 @@ pub fn apply_grip_tol(orig: &Entity, kind: GripKind, target: V2, tol: f64) -> Op
                 }
                 _ => return None,
             }
+        }
+        // Bild: eine Ecke verschiebt genau diese Rahmenecke. Aus den vier
+        // Ecken entsteht das neue Rechteck; eine entartete Kante (unter 1 mm)
+        // wird nicht übernommen.
+        (EntityKind::Image { a, b, .. }, GripKind::Vert(i)) => {
+            let mut ecken = jjcad_core::bild::ecken(*a, *b);
+            *ecken.get_mut(i)? = target;
+            let x0 = ecken.iter().map(|p| p.x).fold(f64::INFINITY, f64::min);
+            let x1 = ecken.iter().map(|p| p.x).fold(f64::NEG_INFINITY, f64::max);
+            let y0 = ecken.iter().map(|p| p.y).fold(f64::INFINITY, f64::min);
+            let y1 = ecken.iter().map(|p| p.y).fold(f64::NEG_INFINITY, f64::max);
+            if x1 - x0 < 1.0 || y1 - y0 < 1.0 {
+                return None;
+            }
+            *a = V2::new(x0, y0);
+            *b = V2::new(x1, y1);
         }
         // Raumstempel: eine Ecke ändert die Fläche (der Text rechnet sich neu),
         // der Textgriff verschiebt nur die Beschriftung — die Fläche bleibt.
@@ -672,6 +695,10 @@ fn kantenmitten(e: &Entity) -> Vec<V2> {
             let (ecken, _, _, _) = stair_rechteck(*a, *b, *width);
             (0..4).map(|i| mitte(ecken[i], ecken[(i + 1) % 4])).collect()
         }
+        EntityKind::Image { a, b, .. } => {
+            let ecken = jjcad_core::bild::ecken(*a, *b);
+            (0..4).map(|i| mitte(ecken[i], ecken[(i + 1) % 4])).collect()
+        }
         // Mitte der Maßlinie: dort sitzt der Griff, also ist sie auch ein
         // Fangpunkt des eigenen Elements.
         EntityKind::Dim { .. } | EntityKind::DimChain { .. } => {
@@ -723,6 +750,7 @@ fn eckpunkte(e: &Entity) -> Vec<V2> {
         EntityKind::Stair { a, b, width, .. } => {
             stair_rechteck(*a, *b, *width).0.to_vec()
         }
+        EntityKind::Image { a, b, .. } => jjcad_core::bild::ecken(*a, *b).to_vec(),
         // Basispunkte der Bemaßung: der Fang darf sie beim Ziehen nicht sperren
         // und beim Fangen nicht doppelt anbieten (T0055).
         EntityKind::Dim { a, b, .. } => vec![*a, *b],

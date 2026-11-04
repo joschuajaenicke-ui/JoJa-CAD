@@ -119,6 +119,17 @@ pub const ACTIONS: &[ActionDef] = &[
         false
     ),
     act!("file.export_png", "action.file.export_png.label", Datei, "image", "", "action.file.export_png.hint", false),
+    // Bild einfügen: der Dialog wählt die Datei, das Werkzeug `draw.image`
+    // fragt danach die beiden Ecken des Rechtecks ab.
+    act!(
+        "file.import_image",
+        "action.file.import_image.label",
+        Datei,
+        "image",
+        "",
+        "action.file.import_image.hint",
+        false
+    ),
     act!("edit.undo", "action.edit.undo.label", Aendern, "undo", "ctrl+z", "action.edit.undo.hint", false),
     act!("edit.redo", "action.edit.redo.label", Aendern, "redo", "ctrl+y", "action.edit.redo.hint", false),
     // Kopieren ohne Basispunkt: legt die Auswahl nur in die Zwischenablage.
@@ -139,6 +150,10 @@ pub const ACTIONS: &[ActionDef] = &[
     act!("draw.fill.paint", "action.draw.fill.paint.label", Zeichnen, "fill", "shift+c", "action.draw.fill.paint.hint", true),
     act!("draw.text", "action.draw.text.label", Zeichnen, "text", "t", "action.draw.text.hint", true),
     act!("draw.ellipse", "action.draw.ellipse.label", Zeichnen, "ellipse", "", "action.draw.ellipse.hint", true),
+    // Bild platzieren: zwei gegenüberliegende Ecken bestimmen Größe und Lage.
+    // Ohne eingebettete Daten (`data`) liest die Action die Datei aus `file` —
+    // so ist sie auch über MCP benutzbar.
+    act!("draw.image", "action.draw.image.label", Zeichnen, "image", "", "action.draw.image.hint", true),
 
     // Architektur
     act!("draw.wall", "action.draw.wall.label", Architektur, "wall", "g", "action.draw.wall.hint", true),
@@ -352,6 +367,7 @@ pub fn is_mutating(id: &str) -> bool {
             | "draw.hatch"
             | "draw.text"
             | "draw.ellipse"
+            | "draw.image"
             | "draw.wall"
             | "draw.volume"
             | "draw.volume.points"
@@ -677,6 +693,9 @@ fn standard_ebene(action: &str) -> Option<&'static str> {
         | "dim.elevation.section"
         | "dim.room" => "Bemaßung",
         "draw.text" => "Text",
+        // Bilder bekommen eine eigene Ebene: sie liegen hinter allem und
+        // sollen sich gemeinsam ein-/ausschalten lassen.
+        "draw.image" => "Bilder",
         "draw.fill" | "draw.fill.points" | "draw.fill.boundary" | "draw.fill.paint" | "draw.hatch" => {
             "Schraffur"
         }
@@ -722,6 +741,7 @@ pub fn erzeuger_fuer(kind: &EntityKind) -> &'static str {
         EntityKind::Window { .. } => "draw.window",
         EntityKind::Stair { .. } => "draw.stair",
         EntityKind::BlockRef { .. } => "block.insert",
+        EntityKind::Image { .. } => "draw.image",
     }
 }
 
@@ -1506,6 +1526,33 @@ pub fn execute(doc: &mut Document, id: &str, params: &Value) -> Result<Value, St
             doc.add_entity(e);
             Ok(json!({"ok": true, "created": [id]}))
         }
+        "draw.image" => {
+            let a = require_pt(&p, "a")?;
+            let b = require_pt(&p, "b")?;
+            if (b.x - a.x).abs() <= POINT_EPS_MM || (b.y - a.y).abs() <= POINT_EPS_MM {
+                return Err("Bild: Die beiden Ecken bestimmen kein Rechteck".into());
+            }
+            // Eingebettete Daten (Oberfläche) haben Vorrang; sonst wird die
+            // Datei gelesen. Beides landet als Base64 im Dokument.
+            let (name, data) = match p.text("data") {
+                Some(d) if !d.trim().is_empty() => (p.text_or("name", "Bild"), d),
+                _ => {
+                    let pfad = p
+                        .text("file")
+                        .ok_or_else(|| "Parameter 'file' oder 'data' fehlt".to_string())?;
+                    crate::bild::lade_datei(std::path::Path::new(&pfad))?
+                }
+            };
+            if crate::bild::dekodiere(&data).is_none() {
+                return Err("Bilddaten sind nicht lesbar (PNG oder JPEG erwartet)".into());
+            }
+            let layer = resolve_layer_in(doc, &p, ebene);
+            let id = doc.new_id();
+            let mut e = Entity::new(id, layer, EntityKind::Image { a, b, name, data });
+            apply_common(doc, &mut e, &p, layer);
+            doc.add_entity(e);
+            Ok(json!({"ok": true, "created": [id]}))
+        }
         "draw.polyline" | "draw.rect" => {
             let pts = if id == "draw.rect" {
                 let a = require_pt(&p, "a")?;
@@ -2255,6 +2302,17 @@ pub fn execute(doc: &mut Document, id: &str, params: &Value) -> Result<Value, St
                 .angle("angle")
                 .ok_or_else(|| "Parameter 'angle' (Grad) fehlt".to_string())?;
             let copy = p.boolean_or("copy", false);
+            // Ein Bild ist achsenparallel gespannt (zwei Ecken); eine Drehung
+            // könnte es nur als Bounding-Box abbilden und würde es dabei
+            // verzerren. Deshalb ein klarer Fehler statt eines falschen Bildes.
+            if ids.iter().any(|id| {
+                matches!(
+                    doc.entity(*id).map(|e| &e.kind),
+                    Some(EntityKind::Image { .. })
+                )
+            }) {
+                return Err("Bild lässt sich nicht drehen — achsenparallel einsetzen".into());
+            }
             let m = Affine::rotate_about(center, angle);
             let mut new_ids = Vec::new();
             for eid in &ids {
@@ -4880,6 +4938,11 @@ pub fn explode_entity(doc: &mut Document, id: Id) -> Result<Vec<Id>, String> {
     if matches!(e.kind, EntityKind::Text { .. }) {
         return explode_text(doc, &e);
     }
+    // Ein Bild besteht aus Pixeln, nicht aus Linien — Zerlegen würde es
+    // ersatzlos löschen. Deshalb ein klarer Fehler statt eines stillen Verlusts.
+    if matches!(e.kind, EntityKind::Image { .. }) {
+        return Err("Ein Bild lässt sich nicht zerlegen".into());
+    }
     let ctx = render::RenderCtx::new(doc);
     let mut dl = render::DisplayList::default();
     render::render_entity(&ctx, &e, Affine::IDENTITY, &mut dl, 0);
@@ -4950,6 +5013,8 @@ pub fn explode_entity(doc: &mut Document, id: Id) -> Result<Vec<Id>, String> {
                 let _ = r;
                 k
             }),
+            // Bilder werden vor der Displayliste abgewiesen (siehe oben).
+            Shape::Image { .. } => None,
             Shape::Text(t) => Some(EntityKind::Text {
                 p: t.pos,
                 text: t.text.clone(),
