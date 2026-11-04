@@ -499,6 +499,94 @@ impl Design {
     }
 }
 
+/// Farbakzent der Oberfläche (T0111) — Einstellungen → Darstellung →
+/// „Farbakzente“.
+///
+/// Der Akzent färbt **alle** hervorgehobenen Stellen der Bedienoberfläche:
+/// aktive Reiter und Chips, Rahmen überfahrener Felder, Auswahl in Menüs und
+/// Schalter. Bernstein-Orange ist der Programmstandard (bisheriges Aussehen).
+/// Je Design (hell/dunkel) hat jeder Akzent einen eigenen Ton, damit Schrift
+/// und Fläche lesbar bleiben — die Töne stehen in `jjcad_gui::theme`.
+#[derive(Clone, Copy, PartialEq, Eq, Debug, Default, serde::Serialize, serde::Deserialize)]
+pub enum Farbakzent {
+    /// Bernstein-Orange (Vorgabe, bisheriges Aussehen)
+    #[default]
+    #[serde(rename = "bernstein")]
+    Bernstein,
+    #[serde(rename = "blau")]
+    Blau,
+    #[serde(rename = "tuerkis")]
+    Tuerkis,
+    #[serde(rename = "gruen")]
+    Gruen,
+    #[serde(rename = "rot")]
+    Rot,
+    #[serde(rename = "violett")]
+    Violett,
+}
+
+impl Farbakzent {
+    /// Alle Wahlen in Anzeigereihenfolge (Einstellungen).
+    pub const ALL: [Farbakzent; 6] = [
+        Farbakzent::Bernstein,
+        Farbakzent::Blau,
+        Farbakzent::Tuerkis,
+        Farbakzent::Gruen,
+        Farbakzent::Rot,
+        Farbakzent::Violett,
+    ];
+
+    /// Deutscher Name — für Dateien, Action-Parameter und Tests.
+    pub fn label(self) -> &'static str {
+        match self {
+            Farbakzent::Bernstein => "Bernstein",
+            Farbakzent::Blau => "Blau",
+            Farbakzent::Tuerkis => "Türkis",
+            Farbakzent::Gruen => "Grün",
+            Farbakzent::Rot => "Rot",
+            Farbakzent::Violett => "Violett",
+        }
+    }
+
+    /// Beschriftung in der gewählten Sprache (T0106).
+    pub fn text(self) -> &'static str {
+        match self {
+            Farbakzent::Bernstein => crate::i18n::tr("ui.farbakzent.bernstein"),
+            Farbakzent::Blau => crate::i18n::tr("ui.farbakzent.blau"),
+            Farbakzent::Tuerkis => crate::i18n::tr("ui.farbakzent.tuerkis"),
+            Farbakzent::Gruen => crate::i18n::tr("ui.farbakzent.gruen"),
+            Farbakzent::Rot => crate::i18n::tr("ui.farbakzent.rot"),
+            Farbakzent::Violett => crate::i18n::tr("ui.farbakzent.violett"),
+        }
+    }
+
+    /// Kurze Erläuterung (Tooltip im Einstellungsfenster).
+    pub fn hint(self) -> &'static str {
+        match self {
+            Farbakzent::Bernstein => {
+                "Bernstein-Orange — das bisherige Aussehen (Programmstandard)"
+            }
+            Farbakzent::Blau => "Blau — kühler Akzent für Reiter, Chips und Rahmen",
+            Farbakzent::Tuerkis => "Türkis — frischer Akzent für Reiter, Chips und Rahmen",
+            Farbakzent::Gruen => "Grün — ruhiger Akzent für Reiter, Chips und Rahmen",
+            Farbakzent::Rot => "Rot — kräftiger Akzent für Reiter, Chips und Rahmen",
+            Farbakzent::Violett => "Violett — eigenständiger Akzent für Reiter, Chips und Rahmen",
+        }
+    }
+
+    /// Tooltip in der gewählten Sprache (T0106).
+    pub fn tip(self) -> &'static str {
+        match self {
+            Farbakzent::Bernstein => crate::i18n::tr("ui.farbakzent.hint_bernstein"),
+            Farbakzent::Blau => crate::i18n::tr("ui.farbakzent.hint_blau"),
+            Farbakzent::Tuerkis => crate::i18n::tr("ui.farbakzent.hint_tuerkis"),
+            Farbakzent::Gruen => crate::i18n::tr("ui.farbakzent.hint_gruen"),
+            Farbakzent::Rot => crate::i18n::tr("ui.farbakzent.hint_rot"),
+            Farbakzent::Violett => crate::i18n::tr("ui.farbakzent.hint_violett"),
+        }
+    }
+}
+
 /// Fensterrahmen (T0098) — experimentell, Einstellungen → Bedienung →
 /// „Fensterrahmen“.
 ///
@@ -806,6 +894,12 @@ pub struct UserPrefs {
     /// wirkt sofort, ohne Neustart (`crate::theme::set_design`).
     #[serde(default)]
     pub design: Design,
+    /// Farbakzent der Oberfläche (T0111): Bernstein (Programmstandard), Blau,
+    /// Türkis, Grün, Rot oder Violett. Er färbt alle Akzentstellen der
+    /// Bedienung (Reiter, Chips, Rahmen, Schalter); die Wahl wirkt sofort
+    /// (`crate::theme::set_akzent`).
+    #[serde(default)]
+    pub farbakzent: Farbakzent,
 }
 
 fn default_dateidialog() -> String {
@@ -1151,6 +1245,9 @@ impl Default for UserPrefs {
             fensterrahmen: Fensterrahmen::System,
             // Programmstandard (T0102): das Farbschema des Betriebssystems.
             design: Design::System,
+            // Programmstandard (T0111): der Bernstein-Akzent (bisheriges
+            // Aussehen).
+            farbakzent: Farbakzent::Bernstein,
         }
     }
 }
@@ -1751,6 +1848,43 @@ mod tests {
         assert_eq!(Design::ALL[0], Design::System);
         assert_eq!(Design::Hell.label(), "Hell");
         assert_eq!(Design::Dunkel.label(), "Dunkel");
+    }
+
+    /// T0111: Der Farbakzent steht in den Voreinstellungen. Vorgabe ist
+    /// „Bernstein“ (das bisherige Aussehen) — auch für Altbestände ohne
+    /// Schlüssel; jede andere Wahl wird gespeichert und wieder gelesen.
+    #[test]
+    fn farbakzent_wird_gespeichert_und_gelesen() {
+        assert_eq!(
+            UserPrefs::default().farbakzent,
+            Farbakzent::Bernstein,
+            "Vorgabe muss der Bernstein-Akzent sein"
+        );
+        let alt: UserPrefs = serde_json::from_str(r#"{"last_dir": "/tmp"}"#).unwrap();
+        assert_eq!(alt.farbakzent, Farbakzent::Bernstein);
+
+        let mut prefs = UserPrefs::default();
+        prefs.farbakzent = Farbakzent::Tuerkis;
+        let roh = serde_json::to_string(&prefs).unwrap();
+        assert!(
+            roh.contains("\"farbakzent\":\"tuerkis\""),
+            "Schlüssel fehlt: {roh}"
+        );
+        let wieder: UserPrefs = serde_json::from_str(&roh).unwrap();
+        assert_eq!(
+            wieder.farbakzent,
+            Farbakzent::Tuerkis,
+            "Akzentwahl ging verloren"
+        );
+
+        let violett: UserPrefs = serde_json::from_str(r#"{"farbakzent": "violett"}"#).unwrap();
+        assert_eq!(violett.farbakzent, Farbakzent::Violett);
+        // Sechs Wahlen, deutsche Namen; Bernstein ist die erste (Vorgabe).
+        assert_eq!(Farbakzent::ALL.len(), 6);
+        assert_eq!(Farbakzent::ALL[0], Farbakzent::Bernstein);
+        assert_eq!(Farbakzent::Bernstein.label(), "Bernstein");
+        assert_eq!(Farbakzent::Tuerkis.label(), "Türkis");
+        assert_eq!(Farbakzent::Gruen.label(), "Grün");
     }
 
     /// T0067: Die Schwenkgeschwindigkeit ist ein Faktor mit Vorgabe 1,0, wird

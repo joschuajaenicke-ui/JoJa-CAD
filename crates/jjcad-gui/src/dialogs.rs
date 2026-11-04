@@ -1,12 +1,13 @@
 //! Dialoge: Dateien, Text, Einstellungen, Tastaturbelegung, Hilfe, Projekt.
 
 use crate::app::App;
+use crate::panels;
 use crate::theme::{self, Palette};
 use crate::widgets;
 use egui::{Align, Color32, FontId, Layout, Pos2, Rect, RichText, Rounding, Sense, Stroke, Ui, Vec2};
 use jjcad_core::actions;
 use jjcad_core::geom::{Vec2 as V2};
-use jjcad_core::persist::{fest_belegt, Design, DragMode, Fensterrahmen, PastePivot};
+use jjcad_core::persist::{fest_belegt, Design, DragMode, Farbakzent, Fensterrahmen, PastePivot};
 use jjcad_core::units::Unit;
 use serde_json::json;
 
@@ -1094,6 +1095,17 @@ pub(crate) const EINSTELLUNGSKATEGORIEN: &[Einstellungskategorie] = &[
             "Nachtmodus",
             "System",
             "Betriebssystem",
+            "Farbakzent",
+            "Farbakzente",
+            "Akzent",
+            "Akzentfarbe",
+            "Bernstein",
+            "Orange",
+            "Blau",
+            "Grün",
+            "Rot",
+            "Violett",
+            "Türkis",
             "Darstellung",
         ],
     },
@@ -1203,6 +1215,8 @@ fn settings_body(app: &mut App, ui: &mut Ui) {
     let mut fensterrahmen = app.prefs.fensterrahmen;
     // T0102: Farbschema der Oberfläche (hell, dunkel oder wie das System).
     let mut design = app.prefs.design;
+    // T0111: Farbakzent der Bedienung (Vorgabe Bernstein).
+    let mut farbakzent = app.prefs.farbakzent;
 
     // Suche: Kategorien, deren Name oder eine ihrer Einstellungen passt.
     let suche = app.ui.settings_suche.trim().to_lowercase();
@@ -1702,6 +1716,69 @@ fn settings_body(app: &mut App, ui: &mut Ui) {
                                         jjcad_core::i18n::tr("settings.design_hint"),
                                     ));
                                 }
+                                // T0111: Der Akzent färbt alle hervorgehobenen
+                                // Stellen der Bedienung; jede Wahl wird in ihrem
+                                // eigenen Ton gezeigt (Farbprobe).
+                                zeile_mit(
+                                    &suche,
+                                    ui,
+                                    jjcad_core::i18n::tr("gui.dialogs.farbakzente"),
+                                    &[
+                                        "Akzent",
+                                        "Akzentfarbe",
+                                        "Bernstein",
+                                        "Orange",
+                                        "Blau",
+                                        "Grün",
+                                        "Rot",
+                                        "Violett",
+                                        "Türkis",
+                                        "Farbe",
+                                    ],
+                                    |ui| {
+                                        // Auswahlfeld wie alle anderen (150 px
+                                        // Wertespalte, gleicher Pfeil); die
+                                        // geschlossene Zeile trägt eine Farbprobe
+                                        // des gewählten Akzents.
+                                        let probe = theme::akzent_probe(farbakzent);
+                                        let icon = panels::BtnIcon::Color(
+                                            jjcad_core::style::Color::rgb(
+                                                probe.r(),
+                                                probe.g(),
+                                                probe.b(),
+                                            ),
+                                        );
+                                        let cap = farbakzent.text().to_string();
+                                        if let Some(neu) = panels::dropdown(
+                                            ui,
+                                            "farbakzent",
+                                            &cap,
+                                            Some(icon),
+                                            |ui| {
+                                                let mut out = None;
+                                                for m in Farbakzent::ALL {
+                                                    let text = egui::RichText::new(m.text())
+                                                        .color(theme::akzent_probe(m));
+                                                    if ui
+                                                        .selectable_label(m == farbakzent, text)
+                                                        .on_hover_text(m.tip())
+                                                        .clicked()
+                                                    {
+                                                        out = Some(m);
+                                                    }
+                                                }
+                                                out
+                                            },
+                                        ) {
+                                            farbakzent = neu;
+                                        }
+                                    },
+                                );
+                                if suche.is_empty() {
+                                    ui.label(theme::faint(
+                                        jjcad_core::i18n::tr("settings.farbakzent_hint"),
+                                    ));
+                                }
                                 zeile(&suche, ui, jjcad_core::i18n::tr("gui.dialogs.linienstaerken"), |ui| {
                                     let mut m = if lw_scaled { 1 } else { 0 };
                                     ui.selectable_value(&mut m, 0, jjcad_core::i18n::tr("gui.dialogs.px"));
@@ -1774,6 +1851,10 @@ fn settings_body(app: &mut App, ui: &mut Ui) {
         // T0102: sofort umschalten — Palette und Stil werden neu gesetzt,
         // die Wahl steht in `prefs.json`.
         app.set_design(design, ui.ctx());
+    }
+    if app.prefs.farbakzent != farbakzent {
+        // T0111: ebenso der Akzent — Palette und Stil tragen den neuen Ton.
+        app.set_akzent(farbakzent, ui.ctx());
     }
     let dialog_neu = if dateidialog_system { "system" } else { "intern" };
     if app.prefs.file_dialog != dialog_neu {
@@ -4117,6 +4198,8 @@ mod tests_einstellungen {
         assert_eq!(treffer("schwenk"), vec!["Bedienung"]);
         // T0070: Der Drehpunkt der Einfüge-Vorschau steht unter „Bedienung“.
         assert_eq!(treffer("drehpunkt"), vec!["Bedienung"]);
+        // T0111: Der Farbakzent steht unter „Darstellung“.
+        assert_eq!(treffer("farbakzent"), vec!["Darstellung"]);
         assert!(treffer("gibtesnicht").is_empty(), "Unbekannter Begriff liefert Treffer");
     }
 
@@ -4207,6 +4290,80 @@ mod tests_einstellungen {
         app.set_design(Design::Dunkel, &ctx);
         assert!(!theme::ist_hell());
         assert_eq!(Palette::bg(), dunkel_bg);
+    }
+
+    /// T0111: Unter „Darstellung“ steht die Zeile „Farbakzente“ mit sechs
+    /// Wahlen. Ein Klick auf „Blau“ färbt die Akzentstellen sofort um und
+    /// schreibt die Wahl in die Voreinstellungen; Bernstein bleibt die Vorgabe.
+    #[test]
+    fn farbakzent_zeile_faerbt_die_oberflaeche() {
+        let _sperre = KONFIG.lock().unwrap_or_else(|e| e.into_inner());
+        let _konfig = WegwerfKonfig::neu("farbakzent");
+        let ctx = egui::Context::default();
+        let mut app = App::with_ctx(ctx.clone());
+        app.set_design(Design::Dunkel, &ctx);
+        app.set_akzent(Farbakzent::Bernstein, &ctx);
+        let bernstein = Palette::accent();
+        assert_eq!(bernstein, egui::Color32::from_rgb(0xE3, 0xA2, 0x3D));
+
+        let kat = EINSTELLUNGSKATEGORIEN
+            .iter()
+            .position(|k| k.name() == "Darstellung")
+            .expect("Kategorie Darstellung");
+        app.ui.settings_open = true;
+        app.ui.settings_kat = kat;
+        app.ui.settings_suche = "Farbakzent".to_string();
+        let bild = || egui::RawInput {
+            screen_rect: Some(Rect::from_min_size(Pos2::ZERO, Vec2::new(1500.0, 950.0))),
+            ..Default::default()
+        };
+        let mut out = ctx.run(bild(), |ctx| app.ui(ctx));
+        for _ in 0..3 {
+            out = ctx.run(bild(), |ctx| app.ui(ctx));
+        }
+        for wort in ["Farbakzente", "Bernstein"] {
+            assert!(
+                text_mitte(&out, wort).is_some(),
+                "„{wort}“ fehlt im Einstellungsfenster"
+            );
+        }
+        // Die Vorgabe bleibt das bisherige Bernstein-Orange.
+        assert_eq!(Palette::accent(), bernstein, "die Vorgabe ist nicht Bernstein");
+
+        // Auswahlfeld öffnen (es zeigt den gewählten Akzent) und „Blau“ wählen.
+        let feld = text_mitte(&out, "Bernstein").expect("„Bernstein“ steht nicht im Fenster");
+        klick(&mut app, &ctx, feld);
+        for _ in 0..2 {
+            out = ctx.run(bild(), |ctx| app.ui(ctx));
+        }
+        for wort in ["Bernstein", "Blau", "Türkis", "Grün", "Rot", "Violett"] {
+            assert!(
+                text_mitte(&out, wort).is_some(),
+                "„{wort}“ fehlt im Auswahlmenü"
+            );
+        }
+        let blau = text_mitte(&out, "Blau").expect("„Blau“ steht nicht im Menü");
+        klick(&mut app, &ctx, blau);
+
+        assert_eq!(
+            app.prefs.farbakzent,
+            Farbakzent::Blau,
+            "die Wahl steht nicht in den Voreinstellungen"
+        );
+        assert_eq!(
+            Palette::accent(),
+            egui::Color32::from_rgb(0x4C, 0x9A, 0xE8),
+            "die Akzentfarbe der Bedienung blieb gleich"
+        );
+        assert_eq!(
+            jjcad_core::persist::UserPrefs::load().farbakzent,
+            Farbakzent::Blau,
+            "die Wahl wurde nicht gespeichert"
+        );
+
+        // Ausgangszustand für die übrigen Tests wiederherstellen.
+        app.set_akzent(Farbakzent::Bernstein, &ctx);
+        assert_eq!(Palette::accent(), bernstein);
     }
 
     /// Ein Suchbegriff außerhalb der gewählten Kategorie springt auf die erste
