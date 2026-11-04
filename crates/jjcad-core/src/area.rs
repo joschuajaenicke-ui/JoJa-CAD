@@ -18,6 +18,53 @@ pub fn point_in_area(p: Vec2, outer: &[Vec2], holes: &[Vec<Vec2>]) -> bool {
     point_in_polygon(p, outer) && !holes.iter().any(|h| point_in_polygon(p, h))
 }
 
+/// Berührt das achsenparallele Rechteck `rect` die gefüllte Fläche?
+///
+/// Eine Bounding-Box taugt dafür nicht: bei einer konkaven Fläche deckt sie
+/// auch die Aussparung ab, und ein Querfenster in der Aussparung „träfe“ die
+/// Fläche, obwohl dort nichts gezeichnet ist (T0099). Geprüft wird deshalb die
+/// echte Geometrie — zwei Flächen berühren sich genau dann, wenn eine Ecke der
+/// einen in der anderen liegt oder sich zwei Kanten schneiden:
+///
+/// * eine Rechteckecke in der gefüllten Fläche (Rechteck ragt hinein),
+/// * ein Konturpunkt im Rechteck (Fläche deckt das Rechteck ganz ab),
+/// * eine geschnittene Kante von Umgrenzung oder Inseln.
+///
+/// Die Punktprobe zählt Löcher als außen: ein Rechteck ganz innerhalb einer
+/// Insel berührt die Fläche nicht.
+pub fn flaeche_beruehrt_rechteck(outer: &[Vec2], holes: &[Vec<Vec2>], rect: &BBox) -> bool {
+    if outer.len() < 3 || !rect.is_valid() {
+        return false;
+    }
+    let ecken = [
+        rect.min,
+        Vec2::new(rect.max.x, rect.min.y),
+        rect.max,
+        Vec2::new(rect.min.x, rect.max.y),
+    ];
+    if ecken.iter().any(|p| point_in_area(*p, outer, holes)) {
+        return true;
+    }
+    let ringe = std::iter::once(outer).chain(holes.iter().map(|h| h.as_slice()));
+    for ring in ringe {
+        // Ringpunkt im Rechteck: die Kontur läuft durch das Fenster.
+        if ring.iter().any(|p| rect.contains(*p)) {
+            return true;
+        }
+        // Ringkante kreuzt eine Rechteckkante. Beide als Strecke: eine
+        // unendliche Gerade träfe die Rechteckseite irgendwo weit außerhalb.
+        // Ein Ringpunkt genau auf der Fensterkante ist oben schon erfasst.
+        let n = ring.len();
+        for i in 0..n {
+            let (a, b) = (ring[i], ring[(i + 1) % n]);
+            if (0..4).any(|k| line_line(a, b, ecken[k], ecken[(k + 1) % 4], false, false).is_some()) {
+                return true;
+            }
+        }
+    }
+    false
+}
+
 /// Fläche eines Objekts in mm² — `None`, wenn das Objekt nichts umschließt.
 ///
 /// Eine Quelle für Anzeige (Eigenschaften-Panel) **und** Abfrage
