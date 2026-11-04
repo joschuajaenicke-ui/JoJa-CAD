@@ -49,6 +49,11 @@ Notausgänge ohne neuen Build (in der Eingabeaufforderung setzen, dann starten)
                            (statt F12).
 
 Änderungen gegenüber der ersten Testfassung
+  * **Helles Windows-Farbschema:** Die weißen Balken und weißen Eingabefelder
+    kamen daher, dass egui bei hellem Systemdesign seinen eigenen hellen Stil
+    benutzt hat, während die Flächen aus JoJa-CAD dunkel blieben. Jetzt gilt
+    immer das eingestellte Design (System / Hell / Dunkel), unabhängig davon,
+    was Windows meldet.
   * Deckender Fenstergrund in der Oberflächenfarbe statt des halbtransparenten
     Standardgraus: bleibt zwischen zwei Flächen eine Fuge, ist sie unsichtbar.
   * Panelhöhen und -breiten werden auf ganze Bildpunkte gerundet; bei 125/150/175 %
