@@ -24,7 +24,10 @@ offene Fensterinstanz zeigt weiterhin den alten Stand.
   die Kopfzeile oben rechts **Minimieren**, **Vergrößern/Wiederherstellen** und
   **Schließen**, ein Zug verschiebt das Fenster (`StartDrag`), ein Doppelklick
   schaltet die Größe um, die Kantenzonen (5 px) ändern sie (`BeginResize`).
-  Tests: `app::tests_fensterrahmen` (7), `dialogs::tests_einstellungen::fensterrahmen_laesst_sich_umschalten`,
+  Nach dem Zug beendet `Context::stop_dragging` egui's Zieh-Zustand: der
+  Fenstermanager übernimmt den Zeiger und schickt das Loslassen an niemanden,
+  sonst bliebe egui „am Ziehen“ und **jeder zweite** Zug verschöbe nichts (Turn 3).
+  Tests: `app::tests_fensterrahmen` (8), `dialogs::tests_einstellungen::fensterrahmen_laesst_sich_umschalten`,
   `persist::tests::fensterrahmen_vorgabe_und_gespeichert`.
 - **Drehpunkt der Einfüge-Vorschau (T0070)**: Einstellungen → Bedienung → Zeile
   „Drehpunkt" mit den Modi **Mittelpunkt** (Vorgabe seit T0087) und
