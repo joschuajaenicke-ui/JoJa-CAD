@@ -246,6 +246,46 @@ fn linienbreite_px(width_mm: f64, paper_px: f64, scaled: bool) -> f64 {
     }
 }
 
+/// Texturen der Bilder, je egui-Kontext.
+///
+/// Der Zwischenspeicher liegt in `Context::data` — damit gehört er zur
+/// laufenden Anwendung und nicht zu einem prozessweiten Zustand (Tests bauen
+/// je Fall einen eigenen Kontext). Der Schlüssel ist die Kennung der
+/// Bilddaten; gleiche Bilder teilen sich eine Textur.
+type BildTexturen = std::collections::HashMap<u64, egui::TextureHandle>;
+
+fn bild_textur(p: &Painter, bild: &jjcad_core::bild::Bild) -> egui::TextureHandle {
+    let ctx = p.ctx().clone();
+    let id = egui::Id::new("jjcad_bild_texturen");
+    if let Some(h) = ctx.data(|d| {
+        d.get_temp::<BildTexturen>(id)
+            .and_then(|m| m.get(&bild.kennung).cloned())
+    }) {
+        return h;
+    }
+    let farben = egui::ColorImage::from_rgba_unmultiplied(
+        [bild.breite as usize, bild.hoehe as usize],
+        &bild.rgba,
+    );
+    let h = ctx.load_texture(
+        format!("bild-{:016X}", bild.kennung),
+        farben,
+        egui::TextureOptions::LINEAR,
+    );
+    let merken = h.clone();
+    ctx.data_mut(|d| {
+        let mut map = d.get_temp::<BildTexturen>(id).unwrap_or_default();
+        map.insert(bild.kennung, merken);
+        d.insert_temp(id, map);
+    });
+    h
+}
+
+/// Einheitliche UV-Deckung einer Textur (0…1 in beiden Richtungen).
+fn uv_voll() -> Rect {
+    Rect::from_min_max(Pos2::ZERO, Pos2::new(1.0, 1.0))
+}
+
 fn paint_prim(p: &Painter, prim: &Prim, w2s: &dyn Fn(V2) -> Pos2, scale: f64, pc: &PaintCtx, alpha: f32) {
     let is_sel = !pc.preview && pc.selected.contains(&prim.entity) && prim.entity != 0;
     let is_hover = !pc.preview && pc.hover == Some(prim.entity) && prim.entity != 0 && !is_sel;
@@ -312,6 +352,24 @@ fn paint_prim(p: &Painter, prim: &Prim, w2s: &dyn Fn(V2) -> Pos2, scale: f64, pc
                 }
             }
             stroke_pts(p, &v, w as f32, col);
+        }
+        PShape::Image { a, b, bild } => {
+            let r = Rect::from_two_pos(w2s(*a), w2s(*b));
+            if r.width() < 0.5 || r.height() < 0.5 {
+                return;
+            }
+            let tex = bild_textur(p, bild);
+            p.image(
+                tex.id(),
+                r,
+                uv_voll(),
+                Color32::from_white_alpha((255.0 * alpha).round().clamp(0.0, 255.0) as u8),
+            );
+            if is_sel || is_hover {
+                // Auswahl färbt nur blau ein — bei einem Bild als durchsichtige
+                // Fläche darüber (ein Rahmen wäre ein zweites Auswahlzeichen).
+                p.rect_filled(r, 0.0, Palette::select().gamma_multiply(0.25 * alpha));
+            }
         }
         PShape::Fill { outer, holes } => {
             if outer.len() < 3 {
@@ -2051,6 +2109,25 @@ fn draw_tool_preview(
                 );
             }
         }
+        // Bild: das gewählte Bild halbtransparent im aufgezogenen Rechteck,
+        // damit der Nutzer vor dem zweiten Klick sieht, was dort landet.
+        "draw.image" => {
+            if let Some(start) = last {
+                let r = Rect::from_two_pos(w2s(start), w2s(cursor));
+                if let Some(q) = &app.options.bild {
+                    if let Some(bild) = jjcad_core::bild::dekodiere(&q.data) {
+                        let tex = bild_textur(p, &bild);
+                        p.image(tex.id(), r, uv_voll(), Color32::from_white_alpha(170));
+                    }
+                }
+                p.rect_stroke(r, 0.0, stroke);
+                label = format!(
+                    "{} × {}",
+                    unit.format_plain((cursor.x - start.x).abs(), unit.decimals()),
+                    unit.format_plain((cursor.y - start.y).abs(), unit.decimals())
+                );
+            }
+        }
         "draw.circle" => {
             if let Some(c) = last {
                 let r = c.dist(cursor);
@@ -2839,6 +2916,13 @@ fn draw_objekt_hervorhebung(
             }
             PShape::Dot { p: pos, .. } => {
                 p.circle_filled(w2s(*pos), 3.0, farbe);
+            }
+            // Bild: hervorgehoben wird der Rahmen (die Textur bliebe sonst
+            // unverändert und wäre als Hervorhebung nicht zu erkennen).
+            PShape::Image { a, b, .. } => {
+                let ecken = jjcad_core::bild::ecken(*a, *b);
+                let pts: Vec<Pos2> = ecken.iter().map(|q| w2s(*q)).collect();
+                p.add(Shape::closed_line(pts, strich));
             }
             // Text: der Kasten, den auch Auswahlrahmen und Einfüge-Vorschau benutzen
             // (`render::text_corners`).
@@ -4135,6 +4219,11 @@ fn ghost_shape(
         // Füllungen haben in der Vorschau keine Kontur — die Umrandung
         // zeichnet `draw_ghost` (äußerer Rahmen) bzw. das Objekt selbst.
         PShape::Fill { .. } => {}
+        // Bild: in der Einfüge-Vorschau nur der Rahmen (die Textur gehört zur
+        // Zeichenfläche, nicht zur Vorschau-Zeichnung).
+        PShape::Image { a, b, .. } => {
+            p.rect_stroke(Rect::from_two_pos(w2s(*a), w2s(*b)), 0.0, stroke);
+        }
     }
 }
 
@@ -4977,6 +5066,34 @@ fn tool_click_at(app: &mut App, w: V2, raw: V2) {
                     let ok = run(app, "draw.rect", json!({"a": ax(a), "b": ax(b)}));
                     if ok {
                         restart_tool(app, "draw.rect");
+                    }
+                }
+            }
+        }
+        // Bild: zwei gegenüberliegende Ecken legen Größe und Lage fest. Wie
+        // beim Rechteck bleibt das Werkzeug danach aktiv (nächste Ecke).
+        "draw.image" => {
+            if tool.pts.is_empty() {
+                tool.pts.push(w);
+                app.tool = Some(tool);
+            } else {
+                let a = tool.pts[0];
+                let b = w;
+                if (a.x - b.x).abs() > 0.5 && (a.y - b.y).abs() > 0.5 {
+                    match app.options.bild.clone() {
+                        Some(q) => {
+                            let ok = run(
+                                app,
+                                "draw.image",
+                                json!({"a": ax(a), "b": ax(b), "name": q.name, "data": q.data}),
+                            );
+                            if ok {
+                                restart_tool(app, "draw.image");
+                            }
+                        }
+                        // Ohne gewählte Datei zuerst den Dialog öffnen — sonst
+                        // startet das Werkzeug aus dem Inventar und tut nichts.
+                        None => app.open_file_dialog(crate::dialogs::FileMode::ImportImage),
                     }
                 }
             }
@@ -6224,6 +6341,36 @@ mod tests_umrandung {
         *o.fill_border_for_mut("draw.fill.paint") = true;
         assert!(o.fill_border_for("draw.fill.paint"));
         assert!(o.fill_border_for("draw.fill.points"), "Punktmodus bleibt an");
+    }
+
+    /// T0100: Das Bildwerkzeug setzt nach zwei Klicks ein Bild mit genau
+    /// diesen gegenüberliegenden Ecken — und bleibt für das nächste bereit.
+    #[test]
+    fn zwei_klicks_setzen_ein_bild() {
+        let mut app = neue_app();
+        // 2×2-PNG (rot, grün / blau, weiß), fest eingetragen.
+        app.options.bild = Some(crate::app::BildQuelle {
+            name: "Probe.png".into(),
+            data: "iVBORw0KGgoAAAANSUhEUgAAAAIAAAACCAIAAAD91JpzAAAAEklEQVR4nGP4z8DAAMIM/4EAAB/uBfsL2WiLAAAAAElFTkSuQmCC".into(),
+        });
+        app.start_tool("draw.image");
+        tool_click(&mut app, V2::new(1000.0, 500.0));
+        assert!(
+            app.doc().entities.is_empty(),
+            "der erste Klick setzt noch nichts"
+        );
+        tool_click(&mut app, V2::new(3000.0, 1500.0));
+        assert_eq!(app.doc().entities.len(), 1, "ein Bild angelegt");
+        let e = app.doc().entities.last().unwrap();
+        match &e.kind {
+            EntityKind::Image { a, b, name, .. } => {
+                assert_eq!(*a, V2::new(1000.0, 500.0));
+                assert_eq!(*b, V2::new(3000.0, 1500.0));
+                assert_eq!(name, "Probe.png");
+            }
+            k => panic!("kein Bild: {k:?}"),
+        }
+        assert_eq!(app.tool_id(), Some("draw.image"), "Werkzeug bleibt aktiv");
     }
 
     /// Kontur anklicken: Klick auf eine geschlossene Polylinie ergibt eine

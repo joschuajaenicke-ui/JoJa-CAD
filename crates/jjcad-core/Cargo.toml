@@ -16,3 +16,5 @@ ab_glyph = "0.2"
 lopdf = { version = "0.46", default-features = false }
 # PDF-Streams packen (FlateDecode) — liegt über lopdf ohnehin im Baum
 flate2 = "1"
+# Bilder (PNG/JPEG) einlesen: Import, Anzeige, PNG- und PDF-Ausgabe
+image = { version = "0.25", default-features = false, features = ["png", "jpeg"] }

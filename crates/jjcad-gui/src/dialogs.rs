@@ -21,6 +21,8 @@ pub enum FileMode {
     ImportDxf,
     /// PDF einfügen (Plan `docs/PDF-IMPORT.md`)
     ImportPdf,
+    /// Bild einfügen (PNG oder JPEG, T0100)
+    ImportImage,
     ExportPdf,
     ExportDxf,
     ExportPng,
@@ -36,6 +38,8 @@ impl FileMode {
             FileMode::Open | FileMode::SaveJjcad => "jjcad",
             FileMode::ImportDxf | FileMode::ExportDxf => "dxf",
             FileMode::ImportPdf => "pdf",
+            // Beide Formate sind gemeint; der Filter unten lässt png/jpg/jpeg zu.
+            FileMode::ImportImage => "png",
             FileMode::ExportPdf => "pdf",
             FileMode::ExportPng => "png",
             FileMode::ImportKeymap | FileMode::ExportKeymap => "json",
@@ -47,6 +51,7 @@ impl FileMode {
             FileMode::SaveJjcad => jjcad_core::i18n::tr("gui.dialogs.zeichnung_speichern"),
             FileMode::ImportDxf => jjcad_core::i18n::tr("gui.dialogs.dxf_importieren"),
             FileMode::ImportPdf => jjcad_core::i18n::tr("gui.dialogs.pdf_einfuegen"),
+            FileMode::ImportImage => jjcad_core::i18n::tr("gui.dialogs.bild_einfuegen"),
             FileMode::ExportPdf => jjcad_core::i18n::tr("gui.dialogs.als_pdf_exportieren"),
             FileMode::ExportDxf => jjcad_core::i18n::tr("gui.dialogs.als_dxf_exportieren"),
             FileMode::ExportPng => jjcad_core::i18n::tr("gui.dialogs.als_png_exportieren"),
@@ -57,7 +62,9 @@ impl FileMode {
     fn action_label(self) -> &'static str {
         match self {
             FileMode::Open => jjcad_core::i18n::tr("gui.dialogs.oeffnen"),
-            FileMode::ImportDxf | FileMode::ImportKeymap => jjcad_core::i18n::tr("gui.dialogs.importieren"),
+            FileMode::ImportDxf | FileMode::ImportKeymap | FileMode::ImportImage => {
+                jjcad_core::i18n::tr("gui.dialogs.importieren")
+            }
             _ => jjcad_core::i18n::tr("gui.dialogs.speichern"),
         }
     }
@@ -77,6 +84,7 @@ impl FileMode {
             FileMode::Open | FileMode::SaveJjcad => jjcad_core::i18n::tr("gui.dialogs.zeichnung"),
             FileMode::ImportDxf | FileMode::ExportDxf => jjcad_core::i18n::tr("gui.dialogs.dxf_zeichnung"),
             FileMode::ImportPdf => jjcad_core::i18n::tr("gui.dialogs.pdf_dokument"),
+            FileMode::ImportImage => jjcad_core::i18n::tr("gui.dialogs.bild"),
             FileMode::ExportPdf => jjcad_core::i18n::tr("gui.dialogs.pdf_dokument"),
             FileMode::ExportPng => jjcad_core::i18n::tr("gui.dialogs.png_bild"),
             FileMode::ImportKeymap | FileMode::ExportKeymap => jjcad_core::i18n::tr("gui.dialogs.tastaturlayout"),
@@ -158,6 +166,12 @@ impl FileDialog {
                         continue;
                     }
                     if self.mode == FileMode::ImportKeymap && ext != "json" {
+                        continue;
+                    }
+                    // Bilder: PNG und JPEG (beide Schreibweisen der Endung).
+                    if self.mode == FileMode::ImportImage
+                        && !matches!(ext.as_str(), "png" | "jpg" | "jpeg")
+                    {
                         continue;
                     }
                 }
@@ -450,6 +464,7 @@ pub fn datei_gewaehlt(app: &mut App, mode: FileMode, path: std::path::PathBuf) {
         },
         FileMode::ImportDxf => app.import_dxf_from(path),
         FileMode::ImportPdf => app.pdf_import_oeffnen(path),
+        FileMode::ImportImage => app.bild_importieren(path),
         FileMode::ExportPdf => app.export_pdf_to(path),
         FileMode::ExportDxf => app.export_dxf_to(path),
         FileMode::ExportPng => app.export_png_to(path),

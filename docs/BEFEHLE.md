@@ -42,6 +42,7 @@ Befehls-Schicht vorbei.
 | `draw.ellipse` | `c`, `rx`, `ry`, `rot` (Grad, CCW) | `{"c":[0,0],"rx":1,"ry":0.5}`; Mittelachse + Breite = `c` = Achsenmitte, `rx` = halbe Achsenlänge, `ry` = halbe Breite, `rot` = Achsenwinkel |
 | `draw.hatch` | `boundary[]`, `pattern`, `angle`, `spacing` | Muster nach DIN 1356-1:2026-09, Tabelle 5 — Schlüssel: `solid`, `mauerwerk` (45°-Linien), `kunststoffe` (Kreuz), `sand` (Punkte), `daemmstoffe` (Zickzack), `boden_unveraendert`, `boden_veraendert`, `kies`, `beton_unbewehrt`, `beton_bewehrt`, `wu_beton`, `textilbeton`, `vollholz_quer`, `vollholz_laengs`, `metall`, `putz`, `daemmung_schlaufen`, `abdichtung_einlagig`, `abdichtung_mehrlagig`, `abdichtung_aufkantung`, `dichtstoffe`, `glas`; die alten Schlüssel `lines`/`cross`/`dots`/`insulation` gelten weiter |
 | `draw.text` | `p`, `text`, `height`, `angle`, `align`, `bold` | `{"p":[1,2],"text":"Wohnen","height":0.3}` |
+| `draw.image` | `a`, `b`, `file` oder `data` (Base64), `name` | `{"a":[0,0],"b":[4,3],"file":"Lageplan.png"}` — PNG oder JPEG; `a`/`b` sind gegenüberliegende Ecken, die Datei wird eingebettet |
 
 ## Architektur
 
@@ -106,6 +107,7 @@ dass jeder Schritt `layer` mitgeben muss.
 | `draw.volume*` | Wände (Körper im Wandton) |
 | `block.insert` | Möbel |
 | `draw.point`, `draw.line`, `draw.polyline`, `draw.spline`, `draw.rect`, `draw.circle`, `draw.arc`, `draw.ellipse` | Hilfslinien |
+| `draw.image` | Bilder |
 
 In der Oberfläche übergibt jedes Werkzeug die im Layer-Panel gewählte Ebene —
 dort gilt weiterhin die Auswahl des Nutzers.
