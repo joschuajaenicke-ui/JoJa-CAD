@@ -320,6 +320,15 @@ pub fn transform_kind(k: &EntityKind, m: &Affine) -> EntityKind {
             scale: v(scale.x * f, scale.y * f),
             mirror: *mirror ^ m.is_mirrored(),
         },
+        // Bild: beide Ecken wandern mit (Verschieben, Spiegeln, Skalieren).
+        // Eine Drehung kann das Bild nicht abbilden — es bleibt achsenparallel
+        // und wird dann über das Rechteck der gedrehten Ecken gelegt.
+        EntityKind::Image { a, b, name, data } => EntityKind::Image {
+            a: m.apply(*a),
+            b: m.apply(*b),
+            name: name.clone(),
+            data: data.clone(),
+        },
     }
 }
 

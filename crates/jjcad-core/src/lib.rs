@@ -9,6 +9,7 @@
 
 pub mod actions;
 pub mod area;
+pub mod bild;
 pub mod blocks_lib;
 pub mod boundary;
 pub mod dxf;

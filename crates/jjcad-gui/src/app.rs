@@ -383,6 +383,17 @@ pub struct ToolOptions {
     pub ellipse_mode: Einfuegemodus,
     /// Eingabemodus des Bogens (`draw.arc`)
     pub arc_mode: Bogenmodus,
+    /// Das Bild, das `draw.image` als Nächstes einsetzt. Die Datei wird beim
+    /// Auswählen gelesen und als Base64 mitgeführt — die Action schickt sie
+    /// unverändert ins Dokument (`EntityKind::Image`).
+    pub bild: Option<BildQuelle>,
+}
+
+/// Ausgewählte Bilddatei für `draw.image` (Anzeigename und Base64-Daten).
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct BildQuelle {
+    pub name: String,
+    pub data: String,
 }
 
 impl ToolOptions {
@@ -460,6 +471,7 @@ impl ToolOptions {
             rect_mode: Einfuegemodus::Achsenparallel,
             ellipse_mode: Einfuegemodus::Achsenparallel,
             arc_mode: Bogenmodus::DreiPunkte,
+            bild: None,
         }
     }
 
@@ -2025,6 +2037,34 @@ impl App {
                     self.options.arc_mode = Bogenmodus::Mittelpunkt;
                     self.start_tool("draw.arc");
                 }
+                // T0100: erstes Bild auswählen — Eigenschaften-Panel und der
+                // blaue Auswahlton über dem Bild.
+                "selbild" => {
+                    if let Some(id) = self
+                        .doc()
+                        .entities
+                        .iter()
+                        .find(|e| matches!(e.kind, EntityKind::Image { .. }))
+                        .map(|e| e.id)
+                    {
+                        self.session_mut().selection = vec![id];
+                    }
+                }
+                // T0100: Bildwerkzeug mit dem Bild aus der Zeichnung starten —
+                // Vorschau und Panelzeilen im Bild.
+                "bild" => {
+                    self.ui.ribbon = RibbonTab::Zeichnen;
+                    if let Some(EntityKind::Image { name, data, .. }) = self
+                        .doc()
+                        .entities
+                        .iter()
+                        .find(|e| matches!(e.kind, EntityKind::Image { .. }))
+                        .map(|e| e.kind.clone())
+                    {
+                        self.options.bild = Some(BildQuelle { name, data });
+                        self.start_tool("draw.image");
+                    }
+                }
                 "selpoly" => {
                     // erste (geschlossene) Polylinie auswählen: Eigenschaften-
                     // Panel mit Länge, Fläche, Stützpunkten, Geschlossenheit
@@ -2706,6 +2746,7 @@ impl App {
             "file.export_dxf" => self.open_file_dialog(FileMode::ExportDxf),
             "file.import_dxf" => self.open_file_dialog(FileMode::ImportDxf),
             "file.import.pdf" => self.open_file_dialog(FileMode::ImportPdf),
+            "file.import_image" => self.open_file_dialog(FileMode::ImportImage),
             "file.export_png" => self.open_file_dialog(FileMode::ExportPng),
             "edit.undo" => {
                 if self.session_mut().undo() {
@@ -3372,6 +3413,33 @@ impl App {
                 });
             }
             Err(e) => self.toast(jjcad_core::i18n::t_args_owned("gui.app.pdf_x", &[("e", format!("{}", e))])),
+        }
+    }
+
+    /// Bilddatei einlesen und das Werkzeug `draw.image` starten.
+    ///
+    /// Die Datei wird **jetzt** geprüft und eingebettet — ein unlesbares Bild
+    /// fällt beim Auswählen auf und nicht erst als leeres Rechteck. Das
+    /// Werkzeug fragt danach die beiden gegenüberliegenden Ecken ab.
+    pub fn bild_importieren(&mut self, pfad: std::path::PathBuf) {
+        match jjcad_core::bild::lade_datei(&pfad) {
+            Ok((name, data)) => {
+                self.prefs.last_dir = pfad
+                    .parent()
+                    .map(|p| p.to_string_lossy().to_string())
+                    .unwrap_or_default();
+                let _ = self.prefs.save();
+                self.options.bild = Some(BildQuelle {
+                    name: name.clone(),
+                    data,
+                });
+                self.start_tool("draw.image");
+                self.toast(jjcad_core::i18n::t_args_owned(
+                    "gui.app.bild_x_ecken_klicken",
+                    &[("name", name)],
+                ));
+            }
+            Err(e) => self.toast(e),
         }
     }
 
@@ -4713,6 +4781,9 @@ fn rail(ui: &mut egui::Ui, icon: &str, tooltip: &str, chevron: &str) -> bool {
                         if widgets::ribbon_button(ui, "pdf", rb("ribbon.pdf_insert"), false).clicked() {
                             app.run_action(ui.ctx(), "file.import.pdf");
                         }
+                        if widgets::ribbon_button(ui, "image", rb("ribbon.bild_einfuegen"), false).clicked() {
+                            app.run_action(ui.ctx(), "file.import_image");
+                        }
                     });
                     widgets::vline(ui, RIBBON_GROUP_H);
                     self.group(ui, "ribbon.group.zwischenablage", |ui, app| {
@@ -5628,6 +5699,13 @@ pub(crate) fn commands_hint(tool: &Tool, opts: &ToolOptions) -> &'static str {
                 }
             }
         }
+        "draw.image" => {
+            if lebt {
+                jjcad_core::i18n::tr("gui.app.bild_zweite_ecke_klicken")
+            } else {
+                jjcad_core::i18n::tr("gui.app.bild_erste_ecke_klicken")
+            }
+        }
         "draw.point" => jjcad_core::i18n::tr("gui.app.punkt_position_klicken"),
         "draw.text" => jjcad_core::i18n::tr("gui.app.text_position_klicken"),
         "draw.wall" => {
@@ -5773,6 +5851,7 @@ pub(crate) fn abschluss_meldung(action: &str) -> Option<&'static str> {
         "draw.polyline" => jjcad_core::i18n::tr("gui.app.polylinie_abgeschlossen"),
         "draw.spline" => jjcad_core::i18n::tr("gui.app.spline_abgeschlossen"),
         "draw.rect" => jjcad_core::i18n::tr("gui.app.rechteck_gesetzt"),
+        "draw.image" => jjcad_core::i18n::tr("gui.app.bild_gesetzt"),
         "draw.circle" => jjcad_core::i18n::tr("gui.app.kreis_gesetzt"),
         "draw.ellipse" => jjcad_core::i18n::tr("gui.app.ellipse_gesetzt"),
         "draw.arc" => jjcad_core::i18n::tr("gui.app.bogen_gesetzt"),
@@ -6325,6 +6404,7 @@ pub fn entity_kind_icon(kind: &EntityKind) -> &'static str {
         EntityKind::Window { .. } => "window",
         EntityKind::Stair { .. } => "stair",
         EntityKind::BlockRef { .. } => "block",
+        EntityKind::Image { .. } => "image",
     }
 }
 
@@ -8030,6 +8110,31 @@ mod tests_vollbild {
         assert!(
             breite <= 1080.0,
             "Reiter Ansicht braucht {breite} px und passt nicht in die Mindestbreite 1080 px"
+        );
+    }
+
+    /// Der Reiter „Start" ist **breiter als die Mindestfensterbreite** — das war
+    /// er schon vor T0100 (1308 px bei 1080 px Fenster); „Bild einfügen" in der
+    /// Gruppe „Ausgabe" kommt hinzu (gemessen 1383 px). Der Test hält den
+    /// Ist-Stand als Riegel: ein weiterer Knopf fällt sofort auf. Bei der
+    /// Standard-Fensterbreite 1500 px ist alles sichtbar.
+    #[test]
+    fn reiter_start_bleibt_in_seiner_breite() {
+        let ctx = egui::Context::default();
+        let mut app = App::with_ctx(ctx.clone());
+        app.ui.ribbon = RibbonTab::Datei;
+        let mut breite = 0.0;
+        for _ in 0..3 {
+            let raw = egui::RawInput {
+                screen_rect: Some(Rect::from_min_size(Pos2::ZERO, Vec2::new(1080.0, 700.0))),
+                ..Default::default()
+            };
+            let _ = ctx.run(raw, |ctx| app.ui(ctx));
+            breite = app.ui.last_ribbon_content_w;
+        }
+        assert!(
+            breite <= 1400.0,
+            "Reiter Start braucht {breite} px (Riegel 1400) — ein Knopf mehr schneidet rechts ab"
         );
     }
 

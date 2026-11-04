@@ -1383,6 +1383,20 @@ pub fn hit_test(doc: &Document, p: Vec2, tol: f64, layer_filter: Option<&[Id]>) 
                 continue;
             }
         }
+        // Bild: die ganze Fläche zählt — der Rahmen ist nicht gezeichnet, ein
+        // Klick auf die Bildmitte muss das Bild wählen. Objekte darüber (Wand,
+        // Linie, Text) haben Vorrang, deshalb Priorität wie ein Textfeld.
+        if let EntityKind::Image { a: ia, b: ib, .. } = &e.kind {
+            let ecken = crate::bild::ecken(*ia, *ib);
+            if BBox::from_points(&ecken).contains(p) {
+                let d = b.center().dist(p);
+                let prio = 2;
+                if best.map(|(_, bd, bp)| prio < bp || (prio == bp && d < bd)).unwrap_or(true) {
+                    best = Some((e.id, d, prio));
+                }
+            }
+            continue;
+        }
         // Text/Punkt: über BBox
         let is_text = matches!(e.kind, EntityKind::Text { .. } | EntityKind::Point { .. });
         if is_text {
@@ -1510,7 +1524,12 @@ pub fn select_window(doc: &Document, a: Vec2, b: Vec2, crossing: bool) -> Vec<Id
         // (Punkt ohne Ausdehnung, Text als Zeilenbox, Treppe als Rechteck).
         let flaechig = matches!(
             e.kind,
-            EntityKind::Stair { .. } | EntityKind::Text { .. } | EntityKind::Point { .. }
+            EntityKind::Stair { .. }
+                | EntityKind::Text { .. }
+                | EntityKind::Point { .. }
+                // Bild: die Fläche ist das Rechteck — dieselbe Trefferfläche
+                // wie beim Klick (T0100).
+                | EntityKind::Image { .. }
         );
         if flaechig {
             if (crossing && bb.intersects(&rect)) || (!crossing && rect.contains_bbox(&bb)) {

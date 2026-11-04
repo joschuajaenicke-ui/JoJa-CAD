@@ -12,8 +12,8 @@ use crate::export::RasterOptions;
 use ab_glyph::{Font, FontRef, ScaleFont};
 use std::path::Path;
 use tiny_skia::{
-    FillRule, LineCap, LineJoin, Paint, PathBuilder, Pixmap, PixmapPaint, Stroke, StrokeDash,
-    Transform,
+    FillRule, FilterQuality, LineCap, LineJoin, Paint, PathBuilder, Pattern, Pixmap, PixmapPaint,
+    SpreadMode, Stroke, StrokeDash, Transform,
 };
 
 struct Map {
@@ -307,6 +307,62 @@ fn draw_prim(pm: &mut Pixmap, prim: &Prim, map: &Map, paper_px: f64) {
             }
         }
         Shape::Text(t) => draw_text(pm, t, prim, map),
+        Shape::Image { a, b, bild } => draw_bild(pm, *a, *b, bild, map),
+    }
+}
+
+/// Bild in das Rechteck `a`–`b` zeichnen.
+///
+/// tiny-skia erwartet **vormultipliziertes** RGBA; die zerlegten Bilddaten
+/// tragen geradlinige Deckung. Die Umrechnung passiert hier einmal je Bild —
+/// deshalb malt der Rasterer über ein Muster (Pattern), das die Bildpixel auf
+/// das Zielrechteck abbildet, statt Pixel für Pixel zu kopieren.
+fn draw_bild(
+    pm: &mut Pixmap,
+    a: Vec2,
+    b: Vec2,
+    bild: &crate::bild::Bild,
+    map: &Map,
+) {
+    let (x0, x1) = (a.x.min(b.x), a.x.max(b.x));
+    let (y0, y1) = (a.y.min(b.y), a.y.max(b.y));
+    // Pixelkoordinaten: map.p dreht die Y-Achse, oben links ist also (x0, y1).
+    let (px, py) = map.p(Vec2::new(x0, y1));
+    let (px2, py2) = map.p(Vec2::new(x1, y0));
+    let (w, h) = (px2 - px, py2 - py);
+    if !w.is_finite() || !h.is_finite() || w <= 0.5 || h <= 0.5 {
+        return;
+    }
+    let Some(mut quelle) = Pixmap::new(bild.breite, bild.hoehe) else {
+        return;
+    };
+    for (dst, src) in quelle.data_mut().chunks_exact_mut(4).zip(bild.rgba.chunks_exact(4)) {
+        let al = src[3] as u32;
+        dst[0] = ((src[0] as u32 * al) / 255) as u8;
+        dst[1] = ((src[1] as u32 * al) / 255) as u8;
+        dst[2] = ((src[2] as u32 * al) / 255) as u8;
+        dst[3] = src[3];
+    }
+    let skala = Transform::from_row(
+        w / bild.breite as f32,
+        0.0,
+        0.0,
+        h / bild.hoehe as f32,
+        px,
+        py,
+    );
+    let mut paint = Paint::default();
+    paint.shader = Pattern::new(
+        quelle.as_ref(),
+        SpreadMode::Pad,
+        FilterQuality::Bilinear,
+        1.0,
+        skala,
+    );
+    paint.anti_alias = true;
+    if let Some(rect) = tiny_skia::Rect::from_xywh(px, py, w, h) {
+        let path = PathBuilder::from_rect(rect);
+        pm.fill_path(&path, &paint, FillRule::Winding, Transform::identity(), None);
     }
 }
 

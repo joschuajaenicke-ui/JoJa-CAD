@@ -2093,6 +2093,8 @@ pub enum Einfach {
     /// Schnitt-Kote: Punktfolge, Höhen aus der Y-Differenz.
     Schnittkote,
     Block,
+    /// Bild: zwei Ecken spannen das Rechteck auf, Maße stehen als Anzeige da.
+    Bild,
 }
 
 impl Einfach {
@@ -2111,6 +2113,7 @@ impl Einfach {
             "dim.elevation.plan" => Self::Grundrisskote,
             "dim.elevation.section" => Self::Schnittkote,
             "block.insert" => Self::Block,
+            "draw.image" => Self::Bild,
             _ => return None,
         })
     }
@@ -2130,6 +2133,7 @@ impl Einfach {
             EntityKind::ElevationPlan { .. } => Self::Grundrisskote,
             EntityKind::ElevationSection { .. } => Self::Schnittkote,
             EntityKind::BlockRef { .. } => Self::Block,
+            EntityKind::Image { .. } => Self::Bild,
             _ => return None,
         })
     }
@@ -2149,6 +2153,7 @@ impl Einfach {
             Self::Grundrisskote => "Grundriss-Kote",
             Self::Schnittkote => "Schnitt-Kote",
             Self::Block => jjcad_core::i18n::tr("gui.props.block"),
+            Self::Bild => jjcad_core::i18n::tr("gui.props.bild"),
         }
     }
 
@@ -2166,12 +2171,13 @@ impl Einfach {
             Self::Grundrisskote => "elevation",
             Self::Schnittkote => "elevation-section",
             Self::Block => "blocknew",
+            Self::Bild => "image",
         }
     }
 
     /// Hat die Art eine Linie (Farbe, Stärke, Linientyp)?
     fn mit_linie(self) -> bool {
-        !matches!(self, Self::Block)
+        !matches!(self, Self::Block | Self::Bild)
     }
 }
 
@@ -2294,6 +2300,12 @@ pub fn raumstempel(app: &mut App, ui: &mut Ui, ziel: Ziel) {
             }
         }
     }
+}
+
+/// Pixelmaße eines eingebetteten Bildes als Anzeigetext — leer, wenn die
+/// Daten nicht lesbar sind.
+fn bild_pixel(data: &str) -> Option<String> {
+    jjcad_core::bild::dekodiere(data).map(|b| format!("{} × {} px", b.breite, b.hoehe))
 }
 
 /// Alle Zeilen einer Klick-Art — für Erzeugen und Bearbeiten dieselben.
@@ -2572,6 +2584,52 @@ pub fn einfach(app: &mut App, ui: &mut Ui, ziel: Ziel, art: Einfach) {
                     abstand = Some(v);
                 }
                 None => gesperrt_zeile(ui, jjcad_core::i18n::tr("gui.props.abstand"), jjcad_core::i18n::tr("gui.props.aus_den_klicks")),
+            }
+        }
+        // Bild: Dateiname und die Größe, die aus den beiden Ecken folgt.
+        // Beides ist Anzeige — die Größe bestimmt der aufgezogene Rahmen
+        // (zwei Klicks), ein Zahlenfeld würde nur eine zweite Wahrheit bauen.
+        Einfach::Bild => {
+            let (name, pixel, breite, hoehe) = match &e {
+                Some(e) => match &e.kind {
+                    EntityKind::Image { a, b, name, data } => {
+                        let (w, h) = jjcad_core::bild::masse(*a, *b);
+                        (name.clone(), bild_pixel(data), w, h)
+                    }
+                    _ => (String::new(), None, 0.0, 0.0),
+                },
+                None => match &app.options.bild {
+                    Some(q) => (q.name.clone(), bild_pixel(&q.data), 0.0, 0.0),
+                    None => (
+                        jjcad_core::i18n::tr("gui.props.keine_datei").to_string(),
+                        None,
+                        0.0,
+                        0.0,
+                    ),
+                },
+            };
+            zeile("datei");
+            widgets::field_row(ui, jjcad_core::i18n::tr("gui.props.datei"), |ui| {
+                ui.label(theme::mono(name.clone()));
+            });
+            // Die Pixelgröße gehört zur Datei (Auflösung der Vorlage) und
+            // steht deshalb als eigene, kleinere Zeile darunter — in der
+            // Wertespalte wäre der Name abgeschnitten.
+            if let Some(px) = &pixel {
+                ui.label(theme::dim(px.clone()));
+            }
+            for (key, label, wert) in [
+                ("breite", jjcad_core::i18n::tr("gui.props.breite"), breite),
+                ("hoehe", jjcad_core::i18n::tr("gui.props.hoehe"), hoehe),
+            ] {
+                zeile(key);
+                if e.is_none() {
+                    gesperrt_zeile(ui, label, jjcad_core::i18n::tr("gui.props.aus_den_klicks"));
+                } else {
+                    widgets::field_row(ui, label, |ui| {
+                        ui.label(theme::mono(unit.format(wert, unit.decimals())));
+                    });
+                }
             }
         }
         Einfach::Block => {
@@ -3950,6 +4008,15 @@ mod tests {
                 },
             ),
             (
+                "draw.image",
+                EntityKind::Image {
+                    a: jjcad_core::geom::Vec2::ZERO,
+                    b: v(1000.0, 600.0),
+                    name: "Bild".into(),
+                    data: String::new(),
+                },
+            ),
+            (
                 "draw.stair",
                 EntityKind::Stair {
                     a: jjcad_core::geom::Vec2::ZERO,
@@ -4183,6 +4250,12 @@ mod tests {
                 rot: 0.0,
                 scale: jjcad_core::geom::v(1.0, 1.0),
                 mirror: false,
+            },
+            EntityKind::Image {
+                a: jjcad_core::geom::Vec2::ZERO,
+                b: jjcad_core::geom::v(1000.0, 600.0),
+                name: "Bild".into(),
+                data: String::new(),
             },
         ];
         for k in &arten {

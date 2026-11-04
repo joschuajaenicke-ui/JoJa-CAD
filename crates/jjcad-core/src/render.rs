@@ -126,6 +126,17 @@ pub enum Shape {
         p: Vec2,
         r: f64,
     },
+    /// Eingebettetes Bild, achsenparallel in das Rechteck `a`–`b` gespannt.
+    ///
+    /// Das Bild wird auf das Rechteck **gestreckt** (kein Seitenverhältnis-
+    /// Zwang): die beiden Klickpunkte bestimmen Größe und Lage, wie beim
+    /// Rechteck. `bild` ist bereits zerlegt (RGBA) und über die Kennung
+    /// zwischengespeichert — Anzeige, Rasterausgabe und PDF teilen es.
+    Image {
+        a: Vec2,
+        b: Vec2,
+        bild: std::sync::Arc<crate::bild::Bild>,
+    },
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -160,6 +171,9 @@ impl Prim {
             } => crate::geom::Ellipse::new(*c, *rx, *ry, *rot).arc_bbox(*a0, *a1),
             Shape::Fill { outer, .. } => BBox::from_points(outer),
             Shape::Dot { p, r } => BBox::new(*p - v(*r, *r), *p + v(*r, *r)),
+            Shape::Image { a, b, .. } => {
+                BBox::new(v(a.x.min(b.x), a.y.min(b.y)), v(a.x.max(b.x), a.y.max(b.y)))
+            }
             Shape::Text(t) => BBox::from_points(&text_corners(
                 t.pos, &t.text, t.height, t.angle, t.align, t.valign,
             )),
@@ -515,7 +529,7 @@ pub fn render_document(ctx: &RenderCtx) -> DisplayList {
         let mut tmp = DisplayList::default();
         render_entity(ctx, e, Affine::IDENTITY, &mut tmp, 0);
         for prim in tmp.prims {
-            if matches!(prim.shape, Shape::Fill { .. }) {
+            if matches!(prim.shape, Shape::Fill { .. } | Shape::Image { .. }) {
                 fills.push(prim);
             } else {
                 rest.push(prim);
@@ -554,7 +568,7 @@ pub fn preview_selection(doc: &Document, ids: &[Id], delta: Vec2) -> DisplayList
         // Dieselbe Ordnung wie `render_document`: alle Füllungen vor allen
         // Linien, untereinander in der Reihenfolge der Auswahl.
         for prim in tmp.prims {
-            if matches!(prim.shape, Shape::Fill { .. }) {
+            if matches!(prim.shape, Shape::Fill { .. } | Shape::Image { .. }) {
                 fills.push(prim);
             } else {
                 rest.push(prim);
@@ -1134,6 +1148,41 @@ pub fn render_entity(
                 }
                 render_entity(ctx, &child_style, m, dl, depth + 1);
             }
+        }
+        // Bild: die eingebetteten Daten werden zerlegt und als eigenes Primitiv
+        // in die Displayliste gelegt. Anzeige, Rasterausgabe und PDF lesen es
+        // von dort — kein zweiter Zeichenweg.
+        EntityKind::Image { a, b, name, data } => {
+            let Some(bild) = crate::bild::dekodiere(data) else {
+                // Unlesbare Daten: als gestrichelten Rahmen zeigen, statt das
+                // Objekt still verschwinden zu lassen.
+                let ecken = crate::bild::ecken(xf.apply(*a), xf.apply(*b));
+                dl.push(Prim {
+                    shape: Shape::Poly(
+                        vec![ecken[0], ecken[1], ecken[2], ecken[3], ecken[0]],
+                        false,
+                    ),
+                    style: PrimStyle {
+                        color: Color::RED,
+                        line_type: LineType::Dashed,
+                        ..st
+                    },
+                    entity: e.id,
+                    layer: e.layer,
+                });
+                let _ = name;
+                return;
+            };
+            dl.push(Prim {
+                shape: Shape::Image {
+                    a: xf.apply(*a),
+                    b: xf.apply(*b),
+                    bild,
+                },
+                style: st,
+                entity: e.id,
+                layer: e.layer,
+            });
         }
     }
 }
@@ -3846,6 +3895,12 @@ pub fn trefferbild(doc: &Document, e: &Entity) -> Trefferbild {
             Shape::Text(t) => text_kaesten.push(text_corners(
                 t.pos, &t.text, t.height, t.angle, t.align, t.valign,
             )),
+            Shape::Image { a, b, .. } => {
+                let ecken = crate::bild::ecken(*a, *b);
+                for i in 0..4 {
+                    segmente.push(Seg::Line(ecken[i], ecken[(i + 1) % 4]));
+                }
+            }
             _ => {}
         }
     }
@@ -4008,6 +4063,14 @@ fn entity_segments_tief(doc: &Document, e: &Entity, depth: usize) -> Vec<Seg> {
                     te.kind = kind;
                     out.extend(entity_segments_tief(doc, &te, depth + 1));
                 }
+            }
+        }
+        // Bild: Trefferfläche ist der Rahmen — ein Klick auf die Kante wählt
+        // das Bild, die Fläche selbst bleibt (wie bei Füllflächen) außen vor.
+        EntityKind::Image { a, b, .. } => {
+            let ecken = crate::bild::ecken(*a, *b);
+            for i in 0..4 {
+                out.push(Seg::Line(ecken[i], ecken[(i + 1) % 4]));
             }
         }
     }
