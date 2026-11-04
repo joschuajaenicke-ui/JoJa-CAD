@@ -898,8 +898,8 @@ pub struct UserPrefs {
     /// wirkt sofort, ohne Neustart (`crate::theme::set_design`).
     #[serde(default)]
     pub design: Design,
-    /// Farbakzent der Oberfläche (T0111): Bernstein (Programmstandard), Blau,
-    /// Türkis, Grün, Rot oder Violett. Er färbt alle Akzentstellen der
+    /// Farbakzent der Oberfläche (T0111): Bernstein (Programmstandard), Saphir,
+    /// Smaragd, Rubin oder Amethyst. Er färbt alle Akzentstellen der
     /// Bedienung (Reiter, Chips, Rahmen, Schalter); die Wahl wirkt sofort
     /// (`crate::theme::set_akzent`).
     #[serde(default)]
