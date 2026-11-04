@@ -4352,6 +4352,11 @@ impl App {
         let ctx = ui.ctx().clone();
         if griff.drag_started() {
             ctx.send_viewport_cmd(egui::ViewportCommand::StartDrag);
+            // Den Zug sofort beenden: der Fenstermanager übernimmt jetzt den
+            // Zeiger und schickt das Loslassen an niemanden. egui bliebe sonst
+            // für immer „am Ziehen“ (kein neuer `drag_started`), und jeder
+            // zweite Zug auf die Kopfzeile verschöbe das Fenster nicht (T0098).
+            ctx.stop_dragging();
         }
         if griff.double_clicked() {
             let maximiert = ctx.input(|i| i.viewport().maximized.unwrap_or(false));
@@ -9618,6 +9623,44 @@ mod tests_fensterrahmen {
         assert!(
             cmds.iter().any(|c| matches!(c, egui::ViewportCommand::StartDrag)),
             "Zug auf die Kopfzeile muss das Fenster verschieben (Befehle: {cmds:?})"
+        );
+    }
+
+    /// T0098 (Turn 3): Nach einem Fensterzug bekommt die Anwendung das
+    /// Loslassen **nicht** — der Fenstermanager hat den Zeiger übernommen
+    /// (`_NET_WM_MOVERESIZE` unter X11, `xdg_toplevel.move` unter Wayland).
+    /// egui blieb deshalb für immer „am Ziehen“, und jeder zweite Zug
+    /// verschob das Fenster nicht.
+    #[test]
+    fn zwei_zuege_nacheinander_verschieben_das_fenster() {
+        let ctx = egui::Context::default();
+        let mut app = ohne_titelleiste(ctx.clone());
+        for _ in 0..3 {
+            bild(&mut app, &ctx, Vec::new(), None);
+        }
+        let start = Pos2::new(750.0, HEADER_H * 0.5);
+        let mut zuege = 0;
+        for runde in 0..2 {
+            bild(&mut app, &ctx, vec![egui::Event::PointerMoved(start)], None);
+            bild(&mut app, &ctx, vec![knopf(start, true)], None);
+            let out = bild(
+                &mut app,
+                &ctx,
+                vec![egui::Event::PointerMoved(start + Vec2::new(30.0, 0.0))],
+                None,
+            );
+            if befehle(&out)
+                .iter()
+                .any(|c| matches!(c, egui::ViewportCommand::StartDrag))
+            {
+                zuege += 1;
+            }
+            // Bewusst **kein** Loslassen: der Fenstermanager hält den Zeiger.
+            assert!(runde < 2);
+        }
+        assert_eq!(
+            zuege, 2,
+            "nur {zuege} von 2 Zügen auf die Kopfzeile haben das Fenster verschoben"
         );
     }
 
