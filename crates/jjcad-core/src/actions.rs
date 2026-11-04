@@ -2302,6 +2302,17 @@ pub fn execute(doc: &mut Document, id: &str, params: &Value) -> Result<Value, St
                 .angle("angle")
                 .ok_or_else(|| "Parameter 'angle' (Grad) fehlt".to_string())?;
             let copy = p.boolean_or("copy", false);
+            // Ein Bild ist achsenparallel gespannt (zwei Ecken); eine Drehung
+            // könnte es nur als Bounding-Box abbilden und würde es dabei
+            // verzerren. Deshalb ein klarer Fehler statt eines falschen Bildes.
+            if ids.iter().any(|id| {
+                matches!(
+                    doc.entity(*id).map(|e| &e.kind),
+                    Some(EntityKind::Image { .. })
+                )
+            }) {
+                return Err("Bild lässt sich nicht drehen — achsenparallel einsetzen".into());
+            }
             let m = Affine::rotate_about(center, angle);
             let mut new_ids = Vec::new();
             for eid in &ids {

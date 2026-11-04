@@ -218,6 +218,24 @@ fn bild_ist_in_der_flaeche_anklickbar() {
 }
 
 #[test]
+fn bild_laesst_sich_nicht_drehen() {
+    let mut s = leer();
+    let id = bild_einfuegen(&mut s, &png_bytes(90, 90, 90, 2, 2), (0.0, 0.0), (2000.0, 1000.0));
+    let res = s.execute(
+        "modify.rotate",
+        &json!({"ids": [id], "center": [0.0, 0.0], "angle": 30.0}),
+    );
+    assert!(res.is_err(), "Drehen müsste abgelehnt werden");
+    // Die Geometrie bleibt unangetastet.
+    match &s.doc.entity(id).expect("Bild fehlt").kind {
+        EntityKind::Image { a, b, .. } => {
+            assert_eq!((*a, *b), (Vec2::new(0.0, 0.0), Vec2::new(2000.0, 1000.0)));
+        }
+        k => panic!("kein Bild: {k:?}"),
+    }
+}
+
+#[test]
 fn bild_laesst_sich_nicht_zerlegen() {
     let mut s = leer();
     let id = bild_einfuegen(&mut s, &png_bytes(0, 0, 0, 2, 2), (0.0, 0.0), (100.0, 100.0));
