@@ -43,8 +43,10 @@ pub const HOTBAR_H: f32 = 60.0;
 pub const FENSTERKNOPF_W: f32 = 46.0;
 /// Breite der Zone an den Fensterkanten, in der ein Zug die Größe ändert
 /// (T0098). Schmal genug, um die Zeichenfläche nicht zu stören, breit genug,
-/// um sie ohne Zielen zu treffen.
-pub const FENSTERKANTE_PX: f32 = 5.0;
+/// um sie ohne Zielen zu treffen — 5 px waren praktisch nicht auffindbar.
+pub const FENSTERKANTE_PX: f32 = 8.0;
+/// Kantenlänge der Ecken, in denen zwei Richtungen zugleich greifen.
+pub const FENSTERECKE_PX: f32 = 24.0;
 
 /// Auf ganze Bildschirm-Pixel runden.
 ///
@@ -715,6 +717,8 @@ pub struct UiState {
     pub last_fenster_knoepfe: Option<[Rect; 3]>,
     /// Zonen zum Ziehen der Fensterkanten (T0098) mit ihrer Richtung
     pub last_fensterkanten: Option<Vec<(&'static str, Rect)>>,
+    /// Lage des sichtbaren Größen-Griffs in der Ecke unten rechts (T0098)
+    pub last_fenster_griff: Option<Rect>,
     pub zoom_edit: Option<String>,
     pub typed: String,
     /// Signatur der Auswahl für die letzte Zeichnung (Panel-Aktualisierung)
@@ -795,6 +799,7 @@ impl Default for UiState {
             last_ribbon_content_w: 0.0,
             last_fenster_knoepfe: None,
             last_fensterkanten: None,
+            last_fenster_griff: None,
             zoom_edit: None,
             typed: String::new(),
             sel_stamp: 0,
@@ -4470,25 +4475,26 @@ impl App {
         }
         let f = ctx.screen_rect();
         let b = FENSTERKANTE_PX;
-        let e = b * 3.0;
+        let e = FENSTERECKE_PX;
         if f.width() <= 4.0 * e || f.height() <= 4.0 * e {
             return;
         }
-        let zonen: [(&'static str, Rect, egui::ResizeDirection, egui::CursorIcon); 8] = [
+        // Die drei Fensterknöpfe stehen in der Ecke oben rechts und haben
+        // Vorrang: dort darf weder ein Griff liegen noch das Größe-Ziehen
+        // beginnen, sonst wäre „Schließen“ nicht mehr zu treffen (T0098, Turn 5).
+        let knoepfe = self.ui.last_fenster_knoepfe.unwrap_or([Rect::NOTHING; 3]);
+        let knopf_links = knoepfe
+            .iter()
+            .map(|r| r.left())
+            .fold(f32::INFINITY, f32::min)
+            .min(f.right() - e);
+        let knopf_unten = knoepfe[0].bottom().min(f.bottom() - e);
+        let zonen: [(&'static str, Rect, egui::ResizeDirection, egui::CursorIcon); 7] = [
             (
                 "nw",
                 Rect::from_min_max(f.min, egui::pos2(f.left() + e, f.top() + e)),
                 egui::ResizeDirection::NorthWest,
                 egui::CursorIcon::ResizeNwSe,
-            ),
-            (
-                "no",
-                Rect::from_min_max(
-                    egui::pos2(f.right() - e, f.top()),
-                    egui::pos2(f.right(), f.top() + e),
-                ),
-                egui::ResizeDirection::NorthEast,
-                egui::CursorIcon::ResizeNeSw,
             ),
             (
                 "sw",
@@ -4512,7 +4518,7 @@ impl App {
                 "n",
                 Rect::from_min_max(
                     egui::pos2(f.left() + e, f.top()),
-                    egui::pos2(f.right() - e, f.top() + b),
+                    egui::pos2(knopf_links, f.top() + b),
                 ),
                 egui::ResizeDirection::North,
                 egui::CursorIcon::ResizeVertical,
@@ -4538,32 +4544,88 @@ impl App {
             (
                 "o",
                 Rect::from_min_max(
-                    egui::pos2(f.right() - b, f.top() + e),
+                    egui::pos2(f.right() - b, f.top() + e.max(knopf_unten)),
                     egui::pos2(f.right(), f.bottom() - e),
                 ),
                 egui::ResizeDirection::East,
                 egui::CursorIcon::ResizeHorizontal,
             ),
         ];
+        // Zeiger und Druck **einmal** aus den Rohdaten lesen: die Zonen sind
+        // schmale Streifen, und `Response::hovered` hängt an der Reihenfolge der
+        // Ebenen — über der Zeichenfläche wäre die Kante sonst kaum zu treffen.
+        let (zeiger, gedrueckt) =
+            ctx.input(|i| (i.pointer.interact_pos(), i.pointer.primary_pressed()));
+        let ueber_knopf = |p: Pos2| knoepfe.iter().any(|r| r.contains(p));
         let mut lagen = Vec::with_capacity(zonen.len());
         for (name, rect, richtung, cursor) in zonen {
-            let antwort = egui::Area::new(egui::Id::new(("fensterkante", name)))
+            // Die Zone liegt als eigene Fläche über allem: ein Druck am Rand
+            // darf nicht zugleich in der Zeichnung landen.
+            egui::Area::new(egui::Id::new(("fensterkante", name)))
                 .fixed_pos(rect.min)
                 .order(egui::Order::Foreground)
                 .show(ctx, |ui| {
-                    ui.allocate_exact_size(rect.size(), Sense::click_and_drag()).1
-                })
-                .inner;
-            if antwort.hovered() {
+                    ui.allocate_exact_size(rect.size(), Sense::click_and_drag())
+                });
+            if zeiger.map_or(false, |p| rect.contains(p) && !ueber_knopf(p)) {
                 ctx.set_cursor_icon(cursor);
                 // Nur der Druck beginnt den Zug — ein Dauerlauf über
                 // `is_pointer_button_down_on` würde ihn jeden Frame neu starten.
-                if ctx.input(|i| i.pointer.primary_pressed()) {
+                if gedrueckt {
                     ctx.send_viewport_cmd(egui::ViewportCommand::BeginResize(richtung));
                 }
             }
             lagen.push((name, rect));
         }
+
+        // Sichtbare Andeutung: die Kante unter dem Zeiger wird hervorgehoben,
+        // unten rechts steht ein Größen-Griff. Ohne diese Anzeige war die
+        // Fläche unsichtbar — sie wurde schlicht nicht gefunden (T0098).
+        let painter = ctx.layer_painter(egui::LayerId::new(
+            egui::Order::Foreground,
+            egui::Id::new("fensterkanten_anzeige"),
+        ));
+        if let Some(zeiger) = zeiger {
+            for (name, rect) in lagen.iter() {
+                if name.len() > 1 || !rect.contains(zeiger) || ueber_knopf(zeiger) {
+                    continue;
+                }
+                let strich = match *name {
+                    "n" => [
+                        egui::pos2(f.left() + e, f.top() + 1.0),
+                        egui::pos2(f.right() - e, f.top() + 1.0),
+                    ],
+                    "s" => [
+                        egui::pos2(f.left() + e, f.bottom() - 1.0),
+                        egui::pos2(f.right() - e, f.bottom() - 1.0),
+                    ],
+                    "w" => [
+                        egui::pos2(f.left() + 1.0, f.top() + e),
+                        egui::pos2(f.left() + 1.0, f.bottom() - e),
+                    ],
+                    _ => [
+                        egui::pos2(f.right() - 1.0, f.top() + e),
+                        egui::pos2(f.right() - 1.0, f.bottom() - e),
+                    ],
+                };
+                painter.line_segment(strich, egui::Stroke::new(2.0, Palette::accent()));
+            }
+        }
+        let griff = Rect::from_min_size(
+            egui::pos2(f.right() - FENSTERECKE_PX, f.bottom() - FENSTERECKE_PX),
+            Vec2::splat(FENSTERECKE_PX),
+        );
+        for k in 0..3 {
+            let v = 4.0 + k as f32 * 5.0;
+            painter.line_segment(
+                [
+                    egui::pos2(griff.right() - 3.0 - v, griff.bottom() - 3.0),
+                    egui::pos2(griff.right() - 3.0, griff.bottom() - 3.0 - v),
+                ],
+                egui::Stroke::new(1.2, Palette::text_faint()),
+            );
+        }
+        self.ui.last_fenster_griff = Some(griff);
         self.ui.last_fensterkanten = Some(lagen);
     }
 
@@ -9676,7 +9738,15 @@ mod tests_fensterrahmen {
             .last_fensterkanten
             .clone()
             .expect("ohne Titelleiste braucht das Fenster Kantenzonen");
-        assert_eq!(kanten.len(), 8, "vier Kanten und vier Ecken erwartet");
+        assert_eq!(
+            kanten.len(),
+            7,
+            "vier Kanten und drei Ecken erwartet — die Ecke oben rechts gehört den Fensterknöpfen"
+        );
+        assert!(
+            !kanten.iter().any(|(n, _)| *n == "no"),
+            "die Ecke oben rechts darf keine Ziehzone tragen, dort sitzt „Schließen“"
+        );
         let ost = kanten
             .iter()
             .find(|(n, _)| *n == "o")
@@ -9696,6 +9766,91 @@ mod tests_fensterrahmen {
             cmds.iter()
                 .any(|c| matches!(c, egui::ViewportCommand::BeginResize(egui::ResizeDirection::East))),
             "Druck auf die rechte Fensterkante muss das Größe-Ziehen beginnen (Befehle: {cmds:?})"
+        );
+    }
+
+    /// T0098 (Turn 5): Alle acht Zonen beginnen das Größe-Ziehen mit der
+    /// richtigen Richtung — vier Kanten und vier Ecken.
+    #[test]
+    fn jede_kante_beginnt_das_groesse_ziehen() {
+        let ctx = egui::Context::default();
+        let mut app = ohne_titelleiste(ctx.clone());
+        for _ in 0..3 {
+            bild(&mut app, &ctx, Vec::new(), None);
+        }
+        let kanten = app
+            .ui
+            .last_fensterkanten
+            .clone()
+            .expect("ohne Titelleiste braucht das Fenster Kantenzonen");
+        let erwartet = [
+            ("n", egui::ResizeDirection::North),
+            ("s", egui::ResizeDirection::South),
+            ("w", egui::ResizeDirection::West),
+            ("o", egui::ResizeDirection::East),
+            ("nw", egui::ResizeDirection::NorthWest),
+            ("sw", egui::ResizeDirection::SouthWest),
+            ("so", egui::ResizeDirection::SouthEast),
+        ];
+        for (name, richtung) in erwartet {
+            let rect = kanten
+                .iter()
+                .find(|(n, _)| *n == name)
+                .unwrap_or_else(|| panic!("Zone „{name}“ fehlt"))
+                .1;
+            let pos = rect.center();
+            bild(&mut app, &ctx, vec![egui::Event::PointerMoved(pos)], None);
+            let out = bild(&mut app, &ctx, vec![knopf(pos, true)], None);
+            let cmds = befehle(&out);
+            assert!(
+                cmds.iter().any(|c| matches!(
+                    c,
+                    egui::ViewportCommand::BeginResize(r) if *r == richtung
+                )),
+                "Druck in Zone „{name}“ (bei {pos:?}) muss {richtung:?} beginnen, Befehle: {cmds:?}"
+            );
+        }
+    }
+
+    /// T0098 (Turn 5): Über der Kante zeigt der Zeiger den Größen-Pfeil — die
+    /// einzige sichtbare Andeutung, dass dort gezogen werden kann.
+    #[test]
+    fn fensterkante_zeigt_den_groesse_pfeil() {
+        let ctx = egui::Context::default();
+        let mut app = ohne_titelleiste(ctx.clone());
+        for _ in 0..3 {
+            bild(&mut app, &ctx, Vec::new(), None);
+        }
+        for (pos, cursor) in [
+            (Pos2::new(1497.0, 500.0), egui::CursorIcon::ResizeHorizontal),
+            (Pos2::new(800.0, 948.0), egui::CursorIcon::ResizeVertical),
+        ] {
+            let out = bild(&mut app, &ctx, vec![egui::Event::PointerMoved(pos)], None);
+            assert_eq!(
+                out.platform_output.cursor_icon, cursor,
+                "bei {pos:?} muss der Größen-Pfeil stehen"
+            );
+        }
+    }
+
+    /// T0098 (Turn 5): In der Ecke unten rechts steht ein sichtbarer Griff —
+    /// ohne ihn war die Fläche unsichtbar und wurde nicht gefunden.
+    #[test]
+    fn ecke_unten_rechts_hat_einen_griff() {
+        let ctx = egui::Context::default();
+        let mut app = ohne_titelleiste(ctx.clone());
+        for _ in 0..3 {
+            bild(&mut app, &ctx, Vec::new(), None);
+        }
+        let griff = app
+            .ui
+            .last_fenster_griff
+            .expect("ohne Titelleiste fehlt der Größen-Griff in der Ecke");
+        assert!(
+            (griff.right() - 1500.0).abs() < 0.5
+                && (griff.bottom() - 950.0).abs() < 0.5
+                && (griff.width() - FENSTERECKE_PX).abs() < 0.5,
+            "der Griff sitzt nicht in der Ecke unten rechts: {griff:?}"
         );
     }
 }

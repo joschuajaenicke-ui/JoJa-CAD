@@ -128,10 +128,12 @@ ausgeblendet.
   KDE/Wayland über die Anfrage nach *client-seitiger* Dekoration, unter Windows als rahmenloses
   Fenster. Dann fehlen die Knöpfe der Titelleiste, und JoJa-CAD übernimmt sie selbst: ganz oben
   rechts **Minimieren**, **Vergrößern/Wiederherstellen** und **Schließen**; ein Zug auf die
-  Kopfzeile verschiebt das Fenster, ein Doppelklick vergrößert bzw. stellt wieder her, und die
-  fünf Pixel breiten Zonen am Fensterrand ändern die Größe (der Zeiger zeigt dort den
-  Größenpfeil). Die Wahl steht in `prefs.json` (`fensterrahmen: system | ohne_titelleiste`) und
-  wirkt beim Umschalten sofort, ohne Neustart.
+  Kopfzeile verschiebt das Fenster, ein Doppelklick vergrößert bzw. stellt wieder her. Die
+  **Größe** ändert ein Zug an den acht Pixel breiten Zonen am Fensterrand: der Zeiger wird dort
+  zum Größenpfeil und die Kante leuchtet auf; in der Ecke unten rechts steht ein sichtbarer
+  Griff. Die Ecke oben rechts gehört den Fensterknöpfen (kein Größe-Ziehen, sonst wäre
+  „Schließen“ nicht zu treffen). Die Wahl steht in `prefs.json`
+  (`fensterrahmen: system | ohne_titelleiste`) und wirkt beim Umschalten sofort, ohne Neustart.
 - **Dateireiter** (Streifen unter dem Ribbon, **zwei getrennte Bereiche**): links auf dunklem
   Band jede geöffnete Zeichnung als Reiter mit Dateisymbol, der aktive als Karte mit
   Akzentlinie; rechts in einer abgesetzten Fläche die Blätter der aktiven Datei als kleinere
