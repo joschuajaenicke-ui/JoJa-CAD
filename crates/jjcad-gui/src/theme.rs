@@ -115,12 +115,38 @@ const HELL: Farben = Farben {
 /// Zeichenwege lesen denselben Wert.
 static HELL_AKTIV: AtomicBool = AtomicBool::new(false);
 
+thread_local! {
+    /// Design des **eigenen Fadens**, sobald dieser es selbst umgestellt hat.
+    ///
+    /// In der Anwendung gibt es nur einen Zeichenfaden, dort ist beides
+    /// dasselbe. Die Tests laufen dagegen in Fäden nebeneinander und stellen
+    /// das Design um; ein Faden, der zeichnet und danach `Palette::…()` liest,
+    /// sah dann zwei Designs (gezeichnet `#2A2F36`, erwartet `#AEB6C0` —
+    /// `dialogs::tests_tastatur::gesperrte_tasten_haben_eigene_flaeche` fiel
+    /// beim Ausliefern zufällig aus, T0099). Fäden ohne eigene Wahl lesen
+    /// weiter den prozessweiten Wert.
+    static HELL_IM_FADEN: std::cell::Cell<Option<bool>> = const { std::cell::Cell::new(None) };
+}
+
+/// Gilt das helle Design in diesem Faden?
+fn hell_jetzt() -> bool {
+    HELL_IM_FADEN
+        .with(|z| z.get())
+        .unwrap_or_else(|| HELL_AKTIV.load(Ordering::Relaxed))
+}
+
+/// Design setzen — prozessweit **und** für den aufrufenden Faden.
+fn setze_hell(hell: bool) {
+    HELL_AKTIV.store(hell, Ordering::Relaxed);
+    HELL_IM_FADEN.with(|z| z.set(Some(hell)));
+}
+
 /// Letzte Prüfung des Betriebssystem-Farbschemas: (Zeitpunkt, war es hell?).
 /// Ohne Drosselung würde jede Bildschleife die Konfigurationsdateien lesen.
 static LETZTE_PRUEFUNG: std::sync::Mutex<(f64, bool)> = std::sync::Mutex::new((0.0, false));
 
 fn farben() -> Farben {
-    if HELL_AKTIV.load(Ordering::Relaxed) {
+    if hell_jetzt() {
         HELL
     } else {
         DUNKEL
@@ -217,7 +243,7 @@ impl Palette {
 
 /// Ist das gerade gezeichnete Design hell?
 pub fn ist_hell() -> bool {
-    HELL_AKTIV.load(Ordering::Relaxed)
+    hell_jetzt()
 }
 
 /// Auflösen der Wahl: `System` folgt dem Betriebssystem, Hell und Dunkel sind
@@ -367,7 +393,7 @@ fn gtk_ist_hell() -> Option<bool> {
 /// Design umstellen — gilt ab dem nächsten Bild, ohne Neustart.
 pub fn set_design(design: Design, ctx: &egui::Context) {
     let system_hell = system_ist_hell(ctx);
-    HELL_AKTIV.store(aufloesen(design, system_hell), Ordering::Relaxed);
+    setze_hell(aufloesen(design, system_hell));
     merke_pruefung(ctx, system_hell);
     stil(ctx);
     ctx.request_repaint();
@@ -396,7 +422,7 @@ pub fn system_nachziehen(ctx: &egui::Context) {
     zelle.0 = jetzt;
     if system_hell != zelle.1 {
         zelle.1 = system_hell;
-        HELL_AKTIV.store(system_hell, Ordering::Relaxed);
+        setze_hell(system_hell);
         drop(zelle);
         stil(ctx);
         ctx.request_repaint();
