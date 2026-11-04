@@ -35,14 +35,15 @@ offene Fensterinstanz zeigt weiterhin den alten Stand.
   **Schließen**, ein Zug verschiebt das Fenster (`StartDrag`), ein Doppelklick
   schaltet die Größe um, die Kantenzonen (8 px, Ecken 24 px) ändern sie
   (`BeginResize`): der Zeiger zeigt dort sofort den Größenpfeil, die Kante leuchtet
-  erst nach 0,4 s Verweilen auf (gedämpft, 1,5 px bei 55 % — Turn 7: die volle
-  Markierung blitzte bei jeder schnellen Bewegung über den Rand auf), unten rechts
-  sitzt ein sichtbarer Griff. Die Ecke oben rechts gehört den
+  nach 0,1 s Verweilen auf (gedämpft, 1,5 px bei 55 % — Turn 7: die volle
+  Markierung blitzte bei jeder schnellen Bewegung über den Rand auf) und bleibt
+  während des Ziehens stehen, bis die Taste losgelassen wird (Turn 9; Not-Aus nach
+  5 s, falls das Loslassen nicht ankommt), unten rechts sitzt ein sichtbarer Griff. Die Ecke oben rechts gehört den
   Fensterknöpfen (Turn 5: 5 px waren unsichtbar und nicht auffindbar).
   Nach dem Zug beendet `Context::stop_dragging` egui's Zieh-Zustand: der
   Fenstermanager übernimmt den Zeiger und schickt das Loslassen an niemanden,
   sonst bliebe egui „am Ziehen“ und **jeder zweite** Zug verschöbe nichts (Turn 3).
-  Tests: `app::tests_fensterrahmen` (14), `dialogs::tests_einstellungen::fensterrahmen_laesst_sich_umschalten`,
+  Tests: `app::tests_fensterrahmen` (16), `dialogs::tests_einstellungen::fensterrahmen_laesst_sich_umschalten`,
   `persist::tests::fensterrahmen_vorgabe_und_gespeichert`.
 - **Drehpunkt der Einfüge-Vorschau (T0070)**: Einstellungen → Bedienung → Zeile
   „Drehpunkt" mit den Modi **Mittelpunkt** (Vorgabe seit T0087) und

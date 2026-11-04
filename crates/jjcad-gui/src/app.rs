@@ -52,7 +52,10 @@ pub const FENSTERECKE_PX: f32 = 24.0;
 /// Ohne Verzögerung blitzte die Markierung bei jeder schnellen Zeigerbewegung
 /// über den Rand auf und lenkte ab. Sie erscheint erst, wenn der Zeiger
 /// bewusst am Rand stehen bleibt.
-pub const KANTEN_VERWEILDAUER: f64 = 0.4;
+pub const KANTEN_VERWEILDAUER: f64 = 0.1;
+/// Not-Aus für die Markierung während eines Zuges: kommt das Loslassen nicht an
+/// (Fenstermanager verschluckt es), fällt sie nach dieser Zeit von selbst ab.
+pub const ZUG_SICHERHEIT_S: f64 = 5.0;
 
 /// Auf ganze Bildschirm-Pixel runden.
 ///
@@ -792,8 +795,15 @@ pub struct UiState {
     /// Kante unter dem Zeiger samt Zeitpunkt des Ankommens (T0098, Turn 7) —
     /// daraus entsteht die Verzögerung, bis die Kante aufleuchtet.
     pub kanten_verweil: Option<(&'static str, f64)>,
-    /// Kante, die in diesem Bild hervorgehoben wird (nach der Verweildauer)
+    /// Kante, die in diesem Bild hervorgehoben wird (nach der Verweildauer
+    /// oder während eines laufenden Zuges)
     pub kanten_leuchten: Option<&'static str>,
+    /// Kante, an der gerade die Größe gezogen wird (T0098, Turn 9): die
+    /// Markierung bleibt stehen, auch wenn der Zeiger den Rand verlässt.
+    pub kanten_zug: Option<&'static str>,
+    /// Zeitpunkt, an dem der Zug begann (Sicherheitsnetz gegen ein
+    /// verschlucktes Loslassen)
+    pub kanten_zug_seit: f64,
     pub zoom_edit: Option<String>,
     pub typed: String,
     /// Signatur der Auswahl für die letzte Zeichnung (Panel-Aktualisierung)
@@ -884,6 +894,8 @@ impl Default for UiState {
             last_fenster_griff: None,
             kanten_verweil: None,
             kanten_leuchten: None,
+            kanten_zug: None,
+            kanten_zug_seit: 0.0,
             zoom_edit: None,
             typed: String::new(),
             sel_stamp: 0,
@@ -4864,6 +4876,10 @@ impl App {
                 // `is_pointer_button_down_on` würde ihn jeden Frame neu starten.
                 if gedrueckt {
                     ctx.send_viewport_cmd(egui::ViewportCommand::BeginResize(richtung));
+                    // Der Zug gehört zu dieser Kante, bis die Taste losgelassen
+                    // wird (Turn 9) — die Markierung bleibt dabei stehen.
+                    self.ui.kanten_zug = Some(name);
+                    self.ui.kanten_zug_seit = ctx.input(|i| i.time);
                 }
             }
             lagen.push((name, rect));
@@ -4887,11 +4903,30 @@ impl App {
             (Some(neu), _) => self.ui.kanten_verweil = Some((neu, jetzt)),
             (None, _) => self.ui.kanten_verweil = None,
         }
-        let leuchten = self
+        // Ende des Zuges: Loslassen gesehen oder Taste nicht mehr gedrückt.
+        // **Nicht** am „Zeiger verlässt das Fenster“ aufhängen: beim Ziehen
+        // übernimmt der Fenstermanager den Zeiger und meldet ihn als weg
+        // (`has_pointer() == false`) — die Markierung verschwände mitten im
+        // Zug. Als Sicherheitsnetz gegen ein verschlucktes Loslassen fällt sie
+        // nach einigen Sekunden von selbst ab.
+        let (taste_unten, losgelassen) =
+            ctx.input(|i| (i.pointer.primary_down(), i.pointer.any_released()));
+        if losgelassen || !taste_unten {
+            self.ui.kanten_zug = None;
+        }
+        if self
             .ui
-            .kanten_verweil
-            .filter(|(_, seit)| jetzt - seit >= KANTEN_VERWEILDAUER)
-            .map(|(name, _)| name);
+            .kanten_zug
+            .map_or(false, |name| jetzt - self.ui.kanten_zug_seit >= ZUG_SICHERHEIT_S)
+        {
+            let _ = self.ui.kanten_zug.take();
+        }
+        let leuchten = self.ui.kanten_zug.or_else(|| {
+            self.ui
+                .kanten_verweil
+                .filter(|(_, seit)| jetzt - seit >= KANTEN_VERWEILDAUER)
+                .map(|(name, _)| name)
+        });
         self.ui.kanten_leuchten = leuchten;
         if leuchten.is_none() {
             if let Some((_, seit)) = self.ui.kanten_verweil {
@@ -10523,12 +10558,12 @@ mod tests_fensterrahmen {
             app.ui.kanten_leuchten, None,
             "die Kante darf im Ankunftbild nicht leuchten"
         );
-        bild_zeit(&mut app, &ctx, Vec::new(), 10.2);
+        bild_zeit(&mut app, &ctx, Vec::new(), 10.04);
         assert_eq!(
             app.ui.kanten_leuchten, None,
-            "nach 200 ms darf die Kante noch nicht leuchten"
+            "nach 40 ms darf die Kante noch nicht leuchten"
         );
-        bild_zeit(&mut app, &ctx, Vec::new(), 10.45);
+        bild_zeit(&mut app, &ctx, Vec::new(), 10.15);
         assert_eq!(
             app.ui.kanten_leuchten,
             Some("o"),
@@ -10538,7 +10573,7 @@ mod tests_fensterrahmen {
             &mut app,
             &ctx,
             vec![egui::Event::PointerMoved(Pos2::new(700.0, 500.0))],
-            10.6,
+            10.3,
         );
         assert_eq!(
             app.ui.kanten_leuchten, None,
@@ -10573,6 +10608,83 @@ mod tests_fensterrahmen {
         assert!(
             app.ui.kanten_verweil.is_none(),
             "nach dem Verlassen ist der Verweil-Zustand zurückgesetzt"
+        );
+    }
+
+    /// T0098 (Turn 9): Während die Größe gezogen wird, bleibt die Markierung
+    /// der Kante stehen — auch wenn der Zeiger den Rand längst verlassen hat.
+    #[test]
+    fn markierung_bleibt_waehrend_des_ziehens() {
+        let ctx = egui::Context::default();
+        let mut app = ohne_titelleiste(ctx.clone());
+        for _ in 0..3 {
+            bild(&mut app, &ctx, Vec::new(), None);
+        }
+        let kante = Pos2::new(1497.0, 500.0);
+        bild_zeit(&mut app, &ctx, vec![egui::Event::PointerMoved(kante)], 30.0);
+        let out = bild_zeit(&mut app, &ctx, vec![knopf(kante, true)], 30.05);
+        assert!(
+            befehle(&out)
+                .iter()
+                .any(|c| matches!(c, egui::ViewportCommand::BeginResize(_))),
+            "der Druck auf die Kante muss das Ziehen beginnen"
+        );
+        // Der Zeiger wandert beim Ziehen nach innen — die Taste bleibt gedrückt.
+        for (i, x) in [1300.0, 1100.0, 900.0].iter().enumerate() {
+            bild_zeit(
+                &mut app,
+                &ctx,
+                vec![egui::Event::PointerMoved(Pos2::new(*x, 500.0))],
+                30.1 + i as f64 * 0.1,
+            );
+            assert_eq!(
+                app.ui.kanten_leuchten,
+                Some("o"),
+                "während des Ziehens muss die rechte Kante markiert bleiben (x = {x})"
+            );
+        }
+        // Loslassen beendet die Markierung.
+        bild_zeit(
+            &mut app,
+            &ctx,
+            vec![knopf(Pos2::new(900.0, 500.0), false)],
+            30.5,
+        );
+        assert_eq!(
+            app.ui.kanten_leuchten, None,
+            "nach dem Loslassen darf die Kante nicht weiter leuchten"
+        );
+    }
+
+    /// T0098 (Turn 9): Kommt das Loslassen nicht an (Fenstermanager), fällt die
+    /// Markierung nach `ZUG_SICHERHEIT_S` von selbst ab statt hängen zu bleiben.
+    #[test]
+    fn markierung_faellt_nach_dem_not_aus_ab() {
+        let ctx = egui::Context::default();
+        let mut app = ohne_titelleiste(ctx.clone());
+        for _ in 0..3 {
+            bild(&mut app, &ctx, Vec::new(), None);
+        }
+        let kante = Pos2::new(1497.0, 500.0);
+        bild_zeit(&mut app, &ctx, vec![egui::Event::PointerMoved(kante)], 40.0);
+        bild_zeit(&mut app, &ctx, vec![knopf(kante, true)], 40.05);
+        assert_eq!(app.ui.kanten_leuchten, Some("o"));
+        bild_zeit(
+            &mut app,
+            &ctx,
+            vec![egui::Event::PointerMoved(Pos2::new(1000.0, 500.0))],
+            40.2,
+        );
+        assert_eq!(
+            app.ui.kanten_leuchten,
+            Some("o"),
+            "während des Zuges bleibt die Markierung"
+        );
+        // Kein Loslassen, aber die Zeit läuft ab.
+        bild_zeit(&mut app, &ctx, Vec::new(), 40.2 + ZUG_SICHERHEIT_S + 0.1);
+        assert_eq!(
+            app.ui.kanten_leuchten, None,
+            "nach dem Not-Aus darf die Markierung nicht hängen bleiben"
         );
     }
 
