@@ -348,12 +348,23 @@ Mit dem Nutzer abgestimmt — nicht „verbessern“:
   gezeichnet **und** ihr Name in den `stichworte`n der Kategorie eingetragen — sonst
   findet die Suche sie nicht. Zeilennamen bleiben kurz (Labelspalte 96 px), lange
   Begriffe kommen als Alias in `zeile_mit`; Häkchen ohne Wert stehen mit vollem Text.
+- **Ansicht verschieben: zwei Bewegungsarten (T0101)**: Einstellungen → Bedienung →
+  „Verschieben" wählt `prefs.pan_mode` — **Kontinuierlich** (Vorgabe) hält die
+  Ansicht in Bewegung, solange die Schwenkfunktion gedrückt bleibt, **Sprunghaft**
+  rückt je Druck um einen Schritt. Der eine Aufrufweg bleibt
+  `App::schwenk_funktion` aus `view.pan_*` (Taste, Hotbar, Ribbon): im Sprungmodus
+  ein `App::schwenk_schritt` (`SCHWENK_SCHRITT_PX` = 60 px), im Dauerlauf **kein**
+  Schritt — den Weg rechnet allein `App::schwenk_fortschritt` je Bild aus
+  `SCHWENK_TEMPO_PX_PRO_S` × Bilddauer (`stable_dt`, gedeckelt auf 0,1 s). Ein
+  Schritt daneben zählte die Tastenwiederholung doppelt: gemessen 700–850 px/s
+  statt 480. Den Dauerlauf nicht als zweiten `key_down`-Lauf neben die Funktion
+  bauen (das war T0089): er liest die Belegung über `prefs.keys_for`, die
+  Hotbar-Ziffern und einen gedrückt gehaltenen Slot (`UiState::schwenk_zeiger`) und
+  schweigt bei Strg, offenem Protokoll und laufender Texteingabe.
 - **Schwenkgeschwindigkeit (T0067)**: Einstellungen → Bedienung → „Schwenk" ist ein
-  Faktor (`prefs.pan_speed`, 0,1…5, Vorgabe 1) auf den Schritt der
-  Schwenk-Funktionen (`app::SCHWENK_SCHRITT_PX` = 60 px). **Ein** Weg: die Funktion
-  `view.pan_*` aus Taste, Hotbar oder Ribbon ruft `App::schwenk_schritt` — ein Druck
-  ist ein Schritt (T0089). Keinen zweiten Dauerlauf auf `key_down` daneben bauen;
-  der bewegte die Ansicht auch bei Strg+S und unabhängig von der Hotbar.
+  Faktor (`prefs.pan_speed`, 0,1…5, Vorgabe 1) auf den Schritt (`SCHWENK_SCHRITT_PX`
+  = 60 px) **und** auf das Tempo des Dauerlaufs — ein Faktor für beide
+  Bewegungsarten.
 
 - **Höhenkoten (T0096)**: Zwei getrennte Objektarten ersetzen die frühere eine
   Höhenkote. Die **Grundriss-Kote** (`EntityKind::ElevationPlan`) ist ein

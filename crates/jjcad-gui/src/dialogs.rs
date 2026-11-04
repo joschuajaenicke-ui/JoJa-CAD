@@ -1033,6 +1033,11 @@ pub(crate) const EINSTELLUNGSKATEGORIEN: &[Einstellungskategorie] = &[
             "Geschwindigkeit",
             "WASD",
             "W A S D",
+            "Ansicht",
+            "Ansicht verschieben",
+            "Bewegungsart",
+            "kontinuierlich",
+            "sprunghaft",
             "Drehpunkt",
             "Einfügen",
             "Vorschau",
@@ -1174,6 +1179,8 @@ fn settings_body(app: &mut App, ui: &mut Ui) {
     let mut marker = app.prefs.snap_marker;
     let mut mouse_move = app.prefs.mouse_move;
     let mut pan_speed = app.prefs.pan_speed;
+    // T0101: Bewegungsart der Ansicht — Dauerlauf oder Einzelschritt.
+    let mut pan_mode = app.prefs.pan_mode;
     let mut dateidialog_system = app.prefs.dateidialog_system();
     // T0070: Drehpunkt der Einfüge-Vorschau (Basispunkt oder Mittelpunkt).
     let mut paste_pivot = app.prefs.paste_pivot;
@@ -1475,6 +1482,36 @@ fn settings_body(app: &mut App, ui: &mut Ui) {
                                         jjcad_core::i18n::tr("gui.dialogs.aus_objekte_wandern_nur_ueber_das_werkzeug_verschieben"),
                                     ));
                                 }
+                                // T0101: Bewegungsart der Ansicht. „Kontinuierlich“
+                                // hält die Ansicht in Bewegung, solange die Funktion
+                                // gedrückt bleibt; „Sprunghaft“ rückt je Druck um einen
+                                // Schritt (bisheriges Verhalten).
+                                zeile_mit(
+                                    &suche,
+                                    ui,
+                                    jjcad_core::i18n::tr("gui.dialogs.ansicht_verschieben"),
+                                    &[
+                                        "Verschieben",
+                                        "Ansicht verschieben",
+                                        "Bewegung",
+                                        "Bewegungsart",
+                                        "kontinuierlich",
+                                        "sprunghaft",
+                                        "Schwenk",
+                                        "WASD",
+                                    ],
+                                    |ui| {
+                                        for m in jjcad_core::persist::PanMode::ALL {
+                                            ui.selectable_value(&mut pan_mode, m, m.text())
+                                                .on_hover_text(m.tip());
+                                        }
+                                    },
+                                );
+                                if suche.is_empty() {
+                                    ui.label(theme::faint(
+                                        jjcad_core::i18n::tr("gui.dialogs.gilt_fuer_die_schwenkfunktionen"),
+                                    ));
+                                }
                                 // T0067: Tempo der Schwenk-Funktionen (`view.pan_*`,
                                 // Vorgabe W/A/S/D) als Faktor auf das Grundtempo.
                                 zeile_mit(
@@ -1693,6 +1730,11 @@ fn settings_body(app: &mut App, ui: &mut Ui) {
             jjcad_core::persist::SCHWENK_FAKTOR_MIN,
             jjcad_core::persist::SCHWENK_FAKTOR_MAX,
         );
+        let _ = app.prefs.save();
+    }
+    if app.prefs.pan_mode != pan_mode {
+        // T0101: gilt sofort — der Dauerlauf liest die Einstellung je Bild.
+        app.prefs.pan_mode = pan_mode;
         let _ = app.prefs.save();
     }
     if app.prefs.paste_pivot != paste_pivot {
@@ -4401,6 +4443,140 @@ mod tests_einstellungen {
             app.prefs.paste_pivot,
             PastePivot::Center,
             "Klick auf „Mittelpunkt“ stellt den Standard nicht her"
+        );
+    }
+
+    /// T0101: Unter „Bedienung“ steht die Zeile „Verschieben“ mit beiden
+    /// Bewegungsarten; Vorgabe ist „Kontinuierlich“.
+    #[test]
+    fn bedienung_zeigt_die_bewegungsart_der_ansicht() {
+        let _sperre = KONFIG.lock().unwrap_or_else(|e| e.into_inner());
+        let _konfig = WegwerfKonfig::neu("bewegungsart");
+        let ctx = egui::Context::default();
+        let mut app = App::with_ctx(ctx.clone());
+        app.ui.settings_open = true;
+        app.ui.settings_kat = 5;
+        let bild = || egui::RawInput {
+            screen_rect: Some(Rect::from_min_size(Pos2::ZERO, Vec2::new(1500.0, 950.0))),
+            ..Default::default()
+        };
+        let mut out = ctx.run(bild(), |ctx| app.ui(ctx));
+        for _ in 0..3 {
+            out = ctx.run(bild(), |ctx| app.ui(ctx));
+        }
+        let texte: Vec<&str> = out
+            .shapes
+            .iter()
+            .filter_map(|cs| match &cs.shape {
+                egui::Shape::Text(t) => Some(t.galley.text()),
+                _ => None,
+            })
+            .collect();
+        for erwartet in ["Verschieben", "Kontinuierlich", "Sprunghaft"] {
+            assert!(
+                texte.iter().any(|t| *t == erwartet),
+                "„{erwartet}“ fehlt im Einstellungsfenster (gezeichnet: {texte:?})"
+            );
+        }
+        // Beide Wahlen müssen in die Wertespalte passen (150 px) und sich nicht
+        // überdecken — sonst läuft der zweite Knopf aus der Zeile.
+        let kasten = |text: &str| -> Rect {
+            out.shapes
+                .iter()
+                .find_map(|cs| match &cs.shape {
+                    egui::Shape::Text(t) if t.galley.text() == text => {
+                        Some(Rect::from_min_size(t.pos, t.galley.size()))
+                    }
+                    _ => None,
+                })
+                .unwrap_or_else(|| panic!("„{text}“ fehlt im Einstellungsfenster"))
+        };
+        let (a, b) = (kasten("Kontinuierlich"), kasten("Sprunghaft"));
+        assert!(
+            a.right() + 2.0 < b.left() || b.right() + 2.0 < a.left(),
+            "die beiden Wahlen überdecken sich: {a:?} / {b:?}"
+        );
+        let pane = app.ui.last_settings_pane.expect("Fläche der Einstellungsseite");
+        assert!(
+            pane.contains_rect(a) && pane.contains_rect(b),
+            "die Wahlen müssen in der Einstellungsseite liegen: {a:?} / {b:?} in {pane:?}"
+        );
+        assert_eq!(
+            app.prefs.pan_mode,
+            jjcad_core::persist::PanMode::Kontinuierlich,
+            "Vorgabe: die Ansicht folgt der gedrückten Funktion (T0101)"
+        );
+    }
+
+    /// T0101: Die Bewegungsart lässt sich in den Einstellungen in **beide**
+    /// Richtungen stellen — der Klick läuft über echte Ereignisse auf das
+    /// gezeichnete Feld (Muster aus T0087). Die Suche holt die Zeile nach oben,
+    /// damit sie nicht unterhalb der Bildlaufgrenze liegt (T0098).
+    #[test]
+    fn bewegungsart_laesst_sich_umschalten() {
+        let _sperre = KONFIG.lock().unwrap_or_else(|e| e.into_inner());
+        let _konfig = WegwerfKonfig::neu("bewegungsart-umschalten");
+        let ctx = egui::Context::default();
+        let mut app = App::with_ctx(ctx.clone());
+        app.prefs.pan_mode = jjcad_core::persist::PanMode::Kontinuierlich;
+        app.ui.settings_open = true;
+        app.ui.settings_kat = 5;
+        app.ui.settings_suche = "Ansicht verschieben".into();
+        let bild = || egui::RawInput {
+            screen_rect: Some(Rect::from_min_size(Pos2::ZERO, Vec2::new(1500.0, 950.0))),
+            ..Default::default()
+        };
+        let mut out = ctx.run(bild(), |ctx| app.ui(ctx));
+        for _ in 0..3 {
+            out = ctx.run(bild(), |ctx| app.ui(ctx));
+        }
+        let stelle = |out: &egui::FullOutput, text: &str| -> Pos2 {
+            out.shapes
+                .iter()
+                .find_map(|cs| match &cs.shape {
+                    egui::Shape::Text(t) if t.galley.text() == text => {
+                        Some(t.pos + t.galley.rect.center().to_vec2())
+                    }
+                    _ => None,
+                })
+                .unwrap_or_else(|| panic!("„{text}“ fehlt im Einstellungsfenster"))
+        };
+        let knopf = |pos: Pos2, pressed: bool| egui::Event::PointerButton {
+            pos,
+            button: egui::PointerButton::Primary,
+            pressed,
+            modifiers: egui::Modifiers::NONE,
+        };
+        let mut klick = |app: &mut App, pos: Pos2| {
+            for events in [
+                vec![egui::Event::PointerMoved(pos)],
+                vec![knopf(pos, true)],
+                vec![knopf(pos, false)],
+                vec![],
+            ] {
+                let _ = ctx.run(
+                    egui::RawInput {
+                        events,
+                        ..bild()
+                    },
+                    |ctx| app.ui(ctx),
+                );
+            }
+        };
+
+        klick(&mut app, stelle(&out, "Sprunghaft"));
+        assert_eq!(
+            app.prefs.pan_mode,
+            jjcad_core::persist::PanMode::Sprunghaft,
+            "Klick auf „Sprunghaft“ muss den Einzelschritt wählen"
+        );
+
+        out = ctx.run(bild(), |ctx| app.ui(ctx));
+        klick(&mut app, stelle(&out, "Kontinuierlich"));
+        assert_eq!(
+            app.prefs.pan_mode,
+            jjcad_core::persist::PanMode::Kontinuierlich,
+            "Klick auf „Kontinuierlich“ muss den Dauerlauf wiederherstellen"
         );
     }
 

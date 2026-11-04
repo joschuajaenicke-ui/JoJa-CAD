@@ -275,19 +275,19 @@ hint = "Zoom out"
 label = "Zoom out"
 
 [action.view.pan_left]
-hint = "Shift the view one step to the left"
+hint = "Pan the view to the left — it keeps moving while held (mode \"Continuous\")"
 label = "Pan left"
 
 [action.view.pan_right]
-hint = "Shift the view one step to the right"
+hint = "Pan the view to the right — it keeps moving while held (mode \"Continuous\")"
 label = "Pan right"
 
 [action.view.pan_up]
-hint = "Shift the view one step up"
+hint = "Pan the view up — it keeps moving while held (mode \"Continuous\")"
 label = "Pan up"
 
 [action.view.pan_down]
-hint = "Shift the view one step down"
+hint = "Pan the view down — it keeps moving while held (mode \"Continuous\")"
 label = "Pan down"
 
 [action.view.inventory]
@@ -577,6 +577,12 @@ center = "Centre"
 hint_base = "The base point sits at the crosshair — the preview jumps around the crosshair when rotating (previous behaviour)"
 hint_center = "The preview rotates about its centre and stays top right at the crosshair"
 
+
+[ui.panmode]
+kontinuierlich = "Continuous"
+sprunghaft = "Stepped"
+hint_kontinuierlich = "As long as the function stays pressed, the view keeps moving evenly"
+hint_sprunghaft = "Each press moves the view on by one step"
 [ui.design]
 system = "System"
 hell = "Light"
@@ -974,7 +980,9 @@ spalte_x_x_x_der_zeilen_hell_farbe_xxx = "  Column x = {x}: {wert1} % of rows br
 version_x_build_x_x = "Version {wert1} · build {wert2} ({wert3})\n"
 
 [gui.dialogs]
+ansicht_verschieben = "Move view"
 dxf_zeichnung = "DXF drawing"
+gilt_fuer_die_schwenkfunktionen = "applies to moving the view (default W A S D) — it keeps moving while held when \"Continuous\" is selected"
 pdf_dokument = "PDF document"
 png_bild = "PNG image"
 2d_cad_fuer_architektur_und_bauantragszeichnungen = "2D CAD for architectural and building-permit drawings."
