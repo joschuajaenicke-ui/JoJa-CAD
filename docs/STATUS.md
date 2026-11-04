@@ -117,6 +117,12 @@ offene Fensterinstanz zeigt weiterhin den alten Stand.
   alten Dateinamen bleiben gültig. Prüfblatt `samples/Schraffuren.jjcad`
   (Erzeuger `examples/schraffuren_erzeugen.rs`), Test
   `crates/jjcad-core/tests/schraffuren_din.rs`.
+  **Ein Raster für alle Muster** (`render::Raster`, Ursprung im Weltnullpunkt):
+  Lage der Musterlinien `(i + versatz) · Abstand`, Unterteilungen (Striche,
+  Gruppen) auf einem globalen Takt, Figuren in Rasterzellen. Zwei benachbarte
+  Flächen zeigen dadurch dasselbe Strichbild ohne Sprung an der Kante; vorher
+  begann jede Linie ihr Strichmuster am eigenen Beschnitt — die Unterteilungen
+  lagen auf verschiedenen Höhen und wirkten zufällig (Turn 2).
 - **Wandschraffur**: `hatch` an der Wand (alle Muster der Tabelle 5,
   **Dämmung = Mäander**), gezeichnet als Displaylisten-Primitive.
 - **Wandausrichtung**: `WallAlign` (Links/Mittig/Rechts), Versatz ±Dicke/2,

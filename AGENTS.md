@@ -303,6 +303,17 @@ Mit dem Nutzer abgestimmt — nicht „verbessern“:
   Ein neues Muster: Variante und `ALL` in `style.rs`, Zweig in `push_muster`,
   Bezeichnung in `TABELLE_5` des Tests `tests/schraffuren_din.rs` — der Test bricht,
   wenn ein Muster fehlt, nichts zeichnet oder wie ein anderes aussieht.
+  **Alle Muster hängen an einem Raster mit festem Ursprung** (`render::Raster`,
+  Weltnullpunkt): Linienlage `(i + versatz) · Abstand`, und die Unterteilungen
+  laufen auf einem **globalen Takt** — nie am Anfang des an der Kontur
+  beschnittenen Stücks neu beginnen (dann liegen die Striche je Linie auf
+  anderen Höhen und das Muster wirkt zufällig, T0095 Turn 2). Figuren (Kiesel,
+  Schlaufen, Pfeile, Felder) sitzen in Rasterzellen und werden nur **ganz**
+  gezeichnet. Prüfweg: `cargo test -p jjcad-core --test schraffuren_din`
+  (`unterteilungen_haengen_am_globalen_raster`,
+  `unterteilungen_sind_in_jeder_reihe_gleichmaessig`,
+  `figuren_sitzen_auf_dem_raster`) — Gegenprobe ist `let ua = 0.0` in
+  `muster_striche`.
 - **Auswahl über Rechteck** prüft echte Geometrie (Segmente, Wandkörper),
   nicht die achsenparallele Bounding-Box.
 - **Griffe** haben 8–12 px Trefferradius, geprüft gegen die *rohe* Zeigerposition
