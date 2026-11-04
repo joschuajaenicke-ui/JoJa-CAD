@@ -2357,6 +2357,10 @@ pub fn einfach(app: &mut App, ui: &mut Ui, ziel: Ziel, art: Einfach) {
     let mut faktor: Option<f64> = None;
     // Lage der Maßlinie einer Maßkette (Abstand zu den Basispunkten).
     let mut abstand: Option<f64> = None;
+    // Bild: Breite (untere Kante), Höhe und die Sperre des Seitenverhältnisses.
+    let mut bild_breite: Option<f64> = None;
+    let mut bild_hoehe: Option<f64> = None;
+    let mut bild_lock: Option<bool> = None;
 
     match art {
         Einfach::Kreis => {
@@ -2590,21 +2594,40 @@ pub fn einfach(app: &mut App, ui: &mut Ui, ziel: Ziel, art: Einfach) {
         // Beides ist Anzeige — die Größe bestimmt der aufgezogene Rahmen
         // (zwei Klicks), ein Zahlenfeld würde nur eine zweite Wahrheit bauen.
         Einfach::Bild => {
-            let (name, pixel, breite, hoehe) = match &e {
+            let (name, pixel, breite, hoehe, gesperrt) = match &e {
                 Some(e) => match &e.kind {
-                    EntityKind::Image { a, b, name, data } => {
-                        let (w, h) = jjcad_core::bild::masse(*a, *b);
-                        (name.clone(), bild_pixel(data), w, h)
+                    EntityKind::Image {
+                        a,
+                        b,
+                        height,
+                        lock_ratio,
+                        name,
+                        data,
+                    } => {
+                        let w = a.dist(*b);
+                        let h = jjcad_core::bild::dekodiere(data)
+                            .map(|bild| {
+                                jjcad_core::bild::wirksame_hoehe(&bild, w, *height, *lock_ratio)
+                            })
+                            .unwrap_or(*height);
+                        (name.clone(), bild_pixel(data), w, h, *lock_ratio)
                     }
-                    _ => (String::new(), None, 0.0, 0.0),
+                    _ => (String::new(), None, 0.0, 0.0, true),
                 },
                 None => match &app.options.bild {
-                    Some(q) => (q.name.clone(), bild_pixel(&q.data), 0.0, 0.0),
+                    Some(q) => (
+                        q.name.clone(),
+                        bild_pixel(&q.data),
+                        0.0,
+                        0.0,
+                        app.options.bild_lock,
+                    ),
                     None => (
                         jjcad_core::i18n::tr("gui.props.keine_datei").to_string(),
                         None,
                         0.0,
                         0.0,
+                        app.options.bild_lock,
                     ),
                 },
             };
@@ -2618,19 +2641,74 @@ pub fn einfach(app: &mut App, ui: &mut Ui, ziel: Ziel, art: Einfach) {
             if let Some(px) = &pixel {
                 ui.label(theme::dim(px.clone()));
             }
-            for (key, label, wert) in [
-                ("breite", jjcad_core::i18n::tr("gui.props.breite"), breite),
-                ("hoehe", jjcad_core::i18n::tr("gui.props.hoehe"), hoehe),
-            ] {
-                zeile(key);
-                if e.is_none() {
-                    gesperrt_zeile(ui, label, jjcad_core::i18n::tr("gui.props.aus_den_klicks"));
-                } else {
-                    widgets::field_row(ui, label, |ui| {
-                        ui.label(theme::mono(unit.format(wert, unit.decimals())));
-                    });
-                }
+            // Breite = Länge der unteren Kante. Sie ist die eine Eingabe; die
+            // Höhe folgt bei gesperrtem Verhältnis daraus.
+            zeile("breite");
+            if e.is_none() {
+                gesperrt_zeile(
+                    ui,
+                    jjcad_core::i18n::tr("gui.props.breite"),
+                    jjcad_core::i18n::tr("gui.props.aus_den_klicks"),
+                );
+            } else {
+                let mut v = breite;
+                widgets::field_row(ui, jjcad_core::i18n::tr("gui.props.breite"), |ui| {
+                    if widgets::length_field(
+                        ui,
+                        &mut v,
+                        unit,
+                        110.0,
+                        widgets::MASS_MIN_MM,
+                        widgets::MASS_MAX_MM,
+                    ) {
+                        bild_breite = Some(v);
+                    }
+                });
             }
+            // Höhe: bei gesperrtem Verhältnis nur Anzeige, sonst Eingabe.
+            zeile("hoehe");
+            if e.is_none() {
+                gesperrt_zeile(
+                    ui,
+                    jjcad_core::i18n::tr("gui.props.hoehe"),
+                    jjcad_core::i18n::tr("gui.props.aus_den_klicks"),
+                );
+            } else if gesperrt {
+                widgets::field_row(ui, jjcad_core::i18n::tr("gui.props.hoehe"), |ui| {
+                    ui.label(theme::mono(unit.format(hoehe, unit.decimals())));
+                });
+            } else {
+                let mut v = hoehe;
+                widgets::field_row(ui, jjcad_core::i18n::tr("gui.props.hoehe"), |ui| {
+                    if widgets::length_field(
+                        ui,
+                        &mut v,
+                        unit,
+                        110.0,
+                        widgets::MASS_MIN_MM,
+                        widgets::MASS_MAX_MM,
+                    ) {
+                        bild_hoehe = Some(v);
+                    }
+                });
+            }
+            zeile("seitenverhaeltnis");
+            let mut lock = gesperrt;
+            widgets::field_row(
+                ui,
+                jjcad_core::i18n::tr("gui.props.seitenverhaeltnis"),
+                |ui| {
+                    if ui
+                        .checkbox(&mut lock, jjcad_core::i18n::tr("gui.props.sperren"))
+                        .on_hover_text(jjcad_core::i18n::tr(
+                            "gui.props.hoehe_folgt_aus_breite_und_dateiverhaeltnis",
+                        ))
+                        .changed()
+                    {
+                        bild_lock = Some(lock);
+                    }
+                },
+            );
         }
         Einfach::Block => {
             let (r0, s0) = match &e {
@@ -2764,6 +2842,9 @@ pub fn einfach(app: &mut App, ui: &mut Ui, ziel: Ziel, art: Einfach) {
             if let Some(v) = faktor {
                 app.options.block_scale = v;
             }
+            if let Some(v) = bild_lock {
+                app.options.bild_lock = v;
+            }
         }
         Ziel::Auswahl(id) => {
             gemein_nach_objekt(app, id, &a);
@@ -2840,6 +2921,42 @@ pub fn einfach(app: &mut App, ui: &mut Ui, ziel: Ziel, art: Einfach) {
                         {
                             map.insert("z".into(), serde_json::json!(unit.from_mm(v)));
                             geaendert = true;
+                        }
+                        // Bild: Breite über die untere Kante, Höhe (nur ohne
+                        // Sperre) und die Sperre selbst.
+                        (
+                            EntityKind::Image {
+                                a,
+                                b,
+                                height,
+                                lock_ratio,
+                                ..
+                            },
+                            _,
+                            _,
+                            _,
+                            _,
+                            _,
+                            _,
+                        ) => {
+                            if let Some(v) = bild_breite {
+                                if (v - a.dist(*b)).abs() > 1e-6 {
+                                    map.insert("width".into(), serde_json::json!(unit.from_mm(v)));
+                                    geaendert = true;
+                                }
+                            }
+                            if let Some(v) = bild_hoehe {
+                                if (v - *height).abs() > 1e-6 {
+                                    map.insert("height".into(), serde_json::json!(unit.from_mm(v)));
+                                    geaendert = true;
+                                }
+                            }
+                            if let Some(v) = bild_lock {
+                                if v != *lock_ratio {
+                                    map.insert("lock_ratio".into(), serde_json::json!(v));
+                                    geaendert = true;
+                                }
+                            }
                         }
                         (EntityKind::BlockRef { rot, scale, .. }, _, _, _, _, Some(rv), Some(sv)) => {
                             if (rv - rot.to_degrees()).abs() > 1e-9 {
@@ -4144,7 +4261,9 @@ mod tests {
                 "draw.image",
                 EntityKind::Image {
                     a: jjcad_core::geom::Vec2::ZERO,
-                    b: v(1000.0, 600.0),
+                    b: v(1000.0, 0.0),
+                    height: 600.0,
+                    lock_ratio: false,
                     name: "Bild".into(),
                     data: String::new(),
                 },
@@ -4405,7 +4524,9 @@ mod tests {
             },
             EntityKind::Image {
                 a: jjcad_core::geom::Vec2::ZERO,
-                b: jjcad_core::geom::v(1000.0, 600.0),
+                b: jjcad_core::geom::v(1000.0, 0.0),
+                height: 600.0,
+                lock_ratio: false,
                 name: "Bild".into(),
                 data: String::new(),
             },

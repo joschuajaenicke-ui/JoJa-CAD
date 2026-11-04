@@ -437,6 +437,9 @@ pub struct ToolOptions {
     /// Auswählen gelesen und als Base64 mitgeführt — die Action schickt sie
     /// unverändert ins Dokument (`EntityKind::Image`).
     pub bild: Option<BildQuelle>,
+    /// Seitenverhältnis des nächsten Bildes sperren (Vorgabe an). Gesperrt
+    /// folgt die Höhe der Breite und dem Verhältnis der Datei.
+    pub bild_lock: bool,
 }
 
 /// Ausgewählte Bilddatei für `draw.image` (Anzeigename und Base64-Daten).
@@ -522,6 +525,7 @@ impl ToolOptions {
             ellipse_mode: Einfuegemodus::Achsenparallel,
             arc_mode: Bogenmodus::DreiPunkte,
             bild: None,
+            bild_lock: true,
         }
     }
 

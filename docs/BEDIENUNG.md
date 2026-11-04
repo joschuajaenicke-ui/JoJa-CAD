@@ -94,12 +94,16 @@ einsehbar und dort frei änderbar (Ribbon ▸ Ansicht ▸ „Tasten").
     Flächen zu erzeugen.
 
 16. **Bild einfügen** (Ribbon ▸ Start ▸ Ausgabe ▸ „Bild einfügen"): PNG oder JPEG auswählen,
-    dann **zwei gegenüberliegende Ecken** des Rechtecks klicken — sie bestimmen Lage und Größe,
-    das Bild wird auf das Rechteck gestreckt. Die Bilddatei wird **in die Zeichnung
-    eingebettet** (Base64), die `.jjcad`-Datei bleibt also gültig, wenn die Vorlage verschoben
-    oder gelöscht wird. Das Bild liegt als Hintergrund hinter Flächen und Linien (eigene
-    Ebene „Bilder", soweit die Ebene nicht selbst gewählt wurde); seine vier Rahmenecken sind
-    Griffe, an denen es neu aufgespannt wird. Ein Bild lässt sich nicht zerlegen.
+    dann die **untere Kante** klicken — Anfang und Ende bestimmen Lage, Drehung und Breite.
+    Die Höhe folgt aus dem **Seitenverhältnis der Datei** und der Breite; das Bild wird also
+    nie verzerrt. Im Eigenschaften-Panel steht dafür die Zeile **„Seitenverhältnis"** mit dem
+    Häkchen „sperren" (Vorgabe an): ohne Häkchen lässt sich die Höhe frei eingeben, und die
+    Breite bleibt unabhängig. Die Bilddatei wird **in die Zeichnung eingebettet** (Base64),
+    die `.jjcad`-Datei bleibt also gültig, wenn die Vorlage verschoben oder gelöscht wird.
+    Das Bild liegt als Hintergrund hinter Flächen und Linien (eigene Ebene „Bilder", soweit
+    die Ebene nicht selbst gewählt wurde); seine vier Rahmenecken sind Griffe — die unteren
+    verschieben die Kante (Lage, Drehung, Breite), die oberen ziehen die Höhe (bei gesperrtem
+    Verhältnis wächst die Breite mit). Ein Bild lässt sich nicht zerlegen.
 
 Der Zeiger ist über der Zeichenfläche ein durchgehendes Fadenkreuz; der Systemzeiger wird dort
 ausgeblendet.

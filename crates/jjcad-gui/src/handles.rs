@@ -234,7 +234,7 @@ pub fn grips_of(e: &Entity) -> Vec<(GripKind, V2)> {
             .collect(),
         // Bild: die vier Ecken des Rahmens. Ziehen spannt das Bild neu auf,
         // die gegenüberliegende Ecke bleibt stehen (wie beim Rechteck).
-        EntityKind::Image { a, b, .. } => jjcad_core::bild::ecken(*a, *b)
+        EntityKind::Image { .. } => bild_ecken(e)
             .iter()
             .enumerate()
             .map(|(i, p)| (GripKind::Vert(i), *p))
@@ -269,6 +269,28 @@ fn viewport_ecken(vp: &jjcad_core::model::Viewport) -> [V2; 4] {
         V2::new(vp.x + vp.w, vp.y + vp.h),
         V2::new(vp.x, vp.y + vp.h),
     ]
+}
+
+/// Ecken eines Bildes in Weltkoordinaten (unten links, unten rechts, oben
+/// rechts, oben links). Die Höhe folgt dem Seitenverhältnis bzw. dem
+/// gespeicherten Wert — dieselbe Rechnung wie in der Anzeige.
+fn bild_ecken(e: &Entity) -> [V2; 4] {
+    if let EntityKind::Image {
+        a,
+        b,
+        height,
+        lock_ratio,
+        data,
+        ..
+    } = &e.kind
+    {
+        let hoehe = jjcad_core::bild::dekodiere(data)
+            .map(|bild| jjcad_core::bild::wirksame_hoehe(&bild, a.dist(*b), *height, *lock_ratio))
+            .unwrap_or(1.0);
+        jjcad_core::bild::ecken(*a, *b, hoehe)
+    } else {
+        [V2::ZERO; 4]
+    }
 }
 
 /// Wendet eine Griffbewegung auf eine Kopie des Elements an.
@@ -435,22 +457,44 @@ pub fn apply_grip_tol(orig: &Entity, kind: GripKind, target: V2, tol: f64) -> Op
             vp.w = x1 - x0;
             vp.h = y1 - y0;
         }
-        // Bild: eine Ecke verschiebt genau diese Rahmenecke. Aus den vier
-        // Ecken entsteht das neue Rechteck; eine entartete Kante (unter 1 mm)
-        // wird nicht übernommen.
-        (EntityKind::Image { a, b, .. }, GripKind::Vert(i)) => {
-            let mut ecken = jjcad_core::bild::ecken(*a, *b);
-            *ecken.get_mut(i)? = target;
-            let x0 = ecken.iter().map(|p| p.x).fold(f64::INFINITY, f64::min);
-            let x1 = ecken.iter().map(|p| p.x).fold(f64::NEG_INFINITY, f64::max);
-            let y0 = ecken.iter().map(|p| p.y).fold(f64::INFINITY, f64::min);
-            let y1 = ecken.iter().map(|p| p.y).fold(f64::NEG_INFINITY, f64::max);
-            if x1 - x0 < 1.0 || y1 - y0 < 1.0 {
-                return None;
+        // Bild: unten links/rechts verschieben die untere Kante (Lage, Drehung,
+        // Breite). Die oberen Ecken ziehen die Höhe; bei gesperrtem Verhältnis
+        // wächst die Breite mit, sonst bliebe das Bild verzerrt.
+        (
+            EntityKind::Image {
+                a: ia,
+                b: ib,
+                height: ih,
+                lock_ratio,
+                data,
+                ..
+            },
+            GripKind::Vert(i),
+        ) => match i {
+            0 => *ia = target,
+            1 => *ib = target,
+            2 | 3 => {
+                let d = *ib - *ia;
+                if d.len() < 1e-6 {
+                    return None;
+                }
+                let n = d.perp().normalized();
+                let h = (target - *ia).dot(n);
+                if h < 1.0 {
+                    return None;
+                }
+                *ih = h;
+                if *lock_ratio {
+                    if let Some(bild) = jjcad_core::bild::dekodiere(data) {
+                        if bild.hoehe > 0 {
+                            let breite = h * bild.breite as f64 / bild.hoehe as f64;
+                            *ib = *ia + d.normalized() * breite.max(1.0);
+                        }
+                    }
+                }
             }
-            *a = V2::new(x0, y0);
-            *b = V2::new(x1, y1);
-        }
+            _ => return None,
+        },
         // Raumstempel: eine Ecke ändert die Fläche (der Text rechnet sich neu),
         // der Textgriff verschiebt nur die Beschriftung — die Fläche bleibt.
         (EntityKind::Room { boundary, .. }, GripKind::Vert(i)) => {
@@ -735,8 +779,8 @@ fn kantenmitten(e: &Entity) -> Vec<V2> {
             let (ecken, _, _, _) = stair_rechteck(*a, *b, *width);
             (0..4).map(|i| mitte(ecken[i], ecken[(i + 1) % 4])).collect()
         }
-        EntityKind::Image { a, b, .. } => {
-            let ecken = jjcad_core::bild::ecken(*a, *b);
+        EntityKind::Image { .. } => {
+            let ecken = bild_ecken(e);
             (0..4).map(|i| mitte(ecken[i], ecken[(i + 1) % 4])).collect()
         }
         // Mitte der Maßlinie: dort sitzt der Griff, also ist sie auch ein
@@ -790,7 +834,7 @@ fn eckpunkte(e: &Entity) -> Vec<V2> {
         EntityKind::Stair { a, b, width, .. } => {
             stair_rechteck(*a, *b, *width).0.to_vec()
         }
-        EntityKind::Image { a, b, .. } => jjcad_core::bild::ecken(*a, *b).to_vec(),
+        EntityKind::Image { .. } => bild_ecken(e).to_vec(),
         // Basispunkte der Bemaßung: der Fang darf sie beim Ziehen nicht sperren
         // und beim Fangen nicht doppelt anbieten (T0055).
         EntityKind::Dim { a, b, .. } => vec![*a, *b],

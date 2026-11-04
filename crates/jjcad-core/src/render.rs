@@ -126,15 +126,17 @@ pub enum Shape {
         p: Vec2,
         r: f64,
     },
-    /// Eingebettetes Bild, achsenparallel in das Rechteck `a`–`b` gespannt.
+    /// Eingebettetes Bild über seiner **unteren Kante** `a`→`b`.
     ///
-    /// Das Bild wird auf das Rechteck **gestreckt** (kein Seitenverhältnis-
-    /// Zwang): die beiden Klickpunkte bestimmen Größe und Lage, wie beim
-    /// Rechteck. `bild` ist bereits zerlegt (RGBA) und über die Kennung
-    /// zwischengespeichert — Anzeige, Rasterausgabe und PDF teilen es.
+    /// Die Kante bestimmt Lage, Drehung und Breite; die Höhe steht senkrecht
+    /// darauf (nach links) und kommt aus dem Seitenverhältnis der Datei oder
+    /// aus dem gespeicherten Wert. `bild` ist bereits zerlegt (RGBA) und über
+    /// die Kennung zwischengespeichert — Anzeige, Rasterausgabe und PDF teilen
+    /// es.
     Image {
         a: Vec2,
         b: Vec2,
+        hoehe: f64,
         bild: std::sync::Arc<crate::bild::Bild>,
     },
 }
@@ -171,8 +173,8 @@ impl Prim {
             } => crate::geom::Ellipse::new(*c, *rx, *ry, *rot).arc_bbox(*a0, *a1),
             Shape::Fill { outer, .. } => BBox::from_points(outer),
             Shape::Dot { p, r } => BBox::new(*p - v(*r, *r), *p + v(*r, *r)),
-            Shape::Image { a, b, .. } => {
-                BBox::new(v(a.x.min(b.x), a.y.min(b.y)), v(a.x.max(b.x), a.y.max(b.y)))
+            Shape::Image { a, b, hoehe, .. } => {
+                BBox::from_points(&crate::bild::ecken(*a, *b, *hoehe))
             }
             Shape::Text(t) => BBox::from_points(&text_corners(
                 t.pos, &t.text, t.height, t.angle, t.align, t.valign,
@@ -1157,11 +1159,20 @@ pub fn render_entity(
         // Bild: die eingebetteten Daten werden zerlegt und als eigenes Primitiv
         // in die Displayliste gelegt. Anzeige, Rasterausgabe und PDF lesen es
         // von dort — kein zweiter Zeichenweg.
-        EntityKind::Image { a, b, name, data } => {
+        EntityKind::Image {
+            a,
+            b,
+            height,
+            lock_ratio,
+            name,
+            data,
+        } => {
             let Some(bild) = crate::bild::dekodiere(data) else {
                 // Unlesbare Daten: als gestrichelten Rahmen zeigen, statt das
                 // Objekt still verschwinden zu lassen.
-                let ecken = crate::bild::ecken(xf.apply(*a), xf.apply(*b));
+                // Unlesbare Daten: Rahmen in der Höhe, die das Verhältnis
+                // vorgäbe, wäre ohne Bild nicht bestimmbar — deshalb flach.
+                let ecken = crate::bild::ecken(xf.apply(*a), xf.apply(*b), 1.0);
                 dl.push(Prim {
                     shape: Shape::Poly(
                         vec![ecken[0], ecken[1], ecken[2], ecken[3], ecken[0]],
@@ -1178,10 +1189,15 @@ pub fn render_entity(
                 let _ = name;
                 return;
             };
+            // Höhe aus dem Seitenverhältnis (gesperrt) oder gespeichert; die
+            // Abbildung skaliert sie mit, wenn das Objekt in einem Block liegt.
+            let breite = a.dist(*b);
+            let hoehe = crate::bild::wirksame_hoehe(&bild, breite, *height, *lock_ratio);
             dl.push(Prim {
                 shape: Shape::Image {
                     a: xf.apply(*a),
                     b: xf.apply(*b),
+                    hoehe: hoehe * xf.scale_factor(),
                     bild,
                 },
                 style: st,
@@ -3898,8 +3914,8 @@ pub fn trefferbild(doc: &Document, e: &Entity) -> Trefferbild {
             Shape::Text(t) => text_kaesten.push(text_corners(
                 t.pos, &t.text, t.height, t.angle, t.align, t.valign,
             )),
-            Shape::Image { a, b, .. } => {
-                let ecken = crate::bild::ecken(*a, *b);
+            Shape::Image { a, b, hoehe, .. } => {
+                let ecken = crate::bild::ecken(*a, *b, *hoehe);
                 for i in 0..4 {
                     segmente.push(Seg::Line(ecken[i], ecken[(i + 1) % 4]));
                 }
@@ -4068,10 +4084,15 @@ fn entity_segments_tief(doc: &Document, e: &Entity, depth: usize) -> Vec<Seg> {
                 }
             }
         }
-        // Bild: Trefferfläche ist der Rahmen — ein Klick auf die Kante wählt
-        // das Bild, die Fläche selbst bleibt (wie bei Füllflächen) außen vor.
-        EntityKind::Image { a, b, .. } => {
-            let ecken = crate::bild::ecken(*a, *b);
+        // Bild: Trefferfläche ist der Rahmen; die Höhe folgt dem
+        // Seitenverhältnis bzw. dem gespeicherten Wert.
+        EntityKind::Image { a, b, height, lock_ratio, data, .. } => {
+            let hoehe = crate::bild::dekodiere(data)
+                .map(|bild| {
+                    crate::bild::wirksame_hoehe(&bild, a.dist(*b), *height, *lock_ratio)
+                })
+                .unwrap_or(1.0);
+            let ecken = crate::bild::ecken(*a, *b, hoehe);
             for i in 0..4 {
                 out.push(Seg::Line(ecken[i], ecken[(i + 1) % 4]));
             }

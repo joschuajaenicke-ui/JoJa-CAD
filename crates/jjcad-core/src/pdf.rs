@@ -468,27 +468,32 @@ fn draw_prim(c: &mut Content, prim: &Prim, xf: &Xf, paper_scale: f64) {
             }
             c.fill();
         }
-        Shape::Image { a, b, bild } => {
+        Shape::Image { a, b, hoehe, bild } => {
             // Das Bild wird als XObject eingebettet (RGB, auf Weiß gelegt —
             // PDF-Bilder dieses Schreibers tragen keinen Alphakanal) und über
-            // eine cm-Matrix in das Rechteck gespannt.
-            let ecken = crate::bild::ecken(*a, *b);
-            let q0 = xf.map(ecken[0]);
-            let q1 = xf.map(ecken[2]);
-            let (x0, x1) = (q0.x.min(q1.x), q0.x.max(q1.x));
-            let (y0, y1) = (q0.y.min(q1.y), q0.y.max(q1.y));
-            let (bw, bh) = ((x1 - x0) * MM2PT, (y1 - y0) * MM2PT);
-            if bw <= 0.01 || bh <= 0.01 {
+            // eine cm-Matrix auf die untere Kante und die Höhe gelegt. Die
+            // Matrix darf drehen: die Kante bestimmt die Richtung.
+            let ecken = crate::bild::ecken(*a, *b, *hoehe);
+            let p0 = xf.map(ecken[0]); // unten links
+            let p1 = xf.map(ecken[1]); // unten rechts
+            let p3 = xf.map(ecken[3]); // oben links
+            let ux = (p1.x - p0.x) * MM2PT;
+            let uy = (p1.y - p0.y) * MM2PT;
+            let vx = (p3.x - p0.x) * MM2PT;
+            let vy = (p3.y - p0.y) * MM2PT;
+            if ux.hypot(uy) <= 0.01 || vx.hypot(vy) <= 0.01 {
                 return;
             }
             c.bilder.insert(bild.kennung, bild.clone());
             c.raw("q");
             c.raw(&format!(
-                "{:.4} 0 0 {:.4} {:.4} {:.4} cm",
-                bw,
-                bh,
-                x0 * MM2PT,
-                y0 * MM2PT
+                "{:.4} {:.4} {:.4} {:.4} {:.4} {:.4} cm",
+                ux,
+                uy,
+                vx,
+                vy,
+                p0.x * MM2PT,
+                p0.y * MM2PT
             ));
             c.raw(&format!("/{} Do", bild_res(bild.kennung)));
             c.raw("Q");

@@ -1553,10 +1553,14 @@ pub fn execute(doc: &mut Document, id: &str, params: &Value) -> Result<Value, St
             Ok(json!({"ok": true, "created": [id]}))
         }
         "draw.image" => {
+            // `a`→`b` ist die **untere Kante**: Anfang, Richtung (Drehung) und
+            // Breite. Die Höhe folgt aus dem Seitenverhältnis der Datei —
+            // solange die Sperre an ist (Vorgabe). Ohne Sperre gilt `height`.
             let a = require_pt(&p, "a")?;
             let b = require_pt(&p, "b")?;
-            if (b.x - a.x).abs() <= POINT_EPS_MM || (b.y - a.y).abs() <= POINT_EPS_MM {
-                return Err("Bild: Die beiden Ecken bestimmen kein Rechteck".into());
+            let breite = a.dist(b);
+            if breite <= POINT_EPS_MM {
+                return Err("Bild: Die untere Kante braucht eine Länge".into());
             }
             // Eingebettete Daten (Oberfläche) haben Vorrang; sonst wird die
             // Datei gelesen. Beides landet als Base64 im Dokument.
@@ -1569,12 +1573,28 @@ pub fn execute(doc: &mut Document, id: &str, params: &Value) -> Result<Value, St
                     crate::bild::lade_datei(std::path::Path::new(&pfad))?
                 }
             };
-            if crate::bild::dekodiere(&data).is_none() {
+            let Some(bild) = crate::bild::dekodiere(&data) else {
                 return Err("Bilddaten sind nicht lesbar (PNG oder JPEG erwartet)".into());
-            }
+            };
+            let lock_ratio = p.boolean_or("lock_ratio", true);
+            let height = p
+                .len("height")
+                .filter(|h| *h > POINT_EPS_MM)
+                .unwrap_or_else(|| crate::bild::hoehe_aus_breite(&bild, breite));
             let layer = resolve_layer_in(doc, &p, ebene);
             let id = doc.new_id();
-            let mut e = Entity::new(id, layer, EntityKind::Image { a, b, name, data });
+            let mut e = Entity::new(
+                id,
+                layer,
+                EntityKind::Image {
+                    a,
+                    b,
+                    height,
+                    lock_ratio,
+                    name,
+                    data,
+                },
+            );
             apply_common(doc, &mut e, &p, layer);
             doc.add_entity(e);
             Ok(json!({"ok": true, "created": [id]}))
@@ -2328,17 +2348,8 @@ pub fn execute(doc: &mut Document, id: &str, params: &Value) -> Result<Value, St
                 .angle("angle")
                 .ok_or_else(|| "Parameter 'angle' (Grad) fehlt".to_string())?;
             let copy = p.boolean_or("copy", false);
-            // Ein Bild ist achsenparallel gespannt (zwei Ecken); eine Drehung
-            // könnte es nur als Bounding-Box abbilden und würde es dabei
-            // verzerren. Deshalb ein klarer Fehler statt eines falschen Bildes.
-            if ids.iter().any(|id| {
-                matches!(
-                    doc.entity(*id).map(|e| &e.kind),
-                    Some(EntityKind::Image { .. })
-                )
-            }) {
-                return Err("Bild lässt sich nicht drehen — achsenparallel einsetzen".into());
-            }
+            // Ein Bild dreht mit seiner unteren Kante mit — die Kante wandert
+            // durch dieselbe Abbildung wie jede andere Geometrie.
             let m = Affine::rotate_about(center, angle);
             let mut new_ids = Vec::new();
             for eid in &ids {
@@ -2817,6 +2828,59 @@ pub fn execute(doc: &mut Document, id: &str, params: &Value) -> Result<Value, St
                             }
                             if let Some(m) = p.text("material") {
                                 *material = m;
+                            }
+                        }
+                        // Bild: Breite über die untere Kante (der Anfangspunkt
+                        // bleibt stehen), Höhe gespeichert, Sperre und Drehung.
+                        EntityKind::Image {
+                            a: ia,
+                            b: ib,
+                            height: ih,
+                            lock_ratio,
+                            data,
+                            ..
+                        } => {
+                            if let Some(v) = width {
+                                let d = *ib - *ia;
+                                if d.len() > 1e-6 {
+                                    *ib = *ia + d.normalized() * v.max(1.0);
+                                }
+                            }
+                            if let Some(v) = height {
+                                *ih = v.max(1.0);
+                                // Bei gesperrtem Verhältnis zieht die Breite
+                                // mit, sonst stimmte die eingegebene Höhe nicht.
+                                if *lock_ratio {
+                                    if let Some(bild) = crate::bild::dekodiere(data) {
+                                        if bild.hoehe > 0 {
+                                            let breite =
+                                                v * bild.breite as f64 / bild.hoehe as f64;
+                                            let d = *ib - *ia;
+                                            if d.len() > 1e-6 {
+                                                *ib = *ia + d.normalized() * breite.max(1.0);
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                            if let Some(v) = p.boolean("lock_ratio") {
+                                if v != *lock_ratio {
+                                    // Beim Umschalten darf nichts springen:
+                                    // gespeichert wird die aktuelle Höhe.
+                                    if let Some(bild) = crate::bild::dekodiere(data) {
+                                        *ih = crate::bild::hoehe_aus_breite(
+                                            &bild,
+                                            ia.dist(*ib),
+                                        );
+                                    }
+                                }
+                                *lock_ratio = v;
+                            }
+                            if let Some(w) = p.angle("angle") {
+                                let d = *ib - *ia;
+                                if d.len() > 1e-6 {
+                                    *ib = *ia + Vec2::polar(w, d.len());
+                                }
                             }
                         }
                         EntityKind::Door {

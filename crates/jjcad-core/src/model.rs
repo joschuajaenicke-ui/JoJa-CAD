@@ -785,13 +785,22 @@ pub enum EntityKind {
     },
     /// Eingebettetes Bild (PNG oder JPEG).
     ///
-    /// `a` und `b` sind zwei **gegenüberliegende Ecken** des Rechtecks, in das
-    /// das Bild gesetzt wird — der Import fragt genau diese beiden Punkte ab.
+    /// `a`→`b` ist die **untere Kante**: Anfangspunkt, Richtung (Drehung) und
+    /// Länge (Breite) stecken darin. Die Höhe folgt aus dem Seitenverhältnis
+    /// der Datei und der Breite — solange `lock_ratio` an ist (Vorgabe). Ist
+    /// die Sperre aus, gilt die gespeicherte `height` (mm).
+    ///
     /// Die Bilddaten liegen als Base64 im Dokument, damit die Zeichnung ohne
     /// die ursprüngliche Bilddatei gilt. `name` ist nur die Anzeige.
     Image {
         a: Vec2,
         b: Vec2,
+        /// Höhe in mm — nur wirksam, wenn `lock_ratio` aus ist.
+        #[serde(default)]
+        height: f64,
+        /// Seitenverhältnis der Datei erzwingen (Vorgabe: an).
+        #[serde(default = "default_true")]
+        lock_ratio: bool,
         #[serde(default)]
         name: String,
         #[serde(default)]
