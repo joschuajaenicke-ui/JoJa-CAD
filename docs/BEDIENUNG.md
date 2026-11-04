@@ -43,7 +43,12 @@ einsehbar und dort frei änderbar (Ribbon ▸ Ansicht ▸ „Tasten").
    zwischen **px** (Linienbreite immer gleich viele Bildschirmpixel, unabhängig vom Zoom) und
    **DPI** (Breite wie im exportierten PDF: `Breite_mm × Pixel pro Papier-mm`, ohne Obergrenze —
    beim Hineinzoomen werden die Linien im selben Verhältnis dicker wie die Zeichnung).
-   Die Wahl wird gespeichert.
+   Die Wahl wird gespeichert. Links davon stehen zwei weitere Schalter:
+   **Verschieben** (Vierfach-Pfeil) schaltet **„Maus verschiebt"** ein und aus — dieselbe
+   Einstellung wie Einstellungen ▸ Bedienung; ausgeschaltet wandert nur noch das Werkzeug
+   „Verschieben". **Drehpunkt** (Fadenkreuz im Quadrat) wechselt beim Einfügen zwischen
+   **Basispunkt** (Zeichen `B`) und **Mittelpunkt** (Zeichen `M`) — ebenfalls dieselbe
+   Einstellung wie in den Einstellungen, ein Wechsel wirkt sofort auf eine laufende Vorschau.
 10. **Rechtsklick in die Zeichnung** öffnet das Objektmenü: Verschieben, Kopieren, Drehen,
     Spiegeln, Zerlegen, Löschen und Eigenschaften für das angeklickte Element. Auf freier
     Fläche erscheint das Flächenmenü (Einfügen, Alles auswählen, Auswahl aufheben, Ansicht
