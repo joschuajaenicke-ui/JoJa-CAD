@@ -53,9 +53,10 @@ pub const FENSTERECKE_PX: f32 = 24.0;
 /// über den Rand auf und lenkte ab. Sie erscheint erst, wenn der Zeiger
 /// bewusst am Rand stehen bleibt.
 pub const KANTEN_VERWEILDAUER: f64 = 0.1;
-/// Not-Aus für die Markierung während eines Zuges: kommt das Loslassen nicht an
-/// (Fenstermanager verschluckt es), fällt sie nach dieser Zeit von selbst ab.
-pub const ZUG_SICHERHEIT_S: f64 = 5.0;
+/// Nachlauf der Markierung nach dem Ende eines Zuges: kommt das Loslassen nicht
+/// an (der Fenstermanager verschluckt es), fällt sie ab, sobald sich die
+/// Fenstergröße so lange nicht mehr geändert hat.
+pub const ZUG_NACHLAUF_S: f64 = 2.0;
 
 /// Auf ganze Bildschirm-Pixel runden.
 ///
@@ -801,9 +802,11 @@ pub struct UiState {
     /// Kante, an der gerade die Größe gezogen wird (T0098, Turn 9): die
     /// Markierung bleibt stehen, auch wenn der Zeiger den Rand verlässt.
     pub kanten_zug: Option<&'static str>,
-    /// Zeitpunkt, an dem der Zug begann (Sicherheitsnetz gegen ein
-    /// verschlucktes Loslassen)
+    /// Zeitpunkt der letzten Änderung während des Zuges (Nachlauf)
     pub kanten_zug_seit: f64,
+    /// Fenstergröße beim letzten Bild des Zuges — ändert sie sich, läuft der
+    /// Nachlauf neu
+    pub kanten_zug_groesse: Vec2,
     pub zoom_edit: Option<String>,
     pub typed: String,
     /// Signatur der Auswahl für die letzte Zeichnung (Panel-Aktualisierung)
@@ -896,6 +899,7 @@ impl Default for UiState {
             kanten_leuchten: None,
             kanten_zug: None,
             kanten_zug_seit: 0.0,
+            kanten_zug_groesse: Vec2::ZERO,
             zoom_edit: None,
             typed: String::new(),
             sel_stamp: 0,
@@ -4880,6 +4884,7 @@ impl App {
                     // wird (Turn 9) — die Markierung bleibt dabei stehen.
                     self.ui.kanten_zug = Some(name);
                     self.ui.kanten_zug_seit = ctx.input(|i| i.time);
+                    self.ui.kanten_zug_groesse = f.size();
                 }
             }
             lagen.push((name, rect));
@@ -4914,12 +4919,23 @@ impl App {
         if losgelassen || !taste_unten {
             self.ui.kanten_zug = None;
         }
-        if self
-            .ui
-            .kanten_zug
-            .map_or(false, |name| jetzt - self.ui.kanten_zug_seit >= ZUG_SICHERHEIT_S)
-        {
-            let _ = self.ui.kanten_zug.take();
+        if self.ui.kanten_zug.is_some() {
+            // Solange der Fenstermanager zieht, ändert sich die Fenstergröße —
+            // jede Änderung verlängert den Nachlauf. Ohne Änderung (Zug vorbei,
+            // Loslassen verschluckt) fällt die Markierung nach `ZUG_NACHLAUF_S`.
+            if (f.size() - self.ui.kanten_zug_groesse).length() > 0.5 {
+                self.ui.kanten_zug_groesse = f.size();
+                self.ui.kanten_zug_seit = jetzt;
+            } else if jetzt - self.ui.kanten_zug_seit >= ZUG_NACHLAUF_S {
+                self.ui.kanten_zug = None;
+            }
+            if self.ui.kanten_zug.is_some() {
+                // Ohne Anforderung käme kein Bild mehr — der Nachlauf würde nie
+                // ausgewertet und die Markierung bliebe stehen.
+                ctx.request_repaint_after(std::time::Duration::from_secs_f64(
+                    (ZUG_NACHLAUF_S - (jetzt - self.ui.kanten_zug_seit)).max(0.02),
+                ));
+            }
         }
         let leuchten = self.ui.kanten_zug.or_else(|| {
             self.ui
@@ -10657,7 +10673,7 @@ mod tests_fensterrahmen {
     }
 
     /// T0098 (Turn 9): Kommt das Loslassen nicht an (Fenstermanager), fällt die
-    /// Markierung nach `ZUG_SICHERHEIT_S` von selbst ab statt hängen zu bleiben.
+    /// Markierung nach `ZUG_NACHLAUF_S` von selbst ab statt hängen zu bleiben.
     #[test]
     fn markierung_faellt_nach_dem_not_aus_ab() {
         let ctx = egui::Context::default();
@@ -10681,7 +10697,7 @@ mod tests_fensterrahmen {
             "während des Zuges bleibt die Markierung"
         );
         // Kein Loslassen, aber die Zeit läuft ab.
-        bild_zeit(&mut app, &ctx, Vec::new(), 40.2 + ZUG_SICHERHEIT_S + 0.1);
+        bild_zeit(&mut app, &ctx, Vec::new(), 40.2 + ZUG_NACHLAUF_S + 0.1);
         assert_eq!(
             app.ui.kanten_leuchten, None,
             "nach dem Not-Aus darf die Markierung nicht hängen bleiben"

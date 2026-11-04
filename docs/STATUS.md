@@ -37,8 +37,10 @@ offene Fensterinstanz zeigt weiterhin den alten Stand.
   (`BeginResize`): der Zeiger zeigt dort sofort den Größenpfeil, die Kante leuchtet
   nach 0,1 s Verweilen auf (gedämpft, 1,5 px bei 55 % — Turn 7: die volle
   Markierung blitzte bei jeder schnellen Bewegung über den Rand auf) und bleibt
-  während des Ziehens stehen, bis die Taste losgelassen wird (Turn 9; Not-Aus nach
-  5 s, falls das Loslassen nicht ankommt), unten rechts sitzt ein sichtbarer Griff. Die Ecke oben rechts gehört den
+  während des Ziehens stehen, bis die Taste losgelassen wird (Turn 9). Kommt das
+  Loslassen nicht an, hält jede Größenänderung den Nachlauf neu (2 s), danach
+  fällt sie ab — mit eigener Bildanforderung, sonst würde der Nachlauf im
+  Ruhezustand nie ausgewertet. Unten rechts sitzt ein sichtbarer Griff. Die Ecke oben rechts gehört den
   Fensterknöpfen (Turn 5: 5 px waren unsichtbar und nicht auffindbar).
   Nach dem Zug beendet `Context::stop_dragging` egui's Zieh-Zustand: der
   Fenstermanager übernimmt den Zeiger und schickt das Loslassen an niemanden,
