@@ -26,10 +26,12 @@ einsehbar und dort frei änderbar (Ribbon ▸ Ansicht ▸ „Tasten").
 5. **Inventar** (`E`): Lager, Blockbibliothek und alle Funktionen — per Drag & Drop auf die Hotbar.
 6. **Navigieren**: Mausrad zoomt, mittlere Taste oder `Leertaste`+Ziehen schwenkt.
    `W A S D` schwenkt ebenfalls — als Funktionen „Ansicht oben/links/unten/rechts",
-   die in der Tastaturbelegung stehen und umbelegt werden können. Sie verhalten sich
-   wie jede andere Taste: ein Druck rückt um **einen** Schritt weiter, gehalten
-   wiederholt das Betriebssystem den Druck. Das Tempo steht in den Einstellungen
-   unter **Bedienung** in der Zeile **„Schwenk"** als Faktor (0,1× bis 5×, Vorgabe 1×).
+   die in der Tastaturbelegung stehen und umbelegt werden können. Wie sich eine
+   Funktion bewegt, steht in den Einstellungen unter **Bedienung** in der Zeile
+   **„Verschieben"**: **Kontinuierlich** (Vorgabe) hält die Ansicht in Bewegung,
+   solange die Taste oder der Hotbar-Slot gedrückt bleibt; **Sprunghaft** rückt je
+   Druck um einen Schritt weiter. Das Tempo steht darunter in der Zeile
+   **„Schwenk"** als Faktor (0,1× bis 5×, Vorgabe 1×) — er gilt für beide Modi.
 7. **Länge tippen**: nach dem ersten Klick Ziffern eingeben, `Enter` übernimmt den Abstand —
    oder `x;y` für absolute Koordinaten (Semikolon trennt, Komma ist Dezimalzeichen: `2,5;3,0`).
 8. **Auswählen**: Klick wählt ein Objekt, `Umschalt`+Klick ergänzt. Ziehen von links nach rechts

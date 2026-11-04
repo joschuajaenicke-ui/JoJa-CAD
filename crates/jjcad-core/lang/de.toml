@@ -298,19 +298,19 @@ hint = "Herauszoomen"
 label = "Verkleinern"
 
 [action.view.pan_left]
-hint = "Ansicht einen Schritt nach links schieben"
+hint = "Ansicht nach links schieben — gedrückt gehalten läuft sie weiter (Modus „Kontinuierlich“)"
 label = "Ansicht links"
 
 [action.view.pan_right]
-hint = "Ansicht einen Schritt nach rechts schieben"
+hint = "Ansicht nach rechts schieben — gedrückt gehalten läuft sie weiter (Modus „Kontinuierlich“)"
 label = "Ansicht rechts"
 
 [action.view.pan_up]
-hint = "Ansicht einen Schritt nach oben schieben"
+hint = "Ansicht nach oben schieben — gedrückt gehalten läuft sie weiter (Modus „Kontinuierlich“)"
 label = "Ansicht oben"
 
 [action.view.pan_down]
-hint = "Ansicht einen Schritt nach unten schieben"
+hint = "Ansicht nach unten schieben — gedrückt gehalten läuft sie weiter (Modus „Kontinuierlich“)"
 label = "Ansicht unten"
 
 [action.view.inventory]
@@ -604,6 +604,12 @@ center = "Mittelpunkt"
 hint_base = "Der Basispunkt steht am Fadenkreuz — die Vorschau springt beim Drehen um das Fadenkreuz (bisheriges Verhalten)"
 hint_center = "Die Vorschau dreht um ihren Mittelpunkt und bleibt oben rechts am Fadenkreuz"
 
+
+[ui.panmode]
+kontinuierlich = "Kontinuierlich"
+sprunghaft = "Sprunghaft"
+hint_kontinuierlich = "Solange die Funktion gedrückt bleibt, wandert die Ansicht gleichmäßig weiter"
+hint_sprunghaft = "Ein Druck rückt die Ansicht um einen Schritt weiter"
 [ui.design]
 system = "System"
 hell = "Hell"
@@ -1005,7 +1011,9 @@ spalte_x_x_x_der_zeilen_hell_farbe_xxx = "  Spalte x = {x}: {wert1} % der Zeilen
 version_x_build_x_x = "Version {wert1} · Build {wert2} ({wert3})\n"
 
 [gui.dialogs]
+ansicht_verschieben = "Verschieben"
 dxf_zeichnung = "DXF-Zeichnung"
+gilt_fuer_die_schwenkfunktionen = "gilt für das Verschieben der Ansicht (Vorgabe W A S D) — gehalten bewegt sie sich weiter, wenn „Kontinuierlich“ gewählt ist"
 pdf_dokument = "PDF-Dokument"
 png_bild = "PNG-Bild"
 2d_cad_fuer_architektur_und_bauantragszeichnungen = "2D-CAD für Architektur und Bauantragszeichnungen."

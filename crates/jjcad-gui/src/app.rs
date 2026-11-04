@@ -70,10 +70,55 @@ pub fn auf_pixel(ctx: &egui::Context, wert: f32) -> f32 {
 
 /// Weg eines einzelnen Schwenk-Schritts in Bildpunkten (T0056): ein Aufruf der
 /// Funktion rückt die Ansicht sichtbar weiter, ohne sie springen zu lassen.
-/// Der Schwenk ist eine **gewöhnliche Funktion** (T0089): ein Druck bewegt,
-/// gehalten wiederholt das Betriebssystem den Druck wie bei jeder anderen Taste.
 /// Die Einstellung „Schwenk“ skaliert den Schritt über `UserPrefs::pan_speed`.
 pub const SCHWENK_SCHRITT_PX: f32 = 60.0;
+
+/// Tempo des **kontinuierlichen** Schwenks in Bildpunkten je Sekunde (T0101):
+/// solange eine Schwenkfunktion gedrückt bleibt, wandert die Ansicht mit
+/// diesem Tempo weiter. `UserPrefs::pan_speed` skaliert auch dieses Tempo —
+/// ein Faktor gilt damit für beide Bewegungsarten.
+pub const SCHWENK_TEMPO_PX_PRO_S: f32 = 480.0;
+
+/// Längste Bilddauer, die der kontinuierliche Schwenk verrechnet (T0101):
+/// nach einem Stocken (Fenster verdeckt, Neuzeichnen) soll die Ansicht nicht
+/// um die stehengebliebene Zeit springen.
+pub const SCHWENK_DT_MAX_S: f32 = 0.1;
+
+/// Richtung einer Schwenkfunktion in Bildschirmkoordinaten (x rechts, y unten):
+/// `view.pan_left` = (−1, 0), `view.pan_right` = (1, 0), `view.pan_up` =
+/// (0, −1), `view.pan_down` = (0, 1). Eine Quelle für den Einzelschritt und
+/// den Dauerlauf (T0101).
+pub fn schwenk_richtung(action: &str) -> Option<(f32, f32)> {
+    match action {
+        "view.pan_left" => Some((-1.0, 0.0)),
+        "view.pan_right" => Some((1.0, 0.0)),
+        "view.pan_up" => Some((0.0, -1.0)),
+        "view.pan_down" => Some((0.0, 1.0)),
+        _ => None,
+    }
+}
+
+/// Taste zu einem Namen der Tastaturbelegung (T0101). Buchstaben und Symbole
+/// kommen aus [`EINZELTASTEN`], `"1"`…`"0"` sind die Hotbar-Ziffern. Ein
+/// `"shift+"`-Vorsatz wird vom Aufrufer abgetrennt.
+fn taste_zu_label(label: &str) -> Option<egui::Key> {
+    if let Some((key, _)) = EINZELTASTEN.iter().find(|(_, l)| *l == label) {
+        return Some(*key);
+    }
+    Some(match label {
+        "1" => egui::Key::Num1,
+        "2" => egui::Key::Num2,
+        "3" => egui::Key::Num3,
+        "4" => egui::Key::Num4,
+        "5" => egui::Key::Num5,
+        "6" => egui::Key::Num6,
+        "7" => egui::Key::Num7,
+        "8" => egui::Key::Num8,
+        "9" => egui::Key::Num9,
+        "0" => egui::Key::Num0,
+        _ => return None,
+    })
+}
 
 /// Die Tasten, deren Funktion aus der **Tastaturbelegung** kommt — Buchstaben
 /// und Symbole (T0056, `docs/TASTEN.md`). Ziffern gehören der Hotbar,
@@ -750,6 +795,11 @@ pub struct UiState {
     pub typed: String,
     /// Signatur der Auswahl für die letzte Zeichnung (Panel-Aktualisierung)
     pub sel_stamp: u64,
+    /// Richtung eines **gedrückt gehaltenen** Schwenk-Slots der Hotbar (T0101).
+    /// Die Leiste setzt sie beim Zeichnen, `App::schwenk_fortschritt` liest und
+    /// löscht sie im selben Bild — so läuft der Dauerlauf nur, solange die
+    /// Maustaste auf dem Slot liegt.
+    pub schwenk_zeiger: Option<(f32, f32)>,
 }
 
 impl Default for UiState {
@@ -834,6 +884,7 @@ impl Default for UiState {
             zoom_edit: None,
             typed: String::new(),
             sel_stamp: 0,
+            schwenk_zeiger: None,
         }
     }
 }
@@ -2858,12 +2909,13 @@ impl App {
             "view.zoom_extents" => self.fit_view(),
             "view.zoom_in" => self.zoom_by(1.25),
             "view.zoom_out" => self.zoom_by(0.8),
-            // Umsetzen der Ansicht: ein Aufruf rückt um einen Schritt weiter —
-            // aus der Hotbar, von der Taste und aus dem Ribbon gleich (T0089).
-            "view.pan_left" => self.schwenk_schritt(-1.0, 0.0),
-            "view.pan_right" => self.schwenk_schritt(1.0, 0.0),
-            "view.pan_up" => self.schwenk_schritt(0.0, -1.0),
-            "view.pan_down" => self.schwenk_schritt(0.0, 1.0),
+            // Umsetzen der Ansicht: der Aufruf kommt aus der Hotbar, von der
+            // Taste und aus dem Ribbon gleich (T0089) und richtet sich nach der
+            // Bewegungsart (T0101) — ein Schritt oder ein Dauerlauf.
+            "view.pan_left" => self.schwenk_funktion(-1.0, 0.0),
+            "view.pan_right" => self.schwenk_funktion(1.0, 0.0),
+            "view.pan_up" => self.schwenk_funktion(0.0, -1.0),
+            "view.pan_down" => self.schwenk_funktion(0.0, 1.0),
             "sheet.new" => {
                 let n = self.doc().sheets.len() + 1;
                 let paper = self
@@ -3835,8 +3887,8 @@ impl App {
     /// Schiebt die Ansicht um einen Schritt (`SCHWENK_SCHRITT_PX` Bildpunkte) in
     /// Bildschirmrichtung — die Umrechnung läuft über die gedrehte Ansicht,
     /// damit der Schub auch bei gedrehter Zeichnung der Taste folgt.
-    /// **Der einzige** Weg des Schwenks: Taste, Hotbar und Ribbon rufen ihn über
-    /// die Funktion `view.pan_*` auf (T0089).
+    /// **Der einzige** Weg des sprunghaften Schwenks (T0101); Taste, Hotbar und
+    /// Ribbon rufen ihn über die Funktion `view.pan_*` auf (T0089).
     pub fn schwenk_schritt(&mut self, dx: f32, dy: f32) {
         let mut v = self.current_view();
         // T0067: Die Einstellung „Schwenk“ skaliert den Schritt.
@@ -3844,6 +3896,129 @@ impl App {
         let w = v.screen_delta_to_world(Vec2::new(dx * px, dy * px));
         v.center += w;
         self.set_view(v);
+    }
+
+    /// Schiebt die Ansicht um `dt` Sekunden Fahrt in Bildschirmrichtung
+    /// (T0101) — dieselbe Umrechnung wie [`App::schwenk_schritt`], nur mit
+    /// einem Weg aus dem Tempo statt aus dem festen Schritt.
+    pub fn schwenk_strecke(&mut self, dt: f32, dx: f32, dy: f32) {
+        let mut v = self.current_view();
+        let px = SCHWENK_TEMPO_PX_PRO_S * self.prefs.pan_speed * dt;
+        let w = v.screen_delta_to_world(Vec2::new(dx * px, dy * px));
+        v.center += w;
+        self.set_view(v);
+    }
+
+    /// Ein Aufruf der Schwenkfunktion aus Taste, Hotbar, Ribbon oder Menü
+    /// (T0101). Sprunghaft: ein Schritt. Kontinuierlich: **kein** Schritt —
+    /// den Weg rechnet allein [`App::schwenk_fortschritt`] aus der gedrückten
+    /// Funktion und der Bilddauer. Ein Schritt daneben zählte doppelt und hing
+    /// an der Tastenwiederholung des Betriebssystems: die Ansicht lief dann
+    /// schneller als das eingestellte Tempo.
+    pub fn schwenk_funktion(&mut self, dx: f32, dy: f32) {
+        if !self.prefs.pan_mode.kontinuierlich() {
+            self.schwenk_schritt(dx, dy);
+        }
+    }
+
+    /// Kontinuierliches Verschieben (T0101): einmal je Bild aufgerufen, nachdem
+    /// die Leisten gezeichnet sind (die Hotbar meldet dort einen gehaltenen
+    /// Druck) und bevor die Zeichenfläche zeichnet.
+    ///
+    /// Bewegt wird nur, wenn die Einstellung „Ansicht verschieben“ auf
+    /// „Kontinuierlich“ steht und eine Schwenkfunktion gehalten wird — Taste,
+    /// Hotbar-Ziffer oder gedrückter Slot. Das Tempo ist
+    /// [`SCHWENK_TEMPO_PX_PRO_S`] × `pan_speed`, die Strecke hängt an der
+    /// echten Bilddauer (gedeckelt, damit ein Stocken nicht springt).
+    pub fn schwenk_fortschritt(&mut self, ctx: &egui::Context) {
+        let (dx, dy) = self.schwenk_gehalten(ctx);
+        // Der gemerkte Zeigerdruck gilt nur für **dieses** Bild; die Hotbar
+        // setzt ihn beim Zeichnen neu.
+        self.ui.schwenk_zeiger = None;
+        if dx == 0.0 && dy == 0.0 {
+            return;
+        }
+        let dt = ctx.input(|i| i.stable_dt).clamp(0.0, SCHWENK_DT_MAX_S);
+        if dt > 0.0 {
+            self.schwenk_strecke(dt, dx, dy);
+        }
+        // Ohne Zeigerbewegung käme kein neues Bild — der Dauerlauf muss sich
+        // selbst anfordern, sonst steht die Ansicht nach einem Bild.
+        ctx.request_repaint();
+    }
+
+    /// Richtung der gerade gehaltenen Schwenkfunktionen in Bildschirmkoordinaten
+    /// (T0101). Gegenläufige Funktionen heben sich auf, je Achse höchstens 1.
+    ///
+    /// Gelesen werden alle drei Wege, über die eine Schwenkfunktion erreichbar
+    /// ist: die Tasten der Tastaturbelegung, die Ziffern der Hotbar-Slots und
+    /// ein gedrückt gehaltener Slot (`UiState::schwenk_zeiger`). Bei offenem
+    /// Protokoll, laufender Texteingabe oder Systemdialog schwenkt nichts —
+    /// dort gehört die Tastatur dem Text.
+    fn schwenk_gehalten(&self, ctx: &egui::Context) -> (f32, f32) {
+        if !self.prefs.pan_mode.kontinuierlich()
+            || self.chat.offen
+            || self.ui.systemdialog.is_some()
+            || ctx.wants_keyboard_input()
+        {
+            return (0.0, 0.0);
+        }
+        let (shift, strg, keys) = ctx.input(|i| {
+            (
+                i.modifiers.shift,
+                i.modifiers.command,
+                i.keys_down.clone(),
+            )
+        });
+        // Mit Strg (Befehlstaste) sind die Kombinationen gemeint, nicht der
+        // Schwenk: `Strg+S` speichert und darf die Ansicht nicht schieben
+        // (T0089 — dort scheiterte schon ein Dauerlauf an derselben Stelle).
+        if strg {
+            return (0.0, 0.0);
+        }
+        let mut dx = 0.0f32;
+        let mut dy = 0.0f32;
+        // Tasten der Tastaturbelegung (Buchstaben und Symbole, `shift+…`).
+        for aktion in [
+            "view.pan_left",
+            "view.pan_right",
+            "view.pan_up",
+            "view.pan_down",
+        ] {
+            let gedrueckt = self.prefs.keys_for(aktion).iter().any(|taste| {
+                let (umschalt, zeichen) = match taste.strip_prefix("shift+") {
+                    Some(rest) => (true, rest),
+                    None => (false, taste.as_str()),
+                };
+                umschalt == shift
+                    && taste_zu_label(zeichen).map_or(false, |key| keys.contains(&key))
+            });
+            if gedrueckt {
+                if let Some((rx, ry)) = schwenk_richtung(aktion) {
+                    dx += rx;
+                    dy += ry;
+                }
+            }
+        }
+        // Hotbar: gehaltene Ziffer und gedrückt gehaltener Slot.
+        let slots = self.prefs.slots();
+        for (slot, belegt) in slots.iter().enumerate() {
+            let label = crate::hotbar::slot_taste(slot);
+            if !taste_zu_label(&label).map_or(false, |key| keys.contains(&key)) {
+                continue;
+            }
+            if let Some(aktion) = belegt {
+                if let Some((rx, ry)) = schwenk_richtung(aktion) {
+                    dx += rx;
+                    dy += ry;
+                }
+            }
+        }
+        if let Some((rx, ry)) = self.ui.schwenk_zeiger {
+            dx += rx;
+            dy += ry;
+        }
+        (dx.clamp(-1.0, 1.0), dy.clamp(-1.0, 1.0))
     }
 
     fn tool_enter(&mut self) {
@@ -5611,6 +5786,11 @@ fn rail(ui: &mut egui::Ui, icon: &str, tooltip: &str, chevron: &str) -> bool {
             .exact_height(auf_pixel(ctx, HOTBAR_H))
             .frame(Frame::none().fill(Palette::panel()))
             .show(ctx, |ui| hotbar::show(self, ui));
+
+        // T0101: Kontinuierliches Verschieben der Ansicht. Nach der Leiste —
+        // deren Slots melden einen gehaltenen Druck — und vor der
+        // Zeichenfläche, damit die Bewegung im selben Bild zu sehen ist.
+        self.schwenk_fortschritt(ctx);
 
         if self.ui.layers_open {
             let collapsed = self.ui.layers_collapsed;
@@ -7491,6 +7671,42 @@ mod tests_tastenbelegung {
         }
     }
 
+    fn loslassen(key: egui::Key) -> egui::Event {
+        egui::Event::Key {
+            key,
+            physical_key: None,
+            pressed: false,
+            repeat: false,
+            modifiers: egui::Modifiers::NONE,
+        }
+    }
+
+    /// Bild mit **laufender** Zeit (T0101): der kontinuierliche Schwenk rechnet
+    /// mit der echten Bilddauer — ohne Zeitfortschritt bewegt er sich nicht.
+    fn frame_zeit(app: &mut App, t: &mut f64, events: Vec<egui::Event>) {
+        frame_zeit_lage(app, t, events, egui::Modifiers::NONE);
+    }
+
+    /// Wie [`frame_zeit`], mit ausdrücklicher Modifier-Lage (T0068: egui liest
+    /// sie aus `RawInput::modifiers`, nicht aus dem Tastenereignis).
+    fn frame_zeit_lage(
+        app: &mut App,
+        t: &mut f64,
+        events: Vec<egui::Event>,
+        modifiers: egui::Modifiers,
+    ) {
+        let ctx = app.ctx.clone();
+        *t += 1.0 / 60.0;
+        let raw = egui::RawInput {
+            screen_rect: Some(Rect::from_min_size(Pos2::ZERO, Vec2::new(1500.0, 950.0))),
+            time: Some(*t),
+            modifiers,
+            events,
+            ..Default::default()
+        };
+        let _ = ctx.run(raw, |ctx| app.ui(ctx));
+    }
+
     /// App mit einer Zeichnung in der Mitte — damit der Schwenk messbar ist.
     fn app_mit_zeichnung() -> App {
         let mut app = App::with_ctx(egui::Context::default());
@@ -7542,15 +7758,15 @@ mod tests_tastenbelegung {
         );
     }
 
-    /// T0089: Der Schwenk ist eine **gewöhnliche Funktion** — ein Druck rückt
-    /// um genau einen Schritt. Die Taste weiter gedrückt zu halten bewegt
-    /// nichts mehr; bei jeder anderen Taste wiederholt allein das
-    /// Betriebssystem den Druck. Vorher lief daneben ein Dauerlauf auf
-    /// `key_down`, der auch ohne neuen Tastendruck weiterschob.
+    /// T0089/T0101: Im Modus **Sprunghaft** ist der Schwenk eine gewöhnliche
+    /// Funktion — ein Druck rückt um genau einen Schritt (60 px × Faktor). Die
+    /// Taste weiter gedrückt zu halten bewegt nichts mehr; den Dauerlauf gibt
+    /// es nur im Modus „Kontinuierlich“.
     #[test]
     fn gehaltene_schwenktaste_rueckt_nur_einen_schritt() {
         let mut app = app_mit_zeichnung();
         app.prefs.pan_speed = 1.0;
+        app.prefs.pan_mode = jjcad_core::persist::PanMode::Sprunghaft;
         frame_mit(&mut app, vec![]);
         let vorher = app.current_view().center;
         frame_mit(&mut app, vec![druck(egui::Key::W)]);
@@ -7619,6 +7835,7 @@ mod tests_tastenbelegung {
     fn schwenk_aus_der_hotbar_rueckt_einen_schritt() {
         let mut app = app_mit_zeichnung();
         app.prefs.pan_speed = 1.0;
+        app.prefs.pan_mode = jjcad_core::persist::PanMode::Sprunghaft;
         app.prefs.set_slot(0, Some("view.pan_right".into()));
         frame_mit(&mut app, vec![]);
         let vorher = app.current_view().center;
@@ -7695,12 +7912,14 @@ mod tests_tastenbelegung {
     #[test]
     fn schwenkgeschwindigkeit_skaliert_den_schritt() {
         let mut app = app_mit_zeichnung();
+        app.prefs.pan_mode = jjcad_core::persist::PanMode::Sprunghaft;
         let start = app.current_view().center;
         app.prefs.pan_speed = 1.0;
         app.run_action(&app.ctx.clone(), "view.pan_right");
         let weg_eins = (app.current_view().center.x - start.x).abs();
 
         let mut app = app_mit_zeichnung();
+        app.prefs.pan_mode = jjcad_core::persist::PanMode::Sprunghaft;
         let start = app.current_view().center;
         app.prefs.pan_speed = 2.0;
         app.run_action(&app.ctx.clone(), "view.pan_right");
@@ -7713,17 +7932,223 @@ mod tests_tastenbelegung {
         );
     }
 
-    /// Ein einzelner Druck (Hotbar, Kürzel) rückt die Ansicht einen Schritt
-    /// weiter — die Funktion ist auch ohne gehaltene Taste benutzbar.
+    /// Ein einzelner Druck (Hotbar, Kürzel) rückt die Ansicht im Modus
+    /// **Sprunghaft** einen Schritt weiter — die Funktion ist auch ohne
+    /// gehaltene Taste benutzbar.
     #[test]
     fn schwenkfunktion_rueckt_einen_schritt() {
         let mut app = app_mit_zeichnung();
+        app.prefs.pan_mode = jjcad_core::persist::PanMode::Sprunghaft;
         let vorher = app.current_view().center;
         app.run_action(&app.ctx.clone(), "view.pan_right");
         let nachher = app.current_view().center;
         assert!(
             nachher.x > vorher.x + 1.0 && (nachher.y - vorher.y).abs() < 1.0,
             "„Ansicht rechts“ muss nach rechts schieben: {vorher:?} → {nachher:?}"
+        );
+    }
+
+    /// T0101: Im Modus „Kontinuierlich“ setzt ein Aufruf der Funktion **keinen**
+    /// Schritt neben dem Dauerlauf — sonst zählte der Druck doppelt und die
+    /// Tastenwiederholung des Betriebssystems beschleunigte die Ansicht.
+    #[test]
+    fn dauerlauf_setzt_keinen_schritt_neben_dem_bild() {
+        let mut app = app_mit_zeichnung();
+        app.prefs.pan_mode = jjcad_core::persist::PanMode::Kontinuierlich;
+        let vorher = app.current_view().center;
+        app.run_action(&app.ctx.clone(), "view.pan_right");
+        assert_eq!(
+            app.current_view().center,
+            vorher,
+            "der Aufruf allein darf im Dauerlauf nichts bewegen"
+        );
+        // Ein Bild mit gehaltener Taste bewegt dagegen — der Dauerlauf läuft.
+        let mut t = 0.0;
+        frame_zeit(&mut app, &mut t, vec![druck(egui::Key::D)]);
+        assert!(
+            app.current_view().center.x > vorher.x + 1.0,
+            "das gehaltene D muss den Dauerlauf starten: {vorher:?} → {:?}",
+            app.current_view().center
+        );
+    }
+
+    /// T0101: Im Modus „Kontinuierlich“ hält eine gedrückt gehaltene    /// T0101: Im Modus „Kontinuierlich“ hält eine gedrückt gehaltene
+    /// Schwenktaste die Ansicht in Bewegung — Bild für Bild, nicht nur beim
+    /// Druck. Gemessen wird der Weg über mehrere Bilder ohne neues Ereignis.
+    #[test]
+    fn kontinuierlicher_schwenk_haelt_die_ansicht_in_bewegung() {
+        let mut app = app_mit_zeichnung();
+        app.prefs.pan_mode = jjcad_core::persist::PanMode::Kontinuierlich;
+        app.prefs.pan_speed = 1.0;
+        let mut t = 0.0;
+        frame_zeit(&mut app, &mut t, vec![]);
+        let vorher = app.current_view().center;
+        frame_zeit(&mut app, &mut t, vec![druck(egui::Key::W)]);
+        let nach_druck = app.current_view().center;
+        assert!(
+            nach_druck.y > vorher.y + 1.0,
+            "der Druck muss sofort schieben: {vorher:?} → {nach_druck:?}"
+        );
+        // Zehn Bilder ohne neues Ereignis: die Taste gilt weiter als gedrückt.
+        for _ in 0..10 {
+            frame_zeit(&mut app, &mut t, vec![]);
+        }
+        let nach_halten = app.current_view().center;
+        let strecke = nach_halten.y - nach_druck.y;
+        assert!(
+            strecke > 200.0,
+            "gehalten muss die Ansicht weiterlaufen (erwartet einige hundert mm, gemessen {strecke})"
+        );
+        assert!(
+            (nach_halten.x - vorher.x).abs() < 1.0,
+            "der Schwenk nach oben darf nicht seitlich wandern"
+        );
+    }
+
+    /// T0101: Loslassen beendet den Dauerlauf — danach steht die Ansicht.
+    #[test]
+    fn loslassen_beendet_den_dauerlauf() {
+        let mut app = app_mit_zeichnung();
+        app.prefs.pan_mode = jjcad_core::persist::PanMode::Kontinuierlich;
+        app.prefs.pan_speed = 1.0;
+        let mut t = 0.0;
+        frame_zeit(&mut app, &mut t, vec![]);
+        frame_zeit(&mut app, &mut t, vec![druck(egui::Key::W)]);
+        for _ in 0..3 {
+            frame_zeit(&mut app, &mut t, vec![]);
+        }
+        frame_zeit(&mut app, &mut t, vec![loslassen(egui::Key::W)]);
+        let nach_loslassen = app.current_view().center;
+        for _ in 0..6 {
+            frame_zeit(&mut app, &mut t, vec![]);
+        }
+        assert_eq!(
+            app.current_view().center,
+            nach_loslassen,
+            "nach dem Loslassen darf die Ansicht nicht weiterwandern"
+        );
+    }
+
+    /// T0101: Auch der Dauerlauf folgt der Einstellung „Schwenk“ — doppelter
+    /// Faktor heißt doppelter Weg in derselben Zeit.
+    #[test]
+    fn dauerlauf_folgt_der_geschwindigkeit() {
+        let weg = |faktor: f32| {
+            let mut app = app_mit_zeichnung();
+            app.prefs.pan_mode = jjcad_core::persist::PanMode::Kontinuierlich;
+            app.prefs.pan_speed = faktor;
+            let mut t = 0.0;
+            frame_zeit(&mut app, &mut t, vec![]);
+            let start = app.current_view().center;
+            frame_zeit(&mut app, &mut t, vec![druck(egui::Key::W)]);
+            for _ in 0..8 {
+                frame_zeit(&mut app, &mut t, vec![]);
+            }
+            app.current_view().center.y - start.y
+        };
+        let einfach = weg(1.0);
+        let doppelt = weg(2.0);
+        assert!(einfach > 100.0, "der Dauerlauf muss messbar sein: {einfach}");
+        assert!(
+            (doppelt / einfach - 2.0).abs() < 0.05,
+            "doppelter Faktor muss doppelten Weg geben: {einfach} → {doppelt}"
+        );
+    }
+
+    /// T0101: Ein gedrückt gehaltener Schwenk-Slot der Hotbar bewegt die Ansicht
+    /// — die Leiste meldet die Richtung, `schwenk_fortschritt` verrechnet sie
+    /// und löscht den Merker im selben Bild.
+    #[test]
+    fn gedrueckter_hotbar_slot_bewegt_die_ansicht() {
+        let mut app = app_mit_zeichnung();
+        app.prefs.pan_mode = jjcad_core::persist::PanMode::Kontinuierlich;
+        app.prefs.pan_speed = 1.0;
+        let mut t = 0.0;
+        frame_zeit(&mut app, &mut t, vec![]);
+        let vorher = app.current_view().center;
+        app.ui.schwenk_zeiger = Some((1.0, 0.0));
+        app.schwenk_fortschritt(&app.ctx.clone());
+        let nachher = app.current_view().center;
+        assert!(
+            nachher.x > vorher.x + 1.0 && (nachher.y - vorher.y).abs() < 1.0,
+            "gehaltener Slot „Ansicht rechts“ muss nach rechts schieben: {vorher:?} → {nachher:?}"
+        );
+        assert_eq!(
+            app.ui.schwenk_zeiger, None,
+            "der gemerkte Druck gilt nur für ein Bild"
+        );
+    }
+
+    /// T0101: Auch die gehaltene **Ziffer** eines Schwenk-Slots läuft weiter —
+    /// der Weg über die Tastatur ist derselbe Dauerlauf.
+    #[test]
+    fn gehaltene_hotbar_ziffer_bewegt_weiter() {
+        let mut app = app_mit_zeichnung();
+        app.prefs.pan_mode = jjcad_core::persist::PanMode::Kontinuierlich;
+        app.prefs.pan_speed = 1.0;
+        app.prefs.set_slot(0, Some("view.pan_right".into()));
+        let mut t = 0.0;
+        frame_zeit(&mut app, &mut t, vec![]);
+        let vorher = app.current_view().center;
+        frame_zeit(&mut app, &mut t, vec![druck(egui::Key::Num1)]);
+        let nach_druck = app.current_view().center;
+        for _ in 0..8 {
+            frame_zeit(&mut app, &mut t, vec![]);
+        }
+        let nach_halten = app.current_view().center;
+        assert!(
+            nach_halten.x - nach_druck.x > 200.0,
+            "die gehaltene Ziffer muss weiterlaufen: {nach_druck:?} → {nach_halten:?}"
+        );
+        assert!(
+            nach_druck.x > vorher.x,
+            "der Druck selbst muss schon schieben"
+        );
+    }
+
+    /// T0101/T0089: Mit Strg sind die Kombinationen gemeint — der Dauerlauf
+    /// schweigt, sonst schöbe `Strg+W` die Ansicht.
+    #[test]
+    fn dauerlauf_schweigt_mit_strg() {
+        let mut app = app_mit_zeichnung();
+        app.prefs.pan_mode = jjcad_core::persist::PanMode::Kontinuierlich;
+        app.prefs.pan_speed = 1.0;
+        let mut t = 0.0;
+        frame_zeit(&mut app, &mut t, vec![]);
+        let vorher = app.current_view().center;
+        frame_zeit_lage(
+            &mut app,
+            &mut t,
+            vec![druck(egui::Key::W)],
+            egui::Modifiers::COMMAND,
+        );
+        for _ in 0..5 {
+            frame_zeit_lage(&mut app, &mut t, vec![], egui::Modifiers::COMMAND);
+        }
+        assert_eq!(
+            app.current_view().center, vorher,
+            "mit Strg darf der Dauerlauf die Ansicht nicht bewegen"
+        );
+    }
+
+    /// T0101: Bei offenem Protokoll gehört die Tastatur dem Chat — die Ansicht
+    /// bleibt stehen.
+    #[test]
+    fn dauerlauf_steht_bei_offenem_protokoll() {
+        let mut app = app_mit_zeichnung();
+        app.prefs.pan_mode = jjcad_core::persist::PanMode::Kontinuierlich;
+        app.prefs.pan_speed = 1.0;
+        let mut t = 0.0;
+        frame_zeit(&mut app, &mut t, vec![]);
+        app.chat.offen = true;
+        let vorher = app.current_view().center;
+        frame_zeit(&mut app, &mut t, vec![druck(egui::Key::W)]);
+        for _ in 0..5 {
+            frame_zeit(&mut app, &mut t, vec![]);
+        }
+        assert_eq!(
+            app.current_view().center, vorher,
+            "bei offenem Protokoll darf der Dauerlauf nicht schieben"
         );
     }
 
