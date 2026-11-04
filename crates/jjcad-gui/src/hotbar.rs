@@ -145,6 +145,15 @@ pub fn show(app: &mut App, ui: &mut Ui) {
                     highlight,
                 );
 
+                // T0101: Ein gedrückt gehaltener Schwenk-Slot bewegt die Ansicht
+                // fortlaufend — `App::schwenk_fortschritt` liest die Richtung im
+                // selben Bild und löscht sie wieder.
+                if resp.is_pointer_button_down_on() {
+                    if let Some(r) = action.as_deref().and_then(crate::app::schwenk_richtung) {
+                        app.ui.schwenk_zeiger = Some(r);
+                    }
+                }
+
                 // Klick: starten oder belegen
                 if resp.clicked() {
                     if let Some(a) = &action {

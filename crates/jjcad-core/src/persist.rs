@@ -358,6 +358,67 @@ impl PastePivot {
 
 }
 
+/// Bewegungsart der Ansicht für die Schwenk-Funktionen (`view.pan_left` …
+/// `view.pan_down`) — Einstellungen → Bedienung → „Ansicht verschieben“ (T0101).
+///
+/// - [`PanMode::Kontinuierlich`] (Programmstandard): solange eine
+///   Schwenkfunktion gedrückt gehalten wird, wandert die Ansicht mit
+///   gleichmäßigem Tempo weiter (Taste, Hotbar-Slot oder Ziffer).
+/// - [`PanMode::Sprunghaft`]: ein Druck rückt genau **einen** Schritt weiter
+///   (bisheriges Verhalten vor T0101).
+#[derive(Clone, Copy, PartialEq, Eq, Debug, Default, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum PanMode {
+    /// Gedrückt halten bewegt die Ansicht gleichmäßig weiter (Vorgabe)
+    #[default]
+    Kontinuierlich,
+    /// Ein Druck rückt um einen Schritt weiter
+    Sprunghaft,
+}
+
+impl PanMode {
+    /// Beide Modi in Anzeigereihenfolge (Einstellungen).
+    pub const ALL: [PanMode; 2] = [PanMode::Kontinuierlich, PanMode::Sprunghaft];
+
+    /// Deutscher Name — für Dateien, Action-Parameter und Tests.
+    pub fn label(self) -> &'static str {
+        match self {
+            PanMode::Kontinuierlich => "Kontinuierlich",
+            PanMode::Sprunghaft => "Sprunghaft",
+        }
+    }
+    /// Beschriftung in der gewählten Sprache (T0106). `label()` bleibt der
+    /// deutsche Name — Dateien und Action-Parameter dürfen sich nicht ändern.
+    pub fn text(self) -> &'static str {
+        match self {
+            PanMode::Kontinuierlich => crate::i18n::tr("ui.panmode.kontinuierlich"),
+            PanMode::Sprunghaft => crate::i18n::tr("ui.panmode.sprunghaft"),
+        }
+    }
+
+    /// Kurze Erläuterung (Tooltip im Einstellungsfenster).
+    pub fn hint(self) -> &'static str {
+        match self {
+            PanMode::Kontinuierlich => {
+                "Solange die Funktion gedrückt bleibt, wandert die Ansicht gleichmäßig weiter"
+            }
+            PanMode::Sprunghaft => "Ein Druck rückt die Ansicht um einen Schritt weiter",
+        }
+    }
+    /// Tooltip in der gewählten Sprache (T0106).
+    pub fn tip(self) -> &'static str {
+        match self {
+            PanMode::Kontinuierlich => crate::i18n::tr("ui.panmode.hint_kontinuierlich"),
+            PanMode::Sprunghaft => crate::i18n::tr("ui.panmode.hint_sprunghaft"),
+        }
+    }
+
+    /// true, wenn gehaltenes Drücken die Ansicht weiterbewegt.
+    pub fn kontinuierlich(self) -> bool {
+        matches!(self, PanMode::Kontinuierlich)
+    }
+}
+
 /// Farbdesign der Oberfläche (T0102) — Einstellungen → Darstellung → „Design“.
 ///
 /// `System` ist der Programmstandard: beim Start und bei jeder Änderung des
@@ -667,6 +728,11 @@ pub struct UserPrefs {
     /// Gilt beim Halten (Bildlauf) und beim Einzelschritt der Funktion.
     #[serde(default = "default_pan_speed")]
     pub pan_speed: f32,
+    /// Bewegungsart der Ansicht für die Schwenk-Funktionen (T0101):
+    /// `kontinuierlich` (Vorgabe) hält die Ansicht in Bewegung, solange die
+    /// Funktion gedrückt bleibt; `sprunghaft` rückt je Druck um einen Schritt.
+    #[serde(default)]
+    pub pan_mode: PanMode,
     /// Drehpunkt und Anker der Einfüge-Vorschau aus der Zwischenablage (T0070):
     /// `center` (Vorgabe seit T0087) = die Vorschau dreht um ihren Mittelpunkt
     /// und bleibt oben rechts am Fadenkreuz, `base_point` = der Basispunkt steht
@@ -1042,6 +1108,9 @@ impl Default for UserPrefs {
             drag_mode: DragMode::HoldAndDrag,
             mouse_move: true,
             pan_speed: default_pan_speed(),
+            // T0101: Die Ansicht folgt der gedrückten Schwenkfunktion, statt
+            // bei jedem Druck um einen Schritt zu springen.
+            pan_mode: PanMode::Kontinuierlich,
             // Vorgabe (T0087): die Vorschau bleibt oben rechts am Fadenkreuz.
             paste_pivot: PastePivot::Center,
             fill_input: "points".into(),
@@ -1698,6 +1767,43 @@ mod tests {
                 p.pan_speed
             );
         }
+    }
+
+    /// T0101: Die Bewegungsart der Ansicht (kontinuierlich/sprunghaft) steht in
+    /// `prefs.json`; ohne Schlüssel gilt der neue Programmstandard
+    /// „kontinuierlich“.
+    #[test]
+    fn bewegungsart_der_ansicht_wird_gespeichert() {
+        assert_eq!(PanMode::default(), PanMode::Kontinuierlich);
+        assert_eq!(
+            serde_json::to_string(&PanMode::Kontinuierlich).unwrap(),
+            "\"kontinuierlich\""
+        );
+        assert_eq!(
+            serde_json::to_string(&PanMode::Sprunghaft).unwrap(),
+            "\"sprunghaft\""
+        );
+        // Altbestand ohne Schlüssel → kontinuierlich.
+        let alt: UserPrefs = serde_json::from_str(r#"{"last_dir": "/tmp"}"#).unwrap();
+        assert_eq!(alt.pan_mode, PanMode::Kontinuierlich);
+
+        let mut prefs = UserPrefs::default();
+        prefs.pan_mode = PanMode::Sprunghaft;
+        let roh = serde_json::to_string(&prefs).unwrap();
+        assert!(
+            roh.contains("\"pan_mode\":\"sprunghaft\""),
+            "Schlüssel fehlt: {roh}"
+        );
+        let wieder: UserPrefs = serde_json::from_str(&roh).unwrap();
+        assert_eq!(wieder.pan_mode, PanMode::Sprunghaft);
+
+        // Zwei Modi, deutsche Namen; „kontinuierlich“ ist die erste Wahl.
+        assert_eq!(PanMode::ALL.len(), 2);
+        assert_eq!(PanMode::ALL[0], PanMode::Kontinuierlich);
+        assert_eq!(PanMode::Kontinuierlich.label(), "Kontinuierlich");
+        assert_eq!(PanMode::Sprunghaft.label(), "Sprunghaft");
+        assert!(PanMode::Kontinuierlich.kontinuierlich());
+        assert!(!PanMode::Sprunghaft.kontinuierlich());
     }
 
     /// T0070/T0087: Der Drehpunkt der Einfüge-Vorschau steht in `prefs.json`;
