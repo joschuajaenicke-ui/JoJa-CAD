@@ -1524,7 +1524,12 @@ pub fn select_window(doc: &Document, a: Vec2, b: Vec2, crossing: bool) -> Vec<Id
         // (Punkt ohne Ausdehnung, Text als Zeilenbox, Treppe als Rechteck).
         let flaechig = matches!(
             e.kind,
-            EntityKind::Stair { .. } | EntityKind::Text { .. } | EntityKind::Point { .. }
+            EntityKind::Stair { .. }
+                | EntityKind::Text { .. }
+                | EntityKind::Point { .. }
+                // Bild: die Fläche ist das Rechteck — dieselbe Trefferfläche
+                // wie beim Klick (T0100).
+                | EntityKind::Image { .. }
         );
         if flaechig {
             if (crossing && bb.intersects(&rect)) || (!crossing && rect.contains_bbox(&bb)) {

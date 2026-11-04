@@ -191,6 +191,15 @@ fn bild_ist_in_der_flaeche_anklickbar() {
     assert_eq!(jjcad_core::snap::hit_test(&s.doc, Vec2::new(2000.0, 1500.0), 5.0, None), Some(id));
     // … außerhalb nicht.
     assert_eq!(jjcad_core::snap::hit_test(&s.doc, Vec2::new(6000.0, 1500.0), 5.0, None), None);
+    // Ein Querfenster **innerhalb** der Fläche wählt das Bild mit (die Fläche
+    // ist sein Rechteck, wie beim Klick).
+    let treffer = jjcad_core::snap::select_window(
+        &s.doc,
+        Vec2::new(1500.0, 1000.0),
+        Vec2::new(2500.0, 2000.0),
+        true,
+    );
+    assert!(treffer.contains(&id), "Querfenster im Bild: {treffer:?}");
 
     // Eine Wand über dem Bild hat Vorrang: der Klick wählt die Wand.
     let wand = s

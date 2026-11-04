@@ -162,9 +162,23 @@ pub fn zerlege(daten: &[u8]) -> Result<Bild, String> {
 
 /// Hash über die Rohdaten — Schlüssel für Zwischenspeicher, Texturen und
 /// PDF-Objekte.
+/// Kennung über die Rohdaten — Schlüssel für Zwischenspeicher, Texturen und
+/// PDF-Objekte.
+///
+/// Bewusst acht Byte auf einmal: die Funktion läuft bei jedem Neuaufbau der
+/// Displayliste über die Base64-Daten eines Bildes (bei einem Foto mehrere
+/// Megabyte). Ein Byte je Schritt wäre dort im Zoom sichtbar.
 pub fn kennung(daten: &[u8]) -> u64 {
     let mut h: u64 = 0xcbf2_9ce4_8422_2325;
-    for b in daten {
+    let mut rest = daten;
+    while rest.len() >= 8 {
+        let mut block = [0u8; 8];
+        block.copy_from_slice(&rest[..8]);
+        h ^= u64::from_le_bytes(block);
+        h = h.wrapping_mul(0x0000_0100_0000_01b3).rotate_left(27);
+        rest = &rest[8..];
+    }
+    for b in rest {
         h ^= *b as u64;
         h = h.wrapping_mul(0x0000_0100_0000_01b3);
     }
@@ -181,13 +195,16 @@ fn zwischenspeicher() -> &'static Mutex<HashMap<u64, Arc<Bild>>> {
 /// Die Anzeige baut die Displayliste bei jedem Zoom neu auf; ohne diesen
 /// Speicher würde jedes Foto dabei erneut zerlegt.
 pub fn dekodiere(base64: &str) -> Option<Arc<Bild>> {
-    let roh = base64_dekodiere(base64).ok()?;
-    let k = kennung(&roh);
+    // Schlüssel ist der Hash des **Textes**: die Anzeige fragt bei jedem
+    // Neuaufbau der Displayliste nach demselben Bild und darf dafür nicht
+    // jedes Mal die Base64-Daten zurückrechnen.
+    let k = kennung(base64.as_bytes());
     if let Ok(map) = zwischenspeicher().lock() {
         if let Some(b) = map.get(&k) {
             return Some(b.clone());
         }
     }
+    let roh = base64_dekodiere(base64).ok()?;
     let bild = Arc::new(zerlege(&roh).ok()?);
     if let Ok(mut map) = zwischenspeicher().lock() {
         // Kleiner Deckel: die letzten acht Bilder reichen für eine Zeichnung.

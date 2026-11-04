@@ -8113,6 +8113,31 @@ mod tests_vollbild {
         );
     }
 
+    /// Der Reiter „Start" ist **breiter als die Mindestfensterbreite** — das war
+    /// er schon vor T0100 (1308 px bei 1080 px Fenster); „Bild einfügen" in der
+    /// Gruppe „Ausgabe" kommt hinzu (gemessen 1383 px). Der Test hält den
+    /// Ist-Stand als Riegel: ein weiterer Knopf fällt sofort auf. Bei der
+    /// Standard-Fensterbreite 1500 px ist alles sichtbar.
+    #[test]
+    fn reiter_start_bleibt_in_seiner_breite() {
+        let ctx = egui::Context::default();
+        let mut app = App::with_ctx(ctx.clone());
+        app.ui.ribbon = RibbonTab::Datei;
+        let mut breite = 0.0;
+        for _ in 0..3 {
+            let raw = egui::RawInput {
+                screen_rect: Some(Rect::from_min_size(Pos2::ZERO, Vec2::new(1080.0, 700.0))),
+                ..Default::default()
+            };
+            let _ = ctx.run(raw, |ctx| app.ui(ctx));
+            breite = app.ui.last_ribbon_content_w;
+        }
+        assert!(
+            breite <= 1400.0,
+            "Reiter Start braucht {breite} px (Riegel 1400) — ein Knopf mehr schneidet rechts ab"
+        );
+    }
+
     /// Der Reiter „Zeichnen" trägt seit T0090 „Vereinigen" und „Schneiden" in
     /// der Gruppe „Füllen" — er muss weiter in die Mindestbreite passen.
     #[test]
