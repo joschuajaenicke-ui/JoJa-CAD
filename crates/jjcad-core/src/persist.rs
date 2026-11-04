@@ -358,6 +358,65 @@ impl PastePivot {
 
 }
 
+/// Farbdesign der Oberfläche (T0102) — Einstellungen → Darstellung → „Design“.
+///
+/// `System` ist der Programmstandard: beim Start und bei jeder Änderung des
+/// Betriebssystems nimmt JoJa-CAD dessen helles oder dunkles Farbschema. Hell
+/// und Dunkel sind feste Wahlen und überstimmen das Betriebssystem; sie
+/// bleiben in `prefs.json` gespeichert.
+#[derive(Clone, Copy, PartialEq, Eq, Debug, Default, serde::Serialize, serde::Deserialize)]
+pub enum Design {
+    /// Farbschema des Betriebssystems (Vorgabe)
+    #[default]
+    #[serde(rename = "system")]
+    System,
+    /// Immer hell — helle Flächen, dunkle Schrift
+    #[serde(rename = "hell")]
+    Hell,
+    /// Immer dunkel — dunkle Flächen, helle Schrift (bisheriges Aussehen)
+    #[serde(rename = "dunkel")]
+    Dunkel,
+}
+
+impl Design {
+    /// Alle Wahlen in Anzeigereihenfolge (Einstellungen).
+    pub const ALL: [Design; 3] = [Design::System, Design::Hell, Design::Dunkel];
+
+    /// Deutscher Name — für Dateien, Action-Parameter und Tests.
+    pub fn label(self) -> &'static str {
+        match self {
+            Design::System => "System",
+            Design::Hell => "Hell",
+            Design::Dunkel => "Dunkel",
+        }
+    }
+    /// Beschriftung in der gewählten Sprache (T0106).
+    pub fn text(self) -> &'static str {
+        match self {
+            Design::System => crate::i18n::tr("ui.design.system"),
+            Design::Hell => crate::i18n::tr("ui.design.hell"),
+            Design::Dunkel => crate::i18n::tr("ui.design.dunkel"),
+        }
+    }
+
+    /// Kurze Erläuterung (Tooltip im Einstellungsfenster).
+    pub fn hint(self) -> &'static str {
+        match self {
+            Design::System => "Folgt dem hellen oder dunklen Farbschema des Betriebssystems",
+            Design::Hell => "Helle Flächen, dunkle Schrift — unabhängig vom Betriebssystem",
+            Design::Dunkel => "Dunkle Flächen, helle Schrift — bisheriges Aussehen",
+        }
+    }
+    /// Tooltip in der gewählten Sprache (T0106).
+    pub fn tip(self) -> &'static str {
+        match self {
+            Design::System => crate::i18n::tr("ui.design.hint_system"),
+            Design::Hell => crate::i18n::tr("ui.design.hint_hell"),
+            Design::Dunkel => crate::i18n::tr("ui.design.hint_dunkel"),
+        }
+    }
+}
+
 /// Fensterrahmen (T0098) — experimentell, Einstellungen → Bedienung →
 /// „Fensterrahmen“.
 ///
@@ -655,6 +714,11 @@ pub struct UserPrefs {
     /// rechts und die Kopfzeile verschiebt das Fenster (`prefs.json`).
     #[serde(default)]
     pub fensterrahmen: Fensterrahmen,
+    /// Farbdesign der Oberfläche (T0102): `system` folgt dem Betriebssystem
+    /// (Programmstandard), `hell` und `dunkel` sind feste Wahlen. Die Wahl
+    /// wirkt sofort, ohne Neustart (`crate::theme::set_design`).
+    #[serde(default)]
+    pub design: Design,
 }
 
 fn default_dateidialog() -> String {
@@ -995,6 +1059,8 @@ impl Default for UserPrefs {
             file_dialog: default_dateidialog(),
             language: crate::i18n::Lang::Deutsch,
             fensterrahmen: Fensterrahmen::System,
+            // Programmstandard (T0102): das Farbschema des Betriebssystems.
+            design: Design::System,
         }
     }
 }
@@ -1563,6 +1629,38 @@ mod tests {
             crate::i18n::Lang::Englisch,
             "Sprachwahl ging beim Laden verloren"
         );
+    }
+
+    /// T0102: Das Farbdesign steht in den Voreinstellungen. Vorgabe ist
+    /// „System“ (dem Betriebssystem folgen) — auch für Altbestände ohne
+    /// Schlüssel; „hell“ und „dunkel“ werden gespeichert und wieder gelesen.
+    #[test]
+    fn design_wird_gespeichert_und_gelesen() {
+        assert_eq!(
+            UserPrefs::default().design,
+            Design::System,
+            "Vorgabe muss das Betriebssystem sein"
+        );
+        let alt: UserPrefs = serde_json::from_str(r#"{"last_dir": "/tmp"}"#).unwrap();
+        assert_eq!(alt.design, Design::System);
+
+        let mut prefs = UserPrefs::default();
+        prefs.design = Design::Hell;
+        let roh = serde_json::to_string(&prefs).unwrap();
+        assert!(
+            roh.contains("\"design\":\"hell\""),
+            "Schlüssel fehlt: {roh}"
+        );
+        let wieder: UserPrefs = serde_json::from_str(&roh).unwrap();
+        assert_eq!(wieder.design, Design::Hell, "Designwahl ging verloren");
+
+        let dunkel: UserPrefs = serde_json::from_str(r#"{"design": "dunkel"}"#).unwrap();
+        assert_eq!(dunkel.design, Design::Dunkel);
+        // Drei Wahlen, deutsche Namen; „System“ ist die erste.
+        assert_eq!(Design::ALL.len(), 3);
+        assert_eq!(Design::ALL[0], Design::System);
+        assert_eq!(Design::Hell.label(), "Hell");
+        assert_eq!(Design::Dunkel.label(), "Dunkel");
     }
 
     /// T0067: Die Schwenkgeschwindigkeit ist ein Faktor mit Vorgabe 1,0, wird

@@ -24,17 +24,17 @@ pub fn icon_button(
     if ui.is_rect_visible(rect) {
         let p = ui.painter();
         if active {
-            p.rect_filled(rect, Rounding::same(7.0), Palette::ACCENT_SOFT);
-            p.rect_stroke(rect, Rounding::same(7.0), Stroke::new(1.0, Palette::ACCENT));
+            p.rect_filled(rect, Rounding::same(7.0), Palette::accent_soft());
+            p.rect_stroke(rect, Rounding::same(7.0), Stroke::new(1.0, Palette::accent()));
         } else if hovered {
-            p.rect_filled(rect, Rounding::same(7.0), Palette::PANEL_ALT);
+            p.rect_filled(rect, Rounding::same(7.0), Palette::panel_alt());
         }
         let color = if active {
-            Palette::ACCENT
+            Palette::accent()
         } else if hovered {
-            Palette::TEXT
+            Palette::text()
         } else {
-            Palette::TEXT_DIM
+            Palette::text_dim()
         };
         icons::paint(p, rect.shrink(size * 0.24), icon_name, color);
     }
@@ -68,15 +68,15 @@ pub fn ribbon_split_button(
     if ui.is_rect_visible(full) {
         let p = ui.painter();
         if active {
-            p.rect_filled(main_rect, Rounding::same(8.0), Palette::ACCENT_SOFT);
-            p.rect_stroke(main_rect, Rounding::same(8.0), Stroke::new(1.0, Palette::ACCENT));
+            p.rect_filled(main_rect, Rounding::same(8.0), Palette::accent_soft());
+            p.rect_stroke(main_rect, Rounding::same(8.0), Stroke::new(1.0, Palette::accent()));
         } else if main.hovered() {
-            p.rect_filled(main_rect, Rounding::same(8.0), Palette::PANEL_ALT);
+            p.rect_filled(main_rect, Rounding::same(8.0), Palette::panel_alt());
         }
         if arrow.hovered() {
-            p.rect_filled(arrow_rect, Rounding::same(4.0), Palette::PANEL_ALT);
+            p.rect_filled(arrow_rect, Rounding::same(4.0), Palette::panel_alt());
         }
-        let color = if active { Palette::ACCENT } else { Palette::TEXT };
+        let color = if active { Palette::accent() } else { Palette::text() };
         let ir = Rect::from_center_size(
             Pos2::new(main_rect.center().x, main_rect.top() + 19.0),
             Vec2::splat(22.0),
@@ -87,7 +87,7 @@ pub fn ribbon_split_button(
             Align2::CENTER_CENTER,
             label,
             FontId::proportional(10.5),
-            if active { Palette::ACCENT } else { Palette::TEXT_DIM },
+            if active { Palette::accent() } else { Palette::text_dim() },
         );
         let c = arrow_rect.center();
         p.add(Shape::convex_polygon(
@@ -96,7 +96,7 @@ pub fn ribbon_split_button(
                 Pos2::new(c.x + 4.0, c.y - 2.0),
                 Pos2::new(c.x, c.y + 3.0),
             ],
-            if arrow.hovered() { Palette::TEXT } else { Palette::TEXT_FAINT },
+            if arrow.hovered() { Palette::text() } else { Palette::text_faint() },
             Stroke::NONE,
         ));
     }
@@ -136,12 +136,12 @@ pub fn ribbon_button(ui: &mut Ui, icon_name: &str, label: &str, active: bool) ->
     if ui.is_rect_visible(rect) {
         let p = ui.painter();
         if active {
-            p.rect_filled(rect, Rounding::same(8.0), Palette::ACCENT_SOFT);
-            p.rect_stroke(rect, Rounding::same(8.0), Stroke::new(1.0, Palette::ACCENT));
+            p.rect_filled(rect, Rounding::same(8.0), Palette::accent_soft());
+            p.rect_stroke(rect, Rounding::same(8.0), Stroke::new(1.0, Palette::accent()));
         } else if hovered {
-            p.rect_filled(rect, Rounding::same(8.0), Palette::PANEL_ALT);
+            p.rect_filled(rect, Rounding::same(8.0), Palette::panel_alt());
         }
-        let color = if active { Palette::ACCENT } else { Palette::TEXT };
+        let color = if active { Palette::accent() } else { Palette::text() };
         let ir = Rect::from_center_size(
             Pos2::new(rect.center().x, rect.top() + 19.0),
             Vec2::splat(21.0),
@@ -150,7 +150,7 @@ pub fn ribbon_button(ui: &mut Ui, icon_name: &str, label: &str, active: bool) ->
         // Lange Beschriftungen („Schnellauswahl") liefen sonst über die
         // Schaltfläche hinaus in die Nachbargruppe — die Schrift wird deshalb
         // so weit verkleinert, wie es der Platz verlangt (T0060).
-        let textfarbe = if active { Palette::ACCENT } else { Palette::TEXT_DIM };
+        let textfarbe = if active { Palette::accent() } else { Palette::text_dim() };
         let gemessen = p
             .layout_no_wrap(label.to_string(), FontId::proportional(RIBBON_TEXT), color)
             .size()
@@ -179,21 +179,21 @@ pub fn slot_button(
     if ui.is_rect_visible(rect) {
         let p = ui.painter();
         let bg = if highlight {
-            Palette::ACCENT_SOFT
+            Palette::accent_soft()
         } else if resp.hovered() {
-            Palette::PANEL_ALT
+            Palette::panel_alt()
         } else {
-            Palette::PANEL
+            Palette::panel()
         };
         p.rect_filled(rect, Rounding::same(9.0), bg);
         let border = if active {
-            Stroke::new(2.0, Palette::ACCENT)
+            Stroke::new(2.0, Palette::accent())
         } else if highlight {
-            Stroke::new(1.0, Palette::ACCENT.gamma_multiply(0.7))
+            Stroke::new(1.0, Palette::accent().gamma_multiply(0.7))
         } else if resp.hovered() {
-            Stroke::new(1.0, Palette::BORDER)
+            Stroke::new(1.0, Palette::border())
         } else {
-            Stroke::new(1.0, Palette::BORDER_SOFT)
+            Stroke::new(1.0, Palette::border_soft())
         };
         p.rect_stroke(rect, Rounding::same(9.0), border);
         if let Some(a) = action {
@@ -204,14 +204,14 @@ pub fn slot_button(
                 rect.center() - Vec2::new(0.0, 2.0),
                 Vec2::splat(size.x * 0.48),
             );
-            icons::paint(p, ir, icon_name, if active { Palette::ACCENT } else { Palette::TEXT });
+            icons::paint(p, ir, icon_name, if active { Palette::accent() } else { Palette::text() });
             if let Some(k) = key_label {
                 p.text(
                     Pos2::new(rect.right() - 5.0, rect.bottom() - 4.0),
                     Align2::RIGHT_BOTTOM,
                     k,
                     FontId::proportional(9.5),
-                    Palette::TEXT_FAINT,
+                    Palette::text_faint(),
                 );
             }
         } else {
@@ -220,7 +220,7 @@ pub fn slot_button(
                 p,
                 Rect::from_center_size(rect.center(), Vec2::splat(size.x * 0.24)),
                 "plus",
-                Palette::TEXT_FAINT.gamma_multiply(0.6),
+                Palette::text_faint().gamma_multiply(0.6),
             );
         }
     }
@@ -272,7 +272,7 @@ pub fn field_row(ui: &mut Ui, label: &str, add: impl FnOnce(&mut Ui)) {
         ui.painter().rect_filled(
             Rect::from_min_size(egui::pos2(row.left(), row.top()), Vec2::new(w, ROW_H)),
             Rounding::same(3.0),
-            Palette::PANEL_ALT.gamma_multiply(0.55),
+            Palette::panel_alt().gamma_multiply(0.55),
         );
     }
     // Name: exakt links, einzeilig, notfalls gekürzt
@@ -285,7 +285,7 @@ pub fn field_row(ui: &mut Ui, label: &str, add: impl FnOnce(&mut Ui)) {
         Align2::LEFT_CENTER,
         text,
         FontId::proportional(11.5),
-        Palette::TEXT_DIM,
+        Palette::text_dim(),
     );
     // Wert: eigener Bereich mit fester linker Kante → alle Felder liegen exakt untereinander
     let cell = Rect::from_min_size(
@@ -321,7 +321,7 @@ pub fn field_block(ui: &mut Ui, label: &str, hoehe: f32, add: impl FnOnce(&mut U
         ui.painter().rect_filled(
             Rect::from_min_size(egui::pos2(row.left(), row.top()), Vec2::new(w, hoehe)),
             Rounding::same(3.0),
-            Palette::PANEL_ALT.gamma_multiply(0.55),
+            Palette::panel_alt().gamma_multiply(0.55),
         );
     }
     ui.painter().text(
@@ -329,7 +329,7 @@ pub fn field_block(ui: &mut Ui, label: &str, hoehe: f32, add: impl FnOnce(&mut U
         Align2::LEFT_CENTER,
         label,
         FontId::proportional(11.5),
-        Palette::TEXT_DIM,
+        Palette::text_dim(),
     );
     let cell = Rect::from_min_size(
         egui::pos2(row.left() + LABEL_W, row.top()),
@@ -387,15 +387,15 @@ pub fn align_matrix(
             if ui.is_rect_visible(r) {
                 let p = ui.painter();
                 let (fuellung, rand, farbe) = if aktiv {
-                    (Palette::ACCENT_SOFT, Palette::ACCENT, Palette::ACCENT)
+                    (Palette::accent_soft(), Palette::accent(), Palette::accent())
                 } else if resp.hovered() {
-                    (Palette::PANEL_ALT, Palette::ACCENT.gamma_multiply(0.7), Palette::TEXT)
+                    (Palette::panel_alt(), Palette::accent().gamma_multiply(0.7), Palette::text())
                 } else {
-                    // Wie die Eingabefelder: dunkler Feldgrund (`Palette::BG`,
+                    // Wie die Eingabefelder: dunkler Feldgrund (`Palette::bg()`,
                     // #121418) statt der durchscheinenden Panel-Zeile
-                    // (`Palette::PANEL`, #1a1d22). Gleicher Rand und gleiche
+                    // (`Palette::panel()`, #1a1d22). Gleicher Rand und gleiche
                     // Rundung wie die Felder daneben.
-                    (Palette::BG, Palette::PANEL_ALT.gamma_multiply(1.6), Palette::TEXT_DIM)
+                    (Palette::bg(), Palette::panel_alt().gamma_multiply(1.6), Palette::text_dim())
                 };
                 p.rect_filled(r, Rounding::same(4.0), fuellung);
                 p.rect_stroke(r, Rounding::same(4.0), Stroke::new(1.0, rand));
@@ -489,7 +489,7 @@ pub fn info_row(ui: &mut Ui, label: &str, value: &str, tip: Option<&str>) -> Res
     let mut resp = None;
     field_row(ui, label, |ui| {
         resp = Some(ui.add(
-            egui::Label::new(egui::RichText::new(value).size(11.5).color(Palette::TEXT)).truncate(),
+            egui::Label::new(egui::RichText::new(value).size(11.5).color(Palette::text())).truncate(),
         ));
     });
     let resp = resp.expect("field_row ruft den Zeileninhalt genau einmal auf");
@@ -624,7 +624,7 @@ fn zahlenkern<'a, T: egui::emath::Numeric>(
 pub fn hline(ui: &mut Ui) {
     let (rect, _) = ui.allocate_exact_size(Vec2::new(ui.available_width(), 1.0), Sense::hover());
     ui.painter()
-        .rect_filled(rect, Rounding::ZERO, Palette::BORDER_SOFT);
+        .rect_filled(rect, Rounding::ZERO, Palette::border_soft());
 }
 
 /// Vertikaler Trenner für Ribbon-Gruppen.
@@ -633,7 +633,7 @@ pub fn vline(ui: &mut Ui, height: f32) {
     ui.painter().rect_filled(
         Rect::from_center_size(rect.center(), Vec2::new(1.0, height * 0.7)),
         Rounding::ZERO,
-        Palette::BORDER_SOFT,
+        Palette::border_soft(),
     );
 }
 
@@ -994,7 +994,7 @@ mod icontests {
     }
 
     /// Grund der Ausrichtungsfelder ist derselbe wie bei den Eingabefeldern
-    /// (`Palette::BG`, #121418). Vorher schien der Panel-Ton (#1a1d22) durch
+    /// (`Palette::bg()`, #121418). Vorher schien der Panel-Ton (#1a1d22) durch
     /// die Zelle — die Knöpfe sahen anders aus als die Felder daneben (T0041).
     #[test]
     fn ausrichtungsfelder_haben_feldgrund() {
@@ -1021,11 +1021,11 @@ mod icontests {
         };
         let felder = flaechen
             .iter()
-            .filter(|(r, f)| zelle(r) && *f == Palette::BG)
+            .filter(|(r, f)| zelle(r) && *f == Palette::bg())
             .count();
         let aktiv = flaechen
             .iter()
-            .filter(|(r, f)| zelle(r) && *f == Palette::ACCENT_SOFT)
+            .filter(|(r, f)| zelle(r) && *f == Palette::accent_soft())
             .count();
         assert_eq!(felder, 8, "acht inaktive Zellen mit Feldgrund, gefunden {felder}");
         assert_eq!(aktiv, 1, "genau eine gewählte Zelle, gefunden {aktiv}");

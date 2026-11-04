@@ -30,7 +30,7 @@ pub fn show(app: &mut App, ctx: &egui::Context) {
             // Kopf
             ui.horizontal(|ui| {
                 let (r, _) = ui.allocate_exact_size(Vec2::splat(22.0), Sense::hover());
-                crate::icons::paint(ui.painter(), r, "inventory", Palette::ACCENT);
+                crate::icons::paint(ui.painter(), r, "inventory", Palette::accent());
                 ui.label(theme::bold(jjcad_core::i18n::tr("gui.inventory.inventar"), 16.0));
                 ui.add_space(10.0);
                 for (i, name) in [
@@ -45,29 +45,29 @@ pub fn show(app: &mut App, ctx: &egui::Context) {
                     let galley = ui.painter().layout_no_wrap(
                         name.to_string(),
                         FontId::proportional(12.5),
-                        if active { Palette::TEXT } else { Palette::TEXT_DIM },
+                        if active { Palette::text() } else { Palette::text_dim() },
                     );
                     let (rect, resp) = ui.allocate_exact_size(
                         Vec2::new(galley.size().x + 24.0, 30.0),
                         Sense::click(),
                     );
                     if active {
-                        ui.painter().rect_filled(rect, Rounding::same(7.0), Palette::PANEL_ALT);
+                        ui.painter().rect_filled(rect, Rounding::same(7.0), Palette::panel_alt());
                         ui.painter().rect_filled(
                             Rect::from_min_max(
                                 Pos2::new(rect.left() + 8.0, rect.bottom() - 2.0),
                                 Pos2::new(rect.right() - 8.0, rect.bottom()),
                             ),
                             Rounding::same(1.0),
-                            Palette::ACCENT,
+                            Palette::accent(),
                         );
                     } else if resp.hovered() {
-                        ui.painter().rect_filled(rect, Rounding::same(7.0), Palette::PANEL_ALT.gamma_multiply(0.5));
+                        ui.painter().rect_filled(rect, Rounding::same(7.0), Palette::panel_alt().gamma_multiply(0.5));
                     }
                     ui.painter().galley(
                         Pos2::new(rect.center().x - galley.size().x / 2.0, rect.center().y - galley.size().y / 2.0),
                         galley,
-                        if active { Palette::TEXT } else { Palette::TEXT_DIM },
+                        if active { Palette::text() } else { Palette::text_dim() },
                     );
                     if resp.clicked() {
                         app.ui.inventory_tab = i;
@@ -192,7 +192,7 @@ fn blocks_tab(app: &mut App, ui: &mut Ui) {
         ui.label(
             RichText::new(jjcad_core::i18n::tr("gui.inventory.blockbibliothek"))
                 .size(12.0)
-                .color(Palette::TEXT_DIM),
+                .color(Palette::text_dim()),
         );
         ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
             if ui.button(jjcad_core::i18n::tr("gui.inventory.block_aus_auswahl")).clicked() {
@@ -216,12 +216,12 @@ fn blocks_tab(app: &mut App, ui: &mut Ui) {
                 ui.label(
                     RichText::new(cat.to_uppercase())
                         .size(9.5)
-                        .color(Palette::TEXT_FAINT)
+                        .color(Palette::text_faint())
                         .strong(),
                 );
                 ui.add_space(4.0);
                 let (rect, _) = ui.allocate_exact_size(Vec2::new(ui.available_width(), 1.0), Sense::hover());
-                ui.painter().rect_filled(rect, 0.0, Palette::BORDER_SOFT);
+                ui.painter().rect_filled(rect, 0.0, Palette::border_soft());
             });
             ui.add_space(4.0);
             ui.horizontal_wrapped(|ui| {
@@ -240,12 +240,12 @@ fn block_tile(app: &mut App, ui: &mut Ui, b: &BlockDef) {
     let hovered = resp.hovered();
     if ui.is_rect_visible(rect) {
         let p = ui.painter();
-        let bg = if hovered { Palette::PANEL_ALT } else { Palette::PANEL };
+        let bg = if hovered { Palette::panel_alt() } else { Palette::panel() };
         p.rect_filled(rect, Rounding::same(8.0), bg);
         p.rect_stroke(
             rect,
             Rounding::same(8.0),
-            Stroke::new(1.0, if hovered { Palette::ACCENT.gamma_multiply(0.6) } else { Palette::BORDER_SOFT }),
+            Stroke::new(1.0, if hovered { Palette::accent().gamma_multiply(0.6) } else { Palette::border_soft() }),
         );
         let thumb = Rect::from_min_size(rect.min + Vec2::new(10.0, 8.0), Vec2::new(w - 20.0, 62.0));
         draw_block_preview(app, p, thumb, b);
@@ -254,14 +254,14 @@ fn block_tile(app: &mut App, ui: &mut Ui, b: &BlockDef) {
             egui::Align2::CENTER_CENTER,
             truncate(&b.name, 16),
             FontId::proportional(11.0),
-            Palette::TEXT,
+            Palette::text(),
         );
         p.text(
             Pos2::new(rect.center().x, rect.bottom() - 13.0),
             egui::Align2::CENTER_CENTER,
             if b.source == jjcad_core::model::BlockSource::System { jjcad_core::i18n::tr("gui.inventory.system") } else { jjcad_core::i18n::tr("gui.inventory.projekt") },
             FontId::proportional(9.0),
-            Palette::TEXT_FAINT,
+            Palette::text_faint(),
         );
     }
     if resp.clicked() {
@@ -310,7 +310,7 @@ pub fn draw_block_preview(app: &App, p: &egui::Painter, rect: Rect, b: &BlockDef
     for e in &b.entities {
         render::render_entity(&ctx, e, Affine::IDENTITY, &mut dl, 0);
     }
-    let col = Palette::TEXT_DIM;
+    let col = Palette::text_dim();
     let stroke = Stroke::new(1.0, col);
     for prim in &dl.prims {
         match &prim.shape {
@@ -358,7 +358,7 @@ pub fn draw_block_preview(app: &App, p: &egui::Painter, rect: Rect, b: &BlockDef
                 let v: Vec<Pos2> = outer.iter().map(|q| w2s(*q)).collect();
                 p.add(egui::Shape::convex_polygon(
                     v,
-                    Palette::TEXT_FAINT.gamma_multiply(0.35),
+                    Palette::text_faint().gamma_multiply(0.35),
                     Stroke::NONE,
                 ));
                 // In der Kachel (wenige Pixel) ist die Insel nicht zu sehen;
@@ -374,7 +374,7 @@ pub fn draw_block_preview(app: &App, p: &egui::Painter, rect: Rect, b: &BlockDef
                     egui::Align2::CENTER_CENTER,
                     &t.text,
                     FontId::proportional(8.0),
-                    Palette::TEXT_FAINT,
+                    Palette::text_faint(),
                 );
             }
         }
@@ -442,7 +442,7 @@ fn functions_tab(app: &mut App, ui: &mut Ui) {
         ui.horizontal(|ui| {
             ui.label(
                 RichText::new(jjcad_core::i18n::t_args_owned("gui.inventory.funktion_fuer_taste_x_waehlen", &[("wert1", format!("{}", key.to_uppercase()))]))
-                    .color(Palette::ACCENT)
+                    .color(Palette::accent())
                     .size(11.5),
             );
             if ui.button(jjcad_core::i18n::tr("gui.inventory.abbrechen")).clicked() {
@@ -458,7 +458,7 @@ fn functions_tab(app: &mut App, ui: &mut Ui) {
                 } else {
                     jjcad_core::i18n::t_args_owned("gui.inventory.element_fuer_slot_x_waehlen", &[("wert1", format!("{}", slot + 1))])
                 })
-                .color(Palette::ACCENT)
+                .color(Palette::accent())
                 .size(11.5),
             );
             if ui.button(jjcad_core::i18n::tr("gui.inventory.abbrechen")).clicked() {
@@ -494,7 +494,7 @@ fn functions_tab(app: &mut App, ui: &mut Ui) {
             ui.label(
                 RichText::new(group.label().to_uppercase())
                     .size(9.5)
-                    .color(Palette::TEXT_FAINT)
+                    .color(Palette::text_faint())
                     .strong(),
             );
             ui.add_space(3.0);
@@ -508,19 +508,19 @@ fn functions_tab(app: &mut App, ui: &mut Ui) {
                 );
                 if ui.is_rect_visible(rect) {
                     if resp.hovered() {
-                        ui.painter().rect_filled(rect, Rounding::same(5.0), Palette::PANEL_ALT);
+                        ui.painter().rect_filled(rect, Rounding::same(5.0), Palette::panel_alt());
                     }
                     let (ir, _) = (
                         Rect::from_min_size(rect.min + Vec2::new(6.0, 5.0), Vec2::splat(18.0)),
                         (),
                     );
-                    crate::icons::paint(ui.painter(), ir, a.icon, Palette::TEXT_DIM);
+                    crate::icons::paint(ui.painter(), ir, a.icon, Palette::text_dim());
                     ui.painter().text(
                         Pos2::new(rect.left() + 32.0, rect.center().y),
                         egui::Align2::LEFT_CENTER,
                         a.label(),
                         FontId::proportional(12.0),
-                        Palette::TEXT,
+                        Palette::text(),
                     );
                     if fest {
                         ui.painter().text(
@@ -528,7 +528,7 @@ fn functions_tab(app: &mut App, ui: &mut Ui) {
                             egui::Align2::RIGHT_CENTER,
                             jjcad_core::i18n::tr("gui.inventory.fest"),
                             FontId::proportional(9.5),
-                            Palette::TEXT_FAINT,
+                            Palette::text_faint(),
                         );
                     } else if let Some(k) = app.prefs.key_for(a.id) {
                         ui.painter().text(
@@ -536,7 +536,7 @@ fn functions_tab(app: &mut App, ui: &mut Ui) {
                             egui::Align2::RIGHT_CENTER,
                             k.to_uppercase(),
                             FontId::proportional(10.0),
-                            Palette::TEXT_FAINT,
+                            Palette::text_faint(),
                         );
                     }
                     ui.painter().text(
@@ -544,7 +544,7 @@ fn functions_tab(app: &mut App, ui: &mut Ui) {
                         egui::Align2::RIGHT_CENTER,
                         &a.hint(),
                         FontId::proportional(9.5),
-                        Palette::TEXT_FAINT,
+                        Palette::text_faint(),
                     );
                 }
                 if resp.clicked() && !fest {
