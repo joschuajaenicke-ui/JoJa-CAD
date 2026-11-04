@@ -38,6 +38,10 @@ label = "Import DXF"
 hint = "Insert a PDF page as one element (block, explodable)"
 label = "Insert PDF"
 
+[action.file.import_image]
+hint = "Insert a PNG or JPEG as an image"
+label = "Insert image"
+
 [action.file.export_png]
 hint = "Render the view as PNG"
 label = "Export PNG"
@@ -69,6 +73,10 @@ label = "Spline"
 [action.draw.rect]
 hint = "Click two corners"
 label = "Rectangle"
+
+[action.draw.image]
+hint = "Click two opposite corners"
+label = "Image"
 
 [action.draw.circle]
 hint = "Click centre and radius"
@@ -451,6 +459,7 @@ zoom = "Zoom"
 zwischenablage = "Clipboard"
 
 [ribbon]
+bild_einfuegen = "Insert image"
 block_from_selection = "From selection"
 block_insert = "Insert"
 block_manager = "Block manager"
@@ -705,6 +714,10 @@ auswahl_verschoben = "Selection · moved"
 auswahl_versetzt = "Selection · offset"
 auswahl_vor_ein_element = "Place the selection in front of an element — then click the element"
 auswahl_zerlegt = "Selection · exploded"
+bild_erste_ecke_klicken = "Image · click first corner"
+bild_gesetzt = "Image · placed"
+bild_x_ecken_klicken = "{name} · click the corners"
+bild_zweite_ecke_klicken = "Image · click second corner"
 blatt_das_letzte_bleibt_offen = "Sheet · the last one stays open"
 blatt_oeffnen_dann_zeichnen = "Open a sheet, then draw"
 blatt_zuerst_ein_blatt_oeffnen = "Sheet · open a sheet first"
@@ -1003,6 +1016,8 @@ bedienung = "Operation"
 belegung_nicht_gespeichert = "Assignment not saved"
 bemassung = "Dimensioning"
 bereit_x = "Ready: {name}"
+bild = "Image file"
+bild_einfuegen = "Insert image"
 bilder_transparenz_schattierungen_muster_und_beschnitt_u = "JoJa-CAD does not take over images, transparency, shading, patterns and clipping — they are counted and reported."
 bitte_einen_dateinamen_angeben = "Please enter a file name"
 blaetter = "Sheets"
@@ -1494,6 +1509,10 @@ endwinkel = "End angle"
 halbachse_x = "Semi-axis X"
 halbachse_y = "Semi-axis Y"
 wandton = "Wall tone"
+bild = "Image"
+datei = "File"
+keine_datei = "no file"
+
 
 [gui.textedit]
 esc_uebernimmt_hinweis = "Esc applies · Enter new line · right click cancels"

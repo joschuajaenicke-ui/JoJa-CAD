@@ -783,6 +783,20 @@ pub enum EntityKind {
         #[serde(default)]
         mirror: bool,
     },
+    /// Eingebettetes Bild (PNG oder JPEG).
+    ///
+    /// `a` und `b` sind zwei **gegenüberliegende Ecken** des Rechtecks, in das
+    /// das Bild gesetzt wird — der Import fragt genau diese beiden Punkte ab.
+    /// Die Bilddaten liegen als Base64 im Dokument, damit die Zeichnung ohne
+    /// die ursprüngliche Bilddatei gilt. `name` ist nur die Anzeige.
+    Image {
+        a: Vec2,
+        b: Vec2,
+        #[serde(default)]
+        name: String,
+        #[serde(default)]
+        data: String,
+    },
 }
 
 // ---------------------------------------------------------------------------
@@ -820,6 +834,9 @@ impl EntityKind {
     pub fn zeichenrang(&self) -> u8 {
         match self {
             EntityKind::Fill { .. } => RANG_FLAECHE,
+            // Ein Bild ist ein Hintergrund: es liegt hinter Flächen und Linien
+            // (eingescannte Pläne, Lagepläne), wie eine Füllfläche.
+            EntityKind::Image { .. } => RANG_FLAECHE,
             EntityKind::Volume { .. } => RANG_VOLUMEN,
             EntityKind::Wall { .. }
             | EntityKind::Door { .. }
@@ -903,6 +920,7 @@ impl EntityKind {
             EntityKind::Window { .. } => "Fenster",
             EntityKind::Stair { .. } => "Treppe",
             EntityKind::BlockRef { .. } => "Block",
+            EntityKind::Image { .. } => "Bild",
         }
     }
 
@@ -1874,6 +1892,8 @@ impl ObjektZaehlung {
                 EntityKind::Door { .. } => z.tueren += 1,
                 EntityKind::Window { .. } => z.fenster += 1,
                 EntityKind::BlockRef { .. } => z.blockinstanzen += 1,
+                // Bilder sind keine Architekturart — sie zählen zu „Sonstige“.
+                EntityKind::Image { .. } => z.sonstige += 1,
                 _ => z.sonstige += 1,
             }
         }

@@ -85,6 +85,14 @@ einsehbar und dort frei änderbar (Ribbon ▸ Ansicht ▸ „Tasten").
     Ebene kommen von der ersten. Getrennte Flächen melden einen Fehler, statt still zwei
     Flächen zu erzeugen.
 
+16. **Bild einfügen** (Ribbon ▸ Start ▸ Ausgabe ▸ „Bild einfügen"): PNG oder JPEG auswählen,
+    dann **zwei gegenüberliegende Ecken** des Rechtecks klicken — sie bestimmen Lage und Größe,
+    das Bild wird auf das Rechteck gestreckt. Die Bilddatei wird **in die Zeichnung
+    eingebettet** (Base64), die `.jjcad`-Datei bleibt also gültig, wenn die Vorlage verschoben
+    oder gelöscht wird. Das Bild liegt als Hintergrund hinter Flächen und Linien (eigene
+    Ebene „Bilder", soweit die Ebene nicht selbst gewählt wurde); seine vier Rahmenecken sind
+    Griffe, an denen es neu aufgespannt wird. Ein Bild lässt sich nicht zerlegen.
+
 Der Zeiger ist über der Zeichenfläche ein durchgehendes Fadenkreuz; der Systemzeiger wird dort
 ausgeblendet.
 
@@ -132,8 +140,9 @@ ausgeblendet.
   rechts **Minimieren**, **Vergrößern/Wiederherstellen** und **Schließen**; ein Zug auf die
   Kopfzeile verschiebt das Fenster, ein Doppelklick vergrößert bzw. stellt wieder her. Die
   **Größe** ändert ein Zug an den acht Pixel breiten Zonen am Fensterrand: der Zeiger wird dort
-  zum Größenpfeil und die Kante leuchtet auf; in der Ecke unten rechts steht ein sichtbarer
-  Griff. Die Ecke oben rechts gehört den Fensterknöpfen (kein Größe-Ziehen, sonst wäre
+  sofort zum Größenpfeil, die Kante leuchtet erst nach kurzem Verweilen auf (0,4 s — ein Zeiger,
+  der nur über den Rand streicht, soll nichts aufblitzen lassen); in der Ecke unten rechts steht
+  ein sichtbarer Griff. Die Ecke oben rechts gehört den Fensterknöpfen (kein Größe-Ziehen, sonst wäre
   „Schließen“ nicht zu treffen). Die Wahl steht in `prefs.json`
   (`fensterrahmen: system | ohne_titelleiste`) und wirkt beim Umschalten sofort, ohne Neustart.
 - **Dateireiter** (Streifen unter dem Ribbon, **zwei getrennte Bereiche**): links auf dunklem

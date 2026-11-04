@@ -53,6 +53,10 @@ label = "DXF importieren"
 hint = "PDF-Seite als ein Element einfügen (Block, zerlegbar)"
 label = "PDF einfügen"
 
+[action.file.import_image]
+hint = "PNG oder JPEG als Bild einsetzen"
+label = "Bild einfügen"
+
 [action.file.export_png]
 hint = "Ansicht als PNG rendern"
 label = "PNG exportieren"
@@ -84,6 +88,10 @@ label = "Spline"
 [action.draw.rect]
 hint = "Zwei Ecken klicken"
 label = "Rechteck"
+
+[action.draw.image]
+hint = "Zwei gegenüberliegende Ecken klicken"
+label = "Bild"
 
 [action.draw.circle]
 hint = "Mittelpunkt und Radius klicken"
@@ -466,6 +474,7 @@ zoom = "Zoom"
 zwischenablage = "Zwischenablage"
 
 [ribbon]
+bild_einfuegen = "Bild einfügen"
 block_from_selection = "Aus Auswahl"
 block_insert = "Einfügen"
 block_manager = "Block-Manager"
@@ -723,6 +732,10 @@ auswahl_verschoben = "Auswahl · verschoben"
 auswahl_versetzt = "Auswahl · versetzt"
 auswahl_vor_ein_element = "Auswahl vor ein Element setzen — danach das Element anklicken"
 auswahl_zerlegt = "Auswahl · zerlegt"
+bild_erste_ecke_klicken = "Bild · erste Ecke klicken"
+bild_gesetzt = "Bild · gesetzt"
+bild_x_ecken_klicken = "{name} · Ecken klicken"
+bild_zweite_ecke_klicken = "Bild · zweite Ecke klicken"
 blatt_das_letzte_bleibt_offen = "Blatt · das letzte bleibt offen"
 blatt_oeffnen_dann_zeichnen = "Blatt öffnen, dann zeichnen"
 blatt_zuerst_ein_blatt_oeffnen = "Blatt · zuerst ein Blatt öffnen"
@@ -1021,6 +1034,8 @@ bedienung = "Bedienung"
 belegung_nicht_gespeichert = "Belegung nicht gespeichert"
 bemassung = "Bemaßung"
 bereit_x = "Bereit: {name}"
+bild = "Bilddatei"
+bild_einfuegen = "Bild einfügen"
 bilder_transparenz_schattierungen_muster_und_beschnitt_u = "Bilder, Transparenz, Schattierungen, Muster und Beschnitt übernimmt JoJa-CAD nicht — sie werden gezählt und gemeldet."
 bitte_einen_dateinamen_angeben = "Bitte einen Dateinamen angeben"
 blaetter = "Blätter"
@@ -1518,6 +1533,10 @@ halbachse_x = "Halbachse X"
 halbachse_y = "Halbachse Y"
 
 wandton = "Wandton"
+bild = "Bild"
+datei = "Datei"
+keine_datei = "keine Datei"
+
 
 [gui.textedit]
 esc_uebernimmt_hinweis = "Esc übernimmt · Enter neue Zeile · Rechtsklick bricht ab"
