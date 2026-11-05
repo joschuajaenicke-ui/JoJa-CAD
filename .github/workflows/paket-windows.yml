@@ -22,8 +22,9 @@ jobs:
       - name: Build-Zwischenspeicher
         uses: Swatinem/rust-cache@v2
 
+      # Programm und MCP-Server gehören beide ins Paket.
       - name: Bauen
-        run: cargo build --release -p jjcad-gui
+        run: cargo build --release -p jjcad-gui -p jjcad-mcp
 
       - name: Paket schnüren
         shell: pwsh
@@ -32,12 +33,11 @@ jobs:
           $name = "JoJa-CAD-$version-windows-x64"
           New-Item -ItemType Directory -Path $name | Out-Null
           Copy-Item target/release/jjcad.exe $name
+          Copy-Item target/release/jjcad-mcp.exe $name
           Copy-Item LICENSE, README.md $name
           New-Item -ItemType Directory -Path "$name/fonts" | Out-Null
           Copy-Item packaging/fonts/*.ttf "$name/fonts/"
           Copy-Item packaging/fonts/*.txt "$name/fonts/"
-          New-Item -ItemType Directory -Path "$name/samples" | Out-Null
-          Copy-Item samples/*.jjcad "$name/samples/"
 
           # Prüfen, dass Symbol und Versionsangaben wirklich in der .exe stecken
           $vi = (Get-Item "$name/jjcad.exe").VersionInfo
