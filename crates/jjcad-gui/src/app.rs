@@ -5885,6 +5885,50 @@ fn rail(ui: &mut egui::Ui, icon: &str, tooltip: &str, chevron: &str) -> bool {
         true
     }
 
+    /// Verknüpft den laufenden Block mit einer Taste der Tastaturbelegung
+    /// (T0116) — dieselbe Geste wie Hotbar-Slot und Lagerplatz.
+    ///
+    /// Gesperrte Tasten (Ziffern, `Esc`, `F1` …) lehnt `UserPrefs::bind` ab;
+    /// das Tastenbild nimmt sie ohnehin nicht an.
+    pub fn bind_key_block(&mut self, key: &str) -> bool {
+        let Some(block) = self.block_einfuegen().map(str::to_string) else {
+            return false;
+        };
+        let name = self.block_name(&block);
+        self.prefs.bind(&format!("block:{block}"), key);
+        let _ = self.prefs.save();
+        self.ghost = None;
+        self.ui.keymap_selected = Some(key.to_lowercase());
+        self.toast(jjcad_core::i18n::t_args_owned(
+            "gui.dialogs.x_taste_x",
+            &[("name", name), ("wert1", key.to_uppercase())],
+        ));
+        true
+    }
+
+    /// Block zu einem Slot-Inhalt (`block:<id>`) — für die Miniaturaansicht
+    /// im Slot, im Lager und im Tastenbild (T0116). `None` bei Werkzeugen und
+    /// bei Blöcken, die die Bibliothek nicht mehr kennt.
+    pub fn slot_block(&self, item: &str) -> Option<(&jjcad_core::model::Document, &jjcad_core::model::BlockDef)> {
+        let id = item.strip_prefix("block:")?;
+        let doc = self.doc();
+        doc.blocks.iter().find(|b| b.id == id).map(|b| (doc, b))
+    }
+
+    /// Beschriftung eines Slot-Inhalts: Werkzeugname oder Blockname (T0116).
+    ///
+    /// Ein Slot, eine Taste und ein Lagerplatz tragen entweder eine Action-ID
+    /// oder `block:<id>` — beides muss lesbar benannt sein, sonst stünde in
+    /// Tooltip und Meldung nur die Kennung.
+    pub fn slot_label(&self, item: &str) -> String {
+        if let Some(id) = item.strip_prefix("block:") {
+            return self.block_name(id);
+        }
+        jjcad_core::actions::action(item)
+            .map(|d| d.label().to_string())
+            .unwrap_or_else(|| jjcad_core::i18n::tr("gui.hotbar.werkzeug").to_string())
+    }
+
     /// Startet die Vorschau für das Einfügen aus der Zwischenablage.
     ///
     /// Der Drehpunkt kommt aus den Einstellungen (T0070): „Basispunkt" (Vorgabe)

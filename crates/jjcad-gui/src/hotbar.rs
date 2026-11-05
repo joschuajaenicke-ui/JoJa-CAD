@@ -143,6 +143,7 @@ pub fn show(app: &mut App, ui: &mut Ui) {
                     .unwrap_or(false);
                 let highlight = app.ui.bind_slot == Some(i);
                 let key = slot_taste(i);
+                let block = action.as_deref().and_then(|a| app.slot_block(a));
                 let resp = widgets::slot_button(
                     ui,
                     Vec2::splat(SLOT),
@@ -150,6 +151,7 @@ pub fn show(app: &mut App, ui: &mut Ui) {
                     Some(&key),
                     active,
                     highlight,
+                    block,
                 );
 
                 // T0101: Ein gedrückt gehaltener Schwenk-Slot bewegt die Ansicht
@@ -175,7 +177,7 @@ pub fn show(app: &mut App, ui: &mut Ui) {
                     } else if let Some(t) = app.tool.clone() {
                         app.bind_slot_action(i, Some(t.action.clone()));
                         app.tool = None;
-                        app.toast(jjcad_core::i18n::t_args_owned("gui.hotbar.x_auf_slot_x_gelegt", &[("wert1", format!("{}", label_of(app, &t.action))), ("wert2", format!("{}", i + 1))]));
+                        app.toast(jjcad_core::i18n::t_args_owned("gui.hotbar.x_auf_slot_x_gelegt", &[("wert1", format!("{}", app.slot_label(&t.action))), ("wert2", format!("{}", i + 1))]));
                     } else {
                         app.ui.bind_slot = Some(i);
                         app.ui.inventory_open = true;
@@ -192,7 +194,7 @@ pub fn show(app: &mut App, ui: &mut Ui) {
                 // Tooltip nennt Werkzeug oder Block (T0116): ein Slot mit Block
                 // zeigt sonst nur das allgemeine Blocksymbol.
                 if let Some(a) = &action {
-                    resp.clone().on_hover_text(label_of(app, a));
+                    resp.clone().on_hover_text(app.slot_label(a));
                 }
 
                 // Ziehen
@@ -421,7 +423,15 @@ pub fn show(app: &mut App, ui: &mut Ui) {
             );
             ui.painter()
                 .rect_stroke(r, Rounding::same(9.0), Stroke::new(1.0, Palette::accent()));
-            if let Some(def) = jjcad_core::actions::action(&a) {
+            if let Some((doc, b)) = app.slot_block(&a) {
+                crate::inventory::draw_block_preview(
+                    ui.painter(),
+                    r.shrink(8.0),
+                    doc,
+                    b,
+                    Palette::accent(),
+                );
+            } else if let Some(def) = jjcad_core::actions::action(&a) {
                 crate::icons::paint(ui.painter(), r.shrink(8.0), def.icon, Palette::accent());
             }
         }
@@ -566,19 +576,6 @@ pub fn auswahl_fenster(app: &mut App, ctx: &egui::Context) {
     if !offen {
         app.ui.hotbar_picker_open = false;
     }
-}
-
-/// Beschriftung eines Slot-Inhalts: Werkzeugname oder Blockname (T0116).
-///
-/// Ein Slot trägt entweder eine Action-ID oder `block:<id>` — beides muss
-/// lesbar benannt sein, sonst steht im Tooltip nur „Werkzeug“.
-fn label_of(app: &App, item: &str) -> String {
-    if let Some(id) = item.strip_prefix("block:") {
-        return app.block_name(id);
-    }
-    jjcad_core::actions::action(item)
-        .map(|d| d.label().to_string())
-        .unwrap_or_else(|| jjcad_core::i18n::tr("gui.hotbar.werkzeug").to_string())
 }
 
 #[cfg(test)]
