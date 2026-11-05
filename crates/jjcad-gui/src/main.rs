@@ -42,6 +42,9 @@ fn main() -> eframe::Result<()> {
             .with_title(app::window_title())
             // Ohne Titelleiste: Knöpfe und Ziehen zeichnet die Anwendung selbst
             .with_decorations(titelleiste)
+            // Dateien dürfen ins Fenster gezogen werden (T0115). Unter
+            // Windows ist das standardmäßig aus, deshalb ausdrücklich an.
+            .with_drag_and_drop(true)
             // Fenstername für Taskleiste und Startmenü (KDE/GNOME ordnen das
             // Fenster über den .desktop-Eintrag „jjcad“ zu)
             .with_app_id("jjcad")
