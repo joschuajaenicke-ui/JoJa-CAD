@@ -36,6 +36,8 @@ jobs:
           New-Item -ItemType Directory -Path "$name/fonts" | Out-Null
           Copy-Item packaging/fonts/*.ttf "$name/fonts/"
           Copy-Item packaging/fonts/*.txt "$name/fonts/"
+          New-Item -ItemType Directory -Path "$name/samples" | Out-Null
+          Copy-Item samples/*.jjcad "$name/samples/"
 
           # Prüfen, dass Symbol und Versionsangaben wirklich in der .exe stecken
           $vi = (Get-Item "$name/jjcad.exe").VersionInfo
