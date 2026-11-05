@@ -611,8 +611,13 @@ pub(crate) fn text_galley(
     scale: f64,
     col: Color32,
 ) -> std::sync::Arc<egui::Galley> {
-    let size = (t.height * scale * render::TEXT_GROESSE_FAKTOR).max(3.0) as f32;
-    satz(p.ctx(), t, size, col)
+    let gewuenscht = (t.height * scale * render::TEXT_GROESSE_FAKTOR).max(3.0) as f32;
+    // Rastergröße gedeckelt und auf die Größenleiter gelegt, den Rest streckt
+    // die Galley (T0114) — sonst rastet egui jede Zoomstufe in den gemeinsamen
+    // Schriftatlas und der Text friert im hohen Zoom ein.
+    let (raster, faktor) = crate::textgroesse::raster_und_skalierung(gewuenscht);
+    let galley = satz(p.ctx(), t, raster, col);
+    crate::textgroesse::skaliere(galley, faktor)
 }
 
 /// Satz eines Textprims in einer Schriftgröße (px) — ohne Maler.
@@ -11066,5 +11071,126 @@ mod tests_textrahmen {
             (rahmen_sans - rahmen_din).abs() > 5.0,
             "Serifenlos {rahmen_sans:.1} und DIN 1451 {rahmen_din:.1} sind gleich hoch"
         );
+    }
+}
+
+#[cfg(test)]
+mod tests_textzoom {
+    //! T0114: Schrift im hohen Zoom — Rasterdeckel, Größenleiter und Atlas.
+    //!
+    //! Gemessen wird über `canvas::text_galley`, also genau den Weg, den die
+    //! Zeichenfläche geht (Satz + Streckung). Die Gegenprobe ist
+    //! `textgroesse::raster_und_skalierung` auf die alte Rasterung
+    //! zurückzusetzen: dann fällt `zoomlauf_haelt_den_schriftatlas_klein` und
+    //! `text_waechst_ueber_620_prozent_hinaus` (Atlas läuft über, Galley bleibt
+    //! bei 2048 px stehen).
+
+    use super::*;
+
+    fn ctx() -> egui::Context {
+        let ctx = egui::Context::default();
+        crate::theme::install(&ctx);
+        let _ = ctx.run(Default::default(), |_| {});
+        ctx
+    }
+
+    fn prim(text: &str, height: f64) -> render::TextPrim {
+        render::TextPrim {
+            pos: V2::ZERO,
+            text: text.to_string(),
+            height,
+            angle: 0.0,
+            align: TextAlignH::Left,
+            valign: TextAlignV::Middle,
+            bold: false,
+            italic: false,
+            underline: false,
+            superscript: false,
+            runs: Vec::new(),
+            font: jjcad_core::model::TextFont::default(),
+            line_spacing: 1.0,
+        }
+    }
+
+    fn maler(ctx: &egui::Context) -> egui::Painter {
+        egui::Painter::new(
+            ctx.clone(),
+            egui::LayerId::new(egui::Order::Background, egui::Id::new("textzoom")),
+            Rect::EVERYTHING,
+        )
+    }
+
+    /// Die gezeichnete Schrift wächst über den 620-%-Deckel hinaus.
+    ///
+    /// Vorher deckelte epaint die Rastergröße hart auf 2048 px: bei 250 mm Text
+    /// war das 620 % Zoom, darüber blieb die Galley stehen. Jetzt wächst die
+    /// Streckung weiter.
+    #[test]
+    fn text_waechst_ueber_620_prozent_hinaus() {
+        let ctx = ctx();
+        let p = maler(&ctx);
+        let t = prim("Wohnen 12,4", 250.0);
+        let hoehe = |zoom: f64| text_galley(&p, &t, zoom, Color32::WHITE).size().y;
+        let (h6, h10, h20) = (hoehe(6.0), hoehe(10.0), hoehe(20.0));
+        assert!(h6 > 1000.0, "600 %: nur {h6} px hoch");
+        assert!(
+            h10 > h6 * 1.5,
+            "1000 %: {h10} px gegen {h6} px bei 600 % — die Schrift wächst nicht"
+        );
+        assert!(
+            h20 > h10 * 1.5,
+            "2000 %: {h20} px gegen {h10} px bei 1000 % — die Schrift wächst nicht"
+        );
+    }
+
+    /// Der Schriftatlas bleibt beim Zoomen klein.
+    ///
+    /// Ein Zoomlauf über den ganzen Bereich mit vielen Texten darf ihn höchstens
+    /// zur Hälfte füllen; vorher lief er über (fill_ratio 1,0) und egui baute
+    /// ihn mit einer 268-MB-Kopie neu.
+    #[test]
+    fn zoomlauf_haelt_den_schriftatlas_klein() {
+        let ctx = ctx();
+        let p = maler(&ctx);
+        let mut fuellstand = 0.0_f32;
+        for zoom in [
+            0.05, 0.1, 0.25, 0.5, 1.0, 2.0, 3.0, 4.0, 6.0, 8.0, 10.0, 15.0, 20.0,
+        ] {
+            for i in 0..64 {
+                let t = prim(&format!("Wohnen {i} 12,4 m²"), 250.0);
+                let _ = text_galley(&p, &t, zoom, Color32::WHITE);
+            }
+            fuellstand = fuellstand.max(ctx.fonts(|f| f.font_atlas_fill_ratio()));
+        }
+        assert!(
+            fuellstand < 0.5,
+            "Schriftatlas zu {:.0} % voll",
+            fuellstand * 100.0
+        );
+    }
+
+    /// Die gestreckte Galley ist so groß wie der Rahmen — der Deckel verkleinert
+    /// die Darstellung nicht, er verschiebt nur die Rasterung.
+    #[test]
+    fn gestreckte_schrift_bleibt_so_gross_wie_der_rahmen() {
+        let ctx = ctx();
+        let p = maler(&ctx);
+        // Kleine Höhen (2,5 mm) sind bei 1 px/mm nur 3 px groß — dort rundet
+        // egui je Zeichen auf ganze Bildpunkte, und der Vergleich wäre eine
+        // Aussage über die Rundung, nicht über den Deckel.
+        for height in [40.0, 250.0, 1000.0] {
+            let t = prim("Wohnen 12,4", height);
+            let g = text_galley(&p, &t, 1.0, Color32::WHITE);
+            let (w, h) = t.box_size();
+            let (gw, gh) = (g.size().x as f64, g.size().y as f64);
+            assert!(
+                (gh - h).abs() <= h * 0.02 + 1.0,
+                "{height} mm: Schrift {gh:.1} hoch, Rahmen {h:.1}"
+            );
+            assert!(
+                (gw - w).abs() <= w * 0.03 + 1.0,
+                "{height} mm: Schrift {gw:.1} breit, Rahmen {w:.1}"
+            );
+        }
     }
 }

@@ -1373,6 +1373,18 @@ impl App {
                     v.rotate_about(mitte, 30f64.to_radians());
                     self.set_view(v);
                 }
+                // Zoomstufe in Prozent (`zoom:600`) — Prüfbilder der Schrift im
+                // hohen Zoom (T0114).
+                s if s.starts_with("zoom:") => {
+                    if let Ok(prozent) = s[5..].trim().parse::<f64>() {
+                        let mut v = self.current_view();
+                        v.zoom = (prozent / 100.0).clamp(1e-5, 80.0);
+                        self.set_view(v);
+                        // Die ersten Bilder passen sonst selbst ein und
+                        // überschreiben die Zoomstufe.
+                        self.started_at = 3.0;
+                    }
+                }
                 "vollbild" | "fullscreen" => self.ui.fullscreen = true,
                 "aendern" | "change" => self.ui.ribbon = RibbonTab::Aendern,
                 "inv" | "inventar" => self.ui.inventory_open = true,

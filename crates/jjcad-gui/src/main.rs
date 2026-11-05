@@ -21,6 +21,7 @@ mod perf;
 mod props;
 mod systemdialog;
 mod textedit;
+mod textgroesse;
 mod theme;
 mod widgets;
 

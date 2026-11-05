@@ -399,8 +399,13 @@ pub fn show(app: &mut App, ui: &mut Ui, rect: Rect, view: View) {
         None => return,
     };
 
-    // Genau die Schrift der Zeichnung (`canvas::paint_text`): Höhe × Zoom × 1,32.
-    let size = (t.height * view.zoom * render::TEXT_GROESSE_FAKTOR).max(3.0) as f32;
+    // Genau die Schrift der Zeichnung (`canvas::paint_text`): Höhe × Zoom × 1,32,
+    // gerastert höchstens in der Deckelgröße und auf die Größenleiter gelegt
+    // (T0114). Den Rest holt die Skalierung des ganzen Feldes — sonst rastet
+    // egui beim Tippen im hohen Zoom jede Größe in den gemeinsamen
+    // Schriftatlas und der Text friert ein.
+    let gewuenscht = (t.height * view.zoom * render::TEXT_GROESSE_FAKTOR).max(3.0) as f32;
+    let (size, faktor) = crate::textgroesse::raster_und_skalierung(gewuenscht);
     // Die Schrift des Textes auch für das Feld: egui nimmt sie für die
     // Zeilenhöhe der leeren Zeile (Cursorstand). Mit der Ersatzschrift stand
     // der Cursor eines leeren Textes neben dem Anker (T0110).
@@ -490,6 +495,16 @@ pub fn show(app: &mut App, ui: &mut Ui, rect: Rect, view: View) {
     };
     let lage = feld_lage(anker, t.align, t.valign, textbreite, block_h);
 
+    // Das Feld wird um den Anker gestreckt (T0114): gerastert ist es in der
+    // Leiterstufe, angezeigt in voller Bildschirmgröße. `TSTransform` bildet
+    // `p` auf `p · f + t` ab; mit `t = Anker · (1 − f)` bleibt der Anker stehen
+    // und die Lage aus `feld_lage` gilt unverändert (nur eben gestreckt).
+    let transform = if (faktor - 1.0).abs() < 1e-3 {
+        egui::emath::TSTransform::IDENTITY
+    } else {
+        egui::emath::TSTransform::new(anker.to_vec2() * (1.0 - faktor), faktor)
+    };
+
     egui::Area::new(Id::new("texteingabe"))
         .order(egui::Order::Foreground)
         // Die Ausrichtung gilt schon beim Schreiben: „Zentriert" wächst nach
@@ -502,7 +517,15 @@ pub fn show(app: &mut App, ui: &mut Ui, rect: Rect, view: View) {
             // Ebenen-Panel und Eigenschaften (T0047). Die Zeichnung selbst
             // endet an derselben Kante — nach dem Übernehmen sieht der Text
             // also genauso aus.
-            ui.set_clip_rect(ui.clip_rect().intersect(rect));
+            // Der Beschnitt wird von der Ebenen-Transformation mitgestreckt;
+            // deshalb die Zeichenfläche vorher in die unskalierte Ebene
+            // zurückrechnen — sonst hinge der Text über Ribbon und Panels.
+            let beschnitt = if transform == egui::emath::TSTransform::IDENTITY {
+                rect
+            } else {
+                transform.inverse() * rect
+            };
+            ui.set_clip_rect(beschnitt);
             // Keine Fläche, kein Rahmen: der Text steht frei in der Zeichnung
             // und sieht während der Eingabe genauso aus wie danach.
             ui.visuals_mut().text_cursor.stroke = Stroke::new(1.5_f32, Palette::accent());
@@ -526,7 +549,9 @@ pub fn show(app: &mut App, ui: &mut Ui, rect: Rect, view: View) {
                 resp.request_focus();
                 t.fokus = false;
             }
-            t.flaeche = Some(resp.rect.expand(2.0));
+            // Die Fläche für „Klick daneben" in Bildschirmkoordinaten: der
+            // Zeiger kommt unskaliert, das Feld ist gestreckt (T0114).
+            t.flaeche = Some(transform * resp.rect.expand(2.0));
             // Hinweis nur solange nichts getippt ist: beim Schreiben soll nur
             // der Text dastehen. Er steht unter dem Text, nicht dahinter.
             if t.text.is_empty() {
@@ -537,6 +562,14 @@ pub fn show(app: &mut App, ui: &mut Ui, rect: Rect, view: View) {
                 );
             }
         });
+
+    // Die Ebene des Feldes strecken (T0114): gerastert in der Leiterstufe,
+    // angezeigt in voller Größe. egui rechnet Zeigerpositionen über die
+    // Transformation zurück — Klicks und Cursor sitzen damit richtig.
+    ctx.set_transform_layer(
+        egui::LayerId::new(egui::Order::Foreground, Id::new("texteingabe")),
+        transform,
+    );
 
     // Eingefügte Zeichen tragen jetzt die vorgemerkte Auszeichnung.
     if t.text != text_vorher {
@@ -1332,15 +1365,21 @@ mod tests_lage_beim_bearbeiten {
         let bearbeitet = kasten(&gemalt(&mut app, &ctx, 1.3), text);
 
         let name = format!("{text:?} {}/{}", align.label(), valign.label());
+        // Toleranz 1,5 px statt 0,6: das Feld setzt **linksbündig** (T0028,
+        // Turn 2), die Zeichnung nach `halign`. egui rundet jede Zeichenposition
+        // auf ganze Bildpunkte; bei verschiedenem Zeilenursprung weichen die
+        // Breiten deshalb um bis zu einen Bildpunkt ab, und die Streckung der
+        // Rastergröße (T0114) vervielfacht diesen einen Punkt. Ein echter
+        // Versatz (der gemeldete Fehler) lag bei einer halben Zeilenhöhe.
         assert!(
-            (bearbeitet.left() - gezeichnet.left()).abs() < 0.6,
+            (bearbeitet.left() - gezeichnet.left()).abs() < 1.5,
             "{name}: waagerecht {:.2} px daneben (bearbeitet {:?}, gezeichnet {:?})",
             bearbeitet.left() - gezeichnet.left(),
             bearbeitet,
             gezeichnet
         );
         assert!(
-            (bearbeitet.top() - gezeichnet.top()).abs() < 0.6,
+            (bearbeitet.top() - gezeichnet.top()).abs() < 1.5,
             "{name}: senkrecht {:.2} px daneben (bearbeitet {:?}, gezeichnet {:?})",
             bearbeitet.top() - gezeichnet.top(),
             bearbeitet,
