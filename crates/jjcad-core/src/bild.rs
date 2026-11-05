@@ -144,6 +144,19 @@ pub fn lade_datei(pfad: &Path) -> Result<(String, String), String> {
     Ok((name, base64_kodiere(&daten)))
 }
 
+/// PNG-Daten aus rohen RGBA-Pixeln (4 Byte je Punkt, Zeile 0 oben).
+///
+/// Für Bilder, die nicht als Datei vorliegen — etwa ein Screenshot aus der
+/// Zwischenablage (T0112). Das Ergebnis hat dieselbe Form wie bei
+/// [`lade_datei`]: Anzeigename und Base64-Daten für `EntityKind::Image`.
+pub fn aus_rgba(breite: u32, hoehe: u32, rgba: &[u8]) -> Result<(String, String), String> {
+    if breite == 0 || hoehe == 0 {
+        return Err("Das Bild hat keine Fläche.".to_string());
+    }
+    let png = crate::raster::rgba_png(breite, hoehe, rgba)?;
+    Ok(("Zwischenablage.png".to_string(), base64_kodiere(&png)))
+}
+
 /// Zerlegt PNG- oder JPEG-Daten in RGBA-Pixel.
 pub fn zerlege(daten: &[u8]) -> Result<Bild, String> {
     let img = image::load_from_memory(daten).map_err(|e| e.to_string())?;
@@ -310,6 +323,31 @@ mod tests {
         assert!(p[0] > 200 && p[1] < 80 && p[2] < 80, "rot erwartet, war {p:?}");
         let g = bild.pixel(1, 0);
         assert!(g[1] > 200 && g[0] < 80, "grün erwartet, war {g:?}");
+    }
+
+    /// T0112: ein Bild aus der Zwischenablage liegt nur als Pixel vor — daraus
+    /// muss derselbe einbettbare Datensatz werden wie aus einer Datei.
+    #[test]
+    fn aus_pixeln_wird_ein_einbettbares_png() {
+        // 2×2: rot, grün / blau, weiß
+        let rgba = [
+            255, 0, 0, 255, 0, 255, 0, 255, 0, 0, 255, 255, 255, 255, 255, 255,
+        ];
+        let (name, data) = aus_rgba(2, 2, &rgba).expect("PNG aus Pixeln");
+        assert_eq!(name, "Zwischenablage.png");
+        let bild = dekodiere(&data).expect("zurückgelesen");
+        assert_eq!((bild.breite, bild.hoehe), (2, 2));
+        assert_eq!(bild.pixel(0, 0), [255, 0, 0, 255], "links oben rot");
+        assert_eq!(bild.pixel(1, 1), [255, 255, 255, 255], "rechts unten weiß");
+    }
+
+    #[test]
+    fn unvollstaendige_pixel_werden_abgelehnt() {
+        assert!(aus_rgba(0, 0, &[]).is_err(), "ohne Fläche kein Bild");
+        assert!(
+            aus_rgba(2, 2, &[0; 4]).is_err(),
+            "zu wenige Bytes dürfen kein halbes Bild ergeben"
+        );
     }
 
     #[test]
