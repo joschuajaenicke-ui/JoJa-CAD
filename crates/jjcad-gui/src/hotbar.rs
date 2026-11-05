@@ -131,9 +131,15 @@ pub fn show(app: &mut App, ui: &mut Ui) {
             let mut slots_ist: Option<Rect> = None;
             for i in 0..n {
                 let action = slots.get(i).cloned().flatten();
+                // Ein Slot mit Block ist „aktiv“, solange genau dieser Block
+                // eingefügt wird (T0116) — dieselbe Hervorhebung wie beim
+                // laufenden Werkzeug.
                 let active = action
                     .as_ref()
-                    .map(|a| app.tool_id() == Some(a.as_str()))
+                    .map(|a| match a.strip_prefix("block:") {
+                        Some(id) => app.block_einfuegen() == Some(id),
+                        None => app.tool_id() == Some(a.as_str()),
+                    })
                     .unwrap_or(false);
                 let highlight = app.ui.bind_slot == Some(i);
                 let key = slot_taste(i);
@@ -157,12 +163,19 @@ pub fn show(app: &mut App, ui: &mut Ui) {
 
                 // Klick: starten oder belegen
                 if resp.clicked() {
-                    if let Some(a) = &action {
+                    // T0116: Läuft das Einfügen eines Blocks, verknüpft der
+                    // Klick den Slot mit diesem Block — dieselbe Geste, mit
+                    // der ein laufendes Werkzeug einen Slot belegt. Der Klick
+                    // startet den Slot dabei **nicht**; sonst wäre die
+                    // Vorschau weg, bevor der Nutzer sie ablegen kann.
+                    if app.bind_slot_block(i) {
+                        // Meldung und Beenden des Einfügens macht der Aufruf.
+                    } else if let Some(a) = &action {
                         app.activate(ui.ctx(), a);
                     } else if let Some(t) = app.tool.clone() {
                         app.bind_slot_action(i, Some(t.action.clone()));
                         app.tool = None;
-                        app.toast(jjcad_core::i18n::t_args_owned("gui.hotbar.x_auf_slot_x_gelegt", &[("wert1", format!("{}", label_of(&t.action))), ("wert2", format!("{}", i + 1))]));
+                        app.toast(jjcad_core::i18n::t_args_owned("gui.hotbar.x_auf_slot_x_gelegt", &[("wert1", format!("{}", label_of(app, &t.action))), ("wert2", format!("{}", i + 1))]));
                     } else {
                         app.ui.bind_slot = Some(i);
                         app.ui.inventory_open = true;
@@ -174,6 +187,12 @@ pub fn show(app: &mut App, ui: &mut Ui) {
                 // Mittlere Maustaste: leeren
                 if resp.clicked_by(egui::PointerButton::Middle) {
                     app.bind_slot_action(i, None);
+                }
+
+                // Tooltip nennt Werkzeug oder Block (T0116): ein Slot mit Block
+                // zeigt sonst nur das allgemeine Blocksymbol.
+                if let Some(a) = &action {
+                    resp.clone().on_hover_text(label_of(app, a));
                 }
 
                 // Ziehen
@@ -549,10 +568,17 @@ pub fn auswahl_fenster(app: &mut App, ctx: &egui::Context) {
     }
 }
 
-fn label_of(action: &str) -> &'static str {
-    jjcad_core::actions::action(action)
-        .map(|d| d.label())
-        .unwrap_or(jjcad_core::i18n::tr("gui.hotbar.werkzeug"))
+/// Beschriftung eines Slot-Inhalts: Werkzeugname oder Blockname (T0116).
+///
+/// Ein Slot trägt entweder eine Action-ID oder `block:<id>` — beides muss
+/// lesbar benannt sein, sonst steht im Tooltip nur „Werkzeug“.
+fn label_of(app: &App, item: &str) -> String {
+    if let Some(id) = item.strip_prefix("block:") {
+        return app.block_name(id);
+    }
+    jjcad_core::actions::action(item)
+        .map(|d| d.label().to_string())
+        .unwrap_or_else(|| jjcad_core::i18n::tr("gui.hotbar.werkzeug").to_string())
 }
 
 #[cfg(test)]
@@ -586,6 +612,206 @@ mod tests_slot_tasten {
         }
         assert_eq!(slot_taste(0), "1", "erster Slot trägt die 1");
         assert_eq!(slot_taste(9), "0", "letzter Slot trägt die 0");
+    }
+}
+
+#[cfg(test)]
+mod tests_block_slot {
+    //! T0116: Ein Block aus der Bibliothek lässt sich auf einen Hotbar-Slot
+    //! legen — dieselbe Geste wie bei einem Werkzeug: läuft das Einfügen, nimmt
+    //! der angeklickte Slot den Block auf.
+    //!
+    //! Geprüft wird über echte Zeigerereignisse auf die **gezeichneten** Slots
+    //! (`UiState::last_slots`), nicht über einen Aufruf von `bind_slot_block`:
+    //! sonst bliebe ein fehlender Mauszweig unbemerkt.
+
+    use super::*;
+    use crate::dialogs::tests_tastatur::{WegwerfKonfig, KONFIG};
+
+    thread_local! {
+        /// egui-Zeit je Testfaden — ein prozessweiter Zähler ließ Klicks im
+        /// Parallelauf verfallen (siehe T0076).
+        static ZEIT: std::cell::Cell<f64> = const { std::cell::Cell::new(0.0) };
+    }
+
+    fn naechste_zeit() -> f64 {
+        ZEIT.with(|z| {
+            let t = z.get() + 0.25;
+            z.set(t);
+            t
+        })
+    }
+
+    fn rahmen(app: &mut App, ctx: &egui::Context, ereignisse: Vec<egui::Event>) {
+        let raw = egui::RawInput {
+            screen_rect: Some(Rect::from_min_size(Pos2::ZERO, Vec2::new(1500.0, 950.0))),
+            time: Some(naechste_zeit()),
+            predicted_dt: 0.016,
+            events: ereignisse,
+            ..Default::default()
+        };
+        let _ = ctx.run(raw, |ctx| app.ui(ctx));
+    }
+
+    fn klick(app: &mut App, ctx: &egui::Context, pos: Pos2) {
+        let knopf = |pressed| egui::Event::PointerButton {
+            pos,
+            button: egui::PointerButton::Primary,
+            pressed,
+            modifiers: egui::Modifiers::NONE,
+        };
+        rahmen(app, ctx, vec![egui::Event::PointerMoved(pos)]);
+        rahmen(app, ctx, vec![knopf(true)]);
+        rahmen(app, ctx, vec![knopf(false)]);
+        rahmen(app, ctx, Vec::new());
+    }
+
+    /// Lage eines einzelnen Slots aus der gezeichneten Gesamtfläche — die
+    /// Slots stehen lückenlos mit `ABSTAND` dazwischen.
+    fn slot_rect(app: &App, i: usize) -> Rect {
+        let u = app.ui.last_slots.expect("Hotbar-Slots gezeichnet");
+        Rect::from_min_size(
+            Pos2::new(u.left() + i as f32 * (SLOT + ABSTAND), u.top()),
+            Vec2::splat(SLOT),
+        )
+    }
+
+    fn app_mit_leiste() -> (App, egui::Context) {
+        let ctx = egui::Context::default();
+        let mut app = App::with_ctx(ctx.clone());
+        for _ in 0..3 {
+            rahmen(&mut app, &ctx, Vec::new());
+        }
+        (app, ctx)
+    }
+
+    fn erster_block(app: &App) -> String {
+        app.doc()
+            .blocks
+            .first()
+            .map(|b| b.id.clone())
+            .expect("die Zeichnung bringt Systemblöcke mit")
+    }
+
+    #[test]
+    fn klick_auf_slot_verknuepft_den_laufenden_block() {
+        let _sperre = KONFIG.lock().unwrap_or_else(|e| e.into_inner());
+        let _konfig = WegwerfKonfig::neu("t0116-block-slot");
+        let (mut app, ctx) = app_mit_leiste();
+        let block = erster_block(&app);
+        app.prefs.set_slot(2, None);
+        app.start_ghost_block(block.clone());
+        rahmen(&mut app, &ctx, Vec::new());
+
+        let ziel = slot_rect(&app, 2).center();
+        klick(&mut app, &ctx, ziel);
+
+        assert_eq!(
+            app.prefs.slots()[2].as_deref(),
+            Some(format!("block:{block}").as_str()),
+            "der Klick auf den Slot hat den Block nicht verknüpft"
+        );
+        assert!(
+            app.ghost.is_none(),
+            "nach dem Verknüpfen läuft das Einfügen weiter — wie beim Werkzeug \
+             muss es beendet sein"
+        );
+        assert_eq!(app.tool_id(), None, "der Klick hat ein Werkzeug gestartet");
+    }
+
+    #[test]
+    fn klick_auf_belegten_slot_ersetzt_dessen_funktion_durch_den_block() {
+        let _sperre = KONFIG.lock().unwrap_or_else(|e| e.into_inner());
+        let _konfig = WegwerfKonfig::neu("t0116-block-slot-belegt");
+        let (mut app, ctx) = app_mit_leiste();
+        let block = erster_block(&app);
+        app.prefs.set_slot(4, Some("draw.wall".into()));
+        app.start_ghost_block(block.clone());
+        rahmen(&mut app, &ctx, Vec::new());
+
+        let ziel = slot_rect(&app, 4).center();
+        klick(&mut app, &ctx, ziel);
+
+        assert_eq!(
+            app.prefs.slots()[4].as_deref(),
+            Some(format!("block:{block}").as_str()),
+            "der belegte Slot behält seine alte Funktion statt den Block zu tragen"
+        );
+        assert_eq!(
+            app.tool_id(),
+            None,
+            "der Klick hat die alte Funktion des Slots gestartet statt zu verknüpfen"
+        );
+    }
+
+    #[test]
+    fn ohne_block_einfuegen_startet_der_slot_wie_bisher() {
+        let _sperre = KONFIG.lock().unwrap_or_else(|e| e.into_inner());
+        let _konfig = WegwerfKonfig::neu("t0116-block-slot-regression");
+        let (mut app, ctx) = app_mit_leiste();
+        app.prefs.set_slot(1, Some("draw.wall".into()));
+        rahmen(&mut app, &ctx, Vec::new());
+
+        let ziel = slot_rect(&app, 1).center();
+        klick(&mut app, &ctx, ziel);
+
+        assert_eq!(
+            app.tool_id(),
+            Some("draw.wall"),
+            "ohne laufendes Einfügen muss der Slot sein Werkzeug starten"
+        );
+        assert_eq!(
+            app.prefs.slots()[1].as_deref(),
+            Some("draw.wall"),
+            "der Slot wurde ohne laufendes Einfügen umbelegt"
+        );
+    }
+
+    /// Die Zifferntaste läuft über `App::run_action` — ohne den Block-Zweig
+    /// dort wäre der Slot nur per Maus zu gebrauchen.
+    #[test]
+    fn zifferntaste_startet_den_block_aus_dem_slot() {
+        let _sperre = KONFIG.lock().unwrap_or_else(|e| e.into_inner());
+        let _konfig = WegwerfKonfig::neu("t0116-block-taste");
+        let (mut app, ctx) = app_mit_leiste();
+        let block = erster_block(&app);
+        app.prefs.set_slot(2, Some(format!("block:{block}")));
+        rahmen(&mut app, &ctx, Vec::new());
+
+        let taste = |pressed| egui::Event::Key {
+            key: egui::Key::Num3,
+            physical_key: None,
+            pressed,
+            repeat: false,
+            modifiers: egui::Modifiers::NONE,
+        };
+        rahmen(&mut app, &ctx, vec![taste(true)]);
+        rahmen(&mut app, &ctx, vec![taste(false)]);
+
+        assert_eq!(
+            app.block_einfuegen(),
+            Some(block.as_str()),
+            "die Taste „3“ startet nicht die Einfüge-Vorschau des Blocks aus Slot 3"
+        );
+    }
+
+    #[test]
+    fn slot_mit_block_startet_die_einfuege_vorschau() {
+        let _sperre = KONFIG.lock().unwrap_or_else(|e| e.into_inner());
+        let _konfig = WegwerfKonfig::neu("t0116-block-slot-start");
+        let (mut app, ctx) = app_mit_leiste();
+        let block = erster_block(&app);
+        app.prefs.set_slot(0, Some(format!("block:{block}")));
+        rahmen(&mut app, &ctx, Vec::new());
+
+        let ziel = slot_rect(&app, 0).center();
+        klick(&mut app, &ctx, ziel);
+
+        assert_eq!(
+            app.block_einfuegen(),
+            Some(block.as_str()),
+            "der Slot mit Block startet nicht die Einfüge-Vorschau dieses Blocks"
+        );
     }
 }
 

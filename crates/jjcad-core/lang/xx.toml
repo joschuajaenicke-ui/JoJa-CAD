@@ -1303,6 +1303,7 @@
 # funktionen = "Funktionen"
 # in_lager_legen = "In Lager legen"
 # ins_lager_gelegt = "Ins Lager gelegt"
+# x_ins_lager_gelegt = "{wert1} ins Lager gelegt"
 # inventar = "Inventar"
 # lager = "Lager"
 # lager_geleert = "Lager · geleert"
