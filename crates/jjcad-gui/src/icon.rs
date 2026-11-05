@@ -359,4 +359,69 @@ mod tests {
             );
         }
     }
+
+    /// Das Installationsskript legt den vollständigen Satz ab und trägt den
+    /// Abdruck-Namen ins Startmenü. Läuft in ein Wegwerf-`XDG_DATA_HOME`; die
+    /// Caches des angemeldeten Benutzers bleiben unberührt
+    /// (`JJCAD_INSTALL_OHNE_CACHE`).
+    ///
+    /// Der Name muss sich mit dem Bild ändern: KDE hält geladene Symbole im
+    /// Speicher und liest die Datei bei gleichem Namen nicht neu — genau daran
+    /// hing die Taskleiste nach dem neuen Markenzeichen (T0113, Turn 5).
+    #[test]
+    fn install_desktop_legt_alle_groessen_und_den_eintrag_ab() {
+        let tmp = std::env::temp_dir().join(format!("jjcad-install-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&tmp);
+        std::fs::create_dir_all(&tmp).unwrap();
+
+        let skript = format!(
+            "{}/../../scripts/install-desktop.sh",
+            env!("CARGO_MANIFEST_DIR")
+        );
+        let ausgabe = std::process::Command::new("bash")
+            .arg(&skript)
+            .arg("/bin/true")
+            .env("XDG_DATA_HOME", &tmp)
+            .env("JJCAD_INSTALL_OHNE_CACHE", "1")
+            .output()
+            .expect("bash fehlt");
+        assert!(
+            ausgabe.status.success(),
+            "install-desktop.sh scheiterte: {}",
+            String::from_utf8_lossy(&ausgabe.stderr)
+        );
+
+        let eintrag = std::fs::read_to_string(tmp.join("applications/jjcad.desktop"))
+            .expect("jjcad.desktop fehlt");
+        let name = eintrag
+            .lines()
+            .find_map(|z| z.strip_prefix("Icon="))
+            .expect("Icon= fehlt im Startmenü-Eintrag")
+            .to_string();
+        assert!(
+            name.starts_with("joja-cad-") && name.len() > "joja-cad-".len(),
+            "Symbolname traegt keinen Bild-Abdruck: {name}"
+        );
+        assert!(
+            eintrag.contains("Exec=\"/bin/true\""),
+            "Exec zeigt nicht auf das uebergebene Programm"
+        );
+
+        for kante in [16usize, 24, 32, 48, 64, 128, 256, 512] {
+            let quelle = format!("{}/assets/jjc-icon-{kante}.png", env!("CARGO_MANIFEST_DIR"));
+            let ziel = tmp.join(format!("icons/hicolor/{kante}x{kante}/apps/{name}.png"));
+            assert_eq!(
+                std::fs::read(&ziel).unwrap_or_else(|e| panic!("{kante} px fehlt: {e}")),
+                std::fs::read(&quelle).unwrap(),
+                "{kante} px weicht vom Markenzeichen ab"
+            );
+            assert!(
+                tmp.join(format!("icons/hicolor/{kante}x{kante}/apps/jjcad.png"))
+                    .exists(),
+                "Zweitname jjcad fehlt bei {kante} px"
+            );
+        }
+
+        let _ = std::fs::remove_dir_all(&tmp);
+    }
 }
