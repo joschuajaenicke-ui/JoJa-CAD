@@ -31,13 +31,13 @@ use std::sync::Arc;
 
 use egui::{Color32, Pos2};
 
-/// Höchste Rastergröße einer Glyphe in Pixeln.
+/// Höchste Rastergröße einer Glyphe in Pixeln — **Vorgabe**.
 ///
-/// 256 px ist die Grenze, ab der echtes Rastern nichts mehr gewinnt: ein
-/// Zeichen belegt dort rund 60 000 Atlas-Pixel (1/60 des Werts bei 1980 px),
-/// und die Stufen der Leiter bis hierher füllen zusammen etwa 7 % des
-/// Atlasses. Darüber ist die Schrift ohnehin größer als jede Bildschirmzeile —
-/// dann wird gestreckt statt gerastert.
+/// Der Deckel ist eine Einstellung (`UserPrefs::textaufloesung`: 128, 256, 512,
+/// 1024 px, T0114 Turn 3). 256 px ist die Vorgabe: ein Zeichen belegt dort rund
+/// 60 000 Atlas-Pixel (1/60 des Werts bei 1980 px), und die Stufen der Leiter
+/// bis hierher füllen zusammen etwa 7 % des Atlasses. Höhere Stufen machen die
+/// Schrift im hohen Zoom schärfer, brauchen aber entsprechend mehr Atlas.
 pub const RASTER_DECKEL_PX: f32 = 256.0;
 
 /// Kleinste Rastergröße in Pixeln — darunter ist Text nicht mehr lesbar, und
@@ -49,21 +49,22 @@ pub const LEITER_FAKTOR: f32 = 1.25;
 
 /// Rastergröße und Skalierfaktor für eine gewünschte Schriftgröße in Pixeln.
 ///
-/// Die Rastergröße ist die nächstgelegene Leiterstufe unterhalb des Deckels;
-/// der Faktor bringt die gerasterte Galley auf die gewünschte Größe
+/// `deckel` ist die eingestellte Höchstgröße (`Textaufloesung::px`). Die
+/// Rastergröße ist die nächstgelegene Leiterstufe unterhalb des Deckels; der
+/// Faktor bringt die gerasterte Galley auf die gewünschte Größe
 /// (`gewünscht = Rastergröße × Faktor`).
-pub fn raster_und_skalierung(gewuenscht: f32) -> (f32, f32) {
+pub fn raster_und_skalierung(gewuenscht: f32, deckel: f32) -> (f32, f32) {
     let gewuenscht = gewuenscht.max(RASTER_MIN_PX);
-    let stufe = leiterstufe(gewuenscht.min(RASTER_DECKEL_PX));
+    let stufe = leiterstufe(gewuenscht.min(deckel), deckel);
     (stufe, gewuenscht / stufe)
 }
 
 /// Nächstgelegene Stufe der Größenleiter (1,25er-Schritte ab
-/// [`RASTER_MIN_PX`]), begrenzt auf [`RASTER_MIN_PX`]…[`RASTER_DECKEL_PX`].
-pub fn leiterstufe(size: f32) -> f32 {
+/// [`RASTER_MIN_PX`]), begrenzt auf [`RASTER_MIN_PX`]…`deckel`.
+pub fn leiterstufe(size: f32, deckel: f32) -> f32 {
     let n = (size.max(RASTER_MIN_PX) / RASTER_MIN_PX).ln() / LEITER_FAKTOR.ln();
     let stufe = RASTER_MIN_PX * LEITER_FAKTOR.powf(n.round());
-    stufe.clamp(RASTER_MIN_PX, RASTER_DECKEL_PX)
+    stufe.clamp(RASTER_MIN_PX, deckel.max(RASTER_MIN_PX))
 }
 
 /// Fertige Galley auf die gewünschte Größe strecken.
@@ -92,26 +93,34 @@ pub fn skaliere(galley: Arc<egui::Galley>, faktor: f32) -> Arc<egui::Galley> {
 mod tests {
     use super::*;
 
-    /// Die Leiter ist stetig, monoton und hält den Deckel ein.
+    /// Die Leiter ist stetig, monoton und hält jeden eingestellten Deckel ein.
     #[test]
     fn leiter_haelt_den_deckel_und_waechst_monoton() {
-        let mut vorher = 0.0;
-        let mut size = RASTER_MIN_PX;
-        while size <= 4096.0 {
-            let (raster, faktor) = raster_und_skalierung(size);
-            assert!(
-                raster <= RASTER_DECKEL_PX,
-                "{size} px: Rastergröße {raster} über dem Deckel"
-            );
-            assert!(raster >= RASTER_MIN_PX, "{size} px: Rastergröße {raster} zu klein");
-            assert!(
-                (raster * faktor - size).abs() <= size * 1e-4 + 1e-3,
-                "{size} px: {raster} × {faktor} = {}",
-                raster * faktor
-            );
-            assert!(raster >= vorher, "{size} px: Rastergröße fällt ({vorher} → {raster})");
-            vorher = raster;
-            size *= 1.05;
+        for deckel in [128.0_f32, 256.0, 512.0, 1024.0] {
+            let mut vorher = 0.0;
+            let mut size = RASTER_MIN_PX;
+            while size <= 4096.0 {
+                let (raster, faktor) = raster_und_skalierung(size, deckel);
+                assert!(
+                    raster <= deckel,
+                    "{size} px bei Deckel {deckel}: Rastergröße {raster} zu groß"
+                );
+                assert!(
+                    raster >= RASTER_MIN_PX,
+                    "{size} px: Rastergröße {raster} zu klein"
+                );
+                assert!(
+                    (raster * faktor - size).abs() <= size * 1e-4 + 1e-3,
+                    "{size} px: {raster} × {faktor} = {}",
+                    raster * faktor
+                );
+                assert!(
+                    raster >= vorher,
+                    "{size} px: Rastergröße fällt ({vorher} → {raster})"
+                );
+                vorher = raster;
+                size *= 1.05;
+            }
         }
     }
 
@@ -119,8 +128,8 @@ mod tests {
     /// stehen (kein neuer Atlas-Eintrag).
     #[test]
     fn ueber_dem_deckel_bleibt_die_rastergroesse_gleich() {
-        let (raster_600, faktor_600) = raster_und_skalierung(1980.0);
-        let (raster_2000, faktor_2000) = raster_und_skalierung(6600.0);
+        let (raster_600, faktor_600) = raster_und_skalierung(1980.0, RASTER_DECKEL_PX);
+        let (raster_2000, faktor_2000) = raster_und_skalierung(6600.0, RASTER_DECKEL_PX);
         assert_eq!(raster_600, RASTER_DECKEL_PX);
         assert_eq!(raster_2000, RASTER_DECKEL_PX);
         assert!(faktor_2000 > faktor_600, "der Faktor muss weiter wachsen");
@@ -134,7 +143,7 @@ mod tests {
         let mut zoom = 0.01_f32;
         while zoom <= 20.0 {
             let gewuenscht = 250.0 * zoom * 1.32;
-            stufen.insert(raster_und_skalierung(gewuenscht).0.to_bits());
+            stufen.insert(raster_und_skalierung(gewuenscht, RASTER_DECKEL_PX).0.to_bits());
             zoom *= 1.02;
         }
         assert!(
@@ -142,5 +151,37 @@ mod tests {
             "{} verschiedene Rastergrößen im Zoomlauf",
             stufen.len()
         );
+    }
+
+    /// Die vier Einstellungen wirken: 128 px rastert gröber als 256, 512 und
+    /// 1024 — der Faktor wächst entsprechend, die Rastergröße bleibt unter der
+    /// eingestellten Grenze (T0114, Turn 3).
+    #[test]
+    fn eingestellter_deckel_bestimmt_die_rastergroesse() {
+        use jjcad_core::persist::Textaufloesung;
+        let gewuenscht = 1980.0_f32;
+        let mut vorher = 0.0;
+        for m in Textaufloesung::ALL {
+            let (raster, faktor) = raster_und_skalierung(gewuenscht, m.px());
+            assert!(
+                raster <= m.px(),
+                "{}: Rastergröße {raster} über der Einstellung",
+                m.label()
+            );
+            assert!(
+                raster > vorher,
+                "{}: Rastergröße {raster} wächst nicht ({vorher} davor)",
+                m.label()
+            );
+            assert!(
+                (raster * faktor - gewuenscht).abs() < 1.0,
+                "{}: {raster} × {faktor} ≠ {gewuenscht}",
+                m.label()
+            );
+            vorher = raster;
+        }
+        // Die Vorgabe ist 256 px.
+        assert_eq!(Textaufloesung::default(), Textaufloesung::Px256);
+        assert_eq!(Textaufloesung::default().px(), RASTER_DECKEL_PX);
     }
 }
