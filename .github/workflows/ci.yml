@@ -33,4 +33,8 @@ jobs:
         run: cargo build --workspace --all-targets
 
       - name: Tests
+        # CI-Läufer sind langsamer als der Entwicklungsrechner; das Zeitbudget
+        # der Performance-Tests wird dort angehoben (lokal gilt 200 ms).
+        env:
+          JJCAD_PERF_BUDGET_MS: 600
         run: cargo test --workspace
