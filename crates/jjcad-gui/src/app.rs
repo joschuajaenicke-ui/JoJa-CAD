@@ -2862,6 +2862,13 @@ impl App {
 
     /// Aktionen aus Ribbon, Hotbar, Tastatur oder Menü.
     pub fn run_action(&mut self, ctx: &egui::Context, id: &str) {
+        // T0116: Ein Hotbar-Slot kann einen **Block** tragen (`block:<id>`).
+        // Die Zifferntaste läuft über diesen Weg — ohne den Zweig hier wäre der
+        // Slot nur per Maus zu gebrauchen (`actions::action` kennt ihn nicht).
+        if let Some(block) = id.strip_prefix("block:") {
+            self.start_ghost_block(block.to_string());
+            return;
+        }
         let Some(def) = actions::action(id) else {
             return;
         };
@@ -5816,6 +5823,68 @@ fn rail(ui: &mut egui::Ui, icon: &str, tooltip: &str, chevron: &str) -> bool {
         self.release_keyboard_focus();
     }
 
+    /// Läuft gerade das Einfügen eines **Blocks** aus der Bibliothek? (T0116)
+    ///
+    /// Dann ist der nächste Klick auf einen Slot eine Verknüpfung und kein
+    /// Start: der Slot bekommt den Block, genau wie ein laufendes Werkzeug
+    /// einen leeren Slot belegt. Die Zwischenablage zählt nicht — sie hat
+    /// keinen Block, den ein Slot aufnehmen könnte.
+    pub fn block_einfuegen(&self) -> Option<&str> {
+        self.ghost.as_ref().and_then(|g| g.block.as_deref())
+    }
+
+    /// Name eines Blocks für Meldungen und Tooltips — die ID, wenn die
+    /// Bibliothek ihn nicht (mehr) kennt.
+    pub fn block_name(&self, id: &str) -> String {
+        self.doc()
+            .blocks
+            .iter()
+            .find(|b| b.id == id)
+            .map(|b| b.name.clone())
+            .unwrap_or_else(|| id.to_string())
+    }
+
+    /// Verknüpft den laufenden Block mit einem Hotbar-Slot (T0116).
+    ///
+    /// Der eine Weg für Hotbar und Lager: Slot belegen, Einfügen beenden,
+    /// Meldung im Chat-Schema (`<Block> auf Slot N gelegt`). Liefert `false`,
+    /// wenn gerade kein Block eingefügt wird — dann bleibt der Klick beim
+    /// bisherigen Verhalten.
+    pub fn bind_slot_block(&mut self, slot: usize) -> bool {
+        let Some(block) = self.block_einfuegen().map(str::to_string) else {
+            return false;
+        };
+        let name = self.block_name(&block);
+        self.prefs.set_slot(slot, Some(format!("block:{block}")));
+        let _ = self.prefs.save();
+        self.ghost = None;
+        self.toast(jjcad_core::i18n::t_args_owned(
+            "gui.hotbar.x_auf_slot_x_gelegt",
+            &[("wert1", name), ("wert2", format!("{}", slot + 1))],
+        ));
+        true
+    }
+
+    /// Legt den laufenden Block auf einen Lagerplatz (T0116) — dieselbe Geste
+    /// wie in der Hotbar, nur ohne Tastenkürzel.
+    pub fn bind_lager_block(&mut self, idx: usize) -> bool {
+        let Some(block) = self.block_einfuegen().map(str::to_string) else {
+            return false;
+        };
+        if idx >= self.prefs.inventory.len() {
+            return false;
+        }
+        let name = self.block_name(&block);
+        self.prefs.inventory[idx] = Some(format!("block:{block}"));
+        let _ = self.prefs.save();
+        self.ghost = None;
+        self.toast(jjcad_core::i18n::t_args_owned(
+            "gui.inventory.x_ins_lager_gelegt",
+            &[("wert1", name)],
+        ));
+        true
+    }
+
     /// Startet die Vorschau für das Einfügen aus der Zwischenablage.
     ///
     /// Der Drehpunkt kommt aus den Einstellungen (T0070): „Basispunkt" (Vorgabe)
@@ -6036,12 +6105,12 @@ fn rail(ui: &mut egui::Ui, icon: &str, tooltip: &str, chevron: &str) -> bool {
         true
     }
 
+    /// Startet einen Slot-Inhalt: Werkzeug oder Block (`block:<id>`, T0116).
+    ///
+    /// Der eine Weg für Klick und Zifferntaste — die Block-Vorschau steckt in
+    /// [`App::run_action`], damit beide Eingaben nicht auseinanderlaufen.
     pub fn activate(&mut self, ctx: &egui::Context, item: &str) {
-        if let Some(block_id) = item.strip_prefix("block:") {
-            self.start_ghost_block(block_id.to_string());
-        } else {
-            self.run_action(ctx, item);
-        }
+        self.run_action(ctx, item);
     }
 
     pub fn tool_id(&self) -> Option<&str> {

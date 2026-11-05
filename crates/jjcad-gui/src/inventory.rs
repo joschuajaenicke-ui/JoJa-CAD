@@ -124,7 +124,12 @@ fn storage_tab(app: &mut App, ui: &mut Ui) {
                         .unwrap_or(false);
                     let resp = widgets::slot_button(ui, Vec2::splat(size), item.as_deref(), None, active, false);
                     if resp.clicked() {
-                        if let Some(a) = &item {
+                        // T0116: Läuft das Einfügen eines Blocks, nimmt der
+                        // Platz den Block auf — dieselbe Geste wie in der
+                        // Hotbar, nur ohne Tastenkürzel.
+                        if app.bind_lager_block(idx) {
+                            // Meldung und Beenden des Einfügens macht der Aufruf.
+                        } else if let Some(a) = &item {
                             app.activate(ui.ctx(), a);
                         } else if let Some(t) = app.tool.clone() {
                             app.prefs.inventory[idx] = Some(t.action.clone());
@@ -663,6 +668,45 @@ mod tests_lager {
             "das Leeren darf das Element nicht zusätzlich starten"
         );
         assert_eq!(app.prefs.inventory.len(), 40, "das Raster bleibt vollständig");
+    }
+
+    /// T0116: Läuft das Einfügen eines Blocks, nimmt der angeklickte
+    /// Lagerplatz den Block auf — dieselbe Geste wie in der Hotbar.
+    #[test]
+    fn klick_auf_lagerplatz_legt_den_laufenden_block_ab() {
+        let _sperre = KONFIG.lock().unwrap_or_else(|e| e.into_inner());
+        let _konfig = WegwerfKonfig::neu("t0116-lager-block");
+        let (mut app, ctx) = app_mit_lager();
+        let block = app
+            .doc()
+            .blocks
+            .first()
+            .map(|b| b.id.clone())
+            .expect("die Zeichnung bringt Systemblöcke mit");
+        app.start_ghost_block(block.clone());
+        // `start_ghost_block` schließt das Inventar — für den Klick wieder auf.
+        app.ui.inventory_open = true;
+        app.ui.inventory_tab = 0;
+        rahmen(&ctx, &mut app, vec![]);
+        rahmen(&ctx, &mut app, vec![]);
+
+        let ziel = platz(&app, 1).center();
+        klick(&ctx, &mut app, ziel, egui::PointerButton::Primary);
+
+        assert_eq!(
+            app.prefs.inventory[1].as_deref(),
+            Some(format!("block:{block}").as_str()),
+            "der Lagerplatz hat den Block nicht aufgenommen"
+        );
+        assert!(
+            app.ghost.is_none(),
+            "nach dem Ablegen läuft das Einfügen weiter"
+        );
+        assert_eq!(
+            app.prefs.inventory[0].as_deref(),
+            Some("draw.wall"),
+            "ein fremder Lagerplatz wurde mitbelegt"
+        );
     }
 
     #[test]
