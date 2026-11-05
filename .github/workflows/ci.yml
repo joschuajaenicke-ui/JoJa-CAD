@@ -24,7 +24,7 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends \
             libxkbcommon-dev libwayland-dev libx11-dev libgl1-mesa-dev \
-            fonts-liberation fonts-quicksand
+            fonts-liberation fonts-liberation-sans-narrow fonts-quicksand
 
       - name: Rust-Werkzeuge
         uses: dtolnay/rust-toolchain@stable
