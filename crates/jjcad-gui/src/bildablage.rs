@@ -108,3 +108,21 @@ impl BildAblage {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    /// T0112: Ohne das Merkmal `wayland-data-control` liest arboard unter
+    /// Wayland über XWayland — und dort kommen Bilder aus anderen
+    /// Wayland-Programmen nicht an (im Protokoll stand „Zwischenablage leer“).
+    /// Die Zusicherung steht in der `Cargo.toml` dieses Pakets; wer sie
+    /// entfernt, bricht diesen Test.
+    #[test]
+    fn arboard_liest_unter_wayland_nativ() {
+        let manifest = include_str!("../Cargo.toml");
+        assert!(
+            manifest.contains("wayland-data-control"),
+            "arboard braucht das Merkmal `wayland-data-control`, sonst bleibt das \
+             Einfügen von Bildern aus anderen Programmen unter Wayland leer"
+        );
+    }
+}

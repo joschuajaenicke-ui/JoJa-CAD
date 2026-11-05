@@ -29,4 +29,9 @@ raw-window-handle = "0.6"
 # System-Zwischenablage für **Bilder** (T0112): Strg+C legt ein einzelnes Bild
 # als reine Bilddaten ab, Strg+V übernimmt ein Bild aus einem anderen Programm.
 # egui selbst kann nur Text — die Kiste spricht X11, Windows und macOS an.
-arboard = "3.7"
+# `wayland-data-control` ist Pflicht: unter Wayland läuft das Programm als
+# Wayland-Client, und der X11-Weg über XWayland liefert Bilder aus anderen
+# Wayland-Programmen nicht (KWin brückt dort nur Text). arboard nimmt den
+# nativen Weg, wenn `WAYLAND_DISPLAY` gesetzt ist, und fällt sonst auf X11
+# zurück.
+arboard = { version = "3.7", features = ["wayland-data-control"] }
