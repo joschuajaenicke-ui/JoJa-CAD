@@ -1,7 +1,7 @@
 //! Kleine, wiederverwendbare UI-Bausteine im JoJa-CAD-Look.
 
 use crate::icons;
-use jjcad_core::model::{TextAlignH, TextAlignV, TextFont};
+use jjcad_core::model::{BlockDef, Document, TextAlignH, TextAlignV, TextFont};
 use crate::theme::Palette;
 use egui::{Shape, 
     Align2, Color32, FontId, Pos2, Rect, Response, Rounding, Sense, Stroke, Ui, Vec2,
@@ -174,6 +174,7 @@ pub fn slot_button(
     key_label: Option<&str>,
     active: bool,
     highlight: bool,
+    block: Option<(&Document, &BlockDef)>,
 ) -> Response {
     let (rect, resp) = ui.allocate_exact_size(size, Sense::click_and_drag());
     if ui.is_rect_visible(rect) {
@@ -197,14 +198,21 @@ pub fn slot_button(
         };
         p.rect_stroke(rect, Rounding::same(9.0), border);
         if let Some(a) = action {
-            let icon_name = jjcad_core::actions::action(a)
-                .map(|d| d.icon)
-                .unwrap_or("block");
+            let farbe = if active { Palette::accent() } else { Palette::text() };
             let ir = Rect::from_center_size(
                 rect.center() - Vec2::new(0.0, 2.0),
                 Vec2::splat(size.x * 0.48),
             );
-            icons::paint(p, ir, icon_name, if active { Palette::accent() } else { Palette::text() });
+            // T0116: Ein Block zeigt seine Miniaturaansicht — dieselbe wie im
+            // Blockmanager — statt eines gemeinsamen Ersatzsymbols.
+            if let Some((doc, b)) = block {
+                crate::inventory::draw_block_preview(p, ir, doc, b, farbe);
+            } else {
+                let icon_name = jjcad_core::actions::action(a)
+                    .map(|d| d.icon)
+                    .unwrap_or("block");
+                icons::paint(p, ir, icon_name, farbe);
+            }
             if let Some(k) = key_label {
                 p.text(
                     Pos2::new(rect.right() - 5.0, rect.bottom() - 4.0),
@@ -1067,5 +1075,144 @@ mod tests_ribbon_beschriftung {
     fn mittlere_beschriftung_passt_genau() {
         let s = passende_schriftgroesse(80.0, 64.0, RIBBON_TEXT);
         assert!((s - 8.4).abs() < 1e-4, "erwartet 8,4 Punkte, war {s}");
+    }
+}
+
+#[cfg(test)]
+mod tests_slot_bild {
+    //! T0116: Ein Slot mit Block zeigt die **Miniaturaansicht dieses Blocks** —
+    //! nicht das gemeinsame Ersatzsymbol. Geprüft wird die gezeichnete
+    //! Geometrie im Slot: ihr Seitenverhältnis muss dem Block entsprechen.
+
+    use super::*;
+    use jjcad_core::model::Document;
+
+    fn punkte(shape: &egui::Shape, out: &mut Vec<Pos2>) {
+        match shape {
+            egui::Shape::LineSegment { points, .. } => out.extend_from_slice(points),
+            egui::Shape::Path(p) => out.extend_from_slice(&p.points),
+            egui::Shape::Vec(v) => {
+                for s in v {
+                    punkte(s, out);
+                }
+            }
+            _ => {}
+        }
+    }
+
+    /// Zeichnet einen Slot und liefert die Streckenpunkte **im** Slot.
+    fn slot_punkte(doc: &Document, b: &BlockDef) -> Vec<Pos2> {
+        let ctx = egui::Context::default();
+        let mut out = None;
+        for _ in 0..2 {
+            out = Some(ctx.run(
+                egui::RawInput {
+                    screen_rect: Some(Rect::from_min_size(Pos2::ZERO, Vec2::new(200.0, 200.0))),
+                    ..Default::default()
+                },
+                |ctx| {
+                    egui::CentralPanel::default().show(ctx, |ui| {
+                        slot_button(
+                            ui,
+                            Vec2::splat(50.0),
+                            Some(&format!("block:{}", b.id)),
+                            None,
+                            false,
+                            false,
+                            Some((doc, b)),
+                        );
+                    });
+                },
+            ));
+        }
+        let out = out.expect("Bild");
+        let mut alle = Vec::new();
+        for cs in &out.shapes {
+            punkte(&cs.shape, &mut alle);
+        }
+        // Nur die Zeichnung im Slot, nicht der Rahmen der Leiste drumherum.
+        let slot = Rect::from_min_size(Pos2::ZERO, Vec2::splat(50.0));
+        alle.retain(|p| slot.expand(2.0).contains(*p));
+        alle
+    }
+
+    fn umriss(punkte: &[Pos2]) -> Rect {
+        let mut r = Rect::NOTHING;
+        for p in punkte {
+            r.extend_with(*p);
+        }
+        r
+    }
+
+    #[test]
+    fn block_im_slot_zeigt_seine_eigene_miniatur() {
+        let doc = Document::new();
+        let mut geprueft = 0;
+        let mut ungleich_seitig = 0;
+        for b in doc.blocks.iter().take(8) {
+            let bbox = b.bbox();
+            if !bbox.is_valid() || bbox.width() <= 0.0 || bbox.height() <= 0.0 {
+                continue;
+            }
+            let punkte = slot_punkte(&doc, b);
+            assert!(
+                punkte.len() >= 6,
+                "Block „{}“ zeichnet im Slot nichts ({} Punkte)",
+                b.name,
+                punkte.len()
+            );
+            let r = umriss(&punkte);
+            let block_seite = (bbox.width() / bbox.height()) as f32;
+            let bild_seite = r.width() / r.height().max(0.01);
+            if (block_seite - 1.0).abs() > 0.35 {
+                ungleich_seitig += 1;
+            }
+            assert!(
+                (bild_seite / block_seite - 1.0).abs() < 0.15,
+                "Block „{}“ ist {} breit je Höhe, im Slot steht aber {:.2} — das ist nicht seine Miniatur",
+                b.name,
+                block_seite,
+                bild_seite
+            );
+            geprueft += 1;
+        }
+        assert!(geprueft >= 3, "zu wenige Blöcke geprüft: {geprueft}");
+        assert!(
+            ungleich_seitig >= 1,
+            "kein ungleichseitiger Block in der Auswahl — der Test könnte ein Ersatzsymbol nicht erkennen"
+        );
+    }
+
+    #[test]
+    fn werkzeug_im_slot_behaelt_sein_icon() {
+        let doc = Document::new();
+        let ctx = egui::Context::default();
+        let mut out = None;
+        for _ in 0..2 {
+            out = Some(ctx.run(
+                egui::RawInput {
+                    screen_rect: Some(Rect::from_min_size(Pos2::ZERO, Vec2::new(200.0, 200.0))),
+                    ..Default::default()
+                },
+                |ctx| {
+                    egui::CentralPanel::default().show(ctx, |ui| {
+                        slot_button(ui, Vec2::splat(50.0), Some("draw.wall"), None, false, false, None);
+                    });
+                },
+            ));
+        }
+        let out = out.expect("Bild");
+        let mut alle = Vec::new();
+        for cs in &out.shapes {
+            punkte(&cs.shape, &mut alle);
+        }
+        let slot = Rect::from_min_size(Pos2::ZERO, Vec2::splat(50.0));
+        alle.retain(|p| slot.expand(2.0).contains(*p));
+        assert!(
+            alle.len() >= 2,
+            "das Werkzeug zeichnet kein Icon mehr ({} Punkte)",
+            alle.len()
+        );
+        let _ = doc;
     }
 }

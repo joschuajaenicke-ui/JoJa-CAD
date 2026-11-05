@@ -23,7 +23,9 @@ einsehbar und dort frei änderbar (Ribbon ▸ Ansicht ▸ „Tasten").
 3. **Maß** (`M`): zwei Punkte und die Maßlinie setzen. **Maßkette**: Punkte klicken, `Enter` beendet.
 4. **Hotbar**: Tasten `1`–`0`. Aktives Werkzeug + Klick auf einen leeren Slot verknüpft es.
    Läuft das **Einfügen eines Blocks**, nimmt der angeklickte Slot den Block auf (der Slot
-   zeigt dann das Blocksymbol, sein Tooltip den Blocknamen); die Taste `1`–`0` fügt ihn ein.
+   zeigt dann die Miniaturaansicht des Blocks, sein Tooltip den Blocknamen); die Taste `1`–`0`
+   fügt ihn ein. Dasselbe gilt für eine Taste im Fenster **Tastaturbelegung** und für einen
+   Lagerplatz: Klick bei laufender Vorschau legt den Block dorthin.
    Rechtsklick auf einen Slot: Leeren / Verknüpfen / Bearbeiten. Mittlere Taste leert.
 5. **Inventar** (`E`): Lager, Blockbibliothek und alle Funktionen — per Drag & Drop auf die Hotbar.
    Ein Block lässt sich auch per Klick auf einen Slot oder Lagerplatz legen, solange seine

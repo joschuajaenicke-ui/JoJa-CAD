@@ -122,7 +122,16 @@ fn storage_tab(app: &mut App, ui: &mut Ui) {
                         .as_ref()
                         .map(|a| app.tool_id() == Some(a.as_str()))
                         .unwrap_or(false);
-                    let resp = widgets::slot_button(ui, Vec2::splat(size), item.as_deref(), None, active, false);
+                    let block = item.as_deref().and_then(|a| app.slot_block(a));
+                    let resp = widgets::slot_button(
+                        ui,
+                        Vec2::splat(size),
+                        item.as_deref(),
+                        None,
+                        active,
+                        false,
+                        block,
+                    );
                     if resp.clicked() {
                         // T0116: Läuft das Einfügen eines Blocks, nimmt der
                         // Platz den Block auf — dieselbe Geste wie in der
@@ -168,11 +177,7 @@ fn storage_tab(app: &mut App, ui: &mut Ui) {
                         }
                     });
                     if let Some(a) = &item {
-                        resp.on_hover_text(
-                            jjcad_core::actions::action(a)
-                                .map(|d| d.label().to_string())
-                                .unwrap_or_else(|| a.clone()),
-                        );
+                        resp.on_hover_text(app.slot_label(a));
                     }
                 }
             });
@@ -253,7 +258,7 @@ fn block_tile(app: &mut App, ui: &mut Ui, b: &BlockDef) {
             Stroke::new(1.0, if hovered { Palette::accent().gamma_multiply(0.6) } else { Palette::border_soft() }),
         );
         let thumb = Rect::from_min_size(rect.min + Vec2::new(10.0, 8.0), Vec2::new(w - 20.0, 62.0));
-        draw_block_preview(app, p, thumb, b);
+        draw_block_preview(p, thumb, &app.doc(), b, Palette::text_dim());
         p.text(
             Pos2::new(rect.center().x, rect.bottom() - 28.0),
             egui::Align2::CENTER_CENTER,
@@ -296,7 +301,19 @@ fn block_tile(app: &mut App, ui: &mut Ui, b: &BlockDef) {
     resp.on_hover_text(&b.description);
 }
 
-pub fn draw_block_preview(app: &App, p: &egui::Painter, rect: Rect, b: &BlockDef) {
+/// Miniaturaansicht eines Blocks — die **eine** Quelle für Blockmanager-Kachel,
+/// Hotbar-Slot, Lagerplatz und Taste im Tastenbild (T0116).
+///
+/// Gezeichnet wird die echte Geometrie des Blocks (dieselbe Displayliste wie
+/// in der Zeichnung), nur verkleinert in `rect`. `farbe` ist die Farbe des
+/// Ziels — im Slot die Text- bzw. Akzentfarbe, in der Kachel die gedämpfte.
+pub fn draw_block_preview(
+    p: &egui::Painter,
+    rect: Rect,
+    doc: &jjcad_core::model::Document,
+    b: &BlockDef,
+    farbe: egui::Color32,
+) {
     let bbox = b.bbox();
     if !bbox.is_valid() {
         return;
@@ -311,11 +328,11 @@ pub fn draw_block_preview(app: &App, p: &egui::Painter, rect: Rect, b: &BlockDef
         Pos2::new(off.x + q.x as f32 * k, off.y - q.y as f32 * k)
     };
     let mut dl = DisplayList::default();
-    let ctx = render::RenderCtx::new(&app.doc());
+    let ctx = render::RenderCtx::new(doc);
     for e in &b.entities {
         render::render_entity(&ctx, e, Affine::IDENTITY, &mut dl, 0);
     }
-    let col = Palette::text_dim();
+    let col = farbe;
     let stroke = Stroke::new(1.0, col);
     for prim in &dl.prims {
         match &prim.shape {
@@ -363,7 +380,7 @@ pub fn draw_block_preview(app: &App, p: &egui::Painter, rect: Rect, b: &BlockDef
                 let v: Vec<Pos2> = outer.iter().map(|q| w2s(*q)).collect();
                 p.add(egui::Shape::convex_polygon(
                     v,
-                    Palette::text_faint().gamma_multiply(0.35),
+                    farbe.gamma_multiply(0.35),
                     Stroke::NONE,
                 ));
                 // In der Kachel (wenige Pixel) ist die Insel nicht zu sehen;
@@ -386,7 +403,7 @@ pub fn draw_block_preview(app: &App, p: &egui::Painter, rect: Rect, b: &BlockDef
                     egui::Align2::CENTER_CENTER,
                     &t.text,
                     FontId::proportional(8.0),
-                    Palette::text_faint(),
+                    farbe,
                 );
             }
         }

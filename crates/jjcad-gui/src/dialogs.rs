@@ -2693,16 +2693,13 @@ fn keyboard_body(app: &mut App, ui: &mut Ui) {
                 },
             );
             if let Some(a) = &action {
-                if let Some(def) = actions::action(a) {
-                    crate::icons::paint(
-                        p,
-                        Rect::from_center_size(
-                            rect.center() - Vec2::new(0.0, 3.0),
-                            Vec2::splat(16.0),
-                        ),
-                        def.icon,
-                        if selected { Palette::accent() } else { Palette::text_dim() },
-                    );
+                let farbe = if selected { Palette::accent() } else { Palette::text_dim() };
+                let ir = Rect::from_center_size(rect.center() - Vec2::new(0.0, 3.0), Vec2::splat(16.0));
+                // T0116: Ein Block zeigt auf der Taste seine Miniaturaansicht.
+                if let Some((doc, b)) = app.slot_block(a) {
+                    crate::inventory::draw_block_preview(p, ir, doc, b, farbe);
+                } else if let Some(def) = actions::action(a) {
+                    crate::icons::paint(p, ir, def.icon, farbe);
                 }
             } else if gesperrt.is_some() {
                 crate::icons::paint(
@@ -2714,24 +2711,30 @@ fn keyboard_body(app: &mut App, ui: &mut Ui) {
             }
         }
         if resp.clicked() && gesperrt.is_none() {
-            // Wie die Hotbar (T0064): Ist eine Funktion gewählt und die Taste
-            // frei, übernimmt die Taste sie sofort — der Umweg über die Liste
-            // entfällt. Eine belegte Taste wird weiterhin nur ausgewählt.
-            match app.ui.keymap_funktion.clone() {
-                Some(f) if action.is_none() => {
-                    if !funktion_auf_taste(app, &f, key) {
-                        // Fest verdrahtete Funktionen (Strg+S, F1 …) lassen sich
-                        // nicht umbelegen; sie bleiben im Inventar gesperrt.
-                        app.toast(jjcad_core::i18n::tr("gui.dialogs.funktion_fest_belegt"));
+            // T0116: Läuft das Einfügen eines Blocks, nimmt die angeklickte
+            // Taste den Block auf — dieselbe Geste wie ein Hotbar-Slot.
+            if !app.bind_key_block(key) {
+                // Wie die Hotbar (T0064): Ist eine Funktion gewählt und die
+                // Taste frei, übernimmt die Taste sie sofort — der Umweg über
+                // die Liste entfällt. Eine belegte Taste wird weiterhin nur
+                // ausgewählt.
+                match app.ui.keymap_funktion.clone() {
+                    Some(f) if action.is_none() => {
+                        if !funktion_auf_taste(app, &f, key) {
+                            // Fest verdrahtete Funktionen (Strg+S, F1 …) lassen
+                            // sich nicht umbelegen; sie bleiben im Inventar
+                            // gesperrt.
+                            app.toast(jjcad_core::i18n::tr("gui.dialogs.funktion_fest_belegt"));
+                        }
                     }
-                }
-                _ => {
-                    app.ui.keymap_selected = Some(key.to_string());
-                    // T0072: Dieselbe Bedienung wie ein leerer Hotbar-Slot —
-                    // freie Taste anklicken öffnet das Inventar im Reiter
-                    // „Funktionen". Die Liste im Fenster gibt es nicht mehr.
-                    if action.is_none() {
-                        taste_belegen(app, key);
+                    _ => {
+                        app.ui.keymap_selected = Some(key.to_string());
+                        // T0072: Dieselbe Bedienung wie ein leerer Hotbar-Slot —
+                        // freie Taste anklicken öffnet das Inventar im Reiter
+                        // „Funktionen". Die Liste im Fenster gibt es nicht mehr.
+                        if action.is_none() {
+                            taste_belegen(app, key);
+                        }
                     }
                 }
             }
@@ -2742,7 +2745,7 @@ fn keyboard_body(app: &mut App, ui: &mut Ui) {
             match app.prefs.unbind_key(key) {
                 Some(a) => {
                     let _ = app.prefs.save();
-                    let name = actions::action(&a).map(|d| d.label().to_string()).unwrap_or(a);
+                    let name = app.slot_label(&a);
                     app.toast(jjcad_core::i18n::t_args_owned("gui.dialogs.x_taste_x_frei", &[("name", format!("{}", name)), ("wert1", format!("{}", key.to_uppercase()))]));
                 }
                 None => app.toast(jjcad_core::i18n::tr("gui.dialogs.taste_nicht_belegt")),
@@ -2756,11 +2759,11 @@ fn keyboard_body(app: &mut App, ui: &mut Ui) {
             }
             None => {
                 if let Some(a) = action {
-                    resp.on_hover_text(
-                        actions::action(&a)
-                            .map(|d| format!("{} — {}", d.label(), d.hint()))
-                            .unwrap_or(a),
-                    );
+                    let text = match actions::action(&a) {
+                        Some(d) => format!("{} — {}", d.label(), d.hint()),
+                        None => app.slot_label(&a),
+                    };
+                    resp.on_hover_text(text);
                 }
             }
         }
@@ -2963,6 +2966,18 @@ pub(crate) mod tests_tastatur {
             ..Default::default()
         };
         ctx.run(input, |ctx| show(app, ctx))
+    }
+
+    /// Ein Bild der **ganzen** Anwendung (nicht nur des Fensters) — nötig,
+    /// sobald eine Taste ausgewertet werden soll (`App::handle_shortcuts`).
+    fn app_rahmen(ctx: &egui::Context, app: &mut App, events: Vec<egui::Event>) {
+        let input = egui::RawInput {
+            screen_rect: Some(Rect::from_min_size(Pos2::ZERO, Vec2::new(1500.0, 950.0))),
+            time: Some(naechste_zeit()),
+            events,
+            ..Default::default()
+        };
+        let _ = ctx.run(input, |ctx| app.ui(ctx));
     }
 
     fn app_mit_tastatur() -> (App, egui::Context) {
@@ -3631,6 +3646,85 @@ pub(crate) mod tests_tastatur {
             gespeichert.action_for_key(",").as_deref(),
             Some("draw.wall"),
             "die Belegung wurde nicht gespeichert"
+        );
+    }
+
+    /// T0116: Läuft das Einfügen eines Blocks, nimmt die angeklickte Taste den
+    /// Block auf — dieselbe Geste wie ein Hotbar-Slot. Die Taste wartet dabei
+    /// **nicht** auf eine Funktion aus dem Inventar.
+    #[test]
+    fn taste_nimmt_den_laufenden_block_auf() {
+        let _sperre = KONFIG.lock().unwrap_or_else(|e| e.into_inner());
+        let _konfig = WegwerfKonfig::neu("t0116-taste-block");
+        let (mut app, ctx) = app_mit_tastatur();
+        let block = app
+            .doc()
+            .blocks
+            .first()
+            .map(|b| b.id.clone())
+            .expect("die Zeichnung bringt Systemblöcke mit");
+        app.start_ghost_block(block.clone());
+        rahmen(&ctx, &mut app, vec![]);
+
+        let tasten = app.ui.last_tasten.clone().expect("Tastenbild gezeichnet");
+        let (_, _, t) = *taste_mit(&tasten, ",");
+        klick(&ctx, &mut app, t.center());
+
+        assert_eq!(
+            app.prefs.action_for_key(",").as_deref(),
+            Some(format!("block:{block}").as_str()),
+            "die Taste hat den Block nicht aufgenommen"
+        );
+        assert!(app.ghost.is_none(), "nach dem Belegen läuft das Einfügen weiter");
+        assert!(
+            app.ui.bind_key.is_none() && !app.ui.inventory_open,
+            "die Taste öffnete das Inventar statt den Block zu belegen"
+        );
+        assert_eq!(app.ui.keymap_selected.as_deref(), Some(","));
+        let gespeichert = jjcad_core::persist::UserPrefs::load();
+        assert_eq!(
+            gespeichert.action_for_key(",").as_deref(),
+            Some(format!("block:{block}").as_str()),
+            "die Belegung wurde nicht gespeichert"
+        );
+    }
+
+    /// T0116: Die so belegte Taste startet die Einfüge-Vorschau des Blocks —
+    /// über denselben Weg wie jede andere Funktion (`action_for_key` →
+    /// `App::run_action`).
+    #[test]
+    fn taste_mit_block_startet_die_einfuege_vorschau() {
+        let _sperre = KONFIG.lock().unwrap_or_else(|e| e.into_inner());
+        let _konfig = WegwerfKonfig::neu("t0116-taste-block-start");
+        let (mut app, ctx) = app_mit_tastatur();
+        let block = app
+            .doc()
+            .blocks
+            .first()
+            .map(|b| b.id.clone())
+            .expect("die Zeichnung bringt Systemblöcke vor");
+        app.prefs.bind(&format!("block:{block}"), ",");
+        app.ui.keymap_open = false;
+
+        let taste = |pressed| egui::Event::Key {
+            key: egui::Key::Comma,
+            physical_key: None,
+            pressed,
+            repeat: false,
+            modifiers: egui::Modifiers::NONE,
+        };
+        // Tastendrücke wertet `App::ui` aus, nicht das Fenster allein —
+        // deshalb hier ein voller Durchgang statt `rahmen`.
+        for _ in 0..2 {
+            app_rahmen(&ctx, &mut app, vec![]);
+        }
+        app_rahmen(&ctx, &mut app, vec![taste(true)]);
+        app_rahmen(&ctx, &mut app, vec![taste(false)]);
+
+        assert_eq!(
+            app.block_einfuegen(),
+            Some(block.as_str()),
+            "die Taste startet nicht die Einfüge-Vorschau des Blocks"
         );
     }
 
