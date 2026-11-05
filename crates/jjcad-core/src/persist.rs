@@ -18,6 +18,7 @@ pub fn from_json(s: &str) -> Result<Document, String> {
     let mut raw: serde_json::Value = serde_json::from_str(s)
         .map_err(|e| format!("Datei ist keine gültige JoJa-CAD-Zeichnung: {e}"))?;
     migrate_legacy_fills(&mut raw);
+    migrate_legacy_images(&mut raw);
     let mut doc: Document = serde_json::from_value(raw)
         .map_err(|e| format!("Datei ist keine gültige JoJa-CAD-Zeichnung: {e}"))?;
     if doc.format != FORMAT_NAME {
@@ -171,6 +172,55 @@ fn migrate_legacy_fills(v: &mut serde_json::Value) {
                         .or_insert_with(|| serde_json::json!(base.mix(crate::style::Color::WHITE, 0.72).to_hex()));
                 }
             }
+        }
+    };
+
+    if let Some(arr) = v.get_mut("entities").and_then(|e| e.as_array_mut()) {
+        fix_list(arr);
+    }
+    if let Some(blocks) = v.get_mut("blocks").and_then(|b| b.as_array_mut()) {
+        for b in blocks.iter_mut() {
+            if let Some(arr) = b.get_mut("entities").and_then(|e| e.as_array_mut()) {
+                fix_list(arr);
+            }
+        }
+    }
+}
+
+/// Bilder älterer Dateien auf die **untere Kante** umstellen.
+///
+/// Bis T0100 (Turn 3) war ein Bild über zwei gegenüberliegende Ecken des
+/// Rechtecks gespeichert. Jetzt beschreibt `a`→`b` die untere Kante, und die
+/// Höhe steht in `height` (wirksam, solange `lock_ratio` aus ist). Alte Dateien
+/// bekommen beim Laden dieselbe Geometrie: untere Kante aus der Box, Höhe als
+/// gespeicherter Wert, Seitenverhältnis **nicht** gesperrt — so sieht die
+/// Zeichnung aus wie vorher, statt sich beim Öffnen zu verändern.
+fn migrate_legacy_images(v: &mut serde_json::Value) {
+    let mut fix_list = |list: &mut Vec<serde_json::Value>| {
+        for e in list.iter_mut() {
+            let Some(kind) = e.get_mut("kind").and_then(|k| k.as_object_mut()) else {
+                continue;
+            };
+            if kind.get("type").and_then(|t| t.as_str()) != Some("image") {
+                continue;
+            }
+            // Neue Dateien tragen `height`; fehlt es, ist es ein altes Rechteck.
+            if kind.contains_key("height") {
+                continue;
+            }
+            let punkt = |k: &str| -> Option<(f64, f64)> {
+                let p = kind.get(k)?;
+                Some((p.get("x")?.as_f64()?, p.get("y")?.as_f64()?))
+            };
+            let (Some((ax, ay)), Some((bx, by))) = (punkt("a"), punkt("b")) else {
+                continue;
+            };
+            let (x0, x1) = (ax.min(bx), ax.max(bx));
+            let (y0, y1) = (ay.min(by), ay.max(by));
+            kind.insert("a".into(), serde_json::json!({"x": x0, "y": y0}));
+            kind.insert("b".into(), serde_json::json!({"x": x1, "y": y0}));
+            kind.insert("height".into(), serde_json::json!((y1 - y0).max(1.0)));
+            kind.insert("lock_ratio".into(), serde_json::json!(false));
         }
     };
 

@@ -216,23 +216,58 @@ pub fn dekodiere(base64: &str) -> Option<Arc<Bild>> {
     Some(bild)
 }
 
-/// Ecken des Rechtecks aus zwei gegenüberliegenden Punkten, beginnend unten
-/// links und gegen den Uhrzeigersinn. Eine Quelle für Anzeige, Griffe und
-/// Trefferflächen — damit die Reihenfolge überall gleich ist.
-pub fn ecken(a: Vec2, b: Vec2) -> [Vec2; 4] {
-    let (x0, x1) = (a.x.min(b.x), a.x.max(b.x));
-    let (y0, y1) = (a.y.min(b.y), a.y.max(b.y));
-    [
-        Vec2::new(x0, y0),
-        Vec2::new(x1, y0),
-        Vec2::new(x1, y1),
-        Vec2::new(x0, y1),
-    ]
+/// Ecken des Bildes aus der **unteren Kante** `a`→`b` und der Höhe, beginnend
+/// unten links und gegen den Uhrzeigersinn. Eine Quelle für Anzeige, Griffe
+/// und Trefferflächen — damit die Reihenfolge überall gleich ist.
+///
+/// Die Höhe steht senkrecht auf der Kante, nach links (mathematisch positiv):
+/// bei waagerechter Kante `a` links und `b` rechts liegt das Bild darüber.
+pub fn ecken(a: Vec2, b: Vec2, hoehe: f64) -> [Vec2; 4] {
+    let d = b - a;
+    let n = d.perp().normalized() * hoehe;
+    [a, b, b + n, a + n]
 }
 
-/// Breite und Höhe des Bildrechtecks in mm.
-pub fn masse(a: Vec2, b: Vec2) -> (f64, f64) {
-    ((b.x - a.x).abs(), (b.y - a.y).abs())
+/// Breite (Länge der unteren Kante) und Höhe in mm.
+pub fn masse(a: Vec2, b: Vec2, hoehe: f64) -> (f64, f64) {
+    (a.dist(b), hoehe)
+}
+
+/// Höhe, die aus Breite und Seitenverhältnis der Datei folgt.
+pub fn hoehe_aus_breite(bild: &Bild, breite: f64) -> f64 {
+    if bild.breite == 0 {
+        return breite;
+    }
+    breite * bild.hoehe as f64 / bild.breite as f64
+}
+
+/// Wirksame Höhe eines Bildes: bei gesperrtem Seitenverhältnis aus Breite und
+/// Dateimaßen, sonst der gespeicherte Wert (0 = noch nicht gesetzt → Verhältnis).
+pub fn wirksame_hoehe(bild: &Bild, breite: f64, gespeichert: f64, gesperrt: bool) -> f64 {
+    if gesperrt || gespeichert <= 0.0 {
+        hoehe_aus_breite(bild, breite)
+    } else {
+        gespeichert
+    }
+}
+
+/// Drehwinkel der unteren Kante (Bogenmaß) — dieselbe Richtung, in der das
+/// Bild gespannt ist.
+pub fn winkel(a: Vec2, b: Vec2) -> f64 {
+    (b - a).angle()
+}
+
+/// Liegt `p` im Bild? Gerechnet wird in Kantenkoordinaten (längs der unteren
+/// Kante und senkrecht dazu) — die Fläche ist ein gedrehtes Rechteck.
+pub fn punkt_im_bild(a: Vec2, b: Vec2, hoehe: f64, p: Vec2) -> bool {
+    let d = b - a;
+    let len = d.len();
+    if len < 1e-9 || hoehe <= 0.0 {
+        return false;
+    }
+    let u = (p - a).dot(d) / len;
+    let v = (p - a).dot(d.perp() / len);
+    (-1e-6..=len + 1e-6).contains(&u) && (-1e-6..=hoehe + 1e-6).contains(&v)
 }
 
 #[cfg(test)]
@@ -294,10 +329,43 @@ mod tests {
     }
 
     #[test]
-    fn ecken_und_masse_sind_achsenparallel() {
-        let e = ecken(Vec2::new(500.0, 300.0), Vec2::new(-100.0, 900.0));
-        assert_eq!(e[0], Vec2::new(-100.0, 300.0));
-        assert_eq!(e[2], Vec2::new(500.0, 900.0));
-        assert_eq!(masse(Vec2::new(500.0, 300.0), Vec2::new(-100.0, 900.0)), (600.0, 600.0));
+    fn ecken_liegen_ueber_der_unteren_kante() {
+        // Waagerechte Kante 600 mm, Höhe 300 mm: das Bild steht darüber.
+        let e = ecken(Vec2::new(0.0, 0.0), Vec2::new(600.0, 0.0), 300.0);
+        assert_eq!(e[0], Vec2::new(0.0, 0.0));
+        assert_eq!(e[1], Vec2::new(600.0, 0.0));
+        assert_eq!(e[2], Vec2::new(600.0, 300.0));
+        assert_eq!(e[3], Vec2::new(0.0, 300.0));
+        assert_eq!(masse(Vec2::new(0.0, 0.0), Vec2::new(600.0, 0.0), 300.0), (600.0, 300.0));
+    }
+
+    #[test]
+    fn gedrehte_kante_dreht_das_bild_mit() {
+        // Kante um 90°: a unten, b oben — das Bild steht links davon.
+        let e = ecken(Vec2::new(0.0, 0.0), Vec2::new(0.0, 600.0), 300.0);
+        assert_eq!(e[0], Vec2::new(0.0, 0.0));
+        assert_eq!(e[1], Vec2::new(0.0, 600.0));
+        assert_eq!(e[2], Vec2::new(-300.0, 600.0));
+        assert_eq!(e[3], Vec2::new(-300.0, 0.0));
+        // Die Fläche ist ein gedrehtes Rechteck, keine achsenparallele Box.
+        assert!(punkt_im_bild(
+            Vec2::new(0.0, 0.0),
+            Vec2::new(0.0, 600.0),
+            300.0,
+            Vec2::new(-150.0, 300.0)
+        ));
+        assert!(!punkt_im_bild(
+            Vec2::new(0.0, 0.0),
+            Vec2::new(0.0, 600.0),
+            300.0,
+            Vec2::new(150.0, 300.0)
+        ));
+    }
+
+    #[test]
+    fn hoehe_folgt_dem_seitenverhaeltnis() {
+        let bild = zerlege(PNG_ROT).expect("PNG");
+        // 2 × 2 Pixel: quadratisch, also Höhe = Breite.
+        assert!((hoehe_aus_breite(&bild, 400.0) - 400.0).abs() < 1e-9);
     }
 }

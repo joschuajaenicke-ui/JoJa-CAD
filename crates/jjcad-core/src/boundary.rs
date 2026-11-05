@@ -544,8 +544,8 @@ impl Gitter {
                 }
                 // Der Bildrahmen begrenzt wie eine Fläche — ein Bild wird beim
                 // Füllen nicht überlaufen.
-                Shape::Image { a, b, .. } => {
-                    let ecken = crate::bild::ecken(*a, *b);
+                Shape::Image { a, b, hoehe, .. } => {
+                    let ecken = crate::bild::ecken(*a, *b, *hoehe);
                     self.ring(&ecken);
                 }
                 Shape::Circle { c, r } => {

@@ -286,6 +286,36 @@ fn uv_voll() -> Rect {
     Rect::from_min_max(Pos2::ZERO, Pos2::new(1.0, 1.0))
 }
 
+/// Bild als Textur über vier Ecken — auch gedreht.
+///
+/// egui zeichnet Texturen nur achsenparallel; ein Bild über einer schrägen
+/// unteren Kante braucht deshalb ein Mesh aus zwei Dreiecken. Ecke 0 = unten
+/// links, 1 = unten rechts, 2 = oben rechts, 3 = oben links; die Textur hat
+/// ihren Ursprung oben links, deshalb liegen die UV-Koordinaten spiegelbildlich.
+fn bild_mesh(
+    tex: &egui::TextureHandle,
+    ecken: &[V2; 4],
+    w2s: &dyn Fn(V2) -> Pos2,
+    tint: Color32,
+) -> Shape {
+    let uv = [
+        Pos2::new(0.0, 1.0),
+        Pos2::new(1.0, 1.0),
+        Pos2::new(1.0, 0.0),
+        Pos2::new(0.0, 0.0),
+    ];
+    let mut mesh = egui::Mesh::with_texture(tex.id());
+    for i in 0..4 {
+        mesh.vertices.push(egui::epaint::Vertex {
+            pos: w2s(ecken[i]),
+            uv: uv[i],
+            color: tint,
+        });
+    }
+    mesh.indices = vec![0, 1, 2, 0, 2, 3];
+    Shape::mesh(mesh)
+}
+
 fn paint_prim(p: &Painter, prim: &Prim, w2s: &dyn Fn(V2) -> Pos2, scale: f64, pc: &PaintCtx, alpha: f32) {
     let is_sel = !pc.preview && pc.selected.contains(&prim.entity) && prim.entity != 0;
     let is_hover = !pc.preview && pc.hover == Some(prim.entity) && prim.entity != 0 && !is_sel;
@@ -353,22 +383,23 @@ fn paint_prim(p: &Painter, prim: &Prim, w2s: &dyn Fn(V2) -> Pos2, scale: f64, pc
             }
             stroke_pts(p, &v, w as f32, col);
         }
-        PShape::Image { a, b, bild } => {
-            let r = Rect::from_two_pos(w2s(*a), w2s(*b));
-            if r.width() < 0.5 || r.height() < 0.5 {
+        PShape::Image { a, b, hoehe, bild } => {
+            let ecken = jjcad_core::bild::ecken(*a, *b, *hoehe);
+            let pts: Vec<Pos2> = ecken.iter().map(|q| w2s(*q)).collect();
+            if pts.iter().any(|q| !q.x.is_finite() || !q.y.is_finite()) {
                 return;
             }
             let tex = bild_textur(p, bild);
-            p.image(
-                tex.id(),
-                r,
-                uv_voll(),
-                Color32::from_white_alpha((255.0 * alpha).round().clamp(0.0, 255.0) as u8),
-            );
+            let tint = Color32::from_white_alpha((255.0 * alpha).round().clamp(0.0, 255.0) as u8);
+            p.add(bild_mesh(&tex, &ecken, w2s, tint));
             if is_sel || is_hover {
                 // Auswahl färbt nur blau ein — bei einem Bild als durchsichtige
                 // Fläche darüber (ein Rahmen wäre ein zweites Auswahlzeichen).
-                p.rect_filled(r, 0.0, Palette::select().gamma_multiply(0.25 * alpha));
+                p.add(Shape::convex_polygon(
+                    pts,
+                    Palette::select().gamma_multiply(0.25 * alpha),
+                    Stroke::NONE,
+                ));
             }
         }
         PShape::Fill { outer, holes } => {
@@ -2130,21 +2161,28 @@ fn draw_tool_preview(
         }
         // Bild: das gewählte Bild halbtransparent im aufgezogenen Rechteck,
         // damit der Nutzer vor dem zweiten Klick sieht, was dort landet.
+        // Bild: die untere Kante folgt dem Zeiger, die Höhe kommt aus dem
+        // Seitenverhältnis der Datei. Gezeigt wird das fertige Bild.
         "draw.image" => {
             if let Some(start) = last {
-                let r = Rect::from_two_pos(w2s(start), w2s(cursor));
+                let breite = start.dist(cursor);
                 if let Some(q) = &app.options.bild {
                     if let Some(bild) = jjcad_core::bild::dekodiere(&q.data) {
+                        let hoehe = jjcad_core::bild::hoehe_aus_breite(&bild, breite);
+                        let ecken = jjcad_core::bild::ecken(start, cursor, hoehe);
                         let tex = bild_textur(p, &bild);
-                        p.image(tex.id(), r, uv_voll(), Color32::from_white_alpha(170));
+                        p.add(bild_mesh(&tex, &ecken, &w2s, Color32::from_white_alpha(170)));
+                        let pts: Vec<Pos2> = ecken.iter().map(|q| w2s(*q)).collect();
+                        p.add(Shape::closed_line(pts, stroke));
+                        label = format!(
+                            "{} × {}",
+                            unit.format_plain(breite, unit.decimals()),
+                            unit.format_plain(hoehe, unit.decimals())
+                        );
                     }
                 }
-                p.rect_stroke(r, 0.0, stroke);
-                label = format!(
-                    "{} × {}",
-                    unit.format_plain((cursor.x - start.x).abs(), unit.decimals()),
-                    unit.format_plain((cursor.y - start.y).abs(), unit.decimals())
-                );
+                // Die untere Kante selbst hervorheben: sie ist die Eingabe.
+                p.line_segment([w2s(start), w2s(cursor)], stroke);
             }
         }
         "draw.circle" => {
@@ -2939,8 +2977,8 @@ fn draw_objekt_hervorhebung(
             }
             // Bild: hervorgehoben wird der Rahmen (die Textur bliebe sonst
             // unverändert und wäre als Hervorhebung nicht zu erkennen).
-            PShape::Image { a, b, .. } => {
-                let ecken = jjcad_core::bild::ecken(*a, *b);
+            PShape::Image { a, b, hoehe, .. } => {
+                let ecken = jjcad_core::bild::ecken(*a, *b, *hoehe);
                 let pts: Vec<Pos2> = ecken.iter().map(|q| w2s(*q)).collect();
                 p.add(Shape::closed_line(pts, strich));
             }
@@ -4092,8 +4130,10 @@ fn ghost_shape(
         PShape::Fill { .. } => {}
         // Bild: in der Einfüge-Vorschau nur der Rahmen (die Textur gehört zur
         // Zeichenfläche, nicht zur Vorschau-Zeichnung).
-        PShape::Image { a, b, .. } => {
-            p.rect_stroke(Rect::from_two_pos(w2s(*a), w2s(*b)), 0.0, stroke);
+        PShape::Image { a, b, hoehe, .. } => {
+            let ecken = jjcad_core::bild::ecken(*a, *b, *hoehe);
+            let pts: Vec<Pos2> = ecken.iter().map(|q| w2s(*q)).collect();
+            p.add(egui::Shape::closed_line(pts, stroke));
         }
     }
 }
@@ -4950,13 +4990,14 @@ fn tool_click_at(app: &mut App, w: V2, raw: V2) {
             } else {
                 let a = tool.pts[0];
                 let b = w;
-                if (a.x - b.x).abs() > 0.5 && (a.y - b.y).abs() > 0.5 {
+                if a.dist(b) > 0.5 {
                     match app.options.bild.clone() {
                         Some(q) => {
                             let ok = run(
                                 app,
                                 "draw.image",
-                                json!({"a": ax(a), "b": ax(b), "name": q.name, "data": q.data}),
+                                json!({"a": ax(a), "b": ax(b), "name": q.name, "data": q.data,
+                                       "lock_ratio": app.options.bild_lock}),
                             );
                             if ok {
                                 restart_tool(app, "draw.image");
@@ -6281,18 +6322,51 @@ mod tests_umrandung {
             app.doc().entities.is_empty(),
             "der erste Klick setzt noch nichts"
         );
-        tool_click(&mut app, V2::new(3000.0, 1500.0));
+        // Zweiter Klick = Ende der unteren Kante; das Bild ist quadratisch,
+        // also 2000 mm hoch.
+        tool_click(&mut app, V2::new(3000.0, 500.0));
         assert_eq!(app.doc().entities.len(), 1, "ein Bild angelegt");
         let e = app.doc().entities.last().unwrap();
         match &e.kind {
-            EntityKind::Image { a, b, name, .. } => {
+            EntityKind::Image {
+                a,
+                b,
+                lock_ratio,
+                name,
+                ..
+            } => {
                 assert_eq!(*a, V2::new(1000.0, 500.0));
-                assert_eq!(*b, V2::new(3000.0, 1500.0));
+                assert_eq!(*b, V2::new(3000.0, 500.0));
+                assert!(*lock_ratio, "Seitenverhältnis ist voreingestellt gesperrt");
                 assert_eq!(name, "Probe.png");
             }
             k => panic!("kein Bild: {k:?}"),
         }
+        let bb = jjcad_core::render::entity_bbox(app.doc(), e);
+        assert_eq!(bb.max, V2::new(3000.0, 2500.0), "Höhe aus dem Verhältnis");
         assert_eq!(app.tool_id(), Some("draw.image"), "Werkzeug bleibt aktiv");
+    }
+
+    /// T0100: Ohne Sperre gilt die Höhe, die das Panel vorgibt — das Werkzeug
+    /// reicht die Einstellung an die Action durch.
+    #[test]
+    fn bild_ohne_sperre_nimmt_die_hoehe_der_vorgaben() {
+        let mut app = neue_app();
+        app.options.bild = Some(crate::app::BildQuelle {
+            name: "Probe.png".into(),
+            data: "iVBORw0KGgoAAAANSUhEUgAAAAIAAAACCAIAAAD91JpzAAAAEklEQVR4nGP4z8DAAMIM/4EAAB/uBfsL2WiLAAAAAElFTkSuQmCC".into(),
+        });
+        app.options.bild_lock = false;
+        app.start_tool("draw.image");
+        tool_click(&mut app, V2::new(0.0, 0.0));
+        tool_click(&mut app, V2::new(1000.0, 0.0));
+        let e = app.doc().entities.last().unwrap();
+        match &e.kind {
+            EntityKind::Image { lock_ratio, .. } => {
+                assert!(!*lock_ratio, "Sperre aus der Vorgabe übernommen");
+            }
+            k => panic!("kein Bild: {k:?}"),
+        }
     }
 
     /// Kontur anklicken: Klick auf eine geschlossene Polylinie ergibt eine

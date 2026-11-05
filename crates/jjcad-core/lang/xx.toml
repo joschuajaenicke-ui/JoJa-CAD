@@ -775,10 +775,10 @@
 # auswahl_versetzt = "Auswahl · versetzt"
 # auswahl_vor_ein_element = "Auswahl vor ein Element setzen — danach das Element anklicken"
 # auswahl_zerlegt = "Auswahl · zerlegt"
-# bild_erste_ecke_klicken = "Bild · erste Ecke klicken"
+# bild_erste_ecke_klicken = "Bild · untere Kante anfangen"
 # bild_gesetzt = "Bild · gesetzt"
-# bild_x_ecken_klicken = "{name} · Ecken klicken"
-# bild_zweite_ecke_klicken = "Bild · zweite Ecke klicken"
+# bild_x_ecken_klicken = "{name} · untere Kante klicken"
+# bild_zweite_ecke_klicken = "Bild · untere Kante beenden"
 # blatt_das_letzte_bleibt_offen = "Blatt · das letzte bleibt offen"
 # blatt_oeffnen_dann_zeichnen = "Blatt öffnen, dann zeichnen"
 # blatt_zuerst_ein_blatt_oeffnen = "Blatt · zuerst ein Blatt öffnen"
@@ -1585,6 +1585,9 @@
 # bild = "Bild"
 # datei = "Datei"
 # keine_datei = "keine Datei"
+# hoehe_folgt_aus_breite_und_dateiverhaeltnis = "Höhe folgt aus Breite und Verhältnis der Datei"
+# seitenverhaeltnis = "Seitenverhältnis"
+# sperren = "sperren"
 #
 [gui.textedit]
 # esc_uebernimmt_hinweis = "Esc übernimmt · Enter neue Zeile · Rechtsklick bricht ab"

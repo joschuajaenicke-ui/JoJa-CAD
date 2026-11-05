@@ -1400,9 +1400,19 @@ pub fn hit_test(doc: &Document, p: Vec2, tol: f64, layer_filter: Option<&[Id]>) 
         // Bild: die ganze Fläche zählt — der Rahmen ist nicht gezeichnet, ein
         // Klick auf die Bildmitte muss das Bild wählen. Objekte darüber (Wand,
         // Linie, Text) haben Vorrang, deshalb Priorität wie ein Textfeld.
-        if let EntityKind::Image { a: ia, b: ib, .. } = &e.kind {
-            let ecken = crate::bild::ecken(*ia, *ib);
-            if BBox::from_points(&ecken).contains(p) {
+        if let EntityKind::Image {
+            a: ia,
+            b: ib,
+            height,
+            lock_ratio,
+            data,
+            ..
+        } = &e.kind
+        {
+            let hoehe = crate::bild::dekodiere(data)
+                .map(|bild| crate::bild::wirksame_hoehe(&bild, ia.dist(*ib), *height, *lock_ratio))
+                .unwrap_or(1.0);
+            if crate::bild::punkt_im_bild(*ia, *ib, hoehe, p) {
                 let d = b.center().dist(p);
                 let prio = 2;
                 if best.map(|(_, bd, bp)| prio < bp || (prio == bp && d < bd)).unwrap_or(true) {

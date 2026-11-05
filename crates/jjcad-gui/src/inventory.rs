@@ -370,8 +370,8 @@ pub fn draw_block_preview(app: &App, p: &egui::Painter, rect: Rect, b: &BlockDef
             }
             // Bild in der Blockkachel: nur der Rahmen (die Textur gehört zur
             // Zeichenfläche, eine Kachel ist ein paar Pixel groß).
-            PShape::Image { a, b, .. } => {
-                let ecken = jjcad_core::bild::ecken(*a, *b);
+            PShape::Image { a, b, hoehe, .. } => {
+                let ecken = jjcad_core::bild::ecken(*a, *b, *hoehe);
                 let pts: Vec<Pos2> = ecken.iter().map(|q| w2s(*q)).collect();
                 p.add(egui::Shape::closed_line(pts, stroke));
             }

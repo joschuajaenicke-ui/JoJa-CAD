@@ -313,30 +313,37 @@ fn draw_prim(pm: &mut Pixmap, prim: &Prim, map: &Map, paper_px: f64) {
             }
         }
         Shape::Text(t) => draw_text(pm, t, prim, map),
-        Shape::Image { a, b, bild } => draw_bild(pm, *a, *b, bild, map),
+        Shape::Image { a, b, hoehe, bild } => draw_bild(pm, *a, *b, *hoehe, bild, map),
     }
 }
 
-/// Bild in das Rechteck `a`–`b` zeichnen.
+/// Bild über seiner unteren Kante `a`→`b` zeichnen.
 ///
 /// tiny-skia erwartet **vormultipliziertes** RGBA; die zerlegten Bilddaten
-/// tragen geradlinige Deckung. Die Umrechnung passiert hier einmal je Bild —
-/// deshalb malt der Rasterer über ein Muster (Pattern), das die Bildpixel auf
-/// das Zielrechteck abbildet, statt Pixel für Pixel zu kopieren.
+/// tragen geradlinige Deckung. Gezeichnet wird über ein Muster (Pattern), das
+/// die Bildpixel über eine Matrix auf das gedrehte Viereck abbildet — dieselbe
+/// Lage, die Anzeige und PDF benutzen.
 fn draw_bild(
     pm: &mut Pixmap,
     a: Vec2,
     b: Vec2,
+    hoehe: f64,
     bild: &crate::bild::Bild,
     map: &Map,
 ) {
-    let (x0, x1) = (a.x.min(b.x), a.x.max(b.x));
-    let (y0, y1) = (a.y.min(b.y), a.y.max(b.y));
-    // Pixelkoordinaten: map.p dreht die Y-Achse, oben links ist also (x0, y1).
-    let (px, py) = map.p(Vec2::new(x0, y1));
-    let (px2, py2) = map.p(Vec2::new(x1, y0));
-    let (w, h) = (px2 - px, py2 - py);
-    if !w.is_finite() || !h.is_finite() || w <= 0.5 || h <= 0.5 {
+    if hoehe <= 0.0 || bild.breite == 0 || bild.hoehe == 0 {
+        return;
+    }
+    let ecken = crate::bild::ecken(a, b, hoehe);
+    // Pixelkoordinaten: map.p dreht die Y-Achse. ecken[0] ist unten links,
+    // [1] unten rechts, [3] oben links.
+    let (ux, uy) = map.p(ecken[0]);
+    let (rx, ry) = map.p(ecken[1]);
+    let (ox, oy) = map.p(ecken[3]);
+    let (trx, try_) = map.p(ecken[2]);
+    let breite_px = (rx - ux).hypot(ry - uy);
+    let hoehe_px = (ox - ux).hypot(oy - uy);
+    if !breite_px.is_finite() || !hoehe_px.is_finite() || breite_px <= 0.5 || hoehe_px <= 0.5 {
         return;
     }
     let Some(mut quelle) = Pixmap::new(bild.breite, bild.hoehe) else {
@@ -349,25 +356,27 @@ fn draw_bild(
         dst[2] = ((src[2] as u32 * al) / 255) as u8;
         dst[3] = src[3];
     }
-    let skala = Transform::from_row(
-        w / bild.breite as f32,
-        0.0,
-        0.0,
-        h / bild.hoehe as f32,
-        px,
-        py,
-    );
+    // Bildpixel (0,0) ist oben links: die Matrix legt die x-Achse auf die
+    // untere Kante und die y-Achse von oben nach unten.
+    let sx = ((rx - ux) / bild.breite as f32, (ry - uy) / bild.breite as f32);
+    let sy = ((ux - ox) / bild.hoehe as f32, (uy - oy) / bild.hoehe as f32);
+    let matrix = Transform::from_row(sx.0, sx.1, sy.0, sy.1, ox, oy);
     let mut paint = Paint::default();
     paint.shader = Pattern::new(
         quelle.as_ref(),
         SpreadMode::Pad,
         FilterQuality::Bilinear,
         1.0,
-        skala,
+        matrix,
     );
     paint.anti_alias = true;
-    if let Some(rect) = tiny_skia::Rect::from_xywh(px, py, w, h) {
-        let path = PathBuilder::from_rect(rect);
+    let mut pb = PathBuilder::new();
+    pb.move_to(ux, uy);
+    pb.line_to(rx, ry);
+    pb.line_to(trx, try_);
+    pb.line_to(ox, oy);
+    pb.close();
+    if let Some(path) = pb.finish() {
         pm.fill_path(&path, &paint, FillRule::Winding, Transform::identity(), None);
     }
 }

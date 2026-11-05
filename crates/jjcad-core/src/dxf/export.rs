@@ -421,8 +421,8 @@ fn write_shape(out: &mut W, layer: &str, prim: &render::Prim) {
         }
         // Ein Rasterbild kennt DXF hier nicht; exportiert wird der Rahmen, damit
         // die belegte Fläche in der Fremdzeichnung sichtbar bleibt.
-        render::Shape::Image { a, b, .. } => {
-            let ecken = crate::bild::ecken(*a, *b);
+        render::Shape::Image { a, b, hoehe, .. } => {
+            let ecken = crate::bild::ecken(*a, *b, *hoehe);
             let verts: Vec<Vertex> = ecken.iter().map(|p| Vertex::new(*p)).collect();
             write_polyline(out, layer, &verts, true, color);
         }

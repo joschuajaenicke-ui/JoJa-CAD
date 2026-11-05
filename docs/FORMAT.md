@@ -108,7 +108,7 @@ Jedes Objekt hat `id`, `kind`, `layer` und optional `style`:
 | `window` | `center`, `angle`, `width`, `sill`, `height`, `host` | |
 | `stair` | `a`, `b`, `width`, `steps`, `height`, `auto_steps`, `cut`, `unten`, `oben` | `a`/`b` = Lauflinie (Mitte des Rechtecks), Breite symmetrisch; `height` = Treppenhöhe; `auto_steps` = Stufenzahl aus 2 S + A = 63 cm statt `steps`; `cut` = Treppenschnitt zeichnen (zwei Läufe übereinander; die Grenze zwischen unterem und oberem Teil läuft schräg mit ihm); `unten`/`oben` = eigene Linien der Treppenteile (`color`, `line_type`, `line_weight`), fehlt = Objektstil |
 | `block_ref` | `block`, `pos`, `rot`, `scale`, `mirror` | verweist auf `blocks[].id` |
-| `image` | `a`, `b`, `name`, `data` | PNG oder JPEG, **eingebettet** als Base64 in `data` (die Zeichnung bleibt ohne die Bilddatei gültig); `a`/`b` sind gegenüberliegende Ecken des Rechtecks, das Bild wird darauf gestreckt. Zeichenrang wie eine Fläche (hinten) |
+| `image` | `a`, `b`, `height`, `lock_ratio`, `name`, `data` | PNG oder JPEG, **eingebettet** als Base64 in `data` (die Zeichnung bleibt ohne die Bilddatei gültig). `a`→`b` ist die **untere Kante**: sie bestimmt Lage, Drehung und Breite; die Höhe steht senkrecht darauf (nach links). `lock_ratio` (Vorgabe `true`) hält die Höhe am Seitenverhältnis der Datei — dann ist `height` nur der zuletzt gerechnete Wert; bei `false` gilt `height`. Dateien aus der Zeit vor der Kante (zwei gegenüberliegende Ecken) werden beim Laden umgestellt: untere Kante aus der Box, Höhe als gespeicherter Wert, `lock_ratio: false`. Zeichenrang wie eine Fläche (hinten) |
 
 **Wände verhalten sich wie Linien mit Breite:** `a`/`b` beschreiben die Achse; die
 Darstellung (zwei parallele Kanten, Füllung, Laibungen) wird gerendert, nicht
