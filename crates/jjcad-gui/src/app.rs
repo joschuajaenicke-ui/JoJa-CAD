@@ -53,10 +53,14 @@ pub const FENSTERECKE_PX: f32 = 24.0;
 /// über den Rand auf und lenkte ab. Sie erscheint erst, wenn der Zeiger
 /// bewusst am Rand stehen bleibt.
 pub const KANTEN_VERWEILDAUER: f64 = 0.1;
-/// Nachlauf der Markierung nach dem Ende eines Zuges: kommt das Loslassen nicht
-/// an (der Fenstermanager verschluckt es), fällt sie ab, sobald sich die
-/// Fenstergröße so lange nicht mehr geändert hat.
-pub const ZUG_NACHLAUF_S: f64 = 2.0;
+/// Nachlauf der Markierung nach dem Ende eines Zuges: sie bleibt nur, solange
+/// sich die Fenstergröße ändert, und fällt kurz danach ab. Das Loslassen kommt
+/// bei einem Ziehen am Rand nicht immer an (der Fenstermanager hält den Zeiger),
+/// deshalb hängt das Ende an der Größenänderung und nicht am Tastenereignis.
+pub const ZUG_NACHLAUF_S: f64 = 0.6;
+/// Not-Aus: länger als das kann ein Zug am Rand nicht dauern — danach fällt die
+/// Markierung auf jeden Fall ab (auch wenn die Größe weiter zappelt).
+pub const ZUG_MAX_S: f64 = 20.0;
 
 /// Auf ganze Bildschirm-Pixel runden.
 ///
@@ -804,9 +808,13 @@ pub struct UiState {
     pub kanten_zug: Option<&'static str>,
     /// Zeitpunkt der letzten Änderung während des Zuges (Nachlauf)
     pub kanten_zug_seit: f64,
-    /// Fenstergröße beim letzten Bild des Zuges — ändert sie sich, läuft der
-    /// Nachlauf neu
-    pub kanten_zug_groesse: Vec2,
+    /// Gerundete Fenstergröße beim letzten Bild des Zuges — ändert sie sich,
+    /// läuft der Nachlauf neu
+    pub kanten_zug_groesse: (f32, f32),
+    /// Beginn des Zuges (Not-Aus nach `ZUG_MAX_S`)
+    pub kanten_zug_start: f64,
+    /// Zeitpunkt der letzten Zeigerbewegung (T0098, Turn 11)
+    pub zeiger_bewegt_seit: f64,
     pub zoom_edit: Option<String>,
     pub typed: String,
     /// Signatur der Auswahl für die letzte Zeichnung (Panel-Aktualisierung)
@@ -899,7 +907,9 @@ impl Default for UiState {
             kanten_leuchten: None,
             kanten_zug: None,
             kanten_zug_seit: 0.0,
-            kanten_zug_groesse: Vec2::ZERO,
+            kanten_zug_groesse: (0.0, 0.0),
+            kanten_zug_start: 0.0,
+            zeiger_bewegt_seit: 0.0,
             zoom_edit: None,
             typed: String::new(),
             sel_stamp: 0,
@@ -4861,8 +4871,16 @@ impl App {
         // Zeiger und Druck **einmal** aus den Rohdaten lesen: die Zonen sind
         // schmale Streifen, und `Response::hovered` hängt an der Reihenfolge der
         // Ebenen — über der Zeichenfläche wäre die Kante sonst kaum zu treffen.
-        let (zeiger, gedrueckt) =
-            ctx.input(|i| (i.pointer.interact_pos(), i.pointer.primary_pressed()));
+        let (zeiger, gedrueckt, bewegt) = ctx.input(|i| {
+            (
+                i.pointer.interact_pos(),
+                i.pointer.primary_pressed(),
+                i.pointer.delta() != Vec2::ZERO,
+            )
+        });
+        if bewegt {
+            self.ui.zeiger_bewegt_seit = ctx.input(|i| i.time);
+        }
         let ueber_knopf = |p: Pos2| knoepfe.iter().any(|r| r.contains(p));
         let mut lagen = Vec::with_capacity(zonen.len());
         for (name, rect, richtung, cursor) in zonen {
@@ -4884,7 +4902,8 @@ impl App {
                     // wird (Turn 9) — die Markierung bleibt dabei stehen.
                     self.ui.kanten_zug = Some(name);
                     self.ui.kanten_zug_seit = ctx.input(|i| i.time);
-                    self.ui.kanten_zug_groesse = f.size();
+                    self.ui.kanten_zug_start = self.ui.kanten_zug_seit;
+                    self.ui.kanten_zug_groesse = (f.width().round(), f.height().round());
                 }
             }
             lagen.push((name, rect));
@@ -4920,13 +4939,36 @@ impl App {
             self.ui.kanten_zug = None;
         }
         if self.ui.kanten_zug.is_some() {
-            // Solange der Fenstermanager zieht, ändert sich die Fenstergröße —
-            // jede Änderung verlängert den Nachlauf. Ohne Änderung (Zug vorbei,
-            // Loslassen verschluckt) fällt die Markierung nach `ZUG_NACHLAUF_S`.
-            if (f.size() - self.ui.kanten_zug_groesse).length() > 0.5 {
-                self.ui.kanten_zug_groesse = f.size();
+            // Die Markierung hängt an der Größenänderung: solange der
+            // Fenstermanager zieht, ändert sich die Größe, und jede Änderung
+            // verlängert den Nachlauf. Bleibt sie stehen, ist der Zug vorbei —
+            // dann fällt die Markierung nach `ZUG_NACHLAUF_S` ab. Verglichen
+            // werden **gerundete** Pixel: bei krummer Skalierung zappelt die
+            // Punktgröße sonst um Bruchteile und der Nachlauf liefe nie ab.
+            let groesse = (f.width().round(), f.height().round());
+            if groesse != self.ui.kanten_zug_groesse {
+                self.ui.kanten_zug_groesse = groesse;
                 self.ui.kanten_zug_seit = jetzt;
-            } else if jetzt - self.ui.kanten_zug_seit >= ZUG_NACHLAUF_S {
+            }
+            // Wandert der Zeiger frisch bewegt weit von der gezogenen Kante weg,
+            // ist der Zug vorbei — das endet die Markierung sofort, auch wenn
+            // das Loslassen verschluckt wurde.
+            if jetzt - self.ui.zeiger_bewegt_seit < 0.2 {
+                if let (Some(name), Some(p)) = (self.ui.kanten_zug, zeiger) {
+                    let abstand = match name {
+                        "n" => p.y - f.top(),
+                        "s" => f.bottom() - p.y,
+                        "w" => p.x - f.left(),
+                        _ => f.right() - p.x,
+                    };
+                    if abstand > 40.0 {
+                        self.ui.kanten_zug = None;
+                    }
+                }
+            }
+            if jetzt - self.ui.kanten_zug_seit >= ZUG_NACHLAUF_S
+                || jetzt - self.ui.kanten_zug_start >= ZUG_MAX_S
+            {
                 self.ui.kanten_zug = None;
             }
             if self.ui.kanten_zug.is_some() {
@@ -10229,6 +10271,32 @@ mod tests_fensterrahmen {
         ctx.run(raw, |ctx| app.ui(ctx))
     }
 
+    /// Wie `bild_zeit`, aber mit veränderbarer Fenstergröße — damit lässt sich
+    /// ein laufendes Größe-Ziehen nachstellen (T0098, Turn 11).
+    fn bild_zeit_groesse(
+        app: &mut App,
+        ctx: &egui::Context,
+        events: Vec<egui::Event>,
+        zeit: f64,
+        breite: f32,
+        hoehe: f32,
+    ) -> egui::FullOutput {
+        let mut raw = egui::RawInput {
+            screen_rect: Some(Rect::from_min_size(Pos2::ZERO, Vec2::new(breite, hoehe))),
+            events,
+            time: Some(zeit),
+            ..Default::default()
+        };
+        raw.viewports.insert(
+            egui::ViewportId::ROOT,
+            egui::ViewportInfo {
+                maximized: None,
+                ..Default::default()
+            },
+        );
+        ctx.run(raw, |ctx| app.ui(ctx))
+    }
+
     fn befehle(out: &egui::FullOutput) -> Vec<egui::ViewportCommand> {
         out.viewport_output
             .get(&egui::ViewportId::ROOT)
@@ -10627,8 +10695,9 @@ mod tests_fensterrahmen {
         );
     }
 
-    /// T0098 (Turn 9): Während die Größe gezogen wird, bleibt die Markierung
-    /// der Kante stehen — auch wenn der Zeiger den Rand längst verlassen hat.
+    /// T0098 (Turn 9/11): Während die Größe gezogen wird, bleibt die Markierung
+    /// der Kante stehen — die Kante wandert mit dem Zeiger, der Abstand bleibt
+    /// also klein.
     #[test]
     fn markierung_bleibt_waehrend_des_ziehens() {
         let ctx = egui::Context::default();
@@ -10645,13 +10714,18 @@ mod tests_fensterrahmen {
                 .any(|c| matches!(c, egui::ViewportCommand::BeginResize(_))),
             "der Druck auf die Kante muss das Ziehen beginnen"
         );
-        // Der Zeiger wandert beim Ziehen nach innen — die Taste bleibt gedrückt.
-        for (i, x) in [1300.0, 1100.0, 900.0].iter().enumerate() {
-            bild_zeit(
+        // Zeiger wandert nach innen, das Fenster wird im selben Maß schmaler.
+        for (i, (x, breite)) in [(1300.0_f32, 1300.0_f32), (1100.0, 1100.0), (900.0, 900.0)]
+            .iter()
+            .enumerate()
+        {
+            bild_zeit_groesse(
                 &mut app,
                 &ctx,
                 vec![egui::Event::PointerMoved(Pos2::new(*x, 500.0))],
                 30.1 + i as f64 * 0.1,
+                *breite,
+                950.0,
             );
             assert_eq!(
                 app.ui.kanten_leuchten,
@@ -10659,21 +10733,37 @@ mod tests_fensterrahmen {
                 "während des Ziehens muss die rechte Kante markiert bleiben (x = {x})"
             );
         }
-        // Loslassen beendet die Markierung.
-        bild_zeit(
+        // Loslassen beendet den Zug; der Zeiger steht noch am Rand, dort hält
+        // ihn die Verweil-Markierung — erst das Weggehen löscht sie.
+        bild_zeit_groesse(
             &mut app,
             &ctx,
             vec![knopf(Pos2::new(900.0, 500.0), false)],
             30.5,
+            900.0,
+            950.0,
+        );
+        assert!(
+            app.ui.kanten_zug.is_none(),
+            "nach dem Loslassen darf kein Zug mehr laufen"
+        );
+        bild_zeit_groesse(
+            &mut app,
+            &ctx,
+            vec![egui::Event::PointerMoved(Pos2::new(600.0, 500.0))],
+            30.6,
+            900.0,
+            950.0,
         );
         assert_eq!(
             app.ui.kanten_leuchten, None,
-            "nach dem Loslassen darf die Kante nicht weiter leuchten"
+            "nach dem Loslassen und Weggehen darf die Kante nicht weiter leuchten"
         );
     }
 
-    /// T0098 (Turn 9): Kommt das Loslassen nicht an (Fenstermanager), fällt die
-    /// Markierung nach `ZUG_NACHLAUF_S` von selbst ab statt hängen zu bleiben.
+    /// T0098 (Turn 9/11): Kommt das Loslassen nicht an (der Fenstermanager hält
+    /// den Zeiger), endet die Markierung trotzdem — sie hängt an der
+    /// Größenänderung, nicht am Tastenereignis.
     #[test]
     fn markierung_faellt_nach_dem_not_aus_ab() {
         let ctx = egui::Context::default();
@@ -10685,22 +10775,42 @@ mod tests_fensterrahmen {
         bild_zeit(&mut app, &ctx, vec![egui::Event::PointerMoved(kante)], 40.0);
         bild_zeit(&mut app, &ctx, vec![knopf(kante, true)], 40.05);
         assert_eq!(app.ui.kanten_leuchten, Some("o"));
-        bild_zeit(
-            &mut app,
-            &ctx,
-            vec![egui::Event::PointerMoved(Pos2::new(1000.0, 500.0))],
-            40.2,
-        );
+        // Kein Loslassen, keine Größenänderung, Zeiger bleibt am Rand.
+        bild_zeit(&mut app, &ctx, Vec::new(), 40.2);
         assert_eq!(
             app.ui.kanten_leuchten,
             Some("o"),
-            "während des Zuges bleibt die Markierung"
+            "kurz nach dem letzten Schritt bleibt die Markierung"
         );
-        // Kein Loslassen, aber die Zeit läuft ab.
-        bild_zeit(&mut app, &ctx, Vec::new(), 40.2 + ZUG_NACHLAUF_S + 0.1);
+        bild_zeit(&mut app, &ctx, Vec::new(), 40.05 + ZUG_NACHLAUF_S + 0.1);
+        assert!(
+            app.ui.kanten_zug.is_none(),
+            "ohne Größenänderung muss der Zug nach dem Nachlauf enden"
+        );
+    }
+
+    /// T0098 (Turn 11): Wandert der Zeiger nach dem Ziehen ins Fenster zurück,
+    /// ist die Markierung sofort weg — sie hängt nicht am Loslassen.
+    #[test]
+    fn markierung_endet_wenn_der_zeiger_weggeht() {
+        let ctx = egui::Context::default();
+        let mut app = ohne_titelleiste(ctx.clone());
+        for _ in 0..3 {
+            bild(&mut app, &ctx, Vec::new(), None);
+        }
+        let kante = Pos2::new(1497.0, 500.0);
+        bild_zeit(&mut app, &ctx, vec![egui::Event::PointerMoved(kante)], 60.0);
+        bild_zeit(&mut app, &ctx, vec![knopf(kante, true)], 60.05);
+        assert_eq!(app.ui.kanten_leuchten, Some("o"));
+        bild_zeit(
+            &mut app,
+            &ctx,
+            vec![egui::Event::PointerMoved(Pos2::new(1200.0, 500.0))],
+            60.2,
+        );
         assert_eq!(
             app.ui.kanten_leuchten, None,
-            "nach dem Not-Aus darf die Markierung nicht hängen bleiben"
+            "der Zeiger ist weit von der Kante weg — die Markierung muss enden"
         );
     }
 

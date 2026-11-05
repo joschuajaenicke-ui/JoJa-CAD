@@ -37,15 +37,17 @@ offene Fensterinstanz zeigt weiterhin den alten Stand.
   (`BeginResize`): der Zeiger zeigt dort sofort den Größenpfeil, die Kante leuchtet
   nach 0,1 s Verweilen auf (gedämpft, 1,5 px bei 55 % — Turn 7: die volle
   Markierung blitzte bei jeder schnellen Bewegung über den Rand auf) und bleibt
-  während des Ziehens stehen, bis die Taste losgelassen wird (Turn 9). Kommt das
-  Loslassen nicht an, hält jede Größenänderung den Nachlauf neu (2 s), danach
-  fällt sie ab — mit eigener Bildanforderung, sonst würde der Nachlauf im
-  Ruhezustand nie ausgewertet. Unten rechts sitzt ein sichtbarer Griff. Die Ecke oben rechts gehört den
+  während des Ziehens stehen (Turn 9) und endet danach zuverlässig (Turn 11): sie
+  hängt an der Größenänderung (Nachlauf 0,6 s, gerundete Pixel gegen Zappeln bei
+  krummer Skalierung), endet sofort, wenn der Zeiger frisch bewegt mehr als 40 px
+  von der Kante weg ist, und spätestens nach 20 s. Mit eigener Bildanforderung,
+  sonst würde der Nachlauf im Ruhezustand nie ausgewertet. Unten rechts sitzt ein
+  sichtbarer Griff. Die Ecke oben rechts gehört den
   Fensterknöpfen (Turn 5: 5 px waren unsichtbar und nicht auffindbar).
   Nach dem Zug beendet `Context::stop_dragging` egui's Zieh-Zustand: der
   Fenstermanager übernimmt den Zeiger und schickt das Loslassen an niemanden,
   sonst bliebe egui „am Ziehen“ und **jeder zweite** Zug verschöbe nichts (Turn 3).
-  Tests: `app::tests_fensterrahmen` (16), `dialogs::tests_einstellungen::fensterrahmen_laesst_sich_umschalten`,
+  Tests: `app::tests_fensterrahmen` (17), `dialogs::tests_einstellungen::fensterrahmen_laesst_sich_umschalten`,
   `persist::tests::fensterrahmen_vorgabe_und_gespeichert`.
 - **Drehpunkt der Einfüge-Vorschau (T0070)**: Einstellungen → Bedienung → Zeile
   „Drehpunkt" mit den Modi **Mittelpunkt** (Vorgabe seit T0087) und
