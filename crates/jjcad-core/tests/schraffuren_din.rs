@@ -417,3 +417,58 @@ fn unterteilungen_sind_in_jeder_reihe_gleichmaessig() {
         }
     }
 }
+
+#[test]
+fn unterbrechungen_liegen_auf_waagerechten_linien() {
+    // T0095, Turn 4: Die Lücken der Striche müssen auf **waagerechten** Linien
+    // liegen (wie in der Norm). Vorher zählte der Takt längs der 45°-Linie —
+    // dann wandert die Lücke von Reihe zu Reihe und bildet eine schiefe Naht.
+    // Prüfung: die Höhen (y) der Strichanfänge und -enden werden von vielen
+    // Strichen **geteilt**; bei längs gezähltem Takt hat fast jeder Strich
+    // seine eigene Höhe.
+    let [x0, y0, x1, y1] = [0.0, 0.0, 3200.0, 2200.0];
+    for p in [
+        FillPattern::ConcretePlain,
+        FillPattern::ConcreteReinforced,
+        FillPattern::ConcreteWatertight,
+        FillPattern::Metal,
+        FillPattern::Glass,
+    ] {
+        let mut anfang: std::collections::BTreeMap<i64, std::collections::BTreeSet<i64>> =
+            Default::default();
+        let mut ende: std::collections::BTreeMap<i64, std::collections::BTreeSet<i64>> =
+            Default::default();
+        let mut striche = 0;
+        for pr in prims([x0, y0, x1, y1], p) {
+            let Shape::Line(a, b) = pr.shape else { continue };
+            let drin = |q: jjcad_core::geom::Vec2| {
+                q.x > x0 + 1.0 && q.x < x1 - 1.0 && q.y > y0 + 1.0 && q.y < y1 - 1.0
+            };
+            if !drin(a) || !drin(b) {
+                continue;
+            }
+            striche += 1;
+            // Reihe über die Querkoordinate (45°-Muster: x + y ist konstant je Reihe)
+            let reihe = ((a.x + a.y) / 10.0).round() as i64;
+            anfang.entry(a.y.round() as i64).or_default().insert(reihe);
+            ende.entry(b.y.round() as i64).or_default().insert(reihe);
+        }
+        assert!(striche > 20, "{}: zu wenige Striche ({striche})", p.label());
+        for (was, karte) in [("Anfang", &anfang), ("Ende", &ende)] {
+            assert!(
+                karte.len() * 2 <= striche,
+                "{}: {was}shöhen sind fast alle eigen ({}/{}) — keine waagerechte Linie",
+                p.label(),
+                karte.len(),
+                striche
+            );
+            let geteilt = karte.values().filter(|r| r.len() >= 2).count();
+            assert!(
+                geteilt * 10 >= karte.len() * 8,
+                "{}: nur {geteilt} von {} {was}shöhen liegen auf mehreren Reihen",
+                p.label(),
+                karte.len()
+            );
+        }
+    }
+}
