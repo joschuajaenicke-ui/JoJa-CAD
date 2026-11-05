@@ -32,9 +32,22 @@ DATEN="${XDG_DATA_HOME:-$HOME/.local/share}"
 ICONS="$DATEN/icons/hicolor"
 APPS="$DATEN/applications"
 
-mkdir -p "$ICONS/512x512/apps" "$ICONS/32x32/apps" "$APPS"
-cp crates/jjcad-gui/assets/jjc-icon-512.png "$ICONS/512x512/apps/jjcad.png"
-cp crates/jjcad-gui/assets/jjc-icon-32.png  "$ICONS/32x32/apps/jjcad.png"
+# Alle Größen, die das Markenzeichen mitbringt (T0113). Die Taskleiste fragt je
+# nach Skalierung 16/24/32/48/64 px an, das Startmenü 256/512 — fehlt eine
+# Größe, skaliert die Oberfläche eine andere hoch und das Symbol wird unscharf.
+# Die Dateien sind dieselben wie im Programm (`crates/jjcad-gui/assets/`), es
+# gibt also keine zweite Bildquelle.
+GROESSEN="16 24 32 48 64 128 256 512"
+mkdir -p "$APPS"
+for s in $GROESSEN; do
+    quelle="crates/jjcad-gui/assets/jjc-icon-$s.png"
+    if [ ! -f "$quelle" ]; then
+        printf 'install-desktop: %s fehlt (Markenzeichen unvollstaendig).\n' "$quelle" >&2
+        exit 1
+    fi
+    mkdir -p "$ICONS/${s}x${s}/apps"
+    cp "$quelle" "$ICONS/${s}x${s}/apps/jjcad.png"
+done
 
 cat > "$APPS/jjcad.desktop" <<EOF
 [Desktop Entry]
@@ -50,10 +63,15 @@ MimeType=application/x-jjcad;
 StartupWMClass=jjcad
 EOF
 
-# Caches der Oberfläche neu bauen, damit das Symbol sofort erscheint.
+# Caches der Oberfläche neu bauen, damit das Symbol sofort erscheint. KDE führt
+# zusätzlich eine eigene Symbol- und Startmenü-Datenbank (`kbuildsycoca`) —
+# ohne sie zeigt die Taskleiste nach einem Icon-Wechsel weiter das alte Bild.
 command -v update-desktop-database >/dev/null && update-desktop-database "$APPS" 2>/dev/null || true
 command -v gtk-update-icon-cache  >/dev/null && gtk-update-icon-cache -f -t "$ICONS" 2>/dev/null || true
+for sycoca in kbuildsycoca6 kbuildsycoca5; do
+    if command -v "$sycoca" >/dev/null; then "$sycoca" >/dev/null 2>&1 || true; break; fi
+done
 
-printf 'Markenzeichen: %s\n' "$ICONS/512x512/apps/jjcad.png"
+printf 'Markenzeichen: %s (%s px)\n' "$ICONS/<n>x<n>/apps/jjcad.png" "$GROESSEN"
 printf 'Startmenue:    %s\n' "$APPS/jjcad.desktop"
 printf 'Programm:      %s\n' "$BIN"

@@ -9,11 +9,13 @@
 //!
 //! **Zwei Aufgaben, zwei Sätze Bilddaten:**
 //!
-//! * Die **ausführbare Datei** trägt fest Bernstein/dunkel — `jjc-icon-512.png`
-//!   (Startmenü, `scripts/install-desktop.sh`), `jjc-icon-128.png`
-//!   (Fenstericon) und `jjc-icon-32.png` (kleine Rasterung). Ein Symbol, das
-//!   mit der Einstellung des Nutzers wechselt, wäre in Taskleiste und
-//!   Startmenü falsch.
+//! * Die **ausführbare Datei** trägt fest Bernstein/dunkel — `jjc-icon-<n>.png`
+//!   für 16, 24, 32, 48, 64, 128, 256 und 512 px. `scripts/install-desktop.sh`
+//!   legt **alle** Größen in den Symbolpfad des Benutzers (`hicolor`), damit
+//!   Taskleiste und Startmenü die passende Rasterung finden statt eine fremde
+//!   hochzuskalieren; `jjc-icon-128.png` ist zusätzlich das Fenstericon
+//!   (`_NET_WM_ICON`). Ein Symbol, das mit der Einstellung des Nutzers
+//!   wechselt, wäre in Taskleiste und Startmenü falsch.
 //! * **Kopfzeile und Über-Dialog** folgen Akzent und Design aus `theme.rs`:
 //!   `a-<akzent>-<design>-512.png` bzw. `-32.png`, je Wahl eine eigene Datei.
 //!   Die Textur wird über den Dateinamen gecacht, ein Wechsel von Akzent oder
@@ -333,16 +335,28 @@ mod tests {
         crate::theme::set_design(jjcad_core::persist::Design::Dunkel, &ctx);
     }
 
-    /// Das 32-px-Bild gehört zum Startmenü-Eintrag (`scripts/install-desktop.sh`)
-    /// und muss ebenfalls lesbar sein — sonst zeigt die Taskleiste ein Loch.
+    /// Der Satz für Startmenü und Taskleiste (`scripts/install-desktop.sh`)
+    /// muss jede Größe mitbringen, die die Oberfläche anfragt — fehlt eine,
+    /// skaliert sie eine andere hoch und das Symbol wird unscharf. Geprüft
+    /// werden die Dateien auf der Platte (das Skript kopiert genau diese), nicht
+    /// eingebettete Bytes: 16…512 px wären sonst doppelt im Programm.
     #[test]
-    fn kleines_icon_fuer_das_startmenue_ist_lesbar() {
-        let png = std::fs::read(concat!(
-            env!("CARGO_MANIFEST_DIR"),
-            "/assets/jjc-icon-32.png"
-        ))
-        .expect("assets/jjc-icon-32.png fehlt");
-        let b = bild(&png).expect("32-px-Icon muss lesbar sein");
-        assert_eq!(b.size, [32, 32]);
+    fn startmenue_icons_haben_alle_groessen() {
+        for kante in [16usize, 24, 32, 48, 64, 128, 256, 512] {
+            let pfad = format!(
+                "{}/assets/jjc-icon-{kante}.png",
+                env!("CARGO_MANIFEST_DIR")
+            );
+            let png = std::fs::read(&pfad).unwrap_or_else(|e| panic!("{pfad} fehlt: {e}"));
+            let b = bild(&png).unwrap_or_else(|e| panic!("{pfad} nicht lesbar: {e}"));
+            assert_eq!(b.size, [kante, kante], "{pfad} hat die falsche Größe");
+            // Die abgerundete Ecke ist durchsichtig; bei 24 px bleibt vom
+            // Kantenglätten ein Rest von 3/255 stehen — deshalb keine harte 0.
+            assert!(
+                b.pixels[0].a() < 16,
+                "{pfad}: Ecke links oben ist nicht durchsichtig (Alpha {})",
+                b.pixels[0].a()
+            );
+        }
     }
 }
