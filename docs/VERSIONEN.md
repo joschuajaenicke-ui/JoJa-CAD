@@ -59,7 +59,8 @@ gh release create v0.2.1 --title "0.2.1" --notes-file <(sed -n '/## 0.2.1/,/## 0
 ## Weg von 0.2 nach 0.3
 
 Sechs Blöcke. Ein Block ist fertig, wenn er im Testkanal abgenommen ist — nicht,
-wenn der Code geschrieben ist.
+wenn der Code geschrieben ist. Die konkrete, priorisierte Fassung mit
+Tagesplan steht in [`ROADMAP-0.3.md`](ROADMAP-0.3.md).
 
 **A — Zeichnen vollständig**
 - Tür-/Fenster-Ausrichtung nachträglich im Eigenschaften-Panel änderbar
