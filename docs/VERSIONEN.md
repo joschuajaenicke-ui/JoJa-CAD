@@ -41,7 +41,7 @@ geschlossenen Entwicklung zur ersten öffentlichen Fassung aussieht.
    `LICENSE` und `README.md`. **Keine Beispieldateien** — `samples/` ist
    Debug-Material und bleibt im Repository.
 4. **Prüfung**: Release-Seite öffnen, beide Pakete herunterladen, starten,
-   eine Beispielzeichnung öffnen.
+   eine Zeichnung anlegen und als PDF ausgeben.
 
 ## Ablauf eines Releases
 
