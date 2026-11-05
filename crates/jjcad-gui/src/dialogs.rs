@@ -108,6 +108,24 @@ impl FileMode {
             self.is_save(),
         )
     }
+
+    /// Welcher Import gehört zu dieser Datei? `None` = das Format lässt sich
+    /// nicht importieren (T0115).
+    ///
+    /// Die **eine** Tabelle für „Datei fällt ins Fenster“ — der Vergleich
+    /// ignoriert Groß- und Kleinschreibung. Wer ein Format ergänzt, ergänzt es
+    /// hier und nicht an der Ablagestelle.
+    pub fn import_aus_datei(pfad: &std::path::Path) -> Option<FileMode> {
+        let endung = pfad.extension()?.to_string_lossy().to_ascii_lowercase();
+        match endung.as_str() {
+            "jjcad" => Some(FileMode::Open),
+            "dxf" => Some(FileMode::ImportDxf),
+            "pdf" => Some(FileMode::ImportPdf),
+            // `bild_importieren` prüft die Datei selbst; die Endung genügt hier.
+            "png" | "jpg" | "jpeg" => Some(FileMode::ImportImage),
+            _ => None,
+        }
+    }
 }
 
 struct Entry {
@@ -483,6 +501,56 @@ pub fn datei_gewaehlt(app: &mut App, mode: FileMode, path: std::path::PathBuf) {
             Err(e) => app.toast(e),
         },
     }
+}
+
+/// Dateien, die per Drag an Drop im Fenster abgelegt wurden (T0115).
+///
+/// Der Weg ist derselbe wie nach einer Auswahl im Dateidialog: die Endung
+/// bestimmt über [`FileMode::import_aus_datei`] den Modus, ausgeführt wird über
+/// [`datei_gewaehlt`]. Kein zweiter Importpfad neben dem bestehenden.
+pub fn dateien_fallen_gelassen(app: &mut App, pfade: &[std::path::PathBuf]) {
+    for pfad in pfade {
+        match FileMode::import_aus_datei(pfad) {
+            // Eine Seitenwahl steht schon offen: eine zweite PDF-Datei würde
+            // sie still überschreiben.
+            Some(FileMode::ImportPdf) if app.ui.pdf_import.is_some() => {
+                app.toast(jjcad_core::i18n::tr("gui.dialogs.pdf_seitenwahl_offen"));
+            }
+            Some(mode) => datei_gewaehlt(app, mode, pfad.clone()),
+            None => app.toast(jjcad_core::i18n::tr("gui.dialogs.datei_format_nicht_unterstuetzt")),
+        }
+    }
+}
+
+/// Hinweis, solange Dateien über dem Fenster schweben (T0115): er nennt die
+/// Datei und was beim Loslassen geschieht — oder dass das Format nicht
+/// importierbar ist. Ohne ihn bliebe der Zug bis zum Ablegen unsichtbar.
+pub fn datei_hinweis(app: &App, ctx: &egui::Context) {
+    let dateien = app.schwebende_dateien(ctx);
+    let Some(erste) = dateien.first() else { return };
+    let name = erste
+        .file_name()
+        .map(|n| n.to_string_lossy().into_owned())
+        .unwrap_or_else(|| erste.to_string_lossy().into_owned());
+    let ziel = match FileMode::import_aus_datei(erste) {
+        Some(mode) => mode.title().to_string(),
+        None => jjcad_core::i18n::tr("gui.dialogs.format_nicht_unterstuetzt").to_string(),
+    };
+    egui::Area::new(egui::Id::new("datei_drop_hinweis"))
+        .order(egui::Order::Tooltip)
+        .anchor(egui::Align2::CENTER_TOP, Vec2::new(0.0, 120.0))
+        .interactable(false)
+        .show(ctx, |ui| {
+            egui::Frame::none()
+                .fill(Palette::panel())
+                .stroke(Stroke::new(1.0, Palette::accent()))
+                .rounding(Rounding::same(6.0))
+                .inner_margin(egui::Margin::symmetric(14.0, 10.0))
+                .show(ui, |ui| {
+                    ui.label(RichText::new(jjcad_core::i18n::tr("gui.dialogs.datei_loslassen")).strong());
+                    ui.label(format!("{name} · {ziel}"));
+                });
+        });
 }
 
 /// Holt das Ergebnis des Systemdialogs ab. Der Dialog läuft in einem eigenen

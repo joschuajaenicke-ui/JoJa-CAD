@@ -700,6 +700,9 @@ pub struct UiState {
     pub systemdialog: Option<(FileMode, Systemdialog)>,
     /// Seite für „PDF einfügen" bereits gewählt
     pub pdf_import: Option<PdfImportWahl>,
+    /// Schwebende Dateien für den Prüfzustand `dateidrop` (T0115): ein echter
+    /// Drag an Drop lässt sich headless nicht erzeugen.
+    pub drop_demo: Option<Vec<PathBuf>>,
     /// Auszeichnung, die für das **nächste getippte Zeichen** gilt (Umschalter
     /// ohne Markierung im Textfeld), samt dem Text, zu dem sie gehört.
     pub text_format_next: Option<(Id, jjcad_core::text::RunStyle)>,
@@ -864,6 +867,7 @@ impl Default for UiState {
             file_dialog: None,
             systemdialog: None,
             pdf_import: None,
+            drop_demo: None,
             text_format_next: None,
             show_grid: true,
             lineweights: true,
@@ -1404,6 +1408,17 @@ impl App {
                     self.active = 0;
                     self.datei_nachziehen();
                     self.fit_view();
+                }
+                // Datei schwebt über dem Fenster (Drag an Drop, T0115):
+                // der Hinweis samt Ziel des Imports. `dateidropfalsch` zeigt
+                // den Fall eines nicht importierbaren Formats.
+                s if s.starts_with("dateidrop") => {
+                    let name = if s.ends_with("falsch") {
+                        "Notizen.txt"
+                    } else {
+                        "samples/Wohnhaus.jjcad"
+                    };
+                    self.ui.drop_demo = Some(vec![PathBuf::from(name)]);
                 }
                 "schliessdialog" => {
                     self.new_document();
@@ -3275,6 +3290,41 @@ impl App {
     }
 
     // ---- Dateien ----
+
+    /// Dateien, die gerade über dem Fenster schweben — die eine Quelle für den
+    /// Hinweis beim Ziehen (T0115). Der Prüfzustand `dateidrop` setzt sie von
+    /// Hand, weil ein echter Zug headless nicht zu erzeugen ist.
+    pub fn schwebende_dateien(&self, ctx: &egui::Context) -> Vec<PathBuf> {
+        if let Some(demo) = &self.ui.drop_demo {
+            return demo.clone();
+        }
+        ctx.input(|i| {
+            i.raw
+                .hovered_files
+                .iter()
+                .filter_map(|f| f.path.clone())
+                .collect()
+        })
+    }
+
+    /// Im Fenster abgelegte Dateien annehmen (Drag an Drop, T0115).
+    ///
+    /// Die Prüfung des Formats und der Aufruf des passenden Imports stehen in
+    /// [`dialogs::dateien_fallen_gelassen`] — hier wird nur der Eingang gelesen.
+    fn dateien_ablegen(&mut self, ctx: &egui::Context) {
+        let pfade: Vec<PathBuf> = ctx.input_mut(|i| {
+            let dateien = std::mem::take(&mut i.raw.dropped_files);
+            if !dateien.is_empty() {
+                // Nach dem Ablegen schwebt nichts mehr: der Hinweis verschwindet
+                // sofort, auch wenn das System kein „HoveredFileCancelled" schickt.
+                i.raw.hovered_files.clear();
+            }
+            dateien.into_iter().filter_map(|f| f.path).collect()
+        });
+        if !pfade.is_empty() {
+            dialogs::dateien_fallen_gelassen(self, &pfade);
+        }
+    }
 
     pub fn open_file_dialog(&mut self, mode: FileMode) {
         // Ein bereits offener Systemdialog bleibt; nicht doppelt öffnen.
@@ -6020,6 +6070,10 @@ fn rail(ui: &mut egui::Ui, icon: &str, tooltip: &str, chevron: &str) -> bool {
             }
         }
 
+        // Drag an Drop (T0115): im Fenster abgelegte Dateien gehen denselben
+        // Weg wie eine Auswahl im Dateidialog.
+        self.dateien_ablegen(ctx);
+
         // Bearbeitungsraum an den aktiven Reiter binden: Modell oder Papierraum
         // der Druckvorschau. Alle Befehle arbeiten danach im selben Raum.
         self.sync_space();
@@ -6123,6 +6177,8 @@ fn rail(ui: &mut egui::Ui, icon: &str, tooltip: &str, chevron: &str) -> bool {
         panels::layer_color_popup(self, ctx);
         // Chat-Protokoll über der Zeichnung (unten links), mit T geöffnet
         crate::chat::fenster(self, ctx);
+        // Schwebende Dateien nennen ihr Ziel, bevor sie abgelegt werden (T0115).
+        dialogs::datei_hinweis(self, ctx);
         // Systemdialog offen: Zeichnung abdunkeln und Hinweis zeigen
         dialogs::systemdialog_schleier(self, ctx);
         // Leistungsanzeige zuletzt: sie zeigt die **abgeschlossenen** Bilder und
@@ -11115,6 +11171,254 @@ mod tests_bildablage {
         assert!(
             !strg_v_losgelassen(&ctx),
             "ohne Strg darf das Loslassen von V nichts einfügen"
+        );
+    }
+}
+
+#[cfg(test)]
+mod tests_dragdrop {
+    //! Drag an Drop (T0115): eine ins Fenster gezogene Datei wird auf ihr
+    //! Format geprüft und über **denselben** Weg importiert wie eine Auswahl im
+    //! Dateidialog (`dialogs::datei_gewaehlt`).
+    //!
+    //! Ein echter Zug lässt sich headless nicht erzeugen; geprüft wird der
+    //! Eingang, den egui dafür bereitstellt (`RawInput::dropped_files` bzw.
+    //! `hovered_files`) — genau die Stelle, an der `App::dateien_ablegen` liest.
+
+    use super::*;
+    use crate::dialogs::tests_tastatur::{WegwerfKonfig, KONFIG};
+    use crate::dialogs::FileMode;
+
+    fn probe(name: &str) -> PathBuf {
+        std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../../samples")
+            .join(name)
+    }
+
+    fn bild() -> egui::RawInput {
+        egui::RawInput {
+            screen_rect: Some(egui::Rect::from_min_size(
+                egui::Pos2::ZERO,
+                egui::vec2(1500.0, 950.0),
+            )),
+            ..Default::default()
+        }
+    }
+
+    fn datei(pfad: &std::path::Path) -> egui::DroppedFile {
+        egui::DroppedFile {
+            path: Some(pfad.to_path_buf()),
+            name: pfad
+                .file_name()
+                .map(|n| n.to_string_lossy().into_owned())
+                .unwrap_or_default(),
+            mime: String::new(),
+            last_modified: None,
+            bytes: None,
+        }
+    }
+
+    /// Ein Bild zeichnen, in dem die Dateien abgelegt werden.
+    fn ablegen(app: &mut App, ctx: &egui::Context, pfade: &[&std::path::Path]) {
+        let raw = egui::RawInput {
+            dropped_files: pfade.iter().map(|p| datei(p)).collect(),
+            ..bild()
+        };
+        let _ = ctx.run(raw, |ctx| app.ui(ctx));
+    }
+
+    /// Die Endung entscheidet über den Import — die eine Tabelle.
+    #[test]
+    fn endung_entscheidet_ueber_den_import() {
+        let f = |n: &str| FileMode::import_aus_datei(std::path::Path::new(n));
+        assert_eq!(f("haus.jjcad"), Some(FileMode::Open));
+        assert_eq!(f("HAUS.JJCAD"), Some(FileMode::Open), "Großschreibung");
+        assert_eq!(f("plan.dxf"), Some(FileMode::ImportDxf));
+        assert_eq!(f("plan.pdf"), Some(FileMode::ImportPdf));
+        assert_eq!(f("bild.png"), Some(FileMode::ImportImage));
+        assert_eq!(f("foto.JPG"), Some(FileMode::ImportImage));
+        assert_eq!(f("foto.jpeg"), Some(FileMode::ImportImage));
+        assert_eq!(f("notizen.txt"), None, "Textdatei ist nicht importierbar");
+        assert_eq!(f("ohne_endung"), None);
+    }
+
+    /// Eine abgelegte Zeichnung landet als Reiter mit Inhalt.
+    #[test]
+    fn abgelegte_zeichnung_wird_geoeffnet() {
+        let _sperre = KONFIG.lock().unwrap_or_else(|e| e.into_inner());
+        let _konfig = WegwerfKonfig::neu("drop-jjcad");
+        let ctx = egui::Context::default();
+        let mut app = App::with_ctx(ctx.clone());
+        let pfad = probe("Wohnhaus.jjcad");
+        assert!(pfad.exists(), "Prüfdatei fehlt: {}", pfad.display());
+
+        ablegen(&mut app, &ctx, &[&pfad]);
+
+        assert_eq!(
+            app.doc().path.as_deref(),
+            Some(pfad.to_string_lossy().as_ref()),
+            "die abgelegte Zeichnung ist nicht geöffnet"
+        );
+        assert!(
+            !app.doc().entities.is_empty(),
+            "die geöffnete Zeichnung ist leer"
+        );
+    }
+
+    /// Eine abgelegte DXF-Datei wird in die laufende Zeichnung importiert.
+    #[test]
+    fn abgelegtes_dxf_wird_importiert() {
+        let ctx = egui::Context::default();
+        let mut app = App::with_ctx(ctx.clone());
+        let vorher = app.doc().entities.len();
+        let pfad = probe("Grundriss.dxf");
+        assert!(pfad.exists(), "Prüfdatei fehlt: {}", pfad.display());
+
+        ablegen(&mut app, &ctx, &[&pfad]);
+
+        assert!(
+            app.doc().entities.len() > vorher,
+            "DXF-Import hat nichts hinzugefügt ({} → {})",
+            vorher,
+            app.doc().entities.len()
+        );
+    }
+
+    /// Ein abgelegtes PDF öffnet die Seitenwahl — nicht mehr und nicht weniger.
+    #[test]
+    fn abgelegtes_pdf_oeffnet_die_seitenwahl() {
+        let ctx = egui::Context::default();
+        let mut app = App::with_ctx(ctx.clone());
+        let pfad = probe("Grundriss.pdf");
+        assert!(pfad.exists(), "Prüfdatei fehlt: {}", pfad.display());
+
+        ablegen(&mut app, &ctx, &[&pfad]);
+
+        let wahl = app.ui.pdf_import.as_ref().expect("Seitenwahl nicht geöffnet");
+        assert_eq!(wahl.pfad, pfad);
+        assert!(wahl.seiten >= 1, "das PDF hat keine Seite");
+    }
+
+    /// Eine zweite PDF-Datei überschreibt die offene Seitenwahl nicht still.
+    #[test]
+    fn zweites_pdf_ueberschreibt_die_seitenwahl_nicht() {
+        let ctx = egui::Context::default();
+        let mut app = App::with_ctx(ctx.clone());
+        let pfad = probe("Grundriss.pdf");
+
+        ablegen(&mut app, &ctx, &[&pfad]);
+        ablegen(&mut app, &ctx, &[&pfad]);
+
+        assert!(
+            app.status_msg.contains("Seitenwahl offen"),
+            "die zweite Datei wurde ohne Meldung verworfen: {:?}",
+            app.status_msg
+        );
+    }
+
+    /// Ein abgelegtes Bild startet das Bildwerkzeug mit der Datei.
+    #[test]
+    fn abgelegtes_bild_startet_das_bildwerkzeug() {
+        let _sperre = KONFIG.lock().unwrap_or_else(|e| e.into_inner());
+        let _konfig = WegwerfKonfig::neu("drop-bild");
+        let ctx = egui::Context::default();
+        let mut app = App::with_ctx(ctx.clone());
+        let pfad = probe("Grundriss.png");
+        assert!(pfad.exists(), "Prüfdatei fehlt: {}", pfad.display());
+
+        ablegen(&mut app, &ctx, &[&pfad]);
+
+        assert!(
+            app.options.bild.is_some(),
+            "das Bild wurde nicht eingelesen"
+        );
+        assert_eq!(
+            app.tool.as_ref().map(|t| t.action.as_str()),
+            Some("draw.image"),
+            "das Bildwerkzeug läuft nicht"
+        );
+    }
+
+    /// Ein nicht importierbares Format wird gemeldet und ändert nichts.
+    #[test]
+    fn nicht_importierbares_format_wird_gemeldet() {
+        let ctx = egui::Context::default();
+        let mut app = App::with_ctx(ctx.clone());
+        let pfad = std::env::temp_dir().join("jjcad-t0115-notizen.txt");
+        std::fs::write(&pfad, b"kein CAD").unwrap();
+
+        ablegen(&mut app, &ctx, &[&pfad]);
+
+        assert!(
+            app.status_msg.contains("Format nicht unterstützt"),
+            "keine Meldung für ein fremdes Format: {:?}",
+            app.status_msg
+        );
+        assert!(app.doc().path.is_none(), "die Zeichnung wurde ersetzt");
+        assert!(app.doc().entities.is_empty(), "es wurde etwas eingefügt");
+        let _ = std::fs::remove_file(&pfad);
+    }
+
+    /// Solange eine Datei schwebt, nennt der Hinweis ihr Ziel — und beim
+    /// nicht importierbaren Format den Grund.
+    #[test]
+    fn schwebende_datei_zeigt_ihr_ziel() {
+        let ctx = egui::Context::default();
+        let mut app = App::with_ctx(ctx.clone());
+        let pfad = probe("Wohnhaus.jjcad");
+
+        let mut texte = Vec::new();
+        for _ in 0..2 {
+            let raw = egui::RawInput {
+                hovered_files: vec![egui::HoveredFile {
+                    path: Some(pfad.clone()),
+                    ..Default::default()
+                }],
+                ..bild()
+            };
+            let out = ctx.run(raw, |ctx| app.ui(ctx));
+            texte = out
+                .shapes
+                .iter()
+                .filter_map(|cs| match &cs.shape {
+                    egui::Shape::Text(t) => Some(t.galley.text().to_string()),
+                    _ => None,
+                })
+                .collect();
+        }
+        assert!(
+            texte.iter().any(|t| t == "Datei loslassen"),
+            "der Hinweis fehlt: {texte:?}"
+        );
+        assert!(
+            texte.iter().any(|t| t.contains("Wohnhaus.jjcad") && t.contains("Zeichnung öffnen")),
+            "der Hinweis nennt das Ziel nicht: {texte:?}"
+        );
+
+        // Fremdes Format: derselbe Hinweis, aber mit dem Grund.
+        let mut app = App::with_ctx(ctx.clone());
+        let mut texte = Vec::new();
+        for _ in 0..2 {
+            let raw = egui::RawInput {
+                hovered_files: vec![egui::HoveredFile {
+                    path: Some(PathBuf::from("Notizen.txt")),
+                    ..Default::default()
+                }],
+                ..bild()
+            };
+            let out = ctx.run(raw, |ctx| app.ui(ctx));
+            texte = out
+                .shapes
+                .iter()
+                .filter_map(|cs| match &cs.shape {
+                    egui::Shape::Text(t) => Some(t.galley.text().to_string()),
+                    _ => None,
+                })
+                .collect();
+        }
+        assert!(
+            texte.iter().any(|t| t.contains("Format nicht unterstützt")),
+            "der Hinweis verschweigt das fremde Format: {texte:?}"
         );
     }
 }

@@ -105,6 +105,15 @@ einsehbar und dort frei änderbar (Ribbon ▸ Ansicht ▸ „Tasten").
     verschieben die Kante (Lage, Drehung, Breite), die oberen ziehen die Höhe (bei gesperrtem
     Verhältnis wächst die Breite mit). Ein Bild lässt sich nicht zerlegen.
 
+17. **Dateien ins Fenster ziehen** (Drag an Drop): eine Datei aus dem Dateimanager auf das
+    Programmfenster ziehen. Solange sie schwebt, nennt ein Hinweis oben in der Mitte die Datei
+    und was beim Loslassen geschieht — oder dass sich das Format nicht importieren lässt.
+    Beim Ablegen entscheidet die **Endung**: `.jjcad` öffnet die Zeichnung in einem Reiter,
+    `.dxf` wird in die laufende Zeichnung importiert, `.pdf` öffnet die Seitenwahl
+    („PDF einfügen"), `.png`/`.jpg`/`.jpeg` startet das Bildwerkzeug mit der Datei. Jede andere
+    Endung wird mit „Datei · Format nicht unterstützt" abgelehnt und ändert nichts. Der Weg ist
+    derselbe wie nach einer Auswahl im Dateidialog.
+
 Der Zeiger ist über der Zeichenfläche ein durchgehendes Fadenkreuz; der Systemzeiger wird dort
 ausgeblendet.
 
