@@ -82,6 +82,8 @@ JoJa-CAD/
 - [`docs/MCP.md`](docs/MCP.md) — KI-Steuerung, Werkzeuge, Beispiele
 - [`docs/GLOSSAR.md`](docs/GLOSSAR.md) — Begriffe, verbindlich für Oberfläche und Code
 - [`docs/STATUS.md`](docs/STATUS.md) — Arbeitsstand und offene Punkte
+- [`docs/VERSIONEN.md`](docs/VERSIONEN.md) — Versionierung, Release-Ablauf, Weg zur 0.3
+- [`CHANGELOG.md`](CHANGELOG.md) — was sich je Version geändert hat
 
 ## Lizenz
 
