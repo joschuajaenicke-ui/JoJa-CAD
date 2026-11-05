@@ -26,3 +26,7 @@ png = "0.17"
 rfd = "0.17"
 # Fensterkennung des Hauptfensters, damit der Systemdialog an diesem Fenster hängt
 raw-window-handle = "0.6"
+# System-Zwischenablage für **Bilder** (T0112): Strg+C legt ein einzelnes Bild
+# als reine Bilddaten ab, Strg+V übernimmt ein Bild aus einem anderen Programm.
+# egui selbst kann nur Text — die Kiste spricht X11, Windows und macOS an.
+arboard = "3.7"

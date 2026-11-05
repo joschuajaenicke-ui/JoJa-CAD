@@ -764,6 +764,10 @@ pub struct UiState {
     /// Zwischenablage: Elemente **und** Basispunkt (siehe `ghost::Clipboard`)
     pub clipboard: crate::ghost::Clipboard,
     pub clipboard_offset: f64,
+    /// System-Zwischenablage für **Bilder** (T0112) — Strg+C legt ein
+    /// einzelnes Bild als reine Bilddaten ab, Strg+V übernimmt eines von
+    /// außen. Die Verbindung lebt, solange das Programm läuft.
+    pub bildablage: crate::bildablage::BildAblage,
     /// Datei-Reiter, der auf die Rückfrage „ungespeicherte Änderungen“ wartet
     pub confirm_close: Option<usize>,
     pub confirm_quit: bool,
@@ -891,6 +895,7 @@ impl Default for UiState {
             rename_layer: None,
             clipboard: crate::ghost::Clipboard::default(),
             clipboard_offset: 20.0,
+            bildablage: crate::bildablage::BildAblage::neu(),
             confirm_close: None,
             confirm_quit: false,
             last_canvas: Rect::from_min_size(Pos2::ZERO, Vec2::new(1000.0, 700.0)),
@@ -1143,6 +1148,29 @@ impl CopyInput {
             _ => Self::BasePoint,
         }
     }
+}
+
+/// Wurde Strg+V gerade **losgelassen**? (T0112)
+///
+/// egui-winit wertet den Tastendruck von Strg+V selbst aus und verschluckt ihn:
+/// es fragt nur **Text** aus der Zwischenablage ab und schickt bei einem reinen
+/// Bild gar kein Ereignis. Das Loslassen kommt dagegen als gewöhnliches
+/// Tastenereignis durch — es ist damit der einzige Anhaltspunkt für „der Nutzer
+/// wollte einfügen“.
+fn strg_v_losgelassen(ctx: &egui::Context) -> bool {
+    ctx.input(|i| {
+        i.events.iter().any(|e| {
+            matches!(
+                e,
+                egui::Event::Key {
+                    key: egui::Key::V,
+                    pressed: false,
+                    modifiers,
+                    ..
+                } if modifiers.command
+            )
+        })
+    })
 }
 
 pub struct App {
@@ -3732,7 +3760,14 @@ impl App {
                 self.copy_selection(true);
             }
             if ev_paste {
-                self.start_ghost_paste();
+                self.einfuegen();
+            } else if strg_v_losgelassen(ctx) && !self.ui.bildablage.hat_text() {
+                // egui-winit verschluckt Strg+V, wenn die Zwischenablage
+                // **nur** ein Bild enthält (es fragt ausschließlich Text ab) —
+                // dann kommt kein `Event::Paste` an. Das Loslassen der Taste
+                // kommt durch und dient als Auslöser. Liegt zusätzlich Text
+                // vor, hat `Event::Paste` schon eingefügt.
+                self.einfuegen();
             }
         }
         let mut run: Option<String> = None;
@@ -4152,8 +4187,17 @@ impl App {
         if self.ui.clipboard.is_empty() {
             return;
         }
-        let msg = jjcad_core::i18n::t_args_owned("gui.app.joja_cad_zwischenablage_x_objekte", &[("wert1", format!("{}", self.ui.clipboard.len()))]);
-        self.ctx.copy_text(msg);
+        // T0112: genau **ein** Bild geht als reine Bilddatei in die
+        // System-Zwischenablage, damit andere Programme es einfügen können.
+        // Dann keine Textmeldung ablegen — sie würde das Bild überschreiben.
+        let als_bild = match self.bild_der_auswahl() {
+            Some(bild) => self.ui.bildablage.lege(&bild).is_ok(),
+            None => false,
+        };
+        if !als_bild {
+            let msg = jjcad_core::i18n::t_args_owned("gui.app.joja_cad_zwischenablage_x_objekte", &[("wert1", format!("{}", self.ui.clipboard.len()))]);
+            self.ctx.copy_text(msg);
+        }
         if cut {
             let _ = self.session_mut().execute("modify.erase", &serde_json::json!({"ids": ids}));
             self.session_mut().clear_selection();
@@ -4162,7 +4206,71 @@ impl App {
         self.toast(if cut { jjcad_core::i18n::tr("gui.app.auswahl_ausgeschnitten") } else { jjcad_core::i18n::tr("gui.app.auswahl_kopiert") });
     }
 
+    /// Das Bild der Auswahl, wenn genau **ein** Objekt ausgewählt ist und
+    /// dieses ein Bild ist (T0112).
+    ///
+    /// Nur dann geht die Auswahl als reine Bilddatei in die
+    /// System-Zwischenablage — bei mehreren Objekten oder einer anderen
+    /// Objektart bleibt es bei der eigenen Zwischenablage.
+    pub fn bild_der_auswahl(&self) -> Option<jjcad_core::bild::Bild> {
+        let ids = self.selection();
+        if ids.len() != 1 {
+            return None;
+        }
+        let doc = self.doc();
+        let e = doc.ents().iter().find(|e| e.id == ids[0])?;
+        let EntityKind::Image { data, .. } = &e.kind else {
+            return None;
+        };
+        jjcad_core::bild::dekodiere(data).map(|b| (*b).clone())
+    }
+
+    /// Fügt ein, was in der Zwischenablage liegt (T0112): ein **Bild** hat
+    /// Vorrang vor der eigenen Objekt-Zwischenablage.
+    pub fn einfuegen(&mut self) {
+        if self.bild_einfuegen() {
+            return;
+        }
+        self.start_ghost_paste();
+    }
+
+    /// Übernimmt ein Bild aus der System-Zwischenablage und startet
+    /// `draw.image`. `false`, wenn dort keines liegt — oder wenn es das Bild
+    /// ist, das wir selbst gerade kopiert haben (dann gilt die eigene
+    /// Zwischenablage mit Lage und Größe).
+    pub fn bild_einfuegen(&mut self) -> bool {
+        let Some(bild) = self.ui.bildablage.hole() else {
+            return false;
+        };
+        if bild.eigen && !self.ui.clipboard.is_empty() {
+            return false;
+        }
+        self.bild_aus_pixeln(bild.breite, bild.hoehe, &bild.rgba);
+        true
+    }
+
+    /// Baut aus rohen Pixeln ein einbettbares Bild und startet das
+    /// Bildwerkzeug — derselbe Weg wie nach einem Datei-Import.
+    pub fn bild_aus_pixeln(&mut self, breite: u32, hoehe: u32, rgba: &[u8]) {
+        match jjcad_core::bild::aus_rgba(breite, hoehe, rgba) {
+            Ok((name, data)) => {
+                self.options.bild = Some(BildQuelle { name: name.clone(), data });
+                self.start_tool("draw.image");
+                self.toast(jjcad_core::i18n::t_args_owned(
+                    "gui.app.bild_x_ecken_klicken",
+                    &[("name", name)],
+                ));
+            }
+            Err(e) => self.toast(e),
+        }
+    }
+
     pub fn paste_clipboard(&mut self) {
+        // T0112: liegt ein Bild in der System-Zwischenablage, wird es
+        // eingefügt — auch über den Knopf „Einfügen“.
+        if self.bild_einfuegen() {
+            return;
+        }
         if self.ui.clipboard.is_empty() {
             return;
         }
@@ -10836,6 +10944,165 @@ mod tests_fensterrahmen {
                 && (griff.bottom() - 950.0).abs() < 0.5
                 && (griff.width() - FENSTERECKE_PX).abs() < 0.5,
             "der Griff sitzt nicht in der Ecke unten rechts: {griff:?}"
+        );
+    }
+}
+
+mod tests_bildablage {
+    //! T0112: Bilder über die System-Zwischenablage austauschen.
+    //!
+    //! Die Verbindung zur Zwischenablage (`arboard`) braucht eine Anzeige und
+    //! ist im Testlauf nicht vorhanden — geprüft wird deshalb alles davor und
+    //! danach: **welche** Auswahl als Bild gilt, wie aus rohen Pixeln ein
+    //! einbettbares Bild wird, und woran Strg+V mit einem reinen Bild erkannt
+    //! wird. Der Weg über die Zwischenablage selbst ist ein dünner Aufruf.
+
+    use super::*;
+
+    /// 2×2: rot, grün / blau, weiß.
+    const RGBA: [u8; 16] = [
+        255, 0, 0, 255, 0, 255, 0, 255, 0, 0, 255, 255, 255, 255, 255, 255,
+    ];
+
+    fn app_mit_bild() -> App {
+        let ctx = egui::Context::default();
+        let mut app = App::with_ctx(ctx);
+        app.doc_mut().settings.input_unit = jjcad_core::units::Unit::Mm;
+        let (name, data) = jjcad_core::bild::aus_rgba(2, 2, &RGBA).expect("PNG aus Pixeln");
+        let r = app
+            .session_mut()
+            .execute(
+                "draw.image",
+                &serde_json::json!({"a": [0, 0], "b": [1000, 0], "name": name, "data": data}),
+            )
+            .expect("Bild");
+        let id = r["created"][0].as_u64().unwrap();
+        app.session_mut().select(vec![id]);
+        app
+    }
+
+    /// Genau ein ausgewähltes Bild ist der Fall, in dem Strg+C eine reine
+    /// Bilddatei ablegt.
+    #[test]
+    fn ein_einzelnes_bild_ist_das_bild_der_auswahl() {
+        let app = app_mit_bild();
+        let bild = app.bild_der_auswahl().expect("Bild der Auswahl");
+        assert_eq!((bild.breite, bild.hoehe), (2, 2));
+        assert_eq!(bild.pixel(0, 0), [255, 0, 0, 255], "links oben rot");
+    }
+
+    /// Zwei Bilder sind keine „einzelne Bilddatei“ — dann bleibt es bei der
+    /// eigenen Zwischenablage.
+    #[test]
+    fn zwei_bilder_sind_kein_einzelbild() {
+        let mut app = app_mit_bild();
+        let (name, data) = jjcad_core::bild::aus_rgba(2, 2, &RGBA).expect("PNG");
+        let r = app
+            .session_mut()
+            .execute(
+                "draw.image",
+                &serde_json::json!({"a": [0, 2000], "b": [1000, 2000], "name": name, "data": data}),
+            )
+            .expect("zweites Bild");
+        let zweite = r["created"][0].as_u64().unwrap();
+        let erste = app.selection()[0];
+        app.session_mut().select(vec![erste, zweite]);
+        assert!(
+            app.bild_der_auswahl().is_none(),
+            "zwei Bilder dürfen nicht als eine Bilddatei in die Zwischenablage"
+        );
+    }
+
+    /// Eine Wand ist kein Bild.
+    #[test]
+    fn eine_wand_ist_kein_bild() {
+        let ctx = egui::Context::default();
+        let mut app = App::with_ctx(ctx);
+        app.doc_mut().settings.input_unit = jjcad_core::units::Unit::Mm;
+        let r = app
+            .session_mut()
+            .execute("draw.wall", &serde_json::json!({"a": [0, 0], "b": [3000, 0]}))
+            .expect("Wand");
+        let id = r["created"][0].as_u64().unwrap();
+        app.session_mut().select(vec![id]);
+        assert!(app.bild_der_auswahl().is_none());
+    }
+
+    /// Ein Bild aus der Zwischenablage landet auf demselben Weg im Dokument
+    /// wie ein Datei-Import: eingebettete PNG-Daten plus Werkzeug `draw.image`.
+    #[test]
+    fn bild_aus_pixeln_startet_das_bildwerkzeug() {
+        let ctx = egui::Context::default();
+        let mut app = App::with_ctx(ctx);
+        app.bild_aus_pixeln(2, 2, &RGBA);
+        assert_eq!(
+            app.tool_id(),
+            Some("draw.image"),
+            "nach dem Einfügen wartet das Bildwerkzeug auf die beiden Ecken"
+        );
+        let quelle = app.options.bild.clone().expect("Bilddaten für das Werkzeug");
+        assert_eq!(quelle.name, "Zwischenablage.png");
+        let bild = jjcad_core::bild::dekodiere(&quelle.data).expect("eingebettete Daten lesbar");
+        assert_eq!((bild.breite, bild.hoehe), (2, 2));
+        assert_eq!(bild.pixel(1, 1), [255, 255, 255, 255], "rechts unten weiß");
+    }
+
+    /// egui-winit verschluckt den Druck von Strg+V bei einem reinen Bild — das
+    /// Loslassen kommt durch und ist der Auslöser.
+    #[test]
+    fn strg_v_wird_am_loslassen_erkannt() {
+        let ctx = egui::Context::default();
+        let loslassen = egui::Event::Key {
+            key: egui::Key::V,
+            physical_key: None,
+            pressed: false,
+            repeat: false,
+            modifiers: egui::Modifiers::COMMAND,
+        };
+        let _ = ctx.run(
+            egui::RawInput {
+                events: vec![loslassen.clone()],
+                ..Default::default()
+            },
+            |_| {},
+        );
+        assert!(strg_v_losgelassen(&ctx), "Loslassen von Strg+V muss zählen");
+
+        // Der Druck selbst wird von egui-winit geschluckt — er darf nicht zählen.
+        let druck = egui::Event::Key {
+            key: egui::Key::V,
+            physical_key: None,
+            pressed: true,
+            repeat: false,
+            modifiers: egui::Modifiers::COMMAND,
+        };
+        let _ = ctx.run(
+            egui::RawInput {
+                events: vec![druck],
+                ..Default::default()
+            },
+            |_| {},
+        );
+        assert!(!strg_v_losgelassen(&ctx), "der Druck allein ist kein Einfügen");
+
+        // Ein blankes „v“ (Werkzeug Verschieben) ist kein Einfügen.
+        let blank = egui::Event::Key {
+            key: egui::Key::V,
+            physical_key: None,
+            pressed: false,
+            repeat: false,
+            modifiers: egui::Modifiers::NONE,
+        };
+        let _ = ctx.run(
+            egui::RawInput {
+                events: vec![blank],
+                ..Default::default()
+            },
+            |_| {},
+        );
+        assert!(
+            !strg_v_losgelassen(&ctx),
+            "ohne Strg darf das Loslassen von V nichts einfügen"
         );
     }
 }
