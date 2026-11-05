@@ -43,7 +43,22 @@ APPS="$DATEN/applications"
 # Die Dateien sind dieselben wie im Programm (`crates/jjcad-gui/assets/`), es
 # gibt also keine zweite Bildquelle.
 GROESSEN="16 24 32 48 64 128 256 512"
+
+# Der Symbolname trägt einen Abdruck des Bildes (T0113, Turn 5). KDE hält
+# geladene Symbole im Speicher und liest die Datei nicht erneut, solange der
+# Name gleich bleibt: nach dem neuen Markenzeichen zeigte die Taskleiste
+# weiterhin das alte Bild, obwohl Datei und Programm längst das neue trugen
+# (plasmashell lief seit dem Anmelden, die Symbol-Dateien waren ersetzt). Ein
+# Name, der sich mit dem Bild ändert, kann keinen alten Eintrag treffen — und
+# beim nächsten Markenzeichen stimmt es von selbst wieder.
+MARKE="$(md5sum crates/jjcad-gui/assets/jjc-icon-512.png | cut -c1-8)"
+ICON_NAME="joja-cad-$MARKE"
+
 mkdir -p "$APPS"
+# Alte Abdruck-Namen wegräumen, damit im Symbolpfad nicht mehrere Fassungen
+# desselben Zeichens liegen.
+rm -f "$ICONS"/*/apps/joja-cad-*.png 2>/dev/null || true
+
 for s in $GROESSEN; do
     quelle="crates/jjcad-gui/assets/jjc-icon-$s.png"
     if [ ! -f "$quelle" ]; then
@@ -51,6 +66,9 @@ for s in $GROESSEN; do
         exit 1
     fi
     mkdir -p "$ICONS/${s}x${s}/apps"
+    cp "$quelle" "$ICONS/${s}x${s}/apps/$ICON_NAME.png"
+    # Zweitname = App-ID: KDE nimmt ihn, wenn es ein Fenster keinem
+    # .desktop-Eintrag zuordnen kann. Dieselbe Datei, kein zweites Bild.
     cp "$quelle" "$ICONS/${s}x${s}/apps/jjcad.png"
 done
 
@@ -61,7 +79,7 @@ Name=JoJa-CAD
 GenericName=CAD-Zeichenprogramm
 Comment=2D-CAD für Architektur- und Bauantragszeichnungen
 Exec="$BIN" %f
-Icon=jjcad
+Icon=$ICON_NAME
 Terminal=false
 Categories=Graphics;Engineering;
 MimeType=application/x-jjcad;
@@ -69,14 +87,20 @@ StartupWMClass=jjcad
 EOF
 
 # Caches der Oberfläche neu bauen, damit das Symbol sofort erscheint. KDE führt
-# zusätzlich eine eigene Symbol- und Startmenü-Datenbank (`kbuildsycoca`) —
-# ohne sie zeigt die Taskleiste nach einem Icon-Wechsel weiter das alte Bild.
-command -v update-desktop-database >/dev/null && update-desktop-database "$APPS" 2>/dev/null || true
-command -v gtk-update-icon-cache  >/dev/null && gtk-update-icon-cache -f -t "$ICONS" 2>/dev/null || true
-for sycoca in kbuildsycoca6 kbuildsycoca5; do
-    if command -v "$sycoca" >/dev/null; then "$sycoca" >/dev/null 2>&1 || true; break; fi
-done
+# zusätzlich eine eigene Symbol- und Startmenü-Datenbank (`kbuildsycoca`) und
+# einen Symbol-Cache (`icon-cache.kcache`) — ohne beides zeigt die Taskleiste
+# nach einem Icon-Wechsel weiter das alte Bild. `JJCAD_INSTALL_OHNE_CACHE=1`
+# überspringt diesen Teil (der Test schreibt in ein Wegwerf-Verzeichnis und darf
+# die Caches des angemeldeten Benutzers nicht anfassen).
+if [ "${JJCAD_INSTALL_OHNE_CACHE:-}" != "1" ]; then
+    command -v update-desktop-database >/dev/null && update-desktop-database "$APPS" 2>/dev/null || true
+    command -v gtk-update-icon-cache  >/dev/null && gtk-update-icon-cache -f -t "$ICONS" 2>/dev/null || true
+    rm -f "${XDG_CACHE_HOME:-$HOME/.cache}/icon-cache.kcache" 2>/dev/null || true
+    for sycoca in kbuildsycoca6 kbuildsycoca5; do
+        if command -v "$sycoca" >/dev/null; then "$sycoca" >/dev/null 2>&1 || true; break; fi
+    done
+fi
 
-printf 'Markenzeichen: %s (%s px)\n' "$ICONS/<n>x<n>/apps/jjcad.png" "$GROESSEN"
+printf 'Markenzeichen: %s (%s px)\n' "$ICONS/<n>x<n>/apps/$ICON_NAME.png" "$GROESSEN"
 printf 'Startmenue:    %s\n' "$APPS/jjcad.desktop"
 printf 'Programm:      %s\n' "$BIN"
