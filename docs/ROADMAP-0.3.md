@@ -4,6 +4,9 @@ Ziel: **Sonntagabend ist 0.3.0 öffentlich.** Kapazität: drei Tage, bisher
 30–40 Commits pro Tag, also rund 100–120 Commits. Die Schätzungen unten sind in
 Commits, nicht in Stunden.
 
+Die vollständige, abhakbare Liste steht in [`TODO-0.3.md`](TODO-0.3.md) —
+73 Punkte, 124 Commits. Dieses Dokument sagt, in welcher Reihenfolge und warum.
+
 Zwei Tore, nicht eines:
 
 1. **Freunde testen** — sie brauchen eine Datei. Bei privatem Repo können sie
