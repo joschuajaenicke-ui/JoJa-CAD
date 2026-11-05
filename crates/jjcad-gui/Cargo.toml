@@ -9,6 +9,10 @@ description = "JoJa-CAD Desktop-Anwendung (2D-CAD für Architektur)"
 name = "jjcad"
 path = "src/main.rs"
 
+# Symbol und Versionsangaben in die .exe einbetten (nur Windows).
+[target.'cfg(windows)'.build-dependencies]
+embed-resource = "2"
+
 [dependencies]
 jjcad-core = { workspace = true }
 serde = { workspace = true }

@@ -1,0 +1,53 @@
+name: Windows-Paket
+
+# Baut die portable Windows-Fassung. Läuft auf Zuruf und bei jedem Tag,
+# damit ein Release immer ein Paket hat, das auf einem echten Windows
+# gebaut wurde — nicht gekreuzt auf Linux.
+
+on:
+  workflow_dispatch:
+  push:
+    tags: ['v*']
+
+jobs:
+  windows:
+    name: Windows-Paket bauen
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Rust-Werkzeuge
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Build-Zwischenspeicher
+        uses: Swatinem/rust-cache@v2
+
+      - name: Bauen
+        run: cargo build --release -p jjcad-gui
+
+      - name: Paket schnüren
+        shell: pwsh
+        run: |
+          $version = (Select-String -Path Cargo.toml -Pattern '^version = "(.+)"').Matches[0].Groups[1].Value
+          $name = "JoJa-CAD-$version-windows-x64"
+          New-Item -ItemType Directory -Path $name | Out-Null
+          Copy-Item target/release/jjcad.exe $name
+          Copy-Item LICENSE, README.md $name
+          New-Item -ItemType Directory -Path "$name/fonts" | Out-Null
+          Copy-Item packaging/fonts/*.ttf "$name/fonts/"
+          Copy-Item packaging/fonts/*.txt "$name/fonts/"
+
+          # Prüfen, dass Symbol und Versionsangaben wirklich in der .exe stecken
+          $vi = (Get-Item "$name/jjcad.exe").VersionInfo
+          if (-not $vi.ProductVersion) { throw "Keine Versionsressource in der .exe" }
+          Write-Host "Produktversion: $($vi.ProductVersion) / $($vi.ProductName)"
+
+          Compress-Archive -Path $name -DestinationPath "$name.zip"
+          Get-Item "$name.zip" | Select-Object Name, Length
+
+      - name: Paket ablegen
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-paket
+          path: "*.zip"
+          if-no-files-found: error

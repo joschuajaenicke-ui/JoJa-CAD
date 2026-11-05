@@ -38,4 +38,13 @@ fn main() {
 
     println!("cargo:rerun-if-changed=../../.git/HEAD");
     println!("cargo:rerun-if-changed=../../.git/refs");
+
+    // Windows: Symbol und Versionsangaben in die .exe einbetten, damit die
+    // Datei im Explorer und in der Taskleiste wie das Programm aussieht.
+    #[cfg(windows)]
+    {
+        println!("cargo:rerun-if-changed=assets/jjcad.rc");
+        println!("cargo:rerun-if-changed=assets/jjc-icon.ico");
+        embed_resource::compile("assets/jjcad.rc", embed_resource::NONE);
+    }
 }

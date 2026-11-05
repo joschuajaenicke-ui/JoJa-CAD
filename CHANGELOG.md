@@ -8,25 +8,35 @@ Abschnitte je Version: **Neu**, **Geändert**, **Behoben**. Ein Eintrag ist ein
 Satz aus Nutzersicht — was man jetzt anders machen kann, nicht welche Datei
 angefasst wurde.
 
-## [Nicht veröffentlicht]
+## [0.2.0] — 2026-11-05
+
+Das Grundprogramm steht: zeichnen, Wände und Öffnungen, bemaßen, Blätter,
+Ausgabe. Erste geschlossene Fassung — das Repository ist noch privat, die erste
+öffentliche Fassung wird 0.3.0.
 
 ### Neu
 
-- 2D-Zeichnen mit Grundelementen, Fangen (Endpunkt, Mitte, Zentrum, Schnitt,
-  Lot, nächster Punkt, Raster, Ortho, 45°-Polar), Griffen und Auswahl
-- Architekturbauteile: Wand mit Öffnungen und Gehrung, Tür, Fenster, Treppe,
-  Volumen — verbinden sich dynamisch
-- Bemaßung nach DIN 406/1356: Einzelmaß, Maßkette, Grundriss- und Schnitt-Kote
-- Blöcke: Systembibliothek, eigene Projektblöcke, Hotbar und Inventar
-- Blätter A4–A0 mit Rahmen, Schriftfeld und Ansichtsfenstern
-- Ausgabe als PDF, PNG und DXF; Import von PDF und DXF
-- MCP-Server mit 10 Werkzeugen für vollständige KI-Steuerung
-- Oberfläche auf Deutsch, auf Englisch umstellbar
+- **Zeichnen**: Punkt, Linie, Polylinie, Rechteck, Kreis, Bogen, Ellipse,
+  Schraffur und Text, mit Griffen, Auswahl und Undo/Redo
+- **Fangen**: Endpunkt, Mittelpunkt, Zentrum, Schnittpunkt, Lot, nächster Punkt,
+  Raster, Ortho und 45°-Polarfang, dazu Hilfslinien beim Verweilen auf einem Punkt
+- **Architektur**: Wand mit Dicke, Ausrichtung und Öffnungen; Gehrung an
+  Anschlüssen; Tür (Dreh-, Schiebe-, zweiflügelig, Öffnung), Fenster, Treppe,
+  Volumen — die Bauteile verbinden sich dynamisch
+- **Bemaßung**: Einzelmaß, Maßkette, Grundriss- und Schnitt-Kote nach
+  DIN 406/1356, Maßtext in mm/cm/m
+- **Blöcke**: Systembibliothek (Sanitär, Küche, Möbel, Symbole), eigene
+  Projektblöcke, Hotbar mit Vorlagen, Inventar
+- **Blätter**: A4–A0 mit Rahmen, Schriftfeld und mehreren Ansichtsfenstern
+- **Ausgabe**: PDF (vektoriell), PNG und DXF; **Import** von PDF und DXF
+- **Oberfläche**: Ribbon, Layer- und Eigenschaften-Panel, Statusleiste,
+  helles und dunkles Design, Deutsch und Englisch
+- **KI-Steuerung**: MCP-Server mit 10 Werkzeugen, vollständig headless
 
-## [0.2.0] — nicht veröffentlicht
+### Bekannt
 
-Erste Fassung der geschlossenen Entwicklung: Kern und Oberfläche neu geschrieben.
-Wird nicht veröffentlicht; die erste öffentliche Fassung ist 0.3.0.
+- Die Windows-Fassung wird erstmals gebaut und ist nicht ausgiebig getestet.
+- Die Zeichnungen in `samples/` sind Platzhalter ohne fachliche Prüfung.
 
 ## [0.1.0] — verworfen
 
