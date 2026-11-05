@@ -40,6 +40,10 @@ struct PaintCtx {
     /// Drehung der Ansicht (Bogenmaß, mathematisch positiv). Texte drehen mit
     /// der Zeichnung; Linien und Flächen stecken schon in `w2s`.
     rot: f32,
+    /// Höchste Rastergröße der Schrift in Pixeln (T0114, Einstellungen →
+    /// Darstellung → „Textauflösung“). Höher = schärfer im hohen Zoom, aber
+    /// mehr Schriftatlas.
+    text_deckel: f32,
 }
 
 fn color32(c: jjcad_core::style::Color) -> Color32 {
@@ -533,7 +537,7 @@ fn paint_prim(p: &Painter, prim: &Prim, w2s: &dyn Fn(V2) -> Pos2, scale: f64, pc
         PShape::Dot { p: pos, r } => {
             p.circle_filled(w2s(*pos), ((*r * scale) as f32).max(1.2), col);
         }
-        PShape::Text(t) => paint_text(p, t, w2s(t.pos), scale, col, pc.rot),
+        PShape::Text(t) => paint_text(p, t, w2s(t.pos), scale, col, pc.rot, pc.text_deckel),
     }
 }
 
@@ -554,8 +558,9 @@ fn paint_text(
     scale: f64,
     col: Color32,
     rot: f32,
+    deckel: f32,
 ) {
-    let galley = text_galley(p, t, scale, col);
+    let galley = text_galley(p, t, scale, col, deckel);
     let (pos, winkel) = text_ort(t, &galley, base, rot);
     if winkel.abs() < 0.001 {
         p.galley(pos, galley, col);
@@ -610,12 +615,14 @@ pub(crate) fn text_galley(
     t: &render::TextPrim,
     scale: f64,
     col: Color32,
+    deckel: f32,
 ) -> std::sync::Arc<egui::Galley> {
     let gewuenscht = (t.height * scale * render::TEXT_GROESSE_FAKTOR).max(3.0) as f32;
     // Rastergröße gedeckelt und auf die Größenleiter gelegt, den Rest streckt
     // die Galley (T0114) — sonst rastet egui jede Zoomstufe in den gemeinsamen
-    // Schriftatlas und der Text friert im hohen Zoom ein.
-    let (raster, faktor) = crate::textgroesse::raster_und_skalierung(gewuenscht);
+    // Schriftatlas und der Text friert im hohen Zoom ein. Der Deckel ist
+    // einstellbar (`Textaufloesung`, T0114 Turn 3).
+    let (raster, faktor) = crate::textgroesse::raster_und_skalierung(gewuenscht, deckel);
     let galley = satz(p.ctx(), t, raster, col);
     crate::textgroesse::skaliere(galley, faktor)
 }
@@ -1275,6 +1282,7 @@ pub fn show(app: &mut App, ui: &mut Ui) {
             paper_px,
             preview: false,
             rot: view_now.rot as f32,
+            text_deckel: app.prefs.textaufloesung.px(),
         };
         if app.ui.show_grid {
             draw_grid(app, &painter, rect, view_now);
@@ -1565,6 +1573,7 @@ fn draw_sheet(app: &mut App, p: &Painter, rect: Rect, view: View, cursor: Option
             paper_px: view.zoom,
             preview: false,
             rot: 0.0,
+            text_deckel: app.prefs.textaufloesung.px(),
         };
         for prim in &vdl.prims {
             paint_prim(&clip, prim, &vp_w2s, view.zoom * s, &vpc, 1.0);
@@ -1599,6 +1608,7 @@ fn draw_sheet(app: &mut App, p: &Painter, rect: Rect, view: View, cursor: Option
         paper_px: view.zoom,
         preview: false,
         rot: view.rot as f32,
+        text_deckel: app.prefs.textaufloesung.px(),
     };
     let mut dl = render::render_sheet(app.doc(), &sheet);
     ohne_texteingabe(app, &mut dl);
@@ -1890,6 +1900,7 @@ fn draw_opening_preview(
         paper_px,
         preview: false,
         rot: view.rot as f32,
+        text_deckel: app.prefs.textaufloesung.px(),
     };
     let symbol_ctx = PaintCtx {
         preview: true,
@@ -2479,6 +2490,7 @@ fn draw_tool_preview(
                 view.zoom,
                 vorschau_col,
                 view.rot as f32,
+                app.prefs.textaufloesung.px(),
             );
         }
         "draw.fill" | "draw.hatch" | "draw.volume" => {
@@ -2646,6 +2658,7 @@ fn draw_tool_preview(
                                         view.zoom,
                                         pre,
                                         view.rot as f32,
+                                        app.prefs.textaufloesung.px(),
                                     );
                                 }
                                 label = jjcad_core::i18n::t_args_owned("gui.canvas.drehen_x", &[("wert1", format!("{}", format_number(angle, 1)))]);
@@ -3119,6 +3132,7 @@ fn draw_selection_preview(
         paper_px,
         preview: true,
         rot: view.rot as f32,
+        text_deckel: app.prefs.textaufloesung.px(),
     };
     let w2s = |q: V2| world_to_screen(rect, view, q);
     for prim in &dl.prims {
@@ -4033,7 +4047,15 @@ fn draw_ghost(app: &App, p: &Painter, rect: Rect, view: View) {
     let mut dl = jjcad_core::render::DisplayList::default();
     dl.prims = geo.prims.clone();
     for prim in &dl.prims {
-        ghost_shape(p, &prim.shape, &w2s, zoom, stroke, view.rot as f32);
+        ghost_shape(
+            p,
+            &prim.shape,
+            &w2s,
+            zoom,
+            stroke,
+            view.rot as f32,
+            app.prefs.textaufloesung.px(),
+        );
     }
 
     // Umriss und Ankerpunkt
@@ -4078,6 +4100,7 @@ fn ghost_shape(
     zoom: f64,
     stroke: Stroke,
     rot: f32,
+    deckel: f32,
 ) {
     match sh {
         PShape::Line(a, b) => {
@@ -4126,7 +4149,7 @@ fn ghost_shape(
         // Text war hier nicht gezeichnet: die Einfüge-Vorschau zeigte bei
         // kopierten Textfeldern nur den Anker, keinen Text (T0025). Gezeichnet
         // über `paint_text` — dieselbe Lage, Schrift und Drehung wie danach.
-        PShape::Text(t) => paint_text(p, t, w2s(t.pos), zoom, Palette::accent(), rot),
+        PShape::Text(t) => paint_text(p, t, w2s(t.pos), zoom, Palette::accent(), rot, deckel),
         PShape::Dot { p: pos, r } => {
             p.circle_filled(w2s(*pos), ((*r * zoom) as f32).max(1.2), stroke.color);
         }
@@ -4469,6 +4492,7 @@ fn draw_fill_ghost(app: &App, p: &Painter, rect: Rect, view: View, umriss: &[V2]
         paper_px: view.zoom * app.doc().settings.annotation_scale,
         preview: true,
         rot: view.rot as f32,
+        text_deckel: app.prefs.textaufloesung.px(),
     };
     for prim in &dl.prims {
         paint_prim(p, prim, &w2s, view.zoom, &pc, 1.0);
@@ -4524,6 +4548,7 @@ fn draw_paint_ghost(
         paper_px: view.zoom * app.doc().settings.annotation_scale,
         preview: true,
         rot: view.rot as f32,
+        text_deckel: app.prefs.textaufloesung.px(),
     };
     for prim in &dl.prims {
         paint_prim(p, prim, &w2s, view.zoom, &pc, 1.0);
@@ -8944,7 +8969,8 @@ mod tests_textvorschau {
                 1.0,
                 Stroke::new(1.5, Palette::accent()),
                 0.0,
-                );
+                crate::textgroesse::RASTER_DECKEL_PX,
+            );
         });
         assert!(
             !out.shapes.is_empty(),
@@ -9061,7 +9087,7 @@ mod tests_textausrichtung {
                 font: jjcad_core::model::TextFont::default(),
                 line_spacing: 1.0,
             };
-            let g = text_galley(&p, &t, 1.0, Color32::WHITE);
+            let g = text_galley(&p, &t, 1.0, Color32::WHITE, crate::textgroesse::RASTER_DECKEL_PX);
             let (pos, _) = text_ort(&t, &g, BASIS, 0.0);
             ergebnis = g.rect.translate(pos.to_vec2());
         });
@@ -10482,6 +10508,7 @@ mod tests_kreis_kontur {
             paper_px: scale,
             preview: false,
             rot: 0.0,
+            text_deckel: crate::textgroesse::RASTER_DECKEL_PX,
         };
         let prim = Prim {
             shape: PShape::Circle {
@@ -11130,7 +11157,7 @@ mod tests_textzoom {
         let ctx = ctx();
         let p = maler(&ctx);
         let t = prim("Wohnen 12,4", 250.0);
-        let hoehe = |zoom: f64| text_galley(&p, &t, zoom, Color32::WHITE).size().y;
+        let hoehe = |zoom: f64| text_galley(&p, &t, zoom, Color32::WHITE, crate::textgroesse::RASTER_DECKEL_PX).size().y;
         let (h6, h10, h20) = (hoehe(6.0), hoehe(10.0), hoehe(20.0));
         assert!(h6 > 1000.0, "600 %: nur {h6} px hoch");
         assert!(
@@ -11158,7 +11185,7 @@ mod tests_textzoom {
         ] {
             for i in 0..64 {
                 let t = prim(&format!("Wohnen {i} 12,4 m²"), 250.0);
-                let _ = text_galley(&p, &t, zoom, Color32::WHITE);
+                let _ = text_galley(&p, &t, zoom, Color32::WHITE, crate::textgroesse::RASTER_DECKEL_PX);
             }
             fuellstand = fuellstand.max(ctx.fonts(|f| f.font_atlas_fill_ratio()));
         }
@@ -11180,7 +11207,7 @@ mod tests_textzoom {
         // Aussage über die Rundung, nicht über den Deckel.
         for height in [40.0, 250.0, 1000.0] {
             let t = prim("Wohnen 12,4", height);
-            let g = text_galley(&p, &t, 1.0, Color32::WHITE);
+            let g = text_galley(&p, &t, 1.0, Color32::WHITE, crate::textgroesse::RASTER_DECKEL_PX);
             let (w, h) = t.box_size();
             let (gw, gh) = (g.size().x as f64, g.size().y as f64);
             assert!(

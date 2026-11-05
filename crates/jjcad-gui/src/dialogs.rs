@@ -7,7 +7,9 @@ use crate::widgets;
 use egui::{Align, Color32, FontId, Layout, Pos2, Rect, RichText, Rounding, Sense, Stroke, Ui, Vec2};
 use jjcad_core::actions;
 use jjcad_core::geom::{Vec2 as V2};
-use jjcad_core::persist::{fest_belegt, Design, DragMode, Farbakzent, Fensterrahmen, PastePivot};
+use jjcad_core::persist::{
+    fest_belegt, Design, DragMode, Farbakzent, Fensterrahmen, PastePivot, Textaufloesung,
+};
 use jjcad_core::units::Unit;
 use serde_json::json;
 
@@ -1177,6 +1179,12 @@ pub(crate) const EINSTELLUNGSKATEGORIEN: &[Einstellungskategorie] = &[
             "Grün",
             "Rot",
             "Violett",
+            "Textauflösung",
+            "Auflösung",
+            "Schärfe",
+            "Rastergröße",
+            "Schrift",
+            "Atlas",
             "Darstellung",
         ],
     },
@@ -1288,6 +1296,8 @@ fn settings_body(app: &mut App, ui: &mut Ui) {
     let mut design = app.prefs.design;
     // T0111: Farbakzent der Bedienung (Vorgabe Bernstein).
     let mut farbakzent = app.prefs.farbakzent;
+    // T0114: höchste Rastergröße der Schrift (Vorgabe 256 px).
+    let mut textaufloesung = app.prefs.textaufloesung;
 
     // Suche: Kategorien, deren Name oder eine ihrer Einstellungen passt.
     let suche = app.ui.settings_suche.trim().to_lowercase();
@@ -1853,6 +1863,54 @@ fn settings_body(app: &mut App, ui: &mut Ui) {
                                         jjcad_core::i18n::tr("settings.farbakzent_hint"),
                                     ));
                                 }
+                                // T0114: höchste Rastergröße der Schrift. Höher
+                                // heißt schärfer im hohen Zoom, kostet aber
+                                // Schriftatlas — deshalb nur vier feste Stufen.
+                                zeile_mit(
+                                    &suche,
+                                    ui,
+                                    jjcad_core::i18n::tr("gui.dialogs.textaufloesung"),
+                                    &[
+                                        "Maximale Textauflösung",
+                                        "Auflösung",
+                                        "Schärfe",
+                                        "Rastergröße",
+                                        "Schrift",
+                                        "Atlas",
+                                    ],
+                                    |ui| {
+                                        let cap = textaufloesung.text().to_string();
+                                        if let Some(neu) = panels::dropdown(
+                                            ui,
+                                            "textaufloesung",
+                                            &cap,
+                                            None,
+                                            |ui| {
+                                                let mut out = None;
+                                                for m in Textaufloesung::ALL {
+                                                    if ui
+                                                        .selectable_label(
+                                                            m == textaufloesung,
+                                                            m.text(),
+                                                        )
+                                                        .on_hover_text(m.tip())
+                                                        .clicked()
+                                                    {
+                                                        out = Some(m);
+                                                    }
+                                                }
+                                                out
+                                            },
+                                        ) {
+                                            textaufloesung = neu;
+                                        }
+                                    },
+                                );
+                                if suche.is_empty() {
+                                    ui.label(theme::faint(
+                                        jjcad_core::i18n::tr("settings.textaufloesung_hint"),
+                                    ));
+                                }
                                 zeile(&suche, ui, jjcad_core::i18n::tr("gui.dialogs.linienstaerken"), |ui| {
                                     let mut m = if lw_scaled { 1 } else { 0 };
                                     ui.selectable_value(&mut m, 0, jjcad_core::i18n::tr("gui.dialogs.px"));
@@ -1929,6 +1987,13 @@ fn settings_body(app: &mut App, ui: &mut Ui) {
     if app.prefs.farbakzent != farbakzent {
         // T0111: ebenso der Akzent — Palette und Stil tragen den neuen Ton.
         app.set_akzent(farbakzent, ui.ctx());
+    }
+    if app.prefs.textaufloesung != textaufloesung {
+        // T0114: gilt sofort — die Zeichenfläche liest die Rastergröße bei
+        // jedem Bild. Ein Bild genügt, dann steht der Text in der neuen Schärfe.
+        app.prefs.textaufloesung = textaufloesung;
+        let _ = app.prefs.save();
+        ui.ctx().request_repaint();
     }
     let dialog_neu = if dateidialog_system { "system" } else { "intern" };
     if app.prefs.file_dialog != dialog_neu {
@@ -4368,6 +4433,9 @@ mod tests_einstellungen {
         assert_eq!(treffer("drehpunkt"), vec!["Bedienung"]);
         // T0111: Der Farbakzent steht unter „Darstellung“.
         assert_eq!(treffer("farbakzent"), vec!["Darstellung"]);
+        // T0114, Turn 3: die maximale Textauflösung steht unter „Darstellung“.
+        assert_eq!(treffer("textauflösung"), vec!["Darstellung"]);
+        assert_eq!(treffer("auflösung"), vec!["Darstellung"]);
         assert!(treffer("gibtesnicht").is_empty(), "Unbekannter Begriff liefert Treffer");
     }
 
@@ -4537,6 +4605,82 @@ mod tests_einstellungen {
         // Ausgangszustand für die übrigen Tests wiederherstellen.
         app.set_akzent(Farbakzent::Bernstein, &ctx);
         assert_eq!(Palette::accent(), bernstein);
+    }
+
+    /// T0114, Turn 3: Unter „Darstellung“ steht die Zeile „Textauflösung“ mit
+    /// den Stufen 128/256/512/1024 px. Eine Wahl wirkt sofort auf die
+    /// Rastergröße der Schrift und landet in `prefs.json`.
+    #[test]
+    fn textaufloesung_zeile_setzt_die_rastergroesse() {
+        let _sperre = KONFIG.lock().unwrap_or_else(|e| e.into_inner());
+        let _konfig = WegwerfKonfig::neu("textaufloesung");
+        let ctx = egui::Context::default();
+        let mut app = App::with_ctx(ctx.clone());
+        assert_eq!(
+            app.prefs.textaufloesung,
+            Textaufloesung::Px256,
+            "die Vorgabe ist nicht 256 px"
+        );
+
+        let kat = EINSTELLUNGSKATEGORIEN
+            .iter()
+            .position(|k| k.name() == "Darstellung")
+            .expect("Kategorie Darstellung");
+        app.ui.settings_open = true;
+        app.ui.settings_kat = kat;
+        app.ui.settings_suche = "Textauflösung".to_string();
+        let bild = || egui::RawInput {
+            screen_rect: Some(Rect::from_min_size(Pos2::ZERO, Vec2::new(1500.0, 950.0))),
+            ..Default::default()
+        };
+        let mut out = ctx.run(bild(), |ctx| app.ui(ctx));
+        for _ in 0..3 {
+            out = ctx.run(bild(), |ctx| app.ui(ctx));
+        }
+        let feld = text_mitte(&out, "256 px").expect("„256 px“ steht nicht im Fenster");
+
+        // Auswahlfeld öffnen — alle vier Stufen stehen im Menü.
+        klick(&mut app, &ctx, feld);
+        for _ in 0..2 {
+            out = ctx.run(bild(), |ctx| app.ui(ctx));
+        }
+        for wort in ["128 px", "256 px", "512 px", "1024 px"] {
+            assert!(
+                text_mitte(&out, wort).is_some(),
+                "„{wort}“ fehlt im Auswahlmenü"
+            );
+        }
+        let hoch = text_mitte(&out, "1024 px").expect("„1024 px“ steht nicht im Menü");
+        klick(&mut app, &ctx, hoch);
+
+        assert_eq!(
+            app.prefs.textaufloesung,
+            Textaufloesung::Px1024,
+            "die Wahl steht nicht in den Voreinstellungen"
+        );
+        assert_eq!(
+            jjcad_core::persist::UserPrefs::load().textaufloesung,
+            Textaufloesung::Px1024,
+            "die Wahl wurde nicht gespeichert"
+        );
+        // Die Rastergröße folgt der Wahl: 1980 px gewünscht (250 mm bei 600 %)
+        // werden jetzt in 1024 px gerastert statt in 256 px.
+        let (raster, faktor) =
+            crate::textgroesse::raster_und_skalierung(1980.0, app.prefs.textaufloesung.px());
+        // Die oberste Leiterstufe unter 1024 px ist 992,6 px (3 px × 1,25²⁶) —
+        // sie muss deutlich über der alten Vorgabe von 256 px liegen.
+        assert!(
+            raster > 900.0,
+            "die Schrift wird nur in {raster} px gerastert"
+        );
+        assert!(
+            (raster * faktor - 1980.0).abs() < 1.0,
+            "1024 px × {faktor} ≠ 1980 px"
+        );
+
+        // Zurück auf die Vorgabe — die Wegwerf-Einstellungen bleiben sauber.
+        app.prefs.textaufloesung = Textaufloesung::Px256;
+        let _ = app.prefs.save();
     }
 
     /// Ein Suchbegriff außerhalb der gewählten Kategorie springt auf die erste

@@ -535,9 +535,24 @@
 # language_hint = "gilt sofort, ohne Neustart"
 # design_hint = "gilt sofort; „System“ folgt dem hellen oder dunklen Farbschema des Betriebssystems"
 # farbakzent_hint = "gilt sofort; färbt Reiter, Chips, Rahmen und Schalter der Bedienoberfläche"
+# textaufloesung_hint = "höchste Rastergröße der Schrift; höher = schärfer im hohen Zoom, aber mehr Schriftatlas — gilt sofort"
 # none_found = "Keine Einstellung gefunden"
 # search = "Einstellungen durchsuchen …"
 # title = "Einstellungen"
+#
+# --- ui ----------------------------------------------------------
+#
+# Auswahlwerte in Auswahllisten (Einfügemodus, Bogenmodus, Füllart …).
+#
+[ui.textaufloesung]
+# px128 = "128 px"
+# px256 = "256 px"
+# px512 = "512 px"
+# px1024 = "1024 px"
+# tip128 = "sparsam — große Schriften werden deutlich weicher"
+# tip256 = "Vorgabe — kleiner Schriftatlas, kleine Schriften bleiben scharf"
+# tip512 = "schärfer bei großen Schriften, größerer Schriftatlas"
+# tip1024 = "schärfste Rasterung — größter Schriftatlas, mehr Arbeit beim Zoomen"
 #
 # --- test --------------------------------------------------------
 #
@@ -1059,6 +1074,7 @@
 # gilt_fuer_die_schwenkfunktionen = "gilt für das Verschieben der Ansicht (Vorgabe W A S D) — gehalten bewegt sie sich weiter, wenn „Kontinuierlich“ gewählt ist"
 # pdf_dokument = "PDF-Dokument"
 # png_bild = "PNG-Bild"
+# textaufloesung = "Textauflösung"
 # 2d_cad_fuer_architektur_und_bauantragszeichnungen = "2D-CAD für Architektur und Bauantragszeichnungen."
 # abbrechen = "Abbrechen"
 # adresse = "Adresse"

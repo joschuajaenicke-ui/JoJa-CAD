@@ -838,6 +838,82 @@ impl KeymapPreset {
     }
 }
 
+/// Maximale Rastergröße der Schrift in der Zeichenfläche (T0114).
+///
+/// egui rastert jede Glyphe in genau der angefragten Pixelgröße in einen
+/// gemeinsamen Schriftatlas; je größer die Rasterung, desto schärfer die
+/// Schrift im hohen Zoom — und desto mehr Atlas-Pixel. Die Zeichenfläche
+/// rastert deshalb höchstens in dieser Größe und streckt den Rest
+/// (`jjcad_gui::textgroesse`). 256 px ist die Vorgabe: alle Stufen bis dahin
+/// brauchen zusammen rund 7 % des Atlasses, darüber wird die Schrift weich.
+/// 128 px ist die sparsamste Wahl, 1024 px die schärfste.
+#[derive(Clone, Copy, PartialEq, Eq, Debug, Default, serde::Serialize, serde::Deserialize)]
+pub enum Textaufloesung {
+    /// 128 px — sparsam, weich bei großen Schriften
+    #[serde(rename = "px128")]
+    Px128,
+    /// 256 px — Vorgabe
+    #[default]
+    #[serde(rename = "px256")]
+    Px256,
+    /// 512 px — schärfer, mehr Atlas
+    #[serde(rename = "px512")]
+    Px512,
+    /// 1024 px — schärfste Rasterung, größter Atlas
+    #[serde(rename = "px1024")]
+    Px1024,
+}
+
+impl Textaufloesung {
+    /// Alle Wahlen in Anzeigereihenfolge (Einstellungen).
+    pub const ALL: [Textaufloesung; 4] = [
+        Textaufloesung::Px128,
+        Textaufloesung::Px256,
+        Textaufloesung::Px512,
+        Textaufloesung::Px1024,
+    ];
+
+    /// Rastergröße in Pixeln — der Wert, der an `textgroesse` geht.
+    pub fn px(self) -> f32 {
+        match self {
+            Textaufloesung::Px128 => 128.0,
+            Textaufloesung::Px256 => 256.0,
+            Textaufloesung::Px512 => 512.0,
+            Textaufloesung::Px1024 => 1024.0,
+        }
+    }
+
+    /// Deutscher Name — für Dateien und Tests.
+    pub fn label(self) -> &'static str {
+        match self {
+            Textaufloesung::Px128 => "128 px",
+            Textaufloesung::Px256 => "256 px",
+            Textaufloesung::Px512 => "512 px",
+            Textaufloesung::Px1024 => "1024 px",
+        }
+    }
+
+    /// Beschriftung in der gewählten Sprache (T0106).
+    pub fn text(self) -> &'static str {
+        match self {
+            Textaufloesung::Px128 => crate::i18n::tr("ui.textaufloesung.px128"),
+            Textaufloesung::Px256 => crate::i18n::tr("ui.textaufloesung.px256"),
+            Textaufloesung::Px512 => crate::i18n::tr("ui.textaufloesung.px512"),
+            Textaufloesung::Px1024 => crate::i18n::tr("ui.textaufloesung.px1024"),
+        }
+    }
+
+    /// Kurze Erläuterung (Tooltip im Einstellungsfenster).
+    pub fn tip(self) -> &'static str {
+        match self {
+            Textaufloesung::Px128 => crate::i18n::tr("ui.textaufloesung.tip128"),
+            Textaufloesung::Px256 => crate::i18n::tr("ui.textaufloesung.tip256"),
+            Textaufloesung::Px512 => crate::i18n::tr("ui.textaufloesung.tip512"),
+            Textaufloesung::Px1024 => crate::i18n::tr("ui.textaufloesung.tip1024"),
+        }
+    }
+}
+
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct UserPrefs {
     #[serde(default)]
@@ -954,6 +1030,11 @@ pub struct UserPrefs {
     /// (`crate::theme::set_akzent`).
     #[serde(default)]
     pub farbakzent: Farbakzent,
+    /// Maximale Rastergröße der Schrift in der Zeichenfläche (T0114):
+    /// 128, 256 (Vorgabe), 512 oder 1024 px. Höher = schärfer im hohen Zoom,
+    /// aber mehr Schriftatlas. Gilt sofort, ohne Neustart.
+    #[serde(default)]
+    pub textaufloesung: Textaufloesung,
 }
 
 fn default_dateidialog() -> String {
@@ -1302,6 +1383,9 @@ impl Default for UserPrefs {
             // Programmstandard (T0111): der Bernstein-Akzent (bisheriges
             // Aussehen).
             farbakzent: Farbakzent::Bernstein,
+            // Programmstandard (T0114): 256 px Rastergröße — der Atlas bleibt
+            // klein, kleine Schriften sind bei jedem Zoom scharf.
+            textaufloesung: Textaufloesung::Px256,
         }
     }
 }

@@ -405,7 +405,10 @@ pub fn show(app: &mut App, ui: &mut Ui, rect: Rect, view: View) {
     // egui beim Tippen im hohen Zoom jede Größe in den gemeinsamen
     // Schriftatlas und der Text friert ein.
     let gewuenscht = (t.height * view.zoom * render::TEXT_GROESSE_FAKTOR).max(3.0) as f32;
-    let (size, faktor) = crate::textgroesse::raster_und_skalierung(gewuenscht);
+    let (size, faktor) = crate::textgroesse::raster_und_skalierung(
+        gewuenscht,
+        app.prefs.textaufloesung.px(),
+    );
     // Die Schrift des Textes auch für das Feld: egui nimmt sie für die
     // Zeilenhöhe der leeren Zeile (Cursorstand). Mit der Ersatzschrift stand
     // der Cursor eines leeren Textes neben dem Anker (T0110).
