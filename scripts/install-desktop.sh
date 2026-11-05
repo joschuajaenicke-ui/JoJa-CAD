@@ -20,9 +20,14 @@ PROJ="$(pwd)"
 BIN="${1:-}"
 if [ -z "$BIN" ]; then
     for kandidat in "$HOME/jjcad-live/jjcad" "$PROJ/target/release/jjcad"; do
-        if [ -x "$kandidat" ]; then BIN="$(readlink -f "$kandidat")"; break; fi
+        if [ -x "$kandidat" ]; then BIN="$kandidat"; break; fi
     done
 fi
+# Den Symlink des Testkanals **nicht** auflösen: `~/jjcad-live/jjcad` zeigt
+# immer auf die neueste Auslieferung, ein aufgelöster Pfad würde den
+# Startmenü-Eintrag dagegen auf den Build festnageln, der beim Aufruf dieses
+# Skripts gerade aktuell war (gesehen: Exec zeigte nach der nächsten
+# Auslieferung noch auf s213).
 [ -n "$BIN" ] && [ -x "$BIN" ] || {
     printf 'install-desktop: kein Programm gefunden (erst bauen oder Pfad angeben).\n' >&2
     exit 1
