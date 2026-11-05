@@ -263,9 +263,16 @@ mod tests {
     }
 
     /// Die Textur kommt einmal und bleibt (kein Neuanlegen je Bild).
+    ///
+    /// Akzent und Design werden im **eigenen Faden** festgelegt: die Wahl ist
+    /// prozessweit, und ein parallel laufender Test, der sie umstellt, ließe
+    /// zwischen den beiden Aufrufen eine andere Datei (und damit eine andere
+    /// Textur) entstehen — genau die Flakiness aus T0099.
     #[test]
     fn textur_wird_einmal_angelegt() {
         let ctx = egui::Context::default();
+        crate::theme::set_akzent(Farbakzent::Bernstein, &ctx);
+        crate::theme::set_design(jjcad_core::persist::Design::Dunkel, &ctx);
         let a = textur(&ctx);
         let b = textur(&ctx);
         assert_eq!(a.id(), b.id());
