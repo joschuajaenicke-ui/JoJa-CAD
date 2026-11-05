@@ -518,8 +518,18 @@ pub fn text(app: &mut App, ui: &mut Ui, ziel: Ziel) {
 
     // ---- Werte besorgen ----
     let e: Option<Entity> = ziel.id().and_then(|id| app.doc().entity(id).cloned());
-    let (titel, layer, farbe, mut hoehe, mut schrift, mut drehung, mut ah, mut av, mut stil) =
-        match &e {
+    let (
+        titel,
+        layer,
+        farbe,
+        mut hoehe,
+        mut schrift,
+        mut zeilenabstand,
+        mut drehung,
+        mut ah,
+        mut av,
+        mut stil,
+    ) = match &e {
             Some(e) => match &e.kind {
                 EntityKind::Text {
                     height,
@@ -531,6 +541,7 @@ pub fn text(app: &mut App, ui: &mut Ui, ziel: Ziel) {
                     underline,
                     superscript,
                     font,
+                    line_spacing,
                     ..
                 } => (
                     e.kind.type_name(),
@@ -538,6 +549,7 @@ pub fn text(app: &mut App, ui: &mut Ui, ziel: Ziel) {
                     e.style.color,
                     *height,
                     *font,
+                    *line_spacing,
                     angle.to_degrees(),
                     *align,
                     *valign,
@@ -556,6 +568,7 @@ pub fn text(app: &mut App, ui: &mut Ui, ziel: Ziel) {
                 app.options.text_color,
                 app.options.text_height,
                 app.options.text_font,
+                app.options.text_line_spacing,
                 app.options.text_angle,
                 app.options.text_align,
                 app.options.text_valign,
@@ -760,6 +773,22 @@ pub fn text(app: &mut App, ui: &mut Ui, ziel: Ziel) {
         ui.label(theme::faint(schrift.explode_hinweis()));
     }
 
+    // Zeilenabstand: Vielfaches der Zeilenhöhe der Schrift. Mehrzeilige Texte
+    // haben je Schriftart verschieden hohe Zeilen — hier lässt sich das
+    // strecken oder stauchen, der Rahmen folgt (T0110).
+    zeile("zeilenabstand");
+    widgets::field_row(ui, jjcad_core::i18n::tr("gui.props.zeilenabstand"), |ui| {
+        ui.add(
+            crate::widgets::zahl(
+                &mut zeilenabstand,
+                0.01,
+                widgets::ZEILENABSTAND_MIN..=widgets::ZEILENABSTAND_MAX,
+            )
+                .suffix(" ×"),
+        )
+        .on_hover_text(jjcad_core::i18n::tr("gui.props.zeilenabstand_hinweis"));
+    });
+
     zeile("drehung");
     widgets::field_row(ui, jjcad_core::i18n::tr("gui.props.drehung"), |ui| {
         ui.add(
@@ -783,6 +812,7 @@ pub fn text(app: &mut App, ui: &mut Ui, ziel: Ziel) {
             gemein_nach_optionen(app, &a);
             app.options.text_height = hoehe;
             app.options.text_font = schrift;
+            app.options.text_line_spacing = zeilenabstand;
             app.options.text_angle = drehung;
             app.options.text_align = ah;
             app.options.text_valign = av;
@@ -803,11 +833,19 @@ pub fn text(app: &mut App, ui: &mut Ui, ziel: Ziel) {
                         align,
                         valign,
                         font,
+                        line_spacing,
                         ..
-                    } => Some((*height, angle.to_degrees(), *align, *valign, *font)),
+                    } => Some((
+                        *height,
+                        angle.to_degrees(),
+                        *align,
+                        *valign,
+                        *font,
+                        *line_spacing,
+                    )),
                     _ => None,
                 });
-                if let Some((h0, w0, ah0, av0, f0)) = alt {
+                if let Some((h0, w0, ah0, av0, f0, a0)) = alt {
                     if (hoehe - h0).abs() > 1e-9 {
                         map.insert("height".into(), serde_json::json!(unit.from_mm(hoehe)));
                         geaendert = true;
@@ -826,6 +864,10 @@ pub fn text(app: &mut App, ui: &mut Ui, ziel: Ziel) {
                     }
                     if schrift != f0 {
                         map.insert("font".into(), serde_json::json!(schrift.key()));
+                        geaendert = true;
+                    }
+                    if (zeilenabstand - a0).abs() > 1e-9 {
+                        map.insert("line_spacing".into(), serde_json::json!(zeilenabstand));
                         geaendert = true;
                     }
                 }
@@ -3881,6 +3923,10 @@ mod tests {
         app.session_mut().selection = vec![id];
         let auswahl = zeichne(&mut app);
         assert!(auswahl.contains(&"inhalt"), "Auswahl ohne Inhalt: {auswahl:?}");
+        assert!(
+            auswahl.contains(&"zeilenabstand"),
+            "Auswahl ohne Zeilenabstand: {auswahl:?}"
+        );
 
         app.session_mut().selection.clear();
         app.start_tool("draw.text");
@@ -4436,6 +4482,7 @@ mod tests {
                 superscript: false,
                 runs: Vec::new(),
                 font: TextFont::default(),
+                line_spacing: 1.0,
             },
             EntityKind::Fill {
                 boundary: vec![],
@@ -4671,6 +4718,7 @@ mod tests {
                 superscript: false,
                 runs: Vec::new(),
                 font: TextFont::default(),
+                line_spacing: 1.0,
             },
             EntityKind::Fill {
                 boundary: vec![Vec2::ZERO, v(1000.0, 0.0), v(1000.0, 1000.0)],

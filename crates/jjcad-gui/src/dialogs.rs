@@ -1101,11 +1101,14 @@ pub(crate) const EINSTELLUNGSKATEGORIEN: &[Einstellungskategorie] = &[
             "Akzentfarbe",
             "Bernstein",
             "Orange",
+            "Saphir",
+            "Smaragd",
+            "Rubin",
+            "Amethyst",
             "Blau",
             "Grün",
             "Rot",
             "Violett",
-            "Türkis",
             "Darstellung",
         ],
     },
@@ -1728,11 +1731,14 @@ fn settings_body(app: &mut App, ui: &mut Ui) {
                                         "Akzentfarbe",
                                         "Bernstein",
                                         "Orange",
+                                        "Saphir",
+                                        "Smaragd",
+                                        "Rubin",
+                                        "Amethyst",
                                         "Blau",
                                         "Grün",
                                         "Rot",
                                         "Violett",
-                                        "Türkis",
                                         "Farbe",
                                     ],
                                     |ui| {
@@ -4330,24 +4336,29 @@ mod tests_einstellungen {
         // Die Vorgabe bleibt das bisherige Bernstein-Orange.
         assert_eq!(Palette::accent(), bernstein, "die Vorgabe ist nicht Bernstein");
 
-        // Auswahlfeld öffnen (es zeigt den gewählten Akzent) und „Blau“ wählen.
+        // Auswahlfeld öffnen (es zeigt den gewählten Akzent) und „Saphir“ wählen.
         let feld = text_mitte(&out, "Bernstein").expect("„Bernstein“ steht nicht im Fenster");
         klick(&mut app, &ctx, feld);
         for _ in 0..2 {
             out = ctx.run(bild(), |ctx| app.ui(ctx));
         }
-        for wort in ["Bernstein", "Blau", "Türkis", "Grün", "Rot", "Violett"] {
+        for wort in ["Bernstein", "Saphir", "Smaragd", "Rubin", "Amethyst"] {
             assert!(
                 text_mitte(&out, wort).is_some(),
                 "„{wort}“ fehlt im Auswahlmenü"
             );
         }
-        let blau = text_mitte(&out, "Blau").expect("„Blau“ steht nicht im Menü");
-        klick(&mut app, &ctx, blau);
+        // T0111, Turn 2: Türkis ist entfallen — es darf nicht mehr auftauchen.
+        assert!(
+            text_mitte(&out, "Türkis").is_none(),
+            "die entfallene Wahl „Türkis“ steht noch im Menü"
+        );
+        let saphir = text_mitte(&out, "Saphir").expect("„Saphir“ steht nicht im Menü");
+        klick(&mut app, &ctx, saphir);
 
         assert_eq!(
             app.prefs.farbakzent,
-            Farbakzent::Blau,
+            Farbakzent::Saphir,
             "die Wahl steht nicht in den Voreinstellungen"
         );
         assert_eq!(
@@ -4357,7 +4368,7 @@ mod tests_einstellungen {
         );
         assert_eq!(
             jjcad_core::persist::UserPrefs::load().farbakzent,
-            Farbakzent::Blau,
+            Farbakzent::Saphir,
             "die Wahl wurde nicht gespeichert"
         );
 

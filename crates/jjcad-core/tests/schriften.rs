@@ -229,6 +229,7 @@ fn schrift_ueberlebt_den_pdf_rundlauf() {
                 superscript: false,
                 runs: Vec::new(),
                 font,
+                line_spacing: 1.0,
             },
         ));
         let pfad = ziel(&format!("jjcad-schrift-{}.pdf", font.key()));

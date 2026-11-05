@@ -86,6 +86,7 @@ impl B {
             superscript: false,
             runs: Vec::new(),
             font: TextFont::Sans,
+            line_spacing: 1.0,
         });
     }
 

@@ -554,47 +554,54 @@ impl Design {
 ///
 /// Der Akzent färbt **alle** hervorgehobenen Stellen der Bedienoberfläche:
 /// aktive Reiter und Chips, Rahmen überfahrener Felder, Auswahl in Menüs und
-/// Schalter. Bernstein-Orange ist der Programmstandard (bisheriges Aussehen).
-/// Je Design (hell/dunkel) hat jeder Akzent einen eigenen Ton, damit Schrift
-/// und Fläche lesbar bleiben — die Töne stehen in `jjcad_gui::theme`.
+/// Schalter. Bernstein-Orange ist der Programmstandard (bisheriges Aussehen);
+/// die übrigen Wahlen sind nach Edelsteinen benannt — Saphir (blau), Smaragd
+/// (grün), Rubin (rot), Amethyst (violett). Je Design (hell/dunkel) hat jeder
+/// Akzent einen eigenen Ton, damit Schrift und Fläche lesbar bleiben; die Töne
+/// stehen in `jjcad_gui::theme`.
+///
+/// Die Dateischlüssel tragen die alten Farbwörter als **Alias**: eine
+/// `prefs.json` aus der ersten Fassung (`"blau"`, `"gruen"`, `"rot"`,
+/// `"violett"`) lädt unverändert, ebenso die inzwischen entfallene Wahl
+/// `"tuerkis"` (sie wird zu Saphir).
 #[derive(Clone, Copy, PartialEq, Eq, Debug, Default, serde::Serialize, serde::Deserialize)]
 pub enum Farbakzent {
     /// Bernstein-Orange (Vorgabe, bisheriges Aussehen)
     #[default]
     #[serde(rename = "bernstein")]
     Bernstein,
-    #[serde(rename = "blau")]
-    Blau,
-    #[serde(rename = "tuerkis")]
-    Tuerkis,
-    #[serde(rename = "gruen")]
-    Gruen,
-    #[serde(rename = "rot")]
-    Rot,
-    #[serde(rename = "violett")]
-    Violett,
+    /// Blau
+    #[serde(rename = "saphir", alias = "blau", alias = "tuerkis")]
+    Saphir,
+    /// Grün
+    #[serde(rename = "smaragd", alias = "gruen")]
+    Smaragd,
+    /// Rot
+    #[serde(rename = "rubin", alias = "rot")]
+    Rubin,
+    /// Violett
+    #[serde(rename = "amethyst", alias = "violett")]
+    Amethyst,
 }
 
 impl Farbakzent {
     /// Alle Wahlen in Anzeigereihenfolge (Einstellungen).
-    pub const ALL: [Farbakzent; 6] = [
+    pub const ALL: [Farbakzent; 5] = [
         Farbakzent::Bernstein,
-        Farbakzent::Blau,
-        Farbakzent::Tuerkis,
-        Farbakzent::Gruen,
-        Farbakzent::Rot,
-        Farbakzent::Violett,
+        Farbakzent::Saphir,
+        Farbakzent::Smaragd,
+        Farbakzent::Rubin,
+        Farbakzent::Amethyst,
     ];
 
     /// Deutscher Name — für Dateien, Action-Parameter und Tests.
     pub fn label(self) -> &'static str {
         match self {
             Farbakzent::Bernstein => "Bernstein",
-            Farbakzent::Blau => "Blau",
-            Farbakzent::Tuerkis => "Türkis",
-            Farbakzent::Gruen => "Grün",
-            Farbakzent::Rot => "Rot",
-            Farbakzent::Violett => "Violett",
+            Farbakzent::Saphir => "Saphir",
+            Farbakzent::Smaragd => "Smaragd",
+            Farbakzent::Rubin => "Rubin",
+            Farbakzent::Amethyst => "Amethyst",
         }
     }
 
@@ -602,11 +609,10 @@ impl Farbakzent {
     pub fn text(self) -> &'static str {
         match self {
             Farbakzent::Bernstein => crate::i18n::tr("ui.farbakzent.bernstein"),
-            Farbakzent::Blau => crate::i18n::tr("ui.farbakzent.blau"),
-            Farbakzent::Tuerkis => crate::i18n::tr("ui.farbakzent.tuerkis"),
-            Farbakzent::Gruen => crate::i18n::tr("ui.farbakzent.gruen"),
-            Farbakzent::Rot => crate::i18n::tr("ui.farbakzent.rot"),
-            Farbakzent::Violett => crate::i18n::tr("ui.farbakzent.violett"),
+            Farbakzent::Saphir => crate::i18n::tr("ui.farbakzent.saphir"),
+            Farbakzent::Smaragd => crate::i18n::tr("ui.farbakzent.smaragd"),
+            Farbakzent::Rubin => crate::i18n::tr("ui.farbakzent.rubin"),
+            Farbakzent::Amethyst => crate::i18n::tr("ui.farbakzent.amethyst"),
         }
     }
 
@@ -616,11 +622,10 @@ impl Farbakzent {
             Farbakzent::Bernstein => {
                 "Bernstein-Orange — das bisherige Aussehen (Programmstandard)"
             }
-            Farbakzent::Blau => "Blau — kühler Akzent für Reiter, Chips und Rahmen",
-            Farbakzent::Tuerkis => "Türkis — frischer Akzent für Reiter, Chips und Rahmen",
-            Farbakzent::Gruen => "Grün — ruhiger Akzent für Reiter, Chips und Rahmen",
-            Farbakzent::Rot => "Rot — kräftiger Akzent für Reiter, Chips und Rahmen",
-            Farbakzent::Violett => "Violett — eigenständiger Akzent für Reiter, Chips und Rahmen",
+            Farbakzent::Saphir => "Saphir — blauer Akzent für Reiter, Chips und Rahmen",
+            Farbakzent::Smaragd => "Smaragd — grüner Akzent für Reiter, Chips und Rahmen",
+            Farbakzent::Rubin => "Rubin — roter Akzent für Reiter, Chips und Rahmen",
+            Farbakzent::Amethyst => "Amethyst — violetter Akzent für Reiter, Chips und Rahmen",
         }
     }
 
@@ -628,11 +633,10 @@ impl Farbakzent {
     pub fn tip(self) -> &'static str {
         match self {
             Farbakzent::Bernstein => crate::i18n::tr("ui.farbakzent.hint_bernstein"),
-            Farbakzent::Blau => crate::i18n::tr("ui.farbakzent.hint_blau"),
-            Farbakzent::Tuerkis => crate::i18n::tr("ui.farbakzent.hint_tuerkis"),
-            Farbakzent::Gruen => crate::i18n::tr("ui.farbakzent.hint_gruen"),
-            Farbakzent::Rot => crate::i18n::tr("ui.farbakzent.hint_rot"),
-            Farbakzent::Violett => crate::i18n::tr("ui.farbakzent.hint_violett"),
+            Farbakzent::Saphir => crate::i18n::tr("ui.farbakzent.hint_saphir"),
+            Farbakzent::Smaragd => crate::i18n::tr("ui.farbakzent.hint_smaragd"),
+            Farbakzent::Rubin => crate::i18n::tr("ui.farbakzent.hint_rubin"),
+            Farbakzent::Amethyst => crate::i18n::tr("ui.farbakzent.hint_amethyst"),
         }
     }
 }
@@ -944,8 +948,8 @@ pub struct UserPrefs {
     /// wirkt sofort, ohne Neustart (`crate::theme::set_design`).
     #[serde(default)]
     pub design: Design,
-    /// Farbakzent der Oberfläche (T0111): Bernstein (Programmstandard), Blau,
-    /// Türkis, Grün, Rot oder Violett. Er färbt alle Akzentstellen der
+    /// Farbakzent der Oberfläche (T0111): Bernstein (Programmstandard), Saphir,
+    /// Smaragd, Rubin oder Amethyst. Er färbt alle Akzentstellen der
     /// Bedienung (Reiter, Chips, Rahmen, Schalter); die Wahl wirkt sofort
     /// (`crate::theme::set_akzent`).
     #[serde(default)]
@@ -1914,27 +1918,41 @@ mod tests {
         assert_eq!(alt.farbakzent, Farbakzent::Bernstein);
 
         let mut prefs = UserPrefs::default();
-        prefs.farbakzent = Farbakzent::Tuerkis;
+        prefs.farbakzent = Farbakzent::Smaragd;
         let roh = serde_json::to_string(&prefs).unwrap();
         assert!(
-            roh.contains("\"farbakzent\":\"tuerkis\""),
+            roh.contains("\"farbakzent\":\"smaragd\""),
             "Schlüssel fehlt: {roh}"
         );
         let wieder: UserPrefs = serde_json::from_str(&roh).unwrap();
         assert_eq!(
             wieder.farbakzent,
-            Farbakzent::Tuerkis,
+            Farbakzent::Smaragd,
             "Akzentwahl ging verloren"
         );
 
-        let violett: UserPrefs = serde_json::from_str(r#"{"farbakzent": "violett"}"#).unwrap();
-        assert_eq!(violett.farbakzent, Farbakzent::Violett);
-        // Sechs Wahlen, deutsche Namen; Bernstein ist die erste (Vorgabe).
-        assert_eq!(Farbakzent::ALL.len(), 6);
+        // T0111, Turn 2: Die Wahlen heißen nach Edelsteinen, die früheren
+        // Farbschlüssel bleiben gültig (Alias) — alte `prefs.json` laden ohne
+        // Verlust. Die entfallene Wahl „türkis“ wird zu Saphir.
+        for (alt, soll) in [
+            ("blau", Farbakzent::Saphir),
+            ("tuerkis", Farbakzent::Saphir),
+            ("gruen", Farbakzent::Smaragd),
+            ("rot", Farbakzent::Rubin),
+            ("violett", Farbakzent::Amethyst),
+        ] {
+            let p: UserPrefs =
+                serde_json::from_str(&format!(r#"{{"farbakzent": "{alt}"}}"#)).unwrap();
+            assert_eq!(p.farbakzent, soll, "alter Schlüssel {alt} ging verloren");
+        }
+
+        // Fünf Wahlen in Anzeigereihenfolge, deutsche Namen; Bernstein zuerst.
+        assert_eq!(Farbakzent::ALL.len(), 5);
         assert_eq!(Farbakzent::ALL[0], Farbakzent::Bernstein);
-        assert_eq!(Farbakzent::Bernstein.label(), "Bernstein");
-        assert_eq!(Farbakzent::Tuerkis.label(), "Türkis");
-        assert_eq!(Farbakzent::Gruen.label(), "Grün");
+        assert_eq!(
+            Farbakzent::ALL.map(|a| a.label()),
+            ["Bernstein", "Saphir", "Smaragd", "Rubin", "Amethyst"]
+        );
     }
 
     /// T0067: Die Schwenkgeschwindigkeit ist ein Faktor mit Vorgabe 1,0, wird

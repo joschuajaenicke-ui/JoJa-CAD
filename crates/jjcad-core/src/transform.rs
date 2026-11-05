@@ -178,6 +178,7 @@ pub fn transform_kind(k: &EntityKind, m: &Affine) -> EntityKind {
             superscript,
             runs,
             font,
+            line_spacing,
         } => EntityKind::Text {
             p: m.apply(*p),
             text: text.clone(),
@@ -191,6 +192,7 @@ pub fn transform_kind(k: &EntityKind, m: &Affine) -> EntityKind {
             superscript: *superscript,
             runs: runs.clone(),
             font: *font,
+            line_spacing: *line_spacing,
         },
         // Raumstempel: Umgrenzung und Textfeld wandern mit, der Text bleibt
         // abgeleitet (Fläche und Beschriftung stimmen danach von selbst).

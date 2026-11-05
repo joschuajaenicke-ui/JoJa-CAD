@@ -122,16 +122,18 @@ fn akzentfarben(akzent: Farbakzent, hell: bool) -> Akzentfarben {
     let (accent, soft, text) = match (akzent, hell) {
         (Farbakzent::Bernstein, false) => (0xE3A23D, 0x3A2E1B, 0x1A150C),
         (Farbakzent::Bernstein, true) => (0xA96C0B, 0xF7E7C4, 0xFFFBF2),
-        (Farbakzent::Blau, false) => (0x4C9AE8, 0x16283C, 0x08131F),
-        (Farbakzent::Blau, true) => (0x1F6FD2, 0xD8E8FA, 0xF6FAFF),
-        (Farbakzent::Tuerkis, false) => (0x35C0B2, 0x11332F, 0x051C1A),
-        (Farbakzent::Tuerkis, true) => (0x0E7F76, 0xD3F0EC, 0xF3FFFD),
-        (Farbakzent::Gruen, false) => (0x5FC57A, 0x17351F, 0x071C0D),
-        (Farbakzent::Gruen, true) => (0x2C7D4A, 0xDCEFE2, 0xF4FFF7),
-        (Farbakzent::Rot, false) => (0xE06A5A, 0x3B1E1A, 0x200C09),
-        (Farbakzent::Rot, true) => (0xB83A2B, 0xF8DFDA, 0xFFF6F4),
-        (Farbakzent::Violett, false) => (0xB48CE8, 0x2A223B, 0x160F22),
-        (Farbakzent::Violett, true) => (0x6B45B0, 0xE8E0F7, 0xF8F4FF),
+        // Saphir = Blau
+        (Farbakzent::Saphir, false) => (0x4C9AE8, 0x16283C, 0x08131F),
+        (Farbakzent::Saphir, true) => (0x1F6FD2, 0xD8E8FA, 0xF6FAFF),
+        // Smaragd = Grün
+        (Farbakzent::Smaragd, false) => (0x5FC57A, 0x17351F, 0x071C0D),
+        (Farbakzent::Smaragd, true) => (0x2C7D4A, 0xDCEFE2, 0xF4FFF7),
+        // Rubin = Rot
+        (Farbakzent::Rubin, false) => (0xE06A5A, 0x3B1E1A, 0x200C09),
+        (Farbakzent::Rubin, true) => (0xB83A2B, 0xF8DFDA, 0xFFF6F4),
+        // Amethyst = Violett
+        (Farbakzent::Amethyst, false) => (0xB48CE8, 0x2A223B, 0x160F22),
+        (Farbakzent::Amethyst, true) => (0x6B45B0, 0xE8E0F7, 0xF8F4FF),
     };
     let farbe = |v: u32| Color32::from_rgb((v >> 16) as u8, (v >> 8) as u8, v as u8);
     Akzentfarben {
@@ -1010,7 +1012,7 @@ mod tests {
             }
             gesehen.push(dunkel.accent);
         }
-        // Sechs Wahlen = sechs verschiedene Töne (keine stille Doppelung).
+        // Fünf Wahlen = fünf verschiedene Töne (keine stille Doppelung).
         for i in 0..gesehen.len() {
             for j in (i + 1)..gesehen.len() {
                 assert_ne!(
@@ -1022,16 +1024,20 @@ mod tests {
             }
         }
 
-        // Designwechsel bei gewähltem Blau: der Ton folgt dem Design.
-        set_akzent(Farbakzent::Blau, &ctx);
+        // Designwechsel bei gewähltem Saphir: der Ton folgt dem Design.
+        set_akzent(Farbakzent::Saphir, &ctx);
         assert_eq!(Palette::accent(), Color32::from_rgb(0x4C, 0x9A, 0xE8));
         set_design(Design::Hell, &ctx);
         assert_eq!(
             Palette::accent(),
             Color32::from_rgb(0x1F, 0x6F, 0xD2),
-            "das helle Design hat keinen eigenen Blauton"
+            "das helle Design hat keinen eigenen Saphirton"
         );
-        assert_eq!(aktueller_akzent(), Farbakzent::Blau, "die Wahl ging verloren");
+        assert_eq!(
+            aktueller_akzent(),
+            Farbakzent::Saphir,
+            "die Wahl ging verloren"
+        );
         set_design(Design::Dunkel, &ctx);
         assert_eq!(Palette::accent(), Color32::from_rgb(0x4C, 0x9A, 0xE8));
 
@@ -1046,7 +1052,7 @@ mod tests {
     fn akzent_umschalten_setzt_den_stil_neu() {
         let ctx = egui::Context::default();
         set_design(Design::Dunkel, &ctx);
-        set_akzent(Farbakzent::Violett, &ctx);
+        set_akzent(Farbakzent::Amethyst, &ctx);
         let v = ctx.style().visuals.clone();
         assert_eq!(v.selection.bg_fill, Palette::accent_soft());
         assert_eq!(v.selection.stroke.color, Palette::accent());

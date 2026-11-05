@@ -78,6 +78,7 @@ Steht rechts „nicht", dann ist das Wort im Projekt verpönt (auch in der Oberf
 | **Schnitt-Kote** | Höhenkote im Schnitt: Dreieck mit Höhenangabe je Punkt; der erste Punkt ist ±0,00, alle weiteren Höhen folgen aus der Y-Differenz | Schnitthöhe, Dreieckskote |
 | **Text** | Freier Text im Modell oder auf dem Blatt; Größe in mm, Ausrichtung, Auszeichnung | Beschriftung (das ist der Inhalt) |
 | **Textgröße** | Die Höhe eines Textes (Feld im Eigenschaften-Panel) | Schriftgröße in Punkt, Höhe |
+| **Zeilenabstand** | Vielfaches der Zeilenhöhe der Schrift bei mehrzeiligen Texten (1 = Zeilenhöhe der Schrift selbst); Rahmen und Fang folgen | Durchschuss, Zeilenhöhe |
 | **Schriftart** | Die Familie eines Textes: Serifenlos, Serifen, Nichtproportional, Schmal, Rund sowie die technischen Schriften **DIN 1451** (Eng-, Mittel-, Breitschrift) und **EN ISO 3098** (Typ A, Typ B) | Font, Typeface |
 | **DIN 1451** | Deutsche technische Normschrift in drei Breiten: Engschrift (schmal), Mittelschrift, Breitschrift (breit); liegt mit im Programm | „DIN" (ohne Nummer), „Schmal" |
 | **EN ISO 3098** | Technische Schrift für Zeichnungen: Typ A mit dünner Strichstärke (d = h/14), Typ B mit d = h/10; liegt mit im Programm | ISO-Schrift, „Normschrift" (ohne Norm) |

@@ -611,11 +611,45 @@ pub(crate) fn text_galley(
     scale: f64,
     col: Color32,
 ) -> std::sync::Arc<egui::Galley> {
-    let size = (t.height * scale * 1.32).max(3.0) as f32;
+    let size = (t.height * scale * render::TEXT_GROESSE_FAKTOR).max(3.0) as f32;
+    satz(p.ctx(), t, size, col)
+}
+
+/// Satz eines Textprims in einer Schriftgröße (px) — ohne Maler.
+///
+/// Dieselbe Galley bekommen Zeichenfläche, Eigenschaften-Panel, Editor und
+/// die Prüfung des Rahmens: Schriftgröße aus dem Kern, Zeilenhöhe der
+/// Familie mal Zeilenabstand, Ausrichtung über `halign` (T0110).
+pub(crate) fn satz(
+    ctx: &egui::Context,
+    t: &render::TextPrim,
+    size: f32,
+    col: Color32,
+) -> std::sync::Arc<egui::Galley> {
     let runs = t.effective_runs();
-    let mut job = auszeichnungs_job(p.ctx(), &runs, size, col, t.font);
+    let mut job = auszeichnungs_job(ctx, &runs, size, col, t.font);
     job.halign = halign(t.align);
-    p.layout_job(job)
+    zeilenhoehe_setzen(&mut job, size, t.line_height_em() as f32, t.line_spacing);
+    ctx.fonts(|f| f.layout_job(job))
+}
+
+/// Zeilenhöhe des Satzes festlegen — eine Zeile ist `size · lh_em · abstand` hoch,
+/// in **jedem** Lauf (auch der Hochstellung).
+///
+/// Ohne diese Vorgabe setzt egui jede Zeile mit der Zeilenhöhe ihrer Schrift;
+/// bei gemischter Auszeichnung (Hochstellung in kleinerer Schrift) wäre die
+/// Zeile dann niedriger als die übrigen. Der Wert ist derselbe, den
+/// `render::TextPrim::line_height` für den Rahmen rechnet.
+pub(crate) fn zeilenhoehe_setzen(
+    job: &mut egui::text::LayoutJob,
+    size: f32,
+    line_height_em: f32,
+    line_spacing: f64,
+) {
+    let lh = (size * line_height_em * line_spacing.clamp(0.1, 10.0) as f32).max(1.0);
+    for abschnitt in &mut job.sections {
+        abschnitt.format.line_height = Some(lh);
+    }
 }
 
 /// Satzauftrag mit den Auszeichnungen der Läufe — die eine Stelle, an der
@@ -731,6 +765,7 @@ pub(crate) fn text_preview_prim(
         valign,
         jjcad_core::text::RunStyle::default(),
         jjcad_core::model::TextFont::default(),
+        1.0,
         0.0,
     )
 }
@@ -745,6 +780,7 @@ pub(crate) fn text_preview_prim_mit(
     valign: TextAlignV,
     stil: jjcad_core::text::RunStyle,
     font: jjcad_core::model::TextFont,
+    line_spacing: f64,
     angle: f64,
 ) -> render::TextPrim {
     let runs = if stil.plain() {
@@ -771,6 +807,7 @@ pub(crate) fn text_preview_prim_mit(
         underline: false,
         superscript: false,
         font,
+        line_spacing,
     }
 }
 
@@ -2430,6 +2467,7 @@ fn draw_tool_preview(
                     app.options.text_valign,
                     stil,
                     app.options.text_font,
+                    app.options.text_line_spacing,
                     app.options.text_angle.to_radians(),
                 ),
                 w2s(cursor),
@@ -2947,8 +2985,7 @@ fn draw_objekt_hervorhebung(
             // Text: der Kasten, den auch Auswahlrahmen und Einfüge-Vorschau benutzen
             // (`render::text_corners`).
             PShape::Text(t) => {
-                let kasten =
-                    render::text_corners(t.pos, &t.text, t.height, t.angle, t.align, t.valign);
+                let kasten = render::text_corners(t);
                 let pts: Vec<Pos2> = kasten.iter().map(|q| w2s(*q)).collect();
                 p.add(Shape::closed_line(pts, strich));
             }
@@ -9017,6 +9054,7 @@ mod tests_textausrichtung {
                 superscript: false,
                 runs: Vec::new(),
                 font: jjcad_core::model::TextFont::default(),
+                line_spacing: 1.0,
             };
             let g = text_galley(&p, &t, 1.0, Color32::WHITE);
             let (pos, _) = text_ort(&t, &g, BASIS, 0.0);
@@ -10909,5 +10947,124 @@ mod tests_raumstempel {
         let mut app = mit_punkten(app(), vec![V2::new(0.0, 0.0), V2::new(1000.0, 0.0)]);
         finish_tool(&mut app, true);
         assert!(app.doc().entities.is_empty(), "es wurde trotzdem etwas angelegt");
+    }
+}
+
+#[cfg(test)]
+mod tests_textrahmen {
+    //! T0110: Der Rahmen um ein Textfeld ist die **echte** Größe der Schrift.
+    //!
+    //! Gemessen wird die gesetzte Galley (dieselbe Schrift, dieselbe
+    //! Zeilenhöhe, derselbe Weg wie in der Zeichnung: `canvas::satz`) gegen den
+    //! Kasten aus `render::TextPrim::box_size` — der Rahmen, den Auswahl,
+    //! Fang und Vorschau zeigen. Vorher schätzte `render::text_box` die Breite
+    //! je Zeichen und nahm fest 1,4 Zeilenhöhen; das traf nur serifenlos.
+
+    use super::*;
+    use jjcad_core::model::TextFont;
+
+    fn ctx() -> egui::Context {
+        let ctx = egui::Context::default();
+        crate::theme::install(&ctx);
+        let _ = ctx.run(Default::default(), |_| {});
+        ctx
+    }
+
+    fn prim(text: &str, font: TextFont, abstand: f64) -> render::TextPrim {
+        text_preview_prim_mit(
+            text.to_string(),
+            // groß genug, dass egui's Rundung auf ganze Bildpunkte (je Zeichen
+            // bis zu einem halben) neben den Millimetern verschwindet
+            1000.0,
+            TextAlignH::Left,
+            TextAlignV::Middle,
+            jjcad_core::text::RunStyle::default(),
+            font,
+            abstand,
+            0.0,
+        )
+    }
+
+    /// Für jede Schriftfamilie: Kasten und gesetzte Galley sind gleich groß.
+    ///
+    /// Die Höhe muss zeilengenau stimmen (je Zeile höchstens ein Pixel
+    /// Rundung), die Breite darf die Galley nicht schneiden und höchstens 2 %
+    /// Luft haben — Kerning setzt die Zeichen enger als die Summe der
+    /// Vorschübe.
+    #[test]
+    fn rahmen_ist_so_gross_wie_die_gesetzte_schrift() {
+        let ctx = ctx();
+        let mut geprueft = 0;
+        for font in TextFont::ALL {
+            for text in ["Hallo", "Wohnen 12,4", "A\nB\nC", "Hallo\nWohnen"] {
+                for abstand in [1.0, 1.5] {
+                    let t = prim(text, font, abstand);
+                    let size = (t.height * render::TEXT_GROESSE_FAKTOR) as f32;
+                    let g = satz(&ctx, &t, size, Color32::WHITE);
+                    let (w, h) = t.box_size();
+                    let (gw, gh) = (g.size().x as f64, g.size().y as f64);
+                    let zeilen = t.lines() as f64;
+                    assert!(
+                        (gh - h).abs() <= zeilen * 1.5 + 0.5,
+                        "{} / {:?} / Abstand {abstand}: Rahmen {h:.1} mm hoch, \
+                         Schrift {gh:.1} mm (Zeilen {zeilen})",
+                        font.key(),
+                        text
+                    );
+                    // egui rundet jede Zeichenposition auf ganze Bildpunkte;
+                    // bei langen Zeilen summiert sich das auf Bruchteile eines
+                    // Prozents.
+                    assert!(
+                        gw <= w + w * 0.002 + 1.5,
+                        "{} / {:?}: Schrift {gw:.1} mm breit, Rahmen nur {w:.1} mm",
+                        font.key(),
+                        text
+                    );
+                    // egui kernt die Zeichen (Paarweise enger); Kern und PDF
+                    // setzen die reinen Vorschübe. Der Rahmen nimmt die
+                    // Vorschübe und ist damit nie zu schmal — höchstens
+                    // ein paar Prozent Luft.
+                    assert!(
+                        w - gw <= w * 0.03 + 1.5,
+                        "{} / {:?}: Rahmen {w:.1} mm leer, Schrift {gw:.1} mm breit",
+                        font.key(),
+                        text
+                    );
+                    geprueft += 1;
+                }
+            }
+        }
+        assert_eq!(geprueft, TextFont::ALL.len() * 4 * 2);
+    }
+
+    /// Gegenprobe zum alten festen Zeilenmaß (1,4 für den Rahmen): Serifenlos
+    /// setzt 1,150 Em Zeilenhöhe, DIN 1451 1,086 Em — der Rahmen darf für
+    /// beide nicht derselbe sein, und beide müssen zur gesetzten Schrift passen.
+    #[test]
+    fn zeilenhoehe_folgt_der_schriftart() {
+        let ctx = ctx();
+        let hoehe = |font: TextFont| {
+            let t = prim("A\nB", font, 1.0);
+            let size = (t.height * render::TEXT_GROESSE_FAKTOR) as f32;
+            let g = satz(&ctx, &t, size, Color32::WHITE);
+            (t.box_size().1, g.size().y as f64)
+        };
+        let (rahmen_sans, schrift_sans) = hoehe(TextFont::Sans);
+        let (rahmen_din, schrift_din) = hoehe(TextFont::DinMittel);
+        for (name, rahmen, schrift) in [
+            ("Serifenlos", rahmen_sans, schrift_sans),
+            ("DIN 1451 Mittel", rahmen_din, schrift_din),
+        ] {
+            assert!(
+                (rahmen - schrift).abs() <= 5.0,
+                "{name}: Rahmen {rahmen:.1} gegen Schrift {schrift:.1}"
+            );
+        }
+        // Die feste Annahme 1,4 war für beide falsch; die Schriften sind
+        // untereinander verschieden hoch.
+        assert!(
+            (rahmen_sans - rahmen_din).abs() > 5.0,
+            "Serifenlos {rahmen_sans:.1} und DIN 1451 {rahmen_din:.1} sind gleich hoch"
+        );
     }
 }
