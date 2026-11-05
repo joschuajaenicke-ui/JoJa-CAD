@@ -1561,7 +1561,7 @@ fn push_muster(
     match pattern {
         FillPattern::Solid => {}
         // Nr. 9 Mauerwerk: eine Linienschar im Musterwinkel
-        FillPattern::Lines => muster_linien(dl, e, st, pts, holes, &[angle], s, None, 0.0, 0.0),
+        FillPattern::Lines => muster_linien(dl, e, st, pts, holes, &[angle], s, None, 0.0),
         // Nr. 17 Kunststoffe: zwei Linienscharen im rechten Winkel
         FillPattern::Cross => muster_linien(
             dl,
@@ -1572,7 +1572,6 @@ fn push_muster(
             &[angle, angle + std::f64::consts::FRAC_PI_2],
             s,
             None,
-            0.0,
             0.0,
         ),
         // Nr. 4 Sand: feine, gestreute Punkte
@@ -1600,11 +1599,10 @@ fn push_muster(
             s,
             Some(&[(0.85, 0.55)]),
             0.0,
-            0.5,
         ),
         // Nr. 6 Beton bewehrt: durchgehende Linien, dazwischen kurze Striche
         FillPattern::ConcreteReinforced => {
-            muster_linien(dl, e, st, pts, holes, &[angle], s * 2.0, None, 0.0, 0.0);
+            muster_linien(dl, e, st, pts, holes, &[angle], s * 2.0, None, 0.0);
             muster_linien(
                 dl,
                 e,
@@ -1615,12 +1613,11 @@ fn push_muster(
                 s * 2.0,
                 Some(&[(0.9, 0.6)]),
                 0.5,
-                0.0,
             );
         }
         // Nr. 7 WU-Beton: durchgehende Linien, dazwischen lange Striche
         FillPattern::ConcreteWatertight => {
-            muster_linien(dl, e, st, pts, holes, &[angle], s * 2.0, None, 0.0, 0.0);
+            muster_linien(dl, e, st, pts, holes, &[angle], s * 2.0, None, 0.0);
             muster_linien(
                 dl,
                 e,
@@ -1631,12 +1628,11 @@ fn push_muster(
                 s * 2.0,
                 Some(&[(1.55, 0.45)]),
                 0.5,
-                0.0,
             );
         }
         // Nr. 8 Textilbeton: Linien mit Pfeilen dazwischen
         FillPattern::TextileConcrete => {
-            muster_linien(dl, e, st, pts, holes, &[angle], s * 2.0, None, 0.0, 0.0);
+            muster_linien(dl, e, st, pts, holes, &[angle], s * 2.0, None, 0.0);
             muster_pfeile(dl, e, st, pts, holes, angle, s);
         }
         // Nr. 10 Vollholz quer: gewellte Linien quer zum Musterwinkel
@@ -1658,7 +1654,7 @@ fn push_muster(
         ),
         // Nr. 12 Metall: weite Linien, dazwischen kurze Striche
         FillPattern::Metal => {
-            muster_linien(dl, e, st, pts, holes, &[angle], s * 2.0, None, 0.0, 0.0);
+            muster_linien(dl, e, st, pts, holes, &[angle], s * 2.0, None, 0.0);
             muster_linien(
                 dl,
                 e,
@@ -1669,7 +1665,6 @@ fn push_muster(
                 s * 2.0,
                 Some(&[(1.25, 1.55)]),
                 0.5,
-                0.0,
             );
         }
         // Nr. 14 Dämmstoffe, Schlaufenform: Reihen geschlossener Schleifen
@@ -1719,7 +1714,6 @@ fn push_muster(
             s * 0.45,
             None,
             0.0,
-            0.0,
         ),
         // Nr. 18 Glas: Gruppen aus drei kurzen Strichen
         FillPattern::Glass => muster_linien(
@@ -1732,7 +1726,6 @@ fn push_muster(
             s,
             Some(&[(0.45, 0.12), (0.45, 0.12), (0.45, 1.05)]),
             0.0,
-            0.5,
         ),
     }
 }
@@ -1796,8 +1789,8 @@ impl Raster {
 /// Parallele Musterlinien über eine Kontur, optional gestrichelt.
 ///
 /// `versatz` ist die Lage der ersten Linie in Einheiten von `spacing`
-/// (0,5 legt sie zwischen zwei Linien), `staffel` versetzt das Strichmuster
-/// jeder zweiten Reihe um diesen Anteil eines Strichzyklus.
+/// (0,5 legt sie zwischen zwei Linien). Die Lage der Unterteilungen kommt aus
+/// dem Raster (waagerechte Taktlinien), nicht aus einem Reihenversatz.
 #[allow(clippy::too_many_arguments)]
 fn muster_linien(
     dl: &mut DisplayList,
@@ -1809,7 +1802,6 @@ fn muster_linien(
     spacing: f64,
     striche: Option<&[(f64, f64)]>,
     versatz: f64,
-    staffel: f64,
 ) {
     let spacing = spacing.max(0.5);
     for &ang in angles {
@@ -1825,10 +1817,9 @@ fn muster_linien(
             let v = (i as f64 + versatz) * spacing;
             let a = r.punkt(umin - spacing, v);
             let b = r.punkt(umax + spacing, v);
-            let phase = if i.rem_euclid(2) == 1 { staffel } else { 0.0 };
             for (q0, q1) in crate::area::clip_line_area(a, b, pts, holes) {
                 match striche {
-                    Some(muster) => muster_striche(dl, e, st, q0, q1, &r, spacing, muster, phase),
+                    Some(muster) => muster_striche(dl, e, st, q0, q1, spacing, muster),
                     None => muster_linie(dl, e, st, q0, q1),
                 }
             }
@@ -1840,21 +1831,19 @@ fn muster_linien(
 /// in Einheiten von `spacing`. Mehr als ein Paar ergibt Gruppen (Glas: drei
 /// Striche, dann eine lange Lücke).
 ///
-/// Die Striche sitzen auf dem **globalen Takt** des Rasters (`u` ab
-/// Weltnullpunkt), nicht am Anfang des an der Kontur abgeschnittenen Stücks.
-/// Vorher begann jedes Stück sein Muster bei 0 — dadurch lagen die
-/// Unterteilungen der Linien auf verschiedenen Höhen, je nachdem wo die
-/// Kontur sie beschnitt (T0095, Turn 2).
+/// Die Unterbrechungen liegen auf **waagerechten Rasterlinien** (bei
+/// waagerechten Linien auf senkrechten): der Takt zählt in der Höhe, nicht
+/// längs der Linie. Nur so stehen die Lücken aller Reihen auf einer Höhe wie
+/// in der Norm — längs der Linie gezählt wandern sie von Reihe zu Reihe und
+/// bilden eine schiefe Naht (T0095, Turn 4).
 fn muster_striche(
     dl: &mut DisplayList,
     e: &Entity,
     st: &PrimStyle,
     a: Vec2,
     b: Vec2,
-    r: &Raster,
     spacing: f64,
     muster: &[(f64, f64)],
-    phase: f64,
 ) {
     let len = a.dist(b);
     if len < 0.05 || muster.is_empty() {
@@ -1864,27 +1853,40 @@ fn muster_striche(
     if zyklus < 1e-6 {
         return;
     }
-    let ua = r.uv(a).0;
-    // Reihenversatz: jede zweite Reihe beginnt einen halben Zyklus später.
-    let ph = phase * zyklus;
-    let mut k = ((ua - ph) / zyklus).floor() as i64 - 1;
+    let dir = (b - a).normalized();
+    // Bezugsachse: die Höhe (y), bei waagerechten Linien die Breite (x).
+    let (achse, start) = if dir.y.abs() > 0.2 {
+        (dir.y, a.y)
+    } else {
+        (dir.x, a.x)
+    };
+    let s_achse = achse.abs();
+    let takt = zyklus * s_achse;
+    if takt < 1e-6 {
+        return;
+    }
+    let ca = start;
+    let cb = start + len * achse;
+    let (cmin, cmax) = if ca <= cb { (ca, cb) } else { (cb, ca) };
+    let mut k = (cmin / takt).floor() as i64 - 1;
     let mut schutz = 0;
     while schutz < 20_000 {
         schutz += 1;
-        let basis = k as f64 * zyklus + ph;
-        if basis > ua + len {
+        let basis = k as f64 * takt;
+        if basis > cmax {
             break;
         }
         let mut cum = 0.0;
         for (an, aus) in muster {
-            let s0 = basis + cum;
-            let s1 = s0 + an * spacing;
-            let t0 = (s0 - ua).max(0.0);
-            let t1 = (s1 - ua).min(len);
-            if t1 > t0 + 0.02 {
-                let p0 = a + (b - a) * (t0 / len);
-                let p1 = a + (b - a) * (t1 / len);
-                muster_linie(dl, e, st, p0, p1);
+            let c0 = basis + cum * s_achse;
+            let c1 = c0 + an * spacing * s_achse;
+            let lo = c0.max(cmin);
+            let hi = c1.min(cmax);
+            if hi > lo + 0.02 {
+                let t0 = (lo - ca) / achse;
+                let t1 = (hi - ca) / achse;
+                let (t0, t1) = if t0 <= t1 { (t0, t1) } else { (t1, t0) };
+                muster_linie(dl, e, st, a + dir * t0, a + dir * t1);
             }
             cum += (an + aus) * spacing;
         }
