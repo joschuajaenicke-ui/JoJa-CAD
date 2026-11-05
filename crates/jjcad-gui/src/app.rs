@@ -11175,6 +11175,7 @@ mod tests_bildablage {
     }
 }
 
+#[cfg(test)]
 mod tests_dragdrop {
     //! Drag an Drop (T0115): eine ins Fenster gezogene Datei wird auf ihr
     //! Format geprüft und über **denselben** Weg importiert wie eine Auswahl im
