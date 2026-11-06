@@ -137,7 +137,14 @@ pub(crate) fn dashed_segments(a: Pos2, b: Pos2, pattern: &[f32]) -> Vec<[Pos2; 2
 
 /// Kleines Mittelpunktkreuz für Kreise, Bögen und Ellipsen.
 fn center_mark(p: &Painter, c: Pos2, col: Color32) {
-    let r = 4.0;
+    center_mark_r(p, c, col, 4.0);
+}
+
+/// Mittelpunktkreuz mit eigener Halbbreite.
+///
+/// Beim Fangen wird es größer gezeichnet als die allgemeine Fangmarke, damit
+/// der sonst unsichtbare Mittelpunkt erkennbar ist (T0117).
+fn center_mark_r(p: &Painter, c: Pos2, col: Color32, r: f32) {
     let s = Stroke::new(1.0, col.gamma_multiply(0.85));
     p.line_segment([Pos2::new(c.x - r, c.y), Pos2::new(c.x + r, c.y)], s);
     p.line_segment([Pos2::new(c.x, c.y - r), Pos2::new(c.x, c.y + r)], s);
@@ -483,7 +490,12 @@ fn paint_prim(p: &Painter, prim: &Prim, w2s: &dyn Fn(V2) -> Pos2, scale: f64, pc
             } else {
                 p.add(kreis_zug(w2s(*c), rr, stroke));
             }
-            center_mark(p, w2s(*c), col);
+            // Mittelpunktkreuz nur bei Auswahl (T0117): im Plan ist der
+            // Kreismittelpunkt kein Zeichnungselement. Fangen darf er
+            // trotzdem — dann zeigt ihn die Fangmarke (`draw_cursor`).
+            if is_sel {
+                center_mark(p, w2s(*c), col);
+            }
         }
         PShape::Arc { c, r, a0, a1 } => {
             let arc = Arc::new(*c, *r, *a0, *a1);
@@ -510,7 +522,9 @@ fn paint_prim(p: &Painter, prim: &Prim, w2s: &dyn Fn(V2) -> Pos2, scale: f64, pc
                     p.circle_filled(b, rr, col);
                 }
             }
-            center_mark(p, w2s(*c), col.gamma_multiply(0.8));
+            if is_sel {
+                center_mark(p, w2s(*c), col.gamma_multiply(0.8));
+            }
         }
         PShape::Ellipse { c, rx, ry, rot } => {
             let pts: Vec<Pos2> = (0..=72)
@@ -520,7 +534,9 @@ fn paint_prim(p: &Painter, prim: &Prim, w2s: &dyn Fn(V2) -> Pos2, scale: f64, pc
                 })
                 .collect();
             stroke_pts(p, &pts, w as f32, col);
-            center_mark(p, w2s(*c), col);
+            if is_sel {
+                center_mark(p, w2s(*c), col);
+            }
         }
         // Ellipsenbogen: dieselbe Pfeilhöhen-Regel wie Bogen und Kreis
         // (Gerätemaß 0,15 px), damit die Kurve in jedem Zoom glatt bleibt.
@@ -532,7 +548,9 @@ fn paint_prim(p: &Painter, prim: &Prim, w2s: &dyn Fn(V2) -> Pos2, scale: f64, pc
                 .map(|q| w2s(*q))
                 .collect();
             stroke_pts(p, &pts, w as f32, col);
-            center_mark(p, w2s(*c), col);
+            if is_sel {
+                center_mark(p, w2s(*c), col);
+            }
         }
         PShape::Dot { p: pos, r } => {
             p.circle_filled(w2s(*pos), ((*r * scale) as f32).max(1.2), col);
@@ -1223,11 +1241,14 @@ pub fn show(app: &mut App, ui: &mut Ui) {
     // Fangen — im Papierraum genauso wie im Modell (dort auf Schriftfeld,
     // Texten und eigenen Blattelementen).
     let mut snapped = raw_world;
+    let mut snap_kind = None;
     app.snap_label = None;
     if let Some(w) = raw_world {
-        let (p, label) = fang_zeiger(app, w, fang_radius_px(app, app.current_view().zoom));
+        let (p, label, kind) =
+            fang_zeiger_art(app, w, fang_radius_px(app, app.current_view().zoom));
         snapped = Some(p);
         app.snap_label = label.map(str::to_string);
+        snap_kind = kind;
     }
     app.pointer_world = snapped;
     if let Some(g) = app.ghost.as_mut() {
@@ -1269,7 +1290,7 @@ pub fn show(app: &mut App, ui: &mut Ui) {
         if let Some((start, cur, _)) = app.select_drag {
             draw_auswahlfenster(&painter, rect, view_now, start, cur);
         }
-        draw_cursor(app, ui, &painter, rect, view_now, snapped, raw_world);
+        draw_cursor(app, ui, &painter, rect, view_now, snapped, raw_world, snap_kind);
     } else {
         app.perf.abschnitt(Abschnitt::Displayliste);
         let dl = display_list(app);
@@ -1328,7 +1349,7 @@ pub fn show(app: &mut App, ui: &mut Ui) {
         if let Some((start, cur, _)) = app.select_drag {
             draw_auswahlfenster(&painter, rect, view_now, start, cur);
         }
-        draw_cursor(app, ui, &painter, rect, view_now, snapped, raw_world);
+        draw_cursor(app, ui, &painter, rect, view_now, snapped, raw_world, snap_kind);
     }
 
     // Werkzeug-Icon am Zeiger — auch außerhalb der Zeichenfläche (T0057),
@@ -1787,14 +1808,14 @@ mod tests_fadenkreuz {
         let rest = &src[i..];
         let blatt = &rest[..rest.find("} else {").expect("Blatt-Zweig nicht gefunden")];
         assert!(
-            blatt.contains("draw_cursor(app, ui, &painter, rect, view_now, snapped, raw_world)"),
+            blatt.contains("draw_cursor(app, ui, &painter, rect, view_now, snapped, raw_world, snap_kind)"),
             "Blatt-Zweig zeichnet den Zeiger nicht über draw_cursor"
         );
         let j = src.find("let dl = display_list(app);").unwrap();
         let rest = &src[j..];
         let modell = &rest[..rest.find("// Eingabe").expect("Zeichenmodus nicht gefunden")];
         assert!(
-            modell.contains("draw_cursor(app, ui, &painter, rect, view_now, snapped, raw_world)"),
+            modell.contains("draw_cursor(app, ui, &painter, rect, view_now, snapped, raw_world, snap_kind)"),
             "Zeichenmodus zeichnet den Zeiger nicht über draw_cursor"
         );
         assert!(
@@ -1813,12 +1834,19 @@ fn draw_cursor(
     view: View,
     snapped: Option<V2>,
     raw: Option<V2>,
+    snap_kind: Option<snap::SnapKind>,
 ) {
     let Some(pos) = ui.ctx().pointer_hover_pos().filter(|q| rect.contains(*q)) else {
         return;
     };
     if let Some(w) = snapped {
         let s = world_to_screen(rect, view, w);
+        // Der Mittelpunkt von Kreis, Bogen und Ellipse ist im Plan unsichtbar
+        // (T0117) — wird er gefangen, zeigt ihn das Kreuz hier an. Sonst wäre
+        // der Fangpunkt nur an der allgemeinen Fangmarke zu erahnen.
+        if snap_kind == Some(snap::SnapKind::Center) {
+            center_mark_r(p, s, Palette::accent(), 7.0);
+        }
         let r = 5.0;
         p.line_segment([s - Vec2::new(r, 0.0), s + Vec2::new(r, 0.0)], Stroke::new(1.2, Palette::accent()));
         p.line_segment([s - Vec2::new(0.0, r), s + Vec2::new(0.0, r)], Stroke::new(1.2, Palette::accent()));
@@ -3225,13 +3253,38 @@ fn bezug_achsen(app: &App) -> Vec<V2> {
 /// laufen sie getrennt, weicht der gespeicherte Punkt vom sichtbaren
 /// Fangpunkt ab. Reihenfolge der Fänge: `snap::snap_constrained`.
 fn fang_zeiger(app: &App, w: V2, tol: f64) -> (V2, Option<&'static str>) {
+    let res = fang_aufloesung(app, w, tol);
+    (res.point, res.text())
+}
+
+/// Wie [`fang_zeiger`], gibt aber zusätzlich die **Art** des Fangs zurück.
+///
+/// Die Zeichenfläche braucht sie, um einen unsichtbaren Mittelpunkt beim
+/// Fangen zu zeigen (T0117): der Punkt ist im Plan nicht gezeichnet, die
+/// allgemeine Fangmarke allein ließe nicht erkennen, dass es der Kreismittel-
+/// punkt ist.
+fn fang_zeiger_art(
+    app: &App,
+    w: V2,
+    tol: f64,
+) -> (V2, Option<&'static str>, Option<snap::SnapKind>) {
+    let res = fang_aufloesung(app, w, tol);
+    let kind = match res.source {
+        snap::SnapSource::Object(k) => Some(k),
+        _ => None,
+    };
+    (res.point, res.text(), kind)
+}
+
+/// Die eine Fangrechnung für Zeigeranzeige und Klickpunkt.
+fn fang_aufloesung(app: &App, w: V2, tol: f64) -> snap::SnapResolution {
     let achsen = bezug_achsen(app);
     let regeln = fang_regeln(app);
     let vorschau = vorschau_punkte(app);
     // `snap_constrained_achsen`: die Haltepunkte des erweiterten Punktfangs
     // liefern ihre Hilfslinien als zusätzliche Fangziele mit; mehrere
     // Bezugspunkte (beide Nachbarn eines Griffs) rasten getrennt je Koordinate.
-    let res = snap::snap_constrained_achsen(
+    snap::snap_constrained_achsen(
         app.doc(),
         w,
         tol,
@@ -3242,8 +3295,7 @@ fn fang_zeiger(app: &App, w: V2, tol: f64) -> (V2, Option<&'static str>) {
         &vorschau,
         &app.halt,
         app.ui.show_grid,
-    );
-    (res.point, res.text())
+    )
 }
 
 /// Stützpunkte des gerade gezeichneten Zuges als zusätzliche Fangziele.
@@ -11219,5 +11271,167 @@ mod tests_textzoom {
                 "{height} mm: Schrift {gw:.1} breit, Rahmen {w:.1}"
             );
         }
+    }
+}
+
+#[cfg(test)]
+mod tests_mittelpunkt {
+    //! T0117: Der Mittelpunkt von Kreis, Bogen und Ellipse ist im Plan **nicht**
+    //! gezeichnet — er erscheint nur bei Auswahl. Gefangen wird er trotzdem;
+    //! dann zeigt ihn ein Kreuz an der Fangstelle.
+
+    use super::*;
+
+    /// Zählt waagerechte/senkrechte Striche der Länge `laenge`, deren Mitte auf
+    /// `c` liegt. Das Mittelpunktkreuz besteht aus genau zwei solchen Strichen.
+    fn zaehle(shape: &egui::Shape, c: Pos2, laenge: f32, n: &mut usize) {
+        match shape {
+            egui::Shape::LineSegment { points, .. } => {
+                let (a, b) = (points[0], points[1]);
+                let mitte = a + (b - a) * 0.5;
+                if mitte.distance(c) < 0.5 && ((b - a).length() - laenge).abs() < 0.01 {
+                    *n += 1;
+                }
+            }
+            egui::Shape::Vec(v) => v.iter().for_each(|s| zaehle(s, c, laenge, n)),
+            _ => {}
+        }
+    }
+
+    fn striche_am_mittelpunkt(shape: PShape, ausgewaehlt: bool) -> usize {
+        let ctx = egui::Context::default();
+        let c = V2::new(500.0, 500.0);
+        let out = ctx.run(egui::RawInput::default(), |ctx| {
+            let layer = egui::LayerId::new(egui::Order::Background, egui::Id::new("t0117"));
+            let p = egui::Painter::new(ctx.clone(), layer, Rect::EVERYTHING);
+            let prim = Prim {
+                shape: shape.clone(),
+                style: render::PrimStyle::default(),
+                entity: 7,
+                layer: 1,
+            };
+            let pc = PaintCtx {
+                selected: if ausgewaehlt { vec![7] } else { Vec::new() },
+                hover: None,
+                lineweights: false,
+                lineweights_scaled: false,
+                paper_px: 1.0,
+                preview: false,
+                rot: 0.0,
+                text_deckel: 64.0,
+            };
+            let w2s = |q: V2| Pos2::new(q.x as f32, q.y as f32);
+            paint_prim(&p, &prim, &w2s, 1.0, &pc, 1.0);
+        });
+        let mut n = 0;
+        for cs in &out.shapes {
+            zaehle(&cs.shape, Pos2::new(500.0, 500.0), 8.0, &mut n);
+        }
+        n
+    }
+
+    /// Ohne Auswahl zeichnet keine der vier Kurven ein Mittelpunktkreuz; mit
+    /// Auswahl zeichnen alle vier es (zwei Striche).
+    #[test]
+    fn mittelpunktkreuz_nur_bei_auswahl() {
+        let c = V2::new(500.0, 500.0);
+        let formen = [
+            ("Kreis", PShape::Circle { c, r: 200.0 }),
+            (
+                "Bogen",
+                PShape::Arc {
+                    c,
+                    r: 200.0,
+                    a0: 0.0,
+                    a1: 1.5,
+                },
+            ),
+            (
+                "Ellipse",
+                PShape::Ellipse {
+                    c,
+                    rx: 200.0,
+                    ry: 100.0,
+                    rot: 0.0,
+                },
+            ),
+            (
+                "Ellipsenbogen",
+                PShape::EllipseArc {
+                    c,
+                    rx: 200.0,
+                    ry: 100.0,
+                    rot: 0.0,
+                    a0: 0.0,
+                    a1: 1.5,
+                },
+            ),
+        ];
+        for (name, form) in formen {
+            assert_eq!(
+                striche_am_mittelpunkt(form.clone(), false),
+                0,
+                "{name}: Mittelpunkt darf ohne Auswahl nicht gezeichnet werden"
+            );
+            assert_eq!(
+                striche_am_mittelpunkt(form, true),
+                2,
+                "{name}: bei Auswahl fehlt das Mittelpunktkreuz"
+            );
+        }
+    }
+
+    fn frame_out(app: &mut App, events: Vec<egui::Event>) -> egui::FullOutput {
+        let ctx = app.ctx.clone();
+        let input = egui::RawInput {
+            screen_rect: Some(Rect::from_min_size(Pos2::ZERO, egui::vec2(1500.0, 950.0))),
+            events,
+            ..Default::default()
+        };
+        ctx.run(input, |ctx| app.ui(ctx))
+    }
+
+    /// Der unsichtbare Mittelpunkt bleibt Fangziel: steht der Zeiger auf ihm,
+    /// meldet die Statuszeile „Zentrum" und die Zeichenfläche zeigt das Kreuz
+    /// (Halbbreite 7 px, also 14 px lange Striche).
+    #[test]
+    fn gefangener_mittelpunkt_wird_gezeigt() {
+        let mut app = App::with_ctx(egui::Context::default());
+        app.session_mut()
+            .execute("doc.settings", &serde_json::json!({"input_unit": "mm"}))
+            .expect("Einheit");
+        frame_out(&mut app, vec![]);
+        let rect = app.ui.last_canvas;
+        let view = app.current_view();
+        let mitte = Pos2::new(rect.center().x, rect.center().y);
+        let w = screen_to_world(rect, view, mitte);
+        app.session_mut()
+            .execute(
+                "draw.circle",
+                &serde_json::json!({"c": [w.x, w.y], "r": 1000.0}),
+            )
+            .expect("Kreis");
+
+        // Zeiger genau auf den Mittelpunkt: der Fang greift.
+        let out = frame_out(&mut app, vec![egui::Event::PointerMoved(mitte)]);
+        assert_eq!(
+            app.snap_label.as_deref(),
+            Some("Zentrum"),
+            "der Mittelpunkt muss weiter fangen"
+        );
+        let mut n = 0;
+        for cs in &out.shapes {
+            zaehle(&cs.shape, mitte, 14.0, &mut n);
+        }
+        assert_eq!(n, 2, "das Mittelpunktkreuz fehlt am gefangenen Zentrum");
+
+        // Zeiger weit weg: kein Fang, kein Kreuz.
+        let weg = Pos2::new(rect.left() + 20.0, rect.top() + 20.0);
+        let out = frame_out(&mut app, vec![egui::Event::PointerMoved(weg)]);
+        let mut n = 0;
+        for cs in &out.shapes {
+            zaehle(&cs.shape, mitte, 14.0, &mut n);
+        }
+        assert_eq!(n, 0, "ohne Fang darf kein Mittelpunktkreuz stehen");
     }
 }
