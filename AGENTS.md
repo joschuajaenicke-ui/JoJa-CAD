@@ -98,6 +98,11 @@ Mit dem Nutzer abgestimmt — nicht „verbessern“:
   (150 px Wertespalte, gleicher Pfeil). **Kein `egui::ComboBox`** — schließt bei
   jedem Klick im Popup und sieht anders aus.
 - **Linienenden sind Halbkreise** (Kapsel-Rendering in `canvas.rs`), nicht Rechtecke.
+- **Mittelpunkte (T0117)**: Das Kreuz am Mittelpunkt von Kreis, Bogen und Ellipse
+  zeichnet `canvas::paint_prim` nur bei **Auswahl** — im Plan ist der Mittelpunkt
+  kein Zeichnungselement. Fangen bleibt er trotzdem; wird er gefangen, zeigt
+  `canvas::draw_cursor` das Kreuz in Akzentfarbe (Halbbreite 7 px) an der
+  Fangstelle.
 - **Linienstärken**: zwei Modi, `px` (bildschirmkonstant) und `DPI`
   (maßstabsgetreu wie im Druck). Strichmuster folgt demselben Schalter.
 - **Wandgehrung** über die *Innenwinkel*-Halbierende (`away - outward`);
