@@ -120,6 +120,10 @@ einsehbar und dort frei änderbar (Ribbon ▸ Ansicht ▸ „Tasten").
     Endung wird mit „Datei · Format nicht unterstützt" abgelehnt und ändert nichts. Der Weg ist
     derselbe wie nach einer Auswahl im Dateidialog.
 
+    **Unter Linux mit Wayland kommt der Drop derzeit nicht an** — die Fensterbibliothek unter
+    egui (winit 0.30) kennt ihn dort nicht. Das ist kein Fehler des Programms; Ursache,
+    Bedingungen und Prüfweg stehen in [`docs/WAYLAND-DATEI-DROP.md`](WAYLAND-DATEI-DROP.md).
+
 Der Zeiger ist über der Zeichenfläche ein durchgehendes Fadenkreuz; der Systemzeiger wird dort
 ausgeblendet.
 
