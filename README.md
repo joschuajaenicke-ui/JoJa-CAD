@@ -82,6 +82,7 @@ JoJa-CAD/
 - [`docs/MCP.md`](docs/MCP.md) — KI-Steuerung, Werkzeuge, Beispiele
 - [`docs/GLOSSAR.md`](docs/GLOSSAR.md) — Begriffe, verbindlich für Oberfläche und Code
 - [`docs/STATUS.md`](docs/STATUS.md) — Arbeitsstand und offene Punkte
+- [`docs/WAYLAND-DATEI-DROP.md`](docs/WAYLAND-DATEI-DROP.md) — warum Datei-Drop unter Wayland nicht geht und wann er wieder kommt
 - [`docs/VERSIONEN.md`](docs/VERSIONEN.md) — Versionierung, Release-Ablauf, Weg zur 0.3
 - [`CHANGELOG.md`](CHANGELOG.md) — was sich je Version geändert hat
 
