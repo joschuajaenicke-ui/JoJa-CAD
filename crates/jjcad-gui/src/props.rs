@@ -314,6 +314,33 @@ pub struct Gemein {
     pub farbe: Option<Option<Color>>,
     pub staerke: Option<f64>,
     pub linientyp: Option<jjcad_core::style::LineType>,
+    /// Dämmung: Bandhöhe H in mm
+    pub daemmung_breite: Option<f64>,
+    /// Dämmung: Schlaufenform r
+    pub daemmung_form: Option<f64>,
+}
+
+/// Dämmungswerte (Breite H in mm, Schlaufenform r): am Objekt der tatsächliche
+/// Wert, beim Erzeugen die Vorgabe. Bei Mehrfachauswahl gilt das erste Objekt —
+/// wie bei allen Zeilen in [`gemein`].
+fn daemmung_werte(app: &App, ziel: Ziel) -> (f64, f64) {
+    let id = app.mehrfach_ziel.first().copied().or(ziel.id());
+    match id.and_then(|i| app.doc().entity(i)) {
+        Some(e) => (
+            app.doc().effective_loop_width(e),
+            app.doc().effective_loop_shape(e),
+        ),
+        None => (
+            app.ui
+                .pending
+                .loop_width
+                .unwrap_or(jjcad_core::daemmung::BREITE_MM),
+            app.ui
+                .pending
+                .loop_shape
+                .unwrap_or(jjcad_core::daemmung::FORM),
+        ),
+    }
 }
 
 /// Die drei Zeilen, die jedes Objekt hat: Layer, Farbe, Linie.
@@ -448,6 +475,39 @@ pub fn gemein(
         if let Some(lt) = picked_lt {
             out.linientyp = Some(lt);
         }
+
+        // Dämmung: Breite (H) und Schlaufenform (r). Die Zeilen erscheinen nur
+        // bei dieser Linienart — bei allen anderen bewirken sie nichts.
+        if out.linientyp.unwrap_or(linientyp) == jjcad_core::style::LineType::Insulation {
+            let (breite0, form0) = daemmung_werte(app, ziel);
+            let (mut breite, mut form) = (breite0, form0);
+            let einheit = app.unit();
+            zeile("daemmung_breite");
+            widgets::field_row(ui, jjcad_core::i18n::tr("gui.props.daemmung_breite"), |ui| {
+                widgets::length_field(
+                    ui,
+                    &mut breite,
+                    einheit,
+                    150.0,
+                    jjcad_core::daemmung::BREITE_MIN_MM,
+                    jjcad_core::daemmung::BREITE_MAX_MM,
+                );
+            });
+            zeile("daemmung_form");
+            widgets::field_row(ui, jjcad_core::i18n::tr("gui.props.daemmung_form"), |ui| {
+                ui.add(widgets::zahl(
+                    &mut form,
+                    0.01,
+                    jjcad_core::daemmung::FORM_MIN..=jjcad_core::daemmung::FORM_MAX,
+                ));
+            });
+            if (breite - breite0).abs() > 1e-9 {
+                out.daemmung_breite = Some(breite);
+            }
+            if (form - form0).abs() > 1e-9 {
+                out.daemmung_form = Some(form);
+            }
+        }
     }
 
     out
@@ -466,6 +526,12 @@ pub fn gemein_nach_optionen(app: &mut App, a: &Gemein) {
     }
     if let Some(lt) = a.linientyp {
         app.ui.pending.line_type = Some(lt);
+    }
+    if let Some(b) = a.daemmung_breite {
+        app.ui.pending.loop_width = Some(b);
+    }
+    if let Some(f) = a.daemmung_form {
+        app.ui.pending.loop_shape = Some(f);
     }
 }
 
@@ -489,21 +555,21 @@ pub fn gemein_nach_objekt(app: &mut App, id: Id, a: &Gemein) {
             map.insert("lineweight".into(), serde_json::json!(w));
         }
         if let Some(lt) = a.linientyp {
-            map.insert("linetype".into(), serde_json::json!(linetype_key(lt)));
+            map.insert("linetype".into(), serde_json::json!(lt.key()));
+        }
+        if let Some(b) = a.daemmung_breite {
+            // Länge in der Eingabeeinheit der Zeichnung (siehe `canvas::run`).
+            map.insert(
+                "loop_width".into(),
+                serde_json::json!(app.unit().from_mm(b)),
+            );
+        }
+        if let Some(f) = a.daemmung_form {
+            map.insert("loop_shape".into(), serde_json::json!(f));
         }
     }
     if params.as_object().map(|m| m.len() > 1).unwrap_or(false) {
         setzen(app, &params);
-    }
-}
-
-fn linetype_key(lt: jjcad_core::style::LineType) -> &'static str {
-    match lt {
-        jjcad_core::style::LineType::Solid => "solid",
-        jjcad_core::style::LineType::Dashed => "dashed",
-        jjcad_core::style::LineType::Dotted => "dotted",
-        jjcad_core::style::LineType::DashDot => "dashdot",
-        jjcad_core::style::LineType::Hidden => "hidden",
     }
 }
 
@@ -3525,16 +3591,7 @@ pub fn treppe(app: &mut App, ui: &mut Ui, ziel: Ziel) {
                 });
             });
             if let Some(v) = picked_lt {
-                teil_aenderung.push((
-                    format!("type_{praefix}"),
-                    serde_json::json!(match v {
-                        jjcad_core::style::LineType::Solid => "solid",
-                        jjcad_core::style::LineType::Dashed => "dashed",
-                        jjcad_core::style::LineType::Dotted => "dotted",
-                        jjcad_core::style::LineType::DashDot => "dashdot",
-                        jjcad_core::style::LineType::Hidden => "hidden",
-                    }),
-                ));
+                teil_aenderung.push((format!("type_{praefix}"), serde_json::json!(v.key())));
             }
             ui.add_space(4.0);
         }
@@ -5018,6 +5075,74 @@ mod tests {
             anzahl, 1,
             "Stärke meldet *variiert* bei zwei gleichen Flächen: {texte:?}"
         );
+    }
+
+    /// Die Linienart „Dämmung“ bringt zwei eigene Zeilen mit — Breite (H) und
+    /// Schlaufenform (r). Bei jeder anderen Linienart fehlen sie, sonst stünden
+    /// zwei wirkungslose Felder in jedem Panel (T0120).
+    #[test]
+    fn daemmung_zeigt_breite_und_schlaufenform() {
+        let mut app = App::with_ctx(egui::Context::default());
+        app.session_mut()
+            .execute("doc.settings", &json!({ "input_unit": "m" }))
+            .expect("Einheit");
+        let linie = |app: &mut App, typ: &str| -> Id {
+            app.session_mut()
+                .execute(
+                    "draw.line",
+                    &json!({
+                        "a": [0.0, 0.0], "b": [3.0, 0.0],
+                        "linetype": typ, "loop_width": 0.12, "loop_shape": 0.4
+                    }),
+                )
+                .expect("Linie")["created"][0]
+                .as_u64()
+                .expect("Id")
+        };
+
+        let duenn = linie(&mut app, "insulation");
+        app.session_mut().selection = vec![duenn];
+        let zeilen = zeichne(&mut app);
+        assert!(
+            zeilen.contains(&"daemmung_breite"),
+            "Breite fehlt bei Dämmung: {zeilen:?}"
+        );
+        assert!(
+            zeilen.contains(&"daemmung_form"),
+            "Schlaufenform fehlt bei Dämmung: {zeilen:?}"
+        );
+
+        let voll = linie(&mut app, "solid");
+        app.session_mut().selection = vec![voll];
+        let zeilen = zeichne(&mut app);
+        assert!(
+            !zeilen.contains(&"daemmung_breite") && !zeilen.contains(&"daemmung_form"),
+            "Dämmungszeilen stehen an einer durchgezogenen Linie: {zeilen:?}"
+        );
+    }
+
+    /// Die beiden Zeilen gelten auch beim Erzeugen: die Vorgabe aus dem
+    /// Eigenschaften-Panel landet am neuen Objekt (T0062-Regel).
+    #[test]
+    fn daemmungswerte_aus_dem_panel_gelten_fuer_das_naechste_element() {
+        let mut app = App::with_ctx(egui::Context::default());
+        app.session_mut()
+            .execute("doc.settings", &json!({ "input_unit": "m" }))
+            .expect("Einheit");
+        app.ui.pending.line_type = Some(jjcad_core::style::LineType::Insulation);
+        app.start_tool("draw.line");
+        let zeilen = zeichne(&mut app);
+        assert!(
+            zeilen.contains(&"daemmung_breite") && zeilen.contains(&"daemmung_form"),
+            "Dämmungszeilen fehlen beim Erzeugen: {zeilen:?}"
+        );
+
+        let mut a = Gemein::default();
+        a.daemmung_breite = Some(180.0);
+        a.daemmung_form = Some(0.35);
+        gemein_nach_optionen(&mut app, &a);
+        assert_eq!(app.ui.pending.loop_width, Some(180.0));
+        assert_eq!(app.ui.pending.loop_shape, Some(0.35));
     }
 
 }

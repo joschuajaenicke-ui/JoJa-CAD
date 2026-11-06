@@ -648,6 +648,7 @@ dashed = "Dashed"
 dotted = "Dotted"
 dash_dot = "Dash-dot"
 hidden = "Hidden"
+insulation = "Insulation"
 
 [ui.arrowkind]
 slash = "Slash (DIN 1356)"
@@ -1473,6 +1474,8 @@ lage_in_der_wanddicke_links_mittig_rechts = "Position in the wall thickness: Lef
 layer = "Layer"
 linie = "Line"
 linientyp = "Line type"
+daemmung_breite = "Width"
+daemmung_form = "Loop shape"
 links = "left"
 mass_und_masstext_erscheinen_am_platzierten_objekt = "Dimension and dimension text appear on the placed object"
 mass_x_x = "Dimension: {wert1} {wert2}"

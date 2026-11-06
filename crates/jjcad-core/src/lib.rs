@@ -12,6 +12,7 @@ pub mod area;
 pub mod bild;
 pub mod blocks_lib;
 pub mod boundary;
+pub mod daemmung;
 pub mod dxf;
 pub mod export;
 pub mod flaeche;

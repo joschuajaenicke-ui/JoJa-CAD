@@ -1046,6 +1046,14 @@ pub struct EntityStyle {
     /// Füllung (z. B. Wand-Poché); None = ByLayer bzw. kein Fill
     #[serde(default)]
     pub fill: Option<Color>,
+    /// Dämmung (Linienart `Insulation`): Bandhöhe **H** in mm. `None` = Vorgabe
+    /// ([`crate::daemmung::BREITE_MM`]). Nur diese Linienart liest den Wert.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub loop_width: Option<f64>,
+    /// Dämmung: Schlaufenform **r** (Periodenlänge / Höhe). `None` = Vorgabe
+    /// ([`crate::daemmung::FORM`]).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub loop_shape: Option<f64>,
 }
 
 impl Default for EntityStyle {
@@ -1055,6 +1063,8 @@ impl Default for EntityStyle {
             line_type: None,
             line_weight: None,
             fill: None,
+            loop_width: None,
+            loop_shape: None,
         }
     }
 }
@@ -1758,6 +1768,22 @@ impl Document {
             return c;
         }
         self.layer(e.layer).map(|l| l.color).unwrap_or(Color::BLACK)
+    }
+
+    /// Bandhöhe der Dämmung in mm — eigener Wert, sonst die Vorgabe.
+    pub fn effective_loop_width(&self, e: &Entity) -> f64 {
+        e.style
+            .loop_width
+            .filter(|v| v.is_finite() && *v > 0.0)
+            .unwrap_or(crate::daemmung::BREITE_MM)
+    }
+
+    /// Schlaufenform der Dämmung — eigener Wert, sonst die Vorgabe.
+    pub fn effective_loop_shape(&self, e: &Entity) -> f64 {
+        e.style
+            .loop_shape
+            .filter(|v| v.is_finite() && *v > 0.0)
+            .unwrap_or(crate::daemmung::FORM)
     }
 
     pub fn effective_line_type(&self, e: &Entity) -> LineType {

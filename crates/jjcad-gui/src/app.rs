@@ -635,6 +635,10 @@ pub struct PendingStyle {
     pub fill: Option<jjcad_core::style::Color>,
     pub lineweight: Option<f64>,
     pub line_type: Option<jjcad_core::style::LineType>,
+    /// Dämmung (Linienart „Dämmung"): Bandhöhe H in mm
+    pub loop_width: Option<f64>,
+    /// Dämmung: Schlaufenform r
+    pub loop_shape: Option<f64>,
 }
 
 impl Default for PendingStyle {
@@ -645,6 +649,8 @@ impl Default for PendingStyle {
             fill: None,
             lineweight: Some(0.35),
             line_type: None,
+            loop_width: None,
+            loop_shape: None,
         }
     }
 }
@@ -2140,6 +2146,22 @@ impl App {
                         .entities
                         .iter()
                         .find(|e| matches!(e.kind, EntityKind::Arc { .. }))
+                        .map(|e| e.id)
+                    {
+                        self.session_mut().selection = vec![id];
+                    }
+                }
+                // Erste Dämmungslinie auswählen: Eigenschaften-Panel mit Breite
+                // und Schlaufenform zeigen (T0120).
+                "seldaemmung" => {
+                    if let Some(id) = self
+                        .doc()
+                        .entities
+                        .iter()
+                        .find(|e| {
+                            self.doc().effective_line_type(e)
+                                == jjcad_core::style::LineType::Insulation
+                        })
                         .map(|e| e.id)
                     {
                         self.session_mut().selection = vec![id];

@@ -378,6 +378,7 @@ fn paint_prim(p: &Painter, prim: &Prim, w2s: &dyn Fn(V2) -> Pos2, scale: f64, pc
             if pts.len() < 2 {
                 return;
             }
+
             let mut v: Vec<Pos2> = pts.iter().map(|q| w2s(*q)).collect();
             if *closed {
                 v.push(v[0]);
@@ -5782,14 +5783,23 @@ fn run(app: &mut App, action: &str, params: serde_json::Value) -> bool {
             }
             if !o.contains_key("linetype") {
                 if let Some(t) = pend.line_type {
-                    let name = match t {
-                        jjcad_core::style::LineType::Solid => "solid",
-                        jjcad_core::style::LineType::Dashed => "dashed",
-                        jjcad_core::style::LineType::Dotted => "dotted",
-                        jjcad_core::style::LineType::DashDot => "dashdot",
-                        jjcad_core::style::LineType::Hidden => "hidden",
-                    };
-                    o.insert("linetype".into(), serde_json::json!(name));
+                    o.insert("linetype".into(), serde_json::json!(t.key()));
+                }
+            }
+            // Dämmung: Breite (H) und Schlaufenform (r) gehören zur Linienart.
+            if !o.contains_key("loop_width") {
+                if let Some(b) = pend.loop_width {
+                    // Länge in der Eingabeeinheit der Zeichnung — die
+                    // Befehlsschicht rechnet über `Params::len` nach mm um.
+                    o.insert(
+                        "loop_width".into(),
+                        serde_json::json!(app.unit().from_mm(b)),
+                    );
+                }
+            }
+            if !o.contains_key("loop_shape") {
+                if let Some(f) = pend.loop_shape {
+                    o.insert("loop_shape".into(), serde_json::json!(f));
                 }
             }
         }
@@ -10572,6 +10582,7 @@ mod tests_kreis_kontur {
                 line_type: jjcad_core::style::LineType::Solid,
                 width: breite_mm,
                 fill: None,
+                ..Default::default()
             },
             entity: 0,
             layer: 0,
