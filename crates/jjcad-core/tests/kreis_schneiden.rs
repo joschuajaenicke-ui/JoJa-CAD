@@ -75,8 +75,11 @@ fn kreis_wird_von_einem_bogen_geschnitten() {
     assert!(nahe(a1, 5.0 * std::f64::consts::FRAC_PI_3), "a1 = {a1}");
 }
 
+/// Vier Schnittpunkte, ein Klick: nur die angeklickte Stelle fällt weg, der
+/// Rest bleibt **ein** Bogen. Vorher zerfiel der Kreis an jeder Schnittstelle
+/// in drei Einzelbögen (T0118).
 #[test]
-fn zwei_kanten_ergeben_drei_boegen() {
+fn zwei_kanten_zerlegen_den_kreis_nicht() {
     let mut s = s();
     let a = kreis(&mut s, [0.0, 0.0], 2.0);
     for x in [-1.0, 1.0] {
@@ -87,6 +90,55 @@ fn zwei_kanten_ergeben_drei_boegen() {
     s.execute("modify.trim", &json!({"ids": [a], "at": [0.0, 2.0]}))
         .expect("Kreis stutzen");
 
+    let boegen: Vec<(f64, f64)> = s
+        .doc
+        .entities
+        .iter()
+        .filter_map(|e| match &e.kind {
+            EntityKind::Arc { a0, a1, .. } => Some((*a0, *a1)),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(boegen.len(), 1, "ein Bogen bleibt: {boegen:?}");
+    let (a0, a1) = boegen[0];
+    assert!(nahe(a0, 2.0 * std::f64::consts::FRAC_PI_3), "a0 = {a0}");
+    assert!(nahe(a1, std::f64::consts::FRAC_PI_3), "a1 = {a1}");
+    // Der obere Abschnitt (60°…120°) fehlt.
+    assert!(
+        !jjcad_core::geom::angle_in_arc(std::f64::consts::FRAC_PI_2, a0, a1),
+        "angeklickter Abschnitt ist weg: {boegen:?}"
+    );
+    // Restsumme: der Kreis ohne den 60°-Abschnitt.
+    let rest = jjcad_core::geom::Arc::new(Vec2::ZERO, 2000.0, a0, a1).sweep();
+    let erwartet = std::f64::consts::TAU - std::f64::consts::FRAC_PI_3;
+    assert!((rest - erwartet).abs() < 1e-6, "Rest {rest}, erwartet {erwartet}");
+}
+
+/// Drei Schnittkanten auf einem Bogen: der Klick schneidet nur seinen Abschnitt
+/// heraus, die beiden Reststücke bleiben je **ein** Bogen (T0118).
+#[test]
+fn bogen_zerfaellt_nicht_an_allen_schnittstellen() {
+    let mut s = s();
+    let antwort = s
+        .execute(
+            "draw.arc",
+            &json!({"c": [0, 0], "r": 2.0, "a0": 0, "a1": 180}),
+        )
+        .expect("Bogen zeichnen");
+    let id = antwort["created"][0].as_u64().expect("Id");
+    // Senkrechte Kanten bei 30°, 90° und 150° (x = 2·cos des Winkels).
+    for x in [-1.7320508, 0.0, 1.7320508] {
+        s.execute("draw.line", &json!({"a": [x, -5], "b": [x, 5]}))
+            .unwrap();
+    }
+    // Klick bei 60° — nur der Abschnitt 30°…90° fällt weg.
+    let klick = v(2000.0 * 0.5, 2000.0 * 3.0f64.sqrt() / 2.0);
+    s.execute(
+        "modify.trim",
+        &json!({"ids": [id], "at": [klick.x / 1000.0, klick.y / 1000.0]}),
+    )
+    .expect("Bogen stutzen");
+
     let mut boegen: Vec<(f64, f64)> = s
         .doc
         .entities
@@ -96,22 +148,17 @@ fn zwei_kanten_ergeben_drei_boegen() {
             _ => None,
         })
         .collect();
-    assert_eq!(boegen.len(), 3, "vier Abschnitte, einer weg: {boegen:?}");
-    // Der obere Abschnitt (60°…120°) fehlt.
+    boegen.sort_by(|a, b| a.0.partial_cmp(&b.0).unwrap());
+    assert_eq!(boegen.len(), 2, "zwei Reststücke, nicht drei: {boegen:?}");
     assert!(
-        boegen
-            .iter()
-            .all(|(a0, a1)| !jjcad_core::geom::angle_in_arc(std::f64::consts::FRAC_PI_2, *a0, *a1)),
-        "angeklickter Abschnitt ist weg: {boegen:?}"
+        nahe(boegen[0].0, 0.0) && nahe(boegen[0].1, std::f64::consts::FRAC_PI_6),
+        "{boegen:?}"
     );
-    // Restsumme: der Kreis ohne den 60°-Abschnitt.
-    let rest: f64 = boegen
-        .iter()
-        .map(|(a0, a1)| jjcad_core::geom::Arc::new(Vec2::ZERO, 2000.0, *a0, *a1).sweep())
-        .sum();
-    let erwartet = std::f64::consts::TAU - std::f64::consts::FRAC_PI_3;
-    assert!((rest - erwartet).abs() < 1e-6, "Rest {rest}, erwartet {erwartet}");
-    boegen.clear();
+    assert!(
+        nahe(boegen[1].0, std::f64::consts::FRAC_PI_2)
+            && nahe(boegen[1].1, std::f64::consts::PI),
+        "{boegen:?}"
+    );
 }
 
 #[test]

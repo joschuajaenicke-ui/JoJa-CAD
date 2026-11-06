@@ -4144,6 +4144,12 @@ fn kreis_schnittwinkel(c: Vec2, r: f64, segs: &[(Seg, Id)]) -> Vec<f64> {
 /// bleibt (a0, a1 je gegen den Uhrzeigersinn) und der Abschnitt, der wegfällt.
 ///
 /// `None`, wenn weniger als zwei Schnittkanten den Kreis teilen.
+///
+/// Stehen bleibt **ein** Bogen: der Gegenbogen zum angeklickten Abschnitt. Die
+/// übrigen Schnittstellen zerlegen ihn nicht (T0118) — gestutzt wird nur die
+/// Stelle unter dem Zeiger. Vorher fiel der Kreis an *jeder* Schnittstelle
+/// auseinander: ein Kreis mit vier Schnittpunkten ergab nach einem Klick drei
+/// Einzelbögen, obwohl nur ein Abschnitt wegfiel.
 fn kreis_trim_stuecke(
     c: Vec2,
     r: f64,
@@ -4156,19 +4162,20 @@ fn kreis_trim_stuecke(
     }
     let n = hits.len();
     let a = norm_angle((at - c).angle());
-    let mut stuecke: Vec<(f64, f64)> = (0..n).map(|i| (hits[i], hits[(i + 1) % n])).collect();
+    let stuecke: Vec<(f64, f64)> = (0..n).map(|i| (hits[i], hits[(i + 1) % n])).collect();
     let idx = stuecke
         .iter()
         .position(|(a0, a1)| angle_in_arc(a, *a0, *a1))?;
-    let weg = stuecke.remove(idx);
-    Some((stuecke, weg))
+    let weg = stuecke[idx];
+    Some((vec![(weg.1, weg.0)], weg))
 }
 
 /// Die Abschnitte eines **Bogens** beim Stutzen an der Stelle `at`.
 ///
 /// Die Schnitte werden in Laufrichtung des Bogens (0 = Anfang) einsortiert;
-/// der angeklickte Abschnitt fällt weg, die übrigen bleiben als eigene Bögen
-/// stehen (T0084, Turn 2).
+/// der angeklickte Abschnitt fällt weg. Stehen bleiben nur die Stücke **vor**
+/// und **nach** dem Schnitt — je ein Bogen, nicht an den übrigen Schnittstellen
+/// zerlegt (T0118, wie beim Kreis).
 fn bogen_trim_stuecke(
     c: Vec2,
     r: f64,
@@ -4200,11 +4207,15 @@ fn bogen_trim_stuecke(
         .iter()
         .position(|(s, e)| t >= *s - 1e-9 && t <= *e + 1e-9)?;
     let weg = stuecke.remove(idx);
-    let bleibt = stuecke
-        .into_iter()
-        .filter(|(s, e)| e - s > 1e-7)
-        .map(|(s, e)| (norm_angle(a0 + s), norm_angle(a0 + e)))
-        .collect();
+    // Nur die Stücke **vor** und **nach** dem Schnitt bleiben stehen — je ein
+    // Bogen. Die übrigen Schnittstellen zerlegen sie nicht (T0118).
+    let mut bleibt: Vec<(f64, f64)> = Vec::new();
+    if weg.0 > 1e-7 {
+        bleibt.push((norm_angle(a0), norm_angle(a0 + weg.0)));
+    }
+    if weg.1 < sweep - 1e-7 {
+        bleibt.push((norm_angle(a0 + weg.1), norm_angle(a0 + sweep)));
+    }
     Some((bleibt, (norm_angle(a0 + weg.0), norm_angle(a0 + weg.1))))
 }
 
@@ -4257,6 +4268,10 @@ fn winkel_abstand(a: f64, b: f64) -> f64 {
 ///
 /// `None`, wenn weniger als zwei Schnittkanten die Ellipse teilen — dann gibt es
 /// keinen Bereich, den ein Klick bestimmt.
+///
+/// Stehen bleibt **ein** Ellipsenbogen: der Gegenbogen zum angeklickten
+/// Abschnitt. Die übrigen Schnittstellen zerlegen ihn nicht (T0118, wie beim
+/// Kreis).
 fn ellipse_trim_stuecke(
     el: &Ellipse,
     at: Vec2,
@@ -4268,12 +4283,12 @@ fn ellipse_trim_stuecke(
     }
     let n = hits.len();
     let u = norm_angle(el.param_of(at));
-    let mut stuecke: Vec<(f64, f64)> = (0..n).map(|i| (hits[i], hits[(i + 1) % n])).collect();
+    let stuecke: Vec<(f64, f64)> = (0..n).map(|i| (hits[i], hits[(i + 1) % n])).collect();
     let idx = stuecke
         .iter()
         .position(|(a0, a1)| angle_in_arc(u, *a0, *a1))?;
-    let weg = stuecke.remove(idx);
-    Some((stuecke, weg))
+    let weg = stuecke[idx];
+    Some((vec![(weg.1, weg.0)], weg))
 }
 
 /// Die Abschnitte eines **Ellipsenbogens** beim Stutzen an der Stelle `at`.
@@ -4311,11 +4326,15 @@ fn ellipsearc_trim_stuecke(
         .iter()
         .position(|(s, e)| t >= *s - 1e-9 && t <= *e + 1e-9)?;
     let weg = stuecke.remove(idx);
-    let bleibt = stuecke
-        .into_iter()
-        .filter(|(s, e)| e - s > 1e-7)
-        .map(|(s, e)| (norm_angle(a0 + s), norm_angle(a0 + e)))
-        .collect();
+    // Nur die Stücke **vor** und **nach** dem Schnitt bleiben stehen — je ein
+    // Bogen. Die übrigen Schnittstellen zerlegen sie nicht (T0118).
+    let mut bleibt: Vec<(f64, f64)> = Vec::new();
+    if weg.0 > 1e-7 {
+        bleibt.push((norm_angle(a0), norm_angle(a0 + weg.0)));
+    }
+    if weg.1 < sweep - 1e-7 {
+        bleibt.push((norm_angle(a0 + weg.1), norm_angle(a0 + sweep)));
+    }
     Some((bleibt, (norm_angle(a0 + weg.0), norm_angle(a0 + weg.1))))
 }
 
