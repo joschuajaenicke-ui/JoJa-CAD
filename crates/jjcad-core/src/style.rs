@@ -108,16 +108,49 @@ pub enum LineType {
     Dotted,
     DashDot,
     Hidden,
+    /// Dämmung: statt eines Strichs wird ein **Schlaufenband** entlang der
+    /// Linie gezeichnet (Breite `H`, Schlaufenform `r`). Die Länge bleibt
+    /// exakt die der Linie — Rechnung in [`crate::daemmung`], Dokumentation
+    /// in `docs/DAEMMUNG-SCHLAUFEN.md`.
+    Insulation,
 }
 
 impl LineType {
-    pub const ALL: [LineType; 5] = [
+    pub const ALL: [LineType; 6] = [
         LineType::Solid,
         LineType::Dashed,
         LineType::Dotted,
         LineType::DashDot,
         LineType::Hidden,
+        LineType::Insulation,
     ];
+
+    /// Kennung in Datei und Befehlsschicht — **eine** Quelle für alle
+    /// Aufrufstellen (`props`, `canvas`, `actions`).
+    pub fn key(self) -> &'static str {
+        match self {
+            LineType::Solid => "solid",
+            LineType::Dashed => "dashed",
+            LineType::Dotted => "dotted",
+            LineType::DashDot => "dashdot",
+            LineType::Hidden => "hidden",
+            LineType::Insulation => "insulation",
+        }
+    }
+
+    /// Kennung → Linienart; deutsche Namen gelten weiter (MCP-Eingaben).
+    pub fn from_key(s: &str) -> Option<LineType> {
+        let s = s.trim().to_lowercase();
+        Some(match s.as_str() {
+            "solid" | "durchgezogen" => LineType::Solid,
+            "dashed" | "gestrichelt" => LineType::Dashed,
+            "dotted" | "gepunktet" => LineType::Dotted,
+            "dashdot" | "strichpunkt" => LineType::DashDot,
+            "hidden" | "verdeckt" => LineType::Hidden,
+            "insulation" | "daemmung" | "dämmung" | "schlaufen" => LineType::Insulation,
+            _ => return None,
+        })
+    }
 
     pub fn label(self) -> &'static str {
         match self {
@@ -126,6 +159,7 @@ impl LineType {
             LineType::Dotted => "Gepunktet",
             LineType::DashDot => "Strichpunkt",
             LineType::Hidden => "Verdeckt",
+            LineType::Insulation => "Dämmung",
         }
     }
     /// Beschriftung in der gewählten Sprache (T0106). `label()` bleibt der
@@ -137,6 +171,7 @@ impl LineType {
             LineType::Dotted => crate::i18n::tr("ui.linetype.dotted"),
             LineType::DashDot => crate::i18n::tr("ui.linetype.dash_dot"),
             LineType::Hidden => crate::i18n::tr("ui.linetype.hidden"),
+            LineType::Insulation => crate::i18n::tr("ui.linetype.insulation"),
         }
     }
 
@@ -149,6 +184,9 @@ impl LineType {
             LineType::Dotted => &[0.4, 1.4],
             LineType::DashDot => &[6.0, 1.6, 0.4, 1.6],
             LineType::Hidden => &[2.0, 1.2],
+            // Die Dämmung ist kein Strichmuster: sie wird als Schlaufenband
+            // gezeichnet (siehe `daemmung`), nicht gestrichelt.
+            LineType::Insulation => &[],
         }
     }
 }

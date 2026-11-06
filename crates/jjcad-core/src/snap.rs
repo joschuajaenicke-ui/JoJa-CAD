@@ -3,6 +3,7 @@
 use crate::geom::*;
 use crate::model::*;
 use crate::render;
+use crate::style::LineType;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum SnapKind {
@@ -1467,7 +1468,16 @@ pub fn hit_test(doc: &Document, p: Vec2, tol: f64, layer_filter: Option<&[Id]>) 
             }
         }
         let mut dmin = f64::INFINITY;
-        for sg in render::entity_segments(doc, e) {
+        // Dämmung: die Linienart zeichnet ein Schlaufenband **versetzt** zur
+        // gespeicherten Linie. Der Klick muss deshalb die gezeichnete
+        // Geometrie treffen (wie bei der Bemaßung, T0052/T0120), sonst läge
+        // die Trefferfläche auf einer unsichtbaren Geraden.
+        let segmente = if doc.effective_line_type(e) == LineType::Insulation {
+            render::trefferbild(doc, e).segmente
+        } else {
+            render::entity_segments(doc, e)
+        };
+        for sg in segmente {
             let (_, d) = sg.closest(p);
             dmin = dmin.min(d);
         }

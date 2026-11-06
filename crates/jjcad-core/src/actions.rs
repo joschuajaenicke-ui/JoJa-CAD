@@ -613,15 +613,15 @@ impl<'a> Params<'a> {
     }
 
     pub fn linetype(&self, k: &str) -> Option<LineType> {
-        let s = self.text(k)?.to_lowercase();
-        Some(match s.as_str() {
-            "solid" | "durchgezogen" => LineType::Solid,
-            "dashed" | "gestrichelt" => LineType::Dashed,
-            "dotted" | "gepunktet" => LineType::Dotted,
-            "dashdot" | "strichpunkt" => LineType::DashDot,
-            "hidden" | "verdeckt" => LineType::Hidden,
-            _ => return None,
-        })
+        LineType::from_key(&self.text(k)?)
+    }
+
+    /// Dämmung: Bandhöhe H (Länge, wird in mm umgerechnet) und Schlaufenform r
+    /// (Verhältnis, keine Länge). Beide bleiben bei `None` unverändert.
+    pub fn loop_params(&self) -> (Option<f64>, Option<f64>) {
+        let breite = self.len("loop_width").filter(|v| *v > 0.0);
+        let form = self.num("loop_shape").filter(|v| *v > 0.0);
+        (breite, form)
     }
 
     pub fn fill_pattern(&self, k: &str) -> Option<FillPattern> {
@@ -1183,6 +1183,13 @@ fn apply_common(doc: &mut Document, e: &mut Entity, p: &Params, layer: Id) {
     }
     if let Some(lw) = p.num("lineweight") {
         e.style.line_weight = Some(lw);
+    }
+    let (breite, form) = p.loop_params();
+    if let Some(b) = breite {
+        e.style.loop_width = Some(b);
+    }
+    if let Some(f) = form {
+        e.style.loop_shape = Some(f);
     }
     if let Some(c) = p.color("fill") {
         e.style.fill = Some(c);
@@ -2754,6 +2761,13 @@ pub fn execute(doc: &mut Document, id: &str, params: &Value) -> Result<Value, St
                     }
                     if let Some(lw) = p.num("lineweight") {
                         e.style.line_weight = Some(lw);
+                    }
+                    let (breite, form) = p.loop_params();
+                    if let Some(b) = breite {
+                        e.style.loop_width = Some(b);
+                    }
+                    if let Some(f) = form {
+                        e.style.loop_shape = Some(f);
                     }
                     if let Some(c) = p.color("fill") {
                         e.style.fill = Some(c);

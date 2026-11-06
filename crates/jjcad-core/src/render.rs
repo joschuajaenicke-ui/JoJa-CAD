@@ -27,6 +27,11 @@ pub struct PrimStyle {
     pub width: f64,
     /// Füllfarbe (nur bei Fill-Primitiven relevant)
     pub fill: Option<Color>,
+    /// Dämmung (`LineType::Insulation`): Bandhöhe H in mm; 0 = Vorgabe
+    /// ([`crate::daemmung::BREITE_MM`]).
+    pub loop_width: f64,
+    /// Dämmung: Schlaufenform r; 0 = Vorgabe ([`crate::daemmung::FORM`]).
+    pub loop_shape: f64,
 }
 
 impl Default for PrimStyle {
@@ -36,6 +41,8 @@ impl Default for PrimStyle {
             line_type: LineType::Solid,
             width: 0.25,
             fill: None,
+            loop_width: 0.0,
+            loop_shape: 0.0,
         }
     }
 }
@@ -329,8 +336,83 @@ pub struct DisplayList {
     pub bbox: BBox,
 }
 
+/// Weg, auf dem ein Schlaufenband läuft — `None` für Formen ohne Linie
+/// (Füllung, Text, Punkt, Bild).
+///
+/// Gekrümmte Formen werden dafür in einen Polygonzug zerlegt (2°-Schritte);
+/// das Band folgt der Bogenlänge, nicht den Stützpunkten.
+fn band_pfad(shape: &Shape) -> Option<(Vec<Vec2>, bool)> {
+    let bogen = |c: Vec2, r: f64, a0: f64, a1: f64| -> Vec<Vec2> {
+        let sweep = a1 - a0;
+        let n = ((sweep.abs() / std::f64::consts::TAU * 180.0).ceil() as usize).clamp(8, 720);
+        (0..=n)
+            .map(|i| c + Vec2::polar(a0 + sweep * (i as f64 / n as f64), r))
+            .collect()
+    };
+    let ellipse = |c: Vec2, rx: f64, ry: f64, rot: f64, a0: f64, a1: f64| -> Vec<Vec2> {
+        let sweep = a1 - a0;
+        let n = ((sweep.abs() / std::f64::consts::TAU * 180.0).ceil() as usize).clamp(8, 720);
+        (0..=n)
+            .map(|i| {
+                let a = a0 + sweep * (i as f64 / n as f64);
+                c + Vec2::polar(rot, rx * a.cos()) + Vec2::polar(rot + std::f64::consts::FRAC_PI_2, ry * a.sin())
+            })
+            .collect()
+    };
+    Some(match shape {
+        Shape::Line(a, b) => (vec![*a, *b], false),
+        Shape::Poly(pts, closed) => (pts.clone(), *closed),
+        Shape::Arc { c, r, a0, a1 } => (bogen(*c, *r, *a0, *a1), false),
+        Shape::Circle { c, r } => (
+            bogen(*c, *r, 0.0, std::f64::consts::TAU),
+            true,
+        ),
+        Shape::Ellipse { c, rx, ry, rot } => (
+            ellipse(*c, *rx, *ry, *rot, 0.0, std::f64::consts::TAU),
+            true,
+        ),
+        Shape::EllipseArc { c, rx, ry, rot, a0, a1 } => {
+            (ellipse(*c, *rx, *ry, *rot, *a0, *a1), false)
+        }
+        Shape::Fill { .. } | Shape::Text(_) | Shape::Dot { .. } | Shape::Image { .. } => {
+            return None
+        }
+    })
+}
+
 impl DisplayList {
+    /// Ein Prim in die Liste legen.
+    ///
+    /// Die Linienart „Dämmung" wird **hier** in Geometrie übersetzt: statt der
+    /// Linie steht danach ein Schlaufenband ([`crate::daemmung::band`]) als
+    /// Polygonzug in der Liste. Damit zeichnen Bildschirm, PDF, PNG und DXF
+    /// dasselbe Band, und Trefferfläche wie Fang kommen aus derselben
+    /// Zerlegung (`trefferbild`) — eine zweite Schlaufenzeichnung gibt es
+    /// nicht.
     pub fn push(&mut self, p: Prim) {
+        if p.style.line_type == LineType::Insulation {
+            if let Some(pfad) = band_pfad(&p.shape) {
+                let st = PrimStyle {
+                    line_type: LineType::Solid,
+                    ..p.style
+                };
+                self.push(Prim {
+                    shape: Shape::Poly(
+                        crate::daemmung::band(
+                            &pfad.0,
+                            pfad.1,
+                            p.style.loop_width,
+                            p.style.loop_shape,
+                        ),
+                        false,
+                    ),
+                    style: st,
+                    entity: p.entity,
+                    layer: p.layer,
+                });
+                return;
+            }
+        }
         self.bbox.union(p.bbox());
         self.prims.push(p);
     }
@@ -687,6 +769,8 @@ fn base_style(doc: &Document, e: &Entity, override_color: Option<Color>) -> Prim
         line_type: doc.effective_line_type(e),
         width: doc.effective_line_weight(e),
         fill: e.style.fill,
+        loop_width: doc.effective_loop_width(e),
+        loop_shape: doc.effective_loop_shape(e),
     }
 }
 
@@ -1557,6 +1641,13 @@ fn push_muster(
     angle: f64,
     spacing: f64,
 ) {
+    // Musterlinien sind dünne, durchgezogene Striche. Eine Linienart gilt der
+    // **Kontur** des Objekts, nicht seiner Schraffur — sonst zeichnete eine
+    // Wand in „Dämmung" auch ihr Muster als Schlaufenband.
+    let st = &PrimStyle {
+        line_type: LineType::Solid,
+        ..*st
+    };
     let s = spacing.max(0.5);
     match pattern {
         FillPattern::Solid => {}
@@ -2597,8 +2688,10 @@ fn push_wall_hatch(
     if hp == FillPattern::Solid {
         return;
     }
+    // Musterlinien: durchgezogen (siehe `push_muster`).
     let thin = PrimStyle {
         width: st.width * 0.55,
+        line_type: LineType::Solid,
         ..*st
     };
     let (h, n, dir, start) = (body.h, body.n, body.dir, body.start);
@@ -3036,6 +3129,8 @@ fn halb_stil(st: &PrimStyle, teil: Option<&EntityStyle>) -> PrimStyle {
         line_type: t.line_type.unwrap_or(st.line_type),
         width: t.line_weight.unwrap_or(st.width),
         fill: t.fill.or(st.fill),
+        loop_width: st.loop_width,
+        loop_shape: st.loop_shape,
     }
 }
 

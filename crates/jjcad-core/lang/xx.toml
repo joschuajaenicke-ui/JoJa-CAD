@@ -694,6 +694,7 @@
 # dotted = "Gepunktet"
 # dash_dot = "Strichpunkt"
 # hidden = "Verdeckt"
+# insulation = "Dämmung"
 #
 [ui.arrowkind]
 # slash = "Schrägstrich (DIN 1356)"
@@ -1525,6 +1526,8 @@
 # layer = "Layer"
 # linie = "Linie"
 # linientyp = "Linientyp"
+# daemmung_breite = "Breite"
+# daemmung_form = "Schlaufenform"
 # links = "links"
 # mass_und_masstext_erscheinen_am_platzierten_objekt = "Maß und Maßtext erscheinen am platzierten Objekt"
 # mass_x_x = "Maß: {wert1} {wert2}"

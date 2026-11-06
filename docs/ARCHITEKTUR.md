@@ -122,6 +122,36 @@ ist ohne Sonderfälle erklärbar, in einem Durchgang über die Liste gerechnet u
 in den meisten Fällen richtig. Wer eine Objektart ergänzt, ordnet sie in
 `zeichenrang` einer Klasse zu — der Compiler erzwingt den Zweig.
 
+### Dämmung als Linienart (T0120)
+
+Die Linienart **Dämmung** (`LineType::Insulation`) ist kein Strichmuster: sie
+zeichnet ein **Schlaufenband** entlang der Linie. Die Kurve ist die
+dokumentierte parametrische Schlaufenkurve (`docs/DAEMMUNG-SCHLAUFEN.md`), die
+Rechnung steht in `crates/jjcad-core/src/daemmung.rs`:
+
+```
+x(t) = L/(2πn)·(t + K·sin 2t),  y(t) = H/2·cos t,  n = max(½, round(2L/(r·H))/2)
+```
+
+`H` (Breite) ist die Dämmstärke in mm, `r` (Schlaufenform) das Verhältnis
+Periodenlänge/Höhe. Bei `t = 2πn` ist `x = L` **exakt** — die Länge der Linie
+bleibt unabhängig von `H` und `r` erhalten. Die Konstante `K = 2,3016694` muss
+auf allen Stellen stehen, sonst ragt die Kurve über die Enden hinaus.
+
+Übersetzt wird die Linienart **an einer Stelle**: `render::DisplayList::push`
+ersetzt den Prim durch den Polygonzug des Bandes. Damit zeichnen Bildschirm,
+PDF, PNG und DXF dieselbe Geometrie, und `render::trefferbild` (Trefferfläche,
+Klick) sowie der DXF-Export folgen automatisch. Auf Polylinie, Bogen, Kreis und
+Ellipse läuft die Kurve über die **Bogenlänge** (`x` = Weg, `y` = Versatz quer
+dazu), sodass das Band mittig auf jedem Weg sitzt. Schraffurlinien tragen die
+Linienart nicht — eine Wand in „Dämmung“ zeichnet ihre Kanten als Band, ihr
+Muster als dünne Striche (`push_muster`).
+
+Gespeichert wird sie wie jede Linienart (`style.line_type: "Insulation"`) plus
+die zwei Werte `loop_width` (H, mm) und `loop_shape` (r); fehlen sie, gelten
+100 mm und 0,5. Im Eigenschaften-Panel erscheinen „Breite“ und „Schlaufenform“
+nur bei dieser Linienart.
+
 ### Blöcke mit Namensräumen
 
 Block-IDs sind präfixiert (`sys:`, `prj:`, `dxf:`). Beim Import kollidierender

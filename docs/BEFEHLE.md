@@ -84,6 +84,12 @@ Ohne `host` sucht `draw.door`/`draw.window` die nächste Wand im Umfeld und
 | `modify.explode` | `ids[]` | Blöcke, Wände, Türen, Bemaßung → Grundelemente |
 | `modify.set` | `ids[]`, `layer`, `color`, `linetype`, `lineweight`, `fill`, Typparameter | Eigenschaften ändern |
 
+`linetype` kennt `solid`, `dashed`, `dotted`, `dashdot`, `hidden` und
+`insulation` (Dämmung). Die Dämmung bringt zwei eigene Parameter mit:
+`loop_width` (Breite H, Länge in der Eingabeeinheit) und `loop_shape`
+(Schlaufenform r, Verhältnis Periodenlänge/Höhe). Beide gelten beim Zeichnen
+und in `modify.set`; ohne Angabe 100 mm und 0,5.
+
 Typparameter für `modify.set`: `thickness`, `height`, `material` (Wand),
 `width`, `kind`, `hinge`, `swing_in` (Tür), `width`, `sill` (Fenster),
 `steps`, `direction` (Treppe), `text`, `angle`, `bold` (Text), `r` (Kreis),

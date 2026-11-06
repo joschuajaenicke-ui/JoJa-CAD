@@ -53,6 +53,10 @@ fn ltype_name(lt: LineType) -> &'static str {
         LineType::Dotted => "DOT",
         LineType::DashDot => "DASHDOT",
         LineType::Hidden => "HIDDEN",
+        // Die Dämmung ist kein Strichmuster, sondern gezeichnete Geometrie
+        // (Schlaufenband). Sie geht als POLYLINE mit durchgezogener Linie
+        // hinaus — siehe `write_entity`.
+        LineType::Insulation => "CONTINUOUS",
     }
 }
 
@@ -226,6 +230,13 @@ fn write_entity(out: &mut W, doc: &Document, e: &Entity, block_ctx: Option<&str>
     };
     let color = e.style.color.map(aci_from_color);
     let lt = doc.effective_line_type(e);
+    // Dämmung: das Schlaufenband ist gezeichnete Geometrie, kein Strichmuster.
+    // Solche Objekte gehen über die Anzeige (Band als POLYLINE) statt über das
+    // rohe DXF-Element — sonst käme in jedem anderen CAD nur eine Gerade an.
+    if lt == LineType::Insulation {
+        write_via_display_list(out, doc, e, &layer);
+        return;
+    }
     match &e.kind {
         EntityKind::Line { a, b } => {
             out.g(0, "LINE");
@@ -328,15 +339,18 @@ fn write_entity(out: &mut W, doc: &Document, e: &Entity, block_ctx: Option<&str>
             out.f(50, to_deg(*rot));
         }
         // Architektur, Bemaßung, Schraffur: über die Anzeigegeometrie exportieren
-        _ => {
-            // DXF beschreibt die Zeichnung, nie den Papierraum
-            let ctx = render::RenderCtx::model(doc);
-            let mut dl = render::DisplayList::default();
-            render::render_entity(&ctx, e, Affine::IDENTITY, &mut dl, 0);
-            for prim in dl.prims {
-                write_shape(out, &layer, &prim);
-            }
-        }
+        _ => write_via_display_list(out, doc, e, &layer),
+    }
+}
+
+/// Objekt über die Anzeigeliste exportieren (DXF beschreibt die Zeichnung,
+/// nie den Papierraum).
+fn write_via_display_list(out: &mut W, doc: &Document, e: &Entity, layer: &str) {
+    let ctx = render::RenderCtx::model(doc);
+    let mut dl = render::DisplayList::default();
+    render::render_entity(&ctx, e, Affine::IDENTITY, &mut dl, 0);
+    for prim in dl.prims {
+        write_shape(out, layer, &prim);
     }
 }
 
