@@ -87,8 +87,11 @@ fn ellipse_wird_zu_einem_ellipsenbogen_gestutzt() {
     assert_eq!(s.doc.entities.len(), 2, "Ellipse + Schnittkante");
 }
 
+/// Vier Schnittpunkte, ein Klick: nur die angeklickte Stelle fällt weg, der
+/// Rest bleibt **ein** Ellipsenbogen. Vorher zerfiel die Ellipse an jeder
+/// Schnittstelle in drei Einzelbögen (T0118).
 #[test]
-fn zwei_schnittkanten_ergeben_drei_ellipsenboegen() {
+fn zwei_schnittkanten_zerlegen_die_ellipse_nicht() {
     let mut s = s();
     let id = ellipse(&mut s);
     // Zwei senkrechte Schnittkanten bei x = ±1000 mm.
@@ -104,7 +107,7 @@ fn zwei_schnittkanten_ergeben_drei_ellipsenboegen() {
     )
     .expect("Ellipse stutzen");
 
-    let mut boegen: Vec<(Id, f64, f64)> = s
+    let boegen: Vec<(Id, f64, f64)> = s
         .doc
         .entities
         .iter()
@@ -114,26 +117,25 @@ fn zwei_schnittkanten_ergeben_drei_ellipsenboegen() {
             _ => None,
         })
         .collect();
-    assert_eq!(boegen.len(), 3, "vier Abschnitte, einer weg: {boegen:?}");
-    // Alle Bögen liegen auf derselben Ellipse (Mittelpunkt, Achsen unverändert).
+    assert_eq!(boegen.len(), 1, "ein Ellipsenbogen bleibt: {boegen:?}");
+    // Der Bogen liegt auf derselben Ellipse (Mittelpunkt, Achsen unverändert).
     for e in s.doc.entities.iter().filter(|e| matches!(e.kind, EntityKind::EllipseArc { .. })) {
         if let EntityKind::EllipseArc { c, rx, ry, .. } = &e.kind {
             assert!(c.x.abs() < 1e-9 && c.y.abs() < 1e-9);
             assert!((*rx - 2000.0).abs() < 1e-9 && (*ry - 1000.0).abs() < 1e-9);
         }
     }
-    // Der obere Abschnitt fehlt: kein Bogen deckt den Parameter 90°.
-    let el = Ellipse::new(Vec2::ZERO, 2000.0, 1000.0, 0.0);
-    boegen.sort_by(|a, b| a.1.partial_cmp(&b.1).unwrap());
-    let oben_weg = boegen
-        .iter()
-        .all(|(_, a0, a1)| !jjcad_core::geom::angle_in_arc(std::f64::consts::FRAC_PI_2, *a0, *a1));
-    assert!(oben_weg, "der angeklickte Abschnitt ist weg: {boegen:?}");
+    let (_, a0, a1) = boegen[0];
+    assert!((a0 - 2.0 * std::f64::consts::FRAC_PI_3).abs() < 1e-9, "a0 = {a0}");
+    assert!((a1 - std::f64::consts::FRAC_PI_3).abs() < 1e-9, "a1 = {a1}");
+    // Der obere Abschnitt fehlt: der Bogen deckt den Parameter 90° nicht.
+    assert!(
+        !jjcad_core::geom::angle_in_arc(std::f64::consts::FRAC_PI_2, a0, a1),
+        "der angeklickte Abschnitt ist weg: {boegen:?}"
+    );
     // Restsumme: die Ellipse ohne den oberen Sechstel-Abschnitt (60°…120°).
-    let rest: f64 = boegen
-        .iter()
-        .map(|(_, a0, a1)| el.sweep(*a0, *a1))
-        .sum();
+    let el = Ellipse::new(Vec2::ZERO, 2000.0, 1000.0, 0.0);
+    let rest = el.sweep(a0, a1);
     let erwartet = std::f64::consts::TAU - std::f64::consts::TAU / 6.0;
     assert!((rest - erwartet).abs() < 1e-6, "Rest {rest}, erwartet {erwartet}");
 }
