@@ -128,6 +128,52 @@ fn taste_zu_label(label: &str) -> Option<egui::Key> {
     })
 }
 
+/// Zeichen, die **keine eigene `egui::Key`-Taste** haben — Umlaute, `ß` und
+/// jedes weitere Sonderzeichen einer fremden Belegung (T0121).
+///
+/// `egui::Key` ist die US-Lage: die Taste `ä` kommt dort als `Key::Quote` an,
+/// das Zeichen selbst nur als `Event::Text`. Solche Zeichen wertet
+/// [`getippte_zeichen`] aus, statt sie über eine Tastentabelle zu suchen.
+fn ist_textzeichen(label: &str) -> bool {
+    !EINZELTASTEN.iter().any(|(_, l)| *l == label)
+}
+
+/// Die in diesem Bild **getippten** Zeichen ohne eigene Taste, klein
+/// geschrieben und ohne Doppel (T0121).
+///
+/// Grundlage der Belegung für Umlaute und andere Sonderzeichen: sie kommen in
+/// jeder Tastaturbelegung als `Event::Text` an, unabhängig davon, welche
+/// physische Taste sie erzeugt. Gesperrte Zeichen (`fest_belegt`, z. B. `#`)
+/// bleiben außen vor — sie gehören dem Programm, nicht der Belegung.
+fn getippte_zeichen(ctx: &egui::Context) -> Vec<String> {
+    let mut zeichen: Vec<String> = Vec::new();
+    ctx.input(|i| {
+        for e in &i.events {
+            let egui::Event::Text(t) = e else { continue };
+            for c in t.chars() {
+                let z = c.to_lowercase().to_string();
+                if ist_textzeichen(&z)
+                    && persist::fest_belegt(&z).is_none()
+                    && !zeichen.contains(&z)
+                {
+                    zeichen.push(z);
+                }
+            }
+        }
+    });
+    zeichen
+}
+
+/// Name einer Taste in der Belegung: `"ä"` bzw. `"shift+ä"` (T0121) — dieselbe
+/// Form, die `UserPrefs::bind` speichert.
+fn zeichen_label(zeichen: &str, umschalt: bool) -> String {
+    if umschalt {
+        format!("shift+{zeichen}")
+    } else {
+        zeichen.to_string()
+    }
+}
+
 /// Die Tasten, deren Funktion aus der **Tastaturbelegung** kommt — Buchstaben
 /// und Symbole (T0056, `docs/TASTEN.md`). Ziffern gehören der Hotbar,
 /// Steuerungstasten und Kombinationen dem festen Ablauf im Code; keine dieser
@@ -797,6 +843,10 @@ pub struct UiState {
     /// Gruppe der unteren Leiste (T0108) — der Test klickt sie an.
     pub last_chip_verschieben: Option<Rect>,
     pub last_chip_drehpunkt: Option<Rect>,
+    /// Welche physische Taste erzeugt welches Zeichen? `egui::Key` kennt keine
+    /// Umlaute; die Zuordnung wird beim Tippen gelernt (T0121) und trägt den
+    /// Dauerlauf des Schwenks, der `keys_down` liest.
+    pub zeichen_taste: HashMap<char, egui::Key>,
     /// Tasten des Tastenbilds der Tastaturbelegung in Fensterkoordinaten
     /// (Regressionstest T0045: gesperrte Tasten dürfen sich nicht belegen lassen)
     pub last_tasten: Option<Vec<(&'static str, &'static str, Rect)>>,
@@ -916,6 +966,7 @@ impl Default for UiState {
             last_kopf_rechts: None,
             last_chip_verschieben: None,
             last_chip_drehpunkt: None,
+            zeichen_taste: HashMap::new(),
             last_tasten: None,
             last_lager: None,
             last_ribbon_content_w: 0.0,
@@ -3765,6 +3816,10 @@ impl App {
     // ---- Tastatur ----
 
     fn handle_shortcuts(&mut self, ctx: &egui::Context) {
+        // Welche physische Taste welches Zeichen erzeugt, lernt das Programm
+        // beim Tippen (T0121) — der Dauerlauf des Schwenks liest `keys_down`
+        // und braucht die Taste, nicht das Zeichen. Vor jeder Auswertung.
+        self.lerne_zeichen_tasten(ctx);
         let typing = ctx.wants_keyboard_input();
         let chat_offen = self.chat.offen;
         // F11 schaltet das Vollbild — unabhängig von Tippeingabe und Werkzeug,
@@ -3955,11 +4010,22 @@ impl App {
                 run = Some("select.all".into());
             }
         } else if !typing {
+            // Zeichen ohne eigene Taste (Umlaute, ß, …): sie kommen nur als
+            // Text an (T0121). Die Belegung gilt trotzdem — sonst ließe sich
+            // eine Funktion zwar auf ä/ö/ü legen, aber nie auslösen. Ein
+            // ausdrücklich belegtes Sonderzeichen schlägt dabei die Taste,
+            // über die es getippt wird (AltGr+E = €, nicht „e").
+            let sonderzeichen = getippte_zeichen(ctx)
+                .into_iter()
+                .find_map(|z| self.prefs.action_for_key(&zeichen_label(&z, shift)));
+            if let Some(action) = sonderzeichen.clone() {
+                run = Some(action);
+            }
             // Einzeltasten über die Belegung (Buchstaben und Symbole, T0056)
             for (key, label) in EINZELTASTEN {
                 // Einzeltasten gelten nur ohne Umschalt — sonst würde
                 // Umschalt+I zusätzlich die Belegung von "i" auslösen.
-                if !shift && ctx.input(|i| i.key_pressed(*key)) {
+                if sonderzeichen.is_none() && !shift && ctx.input(|i| i.key_pressed(*key)) {
                     // Auch der Ansichtsschwenk ist eine gewöhnliche Funktion
                     // (T0089): der Druck löst sie einmal aus, gehalten
                     // wiederholt das Betriebssystem den Druck wie bei jeder
@@ -3975,7 +4041,7 @@ impl App {
             // Belegung als "shift+<Zeichen>" gespeichert (Umschalt+I =
             // Füllfläche nach Punktfolge, Umschalt+V = Volumen). Gilt für alle
             // Einzeltasten, nicht nur für eine fest eingetragene (T0056).
-            if shift {
+            if shift && sonderzeichen.is_none() {
                 for (key, label) in EINZELTASTEN {
                     if !ctx.input(|i| i.key_pressed(*key)) {
                         continue;
@@ -4066,7 +4132,92 @@ impl App {
             });
             getroffen = true;
         }
+        // Zeichen ohne eigene Taste (Umlaute, ß, …) — sie kommen nur als Text
+        // an (T0121). Der Druck wird ebenfalls verbraucht, sonst startete die
+        // Auswertung unten dieselbe Funktion und bräche das Einfügen ab.
+        let treffer: Vec<String> = getippte_zeichen(ctx)
+            .into_iter()
+            .filter(|z| {
+                self.prefs
+                    .action_for_key(&zeichen_label(z, lage.shift))
+                    .as_deref()
+                    == Some(action)
+            })
+            .collect();
+        if !treffer.is_empty() {
+            ctx.input_mut(|i| {
+                i.events.retain(|e| match e {
+                    egui::Event::Text(t) => {
+                        let klein = t.to_lowercase();
+                        !treffer.iter().any(|z| klein.contains(z.as_str()))
+                    }
+                    _ => true,
+                });
+            });
+            getroffen = true;
+        }
         getroffen
+    }
+
+    /// Lernt, welche physische Taste welches Zeichen erzeugt (T0121).
+    ///
+    /// `egui::Key` kennt keine Umlaute: die Taste `ä` kommt als `Key::Quote`
+    /// (US-Lage) an, das Zeichen nur als `Event::Text`. Beides steht im selben
+    /// Bild — daraus entsteht die Zuordnung, die den Dauerlauf des Schwenks
+    /// trägt; der liest `keys_down` und braucht die Taste, nicht das Zeichen.
+    fn lerne_zeichen_tasten(&mut self, ctx: &egui::Context) {
+        let (gedrueckt, texte) = ctx.input(|i| {
+            let gedrueckt: Vec<egui::Key> = i
+                .events
+                .iter()
+                .filter_map(|e| match e {
+                    egui::Event::Key {
+                        key, pressed: true, ..
+                    } => Some(*key),
+                    _ => None,
+                })
+                .collect();
+            let texte: Vec<String> = i
+                .events
+                .iter()
+                .filter_map(|e| match e {
+                    egui::Event::Text(t) => Some(t.clone()),
+                    _ => None,
+                })
+                .collect();
+            (gedrueckt, texte)
+        });
+        // Nur eine eindeutige Paarung lernen: genau eine gedrückte Taste und
+        // Zeichen, die keine eigene Taste haben.
+        if gedrueckt.len() != 1 {
+            return;
+        }
+        for text in texte {
+            for c in text.chars() {
+                if ist_textzeichen(&c.to_string()) {
+                    let z = c.to_lowercase().next().unwrap_or(c);
+                    self.ui.zeichen_taste.insert(z, gedrueckt[0]);
+                }
+            }
+        }
+    }
+
+    /// Ist die Taste, die `zeichen` erzeugt, gerade gedrückt? Für Zeichen mit
+    /// eigener `egui::Key`-Taste direkt, für Umlaute und andere Sonderzeichen
+    /// über die beim Tippen gelernte Zuordnung (T0121).
+    fn taste_gedrueckt(&self, zeichen: &str, keys: &std::collections::HashSet<egui::Key>) -> bool {
+        if let Some(key) = taste_zu_label(zeichen) {
+            return keys.contains(&key);
+        }
+        let mut chars = zeichen.chars();
+        match (chars.next(), chars.next()) {
+            (Some(c), None) => self
+                .ui
+                .zeichen_taste
+                .get(&c.to_lowercase().next().unwrap_or(c))
+                .map_or(false, |k| keys.contains(k)),
+            _ => false,
+        }
     }
 
     /// Schiebt die Ansicht um einen Schritt (`SCHWENK_SCHRITT_PX` Bildpunkte) in
@@ -4175,8 +4326,7 @@ impl App {
                     Some(rest) => (true, rest),
                     None => (false, taste.as_str()),
                 };
-                umschalt == shift
-                    && taste_zu_label(zeichen).map_or(false, |key| keys.contains(&key))
+                umschalt == shift && self.taste_gedrueckt(zeichen, &keys)
             });
             if gedrueckt {
                 if let Some((rx, ry)) = schwenk_richtung(aktion) {
@@ -8702,6 +8852,245 @@ mod tests_tastenbelegung {
         assert_eq!(app.prefs.key_for("file.save").as_deref(), Some("ctrl+s"));
         assert_eq!(app.prefs.action_for_key("k"), vorher);
         assert!(!app.prefs.belegung_aenderbar("file.save"));
+    }
+}
+
+#[cfg(test)]
+mod tests_sonderzeichen {
+    //! T0121: Umlaute und andere Sonderzeichen in der Tastaturbelegung.
+    //!
+    //! `egui::Key` ist die US-Lage und kennt kein `ä`, `ö`, `ü` — die Taste
+    //! kommt als `Key::Quote`/`Key::Semicolon`/`Key::OpenBracket` an, das
+    //! Zeichen nur als `Event::Text`. Die Belegung wird deshalb am **Zeichen**
+    //! ausgewertet; damit gilt sie für jedes Sonderzeichen, nicht nur für die
+    //! drei Umlaute.
+
+    use super::*;
+
+    fn frame(app: &mut App, events: Vec<egui::Event>) {
+        frame_lage(app, events, egui::Modifiers::NONE);
+    }
+
+    fn frame_lage(app: &mut App, events: Vec<egui::Event>, modifiers: egui::Modifiers) {
+        let ctx = app.ctx.clone();
+        let raw = egui::RawInput {
+            screen_rect: Some(Rect::from_min_size(Pos2::ZERO, Vec2::new(1500.0, 950.0))),
+            modifiers,
+            events,
+            ..Default::default()
+        };
+        let _ = ctx.run(raw, |ctx| app.ui(ctx));
+    }
+
+    /// Bild mit laufender Zeit — der Dauerlauf des Schwenks rechnet mit der
+    /// echten Bilddauer.
+    fn frame_zeit(app: &mut App, t: &mut f64, events: Vec<egui::Event>) {
+        let ctx = app.ctx.clone();
+        *t += 1.0 / 60.0;
+        let raw = egui::RawInput {
+            screen_rect: Some(Rect::from_min_size(Pos2::ZERO, Vec2::new(1500.0, 950.0))),
+            time: Some(*t),
+            events,
+            ..Default::default()
+        };
+        let _ = ctx.run(raw, |ctx| app.ui(ctx));
+    }
+
+    /// Ein Tastendruck, wie ihn egui-winit liefert: die physische Taste in
+    /// US-Lage **und** das erzeugte Zeichen im selben Bild.
+    fn druck_zeichen(key: egui::Key, zeichen: &str) -> Vec<egui::Event> {
+        vec![
+            egui::Event::Key {
+                key,
+                physical_key: Some(key),
+                pressed: true,
+                repeat: false,
+                modifiers: egui::Modifiers::NONE,
+            },
+            egui::Event::Text(zeichen.to_string()),
+        ]
+    }
+
+    fn neue_app() -> App {
+        let mut app = App::with_ctx(egui::Context::default());
+        app.prefs.reset_bindings();
+        app
+    }
+
+    #[test]
+    fn umlaut_startet_die_zugewiesene_funktion() {
+        let mut app = neue_app();
+        app.prefs.bind("draw.wall", "ä");
+        assert_eq!(
+            app.prefs.action_for_key("ä").as_deref(),
+            Some("draw.wall"),
+            "die Belegung nimmt den Umlaut an"
+        );
+        frame(&mut app, druck_zeichen(egui::Key::Quote, "ä"));
+        assert_eq!(
+            app.tool_id(),
+            Some("draw.wall"),
+            "die auf ä gelegte Funktion muss beim Druck starten"
+        );
+    }
+
+    #[test]
+    fn alle_drei_umlaute_starten_ihre_funktion() {
+        for (key, zeichen, funktion) in [
+            (egui::Key::Quote, "ä", "draw.wall"),
+            (egui::Key::Semicolon, "ö", "draw.line"),
+            (egui::Key::OpenBracket, "ü", "draw.circle"),
+        ] {
+            let mut app = neue_app();
+            app.prefs.bind(funktion, zeichen);
+            frame(&mut app, druck_zeichen(key, zeichen));
+            assert_eq!(
+                app.tool_id(),
+                Some(funktion),
+                "{zeichen} muss {funktion} starten"
+            );
+        }
+    }
+
+    /// Die Lösung hängt am Zeichen, nicht an einer Tabelle: ein Zeichen, das
+    /// auf keiner deutschen Taste liegt, funktioniert genauso.
+    #[test]
+    fn anderes_sonderzeichen_startet_ebenfalls() {
+        let mut app = neue_app();
+        app.prefs.bind("draw.line", "ß");
+        frame(&mut app, druck_zeichen(egui::Key::Minus, "ß"));
+        assert_eq!(app.tool_id(), Some("draw.line"), "ß muss die Funktion starten");
+    }
+
+    /// Ein ausdrücklich belegtes Sonderzeichen schlägt die Taste, über die es
+    /// getippt wird: AltGr+E liefert `€`, nicht „e".
+    #[test]
+    fn belegtes_sonderzeichen_schlaegt_die_grundtaste() {
+        let mut app = neue_app();
+        app.prefs.bind("draw.wall", "e");
+        app.prefs.bind("draw.line", "€");
+        frame(&mut app, druck_zeichen(egui::Key::E, "€"));
+        assert_eq!(
+            app.tool_id(),
+            Some("draw.line"),
+            "€ ist belegt und muss die Grundtaste e verdrängen"
+        );
+    }
+
+    #[test]
+    fn umlaut_ohne_belegung_startet_nichts() {
+        let mut app = neue_app();
+        assert_eq!(app.prefs.action_for_key("ä"), None);
+        frame(&mut app, druck_zeichen(egui::Key::Quote, "ä"));
+        assert_eq!(app.tool_id(), None, "ohne Belegung darf ä nichts starten");
+    }
+
+    /// Die Umschalt-Ebene gilt auch für Sonderzeichen: `Umschalt+ä` ist eine
+    /// eigene Belegung, genau wie `Umschalt+a` neben `a`.
+    #[test]
+    fn umschalt_umlaut_ist_eine_eigene_ebene() {
+        let mut app = neue_app();
+        app.prefs.bind("draw.wall", "ä");
+        frame_lage(
+            &mut app,
+            druck_zeichen(egui::Key::Quote, "Ä"),
+            egui::Modifiers::SHIFT,
+        );
+        assert_eq!(
+            app.tool_id(),
+            None,
+            "Umschalt+ä ist nicht die Belegung von ä"
+        );
+
+        let mut zweite = neue_app();
+        zweite.prefs.bind("draw.line", "shift+ä");
+        frame_lage(
+            &mut zweite,
+            druck_zeichen(egui::Key::Quote, "Ä"),
+            egui::Modifiers::SHIFT,
+        );
+        assert_eq!(
+            zweite.tool_id(),
+            Some("draw.line"),
+            "Umschalt+ä muss seine eigene Belegung starten"
+        );
+    }
+
+    /// Drehen der Einfüge-Vorschau hängt an der Funktion, nicht an `R` — das
+    /// gilt auch, wenn sie auf einem Umlaut liegt. Der Druck darf das Einfügen
+    /// nicht abbrechen (T0094).
+    #[test]
+    fn umlaut_dreht_die_einfuege_vorschau() {
+        let mut app = neue_app();
+        app.session_mut()
+            .execute(
+                "draw.line",
+                &serde_json::json!({"a": [0.0, 0.0], "b": [2.0, 0.0]}),
+            )
+            .expect("Linie anlegen");
+        let id = app.doc().entities[0].id;
+        app.session_mut().select(vec![id]);
+        app.copy_selection(false);
+        app.pointer_world = Some(V2::new(0.0, 0.0));
+        app.start_ghost_paste();
+        app.prefs.bind("modify.rotate", "ä");
+        let vorher = app.ghost.as_ref().map(|g| g.rot).unwrap_or(0.0);
+        frame(&mut app, druck_zeichen(egui::Key::Quote, "ä"));
+        let nachher = app.ghost.as_ref().map(|g| g.rot).unwrap_or(0.0);
+        assert!(
+            (nachher - vorher).abs() > 0.1,
+            "ä muss die Vorschau drehen: {vorher} → {nachher}"
+        );
+        assert!(
+            app.ghost.is_some(),
+            "Drehen darf das Einfügen nicht abbrechen"
+        );
+    }
+
+    /// Der Dauerlauf des Schwenks liest `keys_down` und braucht die physische
+    /// Taste. Sie wird beim Tippen gelernt (T0121) — sonst bliebe eine auf ä
+    /// gelegte Schwenkfunktion im Modus „Kontinuierlich" wirkungslos.
+    #[test]
+    fn gehaltener_umlaut_schwenkt_weiter() {
+        let mut app = neue_app();
+        app.session_mut()
+            .execute(
+                "draw.line",
+                &serde_json::json!({"a": [0.0, 0.0], "b": [2000.0, 0.0]}),
+            )
+            .expect("Linie anlegen");
+        app.prefs.pan_mode = jjcad_core::persist::PanMode::Kontinuierlich;
+        app.prefs.pan_speed = 1.0;
+        app.prefs.bind("view.pan_up", "ä");
+        app.prefs.unbind_key("w");
+        let mut t = 0.0;
+        frame_zeit(&mut app, &mut t, vec![]);
+        let vorher = app.current_view().center;
+        frame_zeit(&mut app, &mut t, druck_zeichen(egui::Key::Quote, "ä"));
+        let nach_druck = app.current_view().center;
+        assert!(
+            nach_druck.y > vorher.y + 1.0,
+            "der Druck auf ä muss sofort schieben: {vorher:?} → {nach_druck:?}"
+        );
+        for _ in 0..10 {
+            frame_zeit(&mut app, &mut t, vec![]);
+        }
+        let nach_halten = app.current_view().center;
+        assert!(
+            nach_halten.y - nach_druck.y > 200.0,
+            "gehalten muss die Ansicht weiterlaufen (gemessen {})",
+            nach_halten.y - nach_druck.y
+        );
+    }
+
+    /// Gegenprobe zur Zeichenauswertung: ein gewöhnlicher Buchstabe läuft
+    /// weiter über seine Taste und wird nicht doppelt ausgewertet.
+    #[test]
+    fn buchstabe_startet_weiterhin_genau_eine_funktion() {
+        let mut app = neue_app();
+        app.prefs.bind("draw.wall", "a");
+        frame(&mut app, druck_zeichen(egui::Key::A, "a"));
+        assert_eq!(app.tool_id(), Some("draw.wall"));
     }
 }
 

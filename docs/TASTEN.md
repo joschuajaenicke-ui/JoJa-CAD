@@ -26,6 +26,14 @@ sie zuerst hier ein — nicht „irgendwie" in den Code.
    nimmt der vorherigen Funktion die Taste weg.
    Jeder Buchstabe hat zusätzlich eine **Umschalt-Ebene** (`Umschalt+I`,
    `Umschalt+V`), die ebenfalls frei belegbar ist.
+   Ausgewertet wird das **getippte Zeichen**, nicht die physische Taste: `ä`,
+   `ö`, `ü` und jedes weitere Sonderzeichen einer fremden Belegung starten ihre
+   Funktion genauso wie ein Buchstabe (T0121). `egui::Key` kennt nur die
+   US-Lage — die Taste `ä` kommt dort als `Key::Quote` an, das Zeichen nur als
+   `Event::Text`; deshalb liest `App::handle_shortcuts` für alles, was nicht in
+   `EINZELTASTEN` steht, den Text. Ein ausdrücklich belegtes Sonderzeichen
+   schlägt dabei die Taste, über die es getippt wird (`AltGr+E` = `€`, nicht
+   `e`). Die Umschalt-Ebene gilt auch hier (`Umschalt+ä`).
 
 3. **Übrige Tasten und Tastenkombinationen — hardcodiert.**
    Die Funktionsweise aller weiteren Tasten (`Esc`, `Tab`, `Caps`, `Umschalt`,
