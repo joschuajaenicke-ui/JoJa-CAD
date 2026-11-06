@@ -4832,6 +4832,17 @@ impl App {
         self.prefs.fensterrahmen.ohne_titelleiste()
     }
 
+    /// `true`, wenn der Fenstermanager das Fenster als maximiert meldet (T0119).
+    ///
+    /// Maßgeblich ist der **Fensterzustand**, nicht ein eigener Schalter: nur so
+    /// stimmt die Bedienung mit dem überein, was das Betriebssystem annimmt.
+    /// Ein maximiertes Fenster füllt den Bildschirm — dort darf die Größe nicht
+    /// gezogen werden, sonst ändert sich die Zeichnung, während der
+    /// Fenstermanager weiter „bildschirmfüllend“ meldet.
+    pub fn fenster_maximiert(ctx: &egui::Context) -> bool {
+        ctx.input(|i| i.viewport().maximized.unwrap_or(false))
+    }
+
     /// Griff der Kopfzeile (T0098).
     ///
     /// Ohne Titelleiste gibt es keinen Fenstergriff: ein Zug auf die Kopfzeile
@@ -4862,7 +4873,7 @@ impl App {
             ctx.stop_dragging();
         }
         if griff.double_clicked() {
-            let maximiert = ctx.input(|i| i.viewport().maximized.unwrap_or(false));
+            let maximiert = Self::fenster_maximiert(&ctx);
             ctx.send_viewport_cmd(egui::ViewportCommand::Maximized(!maximiert));
         }
     }
@@ -4871,7 +4882,7 @@ impl App {
     /// (bzw. Wiederherstellen, wenn das Fenster schon groß ist) und Schließen.
     fn fenster_knoepfe(&mut self, ui: &mut egui::Ui) {
         let hoehe = ui.available_height().max(HEADER_H);
-        let maximiert = ui.ctx().input(|i| i.viewport().maximized.unwrap_or(false));
+        let maximiert = Self::fenster_maximiert(ui.ctx());
         let mut rects = [Rect::NOTHING; 3];
         // Die drei Knöpfe stoßen aneinander wie in einer Titelleiste — ohne
         // Abstand dazwischen (egui setzt sonst 8 px).
@@ -4968,7 +4979,16 @@ impl App {
     /// Flächen, damit ein Zug am Rand nicht zugleich in der Zeichnung landet.
     fn fensterkanten(&mut self, ctx: &egui::Context) {
         self.ui.last_fensterkanten = None;
-        if !self.fenster_ohne_titelleiste() || self.ui.fullscreen {
+        // T0119: Ein maximiertes Fenster füllt den Bildschirm — der
+        // Fenstermanager hält es dort fest. Ein Größe-Zug an der Kante würde
+        // die Zeichnung verkleinern, während das Betriebssystem weiter
+        // „bildschirmfüllend“ meldet; die Bedienung liefe auseinander. Also
+        // gibt es Kantenzonen nur im wiederhergestellten Fenster.
+        if !self.fenster_ohne_titelleiste() || self.ui.fullscreen || Self::fenster_maximiert(ctx) {
+            // Keine Zonen heißt auch: keine Markierung, kein laufender Zug.
+            self.ui.kanten_verweil = None;
+            self.ui.kanten_leuchten = None;
+            self.ui.kanten_zug = None;
             return;
         }
         let f = ctx.screen_rect();
@@ -10590,6 +10610,30 @@ mod tests_fensterrahmen {
         ctx.run(raw, |ctx| app.ui(ctx))
     }
 
+    /// Wie `bild_zeit`, aber mit ausdrücklichem Maximiert-Zustand (T0119).
+    fn bild_zeit_max(
+        app: &mut App,
+        ctx: &egui::Context,
+        events: Vec<egui::Event>,
+        zeit: f64,
+        maximiert: Option<bool>,
+    ) -> egui::FullOutput {
+        let mut raw = egui::RawInput {
+            screen_rect: Some(Rect::from_min_size(Pos2::ZERO, Vec2::new(1500.0, 950.0))),
+            events,
+            time: Some(zeit),
+            ..Default::default()
+        };
+        raw.viewports.insert(
+            egui::ViewportId::ROOT,
+            egui::ViewportInfo {
+                maximized: maximiert,
+                ..Default::default()
+            },
+        );
+        ctx.run(raw, |ctx| app.ui(ctx))
+    }
+
     fn befehle(out: &egui::FullOutput) -> Vec<egui::ViewportCommand> {
         out.viewport_output
             .get(&egui::ViewportId::ROOT)
@@ -10852,6 +10896,89 @@ mod tests_fensterrahmen {
             cmds.iter()
                 .any(|c| matches!(c, egui::ViewportCommand::BeginResize(egui::ResizeDirection::East))),
             "Druck auf die rechte Fensterkante muss das Größe-Ziehen beginnen (Befehle: {cmds:?})"
+        );
+    }
+
+    /// T0119: Ein maximiertes Fenster füllt den Bildschirm — dort darf die
+    /// Größe nicht gezogen werden. Das Betriebssystem meldet weiter
+    /// „bildschirmfüllend“; ein Zug an der Kante verkleinerte die Zeichnung
+    /// gegen einen Rahmen, den es nicht gibt.
+    #[test]
+    fn maximiert_gibt_es_keine_kantenzonen() {
+        let ctx = egui::Context::default();
+        let mut app = ohne_titelleiste(ctx.clone());
+        for _ in 0..3 {
+            bild(&mut app, &ctx, Vec::new(), Some(true));
+        }
+        assert!(
+            app.ui.last_fensterkanten.is_none(),
+            "im maximierten Fenster darf es keine Ziehzonen geben"
+        );
+        // Auch ein Druck genau auf den Rand beginnt kein Größe-Ziehen.
+        let pos = Pos2::new(1497.0, 500.0);
+        let cmds = klick(&mut app, &ctx, pos, Some(true));
+        assert!(
+            !cmds
+                .iter()
+                .any(|c| matches!(c, egui::ViewportCommand::BeginResize(_))),
+            "im maximierten Fenster darf der Rand kein Größe-Ziehen beginnen (Befehle: {cmds:?})"
+        );
+        // Und der Zeiger zeigt dort keinen Größen-Pfeil.
+        let out = bild(
+            &mut app,
+            &ctx,
+            vec![egui::Event::PointerMoved(pos)],
+            Some(true),
+        );
+        assert_ne!(
+            out.platform_output.cursor_icon,
+            egui::CursorIcon::ResizeHorizontal,
+            "im maximierten Fenster darf am Rand kein Größen-Pfeil stehen"
+        );
+    }
+
+    /// T0119: Wiederhergestellt ist das Ziehen wieder da — und eine Markierung
+    /// aus dem Fenstermodus bleibt beim Maximieren nicht stehen.
+    #[test]
+    fn maximieren_loescht_die_kantenmarkierung() {
+        let ctx = egui::Context::default();
+        let mut app = ohne_titelleiste(ctx.clone());
+        for _ in 0..3 {
+            bild(&mut app, &ctx, Vec::new(), Some(false));
+        }
+        assert!(
+            app.ui.last_fensterkanten.is_some(),
+            "im wiederhergestellten Fenster gehören die Kantenzonen dazu"
+        );
+        let kante = Pos2::new(1497.0, 500.0);
+        bild_zeit_max(
+            &mut app,
+            &ctx,
+            vec![egui::Event::PointerMoved(kante)],
+            50.0,
+            Some(false),
+        );
+        bild_zeit_max(&mut app, &ctx, Vec::new(), 50.2, Some(false));
+        assert_eq!(
+            app.ui.kanten_leuchten,
+            Some("o"),
+            "Vorbedingung: die rechte Kante leuchtet nach dem Verweilen"
+        );
+        // Das Fenster wird maximiert — Markierung und Verweilzustand fallen weg.
+        bild_zeit_max(&mut app, &ctx, Vec::new(), 50.3, Some(true));
+        assert_eq!(
+            app.ui.kanten_leuchten, None,
+            "im maximierten Fenster darf keine Kante leuchten"
+        );
+        assert!(
+            app.ui.kanten_verweil.is_none(),
+            "im maximierten Fenster darf kein Verweilzustand stehen bleiben"
+        );
+        // Wiederhergestellt: die Zonen sind zurück.
+        bild_zeit_max(&mut app, &ctx, Vec::new(), 50.4, Some(false));
+        assert!(
+            app.ui.last_fensterkanten.is_some(),
+            "nach dem Wiederherstellen müssen die Kantenzonen zurück sein"
         );
     }
 
