@@ -1188,6 +1188,30 @@ pub(crate) const EINSTELLUNGSKATEGORIEN: &[Einstellungskategorie] = &[
             "Darstellung",
         ],
     },
+    // T0125: Voreinstellungen der Linienstärke je Objektart.
+    Einstellungskategorie {
+        key: "settings.category_voreinstellungen",
+        icon: "staerke",
+        stichworte: &[
+            "Linienstärke",
+            "Linienbreite",
+            "Linienstärken",
+            "Voreinstellungen",
+            "Objektart",
+            "Wände",
+            "Türen",
+            "Fenster",
+            "Treppen",
+            "Bemaßung",
+            "Text",
+            "Schraffur",
+            "Möbel",
+            "Achsen",
+            "Hilfslinien",
+            "zurücksetzen",
+            "0,18",
+        ],
+    },
 ];
 
 /// Eine Zeile im Einstellungsfenster — während einer Suche nur, wenn ihr Name
@@ -1765,7 +1789,7 @@ fn settings_body(app: &mut App, ui: &mut Ui) {
                                 }
                             }
                             // ------------------------ Darstellung -----------------
-                            _ => {
+                            6 => {
                                 abschnitt(&suche, ui, jjcad_core::i18n::tr("gui.dialogs.darstellung"));
                                 // T0102: Hell, Dunkel oder wie das Betriebssystem —
                                 // die Wahl wirkt sofort (Palette und Stil neu).
@@ -1932,6 +1956,56 @@ fn settings_body(app: &mut App, ui: &mut Ui) {
                                     ui.checkbox(wert, name);
                                 }
                             }
+                            // ------------------- Voreinstellungen ----------------
+                            // T0125: eine Zeile je Objektart, Liste aus
+                            // `style::LAYER_DEFAULTS` — nicht ein zweites Mal
+                            // getippt. Der Wert gilt für neue Zeichnungen und
+                            // neu angelegte Standardebenen; bestehende Ebenen
+                            // einer offenen Zeichnung bleiben unverändert.
+                            7 => {
+                                abschnitt(
+                                    &suche,
+                                    ui,
+                                    jjcad_core::i18n::tr("settings.linienstaerken_neuer_objekte"),
+                                );
+                                for (name, _, _) in jjcad_core::style::LAYER_DEFAULTS {
+                                    zeile_mit(&suche, ui, name, &[], |ui| {
+                                        let breite = app.prefs.linienstaerke(name);
+                                        if let Some(neu) = panels::weight_combo(
+                                            ui,
+                                            &format!("vorgabe_{name}"),
+                                            breite,
+                                            false,
+                                        ) {
+                                            app.prefs.set_linienstaerke(name, neu);
+                                            let _ = app.prefs.save();
+                                            let breiten = app.prefs.layer_weights.clone();
+                                            app.doc_mut().merke_standard_breiten(&breiten);
+                                        }
+                                    });
+                                }
+                                if suche.is_empty() {
+                                    ui.add_space(8.0);
+                                    if ui
+                                        .button(jjcad_core::i18n::tr(
+                                            "settings.vorgaben_zuruecksetzen",
+                                        ))
+                                        .clicked()
+                                    {
+                                        app.prefs.linienstaerken_zuruecksetzen();
+                                        let _ = app.prefs.save();
+                                        let breiten = app.prefs.layer_weights.clone();
+                                        app.doc_mut().merke_standard_breiten(&breiten);
+                                        ui.ctx().request_repaint();
+                                    }
+                                    ui.label(theme::faint(jjcad_core::i18n::tr(
+                                        "settings.linienstaerken_hint",
+                                    )));
+                                }
+                            }
+                            // Die Auswahl oben ist auf die Liste begrenzt; der
+                            // Zweig hält den `match` vollständig.
+                            _ => {}
                         }
                     });
             },
@@ -4398,7 +4472,7 @@ mod tests_einstellungen {
 
     #[test]
     fn jede_kategorie_hat_name_icon_und_stichworte() {
-        assert_eq!(EINSTELLUNGSKATEGORIEN.len(), 7, "Kategorienzahl");
+        assert_eq!(EINSTELLUNGSKATEGORIEN.len(), 8, "Kategorienzahl");
         for k in EINSTELLUNGSKATEGORIEN {
             assert!(!k.name().is_empty(), "Kategorie ohne Namen");
             assert!(!k.icon.is_empty(), "Kategorie „{}“ ohne Icon", k.name());
@@ -4746,6 +4820,65 @@ mod tests_einstellungen {
             "Zeile „Maus verschiebt“ fehlt im Einstellungsfenster"
         );
         assert!(app.prefs.mouse_move, "Vorgabe: Maus verschiebt ist eingeschaltet");
+    }
+
+    /// T0125: „Voreinstellungen“ zeigt eine Zeile je Objektart — die Liste
+    /// kommt aus `LAYER_DEFAULTS`, alle Zeilen tragen zunächst 0,18 mm.
+    #[test]
+    fn voreinstellungen_zeigen_eine_zeile_je_objektart() {
+        let _sperre = KONFIG.lock().unwrap_or_else(|e| e.into_inner());
+        let _konfig = WegwerfKonfig::neu("vorgaben");
+        let ctx = egui::Context::default();
+        let mut app = App::with_ctx(ctx.clone());
+        app.ui.settings_open = true;
+        app.ui.settings_kat = 7;
+        let bild = || egui::RawInput {
+            screen_rect: Some(Rect::from_min_size(Pos2::ZERO, Vec2::new(1500.0, 950.0))),
+            ..Default::default()
+        };
+        let mut out = ctx.run(bild(), |ctx| app.ui(ctx));
+        for _ in 0..3 {
+            out = ctx.run(bild(), |ctx| app.ui(ctx));
+        }
+        let texte: Vec<&str> = out
+            .shapes
+            .iter()
+            .filter_map(|cs| match &cs.shape {
+                egui::Shape::Text(t) => Some(t.galley.text()),
+                _ => None,
+            })
+            .collect();
+        for (name, _, _) in jjcad_core::style::LAYER_DEFAULTS {
+            assert!(
+                texte.iter().any(|t| *t == *name),
+                "Zeile „{name}“ fehlt in den Voreinstellungen (gezeichnet: {texte:?})"
+            );
+        }
+        assert!(
+            texte.iter().any(|t| *t == "0,18 mm"),
+            "keine Zeile zeigt die Vorgabe 0,18 mm"
+        );
+        assert!(
+            texte.iter().any(|t| *t == "Vorgaben zurücksetzen"),
+            "Knopf „Vorgaben zurücksetzen“ fehlt"
+        );
+    }
+
+    /// T0125: „Neu“ übernimmt die eingestellte Linienstärke in die
+    /// Standardebenen der neuen Zeichnung.
+    #[test]
+    fn neue_zeichnung_uebernimmt_die_voreinstellungen() {
+        let _sperre = KONFIG.lock().unwrap_or_else(|e| e.into_inner());
+        let _konfig = WegwerfKonfig::neu("vorgaben-neu");
+        let ctx = egui::Context::default();
+        let mut app = App::with_ctx(ctx.clone());
+        app.prefs.set_linienstaerke("Wände", 0.50);
+        app.prefs.set_linienstaerke("Hilfslinien", 0.13);
+        app.new_document();
+        let doc = app.doc();
+        assert!((doc.layer_by_name("Wände").unwrap().line_weight - 0.50).abs() < 1e-9);
+        assert!((doc.layer_by_name("Hilfslinien").unwrap().line_weight - 0.13).abs() < 1e-9);
+        assert!((doc.layer_by_name("Fenster").unwrap().line_weight - 0.18).abs() < 1e-9);
     }
 
     /// T0067: Unter „Bedienung“ steht zusätzlich die Zeile „Schwenk“ für die
