@@ -164,7 +164,9 @@ ausgeblendet.
   der Stärken-Liste nach DIN EN ISO 128-2 und freiem Wert. Programm-Vorgabe ist **0,18 mm** für
   alle; „Vorgaben zurücksetzen" stellt jede Zeile darauf zurück. Die Werte gelten für **neue**
   Zeichnungen und für neu angelegte Standardebenen — die Ebenen einer geöffneten Zeichnung
-  behalten ihre Breiten. Gespeichert in `prefs.json` (`layer_weights`); die Farbe je Ebene
+  behalten ihre Breiten. Eine noch leere Zeichnung übernimmt die Änderung sofort, damit die
+  Wirkung ohne „Neu" sichtbar ist. Ein neues Objekt erbt die Stärke seiner Ebene; das
+  Eigenschaften-Panel zeigt beim Erzeugen genau diesen Wert. Gespeichert in `prefs.json` (`layer_weights`); die Farbe je Ebene
   bleibt unberührt.
 - **Helles und dunkles Design** (Einstellungen ▸ Darstellung ▸ „Design"): **System** ist der
   Programmstandard und folgt dem hellen oder dunklen Farbschema des Betriebssystems (unter KDE

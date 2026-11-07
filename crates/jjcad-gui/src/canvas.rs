@@ -5832,6 +5832,51 @@ mod tests {
         App::with_ctx(egui::Context::default())
     }
 
+    /// T0125: Ein neues Objekt erbt die Stärke seiner Ebene. Der frühere
+    /// Vorgabewert 0,35 in `PendingStyle` wurde von `run` an **jede**
+    /// Erzeuger-Action weitergereicht und überschrieb damit die
+    /// Voreinstellungen vollständig.
+    #[test]
+    fn neues_objekt_erbt_die_ebenenstaerke() {
+        let mut app = app();
+        app.prefs.set_linienstaerke("Wände", 0.50);
+        app.new_document();
+        assert!(run(
+            &mut app,
+            "draw.wall",
+            json!({"a": [0.0, 0.0], "b": [2.0, 0.0]})
+        ));
+        let id = *app.session().last_created.first().expect("Wand angelegt");
+        let e = app.doc().entity(id).expect("Wand");
+        assert_eq!(e.style.line_weight, None, "keine feste Stärke am Objekt");
+        assert!(
+            (app.doc().effective_line_weight(e) - 0.50).abs() < 1e-9,
+            "Wand trägt {}, erwartet 0,50 aus der Ebene",
+            app.doc().effective_line_weight(e)
+        );
+    }
+
+    /// T0125: Ohne eigene Wahl trägt eine neue Zeichnung 0,18 mm — auch am
+    /// erzeugten Objekt, nicht nur in der Ebene.
+    #[test]
+    fn neues_objekt_traegt_ohne_einstellung_018() {
+        let mut app = app();
+        app.prefs.linienstaerken_zuruecksetzen();
+        app.new_document();
+        assert!(run(
+            &mut app,
+            "draw.wall",
+            json!({"a": [0.0, 0.0], "b": [2.0, 0.0]})
+        ));
+        let id = *app.session().last_created.first().expect("Wand angelegt");
+        let e = app.doc().entity(id).expect("Wand");
+        assert!(
+            (app.doc().effective_line_weight(e) - 0.18).abs() < 1e-9,
+            "Wand trägt {}",
+            app.doc().effective_line_weight(e)
+        );
+    }
+
     fn ecken(app: &App) -> Vec<V2> {
         app.doc()
             .entities

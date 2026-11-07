@@ -689,11 +689,15 @@ pub struct PendingStyle {
 
 impl Default for PendingStyle {
     fn default() -> Self {
-        // Mittel (0,35 mm) ist die Vorgabe für neue Elemente
+        // T0125: **keine** feste Stärke. Ein neues Objekt erbt die Breite
+        // seiner Ebene — und die kommt bei einer neuen Zeichnung aus den
+        // Voreinstellungen (0,18 mm). Der frühere Wert 0,35 hier hat jede
+        // Einstellung überschrieben: `canvas::run` reicht `pending.lineweight`
+        // an jede Erzeuger-Action weiter, sobald es gesetzt ist.
         Self {
             color: None,
             fill: None,
-            lineweight: Some(0.35),
+            lineweight: None,
             line_type: None,
             loop_width: None,
             loop_shape: None,
@@ -3567,6 +3571,24 @@ impl App {
         self.datei_nachziehen();
         self.fit_view();
         self.toast(jjcad_core::i18n::tr("gui.app.datei_neu"));
+    }
+
+    /// T0125: Voreinstellungen der Linienstärke übernehmen.
+    ///
+    /// Eine **leere, ungespeicherte** Zeichnung bekommt sie sofort — sie ist
+    /// noch kein Plan, und der Nutzer soll die Wirkung ohne „Neu“ sehen. Eine
+    /// geöffnete Zeichnung merkt sie nur für **neue** Standardebenen; ihre
+    /// vorhandenen Ebenen bleiben unverändert.
+    pub fn voreinstellungen_uebernehmen(&mut self) {
+        let breiten = self.prefs.layer_weights.clone();
+        let leer = self.doc().entities.is_empty()
+            && self.doc().path.is_none()
+            && !self.doc().modified;
+        if leer {
+            self.doc_mut().setze_standard_breiten(&breiten);
+        } else {
+            self.doc_mut().merke_standard_breiten(&breiten);
+        }
     }
 
     /// Name für eine neue, noch ungespeicherte Zeichnung, der im Reiterstreifen
