@@ -46,7 +46,7 @@ Steht rechts „nicht", dann ist das Wort im Projekt verpönt (auch in der Oberf
 | **Füllfläche** | Objekt, das eine geschlossene Fläche ausfüllt — Farbe oder Muster; **dasselbe Objekt** wie Schraffur | Fill, Fläche, Schraffur-Objekt |
 | **Zeichenrang** | Klasse eines Objekts in der Zeichenreihenfolge: Fläche 0, Volumen 1, Bauteil 2, Linie 3, Beschriftung 4; neue Elemente ordnen sich danach ein | Z-Order, Layerreihenfolge, Ebene |
 | **Schraffur** | Füllfläche mit Muster; die Muster sind die Kennzeichnungen der Schnittflächen nach DIN 1356-1:2026-09, Tabelle 5 (Mauerwerk, Beton, Kies, Glas …) — gleiches Objekt, nur anderes Muster | Hatch, Musterfläche |
-| **Dämmung** | Schraffurmuster der Dämmstoffe (Tabelle 5, Nr. 14): Mäanderlinie in der Wand (Amplitude = Wanddicke) oder Schlaufenreihen in der Fläche | Isolierung, Dämm-Muster |
+| **Dämmung** | Schraffurmuster der Dämmstoffe (Tabelle 5, Nr. 14): Mäanderlinie in der Wand (Amplitude = Wanddicke); die Schlaufenform an der Wand ist das Schlaufenband der Dämmungslinie (Breite = Wanddicke), in der Fläche Schlaufenreihen | Isolierung, Dämm-Muster |
 | **Dämmungslinie** | Linienart **Dämmung**: ein Schlaufenband entlang einer Linie, mit den Parametern **Breite** (H, Dämmstärke) und **Schlaufenform** (r, Periodenlänge/Höhe); die Länge der Linie bleibt exakt | Schlaufenlinie, Dämmband |
 | **Insel** / **Loch** | Ausgesparte Fläche innerhalb einer Füllfläche (z. B. Stütze im Raum) | Lochung, Aussparung |
 | **Umgrenzung** | Die Punktfolge, die eine Füllfläche definiert | Umriss, Kontur, Polygon (nur wenn wirklich gemeint) |
@@ -121,7 +121,7 @@ Steht rechts „nicht", dann ist das Wort im Projekt verpönt (auch in der Oberf
 | Begriff | Bedeutung | nicht |
 |---|---|---|
 | **Displayliste** | Die eine Zwischendarstellung, aus der Bildschirm, PDF und PNG gezeichnet werden | Renderliste, Draw-List |
-| **Linienstärke** | Strichdicke in mm (0,25 / 0,35 / 0,50); Anzeige in `px` oder `DPI` | Linienbreite, Strichstärke |
+| **Linienstärke** | Strichdicke in mm nach DIN EN ISO 128-2, Abschnitt 5.1 (0,13 · 0,18 · 0,25 · 0,35 · 0,50 · 0,70 · 1,00 · 1,40 · 2,00); Anzeige in `px` oder `DPI` | Linienbreite, Strichstärke |
 | **px-Modus** | Stärke bleibt auf dem Bildschirm konstant | Bildschirmmodus |
 | **DPI-Modus** | Stärke wächst mit dem Zoom, wie im Druck | Druckmodus |
 | **Maßstab** | Verhältnis Zeichnung : Papier (1:100) | Skalierung |

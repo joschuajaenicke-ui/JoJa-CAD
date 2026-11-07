@@ -1035,6 +1035,12 @@ pub struct UserPrefs {
     /// aber mehr Schriftatlas. Gilt sofort, ohne Neustart.
     #[serde(default)]
     pub textaufloesung: Textaufloesung,
+    /// Voreinstellungen der Linienstärke je Objektart (T0125):
+    /// Name der Standardebene ([`crate::style::LAYER_DEFAULTS`]) → mm.
+    /// Fehlt ein Eintrag, gilt 0,18 mm ([`crate::style::LINIENSTAERKE_VORGABE`]).
+    /// Ältere `prefs.json` bleiben damit gültig — das Feld ist optional.
+    #[serde(default)]
+    pub layer_weights: BTreeMap<String, f64>,
 }
 
 fn default_dateidialog() -> String {
@@ -1386,11 +1392,39 @@ impl Default for UserPrefs {
             // Programmstandard (T0114): 256 px Rastergröße — der Atlas bleibt
             // klein, kleine Schriften sind bei jedem Zoom scharf.
             textaufloesung: Textaufloesung::Px256,
+            // T0125: ohne eigene Wahl trägt jede Objektart 0,18 mm.
+            layer_weights: BTreeMap::new(),
         }
     }
 }
 
 impl UserPrefs {
+    /// Voreingestellte Linienstärke einer Objektart (T0125) — der gesetzte
+    /// Wert oder 0,18 mm, wenn der Nutzer nichts gewählt hat.
+    pub fn linienstaerke(&self, ebene: &str) -> f64 {
+        self.layer_weights
+            .get(ebene)
+            .copied()
+            .filter(|w| w.is_finite() && *w > 0.0)
+            .unwrap_or(crate::style::LINIENSTAERKE_VORGABE)
+    }
+
+    /// Setzt die Voreinstellung einer Objektart; der Vorgabewert 0,18 mm wird
+    /// **nicht** gespeichert, damit die Datei schlank bleibt und spätere
+    /// Änderungen an [`crate::style::LINIENSTAERKE_VORGABE`] greifen.
+    pub fn set_linienstaerke(&mut self, ebene: &str, wert: f64) {
+        if (wert - crate::style::LINIENSTAERKE_VORGABE).abs() < 1e-9 {
+            self.layer_weights.remove(ebene);
+        } else {
+            self.layer_weights.insert(ebene.to_string(), wert);
+        }
+    }
+
+    /// „Vorgaben zurücksetzen“: alle Objektarten wieder auf 0,18 mm.
+    pub fn linienstaerken_zuruecksetzen(&mut self) {
+        self.layer_weights.clear();
+    }
+
     /// Soll der Dateidialog des Betriebssystems benutzt werden? Vorgabe ist
     /// „system“; nur ein ausdrückliches "intern" wählt den eigenen Dialog.
     pub fn dateidialog_system(&self) -> bool {

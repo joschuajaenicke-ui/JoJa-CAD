@@ -287,7 +287,11 @@ fn gesperrt_zeile(ui: &mut Ui, label: &str, hinweis: &str) {
 
 /// Angezeigte Linienstärke und Linientyp: am Objekt der tatsächliche Wert
 /// (eigener oder aus dem Layer), beim Erzeugen die Vorgabe.
-fn linienwerte(app: &App, e: &Option<Entity>) -> (f64, jjcad_core::style::LineType) {
+fn linienwerte(
+    app: &App,
+    e: &Option<Entity>,
+    ebene: &str,
+) -> (f64, jjcad_core::style::LineType) {
     match e {
         Some(e) => (
             e.style
@@ -297,8 +301,17 @@ fn linienwerte(app: &App, e: &Option<Entity>) -> (f64, jjcad_core::style::LineTy
                 .line_type
                 .unwrap_or_else(|| app.doc().effective_line_type(e)),
         ),
+        // T0125: „beim Erzeugen die Vorgabe“ ist die Breite, die das neue
+        // Objekt wirklich bekommt — die seiner Ebene. Fehlt sie, gilt die
+        // eingestellte Voreinstellung dieser Objektart (0,18 mm), nicht 0,35.
         None => (
-            app.ui.pending.lineweight.unwrap_or(0.35),
+            app.ui.pending.lineweight.unwrap_or_else(|| {
+                app.doc()
+                    .layer(app.doc().current_layer)
+                    .map(|l| l.line_weight)
+                    .filter(|w| *w > 0.0)
+                    .unwrap_or_else(|| app.doc().standard_breite(ebene))
+            }),
             app.ui
                 .pending
                 .line_type
@@ -370,7 +383,7 @@ pub fn gemein(
             .iter()
             .all(|i| app.doc().entity(*i).map(|e| e.layer) == Some(layer));
     // Bezug des Vergleichs ist das **erste** Objekt der Gruppe, nicht der
-    // angezeigte Vorgabewert: eine Füllfläche zeigt 0,35 mm, ihre wirksame
+    // angezeigte Vorgabewert: eine Füllfläche zeigt ihre Ebenenstärke, ihre wirksame
     // Stärke kommt aber aus der Ebene. Der Vergleich gegen den Vorgabewert
     // meldete „*variiert*“ für zwei gleiche Flächen (T0090).
     let referenz = viele.first().and_then(|i| app.doc().entity(*i));
@@ -664,7 +677,7 @@ pub fn text(app: &mut App, ui: &mut Ui, ziel: Ziel) {
         layer,
         farbe,
         farbe_gezeigt,
-        0.35,
+        app.doc().standard_breite("Text"),
         jjcad_core::style::LineType::Solid,
         false,
         jjcad_core::i18n::tr("gui.props.farbe"),
@@ -1170,7 +1183,7 @@ pub fn wand(app: &mut App, ui: &mut Ui, ziel: Ziel) {
     });
     kopf(app, ui, ziel, jjcad_core::i18n::tr("gui.props.wand"), "wall");
     reihenfolge(app, ui, ziel);
-    let (staerke, linientyp) = linienwerte(app, &e);
+    let (staerke, linientyp) = linienwerte(app, &e, "Wände");
 
     let a = gemein(
         app,
@@ -1255,6 +1268,26 @@ pub fn wand(app: &mut App, ui: &mut Ui, ziel: Ziel) {
         };
     }
 
+    // Dämmung in der Wand (Muster „Dämmstoffe Schlaufen“, T0123): gezeichnet
+    // wird das Schlaufenband der Linienart „Dämmung“. Die Breite ist die
+    // Wanddicke, die Schlaufenform ist einstellbar.
+    let mut picked_form: Option<f64> = None;
+    if schraffur == Some(jjcad_core::style::FillPattern::InsulationLoops) {
+        let (_, form0) = daemmung_werte(app, ziel);
+        let mut form = form0;
+        zeile("daemmung_form");
+        widgets::field_row(ui, jjcad_core::i18n::tr("gui.props.daemmung_form"), |ui| {
+            ui.add(widgets::zahl(
+                &mut form,
+                0.01,
+                jjcad_core::daemmung::FORM_MIN..=jjcad_core::daemmung::FORM_MAX,
+            ));
+        });
+        if (form - form0).abs() > 1e-9 {
+            picked_form = Some(form);
+        }
+    }
+
     zeile("fuellfarbe");
     let fill_unset = fuellfarbe.is_none();
     let fill_cur = fuellfarbe.unwrap_or_else(|| farbe_gezeigt.mix(Color::WHITE, 0.74));
@@ -1306,6 +1339,9 @@ pub fn wand(app: &mut App, ui: &mut Ui, ziel: Ziel) {
             app.options.wall_height = hoehe;
             app.options.wall_align = ausrichtung;
             app.options.wall_hatch = schraffur;
+            if let Some(f) = picked_form {
+                app.ui.pending.loop_shape = Some(f);
+            }
             if let Some(v) = picked_fill {
                 app.ui.pending.fill = v;
             }
@@ -1355,6 +1391,10 @@ pub fn wand(app: &mut App, ui: &mut Ui, ziel: Ziel) {
                             );
                             geaendert = true;
                         }
+                    }
+                    if let Some(f) = picked_form {
+                        map.insert("loop_shape".into(), serde_json::json!(f));
+                        geaendert = true;
                     }
                     if fuellfarbe != e.style.fill {
                         map.insert(
@@ -1422,7 +1462,7 @@ pub fn tuer(app: &mut App, ui: &mut Ui, ziel: Ziel) {
 
     kopf(app, ui, ziel, jjcad_core::i18n::tr("gui.props.tuer"), "door");
     reihenfolge(app, ui, ziel);
-    let (staerke, linientyp) = linienwerte(app, &e);
+    let (staerke, linientyp) = linienwerte(app, &e, "Türen");
 
     let a = gemein(
         app,
@@ -1625,7 +1665,7 @@ pub fn fenster(app: &mut App, ui: &mut Ui, ziel: Ziel) {
 
     kopf(app, ui, ziel, jjcad_core::i18n::tr("gui.props.fenster"), "window");
     reihenfolge(app, ui, ziel);
-    let (staerke, linientyp) = linienwerte(app, &e);
+    let (staerke, linientyp) = linienwerte(app, &e, "Fenster");
 
     let a = gemein(
         app,
@@ -1825,7 +1865,7 @@ pub fn fuellflaeche(app: &mut App, ui: &mut Ui, ziel: Ziel) {
         layer,
         farbe,
         farbe_gezeigt,
-        0.35,
+        app.doc().standard_breite("Schraffur"),
         jjcad_core::style::LineType::Solid,
         true,
         jjcad_core::i18n::tr("gui.props.linienfarbe"),
@@ -2027,7 +2067,7 @@ pub fn bemassung(app: &mut App, ui: &mut Ui, ziel: Ziel) {
     kopf(app, ui, ziel, jjcad_core::i18n::tr("gui.props.bemassung"), "dim");
     reihenfolge(app, ui, ziel);
 
-    let (staerke, linientyp) = linienwerte(app, &e);
+    let (staerke, linientyp) = linienwerte(app, &e, "Bemaßung");
     let a = gemein(
         app,
         ui,
@@ -2206,6 +2246,21 @@ pub enum Einfach {
 }
 
 impl Einfach {
+    /// Standardebene dieser Objektart — sie trägt die Linienstärke-Vorgabe
+    /// aus den Einstellungen (T0125). Muss zu `actions::standard_ebene`
+    /// passen, sonst zeigt das Panel eine andere Vorgabe als das erzeugte
+    /// Objekt sie bekommt.
+    pub fn ebene(self) -> &'static str {
+        match self {
+            Einfach::Masskette
+            | Einfach::Grundrisskote
+            | Einfach::Schnittkote => "Bemaßung",
+            Einfach::Block => "Möbel",
+            Einfach::Bild => "Bilder",
+            _ => "Hilfslinien",
+        }
+    }
+
     /// Art aus dem Werkzeug, das gerade läuft.
     pub fn aus_werkzeug(id: &str) -> Option<Self> {
         Some(match id {
@@ -2331,7 +2386,7 @@ pub fn raumstempel(app: &mut App, ui: &mut Ui, ziel: Ziel) {
         layer,
         farbe,
         farbe_gezeigt,
-        0.35,
+        app.doc().standard_breite("Bemaßung"),
         jjcad_core::style::LineType::Solid,
         false,
         jjcad_core::i18n::tr("gui.props.farbe"),
@@ -2430,7 +2485,7 @@ pub fn einfach(app: &mut App, ui: &mut Ui, ziel: Ziel, art: Einfach) {
             .map(|l| l.color)
             .unwrap_or(Color::BLACK)
     });
-    let (staerke, linientyp) = linienwerte(app, &e);
+    let (staerke, linientyp) = linienwerte(app, &e, art.ebene());
 
     kopf(app, ui, ziel, art.titel(), art.icon());
     reihenfolge(app, ui, ziel);
@@ -3150,7 +3205,7 @@ pub fn volumen(app: &mut App, ui: &mut Ui, ziel: Ziel) {
             .map(|l| l.color)
             .unwrap_or(Color::BLACK)
     });
-    let (staerke, linientyp) = linienwerte(app, &e);
+    let (staerke, linientyp) = linienwerte(app, &e, "Wände");
 
     kopf(app, ui, ziel, jjcad_core::i18n::tr("gui.props.volumen"), "volume");
     reihenfolge(app, ui, ziel);
@@ -3392,7 +3447,7 @@ pub fn treppe(app: &mut App, ui: &mut Ui, ziel: Ziel) {
             .map(|l| l.color)
             .unwrap_or(Color::BLACK)
     });
-    let (staerke, linientyp) = linienwerte(app, &e);
+    let (staerke, linientyp) = linienwerte(app, &e, "Treppen");
     // Ohne Länge (beim Erzeugen) gilt die Vorgabe der Action als Rechengrundlage.
     let rechen_laenge = if laenge > 1.0 { laenge } else { 4640.0 };
     let mass = jjcad_core::stair::treppenmass(rechen_laenge, hoehe, stuen, auto);
@@ -5028,7 +5083,7 @@ mod tests {
     }
     /// Zwei gleiche Füllflächen — etwa die zwei Teile eines Schnitts — zeigen
     /// **kein** „*variiert*“ in der Stärke. Der Vergleich läuft gegen das erste
-    /// Objekt der Gruppe, nicht gegen den angezeigten Vorgabewert 0,35 mm
+    /// Objekt der Gruppe, nicht gegen den angezeigten Vorgabewert
     /// (T0090).
     #[test]
     fn zwei_gleiche_flaechen_zeigen_kein_variiert_in_der_staerke() {
@@ -5118,6 +5173,140 @@ mod tests {
         assert!(
             !zeilen.contains(&"daemmung_breite") && !zeilen.contains(&"daemmung_form"),
             "Dämmungszeilen stehen an einer durchgezogenen Linie: {zeilen:?}"
+        );
+    }
+
+    /// Die Wanddämmung (Muster „Dämmstoffe Schlaufen“) bringt die Zeile
+    /// „Schlaufenform“ mit — die Breite ist die Wanddicke, ein eigenes
+    /// Breitenfeld gibt es deshalb nicht (T0123).
+    #[test]
+    fn wanddaemmung_zeigt_die_schlaufenform() {
+        let mut app = App::with_ctx(egui::Context::default());
+        app.session_mut()
+            .execute("doc.settings", &json!({ "input_unit": "m" }))
+            .expect("Einheit");
+        let wand = |app: &mut App, hatch: &str| -> Id {
+            app.session_mut()
+                .execute(
+                    "draw.wall",
+                    &json!({
+                        "a": [0.0, 0.0], "b": [4.0, 0.0], "thickness": 0.24,
+                        "hatch": hatch
+                    }),
+                )
+                .expect("Wand")["created"][0]
+                .as_u64()
+                .expect("Id")
+        };
+
+        let daemm = wand(&mut app, "daemmung_schlaufen");
+        app.session_mut().selection = vec![daemm];
+        let zeilen = zeichne(&mut app);
+        assert!(
+            zeilen.contains(&"daemmung_form"),
+            "Schlaufenform fehlt an der gedämmten Wand: {zeilen:?}"
+        );
+        assert!(
+            !zeilen.contains(&"daemmung_breite"),
+            "die Breite ist die Wanddicke, kein eigenes Feld: {zeilen:?}"
+        );
+
+        let mauer = wand(&mut app, "mauerwerk");
+        app.session_mut().selection = vec![mauer];
+        let zeilen = zeichne(&mut app);
+        assert!(
+            !zeilen.contains(&"daemmung_form"),
+            "Schlaufenform an einer Mauerwerkswand: {zeilen:?}"
+        );
+    }
+
+    /// Ende-zu-Ende: ein Zug am Feld „Schlaufenform“ schreibt `loop_shape`
+    /// an die Wand — derselbe Weg wie beim Nutzer (T0123).
+    #[test]
+    fn schlaufenformzug_im_panel_aendert_die_wanddaemmung() {
+        let mut app = App::with_ctx(egui::Context::default());
+        app.session_mut()
+            .execute("doc.settings", &json!({ "input_unit": "m" }))
+            .expect("Einheit");
+        let id = app
+            .session_mut()
+            .execute(
+                "draw.wall",
+                &json!({
+                    "a": [0.0, 0.0], "b": [4.0, 0.0], "thickness": 0.24,
+                    "hatch": "daemmung_schlaufen"
+                }),
+            )
+            .expect("Wand")["created"][0]
+            .as_u64()
+            .expect("Id");
+        app.session_mut().selection = vec![id];
+        let ctx = app.ctx.clone();
+        let bild = |app: &mut App, ereignisse: Vec<egui::Event>, zeit: f64| -> egui::FullOutput {
+            let raw = egui::RawInput {
+                screen_rect: Some(egui::Rect::from_min_size(
+                    egui::Pos2::ZERO,
+                    egui::Vec2::new(1200.0, 950.0),
+                )),
+                time: Some(zeit),
+                predicted_dt: 0.016,
+                events: ereignisse,
+                ..Default::default()
+            };
+            ctx.run(raw, |ctx| {
+                egui::SidePanel::right("eigenschaften")
+                    .exact_width(280.0)
+                    .show(ctx, |ui| crate::panels::properties(app, ui));
+            })
+        };
+
+        let out = bild(&mut app, Vec::new(), 1.0);
+        let feld = out
+            .shapes
+            .iter()
+            .find_map(|cs| match &cs.shape {
+                egui::Shape::Text(t) if t.galley.text().trim() == "0,50" => Some(
+                    t.pos + egui::Vec2::new(t.galley.size().x / 2.0, t.galley.size().y / 2.0),
+                ),
+                _ => None,
+            })
+            .unwrap_or_else(|| {
+                let texte: Vec<String> = out
+                    .shapes
+                    .iter()
+                    .filter_map(|cs| match &cs.shape {
+                        egui::Shape::Text(t) => Some(t.galley.text().to_string()),
+                        _ => None,
+                    })
+                    .collect();
+                panic!("Feld „Schlaufenform“ nicht im Panel gefunden: {texte:?}")
+            });
+
+        let ziel = feld + egui::Vec2::new(40.0, 0.0);
+        let knopf = |pos, pressed| egui::Event::PointerButton {
+            pos,
+            button: egui::PointerButton::Primary,
+            pressed,
+            modifiers: Default::default(),
+        };
+        for (i, ev) in vec![
+            vec![egui::Event::PointerMoved(feld)],
+            vec![knopf(feld, true)],
+            vec![egui::Event::PointerMoved(ziel)],
+            vec![knopf(ziel, false)],
+            Vec::new(),
+        ]
+        .into_iter()
+        .enumerate()
+        {
+            let _ = bild(&mut app, ev, 1.1 + i as f64 * 0.1);
+        }
+
+        let e = app.doc().entity(id).expect("Wand fehlt");
+        let form = app.doc().effective_loop_shape(e);
+        assert!(
+            (form - 0.9).abs() < 0.05,
+            "Zug am Feld „Schlaufenform“ hat nicht geschrieben: {form}"
         );
     }
 

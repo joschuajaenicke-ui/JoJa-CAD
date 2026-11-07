@@ -136,6 +136,15 @@ Mit dem Nutzer abgestimmt — nicht „verbessern“:
   Rasterausgabe, PDF und Zerlegen überein. „Schmal" ist Liberation Sans Narrow und
   **nicht** die DIN 1451. Die Auswahl `widgets::schrift_wahl` zeigt jede Zeile in ihrer
   eigenen Schrift und läuft über `panels::dropdown` (kein `egui::ComboBox`).
+- **Linienstärke-Voreinstellungen (T0125)**: `LAYER_DEFAULTS` (`style.rs`) führt
+  **keine** Stärke mehr — nur Name, Farbe, Linientyp. Die Breite je Objektart steht
+  in `prefs.json` (`UserPrefs::layer_weights`, Vorgabe
+  `style::LINIENSTAERKE_VORGABE` = 0,18 mm für alle) und wird über
+  `Document::setze_standard_breiten` (frische Zeichnung) bzw.
+  `Document::merke_standard_breiten` (geöffnete Zeichnung: nur für **neue**
+  Standardebenen) übernommen. Bestehende Ebenen werden nie umgeschrieben. Das
+  Eigenschaften-Panel zeigt als „beim Erzeugen die Vorgabe“ dieselbe Zahl
+  (`Document::standard_breite`), nicht mehr 0,35.
 - **Raster-Chip** schaltet Anzeige *und* Rasterfang gemeinsam.
 - **Ansichtsfenster (T0109)** sind **normale Blattobjekte** (`EntityKind::Viewport` in
   `sheet.entities`, nicht mehr `Sheet::viewports`): vier Eckgriffe wie ein Rechteck, Auswahl per
@@ -304,6 +313,12 @@ Mit dem Nutzer abgestimmt — nicht „verbessern“:
   — `app::tests_chat_texte` prüft Aufforderung und Ergebnis für jedes Werkzeug.
 - Wände: Farbe (Linie) und Füllung (Fläche) getrennt; Schraffuren inklusive
   **Dämmung** (Mäander); Ausrichtung Links/Mittig/Rechts.
+- **Dämmung an Wänden (T0123)**: Das Muster „Dämmstoffe Schlaufen“ zeichnet das
+  **Schlaufenband der Linienart „Dämmung“** auf der Wandmitte, Breite = Wanddicke
+  (`render::wall_insulation_paths` — eine Quelle für Anzeige und Zerlegen). Im
+  Panel steht dafür die Zeile „Schlaufenform“; ein Breitenfeld gibt es nicht.
+  `modify.explode` erzeugt daraus eine **Linie** mit der Linienart „Dämmung“,
+  keine Schraffurlinien.
 - **Helles und dunkles Design (T0102)**: Die Farben stehen in **zwei** Tabellen in
   `theme.rs` (`DUNKEL`, `HELL`); `Palette::bg()` & Co. liefern die Werte des eingestellten
   Designs — im Zeichenweg wird **keine** Farbe festgehalten, sonst bleibt beim Umschalten ein

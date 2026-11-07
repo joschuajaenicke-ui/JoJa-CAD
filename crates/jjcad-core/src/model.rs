@@ -1508,6 +1508,12 @@ pub struct Document {
     pub dim_style: DimStyle,
     #[serde(default = "default_one_id")]
     pub next_id: Id,
+    /// Voreinstellungen der Linienstärke je Standardebene (T0125), Name → mm.
+    /// Laufzeitzustand aus `prefs.json` — wird **nicht** mit der Zeichnung
+    /// gespeichert. Bestehende Ebenen bleiben unangetastet; der Wert gilt nur
+    /// für frisch angelegte Standardebenen ([`Document::ensure_layer`]).
+    #[serde(skip)]
+    pub layer_weight_defaults: BTreeMap<String, f64>,
     #[serde(skip)]
     pub modified: bool,
     #[serde(skip)]
@@ -1541,12 +1547,15 @@ impl Document {
             sheets: Vec::new(),
             dim_style: DimStyle::default(),
             next_id: 1,
+            layer_weight_defaults: BTreeMap::new(),
             modified: false,
             path: None,
         };
-        for (i, (name, color, lw, lt)) in LAYER_DEFAULTS.iter().enumerate() {
+        for (i, (name, color, lt)) in LAYER_DEFAULTS.iter().enumerate() {
             let mut l = Layer::new(doc.next_id, name, *color);
-            l.line_weight = *lw;
+            // Ohne Voreinstellung gilt für jede Objektart dieselbe Breite
+            // (T0125); die Einstellung setzt `setze_standard_breiten` danach.
+            l.line_weight = LINIENSTAERKE_VORGABE;
             l.line_type = *lt;
             if i == 0 {
                 doc.current_layer = l.id;
@@ -1581,9 +1590,51 @@ impl Document {
             sheets: Vec::new(),
             dim_style: DimStyle::default(),
             next_id: 1,
+            layer_weight_defaults: BTreeMap::new(),
             modified: false,
             path: None,
         }
+    }
+
+    /// Voreinstellung der Linienstärke für eine Standardebene (T0125):
+    /// der eingestellte Wert, sonst [`LINIENSTAERKE_VORGABE`] (0,18 mm).
+    /// Unbekannte Namen bekommen dieselbe Vorgabe.
+    pub fn standard_breite(&self, ebene: &str) -> f64 {
+        self.layer_weight_defaults
+            .get(ebene)
+            .copied()
+            .filter(|w| w.is_finite() && *w > 0.0)
+            .unwrap_or(LINIENSTAERKE_VORGABE)
+    }
+
+    /// Übernimmt die Voreinstellungen der Linienstärke (T0125): merkt sie für
+    /// neue Standardebenen und **setzt** sie auf die vorhandenen
+    /// Standardebenen. Nur für frische Zeichnungen gedacht — eine geöffnete
+    /// Zeichnung darf ihre Ebenenbreiten behalten
+    /// ([`Document::merke_standard_breiten`]).
+    pub fn setze_standard_breiten(&mut self, breiten: &BTreeMap<String, f64>) {
+        self.layer_weight_defaults = breiten.clone();
+        let vorgabe = |name: &str| {
+            breiten
+                .get(name)
+                .copied()
+                .filter(|w| w.is_finite() && *w > 0.0)
+                .unwrap_or(LINIENSTAERKE_VORGABE)
+        };
+        for l in &mut self.layers {
+            if LAYER_DEFAULTS
+                .iter()
+                .any(|(name, _, _)| name.eq_ignore_ascii_case(&l.name))
+            {
+                l.line_weight = vorgabe(&l.name);
+            }
+        }
+    }
+
+    /// Merkt die Voreinstellungen nur für **neue** Standardebenen — die
+    /// vorhandenen Ebenen einer geöffneten Zeichnung bleiben unverändert.
+    pub fn merke_standard_breiten(&mut self, breiten: &BTreeMap<String, f64>) {
+        self.layer_weight_defaults = breiten.clone();
     }
 
     pub fn new_id(&mut self) -> Id {
@@ -1616,7 +1667,11 @@ impl Document {
         }
         let id = self.new_id();
         let mut l = Layer::new(id, name, color);
-        l.line_weight = 0.25;
+        // T0125: eine neu angelegte Standardebene (z. B. „Bilder“) trägt die
+        // eingestellte Voreinstellung; freie Ebenen behalten die Grundbreite.
+        if let Some(w) = self.layer_weight_defaults.get(name) {
+            l.line_weight = *w;
+        }
         self.layers.push(l);
         id
     }

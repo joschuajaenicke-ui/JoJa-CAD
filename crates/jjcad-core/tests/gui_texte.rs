@@ -339,9 +339,9 @@ fn jeder_sichtbare_text_kommt_aus_dem_katalog() {
 }
 
 /// Jeder im Quelltext genannte `gui.…`-Schlüssel muss im Katalog stehen —
-/// auch die über Konstanten gereichten (`WEIGHT_PRESETS`, `COLOR_PRESETS`).
-/// Diese Falle war echt: die Farb- und Stärkenamen standen nur im Quelltext,
-/// die Tabelle zeigte deshalb `0,50 mm · gui.panels.staerke_dick` (T0104).
+/// auch die über Konstanten gereichten (`COLOR_PRESETS`, `WEIGHT_PRESETS`).
+/// Diese Falle war echt: die Farbnamen standen nur im Quelltext,
+/// die Tabelle zeigte deshalb `gui.panels.farbe_rot` statt „Rot“ (T0104).
 #[test]
 fn jeder_schluessel_im_quelltext_existiert() {
     let mut fehlend = Vec::new();

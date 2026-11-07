@@ -1315,6 +1315,9 @@ impl App {
         // Akzentstellen der Bedienung ab dem ersten Bild.
         theme::set_akzent(prefs.farbakzent, &ctx);
         let mut s = Session::new();
+        // T0125: eine neue Zeichnung trägt die eingestellte Linienstärke je
+        // Objektart (Vorgabe 0,18 mm für alle).
+        s.doc.setze_standard_breiten(&prefs.layer_weights);
         s.doc.name = "Unbenannt".into();
         // App-weite Vorliebe für den Wandkontur-Fang übernehmen, damit die
         // Einstellung auch ohne gespeicherte Zeichnung einen Neustart überlebt.
@@ -3506,7 +3509,10 @@ impl App {
             return;
         }
         match Session::open(path) {
-            Ok(s) => {
+            Ok(mut s) => {
+                // T0125: Voreinstellungen nur **merken** — die Ebenen der
+                // geöffneten Zeichnung behalten ihre Breiten.
+                s.doc.merke_standard_breiten(&self.prefs.layer_weights);
                 let tab = DocTab {
                     session: s,
                     tab: TabKind::Model,
@@ -3560,6 +3566,8 @@ impl App {
     pub fn new_document(&mut self) {
         crate::textedit::beenden(self);
         let mut s = Session::new();
+        // T0125: „Neu“ bekommt die eingestellte Linienstärke je Objektart.
+        s.doc.setze_standard_breiten(&self.prefs.layer_weights);
         s.doc.settings.snap.wall_edges = self.prefs.snap_wall_edges;
         s.doc.name = self.freier_dateiname("Unbenannt");
         let tab = DocTab {

@@ -1,4 +1,4 @@
-# Befund: Datei-Drop unter Wayland (T0115, geprüft in T0123)
+# Befund: Datei-Drop unter Wayland (T0115, nachgeprüft am 6. November 2026)
 
 Stand: 6. November 2026 · Umgebung: KDE Plasma 6.3.6, Wayland-Sitzung,
 eframe/egui/egui-winit **0.29.1**, winit **0.30.13**, arboard 3.7.
@@ -99,7 +99,8 @@ aussah — Urteil des Nutzers, und das ist hier maßgeblich. Die Messung
 Beleg für Bildqualität; sie sagt nur, in welcher Auflösung gezeichnet wird.
 
 Die beiden Commits liegen als Patch außerhalb des Repos:
-`~/JoJa-CAD/_lose-dateien/0001-T0123-…patch` und `0002-T0123-…patch`.
+`~/JoJa-CAD/_lose-dateien/0001-datei-drop-xwayland.patch` und
+`0002-datei-drop-einstellungen.patch`.
 Nicht wieder einbauen, ohne §5 zu lesen.
 
 ## 5. Bedingungen, unter denen Datei-Drop funktioniert

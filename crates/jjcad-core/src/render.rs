@@ -2697,6 +2697,26 @@ fn render_wall(
     }
 }
 
+/// Mittellinie der Wand je Stück (zwischen Öffnungen) — der Weg, auf dem die
+/// Dämmung als Schlaufenband läuft.
+///
+/// Eine Quelle für Anzeige und Zerlegen (T0123): das Band sitzt mittig im
+/// Wandkörper (die Stücke sind um die Achse `start`/`dir` gebaut), seine Höhe
+/// ist die Wanddicke. An Gehrungen reicht es bis an die Naht, an Tür- und
+/// Fensteröffnungen endet es wie der Wandkörper.
+pub fn wall_insulation_paths(body: &wall::Body) -> Vec<(Vec2, Vec2)> {
+    let mut out = Vec::new();
+    for poly in &body.pieces {
+        let ss: Vec<f64> = poly.iter().map(|q| (*q - body.start).dot(body.dir)).collect();
+        let smin = ss.iter().cloned().fold(f64::INFINITY, f64::min);
+        let smax = ss.iter().cloned().fold(f64::NEG_INFINITY, f64::max);
+        if smax - smin > 1.0 {
+            out.push((body.start + body.dir * smin, body.start + body.dir * smax));
+        }
+    }
+    out
+}
+
 /// Schraffur (Muster) der Wandfläche, beschnitten auf die Wandkörper.
 fn push_wall_hatch(
     dl: &mut DisplayList,
@@ -2723,6 +2743,27 @@ fn push_wall_hatch(
         .map(|p| p.iter().map(|q| xf.apply(*q)).collect())
         .collect();
     match hp {
+        // Dämmung in der Wand (T0123): statt Schlaufenreihen läuft das
+        // Schlaufenband der Linienart „Dämmung“ auf der Wandmitte. Die Breite
+        // ist die Wanddicke — das Band füllt den Wandkörper, wie die
+        // Mäanderlinie der Norm. Gezeichnet wird es über `DisplayList::push`
+        // (dieselbe Übersetzung wie bei einer Dämmungslinie), damit Anzeige,
+        // PDF, PNG und DXF dasselbe Band zeigen.
+        FillPattern::InsulationLoops => {
+            let band = PrimStyle {
+                line_type: LineType::Insulation,
+                loop_width: thickness,
+                ..*st
+            };
+            for (p, q) in wall_insulation_paths(body) {
+                dl.push(Prim {
+                    shape: Shape::Line(xf.apply(p), xf.apply(q)),
+                    style: band,
+                    entity: e.id,
+                    layer: e.layer,
+                });
+            }
+        }
         FillPattern::Insulation => {
             // Mäanderlinie (Mineralwolle/Dämmung) je Wandstück
             for poly in &body.fills {
