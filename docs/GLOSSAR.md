@@ -121,7 +121,7 @@ Steht rechts „nicht", dann ist das Wort im Projekt verpönt (auch in der Oberf
 | Begriff | Bedeutung | nicht |
 |---|---|---|
 | **Displayliste** | Die eine Zwischendarstellung, aus der Bildschirm, PDF und PNG gezeichnet werden | Renderliste, Draw-List |
-| **Linienstärke** | Strichdicke in mm (0,25 / 0,35 / 0,50); Anzeige in `px` oder `DPI` | Linienbreite, Strichstärke |
+| **Linienstärke** | Strichdicke in mm nach DIN EN ISO 128-2, Abschnitt 5.1 (0,13 · 0,18 · 0,25 · 0,35 · 0,50 · 0,70 · 1,00 · 1,40 · 2,00); Anzeige in `px` oder `DPI` | Linienbreite, Strichstärke |
 | **px-Modus** | Stärke bleibt auf dem Bildschirm konstant | Bildschirmmodus |
 | **DPI-Modus** | Stärke wächst mit dem Zoom, wie im Druck | Druckmodus |
 | **Maßstab** | Verhältnis Zeichnung : Papier (1:100) | Skalierung |
