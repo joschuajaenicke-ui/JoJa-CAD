@@ -304,6 +304,12 @@ Mit dem Nutzer abgestimmt — nicht „verbessern“:
   — `app::tests_chat_texte` prüft Aufforderung und Ergebnis für jedes Werkzeug.
 - Wände: Farbe (Linie) und Füllung (Fläche) getrennt; Schraffuren inklusive
   **Dämmung** (Mäander); Ausrichtung Links/Mittig/Rechts.
+- **Dämmung an Wänden (T0123)**: Das Muster „Dämmstoffe Schlaufen“ zeichnet das
+  **Schlaufenband der Linienart „Dämmung“** auf der Wandmitte, Breite = Wanddicke
+  (`render::wall_insulation_paths` — eine Quelle für Anzeige und Zerlegen). Im
+  Panel steht dafür die Zeile „Schlaufenform“; ein Breitenfeld gibt es nicht.
+  `modify.explode` erzeugt daraus eine **Linie** mit der Linienart „Dämmung“,
+  keine Schraffurlinien.
 - **Helles und dunkles Design (T0102)**: Die Farben stehen in **zwei** Tabellen in
   `theme.rs` (`DUNKEL`, `HELL`); `Palette::bg()` & Co. liefern die Werte des eingestellten
   Designs — im Zeichenweg wird **keine** Farbe festgehalten, sonst bleibt beim Umschalten ein
