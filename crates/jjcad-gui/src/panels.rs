@@ -523,12 +523,17 @@ pub(crate) fn auszeichnen(app: &mut App, id: Id, von: usize, bis: usize, schlues
 // Vorgabewerte für Farbe und Linienstärke
 // ---------------------------------------------------------------------------
 
-/// Strichstärken nach DIN 1356 / Bauzeichnung
-pub const WEIGHT_PRESETS: [(f64, &str); 3] = [
-    (0.50, "gui.panels.staerke_dick"),
-    (0.35, "gui.panels.staerke_mittel"),
-    (0.25, "gui.panels.staerke_duenn"),
-];
+/// Linienbreiten nach DIN EN ISO 128-2:2023-06, Abschnitt 5.1 — die
+/// vollständige Reihe mit dem Verhältnis 1 : √2. Andere Werte sind nach der
+/// Norm unzulässig; Abweichungen nur über „Freier Wert“ (Abschnitt 5.2).
+/// Beschriftet wird jede Breite nur mit Zahl und Einheit — „schmal, breit,
+/// extrabreit“ ergibt sich erst aus der Liniengruppe der Zeichnung (Tabelle B.2).
+pub const WEIGHT_PRESETS: [f64; 9] = [0.13, 0.18, 0.25, 0.35, 0.50, 0.70, 1.00, 1.40, 2.00];
+
+/// Beschriftung einer Linienbreite: Zahl mit Einheit, deutsches Komma.
+fn weight_label(w: f64) -> String {
+    format!("{:.2} mm", w).replace('.', ",")
+}
 
 /// Farbvorgaben: (Name, Bedeutung, RGB)
 pub const COLOR_PRESETS: [(&str, &str, u32); 13] = [
@@ -561,12 +566,7 @@ fn swatch(ui: &mut Ui, c: Color) {
 }
 
 fn weight_text(w: f64) -> String {
-    for (val, name) in WEIGHT_PRESETS {
-        if (w - val).abs() < 1e-6 {
-            return format!("{:.2} mm · {}", val, jjcad_core::i18n::tr(name)).replace('.', ",");
-        }
-    }
-    format!("{:.2} mm", w).replace('.', ",")
+    weight_label(w)
 }
 
 /// Eigener Dropdown: bleibt offen, während man im Popup arbeitet
@@ -841,8 +841,8 @@ pub(crate) fn weight_combo(ui: &mut Ui, salt: &str, cur: f64, mixed: bool) -> Op
     };
     dropdown(ui, salt, &cap, None, |ui| {
         let mut out = None;
-        for (val, name) in WEIGHT_PRESETS {
-            let txt = format!("{:.2} mm · {}", val, jjcad_core::i18n::tr(name)).replace('.', ",");
+        for val in WEIGHT_PRESETS {
+            let txt = weight_label(val);
             if ui.selectable_label((cur - val).abs() < 1e-6, txt).clicked() {
                 out = Some(val);
             }
@@ -2086,5 +2086,72 @@ mod tests_keine_befehle_im_panel {
         // Die Werkzeugknöpfe für die Auswahl bleiben.
         assert!(enthaelt(&texte, "Verschieben"), "Verschieben fehlt: {texte:?}");
         assert!(enthaelt(&texte, "Drehen"), "Drehen fehlt: {texte:?}");
+    }
+}
+
+/// Linienstärken-Liste nach DIN EN ISO 128-2:2023-06, Abschnitt 5.1 (T0124).
+///
+/// Die Liste ist die vollständige Normreihe 1 : √2 — neun Werte, aufsteigend,
+/// ohne Dubletten. Beschriftet wird nur die Zahl mit Einheit; Klassennamen wie
+/// „dünn/mittel/dick“ gibt es nicht mehr, weil sie eine Liniengruppe meinen
+/// (Tabelle B.2) und nicht eine einzelne Breite.
+mod tests_linienstaerken {
+    use super::*;
+    use jjcad_core::session::Session;
+
+    #[test]
+    fn liste_ist_die_normreihe_aufsteigend_ohne_dubletten() {
+        assert_eq!(
+            WEIGHT_PRESETS,
+            [0.13, 0.18, 0.25, 0.35, 0.50, 0.70, 1.00, 1.40, 2.00],
+            "die neun Breiten aus DIN EN ISO 128-2, Abschnitt 5.1"
+        );
+        for paar in WEIGHT_PRESETS.windows(2) {
+            assert!(
+                paar[1] > paar[0],
+                "Liste muss aufsteigend sein: {:?}",
+                WEIGHT_PRESETS
+            );
+        }
+    }
+
+    #[test]
+    fn beschriftung_ist_zahl_und_einheit_ohne_klassennamen() {
+        assert_eq!(weight_text(0.18), "0,18 mm");
+        assert_eq!(weight_text(0.13), "0,13 mm");
+        assert_eq!(weight_text(2.0), "2,00 mm");
+        // Kein Listenwert: der Ist-Wert wird weiter gezeigt, nicht verschluckt.
+        assert_eq!(weight_text(0.2), "0,20 mm");
+        assert_eq!(weight_text(0.37), "0,37 mm");
+    }
+
+    /// Ein Objekt mit der schmalsten Normbreite wird angelegt, gespeichert und
+    /// wieder geladen — die Anzeige zeigt danach weiter `0,13 mm` (T0124).
+    #[test]
+    fn objekt_mit_013_mm_ueberlebt_speichern_und_laden() {
+        let mut session = Session::new();
+        session
+            .execute("doc.settings", &json!({"input_unit": "mm"}))
+            .expect("Einheit");
+        let id = session
+            .execute(
+                "draw.line",
+                &json!({
+                    "a": [0.0, 0.0], "b": [500.0, 0.0],
+                    "lineweight": 0.13, "layer": "Wände"
+                }),
+            )
+            .expect("Linie")["created"][0]
+            .as_u64()
+            .expect("Id");
+        let e = session.doc.entity(id).expect("Linie fehlt");
+        assert!((session.doc.effective_line_weight(e) - 0.13).abs() < 1e-9);
+
+        let text = jjcad_core::persist::to_json(&session.doc).expect("JSON");
+        let wieder = jjcad_core::persist::from_json(&text).expect("zurückgelesen");
+        let e = wieder.entity(id).expect("Linie nach dem Laden");
+        let w = wieder.effective_line_weight(e);
+        assert!((w - 0.13).abs() < 1e-9, "gespeicherte Breite: {w}");
+        assert_eq!(weight_text(w), "0,13 mm");
     }
 }
