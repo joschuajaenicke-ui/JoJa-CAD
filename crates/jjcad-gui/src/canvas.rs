@@ -2599,26 +2599,32 @@ fn draw_tool_preview(
             );
             label = jjcad_core::i18n::t_args_owned("gui.canvas.kote_x", &[("wert1", format!("{}", jjcad_core::units::elevation_text(app.options.elevation_z)))]);
         }
-        // Schnitt-Kote: Dreiecke der gesetzten Punkte, der Zeiger zeigt den
-        // nächsten Punkt. Der erste Punkt ist ±0,00.
+        // Schnitt-Kote: Vorschau ist das **fertige** Objekt — Dreiecke der
+        // gesetzten Punkte plus der Punkt am Zeiger, mit Höhenangabe unter
+        // jedem Dreieck (T0122). Gezeichnet wird über dieselbe Anzeige wie die
+        // eingefügte Kote, damit Form und Werte vor dem Klick feststehen.
         "dim.elevation.section" => {
-            let h = app.doc().dim_style.text_height;
-            let basis = tool.pts.first().map(|q| q.y).unwrap_or(cursor.y);
-            let dreieck = |q: V2| {
-                let w2 = h * 0.45;
-                let ht = h * 0.9;
-                vec![
-                    w2s(q),
-                    w2s(V2::new(q.x - w2, q.y + ht)),
-                    w2s(V2::new(q.x + w2, q.y + ht)),
-                ]
+            let mut pts = tool.pts.clone();
+            pts.push(cursor);
+            let dl = render::preview_elevation_section(
+                app.doc(),
+                &pts,
+                app.doc().current_layer,
+                app.ui.pending.color,
+            );
+            let pc = PaintCtx {
+                selected: Vec::new(),
+                hover: None,
+                lineweights: app.ui.lineweights,
+                lineweights_scaled: app.ui.lineweights_scaled,
+                paper_px: view.zoom * app.doc().settings.annotation_scale,
+                preview: true,
+                rot: view.rot as f32,
+                text_deckel: app.prefs.textaufloesung.px(),
             };
-            for q in tool.pts.iter().copied().chain(std::iter::once(cursor)) {
-                p.line_segment([dreieck(q)[0], dreieck(q)[1]], dashed);
-                p.line_segment([dreieck(q)[1], dreieck(q)[2]], dashed);
-                p.line_segment([dreieck(q)[2], dreieck(q)[0]], dashed);
+            for prim in &dl.prims {
+                paint_prim(p, prim, &w2s, view.zoom, &pc, 1.0);
             }
-            label = jjcad_core::i18n::t_args_owned("gui.canvas.kote_x", &[("wert1", format!("{}", jjcad_core::units::elevation_section_text(cursor.y - basis)))]);
         }
         "modify.move" => {
             if let Some(base) = last {
@@ -10101,6 +10107,55 @@ mod tests_hoehenkoten {
             app.tool_id(),
             Some("dim.elevation.plan"),
             "das Werkzeug bleibt für die nächste Kote stehen"
+        );
+    }
+
+    /// Alle Texte, die die Werkzeug-Vorschau malt (T0122).
+    fn vorschau_texte(app: &mut App, cursor: V2) -> Vec<String> {
+        fn sammle(s: &egui::Shape, texte: &mut Vec<String>) {
+            match s {
+                egui::Shape::Text(t) => texte.push(t.galley.text().to_string()),
+                egui::Shape::Vec(v) => v.iter().for_each(|s| sammle(s, texte)),
+                _ => {}
+            }
+        }
+        let ctx = app.ctx.clone();
+        let out = ctx.run(egui::RawInput::default(), |ctx| {
+            let layer = egui::LayerId::new(egui::Order::Background, egui::Id::new("vorschau"));
+            let p = egui::Painter::new(ctx.clone(), layer, Rect::EVERYTHING);
+            let rect = Rect::from_min_size(Pos2::ZERO, Vec2::new(1000.0, 800.0));
+            let view = View {
+                center: V2::new(0.0, 1000.0),
+                zoom: 0.2,
+                rot: 0.0,
+            };
+            draw_tool_preview(app, &p, rect, view, Some(cursor), Some(cursor));
+        });
+        let mut texte = Vec::new();
+        for cs in &out.shapes {
+            sammle(&cs.shape, &mut texte);
+        }
+        texte
+    }
+
+    /// Die Vorschau der Schnitt-Kote ist das fertige Objekt: sie schreibt die
+    /// Höhe unter jedes Dreieck — auch unter den Punkt am Zeiger. Vorher zeigte
+    /// sie nur Umrisse, der Nutzer setzte die Kote blind (T0122).
+    #[test]
+    fn vorschau_der_schnitt_kote_zeigt_die_hoehen() {
+        let mut app = app();
+        app.start_tool("dim.elevation.section");
+        tool_click(&mut app, V2::new(0.0, 0.0));
+        tool_click(&mut app, V2::new(0.0, 1200.0));
+        let texte = vorschau_texte(&mut app, V2::new(0.0, 2000.0));
+        assert_eq!(
+            texte,
+            vec![
+                "±0,00".to_string(),
+                "+1,200".to_string(),
+                "+2,000".to_string()
+            ],
+            "die Vorschau zeigt nicht die Höhen aller Punkte"
         );
     }
 
