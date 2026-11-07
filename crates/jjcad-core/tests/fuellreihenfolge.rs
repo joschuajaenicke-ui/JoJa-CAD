@@ -23,6 +23,13 @@ fn leinwand() -> Session {
     let mut s = Session::new();
     s.execute("doc.settings", &json!({ "input_unit": "m" }))
         .expect("Eingabe in Metern");
+    // Die Randlinien brauchen eine sichtbare Stärke, damit das Pixelmaß
+    // „Linie über der Füllung“ trägt. Seit T0125 ist die Programm-Vorgabe für
+    // alle Ebenen 0,18 mm — hier ausdrücklich die alte 0,50 mm setzen, damit
+    // der Schwellwert des Tests die Zeichenfolge misst und nicht die Vorgabe.
+    if let Some(l) = s.doc.layers.iter_mut().find(|l| l.name == "Wände") {
+        l.line_weight = 0.50;
+    }
     s
 }
 

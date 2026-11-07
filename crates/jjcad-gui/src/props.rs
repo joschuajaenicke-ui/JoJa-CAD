@@ -287,7 +287,11 @@ fn gesperrt_zeile(ui: &mut Ui, label: &str, hinweis: &str) {
 
 /// Angezeigte Linienstärke und Linientyp: am Objekt der tatsächliche Wert
 /// (eigener oder aus dem Layer), beim Erzeugen die Vorgabe.
-fn linienwerte(app: &App, e: &Option<Entity>) -> (f64, jjcad_core::style::LineType) {
+fn linienwerte(
+    app: &App,
+    e: &Option<Entity>,
+    ebene: &str,
+) -> (f64, jjcad_core::style::LineType) {
     match e {
         Some(e) => (
             e.style
@@ -297,8 +301,17 @@ fn linienwerte(app: &App, e: &Option<Entity>) -> (f64, jjcad_core::style::LineTy
                 .line_type
                 .unwrap_or_else(|| app.doc().effective_line_type(e)),
         ),
+        // T0125: „beim Erzeugen die Vorgabe“ ist die Breite, die das neue
+        // Objekt wirklich bekommt — die seiner Ebene. Fehlt sie, gilt die
+        // eingestellte Voreinstellung dieser Objektart (0,18 mm), nicht 0,35.
         None => (
-            app.ui.pending.lineweight.unwrap_or(0.35),
+            app.ui.pending.lineweight.unwrap_or_else(|| {
+                app.doc()
+                    .layer(app.doc().current_layer)
+                    .map(|l| l.line_weight)
+                    .filter(|w| *w > 0.0)
+                    .unwrap_or_else(|| app.doc().standard_breite(ebene))
+            }),
             app.ui
                 .pending
                 .line_type
@@ -370,7 +383,7 @@ pub fn gemein(
             .iter()
             .all(|i| app.doc().entity(*i).map(|e| e.layer) == Some(layer));
     // Bezug des Vergleichs ist das **erste** Objekt der Gruppe, nicht der
-    // angezeigte Vorgabewert: eine Füllfläche zeigt 0,35 mm, ihre wirksame
+    // angezeigte Vorgabewert: eine Füllfläche zeigt ihre Ebenenstärke, ihre wirksame
     // Stärke kommt aber aus der Ebene. Der Vergleich gegen den Vorgabewert
     // meldete „*variiert*“ für zwei gleiche Flächen (T0090).
     let referenz = viele.first().and_then(|i| app.doc().entity(*i));
@@ -664,7 +677,7 @@ pub fn text(app: &mut App, ui: &mut Ui, ziel: Ziel) {
         layer,
         farbe,
         farbe_gezeigt,
-        0.35,
+        app.doc().standard_breite("Text"),
         jjcad_core::style::LineType::Solid,
         false,
         jjcad_core::i18n::tr("gui.props.farbe"),
@@ -1170,7 +1183,7 @@ pub fn wand(app: &mut App, ui: &mut Ui, ziel: Ziel) {
     });
     kopf(app, ui, ziel, jjcad_core::i18n::tr("gui.props.wand"), "wall");
     reihenfolge(app, ui, ziel);
-    let (staerke, linientyp) = linienwerte(app, &e);
+    let (staerke, linientyp) = linienwerte(app, &e, "Wände");
 
     let a = gemein(
         app,
@@ -1449,7 +1462,7 @@ pub fn tuer(app: &mut App, ui: &mut Ui, ziel: Ziel) {
 
     kopf(app, ui, ziel, jjcad_core::i18n::tr("gui.props.tuer"), "door");
     reihenfolge(app, ui, ziel);
-    let (staerke, linientyp) = linienwerte(app, &e);
+    let (staerke, linientyp) = linienwerte(app, &e, "Türen");
 
     let a = gemein(
         app,
@@ -1652,7 +1665,7 @@ pub fn fenster(app: &mut App, ui: &mut Ui, ziel: Ziel) {
 
     kopf(app, ui, ziel, jjcad_core::i18n::tr("gui.props.fenster"), "window");
     reihenfolge(app, ui, ziel);
-    let (staerke, linientyp) = linienwerte(app, &e);
+    let (staerke, linientyp) = linienwerte(app, &e, "Fenster");
 
     let a = gemein(
         app,
@@ -1852,7 +1865,7 @@ pub fn fuellflaeche(app: &mut App, ui: &mut Ui, ziel: Ziel) {
         layer,
         farbe,
         farbe_gezeigt,
-        0.35,
+        app.doc().standard_breite("Schraffur"),
         jjcad_core::style::LineType::Solid,
         true,
         jjcad_core::i18n::tr("gui.props.linienfarbe"),
@@ -2054,7 +2067,7 @@ pub fn bemassung(app: &mut App, ui: &mut Ui, ziel: Ziel) {
     kopf(app, ui, ziel, jjcad_core::i18n::tr("gui.props.bemassung"), "dim");
     reihenfolge(app, ui, ziel);
 
-    let (staerke, linientyp) = linienwerte(app, &e);
+    let (staerke, linientyp) = linienwerte(app, &e, "Bemaßung");
     let a = gemein(
         app,
         ui,
@@ -2233,6 +2246,21 @@ pub enum Einfach {
 }
 
 impl Einfach {
+    /// Standardebene dieser Objektart — sie trägt die Linienstärke-Vorgabe
+    /// aus den Einstellungen (T0125). Muss zu `actions::standard_ebene`
+    /// passen, sonst zeigt das Panel eine andere Vorgabe als das erzeugte
+    /// Objekt sie bekommt.
+    pub fn ebene(self) -> &'static str {
+        match self {
+            Einfach::Masskette
+            | Einfach::Grundrisskote
+            | Einfach::Schnittkote => "Bemaßung",
+            Einfach::Block => "Möbel",
+            Einfach::Bild => "Bilder",
+            _ => "Hilfslinien",
+        }
+    }
+
     /// Art aus dem Werkzeug, das gerade läuft.
     pub fn aus_werkzeug(id: &str) -> Option<Self> {
         Some(match id {
@@ -2358,7 +2386,7 @@ pub fn raumstempel(app: &mut App, ui: &mut Ui, ziel: Ziel) {
         layer,
         farbe,
         farbe_gezeigt,
-        0.35,
+        app.doc().standard_breite("Bemaßung"),
         jjcad_core::style::LineType::Solid,
         false,
         jjcad_core::i18n::tr("gui.props.farbe"),
@@ -2457,7 +2485,7 @@ pub fn einfach(app: &mut App, ui: &mut Ui, ziel: Ziel, art: Einfach) {
             .map(|l| l.color)
             .unwrap_or(Color::BLACK)
     });
-    let (staerke, linientyp) = linienwerte(app, &e);
+    let (staerke, linientyp) = linienwerte(app, &e, art.ebene());
 
     kopf(app, ui, ziel, art.titel(), art.icon());
     reihenfolge(app, ui, ziel);
@@ -3177,7 +3205,7 @@ pub fn volumen(app: &mut App, ui: &mut Ui, ziel: Ziel) {
             .map(|l| l.color)
             .unwrap_or(Color::BLACK)
     });
-    let (staerke, linientyp) = linienwerte(app, &e);
+    let (staerke, linientyp) = linienwerte(app, &e, "Wände");
 
     kopf(app, ui, ziel, jjcad_core::i18n::tr("gui.props.volumen"), "volume");
     reihenfolge(app, ui, ziel);
@@ -3419,7 +3447,7 @@ pub fn treppe(app: &mut App, ui: &mut Ui, ziel: Ziel) {
             .map(|l| l.color)
             .unwrap_or(Color::BLACK)
     });
-    let (staerke, linientyp) = linienwerte(app, &e);
+    let (staerke, linientyp) = linienwerte(app, &e, "Treppen");
     // Ohne Länge (beim Erzeugen) gilt die Vorgabe der Action als Rechengrundlage.
     let rechen_laenge = if laenge > 1.0 { laenge } else { 4640.0 };
     let mass = jjcad_core::stair::treppenmass(rechen_laenge, hoehe, stuen, auto);
@@ -5055,7 +5083,7 @@ mod tests {
     }
     /// Zwei gleiche Füllflächen — etwa die zwei Teile eines Schnitts — zeigen
     /// **kein** „*variiert*“ in der Stärke. Der Vergleich läuft gegen das erste
-    /// Objekt der Gruppe, nicht gegen den angezeigten Vorgabewert 0,35 mm
+    /// Objekt der Gruppe, nicht gegen den angezeigten Vorgabewert
     /// (T0090).
     #[test]
     fn zwei_gleiche_flaechen_zeigen_kein_variiert_in_der_staerke() {

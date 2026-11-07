@@ -583,17 +583,28 @@ impl PaperSize {
 // Layer-Standardfarben (Architektur)
 // ---------------------------------------------------------------------------
 
-pub const LAYER_DEFAULTS: &[(&str, Color, f64, LineType)] = &[
-    ("Wände", Color::rgb(35, 38, 44), 0.50, LineType::Solid),
-    ("Türen", Color::rgb(120, 85, 55), 0.25, LineType::Solid),
-    ("Fenster", Color::rgb(45, 105, 190), 0.25, LineType::Solid),
-    ("Treppen", Color::rgb(60, 140, 95), 0.25, LineType::Solid),
-    ("Bemaßung", Color::rgb(190, 70, 60), 0.18, LineType::Solid),
-    ("Text", Color::rgb(40, 45, 52), 0.18, LineType::Solid),
-    ("Schraffur", Color::rgb(150, 155, 160), 0.13, LineType::Solid),
-    ("Möbel", Color::rgb(110, 115, 122), 0.18, LineType::Solid),
-    ("Achsen", Color::rgb(200, 120, 40), 0.18, LineType::DashDot),
-    ("Hilfslinien", Color::rgb(150, 160, 175), 0.13, LineType::Dashed),
+/// Linienstärke neuer Ebenen, wenn der Nutzer keine Voreinstellung gesetzt hat
+/// (T0125). Eine Vorgabe für **alle** Objektarten — so ist es auch in Allplan;
+/// die frühere Mischung (Wände 0,50, Türen 0,25 …) ist damit weg.
+pub const LINIENSTAERKE_VORGABE: f64 = 0.18;
+
+/// Die Standardebenen einer neuen Zeichnung: Name, Farbe, Linientyp.
+///
+/// Die **Linienstärke** steht bewusst nicht in dieser Liste — sie kommt aus
+/// den Voreinstellungen (`UserPrefs::layer_weights`, Vorgabe
+/// [`LINIENSTAERKE_VORGABE`]). So gibt es keine zweite, fest verdrahtete
+/// Wahrheit, die von der Einstellung abweichen könnte (T0125).
+pub const LAYER_DEFAULTS: &[(&str, Color, LineType)] = &[
+    ("Wände", Color::rgb(35, 38, 44), LineType::Solid),
+    ("Türen", Color::rgb(120, 85, 55), LineType::Solid),
+    ("Fenster", Color::rgb(45, 105, 190), LineType::Solid),
+    ("Treppen", Color::rgb(60, 140, 95), LineType::Solid),
+    ("Bemaßung", Color::rgb(190, 70, 60), LineType::Solid),
+    ("Text", Color::rgb(40, 45, 52), LineType::Solid),
+    ("Schraffur", Color::rgb(150, 155, 160), LineType::Solid),
+    ("Möbel", Color::rgb(110, 115, 122), LineType::Solid),
+    ("Achsen", Color::rgb(200, 120, 40), LineType::DashDot),
+    ("Hilfslinien", Color::rgb(150, 160, 175), LineType::Dashed),
 ];
 
 // ---------------------------------------------------------------------------

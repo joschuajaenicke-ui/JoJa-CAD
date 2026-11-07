@@ -65,7 +65,7 @@ einsehbar und dort frei änderbar (Ribbon ▸ Ansicht ▸ „Tasten").
     mit dem Werkzeug „Verschieben" über einen Richtungsvektor, mit `Entf` löschen. `X`/`Y`/`B`/`H`
     stehen im Eigenschaften-Panel.
 12. **Einstellungen** (Zahnrad) — links eine Tabelle der Kategorien (Einheiten und Maßstab,
-    Raster, Fangen, Architektur, Bemaßung, Bedienung, Darstellung), darüber die Suche, rechts die
+    Raster, Fangen, Architektur, Bemaßung, Bedienung, Darstellung, Voreinstellungen), darüber die Suche, rechts die
     Einstellungen der gewählten Kategorie. Die Suche filtert Kategorien **und** Zeilen und springt
     auf die erste passende Kategorie.
 13. **Platzieren mit Vorschau**: Block aus dem Inventar wählen oder `Strg+V` drücken — die Vorschau
@@ -159,6 +159,13 @@ ausgeblendet.
 - **Linien** werden als Kapsel gezeichnet: Rechteck plus Halbkreis an beiden Enden. Dadurch sind
   auch die Übergänge in Polylinien, Bögen und an Wandanschlüssen rund statt eckig.
 - **Ribbon** lässt sich über den Pfeil rechts in der Kopfzeile einklappen; die Reiter bleiben sichtbar.
+- **Linienstärke neuer Objekte** (Einstellungen ▸ Voreinstellungen): eine Zeile je Objektart
+  (Wände, Türen, Fenster, Treppen, Bemaßung, Text, Schraffur, Möbel, Achsen, Hilfslinien) mit
+  der Stärken-Liste nach DIN EN ISO 128-2 und freiem Wert. Programm-Vorgabe ist **0,18 mm** für
+  alle; „Vorgaben zurücksetzen" stellt jede Zeile darauf zurück. Die Werte gelten für **neue**
+  Zeichnungen und für neu angelegte Standardebenen — die Ebenen einer geöffneten Zeichnung
+  behalten ihre Breiten. Gespeichert in `prefs.json` (`layer_weights`); die Farbe je Ebene
+  bleibt unberührt.
 - **Helles und dunkles Design** (Einstellungen ▸ Darstellung ▸ „Design"): **System** ist der
   Programmstandard und folgt dem hellen oder dunklen Farbschema des Betriebssystems (unter KDE
   dessen Fensterhintergrund, unter GTK „prefer dark"), **Hell** und **Dunkel** überstimmen es.
