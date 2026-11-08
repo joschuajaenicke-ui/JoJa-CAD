@@ -5,7 +5,7 @@ Ziel: **Sonntagabend ist 0.3.0 öffentlich.** Kapazität: drei Tage, bisher
 Commits, nicht in Stunden.
 
 Die vollständige, abhakbare Liste steht in [`TODO-0.3.md`](TODO-0.3.md) —
-73 Punkte, 124 Commits. Dieses Dokument sagt, in welcher Reihenfolge und warum.
+105 Punkte, 191 Commits. Dieses Dokument sagt, in welcher Reihenfolge und warum.
 
 Zwei Tore, nicht eines:
 

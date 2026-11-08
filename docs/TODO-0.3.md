@@ -6,7 +6,7 @@ dem Zeigen an Freunde, `P2` = danach. Aufwand in Commits.
 **Reihenfolge ist fix, das Datum nicht.** Sonntag ist ein Ziel, kein Termin:
 wenn P0 nicht fertig ist, verschiebt sich die Veröffentlichung, nicht die Liste.
 
-Stand: 2026-11-05 · 73 Punkte · P0: 45 · P1: 20 · P2: 8 · zusammen 124 Commits
+Stand: 2026-11-05 · 105 Punkte · P0: 45 · P1: 31 · P2: 29 · zusammen 191 Commits
 
 ---
 
@@ -116,6 +116,73 @@ Stand: 2026-11-05 · 73 Punkte · P0: 45 · P1: 20 · P2: 8 · zusammen 124 Comm
 - [ ] **K5** AppImage bzw. `.deb` (3)
 - [ ] **K6** GitHub-Account-Name (0)
 
+## L — Allplan-Abgleich (32)
+
+Abgleich mit Allplan vom 2026-11-05. Begriffe: Zeichnungsobjekte heißen
+**Elemente**, Manipulatoren **Griffe**.
+
+**Diese Punkte gibt es schon** — nicht doppelt bauen:
+
+| Allplan-Begriff | vorhanden als |
+|---|---|
+| Parallele Linie | `modify.offset` (Versetzen) |
+| Teilelement löschen (Trimmen) | `modify.trim` |
+| Elemente schneiden | `modify.intersect` |
+| Bereich ausschneiden | `modify.area.split` |
+| Polygon in Einzellinien zerlegen | `modify.explode` |
+| Schraffur Mauerwerk | `draw.hatch` mit `mauerwerk` (DIN 1356-1, 20 Muster) |
+| Maßkette horizontal/vertikal | `dim.chain` mit `axis` |
+
+### L.1 Zeichnen
+
+- [ ] **L1** Linie mit Anfangs- und Endsymbol (P2, 2)
+- [ ] **L2** N-Eck (P2, 2)
+- [ ] **L3** Kreis als Bogen behandelbar (Zerlegen, Bogenmaß) (P2, 2)
+- [ ] **L4** Punktarten: Symbole statt nur Kreuz (P1, 2)
+- [ ] **L5** Freihandlinie (P2, 3)
+- [ ] **L6** Tangente an Kreis/Bogen (P2, 2)
+- [ ] **L7** Winkelhalbierende (P2, 2)
+- [ ] **L8** Paralleler Linienzug (mehrere Linien auf einmal versetzen) (P2, 3)
+- [ ] **L9** Abrunden und Fasen (P1, 3)
+- [ ] **L10** Element teilen: Punkte gleichmäßig verteilen (P2, 2)
+- [ ] **L11** Linien zu Polygonen vereinigen (P1, 3)
+- [ ] **L12** Doppelte Linien löschen (P2, 2)
+
+### L.2 Schraffuren
+
+- [ ] **L13** Muster Dachziegel (P2, 1)
+- [ ] **L14** Hintergrundfarbe für Schraffuren (P2, 2)
+
+### L.3 Text
+
+- [ ] **L15** Textzeiger (Einfügemarke beim Setzen sichtbar) (P2, 1)
+- [ ] **L16** Textumrandung anzeigen (P2, 1)
+- [ ] **L17** Texthintergrundfarbe (P2, 2)
+- [ ] **L18** Rundes Textfeld (P2, 3)
+- [ ] **L19** Zeilenabstand einstellbar (P1, 1)
+
+### L.4 Bemaßung
+
+- [ ] **L20** Maßkette Winkel (P1, 3)
+- [ ] **L21** Maßkette direkt/ausgerichtet (P1, 2)
+- [ ] **L22** Maßkette: Punkte anfügen und entfernen (P1, 2)
+- [ ] **L23** Maßkette: erst Position und Lage wählen, dann die Punkte (P1, 2)
+- [ ] **L24** Abstand Maßkettenblock 0,75 (P2, 1)
+- [ ] **L25** Kurvenbemaßung (P2, 3)
+- [ ] **L26** Achsenbemaßung (P2, 3)
+
+### L.5 Ausgabe
+
+- [ ] **L27** Plotten: Stapelausgabe mehrerer Blätter (P2, 4)
+- [ ] **L28** Geländepunkte (P2, 3)
+
+### L.6 Einstellungen
+
+- [ ] **L29** Winkeleinheit (Grad/Gon) (P1, 1)
+- [ ] **L30** Reihenfolge (Rang) als Voreinstellung (P2, 2)
+- [ ] **L31** Hintergrundfarbe der Zeichenfläche (P1, 1)
+- [ ] **L32** Strichstärke-Standard 0,13 mm (P1, 1)
+
 ---
 
 ## Summen
@@ -123,12 +190,12 @@ Stand: 2026-11-05 · 73 Punkte · P0: 45 · P1: 20 · P2: 8 · zusammen 124 Comm
 | Stufe | Punkte | Commits |
 |---|---|---|
 | P0 | 45 | 64 |
-| P1 | 20 | 40 |
-| P2 | 8 | 20 |
-| **gesamt** | **73** | **124** |
+| P1 | 31 | 61 |
+| P2 | 29 | 66 |
+| **gesamt** | **105** | **191** |
 
-Bei 35–40 Commits pro Tag: P0 knapp zwei Tage, P1 einer, P2 ein halber. Alles
-zusammen ist realistisch eine Woche — Sonntag wäre P0 plus ein Teil von P1.
+Bei 35–40 Commits pro Tag: P0 knapp zwei Tage, P1 eineinhalb, P2 eineinhalb.
+Alles zusammen ist realistisch eine Woche — Sonntag wäre P0 plus ein Teil von P1.
 
 ## Was zuerst
 
