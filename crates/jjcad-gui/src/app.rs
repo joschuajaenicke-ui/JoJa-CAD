@@ -846,6 +846,15 @@ pub struct UiState {
     pub confirm_close: Option<usize>,
     pub confirm_quit: bool,
     pub last_canvas: Rect,
+    /// Sicherung (T0129): Fenster „Sicherung wiederherstellen“ offen.
+    pub sicherung_dialog: bool,
+    /// Gewählter Stand im Wiederherstellen-Dialog (Zyklusnummer).
+    pub sicherung_wahl: Option<u64>,
+    /// Geladener Stand für die Vorschau: (Zyklusnummer, Dokument).
+    pub sicherung_vorschau: Option<(u64, jjcad_core::model::Document)>,
+    /// Kennzahlen des Pools für die Einstellungsseite:
+    /// (Zeit, Bytes, Stände, Dateien).
+    pub sicherung_info: Option<(f64, u64, usize, usize)>,
     /// Höhe des zuletzt gezeichneten Ribbon-Inhalts (Regressionstest t_92b03440)
     pub last_ribbon_content_h: f32,
     /// Lage der Hotbar-Slots in der unteren Leiste (Regressionstest T0043:
@@ -980,6 +989,10 @@ impl Default for UiState {
             confirm_close: None,
             confirm_quit: false,
             last_canvas: Rect::from_min_size(Pos2::ZERO, Vec2::new(1000.0, 700.0)),
+            sicherung_dialog: false,
+            sicherung_wahl: None,
+            sicherung_vorschau: None,
+            sicherung_info: None,
             last_ribbon_content_h: 0.0,
             last_slots: None,
             last_blattrechtecke: None,
@@ -1309,6 +1322,11 @@ pub struct App {
     /// Sperrdatei der Datenwurzel (T0127). Sie lebt so lange wie die
     /// Anwendung und verhindert eine zweite Schreibinstanz.
     pub sperre: Option<jjcad_core::daten::Sperre>,
+    /// Sicherung (T0129): der Pool. Wird beim ersten Bedarf geöffnet — Tests,
+    /// die nur zeichnen, fassen so den Datenordner des Nutzers nicht an.
+    pub sicherung: Option<jjcad_core::sicherung::Sicherung>,
+    /// Zeitpunkt der letzten Sicherungsprüfung (egui-Zeit in Sekunden).
+    pub sicherung_zuletzt: f64,
 }
 
 impl App {
@@ -1393,6 +1411,8 @@ impl App {
             perf: crate::perf::Perf::default(),
             mehrfach_ziel: Vec::new(),
             sperre: None,
+            sicherung: None,
+            sicherung_zuletzt: 0.0,
         };
         app.ui.show_grid = show_grid;
         app.ui.lineweights = lineweights;
@@ -1475,6 +1495,25 @@ impl App {
                         // überschreiben die Zoomstufe.
                         self.started_at = 3.0;
                     }
+                }
+                // T0129: Prüfzustand der Sicherung — drei Stände anlegen und
+                // den Wiederherstellen-Dialog öffnen. Für Prüfbilder zeigt
+                // `JJCAD_DATA_DIR` auf ein Wegwerf-Verzeichnis.
+                "sicherung" => {
+                    let einst = self.prefs.sicherung_einstellungen();
+                    if self.sicherung.is_none() {
+                        self.sicherung = Some(jjcad_core::sicherung::Sicherung::oeffnen(
+                            &self.prefs.sicherungen_dir(),
+                        ));
+                    }
+                    if let Some(mut pool) = self.sicherung.take() {
+                        for i in 0..3 {
+                            self.doc_mut().name = format!("Wohnhaus {}", i + 1);
+                            let _ = pool.sichern(&mut self.doc_mut(), &einst);
+                        }
+                        self.sicherung = Some(pool);
+                    }
+                    self.ui.sicherung_dialog = true;
                 }
                 "vollbild" | "fullscreen" => self.ui.fullscreen = true,
                 "aendern" | "change" => self.ui.ribbon = RibbonTab::Aendern,
@@ -3163,6 +3202,8 @@ impl App {
             "file.open" => self.open_file_dialog(FileMode::Open),
             "file.save" => self.save_current(false),
             "file.save_as" => self.open_file_dialog(FileMode::SaveJjcad),
+            // T0129: Stände der Sicherung ansehen und als neues Dokument öffnen.
+            "file.restore" => self.ui.sicherung_dialog = true,
             "file.export_pdf" | "sheet.pdf" => self.open_file_dialog(FileMode::ExportPdf),
             "file.export_dxf" => self.open_file_dialog(FileMode::ExportDxf),
             "file.import_dxf" => self.open_file_dialog(FileMode::ImportDxf),
@@ -3697,6 +3738,106 @@ impl App {
                 "gui.app.datenordner_nicht_geoeffnet_x",
                 &[("wert1", e.to_string())],
             )),
+        }
+    }
+
+    /// Sicherung (T0129): Pool öffnen, falls noch nicht geschehen.
+    pub fn sicherung_pool(&mut self) -> &mut jjcad_core::sicherung::Sicherung {
+        if self.sicherung.is_none() {
+            self.sicherung = Some(jjcad_core::sicherung::Sicherung::oeffnen(
+                &self.prefs.sicherungen_dir(),
+            ));
+        }
+        self.sicherung
+            .as_mut()
+            .expect("Pool wurde eben geöffnet")
+    }
+
+    /// Sicherung (T0129): Ist das Intervall abgelaufen, sichert der Pool den
+    /// Stand **aller** offenen Dokumente, deren Inhalt sich geändert hat.
+    ///
+    /// Die Zieldatei wird dabei nicht angefasst — geschrieben wird nur in den
+    /// Pool. Der Aufruf läuft aus `update`; Tests rufen ihn mit eigener Zeit
+    /// und eigenem Pool auf.
+    pub fn sicherung_tick(&mut self, jetzt: f64) {
+        let einst = self.prefs.sicherung_einstellungen();
+        let abstand = (einst.intervall_min.max(1) as f64) * 60.0;
+        if jetzt - self.sicherung_zuletzt < abstand {
+            return;
+        }
+        self.sicherung_zuletzt = jetzt;
+        let mut fehler: Option<String> = None;
+        // Der Pool wird für die Schleife ausgeliehen: `sicherung_pool` borgt
+        // `self` mut, die Reiter brauchen es ebenfalls.
+        if self.sicherung.is_none() {
+            self.sicherung = Some(jjcad_core::sicherung::Sicherung::oeffnen(
+                &self.prefs.sicherungen_dir(),
+            ));
+        }
+        if let Some(mut pool) = self.sicherung.take() {
+            for tab in &mut self.tabs {
+                if let Err(e) = pool.sichern(&mut tab.session.doc, &einst) {
+                    fehler = Some(e);
+                }
+            }
+            self.sicherung = Some(pool);
+        }
+        if let Some(grund) = fehler {
+            self.toast(jjcad_core::i18n::t_args_owned(
+                "gui.app.sicherung_fehler_x",
+                &[("grund", grund)],
+            ));
+        }
+    }
+
+    /// Sicherung (T0129): Einen Stand als **neues** Dokument öffnen.
+    ///
+    /// Das neue Dokument trägt keinen Pfad — „Speichern“ fragt nach einem Ziel
+    /// und überschreibt nie die Zieldatei des alten Standes.
+    pub fn sicherung_wiederherstellen(&mut self, zyklus: u64) {
+        let geladen = {
+            let pool = self.sicherung_pool();
+            let stand = pool
+                .manifest()
+                .staende
+                .iter()
+                .find(|s| s.zyklus == zyklus)
+                .cloned();
+            match stand {
+                Some(stand) => pool.laden(&stand).map(|doc| (doc, stand)),
+                None => Err(jjcad_core::i18n::tr("gui.dialogs.sicherung_stand_fehlt").to_string()),
+            }
+        };
+        match geladen {
+            Ok((mut doc, stand)) => {
+                let basis = if stand.name.trim().is_empty() {
+                    jjcad_core::i18n::tr("gui.dialogs.sicherung_zeichnung").to_string()
+                } else {
+                    stand.name.clone()
+                };
+                doc.name = format!("{basis} ({})", kurz_zeit(&stand.zeit));
+                doc.path = None;
+                doc.modified = false;
+                doc.merke_standard_breiten(&self.prefs.layer_weights);
+                let tab = DocTab {
+                    session: Session::with_doc(doc),
+                    tab: TabKind::Model,
+                    view_model: View::default(),
+                    sheet_views: HashMap::new(),
+                    rev: 0,
+                    cache: None,
+                    hover: None,
+                };
+                self.tabs.push(tab);
+                self.active = self.tabs.len() - 1;
+                self.datei_nachziehen();
+                self.fit_view();
+                self.toast(jjcad_core::i18n::t_args_owned(
+                    "gui.dialogs.sicherung_geoeffnet_x",
+                    &[("zeit", kurz_zeit(&stand.zeit))],
+                ));
+            }
+            Err(e) => self.toast(e),
         }
     }
 
@@ -7441,6 +7582,13 @@ impl eframe::App for App {
         );
         self.ui(ctx);
         self.draw_menu(ctx);
+        // T0129: Sicherung — Stände anlegen, wenn das Intervall abgelaufen ist.
+        // Der Weckruf hält die Prüfung auch ohne Eingabe am Laufen.
+        let jetzt = ctx.input(|i| i.time);
+        self.sicherung_tick(jetzt);
+        let intervall = (self.prefs.sicherung_einstellungen().intervall_min.max(1) as f64) * 60.0;
+        let rest = (intervall - (jetzt - self.sicherung_zuletzt)).max(1.0);
+        ctx.request_repaint_after(std::time::Duration::from_secs_f64(rest));
         if self.started_at < 3.0 {
             // Die ersten Frames: Layout einschwingen lassen, dann einpassen
             self.started_at += 1.0;
@@ -7493,6 +7641,21 @@ impl eframe::App for App {
         self.prefs.lineweights_scaled = self.ui.lineweights_scaled;
         let _ = self.prefs.save();
     }
+}
+
+/// Zeitstempel eines Standes für die Anzeige: `2026-11-08T12:33:29` →
+/// `08.11.2026 12:33`. Unbekannte Formen bleiben, wie sie sind.
+pub fn kurz_zeit(zeit: &str) -> String {
+    let (datum, uhr) = match zeit.split_once('T') {
+        Some((d, u)) => (d, u),
+        None => return zeit.to_string(),
+    };
+    let teile: Vec<&str> = datum.split('-').collect();
+    if teile.len() != 3 {
+        return zeit.to_string();
+    }
+    let hm: String = uhr.chars().take(5).collect();
+    format!("{}.{}.{} {hm}", teile[2], teile[1], teile[0])
 }
 
 /// Dateiendungen für Dialoge.
@@ -12326,5 +12489,138 @@ mod tests_dragdrop {
             texte.iter().any(|t| t.contains("Format nicht unterstützt")),
             "der Hinweis verschweigt das fremde Format: {texte:?}"
         );
+    }
+}
+
+#[cfg(test)]
+mod tests_sicherung {
+    //! T0129: Die Sicherung arbeitet getrennt vom Speichern. Geprüft wird der
+    //! Weg über die App: Intervall, Stände, Zieldatei und Wiederherstellen.
+
+    use super::*;
+
+    fn test_dir(name: &str) -> PathBuf {
+        let d = std::env::temp_dir().join(format!(
+            "jjcad-sicherung-app-{}-{name}",
+            std::process::id()
+        ));
+        let _ = std::fs::remove_dir_all(&d);
+        std::fs::create_dir_all(&d).unwrap();
+        d
+    }
+
+    /// App mit eigenem Pool — der Datenordner des Nutzers bleibt unberührt.
+    fn app_mit_pool(dir: &std::path::Path) -> App {
+        let mut app = App::with_ctx(egui::Context::default());
+        app.sicherung = Some(jjcad_core::sicherung::Sicherung::oeffnen(dir));
+        app.prefs.sicherung_intervall = 1;
+        app.prefs.sicherung_verlauf = true;
+        app
+    }
+
+    fn linie(app: &mut App, x: f64) {
+        app.session_mut()
+            .execute(
+                "draw.line",
+                &serde_json::json!({"a": [x, 0.0], "b": [x, 1000.0]}),
+            )
+            .expect("Linie anlegen");
+    }
+
+    /// Zeichnen, warten: ein Stand entsteht, die Zieldatei bleibt unverändert,
+    /// der neueste Stand entspricht dem Arbeitsstand.
+    #[test]
+    fn tick_sichert_und_laesst_die_zieldatei_unberuehrt() {
+        let dir = test_dir("tick");
+        let mut app = app_mit_pool(&dir);
+        let ziel = dir.join("Plan.jjcad");
+        app.session_mut().save(&ziel).expect("Zieldatei");
+        let vorher = std::fs::read(&ziel).unwrap();
+
+        linie(&mut app, 0.0);
+        app.sicherung_tick(120.0);
+
+        let pool = app.sicherung.as_ref().expect("Pool");
+        assert_eq!(pool.manifest().staende.len(), 1, "kein Stand angelegt");
+        assert_eq!(
+            std::fs::read(&ziel).unwrap(),
+            vorher,
+            "die Sicherung hat die Zieldatei verändert"
+        );
+        let stand = pool.staende_neueste()[0].clone();
+        let geladen = pool.laden(&stand).expect("Stand lesbar");
+        assert_eq!(
+            geladen.entities.len(),
+            app.doc().entities.len(),
+            "der neueste Stand ist nicht der Arbeitsstand"
+        );
+    }
+
+    /// Vor Ablauf des Intervalls wird nichts gesichert.
+    #[test]
+    fn tick_wartet_das_intervall_ab() {
+        let dir = test_dir("intervall");
+        let mut app = app_mit_pool(&dir);
+        linie(&mut app, 0.0);
+        app.sicherung_tick(10.0);
+        assert!(
+            app.sicherung.as_ref().unwrap().manifest().staende.is_empty(),
+            "vor Ablauf des Intervalls darf nichts gesichert werden"
+        );
+        app.sicherung_tick(61.0);
+        assert_eq!(app.sicherung.as_ref().unwrap().manifest().staende.len(), 1);
+    }
+
+    /// Ein Stand öffnet ein **neues** Dokument; die Zieldatei bleibt unberührt.
+    #[test]
+    fn wiederherstellen_oeffnet_ein_neues_dokument() {
+        let dir = test_dir("wiederherstellen");
+        let mut app = app_mit_pool(&dir);
+        let ziel = dir.join("Plan.jjcad");
+        app.session_mut().save(&ziel).expect("Zieldatei");
+        let vorher = std::fs::read(&ziel).unwrap();
+
+        linie(&mut app, 0.0);
+        app.sicherung_tick(120.0);
+        let zyklus = app.sicherung.as_ref().unwrap().manifest().staende[0].zyklus;
+
+        // Danach weiterzeichnen — der Stand bleibt der alte.
+        linie(&mut app, 500.0);
+        assert_eq!(app.doc().entities.len(), 2);
+
+        app.sicherung_wiederherstellen(zyklus);
+
+        assert_eq!(app.tabs.len(), 2, "der Stand öffnet einen zweiten Reiter");
+        assert_eq!(app.active, 1, "der neue Reiter ist vorn");
+        assert_eq!(
+            app.doc().entities.len(),
+            1,
+            "der wiederhergestellte Stand hat den alten Inhalt"
+        );
+        assert!(app.doc().path.is_none(), "der Stand trägt keinen Pfad");
+        assert_eq!(
+            std::fs::read(&ziel).unwrap(),
+            vorher,
+            "die Zieldatei wurde beim Wiederherstellen verändert"
+        );
+        assert_eq!(
+            app.tabs[0].session.doc.entities.len(),
+            2,
+            "die offene Zeichnung bleibt unverändert"
+        );
+    }
+
+    /// „Verlauf sichern“ aus → genau ein Stand je Dokument.
+    #[test]
+    fn verlauf_aus_haelt_einen_stand() {
+        let dir = test_dir("verlauf-aus");
+        let mut app = app_mit_pool(&dir);
+        app.prefs.sicherung_verlauf = false;
+        for i in 0..5 {
+            linie(&mut app, i as f64 * 100.0);
+            app.sicherung_tick(120.0 * (i + 1) as f64);
+        }
+        let pool = app.sicherung.as_ref().unwrap();
+        assert_eq!(pool.manifest().staende.len(), 1, "Verlauf aus hält einen Stand");
     }
 }

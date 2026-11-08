@@ -18,3 +18,9 @@ lopdf = { version = "0.46", default-features = false }
 flate2 = "1"
 # Bilder (PNG/JPEG) einlesen: Import, Anzeige, PNG- und PDF-Ausgabe
 image = { version = "0.25", default-features = false, features = ["png", "jpeg"] }
+# Sicherung (T0129): Hash-Vergleich der Stände und Kennung neuer Dokumente.
+sha2 = "0.11"
+
+# Ortszeit für den Zeitstempel der Stände (nur Anzeige).
+[target.'cfg(unix)'.dependencies]
+libc = "0.2"

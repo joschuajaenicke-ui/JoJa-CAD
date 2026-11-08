@@ -323,6 +323,38 @@ pub fn draw_block_preview(
     if !bbox.is_valid() {
         return;
     }
+    let mut dl = DisplayList::default();
+    let ctx = render::RenderCtx::new(doc);
+    for e in &b.entities {
+        render::render_entity(&ctx, e, Affine::IDENTITY, &mut dl, 0);
+    }
+    draw_list_preview(p, rect, bbox, &dl, farbe);
+}
+
+/// Vorschau einer ganzen Zeichnung (T0129: Wiederherstellen-Dialog).
+pub fn draw_document_preview(
+    p: &egui::Painter,
+    rect: Rect,
+    doc: &jjcad_core::model::Document,
+    farbe: egui::Color32,
+) {
+    let bbox = doc.bbox();
+    if !bbox.is_valid() {
+        return;
+    }
+    let dl = render::render_document(&render::RenderCtx::new(doc));
+    draw_list_preview(p, rect, bbox, &dl, farbe);
+}
+
+/// Zeichnet eine Anzeigeliste in ein Rechteck — eine Quelle für Blockkachel
+/// und Sicherungs-Vorschau.
+pub fn draw_list_preview(
+    p: &egui::Painter,
+    rect: Rect,
+    bbox: jjcad_core::geom::BBox,
+    dl: &DisplayList,
+    farbe: egui::Color32,
+) {
     let bw = bbox.width().max(1.0) as f32;
     let bh = bbox.height().max(1.0) as f32;
     let k: f32 = ((rect.width() - 4.0) / bw).min((rect.height() - 4.0) / bh);
@@ -332,11 +364,6 @@ pub fn draw_block_preview(
     let w2s = |q: jjcad_core::geom::Vec2| {
         Pos2::new(off.x + q.x as f32 * k, off.y - q.y as f32 * k)
     };
-    let mut dl = DisplayList::default();
-    let ctx = render::RenderCtx::new(doc);
-    for e in &b.entities {
-        render::render_entity(&ctx, e, Affine::IDENTITY, &mut dl, 0);
-    }
     let col = farbe;
     let stroke = Stroke::new(1.0, col);
     for prim in &dl.prims {
@@ -395,7 +422,7 @@ pub fn draw_block_preview(
             PShape::Dot { p: q, .. } => {
                 p.circle_filled(w2s(*q), 1.5, col);
             }
-            // Bild in der Blockkachel: nur der Rahmen (die Textur gehört zur
+            // Bild in der Kachel: nur der Rahmen (die Textur gehört zur
             // Zeichenfläche, eine Kachel ist ein paar Pixel groß).
             PShape::Image { a, b, hoehe, .. } => {
                 let ecken = jjcad_core::bild::ecken(*a, *b, *hoehe);
