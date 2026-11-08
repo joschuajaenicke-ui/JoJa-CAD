@@ -686,7 +686,13 @@ pub fn show(app: &mut App, ctx: &egui::Context) {
             if let Some((name, _)) = app.ui.block_name_dialog.clone() {
                 if !name.trim().is_empty() {
                     let ids = app.selection().to_vec();
-                    match app.session_mut().execute("block.create", &json!({"name": name, "ids": ids})) {
+                    // T0128: „Block aus Auswahl“ schreibt die Blockdatei in die
+                    // Benutzerbibliothek (`<Wurzel>/blocks/<slug>.jjblk`).
+                    let dir = app.prefs.blocks_dir().to_string_lossy().to_string();
+                    match app.session_mut().execute(
+                        "block.create",
+                        &json!({"name": name, "ids": ids, "dir": dir}),
+                    ) {
                         Ok(_) => {
                             app.mark_changed();
                             app.toast(jjcad_core::i18n::t_args_owned("gui.dialogs.block_x_angelegt", &[("name", format!("{}", name))]));

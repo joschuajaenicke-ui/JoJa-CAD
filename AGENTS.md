@@ -313,6 +313,16 @@ Mit dem Nutzer abgestimmt — nicht „verbessern“:
   — `app::tests_chat_texte` prüft Aufforderung und Ergebnis für jedes Werkzeug.
 - Wände: Farbe (Linie) und Füllung (Fläche) getrennt; Schraffuren nach Tabelle 5;
   Ausrichtung Links/Mittig/Rechts.
+- **Eigene Blöcke als Datei (T0128)**: „Block aus Auswahl“ legt **eine** Datei
+  `<Wurzel>/blocks/<slug>.jjblk` an (`{"format":"jjcad-block","version":1,"block":{…}}`,
+  Code in `crates/jjcad-core/src/bloecke.rs`); Kennung `usr:…` im Inhalt, Dateiname
+  folgt dem Namen (`slug`), Umbenennen ist `rename` plus Feld. Das Verzeichnis ist
+  die Wahrheit — kein Index. Beim Start liest `daten::lade_benutzerbloecke_mit_meldungen`
+  das Verzeichnis, unlesbare Dateien werden gemeldet und übersprungen.
+  `block.create`/`block.update`/`block.delete` schreiben bzw. löschen nur mit dem
+  Parameter `dir` (die Oberfläche übergibt `prefs.blocks_dir()`) — ohne `dir`
+  bleibt das Benutzerverzeichnis unberührt (Tests, MCP ohne Datenwurzel).
+
 - **Dämmung und Abdichtung sind Linienarten, keine Muster (T0132)**: Die Muster
   „Dämmstoffe“, „Dämmstoffe Schlaufen“ und die drei „Abdichtungen“ sind
   **entfernt**. Dämmung zeichnet die Linienart `LineType::Insulation` (Schlaufenband,

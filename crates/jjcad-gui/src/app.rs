@@ -3645,9 +3645,22 @@ impl App {
     /// Blöcke aus der Benutzerbibliothek (`<Wurzel>/blocks`, T0127) in die
     /// aktive Zeichnung übernehmen. Vorhandene Kennungen und Namen bleiben
     /// stehen — die Systembibliothek gewinnt.
+    ///
+    /// Eine unlesbare Blockdatei wird gemeldet (T0128) und übersprungen; sie
+    /// reißt die übrige Bibliothek nicht mit.
     pub fn benutzerbloecke_einhaengen(&mut self) {
         let dir = self.prefs.blocks_dir();
-        let geladen = jjcad_core::daten::lade_benutzerbloecke(&dir);
+        let (geladen, meldungen) = jjcad_core::daten::lade_benutzerbloecke_mit_meldungen(&dir);
+        if !meldungen.is_empty() {
+            let mut grund = meldungen[0].clone();
+            if meldungen.len() > 1 {
+                grund = format!("{grund} (+{})", meldungen.len() - 1);
+            }
+            self.toast(jjcad_core::i18n::t_args_owned(
+                "gui.app.blockdatei_uebersprungen_x",
+                &[("wert1", grund)],
+            ));
+        }
         if geladen.is_empty() {
             return;
         }
