@@ -1316,6 +1316,76 @@ pub fn polygon_centroid(poly: &[Vec2]) -> Vec2 {
     v(cx / (6.0 * a), cy / (6.0 * a))
 }
 
+/// Achsenparalleles Rechteck aus zwei gegenüberliegenden Ecken (Diagonale).
+///
+/// Sonderfall beim Aufziehen einer Fläche (T0131): zwei Klicks sind erlaubt,
+/// wenn sie die Diagonale eines Rechtecks beschreiben. Die vier Ecken liegen
+/// dann auf den Achsen; liegen beide Punkte auf einer Waagerechten oder
+/// Senkrechten, entsteht keine Fläche — dann `None`.
+pub fn rechteck_aus_diagonale(a: Vec2, b: Vec2) -> Option<[Vec2; 4]> {
+    // Unter dieser Breite ist das Rechteck keine Fläche mehr, sondern eine
+    // Linie (dieselbe Größenordnung wie `POINT_EPS_MM`).
+    const MIN_MM: f64 = 0.5;
+    if (b.x - a.x).abs() <= MIN_MM || (b.y - a.y).abs() <= MIN_MM {
+        return None;
+    }
+    Some([a, v(b.x, a.y), b, v(a.x, b.y)])
+}
+
+/// Toleranz für „echtes Rechteck": Sinus des Knickwinkels bzw. Cosinus des
+/// Eckenwinkels. 1e-3 entspricht etwa 0,06° — eine von Hand ohne Fang
+/// geklickte Ecke fällt damit durch, eine gezeichnete oder kopierte nicht.
+const RECHTECK_TOL: f64 = 1e-3;
+
+/// Knickt der Ring an `i`? Zwischenpunkte einer geraden Kante sind kein Knick.
+fn ring_knick(ring: &[Vec2], i: usize) -> bool {
+    let n = ring.len();
+    let p = ring[i];
+    let davor = p - ring[(i + n - 1) % n];
+    let danach = ring[(i + 1) % n] - p;
+    let (l1, l2) = (davor.len(), danach.len());
+    if l1 < 1e-9 || l2 < 1e-9 {
+        return false;
+    }
+    (davor.cross(danach) / (l1 * l2)).abs() > RECHTECK_TOL
+}
+
+/// Erkennt ein echtes Rechteck in einem geschlossenen Ring und liefert seine
+/// vier Ecken in Ringreihenfolge.
+///
+/// Zwischenpunkte auf geraden Kanten fallen zuerst weg — der Farbeimer liefert
+/// seinen Rand als dichten Punktzug, und auch kopierte Flächen tragen oft
+/// Zwischenpunkte. Übrig bleiben müssen genau vier Ecken mit rechten Winkeln;
+/// alles andere ist kein Rechteck und liefert `None`. Die Ecken tragen die
+/// Kantenindizes 0…3 (Kante `i` = Ecke `i` → Ecke `i+1`), dieselbe Zählung wie
+/// bei Polylinie und Treppe.
+pub fn rechteck_ecken(ring: &[Vec2]) -> Option<[Vec2; 4]> {
+    let ecken: Vec<Vec2> = ring
+        .iter()
+        .enumerate()
+        .filter(|(i, _)| ring_knick(ring, *i))
+        .map(|(_, p)| *p)
+        .collect();
+    if ecken.len() != 4 {
+        return None;
+    }
+    // Vier Ecken, alle Winkel 90°: dann sind die Gegenseiten zwangsläufig
+    // parallel und gleich lang — ein schiefes Viereck mit vier rechten
+    // Winkeln gibt es nicht.
+    for i in 0..4 {
+        let d1 = ecken[(i + 1) % 4] - ecken[i];
+        let d2 = ecken[(i + 2) % 4] - ecken[(i + 1) % 4];
+        let (l1, l2) = (d1.len(), d2.len());
+        if l1 < 1e-6 || l2 < 1e-6 {
+            return None;
+        }
+        if (d1.dot(d2) / (l1 * l2)).abs() > RECHTECK_TOL {
+            return None;
+        }
+    }
+    Some([ecken[0], ecken[1], ecken[2], ecken[3]])
+}
+
 /// Punkt-in-Polygon (Even-Odd).
 pub fn point_in_polygon(p: Vec2, poly: &[Vec2]) -> bool {
     if poly.len() < 3 {
@@ -1664,5 +1734,62 @@ mod tests {
         let q = m.apply(p);
         let back = m.inverse().apply(q);
         assert!(back.dist(p) < 1e-9);
+    }
+
+    /// Zwei Punkte als Diagonale ergeben vier achsenparallele Ecken (T0131);
+    /// auf einer Waagerechten oder Senkrechten entsteht keine Fläche.
+    #[test]
+    fn test_rechteck_aus_diagonale() {
+        let ecken = rechteck_aus_diagonale(v(1000., 500.), v(4000., 2500.)).unwrap();
+        assert_eq!(ecken[0], v(1000., 500.));
+        assert_eq!(ecken[1], v(4000., 500.));
+        assert_eq!(ecken[2], v(4000., 2500.));
+        assert_eq!(ecken[3], v(1000., 2500.));
+        assert!((polygon_area(&ecken) - 3_000.0 * 2_000.0).abs() < 1e-6);
+        // Auch von rechts unten nach links oben.
+        assert!(rechteck_aus_diagonale(v(4000., 2500.), v(1000., 500.)).is_some());
+        assert!(rechteck_aus_diagonale(v(0., 0.), v(1000., 0.)).is_none(), "waagerecht");
+        assert!(rechteck_aus_diagonale(v(0., 0.), v(0., 1000.)).is_none(), "senkrecht");
+    }
+
+    /// Ein echtes Rechteck wird erkannt, Zwischenpunkte fallen dabei weg; ein
+    /// schiefes Viereck und ein Fünfeck sind keins (T0131).
+    #[test]
+    fn test_rechteck_ecken() {
+        let ring = vec![v(0., 0.), v(2000., 0.), v(2000., 1000.), v(0., 1000.)];
+        let ecken = rechteck_ecken(&ring).unwrap();
+        assert_eq!(ecken[0], v(0., 0.));
+        assert_eq!(ecken[2], v(2000., 1000.));
+        // Zwischenpunkte auf den Kanten (Farbeimer-Rand) ändern nichts.
+        let dicht = vec![
+            v(0., 0.),
+            v(1000., 0.),
+            v(2000., 0.),
+            v(2000., 500.),
+            v(2000., 1000.),
+            v(1000., 1000.),
+            v(0., 1000.),
+            v(0., 500.),
+        ];
+        assert_eq!(rechteck_ecken(&dicht).unwrap()[1], v(2000., 0.));
+        // Gedrehtes Rechteck (45°) bleibt ein Rechteck.
+        let gedreht = vec![
+            v(1000., 0.),
+            v(2000., 1000.),
+            v(1000., 2000.),
+            v(0., 1000.),
+        ];
+        assert!(rechteck_ecken(&gedreht).is_some());
+        // Parallelogramm (kein rechter Winkel) und Fünfeck fallen durch.
+        let schief = vec![v(0., 0.), v(2000., 0.), v(2500., 1000.), v(500., 1000.)];
+        assert!(rechteck_ecken(&schief).is_none());
+        let fuenf = vec![
+            v(0., 0.),
+            v(2000., 0.),
+            v(2000., 1000.),
+            v(1000., 1500.),
+            v(0., 1000.),
+        ];
+        assert!(rechteck_ecken(&fuenf).is_none());
     }
 }
