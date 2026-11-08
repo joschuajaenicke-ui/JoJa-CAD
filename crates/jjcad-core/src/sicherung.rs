@@ -67,12 +67,56 @@ pub struct Stand {
     /// Datei; nur ein Stand mit `gesichert = false` trägt ungespeicherte Arbeit.
     #[serde(default)]
     pub gesichert: bool,
+    /// Dateiname im Pool (ohne Verzeichnis). Leer = aus `name` und `zeit`
+    /// ableiten — so heißen Stände aus älteren Pools noch.
+    #[serde(default)]
+    pub datei_name: String,
 }
 
 impl Stand {
-    /// Dateiname des Standes im Pool.
+    /// Dateiname des Standes im Pool:
+    /// `<Zieldatei>_autosave_<Rückwärtsdatum>.jjcad`, z. B.
+    /// `wohnhaus_autosave_20261108-153012.jjcad`.
+    ///
+    /// Das Datum steht Jahr–Monat–Tag–Stunde–Minute–Sekunde, also rückwärts
+    /// gegenüber der deutschen Schreibweise; alphabetisch sortiert ist das
+    /// Verzeichnis damit chronologisch.
     pub fn dateiname(&self) -> String {
-        format!("stand-{}-{}.jjcad", self.zyklus, self.datei)
+        if !self.datei_name.is_empty() {
+            return self.datei_name.clone();
+        }
+        format!(
+            "{}_autosave_{}.jjcad",
+            dateistamm(&self.name),
+            rueckwaertsdatum(&self.zeit, self.zyklus)
+        )
+    }
+}
+
+/// Stamm für den Standnamen: klein, ohne Umlaute, ohne Sonderzeichen.
+fn dateistamm(name: &str) -> String {
+    let s = crate::bloecke::slug(name);
+    if s.is_empty() {
+        "zeichnung".to_string()
+    } else {
+        s
+    }
+}
+
+/// `2026-11-08T15:30:12` → `20261108-153012`.
+///
+/// Fehlt der Zeitstempel (Altbestand), steht die Zyklusnummer — sie ist
+/// ebenfalls monoton und damit sortierbar.
+fn rueckwaertsdatum(zeit: &str, zyklus: u64) -> String {
+    let ziffern: String = zeit
+        .chars()
+        .filter(|c| c.is_ascii_digit())
+        .take(14)
+        .collect();
+    if ziffern.len() == 14 {
+        format!("{}-{}", &ziffern[..8], &ziffern[8..])
+    } else {
+        format!("zyklus-{zyklus:09}")
     }
 }
 
@@ -182,8 +226,30 @@ impl Sicherung {
             dir: dir.to_path_buf(),
             manifest,
         };
+        pool.altbestand_umbenennen();
         pool.waisen_entfernen();
         pool
+    }
+
+    /// Stände aus einem älteren Pool heißen noch `stand-<n>-<uuid>.jjcad`.
+    /// Sie werden auf den neuen Namen umgezogen, damit das Verzeichnis lesbar
+    /// ist und `stand_pfad` sie wiederfindet — sonst würde `waisen_entfernen`
+    /// sie als „Eintrag ohne Datei“ verwerfen.
+    fn altbestand_umbenennen(&mut self) {
+        let dir = self.dir.clone();
+        for s in &mut self.manifest.staende {
+            if !s.datei_name.is_empty() {
+                continue;
+            }
+            let neu = dir.join(s.dateiname());
+            if neu.exists() {
+                continue;
+            }
+            let alt = dir.join(format!("stand-{}-{}.jjcad", s.zyklus, s.datei));
+            if alt.exists() {
+                let _ = std::fs::rename(&alt, &neu);
+            }
+        }
     }
 
     /// Verzeichnis des Pools.
@@ -242,6 +308,22 @@ impl Sicherung {
         self.dir.join(stand.dateiname())
     }
 
+    /// Freier Dateiname für einen neuen Stand: `basis.jjcad`, sonst
+    /// `basis-2.jjcad`, `basis-3.jjcad` …
+    ///
+    /// Nötig, weil zwei Reiter mit gleichem Dateinamen im selben Zyklus
+    /// denselben Zeitstempel bekommen und sich sonst überschreiben würden.
+    fn freier_name(&self, basis: &str) -> String {
+        let stamm = basis.trim_end_matches(".jjcad").to_string();
+        let mut kandidat = format!("{stamm}.jjcad");
+        let mut n = 2;
+        while self.dir.join(&kandidat).exists() {
+            kandidat = format!("{stamm}-{n}.jjcad");
+            n += 1;
+        }
+        kandidat
+    }
+
     /// Sichert den aktuellen Inhalt des Dokuments, wenn er sich seit dem
     /// neuesten Stand geändert hat.
     ///
@@ -289,7 +371,7 @@ impl Sicherung {
             }
         }
         let zyklus = self.manifest.zyklus + 1;
-        let stand = Stand {
+        let mut stand = Stand {
             zyklus,
             datei: doc.id.clone(),
             name: doc.name.clone(),
@@ -297,7 +379,16 @@ impl Sicherung {
             groesse: json.len() as u64,
             zeit: zeitstempel(),
             gesichert,
+            datei_name: String::new(),
         };
+        // Zwei Stände in derselben Sekunde (zwei Reiter mit gleichem Dateinamen)
+        // dürfen sich nicht gegenseitig überschreiben.
+        let basis = format!(
+            "{}_autosave_{}",
+            dateistamm(&doc.name),
+            rueckwaertsdatum(&stand.zeit, stand.zyklus)
+        );
+        stand.datei_name = self.freier_name(&basis);
         atomar_schreiben(&self.stand_pfad(&stand), json.as_bytes())?;
         self.manifest.zyklus = zyklus;
         self.manifest.staende.push(stand.clone());
@@ -434,7 +525,7 @@ impl Sicherung {
     /// Entfernt Standdateien ohne Eintrag, Einträge ohne Datei und Reste
     /// abgebrochener Schreibvorgänge.
     fn waisen_entfernen(&mut self) {
-        let mut bekannt: std::collections::BTreeSet<String> = self
+        let bekannt: std::collections::BTreeSet<String> = self
             .manifest
             .staende
             .iter()
@@ -444,7 +535,11 @@ impl Sicherung {
         if let Ok(eintraege) = std::fs::read_dir(&self.dir) {
             for e in eintraege.flatten() {
                 let name = e.file_name().to_string_lossy().to_string();
-                if name.starts_with("stand-") && name.ends_with(".jjcad") {
+                // Standdateien heißen `<datei>_autosave_<datum>.jjcad`; der alte
+                // Name `stand-<n>-<uuid>.jjcad` zählt mit, bis er umbenannt ist.
+                let stand_datei = name.ends_with(".jjcad")
+                    && (name.contains("_autosave_") || name.starts_with("stand-"));
+                if stand_datei {
                     if bekannt.contains(&name) {
                         vorhanden.insert(name);
                     } else {
@@ -459,7 +554,6 @@ impl Sicherung {
         }
         // Eintrag ohne Datei: der Stand ist nicht mehr wiederherstellbar.
         self.manifest.staende.retain(|s| vorhanden.contains(&s.dateiname()));
-        bekannt.clear();
         let _ = self.manifest_schreiben();
     }
 
@@ -627,7 +721,7 @@ mod tests {
             .flatten()
             .filter(|e| {
                 let n = e.file_name().to_string_lossy().to_string();
-                n.starts_with("stand-") && n.ends_with(".jjcad")
+                n.ends_with(".jjcad") && n.contains("_autosave_")
             })
             .count()
     }
@@ -942,5 +1036,77 @@ mod tests {
         assert!(b.gesichert);
         assert_eq!(b.zyklus, a.zyklus + 1);
         assert!(pool.neuester(&doc.id).unwrap().gesichert);
+    }
+
+    /// Der Name eines Standes: Zieldatei + `autosave` + Rückwärtsdatum.
+    #[test]
+    fn standname_aus_datei_autosave_und_rueckwaertsdatum() {
+        let stand = Stand {
+            zyklus: 7,
+            datei: "egal".into(),
+            name: "Wohnhaus Musterstraße".into(),
+            hash: "h".into(),
+            groesse: 1,
+            zeit: "2026-11-08T15:30:12".into(),
+            gesichert: false,
+            datei_name: String::new(),
+        };
+        assert_eq!(
+            stand.dateiname(),
+            "wohnhaus-musterstrasse_autosave_20261108-153012.jjcad"
+        );
+
+        // Ohne Zeitstempel steht die Zyklusnummer — auch sortierbar.
+        let alt = Stand {
+            zeit: String::new(),
+            ..stand.clone()
+        };
+        assert_eq!(
+            alt.dateiname(),
+            "wohnhaus-musterstrasse_autosave_zyklus-000000007.jjcad"
+        );
+    }
+
+    /// Zwei Stände mit gleichem Namen in derselben Sekunde bekommen eine
+    /// Nummer, statt sich zu überschreiben.
+    #[test]
+    fn gleicher_name_in_derselben_sekunde_bekommt_eine_nummer() {
+        let dir = test_dir("namenskollision");
+        let pool = Sicherung::oeffnen(&dir);
+        let basis = "plan_autosave_20261108-153012";
+        assert_eq!(pool.freier_name(basis), format!("{basis}.jjcad"));
+        std::fs::write(dir.join(format!("{basis}.jjcad")), b"{}").unwrap();
+        assert_eq!(pool.freier_name(basis), format!("{basis}-2.jjcad"));
+        std::fs::write(dir.join(format!("{basis}-2.jjcad")), b"{}").unwrap();
+        assert_eq!(pool.freier_name(basis), format!("{basis}-3.jjcad"));
+    }
+
+    /// Stände aus einem älteren Pool (`stand-<n>-<uuid>.jjcad`) werden beim
+    /// Öffnen umbenannt statt als Waise verworfen.
+    #[test]
+    fn altbestand_wird_umbenannt() {
+        let dir = test_dir("altbestand");
+        let mut m = Manifest::default();
+        m.zyklus = 3;
+        m.staende.push(Stand {
+            zyklus: 3,
+            datei: "abc".into(),
+            name: "Plan".into(),
+            hash: "h".into(),
+            groesse: 2,
+            zeit: "2026-11-08T15:30:12".into(),
+            gesichert: false,
+            datei_name: String::new(),
+        });
+        std::fs::write(dir.join("manifest.json"), serde_json::to_string(&m).unwrap()).unwrap();
+        std::fs::write(dir.join("stand-3-abc.jjcad"), "{}").unwrap();
+
+        let pool = Sicherung::oeffnen(&dir);
+        assert_eq!(pool.manifest().staende.len(), 1, "Stand wurde verworfen");
+        assert!(
+            dir.join("plan_autosave_20261108-153012.jjcad").exists(),
+            "Stand nicht umbenannt"
+        );
+        assert!(!dir.join("stand-3-abc.jjcad").exists(), "alter Name liegt noch");
     }
 }
