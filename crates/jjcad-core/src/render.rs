@@ -330,6 +330,61 @@ pub fn text_corners(t: &TextPrim) -> [Vec2; 4] {
     ]
 }
 
+/// Pfad einer Textumrandung: der Kasten aus [`text_corners`], wahlweise mit
+/// abgerundeten Ecken.
+///
+/// `radius` ist der Eckradius in Welt-mm. Bei der runden Umrandung eines
+/// Textfeldes ist das die halbe Texthöhe — einzeilig entsteht damit ein Oval
+/// aus zwei Halbkreisen, mehrzeilig bleibt an den langen Kanten ein gerades
+/// Stück stehen (Stadionform). Der Pfad wird wie der Kasten um den Anker des
+/// Textes gedreht (eine Quelle mit [`text_corners`]).
+pub fn text_frame_path(t: &TextPrim, radius: f64) -> Vec<Vec2> {
+    let (w, h) = t.box_size();
+    let dx = match t.align {
+        TextAlignH::Left => 0.0,
+        TextAlignH::Center => -w * 0.5,
+        TextAlignH::Right => -w,
+    };
+    let dy = match t.valign {
+        TextAlignV::Top => -h,
+        TextAlignV::Middle => -h * 0.5,
+        TextAlignV::Bottom => 0.0,
+    };
+    let base = t.pos + Vec2::new(dx, dy);
+    let r = radius.clamp(0.0, w.min(h) * 0.5);
+    let rot = Affine::rotate_about(t.pos, t.angle);
+    if r <= 1e-9 {
+        return [base, base + v(w, 0.0), base + v(w, h), base + v(0.0, h)]
+            .iter()
+            .map(|q| rot.apply(*q))
+            .collect();
+    }
+    // Bogenpunkte je Viertelecke — genug für eine glatte Rundung in jeder
+    // Ansicht, und der Pfad ist zugleich die Trefferfläche.
+    let n = 8;
+    let mut pts: Vec<Vec2> = Vec::with_capacity(4 * (n + 1));
+    let ecke = |c: Vec2, a0: f64, pts: &mut Vec<Vec2>| {
+        for i in 0..=n {
+            let a = a0 + std::f64::consts::FRAC_PI_2 * i as f64 / n as f64;
+            pts.push(rot.apply(c + Vec2::polar(a, r)));
+        }
+    };
+    let x0 = base.x;
+    let y0 = base.y;
+    let x1 = base.x + w;
+    let y1 = base.y + h;
+    pts.push(rot.apply(v(x0 + r, y0)));
+    pts.push(rot.apply(v(x1 - r, y0)));
+    ecke(v(x1 - r, y0 + r), -std::f64::consts::FRAC_PI_2, &mut pts);
+    pts.push(rot.apply(v(x1, y1 - r)));
+    ecke(v(x1 - r, y1 - r), 0.0, &mut pts);
+    pts.push(rot.apply(v(x0 + r, y1)));
+    ecke(v(x0 + r, y1 - r), std::f64::consts::FRAC_PI_2, &mut pts);
+    pts.push(rot.apply(v(x0, y0 + r)));
+    ecke(v(x0 + r, y0 + r), std::f64::consts::PI, &mut pts);
+    pts
+}
+
 #[derive(Clone, Debug, Default)]
 pub struct DisplayList {
     pub prims: Vec<Prim>,
@@ -959,6 +1014,9 @@ pub fn render_entity(
             runs,
             font,
             line_spacing,
+            frame,
+            frame_round,
+            background,
         } => {
             let txt = if ctx.resolve_text {
                 doc.resolve_text_scaled(text, ctx.sheet_scale)
@@ -968,26 +1026,63 @@ pub fn render_entity(
             if txt.trim().is_empty() {
                 return;
             }
+            let tprim = TextPrim {
+                pos: xf.apply(*p),
+                text: txt,
+                height: *height * xf.scale_factor(),
+                angle: *angle + xf.rotation(),
+                align: *align,
+                valign: *valign,
+                bold: *bold || (st.width > 0.4 && runs.is_empty()),
+                italic: *italic,
+                underline: *underline,
+                superscript: *superscript,
+                runs: runs.clone(),
+                font: *font,
+                line_spacing: *line_spacing,
+            };
+            // Hintergrund **vor** der Schrift, damit sie darauf steht. Die
+            // Fläche ist immer das Rechteck des Textkastens — auch bei runder
+            // Umrandung (T0126).
+            if let Some(bg) = background {
+                dl.push(Prim {
+                    shape: Shape::Fill {
+                        outer: text_corners(&tprim).to_vec(),
+                        holes: Vec::new(),
+                    },
+                    style: PrimStyle {
+                        fill: Some(*bg),
+                        ..st
+                    },
+                    entity: e.id,
+                    layer: e.layer,
+                });
+            }
             dl.push(Prim {
-                shape: Shape::Text(TextPrim {
-                    pos: xf.apply(*p),
-                    text: txt,
-                    height: *height * xf.scale_factor(),
-                    angle: *angle + xf.rotation(),
-                    align: *align,
-                    valign: *valign,
-                    bold: *bold || (st.width > 0.4 && runs.is_empty()),
-                    italic: *italic,
-                    underline: *underline,
-                    superscript: *superscript,
-                    runs: runs.clone(),
-                    font: *font,
-                    line_spacing: *line_spacing,
-                }),
+                shape: Shape::Text(tprim.clone()),
                 style: st,
                 entity: e.id,
                 layer: e.layer,
             });
+            // Dauerhafte Umrandung: derselbe Kasten wie der Auswahlrahmen,
+            // auf Wunsch mit abgerundeten Ecken. Als durchgezogene Linie in
+            // der Textfarbe — sie gehört zum Text, nicht zur Linienart.
+            if *frame {
+                let radius = if *frame_round {
+                    tprim.box_size().1 * 0.5
+                } else {
+                    0.0
+                };
+                dl.push(Prim {
+                    shape: Shape::Poly(text_frame_path(&tprim, radius), true),
+                    style: PrimStyle {
+                        line_type: LineType::Solid,
+                        ..st
+                    },
+                    entity: e.id,
+                    layer: e.layer,
+                });
+            }
         }
         // Raumstempel: nur das Textfeld wird gezeichnet. Die Umgrenzung ist
         // unsichtbar und nicht anklickbar; der Text entsteht bei jeder Anzeige

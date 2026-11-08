@@ -83,7 +83,7 @@ fn dokument_mit_laeufen() -> Document {
             runs,
             font: Default::default(),
             line_spacing: 1.0,
-        },
+        frame: false,                    frame_round: false,                    background: None,                    },
     );
     doc.add_entity(e);
     doc
@@ -193,7 +193,7 @@ fn alter_text_ohne_laeufe_bleibt_lesbar() {
             runs: Vec::new(),
             font: Default::default(),
             line_spacing: 1.0,
-        },
+        frame: false,                    frame_round: false,                    background: None,                    },
     ));
     let pfad = ziel("jjcad-text-alt.pdf");
     pdf::export_model_pdf(&doc, &pfad, jjcad_core::style::PaperSize::A4).expect("Export");

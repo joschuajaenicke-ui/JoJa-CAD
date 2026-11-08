@@ -454,6 +454,12 @@ pub struct ToolOptions {
     /// Zeilenabstand des nächsten Textes als Vielfaches der Zeilenhöhe der
     /// Schrift (1 = Zeilenhöhe der Schrift selbst).
     pub text_line_spacing: f64,
+    /// Umrandung des nächsten Textes dauerhaft anzeigen (T0126).
+    pub text_frame: bool,
+    /// Runde Umrandung: Ecken mit dem Radius der halben Schrifthöhe.
+    pub text_frame_round: bool,
+    /// Hintergrundfarbe des nächsten Textes (None = keine Fläche).
+    pub text_background: Option<Color>,
     /// Textgröße des nächsten Raumstempels in mm.
     pub room_height: f64,
     /// Überschrift über dem Flächeninhalt des nächsten Raumstempels.
@@ -563,6 +569,9 @@ impl ToolOptions {
             text_superscript: false,
             text_font: TextFont::default(),
             text_line_spacing: 1.0,
+            text_frame: false,
+            text_frame_round: false,
+            text_background: None,
             room_height: doc.settings.text_height,
             room_heading: "Zimmer".to_string(),
             dim_axis: None,
@@ -1603,10 +1612,51 @@ impl App {
                             runs,
                             font: TextFont::default(),
                             line_spacing: 1.0,
+                            frame: false,
+                            frame_round: false,
+                            background: None,
                         },
                     );
                     e.style.color = Some(jjcad_core::style::Color::BLACK);
                     self.doc_mut().add_entity(e);
+                }
+                // Textfelder mit Umrandung und Hintergrund (T0126):
+                // eckig, rund (Oval) und mit Fläche — Prüfbild der drei Formen.
+                "textrahmen" => {
+                    let layer = self.doc().current_layer;
+                    let formen = [
+                        ("Umrandung", false, None),
+                        ("Runde Umrandung", true, None),
+                        ("Hintergrund", false, Some(jjcad_core::style::Color::rgb(255, 240, 160))),
+                    ];
+                    for (i, (txt, rund, flaeche)) in formen.iter().enumerate() {
+                        let id = self.doc_mut().new_id();
+                        let mut e = Entity::new(
+                            id,
+                            layer,
+                            EntityKind::Text {
+                                p: jjcad_core::geom::v(1200.0, 3000.0 - i as f64 * 800.0),
+                                text: (*txt).into(),
+                                height: 250.0,
+                                angle: 0.0,
+                                align: TextAlignH::Left,
+                                valign: TextAlignV::Bottom,
+                                bold: false,
+                                italic: false,
+                                underline: false,
+                                superscript: false,
+                                runs: Vec::new(),
+                                font: TextFont::default(),
+                                line_spacing: 1.0,
+                                frame: true,
+                                frame_round: *rund,
+                                background: *flaeche,
+                            },
+                        );
+                        e.style.color = Some(jjcad_core::style::Color::BLACK);
+                        self.doc_mut().add_entity(e);
+                    }
+                    self.fit_view();
                 }
                 // Ausgewählter Text mit gemischter Auszeichnung, Panel sichtbar
                 // (Screenshot-Prüfung der Textbearbeitung, T0032)
@@ -1639,6 +1689,9 @@ impl App {
                             runs,
                             font: TextFont::default(),
                             line_spacing: 1.0,
+                            frame: false,
+                            frame_round: false,
+                            background: None,
                         },
                     );
                     e.style.color = Some(jjcad_core::style::Color::BLACK);
@@ -1670,6 +1723,9 @@ impl App {
                                 runs: Vec::new(),
                                 font: *font,
                                 line_spacing: 1.0,
+                                frame: false,
+                                frame_round: false,
+                                background: None,
                             },
                         );
                         e.style.color = Some(jjcad_core::style::Color::BLACK);
@@ -1694,6 +1750,9 @@ impl App {
                             runs: Vec::new(),
                             font: jjcad_core::model::TextFont::Serif,
                             line_spacing: 1.0,
+                            frame: false,
+                            frame_round: false,
+                            background: None,
                         },
                     );
                     e.style.color = Some(jjcad_core::style::Color::BLACK);
@@ -1774,6 +1833,9 @@ impl App {
                                     runs: Vec::new(),
                                     font: jjcad_core::model::TextFont::Sans,
                                     line_spacing: 1.0,
+                                    frame: false,
+                                    frame_round: false,
+                                    background: None,
                                 },
                             );
                             self.doc_mut().add_entity(e);

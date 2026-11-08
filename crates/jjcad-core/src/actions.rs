@@ -1802,6 +1802,9 @@ pub fn execute(doc: &mut Document, id: &str, params: &Value) -> Result<Value, St
                         .and_then(|s| TextFont::from_key(&s))
                         .unwrap_or_default(),
                     line_spacing: p.num("line_spacing").unwrap_or(1.0).clamp(0.5, 3.0),
+                    frame: p.boolean_or("frame", false),
+                    frame_round: p.boolean_or("frame_round", false),
+                    background: p.color("background"),
                 },
             );
             // Gemischte Auszeichnung gleich beim Anlegen (Editor, MCP).
@@ -2110,6 +2113,9 @@ pub fn execute(doc: &mut Document, id: &str, params: &Value) -> Result<Value, St
                     runs: Vec::new(),
                     font: TextFont::Sans,
                     line_spacing: 1.0,
+                    frame: false,
+                    frame_round: false,
+                    background: None,
                 },
             );
             apply_common(doc, &mut t, &p, layer);
@@ -3046,6 +3052,9 @@ pub fn execute(doc: &mut Document, id: &str, params: &Value) -> Result<Value, St
                             runs,
                             font,
                             line_spacing,
+                            frame,
+                            frame_round,
+                            background,
                             ..
                         } => {
                             if let Some(v) = text {
@@ -3090,6 +3099,27 @@ pub fn execute(doc: &mut Document, id: &str, params: &Value) -> Result<Value, St
                             // Zeilenabstand: Vielfaches der Zeilenhöhe der Schrift.
                             if let Some(v) = p.num("line_spacing") {
                                 *line_spacing = v.clamp(0.5, 3.0);
+                            }
+                            // Umrandung dauerhaft anzeigen, auf Wunsch rund (T0126).
+                            if let Some(b) = p.boolean("frame") {
+                                *frame = b;
+                            }
+                            if let Some(b) = p.boolean("frame_round") {
+                                *frame_round = b;
+                            }
+                            // Hintergrund: Farbwert setzt die Fläche, "none"
+                            // nimmt sie wieder weg — ohne diesen Weg ließe sich
+                            // ein einmal gesetzter Hintergrund nie löschen.
+                            match p.raw("background") {
+                                Some(serde_json::Value::String(t)) if t == "none" => {
+                                    *background = None;
+                                }
+                                Some(_) => {
+                                    if let Some(c) = p.color("background") {
+                                        *background = Some(c);
+                                    }
+                                }
+                                None => {}
                             }
                             // Gemischte Auszeichnung: eine Liste von Läufen.
                             // Sie muss den Text genau abdecken; fehlende
@@ -5220,6 +5250,9 @@ pub fn explode_entity(doc: &mut Document, id: Id) -> Result<Vec<Id>, String> {
                 runs: t.runs.clone(),
                 font: t.font,
                 line_spacing: t.line_spacing,
+                frame: false,
+                frame_round: false,
+                background: None,
             }),
         };
         if let Some(kind) = kind {
@@ -5335,6 +5368,9 @@ fn scale_kind(kind: &EntityKind, f: f64) -> EntityKind {
             runs,
             font,
             line_spacing,
+            frame,
+            frame_round,
+            background,
         } => EntityKind::Text {
             p: s(p),
             text: text.clone(),
@@ -5351,6 +5387,9 @@ fn scale_kind(kind: &EntityKind, f: f64) -> EntityKind {
             // still auf die Vorgabeschrift zurück).
             font: *font,
             line_spacing: *line_spacing,
+            frame: *frame,
+            frame_round: *frame_round,
+            background: *background,
         },
         other => other.clone(),
     }
@@ -5507,6 +5546,7 @@ fn explode_text(doc: &mut Document, e: &Entity) -> Result<Vec<Id>, String> {
         underline,
         superscript,
         line_spacing,
+        ..
     } = &e.kind
     else {
         return Err("Kein Text".into());

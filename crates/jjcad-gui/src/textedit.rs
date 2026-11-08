@@ -63,6 +63,13 @@ pub struct Texteingabe {
     pub font: jjcad_core::model::TextFont,
     /// Zeilenabstand als Vielfaches der Zeilenhöhe der Schrift.
     pub line_spacing: f64,
+    /// Umrandung dauerhaft anzeigen (T0126) — beim Ändern aus dem Text,
+    /// beim Neuen aus dem Panel.
+    pub frame: bool,
+    /// Runde Umrandung (Radius = halbe Schrifthöhe).
+    pub frame_round: bool,
+    /// Hintergrundfarbe (None = keine Fläche).
+    pub background: Option<jjcad_core::style::Color>,
     /// Auszeichnung je Lauf, aus dem bearbeiteten Text übernommen — beim
     /// Übernehmen auf den neuen Text übertragen, damit Formatierung bleibt.
     pub runs: Vec<TextRun>,
@@ -89,6 +96,9 @@ impl Texteingabe {
         farbe: Color,
         font: jjcad_core::model::TextFont,
         line_spacing: f64,
+        frame: bool,
+        frame_round: bool,
+        background: Option<jjcad_core::style::Color>,
     ) -> Self {
         Self {
             pos,
@@ -102,6 +112,9 @@ impl Texteingabe {
             farbe,
             runs: Vec::new(),
             line_spacing,
+            frame,
+            frame_round,
+            background,
             letzter_text: String::new(),
             pending: None,
             fokus: true,
@@ -134,6 +147,9 @@ pub fn start(app: &mut App, pos: V2) {
         farbe,
         app.options.text_font,
         app.options.text_line_spacing,
+        app.options.text_frame,
+        app.options.text_frame_round,
+        app.options.text_background,
     ));
     app.mitteilung(jjcad_core::i18n::tr("gui.textedit.text_text_eingeben_esc_uebernimmt"));
 }
@@ -159,6 +175,9 @@ pub fn start_entitaet(app: &mut App, id: EId) -> bool {
         runs,
         font,
         line_spacing,
+        frame,
+        frame_round,
+        background,
         ..
     } = &e.kind
     else {
@@ -166,6 +185,7 @@ pub fn start_entitaet(app: &mut App, id: EId) -> bool {
     };
     let font = *font;
     let line_spacing = *line_spacing;
+    let (frame, frame_round, background) = (*frame, *frame_round, *background);
     let (p, text, height, angle) = (*p, text.clone(), *height, *angle);
     let (align, valign) = (*align, *valign);
     let runs = runs.clone();
@@ -185,6 +205,9 @@ pub fn start_entitaet(app: &mut App, id: EId) -> bool {
         farbe,
         font,
         line_spacing,
+        frame,
+        frame_round,
+        background,
     );
     e.runs = runs;
     app.ui.texteingabe = Some(e);
@@ -307,6 +330,13 @@ fn uebernehmen(app: &mut App, ctx: &egui::Context) {
                    "align": t.align.key(), "valign": t.valign.key(),
                    "font": t.font.key(),
                    "line_spacing": t.line_spacing,
+                   "frame": t.frame,
+                   "frame_round": t.frame_round,
+                   // "none" nimmt eine vorhandene Fläche wieder weg.
+                   "background": match t.background {
+                       Some(c) => json!(c.to_hex()),
+                       None => json!("none"),
+                   },
                    "runs": runs_json}),
             jjcad_core::i18n::tr("gui.textedit.text_geaendert"),
         ),
@@ -323,12 +353,18 @@ fn uebernehmen(app: &mut App, ctx: &egui::Context) {
                        "superscript": app.options.text_superscript,
                        "font": t.font.key(),
                        "line_spacing": t.line_spacing,
+                       "frame": t.frame,
+                       "frame_round": t.frame_round,
                        "runs": runs_json.clone(),
                        // Ebene des Layer-Panels, nicht die Standardebene „Text“.
                        "layer": app.doc().current_layer});
             // Nur wenn eine Farbe gewählt wurde — sonst gilt die Layerfarbe.
             if let Some(c) = app.options.text_color {
                 params["color"] = json!(c.to_hex());
+            }
+            // Hintergrundfläche der Umrandung (T0126).
+            if let Some(c) = t.background {
+                params["background"] = json!(c.to_hex());
             }
             ("draw.text", params, "Text · gesetzt")
         }

@@ -58,6 +58,9 @@ impl TB {
                 runs: Vec::new(),
                 font: TextFont::Sans,
                 line_spacing: 1.0,
+                frame: false,
+                frame_round: false,
+                background: None,
             },
         );
         e.style.color = Some(Color::BLACK);

@@ -604,6 +604,9 @@ pub fn text(app: &mut App, ui: &mut Ui, ziel: Ziel) {
         mut hoehe,
         mut schrift,
         mut zeilenabstand,
+        mut umrandung,
+        mut runde_umrandung,
+        mut hintergrund,
         mut drehung,
         mut ah,
         mut av,
@@ -621,6 +624,9 @@ pub fn text(app: &mut App, ui: &mut Ui, ziel: Ziel) {
                     superscript,
                     font,
                     line_spacing,
+                    frame,
+                    frame_round,
+                    background,
                     ..
                 } => (
                     e.kind.type_name(),
@@ -629,6 +635,9 @@ pub fn text(app: &mut App, ui: &mut Ui, ziel: Ziel) {
                     *height,
                     *font,
                     *line_spacing,
+                    *frame,
+                    *frame_round,
+                    *background,
                     angle.to_degrees(),
                     *align,
                     *valign,
@@ -648,6 +657,9 @@ pub fn text(app: &mut App, ui: &mut Ui, ziel: Ziel) {
                 app.options.text_height,
                 app.options.text_font,
                 app.options.text_line_spacing,
+                app.options.text_frame,
+                app.options.text_frame_round,
+                app.options.text_background,
                 app.options.text_angle,
                 app.options.text_align,
                 app.options.text_valign,
@@ -854,19 +866,51 @@ pub fn text(app: &mut App, ui: &mut Ui, ziel: Ziel) {
 
     // Zeilenabstand: Vielfaches der Zeilenhöhe der Schrift. Mehrzeilige Texte
     // haben je Schriftart verschieden hohe Zeilen — hier lässt sich das
-    // strecken oder stauchen, der Rahmen folgt (T0110).
+    // strecken oder stauchen, der Rahmen folgt (T0110). Angeboten werden die
+    // typischen Werte aus Textprogrammen (Einfach … Doppelt) und ein freier
+    // Wert (T0126).
     zeile("zeilenabstand");
     widgets::field_row(ui, jjcad_core::i18n::tr("gui.props.zeilenabstand"), |ui| {
-        ui.add(
-            crate::widgets::zahl(
-                &mut zeilenabstand,
-                0.01,
-                widgets::ZEILENABSTAND_MIN..=widgets::ZEILENABSTAND_MAX,
-            )
-                .suffix(" ×"),
-        )
-        .on_hover_text(jjcad_core::i18n::tr("gui.props.zeilenabstand_hinweis"));
+        widgets::zeilenabstand_wahl(ui, &ziel.salt("zeilenabstand"), &mut zeilenabstand);
     });
+
+    // Umrandung: derselbe Kasten, den die Bearbeitung als Auswahlrahmen zeigt
+    // — dauerhaft in der Zeichnung. Auf Wunsch rund: Radius = halbe
+    // Schrifthöhe, einzeilig also ein Oval aus zwei Halbkreisen (T0126).
+    zeile("umrandung");
+    widgets::field_row(ui, jjcad_core::i18n::tr("gui.props.umrandung"), |ui| {
+        ui.checkbox(&mut umrandung, jjcad_core::i18n::tr("gui.props.anzeigen"))
+            .on_hover_text(jjcad_core::i18n::tr("gui.props.umrandung_hinweis"));
+    });
+    zeile("runde_umrandung");
+    widgets::field_row(ui, jjcad_core::i18n::tr("gui.props.runde_umrandung"), |ui| {
+        ui.add_enabled_ui(umrandung, |ui| {
+            ui.checkbox(
+                &mut runde_umrandung,
+                jjcad_core::i18n::tr("gui.props.abgerundet"),
+            )
+            .on_hover_text(jjcad_core::i18n::tr("gui.props.runde_umrandung_hinweis"));
+        });
+    });
+
+    // Hintergrund: Fläche hinter dem Text, immer das **Rechteck** der
+    // Umrandung — eine runde Fläche gibt es nicht (T0126).
+    zeile("hintergrund");
+    let mut hintergrund_neu = hintergrund;
+    widgets::field_row(ui, jjcad_core::i18n::tr("gui.props.hintergrund"), |ui| {
+        let gezeigt = hintergrund.unwrap_or(Color::rgb(255, 255, 255));
+        if let Some(v) = panels::color_combo(
+            ui,
+            &ziel.salt("hintergrund"),
+            gezeigt,
+            hintergrund.is_none(),
+            false,
+            jjcad_core::i18n::tr("gui.props.keine_flaeche"),
+        ) {
+            hintergrund_neu = v;
+        }
+    });
+    hintergrund = hintergrund_neu;
 
     zeile("drehung");
     widgets::field_row(ui, jjcad_core::i18n::tr("gui.props.drehung"), |ui| {
@@ -892,6 +936,9 @@ pub fn text(app: &mut App, ui: &mut Ui, ziel: Ziel) {
             app.options.text_height = hoehe;
             app.options.text_font = schrift;
             app.options.text_line_spacing = zeilenabstand;
+            app.options.text_frame = umrandung;
+            app.options.text_frame_round = runde_umrandung;
+            app.options.text_background = hintergrund;
             app.options.text_angle = drehung;
             app.options.text_align = ah;
             app.options.text_valign = av;
@@ -913,6 +960,9 @@ pub fn text(app: &mut App, ui: &mut Ui, ziel: Ziel) {
                         valign,
                         font,
                         line_spacing,
+                        frame,
+                        frame_round,
+                        background,
                         ..
                     } => Some((
                         *height,
@@ -921,10 +971,13 @@ pub fn text(app: &mut App, ui: &mut Ui, ziel: Ziel) {
                         *valign,
                         *font,
                         *line_spacing,
+                        *frame,
+                        *frame_round,
+                        *background,
                     )),
                     _ => None,
                 });
-                if let Some((h0, w0, ah0, av0, f0, a0)) = alt {
+                if let Some((h0, w0, ah0, av0, f0, a0, ra0, rr0, hg0)) = alt {
                     if (hoehe - h0).abs() > 1e-9 {
                         map.insert("height".into(), serde_json::json!(unit.from_mm(hoehe)));
                         geaendert = true;
@@ -947,6 +1000,24 @@ pub fn text(app: &mut App, ui: &mut Ui, ziel: Ziel) {
                     }
                     if (zeilenabstand - a0).abs() > 1e-9 {
                         map.insert("line_spacing".into(), serde_json::json!(zeilenabstand));
+                        geaendert = true;
+                    }
+                    if umrandung != ra0 {
+                        map.insert("frame".into(), serde_json::json!(umrandung));
+                        geaendert = true;
+                    }
+                    if runde_umrandung != rr0 {
+                        map.insert("frame_round".into(), serde_json::json!(runde_umrandung));
+                        geaendert = true;
+                    }
+                    if hintergrund != hg0 {
+                        map.insert(
+                            "background".into(),
+                            match hintergrund {
+                                Some(c) => serde_json::json!(c.to_hex()),
+                                None => serde_json::json!("none"),
+                            },
+                        );
                         geaendert = true;
                     }
                 }
@@ -1110,6 +1181,9 @@ pub fn eingabe_spiegeln(app: &mut App) {
             app.options.text_align,
             app.options.text_valign,
             app.options.text_angle.to_radians(),
+            app.options.text_frame,
+            app.options.text_frame_round,
+            app.options.text_background,
         )),
         Some(id) => match app.doc().entity(id).map(|e| e.kind.clone()) {
             Some(EntityKind::Text {
@@ -1118,12 +1192,15 @@ pub fn eingabe_spiegeln(app: &mut App) {
                 align,
                 valign,
                 angle,
+                frame,
+                frame_round,
+                background,
                 ..
-            }) => Some((height, font, align, valign, angle)),
+            }) => Some((height, font, align, valign, angle, frame, frame_round, background)),
             _ => None,
         },
     };
-    if let (Some((hoehe, schrift, ah, av, winkel)), Some(t)) =
+    if let (Some((hoehe, schrift, ah, av, winkel, umrandung, rund, hintergrund)), Some(t)) =
         (werte, app.ui.texteingabe.as_mut())
     {
         t.height = hoehe;
@@ -1131,6 +1208,10 @@ pub fn eingabe_spiegeln(app: &mut App) {
         t.align = ah;
         t.valign = av;
         t.angle = winkel;
+        // Umrandung und Hintergrund gelten auch während des Tippens (T0126).
+        t.frame = umrandung;
+        t.frame_round = rund;
+        t.background = hintergrund;
         // Größe und Drehung ändern die Lage des Feldes — neu zeichnen.
         app.ctx.request_repaint();
     }
@@ -4039,6 +4120,12 @@ mod tests {
             auswahl.contains(&"zeilenabstand"),
             "Auswahl ohne Zeilenabstand: {auswahl:?}"
         );
+        for zeile in ["umrandung", "runde_umrandung", "hintergrund"] {
+            assert!(
+                auswahl.contains(&zeile),
+                "Auswahl ohne {zeile}: {auswahl:?}"
+            );
+        }
 
         app.session_mut().selection.clear();
         app.start_tool("draw.text");
@@ -4595,7 +4682,7 @@ mod tests {
                 runs: Vec::new(),
                 font: TextFont::default(),
                 line_spacing: 1.0,
-            },
+            frame: false,                            frame_round: false,                            background: None,                            },
             EntityKind::Fill {
                 boundary: vec![],
                 holes: vec![],
@@ -4831,7 +4918,7 @@ mod tests {
                 runs: Vec::new(),
                 font: TextFont::default(),
                 line_spacing: 1.0,
-            },
+            frame: false,                            frame_round: false,                            background: None,                            },
             EntityKind::Fill {
                 boundary: vec![Vec2::ZERO, v(1000.0, 0.0), v(1000.0, 1000.0)],
                 holes: Vec::new(),
