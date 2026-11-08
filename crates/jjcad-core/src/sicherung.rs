@@ -371,6 +371,15 @@ impl Sicherung {
             }
         }
         let zyklus = self.manifest.zyklus + 1;
+        // Ohne Verlauf bleibt je Dokument genau **ein** Stand: der bisherige
+        // neueste wird ersetzt, nicht ergänzt. Vorhandene Stände werden dabei
+        // nicht gelöscht — die Einstellung verhindert nur neue.
+        if !einst.verlauf {
+            if let Some(alt) = self.neuester(&doc.id).cloned() {
+                let _ = std::fs::remove_file(self.stand_pfad(&alt));
+                self.manifest.staende.retain(|s| s.zyklus != alt.zyklus);
+            }
+        }
         let mut stand = Stand {
             zyklus,
             datei: doc.id.clone(),
@@ -448,18 +457,9 @@ impl Sicherung {
         }
         self.manifest.staende = behalten;
 
-        // 2. Verlauf aus: nur die Pins bleiben.
-        if !einst.verlauf {
-            let mut behalten = Vec::with_capacity(self.manifest.staende.len());
-            for s in self.manifest.staende.drain(..) {
-                if pins.contains(&s.zyklus) {
-                    behalten.push(s);
-                } else {
-                    entfernt.push(s);
-                }
-            }
-            self.manifest.staende = behalten;
-        }
+        // 2. Verlauf aus: nichts löschen. Die Einstellung verhindert nur neue
+        //    Stände (§10.5) — vorhandene bleiben, bis Fenster und Obergrenze
+        //    sie ausdünnen. Ein Haken darf keine Sicherungen vernichten.
 
         // 3. Obergrenze: ausdünnen, solange der Pool voll ist.
         let plaetze = einst.plaetze_effektiv(self.dateien());
@@ -955,6 +955,34 @@ mod tests {
         assert_eq!(pool.staende_von(&a.id).len(), 1);
         assert_eq!(pool.staende_von(&b.id).len(), 1);
         assert_eq!(pool.neuester(&a.id).unwrap().name, "A 9");
+    }
+
+    /// „Verlauf aus“ verhindert nur **neue** Stände — vorhandene Sicherungen
+    /// werden nicht gelöscht (ein Haken darf nichts vernichten).
+    #[test]
+    fn verlauf_aus_loescht_keinen_vorhandenen_verlauf() {
+        let dir = test_dir("verlauf-aus-kein-loeschen");
+        let mut pool = Sicherung::oeffnen(&dir);
+        let an = Einstellungen::default();
+        let mut doc = doc_mit("Plan", "aaaaaaaa-0000-4000-8000-00000000000d");
+        for i in 0..5 {
+            doc.name = format!("Plan {i}");
+            pool.sichern(&mut doc, &an).unwrap();
+        }
+        assert_eq!(pool.staende_von(&doc.id).len(), 5);
+
+        let aus = Einstellungen {
+            verlauf: false,
+            ..Einstellungen::default()
+        };
+        doc.name = "Plan neu".into();
+        pool.sichern(&mut doc, &aus).unwrap();
+        assert_eq!(
+            pool.staende_von(&doc.id).len(),
+            5,
+            "das Abschalten hat vorhandene Stände gelöscht"
+        );
+        assert_eq!(pool.neuester(&doc.id).unwrap().name, "Plan neu");
     }
 
     /// §13.10: Ein Stand lässt sich als neues Dokument laden; die Zieldatei
