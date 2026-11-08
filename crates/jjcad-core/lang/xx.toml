@@ -487,6 +487,7 @@
 #
 [ribbon]
 # bild_einfuegen = "Bild einfügen"
+# datenordner = "Datenordner"
 # block_from_selection = "Aus Auswahl"
 # block_insert = "Einfügen"
 # block_manager = "Block-Manager"
@@ -526,6 +527,7 @@
 #
 [settings]
 # category_architektur = "Architektur"
+# category_speicherorte = "Speicherorte"
 # category_bedienung = "Bedienung"
 # category_bemassung = "Bemaßung"
 # category_darstellung = "Darstellung"
@@ -541,6 +543,18 @@
 # farbakzent_hint = "gilt sofort; färbt Reiter, Chips, Rahmen und Schalter der Bedienoberfläche"
 # textaufloesung_hint = "höchste Rastergröße der Schrift; höher = schärfer im hohen Zoom, aber mehr Schriftatlas — gilt sofort"
 # none_found = "Keine Einstellung gefunden"
+# speicherorte = "Speicherorte"
+# datenwurzel = "Datenordner"
+# ordner_oeffnen = "Ordner öffnen"
+# speicherorte_hint = "Alle Nutzdaten liegen in diesem einen Ordner. Zeichnungen bleiben, wo Sie sie ablegen — das Programm legt dort nichts an. Pfade gelten relativ zum Datenordner oder absolut; ein leeres Feld heißt Vorgabe."
+# blockbibliothek = "Blockbibliothek"
+# sicherungen = "Sicherungen"
+# protokolle = "Protokolle"
+# speicherort_feld_hint = "relativ zum Datenordner oder absolut; leer = Vorgabe"
+# uebernehmen = "Übernehmen"
+# zuruecksetzen = "Zurücksetzen"
+# vorgabe_pfad = "→ {pfad}"
+# nicht_beschreibbar = "Pfad nicht übernommen: {grund}"
 # search = "Einstellungen durchsuchen …"
 # title = "Einstellungen"
 #
@@ -754,6 +768,8 @@
 # und {wert1} stehen für Werte, die das Programm einsetzt.
 #
 [gui.app]
+# datenordner_geoeffnet_x = "Datenordner: {wert1}"
+# datenordner_nicht_geoeffnet_x = "Ordner nicht geöffnet: {wert1}"
 # vordergrund = "Vordergrund"
 # hintergrund = "Hintergrund"
 # modell = "Modell"
@@ -999,6 +1015,14 @@
 # zerlegen = "Zerlegen"
 # zerlegen_objekt_anklicken = "Zerlegen · Objekt anklicken"
 # zwei_oder_mehr_angrenzende_fuellflaechen_zu_einer_verein = "Zwei oder mehr angrenzende Füllflächen zu einer vereinigen"
+#
+[gui.start]
+# sperre_titel = "Datenordner bereits in Benutzung"
+# sperre_text = "Der Datenordner {pfad} wird bereits von JoJa-CAD benutzt (PID {pid})."
+# sperre_hinweis = "Zwei Instanzen auf demselben Ordner würden Sitzung und Sicherungen überschreiben. Diese Instanz schreibt nichts."
+# andere_wurzel = "Mit anderem Datenordner starten …"
+# beenden = "Beenden"
+# kommandozeile = "Alternativ von der Kommandozeile: jjcad --daten-dir <Pfad>"
 #
 [gui.canvas]
 # abgebrochen = "Abgebrochen"

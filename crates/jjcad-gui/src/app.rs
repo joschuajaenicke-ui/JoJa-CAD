@@ -743,6 +743,12 @@ pub struct UiState {
     pub settings_kat: usize,
     /// Suchtext über der Kategorienliste im Einstellungsfenster
     pub settings_suche: String,
+    /// T0127: Eingabepuffer der drei Speicherorte, indexgleich zu
+    /// `persist::SpeicherortFeld::ALL`.
+    pub speicherorte: [String; 3],
+    /// Sind die Puffer aus den Einstellungen gefüllt? Wird beim Schließen des
+    /// Einstellungsfensters zurückgesetzt.
+    pub speicherorte_geladen: bool,
     /// Lage von Suchfeld, Kategorienliste und Einstellungsseite im zuletzt
     /// gezeichneten Einstellungsfenster (Regressionstest T0061)
     pub last_settings_suche: Option<Rect>,
@@ -922,6 +928,8 @@ impl Default for UiState {
             settings_open: false,
             settings_kat: 0,
             settings_suche: String::new(),
+            speicherorte: Default::default(),
+            speicherorte_geladen: false,
             last_settings_suche: None,
             last_settings_nav: None,
             last_settings_pane: None,
@@ -1298,6 +1306,9 @@ pub struct App {
     /// so gilt jede Eigenschaft eines einzelnen Objekts auch für die Auswahl.
     /// Außerhalb des Panel-Zeichnens leer.
     pub mehrfach_ziel: Vec<Id>,
+    /// Sperrdatei der Datenwurzel (T0127). Sie lebt so lange wie die
+    /// Anwendung und verhindert eine zweite Schreibinstanz.
+    pub sperre: Option<jjcad_core::daten::Sperre>,
 }
 
 impl App {
@@ -1381,6 +1392,7 @@ impl App {
             verweil: crate::canvas::VerweilFang::default(),
             perf: crate::perf::Perf::default(),
             mehrfach_ziel: Vec::new(),
+            sperre: None,
         };
         app.ui.show_grid = show_grid;
         app.ui.lineweights = lineweights;
@@ -1391,6 +1403,8 @@ impl App {
         app.ui.props_open = props_open;
         app.fit_view();
         app.started_at = 0.0;
+        // T0127: Blöcke aus der Benutzerbibliothek der Datenwurzel.
+        app.benutzerbloecke_einhaengen();
         app
     }
 
@@ -3565,6 +3579,51 @@ impl App {
         }
     }
 
+    /// Blöcke aus der Benutzerbibliothek (`<Wurzel>/blocks`, T0127) in die
+    /// aktive Zeichnung übernehmen. Vorhandene Kennungen und Namen bleiben
+    /// stehen — die Systembibliothek gewinnt.
+    pub fn benutzerbloecke_einhaengen(&mut self) {
+        let dir = self.prefs.blocks_dir();
+        let geladen = jjcad_core::daten::lade_benutzerbloecke(&dir);
+        if geladen.is_empty() {
+            return;
+        }
+        let doc = &mut self.tabs[self.active].session.doc;
+        for b in geladen {
+            let vorhanden = doc
+                .blocks
+                .iter()
+                .any(|x| x.id == b.id || x.name.eq_ignore_ascii_case(&b.name));
+            if !vorhanden {
+                doc.blocks.push(b);
+            }
+        }
+    }
+
+    /// Öffnet die Datenwurzel im Dateimanager des Betriebssystems (T0127,
+    /// Menü Datei → „Datenordner öffnen“).
+    pub fn datenordner_oeffnen(&mut self) {
+        let pfad = jjcad_core::daten::wurzel();
+        let _ = std::fs::create_dir_all(&pfad);
+        let befehl = if cfg!(windows) {
+            "explorer"
+        } else if cfg!(target_os = "macos") {
+            "open"
+        } else {
+            "xdg-open"
+        };
+        match std::process::Command::new(befehl).arg(&pfad).spawn() {
+            Ok(_) => self.toast(jjcad_core::i18n::t_args_owned(
+                "gui.app.datenordner_geoeffnet_x",
+                &[("wert1", pfad.display().to_string())],
+            )),
+            Err(e) => self.toast(jjcad_core::i18n::t_args_owned(
+                "gui.app.datenordner_nicht_geoeffnet_x",
+                &[("wert1", e.to_string())],
+            )),
+        }
+    }
+
     pub fn load_document(&mut self, path: &PathBuf) {
         crate::textedit::beenden(self);
         // Dieselbe Datei nur einmal öffnen: zwei Reiter auf denselben Pfad
@@ -3607,6 +3666,7 @@ impl App {
                 }
                 let _ = self.prefs.save();
                 self.fit_view();
+                self.benutzerbloecke_einhaengen();
                 self.toast(jjcad_core::i18n::t_args_owned("gui.app.datei_geoeffnet_x", &[("wert1", format!("{}", path.file_name().unwrap_or_default().to_string_lossy()))]));
             }
             Err(e) => self.toast(e),
@@ -3649,6 +3709,7 @@ impl App {
         self.active = self.tabs.len() - 1;
         self.datei_nachziehen();
         self.fit_view();
+        self.benutzerbloecke_einhaengen();
         self.toast(jjcad_core::i18n::tr("gui.app.datei_neu"));
     }
 
@@ -5632,6 +5693,14 @@ fn rail(ui: &mut egui::Ui, icon: &str, tooltip: &str, chevron: &str) -> bool {
                         }
                         if widgets::ribbon_button(ui, "settings", rb("ribbon.settings"), false).clicked() {
                             app.ui.settings_open = true;
+                        }
+                        // T0127: alle Nutzdaten liegen in einer Wurzel — hier
+                        // landet der Dateimanager darin.
+                        if widgets::ribbon_button(ui, "datei", rb("ribbon.datenordner"), false)
+                            .on_hover_text(jjcad_core::daten::pfad_text(&jjcad_core::daten::wurzel()))
+                            .clicked()
+                        {
+                            app.datenordner_oeffnen();
                         }
                     });
                     widgets::vline(ui, RIBBON_GROUP_H);
@@ -9586,8 +9655,9 @@ mod tests_vollbild {
 
     /// Der Reiter „Start" ist **breiter als die Mindestfensterbreite** — das war
     /// er schon vor T0100 (1308 px bei 1080 px Fenster); „Bild einfügen" in der
-    /// Gruppe „Ausgabe" kommt hinzu (gemessen 1383 px). Der Test hält den
-    /// Ist-Stand als Riegel: ein weiterer Knopf fällt sofort auf. Bei der
+    /// Gruppe „Ausgabe" kommt hinzu (gemessen 1383 px), seit T0127 „Datenordner"
+    /// in der Gruppe „Projekt" (gemessen 1458 px). Der Test hält den Ist-Stand
+    /// als Riegel: ein weiterer Knopf fällt sofort auf. Bei der
     /// Standard-Fensterbreite 1500 px ist alles sichtbar.
     #[test]
     fn reiter_start_bleibt_in_seiner_breite() {
@@ -9604,8 +9674,8 @@ mod tests_vollbild {
             breite = app.ui.last_ribbon_content_w;
         }
         assert!(
-            breite <= 1400.0,
-            "Reiter Start braucht {breite} px (Riegel 1400) — ein Knopf mehr schneidet rechts ab"
+            breite <= 1460.0,
+            "Reiter Start braucht {breite} px (Riegel 1460) — ein Knopf mehr schneidet rechts ab"
         );
     }
 
