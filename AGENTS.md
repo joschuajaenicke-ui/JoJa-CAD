@@ -391,6 +391,17 @@ Mit dem Nutzer abgestimmt — nicht „verbessern“:
   „Verschieben“ (exakter Weg für professionelles Arbeiten). Die eine Auswertung ist
   `App::maus_verschiebt`; wer eine Objektart besonders behandeln will, tut das dort —
   nicht in einem zweiten `match` an der Zeichenfläche.
+- **Einstellungsfenster mit fester Größe (T0135)**: Das Fenster hat in **allen**
+  Kategorien dieselbe Größe (`SETTINGS_BREITE`/`SETTINGS_HOEHE_GESAMT` in `dialogs.rs`).
+  Eine Zeile, die ihre Breite aus `ui.available_width()` nimmt, treibt ein
+  selbstgroßes egui-Fenster Bild für Bild auf — so wuchs „Speicherorte“ um 45 px,
+  weil die Knopfzeile (2 × 101 px) breiter war als der feste Abzug von 210 px.
+  Die Seite rechts neben der Kategorienliste ist deshalb auf `SETTINGS_SEITE_W`
+  begrenzt, und die Pfadzeile setzt ihre Knöpfe **rechts nach links**
+  (`allocate_ui_with_layout` mit fester Höhe — `with_layout` allein füllt den
+  restlichen Platz und schiebt alle folgenden Zeilen nach unten). Prüfweg:
+  `cargo test -p jjcad-gui einstellungsfenster_gleich_gross_in_allen_kategorien`
+  (vergleicht die Fensterfläche je Kategorie; vor dem Fix 1021 px gegen 976 px).
 - **Einstellungsfenster (T0061)**: links die Kategorienliste
   (`dialogs::EINSTELLUNGSKATEGORIEN`, Icon + Name, Auswahl blau), darüber das Suchfeld,
   rechts die Einstellungen der gewählten Kategorie. Beide Spalten scrollen getrennt.
