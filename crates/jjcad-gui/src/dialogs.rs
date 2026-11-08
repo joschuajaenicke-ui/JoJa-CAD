@@ -778,6 +778,8 @@ pub fn show(app: &mut App, ctx: &egui::Context) {
             });
         if !open || ctx.input(|i| i.key_pressed(egui::Key::Escape)) {
             app.ui.settings_open = false;
+            // T0127: der Pfadpuffer wird beim nächsten Öffnen neu gefüllt.
+            app.ui.speicherorte_geladen = false;
         }
     }
 
@@ -1210,6 +1212,28 @@ pub(crate) const EINSTELLUNGSKATEGORIEN: &[Einstellungskategorie] = &[
             "Hilfslinien",
             "zurücksetzen",
             "0,18",
+        ],
+    },
+    // T0127: eine Wurzel für alle Nutzdaten; die drei Unterordner sind
+    // änderbar.
+    Einstellungskategorie {
+        key: "settings.category_speicherorte",
+        icon: "datei",
+        stichworte: &[
+            "Speicherorte",
+            "Datenordner",
+            "Datenwurzel",
+            "Ordner",
+            "Blockbibliothek",
+            "Blocks",
+            "Sicherungen",
+            "Protokolle",
+            "Log",
+            "Pfad",
+            "portabel",
+            "portable",
+            "daten-dir",
+            "JJCAD_DATA_DIR",
         ],
     },
 ];
@@ -1999,6 +2023,153 @@ fn settings_body(app: &mut App, ui: &mut Ui) {
                                     ui.label(theme::faint(jjcad_core::i18n::tr(
                                         "settings.linienstaerken_hint",
                                     )));
+                                }
+                            }
+                            // ------------------------ Speicherorte (T0127) ---------
+                            8 => {
+                                abschnitt(&suche, ui, jjcad_core::i18n::tr("settings.speicherorte"));
+                                // Die Wurzel ist nicht änderbar — sie steht als
+                                // eigener Abschnitt über den Pfadfeldern, weil
+                                // ein voller Pfad nicht in die Wertespalte passt.
+                                let wurzel_name = jjcad_core::i18n::tr("settings.datenwurzel");
+                                if suche.is_empty() || wurzel_name.to_lowercase().contains(&suche) {
+                                    ui.add_space(4.0);
+                                    ui.label(theme::bold(wurzel_name, 14.0));
+                                    ui.add(
+                                        egui::Label::new(theme::dim(
+                                            &jjcad_core::daten::pfad_text(
+                                                &jjcad_core::daten::wurzel(),
+                                            ),
+                                        ))
+                                        .wrap(),
+                                    );
+                                    if ui
+                                        .small_button(jjcad_core::i18n::tr(
+                                            "settings.ordner_oeffnen",
+                                        ))
+                                        .clicked()
+                                    {
+                                        app.datenordner_oeffnen();
+                                    }
+                                }
+                                if suche.is_empty() {
+                                    ui.label(theme::faint(jjcad_core::i18n::tr(
+                                        "settings.speicherorte_hint",
+                                    )));
+                                    ui.add_space(6.0);
+                                }
+                                if !app.ui.speicherorte_geladen {
+                                    for (i, feld) in jjcad_core::persist::SpeicherortFeld::ALL
+                                        .iter()
+                                        .enumerate()
+                                    {
+                                        app.ui.speicherorte[i] =
+                                            app.prefs.speicherort(*feld).to_string();
+                                    }
+                                    app.ui.speicherorte_geladen = true;
+                                }
+                                let mut aktion: Option<(jjcad_core::persist::SpeicherortFeld, bool)> =
+                                    None;
+                                for (i, feld) in jjcad_core::persist::SpeicherortFeld::ALL
+                                    .iter()
+                                    .copied()
+                                    .enumerate()
+                                {
+                                    let name = match feld {
+                                        jjcad_core::persist::SpeicherortFeld::Bloecke => {
+                                            jjcad_core::i18n::tr("settings.blockbibliothek")
+                                        }
+                                        jjcad_core::persist::SpeicherortFeld::Sicherungen => {
+                                            jjcad_core::i18n::tr("settings.sicherungen")
+                                        }
+                                        jjcad_core::persist::SpeicherortFeld::Protokolle => {
+                                            jjcad_core::i18n::tr("settings.protokolle")
+                                        }
+                                    };
+                                    if !suche.is_empty() && !name.to_lowercase().contains(&suche) {
+                                        continue;
+                                    }
+                                    ui.add_space(8.0);
+                                    ui.label(theme::bold(name, 14.0));
+                                    let mut uebernehmen = false;
+                                    let mut zuruecksetzen = false;
+                                    ui.horizontal(|ui| {
+                                        let breite = (ui.available_width() - 210.0).max(120.0);
+                                        ui.add(
+                                            egui::TextEdit::singleline(
+                                                &mut app.ui.speicherorte[i],
+                                            )
+                                            .desired_width(breite)
+                                            .hint_text(feld.vorgabe()),
+                                        )
+                                        .on_hover_text(jjcad_core::i18n::tr(
+                                            "settings.speicherort_feld_hint",
+                                        ));
+                                        if ui
+                                            .button(jjcad_core::i18n::tr("settings.uebernehmen"))
+                                            .clicked()
+                                        {
+                                            uebernehmen = true;
+                                        }
+                                        if ui
+                                            .button(jjcad_core::i18n::tr(
+                                                "settings.zuruecksetzen",
+                                            ))
+                                            .clicked()
+                                        {
+                                            zuruecksetzen = true;
+                                        }
+                                    });
+                                    let angezeigt = jjcad_core::daten::pfad_in_wurzel(
+                                        &app.ui.speicherorte[i],
+                                        feld.vorgabe(),
+                                    );
+                                    ui.label(theme::faint(&jjcad_core::i18n::t_args_owned(
+                                        "settings.vorgabe_pfad",
+                                        &[("pfad", jjcad_core::daten::pfad_text(&angezeigt))],
+                                    )));
+                                    if uebernehmen {
+                                        aktion = Some((feld, false));
+                                    }
+                                    if zuruecksetzen {
+                                        aktion = Some((feld, true));
+                                    }
+                                }
+                                if let Some((feld, zuruecksetzen)) = aktion {
+                                    let idx = jjcad_core::persist::SpeicherortFeld::ALL
+                                        .iter()
+                                        .position(|f| *f == feld)
+                                        .unwrap_or(0);
+                                    if zuruecksetzen {
+                                        app.ui.speicherorte[idx].clear();
+                                        app.prefs.setze_speicherort(feld, "");
+                                        let _ = app.prefs.save();
+                                    } else {
+                                        let text = app.ui.speicherorte[idx].clone();
+                                        let pfad = jjcad_core::daten::pfad_in_wurzel(
+                                            &text,
+                                            feld.vorgabe(),
+                                        );
+                                        // Schreibprobe: einen nicht beschreibbaren
+                                        // Pfad nicht still übernehmen (T0127).
+                                        match jjcad_core::daten::pruefe_verzeichnis(&pfad) {
+                                            Ok(()) => {
+                                                app.prefs.setze_speicherort(feld, &text);
+                                                let _ = app.prefs.save();
+                                            }
+                                            Err(grund) => {
+                                                app.ui.speicherorte[idx] =
+                                                    app.prefs.speicherort(feld).to_string();
+                                                app.toast(jjcad_core::i18n::t_args_owned(
+                                                    "settings.nicht_beschreibbar",
+                                                    &[("grund", grund)],
+                                                ));
+                                            }
+                                        }
+                                    }
+                                    if feld == jjcad_core::persist::SpeicherortFeld::Bloecke {
+                                        app.benutzerbloecke_einhaengen();
+                                    }
                                 }
                             }
                             // Die Auswahl oben ist auf die Liste begrenzt; der
@@ -4470,7 +4641,7 @@ mod tests_einstellungen {
 
     #[test]
     fn jede_kategorie_hat_name_icon_und_stichworte() {
-        assert_eq!(EINSTELLUNGSKATEGORIEN.len(), 8, "Kategorienzahl");
+        assert_eq!(EINSTELLUNGSKATEGORIEN.len(), 9, "Kategorienzahl");
         for k in EINSTELLUNGSKATEGORIEN {
             assert!(!k.name().is_empty(), "Kategorie ohne Namen");
             assert!(!k.icon.is_empty(), "Kategorie „{}“ ohne Icon", k.name());

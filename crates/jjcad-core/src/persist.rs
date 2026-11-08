@@ -914,6 +914,36 @@ impl Textaufloesung {
     }
 }
 
+/// Die drei in den Einstellungen änderbaren Speicherorte (T0127).
+/// `prefs.json` und `sitzung.json` liegen immer in der Wurzel.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum SpeicherortFeld {
+    /// Benutzerblock-Bibliothek, Vorgabe `blocks/`.
+    Bloecke,
+    /// Sicherungen, Vorgabe `sicherungen/`.
+    Sicherungen,
+    /// Protokolle, Vorgabe `log/`.
+    Protokolle,
+}
+
+impl SpeicherortFeld {
+    /// Alle Felder in der Reihenfolge der Einstellungsseite.
+    pub const ALL: [SpeicherortFeld; 3] = [
+        SpeicherortFeld::Bloecke,
+        SpeicherortFeld::Sicherungen,
+        SpeicherortFeld::Protokolle,
+    ];
+
+    /// Name des Unterordners in der Wurzel (Vorgabe).
+    pub fn vorgabe(self) -> &'static str {
+        match self {
+            SpeicherortFeld::Bloecke => "blocks",
+            SpeicherortFeld::Sicherungen => "sicherungen",
+            SpeicherortFeld::Protokolle => "log",
+        }
+    }
+}
+
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct UserPrefs {
     #[serde(default)]
@@ -1041,6 +1071,16 @@ pub struct UserPrefs {
     /// Ältere `prefs.json` bleiben damit gültig — das Feld ist optional.
     #[serde(default)]
     pub layer_weights: BTreeMap<String, f64>,
+    /// Speicherort der Benutzerblock-Bibliothek (T0127), leer = `blocks/` in
+    /// der Datenwurzel. Relativ zur Wurzel oder absolut.
+    #[serde(default)]
+    pub blocks_pfad: String,
+    /// Speicherort der Sicherungen (T0127), leer = `sicherungen/`.
+    #[serde(default)]
+    pub sicherungen_pfad: String,
+    /// Speicherort der Protokolle (T0127), leer = `log/`.
+    #[serde(default)]
+    pub log_pfad: String,
 }
 
 fn default_dateidialog() -> String {
@@ -1394,6 +1434,10 @@ impl Default for UserPrefs {
             textaufloesung: Textaufloesung::Px256,
             // T0125: ohne eigene Wahl trägt jede Objektart 0,18 mm.
             layer_weights: BTreeMap::new(),
+            // T0127: ohne eigene Angabe liegen alle Unterordner in der Wurzel.
+            blocks_pfad: String::new(),
+            sicherungen_pfad: String::new(),
+            log_pfad: String::new(),
         }
     }
 }
@@ -1425,14 +1469,61 @@ impl UserPrefs {
         self.layer_weights.clear();
     }
 
+    /// Benutzerblock-Bibliothek (T0127): eigener Pfad oder `blocks/` in der
+    /// Datenwurzel.
+    pub fn blocks_dir(&self) -> PathBuf {
+        crate::daten::pfad_in_wurzel(&self.blocks_pfad, "blocks")
+    }
+
+    /// Sicherungen (T0127): eigener Pfad oder `sicherungen/` in der Wurzel.
+    pub fn sicherungen_dir(&self) -> PathBuf {
+        crate::daten::pfad_in_wurzel(&self.sicherungen_pfad, "sicherungen")
+    }
+
+    /// Protokolle (T0127): eigener Pfad oder `log/` in der Wurzel.
+    pub fn log_dir(&self) -> PathBuf {
+        crate::daten::pfad_in_wurzel(&self.log_pfad, "log")
+    }
+
+    /// Ausdrücklicher Speicherort einer der drei ändbaren Angaben
+    /// (`"blocks"`, `"sicherungen"`, `"log"`) — leer, wenn die Vorgabe gilt.
+    pub fn speicherort(&self, feld: SpeicherortFeld) -> &str {
+        match feld {
+            SpeicherortFeld::Bloecke => &self.blocks_pfad,
+            SpeicherortFeld::Sicherungen => &self.sicherungen_pfad,
+            SpeicherortFeld::Protokolle => &self.log_pfad,
+        }
+    }
+
+    /// Setzt einen Speicherort; ein leerer Text stellt die Vorgabe her
+    /// („Zurücksetzen“).
+    pub fn setze_speicherort(&mut self, feld: SpeicherortFeld, wert: &str) {
+        let ziel = match feld {
+            SpeicherortFeld::Bloecke => &mut self.blocks_pfad,
+            SpeicherortFeld::Sicherungen => &mut self.sicherungen_pfad,
+            SpeicherortFeld::Protokolle => &mut self.log_pfad,
+        };
+        *ziel = wert.trim().to_string();
+    }
+
+    /// Aufgelöster Speicherort eines der drei Felder.
+    pub fn speicherort_pfad(&self, feld: SpeicherortFeld) -> PathBuf {
+        match feld {
+            SpeicherortFeld::Bloecke => self.blocks_dir(),
+            SpeicherortFeld::Sicherungen => self.sicherungen_dir(),
+            SpeicherortFeld::Protokolle => self.log_dir(),
+        }
+    }
+
     /// Soll der Dateidialog des Betriebssystems benutzt werden? Vorgabe ist
     /// „system“; nur ein ausdrückliches "intern" wählt den eigenen Dialog.
     pub fn dateidialog_system(&self) -> bool {
         self.file_dialog != "intern"
     }
 
+    /// `prefs.json` liegt immer in der Datenwurzel (T0127) — nicht änderbar.
     pub fn path() -> PathBuf {
-        config_dir().join("prefs.json")
+        crate::daten::prefs_datei()
     }
 
     pub fn load() -> Self {
@@ -1880,27 +1971,46 @@ impl UserPrefs {
     }
 }
 
-/// Konfigurationsverzeichnis (plattformabhängig).
-pub fn config_dir() -> PathBuf {
+/// Konfigurationsverzeichnis des Betriebssystems — **eine** Auflösung für
+/// alles, was dort liegt (T0127): das alte JoJa-CAD-Verzeichnis und die
+/// Systemdateien, die `theme.rs` liest (`kdeglobals`, `settings.ini`).
+pub fn xdg_config_home() -> PathBuf {
     if cfg!(windows) {
         if let Ok(appdata) = std::env::var("APPDATA") {
-            return PathBuf::from(appdata).join("JoJa-CAD");
+            return PathBuf::from(appdata);
         }
+        let home = std::env::var("HOME").unwrap_or_else(|_| ".".into());
+        return PathBuf::from(home).join("AppData").join("Roaming");
+    }
+    if cfg!(target_os = "macos") {
+        let home = std::env::var("HOME").unwrap_or_else(|_| ".".into());
+        return PathBuf::from(home).join("Library").join("Application Support");
     }
     if let Ok(xdg) = std::env::var("XDG_CONFIG_HOME") {
-        return PathBuf::from(xdg).join("jjcad");
+        if !xdg.is_empty() {
+            return PathBuf::from(xdg);
+        }
     }
     let home = std::env::var("HOME").unwrap_or_else(|_| ".".into());
-    PathBuf::from(home).join(".config").join("jjcad")
+    PathBuf::from(home).join(".config")
 }
 
-/// Benutzerblock-Bibliothek (profilweit).
+/// **Alter** Ort der Einstellungen (`~/.config/jjcad` bzw.
+/// `%APPDATA%\JoJa-CAD`). Seit T0127 liegen die Nutzdaten in
+/// [`crate::daten::wurzel`]; hier wird nur noch beim ersten Start eine
+/// vorhandene `prefs.json` herüberkopiert (`daten::prefs_uebernehmen`).
+pub fn config_dir() -> PathBuf {
+    xdg_config_home().join("jjcad")
+}
+
+/// Benutzerblock-Bibliothek (profilweit) — Vorgabe ohne eigene Einstellung.
 pub fn user_blocks_dir() -> PathBuf {
-    config_dir().join("blocks")
+    crate::daten::pfad_in_wurzel("", "blocks")
 }
 
+/// Sicherung (`autosave.jjcad`) im Ordner „Sicherungen“ der Wurzel.
 pub fn autosave_path() -> PathBuf {
-    config_dir().join("autosave.jjcad")
+    crate::daten::pfad_in_wurzel("", "sicherungen").join("autosave.jjcad")
 }
 
 #[cfg(test)]
@@ -1921,6 +2031,43 @@ mod tests {
         assert_eq!(UserPrefs::default().drag_mode, DragMode::HoldAndDrag);
         assert!(!DragMode::HoldAndDrag.two_clicks());
         assert!(DragMode::TwoClicks.two_clicks());
+    }
+
+    /// T0127: Die drei Speicherorte überleben Speichern und Laden; ein leeres
+    /// Feld bedeutet die Vorgabe in der Datenwurzel („Zurücksetzen“).
+    #[test]
+    fn speicherorte_ueberleben_und_lassen_sich_zuruecksetzen() {
+        use crate::persist::SpeicherortFeld;
+        let mut prefs = UserPrefs::default();
+        assert_eq!(prefs.blocks_pfad, "");
+        assert!(prefs.blocks_dir().ends_with("blocks"));
+
+        prefs.setze_speicherort(SpeicherortFeld::Bloecke, "eigene/bloecke");
+        prefs.setze_speicherort(SpeicherortFeld::Protokolle, "/var/log/jjcad");
+        let dir = test_dir("speicherorte");
+        let p = dir.join("prefs.json");
+        prefs.save_to(&p).unwrap();
+
+        let wieder = UserPrefs::load_from(&p);
+        assert_eq!(wieder.blocks_pfad, "eigene/bloecke");
+        assert_eq!(wieder.log_pfad, "/var/log/jjcad");
+        assert!(
+            wieder.blocks_dir().ends_with("eigene/bloecke"),
+            "relativer Pfad hängt an der Wurzel: {:?}",
+            wieder.blocks_dir()
+        );
+        assert_eq!(wieder.log_dir(), PathBuf::from("/var/log/jjcad"));
+
+        // Altbestand ohne die Felder bleibt gültig.
+        let alt: UserPrefs = serde_json::from_str(r#"{"last_dir": "/tmp"}"#).unwrap();
+        assert_eq!(alt.blocks_pfad, "");
+        assert!(alt.blocks_dir().ends_with("blocks"));
+
+        // „Zurücksetzen“ stellt die Vorgabe her.
+        let mut zurueck = wieder;
+        zurueck.setze_speicherort(SpeicherortFeld::Bloecke, "");
+        assert_eq!(zurueck.blocks_pfad, "");
+        assert!(zurueck.blocks_dir().ends_with("blocks"));
     }
 
     /// T0063: „Maus verschiebt“ ist in der Vorgabe an (bisheriges Verhalten)
