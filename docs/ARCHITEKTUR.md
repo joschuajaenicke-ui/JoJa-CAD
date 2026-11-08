@@ -196,6 +196,19 @@ Wurzel **kopiert**; die alte Datei bleibt liegen. Die Auflösung des
 Konfigurationsverzeichnisses steht einmal in `persist::xdg_config_home` und wird
 auch von `theme.rs` für `kdeglobals`/`settings.ini` benutzt.
 
+**Sitzung.** `<Wurzel>/sitzung.json` (`crates/jjcad-core/src/sitzung.rs`) hält,
+was beim Beenden gemerkt und beim Start wiederhergestellt wird: die Reiter in
+ihrer Reihenfolge (Kennung, Zieldatei oder keine, Name), je Reiter die Ansicht
+(Mitte, Zoom, Drehung) und das aktive Blatt, dazu der aktive Reiter und die
+Fensterlage. Gespeicherte Zeichnungen kommen von der Platte; fehlt die
+Zieldatei, kommt der neueste Stand aus dem Sicherungspool und der Reiter heißt
+„Unbenannt“; fehlt auch der Stand, wird der Reiter weggelassen und gemeldet.
+**Nicht** wiederhergestellt werden Auswahl, Undo-Verlauf, Werkzeugwahl und
+Zwischenablage. Beim Beenden fragt das Programm nicht nach dem Speichern; die
+Rückfrage bleibt nur beim Schließen eines Reiters und hängt daran, ob der
+Reiter von seiner Zieldatei abweicht. Fehlt `sitzung.json`, startet eine leere
+Zeichnung.
+
 `<Wurzel>/sperre.lock` trägt die PID der laufenden Instanz. Eine zweite Instanz
 auf derselben Wurzel schreibt nichts, sondern zeigt ein Hinweisfenster und
 bietet an, mit einem anderen Datenordner zu starten (`--daten-dir`). Eine
