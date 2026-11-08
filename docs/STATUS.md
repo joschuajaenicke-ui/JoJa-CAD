@@ -1,6 +1,6 @@
 # JoJa-CAD v0.2 — Arbeitsstand
 
-Fortlaufender Stand der Umsetzung. Stand: 29.10.2026
+Fortlaufender Stand der Umsetzung. Stand: 08.11.2026
 
 ## Build & Start
 
@@ -183,6 +183,48 @@ offene Fensterinstanz zeigt weiterhin den alten Stand.
   `crates/jjcad-core/src/wall.rs` (siehe erster Punkt). Nachweis:
   `tests/wandgehrung_spitz.rs` (7 Tests) und `tests/wandanschluss.rs` bleiben
   grün, ohne Patch und ohne Sonderfall.
+
+- **Speicherorte (T0127)**: Alle Nutzdaten liegen in **einer** Wurzel
+  (`prefs.json`, `sitzung.json`, `blocks/`, `sicherungen/`, `log/`); die
+  Zeichnungen bleiben, wo der Benutzer sie ablegt. Auflösung in
+  `daten::wurzel_ermitteln`: `--daten-dir` → `$JJCAD_DATA_DIR` → `portable.txt`
+  neben der Programmdatei → Plattformstandard. Beim ersten Start wandert eine
+  vorhandene `prefs.json` aus `~/.config/jjcad` in die Wurzel (die alte bleibt
+  liegen). `sperre.lock` trägt die PID — eine zweite Instanz auf derselben
+  Wurzel zeigt „Datenordner belegt" statt zu schreiben. Die Unterordner sind
+  unter Einstellungen → **Speicherorte** änderbar (Schreibprobe lehnt einen
+  nicht beschreibbaren Pfad ab), Menüband *Datei* → **Datenordner** öffnet die
+  Wurzel. Nachweis: 8 Tests in `daten.rs`, `cargo test` grün, Kopf der
+  `prefs.json` liegt nach dem Start in der Wurzel.
+
+- **Eigene Blöcke als Datei (T0128)**: „Block aus Auswahl" schreibt
+  `<Wurzel>/blocks/<slug>.jjblk` (`{"format":"jjcad-block","version":1,…}`),
+  eine Datei je Block; die Kennung `usr:…` steht im Inhalt und bleibt beim
+  Umbenennen. Der Start liest das Verzeichnis (kein Index); eine unlesbare Datei
+  wird gemeldet und übersprungen. Blockmanager zeigt die Herkunft **Benutzer**.
+  Nachweis: `tests/bloecke_datei.rs` (6 Tests).
+
+- **Sicherung (T0129)**: Stände im Pool statt einer Autosave-Datei, **ohne** je
+  in die Zieldatei zu schreiben — gespeichert wird nur auf Befehl. Zyklus nur
+  bei geänderter Zeichnung (Hash), Ausdünnen nach Fenster/Obergrenze/Kosten,
+  Pins je Dokument unantastbar, Waisen beim Start entfernt. Einstellungen →
+  **Sicherung**: Verlauf an/aus, Plätze 30–2000 (Vorgabe 100), Reichweite,
+  Intervall 1–240 min (Vorgabe 1), Abstandsanzeige, Poolgröße, Hinweis zum
+  Netzlaufwerk. Wiederherstellen über `file.restore` öffnet ein **neues**
+  Dokument. Doku: `docs/SICHERUNG.md` (korrigiert), `docs/FORMAT.md`
+  (`Document.id`). Nachweis: 14 Tests in `sicherung.rs` (die Kriterien aus §13),
+  `cargo test` grün; am laufenden Programm nach 70 s ein Stand, Zieldatei
+  byte-gleich zum Git-Stand.
+
+- **Sitzung (T0130)**: Beim Beenden wird der Zustand in
+  `<Wurzel>/sitzung.json` gemerkt (Reiter in Reihenfolge, je Reiter Ansicht und
+  Blatt, aktiver Reiter, Fensterlage) und beim Start wiederhergestellt; auch nie
+  gespeicherte Zeichnungen kommen als „Unbenannt" aus dem Pool zurück. Beenden
+  fragt nicht mehr nach dem Speichern; das Schließen eines Reiters fragt, sobald
+  der Inhalt von der Zieldatei abweicht (Vergleich statt Merker). Auswahl,
+  Undo-Verlauf, Werkzeugwahl und Zwischenablage bleiben draußen. Nachweis:
+  6 Tests in `sitzung.rs`, am Programm: sauberes Schließen schreibt
+  `sitzung.json`, der nächste Start zeigt denselben Reiter samt Ansicht.
 
 ## Offen
 

@@ -18,6 +18,7 @@
 //! (`UserPrefs::blocks_pfad` & Co.).
 
 use crate::model::BlockDef;
+use sha2::{Digest, Sha256};
 use std::path::{Path, PathBuf};
 use std::sync::OnceLock;
 
@@ -173,6 +174,35 @@ pub fn pfad_in_wurzel_basis(w: &Path, angabe: &str, vorgabe: &str) -> PathBuf {
 /// Anzeigetext eines aufgelösten Pfads (für das Einstellungsfenster).
 pub fn pfad_text(p: &Path) -> String {
     p.display().to_string()
+}
+
+/// Stabile Kennung für eine Zeichnung, die im Dateikopf keine `id` trägt.
+///
+/// Aus dem kanonischen Pfad abgeleitet (UUID-Form, Version 5), damit **dieselbe**
+/// Datei über Sitzungen hinweg dieselbe Kennung behält. Eine zufällige Kennung je
+/// Öffnen würde dem Sicherungspool bei jedem Start einen neuen Pin bescheren und
+/// den Verlauf einer Zeichnung in mehrere Dokumente zerfallen lassen.
+///
+/// Unter Windows werden Groß- und Kleinschreibung vereinheitlicht — dort ist
+/// `C:\Bau\Haus.jjcad` dieselbe Datei wie `c:\bau\haus.jjcad`.
+pub fn kennung_fuer_pfad(pfad: &Path) -> String {
+    let echt = std::fs::canonicalize(pfad).unwrap_or_else(|_| pfad.to_path_buf());
+    let mut text = echt.to_string_lossy().to_string();
+    if cfg!(windows) {
+        text = text.to_lowercase();
+    }
+    let mut h = Sha256::new();
+    h.update(text.as_bytes());
+    let d = h.finalize();
+    let mut b = [0u8; 16];
+    b.copy_from_slice(&d[..16]);
+    // Version 5: aus einem Namen abgeleitet, nicht zufällig.
+    b[6] = (b[6] & 0x0f) | 0x50;
+    b[8] = (b[8] & 0x3f) | 0x80;
+    format!(
+        "{:02x}{:02x}{:02x}{:02x}-{:02x}{:02x}-{:02x}{:02x}-{:02x}{:02x}-{:02x}{:02x}{:02x}{:02x}{:02x}{:02x}",
+        b[0], b[1], b[2], b[3], b[4], b[5], b[6], b[7], b[8], b[9], b[10], b[11], b[12], b[13], b[14], b[15]
+    )
 }
 
 /// Schreibprobe: legt das Verzeichnis an (falls nötig) und schreibt eine
@@ -592,5 +622,32 @@ mod tests {
             .find(|b| b.id == "benutzer-tuer")
             .map(|b| b.source == crate::model::BlockSource::User)
             .unwrap_or(false));
+    }
+
+    /// Eine Zeichnung ohne Kennung im Kopf muss über Sitzungen hinweg
+    /// **dieselbe** Kennung behalten — sonst legt der Sicherungspool bei jedem
+    /// Öffnen einen neuen Pin für dieselbe Datei an.
+    #[test]
+    fn kennung_ohne_kopfzeile_bleibt_gleich() {
+        let dir = test_dir("kennung");
+        let a = dir.join("a.jjcad");
+        let b = dir.join("b.jjcad");
+        std::fs::write(&a, "{}").unwrap();
+        std::fs::write(&b, "{}").unwrap();
+
+        assert_eq!(
+            kennung_fuer_pfad(&a),
+            kennung_fuer_pfad(&a),
+            "gleicher Pfad muss dieselbe Kennung ergeben"
+        );
+        assert_ne!(
+            kennung_fuer_pfad(&a),
+            kennung_fuer_pfad(&b),
+            "zwei Dateien dürfen nicht dieselbe Kennung bekommen"
+        );
+
+        let k = kennung_fuer_pfad(&a);
+        assert_eq!(k.len(), 36, "Kennung in UUID-Form: {k}");
+        assert_eq!(k.matches('-').count(), 4, "Kennung in UUID-Form: {k}");
     }
 }
