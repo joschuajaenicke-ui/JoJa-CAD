@@ -2505,6 +2505,42 @@ impl App {
                         }
                     }
                 }
+                // Rechteckige Polylinie aus dem Rechteck-Werkzeug (T0133):
+                // ausgewählt mit vier Eck- und vier Kantengriffen; `schiefviereck`
+                // zieht eine Ecke schräg, dann ist die Form kein Rechteck mehr und
+                // die Kantengriffe müssen fehlen.
+                "rechteckgriffe" | "schiefviereck" => {
+                    // Frische Zeichnung, damit im Bild nur die Polylinie steht.
+                    self.new_document();
+                    let u = self.unit();
+                    let r = self.session_mut().execute(
+                        "draw.rect",
+                        &serde_json::json!({
+                            "a": [u.from_mm(2000.0), u.from_mm(2000.0)],
+                            "b": [u.from_mm(7000.0), u.from_mm(5000.0)],
+                        }),
+                    );
+                    if let Ok(v) = r {
+                        if let Some(id) = v["created"][0].as_u64() {
+                            if part.trim() == "schiefviereck" {
+                                if let Some(e) = self.doc_mut().entity_mut(id) {
+                                    if let Some(neu) = crate::handles::apply_grip(
+                                        e,
+                                        crate::handles::GripKind::Vert(1),
+                                        V2::new(7600.0, 2600.0),
+                                    ) {
+                                        *e = neu;
+                                    }
+                                }
+                            }
+                            self.session_mut().selection = vec![id];
+                            let mut view = self.current_view();
+                            view.center = V2::new(4500.0, 3500.0);
+                            view.zoom = 0.12;
+                            self.set_view(view);
+                        }
+                    }
+                }
                 // Farbeimer-Prüffall (F1b): den Raum unten links füllen, so wie
                 // es der Farbeimer tun wird — mit Inseln. Im Screenshot müssen
                 // Schornstein und Treppe frei bleiben (kein Muster darin).
