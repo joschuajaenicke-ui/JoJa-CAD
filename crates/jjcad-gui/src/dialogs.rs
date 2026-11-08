@@ -1979,8 +1979,7 @@ fn settings_body(app: &mut App, ui: &mut Ui) {
                                         ) {
                                             app.prefs.set_linienstaerke(name, neu);
                                             let _ = app.prefs.save();
-                                            let breiten = app.prefs.layer_weights.clone();
-                                            app.doc_mut().merke_standard_breiten(&breiten);
+                                            app.voreinstellungen_uebernehmen();
                                         }
                                     });
                                 }
@@ -1994,8 +1993,7 @@ fn settings_body(app: &mut App, ui: &mut Ui) {
                                     {
                                         app.prefs.linienstaerken_zuruecksetzen();
                                         let _ = app.prefs.save();
-                                        let breiten = app.prefs.layer_weights.clone();
-                                        app.doc_mut().merke_standard_breiten(&breiten);
+                                        app.voreinstellungen_uebernehmen();
                                         ui.ctx().request_repaint();
                                     }
                                     ui.label(theme::faint(jjcad_core::i18n::tr(
@@ -4866,6 +4864,34 @@ mod tests_einstellungen {
         assert!(
             texte.iter().any(|t| *t == "Vorgaben zurücksetzen"),
             "Knopf „Vorgaben zurücksetzen“ fehlt"
+        );
+    }
+
+    /// T0125: Eine Änderung in den Voreinstellungen wirkt sofort auf eine
+    /// **leere** Zeichnung (noch kein Plan) — eine geöffnete Zeichnung behält
+    /// ihre Ebenenbreiten.
+    #[test]
+    fn voreinstellungen_wirken_sofort_auf_eine_leere_zeichnung() {
+        let _sperre = KONFIG.lock().unwrap_or_else(|e| e.into_inner());
+        let _konfig = WegwerfKonfig::neu("vorgaben-sofort");
+        let ctx = egui::Context::default();
+        let mut app = App::with_ctx(ctx.clone());
+        app.prefs.set_linienstaerke("Wände", 0.50);
+        app.voreinstellungen_uebernehmen();
+        assert!(
+            (app.doc().layer_by_name("Wände").unwrap().line_weight - 0.50).abs() < 1e-9,
+            "leere Zeichnung muss die Voreinstellung sofort tragen"
+        );
+
+        // Mit Inhalt ist die Zeichnung ein Plan: ihre Ebenen bleiben stehen.
+        app.session_mut()
+            .execute("draw.line", &json!({"a": [0.0, 0.0], "b": [1.0, 0.0]}))
+            .expect("Linie");
+        app.prefs.set_linienstaerke("Wände", 0.13);
+        app.voreinstellungen_uebernehmen();
+        assert!(
+            (app.doc().layer_by_name("Wände").unwrap().line_weight - 0.50).abs() < 1e-9,
+            "bestehende Ebene darf sich nicht ändern"
         );
     }
 
