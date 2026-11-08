@@ -6144,7 +6144,7 @@ mod tests {
     #[test]
     fn vier_punkte_und_enter_erzeugen_vier_ecken() {
         let mut app = app();
-        app.options.fill_pattern = FillPattern::Insulation;
+        app.options.fill_pattern = FillPattern::Lines;
         app.options.fill_angle = 30.0_f64.to_radians();
         app.options.fill_scale = 120.0;
         app.options.fill_border_points = true;
@@ -6178,7 +6178,7 @@ mod tests {
         else {
             panic!("kein Fill angelegt");
         };
-        assert_eq!(pattern, FillPattern::Insulation, "Muster aus dem Panel");
+        assert_eq!(pattern, FillPattern::Lines, "Muster aus dem Panel");
         assert!((pattern_angle - 30.0_f64.to_radians()).abs() < 1e-9);
         assert!((pattern_scale - 120.0).abs() < 1e-9, "Abstand aus dem Panel");
         assert!(border, "Randlinie aus dem Panel");

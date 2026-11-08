@@ -711,7 +711,6 @@
 # lines = "Mauerwerk"
 # cross = "Kunststoffe"
 # dots = "Sand"
-# insulation = "Dämmstoffe"
 # ground_plain = "Boden unverändert"
 # ground_changed = "Boden verändert"
 # gravel = "Kies"
@@ -723,10 +722,6 @@
 # wood_along = "Vollholz längs"
 # metal = "Metall"
 # plaster = "Putz"
-# insulation_loops = "Dämmstoffe Schlaufen"
-# seal_single = "Abdichtung 1-lagig"
-# seal_multi = "Abdichtung 2-lagig"
-# seal_upstand = "Abdichtung Aufkantung"
 # sealant = "Dichtstoffe"
 # glass = "Glas"
 #

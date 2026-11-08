@@ -131,10 +131,11 @@ offene Fensterinstanz zeigt weiterhin den alten Stand.
     (Vektor **und** Pixelbild), gleicher Ton wie die Wand, Höhe/Volumen in m³,
     Höhenänderung über `modify.set`, Speichern/Laden, alle drei Eingaben
     (`volumen_drei_eingaben`, Farbeimer über `detect_boundary`).
-- **Schraffuren nach DIN 1356-1:2026-09, Tabelle 5** (T0095): alle 18
+- **Schraffuren nach DIN 1356-1:2026-09, Tabelle 5** (T0095): 16 der 18
   Kennzeichnungen der Schnittflächen als Muster in `style::FillPattern`
-  (`ALL` in der Reihenfolge der Norm); die früheren Muster heißen jetzt nach
-  ihrem Baustoff (Mauerwerk, Kunststoffe, Sand, Dämmstoffe). Ein Generator
+  (`ALL` in der Reihenfolge der Norm); Nr. 14 (Dämmung) und Nr. 15
+  (Abdichtungen) sind Linienarten und deshalb keine Muster (T0132). Die Muster
+  heißen nach ihrem Baustoff (Mauerwerk, Kunststoffe, Sand). Ein Generator
   (`render::push_muster`) zeichnet sie für Füllfläche, Volumen **und**
   Wandschraffur; Schlüssel und Bezeichnung finden jedes Muster wieder, die
   alten Dateinamen bleiben gültig. Prüfblatt `samples/Schraffuren.jjcad`

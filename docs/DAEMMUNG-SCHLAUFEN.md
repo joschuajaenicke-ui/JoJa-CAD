@@ -74,19 +74,11 @@ Sie muss mit allen Stellen verwendet werden. Bei einem gröber gerundeten Wert (
 - Schraffuren bleiben außen vor: eine Wand in „Dämmung“ zeichnet ihre Kanten als
   Band, ihr Muster aber als dünne durchgezogene Striche.
 
-## Dämmung an Wänden (T0123)
+## Dämmung an Wänden
 
-Eine Wand mit dem Muster **Dämmstoffe Schlaufen** (`FillPattern::InsulationLoops`,
-Tabelle 5 Nr. 14) zeichnet statt der Schlaufenreihen dasselbe Schlaufenband: es
-läuft auf der **Wandmitte** (Achse `wall::Body::start`/`dir`), seine **Breite ist
-die Wanddicke** — die Schlaufen berühren beide Wandflächen. An Tür- und
-Fensteröffnungen endet es wie der Wandkörper, an Gehrungen reicht es bis zur Naht
-(`render::wall_insulation_paths` ist die eine Quelle für Anzeige und Zerlegen).
-
-Im Eigenschaften-Panel steht bei dieser Schraffur die Zeile **Schlaufenform** (r);
-ein eigenes Breitenfeld gibt es nicht, weil die Breite die Wanddicke ist.
-
-**Zerlegen** (`modify.explode`) macht daraus eine **Linie** mit der Linienart
-„Dämmung“ (`loop_width` = Wanddicke, `loop_shape` vom Objekt) — nicht mehr die
-Schraffurlinien des Musters. Die Wand selbst wird dabei wie bisher in Füllfläche
-und Kanten zerlegt.
+Die Dämmung an einer Wand ist **keine Schraffur**: die Wand trägt die Linienart
+„Dämmung“ (`style.line_type`), und deren Band läuft auf den Wandkanten. Die
+früheren Muster „Dämmstoffe“ und „Dämmstoffe Schlaufen“ gibt es nicht mehr
+(T0132) — sie waren Linienarten in der Musterauswahl. Im Eigenschaften-Panel
+stehen **Breite** (H) und **Schlaufenform** (r) deshalb nur bei der Linienart,
+nicht mehr bei einer Wandschraffur.

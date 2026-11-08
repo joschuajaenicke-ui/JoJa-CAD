@@ -47,7 +47,7 @@
       "id": 1,
       "name": "Wände",
       "color": "#23262C",
-      "line_weight": 0.5,
+      "line_weight": 0.18,
       "line_type": "Solid",
       "visible": true,
       "locked": false,
@@ -57,7 +57,7 @@
       "id": 2,
       "name": "Türen",
       "color": "#785537",
-      "line_weight": 0.25,
+      "line_weight": 0.18,
       "line_type": "Solid",
       "visible": true,
       "locked": false,
@@ -67,7 +67,7 @@
       "id": 3,
       "name": "Fenster",
       "color": "#2D69BE",
-      "line_weight": 0.25,
+      "line_weight": 0.18,
       "line_type": "Solid",
       "visible": true,
       "locked": false,
@@ -77,7 +77,7 @@
       "id": 4,
       "name": "Treppen",
       "color": "#3C8C5F",
-      "line_weight": 0.25,
+      "line_weight": 0.18,
       "line_type": "Solid",
       "visible": true,
       "locked": false,
@@ -107,7 +107,7 @@
       "id": 7,
       "name": "Schraffur",
       "color": "#969BA0",
-      "line_weight": 0.13,
+      "line_weight": 0.18,
       "line_type": "Solid",
       "visible": true,
       "locked": false,
@@ -137,7 +137,7 @@
       "id": 10,
       "name": "Hilfslinien",
       "color": "#96A0AF",
-      "line_weight": 0.13,
+      "line_weight": 0.18,
       "line_type": "Dashed",
       "visible": true,
       "locked": false,
@@ -1247,7 +1247,9 @@
             "underline": false,
             "superscript": false,
             "font": "sans",
-            "line_spacing": 1.0
+            "line_spacing": 1.0,
+            "frame": false,
+            "frame_round": false
           },
           "layer": 0,
           "style": {
@@ -2138,7 +2140,9 @@
             "underline": false,
             "superscript": false,
             "font": "sans",
-            "line_spacing": 1.0
+            "line_spacing": 1.0,
+            "frame": false,
+            "frame_round": false
           },
           "layer": 0,
           "style": {
@@ -2653,7 +2657,9 @@
             "underline": false,
             "superscript": false,
             "font": "sans",
-            "line_spacing": 1.0
+            "line_spacing": 1.0,
+            "frame": false,
+            "frame_round": false
           },
           "layer": 0,
           "style": {
@@ -2756,7 +2762,9 @@
             "underline": false,
             "superscript": false,
             "font": "sans",
-            "line_spacing": 1.0
+            "line_spacing": 1.0,
+            "frame": false,
+            "frame_round": false
           },
           "layer": 0,
           "style": {
@@ -2844,7 +2852,9 @@
             "underline": false,
             "superscript": false,
             "font": "sans",
-            "line_spacing": 1.0
+            "line_spacing": 1.0,
+            "frame": false,
+            "frame_round": false
           },
           "layer": 0,
           "style": {
@@ -2976,7 +2986,9 @@
             "underline": false,
             "superscript": false,
             "font": "sans",
-            "line_spacing": 1.0
+            "line_spacing": 1.0,
+            "frame": false,
+            "frame_round": false
           },
           "layer": 0,
           "style": {
@@ -3537,7 +3549,7 @@
           }
         ],
         "holes": [],
-        "pattern": "Insulation",
+        "pattern": "Sealant",
         "pattern_angle": 0.7853981633974483,
         "pattern_scale": 100.0,
         "border": true
@@ -3574,7 +3586,7 @@
           }
         ],
         "holes": [],
-        "pattern": "InsulationLoops",
+        "pattern": "Cross",
         "pattern_angle": 0.7853981633974483,
         "pattern_scale": 100.0,
         "border": true
@@ -3611,191 +3623,6 @@
           }
         ],
         "holes": [],
-        "pattern": "SealSingle",
-        "pattern_angle": 0.7853981633974483,
-        "pattern_scale": 100.0,
-        "border": true
-      },
-      "layer": 1,
-      "style": {
-        "color": null,
-        "line_type": null,
-        "line_weight": null,
-        "fill": null
-      },
-      "by_block": false
-    },
-    {
-      "id": 83,
-      "kind": {
-        "type": "fill",
-        "boundary": [
-          {
-            "x": 4650.0,
-            "y": -5500.0
-          },
-          {
-            "x": 6150.0,
-            "y": -5500.0
-          },
-          {
-            "x": 6150.0,
-            "y": -6250.0
-          },
-          {
-            "x": 4650.0,
-            "y": -6250.0
-          }
-        ],
-        "holes": [],
-        "pattern": "SealMulti",
-        "pattern_angle": 0.7853981633974483,
-        "pattern_scale": 100.0,
-        "border": true
-      },
-      "layer": 1,
-      "style": {
-        "color": null,
-        "line_type": null,
-        "line_weight": null,
-        "fill": null
-      },
-      "by_block": false
-    },
-    {
-      "id": 85,
-      "kind": {
-        "type": "fill",
-        "boundary": [
-          {
-            "x": 250.0,
-            "y": -6600.0
-          },
-          {
-            "x": 1750.0,
-            "y": -6600.0
-          },
-          {
-            "x": 1750.0,
-            "y": -7350.0
-          },
-          {
-            "x": 250.0,
-            "y": -7350.0
-          }
-        ],
-        "holes": [],
-        "pattern": "SealUpstand",
-        "pattern_angle": 0.7853981633974483,
-        "pattern_scale": 100.0,
-        "border": true
-      },
-      "layer": 1,
-      "style": {
-        "color": null,
-        "line_type": null,
-        "line_weight": null,
-        "fill": null
-      },
-      "by_block": false
-    },
-    {
-      "id": 87,
-      "kind": {
-        "type": "fill",
-        "boundary": [
-          {
-            "x": 2450.0,
-            "y": -6600.0
-          },
-          {
-            "x": 3950.0,
-            "y": -6600.0
-          },
-          {
-            "x": 3950.0,
-            "y": -7350.0
-          },
-          {
-            "x": 2450.0,
-            "y": -7350.0
-          }
-        ],
-        "holes": [],
-        "pattern": "Sealant",
-        "pattern_angle": 0.7853981633974483,
-        "pattern_scale": 100.0,
-        "border": true
-      },
-      "layer": 1,
-      "style": {
-        "color": null,
-        "line_type": null,
-        "line_weight": null,
-        "fill": null
-      },
-      "by_block": false
-    },
-    {
-      "id": 89,
-      "kind": {
-        "type": "fill",
-        "boundary": [
-          {
-            "x": 4650.0,
-            "y": -6600.0
-          },
-          {
-            "x": 6150.0,
-            "y": -6600.0
-          },
-          {
-            "x": 6150.0,
-            "y": -7350.0
-          },
-          {
-            "x": 4650.0,
-            "y": -7350.0
-          }
-        ],
-        "holes": [],
-        "pattern": "Cross",
-        "pattern_angle": 0.7853981633974483,
-        "pattern_scale": 100.0,
-        "border": true
-      },
-      "layer": 1,
-      "style": {
-        "color": null,
-        "line_type": null,
-        "line_weight": null,
-        "fill": null
-      },
-      "by_block": false
-    },
-    {
-      "id": 91,
-      "kind": {
-        "type": "fill",
-        "boundary": [
-          {
-            "x": 250.0,
-            "y": -7700.0
-          },
-          {
-            "x": 1750.0,
-            "y": -7700.0
-          },
-          {
-            "x": 1750.0,
-            "y": -8450.0
-          },
-          {
-            "x": 250.0,
-            "y": -8450.0
-          }
-        ],
-        "holes": [],
         "pattern": "Glass",
         "pattern_angle": 0.7853981633974483,
         "pattern_scale": 100.0,
@@ -3828,7 +3655,9 @@
         "underline": false,
         "superscript": false,
         "font": "sans",
-        "line_spacing": 1.0
+        "line_spacing": 1.0,
+        "frame": false,
+        "frame_round": false
       },
       "layer": 1,
       "style": {
@@ -3857,7 +3686,9 @@
         "underline": false,
         "superscript": false,
         "font": "sans",
-        "line_spacing": 1.0
+        "line_spacing": 1.0,
+        "frame": false,
+        "frame_round": false
       },
       "layer": 1,
       "style": {
@@ -3886,7 +3717,9 @@
         "underline": false,
         "superscript": false,
         "font": "sans",
-        "line_spacing": 1.0
+        "line_spacing": 1.0,
+        "frame": false,
+        "frame_round": false
       },
       "layer": 1,
       "style": {
@@ -3915,7 +3748,9 @@
         "underline": false,
         "superscript": false,
         "font": "sans",
-        "line_spacing": 1.0
+        "line_spacing": 1.0,
+        "frame": false,
+        "frame_round": false
       },
       "layer": 1,
       "style": {
@@ -3944,7 +3779,9 @@
         "underline": false,
         "superscript": false,
         "font": "sans",
-        "line_spacing": 1.0
+        "line_spacing": 1.0,
+        "frame": false,
+        "frame_round": false
       },
       "layer": 1,
       "style": {
@@ -3973,7 +3810,9 @@
         "underline": false,
         "superscript": false,
         "font": "sans",
-        "line_spacing": 1.0
+        "line_spacing": 1.0,
+        "frame": false,
+        "frame_round": false
       },
       "layer": 1,
       "style": {
@@ -4002,7 +3841,9 @@
         "underline": false,
         "superscript": false,
         "font": "sans",
-        "line_spacing": 1.0
+        "line_spacing": 1.0,
+        "frame": false,
+        "frame_round": false
       },
       "layer": 1,
       "style": {
@@ -4031,7 +3872,9 @@
         "underline": false,
         "superscript": false,
         "font": "sans",
-        "line_spacing": 1.0
+        "line_spacing": 1.0,
+        "frame": false,
+        "frame_round": false
       },
       "layer": 1,
       "style": {
@@ -4060,7 +3903,9 @@
         "underline": false,
         "superscript": false,
         "font": "sans",
-        "line_spacing": 1.0
+        "line_spacing": 1.0,
+        "frame": false,
+        "frame_round": false
       },
       "layer": 1,
       "style": {
@@ -4089,7 +3934,9 @@
         "underline": false,
         "superscript": false,
         "font": "sans",
-        "line_spacing": 1.0
+        "line_spacing": 1.0,
+        "frame": false,
+        "frame_round": false
       },
       "layer": 1,
       "style": {
@@ -4118,7 +3965,9 @@
         "underline": false,
         "superscript": false,
         "font": "sans",
-        "line_spacing": 1.0
+        "line_spacing": 1.0,
+        "frame": false,
+        "frame_round": false
       },
       "layer": 1,
       "style": {
@@ -4147,7 +3996,9 @@
         "underline": false,
         "superscript": false,
         "font": "sans",
-        "line_spacing": 1.0
+        "line_spacing": 1.0,
+        "frame": false,
+        "frame_round": false
       },
       "layer": 1,
       "style": {
@@ -4176,7 +4027,9 @@
         "underline": false,
         "superscript": false,
         "font": "sans",
-        "line_spacing": 1.0
+        "line_spacing": 1.0,
+        "frame": false,
+        "frame_round": false
       },
       "layer": 1,
       "style": {
@@ -4205,7 +4058,9 @@
         "underline": false,
         "superscript": false,
         "font": "sans",
-        "line_spacing": 1.0
+        "line_spacing": 1.0,
+        "frame": false,
+        "frame_round": false
       },
       "layer": 1,
       "style": {
@@ -4224,7 +4079,7 @@
           "x": 4650.0,
           "y": -4280.0
         },
-        "text": "Dämmstoffe",
+        "text": "Dichtstoffe",
         "height": 150.0,
         "angle": 0.0,
         "align": "Left",
@@ -4234,7 +4089,9 @@
         "underline": false,
         "superscript": false,
         "font": "sans",
-        "line_spacing": 1.0
+        "line_spacing": 1.0,
+        "frame": false,
+        "frame_round": false
       },
       "layer": 1,
       "style": {
@@ -4253,7 +4110,7 @@
           "x": 250.0,
           "y": -5380.0
         },
-        "text": "Dämmstoffe Schlaufen",
+        "text": "Kunststoffe",
         "height": 150.0,
         "angle": 0.0,
         "align": "Left",
@@ -4263,7 +4120,9 @@
         "underline": false,
         "superscript": false,
         "font": "sans",
-        "line_spacing": 1.0
+        "line_spacing": 1.0,
+        "frame": false,
+        "frame_round": false
       },
       "layer": 1,
       "style": {
@@ -4282,151 +4141,6 @@
           "x": 2450.0,
           "y": -5380.0
         },
-        "text": "Abdichtung 1-lagig",
-        "height": 150.0,
-        "angle": 0.0,
-        "align": "Left",
-        "valign": "Middle",
-        "bold": false,
-        "italic": false,
-        "underline": false,
-        "superscript": false,
-        "font": "sans",
-        "line_spacing": 1.0
-      },
-      "layer": 1,
-      "style": {
-        "color": null,
-        "line_type": null,
-        "line_weight": null,
-        "fill": null
-      },
-      "by_block": false
-    },
-    {
-      "id": 82,
-      "kind": {
-        "type": "text",
-        "p": {
-          "x": 4650.0,
-          "y": -5380.0
-        },
-        "text": "Abdichtung 2-lagig",
-        "height": 150.0,
-        "angle": 0.0,
-        "align": "Left",
-        "valign": "Middle",
-        "bold": false,
-        "italic": false,
-        "underline": false,
-        "superscript": false,
-        "font": "sans",
-        "line_spacing": 1.0
-      },
-      "layer": 1,
-      "style": {
-        "color": null,
-        "line_type": null,
-        "line_weight": null,
-        "fill": null
-      },
-      "by_block": false
-    },
-    {
-      "id": 84,
-      "kind": {
-        "type": "text",
-        "p": {
-          "x": 250.0,
-          "y": -6480.0
-        },
-        "text": "Abdichtung Aufkantung",
-        "height": 150.0,
-        "angle": 0.0,
-        "align": "Left",
-        "valign": "Middle",
-        "bold": false,
-        "italic": false,
-        "underline": false,
-        "superscript": false,
-        "font": "sans",
-        "line_spacing": 1.0
-      },
-      "layer": 1,
-      "style": {
-        "color": null,
-        "line_type": null,
-        "line_weight": null,
-        "fill": null
-      },
-      "by_block": false
-    },
-    {
-      "id": 86,
-      "kind": {
-        "type": "text",
-        "p": {
-          "x": 2450.0,
-          "y": -6480.0
-        },
-        "text": "Dichtstoffe",
-        "height": 150.0,
-        "angle": 0.0,
-        "align": "Left",
-        "valign": "Middle",
-        "bold": false,
-        "italic": false,
-        "underline": false,
-        "superscript": false,
-        "font": "sans",
-        "line_spacing": 1.0
-      },
-      "layer": 1,
-      "style": {
-        "color": null,
-        "line_type": null,
-        "line_weight": null,
-        "fill": null
-      },
-      "by_block": false
-    },
-    {
-      "id": 88,
-      "kind": {
-        "type": "text",
-        "p": {
-          "x": 4650.0,
-          "y": -6480.0
-        },
-        "text": "Kunststoffe",
-        "height": 150.0,
-        "angle": 0.0,
-        "align": "Left",
-        "valign": "Middle",
-        "bold": false,
-        "italic": false,
-        "underline": false,
-        "superscript": false,
-        "font": "sans",
-        "line_spacing": 1.0
-      },
-      "layer": 1,
-      "style": {
-        "color": null,
-        "line_type": null,
-        "line_weight": null,
-        "fill": null
-      },
-      "by_block": false
-    },
-    {
-      "id": 90,
-      "kind": {
-        "type": "text",
-        "p": {
-          "x": 250.0,
-          "y": -7580.0
-        },
         "text": "Glas",
         "height": 150.0,
         "angle": 0.0,
@@ -4437,7 +4151,9 @@
         "underline": false,
         "superscript": false,
         "font": "sans",
-        "line_spacing": 1.0
+        "line_spacing": 1.0,
+        "frame": false,
+        "frame_round": false
       },
       "layer": 1,
       "style": {
@@ -4857,7 +4573,9 @@
             "underline": false,
             "superscript": false,
             "font": "sans",
-            "line_spacing": 1.0
+            "line_spacing": 1.0,
+            "frame": false,
+            "frame_round": false
           },
           "layer": 0,
           "style": {
@@ -4886,7 +4604,9 @@
             "underline": false,
             "superscript": false,
             "font": "sans",
-            "line_spacing": 1.0
+            "line_spacing": 1.0,
+            "frame": false,
+            "frame_round": false
           },
           "layer": 0,
           "style": {
@@ -4915,7 +4635,9 @@
             "underline": false,
             "superscript": false,
             "font": "sans",
-            "line_spacing": 1.0
+            "line_spacing": 1.0,
+            "frame": false,
+            "frame_round": false
           },
           "layer": 0,
           "style": {
@@ -4944,7 +4666,9 @@
             "underline": false,
             "superscript": false,
             "font": "sans",
-            "line_spacing": 1.0
+            "line_spacing": 1.0,
+            "frame": false,
+            "frame_round": false
           },
           "layer": 0,
           "style": {
@@ -4973,7 +4697,9 @@
             "underline": false,
             "superscript": false,
             "font": "sans",
-            "line_spacing": 1.0
+            "line_spacing": 1.0,
+            "frame": false,
+            "frame_round": false
           },
           "layer": 0,
           "style": {
@@ -5002,7 +4728,9 @@
             "underline": false,
             "superscript": false,
             "font": "sans",
-            "line_spacing": 1.0
+            "line_spacing": 1.0,
+            "frame": false,
+            "frame_round": false
           },
           "layer": 0,
           "style": {
@@ -5031,7 +4759,9 @@
             "underline": false,
             "superscript": false,
             "font": "sans",
-            "line_spacing": 1.0
+            "line_spacing": 1.0,
+            "frame": false,
+            "frame_round": false
           },
           "layer": 0,
           "style": {
@@ -5060,7 +4790,9 @@
             "underline": false,
             "superscript": false,
             "font": "sans",
-            "line_spacing": 1.0
+            "line_spacing": 1.0,
+            "frame": false,
+            "frame_round": false
           },
           "layer": 0,
           "style": {
@@ -5089,7 +4821,9 @@
             "underline": false,
             "superscript": false,
             "font": "sans",
-            "line_spacing": 1.0
+            "line_spacing": 1.0,
+            "frame": false,
+            "frame_round": false
           },
           "layer": 0,
           "style": {
@@ -5118,7 +4852,9 @@
             "underline": false,
             "superscript": false,
             "font": "sans",
-            "line_spacing": 1.0
+            "line_spacing": 1.0,
+            "frame": false,
+            "frame_round": false
           },
           "layer": 0,
           "style": {
@@ -5147,7 +4883,9 @@
             "underline": false,
             "superscript": false,
             "font": "sans",
-            "line_spacing": 1.0
+            "line_spacing": 1.0,
+            "frame": false,
+            "frame_round": false
           },
           "layer": 0,
           "style": {
@@ -5176,7 +4914,9 @@
             "underline": false,
             "superscript": false,
             "font": "sans",
-            "line_spacing": 1.0
+            "line_spacing": 1.0,
+            "frame": false,
+            "frame_round": false
           },
           "layer": 0,
           "style": {
@@ -5205,7 +4945,9 @@
             "underline": false,
             "superscript": false,
             "font": "sans",
-            "line_spacing": 1.0
+            "line_spacing": 1.0,
+            "frame": false,
+            "frame_round": false
           },
           "layer": 0,
           "style": {
@@ -5234,7 +4976,9 @@
             "underline": false,
             "superscript": false,
             "font": "sans",
-            "line_spacing": 1.0
+            "line_spacing": 1.0,
+            "frame": false,
+            "frame_round": false
           },
           "layer": 0,
           "style": {
@@ -5263,7 +5007,9 @@
             "underline": false,
             "superscript": false,
             "font": "sans",
-            "line_spacing": 1.0
+            "line_spacing": 1.0,
+            "frame": false,
+            "frame_round": false
           },
           "layer": 0,
           "style": {
@@ -5292,7 +5038,9 @@
             "underline": false,
             "superscript": false,
             "font": "sans",
-            "line_spacing": 1.0
+            "line_spacing": 1.0,
+            "frame": false,
+            "frame_round": false
           },
           "layer": 0,
           "style": {
@@ -5321,7 +5069,9 @@
             "underline": false,
             "superscript": false,
             "font": "sans",
-            "line_spacing": 1.0
+            "line_spacing": 1.0,
+            "frame": false,
+            "frame_round": false
           },
           "layer": 0,
           "style": {
@@ -5350,7 +5100,9 @@
             "underline": false,
             "superscript": false,
             "font": "sans",
-            "line_spacing": 1.0
+            "line_spacing": 1.0,
+            "frame": false,
+            "frame_round": false
           },
           "layer": 0,
           "style": {
@@ -5379,7 +5131,9 @@
             "underline": false,
             "superscript": false,
             "font": "sans",
-            "line_spacing": 1.0
+            "line_spacing": 1.0,
+            "frame": false,
+            "frame_round": false
           },
           "layer": 0,
           "style": {
@@ -5405,5 +5159,5 @@
     "decimals": 2,
     "unit_divisor": 1000.0
   },
-  "next_id": 92
+  "next_id": 82
 }

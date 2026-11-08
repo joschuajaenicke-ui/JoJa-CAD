@@ -294,9 +294,14 @@ impl Default for DimStyle {
 /// Die Namen folgen DIN 1356-1:2026-09, Tabelle 5 „Kennzeichnung der
 /// Schnittflächen von Baustoffen“ (18 Schraffuren). Die schon vorhandenen
 /// Muster tragen seitdem den Namen der Zeile, die sie abbilden: `Lines` ist
-/// Mauerwerk, `Cross` Kunststoffe, `Dots` Sand, `Insulation` Dämmstoffe
-/// (Zickzackform). Die zweite Form einer Zeile steht als eigene Variante
-/// daneben (`InsulationLoops`, `SealSingle`/`SealMulti`/`SealUpstand`).
+/// Mauerwerk, `Cross` Kunststoffe, `Dots` Sand.
+///
+/// **Dämmung (Nr. 14) und Abdichtung (Nr. 15) fehlen bewusst** (T0132): beides
+/// ist keine Schraffur, sondern eine Linienart — die Dämmung zeichnet als
+/// `LineType::Insulation` ein Schlaufenband, eine Abdichtung ist eine Linie mit
+/// dieser Kennzeichnung. Alte Zeichnungen mit den früheren Mustern laden über
+/// den Serde-Alias an `Lines` als Mauerwerk weiter, statt beim Öffnen zu
+/// scheitern.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, Default)]
 pub enum FillPattern {
     /// Fläche in der Füllfarbe
@@ -304,13 +309,23 @@ pub enum FillPattern {
     Solid,
     /// Parallele Linien im Musterwinkel (Vorgabe 45°) — Tabelle 5, Nr. 9
     /// „Mauerwerk“.
+    ///
+    /// Die 2026 entfernten Muster „Dämmstoffe“, „Dämmstoffe Schlaufen“ und die
+    /// drei „Abdichtungen“ (T0132) tragen ihre alten Serde-Namen als Alias und
+    /// laden deshalb weiter — als Mauerwerk, weil ein fehlendes Muster die
+    /// Zeichnung nicht öffnen ließe.
+    #[serde(
+        alias = "Insulation",
+        alias = "InsulationLoops",
+        alias = "SealSingle",
+        alias = "SealMulti",
+        alias = "SealUpstand"
+    )]
     Lines,
     /// Zwei Linienscharen im rechten Winkel — Nr. 17 „Kunststoffe“.
     Cross,
     /// Punktraster — Nr. 4 „Sand“.
     Dots,
-    /// Mäanderlinie (Mineralwolle) — Nr. 14 „Dämmstoffe“, Zickzackform.
-    Insulation,
     /// Nr. 1 „Boden/Gelände unverändert“: Zickzackschraffur unter der
     /// Geländekante.
     GroundPlain,
@@ -335,15 +350,6 @@ pub enum FillPattern {
     Metal,
     /// Nr. 13 „Putz“: gröberes, unregelmäßiges Punktraster.
     Plaster,
-    /// Nr. 14 „Dämmstoffe“, Schlaufenform: Reihen geschlossener Schlaufen.
-    InsulationLoops,
-    /// Nr. 15 „Abdichtungen“, einlagig: eine Lage, Felder abwechselnd voll.
-    SealSingle,
-    /// Nr. 15 „Abdichtungen“, mehrlagig: zwei Lagen, Felder versetzt.
-    SealMulti,
-    /// Nr. 15 „Abdichtungen“, mehrlagig mit Aufkantung: zwei Lagen, Kanten
-    /// betont.
-    SealUpstand,
     /// Nr. 16 „Dichtstoffe“: enges Kreuzraster.
     Sealant,
     /// Nr. 18 „Glas“: Gruppen aus drei kurzen Strichen.
@@ -351,7 +357,8 @@ pub enum FillPattern {
 }
 
 impl FillPattern {
-    /// Alle Muster in der Reihenfolge der Norm (Tabelle 5, Nr. 1–18) —
+    /// Alle Muster in der Reihenfolge der Norm (Tabelle 5, Nr. 1–13 und
+    /// 16–18; Nr. 14 und 15 sind Linienarten, siehe [`FillPattern`]) —
     /// dieselbe Reihenfolge zeigt die Auswahl im Eigenschaften-Panel.
     pub const ALL: &'static [FillPattern] = &[
         FillPattern::Solid,
@@ -368,11 +375,6 @@ impl FillPattern {
         FillPattern::WoodAlong,
         FillPattern::Metal,
         FillPattern::Plaster,
-        FillPattern::Insulation,
-        FillPattern::InsulationLoops,
-        FillPattern::SealSingle,
-        FillPattern::SealMulti,
-        FillPattern::SealUpstand,
         FillPattern::Sealant,
         FillPattern::Cross,
         FillPattern::Glass,
@@ -386,7 +388,6 @@ impl FillPattern {
             FillPattern::Lines => "Mauerwerk",
             FillPattern::Cross => "Kunststoffe",
             FillPattern::Dots => "Sand",
-            FillPattern::Insulation => "Dämmstoffe",
             FillPattern::GroundPlain => "Boden unverändert",
             FillPattern::GroundChanged => "Boden verändert",
             FillPattern::Gravel => "Kies",
@@ -398,10 +399,6 @@ impl FillPattern {
             FillPattern::WoodAlong => "Vollholz längs",
             FillPattern::Metal => "Metall",
             FillPattern::Plaster => "Putz",
-            FillPattern::InsulationLoops => "Dämmstoffe Schlaufen",
-            FillPattern::SealSingle => "Abdichtung 1-lagig",
-            FillPattern::SealMulti => "Abdichtung 2-lagig",
-            FillPattern::SealUpstand => "Abdichtung Aufkantung",
             FillPattern::Sealant => "Dichtstoffe",
             FillPattern::Glass => "Glas",
         }
@@ -414,7 +411,6 @@ impl FillPattern {
             FillPattern::Lines => crate::i18n::tr("ui.fillpattern.lines"),
             FillPattern::Cross => crate::i18n::tr("ui.fillpattern.cross"),
             FillPattern::Dots => crate::i18n::tr("ui.fillpattern.dots"),
-            FillPattern::Insulation => crate::i18n::tr("ui.fillpattern.insulation"),
             FillPattern::GroundPlain => crate::i18n::tr("ui.fillpattern.ground_plain"),
             FillPattern::GroundChanged => crate::i18n::tr("ui.fillpattern.ground_changed"),
             FillPattern::Gravel => crate::i18n::tr("ui.fillpattern.gravel"),
@@ -426,10 +422,6 @@ impl FillPattern {
             FillPattern::WoodAlong => crate::i18n::tr("ui.fillpattern.wood_along"),
             FillPattern::Metal => crate::i18n::tr("ui.fillpattern.metal"),
             FillPattern::Plaster => crate::i18n::tr("ui.fillpattern.plaster"),
-            FillPattern::InsulationLoops => crate::i18n::tr("ui.fillpattern.insulation_loops"),
-            FillPattern::SealSingle => crate::i18n::tr("ui.fillpattern.seal_single"),
-            FillPattern::SealMulti => crate::i18n::tr("ui.fillpattern.seal_multi"),
-            FillPattern::SealUpstand => crate::i18n::tr("ui.fillpattern.seal_upstand"),
             FillPattern::Sealant => crate::i18n::tr("ui.fillpattern.sealant"),
             FillPattern::Glass => crate::i18n::tr("ui.fillpattern.glass"),
         }
@@ -444,7 +436,6 @@ impl FillPattern {
             FillPattern::Lines => "mauerwerk",
             FillPattern::Cross => "kunststoffe",
             FillPattern::Dots => "sand",
-            FillPattern::Insulation => "daemmstoffe",
             FillPattern::GroundPlain => "boden_unveraendert",
             FillPattern::GroundChanged => "boden_veraendert",
             FillPattern::Gravel => "kies",
@@ -456,17 +447,15 @@ impl FillPattern {
             FillPattern::WoodAlong => "vollholz_laengs",
             FillPattern::Metal => "metall",
             FillPattern::Plaster => "putz",
-            FillPattern::InsulationLoops => "daemmung_schlaufen",
-            FillPattern::SealSingle => "abdichtung_einlagig",
-            FillPattern::SealMulti => "abdichtung_mehrlagig",
-            FillPattern::SealUpstand => "abdichtung_aufkantung",
             FillPattern::Sealant => "dichtstoffe",
             FillPattern::Glass => "glas",
         }
     }
 
     /// Muster aus einem Action-Parameter lesen (deutsch und englisch, auch die
-    /// alten Schlüssel `lines`/`cross`/`dots`/`insulation`).
+    /// alten Schlüssel `lines`/`cross`/`dots`). Die Schlüssel der entfernten
+    /// Dämm- und Abdichtungsmuster gibt es nicht mehr (T0132) — sie liefern
+    /// `None`, damit kein Aufruf still ein anderes Muster bekommt.
     pub fn from_key(s: &str) -> Option<FillPattern> {
         let k = s.trim().to_lowercase().replace([' ', '-', '/'], "_");
         Some(match k.as_str() {
@@ -477,10 +466,6 @@ impl FillPattern {
             "kunststoffe" | "cross" | "kreuz" | "kreuzschraffur" => FillPattern::Cross,
             // Sand (Nr. 4) — hieß früher „Punktraster“
             "sand" | "dots" | "punkte" | "punktraster" => FillPattern::Dots,
-            // Dämmstoffe, Zickzack (Nr. 14) — hieß früher „Dämmung“
-            "daemmstoffe" | "dämmstoffe" | "insulation" | "daemmung" | "dämmung" => {
-                FillPattern::Insulation
-            }
             "boden_unveraendert" | "boden_unverändert" | "boden" => {
                 FillPattern::GroundPlain
             }
@@ -500,12 +485,6 @@ impl FillPattern {
             }
             "metall" | "metal" => FillPattern::Metal,
             "putz" | "plaster" => FillPattern::Plaster,
-            "daemmung_schlaufen" | "dämmung_schlaufen" | "daemmstoffe_schlaufen"
-            | "dämmstoffe_schlaufen" => FillPattern::InsulationLoops,
-            "abdichtung_einlagig" | "abdichtung_1_lagig" | "abdichtung" | "abdichtungen"
-            | "seal_single" => FillPattern::SealSingle,
-            "abdichtung_mehrlagig" | "abdichtung_2_lagig" | "seal_multi" => FillPattern::SealMulti,
-            "abdichtung_aufkantung" | "seal_upstand" => FillPattern::SealUpstand,
             "dichtstoffe" | "sealant" => FillPattern::Sealant,
             "glas" | "glass" => FillPattern::Glass,
             _ => return None,

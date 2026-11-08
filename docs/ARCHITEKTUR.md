@@ -152,12 +152,11 @@ die zwei Werte `loop_width` (H, mm) und `loop_shape` (r); fehlen sie, gelten
 100 mm und 0,5. Im Eigenschaften-Panel erscheinen „Breite“ und „Schlaufenform“
 nur bei dieser Linienart.
 
-**An Wänden (T0123)** ist die Dämmung das Muster „Dämmstoffe Schlaufen“
-(`FillPattern::InsulationLoops`): statt der Schlaufenreihen läuft das Band auf
-der Wandmitte, seine Breite ist die **Wanddicke** (`render::wall_insulation_paths`
-liefert die Strecken je Wandstück, zwischen Öffnungen). `modify.explode` macht
-daraus eine **Linie** mit der Linienart „Dämmung“ — nicht die Schraffurlinien
-des Musters.
+Auf einer **Wand** liegt das Band auf deren Kanten: die Linienart ist eine
+Eigenschaft des Objekts, kein Schraffurmuster. Die früheren Muster „Dämmstoffe“
+und „Dämmstoffe Schlaufen“ (und die drei „Abdichtungen“) sind mit T0132
+entfallen — Dämmung und Abdichtung sind Linienarten, keine Schraffuren. Alte
+Zeichnungen laden diese Namen als Mauerwerk (`FillPattern::Lines`).
 
 ### Blöcke mit Namensräumen
 

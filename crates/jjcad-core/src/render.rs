@@ -1807,8 +1807,6 @@ fn push_muster(
         FillPattern::Plaster => {
             muster_punkte(dl, e, st, pts, holes, angle, s * 1.9, 1.0, 1.9, 0.07, 0.6)
         }
-        // Nr. 14 Dämmstoffe, Zickzackform: Mäanderlinie
-        FillPattern::Insulation => muster_wellen(dl, e, st, pts, holes, angle, s, 1.0, 0.45, 2.0),
         // Nr. 1 Boden unverändert: Zickzackschraffur
         FillPattern::GroundPlain => muster_zickzack(dl, e, st, pts, holes, angle, s),
         // Nr. 2 Boden verändert: Längsstriche mit Querstrichen
@@ -1894,42 +1892,6 @@ fn push_muster(
                 0.5,
             );
         }
-        // Nr. 14 Dämmstoffe, Schlaufenform: Reihen geschlossener Schleifen
-        FillPattern::InsulationLoops => muster_schlaufen(dl, e, st, pts, holes, angle, s),
-        // Nr. 15 Abdichtungen: einlagig / mehrlagig / mit Aufkantung
-        FillPattern::SealSingle => muster_abdichtung(
-            dl,
-            e,
-            st,
-            pts,
-            holes,
-            angle - std::f64::consts::FRAC_PI_4,
-            s,
-            1,
-            false,
-        ),
-        FillPattern::SealMulti => muster_abdichtung(
-            dl,
-            e,
-            st,
-            pts,
-            holes,
-            angle - std::f64::consts::FRAC_PI_4,
-            s,
-            2,
-            false,
-        ),
-        FillPattern::SealUpstand => muster_abdichtung(
-            dl,
-            e,
-            st,
-            pts,
-            holes,
-            angle - std::f64::consts::FRAC_PI_4,
-            s,
-            2,
-            true,
-        ),
         // Nr. 16 Dichtstoffe: enges Kreuzraster
         FillPattern::Sealant => muster_linien(
             dl,
@@ -2193,7 +2155,7 @@ fn muster_punkte(
 }
 
 /// Wellenlinien entlang der Musterrichtung, am Polygon beschnitten —
-/// Dämmstoffe (Zickzackform) und Vollholz. `amp` ist die Amplitude, `periode`
+/// Vollholz quer und längs. `amp` ist die Amplitude, `periode`
 /// die Wellenlänge, beide in Einheiten von `spacing`.
 ///
 /// Die Reihen liegen auf dem Muster-Raster, und die Welle beginnt bei einem
@@ -2446,153 +2408,6 @@ fn muster_pfeile(
     }
 }
 
-/// Nr. 14 Dämmstoffe, Schlaufenform: Reihen geschlossener Schlaufen, jede in
-/// ihrer Rasterzelle.
-fn muster_schlaufen(
-    dl: &mut DisplayList,
-    e: &Entity,
-    st: &PrimStyle,
-    pts: &[Vec2],
-    holes: &[Vec<Vec2>],
-    angle: f64,
-    spacing: f64,
-) {
-    let s = spacing.max(0.5);
-    let r = Raster::new(angle);
-    let (umin, umax, vmin, vmax) = r.bereich(pts);
-    // Eine Reihe ist ein Band aus aneinanderstoßenden Schlaufen: Schlaufe
-    // 0,92 s breit, 1,9 s hoch, Reihen im Abstand einer Schlaufe.
-    let rx = s * 0.46;
-    let ry = s * 0.95;
-    let schritt = rx * 2.0;
-    let reihe = ry * 2.0;
-    let i0 = (umin / schritt).floor() as i64;
-    let i1 = (umax / schritt).ceil() as i64;
-    let j0 = (vmin / reihe).floor() as i64;
-    let j1 = (vmax / reihe).ceil() as i64;
-    if (i1 - i0) * (j1 - j0) > 40_000 {
-        return;
-    }
-    let (dir, nrm) = (r.dir, r.nrm);
-    for j in j0..=j1 {
-        for i in i0..=i1 {
-            let p = r.punkt(i as f64 * schritt, j as f64 * reihe);
-            // Schlaufen nur ganz zeichnen — eine angeschnittene Schleife sähe
-            // an der Umgrenzung wie ein Fehler aus.
-            let passt = (0..8).all(|k| {
-                let a = k as f64 / 8.0 * std::f64::consts::TAU;
-                let q = p + dir * (rx * a.cos()) + nrm * (ry * a.sin());
-                crate::area::point_in_area(q, pts, holes)
-            });
-            if !passt {
-                continue;
-            }
-            dl.push(Prim {
-                shape: Shape::Ellipse {
-                    c: p,
-                    rx,
-                    ry,
-                    rot: angle,
-                },
-                style: *st,
-                entity: e.id,
-                layer: e.layer,
-            });
-        }
-    }
-}
-
-/// Nr. 15 Abdichtungen: Bänder aus Feldern, die abwechselnd voll sind.
-///
-/// Die Norm zeichnet ein Band entlang der abgedichteten Fläche (einlagig eine
-/// Lage, mehrlagig zwei versetzte Lagen, Aufkantung mit betonten Kanten). In
-/// einer Füllfläche wiederholt sich das Band im Musterabstand; die Bandlängs-
-/// richtung ist bei Vorgabe **waagerecht** (Musterwinkel − 45°), denn eine
-/// Abdichtung liegt auf der Bauteilfläche, nicht schräg dazu.
-fn muster_abdichtung(
-    dl: &mut DisplayList,
-    e: &Entity,
-    st: &PrimStyle,
-    pts: &[Vec2],
-    holes: &[Vec<Vec2>],
-    angle: f64,
-    spacing: f64,
-    lagen: usize,
-    kanten: bool,
-) {
-    let s = spacing.max(0.5);
-    let r = Raster::new(angle);
-    let (umin, umax, vmin, vmax) = r.bereich(pts);
-    // Lagenhöhe, Abstand zweier Lagen und Zellenlänge in Musterrichtung.
-    let lage_h = s * 0.42;
-    let lage_abstand = lage_h + s * 0.05;
-    let zelle = s * 1.3;
-    let band = lage_h * lagen as f64 + lage_abstand * (lagen.saturating_sub(1)) as f64;
-    let abstand = band + s * 0.9;
-    let j0 = (vmin / abstand).floor() as i64;
-    let j1 = (vmax / abstand).ceil() as i64;
-    let i0 = (umin / zelle).floor() as i64 - 1;
-    let i1 = (umax / zelle).ceil() as i64 + 1;
-    if j1 - j0 > 400 || i1 - i0 > 4000 {
-        return;
-    }
-    let mut gefuellt = *st;
-    gefuellt.fill = Some(st.color);
-    for j in j0..=j1 {
-        let band_anfang = j as f64 * abstand;
-        for lage in 0..lagen {
-            let v0 = band_anfang + lage as f64 * lage_abstand;
-            // Die zweite Lage liegt um eine halbe Zelle versetzt.
-            let versatz = if lage % 2 == 1 { 0.5 } else { 0.0 };
-            for i in i0..=i1 {
-                let u0 = (i as f64 + versatz) * zelle;
-                let ecken = [
-                    r.punkt(u0, v0),
-                    r.punkt(u0 + zelle, v0),
-                    r.punkt(u0 + zelle, v0 + lage_h),
-                    r.punkt(u0, v0 + lage_h),
-                ];
-                let drin = ecken
-                    .iter()
-                    .all(|q| crate::area::point_in_area(*q, pts, holes));
-                if !drin {
-                    continue;
-                }
-                // Die weißen Felder der Norm sind umrandet, jedes zweite Feld
-                // ist voll.
-                for k in 0..4 {
-                    muster_linie(dl, e, st, ecken[k], ecken[(k + 1) % 4]);
-                }
-                if i.rem_euclid(2) == 0 {
-                    dl.push(Prim {
-                        shape: Shape::Fill {
-                            outer: ecken.to_vec(),
-                            holes: Vec::new(),
-                        },
-                        style: gefuellt,
-                        entity: e.id,
-                        layer: e.layer,
-                    });
-                }
-            }
-        }
-        if kanten {
-            // Aufkantung: die Bandkanten laufen als durchgehende Linie mit.
-            for v in [band_anfang, band_anfang + band] {
-                muster_abschnitt(
-                    dl,
-                    e,
-                    st,
-                    r.punkt(umin - s, v),
-                    r.punkt(umax + s, v),
-                    pts,
-                    holes,
-                );
-            }
-        }
-    }
-}
-
 fn render_polyline(
     _ctx: &RenderCtx,
     e: &Entity,
@@ -2811,26 +2626,6 @@ fn render_wall(
     }
 }
 
-/// Mittellinie der Wand je Stück (zwischen Öffnungen) — der Weg, auf dem die
-/// Dämmung als Schlaufenband läuft.
-///
-/// Eine Quelle für Anzeige und Zerlegen (T0123): das Band sitzt mittig im
-/// Wandkörper (die Stücke sind um die Achse `start`/`dir` gebaut), seine Höhe
-/// ist die Wanddicke. An Gehrungen reicht es bis an die Naht, an Tür- und
-/// Fensteröffnungen endet es wie der Wandkörper.
-pub fn wall_insulation_paths(body: &wall::Body) -> Vec<(Vec2, Vec2)> {
-    let mut out = Vec::new();
-    for poly in &body.pieces {
-        let ss: Vec<f64> = poly.iter().map(|q| (*q - body.start).dot(body.dir)).collect();
-        let smin = ss.iter().cloned().fold(f64::INFINITY, f64::min);
-        let smax = ss.iter().cloned().fold(f64::NEG_INFINITY, f64::max);
-        if smax - smin > 1.0 {
-            out.push((body.start + body.dir * smin, body.start + body.dir * smax));
-        }
-    }
-    out
-}
-
 /// Schraffur (Muster) der Wandfläche, beschnitten auf die Wandkörper.
 fn push_wall_hatch(
     dl: &mut DisplayList,
@@ -2850,71 +2645,17 @@ fn push_wall_hatch(
         line_type: LineType::Solid,
         ..*st
     };
-    let (h, n, dir, start) = (body.h, body.n, body.dir, body.start);
     let flechen: Vec<Vec<Vec2>> = body
         .pieces
         .iter()
         .map(|p| p.iter().map(|q| xf.apply(*q)).collect())
         .collect();
-    match hp {
-        // Dämmung in der Wand (T0123): statt Schlaufenreihen läuft das
-        // Schlaufenband der Linienart „Dämmung“ auf der Wandmitte. Die Breite
-        // ist die Wanddicke — das Band füllt den Wandkörper, wie die
-        // Mäanderlinie der Norm. Gezeichnet wird es über `DisplayList::push`
-        // (dieselbe Übersetzung wie bei einer Dämmungslinie), damit Anzeige,
-        // PDF, PNG und DXF dasselbe Band zeigen.
-        FillPattern::InsulationLoops => {
-            let band = PrimStyle {
-                line_type: LineType::Insulation,
-                loop_width: thickness,
-                ..*st
-            };
-            for (p, q) in wall_insulation_paths(body) {
-                dl.push(Prim {
-                    shape: Shape::Line(xf.apply(p), xf.apply(q)),
-                    style: band,
-                    entity: e.id,
-                    layer: e.layer,
-                });
-            }
-        }
-        FillPattern::Insulation => {
-            // Mäanderlinie (Mineralwolle/Dämmung) je Wandstück
-            for poly in &body.fills {
-                let ss: Vec<f64> = poly.iter().map(|q| (*q - start).dot(dir)).collect();
-                let smin = ss.iter().cloned().fold(f64::INFINITY, f64::min);
-                let smax = ss.iter().cloned().fold(f64::NEG_INFINITY, f64::max);
-                let seg_len = smax - smin;
-                if seg_len < 1.0 {
-                    continue;
-                }
-                let period = (4.0 * h).max(80.0);
-                let steps = ((seg_len / period) * 14.0).ceil().max(4.0) as usize;
-                let mut pts = Vec::with_capacity(steps + 1);
-                for i in 0..=steps {
-                    let t = i as f64 / steps as f64;
-                    let s_along = t * seg_len;
-                    let ang = s_along / period * std::f64::consts::TAU;
-                    let off = ang.sin() * (h * 0.9);
-                    pts.push(xf.apply(start + dir * (smin + s_along) + n * off));
-                }
-                dl.push(Prim {
-                    shape: Shape::Poly(pts, false),
-                    style: thin,
-                    entity: e.id,
-                    layer: e.layer,
-                });
-            }
-        }
-        _ => {
-            // Alle übrigen Muster (DIN 1356-1:2026-09, Tabelle 5) entstehen im
-            // selben Mustergenerator wie die Füllfläche — je Wandstück
-            // beschnitten, damit an Gehrung und Öffnung nichts übersteht.
-            let sp = (thickness * 0.25).max(12.0);
-            for fl in &flechen {
-                push_muster(dl, e, &thin, fl, &[], hp, std::f64::consts::FRAC_PI_4, sp);
-            }
-        }
+    // Alle Muster (DIN 1356-1:2026-09, Tabelle 5) entstehen im selben
+    // Mustergenerator wie die Füllfläche — je Wandstück beschnitten, damit an
+    // Gehrung und Öffnung nichts übersteht.
+    let sp = (thickness * 0.25).max(12.0);
+    for fl in &flechen {
+        push_muster(dl, e, &thin, fl, &[], hp, std::f64::consts::FRAC_PI_4, sp);
     }
 }
 

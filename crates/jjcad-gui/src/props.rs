@@ -1349,26 +1349,6 @@ pub fn wand(app: &mut App, ui: &mut Ui, ziel: Ziel) {
         };
     }
 
-    // Dämmung in der Wand (Muster „Dämmstoffe Schlaufen“, T0123): gezeichnet
-    // wird das Schlaufenband der Linienart „Dämmung“. Die Breite ist die
-    // Wanddicke, die Schlaufenform ist einstellbar.
-    let mut picked_form: Option<f64> = None;
-    if schraffur == Some(jjcad_core::style::FillPattern::InsulationLoops) {
-        let (_, form0) = daemmung_werte(app, ziel);
-        let mut form = form0;
-        zeile("daemmung_form");
-        widgets::field_row(ui, jjcad_core::i18n::tr("gui.props.daemmung_form"), |ui| {
-            ui.add(widgets::zahl(
-                &mut form,
-                0.01,
-                jjcad_core::daemmung::FORM_MIN..=jjcad_core::daemmung::FORM_MAX,
-            ));
-        });
-        if (form - form0).abs() > 1e-9 {
-            picked_form = Some(form);
-        }
-    }
-
     zeile("fuellfarbe");
     let fill_unset = fuellfarbe.is_none();
     let fill_cur = fuellfarbe.unwrap_or_else(|| farbe_gezeigt.mix(Color::WHITE, 0.74));
@@ -1420,9 +1400,6 @@ pub fn wand(app: &mut App, ui: &mut Ui, ziel: Ziel) {
             app.options.wall_height = hoehe;
             app.options.wall_align = ausrichtung;
             app.options.wall_hatch = schraffur;
-            if let Some(f) = picked_form {
-                app.ui.pending.loop_shape = Some(f);
-            }
             if let Some(v) = picked_fill {
                 app.ui.pending.fill = v;
             }
@@ -1472,10 +1449,6 @@ pub fn wand(app: &mut App, ui: &mut Ui, ziel: Ziel) {
                             );
                             geaendert = true;
                         }
-                    }
-                    if let Some(f) = picked_form {
-                        map.insert("loop_shape".into(), serde_json::json!(f));
-                        geaendert = true;
                     }
                     if fuellfarbe != e.style.fill {
                         map.insert(
@@ -4851,17 +4824,17 @@ mod tests {
         app.mehrfach_ziel = vec![a, b];
         setzen(
             &mut app,
-            &json!({"ids": [a], "thickness": 0.30, "hatch": "insulation"}),
+            &json!({"ids": [a], "thickness": 0.30, "hatch": "mauerwerk"}),
         );
         assert!((wand_dicke(&app, a) - 300.0).abs() < 1e-6, "Wand 1: {}", wand_dicke(&app, a));
         assert!((wand_dicke(&app, b) - 300.0).abs() < 1e-6, "Wand 2: {}", wand_dicke(&app, b));
         assert_eq!(
             wand_schraffur(&app, a),
-            Some(jjcad_core::style::FillPattern::Insulation)
+            Some(jjcad_core::style::FillPattern::Lines)
         );
         assert_eq!(
             wand_schraffur(&app, b),
-            Some(jjcad_core::style::FillPattern::Insulation)
+            Some(jjcad_core::style::FillPattern::Lines)
         );
     }
 
@@ -5263,17 +5236,18 @@ mod tests {
         );
     }
 
-    /// Die Wanddämmung (Muster „Dämmstoffe Schlaufen“) bringt die Zeile
-    /// „Schlaufenform“ mit — die Breite ist die Wanddicke, ein eigenes
-    /// Breitenfeld gibt es deshalb nicht (T0123).
+    /// Die Wanddämmung ist kein Muster mehr (T0132): an der Wand gibt es keine
+    /// Zeile „Schlaufenform“ — die Dämmung zeichnet die Linienart, dort steht
+    /// das Feld (siehe `daemmungswerte_aus_dem_panel_gelten_...`).
     #[test]
-    fn wanddaemmung_zeigt_die_schlaufenform() {
+    fn wand_panel_hat_keine_schlaufenform() {
         let mut app = App::with_ctx(egui::Context::default());
         app.session_mut()
             .execute("doc.settings", &json!({ "input_unit": "m" }))
             .expect("Einheit");
-        let wand = |app: &mut App, hatch: &str| -> Id {
-            app.session_mut()
+        for hatch in ["mauerwerk", "daemmung_schlaufen"] {
+            let id = app
+                .session_mut()
                 .execute(
                     "draw.wall",
                     &json!({
@@ -5283,118 +5257,14 @@ mod tests {
                 )
                 .expect("Wand")["created"][0]
                 .as_u64()
-                .expect("Id")
-        };
-
-        let daemm = wand(&mut app, "daemmung_schlaufen");
-        app.session_mut().selection = vec![daemm];
-        let zeilen = zeichne(&mut app);
-        assert!(
-            zeilen.contains(&"daemmung_form"),
-            "Schlaufenform fehlt an der gedämmten Wand: {zeilen:?}"
-        );
-        assert!(
-            !zeilen.contains(&"daemmung_breite"),
-            "die Breite ist die Wanddicke, kein eigenes Feld: {zeilen:?}"
-        );
-
-        let mauer = wand(&mut app, "mauerwerk");
-        app.session_mut().selection = vec![mauer];
-        let zeilen = zeichne(&mut app);
-        assert!(
-            !zeilen.contains(&"daemmung_form"),
-            "Schlaufenform an einer Mauerwerkswand: {zeilen:?}"
-        );
-    }
-
-    /// Ende-zu-Ende: ein Zug am Feld „Schlaufenform“ schreibt `loop_shape`
-    /// an die Wand — derselbe Weg wie beim Nutzer (T0123).
-    #[test]
-    fn schlaufenformzug_im_panel_aendert_die_wanddaemmung() {
-        let mut app = App::with_ctx(egui::Context::default());
-        app.session_mut()
-            .execute("doc.settings", &json!({ "input_unit": "m" }))
-            .expect("Einheit");
-        let id = app
-            .session_mut()
-            .execute(
-                "draw.wall",
-                &json!({
-                    "a": [0.0, 0.0], "b": [4.0, 0.0], "thickness": 0.24,
-                    "hatch": "daemmung_schlaufen"
-                }),
-            )
-            .expect("Wand")["created"][0]
-            .as_u64()
-            .expect("Id");
-        app.session_mut().selection = vec![id];
-        let ctx = app.ctx.clone();
-        let bild = |app: &mut App, ereignisse: Vec<egui::Event>, zeit: f64| -> egui::FullOutput {
-            let raw = egui::RawInput {
-                screen_rect: Some(egui::Rect::from_min_size(
-                    egui::Pos2::ZERO,
-                    egui::Vec2::new(1200.0, 950.0),
-                )),
-                time: Some(zeit),
-                predicted_dt: 0.016,
-                events: ereignisse,
-                ..Default::default()
-            };
-            ctx.run(raw, |ctx| {
-                egui::SidePanel::right("eigenschaften")
-                    .exact_width(280.0)
-                    .show(ctx, |ui| crate::panels::properties(app, ui));
-            })
-        };
-
-        let out = bild(&mut app, Vec::new(), 1.0);
-        let feld = out
-            .shapes
-            .iter()
-            .find_map(|cs| match &cs.shape {
-                egui::Shape::Text(t) if t.galley.text().trim() == "0,50" => Some(
-                    t.pos + egui::Vec2::new(t.galley.size().x / 2.0, t.galley.size().y / 2.0),
-                ),
-                _ => None,
-            })
-            .unwrap_or_else(|| {
-                let texte: Vec<String> = out
-                    .shapes
-                    .iter()
-                    .filter_map(|cs| match &cs.shape {
-                        egui::Shape::Text(t) => Some(t.galley.text().to_string()),
-                        _ => None,
-                    })
-                    .collect();
-                panic!("Feld „Schlaufenform“ nicht im Panel gefunden: {texte:?}")
-            });
-
-        let ziel = feld + egui::Vec2::new(40.0, 0.0);
-        let knopf = |pos, pressed| egui::Event::PointerButton {
-            pos,
-            button: egui::PointerButton::Primary,
-            pressed,
-            modifiers: Default::default(),
-        };
-        for (i, ev) in vec![
-            vec![egui::Event::PointerMoved(feld)],
-            vec![knopf(feld, true)],
-            vec![egui::Event::PointerMoved(ziel)],
-            vec![knopf(ziel, false)],
-            Vec::new(),
-        ]
-        .into_iter()
-        .enumerate()
-        {
-            let _ = bild(&mut app, ev, 1.1 + i as f64 * 0.1);
+                .expect("Id");
+            app.session_mut().selection = vec![id];
+            let zeilen = zeichne(&mut app);
+            assert!(
+                !zeilen.contains(&"daemmung_form") && !zeilen.contains(&"daemmung_breite"),
+                "Dämmungszeile an der Wand (Schraffur „{hatch}“): {zeilen:?}"
+            );
         }
-
-        let e = app.doc().entity(id).expect("Wand fehlt");
-        let form = app.doc().effective_loop_shape(e);
-        assert!(
-            (form - 0.9).abs() < 0.05,
-            "Zug am Feld „Schlaufenform“ hat nicht geschrieben: {form}"
-        );
     }
 
     /// Die beiden Zeilen gelten auch beim Erzeugen: die Vorgabe aus dem
