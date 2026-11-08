@@ -26,6 +26,7 @@ mod theme;
 mod widgets;
 
 use jjcad_core::daten;
+use jjcad_core::instanz;
 use std::path::PathBuf;
 
 fn main() -> eframe::Result<()> {
@@ -40,8 +41,21 @@ fn main() -> eframe::Result<()> {
         eprintln!("Datenordner: {e}");
     }
 
-    // Eine zweite Instanz auf derselben Wurzel würde Sitzung und
-    // Sicherungs-Manifest überschreiben — sie bekommt nur den Hinweis.
+    // T0135: Läuft schon eine Instanz auf dieser Wurzel, übernimmt sie die
+    // Arbeit — Zeichnung als Reiter öffnen, sonst Fenster nach vorn holen.
+    // Der zweite Prozess endet sofort, statt eine Meldung zu zeigen.
+    let auftrag = match &datei {
+        Some(d) => instanz::Auftrag::Oeffnen(PathBuf::from(d)),
+        None => instanz::Auftrag::Zeigen,
+    };
+    // Prüfläufe (`JJCAD_DEMO_UI`) sind keine Arbeit des Benutzers: sie übergeben
+    // nichts an ein laufendes Fenster, sondern starten wie bisher.
+    if !app::ist_demo_start() && instanz::melden(&daten::wurzel(), &auftrag) {
+        return Ok(());
+    }
+
+    // Bleibt die Sperre: eine Fassung ohne Kanal (alt oder abgestürzt) würde
+    // Sitzung und Sicherungs-Manifest überschreiben — sie bekommt den Hinweis.
     match daten::sperre_nehmen() {
         Ok(sperre) => starte_app(datei, sperre),
         Err(konflikt) => starte_hinweis(konflikt),
@@ -132,6 +146,8 @@ fn starte_app(file: Option<String>, sperre: daten::Sperre) -> eframe::Result<()>
             let mut app = app::App::new(cc);
             // Sperrdatei lebt so lange wie die Anwendung.
             app.sperre = Some(sperre);
+            // T0135: Kanal für eine zweite Instanz.
+            app.instanzdienst_starten(&cc.egui_ctx);
             match file.clone() {
                 // Eine ausdrücklich übergebene Zeichnung hat Vorrang — dann
                 // wird nicht zusätzlich die Sitzung geöffnet.

@@ -19,6 +19,13 @@ cargo build --release -p jjcad-mcp
 
 Logs gehen ausschließlich nach **stderr** — stdout bleibt dem Protokoll vorbehalten.
 
+Der Server läuft **unabhängig vom Programm**: er nimmt keine Sperre auf den
+Datenordner, liest weder `prefs.json` noch `sitzung.json` und schreibt nur die
+Zeichnungen, die ihm genannt werden. Er kann also parallel zu einem geöffneten
+JoJa-CAD laufen — auch auf derselben Datei; die zuletzt gespeicherte Fassung
+gewinnt, und das geöffnete Fenster merkt eine von außen geänderte Datei nicht
+von selbst.
+
 ### Konfiguration (Claude Desktop, Cursor, …)
 
 ```json

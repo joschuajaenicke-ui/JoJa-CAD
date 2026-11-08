@@ -1353,6 +1353,9 @@ pub struct App {
     pub sicherung: Option<jjcad_core::sicherung::Sicherung>,
     /// Zeitpunkt der letzten Sicherungsprüfung (egui-Zeit in Sekunden).
     pub sicherung_zuletzt: f64,
+    /// T0135: Kanal für eine zweite Instanz — Zeichnung als Reiter öffnen oder
+    /// das Fenster nach vorn holen.
+    pub instanz: Option<jjcad_core::instanz::Dienst>,
 }
 
 impl App {
@@ -1439,6 +1442,7 @@ impl App {
             sperre: None,
             sicherung: None,
             sicherung_zuletzt: 0.0,
+            instanz: None,
         };
         app.ui.show_grid = show_grid;
         app.ui.lineweights = lineweights;
@@ -3798,6 +3802,19 @@ impl App {
                 &[("wert1", e.to_string())],
             )),
         }
+    }
+
+    /// T0135: Dienst starten, der Aufträge einer zweiten Instanz entgegennimmt.
+    ///
+    /// Die zweite Instanz reicht ihre Zeichnung hierher weiter, statt eine
+    /// Meldung zu zeigen. `wecken` lässt die Oberfläche neu zeichnen, sonst
+    /// bliebe die geöffnete Zeichnung bis zur nächsten Eingabe unsichtbar.
+    pub fn instanzdienst_starten(&mut self, ctx: &egui::Context) {
+        let wecken = {
+            let c = ctx.clone();
+            move || c.request_repaint()
+        };
+        self.instanz = jjcad_core::instanz::dienst_starten(&jjcad_core::daten::wurzel(), wecken);
     }
 
     /// Sicherung (T0129): Pool öffnen, falls noch nicht geschehen.
@@ -7873,6 +7890,21 @@ impl eframe::App for App {
         // die Abschnittsmarken messen. Das läuft immer mit; ein paar
         // Uhrablesungen je Bild kosten nichts.
         self.perf.bild_beginnen();
+        // T0135: Aufträge einer zweiten Instanz abholen — Zeichnung als Reiter
+        // öffnen oder das Fenster nach vorn holen.
+        let auftraege = self
+            .instanz
+            .as_ref()
+            .map(|d| d.abholen())
+            .unwrap_or_default();
+        for a in auftraege {
+            match a {
+                jjcad_core::instanz::Auftrag::Oeffnen(pfad) => self.load_document(&pfad),
+                jjcad_core::instanz::Auftrag::Zeigen => {
+                    ctx.send_viewport_cmd(egui::ViewportCommand::Focus)
+                }
+            }
+        }
         // T0102: Bei der Wahl „System“ folgt das Design dem Betriebssystem auch
         // im Betrieb (Wechsel hell ↔ dunkel am Abend). `system_nachziehen`
         // sieht höchstens alle zwei Sekunden nach.

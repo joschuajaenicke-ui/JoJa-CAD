@@ -230,9 +230,13 @@ unter Einstellungen → **Speicherorte** ändern — relativ zum Datenordner ode
 absolut, je Feld mit **Zurücksetzen**. Ein nicht beschreibbarer Pfad wird beim
 Übernehmen abgelehnt, nicht still gesetzt.
 
-Läuft bereits eine Instanz auf demselben Ordner, meldet die zweite das und
-bietet an, mit einem anderen Datenordner zu starten. Zwei Instanzen auf einer
-Wurzel würden sich Sitzung und Sicherung gegenseitig überschreiben.
+Läuft bereits eine Instanz auf demselben Ordner, wird **nicht** gemeckert: eine
+zweite Zeichnung, die Sie von außen öffnen (Doppelklick, Datei als Argument),
+landet als Reiter im laufenden Fenster und der zweite Prozess beendet sich; ein
+Start ohne Datei holt das laufende Fenster nur nach vorn. Zwei Instanzen auf
+einer Wurzel würden sich Sitzung und Sicherung gegenseitig überschreiben —
+deshalb gibt es nur eine. Wer bewusst getrennt arbeiten will, startet mit einem
+anderen Datenordner (`--daten-dir`).
 
 ### Speichern und Sitzung
 
