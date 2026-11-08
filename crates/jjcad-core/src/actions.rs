@@ -1215,6 +1215,18 @@ fn ids_from(p: &Params, key: &str) -> Vec<Id> {
     p.ids(key).unwrap_or_default()
 }
 
+/// Benutzerbibliothek aus dem Aufruf (`dir`, die Oberfläche übergibt
+/// `prefs.blocks_dir`). Ohne Angabe bleibt das Verzeichnis unberührt — Tests
+/// und Aufrufe ohne Datenwurzel schreiben nichts in das Benutzerverzeichnis.
+fn bloecke_verzeichnis(p: &Params) -> Option<std::path::PathBuf> {
+    let angabe = p.text("dir")?;
+    let angabe = angabe.trim();
+    if angabe.is_empty() {
+        return None;
+    }
+    Some(std::path::PathBuf::from(angabe))
+}
+
 /// Läufe aus einem JSON-Array lesen: `[{"text": "…", "bold": true}, …]`.
 fn parse_runs(v: &Value) -> Result<Vec<TextRun>, String> {
     let Some(arr) = v.as_array() else {
@@ -3492,17 +3504,27 @@ pub fn execute(doc: &mut Document, id: &str, params: &Value) -> Result<Value, St
                     entities.push(ne);
                 }
             }
-            let bid = format!("prj:{}", crate::util::short_id());
-            doc.blocks.push(BlockDef {
+            // Eigene Blöcke des Benutzers (T0128): die Kennung `usr:…` steht im
+            // Inhalt, der Dateiname folgt dem Namen. Geschrieben wird, bevor das
+            // Dokument geändert wird — scheitert die Datei, bleibt die Auswahl
+            // unangetastet.
+            let bid = format!("usr:{}", crate::util::short_id());
+            let block = BlockDef {
                 id: bid.clone(),
                 name: name.clone(),
                 category: p.text_or("category", "Projekt"),
-                source: BlockSource::Project,
+                source: BlockSource::User,
                 description: p.text_or("description", ""),
                 entities,
                 icon: None,
                 base,
-            });
+            };
+            let mut datei: Option<String> = None;
+            if let Some(dir) = bloecke_verzeichnis(&p) {
+                let pfad = crate::bloecke::schreibe_block(&dir, &block)?;
+                datei = Some(pfad.display().to_string());
+            }
+            doc.blocks.push(block);
             // Originale entfernen, Instanz einfügen
             for id in &ids {
                 doc.remove_entity(*id);
@@ -3522,22 +3544,25 @@ pub fn execute(doc: &mut Document, id: &str, params: &Value) -> Result<Value, St
             );
             apply_common(doc, &mut e, &p, layer);
             doc.add_entity(e);
-            Ok(json!({"ok": true, "created": [inst], "block": e_block_id(doc.ents(), inst)}))
+            Ok(json!({
+                "ok": true,
+                "created": [inst],
+                "block": e_block_id(doc.ents(), inst),
+                "datei": datei
+            }))
         }
         "block.update" => {
             let name = p.text("block").ok_or_else(|| "Parameter 'block' fehlt".to_string())?;
             let ids = ids_from(&p, "ids");
-            let (base, is_system) = {
-                let block = doc
-                    .blocks
-                    .iter()
-                    .find(|b| b.id == name || b.name.eq_ignore_ascii_case(&name))
-                    .ok_or_else(|| format!("Block '{name}' nicht gefunden"))?;
-                (block.base, block.source == BlockSource::System)
-            };
-            if is_system {
+            let idx = doc
+                .blocks
+                .iter()
+                .position(|b| b.id == name || b.name.eq_ignore_ascii_case(&name))
+                .ok_or_else(|| format!("Block '{name}' nicht gefunden"))?;
+            if doc.blocks[idx].source == BlockSource::System {
                 return Err("Systemblöcke sind schreibgeschützt".into());
             }
+            let base = doc.blocks[idx].base;
             let mut ents = Vec::new();
             for (i, id) in ids.iter().enumerate() {
                 if let Some(e) = doc.entity(*id).cloned() {
@@ -3547,32 +3572,47 @@ pub fn execute(doc: &mut Document, id: &str, params: &Value) -> Result<Value, St
                     ents.push(ne);
                 }
             }
-            let new_name = p.text("name");
-            if let Some(block) = doc
-                .blocks
-                .iter_mut()
-                .find(|b| b.id == name || b.name.eq_ignore_ascii_case(&name))
-            {
-                if !ents.is_empty() {
-                    block.entities = ents;
-                }
-                if let Some(n) = new_name {
-                    block.name = n;
+            let mut neu = doc.blocks[idx].clone();
+            if !ents.is_empty() {
+                neu.entities = ents;
+            }
+            if let Some(n) = p.text("name") {
+                neu.name = n.to_string();
+            }
+            // Benutzerblock (T0128): Datei nachziehen — Umbenennen ist
+            // `rename` plus Feld, die Kennung bleibt gleich.
+            if neu.source == BlockSource::User {
+                if let Some(dir) = bloecke_verzeichnis(&p) {
+                    crate::bloecke::schreibe_block(&dir, &neu)?;
                 }
             }
+            doc.blocks[idx] = neu;
             Ok(json!({"ok": true}))
         }
         "block.delete" => {
             let name = p.text("block").ok_or_else(|| "Parameter 'block' fehlt".to_string())?;
+            let ziel = doc
+                .blocks
+                .iter()
+                .find(|b| b.id == name || b.name.eq_ignore_ascii_case(&name))
+                .cloned()
+                .ok_or_else(|| format!("Block '{name}' nicht gefunden"))?;
             let in_benutzung = doc
                 .entities
                 .iter()
                 .chain(doc.sheets.iter().flat_map(|s| s.entities.iter()))
-                .any(|e| matches!(&e.kind, EntityKind::BlockRef{block,..} if *block == name));
+                .any(|e| matches!(&e.kind, EntityKind::BlockRef{block,..} if *block == ziel.id));
             if in_benutzung {
                 return Err("Block wird noch verwendet".into());
             }
-            doc.blocks.retain(|b| b.id != name && !b.name.eq_ignore_ascii_case(&name));
+            // Benutzerblock (T0128): die Datei ist die Bibliothek — Löschen im
+            // Blockmanager entfernt sie mit.
+            if ziel.source == BlockSource::User {
+                if let Some(dir) = bloecke_verzeichnis(&p) {
+                    crate::bloecke::loesche_block(&dir, &ziel.id)?;
+                }
+            }
+            doc.blocks.retain(|b| b.id != ziel.id);
             Ok(json!({"ok": true}))
         }
         // ---------------- PDF einfügen ----------------

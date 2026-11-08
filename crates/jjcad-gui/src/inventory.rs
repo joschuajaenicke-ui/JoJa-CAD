@@ -269,7 +269,7 @@ fn block_tile(app: &mut App, ui: &mut Ui, b: &BlockDef) {
         p.text(
             Pos2::new(rect.center().x, rect.bottom() - 13.0),
             egui::Align2::CENTER_CENTER,
-            if b.source == jjcad_core::model::BlockSource::System { jjcad_core::i18n::tr("gui.inventory.system") } else { jjcad_core::i18n::tr("gui.inventory.projekt") },
+            b.source.text(),
             FontId::proportional(9.0),
             Palette::text_faint(),
         );
@@ -293,7 +293,12 @@ fn block_tile(app: &mut App, ui: &mut Ui, b: &BlockDef) {
             ui.close_menu();
         }
         if b.source != jjcad_core::model::BlockSource::System && ui.button(jjcad_core::i18n::tr("gui.inventory.loeschen")).clicked() {
-            let _ = app.session_mut().execute("block.delete", &serde_json::json!({"block": b.id}));
+            // T0128: die Blockdatei in `<blocks>/` geht mit.
+            let dir = app.prefs.blocks_dir().to_string_lossy().to_string();
+            let _ = app.session_mut().execute(
+                "block.delete",
+                &serde_json::json!({ "block": b.id, "dir": dir }),
+            );
             app.mark_changed();
             ui.close_menu();
         }

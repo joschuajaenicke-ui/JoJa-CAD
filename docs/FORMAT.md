@@ -135,12 +135,29 @@ schneidet die Öffnung aus der Wand und zeichnet die Laibungen.
 ```
 
 - `source`: `System` (mitgeliefert, schreibgeschützt), `Project` (in der Datei),
-  `User` (Benutzerbibliothek im Profil).
+  `User` (Benutzerbibliothek im Profil, siehe unten).
 - IDs sind namensraum-präfixiert (`sys:`, `prj:`, `dxf:`), damit beim Kopieren
   zwischen Dateien keine Kollisionen entstehen. Beim Import werden kollidierende
   IDs automatisch umbenannt.
 - Blockinhalte liegen im **Blockkoordinatensystem**; die Instanz transformiert sie
   (Position, Rotation, Skalierung, Spiegelung).
+
+### Eigene Blöcke: `<blocks>/<slug>.jjblk`
+
+Ein Block des Benutzers liegt in **einer** eigenen Datei in der Datenwurzel
+(`~/.local/share/JoJa-CAD/blocks`). Das Verzeichnis ist die Wahrheit — es gibt
+keinen Index. Der Dateiname folgt dem Namen (Kleinbuchstaben, Umlaute
+aufgelöst, z. B. `eigene-tuer.jjblk`); zwei Blöcke gleichen Namens bekommen
+`…-2.jjblk`. Die Kennung `usr:…` steht im Inhalt und bleibt beim Umbenennen
+gleich — umbenannt wird die Datei plus das Feld `name`.
+
+```json
+{ "format": "jjcad-block", "version": 1, "block": { "…": "BlockDef wie oben" } }
+```
+
+Eine unlesbare Datei wird beim Start gemeldet und übersprungen; sie reißt die
+übrige Bibliothek nicht mit. Geschrieben wird sie von „Block aus Auswahl“,
+gelöscht beim Löschen im Blockmanager.
 
 ## `sheets`
 

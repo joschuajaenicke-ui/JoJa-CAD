@@ -553,7 +553,7 @@
 # speicherort_feld_hint = "relativ zum Datenordner oder absolut; leer = Vorgabe"
 # uebernehmen = "Übernehmen"
 # zuruecksetzen = "Zurücksetzen"
-# vorgabe_pfad = "→ {pfad}"
+# vorgabe_pfad = "Pfad: {pfad}"
 # nicht_beschreibbar = "Pfad nicht übernommen: {grund}"
 # search = "Einstellungen durchsuchen …"
 # title = "Einstellungen"
@@ -764,6 +764,7 @@
 #
 [gui.app]
 # datenordner_geoeffnet_x = "Datenordner: {wert1}"
+# blockdatei_uebersprungen_x = "Blockdatei übersprungen: {wert1}"
 # datenordner_nicht_geoeffnet_x = "Ordner nicht geöffnet: {wert1}"
 # vordergrund = "Vordergrund"
 # hintergrund = "Hintergrund"
@@ -1350,10 +1351,8 @@
 # lager_geleert = "Lager · geleert"
 # leeren = "Leeren"
 # loeschen = "Löschen"
-# projekt = "Projekt"
 # schliessen_e = "Schließen (E)"
 # suchen = "Suchen …"
-# system = "System"
 # verknuepfen = "Verknüpfen …"
 # weitere_reihe = "+ Weitere Reihe"
 # werkzeug_waehlen_dann_leeren_lagerplatz_anklicken = "Werkzeug wählen, dann leeren Lagerplatz anklicken"

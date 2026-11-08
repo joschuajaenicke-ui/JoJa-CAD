@@ -10,6 +10,7 @@
 pub mod actions;
 pub mod area;
 pub mod bild;
+pub mod bloecke;
 pub mod blocks_lib;
 pub mod boundary;
 pub mod daemmung;

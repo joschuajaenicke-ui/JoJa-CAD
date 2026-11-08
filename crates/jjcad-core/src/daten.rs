@@ -355,10 +355,22 @@ fn prozess_lebt(pid: u32) -> bool {
     pid != 0
 }
 
-/// Blöcke aus der Benutzerbibliothek `<blocks>/**.jjcad`: jede Datei ist eine
-/// Zeichnung, deren **nicht** mitgelieferte Blöcke übernommen werden. Die
-/// Kennung des Systembestands bleibt beim Programm.
+/// Blöcke aus der Benutzerbibliothek — ohne Meldungen (ältere Aufrufer).
+///
+/// Siehe [`lade_benutzerbloecke_mit_meldungen`].
 pub fn lade_benutzerbloecke(dir: &Path) -> Vec<BlockDef> {
+    lade_benutzerbloecke_mit_meldungen(dir).0
+}
+
+/// Blöcke aus der Benutzerbibliothek `<blocks>/`.
+///
+/// Zwei Formen liegen dort: die **eigene Blockdatei** `<slug>.jjblk` (eine
+/// Datei je Block, T0128) und die ältere Form `.jjcad` — eine Zeichnung, deren
+/// **nicht** mitgelieferte Blöcke übernommen werden. Die Kennung des
+/// Systembestands bleibt beim Programm. Unlesbare Dateien werden gemeldet und
+/// übersprungen; sie reißen die Bibliothek nicht mit.
+pub fn lade_benutzerbloecke_mit_meldungen(dir: &Path) -> (Vec<BlockDef>, Vec<String>) {
+    let (mut out, meldungen) = crate::bloecke::lade_bloecke(dir);
     let mut dateien: Vec<PathBuf> = match std::fs::read_dir(dir) {
         Ok(eintraege) => eintraege
             .filter_map(|e| e.ok())
@@ -371,13 +383,17 @@ pub fn lade_benutzerbloecke(dir: &Path) -> Vec<BlockDef> {
                         .unwrap_or(false)
             })
             .collect(),
-        Err(_) => return Vec::new(),
+        Err(_) => return (out, meldungen),
     };
     dateien.sort();
-    let mut out: Vec<BlockDef> = Vec::new();
+    let mut meldungen = meldungen;
     for datei in dateien {
-        let Ok(doc) = crate::persist::load_document(&datei) else {
-            continue;
+        let doc = match crate::persist::load_document(&datei) {
+            Ok(doc) => doc,
+            Err(grund) => {
+                meldungen.push(format!("{}: {grund}", datei.display()));
+                continue;
+            }
         };
         for mut b in doc.blocks {
             if b.source == crate::model::BlockSource::System {
@@ -390,7 +406,7 @@ pub fn lade_benutzerbloecke(dir: &Path) -> Vec<BlockDef> {
             out.push(b);
         }
     }
-    out
+    (out, meldungen)
 }
 
 #[cfg(test)]
