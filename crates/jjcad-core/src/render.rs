@@ -700,6 +700,28 @@ pub fn preview_selection(doc: &Document, ids: &[Id], delta: Vec2) -> DisplayList
     fills
 }
 
+/// Vorschau einer Schnitt-Kote: die Anzeige des **fertigen** Objekts für eine
+/// Punktfolge, die noch nicht in der Zeichnung steht.
+///
+/// Dieselbe Quelle wie die eingefügte Kote ([`render_entity`]): Dreiecke,
+/// Füllung ab dem zweiten Punkt und die Höhenangabe unter jedem Punkt. Ein
+/// eigener Platzhalter im Zeichner zeigte eine andere Form als das Ergebnis
+/// (T0122) — der Nutzer musste die Kote deshalb blind setzen.
+pub fn preview_elevation_section(
+    doc: &Document,
+    pts: &[Vec2],
+    layer: Id,
+    color: Option<Color>,
+) -> DisplayList {
+    let mut e = Entity::new(0, layer, EntityKind::ElevationSection { pts: pts.to_vec() });
+    // Wie die Action: ohne ausdrückliche Farbe ist neue Bemaßung schwarz.
+    e.style.color = Some(color.unwrap_or(Color::BLACK));
+    let ctx = RenderCtx::new(doc);
+    let mut dl = DisplayList::default();
+    render_entity(&ctx, &e, Affine::IDENTITY, &mut dl, 0);
+    dl
+}
+
 pub fn entity_bbox(doc: &Document, e: &Entity) -> BBox {
     // Ansichtsfenster: die Fläche ist das Rechteck, auch wenn der Rahmen
     // abgeschaltet ist (dann zeichnet der Renderer nichts).

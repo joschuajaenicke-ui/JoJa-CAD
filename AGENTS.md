@@ -410,6 +410,15 @@ Mit dem Nutzer abgestimmt — nicht „verbessern“:
   `render::trefferbild` — über die Bounding-Box wäre die ganze Fläche zwischen
   den Punkten anklickbar. Alte Zeichnungen mit `elevation` werden über einen
   Serde-Alias als Grundriss-Kote gelesen; der frühere Zusatztext entfällt.
+  **Vorschau (T0122)**: Beim Setzen zeigt `render::preview_elevation_section`
+  das **fertige** Objekt für die gesetzten Punkte plus den Punkt am Zeiger —
+  Dreiecke, Füllung ab dem zweiten Punkt und die Höhenangabe unter jedem
+  Dreieck, aus demselben Renderer wie die eingefügte Kote. Kein eigener
+  Platzhalter im Zeichner: der zeigte nur Umrisse, die Kote wurde blind
+  gesetzt. Prüfweg: `cargo test -p jjcad-core --test schnittkote_vorschau`
+  (Vorschau zeilengleich mit dem Objekt) und
+  `canvas::tests_hoehenkoten::vorschau_der_schnitt_kote_zeigt_die_hoehen`;
+  Prüfbild `--demo koteschnitt`.
 
 ## Zahlenfelder: Grenzen und Zuggeschwindigkeit (verbindlich)
 

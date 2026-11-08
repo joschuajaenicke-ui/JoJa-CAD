@@ -1808,6 +1808,23 @@ impl App {
                     );
                     self.ui.ribbon = RibbonTab::Bemassung;
                 }
+                // Schnitt-Kote platzieren: Werkzeug läuft, zwei Punkte sind
+                // gesetzt — das Prüfbild zeigt die Vorschau am Zeiger (T0122).
+                "koteschnitt" => {
+                    self.ui.ribbon = RibbonTab::Bemassung;
+                    self.start_tool("dim.elevation.section");
+                    if let Some(t) = self.tool.as_mut() {
+                        t.pts.push(V2::new(3000.0, 0.0));
+                        t.pts.push(V2::new(4000.0, 1200.0));
+                    }
+                    // Nahansicht auf die gesetzten Punkte, damit die Vorschau
+                    // im Prüfbild lesbar ist.
+                    let mut v = self.current_view();
+                    v.center = V2::new(3600.0, 900.0);
+                    v.zoom = 0.35;
+                    self.set_view(v);
+                    self.started_at = 3.0;
+                }
                 // Grundriss-Kote auswählen: Eigenschaften-Panel mit dem Feld
                 // „Höhe“.
                 "selkoteplan" => {

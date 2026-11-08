@@ -4797,6 +4797,11 @@ mod tests_einstellungen {
     /// (bisheriges Verhalten: die meisten Objekte folgten der Maus).
     #[test]
     fn bedienung_zeigt_die_einstellung_maus_verschiebt() {
+        // Die Vorgabe wird geprüft, nicht der Rechner: `App::with_ctx` liest
+        // `prefs.json`, und wer „Maus verschiebt“ abgeschaltet hat, machte den
+        // Test rot (T0122, `ship-card.sh` läuft mit dem echten XDG_CONFIG_HOME).
+        let _sperre = KONFIG.lock().unwrap_or_else(|e| e.into_inner());
+        let _konfig = WegwerfKonfig::neu("maus-verschiebt");
         let ctx = egui::Context::default();
         let mut app = App::with_ctx(ctx.clone());
         app.ui.settings_open = true;
