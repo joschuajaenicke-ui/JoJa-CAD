@@ -779,12 +779,20 @@ pub fn show(app: &mut App, ctx: &egui::Context) {
         let mut open = true;
         // Aufbau wie in der KDE-Systemsteuerung (T0061): Suche und Kategorien
         // links, die Einstellungen der gewählten Kategorie rechts.
-        modal_window(ctx, jjcad_core::i18n::tr("settings.title"), 960.0, &mut open)
-            .default_height(660.0)
+        // T0135: feste Größe. Vorher wuchs das Fenster in „Speicherorte“
+        // Bild für Bild, weil die Pfadzeile ihre Breite aus
+        // `ui.available_width()` rechnete und das Fenster mitwuchs. Die
+        // eigentliche Ursache ist dort behoben (feste Breite der Seite,
+        // Knopfzeile rechts nach links); `fixed_size` hält die Sollgröße fest,
+        // und `tests_einstellungen::einstellungsfenster_gleich_gross_in_allen_kategorien`
+        // prüft, dass keine Kategorie darüber hinauswächst.
+        let fenster = modal_window(ctx, jjcad_core::i18n::tr("settings.title"), SETTINGS_BREITE, &mut open)
+            .fixed_size([SETTINGS_BREITE, SETTINGS_HOEHE_GESAMT])
             .show(ctx, |ui| {
-                ui.set_width(940.0);
+                ui.set_width(SETTINGS_BREITE_INNEN);
                 settings_body(app, ui);
             });
+        app.ui.last_settings_fenster = fenster.map(|f| f.response.rect);
         if !open || ctx.input(|i| i.key_pressed(egui::Key::Escape)) {
             app.ui.settings_open = false;
             // T0127: der Pfadpuffer wird beim nächsten Öffnen neu gefüllt.
@@ -1026,6 +1034,18 @@ const SETTINGS_NAV_W: f32 = 220.0;
 const SETTINGS_ZEILE_H: f32 = 30.0;
 /// Höhe des Einstellungsfensters unter dem Fenstertitel.
 const SETTINGS_HOEHE: f32 = 580.0;
+/// Breite des Einstellungsfensters samt Rahmen (T0135). Sie ist in **allen**
+/// Kategorien dieselbe — ein selbstgroßes Fenster wuchs in „Speicherorte“, weil
+/// die Pfadzeile ihre Breite aus dem verfügbaren Platz rechnete.
+const SETTINGS_BREITE: f32 = 960.0;
+/// Innenbreite des Fensters (Rahmen links und rechts je 10 px).
+const SETTINGS_BREITE_INNEN: f32 = SETTINGS_BREITE - 20.0;
+/// Höhe des Fensters samt Titelzeile und Rahmen.
+const SETTINGS_HOEHE_GESAMT: f32 = 660.0;
+/// Höchstbreite der Einstellungsseite rechts neben der Kategorienspalte.
+/// Sie wird **nicht** aus dem verfügbaren Platz genommen: sonst wächst das
+/// Fenster mit jeder Zeile, die sich nach der verfügbaren Breite richtet (T0135).
+const SETTINGS_SEITE_W: f32 = SETTINGS_BREITE_INNEN - SETTINGS_NAV_W - 32.0;
 
 /// Eine Kategorie der Einstellungen: Name, Icon und die Namen der
 /// Einstellungen darin.
@@ -1500,8 +1520,13 @@ fn settings_body(app: &mut App, ui: &mut Ui) {
         ui.add_space(12.0);
 
         // --------------------------- Einstellungen ---------------------------
-        let (pane_rect, _) =
-            ui.allocate_exact_size(Vec2::new(ui.available_width(), SETTINGS_HOEHE), Sense::hover());
+        // T0135: feste Breite statt `available_width()` — sonst rechnen die
+        // Pfadzeilen der Kategorie „Speicherorte“ ihre Breite aus dem Fenster
+        // und treiben es Bild für Bild weiter auf.
+        let (pane_rect, _) = ui.allocate_exact_size(
+            Vec2::new(ui.available_width().min(SETTINGS_SEITE_W), SETTINGS_HOEHE),
+            Sense::hover(),
+        );
         app.ui.last_settings_pane = Some(pane_rect);
         ui.scope_builder(
             egui::UiBuilder::new()
@@ -2179,8 +2204,32 @@ fn settings_body(app: &mut App, ui: &mut Ui) {
                                     ui.label(theme::bold(name, 14.0));
                                     let mut uebernehmen = false;
                                     let mut zuruecksetzen = false;
-                                    ui.horizontal(|ui| {
-                                        let breite = (ui.available_width() - 210.0).max(120.0);
+                                    // T0135: Die Knöpfe bestimmen ihre Breite
+                                    // selbst — rechts nach links gesetzt nimmt
+                                    // das Pfadfeld den Rest. Ein fester Abzug
+                                    // (früher 210 px) war zu klein: die
+                                    // Knopfzeile ragte aus der Seite und trieb
+                                    // das ganze Fenster auf.
+                                    let zeilen_breite = ui.available_width();
+                                    ui.allocate_ui_with_layout(
+                                        Vec2::new(zeilen_breite, 30.0),
+                                        Layout::right_to_left(Align::Center),
+                                        |ui| {
+                                        if ui
+                                            .button(jjcad_core::i18n::tr(
+                                                "settings.zuruecksetzen",
+                                            ))
+                                            .clicked()
+                                        {
+                                            zuruecksetzen = true;
+                                        }
+                                        if ui
+                                            .button(jjcad_core::i18n::tr("settings.uebernehmen"))
+                                            .clicked()
+                                        {
+                                            uebernehmen = true;
+                                        }
+                                        let breite = ui.available_width();
                                         ui.add(
                                             egui::TextEdit::singleline(
                                                 &mut app.ui.speicherorte[i],
@@ -2191,21 +2240,8 @@ fn settings_body(app: &mut App, ui: &mut Ui) {
                                         .on_hover_text(jjcad_core::i18n::tr(
                                             "settings.speicherort_feld_hint",
                                         ));
-                                        if ui
-                                            .button(jjcad_core::i18n::tr("settings.uebernehmen"))
-                                            .clicked()
-                                        {
-                                            uebernehmen = true;
-                                        }
-                                        if ui
-                                            .button(jjcad_core::i18n::tr(
-                                                "settings.zuruecksetzen",
-                                            ))
-                                            .clicked()
-                                        {
-                                            zuruecksetzen = true;
-                                        }
-                                    });
+                                        },
+                                    );
                                     let angezeigt = jjcad_core::daten::pfad_in_wurzel(
                                         &app.ui.speicherorte[i],
                                         feld.vorgabe(),
@@ -4950,6 +4986,54 @@ mod tests_einstellungen {
             "die Einstellungsseite ({} px) ist nicht breiter als die Kategorienspalte ({} px)",
             pane.width(),
             nav.width()
+        );
+    }
+
+    /// T0135: Das Einstellungsfenster hat in **allen** Kategorien dieselbe
+    /// Größe. Vorher wuchs es in „Speicherorte“ Bild für Bild, weil die
+    /// Pfadzeilen ihre Breite aus dem verfügbaren Platz rechneten und das
+    /// Fenster mit jeder Zeile weiter aufging.
+    #[test]
+    fn einstellungsfenster_gleich_gross_in_allen_kategorien() {
+        let _sperre = KONFIG.lock().unwrap_or_else(|e| e.into_inner());
+        let _konfig = WegwerfKonfig::neu("fenstergroesse");
+        let ctx = egui::Context::default();
+        let mut app = App::with_ctx(ctx.clone());
+        app.ui.settings_open = true;
+        // Jede Kategorie ein paar Bilder lang zeichnen (ein selbstgroßes
+        // Fenster wächst erst nach mehreren Bildern) und die Fensterfläche
+        // merken.
+        let mut masse: Vec<(&'static str, f32, f32)> = Vec::new();
+        for (i, kat) in EINSTELLUNGSKATEGORIEN.iter().enumerate() {
+            app.ui.settings_kat = i;
+            app.ui.settings_suche.clear();
+            app.ui.last_settings_fenster = None;
+            for _ in 0..4 {
+                frame(&mut app, &ctx);
+            }
+            let r = app
+                .ui
+                .last_settings_fenster
+                .unwrap_or_else(|| panic!("Kategorie „{}“ zeichnet kein Fenster", kat.name()));
+            masse.push((kat.name(), r.width(), r.height()));
+        }
+        let (erste, breite, hoehe) = masse[0];
+        for (name, b, h) in &masse {
+            assert!(
+                (b - breite).abs() < 0.5,
+                "Kategorie „{name}“ ist {b} px breit, „{erste}“ {breite} px"
+            );
+            assert!(
+                (h - hoehe).abs() < 0.5,
+                "Kategorie „{name}“ ist {h} px hoch, „{erste}“ {hoehe} px"
+            );
+        }
+        // Der Rahmen legt links und rechts je ~18 px zu (gemessen 976 px
+        // statt 940 Inhalt) — entscheidend ist, dass keine Kategorie mehr
+        // darüber hinauswächst.
+        assert!(
+            breite <= SETTINGS_BREITE + 20.0,
+            "das Fenster ist {breite} px breit, höchstens {SETTINGS_BREITE} px Inhalt erwartet"
         );
     }
 

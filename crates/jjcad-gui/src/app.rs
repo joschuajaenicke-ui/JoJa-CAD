@@ -787,6 +787,9 @@ pub struct UiState {
     pub last_settings_suche: Option<Rect>,
     pub last_settings_nav: Option<Rect>,
     pub last_settings_pane: Option<Rect>,
+    /// Fläche des ganzen Einstellungsfensters im zuletzt gezeichneten Bild.
+    /// T0135: Die Größe muss in allen Kategorien dieselbe sein.
+    pub last_settings_fenster: Option<Rect>,
     pub help_open: bool,
     pub about_open: bool,
     pub sheet_dialog: bool,
@@ -968,6 +971,7 @@ impl Default for UiState {
             last_settings_suche: None,
             last_settings_nav: None,
             last_settings_pane: None,
+            last_settings_fenster: None,
             help_open: false,
             about_open: false,
             sheet_dialog: false,
