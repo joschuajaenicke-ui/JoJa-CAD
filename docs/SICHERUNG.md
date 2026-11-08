@@ -30,6 +30,9 @@ schiefgeht.
   Intervall verloren.
 - Die **Zieldatei** (die `.jjcad`, die der Benutzer geöffnet hat) wird von der
   Sicherung **nie** angefasst. Sie ändert sich nur durch „Speichern“.
+- **Beim Beenden** wird sofort gesichert, wenn es ungespeicherte Änderungen gibt
+  — unabhängig vom Intervall. Danach merkt sich die Sitzung die Reiter, und der
+  nächste Start holt die Arbeit zurück (Abschnitt 6).
 
 Ein **Zyklus** ist ein solcher Autosave mit Änderung. Alle Angaben in dieser
 Doku (Reichweite, Abstand der Stände) rechnen in Zyklen, nicht in
@@ -112,11 +115,33 @@ Arbeit sind es noch ~22 von 100 Ständen, nach 10 000 noch 4).
 
 ### 6. Wiederherstellen
 
-Der Dialog zeigt eine Liste der Stände, neueste zuerst: Datum, Uhrzeit, Größe
-und Vorschau. Die letzten zehn im Intervallraster, danach in wachsenden
-Abständen. Ein Klick öffnet den Stand als **neues Dokument**; die Zieldatei und
-der bisherige Stand bleiben unberührt. Gespeichert wird das neue Dokument erst
-durch „Speichern unter“.
+Es gibt zwei Wege, und beide lesen denselben Pool:
+
+**Beim Start (Sitzung).** Die Sitzung merkt sich die Reiter mit ihrer Kennung und
+ihrem Speicherort. Für jeden Reiter gilt:
+
+1. Der **neueste Stand** des Dokuments trägt **ungespeicherte Arbeit**
+   (`gesichert = false`) und weicht vom Inhalt der Zieldatei ab → sein Inhalt
+   wird geladen, der Speicherort bleibt, der Reiter gilt als **geändert**.
+   „Speichern“ überschreibt dann die Zieldatei.
+2. Sonst gilt die **Zieldatei** von der Platte.
+3. Fehlt die Zieldatei, kommt der neueste Stand als **unbenannte** Zeichnung
+   (ohne Speicherort) zurück.
+4. Fehlt beides, entfällt der Reiter mit einer Meldung.
+
+Denselben Vorrang hat der Stand, wenn die Zeichnung **ausdrücklich geöffnet**
+wird (Doppelklick auf die `.jjcad`, Datei als Argument): ein Doppelklick darf
+die Arbeit von eben nicht verwerfen.
+
+**Aus dem Dialog.** Der Dialog zeigt eine Liste der Stände, neueste zuerst:
+Datum, Uhrzeit, Größe und Vorschau. Die letzten zehn im Intervallraster, danach
+in wachsenden Abständen. Ein Klick öffnet den Stand als **neues Dokument**; die
+Zieldatei und der bisherige Stand bleiben unberührt. Gespeichert wird das neue
+Dokument erst durch „Speichern unter“.
+
+**Verworfen heißt verworfen.** Wählt der Benutzer beim Schließen eines Reiters
+„Verwerfen“, wird der neueste Stand auf den Inhalt der Zieldatei gesetzt — beim
+nächsten Öffnen gilt die Datei, die verworfene Arbeit kehrt nicht zurück.
 
 ### 7. Was die Sicherung nicht ist
 
@@ -153,6 +178,11 @@ Zeitstempel (nur Anzeige). Trägt eine Zeichnung im Kopf keine Kennung, wird
 beim Laden eine aus dem Pfad abgeleitete vergeben (`daten::kennung_fuer_pfad`) —
 dieselbe Datei behält sie über Sitzungen hinweg; eine zufällige Kennung je
 Öffnen würde je Start einen neuen Pin anlegen.
+
+Je Stand steht außerdem `gesichert`: `false` = Arbeitsstand (ungespeicherte
+Arbeit), `true` = der Stand entspricht dem Inhalt der Zieldatei. Geschrieben
+wird ein Dateistand nach dem Speichern, nach „Verwerfen“ und — immer, auch bei
+gleichem Inhalt — als neuester Stand, damit er die Regel aus Abschnitt 6 trägt.
 
 ```
 <Sicherungen>/manifest.json          Zähler n und die Liste der Stände
@@ -211,6 +241,12 @@ wenn Inhalt geändert (Hash-Vergleich):
     ausdünnen(n)                       # Regeln 10.2–10.5
 ```
 
+Beim **Beenden** läuft derselbe Ablauf sofort für jeden Reiter mit
+`doc.modified` — ohne Rücksicht auf das Intervall, damit der nächste Start die
+Arbeit wiederfindet. Ein **Dateistand** (nach „Speichern“ oder „Verwerfen“)
+schreibt ebenfalls einen Stand, überspringt aber den Hash-Vergleich: er muss der
+neueste sein.
+
 Die Zieldatei wird dabei **nicht** angefasst. Ausgedünnt wird **nach** dem
 erfolgreichen Schreiben; die Spitze liegt kurzzeitig bei `Plätze + 1`. Waisen
 (Stand ohne Eintrag) werden beim Start entfernt. Aufwand: `O(N)` je Autosave.
@@ -233,12 +269,21 @@ erfolgreichen Schreiben; die Spitze liegt kurzzeitig bei `Plätze + 1`. Waisen
 9. „Verlauf sichern“ aus → genau ein Stand je Dokument.
 10. Ein wiederhergestellter Stand öffnet ein **neues** Dokument; die Zieldatei
     bleibt unverändert.
+11. Ändern, Beenden, Starten: der Reiter kommt mit dem geänderten Inhalt, dem
+    alten Speicherort und als **geändert** markiert zurück; die Zieldatei hat
+    weiterhin den alten Inhalt.
+12. Speichern, Beenden, Starten: der Reiter kommt mit dem **Dateiinhalt** und
+    **nicht** als geändert zurück.
+13. Verwerfen, Starten: die verworfene Arbeit ist weg, die Datei gilt.
 
 ### 14. Randfälle
 
 | Fall | Verhalten |
 |---|---|
 | Datei unverändert | kein Zyklus, kein Stand |
+| Beenden mit Änderungen | sofort ein Stand, unabhängig vom Intervall |
+| „Verwerfen“ beim Reiter | neuester Stand = Dateiinhalt; die Arbeit kehrt nicht zurück |
+| Zeichnung ausdrücklich geöffnet (Datei-Argument) | ungespeicherter Stand hat Vorrang, der Reiter gilt als geändert |
 | Uhrzeit/DST/Zeitsprung | ohne Wirkung — gerechnet wird in Zyklen |
 | Speichern unter / umbenennen | Stände folgen der Datei-UUID, nicht dem Pfad |
 | Zeichnung ohne Kennung im Kopf | Kennung aus dem Pfad abgeleitet, über Sitzungen stabil; nach dem ersten Speichern steht sie in der Datei und gewinnt |

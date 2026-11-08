@@ -479,6 +479,9 @@ pub fn datei_gewaehlt(app: &mut App, mode: FileMode, path: std::path::PathBuf) {
                 app.prefs.last_dir =
                     path.parent().map(|p| p.to_string_lossy().to_string()).unwrap_or_default();
                 let _ = app.prefs.save();
+                // T0129: der neueste Stand ist jetzt der Dateiinhalt.
+                let aktiv = app.active;
+                app.sicherung_dateistand(aktiv);
                 app.toast(jjcad_core::i18n::t_args_owned("gui.dialogs.datei_gespeichert_x", &[("wert1", format!("{}", path.display()))]));
             }
             Err(e) => app.toast(e),
@@ -966,6 +969,9 @@ pub fn show(app: &mut App, ctx: &egui::Context) {
             app.close_tab_speichern(idx);
             app.ui.confirm_close = None;
         } else if verwerfen {
+            // T0129: verworfene Änderungen dürfen beim nächsten Start nicht
+            // zurückkehren — der neueste Stand wird der Dateiinhalt.
+            app.verwerfen_stand(idx);
             app.close_tab(idx);
             app.ui.confirm_close = None;
         } else if close {

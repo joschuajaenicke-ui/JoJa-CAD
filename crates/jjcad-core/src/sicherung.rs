@@ -62,6 +62,11 @@ pub struct Stand {
     /// Zeitstempel, nur zur Anzeige.
     #[serde(default)]
     pub zeit: String,
+    /// Der Stand entspricht dem Inhalt der **Zieldatei** (geschrieben nach dem
+    /// Speichern bzw. nach „Verwerfen“). Beim Wiederherstellen gewinnt dann die
+    /// Datei; nur ein Stand mit `gesichert = false` trägt ungespeicherte Arbeit.
+    #[serde(default)]
+    pub gesichert: bool,
 }
 
 impl Stand {
@@ -247,14 +252,40 @@ impl Sicherung {
         doc: &mut Document,
         einst: &Einstellungen,
     ) -> Result<Option<Stand>, String> {
+        self.ablegen(doc, einst, false, false)
+    }
+
+    /// Stand, der dem Inhalt der **Zieldatei** entspricht (T0129): nach dem
+    /// Speichern und nach „Verwerfen“.
+    ///
+    /// Er wird **immer** geschrieben, auch bei gleichem Hash — er muss der
+    /// neueste Stand sein, damit das Wiederherstellen die Datei gewinnen lässt
+    /// und verworfene Änderungen nicht zurückkehren.
+    pub fn sichern_dateistand(
+        &mut self,
+        doc: &mut Document,
+        einst: &Einstellungen,
+    ) -> Result<Option<Stand>, String> {
+        self.ablegen(doc, einst, true, true)
+    }
+
+    fn ablegen(
+        &mut self,
+        doc: &mut Document,
+        einst: &Einstellungen,
+        erzwingen: bool,
+        gesichert: bool,
+    ) -> Result<Option<Stand>, String> {
         if doc.id.trim().is_empty() {
             doc.id = neue_uuid();
         }
         let json = persist::to_json(doc)?;
         let hash = hash_hex(json.as_bytes());
-        if let Some(neu) = self.neuester(&doc.id) {
-            if neu.hash == hash {
-                return Ok(None);
+        if !erzwingen {
+            if let Some(neu) = self.neuester(&doc.id) {
+                if neu.hash == hash {
+                    return Ok(None);
+                }
             }
         }
         let zyklus = self.manifest.zyklus + 1;
@@ -265,6 +296,7 @@ impl Sicherung {
             hash,
             groesse: json.len() as u64,
             zeit: zeitstempel(),
+            gesichert,
         };
         atomar_schreiben(&self.stand_pfad(&stand), json.as_bytes())?;
         self.manifest.zyklus = zyklus;
@@ -887,5 +919,28 @@ mod tests {
         let stand = pool.sichern(&mut doc, &Einstellungen::default()).unwrap().unwrap();
         assert!(!doc.id.is_empty());
         assert_eq!(stand.datei, doc.id);
+    }
+
+    /// Ein Arbeitsstand trägt `gesichert = false` (ungespeicherte Arbeit), ein
+    /// Dateistand `true` — und der Dateistand wird auch bei gleichem Inhalt
+    /// geschrieben, damit er der neueste bleibt.
+    #[test]
+    fn dateistand_wird_auch_bei_gleichem_inhalt_geschrieben() {
+        let dir = test_dir("dateistand");
+        let mut pool = Sicherung::oeffnen(&dir);
+        let einst = Einstellungen::default();
+        let mut doc = Document::new();
+
+        let a = pool.sichern(&mut doc, &einst).unwrap().unwrap();
+        assert!(!a.gesichert, "Arbeitsstand darf nicht als Dateistand gelten");
+
+        // Gleicher Inhalt: der normale Weg schweigt …
+        assert!(pool.sichern(&mut doc, &einst).unwrap().is_none());
+
+        // … der Dateistand nicht, und er ist danach der neueste.
+        let b = pool.sichern_dateistand(&mut doc, &einst).unwrap().unwrap();
+        assert!(b.gesichert);
+        assert_eq!(b.zyklus, a.zyklus + 1);
+        assert!(pool.neuester(&doc.id).unwrap().gesichert);
     }
 }

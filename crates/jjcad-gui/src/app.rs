@@ -3708,6 +3708,9 @@ impl App {
             Ok(_) => {
                 self.prefs.add_recent(&path.to_string_lossy());
                 let _ = self.prefs.save();
+                // T0129: der neueste Stand ist jetzt der Dateiinhalt.
+                let aktiv = self.active;
+                self.sicherung_dateistand(aktiv);
                 self.toast(jjcad_core::i18n::t_args_owned("gui.app.datei_gespeichert_x", &[("wert1", format!("{}", path.display()))]));
             }
             Err(e) => self.toast(e),
@@ -3821,6 +3824,77 @@ impl App {
         }
     }
 
+    /// Sichert **sofort** alle Reiter mit ungespeicherten Änderungen (T0129) —
+    /// unabhängig vom eingestellten Intervall. Wird beim Beenden gerufen, damit
+    /// der nächste Start die Arbeit wiederfindet; die Zieldatei bleibt unberührt.
+    pub fn sicherung_jetzt(&mut self) {
+        let einst = self.prefs.sicherung_einstellungen();
+        let mut fehler: Option<String> = None;
+        if self.sicherung.is_none() {
+            self.sicherung = Some(jjcad_core::sicherung::Sicherung::oeffnen(
+                &self.prefs.sicherungen_dir(),
+            ));
+        }
+        if let Some(mut pool) = self.sicherung.take() {
+            for tab in &mut self.tabs {
+                if !tab.session.doc.modified {
+                    continue;
+                }
+                if let Err(e) = pool.sichern(&mut tab.session.doc, &einst) {
+                    fehler = Some(e);
+                }
+            }
+            self.sicherung = Some(pool);
+        }
+        if let Some(grund) = fehler {
+            eprintln!("Sicherung beim Beenden: {grund}");
+        }
+    }
+
+    /// Nach dem Speichern (und nach „Verwerfen“): der neueste Stand ist der
+    /// Inhalt der Zieldatei (T0129). Beim Wiederherstellen gewinnt dann die
+    /// Datei — ungespeicherte Stände bleiben nur, solange es sie gibt.
+    pub fn sicherung_dateistand(&mut self, idx: usize) {
+        let einst = self.prefs.sicherung_einstellungen();
+        if self.sicherung.is_none() {
+            self.sicherung = Some(jjcad_core::sicherung::Sicherung::oeffnen(
+                &self.prefs.sicherungen_dir(),
+            ));
+        }
+        if let Some(mut pool) = self.sicherung.take() {
+            if let Some(tab) = self.tabs.get_mut(idx) {
+                let _ = pool.sichern_dateistand(&mut tab.session.doc, &einst);
+            }
+            self.sicherung = Some(pool);
+        }
+    }
+
+    /// „Verwerfen“ beim Schließen eines Reiters: die ungespeicherten Änderungen
+    /// sollen nicht wiederkehren. Der neueste Stand wird deshalb auf den Inhalt
+    /// der Zieldatei gesetzt — beim nächsten Öffnen gilt die Datei.
+    pub fn verwerfen_stand(&mut self, idx: usize) {
+        let Some(pfad) = self
+            .tabs
+            .get(idx)
+            .and_then(|t| t.session.doc.path.clone())
+        else {
+            return;
+        };
+        let Ok(mut doc) = jjcad_core::persist::load_document(Path::new(&pfad)) else {
+            return;
+        };
+        let einst = self.prefs.sicherung_einstellungen();
+        if self.sicherung.is_none() {
+            self.sicherung = Some(jjcad_core::sicherung::Sicherung::oeffnen(
+                &self.prefs.sicherungen_dir(),
+            ));
+        }
+        if let Some(mut pool) = self.sicherung.take() {
+            let _ = pool.sichern_dateistand(&mut doc, &einst);
+            self.sicherung = Some(pool);
+        }
+    }
+
     /// Sicherung (T0129): Einen Stand als **neues** Dokument öffnen.
     ///
     /// Das neue Dokument trägt keinen Pfad — „Speichern“ fragt nach einem Ziel
@@ -3886,6 +3960,21 @@ impl App {
                 // T0125: Voreinstellungen nur **merken** — die Ebenen der
                 // geöffneten Zeichnung behalten ihre Breiten.
                 s.doc.merke_standard_breiten(&self.prefs.layer_weights);
+                // T0129: Liegt für diese Zeichnung ungespeicherte Arbeit im
+                // Sicherungspool, gilt sie — sonst würde ein Doppelklick auf die
+                // Datei die Arbeit von eben stillschweigend verwerfen.
+                let id = s.doc.id.clone();
+                let stand_doc = {
+                    let pool = self.sicherung_pool();
+                    ungespeicherter_stand(pool, &id, path)
+                };
+                if let Some(mut doc) = stand_doc {
+                    doc.path = Some(path.to_string_lossy().to_string());
+                    doc.name = s.doc.name.clone();
+                    doc.modified = true;
+                    doc.merke_standard_breiten(&self.prefs.layer_weights);
+                    s = Session::with_doc(doc);
+                }
                 let tab = DocTab {
                     session: s,
                     tab: TabKind::Model,
@@ -4105,6 +4194,9 @@ impl App {
             Ok(_) => {
                 self.prefs.add_recent(&pfad.to_string_lossy());
                 let _ = self.prefs.save();
+                // T0129: der neueste Stand ist jetzt der Dateiinhalt — vor dem
+                // Schließen, damit der Reiter nicht mit ungespeichertem Stand geht.
+                self.sicherung_dateistand(idx);
                 self.toast(jjcad_core::i18n::t_args_owned("gui.app.datei_gespeichert_x", &[("wert1", format!("{}", pfad.display()))]));
                 self.close_tab(idx);
             }
@@ -4189,7 +4281,7 @@ impl App {
     ) -> Vec<String> {
         let mut meldungen = Vec::new();
         let mut tabs: Vec<DocTab> = Vec::new();
-        let mut pool: Option<jjcad_core::sicherung::Sicherung> = None;
+        let pool = jjcad_core::sicherung::Sicherung::oeffnen(pool_dir);
 
         for r in &s.reiter {
             // 1. Zieldatei von der Platte. Ein Fehler wird noch nicht gemeldet:
@@ -4199,6 +4291,16 @@ impl App {
             if let Some(pfad) = r.datei.as_deref() {
                 match Session::open(Path::new(pfad)) {
                     Ok(mut sess) => {
+                        // T0129: Gibt es einen neueren Stand mit **ungespeicherter**
+                        // Arbeit, gilt sein Inhalt — der Pfad bleibt, damit
+                        // „Speichern“ die Zieldatei überschreibt.
+                        if let Some(mut doc) = ungespeicherter_stand(&pool, &r.id, Path::new(pfad)) {
+                            doc.path = Some(pfad.to_string());
+                            doc.name = sess.doc.name.clone();
+                            doc.modified = true;
+                            doc.merke_standard_breiten(&self.prefs.layer_weights);
+                            sess = Session::with_doc(doc);
+                        }
                         sess.doc.merke_standard_breiten(&self.prefs.layer_weights);
                         geladen = Some(sess);
                     }
@@ -4210,9 +4312,6 @@ impl App {
             let sess = match geladen {
                 Some(sess) => sess,
                 None => {
-                    let pool = pool.get_or_insert_with(|| {
-                        jjcad_core::sicherung::Sicherung::oeffnen(pool_dir)
-                    });
                     let stand = pool.neuester(&r.id).cloned();
                     match stand {
                         Some(stand) => match pool.laden(&stand) {
@@ -7881,10 +7980,34 @@ impl eframe::App for App {
         if ist_demo_start() {
             return;
         }
+        // T0129: ungespeicherte Änderungen zuerst als Stand ablegen — sonst
+        // findet der nächste Start nur den Stand von vor dem letzten Intervall.
+        self.sicherung_jetzt();
         if let Err(e) = self.sitzung_schreiben() {
             eprintln!("Sitzung nicht gespeichert: {e}");
         }
     }
+}
+
+/// Inhalt des neuesten Standes, wenn er **ungespeicherte Arbeit** trägt und
+/// vom Inhalt der Zieldatei abweicht (T0129).
+///
+/// `None` heißt: die Datei gilt. Ein Stand, der der Datei entspricht
+/// (`gesichert`, geschrieben nach dem Speichern oder nach „Verwerfen“), zählt
+/// nie — sonst käme verworfene Arbeit zurück.
+fn ungespeicherter_stand(
+    pool: &jjcad_core::sicherung::Sicherung,
+    id: &str,
+    pfad: &Path,
+) -> Option<jjcad_core::model::Document> {
+    let stand = pool.neuester(id)?.clone();
+    let datei_hash = std::fs::read(pfad)
+        .ok()
+        .map(|b| jjcad_core::sicherung::hash_hex(&b));
+    if stand.gesichert || datei_hash.as_deref() == Some(stand.hash.as_str()) {
+        return None;
+    }
+    pool.laden(&stand).ok()
 }
 
 /// Zeitstempel eines Standes für die Anzeige: `2026-11-08T12:33:29` →
@@ -12798,6 +12921,63 @@ mod tests_sicherung {
             app.doc().entities.len(),
             "der neueste Stand ist nicht der Arbeitsstand"
         );
+    }
+
+    /// Ungespeicherte Arbeit überlebt das Beenden: `sicherung_jetzt` (der
+    /// Beenden-Weg) legt sie als Stand ab, der nächste Start holt sie zurück —
+    /// mit Pfad, aber als geändert. Die Zieldatei bleibt unberührt.
+    #[test]
+    fn ungespeicherte_arbeit_kommt_beim_start_zurueck() {
+        let dir = test_dir("ungespeichert");
+        let mut app = app_mit_pool(&dir);
+        let ziel = dir.join("Plan.jjcad");
+        linie(&mut app, 0.0);
+        app.session_mut().save(&ziel).expect("Zieldatei");
+        app.sicherung_dateistand(0);
+
+        linie(&mut app, 500.0);
+        app.sicherung_jetzt();
+
+        let s = app.sitzung_sammeln();
+        let mut neu = App::with_ctx(egui::Context::default());
+        let meldungen = neu.sitzung_wiederherstellen(&s, &dir);
+        assert!(meldungen.is_empty(), "keine Meldung erwartet: {meldungen:?}");
+        assert_eq!(neu.doc().entities.len(), 2, "die ungespeicherte Linie fehlt");
+        assert_eq!(
+            neu.doc().path.as_deref(),
+            Some(ziel.to_string_lossy().as_ref()),
+            "der Pfad muss erhalten bleiben"
+        );
+        assert!(neu.doc().modified, "der Reiter muss als geändert gelten");
+        assert!(neu.weicht_von_zieldatei(0));
+
+        let datei = jjcad_core::persist::load_document(&ziel).expect("Zieldatei lesbar");
+        assert_eq!(datei.entities.len(), 1, "die Zieldatei wurde angefasst");
+    }
+
+    /// „Verwerfen“ lässt die Änderungen nicht zurückkehren: der neueste Stand
+    /// wird der Dateiinhalt, der Start lädt wieder die Datei.
+    #[test]
+    fn verworfene_arbeit_kommt_nicht_zurueck() {
+        let dir = test_dir("verworfen");
+        let mut app = app_mit_pool(&dir);
+        let ziel = dir.join("Plan.jjcad");
+        linie(&mut app, 0.0);
+        app.session_mut().save(&ziel).expect("Zieldatei");
+
+        linie(&mut app, 500.0);
+        app.sicherung_jetzt();
+        app.verwerfen_stand(0);
+
+        let s = app.sitzung_sammeln();
+        let mut neu = App::with_ctx(egui::Context::default());
+        neu.sitzung_wiederherstellen(&s, &dir);
+        assert_eq!(
+            neu.doc().entities.len(),
+            1,
+            "verworfene Änderung ist zurückgekommen"
+        );
+        assert!(!neu.doc().modified, "die Datei gilt als gespeichert");
     }
 
     /// Vor Ablauf des Intervalls wird nichts gesichert.
