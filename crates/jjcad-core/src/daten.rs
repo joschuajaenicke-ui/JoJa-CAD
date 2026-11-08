@@ -28,7 +28,8 @@ pub const WURZEL_UMGEBUNG: &str = "JJCAD_DATA_DIR";
 pub const PORTABLE_DATEI: &str = "portable.txt";
 /// Einstellungen in der Wurzel (nicht änderbar).
 pub const PREFS_DATEI: &str = "prefs.json";
-/// Sitzung in der Wurzel (nicht änderbar; kommt mit dem Sitzungs-Ticket).
+/// Sitzung in der Wurzel (nicht änderbar) — Reiter, Ansichten und Fensterlage
+/// für den nächsten Start, siehe [`crate::sitzung`].
 pub const SITZUNG_DATEI: &str = "sitzung.json";
 /// Sperrdatei der laufenden Instanz (PID).
 pub const SPERRE_DATEI: &str = "sperre.lock";

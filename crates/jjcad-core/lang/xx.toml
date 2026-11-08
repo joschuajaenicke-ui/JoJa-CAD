@@ -1032,6 +1032,8 @@
 # zerlegen_objekt_anklicken = "Zerlegen · Objekt anklicken"
 # zwei_oder_mehr_angrenzende_fuellflaechen_zu_einer_verein = "Zwei oder mehr angrenzende Füllflächen zu einer vereinigen"
 # sicherung_fehler_x = "Sicherung: {grund}"
+# sitzung_reiter_weggefallen_x = "Reiter {name} nicht wiederhergestellt: {grund}"
+# sitzung_stand_fehlt = "kein Sicherungsstand vorhanden"
 #
 [gui.start]
 # sperre_titel = "Datenordner bereits in Benutzung"

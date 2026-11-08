@@ -981,6 +981,8 @@ zerlegen_objekt_anklicken = "Explode · click an object"
 zwei_oder_mehr_angrenzende_fuellflaechen_zu_einer_verein = "Unite two or more adjacent fill areas into one"
 
 sicherung_fehler_x = "Backup: {grund}"
+sitzung_reiter_weggefallen_x = "Tab {name} not restored: {grund}"
+sitzung_stand_fehlt = "no backup state available"
 
 [gui.start]
 sperre_titel = "Data folder already in use"

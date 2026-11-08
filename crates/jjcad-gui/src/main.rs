@@ -81,20 +81,46 @@ fn starte_app(file: Option<String>, sperre: daten::Sperre) -> eframe::Result<()>
     let prefs = jjcad_core::persist::UserPrefs::load();
     let titelleiste = !prefs.fensterrahmen.ohne_titelleiste();
 
+    // T0130: Größe und Lage des Fensters stehen ebenfalls vor dem Fenster fest;
+    // sie kommen aus `sitzung.json`. Fehlt die Datei, bleibt die Vorgabe.
+    let sitzung = if app::ist_demo_start() {
+        // Prüfbild: die Reiter des Nutzers bleiben unangetastet.
+        None
+    } else {
+        match jjcad_core::sitzung::laden(&daten::sitzung_datei()) {
+            Ok(s) => s,
+            Err(e) => {
+                eprintln!("{e} — es wird mit einer leeren Zeichnung gestartet");
+                None
+            }
+        }
+    };
+
+    let mut viewport = egui::ViewportBuilder::default()
+        .with_inner_size([1500.0, 950.0])
+        .with_min_inner_size([1080.0, 680.0])
+        .with_title(app::window_title())
+        // Ohne Titelleiste: Knöpfe und Ziehen zeichnet die Anwendung selbst
+        .with_decorations(titelleiste)
+        // Dateien dürfen ins Fenster gezogen werden (T0115). Unter
+        // Windows ist das standardmäßig aus, deshalb ausdrücklich an.
+        .with_drag_and_drop(true)
+        // Fenstername für Taskleiste und Startmenü (KDE/GNOME ordnen das
+        // Fenster über den .desktop-Eintrag „jjcad“ zu)
+        .with_app_id("jjcad")
+        .with_icon(icon::fenster_icon());
+    if let Some(f) = sitzung.as_ref().and_then(|s| s.fenster) {
+        if f.brauchbar() {
+            // Die Mindestgröße gilt auch für einen gespeicherten Stand: ein von
+            // Hand verkleinertes Fenster soll die Oberfläche nicht zerlegen.
+            viewport = viewport
+                .with_inner_size([f.breite.max(1080.0), f.hoehe.max(680.0)])
+                .with_position([f.x, f.y]);
+        }
+    }
+
     let options = eframe::NativeOptions {
-        viewport: egui::ViewportBuilder::default()
-            .with_inner_size([1500.0, 950.0])
-            .with_min_inner_size([1080.0, 680.0])
-            .with_title(app::window_title())
-            // Ohne Titelleiste: Knöpfe und Ziehen zeichnet die Anwendung selbst
-            .with_decorations(titelleiste)
-            // Dateien dürfen ins Fenster gezogen werden (T0115). Unter
-            // Windows ist das standardmäßig aus, deshalb ausdrücklich an.
-            .with_drag_and_drop(true)
-            // Fenstername für Taskleiste und Startmenü (KDE/GNOME ordnen das
-            // Fenster über den .desktop-Eintrag „jjcad“ zu)
-            .with_app_id("jjcad")
-            .with_icon(icon::fenster_icon()),
+        viewport,
         vsync: crate::diag::vsync(),
         ..Default::default()
     };
@@ -106,8 +132,19 @@ fn starte_app(file: Option<String>, sperre: daten::Sperre) -> eframe::Result<()>
             let mut app = app::App::new(cc);
             // Sperrdatei lebt so lange wie die Anwendung.
             app.sperre = Some(sperre);
-            if let Some(f) = file.clone() {
-                app.load_document(&std::path::PathBuf::from(f));
+            match file.clone() {
+                // Eine ausdrücklich übergebene Zeichnung hat Vorrang — dann
+                // wird nicht zusätzlich die Sitzung geöffnet.
+                Some(f) => app.load_document(&std::path::PathBuf::from(f)),
+                None => {
+                    if let Some(s) = &sitzung {
+                        let pool_dir = app.prefs.sicherungen_dir();
+                        let meldungen = app.sitzung_wiederherstellen(s, &pool_dir);
+                        for m in meldungen {
+                            app.toast(m);
+                        }
+                    }
+                }
             }
             // Startzustand für Screenshots/automatisierte Tests (JJCAD_DEMO_UI)
             app.apply_demo_ui();
