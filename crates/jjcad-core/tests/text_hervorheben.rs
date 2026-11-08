@@ -10,9 +10,11 @@
 //! PNG und PDF dieselbe Form zeigen. Alle Koordinaten in Millimetern
 //! (`input_unit: mm`).
 
-use jjcad_core::geom::Vec2;
+use jjcad_core::export::RasterOptions;
+use jjcad_core::geom::{v, Vec2};
 use jjcad_core::model::{EntityKind, TextAlignH, TextAlignV};
 use jjcad_core::persist;
+use jjcad_core::geom::BBox;
 use jjcad_core::render::{self, render_document, RenderCtx, Shape};
 use jjcad_core::session::Session;
 use serde_json::json;
@@ -58,7 +60,9 @@ fn rahmen_und_flaeche(s: &Session) -> (Option<Vec<Vec2>>, Option<Vec<Vec2>>) {
             continue;
         }
         match &prim.shape {
-            Shape::Fill { outer, .. } => flaeche = Some(outer.clone()),
+            Shape::Fill { outer, .. } | Shape::FillOrdered { outer, .. } => {
+                flaeche = Some(outer.clone())
+            }
             Shape::Poly(pts, closed) if *closed => rahmen = Some(pts.clone()),
             _ => {}
         }
@@ -191,7 +195,7 @@ fn hintergrund_ist_das_rechteck_der_umrandung() {
         .prims
         .iter()
         .find_map(|p| match &p.shape {
-            Shape::Fill { .. } if p.entity == e.id => p.style.fill,
+            Shape::Fill { .. } | Shape::FillOrdered { .. } if p.entity == e.id => p.style.fill,
             _ => None,
         })
         .expect("keine Füllfarbe");
@@ -281,4 +285,135 @@ fn umrandung_ueberlebt_das_veraendern() {
     assert!(*frame, "Umrandung verloren");
     assert!(background.is_some(), "Hintergrund verloren");
     assert_eq!((*align, *valign), (TextAlignH::Center, TextAlignV::Middle));
+}
+
+// ---------------------------------------------------------------------------
+// Zeichenreihenfolge (Turn 3)
+// ---------------------------------------------------------------------------
+
+/// Text mit Hintergrund, danach eine Linie quer durch dessen Kasten.
+///
+/// Der Text ordnet sich per Zeichenrang (4) über der Linie (3) ein — er
+/// liegt also oben, die Linie darunter. Gemessen wird rechts neben dem
+/// Zeichen (Text „I “ mit Leerzeichen): dort liegt nur die Hintergrundfläche,
+/// kein Buchstabenstrich.
+///
+/// Die Linie kommt **nach** dem Text in die Zeichnung, damit ihre Höhe aus dem
+/// fertigen Textkasten stammt und der Prüfpunkt sicher auf ihr liegt.
+fn text_ueber_linie() -> (Session, jjcad_core::model::Id, Vec2, BBox) {
+    let mut s = s();
+    s.execute(
+        "draw.text",
+        &json!({ "p": [0.0, 0.0], "text": "I ", "height": 250.0,
+                 "align": "left", "valign": "bottom",
+                 "background": "#fff176", "frame": true }),
+    )
+    .expect("Text");
+    let id = letzter_text(&s).id;
+    let k = render::text_frame(&s.doc, letzter_text(&s)).expect("Kasten");
+    let kb = bbox(&k);
+    // Rechts neben dem Zeichen, auf halber Kasten­höhe.
+    let punkt = Vec2::new(kb.0 + (kb.2 - kb.0) * 0.8, (kb.1 + kb.3) * 0.5);
+    s.execute(
+        "draw.line",
+        &json!({ "a": [-300.0, punkt.y], "b": [700.0, punkt.y],
+                 "layer": "Wände", "color": "#000000", "lineweight": 0.5 }),
+    )
+    .expect("Linie");
+    let bbox = BBox::new(v(-400.0, -100.0), v(800.0, 600.0));
+    (s, id, punkt, bbox)
+}
+
+/// Bildpunkt einer Weltkoordinate im Rasterbild (dieselbe Rechnung wie
+/// `raster::render_model_pixmap`: 3 % Rand, dann einheitlicher Maßstab).
+fn bildpunkt(bbox: BBox, w: u32, h: u32, x: f64, y: f64) -> (u32, u32) {
+    let b = bbox.expanded(bbox.width().max(bbox.height()) * 0.03);
+    let k = (w as f64 / b.width()).min(h as f64 / b.height());
+    let ox = -b.min.x * k + (w as f64 - b.width() * k) * 0.5;
+    let oy = b.max.y * k + (h as f64 - b.height() * k) * 0.5;
+    let px = (x * k + ox).round().clamp(0.0, (w - 1) as f64) as u32;
+    let py = (-y * k + oy).round().clamp(0.0, (h - 1) as f64) as u32;
+    (px, py)
+}
+
+/// Farbe am Prüfpunkt im Rasterbild.
+fn farbe_am_punkt(s: &Session, punkt: Vec2, bbox: BBox) -> image::Rgba<u8> {
+    let (w, h) = (600u32, 300u32);
+    let opts = RasterOptions {
+        width_px: w,
+        height_px: h,
+        bbox: Some([bbox.min.x, bbox.min.y, bbox.max.x, bbox.max.y]),
+        paper: true,
+        annot_scale: None,
+        sheet: None,
+    };
+    let png = jjcad_core::raster::png_bytes(&s.doc, &opts).expect("PNG");
+    let img = image::load_from_memory(&png).expect("PNG lesen").to_rgba8();
+    let (px, py) = bildpunkt(bbox, w, h, punkt.x, punkt.y);
+    *img.get_pixel(px, py)
+}
+
+/// Der Hintergrund reist mit dem Text: liegt der Text über der Linie, deckt
+/// seine Fläche sie zu — vorher stand jede Füllung vor allen Linien und der
+/// Hintergrund lag darunter (T0126, Turn 3).
+#[test]
+fn hintergrund_ueberdeckt_frueher_gezeichnete_linien() {
+    let (s, _, punkt, bbox) = text_ueber_linie();
+    let p = farbe_am_punkt(&s, punkt, bbox);
+    assert!(
+        p[0] > 200 && p[1] > 200 && p[2] < 200,
+        "Hintergrundfarbe erwartet, gemessen {p:?} — die Linie liegt noch oben"
+    );
+}
+
+/// Gegenprobe: liegt die Linie **über** dem Text (`modify.order`), deckt sie
+/// den Hintergrund zu. Die Reihenfolge folgt also der Zeichnung, nicht dem
+/// Unterschied „Fläche/Linie".
+#[test]
+fn linie_ueber_dem_text_deckt_den_hintergrund_zu() {
+    let (mut s, _, punkt, bbox) = text_ueber_linie();
+    let linie = s
+        .doc
+        .entities
+        .iter()
+        .find(|e| matches!(e.kind, EntityKind::Line { .. }))
+        .expect("Linie")
+        .id;
+    s.execute("modify.order", &json!({ "ids": [linie], "where": "front" }))
+        .expect("Linie nach vorn");
+    let p = farbe_am_punkt(&s, punkt, bbox);
+    assert!(
+        p[0] < 120 && p[1] < 120 && p[2] < 120,
+        "Linienfarbe erwartet, gemessen {p:?}"
+    );
+}
+
+/// Dieselbe Reihenfolge in der Anzeigeliste: der Hintergrund steht an der
+/// Stelle des Textes, nicht am Anfang der Liste.
+#[test]
+fn hintergrund_steht_an_der_stelle_des_textes() {
+    let (s, text_id, _, _) = text_ueber_linie();
+    let linie = s
+        .doc
+        .entities
+        .iter()
+        .find(|e| matches!(e.kind, EntityKind::Line { .. }))
+        .expect("Linie")
+        .id;
+    let dl = render_document(&RenderCtx::new(&s.doc));
+    let pos = |id: u64| -> Vec<usize> {
+        dl.prims
+            .iter()
+            .enumerate()
+            .filter(|(_, p)| p.entity == id)
+            .map(|(i, _)| i)
+            .collect()
+    };
+    let t = pos(text_id);
+    let l = pos(linie);
+    assert!(!t.is_empty() && !l.is_empty(), "Prims fehlen");
+    assert!(
+        *t.first().unwrap() > *l.last().unwrap(),
+        "Text/Hintergrund vor der Linie: Text {t:?}, Linie {l:?}"
+    );
 }

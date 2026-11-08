@@ -5216,7 +5216,7 @@ pub fn explode_entity(doc: &mut Document, id: Id) -> Result<Vec<Id>, String> {
                 a0: *a0,
                 a1: *a1,
             }),
-            Shape::Fill { outer, holes } => {
+            Shape::Fill { outer, holes } | Shape::FillOrdered { outer, holes } => {
                 if outer.len() >= 3 {
                     Some(EntityKind::Fill {
                         boundary: outer.clone(),
