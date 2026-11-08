@@ -5437,7 +5437,12 @@ mod tests_einstellungen {
                     egui::Shape::Text(t) if t.galley.text() == "Maus verschiebt")),
             "Zeile „Maus verschiebt“ fehlt im Einstellungsfenster"
         );
-        assert!(app.prefs.mouse_move, "Vorgabe: Maus verschiebt ist eingeschaltet");
+        // T0127: `prefs.json` liegt in der Datenwurzel — `WegwerfKonfig` leitet
+        // nur `XDG_CONFIG_HOME` um. Geprüft wird deshalb die Vorgabe selbst.
+        assert!(
+            jjcad_core::persist::UserPrefs::default().mouse_move,
+            "Vorgabe: Maus verschiebt ist eingeschaltet"
+        );
     }
 
     /// T0125: „Voreinstellungen“ zeigt eine Zeile je Objektart — die Liste
@@ -5555,8 +5560,14 @@ mod tests_einstellungen {
                     egui::Shape::Text(t) if t.galley.text() == "Schwenk")),
             "Zeile „Schwenk“ fehlt im Einstellungsfenster"
         );
+        // T0127: `prefs.json` liegt in der Datenwurzel, nicht mehr unter
+        // `XDG_CONFIG_HOME` — `WegwerfKonfig` isoliert sie also nicht. Der Test
+        // prüft deshalb die **Vorgabe** der Einstellung selbst, nicht den
+        // geladenen Wert: der Nutzer stellt „Schwenk“ im laufenden Betrieb um,
+        // und `ship-card.sh` testet mit seiner echten `prefs.json` (gesehen:
+        // rot nach dem Merge, obwohl die Oberfläche stimmt).
         assert!(
-            (app.prefs.pan_speed - 1.0).abs() < 1e-6,
+            (jjcad_core::persist::UserPrefs::default().pan_speed - 1.0).abs() < 1e-6,
             "Vorgabe der Schwenkgeschwindigkeit ist 1×"
         );
     }
