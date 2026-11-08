@@ -104,16 +104,87 @@ fn alter_name_draw_fill_erzeugt_dieselbe_flaeche() {
     assert_eq!(a.doc.entities[0].kind, b.doc.entities[0].kind);
 }
 
-/// Weniger als drei Punkte werden abgelehnt statt eine entartete Fläche
-/// anzulegen.
+/// Zwei Punkte **auf einer Achse** sind keine Diagonale und werden abgelehnt —
+/// die Meldung nennt den Grund statt eine entartete Fläche anzulegen (T0131).
 #[test]
-fn weniger_als_drei_punkte_werden_abgelehnt() {
+fn zwei_punkte_auf_einer_achse_werden_abgelehnt() {
     let mut s = Session::new();
     let err = s
         .execute("draw.fill.points", &json!({ "pts": [[0.0, 0.0], [1.0, 0.0]] }))
-        .expect_err("zwei Punkte reichen nicht");
-    assert!(err.contains("drei Punkte"), "Meldung: {err}");
+        .expect_err("zwei Punkte auf einer Waagerechten ergeben keine Fläche");
+    assert!(err.contains("Achse"), "Meldung: {err}");
     assert!(s.doc.entities.is_empty(), "nichts angelegt");
+
+    let err = s
+        .execute("draw.fill.points", &json!({ "pts": [[0.0, 0.0], [0.0, 1.0]] }))
+        .expect_err("zwei Punkte auf einer Senkrechten ergeben keine Fläche");
+    assert!(err.contains("Achse"), "Meldung: {err}");
+    assert!(s.doc.entities.is_empty(), "nichts angelegt");
+}
+
+/// Ein einzelner Punkt bleibt zu wenig — dort ist die alte Meldung richtig.
+#[test]
+fn ein_punkt_ist_zu_wenig() {
+    let mut s = Session::new();
+    let err = s
+        .execute("draw.fill.points", &json!({ "pts": [[0.0, 0.0]] }))
+        .expect_err("ein Punkt ist keine Fläche");
+    assert!(err.contains("drei Punkte"), "Meldung: {err}");
+    assert!(s.doc.entities.is_empty());
+}
+
+/// Zwei Punkte als **Diagonale** ergeben ein achsenparalleles Rechteck — für
+/// Füllfläche, Schraffur und Volumen derselbe Weg (T0131).
+#[test]
+fn zwei_punkte_als_diagonale_ergeben_ein_rechteck() {
+    // Füllfläche aus der Punktfolge.
+    let mut s = Session::new();
+    s.execute(
+        "draw.fill.points",
+        &json!({ "pts": [[0.0, 0.0], [4.0, 3.0]] }),
+    )
+    .expect("Diagonale muss eine Fläche anlegen");
+    assert_eq!(s.doc.entities.len(), 1);
+    let k = kanten(&s.doc.entities[0]);
+    assert_eq!(k.len(), 4, "vier Ecken");
+    for (got, want) in k.iter().zip([
+        Vec2::new(0.0, 0.0),
+        Vec2::new(4000.0, 0.0),
+        Vec2::new(4000.0, 3000.0),
+        Vec2::new(0.0, 3000.0),
+    ]) {
+        assert!((*got - want).len() < 1e-6, "Ecke {got:?} statt {want:?}");
+    }
+    assert!((flaeche_m2(&s.doc.entities[0]) - 12.0).abs() < 1e-9);
+
+    // Schraffur (`draw.hatch`) nimmt dieselbe Diagonale.
+    let mut h = Session::new();
+    h.execute(
+        "draw.hatch",
+        &json!({ "boundary": [[0.0, 0.0], [4.0, 3.0]], "pattern": "lines" }),
+    )
+    .expect("Schraffur aus der Diagonale");
+    assert_eq!(kanten(&h.doc.entities[0]).len(), 4);
+    assert!((flaeche_m2(&h.doc.entities[0]) - 12.0).abs() < 1e-9);
+
+    // Volumen: dieselbe Diagonale, dazu die Höhe.
+    let mut v = Session::new();
+    v.execute(
+        "draw.volume.points",
+        &json!({ "pts": [[0.0, 0.0], [4.0, 3.0]], "height": 2.5 }),
+    )
+    .expect("Volumen aus der Diagonale");
+    match &v.doc.entities[0].kind {
+        EntityKind::Volume {
+            boundary, height, ..
+        } => {
+            assert_eq!(boundary.len(), 4, "vier Ecken");
+            assert!((height - 2500.0).abs() < 1e-6, "Höhe {height}");
+            let flaeche = polygon_area(boundary).abs() / 1_000_000.0;
+            assert!((flaeche - 12.0).abs() < 1e-9, "Fläche {flaeche} m²");
+        }
+        other => panic!("kein Volumen, sondern {}", other.type_name()),
+    }
 }
 
 /// Das Werkzeug steht im Register — nur so erscheint es in Ribbon-Inventar,

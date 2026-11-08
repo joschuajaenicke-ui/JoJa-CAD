@@ -1312,6 +1312,24 @@ fn add_filled(
     ebene: Option<&str>,
 ) -> Result<Value, String> {
     if boundary.len() < 3 {
+        // Sonderfall „Diagonale" (T0131): zwei Punkte ergeben ein
+        // achsenparalleles Rechteck. Liegen beide auf einer Waagerechten oder
+        // Senkrechten, ist das keine Fläche — dann bleibt es beim Fehler, kein
+        // stiller Erfolg (T0038).
+        if boundary.len() == 2 {
+            if let Some(ecken) = crate::geom::rechteck_aus_diagonale(boundary[0], boundary[1]) {
+                return add_filled(
+                    doc,
+                    ecken.to_vec(),
+                    holes,
+                    p,
+                    rand_vorgabe,
+                    volumen,
+                    ebene,
+                );
+            }
+            return Err("Zwei Punkte auf einer Achse ergeben keine Fläche".into());
+        }
         return Err("Füllfläche braucht mindestens drei Punkte".into());
     }
     let layer = resolve_layer_in(doc, p, ebene);

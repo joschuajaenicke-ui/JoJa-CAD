@@ -99,6 +99,67 @@ fn fill_ring_mut(kind: &mut EntityKind, i: usize) -> Option<(&mut Vec<V2>, usize
     None
 }
 
+/// Punkte eines Rings, die auf der Rechteckkante `i` liegen — die beiden Ecken
+/// und alle Zwischenpunkte dazwischen.
+///
+/// Der Farbeimer liefert seinen Rand als dichten Punktzug; beim Verschieben
+/// einer Kante müssen diese Zwischenpunkte mitwandern, sonst bliebe der Rand
+/// stehen und die Fläche bekäme einen Knick. Gesucht wird über den Abstand zur
+/// Kante (0,5 mm), nicht über Indizes — so ist die Reihenfolge der Punkte im
+/// Ring gleichgültig.
+fn rechteck_kante_punkte(ring: &[V2], ecken: &[V2; 4], i: usize) -> Vec<V2> {
+    let p1 = ecken[i % 4];
+    let p2 = ecken[(i + 1) % 4];
+    ring.iter()
+        .copied()
+        .filter(|p| jjcad_core::geom::dist_point_segment(*p, p1, p2) <= 0.5)
+        .collect()
+}
+
+/// Verschiebt die Kante `i` eines rechteckigen Rings **parallel**: alle Punkte
+/// auf der Kante wandern um denselben Betrag in Normalenrichtung, die
+/// gegenüberliegende Kante bleibt stehen. Damit wird das Rechteck breiter bzw.
+/// schmaler, ohne zu kippen — dieselbe Bewegung wie an einer geschlossenen
+/// Polylinie (`GripKind::Edge`), nur mit Zwischenpunkten (T0131).
+///
+/// Die Breite bleibt mindestens 1 mm; über die gegenüberliegende Kante hinaus
+/// lässt sich die Kante nicht ziehen (sonst kehrte sich die Fläche um).
+fn rechteck_kante_schieben(ring: &mut [V2], ecken: &[V2; 4], i: usize, target: V2) -> Option<()> {
+    const MIN_BREITE_MM: f64 = 1.0;
+    let p1 = ecken[i % 4];
+    let p2 = ecken[(i + 1) % 4];
+    let seg = p2 - p1;
+    let len = seg.len();
+    if len < 1e-6 {
+        return None;
+    }
+    // Linke Normale der Kante; die Gegenkante liegt auf der anderen Seite.
+    let nrm = V2::new(-seg.y, seg.x) / len;
+    let mitte = (p1 + p2) * 0.5;
+    let mut d = (target - mitte).dot(nrm);
+    let gegen = (ecken[(i + 2) % 4] + ecken[(i + 3) % 4]) * 0.5;
+    let breite = (mitte - gegen).dot(nrm);
+    if breite.abs() < 1e-6 {
+        return None;
+    }
+    if breite > 0.0 {
+        // Kante liegt auf der +n-Seite der Gegenkante: der Abstand darf nicht
+        // unter das Minimum fallen, weiter weg ist immer erlaubt.
+        d = d.max(MIN_BREITE_MM - breite);
+    } else {
+        d = d.min(-MIN_BREITE_MM - breite);
+    }
+    if rechteck_kante_punkte(ring, ecken, i).is_empty() {
+        return None;
+    }
+    for p in ring.iter_mut() {
+        if jjcad_core::geom::dist_point_segment(*p, p1, p2) <= 0.5 {
+            *p = *p + nrm * d;
+        }
+    }
+    Some(())
+}
+
 /// Ecken des Treppenrechtecks in Anzeigereihenfolge, dazu Richtung, Normale
 /// und halbe Breite.
 ///
@@ -241,7 +302,11 @@ pub fn grips_of(e: &Entity) -> Vec<(GripKind, V2)> {
             .collect(),
         // Füllfläche: die Ecken der Umgrenzung und der Inseln. Zwischenpunkte
         // einer geraden Kante fallen weg (`ist_ecke`) — der Farbeimer liefert
-        // seinen Rand als dichten Punktzug.
+        // seinen Rand als dichten Punktzug. Ist die Umgrenzung ein **echtes
+        // Rechteck**, kommen die vier Kantenmitten dazu: Ziehen verschiebt die
+        // Kante parallel, wie beim Rechteck (T0131). Inseln schließen die
+        // Kantengriffe aus — eine Kante mit Loch lässt sich nicht als Ganzes
+        // verschieben.
         EntityKind::Fill { boundary, holes, .. }
         | EntityKind::Volume { boundary, holes, .. } => {
             let mut out: Vec<(GripKind, V2)> = Vec::new();
@@ -253,6 +318,16 @@ pub fn grips_of(e: &Entity) -> Vec<(GripKind, V2)> {
                     }
                 }
                 base += ring.len();
+            }
+            if holes.is_empty() {
+                if let Some(ecken) = jjcad_core::geom::rechteck_ecken(boundary) {
+                    for i in 0..4 {
+                        out.push((
+                            GripKind::Edge(i),
+                            (ecken[i] + ecken[(i + 1) % 4]) * 0.5,
+                        ));
+                    }
+                }
             }
             out
         }
@@ -520,6 +595,26 @@ pub fn apply_grip_tol(orig: &Entity, kind: GripKind, target: V2, tol: f64) -> Op
             let ring = ziel?;
             ring[i - base] = target;
         }
+        // Rechteckige Füllfläche/Volumen: eine Kante parallel verschieben —
+        // die gegenüberliegende bleibt stehen, die Nachbarkanten werden länger
+        // bzw. kürzer. Dieselbe Bewegung wie an einer geschlossenen Polylinie
+        // (`GripKind::Edge`), zusätzlich wandern die Zwischenpunkte auf der
+        // Kante mit (T0131).
+        (
+            EntityKind::Fill {
+                boundary, holes, ..
+            }
+            | EntityKind::Volume {
+                boundary, holes, ..
+            },
+            GripKind::Edge(i),
+        ) => {
+            if !holes.is_empty() || i >= 4 {
+                return None;
+            }
+            let ecken = jjcad_core::geom::rechteck_ecken(boundary)?;
+            rechteck_kante_schieben(boundary, &ecken, i, target)?;
+        }
         _ => return None,
     }
     Some(e)
@@ -591,6 +686,25 @@ pub fn moving_points(e: &Entity, kind: GripKind) -> Vec<V2> {
                 base += n;
             }
             Vec::new()
+        }
+        // Rechteckige Fläche: die ganze Kante wandert — beide Ecken und alle
+        // Zwischenpunkte darauf (T0131).
+        (
+            EntityKind::Fill {
+                boundary, holes, ..
+            }
+            | EntityKind::Volume {
+                boundary, holes, ..
+            },
+            GripKind::Edge(i),
+        ) => {
+            if !holes.is_empty() {
+                return Vec::new();
+            }
+            match jjcad_core::geom::rechteck_ecken(boundary) {
+                Some(ecken) => rechteck_kante_punkte(boundary, &ecken, i),
+                None => Vec::new(),
+            }
         }
         // Kreis, Bogen, Ellipse und Punkt bewegen ihren Mittelpunkt.
         (
@@ -873,6 +987,27 @@ pub fn edge_dir(e: &Entity, i: usize) -> Option<(V2, V2)> {
         }
         return Some((p, d / l));
     }
+    // Rechteckige Füllfläche/Volumen: Richtung der erkannten Rechteckkante —
+    // der Kantengriff steht quer dazu und verschiebt die Kante parallel
+    // (T0131).
+    if let EntityKind::Fill {
+        boundary, holes, ..
+    }
+    | EntityKind::Volume {
+        boundary, holes, ..
+    } = &e.kind
+    {
+        if !holes.is_empty() || i >= 4 {
+            return None;
+        }
+        let ecken = jjcad_core::geom::rechteck_ecken(boundary)?;
+        let d = ecken[(i + 1) % 4] - ecken[i];
+        let l = d.len();
+        if l < 1e-9 {
+            return None;
+        }
+        return Some((ecken[i], d / l));
+    }
     // Maßlinie: Richtung der gezeichneten Linie — der Griff steht quer dazu
     // und wandert senkrecht (T0055).
     if matches!(e.kind, EntityKind::Dim { .. } | EntityKind::DimChain { .. }) {
@@ -1154,6 +1289,151 @@ mod tests {
             })
             .collect();
         assert_eq!(ecken, vec![0, 3, 4, 5], "nur die vier echten Ecken");
+    }
+
+    // ---- Rechteckige Fläche: Kantengriffe (T0131) ----
+
+    /// Ein echtes Rechteck bekommt zusätzlich die vier Kantenmitten: Ziehen
+    /// verschiebt die Kante parallel, wie beim Rechteck.
+    #[test]
+    fn rechteckige_flaeche_hat_kantengriffe() {
+        let e = quadrat();
+        let g = grips_of(&e);
+        let kanten: Vec<(usize, V2)> = g
+            .iter()
+            .filter_map(|(k, p)| match k {
+                GripKind::Edge(i) => Some((*i, *p)),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(kanten.len(), 4, "vier Kantengriffe: {g:?}");
+        let mitten: Vec<V2> = kanten.iter().map(|(_, p)| *p).collect();
+        assert!(mitten.contains(&V2::new(2000.0, 0.0)), "unten: {mitten:?}");
+        assert!(mitten.contains(&V2::new(4000.0, 1500.0)), "rechts: {mitten:?}");
+        assert!(mitten.contains(&V2::new(2000.0, 3000.0)), "oben: {mitten:?}");
+        assert!(mitten.contains(&V2::new(0.0, 1500.0)), "links: {mitten:?}");
+        // Jeder Kantengriff braucht eine Richtung — ohne sie zeichnet
+        // `draw_grips` keinen Griff (er bliebe unsichtbar aber klickbar).
+        for (i, _) in kanten {
+            assert!(
+                edge_dir(&e, i).is_some(),
+                "Kante {i} ohne Richtung — der Griff bliebe unsichtbar"
+            );
+        }
+    }
+
+    /// Eine Kante ziehen verschiebt **nur** diese Kante: die gegenüberliegende
+    /// bleibt stehen, die Fläche wird breiter (T0131).
+    #[test]
+    fn kante_parallel_schieben_laesst_die_gegenkante_stehen() {
+        let neu = apply_grip_tol(&quadrat(), GripKind::Edge(0), V2::new(2000.0, -500.0), 1.0)
+            .expect("Kantengriff muss greifen");
+        let (rand, _) = raender(&neu);
+        assert_eq!(rand[0], V2::new(0.0, -500.0), "linke Ecke wandert mit");
+        assert_eq!(rand[1], V2::new(4000.0, -500.0), "rechte Ecke wandert mit");
+        assert_eq!(rand[2], V2::new(4000.0, 3000.0), "Gegenkante bleibt");
+        assert_eq!(rand[3], V2::new(0.0, 3000.0), "Gegenkante bleibt");
+        let flaeche = jjcad_core::geom::polygon_area(&rand).abs();
+        assert!((flaeche - 4000.0 * 3500.0).abs() < 1e-6, "Fläche {flaeche}");
+    }
+
+    /// Auch die Zwischenpunkte einer geraden Kante wandern mit — sonst bekäme
+    /// der Rand des Farbeimers einen Knick (T0131).
+    #[test]
+    fn kante_schiebt_zwischenpunkte_mit() {
+        let e = flaeche(
+            &[
+                V2::new(0.0, 0.0),
+                V2::new(1000.0, 0.0),
+                V2::new(2000.0, 0.0),
+                V2::new(4000.0, 0.0),
+                V2::new(4000.0, 3000.0),
+                V2::new(0.0, 3000.0),
+            ],
+            &[],
+        );
+        let neu = apply_grip_tol(&e, GripKind::Edge(0), V2::new(2000.0, 250.0), 1.0)
+            .expect("Kantengriff muss greifen");
+        let (rand, _) = raender(&neu);
+        for (i, p) in rand.iter().enumerate().take(4) {
+            assert!(
+                (p.y - 250.0).abs() < 1e-6,
+                "Punkt {i} auf der Kante nicht mitgewandert: {p:?}"
+            );
+        }
+        assert_eq!(rand[4], V2::new(4000.0, 3000.0));
+        assert_eq!(rand[5], V2::new(0.0, 3000.0));
+    }
+
+    /// Über die gegenüberliegende Kante hinaus lässt sich die Kante nicht
+    /// ziehen — sonst kehrte sich die Fläche um (T0131).
+    #[test]
+    fn kante_kippt_nicht_ueber_die_gegenkante() {
+        let neu = apply_grip_tol(&quadrat(), GripKind::Edge(0), V2::new(2000.0, 9000.0), 1.0)
+            .expect("Kantengriff muss greifen");
+        let (rand, _) = raender(&neu);
+        let breite = (rand[2].y - rand[0].y).abs();
+        assert!(
+            breite >= 0.999,
+            "Breite {breite} mm — Fläche wäre umgekehrt"
+        );
+        assert!(
+            jjcad_core::geom::polygon_area(&rand) > 0.0,
+            "Fläche muss positiv bleiben"
+        );
+    }
+
+    /// Ein schiefes Viereck und ein Rechteck mit Insel sind keine „echten"
+    /// Rechtecke im Sinn der Kantengriffe (T0131).
+    #[test]
+    fn nur_das_echte_rechteck_bekommt_kantengriffe() {
+        let schief = flaeche(
+            &[
+                V2::new(0.0, 0.0),
+                V2::new(2000.0, 0.0),
+                V2::new(2500.0, 1000.0),
+                V2::new(500.0, 1000.0),
+            ],
+            &[],
+        );
+        assert!(
+            !grips_of(&schief)
+                .iter()
+                .any(|(k, _)| matches!(k, GripKind::Edge(_))),
+            "Parallelogramm darf keine Kantengriffe haben"
+        );
+
+        let mit_insel = flaeche(
+            &[
+                V2::new(0.0, 0.0),
+                V2::new(4000.0, 0.0),
+                V2::new(4000.0, 3000.0),
+                V2::new(0.0, 3000.0),
+            ],
+            &[&[
+                V2::new(1000.0, 1000.0),
+                V2::new(2000.0, 1000.0),
+                V2::new(2000.0, 2000.0),
+            ]],
+        );
+        assert!(
+            !grips_of(&mit_insel)
+                .iter()
+                .any(|(k, _)| matches!(k, GripKind::Edge(_))),
+            "Rechteck mit Insel darf keine Kantengriffe haben"
+        );
+    }
+
+    /// Die gezogene Kante ist während des Zugs gesperrt (Selbst-Fang), die
+    /// Gegenkante bleibt fangbar (T0131).
+    #[test]
+    fn kante_bewegt_ihre_punkte_als_einheit() {
+        let e = quadrat();
+        let bewegt = moving_points(&e, GripKind::Edge(0));
+        assert_eq!(bewegt.len(), 2, "beide Ecken der Kante: {bewegt:?}");
+        assert!(bewegt.contains(&V2::new(0.0, 0.0)));
+        assert!(bewegt.contains(&V2::new(4000.0, 0.0)));
+        assert!(fang_sperre(&e, GripKind::Edge(0)).len() == 2);
     }
 
     /// Ecke ziehen: nur dieser Punkt wandert, Muster und Umrandung bleiben.
@@ -1794,8 +2074,12 @@ mod tests_volumen {
     fn volumen_hat_eckpunkte_als_griffe() {
         let e = volumen();
         let g = grips_of(&e);
-        assert_eq!(g.len(), 4, "vier Eckpunkte, war {g:?}");
+        // Vier Ecken plus vier Kantenmitten — das Volumen ist ein echtes
+        // Rechteck (T0131).
+        assert_eq!(g.len(), 8, "vier Ecken und vier Kantenmitten, war {g:?}");
         assert!(g.iter().any(|(_, p)| p.dist(V2::new(1000.0, 800.0)) < 0.5));
+        assert!(g.iter().any(|(k, p)| *k == GripKind::Edge(0)
+            && p.dist(V2::new(500.0, 0.0)) < 0.5));
     }
 
     #[test]

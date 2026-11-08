@@ -2478,6 +2478,33 @@ impl App {
                         ];
                     }
                 }
+                // Rechteck aus der Diagonale (T0131): **ein** Punkt gesetzt, der
+                // zweite steht am Zeiger — die Vorschau zeigt das fertige
+                // Rechteck samt Muster und Fläche.
+                "filldiagonale" | "diagonalflaeche" => {
+                    self.start_tool("draw.fill.points");
+                    if let Some(t) = &mut self.tool {
+                        t.pts = vec![V2::new(2000.0, 2000.0)];
+                    }
+                }
+                // Rechteckige Fläche aus der Diagonale, fertig und ausgewählt
+                // (T0131): zeigt die vier Eck- und vier Kantengriffe.
+                "rechteckflaeche" | "diagonalrechteck" => {
+                    let u = self.unit();
+                    let r = self.session_mut().execute(
+                        "draw.fill.points",
+                        &serde_json::json!({
+                            "pts": [[u.from_mm(2000.0), u.from_mm(2000.0)],
+                                    [u.from_mm(7000.0), u.from_mm(5000.0)]],
+                            "pattern": "lines",
+                        }),
+                    );
+                    if let Ok(v) = r {
+                        if let Some(id) = v["created"][0].as_u64() {
+                            self.session_mut().selection = vec![id];
+                        }
+                    }
+                }
                 // Farbeimer-Prüffall (F1b): den Raum unten links füllen, so wie
                 // es der Farbeimer tun wird — mit Inseln. Im Screenshot müssen
                 // Schornstein und Treppe frei bleiben (kein Muster darin).
@@ -6784,7 +6811,7 @@ pub(crate) fn commands_hint(tool: &Tool, opts: &ToolOptions) -> &'static str {
             }
         }
         "draw.fill.points" => {
-            if tool.pts.len() < 3 {
+            if tool.pts.len() < 2 {
                 jjcad_core::i18n::tr("gui.app.fuellflaeche_punkt_klicken_mind_3")
             } else {
                 jjcad_core::i18n::tr("gui.app.fuellflaeche_enter_schliesst")
@@ -6793,7 +6820,7 @@ pub(crate) fn commands_hint(tool: &Tool, opts: &ToolOptions) -> &'static str {
         "draw.fill.paint" => jjcad_core::i18n::tr("gui.app.farbeimer_flaeche_anklicken"),
         "draw.volume" => jjcad_core::i18n::tr("gui.app.volumen_kontur_anklicken"),
         "draw.volume.points" => {
-            if tool.pts.len() < 3 {
+            if tool.pts.len() < 2 {
                 jjcad_core::i18n::tr("gui.app.volumen_nach_punktfolge_punkt_klicken")
             } else {
                 jjcad_core::i18n::tr("gui.app.volumen_nach_punktfolge_enter_schliesst")

@@ -2127,7 +2127,7 @@ fn draw_tool_preview(
             let mut umriss = tool.pts.clone();
             umriss.push(cursor);
             draw_fill_ghost(app, p, rect, view, &umriss);
-            if let Some(pts) = fill_boundary_points(&umriss) {
+            if let Some(pts) = fill_boundary_points_rechteck(&umriss) {
                 label = jjcad_core::i18n::t_args_owned("gui.canvas.x_punkte_x", &[("wert1", format!("{}", pts.len())), ("wert2", format!("{}", unit.format_area(polygon_area(&pts).abs(), 2)))]);
             } else {
                 label = jjcad_core::i18n::t_args_owned("gui.canvas.x_punkte", &[("wert1", format!("{}", tool.pts.len() + 1))]);
@@ -4512,8 +4512,24 @@ pub fn ist_fuell_punkte(action: &str) -> bool {
 /// Doppelte Punkte fallen weg (zweimal auf dieselbe Stelle geklickt,
 /// Doppelklick am letzten Punkt), und ein Schlusspunkt auf dem Startpunkt
 /// schließt den Umriss, statt eine vierte Ecke zu erzeugen. Weniger als drei
-/// Ecken ergeben keine Fläche.
+/// Ecken ergeben keine Fläche — den Sonderfall zweier Punkte erlaubt
+/// [`fill_boundary_points_rechteck`].
 pub fn fill_boundary_points(pts: &[V2]) -> Option<Vec<V2>> {
+    fill_boundary_points_mit_diagonale(pts, false)
+}
+
+/// Wie [`fill_boundary_points`], erlaubt aber den Sonderfall **zweier**
+/// Punkte: sie sind die Diagonale einer achsenparallelen Fläche (T0131).
+///
+/// Das gilt für Füllfläche, Schraffur und Volumen — überall dort, wo der
+/// Nutzer den Umriss selbst klickt. Liegen beide Punkte auf einer
+/// Waagerechten oder Senkrechten, entsteht keine Fläche und es bleibt bei
+/// `None` (die Meldung nennt dann die Diagonale).
+pub fn fill_boundary_points_rechteck(pts: &[V2]) -> Option<Vec<V2>> {
+    fill_boundary_points_mit_diagonale(pts, true)
+}
+
+fn fill_boundary_points_mit_diagonale(pts: &[V2], diagonale: bool) -> Option<Vec<V2>> {
     let mut out: Vec<V2> = Vec::with_capacity(pts.len());
     for p in pts {
         if out.last().map(|q: &V2| q.dist(*p) > 0.5).unwrap_or(true) {
@@ -4522,6 +4538,12 @@ pub fn fill_boundary_points(pts: &[V2]) -> Option<Vec<V2>> {
     }
     if out.len() > 1 && out[0].dist(*out.last().unwrap()) <= 0.5 {
         out.pop();
+    }
+    if out.len() == 2 && diagonale {
+        // Zwei Punkte als Diagonale: die vier Ecken liegen auf den Achsen.
+        if let Some(ecken) = jjcad_core::geom::rechteck_aus_diagonale(out[0], out[1]) {
+            return Some(ecken.to_vec());
+        }
     }
     if out.len() >= 3 {
         Some(out)
@@ -4537,7 +4559,7 @@ pub fn fill_boundary_points(pts: &[V2]) -> Option<Vec<V2>> {
 /// fertige Objekt zeichnet; die Fläche selbst wird trianguliert eingefärbt
 /// (egui füllt nur konvexe Polygone selbst, ein Umriss darf konkav sein).
 fn draw_fill_ghost(app: &App, p: &Painter, rect: Rect, view: View, umriss: &[V2]) {
-    let Some(boundary) = fill_boundary_points(umriss) else {
+    let Some(boundary) = fill_boundary_points_rechteck(umriss) else {
         return;
     };
     let w2s = |q: V2| world_to_screen(rect, view, q);
@@ -4676,8 +4698,16 @@ fn finish_fill(app: &mut App, action: &str) -> bool {
     let Some(tool) = app.tool.clone() else {
         return false;
     };
-    let Some(boundary) = fill_boundary_points(&tool.pts) else {
-        app.toast(jjcad_core::i18n::tr("gui.canvas.fuellflaeche_mindestens_3_punkte"));
+    let Some(boundary) = fill_boundary_points_rechteck(&tool.pts) else {
+        // Zwei Punkte auf einer Waagerechten oder Senkrechten sind keine
+        // Diagonale — die Meldung sagt, was fehlt (T0131). Sonst bleibt es bei
+        // der Zahl der nötigen Ecken.
+        let zwei = tool.pts.len() == 2 && tool.pts[0].dist(tool.pts[1]) > 0.5;
+        app.toast(jjcad_core::i18n::tr(if zwei {
+            "gui.canvas.fuellflaeche_diagonale_auf_einer_achse"
+        } else {
+            "gui.canvas.fuellflaeche_mindestens_3_punkte"
+        }));
         return false;
     };
     let pts: Vec<[f64; 2]> = boundary
@@ -5044,10 +5074,12 @@ fn tool_click_at(app: &mut App, w: V2, raw: V2) {
         }
         "draw.fill.boundary" | "draw.fill.points" | "draw.volume.points" => {
             // Klick auf den letzten Punkt (Doppelklick) oder auf den Startpunkt
-            // schließt den Umriss — wie Enter, nur mit der Maus.
+            // schließt den Umriss — wie Enter, nur mit der Maus. Ab **zwei**
+            // Punkten, weil zwei Punkte als Diagonale eine rechteckige Fläche
+            // ergeben (T0131).
             let doppelt = tool.pts.last().map(|q| q.dist(w) <= 0.5).unwrap_or(false);
             let am_start = tool.pts.first().map(|q| q.dist(w) <= 0.5).unwrap_or(false);
-            if tool.pts.len() >= 3 && (doppelt || am_start) {
+            if tool.pts.len() >= 2 && (doppelt || am_start) {
                 finish_tool(app, true);
             } else {
                 tool.pts.push(w);
@@ -6019,8 +6051,8 @@ mod tests {
         assert!(app.doc().entities.is_empty(), "nichts angelegt");
     }
 
-    /// Zu wenige Punkte: Enter legt nichts an, der gesammelte Umriss bleibt
-    /// stehen (der Nutzer kann weiterklicken).
+    /// Zwei Punkte auf einer Waagerechten sind keine Diagonale — dann bleibt
+    /// es beim Abbruch, der gesammelte Umriss bleibt stehen (T0131).
     #[test]
     fn zwei_punkte_und_enter_legen_nichts_an() {
         let mut app = app();
@@ -6034,6 +6066,51 @@ mod tests {
             Some(2),
             "Punkte bleiben erhalten"
         );
+    }
+
+    /// Zwei Klicks als **Diagonale** legen eine rechteckige Fläche an (T0131):
+    /// vier achsenparallele Ecken und die Fläche der Diagonale.
+    #[test]
+    fn zwei_klicks_als_diagonale_legen_ein_rechteck_an() {
+        let mut app = app();
+        app.start_tool("draw.fill.points");
+        tool_click(&mut app, V2::new(0.0, 0.0));
+        tool_click(&mut app, V2::new(4000.0, 3000.0));
+        finish_tool(&mut app, true);
+
+        assert_eq!(app.doc().entities.len(), 1, "genau eine Fläche");
+        let rand = ecken(&app);
+        assert_eq!(rand.len(), 4, "vier Ecken: {rand:?}");
+        for (got, want) in rand.iter().zip([
+            V2::new(0.0, 0.0),
+            V2::new(4000.0, 0.0),
+            V2::new(4000.0, 3000.0),
+            V2::new(0.0, 3000.0),
+        ]) {
+            assert!((*got - want).len() < 1e-6, "Ecke {got:?} statt {want:?}");
+        }
+        assert!(app.tool.is_none(), "Werkzeug nach dem Abschluss beendet");
+    }
+
+    /// Dieselbe Diagonale im Volumen-Werkzeug (T0131).
+    #[test]
+    fn zwei_klicks_als_diagonale_legen_ein_volumen_an() {
+        let mut app = app();
+        app.start_tool("draw.volume.points");
+        tool_click(&mut app, V2::new(0.0, 0.0));
+        tool_click(&mut app, V2::new(2000.0, 1000.0));
+        finish_tool(&mut app, true);
+
+        let volumen = app
+            .doc()
+            .entities
+            .iter()
+            .find_map(|e| match &e.kind {
+                EntityKind::Volume { boundary, .. } => Some(boundary.clone()),
+                _ => None,
+            })
+            .expect("Volumen angelegt");
+        assert_eq!(volumen.len(), 4, "vier Ecken: {volumen:?}");
     }
 
     /// Punktliste: Doppelte fallen weg, Schlusspunkt auf dem Start schließt.
