@@ -244,111 +244,33 @@ fn dxf_schreibt_das_band_als_polyline() {
 }
 
 // ---------------------------------------------------------------------------
-// Dämmung an Wänden (T0123)
+// Entfernte Muster (T0132)
 // ---------------------------------------------------------------------------
 
-/// Eine Wand von 0 bis 5000 mm, 240 mm dick, mit dem Muster „Dämmstoffe
-/// Schlaufen“.
-fn daemmwand(doc: &mut Document) -> u64 {
-    neu(
-        doc,
+/// „Dämmstoffe Schlaufen“ ist kein Muster mehr: eine Wand mit dem alten
+/// Schlüssel bekommt keine Schraffur, und es entsteht auch kein Schlaufenband.
+/// Die Dämmung zeichnet allein die Linienart (`draw.line` mit
+/// `linetype: "insulation"`).
+#[test]
+fn alter_wanddaemmungs_schluessel_erzeugt_keine_schraffur() {
+    let mut doc = Document::new();
+    let id = neu(
+        &mut doc,
         "draw.wall",
         json!({
             "a": [0.0, 0.0], "b": [5.0, 0.0], "thickness": 0.24,
             "hatch": "daemmung_schlaufen", "layer": "Wände"
         }),
-    )
-}
-
-/// Die Wanddämmung ist das Schlaufenband der Linienart „Dämmung“ — kein
-/// Schlaufenraster mehr. Das Band läuft auf der Wandmitte und füllt die
-/// Wanddicke.
-#[test]
-fn wand_mit_daemmung_zeichnet_das_schlaufenband() {
-    let mut doc = Document::new();
-    let id = daemmwand(&mut doc);
-    let prims = prims(&doc, id);
-
-    // Keine Schlaufenreihen (Ellipsen) mehr — das war die alte Schraffur.
-    assert!(
-        !prims.iter().any(|p| matches!(p.shape, Shape::Ellipse { .. })),
-        "die Wand zeichnet noch Schlaufenreihen statt des Bandes"
     );
-
-    // Das Band: ein Polygonzug mit vielen Punkten, der die Wandlänge abfährt.
-    let band = prims
-        .iter()
-        .find(|p| matches!(&p.shape, Shape::Poly(pts, _) if pts.len() > 40))
-        .expect("kein Schlaufenband in der Wand");
-    let Shape::Poly(pts, closed) = &band.shape else {
-        unreachable!()
+    let e = doc.entity(id).expect("Wand fehlt");
+    let jjcad_core::model::EntityKind::Wall { hatch, .. } = &e.kind else {
+        panic!("keine Wand: {:?}", e.kind);
     };
-    assert!(!closed, "das Band ist offen");
-    let min_x = pts.iter().fold(f64::INFINITY, |m, p| m.min(p.x));
-    let max_x = pts.iter().fold(f64::NEG_INFINITY, |m, p| m.max(p.x));
-    assert!(min_x.abs() < 1e-6, "Band beginnt bei x = {min_x}");
-    assert!((max_x - 5000.0).abs() < 1e-6, "Band endet bei x = {max_x}");
-
-    // Breite = Wanddicke: die Kurve schwingt zwischen ±120 mm.
-    let max_y = pts.iter().fold(f64::NEG_INFINITY, |m, p| m.max(p.y));
-    let min_y = pts.iter().fold(f64::INFINITY, |m, p| m.min(p.y));
-    assert!((max_y - 120.0).abs() < 1.0, "höchster Punkt bei y = {max_y}");
-    assert!((min_y + 120.0).abs() < 1.0, "tiefster Punkt bei y = {min_y}");
-}
-
-/// Zerlegen macht aus der Wanddämmung **eine Linie** mit der Linienart
-/// „Dämmung“ — nicht die Schraffurlinien des Musters.
-#[test]
-fn zerlegen_der_wand_ergibt_eine_daemmungslinie() {
-    let mut doc = Document::new();
-    let id = daemmwand(&mut doc);
-    let r = actions::execute(&mut doc, "modify.explode", &json!({"ids": [id]}))
-        .expect("Zerlegen fehlgeschlagen");
-    let created: Vec<u64> = r["created"]
-        .as_array()
-        .expect("created fehlt")
-        .iter()
-        .filter_map(|v| v.as_u64())
-        .collect();
-    assert!(!created.is_empty(), "Zerlegen hat nichts erzeugt");
-
-    let linien: Vec<&jjcad_core::model::Entity> = created
-        .iter()
-        .filter_map(|i| doc.entity(*i))
-        .filter(|e| doc.effective_line_type(e) == LineType::Insulation)
-        .collect();
-    assert_eq!(
-        linien.len(),
-        1,
-        "die Dämmung muss als **eine** Linie entstehen, es sind {}",
-        linien.len()
-    );
-    let e = linien[0];
-    let jjcad_core::model::EntityKind::Line { a, b } = &e.kind else {
-        panic!("die Dämmung ist keine Linie: {:?}", e.kind);
-    };
-    // Die Linie liegt auf der Wandmitte (y = 0) und läuft über die Wandlänge.
-    assert!(a.y.abs() < 1e-6 && b.y.abs() < 1e-6, "Linie liegt nicht auf der Wandmitte");
-    assert!((a.dist(*b) - 5000.0).abs() < 1e-6, "Linie ist {} lang", a.dist(*b));
-    // Breite (H) ist die Wanddicke, die Schlaufenform kommt vom Objekt.
-    assert!((doc.effective_loop_width(e) - 240.0).abs() < 1e-6);
-    assert!((doc.effective_loop_shape(e) - jjcad_core::daemmung::FORM).abs() < 1e-9);
-
-    // Keine Schraffur: weder eine Füllfläche mit dem Dämmungsmuster noch
-    // Schlaufenreihen als Ellipsen.
+    assert_eq!(*hatch, None, "der alte Musterschlüssel setzt noch eine Schraffur");
     assert!(
-        !created.iter().filter_map(|i| doc.entity(*i)).any(|e| matches!(
-            &e.kind,
-            jjcad_core::model::EntityKind::Fill { pattern, .. }
-                if *pattern == jjcad_core::style::FillPattern::InsulationLoops
-        )),
-        "die Dämmung entsteht noch als Schraffurfläche"
-    );
-    assert!(
-        !created
+        !prims(&doc, id)
             .iter()
-            .filter_map(|i| doc.entity(*i))
-            .any(|e| matches!(e.kind, jjcad_core::model::EntityKind::Ellipse { .. })),
-        "die Dämmung entsteht noch als Schlaufenreihe"
+            .any(|p| matches!(p.shape, Shape::Poly(ref pts, _) if pts.len() > 40)),
+        "die Wand zeichnet noch ein Schlaufenband aus dem Muster"
     );
 }

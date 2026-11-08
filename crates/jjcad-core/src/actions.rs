@@ -5147,41 +5147,7 @@ pub fn explode_entity(doc: &mut Document, id: Id) -> Result<Vec<Id>, String> {
     if matches!(e.kind, EntityKind::Image { .. }) {
         return Err("Ein Bild lässt sich nicht zerlegen".into());
     }
-    // Dämmung in der Wand (Muster „Dämmstoffe Schlaufen“): sie ist eine Linie
-    // mit der Linienart „Dämmung“, keine Schraffur. Zerlegt wird sie deshalb
-    // als Linie auf der Wandmitte — die Schlaufenreihen des Musters entstehen
-    // nicht (T0123). Die Strecken kommen aus derselben Rechnung wie die
-    // Anzeige (`render::wall_insulation_paths`).
-    let daemmung: Option<(Vec<(Vec2, Vec2)>, f64, f64)> = match &e.kind {
-        EntityKind::Wall {
-            thickness,
-            hatch: Some(FillPattern::InsulationLoops),
-            ..
-        } => {
-            let ctx = render::RenderCtx::new(doc);
-            let body = ctx
-                .wall_index()
-                .body_of(&e)
-                .cloned()
-                .or_else(|| crate::wall::Body::isolated(doc, &e));
-            body.map(|b| {
-                (
-                    render::wall_insulation_paths(&b),
-                    *thickness,
-                    doc.effective_loop_shape(&e),
-                )
-            })
-        }
-        _ => None,
-    };
-    // Die Schraffur der Wand entfällt beim Zerlegen — sonst stünden die
-    // Schlaufenreihen neben der Dämmungslinie.
-    let mut ziel = e.clone();
-    if daemmung.is_some() {
-        if let EntityKind::Wall { hatch, .. } = &mut ziel.kind {
-            *hatch = None;
-        }
-    }
+    let ziel = e.clone();
     let ctx = render::RenderCtx::new(doc);
     let mut dl = render::DisplayList::default();
     render::render_entity(&ctx, &ziel, Affine::IDENTITY, &mut dl, 0);
@@ -5280,24 +5246,6 @@ pub fn explode_entity(doc: &mut Document, id: Id) -> Result<Vec<Id>, String> {
             ne.style.line_type = Some(prim.style.line_type);
             ne.style.line_weight = Some(prim.style.width.max(0.05));
             ne.style.fill = prim.style.fill;
-            new_ents.push(ne);
-            created.push(nid);
-        }
-    }
-    // Die Dämmung entsteht als **Linie** mit der Linienart „Dämmung“ — nicht
-    // als Schraffur. Breite (H) ist die Wanddicke, die Schlaufenform kommt vom
-    // Objekt (T0123).
-    if let Some((pfade, h, r)) = daemmung {
-        let farbe = doc.effective_color(&e);
-        let staerke = doc.effective_line_weight(&e);
-        for (p, q) in pfade {
-            let nid = doc.new_id();
-            let mut ne = Entity::new(nid, e.layer, EntityKind::Line { a: p, b: q });
-            ne.style.color = Some(farbe);
-            ne.style.line_type = Some(LineType::Insulation);
-            ne.style.line_weight = Some(staerke);
-            ne.style.loop_width = Some(h);
-            ne.style.loop_shape = Some(r);
             new_ents.push(ne);
             created.push(nid);
         }

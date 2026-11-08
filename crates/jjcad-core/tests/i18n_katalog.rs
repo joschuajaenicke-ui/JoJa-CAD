@@ -217,16 +217,16 @@ fn beschriftungen_der_kern_werte_folgen_der_sprache() {
     i18n::set_language(i18n::Lang::Englisch);
     assert_eq!(DimAxis::X.text(), "Horizontal");
     assert_eq!(DoorKind::Hinge.text(), "Hinged door");
-    assert_eq!(FillPattern::Insulation.text(), "Insulation");
+    assert_eq!(FillPattern::Lines.text(), "Masonry");
     assert_eq!(WallAlign::Center.text(), "Centre");
     assert_eq!(TextFont::DinMittel.text(), "DIN 1451 medium");
 
     i18n::set_language(i18n::Lang::Deutsch);
     assert_eq!(DimAxis::X.text(), "Waagerecht");
     assert_eq!(DoorKind::Hinge.text(), "Drehtür");
-    assert_eq!(FillPattern::Insulation.text(), "Dämmstoffe");
+    assert_eq!(FillPattern::Lines.text(), "Mauerwerk");
 
     // Der deutsche Name bleibt die Kennung für Datei und Befehlsschicht.
-    assert_eq!(FillPattern::Insulation.label(), "Dämmstoffe");
+    assert_eq!(FillPattern::Lines.label(), "Mauerwerk");
     assert_eq!(DoorKind::Hinge.label(), "Drehtür");
 }

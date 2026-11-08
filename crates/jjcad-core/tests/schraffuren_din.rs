@@ -1,7 +1,8 @@
 //! Schraffuren nach DIN 1356-1:2026-09, Tabelle 5.
 //!
-//! Die Norm zeichnet die Schnittflächen von 18 Baustoffen aus. Der Test hält
-//! drei Dinge fest:
+//! Die Norm zeichnet die Schnittflächen von 18 Baustoffen aus; Nr. 14
+//! (Dämmung) und Nr. 15 (Abdichtungen) sind **Linienarten** und deshalb keine
+//! Muster (T0132). Der Test hält drei Dinge fest:
 //!
 //! * **Vollständigkeit** — jede Zeile der Tabelle hat ein Muster, und die
 //!   vorhandenen Muster tragen den Namen ihrer Zeile (T0095: „passe nur den
@@ -18,8 +19,8 @@ use jjcad_core::session::Session;
 use jjcad_core::style::FillPattern;
 use serde_json::json;
 
-/// Die Bezeichnungen der Tabelle 5, Zeile für Zeile (Nr. 1–18). Die Zeilen 14
-/// und 15 führen zwei bzw. drei Formen — sie stehen als eigene Muster daneben.
+/// Die Bezeichnungen der Tabelle 5, Zeile für Zeile — ohne Nr. 14 (Dämmung)
+/// und Nr. 15 (Abdichtungen): beides zeichnet eine Linienart, kein Muster.
 const TABELLE_5: &[&str] = &[
     "Boden unverändert",     // 1
     "Boden verändert",       // 2
@@ -34,11 +35,6 @@ const TABELLE_5: &[&str] = &[
     "Vollholz längs",        // 11
     "Metall",                // 12
     "Putz",                  // 13
-    "Dämmstoffe",            // 14, Zickzack
-    "Dämmstoffe Schlaufen",  // 14, Schlaufen
-    "Abdichtung 1-lagig",    // 15, einlagig
-    "Abdichtung 2-lagig",    // 15, mehrlagig
-    "Abdichtung Aufkantung", // 15, mehrlagig mit Aufkantung
     "Dichtstoffe",           // 16
     "Kunststoffe",           // 17
     "Glas",                  // 18
@@ -70,7 +66,7 @@ fn alle_schraffuren_der_tabelle_5_sind_vorhanden() {
     assert_eq!(
         FillPattern::ALL.len(),
         TABELLE_5.len() + 1,
-        "Vollfläche + 21 Muster der Tabelle 5"
+        "Vollfläche + 16 Muster der Tabelle 5"
     );
 }
 
@@ -95,11 +91,43 @@ fn schluessel_und_bezeichnung_finden_das_muster() {
     assert_eq!(FillPattern::from_key("lines"), Some(FillPattern::Lines));
     assert_eq!(FillPattern::from_key("cross"), Some(FillPattern::Cross));
     assert_eq!(FillPattern::from_key("dots"), Some(FillPattern::Dots));
-    assert_eq!(
-        FillPattern::from_key("insulation"),
-        Some(FillPattern::Insulation)
-    );
     assert_eq!(FillPattern::from_key("nonsens"), None);
+}
+
+/// Die fünf Muster, die eigentlich Linienarten sind, gibt es nicht mehr —
+/// weder in der Auswahl noch über einen Action-Schlüssel (T0132).
+#[test]
+fn entfernte_muster_sind_verschwunden() {
+    const WEG: &[&str] = &[
+        "Dämmstoffe",
+        "Dämmstoffe Schlaufen",
+        "Abdichtung 1-lagig",
+        "Abdichtung 2-lagig",
+        "Abdichtung Aufkantung",
+    ];
+    for name in WEG {
+        assert!(
+            !FillPattern::ALL.iter().any(|p| p.label() == *name),
+            "„{name}“ steht noch in der Musterauswahl"
+        );
+    }
+    // Auch die Schlüssel der Action-Schicht sind weg — sie liefern `None`,
+    // damit kein Aufruf still ein anderes Muster bekommt.
+    for key in [
+        "daemmstoffe",
+        "insulation",
+        "daemmung_schlaufen",
+        "abdichtung_einlagig",
+        "abdichtung_mehrlagig",
+        "abdichtung_aufkantung",
+    ] {
+        assert_eq!(
+            FillPattern::from_key(key),
+            None,
+            "Schlüssel „{key}“ liefert noch ein Muster"
+        );
+    }
+    assert_eq!(FillPattern::ALL.len(), 17, "Vollfläche + 16 Muster");
 }
 
 #[test]
@@ -110,10 +138,15 @@ fn gespeicherte_namen_bleiben_lesbar() {
         ("\"Lines\"", FillPattern::Lines),
         ("\"Cross\"", FillPattern::Cross),
         ("\"Dots\"", FillPattern::Dots),
-        ("\"Insulation\"", FillPattern::Insulation),
         ("\"Glass\"", FillPattern::Glass),
         ("\"ConcreteReinforced\"", FillPattern::ConcreteReinforced),
-        ("\"SealUpstand\"", FillPattern::SealUpstand),
+        // Die 2026 entfernten Muster laden als Mauerwerk — eine Zeichnung mit
+        // ihnen muss weiter aufgehen (T0132).
+        ("\"Insulation\"", FillPattern::Lines),
+        ("\"InsulationLoops\"", FillPattern::Lines),
+        ("\"SealSingle\"", FillPattern::Lines),
+        ("\"SealMulti\"", FillPattern::Lines),
+        ("\"SealUpstand\"", FillPattern::Lines),
     ] {
         let p: FillPattern = serde_json::from_str(roh).expect("alter Name muss laden");
         assert_eq!(p, erwartet, "{roh}");
@@ -207,7 +240,7 @@ fn jede_schraffur_sieht_anders_aus() {
         }
         gesehen.push((p.label(), k));
     }
-    assert_eq!(gesehen.len(), TABELLE_5.len(), "21 Muster geprüft");
+    assert_eq!(gesehen.len(), TABELLE_5.len(), "16 Muster geprüft");
 }
 
 // ---------------------------------------------------------------------------
@@ -305,15 +338,11 @@ fn unterteilungen_haengen_am_globalen_raster() {
 
 #[test]
 fn figuren_sitzen_auf_dem_raster() {
-    // Kies (Kreise), Dämmstoffe Schlaufen (Ellipsen) und Textilbeton (Pfeile)
-    // sitzen in Rasterzellen, nicht an der Bounding-Box der Fläche.
+    // Kies (Kreise) und Textilbeton (Pfeile) sitzen in Rasterzellen, nicht an
+    // der Bounding-Box der Fläche.
     let aussen = [0.0, 0.0, 1400.0, 700.0];
     let innen = [300.0, 100.0, 1100.0, 600.0];
-    for p in [
-        FillPattern::Gravel,
-        FillPattern::InsulationLoops,
-        FillPattern::TextileConcrete,
-    ] {
+    for p in [FillPattern::Gravel, FillPattern::TextileConcrete] {
         let gross: Vec<(i64, i64)> = figuren(p, aussen);
         let klein: Vec<(i64, i64)> = figuren(p, innen);
         assert!(!klein.is_empty(), "{}: nichts gezeichnet", p.label());

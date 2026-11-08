@@ -311,14 +311,15 @@ Mit dem Nutzer abgestimmt — nicht „verbessern“:
   (`Wand · gesetzt`, `Auswahl · kopiert`), `<Werkzeug> · <Grund>` als Abbruch
   (`Tür · nur auf einer Wand`). Kein Satz, keine Erklärung, höchstens 48 Zeichen
   — `app::tests_chat_texte` prüft Aufforderung und Ergebnis für jedes Werkzeug.
-- Wände: Farbe (Linie) und Füllung (Fläche) getrennt; Schraffuren inklusive
-  **Dämmung** (Mäander); Ausrichtung Links/Mittig/Rechts.
-- **Dämmung an Wänden (T0123)**: Das Muster „Dämmstoffe Schlaufen“ zeichnet das
-  **Schlaufenband der Linienart „Dämmung“** auf der Wandmitte, Breite = Wanddicke
-  (`render::wall_insulation_paths` — eine Quelle für Anzeige und Zerlegen). Im
-  Panel steht dafür die Zeile „Schlaufenform“; ein Breitenfeld gibt es nicht.
-  `modify.explode` erzeugt daraus eine **Linie** mit der Linienart „Dämmung“,
-  keine Schraffurlinien.
+- Wände: Farbe (Linie) und Füllung (Fläche) getrennt; Schraffuren nach Tabelle 5;
+  Ausrichtung Links/Mittig/Rechts.
+- **Dämmung und Abdichtung sind Linienarten, keine Muster (T0132)**: Die Muster
+  „Dämmstoffe“, „Dämmstoffe Schlaufen“ und die drei „Abdichtungen“ sind
+  **entfernt**. Dämmung zeichnet die Linienart `LineType::Insulation` (Schlaufenband,
+  `docs/DAEMMUNG-SCHLAUFEN.md`), auch auf einer Wand (deren Kanten). Alte
+  Zeichnungen mit diesen Mustern laden über den Serde-Alias an
+  `FillPattern::Lines` als Mauerwerk; ihre Schlüssel (`daemmstoffe`,
+  `daemmung_schlaufen`, `abdichtung_*`) liefern `None`.
 - **Helles und dunkles Design (T0102)**: Die Farben stehen in **zwei** Tabellen in
   `theme.rs` (`DUNKEL`, `HELL`); `Palette::bg()` & Co. liefern die Werte des eingestellten
   Designs — im Zeichenweg wird **keine** Farbe festgehalten, sonst bleibt beim Umschalten ein
@@ -335,12 +336,13 @@ Mit dem Nutzer abgestimmt — nicht „verbessern“:
   `Palette::hinweis_flaeche`).
 
 - **Schraffuren (T0095)**: Die Muster sind die Kennzeichnungen der Schnittflächen nach
-  DIN 1356-1:2026-09, Tabelle 5 (18 Zeilen, `style::FillPattern`, `ALL` in der
-  Reihenfolge der Norm); die früheren Muster heißen nach ihrem Baustoff (Mauerwerk,
-  Kunststoffe, Sand, Dämmstoffe). Gezeichnet werden **alle** Muster an einer Stelle
+  DIN 1356-1:2026-09, Tabelle 5 (16 Muster — Nr. 14 und 15 sind Linienarten,
+  T0132; `style::FillPattern`, `ALL` in der Reihenfolge der Norm); die Muster
+  heißen nach ihrem Baustoff (Mauerwerk, Kunststoffe, Sand). Gezeichnet werden
+  **alle** Muster an einer Stelle
   (`render::push_muster`) — Füllfläche, Volumen und Wandschraffur teilen sie, keine
   zweite Musterzeichnung. Schlüssel über `FillPattern::key`/`from_key`, die alten
-  Schlüssel `lines`/`cross`/`dots`/`insulation` bleiben gültig (alte Dateien).
+  Schlüssel `lines`/`cross`/`dots` bleiben gültig (alte Dateien).
   Ein neues Muster: Variante und `ALL` in `style.rs`, Zweig in `push_muster`,
   Bezeichnung in `TABELLE_5` des Tests `tests/schraffuren_din.rs` — der Test bricht,
   wenn ein Muster fehlt, nichts zeichnet oder wie ein anderes aussieht.
