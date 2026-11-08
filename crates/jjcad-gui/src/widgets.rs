@@ -262,13 +262,29 @@ pub fn reset_rows() {
 }
 
 /// Tabellenzeile: feste Namensspalte, Wert rechts daneben, jede zweite Zeile leicht hinterlegt.
-pub const LABEL_W: f32 = 96.0;
+pub const LABEL_W: f32 = 160.0;
 /// Breite der Wertspalte — alle Eingabefelder liegen damit exakt untereinander.
 pub const VAL_W: f32 = 150.0;
 /// Höhe einer Zeile
 pub const ROW_H: f32 = 22.0;
 
 pub fn field_row(ui: &mut Ui, label: &str, add: impl FnOnce(&mut Ui)) {
+    field_row_mit_hinweis(ui, label, None, add);
+}
+
+/// Wie [`field_row`], aber der Name trägt einen Hinweis (Tooltip) und ein
+/// kleines Infozeichen — für Einstellungen, deren Name allein nicht verrät,
+/// was sie tun.
+pub fn field_row_tip(ui: &mut Ui, label: &str, tip: &str, add: impl FnOnce(&mut Ui)) {
+    field_row_mit_hinweis(ui, label, Some(tip), add);
+}
+
+fn field_row_mit_hinweis(
+    ui: &mut Ui,
+    label: &str,
+    tip: Option<&str>,
+    add: impl FnOnce(&mut Ui),
+) {
     let idx = ROW_IDX.with(|c| {
         let v = c.get();
         c.set(v + 1);
@@ -283,10 +299,12 @@ pub fn field_row(ui: &mut Ui, label: &str, add: impl FnOnce(&mut Ui)) {
             Palette::panel_alt().gamma_multiply(0.55),
         );
     }
-    // Name: exakt links, einzeilig, notfalls gekürzt
+    // Name: exakt links, einzeilig, notfalls gekürzt. Mit Hinweis bleibt rechts
+    // Platz für das Infozeichen.
+    let platz = if tip.is_some() { 24 } else { 27 };
     let mut text = label.to_string();
-    if text.chars().count() > 16 {
-        text = format!("{}…", text.chars().take(15).collect::<String>());
+    if text.chars().count() > platz {
+        text = format!("{}…", text.chars().take(platz - 1).collect::<String>());
     }
     ui.painter().text(
         egui::pos2(row.left() + 4.0, row.center().y),
@@ -295,6 +313,19 @@ pub fn field_row(ui: &mut Ui, label: &str, add: impl FnOnce(&mut Ui)) {
         FontId::proportional(11.5),
         Palette::text_dim(),
     );
+    if let Some(t) = tip {
+        let icon = Rect::from_center_size(
+            egui::pos2(row.left() + LABEL_W - 11.0, row.center().y),
+            Vec2::splat(11.0),
+        );
+        crate::icons::paint(ui.painter(), icon, "info", Palette::text_faint());
+        ui.interact(
+            Rect::from_min_size(row.min, Vec2::new(LABEL_W, ROW_H)),
+            ui.id().with(("feldhinweis", idx)),
+            Sense::hover(),
+        )
+        .on_hover_text(t);
+    }
     // Wert: eigener Bereich mit fester linker Kante → alle Felder liegen exakt untereinander
     let cell = Rect::from_min_size(
         egui::pos2(row.left() + LABEL_W, row.center().y - ROW_H * 0.5),

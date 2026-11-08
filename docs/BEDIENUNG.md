@@ -260,16 +260,18 @@ der Zieldatei abweicht: „Speichern und schließen" (nur mit Speicherort),
 dicht, hinten grob. Vorgabe: 1 Minute, 100 Plätze, Reichweite ein Quartal. Ohne
 Änderung entsteht kein Stand.
 
-Einstellungen → **Sicherung**: *Verlauf sichern* (aus = nur der neueste Stand je
-Dokument), *Plätze im Pool* (30–2000), *Reicht zurück* (Woche bis Jahr),
-*Intervall* (1–240 Minuten), dazu der mittlere Abstand der Stände, die Größe des
-Ordners und der Hinweis zum Netzlaufwerk.
+Einstellungen → **Sicherung**: *Verlauf aufbewahren* (aus = je Zeichnung nur der
+neueste Stand, vorhandene Sicherungen bleiben), *Anzahl der Sicherungen*
+(30–2000), *Aufbewahrungszeitraum* (Woche bis Jahr), *Sicherung alle* (1–240
+Minuten), dazu der mittlere Abstand der Stände, der belegte Speicher und der
+Hinweis zum Netzlaufwerk. Jede Zeile erklärt sich über ihr Infozeichen; über der
+Tabelle steht das Konzept in drei Sätzen.
 
-**Wiederherstellen**: Einstellungen → Sicherung → **Wiederherstellen**, oder die
-Funktion *Sicherung* (`file.restore`) aus dem Inventar. Die Liste zeigt die
-Stände, neueste zuerst, mit Datum, Größe und Vorschau; ein Klick öffnet den
-Stand als **neues** Dokument ohne Speicherort. Die Zieldatei und der bisherige
-Stand bleiben unberührt.
+**Sicherungen ansehen**: Einstellungen → Sicherung → **Sicherungsordner** öffnet
+den Ordner im Dateimanager (dieselbe Funktion wie *Sicherungen öffnen* in
+Inventar und Hotbar). Jeder Stand ist eine gewöhnliche `.jjcad`-Datei — öffnen
+per Doppelklick oder in das Fenster ziehen. Ein so geöffneter Stand trägt keinen
+Speicherort; gespeichert wird er erst über „Speichern unter“.
 
 Die Sicherung schützt gegen Absturz und vergessene Speicherung, **nicht** gegen
 einen Plattenausfall. Dafür den Sicherungsordner (Einstellungen → Speicherorte →

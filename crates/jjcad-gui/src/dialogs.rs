@@ -979,149 +979,6 @@ pub fn show(app: &mut App, ctx: &egui::Context) {
         }
     }
 
-    // Sicherung wiederherstellen (T0129)
-    if app.ui.sicherung_dialog {
-        dim_background(ctx);
-        let mut win_open = true;
-        let mut schliessen = false;
-        let mut wiederherstellen: Option<u64> = None;
-        // Stände einmal je Bild holen (neueste zuerst).
-        let staende: Vec<jjcad_core::sicherung::Stand> = app
-            .sicherung_pool()
-            .staende_neueste()
-            .into_iter()
-            .cloned()
-            .collect();
-        if app.ui.sicherung_wahl.is_none() {
-            app.ui.sicherung_wahl = staende.first().map(|s| s.zyklus);
-        }
-        // Vorschau des gewählten Standes laden — nur bei Wechsel.
-        if let Some(zyklus) = app.ui.sicherung_wahl {
-            let passt = app
-                .ui
-                .sicherung_vorschau
-                .as_ref()
-                .map(|(z, _)| *z == zyklus)
-                .unwrap_or(false);
-            if !passt {
-                let geladen = {
-                    let pool = app.sicherung_pool();
-                    pool.manifest()
-                        .staende
-                        .iter()
-                        .find(|s| s.zyklus == zyklus)
-                        .cloned()
-                        .and_then(|s| pool.laden(&s).ok())
-                };
-                app.ui.sicherung_vorschau = geladen.map(|d| (zyklus, d));
-            }
-        }
-        modal_window(
-            ctx,
-            jjcad_core::i18n::tr("gui.dialogs.sicherung_titel"),
-            780.0,
-            &mut win_open,
-        )
-        .show(ctx, |ui| {
-            ui.set_width(760.0);
-            if staende.is_empty() {
-                ui.label(theme::dim(jjcad_core::i18n::tr(
-                    "gui.dialogs.sicherung_keine",
-                )));
-            } else {
-                ui.horizontal_top(|ui| {
-                    ui.vertical(|ui| {
-                        ui.set_width(360.0);
-                        egui::ScrollArea::vertical()
-                            .max_height(400.0)
-                            .show(ui, |ui| {
-                                for s in &staende {
-                                    let gewaehlt = app.ui.sicherung_wahl == Some(s.zyklus);
-                                    let text = format!(
-                                        "{}  ·  {}",
-                                        crate::app::kurz_zeit(&s.zeit),
-                                        groesse_text(s.groesse)
-                                    );
-                                    if ui.selectable_label(gewaehlt, text).clicked() {
-                                        app.ui.sicherung_wahl = Some(s.zyklus);
-                                    }
-                                    let name = if s.name.trim().is_empty() {
-                                        jjcad_core::i18n::tr("gui.dialogs.sicherung_zeichnung")
-                                    } else {
-                                        &s.name
-                                    };
-                                    ui.label(theme::faint(name));
-                                }
-                            });
-                    });
-                    // Feste Höhe statt `ui.separator()`: in einer waagerechten
-                    // Zeile nimmt der Trenner sonst die ganze Fensterhöhe ein
-                    // und der Dialog wächst über den Bildschirm hinaus.
-                    let (trenner, _) =
-                        ui.allocate_exact_size(Vec2::new(9.0, 360.0), Sense::hover());
-                    ui.painter().vline(
-                        trenner.center().x,
-                        trenner.y_range(),
-                        Stroke::new(1.0, Palette::panel_alt()),
-                    );
-                    ui.vertical(|ui| {
-                        ui.set_width(360.0);
-                        let (rect, _) =
-                            ui.allocate_exact_size(Vec2::new(360.0, 360.0), Sense::hover());
-                        ui.painter()
-                            .rect_filled(rect, Rounding::same(4.0), Palette::bg());
-                        match &app.ui.sicherung_vorschau {
-                            Some((_, doc)) => crate::inventory::draw_document_preview(
-                                ui.painter(),
-                                rect.shrink(8.0),
-                                doc,
-                                Palette::text(),
-                            ),
-                            None => {
-                                ui.painter().text(
-                                    rect.center(),
-                                    egui::Align2::CENTER_CENTER,
-                                    jjcad_core::i18n::tr("gui.dialogs.sicherung_keine_vorschau"),
-                                    FontId::proportional(12.0),
-                                    Palette::text_dim(),
-                                );
-                            }
-                        }
-                    });
-                });
-            }
-            ui.add_space(6.0);
-            button_row(ui, |ui| {
-                if ui
-                    .button(jjcad_core::i18n::tr("gui.dialogs.schliessen"))
-                    .clicked()
-                {
-                    schliessen = true;
-                }
-                if ui
-                    .add_enabled(
-                        app.ui.sicherung_wahl.is_some(),
-                        egui::Button::new(jjcad_core::i18n::tr(
-                            "gui.dialogs.sicherung_wiederherstellen",
-                        )),
-                    )
-                    .clicked()
-                {
-                    wiederherstellen = app.ui.sicherung_wahl;
-                }
-            });
-        });
-        if let Some(zyklus) = wiederherstellen {
-            app.sicherung_wiederherstellen(zyklus);
-            schliessen = true;
-        }
-        if schliessen || !win_open || ctx.input(|i| i.key_pressed(egui::Key::Escape)) {
-            app.ui.sicherung_dialog = false;
-            app.ui.sicherung_wahl = None;
-            app.ui.sicherung_vorschau = None;
-        }
-    }
-
     // Info
     if app.ui.about_open {
         dim_background(ctx);
@@ -1398,14 +1255,15 @@ pub(crate) const EINSTELLUNGSKATEGORIEN: &[Einstellungskategorie] = &[
         stichworte: &[
             "Sicherung",
             "Sicherungen",
+            "Zwischenstände",
             "Verlauf",
-            "Verlauf sichern",
-            "Stände",
-            "Stand",
-            "Wiederherstellen",
+            "Anzahl",
             "Plätze",
+            "Stände",
+            "Wiederherstellen",
             "Pool",
             "Intervall",
+            "Aufbewahrungszeitraum",
             "Reicht zurück",
             "Abstand",
             "Netzlaufwerk",
@@ -1464,6 +1322,24 @@ fn zeile_mit(
         || aliase.iter().any(|a| a.to_lowercase().contains(suche));
     if passt {
         widgets::field_row(ui, label, add);
+    }
+}
+
+/// Wie `zeile`, aber der Name trägt einen Hinweis (Tooltip) — für Einstellungen,
+/// deren Name allein nicht verrät, was sie tut.
+fn zeile_tip(
+    suche: &str,
+    ui: &mut Ui,
+    label: &str,
+    aliase: &[&str],
+    tip: &str,
+    add: impl FnOnce(&mut Ui),
+) {
+    let passt = suche.is_empty()
+        || label.to_lowercase().contains(suche)
+        || aliase.iter().any(|a| a.to_lowercase().contains(suche));
+    if passt {
+        widgets::field_row_tip(ui, label, tip, add);
     }
 }
 
@@ -2384,15 +2260,32 @@ fn settings_body(app: &mut App, ui: &mut Ui) {
                             }
                             // ------------------------ Sicherung (T0129) --------
                             9 => {
+                                if suche.is_empty() {
+                                    ui.add(
+                                        egui::Label::new(theme::dim(jjcad_core::i18n::tr(
+                                            "settings.sicherung_erklaerung",
+                                        )))
+                                        .wrap(),
+                                    );
+                                    ui.add_space(8.0);
+                                }
                                 abschnitt(&suche, ui, jjcad_core::i18n::tr("settings.sicherung"));
-                                zeile(&suche, ui, jjcad_core::i18n::tr("settings.sicherung_verlauf"), |ui| {
-                                    ui.checkbox(&mut s_verlauf, "");
-                                });
-                                zeile_mit(
+                                zeile_tip(
                                     &suche,
                                     ui,
-                                    jjcad_core::i18n::tr("settings.sicherung_plaetze"),
-                                    &["Pool", "Stände"],
+                                    jjcad_core::i18n::tr("settings.sicherung_zwischenstaende"),
+                                    &["Verlauf", "Sicherungen", "an", "aus"],
+                                    jjcad_core::i18n::tr("settings.sicherung_zwischenstaende_tip"),
+                                    |ui| {
+                                        ui.checkbox(&mut s_verlauf, "");
+                                    },
+                                );
+                                zeile_tip(
+                                    &suche,
+                                    ui,
+                                    jjcad_core::i18n::tr("settings.sicherung_anzahl"),
+                                    &["Plätze", "Pool", "Stände", "Sicherungen"],
+                                    jjcad_core::i18n::tr("settings.sicherung_anzahl_tip"),
                                     |ui| {
                                         ui.add(crate::widgets::zahl(
                                             &mut s_plaetze,
@@ -2402,11 +2295,12 @@ fn settings_body(app: &mut App, ui: &mut Ui) {
                                         ));
                                     },
                                 );
-                                zeile_mit(
+                                zeile_tip(
                                     &suche,
                                     ui,
-                                    jjcad_core::i18n::tr("settings.sicherung_reicht_zurueck"),
-                                    &["Reichweite", "Arbeitsstunden"],
+                                    jjcad_core::i18n::tr("settings.sicherung_zeitraum"),
+                                    &["Reicht zurück", "Aufbewahrung", "Arbeitsstunden"],
+                                    jjcad_core::i18n::tr("settings.sicherung_zeitraum_tip"),
                                     |ui| {
                                         let caption = stunden_name(s_stunden);
                                         if let Some(neu) = crate::panels::dropdown(
@@ -2431,11 +2325,12 @@ fn settings_body(app: &mut App, ui: &mut Ui) {
                                         }
                                     },
                                 );
-                                zeile_mit(
+                                zeile_tip(
                                     &suche,
                                     ui,
                                     jjcad_core::i18n::tr("settings.sicherung_intervall"),
-                                    &["Minuten", "Abstand"],
+                                    &["Minuten", "Abstand", "Sicherung alle"],
+                                    jjcad_core::i18n::tr("settings.sicherung_intervall_tip"),
                                     |ui| {
                                         ui.add(crate::widgets::zahl(
                                             &mut s_intervall,
@@ -2443,6 +2338,14 @@ fn settings_body(app: &mut App, ui: &mut Ui) {
                                             jjcad_core::sicherung::INTERVALL_MIN as i32
                                                 ..=jjcad_core::sicherung::INTERVALL_MAX as i32,
                                         ));
+                                        // Einzahl hat einen eigenen Text: „1 Minuten“
+                                        // liest sich falsch.
+                                        let schluessel = if s_intervall == 1 {
+                                            "settings.sicherung_minute"
+                                        } else {
+                                            "settings.sicherung_minuten"
+                                        };
+                                        ui.label(theme::dim(jjcad_core::i18n::tr(schluessel)));
                                     },
                                 );
                                 // Kennzahlen des Pools: höchstens alle zwei
@@ -2476,18 +2379,37 @@ fn settings_body(app: &mut App, ui: &mut Ui) {
                                     stunden: s_stunden,
                                     intervall_min: s_intervall.max(1) as u32,
                                 };
-                                zeile_mit(
+                                let abstand = einst.abstand(dateien);
+                                zeile_tip(
                                     &suche,
                                     ui,
                                     jjcad_core::i18n::tr("settings.sicherung_abstand"),
                                     &["Abstand der Stände", "Prozent"],
+                                    jjcad_core::i18n::tr("settings.sicherung_abstand_tip"),
                                     |ui| {
                                         ui.label(theme::dim(&format!(
                                             "{} %",
-                                            zahl_deutsch(einst.abstand(dateien) * 100.0, 1)
+                                            zahl_deutsch(abstand * 100.0, 1)
                                         )));
                                     },
                                 );
+                                if suche.is_empty() {
+                                    // Konkretes Beispiel statt nur einer Prozentzahl:
+                                    // dieselben Zahlen stehen in `docs/SICHERUNG.md`.
+                                    ui.add(
+                                        egui::Label::new(theme::faint(
+                                            jjcad_core::i18n::t_args_owned(
+                                                "settings.sicherung_abstand_beispiel",
+                                                &[
+                                                    ("stunde", zahl_deutsch(60.0 * abstand, 0)),
+                                                    ("tag", zahl_deutsch(480.0 * abstand, 0)),
+                                                ],
+                                            ),
+                                        ))
+                                        .wrap(),
+                                    );
+                                    ui.add_space(6.0);
+                                }
                                 zeile_mit(
                                     &suche,
                                     ui,
@@ -2516,16 +2438,21 @@ fn settings_body(app: &mut App, ui: &mut Ui) {
                                         )));
                                     },
                                 );
-                                zeile(&suche, ui, jjcad_core::i18n::tr("settings.sicherung_staende"), |ui| {
-                                    if ui
-                                        .button(jjcad_core::i18n::tr(
-                                            "gui.dialogs.sicherung_wiederherstellen",
-                                        ))
-                                        .clicked()
-                                    {
-                                        app.ui.sicherung_dialog = true;
-                                    }
-                                });
+                                zeile(
+                                    &suche,
+                                    ui,
+                                    jjcad_core::i18n::tr("settings.sicherung_ordner"),
+                                    |ui| {
+                                        if ui
+                                            .button(jjcad_core::i18n::tr(
+                                                "settings.sicherung_ordner_oeffnen",
+                                            ))
+                                            .clicked()
+                                        {
+                                            app.sicherungsordner_oeffnen();
+                                        }
+                                    },
+                                );
                                 if suche.is_empty() {
                                     ui.add(
                                         egui::Label::new(theme::faint(jjcad_core::i18n::tr(
@@ -5068,8 +4995,12 @@ mod tests_einstellungen {
         assert_eq!(treffer("auflösung"), vec!["Darstellung"]);
         // T0129: Die Sicherung ist eine eigene Kategorie.
         assert!(
-            treffer("verlauf sichern").contains(&"Sicherung"),
-            "„Verlauf sichern“ findet die Kategorie Sicherung nicht"
+            treffer("verlauf").contains(&"Sicherung"),
+            "„Verlauf“ findet die Kategorie Sicherung nicht"
+        );
+        assert!(
+            treffer("aufbewahrungszeitraum").contains(&"Sicherung"),
+            "„Aufbewahrungszeitraum“ findet die Kategorie Sicherung nicht"
         );
         assert!(
             treffer("intervall").contains(&"Sicherung"),
@@ -5118,12 +5049,13 @@ mod tests_einstellungen {
             out = ctx.run(bild(), |ctx| app.ui(ctx));
         }
         for wort in [
-            "Verlauf sichern",
-            "Plätze",
-            "Reicht zurück",
-            "Intervall",
-            "Abstand",
-            "Poolgröße",
+            "Verlauf aufbewahren",
+            "Anzahl der Sicherungen",
+            "Aufbewahrungszeitraum",
+            "Sicherung alle",
+            "Abstand der Stände",
+            "Belegter Speicher",
+            "Sicherungsordner",
         ] {
             assert!(
                 text_mitte(&out, wort).is_some(),

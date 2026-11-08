@@ -44,12 +44,15 @@ Einstellungen → Sicherung:
 
 | Einstellung | Bedeutung | Vorgabe |
 |---|---|---|
-| **Verlauf sichern** | an = Stände werden aufbewahrt und ausgedünnt; aus = nur der neueste Stand je Dokument (Pins bleiben) | an |
-| **Plätze im Pool** | wie viele Stände **insgesamt** aufbewahrt werden — für alle Dateien zusammen | 100 (30 … 2000) |
-| **Reicht zurück** | wie viel Arbeit rekonstruierbar sein soll | Quartal |
-| **Intervall** | Abstand zwischen zwei Sicherungen in Minuten | 1 (1 … 240) |
+| **Verlauf aufbewahren** | an = jeder Stand bleibt und wird nach Alter ausgedünnt; aus = je Dokument bleibt nur der neueste Stand, der beim nächsten Mal **ersetzt** wird. Abschalten löscht **nichts** — es kommen nur keine neuen Stände hinzu | an |
+| **Anzahl der Sicherungen** | wie viele Sicherungen **insgesamt** aufbewahrt werden — für alle Zeichnungen zusammen | 100 (30 … 2000) |
+| **Aufbewahrungszeitraum** | wie weit die Sicherungen zurückreichen sollen | Quartal |
+| **Sicherung alle** | Abstand zwischen zwei Sicherungen in Minuten | 1 (1 … 240) |
 
-„Reicht zurück“ ist in **Arbeitsstunden** angegeben, nicht in Kalendertagen:
+Jede Zeile trägt ein Infozeichen mit derselben Erklärung; über der Tabelle steht
+das Konzept in drei Sätzen.
+
+Der **Aufbewahrungszeitraum** ist in **Arbeitsstunden** angegeben, nicht in Kalendertagen:
 
 | Auswahl | Arbeitsstunden | Zyklen bei 1 min | bei Dauerbetrieb |
 |---|---|---|---|
@@ -133,11 +136,12 @@ Denselben Vorrang hat der Stand, wenn die Zeichnung **ausdrücklich geöffnet**
 wird (Doppelklick auf die `.jjcad`, Datei als Argument): ein Doppelklick darf
 die Arbeit von eben nicht verwerfen.
 
-**Aus dem Dialog.** Der Dialog zeigt eine Liste der Stände, neueste zuerst:
-Datum, Uhrzeit, Größe und Vorschau. Die letzten zehn im Intervallraster, danach
-in wachsenden Abständen. Ein Klick öffnet den Stand als **neues Dokument**; die
-Zieldatei und der bisherige Stand bleiben unberührt. Gespeichert wird das neue
-Dokument erst durch „Speichern unter“.
+**Aus dem Ordner.** Einstellungen → Sicherung → **Sicherungsordner** öffnet den
+Ordner im Dateimanager (dieselbe Funktion wie `file.restore` in Inventar und
+Hotbar). Jeder Stand ist eine gewöhnliche `.jjcad`-Datei und lässt sich von dort
+öffnen — per Doppelklick oder in das Fenster gezogen. Ein so geöffneter Stand
+trägt keinen Speicherort; gespeichert wird er erst durch „Speichern unter“, die
+Zieldatei bleibt unberührt.
 
 **Verworfen heißt verworfen.** Wählt der Benutzer beim Schließen eines Reiters
 „Verwerfen“, wird der neueste Stand auf den Inhalt der Zieldatei gesetzt — beim
@@ -223,8 +227,10 @@ Stand je UUID), nicht gespeichert — so kann er nicht veralten.
 
    wobei das Fensterende `T` als oberer Nachbar zählt. Kleine Kosten heißt:
    dort ist der Abstand nach dem Löschen am größten.
-5. **Verlauf aus:** alle Stände außer Pins werden gelöscht — je Dokument bleibt
-   genau der neueste.
+5. **Verlauf aus:** es entsteht kein zusätzlicher Stand — der bisherige neueste
+   je Dokument wird durch den neuen **ersetzt**. Vorhandene Stände werden dabei
+   nicht gelöscht; sie verfallen nur nach Regel 2 und 3. Ein Haken darf keine
+   Sicherung vernichten.
 
 Die Regel ist **monoton**: es wird nur gelöscht, nie wiederhergestellt. Sie
 braucht keinen Verlauf außer der aktuellen Liste und ist damit nach einem
@@ -307,7 +313,7 @@ erfolgreichen Schreiben; die Spitze liegt kurzzeitig bei `Plätze + 1`. Waisen
 | Zeichnung ohne Kennung im Kopf | Kennung aus dem Pfad abgeleitet, über Sitzungen stabil; nach dem ersten Speichern steht sie in der Datei und gewinnt |
 | Datei gelöscht | Pin bleibt, bis die Datei 30 Tage unbekannt ist |
 | `N`, `T` oder Intervall geändert | gilt ab der nächsten Ausdünnung; bestehende Stände behalten ihre Frist |
-| Verlauf aus | nur der neueste Stand je Dokument bleibt |
+| Verlauf aus | je Dokument nur der neueste Stand; vorhandene Sicherungen bleiben, neue werden nicht angelegt |
 | Netzlaufwerk | Kopie + fsync + rename, keine Hardlinks |
 | Absturz zwischen Stand und Manifest | Waisen werden beim Start entfernt |
 
