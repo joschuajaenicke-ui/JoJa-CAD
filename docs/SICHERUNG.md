@@ -149,7 +149,10 @@ durch „Speichern unter“.
 **Ein Pool für alle Dateien** — ein Projektordner, kein Gruppenfeld. Sonst kann
 nicht dateiübergreifend ausgedünnt werden. Je Stand: Zyklusnummer,
 Datei-Kennung (UUID aus dem Dateikopf, nicht der Pfad), Hash, Größe,
-Zeitstempel (nur Anzeige).
+Zeitstempel (nur Anzeige). Trägt eine Zeichnung im Kopf keine Kennung, wird
+beim Laden eine aus dem Pfad abgeleitete vergeben (`daten::kennung_fuer_pfad`) —
+dieselbe Datei behält sie über Sitzungen hinweg; eine zufällige Kennung je
+Öffnen würde je Start einen neuen Pin anlegen.
 
 ```
 <Sicherungen>/manifest.json          Zähler n und die Liste der Stände
@@ -238,6 +241,7 @@ erfolgreichen Schreiben; die Spitze liegt kurzzeitig bei `Plätze + 1`. Waisen
 | Datei unverändert | kein Zyklus, kein Stand |
 | Uhrzeit/DST/Zeitsprung | ohne Wirkung — gerechnet wird in Zyklen |
 | Speichern unter / umbenennen | Stände folgen der Datei-UUID, nicht dem Pfad |
+| Zeichnung ohne Kennung im Kopf | Kennung aus dem Pfad abgeleitet, über Sitzungen stabil; nach dem ersten Speichern steht sie in der Datei und gewinnt |
 | Datei gelöscht | Pin bleibt, bis die Datei 30 Tage unbekannt ist |
 | `N`, `T` oder Intervall geändert | gilt ab der nächsten Ausdünnung; bestehende Stände behalten ihre Frist |
 | Verlauf aus | nur der neueste Stand je Dokument bleibt |
@@ -246,6 +250,7 @@ erfolgreichen Schreiben; die Spitze liegt kurzzeitig bei `Plätze + 1`. Waisen
 
 ### 15. Offene Entscheidungen
 
-1. Vorgabe für `N`: fest 100 oder „automatisch = Dateien + 90“.
+1. ~~Vorgabe für `N`~~ — **entschieden:** 100, Bereich 30 … 2000; unter 30 wird
+   „Verlauf sichern" abgeschaltet (nur Pins). Siehe §2 und §11.
 2. Pin-Tiefe: derzeit 1 Stand je Datei; 2 kostet einen Platz je Datei.
 3. Zählt Leerlauf als Zyklus? Dieses Konzept sagt nein.

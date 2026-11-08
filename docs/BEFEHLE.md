@@ -24,6 +24,7 @@ Befehls-Schicht vorbei.
 | `file.new` / `file.open` / `file.save` / `file.save_as` | — | Nur GUI (Dialoge) |
 | `file.export_pdf` | — | Blatt-PDF über Dialog |
 | `file.export_dxf` | — | DXF über Dialog |
+| `file.restore` | — | Dialog „Sicherung wiederherstellen": Stände ansehen und als **neues** Dokument öffnen (schreibt nie in die Zieldatei) |
 | `doc.settings` | `input_unit`, `dim_unit`, `decimals`, `annotation_scale`, `grid_step`, `text_height`, `wall_thickness`, `door_width`, `window_width`, `stair_width`, `show_grid`, `snap{...}` | Einstellungen ändern |
 | `doc.project` | `project`, `client`, `planner`, `plan_no`, `plan_title`, `address`, `note`, `date`, `revision` | Projektdaten / Schriftfeld |
 | `dim.style` | `text_height`, `arrow_size`, `arrow` (`slash`/`arrow`/`dot`/`none`), `text_gap`, `ext_gap`, `ext_overshoot`, `decimals` | Bemaßungsstil |

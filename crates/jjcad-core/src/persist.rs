@@ -33,11 +33,9 @@ pub fn from_json(s: &str) -> Result<Document, String> {
             doc.version, FORMAT_VERSION
         ));
     }
-    // T0129: Ältere Dateien tragen keine Kennung — sie bekommen beim Laden
-    // eine und schreiben sie beim nächsten Speichern mit.
-    if doc.id.trim().is_empty() {
-        doc.id = crate::sicherung::neue_uuid();
-    }
+    // T0129: Ältere Dateien tragen keine Kennung. Vergeben wird sie in
+    // `load_document` — dort ist der Pfad bekannt, und daraus lässt sich eine
+    // **stabile** Kennung ableiten. Hier (ohne Pfad) bleibt das Feld leer.
     // Rasterweite aus älteren Dateien in den brauchbaren Bereich holen
     doc.settings.snap.grid_step = crate::model::clamp_grid_step(doc.settings.snap.grid_step);
     // Fehlende Layer reparieren
@@ -262,6 +260,13 @@ pub fn save_document(doc: &mut Document, path: &Path) -> Result<(), String> {
 pub fn load_document(path: &Path) -> Result<Document, String> {
     let s = std::fs::read_to_string(path).map_err(|e| format!("Lesen fehlgeschlagen: {e}"))?;
     let mut doc = from_json(&s)?;
+    // T0129: Eine Zeichnung ohne Kennung im Kopf bekommt eine aus dem Pfad
+    // abgeleitete — dieselbe Datei behält sie über Sitzungen hinweg. Eine
+    // zufällige Kennung je Öffnen würde im Sicherungspool bei jedem Start einen
+    // neuen Pin anlegen und den Verlauf der Zeichnung aufteilen.
+    if doc.id.trim().is_empty() {
+        doc.id = crate::daten::kennung_fuer_pfad(path);
+    }
     doc.path = Some(path.to_string_lossy().to_string());
     doc.name = path
         .file_stem()
@@ -2050,11 +2055,6 @@ pub fn config_dir() -> PathBuf {
     xdg_config_home().join("jjcad")
 }
 
-/// Benutzerblock-Bibliothek (profilweit) — Vorgabe ohne eigene Einstellung.
-pub fn user_blocks_dir() -> PathBuf {
-    crate::daten::pfad_in_wurzel("", "blocks")
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -3123,5 +3123,38 @@ mod tests {
         // Neuer Schlüssel hat Vorrang bzw. wird normal gelesen.
         let neu: UserPrefs = serde_json::from_str(r#"{"drag_mode": "two_clicks"}"#).unwrap();
         assert_eq!(neu.drag_mode, DragMode::TwoClicks);
+    }
+
+    /// Eine Altdatei ohne `id` im Kopf bekommt beim Laden eine Kennung aus dem
+    /// Pfad — zweimal geöffnet muss dieselbe herauskommen (T0129).
+    #[test]
+    fn altdatei_ohne_kennung_bekommt_eine_stabile() {
+        let d = test_dir("alt-ohne-id");
+        let p = d.join("alt.jjcad");
+        let doc = crate::model::Document::new();
+        let mut v: serde_json::Value = serde_json::from_str(&to_json(&doc).unwrap()).unwrap();
+        v.as_object_mut().unwrap().remove("id");
+        std::fs::write(&p, serde_json::to_string(&v).unwrap()).unwrap();
+
+        let a = load_document(&p).expect("Altdatei muss laden");
+        let b = load_document(&p).expect("Altdatei muss laden");
+        assert!(!a.id.trim().is_empty(), "Kennung fehlt");
+        assert_eq!(a.id, b.id, "zweimal geöffnet muss dieselbe Kennung ergeben");
+    }
+
+    /// Steht die Kennung in der Datei, gewinnt sie gegen den Pfad — sonst
+    /// verlöre eine umbenannte Zeichnung ihren Verlauf.
+    #[test]
+    fn kennung_aus_der_datei_gewinnt_gegen_den_pfad() {
+        let d = test_dir("id-aus-datei");
+        let p = d.join("mit-id.jjcad");
+        let mut doc = crate::model::Document::new();
+        doc.id = "11111111-2222-4333-8444-555555555555".into();
+        std::fs::write(&p, to_json(&doc).unwrap()).unwrap();
+
+        assert_eq!(
+            load_document(&p).expect("laden").id,
+            "11111111-2222-4333-8444-555555555555"
+        );
     }
 }

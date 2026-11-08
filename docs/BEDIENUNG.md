@@ -208,6 +208,78 @@ ausgeblendet.
   gibt es bewusst nicht: JoJa-CAD zeichnet nur, wenn ein Bild gebraucht wird, Pausen sagen
   nichts über die Zeichenzeit. Die Anzeige nimmt keine Klicks an.
 
+## Daten, Sicherung und Sitzung
+
+### Wo die Daten liegen
+
+Alle Nutzdaten liegen in **einem** Ordner: `prefs.json` (Einstellungen),
+`sitzung.json` (offene Reiter), `blocks/` (eigene Blöcke), `sicherungen/`
+(Stände) und `log/`. Die Zeichnungen selbst bleiben, wo Sie sie speichern.
+
+Den Ordner bestimmt die erste zutreffende Angabe:
+
+1. `jjcad --daten-dir <Pfad>`
+2. die Umgebungsvariable `JJCAD_DATA_DIR`
+3. eine Datei `portable.txt` neben dem Programm → `<Programmordner>/data`
+4. der Plattformstandard (Linux `~/.local/share/JoJa-CAD`, Windows
+   `%APPDATA%\JoJa-CAD`, macOS `~/Library/Application Support/JoJa-CAD`)
+
+Der Knopf **Datenordner** (Menüband *Datei*, Gruppe *Projekt*) öffnet ihn im
+Dateimanager; sein Tooltip zeigt den Pfad. Die drei Unterordner lassen sich
+unter Einstellungen → **Speicherorte** ändern — relativ zum Datenordner oder
+absolut, je Feld mit **Zurücksetzen**. Ein nicht beschreibbarer Pfad wird beim
+Übernehmen abgelehnt, nicht still gesetzt.
+
+Läuft bereits eine Instanz auf demselben Ordner, meldet die zweite das und
+bietet an, mit einem anderen Datenordner zu starten. Zwei Instanzen auf einer
+Wurzel würden sich Sitzung und Sicherung gegenseitig überschreiben.
+
+### Speichern und Sitzung
+
+Gespeichert wird **nur** auf Befehl (`Strg+S`, „Speichern unter"). Die Sicherung
+schreibt nie in die Zieldatei.
+
+Beim Beenden wird **nicht** nach dem Speichern gefragt: Der Zustand — offene
+Reiter in ihrer Reihenfolge, je Reiter Ansicht und aktives Blatt, aktiver Reiter,
+Fenstergröße und -lage — steht in `sitzung.json` und wird beim nächsten Start
+wiederhergestellt. Auch eine Zeichnung, die nie gespeichert wurde, kommt als
+„Unbenannt" zurück; ihr Inhalt liegt im Sicherungsordner. **Nicht**
+wiederhergestellt werden Auswahl, Undo-Verlauf, Werkzeugwahl und Zwischenablage.
+
+Das Schließen eines **Reiters** (`×`) fragt dagegen nach, sobald der Inhalt von
+der Zieldatei abweicht: „Speichern und schließen" (nur mit Speicherort),
+„Verwerfen", „Abbrechen".
+
+### Sicherung
+
+Ändert sich eine Zeichnung, legt die Sicherung im eingestellten Intervall einen
+**Stand** im Sicherungsordner ab und dünnt die Stände nach Alter aus: vorne
+dicht, hinten grob. Vorgabe: 1 Minute, 100 Plätze, Reichweite ein Quartal. Ohne
+Änderung entsteht kein Stand.
+
+Einstellungen → **Sicherung**: *Verlauf sichern* (aus = nur der neueste Stand je
+Dokument), *Plätze im Pool* (30–2000), *Reicht zurück* (Woche bis Jahr),
+*Intervall* (1–240 Minuten), dazu der mittlere Abstand der Stände, die Größe des
+Ordners und der Hinweis zum Netzlaufwerk.
+
+**Wiederherstellen**: Einstellungen → Sicherung → **Wiederherstellen**, oder die
+Funktion *Sicherung* (`file.restore`) aus dem Inventar. Die Liste zeigt die
+Stände, neueste zuerst, mit Datum, Größe und Vorschau; ein Klick öffnet den
+Stand als **neues** Dokument ohne Speicherort. Die Zieldatei und der bisherige
+Stand bleiben unberührt.
+
+Die Sicherung schützt gegen Absturz und vergessene Speicherung, **nicht** gegen
+einen Plattenausfall. Dafür den Sicherungsordner (Einstellungen → Speicherorte →
+*Sicherungen*) auf ein Netzlaufwerk mit redundanter Sicherung legen.
+
+### Eigene Blöcke
+
+„Block aus Auswahl" im Blockmanager legt den Block **dauerhaft** an: eine Datei
+`blocks/<name>.jjblk` im Datenordner. Nach dem nächsten Start steht er wieder im
+Blockmanager, Untertitel **Benutzer**; Löschen im Blockmanager entfernt auch die
+Datei. Das Verzeichnis ist die Wahrheit — es gibt keinen Index. Eine unlesbare
+Datei wird gemeldet und übersprungen, sie hält den Start nicht auf.
+
 ## Nachweis für den DPI-Modus
 
 `cargo run -p jjcad-core --example lw_test -- /tmp/lw.jjcad` erzeugt zwei parallele Linien

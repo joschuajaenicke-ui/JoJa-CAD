@@ -281,6 +281,11 @@ impl Sicherung {
         let text = std::fs::read_to_string(self.stand_pfad(stand))
             .map_err(|e| format!("Stand nicht lesbar: {e}"))?;
         let mut doc = persist::from_json(&text)?;
+        // Der Stand gehört zu genau dieser Kennung — sie gewinnt, falls der
+        // Inhalt keine (mehr) trägt.
+        if doc.id.trim().is_empty() {
+            doc.id = stand.datei.clone();
+        }
         doc.path = None;
         doc.modified = false;
         Ok(doc)

@@ -14,11 +14,11 @@ Stand: 2026-11-05 · 105 Punkte · P0: 45 · P1: 31 · P2: 29 · zusammen 191 Co
 
 - [x] **A1** Sicherung verdrahten: Stände im Pool statt einer Autosave-Datei, Intervall einstellbar (Vorgabe 1 min) — T0129, `docs/SICHERUNG.md` (3)
 - [x] **A2** entfällt: der Pool behält die Stände; die Zieldatei schreibt nur der Benutzer (T0129) (1)
-- [ ] **A3** Atomar speichern: in temporäre Datei schreiben, `fsync`, dann umbenennen (2)
-- [ ] **A4** `.bak` der Vorgängerversion beim Überschreiben anlegen (1)
+- [ ] **A3** Atomar speichern: in temporäre Datei schreiben, `fsync`, dann umbenennen (2) — gilt für die **Zieldatei** (`persist::save_document`); der Sicherungspool schreibt bereits so (T0129)
+- [x] **A4** entfällt: der Sicherungspool hält die Vorgängerversionen, kein `.bak` neben der Zeichnung (T0129) (1)
 - [ ] **A5** Panic-Hook: Meldung mit Pfad zur Sicherung statt wortlosem Verschwinden (2)
 - [~] **A6** Wiederherstellen über „Datei ▸ Sicherung“ (Dialog mit Vorschau) — kein Automatik-Hinweis beim Start (T0129) (1)
-- [ ] **A7** Warnung bei ungespeicherten Änderungen: Schließen, Neue Datei, Öffnen (1)
+- [~] **A7** Warnung bei ungespeicherten Änderungen — Reiter schließen fragt (T0130); „Beenden“ fragt bewusst nicht mehr, „Neu“ lässt den alten Reiter offen, und der Inhalt liegt im Pool (T0129) (1)
 - [x] **A8** Test: Absturz mitten im Schreiben → keine halbe Datei, Waise wird beim Start entfernt (T0129) (1)
 - [ ] **A9** Test: Speichern auf volle oder gesperrte Platte → Meldung, Originaldatei unversehrt (1)
 
