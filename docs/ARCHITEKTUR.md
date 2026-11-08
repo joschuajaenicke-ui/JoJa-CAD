@@ -209,11 +209,26 @@ Rückfrage bleibt nur beim Schließen eines Reiters und hängt daran, ob der
 Reiter von seiner Zieldatei abweicht. Fehlt `sitzung.json`, startet eine leere
 Zeichnung.
 
-`<Wurzel>/sperre.lock` trägt die PID der laufenden Instanz. Eine zweite Instanz
-auf derselben Wurzel schreibt nichts, sondern zeigt ein Hinweisfenster und
-bietet an, mit einem anderen Datenordner zu starten (`--daten-dir`). Eine
-Sperrdatei eines beendeten Prozesses wird übernommen. Ohne diese Sperre würden
-sich `sitzung.json` und das Sicherungs-Manifest überschreiben.
+**Eine Instanz je Wurzel.** `<Wurzel>/sperre.lock` trägt die PID der laufenden
+Instanz; ohne diese Sperre würden sich `sitzung.json` und das
+Sicherungs-Manifest überschreiben. Eine Sperrdatei eines beendeten Prozesses
+wird übernommen.
+
+Statt eine zweite Instanz nur abzuweisen, reicht sie ihre Arbeit weiter
+(`crates/jjcad-core/src/instanz.rs`, T0135): Port und Kennwort der laufenden
+Instanz stehen in `<Wurzel>/instanz.port`, die zweite schickt `oeffnen<TAB>pfad`
+oder `zeigen` an `127.0.0.1` und beendet sich sofort. Die laufende Instanz holt
+den Auftrag im nächsten Bild ab — Zeichnung als Reiter öffnen (oder dorthin
+wechseln) bzw. Fenster nach vorn —, ein Kanal-Thread weckt die Oberfläche über
+`Context::request_repaint`. Der Kanal ist ein TCP-Socket, damit ein Codeweg für
+Linux, Windows und macOS gilt; das Kennwort weist fremde Verbindungen ab. Ist
+kein Kanal erreichbar (alte Fassung, Absturz, Rechte), bleibt es beim
+Hinweisfenster mit dem Angebot, mit einem anderen Datenordner zu starten
+(`--daten-dir`).
+
+Der **MCP-Server** ist davon nicht betroffen: `crates/jjcad-mcp` nimmt keine
+Sperre, liest weder `prefs.json` noch `sitzung.json` und schreibt nur die
+Zeichnungen, die ihm genannt werden — er läuft unabhängig neben dem Programm.
 
 Bewusst **nicht** umgesetzt: eine Zeigerdatei und das Umziehen der Wurzel aus
 der Oberfläche. Ein kopiertes Verzeichnis wird über `--daten-dir` geöffnet.

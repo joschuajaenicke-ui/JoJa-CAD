@@ -87,8 +87,10 @@ Beim ersten Start wird eine vorhandene `prefs.json` aus dem alten Ort
 (`~/.config/jjcad`) in den neuen Ordner kopiert; die alte Datei bleibt liegen.
 Die drei Unterordner lassen sich unter Einstellungen → Speicherorte ändern
 (relativ zum Datenordner oder absolut, je Feld „Zurücksetzen“). Läuft bereits
-eine Instanz auf demselben Ordner, meldet die zweite das und bietet an, mit
-einem anderen Datenordner zu starten.
+eine Instanz auf demselben Ordner, übernimmt sie die Arbeit: eine von außen
+geöffnete Zeichnung erscheint als Reiter im laufenden Fenster, ein Start ohne
+Datei holt es nur nach vorn. Für getrennte Arbeit einen anderen Datenordner
+angeben (`--daten-dir`).
 
 ## Dokumentation
 
