@@ -185,9 +185,25 @@ wird ein Dateistand nach dem Speichern, nach „Verwerfen“ und — immer, auch
 gleichem Inhalt — als neuester Stand, damit er die Regel aus Abschnitt 6 trägt.
 
 ```
-<Sicherungen>/manifest.json          Zähler n und die Liste der Stände
-<Sicherungen>/stand-<n>-<uuid>.jjcad eine Datei je Stand
+<Sicherungen>/manifest.json                            Zähler n und die Liste der Stände
+<Sicherungen>/wohnhaus_autosave_20261108-153012.jjcad  eine Datei je Stand
 ```
+
+**Name eines Standes:** `<Zieldatei>_autosave_<Rückwärtsdatum>.jjcad`.
+
+- *Zieldatei* ist der Dateiname ohne Endung, klein und ohne Umlaute/Sonderzeichen
+  (`Wohnhaus Musterstraße` → `wohnhaus-musterstrasse`); hat die Zeichnung keinen
+  Namen, steht `zeichnung`.
+- *Rückwärtsdatum* ist `JJJJMMTT-HHMMSS` — Jahr zuerst statt wie gewohnt zuletzt,
+  damit alphabetische Sortierung chronologisch ist. Fehlt der Zeitstempel
+  (Altbestand), steht `zyklus-000000123`; die Zyklusnummer ist ebenfalls monoton.
+- Zwei Stände mit gleichem Namen in derselben Sekunde (zwei Reiter mit gleichem
+  Dateinamen) bekommen `…-2.jjcad`, `…-3.jjcad` — sie dürfen sich nicht
+  überschreiben.
+- Der Name steht im Manifest (`datei_name`); er ist die einzige Quelle für den
+  Pfad, damit Umbenennen der Zeichnung alte Stände nicht unauffindbar macht.
+  Stände aus älteren Pools (`stand-<n>-<uuid>.jjcad`) werden beim Öffnen
+  umbenannt.
 
 Die Zyklusnummer ist der einzige Zeitanker für Entscheidungen: monoton,
 DST-fest, unabhängig von der Systemuhr. Der Pin ist **abgeleitet** (neuester
@@ -275,6 +291,8 @@ erfolgreichen Schreiben; die Spitze liegt kurzzeitig bei `Plätze + 1`. Waisen
 12. Speichern, Beenden, Starten: der Reiter kommt mit dem **Dateiinhalt** und
     **nicht** als geändert zurück.
 13. Verwerfen, Starten: die verworfene Arbeit ist weg, die Datei gilt.
+14. Standdateien heißen `<Zieldatei>_autosave_<JJJJMMTT-HHMMSS>.jjcad`, sind
+    alphabetisch chronologisch sortiert und kollidieren nicht.
 
 ### 14. Randfälle
 
