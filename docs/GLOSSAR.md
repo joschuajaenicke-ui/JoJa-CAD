@@ -116,6 +116,10 @@ Steht rechts „nicht", dann ist das Wort im Projekt verpönt (auch in der Oberf
 | **Protokoll** | Der geöffnete Chat: alle Meldungen, scrollbar, Zeichnung blass | Verlauf, Historie |
 | **Toast** | Kurze Meldung, die von selbst verschwindet — heute eine Zeile im Chat | Benachrichtigung, Popup |
 | **Zieh-Modus** | Wie gezogen wird: „Gedrückthalten" oder „Zwei Klicks" | Drag-Modus, Drag and Drop |
+| **Plätze im Pool** | Anzahl der aufbewahrten Stände **insgesamt**, über alle Dateien; Einstellungen → Sicherung (`docs/SICHERUNG.md`) | Speicherlimit, Kontingent |
+| **Reicht zurück** | Gewünschte Reichweite der Sicherung in **Arbeitsstunden**; Einstellungen → Sicherung | Aufbewahrungsdauer, History-Tiefe |
+| **Stand** (Sicherung) | Eine gesicherte Fassung einer Datei zu einem Zyklus, mit Hash und Größe | Version, Snapshot, Backup-Datei |
+| **Abstand der Stände** | Mittlerer relativer Altersabstand zweier benachbarter Stände in Prozent; wird im Sicherungsdialog angezeigt | Auflösung (das ist DPI) |
 | **Leistungsanzeige** | Feld oben rechts in der Zeichenfläche mit Abstand und Rechenzeit je Bild samt Abschnitten (Umschalt+F3) | Perf-Overlay, FPS-Anzeige, Debug-HUD |
 
 ## 6. Ausgabe

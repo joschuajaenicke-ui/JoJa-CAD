@@ -1343,9 +1343,11 @@ dependencies = [
  "ab_glyph",
  "flate2",
  "image",
+ "libc",
  "lopdf",
  "serde",
  "serde_json",
+ "sha2",
  "tiny-skia",
 ]
 

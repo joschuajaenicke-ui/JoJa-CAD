@@ -105,6 +105,8 @@ pub const ACTIONS: &[ActionDef] = &[
     act!("file.new", "action.file.new.label", Datei, "new", "ctrl+n", "action.file.new.hint", false),
     act!("file.open", "action.file.open.label", Datei, "open", "ctrl+o", "action.file.open.hint", false),
     act!("file.save", "action.file.save.label", Datei, "save", "ctrl+s", "action.file.save.hint", false),
+    // T0129: Stände der Sicherung (unabhängig vom Speichern).
+    act!("file.restore", "action.file.restore.label", Datei, "datei", "", "action.file.restore.hint", false),
     act!("file.save_as", "action.file.save_as.label", Datei, "save", "ctrl+shift+s", "action.file.save_as.hint", false),
     act!("file.export_pdf", "action.file.export_pdf.label", Datei, "pdf", "ctrl+p", "action.file.export_pdf.hint", false),
     act!("file.export_dxf", "action.file.export_dxf.label", Datei, "dxf", "", "action.file.export_dxf.hint", false),

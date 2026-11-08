@@ -1499,6 +1499,11 @@ pub struct Document {
     pub version: u32,
     #[serde(default)]
     pub name: String,
+    /// Kennung des Dokuments (T0129): Stände der Sicherung folgen der Datei,
+    /// nicht dem Pfad — auch eine ungespeicherte Zeichnung braucht eine.
+    /// Beim Anlegen erzeugt; ältere Dateien bekommen sie beim Laden.
+    #[serde(default)]
+    pub id: String,
     #[serde(default)]
     pub project: ProjectMeta,
     #[serde(default)]
@@ -1551,6 +1556,7 @@ impl Document {
             format: FORMAT_NAME.to_string(),
             version: FORMAT_VERSION,
             name: "Unbenannt".to_string(),
+            id: crate::sicherung::neue_uuid(),
             project: ProjectMeta::default(),
             settings: Settings::default(),
             layers: Vec::new(),
@@ -1594,6 +1600,9 @@ impl Document {
             format: FORMAT_NAME.to_string(),
             version: FORMAT_VERSION,
             name: String::new(),
+            // Kein Kennungsbedarf: `blank` ist ein Rechengerüst (z. B. für
+            // `Entity::bbox`) und wird in heißen Schleifen angelegt.
+            id: String::new(),
             project: ProjectMeta::default(),
             settings: Settings::default(),
             layers: Vec::new(),
