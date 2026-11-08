@@ -120,7 +120,7 @@ fn jede_objektart_startet_ihren_erzeuger() {
             runs: Vec::new(),
             font: TextFont::Sans,
             line_spacing: 1.0,
-        },
+        frame: false,                    frame_round: false,                    background: None,                    },
         "draw.text",
     );
     pruefe(

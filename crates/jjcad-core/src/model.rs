@@ -638,6 +638,20 @@ pub enum EntityKind {
         /// Schriftart verschieden hohe Zeilen; der Rahmen folgt (`render::text_box`).
         #[serde(default = "default_one")]
         line_spacing: f64,
+        /// Umrandung dauerhaft anzeigen — derselbe Kasten, den die Bearbeitung
+        /// als Auswahlrahmen zeigt (T0126).
+        #[serde(default)]
+        frame: bool,
+        /// Runde Umrandung: Ecken mit dem Radius der halben Schrifthöhe
+        /// abgerundet. Einzeilig ergibt das ein Oval aus zwei Halbkreisen.
+        #[serde(default)]
+        frame_round: bool,
+        /// Hintergrundfläche hinter dem Text, in der Farbe dieses Feldes.
+        ///
+        /// Die Fläche ist immer das **Rechteck** der Umrandung; eine runde
+        /// Hintergrundfläche gibt es nicht (T0126).
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        background: Option<Color>,
     },
     /// Raumstempel: unsichtbare Raumfläche mit verknüpfter Beschriftung.
     ///

@@ -2503,24 +2503,55 @@ fn draw_tool_preview(
                 .text_color
                 .map(color32)
                 .unwrap_or(col);
+            // Dieselbe Form wie das fertige Objekt: Hintergrundfläche (immer
+            // das Rechteck) und Umrandung, eckig oder rund (T0126). Die
+            // Vorschau liegt über der Zeichnung, deshalb mit leichter
+            // Deckkraft — sie darf den Plan darunter nicht verdecken.
+            let tprim = text_preview_prim_mit(
+                txt,
+                h,
+                app.options.text_align,
+                app.options.text_valign,
+                stil,
+                app.options.text_font,
+                app.options.text_line_spacing,
+                app.options.text_angle.to_radians(),
+            );
+            if let Some(bg) = app.options.text_background {
+                let pts: Vec<Pos2> = render::text_corners(&tprim)
+                    .iter()
+                    .map(|q| w2s(*q + cursor))
+                    .collect();
+                p.add(Shape::convex_polygon(
+                    pts,
+                    color32(bg).gamma_multiply(0.6),
+                    Stroke::NONE,
+                ));
+            }
             paint_text(
                 p,
-                &text_preview_prim_mit(
-                    txt,
-                    h,
-                    app.options.text_align,
-                    app.options.text_valign,
-                    stil,
-                    app.options.text_font,
-                    app.options.text_line_spacing,
-                    app.options.text_angle.to_radians(),
-                ),
+                &tprim,
                 w2s(cursor),
                 view.zoom,
                 vorschau_col,
                 view.rot as f32,
                 app.prefs.textaufloesung.px(),
             );
+            if app.options.text_frame {
+                let radius = if app.options.text_frame_round {
+                    tprim.box_size().1 * 0.5
+                } else {
+                    0.0
+                };
+                let pts: Vec<Pos2> = render::text_frame_path(&tprim, radius)
+                    .iter()
+                    .map(|q| w2s(*q + cursor))
+                    .collect();
+                p.add(Shape::closed_line(
+                    pts,
+                    Stroke::new(1.0, vorschau_col.gamma_multiply(0.7)),
+                ));
+            }
         }
         "draw.fill" | "draw.hatch" | "draw.volume" => {
             p.circle_stroke(w2s(cursor), 9.0, dashed);

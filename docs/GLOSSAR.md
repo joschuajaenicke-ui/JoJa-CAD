@@ -80,6 +80,8 @@ Steht rechts „nicht", dann ist das Wort im Projekt verpönt (auch in der Oberf
 | **Text** | Freier Text im Modell oder auf dem Blatt; Größe in mm, Ausrichtung, Auszeichnung | Beschriftung (das ist der Inhalt) |
 | **Textgröße** | Die Höhe eines Textes (Feld im Eigenschaften-Panel) | Schriftgröße in Punkt, Höhe |
 | **Zeilenabstand** | Vielfaches der Zeilenhöhe der Schrift bei mehrzeiligen Texten (1 = Zeilenhöhe der Schrift selbst); Rahmen und Fang folgen | Durchschuss, Zeilenhöhe |
+| **Textumrandung** | Der dauerhaft gezeigte Kasten um ein Textfeld — derselbe, den die Bearbeitung als Auswahlrahmen zeigt; auf Wunsch **runde Umrandung** mit dem Radius der halben Schrifthöhe (einzeilig ein Oval aus zwei Halbkreisen) | Rahmen, Kontur des Textes |
+| **Texthintergrund** | Fläche hinter einem Text in eigener Farbe, damit er sich vom Plan abhebt; immer das **Rechteck** der Umrandung — eine runde Fläche gibt es nicht | Hintergrundfarbe, Textfeld-Füllung |
 | **Schriftart** | Die Familie eines Textes: Serifenlos, Serifen, Nichtproportional, Schmal, Rund sowie die technischen Schriften **DIN 1451** (Eng-, Mittel-, Breitschrift) und **EN ISO 3098** (Typ A, Typ B) | Font, Typeface |
 | **DIN 1451** | Deutsche technische Normschrift in drei Breiten: Engschrift (schmal), Mittelschrift, Breitschrift (breit); liegt mit im Programm | „DIN" (ohne Nummer), „Schmal" |
 | **EN ISO 3098** | Technische Schrift für Zeichnungen: Typ A mit dünner Strichstärke (d = h/14), Typ B mit d = h/10; liegt mit im Programm | ISO-Schrift, „Normschrift" (ohne Norm) |

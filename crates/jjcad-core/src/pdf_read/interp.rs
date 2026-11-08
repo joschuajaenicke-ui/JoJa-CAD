@@ -542,6 +542,9 @@ impl<'a> Interp<'a> {
             runs: acc.runs,
             font: acc.font,
             line_spacing: 1.0,
+            frame: false,
+            frame_round: false,
+            background: None,
         };
         self.push_color(kind, None, farbe);
     }

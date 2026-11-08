@@ -705,9 +705,88 @@ pub fn schrift_wahl(ui: &mut Ui, id: &str, font: &mut TextFont) -> bool {
     }
 }
 
+/// Typische Zeilenabstände aus Textprogrammen (Vielfaches der Zeilenhöhe).
+///
+/// Einfach bis Doppelt sind die Werte, die Word, LibreOffice und InDesign
+/// anbieten; ein freier Wert bleibt im selben Menü einstellbar (T0126).
+pub const ZEILENABSTAENDE: [(f64, &str); 6] = [
+    (1.0, "Einfach"),
+    (1.15, "1,15"),
+    (1.5, "1,5"),
+    (2.0, "Doppelt"),
+    (2.5, "2,5"),
+    (3.0, "3,0"),
+];
+
+/// Auswahl des Zeilenabstands eines Textfelds — dieselben Vorgaben wie in
+/// Textprogrammen, dazu ein freies Feld.
+pub fn zeilenabstand_wahl(ui: &mut Ui, id: &str, spacing: &mut f64) -> bool {
+    let cap = ZEILENABSTAENDE
+        .iter()
+        .find(|(v, _)| (v - *spacing).abs() < 1e-6)
+        .map(|(_, l)| (*l).to_string())
+        .unwrap_or_else(|| format!("{:.2} ×", spacing).replace('.', ","));
+    let gewaehlt = crate::panels::dropdown(ui, id, &cap, None, |ui| {
+        let mut out = None;
+        for (v, l) in ZEILENABSTAENDE {
+            if ui
+                .selectable_label((v - *spacing).abs() < 1e-6, l)
+                .on_hover_text(jjcad_core::i18n::tr("gui.props.zeilenabstand_hinweis"))
+                .clicked()
+            {
+                out = Some(v);
+            }
+        }
+        ui.separator();
+        // Freier Wert: das Feld selbst gilt weiter (Grenzen wie beim Panel).
+        let mut frei = *spacing;
+        if ui
+            .add(
+                zahl(
+                    &mut frei,
+                    0.01,
+                    ZEILENABSTAND_MIN..=ZEILENABSTAND_MAX,
+                )
+                .suffix(" ×"),
+            )
+            .changed()
+        {
+            out = Some(frei);
+        }
+        out
+    });
+    match gewaehlt {
+        Some(v) if (v - *spacing).abs() > 1e-9 => {
+            *spacing = v.clamp(ZEILENABSTAND_MIN, ZEILENABSTAND_MAX);
+            true
+        }
+        _ => false,
+    }
+}
+
 #[cfg(test)]
 mod zahltests {
     use super::*;
+
+    /// Die Zeilenabstand-Vorgaben sind die üblichen Werte aus
+    /// Textprogrammen, aufsteigend und innerhalb der Feldgrenzen (T0126).
+    #[test]
+    fn zeilenabstand_vorgaben_sind_die_ueblichen_werte() {
+        let werte: Vec<f64> = ZEILENABSTAENDE.iter().map(|(v, _)| *v).collect();
+        assert!(werte.contains(&1.0), "Einfach fehlt: {werte:?}");
+        assert!(werte.contains(&1.5), "1,5 fehlt: {werte:?}");
+        assert!(werte.contains(&2.0), "Doppelt fehlt: {werte:?}");
+        assert!(
+            werte.windows(2).all(|w| w[0] < w[1]),
+            "Vorgaben nicht aufsteigend: {werte:?}"
+        );
+        for v in werte {
+            assert!(
+                v >= ZEILENABSTAND_MIN && v <= ZEILENABSTAND_MAX,
+                "Vorgabe {v} außerhalb der Grenzen"
+            );
+        }
+    }
 
     #[test]
     fn zahlenfeld_akzeptiert_komma_und_punkt() {
