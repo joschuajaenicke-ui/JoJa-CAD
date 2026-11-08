@@ -221,10 +221,14 @@ offene Fensterinstanz zeigt weiterhin den alten Stand.
   Blatt, aktiver Reiter, Fensterlage) und beim Start wiederhergestellt; auch nie
   gespeicherte Zeichnungen kommen als „Unbenannt" aus dem Pool zurück. Beenden
   fragt nicht mehr nach dem Speichern; das Schließen eines Reiters fragt, sobald
-  der Inhalt von der Zieldatei abweicht (Vergleich statt Merker). Auswahl,
+  der Inhalt von der Zieldatei abweicht (Vergleich statt Merker). **Ungespeicherte
+  Arbeit überlebt das Beenden**: sie wird als Stand abgelegt (unabhängig vom
+  Intervall) und beim Start mit Speicherort, aber als geändert zurückgeholt; ein
+  „Verwerfen“ setzt den neuesten Stand auf den Dateiinhalt. Auswahl,
   Undo-Verlauf, Werkzeugwahl und Zwischenablage bleiben draußen. Nachweis:
-  6 Tests in `sitzung.rs`, am Programm: sauberes Schließen schreibt
-  `sitzung.json`, der nächste Start zeigt denselben Reiter samt Ansicht.
+  8 Tests in `sitzung.rs`/`app.rs` (`ungespeicherte_arbeit_kommt_beim_start_zurueck`,
+  `verworfene_arbeit_kommt_nicht_zurueck`), am Programm: ändern → beenden →
+  starten zeigt 37 statt 36 Objekte, „Stand: geändert“, Zieldatei unverändert.
 
 ## Offen
 

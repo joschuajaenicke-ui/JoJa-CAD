@@ -242,9 +242,12 @@ schreibt nie in die Zieldatei.
 Beim Beenden wird **nicht** nach dem Speichern gefragt: Der Zustand — offene
 Reiter in ihrer Reihenfolge, je Reiter Ansicht und aktives Blatt, aktiver Reiter,
 Fenstergröße und -lage — steht in `sitzung.json` und wird beim nächsten Start
-wiederhergestellt. Auch eine Zeichnung, die nie gespeichert wurde, kommt als
-„Unbenannt" zurück; ihr Inhalt liegt im Sicherungsordner. **Nicht**
-wiederhergestellt werden Auswahl, Undo-Verlauf, Werkzeugwahl und Zwischenablage.
+wiederhergestellt. **Ungespeicherte Änderungen gehen dabei nicht verloren:** die
+Sicherung legt sie beim Beenden als Stand ab, und der nächste Start holt sie
+zurück — mit demselben Speicherort, aber als **geändert** markiert. Erst
+„Speichern“ schreibt in die Zieldatei. Auch eine Zeichnung, die nie gespeichert
+wurde, kommt als „Unbenannt“ zurück. **Nicht** wiederhergestellt werden Auswahl,
+Undo-Verlauf, Werkzeugwahl und Zwischenablage.
 
 Das Schließen eines **Reiters** (`×`) fragt dagegen nach, sobald der Inhalt von
 der Zieldatei abweicht: „Speichern und schließen" (nur mit Speicherort),
