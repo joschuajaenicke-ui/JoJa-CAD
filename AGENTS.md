@@ -258,6 +258,15 @@ Mit dem Nutzer abgestimmt — nicht „verbessern“:
   Mitte der Maßlinie (verschiebt sie senkrecht zur Messrichtung, `render::dim_line_move`);
   im Eigenschaften-Panel steht derselbe Wert als „Abstand“ (`render::dim_offset`).
 - **Polarfang** 45° (Toleranz 6°); Fangmodi END, SCHN, MIT, ZEN, QUA, LOT, NÄC, RAS, POL.
+- **Splines fangen nur an ihren Stützpunkten (T0134)**: Die gezeichnete Kurve ist
+  eine Zerlegung in viele kurze Teilstrecken; deren Enden sind **keine** Fangpunkte.
+  Beim Ziehen an einem Stützpunkt wandert die Kurve mit, ein Fang auf einem
+  Zwischenpunkt zöge den Zeiger auf eine Stelle, die im nächsten Bild woanders
+  liegt — die Linie flackert und zittert. `snap` überspringt End- und Mittelpunkt
+  für `EntityKind::Spline` und bietet stattdessen die Stützpunkte als Endpunkte an;
+  Lot und „Nächster Punkt" auf der Kurve bleiben erhalten. Prüfweg:
+  `cargo test -p jjcad-core --test snap_spline` und
+  `cargo test -p jjcad-gui spline_griffzug`.
 - **Treppen** sind von der Kontur her ein **Rechteck**: erster und zweiter Klick
   liegen auf der **Außenkante** (Länge), der dritte setzt die Breite dorthin, wo
   der Zeiger steht. Gespeichert ist die Lauflinie (`a`→`b`, Mitte) plus Breite —
