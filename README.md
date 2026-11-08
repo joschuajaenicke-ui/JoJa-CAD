@@ -10,17 +10,17 @@ fachlich geprüft.*
 
 ## Die Idee
 
-Für einen Bauantrag braucht man kein Modellierprogramm mit tausend Werkzeugen,
+Für einen Bauantrag braucht man kein 3D Modellierprogramm mit tausend Werkzeugen,
 sondern ein sauberes Werkzeug für Grundriss, Bemaßung und Blatt — und sonst nichts.
 
 - **Fokus Bauantragszeichnung**: Wände mit Öffnungen, Bemaßung nach DIN, Blätter
   mit Rahmen und Schriftfeld, Linienstärken wie im Druck.
 - **Bewusst minimal**: nur das, was eine Bauvorlage braucht. Kein 3D, kein BIM,
-  kein DWG.
+  kein IoT, kein DWG.
 - **Kostenlos und quelloffen** (GPL-3.0-or-later), offenes Dateiformat (JSON), keine Cloud,
   kein Konto.
-- **Linux und Windows.**
-- **Oberfläche auf Deutsch**, auf Englisch umstellbar.
+- **Linux und Windows.** macOS ist geplant.
+- **Oberfläche auf Deutsch**, auf Englisch umstellbar, weitere Sprachen möglich.
 - **Vollständig über KI steuerbar** durch einen MCP-Server.
 
 ## Wichtigste Funktionen
@@ -30,21 +30,15 @@ sondern ein sauberes Werkzeug für Grundriss, Bemaßung und Blatt — und sonst 
 | **Grundelemente** | Punkt, Linie, Polylinie, Rechteck, Kreis, Bogen, Ellipse, Schraffur, Text |
 | **Architektur** | Wand mit Öffnungen, Tür, Fenster, Treppe, Volumen — die Bauteile verbinden sich dynamisch: Gehrung an Anschlüssen, Öffnungen schneiden die Wand, Türen sitzen auf der Blattseite |
 | **Bemaßung** | Einzelmaß, Maßkette, Grundriss- und Schnitt-Kote nach DIN 406/1356; Maßtext in mm/cm/m |
-| **Blöcke** | Systembibliothek (Sanitär, Küche, Möbel, Symbole) und eigene Projektblöcke, erweiterbar über Inventar und Hotbar |
-| **Austausch** | PDF (vektoriell) und PNG schreiben, PDF und DXF importieren und exportieren |
+| **Blöcke** | Systembibliothek (Sanitär, Küche, Möbel, Symbole) und eigene Projektblöcke, erweiterbar |
+| **Austausch** | Import und Export von PDF, PNG und DXF möglich |
 | **KI-Steuerung** | MCP-Server mit 10 Werkzeugen, vollständig headless, inklusive Bild-Rückgabe |
 
 ## Hinweis: dieses Projekt ist vollständig KI-generiert
 
-**Der gesamte Code wurde von einer KI geschrieben — keine Zeile wurde von Hand
-getippt.** Entwickelt wurde er mit Hermes Agent und dem Modell **DeepSeek V4.1
-Flash 1017**. Der Autor hat Entscheidungen getroffen, das laufende Programm
-getestet und Fehler kritisiert.
+Der gesamte Sourcecode wurde von einer KI generiert — keine Zeile wurde von Hand getippt. Der Entwicklungsprozess wurde dazu umgestaltet, dass er im Wesentlichen nur noch aus dem Beschreiben von Features und Bugs besteht. Der Code wurde mit Hermes Agent und dem Modell DeepSeek V4.1 Flash 1017 entwickelt. Die menschliche Beteiligung beschränkte sich auf das Treffen von Entscheidungen, das Testen des laufenden Programms und die Kritik von Fehlern.
 
-KI-generierter Code ist zu Recht umstritten. Deshalb steht das hier offen statt
-im Kleingedruckten: die automatisierten Tests und messbaren Nachweise sind ein
-Sicherheitsnetz, kein Nachweis fachlicher Richtigkeit. Wer das Programm für echte
-Bauanträge einsetzt, sollte Code und Ergebnisse prüfen.
+Dieses Projekt ist als Experiment entstanden, um zu sehen, wie weit KI-generierte Programmierung trägt. Der Code ist so schnell gewachsen, dass eine Prüfung im Detail unmöglich ist — was genau im Programm eingebaut wurde, lässt sich daher nicht vollständig wissen. KI-generierter Code ist zu Recht umstritten. Getestet wurde ausschließlich auf oberflächlicher Nutzungsebene; die Nutzung setzt folglich Vertrauen in die Korrektheit des KI-generierten Codes voraus.
 
 ## Installation
 
@@ -101,6 +95,7 @@ einem anderen Datenordner zu starten.
 - [`docs/BEDIENUNG.md`](docs/BEDIENUNG.md) — Werkzeuge, Panels, erste Schritte
 - [`docs/ARCHITEKTUR.md`](docs/ARCHITEKTUR.md) — Aufbau, Datenfluss, Entscheidungen
 - [`docs/FORMAT.md`](docs/FORMAT.md) — Dateiformat `.jjcad` (JSON, offen)
+- [`docs/SICHERUNG.md`](docs/SICHERUNG.md) — Autosave und Aufbewahrung: Einstellungen, Zusagen, Regeln
 - [`docs/BEFEHLE.md`](docs/BEFEHLE.md) — alle Aktionen mit Parametern
 - [`docs/MCP.md`](docs/MCP.md) — KI-Steuerung, Werkzeuge, Beispiele
 - [`docs/GLOSSAR.md`](docs/GLOSSAR.md) — Begriffe, verbindlich für Oberfläche und Code
@@ -130,14 +125,15 @@ cargo test
 
 ## Beitragen
 
-**Keine fremden Commits, keine Pull Requests.** Willkommen sind Fehlerberichte
-und Feature-Wünsche als Issue; umgesetzt werden sie im eigenen Ablauf mit dem
-eigenen KI-Agenten, mit Test und Nachweis.
+Es werden keine Commits oder Pull Requests angenommen. Bei KI-generiertem Code ist eine klassische Code Review zu aufwendig und würde den Entwicklungsprozess ausbremsen. Willkommen sind stattdessen Fehlerberichte und Feature-Wünsche als GitHub-Issues: Da die Umsetzung über Prompts läuft, ist eine Prompt-Review deutlich einfacher als eine Code-Review, und eingereichte Vorschläge werden im eigenen Ablauf mit dem eigenen KI-Agenten umgesetzt.
 
-Ein brauchbarer Fehlerbericht enthält die **Build-Nummer aus dem Fenstertitel**,
-die `.jjcad`-Datei oder die Klickfolge und Erwartung gegen tatsächliches
-Verhalten — bei sichtbaren Fehlern mit Screenshot.
+So reichst du ein
+Öffne ein Issue auf GitHub und wähle die passende Vorlage (Bug Report oder Feature Request).
+Beschreibe das Anliegen so, wie man es einem Agenten geben würde: als direkte Anweisung mit klarem Ziel, nicht als Diskussion.
+Folge dabei immer derselben Struktur:Ist-Zustand: Was tut das Programm aktuell? Wie lässt sich das Verhalten reproduzieren?
+Fehler bzw. Problem: Was ist daran falsch oder unzureichend? (Bei Feature-Wünschen: Was kann das Programm noch nicht, was es können sollte?)
+Soll-Zustand: Wie soll es stattdessen sein? Was genau soll der Agent tun?
 
-Konventionen für Änderungen stehen in [`AGENTS.md`](AGENTS.md), die Begriffe in
-[`docs/GLOSSAR.md`](docs/GLOSSAR.md). Forken und selbst weiterbauen ist mit der
-GPL ausdrücklich erlaubt.
+Je präziser das Issue diese drei Punkte beschreibt, desto eher kann es direkt als Prompt übernommen und umgesetzt werden.
+Wichtige Begriffe sind in [`docs/GLOSSAR.md`](docs/GLOSSAR.md) formuliert. 
+Forken und selbst weiterbauen ist mit der GPL ausdrücklich erlaubt, das Github Projekt beinhaltet auch die notwendige Agent.md, damit direkt mit einem andern Agent weiter gearbeitet werden kann.

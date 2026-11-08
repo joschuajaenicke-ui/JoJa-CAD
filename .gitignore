@@ -6,6 +6,11 @@ target/
 # Probeläufe der Beispiele (JJCAD_OUT_DIR), falls im Projektordner abgelegt
 /jjcad-proben/
 
+# Genormte Normtexte (DIN/ISO) sind urheberrechtlich geschützt – niemals einchecken
+/Normen/
+/docs/normen/
+/docs/normungen/
+
 # Editor und Betriebssystem
 .DS_Store
 *.swp
