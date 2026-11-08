@@ -1,7 +1,7 @@
 //! Direktes Bearbeiten über Griffe: Endpunkte, Ecken und Parallelverschiebung.
 
 use crate::app::App;
-use jjcad_core::geom::{Ellipse, Vec2 as V2};
+use jjcad_core::geom::{Ellipse, Vec2 as V2, Vertex};
 use jjcad_core::model::{Entity, EntityKind, Id};
 
 /// Art eines Griffpunkts.
@@ -160,6 +160,20 @@ fn rechteck_kante_schieben(ring: &mut [V2], ecken: &[V2; 4], i: usize, target: V
     Some(())
 }
 
+/// Ecken des Rechtecks, das eine **geschlossene** Polylinie beschreibt (T0133).
+///
+/// Das Rechteck-Werkzeug legt eine geschlossene Polylinie mit vier Ecken an;
+/// Zwischenpunkte auf geraden Kanten (kopiert, verschmolzen) zählen nicht. Wird
+/// eine Ecke schräg gezogen, ist der Zug kein Rechteck mehr — dann gibt es
+/// keine Kantengriffe und keine Parallelverschiebung.
+fn rechteck_der_polylinie(verts: &[Vertex], closed: bool) -> Option<[V2; 4]> {
+    if !closed || verts.len() < 4 {
+        return None;
+    }
+    let ring: Vec<V2> = verts.iter().map(|v| v.p).collect();
+    jjcad_core::geom::rechteck_ecken(&ring)
+}
+
 /// Ecken des Treppenrechtecks in Anzeigereihenfolge, dazu Richtung, Normale
 /// und halbe Breite.
 ///
@@ -211,21 +225,33 @@ pub fn grips_of(e: &Entity) -> Vec<(GripKind, V2)> {
         EntityKind::Line { a, b } | EntityKind::Wall { a, b, .. } => {
             vec![(GripKind::Vert(0), *a), (GripKind::Vert(1), *b)]
         }
-        EntityKind::Polyline { verts, closed } | EntityKind::Spline { verts, closed } => {
+        // Polylinie: jeder Stützpunkt ist ein Griff. Ein **geschlossener** Zug
+        // bekommt die vier Kantenmitten nur, solange er ein echtes Rechteck
+        // ist (T0133) — ziehen verschiebt die Kante parallel, wie beim
+        // Rechteck. Ist die Form kein Rechteck mehr, verschwinden sie.
+        EntityKind::Polyline { verts, closed } => {
             let mut out: Vec<(GripKind, V2)> = verts
                 .iter()
                 .enumerate()
                 .map(|(i, v)| (GripKind::Vert(i), v.p))
                 .collect();
-            if *closed && verts.len() >= 3 {
-                for i in 0..verts.len() {
-                    let p1 = verts[i].p;
-                    let p2 = verts[(i + 1) % verts.len()].p;
-                    out.push((GripKind::Edge(i), (p1 + p2) * 0.5));
+            if let Some(ecken) = rechteck_der_polylinie(verts, *closed) {
+                for i in 0..4 {
+                    out.push((
+                        GripKind::Edge(i),
+                        (ecken[i] + ecken[(i + 1) % 4]) * 0.5,
+                    ));
                 }
             }
             out
         }
+        // Spline: nur die Stützpunkte — eine Kurve ist nie ein Rechteck, also
+        // gibt es auch keine Kantengriffe (T0133).
+        EntityKind::Spline { verts, .. } => verts
+            .iter()
+            .enumerate()
+            .map(|(i, v)| (GripKind::Vert(i), v.p))
+            .collect(),
         EntityKind::Circle { c, .. }
         | EntityKind::Ellipse { c, .. }
         | EntityKind::Point { p: c } => vec![(GripKind::Vert(0), *c)],
@@ -449,26 +475,21 @@ pub fn apply_grip_tol(orig: &Entity, kind: GripKind, target: V2, tol: f64) -> Op
                 }
             }
         }
-        (EntityKind::Polyline { verts, closed }, GripKind::Edge(i)) if *closed => {
-            let n = verts.len();
-            if n < 3 || i >= n {
+        // Rechteckige Polylinie: eine Kante parallel verschieben — die
+        // gegenüberliegende bleibt stehen, Zwischenpunkte auf der Kante wandern
+        // mit. Nur echte Rechtecke haben diesen Griff (T0133), die Rechnung
+        // teilt sie mit der rechteckigen Fläche (T0131).
+        (EntityKind::Polyline { verts, closed }, GripKind::Edge(i)) => {
+            if !*closed || i >= 4 {
                 return None;
             }
-            let j = (i + 1) % n;
-            let p1 = verts[i].p;
-            let p2 = verts[j].p;
-            let seg = p2 - p1;
-            let len = seg.len();
-            if len < 1e-6 {
-                return None;
+            let ring: Vec<V2> = verts.iter().map(|v| v.p).collect();
+            let ecken = jjcad_core::geom::rechteck_ecken(&ring)?;
+            let mut neu = ring;
+            rechteck_kante_schieben(&mut neu, &ecken, i, target)?;
+            for (v, p) in verts.iter_mut().zip(neu) {
+                v.p = p;
             }
-            // Verschiebung senkrecht zur Kante: die Nachbarkanten folgen automatisch,
-            // weil sie sich dieselben Eckpunkte teilen.
-            let normal = V2::new(-seg.y, seg.x) / len;
-            let mid = (p1 + p2) * 0.5;
-            let d = (target - mid).dot(normal);
-            verts[i].p = p1 + normal * d;
-            verts[j].p = p2 + normal * d;
         }
         // Treppenkante parallel verschieben. Die gegenüberliegende Kante bleibt
         // stehen: Breite und Lage der Lauflinie folgen der halben Verschiebung.
@@ -658,13 +679,14 @@ pub fn moving_points(e: &Entity, kind: GripKind) -> Vec<V2> {
         (EntityKind::Polyline { verts, .. } | EntityKind::Spline { verts, .. }, GripKind::Vert(i)) => {
             verts.get(i).map(|v| vec![v.p]).unwrap_or_default()
         }
+        // Rechteckige Polylinie: die ganze Kante wandert — beide Ecken und alle
+        // Zwischenpunkte darauf (T0133).
         (EntityKind::Polyline { verts, closed }, GripKind::Edge(i)) if *closed => {
-            let n = verts.len();
-            if n < 3 || i >= n {
-                return Vec::new();
+            let ring: Vec<V2> = verts.iter().map(|v| v.p).collect();
+            match jjcad_core::geom::rechteck_ecken(&ring) {
+                Some(ecken) => rechteck_kante_punkte(&ring, &ecken, i),
+                None => Vec::new(),
             }
-            let j = (i + 1) % n;
-            vec![verts[i].p, verts[j].p]
         }
         // Treppenkante: beide Enden der Kante wandern mit.
         (EntityKind::Stair { a, b, width, .. }, GripKind::Edge(i)) => {
@@ -1019,18 +1041,20 @@ pub fn edge_dir(e: &Entity, i: usize) -> Option<(V2, V2)> {
         }
         return Some((s, d / l));
     }
+    // Rechteckige Polylinie: Richtung der erkannten Rechteckkante — der
+    // Kantengriff steht quer dazu und verschiebt die Kante parallel (T0133).
+    // Ohne Rechteck gibt es keinen Kantengriff, also auch keine Richtung.
     if let EntityKind::Polyline { verts, closed } = &e.kind {
-        let n = verts.len();
-        if n < 2 || i >= n {
+        if i >= 4 {
             return None;
         }
-        let j = if i + 1 < n { i + 1 } else if *closed { 0 } else { return None };
-        let a = verts[i].p;
-        let b = verts[j].p;
-        let d = b - a;
+        let ecken = rechteck_der_polylinie(verts, *closed)?;
+        let d = ecken[(i + 1) % 4] - ecken[i];
         let l = d.len();
-        if l < 1e-9 { return None }
-        Some((a, d / l))
+        if l < 1e-9 {
+            return None;
+        }
+        Some((ecken[i], d / l))
     } else {
         None
     }
@@ -2404,5 +2428,260 @@ mod tests_ansichtsfenster {
     #[test]
     fn entartete_kante_wird_verworfen() {
         assert!(apply_grip(&fenster(), GripKind::Vert(2), V2::new(20.0, 90.0)).is_none());
+    }
+}
+
+#[cfg(test)]
+mod tests_rechteck_polylinie {
+    //! Kantengriffe der Polylinie (T0133): Das Rechteck-Werkzeug legt eine
+    //! geschlossene Polylinie an; ihre vier Kantenmitten verschieben eine Kante
+    //! parallel. Sobald die Form kein Rechteck mehr ist, verschwinden sie —
+    //! dieselbe Regel wie bei der rechteckigen Fläche (T0131).
+
+    use super::*;
+    use jjcad_core::geom::Vertex;
+
+    fn zug(pts: &[V2], closed: bool) -> Entity {
+        Entity::new(
+            1,
+            1,
+            EntityKind::Polyline {
+                verts: pts.iter().map(|p| Vertex::new(*p)).collect(),
+                closed,
+            },
+        )
+    }
+
+    fn rechteck() -> Entity {
+        zug(
+            &[
+                V2::new(0.0, 0.0),
+                V2::new(4000.0, 0.0),
+                V2::new(4000.0, 3000.0),
+                V2::new(0.0, 3000.0),
+            ],
+            true,
+        )
+    }
+
+    fn kanten(e: &Entity) -> Vec<(usize, V2)> {
+        grips_of(e)
+            .into_iter()
+            .filter_map(|(k, p)| match k {
+                GripKind::Edge(i) => Some((i, p)),
+                _ => None,
+            })
+            .collect()
+    }
+
+    fn stand(e: &Entity) -> Vec<V2> {
+        match &e.kind {
+            EntityKind::Polyline { verts, .. } => verts.iter().map(|v| v.p).collect(),
+            _ => panic!("keine Polylinie"),
+        }
+    }
+
+    /// Das Rechteck aus dem Rechteck-Werkzeug hat vier Kantenmitten, jede mit
+    /// Richtung (ohne sie bliebe der Griff unsichtbar aber klickbar).
+    #[test]
+    fn rechteck_hat_vier_kantengriffe() {
+        let e = rechteck();
+        let k = kanten(&e);
+        assert_eq!(k.len(), 4, "vier Kantenmitten: {k:?}");
+        let mitten: Vec<V2> = k.iter().map(|(_, p)| *p).collect();
+        assert!(mitten.contains(&V2::new(2000.0, 0.0)), "unten: {mitten:?}");
+        assert!(mitten.contains(&V2::new(4000.0, 1500.0)), "rechts: {mitten:?}");
+        assert!(mitten.contains(&V2::new(2000.0, 3000.0)), "oben: {mitten:?}");
+        assert!(mitten.contains(&V2::new(0.0, 1500.0)), "links: {mitten:?}");
+        for (i, _) in k {
+            assert!(edge_dir(&e, i).is_some(), "Kante {i} ohne Richtung");
+        }
+        // Die vier Ecken sind weiterhin Griffe.
+        assert_eq!(
+            grips_of(&e)
+                .iter()
+                .filter(|(k, _)| matches!(k, GripKind::Vert(_)))
+                .count(),
+            4
+        );
+    }
+
+    /// Ein gedrehtes Rechteck (Einfügemodus „Basislinie + Höhe") ist genauso
+    /// ein Rechteck — rechte Winkel genügen, achsenparallel muss es nicht sein.
+    #[test]
+    fn gedrehtes_rechteck_hat_kantengriffe() {
+        let e = zug(
+            &[
+                V2::new(0.0, 0.0),
+                V2::new(2000.0, 2000.0),
+                V2::new(1000.0, 3000.0),
+                V2::new(-1000.0, 1000.0),
+            ],
+            true,
+        );
+        assert_eq!(kanten(&e).len(), 4, "gedrehtes Rechteck: {:?}", grips_of(&e));
+    }
+
+    /// Kein Rechteck, keine Kantengriffe: Dreieck, L-Form und schiefes Viereck.
+    #[test]
+    fn formen_ohne_rechte_winkel_haben_keine_kantengriffe() {
+        let dreieck = zug(
+            &[
+                V2::new(0.0, 0.0),
+                V2::new(3000.0, 0.0),
+                V2::new(0.0, 2000.0),
+            ],
+            true,
+        );
+        let l_form = zug(
+            &[
+                V2::new(0.0, 0.0),
+                V2::new(3000.0, 0.0),
+                V2::new(3000.0, 1000.0),
+                V2::new(1000.0, 1000.0),
+                V2::new(1000.0, 3000.0),
+                V2::new(0.0, 3000.0),
+            ],
+            true,
+        );
+        let schief = zug(
+            &[
+                V2::new(0.0, 0.0),
+                V2::new(3000.0, 500.0),
+                V2::new(2500.0, 2500.0),
+                V2::new(500.0, 2000.0),
+            ],
+            true,
+        );
+        for (name, e) in [("Dreieck", dreieck), ("L-Form", l_form), ("schief", schief)] {
+            assert!(
+                kanten(&e).is_empty(),
+                "{name} ist kein Rechteck, hat aber Kantengriffe: {:?}",
+                grips_of(&e)
+            );
+        }
+    }
+
+    /// Offener Zug: keine Kantengriffe, auch wenn die Punkte ein Rechteck
+    /// beschreiben — ohne geschlossenen Ring gibt es keine Gegenkante.
+    #[test]
+    fn offener_zug_hat_keine_kantengriffe() {
+        let e = zug(
+            &[
+                V2::new(0.0, 0.0),
+                V2::new(4000.0, 0.0),
+                V2::new(4000.0, 3000.0),
+                V2::new(0.0, 3000.0),
+            ],
+            false,
+        );
+        assert!(kanten(&e).is_empty(), "{:?}", grips_of(&e));
+    }
+
+    /// Der Kern des Tickets: eine Ecke schräg ziehen macht aus dem Rechteck
+    /// kein Rechteck mehr — die Kantengriffe müssen verschwinden, und ein
+    /// stehengebliebener Kantenzug darf nichts mehr bewegen.
+    #[test]
+    fn gezogene_ecke_nimmt_die_kantengriffe_weg() {
+        let schief = apply_grip(&rechteck(), GripKind::Vert(1), V2::new(4500.0, 800.0))
+            .expect("Eckgriff muss greifen");
+        assert!(
+            kanten(&schief).is_empty(),
+            "kein Rechteck mehr, aber Kantengriffe: {:?}",
+            grips_of(&schief)
+        );
+        assert!(apply_grip(&schief, GripKind::Edge(0), V2::new(1000.0, -500.0)).is_none());
+    }
+
+    /// Eine Kante ziehen verschiebt **nur** diese: die Gegenkante bleibt
+    /// stehen, das Rechteck wird höher.
+    #[test]
+    fn kante_schieben_laesst_die_gegenkante_stehen() {
+        let neu = apply_grip_tol(&rechteck(), GripKind::Edge(0), V2::new(2000.0, -500.0), 1.0)
+            .expect("Kantengriff muss greifen");
+        assert_eq!(
+            stand(&neu),
+            vec![
+                V2::new(0.0, -500.0),
+                V2::new(4000.0, -500.0),
+                V2::new(4000.0, 3000.0),
+                V2::new(0.0, 3000.0),
+            ]
+        );
+        // Hinterher ist es weiter ein Rechteck: die Griffe bleiben.
+        assert_eq!(kanten(&neu).len(), 4);
+    }
+
+    /// Zwischenpunkte auf der gezogenen Kante wandern mit (kopierte Züge tragen
+    /// sie) — sonst knickt die Kante beim Verschieben.
+    #[test]
+    fn zwischenpunkte_der_kante_wandern_mit() {
+        let e = zug(
+            &[
+                V2::new(0.0, 0.0),
+                V2::new(2000.0, 0.0),
+                V2::new(4000.0, 0.0),
+                V2::new(4000.0, 3000.0),
+                V2::new(0.0, 3000.0),
+            ],
+            true,
+        );
+        assert_eq!(kanten(&e).len(), 4, "vier Ecken erkannt: {:?}", grips_of(&e));
+        let bewegt = moving_points(&e, GripKind::Edge(0));
+        assert_eq!(
+            bewegt,
+            vec![
+                V2::new(0.0, 0.0),
+                V2::new(2000.0, 0.0),
+                V2::new(4000.0, 0.0)
+            ],
+            "der Zwischenpunkt gehört zur Kante"
+        );
+        let neu = apply_grip_tol(&e, GripKind::Edge(0), V2::new(2000.0, 400.0), 1.0).unwrap();
+        assert_eq!(
+            stand(&neu),
+            vec![
+                V2::new(0.0, 400.0),
+                V2::new(2000.0, 400.0),
+                V2::new(4000.0, 400.0),
+                V2::new(4000.0, 3000.0),
+                V2::new(0.0, 3000.0),
+            ]
+        );
+    }
+
+    /// Die Kante lässt sich nicht über die Gegenkante hinausziehen — sonst
+    /// kehrte sich der Ring um.
+    #[test]
+    fn kante_haelt_die_mindestbreite() {
+        let neu = apply_grip(&rechteck(), GripKind::Edge(0), V2::new(2000.0, 5000.0)).unwrap();
+        let pts = stand(&neu);
+        let unterkante = pts[0].y.min(pts[1].y);
+        assert!(
+            unterkante >= 3000.0 - 1.0 - 1e-6,
+            "Kante lief über die Gegenkante: {pts:?}"
+        );
+    }
+
+    /// Ein geschlossener Spline ist keine Polylinie: keine Kantengriffe.
+    #[test]
+    fn spline_hat_keine_kantengriffe() {
+        let e = Entity::new(
+            1,
+            1,
+            EntityKind::Spline {
+                verts: [
+                    V2::new(0.0, 0.0),
+                    V2::new(4000.0, 0.0),
+                    V2::new(4000.0, 3000.0),
+                    V2::new(0.0, 3000.0),
+                ]
+                .iter()
+                .map(|p| Vertex::new(*p))
+                .collect(),
+                closed: true,
+            },
+        );
+        assert!(kanten(&e).is_empty(), "{:?}", grips_of(&e));
     }
 }

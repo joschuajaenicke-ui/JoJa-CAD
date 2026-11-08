@@ -373,14 +373,12 @@ fn betriebssystem_ist_hell() -> bool {
     false
 }
 
-/// Konfigurationsverzeichnis des Nutzers (`$XDG_CONFIG_HOME` oder `~/.config`).
+/// Konfigurationsdatei des Betriebssystems (`kdeglobals`, `settings.ini`).
+/// Die Auflösung des Konfigurationsverzeichnisses steht **einmal** in
+/// `jjcad_core::persist::xdg_config_home` (T0127) — nicht hier ein zweites Mal.
 #[cfg(target_os = "linux")]
 fn konfig_datei(relativ: &str) -> Option<std::path::PathBuf> {
-    let basis = match std::env::var_os("XDG_CONFIG_HOME") {
-        Some(p) if !p.is_empty() => std::path::PathBuf::from(p),
-        _ => std::path::PathBuf::from(std::env::var_os("HOME")?).join(".config"),
-    };
-    Some(basis.join(relativ))
+    Some(jjcad_core::persist::xdg_config_home().join(relativ))
 }
 
 /// KDE schreibt die Hintergrundfarbe der Fenster nach `kdeglobals`. Helle

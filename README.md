@@ -73,6 +73,29 @@ JoJa-CAD/
 └── scripts/            Hilfsskripte (headless starten, Screenshot, Roundtrip-Test)
 ```
 
+## Wo die Daten liegen
+
+Alle Nutzdaten liegen in **einem** Ordner: `prefs.json`, `sitzung.json`,
+`blocks/` (Benutzerblöcke), `sicherungen/` und `log/`. Zeichnungen bleiben, wo
+Sie sie speichern — das Programm legt in deren Ordner nichts an.
+
+Den Ordner bestimmt die erste zutreffende Angabe:
+
+1. `jjcad --daten-dir <Pfad>`
+2. die Umgebungsvariable `JJCAD_DATA_DIR`
+3. eine Datei `portable.txt` neben dem Programm → `<Programmordner>/data`
+4. der Plattformstandard:
+   - Linux `$XDG_DATA_HOME/JoJa-CAD`, sonst `~/.local/share/JoJa-CAD`
+   - Windows `%APPDATA%\JoJa-CAD`
+   - macOS `~/Library/Application Support/JoJa-CAD`
+
+Beim ersten Start wird eine vorhandene `prefs.json` aus dem alten Ort
+(`~/.config/jjcad`) in den neuen Ordner kopiert; die alte Datei bleibt liegen.
+Die drei Unterordner lassen sich unter Einstellungen → Speicherorte ändern
+(relativ zum Datenordner oder absolut, je Feld „Zurücksetzen“). Läuft bereits
+eine Instanz auf demselben Ordner, meldet die zweite das und bietet an, mit
+einem anderen Datenordner zu starten.
+
 ## Dokumentation
 
 - [`docs/BEDIENUNG.md`](docs/BEDIENUNG.md) — Werkzeuge, Panels, erste Schritte

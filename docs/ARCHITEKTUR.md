@@ -170,6 +170,41 @@ Blockkoordinatensystem, Instanzen tragen nur die Transformation.
 nicht beim Zeichnen. Das Schriftfeld bleibt dadurch aktuell, ohne dass Objekte
 bearbeitet werden müssen.
 
+### Speicherorte: eine Wurzel für alle Nutzdaten (T0127)
+
+Alle Nutzdaten liegen in **einem** Wurzelverzeichnis. Die Zeichnungen selbst
+bleiben, wo der Benutzer sie ablegt — das Programm legt dort nichts an.
+
+Die Wurzel bestimmt, erste Übereinstimmung gewinnt (`daten::wurzel_ermitteln`):
+
+1. `--daten-dir <pfad>` (Kommandozeile),
+2. `$JJCAD_DATA_DIR`,
+3. `portable.txt` neben der Programmdatei → `<exe>/data`,
+4. Plattformstandard: Linux `$XDG_DATA_HOME/JoJa-CAD` (sonst
+   `~/.local/share/JoJa-CAD`), Windows `%APPDATA%\JoJa-CAD`, macOS
+   `~/Library/Application Support/JoJa-CAD`.
+
+In der Wurzel liegen `prefs.json` und `sitzung.json` (nicht änderbar) sowie
+`blocks/`, `sicherungen/` und `log/` (in den Einstellungen änderbar, relativ zur
+Wurzel oder absolut). Aufgelöst wird über `daten::pfad_in_wurzel`; eine
+Schreibprobe (`daten::pruefe_verzeichnis`) lehnt einen nicht beschreibbaren
+Pfad ab, statt ihn still zu übernehmen.
+
+Beim ersten Start wird eine vorhandene `prefs.json` aus dem alten
+Konfigurationsverzeichnis (`persist::config_dir()`, `~/.config/jjcad`) in die
+Wurzel **kopiert**; die alte Datei bleibt liegen. Die Auflösung des
+Konfigurationsverzeichnisses steht einmal in `persist::xdg_config_home` und wird
+auch von `theme.rs` für `kdeglobals`/`settings.ini` benutzt.
+
+`<Wurzel>/sperre.lock` trägt die PID der laufenden Instanz. Eine zweite Instanz
+auf derselben Wurzel schreibt nichts, sondern zeigt ein Hinweisfenster und
+bietet an, mit einem anderen Datenordner zu starten (`--daten-dir`). Eine
+Sperrdatei eines beendeten Prozesses wird übernommen. Ohne diese Sperre würden
+sich `sitzung.json` und das Sicherungs-Manifest überschreiben.
+
+Bewusst **nicht** umgesetzt: eine Zeigerdatei und das Umziehen der Wurzel aus
+der Oberfläche. Ein kopiertes Verzeichnis wird über `--daten-dir` geöffnet.
+
 ## Oberfläche
 
 - **egui/eframe** mit eigener Themen- und Icon-Schicht (Vektor-Icons, keine

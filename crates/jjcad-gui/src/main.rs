@@ -25,10 +25,56 @@ mod textgroesse;
 mod theme;
 mod widgets;
 
-fn main() -> eframe::Result<()> {
-    let args: Vec<String> = std::env::args().collect();
-    let file = args.get(1).filter(|a| !a.starts_with("--")).cloned();
+use jjcad_core::daten;
+use std::path::PathBuf;
 
+fn main() -> eframe::Result<()> {
+    let args: Vec<String> = std::env::args().skip(1).collect();
+    let (daten_arg, datei) = argumente(&args);
+
+    // T0127: Die Wurzel steht vor allem anderen fest — Einstellungen, Blöcke,
+    // Sicherungen und Protokolle liegen darin.
+    let wurzel = daten::wurzel_ermitteln_aus_umgebung(daten_arg.as_deref());
+    daten::setze_wurzel(wurzel);
+    if let Err(e) = daten::vorbereiten() {
+        eprintln!("Datenordner: {e}");
+    }
+
+    // Eine zweite Instanz auf derselben Wurzel würde Sitzung und
+    // Sicherungs-Manifest überschreiben — sie bekommt nur den Hinweis.
+    match daten::sperre_nehmen() {
+        Ok(sperre) => starte_app(datei, sperre),
+        Err(konflikt) => starte_hinweis(konflikt),
+    }
+}
+
+/// Zerlegt die Kommandozeile: `--daten-dir <pfad>` (T0127) und die optional
+/// übergebene Zeichnung. Alles andere bleibt unberücksichtigt.
+fn argumente(args: &[String]) -> (Option<PathBuf>, Option<String>) {
+    let mut daten: Option<PathBuf> = None;
+    let mut datei: Option<String> = None;
+    let mut i = 0;
+    while i < args.len() {
+        let a = &args[i];
+        if a == "--daten-dir" {
+            if let Some(p) = args.get(i + 1) {
+                daten = Some(PathBuf::from(p));
+                i += 2;
+                continue;
+            }
+        } else if let Some(p) = a.strip_prefix("--daten-dir=") {
+            if !p.is_empty() {
+                daten = Some(PathBuf::from(p));
+            }
+        } else if !a.starts_with("--") && datei.is_none() {
+            datei = Some(a.clone());
+        }
+        i += 1;
+    }
+    (daten, datei)
+}
+
+fn starte_app(file: Option<String>, sperre: daten::Sperre) -> eframe::Result<()> {
     // T0098: Der Fensterrahmen steht schon vor dem Fenster fest — ob der
     // Fenstermanager eine Titelleiste zeichnet, entscheidet die Erzeugung
     // (`with_decorations`), nicht ein späterer Befehl.
@@ -58,6 +104,8 @@ fn main() -> eframe::Result<()> {
         options,
         Box::new(move |cc| {
             let mut app = app::App::new(cc);
+            // Sperrdatei lebt so lange wie die Anwendung.
+            app.sperre = Some(sperre);
             if let Some(f) = file.clone() {
                 app.load_document(&std::path::PathBuf::from(f));
             }
@@ -66,4 +114,111 @@ fn main() -> eframe::Result<()> {
             Ok(Box::new(app))
         }),
     )
+}
+
+/// Hinweisfenster, wenn eine andere Instanz die Wurzel hält: keine zweite
+/// Schreibinstanz, aber der Weg zu einem anderen Datenordner.
+struct SperrFenster {
+    konflikt: daten::Sperrkonflikt,
+}
+
+impl eframe::App for SperrFenster {
+    fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
+        egui::CentralPanel::default().show(ctx, |ui| {
+            ui.add_space(12.0);
+            ui.heading(jjcad_core::i18n::tr("gui.start.sperre_titel"));
+            ui.add_space(6.0);
+            let pid = if self.konflikt.pid == 0 {
+                "?".to_string()
+            } else {
+                self.konflikt.pid.to_string()
+            };
+            ui.label(jjcad_core::i18n::t_args_owned(
+                "gui.start.sperre_text",
+                &[
+                    // Der Nutzer soll den Ordner sehen, nicht die Sperrdatei.
+                    ("pfad", jjcad_core::daten::pfad_text(&jjcad_core::daten::wurzel())),
+                    ("pid", pid),
+                ],
+            ))
+            .on_hover_text(self.konflikt.pfad.display().to_string());
+            ui.add_space(4.0);
+            ui.label(jjcad_core::i18n::tr("gui.start.sperre_hinweis"));
+            ui.add_space(12.0);
+            ui.horizontal(|ui| {
+                if ui
+                    .button(jjcad_core::i18n::tr("gui.start.andere_wurzel"))
+                    .clicked()
+                {
+                    if let Some(dir) = rfd::FileDialog::new().pick_folder() {
+                        if let Ok(exe) = std::env::current_exe() {
+                            let _ = std::process::Command::new(exe)
+                                .arg("--daten-dir")
+                                .arg(dir)
+                                .spawn();
+                        }
+                        ctx.send_viewport_cmd(egui::ViewportCommand::Close);
+                    }
+                }
+                if ui
+                    .button(jjcad_core::i18n::tr("gui.start.beenden"))
+                    .clicked()
+                {
+                    ctx.send_viewport_cmd(egui::ViewportCommand::Close);
+                }
+            });
+            ui.add_space(8.0);
+            ui.label(jjcad_core::i18n::tr("gui.start.kommandozeile"));
+        });
+    }
+}
+
+fn starte_hinweis(konflikt: daten::Sperrkonflikt) -> eframe::Result<()> {
+    let options = eframe::NativeOptions {
+        viewport: egui::ViewportBuilder::default()
+            .with_inner_size([560.0, 260.0])
+            .with_resizable(false)
+            .with_title("JoJa-CAD — Datenordner belegt")
+            .with_app_id("jjcad")
+            .with_icon(icon::fenster_icon()),
+        ..Default::default()
+    };
+    eframe::run_native(
+        "JoJa-CAD — Datenordner belegt",
+        options,
+        Box::new(move |cc| {
+            theme::install(&cc.egui_ctx);
+            Ok(Box::new(SperrFenster { konflikt }))
+        }),
+    )
+}
+
+#[cfg(test)]
+mod tests {
+    use super::argumente;
+
+    fn s(v: &[&str]) -> Vec<String> {
+        v.iter().map(|x| x.to_string()).collect()
+    }
+
+    /// T0127: `--daten-dir` wird abgetrennt, die Zeichnung bleibt das erste
+    /// freie Argument; beide Schreibweisen sind erlaubt.
+    #[test]
+    fn daten_dir_wird_abgetrennt() {
+        let (d, f) = argumente(&s(&["--daten-dir", "/tmp/wurzel", "plan.jjcad"]));
+        assert_eq!(d.as_deref(), Some(std::path::Path::new("/tmp/wurzel")));
+        assert_eq!(f.as_deref(), Some("plan.jjcad"));
+
+        let (d, f) = argumente(&s(&["plan.jjcad", "--daten-dir=/tmp/wurzel"]));
+        assert_eq!(d.as_deref(), Some(std::path::Path::new("/tmp/wurzel")));
+        assert_eq!(f.as_deref(), Some("plan.jjcad"));
+
+        let (d, f) = argumente(&s(&["plan.jjcad"]));
+        assert!(d.is_none());
+        assert_eq!(f.as_deref(), Some("plan.jjcad"));
+
+        let (d, f) = argumente(&s(&[]));
+        assert!(d.is_none());
+        assert!(f.is_none());
+    }
 }
