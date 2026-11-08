@@ -700,6 +700,14 @@ fn snap_candidates_alle(
     let area = BBox::new(cursor - v(tol, tol), cursor + v(tol, tol));
     let mut segs: Vec<(Seg, Id, bool)> = Vec::new();
     let mut widx: Option<render::WallIndex> = None;
+    // Splines: die gezeichnete Kurve ist eine Zerlegung in viele kurze
+    // Teilstrecken. Deren Enden sind **keine** Fangpunkte — beim Ziehen an
+    // einem Stützpunkt wandert die Kurve mit, der Fang zöge den Zeiger auf
+    // einen Punkt, der im nächsten Bild woanders liegt (Flackern und Zittern,
+    // T0134). Fangbar sind nur die Stützpunkte; die Teilstrecken bleiben für
+    // Schnittpunkt und „Nächster Punkt" erhalten.
+    let mut spline_ids: std::collections::HashSet<Id> = std::collections::HashSet::new();
+    let mut stuetzpunkte: Vec<(Vec2, Id)> = Vec::new();
     // Aktiver Bearbeitungsraum (Modell oder Papierraum)
     for e in doc.ents() {
         if ignore.contains(&e.id) {
@@ -717,6 +725,15 @@ fn snap_candidates_alle(
         }
         for sg in render::entity_segments(doc, e) {
             segs.push((sg, e.id, ausgewaehlt));
+        }
+        // Spline: nur die Stützpunkte sind feste Fangziele (T0134).
+        if let EntityKind::Spline { verts, .. } = &e.kind {
+            spline_ids.insert(e.id);
+            if s.endpoint {
+                for v in verts {
+                    stuetzpunkte.push((v.p, e.id));
+                }
+            }
         }
         // Text: der unsichtbare Rahmen ist mit seinen Ecken (END), Kantenmitten
         // (MIT) und Kanten (NÄC) fangbar — er ist der Kasten, den die
@@ -746,15 +763,20 @@ fn snap_candidates_alle(
 
     // Endpunkte / Mittelpunkte / Quadranten
     for (sg, id, ausgewaehlt) in &segs {
+        // Teilstrecken eines Splines liefern keine End- und Mittelpunkte
+        // (T0134): sie sind nur die Zerlegung der Kurve, keine gesetzten
+        // Punkte. Fangbar sind allein die Stützpunkte (siehe unten); die
+        // Teilstrecken bleiben für Lot und „Nächster Punkt" erhalten.
+        let teilstrecke_eines_splines = spline_ids.contains(id);
         let a = sg.start();
         let b = sg.end();
         let da = a.dist(cursor);
         let db = b.dist(cursor);
-        if s.endpoint {
+        if s.endpoint && !teilstrecke_eines_splines {
             consider(a, SnapKind::Endpoint, Some(*id), da);
             consider(b, SnapKind::Endpoint, Some(*id), db);
         }
-        if s.midpoint {
+        if s.midpoint && !teilstrecke_eines_splines {
             let m = a.lerp(b, 0.5);
             consider(m, SnapKind::Midpoint, Some(*id), m.dist(cursor));
         }
@@ -784,6 +806,13 @@ fn snap_candidates_alle(
             let (q, d) = sg.closest(cursor);
             consider(q, SnapKind::Nearest, Some(*id), d);
         }
+    }
+
+    // Stützpunkte eines Splines: die vom Nutzer gesetzten Punkte sind die
+    // einzigen festen Fangziele der Kurve (T0134). Sie fangen wie Endpunkte
+    // eines Objekts; der gerade gezogene Punkt ist über `gesperrt` ausgenommen.
+    for (p, id) in &stuetzpunkte {
+        consider(*p, SnapKind::Endpoint, Some(*id), p.dist(cursor));
     }
 
     // Vorschau-Punkte: Stützpunkte des gerade gezeichneten Zuges, die noch

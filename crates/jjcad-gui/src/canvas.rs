@@ -8375,6 +8375,74 @@ mod tests_fang_griff {
         assert!(p.dist(weit) < 1e-9);
     }
 
+    // ---- Spline im Griffzug (T0134) ----
+
+    /// Spline (0;0) → (1000;600) → (2000;0) → (3000;600), ausgewählt.
+    fn szenario_spline() -> (App, Id) {
+        let mut app = app();
+        app.session_mut()
+            .execute(
+                "draw.spline",
+                &serde_json::json!({"pts": [[0.0, 0.0], [1000.0, 600.0],
+                                            [2000.0, 0.0], [3000.0, 600.0]]}),
+            )
+            .expect("Spline");
+        let id = app.doc().entities[0].id;
+        app.session_mut().select(vec![id]);
+        (app, id)
+    }
+
+    fn spline_stuetzpunkte() -> Vec<V2> {
+        vec![
+            V2::new(0.0, 0.0),
+            V2::new(1000.0, 600.0),
+            V2::new(2000.0, 0.0),
+            V2::new(3000.0, 600.0),
+        ]
+    }
+
+    /// Ein Punkt der Kurvenzerlegung, der **kein** Stützpunkt ist.
+    fn spline_zwischenpunkt() -> V2 {
+        let stuetz = spline_stuetzpunkte();
+        let kurve = Spline::new(stuetz.clone(), false).flatten(SPLINE_TOL_MM);
+        kurve
+            .iter()
+            .copied()
+            .find(|p| stuetz.iter().all(|q| p.dist(*q) > 1.0))
+            .expect("die Zerlegung hat Zwischenpunkte")
+    }
+
+    /// Die Zerlegung des Splines in kurze Teilstrecken darf beim Ziehen an
+    /// einem Stützpunkt nicht fangen: der Punkt wandert mit der Kurve, der Fang
+    /// zöge den Zeiger auf eine Stelle, die im nächsten Bild woanders liegt —
+    /// die Linie flackert und zittert (T0134). Fangbar bleiben die Stützpunkte.
+    #[test]
+    fn spline_griffzug_faengt_nicht_an_der_eigenen_kurve() {
+        let (mut app, id) = szenario_spline();
+        app.begin_grip_drag(id, crate::handles::GripKind::Vert(0));
+        let zoom = app.current_view().zoom.max(1e-6);
+        let tol = 12.0 / zoom;
+
+        let zwischen = spline_zwischenpunkt();
+        let (p, label) = fang_zeiger(&app, zwischen, tol);
+        assert_eq!(label, None, "Kurvenpunkt darf nicht fangen: {p:?}");
+        assert_punkt(p, zwischen);
+
+        // Auch nach mehreren Bildern bleibt es dabei (kein Aufschaukeln).
+        app.update_grip_drag(p);
+        for _ in 0..3 {
+            let (q, label) = fang_zeiger(&app, zwischen, tol);
+            assert_eq!(label, None, "der Fang kehrt im nächsten Bild zurück: {q:?}");
+            assert_punkt(q, zwischen);
+            app.update_grip_drag(q);
+        }
+
+        // Gegenprobe: der ruhende Stützpunkt (1000;600) fängt weiterhin.
+        let (q, label) = fang_zeiger(&app, V2::new(1006.0, 603.0), tol);
+        assert_eq!(label, Some("Endpunkt"), "Stützpunkt muss fangen");
+        assert_punkt(q, V2::new(1000.0, 600.0));
+    }
+
     /// Zwei Ecken aufeinandergelegt (Zug mit Fang auf die Nachbarecke): aus
     /// vier Umgrenzungspunkten werden drei, die Fläche bleibt eine Fläche —
     /// und die gespeicherte Datei trägt drei Punkte (T0018, Turn 2).
