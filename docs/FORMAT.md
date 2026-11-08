@@ -16,6 +16,7 @@ Lock-in. Es gibt keine Binärdaten und keine eingebetteten Archive.
   "format": "jjcad",
   "version": 2,
   "name": "Wohnhaus",
+  "id": "6f1c2a4e-8b3d-4c7a-9e10-2d5b8f0a1c33",
   "project": {
     "project": "Wohnhaus Musterstraße 12",
     "client": "Bauherr Max Mustermann",
@@ -40,6 +41,11 @@ Lock-in. Es gibt keine Binärdaten und keine eingebetteten Archive.
 
 Die Felder `project` und `settings` sind optional; fehlende Werte werden mit
 Standardwerten ergänzt. `modified` und `path` werden nicht gespeichert.
+
+`id` ist die **Kennung des Dokuments** (UUID, T0129). Die Sicherung folgt damit
+der Datei, nicht dem Pfad — auch eine noch ungespeicherte Zeichnung hat eine.
+Das Feld ist optional: ältere Dateien bekommen beim Laden eine Kennung und
+schreiben sie beim nächsten Speichern mit. `version` bleibt deshalb 2.
 
 ## `settings`
 

@@ -33,6 +33,11 @@ pub fn from_json(s: &str) -> Result<Document, String> {
             doc.version, FORMAT_VERSION
         ));
     }
+    // T0129: Ältere Dateien tragen keine Kennung — sie bekommen beim Laden
+    // eine und schreiben sie beim nächsten Speichern mit.
+    if doc.id.trim().is_empty() {
+        doc.id = crate::sicherung::neue_uuid();
+    }
     // Rasterweite aus älteren Dateien in den brauchbaren Bereich holen
     doc.settings.snap.grid_step = crate::model::clamp_grid_step(doc.settings.snap.grid_step);
     // Fehlende Layer reparieren
@@ -1081,6 +1086,19 @@ pub struct UserPrefs {
     /// Speicherort der Protokolle (T0127), leer = `log/`.
     #[serde(default)]
     pub log_pfad: String,
+    /// Sicherung (T0129): „Verlauf sichern“. Aus = nur der neueste Stand je
+    /// Dokument; Pins bleiben in beiden Fällen.
+    #[serde(default = "default_true")]
+    pub sicherung_verlauf: bool,
+    /// Plätze im Pool (30 … 2000, Vorgabe 100) — für alle Dateien zusammen.
+    #[serde(default = "default_sicherung_plaetze")]
+    pub sicherung_plaetze: u32,
+    /// „Reicht zurück“ in Arbeitsstunden (Vorgabe 480 = Quartal).
+    #[serde(default = "default_sicherung_stunden")]
+    pub sicherung_stunden: u32,
+    /// Intervall zwischen zwei Sicherungen in Minuten (Vorgabe 1).
+    #[serde(default = "default_sicherung_intervall")]
+    pub sicherung_intervall: u32,
 }
 
 fn default_dateidialog() -> String {
@@ -1089,6 +1107,18 @@ fn default_dateidialog() -> String {
 
 fn default_preset_idx() -> usize {
     0
+}
+
+fn default_sicherung_plaetze() -> u32 {
+    crate::sicherung::PLAETZE_VORGABE
+}
+
+fn default_sicherung_stunden() -> u32 {
+    crate::sicherung::STUNDEN_VORGABE
+}
+
+fn default_sicherung_intervall() -> u32 {
+    crate::sicherung::INTERVALL_VORGABE
 }
 fn default_true() -> bool {
     true
@@ -1437,6 +1467,10 @@ impl Default for UserPrefs {
             // T0127: ohne eigene Angabe liegen alle Unterordner in der Wurzel.
             blocks_pfad: String::new(),
             sicherungen_pfad: String::new(),
+            sicherung_verlauf: true,
+            sicherung_plaetze: crate::sicherung::PLAETZE_VORGABE,
+            sicherung_stunden: crate::sicherung::STUNDEN_VORGABE,
+            sicherung_intervall: crate::sicherung::INTERVALL_VORGABE,
             log_pfad: String::new(),
         }
     }
@@ -1478,6 +1512,19 @@ impl UserPrefs {
     /// Sicherungen (T0127): eigener Pfad oder `sicherungen/` in der Wurzel.
     pub fn sicherungen_dir(&self) -> PathBuf {
         crate::daten::pfad_in_wurzel(&self.sicherungen_pfad, "sicherungen")
+    }
+
+    /// Einstellungen der Sicherung (T0129) in der Form, die der Pool erwartet.
+    /// Werte außerhalb der Grenzen werden geklemmt — eine von Hand bearbeitete
+    /// `prefs.json` soll die Ausdünnung nicht lahmlegen.
+    pub fn sicherung_einstellungen(&self) -> crate::sicherung::Einstellungen {
+        use crate::sicherung::{INTERVALL_MAX, INTERVALL_MIN, PLAETZE_MAX, PLAETZE_MIN};
+        crate::sicherung::Einstellungen {
+            verlauf: self.sicherung_verlauf,
+            plaetze: self.sicherung_plaetze.clamp(PLAETZE_MIN, PLAETZE_MAX),
+            stunden: self.sicherung_stunden.max(1),
+            intervall_min: self.sicherung_intervall.clamp(INTERVALL_MIN, INTERVALL_MAX),
+        }
     }
 
     /// Protokolle (T0127): eigener Pfad oder `log/` in der Wurzel.
@@ -2006,11 +2053,6 @@ pub fn config_dir() -> PathBuf {
 /// Benutzerblock-Bibliothek (profilweit) — Vorgabe ohne eigene Einstellung.
 pub fn user_blocks_dir() -> PathBuf {
     crate::daten::pfad_in_wurzel("", "blocks")
-}
-
-/// Sicherung (`autosave.jjcad`) im Ordner „Sicherungen“ der Wurzel.
-pub fn autosave_path() -> PathBuf {
-    crate::daten::pfad_in_wurzel("", "sicherungen").join("autosave.jjcad")
 }
 
 #[cfg(test)]

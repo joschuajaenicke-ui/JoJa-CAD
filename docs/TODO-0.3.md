@@ -12,14 +12,14 @@ Stand: 2026-11-05 · 105 Punkte · P0: 45 · P1: 31 · P2: 29 · zusammen 191 Co
 
 ## A — Datensicherung (P0, 9)
 
-- [ ] **A1** Autosave verdrahten: alle 60 s bei Änderung, Pfad aus `persist::autosave_path()` (3)
-- [ ] **A2** Autosave nach erfolgreichem Speichern und beim sauberen Beenden entfernen (1)
+- [x] **A1** Sicherung verdrahten: Stände im Pool statt einer Autosave-Datei, Intervall einstellbar (Vorgabe 1 min) — T0129, `docs/SICHERUNG.md` (3)
+- [x] **A2** entfällt: der Pool behält die Stände; die Zieldatei schreibt nur der Benutzer (T0129) (1)
 - [ ] **A3** Atomar speichern: in temporäre Datei schreiben, `fsync`, dann umbenennen (2)
 - [ ] **A4** `.bak` der Vorgängerversion beim Überschreiben anlegen (1)
 - [ ] **A5** Panic-Hook: Meldung mit Pfad zur Sicherung statt wortlosem Verschwinden (2)
-- [ ] **A6** Nach Absturz beim Start Wiederherstellung anbieten (Autosave gefunden) (1)
+- [~] **A6** Wiederherstellen über „Datei ▸ Sicherung“ (Dialog mit Vorschau) — kein Automatik-Hinweis beim Start (T0129) (1)
 - [ ] **A7** Warnung bei ungespeicherten Änderungen: Schließen, Neue Datei, Öffnen (1)
-- [ ] **A8** Test: Absturz mitten im Zeichnen → Autosave da, wiederherstellbar (1)
+- [x] **A8** Test: Absturz mitten im Schreiben → keine halbe Datei, Waise wird beim Start entfernt (T0129) (1)
 - [ ] **A9** Test: Speichern auf volle oder gesperrte Platte → Meldung, Originaldatei unversehrt (1)
 
 ## B — Grundelemente und Interaktion (P0, 8)

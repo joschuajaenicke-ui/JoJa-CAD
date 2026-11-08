@@ -27,11 +27,11 @@ Ohne diese Punkte wird nicht veröffentlicht.
 
 | Punkt | Aufwand | Stand |
 |---|---|---|
-| Autosave verdrahten | 3 | `persist::autosave_path()` existiert, wird **nirgends aufgerufen** |
+| Autosave verdrahten | 3 | erledigt in T0129: Pool mit Ständen (`docs/SICHERUNG.md`), Intervall einstellbar |
 | Atomar speichern (temporär schreiben, dann umbenennen) + `.bak` der Vorgängerversion | 2 | heute wird direkt über die Datei geschrieben |
 | Panic-Hook: Meldung mit Pfad zur Sicherung statt wortlosem Verschwinden | 2 | kein Hook vorhanden |
 | Beim Schließen mit ungespeicherten Änderungen warnen | 1 | — |
-| Wiederherstellung nach Absturz anbieten (Autosave gefunden → öffnen?) | 1 | — |
+| Wiederherstellung nach Absturz anbieten (Autosave gefunden → öffnen?) | 1 | T0129: Dialog „Sicherung wiederherstellen“ mit Vorschau; kein Automatik-Hinweis |
 
 ### B. Grundelemente und Interaktion
 
