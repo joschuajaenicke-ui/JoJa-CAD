@@ -414,7 +414,7 @@ fn paint_prim(p: &Painter, prim: &Prim, w2s: &dyn Fn(V2) -> Pos2, scale: f64, pc
                 ));
             }
         }
-        PShape::Fill { outer, holes } => {
+        PShape::Fill { outer, holes } | PShape::FillOrdered { outer, holes } => {
             if outer.len() < 3 {
                 return;
             }
@@ -3014,7 +3014,7 @@ fn draw_objekt_hervorhebung(
             }
             // Flächen: nur der Umriss (Umgrenzung und Inseln), damit die Zeichnung
             // darunter sichtbar bleibt.
-            PShape::Fill { outer, holes } => {
+            PShape::Fill { outer, holes } | PShape::FillOrdered { outer, holes } => {
                 for ring in std::iter::once(outer).chain(holes.iter()) {
                     if ring.len() < 2 {
                         continue;
@@ -4245,7 +4245,7 @@ fn ghost_shape(
         }
         // Füllungen haben in der Vorschau keine Kontur — die Umrandung
         // zeichnet `draw_ghost` (äußerer Rahmen) bzw. das Objekt selbst.
-        PShape::Fill { .. } => {}
+        PShape::Fill { .. } | PShape::FillOrdered { .. } => {}
         // Bild: in der Einfüge-Vorschau nur der Rahmen (die Textur gehört zur
         // Zeichenfläche, nicht zur Vorschau-Zeichnung).
         PShape::Image { a, b, hoehe, .. } => {

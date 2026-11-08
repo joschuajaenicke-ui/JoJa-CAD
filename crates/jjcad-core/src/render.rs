@@ -174,6 +174,17 @@ pub enum Shape {
         outer: Vec<Vec2>,
         holes: Vec<Vec<Vec2>>,
     },
+    /// Gefüllte Fläche, die ihre Stelle in der Zeichenreihenfolge behält.
+    ///
+    /// Der Hintergrund eines Textfelds gehört zum Text: liegt das Textfeld
+    /// oben (hinter ihm gezeichnete Linien), muss seine Fläche sie überdecken.
+    /// Alle übrigen Füllungen stellt [`render_document`] **vor** alle Linien,
+    /// damit keine Wandumrandung von einer Nachbarfüllung zugedeckt wird —
+    /// diese hier bleibt zwischen den Linien stehen (T0126, Turn 3).
+    FillOrdered {
+        outer: Vec<Vec2>,
+        holes: Vec<Vec<Vec2>>,
+    },
     Text(TextPrim),
     Dot {
         p: Vec2,
@@ -224,7 +235,9 @@ impl Prim {
                 a0,
                 a1,
             } => crate::geom::Ellipse::new(*c, *rx, *ry, *rot).arc_bbox(*a0, *a1),
-            Shape::Fill { outer, .. } => BBox::from_points(outer),
+            Shape::Fill { outer, .. } | Shape::FillOrdered { outer, .. } => {
+                BBox::from_points(outer)
+            }
             Shape::Dot { p, r } => BBox::new(*p - v(*r, *r), *p + v(*r, *r)),
             Shape::Image { a, b, hoehe, .. } => {
                 BBox::from_points(&crate::bild::ecken(*a, *b, *hoehe))
@@ -429,9 +442,11 @@ fn band_pfad(shape: &Shape) -> Option<(Vec<Vec2>, bool)> {
         Shape::EllipseArc { c, rx, ry, rot, a0, a1 } => {
             (ellipse(*c, *rx, *ry, *rot, *a0, *a1), false)
         }
-        Shape::Fill { .. } | Shape::Text(_) | Shape::Dot { .. } | Shape::Image { .. } => {
-            return None
-        }
+        Shape::Fill { .. }
+        | Shape::FillOrdered { .. }
+        | Shape::Text(_)
+        | Shape::Dot { .. }
+        | Shape::Image { .. } => return None,
     })
 }
 
@@ -696,6 +711,9 @@ pub fn render_document(ctx: &RenderCtx) -> DisplayList {
     // deckt die Wandfüllung die Umrandung einer anderen Wand zu. Untereinander
     // behalten die Füllungen ihre Stellung im Dokument — der Zeichenrang
     // entscheidet also, welche Fläche oben liegt (Wand über Füllfläche, T0050).
+    // Der Hintergrund eines Textfelds ist die Ausnahme: er gehört zum Text
+    // und bleibt an dessen Stelle (`Shape::FillOrdered`), sonst läge er unter
+    // Linien, die das Textfeld überdeckt (T0126, Turn 3).
     // Gerendert wird der aktive Bearbeitungsraum: Modell oder Papierraum.
     let mut fills = DisplayList::default();
     let mut rest = DisplayList::default();
@@ -740,7 +758,8 @@ pub fn preview_selection(doc: &Document, ids: &[Id], delta: Vec2) -> DisplayList
         let mut tmp = DisplayList::default();
         render_entity(&ctx, e, xf, &mut tmp, 0);
         // Dieselbe Ordnung wie `render_document`: alle Füllungen vor allen
-        // Linien, untereinander in der Reihenfolge der Auswahl.
+        // Linien, untereinander in der Reihenfolge der Auswahl — der
+        // Texthintergrund bleibt beim Text (`Shape::FillOrdered`).
         for prim in tmp.prims {
             if matches!(prim.shape, Shape::Fill { .. } | Shape::Image { .. }) {
                 fills.push(prim);
@@ -1046,7 +1065,7 @@ pub fn render_entity(
             // Umrandung (T0126).
             if let Some(bg) = background {
                 dl.push(Prim {
-                    shape: Shape::Fill {
+                    shape: Shape::FillOrdered {
                         outer: text_corners(&tprim).to_vec(),
                         holes: Vec::new(),
                     },

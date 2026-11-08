@@ -251,7 +251,7 @@ fn draw_prim(pm: &mut Pixmap, prim: &Prim, map: &Map, paper_px: f64) {
                 pm.stroke_path(&path, &paint, &stroke, Transform::identity(), None);
             }
         }
-        Shape::Fill { outer, holes } => {
+        Shape::Fill { outer, holes } | Shape::FillOrdered { outer, holes } => {
             // Alle Ringe als Unterpfade einer Fläche, gefüllt nach Even-Odd:
             // die Löcher sind dann echte Aussparungen (der Untergrund bleibt
             // sichtbar) und nicht mit Hintergrundfarbe übermalt.

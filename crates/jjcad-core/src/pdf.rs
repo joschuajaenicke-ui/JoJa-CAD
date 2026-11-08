@@ -364,7 +364,7 @@ fn draw_prim(c: &mut Content, prim: &Prim, xf: &Xf, paper_scale: f64) {
             push_polyline(c, pts, *closed, xf);
             c.stroke();
         }
-        Shape::Fill { outer, holes } => {
+        Shape::Fill { outer, holes } | Shape::FillOrdered { outer, holes } => {
             if outer.len() < 3 {
                 return;
             }

@@ -376,7 +376,7 @@ pub fn draw_block_preview(
                     .collect();
                 p.add(egui::Shape::line(pts, stroke));
             }
-            PShape::Fill { outer, holes } => {
+            PShape::Fill { outer, holes } | PShape::FillOrdered { outer, holes } => {
                 let v: Vec<Pos2> = outer.iter().map(|q| w2s(*q)).collect();
                 p.add(egui::Shape::convex_polygon(
                     v,

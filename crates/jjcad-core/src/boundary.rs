@@ -536,7 +536,7 @@ impl Gitter {
                 // Schreibzugriffe je Klick.
                 // Außenring *und* Lochränder sind Begrenzungen: eine bereits
                 // gefüllte Fläche mit Insel darf die Flut nicht überrennen.
-                Shape::Fill { outer, holes } => {
+                Shape::Fill { outer, holes } | Shape::FillOrdered { outer, holes } => {
                     self.ring(outer);
                     for h in holes {
                         self.ring(h);
