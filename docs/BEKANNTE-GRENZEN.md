@@ -214,8 +214,9 @@ bleiben dabei Zahlen, weil eine `null` ältere Fassungen beim Laden der Sitzung
 scheitern ließe. Belege: `jjcad-core`-Test
 `sitzung::tests::fensterlage_ohne_position_ist_brauchbar`,
 `app::tests_fensterlage` (Umrechnung mit und ohne Fensterrechtecke) und ein Lauf
-unter Xvfb — Fenster auf 1300 × 800 bei (250, 120) gezogen, beendet, neu
-gestartet: dieselbe Geometrie, `sitzung.json` trägt `x: 250.0, y: 120.0`.
+unter Xvfb — Fenster auf 1240 × 780 bei (320, 180) gezogen, beendet, neu
+gestartet: dieselbe Geometrie, `sitzung.json` trägt `x: 320.0, y: 180.0`,
+`mit_lage: true`.
 
 **Warum jetzt nicht lösbar.** Ein Ausweichen auf XWayland ist verworfen (Grenze 1:
 träger und unschärfer). Die Programmseite kann eine Position nicht erzwingen.

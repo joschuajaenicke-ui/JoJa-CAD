@@ -239,12 +239,15 @@ offene Fensterinstanz zeigt weiterhin den alten Stand.
   (xdg-shell kennt keine Fensterposition), deshalb stand `fenster: null` in der
   Datei und auch die Größe kam nicht zurück. Jetzt liefert die Bildschirmfläche
   die Größe (`RawInput::screen_rect`, aus `window.inner_size()`), die
-  Fensterrechtecke die Lage; fehlt die Lage, bleiben `x`/`y` leer statt die
-  ganze Lage zu verwerfen. Unter X11, Windows und macOS kommt auch die Position
-  zurück; unter Wayland bleibt sie eine Grenze (`docs/BEKANNTE-GRENZEN.md`,
-  Nr. 7). Nachweis: `cargo test -p jjcad-gui fensterlage` (5 Tests),
-  `cargo test -p jjcad-core --lib sitzung` (9), unter Xvfb: 1300 × 800 bei
-  (250, 120) gezogen → beendet → neu gestartet, gleiche Geometrie.
+  Fensterrechtecke die Lage; fehlt die Lage, steht `mit_lage: false` statt die
+  ganze Lage zu verwerfen (`x`/`y` bleiben Zahlen — eine `null` ließe ältere
+  Fassungen an der Sitzung scheitern). Unter X11, Windows und macOS kommt auch
+  die Position zurück; unter Wayland bleibt sie eine Grenze
+  (`docs/BEKANNTE-GRENZEN.md`, Nr. 7). Nachweis:
+  `cargo test -p jjcad-gui fensterlage` (5 Tests),
+  `cargo test -p jjcad-core --lib sitzung` (10), unter Xvfb: Fenster auf
+  1240 × 780 bei (320, 180) gezogen → beendet → neu gestartet, gleiche
+  Geometrie (`xwininfo`).
 
 ## Offen
 
