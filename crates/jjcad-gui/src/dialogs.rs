@@ -1186,6 +1186,13 @@ pub(crate) const EINSTELLUNGSKATEGORIEN: &[Einstellungskategorie] = &[
         icon: "eye",
         stichworte: &[
             "Linienstärken",
+            "Linienstärke",
+            "Papier",
+            "maßstabsgetreu",
+            "Bildschirm",
+            "konstant",
+            "Faktor",
+            "Skalierung",
             "Layer-Panel",
             "Eigenschaften-Panel",
             "Fangmarker",
@@ -1428,6 +1435,8 @@ fn settings_body(app: &mut App, ui: &mut Ui) {
     let mut ds = app.doc().dim_style.clone();
     let mut ds_changed = false;
     let mut lw_scaled = app.ui.lineweights_scaled;
+    // T0139: Faktor der Linienstärke im Modus „Bildschirm (konstant)“.
+    let mut lw_factor = app.ui.lineweight_factor;
     let mut drag_mode = app.ui.drag_mode;
     let mut show_layers = app.ui.layers_open;
     let mut show_props = app.ui.props_open;
@@ -2071,11 +2080,74 @@ fn settings_body(app: &mut App, ui: &mut Ui) {
                                     ));
                                 }
                                 zeile(&suche, ui, jjcad_core::i18n::tr("gui.dialogs.linienstaerken"), |ui| {
-                                    let mut m = if lw_scaled { 1 } else { 0 };
-                                    ui.selectable_value(&mut m, 0, jjcad_core::i18n::tr("gui.dialogs.px"));
-                                    ui.selectable_value(&mut m, 1, jjcad_core::i18n::tr("gui.dialogs.dpi"));
-                                    lw_scaled = m == 1;
+                                    // T0139: die beiden Modi heißen jetzt nach dem, was sie
+                                    // zeigen — „Bildschirm (konstant)“ und „Papier
+                                    // (maßstabsgetreu)“. Auswahlfeld statt zweier Wahlen,
+                                    // weil die vollen Namen nicht nebeneinander passen.
+                                    let cap = if lw_scaled {
+                                        jjcad_core::i18n::tr("gui.dialogs.linienstaerke_papier")
+                                    } else {
+                                        jjcad_core::i18n::tr("gui.dialogs.linienstaerke_bildschirm")
+                                    };
+                                    if let Some(neu) = panels::dropdown(
+                                        ui,
+                                        "linienstaerken_modus",
+                                        cap,
+                                        None,
+                                        |ui| {
+                                            let mut out = None;
+                                            for (wert, text) in [
+                                                (
+                                                    false,
+                                                    jjcad_core::i18n::tr(
+                                                        "gui.dialogs.linienstaerke_bildschirm",
+                                                    ),
+                                                ),
+                                                (
+                                                    true,
+                                                    jjcad_core::i18n::tr(
+                                                        "gui.dialogs.linienstaerke_papier",
+                                                    ),
+                                                ),
+                                            ] {
+                                                if ui.selectable_label(lw_scaled == wert, text).clicked() {
+                                                    out = Some(wert);
+                                                }
+                                            }
+                                            out
+                                        },
+                                    ) {
+                                        lw_scaled = neu;
+                                    }
                                 });
+                                // T0139: Faktor nur im Modus „Bildschirm (konstant)“. Im
+                                // Papier-Modus bleibt die Zeile sichtbar, aber deaktiviert —
+                                // dort bestimmt der Maßstab der Zeichnung die Breite.
+                                zeile_mit(
+                                    &suche,
+                                    ui,
+                                    jjcad_core::i18n::tr("gui.dialogs.linienstaerke_faktor"),
+                                    &["Faktor", "Skalierung", "Stärke", "Bildschirm"],
+                                    |ui| {
+                                        ui.add_enabled_ui(!lw_scaled, |ui| {
+                                            ui.add_sized(
+                                                [ui.available_width(), 20.0],
+                                                widgets::zahl(
+                                                    &mut lw_factor,
+                                                    0.01,
+                                                    jjcad_core::persist::LINIENSTAERKE_FAKTOR_MIN
+                                                        ..=jjcad_core::persist::LINIENSTAERKE_FAKTOR_MAX,
+                                                )
+                                                .suffix(" ×"),
+                                            );
+                                        });
+                                    },
+                                );
+                                if suche.is_empty() {
+                                    ui.label(theme::faint(jjcad_core::i18n::tr(
+                                        "settings.linienstaerke_faktor_hint",
+                                    )));
+                                }
                                 // Häkchen mit vollem Text — die Labelspalte der
                                 // Zeilen (96 px) schnitte „Eigenschaften-Panel“ ab.
                                 for (name, wert) in [
@@ -2594,6 +2666,13 @@ fn settings_body(app: &mut App, ui: &mut Ui) {
         let _ = app.prefs.save();
     }
     app.prefs.lineweights_scaled = lw_scaled;
+    // T0139: der Faktor gilt sofort (die Zeichenfläche liest ihn je Bild).
+    app.ui.lineweight_factor = lw_factor;
+    if (app.prefs.lineweight_factor - lw_factor).abs() > 1e-6 {
+        app.prefs.lineweight_factor = lw_factor;
+        let _ = app.prefs.save();
+        ui.ctx().request_repaint();
+    }
     app.ui.layers_open = show_layers;
     app.ui.props_open = show_props;
     app.prefs.snap_marker = marker;
@@ -5467,6 +5546,42 @@ mod tests_einstellungen {
         );
     }
 
+    /// T0139: Unter „Darstellung“ heißen die beiden Modi nach dem, was sie
+    /// zeigen („Bildschirm (konstant)“, „Papier (maßstabsgetreu)“), und der
+    /// Modus „Bildschirm (konstant)“ hat eine Zeile für den Stärke-Faktor.
+    #[test]
+    fn darstellung_zeigt_linienstaerke_modi_und_faktor() {
+        let _sperre = KONFIG.lock().unwrap_or_else(|e| e.into_inner());
+        let _konfig = WegwerfKonfig::neu("linienstaerke");
+        let ctx = egui::Context::default();
+        let mut app = App::with_ctx(ctx.clone());
+        app.ui.settings_open = true;
+        app.ui.settings_kat = 6;
+        app.ui.lineweights_scaled = false;
+        let bild = || egui::RawInput {
+            screen_rect: Some(Rect::from_min_size(Pos2::ZERO, Vec2::new(1500.0, 950.0))),
+            ..Default::default()
+        };
+        let mut out = ctx.run(bild(), |ctx| app.ui(ctx));
+        for _ in 0..3 {
+            out = ctx.run(bild(), |ctx| app.ui(ctx));
+        }
+        let texte: Vec<&str> = out
+            .shapes
+            .iter()
+            .filter_map(|cs| match &cs.shape {
+                egui::Shape::Text(t) => Some(t.galley.text()),
+                _ => None,
+            })
+            .collect();
+        for erwartet in ["Bildschirm (konstant)", "Stärke-Faktor"] {
+            assert!(
+                texte.iter().any(|t| *t == erwartet),
+                "„{erwartet}“ fehlt in der Darstellung (gezeichnet: {texte:?})"
+            );
+        }
+    }
+
     /// T0125: „Voreinstellungen“ zeigt eine Zeile je Objektart — die Liste
     /// kommt aus `LAYER_DEFAULTS`, alle Zeilen tragen zunächst 0,18 mm.
     #[test]
@@ -5997,3 +6112,4 @@ mod tests_einstellungen {
         );
     }
 }
+

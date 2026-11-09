@@ -1419,6 +1419,23 @@ fn doc_props(app: &mut App, ui: &mut Ui) {
             app.mark_changed();
         }
     });
+    // Maßstab der Zeichnung (1:N, T0139) — im Modus „Papier
+    // (maßstabsgetreu)“ bestimmt er die Strichbreite auf dem Bildschirm.
+    let mut scale = app.doc().settings.annotation_scale;
+    widgets::field_row(ui, jjcad_core::i18n::tr("gui.panels.massstab"), |ui| {
+        if ui
+            .add_sized(
+                [ui.available_width(), 20.0],
+                crate::widgets::zahl(&mut scale, 1.0, 1.0..=1000.0).prefix("1:"),
+            )
+            .changed()
+        {
+            let _ = app
+                .session_mut()
+                .execute("doc.settings", &json!({"annotation_scale": scale}));
+            app.mark_changed();
+        }
+    });
     if input != app.doc().settings.input_unit || decimals as usize != app.doc().settings.decimals {
         let _ = app.session_mut().execute(
             "doc.settings",
@@ -1570,6 +1587,36 @@ fn arrow_caption(a: ArrowKind) -> &'static str {
         ArrowKind::Arrow => jjcad_core::i18n::tr("gui.panels.pfeil"),
         ArrowKind::Dot => jjcad_core::i18n::tr("gui.panels.punkt"),
         ArrowKind::None => jjcad_core::i18n::tr("gui.panels.ohne"),
+    }
+}
+
+#[cfg(test)]
+mod tests_massstab {
+    //! T0139: Der Maßstab der Zeichnung (1:N) steht in den Zeichnungs-
+    //! Eigenschaften. Er bestimmt im Modus „Papier (maßstabsgetreu)“ die
+    //! Strichbreite auf dem Bildschirm.
+
+    use super::*;
+    use crate::app::App;
+
+    #[test]
+    fn zeichnungs_eigenschaften_zeigen_den_massstab() {
+        let ctx = egui::Context::default();
+        let mut app = App::with_ctx(ctx.clone());
+        app.ui.props_open = true;
+        let bild = || egui::RawInput {
+            screen_rect: Some(Rect::from_min_size(Pos2::ZERO, Vec2::new(1500.0, 950.0))),
+            ..Default::default()
+        };
+        let mut out = ctx.run(bild(), |ctx| app.ui(ctx));
+        for _ in 0..3 {
+            out = ctx.run(bild(), |ctx| app.ui(ctx));
+        }
+        assert!(
+            out.shapes.iter().any(|cs| matches!(&cs.shape,
+                egui::Shape::Text(t) if t.galley.text() == "Maßstab")),
+            "Zeile „Maßstab“ fehlt in den Zeichnungs-Eigenschaften"
+        );
     }
 }
 

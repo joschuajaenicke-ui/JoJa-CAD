@@ -1,22 +1,23 @@
 # JoJa-CAD
 
+**Deutsch** · [English](README.en.md)
+
 **2D-CAD für Architektur- und Bauantragszeichnungen.** Bewusst minimal, kostenlos
 und quelloffen — für Linux und Windows.
 
 ![JoJa-CAD Oberfläche](samples/ui.png)
 
-*Beispielzeichnung, die mit dem Programm ausgeliefert wird — Platzhalter, nicht
-fachlich geprüft.*
+*Beispielzeichnung aus dem Repository — Platzhalter, nicht fachlich geprüft.*
 
 ## Die Idee
 
-Für einen Bauantrag braucht man kein 3D Modellierprogramm mit tausend Werkzeugen,
+Für einen Bauantrag braucht man kein 3D-Modellierprogramm mit tausend Werkzeugen,
 sondern ein sauberes Werkzeug für Grundriss, Bemaßung und Blatt — und sonst nichts.
 
 - **Fokus Bauantragszeichnung**: Wände mit Öffnungen, Bemaßung nach DIN, Blätter
   mit Rahmen und Schriftfeld, Linienstärken wie im Druck.
 - **Bewusst minimal**: nur das, was eine Bauvorlage braucht. Kein 3D, kein BIM,
-  kein IoT, kein DWG.
+  kein IFC, kein DWG.
 - **Kostenlos und quelloffen** (GPL-3.0-or-later), offenes Dateiformat (JSON), keine Cloud,
   kein Konto.
 - **Linux und Windows.** macOS ist geplant.
@@ -36,7 +37,7 @@ sondern ein sauberes Werkzeug für Grundriss, Bemaßung und Blatt — und sonst 
 
 ## Hinweis: dieses Projekt ist vollständig KI-generiert
 
-Der gesamte Sourcecode wurde von einer KI generiert — keine Zeile wurde von Hand getippt. Der Entwicklungsprozess wurde dazu umgestaltet, dass er im Wesentlichen nur noch aus dem Beschreiben von Features und Bugs besteht. Der Code wurde mit Hermes Agent und dem Modell DeepSeek V4.1 Flash 1017 entwickelt. Die menschliche Beteiligung beschränkte sich auf das Treffen von Entscheidungen, das Testen des laufenden Programms und die Kritik von Fehlern.
+Der gesamte Sourcecode wurde von einer KI generiert — keine Zeile wurde von Hand getippt. Der Entwicklungsprozess wurde so umgestaltet, dass er im Wesentlichen nur noch aus dem Beschreiben von Features und Bugs besteht. Der Code wurde mit Hermes Agent und dem Modell DeepSeek V4.1 Flash 1017 entwickelt. Die menschliche Beteiligung beschränkte sich auf das Treffen von Entscheidungen, das Testen des laufenden Programms und die Kritik von Fehlern.
 
 Dieses Projekt ist als Experiment entstanden, um zu sehen, wie weit KI-generierte Programmierung trägt. Der Code ist so schnell gewachsen, dass eine Prüfung im Detail unmöglich ist — was genau im Programm eingebaut wurde, lässt sich daher nicht vollständig wissen. KI-generierter Code ist zu Recht umstritten. Getestet wurde ausschließlich auf oberflächlicher Nutzungsebene; die Nutzung setzt folglich Vertrauen in die Korrektheit des KI-generierten Codes voraus.
 
@@ -86,7 +87,7 @@ Den Ordner bestimmt die erste zutreffende Angabe:
 Beim ersten Start wird eine vorhandene `prefs.json` aus dem alten Ort
 (`~/.config/jjcad`) in den neuen Ordner kopiert; die alte Datei bleibt liegen.
 Die drei Unterordner lassen sich unter Einstellungen → Speicherorte ändern
-(relativ zum Datenordner oder absolut, je Feld „Zurücksetzen“). Läuft bereits
+(relativ zum Datenordner oder absolut; jedes Feld hat ein „Zurücksetzen“). Läuft bereits
 eine Instanz auf demselben Ordner, übernimmt sie die Arbeit: eine von außen
 geöffnete Zeichnung erscheint als Reiter im laufenden Fenster, ein Start ohne
 Datei holt es nur nach vorn. Für getrennte Arbeit einen anderen Datenordner
@@ -102,7 +103,7 @@ angeben (`--daten-dir`).
 - [`docs/MCP.md`](docs/MCP.md) — KI-Steuerung, Werkzeuge, Beispiele
 - [`docs/GLOSSAR.md`](docs/GLOSSAR.md) — Begriffe, verbindlich für Oberfläche und Code
 - [`docs/STATUS.md`](docs/STATUS.md) — Arbeitsstand und offene Punkte
-- [`docs/WAYLAND-DATEI-DROP.md`](docs/WAYLAND-DATEI-DROP.md) — warum Datei-Drop unter Wayland nicht geht und wann er wieder kommt
+- [`docs/WAYLAND-DATEI-DROP.md`](docs/WAYLAND-DATEI-DROP.md) — warum Datei-Drop unter Wayland nicht geht und wann er zurückkommt
 - [`docs/BEKANNTE-GRENZEN.md`](docs/BEKANNTE-GRENZEN.md) — bekannte Grenzen, die derzeit nicht lösbar sind (und was sie lösen würde)
 - [`docs/VERSIONEN.md`](docs/VERSIONEN.md) — Versionierung, Release-Ablauf, Weg zur 0.3
 - [`CHANGELOG.md`](CHANGELOG.md) — was sich je Version geändert hat
@@ -127,15 +128,17 @@ cargo test
 
 ## Beitragen
 
-Es werden keine Commits oder Pull Requests angenommen. Bei KI-generiertem Code ist eine klassische Code Review zu aufwendig und würde den Entwicklungsprozess ausbremsen. Willkommen sind stattdessen Fehlerberichte und Feature-Wünsche als GitHub-Issues: Da die Umsetzung über Prompts läuft, ist eine Prompt-Review deutlich einfacher als eine Code-Review, und eingereichte Vorschläge werden im eigenen Ablauf mit dem eigenen KI-Agenten umgesetzt.
+Es werden keine Commits oder Pull Requests angenommen. Bei KI-generiertem Code ist eine klassische Code-Review zu aufwendig und würde den Entwicklungsprozess ausbremsen. Willkommen sind stattdessen Fehlerberichte und Feature-Wünsche als GitHub-Issues: Da die Umsetzung über Prompts läuft, ist eine Prompt-Review deutlich einfacher als eine Code-Review, und eingereichte Vorschläge werden im eigenen Ablauf mit dem eigenen KI-Agenten umgesetzt.
 
-So reichst du ein
-Öffne ein Issue auf GitHub und wähle die passende Vorlage (Bug Report oder Feature Request).
-Beschreibe das Anliegen so, wie man es einem Agenten geben würde: als direkte Anweisung mit klarem Ziel, nicht als Diskussion.
-Folge dabei immer derselben Struktur:Ist-Zustand: Was tut das Programm aktuell? Wie lässt sich das Verhalten reproduzieren?
-Fehler bzw. Problem: Was ist daran falsch oder unzureichend? (Bei Feature-Wünschen: Was kann das Programm noch nicht, was es können sollte?)
-Soll-Zustand: Wie soll es stattdessen sein? Was genau soll der Agent tun?
+**So reichst du ein:**
 
-Je präziser das Issue diese drei Punkte beschreibt, desto eher kann es direkt als Prompt übernommen und umgesetzt werden.
-Wichtige Begriffe sind in [`docs/GLOSSAR.md`](docs/GLOSSAR.md) formuliert. 
-Forken und selbst weiterbauen ist mit der GPL ausdrücklich erlaubt, das Github Projekt beinhaltet auch die notwendige Agent.md, damit direkt mit einem andern Agent weiter gearbeitet werden kann.
+1. Öffne ein Issue auf GitHub und wähle die passende Vorlage (Bug Report oder Feature Request).
+2. Beschreibe das Anliegen so, wie man es einem Agenten geben würde: als direkte Anweisung mit klarem Ziel, nicht als Diskussion.
+3. Halte dich an dieselbe Struktur:
+   - **Ist-Zustand**: Was tut das Programm aktuell? Wie lässt sich das Verhalten reproduzieren?
+   - **Fehler bzw. Problem**: Was ist daran falsch oder unzureichend? (Bei Feature-Wünschen: Was kann das Programm noch nicht, was es können sollte?)
+   - **Soll-Zustand**: Wie soll es stattdessen sein? Was genau soll der Agent tun?
+
+Je präziser das Issue diese drei Punkte beschreibt, desto eher kann es direkt als Prompt übernommen und umgesetzt werden. Wichtige Begriffe sind in [`docs/GLOSSAR.md`](docs/GLOSSAR.md) formuliert.
+
+Forken und selbst weiterbauen ist mit der GPL ausdrücklich erlaubt; das GitHub-Projekt enthält auch die notwendige [`AGENTS.md`](AGENTS.md), damit direkt mit einem anderen Agenten weitergearbeitet werden kann.

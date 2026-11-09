@@ -1184,8 +1184,12 @@ pub fn render_entity(
             // auf Wunsch mit abgerundeten Ecken. Als durchgezogene Linie in
             // der Textfarbe — sie gehört zum Text, nicht zur Linienart.
             if *frame {
+                // Radius = halbe **Zeile**, nicht halbe Kasten­höhe: einzeilig
+                // ergibt das ein Oval aus zwei Halbkreisen, mehrzeilig bleiben
+                // Viertelkreise an den Ecken eines Rechtecks — der Radius ist
+                // in beiden Fällen derselbe (T0126, Turn 7).
                 let radius = if *frame_round {
-                    tprim.box_size().1 * 0.5
+                    tprim.line_height() * 0.5
                 } else {
                     0.0
                 };

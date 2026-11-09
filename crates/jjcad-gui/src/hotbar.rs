@@ -308,19 +308,20 @@ pub fn show(app: &mut App, ui: &mut Ui) {
             kopf = kopf.map(|b| b.union(resp.rect));
             ui.add_space(ABSTAND);
 
-            // Linienstärken: px (bildschirmkonstant) oder DPI (wie im PDF).
-            // Das Zeichen rechts unten nennt den Modus, der Tooltip den Rest.
+            // Linienstärken (T0139): „Bildschirm (konstant)“ oder „Papier
+            // (maßstabsgetreu)“. Das Zeichen rechts unten nennt den Modus,
+            // der Tooltip den Rest.
             let scaled = app.ui.lineweights_scaled;
             let tip = if scaled {
-                jjcad_core::i18n::tr("gui.hotbar.linienstaerke_dpi_wie_im_pdf_klick_px_rechtsklick_auswah")
+                jjcad_core::i18n::tr("gui.hotbar.linienstaerke_papier_tip")
             } else {
-                jjcad_core::i18n::tr("gui.hotbar.linienstaerke_px_bildschirmkonstant_klick_dpi_rechtsklic")
+                jjcad_core::i18n::tr("gui.hotbar.linienstaerke_bildschirm_tip")
             };
             let resp = widgets::icon_button(ui, "staerke", KOPF, scaled, tip);
             ui.painter().text(
                 Pos2::new(resp.rect.right() - 2.0, resp.rect.bottom() - 1.0),
                 egui::Align2::RIGHT_BOTTOM,
-                if scaled { jjcad_core::i18n::tr("gui.hotbar.d") } else { jjcad_core::i18n::tr("gui.hotbar.p") },
+                if scaled { jjcad_core::i18n::tr("gui.hotbar.papier") } else { jjcad_core::i18n::tr("gui.hotbar.bildschirm") },
                 FontId::proportional(8.0),
                 if scaled {
                     Palette::accent()

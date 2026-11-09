@@ -128,10 +128,10 @@ Steht rechts „nicht", dann ist das Wort im Projekt verpönt (auch in der Oberf
 | Begriff | Bedeutung | nicht |
 |---|---|---|
 | **Displayliste** | Die eine Zwischendarstellung, aus der Bildschirm, PDF und PNG gezeichnet werden | Renderliste, Draw-List |
-| **Linienstärke** | Strichdicke in mm nach DIN EN ISO 128-2, Abschnitt 5.1 (0,13 · 0,18 · 0,25 · 0,35 · 0,50 · 0,70 · 1,00 · 1,40 · 2,00); Anzeige in `px` oder `DPI` | Linienbreite, Strichstärke |
-| **px-Modus** | Stärke bleibt auf dem Bildschirm konstant | Bildschirmmodus |
-| **DPI-Modus** | Stärke wächst mit dem Zoom, wie im Druck | Druckmodus |
-| **Maßstab** | Verhältnis Zeichnung : Papier (1:100) | Skalierung |
+| **Linienstärke** | Strichdicke in mm nach DIN EN ISO 128-2, Abschnitt 5.1 (0,13 · 0,18 · 0,25 · 0,35 · 0,50 · 0,70 · 1,00 · 1,40 · 2,00); Anzeige in `Bildschirm (konstant)` oder `Papier (maßstabsgetreu)` | Linienbreite, Strichstärke |
+| **Bildschirm-Modus** | Stärke bleibt auf dem Bildschirm konstant, unabhängig vom Zoom; der Stärke-Faktor in den Einstellungen skaliert sie (T0139) | px-Modus |
+| **Papier-Modus** | Stärke wächst mit dem Zoom wie im Druck; der Maßstab der Zeichnung bestimmt sie | DPI-Modus, Druckmodus |
+| **Maßstab** | Verhältnis Zeichnung : Papier (1:100); bestimmt im Papier-Modus die Strichbreite | Skalierung |
 | **Papier-mm** | Koordinaten auf dem Blatt, unabhängig vom Maßstab | Blattkoordinaten |
 
 ## 7. Ticket schreiben — Vorlage
