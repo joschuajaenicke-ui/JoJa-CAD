@@ -1413,6 +1413,15 @@ pub struct App {
     /// T0135: Kanal für eine zweite Instanz — Zeichnung als Reiter öffnen oder
     /// das Fenster nach vorn holen.
     pub instanz: Option<jjcad_core::instanz::Dienst>,
+    /// Ablage der Blockdatei für Blöcke, die direkt entstehen (T0142).
+    /// Nur für Tests: `None` heißt „wie eingestellt“ (`prefs.blocks_dir()`).
+    /// Ohne diesen Weg schriebe ein Test in die Benutzerbibliothek des Nutzers.
+    #[cfg(test)]
+    pub(crate) test_blockordner: Option<std::path::PathBuf>,
+    /// Nur für Tests: `false` unterdrückt das Speichern der Voreinstellungen,
+    /// damit ein Testlauf nicht die `prefs.json` des Nutzers verändert.
+    #[cfg(test)]
+    pub(crate) test_prefs_speichern: bool,
 }
 
 impl App {
@@ -1504,6 +1513,10 @@ impl App {
             sicherung: None,
             sicherung_zuletzt: 0.0,
             instanz: None,
+            #[cfg(test)]
+            test_blockordner: None,
+            #[cfg(test)]
+            test_prefs_speichern: true,
         };
         app.ui.show_grid = show_grid;
         app.ui.lineweights = lineweights;
@@ -4892,7 +4905,13 @@ impl App {
                 self.copy_selection(true);
             }
             if ev_paste {
-                self.einfuegen();
+                // T0142: Strg+Umschalt+V fügt die Zwischenablage als **Block**
+                // ein — der Block entsteht dabei ohne Namensdialog.
+                if shift {
+                    self.einfuegen_als_block();
+                } else {
+                    self.einfuegen();
+                }
             } else if strg_v_losgelassen(ctx) && !self.ui.bildablage.hat_text() {
                 // egui-winit verschluckt Strg+V, wenn die Zwischenablage
                 // **nur** ein Bild enthält (es fragt ausschließlich Text ab) —
@@ -7119,8 +7138,9 @@ fn rail(ui: &mut egui::Ui, icon: &str, tooltip: &str, chevron: &str) -> bool {
     ///
     /// Dann ist der nächste Klick auf einen Slot eine Verknüpfung und kein
     /// Start: der Slot bekommt den Block, genau wie ein laufendes Werkzeug
-    /// einen leeren Slot belegt. Die Zwischenablage zählt nicht — sie hat
-    /// keinen Block, den ein Slot aufnehmen könnte.
+    /// einen leeren Slot belegt. Eine laufende **Zwischenablage**-Vorschau
+    /// liefert hier noch keinen Block; für sie entsteht er erst beim Klick
+    /// (`App::block_fuer_verknuepfung`, T0142).
     pub fn block_einfuegen(&self) -> Option<&str> {
         self.ghost.as_ref().and_then(|g| g.block.as_deref())
     }
@@ -7143,12 +7163,12 @@ fn rail(ui: &mut egui::Ui, icon: &str, tooltip: &str, chevron: &str) -> bool {
     /// wenn gerade kein Block eingefügt wird — dann bleibt der Klick beim
     /// bisherigen Verhalten.
     pub fn bind_slot_block(&mut self, slot: usize) -> bool {
-        let Some(block) = self.block_einfuegen().map(str::to_string) else {
+        let Some(block) = self.block_fuer_verknuepfung() else {
             return false;
         };
         let name = self.block_name(&block);
         self.prefs.set_slot(slot, Some(format!("block:{block}")));
-        let _ = self.prefs.save();
+        self.speichere_prefs();
         self.ghost = None;
         self.toast(jjcad_core::i18n::t_args_owned(
             "gui.hotbar.x_auf_slot_x_gelegt",
@@ -7160,7 +7180,7 @@ fn rail(ui: &mut egui::Ui, icon: &str, tooltip: &str, chevron: &str) -> bool {
     /// Legt den laufenden Block auf einen Lagerplatz (T0116) — dieselbe Geste
     /// wie in der Hotbar, nur ohne Tastenkürzel.
     pub fn bind_lager_block(&mut self, idx: usize) -> bool {
-        let Some(block) = self.block_einfuegen().map(str::to_string) else {
+        let Some(block) = self.block_fuer_verknuepfung() else {
             return false;
         };
         if idx >= self.prefs.inventory.len() {
@@ -7168,7 +7188,7 @@ fn rail(ui: &mut egui::Ui, icon: &str, tooltip: &str, chevron: &str) -> bool {
         }
         let name = self.block_name(&block);
         self.prefs.inventory[idx] = Some(format!("block:{block}"));
-        let _ = self.prefs.save();
+        self.speichere_prefs();
         self.ghost = None;
         self.toast(jjcad_core::i18n::t_args_owned(
             "gui.inventory.x_ins_lager_gelegt",
@@ -7183,12 +7203,12 @@ fn rail(ui: &mut egui::Ui, icon: &str, tooltip: &str, chevron: &str) -> bool {
     /// Gesperrte Tasten (Ziffern, `Esc`, `F1` …) lehnt `UserPrefs::bind` ab;
     /// das Tastenbild nimmt sie ohnehin nicht an.
     pub fn bind_key_block(&mut self, key: &str) -> bool {
-        let Some(block) = self.block_einfuegen().map(str::to_string) else {
+        let Some(block) = self.block_fuer_verknuepfung() else {
             return false;
         };
         let name = self.block_name(&block);
         self.prefs.bind(&format!("block:{block}"), key);
-        let _ = self.prefs.save();
+        self.speichere_prefs();
         self.ghost = None;
         self.ui.keymap_selected = Some(key.to_lowercase());
         self.toast(jjcad_core::i18n::t_args_owned(
@@ -7196,6 +7216,123 @@ fn rail(ui: &mut egui::Ui, icon: &str, tooltip: &str, chevron: &str) -> bool {
             &[("name", name), ("wert1", key.to_uppercase())],
         ));
         true
+    }
+
+    /// Block, der beim Klick auf einen Slot/Taste verknüpft wird (T0116/T0142).
+    ///
+    /// Läuft die Vorschau eines **Blocks**, ist das dieser Block. Läuft die
+    /// Vorschau der **Zwischenablage**, entsteht daraus jetzt ein Block
+    /// (T0142) — der Klick auf den Slot ist die Geste „daraus einen Block
+    /// machen und ihn ablegen“. Ohne laufendes Einfügen gibt es nichts zu
+    /// verknüpfen; dann bleibt der Klick beim bisherigen Verhalten.
+    pub fn block_fuer_verknuepfung(&mut self) -> Option<String> {
+        if let Some(block) = self.block_einfuegen() {
+            return Some(block.to_string());
+        }
+        if self.ghost.is_some() {
+            return self.block_aus_zwischenablage();
+        }
+        None
+    }
+
+    /// Speichert die Voreinstellungen — in Tests abschaltbar, damit ein Lauf
+    /// nicht die `prefs.json` des Nutzers überschreibt.
+    fn speichere_prefs(&self) {
+        #[cfg(test)]
+        if !self.test_prefs_speichern {
+            return;
+        }
+        let _ = self.prefs.save();
+    }
+
+    /// Ordner, in dem ein direkt erzeugter Block als Datei landet (T0142).
+    fn blockordner(&self) -> std::path::PathBuf {
+        #[cfg(test)]
+        if let Some(dir) = &self.test_blockordner {
+            return dir.clone();
+        }
+        self.prefs.blocks_dir()
+    }
+
+    /// Erzeugt aus der Zwischenablage einen Block ohne Namensdialog (T0142).
+    ///
+    /// Der Name kommt aus `bloecke::freier_name` („Unbenannt 1“, „Unbenannt 2“, …)
+    /// und ist damit kollisionsfrei und als „nicht benannt“ erkennbar. Der Block
+    /// wird als `.jjblk` in der Benutzerbibliothek abgelegt und in `doc.blocks`
+    /// aufgenommen; die Zwischenablage bleibt unverändert. Liefert die Kennung
+    /// des neuen Blocks oder `None`, wenn nichts einzufügen war bzw. die Datei
+    /// nicht geschrieben werden konnte.
+    pub fn block_aus_zwischenablage(&mut self) -> Option<String> {
+        let clip = self.ui.clipboard.clone();
+        if clip.is_empty() {
+            self.toast(jjcad_core::i18n::tr("gui.app.einfuegen_zwischenablage_leer"));
+            return None;
+        }
+        // Basispunkt ist die untere linke Ecke der Auswahl — dieselbe Lage, die
+        // ein normaler Einfügevorgang als Anker benutzt.
+        let mut bb = BBox::EMPTY;
+        for e in &clip.ents {
+            bb.union(jjcad_core::render::entity_bbox(self.doc(), e));
+        }
+        let base = if bb.is_valid() { bb.min } else { V2::ZERO };
+        let name = jjcad_core::bloecke::freier_name(
+            self.doc().blocks.iter().map(|b| b.name.as_str()),
+        );
+        let block =
+            jjcad_core::bloecke::definition_aus_elementen(&name, "Projekt", &clip.ents, base);
+        let dir = self.blockordner();
+        if let Err(e) = jjcad_core::bloecke::schreibe_block(&dir, &block) {
+            self.toast(e);
+            return None;
+        }
+        let id = block.id.clone();
+        self.doc_mut().blocks.push(block);
+        self.mark_changed();
+        self.toast(jjcad_core::i18n::t_args_owned(
+            "gui.dialogs.block_x_angelegt",
+            &[("name", name)],
+        ));
+        Some(id)
+    }
+
+    /// „Einfügen als Block“ — Strg+Umschalt+V (T0142).
+    ///
+    /// Statt der losen Objekte der Zwischenablage entsteht ein Block, der
+    /// sofort als Vorschau am Zeiger steht und mit einem Klick abgesetzt wird.
+    /// Eine bereits laufende Vorschau behält Lage, Drehung und Spiegelung.
+    pub fn einfuegen_als_block(&mut self) {
+        if self.bild_einfuegen() {
+            return;
+        }
+        if self.ui.clipboard.is_empty() {
+            self.toast(jjcad_core::i18n::tr("gui.app.einfuegen_zwischenablage_leer"));
+            return;
+        }
+        let Some(id) = self.block_aus_zwischenablage() else {
+            return;
+        };
+        let (pos, rot, mirror, scale) = match &self.ghost {
+            Some(g) => (g.pos, g.rot, g.mirror, g.scale),
+            None => (
+                self.pointer_world
+                    .or_else(|| self.pointer_world_fallback())
+                    .unwrap_or_default(),
+                0.0,
+                false,
+                1.0,
+            ),
+        };
+        self.ghost = Some(crate::ghost::Ghost {
+            block: Some(id),
+            pos,
+            rot,
+            mirror,
+            scale,
+            pivot: self.prefs.paste_pivot,
+        });
+        self.tool = None;
+        self.session_mut().clear_selection();
+        self.release_keyboard_focus();
     }
 
     /// Block zu einem Slot-Inhalt (`block:<id>`) — für die Miniaturaansicht
@@ -11441,6 +11578,167 @@ mod tests_kopieren {
 }
 
 #[cfg(test)]
+mod tests_block_direkt {
+    //! T0142: Blöcke entstehen direkt, ohne Benennung.
+    //!
+    //! Strg+Umschalt+V macht aus der Zwischenablage einen Block und fügt ihn
+    //! ein; ein Klick auf einen Hotbar-Slot während des Einfügens legt den
+    //! Block auf dem Slot ab. Beide Wege vergeben einen Namen „Unbenannt N“
+    //! ohne Dialog, der nicht mit vorhandenen Namen kollidiert.
+
+    use super::*;
+
+    fn app_mit_zwischenablage() -> App {
+        let ctx = egui::Context::default();
+        let mut app = App::with_ctx(ctx);
+        app.doc_mut().settings.input_unit = jjcad_core::units::Unit::Mm;
+        let r = app
+            .session_mut()
+            .execute("draw.rect", &serde_json::json!({"a": [0, 0], "b": [1000, 1000]}))
+            .expect("Rechteck");
+        let id = r["created"][0].as_u64().unwrap();
+        app.session_mut().select(vec![id]);
+        let ids = app.selection().to_vec();
+        app.merke_zwischenablage(&ids, None);
+        app
+    }
+
+    /// Die Benutzerbibliothek landet im Wegwerfordner (`App::test_blockordner`),
+    /// nie in der Datenwurzel des Nutzers.
+    fn wegwerf_blockordner(app: &mut App, name: &str) -> std::path::PathBuf {
+        let dir = std::env::temp_dir().join(format!(
+            "jjcad-t0142-{}-{name}",
+            std::process::id()
+        ));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        // Nicht über `prefs.blocks_pfad`: das Speichern der Slots schriebe den
+        // Wegwerfpfad in die `prefs.json` des Nutzers.
+        app.test_blockordner = Some(dir.clone());
+        app.test_prefs_speichern = false;
+        dir
+    }
+
+    /// Nur die ohne Namen entstandenen Blöcke — die Bibliothek der Vorlagen
+    /// („WC“, „Tisch“, …) steht in jedem neuen Dokument.
+    fn unbenannte(app: &App) -> Vec<String> {
+        app.doc()
+            .blocks
+            .iter()
+            .filter(|b| b.name.starts_with("Unbenannt "))
+            .map(|b| b.name.clone())
+            .collect()
+    }
+
+    fn block_mit_namen(app: &App, name: &str) -> jjcad_core::model::BlockDef {
+        app.doc()
+            .blocks
+            .iter()
+            .find(|b| b.name == name)
+            .cloned()
+            .unwrap_or_else(|| panic!("Block '{name}' fehlt"))
+    }
+
+    fn paste_frame(app: &mut App, shift: bool) {
+        let ctx = app.ctx.clone();
+        let mut mods = egui::Modifiers::COMMAND;
+        mods.shift = shift;
+        let raw = egui::RawInput {
+            screen_rect: Some(Rect::from_min_size(Pos2::ZERO, Vec2::new(1500.0, 950.0))),
+            modifiers: mods,
+            events: vec![egui::Event::Paste(String::new())],
+            ..Default::default()
+        };
+        let _ = ctx.run(raw, |ctx| app.ui(ctx));
+    }
+
+    /// Strg+Umschalt+V legt einen unbenannten Block an, schreibt die
+    /// Blockdatei und startet die Vorschau mit genau diesem Block.
+    #[test]
+    fn strg_umschalt_v_legt_einen_block_an_und_fuegt_ihn_ein() {
+        let mut app = app_mit_zwischenablage();
+        let dir = wegwerf_blockordner(&mut app, "shiftv");
+        app.pointer_world = Some(V2::new(4000.0, 5000.0));
+        paste_frame(&mut app, true);
+
+        assert_eq!(unbenannte(&app), vec!["Unbenannt 1"], "genau ein Block entstanden");
+        let block = block_mit_namen(&app, "Unbenannt 1");
+        assert_eq!(
+            app.block_einfuegen(),
+            Some(block.id.as_str()),
+            "die Vorschau ist der neue Block"
+        );
+        let dateien = std::fs::read_dir(&dir).unwrap().count();
+        assert_eq!(dateien, 1, "der Block liegt als .jjblk in der Bibliothek");
+        let (geladen, meldungen) = jjcad_core::bloecke::lade_bloecke(&dir);
+        assert!(meldungen.is_empty(), "{meldungen:?}");
+        assert_eq!(geladen.len(), 1, "die Datei ist wieder lesbar");
+        assert_eq!(geladen[0].name, "Unbenannt 1");
+        assert_eq!(geladen[0].entities.len(), 1, "das Rechteck steckt im Block");
+
+        assert!(app.commit_ghost(), "der Klick setzt die Blockinstanz");
+        assert!(
+            app.doc().entities.iter().any(|e| matches!(
+                &e.kind,
+                jjcad_core::model::EntityKind::BlockRef { block: b, .. } if *b == block.id
+            )),
+            "eingefügt wird eine Blockinstanz, keine losen Objekte"
+        );
+    }
+
+    /// Ohne Umschalt bleibt Strg+V beim gewohnten Einfügen der losen Objekte —
+    /// es entsteht kein Block.
+    #[test]
+    fn strg_v_allein_legt_keinen_block_an() {
+        let mut app = app_mit_zwischenablage();
+        let _dir = wegwerf_blockordner(&mut app, "strgv");
+        paste_frame(&mut app, false);
+        assert!(unbenannte(&app).is_empty(), "kein Block ohne Umschalt");
+        assert!(app.ghost.is_some(), "die Vorschau der Zwischenablage läuft");
+        assert_eq!(app.block_einfuegen(), None);
+    }
+
+    /// Klick auf einen Hotbar-Slot während des Einfügens: aus der
+    /// Zwischenablage wird ein Block, der Slot trägt ihn.
+    #[test]
+    fn slot_klick_erzeugt_block_aus_der_zwischenablage() {
+        let mut app = app_mit_zwischenablage();
+        let _dir = wegwerf_blockordner(&mut app, "slot");
+        app.start_ghost_paste();
+        assert!(app.ghost.is_some());
+        assert!(app.block_einfuegen().is_none(), "noch kein Block");
+
+        assert!(app.bind_slot_block(2), "der Slot nimmt den neuen Block auf");
+        assert_eq!(unbenannte(&app), vec!["Unbenannt 1"]);
+        let block = block_mit_namen(&app, "Unbenannt 1");
+        assert_eq!(
+            app.prefs.slots()[2].as_deref(),
+            Some(format!("block:{}", block.id).as_str()),
+            "der Slot verweist auf den Block"
+        );
+        assert!(app.ghost.is_none(), "das Einfügen ist beendet");
+    }
+
+    /// Ohne laufendes Einfügen erzeugt ein Slotklick keinen Block.
+    #[test]
+    fn slot_klick_ohne_einfuegen_erzeugt_keinen_block() {
+        let mut app = app_mit_zwischenablage();
+        let _dir = wegwerf_blockordner(&mut app, "ohne");
+        assert!(!app.bind_slot_block(0));
+        assert!(unbenannte(&app).is_empty());
+    }
+
+    /// Zweimal erzeugen ergibt zwei Namen: „Unbenannt 1“ und „Unbenannt 2“.
+    #[test]
+    fn zweiter_block_bekommt_einen_freien_namen() {
+        let mut app = app_mit_zwischenablage();
+        let _dir = wegwerf_blockordner(&mut app, "zaehler");
+        assert!(app.block_aus_zwischenablage().is_some());
+        assert!(app.block_aus_zwischenablage().is_some());
+        assert_eq!(unbenannte(&app), vec!["Unbenannt 1", "Unbenannt 2"]);
+    }
+}
+
 mod tests_einfuegemodus {
     //! Einfügemodus von Rechteck und Ellipse (T0024, Turn 2).
     //!

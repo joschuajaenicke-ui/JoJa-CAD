@@ -167,9 +167,11 @@ pub fn show(app: &mut App, ui: &mut Ui) {
                 if resp.clicked() {
                     // T0116: Läuft das Einfügen eines Blocks, verknüpft der
                     // Klick den Slot mit diesem Block — dieselbe Geste, mit
-                    // der ein laufendes Werkzeug einen Slot belegt. Der Klick
-                    // startet den Slot dabei **nicht**; sonst wäre die
-                    // Vorschau weg, bevor der Nutzer sie ablegen kann.
+                    // der ein laufendes Werkzeug einen Slot belegt. T0142: das
+                    // gilt auch für die Zwischenablage — aus ihr entsteht dabei
+                    // erst der Block, der den Slot belegt. Der Klick startet
+                    // den Slot dabei **nicht**; sonst wäre die Vorschau weg,
+                    // bevor der Nutzer sie ablegen kann.
                     if app.bind_slot_block(i) {
                         // Meldung und Beenden des Einfügens macht der Aufruf.
                     } else if let Some(a) = &action {

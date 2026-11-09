@@ -3484,11 +3484,14 @@ pub fn execute(doc: &mut Document, id: &str, params: &Value) -> Result<Value, St
             if ids.is_empty() {
                 return Err("Parameter 'ids' fehlt".into());
             }
+            let ents: Vec<Entity> = ids.iter().filter_map(|id| doc.entity(*id).cloned()).collect();
+            if ents.is_empty() {
+                // Kein leerer Block als stiller Erfolg (T0038).
+                return Err("ids: keine der Objektkennungen gefunden".into());
+            }
             let mut bbox = BBox::EMPTY;
-            for id in &ids {
-                if let Some(e) = doc.entity(*id) {
-                    bbox.union(render::entity_bbox(doc, e));
-                }
+            for e in &ents {
+                bbox.union(render::entity_bbox(doc, e));
             }
             let base = p.pt("base").unwrap_or_else(|| {
                 if bbox.is_valid() {
@@ -3497,30 +3500,20 @@ pub fn execute(doc: &mut Document, id: &str, params: &Value) -> Result<Value, St
                     Vec2::ZERO
                 }
             });
-            let mut entities = Vec::new();
-            for id in &ids {
-                if let Some(e) = doc.entity(*id).cloned() {
-                    let m = Affine::translate(-base);
-                    let mut ne = transform::transform_entity(&e, &m);
-                    ne.id = entities.len() as u64 + 1;
-                    entities.push(ne);
-                }
-            }
+            // Eine Quelle für die Blockdefinition — derselbe Weg entsteht aus
+            // der Zwischenablage (T0142, `bloecke::definition_aus_elementen`).
+            let mut block = crate::bloecke::definition_aus_elementen(
+                &name,
+                &p.text_or("category", "Projekt"),
+                &ents,
+                base,
+            );
+            block.description = p.text_or("description", "");
             // Eigene Blöcke des Benutzers (T0128): die Kennung `usr:…` steht im
             // Inhalt, der Dateiname folgt dem Namen. Geschrieben wird, bevor das
             // Dokument geändert wird — scheitert die Datei, bleibt die Auswahl
             // unangetastet.
-            let bid = format!("usr:{}", crate::util::short_id());
-            let block = BlockDef {
-                id: bid.clone(),
-                name: name.clone(),
-                category: p.text_or("category", "Projekt"),
-                source: BlockSource::User,
-                description: p.text_or("description", ""),
-                entities,
-                icon: None,
-                base,
-            };
+            let bid = block.id.clone();
             let mut datei: Option<String> = None;
             if let Some(dir) = bloecke_verzeichnis(&p) {
                 let pfad = crate::bloecke::schreibe_block(&dir, &block)?;
