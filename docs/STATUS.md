@@ -232,6 +232,20 @@ offene Fensterinstanz zeigt weiterhin den alten Stand.
   `verworfene_arbeit_kommt_nicht_zurueck`), am Programm: ändern → beenden →
   starten zeigt 37 statt 36 Objekte, „Stand: geändert“, Zieldatei unverändert.
 
+- **Fensterlage in der Sitzung (T0141)**: `sitzung.json` merkt beim Beenden
+  Fenstergröße (jede Plattform), Maximiert-Zustand und — wo das Fenstersystem
+  globale Koordinaten liefert — die Fensterposition. Bis hierher scheiterte das
+  Merken unter Wayland **ganz**: `inner_rect`/`outer_rect` sind dort `None`
+  (xdg-shell kennt keine Fensterposition), deshalb stand `fenster: null` in der
+  Datei und auch die Größe kam nicht zurück. Jetzt liefert die Bildschirmfläche
+  die Größe (`RawInput::screen_rect`, aus `window.inner_size()`), die
+  Fensterrechtecke die Lage; fehlt die Lage, bleiben `x`/`y` leer statt die
+  ganze Lage zu verwerfen. Unter X11, Windows und macOS kommt auch die Position
+  zurück; unter Wayland bleibt sie eine Grenze (`docs/BEKANNTE-GRENZEN.md`,
+  Nr. 7). Nachweis: `cargo test -p jjcad-gui fensterlage` (5 Tests),
+  `cargo test -p jjcad-core --lib sitzung` (9), unter Xvfb: 1300 × 800 bei
+  (250, 120) gezogen → beendet → neu gestartet, gleiche Geometrie.
+
 ## Offen
 
 1. **Tür/Fenster-Ausrichtung im Eigenschaften-Panel** — beim Anlegen gesetzt,

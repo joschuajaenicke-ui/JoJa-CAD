@@ -1,6 +1,6 @@
 # Bekannte Grenzen — derzeit nicht lösbar
 
-Stand: 6. November 2026 · JoJa-CAD 0.2
+Stand: 9. November 2026 · JoJa-CAD 0.2
 
 Hier steht, was **bekannt** ist, **geprüft** wurde und **jetzt nicht gelöst
 werden kann** — weil eine Bibliothek es nicht hergibt, weil die Lösung dem
@@ -16,6 +16,7 @@ von vorn.
 | 4 | Farbeimer ist eine Näherung | gewähltes Rasterverfahren | vektorielles Flächennetz (Arrangement) |
 | 5 | Splines lassen sich nicht stutzen | Modell/Geometrie | numerischer Schnitt + Teilstück-Extraktion |
 | 6 | Bei großer Displayskalierung wird die Oberfläche abgeschnitten | Mindestfenstergröße in logischen Punkten | umbrechende/scrollende Ribbon-Gruppen |
+| 7 | Fensterposition lässt sich unter Wayland nicht wiederherstellen | Wayland (`xdg-shell`) und winit | `xdg-session-management-v1` in KWin und winit |
 
 ---
 
@@ -188,6 +189,42 @@ scrollen, plus eine Mindestgröße, die sich an der Bildschirmgröße orientiert
 
 **Behelf.** Skalierung auf 100–150 % stellen oder das Fenster im Vollbild
 (F11) benutzen — dort steht die volle Bildschirmfläche zur Verfügung.
+
+---
+
+## 7. Fensterposition unter Wayland
+
+**Symptom.** Unter Wayland (z. B. KDE Plasma) merkt sich das Programm die
+Fenstergröße, das Fenster erscheint aber dort, wo die Fensterverwaltung es
+hinstellt — nicht an der Stelle des letzten Laufs.
+
+**Ursache.** `xdg-shell` kennt weder eine Abfrage noch eine Vorgabe der
+Fensterposition: `xdg_toplevel` hat keine Koordinaten, und winit liefert für
+`inner_position()`/`outer_position()` `NotSupported` (`set_outer_position` ist
+im Wayland-Zweig eine leere Funktion). Das trifft jedes Wayland-Programm; KDE
+schreibt es selbst so aus („apps aren’t allowed to position themselves“).
+Nachweis im Code: `winit-0.30.13/src/platform_impl/linux/wayland/window/mod.rs`.
+
+**Was das Programm trotzdem tut (T0141).** `sitzung.json` merkt Größe, Lage und
+Maximiert-Zustand (`sitzung::Fensterlage`). Fehlt die Lage (Wayland), bleiben
+`x`/`y` leer und die **Größe** kommt beim Start zurück; unter X11, Windows und
+macOS kommt auch die Position zurück (`main.rs` setzt `with_position` nur, wenn
+`Fensterlage::lage()` eine Lage liefert). Belege: `jjcad-core`-Test
+`sitzung::tests::fensterlage_ohne_position_ist_brauchbar`,
+`app::tests_fensterlage` (Umrechnung mit und ohne Fensterrechtecke) und ein Lauf
+unter Xvfb — Fenster auf 1300 × 800 bei (250, 120) gezogen, beendet, neu
+gestartet: dieselbe Geometrie, `sitzung.json` trägt `x: 250.0, y: 120.0`.
+
+**Warum jetzt nicht lösbar.** Ein Ausweichen auf XWayland ist verworfen (Grenze 1:
+träger und unschärfer). Die Programmseite kann eine Position nicht erzwingen.
+
+**Bedingung.** `xdg-session-management-v1`, das KWin umsetzen und winit
+durchreichen müsste (winit führt das Thema als Issue #4636) — dann darf ein
+Programm seinen Zustand samt Position wieder anfordern.
+
+**Behelf.** Fensterregel in KWin (Systemeinstellungen → Fensterverwaltung →
+Fensterregeln): Eigenschaft „Position“ auf „Erzwingen“ für `jjcad`. Die Regel
+setzt KWin selbst, deshalb wirkt sie auch unter Wayland.
 
 ---
 

@@ -89,24 +89,45 @@ pub struct Reiter {
 }
 
 /// Lage und Größe des Fensters (in Punkten, wie egui sie meldet).
+///
+/// Die **Größe** meldet jede Plattform (`RawInput::screen_rect`, aus
+/// `window.inner_size()`). Die **Lage** (`x`/`y`) meldet nur ein Fenstersystem
+/// mit globalen Fensterkoordinaten; unter Wayland bleiben beide leer, weil
+/// xdg-shell weder Abfrage noch Vorgabe einer Fensterposition kennt (winit
+/// liefert dort `NotSupported`, `with_position` wird still verworfen).
 #[derive(Clone, Copy, Debug, Serialize, Deserialize, PartialEq)]
 pub struct Fensterlage {
     pub breite: f32,
     pub hoehe: f32,
-    pub x: f32,
-    pub y: f32,
+    /// Linke Fensterkante in Punkten; `None` = die Plattform meldet keine Lage.
+    #[serde(default)]
+    pub x: Option<f32>,
+    /// Obere Fensterkante in Punkten; `None` = die Plattform meldet keine Lage.
+    #[serde(default)]
+    pub y: Option<f32>,
+    /// Das Fenster war beim Beenden maximiert.
+    #[serde(default)]
+    pub maximiert: bool,
 }
 
 impl Fensterlage {
-    /// Brauchbar für `ViewportBuilder`: endliche Werte und keine Größe, die
-    /// unter der Mindestgröße des Fensters liegt.
+    /// Brauchbar für `ViewportBuilder`: eine endliche Größe, die nicht unter
+    /// der Mindestgröße des Fensters liegt. Eine fehlende Lage ist kein Grund,
+    /// die ganze Lage zu verwerfen — dann kommt wenigstens die Größe zurück.
     pub fn brauchbar(&self) -> bool {
         self.breite.is_finite()
             && self.hoehe.is_finite()
-            && self.x.is_finite()
-            && self.y.is_finite()
             && self.breite >= 1.0
             && self.hoehe >= 1.0
+    }
+
+    /// Fensterposition (linke obere Ecke in Punkten), sofern gemeldet.
+    /// Beide Kanten gehören zusammen: eine halbe Lage ist keine Lage.
+    pub fn lage(&self) -> Option<(f32, f32)> {
+        match (self.x, self.y) {
+            (Some(x), Some(y)) if x.is_finite() && y.is_finite() => Some((x, y)),
+            _ => None,
+        }
     }
 }
 
@@ -210,8 +231,9 @@ mod tests {
             fenster: Some(Fensterlage {
                 breite: 1600.0,
                 hoehe: 1000.0,
-                x: 120.0,
-                y: 60.0,
+                x: Some(120.0),
+                y: Some(60.0),
+                maximiert: false,
             }),
             aktiv: 1,
             reiter: vec![
@@ -333,16 +355,83 @@ mod tests {
         assert!(Fensterlage {
             breite: 1600.0,
             hoehe: 1000.0,
-            x: 0.0,
-            y: 0.0
+            x: Some(0.0),
+            y: Some(0.0),
+            maximiert: false,
         }
         .brauchbar());
         assert!(!Fensterlage {
             breite: 0.0,
             hoehe: 1000.0,
-            x: 0.0,
-            y: 0.0
+            x: Some(0.0),
+            y: Some(0.0),
+            maximiert: false,
         }
         .brauchbar());
+    }
+
+    /// T0141: Ohne gemeldete Lage (Wayland) ist die Größe trotzdem brauchbar —
+    /// sonst würde beim Beenden gar nichts gemerkt.
+    #[test]
+    fn fensterlage_ohne_position_ist_brauchbar() {
+        let ohne = Fensterlage {
+            breite: 1500.0,
+            hoehe: 950.0,
+            x: None,
+            y: None,
+            maximiert: false,
+        };
+        assert!(ohne.brauchbar(), "die Größe allein ist brauchbar");
+        assert_eq!(ohne.lage(), None, "ohne gemeldete Lage keine Position");
+
+        let mit = Fensterlage {
+            breite: 1500.0,
+            hoehe: 950.0,
+            x: Some(120.0),
+            y: Some(60.0),
+            maximiert: true,
+        };
+        assert_eq!(mit.lage(), Some((120.0, 60.0)));
+        assert!(mit.maximiert);
+    }
+
+    /// Eine halbe Lage ist keine Lage — und keine gültige Zahl ebenso wenig.
+    #[test]
+    fn halbe_oder_unsinnige_lage_zaehlt_nicht() {
+        let nur_x = Fensterlage {
+            breite: 1500.0,
+            hoehe: 950.0,
+            x: Some(10.0),
+            y: None,
+            maximiert: false,
+        };
+        assert_eq!(nur_x.lage(), None);
+        let nan = Fensterlage {
+            breite: 1500.0,
+            hoehe: 950.0,
+            x: Some(f32::NAN),
+            y: Some(60.0),
+            maximiert: false,
+        };
+        assert_eq!(nan.lage(), None);
+    }
+
+    /// Alte `sitzung.json` (T0130) trug `x`/`y` als Zahl und kannte
+    /// `maximiert` nicht — sie muss weiterhin laden.
+    #[test]
+    fn alte_sitzung_ohne_maximiert_laedt() {
+        let dir = test_dir("alt");
+        let pfad = dir.join("sitzung.json");
+        std::fs::write(
+            &pfad,
+            br#"{"format":"jjcad-sitzung","version":1,
+                 "fenster":{"breite":1600.0,"hoehe":1000.0,"x":120.0,"y":60.0},
+                 "aktiv":0,"reiter":[]}"#,
+        )
+        .unwrap();
+        let s = laden(&pfad).unwrap().expect("alte Sitzung muss laden");
+        let f = s.fenster.expect("Fensterlage");
+        assert_eq!(f.lage(), Some((120.0, 60.0)));
+        assert!(!f.maximiert, "unbekanntes Feld heißt nicht maximiert");
     }
 }
