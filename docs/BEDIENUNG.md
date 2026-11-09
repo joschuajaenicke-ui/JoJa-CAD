@@ -258,7 +258,8 @@ schreibt nie in die Zieldatei.
 Beim Beenden wird **nicht** nach dem Speichern gefragt: Der Zustand — offene
 Reiter in ihrer Reihenfolge, je Reiter Ansicht und aktives Blatt, aktiver Reiter,
 Fenstergröße und -lage — steht in `sitzung.json` und wird beim nächsten Start
-wiederhergestellt. **Ungespeicherte Änderungen gehen dabei nicht verloren:** die
+wiederhergestellt. Unter Wayland kommt nur die Größe zurück: dort darf kein
+Programm seine Fensterposition setzen (`docs/BEKANNTE-GRENZEN.md`, Grenze 7). **Ungespeicherte Änderungen gehen dabei nicht verloren:** die
 Sicherung legt sie beim Beenden als Stand ab, und der nächste Start holt sie
 zurück — mit demselben Speicherort, aber als **geändert** markiert. Erst
 „Speichern“ schreibt in die Zieldatei. Auch eine Zeichnung, die nie gespeichert

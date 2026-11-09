@@ -312,6 +312,42 @@ fn ansicht_als_wert(v: View) -> sitzung::Ansicht {
     v.als_wert()
 }
 
+/// Fensterlage aus den Meldungen von egui (T0141).
+///
+/// Die **Größe** kommt aus der Bildschirmfläche (`bild`), die jede Plattform
+/// meldet (egui-winit setzt sie aus `window.inner_size()`). Die **Lage** kommt
+/// nur aus den Fensterrechtecken (`inner`/`outer`, globale Koordinaten in
+/// Punkten) — unter Wayland sind beide `None`, weil xdg-shell keine
+/// Fensterposition kennt. Dann bleibt `x`/`y` leer und wenigstens die Größe
+/// wird gemerkt; `None` heißt: gar nichts Brauchbares (z. B. Fenster minimiert).
+fn lage_aus(
+    inner: Option<egui::Rect>,
+    outer: Option<egui::Rect>,
+    bild: egui::Rect,
+) -> Option<sitzung::Fensterlage> {
+    // egui ohne Fensterangabe (minimiert, Testkontext) meldet 10 000 × 10 000
+    // Punkte (`InputState::default`) — das ist der Platzhalter, keine Größe.
+    const PLATZHALTER: f32 = 10_000.0;
+    if inner.is_none() && bild.width() >= PLATZHALTER && bild.height() >= PLATZHALTER {
+        return None;
+    }
+    let (breite, hoehe) = inner
+        .map(|r| (r.width(), r.height()))
+        .unwrap_or((bild.width(), bild.height()));
+    // Die Außenkante ist die Fensterposition, die `with_position` erwartet;
+    // die Innenkante taugt als Rückfall, weil sie ebenfalls global ist.
+    let pos = outer.map(|r| r.min).or_else(|| inner.map(|r| r.min));
+    let lage = sitzung::Fensterlage {
+        breite,
+        hoehe,
+        x: pos.map(|p| p.x).unwrap_or(0.0),
+        y: pos.map(|p| p.y).unwrap_or(0.0),
+        mit_lage: pos.is_some(),
+        maximiert: false,
+    };
+    lage.brauchbar().then_some(lage)
+}
+
 /// Läuft ein Demo-/Prüfzustand (`JJCAD_DEMO_UI`)?
 ///
 /// Dann fasst die Sitzung weder lesend noch schreibend zu: ein Prüfbild
@@ -4484,23 +4520,20 @@ impl App {
         }
     }
 
-    /// Fenstergröße und -lage, wie egui sie meldet. `None`, solange es kein
-    /// Fenster gibt (Tests, headless) — dann bleibt die gespeicherte Lage
+    /// Fenstergröße und -lage, wie egui sie meldet (T0141). `None`, solange es
+    /// kein Fenster gibt (Tests, headless) — dann bleibt die gespeicherte Lage
     /// stehen, statt von einem leeren Wert überschrieben zu werden.
+    ///
+    /// Unter Wayland meldet das Fenstersystem keine Position; dann steht die
+    /// Größe in der Sitzung und `x`/`y` bleiben leer.
     fn fensterlage(&self) -> Option<sitzung::Fensterlage> {
         let (inner, outer) = self.ctx.input(|i| {
             let vp = i.viewport();
             (vp.inner_rect, vp.outer_rect)
         });
-        let inner = inner?;
-        let pos = outer.map(|r| r.min).unwrap_or(inner.min);
-        let lage = sitzung::Fensterlage {
-            breite: inner.width(),
-            hoehe: inner.height(),
-            x: pos.x,
-            y: pos.y,
-        };
-        lage.brauchbar().then_some(lage)
+        let mut lage = lage_aus(inner, outer, self.ctx.screen_rect())?;
+        lage.maximiert = self.ctx.input(|i| i.viewport().maximized.unwrap_or(false));
+        Some(lage)
     }
 
     /// Schreibt die Sitzung nach `<Wurzel>/sitzung.json` (beim Beenden).
@@ -13784,6 +13817,88 @@ mod tests_sicherung {
         }
         let pool = app.sicherung.as_ref().unwrap();
         assert_eq!(pool.manifest().staende.len(), 1, "Verlauf aus hält einen Stand");
+    }
+}
+
+#[cfg(test)]
+mod tests_fensterlage {
+    //! T0141: Fensterlage für die Sitzung. Geprüft wird die Umrechnung aus den
+    //! egui-Meldungen — mit Fensterrechtecken (X11/Windows) und ohne
+    //! (Wayland, dort meldet das Fenstersystem keine Position).
+
+    use super::*;
+
+    fn rect(x: f32, y: f32, w: f32, h: f32) -> egui::Rect {
+        egui::Rect::from_min_size(egui::pos2(x, y), egui::vec2(w, h))
+    }
+
+    /// Wayland: keine Fensterrechtecke, aber die Größe aus der Bildschirmfläche.
+    #[test]
+    fn ohne_fensterrechtecke_bleibt_die_groesse() {
+        let lage = lage_aus(None, None, rect(0.0, 0.0, 1500.0, 950.0)).expect("Größe genügt");
+        assert_eq!(lage.breite, 1500.0);
+        assert_eq!(lage.hoehe, 950.0);
+        assert_eq!(lage.lage(), None, "ohne Meldung keine Position");
+        assert!(!lage.mit_lage, "kein Merker ohne Meldung");
+        assert!(lage.brauchbar());
+    }
+
+    /// X11/Windows: die Außenkante ist die Fensterposition, die Innenfläche die
+    /// Größe (die Titelleiste gehört nicht dazu).
+    #[test]
+    fn mit_fensterrechtecken_kommt_die_lage() {
+        let lage = lage_aus(
+            Some(rect(100.0, 50.0, 1600.0, 1000.0)),
+            Some(rect(90.0, 20.0, 1620.0, 1030.0)),
+            rect(0.0, 0.0, 1600.0, 1000.0),
+        )
+        .expect("Lage");
+        assert_eq!((lage.breite, lage.hoehe), (1600.0, 1000.0));
+        assert_eq!(lage.lage(), Some((90.0, 20.0)));
+    }
+
+    /// Fehlt nur die Außenkante, ist die Innenkante der Rückfall — sie ist
+    /// ebenfalls global.
+    #[test]
+    fn innenkante_ist_der_rueckfall() {
+        let lage = lage_aus(
+            Some(rect(100.0, 50.0, 1600.0, 1000.0)),
+            None,
+            rect(0.0, 0.0, 1600.0, 1000.0),
+        )
+        .expect("Lage");
+        assert_eq!(lage.lage(), Some((100.0, 50.0)));
+    }
+
+    /// Ein minimiertes Fenster (Größe 0) ergibt keine Lage — dann bleibt die
+    /// gespeicherte in der Datei stehen. Dasselbe gilt für den Platzhalter,
+    /// den egui ohne Fensterangabe meldet (10 000 × 10 000).
+    #[test]
+    fn ohne_groesse_keine_lage() {
+        assert!(lage_aus(None, None, rect(0.0, 0.0, 0.0, 0.0)).is_none());
+        assert!(lage_aus(None, None, rect(0.0, 0.0, 10_000.0, 10_000.0)).is_none());
+    }
+
+    /// Die Sitzung nimmt die Lage mit — und ohne Fenster (Tests, headless)
+    /// bleibt `fenster` leer, statt eine Null-Lage zu schreiben.
+    #[test]
+    fn sitzung_schreibt_die_fensterlage() {
+        let mut app = App::with_ctx(egui::Context::default());
+        assert!(
+            app.sitzung_sammeln().fenster.is_none(),
+            "ohne Fenster keine Lage"
+        );
+        let lage = lage_aus(None, None, rect(0.0, 0.0, 1400.0, 900.0)).unwrap();
+        assert!(lage.brauchbar());
+        let s = sitzung::Sitzung {
+            fenster: Some(lage),
+            ..sitzung::Sitzung::default()
+        };
+        let text = serde_json::to_string(&s).unwrap();
+        assert!(text.contains("\"breite\":1400.0"), "{text}");
+        let wieder: sitzung::Sitzung = serde_json::from_str(&text).unwrap();
+        assert_eq!(wieder.fenster, Some(lage));
+        app.new_document();
     }
 }
 
