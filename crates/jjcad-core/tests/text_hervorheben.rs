@@ -529,3 +529,51 @@ fn runde_umrandung_schneidet_den_text_nicht() {
         );
     }
 }
+
+/// Radius der runden Umrandung aus dem Pfad: die linke Kante hat ein gerades
+/// Stück der Länge `Höhe − 2 × Radius` (einzeilig null = Oval).
+fn radius_aus_pfad(s: &Session) -> f64 {
+    let (_, rahmen) = rahmen_und_flaeche(s);
+    let rahmen = rahmen.expect("Rahmen fehlt");
+    let b = bbox(&rahmen);
+    let links: Vec<f64> = rahmen
+        .iter()
+        .filter(|p| (p.x - b.0).abs() < 1e-6)
+        .map(|p| p.y)
+        .collect();
+    let ymin = links.iter().cloned().fold(f64::INFINITY, f64::min);
+    let ymax = links.iter().cloned().fold(f64::NEG_INFINITY, f64::max);
+    ((b.3 - b.1) - (ymax - ymin)) * 0.5
+}
+
+/// Mehrzeiliger Text: der Radius bleibt der einer Zeile — halbe Zeilenhöhe.
+/// Damit sind es Viertelkreise an den Ecken eines Rechtecks, kein Oval
+/// (T0126, Turn 7).
+#[test]
+fn runde_umrandung_behaelt_den_radius_bei_mehrzeiligen_text() {
+    let einzeilig = text_schreiben(
+        "Hintergrund",
+        250.0,
+        json!({ "frame": true, "frame_round": true }),
+    );
+    let zwei = text_schreiben(
+        "Hintergrund\nHintergrund",
+        250.0,
+        json!({ "frame": true, "frame_round": true }),
+    );
+    let r1 = radius_aus_pfad(&einzeilig);
+    let r2 = radius_aus_pfad(&zwei);
+    let (_, h1) = render::text_box_mit("Hintergrund", &[], jjcad_core::model::TextFont::Sans, 250.0, 1.0);
+    let (_, h2) = render::text_box_mit("Hintergrund\nHintergrund", &[], jjcad_core::model::TextFont::Sans, 250.0, 1.0);
+
+    // Einzeilig: exaktes Oval — Radius ist die halbe Kasten­höhe.
+    assert_nahe(r1, h1 * 0.5, "Oval einzeilig");
+    // Zwei Zeilen: derselbe Radius wie einzeilig, nicht die halbe Kastenhöhe.
+    assert_nahe(r2, r1, "Radius zwei Zeilen");
+    assert_nahe(r2, h2 * 0.25, "halbe Zeilenhöhe bei zwei Zeilen");
+    assert!(
+        r2 < h2 * 0.5 - 1.0,
+        "zwei Zeilen sind noch ein Oval: Radius {r2:.1} von halber Höhe {:.1}",
+        h2 * 0.5
+    );
+}

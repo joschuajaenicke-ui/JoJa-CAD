@@ -2614,8 +2614,10 @@ fn draw_tool_preview(
                 app.prefs.textaufloesung.px(),
             );
             if app.options.text_frame {
+                // Derselbe Radius wie im fertigen Objekt: halbe Zeilenhöhe
+                // (einzeilig ein Oval, mehrzeilig Viertelkreise; T0126, Turn 7).
                 let radius = if app.options.text_frame_round {
-                    tprim.box_size().1 * 0.5
+                    tprim.line_height() * 0.5
                 } else {
                     0.0
                 };

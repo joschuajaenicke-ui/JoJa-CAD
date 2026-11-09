@@ -1816,6 +1816,9 @@ impl App {
                         ("Umrandung", false, None),
                         ("Runde Umrandung", true, None),
                         ("Hintergrund", false, Some(jjcad_core::style::Color::rgb(255, 240, 160))),
+                        // Mehrzeilig: Viertelkreise mit dem Radius einer Zeile
+                        // statt eines Ovals über den ganzen Block (T0126, Turn 7).
+                        ("Zweizeilig\nrunde Ecken", true, None),
                     ];
                     for (i, (txt, rund, flaeche)) in formen.iter().enumerate() {
                         let id = self.doc_mut().new_id();
