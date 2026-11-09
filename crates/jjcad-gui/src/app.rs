@@ -5275,13 +5275,15 @@ impl App {
     /// Gelesen werden alle drei Wege, über die eine Schwenkfunktion erreichbar
     /// ist: die Tasten der Tastaturbelegung, die Ziffern der Hotbar-Slots und
     /// ein gedrückt gehaltener Slot (`UiState::schwenk_zeiger`). Bei offenem
-    /// Protokoll, laufender Texteingabe oder Systemdialog schwenkt nichts —
-    /// dort gehört die Tastatur dem Text.
+    /// Protokoll, laufender Texteingabe, Systemdialog oder ohne Fensterfokus
+    /// schwenkt nichts — dort gehört die Tastatur dem Text bzw. einem anderen
+    /// Fenster.
     fn schwenk_gehalten(&self, ctx: &egui::Context) -> (f32, f32) {
         if !self.prefs.pan_mode.kontinuierlich()
             || self.chat.offen
             || self.ui.systemdialog.is_some()
             || ctx.wants_keyboard_input()
+            || !ctx.input(|i| i.focused)
         {
             return (0.0, 0.0);
         }
@@ -7461,6 +7463,15 @@ fn rail(ui: &mut egui::Ui, icon: &str, tooltip: &str, chevron: &str) -> bool {
         // Oberfläche. Der Wechsel gehört zum **vorigen** Abschnitt, deshalb
         // steht er hier und nicht nach der Zeichenfläche.
         self.perf.abschnitt(crate::perf::Abschnitt::Oberflaeche);
+        // T0140: Fokusverlust heißt, das Betriebssystem schickt kein
+        // Tastenloslassen mehr nach — der Systemdialog („Strg+S", „Strg+O")
+        // nimmt den Fokus, egui führt die gedrückte Taste aber in `keys_down`
+        // fort. Der Dauerlauf des Schwenks liefe dann endlos weiter, obwohl
+        // niemand mehr drückt. Nach einem Fokusverlust gilt deshalb jede Taste
+        // als losgelassen, bis sie neu gedrückt wird.
+        if !ctx.input(|i| i.focused) {
+            ctx.input_mut(|i| i.keys_down.clear());
+        }
         // Offener Systemdialog ist modal: die Anwendung nimmt keine Eingaben an,
         // bis der Nutzer im Dialog wählt oder abbricht. Ohne das ließen sich
         // Zeichnung und Werkzeuge hinter dem Dialog weiterbedienen.
@@ -9461,6 +9472,30 @@ mod tests_tastenbelegung {
         let _ = ctx.run(raw, |ctx| app.ui(ctx));
     }
 
+    /// Ein Bild mit ausdrücklicher Fokuslage und laufender Zeit (T0140):
+    /// `focused = false` steht für den Systemdialog, während dem das
+    /// Betriebssystem kein Tastenloslassen mehr nachliefert. Die laufende Zeit
+    /// braucht der Dauerlauf — er rechnet mit der Bilddauer.
+    fn frame_zeit_fokus(
+        app: &mut App,
+        t: &mut f64,
+        focused: bool,
+        events: Vec<egui::Event>,
+        modifiers: egui::Modifiers,
+    ) {
+        let ctx = app.ctx.clone();
+        *t += 1.0 / 60.0;
+        let raw = egui::RawInput {
+            screen_rect: Some(Rect::from_min_size(Pos2::ZERO, Vec2::new(1500.0, 950.0))),
+            time: Some(*t),
+            modifiers,
+            focused,
+            events,
+            ..Default::default()
+        };
+        let _ = ctx.run(raw, |ctx| app.ui(ctx));
+    }
+
     fn druck(key: egui::Key) -> egui::Event {
         egui::Event::Key {
             key,
@@ -9625,6 +9660,97 @@ mod tests_tastenbelegung {
             frisch.current_view().center.y < start.y - 1.0,
             "S allein muss nach unten schieben: {start:?} → {:?}",
             frisch.current_view().center
+        );
+    }
+
+    /// T0140: Der Dauerlauf liest `keys_down`. Nimmt ein anderes Fenster den
+    /// Fokus (Systemdialog bei „Strg+S"/„Strg+O"), liefert das Betriebssystem
+    /// das Loslassen nicht mehr nach — die Taste bliebe „gedrückt" und die
+    /// Ansicht liefe endlos weiter. Nach einem Fokusverlust gilt keine Taste
+    /// mehr als gedrückt, bis sie neu kommt.
+    #[test]
+    fn fokusverlust_beendet_den_dauerlauf() {
+        let mut app = app_mit_zeichnung();
+        app.prefs.pan_speed = 1.0;
+        app.prefs.pan_mode = jjcad_core::persist::PanMode::Kontinuierlich;
+        let mut t = 0.0;
+        frame_zeit_fokus(&mut app, &mut t, true, vec![], egui::Modifiers::NONE);
+        let start = app.current_view().center;
+        frame_zeit_fokus(
+            &mut app,
+            &mut t,
+            true,
+            vec![druck(egui::Key::S)],
+            egui::Modifiers::NONE,
+        );
+        assert!(
+            app.current_view().center.y < start.y - 1.0,
+            "S muss die Ansicht in Bewegung halten: {start:?} → {:?}",
+            app.current_view().center
+        );
+        // Der Dialog nimmt den Fokus: „S" wird draußen losgelassen, das
+        // Loslassen erreicht die Anwendung nie.
+        frame_zeit_fokus(&mut app, &mut t, false, vec![], egui::Modifiers::NONE);
+        assert!(
+            app.ctx.input(|i| i.keys_down.is_empty()),
+            "nach dem Fokusverlust darf keine Taste als gedrückt gelten"
+        );
+        let beim_verlust = app.current_view().center;
+        for _ in 0..20 {
+            frame_zeit_fokus(&mut app, &mut t, true, vec![], egui::Modifiers::NONE);
+        }
+        assert_eq!(
+            app.current_view().center,
+            beim_verlust,
+            "die Taste darf nach dem Fokusverlust nicht weiter schieben"
+        );
+    }
+
+    /// T0140, gemeldeter Fall: „Strg+S" speichert und öffnet den Dateidialog.
+    /// Der nimmt den Fokus, das Loslassen von „S" bleibt aus — nach dem
+    /// Schließen des Dialogs schob die Ansicht endlos weiter.
+    #[test]
+    fn nach_strg_s_schwenkt_die_ansicht_nicht_weiter() {
+        let mut app = app_mit_zeichnung();
+        app.prefs.pan_speed = 1.0;
+        app.prefs.pan_mode = jjcad_core::persist::PanMode::Kontinuierlich;
+        // Eingebauter Dateidialog: im Test geht kein Fenster der Sitzung auf.
+        app.prefs.file_dialog = "intern".into();
+        let mut t = 0.0;
+        frame_zeit_fokus(&mut app, &mut t, true, vec![], egui::Modifiers::NONE);
+        let vorher = app.current_view().center;
+        let strg_s = egui::Event::Key {
+            key: egui::Key::S,
+            physical_key: None,
+            pressed: true,
+            repeat: false,
+            modifiers: egui::Modifiers::COMMAND,
+        };
+        frame_zeit_fokus(
+            &mut app,
+            &mut t,
+            true,
+            vec![strg_s],
+            egui::Modifiers::COMMAND,
+        );
+        assert_eq!(
+            app.current_view().center, vorher,
+            "Strg+S speichert, es schwenkt nicht"
+        );
+        // Der Dialog nimmt den Fokus (Systemdialog); „S" und „Strg" werden
+        // draußen losgelassen und erreichen die Anwendung nie.
+        frame_zeit_fokus(&mut app, &mut t, false, vec![], egui::Modifiers::NONE);
+        // Dialog zu, Fenster wieder vorn.
+        app.ui.file_dialog = None;
+        frame_zeit_fokus(&mut app, &mut t, true, vec![], egui::Modifiers::NONE);
+        let nach_dialog = app.current_view().center;
+        for _ in 0..20 {
+            frame_zeit_fokus(&mut app, &mut t, true, vec![], egui::Modifiers::NONE);
+        }
+        assert_eq!(
+            app.current_view().center,
+            nach_dialog,
+            "nach dem Speichern darf die Ansicht nicht von selbst weiterlaufen"
         );
     }
 
