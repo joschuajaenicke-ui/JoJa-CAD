@@ -5256,10 +5256,11 @@ pub fn explode_entity(doc: &mut Document, id: Id) -> Result<Vec<Id>, String> {
                     None
                 }
             }
-            Shape::Dot { p, r } => Some(EntityKind::Point { p: *p }).map(|k| {
-                let _ = r;
-                k
-            }),
+            // Ein Punkt des Musters (Sand, Putz) ist ein **gefüllter Kreis** vom
+            // Radius `r` — ein Punktobjekt zeichnete dagegen einen Anzeigepunkt
+            // (Radius aus der Linienstärke × Beschriftungsmaßstab, mindestens
+            // 32 mm bei 1:100) und die Sandkörner wären neunmal zu groß (T0138).
+            Shape::Dot { p, r } => Some(EntityKind::Circle { c: *p, r: *r }),
             // Bilder werden vor der Displayliste abgewiesen (siehe oben).
             Shape::Image { .. } => None,
             Shape::Text(t) => Some(EntityKind::Text {
@@ -5288,6 +5289,12 @@ pub fn explode_entity(doc: &mut Document, id: Id) -> Result<Vec<Id>, String> {
             ne.style.line_type = Some(prim.style.line_type);
             ne.style.line_weight = Some(prim.style.width.max(0.05));
             ne.style.fill = prim.style.fill;
+            // Ein Musterpunkt wird zum **gefüllten Kreis in der Musterfarbe**:
+            // ohne ausdrückliche Füllfarbe bliebe er ein leerer Ring und die
+            // Schraffur verblasste beim Zerlegen (T0138).
+            if matches!(prim.shape, Shape::Dot { .. }) {
+                ne.style.fill = Some(prim.style.color);
+            }
             new_ents.push(ne);
             created.push(nid);
         }

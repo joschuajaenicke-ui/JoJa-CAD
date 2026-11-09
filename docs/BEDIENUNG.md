@@ -61,6 +61,10 @@ einsehbar und dort frei änderbar (Ribbon ▸ Ansicht ▸ „Tasten").
     Spiegeln, Zerlegen, Löschen und Eigenschaften für das angeklickte Element. Auf freier
     Fläche erscheint das Flächenmenü (Einfügen, Alles auswählen, Auswahl aufheben, Ansicht
     einpassen).
+    **Zerlegen** löst ein Objekt in seine Einzelteile auf. Ohne Auswahl ist es ein
+    Klick-Werkzeug, und bei einer Schraffur genügt der Klick **irgendwo in die Fläche** —
+    nicht nur auf den Rand: die Musterlinien werden zu einzelnen Linien, die Musterpunkte
+    (Sand, Putz) zu kleinen gefüllten Kreisen in der Musterfarbe. Das Bild bleibt dabei gleich.
 11. **Ansichtsfenster**: auf einem Blatt über `Blatt ▸ Ansicht` als Rechteck aufziehen. Es ist
     ein normales Blattobjekt: per Klick oder Auswahlfenster wählen, an den vier Eckgriffen
     aufziehen, mit der Maus verschieben (Einstellungen ▸ Bedienung ▸ „Maus verschiebt") oder
