@@ -7105,8 +7105,9 @@ fn rail(ui: &mut egui::Ui, icon: &str, tooltip: &str, chevron: &str) -> bool {
     ///
     /// Dann ist der nächste Klick auf einen Slot eine Verknüpfung und kein
     /// Start: der Slot bekommt den Block, genau wie ein laufendes Werkzeug
-    /// einen leeren Slot belegt. Die Zwischenablage zählt nicht — sie hat
-    /// keinen Block, den ein Slot aufnehmen könnte.
+    /// einen leeren Slot belegt. Eine laufende **Zwischenablage**-Vorschau
+    /// liefert hier noch keinen Block; für sie entsteht er erst beim Klick
+    /// (`App::block_fuer_verknuepfung`, T0142).
     pub fn block_einfuegen(&self) -> Option<&str> {
         self.ghost.as_ref().and_then(|g| g.block.as_deref())
     }
