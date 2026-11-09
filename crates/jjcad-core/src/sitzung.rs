@@ -92,9 +92,9 @@ pub struct Reiter {
 ///
 /// Die **Größe** meldet jede Plattform (`RawInput::screen_rect`, aus
 /// `window.inner_size()`). Die **Lage** (`x`/`y`) meldet nur ein Fenstersystem
-/// mit globalen Fensterkoordinaten; unter Wayland bleiben beide leer, weil
-/// xdg-shell weder Abfrage noch Vorgabe einer Fensterposition kennt (winit
-/// liefert dort `NotSupported`, `with_position` wird still verworfen).
+/// mit globalen Fensterkoordinaten; unter Wayland fehlt sie (`mit_lage: false`),
+/// weil xdg-shell weder Abfrage noch Vorgabe einer Fensterposition kennt
+/// (winit liefert dort `NotSupported`, `with_position` wird still verworfen).
 #[derive(Clone, Copy, Debug, Serialize, Deserialize, PartialEq)]
 pub struct Fensterlage {
     pub breite: f32,
