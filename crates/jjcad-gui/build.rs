@@ -61,6 +61,9 @@ fn main() {
         );
         let manifest = std::env::var("CARGO_MANIFEST_DIR").unwrap_or_else(|_| ".".to_string());
         let icon = std::path::Path::new(&manifest).join("assets").join("jjc-icon.ico");
+        // Im .rc sind Backslashes Fluchtzeichen (`\a` = Glocke) — der Pfad muss
+        // verdoppelt werden, sonst sucht rc.exe in `\x07ssets\...`.
+        let icon_pfad = icon.display().to_string().replace('\\', "\\\\");
         let rc = format!(
             "1 ICON \"{}\"\n\n\
              1 VERSIONINFO\n\
@@ -88,7 +91,7 @@ fn main() {
              \x20   VALUE \"Translation\", 0x407, 1200\n\
              \x20 END\n\
              END\n",
-            icon.display()
+            icon_pfad
         );
         let out = std::path::PathBuf::from(std::env::var("OUT_DIR").unwrap_or_default());
         let pfad = out.join("jjcad.rc");
