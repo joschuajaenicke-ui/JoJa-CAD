@@ -1,6 +1,7 @@
 # Dämmungs-Schlaufenkurve
 
-> **Im Programm:** die Linienart **Dämmung** (`LineType::Insulation`). Die
+> **Im Programm:** die Linienart **Dämmung** (`LineType::Insulation`) und seit
+> T0136 das Schraffurmuster **Dämmung** (`FillPattern::InsulationHatch`). Die
 > Rechnung steht in `crates/jjcad-core/src/daemmung.rs`, gezeichnet wird das
 > Band in der Displayliste (`render::DisplayList::push`) — Bildschirm, PDF,
 > PNG und DXF zeigen dieselbe Geometrie. Die beiden Parameter heißen in der
@@ -71,8 +72,39 @@ Sie muss mit allen Stellen verwendet werden. Bei einem gröber gerundeten Wert (
 - Gezeichnet wird ein Polygonzug; die Stützpunkte folgen der Kurve (rund 25 je
   Periode, mindestens 12, höchstens 6000 Punkte je Linie). Weil das Band die
   Anzeigegeometrie ist, folgen Trefferfläche, Fang und DXF-Export mit.
-- Schraffuren bleiben außen vor: eine Wand in „Dämmung“ zeichnet ihre Kanten als
-  Band, ihr Muster aber als dünne durchgezogene Striche.
+- Eine Wand in „Dämmung“ zeichnet ihre **Kanten** als Band; ihr Muster (die
+  Wandschraffur) ist davon getrennt und wird — wie jedes Muster — als dünne
+  Striche gezeichnet.
+
+## Schraffur Dämmung (T0136)
+
+Die Fläche, die eine Dämmung kennzeichnet, ist **eine Schraffur aus parallelen
+Schlaufenbändern**: dieselbe Kurve, mehrfach quer zum Musterwinkel versetzt.
+
+Der Unterschied zur Linienart ist die **Schlaufengröße**. Die Linienart passt
+die Periodenlänge an die Länge der Linie an (`n` aus `L`, siehe oben) — die
+Form wird dafür um einige Prozent gestaucht oder gestreckt, damit eine runde
+Anzahl Schlaufen aufgeht. In einer Schraffur liegen viele Bänder nebeneinander,
+und jedes endet an einer anderen Kante: mit der gestauchten Kurve stünde in
+jeder Reihe ein anderes Schlaufenmaß, die Schlaufen stünden nicht übereinander.
+
+Deshalb rechnet das Muster mit **fester** Periode:
+
+| Größe | Wert | Bedeutung |
+|-------|------|-----------|
+| `H` | Musterabstand (`scale`/`spacing`, Vorgabe 100 mm) | Bandhöhe = Dämmstärke |
+| `r` | `daemmung::FORM` = 0,5 | Schlaufenform, fest |
+| `p` | `r · H` | Periodenlänge, **unabhängig von der Länge** |
+
+Die Phase hängt am **Weltnullpunkt** (`x = k · p`), wie bei allen Mustern am
+gemeinsamen Raster (`render::Raster`): zwei Flächen mit verschiedenem Rand
+zeigen an der gemeinsamen Kante dasselbe Schlaufenbild. Die Bänder liegen um
+`H` versetzt, ein Band schwingt zwischen ±`H`/2 — benachbarte Schlaufen
+berühren sich (dafür ist die Konstante `K` gewählt).
+
+Beschnitten wird an der Kontur, **nicht gestaucht**: an einer schrägen Kante
+hört das Band auf. Die Rechnung steht in `daemmung::band_fest`/`periode`,
+gezeichnet wird in `render::muster_daemmung`.
 
 ## Dämmung an Wänden
 

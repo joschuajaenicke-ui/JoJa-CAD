@@ -117,6 +117,68 @@ pub fn band(pfad: &[Vec2], geschlossen: bool, h: f64, r: f64) -> Vec<Vec2> {
     out
 }
 
+/// Periodenlänge der Schlaufe bei **fester** Schlaufengröße (mm).
+///
+/// Die Linienart rechnet die Periode aus der Linienlänge
+/// ([`perioden`]): jede Linie bekommt eine runde Anzahl Schlaufen, die Form
+/// wird dafür leicht gestaucht oder gestreckt. In einer Schraffur liegen
+/// viele Bänder nebeneinander, und jedes würde für sich gerechnet — die
+/// Schlaufen stünden dann an jeder Kante anders (T0136). Für das Muster gilt
+/// deshalb `p = r · H`, unabhängig von der Länge des beschnittenen Stücks.
+pub fn periode(h: f64, r: f64) -> f64 {
+    let h = if h.is_finite() && h > 0.0 { h } else { BREITE_MM };
+    let r = if r.is_finite() && r > 0.0 { r } else { FORM };
+    (r * h).max(1.0)
+}
+
+/// Schlaufenband mit **fester** Periodenlänge — die Schraffur (T0136).
+///
+/// Wie [`band`], aber die Phase hängt am **Weltnullpunkt** statt an der Länge
+/// des Wegs: die Kurve beginnt bei `t = 0` mit `x = 0` und hat ihre Perioden
+/// bei `x = k · p` ([`periode`]). Damit zeigen alle Bänder einer Fläche
+/// dieselben Schlaufenlagen, und zwei Flächen mit verschiedenem Rand passen
+/// an der gemeinsamen Kante zusammen — dieselbe Regel wie beim Musterraster.
+///
+/// Zurück kommt ein Punktzug in **Rasterkoordinaten der Kurve**: `x` ist der
+/// Weg längs (`u`, absolut, nicht relativ zu `u0`), `y` der Versatz quer dazu
+/// gegen die Bandmitte (±H/2). Der Aufrufer setzt die Bandmitte auf die
+/// gewünschte Reihe. Gezeichnet wird ein Polygonzug; beschnitten wird er an
+/// der Kontur, nicht gestaucht.
+///
+/// `u0`…`u1` begrenzen den Bereich, den der Punktzug sicher abdeckt. Gesampelt
+/// wird immer über **ganze** Perioden — innerhalb einer Periode läuft `x`
+/// zurück (die Schlaufe), ein Abbruch mitten darin ließe ein Stück aus.
+pub fn band_fest(h: f64, r: f64, u0: f64, u1: f64) -> Vec<Vec2> {
+    let h = if h.is_finite() && h > 0.0 { h } else { BREITE_MM };
+    if !u0.is_finite() || !u1.is_finite() {
+        return Vec::new();
+    }
+    let (u0, u1) = if u0 <= u1 { (u0, u1) } else { (u1, u0) };
+    let p = periode(h, r);
+    let a = p / std::f64::consts::TAU;
+
+    // Eine Periode vor und zwei dahinter: so liegt der Bereich sicher im
+    // erzeugten Zug, und der Beschnitt an der Kontur bleibt die einzige Kürzung.
+    let k0 = (u0 / p).floor() - 1.0;
+    let k1 = (u1 / p).floor() + 2.0;
+    let t0 = k0 * std::f64::consts::TAU;
+    let t1 = k1 * std::f64::consts::TAU;
+
+    // Stützpunkte: 32 je Schlaufe (die Schlaufe läuft an der Berührstelle
+    // schnell — weniger Punkte machen sie dort eckig), gedeckelt für sehr
+    // feine Muster.
+    let per = 32.0;
+    let n = (((k1 - k0) * per).ceil() as usize).clamp(24, 4000);
+
+    let mut out = Vec::with_capacity(n + 1);
+    for i in 0..=n {
+        let t = t0 + (t1 - t0) * (i as f64 / n as f64);
+        let x = a * (t + K * (2.0 * t).sin());
+        out.push(Vec2::new(x, 0.5 * h * t.cos()));
+    }
+    out
+}
+
 /// Punkt und Richtung bei der Bogenlänge `x` (lineare Interpolation).
 fn punkt_bei(pts: &[Vec2], s: &[f64], x: f64) -> (Vec2, Vec2) {
     let i = match s.binary_search_by(|v| v.partial_cmp(&x).unwrap_or(std::cmp::Ordering::Equal)) {
@@ -245,6 +307,75 @@ mod tests {
             last.dist(Vec2::new(40.0, 0.0)) < 1e-9,
             "Ring endet nicht bei (40, 0): {last:?}"
         );
+    }
+
+    /// Die Schraffur hat ein **festes** Schlaufenmaß: die Scheitel liegen
+    /// genau auf `k · p`, unabhängig davon, wie lang der abgefragte Bereich
+    /// ist (T0136). Die Linienart bekäme für 830 mm eine Periode von 50,3 mm.
+    #[test]
+    fn schraffur_haelt_das_schlaufenmass() {
+        let (h, r) = (100.0, FORM);
+        let p = periode(h, r);
+        assert!((p - 50.0).abs() < 1e-12, "Periode {p}");
+        for (u0, u1) in [(-800.0, 800.0), (-800.0, 5000.0), (0.0, 830.0)] {
+            let b = band_fest(h, r, u0, u1);
+            let mut scheitel: Vec<f64> = b
+                .iter()
+                .filter(|q| (q.y - 0.5 * h).abs() < 1e-9)
+                .map(|q| q.x)
+                .collect();
+            scheitel.sort_by(|a, b| a.partial_cmp(b).unwrap());
+            scheitel.dedup_by(|a, b| (*a - *b).abs() < 1e-9);
+            assert!(scheitel.len() >= 3, "Bereich {u0}…{u1}: {}", scheitel.len());
+            for w in scheitel.windows(2) {
+                assert!(
+                    ((w[1] - w[0]) - p).abs() < 1e-9,
+                    "Schlaufenmaß {} statt {p} (Bereich {u0}…{u1})",
+                    w[1] - w[0]
+                );
+            }
+            for x in &scheitel {
+                assert!(
+                    (x / p - (x / p).round()).abs() < 1e-9,
+                    "Scheitel bei {x} liegt nicht auf k·p"
+                );
+            }
+        }
+    }
+
+    /// Die Phase hängt am Weltnullpunkt, nicht am abgefragten Bereich: ein
+    /// längerer Bereich verlängert den Punktzug nur, er verschiebt ihn nicht.
+    #[test]
+    fn schraffur_phase_haengt_am_nullpunkt() {
+        let kurz = band_fest(100.0, FORM, -500.0, 900.0);
+        let lang = band_fest(100.0, FORM, -500.0, 4000.0);
+        assert!(lang.len() > kurz.len());
+        for (a, b) in kurz.iter().zip(lang.iter()) {
+            assert!(
+                a.dist(*b) < 1e-9,
+                "gleicher Anfang, andere Punkte: {a:?} gegen {b:?}"
+            );
+        }
+    }
+
+    /// Das Band bleibt in seiner Höhe und springt nicht zwischen zwei
+    /// Stützpunkten (ein Sprung wäre eine Lücke im Muster).
+    #[test]
+    fn schraffur_band_bleibt_zusammenhaengend() {
+        let (h, r) = (100.0, 0.5);
+        let b = band_fest(h, r, -500.0, 2000.0);
+        let p = periode(h, r);
+        for q in &b {
+            assert!(q.y.abs() <= 0.5 * h + 1e-9, "Punkt außerhalb der Bandhöhe");
+        }
+        for w in b.windows(2) {
+            assert!(
+                w[0].dist(w[1]) < p / 4.0,
+                "Sprung von {:?} nach {:?}",
+                w[0],
+                w[1]
+            );
+        }
     }
 
     /// Degenerierte Eingaben bleiben stehen statt zu panicken.

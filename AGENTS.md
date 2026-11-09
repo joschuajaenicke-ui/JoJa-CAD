@@ -355,9 +355,16 @@ Mit dem Nutzer abgestimmt — nicht „verbessern“:
   `Palette::hinweis_flaeche`).
 
 - **Schraffuren (T0095)**: Die Muster sind die Kennzeichnungen der Schnittflächen nach
-  DIN 1356-1:2026-09, Tabelle 5 (16 Muster — Nr. 14 und 15 sind Linienarten,
-  T0132; `style::FillPattern`, `ALL` in der Reihenfolge der Norm); die Muster
-  heißen nach ihrem Baustoff (Mauerwerk, Kunststoffe, Sand). Gezeichnet werden
+  DIN 1356-1:2026-09, Tabelle 5 (17 Muster — Nr. 15 ist eine Linienart, T0132;
+  `style::FillPattern`, `ALL` in der Reihenfolge der Norm); die Muster
+  heißen nach ihrem Baustoff (Mauerwerk, Kunststoffe, Sand).
+  **Dämmung (Nr. 14, T0136)** ist beides: Linienart `LineType::Insulation` und
+  Muster `FillPattern::InsulationHatch` — parallele Schlaufenbänder aus
+  derselben Kurve (`daemmung::band_fest`), aber mit **fester** Schlaufengröße
+  (`p = r · H`) und Phase am Weltnullpunkt. Der Musterabstand ist die
+  Dämmstärke H. Nicht die gestauchte Linienart-Kurve nehmen: sie rechnet die
+  Periode je Bande vom Beschnitt und die Schlaufen stünden von Reihe zu Reihe
+  verschieden (`tests/schraffur_daemmung.rs` prüft das Raster). Gezeichnet werden
   **alle** Muster an einer Stelle
   (`render::push_muster`) — Füllfläche, Volumen und Wandschraffur teilen sie, keine
   zweite Musterzeichnung. Schlüssel über `FillPattern::key`/`from_key`, die alten

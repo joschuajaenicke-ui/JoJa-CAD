@@ -296,12 +296,12 @@ impl Default for DimStyle {
 /// Muster tragen seitdem den Namen der Zeile, die sie abbilden: `Lines` ist
 /// Mauerwerk, `Cross` Kunststoffe, `Dots` Sand.
 ///
-/// **Dämmung (Nr. 14) und Abdichtung (Nr. 15) fehlen bewusst** (T0132): beides
-/// ist keine Schraffur, sondern eine Linienart — die Dämmung zeichnet als
-/// `LineType::Insulation` ein Schlaufenband, eine Abdichtung ist eine Linie mit
-/// dieser Kennzeichnung. Alte Zeichnungen mit den früheren Mustern laden über
-/// den Serde-Alias an `Lines` als Mauerwerk weiter, statt beim Öffnen zu
-/// scheitern.
+/// **Abdichtung (Nr. 15)** ist keine Schraffur, sondern eine Linienart (T0132).
+/// **Dämmung (Nr. 14)** ist seit T0136 beides: als Linie das Schlaufenband
+/// `LineType::Insulation`, als Fläche das Muster `InsulationHatch`, das aus
+/// derselben Kurve parallele Schlaufenbänder zeichnet. Alte Zeichnungen mit den
+/// früheren Dämm-Mustern laden über den Serde-Alias an `Lines` als Mauerwerk
+/// weiter, statt beim Öffnen zu scheitern.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, Default)]
 pub enum FillPattern {
     /// Fläche in der Füllfarbe
@@ -350,6 +350,20 @@ pub enum FillPattern {
     Metal,
     /// Nr. 13 „Putz“: gröberes, unregelmäßiges Punktraster.
     Plaster,
+    /// Nr. 14 „Dämmung“ (T0136): parallele Schlaufenbänder — dieselbe Kurve
+    /// wie die Linienart [`LineType::Insulation`], aber mit **fester**
+    /// Schlaufengröße. Der Musterabstand ist die Bandhöhe (Dämmstärke H).
+    ///
+    /// Die Linienart passt die Periodenlänge an die Linienlänge an (eine runde
+    /// Anzahl Schlaufen); nebeneinander gelegt stünde dann an jeder Kante ein
+    /// anderes Schlaufenmaß. Das Muster rechnet die Periode deshalb fest aus
+    /// H und der Schlaufenform (`daemmung::periode`) und beschneidet das Band
+    /// an der Kontur.
+    ///
+    /// Der Serde-Name `Insulation` bleibt beim alten Alias an [`FillPattern::Lines`]
+    /// (Dämmstoffe von vor 2026): ein neues Muster braucht einen neuen Namen,
+    /// sonst wären zwei Bedeutungen an einem Wort.
+    InsulationHatch,
     /// Nr. 16 „Dichtstoffe“: enges Kreuzraster.
     Sealant,
     /// Nr. 18 „Glas“: Gruppen aus drei kurzen Strichen.
@@ -375,6 +389,7 @@ impl FillPattern {
         FillPattern::WoodAlong,
         FillPattern::Metal,
         FillPattern::Plaster,
+        FillPattern::InsulationHatch,
         FillPattern::Sealant,
         FillPattern::Cross,
         FillPattern::Glass,
@@ -399,6 +414,7 @@ impl FillPattern {
             FillPattern::WoodAlong => "Vollholz längs",
             FillPattern::Metal => "Metall",
             FillPattern::Plaster => "Putz",
+            FillPattern::InsulationHatch => "Dämmung",
             FillPattern::Sealant => "Dichtstoffe",
             FillPattern::Glass => "Glas",
         }
@@ -422,6 +438,7 @@ impl FillPattern {
             FillPattern::WoodAlong => crate::i18n::tr("ui.fillpattern.wood_along"),
             FillPattern::Metal => crate::i18n::tr("ui.fillpattern.metal"),
             FillPattern::Plaster => crate::i18n::tr("ui.fillpattern.plaster"),
+            FillPattern::InsulationHatch => crate::i18n::tr("ui.fillpattern.insulation"),
             FillPattern::Sealant => crate::i18n::tr("ui.fillpattern.sealant"),
             FillPattern::Glass => crate::i18n::tr("ui.fillpattern.glass"),
         }
@@ -447,6 +464,7 @@ impl FillPattern {
             FillPattern::WoodAlong => "vollholz_laengs",
             FillPattern::Metal => "metall",
             FillPattern::Plaster => "putz",
+            FillPattern::InsulationHatch => "daemmung",
             FillPattern::Sealant => "dichtstoffe",
             FillPattern::Glass => "glas",
         }
@@ -485,6 +503,9 @@ impl FillPattern {
             }
             "metall" | "metal" => FillPattern::Metal,
             "putz" | "plaster" => FillPattern::Plaster,
+            // Dämmung als Flächenmuster (T0136) — die Linienart heißt im
+            // Dateiformat `insulation` und bleibt davon getrennt.
+            "daemmung" | "dämmung" | "insulation_hatch" => FillPattern::InsulationHatch,
             "dichtstoffe" | "sealant" => FillPattern::Sealant,
             "glas" | "glass" => FillPattern::Glass,
             _ => return None,

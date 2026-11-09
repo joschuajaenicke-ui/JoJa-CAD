@@ -46,7 +46,7 @@ Steht rechts „nicht", dann ist das Wort im Projekt verpönt (auch in der Oberf
 | **Füllfläche** | Objekt, das eine geschlossene Fläche ausfüllt — Farbe oder Muster; **dasselbe Objekt** wie Schraffur | Fill, Fläche, Schraffur-Objekt |
 | **Zeichenrang** | Klasse eines Objekts in der Zeichenreihenfolge: Fläche 0, Volumen 1, Bauteil 2, Linie 3, Beschriftung 4; neue Elemente ordnen sich danach ein | Z-Order, Layerreihenfolge, Ebene |
 | **Schraffur** | Füllfläche mit Muster; die Muster sind die Kennzeichnungen der Schnittflächen nach DIN 1356-1:2026-09, Tabelle 5 (Mauerwerk, Beton, Kies, Glas …) — gleiches Objekt, nur anderes Muster | Hatch, Musterfläche |
-| **Dämmung** | Linienart **Dämmung** (Schlaufenband, siehe *Dämmungslinie*) — **kein Schraffurmuster**; die Muster „Dämmstoffe“/„Dämmstoffe Schlaufen“ sind entfallen (T0132) | Isolierung, Dämm-Muster |
+| **Dämmung** | Kennzeichnung der Schnittfläche Nr. 14 der Tabelle 5 in zwei Formen: als **Linienart** das Schlaufenband (siehe *Dämmungslinie*) und als **Schraffur** parallele Schlaufenbänder mit fester Schlaufengröße (`FillPattern::InsulationHatch`, T0136); die früheren Muster „Dämmstoffe“/„Dämmstoffe Schlaufen“ sind entfallen (T0132) | Isolierung, Dämm-Muster |
 | **Dämmungslinie** | Linienart **Dämmung**: ein Schlaufenband entlang einer Linie, mit den Parametern **Breite** (H, Dämmstärke) und **Schlaufenform** (r, Periodenlänge/Höhe); die Länge der Linie bleibt exakt | Schlaufenlinie, Dämmband |
 | **Insel** / **Loch** | Ausgesparte Fläche innerhalb einer Füllfläche (z. B. Stütze im Raum) | Lochung, Aussparung |
 | **Umgrenzung** | Die Punktfolge, die eine Füllfläche definiert | Umriss, Kontur, Polygon (nur wenn wirklich gemeint) |

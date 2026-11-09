@@ -2,6 +2,7 @@
   "format": "jjcad",
   "version": 2,
   "name": "Unbenannt",
+  "id": "cef54050-e07e-4b4b-9070-24f8c19d6731",
   "project": {
     "project": "",
     "client": "",
@@ -3549,7 +3550,7 @@
           }
         ],
         "holes": [],
-        "pattern": "Sealant",
+        "pattern": "InsulationHatch",
         "pattern_angle": 0.7853981633974483,
         "pattern_scale": 100.0,
         "border": true
@@ -3586,7 +3587,7 @@
           }
         ],
         "holes": [],
-        "pattern": "Cross",
+        "pattern": "Sealant",
         "pattern_angle": 0.7853981633974483,
         "pattern_scale": 100.0,
         "border": true
@@ -3619,6 +3620,43 @@
           },
           {
             "x": 2450.0,
+            "y": -6250.0
+          }
+        ],
+        "holes": [],
+        "pattern": "Cross",
+        "pattern_angle": 0.7853981633974483,
+        "pattern_scale": 100.0,
+        "border": true
+      },
+      "layer": 1,
+      "style": {
+        "color": null,
+        "line_type": null,
+        "line_weight": null,
+        "fill": null
+      },
+      "by_block": false
+    },
+    {
+      "id": 83,
+      "kind": {
+        "type": "fill",
+        "boundary": [
+          {
+            "x": 4650.0,
+            "y": -5500.0
+          },
+          {
+            "x": 6150.0,
+            "y": -5500.0
+          },
+          {
+            "x": 6150.0,
+            "y": -6250.0
+          },
+          {
+            "x": 4650.0,
             "y": -6250.0
           }
         ],
@@ -4079,7 +4117,7 @@
           "x": 4650.0,
           "y": -4280.0
         },
-        "text": "Dichtstoffe",
+        "text": "Dämmung",
         "height": 150.0,
         "angle": 0.0,
         "align": "Left",
@@ -4110,7 +4148,7 @@
           "x": 250.0,
           "y": -5380.0
         },
-        "text": "Kunststoffe",
+        "text": "Dichtstoffe",
         "height": 150.0,
         "angle": 0.0,
         "align": "Left",
@@ -4139,6 +4177,37 @@
         "type": "text",
         "p": {
           "x": 2450.0,
+          "y": -5380.0
+        },
+        "text": "Kunststoffe",
+        "height": 150.0,
+        "angle": 0.0,
+        "align": "Left",
+        "valign": "Middle",
+        "bold": false,
+        "italic": false,
+        "underline": false,
+        "superscript": false,
+        "font": "sans",
+        "line_spacing": 1.0,
+        "frame": false,
+        "frame_round": false
+      },
+      "layer": 1,
+      "style": {
+        "color": null,
+        "line_type": null,
+        "line_weight": null,
+        "fill": null
+      },
+      "by_block": false
+    },
+    {
+      "id": 82,
+      "kind": {
+        "type": "text",
+        "p": {
+          "x": 4650.0,
           "y": -5380.0
         },
         "text": "Glas",
@@ -5159,5 +5228,5 @@
     "decimals": 2,
     "unit_divisor": 1000.0
   },
-  "next_id": 82
+  "next_id": 84
 }
