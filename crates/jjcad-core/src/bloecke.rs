@@ -17,7 +17,8 @@
 //! reißt die übrige Bibliothek nicht mit. Zwei Blöcke gleichen Namens bekommen
 //! zwei Dateien (`…-2.jjblk`), keiner überschreibt den anderen.
 
-use crate::model::{BlockDef, BlockSource};
+use crate::geom::{Affine, Vec2};
+use crate::model::{BlockDef, BlockSource, Entity};
 use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
 
@@ -119,6 +120,65 @@ pub fn lies(pfad: &Path) -> Result<Blockdatei, String> {
 /// Trägt die Datei die Kennung? Unlesbare Dateien gehören zu niemandem.
 fn gehoert_zu(pfad: &Path, id: &str) -> bool {
     lies(pfad).map(|d| d.block.id == id).unwrap_or(false)
+}
+
+/// Name für einen Block, der ohne Benennung entsteht (T0142).
+///
+/// „Unbenannt 1“, „Unbenannt 2“, … — der Name sagt sichtbar, dass der Block
+/// nicht benannt wurde, und die laufende Nummer macht ihn kollisionsfrei:
+/// zwei so entstandene Blöcke heißen nie gleich, ihre Dateien überschreiben
+/// einander also nicht. Verglichen wird ohne Rücksicht auf Groß-/Kleinschreibung,
+/// weil die Bibliothek Namen so gegenüberstellt.
+pub fn freier_name<'a, I>(vorhanden: I) -> String
+where
+    I: IntoIterator<Item = &'a str>,
+{
+    let namen: Vec<String> = vorhanden
+        .into_iter()
+        .map(|n| n.trim().to_lowercase())
+        .collect();
+    for n in 1..=99_999u32 {
+        let kandidat = format!("Unbenannt {n}");
+        if !namen.iter().any(|v| *v == kandidat.to_lowercase()) {
+            return kandidat;
+        }
+    }
+    // Praktisch unerreichbar — aber nie denselben Namen zweimal vergeben.
+    format!("Unbenannt {}", crate::util::short_id())
+}
+
+/// Blockdefinition aus vorhandenen Elementen (T0142).
+///
+/// Gilt für Blöcke, die **nicht** aus einer Auswahl im Dokument entstehen,
+/// sondern aus der Zwischenablage. Die Elemente werden um `base` verschoben,
+/// damit der Block um seinen Basispunkt liegt; die Kennungen werden von 1 an
+/// neu vergeben, weil die Vorlage-Ids aus einem anderen Dokument stammen können.
+pub fn definition_aus_elementen(
+    name: &str,
+    category: &str,
+    ents: &[Entity],
+    base: Vec2,
+) -> BlockDef {
+    let m = Affine::translate(-base);
+    let entities = ents
+        .iter()
+        .enumerate()
+        .map(|(i, e)| {
+            let mut ne = crate::transform::transform_entity(e, &m);
+            ne.id = i as u64 + 1;
+            ne
+        })
+        .collect();
+    BlockDef {
+        id: format!("usr:{}", crate::util::short_id()),
+        name: name.to_string(),
+        category: category.to_string(),
+        source: BlockSource::User,
+        description: String::new(),
+        entities,
+        icon: None,
+        base,
+    }
 }
 
 /// Erster freier Dateiname für `basis`. Eine vorhandene Datei mit **derselben**
@@ -239,6 +299,52 @@ pub fn lade_bloecke(dir: &Path) -> (Vec<BlockDef>, Vec<String>) {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::model::{Document, EntityKind};
+
+    /// T0142: Der automatische Name sagt, dass der Block nicht benannt wurde,
+    /// und er kollidiert nicht mit vorhandenen Namen (auch nicht in anderer
+    /// Groß-/Kleinschreibung).
+    #[test]
+    fn freier_name_zaehlt_und_meidet_kollisionen() {
+        assert_eq!(freier_name(std::iter::empty()), "Unbenannt 1");
+        assert_eq!(freier_name(["Unbenannt 1"]), "Unbenannt 2");
+        assert_eq!(
+            freier_name(["UNBENANNT 1", "Unbenannt 2", "Wohnzimmer"]),
+            "Unbenannt 3"
+        );
+        // Lücken werden wieder benutzt — der Name bleibt kurz.
+        assert_eq!(freier_name(["Unbenannt 2"]), "Unbenannt 1");
+    }
+
+    /// T0142: Die Definition aus der Zwischenablage liegt um ihren Basispunkt
+    /// und trägt eigene, fortlaufende Kennungen.
+    #[test]
+    fn definition_aus_elementen_verschiebt_auf_den_basispunkt() {
+        let mut doc = Document::default();
+        let mut e = Entity::new(
+            doc.new_id(),
+            doc.current_layer,
+            EntityKind::Line {
+                a: Vec2::new(1000.0, 2000.0),
+                b: Vec2::new(3000.0, 2000.0),
+            },
+        );
+        e.id = 77;
+        let b = definition_aus_elementen("Unbenannt 1", "Projekt", &[e], Vec2::new(1000.0, 2000.0));
+        assert_eq!(b.id.len() > 4, true, "Kennung usr:… gesetzt");
+        assert!(b.id.starts_with("usr:"));
+        assert_eq!(b.name, "Unbenannt 1");
+        assert_eq!(b.base, Vec2::new(1000.0, 2000.0));
+        assert_eq!(b.entities.len(), 1);
+        assert_eq!(b.entities[0].id, 1, "Kennung beginnt bei 1");
+        match &b.entities[0].kind {
+            EntityKind::Line { a, b } => {
+                assert_eq!(*a, Vec2::new(0.0, 0.0), "Anfang am Basispunkt");
+                assert_eq!(*b, Vec2::new(2000.0, 0.0));
+            }
+            other => panic!("Linie erwartet, war {:?}", other),
+        }
+    }
 
     #[test]
     fn slug_loest_umlaute_und_sonderzeichen_auf() {

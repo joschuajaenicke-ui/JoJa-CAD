@@ -43,6 +43,9 @@ einsehbar und dort frei änderbar (Ribbon ▸ Ansicht ▸ „Tasten").
 8. **Auswählen**: Klick wählt ein Objekt, `Umschalt`+Klick ergänzt. Ziehen von links nach rechts
    wählt vollständig umschlossene Objekte (Fenster), von rechts nach links auch geschnittene
    (Querfenster). `Strg+C` / `Strg+X` / `Strg+V` kopieren, schneiden aus und fügen 20 mm versetzt ein.
+   `Strg+Umschalt+V` legt die Zwischenablage als **Block** ab: der Block entsteht ohne
+   Namensdialog als „Unbenannt 1“, „Unbenannt 2“, … (kollisionsfrei) in der
+   Benutzerbibliothek und steht sofort als Einfüge-Vorschau am Zeiger.
 9. **Statusleiste**: `Raster`, `Ortho` und `Fang` schalten per Linksklick; **Rechtsklick** öffnet
    ein Menü mit den einzelnen Fangmodi (Endpunkt, Mittelpunkt, Zentrum, Schnittpunkt, Lot,
    nächster Punkt) bzw. Raster- und Polaroptionen. Ganz rechts schaltet `Stärke`
@@ -81,6 +84,9 @@ einsehbar und dort frei änderbar (Ribbon ▸ Ansicht ▸ „Tasten").
     „Spiegeln") spiegelt, `ESC` bricht ab. Beide Tasten folgen der
     Tastaturbelegung: wer „Drehen" umlegt, dreht auch die Vorschau mit der neuen
     Taste. Der Einfügepunkt ist exakt der Ankerpunkt der Vorschau.
+    Läuft das Einfügen aus der Zwischenablage und wird ein Hotbar-Slot (oder ein
+    Lagerplatz bzw. eine Taste der Tastaturbelegung) angeklickt, entsteht daraus
+    ebenfalls ein Block „Unbenannt N“ — der Slot trägt ihn danach.
     Wird während der Vorschau eine **andere Funktion** aktiviert (Ribbon, Hotbar,
     Inventar oder die Schnellauswahl), bricht das Einfügen ab — Vorschau und
     Werkzeug laufen nie gleichzeitig. Die Schnellauswahl wirkt dabei nur als
