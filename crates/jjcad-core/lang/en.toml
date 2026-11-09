@@ -720,6 +720,7 @@ wood_across = "Solid wood across"
 wood_along = "Solid wood along"
 metal = "Metal"
 plaster = "Plaster"
+insulation = "Insulation"
 sealant = "Sealants"
 glass = "Glass"
 

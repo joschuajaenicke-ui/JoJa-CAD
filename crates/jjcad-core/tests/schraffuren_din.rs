@@ -1,8 +1,9 @@
 //! Schraffuren nach DIN 1356-1:2026-09, Tabelle 5.
 //!
-//! Die Norm zeichnet die Schnittflächen von 18 Baustoffen aus; Nr. 14
-//! (Dämmung) und Nr. 15 (Abdichtungen) sind **Linienarten** und deshalb keine
-//! Muster (T0132). Der Test hält drei Dinge fest:
+//! Die Norm zeichnet die Schnittflächen von 18 Baustoffen aus. Nr. 14
+//! (Dämmung) ist **beides**: Linienart `LineType::Insulation` für die Kante und
+//! seit T0136 ein Muster aus parallelen Schlaufenbändern; Nr. 15 (Abdichtungen)
+//! bleibt eine reine Linienart (T0132). Der Test hält drei Dinge fest:
 //!
 //! * **Vollständigkeit** — jede Zeile der Tabelle hat ein Muster, und die
 //!   vorhandenen Muster tragen den Namen ihrer Zeile (T0095: „passe nur den
@@ -19,8 +20,9 @@ use jjcad_core::session::Session;
 use jjcad_core::style::FillPattern;
 use serde_json::json;
 
-/// Die Bezeichnungen der Tabelle 5, Zeile für Zeile — ohne Nr. 14 (Dämmung)
-/// und Nr. 15 (Abdichtungen): beides zeichnet eine Linienart, kein Muster.
+/// Die Bezeichnungen der Tabelle 5, Zeile für Zeile — ohne Nr. 15
+/// (Abdichtungen): die zeichnet eine Linienart, kein Muster. Nr. 14 heißt im
+/// Programm „Dämmung“ (so wie die Linienart, GLOSSAR) statt „Dämmstoffe“.
 const TABELLE_5: &[&str] = &[
     "Boden unverändert",     // 1
     "Boden verändert",       // 2
@@ -35,6 +37,7 @@ const TABELLE_5: &[&str] = &[
     "Vollholz längs",        // 11
     "Metall",                // 12
     "Putz",                  // 13
+    "Dämmung",               // 14
     "Dichtstoffe",           // 16
     "Kunststoffe",           // 17
     "Glas",                  // 18
@@ -66,7 +69,7 @@ fn alle_schraffuren_der_tabelle_5_sind_vorhanden() {
     assert_eq!(
         FillPattern::ALL.len(),
         TABELLE_5.len() + 1,
-        "Vollfläche + 16 Muster der Tabelle 5"
+        "Vollfläche + 17 Muster der Tabelle 5"
     );
 }
 
@@ -127,7 +130,7 @@ fn entfernte_muster_sind_verschwunden() {
             "Schlüssel „{key}“ liefert noch ein Muster"
         );
     }
-    assert_eq!(FillPattern::ALL.len(), 17, "Vollfläche + 16 Muster");
+    assert_eq!(FillPattern::ALL.len(), 18, "Vollfläche + 17 Muster");
 }
 
 #[test]
@@ -240,7 +243,7 @@ fn jede_schraffur_sieht_anders_aus() {
         }
         gesehen.push((p.label(), k));
     }
-    assert_eq!(gesehen.len(), TABELLE_5.len(), "16 Muster geprüft");
+    assert_eq!(gesehen.len(), TABELLE_5.len(), "17 Muster geprüft");
 }
 
 // ---------------------------------------------------------------------------

@@ -738,6 +738,7 @@ wood_across = "Vollholz quer"
 wood_along = "Vollholz längs"
 metal = "Metall"
 plaster = "Putz"
+insulation = "Dämmung"
 sealant = "Dichtstoffe"
 glass = "Glas"
 

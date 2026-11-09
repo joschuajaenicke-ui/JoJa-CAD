@@ -1987,6 +1987,8 @@ fn push_muster(
                 0.5,
             );
         }
+        // Nr. 14 Dämmung (T0136): parallele Schlaufenbänder fester Größe
+        FillPattern::InsulationHatch => muster_daemmung(dl, e, st, pts, holes, angle, s),
         // Nr. 16 Dichtstoffe: enges Kreuzraster
         FillPattern::Sealant => muster_linien(
             dl,
@@ -2107,6 +2109,60 @@ fn muster_linien(
                     None => muster_linie(dl, e, st, q0, q1),
                 }
             }
+        }
+    }
+}
+
+/// Nr. 14 Dämmung (T0136): parallele Schlaufenbänder.
+///
+/// Die Kurve stammt aus der Linienart ([`crate::daemmung::band_fest`]) — hier
+/// aber mit **fester** Schlaufengröße: die Periode ist `p = r · H` und hängt
+/// nicht an der Länge des beschnittenen Stücks, die Phase hängt am
+/// Weltnullpunkt (dasselbe Raster wie alle anderen Muster). So zeigen alle
+/// Bänder dieselben Schlaufenlagen; mit der gestauchten Linienart-Kurve
+/// stünde an jeder Kante ein anderes Schlaufenmaß.
+///
+/// Der Musterabstand ist die Bandhöhe H (Dämmstärke). Die Bänder liegen
+/// lückenlos nebeneinander: ein Band schwingt zwischen ±H/2 um seine Mitte,
+/// benachbarte Schlaufen berühren sich (die Konstante K ist dafür gewählt).
+/// Beschnitten wird an der Kontur, nicht gestaucht.
+fn muster_daemmung(
+    dl: &mut DisplayList,
+    e: &Entity,
+    st: &PrimStyle,
+    pts: &[Vec2],
+    holes: &[Vec<Vec2>],
+    angle: f64,
+    spacing: f64,
+) {
+    let h = spacing.max(2.0);
+    let r = Raster::new(angle);
+    let (umin, umax, vmin, vmax) = r.bereich(pts);
+    let i0 = (vmin / h).floor() as i64 - 1;
+    let i1 = (vmax / h).ceil() as i64 + 1;
+    // Schutz gegen ein unsinnig feines Muster (wie bei `muster_linien`).
+    if i1 - i0 > 2000 {
+        return;
+    }
+
+    let form = crate::daemmung::FORM;
+    let p = crate::daemmung::periode(h, form);
+    // Ein Punktzug für **alle** Reihen — die Bänder sind parallel, nur die
+    // Lage quer zum Muster ist verschieden.
+    let kurve = crate::daemmung::band_fest(h, form, umin - p, umax + p);
+    if kurve.len() < 2 {
+        return;
+    }
+
+    for i in i0..=i1 {
+        let v = (i as f64 + 0.5) * h;
+        let mut prev: Option<Vec2> = None;
+        for k in &kurve {
+            let q = r.punkt(k.x, v + k.y);
+            if let Some(a) = prev {
+                muster_abschnitt(dl, e, st, a, q, pts, holes);
+            }
+            prev = Some(q);
         }
     }
 }

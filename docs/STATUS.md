@@ -131,10 +131,11 @@ offene Fensterinstanz zeigt weiterhin den alten Stand.
     (Vektor **und** Pixelbild), gleicher Ton wie die Wand, Höhe/Volumen in m³,
     Höhenänderung über `modify.set`, Speichern/Laden, alle drei Eingaben
     (`volumen_drei_eingaben`, Farbeimer über `detect_boundary`).
-- **Schraffuren nach DIN 1356-1:2026-09, Tabelle 5** (T0095): 16 der 18
+- **Schraffuren nach DIN 1356-1:2026-09, Tabelle 5** (T0095): 17 der 18
   Kennzeichnungen der Schnittflächen als Muster in `style::FillPattern`
-  (`ALL` in der Reihenfolge der Norm); Nr. 14 (Dämmung) und Nr. 15
-  (Abdichtungen) sind Linienarten und deshalb keine Muster (T0132). Die Muster
+  (`ALL` in der Reihenfolge der Norm); Nr. 15 (Abdichtungen) ist eine
+  Linienart und deshalb kein Muster (T0132), Nr. 14 (Dämmung) ist beides —
+  Linienart **und** Muster aus parallelen Schlaufenbändern (T0136). Die Muster
   heißen nach ihrem Baustoff (Mauerwerk, Kunststoffe, Sand). Ein Generator
   (`render::push_muster`) zeichnet sie für Füllfläche, Volumen **und**
   Wandschraffur; Schlüssel und Bezeichnung finden jedes Muster wieder, die
@@ -149,7 +150,8 @@ offene Fensterinstanz zeigt weiterhin den alten Stand.
   Lücke längs der 45°-Linie von Reihe zu Reihe und bildete eine schiefe Naht
   (Turn 4).
 - **Wandschraffur**: `hatch` an der Wand (alle Muster der Tabelle 5,
-  **Dämmung = Mäander**), gezeichnet als Displaylisten-Primitive.
+  **Dämmung = parallele Schlaufenbänder**), gezeichnet als
+  Displaylisten-Primitive.
 - **Wandausrichtung**: `WallAlign` (Links/Mittig/Rechts), Versatz ±Dicke/2,
   Tab wechselt beim Platzieren (Zyklus, `consume_key`), Wert landet in `draw.wall`.
 - **Vorschau**: Wandkörper mit Ausrichtung + gestrichelter Achse; Tür/Fenster
