@@ -405,7 +405,14 @@ fn draw_prim(c: &mut Content, prim: &Prim, xf: &Xf, paper_scale: f64) {
                 );
                 c.raw(&s);
             }
-            c.stroke();
+            // Ein gefüllter Kreis (Musterpunkt beim Zerlegen, T0138) wird als
+            // Scheibe geschrieben, sonst als Ring.
+            if let Some(fill) = prim.style.fill {
+                c.fill_color(fill);
+                c.fill();
+            } else {
+                c.stroke();
+            }
         }
         Shape::Arc { c: cc, r, a0, a1 } => {
             c.stroke_color(prim.style.color);

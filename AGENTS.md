@@ -400,6 +400,14 @@ Mit dem Nutzer abgestimmt — nicht „verbessern“:
   Bezugsachse auf die Linienrichtung zu setzen (`let (achse, start) = (1.0, 0.0)`).
 - **Auswahl über Rechteck** prüft echte Geometrie (Segmente, Wandkörper),
   nicht die achsenparallele Bounding-Box.
+- **Zerlegen trifft die Fläche (T0138)**: `snap::hit_test_flaeche` nimmt eine
+  Füllfläche auch **innen** (Rückfall, wenn kein Objekt darüber liegt) — nur das
+  Zerlegen nutzt sie (Werkzeug, Vorschau). `snap::hit_test` bleibt beim
+  Randtreffer, weil der Farbeimer dieselbe Funktion fragt. Ein Musterpunkt
+  (`Shape::Dot`) wird beim Zerlegen zum gefüllten Kreis in der Musterfarbe
+  (`style.fill`; Anzeige, Raster und PDF zeichnen einen gefüllten Kreis als
+  Scheibe); ein Punktobjekt geriete über Linienstärke × Beschriftungsmaßstab
+  auf das Neunfache.
 - **Griffe** haben 8–12 px Trefferradius, geprüft gegen die *rohe* Zeigerposition
   (nicht den Fangpunkt).
 - **Zieh-Modi**: Einstellungen → Bedienung → „Ziehen“ (Gedrückthalten / Zwei

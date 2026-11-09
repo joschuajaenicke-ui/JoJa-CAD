@@ -82,7 +82,7 @@ Ohne `host` sucht `draw.door`/`draw.window` die nächste Wand im Umfeld und
 | `modify.area.union` | `ids[]` (zwei oder mehr Füllflächen) | vereinigt **angrenzende** Flächen zu einer; Muster, Rand, Stil und Ebene kommen von der ersten. Getrennte Flächen sind ein Fehler |
 | `modify.area.split` | `pts[]`, `ids[]` (optional) | teilt eine Füllfläche entlang der Punktfolge in zwei; ohne `ids` bestimmt die Linie die Fläche. Kreuzt sie den Rand mehrfach oder eine Insel, ist das ein Fehler |
 | `modify.erase` | `ids[]` | löschen |
-| `modify.explode` | `ids[]` | Blöcke, Wände, Türen, Bemaßung → Grundelemente |
+| `modify.explode` | `ids[]` | Blöcke, Wände, Türen, Bemaßung, Schraffuren → Grundelemente. Eine Schraffur zerfällt in ihre Musterlinien, Musterpunkte werden zu kleinen gefüllten Kreisen in der Musterfarbe; das Bild bleibt gleich |
 | `modify.set` | `ids[]`, `layer`, `color`, `linetype`, `lineweight`, `fill`, Typparameter | Eigenschaften ändern |
 
 `linetype` kennt `solid`, `dashed`, `dotted`, `dashdot`, `hidden` und
