@@ -46,10 +46,12 @@ einsehbar und dort frei änderbar (Ribbon ▸ Ansicht ▸ „Tasten").
 9. **Statusleiste**: `Raster`, `Ortho` und `Fang` schalten per Linksklick; **Rechtsklick** öffnet
    ein Menü mit den einzelnen Fangmodi (Endpunkt, Mittelpunkt, Zentrum, Schnittpunkt, Lot,
    nächster Punkt) bzw. Raster- und Polaroptionen. Ganz rechts schaltet `Stärke`
-   zwischen **px** (Linienbreite immer gleich viele Bildschirmpixel, unabhängig vom Zoom) und
-   **DPI** (Breite wie im exportierten PDF: `Breite_mm × Pixel pro Papier-mm`, ohne Obergrenze —
-   beim Hineinzoomen werden die Linien im selben Verhältnis dicker wie die Zeichnung).
-   Die Wahl wird gespeichert. Links davon stehen zwei weitere Schalter:
+   zwischen **Bildschirm (konstant)** (Linienbreite immer gleich viele Bildschirmpixel,
+   unabhängig vom Zoom; ein Faktor in Einstellungen ▸ Darstellung skaliert sie) und
+   **Papier (maßstabsgetreu)** (Breite wie im exportierten PDF: `Breite_mm × Pixel pro
+   Papier-mm`, ohne Obergrenze — beim Hineinzoomen werden die Linien im selben Verhältnis
+   dicker wie die Zeichnung). Im Papier-Modus bestimmt der **Maßstab** der Zeichnung
+   (Eigenschaften der Zeichnung, 1:N) die Strichbreite. Die Wahl wird gespeichert. Links davon stehen zwei weitere Schalter:
    **Verschieben** (Vierfach-Pfeil) schaltet **„Maus verschiebt"** ein und aus — dieselbe
    Einstellung wie Einstellungen ▸ Bedienung; ausgeschaltet wandert nur noch das Werkzeug
    „Verschieben". **Drehpunkt** (Fadenkreuz im Quadrat) wechselt beim Einfügen zwischen
@@ -289,8 +291,8 @@ Blockmanager, Untertitel **Benutzer**; Löschen im Blockmanager entfernt auch di
 Datei. Das Verzeichnis ist die Wahrheit — es gibt keinen Index. Eine unlesbare
 Datei wird gemeldet und übersprungen, sie hält den Start nicht auf.
 
-## Nachweis für den DPI-Modus
+## Nachweis für den Papier-Modus
 
 `cargo run -p jjcad-core --example lw_test -- /tmp/lw.jjcad` erzeugt zwei parallele Linien
-(0,5 mm Strich, 100 mm Abstand, Maßstab 1:100) — im DPI-Modus muss der weiße Streifen
+(0,5 mm Strich, 100 mm Abstand, Maßstab 1:100) — im Papier-Modus muss der weiße Streifen
 zwischen ihnen genauso breit sein wie die Linien selbst.

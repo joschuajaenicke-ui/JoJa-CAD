@@ -146,12 +146,15 @@ fn massketten_werte_nur_im_einstellungen_dialog() {
     let panels = std::fs::read_to_string(gui.join("panels.rs")).unwrap();
 
     // Eigenschaften-Panel ohne Auswahl („Zeichnung"): keine Maßketten-Werte.
+    // Ausnahme ist der **Maßstab** (T0139): er bestimmt im Modus „Papier
+    // (maßstabsgetreu)“ die Strichbreite und steht deshalb auch in den
+    // Eigenschaften der Zeichnung — dieselbe Action `doc.settings`.
     let start = panels.find("fn doc_props").expect("doc_props");
     let rest = &panels[start..];
     // Ende des Panel-Abschnitts = Beginn der Werkzeugfunktion darunter (deren
     // Doc-Kommentar nennt die Werte, deshalb nicht bis zum `fn` schneiden).
     let doc_panel = ohne_kommentare(&rest[..rest.find("/// Maßketten:").expect("dim_fields")]);
-    for verboten in ["Maßketten", "Maßeinheit", "Textgröße", "Maßstab", "Bogensymbole"] {
+    for verboten in ["Maßketten", "Maßeinheit", "Textgröße", "Bogensymbole"] {
         assert!(
             !zeigt_wort(&doc_panel, verboten),
             "Eigenschaften-Panel der Zeichnung enthält weiterhin {verboten}"

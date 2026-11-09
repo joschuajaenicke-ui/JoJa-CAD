@@ -32,6 +32,9 @@ struct PaintCtx {
     lineweights: bool,
     /// Linienstärke maßstabsgetreu (über den Maßstab skaliert) statt bildschirmkonstant
     lineweights_scaled: bool,
+    /// Faktor der Linienstärke im Modus „Bildschirm (konstant)“ (T0139);
+    /// im Modus „Papier (maßstabsgetreu)“ gilt er nicht.
+    lineweight_factor: f64,
     /// Pixel pro Papier-mm (für Strichstärken und Linientypen)
     paper_px: f64,
     /// Vorschau-Modus: einheitliche Akzentkontur (wie die Einfüge-Vorschau),
@@ -51,8 +54,8 @@ fn color32(c: jjcad_core::style::Color) -> Color32 {
 }
 
 /// Strichmuster in Bildschirmpixeln.
-/// `scaled` = maßstabsgetreu (DPI-Modus): das Muster wächst mit dem Zoom wie im PDF.
-/// Sonst bildschirmkonstant (px-Modus) mit demselben Faktor wie die Strichstärken.
+/// `scaled` = „Papier (maßstabsgetreu)“: das Muster wächst mit dem Zoom wie im PDF.
+/// Sonst „Bildschirm (konstant)“ — das Muster bleibt in Bildschirmpixeln gleich.
 /// Wandausrichtung als Aktionsname
 fn align_name(a: jjcad_core::style::WallAlign) -> &'static str {
     match a {
@@ -246,14 +249,17 @@ fn fill_too_thin(v: &[Pos2]) -> bool {
 /// Papier-Millimetern in Pixel, für die Anzeige (`paint_prim`) und für Vorschauen
 /// wie die Stutzen-Hervorhebung (T0075).
 ///
-/// Zwei Modi: `px` = bildschirmkonstant (Breite in Pixeln, unabhängig vom Zoom),
-/// `DPI` = wie im PDF (Breite_mm × Pixel je Papier-mm, ohne Obergrenze, damit
-/// Strichbreite und Abstand in jedem Zoom im selben Verhältnis stehen).
-fn linienbreite_px(width_mm: f64, paper_px: f64, scaled: bool) -> f64 {
+/// Zwei Modi (T0139): `scaled = false` = „Bildschirm (konstant)“ — die Breite
+/// steht in Pixeln und hängt nicht am Zoom; der Faktor aus den Einstellungen
+/// skaliert sie zusätzlich. `scaled = true` = „Papier (maßstabsgetreu)“ — die
+/// Breite_mm × Pixel je Papier-mm, ohne Obergrenze, damit Strichbreite und
+/// Abstand in jedem Zoom im selben Verhältnis stehen wie im PDF. Dort bestimmt
+/// der Maßstab der Zeichnung (`settings.annotation_scale`) die Papier-mm.
+fn linienbreite_px(width_mm: f64, paper_px: f64, scaled: bool, faktor: f64) -> f64 {
     if scaled {
         (width_mm * paper_px).max(0.05)
     } else {
-        (width_mm * PAPER_PX_PER_MM).clamp(0.7, 9.0)
+        ((width_mm * PAPER_PX_PER_MM).clamp(0.7, 9.0) * faktor).max(0.05)
     }
 }
 
@@ -341,10 +347,17 @@ fn paint_prim(p: &Painter, prim: &Prim, w2s: &dyn Fn(V2) -> Pos2, scale: f64, pc
     }
     let col = col.gamma_multiply(alpha);
     // Zwei Modi:
-    //  "px"  = bildschirmkonstant (Breite in Pixeln, unabhängig vom Zoom)
-    //  "DPI" = wie im PDF: Breite_mm * Pixel-pro-Papier-mm, ohne Obergrenze,
-    //          damit Strichbreite und Abstand in jedem Zoom im selben Verhältnis stehen.
-    let base_w = linienbreite_px(prim.style.width, pc.paper_px, pc.lineweights_scaled);
+    //  "Bildschirm (konstant)"     = Breite in Pixeln, unabhängig vom Zoom,
+    //                                zusätzlich mit dem Faktor aus den Einstellungen
+    //  "Papier (maßstabsgetreu)"   = Breite_mm * Pixel-pro-Papier-mm, ohne Obergrenze,
+    //                                damit Strichbreite und Abstand in jedem Zoom im
+    //                                selben Verhältnis stehen wie im PDF.
+    let base_w = linienbreite_px(
+        prim.style.width,
+        pc.paper_px,
+        pc.lineweights_scaled,
+        pc.lineweight_factor,
+    );
     let _ = pc.lineweights;
     let w = if pc.preview {
         1.2
@@ -1265,6 +1278,7 @@ pub fn show(app: &mut App, ui: &mut Ui) {
     let hover = app.tab().hover;
     let lineweights = app.ui.lineweights;
     let lineweights_scaled = app.ui.lineweights_scaled;
+    let lineweight_factor = app.ui.lineweight_factor as f64;
     let paper_px = view_now.zoom * app.doc().settings.annotation_scale;
 
     if is_sheet {
@@ -1302,6 +1316,7 @@ pub fn show(app: &mut App, ui: &mut Ui) {
             hover,
             lineweights,
             lineweights_scaled,
+            lineweight_factor,
             paper_px,
             preview: false,
             rot: view_now.rot as f32,
@@ -1668,6 +1683,7 @@ fn draw_sheet(app: &mut App, p: &Painter, rect: Rect, view: View, cursor: Option
             hover: None,
             lineweights: true,
             lineweights_scaled: true,
+            lineweight_factor: 1.0,
             paper_px: view.zoom,
             preview: false,
             rot: 0.0,
@@ -1703,6 +1719,7 @@ fn draw_sheet(app: &mut App, p: &Painter, rect: Rect, view: View, cursor: Option
         hover: app.tab().hover,
         lineweights: true,
         lineweights_scaled: true,
+        lineweight_factor: 1.0,
         paper_px: view.zoom,
         preview: false,
         rot: view.rot as f32,
@@ -2002,6 +2019,7 @@ fn draw_opening_preview(
         hover: app.tab().hover,
         lineweights: app.ui.lineweights,
         lineweights_scaled: app.ui.lineweights_scaled,
+        lineweight_factor: app.ui.lineweight_factor as f64,
         paper_px,
         preview: false,
         rot: view.rot as f32,
@@ -2726,6 +2744,7 @@ fn draw_tool_preview(
                 hover: None,
                 lineweights: app.ui.lineweights,
                 lineweights_scaled: app.ui.lineweights_scaled,
+                lineweight_factor: app.ui.lineweight_factor as f64,
                 paper_px: view.zoom * app.doc().settings.annotation_scale,
                 preview: true,
                 rot: view.rot as f32,
@@ -3073,6 +3092,7 @@ fn draw_objekt_hervorhebung(
         app.doc().effective_line_weight(e),
         view.zoom * app.doc().settings.annotation_scale,
         app.ui.lineweights_scaled,
+        app.ui.lineweight_factor as f64,
     );
     let strich = Stroke::new((breite + 1.0).max(3.0) as f32, farbe);
     for prim in &dl.prims {
@@ -3183,7 +3203,7 @@ fn vorschau_objekt(
 /// Körper, damit auch die Dicke stimmt, sonst als Linie.
 ///
 /// Der Strich folgt der Strichstärke des Objekts (T0075): bei fetten Linien
-/// deckt er die Linie ab, im DPI-Modus wächst er mit dem Zoom. Ein Mindestmaß
+/// deckt er die Linie ab, im Papier-Modus wächst er mit dem Zoom. Ein Mindestmaß
 /// hält ihn auch auf dünnen Linien sichtbar, der Zuschlag lässt die Linie
 /// links und rechts darunter hervorschauen.
 fn draw_abschnitt_preview(
@@ -3226,6 +3246,7 @@ fn draw_abschnitt_preview(
         app.doc().effective_line_weight(e),
         view.zoom * app.doc().settings.annotation_scale,
         app.ui.lineweights_scaled,
+        app.ui.lineweight_factor as f64,
     );
     let strich = Stroke::new((breite + 1.0).max(3.0) as f32, farbe);
     for s in segs {
@@ -3273,6 +3294,7 @@ fn draw_selection_preview(
         hover: None,
         lineweights: true,
         lineweights_scaled: app.ui.lineweights_scaled,
+        lineweight_factor: app.ui.lineweight_factor as f64,
         paper_px,
         preview: true,
         rot: view.rot as f32,
@@ -4679,6 +4701,7 @@ fn draw_fill_ghost(app: &App, p: &Painter, rect: Rect, view: View, umriss: &[V2]
         hover: None,
         lineweights: true,
         lineweights_scaled: app.ui.lineweights_scaled,
+        lineweight_factor: app.ui.lineweight_factor as f64,
         paper_px: view.zoom * app.doc().settings.annotation_scale,
         preview: true,
         rot: view.rot as f32,
@@ -4735,6 +4758,7 @@ fn draw_paint_ghost(
         hover: None,
         lineweights: true,
         lineweights_scaled: app.ui.lineweights_scaled,
+        lineweight_factor: app.ui.lineweight_factor as f64,
         paper_px: view.zoom * app.doc().settings.annotation_scale,
         preview: true,
         rot: view.rot as f32,
@@ -10651,7 +10675,8 @@ mod tests_stutzvorschau {
         let mut app = app();
         let id = ziel_id(&app);
         // Modus ausdrücklich setzen: er kommt sonst aus der echten `prefs.json`
-        // des Nutzers (hier steht DPI), und der Test hinge an seiner Einstellung.
+        // des Nutzers (dort steht womöglich „Papier (maßstabsgetreu)“), und der
+        // Test hinge an seiner Einstellung.
         app.ui.lineweights_scaled = false;
         staerke(&mut app, id, 0.25);
         let duenn = stutz_strecken(&mut app, Some(V2::new(3000.0, 0.0)))[0].2;
@@ -10665,10 +10690,10 @@ mod tests_stutzvorschau {
         assert!((fett - 7.4).abs() < 0.01, "Breite im px-Modus: {fett}");
     }
 
-    /// Im DPI-Modus wächst die Hervorhebung mit dem Zoom — vorher blieb sie bei
-    /// 3 px stehen, während die Linie selbst breiter wurde.
+    /// Im Papier-Modus wächst die Hervorhebung mit dem Zoom — vorher blieb sie
+    /// bei 3 px stehen, während die Linie selbst breiter wurde.
     #[test]
-    fn hervorhebung_skaliert_im_dpi_modus() {
+    fn hervorhebung_skaliert_im_papier_modus() {
         let mut app = app();
         let id = ziel_id(&app);
         staerke(&mut app, id, 0.5);
@@ -10688,6 +10713,57 @@ mod tests_stutzvorschau {
             (gross - 21.0).abs() < 0.01,
             "0,5 mm bei 40 px/mm → 20 px + 1: {gross}"
         );
+    }
+
+    /// T0139: Der Faktor aus den Einstellungen skaliert die Strichbreite im
+    /// Modus „Bildschirm (konstant)“ — im Papier-Modus bleibt er wirkungslos,
+    /// dort bestimmt der Maßstab der Zeichnung die Breite.
+    #[test]
+    fn linienstaerke_faktor_gilt_nur_im_bildschirm_modus() {
+        let mut app = app();
+        let id = ziel_id(&app);
+        app.ui.lineweights_scaled = false;
+        staerke(&mut app, id, 1.0);
+        // px-Modus: 1,0 mm × 3,2 px/mm = 3,2 px, Hervorhebung +1 px.
+        app.ui.lineweight_factor = 1.0;
+        let einfach = stutz_strecken(&mut app, Some(V2::new(3000.0, 0.0)))[0].2;
+        app.ui.lineweight_factor = 2.0;
+        let doppelt = stutz_strecken(&mut app, Some(V2::new(3000.0, 0.0)))[0].2;
+        assert!((einfach - 4.2).abs() < 0.01, "Faktor 1: {einfach}");
+        assert!((doppelt - 7.4).abs() < 0.01, "Faktor 2: {doppelt}");
+
+        // Papier-Modus: derselbe Wert mit und ohne Faktor.
+        app.ui.lineweights_scaled = true;
+        app.ui.lineweight_factor = 1.0;
+        let papier_einfach = stutz_strecken(&mut app, Some(V2::new(3000.0, 0.0)))[0].2;
+        app.ui.lineweight_factor = 2.0;
+        let papier_doppelt = stutz_strecken(&mut app, Some(V2::new(3000.0, 0.0)))[0].2;
+        assert!(
+            (papier_einfach - papier_doppelt).abs() < 0.01,
+            "der Faktor darf den Papier-Modus nicht verändern: {papier_einfach} / {papier_doppelt}"
+        );
+    }
+
+    /// T0139: Im Papier-Modus bestimmt der Maßstab der Zeichnung
+    /// (`settings.annotation_scale`) die Strichbreite: 1:50 zeigt dieselbe
+    /// Linie bei gleichem Zoom halb so breit wie 1:100.
+    #[test]
+    fn massstab_der_zeichnung_bestimmt_die_breite_im_papier_modus() {
+        let mut app = app();
+        let id = ziel_id(&app);
+        app.ui.lineweights_scaled = true;
+        app.ui.lineweight_factor = 1.0;
+        staerke(&mut app, id, 1.0);
+        let mut view = app.current_view();
+        view.zoom = 0.04; // 4 px je Modell-mm
+        app.set_view(view);
+        // 1:100 → paper_px = 4 → 4 px Strich + 1 px Hervorhebung.
+        let bei_100 = stutz_strecken(&mut app, Some(V2::new(3000.0, 0.0)))[0].2;
+        app.doc_mut().settings.annotation_scale = 50.0;
+        // 1:50 → paper_px = 2 → 2 px Strich + 1 px Hervorhebung.
+        let bei_50 = stutz_strecken(&mut app, Some(V2::new(3000.0, 0.0)))[0].2;
+        assert!((bei_100 - 5.0).abs() < 0.01, "1:100: {bei_100}");
+        assert!((bei_50 - 3.0).abs() < 0.01, "1:50: {bei_50}");
     }
 }
 
@@ -10935,6 +11011,7 @@ mod tests_kreis_kontur {
             hover: None,
             lineweights: skalierte_breiten,
             lineweights_scaled: skalierte_breiten,
+            lineweight_factor: 1.0,
             paper_px: scale,
             preview: false,
             rot: 0.0,
@@ -11694,6 +11771,7 @@ mod tests_mittelpunkt {
                 hover: None,
                 lineweights: false,
                 lineweights_scaled: false,
+                lineweight_factor: 1.0,
                 paper_px: 1.0,
                 preview: false,
                 rot: 0.0,
