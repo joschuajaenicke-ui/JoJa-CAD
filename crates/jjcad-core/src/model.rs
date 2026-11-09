@@ -1521,6 +1521,13 @@ pub struct Document {
     /// nicht gespeichert, nicht verglichen und nicht mitgeschrieben.
     #[serde(skip)]
     pub space: Option<Id>,
+    /// Kennung des **Blockeditors** (T0137): Ist sie gesetzt, arbeiten alle
+    /// Befehle auf den Objekten dieser Blockdefinition statt auf der Zeichnung.
+    /// Der Blockeditor ist damit ein dritter Bearbeitungsraum neben Modell und
+    /// Papierraum — ohne zweiten Eingabe- oder Action-Weg. Reiner
+    /// Laufzeitzustand: wird nicht gespeichert und nicht verglichen.
+    #[serde(skip)]
+    pub block_space: Option<String>,
     #[serde(default)]
     pub sheets: Vec<Sheet>,
     #[serde(default)]
@@ -1564,6 +1571,7 @@ impl Document {
             blocks: Vec::new(),
             entities: Vec::new(),
             space: None,
+            block_space: None,
             sheets: Vec::new(),
             dim_style: DimStyle::default(),
             next_id: 1,
@@ -1610,6 +1618,7 @@ impl Document {
             blocks: Vec::new(),
             entities: Vec::new(),
             space: None,
+            block_space: None,
             sheets: Vec::new(),
             dim_style: DimStyle::default(),
             next_id: 1,
@@ -1722,7 +1731,16 @@ impl Document {
     // beiden Räumen gleich — ohne zweiten Weg an der Action-Schicht vorbei.
 
     /// Objekte des aktiven Bearbeitungsraums.
+    ///
+    /// Drei Räume, eine Quelle: Blockeditor (`block_space`) vor Papierraum
+    /// (`space`) vor Modell. Der Blockeditor hat Vorrang, weil er immer
+    /// ausdrücklich geöffnet wird.
     pub fn ents(&self) -> &[Entity] {
+        if let Some(bid) = self.block_space.as_deref() {
+            if let Some(b) = self.block(bid) {
+                return &b.entities;
+            }
+        }
         match self.space.and_then(|sid| self.sheet(sid)) {
             Some(s) => &s.entities,
             None => &self.entities,
@@ -1731,6 +1749,11 @@ impl Document {
 
     /// Objekte des aktiven Bearbeitungsraums, veränderbar.
     pub fn ents_mut(&mut self) -> &mut Vec<Entity> {
+        if let Some(bid) = self.block_space.clone() {
+            if let Some(i) = self.blocks.iter().position(|b| b.id == bid) {
+                return &mut self.blocks[i].entities;
+            }
+        }
         let Some(sid) = self.space.filter(|sid| self.sheets.iter().any(|s| s.id == *sid)) else {
             return &mut self.entities;
         };
@@ -1742,6 +1765,37 @@ impl Document {
             .entities
     }
 
+    /// Block des offenen Blockeditors (None = kein Blockeditor).
+    pub fn block_edit(&self) -> Option<&BlockDef> {
+        self.block_space.as_deref().and_then(|id| self.block(id))
+    }
+
+    /// Läuft die Bearbeitung im Blockeditor?
+    pub fn in_block_space(&self) -> bool {
+        self.block_edit().is_some()
+    }
+
+    /// Blockeditor öffnen. Nur **eigene** Blöcke (Projekt/Benutzer) sind
+    /// bearbeitbar — Systemblöcke sind schreibgeschützt und werden abgelehnt;
+    /// ein unbekannter Bezeichner ebenso. Ein Blockeditor ist kein Papierraum:
+    /// `space` wird dabei geleert.
+    pub fn set_block_space(&mut self, block: Option<&str>) -> bool {
+        let ziel = block.and_then(|id| {
+            self.blocks
+                .iter()
+                .find(|b| b.id == id && b.source != BlockSource::System)
+                .map(|b| b.id.clone())
+        });
+        if block.is_some() && ziel.is_none() {
+            return false;
+        }
+        self.block_space = ziel;
+        if self.block_space.is_some() {
+            self.space = None;
+        }
+        true
+    }
+
     /// Blatt des aktiven Papierraums (None = Modell).
     pub fn space_sheet(&self) -> Option<&Sheet> {
         self.space.and_then(|sid| self.sheet(sid))
@@ -1751,6 +1805,8 @@ impl Document {
     /// zurück — nie auf ein Blatt, das es nicht gibt.
     pub fn set_space(&mut self, space: Option<Id>) {
         self.space = space.filter(|sid| self.sheets.iter().any(|s| s.id == *sid));
+        // Modell/Papierraum und Blockeditor schließen sich aus.
+        self.block_space = None;
     }
 
     /// Ist der Papierraum (Druckvorschau) der aktive Raum?

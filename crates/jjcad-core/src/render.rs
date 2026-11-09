@@ -941,7 +941,9 @@ pub fn text_frame_segments(doc: &Document, e: &Entity) -> Vec<Seg> {
 pub fn visible_bbox(doc: &Document) -> BBox {
     let ctx = RenderCtx::new(doc);
     let mut b = BBox::EMPTY;
-    for e in &doc.entities {
+    // Der aktive Bearbeitungsraum: im Blockeditor ist das die Blockdefinition,
+    // sonst die Zeichnung (T0137).
+    for e in doc.ents() {
         if let Some(l) = doc.layer(e.layer) {
             if !l.visible {
                 continue;

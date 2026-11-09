@@ -64,7 +64,10 @@ impl Session {
         let result = actions::execute(&mut self.doc, action, params)?;
         // Türen/Fenster folgen ihrer Wand (Verschieben, Verdicken, Drehen).
         // Das gilt nur im Modell — im Papierraum gibt es keine Wände.
-        if actions::is_mutating(action) {
+        // Tür-/Fenster-Nachführung gilt der Zeichnung, nicht dem Blockeditor:
+        // dort gibt es keine Wände des Modells, und Block-Objekt-Ids dürfen
+        // nicht mit Modell-Ids verwechselt werden (T0137).
+        if actions::is_mutating(action) && !self.doc.in_block_space() {
             if matches!(
                 action,
                 "modify.move" | "modify.copy" | "modify.rotate" | "modify.scale" | "modify.mirror"

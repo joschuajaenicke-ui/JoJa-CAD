@@ -1196,7 +1196,8 @@ pub fn show(app: &mut App, ui: &mut Ui) {
         ui.ctx().set_cursor_icon(egui::CursorIcon::None);
     }
     let view = app.current_view();
-    let is_sheet = matches!(app.tab().tab, TabKind::Sheet(_));
+    let is_sheet = matches!(&app.tab().tab, TabKind::Sheet(_));
+    let is_block = matches!(&app.tab().tab, TabKind::Block(_));
 
     // Hintergrund
     painter.rect_filled(rect, 0.0, Palette::bg());
@@ -1309,8 +1310,16 @@ pub fn show(app: &mut App, ui: &mut Ui) {
         if app.ui.show_grid {
             draw_grid(app, &painter, rect, view_now);
         }
-        // Papierfläche
-        painter.rect_filled(rect, 0.0, Palette::paper());
+        // Papierfläche — der Blockeditor hat einen eigenen Ton (T0137).
+        painter.rect_filled(
+            rect,
+            0.0,
+            if is_block {
+                Palette::block_paper()
+            } else {
+                Palette::paper()
+            },
+        );
         if app.ui.show_grid {
             draw_grid(app, &painter, rect, view_now);
         }
@@ -1329,6 +1338,10 @@ pub fn show(app: &mut App, ui: &mut Ui) {
             for prim in &dl.prims {
                 paint_prim(&painter, prim, &w2s, view_now.zoom, &pc, 1.0);
             }
+        }
+        // Blockeditor: Basispunkt und Hinweis, wo man zeichnet (T0137).
+        if is_block {
+            draw_block_hinweise(app, &painter, rect, view_now);
         }
         // Fangmarker + Cursor
         app.perf.abschnitt(Abschnitt::Bedienung);
@@ -1402,8 +1415,8 @@ pub fn show(app: &mut App, ui: &mut Ui) {
 
     // Overlay: Blattmaßstab / Zoom
     if is_sheet {
-        if let Some(sid) = match app.tab().tab {
-            TabKind::Sheet(id) => Some(id),
+        if let Some(sid) = match &app.tab().tab {
+            TabKind::Sheet(id) => Some(*id),
             _ => None,
         } {
             if let Some(sheet) = app.doc().sheet(sid) {
@@ -1445,6 +1458,7 @@ fn display_list(app: &mut App) -> DisplayList {
         zoom: app.current_view().zoom,
         annot: app.doc().settings.annotation_scale,
         space: app.session().space(),
+        block: app.doc().in_block_space(),
     };
     let (mut dl, neu) = match &app.tab().cache {
         Some((k, dl)) if k.matches(&key) => (dl.clone(), false),
@@ -1460,6 +1474,68 @@ fn display_list(app: &mut App) -> DisplayList {
     app.perf.anzeigeliste(neu, app.doc().ents().len());
     ohne_texteingabe(app, &mut dl);
     dl
+}
+
+// ---------------------------------------------------------------------------
+// Blockeditor
+// ---------------------------------------------------------------------------
+
+/// Hinweise im Blockeditor (T0137): der Koordinatenursprung ist der
+/// Einfüge-Basispunkt des Blocks und wird als Kreuz mit Kreis gezeigt; oben in
+/// der Zeichenfläche steht, dass hier ein Block und nicht die Zeichnung
+/// bearbeitet wird.
+///
+/// Beides ist reine Anzeige — es wird nicht gefangen und nicht gedruckt.
+fn draw_block_hinweise(app: &App, p: &Painter, rect: Rect, view: View) {
+    let Some(block) = app.doc().block_edit() else {
+        return;
+    };
+    let akzent = Palette::accent();
+    // Basispunkt (Weltursprung des Blocks)
+    let o = world_to_screen(rect, view, V2::ZERO);
+    p.circle_stroke(o, 6.0, Stroke::new(1.6, akzent));
+    p.line_segment(
+        [Pos2::new(o.x - 11.0, o.y), Pos2::new(o.x + 11.0, o.y)],
+        Stroke::new(1.6, akzent),
+    );
+    p.line_segment(
+        [Pos2::new(o.x, o.y - 11.0), Pos2::new(o.x, o.y + 11.0)],
+        Stroke::new(1.6, akzent),
+    );
+    p.text(
+        Pos2::new(o.x + 14.0, o.y + 4.0),
+        Align2::LEFT_TOP,
+        jjcad_core::i18n::tr("gui.canvas.basispunkt"),
+        FontId::proportional(10.0),
+        akzent,
+    );
+
+    // Hinweis oben in der Mitte: eigener Raum, nicht die Zeichnung.
+    let text = format!(
+        "{} · {}",
+        jjcad_core::i18n::tr("gui.canvas.blockeditor"),
+        block.name
+    );
+    let galley = p.layout_no_wrap(text, FontId::proportional(12.5), Palette::text());
+    let size = galley.size() + Vec2::new(24.0, 12.0);
+    let box_rect = Rect::from_center_size(
+        Pos2::new(rect.center().x, rect.top() + 22.0),
+        size,
+    );
+    p.rect_filled(box_rect, egui::Rounding::same(8.0), Palette::hinweis_flaeche());
+    p.rect_stroke(
+        box_rect,
+        egui::Rounding::same(8.0),
+        Stroke::new(1.0_f32, akzent.gamma_multiply(0.7)),
+    );
+    p.galley(
+        Pos2::new(
+            box_rect.center().x - galley.size().x / 2.0,
+            box_rect.center().y - galley.size().y / 2.0,
+        ),
+        galley,
+        Palette::text(),
+    );
 }
 
 // ---------------------------------------------------------------------------
@@ -1539,8 +1615,8 @@ fn draw_grid(app: &App, p: &Painter, rect: Rect, view: View) {
 // ---------------------------------------------------------------------------
 
 fn draw_sheet(app: &mut App, p: &Painter, rect: Rect, view: View, cursor: Option<V2>) {
-    let Some(sid) = (match app.tab().tab {
-        TabKind::Sheet(id) => Some(id),
+    let Some(sid) = (match &app.tab().tab {
+        TabKind::Sheet(id) => Some(*id),
         _ => None,
     }) else {
         return;
@@ -5512,8 +5588,8 @@ fn tool_click_at(app: &mut App, w: V2, raw: V2) {
             } else {
                 let a = tool.pts[0];
                 let b = w;
-                let sid = match app.tab().tab {
-                    TabKind::Sheet(id) => id,
+                let sid = match &app.tab().tab {
+                    TabKind::Sheet(id) => *id,
                     _ => {
                         app.tool = None;
                         return;
@@ -9047,16 +9123,30 @@ mod tests_raumwechsel_anzeige {
             zoom: 0.08,
             annot: 100.0,
             space: None,
+            block: false,
         };
         let blatt = DrawCacheKey {
             rev: 7,
             zoom: 0.08,
             annot: 100.0,
             space: Some(3),
+            block: false,
+        };
+        // T0137: Der Blockeditor hat keinen `space` — ohne eigenes Kennzeichen
+        // gälte seine Liste als die des Modells.
+        let block = DrawCacheKey {
+            rev: 7,
+            zoom: 0.08,
+            annot: 100.0,
+            space: None,
+            block: true,
         };
         assert!(!modell.matches(&blatt), "Papierraum gilt sonst als Modell");
         assert!(!blatt.matches(&modell));
+        assert!(!modell.matches(&block), "Blockeditor gilt sonst als Modell");
+        assert!(!block.matches(&modell));
         assert!(modell.matches(&modell));
+        assert!(block.matches(&block));
         assert!(!modell.matches(&DrawCacheKey { rev: 8, ..modell }));
         assert!(!modell.matches(&DrawCacheKey {
             zoom: 0.16,
