@@ -44,7 +44,7 @@ ohne Weichzeichnung).
 
 Abgedeckt sind: kleiner und großer Radius, vier Zoomstufen (0,75 % bis 95 %),
 dünne (0,13 mm) und dicke (2,00 mm) Striche, Viertel-, Halb- und
-Dreiviertelbögen sowie ein flacher Bogen (20°). Der Modus „Stärke DPI" ist
+Dreiviertelbögen sowie ein flacher Bogen (20°). Der Modus „Papier (maßstabsgetreu)“ ist
 aktiv, die Strichbreite skaliert also mit dem Zoom wie im Druck — so wie der
 Nutzer zeichnet.
 

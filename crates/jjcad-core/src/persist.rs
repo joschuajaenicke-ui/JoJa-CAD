@@ -989,6 +989,12 @@ pub struct UserPrefs {
     /// Linienstärken maßstabsgetreu statt bildschirmkonstant
     #[serde(default)]
     pub lineweights_scaled: bool,
+    /// Faktor der Linienstärke im Modus „Bildschirm (konstant)“ (T0139):
+    /// 1,0 = Vorgabe, 2,0 = doppelt so dicke Striche. Im Modus „Papier
+    /// (maßstabsgetreu)“ gilt er nicht — dort bestimmt der Maßstab der
+    /// Zeichnung die Breite.
+    #[serde(default = "default_lineweight_factor")]
+    pub lineweight_factor: f32,
     /// Zieh-Modus für Objekte und Griffe
     #[serde(
         default,
@@ -1140,6 +1146,18 @@ fn default_pan_speed() -> f32 {
 pub const SCHWENK_FAKTOR_MIN: f32 = 0.1;
 /// Gegenstück zu [`SCHWENK_FAKTOR_MIN`].
 pub const SCHWENK_FAKTOR_MAX: f32 = 5.0;
+
+/// Grenzen des Linienstärke-Faktors im Modus „Bildschirm (konstant)“ (T0139):
+/// halbe bis dreifache Strichdicke. Darunter verschwinden dünne Linien, darüber
+/// deckt ein 1-mm-Strich die halbe Zeichnung zu.
+pub const LINIENSTAERKE_FAKTOR_MIN: f32 = 0.5;
+/// Gegenstück zu [`LINIENSTAERKE_FAKTOR_MIN`].
+pub const LINIENSTAERKE_FAKTOR_MAX: f32 = 3.0;
+
+/// Vorgabe des Linienstärke-Faktors: unverändert die bisherige Strichdicke.
+fn default_lineweight_factor() -> f32 {
+    1.0
+}
 
 /// Die drei Schichten der Tastatur (T0056, `docs/TASTEN.md`):
 ///
@@ -1436,6 +1454,7 @@ impl Default for UserPrefs {
             last_dir: String::new(),
             show_lineweights: true,
             lineweights_scaled: false,
+            lineweight_factor: default_lineweight_factor(),
             drag_mode: DragMode::HoldAndDrag,
             mouse_move: true,
             pan_speed: default_pan_speed(),
@@ -1602,6 +1621,14 @@ impl UserPrefs {
             self.pan_speed.clamp(SCHWENK_FAKTOR_MIN, SCHWENK_FAKTOR_MAX)
         } else {
             default_pan_speed()
+        };
+        // T0139: derselbe Schutz für den Linienstärke-Faktor — ein alter oder
+        // fremder Wert darf die Zeichnung weder unsichtbar noch zudecken.
+        self.lineweight_factor = if self.lineweight_factor.is_finite() {
+            self.lineweight_factor
+                .clamp(LINIENSTAERKE_FAKTOR_MIN, LINIENSTAERKE_FAKTOR_MAX)
+        } else {
+            default_lineweight_factor()
         };
         if self.hotbar_presets.is_empty() {
             self.hotbar_presets = UserPrefs::default().hotbar_presets;
@@ -2295,6 +2322,45 @@ mod tests {
                 (p.pan_speed - erwartet).abs() < 1e-9,
                 "{eingabe} ergibt {}, erwartet {erwartet}",
                 p.pan_speed
+            );
+        }
+    }
+
+    /// T0139: Der Linienstärke-Faktor im Modus „Bildschirm (konstant)“ hat die
+    /// Vorgabe 1,0, wird gespeichert und beim Laden auf seine Grenzen geklemmt.
+    #[test]
+    fn linienstaerke_faktor_vorgabe_gespeichert_und_begrenzt() {
+        assert!((UserPrefs::default().lineweight_factor - 1.0).abs() < 1e-9);
+        // Altbestand ohne Schlüssel: unveränderte Strichdicke.
+        let alt: UserPrefs = serde_json::from_str(r#"{"last_dir": "/tmp"}"#).unwrap();
+        assert!((alt.lineweight_factor - 1.0).abs() < 1e-9);
+
+        let mut prefs = UserPrefs::default();
+        prefs.lineweight_factor = 2.5;
+        let roh = serde_json::to_string(&prefs).unwrap();
+        assert!(
+            roh.contains("\"lineweight_factor\":2.5"),
+            "Schlüssel fehlt: {roh}"
+        );
+        let wieder: UserPrefs = serde_json::from_str(&roh).unwrap();
+        assert!(
+            (wieder.lineweight_factor - 2.5).abs() < 1e-9,
+            "Einstellung ging beim Laden verloren"
+        );
+
+        for (eingabe, erwartet) in [
+            (0.0_f32, LINIENSTAERKE_FAKTOR_MIN),
+            (-3.0, LINIENSTAERKE_FAKTOR_MIN),
+            (99.0, LINIENSTAERKE_FAKTOR_MAX),
+            (f32::NAN, 1.0),
+        ] {
+            let mut p = UserPrefs::default();
+            p.lineweight_factor = eingabe;
+            p.ensure_defaults();
+            assert!(
+                (p.lineweight_factor - erwartet).abs() < 1e-9,
+                "{eingabe} ergibt {}, erwartet {erwartet}",
+                p.lineweight_factor
             );
         }
     }

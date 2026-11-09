@@ -837,6 +837,9 @@ pub struct UiState {
     pub fullscreen: bool,
     /// Linienstärken über den Maßstab skalieren (gedruckte Breite)
     pub lineweights_scaled: bool,
+    /// Faktor der Linienstärke im Modus „Bildschirm (konstant)“ (T0139);
+    /// 1,0 = Vorgabe. Im Modus „Papier (maßstabsgetreu)“ ohne Wirkung.
+    pub lineweight_factor: f32,
     /// Zieh-Modus für Objekte und Griffe
     pub drag_mode: DragMode,
     /// Zuletzt benutzter Eingabemodus je Button (Fläche / Schraffur)
@@ -1006,6 +1009,7 @@ impl Default for UiState {
             lineweights: true,
             fullscreen: false,
             lineweights_scaled: false,
+            lineweight_factor: 1.0,
             drag_mode: DragMode::HoldAndDrag,
             fill_input: FillInput::Points,
             hatch_input: FillInput::Contour,
@@ -1426,6 +1430,7 @@ impl App {
         let show_grid = tab.session.doc.settings.show_grid;
         let lineweights = prefs.show_lineweights;
         let lineweights_scaled = prefs.lineweights_scaled;
+        let lineweight_factor = prefs.lineweight_factor;
         let drag_mode = prefs.drag_mode;
         let layers_open = prefs.show_layers;
         let props_open = prefs.show_properties;
@@ -1467,6 +1472,7 @@ impl App {
         app.ui.show_grid = show_grid;
         app.ui.lineweights = lineweights;
         app.ui.lineweights_scaled = lineweights_scaled;
+        app.ui.lineweight_factor = lineweight_factor;
         app.ui.drag_mode = drag_mode;
         app.ui.copy_input = CopyInput::from_key(&app.prefs.copy_input);
         app.ui.layers_open = layers_open;
@@ -8155,7 +8161,7 @@ impl App {
                             ui.add_space(2.0);
                             let mut m = if self.ui.lineweights_scaled { 1 } else { 0 };
                             if ui
-                                .radio_value(&mut m, 0, jjcad_core::i18n::tr("gui.app.px_bildschirmkonstant"))
+                                .radio_value(&mut m, 0, jjcad_core::i18n::tr("gui.app.linienstaerke_bildschirm"))
                                 .clicked()
                             {
                                 self.ui.lineweights = true;
@@ -8163,7 +8169,7 @@ impl App {
                                 close = true;
                             }
                             if ui
-                                .radio_value(&mut m, 1, jjcad_core::i18n::tr("gui.app.dpi_wie_im_pdf_zoombhaengig"))
+                                .radio_value(&mut m, 1, jjcad_core::i18n::tr("gui.app.linienstaerke_papier"))
                                 .clicked()
                             {
                                 self.ui.lineweights = true;
@@ -8318,6 +8324,7 @@ impl eframe::App for App {
         self.prefs.show_properties = self.ui.props_open;
         self.prefs.show_lineweights = self.ui.lineweights;
         self.prefs.lineweights_scaled = self.ui.lineweights_scaled;
+        self.prefs.lineweight_factor = self.ui.lineweight_factor;
         let _ = self.prefs.save();
         // T0130: Reiter, Ansichten und Fensterlage für den nächsten Start
         // merken. Beim Beenden wird **nicht** nach dem Speichern gefragt — die
