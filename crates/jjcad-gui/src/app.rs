@@ -11591,6 +11591,11 @@ mod tests_block_direkt {
     fn app_mit_zwischenablage() -> App {
         let ctx = egui::Context::default();
         let mut app = App::with_ctx(ctx);
+        // Das Dokument kommt mit der Benutzerbibliothek des Rechners — hat der
+        // Nutzer dort eigene „Unbenannt N“-Blöcke, zählen die Tests sie mit.
+        // Für die Prüfung zählt nur, was der Test selbst anlegt; die Vorlagen
+        // („WC“, „Tisch“, …) bleiben.
+        app.doc_mut().blocks.retain(|b| !b.name.starts_with("Unbenannt "));
         app.doc_mut().settings.input_unit = jjcad_core::units::Unit::Mm;
         let r = app
             .session_mut()

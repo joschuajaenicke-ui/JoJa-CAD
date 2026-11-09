@@ -8,6 +8,60 @@ Abschnitte je Version: **Neu**, **Geändert**, **Behoben**. Ein Eintrag ist ein
 Satz aus Nutzersicht — was man jetzt anders machen kann, nicht welche Datei
 angefasst wurde.
 
+## [0.2.1] — 2026-11-09
+
+Sicherung und Sitzung: ungespeicherte Arbeit geht nicht mehr verloren. Dazu der
+Blockeditor und ein Schwung Detailarbeit an Linienstärken, Text und Schraffuren.
+
+### Neu
+
+- **Sicherung**: Während der Arbeit legt das Programm automatisch Stände an —
+  getrennt vom Speichern, die geöffnete Datei wird dabei nie angetastet.
+  Einstellbar sind Intervall (1–240 min), Anzahl der Sicherungen (30–2000) und
+  Aufbewahrungszeitraum (Woche bis Quartal); alte Stände werden ausgedünnt, der
+  Speicherbedarf bleibt begrenzt. Nach einem Absturz ist höchstens das letzte
+  Intervall verloren.
+- **Sitzung**: Reiter, Fenstergröße und -lage werden gemerkt, der nächste Start
+  stellt die Arbeit wieder her. Beim Beenden mit ungespeicherten Änderungen wird
+  sofort gesichert.
+- **Blockeditor**: Blöcke lassen sich in einem eigenen Bearbeitungsraum öffnen,
+  ändern und zurückschreiben.
+- **Eigene Blöcke als Datei** speichern und beim Start wieder laden.
+- **Blöcke aus der Zwischenablage** erstellen.
+- **Linienstärken nach DIN EN ISO 128-2**: neun Breiten von 0,13 bis 2,00 mm,
+  Voreinstellung je Objektart, Umschalter „Bildschirm (konstant)“ / „Papier
+  (maßstabsgetreu)“ und ein Stärke-Faktor.
+- **Dämmung als Linienart**: Schlaufenband, auch an Wänden; Zerlegen ergibt eine
+  Linie.
+- **Text**: Umrandung dauerhaft anzeigen, Zeilenabstand einstellen,
+  Texthintergrund, runde Umrandung auch bei mehrzeiligem Text.
+- **Ein Datenordner** für alle Nutzdaten — Einstellungen, Blöcke, Sicherungen,
+  Protokolle — frei wählbar und auch portabel neben dem Programm.
+- **Zweite Instanz**: Eine von außen geöffnete Zeichnung erscheint als Reiter im
+  laufenden Fenster, statt eine Fehlermeldung zu bringen.
+
+### Geändert
+
+- Schraffuren: fünf Muster entfernt, die in Wahrheit Linienarten waren; Zerlegen
+  einer Schraffur trifft jetzt die Musterpunkte genau.
+- Stutzen an Kreis, Bogen und Ellipse schneidet nur noch die angeklickte Stelle.
+- Mittelpunkt von Kreis, Bogen und Ellipse wird nur bei Auswahl gezeichnet.
+- Einstellungsfenster in allen Kategorien gleich breit.
+- Schnitt-Kote: die Vorschau zeigt das fertige Objekt.
+
+### Behoben
+
+- Umlaute und Sonderzeichen lösten ihre Tastenfunktion nicht aus.
+- Spline fing beim Manipulieren an beliebigen Stellen statt an den Stützpunkten.
+- Kantengriffe erschienen auch an Objekten, die kein Rechteck sind.
+- Der Schwenk lief nach Fokusverlust weiter.
+- Fensterkanten ließen sich nur im wiederhergestellten Fenster ziehen.
+
+### Bekannt
+
+- Die Windows-Fassung ist gebaut, aber nicht ausgiebig getestet.
+- Die Zeichnungen in `samples/` sind Platzhalter ohne fachliche Prüfung.
+
 ## [0.2.0] — 2026-11-05
 
 Das Grundprogramm steht: zeichnen, Wände und Öffnungen, bemaßen, Blätter,
