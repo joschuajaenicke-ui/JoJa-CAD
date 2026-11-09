@@ -127,9 +127,17 @@ fn starte_app(file: Option<String>, sperre: daten::Sperre) -> eframe::Result<()>
         if f.brauchbar() {
             // Die Mindestgröße gilt auch für einen gespeicherten Stand: ein von
             // Hand verkleinertes Fenster soll die Oberfläche nicht zerlegen.
-            viewport = viewport
-                .with_inner_size([f.breite.max(1080.0), f.hoehe.max(680.0)])
-                .with_position([f.x, f.y]);
+            viewport = viewport.with_inner_size([f.breite.max(1080.0), f.hoehe.max(680.0)]);
+            // Die Lage setzt nur ein Fenstersystem, das globale Fensterkoordinaten
+            // annimmt (X11, Windows, macOS). Unter Wayland meldet die Sitzung
+            // keine Lage — dort kennt xdg-shell keine Fensterposition, `winit`
+            // verwirft `with_position` still. Die Größe kommt trotzdem zurück.
+            if let Some((x, y)) = f.lage() {
+                viewport = viewport.with_position([x, y]);
+            }
+            if f.maximiert {
+                viewport = viewport.with_maximized(true);
+            }
         }
     }
 

@@ -89,24 +89,54 @@ pub struct Reiter {
 }
 
 /// Lage und Größe des Fensters (in Punkten, wie egui sie meldet).
+///
+/// Die **Größe** meldet jede Plattform (`RawInput::screen_rect`, aus
+/// `window.inner_size()`). Die **Lage** (`x`/`y`) meldet nur ein Fenstersystem
+/// mit globalen Fensterkoordinaten; unter Wayland fehlt sie (`mit_lage: false`),
+/// weil xdg-shell weder Abfrage noch Vorgabe einer Fensterposition kennt
+/// (winit liefert dort `NotSupported`, `with_position` wird still verworfen).
 #[derive(Clone, Copy, Debug, Serialize, Deserialize, PartialEq)]
 pub struct Fensterlage {
     pub breite: f32,
     pub hoehe: f32,
+    /// Linke Fensterkante in Punkten; nur gültig, wenn `mit_lage`.
     pub x: f32,
+    /// Obere Fensterkante in Punkten; nur gültig, wenn `mit_lage`.
     pub y: f32,
+    /// Die Plattform hat eine Lage gemeldet (X11, Windows, macOS).
+    ///
+    /// Bewusst ein Merker statt `Option<f32>`: eine `null` im Feld `x` bricht
+    /// das Laden in **älteren** Fassungen (dort steht `f32`), und die verwerfen
+    /// dann die ganze Sitzung samt Reitern. Ältere Dateien trugen immer eine
+    /// echte Lage — daher ist `true` die Vorgabe beim Lesen.
+    #[serde(default = "lage_gemeldet")]
+    pub mit_lage: bool,
+    /// Das Fenster war beim Beenden maximiert.
+    #[serde(default)]
+    pub maximiert: bool,
+}
+
+/// Vorgabe für [`Fensterlage::mit_lage`] bei Dateien ohne dieses Feld (T0141).
+fn lage_gemeldet() -> bool {
+    true
 }
 
 impl Fensterlage {
-    /// Brauchbar für `ViewportBuilder`: endliche Werte und keine Größe, die
-    /// unter der Mindestgröße des Fensters liegt.
+    /// Brauchbar für `ViewportBuilder`: eine endliche Größe, die nicht unter
+    /// der Mindestgröße des Fensters liegt. Eine fehlende Lage ist kein Grund,
+    /// die ganze Lage zu verwerfen — dann kommt wenigstens die Größe zurück.
     pub fn brauchbar(&self) -> bool {
         self.breite.is_finite()
             && self.hoehe.is_finite()
-            && self.x.is_finite()
-            && self.y.is_finite()
             && self.breite >= 1.0
             && self.hoehe >= 1.0
+    }
+
+    /// Fensterposition (linke obere Ecke in Punkten), sofern gemeldet und
+    /// endlich. Beide Kanten gehören zusammen: eine halbe Lage ist keine Lage.
+    pub fn lage(&self) -> Option<(f32, f32)> {
+        (self.mit_lage && self.x.is_finite() && self.y.is_finite())
+            .then_some((self.x, self.y))
     }
 }
 
@@ -212,6 +242,8 @@ mod tests {
                 hoehe: 1000.0,
                 x: 120.0,
                 y: 60.0,
+                mit_lage: true,
+                maximiert: false,
             }),
             aktiv: 1,
             reiter: vec![
@@ -334,15 +366,118 @@ mod tests {
             breite: 1600.0,
             hoehe: 1000.0,
             x: 0.0,
-            y: 0.0
+            y: 0.0,
+            mit_lage: true,
+            maximiert: false,
         }
         .brauchbar());
         assert!(!Fensterlage {
             breite: 0.0,
             hoehe: 1000.0,
             x: 0.0,
-            y: 0.0
+            y: 0.0,
+            mit_lage: true,
+            maximiert: false,
         }
         .brauchbar());
+    }
+
+    /// T0141: Ohne gemeldete Lage (Wayland) ist die Größe trotzdem brauchbar —
+    /// sonst würde beim Beenden gar nichts gemerkt.
+    #[test]
+    fn fensterlage_ohne_position_ist_brauchbar() {
+        let ohne = Fensterlage {
+            breite: 1500.0,
+            hoehe: 950.0,
+            x: 0.0,
+            y: 0.0,
+            mit_lage: false,
+            maximiert: false,
+        };
+        assert!(ohne.brauchbar(), "die Größe allein ist brauchbar");
+        assert_eq!(ohne.lage(), None, "ohne gemeldete Lage keine Position");
+
+        let mit = Fensterlage {
+            breite: 1500.0,
+            hoehe: 950.0,
+            x: 120.0,
+            y: 60.0,
+            mit_lage: true,
+            maximiert: true,
+        };
+        assert_eq!(mit.lage(), Some((120.0, 60.0)));
+        assert!(mit.maximiert);
+    }
+
+    /// Ohne Merker zählt keine Position — auch keine unsinnige Zahl.
+    #[test]
+    fn lage_ohne_merker_oder_mit_nan_zaehlt_nicht() {
+        let ohne_merker = Fensterlage {
+            breite: 1500.0,
+            hoehe: 950.0,
+            x: 10.0,
+            y: 20.0,
+            mit_lage: false,
+            maximiert: false,
+        };
+        assert_eq!(ohne_merker.lage(), None);
+        let nan = Fensterlage {
+            breite: 1500.0,
+            hoehe: 950.0,
+            x: f32::NAN,
+            y: 60.0,
+            mit_lage: true,
+            maximiert: false,
+        };
+        assert_eq!(nan.lage(), None);
+    }
+
+    /// T0141: Die Datei trägt `x`/`y` **als Zahlen**, auch wenn keine Lage
+    /// gemeldet wurde — ältere Fassungen lesen dort `f32` und würden an einer
+    /// `null` die ganze Sitzung (samt Reitern) verwerfen.
+    #[test]
+    fn geschriebene_datei_traegt_zahlen_statt_null() {
+        let dir = test_dir("zahlen");
+        let pfad = dir.join("sitzung.json");
+        let s = Sitzung {
+            fenster: Some(Fensterlage {
+                breite: 1500.0,
+                hoehe: 950.0,
+                x: 0.0,
+                y: 0.0,
+                mit_lage: false,
+                maximiert: false,
+            }),
+            ..Sitzung::default()
+        };
+        speichern(&pfad, &s).unwrap();
+        let wert: serde_json::Value =
+            serde_json::from_str(&std::fs::read_to_string(&pfad).unwrap()).unwrap();
+        let f = &wert["fenster"];
+        assert!(f["x"].is_number(), "x muss eine Zahl sein: {f}");
+        assert!(f["y"].is_number(), "y muss eine Zahl sein: {f}");
+        assert_eq!(f["mit_lage"], serde_json::json!(false));
+        // Und der neue Leser versteht seine eigene Datei.
+        let wieder = laden(&pfad).unwrap().unwrap();
+        assert_eq!(wieder.fenster.unwrap().lage(), None);
+    }
+
+    /// Alte `sitzung.json` (T0130) trug `x`/`y` als Zahl und kannte
+    /// `maximiert` nicht — sie muss weiterhin laden.
+    #[test]
+    fn alte_sitzung_ohne_maximiert_laedt() {
+        let dir = test_dir("alt");
+        let pfad = dir.join("sitzung.json");
+        std::fs::write(
+            &pfad,
+            br#"{"format":"jjcad-sitzung","version":1,
+                 "fenster":{"breite":1600.0,"hoehe":1000.0,"x":120.0,"y":60.0},
+                 "aktiv":0,"reiter":[]}"#,
+        )
+        .unwrap();
+        let s = laden(&pfad).unwrap().expect("alte Sitzung muss laden");
+        let f = s.fenster.expect("Fensterlage");
+        assert_eq!(f.lage(), Some((120.0, 60.0)));
+        assert!(!f.maximiert, "unbekanntes Feld heißt nicht maximiert");
     }
 }
