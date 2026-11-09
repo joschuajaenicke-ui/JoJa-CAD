@@ -63,7 +63,10 @@ fest.** Keine Taste gehört zwei Schichten.
   `SCHWENK_TEMPO_PX_PRO_S` mal Bilddauer). Ein **Schritt neben** dem Dauerlauf ist
   ein Fehler — er zählte die Tastenwiederholung des Betriebssystems doppelt und
   machte die Ansicht schneller als das eingestellte Tempo. Mit `Strg` schweigt der
-  Dauerlauf (sonst schöbe `Strg+S` die Ansicht).
+  Dauerlauf (sonst schöbe `Strg+S` die Ansicht). Nimmt ein anderes Fenster den
+  Fokus — der Systemdialog bei `Strg+S` und `Strg+O` —, gilt **keine** Taste mehr
+  als gedrückt: das Betriebssystem liefert das Loslassen nicht nach, sonst liefe
+  der Dauerlauf endlos weiter (T0140).
 - **`S` gehört dem Schwenk, nicht dem Stutzen** — das Stutzen liegt seit T0079
   auf `C`. Eine alte `prefs.json` mit `Stutzen = S` wird beim Laden bereinigt.
 - **`C` = Stutzen, `T` = Text, `Z` = Zerlegen** (T0079). Der Farbeimer lag
