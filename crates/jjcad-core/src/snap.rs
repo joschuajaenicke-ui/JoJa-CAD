@@ -1372,7 +1372,36 @@ fn polar_einzel(s: &SnapSettings, cursor: Vec2, bezuege: &[Vec2], tol: f64) -> O
 
 /// Trefferprüfung (Auswahl per Klick).
 pub fn hit_test(doc: &Document, p: Vec2, tol: f64, layer_filter: Option<&[Id]>) -> Option<Id> {
+    hit_test_opt(doc, p, tol, layer_filter, false)
+}
+
+/// Trefferprüfung für **Zerlegen**: eine gefüllte Fläche (Schraffur, Volumen)
+/// zählt über ihre **ganze Fläche**, nicht nur über den 8-px-Rand (T0138).
+///
+/// Beim Zerlegen ist das die natürliche Geste — man klickt in die Schraffur,
+/// die man auflösen will. Für die normale Auswahl bleibt es beim Randtreffer:
+/// der Farbeimer fragt dieselbe Funktion und soll in einer gefüllten Fläche
+/// weiter füllen können. Die Fläche ist **Rückfall**: Linien, Texte und Maße,
+/// die in ihr liegen, gewinnen weiterhin.
+pub fn hit_test_flaeche(
+    doc: &Document,
+    p: Vec2,
+    tol: f64,
+    layer_filter: Option<&[Id]>,
+) -> Option<Id> {
+    hit_test_opt(doc, p, tol, layer_filter, true)
+}
+
+fn hit_test_opt(
+    doc: &Document,
+    p: Vec2,
+    tol: f64,
+    layer_filter: Option<&[Id]>,
+    flaeche_innen: bool,
+) -> Option<Id> {
     let mut best: Option<(Id, f64, u8)> = None;
+    // Rückfall für `hit_test_flaeche`: oberste Fläche, die den Punkt enthält.
+    let mut innen: Option<Id> = None;
     // Treffer zählen im aktiven Raum — im Papierraum also Schriftfeld und Text
     for e in doc.ents().iter().rev() {
         if let Some(l) = doc.layer(e.layer) {
@@ -1495,6 +1524,22 @@ pub fn hit_test(doc: &Document, p: Vec2, tol: f64, layer_filter: Option<&[Id]>) 
                     continue;
                 }
             }
+            // Füllfläche: nur beim Zerlegen zählt die Innenfläche (siehe
+            // `hit_test_flaeche`). Sie ist der schwächste Treffer und wird erst
+            // genommen, wenn kein Objekt darüber getroffen wurde.
+            if flaeche_innen {
+                if let EntityKind::Fill {
+                    boundary, holes, ..
+                } = &e.kind
+                {
+                    if crate::area::point_in_area(p, boundary, holes) {
+                        if innen.is_none() {
+                            innen = Some(e.id);
+                        }
+                        continue;
+                    }
+                }
+            }
         }
         let mut dmin = f64::INFINITY;
         // Dämmung: die Linienart zeichnet ein Schlaufenband **versetzt** zur
@@ -1520,7 +1565,7 @@ pub fn hit_test(doc: &Document, p: Vec2, tol: f64, layer_filter: Option<&[Id]>) 
             }
         }
     }
-    best.map(|(id, _, _)| id)
+    best.map(|(id, _, _)| id).or(innen)
 }
 
 /// Punkte, die ein Segment beschreiben (Bögen werden abgeflacht).

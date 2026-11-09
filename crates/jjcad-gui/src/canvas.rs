@@ -498,7 +498,15 @@ fn paint_prim(p: &Painter, prim: &Prim, w2s: &dyn Fn(V2) -> Pos2, scale: f64, pc
         }
         PShape::Circle { c, r } => {
             let rr = (*r * scale) as f32;
-            if rr < 0.4 {
+            if prim.style.fill.is_some() {
+                // Gefüllter Kreis (Musterpunkt beim Zerlegen, T0138): eine
+                // Scheibe, auch wenn sie auf dem Schirm kleiner als ein Pixel
+                // ist — sonst verschwände die zerlegte Schraffur beim
+                // Herauszoomen.
+                // Mindestens 1,2 px wie ein Musterpunkt (`PShape::Dot`) —
+                // sonst wird die zerlegte Schraffur beim Herauszoomen blasser.
+                p.circle_filled(w2s(*c), rr.max(1.2), col);
+            } else if rr < 0.4 {
                 // Auf dem Schirm punktförmiger Kreis
                 p.circle_filled(w2s(*c), (w as f32 * 0.5).max(0.5), col);
             } else {
@@ -3054,7 +3062,9 @@ fn draw_verschneiden_preview(app: &App, p: &Painter, rect: Rect, view: View, at:
 /// Stutzen-Vorschau ([`Palette::danger()`]), welches Objekt der Zeiger trifft.
 fn draw_explode_preview(app: &App, p: &Painter, rect: Rect, view: View, at: V2) {
     let tol = (8.0 / view.zoom).max(0.5);
-    let Some(id) = snap::hit_test(app.doc(), at, tol, None) else {
+    // Ein Klick in die Fläche zählt: eine Schraffur wird dort zerlegt, wo sie
+    // liegt, nicht nur auf ihrem Rand (T0138).
+    let Some(id) = snap::hit_test_flaeche(app.doc(), at, tol, None) else {
         return;
     };
     let Some(e) = app.doc().entity(id) else {
@@ -5821,7 +5831,9 @@ fn tool_click_at(app: &mut App, w: V2, raw: V2) {
         // Objekt es trifft, zeigt die Vorschau vorher in der Warnfarbe.
         "modify.explode" => {
             let tol = (8.0 / app.current_view().zoom).max(0.5);
-            if let Some(id) = snap::hit_test(app.doc(), w, tol, None) {
+            // Flächentreffer wie in der Vorschau (T0138): die Schraffur wird
+            // mit einem Klick in ihre Fläche zerlegt.
+            if let Some(id) = snap::hit_test_flaeche(app.doc(), w, tol, None) {
                 let _ = run(app, "modify.explode", json!({"ids": [id]}));
             }
         }
@@ -11428,6 +11440,71 @@ mod tests_zerlegen {
 
         let neben_der_wand = warnformen(&mut app, Some(V2::new(2000.0, 5000.0)));
         assert_eq!(neben_der_wand, 0, "ohne Objekt keine Hervorhebung");
+    }
+
+    /// Eine Schraffur 3 × 2 m in Welt-mm.
+    fn app_mit_schraffur(pattern: jjcad_core::style::FillPattern) -> (App, Id) {
+        let mut app = App::with_ctx(egui::Context::default());
+        let layer = app.doc().current_layer;
+        let id = app.doc_mut().new_id();
+        let e = Entity::new(
+            id,
+            layer,
+            EntityKind::Fill {
+                boundary: vec![
+                    V2::new(0.0, 0.0),
+                    V2::new(3000.0, 0.0),
+                    V2::new(3000.0, 2000.0),
+                    V2::new(0.0, 2000.0),
+                ],
+                holes: Vec::new(),
+                pattern,
+                pattern_angle: 0.0,
+                pattern_scale: 200.0,
+                border: true,
+            },
+        );
+        app.doc_mut().add_entity(e);
+        (app, id)
+    }
+
+    /// T0138: Zerlegen trifft die **Fläche**, nicht nur ihren Rand — der Klick
+    /// in die Schraffur löst sie auf. Vorher blieb er wirkungslos, weil der
+    /// Treffer nur auf der 8-px-Kontur lag.
+    #[test]
+    fn klick_in_die_schraffur_zerlegt_sie() {
+        let (mut app, id) = app_mit_schraffur(jjcad_core::style::FillPattern::Lines);
+        app.start_tool("modify.explode");
+
+        tool_click(&mut app, V2::new(1500.0, 1000.0));
+
+        assert!(
+            app.doc().entity(id).is_none(),
+            "die Fläche muss zerlegt sein"
+        );
+        assert!(
+            app.doc().ents().len() > 1,
+            "es müssen Einzelteile entstehen: {}",
+            app.doc().ents().len()
+        );
+    }
+
+    /// Dieselbe Stelle hebt die Vorschau vorher hervor — Vorschau und Klick
+    /// laufen über dieselbe Trefferprüfung.
+    #[test]
+    fn vorschau_hebt_die_schraffur_in_der_mitte_hervor() {
+        let (mut app, _id) = app_mit_schraffur(jjcad_core::style::FillPattern::Cross);
+        app.start_tool("modify.explode");
+
+        assert!(
+            warnformen(&mut app, Some(V2::new(1500.0, 1000.0))) > 0,
+            "die Fläche unter dem Zeiger muss hervorgehoben sein"
+        );
+        assert_eq!(
+            warnformen(&mut app, Some(V2::new(9000.0, 9000.0))),
+            0,
+            "neben der Fläche keine Hervorhebung"
+        );
     }
 }
 

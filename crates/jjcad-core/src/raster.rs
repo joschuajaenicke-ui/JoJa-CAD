@@ -267,7 +267,16 @@ fn draw_prim(pm: &mut Pixmap, prim: &Prim, map: &Map, paper_px: f64) {
             if rp > 0.4 {
                 let (cxp, cyp) = map.p(*c);
                 if let Some(path) = PathBuilder::from_circle(cxp, cyp, rp) {
-                    pm.stroke_path(&path, &paint, &stroke, Transform::identity(), None);
+                    // Ein gefüllter Kreis (Musterpunkt beim Zerlegen, T0138)
+                    // wird als Scheibe geschrieben, sonst als Ring.
+                    if let Some(fill) = prim.style.fill {
+                        let mut fp = Paint::default();
+                        fp.set_color(color_of(fill));
+                        fp.anti_alias = true;
+                        pm.fill_path(&path, &fp, FillRule::Winding, Transform::identity(), None);
+                    } else {
+                        pm.stroke_path(&path, &paint, &stroke, Transform::identity(), None);
+                    }
                 }
             }
         }
