@@ -340,8 +340,9 @@ fn lage_aus(
     let lage = sitzung::Fensterlage {
         breite,
         hoehe,
-        x: pos.map(|p| p.x),
-        y: pos.map(|p| p.y),
+        x: pos.map(|p| p.x).unwrap_or(0.0),
+        y: pos.map(|p| p.y).unwrap_or(0.0),
+        mit_lage: pos.is_some(),
         maximiert: false,
     };
     lage.brauchbar().then_some(lage)
@@ -13414,6 +13415,7 @@ mod tests_fensterlage {
         assert_eq!(lage.breite, 1500.0);
         assert_eq!(lage.hoehe, 950.0);
         assert_eq!(lage.lage(), None, "ohne Meldung keine Position");
+        assert!(!lage.mit_lage, "kein Merker ohne Meldung");
         assert!(lage.brauchbar());
     }
 

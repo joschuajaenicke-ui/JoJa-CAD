@@ -99,15 +99,26 @@ pub struct Reiter {
 pub struct Fensterlage {
     pub breite: f32,
     pub hoehe: f32,
-    /// Linke Fensterkante in Punkten; `None` = die Plattform meldet keine Lage.
-    #[serde(default)]
-    pub x: Option<f32>,
-    /// Obere Fensterkante in Punkten; `None` = die Plattform meldet keine Lage.
-    #[serde(default)]
-    pub y: Option<f32>,
+    /// Linke Fensterkante in Punkten; nur gültig, wenn `mit_lage`.
+    pub x: f32,
+    /// Obere Fensterkante in Punkten; nur gültig, wenn `mit_lage`.
+    pub y: f32,
+    /// Die Plattform hat eine Lage gemeldet (X11, Windows, macOS).
+    ///
+    /// Bewusst ein Merker statt `Option<f32>`: eine `null` im Feld `x` bricht
+    /// das Laden in **älteren** Fassungen (dort steht `f32`), und die verwerfen
+    /// dann die ganze Sitzung samt Reitern. Ältere Dateien trugen immer eine
+    /// echte Lage — daher ist `true` die Vorgabe beim Lesen.
+    #[serde(default = "lage_gemeldet")]
+    pub mit_lage: bool,
     /// Das Fenster war beim Beenden maximiert.
     #[serde(default)]
     pub maximiert: bool,
+}
+
+/// Vorgabe für [`Fensterlage::mit_lage`] bei Dateien ohne dieses Feld (T0141).
+fn lage_gemeldet() -> bool {
+    true
 }
 
 impl Fensterlage {
@@ -121,13 +132,11 @@ impl Fensterlage {
             && self.hoehe >= 1.0
     }
 
-    /// Fensterposition (linke obere Ecke in Punkten), sofern gemeldet.
-    /// Beide Kanten gehören zusammen: eine halbe Lage ist keine Lage.
+    /// Fensterposition (linke obere Ecke in Punkten), sofern gemeldet und
+    /// endlich. Beide Kanten gehören zusammen: eine halbe Lage ist keine Lage.
     pub fn lage(&self) -> Option<(f32, f32)> {
-        match (self.x, self.y) {
-            (Some(x), Some(y)) if x.is_finite() && y.is_finite() => Some((x, y)),
-            _ => None,
-        }
+        (self.mit_lage && self.x.is_finite() && self.y.is_finite())
+            .then_some((self.x, self.y))
     }
 }
 
@@ -231,8 +240,9 @@ mod tests {
             fenster: Some(Fensterlage {
                 breite: 1600.0,
                 hoehe: 1000.0,
-                x: Some(120.0),
-                y: Some(60.0),
+                x: 120.0,
+                y: 60.0,
+                mit_lage: true,
                 maximiert: false,
             }),
             aktiv: 1,
@@ -355,16 +365,18 @@ mod tests {
         assert!(Fensterlage {
             breite: 1600.0,
             hoehe: 1000.0,
-            x: Some(0.0),
-            y: Some(0.0),
+            x: 0.0,
+            y: 0.0,
+            mit_lage: true,
             maximiert: false,
         }
         .brauchbar());
         assert!(!Fensterlage {
             breite: 0.0,
             hoehe: 1000.0,
-            x: Some(0.0),
-            y: Some(0.0),
+            x: 0.0,
+            y: 0.0,
+            mit_lage: true,
             maximiert: false,
         }
         .brauchbar());
@@ -377,8 +389,9 @@ mod tests {
         let ohne = Fensterlage {
             breite: 1500.0,
             hoehe: 950.0,
-            x: None,
-            y: None,
+            x: 0.0,
+            y: 0.0,
+            mit_lage: false,
             maximiert: false,
         };
         assert!(ohne.brauchbar(), "die Größe allein ist brauchbar");
@@ -387,33 +400,66 @@ mod tests {
         let mit = Fensterlage {
             breite: 1500.0,
             hoehe: 950.0,
-            x: Some(120.0),
-            y: Some(60.0),
+            x: 120.0,
+            y: 60.0,
+            mit_lage: true,
             maximiert: true,
         };
         assert_eq!(mit.lage(), Some((120.0, 60.0)));
         assert!(mit.maximiert);
     }
 
-    /// Eine halbe Lage ist keine Lage — und keine gültige Zahl ebenso wenig.
+    /// Ohne Merker zählt keine Position — auch keine unsinnige Zahl.
     #[test]
-    fn halbe_oder_unsinnige_lage_zaehlt_nicht() {
-        let nur_x = Fensterlage {
+    fn lage_ohne_merker_oder_mit_nan_zaehlt_nicht() {
+        let ohne_merker = Fensterlage {
             breite: 1500.0,
             hoehe: 950.0,
-            x: Some(10.0),
-            y: None,
+            x: 10.0,
+            y: 20.0,
+            mit_lage: false,
             maximiert: false,
         };
-        assert_eq!(nur_x.lage(), None);
+        assert_eq!(ohne_merker.lage(), None);
         let nan = Fensterlage {
             breite: 1500.0,
             hoehe: 950.0,
-            x: Some(f32::NAN),
-            y: Some(60.0),
+            x: f32::NAN,
+            y: 60.0,
+            mit_lage: true,
             maximiert: false,
         };
         assert_eq!(nan.lage(), None);
+    }
+
+    /// T0141: Die Datei trägt `x`/`y` **als Zahlen**, auch wenn keine Lage
+    /// gemeldet wurde — ältere Fassungen lesen dort `f32` und würden an einer
+    /// `null` die ganze Sitzung (samt Reitern) verwerfen.
+    #[test]
+    fn geschriebene_datei_traegt_zahlen_statt_null() {
+        let dir = test_dir("zahlen");
+        let pfad = dir.join("sitzung.json");
+        let s = Sitzung {
+            fenster: Some(Fensterlage {
+                breite: 1500.0,
+                hoehe: 950.0,
+                x: 0.0,
+                y: 0.0,
+                mit_lage: false,
+                maximiert: false,
+            }),
+            ..Sitzung::default()
+        };
+        speichern(&pfad, &s).unwrap();
+        let wert: serde_json::Value =
+            serde_json::from_str(&std::fs::read_to_string(&pfad).unwrap()).unwrap();
+        let f = &wert["fenster"];
+        assert!(f["x"].is_number(), "x muss eine Zahl sein: {f}");
+        assert!(f["y"].is_number(), "y muss eine Zahl sein: {f}");
+        assert_eq!(f["mit_lage"], serde_json::json!(false));
+        // Und der neue Leser versteht seine eigene Datei.
+        let wieder = laden(&pfad).unwrap().unwrap();
+        assert_eq!(wieder.fenster.unwrap().lage(), None);
     }
 
     /// Alte `sitzung.json` (T0130) trug `x`/`y` als Zahl und kannte

@@ -206,10 +206,12 @@ schreibt es selbst so aus („apps aren’t allowed to position themselves“).
 Nachweis im Code: `winit-0.30.13/src/platform_impl/linux/wayland/window/mod.rs`.
 
 **Was das Programm trotzdem tut (T0141).** `sitzung.json` merkt Größe, Lage und
-Maximiert-Zustand (`sitzung::Fensterlage`). Fehlt die Lage (Wayland), bleiben
-`x`/`y` leer und die **Größe** kommt beim Start zurück; unter X11, Windows und
-macOS kommt auch die Position zurück (`main.rs` setzt `with_position` nur, wenn
-`Fensterlage::lage()` eine Lage liefert). Belege: `jjcad-core`-Test
+Maximiert-Zustand (`sitzung::Fensterlage`). Fehlt die Lage (Wayland), steht
+`mit_lage: false` in der Datei und die **Größe** kommt beim Start zurück; unter
+X11, Windows und macOS kommt auch die Position zurück (`main.rs` setzt
+`with_position` nur, wenn `Fensterlage::lage()` eine Lage liefert). `x`/`y`
+bleiben dabei Zahlen, weil eine `null` ältere Fassungen beim Laden der Sitzung
+scheitern ließe. Belege: `jjcad-core`-Test
 `sitzung::tests::fensterlage_ohne_position_ist_brauchbar`,
 `app::tests_fensterlage` (Umrechnung mit und ohne Fensterrechtecke) und ein Lauf
 unter Xvfb — Fenster auf 1300 × 800 bei (250, 120) gezogen, beendet, neu
