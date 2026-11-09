@@ -41,7 +41,9 @@ fn text(s: &Session) -> (Vec2, TextAlignH, TextAlignV, f64) {
 /// denselben Weg wie Anzeige und Fang.
 fn kasten(s: &Session) -> (Vec2, Vec2) {
     let e = s.doc.ents().last().unwrap();
-    let ecken = render::text_frame(&s.doc, e).expect("Text ohne Rahmen");
+    // Der **Textkasten**, nicht die Umrandung: die Ausrichtung hängt an der
+    // Schrift, die Umrandung wächst seitlich darüber hinaus (T0126, Turn 5).
+    let ecken = render::text_box_corners(&s.doc, e).expect("Text ohne Kasten");
     let min = Vec2::new(
         ecken.iter().map(|q| q.x).fold(f64::INFINITY, f64::min),
         ecken.iter().map(|q| q.y).fold(f64::INFINITY, f64::min),
