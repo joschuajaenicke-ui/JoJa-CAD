@@ -29,6 +29,9 @@ struct Farben {
     danger: Color32,
     ok: Color32,
     paper: Color32,
+    /// Zeichenfläche des **Blockeditors** (T0137): eigener Ton, damit man den
+    /// Bearbeitungsraum nicht mit dem Modell verwechselt.
+    block_paper: Color32,
     paper_shadow: Color32,
     select: Color32,
     hover: Color32,
@@ -60,6 +63,7 @@ const DUNKEL: Farben = Farben {
     danger: Color32::from_rgb(0xD8, 0x60, 0x4F),
     ok: Color32::from_rgb(0x5A, 0xB5, 0x82),
     paper: Color32::from_rgb(0xFB, 0xFA, 0xF6),
+    block_paper: Color32::from_rgb(0xE8, 0xEE, 0xF6),
     paper_shadow: Color32::from_rgb(0x0A, 0x0B, 0x0D),
     select: Color32::from_rgb(0x2F, 0x8C, 0xF0),
     hover: Color32::from_rgb(0x59, 0xA8, 0xFF),
@@ -89,6 +93,7 @@ const HELL: Farben = Farben {
     danger: Color32::from_rgb(0xBE, 0x3A, 0x2B),
     ok: Color32::from_rgb(0x2C, 0x8A, 0x5C),
     paper: Color32::from_rgb(0xFB, 0xFA, 0xF6),
+    block_paper: Color32::from_rgb(0xE8, 0xEE, 0xF6),
     paper_shadow: Color32::from_rgb(0x9A, 0xA1, 0xAA),
     select: Color32::from_rgb(0x1F, 0x6F, 0xD2),
     hover: Color32::from_rgb(0x1B, 0x77, 0xE0),
@@ -278,6 +283,11 @@ impl Palette {
     }
     pub fn paper() -> Color32 {
         farben().paper
+    }
+    /// Fläche des Blockeditors — in beiden Designs derselbe Ton (wie das
+    /// Papier bleibt die Zeichenfläche unabhängig vom Design).
+    pub fn block_paper() -> Color32 {
+        farben().block_paper
     }
     pub fn paper_shadow() -> Color32 {
         farben().paper_shadow

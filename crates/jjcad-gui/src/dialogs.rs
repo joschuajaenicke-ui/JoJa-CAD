@@ -5627,8 +5627,12 @@ mod tests_einstellungen {
                 "„{erwartet}“ fehlt im Einstellungsfenster (gezeichnet: {texte:?})"
             );
         }
+        // T0127: `prefs.json` liegt in der Datenwurzel — `WegwerfKonfig`
+        // isoliert sie nicht mehr. Geprüft wird deshalb die **Vorgabe** des
+        // Programms, nicht der geladene Wert des Nutzers (dieselbe Begründung
+        // wie bei `bedienung_zeigt_die_schwenkgeschwindigkeit`).
         assert_eq!(
-            app.prefs.paste_pivot,
+            jjcad_core::persist::UserPrefs::default().paste_pivot,
             PastePivot::Center,
             "Vorgabe: der Mittelpunkt ist der Programmstandard (T0087)"
         );

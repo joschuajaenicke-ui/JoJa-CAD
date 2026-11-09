@@ -159,7 +159,19 @@ Mit dem Nutzer abgestimmt — nicht „verbessern“:
   Textfelder in `sheet.entities` (kein Renderer-Sonderrahmen mehr, `Sheet::frame`/
   `show_title_block` sind nur noch Altlasten für die Migration). Die echten Blattecken
   (0,0)…(B,H) fangen im Papierraum als „Blattecke“.
-- **Mauszeiger** ist ein durchgehendes Fadenkreuz bis zum Bildschirmrand.
+- **Blockeditor (T0137)**: Eigene Blöcke (Projekt/Benutzer — **nicht** System) werden
+  über das Rechtsklickmenü der Blockbibliothek geöffnet. `Document::block_space` ist
+  der **dritte Bearbeitungsraum** neben Modell und Papierraum: `ents()`/`ents_mut()`
+  liefern die Blockdefinition, damit gelten alle Actions, Fang, Auswahl und Griffe
+  unverändert. Der Reiter steht im Streifen — Blöcke **der Datei** in der Blattzone,
+  **Benutzerblöcke** in einer eigenen Gruppe dahinter. Die Fläche hat einen eigenen
+  Ton (`Palette::block_paper`), zeigt den Ursprung als Basispunkt (Kreuz + „Basispunkt“)
+  und oben den Hinweis `Blockeditor · <Name>`. Ohne Auswahl zeigt das Panel Name,
+  Gruppe, Beschreibung, Herkunft und „Speichern“ (schreibt bei Benutzerblöcken die
+  `.jjblk` und schließt den Reiter); das Reiterkreuz verwirft den Stand vom Öffnen.
+  `render::visible_bbox` liest `doc.ents()` — sonst passt die Ansicht im Blockeditor
+  die Zeichnung statt den Block ein.
+  - **Mauszeiger** ist ein durchgehendes Fadenkreuz bis zum Bildschirmrand.
 - **Einfügen** (Block/Zwischenablage): Vorschau oben rechts am Zeiger, `R` dreht,
   `S` spiegelt, Klick bestätigt. Beim Einfügen aus der Zwischenablage entscheidet
   Einstellungen → Bedienung → „Drehpunkt" (`prefs.paste_pivot`), welcher Punkt am

@@ -223,10 +223,13 @@ pub const EINZELTASTEN: &[(egui::Key, &str)] = &[
 // Ansicht / Reiter
 // ---------------------------------------------------------------------------
 
-#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+#[derive(Clone, PartialEq, Eq, Debug)]
 pub enum TabKind {
     Model,
     Sheet(Id),
+    /// Blockeditor: die Kennung der Blockdefinition (T0137). Ein Reiter je
+    /// offenem Block; bearbeitet wird der Block als dritter Raum.
+    Block(String),
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -334,6 +337,10 @@ pub struct DrawCacheKey {
     pub annot: f64,
     /// Bearbeitungsraum: `None` = Modell, `Some(Blatt)` = Papierraum
     pub space: Option<Id>,
+    /// Läuft der Blockeditor? Die Liste hängt am Block, nicht an `space` —
+    /// ohne das Kennzeichen bliebe beim Wechsel in einen Blockeditor die
+    /// Zeichnung des vorigen Raums stehen.
+    pub block: bool,
 }
 
 impl DrawCacheKey {
@@ -343,6 +350,7 @@ impl DrawCacheKey {
             && (self.zoom - other.zoom).abs() < 1e-9
             && (self.annot - other.annot).abs() < 1e-9
             && self.space == other.space
+            && self.block == other.block
     }
 }
 
@@ -351,6 +359,15 @@ pub struct DocTab {
     pub tab: TabKind,
     pub view_model: View,
     pub sheet_views: HashMap<Id, View>,
+    /// Ansichten der offenen Blockeditoren (T0137), je Blockkennung.
+    pub block_views: HashMap<String, View>,
+    /// Offene Blockeditoren in Reihenfolge des Öffnens — ihre Reiter stehen
+    /// im Streifen. Geschlossen wird über das Kreuz oder „Speichern“.
+    pub offene_bloecke: Vec<String>,
+    /// Stand der Blockdefinition beim Öffnen: Schließen ohne Speichern stellt
+    /// ihn wieder her, damit ein versehentlich angetippter Reiter nichts
+    /// verändert.
+    pub block_original: HashMap<String, jjcad_core::model::BlockDef>,
     pub rev: u64,
     pub cache: Option<(DrawCacheKey, DisplayList)>,
     pub hover: Option<Id>,
@@ -1398,6 +1415,9 @@ impl App {
             tab: TabKind::Model,
             view_model: View::default(),
             sheet_views: HashMap::new(),
+            block_views: HashMap::new(),
+            offene_bloecke: Vec::new(),
+            block_original: HashMap::new(),
             rev: 0,
             cache: None,
             hover: None,
@@ -1589,6 +1609,87 @@ impl App {
                         )
                         .ok();
                     self.ui.confirm_close = Some(1);
+                }
+                // T0137: Blockeditor als Prüfbild — je ein Block der Datei und
+                // des Benutzers (nur im Speicher, keine Datei). Beide Reiter
+                // stehen im Streifen: der Dateiblock in der Blattzone, der
+                // Benutzerblock in der eigenen Gruppe.
+                "blockeditor" | "blockedit" => {
+                    let mut anlegen = |app: &mut App, id: &str, name: &str, quelle: jjcad_core::model::BlockSource| {
+                        if app.doc().block(id).is_some() {
+                            return;
+                        }
+                        let layer = app.doc().current_layer;
+                        let mut ents = Vec::new();
+                        let mut rahmen = Entity::new(
+                            1,
+                            layer,
+                            EntityKind::Polyline {
+                                verts: vec![
+                                    (-900.0, -600.0),
+                                    (900.0, -600.0),
+                                    (900.0, 600.0),
+                                    (-900.0, 600.0),
+                                ]
+                                .into_iter()
+                                .map(|(x, y)| jjcad_core::geom::Vertex::new(jjcad_core::geom::v(x, y)))
+                                .collect(),
+                                closed: true,
+                            },
+                        );
+                        rahmen.by_block = true;
+                        ents.push(rahmen);
+                        let mut kreis = Entity::new(
+                            2,
+                            layer,
+                            EntityKind::Circle {
+                                c: jjcad_core::geom::v(0.0, 250.0),
+                                r: 300.0,
+                            },
+                        );
+                        kreis.by_block = true;
+                        ents.push(kreis);
+                        let mut linie = Entity::new(
+                            3,
+                            layer,
+                            EntityKind::Line {
+                                a: jjcad_core::geom::v(-900.0, -600.0),
+                                b: jjcad_core::geom::v(900.0, 600.0),
+                            },
+                        );
+                        linie.by_block = true;
+                        ents.push(linie);
+                        app.doc_mut().blocks.push(jjcad_core::model::BlockDef {
+                            id: id.to_string(),
+                            name: name.to_string(),
+                            category: "Prüfblocks".to_string(),
+                            source: quelle,
+                            description: jjcad_core::i18n::tr("gui.app.pruefblock").to_string(),
+                            entities: ents,
+                            icon: None,
+                            base: V2::ZERO,
+                        });
+                    };
+                    anlegen(
+                        self,
+                        "prj:demo-block",
+                        "Prüfblock Datei",
+                        jjcad_core::model::BlockSource::Project,
+                    );
+                    anlegen(
+                        self,
+                        "usr:demo-block",
+                        "Prüfblock Benutzer",
+                        jjcad_core::model::BlockSource::User,
+                    );
+                    self.oeffne_block_editor("prj:demo-block");
+                    self.oeffne_block_editor("usr:demo-block");
+                    let mut v = self.current_view();
+                    v.center = V2::new(0.0, 100.0);
+                    v.zoom = 0.42;
+                    self.set_view(v);
+                    // Die ersten Bilder würden sonst selbst einpassen.
+                    self.started_at = 3.0;
                 }
                 "blocks-tab" => {
                     self.ui.inventory_open = true;
@@ -2963,7 +3064,7 @@ impl App {
         if self.tab().tab == kind {
             return;
         }
-        self.tab_mut().tab = kind;
+        self.tab_mut().tab = kind.clone();
         self.tool = None;
         self.session_mut().clear_selection();
         self.sync_space();
@@ -2978,32 +3079,138 @@ impl App {
                     self.fit_view();
                 }
             }
+            TabKind::Block(id) => {
+                if !self.tab().block_views.contains_key(&id) {
+                    self.fit_view();
+                }
+            }
         }
+    }
+
+    /// Kennung des gerade bearbeiteten Blocks (None = Modell/Papierraum).
+    pub fn aktiver_block(&self) -> Option<String> {
+        match &self.tab().tab {
+            TabKind::Block(id) => Some(id.clone()),
+            _ => None,
+        }
+    }
+
+    /// Blockeditor öffnen (T0137). Nur **eigene** Blöcke — Systemblöcke sind
+    /// schreibgeschützt und werden mit einer Meldung abgelehnt. Der eine Weg
+    /// für Bibliothek, Tab und Tests.
+    pub fn oeffne_block_editor(&mut self, id: &str) -> bool {
+        let Some(block) = self.doc().block(id).cloned() else {
+            self.toast(jjcad_core::i18n::tr("gui.app.block_nicht_gefunden"));
+            return false;
+        };
+        if block.source == jjcad_core::model::BlockSource::System {
+            self.toast(jjcad_core::i18n::tr("gui.app.systemblock_schreibgeschuetzt"));
+            return false;
+        }
+        if !self.tab().offene_bloecke.iter().any(|b| b == id) {
+            self.tab_mut().offene_bloecke.push(id.to_string());
+            // Ausgangsstand für „ohne Speichern schließen“.
+            self.tab_mut()
+                .block_original
+                .insert(id.to_string(), block.clone());
+        }
+        self.switch_tab(TabKind::Block(id.to_string()));
+        if !self.tab().block_views.contains_key(id) {
+            self.fit_view();
+        }
+        true
+    }
+
+    /// Blockeditor schließen. Ohne `speichern` wird der Stand vom Öffnen
+    /// wiederhergestellt — ein Reiterkreuz verwirft, „Speichern“ übernimmt.
+    pub fn schliesse_block_editor(&mut self, id: &str, speichern: bool) {
+        if !speichern {
+            let original = self.tab_mut().block_original.remove(id);
+            if let Some(orig) = original {
+                if let Some(b) = self.doc_mut().block_mut(id) {
+                    *b = orig;
+                }
+                self.doc_mut().modified = true;
+                self.mark_changed();
+            }
+        } else {
+            self.tab_mut().block_original.remove(id);
+        }
+        self.tab_mut().offene_bloecke.retain(|b| b != id);
+        self.tab_mut().block_views.remove(id);
+        if self.aktiver_block().as_deref() == Some(id) {
+            self.switch_tab(TabKind::Model);
+        }
+    }
+
+    /// „Speichern“ im Blockeditor (T0137): Änderungen übernehmen, bei einem
+    /// Benutzerblock die `.jjblk`-Datei nachziehen und den Reiter schließen.
+    ///
+    /// Der Block selbst ist bereits im Dokument geändert (der Blockeditor ist
+    /// ein Bearbeitungsraum auf denselben Objekten) — hier wird nur noch die
+    /// Datei geschrieben und der Raum verlassen.
+    pub fn block_editor_speichern(&mut self) -> bool {
+        let Some(id) = self.aktiver_block() else {
+            return false;
+        };
+        let Some(block) = self.doc().block(&id).cloned() else {
+            return false;
+        };
+        if block.source == jjcad_core::model::BlockSource::User {
+            // T0128: Die Datei ist die Wahrheit der Benutzerbibliothek.
+            let dir = self.prefs.blocks_dir();
+            if let Err(grund) = jjcad_core::bloecke::schreibe_block(&dir, &block) {
+                self.toast(grund);
+                return false;
+            }
+        }
+        self.doc_mut().modified = true;
+        self.schliesse_block_editor(&id, true);
+        self.toast(jjcad_core::i18n::tr("gui.app.block_gespeichert"));
+        true
     }
 
     /// Bearbeitungsraum diesem Reiter nachziehen (Modell ↔ Papierraum).
     /// Wird einmal je Frame aufgerufen; die Action-Schicht liest ihn aus dem
     /// Dokument, damit GUI, Tastatur und MCP denselben Weg gehen.
     pub fn sync_space(&mut self) {
-        let raum = match self.tab().tab {
+        let block = self.aktiver_block();
+        let raum = match &self.tab().tab {
             TabKind::Model => None,
-            TabKind::Sheet(id) => Some(id),
+            TabKind::Sheet(id) => Some(*id),
+            TabKind::Block(_) => None,
         };
-        if self.session().space() != raum {
-            self.session_mut().set_space(raum);
-            self.tool = None;
-            self.ghost = None;
-            self.tab_mut().hover = None;
-            // Die Anzeigeliste des alten Raums gilt hier nicht mehr.
-            self.tab_mut().cache = None;
-            // Der Papierraum ist in Blatt-Millimetern gezeichnet: dort ist eine
-            // Texthöhe von 2,5 mm richtig, nicht die 250 mm des Modells.
-            let modell_hoehe = self.doc().settings.text_height;
-            if self.doc().in_paper_space() {
-                self.options.text_height = 2.5;
-            } else if (self.options.text_height - 2.5).abs() < 1e-9 {
-                self.options.text_height = modell_hoehe;
+        // Ein gelöschter Block lässt seinen Reiter auf das Modell zurückfallen.
+        if let Some(bid) = &block {
+            if self.doc().block(bid).is_none() {
+                self.tab_mut().tab = TabKind::Model;
+                self.sync_space();
+                return;
             }
+        }
+        let block_gleich = self.doc().block_space == block;
+        if block_gleich && self.session().space() == raum {
+            return;
+        }
+        self.session_mut().clear_selection();
+        self.tool = None;
+        self.ghost = None;
+        self.tab_mut().hover = None;
+        // Die Anzeigeliste des alten Raums gilt hier nicht mehr.
+        self.tab_mut().cache = None;
+        match &block {
+            Some(bid) => {
+                self.doc_mut().set_block_space(Some(bid));
+            }
+            None => self.session_mut().set_space(raum),
+        }
+        // Der Papierraum ist in Blatt-Millimetern gezeichnet: dort ist eine
+        // Texthöhe von 2,5 mm richtig, nicht die 250 mm des Modells.
+        let modell_hoehe = self.doc().settings.text_height;
+        if self.doc().in_paper_space() {
+            self.options.text_height = 2.5;
+        } else if (self.options.text_height - 2.5).abs() < 1e-9 {
+            self.options.text_height = modell_hoehe;
         }
     }
 
@@ -3092,11 +3299,17 @@ impl App {
 
     pub fn current_view(&self) -> View {
         let t = self.tab();
-        match t.tab {
+        match &t.tab {
             TabKind::Model => t.view_model,
-            TabKind::Sheet(id) => *t.sheet_views.get(&id).unwrap_or(&View {
+            TabKind::Sheet(id) => *t.sheet_views.get(id).unwrap_or(&View {
                 center: V2::new(0.0, 0.0),
                 zoom: 2.2,
+                rot: 0.0,
+            }),
+            // Der Block ist in Millimetern um seinen Basispunkt gezeichnet.
+            TabKind::Block(id) => *t.block_views.get(id).unwrap_or(&View {
+                center: V2::new(0.0, 0.0),
+                zoom: 0.35,
                 rot: 0.0,
             }),
         }
@@ -3104,12 +3317,15 @@ impl App {
 
     pub fn set_view(&mut self, v: View) {
         let active = self.active;
-        let tabkind = self.tabs[active].tab;
+        let tabkind = self.tabs[active].tab.clone();
         let t = &mut self.tabs[active];
         match tabkind {
             TabKind::Model => t.view_model = v,
             TabKind::Sheet(id) => {
                 t.sheet_views.insert(id, v);
+            }
+            TabKind::Block(id) => {
+                t.block_views.insert(id, v);
             }
         }
         t.cache = None;
@@ -3138,15 +3354,19 @@ impl App {
         let rect = self.ui.last_canvas;
         let (w, h) = (rect.width().max(50.0) as f64, rect.height().max(50.0) as f64);
         let tab = self.tab();
-        let (bbox, is_sheet): (BBox, bool) = match tab.tab {
-            TabKind::Model => {
+        let (bbox, is_sheet): (BBox, bool) = match &tab.tab {
+            TabKind::Model | TabKind::Block(_) => {
                 let mut b = jjcad_core::render::visible_bbox(&tab.session.doc);
                 if !b.is_valid() || b.width() < 1.0 {
-                    b = BBox::new(V2::new(0.0, 0.0), V2::new(12000.0, 9000.0));
+                    b = if matches!(&tab.tab, TabKind::Block(_)) {
+                        BBox::new(V2::new(-1000.0, -1000.0), V2::new(1000.0, 1000.0))
+                    } else {
+                        BBox::new(V2::new(0.0, 0.0), V2::new(12000.0, 9000.0))
+                    };
                 }
                 (b, false)
             }
-            TabKind::Sheet(id) => match tab.session.doc.sheet(id) {
+            TabKind::Sheet(id) => match tab.session.doc.sheet(*id) {
                 Some(s) => (s.bbox(), true),
                 None => (BBox::new(V2::new(0.0, 0.0), V2::new(420.0, 297.0)), true),
             },
@@ -3369,7 +3589,7 @@ impl App {
                 }
             }
             "sheet.add_viewport" => {
-                if let TabKind::Sheet(sid) = self.tab().tab {
+                if let TabKind::Sheet(sid) = self.tab().tab.clone() {
                     let r = self.session_mut().execute(
                         "sheet.add_viewport",
                         &serde_json::json!({"sheet": sid, "show_frame": true}),
@@ -3971,6 +4191,9 @@ impl App {
                     tab: TabKind::Model,
                     view_model: View::default(),
                     sheet_views: HashMap::new(),
+                    block_views: HashMap::new(),
+                    offene_bloecke: Vec::new(),
+                    block_original: HashMap::new(),
                     rev: 0,
                     cache: None,
                     hover: None,
@@ -4029,6 +4252,9 @@ impl App {
             tab: TabKind::Model,
             view_model: View::default(),
             sheet_views: HashMap::new(),
+            block_views: HashMap::new(),
+            offene_bloecke: Vec::new(),
+            block_original: HashMap::new(),
             rev: 0,
             cache: None,
             hover: None,
@@ -4208,18 +4434,22 @@ impl App {
             .tabs
             .iter()
             .map(|t| {
-                let ansicht = match t.tab {
+                let ansicht = match &t.tab {
                     TabKind::Model => t.view_model,
-                    TabKind::Sheet(id) => *t.sheet_views.get(&id).unwrap_or(&t.view_model),
+                    TabKind::Sheet(id) => *t.sheet_views.get(id).unwrap_or(&t.view_model),
+                    // Ein Blockeditor gehört zur Sitzung der Datei, nicht zu
+                    // ihrem Fensterzustand — die Ansicht zählt hier nicht.
+                    TabKind::Block(_) => t.view_model,
                 };
                 sitzung::Reiter {
                     id: t.session.doc.id.clone(),
                     datei: t.session.doc.path.clone(),
                     name: t.session.doc.name.clone(),
                     ansicht: ansicht_als_wert(ansicht),
-                    blatt: match t.tab {
+                    blatt: match &t.tab {
                         TabKind::Model => None,
-                        TabKind::Sheet(id) => Some(id),
+                        TabKind::Sheet(id) => Some(*id),
+                        TabKind::Block(_) => None,
                     },
                 }
             })
@@ -4348,6 +4578,9 @@ impl App {
                 tab: TabKind::Model,
                 view_model: view,
                 sheet_views: HashMap::new(),
+                block_views: HashMap::new(),
+                offene_bloecke: Vec::new(),
+                block_original: HashMap::new(),
                 rev: 0,
                 cache: None,
                 hover: None,
@@ -4373,9 +4606,9 @@ impl App {
     }
 
     pub fn export_pdf_to(&mut self, path: PathBuf) {
-        let idx = match self.tab().tab {
-            TabKind::Sheet(id) => self.doc().sheets.iter().position(|s| s.id == id),
-            TabKind::Model => None,
+        let idx = match &self.tab().tab {
+            TabKind::Sheet(id) => self.doc().sheets.iter().position(|s| s.id == *id),
+            TabKind::Model | TabKind::Block(_) => None,
         };
         let res = if let Some(i) = idx {
             pdf::export_pdf(self.doc(), &path, Some(i))
@@ -4396,9 +4629,9 @@ impl App {
     }
 
     pub fn export_png_to(&mut self, path: PathBuf) {
-        let sheet = match self.tab().tab {
-            TabKind::Sheet(id) => self.doc().sheets.iter().position(|s| s.id == id),
-            TabKind::Model => None,
+        let sheet = match &self.tab().tab {
+            TabKind::Sheet(id) => self.doc().sheets.iter().position(|s| s.id == *id),
+            TabKind::Model | TabKind::Block(_) => None,
         };
         let opts = RasterOptions {
             width_px: 2400,
@@ -5259,6 +5492,7 @@ impl App {
         let mut schliesse_datei: Option<usize> = None;
         let mut wechsle_reiter: Option<TabKind> = None;
         let mut schliesse_blatt: Option<Id> = None;
+        let mut schliesse_block: Option<String> = None;
         let mut neues_blatt = false;
         let dateien: Vec<(usize, String, bool)> = self
             .tabs
@@ -5276,7 +5510,24 @@ impl App {
             }
             v
         };
-        let aktuell = self.tab().tab;
+        // Offene Blockeditoren, nach Herkunft getrennt (T0137): Blöcke der
+        // Datei stehen in der Blattzone, Benutzerblöcke in einer eigenen
+        // Gruppe dahinter.
+        let (projekt_bloecke, nutzer_bloecke): (Vec<(String, String)>, Vec<(String, String)>) = {
+            let t = self.tab();
+            let mut p = Vec::new();
+            let mut u = Vec::new();
+            for id in &t.offene_bloecke {
+                if let Some(b) = t.session.doc.block(id) {
+                    match b.source {
+                        jjcad_core::model::BlockSource::User => u.push((id.clone(), b.name.clone())),
+                        _ => p.push((id.clone(), b.name.clone())),
+                    }
+                }
+            }
+            (p, u)
+        };
+        let aktuell = self.tab().tab.clone();
         // Luft zwischen den Blatt-Chips: ohne sie stoßen die Umrisse zweier
         // Chips aneinander und überlappen um ein bis drei Pixel.
         const BLATT_ABSTAND: f32 = 4.0;
@@ -5345,9 +5596,15 @@ impl App {
                 .iter()
                 .map(|(_, name, closable)| Self::blatt_breite(ui, name, *closable))
                 .collect();
+            let blockbreiten: Vec<f32> = projekt_bloecke
+                .iter()
+                .map(|(_, name)| Self::blatt_breite(ui, name, true))
+                .collect();
+            let anzahl = blattbreiten.len() + blockbreiten.len();
             let tray_breite = 12.0
                 + blattbreiten.iter().sum::<f32>()
-                + BLATT_ABSTAND * (blattbreiten.len().saturating_sub(1)) as f32
+                + blockbreiten.iter().sum::<f32>()
+                + BLATT_ABSTAND * (anzahl.saturating_sub(1)) as f32
                 + 8.0
                 + 20.0
                 + 10.0;
@@ -5377,6 +5634,7 @@ impl App {
                 let icon = match kind {
                     TabKind::Model => "layers",
                     TabKind::Sheet(_) => "sheet",
+                    TabKind::Block(_) => "block",
                 };
                 let (geklickt, geschlossen, rechteck) = Self::blatt_chip(
                     &mut blatt_ui,
@@ -5393,7 +5651,27 @@ impl App {
                         schliesse_blatt = Some(*id);
                     }
                 } else if geklickt {
-                    wechsle_reiter = Some(*kind);
+                    wechsle_reiter = Some(kind.clone());
+                }
+            }
+            // Blöcke **dieser Datei** stehen im selben Oval wie die Blätter.
+            for ((bid, name), breite) in projekt_bloecke.iter().zip(blockbreiten) {
+                blatt_ui.add_space(BLATT_ABSTAND);
+                let kind = TabKind::Block(bid.clone());
+                let (geklickt, geschlossen, rechteck) = Self::blatt_chip(
+                    &mut blatt_ui,
+                    name,
+                    "block",
+                    breite,
+                    aktuell == kind,
+                    true,
+                    egui::Id::new(("block", bid)),
+                );
+                blatt_rechtecke.push(rechteck);
+                if geschlossen {
+                    schliesse_block = Some(bid.clone());
+                } else if geklickt {
+                    wechsle_reiter = Some(kind);
                 }
             }
             blatt_ui.add_space(6.0);
@@ -5413,6 +5691,61 @@ impl App {
                 neues_blatt = true;
             }
             resp.on_hover_text(jjcad_core::i18n::tr("gui.app.neues_blatt"));
+
+            // ---- Zone 3: Blöcke des Benutzers (eigene Gruppe) ----
+            // Sie gehören zur Bibliothek, nicht zur Datei — deshalb eine eigene
+            // Fläche hinter der Blattzone (T0137).
+            if !nutzer_bloecke.is_empty() {
+                ui.add_space(8.0);
+                let breiten: Vec<f32> = nutzer_bloecke
+                    .iter()
+                    .map(|(_, name)| Self::blatt_breite(ui, name, true))
+                    .collect();
+                let breite = 10.0
+                    + breiten.iter().sum::<f32>()
+                    + BLATT_ABSTAND * (breiten.len().saturating_sub(1)) as f32
+                    + 10.0;
+                let (tray, _) = ui.allocate_exact_size(
+                    Vec2::new(breite, DOCTABS_H - 6.0),
+                    Sense::hover(),
+                );
+                ui.painter().rect_filled(tray, Rounding::same(9.0), Palette::panel_alt());
+                ui.painter().rect_stroke(
+                    tray,
+                    Rounding::same(9.0),
+                    Stroke::new(1.0_f32, Palette::border()),
+                );
+                let mut nutzer_ui = ui.new_child(
+                    egui::UiBuilder::new()
+                        .max_rect(tray)
+                        .layout(Layout::left_to_right(Align::Center)),
+                );
+                nutzer_ui.spacing_mut().item_spacing.x = 0.0;
+                nutzer_ui.add_space(10.0);
+                for (i, ((bid, name), breite)) in
+                    nutzer_bloecke.iter().zip(breiten).enumerate()
+                {
+                    if i > 0 {
+                        nutzer_ui.add_space(BLATT_ABSTAND);
+                    }
+                    let kind = TabKind::Block(bid.clone());
+                    let (geklickt, geschlossen, rechteck) = Self::blatt_chip(
+                        &mut nutzer_ui,
+                        name,
+                        "block",
+                        breite,
+                        aktuell == kind,
+                        true,
+                        egui::Id::new(("block", bid)),
+                    );
+                    blatt_rechtecke.push(rechteck);
+                    if geschlossen {
+                        schliesse_block = Some(bid.clone());
+                    } else if geklickt {
+                        wechsle_reiter = Some(kind);
+                    }
+                }
+            }
         });
         if !blatt_rechtecke.is_empty() {
             self.ui.last_blattrechtecke = Some(blatt_rechtecke);
@@ -5428,6 +5761,10 @@ impl App {
         }
         if let Some(kind) = wechsle_reiter {
             self.switch_tab(kind);
+        }
+        if let Some(id) = schliesse_block {
+            // Reiterkreuz = verwerfen (der Öffnungsstand kommt zurück).
+            self.schliesse_block_editor(&id, false);
         }
         if let Some(id) = schliesse_blatt {
             if self.doc().sheets.len() > 1 {
@@ -6511,7 +6848,7 @@ fn rail(ui: &mut egui::Ui, icon: &str, tooltip: &str, chevron: &str) -> bool {
                             app.run_action(ui.ctx(), "sheet.new");
                         }
                         if widgets::ribbon_button(ui, "viewport", rb("ribbon.viewport"), app.tool_id() == Some("sheet.viewport_tool")).clicked() {
-                            if matches!(app.tab().tab, TabKind::Sheet(_)) {
+                            if matches!(&app.tab().tab, TabKind::Sheet(_)) {
                                 app.start_tool("sheet.viewport_tool");
                                 app.toast(jjcad_core::i18n::tr("gui.app.ansichtsfenster_rechteck_aufziehen"));
                             } else {
@@ -6526,7 +6863,7 @@ fn rail(ui: &mut egui::Ui, icon: &str, tooltip: &str, chevron: &str) -> bool {
                     // Papierraum: dieselben Zeichenwerkzeuge wie im Modell.
                     // Der Plankopf besteht aus normalen Linien und Textfeldern.
                     self.group(ui, "ribbon.group.papierraum", |ui, app| {
-                        if matches!(app.tab().tab, TabKind::Sheet(_)) {
+                        if matches!(&app.tab().tab, TabKind::Sheet(_)) {
                             for (icon, action) in [
                                 ("line", "draw.line"),
                                 ("rect", "draw.rect"),
@@ -6543,7 +6880,7 @@ fn rail(ui: &mut egui::Ui, icon: &str, tooltip: &str, chevron: &str) -> bool {
                     });
                     widgets::vline(ui, RIBBON_GROUP_H);
                     self.group(ui, "ribbon.group.blatteinstellungen", |ui, app| {
-                        if let TabKind::Sheet(id) = app.tab().tab {
+                        if let TabKind::Sheet(id) = app.tab().tab.clone() {
                             let mut paper = app.doc().sheet(id).map(|s| s.paper).unwrap_or_default();
                             let mut landscape = app.doc().sheet(id).map(|s| s.landscape).unwrap_or(true);
                             let mut scale = app.doc().sheet(id).map(|s| s.scale).unwrap_or(100.0);
@@ -13268,5 +13605,186 @@ mod tests_sitzung {
         assert!(!app.weicht_von_zieldatei(0));
         app.request_close_tab(0);
         assert_eq!(app.ui.confirm_close, None);
+    }
+}
+
+#[cfg(test)]
+mod tests_blockeditor {
+    //! T0137: Blockeditor — nur eigene Blöcke, Speichern schreibt die
+    //! Benutzerdatei und schließt den Reiter, Schließen ohne Speichern stellt
+    //! den Ausgangsstand wieder her.
+
+    use super::*;
+    use jjcad_core::model::BlockSource;
+
+    fn test_dir(name: &str) -> PathBuf {
+        let d = std::env::temp_dir().join(format!(
+            "jjcad-blockeditor-{}-{name}",
+            std::process::id()
+        ));
+        let _ = std::fs::remove_dir_all(&d);
+        std::fs::create_dir_all(&d).unwrap();
+        d
+    }
+
+    /// Zeichnung mit einem Benutzerblock (`usr:stuhl`) aus zwei Linien.
+    fn app_mit_benutzerblock(dir: &std::path::Path) -> App {
+        let mut app = App::with_ctx(egui::Context::default());
+        app.prefs.blocks_pfad = dir.to_string_lossy().to_string();
+        let layer = app.doc().current_layer;
+        let mut ents = Vec::new();
+        for (i, (a, b)) in [
+            ((-100.0, 0.0), (100.0, 0.0)),
+            ((0.0, -100.0), (0.0, 100.0)),
+        ]
+        .iter()
+        .enumerate()
+        {
+            let mut e = Entity::new(
+                i as u64 + 1,
+                layer,
+                EntityKind::Line {
+                    a: jjcad_core::geom::v(a.0, a.1),
+                    b: jjcad_core::geom::v(b.0, b.1),
+                },
+            );
+            e.by_block = true;
+            ents.push(e);
+        }
+        app.doc_mut().blocks.push(BlockDef {
+            id: "usr:stuhl".into(),
+            name: "Stuhl".into(),
+            category: "Projekt".into(),
+            source: BlockSource::User,
+            description: "Prüfblock".into(),
+            entities: ents,
+            icon: None,
+            base: V2::ZERO,
+        });
+        app
+    }
+
+    #[test]
+    fn nur_eigene_bloecke_bekommen_einen_editor() {
+        let dir = test_dir("nur-eigene");
+        let mut app = app_mit_benutzerblock(&dir);
+
+        assert!(
+            !app.oeffne_block_editor("sys:wc"),
+            "ein Systemblock ist schreibgeschützt"
+        );
+        assert_eq!(app.aktiver_block(), None);
+        assert_eq!(app.tab().offene_bloecke.len(), 0);
+
+        assert!(app.oeffne_block_editor("usr:stuhl"));
+        assert_eq!(app.aktiver_block().as_deref(), Some("usr:stuhl"));
+        assert_eq!(app.doc().block_space.as_deref(), Some("usr:stuhl"));
+        assert_eq!(app.tab().offene_bloecke, vec!["usr:stuhl".to_string()]);
+    }
+
+    #[test]
+    fn speichern_schreibt_die_benutzerdatei_und_schliesst_den_reiter() {
+        let dir = test_dir("speichern");
+        let mut app = app_mit_benutzerblock(&dir);
+        assert!(app.oeffne_block_editor("usr:stuhl"));
+
+        // Im Blockeditor zeichnen — die Änderung gehört zur Blockdefinition.
+        app.session_mut()
+            .execute(
+                "draw.line",
+                &serde_json::json!({"a": [200.0, 0.0], "b": [300.0, 0.0]}),
+            )
+            .unwrap();
+        assert_eq!(app.doc().block("usr:stuhl").unwrap().entities.len(), 3);
+
+        assert!(app.block_editor_speichern(), "Speichern muss gelingen");
+
+        // Datei liegt im Blockverzeichnis und trägt alle drei Bauteile.
+        let dateien = jjcad_core::bloecke::dateien(&dir);
+        assert_eq!(dateien.len(), 1, "genau eine Blockdatei");
+        let datei = jjcad_core::bloecke::lies(&dateien[0]).expect("Blockdatei lesbar");
+        assert_eq!(datei.block.id, "usr:stuhl");
+        assert_eq!(datei.block.source, BlockSource::User);
+        assert_eq!(
+            datei.block.entities.len(),
+            3,
+            "die neue Linie ist in der Datei"
+        );
+
+        // Reiter zu, Blockeditor zu, Modell wieder der Raum.
+        assert_eq!(app.aktiver_block(), None);
+        assert!(app.tab().offene_bloecke.is_empty());
+        assert!(!app.doc().in_block_space());
+    }
+
+    #[test]
+    fn schliessen_ohne_speichern_stellt_den_stand_wieder_her() {
+        let dir = test_dir("verwerfen");
+        let mut app = app_mit_benutzerblock(&dir);
+        assert!(app.oeffne_block_editor("usr:stuhl"));
+        app.session_mut()
+            .execute(
+                "draw.line",
+                &serde_json::json!({"a": [200.0, 0.0], "b": [300.0, 0.0]}),
+            )
+            .unwrap();
+        assert_eq!(app.doc().block("usr:stuhl").unwrap().entities.len(), 3);
+
+        app.schliesse_block_editor("usr:stuhl", false);
+
+        assert_eq!(
+            app.doc().block("usr:stuhl").unwrap().entities.len(),
+            2,
+            "Schließen ohne Speichern verwirft die Änderung"
+        );
+        assert!(
+            jjcad_core::bloecke::dateien(&dir).is_empty(),
+            "es wurde keine Datei geschrieben"
+        );
+        assert_eq!(app.aktiver_block(), None);
+    }
+
+    #[test]
+    fn oberflaeche_zeichnet_mit_offenem_blockeditor() {
+        // Der Reiter des Blockeditors liegt in der Blattzone, der Benutzerblock
+        // in einer eigenen Gruppe — beide müssen ohne Panik gezeichnet werden.
+        let dir = test_dir("oberflaeche");
+        let mut app = app_mit_benutzerblock(&dir);
+        assert!(app.oeffne_block_editor("usr:stuhl"));
+        // Denselben Kontext nehmen: nur er kennt die geladenen Schriften.
+        let ctx = app.ctx.clone();
+        for _ in 0..3 {
+            let raw = egui::RawInput {
+                screen_rect: Some(Rect::from_min_size(
+                    Pos2::ZERO,
+                    egui::vec2(1500.0, 950.0),
+                )),
+                ..Default::default()
+            };
+            let _ = ctx.run(raw, |ctx| app.ui(ctx));
+        }
+        assert!(
+            app.doc().in_block_space(),
+            "der Blockeditor bleibt nach den Frames der aktive Raum"
+        );
+        // Die Anzeigeliste zeigt den Block (zwei Bauteile), nicht die Zeichnung.
+        let prims = app
+            .tab()
+            .cache
+            .as_ref()
+            .map(|(_, dl)| dl.prims.len())
+            .expect("Anzeigeliste gezeichnet");
+        assert_eq!(prims, 2, "Block: Rahmen und Kreis, sonst nichts");
+        let reiter = app
+            .ui
+            .last_blattrechtecke
+            .clone()
+            .expect("Reiter gezeichnet");
+        let blattzahl = app.doc().sheets.len();
+        assert_eq!(
+            reiter.len(),
+            blattzahl + 2,
+            "Modell, Blätter und der Blockeditor stehen im Streifen"
+        );
     }
 }

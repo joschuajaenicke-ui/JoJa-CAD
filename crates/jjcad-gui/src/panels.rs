@@ -453,8 +453,10 @@ pub fn properties(app: &mut App, ui: &mut Ui) {
             } else if sel.len() > 1 {
                 crate::props::mehrfach(app, ui, &sel);
             } else if !tool_active {
-                match app.tab().tab {
-                    TabKind::Sheet(id) => sheet_props(app, ui, id),
+                let reiter = app.tab().tab.clone();
+                match &reiter {
+                    TabKind::Sheet(id) => sheet_props(app, ui, *id),
+                    TabKind::Block(id) => block_props(app, ui, id),
                     TabKind::Model => doc_props(app, ui),
                 }
             }
@@ -1282,6 +1284,81 @@ fn bestand_text(doc: &Document) -> String {
         "keine Objekte".to_string()
     } else {
         teile.join(" · ")
+    }
+}
+
+/// Eigenschaften des **Blocks**, dessen Editor offen ist (T0137).
+///
+/// Erscheint nur, solange nichts ausgewählt ist — ein ausgewähltes Objekt
+/// gehört mit seinen Eigenschaften dem Panel (dieselbe Regel wie im Modell).
+/// Name, Gruppe und Beschreibung sind hier bearbeitbar; „Speichern“ übernimmt
+/// (bei Benutzerblöcken samt Datei) und schließt den Reiter.
+fn block_props(app: &mut App, ui: &mut Ui, id: &str) {
+    let Some(block) = app.doc().block(id).cloned() else {
+        return;
+    };
+    section_title(ui, "block", &block.name);
+    ui.label(theme::dim(
+        jjcad_core::i18n::tr("gui.panels.blockeditor_hinweis"),
+    ));
+    ui.add_space(8.0);
+
+    let mut name = block.name.clone();
+    widgets::field_row(ui, jjcad_core::i18n::tr("gui.panels.name"), |ui| {
+        if ui
+            .add_sized([140.0, 20.0], egui::TextEdit::singleline(&mut name))
+            .changed()
+        {
+            if let Some(b) = app.doc_mut().block_mut(id) {
+                b.name = name.clone();
+            }
+            app.mark_changed();
+        }
+    });
+    let mut gruppe = block.category.clone();
+    widgets::field_row(ui, jjcad_core::i18n::tr("gui.panels.gruppe"), |ui| {
+        if ui
+            .add_sized([140.0, 20.0], egui::TextEdit::singleline(&mut gruppe))
+            .changed()
+        {
+            if let Some(b) = app.doc_mut().block_mut(id) {
+                b.category = gruppe.clone();
+            }
+            app.mark_changed();
+        }
+    });
+    let mut beschreibung = block.description.clone();
+    widgets::field_row(ui, jjcad_core::i18n::tr("gui.panels.beschreibung"), |ui| {
+        if ui
+            .add_sized([140.0, 20.0], egui::TextEdit::singleline(&mut beschreibung))
+            .changed()
+        {
+            if let Some(b) = app.doc_mut().block_mut(id) {
+                b.description = beschreibung.clone();
+            }
+            app.mark_changed();
+        }
+    });
+    widgets::field_row(ui, jjcad_core::i18n::tr("gui.panels.herkunft"), |ui| {
+        ui.label(block.source.text());
+    });
+    widgets::field_row(ui, jjcad_core::i18n::tr("gui.panels.bauteile"), |ui| {
+        ui.label(format!("{}", block.entities.len()));
+    });
+    widgets::field_row(ui, jjcad_core::i18n::tr("gui.panels.kennung"), |ui| {
+        ui.label(theme::dim(&block.id));
+    });
+
+    ui.add_space(12.0);
+    widgets::hline(ui);
+    ui.add_space(8.0);
+    let knopf = egui::Button::new(theme::bold(
+        jjcad_core::i18n::tr("gui.panels.block_speichern"),
+        12.0,
+    ))
+    .min_size(Vec2::new(150.0, 26.0));
+    if ui.add(knopf).clicked() {
+        app.block_editor_speichern();
     }
 }
 

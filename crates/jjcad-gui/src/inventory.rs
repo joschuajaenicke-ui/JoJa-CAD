@@ -1,6 +1,6 @@
 //! Inventar: Lager (Raster), Block-Manager, Funktionsliste.
 
-use crate::app::App;
+use crate::app::{App, TabKind};
 use crate::theme::{self, Palette};
 use crate::widgets;
 use egui::{Align, Color32, FontId, Layout, Pos2, Rect, RichText, Rounding, Sense, Stroke, Ui, Vec2};
@@ -281,6 +281,16 @@ fn block_tile(app: &mut App, ui: &mut Ui, b: &BlockDef) {
         app.ui.slot_drag = Some((usize::MAX, format!("block:{}", b.id)));
     }
     resp.context_menu(|ui| {
+        // T0137: Nur eigene Blöcke sind bearbeitbar — Systemblöcke nicht.
+        if b.source != jjcad_core::model::BlockSource::System
+            && ui
+                .button(jjcad_core::i18n::tr("gui.inventory.bearbeiten"))
+                .clicked()
+        {
+            app.oeffne_block_editor(&b.id);
+            app.close_inventory();
+            ui.close_menu();
+        }
         if ui.button(jjcad_core::i18n::tr("gui.inventory.einfuegen")).clicked() {
             app.start_ghost_block(b.id.clone());
             ui.close_menu();
@@ -299,6 +309,13 @@ fn block_tile(app: &mut App, ui: &mut Ui, b: &BlockDef) {
                 "block.delete",
                 &serde_json::json!({ "block": b.id, "dir": dir }),
             );
+            // Ein offener Editor dieses Blocks hat keinen Block mehr.
+            app.tab_mut().offene_bloecke.retain(|x| x != &b.id);
+            app.tab_mut().block_original.remove(&b.id);
+            app.tab_mut().block_views.remove(&b.id);
+            if app.aktiver_block().as_deref() == Some(b.id.as_str()) {
+                app.switch_tab(TabKind::Model);
+            }
             app.mark_changed();
             ui.close_menu();
         }
