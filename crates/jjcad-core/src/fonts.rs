@@ -374,6 +374,24 @@ pub fn line_height_em(font: TextFont, style: FontStyle) -> f64 {
     wert.clamp(0.5, 4.0)
 }
 
+/// Versalhöhe einer Familie in Vielfachen der Schriftgröße (Em).
+///
+/// Die Höhe der Großbuchstaben („H") aus dem Kopf der Schriftdatei — das Maß,
+/// um das der Zeilenkasten über und unter dem sichtbaren Text Luft hat. Der
+/// Rahmen eines Textfelds bekommt links und rechts denselben Abstand
+/// (T0126, Turn 5). Fehlt der Wert, gilt die übliche Annahme 0,7 Em.
+pub fn cap_height_em(font: TextFont, style: FontStyle) -> f64 {
+    ttf_info(font, style)
+        .map(|i| {
+            if i.units_per_em > 0.0 {
+                (i.cap_height / i.units_per_em).clamp(0.3, 0.95)
+            } else {
+                0.7
+            }
+        })
+        .unwrap_or(0.7)
+}
+
 /// Glyphennummer im Font (für Identity-H-Sätze im PDF).
 pub fn glyph_id(font: TextFont, style: FontStyle, c: char) -> u16 {
     with_font(font, style, |f| f.glyph_id(c).0).unwrap_or(0)

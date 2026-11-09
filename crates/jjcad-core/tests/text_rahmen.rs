@@ -48,6 +48,15 @@ fn erwartet(text: &str, font: TextFont, height: f64) -> (f64, f64) {
     (breite, zeile)
 }
 
+/// Seitlicher Rand der Umrandung in mm (T0126, Turn 5): die halbe Luft, die
+/// der Zeilenkasten über und unter den Versalien hat — dieselbe Luft links
+/// und rechts. Aus den Schriftmaßen gerechnet, nicht aus dem Renderer.
+fn rand(font: TextFont, height: f64) -> f64 {
+    let lh = fonts::line_height_em(font, FontStyle::Regular);
+    let cap = fonts::cap_height_em(font, FontStyle::Regular);
+    (lh - cap) * 0.5 * height * render::TEXT_GROESSE_FAKTOR
+}
+
 fn text_schreiben(text: &str, height: f64, extra: serde_json::Value) -> Session {
     let mut s = s();
     let mut p = json!({ "p": [0.0, 0.0], "text": text, "height": height });
@@ -95,14 +104,16 @@ fn rahmen_umschliesst_den_text() {
     assert_nahe(w, 752.0, "Breite");
     assert_nahe(h, 379.5, "Zeilenhöhe");
 
-    let ecken = render::text_frame(&s.doc, e).expect("Text braucht einen Rahmen");
+    // Der **Textkasten** (die Schrift) — die Umrandung ist breiter, siehe
+    // `umrandung_hat_seitlich_denselben_abstand_wie_oben` (T0126, Turn 5).
+    let ecken = render::text_box_corners(&s.doc, e).expect("Text braucht einen Kasten");
     assert!(matches!(e.kind, EntityKind::Text { .. }));
     assert_punkt(ecken[0], v(0.0, -h / 2.0), "links unten");
     assert_punkt(ecken[1], v(w, -h / 2.0), "rechts unten");
     assert_punkt(ecken[2], v(w, h / 2.0), "rechts oben");
     assert_punkt(ecken[3], v(0.0, h / 2.0), "links oben");
 
-    // Rahmen und Bounding-Box sind derselbe Kasten (Breite/Höhe in mm).
+    // Ohne Umrandung ist die Bounding-Box der Textkasten selbst.
     let b = render::entity_bbox(&s.doc, e);
     assert!((b.max.x - b.min.x - w).abs() < 1e-6, "Breite {:?}", b);
     assert!((b.max.y - b.min.y - h).abs() < 1e-6, "Höhe {:?}", b);
@@ -115,7 +126,7 @@ fn rahmen_umschliesst_den_text() {
 fn rahmen_umschliesst_auch_grossbuchstaben() {
     let s = text_schreiben("WOHNEN", 250.0, json!({}));
     let e = letzter_text(&s);
-    let ecken = render::text_frame(&s.doc, e).expect("Rahmen");
+    let ecken = render::text_box_corners(&s.doc, e).expect("Kasten");
     let breite = ecken[1].x - ecken[0].x;
 
     let (soll, _) = erwartet("WOHNEN", TextFont::Sans, 250.0);
@@ -139,7 +150,7 @@ fn jede_schrift_bekommt_ihren_eigenen_rahmen() {
     for font in TextFont::ALL {
         let s = text_schreiben("Wohnen", 250.0, json!({ "font": font.key() }));
         let e = letzter_text(&s);
-        let ecken = render::text_frame(&s.doc, e).expect("Rahmen");
+        let ecken = render::text_box_corners(&s.doc, e).expect("Kasten");
         let (w, h) = erwartet("Wohnen", font, 250.0);
         assert_nahe(
             ecken[1].x - ecken[0].x,
@@ -186,7 +197,7 @@ fn jede_schrift_bekommt_ihren_eigenen_rahmen() {
 fn mehrzeiliger_rahmen_umschliesst_alle_zeilen() {
     let s = text_schreiben("WOHNEN\nOG", 250.0, json!({}));
     let e = letzter_text(&s);
-    let ecken = render::text_frame(&s.doc, e).expect("Rahmen");
+    let ecken = render::text_box_corners(&s.doc, e).expect("Kasten");
 
     let (w, zeile) = erwartet("WOHNEN", TextFont::Sans, 250.0);
     assert_nahe(ecken[1].x - ecken[0].x, w, "Breite");
@@ -307,9 +318,10 @@ fn rahmen_besteht_aus_vier_kanten() {
 fn ecke_des_rahmens_faengt_als_endpunkt() {
     let s = text_schreiben("Hallo", 250.0, json!({}));
     let (w, h) = erwartet("Hallo", TextFont::Sans, 250.0);
-    let r = fang(&s, v(w + 7.0, h / 2.0 + 5.0), 40.0);
+    let rand = rand(TextFont::Sans, 250.0);
+    let r = fang(&s, v(w + rand + 7.0, h / 2.0 + 5.0), 40.0);
     assert_eq!(r.source, SnapSource::Object(SnapKind::Endpoint), "{r:?}");
-    assert_punkt(r.point, v(w, h / 2.0), "Ecke rechts oben");
+    assert_punkt(r.point, v(w + rand, h / 2.0), "Ecke rechts oben");
 }
 
 /// Die Mitte einer Rahmenkante fängt als Mittelpunkt.
@@ -327,9 +339,10 @@ fn kantenmitte_faengt_als_mittelpunkt() {
 #[test]
 fn kante_faengt_als_naechster_punkt() {
     let s = text_schreiben("Hallo", 250.0, json!({}));
-    let r = fang(&s, v(4.0, 60.0), 40.0);
+    let rand = rand(TextFont::Sans, 250.0);
+    let r = fang(&s, v(-rand + 4.0, 60.0), 40.0);
     assert_eq!(r.source, SnapSource::Object(SnapKind::Nearest), "{r:?}");
-    assert_punkt(r.point, v(0.0, 60.0), "Punkt auf der linken Kante");
+    assert_punkt(r.point, v(-rand, 60.0), "Punkt auf der linken Kante");
 }
 
 /// Der Ankerpunkt des Textes bleibt fangbar (Rückfall auf das alte Verhalten).
@@ -363,13 +376,15 @@ fn gedrehter_rahmen_dreht_mit_dem_text() {
     );
     let e = letzter_text(&s);
     let (w, h) = erwartet("Hallo", TextFont::Sans, 250.0);
+    let rand = rand(TextFont::Sans, 250.0);
     let ecken = render::text_frame(&s.doc, e).expect("Rahmen");
 
-    // 90° gegen den Uhrzeigersinn: „rechts“ zeigt nach oben, „oben“ nach links
-    assert_punkt(ecken[0], v(h / 2.0, 0.0), "links unten gedreht");
-    assert_punkt(ecken[1], v(h / 2.0, w), "rechts unten gedreht");
-    assert_punkt(ecken[2], v(-h / 2.0, w), "rechts oben gedreht");
-    assert_punkt(ecken[3], v(-h / 2.0, 0.0), "links oben gedreht");
+    // 90° gegen den Uhrzeigersinn: „rechts“ zeigt nach oben, „oben“ nach links.
+    // Der seitliche Rand liegt mit auf der gedrehten Textachse (T0126, Turn 5).
+    assert_punkt(ecken[0], v(h / 2.0, -rand), "links unten gedreht");
+    assert_punkt(ecken[1], v(h / 2.0, w + rand), "rechts unten gedreht");
+    assert_punkt(ecken[2], v(-h / 2.0, w + rand), "rechts oben gedreht");
+    assert_punkt(ecken[3], v(-h / 2.0, -rand), "links oben gedreht");
 
     // Die Bounding-Box bleibt die Hülle des gedrehten Kastens.
     let b = render::entity_bbox(&s.doc, e);

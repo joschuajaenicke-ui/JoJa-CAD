@@ -417,3 +417,115 @@ fn hintergrund_steht_an_der_stelle_des_textes() {
         "Text/Hintergrund vor der Linie: Text {t:?}, Linie {l:?}"
     );
 }
+
+// ---------------------------------------------------------------------------
+// Seitlicher Rand der Umrandung (Turn 5)
+// ---------------------------------------------------------------------------
+
+/// Erwarteter seitlicher Rand in mm: die halbe Luft, die der Zeilenkasten über
+/// und unter den Versalien hat — aus den Schriftmaßen gerechnet.
+fn erwarteter_rand(font: jjcad_core::model::TextFont, height: f64) -> f64 {
+    let stil = jjcad_core::fonts::FontStyle::Regular;
+    let lh = jjcad_core::fonts::line_height_em(font, stil);
+    let cap = jjcad_core::fonts::cap_height_em(font, stil);
+    (lh - cap) * 0.5 * height * render::TEXT_GROESSE_FAKTOR
+}
+
+/// Links und rechts steht derselbe Abstand wie oben und unten: der Rahmen ist
+/// um genau die halbe Luft zwischen Zeilenhöhe und Versalhöhe breiter, und der
+/// Textanker bleibt, wo er ist (T0126, Turn 5).
+#[test]
+fn umrandung_hat_seitlich_denselben_abstand_wie_oben() {
+    for font in [jjcad_core::model::TextFont::Sans, jjcad_core::model::TextFont::DinMittel] {
+        let s = text_schreiben(
+            "Hintergrund",
+            250.0,
+            json!({ "frame": true, "font": font.key(), "align": "left", "valign": "bottom" }),
+        );
+        let e = letzter_text(&s);
+        let text = render::text_box_corners(&s.doc, e).expect("Textkasten");
+        let rahmen = render::text_frame(&s.doc, e).expect("Umrandung");
+        let tb = bbox(&text);
+        let rb = bbox(&rahmen);
+        let soll = erwarteter_rand(font, 250.0);
+
+        // Der Textkasten hängt am Anker (links unten bei 0,0) …
+        assert_nahe(tb.0, 0.0, "Textkasten links am Anker");
+        // … die Umrandung wächst nach außen.
+        assert_nahe(tb.0 - rb.0, soll, "Rand links");
+        assert_nahe(rb.2 - tb.2, soll, "Rand rechts");
+        // Oben und unten bleibt es beim Zeilenkasten — dort ist die Luft schon.
+        assert_nahe(rb.1, tb.1, "untere Kante unverändert");
+        assert_nahe(rb.3, tb.3, "obere Kante unverändert");
+        // Damit ist der seitliche Rand genau die halbe Luft oben/unten.
+        let luft_oben = (tb.3 - tb.1 - jjcad_core::fonts::cap_height_em(font, jjcad_core::fonts::FontStyle::Regular) * 250.0 * render::TEXT_GROESSE_FAKTOR) * 0.5;
+        assert_nahe(soll, luft_oben, "seitlicher Rand = Luft oben");
+    }
+}
+
+/// Die runden Ecken schneiden den Text nicht.
+///
+/// Geprüft wird die Bedingung, unter der das gilt: der seitliche Rand muss
+/// mindestens so groß sein wie der Rücksprung der Rundung auf Höhe der
+/// Versalien. Bei einem Halbkreis mit dem Radius der halben Zeilenhöhe
+/// (`r`) liegt die Bogenkante auf Höhe der Versaloberkante um
+/// `r − √(r² − (Versalhöhe/2)²)` innen — genau so viel Rand braucht der Text
+/// (T0126, Turn 5).
+#[test]
+fn runde_umrandung_schneidet_den_text_nicht() {
+    let s = text_schreiben(
+        "Hintergrund",
+        250.0,
+        json!({ "frame": true, "frame_round": true, "align": "left", "valign": "bottom" }),
+    );
+    let e = letzter_text(&s);
+    let rahmen = rahmen_und_flaeche(&s).1.expect("Rahmen fehlt");
+    let rb = bbox(&rahmen);
+    let r = (rb.3 - rb.1) * 0.5;
+    let stil = jjcad_core::fonts::FontStyle::Regular;
+    let versal = jjcad_core::fonts::cap_height_em(jjcad_core::model::TextFont::Sans, stil)
+        * 250.0
+        * render::TEXT_GROESSE_FAKTOR;
+    let ruecksprung = r - (r * r - (versal * 0.5).powi(2)).max(0.0).sqrt();
+    let rand = erwarteter_rand(jjcad_core::model::TextFont::Sans, 250.0);
+    assert!(
+        rand > ruecksprung + 1.0,
+        "Rand {rand:.1} mm deckt den Rücksprung der Rundung ({ruecksprung:.1} mm) nicht"
+    );
+
+    // Und die Ecken der Versalzeile liegen wirklich innerhalb des Pfades.
+    let tb = bbox(&render::text_box_corners(&s.doc, e).expect("Textkasten"));
+    let mitte = (rb.1 + rb.3) * 0.5;
+    let ecken = [
+        Vec2::new(tb.0, mitte + versal * 0.5),
+        Vec2::new(tb.2, mitte + versal * 0.5),
+        Vec2::new(tb.2, mitte - versal * 0.5),
+        Vec2::new(tb.0, mitte - versal * 0.5),
+    ];
+    let flaeche: f64 = (0..rahmen.len())
+        .map(|i| {
+            let a = rahmen[i];
+            let b = rahmen[(i + 1) % rahmen.len()];
+            a.x * b.y - b.x * a.y
+        })
+        .sum();
+    let vorzeichen = if flaeche >= 0.0 { 1.0 } else { -1.0 };
+    for (i, p) in ecken.iter().enumerate() {
+        let abstand = (0..rahmen.len())
+            .filter_map(|k| {
+                let a = rahmen[k];
+                let b = rahmen[(k + 1) % rahmen.len()];
+                let len = a.dist(b);
+                // Der Pfad hat an den Übergängen Ecke/Bogen doppelte Punkte.
+                if len < 1e-6 {
+                    return None;
+                }
+                Some(vorzeichen * ((b.x - a.x) * (p.y - a.y) - (b.y - a.y) * (p.x - a.x)) / len)
+            })
+            .fold(f64::INFINITY, f64::min);
+        assert!(
+            abstand > 0.0,
+            "Versalecke {i} bei {p:?} liegt außerhalb der runden Umrandung ({abstand:.1} mm)"
+        );
+    }
+}

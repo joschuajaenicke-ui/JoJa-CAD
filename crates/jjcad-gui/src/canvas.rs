@@ -2518,7 +2518,7 @@ fn draw_tool_preview(
                 app.options.text_angle.to_radians(),
             );
             if let Some(bg) = app.options.text_background {
-                let pts: Vec<Pos2> = render::text_corners(&tprim)
+                let pts: Vec<Pos2> = render::text_frame_corners(&tprim)
                     .iter()
                     .map(|q| w2s(*q + cursor))
                     .collect();

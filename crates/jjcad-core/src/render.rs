@@ -129,8 +129,54 @@ impl TextPrim {
     }
 
     /// Breite und Höhe des Textkastens in Welt-mm.
+    ///
+    /// Das ist der **Textkasten** (Schriftbreite × Zeilenhöhe) — Bezug für
+    /// Satz, Ausrichtung und Fang der Schrift selbst.
     pub fn box_size(&self) -> (f64, f64) {
         (self.width(), self.line_height() * self.lines() as f64)
+    }
+
+    /// Seitlicher Rand der Umrandung in Em.
+    ///
+    /// Der Zeilenkasten hat über und unter den Versalien Luft (halbe Differenz
+    /// aus Zeilenhöhe und Versalhöhe der Schrift); links und rechts fehlte sie
+    /// bisher. Der Rahmen bekommt genau diesen Abstand auf beiden Seiten —
+    /// sonst säßen die runden Ecken im Text (T0126, Turn 5). Gemessen wird ohne
+    /// den Zeilenabstand des Objekts: der verteilt Luft **zwischen** den
+    /// Zeilen, nicht am Rand.
+    pub fn frame_pad_em(&self) -> f64 {
+        let lh = self
+            .effective_runs()
+            .iter()
+            .map(|r| {
+                let stil = crate::fonts::FontStyle::from_flags(r.bold, r.italic);
+                crate::fonts::line_height_em(self.font, stil)
+            })
+            .fold(0.0, f64::max)
+            .max(0.5);
+        let cap = self
+            .effective_runs()
+            .iter()
+            .map(|r| {
+                let stil = crate::fonts::FontStyle::from_flags(r.bold, r.italic);
+                crate::fonts::cap_height_em(self.font, stil)
+            })
+            .fold(0.0, f64::max)
+            .max(0.3);
+        ((lh - cap) * 0.5).max(0.02)
+    }
+
+    /// Seitlicher Rand der Umrandung in Welt-mm.
+    pub fn frame_pad(&self) -> f64 {
+        self.frame_pad_em() * self.height * TEXT_GROESSE_FAKTOR
+    }
+
+    /// Breite und Höhe der **Umrandung** in Welt-mm: der Textkasten, links und
+    /// rechts um den Rand verbreitert. Oben und unten bleibt es beim
+    /// Zeilenkasten — dort ist der Abstand schon da.
+    pub fn frame_box_size(&self) -> (f64, f64) {
+        let (w, h) = self.box_size();
+        (w + 2.0 * self.frame_pad(), h)
     }
 }
 
@@ -343,6 +389,45 @@ pub fn text_corners(t: &TextPrim) -> [Vec2; 4] {
     ]
 }
 
+/// Geometrie der Umrandung: Breite, Höhe und Versatz vom Anker.
+///
+/// Die Umrandung ist der Textkasten (`box_size`), links und rechts um
+/// [`TextPrim::frame_pad`] verbreitert — oben und unten ist der Abstand schon
+/// im Zeilenkasten (T0126, Turn 5).
+fn frame_geometry(t: &TextPrim) -> (f64, f64, f64, f64) {
+    let (w, h) = t.frame_box_size();
+    let pad = t.frame_pad();
+    let dx = match t.align {
+        TextAlignH::Left => -pad,
+        TextAlignH::Center => -w * 0.5,
+        TextAlignH::Right => -w + pad,
+    };
+    let dy = match t.valign {
+        TextAlignV::Top => -h,
+        TextAlignV::Middle => -h * 0.5,
+        TextAlignV::Bottom => 0.0,
+    };
+    (w, h, dx, dy)
+}
+
+/// Die vier Ecken der **Umrandung** (links unten, rechts unten, rechts oben,
+/// links oben) in Weltkoordinaten.
+///
+/// Dieselbe Form wie [`text_frame_path`] ohne Rundung — Bezug für den
+/// Hintergrund (immer dieses Rechteck) und für den Fang. Der Textanker bleibt
+/// wo er ist: die Umrandung wächst nach außen, der Text wandert nicht.
+pub fn text_frame_corners(t: &TextPrim) -> [Vec2; 4] {
+    let (w, h, dx, dy) = frame_geometry(t);
+    let base = t.pos + Vec2::new(dx, dy);
+    let rot = Affine::rotate_about(t.pos, t.angle);
+    [
+        rot.apply(base),
+        rot.apply(base + Vec2::new(w, 0.0)),
+        rot.apply(base + Vec2::new(w, h)),
+        rot.apply(base + Vec2::new(0.0, h)),
+    ]
+}
+
 /// Pfad einer Textumrandung: der Kasten aus [`text_corners`], wahlweise mit
 /// abgerundeten Ecken.
 ///
@@ -352,17 +437,7 @@ pub fn text_corners(t: &TextPrim) -> [Vec2; 4] {
 /// Stück stehen (Stadionform). Der Pfad wird wie der Kasten um den Anker des
 /// Textes gedreht (eine Quelle mit [`text_corners`]).
 pub fn text_frame_path(t: &TextPrim, radius: f64) -> Vec<Vec2> {
-    let (w, h) = t.box_size();
-    let dx = match t.align {
-        TextAlignH::Left => 0.0,
-        TextAlignH::Center => -w * 0.5,
-        TextAlignH::Right => -w,
-    };
-    let dy = match t.valign {
-        TextAlignV::Top => -h,
-        TextAlignV::Middle => -h * 0.5,
-        TextAlignV::Bottom => 0.0,
-    };
+    let (w, h, dx, dy) = frame_geometry(t);
     let base = t.pos + Vec2::new(dx, dy);
     let r = radius.clamp(0.0, w.min(h) * 0.5);
     let rot = Affine::rotate_about(t.pos, t.angle);
@@ -808,8 +883,9 @@ pub fn entity_bbox(doc: &Document, e: &Entity) -> BBox {
     dl.bbox
 }
 
-/// Unsichtbarer Rahmen eines Textes: die vier Ecken der Zeilenbox
-/// (links unten, rechts unten, rechts oben, links oben).
+/// Rahmen eines Textes: die vier Ecken der Umrandung (links unten, rechts
+/// unten, rechts oben, links oben) — der Textkasten, links und rechts um den
+/// seitlichen Rand verbreitert (`TextPrim::frame_pad`).
 ///
 /// Derselbe Kasten erscheint in der Einfüge-Vorschau; bei Auswahl wird er
 /// gezeichnet, und seine Ecken und Kantenmitten sind Fangpunkte. Eine Quelle
@@ -823,6 +899,25 @@ pub fn text_frame(doc: &Document, e: &Entity) -> Option<[Vec2; 4]> {
     }
     // Über die Anzeige gehen: dort steht der aufgelöste Text samt tatsächlicher
     // Schriftgröße (Block-/Blattmaßstab) — der Rahmen kann so nicht abweichen.
+    let ctx = RenderCtx::for_entity(doc, e);
+    let mut dl = DisplayList::default();
+    render_entity(&ctx, e, Affine::IDENTITY, &mut dl, 0);
+    for prim in &dl.prims {
+        if let Shape::Text(t) = &prim.shape {
+            return Some(text_frame_corners(t));
+        }
+    }
+    None
+}
+
+/// Der **Textkasten** eines Textes (ohne den seitlichen Rand der Umrandung) —
+/// die vier Ecken, an denen die Schrift hängt. Der Einfügepunkt der
+/// Ausrichtung liegt in dieser Ecke/Mitte; die Umrandung wächst darüber hinaus
+/// (`text_frame`).
+pub fn text_box_corners(doc: &Document, e: &Entity) -> Option<[Vec2; 4]> {
+    if !matches!(e.kind, EntityKind::Text { .. }) {
+        return None;
+    }
     let ctx = RenderCtx::for_entity(doc, e);
     let mut dl = DisplayList::default();
     render_entity(&ctx, e, Affine::IDENTITY, &mut dl, 0);
@@ -1066,7 +1161,7 @@ pub fn render_entity(
             if let Some(bg) = background {
                 dl.push(Prim {
                     shape: Shape::FillOrdered {
-                        outer: text_corners(&tprim).to_vec(),
+                        outer: text_frame_corners(&tprim).to_vec(),
                         holes: Vec::new(),
                     },
                     style: PrimStyle {
