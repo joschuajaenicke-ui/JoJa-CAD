@@ -4213,13 +4213,36 @@ impl App {
     /// Verworfen wird nur eine unfertige Punktfolge — ein unfertiger erster
     /// Punkt; der harte Abbruch dieser Werkzeuge liegt auf Entf/Backspace.
     fn escape_pressed(&mut self) {
+        // Maßketten-Eingabe: **ESC bestätigt** die Eingabe wie Enter (T0154,
+        // Turn 5) — die Punkte sind gesetzt, ein Abbruch würde sie
+        // wegwerfen. Nur ohne jeden Klick gibt es nichts zu bestätigen, dann
+        // bricht ESC wie bisher ab.
+        if let Some(t) = self.tool.as_ref() {
+            if DimModus::aus_werkzeug(&t.action).is_some() {
+                if t.pts.is_empty() {
+                    self.cancel_tool();
+                } else {
+                    // `finish_tool` legt die Kette an und meldet selbst, wenn
+                    // noch Messpunkte fehlen.
+                    crate::canvas::finish_tool(self, false);
+                }
+                return;
+            }
+            // Messpunkte ändern: die Klicks sind bereits ausgeführt, ESC
+            // beendet nur die Reihe — die Auswahl bleibt stehen, damit
+            // sichtbar bleibt, welche Maßkette bearbeitet wurde.
+            if matches!(t.action.as_str(), "dim.point.add" | "dim.point.remove") {
+                self.tool = None;
+                return;
+            }
+        }
         let finisheable = self
             .tool
             .as_ref()
             .map(|t| {
                 let punktfolge = matches!(
                     t.action.as_str(),
-                    "draw.polyline" | "draw.spline" | "dim.chain" | "modify.area.split"
+                    "draw.polyline" | "draw.spline" | "modify.area.split"
                 ) || crate::canvas::ist_fuell_punkte(&t.action);
                 punktfolge && t.pts.len() >= 2
             })
@@ -12215,6 +12238,135 @@ mod tests_systemdialog_modal {
         // … und danach ist die Anwendung wieder bedienbar
         let _ = ctx.run(rahmen(vec![taste(egui::Key::L)]), |ctx| app.ui(ctx));
         assert!(app.tool.is_some(), "nach ESC muss die Taste wieder wirken");
+    }
+}
+
+mod tests_masskette_esc {
+    //! T0154, Turn 5: **ESC bestätigt** die Maßketten-Eingabe.
+    //!
+    //! Gesetzt Punkte dürfen nicht verloren gehen, wenn man die Eingabe mit
+    //! ESC abschließt — wie beim Text, wo ESC übernimmt. Geprüft am echten
+    //! Tastendruck über `App::ui` (derselbe Weg wie im Betrieb) und direkt an
+    //! `App::escape_pressed` für die Randfälle.
+
+    use super::*;
+    use jjcad_core::geom::v;
+
+    fn rahmen(events: Vec<egui::Event>) -> egui::RawInput {
+        egui::RawInput {
+            screen_rect: Some(egui::Rect::from_min_size(
+                egui::Pos2::ZERO,
+                egui::vec2(1600.0, 1000.0),
+            )),
+            events,
+            ..Default::default()
+        }
+    }
+
+    fn taste(key: egui::Key) -> egui::Event {
+        egui::Event::Key {
+            key,
+            physical_key: None,
+            pressed: true,
+            repeat: false,
+            modifiers: egui::Modifiers::NONE,
+        }
+    }
+
+    fn app_mit_kette() -> (egui::Context, App) {
+        let ctx = egui::Context::default();
+        let mut app = App::with_ctx(ctx.clone());
+        app.doc_mut().settings.input_unit = jjcad_core::units::Unit::Mm;
+        app.start_tool("dim.chain.h");
+        if let Some(t) = app.tool.as_mut() {
+            t.pts.push(v(0.0, -900.0)); // Lage der Maßlinie
+            t.pts.push(v(0.0, 0.0));
+            t.pts.push(v(2000.0, 0.0));
+        }
+        (ctx, app)
+    }
+
+    /// ESC legt die Maßkette an, statt die Punkte wegzuwerfen.
+    #[test]
+    fn esc_uebernimmt_die_eingabe_der_masskette() {
+        let (ctx, mut app) = app_mit_kette();
+        let _ = ctx.run(rahmen(vec![]), |ctx| app.ui(ctx));
+        let _ = ctx.run(rahmen(vec![taste(egui::Key::Escape)]), |ctx| app.ui(ctx));
+
+        assert!(app.tool.is_none(), "ESC muss die Eingabe beenden");
+        let kette = app
+            .doc()
+            .ents()
+            .iter()
+            .find(|e| matches!(e.kind, EntityKind::Dim { .. }))
+            .expect("ESC muss die Maßkette anlegen");
+        match &kette.kind {
+            EntityKind::Dim { pts, .. } => assert_eq!(pts.len(), 2, "{pts:?}"),
+            _ => unreachable!(),
+        }
+    }
+
+    /// Gegenprobe: ohne einen einzigen Klick bricht ESC weiter ab.
+    #[test]
+    fn esc_ohne_klick_bricht_ab() {
+        let mut app = App::with_ctx(egui::Context::default());
+        app.start_tool("dim.chain.h");
+        app.escape_pressed();
+        assert!(app.tool.is_none());
+        assert!(
+            !app.doc()
+                .ents()
+                .iter()
+                .any(|e| matches!(e.kind, EntityKind::Dim { .. })),
+            "ohne Punkte darf nichts entstehen"
+        );
+    }
+
+    /// Nur die Lage der Maßlinie gesetzt: es gibt nichts zu bestätigen — das
+    /// Werkzeug endet, ohne eine unbrauchbare Kette zu hinterlassen.
+    #[test]
+    fn esc_nach_der_masslinie_legt_nichts_an() {
+        let mut app = App::with_ctx(egui::Context::default());
+        app.start_tool("dim.chain.v");
+        if let Some(t) = app.tool.as_mut() {
+            t.pts.push(v(-800.0, 0.0));
+        }
+        app.escape_pressed();
+        assert!(app.tool.is_none());
+        assert!(!app
+            .doc()
+            .ents()
+            .iter()
+            .any(|e| matches!(e.kind, EntityKind::Dim { .. })));
+    }
+
+    /// „Punkt hinzufügen“: ESC beendet die Reihe und lässt die gewählte
+    /// Maßkette ausgewählt (kein „Abgebrochen“, keine leere Auswahl).
+    #[test]
+    fn esc_beendet_das_punktwerkzeug_ohne_auswahl_zu_loeschen() {
+        let mut app = App::with_ctx(egui::Context::default());
+        let antwort = app
+            .session_mut()
+            .execute(
+                "dim.chain",
+                &serde_json::json!({"pts": [[0.0, 0.0], [2000.0, 0.0]],
+                                    "line_pos": [1000.0, -500.0], "axis": "x"}),
+            )
+            .expect("Maßkette");
+        let id = antwort["created"][0].as_u64().unwrap();
+        app.session_mut().select(vec![id]);
+        app.start_tool("dim.point.add");
+        if let Some(t) = app.tool.as_mut() {
+            t.obj = Some(id);
+        }
+
+        app.escape_pressed();
+        assert!(app.tool.is_none(), "ESC beendet das Werkzeug");
+        assert_eq!(
+            app.selection(),
+            &[id],
+            "die bearbeitete Maßkette bleibt ausgewählt"
+        );
     }
 }
 
