@@ -344,9 +344,14 @@ fn lage_aus(
         y: pos.map(|p| p.y).unwrap_or(0.0),
         mit_lage: pos.is_some(),
         maximiert: false,
+        vollbild: false,
     };
     lage.brauchbar().then_some(lage)
 }
+
+/// Wie lange der Startzustand des Fensters (Vollbild/maximiert) wiederholt
+/// wird, bis der Fenstermanager ihn annimmt (T0141, Turn 2).
+const FENSTER_START_GEDULD: f64 = 3.0;
 
 /// Läuft ein Demo-/Prüfzustand (`JJCAD_DEMO_UI`)?
 ///
@@ -1422,6 +1427,23 @@ pub struct App {
     /// damit ein Testlauf nicht die `prefs.json` des Nutzers verändert.
     #[cfg(test)]
     pub(crate) test_prefs_speichern: bool,
+    /// Zuletzt gemeldete Fenstergröße **im Normalzustand** (T0141, Turn 2).
+    ///
+    /// Im Vollbild und maximiert meldet das Fenster die Bildschirmgröße; die
+    /// taugt nicht als Fenstergröße für den nächsten Start — nach dem Verlassen
+    /// des Vollbilds stünde ein bildschirmgroßes Fenster da. Deshalb wird der
+    /// letzte normale Stand mitgeführt (`fenster_merken`) und beim Sammeln der
+    /// Sitzung anstelle der aktuellen Größe eingesetzt.
+    pub fenster_normal: Option<sitzung::Fensterlage>,
+    /// Startzustand des Fensters (T0141, Turn 2): Vollbild oder maximiert, aus
+    /// der Sitzung. Wird im **ersten Bild** gesetzt und dann verbraucht — beim
+    /// Erzeugen des Fensters nimmt der Fenstermanager den Wunsch nicht
+    /// zuverlässig an (unter X11 verwirft KWin die ClientMessage an ein noch
+    /// nicht abgebildetes Fenster; gemessen: `_NET_WM_STATE` blieb leer).
+    pub fenster_start: Option<sitzung::Fensterlage>,
+    /// Erster Versuch, den Startzustand zu setzen (egui-Zeit). Danach wird
+    /// höchstens `FENSTER_START_GEDULD` Sekunden wiederholt.
+    pub fenster_start_zeit: Option<f64>,
 }
 
 impl App {
@@ -1517,6 +1539,9 @@ impl App {
             test_blockordner: None,
             #[cfg(test)]
             test_prefs_speichern: true,
+            fenster_normal: None,
+            fenster_start: None,
+            fenster_start_zeit: None,
         };
         app.ui.show_grid = show_grid;
         app.ui.lineweights = lineweights;
@@ -4520,20 +4545,128 @@ impl App {
         }
     }
 
-    /// Fenstergröße und -lage, wie egui sie meldet (T0141). `None`, solange es
-    /// kein Fenster gibt (Tests, headless) — dann bleibt die gespeicherte Lage
-    /// stehen, statt von einem leeren Wert überschrieben zu werden.
+    /// Fenstergröße, -lage und -zustand, wie egui sie meldet (T0141).
+    /// `None`, solange es kein Fenster gibt (Tests, headless) — dann bleibt die
+    /// gespeicherte Lage stehen, statt von einem leeren Wert überschrieben zu
+    /// werden.
     ///
     /// Unter Wayland meldet das Fenstersystem keine Position; dann steht die
-    /// Größe in der Sitzung und `x`/`y` bleiben leer.
+    /// Größe in der Sitzung und `x`/`y` bleiben ohne Merker.
+    ///
+    /// Im Vollbild und maximiert kommt die **Größe** aus `fenster_normal`: die
+    /// aktuelle wäre die Bildschirmgröße.
     fn fensterlage(&self) -> Option<sitzung::Fensterlage> {
-        let (inner, outer) = self.ctx.input(|i| {
+        let (inner, outer, vollbild, maximiert) = self.ctx.input(|i| {
             let vp = i.viewport();
-            (vp.inner_rect, vp.outer_rect)
+            (
+                vp.inner_rect,
+                vp.outer_rect,
+                vp.fullscreen.unwrap_or(self.ui.fullscreen),
+                vp.maximized.unwrap_or(false),
+            )
         });
         let mut lage = lage_aus(inner, outer, self.ctx.screen_rect())?;
-        lage.maximiert = self.ctx.input(|i| i.viewport().maximized.unwrap_or(false));
+        lage.vollbild = vollbild;
+        // Ein Vollbild meldet unter KWin oft zusätzlich „maximiert“; beim
+        // Wiederherstellen zählt der Vollbild-Zustand.
+        lage.maximiert = maximiert && !vollbild;
+        if vollbild || maximiert {
+            if let Some(normal) = self.fenster_normal {
+                lage = sitzung::Fensterlage {
+                    breite: normal.breite,
+                    hoehe: normal.hoehe,
+                    x: normal.x,
+                    y: normal.y,
+                    mit_lage: normal.mit_lage,
+                    maximiert: lage.maximiert,
+                    vollbild: lage.vollbild,
+                };
+            }
+        }
         Some(lage)
+    }
+
+    /// Merkt sich die Fenstergröße im Normalzustand (T0141, Turn 2) — nicht im
+    /// Vollbild und nicht maximiert, dort ist sie die Bildschirmgröße. Läuft
+    /// jedes Bild in [`App::ui`], damit beim Beenden der letzte normale Stand
+    /// bereitsteht.
+    fn fenster_merken(&mut self) {
+        let (inner, outer, vollbild, maximiert) = self.ctx.input(|i| {
+            let vp = i.viewport();
+            (
+                vp.inner_rect,
+                vp.outer_rect,
+                vp.fullscreen.unwrap_or(self.ui.fullscreen),
+                vp.maximized.unwrap_or(false),
+            )
+        });
+        if vollbild || maximiert {
+            return;
+        }
+        if let Some(lage) = lage_aus(inner, outer, self.ctx.screen_rect()) {
+            self.fenster_normal = Some(lage);
+        }
+    }
+
+    /// Übernimmt die gespeicherte Fensterlage als „normalen“ Stand (T0141,
+    /// Turn 2). Ein Start im Vollbild soll beim Beenden die vorige
+    /// Fenstergröße behalten, nicht die Bildschirmgröße.
+    pub fn setze_fensterlage(&mut self, lage: Option<sitzung::Fensterlage>) {
+        let Some(l) = lage else { return };
+        if !l.brauchbar() {
+            return;
+        }
+        if l.vollbild || l.maximiert {
+            self.fenster_start = Some(l);
+        }
+        self.fenster_normal = Some(sitzung::Fensterlage {
+            maximiert: false,
+            vollbild: false,
+            ..l
+        });
+    }
+
+    /// Setzt den Startzustand (Vollbild/maximiert) aus der Sitzung (T0141,
+    /// Turn 2).
+    ///
+    /// Beim **Erzeugen** des Fensters nimmt der Fenstermanager den Wunsch nicht
+    /// an: winit schickt die `_NET_WM_STATE`-Nachricht an ein noch nicht
+    /// abgebildetes Fenster, KWin verwirft sie (gemessen — das Vollbild klappt
+    /// dort nur, weil winit es bis zur Sichtbarkeit zurückhält). Deshalb wird
+    /// der Wunsch in den ersten Bildern wiederholt, bis der gemeldete Zustand
+    /// stimmt; nach [`FENSTER_START_GEDULD`] Sekunden ist Schluss, damit ein
+    /// Fenstermanager ohne Maximieren nicht endlos belästigt wird. Sobald der
+    /// Zustand steht, ist der Wunsch verbraucht — sonst ließe sich das Fenster
+    /// nicht wieder verkleinern.
+    fn fenster_start_anwenden(&mut self, ctx: &egui::Context) {
+        let Some(ziel) = self.fenster_start else {
+            return;
+        };
+        let (vollbild, maximiert) = ctx.input(|i| {
+            let vp = i.viewport();
+            (
+                vp.fullscreen.unwrap_or(false),
+                vp.maximized.unwrap_or(false),
+            )
+        });
+        let erreicht = if ziel.vollbild { vollbild } else { maximiert };
+        if erreicht {
+            self.fenster_start = None;
+            self.fenster_start_zeit = None;
+            return;
+        }
+        let jetzt = ctx.input(|i| i.time);
+        let start = *self.fenster_start_zeit.get_or_insert(jetzt);
+        if jetzt - start > FENSTER_START_GEDULD {
+            self.fenster_start = None;
+            self.fenster_start_zeit = None;
+            return;
+        }
+        if ziel.vollbild {
+            ctx.send_viewport_cmd(egui::ViewportCommand::Fullscreen(true));
+        } else {
+            ctx.send_viewport_cmd(egui::ViewportCommand::Maximized(true));
+        }
     }
 
     /// Schreibt die Sitzung nach `<Wurzel>/sitzung.json` (beim Beenden).
@@ -7620,6 +7753,12 @@ fn rail(ui: &mut egui::Ui, icon: &str, tooltip: &str, chevron: &str) -> bool {
                 ctx.input_mut(|i| i.events.clear());
             }
         }
+
+        // T0141: Fenstergröße im Normalzustand mitschreiben — beim Beenden im
+        // Vollbild oder maximiert wird sonst die Bildschirmgröße gespeichert.
+        self.fenster_merken();
+        // Und den gespeicherten Fensterzustand anwenden (nur im ersten Bild).
+        self.fenster_start_anwenden(ctx);
 
         // Drag an Drop (T0115): im Fenster abgelegte Dateien gehen denselben
         // Weg wie eine Auswahl im Dateidialog.
@@ -13882,6 +14021,266 @@ mod tests_fensterlage {
     fn ohne_groesse_keine_lage() {
         assert!(lage_aus(None, None, rect(0.0, 0.0, 0.0, 0.0)).is_none());
         assert!(lage_aus(None, None, rect(0.0, 0.0, 10_000.0, 10_000.0)).is_none());
+    }
+
+    /// Ein Bild mit gesetzten Fensterangaben — danach stehen sie in
+    /// `ctx.input()`, und `fenster_merken`/`fensterlage` lesen sie wie im Lauf.
+    fn bild_mit(ctx: &egui::Context, viewport: egui::ViewportInfo, bild: egui::Rect) {
+        let mut raw = egui::RawInput {
+            screen_rect: Some(bild),
+            ..Default::default()
+        };
+        raw.viewports.insert(egui::ViewportId::ROOT, viewport);
+        let _ = ctx.run(raw, |_| {});
+    }
+
+    fn viewport(
+        inner: Option<egui::Rect>,
+        outer: Option<egui::Rect>,
+        vollbild: Option<bool>,
+        maximiert: Option<bool>,
+    ) -> egui::ViewportInfo {
+        egui::ViewportInfo {
+            inner_rect: inner,
+            outer_rect: outer,
+            fullscreen: vollbild,
+            maximized: maximiert,
+            ..Default::default()
+        }
+    }
+
+    /// T0141, Turn 2: Ein Vollbild meldet die Bildschirmgröße. Gespeichert wird
+    /// trotzdem die zuletzt bekannte normale Größe — sonst stünde nach dem
+    /// Verlassen des Vollbilds ein bildschirmgroßes Fenster da.
+    #[test]
+    fn vollbild_behaelt_die_normale_groesse() {
+        let ctx = egui::Context::default();
+        let mut app = App::with_ctx(ctx.clone());
+        app.fenster_normal = Some(sitzung::Fensterlage {
+            breite: 1200.0,
+            hoehe: 800.0,
+            x: 0.0,
+            y: 0.0,
+            mit_lage: false,
+            maximiert: false,
+            vollbild: false,
+        });
+        bild_mit(
+            &ctx,
+            viewport(
+                Some(rect(0.0, 0.0, 1600.0, 1000.0)),
+                None,
+                Some(true),
+                Some(true),
+            ),
+            rect(0.0, 0.0, 1600.0, 1000.0),
+        );
+        let lage = app.fensterlage().expect("Lage");
+        assert!(lage.vollbild, "Vollbild wird gemerkt");
+        assert!(
+            !lage.maximiert,
+            "ein Vollbild meldet unter KWin oft zusätzlich maximiert"
+        );
+        assert_eq!(
+            (lage.breite, lage.hoehe),
+            (1200.0, 800.0),
+            "die Bildschirmgröße taugt nicht als Fenstergröße"
+        );
+    }
+
+    /// Maximiert ohne Vollbild: Zustand wird gemerkt, die Größe bleibt die
+    /// normale.
+    #[test]
+    fn maximiert_behaelt_die_normale_groesse() {
+        let ctx = egui::Context::default();
+        let mut app = App::with_ctx(ctx.clone());
+        app.fenster_normal = Some(sitzung::Fensterlage {
+            breite: 1200.0,
+            hoehe: 800.0,
+            x: 0.0,
+            y: 0.0,
+            mit_lage: false,
+            maximiert: false,
+            vollbild: false,
+        });
+        bild_mit(
+            &ctx,
+            viewport(
+                Some(rect(0.0, 0.0, 1600.0, 1000.0)),
+                None,
+                Some(false),
+                Some(true),
+            ),
+            rect(0.0, 0.0, 1600.0, 1000.0),
+        );
+        let lage = app.fensterlage().expect("Lage");
+        assert!(lage.maximiert && !lage.vollbild);
+        assert_eq!((lage.breite, lage.hoehe), (1200.0, 800.0));
+    }
+
+    /// `fenster_merken` schreibt nur den Normalzustand mit — im Vollbild und
+    /// maximiert bleibt der gemerkte Stand stehen.
+    #[test]
+    fn fenster_merken_ignoriert_vollbild_und_maximiert() {
+        let ctx = egui::Context::default();
+        let mut app = App::with_ctx(ctx.clone());
+        bild_mit(
+            &ctx,
+            viewport(
+                Some(rect(0.0, 0.0, 1600.0, 1000.0)),
+                None,
+                Some(true),
+                Some(false),
+            ),
+            rect(0.0, 0.0, 1600.0, 1000.0),
+        );
+        app.fenster_merken();
+        assert!(app.fenster_normal.is_none(), "Vollbild wird nicht gemerkt");
+
+        bild_mit(
+            &ctx,
+            viewport(
+                Some(rect(0.0, 0.0, 1250.0, 820.0)),
+                None,
+                Some(false),
+                Some(false),
+            ),
+            rect(0.0, 0.0, 1250.0, 820.0),
+        );
+        app.fenster_merken();
+        let normal = app.fenster_normal.expect("Normalzustand gemerkt");
+        assert_eq!((normal.breite, normal.hoehe), (1250.0, 820.0));
+    }
+
+    /// Die gespeicherte Lage gilt beim Start als normaler Stand — ohne die
+    /// Zustandsmerker, sonst würde ein Vollbild-Start die Bildschirmgröße
+    /// weiterreichen.
+    #[test]
+    fn gespeicherte_lage_ist_der_normale_stand() {
+        let mut app = App::with_ctx(egui::Context::default());
+        app.setze_fensterlage(Some(sitzung::Fensterlage {
+            breite: 1200.0,
+            hoehe: 800.0,
+            x: 10.0,
+            y: 20.0,
+            mit_lage: true,
+            maximiert: true,
+            vollbild: true,
+        }));
+        let normal = app.fenster_normal.expect("übernommen");
+        assert!(!normal.maximiert && !normal.vollbild);
+        assert_eq!((normal.breite, normal.hoehe), (1200.0, 800.0));
+        assert_eq!(normal.lage(), Some((10.0, 20.0)));
+    }
+
+    fn befehle(aus: &egui::FullOutput) -> Vec<egui::ViewportCommand> {
+        aus.viewport_output
+            .get(&egui::ViewportId::ROOT)
+            .map(|v| v.commands.clone())
+            .unwrap_or_default()
+    }
+
+    /// Ein Bild mit Fensterangaben und fester Zeit für den Startzustand.
+    fn bild_start(
+        vollbild: Option<bool>,
+        maximiert: Option<bool>,
+        zeit: f64,
+    ) -> egui::RawInput {
+        let mut raw = egui::RawInput {
+            time: Some(zeit),
+            ..Default::default()
+        };
+        raw.viewports.insert(
+            egui::ViewportId::ROOT,
+            egui::ViewportInfo {
+                fullscreen: vollbild,
+                maximized: maximiert,
+                ..Default::default()
+            },
+        );
+        raw
+    }
+
+    /// T0141, Turn 2: Der Wunsch wird wiederholt, bis der Fenstermanager ihn
+    /// meldet — beim Erzeugen des Fensters verwirft KWin ihn (gemessen). Danach
+    /// ist er verbraucht, sonst ließe sich das Fenster nicht verkleinern.
+    #[test]
+    fn startzustand_wird_angefordert_bis_er_steht() {
+        let ctx = egui::Context::default();
+        let mut app = App::with_ctx(ctx.clone());
+        app.setze_fensterlage(Some(sitzung::Fensterlage {
+            breite: 1200.0,
+            hoehe: 800.0,
+            x: 0.0,
+            y: 0.0,
+            mit_lage: false,
+            maximiert: false,
+            vollbild: true,
+        }));
+        // Bild 1: das Fenster meldet noch kein Vollbild -> Befehl.
+        let aus = ctx.run(
+            bild_start(None, None, 0.0),
+            |ctx| app.fenster_start_anwenden(ctx),
+        );
+        assert!(
+            befehle(&aus)
+                .iter()
+                .any(|c| matches!(c, egui::ViewportCommand::Fullscreen(true))),
+            "Vollbild muss angefordert werden: {:?}",
+            befehle(&aus)
+        );
+        // Bild 2: das Fenster meldet Vollbild -> Wunsch ist erledigt.
+        let aus2 = ctx.run(
+            bild_start(Some(true), None, 0.05),
+            |ctx| app.fenster_start_anwenden(ctx),
+        );
+        assert!(befehle(&aus2).is_empty(), "{:?}", befehle(&aus2));
+        // Bild 3: der Nutzer verlässt das Vollbild — kein erneutes Maximieren.
+        let aus3 = ctx.run(
+            bild_start(Some(false), None, 0.1),
+            |ctx| app.fenster_start_anwenden(ctx),
+        );
+        assert!(
+            befehle(&aus3).is_empty(),
+            "der Wunsch ist verbraucht: {:?}",
+            befehle(&aus3)
+        );
+    }
+
+    /// Ohne Vollbild wird maximiert angefordert — und nach
+    /// [`FENSTER_START_GEDULD`] aufgegeben, damit ein Fenstermanager ohne
+    /// Maximieren nicht endlos belästigt wird.
+    #[test]
+    fn startzustand_maximiert_und_gibt_dann_auf() {
+        let ctx = egui::Context::default();
+        let mut app = App::with_ctx(ctx.clone());
+        app.setze_fensterlage(Some(sitzung::Fensterlage {
+            breite: 1200.0,
+            hoehe: 800.0,
+            x: 0.0,
+            y: 0.0,
+            mit_lage: false,
+            maximiert: true,
+            vollbild: false,
+        }));
+        let aus = ctx.run(
+            bild_start(Some(false), Some(false), 0.0),
+            |ctx| app.fenster_start_anwenden(ctx),
+        );
+        assert!(befehle(&aus)
+            .iter()
+            .any(|c| matches!(c, egui::ViewportCommand::Maximized(true))));
+        let spaet = FENSTER_START_GEDULD + 0.5;
+        let aus2 = ctx.run(
+            bild_start(Some(false), Some(false), spaet),
+            |ctx| app.fenster_start_anwenden(ctx),
+        );
+        assert!(
+            befehle(&aus2).is_empty(),
+            "nach der Geduld wird aufgegeben: {:?}",
+            befehle(&aus2)
+        );
+        assert!(app.fenster_start.is_none());
     }
 
     /// Die Sitzung nimmt die Lage mit — und ohne Fenster (Tests, headless)

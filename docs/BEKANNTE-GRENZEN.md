@@ -194,9 +194,10 @@ scrollen, plus eine Mindestgröße, die sich an der Bildschirmgröße orientiert
 
 ## 7. Fensterposition unter Wayland
 
-**Symptom.** Unter Wayland (z. B. KDE Plasma) merkt sich das Programm die
-Fenstergröße, das Fenster erscheint aber dort, wo die Fensterverwaltung es
-hinstellt — nicht an der Stelle des letzten Laufs.
+**Symptom.** Unter Wayland (z. B. KDE Plasma) merkt sich das Programm
+Fenstergröße, Vollbild und „maximiert“, das Fenster erscheint aber dort, wo die
+Fensterverwaltung es hinstellt — nicht an der Stelle des letzten Laufs. Die Lage
+wird gar nicht erst aufgezeichnet.
 
 **Ursache.** `xdg-shell` kennt weder eine Abfrage noch eine Vorgabe der
 Fensterposition: `xdg_toplevel` hat keine Koordinaten, und winit liefert für
@@ -205,18 +206,21 @@ im Wayland-Zweig eine leere Funktion). Das trifft jedes Wayland-Programm; KDE
 schreibt es selbst so aus („apps aren’t allowed to position themselves“).
 Nachweis im Code: `winit-0.30.13/src/platform_impl/linux/wayland/window/mod.rs`.
 
-**Was das Programm trotzdem tut (T0141).** `sitzung.json` merkt Größe, Lage und
-Maximiert-Zustand (`sitzung::Fensterlage`). Fehlt die Lage (Wayland), steht
-`mit_lage: false` in der Datei und die **Größe** kommt beim Start zurück; unter
-X11, Windows und macOS kommt auch die Position zurück (`main.rs` setzt
-`with_position` nur, wenn `Fensterlage::lage()` eine Lage liefert). `x`/`y`
-bleiben dabei Zahlen, weil eine `null` ältere Fassungen beim Laden der Sitzung
-scheitern ließe. Belege: `jjcad-core`-Test
-`sitzung::tests::fensterlage_ohne_position_ist_brauchbar`,
-`app::tests_fensterlage` (Umrechnung mit und ohne Fensterrechtecke) und ein Lauf
-unter Xvfb — Fenster auf 1240 × 780 bei (320, 180) gezogen, beendet, neu
-gestartet: dieselbe Geometrie, `sitzung.json` trägt `x: 320.0, y: 180.0`,
-`mit_lage: true`.
+**Was das Programm trotzdem tut (T0141).** `sitzung.json` merkt Größe, Vollbild,
+Maximiert-Zustand und — wo gemeldet — die Lage (`sitzung::Fensterlage`). Fehlt
+die Lage (Wayland), steht `mit_lage: false` in der Datei und die **Größe** kommt
+beim Start zurück, ebenso Vollbild und „maximiert“; unter X11, Windows und macOS
+kommt auch die Position zurück (`main.rs` setzt `with_position` nur, wenn
+`Fensterlage::lage()` eine Lage liefert). `x`/`y` bleiben dabei Zahlen, weil eine
+`null` ältere Fassungen beim Laden der Sitzung scheitern ließe.
+Belege: `jjcad-core`-Test `sitzung::tests::fensterlage_ohne_position_ist_brauchbar`,
+`app::tests_fensterlage` (11 Tests: Umrechnung mit und ohne Fensterrechtecke,
+Vollbild/maximiert, Startzustand) und Läufe unter Xvfb mit kwin_x11 — Fenster auf
+1240 × 780 bei (320, 180) gezogen, beendet, neu gestartet: dieselbe Geometrie
+(`x: 320.0, y: 180.0`, `mit_lage: true`); im Vollbild beendet: Neustart mit
+`_NET_WM_STATE_FULLSCREEN`, gespeicherte Größe bleibt 1500 × 950 (nicht die
+Bildschirmgröße); maximiert beendet: Neustart mit
+`_NET_WM_STATE_MAXIMIZED_VERT/HORZ`.
 
 **Warum jetzt nicht lösbar.** Ein Ausweichen auf XWayland ist verworfen (Grenze 1:
 träger und unschärfer). Die Programmseite kann eine Position nicht erzwingen.
