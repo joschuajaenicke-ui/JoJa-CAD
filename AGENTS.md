@@ -146,6 +146,17 @@ Mit dem Nutzer abgestimmt — nicht „verbessern“:
   Eigenschaften-Panel zeigt als „beim Erzeugen die Vorgabe“ dieselbe Zahl
   (`Document::standard_breite`), nicht mehr 0,35.
 - **Raster-Chip** schaltet Anzeige *und* Rasterfang gemeinsam.
+- **Raster (T0144)**: Die Kategorie „Raster“ im Einstellungsfenster führt **alle**
+  Rastereinstellungen (Weite, Anzeigen, Fang, Art, Modus, Erzwingen). Art und Weite
+  stehen in `gitter::Raster` — **eine** Rechnung für Anzeige (`canvas::draw_grid`) und
+  Fang (`snap`), kein zweites Rastermodell daneben. Arten: rechtwinklig (0°/90°),
+  isometrisch (30°/150°/90°, dritte Familie entlang `u+v`), Dimetrie (7°/138°, zweite
+  Achse halb verkürzt), Trimetrie (15°/140°, 0,6). Modus „Skaliert“ dünnt die
+  gezeichneten Linien bei kleinem Zoom aus (bisheriges Verhalten), „Fest“ zeichnet
+  immer die eingestellte Weite; gefangen wird in beiden Modi auf die eingestellte
+  Weite. „Rasterfang erzwingen“ (`grid_force`) legt jede Eingabe **ohne** Fangradius
+  ins Raster; Objektpunkte (Endpunkt, Schnitt, Mitte …) bleiben exakt, sonst wäre der
+  Objektfang mit dieser Option unbrauchbar.
 - **Ansichtsfenster (T0109)** sind **normale Blattobjekte** (`EntityKind::Viewport` in
   `sheet.entities`, nicht mehr `Sheet::viewports`): vier Eckgriffe wie ein Rechteck, Auswahl per
   Klick und Auswahlfenster, Verschieben per Maus („Maus verschiebt") oder Werkzeug „Verschieben",

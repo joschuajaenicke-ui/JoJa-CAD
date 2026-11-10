@@ -1117,7 +1117,18 @@ pub(crate) const EINSTELLUNGSKATEGORIEN: &[Einstellungskategorie] = &[
     Einstellungskategorie {
         key: "settings.category_raster",
         icon: "grid",
-        stichworte: &["Rasterweite", "Raster anzeigen", "Rasterfang", "Raster"],
+        stichworte: &[
+            "Rasterweite",
+            "Raster anzeigen",
+            "Rasterfang",
+            "Raster",
+            "Rasterart",
+            "Isometrisch",
+            "Dimetrie",
+            "Trimetrie",
+            "Fest",
+            "erzwingen",
+        ],
     },
     Einstellungskategorie {
         key: "settings.category_fangen",
@@ -1439,6 +1450,26 @@ fn kategorie_zeile(ui: &mut Ui, kat: &Einstellungskategorie, gewaehlt: bool) -> 
     antwort.clicked()
 }
 
+/// Beschriftung einer Rasterart (T0144).
+pub(crate) fn rasterart_text(art: jjcad_core::gitter::Rasterart) -> &'static str {
+    use jjcad_core::gitter::Rasterart;
+    match art {
+        Rasterart::Rechteckig => jjcad_core::i18n::tr("gui.dialogs.rasterart_rechteckig"),
+        Rasterart::Isometrisch => jjcad_core::i18n::tr("gui.dialogs.rasterart_isometrisch"),
+        Rasterart::Dimetrie => jjcad_core::i18n::tr("gui.dialogs.rasterart_dimetrie"),
+        Rasterart::Trimetrie => jjcad_core::i18n::tr("gui.dialogs.rasterart_trimetrie"),
+    }
+}
+
+/// Beschriftung des Rastermodus (T0144).
+pub(crate) fn rastermodus_text(m: jjcad_core::gitter::Rastermodus) -> &'static str {
+    use jjcad_core::gitter::Rastermodus;
+    match m {
+        Rastermodus::Skaliert => jjcad_core::i18n::tr("gui.dialogs.rastermodus_skaliert"),
+        Rastermodus::Fest => jjcad_core::i18n::tr("gui.dialogs.rastermodus_fest"),
+    }
+}
+
 fn settings_body(app: &mut App, ui: &mut Ui) {
     let unit = app.doc().settings.input_unit;
 
@@ -1449,6 +1480,10 @@ fn settings_body(app: &mut App, ui: &mut Ui) {
     let mut show_grid = app.ui.show_grid;
     let mut snap = cur.snap.clone();
     let mut grid_step = snap.grid_step;
+    // T0144: Art, Modus und erzwungener Rasterfang.
+    let mut rasterart = snap.grid_kind;
+    let mut rastermodus = snap.grid_mode;
+    let mut grid_force = snap.grid_force;
     let mut polar_step = snap.polar_step;
     let mut polar_tol = snap.polar_tolerance;
     let mut tol_px = snap.tolerance_px;
@@ -1634,6 +1669,89 @@ fn settings_body(app: &mut App, ui: &mut Ui) {
                                 zeile(&suche, ui, jjcad_core::i18n::tr("gui.dialogs.rasterfang"), |ui| {
                                     ui.checkbox(&mut snap.grid, "");
                                 });
+                                // T0144: Art des Rasters — dieselben Achsen gelten
+                                // für Anzeige und Fang.
+                                zeile(&suche, ui, jjcad_core::i18n::tr("gui.dialogs.rasterart"), |ui| {
+                                    let cap = rasterart_text(rasterart);
+                                    if let Some(neu) = panels::dropdown(
+                                        ui,
+                                        "rasterart",
+                                        cap,
+                                        None,
+                                        |ui| {
+                                            let mut out = None;
+                                            for art in jjcad_core::gitter::Rasterart::ALL {
+                                                if ui
+                                                    .selectable_label(
+                                                        art == rasterart,
+                                                        rasterart_text(art),
+                                                    )
+                                                    .clicked()
+                                                {
+                                                    out = Some(art);
+                                                }
+                                            }
+                                            out
+                                        },
+                                    ) {
+                                        rasterart = neu;
+                                    }
+                                });
+                                if suche.is_empty() {
+                                    ui.label(theme::faint(jjcad_core::i18n::tr(
+                                        "gui.dialogs.rasterart_hinweis",
+                                    )));
+                                }
+                                // T0144: skaliert die gezeichnete Weite mit dem
+                                // Zoom oder bleibt sie fest?
+                                zeile_mit(
+                                    &suche,
+                                    ui,
+                                    jjcad_core::i18n::tr("gui.dialogs.rastermodus"),
+                                    &["Rasterweite folgt dem Zoom", "Modus", "Raster"],
+                                    |ui| {
+                                    let cap = rastermodus_text(rastermodus);
+                                    if let Some(neu) = panels::dropdown(
+                                        ui,
+                                        "rastermodus",
+                                        cap,
+                                        None,
+                                        |ui| {
+                                            let mut out = None;
+                                            for m in jjcad_core::gitter::Rastermodus::ALL {
+                                                if ui
+                                                    .selectable_label(m == rastermodus, rastermodus_text(m))
+                                                    .clicked()
+                                                {
+                                                    out = Some(m);
+                                                }
+                                            }
+                                            out
+                                        },
+                                    ) {
+                                        rastermodus = neu;
+                                    }
+                                });
+                                if suche.is_empty() {
+                                    ui.label(theme::faint(jjcad_core::i18n::tr(
+                                        "gui.dialogs.rastermodus_hinweis",
+                                    )));
+                                }
+                                // T0144: jede Eingabe liegt im Raster.
+                                zeile_mit(
+                                    &suche,
+                                    ui,
+                                    jjcad_core::i18n::tr("gui.dialogs.raster_erzwingen"),
+                                    &["Rasterfang erzwingen", "Raster", "Zwang"],
+                                    |ui| {
+                                        ui.checkbox(&mut grid_force, "");
+                                    },
+                                );
+                                if suche.is_empty() {
+                                    ui.label(theme::faint(jjcad_core::i18n::tr(
+                                        "gui.dialogs.raster_erzwingen_hinweis",
+                                    )));
+                                }
                             }
                             // -------------------------- Fangen --------------------
                             2 => {
@@ -2709,6 +2827,9 @@ fn settings_body(app: &mut App, ui: &mut Ui) {
     let settings_changed = input != cur.input_unit
         || decimals as usize != cur.decimals
         || (grid_step - cur.snap.grid_step).abs() > 1e-9
+        || rasterart != cur.snap.grid_kind
+        || rastermodus != cur.snap.grid_mode
+        || grid_force != cur.snap.grid_force
         || (polar_step - cur.snap.polar_step).abs() > 1e-9
         || (polar_tol - cur.snap.polar_tolerance).abs() > 1e-9
         || (tol_px - cur.snap.tolerance_px).abs() > 1e-9
@@ -2747,6 +2868,9 @@ fn settings_body(app: &mut App, ui: &mut Ui) {
                 "nearest": snap.nearest, "grid": snap.grid, "ortho": snap.ortho,
                 "polar": snap.polar, "wall_edges": snap.wall_edges,
                 "grid_step": unit.from_mm(grid_step),
+                "grid_kind": rasterart.key(),
+                "grid_mode": rastermodus.key(),
+                "grid_force": grid_force,
                 "polar_step": polar_step,
                 "polar_tolerance": polar_tol,
                 "tolerance_px": tol_px
@@ -5403,6 +5527,46 @@ mod tests_einstellungen {
             assert!(
                 text_mitte(&out, wort).is_some(),
                 "„{wort}“ fehlt in der Kategorie Sicherung"
+            );
+        }
+    }
+
+    /// T0144: Die Kategorie „Raster“ führt alle Rastereinstellungen — Weite,
+    /// Anzeige, Fang, Art, Modus und den erzwungenen Rasterfang.
+    #[test]
+    fn raster_zeigt_art_modus_und_zwang() {
+        let _sperre = KONFIG.lock().unwrap_or_else(|e| e.into_inner());
+        let _konfig = WegwerfKonfig::neu("raster");
+        let ctx = egui::Context::default();
+        let mut app = App::with_ctx(ctx.clone());
+        let kat = EINSTELLUNGSKATEGORIEN
+            .iter()
+            .position(|k| k.name() == "Raster")
+            .expect("Kategorie Raster");
+        app.ui.settings_open = true;
+        app.ui.settings_kat = kat;
+        app.ui.settings_suche = String::new();
+        let bild = || egui::RawInput {
+            screen_rect: Some(Rect::from_min_size(Pos2::ZERO, Vec2::new(1500.0, 950.0))),
+            ..Default::default()
+        };
+        let mut out = ctx.run(bild(), |ctx| app.ui(ctx));
+        for _ in 0..3 {
+            out = ctx.run(bild(), |ctx| app.ui(ctx));
+        }
+        for wort in [
+            "Rasterweite",
+            "Raster anzeigen",
+            "Rasterfang",
+            "Rasterart",
+            "Rechtwinklig",
+            "Weite folgt",
+            "Ansicht (skaliert)",
+            "Erzwingen",
+        ] {
+            assert!(
+                text_mitte(&out, wort).is_some(),
+                "„{wort}“ fehlt in der Kategorie Raster"
             );
         }
     }

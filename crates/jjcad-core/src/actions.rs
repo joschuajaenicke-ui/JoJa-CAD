@@ -3804,6 +3804,21 @@ pub fn execute(doc: &mut Document, id: &str, params: &Value) -> Result<Value, St
             if let Some(g) = p.len("grid_step") {
                 doc.settings.snap.grid_step = crate::model::clamp_grid_step(g);
             }
+            // T0144: Rasterart, Modus und erzwungener Rasterfang. Unbekannte
+            // Schlüssel werden abgewiesen (kein stiller Rückfall auf die Vorgabe).
+            if let Some(k) = p.text("grid_kind") {
+                if let Some(art) = crate::gitter::Rasterart::from_key(&k) {
+                    doc.settings.snap.grid_kind = art;
+                }
+            }
+            if let Some(m) = p.text("grid_mode") {
+                if let Some(modus) = crate::gitter::Rastermodus::from_key(&m) {
+                    doc.settings.snap.grid_mode = modus;
+                }
+            }
+            if let Some(v) = p.boolean("grid_force") {
+                doc.settings.snap.grid_force = v;
+            }
             if let Some(v) = p.boolean("show_grid") {
                 doc.settings.show_grid = v;
             }
@@ -3848,6 +3863,19 @@ pub fn execute(doc: &mut Document, id: &str, params: &Value) -> Result<Value, St
                 // legte 0,25 mm an, sobald die Einheit nicht mm war.
                 if let Some(g) = sp.len("grid_step") {
                     doc.settings.snap.grid_step = crate::model::clamp_grid_step(g);
+                }
+                if let Some(k) = sp.text("grid_kind") {
+                    if let Some(art) = crate::gitter::Rasterart::from_key(&k) {
+                        doc.settings.snap.grid_kind = art;
+                    }
+                }
+                if let Some(m) = sp.text("grid_mode") {
+                    if let Some(modus) = crate::gitter::Rastermodus::from_key(&m) {
+                        doc.settings.snap.grid_mode = modus;
+                    }
+                }
+                if let Some(v) = sp.boolean("grid_force") {
+                    doc.settings.snap.grid_force = v;
                 }
                 if let Some(a) = sp.num("polar_step") {
                     doc.settings.snap.polar_step = a.clamp(1.0, 180.0);

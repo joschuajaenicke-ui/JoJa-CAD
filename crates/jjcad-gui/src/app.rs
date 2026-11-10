@@ -2285,6 +2285,20 @@ impl App {
                         ];
                     }
                 }
+                // T0144: Rasterart und -modus im Prüfbild — `raster:isometrisch`,
+                // `raster:dimetrie`, `raster:trimetrie`, `raster:fest`.
+                s if s.starts_with("raster:") => {
+                    let wahl = &s["raster:".len()..];
+                    let mut p = serde_json::json!({});
+                    match wahl {
+                        "isometrisch" | "iso" => p["grid_kind"] = serde_json::json!("isometrisch"),
+                        "dimetrie" | "dim" => p["grid_kind"] = serde_json::json!("dimetrie"),
+                        "trimetrie" | "tri" => p["grid_kind"] = serde_json::json!("trimetrie"),
+                        "fest" => p["grid_mode"] = serde_json::json!("fest"),
+                        _ => {}
+                    }
+                    let _ = self.session_mut().execute("doc.settings", &p);
+                }
                 "settings" => self.ui.settings_open = true,
                 // T0098: Fenster ohne Titelleiste — die drei Fensterknöpfe
                 // stehen dann oben rechts in der Kopfzeile (Prüfbild).
@@ -8414,9 +8428,23 @@ impl App {
                             }
                             let step = self.doc().settings.snap.grid_step;
                             ui.label(theme::dim(jjcad_core::i18n::t_args_owned("gui.app.rasterweite_x_mm", &[("wert1", format!("{:.0}", step))])));
+                            // T0144: Art und Modus stehen als Kurzinfo darunter.
+                            let art = self.doc().settings.snap.grid_kind;
+                            let modus = self.doc().settings.snap.grid_mode;
+                            ui.label(theme::dim(format!(
+                                "{} · {}",
+                                crate::dialogs::rasterart_text(art),
+                                crate::dialogs::rastermodus_text(modus)
+                            )));
                             ui.separator();
                             if ui.button(jjcad_core::i18n::tr("gui.app.weitere_einstellungen")).clicked() {
                                 self.ui.settings_open = true;
+                                // Direkt in die Kategorie „Raster“ — dort stehen
+                                // alle Rastereinstellungen (T0144).
+                                self.ui.settings_kat = crate::dialogs::EINSTELLUNGSKATEGORIEN
+                                    .iter()
+                                    .position(|k| k.key == "settings.category_raster")
+                                    .unwrap_or(0);
                                 close = true;
                             }
                         }
