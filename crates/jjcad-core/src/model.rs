@@ -1325,6 +1325,27 @@ pub struct SnapSettings {
     /// Laibungen) — unabhängig von den übrigen Fangarten schaltbar.
     #[serde(default = "default_true")]
     pub wall_edges: bool,
+    /// Quadrantenpunkte eines Kreises/Bogens (0°, 90°, 180°, 270°) als eigenes
+    /// Fangziel (T0160). Vorher hingen sie am Endpunkt-Fang: wer die Quadranten
+    /// nicht wollte, musste auch die Endpunkte abschalten.
+    #[serde(default = "default_true")]
+    pub quadrant: bool,
+    /// Winkelhalbierende zwischen zwei Linien als Fangziel (T0150) — in der
+    /// Fang-Kette fest eingebaut, hier schaltbar (T0160).
+    #[serde(default = "default_true")]
+    pub bisector: bool,
+    /// Erweiterter Punktfang (T0014): bleibt der Zeiger auf einem diskreten
+    /// Fangpunkt stehen, wird dieser gehalten und gibt Hilfslinien. Aus =
+    /// kein Verweilen, keine Hilfslinien (T0160).
+    #[serde(default = "default_true")]
+    pub hilfslinien: bool,
+    /// Verweildauer bis zum Halten in Millisekunden ([`VERWEIL_MIN_MS`] …
+    /// [`VERWEIL_MAX_MS`], Vorgabe 400).
+    #[serde(default = "default_verweil_ms")]
+    pub verweil_ms: f64,
+    /// Höchstzahl gleichzeitig gehaltener Punkte (0 … [`HALTE_MAX`], Vorgabe 2).
+    #[serde(default = "default_halte_max")]
+    pub halte_max: usize,
     /// Rasterweite in mm
     #[serde(default = "default_grid")]
     pub grid_step: f64,
@@ -1354,6 +1375,28 @@ pub struct SnapSettings {
 fn default_polar_tol() -> f64 {
     6.0
 }
+
+/// Verweildauer des erweiterten Punktfangs in Millisekunden (T0160).
+pub fn default_verweil_ms() -> f64 {
+    400.0
+}
+
+/// Vorgabe der gehaltenen Punkte des erweiterten Punktfangs (T0160).
+pub const HALTE_VORGABE: usize = 2;
+
+/// Höchstzahl gehaltener Punkte des erweiterten Punktfangs (T0160).
+pub fn default_halte_max() -> usize {
+    HALTE_VORGABE
+}
+
+/// Untere Grenze der Verweildauer: darunter hält schon ein flüchtiges
+/// Überfahren des Punktes, der Fang wird unberechenbar.
+pub const VERWEIL_MIN_MS: f64 = 100.0;
+/// Obere Grenze der Verweildauer: darüber muss man auf den Fang warten.
+pub const VERWEIL_MAX_MS: f64 = 2000.0;
+/// Höchstzahl gehaltener Punkte — zwei genügen (x vom einen, y vom anderen);
+/// mehr Linien machen den Fang nur unübersichtlich.
+pub const HALTE_MAX: usize = 4;
 
 fn default_polar_step() -> f64 {
     45.0
@@ -1408,6 +1451,11 @@ impl Default for SnapSettings {
             ortho: false,
             polar: true,
             wall_edges: true,
+            quadrant: true,
+            bisector: true,
+            hilfslinien: true,
+            verweil_ms: default_verweil_ms(),
+            halte_max: default_halte_max(),
             grid_step: 100.0,
             grid_kind: crate::gitter::Rasterart::Rechteckig,
             grid_mode: crate::gitter::Rastermodus::Skaliert,

@@ -61,8 +61,14 @@ schreiben sie beim nächsten Speichern mit. `version` bleibt deshalb 2.
 | `snap` | Objekt | siehe unten | Fangoptionen |
 
 `snap`: `endpoint`, `midpoint`, `center`, `intersection`, `perpendicular`,
-`nearest`, `grid`, `ortho`, `polar` (bool), `grid_step` (mm, Standard 100),
-`tolerance_px` (Standard 12).
+`tangent`, `nearest`, `grid`, `ortho`, `polar`, `wall_edges`, `quadrant`,
+`bisector` (bool), `grid_step` (mm, Standard 100), `tolerance_px` (Standard 12),
+`polar_step` und `polar_tolerance` (Grad, Standard 45 / 6).
+
+Erweiterter Punktfang (T0160): `hilfslinien` (bool, Standard `true`) schaltet
+das Halten und die Hilfslinien ab, `verweil_ms` (Standard 400, 100…2000) ist die
+Verweildauer bis zum Halten, `halte_max` (Standard 2, 0…4) die Höchstzahl
+gehaltener Punkte.
 
 Raster (T0144): `grid_kind` (`rechteckig` | `isometrisch` | `dimetrie` |
 `trimetrie`, Standard `rechteckig`) bestimmt die Achsen von Anzeige **und**
