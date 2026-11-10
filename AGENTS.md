@@ -157,6 +157,11 @@ Mit dem Nutzer abgestimmt — nicht „verbessern“:
   Weite. „Rasterfang erzwingen“ (`grid_force`) legt jede Eingabe **ohne** Fangradius
   ins Raster; Objektpunkte (Endpunkt, Schnitt, Mitte …) bleiben exakt, sonst wäre der
   Objektfang mit dieser Option unbrauchbar.
+  **Die gezeichneten Linien liegen um die Mitte des sichtbaren Ausschnitts**
+  (`canvas::raster_strecken`), nicht um den Weltnullpunkt: eine Linie durch den Ursprung
+  deckte bei hohem Zoom nur die Umgebung von (0,0) ab, und das Raster verschwand aus dem
+  Bild, sobald die Zeichnung weit davon entfernt war. Prüfweg:
+  `cargo test -p jjcad-gui tests_raster` (Gegenprobe ist `basis = normale · (k · abstand)`).
 - **Ansichtsfenster (T0109)** sind **normale Blattobjekte** (`EntityKind::Viewport` in
   `sheet.entities`, nicht mehr `Sheet::viewports`): vier Eckgriffe wie ein Rechteck, Auswahl per
   Klick und Auswahlfenster, Verschieben per Maus („Maus verschiebt") oder Werkzeug „Verschieben",
