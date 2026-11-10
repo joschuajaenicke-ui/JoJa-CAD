@@ -1290,6 +1290,14 @@ pub fn show(app: &mut App, ui: &mut Ui) {
     let lineweight_factor = app.ui.lineweight_factor as f64;
     let paper_px = view_now.zoom * app.doc().settings.annotation_scale;
 
+    // Einfüge-Vorschau nur, solange der Zeiger über der Zeichenfläche steht
+    // (T0156). Außerhalb gibt es keinen Punkt, an dem sie gesetzt werden
+    // könnte — das eingefrorene Abbild am zuletzt besuchten Punkt sah aus, als
+    // hinge es in der Luft. Am Zeiger steht dann die Miniatur
+    // (`draw_ghost_zeiger`), mit der sich der Inhalt auf einen Hotbar-Slot
+    // oder eine Taste legen lässt.
+    let ghost_in_zeichnung = app.ghost.is_some() && pointer.is_some();
+
     if is_sheet {
         // Leistungsanzeige: der Papierraum baut seine Ansichtsfenster selbst auf
         // und zeichnet sie sofort — Aufbau und Zeichnen sind hier ein Abschnitt.
@@ -1309,7 +1317,7 @@ pub fn show(app: &mut App, ui: &mut Ui) {
         draw_wand_basislinien(app, &painter, rect, view_now, &selected);
         draw_tuer_basispunkte(app, &painter, rect, view_now, &selected);
         draw_grips(app, &painter, rect, view_now, &selected);
-        if app.ghost.is_some() {
+        if ghost_in_zeichnung {
             draw_ghost(app, &painter, rect, view_now);
         }
         if let Some((start, cur, _)) = app.select_drag {
@@ -1384,7 +1392,7 @@ pub fn show(app: &mut App, ui: &mut Ui) {
         draw_wand_basislinien(app, &painter, rect, view_now, &selected);
         draw_tuer_basispunkte(app, &painter, rect, view_now, &selected);
         draw_grips(app, &painter, rect, view_now, &selected);
-        if app.ghost.is_some() {
+        if ghost_in_zeichnung {
             draw_ghost(app, &painter, rect, view_now);
         }
         if let Some((start, cur, _)) = app.select_drag {
@@ -1399,6 +1407,8 @@ pub fn show(app: &mut App, ui: &mut Ui) {
     // Werkzeug-Icon am Zeiger — auch außerhalb der Zeichenfläche (T0057),
     // deshalb auf eigener Ebene statt im beschnittenen Maler der Fläche.
     draw_werkzeug_zeiger(app, ui.ctx());
+    // Miniatur am Zeiger, sobald die Vorschau die Zeichenfläche verlässt (T0156).
+    draw_ghost_zeiger(app, ui.ctx(), rect);
 
     // Eingabe
     let pointer_pos = ui.ctx().pointer_hover_pos();
@@ -2213,6 +2223,85 @@ fn draw_cursor(
 /// Zeiger, egal in welchem Teil des Fensters er steht.
 pub fn werkzeug_zeiger_mitte(zeiger: Pos2) -> Pos2 {
     zeiger + Vec2::new(22.0, 22.0)
+}
+
+/// Kantenlänge der Miniatur am Zeiger, wenn die Einfüge-Vorschau die
+/// Zeichenfläche verlässt (T0156).
+///
+/// Kleiner als ein Hotbar-Slot (`hotbar::SLOT` = 50 px): das Bild hängt am
+/// Zeiger und darf das Ziel, auf das abgelegt wird, nicht verdecken.
+pub const GHOST_ZEIGER: f32 = 30.0;
+
+/// Lage der Miniatur am Zeiger (Bildschirmpunkte) — oben rechts davon, wie die
+/// Einfüge-Vorschau in der Zeichnung steht (T0156).
+///
+/// Eine Quelle für Zeichnen und Test. Im Fenster gehalten: an den Rändern
+/// stünde das Kästchen sonst halb außerhalb und wäre abgeschnitten.
+pub fn ghost_zeiger_rect(zeiger: Pos2, fenster: Rect) -> Rect {
+    let roh = zeiger + Vec2::new(10.0, -GHOST_ZEIGER - 10.0);
+    let x = roh.x.clamp(
+        fenster.left() + 2.0,
+        (fenster.right() - GHOST_ZEIGER - 2.0).max(fenster.left() + 2.0),
+    );
+    let y = roh.y.clamp(
+        fenster.top() + 2.0,
+        (fenster.bottom() - GHOST_ZEIGER - 2.0).max(fenster.top() + 2.0),
+    );
+    Rect::from_min_size(Pos2::new(x, y), Vec2::splat(GHOST_ZEIGER))
+}
+
+/// Zeichnet die Miniatur des laufenden Einfügens am Mauszeiger (T0156).
+///
+/// Verlässt der Zeiger die Zeichenfläche, verschwindet die Vorschau aus der
+/// Zeichnung — dort gibt es keinen Punkt, an dem sie gesetzt werden könnte.
+/// Am Zeiger bleibt stattdessen die Miniatur des Inhalts: **dieselbe**
+/// Anzeigeliste wie in Blockkachel, Hotbar-Slot und Lagerplatz
+/// (`inventory::draw_list_preview`), nur kleiner. Sie zeigt damit auch, was
+/// gerade auf einen Slot oder eine Taste gelegt würde.
+///
+/// Eigene Ebene in `Order::Tooltip`, weil der Maler der Zeichenfläche auf
+/// deren Rechteck beschnitten ist (wie beim Werkzeug-Icon, T0057).
+pub fn draw_ghost_zeiger(app: &App, ctx: &egui::Context, flaeche: Rect) {
+    if app.chat.offen {
+        return;
+    }
+    let Some(g) = &app.ghost else { return };
+    let Some(zeiger) = ctx.pointer_hover_pos() else {
+        return;
+    };
+    let fenster = ctx.screen_rect();
+    // Nur im Fenster: außerhalb gibt es keinen Zeiger, an dem es hängen könnte.
+    if !fenster.contains(zeiger) {
+        return;
+    }
+    // Über der Zeichenfläche zeichnet die Vorschau selbst — die Miniatur
+    // ersetzt sie nur draußen.
+    if flaeche.contains(zeiger) {
+        return;
+    }
+
+    let kasten = ghost_zeiger_rect(zeiger, fenster);
+    let p = ctx.layer_painter(egui::LayerId::new(
+        egui::Order::Tooltip,
+        egui::Id::new("ghost_zeiger"),
+    ));
+    p.rect_filled(kasten, 6.0, Palette::schwebend());
+    p.rect_stroke(kasten, 6.0, Stroke::new(1.0, Palette::accent()));
+
+    // Geometrie des laufenden Inhalts (Block oder Zwischenablage) — gedreht
+    // und gespiegelt wie die Vorschau in der Zeichnung.
+    let geo = crate::ghost::geometry(app.doc(), g, &app.ui.clipboard);
+    if geo.bbox.is_valid() && !geo.prims.is_empty() {
+        let mut dl = DisplayList::default();
+        dl.prims = geo.prims;
+        crate::inventory::draw_list_preview(
+            &p,
+            kasten.shrink(4.0),
+            geo.bbox,
+            &dl,
+            Palette::accent(),
+        );
+    }
 }
 
 /// Zeichnet das Icon des laufenden Werkzeugs am Mauszeiger — im **ganzen**
@@ -11131,6 +11220,259 @@ mod tests_werkzeug_zeiger {
         let b = werkzeug_zeiger_mitte(Pos2::new(900.0, 40.0));
         assert_eq!(a - Pos2::new(100.0, 200.0), b - Pos2::new(900.0, 40.0));
         assert!(a.x > 100.0 && a.y > 200.0, "unten rechts vom Zeiger");
+    }
+}
+
+#[cfg(test)]
+mod tests_ghost_zeiger {
+    //! T0156: Miniatur am Zeiger, solange die Einfüge-Vorschau außerhalb der
+    //! Zeichenfläche steht.
+    //!
+    //! Vorher blieb die Vorschau am zuletzt besuchten Punkt in der Zeichnung
+    //! stehen, sobald der Zeiger über Ribbon, Panel oder Hotbar wanderte — sie
+    //! sah aus, als hinge sie in der Luft, und das Ablegen auf einen Slot war
+    //! blind. Geprüft wird am gerenderten Bild: kein Ankerkreuz der Vorschau
+    //! mehr, dafür ein Kästchen mit der Blockgeometrie am Zeiger.
+
+    use super::*;
+    use crate::app::App;
+
+    const FENSTER: Vec2 = Vec2::new(1500.0, 950.0);
+
+    fn fenster() -> Rect {
+        Rect::from_min_size(Pos2::ZERO, FENSTER)
+    }
+
+    fn rahmen(ctx: &egui::Context, app: &mut App, zeiger: Option<Pos2>) -> egui::FullOutput {
+        let mut raw = egui::RawInput {
+            screen_rect: Some(fenster()),
+            ..Default::default()
+        };
+        if let Some(p) = zeiger {
+            raw.events.push(egui::Event::PointerMoved(p));
+        }
+        ctx.run(raw, |ctx| app.ui(ctx))
+    }
+
+    /// App mit laufender Block-Einfügung (Vorschau aus der Bibliothek).
+    fn app_mit_einfuegen(ctx: &egui::Context) -> App {
+        let mut app = App::with_ctx(ctx.clone());
+        let block = app
+            .doc()
+            .blocks
+            .iter()
+            .find(|b| b.bbox().is_valid())
+            .map(|b| b.id.clone())
+            .expect("die Bibliothek führt mindestens einen Block mit Geometrie");
+        app.start_ghost_block(block);
+        app
+    }
+
+    /// Ankerkreuz der Vorschau: zwei 12-px-Striche um den Ankerpunkt.
+    fn anker_kreuz(out: &egui::FullOutput, mitte: Pos2) -> usize {
+        out.shapes
+            .iter()
+            .filter(|cs| match &cs.shape {
+                egui::Shape::LineSegment { points, .. } => {
+                    let m = Pos2::new(
+                        (points[0].x + points[1].x) / 2.0,
+                        (points[0].y + points[1].y) / 2.0,
+                    );
+                    (points[0].distance(points[1]) - 12.0).abs() < 0.01 && m.distance(mitte) < 0.01
+                }
+                _ => false,
+            })
+            .count()
+    }
+
+    /// Kästchen der Miniatur an `kasten`: Füllung und Rand, also zwei Formen.
+    fn miniatur_kasten(out: &egui::FullOutput, kasten: Rect) -> usize {
+        out.shapes
+            .iter()
+            .filter(|cs| match &cs.shape {
+                egui::Shape::Rect(r) => {
+                    r.rect.min.distance(kasten.min) < 0.01
+                        && (r.rect.width() - GHOST_ZEIGER).abs() < 0.01
+                }
+                _ => false,
+            })
+            .count()
+    }
+
+    /// Gezeichnete Strecken der Miniatur innerhalb von `kasten`.
+    fn miniatur_strecken(out: &egui::FullOutput, kasten: Rect) -> usize {
+        out.shapes
+            .iter()
+            .filter(|cs| match &cs.shape {
+                egui::Shape::LineSegment { points, .. } => {
+                    kasten.contains(points[0]) && kasten.contains(points[1])
+                }
+                egui::Shape::Path(p) => {
+                    !p.points.is_empty() && p.points.iter().all(|q| kasten.contains(*q))
+                }
+                _ => false,
+            })
+            .count()
+    }
+
+    /// Über der Zeichenfläche steht die Vorschau; sobald der Zeiger sie
+    /// verlässt, ist sie aus der Zeichnung verschwunden.
+    #[test]
+    fn vorschau_verschwindet_aus_der_zeichnung() {
+        let ctx = egui::Context::default();
+        let mut app = app_mit_einfuegen(&ctx);
+        rahmen(&ctx, &mut app, None);
+        let flaeche = app.ui.last_canvas;
+        let innen = flaeche.center();
+
+        let out = rahmen(&ctx, &mut app, Some(innen));
+        let anker = world_to_screen(
+            flaeche,
+            app.current_view(),
+            app.ghost.as_ref().expect("die Vorschau läuft").pos,
+        );
+        assert_eq!(
+            anker_kreuz(&out, anker),
+            2,
+            "über der Fläche muss die Vorschau stehen (Ankerkreuz)"
+        );
+
+        let aussen = Pos2::new(innen.x, flaeche.top() - 30.0);
+        assert!(
+            !flaeche.contains(aussen),
+            "Prüfpunkt muss außerhalb der Zeichenfläche liegen ({flaeche:?})"
+        );
+        let out = rahmen(&ctx, &mut app, Some(aussen));
+        assert_eq!(
+            anker_kreuz(&out, anker),
+            0,
+            "außerhalb der Fläche darf die Vorschau nicht in der Zeichnung stehen bleiben"
+        );
+    }
+
+    /// Außerhalb der Fläche hängt die Miniatur des Blocks am Zeiger — mit
+    /// seiner Geometrie, nicht als leeres Kästchen, und unbeschnitten.
+    #[test]
+    fn miniatur_haengt_am_zeiger_ausserhalb_der_flaeche() {
+        let ctx = egui::Context::default();
+        let mut app = app_mit_einfuegen(&ctx);
+        rahmen(&ctx, &mut app, None);
+        let flaeche = app.ui.last_canvas;
+        let aussen = Pos2::new(flaeche.center().x, flaeche.top() - 30.0);
+        let out = rahmen(&ctx, &mut app, Some(aussen));
+
+        let kasten = ghost_zeiger_rect(aussen, fenster());
+        assert_eq!(
+            miniatur_kasten(&out, kasten),
+            2,
+            "genau ein Kästchen am Zeiger (Füllung und Rand), nicht zwei"
+        );
+        assert!(
+            miniatur_strecken(&out, kasten) >= 3,
+            "die Miniatur zeigt die Blockgeometrie, nicht nur den Rahmen"
+        );
+        let cs = out
+            .shapes
+            .iter()
+            .find(|cs| matches!(&cs.shape, egui::Shape::Rect(r) if r.rect.min.distance(kasten.min) < 0.01))
+            .expect("Kästchen der Miniatur");
+        assert!(
+            cs.clip_rect.contains_rect(kasten),
+            "die Miniatur ist beschnitten ({:?}) — sie muss über Panels und Leiste sichtbar sein",
+            cs.clip_rect
+        );
+    }
+
+    /// Über der Fläche zeichnet die Vorschau selbst — das Kästchen wäre doppelt.
+    #[test]
+    fn ueber_der_flaeche_kein_kaestchen() {
+        let ctx = egui::Context::default();
+        let mut app = app_mit_einfuegen(&ctx);
+        rahmen(&ctx, &mut app, None);
+        let innen = app.ui.last_canvas.center();
+        let out = rahmen(&ctx, &mut app, Some(innen));
+        assert_eq!(
+            miniatur_kasten(&out, ghost_zeiger_rect(innen, fenster())),
+            0,
+            "über der Zeichenfläche steht die Vorschau, kein zweites Bild am Zeiger"
+        );
+    }
+
+    /// Ohne laufendes Einfügen gibt es keine Miniatur.
+    #[test]
+    fn ohne_einfuegen_kein_kaestchen() {
+        let ctx = egui::Context::default();
+        let mut app = App::with_ctx(ctx.clone());
+        rahmen(&ctx, &mut app, None);
+        let aussen = Pos2::new(700.0, app.ui.last_canvas.top() - 30.0);
+        let out = rahmen(&ctx, &mut app, Some(aussen));
+        assert_eq!(
+            miniatur_kasten(&out, ghost_zeiger_rect(aussen, fenster())),
+            0,
+            "ohne Vorschau darf kein Bild am Zeiger hängen"
+        );
+    }
+
+    /// Auch das Einfügen aus der Zwischenablage zeigt die Miniatur (derselbe
+    /// Weg über `ghost::geometry`).
+    #[test]
+    fn zwischenablage_zeigt_ihre_miniatur() {
+        let ctx = egui::Context::default();
+        let mut app = App::with_ctx(ctx.clone());
+        let mut quelle = jjcad_core::model::Document::default();
+        let e = jjcad_core::model::Entity::new(
+            quelle.new_id(),
+            quelle.current_layer,
+            jjcad_core::model::EntityKind::Line {
+                a: V2::new(0.0, 0.0),
+                b: V2::new(2000.0, 1000.0),
+            },
+        );
+        app.ui.clipboard = crate::ghost::Clipboard {
+            ents: vec![e],
+            base: Some(V2::new(0.0, 0.0)),
+        };
+        app.start_ghost_paste();
+        rahmen(&ctx, &mut app, None);
+        let aussen = Pos2::new(700.0, app.ui.last_canvas.top() - 30.0);
+        let out = rahmen(&ctx, &mut app, Some(aussen));
+        let kasten = ghost_zeiger_rect(aussen, fenster());
+        assert_eq!(
+            miniatur_kasten(&out, kasten),
+            2,
+            "Kästchen am Zeiger (Füllung und Rand)"
+        );
+        assert!(
+            miniatur_strecken(&out, kasten) >= 1,
+            "die kopierte Linie ist in der Miniatur zu sehen"
+        );
+    }
+
+    /// Kleiner als ein Hotbar-Slot und immer im Fenster, oben rechts vom Zeiger.
+    #[test]
+    fn groesse_und_lage() {
+        assert!(
+            GHOST_ZEIGER < crate::hotbar::SLOT,
+            "die Miniatur am Zeiger ({GHOST_ZEIGER} px) muss kleiner als ein Slot ({}) sein",
+            crate::hotbar::SLOT
+        );
+        let mitte = ghost_zeiger_rect(Pos2::new(700.0, 500.0), fenster());
+        assert!(
+            mitte.left() > 700.0 && mitte.bottom() < 500.0,
+            "oben rechts vom Zeiger: {mitte:?}"
+        );
+        for ecke in [
+            Pos2::new(4.0, 4.0),
+            Pos2::new(FENSTER.x - 3.0, 4.0),
+            Pos2::new(4.0, FENSTER.y - 3.0),
+            Pos2::new(FENSTER.x - 3.0, FENSTER.y - 3.0),
+        ] {
+            let r = ghost_zeiger_rect(ecke, fenster());
+            assert!(
+                fenster().contains_rect(r),
+                "an der Ecke {ecke:?} hängt die Miniatur aus dem Fenster ({r:?})"
+            );
+        }
     }
 }
 

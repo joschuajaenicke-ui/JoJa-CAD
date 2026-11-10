@@ -209,6 +209,16 @@ Mit dem Nutzer abgestimmt — nicht „verbessern“:
   untere linke Ecke der Auswahl — beim Einfügen steht dieser Punkt am Zeiger.
   **Kopieren setzt nie sofort eine Kopie ab** (auch nicht mit Basispunkt): es füllt
   nur die Zwischenablage, platziert wird über die Einfüge-Vorschau.
+  **Miniatur am Zeiger (T0156)**: Die Vorschau wird nur **über der Zeichenfläche**
+  gezeichnet (`canvas::show` prüft dafür die Zeigerlage) — verlässt der Zeiger
+  die Fläche, gibt es dort keinen Punkt zum Setzen, und das eingefrorene Abbild am
+  letzten Punkt sah aus, als hinge es in der Luft. Am Zeiger steht stattdessen die
+  Miniatur des laufenden Inhalts (`canvas::draw_ghost_zeiger`, `GHOST_ZEIGER` = 30 px
+  gegen 50 px Slot) aus **derselben** Anzeigeliste wie Blockkachel und Hotbar-Slot
+  (`inventory::draw_list_preview` über `ghost::geometry`, also gedreht/gespiegelt wie
+  die Vorschau) — damit ist sichtbar, was ein Klick auf einen Slot oder eine Taste
+  ablegt. Prüfzustand `--demo blockvorschau`; Tests
+  `cargo test -p jjcad-gui tests_ghost_zeiger`.
 - **Tastenbelegung in drei Schichten (T0056, `docs/TASTEN.md` ist verbindlich)**:
   Ziffern `1`–`0` gehören der **Hotbar**, Buchstaben und Symbole der
   **Tastaturbelegung** (frei und dynamisch änderbar, je Taste genau eine
