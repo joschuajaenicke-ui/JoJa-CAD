@@ -17,9 +17,10 @@
 //! prüfen die Tests Form und Lage ohne laufendes Fenster, und der Maler hat
 //! keine zweite Geometrie.
 //!
-//! `Ortho` und „kein Fang“ bekommen bewusst kein Zeichen: sie liefern keinen
-//! Sonderpunkt, sondern führen den Zeiger nur (die Statuszeile zeigt dort
-//! ebenfalls nichts). `Polar` ist ein Fang (POL) und hat deshalb eine Marke.
+//! Ein Zeichen bekommt nur, was einen Punkt **am Element** hat. `Ortho`,
+//! `Polar` und der `Raster`-Fang führen den Zeiger nur — ihr Punkt liegt an
+//! jeder Mausstellung unter dem Zeiger, ein Zeichen dort klebte am Mauszeiger
+//! statt am Objekt (T0153, Turn 3). Die Statuszeile nennt sie weiterhin.
 
 use egui::{Color32, Painter, Pos2, Stroke};
 use jjcad_core::snap::SnapKind;
@@ -29,10 +30,9 @@ use crate::theme::Palette;
 /// Art des gerade aktiven Fangs — Grundlage für die Fangmarke.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum FangArt {
-    /// Objektfang der Fang-Engine (Endpunkt, Mitte, Zentrum …).
+    /// Objektfang der Fang-Engine mit einem Punkt am Element (Endpunkt, Mitte,
+    /// Zentrum, Schnittpunkt …). Das Raster ist ausgenommen: es liegt überall.
     Objekt(SnapKind),
-    /// Polarfang: der Punkt liegt auf einem Vielfachen der Polarschrittweite.
-    Polar,
 }
 
 impl FangArt {
@@ -41,7 +41,6 @@ impl FangArt {
     pub fn name(self) -> &'static str {
         match self {
             FangArt::Objekt(k) => k.label(),
-            FangArt::Polar => "POL",
         }
     }
 }
@@ -64,8 +63,6 @@ pub enum Zug {
     Punkt((f32, f32), f32),
     /// Gefülltes Vieleck.
     Flaeche(&'static [(f32, f32)]),
-    /// Bogen um den Fangpunkt (Radius, Winkel von, Winkel bis).
-    Bogen(f32, f32, f32),
 }
 
 fn l(v: &mut Vec<Zug>, a: (f32, f32), b: (f32, f32)) {
@@ -77,6 +74,7 @@ fn l(v: &mut Vec<Zug>, a: (f32, f32), b: (f32, f32)) {
 /// Die Zahlen stehen im 18-px-Raster (±9), damit alle Zeichen gleich groß
 /// wirken. Jede Marke trägt einen gefüllten Punkt im Ursprung — er zeigt den
 /// genauen Fangpunkt, auch wenn das Zeichen drumherum unsymmetrisch ist.
+/// Einzige Ausnahme ist der Rasterfang: er bekommt **kein** Zeichen.
 pub fn marke(art: FangArt) -> Vec<Zug> {
     use Zug::*;
     let mut v: Vec<Zug> = Vec::new();
@@ -138,21 +136,10 @@ pub fn marke(art: FangArt) -> Vec<Zug> {
             l(&mut v, (6.0, 7.0), (0.0, 0.0));
             l(&mut v, (0.0, 0.0), (-6.0, 7.0));
         }
-        // Raster: Punktraster — der Fang liegt auf einer Rasterlinie.
-        FangArt::Objekt(SnapKind::Grid) => {
-            for (x, y) in [
-                (-5.0, -5.0),
-                (0.0, -5.0),
-                (5.0, -5.0),
-                (-5.0, 0.0),
-                (5.0, 0.0),
-                (-5.0, 5.0),
-                (0.0, 5.0),
-                (5.0, 5.0),
-            ] {
-                v.push(Punkt((x, y), 1.2));
-            }
-        }
+        // Raster: **kein** Zeichen (T0153, Turn 3). Der Rasterfang liegt an
+        // jeder Zeigerstellung dicht unter dem Zeiger — ein Zeichen hier
+        // klebte am Mauszeiger statt am Objekt. Die Statuszeile nennt ihn.
+        FangArt::Objekt(SnapKind::Grid) => return Vec::new(),
         // Hilfslinie: gestricheltes Kreuz — der Punkt liegt auf einer
         // Verlängerung oder Normalen, nicht auf dem Objekt selbst.
         FangArt::Objekt(SnapKind::Tracking) => {
@@ -179,12 +166,6 @@ pub fn marke(art: FangArt) -> Vec<Zug> {
         FangArt::Objekt(SnapKind::Tangent) => {
             v.push(Kreis(5.0));
             l(&mut v, (-8.5, -5.0), (8.5, -5.0));
-        }
-        // Polarfang: Winkelmarke mit Strahl auf der Polarschrittweite.
-        FangArt::Polar => {
-            l(&mut v, (0.0, 0.0), (8.0, 0.0));
-            l(&mut v, (0.0, 0.0), (5.0, -5.0));
-            v.push(Bogen(7.0, 0.0, -std::f32::consts::FRAC_PI_4));
         }
     }
     v.push(Punkt((0.0, 0.0), 1.4));
@@ -229,22 +210,12 @@ fn mal_zug(p: &Painter, mitte: Pos2, zug: Zug, breite: f32, farbe: Color32) {
             let pts: Vec<Pos2> = ecken.iter().map(|q| pt(*q)).collect();
             p.add(egui::Shape::convex_polygon(pts, farbe, Stroke::NONE));
         }
-        Zug::Bogen(r, a0, a1) => {
-            let n = 14;
-            let mut vorher = Pos2::new(mitte.x + r * a0.cos(), mitte.y + r * a0.sin());
-            for i in 1..=n {
-                let a = a0 + (a1 - a0) * i as f32 / n as f32;
-                let jetzt = Pos2::new(mitte.x + r * a.cos(), mitte.y + r * a.sin());
-                p.line_segment([vorher, jetzt], st);
-                vorher = jetzt;
-            }
-        }
     }
 }
 
 /// Alle Fangarten, die eine Marke haben — Grundlage für die Vollständigkeit.
 #[cfg(test)]
-pub const ALLE: [FangArt; 13] = [
+pub const ALLE: [FangArt; 12] = [
     FangArt::Objekt(SnapKind::Endpoint),
     FangArt::Objekt(SnapKind::SheetCorner),
     FangArt::Objekt(SnapKind::Intersection),
@@ -253,11 +224,10 @@ pub const ALLE: [FangArt; 13] = [
     FangArt::Objekt(SnapKind::Quadrant),
     FangArt::Objekt(SnapKind::Perpendicular),
     FangArt::Objekt(SnapKind::Nearest),
-    FangArt::Objekt(SnapKind::Grid),
     FangArt::Objekt(SnapKind::Tracking),
     FangArt::Objekt(SnapKind::Bisector),
+    FangArt::Objekt(SnapKind::DimParallel),
     FangArt::Objekt(SnapKind::Tangent),
-    FangArt::Polar,
 ];
 
 #[cfg(test)]
@@ -270,7 +240,6 @@ mod tests {
             Zug::Kreis(r) => vec![(-r, -r), (r, r)],
             Zug::Punkt((x, y), r) => vec![(x - r, y - r), (x + r, y + r)],
             Zug::Flaeche(e) => e.to_vec(),
-            Zug::Bogen(r, ..) => vec![(-r, -r), (r, r)],
         }
     }
 
@@ -363,6 +332,22 @@ mod tests {
             })
             .count();
         assert_eq!(diagonalen, 2, "Schnittpunktzeichen ist kein Kreuz");
+    }
+
+    /// Der Rasterfang bekommt **kein** Zeichen: er liegt an jeder
+    /// Zeigerstellung dicht unter dem Zeiger, ein Zeichen dort klebte am
+    /// Mauszeiger statt am Objekt (T0153, Turn 3). Polar ebenso — es hat gar
+    /// keine eigene Marke mehr.
+    #[test]
+    fn raster_hat_keine_marke() {
+        assert!(
+            marke(FangArt::Objekt(SnapKind::Grid)).is_empty(),
+            "der Rasterfang darf kein Zeichen haben"
+        );
+        assert!(
+            !ALLE.contains(&FangArt::Objekt(SnapKind::Grid)),
+            "der Rasterfang steht noch in der Liste der Marken"
+        );
     }
 
     /// Der Mittelpunkt behält sein Kreuz mit 7 px Halbbreite (T0117) und
