@@ -1171,7 +1171,9 @@ fn snap_candidates_alle(
             if s.center {
                 consider(arc.c, SnapKind::Center, Some(*id), arc.c.dist(cursor));
             }
-            if s.endpoint {
+            // Quadranten sind ein eigenes Fangziel (T0160): wer sie nicht
+            // will, musste früher auch die Endpunkte abschalten.
+            if s.quadrant {
                 for k in 0..4 {
                     let ang = k as f64 * std::f64::consts::FRAC_PI_2;
                     let q = arc.c + Vec2::polar(ang, arc.r);
@@ -1539,15 +1541,17 @@ pub fn snap_constrained_achsen(
     // Lot (Priorität, siehe `SnapKind::priority`). Angeboten wird sie an jedem
     // Bezugspunkt des Zuges und an jedem Haltepunkt des erweiterten Punktfangs —
     // das sind genau die zwei Lagen aus der Aufgabenstellung.
-    let mut winkel_punkte: Vec<Vec2> = achsen.to_vec();
-    winkel_punkte.extend(halte.iter().map(|h| h.point));
-    cands.extend(winkelhalbierende_treffer(
-        doc,
-        &winkel_punkte,
-        cursor,
-        tol,
-        ignore,
-    ));
+    if s.bisector {
+        let mut winkel_punkte: Vec<Vec2> = achsen.to_vec();
+        winkel_punkte.extend(halte.iter().map(|h| h.point));
+        cands.extend(winkelhalbierende_treffer(
+            doc,
+            &winkel_punkte,
+            cursor,
+            tol,
+            ignore,
+        ));
+    }
     let bester = sortiere_kandidaten(cands, cursor).into_iter().next();
 
     let diskret = bester
@@ -1569,13 +1573,17 @@ pub fn snap_constrained_achsen(
     //    Zwangsachse bleibt Bedingung, die Hilfslinie wählt die Lage auf ihr
     //    (T0042).
     let zwang = zwangsachse(&s, cursor, reference, tol);
-    if let Some(hit) =
-        hilfslinien_snap_mit_zwang(doc, halte, cursor, tol, ignore, selected, zwang)
-    {
-        return SnapResolution {
-            point: hit.point,
-            source: SnapSource::Object(hit.kind),
-        };
+    // Hilfslinien sind abschaltbar (T0160): dann fängt der nächste Punkt zwar
+    // weiter normal, aber nicht mehr auf den Linien gehaltener Punkte.
+    if s.hilfslinien {
+        if let Some(hit) =
+            hilfslinien_snap_mit_zwang(doc, halte, cursor, tol, ignore, selected, zwang)
+        {
+            return SnapResolution {
+                point: hit.point,
+                source: SnapSource::Object(hit.kind),
+            };
+        }
     }
 
     // 3. Kontinuierlicher Objektfang (Nächster Punkt, Lot) in Reichweite.

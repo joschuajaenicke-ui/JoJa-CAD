@@ -1244,17 +1244,19 @@ pub fn show(app: &mut App, ui: &mut Ui) {
     // Gilt auch beim **Manipulieren** (Griffzug, Maus-Verschiebung): dort wird
     // ebenso ein Punkt gesetzt, und ohne Haltepunkte ließ sich nichts mehr
     // ausrichten (T0046, Turn 2).
-    if fang_aktiv(app) {
+    let hilfslinien_an = app.doc().settings.snap.hilfslinien;
+    if fang_aktiv(app) && hilfslinien_an {
         let tol = fang_radius_px(app, app.current_view().zoom);
         let kandidat = raw_world.and_then(|w| verweil_kandidat(app, w, tol));
         let jetzt = std::time::Instant::now();
-        if let Some(h) = app.verweil.update(kandidat, jetzt) {
+        let dauer = verweildauer(app);
+        if let Some(h) = app.verweil.update_mit(kandidat, jetzt, dauer) {
             halt_merken(app, h);
         }
         if app.verweil.laeuft() {
             // Ohne Zeigerbewegung kommt kein Frame — der Zeitgeber muss selbst
             // einen anfordern, sonst löst das Verweilen nie aus.
-            ui.ctx().request_repaint_after(VERWEILDAUER);
+            ui.ctx().request_repaint_after(dauer);
         }
     } else {
         // Kein Werkzeug: kein Haltepunkt, keine Hilfslinien.
@@ -5036,9 +5038,21 @@ impl PaintPreview {
 /// eines Endpunkts versehentlich Hilfslinien aufzuziehen.
 pub const VERWEILDAUER: std::time::Duration = std::time::Duration::from_millis(400);
 
-/// Höchstzahl gehaltener Punkte. Zwei genügen: x vom einen, y vom anderen —
-/// mehr Linien machen den Fang nur unübersichtlich.
-pub const HALTE_MAX: usize = 2;
+/// Höchstzahl gehaltener Punkte, wenn die Zeichnung nichts anderes vorgibt.
+/// Zwei genügen: x vom einen, y vom anderen — mehr Linien machen den Fang nur
+/// unübersichtlicher. Einstellbar in `SnapSettings::halte_max` (T0160).
+pub const HALTE_MAX: usize = jjcad_core::model::HALTE_VORGABE;
+
+/// Verweildauer aus den Einstellungen der Zeichnung (T0160), auf den
+/// brauchbaren Bereich begrenzt — eine alte Datei mit 0 hielte jeden Punkt
+/// beim bloßen Überfahren.
+fn verweildauer(app: &App) -> std::time::Duration {
+    let ms = app.doc().settings.snap.verweil_ms.clamp(
+        jjcad_core::model::VERWEIL_MIN_MS,
+        jjcad_core::model::VERWEIL_MAX_MS,
+    );
+    std::time::Duration::from_millis(ms.round() as u64)
+}
 
 /// Verweil-Erkennung des erweiterten Punktfangs.
 ///
@@ -5064,6 +5078,17 @@ impl VerweilFang {
         kandidat: Option<snap::HaltPunkt>,
         jetzt: std::time::Instant,
     ) -> Option<snap::HaltPunkt> {
+        self.update_mit(kandidat, jetzt, VERWEILDAUER)
+    }
+
+    /// Wie [`VerweilFang::update`], aber mit eigener Dauer — die Verweildauer
+    /// steht in den Einstellungen der Zeichnung (T0160).
+    pub fn update_mit(
+        &mut self,
+        kandidat: Option<snap::HaltPunkt>,
+        jetzt: std::time::Instant,
+        dauer: std::time::Duration,
+    ) -> Option<snap::HaltPunkt> {
         let kennung = kandidat.as_ref().map(|h| (h.point, h.kind));
         let gewechselt = match (&self.kandidat, &kennung) {
             (Some((p, k)), Some((q, l))) => p.dist(*q) > 0.1 || k != l,
@@ -5075,7 +5100,7 @@ impl VerweilFang {
             self.seit = kandidat.as_ref().map(|_| jetzt);
         }
         let kandidat = kandidat?;
-        if jetzt.duration_since(self.seit.unwrap_or(jetzt)) >= VERWEILDAUER {
+        if jetzt.duration_since(self.seit.unwrap_or(jetzt)) >= dauer {
             // Gehalten: Zeitgeber auf NULL, den Kandidaten aber behalten. Sonst
             // gälte derselbe Punkt im nächsten Frame wieder als neu, der
             // Zeitgeber liefe endlos und die Zeichenfläche müsste dauernd
@@ -5102,11 +5127,18 @@ impl VerweilFang {
 /// Haltepunkt übernehmen: höchstens [`HALTE_MAX`], derselbe Punkt nicht doppelt.
 /// Der neueste steht vorn — er ist der zuletzt gewählte.
 fn halt_merken(app: &mut App, h: snap::HaltPunkt) {
-    if app.halt.iter().any(|x| x.point.dist(h.point) <= 0.1) {
+    let grenze = app
+        .doc()
+        .settings
+        .snap
+        .halte_max
+        .min(jjcad_core::model::HALTE_MAX);
+    // 0 Haltepunkte heißt „keine Hilfslinien": der Punkt wird nicht gehalten.
+    if grenze == 0 || app.halt.iter().any(|x| x.point.dist(h.point) <= 0.1) {
         return;
     }
     app.halt.insert(0, h);
-    app.halt.truncate(HALTE_MAX);
+    app.halt.truncate(grenze);
 }
 
 /// Entsteht gerade ein Punkt? Werkzeug, Griffzug oder Maus-Verschiebung —
@@ -10791,6 +10823,31 @@ mod tests_hilfslinien {
         );
     }
 
+    /// Die Verweildauer ist eine Einstellung (T0160): mit 1,2 s hält der
+    /// Punkt erst nach 1,2 s, nicht schon nach den 400 ms der Vorgabe.
+    #[test]
+    fn verweilen_nimmt_die_eingestellte_dauer() {
+        let t0 = std::time::Instant::now();
+        let mut v = VerweilFang::default();
+        let h = snap::HaltPunkt {
+            point: V2::new(1000.0, 500.0),
+            kind: snap::SnapKind::Endpoint,
+            entity: None,
+            richtung: None,
+        };
+        let dauer = std::time::Duration::from_millis(1200);
+        assert!(v.update_mit(Some(h.clone()), t0, dauer).is_none());
+        // Nach der halben Vorgabe-Dauer ist noch nichts passiert.
+        assert!(
+            v.update_mit(Some(h.clone()), t0 + dauer / 2, dauer).is_none(),
+            "600 ms sind bei 1,2 s zu früh"
+        );
+        assert!(
+            v.update_mit(Some(h), t0 + dauer, dauer).is_some(),
+            "nach 1,2 s muss er halten"
+        );
+    }
+
     /// Wandert der Fangpunkt, beginnt die Zeit von vorn.
     #[test]
     fn neuer_punkt_beginnt_von_vorn() {
@@ -10922,6 +10979,94 @@ mod tests_hilfslinien {
         let auf_der_linie = world_to_screen(rect, view, V2::new(2000.0 + tol * 0.3, 700.0));
         frame(&mut app, vec![egui::Event::PointerMoved(auf_der_linie)]);
         assert_eq!(app.snap_label.as_deref(), Some("Hilfslinie"));
+    }
+
+    /// Die Verweildauer aus der Zeichnung gilt in der Zeichenfläche (T0160):
+    /// bei 1,5 s hält der Endpunkt nach 500 ms noch nicht.
+    #[test]
+    fn verweildauer_kommt_aus_der_zeichnung() {
+        let mut app = app();
+        linie(&mut app);
+        app.session_mut()
+            .execute(
+                "doc.settings",
+                &serde_json::json!({"snap": {"verweil_ms": 1500.0}}),
+            )
+            .unwrap();
+        app.start_tool("draw.line");
+        frame(&mut app, vec![]);
+        let rect = app.ui.last_canvas;
+        let view = app.current_view();
+        let ende = world_to_screen(rect, view, V2::new(2000.0, 0.0));
+
+        frame(&mut app, vec![egui::Event::PointerMoved(ende)]);
+        std::thread::sleep(std::time::Duration::from_millis(500));
+        frame(&mut app, vec![egui::Event::PointerMoved(ende)]);
+        assert!(
+            app.halt.is_empty(),
+            "500 ms bei 1,5 s Verweildauer sind zu früh: {:?}",
+            app.halt
+        );
+
+        std::thread::sleep(std::time::Duration::from_millis(1200));
+        frame(&mut app, vec![egui::Event::PointerMoved(ende)]);
+        assert_eq!(app.halt.len(), 1, "nach 1,7 s muss er halten");
+    }
+
+    /// „Hilfslinien“ aus (T0160): der Zeiger verweilt, es wird aber nichts
+    /// gehalten — der Fang bleibt beim Endpunkt.
+    #[test]
+    fn hilfslinien_aus_haelt_keinen_punkt() {
+        let mut app = app();
+        linie(&mut app);
+        app.session_mut()
+            .execute(
+                "doc.settings",
+                &serde_json::json!({"snap": {"hilfslinien": false}}),
+            )
+            .unwrap();
+        app.start_tool("draw.line");
+        frame(&mut app, vec![]);
+        let rect = app.ui.last_canvas;
+        let view = app.current_view();
+        let ende = world_to_screen(rect, view, V2::new(2000.0, 0.0));
+
+        frame(&mut app, vec![egui::Event::PointerMoved(ende)]);
+        std::thread::sleep(VERWEILDAUER + std::time::Duration::from_millis(120));
+        frame(&mut app, vec![egui::Event::PointerMoved(ende)]);
+        assert!(app.halt.is_empty(), "trotz Abschaltung gehalten: {:?}", app.halt);
+        // Der Endpunkt selbst fängt weiter.
+        assert_eq!(app.snap_label.as_deref(), Some("Endpunkt"));
+    }
+
+    /// Höchstzahl der Haltepunkte aus der Zeichnung (T0160): bei 1 bleibt nur
+    /// der zuletzt gewählte stehen.
+    #[test]
+    fn haltepunkte_kommen_aus_der_zeichnung() {
+        let mut app = app();
+        linie(&mut app);
+        app.session_mut()
+            .execute(
+                "doc.settings",
+                &serde_json::json!({"snap": {"halte_max": 1}}),
+            )
+            .unwrap();
+        let a = snap::HaltPunkt {
+            point: V2::new(0.0, 0.0),
+            kind: snap::SnapKind::Endpoint,
+            entity: None,
+            richtung: None,
+        };
+        let b = snap::HaltPunkt {
+            point: V2::new(2000.0, 0.0),
+            kind: snap::SnapKind::Endpoint,
+            entity: None,
+            richtung: None,
+        };
+        halt_merken(&mut app, a);
+        halt_merken(&mut app, b.clone());
+        assert_eq!(app.halt.len(), 1, "{:?}", app.halt);
+        assert_punkt(app.halt[0].point, b.point, "der zuletzt gewählte Punkt");
     }
 
     /// Der feste Punkt einer neuen Linie liegt im **Scheitel zweier Linien**

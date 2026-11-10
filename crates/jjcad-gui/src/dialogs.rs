@@ -1138,14 +1138,22 @@ pub(crate) const EINSTELLUNGSKATEGORIEN: &[Einstellungskategorie] = &[
             "Wandkanten",
             "Mittelpunkt",
             "Zentrum",
+            "Quadrant",
             "Schnittpunkt",
             "Lot",
+            "Tangential",
             "Nächster Punkt",
+            "Winkelhalbierende",
             "Ortho",
             "Polar",
             "Polarwinkel",
             "Polarfenster",
             "Fangradius",
+            "Hilfslinien",
+            "Hilfslinie",
+            "Verweildauer",
+            "Haltepunkte",
+            "Fangmarker",
             "Fangen",
         ],
     },
@@ -1484,9 +1492,9 @@ fn settings_body(app: &mut App, ui: &mut Ui) {
     let mut rasterart = snap.grid_kind;
     let mut rastermodus = snap.grid_mode;
     let mut grid_force = snap.grid_force;
-    let mut polar_step = snap.polar_step;
-    let mut polar_tol = snap.polar_tolerance;
-    let mut tol_px = snap.tolerance_px;
+    // T0160: Die Fangwerte stehen im Klon `snap` selbst — so vergleicht
+    // `settings_changed` sie mit `cur.snap` ohne eine zweite Liste von
+    // Einzelwerten, die man beim Ergänzen vergessen könnte.
     let mut th = cur.text_height;
     let mut wall = cur.wall_thickness;
     let mut door = cur.door_width;
@@ -1756,17 +1764,63 @@ fn settings_body(app: &mut App, ui: &mut Ui) {
                                 }
                             }
                             // -------------------------- Fangen --------------------
+                            // T0160: Der Fang ist in Gruppen geordnet — Allgemein,
+                            // Objektfang, Raster und Winkel, erweiterter Punktfang,
+                            // Anzeige. Jede Stellschraube steht genau einmal hier;
+                            // die Rasterweite bleibt in der Kategorie „Raster“.
                             2 => {
-                                abschnitt(&suche, ui, jjcad_core::i18n::tr("gui.dialogs.fangen"));
+                                abschnitt(&suche, ui, jjcad_core::i18n::tr("gui.dialogs.allgemein"));
+                                zeile_mit(
+                                    &suche,
+                                    ui,
+                                    jjcad_core::i18n::tr("gui.dialogs.fangradius"),
+                                    &["Trefferbereich", "Radius", "Fangen"],
+                                    |ui| {
+                                        ui.add(
+                                            crate::widgets::zahl(&mut snap.tolerance_px, 1.0, 1.0..=60.0)
+                                                .suffix(" px"),
+                                        );
+                                    },
+                                );
+                                if suche.is_empty() {
+                                    ui.label(theme::faint(jjcad_core::i18n::tr(
+                                        "gui.dialogs.fangradius_hinweis",
+                                    )));
+                                }
+
+                                abschnitt(&suche, ui, jjcad_core::i18n::tr("gui.dialogs.objektfang"));
                                 for (label, field) in [
                                     (jjcad_core::i18n::tr("gui.dialogs.endpunkt"), &mut snap.endpoint),
-                                    (jjcad_core::i18n::tr("gui.dialogs.wandkanten"), &mut snap.wall_edges),
                                     (jjcad_core::i18n::tr("gui.dialogs.mittelpunkt"), &mut snap.midpoint),
                                     (jjcad_core::i18n::tr("gui.dialogs.zentrum"), &mut snap.center),
-                                    (jjcad_core::i18n::tr("gui.dialogs.schnittpunkt"), &mut snap.intersection),
+                                    (jjcad_core::i18n::tr("ui.snapkind.quadrant"), &mut snap.quadrant),
+                                    (
+                                        jjcad_core::i18n::tr("gui.dialogs.schnittpunkt"),
+                                        &mut snap.intersection,
+                                    ),
                                     (jjcad_core::i18n::tr("gui.dialogs.lot"), &mut snap.perpendicular),
                                     (jjcad_core::i18n::tr("gui.dialogs.tangential"), &mut snap.tangent),
-                                    (jjcad_core::i18n::tr("gui.dialogs.naechster_punkt"), &mut snap.nearest),
+                                    (
+                                        jjcad_core::i18n::tr("gui.dialogs.naechster_punkt"),
+                                        &mut snap.nearest,
+                                    ),
+                                    (jjcad_core::i18n::tr("ui.snapkind.bisector"), &mut snap.bisector),
+                                    (jjcad_core::i18n::tr("gui.dialogs.wandkanten"), &mut snap.wall_edges),
+                                ] {
+                                    if !suche.is_empty() && !label.to_lowercase().contains(&suche) {
+                                        continue;
+                                    }
+                                    widgets::field_row(ui, label, |ui| {
+                                        ui.checkbox(field, "");
+                                    });
+                                }
+
+                                abschnitt(
+                                    &suche,
+                                    ui,
+                                    jjcad_core::i18n::tr("gui.dialogs.raster_und_winkel"),
+                                );
+                                for (label, field) in [
                                     (jjcad_core::i18n::tr("gui.dialogs.ortho"), &mut snap.ortho),
                                     (jjcad_core::i18n::tr("gui.dialogs.polar"), &mut snap.polar),
                                 ] {
@@ -1779,26 +1833,91 @@ fn settings_body(app: &mut App, ui: &mut Ui) {
                                 }
                                 zeile(&suche, ui, jjcad_core::i18n::tr("gui.dialogs.polarwinkel"), |ui| {
                                     ui.add(
-                                        crate::widgets::zahl(&mut polar_step, 1.0, 1.0..=180.0)
+                                        crate::widgets::zahl(&mut snap.polar_step, 1.0, 1.0..=180.0)
                                             .suffix("°"),
                                     );
                                     ui.label(theme::dim(jjcad_core::i18n::tr("gui.dialogs.architektur_45")));
                                 });
                                 zeile(&suche, ui, jjcad_core::i18n::tr("gui.dialogs.polarfenster"), |ui| {
                                     ui.add(
-                                        crate::widgets::zahl(&mut polar_tol, 0.5, 0.0..=45.0)
+                                        crate::widgets::zahl(&mut snap.polar_tolerance, 0.5, 0.0..=45.0)
                                             .suffix("°"),
                                     );
                                     ui.label(theme::dim(
                                         jjcad_core::i18n::tr("gui.dialogs.nur_innerhalb_dieser_abweichung_rastet_polar_ein"),
                                     ));
                                 });
-                                zeile(&suche, ui, jjcad_core::i18n::tr("gui.dialogs.fangradius"), |ui| {
-                                    ui.add(
-                                        crate::widgets::zahl(&mut tol_px, 1.0, 1.0..=60.0)
-                                            .suffix(" px"),
-                                    );
-                                });
+                                if suche.is_empty() {
+                                    ui.label(theme::faint(jjcad_core::i18n::tr(
+                                        "gui.dialogs.raster_im_fang_hinweis",
+                                    )));
+                                }
+
+                                abschnitt(
+                                    &suche,
+                                    ui,
+                                    jjcad_core::i18n::tr("gui.dialogs.erweiterter_punktfang"),
+                                );
+                                zeile_mit(
+                                    &suche,
+                                    ui,
+                                    jjcad_core::i18n::tr("gui.dialogs.hilfslinien"),
+                                    &["erweiterter Punktfang", "Verweilen", "Halten"],
+                                    |ui| {
+                                        ui.checkbox(&mut snap.hilfslinien, "");
+                                    },
+                                );
+                                let hilfslinien_an = snap.hilfslinien;
+                                zeile_mit(
+                                    &suche,
+                                    ui,
+                                    jjcad_core::i18n::tr("gui.dialogs.verweildauer"),
+                                    &["Verweilen", "Millisekunden", "Halten"],
+                                    |ui| {
+                                        ui.add_enabled_ui(hilfslinien_an, |ui| {
+                                            ui.add(
+                                                crate::widgets::zahl(
+                                                    &mut snap.verweil_ms,
+                                                    5.0,
+                                                    jjcad_core::model::VERWEIL_MIN_MS
+                                                        ..=jjcad_core::model::VERWEIL_MAX_MS,
+                                                )
+                                                .suffix(" ms"),
+                                            );
+                                        });
+                                    },
+                                );
+                                zeile_mit(
+                                    &suche,
+                                    ui,
+                                    jjcad_core::i18n::tr("gui.dialogs.haltepunkte"),
+                                    &["Hilfslinien", "Punkte", "Anzahl"],
+                                    |ui| {
+                                        ui.add_enabled_ui(hilfslinien_an, |ui| {
+                                            ui.add(crate::widgets::zahl(
+                                                &mut snap.halte_max,
+                                                1.0,
+                                                0..=jjcad_core::model::HALTE_MAX,
+                                            ));
+                                        });
+                                    },
+                                );
+                                if suche.is_empty() {
+                                    ui.label(theme::faint(jjcad_core::i18n::tr(
+                                        "gui.dialogs.hilfslinien_hinweis",
+                                    )));
+                                }
+
+                                abschnitt(&suche, ui, jjcad_core::i18n::tr("gui.dialogs.anzeige"));
+                                zeile_mit(
+                                    &suche,
+                                    ui,
+                                    jjcad_core::i18n::tr("gui.dialogs.fangmarker"),
+                                    &["Fangmarke", "Marker", "Anzeige"],
+                                    |ui| {
+                                        ui.checkbox(&mut marker, "");
+                                    },
+                                );
                             }
                             // ------------------------ Architektur -----------------
                             3 => {
@@ -2315,7 +2434,6 @@ fn settings_body(app: &mut App, ui: &mut Ui) {
                                 for (name, wert) in [
                                     ("Layer-Panel", &mut show_layers),
                                     ("Eigenschaften-Panel", &mut show_props),
-                                    (jjcad_core::i18n::tr("gui.dialogs.fangmarker"), &mut marker),
                                     ("Lineale einblenden", &mut rulers),
                                 ] {
                                     if !suche.is_empty() && !name.to_lowercase().contains(&suche) {
@@ -2861,9 +2979,14 @@ fn settings_body(app: &mut App, ui: &mut Ui) {
         || rasterart != cur.snap.grid_kind
         || rastermodus != cur.snap.grid_mode
         || grid_force != cur.snap.grid_force
-        || (polar_step - cur.snap.polar_step).abs() > 1e-9
-        || (polar_tol - cur.snap.polar_tolerance).abs() > 1e-9
-        || (tol_px - cur.snap.tolerance_px).abs() > 1e-9
+        || (snap.polar_step - cur.snap.polar_step).abs() > 1e-9
+        || (snap.polar_tolerance - cur.snap.polar_tolerance).abs() > 1e-9
+        || (snap.tolerance_px - cur.snap.tolerance_px).abs() > 1e-9
+        || (snap.verweil_ms - cur.snap.verweil_ms).abs() > 1e-9
+        || snap.halte_max != cur.snap.halte_max
+        || snap.quadrant != cur.snap.quadrant
+        || snap.bisector != cur.snap.bisector
+        || snap.hilfslinien != cur.snap.hilfslinien
         || snap.endpoint != cur.snap.endpoint
         || snap.midpoint != cur.snap.midpoint
         || snap.center != cur.snap.center
@@ -2904,9 +3027,14 @@ fn settings_body(app: &mut App, ui: &mut Ui) {
                 "grid_kind": rasterart.key(),
                 "grid_mode": rastermodus.key(),
                 "grid_force": grid_force,
-                "polar_step": polar_step,
-                "polar_tolerance": polar_tol,
-                "tolerance_px": tol_px
+                "polar_step": snap.polar_step,
+                "polar_tolerance": snap.polar_tolerance,
+                "tolerance_px": snap.tolerance_px,
+                "quadrant": snap.quadrant,
+                "bisector": snap.bisector,
+                "hilfslinien": snap.hilfslinien,
+                "verweil_ms": snap.verweil_ms,
+                "halte_max": snap.halte_max
             }
         });
         let _ = app.session_mut().execute("doc.settings", &p);
@@ -5357,8 +5485,49 @@ mod tests_einstellungen {
         )
     }
 
+    /// T0160: Jede Fang-Einstellung der Zeichnung hat eine Zeile in der
+    /// Kategorie „Fangen“. Die Feldnamen kommen aus der Serialisierung von
+    /// `SnapSettings` — ein neues Feld bricht den Test, bis es eine Zeile hat.
+    /// Ausgenommen sind die Rasterfelder: laut T0144 stehen **alle**
+    /// Rastereinstellungen in der Kategorie „Raster“.
     #[test]
-    fn suche_steht_ueber_der_tabelle_und_einstellungen_rechts() {
+    fn jede_fang_einstellung_hat_eine_zeile() {
+        let quelle = include_str!("dialogs.rs");
+        // Nur der Zweig der Kategorie „Fangen“ zählt — die Felder stehen auch
+        // im Vergleich `settings_changed` weiter unten, das wäre kein Beleg.
+        let anfang = quelle
+            .find("// -------------------------- Fangen")
+            .expect("Zweig der Kategorie Fangen fehlt");
+        let ende = quelle[anfang..]
+            .find("// ------------------------ Architektur")
+            .map(|i| anfang + i)
+            .expect("Ende des Fang-Zweigs fehlt");
+        let ohne_kommentare: String = quelle[anfang..ende]
+            .lines()
+            .filter(|z| !z.trim_start().starts_with("//"))
+            .collect::<Vec<_>>()
+            .join("\n");
+        let im_raster = ["grid", "grid_step", "grid_kind", "grid_mode", "grid_force"];
+        let felder = serde_json::to_value(jjcad_core::model::SnapSettings::default())
+            .expect("SnapSettings ist serialisierbar");
+        let obj = felder.as_object().expect("snap ist ein Objekt");
+        let mut fehlend: Vec<String> = Vec::new();
+        for name in obj.keys() {
+            if im_raster.contains(&name.as_str()) {
+                continue;
+            }
+            if !ohne_kommentare.contains(&format!("snap.{name}")) {
+                fehlend.push(name.clone());
+            }
+        }
+        assert!(
+            fehlend.is_empty(),
+            "ohne Zeile in der Kategorie „Fangen“: {fehlend:?}"
+        );
+    }
+
+    #[test]
+    fn suche_steht_über_der_tabelle_und_einstellungen_rechts() {
         let (suche, nav, pane) = lage("");
         assert!(
             suche.bottom() <= nav.top() + 1.0,

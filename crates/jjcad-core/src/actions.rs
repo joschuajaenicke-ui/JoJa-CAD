@@ -3987,6 +3987,9 @@ pub fn execute(doc: &mut Document, id: &str, params: &Value) -> Result<Value, St
                     ("ortho", &mut doc.settings.snap.ortho),
                     ("polar", &mut doc.settings.snap.polar),
                     ("wall_edges", &mut doc.settings.snap.wall_edges),
+                    ("quadrant", &mut doc.settings.snap.quadrant),
+                    ("bisector", &mut doc.settings.snap.bisector),
+                    ("hilfslinien", &mut doc.settings.snap.hilfslinien),
                 ] {
                     if let Some(v) = sp.boolean(k) {
                         *target = v;
@@ -4019,6 +4022,17 @@ pub fn execute(doc: &mut Document, id: &str, params: &Value) -> Result<Value, St
                 }
                 if let Some(t) = sp.num("tolerance_px") {
                     doc.settings.snap.tolerance_px = t.clamp(1.0, 60.0);
+                }
+                // Erweiterter Punktfang (T0160): Verweildauer und Zahl der
+                // Haltepunkte. Grenzen stehen im Modell, damit Feld, Action und
+                // Datei dieselben Werte kennen.
+                if let Some(v) = sp.num("verweil_ms") {
+                    doc.settings.snap.verweil_ms =
+                        v.clamp(crate::model::VERWEIL_MIN_MS, crate::model::VERWEIL_MAX_MS);
+                }
+                if let Some(h) = sp.num("halte_max") {
+                    doc.settings.snap.halte_max =
+                        (h.round().max(0.0) as usize).min(crate::model::HALTE_MAX);
                 }
             }
             Ok(json!({"ok": true}))

@@ -207,6 +207,12 @@ ausgeblendet.
   2 m breit, und der Punkt rastete weit neben der gemeinten Richtung ein.
   Auch der **erweiterte Punktfang** arbeitet dabei: bleibt der Zeiger auf einem Fangpunkt
   stehen, wird dieser gehalten und seine Hilfslinien fangen den gezogenen Punkt.
+  Alle Fang-Einstellungen stehen gebündelt in **Einstellungen ▸ Fangen**: oben der Fangradius,
+  darunter der Objektfang (Endpunkt, Mittelpunkt, Zentrum, Quadrant, Schnittpunkt, Lot,
+  Tangential, Nächster Punkt, Winkelhalbierende, Wandkanten), dann Raster und Winkel (Ortho,
+  Polar mit Schrittweite und Fenster), der erweiterte Punktfang (Hilfslinien an/aus,
+  Verweildauer, Höchstzahl der Haltepunkte) und die Anzeige (Fangmarker). Rasterweite,
+  Rasterart und Rasterfang bleiben in der Kategorie **Raster**.
 - **Winkelhalbierende am Schnittpunkt zweier Linien** (T0150): Der Fang wird **nur** aktiv, wenn
   der feste Punkt der neuen Linie auf dem Schnittpunkt zweier Linien liegt — also im Scheitel
   einer Ecke, Kreuzung oder eines Stoßes (Linien und Wände, letztere mit ihrer Achse). Liegt der
