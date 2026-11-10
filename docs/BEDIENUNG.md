@@ -229,16 +229,17 @@ ausgeblendet.
   anliegender Gerade. Abschaltbar in Einstellungen ▸ Fangen und im Fangmenü der Statusleiste.
   Prüfweg: `cargo test -p jjcad-core --test tangential_fang` (8 Tests, messen den Abstand
   Mittelpunkt → Gerade gegen den Radius).
-- **Fangmarken** (T0153): Jeder Fang zeigt sein eigenes Zeichen am **Fangpunkt** — also am
-  Element, nicht am Zeiger: Endpunkt ein Quadrat, Mittelpunkt ein Dreieck, Zentrum ein Kreis
-  mit Kreuz, Schnittpunkt ein Kreuz, Quadrant eine Raute, Lot ein rechter Winkel, nächster
-  Punkt eine Sanduhr, Raster ein Punktraster, Hilfslinie ein gestricheltes Kreuz,
-  Winkelhalbierende ein Winkel mit Mittelstrahl, Tangential ein Kreis mit anliegender Gerade,
-  Blattecke ein gefülltes Quadrat, Polarfang
-  eine Winkelmarke. Ohne Fang bleibt es beim kleinen Kreuz am Zeiger; `Ortho` führt nur und
-  zeigt keine Marke. Die Marke steht in der **Fangfarbe** (dasselbe Grün wie die Hilfslinien
-  des erweiterten Punktfangs), ist 18 px groß, liegt über der Zeichnung und erscheint nicht
-  im Druck.
+- **Fangmarken** (T0153): Jeder Fang **am Element** zeigt sein eigenes Zeichen am
+  **Fangpunkt** — also am Objekt, nicht am Zeiger: Endpunkt ein Quadrat, Mittelpunkt ein
+  Dreieck, Zentrum ein Kreis mit Kreuz, Schnittpunkt ein Kreuz, Quadrant eine Raute, Lot ein
+  rechter Winkel, nächster Punkt eine Sanduhr, Hilfslinie ein gestricheltes Kreuz,
+  Winkelhalbierende ein Winkel mit Mittelstrahl, Maßkette parallel zwei parallele Striche,
+  Tangential ein Kreis mit anliegender Gerade, Blattecke ein gefülltes Quadrat. **Raster und
+  Polarfang zeigen keine Marke**: sie haben keinen Punkt am Element, ihr Zeichen säße an jeder
+  Mausstellung unter dem Zeiger (T0153, Turn 3) — die Statuszeile nennt sie weiterhin. Ohne
+  Fang bleibt es beim kleinen Kreuz am Zeiger, `Ortho` führt ebenfalls nur. Die Marke steht in
+  der **Fangfarbe** (dasselbe Grün wie die Hilfslinien des erweiterten Punktfangs), ist 18 px
+  groß, liegt über der Zeichnung und erscheint nicht im Druck.
 - **Linien** werden als Kapsel gezeichnet: Rechteck plus Halbkreis an beiden Enden. Dadurch sind
   auch die Übergänge in Polylinien, Bögen und an Wandanschlüssen rund statt eckig.
 - **Ribbon** lässt sich über den Pfeil rechts in der Kopfzeile einklappen; die Reiter bleiben sichtbar.

@@ -2142,10 +2142,49 @@ mod tests_fangmarke {
         );
     }
 
-    /// Der Polarfang ist ein Fang (Statuszeile „POL") und bekommt deshalb
-    /// ebenfalls eine Marke — die Winkelmarke am gerasteten Punkt.
+    /// Raster und Polar haben keinen Punkt am Element — ihr Fangpunkt liegt
+    /// unter dem Zeiger. Sie bekommen deshalb **keine** Marke (T0153, Turn 3):
+    /// sonst klebte ein Zeichen an jeder Mausstellung. Die Statuszeile nennt
+    /// sie weiterhin.
     #[test]
-    fn polarfang_zeigt_die_winkelmarke() {
+    fn raster_und_polar_zeigen_keine_marke() {
+        // Raster: Zeiger auf freier Fläche, Raster an, feine Weite → der
+        // Rasterfang greift überall, es darf aber nichts gezeichnet werden.
+        let ctx = egui::Context::default();
+        let mut app = app_mit_linie(&ctx);
+        app.session_mut()
+            .execute(
+                "doc.settings",
+                &json!({"input_unit": "mm", "show_grid": true, "snap": {"grid": true, "grid_step": 10.0}}),
+            )
+            .unwrap();
+        app.ui.show_grid = true;
+        rahmen(&ctx, &mut app, None);
+        let flaeche = app.ui.last_canvas;
+        let zeiger = Pos2::new(flaeche.left() + 40.0, flaeche.top() + 40.0);
+        let out = rahmen(&ctx, &mut app, Some(zeiger));
+        assert_eq!(
+            app.snap_label.as_deref(),
+            Some("Raster"),
+            "der Rasterfang greift im Test nicht"
+        );
+        let s = world_to_screen(
+            flaeche,
+            app.current_view(),
+            app.pointer_world.expect("kein Fangpunkt"),
+        );
+        let punkte = out
+            .shapes
+            .iter()
+            .filter(|cs| match &cs.shape {
+                egui::Shape::Circle(c) => c.radius < 2.0 && c.center.distance(s) < 10.0,
+                _ => false,
+            })
+            .count();
+        assert_eq!(punkte, 0, "der Rasterfang zeichnet noch eine Punktraster-Marke");
+
+        // Polar: Werkzeug mit Bezugspunkt, Zeiger auf der 45°-Richtung. Der
+        // Fang greift (Statuszeile „POL"), zeichnet aber keine Winkelmarke.
         let ctx = egui::Context::default();
         let mut app = App::with_ctx(ctx.clone());
         app.session_mut()
@@ -2164,10 +2203,7 @@ mod tests_fangmarke {
         rahmen(&ctx, &mut app, None);
         let flaeche = app.ui.last_canvas;
         let start = world_to_screen(flaeche, app.current_view(), V2::new(0.0, 0.0));
-
-        // Zeiger genau auf der 45°-Richtung: der Polarfang rastet ein.
-        let zeiger = start + Vec2::new(140.0, -140.0);
-        let out = rahmen(&ctx, &mut app, Some(zeiger));
+        let out = rahmen(&ctx, &mut app, Some(start + Vec2::new(140.0, -140.0)));
         assert_eq!(app.snap_label.as_deref(), Some("POL"), "Polarfang greift nicht");
         let s = world_to_screen(
             flaeche,
@@ -2176,8 +2212,8 @@ mod tests_fangmarke {
         );
         let ss = strecken(&out);
         assert!(
-            hat_strecke(&ss, s, Pos2::new(s.x + 8.0, s.y)),
-            "Winkelmarke des Polarfangs fehlt am Fangpunkt"
+            !hat_strecke(&ss, s, Pos2::new(s.x + 8.0, s.y)),
+            "der Polarfang zeichnet noch eine Winkelmarke am Zeiger"
         );
     }
 
@@ -3851,17 +3887,18 @@ fn fang_zeiger(app: &App, w: V2, tol: f64) -> (V2, Option<&'static str>) {
 
 /// Wie [`fang_zeiger`], gibt aber zusätzlich die **Art** des Fangs zurück.
 ///
-/// Die Zeichenfläche braucht sie für die Fangmarke (T0153): jede Fangart hat
-/// ihr eigenes Zeichen am Fangpunkt — beim Mittelpunkt ist das der sonst
-/// unsichtbare Kreismittelpunkt (T0117). Polar zählt mit, es ist ein Fang
-/// (Statuszeile „POL“); Ortho und „frei“ führen den Zeiger nur und bleiben
-/// ohne Marke.
+/// Die Zeichenfläche braucht sie für die Fangmarke (T0153): jede Fangart mit
+/// einem Punkt **am Element** hat ihr eigenes Zeichen am Fangpunkt — beim
+/// Mittelpunkt ist das der sonst unsichtbare Kreismittelpunkt (T0117).
+/// Raster, Polar, Ortho und „frei“ führen den Zeiger nur; ihr Punkt liegt an
+/// jeder Mausstellung unter dem Zeiger, ein Zeichen dort klebte am Cursor
+/// (T0153, Turn 3).
 fn fang_zeiger_art(app: &App, w: V2, tol: f64) -> (V2, Option<&'static str>, Option<FangArt>) {
     let res = fang_aufloesung(app, w, tol);
     let art = match res.source {
+        snap::SnapSource::Object(snap::SnapKind::Grid) => None,
         snap::SnapSource::Object(k) => Some(FangArt::Objekt(k)),
-        snap::SnapSource::Polar => Some(FangArt::Polar),
-        snap::SnapSource::Ortho | snap::SnapSource::Free => None,
+        snap::SnapSource::Polar | snap::SnapSource::Ortho | snap::SnapSource::Free => None,
     };
     (res.point, res.text(), art)
 }
