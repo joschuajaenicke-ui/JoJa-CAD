@@ -5,6 +5,7 @@ use crate::app::{
     Einfuegemodus, TabKind, Tool, ToolPhase, View,
 };
 use crate::perf::Abschnitt;
+use crate::snapmarke::FangArt;
 use crate::theme::Palette;
 use egui::{Align2, Color32, FontFamily, FontId, Painter, Pos2, Rect, Response, Sense, Shape, Stroke, Ui, Vec2};
 use jjcad_core::actions;
@@ -1264,14 +1265,14 @@ pub fn show(app: &mut App, ui: &mut Ui) {
     // Fangen — im Papierraum genauso wie im Modell (dort auf Schriftfeld,
     // Texten und eigenen Blattelementen).
     let mut snapped = raw_world;
-    let mut snap_kind = None;
+    let mut fang_art = None;
     app.snap_label = None;
     if let Some(w) = raw_world {
-        let (p, label, kind) =
+        let (p, label, art) =
             fang_zeiger_art(app, w, fang_radius_px(app, app.current_view().zoom));
         snapped = Some(p);
         app.snap_label = label.map(str::to_string);
-        snap_kind = kind;
+        fang_art = art;
     }
     app.pointer_world = snapped;
     if let Some(g) = app.ghost.as_mut() {
@@ -1317,7 +1318,7 @@ pub fn show(app: &mut App, ui: &mut Ui) {
         if let Some((start, cur, _)) = app.select_zwei {
             draw_auswahlfenster(&painter, rect, view_now, start, cur);
         }
-        draw_cursor(app, ui, &painter, rect, view_now, snapped, raw_world, snap_kind);
+        draw_cursor(app, ui, &painter, rect, view_now, snapped, raw_world, fang_art);
     } else {
         app.perf.abschnitt(Abschnitt::Displayliste);
         let dl = display_list(app);
@@ -1392,7 +1393,7 @@ pub fn show(app: &mut App, ui: &mut Ui) {
         if let Some((start, cur, _)) = app.select_zwei {
             draw_auswahlfenster(&painter, rect, view_now, start, cur);
         }
-        draw_cursor(app, ui, &painter, rect, view_now, snapped, raw_world, snap_kind);
+        draw_cursor(app, ui, &painter, rect, view_now, snapped, raw_world, fang_art);
     }
 
     // Werkzeug-Icon am Zeiger — auch außerhalb der Zeichenfläche (T0057),
@@ -1958,14 +1959,14 @@ mod tests_fadenkreuz {
         let rest = &src[i..];
         let blatt = &rest[..rest.find("} else {").expect("Blatt-Zweig nicht gefunden")];
         assert!(
-            blatt.contains("draw_cursor(app, ui, &painter, rect, view_now, snapped, raw_world, snap_kind)"),
+            blatt.contains("draw_cursor(app, ui, &painter, rect, view_now, snapped, raw_world, fang_art)"),
             "Blatt-Zweig zeichnet den Zeiger nicht über draw_cursor"
         );
         let j = src.find("let dl = display_list(app);").unwrap();
         let rest = &src[j..];
         let modell = &rest[..rest.find("// Eingabe").expect("Zeichenmodus nicht gefunden")];
         assert!(
-            modell.contains("draw_cursor(app, ui, &painter, rect, view_now, snapped, raw_world, snap_kind)"),
+            modell.contains("draw_cursor(app, ui, &painter, rect, view_now, snapped, raw_world, fang_art)"),
             "Zeichenmodus zeichnet den Zeiger nicht über draw_cursor"
         );
         assert!(
@@ -1976,6 +1977,162 @@ mod tests_fadenkreuz {
 
 }
 
+#[cfg(test)]
+mod tests_fangmarke {
+    //! Fangmarken am Element (T0153).
+    //!
+    //! Geprüft wird am gerenderten Bild: steht der Zeiger neben einem
+    //! Linienende, muss das Endpunktzeichen (Quadrat, 12 px Kantenlänge) am
+    //! **Fangpunkt** liegen — nicht am rohen Zeiger. Ohne Fang bleibt es beim
+    //! kleinen Kreuz am Zeiger.
+
+    use super::*;
+    use crate::app::App;
+
+    const FENSTER: Vec2 = Vec2::new(1500.0, 950.0);
+
+    fn rahmen(ctx: &egui::Context, app: &mut App, zeiger: Option<Pos2>) -> egui::FullOutput {
+        let mut raw = egui::RawInput {
+            screen_rect: Some(Rect::from_min_size(Pos2::ZERO, FENSTER)),
+            ..Default::default()
+        };
+        if let Some(p) = zeiger {
+            raw.events.push(egui::Event::PointerMoved(p));
+        }
+        ctx.run(raw, |ctx| app.ui(ctx))
+    }
+
+    fn strecken(out: &egui::FullOutput) -> Vec<[Pos2; 2]> {
+        out.shapes
+            .iter()
+            .filter_map(|cs| match &cs.shape {
+                egui::Shape::LineSegment { points, .. } => Some(*points),
+                _ => None,
+            })
+            .collect()
+    }
+
+    fn hat_strecke(ss: &[[Pos2; 2]], a: Pos2, b: Pos2) -> bool {
+        ss.iter().any(|s| {
+            (s[0].distance(a) < 0.3 && s[1].distance(b) < 0.3)
+                || (s[0].distance(b) < 0.3 && s[1].distance(a) < 0.3)
+        })
+    }
+
+    /// Eine schräge Linie (0,0) → (4000,3000) — das linke Ende ist ein
+    /// Endpunkt-Fangziel, das Raster ist für den Test aus.
+    fn app_mit_linie(ctx: &egui::Context) -> App {
+        let mut app = App::with_ctx(ctx.clone());
+        assert!(run(
+            &mut app,
+            "draw.line",
+            json!({"a": [0.0, 0.0], "b": [4000.0, 3000.0]})
+        ));
+        app.ui.show_grid = false;
+        app
+    }
+
+    #[test]
+    fn endpunktmarke_liegt_am_fangpunkt() {
+        let ctx = egui::Context::default();
+        let mut app = app_mit_linie(&ctx);
+        rahmen(&ctx, &mut app, None);
+        let flaeche = app.ui.last_canvas;
+        let s = world_to_screen(flaeche, app.current_view(), V2::new(0.0, 0.0));
+        assert!(flaeche.contains(s), "Linienende liegt nicht im Bild: {s:?}");
+
+        // Zeiger 5 px neben dem Ende — innerhalb des Fangradius (12 px).
+        let zeiger = s + Vec2::new(4.0, 3.0);
+        let out = rahmen(&ctx, &mut app, Some(zeiger));
+        let ss = strecken(&out);
+        let ecke = |x: f32, y: f32| Pos2::new(s.x + x, s.y + y);
+        for (a, b) in [
+            (ecke(-6.0, -6.0), ecke(6.0, -6.0)),
+            (ecke(6.0, -6.0), ecke(6.0, 6.0)),
+            (ecke(6.0, 6.0), ecke(-6.0, 6.0)),
+            (ecke(-6.0, 6.0), ecke(-6.0, -6.0)),
+        ] {
+            assert!(
+                hat_strecke(&ss, a, b),
+                "Endpunktmarke fehlt am Fangpunkt ({a:?} → {b:?})"
+            );
+        }
+        // Gegenprobe: am rohen Zeiger steht sie nicht.
+        let roh = |x: f32, y: f32| Pos2::new(zeiger.x + x, zeiger.y + y);
+        assert!(
+            !hat_strecke(&ss, roh(-6.0, -6.0), roh(6.0, -6.0)),
+            "Marke sitzt am Zeiger statt am Element"
+        );
+    }
+
+    /// Der Polarfang ist ein Fang (Statuszeile „POL") und bekommt deshalb
+    /// ebenfalls eine Marke — die Winkelmarke am gerasteten Punkt.
+    #[test]
+    fn polarfang_zeigt_die_winkelmarke() {
+        let ctx = egui::Context::default();
+        let mut app = App::with_ctx(ctx.clone());
+        app.session_mut()
+            .execute(
+                "doc.settings",
+                &json!({"input_unit": "mm", "snap": {
+                    "ortho": false, "polar": true, "grid": false,
+                    "endpoint": false, "midpoint": false, "center": false,
+                    "intersection": false, "perpendicular": false,
+                    "nearest": false, "wall_edges": false
+                }}),
+            )
+            .unwrap();
+        app.start_tool("draw.line");
+        app.tool.as_mut().unwrap().pts.push(V2::new(0.0, 0.0));
+        rahmen(&ctx, &mut app, None);
+        let flaeche = app.ui.last_canvas;
+        let start = world_to_screen(flaeche, app.current_view(), V2::new(0.0, 0.0));
+
+        // Zeiger genau auf der 45°-Richtung: der Polarfang rastet ein.
+        let zeiger = start + Vec2::new(140.0, -140.0);
+        let out = rahmen(&ctx, &mut app, Some(zeiger));
+        assert_eq!(app.snap_label.as_deref(), Some("POL"), "Polarfang greift nicht");
+        let s = world_to_screen(
+            flaeche,
+            app.current_view(),
+            app.pointer_world.expect("kein Fangpunkt"),
+        );
+        let ss = strecken(&out);
+        assert!(
+            hat_strecke(&ss, s, Pos2::new(s.x + 8.0, s.y)),
+            "Winkelmarke des Polarfangs fehlt am Fangpunkt"
+        );
+    }
+
+    #[test]
+    fn ohne_fang_bleibt_das_kleine_kreuz() {
+        let ctx = egui::Context::default();
+        let mut app = app_mit_linie(&ctx);
+        rahmen(&ctx, &mut app, None);
+        let flaeche = app.ui.last_canvas;
+        // Oben links, weit weg von der schrägen Linie.
+        let zeiger = Pos2::new(flaeche.left() + 40.0, flaeche.top() + 40.0);
+        let out = rahmen(&ctx, &mut app, Some(zeiger));
+        let ss = strecken(&out);
+        assert!(
+            hat_strecke(
+                &ss,
+                Pos2::new(zeiger.x - 5.0, zeiger.y),
+                Pos2::new(zeiger.x + 5.0, zeiger.y)
+            ),
+            "ohne Fang fehlt das kleine Kreuz am Zeiger"
+        );
+        assert!(
+            !hat_strecke(
+                &ss,
+                Pos2::new(zeiger.x - 6.0, zeiger.y - 6.0),
+                Pos2::new(zeiger.x + 6.0, zeiger.y - 6.0)
+            ),
+            "ohne Fang darf keine Fangmarke gezeichnet werden"
+        );
+    }
+}
+
 fn draw_cursor(
     _app: &mut App,
     ui: &mut Ui,
@@ -1983,25 +2140,26 @@ fn draw_cursor(
     rect: Rect,
     view: View,
     snapped: Option<V2>,
-    raw: Option<V2>,
-    snap_kind: Option<snap::SnapKind>,
+    _raw: Option<V2>,
+    fang_art: Option<FangArt>,
 ) {
     let Some(pos) = ui.ctx().pointer_hover_pos().filter(|q| rect.contains(*q)) else {
         return;
     };
     if let Some(w) = snapped {
         let s = world_to_screen(rect, view, w);
-        // Der Mittelpunkt von Kreis, Bogen und Ellipse ist im Plan unsichtbar
-        // (T0117) — wird er gefangen, zeigt ihn das Kreuz hier an. Sonst wäre
-        // der Fangpunkt nur an der allgemeinen Fangmarke zu erahnen.
-        if snap_kind == Some(snap::SnapKind::Center) {
-            center_mark_r(p, s, Palette::accent(), 7.0);
-        }
-        let r = 5.0;
-        p.line_segment([s - Vec2::new(r, 0.0), s + Vec2::new(r, 0.0)], Stroke::new(1.2, Palette::accent()));
-        p.line_segment([s - Vec2::new(0.0, r), s + Vec2::new(0.0, r)], Stroke::new(1.2, Palette::accent()));
-        if raw.map(|q| q.dist(w)).unwrap_or(0.0) * view.zoom > 1.0 {
-            p.circle_stroke(s, 7.0, Stroke::new(1.0, Palette::accent().gamma_multiply(0.7)));
+        match fang_art {
+            // Eigene Marke je Fangart, am Fangpunkt — also am Element, auf
+            // das sich der Fang bezieht (T0153). Der Mittelpunkt von Kreis,
+            // Bogen und Ellipse ist im Plan unsichtbar; seine Marke trägt das
+            // Kreuz in Akzentfarbe (T0117).
+            Some(art) => crate::snapmarke::zeichne(p, s, art),
+            // Kein Fang: der Zeigerpunkt selbst, wie bisher als kleines Kreuz.
+            None => {
+                let r = 5.0;
+                p.line_segment([s - Vec2::new(r, 0.0), s + Vec2::new(r, 0.0)], Stroke::new(1.2, Palette::accent()));
+                p.line_segment([s - Vec2::new(0.0, r), s + Vec2::new(0.0, r)], Stroke::new(1.2, Palette::accent()));
+            }
         }
     }
     // Fadenkreuz bis zu den Bildschirmrändern
@@ -3380,21 +3538,19 @@ fn fang_zeiger(app: &App, w: V2, tol: f64) -> (V2, Option<&'static str>) {
 
 /// Wie [`fang_zeiger`], gibt aber zusätzlich die **Art** des Fangs zurück.
 ///
-/// Die Zeichenfläche braucht sie, um einen unsichtbaren Mittelpunkt beim
-/// Fangen zu zeigen (T0117): der Punkt ist im Plan nicht gezeichnet, die
-/// allgemeine Fangmarke allein ließe nicht erkennen, dass es der Kreismittel-
-/// punkt ist.
-fn fang_zeiger_art(
-    app: &App,
-    w: V2,
-    tol: f64,
-) -> (V2, Option<&'static str>, Option<snap::SnapKind>) {
+/// Die Zeichenfläche braucht sie für die Fangmarke (T0153): jede Fangart hat
+/// ihr eigenes Zeichen am Fangpunkt — beim Mittelpunkt ist das der sonst
+/// unsichtbare Kreismittelpunkt (T0117). Polar zählt mit, es ist ein Fang
+/// (Statuszeile „POL“); Ortho und „frei“ führen den Zeiger nur und bleiben
+/// ohne Marke.
+fn fang_zeiger_art(app: &App, w: V2, tol: f64) -> (V2, Option<&'static str>, Option<FangArt>) {
     let res = fang_aufloesung(app, w, tol);
-    let kind = match res.source {
-        snap::SnapSource::Object(k) => Some(k),
-        _ => None,
+    let art = match res.source {
+        snap::SnapSource::Object(k) => Some(FangArt::Objekt(k)),
+        snap::SnapSource::Polar => Some(FangArt::Polar),
+        snap::SnapSource::Ortho | snap::SnapSource::Free => None,
     };
-    (res.point, res.text(), kind)
+    (res.point, res.text(), art)
 }
 
 /// Die eine Fangrechnung für Zeigeranzeige und Klickpunkt.
@@ -12509,7 +12665,9 @@ mod tests_mittelpunkt {
         for cs in &out.shapes {
             zaehle(&cs.shape, mitte, 14.0, &mut n);
         }
-        assert_eq!(n, 2, "das Mittelpunktkreuz fehlt am gefangenen Zentrum");
+        // Zwei Striche, jeder einmal als heller Rand und einmal in Akzentfarbe
+        // (die Fangmarke legt den Rand unter den Strich, T0153).
+        assert_eq!(n, 4, "das Mittelpunktkreuz fehlt am gefangenen Zentrum");
 
         // Zeiger weit weg: kein Fang, kein Kreuz.
         let weg = Pos2::new(rect.left() + 20.0, rect.top() + 20.0);

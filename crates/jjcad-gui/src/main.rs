@@ -19,6 +19,7 @@ mod inventory;
 mod panels;
 mod perf;
 mod props;
+mod snapmarke;
 mod systemdialog;
 mod textedit;
 mod textgroesse;
