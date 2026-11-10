@@ -215,3 +215,31 @@ fn neue_zeichnung_hat_die_bisherigen_vorgaben() {
     assert_eq!(d.settings.snap.halte_max, 2);
     assert!(d.settings.snap.hilfslinien);
 }
+
+/// Die Einstellungen stehen in der gespeicherten `.jjcad`-Datei und laden
+/// unverändert wieder — der Prüfweg am Feld, nicht am Bild.
+#[test]
+fn fang_einstellungen_stehen_in_der_datei() {
+    let mut s = s();
+    s.execute(
+        "doc.settings",
+        &json!({ "snap": {
+            "quadrant": false,
+            "hilfslinien": false,
+            "verweil_ms": 700.0,
+            "halte_max": 3
+        } }),
+    )
+    .unwrap();
+    let text = jjcad_core::persist::to_json(&s.doc).expect("schreiben");
+    assert!(text.contains("\"verweil_ms\": 700"), "verweil_ms fehlt: {text}");
+    assert!(text.contains("\"halte_max\": 3"), "halte_max fehlt");
+    assert!(text.contains("\"quadrant\": false"), "quadrant fehlt");
+    assert!(text.contains("\"hilfslinien\": false"), "hilfslinien fehlt");
+
+    let wieder = jjcad_core::persist::from_json(&text).expect("lesen");
+    assert!(!wieder.settings.snap.quadrant);
+    assert!(!wieder.settings.snap.hilfslinien);
+    assert!((wieder.settings.snap.verweil_ms - 700.0).abs() < 1e-9);
+    assert_eq!(wieder.settings.snap.halte_max, 3);
+}
