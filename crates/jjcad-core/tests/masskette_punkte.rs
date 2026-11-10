@@ -281,3 +281,97 @@ fn gespeicherte_masskette_traegt_alle_messpunkte() {
         "die Messpunkte überstehen Speichern und Laden"
     );
 }
+
+/// Punkte dürfen in beliebiger Reihenfolge gesetzt werden — die Kette wird
+/// beim Anlegen sortiert (T0154, Turn 3).
+#[test]
+fn kette_sortiert_die_messpunkte_beim_anlegen() {
+    let mut d = doc_mm();
+    // Absichtlich durcheinander: 1., 3., 2., 4. Punkt.
+    let r = actions::execute(
+        &mut d,
+        "dim.chain",
+        &json!({"pts": [[0.0, 0.0], [5000.0, 0.0], [2000.0, 0.0], [3500.0, 0.0]],
+                "line_pos": [1000.0, -500.0], "axis": "x"}),
+    )
+    .expect("Maßkette");
+    let id = r["created"][0].as_u64().unwrap();
+    assert_eq!(
+        punkte(&d, id),
+        vec![
+            v(0.0, 0.0),
+            v(2000.0, 0.0),
+            v(3500.0, 0.0),
+            v(5000.0, 0.0)
+        ],
+        "die Kette steht in Reihenfolge der Maßlinie"
+    );
+}
+
+/// Dasselbe senkrecht: sortiert wird nach y.
+#[test]
+fn senkrechte_kette_sortiert_nach_hoehe() {
+    let mut d = doc_mm();
+    let r = actions::execute(
+        &mut d,
+        "dim.chain.v",
+        &json!({"pts": [[0.0, 2500.0], [0.0, 0.0], [0.0, 1200.0]],
+                "line_pos": [-800.0, 0.0]}),
+    )
+    .expect("senkrechte Kette");
+    let id = r["created"][0].as_u64().unwrap();
+    assert_eq!(
+        punkte(&d, id),
+        vec![v(0.0, 0.0), v(0.0, 1200.0), v(0.0, 2500.0)]
+    );
+    match &d.entity(id).unwrap().kind {
+        EntityKind::Dim { axis, .. } => assert_eq!(*axis, DimAxis::Y),
+        k => panic!("kein Dim: {k:?}"),
+    }
+}
+
+/// Die drei Werkzeuge legen ihre Achse selbst fest — ein mitgegebenes `axis`
+/// sticht sie nicht (der Modus steckt im Werkzeug).
+#[test]
+fn die_drei_werkzeuge_setzen_ihre_achse() {
+    let mut d = doc_mm();
+    for (werkzeug, achse) in [
+        ("dim.chain.h", DimAxis::X),
+        ("dim.chain.v", DimAxis::Y),
+        ("dim.chain.d", DimAxis::Aligned),
+    ] {
+        let r = actions::execute(
+            &mut d,
+            werkzeug,
+            &json!({"pts": [[0.0, 0.0], [2000.0, 500.0]],
+                    "line_pos": [0.0, -500.0], "axis": "x"}),
+        )
+        .unwrap_or_else(|e| panic!("{werkzeug} fehlgeschlagen: {e}"));
+        let id = r["created"][0].as_u64().unwrap();
+        match &d.entity(id).unwrap().kind {
+            EntityKind::Dim { axis, .. } => {
+                assert_eq!(*axis, achse, "{werkzeug} hat die falsche Achse")
+            }
+            k => panic!("kein Dim: {k:?}"),
+        }
+    }
+}
+
+/// Schräge Kette: sortiert wird entlang der Richtung der ersten beiden
+/// Punkte, ein seitlich gesetzter Punkt landet an seiner Stelle.
+#[test]
+fn schraege_kette_sortiert_entlang_der_richtung() {
+    let mut d = doc_mm();
+    let r = actions::execute(
+        &mut d,
+        "dim.chain.d",
+        &json!({"pts": [[0.0, 0.0], [3000.0, 3000.0], [1000.0, 1000.0]],
+                "line_pos": [0.0, 1000.0]}),
+    )
+    .expect("schräge Kette");
+    let id = r["created"][0].as_u64().unwrap();
+    assert_eq!(
+        punkte(&d, id),
+        vec![v(0.0, 0.0), v(1000.0, 1000.0), v(3000.0, 3000.0)]
+    );
+}

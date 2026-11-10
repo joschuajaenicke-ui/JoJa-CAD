@@ -3058,8 +3058,8 @@ fn draw_tool_preview(
         // Maßkette: die Vorschau ist das **fertige** Objekt — Maßlinie,
         // Hilfslinien, Begrenzungsstriche und Maßzahlen aus demselben
         // Renderer wie das eingefügte Element (T0154).
-        "dim.chain" => {
-            let modus = app.options.dim_mode;
+        "dim.chain" | "dim.chain.h" | "dim.chain.v" | "dim.chain.d" => {
+            let modus = DimModus::aus_werkzeug(&tool.action).unwrap_or(DimModus::Direkt);
             let axis = modus.axis();
             let mut pts = dim_messpunkte(&tool, modus);
             let mut line_pos = dim_masslinie(&tool, modus);
@@ -3081,6 +3081,10 @@ fn draw_tool_preview(
                 }
             }
             if let Some(lp) = line_pos {
+                // Die Vorschau zeigt die Kette in **Messreihenfolge** — so
+                // sieht man schon vor dem Klick, dass ein seitlich gesetzter
+                // Punkt richtig einsortiert wird (T0154, Turn 3).
+                let pts = render::dim_sortieren(&pts, axis);
                 let dl = render::preview_dim(
                     app.doc(),
                     &pts,
@@ -3831,9 +3835,10 @@ fn fang_aufloesung(app: &App, w: V2, tol: f64) -> snap::SnapResolution {
     // vorhandenen im festen Abstand. Er gilt nur für den Klick, der die Lage
     // der Maßlinie setzt — Messpunkte fangen normal.
     if let Some(t) = app.tool.as_ref() {
-        if dim_legt_masslinie(t, app.options.dim_mode) {
-            let axis = app.options.dim_mode.axis();
-            let pts = dim_messpunkte(t, app.options.dim_mode);
+        let modus = DimModus::aus_werkzeug(&t.action);
+        if let Some(modus) = modus.filter(|m| dim_legt_masslinie(t, *m)) {
+            let axis = modus.axis();
+            let pts = dim_messpunkte(t, modus);
             // Bei „Direkt“ stehen die zwei Messpunkte schon fest; bei
             // „Waagerecht“/„Senkrecht“ ist die Richtung die Achse selbst.
             let richtung: Vec<V2> = if pts.len() >= 2 {
@@ -4023,7 +4028,13 @@ fn handle_input(
             let punktfolge = ist_fuell_punkte(&t.action);
             if matches!(
                 t.action.as_str(),
-                "draw.polyline" | "draw.spline" | "dim.chain" | "dim.room"
+                "draw.polyline"
+                    | "draw.spline"
+                    | "dim.chain"
+                    | "dim.chain.h"
+                    | "dim.chain.v"
+                    | "dim.chain.d"
+                    | "dim.room"
             ) || punktfolge
                 || t.action == "modify.area.split"
             {
@@ -4335,7 +4346,13 @@ fn handle_input(
     if resp.clicked_by(egui::PointerButton::Secondary) {
         if let Some(tool) = app.tool.clone() {
             match tool.action.as_str() {
-                "draw.polyline" | "draw.spline" | "dim.chain" | "dim.room" => {
+                "draw.polyline"
+                | "draw.spline"
+                | "dim.chain"
+                | "dim.chain.h"
+                | "dim.chain.v"
+                | "dim.chain.d"
+                | "dim.room" => {
                     finish_tool(app, true);
                 }
                 "dim.elevation.section" => {
@@ -5513,8 +5530,8 @@ pub fn finish_tool(app: &mut App, from_enter: bool) {
         // verschiedenen Stellen im Puffer (`dim_messpunkte`/`dim_masslinie`).
         // Ohne zwei Messpunkte entsteht nichts — eine „Maßkette“ aus einem
         // Punkt hätte keine Maßzahl (T0154).
-        "dim.chain" => {
-            let modus = app.options.dim_mode;
+        "dim.chain" | "dim.chain.h" | "dim.chain.v" | "dim.chain.d" => {
+            let modus = DimModus::aus_werkzeug(&tool.action).unwrap_or(DimModus::Direkt);
             let pts = dim_messpunkte(&tool, modus);
             if pts.len() >= 2 {
                 let axis = modus.axis();
@@ -5900,7 +5917,10 @@ fn axis_dir(axis: DimAxis) -> f64 {
 /// Vorschau und Fang — sonst zeigte die Vorschau einen anderen Schritt an, als
 /// der Klick ausführt.
 pub fn dim_legt_masslinie(tool: &Tool, modus: DimModus) -> bool {
-    if tool.action != "dim.chain" {
+    if !matches!(
+        tool.action.as_str(),
+        "dim.chain" | "dim.chain.h" | "dim.chain.v" | "dim.chain.d"
+    ) {
         return false;
     }
     match modus {
@@ -6465,57 +6485,58 @@ fn tool_click_at(app: &mut App, w: V2, raw: V2) {
         }
         // Ein Klick, zwei Bedeutungen — je nach Modus: Lage der Maßlinie oder
         // ein Messpunkt. Die Auswertung steht in `dim_legt_masslinie`.
-        "dim.chain" => {
+        "dim.chain" | "dim.chain.h" | "dim.chain.v" | "dim.chain.d" => {
             tool.pts.push(w);
             app.tool = Some(tool);
         }
         // Messpunkt einer bestehenden Maßkette hinzufügen bzw. entfernen
-        // (T0154). Ziel ist die ausgewählte Maßkette, sonst die unter dem
-        // Zeiger. Das Werkzeug bleibt aktiv — mehrere Punkte nacheinander.
+        // (T0154). **Zwei Schritte**: erst die Maßkette anklicken (sie wird
+        // ausgewählt, damit sichtbar ist, welche gemeint ist), dann den
+        // Messpunkt. Danach bleibt die Kette gewählt — weitere Punkte gehen
+        // ohne neuen ersten Klick; Enter beendet.
         "dim.point.add" | "dim.point.remove" => {
             let tol = (8.0 / app.current_view().zoom).max(0.5);
-            let ziel = app
-                .selection()
-                .iter()
-                .copied()
-                .find(|id| {
-                    matches!(
-                        app.doc().entity(*id).map(|e| &e.kind),
-                        Some(EntityKind::Dim { .. })
-                    )
-                })
-                // Sonst die Maßkette unter dem Zeiger: entweder auf ihrer
-                // gezeichneten Maßlinie oder an einem ihrer Messpunkte — der
-                // Punkt selbst liegt auf dem Bauteil und ist keine
-                // Trefferfläche der Bemaßung.
-                .or_else(|| {
-                    snap::hit_test(app.doc(), w, tol, None).filter(|id| {
-                        matches!(
-                            app.doc().entity(*id).map(|e| &e.kind),
-                            Some(EntityKind::Dim { .. })
-                        )
-                    })
-                })
-                .or_else(|| {
-                    app.doc()
-                        .ents()
-                        .iter()
-                        .find(|e| match &e.kind {
-                            EntityKind::Dim { pts, .. } => {
-                                pts.iter().any(|p| p.dist(w) <= tol)
-                            }
-                            _ => false,
-                        })
-                        .map(|e| e.id)
-                });
-            match ziel {
+            let treffer = |id: &Id| {
+                matches!(
+                    app.doc().entity(*id).map(|e| &e.kind),
+                    Some(EntityKind::Dim { .. })
+                )
+            };
+            match tool.obj {
+                // Schritt 1: welche Maßkette? Treffer auf Maßlinie/Maßtext
+                // oder an einem ihrer Messpunkte — der Punkt selbst liegt auf
+                // dem Bauteil und ist keine Trefferfläche der Bemaßung.
+                None => {
+                    let ziel = snap::hit_test(app.doc(), w, tol, None)
+                        .filter(treffer)
+                        .or_else(|| {
+                            app.doc()
+                                .ents()
+                                .iter()
+                                .find(|e| match &e.kind {
+                                    EntityKind::Dim { pts, .. } => {
+                                        pts.iter().any(|p| p.dist(w) <= tol)
+                                    }
+                                    _ => false,
+                                })
+                                .map(|e| e.id)
+                        });
+                    match ziel {
+                        Some(id) => {
+                            tool.obj = Some(id);
+                            app.session_mut().select(vec![id]);
+                            app.tool = Some(tool);
+                        }
+                        None => {
+                            app.toast(jjcad_core::i18n::tr("gui.canvas.masskette_waehlen"));
+                        }
+                    }
+                }
+                // Schritt 2: der Messpunkt.
                 Some(id) => {
                     let action = tool.action.clone();
                     let _ = run(app, &action, json!({"ids": [id], "p": ax(w)}));
                     app.tool = Some(tool);
-                }
-                None => {
-                    app.toast(jjcad_core::i18n::tr("gui.canvas.masskette_waehlen"));
                 }
             }
         }
@@ -6797,7 +6818,16 @@ fn tool_click_at(app: &mut App, w: V2, raw: V2) {
             if let EntityKind::BlockRef { block, .. } = &kind {
                 app.options.block_id = Some(block.clone());
             }
-            app.start_tool(actions::erzeuger_fuer(&kind));
+            // Maßkette: der Modus richtet sich nach der Achse des
+            // angeklickten Maßes — so entsteht dasselbe Element wieder
+            // (T0154, Turn 3).
+            let werkzeug = match &kind {
+                EntityKind::Dim { axis, .. } => {
+                    crate::app::DimModus::aus_achse(*axis).werkzeug()
+                }
+                _ => actions::erzeuger_fuer(&kind),
+            };
+            app.start_tool(werkzeug);
         }
         "modify.select" => {}
         _ => {}
@@ -11661,16 +11691,16 @@ mod tests_schnellauswahl {
         );
     }
 
-    /// Klick auf die Maßlinie einer Maßkette startet die Maßkette (nicht das
-    /// Einzelmaß) — die Zuordnung kommt aus `actions::erzeuger_fuer`.
+    /// Klick auf die Maßlinie einer Maßkette startet die Maßkette im Modus
+    /// ihrer Achse (hier waagerecht) — nicht das Einzelmaß (T0154).
     #[test]
     fn klick_auf_masskette_startet_die_masskette() {
         let mut app = app_mit_objekten();
         tool_click(&mut app, V2::new(2000.0, -800.0));
         assert_eq!(
             app.tool_id(),
-            Some("dim.chain"),
-            "die Schnellauswahl muss die Maßkette starten"
+            Some("dim.chain.h"),
+            "die Schnellauswahl muss die Maßkette waagerecht starten"
         );
     }
 
@@ -11798,15 +11828,17 @@ mod tests_masskette_eingabe {
         tool_click(&mut app, V2::new(1500.0, 1500.0)); // weiterer Messpunkt
         finish_tool(&mut app, true);
 
+        // Der vierte Klick liegt zwischen den ersten beiden — die Kette
+        // sortiert ihn ein und läuft nicht im Zickzack (T0154, Turn 3).
         let pts = letzte_masskette(&app);
         assert_eq!(
             pts,
             vec![
                 V2::new(0.0, 0.0),
-                V2::new(3000.0, 3000.0),
-                V2::new(1500.0, 1500.0)
+                V2::new(1500.0, 1500.0),
+                V2::new(3000.0, 3000.0)
             ],
-            "die zwei ersten Punkte und der vierte Klick sind die Messpunkte"
+            "die Messpunkte stehen in Reihenfolge der Maßlinie"
         );
     }
 
@@ -11869,7 +11901,16 @@ mod tests_masskette_eingabe {
         let id = antwort["created"][0].as_u64().unwrap();
         app.session_mut().select(vec![id]);
 
+        // Erster Klick wählt die **Maßkette** (hier ihre Maßlinie), erst der
+        // zweite setzt den Messpunkt (T0154, Turn 3).
         app.start_tool("dim.point.add");
+        tool_click(&mut app, V2::new(1000.0, -500.0));
+        assert_eq!(
+            app.tool.as_ref().and_then(|t| t.obj),
+            Some(id),
+            "der erste Klick muss die Maßkette wählen"
+        );
+        assert_eq!(letzte_masskette(&app).len(), 3, "noch kein Punkt gesetzt");
         tool_click(&mut app, V2::new(3000.0, 0.0));
         assert_eq!(
             letzte_masskette(&app).len(),
@@ -11878,8 +11919,57 @@ mod tests_masskette_eingabe {
         );
 
         app.start_tool("dim.point.remove");
+        tool_click(&mut app, V2::new(1000.0, -500.0)); // Kette wählen
         tool_click(&mut app, V2::new(3000.0, 0.0));
         assert_eq!(letzte_masskette(&app).len(), 3, "und geht wieder heraus");
+    }
+
+    /// Jede der drei Schaltflächen startet ihren eigenen Modus — die Achse
+    /// kommt aus dem Werkzeug, nicht aus einer Einstellung daneben (T0154,
+    /// Turn 3).
+    #[test]
+    fn drei_werkzeuge_setzen_ihre_achse() {
+        for (werkzeug, achse) in [
+            ("dim.chain.h", DimAxis::X),
+            ("dim.chain.v", DimAxis::Y),
+            ("dim.chain.d", DimAxis::Aligned),
+        ] {
+            let mut app = app();
+            app.start_tool(werkzeug);
+            assert_eq!(app.tool_id(), Some(werkzeug));
+            tool_click(&mut app, V2::new(0.0, -900.0)); // Maßlinie
+            tool_click(&mut app, V2::new(0.0, 0.0));
+            tool_click(&mut app, V2::new(2000.0, 0.0));
+            finish_tool(&mut app, true);
+            let e = app
+                .doc()
+                .ents()
+                .iter()
+                .rev()
+                .find(|e| matches!(e.kind, EntityKind::Dim { .. }))
+                .unwrap_or_else(|| panic!("{werkzeug} hat keine Maßkette angelegt"));
+            match &e.kind {
+                EntityKind::Dim { axis, .. } => assert_eq!(*axis, achse, "{werkzeug}"),
+                _ => unreachable!(),
+            }
+        }
+    }
+
+    /// Ein Klick ins Leere wählt keine Maßkette — es wird nichts eingefügt.
+    #[test]
+    fn punkt_hinzufuegen_ohne_masskette_aendert_nichts() {
+        let mut app = app();
+        app.session_mut()
+            .execute(
+                "dim.chain",
+                &json!({"pts": [[0.0, 0.0], [2000.0, 0.0]],
+                        "line_pos": [1000.0, -500.0], "axis": "x"}),
+            )
+            .unwrap();
+        app.start_tool("dim.point.add");
+        tool_click(&mut app, V2::new(9000.0, 9000.0));
+        assert_eq!(app.tool.as_ref().and_then(|t| t.obj), None, "keine Kette gewählt");
+        assert_eq!(letzte_masskette(&app).len(), 2);
     }
 
     /// Der Sonderfang gilt nur beim Positionieren: Messpunkte fangen normal

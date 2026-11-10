@@ -561,11 +561,23 @@ impl DimModus {
         }
     }
 
-    pub fn key(self) -> &'static str {
+    /// Werkzeug, das diesen Modus eingibt — je Modus eine eigene
+    /// Schaltfläche mit eigenem Icon (T0154, Turn 3).
+    pub fn werkzeug(self) -> &'static str {
         match self {
-            DimModus::Waagerecht => "waagerecht",
-            DimModus::Senkrecht => "senkrecht",
-            DimModus::Direkt => "direkt",
+            DimModus::Waagerecht => "dim.chain.h",
+            DimModus::Senkrecht => "dim.chain.v",
+            DimModus::Direkt => "dim.chain.d",
+        }
+    }
+
+    /// Modus eines Werkzeugs — `None` für alles, was keine Maßkette ist.
+    pub fn aus_werkzeug(id: &str) -> Option<Self> {
+        match id {
+            "dim.chain.h" => Some(DimModus::Waagerecht),
+            "dim.chain.v" => Some(DimModus::Senkrecht),
+            "dim.chain.d" => Some(DimModus::Direkt),
+            _ => None,
         }
     }
 
@@ -645,9 +657,6 @@ pub struct ToolOptions {
     /// Überschrift über dem Flächeninhalt des nächsten Raumstempels.
     pub room_heading: String,
     pub dim_axis: Option<DimAxis>,
-    /// Eingabemodus der nächsten Maßkette (T0154) — bestimmt, ob zuerst die
-    /// Maßlinie oder die Messpunkte gefragt werden.
-    pub dim_mode: DimModus,
     /// Eigener Maßtext des nächsten Maßes (leer = automatisch berechnet).
     pub dim_text: String,
     pub offset_dist: f64,
@@ -758,7 +767,6 @@ impl ToolOptions {
             room_height: doc.settings.text_height,
             room_heading: "Zimmer".to_string(),
             dim_axis: None,
-            dim_mode: DimModus::Direkt,
             dim_text: String::new(),
             offset_dist: doc.settings.wall_thickness,
             elevation_z: 0.0,
@@ -2449,6 +2457,41 @@ impl App {
                     };
                     if let Some(id) = id {
                         self.session_mut().select(vec![id]);
+                    }
+                }
+                // Punkte in falscher Reihenfolge gesetzt: die Kette sortiert
+                // sie beim Anlegen (T0154, Turn 3).
+                "massketteunsortiert" => {
+                    self.ui.props_open = true;
+                    self.ui.ribbon = RibbonTab::Bemassung;
+                    let antwort = self.session_mut().execute(
+                        "dim.chain",
+                        &serde_json::json!({"pts": [[0.0, -1.2], [3.6, -1.2],
+                                                    [2.0, -1.2], [6.0, -1.2],
+                                                    [1.2, -1.2]],
+                                            "line_pos": [3.0, -2.0], "axis": "x"}),
+                    );
+                    if let Some(id) = antwort.ok().and_then(|r| r["created"][0].as_u64()) {
+                        self.session_mut().select(vec![id]);
+                    }
+                }
+                // „Punkt hinzufügen“ mit gewählter Maßkette: der nächste Klick
+                // setzt den Messpunkt (zweiter Schritt, T0154 Turn 3).
+                "punktwerkzeug" => {
+                    self.ui.props_open = true;
+                    self.ui.ribbon = RibbonTab::Bemassung;
+                    let vorhanden = self
+                        .doc()
+                        .entities
+                        .iter()
+                        .find(|e| matches!(e.kind, EntityKind::Dim { .. }))
+                        .map(|e| e.id);
+                    if let Some(id) = vorhanden {
+                        self.session_mut().select(vec![id]);
+                        self.start_tool("dim.point.add");
+                        if let Some(t) = self.tool.as_mut() {
+                            t.obj = Some(id);
+                        }
                     }
                 }
                 // Raumstempel (T0097): ein Stempel über einem 4 × 3 m großen
@@ -7434,10 +7477,24 @@ fn rail(ui: &mut egui::Ui, icon: &str, tooltip: &str, chevron: &str) -> bool {
                 }
                 RibbonTab::Bemassung => {
                     self.group(ui, "ribbon.group.masse", |ui, app| {
-                        // **Ein** Werkzeug für jede Bemaßung (T0154): die
-                        // geteilte Schaltfläche führt die drei Eingabemodi,
-                        // der Hauptknopf startet den zuletzt gewählten.
-                        app.masskette_group_button(ui);
+                        // **Ein** Element für jede Bemaßung (T0154): je
+                        // Eingabemodus eine eigene Schaltfläche mit eigenem
+                        // Icon — kein Dropdown (Turn 3).
+                        for (id, icon) in [
+                            ("dim.chain.h", "dimchain"),
+                            ("dim.chain.v", "dim-v"),
+                            ("dim.chain.d", "dim-d"),
+                        ] {
+                            let label = aktion_label(id);
+                            if widgets::ribbon_button(ui, icon, label, app.tool_id() == Some(id))
+                                .on_hover_text(actions::action(id).map(|a| a.hint()).unwrap_or(""))
+                                .clicked()
+                            {
+                                app.waehle_dim_modus(
+                                    DimModus::aus_werkzeug(id).unwrap_or(DimModus::Direkt),
+                                );
+                            }
+                        }
                         for (id, icon) in [
                             ("dim.elevation.plan", "elevation"),
                             ("dim.elevation.section", "elevation-section"),
@@ -8486,9 +8543,9 @@ pub(crate) fn commands_hint(tool: &Tool, opts: &ToolOptions) -> &'static str {
             _ => jjcad_core::i18n::tr("gui.app.mass_masslinie_platzieren"),
         },
         // Maßkette: der Schritt hängt am Eingabemodus (T0154) — erst die Lage
-        // der Maßlinie, dann die Messpunkte.
-        "dim.chain" => {
-            let modus = opts.dim_mode;
+        // der Maßlinie, dann die Messpunkte. Den Modus sagt das Werkzeug.
+        "dim.chain" | "dim.chain.h" | "dim.chain.v" | "dim.chain.d" => {
+            let modus = DimModus::aus_werkzeug(&tool.action).unwrap_or(DimModus::Direkt);
             if crate::canvas::dim_legt_masslinie(tool, modus) {
                 match modus {
                     DimModus::Direkt => {
@@ -8504,9 +8561,20 @@ pub(crate) fn commands_hint(tool: &Tool, opts: &ToolOptions) -> &'static str {
                 jjcad_core::i18n::tr("gui.app.masskette_messpunkt_klicken_enter")
             }
         }
-        "dim.point.add" => jjcad_core::i18n::tr("gui.app.punkt_hinzufuegen_messpunkt_klicken"),
+        // Messpunkte ändern: erst die Maßkette, dann der Punkt (T0154).
+        "dim.point.add" => {
+            if tool.obj.is_some() {
+                jjcad_core::i18n::tr("gui.app.punkt_hinzufuegen_messpunkt_klicken")
+            } else {
+                jjcad_core::i18n::tr("gui.app.punkt_hinzufuegen_masskette_klicken")
+            }
+        }
         "dim.point.remove" => {
-            jjcad_core::i18n::tr("gui.app.punkt_entfernen_messpunkt_klicken")
+            if tool.obj.is_some() {
+                jjcad_core::i18n::tr("gui.app.punkt_entfernen_messpunkt_klicken")
+            } else {
+                jjcad_core::i18n::tr("gui.app.punkt_entfernen_masskette_klicken")
+            }
         }
         "dim.elevation.plan" => jjcad_core::i18n::tr("gui.app.grundriss_kote_punkt_klicken"),
         "dim.elevation.section" => {
@@ -8614,7 +8682,9 @@ pub(crate) fn abschluss_meldung(action: &str) -> Option<&'static str> {
         }
         "draw.hatch" => jjcad_core::i18n::tr("gui.app.schraffur_gesetzt"),
         "dim.linear" => jjcad_core::i18n::tr("gui.app.mass_gesetzt"),
-        "dim.chain" => jjcad_core::i18n::tr("gui.app.masskette_gesetzt"),
+        "dim.chain" | "dim.chain.h" | "dim.chain.v" | "dim.chain.d" => {
+            jjcad_core::i18n::tr("gui.app.masskette_gesetzt")
+        }
         "dim.point.add" => jjcad_core::i18n::tr("gui.app.punkt_hinzufuegen_gesetzt"),
         "dim.point.remove" => jjcad_core::i18n::tr("gui.app.punkt_entfernen_entfernt"),
         "dim.elevation.plan" => jjcad_core::i18n::tr("gui.app.grundriss_kote_gesetzt"),
@@ -9435,35 +9505,12 @@ impl App {
         }
     }
 
-    /// Maßkette mit ihren drei Eingabemodi (T0154).
-    ///
-    /// Geteilte Schaltfläche wie bei Rechteck, Ellipse und Bogen: der
-    /// Hauptknopf startet das Werkzeug im zuletzt gewählten Modus, der Pfeil
-    /// öffnet die Auswahl. Ein eigenes Werkzeug für das Einzelmaß gibt es
-    /// nicht mehr — es ist die Kette aus zwei Messpunkten.
-    fn masskette_group_button(&mut self, ui: &mut egui::Ui) {
-        let cur = self.options.dim_mode;
-        let idx = DimModus::ALL.iter().position(|m| *m == cur).unwrap_or(2);
-        let items: Vec<&str> = DimModus::ALL.iter().map(|m| m.label()).collect();
-        if let Some(i) = self.modus_group_button(
-            ui,
-            "dim.chain",
-            "dimchain",
-            aktion_label("dim.chain"),
-            idx,
-            &items,
-            &["dimchain", "masskette"],
-        ) {
-            self.waehle_dim_modus(DimModus::ALL[i]);
-        }
-    }
-
-    /// Setzt den Eingabemodus der Maßkette und startet das Werkzeug — ein Weg
-    /// für Ribbon, Panel und Demo-Zustände (wie `waehle_einfuegemodus`).
+    /// Startet die Maßkette im gewünschten Modus — ein Weg für Ribbon und
+    /// Demo-Zustände. Der Modus steckt im Werkzeug (`DimModus::werkzeug`),
+    /// nicht in einer zweiten Einstellung daneben.
     pub(crate) fn waehle_dim_modus(&mut self, modus: DimModus) {
-        self.options.dim_mode = modus;
         self.options.dim_axis = Some(modus.axis());
-        self.start_tool("dim.chain");
+        self.start_tool(modus.werkzeug());
     }
 
     fn fill_group_button(&mut self, ui: &mut egui::Ui, kind: FillKind) {
@@ -11849,6 +11896,9 @@ mod tests_chat_texte {
             "draw.fill" | "draw.fill.boundary" | "draw.fill.points" => "Füllfläche".into(),
             "block.insert" => "Block".into(),
             "sheet.viewport_tool" => "Ansichtsfenster".into(),
+            // Die drei Maßketten-Modi sind **ein** Werkzeug mit drei
+            // Schaltflächen — im Chat heißt es „Maßkette“ (T0154).
+            "dim.chain" | "dim.chain.h" | "dim.chain.v" | "dim.chain.d" => "Maßkette".into(),
             other => actions::action(other).map(|d| d.label()).unwrap_or("?").to_string(),
         }
     }

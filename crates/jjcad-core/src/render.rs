@@ -3712,6 +3712,31 @@ pub fn dim_achse(pts: &[Vec2], axis: DimAxis) -> (Vec2, Vec2) {
     }
 }
 
+/// Sortiert Messpunkte entlang der Messrichtung (T0154).
+///
+/// Punkte dürfen in **beliebiger** Reihenfolge geklickt werden — die Kette
+/// zeigt sie immer so, wie sie auf der Maßlinie liegen. Ohne das entsteht ein
+/// Zickzack („chaotische Maßkette“), sobald ein Punkt in der falschen
+/// Reihenfolge gesetzt wurde, und die Maßzahlen stehen übereinander.
+///
+/// Die Sortierung ist **stabil**: Punkte mit gleichem Anteil (eine senkrechte
+/// Kette bei waagerechter Messung liegt auf einer Höhe) behalten ihre
+/// Klickreihenfolge. Weniger als drei Punkte bleiben, wie sie sind — bei zwei
+/// Punkten ist die Reihenfolge die Richtung der Kette.
+pub fn dim_sortieren(pts: &[Vec2], axis: DimAxis) -> Vec<Vec2> {
+    if pts.len() < 3 {
+        return pts.to_vec();
+    }
+    let (dir, _) = dim_achse(pts, axis);
+    let mut out = pts.to_vec();
+    out.sort_by(|a, b| {
+        let ta = (*a - pts[0]).dot(dir);
+        let tb = (*b - pts[0]).dot(dir);
+        ta.partial_cmp(&tb).unwrap_or(std::cmp::Ordering::Equal)
+    });
+    out
+}
+
 /// Basispunkte auf die Maßlinie gelotet.
 ///
 /// Für `X` ist die Maßlinie waagerecht auf **einer** Höhe (`line_pos.y`), für

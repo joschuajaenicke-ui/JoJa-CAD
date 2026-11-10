@@ -321,7 +321,15 @@ Mit dem Nutzer abgestimmt — nicht „verbessern“:
   Kette (Einfügen hält die Reihenfolge entlang der Messrichtung, unter zwei
   Punkten ist Entfernen ein Fehler). Beim Positionieren fängt
   `snap::dim_parallel` die Maßlinie parallel zu einer vorhandenen im Abstand
-  `DIM_PARALLEL_ABSTAND_MM` (0,75 m).
+  `DIM_PARALLEL_ABSTAND_MM` (0,75 m). **Je Modus eine eigene Schaltfläche**
+  (`dim.chain.h`/`.v`/`.d`, eigenes Icon, kein Dropdown) — der Modus steckt im
+  Werkzeug (`DimModus::werkzeug`/`aus_werkzeug`), nicht in einer Einstellung
+  daneben; `dim.chain` bleibt der Befehl. **Messpunkte werden sortiert**:
+  `render::dim_sortieren` ordnet sie beim Anlegen entlang der Messrichtung
+  (beliebige Klickreihenfolge, kein Zickzack), `dim.point.add` fügt an der
+  geordneten Stelle ein. Punkt hinzufügen/entfernen geht in **zwei Schritten**
+  (`Tool::obj` hält die gewählte Maßkette): erst die Kette anklicken, dann den
+  Messpunkt.
 - **Bemaßung beim Ändern**: Die Maßlinie behält ihre **Lage**. Ein waagerechtes
   Maß liegt auf *einer* Höhe (`line_pos.y` für alle Basispunkte), ein senkrechtes
   auf einer Breite — `render::dim_projiziert` **setzt** die Koordinate, es addiert
