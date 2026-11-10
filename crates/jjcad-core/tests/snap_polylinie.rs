@@ -206,13 +206,14 @@ fn gespeicherter_punkt_ist_der_fangpunkt() {
     )
     .unwrap();
 
-    let verts = match &s.doc.entities.last().unwrap().kind {
-        EntityKind::Polyline { verts, .. } => verts.clone(),
-        other => panic!("keine Polylinie angelegt: {other:?}"),
+    // Zwei Punkte sind ein Element — daraus entsteht eine Linie (T0149).
+    let (a, b) = match &s.doc.entities.last().unwrap().kind {
+        EntityKind::Line { a, b } => (*a, *b),
+        other => panic!("keine Linie angelegt: {other:?}"),
     };
-    assert_eq!(verts.len(), 2, "zwei Stützpunkte");
-    assert_punkt(verts[1].p, r.point, "gespeicherter Punkt");
-    assert_punkt(verts[1].p, v(2000.0, 0.0), "gespeicherter Punkt am Ende");
+    assert_punkt(a, start, "Anfangspunkt");
+    assert_punkt(b, r.point, "gespeicherter Punkt");
+    assert_punkt(b, v(2000.0, 0.0), "gespeicherter Punkt am Ende");
 }
 
 // ---------------------------------------------------------------------------

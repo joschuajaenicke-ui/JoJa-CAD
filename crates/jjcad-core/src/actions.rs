@@ -1684,15 +1684,13 @@ pub fn execute(doc: &mut Document, id: &str, params: &Value) -> Result<Value, St
             }
             let layer = resolve_layer_in(doc, &p, ebene);
             let idn = doc.new_id();
-            let verts = pts.iter().map(|q| Vertex::new(*q)).collect();
-            let mut e = Entity::new(
-                idn,
-                layer,
-                EntityKind::Polyline {
-                    verts,
-                    closed,
-                },
-            );
+            let verts: Vec<Vertex> = pts.iter().map(|q| Vertex::new(*q)).collect();
+            // Nur ein Element (zwei Punkte) ist keine Polylinie, sondern eine
+            // Linie (T0149) — dieselbe Regel wie beim Stutzen.
+            let Some(kind) = polyline_kind(&verts, closed) else {
+                return Err("Mindestens zwei verschiedene Punkte nötig".into());
+            };
+            let mut e = Entity::new(idn, layer, kind);
             apply_common(doc, &mut e, &p, layer);
             doc.add_entity(e);
             Ok(json!({"ok": true, "created": [idn]}))
@@ -4639,10 +4637,14 @@ fn polyline_rest(verts: &[Vertex], closed: bool, i: usize, t0: f64, t1: f64) -> 
     stuecke
 }
 
-/// Ein Polylinien-Stück als Objektart: bleiben nur **zwei** Punkte übrig, wird
-/// daraus eine Linie (bzw. ein Bogen) — aus einer Polylinie entsteht so ein
-/// normales Einzelobjekt. Ab drei Punkten bleibt es ein Polygonzug.
-fn polyline_stueck_kind(verts: &[Vertex]) -> Option<EntityKind> {
+/// Objektart für eine Punktfolge: eine Polylinie aus **nur einem Element**
+/// (zwei Punkte, ein Segment) ist keine Polylinie, sondern eine Linie (bzw.
+/// ein Bogen, wenn das Segment einen Stützbogen trägt). Ab drei Punkten bleibt
+/// es ein Polygonzug.
+///
+/// Dieselbe Regel gilt beim Zeichnen (`draw.polyline`, T0149) und beim Stutzen
+/// (`modify.trim`) — dort sind die übrig bleibenden Stücke immer **offen**.
+fn polyline_kind(verts: &[Vertex], closed: bool) -> Option<EntityKind> {
     if verts.len() < 2 {
         return None;
     }
@@ -4666,7 +4668,7 @@ fn polyline_stueck_kind(verts: &[Vertex]) -> Option<EntityKind> {
     }
     Some(EntityKind::Polyline {
         verts: verts.to_vec(),
-        closed: false,
+        closed,
     })
 }
 
@@ -4977,7 +4979,7 @@ fn trim_entity(doc: &mut Document, id: Id, at: Vec2, cutters: &[Id]) -> Result<V
             };
             let stuecke: Vec<EntityKind> = polyline_rest(verts, *closed, i, t0, t1)
                 .iter()
-                .filter_map(|v| polyline_stueck_kind(v))
+                .filter_map(|v| polyline_kind(v, false))
                 .collect();
             if stuecke.is_empty() {
                 doc.remove_entity(id);

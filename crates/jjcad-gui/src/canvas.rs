@@ -5038,10 +5038,18 @@ pub fn finish_tool(app: &mut App, from_enter: bool) {
                         .zip(tool.pts.last())
                         .map(|(a, b)| a.dist(*b) <= tol)
                         .unwrap_or(false);
-                let _ = run(
+                // Ein Zug aus zwei Punkten ist ein Element — daraus entsteht
+                // eine Linie, und der Chat soll das auch sagen (T0149).
+                let meldung = if action == "draw.polyline" && tool.pts.len() == 2 {
+                    Some(jjcad_core::i18n::tr("gui.app.linie_gesetzt"))
+                } else {
+                    None
+                };
+                let _ = run_mit_meldung(
                     app,
                     action,
                     json!({"pts": tool.pts.iter().map(|p| [app.unit().from_mm(p.x), app.unit().from_mm(p.y)]).collect::<Vec<_>>(), "closed": geschlossen, "layer": layer}),
+                    meldung,
                 );
             }
             app.tool = None;
@@ -6072,6 +6080,19 @@ fn ist_erzeuger(action: &str) -> bool {
 }
 
 fn run(app: &mut App, action: &str, params: serde_json::Value) -> bool {
+    run_mit_meldung(app, action, params, None)
+}
+
+/// Wie [`run`], aber mit eigener Chat-Meldung. Nötig, wenn das Ergebnis eine
+/// andere Objektart ist als das Werkzeug: eine Polylinie aus nur einem Element
+/// wird zur **Linie** (T0149), die Meldung „Polylinie · abgeschlossen“ wäre dann
+/// falsch.
+fn run_mit_meldung(
+    app: &mut App,
+    action: &str,
+    params: serde_json::Value,
+    meldung: Option<&'static str>,
+) -> bool {
     // Aktuelle Zeichen-Eigenschaften (Farbe/Stärke/Typ) an neue Elemente weitergeben
     let mut params = params;
     if ist_erzeuger(action) {
@@ -6127,7 +6148,7 @@ fn run(app: &mut App, action: &str, params: serde_json::Value) -> bool {
     match app.session_mut().execute(action, &params) {
         Ok(_) => {
             // Einheitliche Rückmeldung im Chat: `<Objekt> · <Zustand>`
-            if let Some(m) = crate::app::abschluss_meldung(action) {
+            if let Some(m) = meldung.or_else(|| crate::app::abschluss_meldung(action)) {
                 app.mitteilung(m);
             }
             app.mark_changed();
@@ -7552,6 +7573,8 @@ mod tests_tasten_punktfolge {
 
     // ---- Geschlossene Polylinie (Karte t_8b6feebf) ----
 
+    /// Punkte und Closed-Flag des angelegten Zugs. Ein Zug aus **zwei** Punkten
+    /// ist eine Linie (T0149) — die wird wie ein offener Zug gelesen.
     fn polylinie_stand(app: &App) -> (Vec<V2>, bool) {
         app.doc()
             .entities
@@ -7560,9 +7583,10 @@ mod tests_tasten_punktfolge {
                 EntityKind::Polyline { verts, closed } => {
                     Some((verts.iter().map(|w| w.p).collect(), *closed))
                 }
+                EntityKind::Line { a, b } => Some((vec![*a, *b], false)),
                 _ => None,
             })
-            .expect("keine Polylinie angelegt")
+            .expect("kein Zug angelegt")
     }
 
     /// Klick auf den Startpunkt schließt den Zug: drei Stützpunkte, Closed-Flag,
@@ -7610,6 +7634,25 @@ mod tests_tasten_punktfolge {
         let (pts, closed) = polylinie_stand(&app);
         assert_eq!(pts.len(), 2, "der wiederholte Punkt entfällt");
         assert!(!closed);
+    }
+
+    /// Zwei Punkte und Enter: das Ergebnis ist eine **Linie** (T0149), und der
+    /// Chat nennt sie so — „Polylinie · abgeschlossen" wäre die falsche Objektart.
+    #[test]
+    fn zwei_punkte_ergeben_eine_linie_mit_richtiger_meldung() {
+        let mut app = app();
+        app.start_tool("draw.polyline");
+        tool_click(&mut app, V2::new(0.0, 0.0));
+        tool_click(&mut app, V2::new(2000.0, 0.0));
+        finish_tool(&mut app, true);
+        match &app.doc().entities[0].kind {
+            EntityKind::Line { a, b } => {
+                assert_eq!((a.x, a.y), (0.0, 0.0));
+                assert_eq!((b.x, b.y), (2000.0, 0.0));
+            }
+            k => panic!("Linie erwartet: {k:?}"),
+        }
+        assert_eq!(app.status_msg, "Linie · gesetzt");
     }
 
     /// Geschlossener Zug lässt sich mit der Befehls-Schicht speichern und laden;
@@ -7665,15 +7708,17 @@ mod tests_fang_polylinie {
         app
     }
 
+    /// Punkte des angelegten Zugs — Polylinie oder (bei zwei Punkten, T0149) Linie.
     fn polylinien_punkte(app: &App) -> Vec<V2> {
         app.doc()
             .entities
             .iter()
             .find_map(|e| match &e.kind {
                 EntityKind::Polyline { verts, .. } => Some(verts.iter().map(|w| w.p).collect()),
+                EntityKind::Line { a, b } => Some(vec![*a, *b]),
                 _ => None,
             })
-            .expect("keine Polylinie angelegt")
+            .expect("kein Zug angelegt")
     }
 
     /// Zeiger 8 mm neben dem Linienende, vom letzten Polylinien-Punkt (0; 2000)

@@ -1,6 +1,7 @@
 //! Integrationstests für die Befehls-Schicht.
 
 use jjcad_core::geom::{v, Vec2};
+use jjcad_core::geom::Vertex;
 use jjcad_core::model::{DoorKind, EntityKind};
 use jjcad_core::session::Session;
 use serde_json::json;
@@ -438,15 +439,28 @@ fn polylinie_stutzen_teilt_den_zug() {
 
 /// Aus einer Polylinie mit zwei Punkten wird beim Stutzen eine einzelne
 /// normale Linie — das Objekt selbst bleibt, nur die Art wechselt.
+///
+/// Seit T0149 entsteht ein Zwei-Punkt-Zug gar nicht mehr beim Zeichnen; so eine
+/// Polylinie steht aber noch in älteren Dateien. Deshalb hier direkt ins
+/// Dokument gelegt statt über `draw.polyline`.
 #[test]
 fn gestutzte_polylinie_wird_zur_linie() {
     let mut s = s();
     s.execute("draw.line", &json!({"a": [3, -1], "b": [3, 1]}))
         .unwrap();
-    let res = s
-        .execute("draw.polyline", &json!({"pts": [[0, 0], [6, 0]]}))
-        .unwrap();
-    let id = res["created"][0].as_u64().unwrap();
+    let id = s.doc.new_id();
+    let e = jjcad_core::model::Entity::new(
+        id,
+        s.doc.layers[0].id,
+        EntityKind::Polyline {
+            verts: vec![
+                Vertex::new(v(0.0, 0.0)),
+                Vertex::new(v(6000.0, 0.0)),
+            ],
+            closed: false,
+        },
+    );
+    s.doc.add_entity(e);
 
     s.execute("modify.trim", &json!({"ids": [id], "at": [1, 0]}))
         .unwrap_or_else(|e| panic!("Stutzen: {e}"));

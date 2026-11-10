@@ -214,4 +214,7 @@ Beide Werkzeuge nehmen beliebig viele Punkte an. Abschließen mit:
 
 `ESC` schließt ebenfalls ab — die bereits gesetzten Punkte bleiben als Objekt erhalten.
 Nur wenn noch kein zweiter Punkt gesetzt wurde, wird das Werkzeug ohne Objekt verworfen.
+Besteht der Zug aus nur **einem Element** (zwei Punkte), entsteht eine **Linie**
+statt einer Polylinie — ein Segment ist kein Polygonzug.
+
 Danach entfernt `Strg+Z` die ganze Polylinie in einem Schritt.
