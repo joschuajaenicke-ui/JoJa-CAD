@@ -1950,11 +1950,14 @@ fn settings_body(app: &mut App, ui: &mut Ui) {
                                 }
                                 // T0067: Tempo der Schwenk-Funktionen (`view.pan_*`,
                                 // Vorgabe W/A/S/D) als Faktor auf das Grundtempo.
+                                // T0146: Die Zeile heißt „Geschwindigkeit der
+                                // Ansicht“; „Schwenk“ bleibt als Suchbegriff.
                                 zeile_mit(
                                     &suche,
                                     ui,
-                                    jjcad_core::i18n::tr("gui.dialogs.schwenk"),
+                                    jjcad_core::i18n::tr("gui.dialogs.geschwindigkeit_der_ansicht"),
                                     &[
+                                        "Schwenk",
                                         "Bewegungsgeschwindigkeit",
                                         "Geschwindigkeit",
                                         "WASD",
@@ -6034,10 +6037,12 @@ mod tests_einstellungen {
         assert!((doc.layer_by_name("Fenster").unwrap().line_weight - 0.18).abs() < 1e-9);
     }
 
-    /// T0067: Unter „Bedienung“ steht zusätzlich die Zeile „Schwenk“ für die
-    /// Bewegungsgeschwindigkeit der Schwenk-Funktionen (W A S D).
+    /// T0067/T0146: Unter „Bedienung“ steht zusätzlich die Zeile
+    /// **„Geschwindigkeit der Ansicht“** (früher „Schwenk“) für das Tempo der
+    /// Schwenk-Funktionen (W A S D). Der Name passt ungekürzt in die
+    /// Namensspalte — sonst stünde in der Oberfläche „…“.
     #[test]
-    fn bedienung_zeigt_die_schwenkgeschwindigkeit() {
+    fn bedienung_zeigt_die_geschwindigkeit_der_ansicht() {
         // Der Test prüft die **Vorgabe** (1×). Ohne Wegwerf-Voreinstellungen
         // liest `App::with_ctx` die `prefs.json` des Nutzers und der Test prüft
         // dessen Schwenk-Wert (gesehen: 3,9 — rot, obwohl die Oberfläche stimmt).
@@ -6055,12 +6060,26 @@ mod tests_einstellungen {
         for _ in 0..3 {
             out = ctx.run(bild(), |ctx| app.ui(ctx));
         }
-        assert!(
-            out.shapes
+        let zeile = out.shapes.iter().find_map(|cs| match &cs.shape {
+            egui::Shape::Text(t) if t.galley.text() == "Geschwindigkeit der Ansicht" => Some(t),
+            _ => None,
+        });
+        let zeile = zeile.unwrap_or_else(|| {
+            let texte: Vec<&str> = out
+                .shapes
                 .iter()
-                .any(|cs| matches!(&cs.shape,
-                    egui::Shape::Text(t) if t.galley.text() == "Schwenk")),
-            "Zeile „Schwenk“ fehlt im Einstellungsfenster"
+                .filter_map(|cs| match &cs.shape {
+                    egui::Shape::Text(t) => Some(t.galley.text()),
+                    _ => None,
+                })
+                .collect();
+            panic!("Zeile „Geschwindigkeit der Ansicht“ fehlt im Einstellungsfenster (gezeichnet: {texte:?})")
+        });
+        assert!(
+            zeile.galley.size().x <= crate::widgets::LABEL_W - 8.0,
+            "der Name läuft in die Wertspalte: {} px breit, {} px Platz",
+            zeile.galley.size().x,
+            crate::widgets::LABEL_W - 8.0
         );
         // T0127: `prefs.json` liegt in der Datenwurzel, nicht mehr unter
         // `XDG_CONFIG_HOME` — `WegwerfKonfig` isoliert sie also nicht. Der Test
@@ -6070,7 +6089,7 @@ mod tests_einstellungen {
         // rot nach dem Merge, obwohl die Oberfläche stimmt).
         assert!(
             (jjcad_core::persist::UserPrefs::default().pan_speed - 1.0).abs() < 1e-6,
-            "Vorgabe der Schwenkgeschwindigkeit ist 1×"
+            "Vorgabe der Geschwindigkeit der Ansicht ist 1×"
         );
     }
 
@@ -6110,7 +6129,7 @@ mod tests_einstellungen {
         // T0127: `prefs.json` liegt in der Datenwurzel — `WegwerfKonfig`
         // isoliert sie nicht mehr. Geprüft wird deshalb die **Vorgabe** des
         // Programms, nicht der geladene Wert des Nutzers (dieselbe Begründung
-        // wie bei `bedienung_zeigt_die_schwenkgeschwindigkeit`).
+        // wie bei `bedienung_zeigt_die_geschwindigkeit_der_ansicht`).
         assert_eq!(
             jjcad_core::persist::UserPrefs::default().paste_pivot,
             PastePivot::Center,

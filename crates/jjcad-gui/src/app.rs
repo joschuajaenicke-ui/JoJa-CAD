@@ -79,14 +79,20 @@ pub fn auf_pixel(ctx: &egui::Context, wert: f32) -> f32 {
 
 /// Weg eines einzelnen Schwenk-Schritts in Bildpunkten (T0056): ein Aufruf der
 /// Funktion rückt die Ansicht sichtbar weiter, ohne sie springen zu lassen.
-/// Die Einstellung „Schwenk“ skaliert den Schritt über `UserPrefs::pan_speed`.
-pub const SCHWENK_SCHRITT_PX: f32 = 60.0;
+/// Die Einstellung „Geschwindigkeit der Ansicht“ skaliert den Schritt über
+/// `UserPrefs::pan_speed`.
+///
+/// T0146: Das **Grundtempo** ist um 50 % erhöht (vorher 60 px). Der Faktor
+/// bleibt bei 1 × die Vorgabe — die Erhöhung wirkt damit auch für gespeicherte
+/// Einstellungen, ohne dass der Nutzer den Faktor nachziehen muss.
+pub const SCHWENK_SCHRITT_PX: f32 = 90.0;
 
 /// Tempo des **kontinuierlichen** Schwenks in Bildpunkten je Sekunde (T0101):
 /// solange eine Schwenkfunktion gedrückt bleibt, wandert die Ansicht mit
 /// diesem Tempo weiter. `UserPrefs::pan_speed` skaliert auch dieses Tempo —
-/// ein Faktor gilt damit für beide Bewegungsarten.
-pub const SCHWENK_TEMPO_PX_PRO_S: f32 = 480.0;
+/// ein Faktor gilt damit für beide Bewegungsarten. T0146: 480 → 720 px/s
+/// (dieselben 50 % wie beim Schritt).
+pub const SCHWENK_TEMPO_PX_PRO_S: f32 = 720.0;
 
 /// Längste Bilddauer, die der kontinuierliche Schwenk verrechnet (T0101):
 /// nach einem Stocken (Fenster verdeckt, Neuzeichnen) soll die Ansicht nicht
@@ -5427,7 +5433,7 @@ impl App {
     /// Ribbon rufen ihn über die Funktion `view.pan_*` auf (T0089).
     pub fn schwenk_schritt(&mut self, dx: f32, dy: f32) {
         let mut v = self.current_view();
-        // T0067: Die Einstellung „Schwenk“ skaliert den Schritt.
+        // T0067: Die Einstellung „Geschwindigkeit der Ansicht“ skaliert den Schritt.
         let px = SCHWENK_SCHRITT_PX * self.prefs.pan_speed;
         let w = v.screen_delta_to_world(Vec2::new(dx * px, dy * px));
         v.center += w;
@@ -10330,6 +10336,36 @@ mod tests_tastenbelegung {
         assert!(
             (doppelt / einfach - 2.0).abs() < 0.05,
             "doppelter Faktor muss doppelten Weg geben: {einfach} → {doppelt}"
+        );
+    }
+
+    /// T0146: Das **Grundtempo** des Schwenks ist um 50 % erhöht — der Faktor
+    /// bleibt bei 1 × die Vorgabe, damit die Erhöhung auch für gespeicherte
+    /// Einstellungen greift. Gemessen am Bildweg: ein Druck im Modus
+    /// „Sprunghaft" schiebt 90 px (vorher 60), der Dauerlauf läuft mit
+    /// 720 px/s (vorher 480).
+    #[test]
+    fn schwenk_grundtempo_ist_50_prozent_hoeher() {
+        let mut app = app_mit_zeichnung();
+        app.prefs.pan_speed = 1.0;
+        app.prefs.pan_mode = jjcad_core::persist::PanMode::Sprunghaft;
+        frame_mit(&mut app, vec![]);
+        let vorher = app.current_view().center;
+        let zoom = app.current_view().zoom;
+        frame_mit(&mut app, vec![druck(egui::Key::W)]);
+        let nachher = app.current_view().center;
+        let px = (nachher.y - vorher.y) * zoom;
+        assert!(
+            (px - 90.0).abs() < 1.0,
+            "ein Schritt muss 90 px weit sein (60 px + 50 %), gemessen {px} px"
+        );
+        assert!(
+            (SCHWENK_SCHRITT_PX - 90.0).abs() < 1e-6,
+            "Schrittweite ist 90 px, nicht {SCHWENK_SCHRITT_PX}"
+        );
+        assert!(
+            (SCHWENK_TEMPO_PX_PRO_S - 720.0).abs() < 1e-6,
+            "Dauerlauf-Tempo ist 720 px/s, nicht {SCHWENK_TEMPO_PX_PRO_S}"
         );
     }
 
