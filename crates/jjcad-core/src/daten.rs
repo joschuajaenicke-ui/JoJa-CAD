@@ -90,6 +90,20 @@ pub fn wurzel_ermitteln(
     plattform_standard()
 }
 
+/// Läuft diese Fassung portabel? Dann liegt `portable.txt` neben der
+/// Programmdatei, und alle Nutzdaten gehören nach `<exe>/data`.
+///
+/// Das ist die **einzige** Unterscheidung zwischen portabel und installiert —
+/// es gibt keine Kennung im Programm und keinen Schalter in den Einstellungen.
+/// Das portable Paket muss die Datei also mitliefern; fehlt sie, landet alles
+/// im Plattformstandard (`%APPDATA%\JoJa-CAD` bzw. `~/.local/share/JoJa-CAD`).
+pub fn ist_portabel() -> bool {
+    std::env::current_exe()
+        .ok()
+        .and_then(|p| p.parent().map(|d| d.join(PORTABLE_DATEI).is_file()))
+        .unwrap_or(false)
+}
+
 /// Wurzel aus der laufenden Umgebung (Kommandozeile, `$JJCAD_DATA_DIR`,
 /// `portable.txt` neben der Programmdatei, Plattformstandard).
 pub fn wurzel_ermitteln_aus_umgebung(argument: Option<&Path>) -> PathBuf {
@@ -225,7 +239,14 @@ pub fn pruefe_verzeichnis(pfad: &Path) -> Result<(), String> {
 /// alte `prefs.json` aus `~/.config/jjcad` (bzw. `%APPDATA%\JoJa-CAD`).
 /// Die alte Datei bleibt liegen.
 pub fn vorbereiten() -> Result<(), String> {
-    vorbereiten_in(&wurzel(), &crate::persist::config_dir())
+    let w = wurzel();
+    if ist_portabel() {
+        // Portabel heißt eigenständig: ein USB-Stick übernimmt nicht die
+        // Einstellungen des Rechners, an dem er gerade steckt. Als Quelle wird
+        // die Wurzel selbst genannt — dann findet keine Übernahme statt.
+        return vorbereiten_in(&w, &w);
+    }
+    vorbereiten_in(&w, &crate::persist::config_dir())
 }
 
 /// Wie [`vorbereiten`], aber mit ausdrücklicher Wurzel und ausdrücklichem
@@ -563,6 +584,24 @@ mod tests {
 
     /// Eine zweite Sperre auf derselben Wurzel meldet den Konflikt; nach dem
     /// Ablegen ist die Wurzel wieder frei.
+    /// Portabel übernimmt keine Einstellungen vom Rechner — die Quelle ist die
+    /// Wurzel selbst, also gibt es nichts zu kopieren.
+    #[test]
+    fn portabel_uebernimmt_keine_fremden_einstellungen() {
+        let dir = test_dir("portabel-import");
+        let w = dir.join("data");
+        std::fs::create_dir_all(&w).unwrap();
+        std::fs::write(w.join(PREFS_DATEI), "{}").unwrap();
+        std::fs::remove_file(w.join(PREFS_DATEI)).unwrap();
+
+        vorbereiten_in(&w, &w).unwrap();
+        assert!(
+            !w.join(PREFS_DATEI).exists(),
+            "portabler Lauf hat fremde Einstellungen übernommen"
+        );
+        assert!(w.join("blocks").is_dir(), "Unterordner fehlen");
+    }
+
     #[test]
     fn zweite_instanz_meldet_sich() {
         let w = test_dir("sperre");
