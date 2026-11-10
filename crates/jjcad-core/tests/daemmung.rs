@@ -221,8 +221,53 @@ fn schraffur_wird_nicht_zum_schlaufenband() {
     );
 }
 
-/// DXF kennt kein Schlaufenband — exportiert wird die gezeichnete Geometrie
-/// (POLYLINE), nicht die nackte Gerade.
+/// Dämmung **in einer Wand** (T0161): eine einzelne Linie mit der Linienart
+/// „Dämmung“ auf der Wandmitte — Bandhöhe = Wanddicke. Die parallelen
+/// Schlaufenbänder des Musters gehören auf eine Fläche, nicht in eine Wand:
+/// dort war die Wandfläche plötzlich mit Musterreihen gefüllt.
+#[test]
+fn wanddaemmung_ist_eine_linie_mit_dem_band() {
+    let mut doc = Document::new();
+    let id = neu(
+        &mut doc,
+        "draw.wall",
+        json!({
+            "a": [0.0, 0.0], "b": [5.0, 0.0], "thickness": 0.24,
+            "hatch": "daemmung", "layer": "Wände"
+        }),
+    );
+    let prims = prims(&doc, id);
+    // Genau ein Polygonzug mit vielen Punkten — das Band. Die Musterreihen
+    // bestünden aus vielen kurzen Strichen (Shape::Line).
+    let baender: Vec<&Vec<jjcad_core::geom::Vec2>> = prims
+        .iter()
+        .filter_map(|p| match &p.shape {
+            Shape::Poly(pts, closed) if !closed && pts.len() > 40 => Some(pts),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(baender.len(), 1, "die Wand zeichnet nicht genau ein Band");
+    let pts = baender[0];
+    // Länge: das Band läuft über die ganze Wand (0…5000).
+    let min_x = pts.iter().fold(f64::INFINITY, |m, p| m.min(p.x));
+    let max_x = pts.iter().fold(f64::NEG_INFINITY, |m, p| m.max(p.x));
+    assert!(min_x.abs() < 1e-6, "Band beginnt bei x = {min_x}");
+    assert!((max_x - 5000.0).abs() < 1e-6, "Band endet bei x = {max_x}");
+    // Bandhöhe = Wanddicke 240 mm, mittig auf der Wandachse (y = 0).
+    let max_y = pts.iter().fold(f64::NEG_INFINITY, |m, p| m.max(p.y));
+    let min_y = pts.iter().fold(f64::INFINITY, |m, p| m.min(p.y));
+    assert!((max_y - 120.0).abs() < 1.5, "höchster Punkt bei y = {max_y}");
+    assert!((min_y + 120.0).abs() < 1.5, "tiefster Punkt bei y = {min_y}");
+    // Die Musterreihen fehlen: kein Strich im Inneren der Wand, nur die vier
+    // Wandkanten (je 5000 bzw. 240 mm lang).
+    let innen = prims
+        .iter()
+        .filter(|p| matches!(p.shape, Shape::Line(_, _)))
+        .filter(|p| p.style.line_type == LineType::Insulation)
+        .count();
+    assert_eq!(innen, 0, "die Dämmungslinie steht noch als Linie in der Liste");
+}
+
 #[test]
 fn dxf_schreibt_das_band_als_polyline() {
     let mut doc = Document::new();
