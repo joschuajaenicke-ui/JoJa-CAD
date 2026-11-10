@@ -690,6 +690,7 @@ perpendicular = "Perpendicular"
 nearest = "Nearest point"
 grid = "Grid"
 tracking = "Tracking line"
+bisector = "Angle bisector"
 
 [ui.linetype]
 solid = "Solid"

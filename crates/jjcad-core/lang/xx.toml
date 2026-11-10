@@ -736,6 +736,7 @@
 # nearest = "Nächster Punkt"
 # grid = "Raster"
 # tracking = "Hilfslinie"
+# bisector = "Winkelhalbierende"
 #
 [ui.linetype]
 # solid = "Durchgezogen"
