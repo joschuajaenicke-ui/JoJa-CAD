@@ -73,7 +73,8 @@ Steht rechts „nicht", dann ist das Wort im Projekt verpönt (auch in der Oberf
 | **Ellipsenbogen** | Abschnitt einer Ellipse — entsteht beim Stutzen einer Ellipse, wie der Bogen beim Stutzen eines Kreises | Ellipsenteil, Teil-Ellipse |
 | **Block** | Wiederverwendbare Zeichnung (Definition) | Symbol, Bauteil |
 | **Blockinstanz** | Ein eingesetzter Block im Plan (mit Position, Drehung, Spiegelung) | Block (wenn die Instanz gemeint ist) |
-| **Maßkette** | Mehrere Maße in einer Linie, fortlaufend | Bemaßungskette, Maßreihe |
+| **Maßkette** | Bemaßung aus mindestens zwei **Messpunkten** mit gemeinsamer Maßlinie, fortlaufend; das Einzelmaß ist die Kette aus zwei Messpunkten (ein Element) | Bemaßungskette, Maßreihe, Einzelmaß (als Sonderfall) |
+| **Messpunkt** | Punkt, den eine Maßkette misst — die Maßhilfslinie geht von ihm aus; Griff in der Zeichnung | Basispunkt, Maßpunkt |
 | **Höhenkote** | Oberbegriff der beiden Höhenmarken; nicht mehr als eigene Objektart verwendet | Höhenmaß, Kote |
 | **Grundriss-Kote** | Höhenkote im Grundriss: Kreis-Symbol mit Fadenkreuz und verknüpftem Höhenwert; die Höhe gibt der Nutzer im Eigenschaften-Panel an | Plankote, Kreiskote |
 | **Schnitt-Kote** | Höhenkote im Schnitt: Dreieck mit Höhenangabe je Punkt; der erste Punkt ist ±0,00, alle weiteren Höhen folgen aus der Y-Differenz | Schnitthöhe, Dreieckskote |

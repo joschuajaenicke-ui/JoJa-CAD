@@ -167,6 +167,13 @@ pub fn marke(art: FangArt) -> Vec<Zug> {
             l(&mut v, (0.0, 0.0), (8.0, 6.0));
             l(&mut v, (0.0, -2.0), (0.0, -9.0));
         }
+        // Maßkette parallel: zwei parallele Striche — die Lage der Maßlinie
+        // neben einer vorhandenen (T0154).
+        FangArt::Objekt(SnapKind::DimParallel) => {
+            l(&mut v, (-9.0, -5.0), (9.0, -5.0));
+            l(&mut v, (-9.0, 5.0), (9.0, 5.0));
+            l(&mut v, (-9.0, -5.0), (-9.0, 5.0));
+        }
         // Polarfang: Winkelmarke mit Strahl auf der Polarschrittweite.
         FangArt::Polar => {
             l(&mut v, (0.0, 0.0), (8.0, 0.0));

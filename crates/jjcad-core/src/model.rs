@@ -672,25 +672,23 @@ pub enum EntityKind {
         #[serde(default = "default_room_heading")]
         heading: String,
     },
-    /// Einzelmaß / Maßkette (linear).
+    /// Bemaßung: eine Maßkette über beliebig viele Messpunkte mit gemeinsamer
+    /// Maßlinie (T0154).
+    ///
+    /// Früher gab es zwei Objektarten — das Einzelmaß (`a`, `b`) und die
+    /// Maßkette (`pts`). Beide sind jetzt **ein** Element: das Einzelmaß ist
+    /// eine Kette aus genau zwei Messpunkten. `pts` trägt immer mindestens
+    /// zwei Punkte; die Befehle `dim.point.add`/`dim.point.remove` ändern die
+    /// Anzahl, ohne unter zwei zu gehen.
     Dim {
-        a: Vec2,
-        b: Vec2,
+        pts: Vec<Vec2>,
         /// Punkt auf der Maßlinie (bestimmt Lage der Maßlinie).
         line_pos: Vec2,
         #[serde(default)]
         axis: DimAxis,
-        /// Maßtext überschreiben (z. B. "2,50").
-        #[serde(default)]
+        /// Maßtext des **ersten** Segments überschreiben (z. B. "2,50").
+        #[serde(default, skip_serializing_if = "Option::is_none")]
         override_text: Option<String>,
-    },
-    /// Maßkette über mehrere Punkte mit gemeinsamer Maßlinie.
-    DimChain {
-        pts: Vec<Vec2>,
-        /// Punkt auf der Maßlinie.
-        line_pos: Vec2,
-        #[serde(default)]
-        axis: DimAxis,
     },
     /// Grundriss-Kote: Kreis-Symbol mit verknüpftem Höhenwert daneben.
     ///
@@ -896,7 +894,6 @@ impl EntityKind {
             EntityKind::Text { .. }
             | EntityKind::Room { .. }
             | EntityKind::Dim { .. }
-            | EntityKind::DimChain { .. }
             | EntityKind::ElevationPlan { .. }
             | EntityKind::ElevationSection { .. } => RANG_BESCHRIFTUNG,
         }
@@ -953,8 +950,7 @@ impl EntityKind {
             EntityKind::Volume { .. } => "Volumen",
             EntityKind::Text { .. } => "Text",
             EntityKind::Room { .. } => "Raumstempel",
-            EntityKind::Dim { .. } => "Maß",
-            EntityKind::DimChain { .. } => "Maßkette",
+            EntityKind::Dim { .. } => "Maßkette",
             EntityKind::ElevationPlan { .. } => "Grundriss-Kote",
             EntityKind::ElevationSection { .. } => "Schnitt-Kote",
             EntityKind::Wall { .. } => "Wand",
@@ -982,7 +978,6 @@ impl EntityKind {
         matches!(
             self,
             EntityKind::Dim { .. }
-                | EntityKind::DimChain { .. }
                 | EntityKind::ElevationPlan { .. }
                 | EntityKind::ElevationSection { .. }
         )
