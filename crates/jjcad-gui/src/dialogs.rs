@@ -3776,6 +3776,47 @@ mod modaltests {
         let _ = std::fs::remove_file(&ziel);
     }
 
+    /// T0143: Der ganze Weg im GUI — Schließdialog, Zielabfrage im
+    /// eingebauten Dateidialog, Sichern, Reiter zu.
+    #[test]
+    fn speichern_und_schliessen_ueber_den_dateidialog_schliesst_den_reiter() {
+        let (mut app, ctx) = app_ohne_speicherort();
+        let ziel_dir = std::env::temp_dir().join(format!("jjcad-t0143-dlg-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&ziel_dir);
+        std::fs::create_dir_all(&ziel_dir).unwrap();
+
+        app.ui.confirm_close = Some(0);
+        frame(&ctx, &mut app, vec![]);
+        let out = rahmen(&ctx, &mut app, vec![]);
+        let knopf = text_mitte(&out, "Speichern und schließen").expect("kein Speichern-Knopf");
+        klick(&ctx, &mut app, knopf);
+
+        // Der eingebaute Dateidialog zeigt auf einen Wegwerfordner; der
+        // Vorschlagsname „Unbenannt“ bleibt.
+        {
+            let fd = app.ui.file_dialog.as_mut().expect("Dateidialog fehlt");
+            fd.dir = ziel_dir.clone();
+            fd.name = "Plan.jjcad".into();
+        }
+        for _ in 0..2 {
+            frame(&ctx, &mut app, vec![]);
+        }
+        let out = rahmen(&ctx, &mut app, vec![]);
+        let sichern = text_mitte(&out, "Speichern").expect("kein Speichern-Knopf im Dateidialog");
+        klick(&ctx, &mut app, sichern);
+
+        assert!(
+            ziel_dir.join("Plan.jjcad").is_file(),
+            "die Zeichnung wurde nicht geschrieben"
+        );
+        assert!(app.ui.file_dialog.is_none(), "der Dateidialog bleibt offen");
+        assert!(
+            app.doc().entities.is_empty(),
+            "der Reiter ist nach dem Sichern nicht zu"
+        );
+        let _ = std::fs::remove_dir_all(&ziel_dir);
+    }
+
     /// T0143: Bricht der Nutzer den Dateidialog ab, bleibt der Reiter offen —
     /// der Merker darf das nächste Speichern nicht treffen.
     #[test]
