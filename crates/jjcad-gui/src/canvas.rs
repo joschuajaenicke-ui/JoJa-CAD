@@ -2823,114 +2823,39 @@ fn draw_tool_preview(
             }
         }
         "modify.rotate" => {
-            // Winkelwahl über „von"/„bis": der Winkel ist die Differenz der
-            // beiden vom Drehzentrum aus gesehenen Richtungen.
+            // Winkelwahl über „von"/„bis" oder über eine getippte Zahl (T0151):
+            // das Zentrum steht, die Bezugslinie kommt aus dem „von"-Punkt.
             if let Some(&c) = tool.pts.first() {
-                center_mark(p, w2s(c), Palette::accent());
-                match tool.pts.get(1).copied() {
-                    None => {
-                        // Von-Richtung (Bezugsrichtung) wird gesetzt
-                        if c.dist(cursor) > 1e-6 {
-                            p.line_segment([w2s(c), w2s(cursor)], dashed);
-                        }
-                        p.circle_stroke(w2s(cursor), 5.0, stroke);
-                        label = jjcad_core::i18n::t_args_owned("gui.canvas.von_x", &[("wert1", format!("{}", format_number((cursor - c).angle().to_degrees(), 1)))]);
-                    }
-                    Some(from) => {
-                        let v0 = from - c;
-                        let v1 = cursor - c;
-                        p.line_segment([w2s(c), w2s(from)], stroke);
-                        match jjcad_core::transform::angle_between_directions(c, from, cursor) {
-                            Some(angle) => {
-                                p.line_segment([w2s(c), w2s(cursor)], dashed);
-                                // Winkelbogen in Drehrichtung (mit Vorzeichen, <= 180°).
-                                // Nicht über geom::Arc: das läuft immer gegen den
-                                // Uhrzeigersinn und zeichnet bei negativem Winkel
-                                // den langen Weg (315° statt 45°).
-                                let r = v0.len().min(v1.len()) * 0.45;
-                                if r > 1.0 {
-                                    let a0 = v0.angle();
-                                    let sweep = angle.to_radians();
-                                    let pts: Vec<Pos2> = (0..=48)
-                                        .map(|i| {
-                                            let a = a0 + sweep * (i as f64 / 48.0);
-                                            w2s(c + V2::new(a.cos(), a.sin()) * r)
-                                        })
-                                        .collect();
-                                    p.add(Shape::line(pts, stroke));
-                                }
-                                // Vorschau der gedrehten Auswahl
-                                let m = Affine::rotate_about(c, angle.to_radians());
-                                let rctx = render::RenderCtx::new(app.doc());
-                                let mut dl = DisplayList::default();
-                                for id in app.selection().to_vec() {
-                                    if let Some(e) = app.doc().entity(id) {
-                                        render::render_entity(&rctx, e, m, &mut dl, 0);
-                                    }
-                                }
-                                let pre = Stroke::new(1.1, Palette::select().gamma_multiply(0.85));
-                                for prim in &dl.prims {
-                                    ghost_shape(
-                                        p,
-                                        &prim.shape,
-                                        &w2s,
-                                        view.zoom,
-                                        pre,
-                                        view.rot as f32,
-                                        app.prefs.textaufloesung.px(),
-                                    );
-                                }
-                                label = jjcad_core::i18n::t_args_owned("gui.canvas.drehen_x", &[("wert1", format!("{}", format_number(angle, 1)))]);
-                            }
-                            None => {
-                                // Bis-Punkt liegt auf dem Zentrum: keine Richtung
-                                label = jjcad_core::i18n::tr("gui.canvas.bis_abstand_zum_drehzentrum_noetig").into();
-                            }
-                        }
-                    }
-                }
+                label = dreh_vorschau(
+                    app,
+                    p,
+                    &w2s,
+                    &view,
+                    c,
+                    tool.pts.get(1).copied(),
+                    cursor,
+                    false,
+                    stroke,
+                    dashed,
+                );
             }
         }
         "view.rotate_tool" => {
             // Gleiche Winkelwahl wie beim Drehen (Zentrum, Bezugspunkt, neue
             // Richtung) — gedreht wird aber die Ansicht, nicht die Auswahl.
             if let Some(&c) = tool.pts.first() {
-                center_mark(p, w2s(c), Palette::accent());
-                match tool.pts.get(1).copied() {
-                    None => {
-                        if c.dist(cursor) > 1e-6 {
-                            p.line_segment([w2s(c), w2s(cursor)], dashed);
-                        }
-                        p.circle_stroke(w2s(cursor), 5.0, stroke);
-                        label = jjcad_core::i18n::t_args_owned("gui.canvas.bezug_x", &[("wert1", format!("{}", format_number((cursor - c).angle().to_degrees(), 1)))]);
-                    }
-                    Some(from) => {
-                        let v0 = from - c;
-                        p.line_segment([w2s(c), w2s(from)], stroke);
-                        match jjcad_core::transform::angle_between_directions(c, from, cursor) {
-                            Some(angle) => {
-                                p.line_segment([w2s(c), w2s(cursor)], dashed);
-                                // Winkelbogen in Drehrichtung (Vorzeichen, <= 180°)
-                                let r = v0.len().min((cursor - c).len()) * 0.45;
-                                if r > 1.0 {
-                                    let a0 = v0.angle();
-                                    let sweep = angle.to_radians();
-                                    let pts: Vec<Pos2> = (0..=48)
-                                        .map(|i| {
-                                            let a = a0 + sweep * (i as f64 / 48.0);
-                                            w2s(c + V2::new(a.cos(), a.sin()) * r)
-                                        })
-                                        .collect();
-                                    p.add(Shape::line(pts, stroke));
-                                }
-                                // Das Drehzentrum bleibt beim Drehen stehen
-                                p.circle_stroke(w2s(c), 9.0, dashed);
-                                label = jjcad_core::i18n::t_args_owned("gui.canvas.ansicht_x", &[("wert1", format!("{}", format_number(angle, 1)))]);
-                            }
-                            None => label = jjcad_core::i18n::tr("gui.canvas.abstand_zum_drehzentrum_noetig").into(),
-                        }
-                    }
-                }
+                label = dreh_vorschau(
+                    app,
+                    p,
+                    &w2s,
+                    &view,
+                    c,
+                    tool.pts.get(1).copied(),
+                    cursor,
+                    true,
+                    stroke,
+                    dashed,
+                );
             }
         }
         "modify.mirror" => {
@@ -3686,6 +3611,14 @@ fn handle_input(
             let galley = painter.layout_no_wrap(
                 if text.contains(';') {
                     format!("{}  [Enter] Punkt x;y", text)
+                } else if app
+                    .tool
+                    .as_ref()
+                    .map(|t| ist_drehwerkzeug(&t.action))
+                    .unwrap_or(false)
+                {
+                    // Beim Drehen ist die Zahl ein Winkel in Grad (T0151).
+                    jjcad_core::i18n::t_args_owned("gui.canvas.x_enter_winkel", &[("eingabe", format!("{}", text))])
                 } else {
                     jjcad_core::i18n::t_args_owned("gui.canvas.x_enter_laenge", &[("eingabe", format!("{}", text))])
                 },
@@ -3701,7 +3634,31 @@ fn handle_input(
             painter.galley(pos + Vec2::new(22.0, 21.0), galley, Palette::accent());
         }
         if ctx.input(|i| i.key_pressed(egui::Key::Enter)) {
-            if let (Some(w), Some(last)) = (snapped, app.tool.as_ref().and_then(|t| t.pts.last().copied())) {
+            let typed = app.ui.typed.clone();
+            // Drehen: die getippte Zahl ist ein Winkel in Grad, keine Länge
+            // (T0151). Muss **vor** dem Längenzweig stehen — der zog den
+            // „bis"-Punkt auf einen Abstand und drehte damit um einen Winkel,
+            // den niemand eingegeben hatte.
+            let dreh = app
+                .tool
+                .clone()
+                .filter(|t| ist_drehwerkzeug(&t.action) && !typed.is_empty() && !typed.contains(';'));
+            if let Some(t) = dreh {
+                let cursor = snapped.or_else(|| {
+                    ctx.pointer_hover_pos()
+                        .map(|pos| screen_to_world(rect, view, pos))
+                });
+                match t
+                    .pts
+                    .first()
+                    .copied()
+                    .and_then(|c| rotate_typed_angle(c, t.pts.get(1).copied(), cursor, &typed).map(|a| (c, a)))
+                {
+                    Some((center, angle)) => rotate_apply(app, &t.action, center, angle),
+                    None => app.toast(jjcad_core::i18n::tr("gui.canvas.drehen_winkel_unbrauchbar")),
+                }
+                app.ui.typed.clear();
+            } else if let (Some(w), Some(last)) = (snapped, app.tool.as_ref().and_then(|t| t.pts.last().copied())) {
                 let typed = app.ui.typed.clone();
                 // Koordinaten nur mit Semikolon trennen — das Komma bleibt
                 // Dezimaltrennzeichen ("2,5" = 2,5 m, "2,5;3,0" = x/y).
@@ -5153,6 +5110,221 @@ pub fn rotate_step(pts: &[V2], w: V2) -> RotateStep {
     }
 }
 
+/// Werkzeug, dessen getippte Zahl ein **Winkel** ist (T0151).
+///
+/// Beim Drehen von Auswahl und Ansicht ist die Zahl ein Winkel in Grad; alle
+/// anderen Werkzeuge lesen sie als Länge bzw. Koordinate.
+pub fn ist_drehwerkzeug(action: &str) -> bool {
+    matches!(action, "modify.rotate" | "view.rotate_tool")
+}
+
+/// Getippte Zahl als Winkel in Grad (T0151).
+///
+/// Das Komma ist Dezimaltrennzeichen; mehr als eine volle Umdrehung wird
+/// abgewiesen, damit ein Tippfehler nicht die halbe Zeichnung dreht.
+pub fn winkel_eingabe(text: &str) -> Option<f64> {
+    let s = text.trim().replace(',', ".");
+    if s.is_empty() {
+        return None;
+    }
+    if !s
+        .chars()
+        .all(|c| c.is_ascii_digit() || c == '.' || c == '-' || c == '+')
+    {
+        return None;
+    }
+    let wert: f64 = s.parse().ok()?;
+    if !wert.is_finite() || wert.abs() > 360.0 {
+        return None;
+    }
+    Some(wert)
+}
+
+/// Drehwinkel aus der Tastatureingabe (T0151).
+///
+/// Ohne Bezugspunkt (`from == None`) ist die getippte Zahl der Drehwinkel
+/// selbst, positiv = gegen den Uhrzeigersinn. Mit Bezugspunkt bilden Zentrum
+/// und Bezugspunkt die Bezugslinie; die Zahl ist dann der Winkel **ab dieser
+/// Linie**, und die Seite, auf der der Zeiger steht, gibt die Richtung vor:
+/// links der Linie (mathematisch positiv) dreht gegen den Uhrzeigersinn,
+/// rechts herum zurück. Ein ausdrückliches Minus in der Eingabe schlägt die
+/// Zeigerseite — wer „-30" tippt, meint die Richtung.
+pub fn rotate_typed_angle(center: V2, from: Option<V2>, cursor: Option<V2>, typed: &str) -> Option<f64> {
+    let wert = winkel_eingabe(typed)?;
+    let Some(from) = from else {
+        return Some(wert);
+    };
+    let a = from - center;
+    if a.len() < jjcad_core::transform::ANGLE_MIN_RADIUS {
+        return None;
+    }
+    if wert < 0.0 {
+        return Some(wert);
+    }
+    let Some(cursor) = cursor else {
+        return Some(wert);
+    };
+    let b = cursor - center;
+    if b.len() < jjcad_core::transform::ANGLE_MIN_RADIUS {
+        return Some(wert);
+    }
+    // Kreuzprodukt der Richtungen: positiv heißt Zeiger **links** der
+    // Bezugslinie, also Gegenuhrzeigersinn.
+    let kreuz = a.x * b.y - a.y * b.x;
+    if kreuz.abs() <= 1e-9 * a.len() * b.len() {
+        return Some(wert);
+    }
+    Some(if kreuz > 0.0 { wert } else { -wert })
+}
+
+/// Drehung ausführen — Auswahl (`modify.rotate`) oder Ansicht
+/// (`view.rotate_tool`) um `center` mit `angle` Grad.
+///
+/// Ein Weg für Klick und Tastatur (T0151): der getippte Winkel landet genau
+/// so in der Action wie der geklickte.
+fn rotate_apply(app: &mut App, action: &str, center: V2, angle: f64) {
+    if action == "view.rotate_tool" {
+        let mut v = app.current_view();
+        v.rotate_about(center, angle.to_radians());
+        app.set_view(v);
+        app.toast(&jjcad_core::i18n::t_args_owned(
+            "gui.canvas.ansicht_gedreht_x",
+            &[("wert1", format!("{}", format_number(angle, 1)))],
+        ));
+    } else {
+        let unit = app.unit();
+        let ax = |q: V2| [unit.from_mm(q.x), unit.from_mm(q.y)];
+        let ids = app.selection().to_vec();
+        let _ = run(
+            app,
+            "modify.rotate",
+            json!({"ids": ids, "center": ax(center), "angle": angle}),
+        );
+        app.toast(&jjcad_core::i18n::t_args_owned(
+            "gui.canvas.drehen_x_2",
+            &[("wert1", format!("{}", format_number(angle, 1)))],
+        ));
+    }
+    app.tool = None;
+}
+
+/// Vorschau der Winkelwahl beim Drehen (T0151).
+///
+/// Ein Weg für Klick und Tastatur: Bezugslinie ist der „von"-Punkt, ohne ihn
+/// die Richtung zum Zeiger; der Winkel kommt aus der getippten Zahl oder aus
+/// der Zeigerrichtung. Mit Bezugspunkt entscheidet die **Seite**, auf der der
+/// Zeiger steht, über das Vorzeichen des getippten Winkels. Liefert die
+/// Beschriftung am Zeiger.
+#[allow(clippy::too_many_arguments)]
+fn dreh_vorschau(
+    app: &App,
+    p: &Painter,
+    w2s: &dyn Fn(V2) -> Pos2,
+    view: &View,
+    c: V2,
+    from: Option<V2>,
+    cursor: V2,
+    ansicht: bool,
+    stroke: Stroke,
+    dashed: Stroke,
+) -> String {
+    center_mark(p, w2s(c), Palette::accent());
+    let getippt = rotate_typed_angle(c, from, Some(cursor), &app.ui.typed);
+    // Bezugsrichtung: der „von"-Punkt, ohne ihn die Richtung zum Zeiger.
+    let a0 = match from {
+        Some(f) => {
+            p.line_segment([w2s(c), w2s(f)], stroke);
+            (f - c).angle()
+        }
+        None => {
+            if c.dist(cursor) > 1e-6 {
+                p.line_segment([w2s(c), w2s(cursor)], dashed);
+            }
+            p.circle_stroke(w2s(cursor), 5.0, stroke);
+            if getippt.is_none() {
+                let w = (cursor - c).angle().to_degrees();
+                return if ansicht {
+                    jjcad_core::i18n::t_args_owned(
+                        "gui.canvas.bezug_x",
+                        &[("wert1", format!("{}", format_number(w, 1)))],
+                    )
+                } else {
+                    jjcad_core::i18n::t_args_owned(
+                        "gui.canvas.von_x",
+                        &[("wert1", format!("{}", format_number(w, 1)))],
+                    )
+                };
+            }
+            (cursor - c).angle()
+        }
+    };
+    let winkel = match getippt {
+        Some(w) => Some(w),
+        None => from.and_then(|f| jjcad_core::transform::angle_between_directions(c, f, cursor)),
+    };
+    let Some(angle) = winkel else {
+        return if ansicht {
+            jjcad_core::i18n::tr("gui.canvas.abstand_zum_drehzentrum_noetig").into()
+        } else {
+            jjcad_core::i18n::tr("gui.canvas.bis_abstand_zum_drehzentrum_noetig").into()
+        };
+    };
+    if getippt.is_none() {
+        p.line_segment([w2s(c), w2s(cursor)], dashed);
+    }
+    // Winkelbogen in Drehrichtung (mit Vorzeichen, <= 180°). Nicht über
+    // geom::Arc: das läuft immer gegen den Uhrzeigersinn und zeichnet bei
+    // negativem Winkel den langen Weg (315° statt 45°).
+    let mut r = c.dist(cursor);
+    if let Some(f) = from {
+        r = r.min(c.dist(f));
+    }
+    let r = r * 0.45;
+    if r > 1.0 {
+        let sweep = angle.to_radians();
+        let pts: Vec<Pos2> = (0..=48)
+            .map(|i| {
+                let a = a0 + sweep * (i as f64 / 48.0);
+                w2s(c + V2::new(a.cos(), a.sin()) * r)
+            })
+            .collect();
+        p.add(Shape::line(pts, stroke));
+    }
+    if ansicht {
+        // Das Drehzentrum bleibt beim Drehen stehen.
+        p.circle_stroke(w2s(c), 9.0, dashed);
+        return jjcad_core::i18n::t_args_owned(
+            "gui.canvas.ansicht_x",
+            &[("wert1", format!("{}", format_number(angle, 1)))],
+        );
+    }
+    // Vorschau der gedrehten Auswahl
+    let m = Affine::rotate_about(c, angle.to_radians());
+    let rctx = render::RenderCtx::new(app.doc());
+    let mut dl = DisplayList::default();
+    for id in app.selection().to_vec() {
+        if let Some(e) = app.doc().entity(id) {
+            render::render_entity(&rctx, e, m, &mut dl, 0);
+        }
+    }
+    let pre = Stroke::new(1.1, Palette::select().gamma_multiply(0.85));
+    for prim in &dl.prims {
+        ghost_shape(
+            p,
+            &prim.shape,
+            w2s,
+            view.zoom,
+            pre,
+            view.rot as f32,
+            app.prefs.textaufloesung.px(),
+        );
+    }
+    jjcad_core::i18n::t_args_owned(
+        "gui.canvas.drehen_x",
+        &[("wert1", format!("{}", format_number(angle, 1)))],
+    )
+}
+
 /// Werkzeug nach einem fertigen Objekt für das nächste bereit machen.
 ///
 /// Zwei-Klick-Werkzeuge (Rechteck, Kreis, Ellipse) bleiben nach dem Anlegen
@@ -5833,19 +6005,9 @@ fn tool_click_at(app: &mut App, w: V2, raw: V2) {
                     tool.pts.push(point);
                     app.tool = Some(tool);
                 }
-                RotateStep::Apply {
-                    center,
-                    from: _,
-                    angle,
-                } => {
-                    let ids = app.selection().to_vec();
-                    let _ = run(
-                        app,
-                        "modify.rotate",
-                        json!({"ids": ids, "center": ax(center), "angle": angle}),
-                    );
-                    app.toast(&jjcad_core::i18n::t_args_owned("gui.canvas.drehen_x_2", &[("wert1", format!("{}", format_number(angle, 1)))]));
-                    app.tool = None;
+                // Klick und getippter Winkel teilen sich den Anwender (T0151).
+                RotateStep::Apply { center, angle, .. } => {
+                    rotate_apply(app, "modify.rotate", center, angle)
                 }
                 RotateStep::Reject(msg) => app.toast(msg),
             }
@@ -5860,11 +6022,7 @@ fn tool_click_at(app: &mut App, w: V2, raw: V2) {
                     app.tool = Some(tool);
                 }
                 RotateStep::Apply { center, angle, .. } => {
-                    let mut v = app.current_view();
-                    v.rotate_about(center, angle.to_radians());
-                    app.set_view(v);
-                    app.tool = None;
-                    app.toast(&jjcad_core::i18n::t_args_owned("gui.canvas.ansicht_gedreht_x", &[("wert1", format!("{}", format_number(angle, 1)))]));
+                    rotate_apply(app, "view.rotate_tool", center, angle)
                 }
                 RotateStep::Reject(_) => {
                     app.toast(jjcad_core::i18n::tr("gui.canvas.ansicht_drehen_abstand_zum_zentrum_noetig"))
@@ -12364,5 +12522,181 @@ mod tests_raster {
                 "{art:?}: {n} Linien im Ausschnitt — erwartet 1…18"
             );
         }
+    }
+}
+
+#[cfg(test)]
+mod tests_drehwinkel {
+    //! T0151 — die getippte Zahl beim Drehen ist ein **Winkel**, keine Länge.
+    //!
+    //! Vorher lief sie durch den Längenzweig der Tippeingabe: „30" zog den
+    //! „bis"-Punkt auf 30 mm Abstand vom Bezugspunkt, der gedrehte Winkel war
+    //! dann ein Bruchteil eines Grades — die Zahl bedeutete etwas anderes, als
+    //! der Nutzer eingegeben hatte.
+
+    use super::*;
+
+    fn app() -> App {
+        App::with_ctx(egui::Context::default())
+    }
+
+    /// Ein Frame mit Ereignissen — der Weg, den auch das Fenster nimmt.
+    fn frame(app: &mut App, events: Vec<egui::Event>) {
+        let ctx = app.ctx.clone();
+        let input = egui::RawInput {
+            screen_rect: Some(Rect::from_min_size(Pos2::ZERO, Vec2::new(1500.0, 950.0))),
+            events,
+            ..Default::default()
+        };
+        let _ = ctx.run(input, |ctx| app.ui(ctx));
+    }
+
+    fn taste(app: &mut App, key: egui::Key) {
+        frame(app, vec![taste_event(key)]);
+    }
+
+    /// Tastendruck **mit** Zeiger auf der Zeichenfläche: der Längenzweig der
+    /// Tippeingabe braucht einen Zeiger, sonst tut er nichts — die Gegenprobe
+    /// (Zahl als Länge) beißt nur so.
+    fn taste_mit_zeiger(app: &mut App, key: egui::Key, pos: Pos2) {
+        frame(app, vec![egui::Event::PointerMoved(pos), taste_event(key)]);
+    }
+
+    fn taste_event(key: egui::Key) -> egui::Event {
+        egui::Event::Key {
+            key,
+            physical_key: None,
+            pressed: true,
+            repeat: false,
+            modifiers: egui::Modifiers::NONE,
+        }
+    }
+
+    /// Waagerechte Linie von (0,0) nach (1000,0), ausgewählt, Drehwerkzeug läuft.
+    fn linie_im_drehen() -> (App, jjcad_core::model::Id) {
+        let mut app = app();
+        assert!(run(
+            &mut app,
+            "draw.line",
+            json!({"a": [0.0, 0.0], "b": [1.0, 0.0]})
+        ));
+        let id = *app.session().last_created.first().expect("Linie angelegt");
+        app.session_mut().select(vec![id]);
+        app.start_tool("modify.rotate");
+        (app, id)
+    }
+
+    /// Endpunkt der Linie in mm.
+    fn ende(app: &App, id: jjcad_core::model::Id) -> V2 {
+        match &app.doc().entity(id).expect("Linie").kind {
+            EntityKind::Line { b, .. } => *b,
+            other => panic!("keine Linie: {other:?}"),
+        }
+    }
+
+    #[test]
+    fn winkel_eingabe_liest_grad_und_weist_unsinn_ab() {
+        assert_eq!(winkel_eingabe("30"), Some(30.0));
+        assert_eq!(winkel_eingabe("30,5"), Some(30.5));
+        assert_eq!(winkel_eingabe(" -45 "), Some(-45.0));
+        assert_eq!(winkel_eingabe("+90"), Some(90.0));
+        assert_eq!(winkel_eingabe("360"), Some(360.0));
+        // Mehr als eine Umdrehung, Koordinaten und Buchstaben sind kein Winkel.
+        assert_eq!(winkel_eingabe("400"), None, "mehr als 360° abgewiesen");
+        assert_eq!(winkel_eingabe("2,5;3,0"), None, "Koordinateneingabe");
+        assert_eq!(winkel_eingabe("abc"), None);
+        assert_eq!(winkel_eingabe(""), None);
+        assert_eq!(winkel_eingabe("-"), None);
+    }
+
+    /// Ohne Bezugspunkt ist die Zahl der Drehwinkel selbst — Vorzeichen aus
+    /// der Eingabe, der Zeiger hat hier keine Seite.
+    #[test]
+    fn ohne_bezugspunkt_zaehlt_die_eingabe() {
+        let c = V2::new(100.0, 100.0);
+        assert_eq!(rotate_typed_angle(c, None, None, "30"), Some(30.0));
+        assert_eq!(rotate_typed_angle(c, None, None, "-30"), Some(-30.0));
+    }
+
+    /// Mit Bezugspunkt entscheidet die **Seite**, auf der der Zeiger steht:
+    /// links der Bezugslinie dreht gegen den Uhrzeigersinn, rechts herum.
+    #[test]
+    fn zeigerseite_gibt_die_drehrichtung_vor() {
+        let c = V2::new(0.0, 0.0);
+        let von = V2::new(1000.0, 0.0); // Bezugslinie nach +X
+        // Zeiger oberhalb (mathematisch links) → Gegenuhrzeigersinn
+        assert_eq!(
+            rotate_typed_angle(c, Some(von), Some(V2::new(0.0, 1000.0)), "30"),
+            Some(30.0)
+        );
+        // Zeiger unterhalb (rechts) → Uhrzeigersinn
+        assert_eq!(
+            rotate_typed_angle(c, Some(von), Some(V2::new(0.0, -1000.0)), "30"),
+            Some(-30.0)
+        );
+        // Zeiger auf der Linie: keine Seite, also die Eingabe wie getippt
+        assert_eq!(
+            rotate_typed_angle(c, Some(von), Some(V2::new(2000.0, 0.0)), "30"),
+            Some(30.0)
+        );
+        // Ausdrückliches Minus schlägt die Zeigerseite
+        assert_eq!(
+            rotate_typed_angle(c, Some(von), Some(V2::new(0.0, 1000.0)), "-30"),
+            Some(-30.0)
+        );
+    }
+
+    /// Der Kern des Tickets: getippter Winkel dreht die Auswahl wirklich.
+    #[test]
+    fn getippter_winkel_dreht_die_auswahl() {
+        let (mut app, id) = linie_im_drehen();
+        tool_click(&mut app, V2::new(0.0, 0.0)); // Zentrum
+        tool_click(&mut app, V2::new(500.0, 0.0)); // Bezugspunkt (+X)
+        app.ui.typed = "30".into();
+        taste(&mut app, egui::Key::Enter);
+        assert!(app.tool.is_none(), "Enter schließt das Drehen ab");
+        assert!(app.ui.typed.is_empty(), "Tippepuffer ist geleert");
+        let b = ende(&app, id);
+        assert!(
+            (b.x - 866.025).abs() < 0.5 && (b.y - 500.0).abs() < 0.5,
+            "Endpunkt nach 30°: {b:?} — erwartet (866,0; 500,0)"
+        );
+    }
+
+    /// Ohne Bezugspunkt dreht die Zahl um das Zentrum, gemessen ab +X.
+    #[test]
+    fn getippter_winkel_dreht_ohne_bezugspunkt() {
+        let (mut app, id) = linie_im_drehen();
+        tool_click(&mut app, V2::new(0.0, 0.0)); // nur das Zentrum
+        app.ui.typed = "90".into();
+        taste(&mut app, egui::Key::Enter);
+        assert!(app.tool.is_none(), "Enter schließt das Drehen ab");
+        let b = ende(&app, id);
+        assert!(
+            b.x.abs() < 0.5 && (b.y - 1000.0).abs() < 0.5,
+            "Endpunkt nach 90°: {b:?} — erwartet (0; 1000)"
+        );
+    }
+
+    /// Gegenprobe zur Längen-Deutung: „500" ist kein Winkel. Nichts dreht
+    /// sich, das Werkzeug bleibt stehen — vorher zog die Zahl den „bis"-Punkt
+    /// auf 500 mm und beendete das Drehen mit einem winzigen Winkel.
+    #[test]
+    fn zahl_ueber_360_dreht_nichts() {
+        let (mut app, id) = linie_im_drehen();
+        tool_click(&mut app, V2::new(0.0, 0.0));
+        tool_click(&mut app, V2::new(500.0, 0.0));
+        app.ui.typed = "500".into();
+        taste_mit_zeiger(&mut app, egui::Key::Enter, Pos2::new(400.0, 300.0));
+        let b = ende(&app, id);
+        assert!(
+            (b.x - 1000.0).abs() < 0.001 && b.y.abs() < 0.001,
+            "Linie unverändert: {b:?}"
+        );
+        assert_eq!(
+            app.tool.as_ref().map(|t| t.pts.len()),
+            Some(2),
+            "Werkzeug sammelt weiter, statt mit einem Bruchteil zu drehen"
+        );
     }
 }
