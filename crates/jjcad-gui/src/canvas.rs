@@ -5375,6 +5375,31 @@ fn rotate_apply(app: &mut App, action: &str, center: V2, angle: f64) {
     app.tool = None;
 }
 
+/// Bestätigt eine getippte Zahl mit dem **Klick** (T0151, Turn 3).
+///
+/// Sobald eine Zahl im Tippepuffer steht, ist der nächste Klick keine weitere
+/// Punkteingabe mehr: die Zahl gilt, die Klickstelle gibt — wie der Zeiger —
+/// die Drehrichtung vor. Eine unbrauchbare Zahl verbraucht den Klick trotzdem
+/// und meldet den Grund; sonst setzte der Klick still einen Punkt und niemand
+/// wüsste, warum nichts dreht.
+///
+/// Liefert `true`, wenn der Klick verbraucht ist.
+fn dreh_klick_bestaetigt(app: &mut App, action: &str, pts: &[V2], w: V2) -> bool {
+    let typed = app.ui.typed.clone();
+    if typed.is_empty() || typed.contains(';') {
+        return false;
+    }
+    let Some(c) = pts.first().copied() else {
+        return false;
+    };
+    match rotate_typed_angle(c, pts.get(1).copied(), Some(w), &typed) {
+        Some(angle) => rotate_apply(app, action, c, angle),
+        None => app.toast(jjcad_core::i18n::tr("gui.canvas.drehen_winkel_unbrauchbar")),
+    }
+    app.ui.typed.clear();
+    true
+}
+
 /// Vorschau der Winkelwahl beim Drehen (T0151).
 ///
 /// Ein Weg für Klick und Tastatur: Bezugslinie ist der „von"-Punkt, ohne ihn
@@ -6166,7 +6191,11 @@ fn tool_click_at(app: &mut App, w: V2, raw: V2) {
         "modify.rotate" => {
             // Drei Klicks: Drehzentrum, „von"-Punkt, „bis"-Punkt. Der Winkel ist
             // die Differenz der beiden vom Zentrum aus gesehenen Richtungen —
-            // nicht mehr die Richtung eines Klicks zur X-Achse.
+            // nicht mehr die Richtung eines Klicks zur X-Achse. Steht eine
+            // getippte Zahl im Puffer, bestätigt der Klick sie (T0151, Turn 3).
+            if dreh_klick_bestaetigt(app, "modify.rotate", &tool.pts, w) {
+                return;
+            }
             match rotate_step(&tool.pts, w) {
                 RotateStep::Collect { point } => {
                     tool.pts.push(point);
@@ -6182,7 +6211,11 @@ fn tool_click_at(app: &mut App, w: V2, raw: V2) {
         "view.rotate_tool" => {
             // Drei Klicks: Drehzentrum, Bezugspunkt, Zielrichtung. Der Winkel
             // ist die Differenz der beiden vom Zentrum aus gesehenen
-            // Richtungen; die Ansicht dreht um das angeklickte Zentrum.
+            // Richtungen; die Ansicht dreht um das angeklickte Zentrum. Eine
+            // getippte Zahl bestätigt auch hier der Klick (T0151, Turn 3).
+            if dreh_klick_bestaetigt(app, "view.rotate_tool", &tool.pts, w) {
+                return;
+            }
             match rotate_step(&tool.pts, w) {
                 RotateStep::Collect { point } => {
                     tool.pts.push(point);
@@ -12921,6 +12954,80 @@ mod tests_drehwinkel {
         app.ui.typed = "90".into();
         taste(&mut app, egui::Key::Enter);
         assert!(app.tool.is_none(), "Enter schließt das Drehen ab");
+        let b = ende(&app, id);
+        assert!(
+            b.x.abs() < 0.5 && (b.y - 1000.0).abs() < 0.5,
+            "Endpunkt nach 90°: {b:?} — erwartet (0; 1000)"
+        );
+    }
+
+    /// Turn 3: sobald eine Zahl im Puffer steht, **bestätigt der Klick** sie —
+    /// statt einen weiteren Punkt zu setzen. Ohne die Bestätigung drehte der
+    /// dritte Klick über die Referenzpunkte (hier 90° statt der getippten 30°).
+    #[test]
+    fn klick_bestaetigt_den_getippten_winkel() {
+        let (mut app, id) = linie_im_drehen();
+        tool_click(&mut app, V2::new(0.0, 0.0)); // Zentrum
+        tool_click(&mut app, V2::new(500.0, 0.0)); // Bezugspunkt (+X)
+        app.ui.typed = "30".into();
+        // Klick oberhalb der Bezugslinie → Gegenuhrzeigersinn
+        tool_click(&mut app, V2::new(0.0, 900.0));
+        assert!(app.tool.is_none(), "der Klick bestätigt und beendet das Drehen");
+        assert!(app.ui.typed.is_empty(), "Tippepuffer ist geleert");
+        let b = ende(&app, id);
+        assert!(
+            (b.x - 866.025).abs() < 0.5 && (b.y - 500.0).abs() < 0.5,
+            "Endpunkt nach 30°: {b:?} — erwartet (866,0; 500,0)"
+        );
+    }
+
+    /// Unterhalb der Bezugslinie bestätigt derselbe Klick die Gegenrichtung.
+    #[test]
+    fn klick_bestaetigt_die_gegenrichtung() {
+        let (mut app, id) = linie_im_drehen();
+        tool_click(&mut app, V2::new(0.0, 0.0));
+        tool_click(&mut app, V2::new(500.0, 0.0));
+        app.ui.typed = "30".into();
+        tool_click(&mut app, V2::new(0.0, -900.0));
+        assert!(app.tool.is_none(), "Klick bestätigt");
+        let b = ende(&app, id);
+        assert!(
+            (b.x - 866.025).abs() < 0.5 && (b.y + 500.0).abs() < 0.5,
+            "Endpunkt nach -30°: {b:?} — erwartet (866,0; -500,0)"
+        );
+    }
+
+    /// Eine unbrauchbare Zahl verbraucht den Klick ebenfalls — sonst setzte er
+    /// still einen Punkt und niemand wüsste, warum nichts dreht.
+    #[test]
+    fn klick_mit_ungueltiger_zahl_setzt_keinen_punkt() {
+        let (mut app, id) = linie_im_drehen();
+        tool_click(&mut app, V2::new(0.0, 0.0));
+        tool_click(&mut app, V2::new(500.0, 0.0));
+        app.ui.typed = "500".into();
+        tool_click(&mut app, V2::new(0.0, 900.0));
+        let b = ende(&app, id);
+        assert!(
+            (b.x - 1000.0).abs() < 0.001 && b.y.abs() < 0.001,
+            "Linie unverändert: {b:?}"
+        );
+        assert_eq!(
+            app.tool.as_ref().map(|t| t.pts.len()),
+            Some(2),
+            "kein dritter Punkt gesetzt"
+        );
+        assert!(app.ui.typed.is_empty(), "Tippepuffer ist geleert");
+    }
+
+    /// Ohne getippte Zahl dreht der dritte Klick wie bisher über die
+    /// Referenzpunkte — die Bestätigung darf diesen Weg nicht verdrängen.
+    #[test]
+    fn ohne_zahl_dreht_der_dritte_klick_wie_bisher() {
+        let (mut app, id) = linie_im_drehen();
+        tool_click(&mut app, V2::new(0.0, 0.0));
+        tool_click(&mut app, V2::new(500.0, 0.0));
+        tool_click(&mut app, V2::new(0.0, 900.0)); // 90° gegen den Uhrzeigersinn
+        assert!(app.tool.is_none(), "der dritte Klick dreht");
         let b = ende(&app, id);
         assert!(
             b.x.abs() < 0.5 && (b.y - 1000.0).abs() < 0.5,
