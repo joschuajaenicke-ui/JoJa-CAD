@@ -2065,6 +2065,46 @@ mod tests_fangmarke {
         );
     }
 
+    fn strecken_mit_farbe(out: &egui::FullOutput) -> Vec<([Pos2; 2], egui::epaint::ColorMode)> {
+        out.shapes
+            .iter()
+            .filter_map(|cs| match &cs.shape {
+                egui::Shape::LineSegment { points, stroke } => Some((*points, stroke.color.clone())),
+                _ => None,
+            })
+            .collect()
+    }
+
+    /// Die Marke steht in der **Fangfarbe** — dasselbe Grün wie die
+    /// Hilfslinien des erweiterten Punktfangs (`Palette::track`), nicht im
+    /// Blau der Akzentfarbe (T0153, Turn 2).
+    #[test]
+    fn marke_steht_in_der_fangfarbe() {
+        let ctx = egui::Context::default();
+        let mut app = app_mit_linie(&ctx);
+        rahmen(&ctx, &mut app, None);
+        let flaeche = app.ui.last_canvas;
+        let s = world_to_screen(flaeche, app.current_view(), V2::new(0.0, 0.0));
+        let out = rahmen(&ctx, &mut app, Some(s + Vec2::new(4.0, 3.0)));
+
+        // Oberkante des Endpunktquadrats — je einmal Rand und einmal Fangfarbe.
+        let a = Pos2::new(s.x - 6.0, s.y - 6.0);
+        let b = Pos2::new(s.x + 6.0, s.y - 6.0);
+        let farben: Vec<egui::epaint::ColorMode> = strecken_mit_farbe(&out)
+            .into_iter()
+            .filter(|(p, _)| hat_strecke(&[*p], a, b))
+            .map(|(_, c)| c)
+            .collect();
+        assert!(
+            farben.contains(&egui::epaint::ColorMode::Solid(Palette::track())),
+            "die Fangmarke steht nicht in der Fangfarbe (Grün)"
+        );
+        assert!(
+            !farben.contains(&egui::epaint::ColorMode::Solid(Palette::accent())),
+            "die Fangmarke steht noch in der Akzentfarbe"
+        );
+    }
+
     /// Der Polarfang ist ein Fang (Statuszeile „POL") und bekommt deshalb
     /// ebenfalls eine Marke — die Winkelmarke am gerasteten Punkt.
     #[test]
@@ -2150,9 +2190,10 @@ fn draw_cursor(
         let s = world_to_screen(rect, view, w);
         match fang_art {
             // Eigene Marke je Fangart, am Fangpunkt — also am Element, auf
-            // das sich der Fang bezieht (T0153). Der Mittelpunkt von Kreis,
-            // Bogen und Ellipse ist im Plan unsichtbar; seine Marke trägt das
-            // Kreuz in Akzentfarbe (T0117).
+            // das sich der Fang bezieht (T0153). Sie steht in der Fangfarbe
+            // (Grün wie die Hilfslinien). Der Mittelpunkt von Kreis, Bogen und
+            // Ellipse ist im Plan unsichtbar; seine Marke trägt das Kreuz
+            // (T0117).
             Some(art) => crate::snapmarke::zeichne(p, s, art),
             // Kein Fang: der Zeigerpunkt selbst, wie bisher als kleines Kreuz.
             None => {
@@ -5462,6 +5503,31 @@ fn rotate_apply(app: &mut App, action: &str, center: V2, angle: f64) {
     app.tool = None;
 }
 
+/// Bestätigt eine getippte Zahl mit dem **Klick** (T0151, Turn 3).
+///
+/// Sobald eine Zahl im Tippepuffer steht, ist der nächste Klick keine weitere
+/// Punkteingabe mehr: die Zahl gilt, die Klickstelle gibt — wie der Zeiger —
+/// die Drehrichtung vor. Eine unbrauchbare Zahl verbraucht den Klick trotzdem
+/// und meldet den Grund; sonst setzte der Klick still einen Punkt und niemand
+/// wüsste, warum nichts dreht.
+///
+/// Liefert `true`, wenn der Klick verbraucht ist.
+fn dreh_klick_bestaetigt(app: &mut App, action: &str, pts: &[V2], w: V2) -> bool {
+    let typed = app.ui.typed.clone();
+    if typed.is_empty() || typed.contains(';') {
+        return false;
+    }
+    let Some(c) = pts.first().copied() else {
+        return false;
+    };
+    match rotate_typed_angle(c, pts.get(1).copied(), Some(w), &typed) {
+        Some(angle) => rotate_apply(app, action, c, angle),
+        None => app.toast(jjcad_core::i18n::tr("gui.canvas.drehen_winkel_unbrauchbar")),
+    }
+    app.ui.typed.clear();
+    true
+}
+
 /// Vorschau der Winkelwahl beim Drehen (T0151).
 ///
 /// Ein Weg für Klick und Tastatur: Bezugslinie ist der „von"-Punkt, ohne ihn
@@ -6359,7 +6425,11 @@ fn tool_click_at(app: &mut App, w: V2, raw: V2) {
         "modify.rotate" => {
             // Drei Klicks: Drehzentrum, „von"-Punkt, „bis"-Punkt. Der Winkel ist
             // die Differenz der beiden vom Zentrum aus gesehenen Richtungen —
-            // nicht mehr die Richtung eines Klicks zur X-Achse.
+            // nicht mehr die Richtung eines Klicks zur X-Achse. Steht eine
+            // getippte Zahl im Puffer, bestätigt der Klick sie (T0151, Turn 3).
+            if dreh_klick_bestaetigt(app, "modify.rotate", &tool.pts, w) {
+                return;
+            }
             match rotate_step(&tool.pts, w) {
                 RotateStep::Collect { point } => {
                     tool.pts.push(point);
@@ -6375,7 +6445,11 @@ fn tool_click_at(app: &mut App, w: V2, raw: V2) {
         "view.rotate_tool" => {
             // Drei Klicks: Drehzentrum, Bezugspunkt, Zielrichtung. Der Winkel
             // ist die Differenz der beiden vom Zentrum aus gesehenen
-            // Richtungen; die Ansicht dreht um das angeklickte Zentrum.
+            // Richtungen; die Ansicht dreht um das angeklickte Zentrum. Eine
+            // getippte Zahl bestätigt auch hier der Klick (T0151, Turn 3).
+            if dreh_klick_bestaetigt(app, "view.rotate_tool", &tool.pts, w) {
+                return;
+            }
             match rotate_step(&tool.pts, w) {
                 RotateStep::Collect { point } => {
                     tool.pts.push(point);
@@ -11978,6 +12052,40 @@ mod tests_verlaengernvorschau {
         );
     }
 
+    /// Eine Polylinie bekommt dieselbe Vorschau (T0155): die hervorgehobene
+    /// Strecke läuft vom Ende bis zur nächsten Kante.
+    #[test]
+    fn polylinie_zeigt_die_vorschau_am_ende() {
+        let mut app = App::with_ctx(egui::Context::default());
+        app.session_mut()
+            .execute("doc.settings", &json!({ "input_unit": "m" }))
+            .expect("Einheit setzen");
+        app.session_mut()
+            .execute("draw.line", &json!({ "a": [0, 3], "b": [4, 3] }))
+            .expect("Schnittkante anlegen");
+        app.session_mut()
+            .execute("draw.polyline", &json!({ "pts": [[0, 0], [1, 0], [1, 2]] }))
+            .expect("Polylinie anlegen");
+        app.start_tool("modify.extend");
+
+        let view = app.current_view();
+        let strecken = vorschau_strecken(&mut app, Some(V2::new(1000.0, 2000.0)));
+        assert_eq!(strecken.len(), 1, "genau eine Strecke: {strecken:?}");
+        let (erwartet_a, erwartet_b) = (
+            world_to_screen(RECT, view, V2::new(1000.0, 2000.0)),
+            world_to_screen(RECT, view, V2::new(1000.0, 3000.0)),
+        );
+        let (a, b, _breite) = strecken[0];
+        assert!(
+            (a.x - erwartet_a.x).abs() < 0.6 && (a.y - erwartet_a.y).abs() < 0.6,
+            "Anfang am wandernden Ende: {a:?} statt {erwartet_a:?}"
+        );
+        assert!(
+            (b.x - erwartet_b.x).abs() < 0.6 && (b.y - erwartet_b.y).abs() < 0.6,
+            "Ende an der nächsten Kante: {b:?} statt {erwartet_b:?}"
+        );
+    }
+
     /// Neben der Linie (mehr als der Trefferradius) gibt es nichts zu zeigen.
     #[test]
     fn neben_der_linie_keine_hervorhebung() {
@@ -13336,6 +13444,80 @@ mod tests_drehwinkel {
         app.ui.typed = "90".into();
         taste(&mut app, egui::Key::Enter);
         assert!(app.tool.is_none(), "Enter schließt das Drehen ab");
+        let b = ende(&app, id);
+        assert!(
+            b.x.abs() < 0.5 && (b.y - 1000.0).abs() < 0.5,
+            "Endpunkt nach 90°: {b:?} — erwartet (0; 1000)"
+        );
+    }
+
+    /// Turn 3: sobald eine Zahl im Puffer steht, **bestätigt der Klick** sie —
+    /// statt einen weiteren Punkt zu setzen. Ohne die Bestätigung drehte der
+    /// dritte Klick über die Referenzpunkte (hier 90° statt der getippten 30°).
+    #[test]
+    fn klick_bestaetigt_den_getippten_winkel() {
+        let (mut app, id) = linie_im_drehen();
+        tool_click(&mut app, V2::new(0.0, 0.0)); // Zentrum
+        tool_click(&mut app, V2::new(500.0, 0.0)); // Bezugspunkt (+X)
+        app.ui.typed = "30".into();
+        // Klick oberhalb der Bezugslinie → Gegenuhrzeigersinn
+        tool_click(&mut app, V2::new(0.0, 900.0));
+        assert!(app.tool.is_none(), "der Klick bestätigt und beendet das Drehen");
+        assert!(app.ui.typed.is_empty(), "Tippepuffer ist geleert");
+        let b = ende(&app, id);
+        assert!(
+            (b.x - 866.025).abs() < 0.5 && (b.y - 500.0).abs() < 0.5,
+            "Endpunkt nach 30°: {b:?} — erwartet (866,0; 500,0)"
+        );
+    }
+
+    /// Unterhalb der Bezugslinie bestätigt derselbe Klick die Gegenrichtung.
+    #[test]
+    fn klick_bestaetigt_die_gegenrichtung() {
+        let (mut app, id) = linie_im_drehen();
+        tool_click(&mut app, V2::new(0.0, 0.0));
+        tool_click(&mut app, V2::new(500.0, 0.0));
+        app.ui.typed = "30".into();
+        tool_click(&mut app, V2::new(0.0, -900.0));
+        assert!(app.tool.is_none(), "Klick bestätigt");
+        let b = ende(&app, id);
+        assert!(
+            (b.x - 866.025).abs() < 0.5 && (b.y + 500.0).abs() < 0.5,
+            "Endpunkt nach -30°: {b:?} — erwartet (866,0; -500,0)"
+        );
+    }
+
+    /// Eine unbrauchbare Zahl verbraucht den Klick ebenfalls — sonst setzte er
+    /// still einen Punkt und niemand wüsste, warum nichts dreht.
+    #[test]
+    fn klick_mit_ungueltiger_zahl_setzt_keinen_punkt() {
+        let (mut app, id) = linie_im_drehen();
+        tool_click(&mut app, V2::new(0.0, 0.0));
+        tool_click(&mut app, V2::new(500.0, 0.0));
+        app.ui.typed = "500".into();
+        tool_click(&mut app, V2::new(0.0, 900.0));
+        let b = ende(&app, id);
+        assert!(
+            (b.x - 1000.0).abs() < 0.001 && b.y.abs() < 0.001,
+            "Linie unverändert: {b:?}"
+        );
+        assert_eq!(
+            app.tool.as_ref().map(|t| t.pts.len()),
+            Some(2),
+            "kein dritter Punkt gesetzt"
+        );
+        assert!(app.ui.typed.is_empty(), "Tippepuffer ist geleert");
+    }
+
+    /// Ohne getippte Zahl dreht der dritte Klick wie bisher über die
+    /// Referenzpunkte — die Bestätigung darf diesen Weg nicht verdrängen.
+    #[test]
+    fn ohne_zahl_dreht_der_dritte_klick_wie_bisher() {
+        let (mut app, id) = linie_im_drehen();
+        tool_click(&mut app, V2::new(0.0, 0.0));
+        tool_click(&mut app, V2::new(500.0, 0.0));
+        tool_click(&mut app, V2::new(0.0, 900.0)); // 90° gegen den Uhrzeigersinn
+        assert!(app.tool.is_none(), "der dritte Klick dreht");
         let b = ende(&app, id);
         assert!(
             b.x.abs() < 0.5 && (b.y - 1000.0).abs() < 0.5,
