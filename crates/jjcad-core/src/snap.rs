@@ -24,6 +24,9 @@ pub enum SnapKind {
     /// Maßlinie parallel zu einer vorhandenen Maßkette im festen Abstand
     /// (T0154) — nur beim Positionieren einer Maßkette.
     DimParallel,
+    /// Tangentialpunkt (T0157): die Linie verlässt einen Kreis/einen Bogen
+    /// tangential, oder ein bewegter Kreis berührt eine Linie.
+    Tangent,
 }
 
 impl SnapKind {
@@ -41,6 +44,7 @@ impl SnapKind {
             SnapKind::Tracking => "Hilfslinie",
             SnapKind::Bisector => "Winkelhalbierende",
             SnapKind::DimParallel => "Maßkette parallel",
+            SnapKind::Tangent => "Tangential",
         }
     }
     /// Beschriftung in der gewählten Sprache (T0106). `label()` bleibt der
@@ -59,6 +63,7 @@ impl SnapKind {
             SnapKind::Tracking => crate::i18n::tr("ui.snapkind.tracking"),
             SnapKind::Bisector => crate::i18n::tr("ui.snapkind.bisector"),
             SnapKind::DimParallel => crate::i18n::tr("ui.snapkind.dim_parallel"),
+            SnapKind::Tangent => crate::i18n::tr("ui.snapkind.tangent"),
         }
     }
 
@@ -77,6 +82,7 @@ impl SnapKind {
             SnapKind::Tracking => "HLF",
             SnapKind::Bisector => "WHB",
             SnapKind::DimParallel => "MPAR",
+            SnapKind::Tangent => "TAN",
         }
     }
 
@@ -112,6 +118,10 @@ impl SnapKind {
             // Ausdrücklich anvisierte Maßlinienlage: schlägt Raster und
             // „Nächster Punkt“, aber keinen echten Objektpunkt.
             SnapKind::DimParallel => 5,
+            // Der Tangentialpunkt ist wie Lot und Winkelhalbierende ein
+            // abgeleiteter Punkt: er schlägt „Nächster Punkt" und das Raster,
+            // aber nie einen echten Objektpunkt (T0157).
+            SnapKind::Tangent => 5,
             SnapKind::Perpendicular => 6,
             SnapKind::Nearest => 7,
             SnapKind::Grid => 8,
@@ -780,6 +790,151 @@ fn hilfslinien_snap_innen(
     None
 }
 
+/// Tangentialfang (T0157).
+///
+/// Zwei Lagen aus der Aufgabenstellung, beide über **eine** Rechnung:
+///
+/// * **Linie an Kreis/Bogen** — der Bezugspunkt (der zuletzt gesetzte Punkt
+///   des Zuges) liegt auf der Kreisbahn. Durch diesen Punkt gibt es genau
+///   **eine** Tangente: die Senkrechte zum Radius. Der Zeiger wird auf diese
+///   Gerade gezogen, damit die Linie den Kreis tangential verlässt. Der
+///   gesuchte „Winkel" ist damit der Winkel dieser Senkrechten — er wird nicht
+///   geraten, sondern aus dem Berührpunkt gerechnet.
+/// * **Kreis/Bogen an Linie** — ein Kreis oder Bogen wird verschoben (er steht
+///   in `ignore`). Sein Mittelpunkt rastet auf die Parallele der Linie im
+///   Abstand `r`: dort berührt der Kreis die Linie. Der Berührpunkt muss auf
+///   der Strecke liegen, nicht auf ihrer Verlängerung.
+///
+/// Der Fang liefert einen **Punkt** (den Zeigerort auf der Tangente bzw. den
+/// neuen Mittelpunkt), keine Richtung — so passt er in dieselbe Fang-Kette wie
+/// Lot und Winkelhalbierende. Er ist kein diskreter Punkt: er wandert mit dem
+/// Zeiger und taugt deshalb nicht als Haltepunkt des erweiterten Punktfangs.
+pub fn tangent_treffer(
+    doc: &Document,
+    reference: Option<Vec2>,
+    cursor: Vec2,
+    tol: f64,
+    ignore: &[Id],
+) -> Vec<SnapHit> {
+    let tol = tol.max(1e-6);
+    let mut out: Vec<SnapHit> = Vec::new();
+
+    // (a) Linie an Kreis: der Bezugspunkt liegt auf der Bahn.
+    if let Some(r0) = reference {
+        for e in doc.ents() {
+            if ignore.contains(&e.id) {
+                continue;
+            }
+            if let Some(l) = doc.layer(e.layer) {
+                if !l.visible || l.locked {
+                    continue;
+                }
+            }
+            let (c, r, bereich) = match &e.kind {
+                EntityKind::Circle { c, r } => (*c, *r, None),
+                EntityKind::Arc { c, r, a0, a1 } => (*c, *r, Some((*a0, *a1))),
+                _ => continue,
+            };
+            if r <= 1e-9 {
+                continue;
+            }
+            // Der Bezugspunkt muss **auf** der Bahn liegen, nicht nur in ihrer
+            // Nähe: sonst hinge die Tangente an einem Punkt, der gar nicht auf
+            // dem Kreis sitzt.
+            if (r0.dist(c) - r).abs() > tol {
+                continue;
+            }
+            if let Some((a0, a1)) = bereich {
+                let sweep = norm_angle(a1 - a0);
+                let rel = norm_angle((r0 - c).angle() - a0);
+                if rel > sweep + 1e-9 {
+                    continue;
+                }
+            }
+            let radius = (r0 - c).normalized();
+            if radius.len() <= 1e-9 {
+                continue;
+            }
+            let tangente = radius.perp();
+            let p = fuss_auf_gerade(cursor, r0, tangente);
+            let d = p.dist(cursor);
+            if d <= tol {
+                out.push(SnapHit {
+                    point: p,
+                    kind: SnapKind::Tangent,
+                    entity: Some(e.id),
+                });
+            }
+        }
+    }
+
+    // (b) Kreis/Bogen an Linie: der bewegte Kreis rastet mit seinem Mittelpunkt
+    //     auf die Parallele im Abstand r.
+    let mut bewegte_radien: Vec<f64> = Vec::new();
+    for id in ignore {
+        if let Some(e) = doc.entity(*id) {
+            match &e.kind {
+                EntityKind::Circle { r, .. } | EntityKind::Arc { r, .. } => {
+                    if *r > 1e-9 {
+                        bewegte_radien.push(*r);
+                    }
+                }
+                _ => {}
+            }
+        }
+    }
+    if !bewegte_radien.is_empty() {
+        let area = BBox::new(cursor - v(tol, tol), cursor + v(tol, tol));
+        // Der gesuchte Mittelpunkt liegt bis zu `r` neben der Linie — die
+        // Bounding-Box der Linie muss um den größten bewegten Radius wachsen,
+        // sonst fällt die Linie schon vor der Rechnung heraus.
+        let weit = bewegte_radien.iter().copied().fold(0.0_f64, f64::max);
+        for e in doc.ents() {
+            if ignore.contains(&e.id) {
+                continue;
+            }
+            if let Some(l) = doc.layer(e.layer) {
+                if !l.visible || l.locked {
+                    continue;
+                }
+            }
+            let b = render::entity_bbox(doc, e);
+            if !b.is_valid() || !b.expanded(tol * 2.0 + weit).intersects(&area) {
+                continue;
+            }
+            for sg in render::entity_segments(doc, e) {
+                let Seg::Line(a, b2) = sg else { continue };
+                let ab = b2 - a;
+                let l2 = ab.len2();
+                if l2 < 1e-12 {
+                    continue;
+                }
+                let n = ab.perp().normalized();
+                for r in &bewegte_radien {
+                    for seite in [1.0, -1.0] {
+                        let q = fuss_auf_gerade(cursor, a + n * (r * seite), ab);
+                        // Der Berührpunkt muss auf der Strecke liegen.
+                        let t = (q - a).dot(ab) / l2;
+                        if !(-1e-9..=1.0 + 1e-9).contains(&t) {
+                            continue;
+                        }
+                        let d = q.dist(cursor);
+                        if d <= tol {
+                            out.push(SnapHit {
+                                point: q,
+                                kind: SnapKind::Tangent,
+                                entity: Some(e.id),
+                            });
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    out
+}
+
 /// Sucht den besten Fangpunkt in der Nähe des Cursors.
 ///
 /// * `tol` – Fangradius in Weltkoordinaten
@@ -1037,6 +1192,16 @@ fn snap_candidates_alle(
         if s.nearest && !*ausgewaehlt {
             let (q, d) = sg.closest(cursor);
             consider(q, SnapKind::Nearest, Some(*id), d);
+        }
+    }
+
+    // Tangentialfang (T0157): Linie tangential an einem Kreis, bewegter Kreis
+    // tangential an einer Linie. Er hängt am Bezugspunkt bzw. am Radius des
+    // bewegten Kreises und tritt als Kandidat in dieselbe Liste — damit gilt
+    // für ihn dieselbe Sortierung und Entdopplung wie für jeden anderen Fang.
+    if s.tangent {
+        for hit in tangent_treffer(doc, reference, cursor, tol, ignore) {
+            consider(hit.point, hit.kind, hit.entity, hit.point.dist(cursor));
         }
     }
 

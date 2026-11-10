@@ -723,6 +723,7 @@ grid = "Raster"
 tracking = "Hilfslinie"
 bisector = "Winkelhalbierende"
 dim_parallel = "Maßkette parallel"
+tangent = "Tangential"
 
 [ui.linetype]
 solid = "Durchgezogen"
@@ -933,6 +934,7 @@ meldung_x_polylinie_naechster_punkt_klicken = "Meldung {i} – Polylinie: nächs
 mitte = "Mitte"
 mittelpunkt = "Mittelpunkt"
 naechster_punkt = "Nächster Punkt"
+tangential = "Tangential"
 neues_blatt = "Neues Blatt"
 nicht_uebernommen = " · nicht übernommen: "
 objekt_zerlegt = "Objekt · zerlegt"
@@ -1246,6 +1248,7 @@ masseinheit_massstab_textgroesse_und_bogensymbole_stehen = "Maßeinheit, Maßsta
 maus_verschiebt = "Maus verschiebt"
 mittelpunkt = "Mittelpunkt"
 naechster_punkt = "Nächster Punkt"
+tangential = "Tangential"
 name_der_vorlage = "Name der Vorlage"
 name_des_layouts_ist_der_name_schon_vergeben_wird_er_ueb = "Name des Layouts. Ist der Name schon vergeben, wird er überschrieben."
 name_x = "name.{wert1}"

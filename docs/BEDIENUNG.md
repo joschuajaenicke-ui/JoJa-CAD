@@ -57,7 +57,7 @@ einsehbar und dort frei änderbar (Ribbon ▸ Ansicht ▸ „Tasten").
    Benutzerbibliothek und steht sofort als Einfüge-Vorschau am Zeiger.
 9. **Statusleiste**: `Raster`, `Ortho` und `Fang` schalten per Linksklick; **Rechtsklick** öffnet
    ein Menü mit den einzelnen Fangmodi (Endpunkt, Mittelpunkt, Zentrum, Schnittpunkt, Lot,
-   nächster Punkt) bzw. Raster- und Polaroptionen. Ganz rechts schaltet `Stärke`
+   Tangential, nächster Punkt) bzw. Raster- und Polaroptionen. Ganz rechts schaltet `Stärke`
    zwischen **Bildschirm (konstant)** (Linienbreite immer gleich viele Bildschirmpixel,
    unabhängig vom Zoom; ein Faktor in Einstellungen ▸ Darstellung skaliert sie) und
    **Papier (maßstabsgetreu)** (Breite wie im exportierten PDF: `Breite_mm × Pixel pro
@@ -191,11 +191,24 @@ ausgeblendet.
   Die Führungslinie steht gestrichelt in der Fangfarbe, die Statusleiste meldet
   „Winkelhalbierende"; ein Endpunkt oder Schnittpunkt an derselben Stelle hat Vorrang.
   Prüfdatei: `samples/Winkelhalbierende.jjcad` (Ecke bei 1,00/1,00, Kreuzung bei 4,00/9,00).
+- **Tangentialfang** (T0157): Zwei Lagen, eine Rechnung.
+  *Liegt der feste Punkt der neuen Linie auf einem Kreis oder Bogen*, gibt es durch ihn genau
+  **eine** Tangente — die Senkrechte zum Radius. Der zweite Punkt rastet auf ihr ein, die
+  Linie verlässt den Kreis also tangential; der Winkel wird aus dem Berührpunkt gerechnet, nicht
+  geraten. *Wird ein Kreis oder Bogen verschoben*, rastet sein Mittelpunkt auf die Parallele
+  einer Linie im Abstand des Radius — dort berührt der Kreis die Linie. Der Berührpunkt muss auf
+  der Strecke liegen, nicht auf ihrer Verlängerung. Beim **Erzeugen** eines Kreises liefert der
+  Lot-Fang denselben Punkt (Radius = Abstand Mittelpunkt → Linie), der Kreis liegt damit
+  ebenfalls tangential. Die Statusleiste meldet „Tangential", die Marke ist ein Kreis mit
+  anliegender Gerade. Abschaltbar in Einstellungen ▸ Fangen und im Fangmenü der Statusleiste.
+  Prüfweg: `cargo test -p jjcad-core --test tangential_fang` (8 Tests, messen den Abstand
+  Mittelpunkt → Gerade gegen den Radius).
 - **Fangmarken** (T0153): Jeder Fang zeigt sein eigenes Zeichen am **Fangpunkt** — also am
   Element, nicht am Zeiger: Endpunkt ein Quadrat, Mittelpunkt ein Dreieck, Zentrum ein Kreis
   mit Kreuz, Schnittpunkt ein Kreuz, Quadrant eine Raute, Lot ein rechter Winkel, nächster
   Punkt eine Sanduhr, Raster ein Punktraster, Hilfslinie ein gestricheltes Kreuz,
-  Winkelhalbierende ein Winkel mit Mittelstrahl, Blattecke ein gefülltes Quadrat, Polarfang
+  Winkelhalbierende ein Winkel mit Mittelstrahl, Tangential ein Kreis mit anliegender Gerade,
+  Blattecke ein gefülltes Quadrat, Polarfang
   eine Winkelmarke. Ohne Fang bleibt es beim kleinen Kreuz am Zeiger; `Ortho` führt nur und
   zeigt keine Marke. Die Marke steht in der **Fangfarbe** (dasselbe Grün wie die Hilfslinien
   des erweiterten Punktfangs), ist 18 px groß, liegt über der Zeichnung und erscheint nicht

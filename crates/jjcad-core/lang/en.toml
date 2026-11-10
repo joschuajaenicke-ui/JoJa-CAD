@@ -705,6 +705,7 @@ grid = "Grid"
 tracking = "Tracking line"
 bisector = "Angle bisector"
 dim_parallel = "Dimension chain parallel"
+tangent = "Tangent"
 
 [ui.linetype]
 solid = "Solid"
@@ -915,6 +916,7 @@ meldung_x_polylinie_naechster_punkt_klicken = "Message {i} – polyline: click t
 mitte = "Middle"
 mittelpunkt = "Centre"
 naechster_punkt = "Nearest point"
+tangential = "Tangent"
 neues_blatt = "New sheet"
 nicht_uebernommen = " · not applied: "
 objekt_zerlegt = "Object · exploded"
@@ -1228,6 +1230,7 @@ masseinheit_massstab_textgroesse_und_bogensymbole_stehen = "Unit, scale, text he
 maus_verschiebt = "Mouse moves"
 mittelpunkt = "Centre"
 naechster_punkt = "Nearest point"
+tangential = "Tangent"
 name_der_vorlage = "Name of the preset"
 name_des_layouts_ist_der_name_schon_vergeben_wird_er_ueb = "Name of the layout. If the name already exists it is overwritten."
 name_x = "name.{wert1}"
