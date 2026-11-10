@@ -3764,7 +3764,11 @@ fn handle_input(
         if let Some(pos) = resp.interact_pointer_pos() {
             if let Some(w) = raw {
                 let tol = (app.doc().settings.snap.tolerance_px / view.zoom).max(1.0);
-                match snap::hit_test(app.doc(), w, tol, None) {
+                // Eine Schraffur zählt über ihre **ganze Fläche** (T0138):
+                // der Rechtsklick in die Fläche öffnet das Objektmenü mit
+                // „Zerlegen“. Vorher traf nur ihr Rand — der Klick in die
+                // Fläche landete im Flächenmenü, das kein Zerlegen kennt.
+                match snap::hit_test_flaeche(app.doc(), w, tol, None) {
                     Some(id) => {
                         app.session_mut().select(vec![id]);
                         app.open_menu(crate::app::MenuKind::Object(id), pos);

@@ -61,7 +61,8 @@ einsehbar und dort frei änderbar (Ribbon ▸ Ansicht ▸ „Tasten").
    **Basispunkt** (Zeichen `B`) und **Mittelpunkt** (Zeichen `M`) — ebenfalls dieselbe
    Einstellung wie in den Einstellungen, ein Wechsel wirkt sofort auf eine laufende Vorschau.
 10. **Rechtsklick in die Zeichnung** öffnet das Objektmenü: Verschieben, Kopieren, Drehen,
-    Spiegeln, Zerlegen, Löschen und Eigenschaften für das angeklickte Element. Auf freier
+    Spiegeln, Zerlegen, Löschen und Eigenschaften für das angeklickte Element. Bei einer
+    Schraffur genügt der Rechtsklick **irgendwo in die Fläche**. Auf freier
     Fläche erscheint das Flächenmenü (Einfügen, Alles auswählen, Auswahl aufheben, Ansicht
     einpassen).
     **Zerlegen** löst ein Objekt in seine Einzelteile auf. Ohne Auswahl ist es ein
