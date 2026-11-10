@@ -1034,6 +1034,7 @@ kommandozeile = "Alternatively from the command line: jjcad --daten-dir <path>"
 
 [gui.canvas]
 abgebrochen = "Cancelled"
+ansichtsbereich_hinweis = "View area · wheel scale · middle button pan"
 masskette_waehlen = "Dimension chain · select a chain first"
 masskette_zwei_messpunkte = "Dimension chain · at least two measuring points"
 abstand_zum_drehzentrum_noetig = "Distance to the rotation centre required"
@@ -1516,6 +1517,8 @@ hoch = "portrait"
 keine = "none"
 
 [gui.props]
+ansichtsbereich_anpassen = "Adjust view area"
+ansichtsbereich_tip = "Wheel changes the scale · middle button pans the view"
 zeilenabstand = "Line spacing"
 zeilenabstand_hinweis = "Line spacing as a multiple of the font’s line height"
 massstab = "Scale"

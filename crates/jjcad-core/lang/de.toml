@@ -1052,6 +1052,7 @@ kommandozeile = "Alternativ von der Kommandozeile: jjcad --daten-dir <Pfad>"
 
 [gui.canvas]
 abgebrochen = "Abgebrochen"
+ansichtsbereich_hinweis = "Ansichtsbereich · Mausrad Maßstab · Mitteltaste verschieben"
 masskette_waehlen = "Maßkette · erst eine Maßkette wählen"
 masskette_zwei_messpunkte = "Maßkette · mindestens zwei Messpunkte"
 abstand_zum_drehzentrum_noetig = "Abstand zum Drehzentrum nötig"
@@ -1538,6 +1539,8 @@ hoch = "hoch"
 keine = "keine"
 
 [gui.props]
+ansichtsbereich_anpassen = "Ansichtsbereich anpassen"
+ansichtsbereich_tip = "Mausrad ändert den Maßstab · Mitteltaste verschiebt den Ausschnitt"
 zeilenabstand = "Zeilenabstand"
 zeilenabstand_hinweis = "Zeilenabstand als Vielfaches der Zeilenhöhe der Schrift"
 massstab = "Maßstab"

@@ -178,6 +178,14 @@ Mit dem Nutzer abgestimmt — nicht „verbessern“:
   `Sheet::viewports_alt` wird nur noch beim Laden gelesen (`persist::normalize_sheet_viewports`).
   Den Inhalt (die Zeichnung im Maßstab) rendert weiterhin `render::render_viewport`; der Rahmen
   kommt aus `render_sheet`.
+  **Ansichtsbereich anpassen (T0158)** ist ein Schalter im Eigenschaften-Panel
+  (`UiState::vp_edit`): solange er an ist, gehören die Bewegungsfunktionen dem Fenster statt dem
+  Blatt — Mitteltaste/Leertaste+Ziehen schieben den Ausschnitt (`canvas::viewport_ziehen`),
+  Mausrad ändert den Maßstab und hält den Punkt unter dem Zeiger (`canvas::viewport_zoom`),
+  Tastatur-Schwenk (`App::schwenk_schritt`) und „alles zeigen" (`App::fit_view` →
+  `sheet.fit_viewport`) ebenso. Geschrieben wird immer über `App::vp_setzen` (`modify.set`), also
+  derselbe Weg wie das Panel. Der Schalter hängt am ausgewählten Fenster und endet mit der
+  Auswahl (`App::sync_space`); `App::vp_edit_fenster` ist die eine Abfrage.
 - **Druckvorschau = Papierraum**: gleiche Werkzeuge wie im Modell. Der Bearbeitungsraum
   steckt in `Document::space` (`None` = Modell, `Some(Blatt)` = Papierraum); alle Actions
   laufen über `doc.ents()`/`doc.ents_mut()`. Rahmen und Schriftfeld sind normale Linien und

@@ -82,7 +82,15 @@ einsehbar und dort frei änderbar (Ribbon ▸ Ansicht ▸ „Tasten").
     ein normales Blattobjekt: per Klick oder Auswahlfenster wählen, an den vier Eckgriffen
     aufziehen, mit der Maus verschieben (Einstellungen ▸ Bedienung ▸ „Maus verschiebt") oder
     mit dem Werkzeug „Verschieben" über einen Richtungsvektor, mit `Entf` löschen. `X`/`Y`/`B`/`H`
-    stehen im Eigenschaften-Panel.
+    stehen im Eigenschaften-Panel. „Auf Zeichnung zentrieren" setzt die Modellmitte auf den
+    Mittelpunkt der Zeichnung.
+    **Ansichtsbereich anpassen** (Schalter im Eigenschaften-Panel) überträgt die
+    Bewegungsfunktionen der Ansicht auf das Fenster, solange er an ist: die Mitteltaste
+    verschiebt den gezeigten Zeichnungsausschnitt (statt des Blattes), das Mausrad ändert den
+    Maßstab des Fensters (hineinzoomen = kleinerer Maßstab, der Punkt unter dem Zeiger bleibt
+    stehen), der Schwenk der Tastatur und „Ansicht einpassen" wirken ebenfalls auf das Fenster.
+    Der Rahmen des eingestellten Fensters ist in der Akzentfarbe markiert; der Schalter endet
+    mit der Auswahl.
 12. **Einstellungen** (Zahnrad) — links eine Tabelle der Kategorien (Einheiten und Maßstab,
     Raster, Fangen, Architektur, Bemaßung, Bedienung, Darstellung, Voreinstellungen), darüber die Suche, rechts die
     Einstellungen der gewählten Kategorie. Die Suche filtert Kategorien **und** Zeilen und springt
