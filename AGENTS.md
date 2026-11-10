@@ -470,6 +470,11 @@ Mit dem Nutzer abgestimmt — nicht „verbessern“:
   (`render::push_muster`) — Füllfläche, Volumen und Wandschraffur teilen sie, keine
   zweite Musterzeichnung. Schlüssel über `FillPattern::key`/`from_key`, die alten
   Schlüssel `lines`/`cross`/`dots` bleiben gültig (alte Dateien).
+  **Ausnahme Wand (T0161)**: In einer Wand zeichnet die Schraffur „Dämmung“
+  **kein** Muster, sondern **eine** Linie mit der Linienart „Dämmung“ auf der
+  Wandmitte (Bandhöhe = Wanddicke, je Wandstück eine). Die parallelen Bänder
+  gehören auf eine Fläche; in einer Wand füllten sie den Körper mit Reihen
+  (`render::push_wall_hatch` → `render::wall_insulation_paths`).
   Ein neues Muster: Variante und `ALL` in `style.rs`, Zweig in `push_muster`,
   Bezeichnung in `TABELLE_5` des Tests `tests/schraffuren_din.rs` — der Test bricht,
   wenn ein Muster fehlt, nichts zeichnet oder wie ein anderes aussieht.

@@ -114,3 +114,12 @@ früheren Muster „Dämmstoffe“ und „Dämmstoffe Schlaufen“ gibt es nicht
 (T0132) — sie waren Linienarten in der Musterauswahl. Im Eigenschaften-Panel
 stehen **Breite** (H) und **Schlaufenform** (r) deshalb nur bei der Linienart,
 nicht mehr bei einer Wandschraffur.
+
+**Wandschraffur „Dämmung“ (T0161)**: Wählt man bei einer Wand die Schraffur
+„Dämmung“, zeichnet die Wand **eine** Linie mit der Linienart „Dämmung“ auf
+ihrer Mitte — je Wandstück (zwischen Öffnungen) eine. Die Bandhöhe ist die
+Wanddicke, das Band füllt damit den Wandkörper; die parallelen Schlaufenbänder
+des Musters (`muster_daemmung`) gehören auf eine **Fläche** und werden in einer
+Wand nicht gezeichnet. Das ist die Darstellung vor T0136/T0132, wieder
+hergestellt in `render::push_wall_hatch` (`render::wall_insulation_paths`).
+
