@@ -473,19 +473,34 @@ fn modal_window<'a>(
 pub fn datei_gewaehlt(app: &mut App, mode: FileMode, path: std::path::PathBuf) {
     match mode {
         FileMode::Open => app.load_document(&path),
-        FileMode::SaveJjcad => match app.session_mut().save(&path) {
-            Ok(_) => {
-                app.prefs.add_recent(&path.to_string_lossy());
-                app.prefs.last_dir =
-                    path.parent().map(|p| p.to_string_lossy().to_string()).unwrap_or_default();
-                let _ = app.prefs.save();
-                // T0129: der neueste Stand ist jetzt der Dateiinhalt.
-                let aktiv = app.active;
-                app.sicherung_dateistand(aktiv);
-                app.toast(jjcad_core::i18n::t_args_owned("gui.dialogs.datei_gespeichert_x", &[("wert1", format!("{}", path.display()))]));
+        FileMode::SaveJjcad => {
+            // T0143: Kam der Dialog aus „Speichern und schließen“, wird der
+            // Reiter danach abgelegt. Er ist dafür aktiv geworden
+            // (`App::close_tab_speichern_mit_ziel`), `session_mut` trifft also
+            // genau ihn.
+            let schliessen = app.ui.schliessen_nach_speichern.take();
+            match app.session_mut().save(&path) {
+                Ok(_) => {
+                    app.prefs.add_recent(&path.to_string_lossy());
+                    app.prefs.last_dir = path
+                        .parent()
+                        .map(|p| p.to_string_lossy().to_string())
+                        .unwrap_or_default();
+                    let _ = app.prefs.save();
+                    // T0129: der neueste Stand ist jetzt der Dateiinhalt.
+                    let aktiv = app.active;
+                    app.sicherung_dateistand(aktiv);
+                    app.toast(jjcad_core::i18n::t_args_owned(
+                        "gui.dialogs.datei_gespeichert_x",
+                        &[("wert1", format!("{}", path.display()))],
+                    ));
+                    if let Some(idx) = schliessen {
+                        app.close_tab(idx);
+                    }
+                }
+                Err(e) => app.toast(e),
             }
-            Err(e) => app.toast(e),
-        },
+        }
         FileMode::ImportDxf => app.import_dxf_from(path),
         FileMode::ImportPdf => app.pdf_import_oeffnen(path),
         FileMode::ImportImage => app.bild_importieren(path),
@@ -576,6 +591,8 @@ fn systemdialog_abholen(app: &mut App, ctx: &egui::Context) {
         }
         Some((_, crate::systemdialog::Stand::Abgebrochen)) => {
             app.ui.systemdialog = None;
+            // T0143: Abbruch heißt „nicht schließen“ — der Reiter bleibt offen.
+            app.ui.schliessen_nach_speichern = None;
         }
         // Das System konnte keinen Dialog zeigen → eingebauten Dialog öffnen,
         // damit „Öffnen“ nie wirkungslos bleibt.
@@ -648,6 +665,15 @@ pub fn show(app: &mut App, ctx: &egui::Context) {
         if ctx.input(|i| i.key_pressed(egui::Key::Escape)) {
             app.ui.file_dialog = None;
         }
+    }
+    // T0143: Der Merker „nach dem Speichern schließen“ gilt nur, solange ein
+    // Dateidialog offen ist. Wird er abgebrochen, bleibt der Reiter stehen —
+    // ohne dieses Aufräumen schlösse ihn das nächste Speichern.
+    if app.ui.schliessen_nach_speichern.is_some()
+        && app.ui.file_dialog.is_none()
+        && app.ui.systemdialog.is_none()
+    {
+        app.ui.schliessen_nach_speichern = None;
     }
 
     // Neuer Block
@@ -952,14 +978,14 @@ pub fn show(app: &mut App, ctx: &egui::Context) {
                 ));
             } else {
                 ui.label(theme::dim(
-                    jjcad_core::i18n::tr("gui.dialogs.fuer_diese_zeichnung_gibt_es_noch_keinen_speicherort_sie"),
+                    jjcad_core::i18n::tr("gui.dialogs.speichern_fragt_nach_einem_speicherort_und_legt_den_reiter_dana"),
                 ));
             }
             ui.add_space(8.0);
             button_row(ui, |ui| {
-                if hat_speicherort
-                    && ui.button(jjcad_core::i18n::tr("gui.dialogs.speichern_und_schliessen")).clicked()
-                {
+                // T0143: „Speichern“ steht immer — ohne Speicherort fragt der
+                // Dateidialog nach dem Ziel (`App::close_tab_speichern_mit_ziel`).
+                if ui.button(jjcad_core::i18n::tr("gui.dialogs.speichern_und_schliessen")).clicked() {
                     speichern = true;
                 }
                 if ui.button(jjcad_core::i18n::tr("gui.dialogs.verwerfen")).clicked() {
@@ -974,8 +1000,8 @@ pub fn show(app: &mut App, ctx: &egui::Context) {
             close = true; // X im Fensterrahmen
         }
         if speichern {
-            app.close_tab_speichern(idx);
             app.ui.confirm_close = None;
+            app.close_tab_speichern_mit_ziel(idx);
         } else if verwerfen {
             // T0129: verworfene Änderungen dürfen beim nächsten Start nicht
             // zurückkehren — der neueste Stand wird der Dateiinhalt.
@@ -3605,13 +3631,39 @@ mod modaltests {
 
     /// Einen Frame ohne echtes Fenster zeichnen — wie im laufenden Programm
     /// wird nur die Dialogschicht aufgerufen.
-    fn frame(ctx: &egui::Context, app: &mut App, events: Vec<egui::Event>) {
+    fn rahmen(ctx: &egui::Context, app: &mut App, events: Vec<egui::Event>) -> egui::FullOutput {
         let input = egui::RawInput {
             screen_rect: Some(Rect::from_min_size(Pos2::ZERO, Vec2::new(1500.0, 950.0))),
             events,
             ..Default::default()
         };
-        let _ = ctx.run(input, |ctx| show(app, ctx));
+        ctx.run(input, |ctx| show(app, ctx))
+    }
+
+    fn frame(ctx: &egui::Context, app: &mut App, events: Vec<egui::Event>) {
+        let _ = rahmen(ctx, app, events);
+    }
+
+    /// Mitte der gezeichneten Beschriftung `label` (Knopf eines Dialogs).
+    fn text_mitte(out: &egui::FullOutput, label: &str) -> Option<Pos2> {
+        out.shapes.iter().find_map(|cs| match &cs.shape {
+            egui::Shape::Text(t) if t.galley.text() == label => Some(t.pos + t.galley.size() / 2.0),
+            _ => None,
+        })
+    }
+
+    /// Klick mit echten Ereignissen: Bewegen, Drücken, Loslassen.
+    fn klick(ctx: &egui::Context, app: &mut App, pos: Pos2) {
+        let knopf = |pressed: bool| egui::Event::PointerButton {
+            pos,
+            button: egui::PointerButton::Primary,
+            pressed,
+            modifiers: egui::Modifiers::NONE,
+        };
+        frame(ctx, app, vec![egui::Event::PointerMoved(pos)]);
+        frame(ctx, app, vec![knopf(true)]);
+        frame(ctx, app, vec![knopf(false)]);
+        frame(ctx, app, vec![]);
     }
 
     /// Wird die Fläche (Fenster oder Abdunklung) tatsächlich gezeichnet?
@@ -3657,6 +3709,93 @@ mod modaltests {
         frame(&ctx, &mut app, vec![]);
         assert!(!fenster(&ctx, "Datei schließen"));
         assert!(!abdunklung(&ctx));
+    }
+
+    /// Zeichnung mit einer Linie und **ohne** Speicherort — der Fall, in dem
+    /// der Schließdialog früher nur „Verwerfen“ anbot (T0143).
+    fn app_ohne_speicherort() -> (App, egui::Context) {
+        let (mut app, ctx) = leeres_app();
+        // Ohne diese Wahl hinge der Test am Sitzungsbus des Rechners: mit
+        // D-Bus und Anzeige öffnete er den Systemdialog.
+        app.prefs.file_dialog = "intern".into();
+        app.session_mut()
+            .execute(
+                "draw.line",
+                &serde_json::json!({"a": [0.0, 0.0], "b": [0.0, 1000.0]}),
+            )
+            .expect("Linie anlegen");
+        assert!(app.doc().path.is_none(), "die Zeichnung hat keinen Speicherort");
+        (app, ctx)
+    }
+
+    /// T0143: Auch ohne Speicherort steht „Speichern und schließen“ im Dialog.
+    #[test]
+    fn schliessdialog_bietet_speichern_auch_ohne_speicherort() {
+        let (mut app, ctx) = app_ohne_speicherort();
+        app.ui.confirm_close = Some(0);
+        frame(&ctx, &mut app, vec![]);
+        let out = rahmen(&ctx, &mut app, vec![]);
+        assert!(fenster(&ctx, "Datei schließen"), "der Dialog fehlt");
+        assert!(
+            text_mitte(&out, "Speichern und schließen").is_some(),
+            "der Schließdialog bietet ohne Speicherort kein Speichern an"
+        );
+    }
+
+    /// T0143: „Speichern und schließen“ ohne Speicherort fragt im Dateidialog
+    /// nach dem Ziel; erst nach dem Sichern geht der Reiter zu.
+    #[test]
+    fn speichern_ohne_speicherort_fragt_nach_dem_ziel() {
+        let (mut app, ctx) = app_ohne_speicherort();
+        app.ui.confirm_close = Some(0);
+        frame(&ctx, &mut app, vec![]);
+        let out = rahmen(&ctx, &mut app, vec![]);
+        let knopf = text_mitte(&out, "Speichern und schließen").expect("kein Speichern-Knopf");
+        klick(&ctx, &mut app, knopf);
+
+        assert_eq!(app.ui.confirm_close, None, "der Schließdialog bleibt stehen");
+        assert_eq!(app.ui.schliessen_nach_speichern, Some(0), "der Reiter ist nicht gemerkt");
+        let fd = app
+            .ui
+            .file_dialog
+            .as_ref()
+            .expect("der Dateidialog muss nach dem Ziel fragen");
+        assert_eq!(fd.mode, FileMode::SaveJjcad, "der Dialog speichert nicht");
+        assert_eq!(app.tabs.len(), 1, "noch ist der Reiter offen");
+
+        let ziel = std::env::temp_dir().join(format!("jjcad-t0143-{}.jjcad", std::process::id()));
+        let _ = std::fs::remove_file(&ziel);
+        app.ui.file_dialog = None;
+        datei_gewaehlt(&mut app, FileMode::SaveJjcad, ziel.clone());
+        assert!(ziel.is_file(), "die Zeichnung wurde nicht geschrieben");
+        assert_eq!(app.ui.schliessen_nach_speichern, None);
+        assert!(
+            app.doc().entities.is_empty(),
+            "der Reiter ist zu — es steht die leere Zeichnung"
+        );
+        let _ = std::fs::remove_file(&ziel);
+    }
+
+    /// T0143: Bricht der Nutzer den Dateidialog ab, bleibt der Reiter offen —
+    /// der Merker darf das nächste Speichern nicht treffen.
+    #[test]
+    fn abbruch_des_dateidialogs_laesst_den_reiter_offen() {
+        let (mut app, ctx) = app_ohne_speicherort();
+        app.ui.confirm_close = Some(0);
+        frame(&ctx, &mut app, vec![]);
+        let out = rahmen(&ctx, &mut app, vec![]);
+        let knopf = text_mitte(&out, "Speichern und schließen").expect("kein Speichern-Knopf");
+        klick(&ctx, &mut app, knopf);
+        assert!(app.ui.file_dialog.is_some(), "der Dateidialog fehlt");
+
+        // Abbruch: der Dialog ist weg, ohne dass ein Ziel gewählt wurde.
+        app.ui.file_dialog = None;
+        frame(&ctx, &mut app, vec![]);
+        assert_eq!(
+            app.ui.schliessen_nach_speichern, None,
+            "der Merker bleibt nach dem Abbruch stehen"
+        );
+        assert_eq!(app.doc().entities.len(), 1, "der Reiter wurde trotzdem geschlossen");
     }
 }
 
