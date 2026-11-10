@@ -243,11 +243,23 @@ offene Fensterinstanz zeigt weiterhin den alten Stand.
   ganze Lage zu verwerfen (`x`/`y` bleiben Zahlen — eine `null` ließe ältere
   Fassungen an der Sitzung scheitern). Unter X11, Windows und macOS kommt auch
   die Position zurück; unter Wayland bleibt sie eine Grenze
-  (`docs/BEKANNTE-GRENZEN.md`, Nr. 7). Nachweis:
-  `cargo test -p jjcad-gui fensterlage` (5 Tests),
-  `cargo test -p jjcad-core --lib sitzung` (10), unter Xvfb: Fenster auf
-  1240 × 780 bei (320, 180) gezogen → beendet → neu gestartet, gleiche
-  Geometrie (`xwininfo`).
+  (`docs/BEKANNTE-GRENZEN.md`, Nr. 7).
+
+  **Turn 2 — Vollbild.** Der Vollbild-Modus wird jetzt ebenfalls gemerkt
+  (`Fensterlage::vollbild`, getrennt von `maximiert`: rahmenlos gegenüber
+  Rahmen). Im Vollbild und maximiert schreibt die Sitzung die zuletzt bekannte
+  **normale** Größe (`App::fenster_normal`, jedes Bild gepflegt), nicht die
+  Bildschirmgröße — sonst stünde nach dem Verlassen des Vollbilds ein
+  bildschirmgroßes Fenster da. Der Startzustand wird im ersten Bild gesetzt und
+  bis zu 3 s wiederholt (`App::fenster_start_anwenden`): beim **Erzeugen** des
+  Fensters verwirft KWin die `_NET_WM_STATE`-Nachricht (gemessen — das Vollbild
+  klappt dort nur, weil winit es bis zur Sichtbarkeit zurückhält). Nachweis:
+  `cargo test -p jjcad-gui fensterlage` (11 Tests), `cargo test -p jjcad-core
+  --lib sitzung` (11), unter Xvfb mit kwin_x11: Vollbild beendet → Neustart mit
+  `_NET_WM_STATE_FULLSCREEN` und gespeicherter Größe 1500 × 950; maximiert
+  beendet → Neustart mit `_NET_WM_STATE_MAXIMIZED_VERT/HORZ`; F11 im
+  Vollbild-Start führt zurück auf 1500 × 950. Die Lage bleibt unter Wayland
+  eine Grenze (Nr. 7).
 
 ## Offen
 

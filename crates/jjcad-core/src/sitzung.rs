@@ -114,6 +114,13 @@ pub struct Fensterlage {
     /// Das Fenster war beim Beenden maximiert.
     #[serde(default)]
     pub maximiert: bool,
+    /// Das Fenster war beim Beenden im Vollbild (T0141, Turn 2).
+    ///
+    /// Getrennt von `maximiert`: ein Vollbild ist rahmenlos und bildschirmfüllend,
+    /// ein maximiertes Fenster behält Rahmen und Titelleiste. Beides über einen
+    /// Merker wiederherzustellen gäbe den falschen Zustand.
+    #[serde(default)]
+    pub vollbild: bool,
 }
 
 /// Vorgabe für [`Fensterlage::mit_lage`] bei Dateien ohne dieses Feld (T0141).
@@ -244,6 +251,7 @@ mod tests {
                 y: 60.0,
                 mit_lage: true,
                 maximiert: false,
+                vollbild: false,
             }),
             aktiv: 1,
             reiter: vec![
@@ -369,6 +377,7 @@ mod tests {
             y: 0.0,
             mit_lage: true,
             maximiert: false,
+            vollbild: false,
         }
         .brauchbar());
         assert!(!Fensterlage {
@@ -378,6 +387,7 @@ mod tests {
             y: 0.0,
             mit_lage: true,
             maximiert: false,
+            vollbild: false,
         }
         .brauchbar());
     }
@@ -393,6 +403,7 @@ mod tests {
             y: 0.0,
             mit_lage: false,
             maximiert: false,
+            vollbild: false,
         };
         assert!(ohne.brauchbar(), "die Größe allein ist brauchbar");
         assert_eq!(ohne.lage(), None, "ohne gemeldete Lage keine Position");
@@ -404,6 +415,7 @@ mod tests {
             y: 60.0,
             mit_lage: true,
             maximiert: true,
+            vollbild: false,
         };
         assert_eq!(mit.lage(), Some((120.0, 60.0)));
         assert!(mit.maximiert);
@@ -419,6 +431,7 @@ mod tests {
             y: 20.0,
             mit_lage: false,
             maximiert: false,
+            vollbild: false,
         };
         assert_eq!(ohne_merker.lage(), None);
         let nan = Fensterlage {
@@ -428,6 +441,7 @@ mod tests {
             y: 60.0,
             mit_lage: true,
             maximiert: false,
+            vollbild: false,
         };
         assert_eq!(nan.lage(), None);
     }
@@ -447,6 +461,7 @@ mod tests {
                 y: 0.0,
                 mit_lage: false,
                 maximiert: false,
+                vollbild: false,
             }),
             ..Sitzung::default()
         };
@@ -479,5 +494,32 @@ mod tests {
         let f = s.fenster.expect("Fensterlage");
         assert_eq!(f.lage(), Some((120.0, 60.0)));
         assert!(!f.maximiert, "unbekanntes Feld heißt nicht maximiert");
+        assert!(!f.vollbild, "unbekanntes Feld heißt nicht Vollbild");
+    }
+
+    /// T0141, Turn 2: Vollbild und maximiert sind zwei Zustände und bleiben es
+    /// auch in der Datei — sonst käme ein Vollbild als maximiertes Fenster
+    /// (mit Rahmen) zurück.
+    #[test]
+    fn vollbild_und_maximiert_bleiben_getrennt() {
+        let dir = test_dir("vollbild");
+        let pfad = dir.join("sitzung.json");
+        let s = Sitzung {
+            fenster: Some(Fensterlage {
+                breite: 1200.0,
+                hoehe: 800.0,
+                x: 40.0,
+                y: 30.0,
+                mit_lage: true,
+                maximiert: false,
+                vollbild: true,
+            }),
+            ..Sitzung::default()
+        };
+        speichern(&pfad, &s).unwrap();
+        let wieder = laden(&pfad).unwrap().unwrap().fenster.unwrap();
+        assert!(wieder.vollbild);
+        assert!(!wieder.maximiert);
+        assert_eq!((wieder.breite, wieder.hoehe), (1200.0, 800.0));
     }
 }

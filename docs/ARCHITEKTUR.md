@@ -200,9 +200,13 @@ auch von `theme.rs` für `kdeglobals`/`settings.ini` benutzt.
 was beim Beenden gemerkt und beim Start wiederhergestellt wird: die Reiter in
 ihrer Reihenfolge (Kennung, Zieldatei oder keine, Name), je Reiter die Ansicht
 (Mitte, Zoom, Drehung) und das aktive Blatt, dazu der aktive Reiter und die
-Fensterlage (Größe und Maximiert-Zustand überall; die Position nur, wo das
-Fenstersystem globale Fensterkoordinaten liefert — unter Wayland trägt sie
-`mit_lage: false`, `docs/BEKANNTE-GRENZEN.md`, Grenze 7). Gespeicherte Zeichnungen kommen von der Platte; fehlt die
+Fensterlage (Größe, Vollbild und Maximiert-Zustand überall; die Position nur, wo
+das Fenstersystem globale Fensterkoordinaten liefert — unter Wayland trägt sie
+`mit_lage: false`, `docs/BEKANNTE-GRENZEN.md`, Grenze 7). Im Vollbild und
+maximiert steht in der Sitzung die zuletzt bekannte **normale** Größe
+(`App::fenster_normal`), nicht die Bildschirmgröße; der Zustand wird im ersten
+Bild gesetzt und bis zu 3 s wiederholt, weil der Fenstermanager ihn beim
+Erzeugen des Fensters verwirft (`App::fenster_start_anwenden`). Gespeicherte Zeichnungen kommen von der Platte; fehlt die
 Zieldatei, kommt der neueste Stand aus dem Sicherungspool und der Reiter heißt
 „Unbenannt“; fehlt auch der Stand, wird der Reiter weggelassen und gemeldet.
 **Nicht** wiederhergestellt werden Auswahl, Undo-Verlauf, Werkzeugwahl und

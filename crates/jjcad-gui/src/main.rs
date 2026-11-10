@@ -135,7 +135,11 @@ fn starte_app(file: Option<String>, sperre: daten::Sperre) -> eframe::Result<()>
             if let Some((x, y)) = f.lage() {
                 viewport = viewport.with_position([x, y]);
             }
-            if f.maximiert {
+            // Vollbild und maximiert sind zwei Zustände: das Vollbild ist
+            // rahmenlos und bildschirmfüllend, maximiert behält den Rahmen.
+            if f.vollbild {
+                viewport = viewport.with_fullscreen(true);
+            } else if f.maximiert {
                 viewport = viewport.with_maximized(true);
             }
         }
@@ -154,6 +158,9 @@ fn starte_app(file: Option<String>, sperre: daten::Sperre) -> eframe::Result<()>
             let mut app = app::App::new(cc);
             // Sperrdatei lebt so lange wie die Anwendung.
             app.sperre = Some(sperre);
+            // T0141: die gespeicherte Fenstergröße gilt als „normaler“ Stand —
+            // ein Start im Vollbild behält sie beim Beenden.
+            app.setze_fensterlage(sitzung.as_ref().and_then(|s| s.fenster));
             // T0135: Kanal für eine zweite Instanz.
             app.instanzdienst_starten(&cc.egui_ctx);
             match file.clone() {
