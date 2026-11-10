@@ -37,7 +37,9 @@ einsehbar und dort frei änderbar (Ribbon ▸ Ansicht ▸ „Tasten").
    **„Verschieben"**: **Kontinuierlich** (Vorgabe) hält die Ansicht in Bewegung,
    solange die Taste oder der Hotbar-Slot gedrückt bleibt; **Sprunghaft** rückt je
    Druck um einen Schritt weiter. Das Tempo steht darunter in der Zeile
-   **„Schwenk"** als Faktor (0,1× bis 5×, Vorgabe 1×) — er gilt für beide Modi.
+   **„Geschwindigkeit der Ansicht"** als Faktor (0,1× bis 5×, Vorgabe 1×) — er gilt für
+   beide Modi. Die 1× sind das Grundtempo des Programms: ein Sprung rückt 90 px
+   weiter, der Dauerlauf fährt 720 px/s (T0146, 50 % mehr als vorher).
 7. **Länge tippen**: nach dem ersten Klick Ziffern eingeben, `Enter` übernimmt den Abstand —
    oder `x;y` für absolute Koordinaten (Semikolon trennt, Komma ist Dezimalzeichen: `2,5;3,0`).
 8. **Auswählen**: Klick wählt ein Objekt, `Umschalt`+Klick ergänzt. Ziehen von links nach rechts

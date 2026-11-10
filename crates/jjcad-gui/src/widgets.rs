@@ -306,12 +306,26 @@ fn field_row_mit_hinweis(
     if text.chars().count() > platz {
         text = format!("{}…", text.chars().take(platz - 1).collect::<String>());
     }
+    // T0146: Ein Name, der die Namensspalte ausfüllt („Geschwindigkeit der
+    // Ansicht“), wird so weit verkleinert, bis er **vor** der Wertspalte endet.
+    // Die Spaltenbreite bleibt für alle Zeilen gleich; ohne die Verkleinerung
+    // liefe der Name ein Pixel in das Eingabefeld.
+    let farbe = Palette::text_dim();
+    let verfuegbar = LABEL_W - 8.0;
+    let mut font = FontId::proportional(11.5);
+    let gemessen = ui
+        .fonts(|f| f.layout_no_wrap(text.clone(), font.clone(), farbe))
+        .size()
+        .x;
+    if gemessen > verfuegbar {
+        font = FontId::proportional(passende_schriftgroesse(gemessen, verfuegbar, 11.5));
+    }
     ui.painter().text(
         egui::pos2(row.left() + 4.0, row.center().y),
         Align2::LEFT_CENTER,
         text,
-        FontId::proportional(11.5),
-        Palette::text_dim(),
+        font,
+        farbe,
     );
     if let Some(t) = tip {
         let icon = Rect::from_center_size(
