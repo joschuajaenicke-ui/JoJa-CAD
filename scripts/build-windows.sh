@@ -63,5 +63,10 @@ cat /usr/share/doc/fonts-liberation/copyright      > "$PKG/fonts/LIZENZ-Liberati
 cat /usr/share/doc/fonts-quicksand/copyright       > "$PKG/fonts/LIZENZ-Quicksand.txt"
 cp "$PROJ/scripts/windows-readme.txt" "$PKG/LIESMICH.txt"
 
+# Der Schalter für den portablen Betrieb (daten::ist_portabel): ohne diese Datei
+# legt das Programm Einstellungen, Blöcke, Sicherungen und Sitzung in
+# %APPDATA%\JoJa-CAD ab — dann ist das Paket keine portable Fassung mehr.
+: > "$PKG/portable.txt"
+
 ( cd "$OUT" && rm -f "$NAME.zip" && zip -qr "$NAME.zip" "$NAME" )
 echo "== Fertig: $OUT/$NAME.zip  ($(du -h "$OUT/$NAME.zip" | cut -f1))"

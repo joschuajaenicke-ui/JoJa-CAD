@@ -236,6 +236,13 @@ Der **MCP-Server** ist davon nicht betroffen: `crates/jjcad-mcp` nimmt keine
 Sperre, liest weder `prefs.json` noch `sitzung.json` und schreibt nur die
 Zeichnungen, die ihm genannt werden — er läuft unabhängig neben dem Programm.
 
+Portabel und installiert unterscheiden sich in **nichts** außer dem
+Vorhandensein von `portable.txt` neben der Programmdatei
+(`daten::ist_portabel`) — es gibt keine Kennung im Programm und keinen Schalter
+in den Einstellungen. Daraus folgt: das portable Paket muss die Datei mitliefern
+(`scripts/build-windows.sh`), und ein portabler Lauf übernimmt keine
+Einstellungen vom Rechner (`daten::vorbereiten` überspringt dann die Übernahme).
+
 Bewusst **nicht** umgesetzt: eine Zeigerdatei und das Umziehen der Wurzel aus
 der Oberfläche. Ein kopiertes Verzeichnis wird über `--daten-dir` geöffnet.
 

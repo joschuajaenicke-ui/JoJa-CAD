@@ -7,6 +7,12 @@ USB-Stick kopiert werden. Voraussetzung ist ein OpenGL-2.0-Treiber, wie ihn
 jeder Windows-Rechner mit Grafikkartentreiber mitbringt.
 
 Inhalt
+  portable.txt ..... Schalter für den portablen Betrieb — nicht löschen.
+  data\ ............ entsteht beim ersten Start: Einstellungen (prefs.json),
+                     eigene Blöcke (blocks\), Sicherungen (sicherungen\),
+                     Sitzung (sitzung.json) und Protokolle (log\). Wandert mit
+                     dem Ordner; auf einem USB-Stick liegen die Daten also auf
+                     dem Stick und nicht im Windows-Profil.
   jjcad.exe ........ Zeichenprogramm (Oberfläche deutsch)
   jjcad-mcp.exe .... Headless-Server über stdin/stdout (Model Context Protocol),
                      Selbsttest:  jjcad-mcp.exe --selftest
@@ -18,6 +24,9 @@ Inhalt
   LIZENZ-JoJa-CAD.txt
 
 Wichtig
+  * "portable.txt" und der Ordner "data" gehören zusammen: fehlt die Datei,
+    legt das Programm seine Daten unter %APPDATA%\JoJa-CAD ab (wie eine
+    installierte Fassung) und der Ordner bleibt leer.
   * Der Ordner "fonts" muss neben jjcad.exe liegen bleiben. Ohne ihn fehlen
     die Beschriftungen auf der Zeichenfläche und im PDF-Export.
   * Zeichnungsdateien (.jjcad) sind reines JSON und zwischen Linux und Windows
