@@ -1571,6 +1571,64 @@ fn draw_block_hinweise(app: &App, p: &Painter, rect: Rect, view: View) {
 // Gitter
 // ---------------------------------------------------------------------------
 
+/// Weltstrecken der Rasterlinien für den sichtbaren Bereich `ecken`
+/// (= `(x0, y0, x1, y1)`), je Strecke mit der Angabe „Hauptlinie“ (jede zehnte).
+///
+/// **Jede Linie ist um den Mittelpunkt des sichtbaren Bereichs gelegt**, nicht um
+/// den Weltnullpunkt: eine Linie durch den Ursprung in Richtung ihrer Familie
+/// deckte bei hohem Zoom nur die Umgebung von (0,0) ab — die Zeichnung steht
+/// aber weit davon entfernt, und das Raster verschwand aus dem Bild (T0144,
+/// Turn 3). Die Enden liegen je eine Diagonale links und rechts der Mitte,
+/// damit die Strecke den Bereich in jeder Richtung überquert.
+fn raster_strecken(
+    familien: &[jjcad_core::gitter::Familie],
+    ecken: (f64, f64, f64, f64),
+) -> Vec<(V2, V2, bool)> {
+    let (x0, y0, x1, y1) = ecken;
+    let mitte = V2::new((x0 + x1) * 0.5, (y0 + y1) * 0.5);
+    let diagonal = (x1 - x0).hypot(y1 - y0);
+    let laenge = diagonal.max(1.0);
+    let ecken = [
+        V2::new(x0, y0),
+        V2::new(x1, y0),
+        V2::new(x1, y1),
+        V2::new(x0, y1),
+    ];
+    let mut out = Vec::new();
+    for fam in familien {
+        let (mut min, mut max) = (f64::INFINITY, f64::NEG_INFINITY);
+        for e in ecken {
+            let d = e.dot(fam.normale);
+            min = min.min(d);
+            max = max.max(d);
+        }
+        let k0 = (min / fam.abstand).floor() as i64;
+        let k1 = (max / fam.abstand).ceil() as i64;
+        // Zu dicht für den Bildschirm: nur jede zehnte Linie zeichnen (dieselben
+        // Gitterpunkte, gröbere Darstellung) — sonst bliebe bei kleinem Zoom
+        // nichts übrig. Bleibt es auch dann zu dicht, wird die Familie
+        // ausgelassen; das Raster ist dann feiner als ein Pixel.
+        let schritt = if k1 - k0 > 4000 { 10 } else { 1 };
+        if (k1 - k0).abs() / schritt > 4000 {
+            continue;
+        }
+        let mut k = k0;
+        while k <= k1 {
+            // Abstand dieser Linie vom Mittelpunkt des Bildes, senkrecht zur
+            // Linienrichtung — daraus die Lage der Linie im Weltraum.
+            let versatz = k as f64 * fam.abstand - mitte.dot(fam.normale);
+            let basis = mitte + fam.normale * versatz;
+            out.push((
+                basis - fam.richtung * laenge,
+                basis + fam.richtung * laenge,
+                k % 10 == 0,
+            ));
+            k += schritt;
+        }
+    }
+    out
+}
+
 fn draw_grid(app: &App, p: &Painter, rect: Rect, view: View) {
     // T0144: Art und Weite kommen aus `gitter::Raster` — dieselbe Rechnung, mit
     // der auch gefangen wird. Im Modus „Skaliert“ wird die gezeichnete Weite bei
@@ -1587,50 +1645,16 @@ fn draw_grid(app: &App, p: &Painter, rect: Rect, view: View) {
     // diese Hülle und werden mitgedreht gezeichnet — sonst stünden sie quer
     // zur gedrehten Zeichnung.
     let (x0, y0, x1, y1) = visible_world_bounds(rect, view);
-    let ecken = [
-        V2::new(x0, y0),
-        V2::new(x1, y0),
-        V2::new(x1, y1),
-        V2::new(x0, y1),
-    ];
-    // Halbe Länge der Linien: die Diagonale der Hülle reicht in jede Richtung.
-    let laenge = ((x1 - x0).hypot(y1 - y0)).max(1.0);
-    for fam in &familien {
-        let (mut min, mut max) = (f64::INFINITY, f64::NEG_INFINITY);
-        for e in ecken {
-            let d = e.dot(fam.normale);
-            min = min.min(d);
-            max = max.max(d);
-        }
-        let k0 = (min / fam.abstand).floor() as i64;
-        let k1 = (max / fam.abstand).ceil() as i64;
-        // Zu dicht für den Bildschirm: nur jede zehnte Linie zeichnen (dieselbe
-        // Gitterpunkte, gröbere Darstellung) — sonst bliebe bei kleinem Zoom
-        // nichts übrig. Bleibt es auch dann zu dicht, wird die Familie
-        // ausgelassen; das Raster ist dann feiner als ein Pixel.
-        let schritt = if k1 - k0 > 4000 { 10 } else { 1 };
-        if (k1 - k0) / schritt > 4000 {
-            continue;
-        }
-        let mut k = k0;
-        while k <= k1 {
-            let basis = fam.normale * (k as f64 * fam.abstand);
-            let a = basis - fam.richtung * laenge;
-            let b = basis + fam.richtung * laenge;
-            let farbe = if k % 10 == 0 {
-                Palette::grid_major()
-            } else {
-                Palette::grid_minor()
-            };
-            p.line_segment(
-                [
-                    world_to_screen(rect, view, a),
-                    world_to_screen(rect, view, b),
-                ],
-                Stroke::new(1.0, farbe),
-            );
-            k += schritt;
-        }
+    for (a, b, haupt) in raster_strecken(&familien, (x0, y0, x1, y1)) {
+        let farbe = if haupt {
+            Palette::grid_major()
+        } else {
+            Palette::grid_minor()
+        };
+        p.line_segment(
+            [world_to_screen(rect, view, a), world_to_screen(rect, view, b)],
+            Stroke::new(1.0, farbe),
+        );
     }
     // Achsen nur im rechtwinkligen Raster: bei den schrägen Arten gibt es keine
     // X/Y-Achse, an der sie sich ausrichten ließen.
@@ -12178,5 +12202,97 @@ mod tests_mittelpunkt {
             zaehle(&cs.shape, mitte, 14.0, &mut n);
         }
         assert_eq!(n, 0, "ohne Fang darf kein Mittelpunktkreuz stehen");
+    }
+}
+
+#[cfg(test)]
+mod tests_raster {
+    //! T0144, Turn 3: Die Rasterlinien müssen im **sichtbaren** Ausschnitt
+    //! liegen, nicht am Weltnullpunkt. Vorher wurde jede Linie um ihre Lage im
+    //! Weltraum gezeichnet; bei hohem Zoom (kleiner Ausschnitt, weit weg vom
+    //! Nullpunkt) lag damit keine Linie mehr im Bild — die Schrägen der
+    //! isometrischen, dimetrischen und trimetrischen Raster verschwanden.
+
+    use super::*;
+    use jjcad_core::gitter::{Raster, Rasterart};
+
+    /// Abstand Punkt–Strecke.
+    fn abstand(p: V2, a: V2, b: V2) -> f64 {
+        let d = b - a;
+        let l2 = d.len2();
+        if l2 < 1e-12 {
+            return (p - a).len();
+        }
+        let t = ((p - a).dot(d) / l2).clamp(0.0, 1.0);
+        (p - (a + d * t)).len()
+    }
+
+    #[test]
+    fn rasterlinien_liegen_im_bild_auch_weit_vom_nullpunkt() {
+        // Ausschnitt bei ~1500 % Zoom, weit weg vom Weltnullpunkt.
+        let (x0, y0, x1, y1) = (5000.0, 3000.0, 5100.0, 3050.0);
+        let mitte = V2::new((x0 + x1) * 0.5, (y0 + y1) * 0.5);
+        let diagonal = (x1 - x0).hypot(y1 - y0);
+        for art in Rasterart::ALL {
+            let raster = Raster::neu(art, 100.0);
+            let familien = raster.familien();
+            assert!(!familien.is_empty(), "{art:?}: keine Linienfamilien");
+            for fam in &familien {
+                let strecken = raster_strecken(std::slice::from_ref(fam), (x0, y0, x1, y1));
+                assert!(!strecken.is_empty(), "{art:?}: keine Linie im Ausschnitt");
+                // Eine Linie der Familie muss an der Bildmitte vorbeikommen.
+                let nah: Vec<&(V2, V2, bool)> = strecken
+                    .iter()
+                    .filter(|(a, b, _)| abstand(mitte, *a, *b) <= fam.abstand * 0.5 + 1e-6)
+                    .collect();
+                assert!(
+                    !nah.is_empty(),
+                    "{art:?}: keine Linie an der Bildmitte — die Linien hängen am Nullpunkt"
+                );
+                // ... und über den Ausschnitt hinausreichen.
+                for (a, b, _) in nah {
+                    assert!(
+                        (*a - mitte).len() >= diagonal * 0.5
+                            && (*b - mitte).len() >= diagonal * 0.5,
+                        "{art:?}: Linie endet im Ausschnitt ({:?} … {:?})",
+                        a,
+                        b
+                    );
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn rasterlinien_haengen_nicht_am_nullpunkt() {
+        // Kein Linienende darf in der Nähe des Nullpunkts liegen, wenn der
+        // Ausschnitt weit davon entfernt ist.
+        let (x0, y0, x1, y1) = (5000.0, 3000.0, 5100.0, 3050.0);
+        for art in Rasterart::ALL {
+            let familien = Raster::neu(art, 100.0).familien();
+            for (a, b, _) in raster_strecken(&familien, (x0, y0, x1, y1)) {
+                assert!(
+                    a.len() > 1000.0 && b.len() > 1000.0,
+                    "{art:?}: Linie {:?} … {:?} liegt am Weltnullpunkt",
+                    a,
+                    b
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn rasterlinien_im_grossen_zoom_bleiben_ueberschaubar() {
+        // 1500 % Zoom, 100-mm-Raster: der Ausschnitt ist 100 × 50 mm groß, es
+        // dürfen nur wenige Linien je Familie entstehen.
+        let (x0, y0, x1, y1) = (5000.0, 3000.0, 5100.0, 3050.0);
+        for art in Rasterart::ALL {
+            let familien = Raster::neu(art, 100.0).familien();
+            let n = raster_strecken(&familien, (x0, y0, x1, y1)).len();
+            assert!(
+                (1..=18).contains(&n),
+                "{art:?}: {n} Linien im Ausschnitt — erwartet 1…18"
+            );
+        }
     }
 }
