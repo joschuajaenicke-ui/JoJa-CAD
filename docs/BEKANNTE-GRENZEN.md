@@ -16,7 +16,7 @@ von vorn.
 | 4 | Farbeimer ist eine Näherung | gewähltes Rasterverfahren | vektorielles Flächennetz (Arrangement) |
 | 5 | Splines lassen sich nicht stutzen | Modell/Geometrie | numerischer Schnitt + Teilstück-Extraktion |
 | 6 | Bei großer Displayskalierung wird die Oberfläche abgeschnitten | Mindestfenstergröße in logischen Punkten | umbrechende/scrollende Ribbon-Gruppen |
-| 7 | Fensterposition lässt sich unter Wayland nicht wiederherstellen | Wayland (`xdg-shell`) und winit | `xdg-session-management-v1` in KWin und winit |
+| 7 | Fensterposition lässt sich unter Wayland **nicht speichern** und nicht wiederherstellen | Wayland (`xdg-shell`) und winit | `xdg-session-management-v1` in KWin und winit |
 
 ---
 
@@ -192,12 +192,16 @@ scrollen, plus eine Mindestgröße, die sich an der Bildschirmgröße orientiert
 
 ---
 
-## 7. Fensterposition unter Wayland
+## 7. Fensterposition speichern — unter Wayland nicht möglich
 
-**Symptom.** Unter Wayland (z. B. KDE Plasma) merkt sich das Programm
-Fenstergröße, Vollbild und „maximiert“, das Fenster erscheint aber dort, wo die
-Fensterverwaltung es hinstellt — nicht an der Stelle des letzten Laufs. Die Lage
-wird gar nicht erst aufgezeichnet.
+**Kurz.** Unter Wayland (KDE Plasma, GNOME) kann JoJa-CAD die Fensterposition
+**weder merken noch setzen**. Das Fenster erscheint dort, wo die
+Fensterverwaltung es hinstellt — nicht an der Stelle des letzten Laufs. Das ist
+keine Einstellung und kein Fehler im Programm: die Schnittstelle gibt es nicht.
+Größe, Vollbild und „maximiert“ kommen dagegen zurück.
+
+**Symptom.** In `sitzung.json` steht `"mit_lage": false`, `x`/`y` bleiben 0 —
+und beim nächsten Start steht das Fenster woanders.
 
 **Ursache.** `xdg-shell` kennt weder eine Abfrage noch eine Vorgabe der
 Fensterposition: `xdg_toplevel` hat keine Koordinaten, und winit liefert für
@@ -215,12 +219,20 @@ kommt auch die Position zurück (`main.rs` setzt `with_position` nur, wenn
 `null` ältere Fassungen beim Laden der Sitzung scheitern ließe.
 Belege: `jjcad-core`-Test `sitzung::tests::fensterlage_ohne_position_ist_brauchbar`,
 `app::tests_fensterlage` (11 Tests: Umrechnung mit und ohne Fensterrechtecke,
-Vollbild/maximiert, Startzustand) und Läufe unter Xvfb mit kwin_x11 — Fenster auf
-1240 × 780 bei (320, 180) gezogen, beendet, neu gestartet: dieselbe Geometrie
-(`x: 320.0, y: 180.0`, `mit_lage: true`); im Vollbild beendet: Neustart mit
-`_NET_WM_STATE_FULLSCREEN`, gespeicherte Größe bleibt 1500 × 950 (nicht die
-Bildschirmgröße); maximiert beendet: Neustart mit
-`_NET_WM_STATE_MAXIMIZED_VERT/HORZ`.
+Vollbild/maximiert, Startzustand). Am laufenden Programm:
+
+- **Wayland** (verschachteltes `kwin_wayland --virtual`, also dieselbe
+  Fensterverwaltung wie auf dem Rechner des Nutzers): Sitzung mit
+  1200 × 800 gestartet → das Programm meldet beim Beenden 1200 × 800 zurück
+  (`mit_lage: false`) — die Größe kommt also an, die Lage nicht. Sitzung mit
+  `vollbild: true` gestartet → das Programm meldet `vollbild: true` zurück, die
+  gespeicherte Größe bleibt 1200 × 800.
+- **X11** (Xvfb + kwin_x11): Fenster auf 1240 × 780 bei (320, 180) gezogen,
+  beendet, neu gestartet: dieselbe Geometrie (`x: 320.0, y: 180.0`,
+  `mit_lage: true`); im Vollbild beendet: Neustart mit
+  `_NET_WM_STATE_FULLSCREEN`, gespeicherte Größe bleibt 1500 × 950 (nicht die
+  Bildschirmgröße); maximiert beendet: Neustart mit
+  `_NET_WM_STATE_MAXIMIZED_VERT/HORZ`.
 
 **Warum jetzt nicht lösbar.** Ein Ausweichen auf XWayland ist verworfen (Grenze 1:
 träger und unschärfer). Die Programmseite kann eine Position nicht erzwingen.
