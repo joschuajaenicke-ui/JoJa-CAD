@@ -2503,16 +2503,25 @@ fn boden_veraendert_schar(
     }
 }
 
-/// Nr. 1 Boden/Gelände unverändert: Flechtmuster aus Haken und Querstrichen
-/// (T0152, nach den Vorlagen zweier CAD-Programme).
+/// Nr. 1 Boden/Gelände unverändert: Flechtmuster aus Haken und Querstrichen.
 ///
-/// Aufbau in Musterkoordinaten (`u` längs, `v` quer, Einheit `s` = Musterabstand):
-/// Linien im Abstand `s` in beiden Richtungen. In der ersten Schar ist jede
-/// zweite Linie durchgezogen, die dazwischen besteht aus „Ziegeln" von `2s`
-/// Länge mit einem Querstrich der Länge `s` an jedem Ziegelende; vier Ziegel
-/// (mit Lücke) bilden den Takt `8s`. Die Querstriche der ersten Schar sind
-/// zugleich die kurzen Striche der zweiten, die dort als `4s`-Striche mit
-/// `4s`-Lücke im Takt `8s` liegen.
+/// Die **Einheitszelle** steht seit T0163 als Zeichnung des Nutzers fest: 8 × 8
+/// Einheiten `s` (= Musterabstand), rechtwinklig im Bezugssystem. Aufbau:
+///
+/// * vier durchgezogene Senkrechte bei `x = 0, 2, 4, 6` über die ganze Höhe,
+/// * vier lange Waagerechte der Länge `4s` bei `y = 0, 2, 4, 6`, um je `2s`
+///   nach links versetzt (`x = 6, 4, 2, 0`) — die untere läuft über den
+///   Zellrand (`x = 6 … 10`) und setzt sich in der Nachbarzelle fort,
+/// * vier kurze Waagerechte der Länge `2s` bei `y = 1, 3, 5, 7`, gleicher
+///   Versatz,
+/// * vier Haken in S-Form bei `x = 1, 3, 5, 7`: Stiel der Länge `4s` ab
+///   `y0 = 1, 7, 5, 3`, unten ein Fuß nach rechts, oben einer nach links.
+///
+/// Gezeichnet wird die Zelle **im Musterraster**, also rechtwinklig — im Plan
+/// steht sie schräg, weil der Musterwinkel der Füllung 45° vorgibt (wie bei
+/// „Mauerwerk": die Mustergeometrie ist achsparallel, die Drehung kommt aus
+/// `pattern_angle`). Gekachelt wird mit der Kantenlänge `8s`; die Lage kommt
+/// wie bei allen Mustern aus dem Weltnullpunkt.
 fn muster_boden_unveraendert(
     dl: &mut DisplayList,
     e: &Entity,
@@ -2525,88 +2534,51 @@ fn muster_boden_unveraendert(
     let s = spacing.max(0.5);
     let r = Raster::new(angle);
     let (umin, umax, vmin, vmax) = r.bereich(pts);
-    let takt = 8.0 * s;
-    let ziegel = 2.0 * s;
-
-    // Erste Schar: Linien bei v = k·s, durchgezogen bei geradem k.
-    let k0 = (vmin / s).floor() as i64 - 1;
-    let k1 = (vmax / s).ceil() as i64 + 1;
-    if k1 - k0 > 4000 {
+    let kante = 8.0 * s;
+    let i0 = (umin / kante).floor() as i64 - 1;
+    let i1 = (umax / kante).ceil() as i64 + 1;
+    let j0 = (vmin / kante).floor() as i64 - 1;
+    let j1 = (vmax / kante).ceil() as i64 + 1;
+    // Zu viele Zellen: lieber nichts zeichnen als ein Bild, das Sekunden
+    // braucht (der Musterabstand kommt aus der Zeichnung).
+    if (i1 - i0 + 1).saturating_mul(j1 - j0 + 1) > 4000 {
         return;
     }
-    for k in k0..=k1 {
-        let v = k as f64 * s;
-        if k.rem_euclid(2) == 0 {
-            muster_abschnitt(
-                dl,
-                e,
-                st,
-                r.punkt(umin - s, v),
-                r.punkt(umax + s, v),
-                pts,
-                holes,
-            );
-            continue;
-        }
-        // Ziegelreihe: je Takt zwei Ziegel mit Querstrichen an den Enden.
-        let phase = -(k as f64) * s;
-        let m0 = ((umin - phase) / takt).floor() as i64 - 1;
-        let m1 = ((umax - phase) / takt).ceil() as i64 + 1;
-        if m1 - m0 > 4000 {
-            continue;
-        }
-        for m in m0..=m1 {
-            let u0 = phase + m as f64 * takt;
-            for z in 0..2 {
-                let a = u0 + z as f64 * ziegel;
-                let b = a + ziegel;
-                muster_abschnitt(dl, e, st, r.punkt(a, v), r.punkt(b, v), pts, holes);
+    for i in i0..=i1 {
+        for j in j0..=j1 {
+            let (u0, v0) = (i as f64 * kante, j as f64 * kante);
+            let mut strich = |x1: f64, y1: f64, x2: f64, y2: f64| {
+                muster_abschnitt(
+                    dl,
+                    e,
+                    st,
+                    r.punkt(u0 + x1 * s, v0 + y1 * s),
+                    r.punkt(u0 + x2 * s, v0 + y2 * s),
+                    pts,
+                    holes,
+                );
+            };
+            // Durchgezogene Senkrechte.
+            for k in 0..4 {
+                let x = 2.0 * k as f64;
+                strich(x, 0.0, x, 8.0);
             }
-        }
-        // Querstriche im Takt 2 s über die ganze Linie — sie laufen auch durch
-        // die Lücken der Längsstriche (so steht es in der Vorlage).
-        let n0 = ((umin - phase) / ziegel).floor() as i64 - 1;
-        let n1 = ((umax - phase) / ziegel).ceil() as i64 + 1;
-        if n1 - n0 <= 4000 {
-            for n in n0..=n1 {
-                let a = phase + n as f64 * ziegel;
-                muster_abschnitt(dl, e, st, r.punkt(a, v), r.punkt(a, v + s), pts, holes);
+            // Waagerechte: lang (`4s`) auf geradem `y`, kurz (`2s`) auf dem
+            // ungeraden `y` darüber.
+            for k in 0..4 {
+                let k = k as f64;
+                let x = 6.0 - 2.0 * k;
+                strich(x, 2.0 * k, x + 4.0, 2.0 * k);
+                strich(x, 2.0 * k + 1.0, x + 2.0, 2.0 * k + 1.0);
             }
-        }
-    }
-
-    // Zweite Schar: Linien bei u = k·s, Striche der Länge 4s im Takt 8s.
-    let j0 = (umin / s).floor() as i64 - 1;
-    let j1 = (umax / s).ceil() as i64 + 1;
-    if j1 - j0 > 4000 {
-        return;
-    }
-    for j in j0..=j1 {
-        if j.rem_euclid(2) != 0 {
-            continue;
-        }
-        let u = j as f64 * s;
-        let phase = (2.0 - j as f64) * s;
-        let m0 = ((vmin - phase) / takt).floor() as i64 - 1;
-        let m1 = ((vmax - phase) / takt).ceil() as i64 + 1;
-        if m1 - m0 > 4000 {
-            continue;
-        }
-        for m in m0..=m1 {
-            let v0 = phase + m as f64 * takt;
-            muster_abschnitt(
-                dl,
-                e,
-                st,
-                r.punkt(u, v0),
-                r.punkt(u, v0 + 4.0 * s),
-                pts,
-                holes,
-            );
-            // Querstriche an den Enden — sie schließen die Haken der ersten
-            // Schar zu Rechtecken (in der Vorlage an beiden Enden).
-            for vv in [v0, v0 + 4.0 * s] {
-                muster_abschnitt(dl, e, st, r.punkt(u, vv), r.punkt(u + s, vv), pts, holes);
+            // Haken: Stiel mit je einem Fuß an beiden Enden, die Füße zeigen
+            // in entgegengesetzte Richtungen (S-Form).
+            for k in 0..4 {
+                let x = 1.0 + 2.0 * k as f64;
+                let y0 = (1.0 - 2.0 * k as f64).rem_euclid(8.0);
+                strich(x, y0, x + 1.0, y0);
+                strich(x, y0, x, y0 + 4.0);
+                strich(x - 1.0, y0 + 4.0, x, y0 + 4.0);
             }
         }
     }

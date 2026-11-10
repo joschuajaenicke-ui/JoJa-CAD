@@ -475,6 +475,16 @@ Mit dem Nutzer abgestimmt — nicht „verbessern“:
   Wandmitte (Bandhöhe = Wanddicke, je Wandstück eine). Die parallelen Bänder
   gehören auf eine Fläche; in einer Wand füllten sie den Körper mit Reihen
   (`render::push_wall_hatch` → `render::wall_insulation_paths`).
+  **Boden unverändert (T0163)** ist eine feste **Einheitszelle** von 8 × 8
+  Musterabständen: vier durchgezogene Senkrechte, vier lange und vier kurze
+  Waagerechte, vier Haken in S-Form (`muster_boden_unveraendert`). Die Zelle
+  liegt **rechtwinklig** im Musterraster; im Plan steht sie schräg, weil der
+  Musterwinkel einer Füllung 45° vorgibt (`pattern_angle`) — die Drehung
+  **nicht** in die Mustergeometrie einbauen, sonst steht das Muster bei
+  Vorgabe achsparallel (wie „Mauerwerk“, dessen 45°-Linien ebenso entstehen).
+  Prüfweg: `cargo test -p jjcad-core --test schraffuren_din
+  boden_unveraendert` (vergleicht das gezeichnete Bild mit der Zelle aus der
+  Zeichnung des Nutzers, bei Musterwinkel 0 und bei 45°).
   Ein neues Muster: Variante und `ALL` in `style.rs`, Zweig in `push_muster`,
   Bezeichnung in `TABELLE_5` des Tests `tests/schraffuren_din.rs` — der Test bricht,
   wenn ein Muster fehlt, nichts zeichnet oder wie ein anderes aussieht.

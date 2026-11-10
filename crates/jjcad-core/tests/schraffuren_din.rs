@@ -14,7 +14,7 @@
 //!   und sieht anders aus als jedes andere (kein Muster fällt still auf
 //!   „Vollfläche“ oder auf ein anderes zurück).
 
-use jjcad_core::geom::BBox;
+use jjcad_core::geom::{BBox, Vec2};
 use jjcad_core::render::{render_document, DisplayList, Prim, RenderCtx, Shape};
 use jjcad_core::session::Session;
 use jjcad_core::style::FillPattern;
@@ -513,13 +513,15 @@ fn unterbrechungen_liegen_auf_waagerechten_linien() {
 }
 
 // ---------------------------------------------------------------------------
-// Die beiden Boden-Schraffuren (T0152)
+// Die beiden Boden-Schraffuren (T0152, T0163)
 // ---------------------------------------------------------------------------
 //
-// Beide Muster sind nach den Vorlagen zweier CAD-Programme neu gezeichnet
-// worden (die Norm zeigt nur einen kleinen, undeutlichen Ausschnitt). Der
-// Musterabstand `s` ist die kleinste Linienentfernung; die Tests messen die
-// Aufbauregeln am gezeichneten Bild, nicht an der Implementierung.
+// „Boden verändert" ist nach den Vorlagen zweier CAD-Programme gezeichnet (die
+// Norm zeigt nur einen kleinen, undeutlichen Ausschnitt). „Boden unverändert"
+// steht seit T0163 als Einheitszelle fest, die der Nutzer als Zeichnung
+// geliefert hat; sie wird für die Schraffur um 45° gedreht. Der Musterabstand
+// `s` ist die Einheit der Zelle; die Tests messen am gezeichneten Bild, nicht
+// an der Implementierung.
 
 /// Alle Linien eines Musters, getrennt nach waagerecht und senkrecht
 /// (Musterwinkel 0: die erste Schar läuft waagerecht).
@@ -624,81 +626,213 @@ fn boden_veraendert_ist_ein_flechtwerk_langer_striche() {
     }
 }
 
-#[test]
-fn boden_unveraendert_ist_ein_flechtmuster_aus_haken() {
-    // Musterabstand 100 mm: Linien im Abstand 100 mm in beiden Richtungen.
-    // Jede zweite Linie der ersten Schar ist durchgezogen, dazwischen liegen
-    // Ziegel von 200 mm mit Querstrichen an den Enden; die zweite Schar hat
-    // Striche von 400 mm im Takt 800 mm.
-    let s = 100.0;
-    let (waagerecht, senkrecht) = linien(FillPattern::GroundPlain, [0.0, 0.0, 3200.0, 2400.0]);
-    assert!(!waagerecht.is_empty() && !senkrecht.is_empty(), "beide Scharen fehlen");
+// ---------------------------------------------------------------------------
+// Muster „Boden unverändert" (T0163)
+// ---------------------------------------------------------------------------
+//
+// Der Nutzer hat die Einheitszelle als Zeichnung geliefert (`Boden
+// Unverändert.jjcad`): 8 × 8 Einheiten bei 100 mm Musterabstand, rechtwinklig
+// im Bezugssystem. Als Schraffur wird diese Zelle um 45° gedreht. Der Test
+// hält beides fest — die Zelle selbst und die Drehung — und misst am
+// gezeichneten Bild, nicht an der Implementierung.
 
-    for (name, schar) in [("waagerecht", &waagerecht), ("senkrecht", &senkrecht)] {
-        let l = lagen(schar);
-        assert!(l.len() > 10, "{name}: zu wenige Linien ({})", l.len());
-        for paar in l.windows(2) {
-            let d = paar[1] - paar[0];
-            assert!(
-                (d - s).abs() < 0.2,
-                "{name}: Linienabstand {d:.1} mm statt {s} mm"
-            );
+/// Die Einheitszelle aus der Zeichnung des Nutzers, in Einheiten des
+/// Musterabstands `s` (Zelle 8 × 8). Segmente, die über den Zellrand laufen,
+/// stehen mit ihren fortgesetzten Koordinaten darin.
+const ZELLE_BODEN_UNVERAENDERT: [(f64, f64, f64, f64); 24] = [
+    // Vier durchgezogene Senkrechte über die ganze Zellhöhe.
+    (0.0, 0.0, 0.0, 8.0),
+    (2.0, 0.0, 2.0, 8.0),
+    (4.0, 0.0, 4.0, 8.0),
+    (6.0, 0.0, 6.0, 8.0),
+    // Lange Waagerechte (4 s) auf geradem y, kurze (2 s) auf dem ungeraden y
+    // darüber; beide um je 2 s nach links versetzt, wenn man nach oben geht.
+    (6.0, 0.0, 10.0, 0.0),
+    (6.0, 1.0, 8.0, 1.0),
+    (4.0, 2.0, 8.0, 2.0),
+    (4.0, 3.0, 6.0, 3.0),
+    (2.0, 4.0, 6.0, 4.0),
+    (2.0, 5.0, 4.0, 5.0),
+    (0.0, 6.0, 4.0, 6.0),
+    (0.0, 7.0, 2.0, 7.0),
+    // Haken in S-Form: Stiel der Länge 4 s mit einem Fuß an jedem Ende, die
+    // Füße zeigen in entgegengesetzte Richtungen.
+    (1.0, 1.0, 2.0, 1.0),
+    (1.0, 1.0, 1.0, 5.0),
+    (0.0, 5.0, 1.0, 5.0),
+    (3.0, 7.0, 4.0, 7.0),
+    (3.0, 7.0, 3.0, 11.0),
+    (2.0, 11.0, 3.0, 11.0),
+    (5.0, 5.0, 6.0, 5.0),
+    (5.0, 5.0, 5.0, 9.0),
+    (4.0, 9.0, 5.0, 9.0),
+    (7.0, 3.0, 8.0, 3.0),
+    (7.0, 3.0, 7.0, 7.0),
+    (6.0, 7.0, 7.0, 7.0),
+];
+
+/// Die Zelle, gekachelt und um `winkel` gedreht — so muss das Muster aussehen.
+/// Die Kachelung läuft im gedrehten Raster (Kantenlänge `8s`).
+fn zelle_gekachelt(s: f64, winkel: f64) -> Vec<(Vec2, Vec2)> {
+    let dir = Vec2::new(winkel.cos(), winkel.sin());
+    let nrm = Vec2::new(-winkel.sin(), winkel.cos());
+    let kante = 8.0 * s;
+    let mut out = Vec::new();
+    for i in -6..=6 {
+        for j in -6..=6 {
+            let (u0, v0) = (i as f64 * kante, j as f64 * kante);
+            for (x1, y1, x2, y2) in ZELLE_BODEN_UNVERAENDERT {
+                out.push((
+                    dir * (u0 + x1 * s) + nrm * (v0 + y1 * s),
+                    dir * (u0 + x2 * s) + nrm * (v0 + y2 * s),
+                ));
+            }
         }
     }
+    out
+}
 
-    // Erste Schar: durchgezogene und Ziegellinien im Wechsel.
-    let mut reihen: std::collections::BTreeMap<i64, Vec<(f64, f64)>> = Default::default();
-    for (q, a, b) in &waagerecht {
-        reihen
-            .entry((q * 10.0).round() as i64)
-            .or_default()
-            .push((*a, *b));
+/// Liegt `q` auf der Strecke `a`–`b` (Toleranz 0,01 mm)?
+fn auf_strecke(q: Vec2, a: Vec2, b: Vec2) -> bool {
+    let ab = b - a;
+    let l2 = ab.dot(ab);
+    if l2 < 1e-9 {
+        return a.dist(q) < 0.01;
     }
-    let mut durchgezogen = 0;
-    let mut ziegel = 0;
-    for (_, mut striche) in reihen {
-        // Kurze Striche der Länge s sind die Querstriche der zweiten Schar.
-        striche.retain(|(a, b)| b - a > 1.5 * s);
-        if striche.is_empty() {
+    let t = (q - a).dot(ab) / l2;
+    // Kleine Toleranz am Ende: `Raster` rechnet die Querachse über
+    // `sin`/`cos`, ein Endpunkt kann deshalb ein Bit neben 0 oder 1 liegen.
+    t >= -1e-6 && t <= 1.0 + 1e-6 && (a + ab * t).dist(q) < 0.01
+}
+
+/// Decken die gezeichneten Striche die Strecke `a`–`b` vollständig ab? Am
+/// Flächenrand wird beschnitten, deshalb wird die Überdeckung geprüft und
+/// nicht die Gleichheit der Endpunkte.
+fn ueberdeckt(a: Vec2, b: Vec2, gezeichnet: &[(Vec2, Vec2)]) -> bool {
+    let ab = b - a;
+    let l = ab.len();
+    if l < 1e-9 {
+        return true;
+    }
+    let dir = ab * (1.0 / l);
+    let mut intervalle: Vec<(f64, f64)> = Vec::new();
+    for (p, q) in gezeichnet {
+        let (tp, tq) = ((*p - a).dot(dir), (*q - a).dot(dir));
+        if ((*p - a) - dir * tp).len() > 0.01 || ((*q - a) - dir * tq).len() > 0.01 {
             continue;
         }
-        striche.sort_by(|a, b| a.0.partial_cmp(&b.0).unwrap());
-        let lang: f64 = striche.iter().map(|(a, b)| b - a).sum();
-        if lang > 2000.0 {
-            // Durchgezogene Linie: ein Stück über die ganze Fläche.
-            durchgezogen += 1;
+        let (t0, t1) = (tp.min(tq), tp.max(tq));
+        if t1 < 0.0 || t0 > l {
             continue;
         }
-        ziegel += 1;
-        for (a, b) in &striche {
-            assert!(
-                (b - a - 2.0 * s).abs() < 0.3,
-                "Ziegellänge {:.1} mm statt {} mm",
-                b - a,
-                2.0 * s
-            );
+        intervalle.push((t0.max(0.0), t1.min(l)));
+    }
+    intervalle.sort_by(|x, y| x.0.partial_cmp(&y.0).unwrap());
+    let mut bis = 0.0;
+    for (t0, t1) in intervalle {
+        if t0 > bis + 0.01 {
+            return false;
         }
-        // Zwei Ziegel je Takt, dann eine Lücke von 4 s.
-        for w in striche.windows(2) {
-            let d = w[1].0 - w[0].0;
-            assert!(
-                (d - 2.0 * s).abs() < 0.3 || (d - 6.0 * s).abs() < 0.3,
-                "Ziegelabstand {d:.1} mm ist weder {} noch {} mm",
-                2.0 * s,
-                6.0 * s
-            );
+        if t1 > bis {
+            bis = t1;
         }
     }
-    assert!(durchgezogen >= 3, "zu wenige durchgezogene Linien ({durchgezogen})");
-    assert!(ziegel >= 3, "zu wenige Ziegelreihen ({ziegel})");
+    bis >= l - 0.01
+}
 
-    // Querstriche: kurze Striche der Länge s an den Ziegelenden.
-    let kurze = senkrecht
-        .iter()
-        .filter(|(_, a, b)| (b - a - s).abs() < 0.3)
-        .count();
+/// Alle Musterlinien einer Füllfläche; `winkel` in Grad, `None` = Vorgabe.
+fn striche(p: FillPattern, rechteck: [f64; 4], winkel: Option<f64>) -> Vec<(Vec2, Vec2)> {
+    prims_mit_winkel(rechteck, p, winkel)
+        .into_iter()
+        .filter_map(|pr| match pr.shape {
+            Shape::Line(a, b) => Some((a, b)),
+            _ => None,
+        })
+        .collect()
+}
+
+/// Prüft, dass das gezeichnete Muster genau die Zelle (gekachelt, gedreht) ist:
+/// jede gezeichnete Linie liegt auf einer Zelllinie, und jede Zelllinie im
+/// Inneren der Fläche ist vollständig gezeichnet.
+fn vergleiche_mit_zelle(
+    gezeichnet: &[(Vec2, Vec2)],
+    rechteck: [f64; 4],
+    erwartet: &[(Vec2, Vec2)],
+) {
     assert!(
-        kurze > 20,
-        "zu wenige Querstriche der Länge {s} mm ({kurze})"
+        gezeichnet.len() > 100,
+        "zu wenige Musterlinien ({})",
+        gezeichnet.len()
+    );
+    for (a, b) in gezeichnet {
+        assert!(
+            erwartet
+                .iter()
+                .any(|(p, q)| auf_strecke(*a, *p, *q) && auf_strecke(*b, *p, *q)),
+            "Linie ({:.1}; {:.1})–({:.1}; {:.1}) gehört nicht zur Zelle",
+            a.x,
+            a.y,
+            b.x,
+            b.y
+        );
+    }
+    let drin = |q: Vec2| {
+        q.x > rechteck[0] + 1.0
+            && q.x < rechteck[2] - 1.0
+            && q.y > rechteck[1] + 1.0
+            && q.y < rechteck[3] - 1.0
+    };
+    let mut geprueft = 0;
+    for (p, q) in erwartet {
+        if !drin(*p) || !drin(*q) {
+            continue;
+        }
+        assert!(
+            ueberdeckt(*p, *q, gezeichnet),
+            "Zelllinie ({:.1}; {:.1})–({:.1}; {:.1}) fehlt",
+            p.x,
+            p.y,
+            q.x,
+            q.y
+        );
+        geprueft += 1;
+    }
+    assert!(geprueft > 200, "zu wenige Zelllinien geprüft ({geprueft})");
+}
+
+#[test]
+fn boden_unveraendert_ist_die_um_45_grad_gedrehte_einheitszelle() {
+    let s = 100.0;
+    let rechteck = [0.0, 0.0, 3200.0, 2400.0];
+
+    // 1) Ohne Musterwinkel steht die Zelle rechtwinklig im Bezugssystem —
+    //    genau wie in der Zeichnung des Nutzers (die Datei trägt die Zelle
+    //    achsparallel, ohne Drehung).
+    let rechtwinklig = striche(FillPattern::GroundPlain, rechteck, Some(0.0));
+    for (a, b) in &rechtwinklig {
+        let achsparallel = (a.y - b.y).abs() < 0.01 || (a.x - b.x).abs() < 0.01;
+        assert!(
+            achsparallel,
+            "Linie nicht achsparallel: ({:.1}; {:.1})–({:.1}; {:.1})",
+            a.x, a.y, b.x, b.y
+        );
+    }
+    vergleiche_mit_zelle(&rechtwinklig, rechteck, &zelle_gekachelt(s, 0.0));
+
+    // 2) Als Schraffur steht dieselbe Zelle um 45° gedreht: der Musterwinkel
+    //    einer Füllung ist vorgabegemäß 45° (`pattern_angle`), die
+    //    Mustergeometrie selbst ist achsparallel (wie bei „Mauerwerk“).
+    let schraeg = striche(FillPattern::GroundPlain, rechteck, None);
+    for (a, b) in &schraeg {
+        let (dx, dy) = ((b.x - a.x).abs(), (b.y - a.y).abs());
+        assert!(
+            dx > 0.01 && (dx - dy).abs() < 0.01,
+            "Linie nicht unter 45°: {dx:.1} × {dy:.1} mm"
+        );
+    }
+    vergleiche_mit_zelle(
+        &schraeg,
+        rechteck,
+        &zelle_gekachelt(s, std::f64::consts::FRAC_PI_4),
     );
 }
