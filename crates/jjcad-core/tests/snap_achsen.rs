@@ -134,11 +134,11 @@ fn doc_polar() -> Document {
 #[test]
 fn polar_rastet_auf_den_ferneren_bezug() {
     let d = doc_polar();
-    // Voriger (0;0), nächster (2500;0). Zeiger (2600;200): Abstand 223 zum
-    // nächsten, 2608 zum vorigen. Vom nächsten aus 63° (kein Fenster), vom
-    // vorigen aus 4,4° an der Waagerechten.
+    // Voriger (0;0), nächster (2500;0). Zeiger (2600;30): Abstand 104 zum
+    // nächsten, 2600 zum vorigen. Vom nächsten aus 17° (kein Fenster), vom
+    // vorigen aus 0,7° an der Waagerechten — seitlich 30 mm, im Band von 40 mm.
     let achsen = [Vec2::new(0.0, 0.0), Vec2::new(2500.0, 0.0)];
-    let roh = Vec2::new(2600.0, 200.0);
+    let roh = Vec2::new(2600.0, 30.0);
     let (p, quelle) = fang(&d, roh, 40.0, &achsen);
     assert_eq!(quelle, SnapSource::Polar, "Fang fehlt: {p:?}");
     assert!(p.y.abs() < 1e-6, "nicht auf der Waagerechten: {p:?}");
@@ -171,4 +171,25 @@ fn ferne_kreuzung_faengt_nicht() {
     let roh = Vec2::new(3200.0, 3200.0);
     let (p, _) = fang(&d, roh, 40.0, &achsen);
     assert!(p.dist(Vec2::new(2000.0, 2000.0)) > 1000.0, "{p:?}");
+}
+
+/// Der Polarfang greift nur in einem **Band** begrenzter Breite, nicht in
+/// einem Kegel (T0148): bei 6° Winkel-Fenster wuchs der Fangbereich mit dem
+/// Abstand (auf 20 m über 2 m seitlich), weit entfernte Punkte rasteten auf
+/// eine Richtung, die der Zeiger nicht meint. Die halbe Bandbreite ist der
+/// Fangradius (`tol`), also bildschirmkonstant.
+#[test]
+fn polar_fangt_nicht_weit_neben_dem_strahl() {
+    let d = doc_polar();
+    let bezug = [Vec2::new(0.0, 0.0)];
+    // 1° neben der Waagerechten, 20 m entfernt: seitlich 349 mm.
+    let roh = Vec2::polar(1f64.to_radians(), 20_000.0);
+    let (p, quelle) = fang(&d, roh, 12.0, &bezug);
+    assert_eq!(quelle, SnapSource::Free, "Kegel statt Band: {p:?}");
+    assert!(p.dist(roh) < 1e-9, "Punkt bleibt am Zeiger: {p:?}");
+    // Derselbe Winkel nah am Bezug (seitlich 1,7 mm) rastet ein.
+    let nah = Vec2::polar(1f64.to_radians(), 100.0);
+    let (p, quelle) = fang(&d, nah, 12.0, &bezug);
+    assert_eq!(quelle, SnapSource::Polar, "Band muss greifen: {p:?}");
+    assert!(p.y.abs() < 1e-9, "nicht auf der Waagerechten: {p:?}");
 }

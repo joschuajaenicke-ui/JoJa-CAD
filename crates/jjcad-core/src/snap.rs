@@ -157,8 +157,8 @@ pub struct Zwangsachse {
 ///
 /// * **Ortho** ist hart — waagerecht oder senkrecht durch den Bezugspunkt, je
 ///   nachdem welche Richtung der Zeiger überwiegend nimmt.
-/// * **Polar** rastet nur innerhalb des Winkel-Fensters ein; außerhalb gibt es
-///   keine Achse.
+/// * **Polar** rastet nur innerhalb des Winkel-Fensters **und** des Bandes
+///   neben dem Strahl ein (T0148); außerhalb gibt es keine Achse.
 pub fn zwangsachse(
     s: &SnapSettings,
     cursor: Vec2,
@@ -176,7 +176,7 @@ pub fn zwangsachse(
         return Some(Zwangsachse { origin: r, dir });
     }
     if s.polar && cursor.dist(r) > tol * 2.0 {
-        if let Some(p) = cursor.polar_snap_from_tol(r, s.polar_step.max(1.0), s.polar_tolerance) {
+        if let Some(p) = cursor.polar_snap(r, s.polar_step.max(1.0), s.polar_tolerance, tol) {
             let dir = (p - r).normalized();
             if dir.len() > 1e-9 {
                 return Some(Zwangsachse { origin: r, dir });
@@ -1210,8 +1210,7 @@ pub fn snap_constrained_achsen(
             point = cursor.ortho_from(r, false);
             source = SnapSource::Ortho;
         } else if s.polar && cursor.dist(r) > tol * 2.0 {
-            if let Some(p) = cursor.polar_snap_from_tol(r, s.polar_step.max(1.0), s.polar_tolerance)
-            {
+            if let Some(p) = cursor.polar_snap(r, s.polar_step.max(1.0), s.polar_tolerance, tol) {
                 point = p;
                 source = SnapSource::Polar;
             }
@@ -1363,15 +1362,17 @@ fn polar_schnittpunkt(
 }
 
 /// Nächstgelegene Polarrichtung **aller** Bezüge, sofern der Zeiger im
-/// Winkel-Fenster liegt (T0054).
+/// Winkel-Fenster und im Band neben dem Strahl liegt (T0054, T0148).
 ///
 /// Ein Bezug, auf dem der Zeiger fast steht, bleibt außen vor — dort ist die
-/// Richtung nicht bestimmt.
+/// Richtung nicht bestimmt. `tol` ist der Fangradius in Weltkoordinaten und
+/// zugleich die halbe Breite des Bandes: der Polarfang reicht damit so weit
+/// wie der Objektfang.
 fn polar_einzel(s: &SnapSettings, cursor: Vec2, bezuege: &[Vec2], tol: f64) -> Option<Vec2> {
     bezuege
         .iter()
         .filter(|r| cursor.dist(**r) > tol * 2.0)
-        .filter_map(|r| cursor.polar_snap_from_tol(*r, s.polar_step.max(1.0), s.polar_tolerance))
+        .filter_map(|r| cursor.polar_snap(*r, s.polar_step.max(1.0), s.polar_tolerance, tol))
         .min_by(|a, b| a.dist(cursor).total_cmp(&b.dist(cursor)))
 }
 
@@ -1745,13 +1746,34 @@ mod tests {
     #[test]
     fn polarfang_rastet_nur_in_der_naehe() {
         let base = Vec2::ZERO;
-        // 40° liegt nahe an 45° -> rastet ein
+        // 40° liegt nahe an 45° -> rastet ein (seitlich 87 mm, Band 100 mm)
         let nah = Vec2::polar(40f64.to_radians(), 1000.0);
-        let hit = nah.polar_snap_from_tol(base, 45.0, 6.0).expect("muss rasten");
+        let hit = nah.polar_snap(base, 45.0, 6.0, 100.0).expect("muss rasten");
         assert!((hit.angle().to_degrees() - 45.0).abs() < 1e-6);
         // 25° ist 20° entfernt -> kein Rasten
         let fern = Vec2::polar(25f64.to_radians(), 1000.0);
-        assert!(fern.polar_snap_from_tol(base, 45.0, 6.0).is_none());
+        assert!(fern.polar_snap(base, 45.0, 6.0, 100.0).is_none());
+    }
+
+    /// Das Winkel-Fenster allein ergäbe einen **Kegel**: mit dem Abstand wächst
+    /// der seitliche Fangbereich. Die Breite ist deshalb begrenzt (T0148) —
+    /// fern neben dem Strahl rastet nichts ein, nah am Strahl schon, und auf
+    /// dem Strahl ist die Länge unbegrenzt.
+    #[test]
+    fn polarfang_band_ist_in_der_breite_begrenzt() {
+        let base = Vec2::ZERO;
+        // 1° neben 45°, 10 m entfernt: seitlich 175 mm — der alte Kegel rastete
+        // hier ein (Gegenprobe mit Band 200), das Band lässt es nicht zu.
+        let fern = Vec2::polar(44f64.to_radians(), 10_000.0);
+        assert!(fern.polar_snap(base, 45.0, 6.0, 12.0).is_none(), "Kegel greift wieder");
+        assert!(fern.polar_snap(base, 45.0, 6.0, 200.0).is_some(), "Gegenprobe: ohne Band");
+        // Gleicher Winkel, 300 mm entfernt: seitlich 5,2 mm — im Band.
+        let nah = Vec2::polar(44f64.to_radians(), 300.0);
+        let hit = nah.polar_snap(base, 45.0, 6.0, 12.0).expect("muss rasten");
+        assert!((hit.angle().to_degrees() - 45.0).abs() < 1e-6);
+        // Genau auf dem Strahl bleibt die Länge frei.
+        let strahl = Vec2::polar(45f64.to_radians(), 20_000.0);
+        assert!(strahl.polar_snap(base, 45.0, 6.0, 12.0).is_some());
     }
 
     #[test]

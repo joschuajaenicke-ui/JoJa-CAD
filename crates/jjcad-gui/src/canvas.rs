@@ -8883,14 +8883,38 @@ mod tests_fang_griff {
         let (mut app, id) = szenario_linie(false, true);
         app.begin_grip_drag(id, crate::handles::GripKind::Vert(1));
 
+        // 1,2° neben 45°: seitlich 71 mm, im Band von 100 mm (T0148).
         let roh = V2::new(2500.0, 2400.0);
-        let (p, label) = fang_zeiger(&app, roh, 40.0);
+        let (p, label) = fang_zeiger(&app, roh, 100.0);
         assert_eq!(label, Some("POL"), "Statuszeile zeigt den Polarfang");
         assert!((p.x - p.y).abs() < 1e-6, "nicht auf 45°: {p:?}");
         assert!(
             (p.dist(V2::ZERO) - roh.dist(V2::ZERO)).abs() < 1e-6,
             "Länge bleibt: {p:?}"
         );
+    }
+
+    /// Der Polarfang greift nur im **Band** um den Strahl (T0148). 20 px neben
+    /// der Waagerechten liegt die Richtung mit 2,9° noch im 6°-Fenster, der
+    /// Fangradius (12 px) reicht aber nicht hin: der Punkt bleibt frei. 8 px
+    /// daneben rastet er ein. Vorher (reine Winkelprüfung) rastete beides ein —
+    /// je weiter der Zeiger vom Bezug stand, desto breiter war der Fangbereich.
+    #[test]
+    fn polarfang_greift_nicht_weit_neben_dem_strahl() {
+        let (mut app, id) = szenario_linie(false, true);
+        app.begin_grip_drag(id, crate::handles::GripKind::Vert(1));
+        let zoom = app.current_view().zoom;
+        let tol = fang_radius_px(&app, zoom);
+
+        let weit = V2::new(400.0 / zoom, 20.0 / zoom);
+        let (p, label) = fang_zeiger(&app, weit, tol);
+        assert_eq!(label, None, "20 px neben dem Strahl darf nicht fangen: {p:?}");
+        assert_punkt(p, weit);
+
+        let nah = V2::new(400.0 / zoom, 8.0 / zoom);
+        let (p, label) = fang_zeiger(&app, nah, tol);
+        assert_eq!(label, Some("POL"), "8 px neben dem Strahl rastet ein: {p:?}");
+        assert!(p.y.abs() < 1e-6, "nicht auf der Waagerechten: {p:?}");
     }
 
     /// Polylinien-Ecke: die Kante zum vorigen Stützpunkt bleibt senkrecht.
@@ -8962,9 +8986,10 @@ mod tests_fang_griff {
         app.session_mut().select(vec![id]);
         app.begin_grip_drag(id, crate::handles::GripKind::Vert(1));
 
-        // 200 mm über dem nächsten Stützpunkt (2500;0), 2600 mm vom vorigen:
-        // vom nächsten aus 63° (kein Fenster), vom vorigen aus 4,4°.
-        let roh = V2::new(2600.0, 200.0);
+        // 30 mm über dem nächsten Stützpunkt (2500;0), 2600 mm vom vorigen:
+        // vom nächsten aus 17° (kein Fenster), vom vorigen aus 0,7° — seitlich
+        // 30 mm, also im Band von 40 mm (T0148).
+        let roh = V2::new(2600.0, 30.0);
         let (p, label) = fang_zeiger(&app, roh, 40.0);
         assert_eq!(label, Some("POL"), "Statuszeile zeigt den Polarfang");
         assert!(p.y.abs() < 1e-6, "nicht auf der Waagerechten: {p:?}");
