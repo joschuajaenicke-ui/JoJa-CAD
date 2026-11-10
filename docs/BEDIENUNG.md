@@ -26,13 +26,15 @@ einsehbar und dort frei änderbar (Ribbon ▸ Ansicht ▸ „Tasten").
    *Senkrecht* setzen zuerst die Lage der Maßlinie (die Vorschau zeigt eine
    exemplarische Kette), danach folgen die Messpunkte; *Direkt* nimmt zwei
    Messpunkte, der dritte Klick legt die Maßlinie parallel fest, weitere Klicks
-   hängen Messpunkte an. `Enter` beendet. Einzelmaß und Maßkette sind dasselbe
-   Element: ein Einzelmaß ist die Kette aus zwei Messpunkten.
+   hängen Messpunkte an. `Enter` **oder `Esc`** beendet die Eingabe — `Esc`
+   **bestätigt** sie dabei, statt die gesetzten Punkte zu verwerfen (wie beim
+   Text); ohne einen einzigen Klick bricht `Esc` ab. Einzelmaß und Maßkette
+   sind dasselbe Element: ein Einzelmaß ist die Kette aus zwei Messpunkten.
    **Punkt hinzufügen**/**Punkt entfernen** arbeiten in **zwei Schritten**:
    erst die Maßkette anklicken (sie wird blau markiert), dann den Messpunkt —
    so ist eindeutig, welche Kette gemeint ist; weitere Punkte gehen ohne neuen
-   ersten Klick, `Enter` beendet. Unter zwei Messpunkten lässt sich kein Punkt
-   entfernen.
+   ersten Klick, `Enter` oder `Esc` beendet die Reihe. Unter zwei Messpunkten
+   lässt sich kein Punkt entfernen.
    **Reihenfolge**: Messpunkte dürfen in beliebiger Reihenfolge geklickt
    werden — die Kette sortiert sie entlang der Maßlinie, beim Anlegen und beim
    Einfügen. Ein Zickzack entsteht dadurch nicht.
