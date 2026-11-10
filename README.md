@@ -84,8 +84,15 @@ Den Ordner bestimmt die erste zutreffende Angabe:
    - Windows `%APPDATA%\JoJa-CAD`
    - macOS `~/Library/Application Support/JoJa-CAD`
 
-Beim ersten Start wird eine vorhandene `prefs.json` aus dem alten Ort
-(`~/.config/jjcad`) in den neuen Ordner kopiert; die alte Datei bleibt liegen.
+`portable.txt` ist der **einzige** Schalter zwischen portabel und installiert:
+liegt die Datei neben dem Programm, bleibt alles im Programmordner (`data/`);
+fehlt sie, geht alles in den Plattformstandard. Das portable ZIP für Windows
+liefert sie mit — sie darf nicht gelöscht werden. Ein portabler Lauf übernimmt
+**keine** Einstellungen vom Rechner, an dem er steckt.
+
+Beim ersten Start einer installierten Fassung wird eine vorhandene `prefs.json`
+aus dem alten Ort (`~/.config/jjcad`) in den neuen Ordner kopiert; die alte
+Datei bleibt liegen.
 Die drei Unterordner lassen sich unter Einstellungen → Speicherorte ändern
 (relativ zum Datenordner oder absolut; jedes Feld hat ein „Zurücksetzen“). Läuft bereits
 eine Instanz auf demselben Ordner, übernimmt sie die Arbeit: eine von außen
