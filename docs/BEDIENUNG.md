@@ -321,6 +321,14 @@ unter Einstellungen → **Speicherorte** ändern — relativ zum Datenordner ode
 absolut, je Feld mit **Zurücksetzen**. Ein nicht beschreibbarer Pfad wird beim
 Übernehmen abgelehnt, nicht still gesetzt.
 
+Auf derselben Seite steht unter den Dateipfaden die **Vorlage für neue
+Dateien**: eine Zeichnung, die als Kopie jeder neuen Datei dient — mit ihren
+Ebenen, Blättern und Einstellungen. Der Pfad lässt sich eintippen oder über
+**Datei wählen …** auswählen; **Zurücksetzen** schaltet die Vorlage ab, dann
+beginnen neue Dateien wieder leer. Eine nicht vorhandene Datei wird beim
+Übernehmen abgelehnt. Die Kopie ist eine **neue** Zeichnung: kein Speicherort,
+nicht „geändert“, eigener Name im Reiterstreifen.
+
 Läuft bereits eine Instanz auf demselben Ordner, wird **nicht** gemeckert: eine
 zweite Zeichnung, die Sie von außen öffnen (Doppelklick, Datei als Argument),
 landet als Reiter im laufenden Fenster und der zweite Prozess beendet sich; ein

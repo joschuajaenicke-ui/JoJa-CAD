@@ -333,6 +333,21 @@ pub fn load_document(path: &Path) -> Result<Document, String> {
     Ok(doc)
 }
 
+/// Kopie einer Vorlagendatei als **neue** Zeichnung (T0162).
+///
+/// Der Inhalt kommt vollständig aus der Datei — Ebenen, Blätter, Blöcke,
+/// Einstellungen und Objekte. Die Zeichnung selbst ist aber neu: kein Pfad,
+/// nicht „geändert“ und mit eigener Kennung. Mit der Kennung der Vorlage
+/// teilte die Kopie im Sicherungspool den Verlauf der Vorlagendatei.
+pub fn lade_vorlage(pfad: &Path) -> Result<Document, String> {
+    let mut doc = load_document(pfad)?;
+    doc.path = None;
+    doc.name = "Unbenannt".to_string();
+    doc.id = crate::sicherung::neue_uuid();
+    doc.modified = false;
+    Ok(doc)
+}
+
 // ---------------------------------------------------------------------------
 // Benutzereinstellungen (Hotbar, Tastenbelegung)
 // ---------------------------------------------------------------------------
@@ -1161,6 +1176,11 @@ pub struct UserPrefs {
     /// Speicherort der Protokolle (T0127), leer = `log/`.
     #[serde(default)]
     pub log_pfad: String,
+    /// Eigene Vorlage für neue Dateien (T0162): Pfad einer `.jjcad`-Datei,
+    /// leer = neue Zeichnungen beginnen leer. Relativ zur Datenwurzel oder
+    /// absolut — wie die drei Speicherorte darüber.
+    #[serde(default)]
+    pub vorlage_pfad: String,
     /// Sicherung (T0129): „Verlauf sichern“. Aus = nur der neueste Stand je
     /// Dokument; Pins bleiben in beiden Fällen.
     #[serde(default = "default_true")]
@@ -1561,6 +1581,8 @@ impl Default for UserPrefs {
             sicherung_stunden: crate::sicherung::STUNDEN_VORGABE,
             sicherung_intervall: crate::sicherung::INTERVALL_VORGABE,
             log_pfad: String::new(),
+            // T0162: ohne eigene Wahl beginnt eine neue Zeichnung leer.
+            vorlage_pfad: String::new(),
         }
     }
 }
@@ -1649,6 +1671,16 @@ impl UserPrefs {
             SpeicherortFeld::Sicherungen => self.sicherungen_dir(),
             SpeicherortFeld::Protokolle => self.log_dir(),
         }
+    }
+
+    /// Vorlagedatei für neue Zeichnungen (T0162) — `None`, wenn keine gewählt
+    /// ist. Ein relativer Pfad hängt an der Datenwurzel, wie die Speicherorte.
+    pub fn vorlage_datei(&self) -> Option<PathBuf> {
+        let text = self.vorlage_pfad.trim();
+        if text.is_empty() {
+            return None;
+        }
+        Some(crate::daten::pfad_in_wurzel(text, ""))
     }
 
     /// Soll der Dateidialog des Betriebssystems benutzt werden? Vorgabe ist
@@ -2202,6 +2234,82 @@ mod tests {
         zurueck.setze_speicherort(SpeicherortFeld::Bloecke, "");
         assert_eq!(zurueck.blocks_pfad, "");
         assert!(zurueck.blocks_dir().ends_with("blocks"));
+    }
+
+    /// T0162: Eine Vorlagendatei wird als **neue** Zeichnung geladen — der
+    /// Inhalt bleibt, Pfad und Kennung sind neu, „geändert“ ist aus. Eine
+    /// fehlende Vorlage meldet den Grund (kein stiller Fehlschlag).
+    #[test]
+    fn vorlage_wird_als_neue_zeichnung_geladen() {
+        let dir = test_dir("vorlage");
+        let pfad = dir.join("Vorlage.jjcad");
+        let mut doc = Document::new();
+        crate::actions::execute(
+            &mut doc,
+            "draw.line",
+            &serde_json::json!({"a": [0.0, 0.0], "b": [1000.0, 0.0]}),
+        )
+        .expect("Linie anlegen");
+        let vorlage_id = doc.id.clone();
+        save_document(&mut doc, &pfad).expect("Vorlage schreiben");
+        assert_eq!(doc.entities.len(), 1);
+
+        let kopie = lade_vorlage(&pfad).expect("Vorlage laden");
+        assert_eq!(kopie.entities.len(), 1, "der Inhalt der Vorlage fehlt");
+        assert!(kopie.path.is_none(), "die Kopie hängt an der Vorlagendatei");
+        assert_eq!(kopie.name, "Unbenannt", "die Kopie trägt den Dateinamen");
+        assert!(!kopie.modified, "eine frische Kopie gilt als geändert");
+        assert_ne!(
+            kopie.id, vorlage_id,
+            "die Kopie teilt die Kennung der Vorlage"
+        );
+        assert!(!kopie.layers.is_empty(), "die Ebenen der Vorlage fehlen");
+
+        // Die Vorlagedatei selbst bleibt unberührt.
+        let wieder = load_document(&pfad).expect("Vorlage erneut lesen");
+        assert_eq!(wieder.id, vorlage_id);
+
+        let fehlt = dir.join("gibtesnicht.jjcad");
+        assert!(
+            lade_vorlage(&fehlt).is_err(),
+            "eine fehlende Vorlage wird stillschweigend geladen"
+        );
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// T0162: Die Vorlage überlebt Speichern und Laden; ohne Angabe gibt es
+    /// keine (`None`), ein relativer Pfad hängt an der Datenwurzel.
+    #[test]
+    fn vorlagenpfad_wird_gespeichert_und_aufgeloest() {
+        let mut prefs = UserPrefs::default();
+        assert!(prefs.vorlage_datei().is_none(), "die Vorgabe ist leer");
+
+        prefs.vorlage_pfad = "/tmp/Vorlage.jjcad".into();
+        let dir = test_dir("vorlagenpfad");
+        let p = dir.join("prefs.json");
+        prefs.save_to(&p).unwrap();
+        let wieder = UserPrefs::load_from(&p);
+        assert_eq!(wieder.vorlage_pfad, "/tmp/Vorlage.jjcad");
+        assert_eq!(
+            wieder.vorlage_datei(),
+            Some(PathBuf::from("/tmp/Vorlage.jjcad"))
+        );
+
+        // Altbestand ohne den Schlüssel bleibt gültig.
+        let alt: UserPrefs = serde_json::from_str(r#"{"last_dir": "/tmp"}"#).unwrap();
+        assert_eq!(alt.vorlage_pfad, "");
+        assert!(alt.vorlage_datei().is_none());
+
+        // Relativ heißt: in der Datenwurzel.
+        let mut relativ = UserPrefs::default();
+        relativ.vorlage_pfad = "vorlagen/Haus.jjcad".into();
+        let aufgeloest = relativ.vorlage_datei().expect("Vorlage");
+        assert!(
+            aufgeloest.ends_with("vorlagen/Haus.jjcad"),
+            "relativer Pfad: {aufgeloest:?}"
+        );
+        assert!(aufgeloest.is_absolute(), "relativer Pfad bleibt relativ");
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     /// T0063: „Maus verschiebt“ ist in der Vorgabe an (bisheriges Verhalten)

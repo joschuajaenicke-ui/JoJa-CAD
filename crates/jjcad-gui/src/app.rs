@@ -941,6 +941,8 @@ pub struct UiState {
     /// Sind die Puffer aus den Einstellungen gefüllt? Wird beim Schließen des
     /// Einstellungsfensters zurückgesetzt.
     pub speicherorte_geladen: bool,
+    /// T0162: Eingabepuffer der Vorlage für neue Dateien.
+    pub vorlage: String,
     /// Lage von Suchfeld, Kategorienliste und Einstellungsseite im zuletzt
     /// gezeichneten Einstellungsfenster (Regressionstest T0061)
     pub last_settings_suche: Option<Rect>,
@@ -1147,6 +1149,7 @@ impl Default for UiState {
             settings_suche: String::new(),
             speicherorte: Default::default(),
             speicherorte_geladen: false,
+            vorlage: String::new(),
             last_settings_suche: None,
             last_settings_nav: None,
             last_settings_pane: None,
@@ -4753,14 +4756,39 @@ impl App {
         })
     }
 
-    /// Einen leeren Datei-Reiter anlegen. Die bisherige Zeichnung bleibt in
+    /// Einen neuen Datei-Reiter anlegen. Die bisherige Zeichnung bleibt in
     /// ihrem Reiter stehen — „Neu“ schließt nichts mehr (T0073).
+    ///
+    /// T0162: Ist in den Einstellungen eine Vorlage angegeben, beginnt die
+    /// neue Datei als **Kopie** dieser Datei — Objekte, Ebenen, Blätter,
+    /// Blöcke und Zeichnungseinstellungen kommen aus der Vorlage, der Pfad
+    /// bleibt leer. Eine unlesbare Vorlage wird gemeldet und die Datei beginnt
+    /// leer; „Neu“ darf weder still scheitern noch hängen bleiben.
     pub fn new_document(&mut self) {
         crate::textedit::beenden(self);
         let mut s = Session::new();
-        // T0125: „Neu“ bekommt die eingestellte Linienstärke je Objektart.
-        s.doc.setze_standard_breiten(&self.prefs.layer_weights);
-        s.doc.settings.snap.wall_edges = self.prefs.snap_wall_edges;
+        let mut aus_vorlage = false;
+        let mut vorlage_fehler = false;
+        if let Some(pfad) = self.prefs.vorlage_datei() {
+            match jjcad_core::persist::lade_vorlage(&pfad) {
+                Ok(doc) => {
+                    s = Session::with_doc(doc);
+                    aus_vorlage = true;
+                }
+                // Der Grund steht nach der Erfolgsmeldung in der Statuszeile —
+                // sonst überschriebe „Datei · neu“ die einzige Spur des Fehlers.
+                Err(_) => vorlage_fehler = true,
+            }
+        }
+        if aus_vorlage {
+            // Die Ebenen der Vorlage behalten ihre Breiten — wie beim Öffnen
+            // einer Datei werden die Voreinstellungen nur **gemerkt**.
+            s.doc.merke_standard_breiten(&self.prefs.layer_weights);
+        } else {
+            // T0125: „Neu“ bekommt die eingestellte Linienstärke je Objektart.
+            s.doc.setze_standard_breiten(&self.prefs.layer_weights);
+            s.doc.settings.snap.wall_edges = self.prefs.snap_wall_edges;
+        }
         s.doc.name = self.freier_dateiname("Unbenannt");
         let tab = DocTab {
             session: s,
@@ -4780,6 +4808,9 @@ impl App {
         self.fit_view();
         self.benutzerbloecke_einhaengen();
         self.toast(jjcad_core::i18n::tr("gui.app.datei_neu"));
+        if vorlage_fehler {
+            self.toast(jjcad_core::i18n::tr("settings.vorlage_nicht_lesbar"));
+        }
     }
 
     /// T0125: Voreinstellungen der Linienstärke übernehmen.
@@ -13235,6 +13266,77 @@ mod tests_mehrere_dateien {
 
         app.new_document();
         assert_eq!(app.doc().name, "Unbenannt 3", "Namen zählen weiter");
+    }
+
+    /// T0162: Mit einer Vorlage in den Einstellungen beginnt „Neu“ als Kopie
+    /// dieser Datei — Inhalt und Ebenen kommen aus der Vorlage, der Reiter ist
+    /// aber neu (kein Pfad, nicht geändert, eigener Name). Ohne Vorlage bleibt
+    /// es beim leeren Blatt.
+    #[test]
+    fn neue_datei_ist_kopie_der_vorlage() {
+        let mut app = App::with_ctx(egui::Context::default());
+        let dir = std::env::temp_dir().join(format!("jjcad-t0162-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let pfad = dir.join("Vorlage.jjcad");
+        let mut doc = jjcad_core::model::Document::new();
+        jjcad_core::actions::execute(
+            &mut doc,
+            "draw.line",
+            &serde_json::json!({"a": [0.0, 0.0], "b": [1000.0, 0.0]}),
+        )
+        .expect("Linie anlegen");
+        jjcad_core::persist::save_document(&mut doc, &pfad).expect("Vorlage schreiben");
+
+        app.prefs.vorlage_pfad = pfad.to_string_lossy().to_string();
+        app.new_document();
+
+        assert_eq!(
+            app.doc().entities.len(),
+            1,
+            "die Kopie hat den Inhalt der Vorlage nicht"
+        );
+        assert!(
+            app.doc().path.is_none(),
+            "die Kopie hängt an der Vorlagendatei"
+        );
+        assert!(!app.doc().modified, "die frische Kopie gilt als geändert");
+        assert!(
+            app.doc().name.starts_with("Unbenannt"),
+            "die Kopie trägt den Dateinamen: {}",
+            app.doc().name
+        );
+        assert_eq!(app.tabs.len(), 2, "die neue Datei bekam keinen Reiter");
+
+        // Ohne Vorlage: wieder das leere Blatt.
+        app.prefs.vorlage_pfad.clear();
+        app.new_document();
+        assert!(
+            app.doc().entities.is_empty(),
+            "ohne Vorlage muss die neue Datei leer sein"
+        );
+        assert!(app.doc().path.is_none());
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// T0162: Eine unlesbare Vorlage blockiert „Neu“ nicht — die Datei beginnt
+    /// leer und der Grund steht in der Statuszeile (kein stiller Fehlschlag).
+    #[test]
+    fn unlesbare_vorlage_beginnt_leer_und_meldet_sich() {
+        let mut app = App::with_ctx(egui::Context::default());
+        app.prefs.vorlage_pfad = "/gibt/es/nicht/Vorlage.jjcad".into();
+        app.new_document();
+        assert!(
+            app.doc().entities.is_empty(),
+            "die unlesbare Vorlage liefert trotzdem Inhalt"
+        );
+        assert!(app.doc().path.is_none());
+        assert_eq!(
+            app.status_msg,
+            jjcad_core::i18n::tr("settings.vorlage_nicht_lesbar"),
+            "der Grund der unlesbaren Vorlage fehlt in der Statuszeile"
+        );
+        assert_eq!(app.tabs.len(), 2, "der Reiter wurde trotzdem angelegt");
     }
 
     /// Jede Datei behält Inhalt, Auswahl und Ansicht für sich.
