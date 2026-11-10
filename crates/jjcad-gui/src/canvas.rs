@@ -4807,9 +4807,8 @@ fn draw_hilfslinien(app: &App, p: &Painter, rect: Rect, view: View) {
     if app.halt.is_empty() && bezug.is_none() {
         return;
     }
-    let tol = fang_radius_px(app, view.zoom);
     let regeln = fang_regeln(app);
-    let linien = snap::hilfslinien_gesamt(app.doc(), &app.halt, bezug, tol, &regeln.ignore);
+    let linien = snap::hilfslinien_gesamt(app.doc(), &app.halt, bezug, &regeln.ignore);
     if linien.is_empty() {
         return;
     }
@@ -10404,12 +10403,11 @@ mod tests_hilfslinien {
         assert_eq!(app.snap_label.as_deref(), Some("Hilfslinie"));
     }
 
-    /// Ein Punkt zwischen zwei Linien (T0150): der zweite Punkt der neuen Linie
-    /// rastet auf der Winkelhalbierenden ein und die Statuszeile meldet sie.
-    /// Der Punkt ist der Bezugspunkt des Zuges („die Linie beginnt zwischen
-    /// zwei Linien").
+    /// Der feste Punkt einer neuen Linie liegt im **Scheitel zweier Linien**
+    /// (T0150): der zweite Punkt rastet auf der Winkelhalbierenden ein und die
+    /// Statuszeile meldet sie.
     #[test]
-    fn winkelhalbierende_zwischen_zwei_linien_faengt_in_der_app() {
+    fn winkelhalbierende_im_scheitel_faengt_in_der_app() {
         let mut app = app();
         let s = app.session_mut();
         s.execute(
@@ -10423,22 +10421,27 @@ mod tests_hilfslinien {
         )
         .unwrap();
         app.start_tool("draw.line");
-        let start = V2::new(1000.0, 1000.0);
-        app.tool.as_mut().unwrap().pts.push(start);
+        let scheitel = V2::new(0.0, 0.0);
+        app.tool.as_mut().unwrap().pts.push(scheitel);
         // 10 mm neben der 45°-Halbierenden.
         let (p, label) = fang_zeiger(&app, V2::new(1200.0, 1190.0), 30.0);
         assert_eq!(label, Some("Winkelhalbierende"));
-        let d = (p - start).normalized();
+        let d = (p - scheitel).normalized();
         assert!(
             (d.angle().to_degrees() - 45.0).abs() < 1e-6,
             "Richtung {:?}",
             d.angle().to_degrees()
         );
 
-        // Gegenprobe: ohne gesetzten Punkt gibt es keine Halbierende.
+        // Gegenprobe: ein Punkt **zwischen** den Linien ist kein Scheitel.
         app.tool.as_mut().unwrap().pts.clear();
-        let (_, ohne) = fang_zeiger(&app, V2::new(1200.0, 1190.0), 30.0);
-        assert_ne!(ohne, Some("Winkelhalbierende"));
+        app.tool
+            .as_mut()
+            .unwrap()
+            .pts
+            .push(V2::new(1000.0, 1000.0));
+        let (p2, ohne) = fang_zeiger(&app, V2::new(1200.0, 1190.0), 30.0);
+        assert_ne!(ohne, Some("Winkelhalbierende"), "{p2:?}");
     }
 
     /// Dieselbe Lage über echte Frames: die Zeichenfläche zeichnet die
@@ -10462,7 +10465,7 @@ mod tests_hilfslinien {
             .as_mut()
             .unwrap()
             .pts
-            .push(V2::new(1000.0, 1000.0));
+            .push(V2::new(0.0, 0.0));
         frame(&mut app, vec![]);
         let rect = app.ui.last_canvas;
         let view = app.current_view();

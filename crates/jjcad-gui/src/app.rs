@@ -2404,11 +2404,13 @@ impl App {
                         }
                     }
                 }
-                // Winkelhalbierender Fang (T0150): eine neue Linie beginnt
-                // zwischen den beiden ersten Linien der Zeichnung — von ihrem
-                // Anfangspunkt geht die Halbierende als Führungslinie aus.
+                // Winkelhalbierender Fang (T0150): eine neue Linie beginnt im
+                // **Schnittpunkt zweier Linien** — von diesem Scheitel geht die
+                // Halbierende als Führungslinie aus. Gesucht wird der erste
+                // Schnittpunkt, der auf beiden Strecken liegt (echte Ecke).
                 "halbierende" | "winkelhalbierende" | "halbierendehalte"
-                | "winkelhalbierendehalte" => {
+                | "winkelhalbierendehalte" | "halbierendezwischen"
+                | "winkelhalbierendezwischen" => {
                     let kanten: Vec<(V2, V2)> = self
                         .doc()
                         .ents()
@@ -2419,15 +2421,32 @@ impl App {
                             _ => None,
                         })
                         .collect();
-                    if kanten.len() >= 2 {
+                    let scheitel = (0..kanten.len())
+                        .flat_map(|i| (i + 1..kanten.len()).map(move |j| (i, j)))
+                        .find_map(|(i, j)| {
+                            let (a1, b1) = kanten[i];
+                            let (a2, b2) = kanten[j];
+                            let p = jjcad_core::geom::line_line(a1, b1, a2, b2, true, true)?;
+                            let grenze = jjcad_core::snap::WINKELHALBIERENDE_SCHEITEL_MM;
+                            (jjcad_core::geom::dist_point_segment(p, a1, b1) <= grenze
+                                && jjcad_core::geom::dist_point_segment(p, a2, b2) <= grenze)
+                                .then_some(p)
+                        });
+                    // Gegenprobe zum Prüfen (T0150): ein Punkt *zwischen* den
+                    // Linien ist kein Scheitel — dort darf keine Halbierende
+                    // erscheinen. Zustand: `halbierendezwischen`.
+                    let punkt = if part.contains("zwischen") && kanten.len() >= 2 {
                         let mitte = |(a, b): (V2, V2)| (a + b) * 0.5;
-                        let p = (mitte(kanten[0]) + mitte(kanten[1])) * 0.5;
+                        Some((mitte(kanten[0]) + mitte(kanten[1])) * 0.5)
+                    } else {
+                        scheitel
+                    };
+                    if let Some(p) = punkt {
                         self.start_tool("draw.line");
                         if part.contains("halte") {
-                            // Zweite Lage der Aufgabenstellung: der Punkt
-                            // zwischen den Linien ist für den **erweiterten
-                            // Punktfang** gehalten — von ihm geht die
-                            // Halbierende aus, ohne gesetzten Startpunkt.
+                            // Zweite Lage: der Scheitel ist für den
+                            // **erweiterten Punktfang** gehalten — von ihm geht
+                            // die Halbierende aus, ohne gesetzten Startpunkt.
                             self.halt.push(jjcad_core::snap::HaltPunkt {
                                 point: p,
                                 kind: jjcad_core::snap::SnapKind::Endpoint,

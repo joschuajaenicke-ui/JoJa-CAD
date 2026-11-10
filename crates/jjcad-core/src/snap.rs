@@ -259,56 +259,43 @@ fn richtungen(h: &HaltPunkt) -> [Vec2; 2] {
 }
 
 // ---------------------------------------------------------------------------
-// Winkelhalbierende zwischen zwei Linien (T0150)
+// Winkelhalbierende am Schnittpunkt zweier Linien (T0150)
 // ---------------------------------------------------------------------------
 
-/// Weite um den Punkt, in der die beiden Linien liegen müssen — als Vielfaches
-/// des Fangradius (bei 12 px Vorgabe rund 480 Bildpunkte), also mit dem Zoom
-/// wachsend.
+/// Toleranz, mit der ein Punkt „auf" einer Linie liegt (mm).
 ///
-/// Ohne Grenze zöge irgendein Paar weit entfernter Linien eine Halbierende
-/// durch die halbe Zeichnung. Mit Grenze gilt: die beiden Linien müssen in der
-/// Nähe des Punktes **verlaufen** (Abstand zur Strecke, nicht zur verlängerten
-/// Geraden) — sonst wäre „zwischen zwei Linien" nur eine Rechnung ohne Bezug
-/// zum Bild.
-pub const WINKELHALBIERENDE_WEITE: f64 = 40.0;
+/// Der feste Punkt einer neuen Linie entsteht durch Fangen und liegt damit
+/// exakt auf der Geometrie; ein frei gesetzter Punkt trifft den Scheitel
+/// höchstens zufällig. 1 mm ist streng genug, dass der Fang nur am
+/// Schnittpunkt greift, und weit genug, dass eine gerundete Koordinate nicht
+/// herausfällt.
+pub const WINKELHALBIERENDE_SCHEITEL_MM: f64 = 1.0;
 
-/// Untergrenze der Weite in Millimetern (3 m).
+/// Winkelhalbierende an einem Punkt, der auf dem Schnittpunkt zweier Linien
+/// liegt.
 ///
-/// Ohne sie hinge der Fang an der Zoomstufe: bei starker Vergrößerung ist der
-/// Fangradius nur wenige Millimeter groß, und zwei Wände im Abstand von 2 m
-/// lägen „außer Reichweite" — der Fang verschwände genau dann, wenn man nah
-/// herangeht. 3 m deckt die üblichen Raummaße ab; weiter entfernte Linien
-/// kommen bei kleinerem Zoom über den Faktor hinzu.
-pub const WINKELHALBIERENDE_MINDEST_MM: f64 = 3000.0;
-
-/// Die Winkelhalbierende zwischen den beiden Linien, zwischen denen `p` liegt.
+/// **Bedingung** (T0150, Turn 2): `p` muss auf **zwei** Linien liegen — also
+/// der Scheitel sein, an dem sich zwei Linien treffen (Ecke, Kreuzung, Stoß).
+/// Nur dann gibt es einen Winkel zu halbieren. Liegt der Punkt nur *zwischen*
+/// zwei Linien oder neben einer einzelnen, entsteht keine Führungslinie; genau
+/// das war am ersten Stand falsch, dort wurde die Halbierende überall
+/// angeboten, wo zwei Linien in der Nähe waren.
 ///
 /// Als Linien zählen **Linien und Wände** (deren Achse) — das sind die Linien
 /// einer Zeichnung; Bogen, Rechteck und Polylinie sind keine „zwei Linien" und
-/// bleiben außen vor. Dadurch braucht die Suche keine Anzeigeliste: sie liest
-/// die Strecke direkt aus dem Modell und kostet je Bild nur einen Durchgang
-/// über die Objekte (gemessen: 1 µs bei 36 Objekten statt 195 µs über
-/// `render::entity_bbox`).
+/// bleiben außen vor. Gelesen wird die Strecke direkt aus dem Modell; über
+/// `render::entity_bbox` kostete jeder Aufruf 195 µs (Displayliste je Objekt).
 ///
-/// Gesucht sind die **zwei nächstgelegenen** Strecken verschiedener Elemente,
-/// die `p` umschließen:
+/// Geliefert wird je Winkel am Scheitel eine Führungslinie **durch `p`**:
 ///
-/// * **sich schneidende** Linien: die Halbierende des Winkels, in dem `p`
-///   liegt — ihre Richtung zeigt vom Scheitel in diesen Winkel hinein.
-/// * **parallele** Linien: die Mittellinie zwischen beiden.
-///
-/// Die gelieferte Hilfslinie läuft durch `p` (bei parallelen Linien durch die
-/// Mitte zwischen den beiden Lotfußpunkten, also ebenfalls neben `p`). Damit
-/// ist sie der Führungsstrahl für den nächsten Punkt: eine Linie, die von `p`
-/// aus gezeichnet wird, läuft genau zwischen den beiden Linien hindurch.
-///
-/// `None`, wenn keine zwei Linien in Reichweite sind, `p` auf einer von beiden
-/// liegt oder beide parallel mit `p` außerhalb sind.
-pub fn winkelhalbierende(doc: &Document, p: Vec2, tol: f64, ignore: &[Id]) -> Option<Hilfslinie> {
-    let weite = (tol * WINKELHALBIERENDE_WEITE).max(WINKELHALBIERENDE_MINDEST_MM);
-    // Kandidaten: gerade Strecken, die in der Nähe von `p` verlaufen.
-    let mut strecken: Vec<(Vec2, Vec2, Id)> = Vec::new();
+/// * **Ecke** (beide Strecken enden im Punkt): die Halbierende des
+///   Innenwinkels,
+/// * **Kreuzung oder Stoß** (der Punkt liegt im Lauf einer Strecke): beide
+///   Halbierenden, denn dort gibt es zwei Winkelpaare.
+pub fn winkelhalbierende(doc: &Document, p: Vec2, ignore: &[Id]) -> Vec<Hilfslinie> {
+    let tol = WINKELHALBIERENDE_SCHEITEL_MM;
+    // Nur Linien, auf denen `p` liegt — der Scheitel liegt auf beiden.
+    let mut strecken: Vec<(Vec2, Vec2)> = Vec::new();
     for e in doc.ents() {
         if ignore.contains(&e.id) {
             continue;
@@ -323,82 +310,85 @@ pub fn winkelhalbierende(doc: &Document, p: Vec2, tol: f64, ignore: &[Id]) -> Op
             EntityKind::Wall { a, b, .. } => (*a, *b),
             _ => continue,
         };
-        if dist_point_segment(p, a, b) <= weite {
-            strecken.push((a, b, e.id));
+        if dist_point_segment(p, a, b) <= tol {
+            strecken.push((a, b));
         }
     }
+    if strecken.len() < 2 {
+        return Vec::new();
+    }
 
-    // Das engste Paar gewinnt: die beiden Linien, zwischen denen der Punkt
-    // tatsächlich sitzt, liegen ihm am nächsten.
-    let mut best: Option<(f64, Hilfslinie)> = None;
+    let mut out: Vec<Hilfslinie> = Vec::new();
     for i in 0..strecken.len() {
         for j in (i + 1)..strecken.len() {
-            let (a1, b1, _) = strecken[i];
-            let (a2, b2, _) = strecken[j];
-            let Some(l) = halbierende_der_linien(p, a1, b1, a2, b2) else {
-                continue;
-            };
-            let score = dist_point_segment(p, a1, b1).max(dist_point_segment(p, a2, b2));
-            if best.as_ref().map(|(s, _)| score < *s).unwrap_or(true) {
-                best = Some((score, l));
+            for l in halbierende_am_scheitel(p, strecken[i], strecken[j]) {
+                // Dieselbe Halbierende kann aus zwei Paaren entstehen (drei
+                // Linien in einem Punkt) — einmal anbieten.
+                let doppelt = out
+                    .iter()
+                    .any(|o| o.dir.cross(l.dir).abs() < 1e-9 && o.origin.dist(l.origin) <= tol);
+                if !doppelt {
+                    out.push(l);
+                }
             }
         }
     }
-    best.map(|(_, l)| l)
+    out
 }
 
-/// Halbierende zweier Strecken, die `p` umschließen — `None`, wenn `p` auf
-/// einer der Linien liegt oder der Winkel gestreckt ist.
-fn halbierende_der_linien(p: Vec2, a1: Vec2, b1: Vec2, a2: Vec2, b2: Vec2) -> Option<Hilfslinie> {
-    let d1 = (b1 - a1).normalized();
-    let d2 = (b2 - a2).normalized();
+/// Halbierende(n) zweier Strecken, die sich in `p` treffen.
+///
+/// Die Richtungen werden **von `p` weg** genommen: endet eine Strecke im
+/// Punkt, ist das ihre eine Richtung; läuft sie durch ihn hindurch, zählen
+/// beide. Die Halbierende ist die Summe zweier solcher Richtungen — zeigen sie
+/// auseinander (gestreckter Winkel), gibt es keine.
+fn halbierende_am_scheitel(p: Vec2, s1: (Vec2, Vec2), s2: (Vec2, Vec2)) -> Vec<Hilfslinie> {
+    let d1 = (s1.1 - s1.0).normalized();
+    let d2 = (s2.1 - s2.0).normalized();
     if d1.len() < 0.5 || d2.len() < 0.5 {
-        return None;
+        return Vec::new();
     }
+    // Parallel oder gleichgerichtet: es gibt keinen Winkel zu halbieren.
     if d1.cross(d2).abs() < 1e-6 {
-        // Parallel: die Mittellinie, sofern `p` zwischen beiden liegt. „Zwischen"
-        // heißt hier: die vorzeichenbehafteten Abstände (mit **derselben**
-        // Richtung gemessen) haben verschiedene Vorzeichen.
-        let s1 = d1.cross(p - a1);
-        let s2 = d1.cross(p - a2);
-        if s1 * s2 >= 0.0 || s1.abs() < SNAP_DEDUP || s2.abs() < SNAP_DEDUP {
-            return None;
+        return Vec::new();
+    }
+    let mut out: Vec<Hilfslinie> = Vec::new();
+    for r1 in richtungen_ab(p, s1, d1) {
+        for r2 in richtungen_ab(p, s2, d2) {
+            let summe = r1 + r2;
+            if summe.len() < 1e-6 {
+                continue;
+            }
+            let dir = summe.normalized();
+            if out.iter().any(|l| l.dir.cross(dir).abs() < 1e-9) {
+                continue;
+            }
+            out.push(Hilfslinie::halbierende(p, dir));
         }
-        let f1 = fuss_auf_gerade(p, a1, d1);
-        let f2 = fuss_auf_gerade(p, a2, d1);
-        return Some(Hilfslinie::halbierende(f1.lerp(f2, 0.5), d1));
     }
-    // Scheitel der beiden unbegrenzten Geraden.
-    let scheitel = line_line(a1, b1, a2, b2, true, true)?;
-    // Von den vier Winkeln um den Scheitel ist der gemeint, in dem `p` liegt:
-    // beide Strahlen zeigen dorthin, wo `p` steht.
-    let mut r1 = d1;
-    if (p - scheitel).dot(r1) < 0.0 {
-        r1 = -r1;
+    out
+}
+
+/// Richtungen der Strecke `s`, gesehen von ihrem Punkt `p`: eine, wenn der
+/// Punkt an einem Ende liegt, sonst beide.
+fn richtungen_ab(p: Vec2, s: (Vec2, Vec2), d: Vec2) -> Vec<Vec2> {
+    let tol = WINKELHALBIERENDE_SCHEITEL_MM;
+    let mut out = Vec::new();
+    if p.dist(s.0) > tol {
+        out.push(-d);
     }
-    let mut r2 = d2;
-    if (p - scheitel).dot(r2) < 0.0 {
-        r2 = -r2;
+    if p.dist(s.1) > tol {
+        out.push(d);
     }
-    if (p - scheitel).dot(r1).abs() < SNAP_DEDUP || (p - scheitel).dot(r2).abs() < SNAP_DEDUP {
-        // `p` liegt auf einer der beiden Linien — es ist kein Punkt *zwischen*
-        // ihnen, und die Halbierende wäre nicht bestimmt.
-        return None;
-    }
-    let dir = (r1 + r2).normalized();
-    if dir.len() < 0.5 {
-        // Gestreckter Winkel (die Strahlen zeigen auseinander).
-        return None;
-    }
-    Some(Hilfslinie::halbierende(p, dir))
+    out
 }
 
 /// Fangpunkte auf den Winkelhalbierenden der genannten Punkte.
 ///
-/// Angeboten wird der Fußpunkt des Zeigers auf der Halbierenden — genau wie bei
-/// einer Hilfslinie des erweiterten Punktfangs, nur ohne deren zweite Achse.
-/// Die Punkte sind der Bezugspunkt des laufenden Zuges („die Linie beginnt
-/// zwischen zwei Linien") und die Haltepunkte des erweiterten Punktfangs.
+/// Angeboten wird der Fußpunkt des Zeigers auf einer Halbierenden — genau wie
+/// bei einer Hilfslinie des erweiterten Punktfangs, nur ohne deren zweite
+/// Achse. Die Punkte sind der Bezugspunkt des laufenden Zuges (der **feste
+/// Punkt** der neuen Linie) und die Haltepunkte des erweiterten Punktfangs.
 pub fn winkelhalbierende_treffer(
     doc: &Document,
     punkte: &[Vec2],
@@ -408,16 +398,15 @@ pub fn winkelhalbierende_treffer(
 ) -> Vec<SnapHit> {
     let mut out = Vec::new();
     for p in punkte {
-        let Some(l) = winkelhalbierende(doc, *p, tol, ignore) else {
-            continue;
-        };
-        let f = fuss_auf_gerade(cursor, l.origin, l.dir);
-        if f.dist(cursor) <= tol {
-            out.push(SnapHit {
-                point: f,
-                kind: SnapKind::Bisector,
-                entity: None,
-            });
+        for l in winkelhalbierende(doc, *p, ignore) {
+            let f = fuss_auf_gerade(cursor, l.origin, l.dir);
+            if f.dist(cursor) <= tol {
+                out.push(SnapHit {
+                    point: f,
+                    kind: SnapKind::Bisector,
+                    entity: None,
+                });
+            }
         }
     }
     out
@@ -427,13 +416,12 @@ pub fn winkelhalbierende_treffer(
 /// Winkelhalbierenden — die eine Liste für die Anzeige.
 ///
 /// Gezeichnet wird damit genau das, was auch fängt: die zwei Achsen je
-/// Haltepunkt, die Halbierende an jedem Haltepunkt, der zwischen zwei Linien
-/// liegt, und die Halbierende am Bezugspunkt des laufenden Zuges.
+/// Haltepunkt und die Halbierenden an jedem Haltepunkt bzw. am Bezugspunkt,
+/// der auf dem Schnittpunkt zweier Linien liegt.
 pub fn hilfslinien_gesamt(
     doc: &Document,
     halte: &[HaltPunkt],
     bezug: Option<Vec2>,
-    tol: f64,
     ignore: &[Id],
 ) -> Vec<Hilfslinie> {
     let mut out = hilfslinien(halte);
@@ -442,23 +430,25 @@ pub fn hilfslinien_gesamt(
         punkte.push(r);
     }
     for p in punkte {
-        let Some(l) = winkelhalbierende(doc, p, tol, ignore) else {
-            continue;
-        };
-        // Dieselbe Halbierende kann von zwei Punkten geliefert werden (Bezug und
-        // Haltepunkt liegen beide zwischen denselben Linien) — einmal zeichnen.
-        let doppelt = out.iter().any(|o| {
-            o.kind == l.kind
-                && (o.origin.dist(l.origin) <= SNAP_DEDUP
-                    || (o.dir.cross(l.dir).abs() < 1e-9
-                        && fuss_auf_gerade(l.origin, o.origin, o.dir).dist(l.origin) <= SNAP_DEDUP))
-        });
-        if !doppelt {
-            out.push(l);
+        for l in winkelhalbierende(doc, p, ignore) {
+            // Dieselbe Halbierende kann von zwei Punkten geliefert werden
+            // (Bezug und Haltepunkt liegen beide auf demselben Scheitel) —
+            // einmal zeichnen.
+            let doppelt = out.iter().any(|o| {
+                o.kind == l.kind
+                    && (o.origin.dist(l.origin) <= SNAP_DEDUP
+                        || (o.dir.cross(l.dir).abs() < 1e-9
+                            && fuss_auf_gerade(l.origin, o.origin, o.dir).dist(l.origin)
+                                <= SNAP_DEDUP))
+            });
+            if !doppelt {
+                out.push(l);
+            }
         }
     }
     out
 }
+
 
 /// Richtung der Linie, auf der dieser Punkt des Elements liegt.
 ///
