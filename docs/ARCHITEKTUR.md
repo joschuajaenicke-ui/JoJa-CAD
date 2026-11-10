@@ -206,9 +206,10 @@ das Fenstersystem globale Fensterkoordinaten liefert — unter Wayland trägt si
 maximiert steht in der Sitzung die zuletzt bekannte **normale** Größe
 (`App::fenster_normal`), nicht die Bildschirmgröße; der Zustand wird im ersten
 Bild gesetzt und bis zu 3 s wiederholt, weil der Fenstermanager ihn beim
-Erzeugen des Fensters verwirft (`App::fenster_start_anwenden`). Gespeicherte Zeichnungen kommen von der Platte; fehlt die
-Zieldatei, kommt der neueste Stand aus dem Sicherungspool und der Reiter heißt
-„Unbenannt“; fehlt auch der Stand, wird der Reiter weggelassen und gemeldet.
+Erzeugen des Fensters verwirft (`App::fenster_start_anwenden`). Gespeicherte
+Zeichnungen kommen von der Platte; fehlt die Zieldatei, kommt der neueste
+Stand aus dem Sicherungspool und der Reiter heißt „Unbenannt“; fehlt auch der
+Stand, wird der Reiter weggelassen und gemeldet.
 **Nicht** wiederhergestellt werden Auswahl, Undo-Verlauf, Werkzeugwahl und
 Zwischenablage. Beim Beenden fragt das Programm nicht nach dem Speichern; die
 Rückfrage bleibt nur beim Schließen eines Reiters und hängt daran, ob der
