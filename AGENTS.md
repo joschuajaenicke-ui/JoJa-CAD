@@ -329,7 +329,10 @@ Mit dem Nutzer abgestimmt — nicht „verbessern“:
   (beliebige Klickreihenfolge, kein Zickzack), `dim.point.add` fügt an der
   geordneten Stelle ein. Punkt hinzufügen/entfernen geht in **zwei Schritten**
   (`Tool::obj` hält die gewählte Maßkette): erst die Kette anklicken, dann den
-  Messpunkt.
+  Messpunkt. **`Esc` bestätigt** die Eingabe (wie beim Text), statt sie zu
+  verwerfen: `App::escape_pressed` schickt die Maßketten-Werkzeuge in
+  `finish_tool` (ohne einen Klick bricht Esc ab), das Punktwerkzeug endet ohne
+  die Auswahl zu leeren.
 - **Bemaßung beim Ändern**: Die Maßlinie behält ihre **Lage**. Ein waagerechtes
   Maß liegt auf *einer* Höhe (`line_pos.y` für alle Basispunkte), ein senkrechtes
   auf einer Breite — `render::dim_projiziert` **setzt** die Koordinate, es addiert
