@@ -255,3 +255,29 @@ fn schraege_masslinie_faengt_parallel() {
     let abstand = (p - v(0.0, 1000.0)).dot(vers.normalized()).abs();
     assert!((abstand - 750.0).abs() < 1.0, "Abstand {abstand}");
 }
+
+/// Gespeicherte Datei: eine Maßkette steht als **ein** Objekt mit `pts` darin
+/// und kommt mit allen Messpunkten wieder heraus (T0154).
+#[test]
+fn gespeicherte_masskette_traegt_alle_messpunkte() {
+    let mut d = doc_mm();
+    let id = kette(&mut d);
+    actions::execute(&mut d, "dim.point.add", &json!({"ids": [id], "p": [3500.0, 0.0]}))
+        .expect("Punkt hinzufügen");
+
+    let text = persist::to_json(&d).expect("schreiben");
+    assert!(
+        text.contains("\"type\": \"dim\""),
+        "die Bemaßung steht nicht als „dim“ in der Datei"
+    );
+    assert!(
+        !text.contains("dim_chain"),
+        "der alte Typ darf nicht mehr geschrieben werden"
+    );
+    let wieder = persist::from_json(&text).expect("lesen");
+    assert_eq!(
+        punkte(&wieder, id),
+        vec![v(0.0, 0.0), v(2000.0, 0.0), v(3500.0, 0.0), v(5000.0, 0.0)],
+        "die Messpunkte überstehen Speichern und Laden"
+    );
+}
