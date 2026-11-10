@@ -326,10 +326,11 @@ pub enum FillPattern {
     Cross,
     /// Punktraster — Nr. 4 „Sand“.
     Dots,
-    /// Nr. 1 „Boden/Gelände unverändert“: Zickzackschraffur unter der
-    /// Geländekante.
+    /// Nr. 1 „Boden/Gelände unverändert“: Flechtmuster aus Haken und
+    /// Querstrichen (T0152).
     GroundPlain,
-    /// Nr. 2 „Boden/Gelände verändert“: Längsstriche mit Querstrichen.
+    /// Nr. 2 „Boden/Gelände verändert“: Flechtwerk aus langen Strichen beider
+    /// Diagonalen (T0152).
     GroundChanged,
     /// Nr. 3 „Kies“: Kieselsteine als Kreise wechselnder Größe.
     Gravel,
