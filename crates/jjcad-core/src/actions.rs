@@ -274,10 +274,13 @@ pub const ACTIONS: &[ActionDef] = &[
     // Ein Element für Einzelmaß und Maßkette (T0154). `dim.linear` bleibt als
     // Befehl für MCP und ältere Skripte bestehen, ist aber kein eigenes
     // Werkzeug mehr — das Ribbon zeigt nur die Maßkette mit ihren Modi.
-    // `dim.linear` ist nur noch ein Befehl (MCP, ältere Skripte) — das
-    // Werkzeug ist die Maßkette, die das Einzelmaß als Zwei-Punkt-Kette kann.
+    // `dim.linear` und `dim.chain` sind Befehle (MCP, ältere Skripte) — die
+    // Werkzeuge sind die drei Eingabemodi der Maßkette (T0154, Turn 3).
     act!("dim.linear", "action.dim.linear.label", Bemassung, "dim", "", "action.dim.linear.hint", false),
-    act!("dim.chain", "action.dim.chain.label", Bemassung, "dimchain", "m", "action.dim.chain.hint", true),
+    act!("dim.chain", "action.dim.chain.label", Bemassung, "dimchain", "", "action.dim.chain.hint", false),
+    act!("dim.chain.h", "action.dim.chain.h.label", Bemassung, "dimchain", "m", "action.dim.chain.h.hint", true),
+    act!("dim.chain.v", "action.dim.chain.v.label", Bemassung, "dim-v", "", "action.dim.chain.v.hint", true),
+    act!("dim.chain.d", "action.dim.chain.d.label", Bemassung, "dim-d", "", "action.dim.chain.d.hint", true),
     // Messpunkt an eine bestehende Maßkette anhängen bzw. herausnehmen
     // (T0154) — beides im Reiter „Bemaßung".
     act!("dim.point.add", "action.dim.point.add.label", Bemassung, "point", "", "action.dim.point.add.hint", true),
@@ -388,6 +391,9 @@ pub fn is_mutating(id: &str) -> bool {
             | "draw.stair"
             | "dim.linear"
             | "dim.chain"
+            | "dim.chain.h"
+            | "dim.chain.v"
+            | "dim.chain.d"
             | "dim.elevation.plan"
             | "dim.elevation.section"
             | "dim.room"
@@ -700,6 +706,9 @@ fn standard_ebene(action: &str) -> Option<&'static str> {
         "draw.stair" | "draw.stair.label" => "Treppen",
         "dim.linear"
         | "dim.chain"
+        | "dim.chain.h"
+        | "dim.chain.v"
+        | "dim.chain.d"
         | "dim.elevation.plan"
         | "dim.elevation.section"
         | "dim.room" => "Bemaßung",
@@ -742,9 +751,10 @@ pub fn erzeuger_fuer(kind: &EntityKind) -> &'static str {
         EntityKind::Fill { .. } => "draw.fill",
         EntityKind::Volume { .. } => "draw.volume",
         EntityKind::Text { .. } => "draw.text",
-        // Ein Element für Einzelmaß und Maßkette (T0154): das Werkzeug ist
-        // immer die Kette; `dim.linear` bleibt für MCP und alte Aufrufe.
-        EntityKind::Dim { .. } => "dim.chain",
+        // Ein Element für Einzelmaß und Maßkette (T0154). Die Schnellauswahl
+        // nimmt den Modus, der zur Achse des angeklickten Maßes passt
+        // (`canvas` wertet die Achse aus) — hier steht der Rückfall.
+        EntityKind::Dim { .. } => "dim.chain.d",
         EntityKind::ElevationPlan { .. } => "dim.elevation.plan",
         EntityKind::ElevationSection { .. } => "dim.elevation.section",
         EntityKind::Room { .. } => "dim.room",
@@ -1549,6 +1559,62 @@ fn fit_werte(bbox: &BBox, w: f64, h: f64, margin: f64) -> (f64, Vec2, Option<Str
 // ---------------------------------------------------------------------------
 
 /// Führt eine Aktion aus. Rückgabe: JSON mit Ergebnisdetails.
+/// Legt eine Maßkette an — ein Weg für den Befehl und die drei Werkzeuge.
+///
+/// `feste_achse` kommt vom Werkzeug (waagerecht, senkrecht, direkt); ohne
+/// Angabe bestimmt der Befehl die Achse aus der Dominanz der Punktdifferenz.
+///
+/// Die Messpunkte werden **sortiert** abgelegt (`render::dim_sortieren`): sie
+/// dürfen in beliebiger Reihenfolge geklickt werden, die Kette zeigt sie immer
+/// in der Reihenfolge der Maßlinie. Sonst entstünde ein Zickzack, sobald ein
+/// Punkt in der falschen Reihenfolge gesetzt wurde (T0154, Turn 3).
+fn dim_kette(
+    doc: &mut Document,
+    p: &Params,
+    ebene: Option<&'static str>,
+    feste_achse: Option<DimAxis>,
+) -> Result<Value, String> {
+    let pts = p
+        .pts("pts")
+        .ok_or_else(|| "Parameter 'pts' fehlt".to_string())?;
+    if pts.len() < 2 {
+        return Err("Maßkette braucht mindestens zwei Punkte".into());
+    }
+    // Achse ohne Angabe aus der Dominanz der Punktdifferenz bestimmen.
+    // Zwei verschiedene Punkte dürfen nie den Maßtext „0,0“ ergeben;
+    // eine gemischte Kette ohne brauchbare Achse ist ein Fehler (T0038).
+    let axis = match feste_achse.or_else(|| p.dim_axis("axis")) {
+        Some(a) => a,
+        None => DimAxis::aus_kette(&pts).ok_or_else(|| {
+            "Maßkette · Achse nicht bestimmbar — `axis` angeben".to_string()
+        })?,
+    };
+    let pts = crate::render::dim_sortieren(&pts, axis);
+    let line_pos = p
+        .pt("line_pos")
+        .or_else(|| p.pt("pos"))
+        .unwrap_or_else(|| {
+            let b = BBox::from_points(&pts);
+            v(b.min.x, b.min.y - doc.settings.annotation_scale * 8.0)
+        });
+    let layer = resolve_layer_in(doc, p, ebene);
+    let idn = doc.new_id();
+    let mut e = Entity::new(
+        idn,
+        layer,
+        EntityKind::Dim {
+            pts,
+            line_pos,
+            axis,
+            override_text: p.text("text"),
+        },
+    );
+    apply_common(doc, &mut e, p, layer);
+    bemasung_schwarz(p, &mut e);
+    doc.add_entity(e);
+    Ok(json!({"ok": true, "created": [idn]}))
+}
+
 pub fn execute(doc: &mut Document, id: &str, params: &Value) -> Result<Value, String> {
     let p = Params::new(params, doc.settings.input_unit);
     // Typgerechte Standardebene dieser Aktion (None = keine Vorgabe).
@@ -2214,45 +2280,18 @@ pub fn execute(doc: &mut Document, id: &str, params: &Value) -> Result<Value, St
             doc.add_entity(e);
             Ok(json!({"ok": true, "created": [idn]}))
         }
-        "dim.chain" => {
-            let pts = p
-                .pts("pts")
-                .ok_or_else(|| "Parameter 'pts' fehlt".to_string())?;
-            if pts.len() < 2 {
-                return Err("Maßkette braucht mindestens zwei Punkte".into());
-            }
-            let line_pos = p
-                .pt("line_pos")
-                .or_else(|| p.pt("pos"))
-                .unwrap_or_else(|| {
-                    let b = BBox::from_points(&pts);
-                    v(b.min.x, b.min.y - doc.settings.annotation_scale * 8.0)
-                });
-            // Achse ohne Angabe aus der Dominanz der Punktdifferenz bestimmen.
-            // Zwei verschiedene Punkte dürfen nie den Maßtext „0,0“ ergeben;
-            // eine gemischte Kette ohne brauchbare Achse ist ein Fehler (T0038).
-            let axis = match p.dim_axis("axis") {
-                Some(a) => a,
-                None => DimAxis::aus_kette(&pts).ok_or_else(|| {
-                    "Maßkette · Achse nicht bestimmbar — `axis` angeben".to_string()
-                })?,
+        // Maßkette. Die drei Werkzeuge (`.h`, `.v`, `.d`) sind derselbe
+        // Befehl mit **fester** Achse — der Modus steckt im Werkzeug, nicht in
+        // einem Parameter, den die Oberfläche zusätzlich führen müsste (T0154,
+        // Turn 3).
+        "dim.chain" | "dim.chain.h" | "dim.chain.v" | "dim.chain.d" => {
+            let feste_achse = match id {
+                "dim.chain.h" => Some(DimAxis::X),
+                "dim.chain.v" => Some(DimAxis::Y),
+                "dim.chain.d" => Some(DimAxis::Aligned),
+                _ => None,
             };
-            let layer = resolve_layer_in(doc, &p, ebene);
-            let idn = doc.new_id();
-            let mut e = Entity::new(
-                idn,
-                layer,
-                EntityKind::Dim {
-                    pts,
-                    line_pos,
-                    axis,
-                    override_text: p.text("text"),
-                },
-            );
-            apply_common(doc, &mut e, &p, layer);
-            bemasung_schwarz(&p, &mut e);
-            doc.add_entity(e);
-            Ok(json!({"ok": true, "created": [idn]}))
+            dim_kette(doc, &p, ebene, feste_achse)
         }
         // Einen Messpunkt an eine bestehende Maßkette anhängen (T0154).
         //

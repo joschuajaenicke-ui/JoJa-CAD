@@ -241,6 +241,18 @@ label = "Maß"
 hint = "Punkte klicken, Enter beendet"
 label = "Maßkette"
 
+[action.dim.chain.h]
+hint = "Maßkette waagerecht — erst die Maßlinie, dann Messpunkte"
+label = "Waagerecht"
+
+[action.dim.chain.v]
+hint = "Maßkette senkrecht — erst die Maßlinie, dann Messpunkte"
+label = "Senkrecht"
+
+[action.dim.chain.d]
+hint = "Maßkette direkt — zwei Messpunkte, dann die Maßlinie parallel"
+label = "Direkt"
+
 [action.dim.point.add]
 hint = "Messpunkt anklicken — kommt in die Maßkette"
 label = "Punkt hinzufügen"
@@ -924,9 +936,11 @@ masskette_position_klicken = "Maßkette · Position der Maßlinie"
 masskette_messpunkt_klicken_enter = "Maßkette · Messpunkt klicken (Enter beendet)"
 masskette_zweiter_punkt = "Maßkette · zweiter Messpunkt"
 masskette_position_parallel_klicken = "Maßkette · Maßlinie setzen (Enter beendet)"
-punkt_hinzufuegen_messpunkt_klicken = "Punkt hinzufügen · Messpunkt klicken"
+punkt_hinzufuegen_messpunkt_klicken = "Punkt hinzufügen · Messpunkt anklicken"
+punkt_hinzufuegen_masskette_klicken = "Punkt hinzufügen · Maßkette anklicken"
 punkt_hinzufuegen_gesetzt = "Punkt hinzufügen · gesetzt"
-punkt_entfernen_messpunkt_klicken = "Punkt entfernen · Messpunkt klicken"
+punkt_entfernen_messpunkt_klicken = "Punkt entfernen · Messpunkt anklicken"
+punkt_entfernen_masskette_klicken = "Punkt entfernen · Maßkette anklicken"
 punkt_entfernen_entfernt = "Punkt entfernen · entfernt"
 massstab = "Maßstab"
 meldung_x_polylinie_naechster_punkt_klicken = "Meldung {i} – Polylinie: nächster Punkt klicken"
@@ -1052,7 +1066,7 @@ kommandozeile = "Alternativ von der Kommandozeile: jjcad --daten-dir <Pfad>"
 
 [gui.canvas]
 abgebrochen = "Abgebrochen"
-masskette_waehlen = "Maßkette · erst eine Maßkette wählen"
+masskette_waehlen = "Maßkette · erst eine Maßkette anklicken"
 masskette_zwei_messpunkte = "Maßkette · mindestens zwei Messpunkte"
 abstand_zum_drehzentrum_noetig = "Abstand zum Drehzentrum nötig"
 ansicht_drehen_abstand_zum_zentrum_noetig = "Ansicht drehen · Abstand zum Zentrum nötig"

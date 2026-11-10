@@ -318,6 +318,30 @@ pub fn paint(painter: &Painter, rect: Rect, name: &str, color: Color32) {
             i.line(3.0, 14.0, 4.5, 12.5);
             i.line(15.0, 14.0, 16.5, 12.5);
         }
+        // Maßkette senkrecht: dieselbe Kette wie „dimchain“, um 90° gedreht
+        // (T0154, Turn 3 — je Eingabemodus ein eigenes Zeichen).
+        "dim-v" => {
+            i.line(14.0, 3.0, 14.0, 21.0);
+            for y in [3.0, 9.0, 15.0, 21.0] {
+                i.line(10.5, y, 18.0, y);
+            }
+            i.line(14.0, 3.0, 12.5, 4.5);
+            i.line(14.0, 15.0, 12.5, 16.5);
+        }
+        // Maßkette direkt: schräge Kette mit Querstrichen.
+        "dim-d" => {
+            i.line(4.0, 19.0, 20.0, 5.0);
+            // Querstriche im rechten Winkel zur Messrichtung (45°).
+            let n = (0.7071, 0.7071);
+            for (x, y) in [(4.0, 19.0), (9.33, 14.33), (14.67, 9.67), (20.0, 5.0)] {
+                i.line(
+                    x - n.0 * 3.6,
+                    y - n.1 * 3.6,
+                    x + n.0 * 3.6,
+                    y + n.1 * 3.6,
+                );
+            }
+        }
         // Grundriss-Kote: Kreis mit Fadenkreuz, zwei gegenüberliegende Viertel
         // gefüllt — dasselbe Symbol, das die Zeichnung zeigt.
         "elevation" => {
