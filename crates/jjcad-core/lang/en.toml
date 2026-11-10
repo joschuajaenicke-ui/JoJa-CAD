@@ -226,6 +226,18 @@ label = "Dimension"
 hint = "Click points, Enter ends"
 label = "Dimension chain"
 
+[action.dim.chain.h]
+hint = "Horizontal chain — first the line, then measuring points"
+label = "Horizontal"
+
+[action.dim.chain.v]
+hint = "Vertical chain — first the line, then measuring points"
+label = "Vertical"
+
+[action.dim.chain.d]
+hint = "Direct chain — two points, then the line parallel to them"
+label = "Direct"
+
 [action.dim.point.add]
 hint = "Click a measuring point — it joins the chain"
 label = "Add point"
@@ -705,6 +717,7 @@ grid = "Grid"
 tracking = "Tracking line"
 bisector = "Angle bisector"
 dim_parallel = "Dimension chain parallel"
+tangent = "Tangent"
 
 [ui.linetype]
 solid = "Solid"
@@ -907,14 +920,17 @@ masskette_messpunkt_klicken_enter = "Dimension chain · click a point (Enter end
 masskette_zweiter_punkt = "Dimension chain · second measuring point"
 masskette_position_parallel_klicken = "Dimension chain · set the line (Enter ends)"
 punkt_hinzufuegen_messpunkt_klicken = "Add point · click a measuring point"
+punkt_hinzufuegen_masskette_klicken = "Add point · click a dimension chain"
 punkt_hinzufuegen_gesetzt = "Add point · done"
 punkt_entfernen_messpunkt_klicken = "Remove point · click a measuring point"
+punkt_entfernen_masskette_klicken = "Remove point · click a dimension chain"
 punkt_entfernen_entfernt = "Remove point · removed"
 massstab = "Scale"
 meldung_x_polylinie_naechster_punkt_klicken = "Message {i} – polyline: click the next point"
 mitte = "Middle"
 mittelpunkt = "Centre"
 naechster_punkt = "Nearest point"
+tangential = "Tangent"
 neues_blatt = "New sheet"
 nicht_uebernommen = " · not applied: "
 objekt_zerlegt = "Object · exploded"
@@ -1035,7 +1051,7 @@ kommandozeile = "Alternatively from the command line: jjcad --daten-dir <path>"
 [gui.canvas]
 abgebrochen = "Cancelled"
 ansichtsbereich_hinweis = "View area · wheel scale · middle button pan"
-masskette_waehlen = "Dimension chain · select a chain first"
+masskette_waehlen = "Dimension chain · click a chain first"
 masskette_zwei_messpunkte = "Dimension chain · at least two measuring points"
 abstand_zum_drehzentrum_noetig = "Distance to the rotation centre required"
 ansicht_drehen_abstand_zum_zentrum_noetig = "Rotate view · distance to the centre required"
@@ -1229,6 +1245,7 @@ masseinheit_massstab_textgroesse_und_bogensymbole_stehen = "Unit, scale, text he
 maus_verschiebt = "Mouse moves"
 mittelpunkt = "Centre"
 naechster_punkt = "Nearest point"
+tangential = "Tangent"
 name_der_vorlage = "Name of the preset"
 name_des_layouts_ist_der_name_schon_vergeben_wird_er_ueb = "Name of the layout. If the name already exists it is overwritten."
 name_x = "name.{wert1}"

@@ -62,7 +62,8 @@ Ohne `host` sucht `draw.door`/`draw.window` die nächste Wand im Umfeld und
 | ID | Parameter | Hinweise |
 |---|---|---|
 | `dim.linear` | `a`, `b`, `line_pos`, `axis`, `text` | Einzelmaß = Maßkette aus zwei Messpunkten; `axis`: `x`, `y`, `aligned`, ohne Angabe automatisch nach Dominanz |
-| `dim.chain` | `pts[]`, `line_pos`, `axis` | Maßkette über mindestens zwei Messpunkte (dasselbe Element wie `dim.linear`) |
+| `dim.chain` | `pts[]`, `line_pos`, `axis` | Maßkette über mindestens zwei Messpunkte (dasselbe Element wie `dim.linear`); die Punkte werden entlang der Messrichtung sortiert abgelegt |
+| `dim.chain.h` / `.v` / `.d` | `pts[]`, `line_pos` | Werkzeuge der Oberfläche: Maßkette waagerecht, senkrecht oder direkt — die Achse kommt aus dem Werkzeug, ein mitgegebenes `axis` sticht sie nicht |
 | `dim.point.add` | `ids`, `p` (oder `pos`), optional `index` | Fügt einer Maßkette einen Messpunkt hinzu; ohne `index` an der Stelle, die die Kette entlang der Messrichtung geordnet hält |
 | `dim.point.remove` | `ids`, `index` oder `p` | Entfernt einen Messpunkt; unter zwei Punkten ist das ein Fehler |
 | `dim.elevation.plan` | `p`, `z` | Grundriss-Kote (Kreis-Symbol), `z` in mm über ±0,00 |

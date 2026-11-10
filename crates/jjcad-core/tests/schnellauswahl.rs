@@ -124,13 +124,16 @@ fn jede_objektart_startet_ihren_erzeuger() {
         "draw.text",
     );
     pruefe(
+        // Maßkette: Rückfall des Erzeugers ist der direkte Modus; die
+        // Oberfläche wählt ihn nach der Achse des angeklickten Maßes
+        // (`canvas::tool_click_at`, T0154).
         &EntityKind::Dim {
             pts: vec![v(0.0, 0.0), v(1000.0, 0.0)],
             line_pos: v(0.0, -300.0),
             axis: DimAxis::X,
             override_text: None,
         },
-        "dim.chain",
+        "dim.chain.d",
     );
     pruefe(
         &EntityKind::Dim {
@@ -139,7 +142,7 @@ fn jede_objektart_startet_ihren_erzeuger() {
             axis: DimAxis::X,
             override_text: None,
         },
-        "dim.chain",
+        "dim.chain.d",
     );
     pruefe(
         &EntityKind::ElevationPlan {

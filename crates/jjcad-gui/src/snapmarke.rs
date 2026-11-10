@@ -174,6 +174,12 @@ pub fn marke(art: FangArt) -> Vec<Zug> {
             l(&mut v, (-9.0, 5.0), (9.0, 5.0));
             l(&mut v, (-9.0, -5.0), (-9.0, 5.0));
         }
+        // Tangential: Kreis mit anliegender Gerade — die Linie berührt den
+        // Kreis in genau einem Punkt (T0157).
+        FangArt::Objekt(SnapKind::Tangent) => {
+            v.push(Kreis(5.0));
+            l(&mut v, (-8.5, -5.0), (8.5, -5.0));
+        }
         // Polarfang: Winkelmarke mit Strahl auf der Polarschrittweite.
         FangArt::Polar => {
             l(&mut v, (0.0, 0.0), (8.0, 0.0));
@@ -238,7 +244,7 @@ fn mal_zug(p: &Painter, mitte: Pos2, zug: Zug, breite: f32, farbe: Color32) {
 
 /// Alle Fangarten, die eine Marke haben — Grundlage für die Vollständigkeit.
 #[cfg(test)]
-pub const ALLE: [FangArt; 12] = [
+pub const ALLE: [FangArt; 13] = [
     FangArt::Objekt(SnapKind::Endpoint),
     FangArt::Objekt(SnapKind::SheetCorner),
     FangArt::Objekt(SnapKind::Intersection),
@@ -250,6 +256,7 @@ pub const ALLE: [FangArt; 12] = [
     FangArt::Objekt(SnapKind::Grid),
     FangArt::Objekt(SnapKind::Tracking),
     FangArt::Objekt(SnapKind::Bisector),
+    FangArt::Objekt(SnapKind::Tangent),
     FangArt::Polar,
 ];
 

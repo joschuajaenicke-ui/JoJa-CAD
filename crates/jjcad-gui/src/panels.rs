@@ -385,7 +385,8 @@ pub fn properties(app: &mut App, ui: &mut Ui) {
                     "draw.stair" => crate::props::treppe(app, ui, ziel),
                     "dim.room" => crate::props::raumstempel(app, ui, ziel),
                     // Ein Element für Einzelmaß und Maßkette (T0154).
-                    "dim.linear" | "dim.chain" => crate::props::bemassung(app, ui, ziel),
+                    "dim.linear" | "dim.chain" | "dim.chain.h" | "dim.chain.v"
+                    | "dim.chain.d" => crate::props::bemassung(app, ui, ziel),
                     "sheet.viewport_tool" => crate::props::viewport(app, ui, ziel),
                     "draw.volume" | "draw.volume.points" | "draw.volume.paint" => {
                         crate::props::volumen(app, ui, ziel)

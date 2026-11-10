@@ -2107,7 +2107,7 @@ pub fn bemassung(app: &mut App, ui: &mut Ui, ziel: Ziel) {
         None => (
             app.doc().current_layer,
             app.ui.pending.color,
-            Some(app.options.dim_mode.axis()),
+            Some(app.options.dim_axis.unwrap_or(DimAxis::X)),
             app.options.dim_text.clone(),
         ),
     };
@@ -2142,28 +2142,21 @@ pub fn bemassung(app: &mut App, ui: &mut Ui, ziel: Ziel) {
     zeile("dimkopf");
 
     zeile("richtung");
-    // **Eine** Zeile für beide Fälle: beim Erzeugen wählt sie den Eingabemodus
-    // der Maßkette (waagerecht, senkrecht, direkt), bei der Auswahl die Achse
-    // des vorhandenen Maßes. Die Zeilen bleiben damit gleich — nur die Werte
-    // der Auswahl unterscheiden sich (T0154).
+    // **Eine** Zeile für beide Fälle: beim Erzeugen zeigt sie den Modus des
+    // laufenden Werkzeugs (gewählt wird er über die drei Schaltflächen im
+    // Reiter „Bemaßung“, T0154 Turn 3), bei der Auswahl ist sie die Achse des
+    // vorhandenen Maßes. Die Zeilen bleiben damit gleich — nur die Werte
+    // unterscheiden sich.
     if ziel.ist_neu() {
-        let mut modus = app.options.dim_mode;
-        let items: Vec<(crate::app::DimModus, String)> = crate::app::DimModus::ALL
-            .iter()
-            .map(|m| (*m, m.label().to_string()))
-            .collect();
-        let mut picked = None;
-        widgets::field_row(ui, jjcad_core::i18n::tr("gui.props.richtung"), |ui| {
-            picked = panels::pick_combo(ui, &ziel.salt("dim_achse"), modus, &items);
-        });
-        if let Some(m) = picked {
-            modus = m;
-            // Der Wechsel startet das Werkzeug neu: die Klickpunkte eines
-            // anderen Modus bedeuten etwas anderes (Lage der Maßlinie oder
-            // Messpunkt), sie dürfen nicht weiterverwendet werden.
-            app.waehle_dim_modus(m);
-        }
+        let modus = app
+            .tool
+            .as_ref()
+            .and_then(|t| crate::app::DimModus::aus_werkzeug(&t.action))
+            .unwrap_or(crate::app::DimModus::Direkt);
         achse = Some(modus.axis());
+        widgets::field_row(ui, jjcad_core::i18n::tr("gui.props.richtung"), |ui| {
+            ui.label(theme::mono(modus.label().to_string()));
+        });
     } else {
         let axis_items: Vec<(Option<DimAxis>, String)> = DimAxis::ALL
             .iter()
