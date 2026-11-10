@@ -763,6 +763,7 @@
 # tracking = "Hilfslinie"
 # bisector = "Winkelhalbierende"
 # dim_parallel = "Maßkette parallel"
+# tangent = "Tangential"
 #
 [ui.linetype]
 # solid = "Durchgezogen"
@@ -981,6 +982,7 @@
 # mitte = "Mitte"
 # mittelpunkt = "Mittelpunkt"
 # naechster_punkt = "Nächster Punkt"
+# tangential = "Tangential"
 # neues_blatt = "Neues Blatt"
 # nicht_uebernommen = " · nicht übernommen: "
 # objekt_zerlegt = "Objekt · zerlegt"
@@ -1099,6 +1101,7 @@
 #
 [gui.canvas]
 # abgebrochen = "Abgebrochen"
+# ansichtsbereich_hinweis = "Ansichtsbereich · Mausrad Maßstab · Mitteltaste verschieben"
 # masskette_waehlen = "Maßkette · erst eine Maßkette anklicken"
 # masskette_zwei_messpunkte = "Maßkette · mindestens zwei Messpunkte"
 # abstand_zum_drehzentrum_noetig = "Abstand zum Drehzentrum nötig"
@@ -1293,6 +1296,7 @@
 # maus_verschiebt = "Maus verschiebt"
 # mittelpunkt = "Mittelpunkt"
 # naechster_punkt = "Nächster Punkt"
+# tangential = "Tangential"
 # name_der_vorlage = "Name der Vorlage"
 # name_des_layouts_ist_der_name_schon_vergeben_wird_er_ueb = "Name des Layouts. Ist der Name schon vergeben, wird er überschrieben."
 # name_x = "name.{wert1}"
@@ -1581,6 +1585,8 @@
 # keine = "keine"
 #
 [gui.props]
+# ansichtsbereich_anpassen = "Ansichtsbereich anpassen"
+# ansichtsbereich_tip = "Mausrad ändert den Maßstab · Mitteltaste verschiebt den Ausschnitt"
 # zeilenabstand = "Zeilenabstand"
 # zeilenabstand_hinweis = "Zeilenabstand als Vielfaches der Zeilenhöhe der Schrift"
 # massstab = "Maßstab"

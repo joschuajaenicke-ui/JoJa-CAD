@@ -1122,6 +1122,11 @@ pub struct UiState {
     /// löscht sie im selben Bild — so läuft der Dauerlauf nur, solange die
     /// Maustaste auf dem Slot liegt.
     pub schwenk_zeiger: Option<(f32, f32)>,
+    /// Ansichtsfenster, dessen **Ansichtsbereich** gerade eingestellt wird
+    /// (T0158). Solange der Schalter im Eigenschaften-Panel an ist, wirken
+    /// Mausrad und Mitteltaste auf dieses Fenster statt auf das Blatt:
+    /// Verschieben ändert die Modellmitte, Zoomen den Maßstab.
+    pub vp_edit: Option<Id>,
 }
 
 impl Default for UiState {
@@ -1222,6 +1227,7 @@ impl Default for UiState {
             typed: String::new(),
             sel_stamp: 0,
             schwenk_zeiger: None,
+            vp_edit: None,
         }
     }
 }
@@ -2276,6 +2282,35 @@ impl App {
                     );
                     self.ui.ribbon = RibbonTab::Bemassung;
                 }
+                // Tangentialfang (T0157): Kreis und Linie, Linienwerkzeug mit
+                // erstem Punkt auf der Kreisbahn. Der Zeiger rastet auf der
+                // Senkrechten zum Radius ein — Prüfbild mit
+                // `x11-drive.py hover` auf diese Tangente.
+                "tangential" => {
+                    self.ui.ribbon = RibbonTab::Zeichnen;
+                    // Frische Zeichnung: sie rechnet in Metern, die Punkte des
+                    // Werkzeugs stehen dagegen in mm.
+                    self.new_document();
+                    let _ = self.session_mut().execute(
+                        "draw.circle",
+                        &serde_json::json!({"c": [0.0, 0.0], "r": 2.0, "layer": "Wände"}),
+                    );
+                    let _ = self.session_mut().execute(
+                        "draw.line",
+                        &serde_json::json!({
+                            "a": [-3.0, -3.0], "b": [3.0, -3.0], "layer": "Wände"
+                        }),
+                    );
+                    self.start_tool("draw.line");
+                    if let Some(t) = self.tool.as_mut() {
+                        t.pts.push(V2::new(2000.0, 0.0));
+                    }
+                    let mut v = self.current_view();
+                    v.center = V2::new(0.0, 0.0);
+                    v.zoom = 0.12;
+                    self.set_view(v);
+                    self.started_at = 3.0;
+                }
                 // Schnitt-Kote platzieren: Werkzeug läuft, zwei Punkte sind
                 // gesetzt — das Prüfbild zeigt die Vorschau am Zeiger (T0122).
                 "koteschnitt" => {
@@ -2764,6 +2799,26 @@ impl App {
                                 g.pos = V2::new(bb.min.x, bb.max.y + 600.0);
                             }
                         }
+                    }
+                }
+                // Prüfhilfe T0156: Einfüge-Vorschau eines **Blocks** — für das
+                // Bild der Miniatur am Zeiger (Vorschau verlässt die Fläche).
+                // Der größte Block, damit die Miniatur im Bild zu erkennen ist.
+                "blockvorschau" | "blockminiatur" => {
+                    let block = self
+                        .doc()
+                        .blocks
+                        .iter()
+                        .filter(|b| b.bbox().is_valid())
+                        .max_by(|a, b| {
+                            let (x, y) = (a.bbox(), b.bbox());
+                            (x.width() * x.height())
+                                .partial_cmp(&(y.width() * y.height()))
+                                .unwrap_or(std::cmp::Ordering::Equal)
+                        })
+                        .map(|b| b.id.clone());
+                    if let Some(id) = block {
+                        self.start_ghost_block(id);
                     }
                 }
                 // Prüfhilfe T0070: Einfüge-Vorschau um 90° gedreht, Anker am
@@ -3302,6 +3357,21 @@ impl App {
                         }
                     }
                 }
+                // Prüfbild T0158: Ansichtsbereich eines Ansichtsfensters wird
+                // eingestellt — Fenster ausgewählt, Schalter an, Rahmen markiert.
+                "ansichtsbereich" => {
+                    if let Some(s) = self.doc().sheets.first().map(|s| s.id) {
+                        self.switch_tab(TabKind::Sheet(s));
+                        if let Some(id) = self
+                            .doc()
+                            .sheet(s)
+                            .and_then(|sh| sh.viewports().next().map(|(e, _)| e.id))
+                        {
+                            self.session_mut().select(vec![id]);
+                            self.ui.vp_edit = Some(id);
+                        }
+                    }
+                }
                 "toolpreview" => {
                     self.start_tool("draw.wall");
                     if let Some(t) = &mut self.tool {
@@ -3560,6 +3630,15 @@ impl App {
             }
         }
         let block_gleich = self.doc().block_space == block;
+        // T0158: Der Schalter „Ansichtsbereich anpassen“ hängt am ausgewählten
+        // Ansichtsfenster. Endet die Auswahl (Klick daneben, Raumwechsel), endet
+        // er mit — sonst liefe eine unsichtbare Einstellung weiter, während das
+        // Panel den Schalter gar nicht mehr zeigt.
+        if let Some(id) = self.ui.vp_edit {
+            if raum.is_none() || !self.session().selection.contains(&id) {
+                self.ui.vp_edit = None;
+            }
+        }
         if block_gleich && self.session().space() == raum {
             return;
         }
@@ -3702,6 +3781,37 @@ impl App {
         t.cache = None;
     }
 
+    /// Ansichtsfenster, dessen **Ansichtsbereich** gerade eingestellt wird
+    /// (T0158) — Blattkennung und Fenster.
+    ///
+    /// Nur im Papierraum und nur für ein vorhandenes Fenster; ohne Auswahl
+    /// schaltet [`App::sync_space`] den Schalter ab.
+    pub fn vp_edit_fenster(&self) -> Option<(Id, jjcad_core::model::Viewport)> {
+        let id = self.ui.vp_edit?;
+        let sid = match &self.tab().tab {
+            TabKind::Sheet(sid) => *sid,
+            _ => return None,
+        };
+        let vp = self.doc().sheet(sid)?.viewport(id)?.clone();
+        Some((sid, vp))
+    }
+
+    /// Ansichtsbereich eines Fensters setzen (T0158): Maßstab und/oder
+    /// Modellmitte über `modify.set` — derselbe Weg wie das
+    /// Eigenschaften-Panel, damit Panel und Mausbewegung nie auseinanderlaufen.
+    pub fn vp_setzen(&mut self, id: Id, scale: Option<f64>, center: Option<V2>) {
+        let u = self.unit();
+        let mut p = serde_json::json!({ "ids": [id] });
+        if let Some(s) = scale {
+            p["scale"] = serde_json::json!(s);
+        }
+        if let Some(c) = center {
+            p["center"] = serde_json::json!([u.from_mm(c.x), u.from_mm(c.y)]);
+        }
+        let _ = self.session_mut().execute("modify.set", &p);
+        self.mark_changed();
+    }
+
     /// Ist das Fenster im Vollbild? Maßgeblich ist der Fensterzustand: beendet
     /// die Fensterverwaltung das Vollbild, zeigt der Knopf das sofort an und
     /// `ui.fullscreen` bleibt nur Rückfall für Oberflächen ohne Rückmeldung
@@ -3722,6 +3832,16 @@ impl App {
 
     /// Ansicht auf Inhalt einpassen.
     pub fn fit_view(&mut self) {
+        // T0158: „Ansichtsbereich anpassen“ — „alles zeigen“ passt die Zeichnung
+        // ins Ansichtsfenster ein, nicht das Blatt.
+        if let Some((sid, vp)) = self.vp_edit_fenster() {
+            let _ = self.session_mut().execute(
+                "sheet.fit_viewport",
+                &serde_json::json!({ "sheet": sid, "viewport": vp.id }),
+            );
+            self.mark_changed();
+            return;
+        }
         let rect = self.ui.last_canvas;
         let (w, h) = (rect.width().max(50.0) as f64, rect.height().max(50.0) as f64);
         let tab = self.tab();
@@ -5683,6 +5803,13 @@ impl App {
         // T0067: Die Einstellung „Geschwindigkeit der Ansicht“ skaliert den Schritt.
         let px = SCHWENK_SCHRITT_PX * self.prefs.pan_speed;
         let w = v.screen_delta_to_world(Vec2::new(dx * px, dy * px));
+        // T0158: Bei „Ansichtsbereich anpassen“ schiebt derselbe Schritt den
+        // Ausschnitt im Ansichtsfenster statt das Blatt.
+        if let Some((_, vp)) = self.vp_edit_fenster() {
+            let center = crate::canvas::viewport_schwenken(&vp, w);
+            self.vp_setzen(vp.id, None, Some(center));
+            return;
+        }
         v.center += w;
         self.set_view(v);
     }
@@ -5694,6 +5821,13 @@ impl App {
         let mut v = self.current_view();
         let px = SCHWENK_TEMPO_PX_PRO_S * self.prefs.pan_speed * dt;
         let w = v.screen_delta_to_world(Vec2::new(dx * px, dy * px));
+        // T0158: derselbe Weg wie beim Schritt — im Ansichtsbereich wandert der
+        // Ausschnitt, nicht das Blatt.
+        if let Some((_, vp)) = self.vp_edit_fenster() {
+            let center = crate::canvas::viewport_schwenken(&vp, w);
+            self.vp_setzen(vp.id, None, Some(center));
+            return;
+        }
         v.center += w;
         self.set_view(v);
     }
@@ -7984,6 +8118,7 @@ fn rail(ui: &mut egui::Ui, icon: &str, tooltip: &str, chevron: &str) -> bool {
             "center" => sn.center = value,
             "intersection" => sn.intersection = value,
             "perpendicular" => sn.perpendicular = value,
+            "tangent" => sn.tangent = value,
             "nearest" => sn.nearest = value,
             "grid" => sn.grid = value,
             "ortho" => sn.ortho = value,
@@ -7996,6 +8131,7 @@ fn rail(ui: &mut egui::Ui, icon: &str, tooltip: &str, chevron: &str) -> bool {
             &serde_json::json!({"snap": {
                 "endpoint": sn.endpoint, "midpoint": sn.midpoint, "center": sn.center,
                 "intersection": sn.intersection, "perpendicular": sn.perpendicular,
+                "tangent": sn.tangent,
                 "nearest": sn.nearest, "grid": sn.grid, "ortho": sn.ortho, "polar": sn.polar,
                 "wall_edges": sn.wall_edges
             }}),
@@ -8862,6 +8998,7 @@ impl App {
                                 (jjcad_core::i18n::tr("gui.app.zentrum"), "center", s0.center),
                                 (jjcad_core::i18n::tr("gui.app.schnittpunkt"), "intersection", s0.intersection),
                                 (jjcad_core::i18n::tr("gui.app.lot"), "perpendicular", s0.perpendicular),
+                                (jjcad_core::i18n::tr("gui.app.tangential"), "tangent", s0.tangent),
                                 (jjcad_core::i18n::tr("gui.app.naechster_punkt"), "nearest", s0.nearest),
                             ] {
                                 let mut v = val;
@@ -8878,6 +9015,7 @@ impl App {
                                     "center",
                                     "intersection",
                                     "perpendicular",
+                                    "tangent",
                                     "nearest",
                                 ] {
                                     self.set_snap(k, true);
@@ -8892,6 +9030,7 @@ impl App {
                                     "center",
                                     "intersection",
                                     "perpendicular",
+                                    "tangent",
                                     "nearest",
                                 ] {
                                     self.set_snap(k, false);
@@ -15555,5 +15694,35 @@ mod tests_rechtsklick {
             Some(MenuKind::Canvas) => {}
             other => panic!("erwartet Flächenmenü, bekommen: {other:?}"),
         }
+    }
+}
+
+/// Tangentialfang (T0157): der Schalter im Fangmenü und in den Einstellungen
+/// muss in der Zeichnung ankommen. Der Weg ist `App::set_snap` — ein
+/// Schlüssel, der dort fehlt, wirkt im Menü und bleibt im Fang stumm.
+#[cfg(test)]
+mod tests_tangentialfang {
+    use super::*;
+
+    fn app() -> App {
+        let mut app = App::with_ctx(egui::Context::default());
+        app.prefs.reset_bindings();
+        app
+    }
+
+    #[test]
+    fn schalter_erreicht_die_zeichnung() {
+        let mut app = app();
+        assert!(app.doc().settings.snap.tangent, "Vorgabe ist an");
+        app.set_snap("tangent", false);
+        assert!(
+            !app.doc().settings.snap.tangent,
+            "Tangentialfang ließ sich nicht abschalten"
+        );
+        app.set_snap("tangent", true);
+        assert!(
+            app.doc().settings.snap.tangent,
+            "Tangentialfang ließ sich nicht einschalten"
+        );
     }
 }

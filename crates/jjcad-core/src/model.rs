@@ -1309,6 +1309,10 @@ pub struct SnapSettings {
     pub intersection: bool,
     #[serde(default = "default_true")]
     pub perpendicular: bool,
+    /// Tangentialfang (T0157): Linie tangential an Kreis/Bogen, bewegter
+    /// Kreis/Bogen tangential an einer Linie.
+    #[serde(default = "default_true")]
+    pub tangent: bool,
     #[serde(default = "default_true")]
     pub nearest: bool,
     #[serde(default = "default_true")]
@@ -1398,6 +1402,7 @@ impl Default for SnapSettings {
             center: true,
             intersection: true,
             perpendicular: true,
+            tangent: true,
             nearest: true,
             grid: true,
             ortho: false,

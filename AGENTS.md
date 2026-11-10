@@ -178,6 +178,14 @@ Mit dem Nutzer abgestimmt — nicht „verbessern“:
   `Sheet::viewports_alt` wird nur noch beim Laden gelesen (`persist::normalize_sheet_viewports`).
   Den Inhalt (die Zeichnung im Maßstab) rendert weiterhin `render::render_viewport`; der Rahmen
   kommt aus `render_sheet`.
+  **Ansichtsbereich anpassen (T0158)** ist ein Schalter im Eigenschaften-Panel
+  (`UiState::vp_edit`): solange er an ist, gehören die Bewegungsfunktionen dem Fenster statt dem
+  Blatt — Mitteltaste/Leertaste+Ziehen schieben den Ausschnitt (`canvas::viewport_ziehen`),
+  Mausrad ändert den Maßstab und hält den Punkt unter dem Zeiger (`canvas::viewport_zoom`),
+  Tastatur-Schwenk (`App::schwenk_schritt`) und „alles zeigen" (`App::fit_view` →
+  `sheet.fit_viewport`) ebenso. Geschrieben wird immer über `App::vp_setzen` (`modify.set`), also
+  derselbe Weg wie das Panel. Der Schalter hängt am ausgewählten Fenster und endet mit der
+  Auswahl (`App::sync_space`); `App::vp_edit_fenster` ist die eine Abfrage.
 - **Druckvorschau = Papierraum**: gleiche Werkzeuge wie im Modell. Der Bearbeitungsraum
   steckt in `Document::space` (`None` = Modell, `Some(Blatt)` = Papierraum); alle Actions
   laufen über `doc.ents()`/`doc.ents_mut()`. Rahmen und Schriftfeld sind normale Linien und
@@ -209,6 +217,16 @@ Mit dem Nutzer abgestimmt — nicht „verbessern“:
   untere linke Ecke der Auswahl — beim Einfügen steht dieser Punkt am Zeiger.
   **Kopieren setzt nie sofort eine Kopie ab** (auch nicht mit Basispunkt): es füllt
   nur die Zwischenablage, platziert wird über die Einfüge-Vorschau.
+  **Miniatur am Zeiger (T0156)**: Die Vorschau wird nur **über der Zeichenfläche**
+  gezeichnet (`canvas::show` prüft dafür die Zeigerlage) — verlässt der Zeiger
+  die Fläche, gibt es dort keinen Punkt zum Setzen, und das eingefrorene Abbild am
+  letzten Punkt sah aus, als hinge es in der Luft. Am Zeiger steht stattdessen die
+  Miniatur des laufenden Inhalts (`canvas::draw_ghost_zeiger`, `GHOST_ZEIGER` = 30 px
+  gegen 50 px Slot) aus **derselben** Anzeigeliste wie Blockkachel und Hotbar-Slot
+  (`inventory::draw_list_preview` über `ghost::geometry`, also gedreht/gespiegelt wie
+  die Vorschau) — damit ist sichtbar, was ein Klick auf einen Slot oder eine Taste
+  ablegt. Prüfzustand `--demo blockvorschau`; Tests
+  `cargo test -p jjcad-gui tests_ghost_zeiger`.
 - **Tastenbelegung in drei Schichten (T0056, `docs/TASTEN.md` ist verbindlich)**:
   Ziffern `1`–`0` gehören der **Hotbar**, Buchstaben und Symbole der
   **Tastaturbelegung** (frei und dynamisch änderbar, je Taste genau eine
