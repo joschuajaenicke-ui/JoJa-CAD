@@ -180,18 +180,22 @@ pub fn marke(art: FangArt) -> Vec<Zug> {
 
 /// Zeichnet die Marke einer Fangart um `mitte` (Bildschirmpunkte).
 ///
+/// Farbe ist die **Fangfarbe** (`Palette::track`) — dasselbe Grün wie die
+/// Hilfslinien des erweiterten Punktfangs (T0153, Turn 2). Die Marke gehört
+/// damit sichtbar zum Fang und nicht zur Auswahl (blau) oder zum Werkzeug.
+///
 /// Alle Striche bekommen zuerst einen hellen Rand in Papierfarbe: über einer
-/// Wandschraffur oder einer dicken Linie bliebe das dünne Akzentzeichen sonst
+/// Wandschraffur oder einer dicken Linie bliebe das dünne Zeichen sonst
 /// unsichtbar. Auf leerem Papier ist der Rand unsichtbar.
 pub fn zeichne(p: &Painter, mitte: Pos2, art: FangArt) {
-    let akzent = Palette::accent();
+    let farbe = Palette::track();
     let rand = Palette::paper().gamma_multiply(0.9);
     let zuege = marke(art);
     for zug in &zuege {
         mal_zug(p, mitte, *zug, 3.4, rand);
     }
     for zug in &zuege {
-        mal_zug(p, mitte, *zug, 1.5, akzent);
+        mal_zug(p, mitte, *zug, 1.5, farbe);
     }
 }
 
