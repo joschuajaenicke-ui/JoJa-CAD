@@ -19,6 +19,8 @@ pub enum SnapKind {
     Grid,
     /// Punkt auf einer Hilfslinie des erweiterten Punktfangs.
     Tracking,
+    /// Punkt auf der Winkelhalbierenden zwischen zwei Linien (T0150).
+    Bisector,
 }
 
 impl SnapKind {
@@ -34,6 +36,7 @@ impl SnapKind {
             SnapKind::Nearest => "Nächster Punkt",
             SnapKind::Grid => "Raster",
             SnapKind::Tracking => "Hilfslinie",
+            SnapKind::Bisector => "Winkelhalbierende",
         }
     }
     /// Beschriftung in der gewählten Sprache (T0106). `label()` bleibt der
@@ -50,6 +53,7 @@ impl SnapKind {
             SnapKind::Nearest => crate::i18n::tr("ui.snapkind.nearest"),
             SnapKind::Grid => crate::i18n::tr("ui.snapkind.grid"),
             SnapKind::Tracking => crate::i18n::tr("ui.snapkind.tracking"),
+            SnapKind::Bisector => crate::i18n::tr("ui.snapkind.bisector"),
         }
     }
 
@@ -66,6 +70,7 @@ impl SnapKind {
             SnapKind::Nearest => "NAE",
             SnapKind::Grid => "RAS",
             SnapKind::Tracking => "HLF",
+            SnapKind::Bisector => "WHB",
         }
     }
 
@@ -94,12 +99,16 @@ impl SnapKind {
             SnapKind::Midpoint => 2,
             SnapKind::Center => 3,
             SnapKind::Quadrant => 4,
-            SnapKind::Perpendicular => 5,
-            SnapKind::Nearest => 6,
-            SnapKind::Grid => 7,
+            // Die Winkelhalbierende ist ein ausdrücklich anvisierter Punkt
+            // zwischen zwei Linien — sie schlägt „Nächster Punkt" und Lot,
+            // aber nie einen echten Endpunkt oder Schnittpunkt (T0150).
+            SnapKind::Bisector => 5,
+            SnapKind::Perpendicular => 6,
+            SnapKind::Nearest => 7,
+            SnapKind::Grid => 8,
             // Hilfslinien entstehen nicht im Kandidaten-Sammellauf, sondern in
             // `hilfslinien_snap`; der Wert hält nur die Reihenfolge eindeutig.
-            SnapKind::Tracking => 8,
+            SnapKind::Tracking => 9,
         }
     }
 }
@@ -130,10 +139,35 @@ pub struct HaltPunkt {
 }
 
 /// Eine unbegrenzte Hilfslinie: Ursprung (der gehaltene Punkt) und Richtung.
+///
+/// `kind` sagt, woher sie stammt: die zwei Achsen eines Haltepunkts sind
+/// [`SnapKind::Tracking`], die Winkelhalbierende zwischen zwei Linien ist
+/// [`SnapKind::Bisector`] — so meldet die Statuszeile den richtigen Namen.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Hilfslinie {
     pub origin: Vec2,
     pub dir: Vec2,
+    pub kind: SnapKind,
+}
+
+impl Hilfslinie {
+    /// Führungslinie eines Haltepunkts (Verlängerung, Normale, Achsenkreuz).
+    fn spur(origin: Vec2, dir: Vec2) -> Self {
+        Hilfslinie {
+            origin,
+            dir,
+            kind: SnapKind::Tracking,
+        }
+    }
+
+    /// Winkelhalbierende zwischen zwei Linien (T0150).
+    fn halbierende(origin: Vec2, dir: Vec2) -> Self {
+        Hilfslinie {
+            origin,
+            dir,
+            kind: SnapKind::Bisector,
+        }
+    }
 }
 
 /// Zwangsachse des Zeigers: Ursprung ist der Bezugspunkt (der zuletzt gesetzte
@@ -211,10 +245,7 @@ pub fn hilfslinien(halte: &[HaltPunkt]) -> Vec<Hilfslinie> {
     let mut out = Vec::new();
     for h in halte {
         for dir in richtungen(h) {
-            out.push(Hilfslinie {
-                origin: h.point,
-                dir,
-            });
+            out.push(Hilfslinie::spur(h.point, dir));
         }
     }
     out
@@ -225,6 +256,198 @@ fn richtungen(h: &HaltPunkt) -> [Vec2; 2] {
         Some(d) if d.len() > 1e-9 => [d, d.perp()],
         _ => [v(1.0, 0.0), v(0.0, 1.0)],
     }
+}
+
+// ---------------------------------------------------------------------------
+// Winkelhalbierende zwischen zwei Linien (T0150)
+// ---------------------------------------------------------------------------
+
+/// Weite um den Punkt, in der die beiden Linien liegen müssen — als Vielfaches
+/// des Fangradius, also bildschirmkonstant.
+///
+/// Ohne Grenze zöge irgendein Paar weit entfernter Linien eine Halbierende
+/// durch die halbe Zeichnung. Mit Grenze gilt: die beiden Linien müssen in der
+/// Nähe des Punktes **verlaufen** (Abstand zur Strecke, nicht zur verlängerten
+/// Geraden) — sonst wäre „zwischen zwei Linien" nur eine Rechnung ohne Bezug
+/// zum Bild.
+pub const WINKELHALBIERENDE_WEITE: f64 = 40.0;
+
+/// Die Winkelhalbierende zwischen den beiden Linien, zwischen denen `p` liegt.
+///
+/// Als Linien zählen **Linien und Wände** (deren Achse) — das sind die Linien
+/// einer Zeichnung; Bogen, Rechteck und Polylinie sind keine „zwei Linien" und
+/// bleiben außen vor. Dadurch braucht die Suche keine Anzeigeliste: sie liest
+/// die Strecke direkt aus dem Modell und kostet je Bild nur einen Durchgang
+/// über die Objekte (gemessen: 1 µs bei 36 Objekten statt 195 µs über
+/// `render::entity_bbox`).
+///
+/// Gesucht sind die **zwei nächstgelegenen** Strecken verschiedener Elemente,
+/// die `p` umschließen:
+///
+/// * **sich schneidende** Linien: die Halbierende des Winkels, in dem `p`
+///   liegt — ihre Richtung zeigt vom Scheitel in diesen Winkel hinein.
+/// * **parallele** Linien: die Mittellinie zwischen beiden.
+///
+/// Die gelieferte Hilfslinie läuft durch `p` (bei parallelen Linien durch die
+/// Mitte zwischen den beiden Lotfußpunkten, also ebenfalls neben `p`). Damit
+/// ist sie der Führungsstrahl für den nächsten Punkt: eine Linie, die von `p`
+/// aus gezeichnet wird, läuft genau zwischen den beiden Linien hindurch.
+///
+/// `None`, wenn keine zwei Linien in Reichweite sind, `p` auf einer von beiden
+/// liegt oder beide parallel mit `p` außerhalb sind.
+pub fn winkelhalbierende(doc: &Document, p: Vec2, tol: f64, ignore: &[Id]) -> Option<Hilfslinie> {
+    let weite = (tol * WINKELHALBIERENDE_WEITE).max(1.0);
+    // Kandidaten: gerade Strecken, die in der Nähe von `p` verlaufen.
+    let mut strecken: Vec<(Vec2, Vec2, Id)> = Vec::new();
+    for e in doc.ents() {
+        if ignore.contains(&e.id) {
+            continue;
+        }
+        if let Some(l) = doc.layer(e.layer) {
+            if !l.visible || l.locked {
+                continue;
+            }
+        }
+        let (a, b) = match &e.kind {
+            EntityKind::Line { a, b } => (*a, *b),
+            EntityKind::Wall { a, b, .. } => (*a, *b),
+            _ => continue,
+        };
+        if dist_point_segment(p, a, b) <= weite {
+            strecken.push((a, b, e.id));
+        }
+    }
+
+    // Das engste Paar gewinnt: die beiden Linien, zwischen denen der Punkt
+    // tatsächlich sitzt, liegen ihm am nächsten.
+    let mut best: Option<(f64, Hilfslinie)> = None;
+    for i in 0..strecken.len() {
+        for j in (i + 1)..strecken.len() {
+            let (a1, b1, _) = strecken[i];
+            let (a2, b2, _) = strecken[j];
+            let Some(l) = halbierende_der_linien(p, a1, b1, a2, b2) else {
+                continue;
+            };
+            let score = dist_point_segment(p, a1, b1).max(dist_point_segment(p, a2, b2));
+            if best.as_ref().map(|(s, _)| score < *s).unwrap_or(true) {
+                best = Some((score, l));
+            }
+        }
+    }
+    best.map(|(_, l)| l)
+}
+
+/// Halbierende zweier Strecken, die `p` umschließen — `None`, wenn `p` auf
+/// einer der Linien liegt oder der Winkel gestreckt ist.
+fn halbierende_der_linien(p: Vec2, a1: Vec2, b1: Vec2, a2: Vec2, b2: Vec2) -> Option<Hilfslinie> {
+    let d1 = (b1 - a1).normalized();
+    let d2 = (b2 - a2).normalized();
+    if d1.len() < 0.5 || d2.len() < 0.5 {
+        return None;
+    }
+    if d1.cross(d2).abs() < 1e-6 {
+        // Parallel: die Mittellinie, sofern `p` zwischen beiden liegt. „Zwischen"
+        // heißt hier: die vorzeichenbehafteten Abstände (mit **derselben**
+        // Richtung gemessen) haben verschiedene Vorzeichen.
+        let s1 = d1.cross(p - a1);
+        let s2 = d1.cross(p - a2);
+        if s1 * s2 >= 0.0 || s1.abs() < SNAP_DEDUP || s2.abs() < SNAP_DEDUP {
+            return None;
+        }
+        let f1 = fuss_auf_gerade(p, a1, d1);
+        let f2 = fuss_auf_gerade(p, a2, d1);
+        return Some(Hilfslinie::halbierende(f1.lerp(f2, 0.5), d1));
+    }
+    // Scheitel der beiden unbegrenzten Geraden.
+    let scheitel = line_line(a1, b1, a2, b2, true, true)?;
+    // Von den vier Winkeln um den Scheitel ist der gemeint, in dem `p` liegt:
+    // beide Strahlen zeigen dorthin, wo `p` steht.
+    let mut r1 = d1;
+    if (p - scheitel).dot(r1) < 0.0 {
+        r1 = -r1;
+    }
+    let mut r2 = d2;
+    if (p - scheitel).dot(r2) < 0.0 {
+        r2 = -r2;
+    }
+    if (p - scheitel).dot(r1).abs() < SNAP_DEDUP || (p - scheitel).dot(r2).abs() < SNAP_DEDUP {
+        // `p` liegt auf einer der beiden Linien — es ist kein Punkt *zwischen*
+        // ihnen, und die Halbierende wäre nicht bestimmt.
+        return None;
+    }
+    let dir = (r1 + r2).normalized();
+    if dir.len() < 0.5 {
+        // Gestreckter Winkel (die Strahlen zeigen auseinander).
+        return None;
+    }
+    Some(Hilfslinie::halbierende(p, dir))
+}
+
+/// Fangpunkte auf den Winkelhalbierenden der genannten Punkte.
+///
+/// Angeboten wird der Fußpunkt des Zeigers auf der Halbierenden — genau wie bei
+/// einer Hilfslinie des erweiterten Punktfangs, nur ohne deren zweite Achse.
+/// Die Punkte sind der Bezugspunkt des laufenden Zuges („die Linie beginnt
+/// zwischen zwei Linien") und die Haltepunkte des erweiterten Punktfangs.
+pub fn winkelhalbierende_treffer(
+    doc: &Document,
+    punkte: &[Vec2],
+    cursor: Vec2,
+    tol: f64,
+    ignore: &[Id],
+) -> Vec<SnapHit> {
+    let mut out = Vec::new();
+    for p in punkte {
+        let Some(l) = winkelhalbierende(doc, *p, tol, ignore) else {
+            continue;
+        };
+        let f = fuss_auf_gerade(cursor, l.origin, l.dir);
+        if f.dist(cursor) <= tol {
+            out.push(SnapHit {
+                point: f,
+                kind: SnapKind::Bisector,
+                entity: None,
+            });
+        }
+    }
+    out
+}
+
+/// Alle Führungslinien des erweiterten Punktfangs **und** die
+/// Winkelhalbierenden — die eine Liste für die Anzeige.
+///
+/// Gezeichnet wird damit genau das, was auch fängt: die zwei Achsen je
+/// Haltepunkt, die Halbierende an jedem Haltepunkt, der zwischen zwei Linien
+/// liegt, und die Halbierende am Bezugspunkt des laufenden Zuges.
+pub fn hilfslinien_gesamt(
+    doc: &Document,
+    halte: &[HaltPunkt],
+    bezug: Option<Vec2>,
+    tol: f64,
+    ignore: &[Id],
+) -> Vec<Hilfslinie> {
+    let mut out = hilfslinien(halte);
+    let mut punkte: Vec<Vec2> = halte.iter().map(|h| h.point).collect();
+    if let Some(r) = bezug {
+        punkte.push(r);
+    }
+    for p in punkte {
+        let Some(l) = winkelhalbierende(doc, p, tol, ignore) else {
+            continue;
+        };
+        // Dieselbe Halbierende kann von zwei Punkten geliefert werden (Bezug und
+        // Haltepunkt liegen beide zwischen denselben Linien) — einmal zeichnen.
+        let doppelt = out.iter().any(|o| {
+            o.kind == l.kind
+                && (o.origin.dist(l.origin) <= SNAP_DEDUP
+                    || (o.dir.cross(l.dir).abs() < 1e-9
+                        && fuss_auf_gerade(l.origin, o.origin, o.dir).dist(l.origin) <= SNAP_DEDUP))
+        });
+        if !doppelt {
+            out.push(l);
+        }
+    }
+    out
 }
 
 /// Richtung der Linie, auf der dieser Punkt des Elements liegt.
@@ -873,18 +1096,25 @@ fn snap_candidates_alle(
         }
     }
 
-    // Beste zuerst: Priorität der Fangart, dann Abstand zum Zeiger.
-    cands.sort_by(|a, b| {
-        a.1.kind
-            .priority()
-            .cmp(&b.1.kind.priority())
-            .then(a.0.partial_cmp(&b.0).unwrap_or(std::cmp::Ordering::Equal))
-    });
+    sortiere_kandidaten(cands.into_iter().map(|(_, hit)| hit).collect(), cursor)
+}
 
-    // Entdoppeln: dieselbe Koordinate (innerhalb SNAP_DEDUP) wird nur einmal
-    // angeboten — der beste Kandidat an dieser Stelle gewinnt.
-    let mut out: Vec<SnapHit> = Vec::with_capacity(cands.len());
-    for (_, hit) in cands {
+/// Kandidaten in Fangreihenfolge bringen: Priorität der Fangart, dann Abstand
+/// zum Zeiger; dieselbe Koordinate (innerhalb [`SNAP_DEDUP`]) nur einmal.
+///
+/// Eigene Funktion, weil die Winkelhalbierende (T0150) ihre Treffer erst in der
+/// Fang-Kette beisteuert — sie muss nach **denselben** Regeln einsortiert und
+/// entdoppelt werden wie die Treffer der Engine. Der Abstand ist immer der des
+/// Punktes zum Zeiger (jeder Kandidat wird mit genau diesem Abstand gesammelt).
+fn sortiere_kandidaten(mut hits: Vec<SnapHit>, cursor: Vec2) -> Vec<SnapHit> {
+    hits.sort_by(|a, b| {
+        a.kind
+            .priority()
+            .cmp(&b.kind.priority())
+            .then(a.point.dist(cursor).total_cmp(&b.point.dist(cursor)))
+    });
+    let mut out: Vec<SnapHit> = Vec::with_capacity(hits.len());
+    for hit in hits {
         if out.iter().any(|h| h.point.dist(hit.point) <= SNAP_DEDUP) {
             continue;
         }
@@ -1126,11 +1356,25 @@ pub fn snap_constrained_achsen(
 
     // 1. Objektfang ohne Raster: er gewinnt gegen jede Zwangsrichtung.
     //    Das Raster ist eine Führung wie Ortho und kommt erst in Schritt 3.
-    let bester = snap_candidates_alle(
+    let mut cands = snap_candidates_alle(
         doc, cursor, tol, reference, ignore, selected, gesperrt, vorschau, false,
-    )
-    .into_iter()
-    .next();
+    );
+    // Die Winkelhalbierende zwischen zwei Linien (T0150) ist ein **Fang**, kein
+    // Zwang: sie tritt als Kandidat in dieselbe Liste und verliert damit gegen
+    // Endpunkt, Schnittpunkt und Mitte, gewinnt aber gegen „Nächster Punkt" und
+    // Lot (Priorität, siehe `SnapKind::priority`). Angeboten wird sie an jedem
+    // Bezugspunkt des Zuges und an jedem Haltepunkt des erweiterten Punktfangs —
+    // das sind genau die zwei Lagen aus der Aufgabenstellung.
+    let mut winkel_punkte: Vec<Vec2> = achsen.to_vec();
+    winkel_punkte.extend(halte.iter().map(|h| h.point));
+    cands.extend(winkelhalbierende_treffer(
+        doc,
+        &winkel_punkte,
+        cursor,
+        tol,
+        ignore,
+    ));
+    let bester = sortiere_kandidaten(cands, cursor).into_iter().next();
 
     let diskret = bester
         .as_ref()

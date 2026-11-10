@@ -4684,8 +4684,20 @@ fn verweil_kandidat(app: &App, w: V2, tol: f64) -> Option<snap::HaltPunkt> {
 
 /// Hilfslinien der gehaltenen Punkte zeichnen: gestrichelt quer durch die
 /// Zeichenfläche, die Haltepunkte selbst als kleines Kreuz.
+///
+/// Gezeichnet wird `snap::hilfslinien_gesamt` — dieselbe Liste, aus der auch
+/// gefangen wird. Sie enthält neben den zwei Achsen je Haltepunkt die
+/// **Winkelhalbierenden** zwischen zwei Linien (T0150): an jedem Haltepunkt und
+/// am Bezugspunkt des laufenden Zuges, sofern er zwischen zwei Linien liegt.
 fn draw_hilfslinien(app: &App, p: &Painter, rect: Rect, view: View) {
-    if app.halt.is_empty() {
+    let bezug = bezug_achsen(app).first().copied();
+    if app.halt.is_empty() && bezug.is_none() {
+        return;
+    }
+    let tol = fang_radius_px(app, view.zoom);
+    let regeln = fang_regeln(app);
+    let linien = snap::hilfslinien_gesamt(app.doc(), &app.halt, bezug, tol, &regeln.ignore);
+    if linien.is_empty() {
         return;
     }
     let col = Palette::track();
@@ -4693,7 +4705,7 @@ fn draw_hilfslinien(app: &App, p: &Painter, rect: Rect, view: View) {
     let lang = rect.width().max(rect.height()) * 1.2;
     let mut shapes: Vec<Shape> = Vec::new();
 
-    for l in snap::hilfslinien(&app.halt) {
+    for l in &linien {
         let o = world_to_screen(rect, view, l.origin);
         // Richtung auf dem Schirm: der y-Anteil dreht sich mit der Ansicht.
         let d = world_to_screen(rect, view, l.origin + l.dir) - o;
@@ -10031,6 +10043,83 @@ mod tests_hilfslinien {
         let auf_der_linie = world_to_screen(rect, view, V2::new(2000.0 + tol * 0.3, 700.0));
         frame(&mut app, vec![egui::Event::PointerMoved(auf_der_linie)]);
         assert_eq!(app.snap_label.as_deref(), Some("Hilfslinie"));
+    }
+
+    /// Ein Punkt zwischen zwei Linien (T0150): der zweite Punkt der neuen Linie
+    /// rastet auf der Winkelhalbierenden ein und die Statuszeile meldet sie.
+    /// Der Punkt ist der Bezugspunkt des Zuges („die Linie beginnt zwischen
+    /// zwei Linien").
+    #[test]
+    fn winkelhalbierende_zwischen_zwei_linien_faengt_in_der_app() {
+        let mut app = app();
+        let s = app.session_mut();
+        s.execute(
+            "draw.line",
+            &serde_json::json!({"a": [0.0, 0.0], "b": [4000.0, 0.0]}),
+        )
+        .unwrap();
+        s.execute(
+            "draw.line",
+            &serde_json::json!({"a": [0.0, 0.0], "b": [0.0, 4000.0]}),
+        )
+        .unwrap();
+        app.start_tool("draw.line");
+        let start = V2::new(1000.0, 1000.0);
+        app.tool.as_mut().unwrap().pts.push(start);
+        // 10 mm neben der 45°-Halbierenden.
+        let (p, label) = fang_zeiger(&app, V2::new(1200.0, 1190.0), 30.0);
+        assert_eq!(label, Some("Winkelhalbierende"));
+        let d = (p - start).normalized();
+        assert!(
+            (d.angle().to_degrees() - 45.0).abs() < 1e-6,
+            "Richtung {:?}",
+            d.angle().to_degrees()
+        );
+
+        // Gegenprobe: ohne gesetzten Punkt gibt es keine Halbierende.
+        app.tool.as_mut().unwrap().pts.clear();
+        let (_, ohne) = fang_zeiger(&app, V2::new(1200.0, 1190.0), 30.0);
+        assert_ne!(ohne, Some("Winkelhalbierende"));
+    }
+
+    /// Dieselbe Lage über echte Frames: die Zeichenfläche zeichnet die
+    /// Führungslinie (draw_hilfslinien) und meldet den Fang in der Statuszeile.
+    #[test]
+    fn winkelhalbierende_steht_in_der_statuszeile() {
+        let mut app = app();
+        let s = app.session_mut();
+        s.execute(
+            "draw.line",
+            &serde_json::json!({"a": [0.0, 0.0], "b": [4000.0, 0.0]}),
+        )
+        .unwrap();
+        s.execute(
+            "draw.line",
+            &serde_json::json!({"a": [0.0, 0.0], "b": [0.0, 4000.0]}),
+        )
+        .unwrap();
+        app.start_tool("draw.line");
+        app.tool
+            .as_mut()
+            .unwrap()
+            .pts
+            .push(V2::new(1000.0, 1000.0));
+        frame(&mut app, vec![]);
+        let rect = app.ui.last_canvas;
+        let view = app.current_view();
+        let tol = fang_radius_px(&app, view.zoom);
+        // 30 % des Fangradius neben der Halbierenden (x − y = 0).
+        let ziel = V2::new(1200.0 + tol * 0.3, 1200.0);
+        frame(
+            &mut app,
+            vec![egui::Event::PointerMoved(world_to_screen(rect, view, ziel))],
+        );
+        assert_eq!(
+            app.snap_label.as_deref(),
+            Some("Winkelhalbierende"),
+            "{:?}",
+            app.snap_label
+        );
     }
 
     /// Zwei Linien: a (0;0) → (2000;0) wird gezogen, b endet bei (2000;1500).
