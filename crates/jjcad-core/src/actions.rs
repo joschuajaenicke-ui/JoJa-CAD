@@ -4756,7 +4756,9 @@ pub fn trim_vorschau(doc: &Document, id: Id, at: Vec2, cutters: &[Id]) -> Vec<Se
 /// hinter dem Ende liegt.
 pub fn extend_vorschau(doc: &Document, id: Id, at: Vec2, cutters: &[Id]) -> Vec<Seg> {
     match verlaengerung(doc, id, at, cutters) {
-        Ok(v) => vec![Seg::Line(v.wandernd, v.ziel)],
+        // Das angesetzte Stück: eine Strecke oder — bei einem Bogen-Endsegment
+        // einer Polylinie — der weiterlaufende Bogen (T0155).
+        Ok(v) => vec![v.weg],
         Err(_) => Vec::new(),
     }
 }
@@ -5007,15 +5009,18 @@ fn trim_entity(doc: &mut Document, id: Id, at: Vec2, cutters: &[Id]) -> Result<V
     }
 }
 
-/// Ziel einer Verlängerung: das stehende Ende, das wandernde Ende und der
-/// Schnittpunkt, bis zu dem verlängert wird.
+/// Ziel einer Verlängerung: das Stück, das angesetzt wird, und das neue Ende.
 struct Verlaengerung {
-    /// Das Ende, das zum Ziel wandert (das Ende näher am Klick).
-    wandernd: Vec2,
+    /// Das Stück zwischen dem bisherigen Ende und dem Ziel — Grundlage der
+    /// Vorschau in der Zeichenfläche.
+    weg: Seg,
     /// Der Punkt, bis zu dem verlängert wird.
     ziel: Vec2,
-    /// Das wandernde Ende ist das `b`-Ende.
+    /// Das wandernde Ende ist das `b`-Ende (bei einer Polylinie: der letzte Punkt).
     ende_b: bool,
+    /// Neue Krümmung des Endsegments einer Polylinie; `None` = das Segment
+    /// bleibt gerade.
+    bulge: Option<f64>,
 }
 
 /// Wie weit [`extend_entity`] das Objekt an der Stelle `at` verlängern würde —
@@ -5035,16 +5040,86 @@ fn verlaengerung(doc: &Document, id: Id, at: Vec2, cutters: &[Id]) -> Result<Ver
             .filter(|(_, sid)| cutters.contains(sid))
             .collect()
     };
-    let (a, b) = match &e.kind {
-        EntityKind::Line { a, b } | EntityKind::Wall { a, b, .. } => (*a, *b),
-        _ => return Err("Verlängern wird für diesen Objekttyp nicht unterstützt".into()),
-    };
-    let ende_b = at.dist(b) <= at.dist(a);
-    let (fest, wandernd) = if ende_b { (a, b) } else { (b, a) };
+    match &e.kind {
+        EntityKind::Line { a, b } | EntityKind::Wall { a, b, .. } => {
+            let ende_b = at.dist(*b) <= at.dist(*a);
+            let (fest, wandernd) = if ende_b { (*a, *b) } else { (*b, *a) };
+            let ziel = naechste_kante(fest, wandernd, &segs)?;
+            Ok(Verlaengerung {
+                weg: Seg::Line(wandernd, ziel),
+                ziel,
+                ende_b,
+                bulge: None,
+            })
+        }
+        // Polylinie (T0155): das Ende näher am Klick wandert — wie bei einer
+        // Linie. Ein gerades Endsegment läuft in seiner Richtung weiter, ein
+        // Endsegment mit Stützbogen auf seinem eigenen Kreis.
+        EntityKind::Polyline { verts, closed } => {
+            if *closed {
+                return Err("Geschlossene Polylinie hat kein Ende zum Verlängern".into());
+            }
+            let n = verts.len();
+            if n < 2 {
+                return Err("Polylinie ohne Strecke".into());
+            }
+            let ende_b = at.dist(verts[n - 1].p) <= at.dist(verts[0].p);
+            // Krümmung und Nachbarpunkt gehören zum Endsegment: bei `ende_b`
+            // ist es das letzte Segment (Krümmung am vorletzten Punkt), sonst
+            // das erste (Krümmung am ersten Punkt).
+            let (prev, ende, bulge) = if ende_b {
+                (verts[n - 2].p, verts[n - 1].p, verts[n - 2].bulge)
+            } else {
+                (verts[1].p, verts[0].p, verts[0].bulge)
+            };
+            if prev.dist(ende) < 1e-9 {
+                return Err("Polylinie ohne Strecke am Ende".into());
+            }
+            // Gerades Endsegment (auch: Krümmung ohne Bogen) läuft in seiner
+            // Richtung weiter; ein Bogen auf seinem eigenen Kreis.
+            let arc = if bulge.abs() < 1e-12 {
+                None
+            } else {
+                arc_from_bulge(prev, ende, bulge)
+            };
+            match arc {
+                Some(arc) => {
+                    let (ziel, weg, neu) = bogen_verlaengern(&arc, prev, ende, bulge, &segs)?;
+                    Ok(Verlaengerung {
+                        weg,
+                        ziel,
+                        ende_b,
+                        bulge: Some(neu),
+                    })
+                }
+                None => {
+                    let ziel = naechste_kante(prev, ende, &segs)?;
+                    Ok(Verlaengerung {
+                        weg: Seg::Line(ende, ziel),
+                        ziel,
+                        ende_b,
+                        bulge: None,
+                    })
+                }
+            }
+        }
+        _ => Err("Verlängern wird für diesen Objekttyp nicht unterstützt".into()),
+    }
+}
+
+/// Der erste Schnittpunkt auf dem Strahl über das wandernde Ende hinaus.
+///
+/// Dieselbe Rechnung für Linie, Wand und das gerade Endsegment einer Polylinie;
+/// Schnittkanten sind Strecken **und** Bögen/Kreise.
+fn naechste_kante(fest: Vec2, wandernd: Vec2, segs: &[(Seg, Id)]) -> Result<Vec2, String> {
+    let len = fest.dist(wandernd);
+    if len < 1e-9 {
+        return Err("Objekt ohne Länge".into());
+    }
     let dir = (wandernd - fest).normalized();
-    let ray_end = fest + dir * (fest.dist(wandernd) * 1000.0 + 1e9);
+    let ray_end = fest + dir * (len * 1000.0 + 1e9);
     let mut best: Option<(f64, Vec2)> = None;
-    for (sg, _) in &segs {
+    for (sg, _) in segs {
         let hits = match sg {
             Seg::Line(c, d) => line_line(fest, ray_end, *c, *d, true, false)
                 .into_iter()
@@ -5056,22 +5131,85 @@ fn verlaengerung(doc: &Document, id: Id, at: Vec2, cutters: &[Id]) -> Result<Ver
         };
         for h in hits {
             let t = (h - fest).dot(dir);
-            let t0 = (wandernd - fest).dot(dir);
-            if t > t0 + 1e-6 {
-                if best.map(|(bt, _)| t < bt).unwrap_or(true) {
-                    best = Some((t, h));
-                }
+            if t > len + 1e-6 && best.map(|(bt, _)| t < bt).unwrap_or(true) {
+                best = Some((t, h));
             }
         }
     }
-    let Some((_, ziel)) = best else {
+    best.map(|(_, p)| p)
+        .ok_or_else(|| "Keine Schnittkante zum Verlängern gefunden".to_string())
+}
+
+/// Liegt `p` auf der Strecke `a`→`b` — nicht nur auf ihrer Geraden?
+///
+/// [`line_circle`] schneidet die **unendliche** Gerade; ohne diese Prüfung
+/// könnte ein Bogen an einer Schnittkante enden, die gar nicht bis dorthin
+/// reicht.
+fn auf_der_strecke(a: Vec2, b: Vec2, p: Vec2) -> bool {
+    let d = a.dist(b);
+    d > 1e-9 && (a.dist(p) + p.dist(b) - d).abs() <= 1e-6 * (1.0 + d)
+}
+
+/// Verlängert ein Bogen-Endsegment einer Polylinie auf seinem eigenen Kreis
+/// (T0155): der Bogen läuft in seiner Laufrichtung weiter bis zur nächsten
+/// Schnittkante.
+///
+/// Zurück kommen das neue Ende, das angesetzte Bogenstück und die neue
+/// Krümmung des Segments — Vorzeichen wie bisher, Betrag aus dem größeren
+/// Öffnungswinkel (`tan(θ/4)`), damit derselbe Kreis herauskommt.
+fn bogen_verlaengern(
+    arc: &Arc,
+    prev: Vec2,
+    ende: Vec2,
+    bulge: f64,
+    segs: &[(Seg, Id)],
+) -> Result<(Vec2, Seg, f64), String> {
+    if arc.r < 1e-9 {
+        return Err("Bogen ohne Radius".into());
+    }
+    // `arc` ist immer positiv orientiert; ob die Polylinie in dieser Richtung
+    // läuft, entscheidet der Anfangspunkt des Segments.
+    let vorwaerts = arc.start().dist(prev) <= arc.end().dist(prev);
+    let lauf = if vorwaerts { 1.0 } else { -1.0 };
+    let winkel_ende = (ende - arc.c).angle();
+    let sweep = arc.sweep();
+    let mut best: Option<(f64, Vec2)> = None;
+    for (sg, _) in segs {
+        let punkte: Vec<Vec2> = match sg {
+            Seg::Line(c, d) => line_circle(*c, *d, arc.c, arc.r)
+                .into_iter()
+                .filter(|p| auf_der_strecke(*c, *d, *p))
+                .collect(),
+            Seg::Arc(other) => circle_circle(arc.c, arc.r, other.c, other.r)
+                .into_iter()
+                .filter(|p| angle_in_arc((*p - other.c).angle(), other.a0, other.a1))
+                .collect(),
+        };
+        for p in punkte {
+            // Winkelweg vom bisherigen Ende bis zum Treffer in Laufrichtung.
+            let t = norm_angle(lauf * ((p - arc.c).angle() - winkel_ende));
+            if t > 1e-6 && t < std::f64::consts::TAU - 1e-6
+                && best.map(|(bt, _)| t < bt).unwrap_or(true)
+            {
+                best = Some((t, p));
+            }
+        }
+    }
+    let Some((t, _)) = best else {
         return Err("Keine Schnittkante zum Verlängern gefunden".into());
     };
-    Ok(Verlaengerung {
-        wandernd,
-        ziel,
-        ende_b,
-    })
+    let neuer_sweep = sweep + t;
+    if neuer_sweep >= std::f64::consts::TAU - 1e-6 {
+        return Err("Verlängern würde den Bogen schließen".into());
+    }
+    let ziel = arc.c + Vec2::polar(winkel_ende + lauf * t, arc.r);
+    let weg = if lauf > 0.0 {
+        Seg::Arc(Arc::new(arc.c, arc.r, winkel_ende, winkel_ende + t))
+    } else {
+        Seg::Arc(Arc::new(arc.c, arc.r, winkel_ende - t, winkel_ende))
+    };
+    let neu = (neuer_sweep / 4.0).tan() * if bulge < 0.0 { -1.0 } else { 1.0 };
+    Ok((ziel, weg, neu))
 }
 
 fn extend_entity(doc: &mut Document, id: Id, at: Vec2, cutters: &[Id]) -> Result<(), String> {
@@ -5083,6 +5221,26 @@ fn extend_entity(doc: &mut Document, id: Id, at: Vec2, cutters: &[Id]) -> Result
                     *b = v.ziel;
                 } else {
                     *a = v.ziel;
+                }
+            }
+            // Polylinie (T0155): der Endpunkt wandert, die Krümmung des
+            // Endsegments sitzt an dessen **Anfang**.
+            EntityKind::Polyline { verts, .. } => {
+                let n = verts.len();
+                if v.ende_b {
+                    if let Some(letztes) = verts.last_mut() {
+                        letztes.p = v.ziel;
+                    }
+                    if let Some(b) = v.bulge {
+                        if n >= 2 {
+                            verts[n - 2].bulge = b;
+                        }
+                    }
+                } else if let Some(erstes) = verts.first_mut() {
+                    erstes.p = v.ziel;
+                    if let Some(b) = v.bulge {
+                        erstes.bulge = b;
+                    }
                 }
             }
             _ => {}

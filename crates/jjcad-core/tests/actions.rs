@@ -384,6 +384,200 @@ fn extend_vorschau_verlaengert_eine_wand_bis_zur_nachbarwand() {
     );
 }
 
+/// Verlängern einer Polylinie (T0155): das Ende näher am Klick wandert bis zur
+/// nächsten Schnittkante, der Knick und der Anfang bleiben stehen.
+#[test]
+fn polylinie_verlaengern_zieht_das_ende_bis_zur_kante() {
+    let mut s = s();
+    // Schnittkante über dem Ende: Waagerechte bei y = 3 m.
+    s.execute("draw.line", &json!({"a": [0, 3], "b": [4, 3]}))
+        .unwrap();
+    let res = s
+        .execute("draw.polyline", &json!({"pts": [[0, 0], [1, 0], [1, 2]]}))
+        .unwrap();
+    let id = res["created"][0].as_u64().unwrap();
+
+    // Vorschau: genau die Strecke, die angesetzt wird.
+    let segs = jjcad_core::actions::extend_vorschau(&s.doc, id, v(1000.0, 2000.0), &[]);
+    assert_eq!(segs.len(), 1, "eine Strecke: {segs:?}");
+    let jjcad_core::geom::Seg::Line(a, b) = segs[0] else {
+        panic!("Strecke erwartet: {:?}", segs[0]);
+    };
+    assert!(
+        (a.x - 1000.0).abs() < 1e-6 && (a.y - 2000.0).abs() < 1e-6,
+        "Anfang am wandernden Ende: {a:?}"
+    );
+    assert!(
+        (b.x - 1000.0).abs() < 1e-6 && (b.y - 3000.0).abs() < 1e-6,
+        "Ende an der Kante: {b:?}"
+    );
+    assert_eq!(s.doc.entities.len(), 2, "Vorschau legt nichts an");
+
+    s.execute(
+        "modify.extend",
+        &json!({"ids": [id], "at": [1, 2], "cutters": []}),
+    )
+    .unwrap_or_else(|e| panic!("Verlängern der Polylinie: {e}"));
+    let EntityKind::Polyline { verts, closed } = &s.doc.entity(id).expect("Polylinie fehlt").kind
+    else {
+        panic!("Polylinie erwartet");
+    };
+    assert!(!closed, "der Zug bleibt offen");
+    assert_eq!(verts.len(), 3, "es kommt kein Punkt hinzu: {verts:?}");
+    assert!(
+        (verts[2].p.x - 1000.0).abs() < 1e-6 && (verts[2].p.y - 3000.0).abs() < 1e-6,
+        "letzter Punkt an der Kante: {:?}",
+        verts[2].p
+    );
+    assert!(
+        (verts[1].p.x - 1000.0).abs() < 1e-6 && verts[1].p.y.abs() < 1e-6,
+        "der Knick bleibt stehen: {:?}",
+        verts[1].p
+    );
+    assert!(verts[0].p.x.abs() < 1e-6, "der Anfang bleibt: {:?}", verts[0].p);
+}
+
+/// Verlängern am **ersten** Punkt: dort läuft die Polylinie rückwärts — die
+/// Richtung kommt vom Nachbarn, nicht von der Reihenfolge der Punkte.
+#[test]
+fn polylinie_verlaengern_am_ersten_punkt() {
+    let mut s = s();
+    s.execute("draw.line", &json!({"a": [-2, -1], "b": [-2, 1]}))
+        .unwrap();
+    let res = s
+        .execute("draw.polyline", &json!({"pts": [[0, 0], [1, 0], [1, 2]]}))
+        .unwrap();
+    let id = res["created"][0].as_u64().unwrap();
+
+    s.execute(
+        "modify.extend",
+        &json!({"ids": [id], "at": [0, 0], "cutters": []}),
+    )
+    .unwrap_or_else(|e| panic!("Verlängern am ersten Punkt: {e}"));
+    let EntityKind::Polyline { verts, .. } = &s.doc.entity(id).expect("Polylinie fehlt").kind
+    else {
+        panic!("Polylinie erwartet");
+    };
+    assert!(
+        (verts[0].p.x + 2000.0).abs() < 1e-6 && verts[0].p.y.abs() < 1e-6,
+        "erster Punkt wandert auf die Kante bei x = -2: {:?}",
+        verts[0].p
+    );
+    assert!(
+        (verts[1].p.x - 1000.0).abs() < 1e-6,
+        "der Rest bleibt stehen: {:?}",
+        verts[1].p
+    );
+}
+
+/// Eine geschlossene Polylinie hat kein Ende — die Action meldet das, statt
+/// still nichts zu tun.
+#[test]
+fn geschlossene_polylinie_laesst_sich_nicht_verlaengern() {
+    let mut s = s();
+    s.execute("draw.line", &json!({"a": [3, -1], "b": [3, 1]}))
+        .unwrap();
+    let res = s
+        .execute(
+            "draw.polyline",
+            &json!({"pts": [[0, 0], [2, 0], [2, 2], [0, 2]], "closed": true}),
+        )
+        .unwrap();
+    let id = res["created"][0].as_u64().unwrap();
+    let vorher = s.doc.entity(id).expect("Polylinie fehlt").kind.clone();
+
+    let err = s
+        .execute(
+            "modify.extend",
+            &json!({"ids": [id], "at": [0, 0], "cutters": []}),
+        )
+        .expect_err("geschlossene Polylinie darf nicht verlängert werden");
+    assert!(err.contains("Geschlossene Polylinie"), "{err}");
+    assert_eq!(
+        s.doc.entity(id).expect("Polylinie fehlt").kind,
+        vorher,
+        "die Zeichnung bleibt unverändert"
+    );
+    assert!(
+        jjcad_core::actions::extend_vorschau(&s.doc, id, v(0.0, 0.0), &[]).is_empty(),
+        "auch die Vorschau zeigt nichts"
+    );
+}
+
+/// Ein Endsegment mit Stützbogen wächst auf seinem **eigenen Kreis** weiter
+/// (T0155): der Bogen läuft in seiner Laufrichtung bis zur nächsten Kante, der
+/// Mittelpunkt bleibt.
+#[test]
+fn polylinie_verlaengern_folgt_dem_bogen() {
+    let mut s = s();
+    // Schnittkante bei y = 0,5 m.
+    s.execute("draw.line", &json!({"a": [-1, 0.5], "b": [3, 0.5]}))
+        .unwrap();
+    let res = s
+        .execute("draw.polyline", &json!({"pts": [[-2, 0], [0, 0], [2, 0]]}))
+        .unwrap();
+    let id = res["created"][0].as_u64().unwrap();
+    // Letztes Segment (0,0)→(2,0) als Halbkreis: Mitte (1,0), Radius 1.
+    if let Some(em) = s.doc.entity_mut(id) {
+        if let EntityKind::Polyline { verts, .. } = &mut em.kind {
+            verts[1].bulge = 1.0;
+        }
+    }
+
+    s.execute(
+        "modify.extend",
+        &json!({"ids": [id], "at": [2, 0], "cutters": []}),
+    )
+    .unwrap_or_else(|e| panic!("Verlängern des Bogens: {e}"));
+    let EntityKind::Polyline { verts, .. } = &s.doc.entity(id).expect("Polylinie fehlt").kind
+    else {
+        panic!("Polylinie erwartet");
+    };
+    // Die Krümmung sitzt am **Anfang** des Endsegments (Punkt 1).
+    let neu = verts[2];
+    let krümmung = verts[1].bulge;
+    // Der nächste Schnitt **in Laufrichtung** (Gegenrichtung träfe den zweiten
+    // Punkt des Kreises auf derselben Kante).
+    assert!(
+        (neu.p.x - 1866.0254).abs() < 0.01 && (neu.p.y - 500.0).abs() < 1e-6,
+        "Ende am nächsten Schnitt in Laufrichtung: {:?}",
+        neu.p
+    );
+    assert!(
+        (krümmung - 1.30323).abs() < 1e-4,
+        "neue Krümmung tan(θ/4) des größeren Bogens: {krümmung}"
+    );
+    // Das neue Ende liegt auf dem Kreis um (1,0) mit r = 1 …
+    let c = v(1000.0, 0.0);
+    assert!(
+        (c.dist(neu.p) - 1000.0).abs() < 1e-3,
+        "Ende bleibt auf dem Kreis: {:?}",
+        neu.p
+    );
+    // … und die neue Krümmung beschreibt denselben Kreis.
+    let arc = jjcad_core::geom::arc_from_bulge(verts[1].p, neu.p, krümmung).expect("Bogen");
+    assert!(
+        (arc.c.x - 1000.0).abs() < 1e-3 && arc.c.y.abs() < 1e-3,
+        "Mittelpunkt bleibt: {:?}",
+        arc.c
+    );
+    assert!(
+        (arc.r - 1000.0).abs() < 1e-3,
+        "Radius bleibt: {}",
+        arc.r
+    );
+    assert!(
+        arc.sweep() > std::f64::consts::PI,
+        "der Bogen ist gewachsen: {}",
+        arc.sweep()
+    );
+    assert!(
+        (neu.p.y - 500.0).abs() < 1e-3,
+        "Ende auf der Schnittkante: {:?}",
+        neu.p
+    );
+}
+
 /// Stutzen einer Polylinie (T0077): der Abschnitt zwischen den beiden
 /// Schnittkanten fällt weg. Bleibt ein Stück mit zwei Punkten, ist es danach
 /// eine normale **Linie**, kein Zwei-Punkt-Polygonzug.

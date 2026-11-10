@@ -11596,6 +11596,40 @@ mod tests_verlaengernvorschau {
         );
     }
 
+    /// Eine Polylinie bekommt dieselbe Vorschau (T0155): die hervorgehobene
+    /// Strecke läuft vom Ende bis zur nächsten Kante.
+    #[test]
+    fn polylinie_zeigt_die_vorschau_am_ende() {
+        let mut app = App::with_ctx(egui::Context::default());
+        app.session_mut()
+            .execute("doc.settings", &json!({ "input_unit": "m" }))
+            .expect("Einheit setzen");
+        app.session_mut()
+            .execute("draw.line", &json!({ "a": [0, 3], "b": [4, 3] }))
+            .expect("Schnittkante anlegen");
+        app.session_mut()
+            .execute("draw.polyline", &json!({ "pts": [[0, 0], [1, 0], [1, 2]] }))
+            .expect("Polylinie anlegen");
+        app.start_tool("modify.extend");
+
+        let view = app.current_view();
+        let strecken = vorschau_strecken(&mut app, Some(V2::new(1000.0, 2000.0)));
+        assert_eq!(strecken.len(), 1, "genau eine Strecke: {strecken:?}");
+        let (erwartet_a, erwartet_b) = (
+            world_to_screen(RECT, view, V2::new(1000.0, 2000.0)),
+            world_to_screen(RECT, view, V2::new(1000.0, 3000.0)),
+        );
+        let (a, b, _breite) = strecken[0];
+        assert!(
+            (a.x - erwartet_a.x).abs() < 0.6 && (a.y - erwartet_a.y).abs() < 0.6,
+            "Anfang am wandernden Ende: {a:?} statt {erwartet_a:?}"
+        );
+        assert!(
+            (b.x - erwartet_b.x).abs() < 0.6 && (b.y - erwartet_b.y).abs() < 0.6,
+            "Ende an der nächsten Kante: {b:?} statt {erwartet_b:?}"
+        );
+    }
+
     /// Neben der Linie (mehr als der Trefferradius) gibt es nichts zu zeigen.
     #[test]
     fn neben_der_linie_keine_hervorhebung() {
