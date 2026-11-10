@@ -2932,6 +2932,26 @@ fn render_wall(
     }
 }
 
+/// Mittellinie der Wand je Stück (zwischen Öffnungen) — der Weg, auf dem die
+/// Dämmung als Schlaufenband läuft.
+///
+/// Eine Quelle für die Anzeige: das Band sitzt mittig im Wandkörper (die
+/// Stücke sind um die Achse `start`/`dir` gebaut), seine Höhe ist die
+/// Wanddicke. An Gehrungen reicht es bis an die Naht, an Tür- und
+/// Fensteröffnungen endet es wie der Wandkörper.
+fn wall_insulation_paths(body: &wall::Body) -> Vec<(Vec2, Vec2)> {
+    let mut out = Vec::new();
+    for poly in &body.pieces {
+        let ss: Vec<f64> = poly.iter().map(|q| (*q - body.start).dot(body.dir)).collect();
+        let smin = ss.iter().cloned().fold(f64::INFINITY, f64::min);
+        let smax = ss.iter().cloned().fold(f64::NEG_INFINITY, f64::max);
+        if smax - smin > 1.0 {
+            out.push((body.start + body.dir * smin, body.start + body.dir * smax));
+        }
+    }
+    out
+}
+
 /// Schraffur (Muster) der Wandfläche, beschnitten auf die Wandkörper.
 fn push_wall_hatch(
     dl: &mut DisplayList,
@@ -2943,6 +2963,30 @@ fn push_wall_hatch(
     xf: Affine,
 ) {
     if hp == FillPattern::Solid {
+        return;
+    }
+    // Dämmung in der Wand (T0161): **eine** Linie mit der Linienart „Dämmung“
+    // auf der Wandmitte, Bandhöhe = Wanddicke. Das ist die Darstellung vor
+    // T0136/T0132; seit dem Dämmungs-Muster zeichnete die Wand stattdessen
+    // parallele Schlaufenbänder wie eine Fläche. In einer Wand ist die
+    // Dämmung aber der Wandkörper selbst — ein Band, keine Schraffur.
+    // Gezeichnet wird über `DisplayList::push` (dieselbe Übersetzung wie bei
+    // einer Dämmungslinie), damit Anzeige, PDF, PNG und DXF dasselbe Band
+    // zeigen.
+    if hp == FillPattern::InsulationHatch {
+        let band = PrimStyle {
+            line_type: LineType::Insulation,
+            loop_width: thickness,
+            ..*st
+        };
+        for (p, q) in wall_insulation_paths(body) {
+            dl.push(Prim {
+                shape: Shape::Line(xf.apply(p), xf.apply(q)),
+                style: band,
+                entity: e.id,
+                layer: e.layer,
+            });
+        }
         return;
     }
     // Musterlinien: durchgezogen (siehe `push_muster`).
