@@ -2065,6 +2065,46 @@ mod tests_fangmarke {
         );
     }
 
+    fn strecken_mit_farbe(out: &egui::FullOutput) -> Vec<([Pos2; 2], egui::epaint::ColorMode)> {
+        out.shapes
+            .iter()
+            .filter_map(|cs| match &cs.shape {
+                egui::Shape::LineSegment { points, stroke } => Some((*points, stroke.color.clone())),
+                _ => None,
+            })
+            .collect()
+    }
+
+    /// Die Marke steht in der **Fangfarbe** — dasselbe Grün wie die
+    /// Hilfslinien des erweiterten Punktfangs (`Palette::track`), nicht im
+    /// Blau der Akzentfarbe (T0153, Turn 2).
+    #[test]
+    fn marke_steht_in_der_fangfarbe() {
+        let ctx = egui::Context::default();
+        let mut app = app_mit_linie(&ctx);
+        rahmen(&ctx, &mut app, None);
+        let flaeche = app.ui.last_canvas;
+        let s = world_to_screen(flaeche, app.current_view(), V2::new(0.0, 0.0));
+        let out = rahmen(&ctx, &mut app, Some(s + Vec2::new(4.0, 3.0)));
+
+        // Oberkante des Endpunktquadrats — je einmal Rand und einmal Fangfarbe.
+        let a = Pos2::new(s.x - 6.0, s.y - 6.0);
+        let b = Pos2::new(s.x + 6.0, s.y - 6.0);
+        let farben: Vec<egui::epaint::ColorMode> = strecken_mit_farbe(&out)
+            .into_iter()
+            .filter(|(p, _)| hat_strecke(&[*p], a, b))
+            .map(|(_, c)| c)
+            .collect();
+        assert!(
+            farben.contains(&egui::epaint::ColorMode::Solid(Palette::track())),
+            "die Fangmarke steht nicht in der Fangfarbe (Grün)"
+        );
+        assert!(
+            !farben.contains(&egui::epaint::ColorMode::Solid(Palette::accent())),
+            "die Fangmarke steht noch in der Akzentfarbe"
+        );
+    }
+
     /// Der Polarfang ist ein Fang (Statuszeile „POL") und bekommt deshalb
     /// ebenfalls eine Marke — die Winkelmarke am gerasteten Punkt.
     #[test]
@@ -2150,9 +2190,10 @@ fn draw_cursor(
         let s = world_to_screen(rect, view, w);
         match fang_art {
             // Eigene Marke je Fangart, am Fangpunkt — also am Element, auf
-            // das sich der Fang bezieht (T0153). Der Mittelpunkt von Kreis,
-            // Bogen und Ellipse ist im Plan unsichtbar; seine Marke trägt das
-            // Kreuz in Akzentfarbe (T0117).
+            // das sich der Fang bezieht (T0153). Sie steht in der Fangfarbe
+            // (Grün wie die Hilfslinien). Der Mittelpunkt von Kreis, Bogen und
+            // Ellipse ist im Plan unsichtbar; seine Marke trägt das Kreuz
+            // (T0117).
             Some(art) => crate::snapmarke::zeichne(p, s, art),
             // Kein Fang: der Zeigerpunkt selbst, wie bisher als kleines Kreuz.
             None => {

@@ -190,7 +190,8 @@ ausgeblendet.
   Punkt eine Sanduhr, Raster ein Punktraster, Hilfslinie ein gestricheltes Kreuz,
   Winkelhalbierende ein Winkel mit Mittelstrahl, Blattecke ein gefülltes Quadrat, Polarfang
   eine Winkelmarke. Ohne Fang bleibt es beim kleinen Kreuz am Zeiger; `Ortho` führt nur und
-  zeigt keine Marke. Die Marke ist 18 px groß, liegt über der Zeichnung und erscheint nicht
+  zeigt keine Marke. Die Marke steht in der **Fangfarbe** (dasselbe Grün wie die Hilfslinien
+  des erweiterten Punktfangs), ist 18 px groß, liegt über der Zeichnung und erscheint nicht
   im Druck.
 - **Linien** werden als Kapsel gezeichnet: Rechteck plus Halbkreis an beiden Enden. Dadurch sind
   auch die Übergänge in Polylinien, Bögen und an Wandanschlüssen rund statt eckig.
