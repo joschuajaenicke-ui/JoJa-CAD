@@ -2968,7 +2968,13 @@ fn settings_body(app: &mut App, ui: &mut Ui) {
     }
     app.ui.layers_open = show_layers;
     app.ui.props_open = show_props;
-    app.prefs.snap_marker = marker;
+    // T0160: Die Fangmarken stehen jetzt in der Kategorie „Fangen“; die Wahl
+    // gehört damit wie die übrigen Fang-Einstellungen gespeichert (vorher
+    // wurde sie nur im Speicher gehalten).
+    if app.prefs.snap_marker != marker {
+        app.prefs.snap_marker = marker;
+        let _ = app.prefs.save();
+    }
     if show_grid != app.ui.show_grid {
         app.ui.show_grid = show_grid;
     }
