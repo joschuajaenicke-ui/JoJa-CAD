@@ -42,7 +42,7 @@ fn dim_shape_signature(s: &Session) -> (usize, usize, usize, usize) {
         .doc
         .entities
         .iter()
-        .filter(|e| matches!(e.kind, jjcad_core::model::EntityKind::DimChain { .. }))
+        .filter(|e| matches!(e.kind, jjcad_core::model::EntityKind::Dim { .. }))
         .map(|e| e.id)
         .collect();
     let dl = render_document(&RenderCtx::new(&s.doc));

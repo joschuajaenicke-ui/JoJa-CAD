@@ -167,6 +167,13 @@ pub fn marke(art: FangArt) -> Vec<Zug> {
             l(&mut v, (0.0, 0.0), (8.0, 6.0));
             l(&mut v, (0.0, -2.0), (0.0, -9.0));
         }
+        // Maßkette parallel: zwei parallele Striche — die Lage der Maßlinie
+        // neben einer vorhandenen (T0154).
+        FangArt::Objekt(SnapKind::DimParallel) => {
+            l(&mut v, (-9.0, -5.0), (9.0, -5.0));
+            l(&mut v, (-9.0, 5.0), (9.0, 5.0));
+            l(&mut v, (-9.0, -5.0), (-9.0, 5.0));
+        }
         // Polarfang: Winkelmarke mit Strahl auf der Polarschrittweite.
         FangArt::Polar => {
             l(&mut v, (0.0, 0.0), (8.0, 0.0));
@@ -180,18 +187,22 @@ pub fn marke(art: FangArt) -> Vec<Zug> {
 
 /// Zeichnet die Marke einer Fangart um `mitte` (Bildschirmpunkte).
 ///
+/// Farbe ist die **Fangfarbe** (`Palette::track`) — dasselbe Grün wie die
+/// Hilfslinien des erweiterten Punktfangs (T0153, Turn 2). Die Marke gehört
+/// damit sichtbar zum Fang und nicht zur Auswahl (blau) oder zum Werkzeug.
+///
 /// Alle Striche bekommen zuerst einen hellen Rand in Papierfarbe: über einer
-/// Wandschraffur oder einer dicken Linie bliebe das dünne Akzentzeichen sonst
+/// Wandschraffur oder einer dicken Linie bliebe das dünne Zeichen sonst
 /// unsichtbar. Auf leerem Papier ist der Rand unsichtbar.
 pub fn zeichne(p: &Painter, mitte: Pos2, art: FangArt) {
-    let akzent = Palette::accent();
+    let farbe = Palette::track();
     let rand = Palette::paper().gamma_multiply(0.9);
     let zuege = marke(art);
     for zug in &zuege {
         mal_zug(p, mitte, *zug, 3.4, rand);
     }
     for zug in &zuege {
-        mal_zug(p, mitte, *zug, 1.5, akzent);
+        mal_zug(p, mitte, *zug, 1.5, farbe);
     }
 }
 

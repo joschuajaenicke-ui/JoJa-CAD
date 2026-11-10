@@ -100,7 +100,12 @@ pub fn dateien(dir: &Path) -> Vec<PathBuf> {
 pub fn lies(pfad: &Path) -> Result<Blockdatei, String> {
     let text = std::fs::read_to_string(pfad)
         .map_err(|e| format!("nicht lesbar: {e}"))?;
-    let datei: Blockdatei = serde_json::from_str(&text)
+    // Bemaßung älterer Blöcke auf das eine Element umstellen (T0154) —
+    // dieselbe Migration wie beim Zeichnen (`persist::migrate_legacy_dims`).
+    let mut raw: serde_json::Value = serde_json::from_str(&text)
+        .map_err(|e| format!("kein gültiger Block (JSON): {e}"))?;
+    crate::persist::migrate_legacy_dims(&mut raw);
+    let datei: Blockdatei = serde_json::from_value(raw)
         .map_err(|e| format!("kein gültiger Block (JSON): {e}"))?;
     if !datei.format.eq_ignore_ascii_case(FORMAT) {
         return Err(format!(

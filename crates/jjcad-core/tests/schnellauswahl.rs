@@ -125,19 +125,19 @@ fn jede_objektart_startet_ihren_erzeuger() {
     );
     pruefe(
         &EntityKind::Dim {
-            a: v(0.0, 0.0),
-            b: v(1000.0, 0.0),
+            pts: vec![v(0.0, 0.0), v(1000.0, 0.0)],
             line_pos: v(0.0, -300.0),
             axis: DimAxis::X,
             override_text: None,
         },
-        "dim.linear",
+        "dim.chain",
     );
     pruefe(
-        &EntityKind::DimChain {
+        &EntityKind::Dim {
             pts: vec![v(0.0, 0.0), v(1000.0, 0.0), v(2000.0, 0.0)],
             line_pos: v(0.0, -300.0),
             axis: DimAxis::X,
+            override_text: None,
         },
         "dim.chain",
     );

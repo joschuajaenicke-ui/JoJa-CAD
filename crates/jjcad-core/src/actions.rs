@@ -271,8 +271,17 @@ pub const ACTIONS: &[ActionDef] = &[
     act!("modify.quickselect", "action.modify.quickselect.label", Aendern, "quickselect", "q", "action.modify.quickselect.hint", true),
 
     // Bemaßung
-    act!("dim.linear", "action.dim.linear.label", Bemassung, "dim", "m", "action.dim.linear.hint", true),
-    act!("dim.chain", "action.dim.chain.label", Bemassung, "dimchain", "", "action.dim.chain.hint", true),
+    // Ein Element für Einzelmaß und Maßkette (T0154). `dim.linear` bleibt als
+    // Befehl für MCP und ältere Skripte bestehen, ist aber kein eigenes
+    // Werkzeug mehr — das Ribbon zeigt nur die Maßkette mit ihren Modi.
+    // `dim.linear` ist nur noch ein Befehl (MCP, ältere Skripte) — das
+    // Werkzeug ist die Maßkette, die das Einzelmaß als Zwei-Punkt-Kette kann.
+    act!("dim.linear", "action.dim.linear.label", Bemassung, "dim", "", "action.dim.linear.hint", false),
+    act!("dim.chain", "action.dim.chain.label", Bemassung, "dimchain", "m", "action.dim.chain.hint", true),
+    // Messpunkt an eine bestehende Maßkette anhängen bzw. herausnehmen
+    // (T0154) — beides im Reiter „Bemaßung".
+    act!("dim.point.add", "action.dim.point.add.label", Bemassung, "point", "", "action.dim.point.add.hint", true),
+    act!("dim.point.remove", "action.dim.point.remove.label", Bemassung, "erase", "", "action.dim.point.remove.hint", true),
     act!("dim.elevation.plan", "action.dim.elevation.plan.label", Bemassung, "elevation", "n", "action.dim.elevation.plan.hint", true),
     act!("dim.elevation.section", "action.dim.elevation.section.label", Bemassung, "elevation-section", "", "action.dim.elevation.section.hint", true),
     act!(
@@ -733,8 +742,9 @@ pub fn erzeuger_fuer(kind: &EntityKind) -> &'static str {
         EntityKind::Fill { .. } => "draw.fill",
         EntityKind::Volume { .. } => "draw.volume",
         EntityKind::Text { .. } => "draw.text",
-        EntityKind::Dim { .. } => "dim.linear",
-        EntityKind::DimChain { .. } => "dim.chain",
+        // Ein Element für Einzelmaß und Maßkette (T0154): das Werkzeug ist
+        // immer die Kette; `dim.linear` bleibt für MCP und alte Aufrufe.
+        EntityKind::Dim { .. } => "dim.chain",
         EntityKind::ElevationPlan { .. } => "dim.elevation.plan",
         EntityKind::ElevationSection { .. } => "dim.elevation.section",
         EntityKind::Room { .. } => "dim.room",
@@ -1215,6 +1225,22 @@ fn bemasung_schwarz(p: &Params, e: &mut Entity) {
 
 fn ids_from(p: &Params, key: &str) -> Vec<Id> {
     p.ids(key).unwrap_or_default()
+}
+
+/// Stelle, an der ein neuer Messpunkt die Kette **geordnet** hält (T0154).
+///
+/// Gezählt wird entlang der Messrichtung: der Punkt gehört vor den ersten
+/// Punkt, der weiter vorn liegt. So bleibt die Kette monoton und ihre
+/// Maßzahlen positiv — egal, in welcher Reihenfolge der Nutzer klickt.
+fn einfuege_index(pts: &[Vec2], axis: DimAxis, q: Vec2) -> usize {
+    if pts.is_empty() {
+        return 0;
+    }
+    let (dir, _) = crate::render::dim_achse(pts, axis);
+    let t = (q - pts[0]).dot(dir);
+    pts.iter()
+        .position(|p| (*p - pts[0]).dot(dir) > t)
+        .unwrap_or(pts.len())
 }
 
 /// Benutzerbibliothek aus dem Aufruf (`dir`, die Oberfläche übergibt
@@ -2154,6 +2180,9 @@ pub fn execute(doc: &mut Document, id: &str, params: &Value) -> Result<Value, St
         }
 
         // ---------------- Bemaßung ----------------
+        // Einzelmaß: zwei Messpunkte — dasselbe Element wie die Maßkette,
+        // nur mit genau zwei Punkten (T0154). `a`/`b` bleiben als Parameter,
+        // damit MCP-Aufrufe und ältere Skripte unverändert laufen.
         "dim.linear" => {
             let a = require_pt(&p, "a")?;
             let b = require_pt(&p, "b")?;
@@ -2174,8 +2203,7 @@ pub fn execute(doc: &mut Document, id: &str, params: &Value) -> Result<Value, St
                 idn,
                 layer,
                 EntityKind::Dim {
-                    a,
-                    b,
+                    pts: vec![a, b],
                     line_pos,
                     axis,
                     override_text: p.text("text"),
@@ -2214,12 +2242,85 @@ pub fn execute(doc: &mut Document, id: &str, params: &Value) -> Result<Value, St
             let mut e = Entity::new(
                 idn,
                 layer,
-                EntityKind::DimChain { pts, line_pos, axis },
+                EntityKind::Dim {
+                    pts,
+                    line_pos,
+                    axis,
+                    override_text: p.text("text"),
+                },
             );
             apply_common(doc, &mut e, &p, layer);
             bemasung_schwarz(&p, &mut e);
             doc.add_entity(e);
             Ok(json!({"ok": true, "created": [idn]}))
+        }
+        // Einen Messpunkt an eine bestehende Maßkette anhängen (T0154).
+        //
+        // Der Punkt wird an der Stelle eingefügt, die die Kette entlang ihrer
+        // Messrichtung geordnet hält — sonst entstünde ein Zickzack mit
+        // negativen Maßzahlen. `index` überschreibt das ausdrücklich.
+        "dim.point.add" => {
+            let ids = ids_from(&p, "ids");
+            if ids.len() != 1 {
+                return Err("dim.point.add · genau eine Maßkette angeben".to_string());
+            }
+            let id = ids[0];
+            let q = require_pt(&p, "p").or_else(|_| require_pt(&p, "pos"))?;
+            let (idx, punkte) = {
+                let e = doc
+                    .entity_mut(id)
+                    .ok_or_else(|| format!("Objekt {id} nicht gefunden"))?;
+                let EntityKind::Dim { pts, axis, .. } = &mut e.kind else {
+                    return Err("dim.point.add · Objekt ist keine Maßkette".to_string());
+                };
+                let idx = match p.num("index") {
+                    Some(i) => (i.round().max(0.0) as usize).min(pts.len()),
+                    None => einfuege_index(pts, *axis, q),
+                };
+                pts.insert(idx, q);
+                (idx, pts.len())
+            };
+            doc.modified = true;
+            Ok(json!({"ok": true, "changed": [id], "index": idx, "punkte": punkte}))
+        }
+        // Einen Messpunkt entfernen. Unter zwei Punkten ist eine Maßkette
+        // keine Maßkette mehr — das ist ein Fehler, kein stiller Erfolg.
+        "dim.point.remove" => {
+            let ids = ids_from(&p, "ids");
+            if ids.len() != 1 {
+                return Err("dim.point.remove · genau eine Maßkette angeben".to_string());
+            }
+            let id = ids[0];
+            let (idx, punkte) = {
+                let e = doc
+                    .entity_mut(id)
+                    .ok_or_else(|| format!("Objekt {id} nicht gefunden"))?;
+                let EntityKind::Dim { pts, .. } = &mut e.kind else {
+                    return Err("dim.point.remove · Objekt ist keine Maßkette".to_string());
+                };
+                if pts.len() <= 2 {
+                    return Err("Maßkette braucht mindestens zwei Messpunkte".to_string());
+                }
+                let idx = match p.num("index") {
+                    Some(i) => (i.round().max(0.0) as usize).min(pts.len() - 1),
+                    None => {
+                        let q = require_pt(&p, "p").or_else(|_| require_pt(&p, "pos"))?;
+                        pts.iter()
+                            .enumerate()
+                            .min_by(|(_, a), (_, b)| {
+                                a.dist(q)
+                                    .partial_cmp(&b.dist(q))
+                                    .unwrap_or(std::cmp::Ordering::Equal)
+                            })
+                            .map(|(i, _)| i)
+                            .unwrap_or(0)
+                    }
+                };
+                pts.remove(idx);
+                (idx, pts.len())
+            };
+            doc.modified = true;
+            Ok(json!({"ok": true, "changed": [id], "index": idx, "punkte": punkte}))
         }
         // Grundriss-Kote: Kreis-Symbol, Höhe kommt aus dem Panel.
         "dim.elevation.plan" => {
@@ -3234,9 +3335,14 @@ pub fn execute(doc: &mut Document, id: &str, params: &Value) -> Result<Value, St
                         // Abstand sind änderbar — wie bei jedem anderen Objekt
                         // (T0055). Der Abstand kommt zuletzt, er rechnet aus
                         // dem (neuen) ersten Basispunkt.
+                        // Bemaßung: Messpunkte, Lage der Maßlinie und ihr
+                        // Abstand sind änderbar — wie bei jedem anderen Objekt
+                        // (T0055). Der Abstand kommt zuletzt, er rechnet aus
+                        // dem (neuen) ersten Messpunkt. `a`/`b` bleiben als
+                        // Altlast gültig: ein Einzelmaß ist eine Kette aus zwei
+                        // Punkten (T0154).
                         EntityKind::Dim {
-                            a,
-                            b,
+                            pts,
                             line_pos,
                             axis,
                             override_text,
@@ -3247,29 +3353,16 @@ pub fn execute(doc: &mut Document, id: &str, params: &Value) -> Result<Value, St
                             if let Some(ax) = p.dim_axis("axis") {
                                 *axis = ax;
                             }
-                            if let Some(q) = p.pt("a") {
-                                *a = q;
+                            let mut neue = p.pts("pts");
+                            if neue.is_none() {
+                                if let (Some(a), Some(b)) = (p.pt("a"), p.pt("b")) {
+                                    neue = Some(vec![a, b]);
+                                }
                             }
-                            if let Some(q) = p.pt("b") {
-                                *b = q;
-                            }
-                            if let Some(q) = p.pt("line_pos") {
-                                *line_pos = q;
-                            }
-                            if let Some(off) = p.len("offset") {
-                                let (_, n) = crate::render::dim_achse(&[*a, *b], *axis);
-                                let alt = (*line_pos - *a).dot(n);
-                                *line_pos = *line_pos + n * (off - alt);
-                            }
-                        }
-                        EntityKind::DimChain { pts, line_pos, axis } => {
-                            if let Some(ax) = p.dim_axis("axis") {
-                                *axis = ax;
-                            }
-                            if let Some(q) = p.pts("pts") {
+                            if let Some(q) = neue {
                                 if q.len() < 2 {
                                     return Err(
-                                        "Maßkette braucht mindestens zwei Punkte".to_string()
+                                        "Maßkette braucht mindestens zwei Messpunkte".to_string()
                                     );
                                 }
                                 *pts = q;
@@ -4756,7 +4849,9 @@ pub fn trim_vorschau(doc: &Document, id: Id, at: Vec2, cutters: &[Id]) -> Vec<Se
 /// hinter dem Ende liegt.
 pub fn extend_vorschau(doc: &Document, id: Id, at: Vec2, cutters: &[Id]) -> Vec<Seg> {
     match verlaengerung(doc, id, at, cutters) {
-        Ok(v) => vec![Seg::Line(v.wandernd, v.ziel)],
+        // Das angesetzte Stück: eine Strecke oder — bei einem Bogen-Endsegment
+        // einer Polylinie — der weiterlaufende Bogen (T0155).
+        Ok(v) => vec![v.weg],
         Err(_) => Vec::new(),
     }
 }
@@ -5007,15 +5102,18 @@ fn trim_entity(doc: &mut Document, id: Id, at: Vec2, cutters: &[Id]) -> Result<V
     }
 }
 
-/// Ziel einer Verlängerung: das stehende Ende, das wandernde Ende und der
-/// Schnittpunkt, bis zu dem verlängert wird.
+/// Ziel einer Verlängerung: das Stück, das angesetzt wird, und das neue Ende.
 struct Verlaengerung {
-    /// Das Ende, das zum Ziel wandert (das Ende näher am Klick).
-    wandernd: Vec2,
+    /// Das Stück zwischen dem bisherigen Ende und dem Ziel — Grundlage der
+    /// Vorschau in der Zeichenfläche.
+    weg: Seg,
     /// Der Punkt, bis zu dem verlängert wird.
     ziel: Vec2,
-    /// Das wandernde Ende ist das `b`-Ende.
+    /// Das wandernde Ende ist das `b`-Ende (bei einer Polylinie: der letzte Punkt).
     ende_b: bool,
+    /// Neue Krümmung des Endsegments einer Polylinie; `None` = das Segment
+    /// bleibt gerade.
+    bulge: Option<f64>,
 }
 
 /// Wie weit [`extend_entity`] das Objekt an der Stelle `at` verlängern würde —
@@ -5035,16 +5133,86 @@ fn verlaengerung(doc: &Document, id: Id, at: Vec2, cutters: &[Id]) -> Result<Ver
             .filter(|(_, sid)| cutters.contains(sid))
             .collect()
     };
-    let (a, b) = match &e.kind {
-        EntityKind::Line { a, b } | EntityKind::Wall { a, b, .. } => (*a, *b),
-        _ => return Err("Verlängern wird für diesen Objekttyp nicht unterstützt".into()),
-    };
-    let ende_b = at.dist(b) <= at.dist(a);
-    let (fest, wandernd) = if ende_b { (a, b) } else { (b, a) };
+    match &e.kind {
+        EntityKind::Line { a, b } | EntityKind::Wall { a, b, .. } => {
+            let ende_b = at.dist(*b) <= at.dist(*a);
+            let (fest, wandernd) = if ende_b { (*a, *b) } else { (*b, *a) };
+            let ziel = naechste_kante(fest, wandernd, &segs)?;
+            Ok(Verlaengerung {
+                weg: Seg::Line(wandernd, ziel),
+                ziel,
+                ende_b,
+                bulge: None,
+            })
+        }
+        // Polylinie (T0155): das Ende näher am Klick wandert — wie bei einer
+        // Linie. Ein gerades Endsegment läuft in seiner Richtung weiter, ein
+        // Endsegment mit Stützbogen auf seinem eigenen Kreis.
+        EntityKind::Polyline { verts, closed } => {
+            if *closed {
+                return Err("Geschlossene Polylinie hat kein Ende zum Verlängern".into());
+            }
+            let n = verts.len();
+            if n < 2 {
+                return Err("Polylinie ohne Strecke".into());
+            }
+            let ende_b = at.dist(verts[n - 1].p) <= at.dist(verts[0].p);
+            // Krümmung und Nachbarpunkt gehören zum Endsegment: bei `ende_b`
+            // ist es das letzte Segment (Krümmung am vorletzten Punkt), sonst
+            // das erste (Krümmung am ersten Punkt).
+            let (prev, ende, bulge) = if ende_b {
+                (verts[n - 2].p, verts[n - 1].p, verts[n - 2].bulge)
+            } else {
+                (verts[1].p, verts[0].p, verts[0].bulge)
+            };
+            if prev.dist(ende) < 1e-9 {
+                return Err("Polylinie ohne Strecke am Ende".into());
+            }
+            // Gerades Endsegment (auch: Krümmung ohne Bogen) läuft in seiner
+            // Richtung weiter; ein Bogen auf seinem eigenen Kreis.
+            let arc = if bulge.abs() < 1e-12 {
+                None
+            } else {
+                arc_from_bulge(prev, ende, bulge)
+            };
+            match arc {
+                Some(arc) => {
+                    let (ziel, weg, neu) = bogen_verlaengern(&arc, prev, ende, bulge, &segs)?;
+                    Ok(Verlaengerung {
+                        weg,
+                        ziel,
+                        ende_b,
+                        bulge: Some(neu),
+                    })
+                }
+                None => {
+                    let ziel = naechste_kante(prev, ende, &segs)?;
+                    Ok(Verlaengerung {
+                        weg: Seg::Line(ende, ziel),
+                        ziel,
+                        ende_b,
+                        bulge: None,
+                    })
+                }
+            }
+        }
+        _ => Err("Verlängern wird für diesen Objekttyp nicht unterstützt".into()),
+    }
+}
+
+/// Der erste Schnittpunkt auf dem Strahl über das wandernde Ende hinaus.
+///
+/// Dieselbe Rechnung für Linie, Wand und das gerade Endsegment einer Polylinie;
+/// Schnittkanten sind Strecken **und** Bögen/Kreise.
+fn naechste_kante(fest: Vec2, wandernd: Vec2, segs: &[(Seg, Id)]) -> Result<Vec2, String> {
+    let len = fest.dist(wandernd);
+    if len < 1e-9 {
+        return Err("Objekt ohne Länge".into());
+    }
     let dir = (wandernd - fest).normalized();
-    let ray_end = fest + dir * (fest.dist(wandernd) * 1000.0 + 1e9);
+    let ray_end = fest + dir * (len * 1000.0 + 1e9);
     let mut best: Option<(f64, Vec2)> = None;
-    for (sg, _) in &segs {
+    for (sg, _) in segs {
         let hits = match sg {
             Seg::Line(c, d) => line_line(fest, ray_end, *c, *d, true, false)
                 .into_iter()
@@ -5056,22 +5224,85 @@ fn verlaengerung(doc: &Document, id: Id, at: Vec2, cutters: &[Id]) -> Result<Ver
         };
         for h in hits {
             let t = (h - fest).dot(dir);
-            let t0 = (wandernd - fest).dot(dir);
-            if t > t0 + 1e-6 {
-                if best.map(|(bt, _)| t < bt).unwrap_or(true) {
-                    best = Some((t, h));
-                }
+            if t > len + 1e-6 && best.map(|(bt, _)| t < bt).unwrap_or(true) {
+                best = Some((t, h));
             }
         }
     }
-    let Some((_, ziel)) = best else {
+    best.map(|(_, p)| p)
+        .ok_or_else(|| "Keine Schnittkante zum Verlängern gefunden".to_string())
+}
+
+/// Liegt `p` auf der Strecke `a`→`b` — nicht nur auf ihrer Geraden?
+///
+/// [`line_circle`] schneidet die **unendliche** Gerade; ohne diese Prüfung
+/// könnte ein Bogen an einer Schnittkante enden, die gar nicht bis dorthin
+/// reicht.
+fn auf_der_strecke(a: Vec2, b: Vec2, p: Vec2) -> bool {
+    let d = a.dist(b);
+    d > 1e-9 && (a.dist(p) + p.dist(b) - d).abs() <= 1e-6 * (1.0 + d)
+}
+
+/// Verlängert ein Bogen-Endsegment einer Polylinie auf seinem eigenen Kreis
+/// (T0155): der Bogen läuft in seiner Laufrichtung weiter bis zur nächsten
+/// Schnittkante.
+///
+/// Zurück kommen das neue Ende, das angesetzte Bogenstück und die neue
+/// Krümmung des Segments — Vorzeichen wie bisher, Betrag aus dem größeren
+/// Öffnungswinkel (`tan(θ/4)`), damit derselbe Kreis herauskommt.
+fn bogen_verlaengern(
+    arc: &Arc,
+    prev: Vec2,
+    ende: Vec2,
+    bulge: f64,
+    segs: &[(Seg, Id)],
+) -> Result<(Vec2, Seg, f64), String> {
+    if arc.r < 1e-9 {
+        return Err("Bogen ohne Radius".into());
+    }
+    // `arc` ist immer positiv orientiert; ob die Polylinie in dieser Richtung
+    // läuft, entscheidet der Anfangspunkt des Segments.
+    let vorwaerts = arc.start().dist(prev) <= arc.end().dist(prev);
+    let lauf = if vorwaerts { 1.0 } else { -1.0 };
+    let winkel_ende = (ende - arc.c).angle();
+    let sweep = arc.sweep();
+    let mut best: Option<(f64, Vec2)> = None;
+    for (sg, _) in segs {
+        let punkte: Vec<Vec2> = match sg {
+            Seg::Line(c, d) => line_circle(*c, *d, arc.c, arc.r)
+                .into_iter()
+                .filter(|p| auf_der_strecke(*c, *d, *p))
+                .collect(),
+            Seg::Arc(other) => circle_circle(arc.c, arc.r, other.c, other.r)
+                .into_iter()
+                .filter(|p| angle_in_arc((*p - other.c).angle(), other.a0, other.a1))
+                .collect(),
+        };
+        for p in punkte {
+            // Winkelweg vom bisherigen Ende bis zum Treffer in Laufrichtung.
+            let t = norm_angle(lauf * ((p - arc.c).angle() - winkel_ende));
+            if t > 1e-6 && t < std::f64::consts::TAU - 1e-6
+                && best.map(|(bt, _)| t < bt).unwrap_or(true)
+            {
+                best = Some((t, p));
+            }
+        }
+    }
+    let Some((t, _)) = best else {
         return Err("Keine Schnittkante zum Verlängern gefunden".into());
     };
-    Ok(Verlaengerung {
-        wandernd,
-        ziel,
-        ende_b,
-    })
+    let neuer_sweep = sweep + t;
+    if neuer_sweep >= std::f64::consts::TAU - 1e-6 {
+        return Err("Verlängern würde den Bogen schließen".into());
+    }
+    let ziel = arc.c + Vec2::polar(winkel_ende + lauf * t, arc.r);
+    let weg = if lauf > 0.0 {
+        Seg::Arc(Arc::new(arc.c, arc.r, winkel_ende, winkel_ende + t))
+    } else {
+        Seg::Arc(Arc::new(arc.c, arc.r, winkel_ende - t, winkel_ende))
+    };
+    let neu = (neuer_sweep / 4.0).tan() * if bulge < 0.0 { -1.0 } else { 1.0 };
+    Ok((ziel, weg, neu))
 }
 
 fn extend_entity(doc: &mut Document, id: Id, at: Vec2, cutters: &[Id]) -> Result<(), String> {
@@ -5083,6 +5314,26 @@ fn extend_entity(doc: &mut Document, id: Id, at: Vec2, cutters: &[Id]) -> Result
                     *b = v.ziel;
                 } else {
                     *a = v.ziel;
+                }
+            }
+            // Polylinie (T0155): der Endpunkt wandert, die Krümmung des
+            // Endsegments sitzt an dessen **Anfang**.
+            EntityKind::Polyline { verts, .. } => {
+                let n = verts.len();
+                if v.ende_b {
+                    if let Some(letztes) = verts.last_mut() {
+                        letztes.p = v.ziel;
+                    }
+                    if let Some(b) = v.bulge {
+                        if n >= 2 {
+                            verts[n - 2].bulge = b;
+                        }
+                    }
+                } else if let Some(erstes) = verts.first_mut() {
+                    erstes.p = v.ziel;
+                    if let Some(b) = v.bulge {
+                        erstes.bulge = b;
+                    }
                 }
             }
             _ => {}

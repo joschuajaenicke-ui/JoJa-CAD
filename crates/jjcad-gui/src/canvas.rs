@@ -1,8 +1,8 @@
 //! Zeichnungsfläche: Anzeige, Fang, Werkzeugbedienung, Navigation.
 
 use crate::app::{
-    screen_to_world, visible_world_bounds, world_to_screen, App, Bogenmodus, DrawCacheKey,
-    Einfuegemodus, TabKind, Tool, ToolPhase, View,
+    screen_to_world, visible_world_bounds, world_to_screen, App, Bogenmodus, DimModus,
+    DrawCacheKey, Einfuegemodus, TabKind, Tool, ToolPhase, View,
 };
 use crate::perf::Abschnitt;
 use crate::snapmarke::FangArt;
@@ -2065,6 +2065,46 @@ mod tests_fangmarke {
         );
     }
 
+    fn strecken_mit_farbe(out: &egui::FullOutput) -> Vec<([Pos2; 2], egui::epaint::ColorMode)> {
+        out.shapes
+            .iter()
+            .filter_map(|cs| match &cs.shape {
+                egui::Shape::LineSegment { points, stroke } => Some((*points, stroke.color.clone())),
+                _ => None,
+            })
+            .collect()
+    }
+
+    /// Die Marke steht in der **Fangfarbe** — dasselbe Grün wie die
+    /// Hilfslinien des erweiterten Punktfangs (`Palette::track`), nicht im
+    /// Blau der Akzentfarbe (T0153, Turn 2).
+    #[test]
+    fn marke_steht_in_der_fangfarbe() {
+        let ctx = egui::Context::default();
+        let mut app = app_mit_linie(&ctx);
+        rahmen(&ctx, &mut app, None);
+        let flaeche = app.ui.last_canvas;
+        let s = world_to_screen(flaeche, app.current_view(), V2::new(0.0, 0.0));
+        let out = rahmen(&ctx, &mut app, Some(s + Vec2::new(4.0, 3.0)));
+
+        // Oberkante des Endpunktquadrats — je einmal Rand und einmal Fangfarbe.
+        let a = Pos2::new(s.x - 6.0, s.y - 6.0);
+        let b = Pos2::new(s.x + 6.0, s.y - 6.0);
+        let farben: Vec<egui::epaint::ColorMode> = strecken_mit_farbe(&out)
+            .into_iter()
+            .filter(|(p, _)| hat_strecke(&[*p], a, b))
+            .map(|(_, c)| c)
+            .collect();
+        assert!(
+            farben.contains(&egui::epaint::ColorMode::Solid(Palette::track())),
+            "die Fangmarke steht nicht in der Fangfarbe (Grün)"
+        );
+        assert!(
+            !farben.contains(&egui::epaint::ColorMode::Solid(Palette::accent())),
+            "die Fangmarke steht noch in der Akzentfarbe"
+        );
+    }
+
     /// Der Polarfang ist ein Fang (Statuszeile „POL") und bekommt deshalb
     /// ebenfalls eine Marke — die Winkelmarke am gerasteten Punkt.
     #[test]
@@ -2150,9 +2190,10 @@ fn draw_cursor(
         let s = world_to_screen(rect, view, w);
         match fang_art {
             // Eigene Marke je Fangart, am Fangpunkt — also am Element, auf
-            // das sich der Fang bezieht (T0153). Der Mittelpunkt von Kreis,
-            // Bogen und Ellipse ist im Plan unsichtbar; seine Marke trägt das
-            // Kreuz in Akzentfarbe (T0117).
+            // das sich der Fang bezieht (T0153). Sie steht in der Fangfarbe
+            // (Grün wie die Hilfslinien). Der Mittelpunkt von Kreis, Bogen und
+            // Ellipse ist im Plan unsichtbar; seine Marke trägt das Kreuz
+            // (T0117).
             Some(art) => crate::snapmarke::zeichne(p, s, art),
             // Kein Fang: der Zeigerpunkt selbst, wie bisher als kleines Kreuz.
             None => {
@@ -2909,12 +2950,56 @@ fn draw_tool_preview(
                 label_pos = w2s((d1 + d2) * 0.5) + Vec2::new(10.0, -20.0);
             }
         }
+        // Maßkette: die Vorschau ist das **fertige** Objekt — Maßlinie,
+        // Hilfslinien, Begrenzungsstriche und Maßzahlen aus demselben
+        // Renderer wie das eingefügte Element (T0154).
         "dim.chain" => {
-            for pair in tool.pts.windows(2) {
-                p.line_segment([w2s(pair[0]), w2s(pair[1])], dashed);
+            let modus = app.options.dim_mode;
+            let axis = modus.axis();
+            let mut pts = dim_messpunkte(&tool, modus);
+            let mut line_pos = dim_masslinie(&tool, modus);
+            if dim_legt_masslinie(&tool, modus) {
+                // Die Maßlinie liegt am Zeiger. Vor dem ersten Messpunkt zeigt
+                // eine **exemplarische** Kette die Form (drei Punkte); in
+                // „Direkt“ stehen die zwei Messpunkte schon fest, dann ist die
+                // Vorschau die echte Kette an der Zeigerlage.
+                if pts.len() < 2 {
+                    let (dir, _) = render::dim_achse(&[cursor, cursor + V2::X], axis);
+                    pts = vec![cursor - dir * 1500.0, cursor, cursor + dir * 1000.0];
+                }
+                line_pos = Some(cursor);
+            } else {
+                pts.push(cursor);
+                if line_pos.is_none() {
+                    let (_, vers) = render::dim_achse(&pts, axis);
+                    line_pos = Some(pts[0] + vers * (app.doc().settings.annotation_scale * 8.0));
+                }
+            }
+            if let Some(lp) = line_pos {
+                let dl = render::preview_dim(
+                    app.doc(),
+                    &pts,
+                    lp,
+                    axis,
+                    app.doc().current_layer,
+                    app.ui.pending.color,
+                );
+                let pc = PaintCtx {
+                    selected: Vec::new(),
+                    hover: None,
+                    lineweights: app.ui.lineweights,
+                    lineweights_scaled: app.ui.lineweights_scaled,
+                    lineweight_factor: app.ui.lineweight_factor as f64,
+                    paper_px: view.zoom * app.doc().settings.annotation_scale,
+                    preview: true,
+                    rot: view.rot as f32,
+                    text_deckel: app.prefs.textaufloesung.px(),
+                };
+                for prim in &dl.prims {
+                    paint_prim(p, prim, &w2s, view.zoom, &pc, 1.0);
+                }
             }
             if let Some(start) = last {
-                p.line_segment([w2s(start), w2s(cursor)], dashed);
                 label = format!(
                     "{} {}",
                     unit.format_plain(start.dist(cursor), unit.decimals()),
@@ -3555,6 +3640,28 @@ fn fang_zeiger_art(app: &App, w: V2, tol: f64) -> (V2, Option<&'static str>, Opt
 
 /// Die eine Fangrechnung für Zeigeranzeige und Klickpunkt.
 fn fang_aufloesung(app: &App, w: V2, tol: f64) -> snap::SnapResolution {
+    // Sonderfang beim Positionieren einer Maßkette (T0154): parallel zu einer
+    // vorhandenen im festen Abstand. Er gilt nur für den Klick, der die Lage
+    // der Maßlinie setzt — Messpunkte fangen normal.
+    if let Some(t) = app.tool.as_ref() {
+        if dim_legt_masslinie(t, app.options.dim_mode) {
+            let axis = app.options.dim_mode.axis();
+            let pts = dim_messpunkte(t, app.options.dim_mode);
+            // Bei „Direkt“ stehen die zwei Messpunkte schon fest; bei
+            // „Waagerecht“/„Senkrecht“ ist die Richtung die Achse selbst.
+            let richtung: Vec<V2> = if pts.len() >= 2 {
+                pts
+            } else {
+                vec![V2::ZERO, V2::polar(axis_dir(axis), 1.0)]
+            };
+            if let Some(p) = snap::dim_parallel(app.doc(), &richtung, axis, w, tol) {
+                return snap::SnapResolution {
+                    point: p,
+                    source: snap::SnapSource::Object(snap::SnapKind::DimParallel),
+                };
+            }
+        }
+    }
     let achsen = bezug_achsen(app);
     let regeln = fang_regeln(app);
     let vorschau = vorschau_punkte(app);
@@ -3721,6 +3828,11 @@ fn handle_input(
         && ctx.input(|i| i.key_pressed(egui::Key::Enter))
     {
         if let Some(t) = app.tool.clone() {
+            // Messpunkte ändern: ein Klick je Punkt, Enter beendet die Reihe.
+            if matches!(t.action.as_str(), "dim.point.add" | "dim.point.remove") {
+                app.tool = None;
+                return;
+            }
             let punktfolge = ist_fuell_punkte(&t.action);
             if matches!(
                 t.action.as_str(),
@@ -5210,18 +5322,34 @@ pub fn finish_tool(app: &mut App, from_enter: bool) {
             }
             app.tool = None;
         }
+        // Maßkette: Messpunkte und Lage der Maßlinie stehen je nach Modus an
+        // verschiedenen Stellen im Puffer (`dim_messpunkte`/`dim_masslinie`).
+        // Ohne zwei Messpunkte entsteht nichts — eine „Maßkette“ aus einem
+        // Punkt hätte keine Maßzahl (T0154).
         "dim.chain" => {
-            if tool.pts.len() >= 2 {
-                let b = BBox::from_points(&tool.pts);
-                let line_pos = V2::new(b.min.x, b.min.y - app.doc().settings.annotation_scale * 8.0);
-                // Achse bestimmt die Action selbst (Dominanz der Punktdifferenz) —
-                // eine hier geratene Achse ergäbe bei senkrechten Ketten „0,00" (T0038).
+            let modus = app.options.dim_mode;
+            let pts = dim_messpunkte(&tool, modus);
+            if pts.len() >= 2 {
+                let axis = modus.axis();
+                let line_pos = dim_masslinie(&tool, modus).unwrap_or_else(|| {
+                    // Ohne dritten Klick: die Maßlinie liegt wie bisher ein
+                    // Stück neben der Messstrecke.
+                    let (_, vers) = render::dim_achse(&pts, axis);
+                    pts[0] + vers * (app.doc().settings.annotation_scale * 8.0)
+                });
                 let _ = run(
                     app,
                     "dim.chain",
-                    json!({"pts": tool.pts.iter().map(|p| [app.unit().from_mm(p.x), app.unit().from_mm(p.y)]).collect::<Vec<_>>(),
-                           "line_pos": [app.unit().from_mm(line_pos.x), app.unit().from_mm(line_pos.y)]}),
+                    json!({"pts": pts.iter().map(|p| [app.unit().from_mm(p.x), app.unit().from_mm(p.y)]).collect::<Vec<_>>(),
+                           "line_pos": [app.unit().from_mm(line_pos.x), app.unit().from_mm(line_pos.y)],
+                           "axis": match axis {
+                               DimAxis::X => "x",
+                               DimAxis::Y => "y",
+                               DimAxis::Aligned => "aligned",
+                           }}),
                 );
+            } else {
+                app.toast(jjcad_core::i18n::tr("gui.canvas.masskette_zwei_messpunkte"));
             }
             app.tool = None;
         }
@@ -5373,6 +5501,31 @@ fn rotate_apply(app: &mut App, action: &str, center: V2, angle: f64) {
         ));
     }
     app.tool = None;
+}
+
+/// Bestätigt eine getippte Zahl mit dem **Klick** (T0151, Turn 3).
+///
+/// Sobald eine Zahl im Tippepuffer steht, ist der nächste Klick keine weitere
+/// Punkteingabe mehr: die Zahl gilt, die Klickstelle gibt — wie der Zeiger —
+/// die Drehrichtung vor. Eine unbrauchbare Zahl verbraucht den Klick trotzdem
+/// und meldet den Grund; sonst setzte der Klick still einen Punkt und niemand
+/// wüsste, warum nichts dreht.
+///
+/// Liefert `true`, wenn der Klick verbraucht ist.
+fn dreh_klick_bestaetigt(app: &mut App, action: &str, pts: &[V2], w: V2) -> bool {
+    let typed = app.ui.typed.clone();
+    if typed.is_empty() || typed.contains(';') {
+        return false;
+    }
+    let Some(c) = pts.first().copied() else {
+        return false;
+    };
+    match rotate_typed_angle(c, pts.get(1).copied(), Some(w), &typed) {
+        Some(angle) => rotate_apply(app, action, c, angle),
+        None => app.toast(jjcad_core::i18n::tr("gui.canvas.drehen_winkel_unbrauchbar")),
+    }
+    app.ui.typed.clear();
+    true
 }
 
 /// Vorschau der Winkelwahl beim Drehen (T0151).
@@ -5537,6 +5690,60 @@ fn basis_hoehe(a: V2, b: V2, p: V2) -> f64 {
 
 fn tool_click(app: &mut App, w: V2) {
     tool_click_at(app, w, w);
+}
+
+// ---------------------------------------------------------------------------
+// Maßkette: drei Eingabemodi (T0154)
+// ---------------------------------------------------------------------------
+
+/// Richtungswinkel der Messachse (0° waagerecht, 90° senkrecht).
+fn axis_dir(axis: DimAxis) -> f64 {
+    match axis {
+        DimAxis::X => 0.0,
+        DimAxis::Y => std::f64::consts::FRAC_PI_2,
+        // Parallel ohne Punkte gibt es nicht; die Vorschau zeigt dann waagerecht.
+        DimAxis::Aligned => 0.0,
+    }
+}
+
+/// Legt der nächste Klick die **Lage der Maßlinie** fest?
+///
+/// Bei „Waagerecht“ und „Senkrecht“ ist das der erste Klick, bei „Direkt“ der
+/// dritte (nach den zwei Messpunkten). Dieselbe Auswertung benutzen Klick,
+/// Vorschau und Fang — sonst zeigte die Vorschau einen anderen Schritt an, als
+/// der Klick ausführt.
+pub fn dim_legt_masslinie(tool: &Tool, modus: DimModus) -> bool {
+    if tool.action != "dim.chain" {
+        return false;
+    }
+    match modus {
+        DimModus::Waagerecht | DimModus::Senkrecht => tool.pts.is_empty(),
+        DimModus::Direkt => tool.pts.len() == 2,
+    }
+}
+
+/// Messpunkte einer neuen Maßkette aus dem Werkzeugpuffer.
+///
+/// Der Puffer trägt je nach Modus auch die Lage der Maßlinie: bei
+/// „Waagerecht“/„Senkrecht“ ist das der **erste** Klick, bei „Direkt“ der
+/// **dritte**. Alles andere sind Messpunkte.
+pub fn dim_messpunkte(tool: &Tool, modus: DimModus) -> Vec<V2> {
+    match modus {
+        DimModus::Waagerecht | DimModus::Senkrecht => tool.pts.iter().skip(1).copied().collect(),
+        DimModus::Direkt => {
+            let mut out: Vec<V2> = tool.pts.iter().take(2).copied().collect();
+            out.extend(tool.pts.iter().skip(3).copied());
+            out
+        }
+    }
+}
+
+/// Lage der Maßlinie aus dem Werkzeugpuffer (`None` = noch nicht gesetzt).
+pub fn dim_masslinie(tool: &Tool, modus: DimModus) -> Option<V2> {
+    match modus {
+        DimModus::Waagerecht | DimModus::Senkrecht => tool.pts.first().copied(),
+        DimModus::Direkt => tool.pts.get(2).copied(),
+    }
 }
 
 /// Klick im Werkzeug. `w` ist der Fangpunkt, `raw` der rohe Zeigerpunkt.
@@ -6069,9 +6276,61 @@ fn tool_click_at(app: &mut App, w: V2, raw: V2) {
                 app.tool = Some(tool);
             }
         }
+        // Ein Klick, zwei Bedeutungen — je nach Modus: Lage der Maßlinie oder
+        // ein Messpunkt. Die Auswertung steht in `dim_legt_masslinie`.
         "dim.chain" => {
             tool.pts.push(w);
             app.tool = Some(tool);
+        }
+        // Messpunkt einer bestehenden Maßkette hinzufügen bzw. entfernen
+        // (T0154). Ziel ist die ausgewählte Maßkette, sonst die unter dem
+        // Zeiger. Das Werkzeug bleibt aktiv — mehrere Punkte nacheinander.
+        "dim.point.add" | "dim.point.remove" => {
+            let tol = (8.0 / app.current_view().zoom).max(0.5);
+            let ziel = app
+                .selection()
+                .iter()
+                .copied()
+                .find(|id| {
+                    matches!(
+                        app.doc().entity(*id).map(|e| &e.kind),
+                        Some(EntityKind::Dim { .. })
+                    )
+                })
+                // Sonst die Maßkette unter dem Zeiger: entweder auf ihrer
+                // gezeichneten Maßlinie oder an einem ihrer Messpunkte — der
+                // Punkt selbst liegt auf dem Bauteil und ist keine
+                // Trefferfläche der Bemaßung.
+                .or_else(|| {
+                    snap::hit_test(app.doc(), w, tol, None).filter(|id| {
+                        matches!(
+                            app.doc().entity(*id).map(|e| &e.kind),
+                            Some(EntityKind::Dim { .. })
+                        )
+                    })
+                })
+                .or_else(|| {
+                    app.doc()
+                        .ents()
+                        .iter()
+                        .find(|e| match &e.kind {
+                            EntityKind::Dim { pts, .. } => {
+                                pts.iter().any(|p| p.dist(w) <= tol)
+                            }
+                            _ => false,
+                        })
+                        .map(|e| e.id)
+                });
+            match ziel {
+                Some(id) => {
+                    let action = tool.action.clone();
+                    let _ = run(app, &action, json!({"ids": [id], "p": ax(w)}));
+                    app.tool = Some(tool);
+                }
+                None => {
+                    app.toast(jjcad_core::i18n::tr("gui.canvas.masskette_waehlen"));
+                }
+            }
         }
         "dim.elevation.plan" => {
             let z = app.options.elevation_z;
@@ -6166,7 +6425,11 @@ fn tool_click_at(app: &mut App, w: V2, raw: V2) {
         "modify.rotate" => {
             // Drei Klicks: Drehzentrum, „von"-Punkt, „bis"-Punkt. Der Winkel ist
             // die Differenz der beiden vom Zentrum aus gesehenen Richtungen —
-            // nicht mehr die Richtung eines Klicks zur X-Achse.
+            // nicht mehr die Richtung eines Klicks zur X-Achse. Steht eine
+            // getippte Zahl im Puffer, bestätigt der Klick sie (T0151, Turn 3).
+            if dreh_klick_bestaetigt(app, "modify.rotate", &tool.pts, w) {
+                return;
+            }
             match rotate_step(&tool.pts, w) {
                 RotateStep::Collect { point } => {
                     tool.pts.push(point);
@@ -6182,7 +6445,11 @@ fn tool_click_at(app: &mut App, w: V2, raw: V2) {
         "view.rotate_tool" => {
             // Drei Klicks: Drehzentrum, Bezugspunkt, Zielrichtung. Der Winkel
             // ist die Differenz der beiden vom Zentrum aus gesehenen
-            // Richtungen; die Ansicht dreht um das angeklickte Zentrum.
+            // Richtungen; die Ansicht dreht um das angeklickte Zentrum. Eine
+            // getippte Zahl bestätigt auch hier der Klick (T0151, Turn 3).
+            if dreh_klick_bestaetigt(app, "view.rotate_tool", &tool.pts, w) {
+                return;
+            }
             match rotate_step(&tool.pts, w) {
                 RotateStep::Collect { point } => {
                     tool.pts.push(point);
@@ -10977,6 +11244,229 @@ mod tests_schnellauswahl {
     }
 }
 
+mod tests_masskette_eingabe {
+    //! T0154: ein Werkzeug, drei Eingabemodi.
+    //!
+    //! „Waagerecht“/„Senkrecht“ setzen zuerst die Lage der Maßlinie und sammeln
+    //! danach Messpunkte; „Direkt“ nimmt zwei Messpunkte, der dritte Klick legt
+    //! die Maßlinie parallel fest. Geprüft über denselben Weg wie die Maus
+    //! (`tool_click` + `finish_tool`).
+
+    use super::*;
+    use jjcad_core::units::Unit;
+
+    fn app() -> App {
+        let mut app = App::with_ctx(egui::Context::default());
+        app.doc_mut().settings.input_unit = Unit::Mm;
+        app
+    }
+
+    fn letzte_masskette(app: &App) -> Vec<V2> {
+        let e = app
+            .doc()
+            .ents()
+            .iter()
+            .rev()
+            .find(|e| matches!(e.kind, EntityKind::Dim { .. }))
+            .cloned()
+            .expect("keine Maßkette angelegt");
+        match e.kind {
+            EntityKind::Dim { pts, .. } => pts,
+            _ => unreachable!(),
+        }
+    }
+
+    /// Waagerecht: erster Klick ist die Lage der Maßlinie, danach drei
+    /// Messpunkte — die Maßlinie liegt auf der Höhe des ersten Klicks.
+    #[test]
+    fn waagerecht_position_zuerst_dann_messpunkte() {
+        let mut app = app();
+        app.waehle_dim_modus(DimModus::Waagerecht);
+        assert!(app.tool.is_some(), "das Werkzeug läuft");
+
+        tool_click(&mut app, V2::new(1000.0, -900.0)); // Lage der Maßlinie
+        tool_click(&mut app, V2::new(0.0, 0.0));
+        tool_click(&mut app, V2::new(2000.0, 0.0));
+        tool_click(&mut app, V2::new(5000.0, 0.0));
+        finish_tool(&mut app, true);
+
+        assert_eq!(
+            letzte_masskette(&app),
+            vec![V2::new(0.0, 0.0), V2::new(2000.0, 0.0), V2::new(5000.0, 0.0)]
+        );
+        let e = app
+            .doc()
+            .ents()
+            .iter()
+            .rev()
+            .find(|e| matches!(e.kind, EntityKind::Dim { .. }))
+            .unwrap();
+        match &e.kind {
+            EntityKind::Dim { axis, line_pos, .. } => {
+                assert_eq!(*axis, DimAxis::X);
+                assert!(
+                    (line_pos.y + 900.0).abs() < 1e-6,
+                    "Maßlinie nicht auf der Klickhöhe: {line_pos:?}"
+                );
+            }
+            _ => unreachable!(),
+        }
+    }
+
+    /// Senkrecht: dieselbe Reihenfolge, Maßlinie auf der Breite des ersten
+    /// Klicks.
+    #[test]
+    fn senkrecht_position_zuerst_dann_messpunkte() {
+        let mut app = app();
+        app.waehle_dim_modus(DimModus::Senkrecht);
+        tool_click(&mut app, V2::new(-700.0, 0.0));
+        tool_click(&mut app, V2::new(0.0, 0.0));
+        tool_click(&mut app, V2::new(0.0, 2500.0));
+        finish_tool(&mut app, true);
+
+        let e = app
+            .doc()
+            .ents()
+            .iter()
+            .rev()
+            .find(|e| matches!(e.kind, EntityKind::Dim { .. }))
+            .unwrap();
+        match &e.kind {
+            EntityKind::Dim { pts, axis, line_pos, .. } => {
+                assert_eq!(pts.len(), 2);
+                assert_eq!(*axis, DimAxis::Y);
+                assert!((line_pos.x + 700.0).abs() < 1e-6, "{line_pos:?}");
+            }
+            _ => unreachable!(),
+        }
+    }
+
+    /// Direkt: zwei Messpunkte, der **dritte** Klick legt die Maßlinie fest,
+    /// weitere Klicks hängen Messpunkte an.
+    #[test]
+    fn direkt_dritter_klick_setzt_die_masslinie() {
+        let mut app = app();
+        app.waehle_dim_modus(DimModus::Direkt);
+        tool_click(&mut app, V2::new(0.0, 0.0));
+        tool_click(&mut app, V2::new(3000.0, 3000.0));
+        // Vor dem dritten Klick fragt das Werkzeug nach der Maßlinie.
+        assert!(
+            crate::canvas::dim_legt_masslinie(app.tool.as_ref().unwrap(), DimModus::Direkt),
+            "der dritte Klick muss die Maßlinie setzen"
+        );
+        tool_click(&mut app, V2::new(0.0, 1000.0)); // Maßlinie
+        tool_click(&mut app, V2::new(1500.0, 1500.0)); // weiterer Messpunkt
+        finish_tool(&mut app, true);
+
+        let pts = letzte_masskette(&app);
+        assert_eq!(
+            pts,
+            vec![
+                V2::new(0.0, 0.0),
+                V2::new(3000.0, 3000.0),
+                V2::new(1500.0, 1500.0)
+            ],
+            "die zwei ersten Punkte und der vierte Klick sind die Messpunkte"
+        );
+    }
+
+    /// „Direkt“ ohne dritten Klick: die Maßlinie liegt ein Stück neben der
+    /// Messstrecke, die Kette entsteht trotzdem.
+    #[test]
+    fn direkt_ohne_position_nimmt_den_standardabstand() {
+        let mut app = app();
+        app.waehle_dim_modus(DimModus::Direkt);
+        tool_click(&mut app, V2::new(0.0, 0.0));
+        tool_click(&mut app, V2::new(3000.0, 0.0));
+        finish_tool(&mut app, true);
+        let e = app
+            .doc()
+            .ents()
+            .iter()
+            .rev()
+            .find(|e| matches!(e.kind, EntityKind::Dim { .. }))
+            .expect("Maßkette fehlt");
+        match &e.kind {
+            EntityKind::Dim { pts, axis, line_pos, .. } => {
+                assert_eq!(pts.len(), 2);
+                assert_eq!(*axis, DimAxis::Aligned);
+                assert!(line_pos.dist(V2::new(0.0, 0.0)) > 100.0, "{line_pos:?}");
+            }
+            _ => unreachable!(),
+        }
+    }
+
+    /// Ein Punkt allein ist keine Maßkette — der Abschluss legt nichts an.
+    #[test]
+    fn ein_messpunkt_legt_nichts_an() {
+        let mut app = app();
+        app.waehle_dim_modus(DimModus::Waagerecht);
+        tool_click(&mut app, V2::new(0.0, -500.0));
+        tool_click(&mut app, V2::new(0.0, 0.0));
+        finish_tool(&mut app, true);
+        assert!(
+            !app.doc()
+                .ents()
+                .iter()
+                .any(|e| matches!(e.kind, EntityKind::Dim { .. })),
+            "eine Maßkette aus einem Messpunkt darf nicht entstehen"
+        );
+    }
+
+    /// „Punkt hinzufügen“ hängt den Klickpunkt an die ausgewählte Kette;
+    /// „Punkt entfernen“ nimmt den nächsten wieder heraus.
+    #[test]
+    fn punkte_hinzufuegen_und_entfernen_am_klick() {
+        let mut app = app();
+        let antwort = app
+            .session_mut()
+            .execute(
+                "dim.chain",
+                &json!({"pts": [[0.0, 0.0], [2000.0, 0.0], [5000.0, 0.0]],
+                        "line_pos": [1000.0, -500.0], "axis": "x"}),
+            )
+            .expect("Maßkette");
+        let id = antwort["created"][0].as_u64().unwrap();
+        app.session_mut().select(vec![id]);
+
+        app.start_tool("dim.point.add");
+        tool_click(&mut app, V2::new(3000.0, 0.0));
+        assert_eq!(
+            letzte_masskette(&app).len(),
+            4,
+            "der Punkt kommt in die Kette"
+        );
+
+        app.start_tool("dim.point.remove");
+        tool_click(&mut app, V2::new(3000.0, 0.0));
+        assert_eq!(letzte_masskette(&app).len(), 3, "und geht wieder heraus");
+    }
+
+    /// Der Sonderfang gilt nur beim Positionieren: Messpunkte fangen normal
+    /// auf Objektpunkten, nicht auf der gedachten Parallelen.
+    #[test]
+    fn parallelfang_nur_beim_positionieren() {
+        let mut app = app();
+        app.session_mut()
+            .execute(
+                "dim.chain",
+                &json!({"pts": [[0.0, 0.0], [2000.0, 0.0]],
+                        "line_pos": [1000.0, -400.0], "axis": "x"}),
+            )
+            .unwrap();
+        app.waehle_dim_modus(DimModus::Waagerecht);
+        // Positionieren: 750 mm unter der vorhandenen Maßlinie.
+        let (p, text) = fang_zeiger(&app, V2::new(500.0, -1150.0), 50.0);
+        assert!((p.y + 1150.0).abs() < 1e-6, "nicht gefangen: {p:?}");
+        assert_eq!(text, Some("Maßkette parallel"));
+
+        // Erster Messpunkt: derselbe Ort fängt nicht mehr parallel.
+        tool_click(&mut app, V2::new(0.0, -1150.0));
+        let (q, _) = fang_zeiger(&app, V2::new(500.0, -1150.0), 50.0);
+        assert!((q.y + 1150.0).abs() > 1e-6, "Fang wirkt noch: {q:?}");
+    }
+}
+
 mod tests_massketten_farbe {
     //! T0062: Neue Maßketten übernehmen Ebene und Farbe aus dem
     //! Eigenschaften-Panel und sind von Haus aus **schwarz**.
@@ -11008,7 +11498,6 @@ mod tests_massketten_farbe {
                 matches!(
                     e.kind,
                     EntityKind::Dim { .. }
-                        | EntityKind::DimChain { .. }
                         | EntityKind::ElevationPlan { .. }
                         | EntityKind::ElevationSection { .. }
                 )
@@ -11119,7 +11608,7 @@ mod tests_massketten_farbe {
             .doc()
             .entities
             .iter()
-            .find(|e| matches!(e.kind, EntityKind::DimChain { .. }))
+            .find(|e| matches!(e.kind, EntityKind::Dim { .. }))
             .cloned()
             .expect("keine Maßkette angelegt");
         assert_eq!(e.layer, ziel, "Ebene der Werkzeugoptionen");
@@ -11551,6 +12040,40 @@ mod tests_verlaengernvorschau {
         let (erwartet_a, erwartet_b) = (
             world_to_screen(RECT, view, V2::new(1000.0, 0.0)),
             world_to_screen(RECT, view, V2::new(2000.0, 0.0)),
+        );
+        let (a, b, _breite) = strecken[0];
+        assert!(
+            (a.x - erwartet_a.x).abs() < 0.6 && (a.y - erwartet_a.y).abs() < 0.6,
+            "Anfang am wandernden Ende: {a:?} statt {erwartet_a:?}"
+        );
+        assert!(
+            (b.x - erwartet_b.x).abs() < 0.6 && (b.y - erwartet_b.y).abs() < 0.6,
+            "Ende an der nächsten Kante: {b:?} statt {erwartet_b:?}"
+        );
+    }
+
+    /// Eine Polylinie bekommt dieselbe Vorschau (T0155): die hervorgehobene
+    /// Strecke läuft vom Ende bis zur nächsten Kante.
+    #[test]
+    fn polylinie_zeigt_die_vorschau_am_ende() {
+        let mut app = App::with_ctx(egui::Context::default());
+        app.session_mut()
+            .execute("doc.settings", &json!({ "input_unit": "m" }))
+            .expect("Einheit setzen");
+        app.session_mut()
+            .execute("draw.line", &json!({ "a": [0, 3], "b": [4, 3] }))
+            .expect("Schnittkante anlegen");
+        app.session_mut()
+            .execute("draw.polyline", &json!({ "pts": [[0, 0], [1, 0], [1, 2]] }))
+            .expect("Polylinie anlegen");
+        app.start_tool("modify.extend");
+
+        let view = app.current_view();
+        let strecken = vorschau_strecken(&mut app, Some(V2::new(1000.0, 2000.0)));
+        assert_eq!(strecken.len(), 1, "genau eine Strecke: {strecken:?}");
+        let (erwartet_a, erwartet_b) = (
+            world_to_screen(RECT, view, V2::new(1000.0, 2000.0)),
+            world_to_screen(RECT, view, V2::new(1000.0, 3000.0)),
         );
         let (a, b, _breite) = strecken[0];
         assert!(
@@ -12921,6 +13444,80 @@ mod tests_drehwinkel {
         app.ui.typed = "90".into();
         taste(&mut app, egui::Key::Enter);
         assert!(app.tool.is_none(), "Enter schließt das Drehen ab");
+        let b = ende(&app, id);
+        assert!(
+            b.x.abs() < 0.5 && (b.y - 1000.0).abs() < 0.5,
+            "Endpunkt nach 90°: {b:?} — erwartet (0; 1000)"
+        );
+    }
+
+    /// Turn 3: sobald eine Zahl im Puffer steht, **bestätigt der Klick** sie —
+    /// statt einen weiteren Punkt zu setzen. Ohne die Bestätigung drehte der
+    /// dritte Klick über die Referenzpunkte (hier 90° statt der getippten 30°).
+    #[test]
+    fn klick_bestaetigt_den_getippten_winkel() {
+        let (mut app, id) = linie_im_drehen();
+        tool_click(&mut app, V2::new(0.0, 0.0)); // Zentrum
+        tool_click(&mut app, V2::new(500.0, 0.0)); // Bezugspunkt (+X)
+        app.ui.typed = "30".into();
+        // Klick oberhalb der Bezugslinie → Gegenuhrzeigersinn
+        tool_click(&mut app, V2::new(0.0, 900.0));
+        assert!(app.tool.is_none(), "der Klick bestätigt und beendet das Drehen");
+        assert!(app.ui.typed.is_empty(), "Tippepuffer ist geleert");
+        let b = ende(&app, id);
+        assert!(
+            (b.x - 866.025).abs() < 0.5 && (b.y - 500.0).abs() < 0.5,
+            "Endpunkt nach 30°: {b:?} — erwartet (866,0; 500,0)"
+        );
+    }
+
+    /// Unterhalb der Bezugslinie bestätigt derselbe Klick die Gegenrichtung.
+    #[test]
+    fn klick_bestaetigt_die_gegenrichtung() {
+        let (mut app, id) = linie_im_drehen();
+        tool_click(&mut app, V2::new(0.0, 0.0));
+        tool_click(&mut app, V2::new(500.0, 0.0));
+        app.ui.typed = "30".into();
+        tool_click(&mut app, V2::new(0.0, -900.0));
+        assert!(app.tool.is_none(), "Klick bestätigt");
+        let b = ende(&app, id);
+        assert!(
+            (b.x - 866.025).abs() < 0.5 && (b.y + 500.0).abs() < 0.5,
+            "Endpunkt nach -30°: {b:?} — erwartet (866,0; -500,0)"
+        );
+    }
+
+    /// Eine unbrauchbare Zahl verbraucht den Klick ebenfalls — sonst setzte er
+    /// still einen Punkt und niemand wüsste, warum nichts dreht.
+    #[test]
+    fn klick_mit_ungueltiger_zahl_setzt_keinen_punkt() {
+        let (mut app, id) = linie_im_drehen();
+        tool_click(&mut app, V2::new(0.0, 0.0));
+        tool_click(&mut app, V2::new(500.0, 0.0));
+        app.ui.typed = "500".into();
+        tool_click(&mut app, V2::new(0.0, 900.0));
+        let b = ende(&app, id);
+        assert!(
+            (b.x - 1000.0).abs() < 0.001 && b.y.abs() < 0.001,
+            "Linie unverändert: {b:?}"
+        );
+        assert_eq!(
+            app.tool.as_ref().map(|t| t.pts.len()),
+            Some(2),
+            "kein dritter Punkt gesetzt"
+        );
+        assert!(app.ui.typed.is_empty(), "Tippepuffer ist geleert");
+    }
+
+    /// Ohne getippte Zahl dreht der dritte Klick wie bisher über die
+    /// Referenzpunkte — die Bestätigung darf diesen Weg nicht verdrängen.
+    #[test]
+    fn ohne_zahl_dreht_der_dritte_klick_wie_bisher() {
+        let (mut app, id) = linie_im_drehen();
+        tool_click(&mut app, V2::new(0.0, 0.0));
+        tool_click(&mut app, V2::new(500.0, 0.0));
+        tool_click(&mut app, V2::new(0.0, 900.0)); // 90° gegen den Uhrzeigersinn
+        assert!(app.tool.is_none(), "der dritte Klick dreht");
         let b = ende(&app, id);
         assert!(
             b.x.abs() < 0.5 && (b.y - 1000.0).abs() < 0.5,

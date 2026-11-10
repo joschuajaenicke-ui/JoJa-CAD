@@ -41,7 +41,7 @@ fn masskette_senkrecht_ohne_achse_misst_senkrecht() {
 
     let e = s.doc.entities.last().unwrap();
     match &e.kind {
-        EntityKind::DimChain { axis, .. } => {
+        EntityKind::Dim { axis, .. } => {
             assert_eq!(*axis, DimAxis::Y, "senkrechte Kette muss senkrecht messen")
         }
         other => panic!("keine Maßkette: {other:?}"),
@@ -72,7 +72,7 @@ fn masskette_waagerecht_ohne_achse_misst_waagerecht() {
     )
     .unwrap();
     match &s.doc.entities.last().unwrap().kind {
-        EntityKind::DimChain { axis, .. } => assert_eq!(*axis, DimAxis::X),
+        EntityKind::Dim { axis, .. } => assert_eq!(*axis, DimAxis::X),
         other => panic!("keine Maßkette: {other:?}"),
     }
     let texte = mass_texte(&s);

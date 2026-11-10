@@ -69,8 +69,7 @@ fn neue_bemassung_ist_schwarz() {
             Color::BLACK,
             "{} auf „{}“ ist {} statt schwarz",
             match e.kind {
-                EntityKind::Dim { .. } => "Einzelmaß",
-                EntityKind::DimChain { .. } => "Maßkette",
+                EntityKind::Dim { .. } => "Maßkette",
                 EntityKind::ElevationPlan { .. } => "Grundriss-Kote",
                 EntityKind::ElevationSection { .. } => "Schnitt-Kote",
                 _ => "unbekannt",

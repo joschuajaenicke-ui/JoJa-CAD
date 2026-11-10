@@ -61,8 +61,10 @@ Ohne `host` sucht `draw.door`/`draw.window` die nächste Wand im Umfeld und
 
 | ID | Parameter | Hinweise |
 |---|---|---|
-| `dim.linear` | `a`, `b`, `line_pos`, `axis`, `text` | `axis`: `x`, `y`, `aligned`; ohne Angabe automatisch nach Dominanz |
-| `dim.chain` | `pts[]`, `line_pos`, `axis` | Eine Maßkette über mehrere Punkte |
+| `dim.linear` | `a`, `b`, `line_pos`, `axis`, `text` | Einzelmaß = Maßkette aus zwei Messpunkten; `axis`: `x`, `y`, `aligned`, ohne Angabe automatisch nach Dominanz |
+| `dim.chain` | `pts[]`, `line_pos`, `axis` | Maßkette über mindestens zwei Messpunkte (dasselbe Element wie `dim.linear`) |
+| `dim.point.add` | `ids`, `p` (oder `pos`), optional `index` | Fügt einer Maßkette einen Messpunkt hinzu; ohne `index` an der Stelle, die die Kette entlang der Messrichtung geordnet hält |
+| `dim.point.remove` | `ids`, `index` oder `p` | Entfernt einen Messpunkt; unter zwei Punkten ist das ein Fehler |
 | `dim.elevation.plan` | `p`, `z` | Grundriss-Kote (Kreis-Symbol), `z` in mm über ±0,00 |
 | `dim.elevation.section` | `pts[]` | Schnitt-Kote; der erste Punkt ist ±0,00, alle weiteren Höhen rechnet der Renderer aus der Y-Differenz |
 
@@ -77,7 +79,7 @@ Ohne `host` sucht `draw.door`/`draw.window` die nächste Wand im Umfeld und
 | `modify.scale` | `ids[]`, `center`, `factor` | Faktor > 0 |
 | `modify.offset` | `ids[]`, `distance`, `side` | `side` = Punkt auf der Zielseite |
 | `modify.trim` | `ids[]`, `at`, `cutters[]` | `at` = Punkt auf dem zu entfernenden Stück; Linie, Wand, Kreis (→ Bogen), Bogen, Ellipse (→ Ellipsenbogen), Ellipsenbogen, Polylinie. Schnittkanten sind Geraden **und** Bögen/Kreise |
-| `modify.extend` | `ids[]`, `at`, `cutters[]` | verlängert das nahe Ende bis zur nächsten Kante |
+| `modify.extend` | `ids[]`, `at`, `cutters[]` | verlängert das nahe Ende bis zur nächsten Kante; Linie, Wand, offene Polylinie (gerades Endsegment läuft in seiner Richtung, ein Endsegment mit Stützbogen auf seinem Kreis weiter). Eine geschlossene Polylinie hat kein Ende und liefert einen Fehler |
 | `modify.intersect` | `ids[]` (zwei Linien oder Wände) | zieht beide Objekte auf ihren gemeinsamen Schnittpunkt — verlängert oder kürzt das jeweils nähere Ende |
 | `modify.area.union` | `ids[]` (zwei oder mehr Füllflächen) | vereinigt **angrenzende** Flächen zu einer; Muster, Rand, Stil und Ebene kommen von der ersten. Getrennte Flächen sind ein Fehler |
 | `modify.area.split` | `pts[]`, `ids[]` (optional) | teilt eine Füllfläche entlang der Punktfolge in zwei; ohne `ids` bestimmt die Linie die Fläche. Kreuzt sie den Rand mehrfach oder eine Insel, ist das ein Fehler |

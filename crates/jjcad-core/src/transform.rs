@@ -214,26 +214,15 @@ pub fn transform_kind(k: &EntityKind, m: &Affine) -> EntityKind {
             heading: heading.clone(),
         },
         EntityKind::Dim {
-            a,
-            b,
+            pts,
             line_pos,
             axis,
             override_text,
         } => EntityKind::Dim {
-            a: m.apply(*a),
-            b: m.apply(*b),
-            line_pos: m.apply(*line_pos),
-            axis: *axis,
-            override_text: override_text.clone(),
-        },
-        EntityKind::DimChain {
-            pts,
-            line_pos,
-            axis,
-        } => EntityKind::DimChain {
             pts: pts.iter().map(|p| m.apply(*p)).collect(),
             line_pos: m.apply(*line_pos),
             axis: *axis,
+            override_text: override_text.clone(),
         },
         EntityKind::ElevationPlan { p, z } => EntityKind::ElevationPlan {
             p: m.apply(*p),

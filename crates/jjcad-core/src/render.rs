@@ -871,6 +871,41 @@ pub fn preview_elevation_section(
     dl
 }
 
+/// Vorschau einer Maßkette: die Anzeige des **fertigen** Objekts für Punkte,
+/// die noch nicht in der Zeichnung stehen (T0154).
+///
+/// Dieselbe Quelle wie die eingefügte Bemaßung ([`render_entity`]) — Maßlinie,
+/// Hilfslinien, Begrenzungsstriche und Maßzahlen. Ein eigener Platzhalter im
+/// Zeichner zeigte eine andere Form als das Ergebnis (dieselbe Lehre wie bei
+/// der Schnitt-Kote, T0122).
+pub fn preview_dim(
+    doc: &Document,
+    pts: &[Vec2],
+    line_pos: Vec2,
+    axis: DimAxis,
+    layer: Id,
+    color: Option<Color>,
+) -> DisplayList {
+    let mut e = Entity::new(
+        0,
+        layer,
+        EntityKind::Dim {
+            pts: pts.to_vec(),
+            line_pos,
+            axis,
+            override_text: None,
+        },
+    );
+    // Wie die Action: ohne ausdrückliche Farbe ist neue Bemaßung schwarz.
+    e.style.color = Some(color.unwrap_or(Color::BLACK));
+    let ctx = RenderCtx::new(doc);
+    let mut dl = DisplayList::default();
+    if pts.len() >= 2 {
+        render_entity(&ctx, &e, Affine::IDENTITY, &mut dl, 0);
+    }
+    dl
+}
+
 pub fn entity_bbox(doc: &Document, e: &Entity) -> BBox {
     // Ansichtsfenster: die Fläche ist das Rechteck, auch wenn der Rahmen
     // abgeschaltet ist (dann zeichnet der Renderer nichts).
@@ -1241,17 +1276,26 @@ pub fn render_entity(
                 layer: e.layer,
             });
         }
+        // Bemaßung: eine Kette aus mindestens zwei Messpunkten — das frühere
+        // Einzelmaß ist der Fall mit genau zwei Punkten (T0154). Beide laufen
+        // deshalb durch **einen** Renderer.
         EntityKind::Dim {
-            a: p0,
-            b: p1,
+            pts,
             line_pos,
             axis,
             override_text,
         } => {
-            render_dim(ctx, e, &st, *p0, *p1, *line_pos, *axis, override_text.as_deref(), xf, dl);
-        }
-        EntityKind::DimChain { pts, line_pos, axis } => {
-            render_dim_chain(ctx, e, &st, pts, *line_pos, *axis, xf, dl);
+            render_dim_chain(
+                ctx,
+                e,
+                &st,
+                pts,
+                *line_pos,
+                *axis,
+                override_text.as_deref(),
+                xf,
+                dl,
+            );
         }
         // Grundriss-Kote: Kreis mit Fadenkreuz, zwei gegenüberliegende Viertel
         // gefüllt; der Höhenwert steht rechts daneben und gehört zum Symbol.
@@ -3615,19 +3659,6 @@ pub const DIM_TEXT_ABSTAND_H: f64 = 0.6;
 /// gekürzt, nicht an der Maßlinie.
 pub const DIM_EXT_GAP_H: f64 = 0.8;
 
-struct DimGeom {
-    /// zu bemaßende Punkte am Bauteil
-    wa: Vec2,
-    wb: Vec2,
-    /// Punkte auf der Maßlinie
-    da: Vec2,
-    db: Vec2,
-    text: String,
-    /// Läufe mit Hochzahl (halber Zentimeter, Tabelle 4)
-    runs: Vec<TextRun>,
-    angle: f64,
-}
-
 /// Maßzahl samt Läufen: die Hochzahl des halben Zentimeters wird kleiner und
 /// höher gesetzt (DIN 1356-1:2026-09, Tabelle 4, Zeile „m und cm“).
 fn dim_text_runs(measure: f64, doc: &Document, resolve: bool) -> (String, Vec<TextRun>) {
@@ -3711,15 +3742,11 @@ pub fn dim_projiziert(pts: &[Vec2], line_pos: Vec2, axis: DimAxis) -> Vec<Vec2> 
 fn dim_teile(kind: &EntityKind) -> Option<(Vec<Vec2>, Vec2, DimAxis)> {
     match kind {
         EntityKind::Dim {
-            a,
-            b,
+            pts,
             line_pos,
             axis,
             ..
-        } => Some((vec![*a, *b], *line_pos, *axis)),
-        EntityKind::DimChain { pts, line_pos, axis } if pts.len() >= 2 => {
-            Some((pts.clone(), *line_pos, *axis))
-        }
+        } if pts.len() >= 2 => Some((pts.clone(), *line_pos, *axis)),
         _ => None,
     }
 }
@@ -3749,7 +3776,7 @@ pub fn dim_offset_set(kind: &mut EntityKind, off: f64) -> bool {
     let (_, vers) = dim_achse(&pts, axis);
     let bezug = pts[0];
     match kind {
-        EntityKind::Dim { line_pos, .. } | EntityKind::DimChain { line_pos, .. } => {
+        EntityKind::Dim { line_pos, .. } => {
             // Nur längs des Versatzes schieben: die Lage entlang der Maßlinie
             // bleibt erhalten, am Objekt ändert sich nur das Angefasste.
             let alt = (*line_pos - bezug).dot(vers);
@@ -3770,192 +3797,13 @@ pub fn dim_line_move(kind: &mut EntityKind, ziel: Vec2) -> bool {
     dim_offset_set(kind, (ziel - pts[0]).dot(vers))
 }
 
-fn dim_geometry(
-    ctx: &RenderCtx,
-    p0: Vec2,
-    p1: Vec2,
-    line_pos: Vec2,
-    axis: DimAxis,
-    override_text: Option<&str>,
-) -> DimGeom {
-    let doc = ctx.doc;
-    let (wa, wb) = (p0, p1);
-    let (dir, _) = dim_achse(&[p0, p1], axis);
-    let proj = dim_projiziert(&[p0, p1], line_pos, axis);
-    let (da, db) = (proj[0], proj[1]);
-    let measure = match axis {
-        DimAxis::X => (p1.x - p0.x).abs(),
-        DimAxis::Y => (p1.y - p0.y).abs(),
-        DimAxis::Aligned => p0.dist(p1),
-    };
-    let angle = dir.angle();
-    let (text, runs) = match override_text {
-        Some(t) => {
-            let t = if ctx.resolve_text {
-                doc.resolve_text(t)
-            } else {
-                t.to_string()
-            };
-            (t.clone(), vec![TextRun::plain(t)])
-        }
-        None => dim_text_runs(measure, doc, ctx.resolve_text),
-    };
-    let _ = format_number;
-    DimGeom {
-        wa,
-        wb,
-        da,
-        db,
-        text,
-        runs,
-        angle,
-    }
-}
-
+/// Zeichnet eine Bemaßung (Kette aus mindestens zwei Messpunkten).
+///
+/// `override_text` ersetzt die gerechnete Maßzahl des **ersten** Segments —
+/// die eine Textzeile, die das Eigenschaften-Panel anbietet. Weitere Segmente
+/// rechnen ihren Wert aus den Punkten; ein Text je Segment wäre eine zweite
+/// Wahrheit ohne Bedienung.
 #[allow(clippy::too_many_arguments)]
-fn render_dim(
-    ctx: &RenderCtx,
-    e: &Entity,
-    st: &PrimStyle,
-    p0: Vec2,
-    p1: Vec2,
-    line_pos: Vec2,
-    axis: DimAxis,
-    override_text: Option<&str>,
-    xf: Affine,
-    dl: &mut DisplayList,
-) {
-    let g = dim_geometry(ctx, p0, p1, line_pos, axis, override_text);
-    let a = ctx.a(1.0);
-    let style = &ctx.doc.dim_style;
-    // Maßhilfslinie: kurz am Bauteil und nur ein Stück über die Maßlinie hinaus
-    // (Bild 3/Bild 4). Die Werte in `dim_style` sind Obergrenzen.
-    let ext_gap = ctx.a(style.ext_gap.max(style.text_height * DIM_EXT_GAP_H));
-    let over = ctx.a(style.ext_overshoot);
-    let arrow = ctx.a(style.arrow_size);
-    let text_h = ctx.a(style.text_height);
-    // Bild 3: Begrenzungsstrich und Überstand hängen an der Texthöhe, nicht an
-    // der Pfeilgröße; der Text steht deutlich über der Linie.
-    let marke = ctx.a(style.text_height * DIM_MARKE_H);
-    let ueberstand = ctx.a(style.text_height * DIM_UEBERSTAND_H);
-    let text_gap = ctx.a(style.text_gap)
-        .max(ctx.a(style.text_height * DIM_TEXT_ABSTAND_H));
-    let dir = Vec2::polar(g.angle, 1.0);
-
-    // Hilfslinien — Volllinie schmal wie die Maßlinie (Tabelle 2, 01.1.8)
-    for (w, d) in [(g.wa, g.da), (g.wb, g.db)] {
-        let dd = (d - w).normalized();
-        let s = w + dd * ext_gap.min(w.dist(d) * 0.5);
-        let t = d + dd * over;
-        dl.push(Prim {
-            shape: Shape::Line(xf.apply(s), xf.apply(t)),
-            style: *st,
-            entity: e.id,
-            layer: e.layer,
-        });
-    }
-    // Maßlinie mit Überstand über die Maßhilfslinien (§9.1: „Auf den Überstand
-    // der Maßlinie über die Maßhilfslinie hinaus darf verzichtet werden“)
-    dl.push(Prim {
-        shape: Shape::Line(
-            xf.apply(g.da - dir * ueberstand),
-            xf.apply(g.db + dir * ueberstand),
-        ),
-        style: *st,
-        entity: e.id,
-        layer: e.layer,
-    });
-    // Markierungen
-    match style.arrow {
-        ArrowKind::Slash => {
-            let d = Vec2::polar(g.angle + std::f64::consts::FRAC_PI_4, marke * 0.5);
-            for p in [g.da, g.db] {
-                dl.push(Prim {
-                    shape: Shape::Line(xf.apply(p - d), xf.apply(p + d)),
-                    style: *st,
-                    entity: e.id,
-                    layer: e.layer,
-                });
-            }
-        }
-        ArrowKind::Arrow => {
-            for (p, s) in [(g.da, 1.0), (g.db, -1.0)] {
-                let d = dir * s;
-                let tri = vec![
-                    xf.apply(p),
-                    xf.apply(p + d * arrow - dir.perp() * (arrow * 0.22)),
-                    xf.apply(p + d * arrow + dir.perp() * (arrow * 0.22)),
-                ];
-                dl.push(Prim {
-                    shape: Shape::Poly(tri, true),
-                    style: PrimStyle {
-                        color: st.color,
-                        fill: Some(st.color),
-                        ..*st
-                    },
-                    entity: e.id,
-                    layer: e.layer,
-                });
-            }
-        }
-        ArrowKind::Dot => {
-            for p in [g.da, g.db] {
-                dl.push(Prim {
-                    shape: Shape::Dot {
-                        p: xf.apply(p),
-                        r: arrow * 0.3,
-                    },
-                    style: PrimStyle {
-                        color: st.color,
-                        fill: Some(st.color),
-                        ..*st
-                    },
-                    entity: e.id,
-                    layer: e.layer,
-                });
-            }
-        }
-        ArrowKind::None => {}
-    }
-    // Maßtext
-    let mid = (g.da + g.db) * 0.5;
-    let n = Vec2::polar(g.angle + std::f64::consts::FRAC_PI_2, 1.0);
-    let text_w = estimate_text_width(&g.text, text_h);
-    let span = g.da.dist(g.db);
-    let mut angle = g.angle;
-    // Lesbarkeit: nie kopfstehen
-    if angle > std::f64::consts::FRAC_PI_2 + 0.01 || angle < -std::f64::consts::FRAC_PI_2 - 0.01 {
-        angle += std::f64::consts::PI;
-    }
-    let (pos, align) = if text_w + ctx.a(1.0) > span && span > 0.0 {
-        // Text passt nicht: außerhalb platzieren
-        (g.db + dir * (text_w * 0.5 + ctx.a(1.5)), TextAlignH::Center)
-    } else {
-        (mid + n * text_gap, TextAlignH::Center)
-    };
-    dl.push(Prim {
-        shape: Shape::Text(TextPrim {
-            pos: xf.apply(pos),
-            text: g.text,
-            height: text_h * xf.scale_factor(),
-            angle: angle + xf.rotation(),
-            align,
-            valign: TextAlignV::Bottom,
-            bold: false,
-            italic: false,
-            underline: false,
-            superscript: false,
-            runs: g.runs,
-            // Bauzeichnungsschrift nach DIN 1356-1, §8.4 (DIN 1451)
-            font: TextFont::DinMittel,
-            line_spacing: 1.0,
-        }),
-        style: *st,
-        entity: e.id,
-        layer: e.layer,
-    });
-}
-
 fn render_dim_chain(
     ctx: &RenderCtx,
     e: &Entity,
@@ -3963,6 +3811,7 @@ fn render_dim_chain(
     pts: &[Vec2],
     line_pos: Vec2,
     axis: DimAxis,
+    override_text: Option<&str>,
     xf: Affine,
     dl: &mut DisplayList,
 ) {
@@ -4054,7 +3903,17 @@ fn render_dim_chain(
             DimAxis::Y => (p1.y - p0.y).abs(),
             DimAxis::Aligned => p0.dist(p1),
         };
-        let (txt, runs) = dim_text_runs(measure, ctx.doc, ctx.resolve_text);
+        let (txt, runs) = match override_text.filter(|_| i == 0) {
+            Some(t) => {
+                let t = if ctx.resolve_text {
+                    ctx.doc.resolve_text(t)
+                } else {
+                    t.to_string()
+                };
+                (t.clone(), vec![TextRun::plain(t)])
+            }
+            None => dim_text_runs(measure, ctx.doc, ctx.resolve_text),
+        };
         // Pfeile nur an den Segmentenden (Schrägstrich und Punkt stehen
         // bereits einmal je Basispunkt oben)
         match style.arrow {
@@ -4310,7 +4169,7 @@ fn entity_segments_tief(doc: &Document, e: &Entity, depth: usize) -> Vec<Seg> {
                 }
             }
         }
-        EntityKind::Dim { .. } | EntityKind::DimChain { .. } => {
+        EntityKind::Dim { .. } => {
             // Gezeichnete Bemaßung — Maßlinie, Hilfslinien und Markierungen
             // versetzt neben den Basispunkten (T0052). Die Grundlinie zwischen
             // den Basispunkten ist unsichtbar und deshalb keine Trefferfläche.
@@ -4450,7 +4309,10 @@ pub fn entity_centers(doc: &Document, e: &Entity) -> Vec<Vec2> {
                 })
                 .collect()
         }
-        EntityKind::Dim { a, b, .. } => vec![(*a + *b) * 0.5],
+        // Mitte der Messstrecke (erster bis letzter Messpunkt).
+        EntityKind::Dim { pts, .. } if pts.len() >= 2 => {
+            vec![(pts[0] + *pts.last().unwrap()) * 0.5]
+        }
         _ => vec![],
     }
 }
