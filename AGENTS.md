@@ -401,9 +401,11 @@ Mit dem Nutzer abgestimmt — nicht „verbessern“:
 - **Auswahl über Rechteck** prüft echte Geometrie (Segmente, Wandkörper),
   nicht die achsenparallele Bounding-Box.
 - **Zerlegen trifft die Fläche (T0138)**: `snap::hit_test_flaeche` nimmt eine
-  Füllfläche auch **innen** (Rückfall, wenn kein Objekt darüber liegt) — nur das
-  Zerlegen nutzt sie (Werkzeug, Vorschau). `snap::hit_test` bleibt beim
-  Randtreffer, weil der Farbeimer dieselbe Funktion fragt. Ein Musterpunkt
+  Füllfläche auch **innen** (Rückfall, wenn kein Objekt darüber liegt) — genutzt
+  von Zerlegen (Werkzeug, Vorschau) **und vom Rechtsklick**: erst dadurch öffnet
+  ein Klick in die Schraffur das Objektmenü mit „Zerlegen“ statt des
+  Flächenmenüs. `snap::hit_test` bleibt beim Randtreffer, weil der Farbeimer
+  dieselbe Funktion fragt. Ein Musterpunkt
   (`Shape::Dot`) wird beim Zerlegen zum gefüllten Kreis in der Musterfarbe
   (`style.fill`; Anzeige, Raster und PDF zeichnen einen gefüllten Kreis als
   Scheibe); ein Punktobjekt geriete über Linienstärke × Beschriftungsmaßstab

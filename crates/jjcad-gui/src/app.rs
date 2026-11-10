@@ -14741,3 +14741,108 @@ mod tests_blockeditor {
         );
     }
 }
+
+#[cfg(test)]
+mod tests_rechtsklick {
+    //! T0138: Der Rechtsklick in eine Schraffur öffnet das **Objektmenü** —
+    //! dort steht „Zerlegen“. Vorher traf die Trefferprüfung nur den Rand der
+    //! Fläche; der Klick in die Fläche landete im Flächenmenü, das kein
+    //! Zerlegen kennt.
+
+    use super::*;
+
+    fn rahmen(events: Vec<egui::Event>) -> egui::RawInput {
+        egui::RawInput {
+            screen_rect: Some(Rect::from_min_size(
+                Pos2::ZERO,
+                Vec2::new(1600.0, 1000.0),
+            )),
+            events,
+            ..Default::default()
+        }
+    }
+
+    fn sekundaer(pos: Pos2, gedrueckt: bool) -> egui::Event {
+        egui::Event::PointerButton {
+            pos,
+            button: egui::PointerButton::Secondary,
+            pressed: gedrueckt,
+            modifiers: egui::Modifiers::NONE,
+        }
+    }
+
+    /// App mit einer Schraffur 3 × 2 m, Ansicht darauf eingepasst.
+    fn app_mit_schraffur() -> (egui::Context, App, Id) {
+        let ctx = egui::Context::default();
+        let mut app = App::with_ctx(ctx.clone());
+        let layer = app.doc().current_layer;
+        let id = app.doc_mut().new_id();
+        let e = Entity::new(
+            id,
+            layer,
+            EntityKind::Fill {
+                boundary: vec![
+                    V2::new(0.0, 0.0),
+                    V2::new(3000.0, 0.0),
+                    V2::new(3000.0, 2000.0),
+                    V2::new(0.0, 2000.0),
+                ],
+                holes: Vec::new(),
+                pattern: FillPattern::Lines,
+                pattern_angle: 0.0,
+                pattern_scale: 200.0,
+                border: true,
+            },
+        );
+        app.doc_mut().add_entity(e);
+        app.fit_view();
+        (ctx, app, id)
+    }
+
+    /// Rechtsklick in die **Mitte** der Fläche (nicht auf den Rand): das
+    /// Objektmenü muss aufgehen, nur dort steht „Zerlegen“.
+    #[test]
+    fn rechtsklick_in_die_schraffur_oeffnet_das_objektmenue() {
+        let (ctx, mut app, id) = app_mit_schraffur();
+        let _ = ctx.run(rahmen(vec![]), |ctx| app.ui(ctx));
+        let pos = world_to_screen(
+            app.ui.last_canvas,
+            app.current_view(),
+            V2::new(1500.0, 1000.0),
+        );
+        let _ = ctx.run(
+            rahmen(vec![egui::Event::PointerMoved(pos), sekundaer(pos, true)]),
+            |ctx| app.ui(ctx),
+        );
+        let _ = ctx.run(rahmen(vec![sekundaer(pos, false)]), |ctx| app.ui(ctx));
+
+        match app.ui.menu.map(|m| m.kind) {
+            Some(MenuKind::Object(hit)) => assert_eq!(hit, id, "falsches Objekt im Menü"),
+            Some(MenuKind::Canvas) => {
+                panic!("Flächenmenü statt Objektmenü — dort fehlt „Zerlegen“")
+            }
+            None => panic!("kein Menü geöffnet"),
+            other => panic!("unerwartetes Menü: {other:?}"),
+        }
+    }
+
+    /// Gegenprobe: neben der Fläche bleibt es beim Flächenmenü.
+    #[test]
+    fn rechtsklick_neben_der_schraffur_bleibt_beim_flaechenmenue() {
+        let (ctx, mut app, _id) = app_mit_schraffur();
+        let _ = ctx.run(rahmen(vec![]), |ctx| app.ui(ctx));
+        // Die Ansicht passt die Fläche mit Rand ein — die linke obere Ecke
+        // der Zeichenfläche liegt außerhalb.
+        let pos = app.ui.last_canvas.left_top() + egui::vec2(4.0, 4.0);
+        let _ = ctx.run(
+            rahmen(vec![egui::Event::PointerMoved(pos), sekundaer(pos, true)]),
+            |ctx| app.ui(ctx),
+        );
+        let _ = ctx.run(rahmen(vec![sekundaer(pos, false)]), |ctx| app.ui(ctx));
+
+        match app.ui.menu.map(|m| m.kind) {
+            Some(MenuKind::Canvas) => {}
+            other => panic!("erwartet Flächenmenü, bekommen: {other:?}"),
+        }
+    }
+}
