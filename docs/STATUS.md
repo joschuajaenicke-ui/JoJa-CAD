@@ -261,6 +261,20 @@ offene Fensterinstanz zeigt weiterhin den alten Stand.
   Vollbild-Start führt zurück auf 1500 × 950. Die Lage bleibt unter Wayland
   eine Grenze (Nr. 7).
 
+- **Eigene Vorlage für neue Dateien (T0162)**: Unter Einstellungen →
+  **Speicherorte** steht unter den drei Dateipfaden die Zeile „Vorlage für neue
+  Dateien“ (Feld, **Datei wählen …**, **Übernehmen**, **Zurücksetzen**). Der
+  Pfad steht als `vorlage_pfad` in `prefs.json`, relativ zur Datenwurzel oder
+  absolut; ein nicht vorhandener Pfad wird beim Übernehmen abgelehnt. Jede mit
+  **Neu** angelegte Datei ist eine Kopie dieser Datei — Objekte, Ebenen,
+  Blätter, Blöcke und Zeichnungseinstellungen kommen aus der Vorlage
+  (`persist::lade_vorlage`), der Reiter bleibt neu (kein Pfad, nicht geändert,
+  eigene Kennung). Eine unlesbare Vorlage meldet „Vorlage · nicht lesbar“ und
+  die Datei beginnt leer. Nachweis: 4 Tests (`vorlage_wird_als_neue_zeichnung_geladen`,
+  `vorlagenpfad_wird_gespeichert_und_aufgeloest`,
+  `neue_datei_ist_kopie_der_vorlage`, `unlesbare_vorlage_beginnt_leer_und_meldet_sich`)
+  und `speicherorte_zeigen_die_vorlage_und_oeffnen_den_dateidialog`.
+
 ## Offen
 
 1. **Tür/Fenster-Ausrichtung im Eigenschaften-Panel** — beim Anlegen gesetzt,
