@@ -20,6 +20,7 @@ pub mod export;
 pub mod flaeche;
 pub mod fonts;
 pub mod geom;
+pub mod gitter;
 pub mod history;
 pub mod instanz;
 pub mod i18n;

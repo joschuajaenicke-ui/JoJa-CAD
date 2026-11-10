@@ -1329,6 +1329,18 @@ pub struct SnapSettings {
     /// Rasterweite in mm
     #[serde(default = "default_grid")]
     pub grid_step: f64,
+    /// Art des Zeichenrasters (T0144): rechtwinklig, isometrisch, dimetrisch,
+    /// trimetrisch. Bestimmt Achsen der Anzeige **und** des Fangs.
+    #[serde(default)]
+    pub grid_kind: crate::gitter::Rasterart,
+    /// Ob die gezeichnete Rasterweite mit dem Zoom skaliert oder fest bleibt
+    /// (T0144).
+    #[serde(default)]
+    pub grid_mode: crate::gitter::Rastermodus,
+    /// Rasterfang erzwingen (T0144): jede Eingabe liegt im Raster, ohne
+    /// Fangradius. Objektpunkte (Endpunkt, Schnitt …) bleiben exakt.
+    #[serde(default)]
+    pub grid_force: bool,
     /// Fangradius in Pixeln
     #[serde(default = "default_snap_px")]
     pub tolerance_px: f64,
@@ -1375,6 +1387,14 @@ fn default_snap_px() -> f64 {
     12.0
 }
 
+impl SnapSettings {
+    /// Das Raster dieser Einstellungen (Art und Weite) — eine Quelle für
+    /// Anzeige und Fang (T0144). Bei Weite 0 fängt das Raster nicht.
+    pub fn raster(&self) -> crate::gitter::Raster {
+        crate::gitter::Raster::neu(self.grid_kind, self.grid_step)
+    }
+}
+
 impl Default for SnapSettings {
     fn default() -> Self {
         Self {
@@ -1389,6 +1409,9 @@ impl Default for SnapSettings {
             polar: true,
             wall_edges: true,
             grid_step: 100.0,
+            grid_kind: crate::gitter::Rasterart::Rechteckig,
+            grid_mode: crate::gitter::Rastermodus::Skaliert,
+            grid_force: false,
             tolerance_px: 12.0,
             polar_step: 45.0,
             polar_tolerance: 6.0,

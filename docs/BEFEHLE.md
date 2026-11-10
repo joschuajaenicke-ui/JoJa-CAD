@@ -25,7 +25,7 @@ Befehls-Schicht vorbei.
 | `file.export_pdf` | — | Blatt-PDF über Dialog |
 | `file.export_dxf` | — | DXF über Dialog |
 | `file.restore` | — | Sicherungsordner im Dateimanager öffnen (die Stände sind `.jjcad`-Dateien und lassen sich direkt öffnen) |
-| `doc.settings` | `input_unit`, `dim_unit`, `decimals`, `annotation_scale`, `grid_step`, `text_height`, `wall_thickness`, `door_width`, `window_width`, `stair_width`, `show_grid`, `snap{...}` | Einstellungen ändern |
+| `doc.settings` | `input_unit`, `dim_unit`, `decimals`, `annotation_scale`, `grid_step`, `grid_kind` (`rechteckig`/`isometrisch`/`dimetrie`/`trimetrie`), `grid_mode` (`skaliert`/`fest`), `grid_force`, `text_height`, `wall_thickness`, `door_width`, `window_width`, `stair_width`, `show_grid`, `snap{...}` | Einstellungen ändern |
 | `doc.project` | `project`, `client`, `planner`, `plan_no`, `plan_title`, `address`, `note`, `date`, `revision` | Projektdaten / Schriftfeld |
 | `dim.style` | `text_height`, `arrow_size`, `arrow` (`slash`/`arrow`/`dot`/`none`), `text_gap`, `ext_gap`, `ext_overshoot`, `decimals` | Bemaßungsstil |
 

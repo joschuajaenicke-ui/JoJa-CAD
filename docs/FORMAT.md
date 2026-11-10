@@ -64,6 +64,13 @@ schreiben sie beim nächsten Speichern mit. `version` bleibt deshalb 2.
 `nearest`, `grid`, `ortho`, `polar` (bool), `grid_step` (mm, Standard 100),
 `tolerance_px` (Standard 12).
 
+Raster (T0144): `grid_kind` (`rechteckig` | `isometrisch` | `dimetrie` |
+`trimetrie`, Standard `rechteckig`) bestimmt die Achsen von Anzeige **und**
+Fang, `grid_mode` (`skaliert` | `fest`, Standard `skaliert`) ob die gezeichnete
+Weite mit dem Zoom ausgedünnt wird, `grid_force` (bool, Standard `false`) ob
+jede Eingabe ohne Fangradius im Raster liegt. Fehlende Felder gelten als
+Vorgabe — alte Dateien laden unverändert.
+
 ## `layers`
 
 ```json

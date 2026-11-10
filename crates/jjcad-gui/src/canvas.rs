@@ -1566,70 +1566,88 @@ fn draw_block_hinweise(app: &App, p: &Painter, rect: Rect, view: View) {
 // ---------------------------------------------------------------------------
 
 fn draw_grid(app: &App, p: &Painter, rect: Rect, view: View) {
-    let step = app.doc().settings.snap.grid_step.max(1.0);
-    let mut minor = step;
-    // Bei sehr kleinem Raster ausdünnen
-    while minor * view.zoom < 7.0 {
-        minor *= 10.0;
+    // T0144: Art und Weite kommen aus `gitter::Raster` — dieselbe Rechnung, mit
+    // der auch gefangen wird. Im Modus „Skaliert“ wird die gezeichnete Weite bei
+    // kleinem Zoom ausgedünnt, im Modus „Fest“ bleibt sie unverändert.
+    let snap = &app.doc().settings.snap;
+    let weite = jjcad_core::gitter::sichtbare_weite(snap.grid_step, snap.grid_mode, view.zoom);
+    let raster = jjcad_core::gitter::Raster::neu(snap.grid_kind, weite);
+    let familien = raster.familien();
+    if familien.is_empty() {
+        return;
     }
-    let major = minor * 10.0;
     // Sichtbarer Weltbereich: bei gedrehter Ansicht ist das die Hülle der
     // vier Bildschirmecken. Die Rasterlinien laufen als Weltstrecken durch
     // diese Hülle und werden mitgedreht gezeichnet — sonst stünden sie quer
     // zur gedrehten Zeichnung.
     let (x0, y0, x1, y1) = visible_world_bounds(rect, view);
-
-    let draw_set = |step: f64, color: Color32, w: f32, p: &Painter| {
-        let start = (x0 / step).floor() as i64;
-        let end = (x1 / step).ceil() as i64;
-        if end - start > 3000 {
-            return;
+    let ecken = [
+        V2::new(x0, y0),
+        V2::new(x1, y0),
+        V2::new(x1, y1),
+        V2::new(x0, y1),
+    ];
+    // Halbe Länge der Linien: die Diagonale der Hülle reicht in jede Richtung.
+    let laenge = ((x1 - x0).hypot(y1 - y0)).max(1.0);
+    for fam in &familien {
+        let (mut min, mut max) = (f64::INFINITY, f64::NEG_INFINITY);
+        for e in ecken {
+            let d = e.dot(fam.normale);
+            min = min.min(d);
+            max = max.max(d);
         }
-        let stroke = Stroke::new(w, color);
-        for i in start..=end {
-            let x = i as f64 * step;
+        let k0 = (min / fam.abstand).floor() as i64;
+        let k1 = (max / fam.abstand).ceil() as i64;
+        // Zu dicht für den Bildschirm: nur jede zehnte Linie zeichnen (dieselbe
+        // Gitterpunkte, gröbere Darstellung) — sonst bliebe bei kleinem Zoom
+        // nichts übrig. Bleibt es auch dann zu dicht, wird die Familie
+        // ausgelassen; das Raster ist dann feiner als ein Pixel.
+        let schritt = if k1 - k0 > 4000 { 10 } else { 1 };
+        if (k1 - k0) / schritt > 4000 {
+            continue;
+        }
+        let mut k = k0;
+        while k <= k1 {
+            let basis = fam.normale * (k as f64 * fam.abstand);
+            let a = basis - fam.richtung * laenge;
+            let b = basis + fam.richtung * laenge;
+            let farbe = if k % 10 == 0 {
+                Palette::grid_major()
+            } else {
+                Palette::grid_minor()
+            };
             p.line_segment(
                 [
-                    world_to_screen(rect, view, V2::new(x, y0)),
-                    world_to_screen(rect, view, V2::new(x, y1)),
+                    world_to_screen(rect, view, a),
+                    world_to_screen(rect, view, b),
                 ],
-                stroke,
+                Stroke::new(1.0, farbe),
             );
+            k += schritt;
         }
-        let start = (y0 / step).floor() as i64;
-        let end = (y1 / step).ceil() as i64;
-        for i in start..=end {
-            let y = i as f64 * step;
-            p.line_segment(
-                [
-                    world_to_screen(rect, view, V2::new(x0, y)),
-                    world_to_screen(rect, view, V2::new(x1, y)),
-                ],
-                stroke,
-            );
-        }
-    };
-    draw_set(minor, Palette::grid_minor(), 1.0, p);
-    draw_set(major, Palette::grid_major(), 1.0, p);
-    // Achsen
-    let achse = Stroke::new(1.2, Color32::from_rgb(0xC9, 0xC2, 0xB0));
-    if x0 <= 0.0 && 0.0 <= x1 {
-        p.line_segment(
-            [
-                world_to_screen(rect, view, V2::new(0.0, y0)),
-                world_to_screen(rect, view, V2::new(0.0, y1)),
-            ],
-            achse,
-        );
     }
-    if y0 <= 0.0 && 0.0 <= y1 {
-        p.line_segment(
-            [
-                world_to_screen(rect, view, V2::new(x0, 0.0)),
-                world_to_screen(rect, view, V2::new(x1, 0.0)),
-            ],
-            achse,
-        );
+    // Achsen nur im rechtwinkligen Raster: bei den schrägen Arten gibt es keine
+    // X/Y-Achse, an der sie sich ausrichten ließen.
+    if snap.grid_kind == jjcad_core::gitter::Rasterart::Rechteckig {
+        let achse = Stroke::new(1.2, Color32::from_rgb(0xC9, 0xC2, 0xB0));
+        if x0 <= 0.0 && 0.0 <= x1 {
+            p.line_segment(
+                [
+                    world_to_screen(rect, view, V2::new(0.0, y0)),
+                    world_to_screen(rect, view, V2::new(0.0, y1)),
+                ],
+                achse,
+            );
+        }
+        if y0 <= 0.0 && 0.0 <= y1 {
+            p.line_segment(
+                [
+                    world_to_screen(rect, view, V2::new(x0, 0.0)),
+                    world_to_screen(rect, view, V2::new(x1, 0.0)),
+                ],
+                achse,
+            );
+        }
     }
 }
 

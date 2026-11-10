@@ -863,11 +863,12 @@ fn snap_candidates_alle(
         }
     }
 
-    // Raster
+    // Raster — dieselbe Rechnung wie die Anzeige (`gitter::Raster`), damit die
+    // Rasterart (rechtwinklig, isometrisch …) auch fängt (T0144).
     if s.grid {
-        let g = doc.grid_step();
-        if g > 0.0 {
-            let gp = cursor.snap_grid(g, Vec2::ZERO);
+        let raster = s.raster();
+        if raster.step > 0.0 {
+            let gp = raster.fangen(cursor);
             consider(gp, SnapKind::Grid, None, gp.dist(cursor));
         }
     }
@@ -1217,12 +1218,16 @@ pub fn snap_constrained_achsen(
         }
     }
 
-    // 3. Raster zuletzt und nur im Fangradius.
+    // 5. Raster zuletzt. Mit „Rasterfang erzwingen“ (T0144) liegt **jede**
+    //    Eingabe im Raster, ohne Fangradius; sonst rastet es nur in Reichweite.
+    //    Die Objektfänge oben (Endpunkt, Schnitt, Nächster Punkt …) geben vorher
+    //    zurück und bleiben exakt — ein Zwang auf das Raster würde sie von der
+    //    Geometrie wegziehen.
     if allow_grid && s.grid {
-        let step = s.grid_step;
-        if step > 0.0 {
-            let gp = point.snap_grid(step, Vec2::ZERO);
-            if gp.dist(point) <= tol {
+        let raster = s.raster();
+        if raster.step > 0.0 {
+            let gp = raster.fangen(point);
+            if s.grid_force || gp.dist(point) <= tol {
                 return SnapResolution {
                     point: gp,
                     source: SnapSource::Object(SnapKind::Grid),
