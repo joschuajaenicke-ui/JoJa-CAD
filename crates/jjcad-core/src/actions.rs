@@ -311,7 +311,10 @@ pub const ACTIONS: &[ActionDef] = &[
     act!("sheet.viewport_tool", "action.sheet.viewport_tool.label", Blatt, "viewport", "", "action.sheet.viewport_tool.hint", true),
 
     // Ansicht
-    act!("view.zoom_extents", "action.view.zoom_extents.label", Ansicht, "zoomfit", "", "action.view.zoom_extents.hint", false),
+    // T0159: „Alles zeigen“ liegt auf der festen Taste F5 — ausgewertet in
+    // `App::handle_shortcuts`, der Eintrag hier macht sie in Tastaturbelegung
+    // und Inventar als feste Belegung sichtbar (wie F1 und F11).
+    act!("view.zoom_extents", "action.view.zoom_extents.label", Ansicht, "zoomfit", "f5", "action.view.zoom_extents.hint", false),
     act!("view.zoom_in", "action.view.zoom_in.label", Ansicht, "zoomin", "", "action.view.zoom_in.hint", false),
     act!("view.zoom_out", "action.view.zoom_out.label", Ansicht, "zoomout", "", "action.view.zoom_out.hint", false),
     // Umsetzen der Ansicht mit der Tastatur (T0056). Die vier Richtungen sind

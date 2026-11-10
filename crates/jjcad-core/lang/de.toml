@@ -310,7 +310,7 @@ hint = "Rechteck für ein Ansichtsfenster aufziehen"
 label = "Ansicht aufziehen"
 
 [action.view.zoom_extents]
-hint = "Zeichnung einpassen"
+hint = "Zeichnung einpassen (F5)"
 label = "Alles zeigen"
 
 [action.view.zoom_in]

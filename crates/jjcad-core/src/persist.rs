@@ -2839,6 +2839,24 @@ mod tests {
         assert!(!prefs.belegung_aenderbar("file.save"));
         assert!(prefs.belegung_aenderbar("draw.line"));
 
+        // T0159: „Alles zeigen" liegt fest auf F5 — im Register, in der
+        // Vorgabebelegung und nicht umbelegbar.
+        assert_eq!(
+            actions::action("view.zoom_extents").map(|a| a.key),
+            Some("f5"),
+            "Alles zeigen muss die feste Taste F5 tragen"
+        );
+        assert_eq!(
+            prefs.key_for("view.zoom_extents").as_deref(),
+            Some("f5"),
+            "F5 muss in der Vorgabebelegung bei Alles zeigen stehen"
+        );
+        assert_eq!(
+            prefs.action_for_key("f5").as_deref(),
+            Some("view.zoom_extents")
+        );
+        assert!(!prefs.belegung_aenderbar("view.zoom_extents"));
+
         prefs.bind("file.save", "k");
         assert_eq!(
             prefs.key_for("file.save").as_deref(),

@@ -79,6 +79,13 @@ fest.** Keine Taste gehört zwei Schichten.
   je Bild, Perzentile und die Aufteilung der Rechenzeit in Abschnitte. F3 allein
   ist nicht belegt. Die Kombination ist fest verdrahtet, weil die Messwerte auch
   bei laufendem Werkzeug erreichbar sein müssen.
+- **`F5` zeigt die ganze Zeichnung** (T0159) — dieselbe Funktion wie der Knopf
+  „Alles zeigen" (`view.zoom_extents` → `App::fit_view`): Mittelpunkt auf die
+  Mitte des sichtbaren Inhalts, Zoom so weit heraus, dass alles in die
+  Zeichenfläche passt (Rand 70 mm Modell, 46 mm im Papierraum). Fest verdrahtet
+  wie `F1` und `F11`, damit sie auch bei laufendem Werkzeug erreichbar ist; im
+  Register trägt die Funktion deshalb den Schlüssel `f5` und erscheint in der
+  Tastaturbelegung als feste Belegung.
 - **Drehen und Spiegeln der Einfüge-Vorschau** hängen an den Funktionen
   **„Drehen"** (`modify.rotate`, Vorgabe `R`) und **„Spiegeln"**
   (`modify.mirror`, Vorgabe `F`) — nicht an festen Tasten. Wer „Drehen" auf `Q`

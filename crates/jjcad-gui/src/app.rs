@@ -5676,6 +5676,14 @@ impl App {
             if ctx.input(|i| i.key_pressed(egui::Key::F1)) {
                 self.ui.help_open = true;
             }
+            // T0159: F5 zeigt die ganze Zeichnung — dieselbe Funktion wie der
+            // Knopf „Alles zeigen“ (`view.zoom_extents` → `App::fit_view`).
+            // Fest verdrahtet wie F1 und F11, damit sie auch bei laufendem
+            // Werkzeug erreichbar ist; über `run` läuft sie durch die
+            // Befehlsschicht, nicht an ihr vorbei.
+            if ctx.input(|i| i.key_pressed(egui::Key::F5)) {
+                run = Some("view.zoom_extents".into());
+            }
         }
         if let Some(id) = run {
             self.run_action(ctx, &id);
@@ -11073,6 +11081,53 @@ mod tests_tastenbelegung {
         assert_eq!(app.prefs.key_for("file.save").as_deref(), Some("ctrl+s"));
         assert_eq!(app.prefs.action_for_key("k"), vorher);
         assert!(!app.prefs.belegung_aenderbar("file.save"));
+    }
+
+    /// T0159: `F5` zeigt die ganze Zeichnung.
+    ///
+    /// Geprüft wird das Ergebnis, nicht der Zoom-Wert: vorher steht die Ansicht
+    /// weit neben der Linie und viel zu nah, nach `F5` liegen **beide** Enden in
+    /// der Zeichenfläche. Die Taste ist fest verdrahtet (Schicht 3) und läuft
+    /// über `view.zoom_extents` — denselben Weg wie der Knopf „Alles zeigen".
+    #[test]
+    fn f5_zeigt_die_ganze_zeichnung() {
+        let mut app = app_mit_zeichnung();
+        app.set_view(View {
+            center: V2::new(-60_000.0, 45_000.0),
+            zoom: 4.0,
+            rot: 0.0,
+        });
+        let mut t = 0.0;
+        // Ein Bild ohne Tastendruck: die Zeichenfläche steht danach fest.
+        frame_zeit(&mut app, &mut t, vec![]);
+        let flaeche = app.ui.last_canvas;
+        let vorher = app.current_view();
+        let ende = V2::new(2000.0, 0.0);
+        assert!(
+            !flaeche.contains(world_to_screen(flaeche, vorher, ende)),
+            "Ausgangslage muss die Zeichnung außerhalb der Fläche zeigen"
+        );
+
+        frame_zeit(
+            &mut app,
+            &mut t,
+            vec![druck(egui::Key::F5), loslassen(egui::Key::F5)],
+        );
+
+        let nachher = app.current_view();
+        assert!(
+            (nachher.zoom - vorher.zoom).abs() > 1e-6,
+            "F5 muss den Zoom ändern: {} → {}",
+            vorher.zoom,
+            nachher.zoom
+        );
+        for p in [V2::new(0.0, 0.0), ende] {
+            let s = world_to_screen(flaeche, nachher, p);
+            assert!(
+                flaeche.contains(s),
+                "Punkt {p:?} liegt nach F5 außerhalb der Zeichenfläche: {s:?} in {flaeche:?}"
+            );
+        }
     }
 }
 

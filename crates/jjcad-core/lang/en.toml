@@ -295,7 +295,7 @@ hint = "Drag a rectangle for a viewport"
 label = "Draw viewport"
 
 [action.view.zoom_extents]
-hint = "Fit the drawing"
+hint = "Fit the drawing (F5)"
 label = "Zoom extents"
 
 [action.view.zoom_in]

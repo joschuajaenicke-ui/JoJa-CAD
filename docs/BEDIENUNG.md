@@ -46,6 +46,8 @@ einsehbar und dort frei änderbar (Ribbon ▸ Ansicht ▸ „Tasten").
    Ein Block lässt sich auch per Klick auf einen Slot oder Lagerplatz legen, solange seine
    Einfüge-Vorschau läuft.
 6. **Navigieren**: Mausrad zoomt, mittlere Taste oder `Leertaste`+Ziehen schwenkt.
+   `F5` zeigt die ganze Zeichnung — dieselbe Funktion wie der Knopf „Alles zeigen"
+   (Zoom und Mittelpunkt so, dass alles sichtbar wird).
    `W A S D` schwenkt ebenfalls — als Funktionen „Ansicht oben/links/unten/rechts",
    die in der Tastaturbelegung stehen und umbelegt werden können. Wie sich eine
    Funktion bewegt, steht in den Einstellungen unter **Bedienung** in der Zeile
