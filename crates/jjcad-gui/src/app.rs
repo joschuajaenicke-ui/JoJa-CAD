@@ -2729,6 +2729,26 @@ impl App {
                         }
                     }
                 }
+                // Prüfhilfe T0156: Einfüge-Vorschau eines **Blocks** — für das
+                // Bild der Miniatur am Zeiger (Vorschau verlässt die Fläche).
+                // Der größte Block, damit die Miniatur im Bild zu erkennen ist.
+                "blockvorschau" | "blockminiatur" => {
+                    let block = self
+                        .doc()
+                        .blocks
+                        .iter()
+                        .filter(|b| b.bbox().is_valid())
+                        .max_by(|a, b| {
+                            let (x, y) = (a.bbox(), b.bbox());
+                            (x.width() * x.height())
+                                .partial_cmp(&(y.width() * y.height()))
+                                .unwrap_or(std::cmp::Ordering::Equal)
+                        })
+                        .map(|b| b.id.clone());
+                    if let Some(id) = block {
+                        self.start_ghost_block(id);
+                    }
+                }
                 // Prüfhilfe T0070: Einfüge-Vorschau um 90° gedreht, Anker am
                 // Zeiger. Das Bild zeigt, ob die Vorschau oben rechts bleibt
                 // (Drehpunkt „Mittelpunkt") oder um das Fadenkreuz springt
