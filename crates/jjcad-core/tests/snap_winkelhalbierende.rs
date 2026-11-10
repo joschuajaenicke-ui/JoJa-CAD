@@ -117,8 +117,21 @@ fn weit_entfernte_linien_liefern_keine_halbierende() {
     let mut s = s();
     linie(&mut s, [0.0, 0.0], [4000.0, 0.0]);
     linie(&mut s, [0.0, 4000.0], [4000.0, 4000.0]);
-    // 4 m über der oberen Linie, Fangradius 30 mm → Weite 1200 mm.
+    // 4 m über der oberen Linie — weiter als die Mindestweite von 3 m.
     assert!(jjcad_core::snap::winkelhalbierende(&s.doc, v(1000.0, 8000.0), 30.0, &[]).is_none());
+}
+
+/// Die Weite hat eine Untergrenze: bei starkem Zoom (kleiner Fangradius)
+/// verschwindet der Fang nicht, nur weil die Wände 2,50 m auseinander liegen.
+#[test]
+fn enger_zoom_verliert_die_halbierende_nicht() {
+    let mut s = s();
+    linie(&mut s, [0.0, 0.0], [4000.0, 0.0]);
+    linie(&mut s, [0.0, 2500.0], [4000.0, 2500.0]);
+    // Fangradius 5 mm (tief hineingezoomt) → Faktor allein ergäbe 200 mm.
+    let l = jjcad_core::snap::winkelhalbierende(&s.doc, v(1000.0, 1250.0), 5.0, &[])
+        .expect("Mindestweite 3 m muss greifen");
+    assert_punkt(l.origin, v(1000.0, 1250.0), "Mittellinie");
 }
 
 /// „Zwei Linien" heißt zwei Linien-Objekte: Rechteck und Polylinie sind keine

@@ -263,7 +263,8 @@ fn richtungen(h: &HaltPunkt) -> [Vec2; 2] {
 // ---------------------------------------------------------------------------
 
 /// Weite um den Punkt, in der die beiden Linien liegen müssen — als Vielfaches
-/// des Fangradius, also bildschirmkonstant.
+/// des Fangradius (bei 12 px Vorgabe rund 480 Bildpunkte), also mit dem Zoom
+/// wachsend.
 ///
 /// Ohne Grenze zöge irgendein Paar weit entfernter Linien eine Halbierende
 /// durch die halbe Zeichnung. Mit Grenze gilt: die beiden Linien müssen in der
@@ -271,6 +272,15 @@ fn richtungen(h: &HaltPunkt) -> [Vec2; 2] {
 /// Geraden) — sonst wäre „zwischen zwei Linien" nur eine Rechnung ohne Bezug
 /// zum Bild.
 pub const WINKELHALBIERENDE_WEITE: f64 = 40.0;
+
+/// Untergrenze der Weite in Millimetern (3 m).
+///
+/// Ohne sie hinge der Fang an der Zoomstufe: bei starker Vergrößerung ist der
+/// Fangradius nur wenige Millimeter groß, und zwei Wände im Abstand von 2 m
+/// lägen „außer Reichweite" — der Fang verschwände genau dann, wenn man nah
+/// herangeht. 3 m deckt die üblichen Raummaße ab; weiter entfernte Linien
+/// kommen bei kleinerem Zoom über den Faktor hinzu.
+pub const WINKELHALBIERENDE_MINDEST_MM: f64 = 3000.0;
 
 /// Die Winkelhalbierende zwischen den beiden Linien, zwischen denen `p` liegt.
 ///
@@ -296,7 +306,7 @@ pub const WINKELHALBIERENDE_WEITE: f64 = 40.0;
 /// `None`, wenn keine zwei Linien in Reichweite sind, `p` auf einer von beiden
 /// liegt oder beide parallel mit `p` außerhalb sind.
 pub fn winkelhalbierende(doc: &Document, p: Vec2, tol: f64, ignore: &[Id]) -> Option<Hilfslinie> {
-    let weite = (tol * WINKELHALBIERENDE_WEITE).max(1.0);
+    let weite = (tol * WINKELHALBIERENDE_WEITE).max(WINKELHALBIERENDE_MINDEST_MM);
     // Kandidaten: gerade Strecken, die in der Nähe von `p` verlaufen.
     let mut strecken: Vec<(Vec2, Vec2, Id)> = Vec::new();
     for e in doc.ents() {
