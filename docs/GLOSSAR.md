@@ -54,7 +54,7 @@ Steht rechts „nicht", dann ist das Wort im Projekt verpönt (auch in der Oberf
 | **Farbeimer** | Werkzeug: Klick in eine leere Fläche, Umgrenzung wird automatisch ermittelt | Füllwerkzeug, Zauberstab, Paint-Bucket |
 | **Griff** | Anfasser zum Ziehen an Enden, Ecken und Kantenmitten eines ausgewählten Objekts | Handle, Punkt, Anker |
 | **Fang** | Einrasten auf Punkten/Geometrie beim Zeichnen | Snap, Einrasten |
-| **Objektfang** | Fang auf vorhandene Geometrie: END (Endpunkt), SCHN (Schnitt), MIT (Mitte), ZEN (Zentrum), QUA (Quadrant), LOT (Lot), NÄC (nächster Punkt), RAS (Raster), POL (Polar) | Fangmodus, Fangart |
+| **Objektfang** | Fang auf vorhandene Geometrie: END (Endpunkt), SCHN (Schnitt), MIT (Mitte), ZEN (Zentrum), QUA (Quadrant), LOT (Lot), NÄC (nächster Punkt), RAS (Raster), POL (Polar), WHB (Winkelhalbierende) | Fangmodus, Fangart |
 | **Polarfang** | Fang auf feste Winkel (45°-Schritte, Winkel-Toleranz 6°); der Fangbereich ist ein **Band** um den Strahl — seitlich höchstens der Fangradius, nicht ein mit dem Abstand wachsender Kegel | Winkelraster, Ortho (das ist etwas anderes) |
 | **Erweiterter Punktfang** | Bleibt der Zeiger kurz auf einem Fangpunkt stehen, wird dieser gehalten und bekommt zwei Hilfslinien; auf ihnen fängt der nächste Punkt | Punktverfolgung, Tracking, OTRACK |
 | **Hilfslinie (Punktfang)** | Eine der beiden Linien des erweiterten Punktfangs — **nicht** die Winkelhalbierende und nicht der Layer „Hilfslinien" | Fanglinie, Verfolgungslinie |

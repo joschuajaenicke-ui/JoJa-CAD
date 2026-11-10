@@ -2404,6 +2404,41 @@ impl App {
                         }
                     }
                 }
+                // Winkelhalbierender Fang (T0150): eine neue Linie beginnt
+                // zwischen den beiden ersten Linien der Zeichnung — von ihrem
+                // Anfangspunkt geht die Halbierende als Führungslinie aus.
+                "halbierende" | "winkelhalbierende" | "halbierendehalte"
+                | "winkelhalbierendehalte" => {
+                    let kanten: Vec<(V2, V2)> = self
+                        .doc()
+                        .ents()
+                        .iter()
+                        .filter_map(|e| match &e.kind {
+                            EntityKind::Line { a, b } => Some((*a, *b)),
+                            EntityKind::Wall { a, b, .. } => Some((*a, *b)),
+                            _ => None,
+                        })
+                        .collect();
+                    if kanten.len() >= 2 {
+                        let mitte = |(a, b): (V2, V2)| (a + b) * 0.5;
+                        let p = (mitte(kanten[0]) + mitte(kanten[1])) * 0.5;
+                        self.start_tool("draw.line");
+                        if part.contains("halte") {
+                            // Zweite Lage der Aufgabenstellung: der Punkt
+                            // zwischen den Linien ist für den **erweiterten
+                            // Punktfang** gehalten — von ihm geht die
+                            // Halbierende aus, ohne gesetzten Startpunkt.
+                            self.halt.push(jjcad_core::snap::HaltPunkt {
+                                point: p,
+                                kind: jjcad_core::snap::SnapKind::Endpoint,
+                                entity: None,
+                                richtung: None,
+                            });
+                        } else if let Some(t) = self.tool.as_mut() {
+                            t.pts.push(p);
+                        }
+                    }
+                }
                 // Prüfhilfe T0027: Treppe nach Schrittmaß anlegen — Lauflinie
                 // 4,64 m, Breite 1,00 m, Höhe 2,752 m ergeben 16 Stufen
                 // (17,2 / 29). `seltreppe` wählt sie zusätzlich aus, damit das
