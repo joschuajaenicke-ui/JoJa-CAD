@@ -274,8 +274,10 @@ pub const ACTIONS: &[ActionDef] = &[
     // Ein Element für Einzelmaß und Maßkette (T0154). `dim.linear` bleibt als
     // Befehl für MCP und ältere Skripte bestehen, ist aber kein eigenes
     // Werkzeug mehr — das Ribbon zeigt nur die Maßkette mit ihren Modi.
-    act!("dim.linear", "action.dim.linear.label", Bemassung, "dim", "m", "action.dim.linear.hint", true),
-    act!("dim.chain", "action.dim.chain.label", Bemassung, "dimchain", "", "action.dim.chain.hint", true),
+    // `dim.linear` ist nur noch ein Befehl (MCP, ältere Skripte) — das
+    // Werkzeug ist die Maßkette, die das Einzelmaß als Zwei-Punkt-Kette kann.
+    act!("dim.linear", "action.dim.linear.label", Bemassung, "dim", "", "action.dim.linear.hint", false),
+    act!("dim.chain", "action.dim.chain.label", Bemassung, "dimchain", "m", "action.dim.chain.hint", true),
     // Messpunkt an eine bestehende Maßkette anhängen bzw. herausnehmen
     // (T0154) — beides im Reiter „Bemaßung".
     act!("dim.point.add", "action.dim.point.add.label", Bemassung, "point", "", "action.dim.point.add.hint", true),

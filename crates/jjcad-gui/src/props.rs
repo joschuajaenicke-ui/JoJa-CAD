@@ -2158,8 +2158,10 @@ pub fn bemassung(app: &mut App, ui: &mut Ui, ziel: Ziel) {
         });
         if let Some(m) = picked {
             modus = m;
-            app.options.dim_mode = m;
-            app.options.dim_axis = Some(m.axis());
+            // Der Wechsel startet das Werkzeug neu: die Klickpunkte eines
+            // anderen Modus bedeuten etwas anderes (Lage der Maßlinie oder
+            // Messpunkt), sie dürfen nicht weiterverwendet werden.
+            app.waehle_dim_modus(m);
         }
         achse = Some(modus.axis());
     } else {
@@ -4236,7 +4238,7 @@ mod tests {
         assert!(auswahl.contains(&"masstext"), "Maß ohne Maßtext: {auswahl:?}");
 
         app.session_mut().selection.clear();
-        app.start_tool("dim.linear");
+        app.start_tool("dim.chain");
         let neu = zeichne(&mut app);
         assert_eq!(neu, auswahl, "Bemaßung: Zeilen weichen ab");
     }

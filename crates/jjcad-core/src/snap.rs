@@ -21,6 +21,9 @@ pub enum SnapKind {
     Tracking,
     /// Punkt auf der Winkelhalbierenden zwischen zwei Linien (T0150).
     Bisector,
+    /// Maßlinie parallel zu einer vorhandenen Maßkette im festen Abstand
+    /// (T0154) — nur beim Positionieren einer Maßkette.
+    DimParallel,
 }
 
 impl SnapKind {
@@ -37,6 +40,7 @@ impl SnapKind {
             SnapKind::Grid => "Raster",
             SnapKind::Tracking => "Hilfslinie",
             SnapKind::Bisector => "Winkelhalbierende",
+            SnapKind::DimParallel => "Maßkette parallel",
         }
     }
     /// Beschriftung in der gewählten Sprache (T0106). `label()` bleibt der
@@ -54,6 +58,7 @@ impl SnapKind {
             SnapKind::Grid => crate::i18n::tr("ui.snapkind.grid"),
             SnapKind::Tracking => crate::i18n::tr("ui.snapkind.tracking"),
             SnapKind::Bisector => crate::i18n::tr("ui.snapkind.bisector"),
+            SnapKind::DimParallel => crate::i18n::tr("ui.snapkind.dim_parallel"),
         }
     }
 
@@ -71,6 +76,7 @@ impl SnapKind {
             SnapKind::Grid => "RAS",
             SnapKind::Tracking => "HLF",
             SnapKind::Bisector => "WHB",
+            SnapKind::DimParallel => "MPAR",
         }
     }
 
@@ -103,6 +109,9 @@ impl SnapKind {
             // zwischen zwei Linien — sie schlägt „Nächster Punkt" und Lot,
             // aber nie einen echten Endpunkt oder Schnittpunkt (T0150).
             SnapKind::Bisector => 5,
+            // Ausdrücklich anvisierte Maßlinienlage: schlägt Raster und
+            // „Nächster Punkt“, aber keinen echten Objektpunkt.
+            SnapKind::DimParallel => 5,
             SnapKind::Perpendicular => 6,
             SnapKind::Nearest => 7,
             SnapKind::Grid => 8,
@@ -1978,6 +1987,68 @@ pub fn select_window(doc: &Document, a: Vec2, b: Vec2, crossing: bool) -> Vec<Id
         }
     }
     out
+}
+
+/// Abstand, in dem eine neue Maßkette parallel zu einer vorhandenen sitzt
+/// (T0154): 0,75 m in Modell-Millimetern.
+pub const DIM_PARALLEL_ABSTAND_MM: f64 = 750.0;
+
+/// Sonderfang beim **Positionieren** einer Maßkette (T0154).
+///
+/// Liegt der Zeiger im Fangradius einer gedachten Parallelen zu einer
+/// vorhandenen Maßkette — im festen Abstand [`DIM_PARALLEL_ABSTAND_MM`] —,
+/// liefert der Fang den Punkt auf dieser Parallelen (in Messrichtung des
+/// Zeigers, quer gerastet). So sitzen zwei Maßketten übereinander in
+/// gleichmäßigem Abstand, ohne dass der Nutzer die Zahl im Panel einstellt.
+///
+/// `pts` sind die bereits gesetzten Messpunkte: bei `DimAxis::Aligned` geben
+/// sie die Richtung vor. Ohne zwei Punkte gibt es keine Richtung und damit
+/// keine Parallele.
+pub fn dim_parallel(
+    doc: &Document,
+    pts: &[Vec2],
+    axis: DimAxis,
+    cursor: Vec2,
+    tol: f64,
+) -> Option<Vec2> {
+    if pts.len() < 2 {
+        return None;
+    }
+    let (dir, vers) = render::dim_achse(pts, axis);
+    let mut best: Option<(f64, Vec2)> = None;
+    for e in doc.ents() {
+        let EntityKind::Dim {
+            pts: referenz,
+            line_pos,
+            axis: ref_axis,
+            ..
+        } = &e.kind
+        else {
+            continue;
+        };
+        if referenz.len() < 2 {
+            continue;
+        }
+        let (ref_dir, ref_vers) = render::dim_achse(referenz, *ref_axis);
+        // Nur parallele Maßketten sind ein Vorbild — eine schräge Kette gibt
+        // keine waagerechte Parallele.
+        if dir.cross(ref_dir).abs() > 0.02 {
+            continue;
+        }
+        // Zwei Seiten: die nähere zum Zeiger gewinnt.
+        for seite in [1.0, -1.0] {
+            let kand = *line_pos + ref_vers * (DIM_PARALLEL_ABSTAND_MM * seite);
+            let abstand = (cursor - kand).dot(vers).abs();
+            if abstand > tol {
+                continue;
+            }
+            let punkt = cursor - vers * (cursor - kand).dot(vers);
+            if best.map(|(d, _)| abstand < d).unwrap_or(true) {
+                best = Some((abstand, punkt));
+            }
+        }
+    }
+    best.map(|(_, p)| p)
 }
 
 #[cfg(test)]

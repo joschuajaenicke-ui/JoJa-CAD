@@ -287,6 +287,23 @@ Mit dem Nutzer abgestimmt — nicht „verbessern“:
   Ausgangsflächen und übernehmen Muster, Randlinie, Stil und Ebene von der ersten.
   Getrennte Flächen, mehrfacher Randkontakt und eine gekreuzte Insel sind Fehler
   (kein stiller Erfolg). Ribbon: Zeichnen ▸ Füllen ▸ „Vereinigen" / „Schneiden".
+- **Maßkette und Einzelmaß sind ein Element (T0154)**: `EntityKind::Dim` trägt
+  `pts` (mindestens zwei **Messpunkte**), `line_pos`, `axis`, `override_text`;
+  das frühere Einzelmaß (`a`, `b`) und `DimChain` gibt es nicht mehr. Alte
+  Dateien und Blöcke schreibt `persist::migrate_legacy_dims` beim Laden um —
+  **ein** Renderer (`render_dim_chain`) zeichnet jede Bemaßung, `dim.linear`
+  bleibt nur als Befehl für MCP/ältere Skripte. Das Werkzeug `dim.chain` hat
+  drei Eingabemodi (`app::DimModus`): **Waagerecht** und **Senkrecht** setzen
+  zuerst die Lage der Maßlinie (erster Klick im Werkzeugpuffer, Vorschau =
+  exemplarische Kette), danach Messpunkte; **Direkt** nimmt zwei Messpunkte,
+  der **dritte** Klick legt die Maßlinie parallel fest, weitere Klicks hängen
+  Messpunkte an. `canvas::dim_legt_masslinie`/`dim_messpunkte`/`dim_masslinie`
+  sind die eine Auswertung für Klick, Vorschau, Fang und Chat-Text — nicht
+  daneben nachbauen. `dim.point.add`/`dim.point.remove` ändern eine bestehende
+  Kette (Einfügen hält die Reihenfolge entlang der Messrichtung, unter zwei
+  Punkten ist Entfernen ein Fehler). Beim Positionieren fängt
+  `snap::dim_parallel` die Maßlinie parallel zu einer vorhandenen im Abstand
+  `DIM_PARALLEL_ABSTAND_MM` (0,75 m).
 - **Bemaßung beim Ändern**: Die Maßlinie behält ihre **Lage**. Ein waagerechtes
   Maß liegt auf *einer* Höhe (`line_pos.y` für alle Basispunkte), ein senkrechtes
   auf einer Breite — `render::dim_projiziert` **setzt** die Koordinate, es addiert

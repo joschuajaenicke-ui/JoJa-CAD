@@ -871,6 +871,41 @@ pub fn preview_elevation_section(
     dl
 }
 
+/// Vorschau einer Maßkette: die Anzeige des **fertigen** Objekts für Punkte,
+/// die noch nicht in der Zeichnung stehen (T0154).
+///
+/// Dieselbe Quelle wie die eingefügte Bemaßung ([`render_entity`]) — Maßlinie,
+/// Hilfslinien, Begrenzungsstriche und Maßzahlen. Ein eigener Platzhalter im
+/// Zeichner zeigte eine andere Form als das Ergebnis (dieselbe Lehre wie bei
+/// der Schnitt-Kote, T0122).
+pub fn preview_dim(
+    doc: &Document,
+    pts: &[Vec2],
+    line_pos: Vec2,
+    axis: DimAxis,
+    layer: Id,
+    color: Option<Color>,
+) -> DisplayList {
+    let mut e = Entity::new(
+        0,
+        layer,
+        EntityKind::Dim {
+            pts: pts.to_vec(),
+            line_pos,
+            axis,
+            override_text: None,
+        },
+    );
+    // Wie die Action: ohne ausdrückliche Farbe ist neue Bemaßung schwarz.
+    e.style.color = Some(color.unwrap_or(Color::BLACK));
+    let ctx = RenderCtx::new(doc);
+    let mut dl = DisplayList::default();
+    if pts.len() >= 2 {
+        render_entity(&ctx, &e, Affine::IDENTITY, &mut dl, 0);
+    }
+    dl
+}
+
 pub fn entity_bbox(doc: &Document, e: &Entity) -> BBox {
     // Ansichtsfenster: die Fläche ist das Rechteck, auch wenn der Rahmen
     // abgeschaltet ist (dann zeichnet der Renderer nichts).

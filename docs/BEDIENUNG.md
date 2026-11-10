@@ -20,7 +20,14 @@ einsehbar und dort frei änderbar (Ribbon ▸ Ansicht ▸ „Tasten").
 1. **Wand** (`G`): Start- und Endpunkt klicken — die Wand läuft als Kette weiter, `ESC` beendet.
 2. **Tür** (`H`) / **Fenster** (`J`): in eine Wand klicken. Öffnung, Laibungen und Anschlag
    entstehen automatisch, die Tür richtet sich an der Wand aus.
-3. **Maß** (`M`): zwei Punkte und die Maßlinie setzen. **Maßkette**: Punkte klicken, `Enter` beendet.
+3. **Maßkette** (`M`): ein Werkzeug mit drei Eingabemodi — **Waagerecht** und
+   **Senkrecht** setzen zuerst die Lage der Maßlinie (die Vorschau zeigt eine
+   exemplarische Kette), danach folgen die Messpunkte; **Direkt** nimmt zwei
+   Messpunkte, der dritte Klick legt die Maßlinie parallel fest, weitere Klicks
+   hängen Messpunkte an. `Enter` beendet. Einzelmaß und Maßkette sind dasselbe
+   Element: ein Einzelmaß ist die Kette aus zwei Messpunkten. **Punkt
+   hinzufügen**/**Punkt entfernen** (Reiter „Bemaßung“) ändern eine bestehende
+   Kette per Klick auf den Messpunkt; unter zwei Messpunkten geht es nicht.
 4. **Hotbar**: Tasten `1`–`0`. Aktives Werkzeug + Klick auf einen leeren Slot verknüpft es.
    Läuft das **Einfügen eines Blocks**, nimmt der angeklickte Slot den Block auf (der Slot
    zeigt dann die Miniaturaansicht des Blocks, sein Tooltip den Blocknamen); die Taste `1`–`0`
