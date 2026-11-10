@@ -1314,6 +1314,9 @@ pub fn show(app: &mut App, ui: &mut Ui) {
         if let Some((start, cur, _)) = app.select_drag {
             draw_auswahlfenster(&painter, rect, view_now, start, cur);
         }
+        if let Some((start, cur, _)) = app.select_zwei {
+            draw_auswahlfenster(&painter, rect, view_now, start, cur);
+        }
         draw_cursor(app, ui, &painter, rect, view_now, snapped, raw_world, snap_kind);
     } else {
         app.perf.abschnitt(Abschnitt::Displayliste);
@@ -1384,6 +1387,9 @@ pub fn show(app: &mut App, ui: &mut Ui) {
             draw_ghost(app, &painter, rect, view_now);
         }
         if let Some((start, cur, _)) = app.select_drag {
+            draw_auswahlfenster(&painter, rect, view_now, start, cur);
+        }
+        if let Some((start, cur, _)) = app.select_zwei {
             draw_auswahlfenster(&painter, rect, view_now, start, cur);
         }
         draw_cursor(app, ui, &painter, rect, view_now, snapped, raw_world, snap_kind);
@@ -3597,6 +3603,13 @@ fn handle_input(
         return;
     }
 
+    // Zwei-Klick-Auswahlfenster (T0145): der zweite Klick übernimmt die
+    // Auswahl. Muss vor der übrigen Klickauswertung stehen — sonst schaltet
+    // der Abschlussklick noch ein Objekt unter dem Zeiger um.
+    if zwei_klick_auswahl(app, ctx, resp, rect, view) {
+        return;
+    }
+
     // Enter beendet Polylinie, Umriss-Fläche und Maßkette (Tippeingabe hat Vorrang)
     if app.ui.typed.is_empty()
         && !ctx.wants_keyboard_input()
@@ -3852,6 +3865,7 @@ fn handle_input(
         } else {
             let tol = (8.0 / view.zoom).max(0.5);
             let hit = snap::hit_test(app.doc(), w, tol, None);
+            let leer = hit.is_none();
             match hit {
                 Some(id) => {
                     let mut sel = if shift {
@@ -3871,6 +3885,12 @@ fn handle_input(
                         app.session_mut().clear_selection();
                     }
                 }
+            }
+            // T0145: Im Zwei-Klick-Modus setzt der Klick auf die freie Fläche
+            // die erste Ecke; die zweite Ecke folgt dem Zeiger ohne gedrückte
+            // Taste, bis der nächste Klick das Fenster schließt.
+            if leer && app.ui.select_mode.two_clicks() {
+                app.select_zwei = Some((w, w, shift));
             }
         }
     }
@@ -3955,7 +3975,13 @@ fn handle_input(
     }
 
     if resp.drag_started_by(egui::PointerButton::Primary) && app.tool.is_none() {
-        app.select_drag = Some((w, w, shift));
+        if app.ui.select_mode.two_clicks() {
+            // T0145: Wie beim Griff bleibt der Zug nach dem Loslassen offen —
+            // die zweite Ecke folgt dem Zeiger, der nächste Klick schließt ab.
+            app.select_zwei = Some((w, w, shift));
+        } else {
+            app.select_drag = Some((w, w, shift));
+        }
     }
 
     if let Some((start, _, add)) = app.select_drag {
@@ -3965,6 +3991,59 @@ fn handle_input(
     }
     // Beendet wird eine Auswahl in `auswahl_abschliessen` (oben) — dort auch
     // dann, wenn der Zeiger die Zeichenfläche bzw. das Fenster verlassen hat.
+}
+
+/// Zwei-Klick-Auswahlfenster (T0145).
+///
+/// Im Modus „Zwei Klicks“ setzt ein Klick auf die freie Fläche die erste Ecke
+/// ([`App::select_zwei`]); die zweite Ecke folgt dem Zeiger **ohne** gedrückte
+/// Taste. Der nächste Klick übernimmt die Auswahl. Esc und der Rechtsklick
+/// brechen ab.
+///
+/// Liefert `true`, wenn der Klick verbraucht wurde (Abschluss); der Aufrufer
+/// beendet dann die Zeigerauswertung, sonst schaltete der Abschlussklick noch
+/// das Objekt unter dem Zeiger um.
+fn zwei_klick_auswahl(
+    app: &mut App,
+    ctx: &egui::Context,
+    resp: &Response,
+    rect: Rect,
+    view: View,
+) -> bool {
+    if !app.ui.select_mode.two_clicks() {
+        // Modus gewechselt: ein offenes Rechteck gehört dem alten Modus.
+        app.select_zwei = None;
+        return false;
+    }
+    if app.tool.is_some() || app.ghost.is_some() {
+        app.select_zwei = None;
+        return false;
+    }
+    let Some((start, mut cur, add)) = app.select_zwei else {
+        return false;
+    };
+    // Zweite Ecke folgt dem Zeiger — auch ohne gedrückte Taste. Außerhalb der
+    // Zeichenfläche bleibt der letzte Stand stehen (kein Springen an den Rand).
+    if let Some(p) = ctx.pointer_hover_pos() {
+        if rect.contains(p) {
+            cur = screen_to_world(rect, view, p);
+            app.select_zwei = Some((start, cur, add));
+        }
+    }
+    // Rechtsklick bricht ab und öffnet danach sein Menü (Rückgabe `false`),
+    // Esc ebenso ohne weitere Wirkung.
+    if resp.clicked_by(egui::PointerButton::Secondary)
+        || ctx.input(|i| i.key_pressed(egui::Key::Escape))
+    {
+        app.select_zwei = None;
+        return false;
+    }
+    if resp.clicked_by(egui::PointerButton::Primary) {
+        app.select_zwei = None;
+        auswahl_uebernehmen(app, start, cur, add, view);
+        return true;
+    }
+    false
 }
 
 /// Schließt eine laufende Fensterauswahl ab (T0023).
@@ -7765,6 +7844,116 @@ mod tests_auswahl_bereich {
 
         frame(&mut app, vec![loslassen(ende)]);
         assert!(app.select_drag.is_none());
+        assert_eq!(app.selection(), &[id]);
+    }
+
+    // -----------------------------------------------------------------
+    // T0145: Zwei-Klick-Modus für das Auswahlfenster
+    // -----------------------------------------------------------------
+
+    /// Wie `zug_bis`, aber im Zwei-Klick-Modus läuft der Zug als `select_zwei`.
+    fn zug_bis_zwei(app: &mut App, start: Pos2, ende: Pos2) {
+        frame(app, vec![egui::Event::PointerMoved(start)]);
+        frame(app, vec![druck(start)]);
+        frame(app, vec![egui::Event::PointerMoved(start + Vec2::new(8.0, 8.0))]);
+        frame(app, vec![egui::Event::PointerMoved(ende)]);
+        assert!(app.select_zwei.is_some(), "Zwei-Klick-Fenster muss laufen");
+        assert!(app.select_drag.is_none(), "kein Zug mit gedrückter Taste");
+    }
+
+    /// Ein vollständiger Klick: Zeiger hin, drücken, loslassen.
+    fn klick(app: &mut App, pos: Pos2) {
+        frame(app, vec![egui::Event::PointerMoved(pos)]);
+        frame(app, vec![druck(pos)]);
+        frame(app, vec![loslassen(pos)]);
+    }
+
+    /// Erster Klick setzt die Ecke, der zweite übernimmt die Auswahl — und der
+    /// Abschlussklick darf das Objekt unter dem Zeiger nicht wieder abwählen.
+    #[test]
+    fn zwei_klicks_waehlen_ueber_das_auswahlfenster() {
+        let (mut app, _id, start, ende) = szenario();
+        app.ui.select_mode = DragMode::TwoClicks;
+
+        klick(&mut app, start);
+        assert!(
+            app.select_zwei.is_some(),
+            "erster Klick muss die erste Ecke setzen"
+        );
+
+        // Ohne gedrückte Taste folgt die zweite Ecke dem Zeiger.
+        frame(&mut app, vec![egui::Event::PointerMoved(ende)]);
+        assert!(app.select_zwei.is_some(), "der zweite Klick fehlt noch");
+
+        klick(&mut app, ende);
+        assert!(app.select_zwei.is_none(), "zweiter Klick schließt ab");
+        assert_eq!(
+            app.selection().len(),
+            1,
+            "die Linie im Fenster muss ausgewählt sein: {:?}",
+            app.selection()
+        );
+    }
+
+    /// Auch ein Zug mit gedrückter Taste bleibt im Zwei-Klick-Modus nach dem
+    /// Loslassen offen — wie beim Griff — und wird erst vom nächsten Klick
+    /// abgeschlossen.
+    #[test]
+    fn zwei_klicks_lassen_einen_zug_nach_dem_loslassen_offen() {
+        let (mut app, _id, start, ende) = szenario();
+        app.ui.select_mode = DragMode::TwoClicks;
+
+        zug_bis_zwei(&mut app, start, ende);
+        frame(&mut app, vec![loslassen(ende)]);
+
+        assert!(
+            app.select_zwei.is_some(),
+            "Loslassen schließt im Zwei-Klick-Modus nicht ab"
+        );
+        assert!(
+            app.selection().is_empty(),
+            "die Auswahl entsteht erst mit dem zweiten Klick"
+        );
+
+        klick(&mut app, ende);
+        assert!(app.select_zwei.is_none());
+        assert_eq!(app.selection().len(), 1, "zweiter Klick übernimmt die Auswahl");
+    }
+
+    /// Esc verwirft nur das offene Fenster; eine bestehende Auswahl bleibt.
+    #[test]
+    fn esc_bricht_das_zwei_klick_fenster_ab() {
+        let (mut app, _id, start, ende) = szenario();
+        app.ui.select_mode = DragMode::TwoClicks;
+
+        klick(&mut app, start);
+        frame(&mut app, vec![egui::Event::PointerMoved(ende)]);
+        frame(
+            &mut app,
+            vec![egui::Event::Key {
+                key: egui::Key::Escape,
+                physical_key: None,
+                pressed: true,
+                repeat: false,
+                modifiers: egui::Modifiers::NONE,
+            }],
+        );
+
+        assert!(app.select_zwei.is_none(), "Esc räumt das Fenster ab");
+        assert!(app.selection().is_empty(), "ohne zweiten Klick keine Auswahl");
+    }
+
+    /// Der Zieh-Modus der Griffe bleibt davon unberührt: mit Gedrückthalten
+    /// wählt das Loslassen weiterhin sofort.
+    #[test]
+    fn gedrueckthalten_waehlt_unabhaengig_vom_auswahl_modus() {
+        let (mut app, id, start, ende) = szenario();
+        app.ui.select_mode = DragMode::HoldAndDrag;
+
+        zug_bis(&mut app, start, ende);
+        frame(&mut app, vec![loslassen(ende)]);
+
+        assert!(app.select_zwei.is_none(), "kein Zwei-Klick-Fenster");
         assert_eq!(app.selection(), &[id]);
     }
 

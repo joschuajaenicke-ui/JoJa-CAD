@@ -1002,6 +1002,12 @@ pub struct UserPrefs {
         deserialize_with = "de_drag_mode_mit_altfeld"
     )]
     pub drag_mode: DragMode,
+    /// Zieh-Modus des **Auswahlfensters** (T0145) — eigene Einstellung neben
+    /// [`UserPrefs::drag_mode`]: „Gedrückthalten“ (Vorgabe) zieht das Rechteck
+    /// mit gedrückter Taste, „Zwei Klicks“ setzt die erste Ecke mit einem Klick
+    /// und schließt mit dem zweiten. Griffe und Objekte bleiben unberührt.
+    #[serde(default)]
+    pub select_mode: DragMode,
     /// Objekte lassen sich mit der gedrückten Maustaste verschieben (T0063).
     /// Ausgeschaltet wandert ausschließlich das Werkzeug „Verschieben“ — die
     /// Einstellung gilt für **alle** Objektarten, auch Text und Treppe.
@@ -1456,6 +1462,7 @@ impl Default for UserPrefs {
             lineweights_scaled: false,
             lineweight_factor: default_lineweight_factor(),
             drag_mode: DragMode::HoldAndDrag,
+            select_mode: DragMode::HoldAndDrag,
             mouse_move: true,
             pan_speed: default_pan_speed(),
             // T0101: Die Ansicht folgt der gedrückten Schwenkfunktion, statt
@@ -2460,6 +2467,41 @@ mod tests {
         assert_eq!(prefs.drag_mode, DragMode::HoldAndDrag);
         assert!(prefs.lineweights_scaled, "übrige Werte bleiben erhalten");
         assert_eq!(prefs.last_dir, "/tmp");
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn auswahlfenster_modus_ueberlebt_speichern_und_laden() {
+        // T0145: eigene Einstellung für das Auswahlfenster, unabhängig vom
+        // Zieh-Modus der Griffe.
+        let dir = test_dir("auswahlmodus");
+        let p = dir.join("prefs.json");
+
+        let mut prefs = UserPrefs::default();
+        assert_eq!(prefs.select_mode, DragMode::HoldAndDrag, "Vorgabe");
+        prefs.drag_mode = DragMode::TwoClicks;
+        prefs.select_mode = DragMode::TwoClicks;
+        prefs.save_to(&p).unwrap();
+
+        let roh = std::fs::read_to_string(&p).unwrap();
+        assert!(
+            roh.contains("\"select_mode\": \"two_clicks\""),
+            "prefs.json muss den Auswahl-Modus lesbar enthalten:\n{roh}"
+        );
+
+        let wieder = UserPrefs::load_from(&p);
+        assert_eq!(wieder.select_mode, DragMode::TwoClicks);
+        assert_eq!(wieder.drag_mode, DragMode::TwoClicks);
+
+        // Beide Schalter sind getrennt: Griffe Gedrückthalten, Auswahl Zwei Klicks.
+        let mut getrennt = UserPrefs::default();
+        getrennt.select_mode = DragMode::TwoClicks;
+        assert_eq!(getrennt.drag_mode, DragMode::HoldAndDrag);
+
+        // Alte Datei ohne den Schlüssel fällt auf die Vorgabe zurück.
+        let alt: UserPrefs =
+            serde_json::from_str(r#"{"drag_mode": "two_clicks", "last_dir": "/tmp"}"#).unwrap();
+        assert_eq!(alt.select_mode, DragMode::HoldAndDrag);
         std::fs::remove_dir_all(&dir).ok();
     }
 

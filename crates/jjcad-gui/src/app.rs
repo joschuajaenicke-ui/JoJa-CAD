@@ -883,6 +883,9 @@ pub struct UiState {
     pub lineweight_factor: f32,
     /// Zieh-Modus für Objekte und Griffe
     pub drag_mode: DragMode,
+    /// Zieh-Modus des Auswahlfensters (T0145) — eigene Einstellung, damit
+    /// „Zwei Klicks“ nur das Rechteck betrifft und nicht die Griffe.
+    pub select_mode: DragMode,
     /// Zuletzt benutzter Eingabemodus je Button (Fläche / Schraffur)
     pub fill_input: FillInput,
     pub hatch_input: FillInput,
@@ -1057,6 +1060,7 @@ impl Default for UiState {
             lineweights_scaled: false,
             lineweight_factor: 1.0,
             drag_mode: DragMode::HoldAndDrag,
+            select_mode: DragMode::HoldAndDrag,
             fill_input: FillInput::Points,
             hatch_input: FillInput::Contour,
             // Programmstandard ist das Einfügen per Punkten (wie bei der Fläche)
@@ -1378,6 +1382,11 @@ pub struct App {
     pub snap_label: Option<String>,
     pub drag_pan: Option<Pos2>,
     pub select_drag: Option<(V2, V2, bool)>,
+    /// Laufendes Auswahlfenster im Zwei-Klick-Modus (T0145): erste Ecke, zweite
+    /// Ecke und Umschalt-Zusatz. Die zweite Ecke folgt dem Zeiger, bis der
+    /// nächste Klick die Auswahl übernimmt (anders als `select_drag` ohne
+    /// gedrückte Taste).
+    pub select_zwei: Option<(V2, V2, bool)>,
     pub mouse_world: Option<V2>,
     pub last_frame: f64,
     pub status_msg: String,
@@ -1505,6 +1514,8 @@ impl App {
         let lineweights_scaled = prefs.lineweights_scaled;
         let lineweight_factor = prefs.lineweight_factor;
         let drag_mode = prefs.drag_mode;
+        // T0145: eigener Zieh-Modus für das Auswahlfenster.
+        let select_mode = prefs.select_mode;
         let layers_open = prefs.show_layers;
         let props_open = prefs.show_properties;
         let mut app = Self {
@@ -1520,6 +1531,7 @@ impl App {
             snap_label: None,
             drag_pan: None,
             select_drag: None,
+            select_zwei: None,
             mouse_world: None,
             last_frame: 0.0,
             status_msg: String::new(),
@@ -1554,6 +1566,7 @@ impl App {
         app.ui.lineweights_scaled = lineweights_scaled;
         app.ui.lineweight_factor = lineweight_factor;
         app.ui.drag_mode = drag_mode;
+        app.ui.select_mode = select_mode;
         app.ui.copy_input = CopyInput::from_key(&app.prefs.copy_input);
         app.ui.layers_open = layers_open;
         app.ui.props_open = props_open;
@@ -3169,6 +3182,8 @@ impl App {
         }
         self.tab_mut().tab = kind.clone();
         self.tool = None;
+        // T0145: ein offenes Zwei-Klick-Rechteck gehört zum alten Raum.
+        self.select_zwei = None;
         self.session_mut().clear_selection();
         self.sync_space();
         match kind {
@@ -3923,6 +3938,7 @@ impl App {
         self.cancel_grip_drag();
         self.session_mut().clear_selection();
         self.select_drag = None;
+        self.select_zwei = None;
     }
 
     pub fn bind_slot_action(&mut self, slot: usize, action: Option<String>) {
@@ -4423,6 +4439,7 @@ impl App {
         self.tool = None;
         self.ghost = None;
         self.select_drag = None;
+        self.select_zwei = None;
         self.grip_drag = None;
         self.move_drag = None;
         self.halt.clear();
@@ -5032,6 +5049,10 @@ impl App {
             } else if self.ui.bind_slot.is_some() {
                 self.ui.bind_slot = None;
                 self.toast(jjcad_core::i18n::tr("gui.app.hotbar_verknuepfen_abgebrochen"));
+            } else if self.select_zwei.take().is_some() {
+                // T0145: nur das offene Auswahlfenster schließen — die
+                // bestehende Auswahl bleibt stehen.
+                self.toast(jjcad_core::i18n::tr("gui.app.auswahl_abgebrochen"));
             } else {
                 self.escape_pressed();
             }

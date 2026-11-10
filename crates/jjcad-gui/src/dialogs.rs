@@ -1499,6 +1499,8 @@ fn settings_body(app: &mut App, ui: &mut Ui) {
     // T0139: Faktor der Linienstärke im Modus „Bildschirm (konstant)“.
     let mut lw_factor = app.ui.lineweight_factor;
     let mut drag_mode = app.ui.drag_mode;
+    // T0145: eigener Zieh-Modus für das Auswahlfenster.
+    let mut select_mode = app.ui.select_mode;
     let mut show_layers = app.ui.layers_open;
     let mut show_props = app.ui.props_open;
     let mut marker = app.prefs.snap_marker;
@@ -1892,7 +1894,19 @@ fn settings_body(app: &mut App, ui: &mut Ui) {
                                     }
                                 });
                                 if suche.is_empty() {
-                                    ui.label(theme::faint(jjcad_core::i18n::tr("gui.dialogs.gilt_fuer_auswahl_und_griffe")));
+                                    ui.label(theme::faint(jjcad_core::i18n::tr("gui.dialogs.gilt_fuer_griffe_und_objekte")));
+                                }
+                                // T0145: Das Auswahlfenster (Rechteck auf der freien
+                                // Fläche) hat einen eigenen Schalter — vorher galt
+                                // „Zwei Klicks“ nur für Griffe und Objekte.
+                                zeile(&suche, ui, jjcad_core::i18n::tr("gui.dialogs.auswahlfenster"), |ui| {
+                                    for m in DragMode::ALL {
+                                        ui.selectable_value(&mut select_mode, m, m.text())
+                                            .on_hover_text(m.tip());
+                                    }
+                                });
+                                if suche.is_empty() {
+                                    ui.label(theme::faint(jjcad_core::i18n::tr("gui.dialogs.gilt_fuer_das_auswahlfenster")));
                                 }
                                 // T0063: Objekte mit der gedrückten Maustaste
                                 // verschieben — für alle Objektarten gemeinsam.
@@ -2730,6 +2744,13 @@ fn settings_body(app: &mut App, ui: &mut Ui) {
     app.ui.lineweights_scaled = lw_scaled;
     app.ui.drag_mode = drag_mode;
     app.prefs.drag_mode = drag_mode;
+    if app.ui.select_mode != select_mode || app.prefs.select_mode != select_mode {
+        // T0145: gilt sofort; ein offenes Zwei-Klick-Rechteck gehört dem alten
+        // Modus und wird in der Zeichenfläche verworfen.
+        app.ui.select_mode = select_mode;
+        app.prefs.select_mode = select_mode;
+        let _ = app.prefs.save();
+    }
     if app.prefs.mouse_move != mouse_move {
         app.prefs.mouse_move = mouse_move;
         let _ = app.prefs.save();
@@ -6094,6 +6115,48 @@ mod tests_einstellungen {
             jjcad_core::persist::UserPrefs::default().paste_pivot,
             PastePivot::Center,
             "Vorgabe: der Mittelpunkt ist der Programmstandard (T0087)"
+        );
+    }
+
+    /// T0145: Unter „Bedienung“ steht ein **zweiter** Zieh-Modus für das
+    /// Auswahlfenster. Beide Zeilen zeigen dieselben beiden Wahlen — wer nur
+    /// eine Zeile einbaut, bekommt den Test nicht grün.
+    #[test]
+    fn bedienung_zeigt_einen_eigenen_modus_fuer_das_auswahlfenster() {
+        let _sperre = KONFIG.lock().unwrap_or_else(|e| e.into_inner());
+        let _konfig = WegwerfKonfig::neu("auswahlmodus");
+        let ctx = egui::Context::default();
+        let mut app = App::with_ctx(ctx.clone());
+        app.ui.settings_open = true;
+        app.ui.settings_kat = 5;
+        app.ui.settings_suche = String::new();
+        let bild = || egui::RawInput {
+            screen_rect: Some(Rect::from_min_size(Pos2::ZERO, Vec2::new(1500.0, 950.0))),
+            ..Default::default()
+        };
+        let mut out = ctx.run(bild(), |ctx| app.ui(ctx));
+        for _ in 0..3 {
+            out = ctx.run(bild(), |ctx| app.ui(ctx));
+        }
+        for wort in [
+            jjcad_core::i18n::tr("gui.dialogs.ziehen"),
+            jjcad_core::i18n::tr("gui.dialogs.auswahlfenster"),
+        ] {
+            assert!(
+                text_mitte(&out, wort).is_some(),
+                "„{wort}“ fehlt in der Kategorie Bedienung"
+            );
+        }
+        // Zwei Zeilen mit derselben Wahl „Zwei Klicks“: Griffe und Auswahlfenster.
+        let zwei_klicks = jjcad_core::persist::DragMode::TwoClicks.text();
+        let anzahl = out
+            .shapes
+            .iter()
+            .filter(|cs| matches!(&cs.shape, egui::Shape::Text(t) if t.galley.text() == zwei_klicks))
+            .count();
+        assert_eq!(
+            anzahl, 2,
+            "„{zwei_klicks}“ muss in zwei Zeilen stehen (Ziehen und Auswahlfenster), gefunden: {anzahl}"
         );
     }
 
