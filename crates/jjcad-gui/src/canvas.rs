@@ -1290,6 +1290,14 @@ pub fn show(app: &mut App, ui: &mut Ui) {
     let lineweight_factor = app.ui.lineweight_factor as f64;
     let paper_px = view_now.zoom * app.doc().settings.annotation_scale;
 
+    // Einfüge-Vorschau nur, solange der Zeiger über der Zeichenfläche steht
+    // (T0156). Außerhalb gibt es keinen Punkt, an dem sie gesetzt werden
+    // könnte — das eingefrorene Abbild am zuletzt besuchten Punkt sah aus, als
+    // hinge es in der Luft. Am Zeiger steht dann die Miniatur
+    // (`draw_ghost_zeiger`), mit der sich der Inhalt auf einen Hotbar-Slot
+    // oder eine Taste legen lässt.
+    let ghost_in_zeichnung = app.ghost.is_some() && pointer.is_some();
+
     if is_sheet {
         // Leistungsanzeige: der Papierraum baut seine Ansichtsfenster selbst auf
         // und zeichnet sie sofort — Aufbau und Zeichnen sind hier ein Abschnitt.
@@ -1309,7 +1317,7 @@ pub fn show(app: &mut App, ui: &mut Ui) {
         draw_wand_basislinien(app, &painter, rect, view_now, &selected);
         draw_tuer_basispunkte(app, &painter, rect, view_now, &selected);
         draw_grips(app, &painter, rect, view_now, &selected);
-        if app.ghost.is_some() {
+        if ghost_in_zeichnung {
             draw_ghost(app, &painter, rect, view_now);
         }
         if let Some((start, cur, _)) = app.select_drag {
@@ -1384,7 +1392,7 @@ pub fn show(app: &mut App, ui: &mut Ui) {
         draw_wand_basislinien(app, &painter, rect, view_now, &selected);
         draw_tuer_basispunkte(app, &painter, rect, view_now, &selected);
         draw_grips(app, &painter, rect, view_now, &selected);
-        if app.ghost.is_some() {
+        if ghost_in_zeichnung {
             draw_ghost(app, &painter, rect, view_now);
         }
         if let Some((start, cur, _)) = app.select_drag {
@@ -1399,6 +1407,8 @@ pub fn show(app: &mut App, ui: &mut Ui) {
     // Werkzeug-Icon am Zeiger — auch außerhalb der Zeichenfläche (T0057),
     // deshalb auf eigener Ebene statt im beschnittenen Maler der Fläche.
     draw_werkzeug_zeiger(app, ui.ctx());
+    // Miniatur am Zeiger, sobald die Vorschau die Zeichenfläche verlässt (T0156).
+    draw_ghost_zeiger(app, ui.ctx(), rect);
 
     // Eingabe
     let pointer_pos = ui.ctx().pointer_hover_pos();
@@ -1749,6 +1759,11 @@ fn draw_sheet(app: &mut App, p: &Painter, rect: Rect, view: View, cursor: Option
         for prim in &vdl.prims {
             paint_prim(&clip, prim, &vp_w2s, view.zoom * s, &vpc, 1.0);
         }
+        // T0158: Wird der Ansichtsbereich gerade eingestellt, ist das Fenster
+        // hervorgehoben — Mausrad und Mitteltaste wirken dann hierher.
+        if app.ui.vp_edit == Some(vp.id) {
+            p.rect_stroke(vp_rect, 0.0, Stroke::new(1.8, Palette::accent()));
+        }
     }
 
     // 2. Beschriftung der Ansichtsfenster. Rahmen, Auswahlfarbe und Griffe
@@ -1767,6 +1782,17 @@ fn draw_sheet(app: &mut App, p: &Painter, rect: Rect, view: View, cursor: Option
             FontId::proportional(9.5),
             Color32::from_rgba_unmultiplied(0x88, 0x88, 0x88, if sel { 255 } else { 110 }),
         );
+        // T0158: Hinweis am unteren Fensterrand, solange der Bereich eingestellt
+        // wird — sonst ist nicht zu erkennen, wohin Mausrad und Mitteltaste gehen.
+        if app.ui.vp_edit == Some(vp.id) {
+            p.text(
+                Pos2::new(vp_rect.left() + 4.0, vp_rect.bottom() - 3.0),
+                Align2::LEFT_BOTTOM,
+                jjcad_core::i18n::tr("gui.canvas.ansichtsbereich_hinweis"),
+                FontId::proportional(9.5),
+                Palette::accent(),
+            );
+        }
     }
 
     // 3. Papierraum: Schriftfeld, Texte, eigene Blattelemente — mit Auswahl
@@ -2213,6 +2239,85 @@ fn draw_cursor(
 /// Zeiger, egal in welchem Teil des Fensters er steht.
 pub fn werkzeug_zeiger_mitte(zeiger: Pos2) -> Pos2 {
     zeiger + Vec2::new(22.0, 22.0)
+}
+
+/// Kantenlänge der Miniatur am Zeiger, wenn die Einfüge-Vorschau die
+/// Zeichenfläche verlässt (T0156).
+///
+/// Kleiner als ein Hotbar-Slot (`hotbar::SLOT` = 50 px): das Bild hängt am
+/// Zeiger und darf das Ziel, auf das abgelegt wird, nicht verdecken.
+pub const GHOST_ZEIGER: f32 = 30.0;
+
+/// Lage der Miniatur am Zeiger (Bildschirmpunkte) — oben rechts davon, wie die
+/// Einfüge-Vorschau in der Zeichnung steht (T0156).
+///
+/// Eine Quelle für Zeichnen und Test. Im Fenster gehalten: an den Rändern
+/// stünde das Kästchen sonst halb außerhalb und wäre abgeschnitten.
+pub fn ghost_zeiger_rect(zeiger: Pos2, fenster: Rect) -> Rect {
+    let roh = zeiger + Vec2::new(10.0, -GHOST_ZEIGER - 10.0);
+    let x = roh.x.clamp(
+        fenster.left() + 2.0,
+        (fenster.right() - GHOST_ZEIGER - 2.0).max(fenster.left() + 2.0),
+    );
+    let y = roh.y.clamp(
+        fenster.top() + 2.0,
+        (fenster.bottom() - GHOST_ZEIGER - 2.0).max(fenster.top() + 2.0),
+    );
+    Rect::from_min_size(Pos2::new(x, y), Vec2::splat(GHOST_ZEIGER))
+}
+
+/// Zeichnet die Miniatur des laufenden Einfügens am Mauszeiger (T0156).
+///
+/// Verlässt der Zeiger die Zeichenfläche, verschwindet die Vorschau aus der
+/// Zeichnung — dort gibt es keinen Punkt, an dem sie gesetzt werden könnte.
+/// Am Zeiger bleibt stattdessen die Miniatur des Inhalts: **dieselbe**
+/// Anzeigeliste wie in Blockkachel, Hotbar-Slot und Lagerplatz
+/// (`inventory::draw_list_preview`), nur kleiner. Sie zeigt damit auch, was
+/// gerade auf einen Slot oder eine Taste gelegt würde.
+///
+/// Eigene Ebene in `Order::Tooltip`, weil der Maler der Zeichenfläche auf
+/// deren Rechteck beschnitten ist (wie beim Werkzeug-Icon, T0057).
+pub fn draw_ghost_zeiger(app: &App, ctx: &egui::Context, flaeche: Rect) {
+    if app.chat.offen {
+        return;
+    }
+    let Some(g) = &app.ghost else { return };
+    let Some(zeiger) = ctx.pointer_hover_pos() else {
+        return;
+    };
+    let fenster = ctx.screen_rect();
+    // Nur im Fenster: außerhalb gibt es keinen Zeiger, an dem es hängen könnte.
+    if !fenster.contains(zeiger) {
+        return;
+    }
+    // Über der Zeichenfläche zeichnet die Vorschau selbst — die Miniatur
+    // ersetzt sie nur draußen.
+    if flaeche.contains(zeiger) {
+        return;
+    }
+
+    let kasten = ghost_zeiger_rect(zeiger, fenster);
+    let p = ctx.layer_painter(egui::LayerId::new(
+        egui::Order::Tooltip,
+        egui::Id::new("ghost_zeiger"),
+    ));
+    p.rect_filled(kasten, 6.0, Palette::schwebend());
+    p.rect_stroke(kasten, 6.0, Stroke::new(1.0, Palette::accent()));
+
+    // Geometrie des laufenden Inhalts (Block oder Zwischenablage) — gedreht
+    // und gespiegelt wie die Vorschau in der Zeichnung.
+    let geo = crate::ghost::geometry(app.doc(), g, &app.ui.clipboard);
+    if geo.bbox.is_valid() && !geo.prims.is_empty() {
+        let mut dl = DisplayList::default();
+        dl.prims = geo.prims;
+        crate::inventory::draw_list_preview(
+            &p,
+            kasten.shrink(4.0),
+            geo.bbox,
+            &dl,
+            Palette::accent(),
+        );
+    }
 }
 
 /// Zeichnet das Icon des laufenden Werkzeugs am Mauszeiger — im **ganzen**
@@ -3536,8 +3641,90 @@ fn draw_selection_preview(
 // Navigation
 // ---------------------------------------------------------------------------
 
+// ---------------------------------------------------------------------------
+// Ansichtsbereich eines Ansichtsfensters (T0158)
+// ---------------------------------------------------------------------------
+
+/// Grenzen des Maßstabs im Ansichtsbereich — dieselben wie im
+/// Eigenschaften-Panel (`props::viewport`).
+pub const VP_SCALE_MIN: f64 = 1.0;
+pub const VP_SCALE_MAX: f64 = 1000.0;
+
+/// Maßstab eines Ansichtsfensters ändern, ohne den Zeichnungspunkt unter dem
+/// Zeiger zu verschieben.
+///
+/// Rückgabe `(Maßstab, Modellmitte)`. `zeiger_papier` ist die Zeigerlage in
+/// **Papier**-Millimetern (`screen_to_world` im Papierraum), `faktor` > 1
+/// zoomt hinein — der Maßstab wird dann kleiner (1:100 → 1:89), weil 1:100
+/// „ein Papier-Millimeter ist 100 Zeichnungs-Millimeter“ heißt.
+pub fn viewport_zoom(vp: &Viewport, faktor: f64, zeiger_papier: V2) -> (f64, V2) {
+    let scale = (vp.scale / faktor).clamp(VP_SCALE_MIN, VP_SCALE_MAX);
+    let mitte = V2::new(vp.x + vp.w * 0.5, vp.y + vp.h * 0.5);
+    // Der Zeichnungspunkt unter dem Zeiger: q = center + (p − Mitte) · scale.
+    let punkt = vp.center + (zeiger_papier - mitte) * vp.scale;
+    (scale, punkt - (zeiger_papier - mitte) * scale)
+}
+
+/// Neue Modellmitte, wenn der Ausschnitt **dem Zeiger folgt** (Mitteltaste,
+/// Leertaste+Ziehen): der Inhalt wandert mit, die Ansicht gegenläufig.
+pub fn viewport_ziehen(vp: &Viewport, delta_papier: V2) -> V2 {
+    vp.center - delta_papier * vp.scale
+}
+
+/// Neue Modellmitte beim Schwenk über die **Tastatur**: dort wandert die
+/// Ansicht in die gedrückte Richtung, nicht der Inhalt.
+pub fn viewport_schwenken(vp: &Viewport, delta_papier: V2) -> V2 {
+    vp.center + delta_papier * vp.scale
+}
+
+/// Bewegung im Ansichtsbereich, solange „Ansichtsbereich anpassen“ an ist
+/// (T0158): Mausrad ändert den Maßstab, Mitteltaste verschiebt den gezeigten
+/// Zeichnungsausschnitt. Das Blatt selbst bleibt stehen.
+fn vp_navigation(app: &mut App, ui: &mut Ui, resp: &Response, rect: Rect, view: View) {
+    let ctx = ui.ctx();
+    if resp.hovered() {
+        let scroll = ctx.input(|i| i.raw_scroll_delta.y);
+        if scroll.abs() > 0.1 {
+            if let Some((_, vp)) = app.vp_edit_fenster() {
+                let faktor = if scroll > 0.0 { 1.12 } else { 1.0 / 1.12 };
+                let zeiger = ctx.pointer_hover_pos().unwrap_or(rect.center());
+                let papier = screen_to_world(rect, view, zeiger);
+                let (scale, center) = viewport_zoom(&vp, faktor, papier);
+                app.vp_setzen(vp.id, Some(scale), Some(center));
+            }
+        }
+    }
+    let space = ctx.input(|i| i.key_down(egui::Key::Space));
+    if resp.dragged_by(egui::PointerButton::Middle)
+        || (resp.dragged_by(egui::PointerButton::Primary) && space)
+    {
+        if let Some((_, vp)) = app.vp_edit_fenster() {
+            let papier = view.screen_delta_to_world(resp.drag_delta());
+            let center = viewport_ziehen(&vp, papier);
+            app.vp_setzen(vp.id, None, Some(center));
+        }
+    }
+    // Doppelklick auf die Mitteltaste heißt sonst „alles zeigen“ — hier passt
+    // er die Zeichnung ins Ansichtsfenster ein.
+    if resp.double_clicked_by(egui::PointerButton::Middle) {
+        if let Some((sid, vp)) = app.vp_edit_fenster() {
+            let _ = app.session_mut().execute(
+                "sheet.fit_viewport",
+                &json!({ "sheet": sid, "viewport": vp.id }),
+            );
+            app.mark_changed();
+        }
+    }
+}
+
 fn handle_navigation(app: &mut App, ui: &mut Ui, resp: &Response, rect: Rect, view: View) {
     let ctx = ui.ctx();
+    // T0158: „Ansichtsbereich anpassen“ — Mausrad und Mitteltaste gehören dem
+    // Ansichtsfenster, nicht dem Blatt.
+    if app.vp_edit_fenster().is_some() {
+        vp_navigation(app, ui, resp, rect, view);
+        return;
+    }
     // Mausrad-Zoom
     if resp.hovered() {
         let scroll = ctx.input(|i| i.raw_scroll_delta.y);
@@ -11135,6 +11322,259 @@ mod tests_werkzeug_zeiger {
 }
 
 #[cfg(test)]
+mod tests_ghost_zeiger {
+    //! T0156: Miniatur am Zeiger, solange die Einfüge-Vorschau außerhalb der
+    //! Zeichenfläche steht.
+    //!
+    //! Vorher blieb die Vorschau am zuletzt besuchten Punkt in der Zeichnung
+    //! stehen, sobald der Zeiger über Ribbon, Panel oder Hotbar wanderte — sie
+    //! sah aus, als hinge sie in der Luft, und das Ablegen auf einen Slot war
+    //! blind. Geprüft wird am gerenderten Bild: kein Ankerkreuz der Vorschau
+    //! mehr, dafür ein Kästchen mit der Blockgeometrie am Zeiger.
+
+    use super::*;
+    use crate::app::App;
+
+    const FENSTER: Vec2 = Vec2::new(1500.0, 950.0);
+
+    fn fenster() -> Rect {
+        Rect::from_min_size(Pos2::ZERO, FENSTER)
+    }
+
+    fn rahmen(ctx: &egui::Context, app: &mut App, zeiger: Option<Pos2>) -> egui::FullOutput {
+        let mut raw = egui::RawInput {
+            screen_rect: Some(fenster()),
+            ..Default::default()
+        };
+        if let Some(p) = zeiger {
+            raw.events.push(egui::Event::PointerMoved(p));
+        }
+        ctx.run(raw, |ctx| app.ui(ctx))
+    }
+
+    /// App mit laufender Block-Einfügung (Vorschau aus der Bibliothek).
+    fn app_mit_einfuegen(ctx: &egui::Context) -> App {
+        let mut app = App::with_ctx(ctx.clone());
+        let block = app
+            .doc()
+            .blocks
+            .iter()
+            .find(|b| b.bbox().is_valid())
+            .map(|b| b.id.clone())
+            .expect("die Bibliothek führt mindestens einen Block mit Geometrie");
+        app.start_ghost_block(block);
+        app
+    }
+
+    /// Ankerkreuz der Vorschau: zwei 12-px-Striche um den Ankerpunkt.
+    fn anker_kreuz(out: &egui::FullOutput, mitte: Pos2) -> usize {
+        out.shapes
+            .iter()
+            .filter(|cs| match &cs.shape {
+                egui::Shape::LineSegment { points, .. } => {
+                    let m = Pos2::new(
+                        (points[0].x + points[1].x) / 2.0,
+                        (points[0].y + points[1].y) / 2.0,
+                    );
+                    (points[0].distance(points[1]) - 12.0).abs() < 0.01 && m.distance(mitte) < 0.01
+                }
+                _ => false,
+            })
+            .count()
+    }
+
+    /// Kästchen der Miniatur an `kasten`: Füllung und Rand, also zwei Formen.
+    fn miniatur_kasten(out: &egui::FullOutput, kasten: Rect) -> usize {
+        out.shapes
+            .iter()
+            .filter(|cs| match &cs.shape {
+                egui::Shape::Rect(r) => {
+                    r.rect.min.distance(kasten.min) < 0.01
+                        && (r.rect.width() - GHOST_ZEIGER).abs() < 0.01
+                }
+                _ => false,
+            })
+            .count()
+    }
+
+    /// Gezeichnete Strecken der Miniatur innerhalb von `kasten`.
+    fn miniatur_strecken(out: &egui::FullOutput, kasten: Rect) -> usize {
+        out.shapes
+            .iter()
+            .filter(|cs| match &cs.shape {
+                egui::Shape::LineSegment { points, .. } => {
+                    kasten.contains(points[0]) && kasten.contains(points[1])
+                }
+                egui::Shape::Path(p) => {
+                    !p.points.is_empty() && p.points.iter().all(|q| kasten.contains(*q))
+                }
+                _ => false,
+            })
+            .count()
+    }
+
+    /// Über der Zeichenfläche steht die Vorschau; sobald der Zeiger sie
+    /// verlässt, ist sie aus der Zeichnung verschwunden.
+    #[test]
+    fn vorschau_verschwindet_aus_der_zeichnung() {
+        let ctx = egui::Context::default();
+        let mut app = app_mit_einfuegen(&ctx);
+        rahmen(&ctx, &mut app, None);
+        let flaeche = app.ui.last_canvas;
+        let innen = flaeche.center();
+
+        let out = rahmen(&ctx, &mut app, Some(innen));
+        let anker = world_to_screen(
+            flaeche,
+            app.current_view(),
+            app.ghost.as_ref().expect("die Vorschau läuft").pos,
+        );
+        assert_eq!(
+            anker_kreuz(&out, anker),
+            2,
+            "über der Fläche muss die Vorschau stehen (Ankerkreuz)"
+        );
+
+        let aussen = Pos2::new(innen.x, flaeche.top() - 30.0);
+        assert!(
+            !flaeche.contains(aussen),
+            "Prüfpunkt muss außerhalb der Zeichenfläche liegen ({flaeche:?})"
+        );
+        let out = rahmen(&ctx, &mut app, Some(aussen));
+        assert_eq!(
+            anker_kreuz(&out, anker),
+            0,
+            "außerhalb der Fläche darf die Vorschau nicht in der Zeichnung stehen bleiben"
+        );
+    }
+
+    /// Außerhalb der Fläche hängt die Miniatur des Blocks am Zeiger — mit
+    /// seiner Geometrie, nicht als leeres Kästchen, und unbeschnitten.
+    #[test]
+    fn miniatur_haengt_am_zeiger_ausserhalb_der_flaeche() {
+        let ctx = egui::Context::default();
+        let mut app = app_mit_einfuegen(&ctx);
+        rahmen(&ctx, &mut app, None);
+        let flaeche = app.ui.last_canvas;
+        let aussen = Pos2::new(flaeche.center().x, flaeche.top() - 30.0);
+        let out = rahmen(&ctx, &mut app, Some(aussen));
+
+        let kasten = ghost_zeiger_rect(aussen, fenster());
+        assert_eq!(
+            miniatur_kasten(&out, kasten),
+            2,
+            "genau ein Kästchen am Zeiger (Füllung und Rand), nicht zwei"
+        );
+        assert!(
+            miniatur_strecken(&out, kasten) >= 3,
+            "die Miniatur zeigt die Blockgeometrie, nicht nur den Rahmen"
+        );
+        let cs = out
+            .shapes
+            .iter()
+            .find(|cs| matches!(&cs.shape, egui::Shape::Rect(r) if r.rect.min.distance(kasten.min) < 0.01))
+            .expect("Kästchen der Miniatur");
+        assert!(
+            cs.clip_rect.contains_rect(kasten),
+            "die Miniatur ist beschnitten ({:?}) — sie muss über Panels und Leiste sichtbar sein",
+            cs.clip_rect
+        );
+    }
+
+    /// Über der Fläche zeichnet die Vorschau selbst — das Kästchen wäre doppelt.
+    #[test]
+    fn ueber_der_flaeche_kein_kaestchen() {
+        let ctx = egui::Context::default();
+        let mut app = app_mit_einfuegen(&ctx);
+        rahmen(&ctx, &mut app, None);
+        let innen = app.ui.last_canvas.center();
+        let out = rahmen(&ctx, &mut app, Some(innen));
+        assert_eq!(
+            miniatur_kasten(&out, ghost_zeiger_rect(innen, fenster())),
+            0,
+            "über der Zeichenfläche steht die Vorschau, kein zweites Bild am Zeiger"
+        );
+    }
+
+    /// Ohne laufendes Einfügen gibt es keine Miniatur.
+    #[test]
+    fn ohne_einfuegen_kein_kaestchen() {
+        let ctx = egui::Context::default();
+        let mut app = App::with_ctx(ctx.clone());
+        rahmen(&ctx, &mut app, None);
+        let aussen = Pos2::new(700.0, app.ui.last_canvas.top() - 30.0);
+        let out = rahmen(&ctx, &mut app, Some(aussen));
+        assert_eq!(
+            miniatur_kasten(&out, ghost_zeiger_rect(aussen, fenster())),
+            0,
+            "ohne Vorschau darf kein Bild am Zeiger hängen"
+        );
+    }
+
+    /// Auch das Einfügen aus der Zwischenablage zeigt die Miniatur (derselbe
+    /// Weg über `ghost::geometry`).
+    #[test]
+    fn zwischenablage_zeigt_ihre_miniatur() {
+        let ctx = egui::Context::default();
+        let mut app = App::with_ctx(ctx.clone());
+        let mut quelle = jjcad_core::model::Document::default();
+        let e = jjcad_core::model::Entity::new(
+            quelle.new_id(),
+            quelle.current_layer,
+            jjcad_core::model::EntityKind::Line {
+                a: V2::new(0.0, 0.0),
+                b: V2::new(2000.0, 1000.0),
+            },
+        );
+        app.ui.clipboard = crate::ghost::Clipboard {
+            ents: vec![e],
+            base: Some(V2::new(0.0, 0.0)),
+        };
+        app.start_ghost_paste();
+        rahmen(&ctx, &mut app, None);
+        let aussen = Pos2::new(700.0, app.ui.last_canvas.top() - 30.0);
+        let out = rahmen(&ctx, &mut app, Some(aussen));
+        let kasten = ghost_zeiger_rect(aussen, fenster());
+        assert_eq!(
+            miniatur_kasten(&out, kasten),
+            2,
+            "Kästchen am Zeiger (Füllung und Rand)"
+        );
+        assert!(
+            miniatur_strecken(&out, kasten) >= 1,
+            "die kopierte Linie ist in der Miniatur zu sehen"
+        );
+    }
+
+    /// Kleiner als ein Hotbar-Slot und immer im Fenster, oben rechts vom Zeiger.
+    #[test]
+    fn groesse_und_lage() {
+        assert!(
+            GHOST_ZEIGER < crate::hotbar::SLOT,
+            "die Miniatur am Zeiger ({GHOST_ZEIGER} px) muss kleiner als ein Slot ({}) sein",
+            crate::hotbar::SLOT
+        );
+        let mitte = ghost_zeiger_rect(Pos2::new(700.0, 500.0), fenster());
+        assert!(
+            mitte.left() > 700.0 && mitte.bottom() < 500.0,
+            "oben rechts vom Zeiger: {mitte:?}"
+        );
+        for ecke in [
+            Pos2::new(4.0, 4.0),
+            Pos2::new(FENSTER.x - 3.0, 4.0),
+            Pos2::new(4.0, FENSTER.y - 3.0),
+            Pos2::new(FENSTER.x - 3.0, FENSTER.y - 3.0),
+        ] {
+            let r = ghost_zeiger_rect(ecke, fenster());
+            assert!(
+                fenster().contains_rect(r),
+                "an der Ecke {ecke:?} hängt die Miniatur aus dem Fenster ({r:?})"
+            );
+        }
+    }
+}
+
+#[cfg(test)]
 mod schrifttests {
     use super::*;
 
@@ -13545,5 +13985,282 @@ mod tests_drehwinkel {
             Some(2),
             "Werkzeug sammelt weiter, statt mit einem Bruchteil zu drehen"
         );
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Ansichtsbereich eines Ansichtsfensters (T0158)
+// ---------------------------------------------------------------------------
+
+#[cfg(test)]
+mod tests_ansichtsbereich {
+    //! Der Schalter „Ansichtsbereich anpassen“ überträgt die Bewegungs-
+    //! funktionen der Ansicht auf das Ansichtsfenster: Mausrad ändert den
+    //! Maßstab, Mitteltaste schiebt den gezeigten Zeichnungsausschnitt, der
+    //! Schwenk der Tastatur ebenso. Ohne den Schalter bewegen beide weiter
+    //! das Blatt.
+
+    use super::*;
+    use jjcad_core::persist::DragMode;
+
+    fn app() -> App {
+        let mut app = App::with_ctx(egui::Context::default());
+        // Ziehen als Gedrückthalten: unabhängig von den Einstellungen des Rechners.
+        app.ui.drag_mode = DragMode::HoldAndDrag;
+        app.session_mut()
+            .execute(
+                "doc.settings",
+                &serde_json::json!({"input_unit": "mm",
+                                   "snap": {"ortho": false, "polar": false, "grid": false}}),
+            )
+            .unwrap();
+        app
+    }
+
+    fn frame(app: &mut App, events: Vec<egui::Event>) {
+        let ctx = app.ctx.clone();
+        let input = egui::RawInput {
+            screen_rect: Some(Rect::from_min_size(Pos2::ZERO, egui::vec2(1500.0, 950.0))),
+            events,
+            ..Default::default()
+        };
+        let _ = ctx.run(input, |ctx| app.ui(ctx));
+    }
+
+    fn knopf(pos: Pos2, taste: egui::PointerButton, gedrueckt: bool) -> egui::Event {
+        egui::Event::PointerButton {
+            pos,
+            button: taste,
+            pressed: gedrueckt,
+            modifiers: egui::Modifiers::NONE,
+        }
+    }
+
+    /// Ein Mausradschritt um `punkte` (positiv = hineinzoomen).
+    fn rad(punkte: f32) -> egui::Event {
+        egui::Event::MouseWheel {
+            unit: egui::MouseWheelUnit::Point,
+            delta: egui::vec2(0.0, punkte),
+            modifiers: egui::Modifiers::NONE,
+        }
+    }
+
+    /// Papierraum mit ausgewähltem Ansichtsfenster; `an` schaltet den Schalter
+    /// „Ansichtsbereich anpassen“ ein.
+    fn blatt_mit_fenster(an: bool) -> (App, Id, Viewport) {
+        let mut app = app();
+        let sid = app.doc().sheets[0].id;
+        app.switch_tab(TabKind::Sheet(sid));
+        frame(&mut app, vec![]);
+        let id = app
+            .doc()
+            .sheets[0]
+            .viewports()
+            .next()
+            .map(|(e, _)| e.id)
+            .expect("Ansichtsfenster");
+        app.session_mut().select(vec![id]);
+        if an {
+            app.ui.vp_edit = Some(id);
+        }
+        frame(&mut app, vec![]);
+        let vp = app.doc().sheets[0].viewport(id).expect("Fenster").clone();
+        (app, id, vp)
+    }
+
+    fn fenster(app: &App, id: Id) -> Viewport {
+        app.doc().sheets[0].viewport(id).expect("Fenster").clone()
+    }
+
+    /// Ein Beispielmaßstab: Papier 380 × 200 mm, Zeichnung 1:100.
+    fn beispiel() -> Viewport {
+        Viewport {
+            id: 1,
+            name: "Ansicht".into(),
+            x: 15.0,
+            y: 83.0,
+            w: 380.0,
+            h: 200.0,
+            center: V2::new(5000.0, 3000.0),
+            scale: 100.0,
+            show_frame: true,
+            locked: false,
+            layers: None,
+        }
+    }
+
+    /// Zoomen hält den Zeichnungspunkt unter dem Zeiger fest — sonst springt
+    /// die Zeichnung beim Einstellen des Maßstabs unter dem Zeiger weg.
+    #[test]
+    fn zoomen_haelt_den_punkt_unter_dem_zeiger() {
+        let vp = beispiel();
+        let mitte = V2::new(vp.x + vp.w * 0.5, vp.y + vp.h * 0.5);
+        let zeiger = V2::new(vp.x + 100.0, vp.y + 50.0);
+        let vorher = vp.center + (zeiger - mitte) * vp.scale;
+
+        let (scale, center) = viewport_zoom(&vp, 1.12, zeiger);
+        assert!(
+            (scale - vp.scale / 1.12).abs() < 1e-9,
+            "Maßstab 1:{} statt 1:{:.2}",
+            scale,
+            vp.scale / 1.12
+        );
+        let nachher = center + (zeiger - mitte) * scale;
+        assert!(
+            nachher.dist(vorher) < 1e-9,
+            "Punkt unter dem Zeiger wandert: {vorher:?} -> {nachher:?}"
+        );
+
+        // Herauszoomen über die Grenze klemmt am Panel-Bereich (1…1000).
+        let (weit, _) = viewport_zoom(&vp, 1e-6, zeiger);
+        assert!((weit - VP_SCALE_MAX).abs() < 1e-9, "Grenze oben: {weit}");
+        let (eng, _) = viewport_zoom(&vp, 1e6, zeiger);
+        assert!((eng - VP_SCALE_MIN).abs() < 1e-9, "Grenze unten: {eng}");
+    }
+
+    /// Mitteltaste verschiebt den Zeichnungsausschnitt im Fenster — und lässt
+    /// die Blattansicht stehen.
+    #[test]
+    fn mitteltaste_verschiebt_den_ausschnitt_im_fenster() {
+        let (mut app, id, vp) = blatt_mit_fenster(true);
+        let rect = app.ui.last_canvas;
+        let view = app.current_view();
+        let mitte = world_to_screen(rect, view, vp.rect().center());
+        let ziel = mitte + egui::vec2(40.0, 0.0);
+
+        frame(&mut app, vec![egui::Event::PointerMoved(mitte)]);
+        frame(
+            &mut app,
+            vec![knopf(mitte, egui::PointerButton::Middle, true)],
+        );
+        frame(&mut app, vec![egui::Event::PointerMoved(ziel)]);
+        frame(&mut app, vec![egui::Event::PointerMoved(ziel)]);
+        frame(
+            &mut app,
+            vec![knopf(ziel, egui::PointerButton::Middle, false)],
+        );
+
+        let nachher = fenster(&app, id);
+        // Der Zeiger zieht nach rechts: der Ausschnitt zeigt weiter links,
+        // die Modellmitte wandert nach links. Ein Bildpunkt ist 1/zoom Papier-mm.
+        assert!(
+            nachher.center.x < vp.center.x - 1.0,
+            "Mitte muss dem Zug folgen: {} -> {}",
+            vp.center.x,
+            nachher.center.x
+        );
+        assert!(
+            (nachher.center.y - vp.center.y).abs() < 1e-6,
+            "nur waagerecht gezogen: y {} -> {}",
+            vp.center.y,
+            nachher.center.y
+        );
+        assert!(
+            (nachher.scale - vp.scale).abs() < 1e-9,
+            "Verschieben ändert den Maßstab nicht"
+        );
+        let danach = app.current_view();
+        assert!(
+            (danach.center - view.center).len() < 1e-9,
+            "die Blattansicht bleibt stehen: {:?} -> {:?}",
+            view.center,
+            danach.center
+        );
+    }
+
+    /// Mausrad im Ansichtsbereich ändert den Maßstab des Fensters, nicht den
+    /// Zoom des Blattes.
+    #[test]
+    fn mausrad_im_ansichtsbereich_aendert_den_massstab() {
+        let (mut app, id, vp) = blatt_mit_fenster(true);
+        let rect = app.ui.last_canvas;
+        let view = app.current_view();
+        let mitte = world_to_screen(rect, view, vp.rect().center());
+
+        frame(&mut app, vec![egui::Event::PointerMoved(mitte)]);
+        frame(&mut app, vec![rad(120.0)]);
+
+        let nachher = fenster(&app, id);
+        assert!(
+            nachher.scale < vp.scale - 1.0,
+            "Hineinzoomen macht den Maßstab kleiner: {} -> {}",
+            vp.scale,
+            nachher.scale
+        );
+        assert!(
+            (app.current_view().zoom - view.zoom).abs() < 1e-9,
+            "der Blattzoom bleibt stehen"
+        );
+    }
+
+    /// Gegenprobe: ohne den Schalter zoomt das Mausrad weiter das Blatt und
+    /// das Ansichtsfenster bleibt unverändert.
+    #[test]
+    fn ohne_schalter_zoomt_das_mausrad_das_blatt() {
+        let (mut app, id, vp) = blatt_mit_fenster(false);
+        let rect = app.ui.last_canvas;
+        let view = app.current_view();
+        let mitte = world_to_screen(rect, view, vp.rect().center());
+
+        frame(&mut app, vec![egui::Event::PointerMoved(mitte)]);
+        frame(&mut app, vec![rad(120.0)]);
+
+        assert!(
+            app.current_view().zoom > view.zoom + 1e-6,
+            "Blattzoom muss wachsen: {} -> {}",
+            view.zoom,
+            app.current_view().zoom
+        );
+        assert!(
+            (fenster(&app, id).scale - vp.scale).abs() < 1e-9,
+            "der Maßstab des Fensters bleibt"
+        );
+    }
+
+    /// Der Schwenk der Tastatur (`view.pan_*`) läuft über denselben Schalter:
+    /// im Ansichtsbereich wandert der Ausschnitt, nicht das Blatt.
+    #[test]
+    fn schwenk_der_tastatur_geht_in_den_ansichtsbereich() {
+        let (mut app, id, vp) = blatt_mit_fenster(true);
+        let view = app.current_view();
+
+        app.schwenk_schritt(1.0, 0.0);
+
+        let nachher = fenster(&app, id);
+        assert!(
+            nachher.center.x > vp.center.x + 1.0,
+            "Ausschnitt muss nach rechts wandern: {} -> {}",
+            vp.center.x,
+            nachher.center.x
+        );
+        let danach = app.current_view();
+        assert!(
+            (danach.center - view.center).len() < 1e-9,
+            "die Blattansicht bleibt stehen"
+        );
+    }
+
+    /// Der Schalter hängt am ausgewählten Fenster: ohne Auswahl ist er aus,
+    /// und außerhalb des Papierraums gibt es ihn gar nicht.
+    #[test]
+    fn der_schalter_endet_mit_der_auswahl_und_dem_raum() {
+        let (mut app, _, _) = blatt_mit_fenster(true);
+        assert!(app.vp_edit_fenster().is_some(), "Schalter ist an");
+
+        app.session_mut().clear_selection();
+        frame(&mut app, vec![]);
+        assert!(app.ui.vp_edit.is_none(), "ohne Auswahl endet der Schalter");
+        assert!(app.vp_edit_fenster().is_none());
+
+        let (mut app, id, _) = blatt_mit_fenster(true);
+        app.switch_tab(TabKind::Model);
+        frame(&mut app, vec![]);
+        assert!(
+            app.vp_edit_fenster().is_none(),
+            "im Modell gibt es keinen Ansichtsbereich"
+        );
+        // Auch der Merker selbst ist weg — ein späteres Blatt erbt ihn nicht.
+        assert!(app.ui.vp_edit.is_none(), "Merker bleibt nicht stehen");
+        let _ = id;
     }
 }

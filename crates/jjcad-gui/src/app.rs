@@ -1114,6 +1114,11 @@ pub struct UiState {
     /// löscht sie im selben Bild — so läuft der Dauerlauf nur, solange die
     /// Maustaste auf dem Slot liegt.
     pub schwenk_zeiger: Option<(f32, f32)>,
+    /// Ansichtsfenster, dessen **Ansichtsbereich** gerade eingestellt wird
+    /// (T0158). Solange der Schalter im Eigenschaften-Panel an ist, wirken
+    /// Mausrad und Mitteltaste auf dieses Fenster statt auf das Blatt:
+    /// Verschieben ändert die Modellmitte, Zoomen den Maßstab.
+    pub vp_edit: Option<Id>,
 }
 
 impl Default for UiState {
@@ -1214,6 +1219,7 @@ impl Default for UiState {
             typed: String::new(),
             sel_stamp: 0,
             schwenk_zeiger: None,
+            vp_edit: None,
         }
     }
 }
@@ -2752,6 +2758,26 @@ impl App {
                         }
                     }
                 }
+                // Prüfhilfe T0156: Einfüge-Vorschau eines **Blocks** — für das
+                // Bild der Miniatur am Zeiger (Vorschau verlässt die Fläche).
+                // Der größte Block, damit die Miniatur im Bild zu erkennen ist.
+                "blockvorschau" | "blockminiatur" => {
+                    let block = self
+                        .doc()
+                        .blocks
+                        .iter()
+                        .filter(|b| b.bbox().is_valid())
+                        .max_by(|a, b| {
+                            let (x, y) = (a.bbox(), b.bbox());
+                            (x.width() * x.height())
+                                .partial_cmp(&(y.width() * y.height()))
+                                .unwrap_or(std::cmp::Ordering::Equal)
+                        })
+                        .map(|b| b.id.clone());
+                    if let Some(id) = block {
+                        self.start_ghost_block(id);
+                    }
+                }
                 // Prüfhilfe T0070: Einfüge-Vorschau um 90° gedreht, Anker am
                 // Zeiger. Das Bild zeigt, ob die Vorschau oben rechts bleibt
                 // (Drehpunkt „Mittelpunkt") oder um das Fadenkreuz springt
@@ -3288,6 +3314,21 @@ impl App {
                         }
                     }
                 }
+                // Prüfbild T0158: Ansichtsbereich eines Ansichtsfensters wird
+                // eingestellt — Fenster ausgewählt, Schalter an, Rahmen markiert.
+                "ansichtsbereich" => {
+                    if let Some(s) = self.doc().sheets.first().map(|s| s.id) {
+                        self.switch_tab(TabKind::Sheet(s));
+                        if let Some(id) = self
+                            .doc()
+                            .sheet(s)
+                            .and_then(|sh| sh.viewports().next().map(|(e, _)| e.id))
+                        {
+                            self.session_mut().select(vec![id]);
+                            self.ui.vp_edit = Some(id);
+                        }
+                    }
+                }
                 "toolpreview" => {
                     self.start_tool("draw.wall");
                     if let Some(t) = &mut self.tool {
@@ -3546,6 +3587,15 @@ impl App {
             }
         }
         let block_gleich = self.doc().block_space == block;
+        // T0158: Der Schalter „Ansichtsbereich anpassen“ hängt am ausgewählten
+        // Ansichtsfenster. Endet die Auswahl (Klick daneben, Raumwechsel), endet
+        // er mit — sonst liefe eine unsichtbare Einstellung weiter, während das
+        // Panel den Schalter gar nicht mehr zeigt.
+        if let Some(id) = self.ui.vp_edit {
+            if raum.is_none() || !self.session().selection.contains(&id) {
+                self.ui.vp_edit = None;
+            }
+        }
         if block_gleich && self.session().space() == raum {
             return;
         }
@@ -3688,6 +3738,37 @@ impl App {
         t.cache = None;
     }
 
+    /// Ansichtsfenster, dessen **Ansichtsbereich** gerade eingestellt wird
+    /// (T0158) — Blattkennung und Fenster.
+    ///
+    /// Nur im Papierraum und nur für ein vorhandenes Fenster; ohne Auswahl
+    /// schaltet [`App::sync_space`] den Schalter ab.
+    pub fn vp_edit_fenster(&self) -> Option<(Id, jjcad_core::model::Viewport)> {
+        let id = self.ui.vp_edit?;
+        let sid = match &self.tab().tab {
+            TabKind::Sheet(sid) => *sid,
+            _ => return None,
+        };
+        let vp = self.doc().sheet(sid)?.viewport(id)?.clone();
+        Some((sid, vp))
+    }
+
+    /// Ansichtsbereich eines Fensters setzen (T0158): Maßstab und/oder
+    /// Modellmitte über `modify.set` — derselbe Weg wie das
+    /// Eigenschaften-Panel, damit Panel und Mausbewegung nie auseinanderlaufen.
+    pub fn vp_setzen(&mut self, id: Id, scale: Option<f64>, center: Option<V2>) {
+        let u = self.unit();
+        let mut p = serde_json::json!({ "ids": [id] });
+        if let Some(s) = scale {
+            p["scale"] = serde_json::json!(s);
+        }
+        if let Some(c) = center {
+            p["center"] = serde_json::json!([u.from_mm(c.x), u.from_mm(c.y)]);
+        }
+        let _ = self.session_mut().execute("modify.set", &p);
+        self.mark_changed();
+    }
+
     /// Ist das Fenster im Vollbild? Maßgeblich ist der Fensterzustand: beendet
     /// die Fensterverwaltung das Vollbild, zeigt der Knopf das sofort an und
     /// `ui.fullscreen` bleibt nur Rückfall für Oberflächen ohne Rückmeldung
@@ -3708,6 +3789,16 @@ impl App {
 
     /// Ansicht auf Inhalt einpassen.
     pub fn fit_view(&mut self) {
+        // T0158: „Ansichtsbereich anpassen“ — „alles zeigen“ passt die Zeichnung
+        // ins Ansichtsfenster ein, nicht das Blatt.
+        if let Some((sid, vp)) = self.vp_edit_fenster() {
+            let _ = self.session_mut().execute(
+                "sheet.fit_viewport",
+                &serde_json::json!({ "sheet": sid, "viewport": vp.id }),
+            );
+            self.mark_changed();
+            return;
+        }
         let rect = self.ui.last_canvas;
         let (w, h) = (rect.width().max(50.0) as f64, rect.height().max(50.0) as f64);
         let tab = self.tab();
@@ -5669,6 +5760,13 @@ impl App {
         // T0067: Die Einstellung „Geschwindigkeit der Ansicht“ skaliert den Schritt.
         let px = SCHWENK_SCHRITT_PX * self.prefs.pan_speed;
         let w = v.screen_delta_to_world(Vec2::new(dx * px, dy * px));
+        // T0158: Bei „Ansichtsbereich anpassen“ schiebt derselbe Schritt den
+        // Ausschnitt im Ansichtsfenster statt das Blatt.
+        if let Some((_, vp)) = self.vp_edit_fenster() {
+            let center = crate::canvas::viewport_schwenken(&vp, w);
+            self.vp_setzen(vp.id, None, Some(center));
+            return;
+        }
         v.center += w;
         self.set_view(v);
     }
@@ -5680,6 +5778,13 @@ impl App {
         let mut v = self.current_view();
         let px = SCHWENK_TEMPO_PX_PRO_S * self.prefs.pan_speed * dt;
         let w = v.screen_delta_to_world(Vec2::new(dx * px, dy * px));
+        // T0158: derselbe Weg wie beim Schritt — im Ansichtsbereich wandert der
+        // Ausschnitt, nicht das Blatt.
+        if let Some((_, vp)) = self.vp_edit_fenster() {
+            let center = crate::canvas::viewport_schwenken(&vp, w);
+            self.vp_setzen(vp.id, None, Some(center));
+            return;
+        }
         v.center += w;
         self.set_view(v);
     }
