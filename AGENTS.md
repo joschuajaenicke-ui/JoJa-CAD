@@ -295,6 +295,13 @@ Mit dem Nutzer abgestimmt — nicht „verbessern“:
   Mitte der Maßlinie (verschiebt sie senkrecht zur Messrichtung, `render::dim_line_move`);
   im Eigenschaften-Panel steht derselbe Wert als „Abstand“ (`render::dim_offset`).
 - **Polarfang** 45° (Toleranz 6°); Fangmodi END, SCHN, MIT, ZEN, QUA, LOT, NÄC, RAS, POL.
+  Das Winkel-Fenster **allein** wäre ein Kegel: die seitliche Abweichung wächst mit dem
+  Abstand (bei 6° und 20 m über 2 m) und weit entfernte Punkte rasteten auf eine Richtung,
+  die der Zeiger nicht meint (T0148). `Vec2::polar_snap(base, step, tol_deg, band)` prüft
+  deshalb **beides** — Winkel **und** seitlichen Abstand `band`; `band` ist der Fangradius
+  in Weltkoordinaten (`tol` des Fangs, Vorgabe 12 px), also bildschirmkonstant. Der
+  Fangbereich ist damit ein Band mit einer Spitze am Bezugspunkt: nah am Punkt begrenzt der
+  Winkel, fern die Breite. Eine reine Winkelprüfung (`polar_snap_from_tol`) gibt es nicht mehr.
 - **Splines fangen nur an ihren Stützpunkten (T0134)**: Die gezeichnete Kurve ist
   eine Zerlegung in viele kurze Teilstrecken; deren Enden sind **keine** Fangpunkte.
   Beim Ziehen an einem Stützpunkt wandert die Kurve mit, ein Fang auf einem
