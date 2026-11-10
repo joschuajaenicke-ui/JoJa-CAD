@@ -33,6 +33,8 @@ pub enum FileMode {
     ImportKeymap,
     /// Tastaturlayout als Datei schreiben (T0076)
     ExportKeymap,
+    /// Vorlage für neue Dateien wählen (T0162)
+    Vorlage,
 }
 
 impl FileMode {
@@ -46,6 +48,7 @@ impl FileMode {
             FileMode::ExportPdf => "pdf",
             FileMode::ExportPng => "png",
             FileMode::ImportKeymap | FileMode::ExportKeymap => "json",
+            FileMode::Vorlage => "jjcad",
         }
     }
     fn title(self) -> &'static str {
@@ -60,6 +63,7 @@ impl FileMode {
             FileMode::ExportPng => jjcad_core::i18n::tr("gui.dialogs.als_png_exportieren"),
             FileMode::ImportKeymap => jjcad_core::i18n::tr("gui.dialogs.tastaturlayout_importieren"),
             FileMode::ExportKeymap => jjcad_core::i18n::tr("gui.dialogs.tastaturlayout_exportieren"),
+            FileMode::Vorlage => jjcad_core::i18n::tr("gui.dialogs.vorlage_waehlen"),
         }
     }
     fn action_label(self) -> &'static str {
@@ -68,6 +72,7 @@ impl FileMode {
             FileMode::ImportDxf | FileMode::ImportKeymap | FileMode::ImportImage => {
                 jjcad_core::i18n::tr("gui.dialogs.importieren")
             }
+            FileMode::Vorlage => jjcad_core::i18n::tr("gui.dialogs.oeffnen"),
             _ => jjcad_core::i18n::tr("gui.dialogs.speichern"),
         }
     }
@@ -91,6 +96,7 @@ impl FileMode {
             FileMode::ExportPdf => jjcad_core::i18n::tr("gui.dialogs.pdf_dokument"),
             FileMode::ExportPng => jjcad_core::i18n::tr("gui.dialogs.png_bild"),
             FileMode::ImportKeymap | FileMode::ExportKeymap => jjcad_core::i18n::tr("gui.dialogs.tastaturlayout"),
+            FileMode::Vorlage => jjcad_core::i18n::tr("gui.dialogs.zeichnung"),
         }
     }
     /// Anfrage an den Systemdialog des Betriebssystems.
@@ -180,7 +186,9 @@ impl FileDialog {
                         .extension()
                         .map(|x| x.to_string_lossy().to_lowercase())
                         .unwrap_or_default();
-                    if self.mode == FileMode::Open && ext != "jjcad" {
+                    if matches!(self.mode, FileMode::Open | FileMode::Vorlage)
+                        && ext != "jjcad"
+                    {
                         continue;
                     }
                     if self.mode == FileMode::ImportDxf && ext != "dxf" {
@@ -220,6 +228,9 @@ impl FileDialog {
         let mut close = false;
         let mut win_open = true;
         egui::Window::new(self.mode.title())
+            // T0162: „Datei wählen“ steht in den Einstellungen; der Dateidialog
+            // muss darüber liegen, sonst deckt das später gezeichnete Fenster ihn zu.
+            .order(egui::Order::Foreground)
             .collapsible(false)
             .resizable(false)
             .default_size(Vec2::new(720.0, 500.0))
@@ -365,8 +376,10 @@ impl FileDialog {
             return None;
         }
         if self.mode.is_save()
-            || self.mode == FileMode::ImportDxf
-            || self.mode == FileMode::ImportKeymap
+            || matches!(
+                self.mode,
+                FileMode::ImportDxf | FileMode::ImportKeymap | FileMode::Vorlage
+            )
         {
             let ext = self.mode.ext();
             if !n.to_lowercase().ends_with(&format!(".{ext}")) {
@@ -374,7 +387,7 @@ impl FileDialog {
             }
         }
         let p = self.dir.join(n);
-        if self.mode == FileMode::Open && !p.exists() {
+        if matches!(self.mode, FileMode::Open | FileMode::Vorlage) && !p.exists() {
             self.error = Some(jjcad_core::i18n::tr("gui.dialogs.datei_existiert_nicht").into());
             return None;
         }
@@ -516,6 +529,13 @@ pub fn datei_gewaehlt(app: &mut App, mode: FileMode, path: std::path::PathBuf) {
             }
             Err(e) => app.toast(e),
         },
+        // T0162: gewählte Vorlage für neue Dateien.
+        FileMode::Vorlage => {
+            app.prefs.vorlage_pfad = path.to_string_lossy().to_string();
+            let _ = app.prefs.save();
+            app.ui.vorlage = app.prefs.vorlage_pfad.clone();
+            app.toast(jjcad_core::i18n::tr("settings.vorlage_gesetzt"));
+        }
         FileMode::ExportKeymap => match app.prefs.keymap_exportieren_aktuell(&path) {
             Ok(name) => app.toast(jjcad_core::i18n::t_args_owned("gui.dialogs.layout_exportiert_x", &[("name", format!("{}", name))])),
             Err(e) => app.toast(e),
@@ -1318,6 +1338,9 @@ pub(crate) const EINSTELLUNGSKATEGORIEN: &[Einstellungskategorie] = &[
             "portable",
             "daten-dir",
             "JJCAD_DATA_DIR",
+            "Vorlage",
+            "Template",
+            "neue Datei",
         ],
     },
     // T0129: Sicherung — Stände unabhängig vom Speichern.
@@ -2529,6 +2552,8 @@ fn settings_body(app: &mut App, ui: &mut Ui) {
                                         app.ui.speicherorte[i] =
                                             app.prefs.speicherort(*feld).to_string();
                                     }
+                                    // T0162: die Vorlage steht auf derselben Seite.
+                                    app.ui.vorlage = app.prefs.vorlage_pfad.clone();
                                     app.ui.speicherorte_geladen = true;
                                 }
                                 let mut aktion: Option<(jjcad_core::persist::SpeicherortFeld, bool)> =
@@ -2643,6 +2668,114 @@ fn settings_body(app: &mut App, ui: &mut Ui) {
                                     }
                                     if feld == jjcad_core::persist::SpeicherortFeld::Bloecke {
                                         app.benutzerbloecke_einhaengen();
+                                    }
+                                }
+                                // --------------- Vorlage für neue Dateien (T0162) -----
+                                // Steht auf derselben Seite wie die Speicherorte: es
+                                // ist ein Dateipfad, kein Zeichenverhalten.
+                                let vorlage_name =
+                                    jjcad_core::i18n::tr("settings.vorlage");
+                                if suche.is_empty()
+                                    || vorlage_name.to_lowercase().contains(&suche)
+                                {
+                                    ui.add_space(12.0);
+                                    ui.label(theme::bold(vorlage_name, 14.0));
+                                    let mut uebernehmen = false;
+                                    let mut zuruecksetzen = false;
+                                    let mut waehlen = false;
+                                    let zeilen_breite = ui.available_width();
+                                    ui.allocate_ui_with_layout(
+                                        Vec2::new(zeilen_breite, 30.0),
+                                        Layout::right_to_left(Align::Center),
+                                        |ui| {
+                                            if ui
+                                                .button(jjcad_core::i18n::tr(
+                                                    "settings.zuruecksetzen",
+                                                ))
+                                                .clicked()
+                                            {
+                                                zuruecksetzen = true;
+                                            }
+                                            if ui
+                                                .button(jjcad_core::i18n::tr(
+                                                    "settings.uebernehmen",
+                                                ))
+                                                .clicked()
+                                            {
+                                                uebernehmen = true;
+                                            }
+                                            let breite = ui.available_width();
+                                            ui.add(
+                                                egui::TextEdit::singleline(
+                                                    &mut app.ui.vorlage,
+                                                )
+                                                .desired_width(breite)
+                                                .hint_text(jjcad_core::i18n::tr(
+                                                    "settings.vorlage_feld_hint",
+                                                )),
+                                            )
+                                            .on_hover_text(jjcad_core::i18n::tr(
+                                                "settings.vorlage_hint",
+                                            ));
+                                        },
+                                    );
+                                    // „Datei wählen“ öffnet den Dateidialog; der
+                                    // eingetippte Pfad gilt genauso.
+                                    ui.horizontal(|ui| {
+                                        if ui
+                                            .small_button(jjcad_core::i18n::tr(
+                                                "settings.datei_waehlen",
+                                            ))
+                                            .clicked()
+                                        {
+                                            waehlen = true;
+                                        }
+                                        let text = app.ui.vorlage.trim().to_string();
+                                        let angezeigt = if text.is_empty() {
+                                            jjcad_core::i18n::tr(
+                                                "settings.vorlage_keine",
+                                            )
+                                            .to_string()
+                                        } else {
+                                            jjcad_core::daten::pfad_text(
+                                                &jjcad_core::daten::pfad_in_wurzel(
+                                                    &text, "",
+                                                ),
+                                            )
+                                        };
+                                        ui.label(theme::faint(&angezeigt));
+                                    });
+                                    if uebernehmen {
+                                        let text = app.ui.vorlage.trim().to_string();
+                                        if text.is_empty() {
+                                            app.prefs.vorlage_pfad.clear();
+                                            let _ = app.prefs.save();
+                                        } else {
+                                            let pfad = jjcad_core::daten::pfad_in_wurzel(
+                                                &text, "",
+                                            );
+                                            // Nur eine vorhandene Datei ist eine
+                                            // Vorlage — ein Tippfehler darf nicht
+                                            // erst beim nächsten „Neu“ auffallen.
+                                            if pfad.is_file() {
+                                                app.prefs.vorlage_pfad = text;
+                                                let _ = app.prefs.save();
+                                            } else {
+                                                app.ui.vorlage =
+                                                    app.prefs.vorlage_pfad.clone();
+                                                app.toast(jjcad_core::i18n::tr(
+                                                    "settings.vorlage_fehlt",
+                                                ));
+                                            }
+                                        }
+                                    }
+                                    if zuruecksetzen {
+                                        app.ui.vorlage.clear();
+                                        app.prefs.vorlage_pfad.clear();
+                                        let _ = app.prefs.save();
+                                    }
+                                    if waehlen {
+                                        app.open_file_dialog(FileMode::Vorlage);
                                     }
                                 }
                             }
@@ -5682,6 +5815,82 @@ mod tests_einstellungen {
             "„Intervall“ findet die Kategorie Sicherung nicht"
         );
         assert!(treffer("gibtesnicht").is_empty(), "Unbekannter Begriff liefert Treffer");
+    }
+
+    /// T0162: Unter den Dateipfaden steht die Vorlage für neue Dateien. Der
+    /// Knopf „Datei wählen“ öffnet den Dateidialog im Modus „Vorlage“, die
+    /// Auswahl landet in den Voreinstellungen und im Feld.
+    ///
+    /// Der Test setzt die Vorlage am Anfang zurück und räumt sie am Ende
+    /// wieder weg: `prefs.json` liegt seit T0127 in der Datenwurzel, ein
+    /// Wegwerf-`XDG_CONFIG_HOME` leitet sie nicht um.
+    #[test]
+    fn speicherorte_zeigen_die_vorlage_und_oeffnen_den_dateidialog() {
+        let _sperre = KONFIG.lock().unwrap_or_else(|e| e.into_inner());
+        let _konfig = WegwerfKonfig::neu("vorlage");
+        let ctx = egui::Context::default();
+        let mut app = App::with_ctx(ctx.clone());
+        // Ohne diese Wahl hinge der Test am Systemdialog des Rechners.
+        app.prefs.file_dialog = "intern".into();
+        app.prefs.vorlage_pfad.clear();
+        app.ui.vorlage.clear();
+        app.ui.settings_open = true;
+        app.ui.settings_kat = EINSTELLUNGSKATEGORIEN
+            .iter()
+            .position(|k| k.key == "settings.category_speicherorte")
+            .expect("Kategorie Speicherorte fehlt");
+        // Die Suche blendet alles andere aus — die Zeile steht dann oben.
+        app.ui.settings_suche = "Vorlage".to_string();
+        let bild = || egui::RawInput {
+            screen_rect: Some(Rect::from_min_size(Pos2::ZERO, Vec2::new(1500.0, 950.0))),
+            ..Default::default()
+        };
+        let mut out = ctx.run(bild(), |ctx| app.ui(ctx));
+        for _ in 0..3 {
+            out = ctx.run(bild(), |ctx| app.ui(ctx));
+        }
+        assert!(
+            text_mitte(&out, "Vorlage für neue Dateien").is_some(),
+            "die Zeile „Vorlage für neue Dateien“ fehlt"
+        );
+        assert!(
+            text_mitte(&out, "keine Vorlage — neue Dateien beginnen leer").is_some(),
+            "der Hinweis auf die leere Vorlage fehlt"
+        );
+        let knopf = text_mitte(&out, "Datei wählen …").expect("Knopf „Datei wählen“ fehlt");
+        klick(&mut app, &ctx, knopf);
+
+        let fd = app.ui.file_dialog.as_ref().expect("der Dateidialog fehlt");
+        assert_eq!(fd.mode, FileMode::Vorlage, "der Dialog wählt keine Vorlage");
+        assert!(app.ui.settings_open, "die Einstellungen gingen zu");
+
+        // Auswahl übernehmen — wie nach einem Klick im Dateidialog.
+        app.ui.file_dialog = None;
+        let ziel = std::env::temp_dir().join(format!(
+            "jjcad-t0162-dialog-{}.jjcad",
+            std::process::id()
+        ));
+        let _ = std::fs::remove_file(&ziel);
+        std::fs::write(&ziel, "{}").unwrap();
+        datei_gewaehlt(&mut app, FileMode::Vorlage, ziel.clone());
+        assert_eq!(
+            app.prefs.vorlage_pfad,
+            ziel.to_string_lossy(),
+            "die Vorlage steht nicht in den Voreinstellungen"
+        );
+        assert_eq!(
+            app.ui.vorlage,
+            ziel.to_string_lossy(),
+            "das Feld zeigt den alten Pfad"
+        );
+        assert_eq!(
+            app.status_msg,
+            jjcad_core::i18n::tr("settings.vorlage_gesetzt")
+        );
+        // Ausgangszustand wiederherstellen — die Datei gehört dem Rechner.
+        app.prefs.vorlage_pfad.clear();
+        let _ = app.prefs.save();
+        let _ = std::fs::remove_file(&ziel);
     }
 
     /// T0129: Zahlen der Sicherung stehen mit deutschem Dezimalkomma.
