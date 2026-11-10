@@ -7540,6 +7540,8 @@ mod tests_tasten_punktfolge {
 
     // ---- Geschlossene Polylinie (Karte t_8b6feebf) ----
 
+    /// Punkte und Closed-Flag des angelegten Zugs. Ein Zug aus **zwei** Punkten
+    /// ist eine Linie (T0149) — die wird wie ein offener Zug gelesen.
     fn polylinie_stand(app: &App) -> (Vec<V2>, bool) {
         app.doc()
             .entities
@@ -7548,9 +7550,10 @@ mod tests_tasten_punktfolge {
                 EntityKind::Polyline { verts, closed } => {
                     Some((verts.iter().map(|w| w.p).collect(), *closed))
                 }
+                EntityKind::Line { a, b } => Some((vec![*a, *b], false)),
                 _ => None,
             })
-            .expect("keine Polylinie angelegt")
+            .expect("kein Zug angelegt")
     }
 
     /// Klick auf den Startpunkt schließt den Zug: drei Stützpunkte, Closed-Flag,
@@ -7653,15 +7656,17 @@ mod tests_fang_polylinie {
         app
     }
 
+    /// Punkte des angelegten Zugs — Polylinie oder (bei zwei Punkten, T0149) Linie.
     fn polylinien_punkte(app: &App) -> Vec<V2> {
         app.doc()
             .entities
             .iter()
             .find_map(|e| match &e.kind {
                 EntityKind::Polyline { verts, .. } => Some(verts.iter().map(|w| w.p).collect()),
+                EntityKind::Line { a, b } => Some(vec![*a, *b]),
                 _ => None,
             })
-            .expect("keine Polylinie angelegt")
+            .expect("kein Zug angelegt")
     }
 
     /// Zeiger 8 mm neben dem Linienende, vom letzten Polylinien-Punkt (0; 2000)

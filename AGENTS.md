@@ -302,6 +302,13 @@ Mit dem Nutzer abgestimmt — nicht „verbessern“:
   Lot und „Nächster Punkt" auf der Kurve bleiben erhalten. Prüfweg:
   `cargo test -p jjcad-core --test snap_spline` und
   `cargo test -p jjcad-gui spline_griffzug`.
+- **Polylinie mit einem Element (T0149)**: Ein Zug aus **zwei Punkten** (ein
+  Segment) ist keine Polylinie, sondern eine **Linie** (mit Stützbogen ein
+  Bogen). Die Regel steht einmal in `actions::polyline_kind` und gilt beim
+  Zeichnen (`draw.polyline`) und beim Stutzen (`modify.trim`, dort sind die
+  Stücke immer offen) — nicht an einer zweiten Stelle nachbauen. Ältere Dateien
+  dürfen noch Zwei-Punkt-Züge enthalten; sie werden erst beim Stutzen zur Linie.
+  Prüfweg: `cargo test -p jjcad-core --test polylinie_geschlossen`.
 - **Treppen** sind von der Kontur her ein **Rechteck**: erster und zweiter Klick
   liegen auf der **Außenkante** (Länge), der dritte setzt die Breite dorthin, wo
   der Zeiger steht. Gespeichert ist die Lauflinie (`a`→`b`, Mitte) plus Breite —

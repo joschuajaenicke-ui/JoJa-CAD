@@ -97,19 +97,32 @@ fn doppelter_zwischenpunkt_entfaellt() {
     assert!(!closed);
 }
 
-/// Zwei Punkte können keine Fläche umschließen: das Closed-Flag fällt weg,
-/// statt eine entartete Polylinie zu erzeugen.
+/// Eine Polylinie aus **nur einem Element** (zwei Punkte) ist keine Polylinie,
+/// sondern eine normale **Linie** (T0149) — ein Segment ist kein Polygonzug.
+/// Das `closed`-Flag fällt dabei weg, weil zwei Punkte keine Fläche umschließen.
 #[test]
-fn zwei_punkte_bleiben_offen() {
+fn zwei_punkte_werden_zur_linie() {
     let mut s = session();
     s.execute(
         "draw.polyline",
         &json!({"pts": [[0, 0], [1000, 0]], "closed": true}),
     )
     .unwrap();
-    let (pts, closed) = polylinie(&s);
-    assert!(!closed);
-    assert_eq!(pts.len(), 2);
+    assert!(
+        !s.doc
+            .entities
+            .iter()
+            .any(|e| matches!(e.kind, EntityKind::Polyline { .. })),
+        "ein Zug mit einem Element ist keine Polylinie"
+    );
+    let e = s.doc.entities.last().expect("Objekt fehlt");
+    match &e.kind {
+        EntityKind::Line { a, b } => {
+            assert_eq!((a.x, a.y), (0.0, 0.0), "Anfang: {a:?}");
+            assert_eq!((b.x, b.y), (1000.0, 0.0), "Ende: {b:?}");
+        }
+        k => panic!("Linie erwartet: {k:?}"),
+    }
 }
 
 /// Das Closed-Flag übersteht Speichern und Laden; die Punktzahl bleibt gleich
