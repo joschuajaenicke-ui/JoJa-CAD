@@ -84,6 +84,15 @@ cargo run --example wand_probe
 
 Mit dem Nutzer abgestimmt — nicht „verbessern“:
 
+- **Fensterschatten ohne Titelleiste (T0147)**: Für ein Fenster ohne Dekoration
+  zeichnet der Fenstermanager unter Wayland keinen Schatten — JoJa-CAD malt ihn
+  selbst. Ein Streifen von `app::SCHATTEN_RAND` (16 px) am Fensterrand bleibt
+  durchsichtig (Fenster mit `with_transparent`, `clear_color` mit Alpha 0), die
+  Oberfläche liegt darin; den kleineren Bildschirmausschnitt setzt
+  `App::raw_input_hook` (vor dem Bild, sonst bleiben die Panels auf der ganzen
+  Fläche). Unter X11 bleibt es beim Schatten von KWin (gemessen: derselbe
+  Schatten mit und ohne Titelleiste) — dort wäre der durchsichtige Rand ohne
+  Compositor ein dunkler Rahmen. Im Vollbild und maximiert entfällt der Rand.
 - **Türen** sitzen immer auf der *vorderen Wandkante* (Blattseite), nicht in der
   Wandmitte. Kein Auswahlfeld für die Tür-Lage. Fenster dürfen ihre Lage in
   der Wanddicke wählen (Links/Mittig/Rechts).

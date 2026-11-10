@@ -2784,6 +2784,12 @@ fn settings_body(app: &mut App, ui: &mut Ui) {
             .send_viewport_cmd(egui::ViewportCommand::Decorations(
                 !fensterrahmen.ohne_titelleiste(),
             ));
+        // T0147: Der Fensterschatten liegt im durchsichtigen Rand — ohne
+        // Alphakanal bliebe davon ein dunkler Rahmen übrig.
+        ui.ctx()
+            .send_viewport_cmd(egui::ViewportCommand::Transparent(
+                fensterrahmen.ohne_titelleiste(),
+            ));
         // Ohne diese Anforderung bliebe die Kopfzeile im alten Zustand stehen,
         // bis der nächste Klick ein Bild auslöst.
         ui.ctx().request_repaint();

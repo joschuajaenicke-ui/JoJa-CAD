@@ -110,12 +110,24 @@ fn starte_app(file: Option<String>, sperre: daten::Sperre) -> eframe::Result<()>
         }
     };
 
+    // T0147: Ohne Titelleiste zeichnet die Anwendung den Fensterschatten
+    // selbst. Dafür bleibt ein Streifen am Fensterrand durchsichtig — das
+    // Fenster braucht einen Alphakanal (`with_transparent`), und die
+    // Mindestgröße wächst um den Streifen, damit die Oberfläche darin noch
+    // ihre Mindestbreite hat.
+    let schatten = if titelleiste { 0.0 } else { 2.0 * app::SCHATTEN_RAND };
     let mut viewport = egui::ViewportBuilder::default()
-        .with_inner_size([1500.0, 950.0])
-        .with_min_inner_size([1080.0, 680.0])
+        .with_inner_size([1500.0 + schatten, 950.0 + schatten])
+        .with_min_inner_size([1080.0 + schatten, 680.0 + schatten])
         .with_title(app::window_title())
         // Ohne Titelleiste: Knöpfe und Ziehen zeichnet die Anwendung selbst
         .with_decorations(titelleiste)
+        // T0147: Der Fensterschatten liegt im durchsichtigen Rand. Der
+        // Alphakanal wird **immer** angefordert, nicht nur im Modus „Ohne
+        // Titelleiste“: winit kann die Transparenz im Betrieb nicht
+        // nachrüsten, ein Wechsel der Einstellung wirkte sonst erst nach einem
+        // Neustart. Mit Titelleiste deckt die Oberfläche das Fenster ganz ab.
+        .with_transparent(true)
         // Dateien dürfen ins Fenster gezogen werden (T0115). Unter
         // Windows ist das standardmäßig aus, deshalb ausdrücklich an.
         .with_drag_and_drop(true)
@@ -127,7 +139,10 @@ fn starte_app(file: Option<String>, sperre: daten::Sperre) -> eframe::Result<()>
         if f.brauchbar() {
             // Die Mindestgröße gilt auch für einen gespeicherten Stand: ein von
             // Hand verkleinertes Fenster soll die Oberfläche nicht zerlegen.
-            viewport = viewport.with_inner_size([f.breite.max(1080.0), f.hoehe.max(680.0)]);
+            viewport = viewport.with_inner_size([
+                f.breite.max(1080.0 + schatten),
+                f.hoehe.max(680.0 + schatten),
+            ]);
             // Die Lage setzt nur ein Fenstersystem, das globale Fensterkoordinaten
             // annimmt (X11, Windows, macOS). Unter Wayland meldet die Sitzung
             // keine Lage — dort kennt xdg-shell keine Fensterposition, `winit`
