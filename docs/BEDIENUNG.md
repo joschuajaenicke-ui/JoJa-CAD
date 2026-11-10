@@ -322,8 +322,8 @@ absolut, je Feld mit **Zurücksetzen**. Ein nicht beschreibbarer Pfad wird beim
 Übernehmen abgelehnt, nicht still gesetzt.
 
 Auf derselben Seite steht unter den Dateipfaden die **Vorlage für neue
-Dateien**: eine Zeichnung, die als Kopie jeder neuen Datei dient — mit ihren
-Ebenen, Blättern und Einstellungen. Der Pfad lässt sich eintippen oder über
+Dateien**: eine Zeichnung, die als Kopie jeder mit **Neu** angelegten Datei
+dient — mit ihren Ebenen, Blättern und Einstellungen. Der Pfad lässt sich eintippen oder über
 **Datei wählen …** auswählen; **Zurücksetzen** schaltet die Vorlage ab, dann
 beginnen neue Dateien wieder leer. Eine nicht vorhandene Datei wird beim
 Übernehmen abgelehnt. Die Kopie ist eine **neue** Zeichnung: kein Speicherort,
