@@ -94,6 +94,11 @@ einsehbar und dort frei änderbar (Ribbon ▸ Ansicht ▸ „Tasten").
     „Spiegeln") spiegelt, `ESC` bricht ab. Beide Tasten folgen der
     Tastaturbelegung: wer „Drehen" umlegt, dreht auch die Vorschau mit der neuen
     Taste. Der Einfügepunkt ist exakt der Ankerpunkt der Vorschau.
+    Verlässt der Zeiger die Zeichenfläche (Ribbon, Panels, Hotbar), verschwindet die
+    Vorschau aus der Zeichnung — dort gibt es keinen Punkt zum Setzen. Am Mauszeiger
+    hängt dann die **Miniatur** des Blocks bzw. der Zwischenablage (dieselbe Darstellung
+    wie in Blockkachel und Slot, nur kleiner); sie zeigt, was auf einen Slot oder eine
+    Taste gelegt würde.
     Läuft das Einfügen aus der Zwischenablage und wird ein Hotbar-Slot (oder ein
     Lagerplatz bzw. eine Taste der Tastaturbelegung) angeklickt, entsteht daraus
     ebenfalls ein Block „Unbenannt N“ — der Slot trägt ihn danach.
