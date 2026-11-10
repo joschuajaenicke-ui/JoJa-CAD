@@ -3877,6 +3877,38 @@ pub fn viewport(app: &mut App, ui: &mut Ui, ziel: Ziel) {
         });
     }
 
+    // T0158: Ansichtsbereich einstellen — ein **Schalter**, kein einmaliger
+    // Befehl. Solange er an ist, gehören Mausrad und Mitteltaste dem Fenster
+    // (`canvas::vp_navigation`): Rad ändert den Maßstab, Mitteltaste schiebt
+    // den gezeigten Zeichnungsausschnitt.
+    zeile("bereich");
+    if let Some(id) = ziel.id() {
+        let an = app.ui.vp_edit == Some(id);
+        let antwort = ui.add_sized(
+            [ui.available_width(), 24.0],
+            egui::SelectableLabel::new(
+                an,
+                jjcad_core::i18n::tr("gui.props.ansichtsbereich_anpassen"),
+            ),
+        );
+        if antwort
+            .on_hover_text(jjcad_core::i18n::tr("gui.props.ansichtsbereich_tip"))
+            .clicked()
+        {
+            app.ui.vp_edit = if an { None } else { Some(id) };
+        }
+    } else {
+        // Beim Aufziehen gibt es noch kein Fenster — der Schalter steht
+        // deaktiviert an derselben Stelle (die Zeile fehlt nie).
+        ui.add_enabled(
+            false,
+            egui::SelectableLabel::new(
+                false,
+                jjcad_core::i18n::tr("gui.props.ansichtsbereich_anpassen"),
+            ),
+        );
+    }
+
     zeile("aktionen");
     if let Some(id) = ziel.id() {
         ui.horizontal(|ui| {
