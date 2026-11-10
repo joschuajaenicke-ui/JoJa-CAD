@@ -175,13 +175,15 @@ ausgeblendet.
   2 m breit, und der Punkt rastete weit neben der gemeinten Richtung ein.
   Auch der **erweiterte Punktfang** arbeitet dabei: bleibt der Zeiger auf einem Fangpunkt
   stehen, wird dieser gehalten und seine Hilfslinien fangen den gezogenen Punkt.
-- **Winkelhalbierende zwischen zwei Linien** (T0150): Liegt der Anfangspunkt einer neuen Linie
-  zwischen zwei Linien — oder wird ein solcher Punkt über den erweiterten Punktfang gehalten —,
-  bietet der Fang die **Winkelhalbierende** an: der nächste Punkt rastet auf ihr ein, die neue
-  Linie läuft damit genau zwischen den beiden hindurch. Bei parallelen Linien ist es die
-  Mittellinie. Die Führungslinie steht gestrichelt in der Fangfarbe, die Statusleiste meldet
+- **Winkelhalbierende am Schnittpunkt zweier Linien** (T0150): Der Fang wird **nur** aktiv, wenn
+  der feste Punkt der neuen Linie auf dem Schnittpunkt zweier Linien liegt — also im Scheitel
+  einer Ecke, Kreuzung oder eines Stoßes (Linien und Wände, letztere mit ihrer Achse). Liegt der
+  Punkt nur *zwischen* zwei Linien oder neben einer einzelnen, schweigt er. Der nächste Punkt
+  rastet dann auf der Halbierenden ein, die neue Linie halbiert den Winkel also exakt. An einer
+  Ecke gibt es eine Halbierende (der Innenwinkel), an Kreuzung und Stoß zwei (je Winkelpaar).
+  Die Führungslinie steht gestrichelt in der Fangfarbe, die Statusleiste meldet
   „Winkelhalbierende"; ein Endpunkt oder Schnittpunkt an derselben Stelle hat Vorrang.
-  Prüfdatei: `samples/Winkelhalbierende.jjcad`.
+  Prüfdatei: `samples/Winkelhalbierende.jjcad` (Ecke bei 1,00/1,00, Kreuzung bei 4,00/9,00).
 - **Linien** werden als Kapsel gezeichnet: Rechteck plus Halbkreis an beiden Enden. Dadurch sind
   auch die Übergänge in Polylinien, Bögen und an Wandanschlüssen rund statt eckig.
 - **Ribbon** lässt sich über den Pfeil rechts in der Kopfzeile einklappen; die Reiter bleiben sichtbar.

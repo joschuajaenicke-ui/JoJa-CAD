@@ -3,15 +3,15 @@
 //!
 //! In der Datei liegen zwei Anordnungen:
 //!
-//! * ein **rechter Winkel** aus zwei Linien (Schenkel nach +X und +Y, Ecke bei
-//!   1,00 / 1,00) — ein Punkt zwischen den Schenkeln liegt auf der
-//!   45°-Halbierenden,
-//! * zwei **parallele** Linien (y = 8,00 und y = 11,00) — zwischen ihnen ist die
-//!   Mittellinie die Halbierende.
+//! * eine **Ecke** aus zwei Linien (Schenkel nach +X und +Y, Scheitel bei
+//!   1,00 / 1,00) — dort liegt die 45°-Halbierende,
+//! * eine **Kreuzung** bei (4,00 / 9,00) — dort gibt es zwei Winkelpaare und
+//!   damit zwei Halbierende.
 //!
-//! Prüfweg: Werkzeug „Linie" starten, den ersten Punkt zwischen die Linien
-//! setzen und den zweiten neben die Halbierende führen — der Zeiger rastet auf
-//! ihr ein, die Statuszeile meldet „Winkelhalbierende".
+//! Prüfweg: Werkzeug „Linie" starten, den ersten Punkt **in den Scheitel**
+//! setzen (er rastet dort als Endpunkt ein) und den zweiten neben die
+//! Halbierende führen — der Zeiger rastet auf ihr ein, die Statuszeile meldet
+//! „Winkelhalbierende". Zwischen den Linien (ohne Scheitel) schweigt der Fang.
 
 use jjcad_core::model::Document;
 use jjcad_core::persist;
@@ -28,12 +28,12 @@ fn linie(doc: &mut Document, a: [f64; 2], b: [f64; 2]) -> Result<(), String> {
 
 fn main() -> Result<(), String> {
     let mut doc = Document::blank();
-    // Rechter Winkel: Schenkel nach +X und +Y.
+    // Ecke: Schenkel nach +X und +Y, Scheitel bei (1,00 / 1,00).
     linie(&mut doc, [1.0, 1.0], [7.0, 1.0])?;
     linie(&mut doc, [1.0, 1.0], [1.0, 6.0])?;
-    // Paralleles Paar.
-    linie(&mut doc, [1.0, 8.0], [7.0, 8.0])?;
-    linie(&mut doc, [1.0, 11.0], [7.0, 11.0])?;
+    // Kreuzung bei (4,00 / 9,00): zwei Winkelpaare, zwei Halbierende.
+    linie(&mut doc, [1.0, 9.0], [7.0, 9.0])?;
+    linie(&mut doc, [4.0, 7.0], [4.0, 11.0])?;
     let path = Path::new("samples/Winkelhalbierende.jjcad");
     persist::save_document(&mut doc, path)?;
     println!("geschrieben: {}", path.display());

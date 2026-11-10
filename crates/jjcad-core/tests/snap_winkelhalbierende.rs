@@ -1,13 +1,15 @@
 //! Winkelhalbierender Fang (T0150).
 //!
-//! Zwischen zwei Linien wird die **Winkelhalbierende** als Führungslinie
-//! angeboten — der Punkt, den der Zeiger fängt, liegt auf ihr. Sie wird aktiv
+//! Der Fang bietet die **Winkelhalbierende** an, wenn der feste Punkt einer
+//! neuen Linie auf dem **Schnittpunkt zweier Linien** liegt — also im Scheitel
+//! einer Ecke, Kreuzung oder eines Stoßes. Nur dort gibt es einen Winkel zu
+//! halbieren.
 //!
-//! * wenn eine Linie von einem Punkt zwischen zwei Linien beginnt (der
-//!   Bezugspunkt des Zuges liegt zwischen den Linien), und
-//! * wenn dieser Punkt für den erweiterten Punktfang gehalten ist.
+//! Der erste Stand war falsch: er bot die Halbierende überall an, wo zwei
+//! Linien in der Nähe waren („Punkt zwischen zwei Linien"). Diese Tests halten
+//! beide Richtungen fest — sie greift am Scheitel und sie schweigt daneben.
 //!
-//! Geprüft wird über `snap::winkelhalbierende` (die Geometrie selbst), über
+//! Geprüft wird über `snap::winkelhalbierende` (die Geometrie), über
 //! `snap::snap_constrained_achsen` (den Weg der Zeichenfläche) und über
 //! `snap::hilfslinien_gesamt` (die gezeichneten Führungslinien). Alle
 //! Koordinaten in Millimetern.
@@ -52,8 +54,8 @@ fn assert_punkt(ist: Vec2, soll: Vec2, was: &str) {
     assert!(ist.dist(soll) < 1e-6, "{was}: erwartet {soll:?}, ist {ist:?}");
 }
 
-/// Rechter Winkel im Ursprung (Schenkel nach +X und +Y), Punkt im Winkel.
-fn rechter_winkel() -> Session {
+/// Rechter Winkel im Ursprung: zwei Schenkel, die sich in (0;0) treffen.
+fn ecke() -> Session {
     let mut s = s();
     linie(&mut s, [0.0, 0.0], [4000.0, 0.0]);
     linie(&mut s, [0.0, 0.0], [0.0, 4000.0]);
@@ -70,90 +72,126 @@ fn halt(p: Vec2) -> HaltPunkt {
 }
 
 // ---------------------------------------------------------------------------
-// Die Geometrie
+// Die Bedingung: nur im Scheitel zweier Linien
 // ---------------------------------------------------------------------------
 
-/// Zwischen den Schenkeln eines rechten Winkels liegt die Halbierende unter
-/// 45° — und zwar durch den Punkt, von dem die neue Linie ausgeht.
+/// Im Scheitel einer Ecke liegt die Halbierende unter 45° — und sie geht vom
+/// Scheitel aus, nicht von irgendeinem Punkt im Winkel.
 #[test]
-fn halbierende_rechter_winkel_zeigt_45_grad() {
-    let s = rechter_winkel();
-    let p = v(1000.0, 1000.0);
-    let l = jjcad_core::snap::winkelhalbierende(&s.doc, p, 30.0, &[])
-        .expect("zwischen zwei Linien muss es eine Halbierende geben");
-    assert_eq!(l.kind, SnapKind::Bisector);
-    assert_punkt(l.origin, p, "Führungslinie durch den Punkt");
-    let grad = l.dir.angle().to_degrees();
+fn halbierende_in_der_ecke_zeigt_45_grad() {
+    let s = ecke();
+    let linien = jjcad_core::snap::winkelhalbierende(&s.doc, v(0.0, 0.0), &[]);
+    assert_eq!(linien.len(), 1, "{linien:?}");
+    assert_eq!(linien[0].kind, SnapKind::Bisector);
+    assert_punkt(linien[0].origin, v(0.0, 0.0), "Ursprung ist der Scheitel");
+    let grad = linien[0].dir.angle().to_degrees();
     assert!((grad - 45.0).abs() < 1e-6, "Winkel {grad}");
 }
 
-/// Ein Punkt auf einer der beiden Linien ist kein Punkt *zwischen* ihnen —
-/// dort gibt es keine Halbierende.
+/// **Der Fehler des ersten Stands**: ein Punkt *zwischen* zwei Linien ist kein
+/// Scheitel — dort darf keine Halbierende entstehen.
 #[test]
-fn punkt_auf_einer_linie_hat_keine_halbierende() {
-    let s = rechter_winkel();
-    // Auf dem Schenkel y = 0, 500 mm vom Scheitel entfernt.
-    assert!(jjcad_core::snap::winkelhalbierende(&s.doc, v(500.0, 0.0), 30.0, &[]).is_none());
+fn punkt_zwischen_zwei_linien_liefert_keine_halbierende() {
+    let s = ecke();
+    // Mitten im Winkel, 1 m von beiden Schenkeln entfernt.
+    assert!(
+        jjcad_core::snap::winkelhalbierende(&s.doc, v(1000.0, 1000.0), &[]).is_empty(),
+        "zwischen den Linien gibt es keinen Winkel zu halbieren"
+    );
+    // Gegenprobe über die Fang-Kette: der Zeiger bleibt frei.
+    let r = fang(&s, v(1200.0, 1190.0), 30.0, &[v(1000.0, 1000.0)], &[]);
+    assert_ne!(r.source, SnapSource::Object(SnapKind::Bisector), "{r:?}");
+    assert_punkt(r.point, v(1200.0, 1190.0), "roher Zeiger");
 }
 
-/// Parallele Linien: die Halbierende ist die Mittellinie — der Punkt liegt in
-/// der Mitte zwischen beiden.
+/// Nur **eine** Linie am Punkt: kein Scheitel, keine Halbierende.
 #[test]
-fn parallele_linien_liefern_die_mittellinie() {
+fn eine_einzelne_linie_am_punkt_liefert_keine_halbierende() {
+    let mut s = s();
+    linie(&mut s, [0.0, 0.0], [4000.0, 0.0]);
+    assert!(jjcad_core::snap::winkelhalbierende(&s.doc, v(0.0, 0.0), &[]).is_empty());
+    assert!(jjcad_core::snap::winkelhalbierende(&s.doc, v(2000.0, 0.0), &[]).is_empty());
+}
+
+/// Neben dem Scheitel (20 mm daneben) greift der Fang nicht — der Punkt muss
+/// **auf** dem Schnittpunkt liegen.
+#[test]
+fn neben_dem_scheitel_keine_halbierende() {
+    let s = ecke();
+    assert!(jjcad_core::snap::winkelhalbierende(&s.doc, v(20.0, 0.0), &[]).is_empty());
+    assert!(jjcad_core::snap::winkelhalbierende(&s.doc, v(0.0, 20.0), &[]).is_empty());
+}
+
+/// Zwei parallele Linien schneiden sich nirgends — zwischen ihnen gibt es
+/// keine Halbierende (das war die alte, zu weite Regel).
+#[test]
+fn parallele_linien_liefern_keine_halbierende() {
     let mut s = s();
     linie(&mut s, [0.0, 0.0], [4000.0, 0.0]);
     linie(&mut s, [0.0, 2000.0], [4000.0, 2000.0]);
-    let l = jjcad_core::snap::winkelhalbierende(&s.doc, v(1000.0, 1000.0), 30.0, &[])
-        .expect("Mittellinie zwischen zwei parallelen Linien");
-    assert!((l.dir.angle().to_degrees()).abs() < 1e-6, "{:?}", l.dir);
-    // Die Führungslinie liegt auf y = 1000 (Mitte zwischen 0 und 2000).
-    assert_punkt(l.origin, v(1000.0, 1000.0), "Mitte");
+    assert!(jjcad_core::snap::winkelhalbierende(&s.doc, v(1000.0, 1000.0), &[]).is_empty());
+    assert!(jjcad_core::snap::winkelhalbierende(&s.doc, v(1000.0, 0.0), &[]).is_empty());
 }
 
-/// Außerhalb der Reichweite gibt es keine Halbierende: die Linien müssen in
-/// der Nähe des Punktes **verlaufen**, nicht nur als Gerade dorthin zeigen.
+/// Zwei fluchtende Strecken (eine gerade Linie aus zwei Teilen) bilden keinen
+/// Winkel — gestreckt, also keine Halbierende.
 #[test]
-fn weit_entfernte_linien_liefern_keine_halbierende() {
+fn fluchtende_strecken_liefern_keine_halbierende() {
+    let mut s = s();
+    linie(&mut s, [0.0, 0.0], [2000.0, 0.0]);
+    linie(&mut s, [2000.0, 0.0], [4000.0, 0.0]);
+    assert!(jjcad_core::snap::winkelhalbierende(&s.doc, v(2000.0, 0.0), &[]).is_empty());
+}
+
+// ---------------------------------------------------------------------------
+// Welche Halbierenden am Scheitel entstehen
+// ---------------------------------------------------------------------------
+
+/// Kreuzung mitten in beiden Linien: es gibt zwei Winkelpaare, also **zwei**
+/// Halbierende (senkrecht zueinander).
+#[test]
+fn kreuzung_liefert_zwei_halbierende() {
     let mut s = s();
     linie(&mut s, [0.0, 0.0], [4000.0, 0.0]);
-    linie(&mut s, [0.0, 4000.0], [4000.0, 4000.0]);
-    // 4 m über der oberen Linie — weiter als die Mindestweite von 3 m.
-    assert!(jjcad_core::snap::winkelhalbierende(&s.doc, v(1000.0, 8000.0), 30.0, &[]).is_none());
+    linie(&mut s, [2000.0, -2000.0], [2000.0, 2000.0]);
+    let linien = jjcad_core::snap::winkelhalbierende(&s.doc, v(2000.0, 0.0), &[]);
+    assert_eq!(linien.len(), 2, "{linien:?}");
+    let winkel: Vec<f64> = linien
+        .iter()
+        .map(|l| l.dir.angle().to_degrees().rem_euclid(180.0).round())
+        .collect();
+    assert!(
+        winkel.contains(&45.0) && winkel.contains(&135.0),
+        "{winkel:?}"
+    );
 }
 
-/// Die Weite hat eine Untergrenze: bei starkem Zoom (kleiner Fangradius)
-/// verschwindet der Fang nicht, nur weil die Wände 2,50 m auseinander liegen.
+/// Stoß: eine Linie endet auf einer anderen — auch dort zwei Winkelpaare.
 #[test]
-fn enger_zoom_verliert_die_halbierende_nicht() {
+fn stoss_liefert_zwei_halbierende() {
     let mut s = s();
     linie(&mut s, [0.0, 0.0], [4000.0, 0.0]);
-    linie(&mut s, [0.0, 2500.0], [4000.0, 2500.0]);
-    // Fangradius 5 mm (tief hineingezoomt) → Faktor allein ergäbe 200 mm.
-    let l = jjcad_core::snap::winkelhalbierende(&s.doc, v(1000.0, 1250.0), 5.0, &[])
-        .expect("Mindestweite 3 m muss greifen");
-    assert_punkt(l.origin, v(1000.0, 1250.0), "Mittellinie");
+    linie(&mut s, [2000.0, 0.0], [2000.0, 2000.0]);
+    let linien = jjcad_core::snap::winkelhalbierende(&s.doc, v(2000.0, 0.0), &[]);
+    assert_eq!(linien.len(), 2, "{linien:?}");
 }
 
-/// „Zwei Linien" heißt zwei Linien-Objekte: Rechteck und Polylinie sind keine
-/// Linien und liefern keine Halbierende (sonst entstünde an jeder Ecke eines
-/// Zuges eine).
+/// Drei Linien in einem Punkt: dieselbe Halbierende wird nur einmal geliefert.
 #[test]
-fn rechteck_und_polylinie_liefern_keine_halbierende() {
+fn drei_linien_am_punkt_ohne_doppelte() {
     let mut s = s();
-    s.execute(
-        "draw.rect",
-        &json!({ "a": [0.0, 0.0], "b": [2000.0, 2000.0] }),
-    )
-    .unwrap();
-    assert!(jjcad_core::snap::winkelhalbierende(&s.doc, v(1000.0, 1000.0), 30.0, &[]).is_none());
-
-    let mut poly = self::s();
-    poly.execute(
-        "draw.polyline",
-        &json!({ "pts": [[0.0, 0.0], [4000.0, 0.0], [0.0, 4000.0]] }),
-    )
-    .unwrap();
-    assert!(jjcad_core::snap::winkelhalbierende(&poly.doc, v(800.0, 800.0), 30.0, &[]).is_none());
+    linie(&mut s, [0.0, 0.0], [4000.0, 0.0]);
+    linie(&mut s, [0.0, 0.0], [0.0, 4000.0]);
+    linie(&mut s, [0.0, 0.0], [3000.0, 3000.0]);
+    let linien = jjcad_core::snap::winkelhalbierende(&s.doc, v(0.0, 0.0), &[]);
+    for (i, a) in linien.iter().enumerate() {
+        for b in linien.iter().skip(i + 1) {
+            assert!(
+                a.dir.cross(b.dir).abs() > 1e-6,
+                "doppelte Halbierende: {linien:?}"
+            );
+        }
+    }
 }
 
 /// Wände zählen mit ihrer **Achse**: zwei Wände in einer Ecke liefern die
@@ -171,70 +209,69 @@ fn waende_zaehlen_mit_ihrer_achse() {
         &json!({ "a": [0.0, 0.0], "b": [0.0, 4000.0], "thickness": 240.0 }),
     )
     .unwrap();
-    let l = jjcad_core::snap::winkelhalbierende(&s.doc, v(1000.0, 1000.0), 30.0, &[])
-        .expect("Halbierende zwischen zwei Wänden");
-    let grad = l.dir.angle().to_degrees();
+    let linien = jjcad_core::snap::winkelhalbierende(&s.doc, v(0.0, 0.0), &[]);
+    assert_eq!(linien.len(), 1, "{linien:?}");
+    let grad = linien[0].dir.angle().to_degrees();
     assert!((grad - 45.0).abs() < 1e-6, "Winkel {grad}");
 }
 
-/// Liegen drei Linien um den Punkt, gewinnt das **engste** Paar: die beiden,
-/// zwischen denen er tatsächlich sitzt.
+/// „Zwei Linien" heißt zwei Linien-Objekte: Rechteck und Polylinie sind keine
+/// Linien und liefern keine Halbierende.
 #[test]
-fn das_engste_paar_gewinnt() {
+fn rechteck_und_polylinie_liefern_keine_halbierende() {
     let mut s = s();
-    // Zwei Schenkel des rechten Winkels …
-    linie(&mut s, [0.0, 0.0], [4000.0, 0.0]);
-    linie(&mut s, [0.0, 0.0], [0.0, 4000.0]);
-    // … und eine dritte Linie weit draußen.
-    linie(&mut s, [-3000.0, 4000.0], [4000.0, 4000.0]);
-    let l = jjcad_core::snap::winkelhalbierende(&s.doc, v(1000.0, 1000.0), 30.0, &[])
-        .expect("Halbierende");
-    let grad = l.dir.angle().to_degrees();
-    assert!((grad - 45.0).abs() < 1e-6, "Winkel {grad}");
+    s.execute(
+        "draw.rect",
+        &json!({ "a": [0.0, 0.0], "b": [2000.0, 2000.0] }),
+    )
+    .unwrap();
+    assert!(jjcad_core::snap::winkelhalbierende(&s.doc, v(0.0, 0.0), &[]).is_empty());
+
+    let mut poly = self::s();
+    poly.execute(
+        "draw.polyline",
+        &json!({ "pts": [[0.0, 0.0], [4000.0, 0.0], [0.0, 4000.0]] }),
+    )
+    .unwrap();
+    assert!(jjcad_core::snap::winkelhalbierende(&poly.doc, v(0.0, 0.0), &[]).is_empty());
+}
+
+/// Ein bewegtes Element (im Fang ausgeschlossen) bildet keinen Scheitel.
+#[test]
+fn ausgeschlossenes_element_liefert_keine_halbierende() {
+    let s = ecke();
+    let id = s.doc.entities[0].id;
+    assert!(jjcad_core::snap::winkelhalbierende(&s.doc, v(0.0, 0.0), &[id]).is_empty());
 }
 
 // ---------------------------------------------------------------------------
-// Der Fang
+// Der Fang selbst
 // ---------------------------------------------------------------------------
 
-/// Der Kern des Tickets: die Linie beginnt zwischen zwei Linien — der zweite
-/// Punkt rastet auf der Winkelhalbierenden ein, die neue Linie läuft also
-/// genau zwischen beiden hindurch.
+/// Der Kern: die neue Linie beginnt im Scheitel — der zweite Punkt rastet auf
+/// der Halbierenden ein, die Linie läuft also genau zwischen beiden hindurch.
 #[test]
-fn linie_beginnt_zwischen_zwei_linien_und_folgt_der_halbierenden() {
-    let s = rechter_winkel();
-    let start = v(1000.0, 1000.0);
+fn linie_beginnt_im_scheitel_und_folgt_der_halbierenden() {
+    let s = ecke();
+    let start = v(0.0, 0.0);
     // Zeiger 10 mm neben der 45°-Halbierenden (x − y = 10).
     let r = fang(&s, v(1200.0, 1190.0), 30.0, &[start], &[]);
     assert_eq!(r.source, SnapSource::Object(SnapKind::Bisector), "{r:?}");
     assert_eq!(r.text(), Some("Winkelhalbierende"));
-    // Der gefangene Punkt liegt auf der Halbierenden durch den Startpunkt …
     let d = (r.point - start).normalized();
     assert!(
         (d.angle().to_degrees() - 45.0).abs() < 1e-6,
         "Richtung der neuen Linie: {:?}",
         d.angle().to_degrees()
     );
-    // … und die Strecke vom Startpunkt läuft schräg (nicht waagerecht/senkrecht).
-    assert!(r.point.dist(start) > 100.0, "{:?}", r.point);
-}
-
-/// Gegenprobe: ohne Punkt zwischen den Linien (kein Bezug, kein Haltepunkt)
-/// zieht die Halbierende nicht — sie ist an die beiden Lagen gebunden.
-#[test]
-fn ohne_punkt_zwischen_den_linien_kein_fang() {
-    let s = rechter_winkel();
-    let r = fang(&s, v(1200.0, 1190.0), 30.0, &[], &[]);
-    assert_ne!(r.source, SnapSource::Object(SnapKind::Bisector), "{r:?}");
 }
 
 /// Abseits der Halbierenden bleibt der Zeiger frei.
 #[test]
 fn ausserhalb_des_fangradius_kein_fang() {
-    let s = rechter_winkel();
-    let start = v(1000.0, 1000.0);
+    let s = ecke();
     // 280 mm neben der Halbierenden (x − y = 280).
-    let r = fang(&s, v(1400.0, 1120.0), 30.0, &[start], &[]);
+    let r = fang(&s, v(1400.0, 1120.0), 30.0, &[v(0.0, 0.0)], &[]);
     assert_ne!(r.source, SnapSource::Object(SnapKind::Bisector), "{r:?}");
     assert_punkt(r.point, v(1400.0, 1120.0), "roher Zeiger");
 }
@@ -243,36 +280,31 @@ fn ausserhalb_des_fangradius_kein_fang() {
 /// ist die genauere Wahl.
 #[test]
 fn endpunkt_schlaegt_die_halbierende() {
-    let mut s = rechter_winkel();
+    let mut s = ecke();
     // Linie, deren Ende genau auf der Halbierenden liegt: (2000; 2000).
     linie(&mut s, [2000.0, 2000.0], [2600.0, 2400.0]);
-    let start = v(1000.0, 1000.0);
-    let r = fang(&s, v(2002.0, 1998.0), 30.0, &[start], &[]);
+    let r = fang(&s, v(2002.0, 1998.0), 30.0, &[v(0.0, 0.0)], &[]);
     assert_eq!(r.source, SnapSource::Object(SnapKind::Endpoint), "{r:?}");
     assert_punkt(r.point, v(2000.0, 2000.0), "Endpunkt");
 }
 
-/// Zweite Lage aus der Aufgabenstellung: der Punkt zwischen zwei Linien ist
-/// für den **erweiterten Punktfang** gehalten — von ihm geht die Halbierende
-/// als Führungslinie aus, auch ohne Bezugspunkt des Zuges.
+/// Zweite Lage: der Punkt im Scheitel ist für den **erweiterten Punktfang**
+/// gehalten — von ihm geht die Halbierende aus, auch ohne Bezugspunkt.
 #[test]
-fn gehaltener_punkt_zwischen_linien_liefert_die_halbierende() {
-    let s = rechter_winkel();
-    let p = v(1000.0, 1000.0);
-    let r = fang(&s, v(1190.0, 1200.0), 30.0, &[], &[halt(p)]);
+fn gehaltener_scheitel_liefert_die_halbierende() {
+    let s = ecke();
+    let r = fang(&s, v(1190.0, 1200.0), 30.0, &[], &[halt(v(0.0, 0.0))]);
     assert_eq!(r.source, SnapSource::Object(SnapKind::Bisector), "{r:?}");
     assert_eq!(r.label(), Some("Winkelhalbierende"));
-    let d = (r.point - p).normalized();
-    assert!((d.angle().to_degrees() - 45.0).abs() < 1e-6, "{:?}", d);
 }
 
-/// Die Führungslinien für die Anzeige enthalten die Halbierende — an einem
-/// Haltepunkt und am Bezugspunkt des Zuges.
+/// Die Führungslinien für die Anzeige enthalten die Halbierende — am
+/// Haltepunkt und am Bezugspunkt, und nur einmal.
 #[test]
 fn fuehrungslinien_enthalten_die_halbierende() {
-    let s = rechter_winkel();
-    let p = v(1000.0, 1000.0);
-    let linien = hilfslinien_gesamt(&s.doc, &[halt(p)], None, 30.0, &[]);
+    let s = ecke();
+    let p = v(0.0, 0.0);
+    let linien = hilfslinien_gesamt(&s.doc, &[halt(p)], None, &[]);
     let halbe: Vec<_> = linien
         .iter()
         .filter(|l| l.kind == SnapKind::Bisector)
@@ -281,37 +313,24 @@ fn fuehrungslinien_enthalten_die_halbierende() {
     assert!((halbe[0].dir.angle().to_degrees() - 45.0).abs() < 1e-6);
 
     // Am Bezugspunkt dasselbe, ohne Haltepunkt.
-    let linien = hilfslinien_gesamt(&s.doc, &[], Some(p), 30.0, &[]);
+    let linien = hilfslinien_gesamt(&s.doc, &[], Some(p), &[]);
     assert!(
         linien.iter().any(|l| l.kind == SnapKind::Bisector),
         "{linien:?}"
     );
 
     // Derselbe Punkt als Bezug **und** als Haltepunkt: die Linie steht einmal.
-    let linien = hilfslinien_gesamt(&s.doc, &[halt(p)], Some(p), 30.0, &[]);
+    let linien = hilfslinien_gesamt(&s.doc, &[halt(p)], Some(p), &[]);
     assert_eq!(
-        linien.iter().filter(|l| l.kind == SnapKind::Bisector).count(),
+        linien
+            .iter()
+            .filter(|l| l.kind == SnapKind::Bisector)
+            .count(),
         1,
         "{linien:?}"
     );
-}
 
-/// Parallele Wände: die neue Linie läuft auf der Mittellinie zwischen ihnen.
-#[test]
-fn zwischen_parallelen_linien_laeuft_die_linie_auf_der_mitte() {
-    let mut s = s();
-    linie(&mut s, [0.0, 0.0], [4000.0, 0.0]);
-    linie(&mut s, [0.0, 2000.0], [4000.0, 2000.0]);
-    let r = fang(&s, v(1500.0, 1004.0), 30.0, &[v(1000.0, 1000.0)], &[]);
-    assert_eq!(r.source, SnapSource::Object(SnapKind::Bisector), "{r:?}");
-    assert_punkt(r.point, v(1500.0, 1000.0), "Mittellinie");
-}
-
-/// Ein bewegtes Element (im Fang ausgeschlossen) liefert keine Halbierende —
-/// sonst wanderte die Führungslinie mit dem Griff.
-#[test]
-fn ausgeschlossenes_element_liefert_keine_halbierende() {
-    let s = rechter_winkel();
-    let id = s.doc.entities[0].id;
-    assert!(jjcad_core::snap::winkelhalbierende(&s.doc, v(1000.0, 1000.0), 30.0, &[id]).is_none());
+    // Ein Punkt zwischen den Linien bringt keine Führungslinie mit.
+    let linien = hilfslinien_gesamt(&s.doc, &[], Some(v(1000.0, 1000.0)), &[]);
+    assert!(linien.is_empty(), "{linien:?}");
 }
