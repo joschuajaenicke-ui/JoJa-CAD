@@ -806,8 +806,8 @@ fn boden_unveraendert_ist_die_um_45_grad_gedrehte_einheitszelle() {
     let rechteck = [0.0, 0.0, 3200.0, 2400.0];
 
     // 1) Ohne Musterwinkel steht die Zelle rechtwinklig im Bezugssystem —
-    //    genau wie in der Zeichnung des Nutzers (die Datei trägt die Zelle
-    //    achsparallel, ohne Drehung).
+    //    wie in der Zeichnung des Nutzers, nur um 90° im Musterraster gedreht
+    //    (siehe `muster_boden_unveraendert`).
     let rechtwinklig = striche(FillPattern::GroundPlain, rechteck, Some(0.0));
     for (a, b) in &rechtwinklig {
         let achsparallel = (a.y - b.y).abs() < 0.01 || (a.x - b.x).abs() < 0.01;
@@ -817,11 +817,15 @@ fn boden_unveraendert_ist_die_um_45_grad_gedrehte_einheitszelle() {
             a.x, a.y, b.x, b.y
         );
     }
-    vergleiche_mit_zelle(&rechtwinklig, rechteck, &zelle_gekachelt(s, 0.0));
+    vergleiche_mit_zelle(
+        &rechtwinklig,
+        rechteck,
+        &zelle_gekachelt(s, -std::f64::consts::FRAC_PI_2),
+    );
 
-    // 2) Als Schraffur steht dieselbe Zelle um 45° gedreht: der Musterwinkel
-    //    einer Füllung ist vorgabegemäß 45° (`pattern_angle`), die
-    //    Mustergeometrie selbst ist achsparallel (wie bei „Mauerwerk“).
+    // 2) Als Schraffur steht dieselbe Zelle um 45° gedreht: die Längsrichtung
+    //    (durchgezogene Linien) läuft unter -45°, so zeigt es die Vorlage aus
+    //    T0152. Der Vorgabe-Musterwinkel einer Füllung ist +45°.
     let schraeg = striche(FillPattern::GroundPlain, rechteck, None);
     for (a, b) in &schraeg {
         let (dx, dy) = ((b.x - a.x).abs(), (b.y - a.y).abs());
@@ -833,6 +837,6 @@ fn boden_unveraendert_ist_die_um_45_grad_gedrehte_einheitszelle() {
     vergleiche_mit_zelle(
         &schraeg,
         rechteck,
-        &zelle_gekachelt(s, std::f64::consts::FRAC_PI_4),
+        &zelle_gekachelt(s, -std::f64::consts::FRAC_PI_4),
     );
 }

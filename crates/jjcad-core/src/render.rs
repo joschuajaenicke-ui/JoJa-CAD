@@ -2517,11 +2517,12 @@ fn boden_veraendert_schar(
 /// * vier Haken in S-Form bei `x = 1, 3, 5, 7`: Stiel der Länge `4s` ab
 ///   `y0 = 1, 7, 5, 3`, unten ein Fuß nach rechts, oben einer nach links.
 ///
-/// Gezeichnet wird die Zelle **im Musterraster**, also rechtwinklig — im Plan
-/// steht sie schräg, weil der Musterwinkel der Füllung 45° vorgibt (wie bei
-/// „Mauerwerk": die Mustergeometrie ist achsparallel, die Drehung kommt aus
-/// `pattern_angle`). Gekachelt wird mit der Kantenlänge `8s`; die Lage kommt
-/// wie bei allen Mustern aus dem Weltnullpunkt.
+/// Gezeichnet wird die Zelle **im Musterraster**; ihre Längsrichtung (die
+/// durchgezogenen Linien) steht im Plan unter -45°, so wie in der Vorlage aus
+/// T0152 (zellengleicher Vergleich). Der Musterwinkel einer Füllung ist
+/// vorgabemäßig +45°, deshalb liegt die Zelle im Raster um 90° gedreht
+/// (+45° - 90° = -45°). Gekachelt wird mit der Kantenlänge `8s`; die Lage
+/// kommt wie bei allen Mustern aus dem Weltnullpunkt.
 fn muster_boden_unveraendert(
     dl: &mut DisplayList,
     e: &Entity,
@@ -2532,7 +2533,9 @@ fn muster_boden_unveraendert(
     spacing: f64,
 ) {
     let s = spacing.max(0.5);
-    let r = Raster::new(angle);
+    // Die Zelle liegt im Musterraster um 90° gedreht: ihre Längsrichtung läuft
+    // im Plan unter -45° (Vorlage T0152), der Vorgabe-Musterwinkel ist +45°.
+    let r = Raster::new(angle - std::f64::consts::FRAC_PI_2);
     let (umin, umax, vmin, vmax) = r.bereich(pts);
     let kante = 8.0 * s;
     let i0 = (umin / kante).floor() as i64 - 1;
