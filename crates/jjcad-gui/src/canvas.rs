@@ -1759,11 +1759,6 @@ fn draw_sheet(app: &mut App, p: &Painter, rect: Rect, view: View, cursor: Option
         for prim in &vdl.prims {
             paint_prim(&clip, prim, &vp_w2s, view.zoom * s, &vpc, 1.0);
         }
-        // T0158: Wird der Ansichtsbereich gerade eingestellt, ist das Fenster
-        // hervorgehoben — Mausrad und Mitteltaste wirken dann hierher.
-        if app.ui.vp_edit == Some(vp.id) {
-            p.rect_stroke(vp_rect, 0.0, Stroke::new(1.8, Palette::accent()));
-        }
     }
 
     // 2. Beschriftung der Ansichtsfenster. Rahmen, Auswahlfarbe und Griffe
@@ -1812,6 +1807,22 @@ fn draw_sheet(app: &mut App, p: &Painter, rect: Rect, view: View, cursor: Option
     ohne_texteingabe(app, &mut dl);
     for prim in &dl.prims {
         paint_prim(p, prim, &w2s, view.zoom, &pc, 1.0);
+    }
+
+    // T0158: Das eingestellte Ansichtsfenster ist in der Akzentfarbe umrandet —
+    // **nach** dem Papierraum, sonst überdeckt der Auswahlrahmen aus
+    // `render_sheet` die Linie (das Fenster ist beim Einstellen immer gewählt).
+    if let Some(id) = app.ui.vp_edit {
+        for (_, vp) in sheet.viewports() {
+            if vp.id != id {
+                continue;
+            }
+            let r = Rect::from_min_max(
+                w2s(V2::new(vp.x, vp.y + vp.h)),
+                w2s(V2::new(vp.x + vp.w, vp.y)),
+            );
+            p.rect_stroke(r, 0.0, Stroke::new(1.8, Palette::accent()));
+        }
     }
 
     // Aufziehen eines neuen Ansichtsfensters
