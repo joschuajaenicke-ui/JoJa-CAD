@@ -253,22 +253,29 @@ fn jede_schraffur_sieht_anders_aus() {
 /// Fläche mit einem Muster füllen und ihre Displaylisten-Primitive liefern.
 /// `rechteck` = (x0, y0, x1, y1) in mm.
 fn prims(rechteck: [f64; 4], p: FillPattern) -> Vec<Prim> {
+    prims_mit_winkel(rechteck, p, None)
+}
+
+/// Wie `prims`, aber mit festem Musterwinkel (Grad) — für Muster, deren Aufbau
+/// nur im eigenen Raster messbar ist.
+fn prims_mit_winkel(rechteck: [f64; 4], p: FillPattern, winkel: Option<f64>) -> Vec<Prim> {
     let [x0, y0, x1, y1] = rechteck;
     let kontur = [[x0, y0], [x1, y0], [x1, y1], [x0, y1]];
     let mut s = Session::new();
     s.execute("doc.settings", &json!({ "input_unit": "mm" }))
         .expect("Eingabe in Millimetern");
+    let mut auftrag = json!({
+        "boundary": kontur,
+        "pattern": p.key(),
+        "scale": 100.0,
+        "border": false,
+        "layer": "Wände"
+    });
+    if let Some(w) = winkel {
+        auftrag["angle"] = json!(w);
+    }
     let a = s
-        .execute(
-            "draw.fill.points",
-            &json!({
-                "boundary": kontur,
-                "pattern": p.key(),
-                "scale": 100.0,
-                "border": false,
-                "layer": "Wände"
-            }),
-        )
+        .execute("draw.fill.points", &auftrag)
         .unwrap_or_else(|e| panic!("{}: Füllfläche: {e}", p.label()));
     let id = a["created"][0].as_u64().expect("Id");
     render_document(&RenderCtx::model(&s.doc))
@@ -503,4 +510,195 @@ fn unterbrechungen_liegen_auf_waagerechten_linien() {
             );
         }
     }
+}
+
+// ---------------------------------------------------------------------------
+// Die beiden Boden-Schraffuren (T0152)
+// ---------------------------------------------------------------------------
+//
+// Beide Muster sind nach den Vorlagen zweier CAD-Programme neu gezeichnet
+// worden (die Norm zeigt nur einen kleinen, undeutlichen Ausschnitt). Der
+// Musterabstand `s` ist die kleinste Linienentfernung; die Tests messen die
+// Aufbauregeln am gezeichneten Bild, nicht an der Implementierung.
+
+/// Alle Linien eines Musters, getrennt nach waagerecht und senkrecht
+/// (Musterwinkel 0: die erste Schar läuft waagerecht).
+fn linien(p: FillPattern, rechteck: [f64; 4]) -> (Vec<(f64, f64, f64)>, Vec<(f64, f64, f64)>) {
+    let [x0, y0, x1, y1] = rechteck;
+    // Nur Striche, die **in** der Fläche liegen: die Mitte muss innen sein
+    // (ein durchgezogener Strich endet auf dem Rand und wird dort beschnitten).
+    let drin = |q: jjcad_core::geom::Vec2| {
+        q.x > x0 + 1.0 && q.x < x1 - 1.0 && q.y > y0 + 1.0 && q.y < y1 - 1.0
+    };
+    let mut waagerecht = Vec::new();
+    let mut senkrecht = Vec::new();
+    for pr in prims_mit_winkel(rechteck, p, Some(0.0)) {
+        let Shape::Line(a, b) = pr.shape else { continue };
+        let mitte = jjcad_core::geom::v((a.x + b.x) / 2.0, (a.y + b.y) / 2.0);
+        if !drin(mitte) {
+            continue;
+        }
+        if (a.y - b.y).abs() < 0.01 {
+            waagerecht.push((a.y, a.x.min(b.x), a.x.max(b.x)));
+        } else if (a.x - b.x).abs() < 0.01 {
+            senkrecht.push((a.x, a.y.min(b.y), a.y.max(b.y)));
+        }
+    }
+    (waagerecht, senkrecht)
+}
+
+/// Lagen einer Schar, auf 0,1 mm gerundet und sortiert.
+fn lagen(striche: &[(f64, f64, f64)]) -> Vec<f64> {
+    let mut v: Vec<f64> = striche.iter().map(|(q, _, _)| (q * 10.0).round() / 10.0).collect();
+    v.sort_by(|a, b| a.partial_cmp(b).unwrap());
+    v.dedup();
+    v
+}
+
+#[test]
+fn boden_veraendert_ist_ein_flechtwerk_langer_striche() {
+    // Musterabstand 100 mm: Reihen im Wechsel 150/100/150 mm (Takt 400 mm),
+    // Striche 400 mm lang mit 400 mm Lücke (Takt 800 mm) — in beiden Scharen.
+    let s = 100.0;
+    let (waagerecht, senkrecht) = linien(FillPattern::GroundChanged, [0.0, 0.0, 3200.0, 2400.0]);
+    assert!(!waagerecht.is_empty() && !senkrecht.is_empty(), "beide Scharen fehlen");
+
+    for (name, schar) in [("waagerecht", &waagerecht), ("senkrecht", &senkrecht)] {
+        let l = lagen(schar);
+        assert!(l.len() > 8, "{name}: zu wenige Reihen ({})", l.len());
+        // Reihenabstände: 1 s und 1,5 s im Wechsel, je drei Reihen 4 s.
+        let mut summe = 0.0;
+        for (i, paar) in l.windows(2).enumerate() {
+            let d = paar[1] - paar[0];
+            assert!(
+                (d - s).abs() < 0.2 || (d - 1.5 * s).abs() < 0.2,
+                "{name}: Reihenabstand {d:.1} mm ist weder {s} noch {} mm",
+                1.5 * s
+            );
+            summe += d;
+            if i % 3 == 2 {
+                assert!(
+                    (summe - 4.0 * s).abs() < 0.3,
+                    "{name}: drei Reihen ergeben {summe:.1} mm statt {} mm",
+                    4.0 * s
+                );
+                summe = 0.0;
+            }
+        }
+        // Strichlänge 4 s, Takt 8 s: die Striche einer Reihe liegen 8 s auseinander.
+        let mut reihen: std::collections::BTreeMap<i64, Vec<(f64, f64)>> = Default::default();
+        for (q, a, b) in schar {
+            reihen
+                .entry((q * 10.0).round() as i64)
+                .or_default()
+                .push((*a, *b));
+        }
+        let mut geprueft = 0;
+        for (_, mut striche) in reihen {
+            // Am Flächenrand wird ein Strich beschnitten — für den Takt nur
+            // die vollen Striche nehmen.
+            striche.retain(|(a, b)| (b - a - 4.0 * s).abs() < 0.3);
+            if striche.len() < 2 {
+                continue;
+            }
+            striche.sort_by(|a, b| a.0.partial_cmp(&b.0).unwrap());
+            for w in striche.windows(2) {
+                let takt = w[1].0 - w[0].0;
+                assert!(
+                    (takt - 8.0 * s).abs() < 0.3,
+                    "{name}: Strichabstand {takt:.1} mm statt {} mm",
+                    8.0 * s
+                );
+            }
+            for (a, b) in &striche {
+                assert!(
+                    (b - a - 4.0 * s).abs() < 0.3,
+                    "{name}: Strichlänge {:.1} mm statt {} mm",
+                    b - a,
+                    4.0 * s
+                );
+            }
+            geprueft += 1;
+        }
+        assert!(geprueft >= 3, "{name}: zu wenige Reihen mit mehreren Strichen");
+    }
+}
+
+#[test]
+fn boden_unveraendert_ist_ein_flechtmuster_aus_haken() {
+    // Musterabstand 100 mm: Linien im Abstand 100 mm in beiden Richtungen.
+    // Jede zweite Linie der ersten Schar ist durchgezogen, dazwischen liegen
+    // Ziegel von 200 mm mit Querstrichen an den Enden; die zweite Schar hat
+    // Striche von 400 mm im Takt 800 mm.
+    let s = 100.0;
+    let (waagerecht, senkrecht) = linien(FillPattern::GroundPlain, [0.0, 0.0, 3200.0, 2400.0]);
+    assert!(!waagerecht.is_empty() && !senkrecht.is_empty(), "beide Scharen fehlen");
+
+    for (name, schar) in [("waagerecht", &waagerecht), ("senkrecht", &senkrecht)] {
+        let l = lagen(schar);
+        assert!(l.len() > 10, "{name}: zu wenige Linien ({})", l.len());
+        for paar in l.windows(2) {
+            let d = paar[1] - paar[0];
+            assert!(
+                (d - s).abs() < 0.2,
+                "{name}: Linienabstand {d:.1} mm statt {s} mm"
+            );
+        }
+    }
+
+    // Erste Schar: durchgezogene und Ziegellinien im Wechsel.
+    let mut reihen: std::collections::BTreeMap<i64, Vec<(f64, f64)>> = Default::default();
+    for (q, a, b) in &waagerecht {
+        reihen
+            .entry((q * 10.0).round() as i64)
+            .or_default()
+            .push((*a, *b));
+    }
+    let mut durchgezogen = 0;
+    let mut ziegel = 0;
+    for (_, mut striche) in reihen {
+        // Kurze Striche der Länge s sind die Querstriche der zweiten Schar.
+        striche.retain(|(a, b)| b - a > 1.5 * s);
+        if striche.is_empty() {
+            continue;
+        }
+        striche.sort_by(|a, b| a.0.partial_cmp(&b.0).unwrap());
+        let lang: f64 = striche.iter().map(|(a, b)| b - a).sum();
+        if lang > 2000.0 {
+            // Durchgezogene Linie: ein Stück über die ganze Fläche.
+            durchgezogen += 1;
+            continue;
+        }
+        ziegel += 1;
+        for (a, b) in &striche {
+            assert!(
+                (b - a - 2.0 * s).abs() < 0.3,
+                "Ziegellänge {:.1} mm statt {} mm",
+                b - a,
+                2.0 * s
+            );
+        }
+        // Zwei Ziegel je Takt, dann eine Lücke von 4 s.
+        for w in striche.windows(2) {
+            let d = w[1].0 - w[0].0;
+            assert!(
+                (d - 2.0 * s).abs() < 0.3 || (d - 6.0 * s).abs() < 0.3,
+                "Ziegelabstand {d:.1} mm ist weder {} noch {} mm",
+                2.0 * s,
+                6.0 * s
+            );
+        }
+    }
+    assert!(durchgezogen >= 3, "zu wenige durchgezogene Linien ({durchgezogen})");
+    assert!(ziegel >= 3, "zu wenige Ziegelreihen ({ziegel})");
+
+    // Querstriche: kurze Striche der Länge s an den Ziegelenden.
+    let kurze = senkrecht
+        .iter()
+        .filter(|(_, a, b)| (b - a - s).abs() < 0.3)
+        .count();
+    assert!(
+        kurze > 20,
+        "zu wenige Querstriche der Länge {s} mm ({kurze})"
+    );
 }

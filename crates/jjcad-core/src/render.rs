@@ -1908,9 +1908,9 @@ fn push_muster(
         FillPattern::Plaster => {
             muster_punkte(dl, e, st, pts, holes, angle, s * 1.9, 1.0, 1.9, 0.07, 0.6)
         }
-        // Nr. 1 Boden unverändert: Zickzackschraffur
-        FillPattern::GroundPlain => muster_zickzack(dl, e, st, pts, holes, angle, s),
-        // Nr. 2 Boden verändert: Längsstriche mit Querstrichen
+        // Nr. 1 Boden unverändert: Flechtmuster aus Haken und Querstrichen
+        FillPattern::GroundPlain => muster_boden_unveraendert(dl, e, st, pts, holes, angle, s),
+        // Nr. 2 Boden verändert: Flechtwerk aus langen Strichen beider Diagonalen
         FillPattern::GroundChanged => muster_boden_veraendert(dl, e, st, pts, holes, angle, s),
         // Nr. 3 Kies: Kieselsteine
         FillPattern::Gravel => muster_kiesel(dl, e, st, pts, holes, angle, s),
@@ -2372,47 +2372,14 @@ fn muster_wellen(
     }
 }
 
-/// Nr. 1 Boden/Gelände unverändert: Zickzackschraffur (Dreiecke) unter der
-/// Geländekante. Zähne und Reihen sitzen auf dem Muster-Raster.
-fn muster_zickzack(
-    dl: &mut DisplayList,
-    e: &Entity,
-    st: &PrimStyle,
-    pts: &[Vec2],
-    holes: &[Vec<Vec2>],
-    angle: f64,
-    spacing: f64,
-) {
-    let s = spacing.max(0.5);
-    let r = Raster::new(angle);
-    let (umin, umax, vmin, vmax) = r.bereich(pts);
-    let reihe = s * 1.3;
-    let zahnh = s * 0.5;
-    let amp = s * 0.75;
-    let j0 = (vmin / reihe).floor() as i64 - 1;
-    let j1 = (vmax / reihe).ceil() as i64 + 1;
-    let k0 = (umin / zahnh).floor() as i64 - 1;
-    let k1 = (umax / zahnh).ceil() as i64 + 1;
-    if j1 - j0 > 400 || k1 - k0 > 4000 {
-        return;
-    }
-    for j in j0..=j1 {
-        let v = j as f64 * reihe;
-        let mut prev: Option<Vec2> = None;
-        for k in k0..=k1 {
-            let u = k as f64 * zahnh;
-            let dv = if k.rem_euclid(2) == 0 { -amp } else { amp };
-            let p = r.punkt(u, v + dv);
-            if let Some(q) = prev {
-                muster_abschnitt(dl, e, st, q, p, pts, holes);
-            }
-            prev = Some(p);
-        }
-    }
-}
-
-/// Nr. 2 Boden/Gelände verändert: Längsstriche zwischen Querstrichen. Jedes
-/// Teil hängt am Raster, die Striche liegen dadurch auf gemeinsamen Höhen.
+/// Nr. 2 Boden/Gelände verändert: Flechtwerk aus langen Strichen in beiden
+/// Diagonalen (T0152, nach den Vorlagen zweier CAD-Programme).
+///
+/// Aufbau in Musterkoordinaten (`u` längs, `v` quer, Einheit `s` = Musterabstand):
+/// Reihen bei `v = 4s·g + {0; 1,5s; 2,5s}`, auf jeder Reihe Striche der Länge
+/// `4s` mit `4s` Lücke, je Reihengruppe um `4s` versetzt. Dieselbe Figur liegt
+/// noch einmal um 90° gedreht darüber — erst beide Scharen zusammen ergeben das
+/// Flechtbild; eine allein wäre eine gewöhnliche Strichschraffur.
 fn muster_boden_veraendert(
     dl: &mut DisplayList,
     e: &Entity,
@@ -2424,40 +2391,178 @@ fn muster_boden_veraendert(
 ) {
     let s = spacing.max(0.5);
     let r = Raster::new(angle);
+    // Zweite Schar um 90° gedreht; der Versatz längs lässt die Striche
+    // ineinandergreifen statt sich zu kreuzen (in der Vorlage gemessen).
+    for (quer, versatz) in [(false, 0.0), (true, 2.0 * s)] {
+        boden_veraendert_schar(dl, e, st, pts, holes, &r, s, quer, versatz);
+    }
+}
+
+/// Eine Schar des Musters „Boden verändert": Reihen im Abstand `s`/`1,5 s`,
+/// darauf lange Striche. `quer` dreht die Schar um 90° (Reihen liegen dann auf
+/// konstantem `u` statt `v`), `versatz` schiebt die Striche längs.
+#[allow(clippy::too_many_arguments)]
+fn boden_veraendert_schar(
+    dl: &mut DisplayList,
+    e: &Entity,
+    st: &PrimStyle,
+    pts: &[Vec2],
+    holes: &[Vec<Vec2>],
+    r: &Raster,
+    s: f64,
+    quer: bool,
+    versatz: f64,
+) {
     let (umin, umax, vmin, vmax) = r.bereich(pts);
-    let reihe = s * 2.0;
-    let j0 = (vmin / reihe).floor() as i64;
-    let j1 = (vmax / reihe).ceil() as i64;
-    let k0 = (umin / s).floor() as i64 - 1;
-    let k1 = (umax / s).ceil() as i64 + 1;
-    if j1 - j0 > 400 || k1 - k0 > 4000 {
+    // Reihenachse: bei `quer` läuft die Reihe längs `v`, sonst längs `u`.
+    let (quer_min, quer_max, along_min, along_max) = if quer {
+        (umin, umax, vmin, vmax)
+    } else {
+        (vmin, vmax, umin, umax)
+    };
+    let punkt = |along: f64, quer_pos: f64| {
+        if quer {
+            r.punkt(quer_pos, along)
+        } else {
+            r.punkt(along, quer_pos)
+        }
+    };
+    let reihe = 4.0 * s;
+    let g0 = (quer_min / reihe).floor() as i64 - 1;
+    let g1 = (quer_max / reihe).ceil() as i64 + 1;
+    if g1 - g0 > 400 {
         return;
     }
-    for j in j0..=j1 {
-        let v = j as f64 * reihe;
-        for k in k0..=k1 {
-            let u = k as f64 * s;
-            // Querstrich über die halbe Reihenhöhe (fest am Raster)
-            muster_abschnitt(
-                dl,
-                e,
-                st,
-                r.punkt(u, v - s * 0.55),
-                r.punkt(u, v + s * 0.55),
-                pts,
-                holes,
-            );
-            // Zwei Längsstriche in der folgenden Zelle
-            for dv in [-0.28f64, 0.28] {
+    for g in g0..=g1 {
+        // Je Reihengruppe um eine Strichlänge versetzt (Flechtversatz).
+        let phase = versatz + if g.rem_euclid(2) == 0 { 0.0 } else { 4.0 * s };
+        for dv in [0.0, 1.5 * s, 2.5 * s] {
+            let q = g as f64 * reihe + dv;
+            let m0 = ((along_min - phase) / (8.0 * s)).floor() as i64 - 1;
+            let m1 = ((along_max - phase) / (8.0 * s)).ceil() as i64 + 1;
+            if m1 - m0 > 4000 {
+                continue;
+            }
+            for m in m0..=m1 {
+                let u0 = phase + m as f64 * 8.0 * s;
                 muster_abschnitt(
                     dl,
                     e,
                     st,
-                    r.punkt(u + s * 0.22, v + s * dv),
-                    r.punkt(u + s * 0.78, v + s * dv),
+                    punkt(u0, q),
+                    punkt(u0 + 4.0 * s, q),
                     pts,
                     holes,
                 );
+            }
+        }
+    }
+}
+
+/// Nr. 1 Boden/Gelände unverändert: Flechtmuster aus Haken und Querstrichen
+/// (T0152, nach den Vorlagen zweier CAD-Programme).
+///
+/// Aufbau in Musterkoordinaten (`u` längs, `v` quer, Einheit `s` = Musterabstand):
+/// Linien im Abstand `s` in beiden Richtungen. In der ersten Schar ist jede
+/// zweite Linie durchgezogen, die dazwischen besteht aus „Ziegeln" von `2s`
+/// Länge mit einem Querstrich der Länge `s` an jedem Ziegelende; vier Ziegel
+/// (mit Lücke) bilden den Takt `8s`. Die Querstriche der ersten Schar sind
+/// zugleich die kurzen Striche der zweiten, die dort als `4s`-Striche mit
+/// `4s`-Lücke im Takt `8s` liegen.
+fn muster_boden_unveraendert(
+    dl: &mut DisplayList,
+    e: &Entity,
+    st: &PrimStyle,
+    pts: &[Vec2],
+    holes: &[Vec<Vec2>],
+    angle: f64,
+    spacing: f64,
+) {
+    let s = spacing.max(0.5);
+    let r = Raster::new(angle);
+    let (umin, umax, vmin, vmax) = r.bereich(pts);
+    let takt = 8.0 * s;
+    let ziegel = 2.0 * s;
+
+    // Erste Schar: Linien bei v = k·s, durchgezogen bei geradem k.
+    let k0 = (vmin / s).floor() as i64 - 1;
+    let k1 = (vmax / s).ceil() as i64 + 1;
+    if k1 - k0 > 4000 {
+        return;
+    }
+    for k in k0..=k1 {
+        let v = k as f64 * s;
+        if k.rem_euclid(2) == 0 {
+            muster_abschnitt(
+                dl,
+                e,
+                st,
+                r.punkt(umin - s, v),
+                r.punkt(umax + s, v),
+                pts,
+                holes,
+            );
+            continue;
+        }
+        // Ziegelreihe: je Takt zwei Ziegel mit Querstrichen an den Enden.
+        let phase = -(k as f64) * s;
+        let m0 = ((umin - phase) / takt).floor() as i64 - 1;
+        let m1 = ((umax - phase) / takt).ceil() as i64 + 1;
+        if m1 - m0 > 4000 {
+            continue;
+        }
+        for m in m0..=m1 {
+            let u0 = phase + m as f64 * takt;
+            for z in 0..2 {
+                let a = u0 + z as f64 * ziegel;
+                let b = a + ziegel;
+                muster_abschnitt(dl, e, st, r.punkt(a, v), r.punkt(b, v), pts, holes);
+            }
+        }
+        // Querstriche im Takt 2 s über die ganze Linie — sie laufen auch durch
+        // die Lücken der Längsstriche (so steht es in der Vorlage).
+        let n0 = ((umin - phase) / ziegel).floor() as i64 - 1;
+        let n1 = ((umax - phase) / ziegel).ceil() as i64 + 1;
+        if n1 - n0 <= 4000 {
+            for n in n0..=n1 {
+                let a = phase + n as f64 * ziegel;
+                muster_abschnitt(dl, e, st, r.punkt(a, v), r.punkt(a, v + s), pts, holes);
+            }
+        }
+    }
+
+    // Zweite Schar: Linien bei u = k·s, Striche der Länge 4s im Takt 8s.
+    let j0 = (umin / s).floor() as i64 - 1;
+    let j1 = (umax / s).ceil() as i64 + 1;
+    if j1 - j0 > 4000 {
+        return;
+    }
+    for j in j0..=j1 {
+        if j.rem_euclid(2) != 0 {
+            continue;
+        }
+        let u = j as f64 * s;
+        let phase = (2.0 - j as f64) * s;
+        let m0 = ((vmin - phase) / takt).floor() as i64 - 1;
+        let m1 = ((vmax - phase) / takt).ceil() as i64 + 1;
+        if m1 - m0 > 4000 {
+            continue;
+        }
+        for m in m0..=m1 {
+            let v0 = phase + m as f64 * takt;
+            muster_abschnitt(
+                dl,
+                e,
+                st,
+                r.punkt(u, v0),
+                r.punkt(u, v0 + 4.0 * s),
+                pts,
+                holes,
+            );
+            // Querstriche an den Enden — sie schließen die Haken der ersten
+            // Schar zu Rechtecken (in der Vorlage an beiden Enden).
+            for vv in [v0, v0 + 4.0 * s] {
+                muster_abschnitt(dl, e, st, r.punkt(u, vv), r.punkt(u + s, vv), pts, holes);
             }
         }
     }
