@@ -184,6 +184,14 @@ ausgeblendet.
   Die Führungslinie steht gestrichelt in der Fangfarbe, die Statusleiste meldet
   „Winkelhalbierende"; ein Endpunkt oder Schnittpunkt an derselben Stelle hat Vorrang.
   Prüfdatei: `samples/Winkelhalbierende.jjcad` (Ecke bei 1,00/1,00, Kreuzung bei 4,00/9,00).
+- **Fangmarken** (T0153): Jeder Fang zeigt sein eigenes Zeichen am **Fangpunkt** — also am
+  Element, nicht am Zeiger: Endpunkt ein Quadrat, Mittelpunkt ein Dreieck, Zentrum ein Kreis
+  mit Kreuz, Schnittpunkt ein Kreuz, Quadrant eine Raute, Lot ein rechter Winkel, nächster
+  Punkt eine Sanduhr, Raster ein Punktraster, Hilfslinie ein gestricheltes Kreuz,
+  Winkelhalbierende ein Winkel mit Mittelstrahl, Blattecke ein gefülltes Quadrat, Polarfang
+  eine Winkelmarke. Ohne Fang bleibt es beim kleinen Kreuz am Zeiger; `Ortho` führt nur und
+  zeigt keine Marke. Die Marke ist 18 px groß, liegt über der Zeichnung und erscheint nicht
+  im Druck.
 - **Linien** werden als Kapsel gezeichnet: Rechteck plus Halbkreis an beiden Enden. Dadurch sind
   auch die Übergänge in Polylinien, Bögen und an Wandanschlüssen rund statt eckig.
 - **Ribbon** lässt sich über den Pfeil rechts in der Kopfzeile einklappen; die Reiter bleiben sichtbar.
