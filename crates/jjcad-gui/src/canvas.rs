@@ -1761,11 +1761,6 @@ fn draw_sheet(app: &mut App, p: &Painter, rect: Rect, view: View, cursor: Option
         for prim in &vdl.prims {
             paint_prim(&clip, prim, &vp_w2s, view.zoom * s, &vpc, 1.0);
         }
-        // T0158: Wird der Ansichtsbereich gerade eingestellt, ist das Fenster
-        // hervorgehoben — Mausrad und Mitteltaste wirken dann hierher.
-        if app.ui.vp_edit == Some(vp.id) {
-            p.rect_stroke(vp_rect, 0.0, Stroke::new(1.8, Palette::accent()));
-        }
     }
 
     // 2. Beschriftung der Ansichtsfenster. Rahmen, Auswahlfarbe und Griffe
@@ -1814,6 +1809,22 @@ fn draw_sheet(app: &mut App, p: &Painter, rect: Rect, view: View, cursor: Option
     ohne_texteingabe(app, &mut dl);
     for prim in &dl.prims {
         paint_prim(p, prim, &w2s, view.zoom, &pc, 1.0);
+    }
+
+    // T0158: Das eingestellte Ansichtsfenster ist in der Akzentfarbe umrandet —
+    // **nach** dem Papierraum, sonst überdeckt der Auswahlrahmen aus
+    // `render_sheet` die Linie (das Fenster ist beim Einstellen immer gewählt).
+    if let Some(id) = app.ui.vp_edit {
+        for (_, vp) in sheet.viewports() {
+            if vp.id != id {
+                continue;
+            }
+            let r = Rect::from_min_max(
+                w2s(V2::new(vp.x, vp.y + vp.h)),
+                w2s(V2::new(vp.x + vp.w, vp.y)),
+            );
+            p.rect_stroke(r, 0.0, Stroke::new(1.8, Palette::accent()));
+        }
     }
 
     // Aufziehen eines neuen Ansichtsfensters
@@ -3719,6 +3730,32 @@ pub fn viewport_schwenken(vp: &Viewport, delta_papier: V2) -> V2 {
     vp.center + delta_papier * vp.scale
 }
 
+/// Ansichtsfenster unter einem Papierpunkt (T0158, Turn 3) — das oberste,
+/// dessen **Fläche** den Punkt enthält.
+///
+/// Ein Doppelklick soll die ganze Ansicht treffen, nicht nur ihren Rahmen:
+/// `snap::hit_test` findet nur die gezeichneten Linien, die Fläche dazwischen
+/// wäre leer. Gesucht wird von hinten nach vorn, damit bei überlappenden
+/// Fenstern das zuletzt gezeichnete gewinnt. Der Rand ist um
+/// [`VP_TREFFER_MM`] erweitert, damit der Klick **auf** der Rahmenlinie bei
+/// Bildschirm-Rundung nicht daneben liegt.
+fn viewport_bei(app: &App, p: V2) -> Option<Id> {
+    let sid = match &app.tab().tab {
+        TabKind::Sheet(sid) => *sid,
+        _ => return None,
+    };
+    let sheet = app.doc().sheet(sid)?;
+    sheet
+        .viewports()
+        .filter(|(_, vp)| vp.rect().expanded(VP_TREFFER_MM).contains(p))
+        .map(|(e, _)| e.id)
+        .last()
+}
+
+/// Trefferrand um ein Ansichtsfenster in Papier-Millimetern — die halbe
+/// Rahmenlinie plus die Rundung von Bildschirm- auf Papierkoordinaten.
+pub const VP_TREFFER_MM: f64 = 0.5;
+
 /// Bewegung im Ansichtsbereich, solange „Ansichtsbereich anpassen“ an ist
 /// (T0158): Mausrad ändert den Maßstab, Mitteltaste verschiebt den gezeigten
 /// Zeichnungsausschnitt. Das Blatt selbst bleibt stehen.
@@ -4034,7 +4071,6 @@ fn handle_input(
 ) {
     let ctx = ui.ctx();
     let view = app.current_view();
-
     // Solange ein Kontextmenü offen ist, reagiert die Fläche nicht auf Klicks
     if app.menu_open() {
         return;
@@ -4213,6 +4249,28 @@ fn handle_input(
             if let Some(id) = crate::textedit::text_bei(app, p) {
                 app.verwerfe_move_drag();
                 crate::textedit::start_entitaet(app, id);
+                return;
+            }
+        }
+    }
+
+    // T0158 (Turn 3): Doppelklick **in** eine Ansicht stellt ihren
+    // Ansichtsbereich ein — derselbe Schalter wie im Eigenschaften-Panel, nur
+    // ohne Umweg über das Panel. Ein zweiter Doppelklick schaltet ihn ab.
+    //
+    // Steht wie der Text-Doppelklick **vor** `laufender_drag`: der zweite Druck
+    // hat über dem Fenster einen Mauszug gestartet („Maus verschiebt“), der
+    // hier still verworfen wird — sonst schöbe der Doppelklick das Fenster
+    // und der Klick käme nie an. Die Auswahl gehört dazu, weil
+    // `App::sync_space` den Schalter ohne ausgewähltes Fenster abräumt.
+    if app.tool.is_none() && resp.double_clicked_by(egui::PointerButton::Primary) {
+        if let Some(p) = raw.or(snapped) {
+            if let Some(id) = viewport_bei(app, p) {
+                app.verwerfe_move_drag();
+                let an = app.ui.vp_edit == Some(id);
+                app.session_mut().select(vec![id]);
+                app.ui.vp_edit = if an { None } else { Some(id) };
+                app.select_zwei = None;
                 return;
             }
         }
@@ -14534,5 +14592,170 @@ mod tests_ansichtsbereich {
         // Auch der Merker selbst ist weg — ein späteres Blatt erbt ihn nicht.
         assert!(app.ui.vp_edit.is_none(), "Merker bleibt nicht stehen");
         let _ = id;
+    }
+
+    // ---- Doppelklick in die Ansicht (T0158, Turn 3) ----
+
+    /// Ein Frame mit laufender Zeit — der Doppelklick lebt von der Zeit
+    /// zwischen den beiden Klicks (egui: höchstens 0,3 s).
+    fn frame_zeit(app: &mut App, events: Vec<egui::Event>, zeit: f64) {
+        let ctx = app.ctx.clone();
+        let input = egui::RawInput {
+            screen_rect: Some(Rect::from_min_size(Pos2::ZERO, egui::vec2(1500.0, 950.0))),
+            time: Some(zeit),
+            predicted_dt: 0.016,
+            events,
+            ..Default::default()
+        };
+        let _ = ctx.run(input, |ctx| app.ui(ctx));
+    }
+
+    /// Zwei Klicks auf derselben Stelle — ein Doppelklick (egui erkennt ihn
+    /// nur innerhalb von 0,3 s, deshalb läuft hier die Zeit mit).
+    fn doppelklick(app: &mut App, pos: Pos2, zeit: &mut f64) {
+        for _ in 0..2 {
+            frame_zeit(app, vec![egui::Event::PointerMoved(pos)], *zeit);
+            *zeit += 0.05;
+            frame_zeit(
+                app,
+                vec![knopf(pos, egui::PointerButton::Primary, true)],
+                *zeit,
+            );
+            *zeit += 0.05;
+            frame_zeit(
+                app,
+                vec![knopf(pos, egui::PointerButton::Primary, false)],
+                *zeit,
+            );
+            *zeit += 0.15;
+        }
+    }
+
+    /// Doppelklick in die Ansicht schaltet „Ansichtsbereich anpassen“ ein und
+    /// wählt das Fenster — der Klick in die Fläche trifft keinen Rahmen.
+    #[test]
+    fn doppelklick_in_die_ansicht_schaltet_den_schalter_ein() {
+        let (mut app, id, vp) = blatt_mit_fenster(false);
+        let rect = app.ui.last_canvas;
+        let view = app.current_view();
+        let mitte = world_to_screen(rect, view, vp.rect().center());
+        let mut zeit = app.ctx.input(|i| i.time) + 0.1;
+
+        doppelklick(&mut app, mitte, &mut zeit);
+
+        assert_eq!(
+            app.ui.vp_edit,
+            Some(id),
+            "Doppelklick muss den Ansichtsbereich einschalten"
+        );
+        assert_eq!(app.selection(), &[id], "und das Fenster wählen");
+        assert!(app.vp_edit_fenster().is_some());
+        // Der zweite Druck hat einen Mauszug gestartet („Maus verschiebt“) —
+        // er wird verworfen, das Fenster bleibt liegen.
+        let nachher = fenster(&app, id);
+        assert!(
+            (nachher.x - vp.x).abs() < 1e-9 && (nachher.y - vp.y).abs() < 1e-9,
+            "der Doppelklick verschiebt das Fenster nicht: {:?} -> {:?}",
+            (vp.x, vp.y),
+            (nachher.x, nachher.y)
+        );
+    }
+
+    /// Derselbe Doppelklick noch einmal schaltet ihn wieder ab — wie der
+    /// Schalter im Panel.
+    #[test]
+    fn zweiter_doppelklick_schaltet_den_schalter_wieder_aus() {
+        let (mut app, id, vp) = blatt_mit_fenster(false);
+        let rect = app.ui.last_canvas;
+        let view = app.current_view();
+        let mitte = world_to_screen(rect, view, vp.rect().center());
+        let mut zeit = app.ctx.input(|i| i.time) + 0.1;
+
+        doppelklick(&mut app, mitte, &mut zeit);
+        assert_eq!(app.ui.vp_edit, Some(id), "erst einschalten");
+        // Eine Pause: sonst zählt egui den nächsten Klick als dritten der
+        // laufenden Klickreihe und erkennt keinen neuen Doppelklick.
+        zeit += 0.6;
+        doppelklick(&mut app, mitte, &mut zeit);
+        assert!(app.ui.vp_edit.is_none(), "dann wieder ausschalten");
+        assert_eq!(app.selection(), &[id], "das Fenster bleibt gewählt");
+    }
+
+    /// Ein Doppelklick neben der Ansicht (auf das Blatt) schaltet nichts ein.
+    #[test]
+    fn doppelklick_neben_der_ansicht_schaltet_nichts() {
+        let (mut app, _, vp) = blatt_mit_fenster(false);
+        let rect = app.ui.last_canvas;
+        let view = app.current_view();
+        // Unterhalb des Fensters, noch auf dem Blatt.
+        let daneben = V2::new(vp.x + vp.w * 0.5, vp.y - 25.0);
+        assert!(!vp.rect().contains(daneben), "Punkt liegt außerhalb");
+        let pos = world_to_screen(rect, view, daneben);
+        assert!(rect.contains(pos), "Punkt liegt in der Zeichenfläche");
+        let mut zeit = app.ctx.input(|i| i.time) + 0.1;
+
+        doppelklick(&mut app, pos, &mut zeit);
+
+        assert!(
+            app.ui.vp_edit.is_none(),
+            "neben der Ansicht bleibt der Schalter aus"
+        );
+    }
+
+    /// Auch auf dem Rahmen trifft der Doppelklick — die Fläche ist das
+    /// Rechteck, nicht nur die gezeichneten Linien.
+    #[test]
+    fn doppelklick_auf_den_rahmen_schaltet_ebenfalls() {
+        let (mut app, id, vp) = blatt_mit_fenster(false);
+        let rect = app.ui.last_canvas;
+        let view = app.current_view();
+        let kante = world_to_screen(rect, view, V2::new(vp.x, vp.y + vp.h * 0.5));
+        let mut zeit = app.ctx.input(|i| i.time) + 0.1;
+
+        doppelklick(&mut app, kante, &mut zeit);
+
+        assert_eq!(app.ui.vp_edit, Some(id), "Rahmen zählt zur Ansicht");
+    }
+
+    /// Nach dem Doppelklick schiebt die Mitteltaste den Ausschnitt im Fenster —
+    /// der Weg vom Doppelklick bis zur Bewegung in einem Stück.
+    #[test]
+    fn doppelklick_dann_schiebt_die_mitteltaste_die_ansicht() {
+        let (mut app, id, vp) = blatt_mit_fenster(false);
+        let rect = app.ui.last_canvas;
+        let view = app.current_view();
+        let mitte = world_to_screen(rect, view, vp.rect().center());
+        let mut zeit = app.ctx.input(|i| i.time) + 0.1;
+        doppelklick(&mut app, mitte, &mut zeit);
+
+        let ziel = mitte + egui::vec2(40.0, 0.0);
+        frame_zeit(
+            &mut app,
+            vec![knopf(mitte, egui::PointerButton::Middle, true)],
+            zeit,
+        );
+        zeit += 0.05;
+        frame_zeit(&mut app, vec![egui::Event::PointerMoved(ziel)], zeit);
+        zeit += 0.05;
+        frame_zeit(&mut app, vec![egui::Event::PointerMoved(ziel)], zeit);
+        zeit += 0.05;
+        frame_zeit(
+            &mut app,
+            vec![knopf(ziel, egui::PointerButton::Middle, false)],
+            zeit,
+        );
+
+        let nachher = fenster(&app, id);
+        assert!(
+            nachher.center.x < vp.center.x - 1.0,
+            "die Mitteltaste muss den Ausschnitt im Fenster schieben: {} -> {}",
+            vp.center.x,
+            nachher.center.x
+        );
+        let danach = app.current_view();
+        assert!(
+            (danach.center - view.center).len() < 1e-9,
+            "die Blattansicht bleibt stehen"
+        );
     }
 }

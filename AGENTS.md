@@ -185,7 +185,11 @@ Mit dem Nutzer abgestimmt — nicht „verbessern“:
   Tastatur-Schwenk (`App::schwenk_schritt`) und „alles zeigen" (`App::fit_view` →
   `sheet.fit_viewport`) ebenso. Geschrieben wird immer über `App::vp_setzen` (`modify.set`), also
   derselbe Weg wie das Panel. Der Schalter hängt am ausgewählten Fenster und endet mit der
-  Auswahl (`App::sync_space`); `App::vp_edit_fenster` ist die eine Abfrage.
+  Auswahl (`App::sync_space`); `App::vp_edit_fenster` ist die eine Abfrage. Ein **Doppelklick in
+  die Ansicht** schaltet ihn ebenfalls (an/aus): `canvas::viewport_bei` trifft die ganze Fläche,
+  nicht nur den Rahmen, und der Doppelklick-Zweig steht **vor** `laufender_drag`, weil der zweite
+  Druck über dem Fenster einen Mauszug startet („Maus verschiebt“) — der wird wie beim
+  Text-Doppelklick mit `App::verwerfe_move_drag` still verworfen.
 - **Druckvorschau = Papierraum**: gleiche Werkzeuge wie im Modell. Der Bearbeitungsraum
   steckt in `Document::space` (`None` = Modell, `Some(Blatt)` = Papierraum); alle Actions
   laufen über `doc.ents()`/`doc.ents_mut()`. Rahmen und Schriftfeld sind normale Linien und
