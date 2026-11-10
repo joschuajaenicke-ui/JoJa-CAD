@@ -48,6 +48,17 @@ pub const FENSTERKNOPF_W: f32 = 46.0;
 pub const FENSTERKANTE_PX: f32 = 8.0;
 /// Kantenlänge der Ecken, in denen zwei Richtungen zugleich greifen.
 pub const FENSTERECKE_PX: f32 = 24.0;
+/// Breite des Streifens, in dem JoJa-CAD ohne Titelleiste den Fensterschatten
+/// selbst zeichnet (T0147).
+///
+/// Der Fenstermanager zeichnet für ein Fenster ohne Dekoration keinen Schatten
+/// mehr; das Fenster lag danach ohne Abhebung auf dem Hintergrund. Der Streifen
+/// bleibt durchsichtig (Fenster mit `with_transparent`, `clear_color` mit
+/// Alpha 0) und trägt den weichen Schatten; die Oberfläche liegt darin.
+pub const SCHATTEN_RAND: f32 = 16.0;
+/// Wie weit der Fensterschatten nach unten wandert (T0147) — ein Schatten ohne
+/// Versatz wirkt wie ein Rahmen um das Fenster.
+pub const SCHATTEN_VERSATZ: f32 = 4.0;
 /// Verweildauer, bis die Kante unter dem Zeiger aufleuchtet (T0098, Turn 7).
 ///
 /// Ohne Verzögerung blitzte die Markierung bei jeder schnellen Zeigerbewegung
@@ -353,6 +364,22 @@ fn lage_aus(
         vollbild: false,
     };
     lage.brauchbar().then_some(lage)
+}
+
+/// `true`, wenn der Fenstermanager für ein Fenster ohne Dekoration keinen
+/// Schatten zeichnet (T0147).
+///
+/// Unter **Wayland** zeichnet KWin für ein Fenster mit clientseitiger
+/// Dekoration keinen Schatten — dort muss JoJa-CAD ihn selbst malen. Unter
+/// **X11** tut KWin es (gemessen: derselbe Schatten mit und ohne Titelleiste);
+/// dort bleibt es beim Schatten des Fenstermanagers, denn ohne Compositor
+/// hätte der durchsichtige Rand keinen Grund und sähe als dunkler Rahmen aus.
+/// Windows und macOS kennen kein X11 und bekommen den eigenen Schatten.
+fn schatten_selbst_zeichnen() -> bool {
+    let x11 = cfg!(unix)
+        && std::env::var_os("DISPLAY").is_some()
+        && std::env::var_os("WAYLAND_DISPLAY").is_none();
+    !x11
 }
 
 /// Wie lange der Startzustand des Fensters (Vollbild/maximiert) wiederholt
@@ -996,6 +1023,10 @@ pub struct UiState {
     pub last_fensterkanten: Option<Vec<(&'static str, Rect)>>,
     /// Lage des sichtbaren Größen-Griffs in der Ecke unten rechts (T0098)
     pub last_fenster_griff: Option<Rect>,
+    /// Fensterausschnitt **vor** dem Schattenrand (T0147) — egui behält den
+    /// zuletzt gesetzten Bildschirmausschnitt, wenn eine Eingabe keinen nennt;
+    /// ohne den gemerkten Außenrand schrumpfte die Fläche Bild für Bild.
+    pub fenster_aussen: Option<Rect>,
     /// Kante unter dem Zeiger samt Zeitpunkt des Ankommens (T0098, Turn 7) —
     /// daraus entsteht die Verzögerung, bis die Kante aufleuchtet.
     pub kanten_verweil: Option<(&'static str, f64)>,
@@ -1111,6 +1142,7 @@ impl Default for UiState {
             last_fenster_knoepfe: None,
             last_fensterkanten: None,
             last_fenster_griff: None,
+            fenster_aussen: None,
             kanten_verweil: None,
             kanten_leuchten: None,
             kanten_zug: None,
@@ -1456,6 +1488,15 @@ pub struct App {
     /// letzte normale Stand mitgeführt (`fenster_merken`) und beim Sammeln der
     /// Sitzung anstelle der aktuellen Größe eingesetzt.
     pub fenster_normal: Option<sitzung::Fensterlage>,
+    /// `true`, wenn JoJa-CAD den Fensterschatten selbst zeichnet (T0147).
+    ///
+    /// Unter **Wayland** zeichnet KWin für ein Fenster mit clientseitiger
+    /// Dekoration keinen Schatten — dort muss die Anwendung ihn selbst malen.
+    /// Unter **X11** tut KWin es (gemessen: derselbe Schatten mit und ohne
+    /// Titelleiste), und ohne Compositor gäbe es für den durchsichtigen Rand
+    /// keinen Grund. Der Wert steht beim Start fest
+    /// ([`schatten_selbst_zeichnen`]) und ist in Tests setzbar.
+    pub schatten_im_rand: bool,
     /// Startzustand des Fensters (T0141, Turn 2): Vollbild oder maximiert, aus
     /// der Sitzung. Wird im **ersten Bild** gesetzt und dann verbraucht — beim
     /// Erzeugen des Fensters nimmt der Fenstermanager den Wunsch nicht
@@ -1564,6 +1605,7 @@ impl App {
             #[cfg(test)]
             test_prefs_speichern: true,
             fenster_normal: None,
+            schatten_im_rand: schatten_selbst_zeichnen(),
             fenster_start: None,
             fenster_start_zeit: None,
         };
@@ -4629,7 +4671,7 @@ impl App {
                 vp.maximized.unwrap_or(false),
             )
         });
-        let mut lage = lage_aus(inner, outer, self.ctx.screen_rect())?;
+        let mut lage = lage_aus(inner, outer, self.fenster_ausschnitt())?;
         lage.vollbild = vollbild;
         // Ein Vollbild meldet unter KWin oft zusätzlich „maximiert“; beim
         // Wiederherstellen zählt der Vollbild-Zustand.
@@ -4667,7 +4709,7 @@ impl App {
         if vollbild || maximiert {
             return;
         }
-        if let Some(lage) = lage_aus(inner, outer, self.ctx.screen_rect()) {
+        if let Some(lage) = lage_aus(inner, outer, self.fenster_ausschnitt()) {
             self.fenster_normal = Some(lage);
         }
     }
@@ -6316,6 +6358,53 @@ impl App {
         self.prefs.fensterrahmen.ohne_titelleiste()
     }
 
+    /// Der Fensterausschnitt **vor** dem Schattenrand, nur lesend (T0147).
+    ///
+    /// Die gespeicherte Fenstergröße ist die des ganzen Fensters, nicht die der
+    /// sichtbaren Fläche — sonst schrumpfte das Fenster bei jedem Start um den
+    /// Streifen.
+    fn fenster_ausschnitt(&self) -> Rect {
+        self.ui
+            .fenster_aussen
+            .unwrap_or_else(|| self.ctx.screen_rect())
+    }
+
+    /// Fensterfläche und Fensterschatten (T0147).
+    ///
+    /// Ohne Titelleiste zeichnet der Fenstermanager keinen Schatten mehr — das
+    /// Fenster lag ohne Abhebung auf dem Hintergrund. JoJa-CAD zeichnet ihn
+    /// deshalb selbst: ein Streifen von [`SCHATTEN_RAND`] Punkten am Fensterrand
+    /// bleibt durchsichtig (Fenster mit `with_transparent`, `clear_color` mit
+    /// Alpha 0), die Oberfläche liegt darin, und im Streifen liegt der weiche
+    /// Schatten.
+    ///
+    /// Den kleineren Bildschirmausschnitt setzt [`eframe::App::raw_input_hook`]
+    /// — Panels, Dialoge, Menüs und die Fensterkanten rechnen damit von selbst
+    /// auf der sichtbaren Fläche.
+    fn fensterflaeche(&mut self, ctx: &egui::Context) {
+        let innen = ctx.screen_rect();
+        let aussen = self.ui.fenster_aussen.unwrap_or(innen);
+        if aussen != innen {
+            // Der Schatten liegt **unter** der Oberfläche und reicht über die
+            // sichtbare Fläche hinaus — eigener Maler mit dem ganzen Fenster
+            // als Beschnitt, sonst schnitte der verkleinerte Ausschnitt ihn ab.
+            egui::Painter::new(ctx.clone(), egui::LayerId::background(), aussen).add(
+                egui::epaint::Shadow {
+                    offset: egui::vec2(0.0, SCHATTEN_VERSATZ),
+                    blur: 2.0 * SCHATTEN_RAND,
+                    spread: 0.0,
+                    color: egui::Color32::from_black_alpha(120),
+                }
+                .as_shape(innen, egui::Rounding::ZERO),
+            );
+        }
+        // Grundfläche unter allem: bleibt zwischen zwei Flächen ein Pixel
+        // unbedeckt (krumme Bildschirmskalierung), steht dort die Fensterfarbe
+        // und nicht der Grund des Fenstersystems.
+        egui::Painter::new(ctx.clone(), egui::LayerId::background(), aussen)
+            .rect_filled(innen, egui::Rounding::ZERO, Palette::bg());
+    }
+
     /// `true`, wenn der Fenstermanager das Fenster als maximiert meldet (T0119).
     ///
     /// Maßgeblich ist der **Fensterzustand**, nicht ein eigener Schalter: nur so
@@ -7801,6 +7890,10 @@ fn rail(ui: &mut egui::Ui, icon: &str, tooltip: &str, chevron: &str) -> bool {
         // Oberfläche. Der Wechsel gehört zum **vorigen** Abschnitt, deshalb
         // steht er hier und nicht nach der Zeichenfläche.
         self.perf.abschnitt(crate::perf::Abschnitt::Oberflaeche);
+        // T0147: Fensterfläche und Schatten — ohne Titelleiste zeichnet
+        // JoJa-CAD den Schatten selbst, der Rand bleibt durchsichtig. Steht
+        // vor allen Panels, weil es den Bildschirmausschnitt verkleinert.
+        self.fensterflaeche(ctx);
         // T0140: Fokusverlust heißt, das Betriebssystem schickt kein
         // Tastenloslassen mehr nach — der Systemdialog („Strg+S", „Strg+O")
         // nimmt den Fokus, egui führt die gedrückte Taste aber in `keys_down`
@@ -8624,6 +8717,15 @@ impl eframe::App for App {
     /// schimmert dort dieser Grund durch und erscheint als helle Fuge. Deckend
     /// in Fensterfarbe ist die Fuge unsichtbar.
     fn clear_color(&self, _visuals: &egui::Visuals) -> [f32; 4] {
+        // T0147: Ohne Titelleiste liegt der Fensterschatten im durchsichtigen
+        // Rand — dort darf kein deckender Grund stehen, sonst bliebe vom
+        // Schatten nur ein dunkler Rahmen. Der Grund muss dann **schwarz** mit
+        // Alpha 0 sein: der Puffer ist vormultipliziert, ein Grund in
+        // Fensterfarbe mit Alpha 0 legte diese Farbe über den Hintergrund
+        // (gemessen: der Rand erschien als dunkler Rahmen statt durchsichtig).
+        if self.schatten_im_rand && self.prefs.fensterrahmen.ohne_titelleiste() {
+            return [0.0, 0.0, 0.0, 0.0];
+        }
         let bg = Palette::bg();
         [
             bg.r() as f32 / 255.0,
@@ -8631,6 +8733,39 @@ impl eframe::App for App {
             bg.b() as f32 / 255.0,
             1.0,
         ]
+    }
+
+    /// T0147: Ohne Titelleiste liegt die Oberfläche im Schattenrand.
+    ///
+    /// Der kleinere Bildschirmausschnitt muss **vor** dem Bild gesetzt werden:
+    /// `PassState::available_rect` — die Fläche, in der die Panels liegen —
+    /// entsteht beim Beginn des Bildes aus `RawInput::screen_rect`. Ein späteres
+    /// Setzen erreichte nur `InputState`; die Panels blieben dann auf der ganzen
+    /// Fensterfläche und die Zeichnung liefe unter den Schatten.
+    fn raw_input_hook(&mut self, _ctx: &egui::Context, raw_input: &mut egui::RawInput) {
+        self.ui.fenster_aussen = None;
+        if !self.schatten_im_rand || !self.fenster_ohne_titelleiste() {
+            return;
+        }
+        let Some(aussen) = raw_input.screen_rect else {
+            return;
+        };
+        let (vollbild, maximiert) = raw_input
+            .viewports
+            .get(&egui::ViewportId::ROOT)
+            .map(|v| (v.fullscreen.unwrap_or(false), v.maximized.unwrap_or(false)))
+            .unwrap_or((false, false));
+        // Vollbild und maximiert füllen den Bildschirm — dort gibt es keinen
+        // Rand, in dem ein Schatten läge.
+        if vollbild || maximiert || self.ui.fullscreen {
+            return;
+        }
+        let innen = aussen.shrink(SCHATTEN_RAND);
+        if innen.width() <= 0.0 || innen.height() <= 0.0 {
+            return;
+        }
+        raw_input.screen_rect = Some(innen);
+        self.ui.fenster_aussen = Some(aussen);
     }
 
     fn update(&mut self, ctx: &egui::Context, frame: &mut eframe::Frame) {
@@ -8659,14 +8794,6 @@ impl eframe::App for App {
         if self.prefs.design == jjcad_core::persist::Design::System {
             theme::system_nachziehen(ctx);
         }
-        // Grundfläche unter allem: bleibt zwischen zwei Flächen ein Pixel
-        // unbedeckt (krumme Bildschirmskalierung), steht dort die Fensterfarbe
-        // und nicht der Grund des Fenstersystems.
-        ctx.layer_painter(egui::LayerId::background()).rect_filled(
-            ctx.screen_rect(),
-            egui::Rounding::ZERO,
-            Palette::bg(),
-        );
         self.ui(ctx);
         self.draw_menu(ctx);
         // T0129: Sicherung — Stände anlegen, wenn das Intervall abgelaufen ist.
@@ -12826,6 +12953,14 @@ mod tests_fensterrahmen {
     //! eframe/winit ausführt — im Test gibt es kein echtes Fenster.
 
     use super::*;
+    // T0147: `raw_input_hook` gehört zum Trait — die Tests rufen ihn wie eframe.
+    use eframe::App as _;
+
+    /// Die **sichtbare** Fläche im Testfenster (1500 × 950): ohne Titelleiste
+    /// liegt sie um den Schattenrand eingerückt (T0147).
+    fn flaeche() -> Rect {
+        Rect::from_min_size(Pos2::ZERO, Vec2::new(1500.0, 950.0)).shrink(SCHATTEN_RAND)
+    }
 
     fn bild(
         app: &mut App,
@@ -12845,6 +12980,9 @@ mod tests_fensterrahmen {
                 ..Default::default()
             },
         );
+        // eframe ruft den Hook vor jedem Bild; ohne ihn bliebe der
+        // Schattenrand in den Tests aus (T0147).
+        app.raw_input_hook(ctx, &mut raw);
         ctx.run(raw, |ctx| app.ui(ctx))
     }
 
@@ -12869,6 +13007,9 @@ mod tests_fensterrahmen {
                 ..Default::default()
             },
         );
+        // eframe ruft den Hook vor jedem Bild; ohne ihn bliebe der
+        // Schattenrand in den Tests aus (T0147).
+        app.raw_input_hook(ctx, &mut raw);
         ctx.run(raw, |ctx| app.ui(ctx))
     }
 
@@ -12895,6 +13036,9 @@ mod tests_fensterrahmen {
                 ..Default::default()
             },
         );
+        // eframe ruft den Hook vor jedem Bild; ohne ihn bliebe der
+        // Schattenrand in den Tests aus (T0147).
+        app.raw_input_hook(ctx, &mut raw);
         ctx.run(raw, |ctx| app.ui(ctx))
     }
 
@@ -12919,6 +13063,9 @@ mod tests_fensterrahmen {
                 ..Default::default()
             },
         );
+        // eframe ruft den Hook vor jedem Bild; ohne ihn bliebe der
+        // Schattenrand in den Tests aus (T0147).
+        app.raw_input_hook(ctx, &mut raw);
         ctx.run(raw, |ctx| app.ui(ctx))
     }
 
@@ -12935,6 +13082,9 @@ mod tests_fensterrahmen {
     fn ohne_titelleiste(ctx: egui::Context) -> App {
         let mut app = App::with_ctx(ctx);
         app.prefs.fensterrahmen = jjcad_core::persist::Fensterrahmen::OhneTitelleiste;
+        // T0147: der eigene Schatten hängt am Fenstersystem — im Test
+        // ausdrücklich an, sonst hinge das Ergebnis an der Umgebung.
+        app.schatten_im_rand = true;
         app
     }
 
@@ -13005,12 +13155,15 @@ mod tests_fensterrahmen {
                 rect.width()
             );
             assert!(
-                rect.bottom() <= HEADER_H + 0.5 && rect.top() >= -0.5,
-                "Knopf {i} liegt nicht in der Kopfzeile (0…{HEADER_H}): {rect:?}"
+                rect.bottom() <= flaeche().top() + HEADER_H + 0.5
+                    && rect.top() >= flaeche().top() - 0.5,
+                "Knopf {i} liegt nicht in der Kopfzeile ({}…{}): {rect:?}",
+                flaeche().top(),
+                flaeche().top() + HEADER_H
             );
         }
         assert!(
-            (r[2].right() - 1500.0).abs() < 0.5,
+            (r[2].right() - flaeche().right()).abs() < 0.5,
             "Schließen sitzt nicht am rechten Fensterrand: {r:?}"
         );
         assert!(
@@ -13090,7 +13243,7 @@ mod tests_fensterrahmen {
         for _ in 0..3 {
             bild(&mut app, &ctx, Vec::new(), None);
         }
-        let start = Pos2::new(750.0, HEADER_H * 0.5);
+        let start = Pos2::new(750.0, flaeche().top() + HEADER_H * 0.5);
         bild(&mut app, &ctx, vec![egui::Event::PointerMoved(start)], None);
         bild(&mut app, &ctx, vec![knopf(start, true)], None);
         let out = bild(
@@ -13118,7 +13271,7 @@ mod tests_fensterrahmen {
         for _ in 0..3 {
             bild(&mut app, &ctx, Vec::new(), None);
         }
-        let start = Pos2::new(750.0, HEADER_H * 0.5);
+        let start = Pos2::new(750.0, flaeche().top() + HEADER_H * 0.5);
         let mut zuege = 0;
         for runde in 0..2 {
             bild(&mut app, &ctx, vec![egui::Event::PointerMoved(start)], None);
@@ -13171,7 +13324,7 @@ mod tests_fensterrahmen {
             .expect("rechte Kante fehlt")
             .1;
         assert!(
-            (ost.right() - 1500.0).abs() < 0.5 && (ost.width() - FENSTERKANTE_PX).abs() < 0.5,
+            (ost.right() - flaeche().right()).abs() < 0.5 && (ost.width() - FENSTERKANTE_PX).abs() < 0.5,
             "die Ziehzone der rechten Kante liegt nicht am Fensterrand: {ost:?}"
         );
 
@@ -13203,7 +13356,7 @@ mod tests_fensterrahmen {
             "im maximierten Fenster darf es keine Ziehzonen geben"
         );
         // Auch ein Druck genau auf den Rand beginnt kein Größe-Ziehen.
-        let pos = Pos2::new(1497.0, 500.0);
+        let pos = Pos2::new(flaeche().right() - 3.0, 500.0);
         let cmds = klick(&mut app, &ctx, pos, Some(true));
         assert!(
             !cmds
@@ -13238,7 +13391,7 @@ mod tests_fensterrahmen {
             app.ui.last_fensterkanten.is_some(),
             "im wiederhergestellten Fenster gehören die Kantenzonen dazu"
         );
-        let kante = Pos2::new(1497.0, 500.0);
+        let kante = Pos2::new(flaeche().right() - 3.0, 500.0);
         bild_zeit_max(
             &mut app,
             &ctx,
@@ -13324,8 +13477,11 @@ mod tests_fensterrahmen {
             bild(&mut app, &ctx, Vec::new(), None);
         }
         for (pos, cursor) in [
-            (Pos2::new(1497.0, 500.0), egui::CursorIcon::ResizeHorizontal),
-            (Pos2::new(800.0, 948.0), egui::CursorIcon::ResizeVertical),
+            (Pos2::new(flaeche().right() - 3.0, 500.0), egui::CursorIcon::ResizeHorizontal),
+            (
+                Pos2::new(800.0, flaeche().bottom() - 2.0),
+                egui::CursorIcon::ResizeVertical,
+            ),
         ] {
             let out = bild(&mut app, &ctx, vec![egui::Event::PointerMoved(pos)], None);
             assert_eq!(
@@ -13344,7 +13500,7 @@ mod tests_fensterrahmen {
         for _ in 0..3 {
             bild(&mut app, &ctx, Vec::new(), None);
         }
-        let kante = Pos2::new(1497.0, 500.0);
+        let kante = Pos2::new(flaeche().right() - 3.0, 500.0);
         bild_zeit(&mut app, &ctx, vec![egui::Event::PointerMoved(kante)], 10.0);
         assert_eq!(
             app.ui.kanten_leuchten, None,
@@ -13384,7 +13540,7 @@ mod tests_fensterrahmen {
         bild_zeit(
             &mut app,
             &ctx,
-            vec![egui::Event::PointerMoved(Pos2::new(1497.0, 500.0))],
+            vec![egui::Event::PointerMoved(Pos2::new(flaeche().right() - 3.0, 500.0))],
             20.0,
         );
         bild_zeit(
@@ -13413,7 +13569,7 @@ mod tests_fensterrahmen {
         for _ in 0..3 {
             bild(&mut app, &ctx, Vec::new(), None);
         }
-        let kante = Pos2::new(1497.0, 500.0);
+        let kante = Pos2::new(flaeche().right() - 3.0, 500.0);
         bild_zeit(&mut app, &ctx, vec![egui::Event::PointerMoved(kante)], 30.0);
         let out = bild_zeit(&mut app, &ctx, vec![knopf(kante, true)], 30.05);
         assert!(
@@ -13479,7 +13635,7 @@ mod tests_fensterrahmen {
         for _ in 0..3 {
             bild(&mut app, &ctx, Vec::new(), None);
         }
-        let kante = Pos2::new(1497.0, 500.0);
+        let kante = Pos2::new(flaeche().right() - 3.0, 500.0);
         bild_zeit(&mut app, &ctx, vec![egui::Event::PointerMoved(kante)], 40.0);
         bild_zeit(&mut app, &ctx, vec![knopf(kante, true)], 40.05);
         assert_eq!(app.ui.kanten_leuchten, Some("o"));
@@ -13506,7 +13662,7 @@ mod tests_fensterrahmen {
         for _ in 0..3 {
             bild(&mut app, &ctx, Vec::new(), None);
         }
-        let kante = Pos2::new(1497.0, 500.0);
+        let kante = Pos2::new(flaeche().right() - 3.0, 500.0);
         bild_zeit(&mut app, &ctx, vec![egui::Event::PointerMoved(kante)], 60.0);
         bild_zeit(&mut app, &ctx, vec![knopf(kante, true)], 60.05);
         assert_eq!(app.ui.kanten_leuchten, Some("o"));
@@ -13536,10 +13692,153 @@ mod tests_fensterrahmen {
             .last_fenster_griff
             .expect("ohne Titelleiste fehlt der Größen-Griff in der Ecke");
         assert!(
-            (griff.right() - 1500.0).abs() < 0.5
-                && (griff.bottom() - 950.0).abs() < 0.5
+            (griff.right() - flaeche().right()).abs() < 0.5
+                && (griff.bottom() - flaeche().bottom()).abs() < 0.5
                 && (griff.width() - FENSTERECKE_PX).abs() < 0.5,
             "der Griff sitzt nicht in der Ecke unten rechts: {griff:?}"
+        );
+    }
+}
+
+mod tests_fensterschatten {
+    //! T0147 — Fensterschatten ohne Titelleiste.
+    //!
+    //! Der Fenstermanager zeichnet für ein Fenster ohne Dekoration keinen
+    //! Schatten; das Fenster lag danach ohne Abhebung auf dem Hintergrund.
+    //! JoJa-CAD zeichnet ihn selbst: ein durchsichtiger Streifen von
+    //! [`SCHATTEN_RAND`] Punkten am Fensterrand trägt den weichen Schatten, die
+    //! Oberfläche liegt darin. Geprüft wird, was gezeichnet wird — im Test gibt
+    //! es kein echtes Fenster.
+
+    use super::*;
+    use eframe::App as _;
+
+    const FENSTER: Vec2 = Vec2::new(1500.0, 950.0);
+
+    fn bild(app: &mut App, ctx: &egui::Context, maximiert: Option<bool>) -> egui::FullOutput {
+        let mut raw = egui::RawInput {
+            screen_rect: Some(Rect::from_min_size(Pos2::ZERO, FENSTER)),
+            ..Default::default()
+        };
+        raw.viewports.insert(
+            egui::ViewportId::ROOT,
+            egui::ViewportInfo {
+                maximized: maximiert,
+                ..Default::default()
+            },
+        );
+        // eframe ruft den Hook vor jedem Bild — er setzt den Schattenrand.
+        app.raw_input_hook(ctx, &mut raw);
+        ctx.run(raw, |ctx| app.ui(ctx))
+    }
+
+    fn app_mit(rahmen: jjcad_core::persist::Fensterrahmen) -> (egui::Context, App) {
+        let ctx = egui::Context::default();
+        let mut app = App::with_ctx(ctx.clone());
+        app.prefs.fensterrahmen = rahmen;
+        // Der eigene Schatten hängt am Fenstersystem — im Test ausdrücklich an.
+        app.schatten_im_rand = true;
+        (ctx, app)
+    }
+
+    /// Die weichen Schatten im Bild: Rechtecke mit Unschärfe, samt Breite.
+    fn schatten(out: &egui::FullOutput) -> Vec<(Rect, f32)> {
+        out.shapes
+            .iter()
+            .filter_map(|cs| match &cs.shape {
+                egui::Shape::Rect(r) if r.blur_width > 0.0 => Some((r.rect, r.blur_width)),
+                _ => None,
+            })
+            .collect()
+    }
+
+    fn gleich(a: Rect, b: Rect) -> bool {
+        a.min.distance(b.min) < 0.5 && a.max.distance(b.max) < 0.5
+    }
+
+    #[test]
+    fn ohne_titelleiste_zeichnet_den_schatten_um_die_flaeche() {
+        let (ctx, mut app) = app_mit(jjcad_core::persist::Fensterrahmen::OhneTitelleiste);
+        let mut out = bild(&mut app, &ctx, None);
+        for _ in 0..2 {
+            out = bild(&mut app, &ctx, None);
+        }
+        let innen = Rect::from_min_size(Pos2::ZERO, FENSTER).shrink(SCHATTEN_RAND);
+        assert!(
+            gleich(ctx.screen_rect(), innen),
+            "die Oberfläche muss im Schattenrand liegen: {:?} statt {innen:?}",
+            ctx.screen_rect()
+        );
+        let schatten = schatten(&out);
+        let lage = innen.translate(egui::vec2(0.0, SCHATTEN_VERSATZ));
+        let (rect, blur) = schatten
+            .iter()
+            .find(|(r, _)| gleich(*r, lage))
+            .copied()
+            .unwrap_or_else(|| {
+                panic!("kein Schatten um die sichtbare Fläche (gezeichnet: {schatten:?})")
+            });
+        assert!(
+            blur >= SCHATTEN_RAND,
+            "der Schatten ist zu hart ({blur} px Unschärfe) — er reicht nicht in den Rand"
+        );
+        assert!(
+            gleich(rect, lage),
+            "der Schatten liegt nicht an der sichtbaren Fläche: {rect:?}"
+        );
+    }
+
+    #[test]
+    fn mit_titelleiste_gibt_es_keinen_schatten() {
+        let (ctx, mut app) = app_mit(jjcad_core::persist::Fensterrahmen::System);
+        let mut out = bild(&mut app, &ctx, None);
+        for _ in 0..2 {
+            out = bild(&mut app, &ctx, None);
+        }
+        assert!(
+            gleich(ctx.screen_rect(), Rect::from_min_size(Pos2::ZERO, FENSTER)),
+            "mit Titelleiste füllt die Oberfläche das ganze Fenster"
+        );
+        assert!(
+            schatten(&out).is_empty(),
+            "mit Titelleiste zeichnet der Fenstermanager den Schatten: {:?}",
+            schatten(&out)
+        );
+    }
+
+    #[test]
+    fn maximiert_zeichnet_keinen_schatten() {
+        let (ctx, mut app) = app_mit(jjcad_core::persist::Fensterrahmen::OhneTitelleiste);
+        let mut out = bild(&mut app, &ctx, Some(true));
+        for _ in 0..2 {
+            out = bild(&mut app, &ctx, Some(true));
+        }
+        assert!(
+            gleich(ctx.screen_rect(), Rect::from_min_size(Pos2::ZERO, FENSTER)),
+            "maximiert füllt das Fenster den Bildschirm — kein Rand für einen Schatten"
+        );
+        assert!(
+            schatten(&out).is_empty(),
+            "maximiert darf kein Schatten gezeichnet werden: {:?}",
+            schatten(&out)
+        );
+    }
+
+    /// Der Grund des Fensters muss im Rand durchsichtig sein, sonst bliebe vom
+    /// Schatten nur ein dunkler Rahmen.
+    #[test]
+    fn grund_ist_ohne_titelleiste_durchsichtig() {
+        let (_, app) = app_mit(jjcad_core::persist::Fensterrahmen::OhneTitelleiste);
+        assert_eq!(
+            app.clear_color(&egui::Visuals::dark())[3],
+            0.0,
+            "ohne Titelleiste braucht der Rand einen durchsichtigen Grund"
+        );
+        let (_, app) = app_mit(jjcad_core::persist::Fensterrahmen::System);
+        assert_eq!(
+            app.clear_color(&egui::Visuals::dark())[3],
+            1.0,
+            "mit Titelleiste bleibt der Grund deckend"
         );
     }
 }
