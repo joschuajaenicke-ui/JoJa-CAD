@@ -478,10 +478,12 @@ Mit dem Nutzer abgestimmt — nicht „verbessern“:
   **Boden unverändert (T0163)** ist eine feste **Einheitszelle** von 8 × 8
   Musterabständen: vier durchgezogene Senkrechte, vier lange und vier kurze
   Waagerechte, vier Haken in S-Form (`muster_boden_unveraendert`). Die Zelle
-  liegt **rechtwinklig** im Musterraster; im Plan steht sie schräg, weil der
-  Musterwinkel einer Füllung 45° vorgibt (`pattern_angle`) — die Drehung
-  **nicht** in die Mustergeometrie einbauen, sonst steht das Muster bei
-  Vorgabe achsparallel (wie „Mauerwerk“, dessen 45°-Linien ebenso entstehen).
+  steht in der Zeichnung des Nutzers rechtwinklig; im Musterraster liegt sie
+  **um 90° gedreht**, damit ihre Längsrichtung (die durchgezogenen Linien) bei
+  Vorgabe-Musterwinkel (+45°) unter −45° läuft — so zeigt es die Vorlage aus
+  T0152, mit der das Muster zellengleich übereinstimmt (Deckung 1,000).
+  Ohne diesen Versatz steht das Muster spiegelverkehrt zur Vorlage; der
+  Musterwinkel allein kann eine Spiegelung nicht ausgleichen.
   Prüfweg: `cargo test -p jjcad-core --test schraffuren_din
   boden_unveraendert` (vergleicht das gezeichnete Bild mit der Zelle aus der
   Zeichnung des Nutzers, bei Musterwinkel 0 und bei 45°).
