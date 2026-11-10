@@ -751,6 +751,7 @@
 # tracking = "Hilfslinie"
 # bisector = "Winkelhalbierende"
 # dim_parallel = "Maßkette parallel"
+# tangent = "Tangential"
 #
 [ui.linetype]
 # solid = "Durchgezogen"
@@ -967,6 +968,7 @@
 # mitte = "Mitte"
 # mittelpunkt = "Mittelpunkt"
 # naechster_punkt = "Nächster Punkt"
+# tangential = "Tangential"
 # neues_blatt = "Neues Blatt"
 # nicht_uebernommen = " · nicht übernommen: "
 # objekt_zerlegt = "Objekt · zerlegt"
@@ -1280,6 +1282,7 @@
 # maus_verschiebt = "Maus verschiebt"
 # mittelpunkt = "Mittelpunkt"
 # naechster_punkt = "Nächster Punkt"
+# tangential = "Tangential"
 # name_der_vorlage = "Name der Vorlage"
 # name_des_layouts_ist_der_name_schon_vergeben_wird_er_ueb = "Name des Layouts. Ist der Name schon vergeben, wird er überschrieben."
 # name_x = "name.{wert1}"

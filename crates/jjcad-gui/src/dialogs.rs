@@ -1765,6 +1765,7 @@ fn settings_body(app: &mut App, ui: &mut Ui) {
                                     (jjcad_core::i18n::tr("gui.dialogs.zentrum"), &mut snap.center),
                                     (jjcad_core::i18n::tr("gui.dialogs.schnittpunkt"), &mut snap.intersection),
                                     (jjcad_core::i18n::tr("gui.dialogs.lot"), &mut snap.perpendicular),
+                                    (jjcad_core::i18n::tr("gui.dialogs.tangential"), &mut snap.tangent),
                                     (jjcad_core::i18n::tr("gui.dialogs.naechster_punkt"), &mut snap.nearest),
                                     (jjcad_core::i18n::tr("gui.dialogs.ortho"), &mut snap.ortho),
                                     (jjcad_core::i18n::tr("gui.dialogs.polar"), &mut snap.polar),
@@ -2868,6 +2869,7 @@ fn settings_body(app: &mut App, ui: &mut Ui) {
         || snap.center != cur.snap.center
         || snap.intersection != cur.snap.intersection
         || snap.perpendicular != cur.snap.perpendicular
+        || snap.tangent != cur.snap.tangent
         || snap.nearest != cur.snap.nearest
         || snap.grid != cur.snap.grid
         || snap.ortho != cur.snap.ortho
@@ -2895,6 +2897,7 @@ fn settings_body(app: &mut App, ui: &mut Ui) {
             "snap": {
                 "endpoint": snap.endpoint, "midpoint": snap.midpoint, "center": snap.center,
                 "intersection": snap.intersection, "perpendicular": snap.perpendicular,
+                "tangent": snap.tangent,
                 "nearest": snap.nearest, "grid": snap.grid, "ortho": snap.ortho,
                 "polar": snap.polar, "wall_edges": snap.wall_edges,
                 "grid_step": unit.from_mm(grid_step),

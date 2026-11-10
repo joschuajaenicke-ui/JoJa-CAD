@@ -2274,6 +2274,35 @@ impl App {
                     );
                     self.ui.ribbon = RibbonTab::Bemassung;
                 }
+                // Tangentialfang (T0157): Kreis und Linie, Linienwerkzeug mit
+                // erstem Punkt auf der Kreisbahn. Der Zeiger rastet auf der
+                // Senkrechten zum Radius ein — Prüfbild mit
+                // `x11-drive.py hover` auf diese Tangente.
+                "tangential" => {
+                    self.ui.ribbon = RibbonTab::Zeichnen;
+                    // Frische Zeichnung: sie rechnet in Metern, die Punkte des
+                    // Werkzeugs stehen dagegen in mm.
+                    self.new_document();
+                    let _ = self.session_mut().execute(
+                        "draw.circle",
+                        &serde_json::json!({"c": [0.0, 0.0], "r": 2.0, "layer": "Wände"}),
+                    );
+                    let _ = self.session_mut().execute(
+                        "draw.line",
+                        &serde_json::json!({
+                            "a": [-3.0, -3.0], "b": [3.0, -3.0], "layer": "Wände"
+                        }),
+                    );
+                    self.start_tool("draw.line");
+                    if let Some(t) = self.tool.as_mut() {
+                        t.pts.push(V2::new(2000.0, 0.0));
+                    }
+                    let mut v = self.current_view();
+                    v.center = V2::new(0.0, 0.0);
+                    v.zoom = 0.12;
+                    self.set_view(v);
+                    self.started_at = 3.0;
+                }
                 // Schnitt-Kote platzieren: Werkzeug läuft, zwei Punkte sind
                 // gesetzt — das Prüfbild zeigt die Vorschau am Zeiger (T0122).
                 "koteschnitt" => {
@@ -8032,6 +8061,7 @@ fn rail(ui: &mut egui::Ui, icon: &str, tooltip: &str, chevron: &str) -> bool {
             "center" => sn.center = value,
             "intersection" => sn.intersection = value,
             "perpendicular" => sn.perpendicular = value,
+            "tangent" => sn.tangent = value,
             "nearest" => sn.nearest = value,
             "grid" => sn.grid = value,
             "ortho" => sn.ortho = value,
@@ -8044,6 +8074,7 @@ fn rail(ui: &mut egui::Ui, icon: &str, tooltip: &str, chevron: &str) -> bool {
             &serde_json::json!({"snap": {
                 "endpoint": sn.endpoint, "midpoint": sn.midpoint, "center": sn.center,
                 "intersection": sn.intersection, "perpendicular": sn.perpendicular,
+                "tangent": sn.tangent,
                 "nearest": sn.nearest, "grid": sn.grid, "ortho": sn.ortho, "polar": sn.polar,
                 "wall_edges": sn.wall_edges
             }}),
@@ -8897,6 +8928,7 @@ impl App {
                                 (jjcad_core::i18n::tr("gui.app.zentrum"), "center", s0.center),
                                 (jjcad_core::i18n::tr("gui.app.schnittpunkt"), "intersection", s0.intersection),
                                 (jjcad_core::i18n::tr("gui.app.lot"), "perpendicular", s0.perpendicular),
+                                (jjcad_core::i18n::tr("gui.app.tangential"), "tangent", s0.tangent),
                                 (jjcad_core::i18n::tr("gui.app.naechster_punkt"), "nearest", s0.nearest),
                             ] {
                                 let mut v = val;
@@ -8913,6 +8945,7 @@ impl App {
                                     "center",
                                     "intersection",
                                     "perpendicular",
+                                    "tangent",
                                     "nearest",
                                 ] {
                                     self.set_snap(k, true);
@@ -8927,6 +8960,7 @@ impl App {
                                     "center",
                                     "intersection",
                                     "perpendicular",
+                                    "tangent",
                                     "nearest",
                                 ] {
                                     self.set_snap(k, false);
@@ -15610,5 +15644,35 @@ mod tests_rechtsklick {
             Some(MenuKind::Canvas) => {}
             other => panic!("erwartet Flächenmenü, bekommen: {other:?}"),
         }
+    }
+}
+
+/// Tangentialfang (T0157): der Schalter im Fangmenü und in den Einstellungen
+/// muss in der Zeichnung ankommen. Der Weg ist `App::set_snap` — ein
+/// Schlüssel, der dort fehlt, wirkt im Menü und bleibt im Fang stumm.
+#[cfg(test)]
+mod tests_tangentialfang {
+    use super::*;
+
+    fn app() -> App {
+        let mut app = App::with_ctx(egui::Context::default());
+        app.prefs.reset_bindings();
+        app
+    }
+
+    #[test]
+    fn schalter_erreicht_die_zeichnung() {
+        let mut app = app();
+        assert!(app.doc().settings.snap.tangent, "Vorgabe ist an");
+        app.set_snap("tangent", false);
+        assert!(
+            !app.doc().settings.snap.tangent,
+            "Tangentialfang ließ sich nicht abschalten"
+        );
+        app.set_snap("tangent", true);
+        assert!(
+            app.doc().settings.snap.tangent,
+            "Tangentialfang ließ sich nicht einschalten"
+        );
     }
 }
