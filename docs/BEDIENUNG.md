@@ -102,7 +102,8 @@ einsehbar und dort frei änderbar (Ribbon ▸ Ansicht ▸ „Tasten").
     Maßstab des Fensters (hineinzoomen = kleinerer Maßstab, der Punkt unter dem Zeiger bleibt
     stehen), der Schwenk der Tastatur und „Ansicht einpassen" wirken ebenfalls auf das Fenster.
     Der Rahmen des eingestellten Fensters ist in der Akzentfarbe markiert; der Schalter endet
-    mit der Auswahl.
+    mit der Auswahl. **Ein Doppelklick in die Ansicht** schaltet ihn ebenfalls ein (und beim
+    nächsten Doppelklick wieder aus) — der Weg ohne Umweg über das Panel.
 12. **Einstellungen** (Zahnrad) — links eine Tabelle der Kategorien (Einheiten und Maßstab,
     Raster, Fangen, Architektur, Bemaßung, Bedienung, Darstellung, Voreinstellungen), darüber die Suche, rechts die
     Einstellungen der gewählten Kategorie. Die Suche filtert Kategorien **und** Zeilen und springt
