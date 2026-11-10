@@ -169,6 +169,10 @@ ausgeblendet.
   alle 45°-Richtungen **beider** Nachbarn: jede Richtung rastet ein (nicht nur die des näheren
   Punkts), und die Kreuzung zweier Richtungen verschiedener Nachbarn ist ebenfalls ein Fangziel
   mit doppeltem Fangradius. Dasselbe gilt für das Verschieben mit der Maus.
+  Der Polarfang greift nur in einem **Band** um den Strahl: seitlich höchstens der Fangradius
+  (Vorgabe 12 px, bildschirmkonstant), unabhängig vom Abstand. Ohne diese Grenze wäre der
+  Fangbereich ein Kegel, der mit dem Abstand breiter wird — ein 6°-Fenster ist auf 20 m über
+  2 m breit, und der Punkt rastete weit neben der gemeinten Richtung ein.
   Auch der **erweiterte Punktfang** arbeitet dabei: bleibt der Zeiger auf einem Fangpunkt
   stehen, wird dieser gehalten und seine Hilfslinien fangen den gezogenen Punkt.
 - **Linien** werden als Kapsel gezeichnet: Rechteck plus Halbkreis an beiden Enden. Dadurch sind

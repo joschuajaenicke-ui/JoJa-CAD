@@ -225,13 +225,14 @@ fn gespeicherter_punkt_ist_der_fangpunkt() {
 fn polarfuehrung_bleibt_erhalten() {
     let s = mit_polar();
     let bezug = v(0.0, 0.0);
-    let cursor = Vec2::polar(44.0_f64.to_radians(), 10_000.0);
+    // 1° neben 45°, 600 mm entfernt: seitlich 10,5 mm — im Band von 12 mm (T0148).
+    let cursor = Vec2::polar(44.0_f64.to_radians(), 600.0);
     let r = fang(&s, cursor, 12.0, Some(bezug));
 
     assert_eq!(r.source, SnapSource::Polar);
     assert_eq!(r.label(), Some("POL"));
     assert!(
-        (r.point.dist(bezug) - 10_000.0).abs() < 1e-6,
+        (r.point.dist(bezug) - 600.0).abs() < 1e-6,
         "Länge bleibt erhalten: {:?}",
         r.point
     );

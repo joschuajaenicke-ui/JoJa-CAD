@@ -207,26 +207,20 @@ impl Vec2 {
         }
     }
 
-    /// Auf 15°-Schritte einrasten (polar tracking).
-    pub fn polar_snap_from(self, base: Vec2, step_deg: f64) -> Vec2 {
-        let d = self - base;
-        let l = d.len();
-        if l < EPS {
-            return self;
-        }
-        let step = step_deg.to_radians();
-        let a = (d.angle() / step).round() * step;
-        base + Vec2::polar(a, l)
-    }
-
-    /// Polarfang mit Winkel-Fenster: rastet nur ein, wenn die Zeigerrichtung
-    /// höchstens `tol_deg` von einem Vielfachen der Schrittweite abweicht.
-    pub fn polar_snap_from_tol(
-        self,
-        base: Vec2,
-        step_deg: f64,
-        tol_deg: f64,
-    ) -> Option<Vec2> {
+    /// Polarfang: rastet auf das nächste Vielfache der Schrittweite ein, wenn
+    /// der Zeiger **beides** zugleich erfüllt — höchstens `tol_deg` Winkel-
+    /// abweichung **und** höchstens `band` seitlich neben dem Strahl.
+    ///
+    /// Nur der Winkel zu prüfen ergibt einen **Kegel**: die seitliche
+    /// Abweichung wächst mit dem Abstand (bei 6° und 20 m über 2 m), ein weit
+    /// entfernter Punkt rastete also auf eine Richtung, die der Zeiger gar
+    /// nicht meint (T0148). Die zweite Bedingung begrenzt die Breite; der
+    /// Fangbereich wird damit ein Band mit einer Spitze am Bezugspunkt — nah
+    /// am Punkt begrenzt der Winkel, fern begrenzt die Breite.
+    ///
+    /// Die Länge bleibt erhalten: der Punkt wird auf den Strahl **gedreht**
+    /// (gleicher Abstand zum Bezug), nicht senkrecht darauf projiziert.
+    pub fn polar_snap(self, base: Vec2, step_deg: f64, tol_deg: f64, band: f64) -> Option<Vec2> {
         let d = self - base;
         let l = d.len();
         if l < EPS {
@@ -242,6 +236,10 @@ impl Vec2 {
             diff
         };
         if diff.to_degrees() > tol_deg.max(0.0) {
+            return None;
+        }
+        // Seitlicher Abstand zum Strahl — begrenzt die Breite des Fangbereichs.
+        if l * diff.sin() > band.max(0.0) {
             return None;
         }
         Some(base + Vec2::polar(a, l))
