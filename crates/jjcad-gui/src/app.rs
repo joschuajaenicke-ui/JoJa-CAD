@@ -941,6 +941,11 @@ pub struct UiState {
     pub bildablage: crate::bildablage::BildAblage,
     /// Datei-Reiter, der auf die Rückfrage „ungespeicherte Änderungen“ wartet
     pub confirm_close: Option<usize>,
+    /// Reiter, der nach dem Sichern geschlossen wird (T0143): „Speichern und
+    /// schließen“ ohne Speicherort öffnet zuerst den Dateidialog; erst wenn
+    /// dort ein Ziel gewählt ist, geht der Reiter zu. Bricht der Nutzer den
+    /// Dateidialog ab, bleibt der Merker nicht stehen und der Reiter offen.
+    pub schliessen_nach_speichern: Option<usize>,
     pub last_canvas: Rect,
     /// Kennzahlen des Pools für die Einstellungsseite:
     /// (Zeit, Bytes, Stände, Dateien).
@@ -1079,6 +1084,7 @@ impl Default for UiState {
             clipboard_offset: 20.0,
             bildablage: crate::bildablage::BildAblage::neu(),
             confirm_close: None,
+            schliessen_nach_speichern: None,
             last_canvas: Rect::from_min_size(Pos2::ZERO, Vec2::new(1000.0, 700.0)),
             sicherung_info: None,
             last_ribbon_content_h: 0.0,
@@ -4502,6 +4508,27 @@ impl App {
             }
             Err(e) => self.toast(e),
         }
+    }
+
+    /// „Speichern und schließen“ aus der Rückfrage vor dem Schließen (T0143).
+    ///
+    /// Mit Speicherort wird sofort dorthin geschrieben. Eine Zeichnung **ohne**
+    /// Speicherort (neue Datei, aus dem Sicherungspool geholt) kann nicht still
+    /// gesichert werden — hier fragt der Dateidialog nach dem Ziel. Der Reiter
+    /// wird dafür aktiv, damit der Dialog auf **ihn** zeigt; geschlossen wird er
+    /// erst nach dem Sichern (`dialogs::datei_gewaehlt`), ein Abbruch lässt ihn
+    /// offen.
+    pub fn close_tab_speichern_mit_ziel(&mut self, idx: usize) {
+        if idx >= self.tabs.len() {
+            return;
+        }
+        if self.tabs[idx].session.doc.path.is_some() {
+            self.close_tab_speichern(idx);
+            return;
+        }
+        self.switch_doc(idx);
+        self.ui.schliessen_nach_speichern = Some(idx);
+        self.open_file_dialog(FileMode::SaveJjcad);
     }
 
     // ---- Sitzung (T0130) ----
@@ -12472,6 +12499,32 @@ mod tests_mehrere_dateien {
         app.close_tab(1);
         app.ui.confirm_close = None;
         assert_eq!(app.tabs.len(), 1);
+    }
+
+    /// T0143: „Speichern und schließen“ mit Speicherort schreibt sofort dorthin
+    /// und fragt keinen Dateidialog — der Weg ohne Speicherort dagegen schon.
+    #[test]
+    fn speichern_und_schliessen_mit_speicherort_fragt_nicht() {
+        let dir = std::env::temp_dir().join(format!("jjcad-t0143-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let pfad = dir.join("Plan.jjcad");
+        let mut app = App::with_ctx(egui::Context::default());
+        app.new_document();
+        linie(&mut app, 0.0);
+        app.session_mut().save(&pfad).expect("speichern");
+        linie(&mut app, 2000.0);
+        assert!(app.weicht_von_zieldatei(app.active), "die Datei hat Änderungen");
+
+        let idx = app.active;
+        app.close_tab_speichern_mit_ziel(idx);
+        assert!(app.ui.file_dialog.is_none(), "mit Speicherort braucht es keinen Dateidialog");
+        assert_eq!(app.ui.schliessen_nach_speichern, None);
+        assert_eq!(app.tabs.len(), 1, "der Reiter ist zu");
+
+        let gespeichert = jjcad_core::persist::load_document(&pfad).expect("laden");
+        assert_eq!(gespeichert.entities.len(), 2, "der neue Stand steht nicht in der Datei");
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     /// Gespeicherte Datei schließt ohne Rückfrage.

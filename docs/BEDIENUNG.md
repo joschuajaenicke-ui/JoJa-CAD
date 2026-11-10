@@ -204,8 +204,9 @@ ausgeblendet.
   Akzentlinie; rechts in einer abgesetzten Fläche die Blätter der aktiven Datei als kleinere
   Chips (mit Abstand zueinander). „Neu“ hängt einen Reiter an, statt die aktuelle Datei zu
   schließen — der bisherige Stand bleibt in seinem Reiter stehen. `×` schließt einen Reiter;
-  bei ungespeicherten Änderungen fragt „Datei schließen“ nach („Speichern und schließen“ nur,
-  wenn es einen Speicherort gibt, sonst „Verwerfen“/„Abbrechen“). Rechts vom Trenner stehen
+  bei ungespeicherten Änderungen fragt „Datei schließen“ nach: „Speichern und schließen“,
+  „Verwerfen“ oder „Abbrechen“. Ohne Speicherort fragt „Speichern und schließen“ im
+  Dateidialog nach dem Ziel und legt den Reiter erst nach dem Sichern ab. Rechts vom Trenner stehen
   die **Blattreiter** der aktiven Datei: `Modell`, die Blätter und `+` für ein neues Blatt.
 - **Linkes Panel** (`Layers`) und **rechtes Panel** (`Eigenschaften`) klappen über den Pfeil in ihrer
   Kopfzeile zu einer schmalen Leiste zusammen — ein Klick auf den Pfeil holt sie zurück.
@@ -269,8 +270,9 @@ wurde, kommt als „Unbenannt“ zurück. **Nicht** wiederhergestellt werden Aus
 Undo-Verlauf, Werkzeugwahl und Zwischenablage.
 
 Das Schließen eines **Reiters** (`×`) fragt dagegen nach, sobald der Inhalt von
-der Zieldatei abweicht: „Speichern und schließen" (nur mit Speicherort),
-„Verwerfen", „Abbrechen".
+der Zieldatei abweicht: „Speichern und schließen", „Verwerfen", „Abbrechen".
+Ohne Speicherort fragt „Speichern und schließen" nach dem Ziel und legt den
+Reiter erst nach dem Sichern ab.
 
 ### Sicherung
 
