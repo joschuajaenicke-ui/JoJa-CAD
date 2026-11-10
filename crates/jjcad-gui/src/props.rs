@@ -2107,7 +2107,7 @@ pub fn bemassung(app: &mut App, ui: &mut Ui, ziel: Ziel) {
         None => (
             app.doc().current_layer,
             app.ui.pending.color,
-            app.options.dim_axis,
+            Some(app.options.dim_mode.axis()),
             app.options.dim_text.clone(),
         ),
     };
@@ -2142,24 +2142,38 @@ pub fn bemassung(app: &mut App, ui: &mut Ui, ziel: Ziel) {
     zeile("dimkopf");
 
     zeile("richtung");
-    // Beim Erzeugen steht zusätzlich „Automatisch“ zur Wahl (Achse aus der
-    // längeren Richtung); ein vorhandenes Maß hat immer eine feste Achse.
-    let axis_items: Vec<(Option<DimAxis>, String)> = std::iter::once((
-        None,
-        jjcad_core::i18n::tr("gui.props.automatisch_2").to_string(),
-    ))
-    .chain(
-        DimAxis::ALL
+    // **Eine** Zeile für beide Fälle: beim Erzeugen wählt sie den Eingabemodus
+    // der Maßkette (waagerecht, senkrecht, direkt), bei der Auswahl die Achse
+    // des vorhandenen Maßes. Die Zeilen bleiben damit gleich — nur die Werte
+    // der Auswahl unterscheiden sich (T0154).
+    if ziel.ist_neu() {
+        let mut modus = app.options.dim_mode;
+        let items: Vec<(crate::app::DimModus, String)> = crate::app::DimModus::ALL
             .iter()
-            .map(|a| (Some(*a), a.text().to_string())),
-    )
-    .collect();
-    let mut picked = None;
-    widgets::field_row(ui, jjcad_core::i18n::tr("gui.props.richtung"), |ui| {
-        picked = panels::pick_combo(ui, &ziel.salt("dim_achse"), achse, &axis_items);
-    });
-    if let Some(v) = picked {
-        achse = v;
+            .map(|m| (*m, m.label().to_string()))
+            .collect();
+        let mut picked = None;
+        widgets::field_row(ui, jjcad_core::i18n::tr("gui.props.richtung"), |ui| {
+            picked = panels::pick_combo(ui, &ziel.salt("dim_achse"), modus, &items);
+        });
+        if let Some(m) = picked {
+            modus = m;
+            app.options.dim_mode = m;
+            app.options.dim_axis = Some(m.axis());
+        }
+        achse = Some(modus.axis());
+    } else {
+        let axis_items: Vec<(Option<DimAxis>, String)> = DimAxis::ALL
+            .iter()
+            .map(|a| (Some(*a), a.text().to_string()))
+            .collect();
+        let mut picked = None;
+        widgets::field_row(ui, jjcad_core::i18n::tr("gui.props.richtung"), |ui| {
+            picked = panels::pick_combo(ui, &ziel.salt("dim_achse"), achse, &axis_items);
+        });
+        if let Some(v) = picked {
+            achse = v;
+        }
     }
 
     zeile("masstext");
@@ -2195,14 +2209,23 @@ pub fn bemassung(app: &mut App, ui: &mut Ui, ziel: Ziel) {
     ui.add_space(4.0);
     match (&e, ziel) {
         (Some(e), Ziel::Auswahl(_)) => {
-            if let EntityKind::Dim { axis, a, b, .. } = &e.kind {
-                let m = match axis {
-                    DimAxis::X => (b.x - a.x).abs(),
-                    DimAxis::Y => (b.y - a.y).abs(),
-                    DimAxis::Aligned => a.dist(*b),
-                };
+            if let EntityKind::Dim { pts, axis, .. } = &e.kind {
+                // Anzahl der Messpunkte und die Summe aller Segmente — beim
+                // Einzelmaß ist das genau eine Strecke (T0154).
+                let mut summe = 0.0;
+                for w in pts.windows(2) {
+                    summe += match axis {
+                        DimAxis::X => (w[1].x - w[0].x).abs(),
+                        DimAxis::Y => (w[1].y - w[0].y).abs(),
+                        DimAxis::Aligned => w[0].dist(w[1]),
+                    };
+                }
+                ui.label(theme::dim(jjcad_core::i18n::t_args_owned(
+                    "gui.props.x_basispunkte",
+                    &[("wert1", format!("{}", pts.len()))],
+                )));
                 ui.label(theme::dim(jjcad_core::i18n::t_args_owned("gui.props.mass_x_x", &[("wert1", format!("{}", jjcad_core::units::format_number(
-                        app.doc().settings.dim_unit.from_mm(m),
+                        app.doc().settings.dim_unit.from_mm(summe),
                         app.doc().dim_style.decimals
                     ))), ("wert2", format!("{}", app.doc().settings.dim_unit.short()))])));
             }
@@ -2289,7 +2312,6 @@ pub enum Einfach {
     Ellipse,
     /// Abschnitt einer Ellipse — entsteht beim Stutzen (T0084).
     Ellipsenbogen,
-    Masskette,
     /// Grundriss-Kote: Kreis-Symbol, Höhe im Panel.
     Grundrisskote,
     /// Schnitt-Kote: Punktfolge, Höhen aus der Y-Differenz.
@@ -2306,9 +2328,7 @@ impl Einfach {
     /// Objekt sie bekommt.
     pub fn ebene(self) -> &'static str {
         match self {
-            Einfach::Masskette
-            | Einfach::Grundrisskote
-            | Einfach::Schnittkote => "Bemaßung",
+            Einfach::Grundrisskote | Einfach::Schnittkote => "Bemaßung",
             Einfach::Block => "Möbel",
             Einfach::Bild => "Bilder",
             _ => "Hilfslinien",
@@ -2326,7 +2346,6 @@ impl Einfach {
             "draw.circle" => Self::Kreis,
             "draw.arc" => Self::Bogen,
             "draw.ellipse" => Self::Ellipse,
-            "dim.chain" => Self::Masskette,
             "dim.elevation.plan" => Self::Grundrisskote,
             "dim.elevation.section" => Self::Schnittkote,
             "block.insert" => Self::Block,
@@ -2346,7 +2365,6 @@ impl Einfach {
             EntityKind::Arc { .. } => Self::Bogen,
             EntityKind::Ellipse { .. } => Self::Ellipse,
             EntityKind::EllipseArc { .. } => Self::Ellipsenbogen,
-            EntityKind::DimChain { .. } => Self::Masskette,
             EntityKind::ElevationPlan { .. } => Self::Grundrisskote,
             EntityKind::ElevationSection { .. } => Self::Schnittkote,
             EntityKind::BlockRef { .. } => Self::Block,
@@ -2366,7 +2384,6 @@ impl Einfach {
             Self::Bogen => jjcad_core::i18n::tr("gui.props.bogen"),
             Self::Ellipse => jjcad_core::i18n::tr("gui.props.ellipse"),
             Self::Ellipsenbogen => jjcad_core::i18n::tr("gui.props.ellipsenbogen"),
-            Self::Masskette => jjcad_core::i18n::tr("gui.props.masskette"),
             Self::Grundrisskote => "Grundriss-Kote",
             Self::Schnittkote => "Schnitt-Kote",
             Self::Block => jjcad_core::i18n::tr("gui.props.block"),
@@ -2384,7 +2401,6 @@ impl Einfach {
             Self::Bogen => "arc",
             Self::Ellipse => "ellipse",
             Self::Ellipsenbogen => "arc",
-            Self::Masskette => "dim",
             Self::Grundrisskote => "elevation",
             Self::Schnittkote => "elevation-section",
             Self::Block => "blocknew",
@@ -2780,33 +2796,6 @@ pub fn einfach(app: &mut App, ui: &mut Ui, ziel: Ziel, art: Einfach) {
             });
             ui.label(theme::dim(liste.clone()));
         }
-        // Maßkette: jeder Basispunkt hängt am Griff in der Zeichnung, die
-        // **Lage der Maßlinie** steht hier als Abstand (vorzeichenbehaftet,
-        // positiv = links der Messrichtung) — dieselbe Zahl zieht die Raute
-        // auf der Maßlinie (T0055).
-        Einfach::Masskette => {
-            let wert = e
-                .as_ref()
-                .and_then(|e| jjcad_core::render::dim_offset(&e.kind));
-            zeile("abstand");
-            match wert {
-                Some(alt) => {
-                    let mut v = alt;
-                    widgets::field_row(ui, jjcad_core::i18n::tr("gui.props.abstand"), |ui| {
-                        widgets::length_field(
-                            ui,
-                            &mut v,
-                            unit,
-                            110.0,
-                            widgets::KOORD_MIN_MM,
-                            widgets::KOORD_MAX_MM,
-                        );
-                    });
-                    abstand = Some(v);
-                }
-                None => gesperrt_zeile(ui, jjcad_core::i18n::tr("gui.props.abstand"), jjcad_core::i18n::tr("gui.props.aus_den_klicks")),
-            }
-        }
         // Bild: Dateiname und die Größe, die aus den beiden Ecken folgt.
         // Beides ist Anzeige — die Größe bestimmt der aufgezogene Rahmen
         // (zwei Klicks), ein Zahlenfeld würde nur eine zweite Wahrheit bauen.
@@ -3013,9 +3002,6 @@ pub fn einfach(app: &mut App, ui: &mut Ui, ziel: Ziel, art: Einfach) {
                 widgets::field_row(ui, name, |ui| {
                     ui.label(theme::mono(wert.clone()));
                 });
-            }
-            if let EntityKind::DimChain { pts, .. } = &e.kind {
-                ui.label(theme::dim(jjcad_core::i18n::t_args_owned("gui.props.x_basispunkte", &[("wert1", format!("{}", pts.len()))])));
             }
             if let EntityKind::BlockRef { block, .. } = &e.kind {
                 let name = app
@@ -4416,10 +4402,11 @@ mod tests {
             ),
             (
                 "dim.chain",
-                EntityKind::DimChain {
+                EntityKind::Dim {
                     pts: vec![jjcad_core::geom::Vec2::ZERO, v(1000.0, 0.0)],
                     line_pos: v(500.0, -300.0),
                     axis: DimAxis::X,
+                    override_text: None,
                 },
             ),
             (
@@ -4716,16 +4703,13 @@ mod tests {
                 oben: None,
             },
             EntityKind::Dim {
-                a: jjcad_core::geom::Vec2::ZERO,
-                b: jjcad_core::geom::v(1000.0, 0.0),
+                pts: vec![
+                    jjcad_core::geom::Vec2::ZERO,
+                    jjcad_core::geom::v(1000.0, 0.0),
+                ],
                 line_pos: jjcad_core::geom::v(500.0, -300.0),
                 axis: DimAxis::X,
                 override_text: None,
-            },
-            EntityKind::DimChain {
-                pts: vec![],
-                line_pos: jjcad_core::geom::Vec2::ZERO,
-                axis: DimAxis::X,
             },
             EntityKind::ElevationPlan {
                 p: jjcad_core::geom::Vec2::ZERO,

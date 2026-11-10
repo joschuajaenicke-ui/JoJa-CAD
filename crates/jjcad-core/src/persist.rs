@@ -19,6 +19,7 @@ pub fn from_json(s: &str) -> Result<Document, String> {
         .map_err(|e| format!("Datei ist keine gültige JoJa-CAD-Zeichnung: {e}"))?;
     migrate_legacy_fills(&mut raw);
     migrate_legacy_images(&mut raw);
+    migrate_legacy_dims(&mut raw);
     let mut doc: Document = serde_json::from_value(raw)
         .map_err(|e| format!("Datei ist keine gültige JoJa-CAD-Zeichnung: {e}"))?;
     if doc.format != FORMAT_NAME {
@@ -236,6 +237,63 @@ fn migrate_legacy_images(v: &mut serde_json::Value) {
                 fix_list(arr);
             }
         }
+    }
+}
+
+/// Bemaßung älterer Dateien auf **ein** Element umstellen (T0154).
+///
+/// Bis dahin gab es zwei Objektarten: das Einzelmaß (`a`, `b`) und die
+/// Maßkette (`dim_chain` mit `pts`). Jetzt ist beides `dim` mit `pts`; das
+/// Einzelmaß ist die Kette aus genau zwei Punkten.
+///
+/// * `type: "dim_chain"` → `type: "dim"` (die Felder passen schon)
+/// * `type: "dim"` mit `a`/`b` → `pts: [a, b]`, `a`/`b` entfallen
+///
+/// Serde-Alias geht nicht, weil sich neben dem Typnamen auch die Feldnamen
+/// ändern — dieselbe Bauart wie [`migrate_legacy_fills`].
+pub fn migrate_legacy_dims(v: &mut serde_json::Value) {
+    let mut fix_list = |list: &mut Vec<serde_json::Value>| {
+        for e in list.iter_mut() {
+            let Some(kind) = e.get_mut("kind").and_then(|k| k.as_object_mut()) else {
+                continue;
+            };
+            match kind.get("type").and_then(|t| t.as_str()) {
+                Some("dim_chain") => {
+                    kind.insert("type".into(), serde_json::json!("dim"));
+                }
+                Some("dim") => {
+                    if kind.contains_key("pts") {
+                        continue;
+                    }
+                    let Some(a) = kind.remove("a") else { continue };
+                    let Some(b) = kind.remove("b") else {
+                        kind.insert("a".into(), a);
+                        continue;
+                    };
+                    kind.insert("pts".into(), serde_json::json!([a, b]));
+                }
+                _ => {}
+            }
+        }
+    };
+
+    if let Some(arr) = v.get_mut("entities").and_then(|e| e.as_array_mut()) {
+        fix_list(arr);
+    }
+    if let Some(blocks) = v.get_mut("blocks").and_then(|b| b.as_array_mut()) {
+        for b in blocks.iter_mut() {
+            if let Some(arr) = b.get_mut("entities").and_then(|e| e.as_array_mut()) {
+                fix_list(arr);
+            }
+        }
+    }
+    // Blockdatei (`<name>.jjblk`): die Definition steckt unter `block`.
+    if let Some(arr) = v
+        .get_mut("block")
+        .and_then(|b| b.get_mut("entities"))
+        .and_then(|e| e.as_array_mut())
+    {
+        fix_list(arr);
     }
 }
 

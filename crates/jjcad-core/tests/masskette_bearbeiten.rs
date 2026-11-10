@@ -33,7 +33,7 @@ fn basispunkt_verschieben() {
 
     let e = s.doc.entity(id).expect("Maßkette");
     match &e.kind {
-        EntityKind::DimChain { pts, line_pos, .. } => {
+        EntityKind::Dim { pts, line_pos, .. } => {
             assert_eq!(pts[1], v(2600.0, 300.0), "Basispunkt nicht gesetzt: {pts:?}");
             assert_eq!(pts[0], v(0.0, 0.0));
             assert_eq!(pts[2], v(5000.0, 0.0));
@@ -111,9 +111,9 @@ fn einzelmass_basispunkte_und_abstand() {
 
     let e = s.doc.entity(id).expect("Maß");
     match &e.kind {
-        EntityKind::Dim { a, b, line_pos, axis, .. } => {
-            assert_eq!(*a, v(-500.0, 0.0));
-            assert_eq!(*b, v(3500.0, 0.0));
+        EntityKind::Dim { pts, line_pos, axis, .. } => {
+            assert_eq!(pts[0], v(-500.0, 0.0));
+            assert_eq!(pts[1], v(3500.0, 0.0));
             assert_eq!(*axis, DimAxis::X);
             // Nur die Höhe zählt, die Lage entlang der Maßlinie bleibt.
             assert_eq!(*line_pos, v(1500.0, 600.0), "Maßlinie auf dem Abstand");

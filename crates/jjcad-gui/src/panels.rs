@@ -384,7 +384,8 @@ pub fn properties(app: &mut App, ui: &mut Ui) {
                     "draw.window" => crate::props::fenster(app, ui, ziel),
                     "draw.stair" => crate::props::treppe(app, ui, ziel),
                     "dim.room" => crate::props::raumstempel(app, ui, ziel),
-                    "dim.linear" => crate::props::bemassung(app, ui, ziel),
+                    // Ein Element für Einzelmaß und Maßkette (T0154).
+                    "dim.linear" | "dim.chain" => crate::props::bemassung(app, ui, ziel),
                     "sheet.viewport_tool" => crate::props::viewport(app, ui, ziel),
                     "draw.volume" | "draw.volume.points" | "draw.volume.paint" => {
                         crate::props::volumen(app, ui, ziel)
@@ -1250,7 +1251,6 @@ fn bestand_text(doc: &Document) -> String {
             EntityKind::Window { .. } => fenster += 1,
             EntityKind::Stair { .. } => treppen += 1,
             EntityKind::Dim { .. }
-            | EntityKind::DimChain { .. }
             | EntityKind::ElevationPlan { .. }
             | EntityKind::ElevationSection { .. } => masse += 1,
             EntityKind::Text { .. } => texte += 1,

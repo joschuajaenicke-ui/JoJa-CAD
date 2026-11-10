@@ -271,8 +271,15 @@ pub const ACTIONS: &[ActionDef] = &[
     act!("modify.quickselect", "action.modify.quickselect.label", Aendern, "quickselect", "q", "action.modify.quickselect.hint", true),
 
     // Bemaßung
+    // Ein Element für Einzelmaß und Maßkette (T0154). `dim.linear` bleibt als
+    // Befehl für MCP und ältere Skripte bestehen, ist aber kein eigenes
+    // Werkzeug mehr — das Ribbon zeigt nur die Maßkette mit ihren Modi.
     act!("dim.linear", "action.dim.linear.label", Bemassung, "dim", "m", "action.dim.linear.hint", true),
     act!("dim.chain", "action.dim.chain.label", Bemassung, "dimchain", "", "action.dim.chain.hint", true),
+    // Messpunkt an eine bestehende Maßkette anhängen bzw. herausnehmen
+    // (T0154) — beides im Reiter „Bemaßung".
+    act!("dim.point.add", "action.dim.point.add.label", Bemassung, "point", "", "action.dim.point.add.hint", true),
+    act!("dim.point.remove", "action.dim.point.remove.label", Bemassung, "erase", "", "action.dim.point.remove.hint", true),
     act!("dim.elevation.plan", "action.dim.elevation.plan.label", Bemassung, "elevation", "n", "action.dim.elevation.plan.hint", true),
     act!("dim.elevation.section", "action.dim.elevation.section.label", Bemassung, "elevation-section", "", "action.dim.elevation.section.hint", true),
     act!(
@@ -733,8 +740,9 @@ pub fn erzeuger_fuer(kind: &EntityKind) -> &'static str {
         EntityKind::Fill { .. } => "draw.fill",
         EntityKind::Volume { .. } => "draw.volume",
         EntityKind::Text { .. } => "draw.text",
-        EntityKind::Dim { .. } => "dim.linear",
-        EntityKind::DimChain { .. } => "dim.chain",
+        // Ein Element für Einzelmaß und Maßkette (T0154): das Werkzeug ist
+        // immer die Kette; `dim.linear` bleibt für MCP und alte Aufrufe.
+        EntityKind::Dim { .. } => "dim.chain",
         EntityKind::ElevationPlan { .. } => "dim.elevation.plan",
         EntityKind::ElevationSection { .. } => "dim.elevation.section",
         EntityKind::Room { .. } => "dim.room",
@@ -1215,6 +1223,22 @@ fn bemasung_schwarz(p: &Params, e: &mut Entity) {
 
 fn ids_from(p: &Params, key: &str) -> Vec<Id> {
     p.ids(key).unwrap_or_default()
+}
+
+/// Stelle, an der ein neuer Messpunkt die Kette **geordnet** hält (T0154).
+///
+/// Gezählt wird entlang der Messrichtung: der Punkt gehört vor den ersten
+/// Punkt, der weiter vorn liegt. So bleibt die Kette monoton und ihre
+/// Maßzahlen positiv — egal, in welcher Reihenfolge der Nutzer klickt.
+fn einfuege_index(pts: &[Vec2], axis: DimAxis, q: Vec2) -> usize {
+    if pts.is_empty() {
+        return 0;
+    }
+    let (dir, _) = crate::render::dim_achse(pts, axis);
+    let t = (q - pts[0]).dot(dir);
+    pts.iter()
+        .position(|p| (*p - pts[0]).dot(dir) > t)
+        .unwrap_or(pts.len())
 }
 
 /// Benutzerbibliothek aus dem Aufruf (`dir`, die Oberfläche übergibt
@@ -2154,6 +2178,9 @@ pub fn execute(doc: &mut Document, id: &str, params: &Value) -> Result<Value, St
         }
 
         // ---------------- Bemaßung ----------------
+        // Einzelmaß: zwei Messpunkte — dasselbe Element wie die Maßkette,
+        // nur mit genau zwei Punkten (T0154). `a`/`b` bleiben als Parameter,
+        // damit MCP-Aufrufe und ältere Skripte unverändert laufen.
         "dim.linear" => {
             let a = require_pt(&p, "a")?;
             let b = require_pt(&p, "b")?;
@@ -2174,8 +2201,7 @@ pub fn execute(doc: &mut Document, id: &str, params: &Value) -> Result<Value, St
                 idn,
                 layer,
                 EntityKind::Dim {
-                    a,
-                    b,
+                    pts: vec![a, b],
                     line_pos,
                     axis,
                     override_text: p.text("text"),
@@ -2214,12 +2240,85 @@ pub fn execute(doc: &mut Document, id: &str, params: &Value) -> Result<Value, St
             let mut e = Entity::new(
                 idn,
                 layer,
-                EntityKind::DimChain { pts, line_pos, axis },
+                EntityKind::Dim {
+                    pts,
+                    line_pos,
+                    axis,
+                    override_text: p.text("text"),
+                },
             );
             apply_common(doc, &mut e, &p, layer);
             bemasung_schwarz(&p, &mut e);
             doc.add_entity(e);
             Ok(json!({"ok": true, "created": [idn]}))
+        }
+        // Einen Messpunkt an eine bestehende Maßkette anhängen (T0154).
+        //
+        // Der Punkt wird an der Stelle eingefügt, die die Kette entlang ihrer
+        // Messrichtung geordnet hält — sonst entstünde ein Zickzack mit
+        // negativen Maßzahlen. `index` überschreibt das ausdrücklich.
+        "dim.point.add" => {
+            let ids = ids_from(&p, "ids");
+            if ids.len() != 1 {
+                return Err("dim.point.add · genau eine Maßkette angeben".to_string());
+            }
+            let id = ids[0];
+            let q = require_pt(&p, "p").or_else(|_| require_pt(&p, "pos"))?;
+            let (idx, punkte) = {
+                let e = doc
+                    .entity_mut(id)
+                    .ok_or_else(|| format!("Objekt {id} nicht gefunden"))?;
+                let EntityKind::Dim { pts, axis, .. } = &mut e.kind else {
+                    return Err("dim.point.add · Objekt ist keine Maßkette".to_string());
+                };
+                let idx = match p.num("index") {
+                    Some(i) => (i.round().max(0.0) as usize).min(pts.len()),
+                    None => einfuege_index(pts, *axis, q),
+                };
+                pts.insert(idx, q);
+                (idx, pts.len())
+            };
+            doc.modified = true;
+            Ok(json!({"ok": true, "changed": [id], "index": idx, "punkte": punkte}))
+        }
+        // Einen Messpunkt entfernen. Unter zwei Punkten ist eine Maßkette
+        // keine Maßkette mehr — das ist ein Fehler, kein stiller Erfolg.
+        "dim.point.remove" => {
+            let ids = ids_from(&p, "ids");
+            if ids.len() != 1 {
+                return Err("dim.point.remove · genau eine Maßkette angeben".to_string());
+            }
+            let id = ids[0];
+            let (idx, punkte) = {
+                let e = doc
+                    .entity_mut(id)
+                    .ok_or_else(|| format!("Objekt {id} nicht gefunden"))?;
+                let EntityKind::Dim { pts, .. } = &mut e.kind else {
+                    return Err("dim.point.remove · Objekt ist keine Maßkette".to_string());
+                };
+                if pts.len() <= 2 {
+                    return Err("Maßkette braucht mindestens zwei Messpunkte".to_string());
+                }
+                let idx = match p.num("index") {
+                    Some(i) => (i.round().max(0.0) as usize).min(pts.len() - 1),
+                    None => {
+                        let q = require_pt(&p, "p").or_else(|_| require_pt(&p, "pos"))?;
+                        pts.iter()
+                            .enumerate()
+                            .min_by(|(_, a), (_, b)| {
+                                a.dist(q)
+                                    .partial_cmp(&b.dist(q))
+                                    .unwrap_or(std::cmp::Ordering::Equal)
+                            })
+                            .map(|(i, _)| i)
+                            .unwrap_or(0)
+                    }
+                };
+                pts.remove(idx);
+                (idx, pts.len())
+            };
+            doc.modified = true;
+            Ok(json!({"ok": true, "changed": [id], "index": idx, "punkte": punkte}))
         }
         // Grundriss-Kote: Kreis-Symbol, Höhe kommt aus dem Panel.
         "dim.elevation.plan" => {
@@ -3234,9 +3333,14 @@ pub fn execute(doc: &mut Document, id: &str, params: &Value) -> Result<Value, St
                         // Abstand sind änderbar — wie bei jedem anderen Objekt
                         // (T0055). Der Abstand kommt zuletzt, er rechnet aus
                         // dem (neuen) ersten Basispunkt.
+                        // Bemaßung: Messpunkte, Lage der Maßlinie und ihr
+                        // Abstand sind änderbar — wie bei jedem anderen Objekt
+                        // (T0055). Der Abstand kommt zuletzt, er rechnet aus
+                        // dem (neuen) ersten Messpunkt. `a`/`b` bleiben als
+                        // Altlast gültig: ein Einzelmaß ist eine Kette aus zwei
+                        // Punkten (T0154).
                         EntityKind::Dim {
-                            a,
-                            b,
+                            pts,
                             line_pos,
                             axis,
                             override_text,
@@ -3247,29 +3351,16 @@ pub fn execute(doc: &mut Document, id: &str, params: &Value) -> Result<Value, St
                             if let Some(ax) = p.dim_axis("axis") {
                                 *axis = ax;
                             }
-                            if let Some(q) = p.pt("a") {
-                                *a = q;
+                            let mut neue = p.pts("pts");
+                            if neue.is_none() {
+                                if let (Some(a), Some(b)) = (p.pt("a"), p.pt("b")) {
+                                    neue = Some(vec![a, b]);
+                                }
                             }
-                            if let Some(q) = p.pt("b") {
-                                *b = q;
-                            }
-                            if let Some(q) = p.pt("line_pos") {
-                                *line_pos = q;
-                            }
-                            if let Some(off) = p.len("offset") {
-                                let (_, n) = crate::render::dim_achse(&[*a, *b], *axis);
-                                let alt = (*line_pos - *a).dot(n);
-                                *line_pos = *line_pos + n * (off - alt);
-                            }
-                        }
-                        EntityKind::DimChain { pts, line_pos, axis } => {
-                            if let Some(ax) = p.dim_axis("axis") {
-                                *axis = ax;
-                            }
-                            if let Some(q) = p.pts("pts") {
+                            if let Some(q) = neue {
                                 if q.len() < 2 {
                                     return Err(
-                                        "Maßkette braucht mindestens zwei Punkte".to_string()
+                                        "Maßkette braucht mindestens zwei Messpunkte".to_string()
                                     );
                                 }
                                 *pts = q;

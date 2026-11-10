@@ -241,6 +241,14 @@ label = "Maß"
 hint = "Punkte klicken, Enter beendet"
 label = "Maßkette"
 
+[action.dim.point.add]
+hint = "Messpunkt anklicken — kommt in die Maßkette"
+label = "Punkt hinzufügen"
+
+[action.dim.point.remove]
+hint = "Messpunkt anklicken — verlässt die Maßkette"
+label = "Punkt entfernen"
+
 [action.dim.elevation.plan]
 hint = "Punkt klicken — Höhe im Eigenschaften-Panel"
 label = "Grundriss-Kote"
@@ -615,6 +623,11 @@ x = "Waagerecht"
 y = "Senkrecht"
 aligned = "Parallel"
 
+[ui.dimmode]
+waagerecht = "Waagerecht"
+senkrecht = "Senkrecht"
+direkt = "Direkt"
+
 [ui.doorkind]
 hinge = "Drehtür"
 sliding = "Schiebetür"
@@ -709,6 +722,7 @@ nearest = "Nächster Punkt"
 grid = "Raster"
 tracking = "Hilfslinie"
 bisector = "Winkelhalbierende"
+dim_parallel = "Maßkette parallel"
 
 [ui.linetype]
 solid = "Durchgezogen"
@@ -907,6 +921,14 @@ mass_zweiter_punkt = "Maß · zweiter Punkt"
 masskette_erster_punkt = "Maßkette · erster Punkt"
 masskette_gesetzt = "Maßkette · gesetzt"
 masskette_naechster_punkt_enter_beendet = "Maßkette · nächster Punkt (Enter beendet)"
+masskette_position_klicken = "Maßkette · Position der Maßlinie"
+masskette_messpunkt_klicken_enter = "Maßkette · Messpunkt klicken (Enter beendet)"
+masskette_zweiter_punkt = "Maßkette · zweiter Messpunkt"
+masskette_position_parallel_klicken = "Maßkette · Maßlinie setzen (Enter beendet)"
+punkt_hinzufuegen_messpunkt_klicken = "Punkt hinzufügen · Messpunkt klicken"
+punkt_hinzufuegen_gesetzt = "Punkt hinzufügen · gesetzt"
+punkt_entfernen_messpunkt_klicken = "Punkt entfernen · Messpunkt klicken"
+punkt_entfernen_entfernt = "Punkt entfernen · entfernt"
 massstab = "Maßstab"
 meldung_x_polylinie_naechster_punkt_klicken = "Meldung {i} – Polylinie: nächster Punkt klicken"
 mitte = "Mitte"
@@ -1554,6 +1576,7 @@ dicke = "Dicke"
 drehen = "Drehen"
 drehung = "Drehung"
 einfuegemodus = "Einfügemodus"
+modus = "Modus"
 eingabemodus = "Eingabemodus"
 ellipse = "Ellipse"
 ellipsenbogen = "Ellipsenbogen"

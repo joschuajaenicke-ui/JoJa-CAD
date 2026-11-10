@@ -522,6 +522,62 @@ impl Bogenmodus {
     }
 }
 
+/// Eingabemodus einer neuen Maßkette (T0154).
+///
+/// Früher lagen Einzelmaß und Maßkette als zwei Werkzeuge nebeneinander. Jetzt
+/// gibt es **ein** Werkzeug mit drei Wegen:
+///
+/// * `Waagerecht` / `Senkrecht` — zuerst die Lage der Maßlinie, danach
+///   beliebig viele Messpunkte (mindestens zwei).
+/// * `Direkt` — die Messpunkte bestimmen die Richtung (auch schräg); ein
+///   weiterer Klick legt die Maßlinie parallel dazu fest, weitere Punkte
+///   hängen sich an.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum DimModus {
+    Waagerecht,
+    Senkrecht,
+    Direkt,
+}
+
+impl DimModus {
+    pub const ALL: [DimModus; 3] = [DimModus::Waagerecht, DimModus::Senkrecht, DimModus::Direkt];
+
+    /// Messachse dieses Modus — dieselbe Angabe, die das Eigenschaften-Panel
+    /// unter „Richtung“ zeigt.
+    pub fn axis(self) -> DimAxis {
+        match self {
+            DimModus::Waagerecht => DimAxis::X,
+            DimModus::Senkrecht => DimAxis::Y,
+            DimModus::Direkt => DimAxis::Aligned,
+        }
+    }
+
+    /// Modus zu einer Achse — die Umkehrung von [`DimModus::axis`].
+    pub fn aus_achse(axis: DimAxis) -> Self {
+        match axis {
+            DimAxis::X => DimModus::Waagerecht,
+            DimAxis::Y => DimModus::Senkrecht,
+            DimAxis::Aligned => DimModus::Direkt,
+        }
+    }
+
+    pub fn key(self) -> &'static str {
+        match self {
+            DimModus::Waagerecht => "waagerecht",
+            DimModus::Senkrecht => "senkrecht",
+            DimModus::Direkt => "direkt",
+        }
+    }
+
+    pub fn label(self) -> &'static str {
+        match self {
+            DimModus::Waagerecht => rb("ui.dimmode.waagerecht"),
+            DimModus::Senkrecht => rb("ui.dimmode.senkrecht"),
+            DimModus::Direkt => rb("ui.dimmode.direkt"),
+        }
+    }
+}
+
 #[derive(Clone)]
 pub struct ToolOptions {
     pub wall_thickness: f64,
@@ -589,6 +645,9 @@ pub struct ToolOptions {
     /// Überschrift über dem Flächeninhalt des nächsten Raumstempels.
     pub room_heading: String,
     pub dim_axis: Option<DimAxis>,
+    /// Eingabemodus der nächsten Maßkette (T0154) — bestimmt, ob zuerst die
+    /// Maßlinie oder die Messpunkte gefragt werden.
+    pub dim_mode: DimModus,
     /// Eigener Maßtext des nächsten Maßes (leer = automatisch berechnet).
     pub dim_text: String,
     pub offset_dist: f64,
@@ -699,6 +758,7 @@ impl ToolOptions {
             room_height: doc.settings.text_height,
             room_heading: "Zimmer".to_string(),
             dim_axis: None,
+            dim_mode: DimModus::Direkt,
             dim_text: String::new(),
             offset_dist: doc.settings.wall_thickness,
             elevation_z: 0.0,
@@ -8992,7 +9052,7 @@ pub fn entity_kind_icon(kind: &EntityKind) -> &'static str {
         EntityKind::Fill { .. } => "fill",
         EntityKind::Volume { .. } => "volume",
         EntityKind::Text { .. } => "text",
-        EntityKind::Dim { .. } | EntityKind::DimChain { .. } => "dim",
+        EntityKind::Dim { .. } => "dim",
         EntityKind::ElevationPlan { .. } => "elevation",
         EntityKind::ElevationSection { .. } => "elevation-section",
         EntityKind::Room { .. } => "room",

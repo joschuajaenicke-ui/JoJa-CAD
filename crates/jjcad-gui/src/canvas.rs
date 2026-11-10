@@ -11008,7 +11008,6 @@ mod tests_massketten_farbe {
                 matches!(
                     e.kind,
                     EntityKind::Dim { .. }
-                        | EntityKind::DimChain { .. }
                         | EntityKind::ElevationPlan { .. }
                         | EntityKind::ElevationSection { .. }
                 )
@@ -11119,7 +11118,7 @@ mod tests_massketten_farbe {
             .doc()
             .entities
             .iter()
-            .find(|e| matches!(e.kind, EntityKind::DimChain { .. }))
+            .find(|e| matches!(e.kind, EntityKind::Dim { .. }))
             .cloned()
             .expect("keine Maßkette angelegt");
         assert_eq!(e.layer, ziel, "Ebene der Werkzeugoptionen");

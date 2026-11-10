@@ -1674,7 +1674,6 @@ fn hit_test_opt(
         if matches!(
             e.kind,
             EntityKind::Dim { .. }
-                | EntityKind::DimChain { .. }
                 | EntityKind::ElevationPlan { .. }
                 | EntityKind::ElevationSection { .. }
         ) {
@@ -1904,7 +1903,6 @@ pub fn select_window(doc: &Document, a: Vec2, b: Vec2, crossing: bool) -> Vec<Id
         if matches!(
             e.kind,
             EntityKind::Dim { .. }
-                | EntityKind::DimChain { .. }
                 | EntityKind::ElevationPlan { .. }
                 | EntityKind::ElevationSection { .. }
         ) {
