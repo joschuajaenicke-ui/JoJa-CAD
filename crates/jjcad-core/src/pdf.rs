@@ -427,13 +427,12 @@ fn draw_prim(c: &mut Content, prim: &Prim, xf: &Xf, paper_scale: f64) {
             c.stroke_color(prim.style.color);
             c.line_width(prim.style.width);
             c.dash(prim.style.line_type);
-            let n = 72;
-            let pts: Vec<Vec2> = (0..=n)
-                .map(|i| {
-                    let t = i as f64 / n as f64 * std::f64::consts::TAU;
-                    *cc + Vec2::new(rx * t.cos(), ry * t.sin()).rotated(*rot)
-                })
-                .collect();
+            // Dieselbe Pfeilhöhen-Regel wie der Bogen (T0174): Drucktoleranz
+            // 0,05 Papier-mm, über die Abbildung in Welt-Millimeter gerechnet.
+            let pts = CurveQuality::PRINT.ellipse_punkte(
+                &crate::geom::Ellipse::new(*cc, *rx, *ry, *rot),
+                paper_scale,
+            );
             push_polyline(c, &pts, true, xf);
             c.stroke();
         }
