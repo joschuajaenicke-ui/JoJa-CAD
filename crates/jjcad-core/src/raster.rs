@@ -288,8 +288,9 @@ fn draw_prim(pm: &mut Pixmap, prim: &Prim, map: &Map, paper_px: f64) {
             }
         }
         Shape::Ellipse { c, rx, ry, rot } => {
-            // Dieselbe Pfeilhöhen-Regel wie der Bogen (T0174): Drucktoleranz
-            // 0,05 Papier-mm, über die Abbildung in Welt-Millimeter gerechnet.
+            // Dieselbe Pfeilhöhen-Regel wie der Bogen (T0174): Toleranz
+            // `CurveQuality::PRINT` (0,05 Ausgabe-Einheiten), über die Abbildung
+            // in Welt-Millimeter gerechnet — wie im Bogen-Arm darüber.
             let pts = CurveQuality::PRINT.ellipse_punkte(
                 &crate::geom::Ellipse::new(*c, *rx, *ry, *rot),
                 map.k,
