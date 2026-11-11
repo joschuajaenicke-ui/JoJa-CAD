@@ -288,13 +288,12 @@ fn draw_prim(pm: &mut Pixmap, prim: &Prim, map: &Map, paper_px: f64) {
             }
         }
         Shape::Ellipse { c, rx, ry, rot } => {
-            let n = 72;
-            let pts: Vec<Vec2> = (0..n)
-                .map(|i| {
-                    let t = i as f64 / n as f64 * std::f64::consts::TAU;
-                    *c + Vec2::new(rx * t.cos(), ry * t.sin()).rotated(*rot)
-                })
-                .collect();
+            // Dieselbe Pfeilhöhen-Regel wie der Bogen (T0174): Drucktoleranz
+            // 0,05 Papier-mm, über die Abbildung in Welt-Millimeter gerechnet.
+            let pts = CurveQuality::PRINT.ellipse_punkte(
+                &crate::geom::Ellipse::new(*c, *rx, *ry, *rot),
+                map.k,
+            );
             if let Some(path) = build_path(&pts, true, map) {
                 pm.stroke_path(&path, &paint, &stroke, Transform::identity(), None);
             }

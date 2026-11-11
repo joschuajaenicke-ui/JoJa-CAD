@@ -127,6 +127,22 @@ impl CurveQuality {
             .map(|i| arc.c + Vec2::polar(arc.a0 + sweep * (i as f64 / n as f64), arc.r))
             .collect()
     }
+
+    /// Punktfolge einer **vollen** Ellipse — die eine Stelle, an der Zeichenfläche,
+    /// PNG und PDF sie in Sehnen zerlegen (T0174).
+    ///
+    /// Dieselbe Pfeilhöhen-Regel wie beim Bogen: `out_per_unit` ist die Abbildung
+    /// von Welt-Millimetern auf Ausgabe-Einheiten (Pixel bzw. Papier-mm), die
+    /// zulässige Pfeilhöhe steht in [`CurveQuality`]. Die feste Zahl von 72
+    /// Segmenten war bei kleinem Zoom verschwendet und bei großem sichtbar eckig.
+    ///
+    /// Die Folge ist **geschlossen**: der Anfangspunkt steht am Ende noch einmal,
+    /// damit ein Zug ohne Sonderfall umläuft. Wer eine geschlossene Form aus
+    /// eindeutigen Punkten braucht (egui `closed_line`), lässt den letzten weg.
+    pub fn ellipse_punkte(&self, el: &crate::geom::Ellipse, out_per_unit: f64) -> Vec<Vec2> {
+        let tol_world = self.max_sagitta / out_per_unit.max(1e-12);
+        el.arc_points(0.0, 0.0, tol_world)
+    }
 }
 
 #[cfg(test)]

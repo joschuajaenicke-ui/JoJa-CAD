@@ -289,9 +289,22 @@ fn stroke_pts(p: &Painter, pts: &[Pos2], w: f32, col: Color32) {
     }
 }
 
-/// Segmente einer Vollellipse. Die Ellipse folgt keiner Pfeilhöhen-Regel; sie
-/// wird immer mit dieser festen Zahl gezeichnet (T0173 zählt sie mit).
-const ELLIPSE_SEGMENTE: usize = 72;
+/// Punktfolge einer Vollellipse — die **eine** Stelle, an der sie in Sehnen
+/// zerlegt wird (T0174).
+///
+/// Dieselbe Pfeilhöhen-Regel wie Bogen und Ellipsenbogen (Einstellungen →
+/// Grafik → Kurventoleranz): `tol` ist die zulässige Pfeilhöhe in Pixeln und
+/// wird über die Abbildung `zoom` in Welt-Millimeter umgerechnet. Eine feste
+/// Segmentzahl war bei kleinem Zoom verschwendet (72 Segmente, wo 9 genügen)
+/// und bei großem sichtbar eckig (bei 30 px/mm 2,85 px Abweichung).
+fn ellipse_zug(c: V2, rx: f64, ry: f64, rot: f64, q: CurveQuality, zoom: f64) -> Vec<V2> {
+    let el = Ellipse::new(c, rx, ry, rot);
+    let mut pts = q.ellipse_punkte(&el, zoom);
+    // Die Punktfolge ist geschlossen (Anfangspunkt am Ende noch einmal); als
+    // `closed_line` wäre das eine Sehne der Länge null.
+    pts.pop();
+    pts
+}
 
 /// Grenze, unter der eine Füllung auf dem Bildschirm verschwindet (Pixel).
 /// Unter einem Pixel Breite ist nichts zu sehen — solche Streifen dürfen nicht
@@ -647,18 +660,20 @@ fn paint_prim(p: &Painter, prim: &Prim, w2s: &dyn Fn(V2) -> Pos2, scale: f64, pc
             }
         }
         PShape::Ellipse { c, rx, ry, rot } => {
-            // T0173: die Vollellipse hat keine Pfeilhöhen-Regel — sie wird immer
-            // mit derselben Segmentzahl gezeichnet, also wird diese gezählt.
-            if let Some(z) = pc.zaehlung {
-                z.ellipse(ELLIPSE_SEGMENTE);
-            }
-            let pts: Vec<Pos2> = (0..=ELLIPSE_SEGMENTE)
-                .map(|i| {
-                    let t = i as f64 / ELLIPSE_SEGMENTE as f64 * std::f64::consts::TAU;
-                    w2s(*c + V2::new(rx * t.cos(), ry * t.sin()).rotated(*rot))
-                })
+            // Dieselbe Pfeilhöhen-Regel wie Bogen und Ellipsenbogen (T0174);
+            // als **geschlossener** Zug, damit an den Stößen keine Kapseln
+            // übereinanderliegen (sichtbar als dunkle Knicke).
+            let pts: Vec<Pos2> = ellipse_zug(*c, *rx, *ry, *rot, pc.kurven, scale)
+                .iter()
+                .map(|q| w2s(*q))
                 .collect();
-            stroke_pts(p, &pts, w as f32, col);
+            // T0173: geschlossener Zug — so viele Sehnen wie Punkte.
+            if let Some(z) = pc.zaehlung {
+                z.ellipse(pts.len());
+            }
+            if pts.len() >= 3 {
+                p.add(Shape::closed_line(pts, stroke));
+            }
             if is_sel {
                 center_mark(p, w2s(*c), col);
             }
@@ -3797,13 +3812,13 @@ fn draw_objekt_hervorhebung(
                 }
             }
             PShape::Ellipse { c, rx, ry, rot } => {
-                let pts: Vec<Pos2> = (0..=ELLIPSE_SEGMENTE)
-                    .map(|i| {
-                        let t = i as f64 / ELLIPSE_SEGMENTE as f64 * std::f64::consts::TAU;
-                        w2s(*c + V2::new(rx * t.cos(), ry * t.sin()).rotated(*rot))
-                    })
+                let pts: Vec<Pos2> = ellipse_zug(*c, *rx, *ry, *rot, kurven_guete(app), view.zoom)
+                    .iter()
+                    .map(|q| w2s(*q))
                     .collect();
-                stroke_pts(p, &pts, strich.width, farbe);
+                if pts.len() >= 3 {
+                    p.add(Shape::closed_line(pts, strich));
+                }
             }
             PShape::EllipseArc { c, rx, ry, rot, a0, a1 } => {
                 let el = Ellipse::new(*c, *rx, *ry, *rot);
@@ -5266,13 +5281,13 @@ fn ghost_shape(
             p.add(egui::Shape::line(pts, stroke));
         }
         PShape::Ellipse { c, rx, ry, rot } => {
-            let pts: Vec<Pos2> = (0..=ELLIPSE_SEGMENTE)
-                .map(|i| {
-                    let t = i as f64 / ELLIPSE_SEGMENTE as f64 * std::f64::consts::TAU;
-                    w2s(*c + V2::new(rx * t.cos(), ry * t.sin()).rotated(*rot))
-                })
+            let pts: Vec<Pos2> = ellipse_zug(*c, *rx, *ry, *rot, q, zoom)
+                .iter()
+                .map(|q| w2s(*q))
                 .collect();
-            p.add(egui::Shape::line(pts, stroke));
+            if pts.len() >= 3 {
+                p.add(egui::Shape::closed_line(pts, stroke));
+            }
         }
         PShape::EllipseArc { c, rx, ry, rot, a0, a1 } => {
             let el = jjcad_core::geom::Ellipse::new(*c, *rx, *ry, *rot);
@@ -16193,9 +16208,9 @@ mod tests_kurventoleranz {
         }
     }
 
-    /// Zeichnet die Form durch `paint_prim` mit der Pfeilhöhe `px` und gibt die
-    /// Punktzahl des längsten Pfads zurück.
-    fn gezeichnet(shape: PShape, px: f64) -> usize {
+    /// Zeichnet die Form durch `paint_prim` mit der Pfeilhöhe `px` und gibt alle
+    /// Ausgabeformen zurück (Vektoren flach geklopft).
+    fn formen(shape: PShape, px: f64) -> Vec<egui::Shape> {
         let ctx = egui::Context::default();
         let form = shape.clone();
         let out = ctx.run(egui::RawInput::default(), |ctx| {
@@ -16223,9 +16238,25 @@ mod tests_kurventoleranz {
             let w2s = |q: V2| Pos2::new(q.x as f32, q.y as f32);
             paint_prim(&p, &prim, &w2s, 1.0, &pc, 1.0);
         });
-        let mut n = 0;
+        let mut flach = Vec::new();
+        fn sammeln(s: &egui::Shape, out: &mut Vec<egui::Shape>) {
+            match s {
+                egui::Shape::Vec(v) => v.iter().for_each(|s| sammeln(s, out)),
+                other => out.push(other.clone()),
+            }
+        }
         for cs in &out.shapes {
-            pfad_punkte(&cs.shape, &mut n);
+            sammeln(&cs.shape, &mut flach);
+        }
+        flach
+    }
+
+    /// Zeichnet die Form durch `paint_prim` mit der Pfeilhöhe `px` und gibt die
+    /// Punktzahl des längsten Pfads zurück.
+    fn gezeichnet(shape: PShape, px: f64) -> usize {
+        let mut n = 0;
+        for s in &formen(shape, px) {
+            pfad_punkte(s, &mut n);
         }
         n
     }
@@ -16255,6 +16286,15 @@ mod tests_kurventoleranz {
                     a1: 3.0,
                 },
             ),
+            (
+                "Vollellipse",
+                PShape::Ellipse {
+                    c,
+                    rx: 300.0,
+                    ry: 200.0,
+                    rot: 0.0,
+                },
+            ),
         ] {
             let fein = gezeichnet(shape.clone(), 0.05);
             let vorgabe = gezeichnet(shape.clone(), 0.15);
@@ -16263,6 +16303,35 @@ mod tests_kurventoleranz {
                 fein > vorgabe && vorgabe > grob,
                 "{name}: 0,05 px → {fein}, 0,15 px → {vorgabe}, 0,5 px → {grob} Punkte"
             );
+        }
+    }
+
+    /// T0174: Die volle Ellipse ist **ein** geschlossener Pfad — keine Kapsel je
+    /// Segment. Bei einer Kapsel je Segment überlagern sich an jedem Stoß zwei
+    /// Kantenglättungen, sichtbar als dunkle Knicke.
+    #[test]
+    fn volle_ellipse_ist_ein_geschlossener_zug() {
+        let c = V2::new(0.0, 0.0);
+        let ausgabe = formen(
+            PShape::Ellipse {
+                c,
+                rx: 300.0,
+                ry: 200.0,
+                rot: 0.4,
+            },
+            0.15,
+        );
+        assert_eq!(ausgabe.len(), 1, "die Ellipse muss eine einzige Form sein");
+        match &ausgabe[0] {
+            egui::Shape::Path(p) => {
+                assert!(p.closed, "der Zug muss geschlossen sein");
+                assert!(
+                    p.points.len() > 8,
+                    "zu wenige Punkte für 0,15 px Pfeilhöhe: {}",
+                    p.points.len()
+                );
+            }
+            andere => panic!("erwartet ein Pfad, bekommen {andere:?}"),
         }
     }
 

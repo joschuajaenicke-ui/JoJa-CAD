@@ -114,6 +114,11 @@ einer Stelle:
 * `CurveQuality::PRINT` — 0,05 Papier-mm, 5…2048 Segmente. Benutzt von PNG
   (`raster.rs`) und PDF (`pdf.rs`).
 
+Die **volle** Ellipse folgt derselben Regel (T0174): `CurveQuality::ellipse_punkte`
+zerlegt sie mit der Pfeilhöhe der jeweiligen Vorgabe — vorher zeichneten
+Zeichenfläche, PNG und PDF sie mit **festen 72 Segmenten** (bei 30 px/mm 2,85 px
+Abweichung, an den Scheiteln als Ecken sichtbar).
+
 `geom::Arc::flatten(tol)` (Weltmaß) bleibt als allgemeiner Weg bestehen und
 bildet auf dieselbe Rechnung ab (512 Segmente, 0,02 rad als Untergrenze).
 
