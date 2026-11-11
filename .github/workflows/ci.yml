@@ -19,15 +19,26 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      # egui/eframe braucht auf Linux die Fenster- und GL-Bibliotheken.
-      # Die Schriften sind Teil der Tests: das Programm setzt mit den
-      # Systemschriften (Liberation, Quicksand) und prüft das auch.
-      - name: Systempakete
+      # Schriften kommen aus dem Repo (packaging/fonts), nicht aus apt: die
+      # GitHub-Mirrors waren am 11.11.2026 minutenlang nicht erreichbar, der
+      # Lauf hing in den Systempaketen fest. Das Programm sucht seine Schriften
+      # in festen Pfaden (crates/jjcad-core/src/fonts.rs), darum dorthin kopieren.
+      - name: Schriften aus dem Repository
         run: |
-          sudo apt-get update || sudo apt-get update
-          sudo apt-get install -y --no-install-recommends \
-            libxkbcommon-dev libwayland-dev libx11-dev libgl1-mesa-dev \
-            fonts-liberation fonts-liberation-sans-narrow fonts-quicksand
+          sudo mkdir -p /usr/share/fonts/truetype/liberation /usr/share/fonts/truetype/quicksand
+          sudo cp packaging/fonts/Liberation*.ttf /usr/share/fonts/truetype/liberation/
+          sudo cp packaging/fonts/Quicksand*.ttf /usr/share/fonts/truetype/quicksand/
+          sudo fc-cache -f >/dev/null
+
+      # egui/eframe braucht auf Linux die Fenster- und GL-Bibliotheken. Sie sind
+      # im Läufer-Image vorhanden; apt nur als Nachschlag mit Zeitlimit, damit
+      # ein langsamer Mirror den Lauf nicht blockiert.
+      - name: Systempakete (mit Zeitlimit)
+        continue-on-error: true
+        run: |
+          timeout 120 sudo apt-get update || true
+          timeout 240 sudo apt-get install -y --no-install-recommends \
+            libxkbcommon-dev libwayland-dev libx11-dev libgl1-mesa-dev || true
 
       - name: Rust-Werkzeuge
         uses: dtolnay/rust-toolchain@stable
