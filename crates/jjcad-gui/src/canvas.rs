@@ -15404,7 +15404,18 @@ mod tests_daemmungsschraffur {
             laengster > 500,
             "kein Zug mit vielen Punkten (längster {laengster})"
         );
-        assert!(zuge > 20, "zu wenige Züge: {zuge}");
+        // Die Zahl der Reihen hängt an Vorgaben des Rechners (Linienstärke,
+        // Kantenweichheit): mit den Einstellungen des Entwicklungsrechners sind
+        // es 29 Züge, ohne Vorgaben 15. Geprüft wird deshalb die **Eigenschaft**,
+        // nicht eine Zahl: wenige, lange Züge statt einer Strecke je Stützpunkt.
+        assert!(
+            zuge > 5,
+            "zu wenige Züge: {zuge} — wird das Muster überhaupt gezeichnet?"
+        );
+        assert!(
+            zuge < 200,
+            "zu viele Züge ({zuge}) — wird wieder je Strecke gezeichnet?"
+        );
         assert!(
             out.shapes.len() < 5000,
             "{} Formen je Bild — wird das Muster wieder je Strecke gezeichnet?",
