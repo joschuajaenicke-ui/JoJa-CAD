@@ -1216,6 +1216,14 @@ pub struct UserPrefs {
     /// eingeschalteter [`UserPrefs::kantenglaettung`].
     #[serde(default = "default_kantenweichheit")]
     pub kantenweichheit: f32,
+    /// Pfeilhöhe, mit der Rundungen (Kreis, Bogen, Ellipsenbogen) auf dem
+    /// Bildschirm in Sehnen zerlegt werden (T0172), in Bildpunkten. Vorgabe
+    /// 0,15 px — der Wert von [`crate::tessellate::CurveQuality::SCREEN`].
+    /// Klein = glatter, groß = schneller; gilt sofort, ohne Neustart. Der
+    /// Druck liest die Einstellung **nicht** (dort gilt
+    /// [`crate::tessellate::CurveQuality::PRINT`]).
+    #[serde(default = "default_kurven_toleranz")]
+    pub kurven_toleranz_px: f64,
     /// Anzeigeliste je Zeichnungsstand zwischenspeichern (T0165, Vorgabe an):
     /// die aus dem Modell erzeugte Displayliste wird wiederverwendet, solange
     /// sich Zeichnung, Zoom und Bearbeitungsraum nicht ändern. Aus = jedes Bild
@@ -1297,12 +1305,28 @@ fn default_kantenweichheit() -> f32 {
     1.0
 }
 
+/// Vorgabe der Kurventoleranz in Bildpunkten (T0172) — die Pfeilhöhe, mit der
+/// Rundungen in Sehnen zerlegt werden. Der Wert kommt aus der einen Quelle
+/// [`crate::tessellate::CurveQuality::SCREEN`], damit Vorgabe und
+/// Zeichenfläche nicht auseinanderlaufen.
+fn default_kurven_toleranz() -> f64 {
+    crate::tessellate::CurveQuality::SCREEN.max_sagitta
+}
+
 /// Grenzen der Kantenweichheit (T0165): darunter verschwindet die Glättung
 /// (harte Kante, dann ist der Schalter sinnvoller), darüber wird jede Kante ein
 /// weicher Saum. Eigene Grenzen, weil der Wert kein Papier-Maß ist.
 pub const KANTENWEICHHEIT_MIN: f32 = 0.5;
 /// Gegenstück zu [`KANTENWEICHHEIT_MIN`].
 pub const KANTENWEICHHEIT_MAX: f32 = 2.0;
+
+/// Grenzen der Kurventoleranz (T0172) in Bildpunkten: darunter kostet jede
+/// Rundung Segmente ohne sichtbaren Gewinn (die Kantenglättung liegt bei 1 px),
+/// darüber wird der Bogen sichtbar eckig. Eigene Grenzen, weil der Wert kein
+/// Papier-Maß ist.
+pub const KURVEN_TOLERANZ_MIN: f64 = 0.05;
+/// Gegenstück zu [`KURVEN_TOLERANZ_MIN`].
+pub const KURVEN_TOLERANZ_MAX: f64 = 2.0;
 
 /// Grenzen der Schwenkgeschwindigkeit (T0067): höchstens ein Zehntel bis
 /// fünffach — darunter kriecht die Ansicht, darüber ist kein Ziel mehr zu
@@ -1655,6 +1679,7 @@ impl Default for UserPrefs {
             // und die Anzeigeliste wiederverwendet; die Leistungsanzeige ist aus.
             kantenglaettung: true,
             kantenweichheit: default_kantenweichheit(),
+            kurven_toleranz_px: default_kurven_toleranz(),
             anzeigeliste_cache: true,
             perf_anzeige: false,
             // T0125: ohne eigene Wahl trägt jede Objektart 0,18 mm.
@@ -1812,6 +1837,14 @@ impl UserPrefs {
                 .clamp(LINIENSTAERKE_FAKTOR_MIN, LINIENSTAERKE_FAKTOR_MAX)
         } else {
             default_lineweight_factor()
+        };
+        // T0172: dasselbe für die Kurventoleranz — ein alter oder fremder Wert
+        // darf die Rundungen weder in Segmentlawinen noch in Ecken verwandeln.
+        self.kurven_toleranz_px = if self.kurven_toleranz_px.is_finite() {
+            self.kurven_toleranz_px
+                .clamp(KURVEN_TOLERANZ_MIN, KURVEN_TOLERANZ_MAX)
+        } else {
+            default_kurven_toleranz()
         };
         if self.hotbar_presets.is_empty() {
             self.hotbar_presets = UserPrefs::default().hotbar_presets;
@@ -2424,6 +2457,8 @@ mod tests {
         let standard = UserPrefs::default();
         assert!(standard.kantenglaettung, "Kantenglättung muss an sein");
         assert_eq!(standard.kantenweichheit, 1.0, "Kantenweichheit");
+        // T0172: die Kurventoleranz ist die Pfeilhöhe der Zeichenfläche.
+        assert_eq!(standard.kurven_toleranz_px, 0.15, "Kurventoleranz");
         assert!(standard.anzeigeliste_cache, "Anzeigeliste muss gespeichert werden");
         assert!(!standard.perf_anzeige, "Leistungsanzeige ist in der Vorgabe aus");
 
@@ -2431,16 +2466,19 @@ mod tests {
         assert!(alt.kantenglaettung && alt.anzeigeliste_cache);
         assert!(!alt.perf_anzeige);
         assert_eq!(alt.kantenweichheit, 1.0);
+        assert_eq!(alt.kurven_toleranz_px, 0.15, "Altbestand ohne Schlüssel");
 
         let mut prefs = UserPrefs::default();
         prefs.kantenglaettung = false;
         prefs.kantenweichheit = 1.75;
+        prefs.kurven_toleranz_px = 0.5;
         prefs.anzeigeliste_cache = false;
         prefs.perf_anzeige = true;
         let roh = serde_json::to_string(&prefs).unwrap();
         for schluessel in [
             "\"kantenglaettung\":false",
             "\"kantenweichheit\":1.75",
+            "\"kurven_toleranz_px\":0.5",
             "\"anzeigeliste_cache\":false",
             "\"perf_anzeige\":true",
         ] {
@@ -2449,8 +2487,37 @@ mod tests {
         let wieder: UserPrefs = serde_json::from_str(&roh).unwrap();
         assert!(!wieder.kantenglaettung);
         assert_eq!(wieder.kantenweichheit, 1.75);
+        assert_eq!(wieder.kurven_toleranz_px, 0.5);
         assert!(!wieder.anzeigeliste_cache);
         assert!(wieder.perf_anzeige);
+    }
+
+    /// T0172: Ein fremder Wert in `prefs.json` wird beim Laden auf die Grenzen
+    /// geklemmt — 0,05 … 2,0 px. Darunter wäre jede Rundung eine Segmentlawine,
+    /// darüber sichtbar eckig; ein unbrauchbarer Wert fällt auf die Vorgabe.
+    #[test]
+    fn kurventoleranz_wird_beim_laden_geklemmt() {
+        for (eingabe, erwartet) in [
+            (0.001, KURVEN_TOLERANZ_MIN),
+            (0.05, 0.05),
+            (0.5, 0.5),
+            (2.0, 2.0),
+            (99.0, KURVEN_TOLERANZ_MAX),
+        ] {
+            let mut p: UserPrefs =
+                serde_json::from_str(&format!(r#"{{"kurven_toleranz_px": {eingabe}}}"#)).unwrap();
+            p.ensure_defaults();
+            assert!(
+                (p.kurven_toleranz_px - erwartet).abs() < 1e-9,
+                "{eingabe} ergibt {}, erwartet {erwartet}",
+                p.kurven_toleranz_px
+            );
+        }
+        // Ein Text statt einer Zahl lässt den ganzen Eintrag scheitern; dann
+        // gilt die Vorgabe.
+        let p: UserPrefs = serde_json::from_str(r#"{"kurven_toleranz_px": "fein"}"#)
+            .unwrap_or_default();
+        assert_eq!(p.kurven_toleranz_px, 0.15);
     }
 
     /// T0098: Der Fensterrahmen steht in den Voreinstellungen. Vorgabe ist die

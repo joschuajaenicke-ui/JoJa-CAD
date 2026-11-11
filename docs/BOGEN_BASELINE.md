@@ -106,6 +106,11 @@ einer Stelle:
 
 * `CurveQuality::SCREEN` — 0,15 px Pfeilhöhe, 4…4096 Segmente, Mindestschritt
   2π/4096. Benutzt von Zeichenfläche (`canvas.rs`), Inventar und Vorschau.
+  Seit T0172 ist die Pfeilhöhe der Zeichenfläche einstellbar (Einstellungen →
+  Grafik → Kurventoleranz, 0,05…2,0 px, Vorgabe 0,15); `CurveQuality::SCREEN`
+  bleibt die Vorgabe, und `CurveQuality::mit_pfeilhoehe(px)` bildet die
+  eingestellte Güte mit denselben Grenzen. Die Zahlen dieser Baseline gelten
+  für die Vorgabe.
 * `CurveQuality::PRINT` — 0,05 Papier-mm, 5…2048 Segmente. Benutzt von PNG
   (`raster.rs`) und PDF (`pdf.rs`).
 

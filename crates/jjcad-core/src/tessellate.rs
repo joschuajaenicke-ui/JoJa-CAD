@@ -58,6 +58,29 @@ impl CurveQuality {
         min_step: std::f64::consts::TAU / 2048.0,
     };
 
+    /// Bildschirmgüte mit einstellbarer Pfeilhöhe (T0172).
+    ///
+    /// Die Vorgabe [`CurveQuality::SCREEN`] bleibt bei 0,15 px; die
+    /// Zeichenfläche nimmt die Pfeilhöhe aus den Einstellungen
+    /// („Grafik“ → Kurventoleranz). Klein = glatter, groß = schneller.
+    /// Die übrigen Grenzen (Mindest- und Höchstsegmentzahl, Mindestschritt)
+    /// bleiben unverändert — nur die Pfeilhöhe ist eine Vorliebe.
+    ///
+    /// Der Druck rechnet unabhängig davon mit [`CurveQuality::PRINT`].
+    pub fn mit_pfeilhoehe(px: f64) -> CurveQuality {
+        let px = if px.is_finite() && px > 0.0 {
+            px
+        } else {
+            CurveQuality::SCREEN.max_sagitta
+        };
+        CurveQuality {
+            max_sagitta: px,
+            min_segments: CurveQuality::SCREEN.min_segments,
+            max_segments: CurveQuality::SCREEN.max_segments,
+            min_step: CurveQuality::SCREEN.min_step,
+        }
+    }
+
     /// Segmentzahl für `arc`; `out_per_unit` ist die Abbildung von Welt-
     /// Millimetern auf Ausgabe-Einheiten (Pixel je mm bzw. Papier-mm je mm).
     pub fn segments(&self, arc: &Arc, out_per_unit: f64) -> usize {
@@ -220,6 +243,52 @@ mod tests {
         // gleiche Abbildung (1 px/mm bzw. 1 Papier-mm/mm)
         assert!(
             CurveQuality::PRINT.segments(&arc, 1.0) > CurveQuality::SCREEN.segments(&arc, 1.0)
+        );
+    }
+
+    /// T0172: Die Pfeilhöhe aus den Einstellungen ist die einzige Stellschraube
+    /// der Segmentzahl — 0,05 px ergibt mehr Segmente als die Vorgabe 0,15 px,
+    /// 0,5 px weniger. Mindest- und Höchstgrenzen bleiben dabei unverändert,
+    /// und die eingehaltene Pfeilhöhe folgt dem eingestellten Wert.
+    #[test]
+    fn pfeilhoehe_bestimmt_die_segmentzahl() {
+        let arc = Arc::new(Vec2::ZERO, 800.0, 0.0, 1.5708);
+        let fein = CurveQuality::mit_pfeilhoehe(0.05).segments(&arc, 1.0);
+        let vorgabe = CurveQuality::mit_pfeilhoehe(0.15).segments(&arc, 1.0);
+        let grob = CurveQuality::mit_pfeilhoehe(0.5).segments(&arc, 1.0);
+        assert!(fein > vorgabe, "0,05 px: {fein} gegen Vorgabe {vorgabe}");
+        assert!(vorgabe > grob, "0,5 px: {grob} gegen Vorgabe {vorgabe}");
+        assert_eq!(
+            vorgabe,
+            CurveQuality::SCREEN.segments(&arc, 1.0),
+            "0,15 px muss die Vorgabe sein"
+        );
+
+        // Die eingehaltene Pfeilhöhe folgt dem eingestellten Wert.
+        let pts = CurveQuality::mit_pfeilhoehe(0.5).flatten(&arc, 1.0);
+        assert!(
+            max_sagitta(&arc, &pts) <= 0.5 * 1.001,
+            "0,5 px wurde nicht eingehalten"
+        );
+        let pts = CurveQuality::mit_pfeilhoehe(0.05).flatten(&arc, 1.0);
+        assert!(
+            max_sagitta(&arc, &pts) <= 0.05 * 1.001,
+            "0,05 px wurde nicht eingehalten"
+        );
+
+        // Unbrauchbare Werte fallen auf die Vorgabe zurück, statt die
+        // Segmentzahl zu sprengen.
+        assert_eq!(
+            CurveQuality::mit_pfeilhoehe(0.0).max_sagitta,
+            CurveQuality::SCREEN.max_sagitta
+        );
+        assert_eq!(
+            CurveQuality::mit_pfeilhoehe(f64::NAN).max_sagitta,
+            CurveQuality::SCREEN.max_sagitta
+        );
+        assert_eq!(
+            CurveQuality::mit_pfeilhoehe(-1.0).max_segments,
+            CurveQuality::SCREEN.max_segments
         );
     }
 }

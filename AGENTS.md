@@ -538,6 +538,17 @@ Mit dem Nutzer abgestimmt — nicht „verbessern“:
   Prüfweg: `cargo test -p jjcad-core --test schraffuren_din
   boden_unveraendert` (vergleicht das gezeichnete Bild mit der Zelle aus der
   Zeichnung des Nutzers, bei Musterwinkel 0 und bei 45°).
+  **Boden verändert (T0170)** ist ebenfalls eine **Einheitszelle** aus der
+  Zeichnung des Nutzers: ein Schachbrett aus Feldern von 6 × 6 Musterabständen
+  (Zelle 12 × 12), in jedem Feld **drei** Striche der Länge 6 s im Abstand 2 s,
+  abwechselnd senkrecht und waagerecht (`muster_boden_veraendert`). Die Striche
+  enden auf der Feldkante — sie kreuzen sich **nie**; der vorherige Stand
+  zeichnete zwei freie Linienscharen, die sich überkreuzten und deshalb falsch
+  aussahen. Als Schraffur steht die Zelle unter 45°; weil sie gegen Drehung um
+  90° gleich ist (das Schachbrett verschiebt sich nur um ein Feld), ist die
+  Drehrichtung beliebig. Prüfweg: `cargo test -p jjcad-core --test
+  schraffuren_din boden_veraendert` (Zellvergleich bei 0° und 45°, dazu die
+  Probe, dass sich keine zwei Striche kreuzen).
   Ein neues Muster: Variante und `ALL` in `style.rs`, Zweig in `push_muster`,
   Bezeichnung in `TABELLE_5` des Tests `tests/schraffuren_din.rs` — der Test bricht,
   wenn ein Muster fehlt, nichts zeichnet oder wie ein anderes aussieht.

@@ -513,118 +513,16 @@ fn unterbrechungen_liegen_auf_waagerechten_linien() {
 }
 
 // ---------------------------------------------------------------------------
-// Die beiden Boden-Schraffuren (T0152, T0163)
+// Die beiden Boden-Schraffuren (T0152, T0163, T0170)
 // ---------------------------------------------------------------------------
 //
-// „Boden verändert" ist nach den Vorlagen zweier CAD-Programme gezeichnet (die
-// Norm zeigt nur einen kleinen, undeutlichen Ausschnitt). „Boden unverändert"
-// steht seit T0163 als Einheitszelle fest, die der Nutzer als Zeichnung
-// geliefert hat; sie wird für die Schraffur um 45° gedreht. Der Musterabstand
-// `s` ist die Einheit der Zelle; die Tests messen am gezeichneten Bild, nicht
-// an der Implementierung.
-
-/// Alle Linien eines Musters, getrennt nach waagerecht und senkrecht
-/// (Musterwinkel 0: die erste Schar läuft waagerecht).
-fn linien(p: FillPattern, rechteck: [f64; 4]) -> (Vec<(f64, f64, f64)>, Vec<(f64, f64, f64)>) {
-    let [x0, y0, x1, y1] = rechteck;
-    // Nur Striche, die **in** der Fläche liegen: die Mitte muss innen sein
-    // (ein durchgezogener Strich endet auf dem Rand und wird dort beschnitten).
-    let drin = |q: jjcad_core::geom::Vec2| {
-        q.x > x0 + 1.0 && q.x < x1 - 1.0 && q.y > y0 + 1.0 && q.y < y1 - 1.0
-    };
-    let mut waagerecht = Vec::new();
-    let mut senkrecht = Vec::new();
-    for pr in prims_mit_winkel(rechteck, p, Some(0.0)) {
-        let Shape::Line(a, b) = pr.shape else { continue };
-        let mitte = jjcad_core::geom::v((a.x + b.x) / 2.0, (a.y + b.y) / 2.0);
-        if !drin(mitte) {
-            continue;
-        }
-        if (a.y - b.y).abs() < 0.01 {
-            waagerecht.push((a.y, a.x.min(b.x), a.x.max(b.x)));
-        } else if (a.x - b.x).abs() < 0.01 {
-            senkrecht.push((a.x, a.y.min(b.y), a.y.max(b.y)));
-        }
-    }
-    (waagerecht, senkrecht)
-}
-
-/// Lagen einer Schar, auf 0,1 mm gerundet und sortiert.
-fn lagen(striche: &[(f64, f64, f64)]) -> Vec<f64> {
-    let mut v: Vec<f64> = striche.iter().map(|(q, _, _)| (q * 10.0).round() / 10.0).collect();
-    v.sort_by(|a, b| a.partial_cmp(b).unwrap());
-    v.dedup();
-    v
-}
-
-#[test]
-fn boden_veraendert_ist_ein_flechtwerk_langer_striche() {
-    // Musterabstand 100 mm: Reihen im Wechsel 150/100/150 mm (Takt 400 mm),
-    // Striche 400 mm lang mit 400 mm Lücke (Takt 800 mm) — in beiden Scharen.
-    let s = 100.0;
-    let (waagerecht, senkrecht) = linien(FillPattern::GroundChanged, [0.0, 0.0, 3200.0, 2400.0]);
-    assert!(!waagerecht.is_empty() && !senkrecht.is_empty(), "beide Scharen fehlen");
-
-    for (name, schar) in [("waagerecht", &waagerecht), ("senkrecht", &senkrecht)] {
-        let l = lagen(schar);
-        assert!(l.len() > 8, "{name}: zu wenige Reihen ({})", l.len());
-        // Reihenabstände: 1 s und 1,5 s im Wechsel, je drei Reihen 4 s.
-        let mut summe = 0.0;
-        for (i, paar) in l.windows(2).enumerate() {
-            let d = paar[1] - paar[0];
-            assert!(
-                (d - s).abs() < 0.2 || (d - 1.5 * s).abs() < 0.2,
-                "{name}: Reihenabstand {d:.1} mm ist weder {s} noch {} mm",
-                1.5 * s
-            );
-            summe += d;
-            if i % 3 == 2 {
-                assert!(
-                    (summe - 4.0 * s).abs() < 0.3,
-                    "{name}: drei Reihen ergeben {summe:.1} mm statt {} mm",
-                    4.0 * s
-                );
-                summe = 0.0;
-            }
-        }
-        // Strichlänge 4 s, Takt 8 s: die Striche einer Reihe liegen 8 s auseinander.
-        let mut reihen: std::collections::BTreeMap<i64, Vec<(f64, f64)>> = Default::default();
-        for (q, a, b) in schar {
-            reihen
-                .entry((q * 10.0).round() as i64)
-                .or_default()
-                .push((*a, *b));
-        }
-        let mut geprueft = 0;
-        for (_, mut striche) in reihen {
-            // Am Flächenrand wird ein Strich beschnitten — für den Takt nur
-            // die vollen Striche nehmen.
-            striche.retain(|(a, b)| (b - a - 4.0 * s).abs() < 0.3);
-            if striche.len() < 2 {
-                continue;
-            }
-            striche.sort_by(|a, b| a.0.partial_cmp(&b.0).unwrap());
-            for w in striche.windows(2) {
-                let takt = w[1].0 - w[0].0;
-                assert!(
-                    (takt - 8.0 * s).abs() < 0.3,
-                    "{name}: Strichabstand {takt:.1} mm statt {} mm",
-                    8.0 * s
-                );
-            }
-            for (a, b) in &striche {
-                assert!(
-                    (b - a - 4.0 * s).abs() < 0.3,
-                    "{name}: Strichlänge {:.1} mm statt {} mm",
-                    b - a,
-                    4.0 * s
-                );
-            }
-            geprueft += 1;
-        }
-        assert!(geprueft >= 3, "{name}: zu wenige Reihen mit mehreren Strichen");
-    }
-}
+// Beide stehen als Einheitszelle fest, die der Nutzer als Zeichnung geliefert
+// hat; für die Schraffur wird die Zelle um 45° gedreht (der Musterwinkel einer
+// Füllung ist +45°, wie bei „Mauerwerk“). Der Musterabstand `s` ist die
+// Einheit der Zelle; die Tests messen am gezeichneten Bild, nicht an der
+// Implementierung. „Boden unverändert“ kam in T0163, „Boden verändert“ in
+// T0170 — vorher waren beide aus Screenshots abgeleitet und trafen das Raster
+// nicht.
 
 // ---------------------------------------------------------------------------
 // Muster „Boden unverändert" (T0163)
@@ -671,17 +569,24 @@ const ZELLE_BODEN_UNVERAENDERT: [(f64, f64, f64, f64); 24] = [
     (6.0, 7.0, 7.0, 7.0),
 ];
 
-/// Die Zelle, gekachelt und um `winkel` gedreht — so muss das Muster aussehen.
-/// Die Kachelung läuft im gedrehten Raster (Kantenlänge `8s`).
-fn zelle_gekachelt(s: f64, winkel: f64) -> Vec<(Vec2, Vec2)> {
+/// Eine Zelle (in Einheiten von `s`), gekachelt und um `winkel` gedreht — so
+/// muss das Muster aussehen. Die Kachelung läuft im gedrehten Raster
+/// (Kantenlänge `kante` in Einheiten von `s`).
+fn zelle_gekachelt(
+    zelle: &[(f64, f64, f64, f64)],
+    kante: f64,
+    s: f64,
+    winkel: f64,
+) -> Vec<(Vec2, Vec2)> {
     let dir = Vec2::new(winkel.cos(), winkel.sin());
     let nrm = Vec2::new(-winkel.sin(), winkel.cos());
-    let kante = 8.0 * s;
+    let kante = kante * s;
     let mut out = Vec::new();
-    for i in -6..=6 {
-        for j in -6..=6 {
+    // Reichlich über die geprüften Flächen hinaus (größte 9600 × 7200 mm).
+    for i in -14..=14 {
+        for j in -14..=14 {
             let (u0, v0) = (i as f64 * kante, j as f64 * kante);
-            for (x1, y1, x2, y2) in ZELLE_BODEN_UNVERAENDERT {
+            for (x1, y1, x2, y2) in zelle.iter().copied() {
                 out.push((
                     dir * (u0 + x1 * s) + nrm * (v0 + y1 * s),
                     dir * (u0 + x2 * s) + nrm * (v0 + y2 * s),
@@ -820,7 +725,7 @@ fn boden_unveraendert_ist_die_um_45_grad_gedrehte_einheitszelle() {
     vergleiche_mit_zelle(
         &rechtwinklig,
         rechteck,
-        &zelle_gekachelt(s, -std::f64::consts::FRAC_PI_2),
+        &zelle_gekachelt(&ZELLE_BODEN_UNVERAENDERT, 8.0, s, -std::f64::consts::FRAC_PI_2),
     );
 
     // 2) Als Schraffur steht dieselbe Zelle um 45° gedreht: die Längsrichtung
@@ -837,6 +742,118 @@ fn boden_unveraendert_ist_die_um_45_grad_gedrehte_einheitszelle() {
     vergleiche_mit_zelle(
         &schraeg,
         rechteck,
-        &zelle_gekachelt(s, -std::f64::consts::FRAC_PI_4),
+        &zelle_gekachelt(&ZELLE_BODEN_UNVERAENDERT, 8.0, s, -std::f64::consts::FRAC_PI_4),
     );
+}
+
+// ---------------------------------------------------------------------------
+// Muster „Boden verändert" (T0170)
+// ---------------------------------------------------------------------------
+//
+// Der Nutzer hat die Einheitszelle als Zeichnung geliefert (`Boden
+// verändert.jjcad`): ein Schachbrett aus Feldern von 6 × 6 Einheiten bei
+// 100 mm Musterabstand, in jedem Feld drei Striche der Länge 6 s im Abstand
+// 2 s — abwechselnd senkrecht und waagerecht. Als Schraffur steht diese Zelle
+// um 45° gedreht. Der Test hält beides fest und prüft zusätzlich, dass sich
+// die Striche nirgends kreuzen: der vorherige Stand zeichnete zwei freie
+// Linienscharen, die sich überkreuzten — daher „sieht falsch aus“.
+
+/// Die Einheitszelle aus der Zeichnung des Nutzers, in Einheiten des
+/// Musterabstands `s` (Zelle 12 × 12, Felder 6 × 6).
+const ZELLE_BODEN_VERAENDERT: [(f64, f64, f64, f64); 12] = [
+    // Feld (0,0): drei Senkrechte über die ganze Feldhöhe.
+    (1.0, 0.0, 1.0, 6.0),
+    (3.0, 0.0, 3.0, 6.0),
+    (5.0, 0.0, 5.0, 6.0),
+    // Feld (1,0): drei Waagerechte über die ganze Feldbreite.
+    (6.0, 1.0, 12.0, 1.0),
+    (6.0, 3.0, 12.0, 3.0),
+    (6.0, 5.0, 12.0, 5.0),
+    // Feld (0,1): drei Waagerechte.
+    (0.0, 7.0, 6.0, 7.0),
+    (0.0, 9.0, 6.0, 9.0),
+    (0.0, 11.0, 6.0, 11.0),
+    // Feld (1,1): drei Senkrechte.
+    (7.0, 6.0, 7.0, 12.0),
+    (9.0, 6.0, 9.0, 12.0),
+    (11.0, 6.0, 11.0, 12.0),
+];
+
+/// Kreuzen sich zwei Striche **im Inneren** (ein gemeinsamer Endpunkt zählt
+/// nicht)?
+fn kreuzt_sich(a: (Vec2, Vec2), b: (Vec2, Vec2)) -> bool {
+    let (p, p2) = a;
+    let (q, q2) = b;
+    let r = p2 - p;
+    let s = q2 - q;
+    let den = r.x * s.y - r.y * s.x;
+    if den.abs() < 1e-9 {
+        return false; // parallel
+    }
+    let d = q - p;
+    let t = (d.x * s.y - d.y * s.x) / den;
+    let u = (d.x * r.y - d.y * r.x) / den;
+    t > 1e-6 && t < 1.0 - 1e-6 && u > 1e-6 && u < 1.0 - 1e-6
+}
+
+#[test]
+fn boden_veraendert_ist_die_um_45_grad_gedrehte_einheitszelle() {
+    let s = 100.0;
+    let rechteck = [0.0, 0.0, 9600.0, 7200.0];
+
+    // 1) Ohne Musterwinkel steht die Zelle rechtwinklig im Bezugssystem — wie
+    //    in der Zeichnung des Nutzers.
+    let rechtwinklig = striche(FillPattern::GroundChanged, rechteck, Some(0.0));
+    for (a, b) in &rechtwinklig {
+        let achsparallel = (a.y - b.y).abs() < 0.01 || (a.x - b.x).abs() < 0.01;
+        assert!(
+            achsparallel,
+            "Linie nicht achsparallel: ({:.1}; {:.1})–({:.1}; {:.1})",
+            a.x, a.y, b.x, b.y
+        );
+    }
+    vergleiche_mit_zelle(
+        &rechtwinklig,
+        rechteck,
+        &zelle_gekachelt(&ZELLE_BODEN_VERAENDERT, 12.0, s, 0.0),
+    );
+
+    // 2) Als Schraffur steht dieselbe Zelle um 45° gedreht.
+    let schraeg = striche(FillPattern::GroundChanged, rechteck, None);
+    for (a, b) in &schraeg {
+        let (dx, dy) = ((b.x - a.x).abs(), (b.y - a.y).abs());
+        assert!(
+            dx > 0.01 && (dx - dy).abs() < 0.01,
+            "Linie nicht unter 45°: {dx:.1} × {dy:.1} mm"
+        );
+    }
+    vergleiche_mit_zelle(
+        &schraeg,
+        rechteck,
+        &zelle_gekachelt(&ZELLE_BODEN_VERAENDERT, 12.0, s, std::f64::consts::FRAC_PI_4),
+    );
+
+    // 3) Kein Strich kreuzt einen anderen — der vorherige Stand tat es.
+    //    Gegenprobe der Prüfung selbst: ein Kreuz kreuzt sich, zwei aneinander
+    //    stoßende Striche nicht.
+    assert!(kreuzt_sich(
+        (Vec2::new(0.0, 0.0), Vec2::new(10.0, 10.0)),
+        (Vec2::new(0.0, 10.0), Vec2::new(10.0, 0.0))
+    ));
+    assert!(!kreuzt_sich(
+        (Vec2::new(0.0, 0.0), Vec2::new(10.0, 0.0)),
+        (Vec2::new(10.0, 0.0), Vec2::new(10.0, 10.0))
+    ));
+    for i in 0..schraeg.len() {
+        for j in i + 1..schraeg.len() {
+            let (a, b) = schraeg[i];
+            let (c, d) = schraeg[j];
+            assert!(
+                !kreuzt_sich((a, b), (c, d)),
+                "Striche kreuzen sich: ({:.1}; {:.1})–({:.1}; {:.1}) und \
+                 ({:.1}; {:.1})–({:.1}; {:.1})",
+                a.x, a.y, b.x, b.y, c.x, c.y, d.x, d.y
+            );
+        }
+    }
 }
