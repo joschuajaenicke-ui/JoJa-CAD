@@ -1153,16 +1153,17 @@ pub fn catmull_rom_point(p0: Vec2, p1: Vec2, p2: Vec2, p3: Vec2, t: f64) -> Vec2
 
 /// Obergrenze der Unterteilung **je Spanne**: höchstens `2^SPLINE_MAX_TIEFE`
 /// Teilstrecken. Ohne Deckel zöge eine sehr feine Toleranz (hoher Zoom) die
-/// Punktzahl ins Unermessliche; 256 Teilstrecken sind achtmal die frühere feste
-/// Abtastung von 32 und reichen bis weit über 30 px/mm.
+/// Punktzahl ins Unermessliche; 1024 Teilstrecken sind das 32-fache der früheren
+/// festen Abtastung und reichen bis weit über 30 px/mm.
 pub const SPLINE_MAX_TIEFE: u32 = 10;
 
 /// Sicherheitsfaktor der Pfeilhöhen-Prüfung.
 ///
 /// Geprüft wird an drei Stellen der Spanne (Mitte und beide Viertelstellen).
 /// Zwischen ihnen wächst die Abweichung weiter — gemessen bis zum 1,8-fachen
-/// der geprüften Stelle. Mit 0,5 bleibt die **gemessene** Pfeilhöhe unter der
-/// Toleranz (bei 30 px/mm: 0,15 px Toleranz, 0,13 px gemessen).
+/// der geprüften Stelle, solange der Deckel die Unterteilung begrenzt. Mit 0,75
+/// bleibt die **gemessene** Pfeilhöhe unter der Toleranz (bei 30 px/mm:
+/// 0,15 px Toleranz, 0,11 px gemessen).
 const SPLINE_PRUEF_FAKTOR: f64 = 0.75;
 
 /// Eine Spanne, die gerade unterteilt wird.

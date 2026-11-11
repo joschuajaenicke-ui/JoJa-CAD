@@ -478,7 +478,7 @@ Mit dem Nutzer abgestimmt — nicht „verbessern“:
   mehr fest 32 Punkte je Spanne ab, sondern halbiert jede Spanne, bis der
   Sehnenfehler die Toleranz einhält (geprüft an Mitte und beiden Viertelstellen —
   die Mitte allein läuft bei einer S-Form durch die Sehne; Deckel
-  `SPLINE_MAX_TIEFE` = 256 Teilstrecken je Spanne). Die **Anzeige** flacht mit
+  `SPLINE_MAX_TIEFE` = 1024 Teilstrecken je Spanne). Die **Anzeige** flacht mit
   `render::SPLINE_TOL_PX` (0,15 px) / Zoom ab, `RenderCtx::screen` trägt den Zoom
   (`mit_abbildung`, gesetzt nur von der Zeichenfläche); Druck, PNG, DXF und
   Ansichtsfenster lassen ihn leer und bleiben weltfest bei `SPLINE_TOL_MM`
