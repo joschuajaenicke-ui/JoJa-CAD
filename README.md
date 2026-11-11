@@ -102,6 +102,9 @@ angeben (`--daten-dir`).
 
 ## Dokumentation
 
+Wegweiser durch die Doku — welche Datei für wen gedacht ist:
+[`docs/README.md`](docs/README.md).
+
 - [`docs/BEDIENUNG.md`](docs/BEDIENUNG.md) — Werkzeuge, Panels, erste Schritte
 - [`docs/ARCHITEKTUR.md`](docs/ARCHITEKTUR.md) — Aufbau, Datenfluss, Entscheidungen
 - [`docs/FORMAT.md`](docs/FORMAT.md) — Dateiformat `.jjcad` (JSON, offen)
