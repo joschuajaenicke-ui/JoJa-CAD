@@ -136,6 +136,65 @@ impl MalKlasse {
     }
 }
 
+/// Zählung der Sehnenpunkte eines Bildes (T0173).
+///
+/// Die Zahl, die über die Bildkosten der Kurven entscheidet, ist die Zahl der
+/// Sehnen, in die Bögen, Ellipsen und Polylinien in diesem Bild zerlegt
+/// werden. Gezählt wird **dort, wo die Punkte ohnehin entstehen** — im Zweig
+/// von `canvas::paint_prim`, der die Kurve zerlegt: kein zusätzliches
+/// Allokieren, keine zweite Zerlegung, nur drei Zähler.
+///
+/// Ein Bogen, ein Ellipsenbogen und ein Spline sind offene Punktfolgen: `n`
+/// Punkte ergeben `n − 1` Sehnen. Eine Vollellipse und ein Kreis sind
+/// geschlossen und haben so viele Sehnen wie Punkte. Von den Polylinien zählen
+/// die **Punkte** aus der Anzeigeliste (ein geschlossener Zug wird mit einem
+/// Schlusssegment gezeichnet).
+#[derive(Default, Debug)]
+pub struct Zaehlung {
+    boegen: std::cell::Cell<usize>,
+    ellipsen: std::cell::Cell<usize>,
+    polylinien: std::cell::Cell<usize>,
+}
+
+impl Zaehlung {
+    /// Sehnen eines Bogens (Punkte minus 1) — auch eines Kreises (geschlossen:
+    /// so viele Sehnen wie Punkte).
+    pub fn bogen(&self, sehnen: usize) {
+        self.boegen.set(self.boegen.get() + sehnen);
+    }
+
+    /// Sehnen einer Ellipse oder eines Ellipsenbogens.
+    pub fn ellipse(&self, sehnen: usize) {
+        self.ellipsen.set(self.ellipsen.get() + sehnen);
+    }
+
+    /// Punkte einer Polylinie aus der Anzeigeliste (auch ein Spline ist dort
+    /// eine dichte Punktfolge).
+    pub fn polylinie(&self, punkte: usize) {
+        self.polylinien.set(self.polylinien.get() + punkte);
+    }
+
+    /// Sehnen der Bögen.
+    pub fn boegen(&self) -> usize {
+        self.boegen.get()
+    }
+
+    /// Sehnen der Ellipsen.
+    pub fn ellipsen(&self) -> usize {
+        self.ellipsen.get()
+    }
+
+    /// Punkte der Polylinien.
+    pub fn polylinien(&self) -> usize {
+        self.polylinien.get()
+    }
+
+    /// Alle Sehnenpunkte dieses Bildes.
+    pub fn summe(&self) -> usize {
+        self.boegen() + self.ellipsen() + self.polylinien()
+    }
+}
+
 /// Messwerte eines abgeschlossenen Bildes.
 #[derive(Clone, Copy, Debug)]
 pub struct Bild {
@@ -159,6 +218,17 @@ pub struct Bild {
     /// Grafikelemente, die das Culling verworfen hat (T0167) — sie liegen
     /// vollständig außerhalb des Bereichs, in dem gezeichnet wird.
     pub verworfen: usize,
+    /// Sehnenpunkte aller Kurven in diesem Bild (T0173) — die Zahl, die über
+    /// die Bildkosten der Kurven entscheidet.
+    pub unterteilungen: usize,
+    /// davon Bögen (Kreisbogen, Kreis)
+    pub unterteilungen_boegen: usize,
+    /// davon Ellipsen (Vollellipse, Ellipsenbogen)
+    pub unterteilungen_ellipsen: usize,
+    /// davon Punkte der Polylinien (auch Splines, Wandkanten, Schraffurzüge)
+    pub unterteilungen_polylinien: usize,
+    /// Wirksame Kurventoleranz (Pfeilhöhe) dieses Bildes in Bildpunkten
+    pub kurven_toleranz_px: f64,
 }
 
 impl Default for Bild {
@@ -175,6 +245,11 @@ impl Default for Bild {
             linien: 0,
             texte: 0,
             verworfen: 0,
+            unterteilungen: 0,
+            unterteilungen_boegen: 0,
+            unterteilungen_ellipsen: 0,
+            unterteilungen_polylinien: 0,
+            kurven_toleranz_px: 0.0,
         }
     }
 }
@@ -299,6 +374,18 @@ impl Perf {
     /// aufgerufen) — es liegt vollständig außerhalb der Ansicht.
     pub fn grafikelement_verworfen(&mut self) {
         self.laufend.verworfen += 1;
+    }
+
+    /// Die Sehnenzählung des Zeichens übernehmen (T0173) — nach dem Zeichnen
+    /// der Anzeigeliste, analog zu [`Self::grafikelement`]. `toleranz_px` ist
+    /// die Pfeilhöhe, mit der die Kurven in diesem Bild zerlegt wurden.
+    pub fn unterteilungen(&mut self, z: &Zaehlung, toleranz_px: f64) {
+        let b = &mut self.laufend;
+        b.unterteilungen_boegen = z.boegen();
+        b.unterteilungen_ellipsen = z.ellipsen();
+        b.unterteilungen_polylinien = z.polylinien();
+        b.unterteilungen = z.summe();
+        b.kurven_toleranz_px = toleranz_px;
     }
 
     /// Woher die Displayliste dieses Bildes kam und wie groß die Zeichnung ist.
@@ -463,6 +550,23 @@ fn zahl_text(n: usize) -> String {
         out.push(c);
     }
     out
+}
+
+/// Tooltip der Zeile „Unterteilungen“ (T0173): die Aufteilung nach Bögen,
+/// Ellipsen und Polylinien und die wirksame Toleranz in Bildpunkten.
+fn unterteilungen_hinweis(b: &Bild) -> String {
+    jjcad_core::i18n::t_args_owned(
+        "gui.perf.hinweis_unterteilungen",
+        &[
+            ("boegen", zahl_text(b.unterteilungen_boegen)),
+            ("ellipsen", zahl_text(b.unterteilungen_ellipsen)),
+            ("polylinien", zahl_text(b.unterteilungen_polylinien)),
+            (
+                "toleranz",
+                format!("{:.2}", b.kurven_toleranz_px).replace('.', ","),
+            ),
+        ],
+    )
 }
 
 /// Farbe für eine Rechenzeit: grün im 60-Bilder-Takt, gelb bis 33 ms,
@@ -784,6 +888,15 @@ fn inhalt(app: &App, ui: &mut egui::Ui) {
             ))
             .color(Palette::text_faint()),
         );
+        // T0173: Sehnenpunkte der Kurven — die Zahl, die über die Bildkosten
+        // der Kurven entscheidet. Aufteilung und wirksame Toleranz stehen im
+        // Tooltip.
+        let unter = jjcad_core::i18n::t_args_owned(
+            "gui.perf.unterteilungen_x",
+            &[("wert1", zahl_text(b.unterteilungen))],
+        );
+        ui.label(theme_mono(&unter).color(Palette::text_dim()))
+            .on_hover_text(unterteilungen_hinweis(&b));
     }
     ui.label(
         theme_mono(&jjcad_core::i18n::t_args_owned(
@@ -972,6 +1085,46 @@ mod tests {
         assert_eq!(b.grafikelemente, 5);
         assert_eq!((b.fuellungen, b.linien, b.texte), (2, 3, 0));
         assert!(b.malzeit(MalKlasse::Fuellung) > b.malzeit(MalKlasse::Linie));
+    }
+
+    #[test]
+    fn unterteilungen_werden_je_art_summiert() {
+        // T0173: drei Zähler, eine Summe — und ein neues Bild beginnt bei null.
+        let z = Zaehlung::default();
+        z.bogen(3);
+        z.bogen(4);
+        z.ellipse(72);
+        z.polylinie(5);
+        assert_eq!((z.boegen(), z.ellipsen(), z.polylinien()), (7, 72, 5));
+        assert_eq!(z.summe(), 84);
+
+        let mut p = Perf::default();
+        p.bild_beginnen();
+        p.unterteilungen(&z, 0.15);
+        let b = p.laufend;
+        assert_eq!(b.unterteilungen, 84);
+        assert_eq!((b.unterteilungen_boegen, b.unterteilungen_ellipsen), (7, 72));
+        assert_eq!(b.unterteilungen_polylinien, 5);
+        assert_eq!(b.kurven_toleranz_px, 0.15);
+
+        p.bild_beginnen();
+        assert_eq!(p.laufend.unterteilungen, 0, "das nächste Bild zählt neu");
+    }
+
+    #[test]
+    fn hinweis_nennt_aufteilung_und_toleranz() {
+        let b = Bild {
+            unterteilungen: 1234,
+            unterteilungen_boegen: 1000,
+            unterteilungen_ellipsen: 200,
+            unterteilungen_polylinien: 34,
+            kurven_toleranz_px: 0.15,
+            ..Bild::default()
+        };
+        let h = unterteilungen_hinweis(&b);
+        for teil in ["1.000", "200", "34", "0,15"] {
+            assert!(h.contains(teil), "der Tooltip nennt „{teil}“ nicht: {h}");
+        }
     }
 
     #[test]
