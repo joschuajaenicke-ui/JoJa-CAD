@@ -83,6 +83,23 @@ its own file `jjcad-mcp`.
 `jjcad.exe`. No installation, no registry, no administrator rights; the folder
 can be moved anywhere.
 
+#### When Windows warns
+
+`jjcad.exe` is **not signed** (code signing requires a certificate with a
+verified identity). SmartScreen and Defender therefore treat a freshly
+downloaded file as unknown. Three ways, depending on the message:
+
+1. **SmartScreen** ("Windows protected your PC"): click **"More info"**, then
+   **"Run anyway"**.
+2. **Defender reports a detection**: choose **"Allow"** / **"Allow on device"**
+   in the protection history — or add the program folder under Virus & threat
+   protection → Settings → Exclusions.
+3. **Cleanest: unblock it first.** Right-click the **ZIP file** → **Properties** →
+   tick **"Unblock"** in the Security section at the bottom → Apply → *then*
+   extract. The clearance then applies to everything in the archive. A single
+   `.exe` has the same checkbox under Properties → General ("This file came from
+   another computer …").
+
 To build it yourself: see [Building](#building).
 
 ## Repository layout

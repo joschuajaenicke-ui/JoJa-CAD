@@ -74,6 +74,23 @@ Tar-Archiv als eigene Datei `jjcad-mcp`.
 `jjcad.exe` starten. Keine Installation, keine Registry, keine
 Administratorrechte; der Ordner darf beliebig verschoben werden.
 
+#### Wenn Windows warnt
+
+Die `jjcad.exe` ist **nicht signiert** (eine Code-Signatur setzt ein Zertifikat
+mit geprüfter Identität voraus). Deshalb stufen SmartScreen und Defender eine
+frisch heruntergeladene Datei als unbekannt ein. Drei Wege, je nach Meldung:
+
+1. **SmartScreen** („Windows hat den Start dieser App verhindert"): auf
+   **„Weitere Informationen"** klicken, dann auf **„Trotzdem ausführen"**.
+2. **Defender meldet einen Fund**: im Schutzverlauf **„Zulassen"** bzw.
+   **„Zulassen auf dem Gerät"** wählen — oder den Programmordner unter
+   Viren- & Bedrohungsschutz → Einstellungen → Ausschlüsse eintragen.
+3. **Am saubersten vorher entsperren**: Rechtsklick auf die **ZIP-Datei** →
+   **Eigenschaften** → unten im Abschnitt „Sicherheit" das Kästchen
+   **„Entsperren"** anhaken → Übernehmen → *danach* entpacken. Die Freigabe gilt
+   dann für alles im Archiv. Die einzelne `.exe` hat dasselbe Kästchen unter
+   Eigenschaften → Allgemein („Die Datei stammt von einem anderen Computer …").
+
 Wer selbst bauen will: siehe [Entwickeln](#entwickeln).
 
 ## Aufbau des Repositories
