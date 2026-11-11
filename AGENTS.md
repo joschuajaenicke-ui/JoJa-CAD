@@ -433,6 +433,17 @@ Mit dem Nutzer abgestimmt — nicht „verbessern“:
   Parameter `dir` (die Oberfläche übergibt `prefs.blocks_dir()`) — ohne `dir`
   bleibt das Benutzerverzeichnis unberührt (Tests, MCP ohne Datenwurzel).
 
+- **Culling (T0167)**: Beim Zeichnen entscheidet `culling.rs` je Grafikelement,
+  ob es den Bereich schneidet, in dem gezeichnet wird — was ganz außerhalb liegt,
+  wird nicht gemalt. Die **Displayliste bleibt vollständig** (PDF/PNG unverändert);
+  geprüft wird gegen die Bildschirmhülle der Welt-Box plus halbe Strichbreite, ein
+  Fehler darf nur mehr zeichnen, nie weniger. Der Prüfbetrieb sitzt als eigener,
+  **anklickbarer** Streifen über der Leistungsanzeige (die Anzeige selbst bleibt
+  ohne Klick-Ebene, T0068): Haken „Bereich verkleinern“ → Bereich 12,5 % je Seite
+  kleiner, lila Rechteck zeigt die Grenze, Zeile „Culling: x von y gezeichnet ·
+  z verworfen“. Prüfweg `cargo test -p jjcad-gui tests_culling`, Prüfbild
+  `--demo culling`.
+
 - **Dämmung und Abdichtung sind Linienarten, keine Muster (T0132)**: Die Muster
   „Dämmstoffe“, „Dämmstoffe Schlaufen“ und die drei „Abdichtungen“ sind
   **entfernt**. Dämmung zeichnet die Linienart `LineType::Insulation` (Schlaufenband,

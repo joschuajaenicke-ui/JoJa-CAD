@@ -1824,6 +1824,10 @@
 # jetzt = "  jetzt"
 # anteil = " Anteil"
 # bilder_ms = "Bilder (ms)"
+# culling = "Culling"
+# culling_bereich_verkleinern = "Bereich verkleinern"
+# culling_x_von_y_gezeichnet = "Culling: {gezeichnet} von {gesamt} gezeichnet · {verworfen} verworfen"
+# hinweis_culling_bereich = "Zeichnet nur noch den lila umrandeten Bereich — zum Prüfen des Cullings"
 # x_objekte = "{wert1} Objekte"
 #
 [gui.widgets]
