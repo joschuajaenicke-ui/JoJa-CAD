@@ -566,10 +566,14 @@ pub fn install(ctx: &egui::Context) {
 fn schriften(ctx: &egui::Context) {
     let mut fonts = egui::FontDefinitions::default();
     // Systemschrift laden (falls vorhanden), sonst egui-Standardschrift
+    // Reihenfolge: **Liberation zuerst.** Es liegt jedem Paket bei (siehe
+    // packaging/fonts) und setzt auf jeder Maschine gleich breit; Noto und
+    // DejaVu weichen in den Breiten ab, was die Spalten der Oberfläche
+    // verschiebt und Tests maschinenabhängig macht.
     for path in [
+        "/usr/share/fonts/truetype/liberation/LiberationSans-Regular.ttf",
         "/usr/share/fonts/truetype/noto/NotoSans-Regular.ttf",
         "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
-        "/usr/share/fonts/truetype/liberation/LiberationSans-Regular.ttf",
         "C:\\Windows\\Fonts\\segoeui.ttf",
         "C:\\Windows\\Fonts\\arial.ttf",
         "/System/Library/Fonts/Supplemental/Arial.ttf",
@@ -587,9 +591,9 @@ fn schriften(ctx: &egui::Context) {
         }
     }
     for path in [
+        "/usr/share/fonts/truetype/liberation/LiberationSans-Bold.ttf",
         "/usr/share/fonts/truetype/noto/NotoSans-Bold.ttf",
         "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf",
-        "/usr/share/fonts/truetype/liberation/LiberationSans-Bold.ttf",
         "C:\\Windows\\Fonts\\segoeuib.ttf",
         "C:\\Windows\\Fonts\\arialbd.ttf",
         "/System/Library/Fonts/Supplemental/Arial Bold.ttf",
