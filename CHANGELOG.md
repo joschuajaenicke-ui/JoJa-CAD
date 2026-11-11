@@ -10,9 +10,30 @@ angefasst wurde.
 
 ## [0.2.2] — 2026-11-11
 
-Erste Fassung mit fertigen Paketen: **AppImage** für Linux, dazu die
-umfangreichste Funktionsrunde bisher — Maßketten, Fang, Ansichtsfenster und
-Einstellungen sind deutlich weiter.
+Erste Fassung mit fertigen Paketen: **AppImage** für Linux. Der größte Sprung
+steckt in der Geschwindigkeit — Culling und die dynamische Glättung aller Kurven
+machen große Zeichnungen spürbar flüssiger. Dazu die umfangreichste
+Funktionsrunde bisher an Maßketten, Fang, Ansichtsfenstern und Einstellungen.
+
+### Deutlich schneller
+
+- **Culling**: Gezeichnet wird nur noch, was im Bild liegt. Was vollständig
+  außerhalb der sichtbaren Fläche steht, wird vor dem Malen verworfen. Die
+  Displayliste bleibt dabei vollständig — PDF, PNG und DXF geben weiterhin jedes
+  Objekt aus. Ein Prüfbetrieb (Einstellungen → Grafik) zeigt die Grenze und
+  zählt mit: „Culling: x von y gezeichnet · z verworfen".
+- **Dynamische Glättung aller Kurven**: Bögen, Ellipsen, Splines und Dämmbänder
+  werden nach der Abbildung abgetastet — die Punktzahl folgt der Pfeilhöhe
+  (`N = gerade(ceil(sqrt(52 · px je Periode)))`, höchstens 512). Stark
+  herausgezoomt kostet eine Kurve nur so viele Punkte, wie man tatsächlich
+  sieht; hineingezoomt wird sie feiner, statt eckig zu werden. Bei Druck, PDF,
+  PNG und DXF bleibt die feste Dichte — ein Ausdruck darf sich nicht mit dem
+  Zoom ändern.
+- **Gemessen** an der Dämmungsschraffur einer großen Fläche (30 px/mm,
+  ≈ 148 000 Punkte): Anzeigeliste 2,4 ms statt 15 ms.
+- **Leistungsanzeige** zählt jetzt die Unterteilungen (Sehnenpunkte) je Bild und
+  nennt die wirksame Pfeilhöhe; die Auflösung der Rundungen ist in den
+  Einstellungen einstellbar.
 
 ### Neu
 
@@ -27,9 +48,6 @@ Einstellungen sind deutlich weiter.
 - **Ansichtsfenster**: eigener Ansichtsbereich einstellbar, Doppelklick springt
   in die Ansicht, `F5` zeigt die ganze Zeichnung.
 - **Dämmung** in mehreren Darstellungsstufen für kleine Auflösungen.
-- **Leistungseinstellungen**: Auflösung der Rundungen einstellbar, Objekte
-  außerhalb der Ansicht werden nicht mehr gezeichnet, die Leistungsanzeige
-  zählt die Unterteilungen mit.
 - **Fang-Einstellungen** in Gruppen, mit allen Stellschrauben; die Wahl der
   Fangmarken wird gespeichert.
 - **Schnellauswahl** übernimmt alle Eigenschaften des angeklickten Objekts.
