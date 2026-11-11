@@ -2599,14 +2599,22 @@ fn muster_wellen(
     }
 }
 
-/// Nr. 2 Boden/Gelände verändert: Flechtwerk aus langen Strichen in beiden
-/// Diagonalen (T0152, nach den Vorlagen zweier CAD-Programme).
+/// Nr. 2 Boden/Gelände verändert: Flechtwerk aus langen Strichen beider
+/// Diagonalen (T0152; Einheitszelle seit T0170 als Zeichnung des Nutzers).
 ///
-/// Aufbau in Musterkoordinaten (`u` längs, `v` quer, Einheit `s` = Musterabstand):
-/// Reihen bei `v = 4s·g + {0; 1,5s; 2,5s}`, auf jeder Reihe Striche der Länge
-/// `4s` mit `4s` Lücke, je Reihengruppe um `4s` versetzt. Dieselbe Figur liegt
-/// noch einmal um 90° gedreht darüber — erst beide Scharen zusammen ergeben das
-/// Flechtbild; eine allein wäre eine gewöhnliche Strichschraffur.
+/// Die Zelle ist ein **Schachbrett** aus Feldern von `6s` × `6s` (Zelle
+/// `12s` × `12s`, `s` = Musterabstand). In jedem Feld liegen **drei** Striche
+/// der Länge `6s` im Abstand `2s`; das Feld links unten führt sie senkrecht,
+/// jedes Nachbarfeld quer — im Schachbrett steht also jedes Feld quer zu
+/// seinen vier Nachbarn. Die Striche enden auf der Feldkante, sie berühren und
+/// kreuzen sich nie; erst die beiden Lagen zusammen ergeben das Flechtbild.
+///
+/// Gezeichnet wird die Zelle **im Musterraster**; als Schraffur steht sie
+/// vorgabemäßig unter 45° (der Musterwinkel einer Füllung ist +45°, wie bei
+/// „Mauerwerk“). Die Zelle ist gegen Drehung um 90° gleich — das Schachbrett
+/// verschiebt sich dabei nur um ein Feld —, die Drehrichtung ist deshalb
+/// beliebig. Gekachelt wird über die Feldkanten; die Lage kommt wie bei allen
+/// Mustern aus dem Weltnullpunkt.
 fn muster_boden_veraendert(
     dl: &mut DisplayList,
     e: &Entity,
@@ -2618,69 +2626,43 @@ fn muster_boden_veraendert(
 ) {
     let s = spacing.max(0.5);
     let r = Raster::new(angle);
-    // Zweite Schar um 90° gedreht; der Versatz längs lässt die Striche
-    // ineinandergreifen statt sich zu kreuzen (in der Vorlage gemessen).
-    for (quer, versatz) in [(false, 0.0), (true, 2.0 * s)] {
-        boden_veraendert_schar(dl, e, st, pts, holes, &r, s, quer, versatz);
-    }
-}
-
-/// Eine Schar des Musters „Boden verändert": Reihen im Abstand `s`/`1,5 s`,
-/// darauf lange Striche. `quer` dreht die Schar um 90° (Reihen liegen dann auf
-/// konstantem `u` statt `v`), `versatz` schiebt die Striche längs.
-#[allow(clippy::too_many_arguments)]
-fn boden_veraendert_schar(
-    dl: &mut DisplayList,
-    e: &Entity,
-    st: &PrimStyle,
-    pts: &[Vec2],
-    holes: &[Vec<Vec2>],
-    r: &Raster,
-    s: f64,
-    quer: bool,
-    versatz: f64,
-) {
     let (umin, umax, vmin, vmax) = r.bereich(pts);
-    // Reihenachse: bei `quer` läuft die Reihe längs `v`, sonst längs `u`.
-    let (quer_min, quer_max, along_min, along_max) = if quer {
-        (umin, umax, vmin, vmax)
-    } else {
-        (vmin, vmax, umin, umax)
-    };
-    let punkt = |along: f64, quer_pos: f64| {
-        if quer {
-            r.punkt(quer_pos, along)
-        } else {
-            r.punkt(along, quer_pos)
-        }
-    };
-    let reihe = 4.0 * s;
-    let g0 = (quer_min / reihe).floor() as i64 - 1;
-    let g1 = (quer_max / reihe).ceil() as i64 + 1;
-    if g1 - g0 > 400 {
+    let feld = 6.0 * s;
+    let i0 = (umin / feld).floor() as i64 - 1;
+    let i1 = (umax / feld).ceil() as i64 + 1;
+    let j0 = (vmin / feld).floor() as i64 - 1;
+    let j1 = (vmax / feld).ceil() as i64 + 1;
+    // Zu viele Felder: lieber nichts zeichnen als ein Bild, das Sekunden
+    // braucht (der Musterabstand kommt aus der Zeichnung).
+    if (i1 - i0 + 1).saturating_mul(j1 - j0 + 1) > 20_000 {
         return;
     }
-    for g in g0..=g1 {
-        // Je Reihengruppe um eine Strichlänge versetzt (Flechtversatz).
-        let phase = versatz + if g.rem_euclid(2) == 0 { 0.0 } else { 4.0 * s };
-        for dv in [0.0, 1.5 * s, 2.5 * s] {
-            let q = g as f64 * reihe + dv;
-            let m0 = ((along_min - phase) / (8.0 * s)).floor() as i64 - 1;
-            let m1 = ((along_max - phase) / (8.0 * s)).ceil() as i64 + 1;
-            if m1 - m0 > 4000 {
-                continue;
-            }
-            for m in m0..=m1 {
-                let u0 = phase + m as f64 * 8.0 * s;
+    for i in i0..=i1 {
+        for j in j0..=j1 {
+            let (u0, v0) = (i as f64 * feld, j as f64 * feld);
+            let mut strich = |x1: f64, y1: f64, x2: f64, y2: f64| {
                 muster_abschnitt(
                     dl,
                     e,
                     st,
-                    punkt(u0, q),
-                    punkt(u0 + 4.0 * s, q),
+                    r.punkt(u0 + x1 * s, v0 + y1 * s),
+                    r.punkt(u0 + x2 * s, v0 + y2 * s),
                     pts,
                     holes,
                 );
+            };
+            if (i + j).rem_euclid(2) == 0 {
+                // Senkrechte Striche über die ganze Feldhöhe.
+                for k in 0..3 {
+                    let x = (1 + 2 * k) as f64;
+                    strich(x, 0.0, x, 6.0);
+                }
+            } else {
+                // Waagerechte Striche über die ganze Feldbreite.
+                for k in 0..3 {
+                    let y = (1 + 2 * k) as f64;
+                    strich(0.0, y, 6.0, y);
+                }
             }
         }
     }
