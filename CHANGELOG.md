@@ -17,23 +17,12 @@ Funktionsrunde bisher an Maßketten, Fang, Ansichtsfenstern und Einstellungen.
 
 ### Deutlich schneller
 
-- **Culling**: Gezeichnet wird nur noch, was im Bild liegt. Was vollständig
-  außerhalb der sichtbaren Fläche steht, wird vor dem Malen verworfen. Die
-  Displayliste bleibt dabei vollständig — PDF, PNG und DXF geben weiterhin jedes
-  Objekt aus. Ein Prüfbetrieb (Einstellungen → Grafik) zeigt die Grenze und
-  zählt mit: „Culling: x von y gezeichnet · z verworfen".
+- **Culling**: Gezeichnet wird nur, was im Bild liegt — der Rest wird vor dem
+  Malen verworfen. PDF, PNG und DXF bleiben vollständig.
 - **Dynamische Glättung aller Kurven**: Bögen, Ellipsen, Splines und Dämmbänder
-  werden nach der Abbildung abgetastet — die Punktzahl folgt der Pfeilhöhe
-  (`N = gerade(ceil(sqrt(52 · px je Periode)))`, höchstens 512). Stark
-  herausgezoomt kostet eine Kurve nur so viele Punkte, wie man tatsächlich
-  sieht; hineingezoomt wird sie feiner, statt eckig zu werden. Bei Druck, PDF,
-  PNG und DXF bleibt die feste Dichte — ein Ausdruck darf sich nicht mit dem
-  Zoom ändern.
-- **Gemessen** an der Dämmungsschraffur einer großen Fläche (30 px/mm,
-  ≈ 148 000 Punkte): Anzeigeliste 2,4 ms statt 15 ms.
-- **Leistungsanzeige** zählt jetzt die Unterteilungen (Sehnenpunkte) je Bild und
-  nennt die wirksame Pfeilhöhe; die Auflösung der Rundungen ist in den
-  Einstellungen einstellbar.
+  werden nur so fein abgetastet, wie die Ansicht es braucht — herausgezoomt
+  wenige Punkte, hineingezoomt feiner. Druck und Exporte behalten ihre feste
+  Dichte.
 
 ### Neu
 
