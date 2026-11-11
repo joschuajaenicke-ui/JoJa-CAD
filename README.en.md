@@ -52,17 +52,38 @@ AI-generated code.
 
 ## Installation
 
-**There are no finished packages yet.** The project is at version 0.2; the
-installation is planned for 1.0. Until then, anyone who wants to try it builds
-from source (see below).
+Finished packages are published under **[Releases](../../releases)** — unpack or
+run, no installation, no administrator rights, no account.
 
-### Linux *(placeholder)*
+### Linux
 
-Planned: AppImage or .deb via GitHub Releases.
+**AppImage** (recommended, a single file):
 
-### Windows *(placeholder)*
+```bash
+chmod +x JoJa-CAD-0.2.2-x86_64.AppImage
+./JoJa-CAD-0.2.2-x86_64.AppImage
+```
 
-Planned: installer or portable ZIP via GitHub Releases.
+If you keep several AppImages around, manage them with
+[Gear Lever](https://github.com/mijorus/gearlever): it registers the menu entry,
+updates on a new release and keeps the files in one place instead of the
+download folder. On a system without FUSE,
+`./JoJa-CAD-0.2.2-x86_64.AppImage --appimage-extract-and-run` does the job.
+
+**Tar archive** (if you prefer plain files): unpack and start `./jjcad`. The
+fonts live in the `fonts/` folder next to the program.
+
+The **MCP server** ships in both packages: in the AppImage via `--mcp`
+(e.g. `./JoJa-CAD-0.2.2-x86_64.AppImage --mcp --selftest`), in the tar archive as
+its own file `jjcad-mcp`.
+
+### Windows
+
+**Portable ZIP**: unpack (any folder, a USB stick is fine) and start
+`jjcad.exe`. No installation, no registry, no administrator rights; the folder
+can be moved anywhere.
+
+To build it yourself: see [Building](#building).
 
 ## Repository layout
 
