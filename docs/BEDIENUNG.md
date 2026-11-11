@@ -109,9 +109,12 @@ einsehbar und dort frei änderbar (Ribbon ▸ Ansicht ▸ „Tasten").
     Speicherorte, Sicherung), darüber die Suche, rechts die
     Einstellungen der gewählten Kategorie. Die Suche filtert Kategorien **und** Zeilen und springt
     auf die erste passende Kategorie. **Grafik** führt nur die Leistungseinstellungen der Anzeige
-    (Kantenglättung samt Kantenweichheit, Textauflösung, Anzeigeliste zwischenspeichern,
-    Leistungsanzeige); die personalisierte Darstellung (Design, Farbakzente, Linienstärken)
-    bleibt in **Darstellung**.
+    (Kantenglättung samt Kantenweichheit, Kurventoleranz, Textauflösung, Anzeigeliste
+    zwischenspeichern, Leistungsanzeige); die personalisierte Darstellung (Design, Farbakzente,
+    Linienstärken) bleibt in **Darstellung**. Die **Kurventoleranz** ist die Pfeilhöhe, mit der
+    Kreise, Bögen und Ellipsenbögen auf dem Bildschirm in Sehnen zerlegt werden (0,05 bis 2,0 px,
+    Vorgabe 0,15 px): klein = glatter, groß = schneller, gilt sofort. Der Druck (PDF, PNG) liest
+    sie nicht — dort gilt unverändert die feinere Druckgüte.
 13. **Platzieren mit Vorschau**: Block aus dem Inventar wählen oder `Strg+V` drücken — die Vorschau
     steht mit ihrer **unteren linken Ecke** am Mauszeiger (also oben rechts davon), folgt der Maus
     und wird mit Klick gesetzt. `R` (die Funktion „Drehen") dreht in 90°-Schritten im

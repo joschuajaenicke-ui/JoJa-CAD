@@ -396,7 +396,14 @@ pub fn draw_list_preview(
                 p.add(egui::Shape::line(v, stroke));
             }
             PShape::Circle { c, r } => {
-                p.add(crate::canvas::kreis_zug(w2s(*c), *r as f32 * k, stroke));
+                // Kachel und Slot sind klein (30…50 px) — dort gilt die
+                // Vorgabegüte, nicht die Kurventoleranz der Zeichnung (T0172).
+                p.add(crate::canvas::kreis_zug(
+                    w2s(*c),
+                    *r as f32 * k,
+                    stroke,
+                    jjcad_core::tessellate::CurveQuality::SCREEN,
+                ));
             }
             PShape::Arc { c, r, a0, a1 } => {
                 let arc = jjcad_core::geom::Arc::new(*c, *r, *a0, *a1);

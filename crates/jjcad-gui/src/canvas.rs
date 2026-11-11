@@ -48,10 +48,21 @@ struct PaintCtx {
     /// Darstellung → „Textauflösung“). Höher = schärfer im hohen Zoom, aber
     /// mehr Schriftatlas.
     text_deckel: f32,
+    /// Güte, mit der Rundungen (Kreis, Bogen, Ellipsenbogen) in Sehnen zerlegt
+    /// werden (T0172) — Pfeilhöhe aus den Einstellungen („Grafik“).
+    kurven: CurveQuality,
 }
 
 fn color32(c: jjcad_core::style::Color) -> Color32 {
     Color32::from_rgb(c.r, c.g, c.b)
+}
+
+/// Kurvengüte der Zeichenfläche (T0172): die Pfeilhöhe aus den Einstellungen
+/// („Grafik“ → Kurventoleranz). Eine Stelle für alle Rundungen — Kreis, Bogen
+/// und Ellipsenbogen; die Vorschauen der Werkzeuge nehmen denselben Wert.
+/// Der Druck liest die Einstellung nicht (dort gilt `CurveQuality::PRINT`).
+fn kurven_guete(app: &App) -> CurveQuality {
+    CurveQuality::mit_pfeilhoehe(app.prefs.kurven_toleranz_px)
 }
 
 /// Strichmuster in Bildschirmpixeln.
@@ -202,13 +213,18 @@ fn capsule(p: &Painter, a: Pos2, b: Pos2, w: f32, col: Color32) {
 /// und PDF/PNG laufen auseinander — die zeichnen mittig. Die Punkte liegen
 /// deshalb auf dem Radius und die Kontur wird wie bei Bogen (`Shape::line`) und
 /// Ellipse (`stroke_pts`) zentriert gestrichen (T0080).
-pub(crate) fn kreis_zug(center: Pos2, radius: f32, stroke: Stroke) -> egui::Shape {
+pub(crate) fn kreis_zug(
+    center: Pos2,
+    radius: f32,
+    stroke: Stroke,
+    q: CurveQuality,
+) -> egui::Shape {
     if radius <= 0.0 {
         return egui::Shape::Noop;
     }
     // Segmentzahl nach derselben Pfeilhöhen-Regel wie alle Bögen.
     let arc = Arc::new(V2::new(0.0, 0.0), radius as f64, 0.0, std::f64::consts::TAU);
-    let n = CurveQuality::SCREEN.segments(&arc, 1.0).max(8);
+    let n = q.segments(&arc, 1.0).max(8);
     let pts: Vec<Pos2> = (0..n)
         .map(|i| {
             let a = i as f64 / n as f64 * std::f64::consts::TAU;
@@ -559,7 +575,7 @@ fn paint_prim(p: &Painter, prim: &Prim, w2s: &dyn Fn(V2) -> Pos2, scale: f64, pc
                 // Auf dem Schirm punktförmiger Kreis
                 p.circle_filled(w2s(*c), (w as f32 * 0.5).max(0.5), col);
             } else {
-                p.add(kreis_zug(w2s(*c), rr, stroke));
+                p.add(kreis_zug(w2s(*c), rr, stroke, pc.kurven));
             }
             // Mittelpunktkreuz nur bei Auswahl (T0117): im Plan ist der
             // Kreismittelpunkt kein Zeichnungselement. Fangen darf er
@@ -575,7 +591,8 @@ fn paint_prim(p: &Painter, prim: &Prim, w2s: &dyn Fn(V2) -> Pos2, scale: f64, pc
                 p.circle_filled(w2s(*c), (w as f32 * 0.5).max(0.5), col);
                 return;
             }
-            let pts: Vec<Pos2> = CurveQuality::SCREEN
+            let pts: Vec<Pos2> = pc
+                .kurven
                 .flatten(&arc, scale)
                 .iter()
                 .map(|q| w2s(*q))
@@ -610,11 +627,12 @@ fn paint_prim(p: &Painter, prim: &Prim, w2s: &dyn Fn(V2) -> Pos2, scale: f64, pc
             }
         }
         // Ellipsenbogen: dieselbe Pfeilhöhen-Regel wie Bogen und Kreis
-        // (Gerätemaß 0,15 px), damit die Kurve in jedem Zoom glatt bleibt.
+        // (Einstellungen → Grafik → Kurventoleranz), damit die Kurve in jedem
+        // Zoom glatt bleibt.
         PShape::EllipseArc { c, rx, ry, rot, a0, a1 } => {
             let el = jjcad_core::geom::Ellipse::new(*c, *rx, *ry, *rot);
             let pts: Vec<Pos2> = el
-                .arc_points(*a0, *a1, 0.15 / scale.max(1e-9))
+                .arc_points(*a0, *a1, pc.kurven.max_sagitta / scale.max(1e-9))
                 .iter()
                 .map(|q| w2s(*q))
                 .collect();
@@ -1400,6 +1418,7 @@ pub fn show(app: &mut App, ui: &mut Ui) {
             preview: false,
             rot: view_now.rot as f32,
             text_deckel: app.prefs.textaufloesung.px(),
+            kurven: kurven_guete(app),
         };
         if app.ui.show_grid {
             draw_grid(app, &painter, rect, view_now);
@@ -1838,6 +1857,7 @@ fn draw_sheet(app: &mut App, p: &Painter, rect: Rect, view: View, cursor: Option
             preview: false,
             rot: 0.0,
             text_deckel: app.prefs.textaufloesung.px(),
+            kurven: kurven_guete(app),
         };
         // Culling (T0167): was außerhalb der Zeichenfläche liegt, wird nicht
         // gezeichnet. Geprüft wird gegen die **Fläche**, nicht gegen den
@@ -1892,6 +1912,7 @@ fn draw_sheet(app: &mut App, p: &Painter, rect: Rect, view: View, cursor: Option
         preview: false,
         rot: view.rot as f32,
         text_deckel: app.prefs.textaufloesung.px(),
+        kurven: kurven_guete(app),
     };
     let mut dl = render::render_sheet(app.doc(), &sheet);
     ohne_texteingabe(app, &mut dl);
@@ -2524,6 +2545,7 @@ fn draw_opening_preview(
         preview: false,
         rot: view.rot as f32,
         text_deckel: app.prefs.textaufloesung.px(),
+        kurven: kurven_guete(app),
     };
     let symbol_ctx = PaintCtx {
         preview: true,
@@ -2827,7 +2849,12 @@ fn draw_tool_preview(
         "draw.circle" => {
             if let Some(c) = last {
                 let r = c.dist(cursor);
-                p.add(kreis_zug(w2s(c), (r * view.zoom) as f32, stroke));
+                p.add(kreis_zug(
+                    w2s(c),
+                    (r * view.zoom) as f32,
+                    stroke,
+                    kurven_guete(app),
+                ));
                 p.line_segment([w2s(c), w2s(cursor)], dashed);
                 label = format!("⌀ {}", unit.format_plain(r * 2.0, unit.decimals()));
             }
@@ -2902,7 +2929,12 @@ fn draw_tool_preview(
                         let r = c.dist(cursor);
                         p.line_segment([w2s(c), w2s(cursor)], dashed);
                         if r > 0.5 {
-                            p.add(kreis_zug(w2s(c), (r * view.zoom) as f32, stroke));
+                            p.add(kreis_zug(
+                                w2s(c),
+                                (r * view.zoom) as f32,
+                                stroke,
+                                kurven_guete(app),
+                            ));
                             label = jjcad_core::i18n::t_args_owned("gui.canvas.r_x", &[("wert1", format!("{}", unit.format_plain(r, unit.decimals())))]);
                         }
                     }
@@ -2915,7 +2947,7 @@ fn draw_tool_preview(
                             let a0 = (s0 - c).angle();
                             let a1 = (cursor - c).angle();
                             let arc = Arc::new(c, r, a0, a1);
-                            let pts: Vec<Pos2> = CurveQuality::SCREEN
+                            let pts: Vec<Pos2> = kurven_guete(app)
                                 .flatten(&arc, view.zoom)
                                 .iter()
                                 .map(|q| w2s(*q))
@@ -2931,7 +2963,7 @@ fn draw_tool_preview(
                 let p0 = tool.pts[0];
                 let p1 = tool.pts[1];
                 if let Some(arc) = Arc::from_3_points(p0, cursor, p1) {
-                    let pts: Vec<Pos2> = CurveQuality::SCREEN
+                    let pts: Vec<Pos2> = kurven_guete(app)
                         .flatten(&arc, view.zoom)
                         .iter()
                         .map(|q| w2s(*q))
@@ -3245,6 +3277,7 @@ fn draw_tool_preview(
                     preview: true,
                     rot: view.rot as f32,
                     text_deckel: app.prefs.textaufloesung.px(),
+                    kurven: kurven_guete(app),
                 };
                 for prim in &dl.prims {
                     paint_prim(p, prim, &w2s, view.zoom, &pc, 1.0);
@@ -3299,6 +3332,7 @@ fn draw_tool_preview(
                 preview: true,
                 rot: view.rot as f32,
                 text_deckel: app.prefs.textaufloesung.px(),
+                kurven: kurven_guete(app),
             };
             for prim in &dl.prims {
                 paint_prim(p, prim, &w2s, view.zoom, &pc, 1.0);
@@ -3600,11 +3634,16 @@ fn draw_objekt_hervorhebung(
                 }
             }
             PShape::Circle { c, r } => {
-                p.add(kreis_zug(w2s(*c), (*r * view.zoom) as f32, strich));
+                p.add(kreis_zug(
+                    w2s(*c),
+                    (*r * view.zoom) as f32,
+                    strich,
+                    kurven_guete(app),
+                ));
             }
             PShape::Arc { c, r, a0, a1 } => {
                 let arc = Arc::new(*c, *r, *a0, *a1);
-                let pts: Vec<Pos2> = CurveQuality::SCREEN
+                let pts: Vec<Pos2> = kurven_guete(app)
                     .flatten(&arc, view.zoom)
                     .iter()
                     .map(|q| w2s(*q))
@@ -3625,7 +3664,7 @@ fn draw_objekt_hervorhebung(
             PShape::EllipseArc { c, rx, ry, rot, a0, a1 } => {
                 let el = Ellipse::new(*c, *rx, *ry, *rot);
                 let pts: Vec<Pos2> = el
-                    .arc_points(*a0, *a1, 0.15 / view.zoom.max(1e-9))
+                    .arc_points(*a0, *a1, kurven_guete(app).max_sagitta / view.zoom.max(1e-9))
                     .iter()
                     .map(|q| w2s(*q))
                     .collect();
@@ -3776,6 +3815,7 @@ fn draw_selection_preview(
         preview: true,
         rot: view.rot as f32,
         text_deckel: app.prefs.textaufloesung.px(),
+        kurven: kurven_guete(app),
     };
     let w2s = |q: V2| world_to_screen(rect, view, q);
     for prim in &dl.prims {
@@ -4999,6 +5039,7 @@ fn draw_ghost(app: &App, p: &Painter, rect: Rect, view: View) {
             stroke,
             view.rot as f32,
             app.prefs.textaufloesung.px(),
+            kurven_guete(app),
         );
     }
 
@@ -5045,6 +5086,7 @@ fn ghost_shape(
     stroke: Stroke,
     rot: f32,
     deckel: f32,
+    q: CurveQuality,
 ) {
     match sh {
         PShape::Line(a, b) => {
@@ -5061,11 +5103,11 @@ fn ghost_shape(
             p.add(egui::Shape::line(v, stroke));
         }
         PShape::Circle { c, r } => {
-            p.add(kreis_zug(w2s(*c), (*r * zoom) as f32, stroke));
+            p.add(kreis_zug(w2s(*c), (*r * zoom) as f32, stroke, q));
         }
         PShape::Arc { c, r, a0, a1 } => {
             let arc = Arc::new(*c, *r, *a0, *a1);
-            let pts: Vec<Pos2> = CurveQuality::SCREEN
+            let pts: Vec<Pos2> = q
                 .flatten(&arc, zoom)
                 .iter()
                 .map(|q| w2s(*q))
@@ -5084,7 +5126,7 @@ fn ghost_shape(
         PShape::EllipseArc { c, rx, ry, rot, a0, a1 } => {
             let el = jjcad_core::geom::Ellipse::new(*c, *rx, *ry, *rot);
             let pts: Vec<Pos2> = el
-                .arc_points(*a0, *a1, 0.15 / zoom.max(1e-9))
+                .arc_points(*a0, *a1, q.max_sagitta / zoom.max(1e-9))
                 .iter()
                 .map(|q| w2s(*q))
                 .collect();
@@ -5501,6 +5543,7 @@ fn draw_fill_ghost(app: &App, p: &Painter, rect: Rect, view: View, umriss: &[V2]
         preview: true,
         rot: view.rot as f32,
         text_deckel: app.prefs.textaufloesung.px(),
+        kurven: kurven_guete(app),
     };
     for prim in &dl.prims {
         paint_prim(p, prim, &w2s, view.zoom, &pc, 1.0);
@@ -5558,6 +5601,7 @@ fn draw_paint_ghost(
         preview: true,
         rot: view.rot as f32,
         text_deckel: app.prefs.textaufloesung.px(),
+        kurven: kurven_guete(app),
     };
     for prim in &dl.prims {
         paint_prim(p, prim, &w2s, view.zoom, &pc, 1.0);
@@ -6057,6 +6101,7 @@ fn dreh_vorschau(
             pre,
             view.rot as f32,
             app.prefs.textaufloesung.px(),
+            kurven_guete(app),
         );
     }
     jjcad_core::i18n::t_args_owned(
@@ -10736,6 +10781,7 @@ mod tests_textvorschau {
                 Stroke::new(1.5, Palette::accent()),
                 0.0,
                 crate::textgroesse::RASTER_DECKEL_PX,
+                CurveQuality::SCREEN,
             );
         });
         assert!(
@@ -13312,6 +13358,7 @@ mod tests_kreis_kontur {
             preview: false,
             rot: 0.0,
             text_deckel: crate::textgroesse::RASTER_DECKEL_PX,
+            kurven: CurveQuality::SCREEN,
         };
         let prim = Prim {
             shape: PShape::Circle {
@@ -14137,6 +14184,7 @@ mod tests_mittelpunkt {
                 preview: false,
                 rot: 0.0,
                 text_deckel: 64.0,
+                kurven: CurveQuality::SCREEN,
             };
             let w2s = |q: V2| Pos2::new(q.x as f32, q.y as f32);
             paint_prim(&p, &prim, &w2s, 1.0, &pc, 1.0);
@@ -15400,3 +15448,116 @@ mod tests_culling {
     }
 }
 
+
+#[cfg(test)]
+mod tests_kurventoleranz {
+    //! T0172: Die Pfeilhöhe der Rundungen steht in den Einstellungen
+    //! („Grafik“ → Kurventoleranz). Geprüft wird der **Zeichenpfad**: dieselbe
+    //! Form muss bei 0,05 px mehr Punkte bekommen als bei 0,15 px und bei
+    //! 0,5 px weniger. Ein Test über `tessellate` allein wäre blind dafür, dass
+    //! `paint_prim` die Konstante statt der Einstellung nimmt.
+
+    use super::*;
+
+    /// Größter Pfad in der Ausgabe — Kreis und Bogen landen als **ein** Pfad,
+    /// Ellipsenbögen als eine Linie (`stroke_pts` unter 2 px Breite).
+    fn pfad_punkte(shape: &egui::Shape, n: &mut usize) {
+        match shape {
+            egui::Shape::Path(p) => *n = (*n).max(p.points.len()),
+            egui::Shape::Vec(v) => v.iter().for_each(|s| pfad_punkte(s, n)),
+            _ => {}
+        }
+    }
+
+    /// Zeichnet die Form durch `paint_prim` mit der Pfeilhöhe `px` und gibt die
+    /// Punktzahl des längsten Pfads zurück.
+    fn gezeichnet(shape: PShape, px: f64) -> usize {
+        let ctx = egui::Context::default();
+        let form = shape.clone();
+        let out = ctx.run(egui::RawInput::default(), |ctx| {
+            let layer = egui::LayerId::new(egui::Order::Background, egui::Id::new("t0172"));
+            let p = egui::Painter::new(ctx.clone(), layer, Rect::EVERYTHING);
+            let prim = Prim {
+                shape: form.clone(),
+                style: render::PrimStyle::default(),
+                entity: 7,
+                layer: 1,
+            };
+            let pc = PaintCtx {
+                selected: Vec::new(),
+                hover: None,
+                lineweights: false,
+                lineweights_scaled: false,
+                lineweight_factor: 1.0,
+                paper_px: 1.0,
+                preview: false,
+                rot: 0.0,
+                text_deckel: 64.0,
+                kurven: CurveQuality::mit_pfeilhoehe(px),
+            };
+            let w2s = |q: V2| Pos2::new(q.x as f32, q.y as f32);
+            paint_prim(&p, &prim, &w2s, 1.0, &pc, 1.0);
+        });
+        let mut n = 0;
+        for cs in &out.shapes {
+            pfad_punkte(&cs.shape, &mut n);
+        }
+        n
+    }
+
+    #[test]
+    fn zeichenpfad_nimmt_die_kurventoleranz() {
+        let c = V2::new(0.0, 0.0);
+        for (name, shape) in [
+            ("Kreis", PShape::Circle { c, r: 300.0 }),
+            (
+                "Bogen",
+                PShape::Arc {
+                    c,
+                    r: 300.0,
+                    a0: 0.0,
+                    a1: 3.0,
+                },
+            ),
+            (
+                "Ellipsenbogen",
+                PShape::EllipseArc {
+                    c,
+                    rx: 300.0,
+                    ry: 200.0,
+                    rot: 0.0,
+                    a0: 0.0,
+                    a1: 3.0,
+                },
+            ),
+        ] {
+            let fein = gezeichnet(shape.clone(), 0.05);
+            let vorgabe = gezeichnet(shape.clone(), 0.15);
+            let grob = gezeichnet(shape, 0.5);
+            assert!(
+                fein > vorgabe && vorgabe > grob,
+                "{name}: 0,05 px → {fein}, 0,15 px → {vorgabe}, 0,5 px → {grob} Punkte"
+            );
+        }
+    }
+
+    /// Die Vorgabe 0,15 px ergibt genau das Bild der Konstante — wer die
+    /// Einstellung nicht anfasst, sieht keinen Unterschied (bestehende
+    /// Prüfbilder bleiben gültig).
+    #[test]
+    fn vorgabe_zeichnet_wie_die_konstante() {
+        let c = V2::new(0.0, 0.0);
+        let shape = PShape::Arc {
+            c,
+            r: 300.0,
+            a0: 0.0,
+            a1: 3.0,
+        };
+        let arc = Arc::new(c, 300.0, 0.0, 3.0);
+        assert_eq!(
+            gezeichnet(shape, 0.15),
+            CurveQuality::SCREEN.flatten(&arc, 1.0).len(),
+            "die Vorgabe weicht von CurveQuality::SCREEN ab"
+        );
+    }
+}

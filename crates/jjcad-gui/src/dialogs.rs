@@ -1302,6 +1302,12 @@ pub(crate) const EINSTELLUNGSKATEGORIEN: &[Einstellungskategorie] = &[
             "Kante",
             "Kanten",
             "Weichheit",
+            "Kurventoleranz",
+            "Rundung",
+            "Rundungen",
+            "Bogen",
+            "Pfeilhöhe",
+            "Toleranz",
             "Textauflösung",
             "Auflösung",
             "Schärfe",
@@ -1577,6 +1583,8 @@ fn settings_body(app: &mut App, ui: &mut Ui) {
     // T0165: Kantenglättung der Zeichnung, Anzeigeliste und Leistungsanzeige.
     let mut kantenglaettung = app.prefs.kantenglaettung;
     let mut kantenweichheit = app.prefs.kantenweichheit;
+    // T0172: Pfeilhöhe der Rundungen in Bildpunkten (Vorgabe 0,15 px).
+    let mut kurven_toleranz = app.prefs.kurven_toleranz_px;
     let mut anzeigeliste_cache = app.prefs.anzeigeliste_cache;
     let mut perf_anzeige = app.prefs.perf_anzeige;
     // T0129: Sicherung — Verlauf, Plätze, Reichweite, Intervall.
@@ -2501,6 +2509,40 @@ fn settings_body(app: &mut App, ui: &mut Ui) {
                                         "settings.kantenweichheit_hint",
                                     )));
                                 }
+                                // T0172: Pfeilhöhe, mit der Rundungen
+                                // (Kreis, Bogen, Ellipsenbogen) in Sehnen
+                                // zerlegt werden. Klein = glatter, groß =
+                                // schneller; gilt sofort.
+                                zeile_mit(
+                                    &suche,
+                                    ui,
+                                    jjcad_core::i18n::tr("gui.dialogs.kurventoleranz"),
+                                    &[
+                                        "Rundung",
+                                        "Rundungen",
+                                        "Bogen",
+                                        "Kreis",
+                                        "Pfeilhöhe",
+                                        "Toleranz",
+                                        "Glättung",
+                                    ],
+                                    |ui| {
+                                        ui.add(
+                                            crate::widgets::zahl(
+                                                &mut kurven_toleranz,
+                                                0.01,
+                                                jjcad_core::persist::KURVEN_TOLERANZ_MIN
+                                                    ..=jjcad_core::persist::KURVEN_TOLERANZ_MAX,
+                                            )
+                                            .suffix(" px"),
+                                        );
+                                    },
+                                );
+                                if suche.is_empty() {
+                                    ui.label(theme::faint(jjcad_core::i18n::tr(
+                                        "settings.kurventoleranz_hint",
+                                    )));
+                                }
                                 // T0114: höchste Rastergröße der Schrift. Höher
                                 // heißt schärfer im hohen Zoom, kostet aber
                                 // Schriftatlas — deshalb nur vier feste Stufen.
@@ -3200,6 +3242,17 @@ fn settings_body(app: &mut App, ui: &mut Ui) {
         app.prefs.kantenweichheit = kantenweichheit;
         let _ = app.prefs.save();
         crate::theme::set_kantenglaettung(kantenglaettung, kantenweichheit, ui.ctx());
+        ui.ctx().request_repaint();
+    }
+    // T0172: die Kurventoleranz gilt sofort — die Zeichenfläche liest sie bei
+    // jedem Bild, die nächste Zerlegung nimmt den neuen Wert.
+    let kurven_toleranz = kurven_toleranz.clamp(
+        jjcad_core::persist::KURVEN_TOLERANZ_MIN,
+        jjcad_core::persist::KURVEN_TOLERANZ_MAX,
+    );
+    if (app.prefs.kurven_toleranz_px - kurven_toleranz).abs() > 1e-9 {
+        app.prefs.kurven_toleranz_px = kurven_toleranz;
+        let _ = app.prefs.save();
         ui.ctx().request_repaint();
     }
     if app.prefs.anzeigeliste_cache != anzeigeliste_cache {
@@ -6336,11 +6389,11 @@ mod tests_einstellungen {
         assert_eq!(Palette::accent(), bernstein);
     }
 
-    /// T0165: Die Kategorie „Grafik“ führt ausschließlich die
+    /// T0165/T0172: Die Kategorie „Grafik“ führt ausschließlich die
     /// Leistungseinstellungen der Anzeige — Kantenglättung, Kantenweichheit,
-    /// Textauflösung, Anzeigeliste und Leistungsanzeige. Die personalisierte
-    /// Darstellung (Design, Farbakzente, Linienstärken) bleibt in
-    /// „Darstellung“.
+    /// Kurventoleranz, Textauflösung, Anzeigeliste und Leistungsanzeige. Die
+    /// personalisierte Darstellung (Design, Farbakzente, Linienstärken) bleibt
+    /// in „Darstellung“.
     #[test]
     fn grafik_zeigt_nur_leistungseinstellungen() {
         let ctx = egui::Context::default();
@@ -6363,6 +6416,7 @@ mod tests_einstellungen {
         for wort in [
             "Kantenglättung",
             "Kantenweichheit",
+            "Kurventoleranz",
             "Textauflösung",
             "Zwischenspeicher",
             "Leistungsanzeige",
@@ -6378,6 +6432,75 @@ mod tests_einstellungen {
                 "„{wort}“ gehört nicht in die Kategorie Grafik"
             );
         }
+    }
+
+    /// T0172: Die Zeile „Kurventoleranz“ zeigt die Pfeilhöhe der Rundungen in
+    /// Bildpunkten (Vorgabe 0,15 px) und schreibt eine Änderung sofort nach
+    /// `prefs.json` — die Zeichenfläche liest den Wert bei jedem Bild, ein
+    /// Neustart ist nicht nötig. Der Zug läuft über echte Zeigerereignisse wie
+    /// bei `widgets::zahltests`; 0,01 px je Bildpunkt, 30 Punkte = +0,30 px.
+    #[test]
+    fn kurventoleranz_zeile_zieht_und_speichert() {
+        let _sperre = KONFIG.lock().unwrap_or_else(|e| e.into_inner());
+        let _konfig = WegwerfKonfig::neu("kurventoleranz");
+        let ctx = egui::Context::default();
+        let mut app = App::with_ctx(ctx.clone());
+        // Die Vorgabe selbst setzen — die echten Voreinstellungen des Nutzers
+        // dürfen hier jeden Wert haben.
+        let vorher = app.prefs.kurven_toleranz_px;
+        app.prefs.kurven_toleranz_px = 0.15;
+        let _ = app.prefs.save();
+
+        let kat = EINSTELLUNGSKATEGORIEN
+            .iter()
+            .position(|k| k.name() == "Grafik")
+            .expect("Kategorie Grafik");
+        app.ui.settings_open = true;
+        app.ui.settings_kat = kat;
+        app.ui.settings_suche = "Kurventoleranz".to_string();
+        let bild = |events: Vec<egui::Event>| egui::RawInput {
+            screen_rect: Some(Rect::from_min_size(Pos2::ZERO, Vec2::new(1500.0, 950.0))),
+            events,
+            ..Default::default()
+        };
+        let mut out = ctx.run(bild(Vec::new()), |ctx| app.ui(ctx));
+        for _ in 0..3 {
+            out = ctx.run(bild(Vec::new()), |ctx| app.ui(ctx));
+        }
+        let feld = text_mitte(&out, "0,15 px").expect("„0,15 px“ steht nicht im Fenster");
+
+        let knopf = |pos: Pos2, pressed: bool| egui::Event::PointerButton {
+            pos,
+            button: egui::PointerButton::Primary,
+            pressed,
+            modifiers: egui::Modifiers::NONE,
+        };
+        let ziel = Pos2::new(feld.x + 30.0, feld.y);
+        let _ = ctx.run(bild(vec![egui::Event::PointerMoved(feld)]), |ctx| app.ui(ctx));
+        let _ = ctx.run(bild(vec![knopf(feld, true)]), |ctx| app.ui(ctx));
+        let _ = ctx.run(bild(vec![egui::Event::PointerMoved(ziel)]), |ctx| app.ui(ctx));
+        let _ = ctx.run(bild(vec![knopf(ziel, false)]), |ctx| app.ui(ctx));
+        out = ctx.run(bild(Vec::new()), |ctx| app.ui(ctx));
+
+        let nachher = app.prefs.kurven_toleranz_px;
+        assert!(
+            nachher > 0.25,
+            "der Zug änderte den Wert nicht: {nachher}"
+        );
+        assert!(
+            (jjcad_core::persist::UserPrefs::load().kurven_toleranz_px - nachher).abs() < 1e-9,
+            "der Wert wurde nicht gespeichert: {nachher}"
+        );
+        // Anzeige mit deutschem Dezimalkomma (`widgets::zahlenkern`).
+        let anzeige = format!("{nachher:.2} px").replace('.', ",");
+        assert!(
+            text_mitte(&out, &anzeige).is_some(),
+            "die Zeile zeigt {anzeige} nicht"
+        );
+
+        // Ausgangswert zurück — die echten Voreinstellungen bleiben unberührt.
+        app.prefs.kurven_toleranz_px = vorher;
+        let _ = app.prefs.save();
     }
 
     /// T0165: Die Zeile „Kantenglättung“ schaltet die weiche Kante der Anzeige
