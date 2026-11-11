@@ -27,7 +27,7 @@ const PAPER_PX_PER_MM: f64 = 3.2;
 // ---------------------------------------------------------------------------
 
 #[derive(Clone)]
-struct PaintCtx {
+struct PaintCtx<'a> {
     selected: Vec<Id>,
     hover: Option<Id>,
     lineweights: bool,
@@ -51,6 +51,9 @@ struct PaintCtx {
     /// Güte, mit der Rundungen (Kreis, Bogen, Ellipsenbogen) in Sehnen zerlegt
     /// werden (T0172) — Pfeilhöhe aus den Einstellungen („Grafik“).
     kurven: CurveQuality,
+    /// Zählung der Sehnenpunkte (T0173). Nur die Zeichnung selbst zählt mit;
+    /// Vorschauen, Ansichtsfenster und Prüfbilder lassen sie leer.
+    zaehlung: Option<&'a crate::perf::Zaehlung>,
 }
 
 fn color32(c: jjcad_core::style::Color) -> Color32 {
@@ -203,6 +206,19 @@ fn capsule(p: &Painter, a: Pos2, b: Pos2, w: f32, col: Color32) {
     p.add(Shape::convex_polygon(pts, col, Stroke::NONE));
 }
 
+/// Segmentzahl eines vollen Kreises mit dem Radius in Bildschirm-Pixeln.
+///
+/// Dieselbe Pfeilhöhen-Regel wie bei allen Bögen, mindestens 8 Segmente. Die
+/// Zeichenfläche und die Zählung der Sehnenpunkte (T0173) fragen hier — sonst
+/// stünde die Regel an zwei Stellen.
+fn kreis_segmente(radius: f32, q: CurveQuality) -> usize {
+    if radius <= 0.0 {
+        return 0;
+    }
+    let arc = Arc::new(V2::new(0.0, 0.0), radius as f64, 0.0, std::f64::consts::TAU);
+    q.segments(&arc, 1.0).max(8)
+}
+
 /// Polylinie aus Kapseln — dadurch sind auch die Übergänge rund.
 /// Kreis als **geschlossenen Zug** mit mittiger Kontur zeichnen.
 ///
@@ -222,9 +238,7 @@ pub(crate) fn kreis_zug(
     if radius <= 0.0 {
         return egui::Shape::Noop;
     }
-    // Segmentzahl nach derselben Pfeilhöhen-Regel wie alle Bögen.
-    let arc = Arc::new(V2::new(0.0, 0.0), radius as f64, 0.0, std::f64::consts::TAU);
-    let n = q.segments(&arc, 1.0).max(8);
+    let n = kreis_segmente(radius, q);
     let pts: Vec<Pos2> = (0..n)
         .map(|i| {
             let a = i as f64 / n as f64 * std::f64::consts::TAU;
@@ -274,6 +288,10 @@ fn stroke_pts(p: &Painter, pts: &[Pos2], w: f32, col: Color32) {
         capsule(p, pair[0], pair[1], w, col);
     }
 }
+
+/// Segmente einer Vollellipse. Die Ellipse folgt keiner Pfeilhöhen-Regel; sie
+/// wird immer mit dieser festen Zahl gezeichnet (T0173 zählt sie mit).
+const ELLIPSE_SEGMENTE: usize = 72;
 
 /// Grenze, unter der eine Füllung auf dem Bildschirm verschwindet (Pixel).
 /// Unter einem Pixel Breite ist nichts zu sehen — solche Streifen dürfen nicht
@@ -387,7 +405,7 @@ fn bild_mesh(
 /// Der Rand ist die halbe Strichbreite in Pixeln plus ein Zuschlag für die
 /// Kantenglättung: eine Linie ragt über ihre Mittellinie hinaus, und bei
 /// „Papier (maßstabsgetreu)“ kann die Strichbreite mit dem Zoom groß werden.
-fn verworfen(prim: &Prim, w2s: &dyn Fn(V2) -> Pos2, bereich: Rect, pc: &PaintCtx) -> bool {
+fn verworfen(prim: &Prim, w2s: &dyn Fn(V2) -> Pos2, bereich: Rect, pc: &PaintCtx<'_>) -> bool {
     let breite = linienbreite_px(
         prim.style.width,
         pc.paper_px,
@@ -398,7 +416,7 @@ fn verworfen(prim: &Prim, w2s: &dyn Fn(V2) -> Pos2, bereich: Rect, pc: &PaintCtx
     crate::culling::ausserhalb(&prim.bbox(), w2s, bereich, rand)
 }
 
-fn paint_prim(p: &Painter, prim: &Prim, w2s: &dyn Fn(V2) -> Pos2, scale: f64, pc: &PaintCtx, alpha: f32) {
+fn paint_prim(p: &Painter, prim: &Prim, w2s: &dyn Fn(V2) -> Pos2, scale: f64, pc: &PaintCtx<'_>, alpha: f32) {
     let is_sel = !pc.preview && pc.selected.contains(&prim.entity) && prim.entity != 0;
     let is_hover = !pc.preview && pc.hover == Some(prim.entity) && prim.entity != 0 && !is_sel;
     let mut col = color32(prim.style.color);
@@ -455,6 +473,11 @@ fn paint_prim(p: &Painter, prim: &Prim, w2s: &dyn Fn(V2) -> Pos2, scale: f64, pc
         PShape::Poly(pts, closed) => {
             if pts.len() < 2 {
                 return;
+            }
+            // T0173: die Punkte des Zuges sind Sehnen, die gezeichnet werden —
+            // auch wenn ein Strichmuster sie in Stücke teilt.
+            if let Some(z) = pc.zaehlung {
+                z.polylinie(pts.len());
             }
 
             let mut v: Vec<Pos2> = pts.iter().map(|q| w2s(*q)).collect();
@@ -575,6 +598,11 @@ fn paint_prim(p: &Painter, prim: &Prim, w2s: &dyn Fn(V2) -> Pos2, scale: f64, pc
                 // Auf dem Schirm punktförmiger Kreis
                 p.circle_filled(w2s(*c), (w as f32 * 0.5).max(0.5), col);
             } else {
+                // T0173: ein Kreis ist ein geschlossener Bogen — so viele Sehnen
+                // wie Punkte.
+                if let Some(z) = pc.zaehlung {
+                    z.bogen(kreis_segmente(rr, pc.kurven));
+                }
                 p.add(kreis_zug(w2s(*c), rr, stroke, pc.kurven));
             }
             // Mittelpunktkreuz nur bei Auswahl (T0117): im Plan ist der
@@ -597,6 +625,10 @@ fn paint_prim(p: &Painter, prim: &Prim, w2s: &dyn Fn(V2) -> Pos2, scale: f64, pc
                 .iter()
                 .map(|q| w2s(*q))
                 .collect();
+            // T0173: offene Punktfolge — n Punkte sind n − 1 Sehnen.
+            if let Some(z) = pc.zaehlung {
+                z.bogen(pts.len().saturating_sub(1));
+            }
             // Ein **durchgehender** Pfad statt einer Kapsel je Sehne: bei einer
             // Kapsel je Segment überlagern sich an jedem Stoß zwei
             // Kantenglättungen, sichtbar als dunkle Knicke. Der Pfad bekommt
@@ -615,9 +647,14 @@ fn paint_prim(p: &Painter, prim: &Prim, w2s: &dyn Fn(V2) -> Pos2, scale: f64, pc
             }
         }
         PShape::Ellipse { c, rx, ry, rot } => {
-            let pts: Vec<Pos2> = (0..=72)
+            // T0173: die Vollellipse hat keine Pfeilhöhen-Regel — sie wird immer
+            // mit derselben Segmentzahl gezeichnet, also wird diese gezählt.
+            if let Some(z) = pc.zaehlung {
+                z.ellipse(ELLIPSE_SEGMENTE);
+            }
+            let pts: Vec<Pos2> = (0..=ELLIPSE_SEGMENTE)
                 .map(|i| {
-                    let t = i as f64 / 72.0 * std::f64::consts::TAU;
+                    let t = i as f64 / ELLIPSE_SEGMENTE as f64 * std::f64::consts::TAU;
                     w2s(*c + V2::new(rx * t.cos(), ry * t.sin()).rotated(*rot))
                 })
                 .collect();
@@ -636,6 +673,9 @@ fn paint_prim(p: &Painter, prim: &Prim, w2s: &dyn Fn(V2) -> Pos2, scale: f64, pc
                 .iter()
                 .map(|q| w2s(*q))
                 .collect();
+            if let Some(z) = pc.zaehlung {
+                z.ellipse(pts.len().saturating_sub(1));
+            }
             stroke_pts(p, &pts, w as f32, col);
             if is_sel {
                 center_mark(p, w2s(*c), col);
@@ -1408,6 +1448,9 @@ pub fn show(app: &mut App, ui: &mut Ui) {
         app.perf.abschnitt(Abschnitt::Displayliste);
         let dl = display_list(app);
         app.perf.abschnitt(Abschnitt::Zeichnen);
+        // T0173: Sehnenpunkte dieses Bildes. Der Zähler ist immer da (drei
+        // `Cell<usize>`); gefüllt wird er nur, wenn die Anzeige offen ist.
+        let zaehlung = crate::perf::Zaehlung::default();
         let pc = PaintCtx {
             selected: selected.clone(),
             hover,
@@ -1419,6 +1462,9 @@ pub fn show(app: &mut App, ui: &mut Ui) {
             rot: view_now.rot as f32,
             text_deckel: app.prefs.textaufloesung.px(),
             kurven: kurven_guete(app),
+            // T0173: Sehnenpunkte nur bei offener Leistungsanzeige zählen —
+            // ohne Anzeige tut der Zeichenweg nichts zusätzlich.
+            zaehlung: if app.perf.an { Some(&zaehlung) } else { None },
         };
         if app.ui.show_grid {
             draw_grid(app, &painter, rect, view_now);
@@ -1454,6 +1500,9 @@ pub fn show(app: &mut App, ui: &mut Ui) {
                 paint_prim(&painter, prim, &w2s, view_now.zoom, &pc, 1.0);
                 app.perf.grafikelement(prim, t.elapsed());
             }
+            // T0173: die Sehnenpunkte, die in diesem Bild wirklich entstanden
+            // sind — verworfene Elemente haben keine beigetragen.
+            app.perf.unterteilungen(&zaehlung, pc.kurven.max_sagitta);
         } else {
             for prim in &dl.prims {
                 if verworfen(prim, &w2s, cull, &pc) {
@@ -1854,6 +1903,7 @@ fn draw_sheet(app: &mut App, p: &Painter, rect: Rect, view: View, cursor: Option
             rot: 0.0,
             text_deckel: app.prefs.textaufloesung.px(),
             kurven: kurven_guete(app),
+            zaehlung: None,
         };
         // Culling (T0167): was außerhalb der Zeichenfläche liegt, wird nicht
         // gezeichnet. Geprüft wird gegen die **Fläche**, nicht gegen den
@@ -1909,6 +1959,7 @@ fn draw_sheet(app: &mut App, p: &Painter, rect: Rect, view: View, cursor: Option
         rot: view.rot as f32,
         text_deckel: app.prefs.textaufloesung.px(),
         kurven: kurven_guete(app),
+        zaehlung: None,
     };
     let mut dl = render::render_sheet(app.doc(), &sheet);
     ohne_texteingabe(app, &mut dl);
@@ -2542,6 +2593,7 @@ fn draw_opening_preview(
         rot: view.rot as f32,
         text_deckel: app.prefs.textaufloesung.px(),
         kurven: kurven_guete(app),
+        zaehlung: None,
     };
     let symbol_ctx = PaintCtx {
         preview: true,
@@ -2581,6 +2633,7 @@ fn paint_vorschau_dl(
         rot: view.rot as f32,
         text_deckel: app.prefs.textaufloesung.px(),
         kurven: kurven_guete(app),
+        zaehlung: None,
     };
     for prim in &dl.prims {
         paint_prim(p, prim, w2s, view.zoom, &pc, 1.0);
@@ -3394,6 +3447,7 @@ fn draw_tool_preview(
                 rot: view.rot as f32,
                 text_deckel: app.prefs.textaufloesung.px(),
                 kurven: kurven_guete(app),
+                zaehlung: None,
             };
             for prim in &dl.prims {
                 paint_prim(p, prim, &w2s, view.zoom, &pc, 1.0);
@@ -3714,9 +3768,9 @@ fn draw_objekt_hervorhebung(
                 }
             }
             PShape::Ellipse { c, rx, ry, rot } => {
-                let pts: Vec<Pos2> = (0..=72)
+                let pts: Vec<Pos2> = (0..=ELLIPSE_SEGMENTE)
                     .map(|i| {
-                        let t = i as f64 / 72.0 * std::f64::consts::TAU;
+                        let t = i as f64 / ELLIPSE_SEGMENTE as f64 * std::f64::consts::TAU;
                         w2s(*c + V2::new(rx * t.cos(), ry * t.sin()).rotated(*rot))
                     })
                     .collect();
@@ -3877,6 +3931,7 @@ fn draw_selection_preview(
         rot: view.rot as f32,
         text_deckel: app.prefs.textaufloesung.px(),
         kurven: kurven_guete(app),
+        zaehlung: None,
     };
     let w2s = |q: V2| world_to_screen(rect, view, q);
     for prim in &dl.prims {
@@ -5176,9 +5231,9 @@ fn ghost_shape(
             p.add(egui::Shape::line(pts, stroke));
         }
         PShape::Ellipse { c, rx, ry, rot } => {
-            let pts: Vec<Pos2> = (0..=72)
+            let pts: Vec<Pos2> = (0..=ELLIPSE_SEGMENTE)
                 .map(|i| {
-                    let t = i as f64 / 72.0 * std::f64::consts::TAU;
+                    let t = i as f64 / ELLIPSE_SEGMENTE as f64 * std::f64::consts::TAU;
                     w2s(*c + V2::new(rx * t.cos(), ry * t.sin()).rotated(*rot))
                 })
                 .collect();
@@ -5605,6 +5660,7 @@ fn draw_fill_ghost(app: &App, p: &Painter, rect: Rect, view: View, umriss: &[V2]
         rot: view.rot as f32,
         text_deckel: app.prefs.textaufloesung.px(),
         kurven: kurven_guete(app),
+        zaehlung: None,
     };
     for prim in &dl.prims {
         paint_prim(p, prim, &w2s, view.zoom, &pc, 1.0);
@@ -5663,6 +5719,7 @@ fn draw_paint_ghost(
         rot: view.rot as f32,
         text_deckel: app.prefs.textaufloesung.px(),
         kurven: kurven_guete(app),
+        zaehlung: None,
     };
     for prim in &dl.prims {
         paint_prim(p, prim, &w2s, view.zoom, &pc, 1.0);
@@ -13455,6 +13512,7 @@ mod tests_kreis_kontur {
             rot: 0.0,
             text_deckel: crate::textgroesse::RASTER_DECKEL_PX,
             kurven: CurveQuality::SCREEN,
+            zaehlung: None,
         };
         let prim = Prim {
             shape: PShape::Circle {
@@ -14281,6 +14339,7 @@ mod tests_mittelpunkt {
                 rot: 0.0,
                 text_deckel: 64.0,
                 kurven: CurveQuality::SCREEN,
+                zaehlung: None,
             };
             let w2s = |q: V2| Pos2::new(q.x as f32, q.y as f32);
             paint_prim(&p, &prim, &w2s, 1.0, &pc, 1.0);
@@ -15542,6 +15601,211 @@ mod tests_culling {
             "ein zweiter Klick muss ihn wieder ausschalten"
         );
     }
+
+    // -----------------------------------------------------------------------
+    // T0173: Sehnenpunkte (Unterteilungen)
+    // -----------------------------------------------------------------------
+
+    /// Erwartete Segmentzahl eines Bogens nach der Pfeilhöhen-Regel — hier
+    /// **noch einmal gerechnet**, nicht aus dem Zeichenweg übernommen:
+    /// `Δφ = 2·acos(1 − h/r)`, `n = ceil(φ/Δφ)`, Grenzen 4…4096.
+    fn sehnen_erwartet(radius_px: f64, winkel: f64, tol_px: f64) -> usize {
+        let schritt = 2.0 * (1.0 - tol_px / radius_px).acos();
+        ((winkel / schritt).ceil() as usize).clamp(4, 4096)
+    }
+
+    /// Kreis und Bogen eines bekannten Durchmessers, dazu ein Spline: die
+    /// Zählung nennt genau die Sehnen, die der Zeichenweg zerlegt. Was das
+    /// Culling verwirft, zählt nicht mit.
+    #[test]
+    fn unterteilungen_zaehlen_die_gezeichneten_sehnen() {
+        let (ctx, mut app) = app_mit_fester_ansicht();
+        app.ui.show_grid = false;
+        app.prefs.kurven_toleranz_px = 0.15;
+        let zoom = app.current_view().zoom;
+        assert!((zoom - 0.5).abs() < 1e-9, "feste Ansicht: {zoom} px/mm");
+        // Kreis r = 200 mm, Bogen r = 300 mm (Halbkreis) und ein Spline: die
+        // Polylinie der Zeichnung geht als einzelne Linien in die Anzeigeliste,
+        // eine Punktfolge (`Shape::Poly`) entsteht beim Spline.
+        assert!(run(
+            &mut app,
+            "draw.circle",
+            json!({ "c": [0.0, 0.0], "r": 0.2 })
+        ));
+        assert!(run(
+            &mut app,
+            "draw.arc",
+            json!({ "c": [0.0, 0.0], "r": 0.3, "a0": 0.0, "a1": 180.0 })
+        ));
+        assert!(run(
+            &mut app,
+            "draw.spline",
+            json!({ "pts": [[-0.2, -0.2], [0.2, -0.2], [0.2, 0.2], [-0.2, 0.2]] })
+        ));
+        // Erwartung für die Punktfolgen: die Punkte, die in der Anzeigeliste
+        // stehen — nicht aus dem Zeichenweg abgeleitet.
+        let erwartet_polylinien: usize = display_list(&mut app)
+            .prims
+            .iter()
+            .filter_map(|p| match &p.shape {
+                PShape::Poly(pts, _) => Some(pts.len()),
+                _ => None,
+            })
+            .sum();
+        assert!(
+            erwartet_polylinien > 10,
+            "der Spline muss eine dichte Punktfolge sein ({erwartet_polylinien} Punkte)"
+        );
+        app.perf.an = true;
+        let _ = zwei_rahmen(&ctx, &mut app);
+        let b = app.perf.letztes().expect("Bild gemessen");
+
+        // Bei 0,5 px/mm: Kreis 100 px, Bogen 150 px Radius, Pfeilhöhe 0,15 px.
+        let kreis = sehnen_erwartet(100.0, std::f64::consts::TAU, 0.15).max(8);
+        let bogen = sehnen_erwartet(150.0, std::f64::consts::PI, 0.15);
+        assert_eq!(kreis, 58, "Kreis mit 100 px Radius");
+        assert_eq!(bogen, 36, "Halbkreis mit 150 px Radius");
+        assert_eq!(
+            b.unterteilungen_boegen,
+            kreis + bogen,
+            "Bögen: {} statt {}",
+            b.unterteilungen_boegen,
+            kreis + bogen
+        );
+        assert_eq!(
+            b.unterteilungen_polylinien, erwartet_polylinien,
+            "die Punkte der Punktfolgen aus der Anzeigeliste"
+        );
+        assert_eq!(b.unterteilungen_ellipsen, 0, "keine Ellipse in der Zeichnung");
+        assert_eq!(
+            b.unterteilungen,
+            b.unterteilungen_boegen + b.unterteilungen_ellipsen + b.unterteilungen_polylinien,
+            "die Summe muss die Aufteilung ergeben"
+        );
+        assert!(
+            (b.kurven_toleranz_px - 0.15).abs() < 1e-9,
+            "die wirksame Toleranz steht im Bild ({} px)",
+            b.kurven_toleranz_px
+        );
+
+        // Höherer Zoom: dieselbe Zeichnung, mehr Sehnen.
+        let vorher = b.unterteilungen;
+        app.set_view(View {
+            center: V2::new(0.0, 0.0),
+            zoom: 1.0,
+            rot: 0.0,
+        });
+        let _ = zwei_rahmen(&ctx, &mut app);
+        let nah = app.perf.letztes().expect("Bild gemessen");
+        assert!(
+            nah.unterteilungen > vorher,
+            "bei doppeltem Zoom müssen mehr Sehnen entstehen ({} gegen {vorher})",
+            nah.unterteilungen
+        );
+
+        // Gröbere Toleranz (Einstellungen → Grafik → Kurventoleranz): dieselbe
+        // Zeichnung, weniger Sehnen.
+        app.prefs.kurven_toleranz_px = 1.0;
+        let _ = zwei_rahmen(&ctx, &mut app);
+        let grob = app.perf.letztes().expect("Bild gemessen");
+        assert!(
+            (grob.kurven_toleranz_px - 1.0).abs() < 1e-9,
+            "die wirksame Toleranz folgt der Einstellung ({} px)",
+            grob.kurven_toleranz_px
+        );
+        assert!(
+            grob.unterteilungen < nah.unterteilungen,
+            "mit 1,0 px Toleranz müssen weniger Sehnen entstehen ({} gegen {})",
+            grob.unterteilungen,
+            nah.unterteilungen
+        );
+
+        // Ein zweiter Kreis 100 m neben der Zeichnung wird verworfen und darf
+        // die Zahl nicht erhöhen.
+        assert!(run(
+            &mut app,
+            "draw.circle",
+            json!({ "c": [100.0, 0.0], "r": 0.2 })
+        ));
+        let _ = zwei_rahmen(&ctx, &mut app);
+        let mit_aussen = app.perf.letztes().expect("Bild gemessen");
+        assert_eq!(
+            mit_aussen.unterteilungen, grob.unterteilungen,
+            "ein verworfener Kreis zählt nicht mit ({} gegen {})",
+            mit_aussen.unterteilungen, grob.unterteilungen
+        );
+        assert_eq!(mit_aussen.verworfen, 1, "genau der äußere Kreis wird verworfen");
+    }
+
+    /// Textform, deren Inhalt mit `anfang` beginnt (die Zeilen der Anzeige).
+    fn text_shape<'a>(
+        out: &'a egui::FullOutput,
+        anfang: &str,
+    ) -> Option<&'a egui::epaint::TextShape> {
+        out.shapes.iter().find_map(|cs| match &cs.shape {
+            egui::Shape::Text(t) if t.galley.text().starts_with(anfang) => Some(t),
+            _ => None,
+        })
+    }
+
+    /// Bild mit Zeigerlage und laufender Zeit — der Tooltip erscheint erst
+    /// nach der Verweildauer (0,5 s), und ohne Uhr steht sie still.
+    fn rahmen_mit_zeit(
+        ctx: &egui::Context,
+        app: &mut App,
+        zeiger: Pos2,
+        zeit: f64,
+    ) -> egui::FullOutput {
+        let mut raw = egui::RawInput {
+            screen_rect: Some(Rect::from_min_size(Pos2::ZERO, FENSTER)),
+            time: Some(zeit),
+            ..Default::default()
+        };
+        raw.events.push(egui::Event::PointerMoved(zeiger));
+        app.perf.bild_beginnen();
+        let out = ctx.run(raw, |ctx| app.ui(ctx));
+        app.perf.bild_beenden();
+        out
+    }
+
+    /// T0173: Die Zeile „Unterteilungen: N“ steht in der Leistungsanzeige, und
+    /// ihr Tooltip nennt die Aufteilung (Bögen / Ellipsen / Polylinien) und die
+    /// wirksame Toleranz in px.
+    #[test]
+    fn unterteilungen_stehen_in_der_anzeige_mit_tooltip() {
+        let ctx = egui::Context::default();
+        let mut app = App::with_ctx(ctx.clone());
+        app.prefs.kurven_toleranz_px = 0.15;
+        app.perf.an = true;
+        let out = zwei_rahmen(&ctx, &mut app);
+        let zeile = text_shape(&out, "Unterteilungen:")
+            .expect("die Zeile „Unterteilungen“ fehlt in der Leistungsanzeige");
+        let rect = Rect::from_min_size(zeile.pos, zeile.galley.size());
+
+        let mut tooltip = String::new();
+        for i in 0..12 {
+            let out = rahmen_mit_zeit(&ctx, &mut app, rect.center(), 1.0 + i as f64 * 0.1);
+            for cs in &out.shapes {
+                if let egui::Shape::Text(t) = &cs.shape {
+                    let s = t.galley.text();
+                    if s.contains("Bögen") && s.contains("Toleranz") {
+                        tooltip = s.to_string();
+                    }
+                }
+            }
+            if !tooltip.is_empty() {
+                break;
+            }
+        }
+        assert!(
+            !tooltip.is_empty(),
+            "der Tooltip der Zeile fehlt (Verweildauer 1,1 s)"
+        );
+        assert!(
+            tooltip.contains("0,15"),
+            "die wirksame Toleranz steht nicht im Tooltip: {tooltip}"
+        );
+    }
 }
 
 
@@ -15638,6 +15902,7 @@ mod tests_masspunkt_vorschau {
                 rot: view.rot as f32,
                 text_deckel,
                 kurven,
+                zaehlung: None,
             };
             let w2s = |q: V2| world_to_screen(RECT, view, q);
             for prim in &dl.prims {
@@ -15831,6 +16096,7 @@ mod tests_kurventoleranz {
                 rot: 0.0,
                 text_deckel: 64.0,
                 kurven: CurveQuality::mit_pfeilhoehe(px),
+                zaehlung: None,
             };
             let w2s = |q: V2| Pos2::new(q.x as f32, q.y as f32);
             paint_prim(&p, &prim, &w2s, 1.0, &pc, 1.0);
@@ -15898,3 +16164,4 @@ mod tests_kurventoleranz {
         );
     }
 }
+

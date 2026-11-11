@@ -458,6 +458,22 @@ Mit dem Nutzer abgestimmt — nicht „verbessern“:
   z verworfen“. Prüfweg `cargo test -p jjcad-gui tests_culling`, Prüfbild
   `--demo culling`.
 
+- **Unterteilungen in der Leistungsanzeige (T0173)**: Die Zeile „Unterteilungen: N“
+  nennt die Sehnenpunkte, die in diesem Bild entstehen — die Zahl, die über die
+  Bildkosten der Kurven entscheidet. Gezählt wird **im Zeichenweg**
+  (`canvas::paint_prim`), wo die Punkte ohnehin entstehen: Punkte − 1 je Bogen und
+  Ellipsenbogen, die Segmentzahl je Vollellipse (`ELLIPSE_SEGMENTE` = 72) und je
+  Kreis (`canvas::kreis_segmente`, dieselbe Pfeilhöhen-Regel wie `kreis_zug`), dazu
+  die Punkte der Punktfolgen (`Shape::Poly`). Eine **Polylinie der Zeichnung** steht
+  in der Anzeigeliste als einzelne Linien (`render::render_polyline`) — unter
+  „Polylinien“ zählen deshalb die Punktfolgen (Spline, Schraffurzug, Dämmband), nicht
+  die Modell-Polylinie. `perf::Zaehlung` sind drei `Cell<usize>` in `PaintCtx`: kein
+  Allokieren, keine zweite Zerlegung, und Vorschauen wie Ansichtsfenster tragen
+  `zaehlung: None`. Vom Culling Verworfene zählen nicht mit, weil `paint_prim` für
+  sie nie läuft. Der Tooltip nennt die Aufteilung (Bögen / Ellipsen / Polylinien) und
+  die wirksame Pfeilhöhe in px. Prüfweg `cargo test -p jjcad-gui unterteilungen`,
+  Prüfbild `--demo "perf,zoom:100"` (Zoom in Prozent: 100 = 1 px/mm).
+
 - **Dämmung und Abdichtung sind Linienarten, keine Muster (T0132)**: Die Muster
   „Dämmstoffe“, „Dämmstoffe Schlaufen“ und die drei „Abdichtungen“ sind
   **entfernt**. Dämmung zeichnet die Linienart `LineType::Insulation` (Schlaufenband,
