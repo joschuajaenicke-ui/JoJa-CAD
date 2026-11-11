@@ -63,13 +63,26 @@ fn stuetzpunkte() -> Vec<Vec2> {
     STUETZ.iter().map(|(x, y)| v(*x, *y)).collect()
 }
 
-/// Ein Punkt der Kurvenzerlegung, der **kein** Stützpunkt ist.
+/// Ein Punkt der Kurvenzerlegung, der **kein** Stützpunkt ist und außerhalb
+/// des Fangradius (20 mm) aller Stützpunkte liegt.
+///
+/// Seit die Zerlegung der Pfeilhöhe folgt (T0175), liegen die Zwischenpunkte
+/// dichter an den Stützpunkten; ein Punkt im Fangradius fängt zu Recht auf dem
+/// Stützpunkt. Für die Prüfung „der Kurvenpunkt selbst fängt nicht" wird
+/// deshalb der Punkt mit dem größten Abstand zu allen Stützpunkten genommen.
 fn zwischenpunkt() -> Vec2 {
     let kurve = Spline::new(stuetzpunkte(), false).flatten(SPLINE_TOL_MM);
+    let abstand = |p: &Vec2| {
+        stuetzpunkte()
+            .iter()
+            .map(|q| p.dist(*q))
+            .fold(f64::INFINITY, f64::min)
+    };
     kurve
         .iter()
         .copied()
-        .find(|p| stuetzpunkte().iter().all(|q| p.dist(*q) > 1.0))
+        .filter(|p| abstand(p) > 40.0)
+        .max_by(|a, b| abstand(a).partial_cmp(&abstand(b)).unwrap())
         .expect("die Zerlegung hat Zwischenpunkte")
 }
 
@@ -90,6 +103,11 @@ fn teilstrecken_der_kurve_fangen_nicht() {
 }
 
 /// Kein einziger Zwischenpunkt der Zerlegung zieht den Zeiger an sich.
+///
+/// Fängt ein Kurvenpunkt doch, muss das Ziel ein **Stützpunkt** sein — der darf
+/// fangen. Mit feinerer Zerlegung (T0175) liegen Zwischenpunkte dichter am
+/// Stützpunkt und geraten in dessen Fangradius; das ist richtig, solange der
+/// Stützpunkt das Ziel ist und nicht das Teilstrecken-Ende.
 #[test]
 fn kein_kurvenpunkt_zieht_den_zeiger() {
     let (s, id) = szenario();
@@ -100,10 +118,13 @@ fn kein_kurvenpunkt_zieht_den_zeiger() {
             continue;
         }
         let res = fang(&s, *p, id, &gesperrt);
-        assert!(
-            !res.is_snap(),
-            "Kurvenpunkt {p:?} fängt und verschiebt damit die Linie: {res:?}"
-        );
+        if res.is_snap() {
+            assert!(
+                stuetzpunkte().iter().any(|q| res.point.dist(*q) < 1e-9),
+                "Kurvenpunkt {p:?} fängt auf {:?} — nur Stützpunkte dürfen fangen",
+                res.point
+            );
+        }
     }
 }
 

@@ -417,11 +417,34 @@ pub struct DrawCacheKey {
     pub block: bool,
 }
 
+/// Faktor, um den sich der Zoom ändern darf, ohne die Anzeigeliste neu zu
+/// bauen (T0175).
+///
+/// Seit die Splines in der Auflösung der Anzeige entstehen, hängt die Liste am
+/// Zoom. Ohne Hysterese baute jedes Bild beim Zoomen die Liste neu (gemessen
+/// 0,3–1,3 ms bei Musterzeichnungen). Ein Viertel Spielraum reicht: die
+/// Pfeilhöhe wächst dadurch höchstens auf 0,19 px (0,15 px × 1,25).
+pub const ZOOM_HYSTERESE: f64 = 1.25;
+
+/// Liegen zwei Zooms innerhalb der Hysterese?
+fn zoom_passt(a: f64, b: f64) -> bool {
+    if !(a.is_finite() && b.is_finite()) {
+        return false;
+    }
+    let (a, b) = (a.max(1e-9), b.max(1e-9));
+    let r = a / b;
+    r <= ZOOM_HYSTERESE && r >= 1.0 / ZOOM_HYSTERESE
+}
+
 impl DrawCacheKey {
     /// Gleiche Zeichnung, gleiche Ansicht, gleicher Raum?
+    ///
+    /// Der Zoom wird mit **Hysterese** verglichen ([`ZOOM_HYSTERESE`]): die
+    /// Liste entsteht in der Auflösung, in der sie gebaut wurde, und bleibt
+    /// stehen, solange sich der Zoom nicht um mehr als ein Viertel ändert.
     pub fn matches(&self, other: &Self) -> bool {
         self.rev == other.rev
-            && (self.zoom - other.zoom).abs() < 1e-9
+            && zoom_passt(self.zoom, other.zoom)
             && (self.annot - other.annot).abs() < 1e-9
             && self.space == other.space
             && self.block == other.block

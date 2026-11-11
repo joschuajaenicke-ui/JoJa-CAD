@@ -1087,84 +1087,155 @@ pub struct Spline {
 /// liegt der Fangpunkt auf der gezeichneten Kurve.
 pub const SPLINE_TOL_MM: f64 = 0.05;
 
+/// Knotenabstände einer Catmull-Rom-Spanne (zentripetal).
+///
+/// Einmal je Spanne gerechnet: `knot` zieht eine Wurzel, und die Unterteilung
+/// wertet dieselbe Spanne viele Male aus (T0175).
+#[derive(Clone, Copy)]
+struct Knoten {
+    t0: f64,
+    t1: f64,
+    t2: f64,
+    t3: f64,
+}
+
+impl Knoten {
+    fn neu(p0: Vec2, p1: Vec2, p2: Vec2, p3: Vec2) -> Self {
+        let knot = |a: Vec2, b: Vec2| (b - a).len().sqrt().max(1e-6);
+        let t0 = 0.0;
+        let t1 = t0 + knot(p0, p1);
+        let t2 = t1 + knot(p1, p2);
+        let t3 = t2 + knot(p2, p3);
+        Self { t0, t1, t2, t3 }
+    }
+
+    /// Barry-Goldman-Auswertung an der Stelle `t` (0 = bei `p1`, 1 = bei `p2`):
+    /// drei lineare Interpolationen über die zentripetalen Knotenabstände.
+    fn punkt(&self, p0: Vec2, p1: Vec2, p2: Vec2, p3: Vec2, t: f64) -> Vec2 {
+        let (t0, t1, t2, t3) = (self.t0, self.t1, self.t2, self.t3);
+        let tt = t1 + (t2 - t1) * t.clamp(0.0, 1.0);
+        let lerp = |a: Vec2, b: Vec2, ta: f64, tb: f64| {
+            if (tb - ta).abs() < 1e-12 {
+                a
+            } else {
+                a * ((tb - tt) / (tb - ta)) + b * ((tt - ta) / (tb - ta))
+            }
+        };
+        let a1 = lerp(p0, p1, t0, t1);
+        let a2 = lerp(p1, p2, t1, t2);
+        let a3 = lerp(p2, p3, t2, t3);
+        let b1 = if (t2 - t0).abs() < 1e-12 {
+            a1
+        } else {
+            a1 * ((t2 - tt) / (t2 - t0)) + a2 * ((tt - t0) / (t2 - t0))
+        };
+        let b2 = if (t3 - t1).abs() < 1e-12 {
+            a2
+        } else {
+            a2 * ((t3 - tt) / (t3 - t1)) + a3 * ((tt - t1) / (t3 - t1))
+        };
+        if (t2 - t1).abs() < 1e-12 {
+            b1
+        } else {
+            b1 * ((t2 - tt) / (t2 - t1)) + b2 * ((tt - t1) / (t2 - t1))
+        }
+    }
+}
+
 /// Ein Punkt der Catmull-Rom-Kurve zwischen `p1` und `p2` (zentripetal).
 ///
 /// `p0` und `p3` sind die Nachbarn, die die Tangente bestimmen; `t` läuft von 0
 /// (bei `p1`) bis 1 (bei `p2`). Barry-Goldman-Auswertung: drei lineare
 /// Interpolationen über die zentripetalen Knotenabstände.
 pub fn catmull_rom_point(p0: Vec2, p1: Vec2, p2: Vec2, p3: Vec2, t: f64) -> Vec2 {
-    let knot = |a: Vec2, b: Vec2| (b - a).len().sqrt().max(1e-6);
-    let t0 = 0.0;
-    let t1 = t0 + knot(p0, p1);
-    let t2 = t1 + knot(p1, p2);
-    let t3 = t2 + knot(p2, p3);
-    let tt = t1 + (t2 - t1) * t.clamp(0.0, 1.0);
-    let lerp = |a: Vec2, b: Vec2, ta: f64, tb: f64| {
-        if (tb - ta).abs() < 1e-12 {
-            a
-        } else {
-            a * ((tb - tt) / (tb - ta)) + b * ((tt - ta) / (tb - ta))
+    Knoten::neu(p0, p1, p2, p3).punkt(p0, p1, p2, p3, t)
+}
+
+/// Obergrenze der Unterteilung **je Spanne**: höchstens `2^SPLINE_MAX_TIEFE`
+/// Teilstrecken. Ohne Deckel zöge eine sehr feine Toleranz (hoher Zoom) die
+/// Punktzahl ins Unermessliche; 256 Teilstrecken sind achtmal die frühere feste
+/// Abtastung von 32 und reichen bis weit über 30 px/mm.
+pub const SPLINE_MAX_TIEFE: u32 = 10;
+
+/// Sicherheitsfaktor der Pfeilhöhen-Prüfung.
+///
+/// Geprüft wird an drei Stellen der Spanne (Mitte und beide Viertelstellen).
+/// Zwischen ihnen wächst die Abweichung weiter — gemessen bis zum 1,8-fachen
+/// der geprüften Stelle. Mit 0,5 bleibt die **gemessene** Pfeilhöhe unter der
+/// Toleranz (bei 30 px/mm: 0,15 px Toleranz, 0,13 px gemessen).
+const SPLINE_PRUEF_FAKTOR: f64 = 0.75;
+
+/// Eine Spanne, die gerade unterteilt wird.
+struct Spanne<'a> {
+    knoten: Knoten,
+    p0: Vec2,
+    p1: Vec2,
+    p2: Vec2,
+    p3: Vec2,
+    /// Toleranz, gegen die geprüft wird (schon mit [`SPLINE_PRUEF_FAKTOR`]).
+    tol: f64,
+    out: &'a mut Vec<Vec2>,
+}
+
+impl Spanne<'_> {
+    fn punkt(&self, t: f64) -> Vec2 {
+        self.knoten.punkt(self.p0, self.p1, self.p2, self.p3, t)
+    }
+
+    /// Halbiert das Intervall `[t0, t1]`, solange der Sehnenfehler die Toleranz
+    /// übersteigt (oder die Tiefengrenze erreicht ist).
+    ///
+    /// `pa`/`pb` sind die Kurvenpunkte an `t0`/`t1`, `pm` der an `tm`. Die
+    /// Viertelstellen des Intervalls sind die Mitten der beiden Hälften — sie
+    /// werden hier gerechnet und an die Kinder weitergegeben, damit jede Stelle
+    /// nur einmal ausgewertet wird.
+    ///
+    /// Die Mitte allein genügt nicht: eine Spanne mit Wendepunkt (S-Form) läuft
+    /// in der Mitte **durch** die Sehne und weicht an den Viertelstellen am
+    /// stärksten ab (gemessen 60 mm bei 1280 mm Sehne, T0175).
+    fn unterteile(&mut self, t0: f64, pa: Vec2, tm: f64, pm: Vec2, t1: f64, pb: Vec2, tiefe: u32) {
+        let tq1 = 0.5 * (t0 + tm);
+        let pq1 = self.punkt(tq1);
+        let tq3 = 0.5 * (tm + t1);
+        let pq3 = self.punkt(tq3);
+        let abweichung = dist_point_segment(pm, pa, pb)
+            .max(dist_point_segment(pq1, pa, pb))
+            .max(dist_point_segment(pq3, pa, pb));
+        if tiefe >= SPLINE_MAX_TIEFE || abweichung <= self.tol {
+            self.out.push(pb);
+            return;
         }
-    };
-    let a1 = lerp(p0, p1, t0, t1);
-    let a2 = lerp(p1, p2, t1, t2);
-    let a3 = lerp(p2, p3, t2, t3);
-    let b1 = if (t2 - t0).abs() < 1e-12 {
-        a1
-    } else {
-        a1 * ((t2 - tt) / (t2 - t0)) + a2 * ((tt - t0) / (t2 - t0))
-    };
-    let b2 = if (t3 - t1).abs() < 1e-12 {
-        a2
-    } else {
-        a2 * ((t3 - tt) / (t3 - t1)) + a3 * ((tt - t1) / (t3 - t1))
-    };
-    if (t2 - t1).abs() < 1e-12 {
-        b1
-    } else {
-        b1 * ((t2 - tt) / (t2 - t1)) + b2 * ((tt - t1) / (t2 - t1))
+        self.unterteile(t0, pa, tq1, pq1, tm, pm, tiefe + 1);
+        self.unterteile(tm, pm, tq3, pq3, t1, pb, tiefe + 1);
     }
 }
 
-/// Vereinfacht eine Punktfolge (Ramer-Douglas-Peucker): Punkte, die weniger als
-/// `tol` von der Sehne abweichen, fallen weg.
-fn simplify(pts: &[Vec2], tol: f64) -> Vec<Vec2> {
-    if pts.len() < 3 {
-        return pts.to_vec();
-    }
-    let a = pts[0];
-    let b = pts[pts.len() - 1];
-    let mut idx = 0usize;
-    let mut dmax = 0.0;
-    for (i, p) in pts.iter().enumerate().take(pts.len() - 1).skip(1) {
-        let d = dist_point_segment(*p, a, b);
-        if d > dmax {
-            dmax = d;
-            idx = i;
-        }
-    }
-    if dmax <= tol {
-        return vec![a, b];
-    }
-    let mut links = simplify(&pts[..=idx], tol);
-    let mut rechts = simplify(&pts[idx..], tol);
-    links.pop();
-    links.append(&mut rechts);
-    links
-}
-
-/// Zerlegt einen Catmull-Rom-Spline in eine Punktfolge (Kurve abgetastet und auf
-/// `tol` vereinfacht). Offene Züge bekommen am Anfang und Ende einen
-/// gespiegelten Hilfspunkt, damit die Kurve am Endpunkt in Richtung der letzten
-/// Strecke austritt; geschlossene Züge laufen mit ihren Nachbarn im Kreis.
+/// Zerlegt einen Catmull-Rom-Spline in eine Punktfolge.
+///
+/// Jede Spanne wird **bedarfsgerecht** unterteilt: solange der Sehnenfehler
+/// größer als `tol` ist, wird sie halbiert (Pfeilhöhen-Regel). Die frühere feste
+/// Abtastung von 32 Punkten je Spanne konnte die Toleranz gar nicht einhalten —
+/// bei 30 px/mm blieben sichtbare Ecken von 45 px, bei kleinem Zoom lagen 32
+/// Punkte auf wenigen Pixeln (T0175). Die Obergrenze je Spanne ist
+/// [`SPLINE_MAX_TIEFE`].
+///
+/// Offene Züge bekommen am Anfang und Ende einen gespiegelten Hilfspunkt, damit
+/// die Kurve am Endpunkt in Richtung der letzten Strecke austritt; geschlossene
+/// Züge laufen mit ihren Nachbarn im Kreis.
 pub fn catmull_rom_points(pts: &[Vec2], closed: bool, tol: f64) -> Vec<Vec2> {
     let n = pts.len();
     if n < 2 {
         return pts.to_vec();
     }
-    const ABTASTUNG: usize = 32;
+    // Eine unbrauchbare Toleranz (0, negativ, NaN) fällt auf die weltfeste
+    // Vorgabe zurück, statt die Unterteilung endlos zu treiben.
+    let tol = if tol.is_finite() && tol > 0.0 {
+        tol
+    } else {
+        SPLINE_TOL_MM
+    } * SPLINE_PRUEF_FAKTOR;
     let spans = if closed { n } else { n - 1 };
-    let mut out: Vec<Vec2> = Vec::with_capacity(spans * 4 + 2);
+    let mut out: Vec<Vec2> = Vec::with_capacity(spans * 8 + 2);
     for i in 0..spans {
         let p1 = pts[i];
         let p2 = pts[(i + 1) % n];
@@ -1182,15 +1253,23 @@ pub fn catmull_rom_points(pts: &[Vec2], closed: bool, tol: f64) -> Vec<Vec2> {
         } else {
             p2 * 2.0 - p1
         };
-        let mut roh: Vec<Vec2> = Vec::with_capacity(ABTASTUNG + 1);
-        for k in 0..=ABTASTUNG {
-            roh.push(catmull_rom_point(p0, p1, p2, p3, k as f64 / ABTASTUNG as f64));
-        }
-        let mut glatt = simplify(&roh, tol);
+        let mut roh: Vec<Vec2> = Vec::with_capacity(9);
+        roh.push(p1);
+        let mut spanne = Spanne {
+            knoten: Knoten::neu(p0, p1, p2, p3),
+            p0,
+            p1,
+            p2,
+            p3,
+            tol,
+            out: &mut roh,
+        };
+        let pm = spanne.punkt(0.5);
+        spanne.unterteile(0.0, p1, 0.5, pm, 1.0, p2, 0);
         if !out.is_empty() {
-            glatt.remove(0);
+            roh.remove(0);
         }
-        out.extend(glatt);
+        out.extend(roh);
     }
     out
 }

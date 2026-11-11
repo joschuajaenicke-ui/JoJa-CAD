@@ -10808,6 +10808,32 @@ mod tests_raumwechsel_anzeige {
             ..modell
         }));
     }
+
+    /// Der Zoom geht mit **Hysterese** in den Anzeige-Schlüssel (T0175): die
+    /// Liste entsteht in der Auflösung, in der sie gebaut wurde, und bleibt
+    /// stehen, solange sich der Zoom nicht um mehr als ein Viertel ändert.
+    /// Ohne das baute jedes Bild beim Zoomen die Liste neu.
+    #[test]
+    fn anzeige_schluessel_zoom_mit_hysterese() {
+        let basis = DrawCacheKey {
+            rev: 7,
+            zoom: 1.0,
+            annot: 100.0,
+            space: None,
+            block: false,
+        };
+        // Innerhalb eines Viertels: derselbe Stand.
+        assert!(basis.matches(&DrawCacheKey { zoom: 1.2, ..basis }));
+        assert!(basis.matches(&DrawCacheKey { zoom: 0.85, ..basis }));
+        assert!(basis.matches(&DrawCacheKey { zoom: 1.25, ..basis }));
+        // Mehr als ein Viertel: neu aufbauen.
+        assert!(!basis.matches(&DrawCacheKey { zoom: 1.3, ..basis }));
+        assert!(!basis.matches(&DrawCacheKey { zoom: 0.75, ..basis }));
+        // Verglichen wird gegen den **gebauten** Stand, nicht gegen das letzte
+        // Bild: viele kleine Schritte ergeben zusammen einen neuen Aufbau.
+        let gebaut = DrawCacheKey { zoom: 1.2, ..basis };
+        assert!(!gebaut.matches(&DrawCacheKey { zoom: 1.55, ..basis }));
+    }
 }
 
 #[cfg(test)]

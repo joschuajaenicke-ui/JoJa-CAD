@@ -474,6 +474,22 @@ Mit dem Nutzer abgestimmt — nicht „verbessern“:
   die wirksame Pfeilhöhe in px. Prüfweg `cargo test -p jjcad-gui unterteilungen`,
   Prüfbild `--demo "perf,zoom:100"` (Zoom in Prozent: 100 = 1 px/mm).
 
+- **Splines folgen der Pfeilhöhe (T0175)**: `geom::catmull_rom_points` tastet nicht
+  mehr fest 32 Punkte je Spanne ab, sondern halbiert jede Spanne, bis der
+  Sehnenfehler die Toleranz einhält (geprüft an Mitte und beiden Viertelstellen —
+  die Mitte allein läuft bei einer S-Form durch die Sehne; Deckel
+  `SPLINE_MAX_TIEFE` = 256 Teilstrecken je Spanne). Die **Anzeige** flacht mit
+  `render::SPLINE_TOL_PX` (0,15 px) / Zoom ab, `RenderCtx::screen` trägt den Zoom
+  (`mit_abbildung`, gesetzt nur von der Zeichenfläche); Druck, PNG, DXF und
+  Ansichtsfenster lassen ihn leer und bleiben weltfest bei `SPLINE_TOL_MM`
+  (0,05 mm). Fang, Trefferprüfung, Fläche und Bounding-Box rechnen **immer**
+  weltfest (`Spline::segments`) — die Auflösung im Bild darf den Fang nicht
+  verschieben. Weil die Liste damit am Zoom hängt, vergleicht `DrawCacheKey` den
+  Zoom mit **Hysterese** (`app::ZOOM_HYSTERESE` = 1,25): neu gebaut wird erst,
+  wenn sich der Zoom um mehr als ein Viertel ändert, sonst baute jedes Bild beim
+  Zoomen die Liste neu. Prüfweg `cargo test -p jjcad-core --test
+  spline_aufloesung` und `cargo test -p jjcad-gui anzeige_schluessel_zoom`.
+
 - **Dämmung und Abdichtung sind Linienarten, keine Muster (T0132)**: Die Muster
   „Dämmstoffe“, „Dämmstoffe Schlaufen“ und die drei „Abdichtungen“ sind
   **entfernt**. Dämmung zeichnet die Linienart `LineType::Insulation` (Schlaufenband,
