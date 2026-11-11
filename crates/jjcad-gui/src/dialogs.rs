@@ -1285,13 +1285,37 @@ pub(crate) const EINSTELLUNGSKATEGORIEN: &[Einstellungskategorie] = &[
             "Grün",
             "Rot",
             "Violett",
+            "Darstellung",
+        ],
+    },
+    // T0165: Leistungseinstellungen der Anzeige — Kantenglättung, Textatlas,
+    // Anzeigeliste und Leistungsanzeige. Die personalisierte Darstellung
+    // (Design, Farbakzent, Linienstärken) bleibt in ihrer eigenen Kategorie;
+    // hier steht nur, was die Zeichenzeit bestimmt. Platz für weitere
+    // Stellschrauben: eine Zeile je Einstellung, Zeilenname in die Stichworte.
+    Einstellungskategorie {
+        key: "settings.category_grafik",
+        icon: "image",
+        stichworte: &[
+            "Kantenglättung",
+            "Antialiasing",
+            "Kante",
+            "Kanten",
+            "Weichheit",
             "Textauflösung",
             "Auflösung",
             "Schärfe",
             "Rastergröße",
             "Schrift",
             "Atlas",
-            "Darstellung",
+            "Zwischenspeicher",
+            "Anzeigeliste",
+            "Cache",
+            "Leistungsanzeige",
+            "Leistung",
+            "Performance",
+            "F3",
+            "Grafik",
         ],
     },
     // T0125: Voreinstellungen der Linienstärke je Objektart.
@@ -1548,8 +1572,13 @@ fn settings_body(app: &mut App, ui: &mut Ui) {
     let mut design = app.prefs.design;
     // T0111: Farbakzent der Bedienung (Vorgabe Bernstein).
     let mut farbakzent = app.prefs.farbakzent;
-    // T0114: höchste Rastergröße der Schrift (Vorgabe 256 px).
+    // T0114/T0165: höchste Rastergröße der Schrift (Vorgabe 256 px).
     let mut textaufloesung = app.prefs.textaufloesung;
+    // T0165: Kantenglättung der Zeichnung, Anzeigeliste und Leistungsanzeige.
+    let mut kantenglaettung = app.prefs.kantenglaettung;
+    let mut kantenweichheit = app.prefs.kantenweichheit;
+    let mut anzeigeliste_cache = app.prefs.anzeigeliste_cache;
+    let mut perf_anzeige = app.prefs.perf_anzeige;
     // T0129: Sicherung — Verlauf, Plätze, Reichweite, Intervall.
     let mut s_verlauf = app.prefs.sicherung_verlauf;
     let mut s_plaetze = app.prefs.sicherung_plaetze as i32;
@@ -2335,54 +2364,6 @@ fn settings_body(app: &mut App, ui: &mut Ui) {
                                         jjcad_core::i18n::tr("settings.farbakzent_hint"),
                                     ));
                                 }
-                                // T0114: höchste Rastergröße der Schrift. Höher
-                                // heißt schärfer im hohen Zoom, kostet aber
-                                // Schriftatlas — deshalb nur vier feste Stufen.
-                                zeile_mit(
-                                    &suche,
-                                    ui,
-                                    jjcad_core::i18n::tr("gui.dialogs.textaufloesung"),
-                                    &[
-                                        "Maximale Textauflösung",
-                                        "Auflösung",
-                                        "Schärfe",
-                                        "Rastergröße",
-                                        "Schrift",
-                                        "Atlas",
-                                    ],
-                                    |ui| {
-                                        let cap = textaufloesung.text().to_string();
-                                        if let Some(neu) = panels::dropdown(
-                                            ui,
-                                            "textaufloesung",
-                                            &cap,
-                                            None,
-                                            |ui| {
-                                                let mut out = None;
-                                                for m in Textaufloesung::ALL {
-                                                    if ui
-                                                        .selectable_label(
-                                                            m == textaufloesung,
-                                                            m.text(),
-                                                        )
-                                                        .on_hover_text(m.tip())
-                                                        .clicked()
-                                                    {
-                                                        out = Some(m);
-                                                    }
-                                                }
-                                                out
-                                            },
-                                        ) {
-                                            textaufloesung = neu;
-                                        }
-                                    },
-                                );
-                                if suche.is_empty() {
-                                    ui.label(theme::faint(
-                                        jjcad_core::i18n::tr("settings.textaufloesung_hint"),
-                                    ));
-                                }
                                 zeile(&suche, ui, jjcad_core::i18n::tr("gui.dialogs.linienstaerken"), |ui| {
                                     // T0139: die beiden Modi heißen jetzt nach dem, was sie
                                     // zeigen — „Bildschirm (konstant)“ und „Papier
@@ -2466,13 +2447,157 @@ fn settings_body(app: &mut App, ui: &mut Ui) {
                                     ui.checkbox(wert, name);
                                 }
                             }
+                            // ------------------------ Grafik (T0165) -------------
+                            // Nur Leistungseinstellungen der Anzeige: was die
+                            // Zeichenzeit bestimmt. Die personalisierte
+                            // Darstellung (Design, Farbakzent, Linienstärken)
+                            // steht weiter in „Darstellung“.
+                            7 => {
+                                abschnitt(
+                                    &suche,
+                                    ui,
+                                    jjcad_core::i18n::tr("settings.category_grafik"),
+                                );
+                                // Kantenglättung: egui zeichnet jede Kante mit
+                                // einem weichen Saum. Aus endet die Fläche hart
+                                // auf dem Pixel — schneller, aber treppig.
+                                zeile_mit(
+                                    &suche,
+                                    ui,
+                                    jjcad_core::i18n::tr("gui.dialogs.kantenglaettung"),
+                                    &["Antialiasing", "Glättung", "Kante", "weich"],
+                                    |ui| {
+                                        ui.checkbox(&mut kantenglaettung, "");
+                                    },
+                                );
+                                if suche.is_empty() {
+                                    ui.label(theme::faint(jjcad_core::i18n::tr(
+                                        "settings.kantenglaettung_hint",
+                                    )));
+                                }
+                                // Breite des weichen Saums; ohne Glättung
+                                // sinnlos und deshalb ausgegraut.
+                                zeile_mit(
+                                    &suche,
+                                    ui,
+                                    jjcad_core::i18n::tr("gui.dialogs.kantenweichheit"),
+                                    &["Weichheit", "Saum", "Kante", "Glättung"],
+                                    |ui| {
+                                        ui.add_enabled_ui(kantenglaettung, |ui| {
+                                            ui.add(
+                                                crate::widgets::zahl(
+                                                    &mut kantenweichheit,
+                                                    0.05,
+                                                    jjcad_core::persist::KANTENWEICHHEIT_MIN
+                                                        ..=jjcad_core::persist::KANTENWEICHHEIT_MAX,
+                                                )
+                                                .suffix(" px"),
+                                            );
+                                        });
+                                    },
+                                );
+                                if suche.is_empty() {
+                                    ui.label(theme::faint(jjcad_core::i18n::tr(
+                                        "settings.kantenweichheit_hint",
+                                    )));
+                                }
+                                // T0114: höchste Rastergröße der Schrift. Höher
+                                // heißt schärfer im hohen Zoom, kostet aber
+                                // Schriftatlas — deshalb nur vier feste Stufen.
+                                // Steht seit T0165 hier: es ist die Atlasgröße,
+                                // keine Darstellungsvorliebe.
+                                zeile_mit(
+                                    &suche,
+                                    ui,
+                                    jjcad_core::i18n::tr("gui.dialogs.textaufloesung"),
+                                    &[
+                                        "Maximale Textauflösung",
+                                        "Auflösung",
+                                        "Schärfe",
+                                        "Rastergröße",
+                                        "Schrift",
+                                        "Atlas",
+                                    ],
+                                    |ui| {
+                                        let cap = textaufloesung.text().to_string();
+                                        if let Some(neu) = panels::dropdown(
+                                            ui,
+                                            "textaufloesung",
+                                            &cap,
+                                            None,
+                                            |ui| {
+                                                let mut out = None;
+                                                for m in Textaufloesung::ALL {
+                                                    if ui
+                                                        .selectable_label(
+                                                            m == textaufloesung,
+                                                            m.text(),
+                                                        )
+                                                        .on_hover_text(m.tip())
+                                                        .clicked()
+                                                    {
+                                                        out = Some(m);
+                                                    }
+                                                }
+                                                out
+                                            },
+                                        ) {
+                                            textaufloesung = neu;
+                                        }
+                                    },
+                                );
+                                if suche.is_empty() {
+                                    ui.label(theme::faint(
+                                        jjcad_core::i18n::tr("settings.textaufloesung_hint"),
+                                    ));
+                                }
+                                // Anzeigeliste: die aus dem Modell erzeugte
+                                // Liste wird wiederverwendet, solange sich
+                                // Zeichnung, Zoom und Raum nicht ändern. Aus
+                                // heißt jedes Bild neu aufbauen — langsamer.
+                                zeile_mit(
+                                    &suche,
+                                    ui,
+                                    jjcad_core::i18n::tr("gui.dialogs.zwischenspeicher"),
+                                    &[
+                                        "Anzeigeliste zwischenspeichern",
+                                        "Anzeigeliste",
+                                        "Cache",
+                                        "Zwischenspeicher",
+                                        "Performance",
+                                    ],
+                                    |ui| {
+                                        ui.checkbox(&mut anzeigeliste_cache, "");
+                                    },
+                                );
+                                if suche.is_empty() {
+                                    ui.label(theme::faint(jjcad_core::i18n::tr(
+                                        "settings.zwischenspeicher_hint",
+                                    )));
+                                }
+                                // Leistungsanzeige: dieselbe wie Umschalt+F3.
+                                zeile_mit(
+                                    &suche,
+                                    ui,
+                                    jjcad_core::i18n::tr("gui.dialogs.leistungsanzeige"),
+                                    &["Leistung", "Performance", "F3", "Messwerte"],
+                                    |ui| {
+                                        ui.checkbox(&mut perf_anzeige, "");
+                                    },
+                                );
+                                if suche.is_empty() {
+                                    ui.label(theme::faint(jjcad_core::i18n::tr(
+                                        "settings.leistungsanzeige_hint",
+                                    )));
+                                }
+                            }
                             // ------------------- Voreinstellungen ----------------
                             // T0125: eine Zeile je Objektart, Liste aus
                             // `style::LAYER_DEFAULTS` — nicht ein zweites Mal
                             // getippt. Der Wert gilt für neue Zeichnungen und
                             // neu angelegte Standardebenen; bestehende Ebenen
                             // einer offenen Zeichnung bleiben unverändert.
-                            7 => {
+                            8 => {
                                 abschnitt(
                                     &suche,
                                     ui,
@@ -2512,7 +2637,7 @@ fn settings_body(app: &mut App, ui: &mut Ui) {
                                 }
                             }
                             // ------------------------ Speicherorte (T0127) ---------
-                            8 => {
+                            9 => {
                                 abschnitt(&suche, ui, jjcad_core::i18n::tr("settings.speicherorte"));
                                 // Die Wurzel ist nicht änderbar — sie steht als
                                 // eigener Abschnitt über den Pfadfeldern, weil
@@ -2780,7 +2905,7 @@ fn settings_body(app: &mut App, ui: &mut Ui) {
                                 }
                             }
                             // ------------------------ Sicherung (T0129) --------
-                            9 => {
+                            10 => {
                                 if suche.is_empty() {
                                     ui.add(
                                         egui::Label::new(theme::dim(jjcad_core::i18n::tr(
@@ -3059,6 +3184,40 @@ fn settings_body(app: &mut App, ui: &mut Ui) {
         // T0114: gilt sofort — die Zeichenfläche liest die Rastergröße bei
         // jedem Bild. Ein Bild genügt, dann steht der Text in der neuen Schärfe.
         app.prefs.textaufloesung = textaufloesung;
+        let _ = app.prefs.save();
+        ui.ctx().request_repaint();
+    }
+    // T0165: Kantenglättung gilt sofort — die nächste Tessellierung nimmt den
+    // neuen Wert. Die Weichheit gehört dazu, auch wenn nur sie sich ändert.
+    let kantenweichheit = kantenweichheit.clamp(
+        jjcad_core::persist::KANTENWEICHHEIT_MIN,
+        jjcad_core::persist::KANTENWEICHHEIT_MAX,
+    );
+    if app.prefs.kantenglaettung != kantenglaettung
+        || (app.prefs.kantenweichheit - kantenweichheit).abs() > 1e-6
+    {
+        app.prefs.kantenglaettung = kantenglaettung;
+        app.prefs.kantenweichheit = kantenweichheit;
+        let _ = app.prefs.save();
+        crate::theme::set_kantenglaettung(kantenglaettung, kantenweichheit, ui.ctx());
+        ui.ctx().request_repaint();
+    }
+    if app.prefs.anzeigeliste_cache != anzeigeliste_cache {
+        // T0165: aus heißt jedes Bild neu aufbauen; der alte Stand wird dabei
+        // weggeworfen, damit ein Wiedereinschalten nicht eine veraltete Liste
+        // weiterbenutzt.
+        app.prefs.anzeigeliste_cache = anzeigeliste_cache;
+        let _ = app.prefs.save();
+        if !anzeigeliste_cache {
+            app.tab_mut().cache = None;
+        }
+        ui.ctx().request_repaint();
+    }
+    if app.prefs.perf_anzeige != perf_anzeige {
+        // T0165: die Anzeige selbst schaltet sofort um; die Wahl gilt beim
+        // nächsten Start (Umschalt+F3 schaltet weiterhin jederzeit).
+        app.prefs.perf_anzeige = perf_anzeige;
+        app.perf.an = perf_anzeige;
         let _ = app.prefs.save();
         ui.ctx().request_repaint();
     }
@@ -5763,7 +5922,7 @@ mod tests_einstellungen {
 
     #[test]
     fn jede_kategorie_hat_name_icon_und_stichworte() {
-        assert_eq!(EINSTELLUNGSKATEGORIEN.len(), 10, "Kategorienzahl");
+        assert_eq!(EINSTELLUNGSKATEGORIEN.len(), 11, "Kategorienzahl");
         for k in EINSTELLUNGSKATEGORIEN {
             assert!(!k.name().is_empty(), "Kategorie ohne Namen");
             assert!(!k.icon.is_empty(), "Kategorie „{}“ ohne Icon", k.name());
@@ -5798,9 +5957,15 @@ mod tests_einstellungen {
         assert_eq!(treffer("drehpunkt"), vec!["Bedienung"]);
         // T0111: Der Farbakzent steht unter „Darstellung“.
         assert_eq!(treffer("farbakzent"), vec!["Darstellung"]);
-        // T0114, Turn 3: die maximale Textauflösung steht unter „Darstellung“.
-        assert_eq!(treffer("textauflösung"), vec!["Darstellung"]);
-        assert_eq!(treffer("auflösung"), vec!["Darstellung"]);
+        // T0165: die maximale Textauflösung ist von „Darstellung“ nach
+        // „Grafik“ gewandert — sie ist eine Leistungseinstellung.
+        assert_eq!(treffer("textauflösung"), vec!["Grafik"]);
+        assert_eq!(treffer("auflösung"), vec!["Grafik"]);
+        // T0165: die Leistungseinstellungen der Anzeige stehen in „Grafik“.
+        assert_eq!(treffer("kantenglättung"), vec!["Grafik"]);
+        assert_eq!(treffer("antialiasing"), vec!["Grafik"]);
+        assert_eq!(treffer("leistungsanzeige"), vec!["Grafik"]);
+        assert_eq!(treffer("zwischenspeicher"), vec!["Grafik"]);
         // T0129: Die Sicherung ist eine eigene Kategorie.
         assert!(
             treffer("verlauf").contains(&"Sicherung"),
@@ -5996,6 +6161,21 @@ mod tests_einstellungen {
         })
     }
 
+    /// Linker Anker (links-mittig) der gezeichneten Beschriftung `label` auf
+    /// der Einstellungsseite — so liegt der Zeilenanfang eines
+    /// `widgets::field_row` (Name 4 px darin). Genommen wird der **letzte**
+    /// Treffer: bei aktivem Suchbegriff trägt auch das Suchfeld links den
+    /// gesuchten Text, die Seite wird danach gezeichnet.
+    fn text_links(out: &egui::FullOutput, label: &str) -> Option<Pos2> {
+        out.shapes
+            .iter()
+            .filter_map(|cs| match &cs.shape {
+                egui::Shape::Text(t) if t.galley.text() == label => Some(t.pos),
+                _ => None,
+            })
+            .last()
+    }
+
     /// Ein linker Mausklick auf `pos` (Drücken und Loslassen in eigenen Bildern).
     fn klick(app: &mut App, ctx: &egui::Context, pos: Pos2) {
         let knopf = |pressed: bool| egui::Event::PointerButton {
@@ -6156,9 +6336,108 @@ mod tests_einstellungen {
         assert_eq!(Palette::accent(), bernstein);
     }
 
-    /// T0114, Turn 3: Unter „Darstellung“ steht die Zeile „Textauflösung“ mit
-    /// den Stufen 128/256/512/1024 px. Eine Wahl wirkt sofort auf die
-    /// Rastergröße der Schrift und landet in `prefs.json`.
+    /// T0165: Die Kategorie „Grafik“ führt ausschließlich die
+    /// Leistungseinstellungen der Anzeige — Kantenglättung, Kantenweichheit,
+    /// Textauflösung, Anzeigeliste und Leistungsanzeige. Die personalisierte
+    /// Darstellung (Design, Farbakzente, Linienstärken) bleibt in
+    /// „Darstellung“.
+    #[test]
+    fn grafik_zeigt_nur_leistungseinstellungen() {
+        let ctx = egui::Context::default();
+        let mut app = App::with_ctx(ctx.clone());
+        let kat = EINSTELLUNGSKATEGORIEN
+            .iter()
+            .position(|k| k.name() == "Grafik")
+            .expect("Kategorie Grafik");
+        app.ui.settings_open = true;
+        app.ui.settings_kat = kat;
+        app.ui.settings_suche.clear();
+        let bild = || egui::RawInput {
+            screen_rect: Some(Rect::from_min_size(Pos2::ZERO, Vec2::new(1500.0, 950.0))),
+            ..Default::default()
+        };
+        let mut out = ctx.run(bild(), |ctx| app.ui(ctx));
+        for _ in 0..3 {
+            out = ctx.run(bild(), |ctx| app.ui(ctx));
+        }
+        for wort in [
+            "Kantenglättung",
+            "Kantenweichheit",
+            "Textauflösung",
+            "Zwischenspeicher",
+            "Leistungsanzeige",
+        ] {
+            assert!(
+                text_mitte(&out, wort).is_some(),
+                "„{wort}“ fehlt in der Kategorie Grafik"
+            );
+        }
+        for wort in ["Design", "Farbakzente", "Linienstärken"] {
+            assert!(
+                text_mitte(&out, wort).is_none(),
+                "„{wort}“ gehört nicht in die Kategorie Grafik"
+            );
+        }
+    }
+
+    /// T0165: Die Zeile „Kantenglättung“ schaltet die weiche Kante der Anzeige
+    /// sofort ab und merkt die Wahl in `prefs.json`. Der Schalter sitzt in der
+    /// Wertespalte von `widgets::field_row` (160 px hinter dem Zeilenanfang,
+    /// der Name beginnt 4 px darin).
+    #[test]
+    fn kantenglaettung_zeile_schaltet_die_weiche_kante() {
+        let _sperre = KONFIG.lock().unwrap_or_else(|e| e.into_inner());
+        let _konfig = WegwerfKonfig::neu("kantenglaettung");
+        let ctx = egui::Context::default();
+        let mut app = App::with_ctx(ctx.clone());
+        assert!(app.prefs.kantenglaettung, "die Vorgabe ist nicht an");
+        assert!(
+            ctx.tessellation_options(|o| o.feathering),
+            "die Vorgabe zeichnet nicht weich"
+        );
+
+        let kat = EINSTELLUNGSKATEGORIEN
+            .iter()
+            .position(|k| k.name() == "Grafik")
+            .expect("Kategorie Grafik");
+        app.ui.settings_open = true;
+        app.ui.settings_kat = kat;
+        app.ui.settings_suche = "Kantenglättung".to_string();
+        let bild = || egui::RawInput {
+            screen_rect: Some(Rect::from_min_size(Pos2::ZERO, Vec2::new(1500.0, 950.0))),
+            ..Default::default()
+        };
+        let mut out = ctx.run(bild(), |ctx| app.ui(ctx));
+        for _ in 0..3 {
+            out = ctx.run(bild(), |ctx| app.ui(ctx));
+        }
+        let label = text_links(&out, "Kantenglättung").expect("Zeile „Kantenglättung“ fehlt");
+        let schalter = Pos2::new(
+            label.x - 4.0 + widgets::LABEL_W + 10.0,
+            label.y,
+        );
+        klick(&mut app, &ctx, schalter);
+
+        assert!(!app.prefs.kantenglaettung, "der Schalter blieb an");
+        assert!(
+            !ctx.tessellation_options(|o| o.feathering),
+            "die Kante blieb weich"
+        );
+        assert!(
+            !jjcad_core::persist::UserPrefs::load().kantenglaettung,
+            "die Wahl wurde nicht gespeichert"
+        );
+
+        // Zurück auf die Vorgabe — die Wegwerf-Einstellungen bleiben sauber.
+        app.prefs.kantenglaettung = true;
+        let _ = app.prefs.save();
+        crate::theme::set_kantenglaettung(true, 1.0, &ctx);
+    }
+
+    /// T0114, Turn 3 / T0165: Die Zeile „Textauflösung“ steht seit T0165 in
+    /// der Kategorie „Grafik“ (vorher „Darstellung“) und bietet die Stufen
+    /// 128/256/512/1024 px. Eine Wahl wirkt sofort auf die Rastergröße der
+    /// Schrift und landet in `prefs.json`.
     #[test]
     fn textaufloesung_zeile_setzt_die_rastergroesse() {
         let _sperre = KONFIG.lock().unwrap_or_else(|e| e.into_inner());
@@ -6173,8 +6452,8 @@ mod tests_einstellungen {
 
         let kat = EINSTELLUNGSKATEGORIEN
             .iter()
-            .position(|k| k.name() == "Darstellung")
-            .expect("Kategorie Darstellung");
+            .position(|k| k.name() == "Grafik")
+            .expect("Kategorie Grafik");
         app.ui.settings_open = true;
         app.ui.settings_kat = kat;
         app.ui.settings_suche = "Textauflösung".to_string();
@@ -6352,7 +6631,10 @@ mod tests_einstellungen {
         let ctx = egui::Context::default();
         let mut app = App::with_ctx(ctx.clone());
         app.ui.settings_open = true;
-        app.ui.settings_kat = 7;
+        app.ui.settings_kat = EINSTELLUNGSKATEGORIEN
+            .iter()
+            .position(|k| k.key == "settings.category_voreinstellungen")
+            .expect("Kategorie Voreinstellungen");
         let bild = || egui::RawInput {
             screen_rect: Some(Rect::from_min_size(Pos2::ZERO, Vec2::new(1500.0, 950.0))),
             ..Default::default()

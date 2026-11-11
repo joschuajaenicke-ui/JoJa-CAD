@@ -1157,9 +1157,33 @@ pub struct UserPrefs {
     pub farbakzent: Farbakzent,
     /// Maximale Rastergröße der Schrift in der Zeichenfläche (T0114):
     /// 128, 256 (Vorgabe), 512 oder 1024 px. Höher = schärfer im hohen Zoom,
-    /// aber mehr Schriftatlas. Gilt sofort, ohne Neustart.
+    /// aber mehr Schriftatlas. Gilt sofort, ohne Neustart. Steht seit T0165 in
+    /// der Kategorie „Grafik“ — sie ist eine Leistungseinstellung (Atlasgröße),
+    /// keine Darstellungsvorliebe.
     #[serde(default)]
     pub textaufloesung: Textaufloesung,
+    /// Kantenglättung der gezeichneten Flächen und Linien (T0165): an
+    /// (Vorgabe) zeichnet egui mit weicher Kante, aus endet jede Fläche hart
+    /// auf dem Pixel — auf Rechnern ohne brauchbare Kantenglättung sichtbar
+    /// sauberer und schneller. Gilt sofort.
+    #[serde(default = "default_true")]
+    pub kantenglaettung: bool,
+    /// Weichheit der Kante in Bildpunkten (T0165): 1,0 ist die Vorgabe von
+    /// egui, 0,5 eine schmale, 2,0 eine breite Kante. Gilt nur bei
+    /// eingeschalteter [`UserPrefs::kantenglaettung`].
+    #[serde(default = "default_kantenweichheit")]
+    pub kantenweichheit: f32,
+    /// Anzeigeliste je Zeichnungsstand zwischenspeichern (T0165, Vorgabe an):
+    /// die aus dem Modell erzeugte Displayliste wird wiederverwendet, solange
+    /// sich Zeichnung, Zoom und Bearbeitungsraum nicht ändern. Aus = jedes Bild
+    /// baut sie neu; das ist langsamer und nur zum Messen sinnvoll.
+    #[serde(default = "default_true")]
+    pub anzeigeliste_cache: bool,
+    /// Leistungsanzeige (Umschalt+F3) beim Start offen (T0165, Vorgabe aus).
+    /// Die Taste schaltet sie weiterhin jederzeit um; die Wahl hier gilt beim
+    /// nächsten Start.
+    #[serde(default)]
+    pub perf_anzeige: bool,
     /// Voreinstellungen der Linienstärke je Objektart (T0125):
     /// Name der Standardebene ([`crate::style::LAYER_DEFAULTS`]) → mm.
     /// Fehlt ein Eintrag, gilt 0,18 mm ([`crate::style::LINIENSTAERKE_VORGABE`]).
@@ -1223,6 +1247,19 @@ fn default_true() -> bool {
 fn default_pan_speed() -> f32 {
     1.0
 }
+
+/// Vorgabe der Kantenweichheit in Bildpunkten (T0165) — der Wert, mit dem egui
+/// seine Kantenglättung rechnet.
+fn default_kantenweichheit() -> f32 {
+    1.0
+}
+
+/// Grenzen der Kantenweichheit (T0165): darunter verschwindet die Glättung
+/// (harte Kante, dann ist der Schalter sinnvoller), darüber wird jede Kante ein
+/// weicher Saum. Eigene Grenzen, weil der Wert kein Papier-Maß ist.
+pub const KANTENWEICHHEIT_MIN: f32 = 0.5;
+/// Gegenstück zu [`KANTENWEICHHEIT_MIN`].
+pub const KANTENWEICHHEIT_MAX: f32 = 2.0;
 
 /// Grenzen der Schwenkgeschwindigkeit (T0067): höchstens ein Zehntel bis
 /// fünffach — darunter kriecht die Ansicht, darüber ist kein Ziel mehr zu
@@ -1571,6 +1608,12 @@ impl Default for UserPrefs {
             // Programmstandard (T0114): 256 px Rastergröße — der Atlas bleibt
             // klein, kleine Schriften sind bei jedem Zoom scharf.
             textaufloesung: Textaufloesung::Px256,
+            // T0165: die Zeichnung wird weich gezeichnet (bisheriges Verhalten)
+            // und die Anzeigeliste wiederverwendet; die Leistungsanzeige ist aus.
+            kantenglaettung: true,
+            kantenweichheit: default_kantenweichheit(),
+            anzeigeliste_cache: true,
+            perf_anzeige: false,
             // T0125: ohne eigene Wahl trägt jede Objektart 0,18 mm.
             layer_weights: BTreeMap::new(),
             // T0127: ohne eigene Angabe liegen alle Unterordner in der Wurzel.
@@ -2326,6 +2369,45 @@ mod tests {
         assert!(roh.contains("\"mouse_move\":false"), "Schlüssel fehlt: {roh}");
         let wieder: UserPrefs = serde_json::from_str(&roh).unwrap();
         assert!(!wieder.mouse_move, "Einstellung ging beim Laden verloren");
+    }
+
+    /// T0165: Die Grafikeinstellungen der Kategorie „Grafik“ stehen in den
+    /// Voreinstellungen. Kantenglättung und Anzeigeliste sind in der Vorgabe
+    /// **an** (bisheriges Verhalten), die Leistungsanzeige **aus**; ein
+    /// Altbestand ohne die Schlüssel bekommt dieselben Vorgaben, und alle vier
+    /// Werte überleben Speichern und Laden.
+    #[test]
+    fn grafikeinstellungen_vorgabe_und_gespeichert() {
+        let standard = UserPrefs::default();
+        assert!(standard.kantenglaettung, "Kantenglättung muss an sein");
+        assert_eq!(standard.kantenweichheit, 1.0, "Kantenweichheit");
+        assert!(standard.anzeigeliste_cache, "Anzeigeliste muss gespeichert werden");
+        assert!(!standard.perf_anzeige, "Leistungsanzeige ist in der Vorgabe aus");
+
+        let alt: UserPrefs = serde_json::from_str(r#"{"last_dir": "/tmp"}"#).unwrap();
+        assert!(alt.kantenglaettung && alt.anzeigeliste_cache);
+        assert!(!alt.perf_anzeige);
+        assert_eq!(alt.kantenweichheit, 1.0);
+
+        let mut prefs = UserPrefs::default();
+        prefs.kantenglaettung = false;
+        prefs.kantenweichheit = 1.75;
+        prefs.anzeigeliste_cache = false;
+        prefs.perf_anzeige = true;
+        let roh = serde_json::to_string(&prefs).unwrap();
+        for schluessel in [
+            "\"kantenglaettung\":false",
+            "\"kantenweichheit\":1.75",
+            "\"anzeigeliste_cache\":false",
+            "\"perf_anzeige\":true",
+        ] {
+            assert!(roh.contains(schluessel), "{schluessel} fehlt: {roh}");
+        }
+        let wieder: UserPrefs = serde_json::from_str(&roh).unwrap();
+        assert!(!wieder.kantenglaettung);
+        assert_eq!(wieder.kantenweichheit, 1.75);
+        assert!(!wieder.anzeigeliste_cache);
+        assert!(wieder.perf_anzeige);
     }
 
     /// T0098: Der Fensterrahmen steht in den Voreinstellungen. Vorgabe ist die

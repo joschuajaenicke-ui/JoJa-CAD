@@ -1612,6 +1612,12 @@ impl App {
         // T0111: und der Farbakzent (Vorgabe Bernstein) — er färbt alle
         // Akzentstellen der Bedienung ab dem ersten Bild.
         theme::set_akzent(prefs.farbakzent, &ctx);
+        // T0165: Kantenglättung der Zeichnung (Einstellungen → Grafik) — gilt
+        // ab dem ersten Bild, damit die Flächen nicht erst nach einem Wechsel
+        // hart oder weich werden.
+        theme::set_kantenglaettung(prefs.kantenglaettung, prefs.kantenweichheit, &ctx);
+        // T0165: Leistungsanzeige nur, wenn sie beim letzten Mal offen war.
+        let perf_anzeige = prefs.perf_anzeige;
         let mut s = Session::new();
         // T0125: eine neue Zeichnung trägt die eingestellte Linienstärke je
         // Objektart (Vorgabe 0,18 mm für alle).
@@ -1686,6 +1692,7 @@ impl App {
             fenster_start: None,
             fenster_start_zeit: None,
         };
+        app.perf.an = perf_anzeige;
         app.ui.show_grid = show_grid;
         app.ui.lineweights = lineweights;
         app.ui.lineweights_scaled = lineweights_scaled;
@@ -16032,6 +16039,41 @@ mod tests_tangentialfang {
         assert!(
             app.doc().settings.snap.tangent,
             "Tangentialfang ließ sich nicht einschalten"
+        );
+    }
+}
+
+/// Grafikeinstellungen (T0165): Kantenglättung, Kantenweichheit und
+/// Leistungsanzeige gelten **ab dem ersten Bild**. Der Prüfweg schreibt keine
+/// Voreinstellungen — er vergleicht die Anzeige mit dem, was `prefs.json`
+/// tatsächlich vorgibt (so bleibt der Lauf auf jedem Rechner gültig).
+#[cfg(test)]
+mod tests_grafikeinstellungen {
+    use super::*;
+
+    #[test]
+    fn kanten_und_leistungsanzeige_gelten_ab_dem_ersten_bild() {
+        let ctx = egui::Context::default();
+        let app = App::with_ctx(ctx.clone());
+        let erwartet = app.prefs.kantenglaettung
+            && std::env::var("JJCAD_UI_FEATHER").ok().as_deref() != Some("0");
+        assert_eq!(
+            ctx.tessellation_options(|o| o.feathering),
+            erwartet,
+            "die Kantenglättung aus prefs.json steht nicht im Zeichner"
+        );
+        let breite = app.prefs.kantenweichheit.clamp(
+            jjcad_core::persist::KANTENWEICHHEIT_MIN,
+            jjcad_core::persist::KANTENWEICHHEIT_MAX,
+        );
+        assert_eq!(
+            ctx.tessellation_options(|o| o.feathering_size_in_pixels),
+            breite,
+            "die Kantenweichheit aus prefs.json steht nicht im Zeichner"
+        );
+        assert_eq!(
+            app.perf.an, app.prefs.perf_anzeige,
+            "die Leistungsanzeige folgt nicht der gespeicherten Wahl"
         );
     }
 }

@@ -1512,13 +1512,17 @@ fn display_list(app: &mut App) -> DisplayList {
         space: app.session().space(),
         block: app.doc().in_block_space(),
     };
+    // T0165: Einstellungen → Grafik → „Anzeigeliste zwischenspeichern“. Aus
+    // heißt: jedes Bild baut die Liste neu (langsamer, nur zum Messen), und
+    // ein alter Stand bleibt nicht liegen.
+    let zwischen = app.prefs.anzeigeliste_cache;
     let (mut dl, neu) = match &app.tab().cache {
-        Some((k, dl)) if k.matches(&key) => (dl.clone(), false),
+        Some((k, dl)) if zwischen && k.matches(&key) => (dl.clone(), false),
         _ => {
             let doc = app.doc().clone();
             let ctx = render::RenderCtx::new(&doc);
             let dl = render::render_document(&ctx);
-            app.tab_mut().cache = Some((key, dl.clone()));
+            app.tab_mut().cache = if zwischen { Some((key, dl.clone())) } else { None };
             (dl, true)
         }
     };
@@ -11443,6 +11447,50 @@ mod tests_texteingabe_anzeige {
         // Eingabe weg: der Text ist wieder da.
         app.ui.texteingabe = None;
         assert!(sichtbar(&mut app, id), "nach dem Bearbeiten wieder sichtbar");
+    }
+}
+
+#[cfg(test)]
+mod tests_anzeigeliste_cache {
+    //! T0165: Einstellungen → Grafik → „Anzeigeliste zwischenspeichern“.
+    //! Aus heißt: jedes Bild baut die Liste neu, und es bleibt kein alter Stand
+    //! liegen (sonst benutzte ein Wiedereinschalten eine veraltete Liste).
+
+    use super::*;
+
+    #[test]
+    fn ausgeschalteter_zwischenspeicher_baut_jedes_bild_neu() {
+        let mut app = App::with_ctx(egui::Context::default());
+        app.session_mut()
+            .execute(
+                "draw.line",
+                &json!({"a": [0.0, 0.0], "b": [1000.0, 0.0]}),
+            )
+            .expect("Linie anlegen");
+        app.mark_changed();
+
+        // Vorgabe an: der erste Durchgang füllt den Speicher, danach bleibt er.
+        assert!(app.prefs.anzeigeliste_cache);
+        let _ = display_list(&mut app);
+        assert!(app.tab().cache.is_some(), "der Speicher wurde nicht gefüllt");
+        let _ = display_list(&mut app);
+        assert!(app.tab().cache.is_some());
+
+        // Aus: nichts bleibt liegen.
+        app.prefs.anzeigeliste_cache = false;
+        let _ = display_list(&mut app);
+        assert!(
+            app.tab().cache.is_none(),
+            "der Speicher blieb trotz ausgeschalteter Einstellung liegen"
+        );
+
+        // Wieder an: der Speicher füllt sich erneut.
+        app.prefs.anzeigeliste_cache = true;
+        let _ = display_list(&mut app);
+        assert!(
+            app.tab().cache.is_some(),
+            "der Speicher füllte sich nach dem Wiedereinschalten nicht"
+        );
     }
 }
 
