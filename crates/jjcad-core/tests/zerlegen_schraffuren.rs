@@ -91,8 +91,18 @@ fn zerlegte_schraffur_sieht_aus_wie_vorher() {
         jjcad_core::actions::explode_entity(&mut d, 1).expect("zerlegen");
         let nachher = bild(&d);
         let ab = abweichung(&vorher, &nachher);
+        // Dämmung ist ein dichter Polygonzug: die Füllfläche zeichnet ihn als
+        // **einen** Zug (T0164), die zerlegte Fassung besteht aus einzelnen
+        // Strecken. Die Geometrie ist dieselbe, nur die Kantenglättung an den
+        // Stößen unterscheidet sich (gemessen 0,43 % — ohne den Zug wären es
+        // 0,00 %, dann aber 144 000 Primitiva für 100 m²).
+        let grenze = if *p == FillPattern::InsulationHatch {
+            0.006
+        } else {
+            0.002
+        };
         assert!(
-            ab < 0.002,
+            ab < grenze,
             "{:?}: {:.2} % der Bildpunkte unterscheiden sich",
             p,
             ab * 100.0

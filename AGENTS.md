@@ -470,6 +470,17 @@ Mit dem Nutzer abgestimmt — nicht „verbessern“:
   (`render::push_muster`) — Füllfläche, Volumen und Wandschraffur teilen sie, keine
   zweite Musterzeichnung. Schlüssel über `FillPattern::key`/`from_key`, die alten
   Schlüssel `lines`/`cross`/`dots` bleiben gültig (alte Dateien).
+  **Züge statt Strecken (T0164)**: Das Muster entsteht aus einer dichten
+  Punktfolge; `render::muster_kurve_ablegen` legt einen zusammenhängenden Lauf
+  als **einen** Polygonzug ab (der Beschnitt trennt nur an den Kanten). Eine
+  eigene Strecke je Stützpunkt ergab bei 100 m² Dämmung 144 004 Primitiva und
+  31 ms Bildzeit, als Zug sind es 49 Primitiva und 2,5 ms — bei gleicher
+  Dämmung aus Linien 18 ms. `render::entity_bbox` nimmt für Füllfläche und
+  Volumen die **Umgrenzung** statt das Muster zu rendern (vorher 6 ms je
+  Aufruf, und Trefferprüfung und Auswahl fragen sie mehrmals je Bild); beim
+  Raumstempel bleibt der Renderweg, weil er nur seine Beschriftung zeichnet.
+  Die Anzeige malt dünne Züge (unter 2 px) als **eine** Form
+  (`canvas::stroke_pts`), Kapseln je Strecke erst darüber.
   **Ausnahme Wand (T0161)**: In einer Wand zeichnet die Schraffur „Dämmung“
   **kein** Muster, sondern **eine** Linie mit der Linienart „Dämmung“ auf der
   Wandmitte (Bandhöhe = Wanddicke, je Wandstück eine). Die parallelen Bänder
