@@ -8,7 +8,7 @@
 //! dann gilt das helle oder dunkle Farbschema des Betriebssystems.
 
 use egui::{Color32, FontFamily, FontId, Frame, Margin, Rounding, Stroke, TextStyle, Visuals};
-use jjcad_core::persist::{Design, Farbakzent};
+use jjcad_core::persist::{Design, Farbakzent, KANTENWEICHHEIT_MAX, KANTENWEICHHEIT_MIN};
 use std::sync::atomic::{AtomicBool, AtomicU8, Ordering};
 
 /// Alle Farben eines Designs. Eine Zeile je Aufgabe — Flächen von außen nach
@@ -731,14 +731,25 @@ pub fn stil(ctx: &egui::Context) {
         o.dark_style = stil.clone();
         o.light_style = stil;
     });
+}
 
-    // `JJCAD_UI_FEATHER=0` schaltet die weiche Kante der Flächen ab. Auf
-    // Rechnern, deren Treiber an halbtransparenten Kanten helle Fugen zeigt
-    // (Windows 11 mit krummer Skalierung), ist das ein Notausgang ohne neuen
-    // Build: die Flächen enden dann hart auf dem Pixel.
-    if std::env::var("JJCAD_UI_FEATHER").ok().as_deref() == Some("0") {
-        ctx.tessellation_options_mut(|o| o.feathering = false);
-    }
+/// Kantenglättung der Flächen und Linien (T0165, Einstellungen → Grafik).
+///
+/// egui zeichnet jede Kante mit einem weichen Saum (`feathering`); ist er aus,
+/// endet die Fläche hart auf dem Pixel — auf Rechnern ohne brauchbare
+/// Kantenglättung sichtbar sauberer und schneller. `weichheit` ist die Breite
+/// dieses Saums in Bildpunkten (0,5 … 2,0; Vorgabe 1,0).
+///
+/// `JJCAD_UI_FEATHER=0` bleibt als Notausgang ohne neuen Build: auf Rechnern,
+/// deren Treiber an halbtransparenten Kanten helle Fugen zeigt (Windows 11 mit
+/// krummer Skalierung), schaltet er die Glättung ab und sticht die Einstellung.
+pub fn set_kantenglaettung(an: bool, weichheit: f32, ctx: &egui::Context) {
+    let an = an && std::env::var("JJCAD_UI_FEATHER").ok().as_deref() != Some("0");
+    let weichheit = weichheit.clamp(KANTENWEICHHEIT_MIN, KANTENWEICHHEIT_MAX);
+    ctx.tessellation_options_mut(|o| {
+        o.feathering = an;
+        o.feathering_size_in_pixels = weichheit;
+    });
 }
 
 /// Kleine Überschrift in Panels.
