@@ -69,9 +69,14 @@ Sie muss mit allen Stellen verwendet werden. Bei einem gröber gerundeten Wert (
   Ellipse werden über die **Bogenlänge** abgefahren — `x` ist der Weg längs der
   Linie, `y` der Versatz quer dazu. Damit sitzt das Band mittig auf der Linie,
   und die Länge stimmt auf jedem Weg, nicht nur auf der Geraden.
-- Gezeichnet wird ein Polygonzug; die Stützpunkte folgen der Kurve (rund 25 je
-  Periode, mindestens 12, höchstens 6000 Punkte je Linie). Weil das Band die
-  Anzeigegeometrie ist, folgen Trefferfläche, Fang und DXF-Export mit.
+- Gezeichnet wird ein Polygonzug; die Stützpunkte folgen der Kurve. **Wie fein**,
+  hängt an der Anzeige (T0176): ab 12 px je Periode nach Pfeilhöhe
+  (`N = gerade(ceil(sqrt(52 · ppx)))`, höchstens 512), darunter feste Stufen mit
+  10, 6 und 2 Punkten, unter 1,5 px eine Gerade in Bandmitte mit der Bandhöhe
+  als Strichbreite. Immer gerade Punktzahl, Knoten auf den Periodengrenzen.
+  Ohne Abbildung (Druck, PNG, DXF) bleibt es weltfest bei 12…40 Punkten je
+  Periode (höchstens 6000 je Linie). Weil das Band die Anzeigegeometrie ist,
+  folgen Trefferfläche, Fang und DXF-Export mit.
 - Eine Wand in „Dämmung“ zeichnet ihre **Kanten** als Band; ihr Muster (die
   Wandschraffur) ist davon getrennt und wird — wie jedes Muster — als dünne
   Striche gezeichnet.
