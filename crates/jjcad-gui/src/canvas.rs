@@ -15384,8 +15384,12 @@ mod tests_daemmungsschraffur {
         // der Zug wird als **eine** Form gezeichnet (Vorgabe des Nutzers).
         app.ui.lineweights_scaled = false;
         app.ui.lineweight_factor = 1.0;
-        // Zwei Bilder: im ersten schwingt das Layout ein.
-        let _ = rahmen(&ctx, &mut app, Some(Pos2::new(700.0, 500.0)));
+        // Vier Bilder: das erste baut das Layout, danach muss der Stand stehen.
+        // (Auf dem CI-Läufer waren zwei Bilder zu knapp — der Rahmen war noch
+        // nicht fertig, es fehlten Reihen.)
+        for _ in 0..3 {
+            let _ = rahmen(&ctx, &mut app, Some(Pos2::new(700.0, 500.0)));
+        }
         let out = rahmen(&ctx, &mut app, Some(Pos2::new(700.0, 500.0)));
 
         let mut zuge = 0;
