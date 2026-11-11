@@ -2,7 +2,7 @@
 
 Verbindliche Konventionen für Beiträge am Projekt. Abweichungen gelten als Fehler.
 
-**Begriffe:** `docs/GLOSSAR.md` ist verbindlich. Ein Begriff, eine Bedeutung —
+**Begriffe:** `docs/benutzer/GLOSSAR.md` ist verbindlich. Ein Begriff, eine Bedeutung —
 UI-Texte, Code-Kommentare und Dokumentation benutzen die dortige linke Spalte.
 Abweichende Wörter gehören nicht in die Oberfläche.
 
@@ -231,7 +231,7 @@ Mit dem Nutzer abgestimmt — nicht „verbessern“:
   die Vorschau) — damit ist sichtbar, was ein Klick auf einen Slot oder eine Taste
   ablegt. Prüfzustand `--demo blockvorschau`; Tests
   `cargo test -p jjcad-gui tests_ghost_zeiger`.
-- **Tastenbelegung in drei Schichten (T0056, `docs/TASTEN.md` ist verbindlich)**:
+- **Tastenbelegung in drei Schichten (T0056, `docs/benutzer/TASTEN.md` ist verbindlich)**:
   Ziffern `1`–`0` gehören der **Hotbar**, Buchstaben und Symbole der
   **Tastaturbelegung** (frei und dynamisch änderbar, je Taste genau eine
   Funktion, Umschalt-Ebene als `shift+<Zeichen>`), alle übrigen Tasten
@@ -299,7 +299,7 @@ Mit dem Nutzer abgestimmt — nicht „verbessern“:
   `EntityKind::zeichenrang`. Eingefügt wird **nur** über
   `Document::insert_ranked` (bzw. `add_entity`, das dorthin delegiert); bestehende
   Objekte werden nie umsortiert, sie rücken nur. Wer eine Objektart ergänzt, ordnet
-  sie dort einer Klasse zu. Details: `docs/ARCHITEKTUR.md` → „Zeichenrang“.
+  sie dort einer Klasse zu. Details: `docs/technik/ARCHITEKTUR.md` → „Zeichenrang“.
 - **Flächen schneiden und vereinigen (T0090)**: `modify.area.split` teilt eine
   Füllfläche entlang einer Punktfolge in zwei Teilflächen, `modify.area.union`
   verschmilzt zwei oder mehr **angrenzende** Füllflächen zu einer. Die Geometrie
@@ -493,7 +493,7 @@ Mit dem Nutzer abgestimmt — nicht „verbessern“:
 - **Dämmung und Abdichtung sind Linienarten, keine Muster (T0132)**: Die Muster
   „Dämmstoffe“, „Dämmstoffe Schlaufen“ und die drei „Abdichtungen“ sind
   **entfernt**. Dämmung zeichnet die Linienart `LineType::Insulation` (Schlaufenband,
-  `docs/DAEMMUNG-SCHLAUFEN.md`), auch auf einer Wand (deren Kanten). Alte
+  `docs/wissen/DAEMMUNG-SCHLAUFEN.md`), auch auf einer Wand (deren Kanten). Alte
   Zeichnungen mit diesen Mustern laden über den Serde-Alias an
   `FillPattern::Lines` als Mauerwerk; ihre Schlüssel (`daemmstoffe`,
   `daemmung_schlaufen`, `abdichtung_*`) liefern `None`.

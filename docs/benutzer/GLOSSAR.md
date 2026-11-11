@@ -101,7 +101,7 @@ Steht rechts „nicht", dann ist das Wort im Projekt verpönt (auch in der Oberf
 | **Ribbon** | Die Registerkartenleiste oben mit Gruppen und Schaltflächen | Menüleiste, Toolbar |
 | **Registerkarte** | Zeichnen / Architektur / Bemassung / Blöcke / Blatt / Ansicht | Tab (das sind Dokumente) |
 | **Hotbar** | Die Schnellzugriffleiste unten; ihre Slots starten die Zifferntasten `1`–`0` | Favoritenleiste |
-| **Tastaturbelegung** | Der Dialog, in dem Buchstaben und Symbole Funktionen zugewiesen bekommen (`docs/TASTEN.md`) | Tastenkürzel, Shortcuts |
+| **Tastaturbelegung** | Der Dialog, in dem Buchstaben und Symbole Funktionen zugewiesen bekommen (`docs/benutzer/TASTEN.md`) | Tastenkürzel, Shortcuts |
 | **Inventar** | Seitliche Sammlung von Blöcken und Funktionen (mit `E`) | Bibliothek, Palette |
 | **Eigenschaften** | Das rechte Seitenpanel mit Feldern zum ausgewählten Objekt **oder** zum nächsten Element | Einstellungen (das ist der Dialog), Seitenleiste |
 | **Einstellungen** | Der Dialog (`Datei → Einstellungen`) für globale Vorgaben | Optionen, Preferences |
@@ -117,7 +117,7 @@ Steht rechts „nicht", dann ist das Wort im Projekt verpönt (auch in der Oberf
 | **Protokoll** | Der geöffnete Chat: alle Meldungen, scrollbar, Zeichnung blass | Verlauf, Historie |
 | **Toast** | Kurze Meldung, die von selbst verschwindet — heute eine Zeile im Chat | Benachrichtigung, Popup |
 | **Zieh-Modus** | Wie gezogen wird: „Gedrückthalten" oder „Zwei Klicks" | Drag-Modus, Drag and Drop |
-| **Anzahl der Sicherungen** | Anzahl der aufbewahrten Stände **insgesamt**, über alle Dateien; Einstellungen → Sicherung (`docs/SICHERUNG.md`) | Plätze im Pool, Speicherlimit, Kontingent |
+| **Anzahl der Sicherungen** | Anzahl der aufbewahrten Stände **insgesamt**, über alle Dateien; Einstellungen → Sicherung (`docs/benutzer/SICHERUNG.md`) | Plätze im Pool, Speicherlimit, Kontingent |
 | **Aufbewahrungszeitraum** | Gewünschte Reichweite der Sicherung in **Arbeitsstunden**; Einstellungen → Sicherung | Reicht zurück, Aufbewahrungsdauer, History-Tiefe |
 | **Verlauf aufbewahren** | Schalter: an = jeder Stand bleibt, aus = je Zeichnung nur der neueste (wird ersetzt, nichts wird gelöscht) | Verlauf sichern, History |
 | **Stand** (Sicherung) | Eine gesicherte Fassung einer Datei zu einem Zyklus, mit Hash und Größe | Version, Snapshot, Backup-Datei |

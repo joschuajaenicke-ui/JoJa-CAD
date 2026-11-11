@@ -11,7 +11,7 @@ Rundung in PDF-Koordinaten ist erlaubt; Toleranzen stehen in Abschnitt 7.
 
 **Startbefehl für eine frische Sitzung** (wörtlich einfügbar):
 
-> Lies `docs/PDF-IMPORT.md` vollständig und setze die Etappen 0–6 um. Arbeite die
+> Lies `docs/wissen/PDF-IMPORT.md` vollständig und setze die Etappen 0–6 um. Arbeite die
 > Etappen durch, ohne nach jeder Etappe zu fragen; melde nur Abweichungen vom Plan,
 > fehlende Entscheidungen und am Ende einen knappen Bericht mit den Messwerten aus
 > Abschnitt 7. Ein Ticket, ein Zweig, eine Auslieferung am Ende.

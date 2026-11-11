@@ -38,7 +38,7 @@ eigener winit-Fork (~300 Zeilen) wäre möglich, wird aber nicht gepflegt.
 asynchrones `data_transfer`-API). Der egui-Port läuft upstream.
 
 **Behelf.** Datei über *Öffnen* wählen. Vollständiger Befund mit Belegstellen
-und Prüfskript: [`WAYLAND-DATEI-DROP.md`](WAYLAND-DATEI-DROP.md).
+und Prüfskript: [`WAYLAND-DATEI-DROP.md`](../wissen/WAYLAND-DATEI-DROP.md).
 
 ---
 

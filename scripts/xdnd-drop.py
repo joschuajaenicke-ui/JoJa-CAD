@@ -9,7 +9,7 @@ XDND-Protokoll so, wie es ein Dateimanager täte:
                ->  XdndDrop    ->  XdndFinished abwarten
 
 Damit ist prüfbar, ob ein Programm Drops annimmt und was es damit tut.
-Siehe docs/WAYLAND-DATEI-DROP.md — unter Wayland (nativ) gibt es kein XDND,
+Siehe docs/wissen/WAYLAND-DATEI-DROP.md — unter Wayland (nativ) gibt es kein XDND,
 dort ist dieses Skript wirkungslos; es prüft den X11-Zweig.
 
 Voraussetzung: python-xlib  (pip install python-xlib)

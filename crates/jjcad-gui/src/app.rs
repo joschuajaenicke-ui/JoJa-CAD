@@ -193,7 +193,7 @@ fn zeichen_label(zeichen: &str, umschalt: bool) -> String {
 }
 
 /// Die Tasten, deren Funktion aus der **Tastaturbelegung** kommt — Buchstaben
-/// und Symbole (T0056, `docs/TASTEN.md`). Ziffern gehören der Hotbar,
+/// und Symbole (T0056, `docs/benutzer/TASTEN.md`). Ziffern gehören der Hotbar,
 /// Steuerungstasten und Kombinationen dem festen Ablauf im Code; keine dieser
 /// Tasten steht deshalb in dieser Liste.
 ///
@@ -10456,7 +10456,7 @@ mod tests_ghost_drehrichtung {
 
 #[cfg(test)]
 mod tests_tastenbelegung {
-    //! T0056: Die Tastatur in drei Schichten (`docs/TASTEN.md`).
+    //! T0056: Die Tastatur in drei Schichten (`docs/benutzer/TASTEN.md`).
     //!
     //! 1. Ziffern `1` … `0` starten den Hotbar-Slot.
     //! 2. Buchstaben und Symbole kommen aus der Tastaturbelegung.

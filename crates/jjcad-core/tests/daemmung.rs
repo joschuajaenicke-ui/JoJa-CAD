@@ -2,7 +2,7 @@
 //!
 //! Die Linienart „Dämmung“ ist kein Strichmuster: die Anzeige übersetzt sie in
 //! ein **Schlaufenband** (Rechnung in `jjcad_core::daemmung`, Dokumentation in
-//! `docs/DAEMMUNG-SCHLAUFEN.md`). Geprüft wird über die Befehls-Schicht und die
+//! `docs/wissen/DAEMMUNG-SCHLAUFEN.md`). Geprüft wird über die Befehls-Schicht und die
 //! Displayliste — derselbe Weg, den GUI, PDF, PNG und DXF nehmen.
 //!
 //! Die Kernaussage des Tickets ist die **exakte Länge**: das Band beginnt bei

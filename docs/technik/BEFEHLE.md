@@ -164,7 +164,7 @@ Ansichtsfenster mischen zwei Räume: `x`/`y`/`w`/`h` bzw. `rect_mm` sind
 **Papier-Millimeter**, `center` ist eine **Modellkoordinate in der Einheit
 `units`** (Vorgabe: Dokumenteinheit), `center_mm` dieselbe Lage in Millimetern.
 `sheet.fit_viewport` setzt die Mitte auf die Zeichnungs-BBox und den Maßstab aus
-der Fenstergröße (siehe `docs/MCP.md`).
+der Fenstergröße (siehe `docs/technik/MCP.md`).
 
 Ein Ansichtsfenster ist seit T0109 ein **normales Blattobjekt**
 (`EntityKind::Viewport`): `modify.move`, `modify.erase` und `modify.set`

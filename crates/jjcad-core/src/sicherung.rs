@@ -2,7 +2,7 @@
 //!
 //! Die Sicherung legt während der Arbeit Stände im **Pool** ab und dünnt sie
 //! nach Alter aus. Sie schreibt **nie** in die Zieldatei — gespeichert wird
-//! ausschließlich vom Benutzer. Vorgabe und Begründung: `docs/SICHERUNG.md`.
+//! ausschließlich vom Benutzer. Vorgabe und Begründung: `docs/benutzer/SICHERUNG.md`.
 //!
 //! Aufbau des Pools (ein Pool für alle Dateien, ein Projektordner):
 //!
@@ -438,7 +438,7 @@ impl Sicherung {
         self.manifest.zyklus = zyklus;
     }
 
-    /// Dünnt den Pool nach den Regeln aus `docs/SICHERUNG.md` §10 aus.
+    /// Dünnt den Pool nach den Regeln aus `docs/benutzer/SICHERUNG.md` §10 aus.
     pub fn ausduennen(&mut self, einst: &Einstellungen) {
         let t = einst.zyklen();
         let n = self.manifest.zyklus;

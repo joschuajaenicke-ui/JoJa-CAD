@@ -1347,7 +1347,7 @@ fn default_lineweight_factor() -> f32 {
     1.0
 }
 
-/// Die drei Schichten der Tastatur (T0056, `docs/TASTEN.md`):
+/// Die drei Schichten der Tastatur (T0056, `docs/benutzer/TASTEN.md`):
 ///
 /// 1. **Ziffern `1` … `0`** starten den Hotbar-Slot — gesteuert über die
 ///    Hotbar, nie über die Tastaturbelegung.
@@ -1439,7 +1439,7 @@ fn werkseinstellung_bindungen() -> BTreeMap<String, Vec<String>> {
         }
         // Ziffern und Steuerungstasten gehören keiner Funktion; Funktions-
         // tasten und Kombinationen sind dagegen genau ihre feste Belegung
-        // (T0056, `docs/TASTEN.md`).
+        // (T0056, `docs/benutzer/TASTEN.md`).
         if matches!(fest_belegt(a.key), Some(f) if !f.ist_feste_belegung()) {
             continue;
         }
@@ -1479,7 +1479,7 @@ fn vorlage(name: &str, abweichungen: &[(&str, &str)]) -> KeymapPreset {
 /// Abweichungen der Vorlage Allplan. Quelle: Allplan-Kurzanleitung „Shortcuts"
 /// (deutsch): Linie `Strg+L`, Maßlinie `Strg+M`, Wand `Strg+W`, Decke `Strg+D`,
 /// Tür `Strg+T`, Fenster `Strg+F`. Tastenkombinationen sind in JoJa-CAD fest
-/// verdrahtet (`docs/TASTEN.md`) — die Vorlage nimmt den Buchstaben dahinter.
+/// verdrahtet (`docs/benutzer/TASTEN.md`) — die Vorlage nimmt den Buchstaben dahinter.
 /// Text liegt deshalb auf `Umschalt+T`, Spiegeln auf `Umschalt+F`, und der
 /// Ansichtsschwenk wandert auf die Umschalt-Ebene.
 const VORLAGE_ALLPLAN: &[(&str, &str)] = &[
@@ -2046,7 +2046,7 @@ impl UserPrefs {
 
     /// Ist die Belegung dieser Funktion änderbar? Nein, wenn eine ihrer Tasten
     /// fest verdrahtet ist (Funktionstaste, Tastenkombination) — die stehen im
-    /// Code (T0056, `docs/TASTEN.md`).
+    /// Code (T0056, `docs/benutzer/TASTEN.md`).
     pub fn belegung_aenderbar(&self, action: &str) -> bool {
         match self.bindings.get(action) {
             Some(keys) => !keys
@@ -2967,7 +2967,7 @@ mod tests {
         assert_eq!(alt.action_for_key("k").as_deref(), Some("draw.circle"));
     }
 
-    /// T0056: Drei Schichten der Tastatur (`docs/TASTEN.md`). Ziffern gehören
+    /// T0056: Drei Schichten der Tastatur (`docs/benutzer/TASTEN.md`). Ziffern gehören
     /// der Hotbar, Buchstaben und Symbole der Tastaturbelegung, Steuerungstasten
     /// und Kombinationen sind fest verdrahtet.
     #[test]

@@ -111,7 +111,7 @@ pub enum LineType {
     /// Dämmung: statt eines Strichs wird ein **Schlaufenband** entlang der
     /// Linie gezeichnet (Breite `H`, Schlaufenform `r`). Die Länge bleibt
     /// exakt die der Linie — Rechnung in [`crate::daemmung`], Dokumentation
-    /// in `docs/DAEMMUNG-SCHLAUFEN.md`.
+    /// in `docs/wissen/DAEMMUNG-SCHLAUFEN.md`.
     Insulation,
 }
 

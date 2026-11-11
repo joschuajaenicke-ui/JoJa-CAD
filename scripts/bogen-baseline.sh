@@ -2,8 +2,8 @@
 # Bogen-Baseline neu erzeugen: Messwerte, Screenshots, 4x-Ausschnitte.
 #
 # Aufruf:  ./scripts/bogen-baseline.sh [ZIELVERZEICHNIS]
-#          (Vorgabe: docs/bogen-baseline — der Stand vor der Glättung;
-#           für einen neuen Stand z. B. docs/bogen-baseline/nachher)
+#          (Vorgabe: docs/wissen/bogen-baseline — der Stand vor der Glättung;
+#           für einen neuen Stand z. B. docs/wissen/bogen-baseline/nachher)
 #
 # Ergebnis (alles versioniert):
 #   S1_klein.png … S4_starken.png    Vollbild je Szene (Build-Kennung im Fenstertitel)

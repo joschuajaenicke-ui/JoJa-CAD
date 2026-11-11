@@ -4,8 +4,8 @@ Stand: 26.10.2026.
 
 | Stand | Commit / Build | Artefakte |
 |---|---|---|
-| **Vorher** (Baseline) | `29b020b`, Build b100 | `docs/bogen-baseline/` |
-| **Ist** (nach der Glättung) | `a26e2f0` (Glättung aus `deeaf72`), Build b108 | `docs/bogen-baseline/nachher/` |
+| **Vorher** (Baseline) | `29b020b`, Build b100 | `docs/wissen/bogen-baseline/` |
+| **Ist** (nach der Glättung) | `a26e2f0` (Glättung aus `deeaf72`), Build b108 | `docs/wissen/bogen-baseline/nachher/` |
 
 Diese Baseline ändert **keine** Renderlogik. Sie legt fest, wie „kantig" gemessen
 wird, wie die Szenen reproduzierbar entstehen und welche Werte als abgenommen
@@ -51,8 +51,8 @@ Nutzer zeichnet.
 ## Reproduzieren
 
 ```bash
-./scripts/bogen-baseline.sh                     # Stand neu erzeugen (docs/bogen-baseline)
-./scripts/bogen-baseline.sh docs/bogen-baseline/nachher   # anderer Zielordner
+./scripts/bogen-baseline.sh                     # Stand neu erzeugen (docs/wissen/bogen-baseline)
+./scripts/bogen-baseline.sh docs/wissen/bogen-baseline/nachher   # anderer Zielordner
 ```
 
 Das Skript schreibt in vier Schritten: Szenen-Zeichnungen, Messtabelle,
@@ -75,7 +75,7 @@ Prozess; die Instanz des Nutzers bleibt unberührt.
 
 ## Messwerte
 
-Vollständig je Messfall in `docs/bogen-baseline/messwerte.md` (bzw.
+Vollständig je Messfall in `docs/wissen/bogen-baseline/messwerte.md` (bzw.
 `nachher/messwerte.md`, identischer Inhalt). 14 Messfälle, Zeichenfläche:
 
 | Kennzahl | Vorher (0,6 px Unterteilung) | Ist (`CurveQuality::SCREEN`, 0,15 px) |

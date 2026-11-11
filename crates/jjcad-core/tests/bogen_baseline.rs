@@ -3,7 +3,7 @@
 //! Kein Abnahmetest im engeren Sinn: dieses Programm misst den Polygonzug,
 //! den die Ausgabewege für einen Bogen erzeugen, und schreibt die Werte auf
 //! stdout. Damit lässt sich die Kantigkeit vor und nach einer Änderung
-//! objektiv vergleichen (Kriterien: `docs/BOGEN_BASELINE.md`).
+//! objektiv vergleichen (Kriterien: `docs/wissen/BOGEN_BASELINE.md`).
 //!
 //! ```text
 //! cargo test -p jjcad-core --test bogen_baseline -- --nocapture
@@ -108,7 +108,7 @@ fn abstand_punkt_strecke(p: Vec2, a: Vec2, b: Vec2) -> f64 {
 
 fn faelle() -> Vec<Fall> {
     // Radien, Öffnungswinkel und Zoom entsprechen den Szenen der visuellen
-    // Baseline (`samples/bogen_baseline/`, Ansicht aus `docs/BOGEN_BASELINE.md`).
+    // Baseline (`samples/bogen_baseline/`, Ansicht aus `docs/wissen/BOGEN_BASELINE.md`).
     vec![
         // S1 — kleine Radien, Ansicht bei 95 % (fit im Fenster 1500x950)
         Fall { name: "S1   60 mm /  90° / 95 %", r_mm: 60.0, sweep_deg: 90.0, zoom: 0.953 },

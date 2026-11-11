@@ -2,7 +2,7 @@
 #
 # Keys are neutral and stable; a missing entry falls back to the German text.
 # Placeholders are named ({name}), so a translation may reorder them.
-# Terminology: docs/I18N.md — Dimensionierung dimensioning, Brüstung sill,
+# Terminology: docs/technik/I18N.md — Dimensionierung dimensioning, Brüstung sill,
 # Schraffur hatch, Gehrung miter, Geschoss storey, Wandkörper wall body,
 # Blatt sheet, Ansichtsfenster viewport.
 

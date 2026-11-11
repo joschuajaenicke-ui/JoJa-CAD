@@ -102,20 +102,30 @@ angeben (`--daten-dir`).
 
 ## Dokumentation
 
-Wegweiser durch die Doku — welche Datei für wen gedacht ist:
+Die Dokumentation ist nach **Leser** sortiert, nicht nach Thema — sonst sucht
+jeder in der falschen Datei:
+
+| Ordner | Für wen | Inhalt |
+|---|---|---|
+| [`docs/benutzer/`](docs/benutzer/) | Anwender | Bedienung, Tastenbelegung, Sicherung, Glossar, bekannte Grenzen |
+| [`docs/technik/`](docs/technik/) | Entwickler und Agenten | Architektur, Dateiformat, Befehlsreferenz, MCP, Übersetzungen, Release-Ablauf |
+| [`docs/wissen/`](docs/wissen/) | wer verstehen will, *warum* | Herleitungen und Messungen: Wandgehrung, Bogenglättung, Dämmungsschlaufen, PDF-Import, Wayland-Befund |
+
+`docs/wissen/` ist der Teil, der über den Quelltext hinausgeht: dort steht, wie
+ein Problem gelöst wurde, welche Variante verworfen wurde und mit welcher Messung
+die Lösung belegt ist. Einstieg und Regeln für alle drei Bereiche:
 [`docs/README.md`](docs/README.md).
 
-- [`docs/BEDIENUNG.md`](docs/BEDIENUNG.md) — Werkzeuge, Panels, erste Schritte
-- [`docs/ARCHITEKTUR.md`](docs/ARCHITEKTUR.md) — Aufbau, Datenfluss, Entscheidungen
-- [`docs/FORMAT.md`](docs/FORMAT.md) — Dateiformat `.jjcad` (JSON, offen)
-- [`docs/SICHERUNG.md`](docs/SICHERUNG.md) — Autosave und Aufbewahrung: Einstellungen, Zusagen, Regeln
-- [`docs/BEFEHLE.md`](docs/BEFEHLE.md) — alle Aktionen mit Parametern
-- [`docs/MCP.md`](docs/MCP.md) — KI-Steuerung, Werkzeuge, Beispiele
-- [`docs/GLOSSAR.md`](docs/GLOSSAR.md) — Begriffe, verbindlich für Oberfläche und Code
-- [`docs/STATUS.md`](docs/STATUS.md) — Arbeitsstand und offene Punkte
-- [`docs/WAYLAND-DATEI-DROP.md`](docs/WAYLAND-DATEI-DROP.md) — warum Datei-Drop unter Wayland nicht geht und wann er zurückkommt
-- [`docs/BEKANNTE-GRENZEN.md`](docs/BEKANNTE-GRENZEN.md) — bekannte Grenzen, die derzeit nicht lösbar sind (und was sie lösen würde)
-- [`docs/VERSIONEN.md`](docs/VERSIONEN.md) — Versionierung, Release-Ablauf, Weg zur 0.3
+Die wichtigsten Dateien:
+
+- [`docs/benutzer/BEDIENUNG.md`](docs/benutzer/BEDIENUNG.md) — Werkzeuge, Panels, erste Schritte
+- [`docs/benutzer/SICHERUNG.md`](docs/benutzer/SICHERUNG.md) — Autosave und Aufbewahrung: Einstellungen, Zusagen, Regeln
+- [`docs/benutzer/GLOSSAR.md`](docs/benutzer/GLOSSAR.md) — Begriffe, verbindlich für Oberfläche und Code
+- [`docs/benutzer/BEKANNTE-GRENZEN.md`](docs/benutzer/BEKANNTE-GRENZEN.md) — bekannte Grenzen und was sie lösen würde
+- [`docs/technik/ARCHITEKTUR.md`](docs/technik/ARCHITEKTUR.md) — Aufbau, Datenfluss, Entscheidungen
+- [`docs/technik/FORMAT.md`](docs/technik/FORMAT.md) — Dateiformat `.jjcad` (JSON, offen)
+- [`docs/technik/BEFEHLE.md`](docs/technik/BEFEHLE.md) — alle Aktionen mit Parametern
+- [`docs/technik/MCP.md`](docs/technik/MCP.md) — KI-Steuerung, Werkzeuge, Beispiele
 - [`CHANGELOG.md`](CHANGELOG.md) — was sich je Version geändert hat
 
 ## Lizenz
@@ -149,6 +159,6 @@ Es werden keine Commits oder Pull Requests angenommen. Bei KI-generiertem Code i
    - **Fehler bzw. Problem**: Was ist daran falsch oder unzureichend? (Bei Feature-Wünschen: Was kann das Programm noch nicht, was es können sollte?)
    - **Soll-Zustand**: Wie soll es stattdessen sein? Was genau soll der Agent tun?
 
-Je präziser das Issue diese drei Punkte beschreibt, desto eher kann es direkt als Prompt übernommen und umgesetzt werden. Wichtige Begriffe sind in [`docs/GLOSSAR.md`](docs/GLOSSAR.md) formuliert.
+Je präziser das Issue diese drei Punkte beschreibt, desto eher kann es direkt als Prompt übernommen und umgesetzt werden. Wichtige Begriffe sind in [`docs/benutzer/GLOSSAR.md`](docs/benutzer/GLOSSAR.md) formuliert.
 
 Forken und selbst weiterbauen ist mit der GPL ausdrücklich erlaubt; das GitHub-Projekt enthält auch die notwendige [`AGENTS.md`](AGENTS.md), damit direkt mit einem anderen Agenten weitergearbeitet werden kann.

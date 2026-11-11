@@ -33,7 +33,7 @@ geschlossenen Entwicklung zur ersten öffentlichen Fassung aussieht.
 ## Was ein Release enthält
 
 1. **Tag** `v0.2.x` auf `master`.
-2. **GitHub-Release** mit Patchnotes aus [`CHANGELOG.md`](../CHANGELOG.md).
+2. **GitHub-Release** mit Patchnotes aus [`CHANGELOG.md`](../../CHANGELOG.md).
 3. **Binaries**: Linux (AppImage bzw. .deb) und Windows (Installer bzw. ZIP) —
    Windows erst, wenn der Windows-Build in der CI grün ist. Ein Release, der
    Windows nennt, ohne dass es gebaut wurde, ist ein Fehler.
@@ -59,8 +59,7 @@ gh release create v0.2.1 --title "0.2.1" --notes-file <(sed -n '/## 0.2.1/,/## 0
 ## Weg von 0.2 nach 0.3
 
 Sechs Blöcke. Ein Block ist fertig, wenn er im Testkanal abgenommen ist — nicht,
-wenn der Code geschrieben ist. Die konkrete, priorisierte Fassung mit
-Tagesplan steht in [`ROADMAP-0.3.md`](ROADMAP-0.3.md).
+wenn der Code geschrieben ist.
 
 **A — Zeichnen vollständig**
 - Tür-/Fenster-Ausrichtung nachträglich im Eigenschaften-Panel änderbar

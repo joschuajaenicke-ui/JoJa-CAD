@@ -126,7 +126,7 @@ in den meisten Fällen richtig. Wer eine Objektart ergänzt, ordnet sie in
 
 Die Linienart **Dämmung** (`LineType::Insulation`) ist kein Strichmuster: sie
 zeichnet ein **Schlaufenband** entlang der Linie. Die Kurve ist die
-dokumentierte parametrische Schlaufenkurve (`docs/DAEMMUNG-SCHLAUFEN.md`), die
+dokumentierte parametrische Schlaufenkurve (`docs/wissen/DAEMMUNG-SCHLAUFEN.md`), die
 Rechnung steht in `crates/jjcad-core/src/daemmung.rs`:
 
 ```
@@ -237,7 +237,7 @@ ihrer Reihenfolge (Kennung, Zieldatei oder keine, Name), je Reiter die Ansicht
 (Mitte, Zoom, Drehung) und das aktive Blatt, dazu der aktive Reiter und die
 Fensterlage (Größe, Vollbild und Maximiert-Zustand überall; die Position nur, wo
 das Fenstersystem globale Fensterkoordinaten liefert — unter Wayland trägt sie
-`mit_lage: false`, `docs/BEKANNTE-GRENZEN.md`, Grenze 7). Im Vollbild und
+`mit_lage: false`, `docs/benutzer/BEKANNTE-GRENZEN.md`, Grenze 7). Im Vollbild und
 maximiert steht in der Sitzung die zuletzt bekannte **normale** Größe
 (`App::fenster_normal`), nicht die Bildschirmgröße; der Zustand wird im ersten
 Bild gesetzt und bis zu 3 s wiederholt, weil der Fenstermanager ihn beim

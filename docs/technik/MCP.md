@@ -65,7 +65,7 @@ Linienzüge, Texte und Maße tragen das Feld nicht. Für Raumgruppen summiert
 
 ## Typischer Ablauf
 
-1. `jjcad_actions` — Katalog lesen (oder `docs/BEFEHLE.md`).
+1. `jjcad_actions` — Katalog lesen (oder `docs/technik/BEFEHLE.md`).
 2. `jjcad_document {"action":"new","units":"m","project":{...}}`.
 3. `jjcad_batch` mit den Zeichenbefehlen — in kleinen Gruppen (10–20 Schritte),
    denn der Batch bricht beim ersten Fehler ab und schickt den Rest nicht mehr.

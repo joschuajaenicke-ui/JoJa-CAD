@@ -17,3 +17,8 @@ target/
 *~
 .idea/
 .vscode/
+
+# Arbeitsmittel: Arbeitsstand und Planung bleiben lokal
+/docs/STATUS.md
+/docs/TODO-0.3.md
+/docs/ROADMAP-0.3.md

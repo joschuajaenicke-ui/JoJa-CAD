@@ -397,7 +397,7 @@ pub fn clip_keep_side(poly: &[Vec2], p0: Vec2, nrm: Vec2) -> Vec<Vec2> {
 
 /// Die beiden Gehrungspunkte eines Wandpaars am gemeinsamen Basispunkt.
 ///
-/// Rechnung wie in `docs/WANDANSCHLUSS.md`: `S_l` ist der Schnitt der beiden
+/// Rechnung wie in `docs/wissen/WANDANSCHLUSS.md`: `S_l` ist der Schnitt der beiden
 /// **linken** Kanten, `S_r` der Schnitt der beiden **rechten** — „links"
 /// bezogen auf die Laufrichtung am Knoten. Die eine Wand läuft auf den Knoten
 /// **zu** (ihr Ende liegt dort), die andere **von ihm weg** (ihr Anfang liegt

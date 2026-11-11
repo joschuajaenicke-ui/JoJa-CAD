@@ -2,12 +2,12 @@
 //!
 //! Misst **den Weg, den die Anwendung wirklich geht** —
 //! [`CurveQuality::SCREEN`] bzw. [`CurveQuality::PRINT`] — für die 14 Szenen
-//! der visuellen Baseline (`docs/BOGEN_BASELINE.md`, `samples/bogen_baseline/`)
+//! der visuellen Baseline (`docs/wissen/BOGEN_BASELINE.md`, `samples/bogen_baseline/`)
 //! und prüft die dort festgelegten Abnahmekriterien.
 //!
 //! Die Fälle und Zoomstufen sind aus der Baseline übernommen (gleiche Radien,
 //! Öffnungswinkel, Ansichten), damit die Zahlen Zeile für Zeile mit
-//! `docs/bogen-baseline/messwerte.md` vergleichbar sind.
+//! `docs/wissen/bogen-baseline/messwerte.md` vergleichbar sind.
 //!
 //! Aufruf:
 //!

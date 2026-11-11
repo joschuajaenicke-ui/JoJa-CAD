@@ -151,7 +151,7 @@ winit 0.31 keinen Ersatz für den echten Zug mit der Maus.
   lebendig.
 - Es gibt **keine** Fenster-Backend-Wahl im Programm (bewusst): das Fenster
   läuft nativ unter Wayland.
-- `docs/BEDIENUNG.md` Abschnitt 17 beschreibt den Drop; dort steht der
+- `docs/benutzer/BEDIENUNG.md` Abschnitt 17 beschreibt den Drop; dort steht der
   Wayland-Hinweis.
 
 ## 8. Offen

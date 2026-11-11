@@ -1,6 +1,6 @@
 # JoJa-CAD — leere Vorlage für eine weitere Sprache (T0105)
 #
-# So wird daraus eine Sprache (ausführlich: docs/I18N.md):
+# So wird daraus eine Sprache (ausführlich: docs/technik/I18N.md):
 #   1. Diese Datei kopieren:  lang/fr.toml
 #   2. Zeilen auskommentieren heißt übersetzen: das „# “ am Zeilenanfang
 #      entfernen und den deutschen Text durch die Übersetzung ersetzen.

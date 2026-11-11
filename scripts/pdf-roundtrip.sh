@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Abnahme des PDF-Rundlaufs (docs/PDF-IMPORT.md, Abschnitt 6).
+# Abnahme des PDF-Rundlaufs (docs/wissen/PDF-IMPORT.md, Abschnitt 6).
 #
 #   1. Tests: Import (Grundriss.pdf), Textformatierung, Rundlauf (Struktur,
 #      Text, Pixel) — die Zahlen stehen im Protokoll.

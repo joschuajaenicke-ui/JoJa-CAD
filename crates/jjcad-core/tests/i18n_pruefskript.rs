@@ -3,7 +3,7 @@
 //! Ohne diesen Test prüft nur, wer das Skript von Hand aufruft; dann verrottet
 //! der Katalog wieder unbemerkt. Fehlt Python 3 (Windows ohne Python, sehr
 //! schlanke Container), wird übersprungen — der Aufruf von Hand steht in
-//! `docs/I18N.md`.
+//! `docs/technik/I18N.md`.
 
 use std::path::{Path, PathBuf};
 use std::process::{Command, Output};

@@ -1,6 +1,6 @@
 //! Abnahme-Rundlauf: **Export → Import → Zerlegen sieht identisch aus.**
 //!
-//! Das ist das verbindliche Kriterium aus `docs/PDF-IMPORT.md`:
+//! Das ist das verbindliche Kriterium aus `docs/wissen/PDF-IMPORT.md`:
 //!
 //! * **A — Struktur:** Anzahl Objekte je Typ und Gesamtumriss.
 //! * **B — Text:** Inhalte gleich, Höhe ±0,05 mm, Lage ±0,3 mm (auf dem Papier).

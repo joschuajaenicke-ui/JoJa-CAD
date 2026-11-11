@@ -19,7 +19,7 @@ Zoomstufen, nicht für beliebige Fensterhöhen.
 
 ## 1. Abnahme-Checkliste
 
-Kriterien aus `docs/BOGEN_BASELINE.md` (Baseline-Karte `t_ea35d723`), gemessen
+Kriterien aus `docs/wissen/BOGEN_BASELINE.md` (Baseline-Karte `t_ea35d723`), gemessen
 über den Weg, den die Anwendung wirklich geht (`tessellate::CurveQuality`).
 
 | Nr. | Kriterium | Soll | Vorher | Nachher | Ergebnis |
@@ -82,7 +82,7 @@ Wohnhaus bei 5 %: 23 Bögen, **111** Segmente (vorher 56), Unterteilung
 ## 2. Vergleich mit den Baseline-Artefakten
 
 14 Messfälle der Baseline, Zeichenfläche. „Vorher“ aus
-`docs/bogen-baseline/messwerte.md`, „Nachher“ aus `messwerte_nachher.md`.
+`docs/wissen/bogen-baseline/messwerte.md`, „Nachher“ aus `messwerte_nachher.md`.
 
 | Fall | Bildschirmradius | Segmente vorher → nachher | Pfeilhöhe vorher → nachher | Knick vorher → nachher |
 |---|---:|---|---|---|
@@ -255,7 +255,7 @@ Die Baseline aus `t_ea35d723` bleibt als **Vorher-Referenz** unverändert
 daneben:
 
 * `messwerte_nachher.md` — dieselben 14 Fälle, gemessen über den neuen Weg
-  (ersetzt die Spalte „Heute“ in `docs/bogen-baseline/messwerte.md`),
+  (ersetzt die Spalte „Heute“ in `docs/wissen/bogen-baseline/messwerte.md`),
 * `bilder/` — Vergleichsausschnitte (links alt, rechts neu) und die
   Wohnhaus-Vollbilder beider Stände.
 
@@ -283,6 +283,6 @@ cargo run --release -p jjcad-core --example mess_export -- samples/Wohnhaus.jjca
 python3 scripts/qa-shot.py /tmp/S2.png --file samples/bogen_baseline/S2_mittel.jjcad
 ```
 
-Die Szenenbilder der Baseline liegen in `docs/bogen-baseline/` (Karte
+Die Szenenbilder der Baseline liegen in `docs/wissen/bogen-baseline/` (Karte
 `t_ea35d723`); die Vergleichsbilder dieses Berichts in `bilder/` (links alter
 Stand, rechts neuer Stand).

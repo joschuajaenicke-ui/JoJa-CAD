@@ -2,7 +2,7 @@
 """i18n-Prüfskript (T0105) — prüft die Sprachkataloge gegen den Code.
 
 Der Katalog liegt als Datendatei unter ``crates/jjcad-core/lang/<code>.toml``
-und wird per ``include_str!`` einkompiliert (siehe ``docs/I18N.md``). Ein
+und wird per ``include_str!`` einkompiliert (siehe ``docs/technik/I18N.md``). Ein
 Tippfehler dort fällt sonst erst im Bild auf: dann steht der Schlüssel oder ein
 leerer Text in der Oberfläche. Dieses Skript ist das Tor davor.
 
@@ -61,7 +61,7 @@ ABSICHTLICH_UNBEKANNT = {"gibt.es.nicht"}
 NICHT_ZU_UEBERSETZEN = {"test"}
 
 #: Platzhalter dürfen Text nicht sprengen: ab diesem Verhältnis zur deutschen
-#: Fassung warnt das Skript (Menüband ist 70 px breit, siehe docs/I18N.md).
+#: Fassung warnt das Skript (Menüband ist 70 px breit, siehe docs/technik/I18N.md).
 LAENGE_FAKTOR = 1.4
 LAENGE_ZUSCHLAG = 8
 
@@ -494,7 +494,7 @@ def pruefe(
 VORLAGE_KOPF = """\
 # JoJa-CAD — leere Vorlage für eine weitere Sprache (T0105)
 #
-# So wird daraus eine Sprache (ausführlich: docs/I18N.md):
+# So wird daraus eine Sprache (ausführlich: docs/technik/I18N.md):
 #   1. Diese Datei kopieren:  lang/fr.toml
 #   2. Zeilen auskommentieren heißt übersetzen: das „# “ am Zeilenanfang
 #      entfernen und den deutschen Text durch die Übersetzung ersetzen.
@@ -671,7 +671,7 @@ def selbsttest() -> int:
 def main(argv: list[str]) -> int:
     zerleger = argparse.ArgumentParser(
         description="Prüft die Sprachkataloge (lang/*.toml) gegen den Quelltext.",
-        epilog="Exitcode 0 = sauber, 1 = Fehler. Siehe docs/I18N.md.",
+        epilog="Exitcode 0 = sauber, 1 = Fehler. Siehe docs/technik/I18N.md.",
     )
     zerleger.add_argument(
         "--lang-dir",

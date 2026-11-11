@@ -22,7 +22,7 @@ pub enum FileMode {
     Open,
     SaveJjcad,
     ImportDxf,
-    /// PDF einfügen (Plan `docs/PDF-IMPORT.md`)
+    /// PDF einfügen (Plan `docs/wissen/PDF-IMPORT.md`)
     ImportPdf,
     /// Bild einfügen (PNG oder JPEG, T0100)
     ImportImage,
@@ -912,7 +912,7 @@ pub fn show(app: &mut App, ctx: &egui::Context) {
         }
     }
 
-    // PDF einfügen: Seitenwahl (docs/PDF-IMPORT.md)
+    // PDF einfügen: Seitenwahl (docs/wissen/PDF-IMPORT.md)
     if let Some(wahl) = app.ui.pdf_import.clone() {
         dim_background(ctx);
         // Fenster-Flag: startet offen, false = über das X geschlossen.
@@ -3083,7 +3083,7 @@ fn settings_body(app: &mut App, ui: &mut Ui) {
                                 );
                                 if suche.is_empty() {
                                     // Konkretes Beispiel statt nur einer Prozentzahl:
-                                    // dieselben Zahlen stehen in `docs/SICHERUNG.md`.
+                                    // dieselben Zahlen stehen in `docs/benutzer/SICHERUNG.md`.
                                     ui.add(
                                         egui::Label::new(theme::faint(
                                             jjcad_core::i18n::t_args_owned(

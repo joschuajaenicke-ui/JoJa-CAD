@@ -2,7 +2,7 @@
 //! [`crate::style::LineType::Insulation`].
 //!
 //! Die Kurve ist die dokumentierte parametrische Schlaufenkurve
-//! (`docs/DAEMMUNG-SCHLAUFEN.md`):
+//! (`docs/wissen/DAEMMUNG-SCHLAUFEN.md`):
 //!
 //! ```text
 //! x(t) = L/(2πn) · (t + K · sin 2t),   y(t) = H/2 · cos t,   t ∈ [0, 2πn]

@@ -2,7 +2,7 @@
 
 Alle nennenswerten Änderungen an JoJa-CAD. Format nach
 [Keep a Changelog](https://keepachangelog.com/de/1.1.0/), Versionierung nach
-[`docs/VERSIONEN.md`](docs/VERSIONEN.md).
+[`docs/technik/VERSIONEN.md`](docs/technik/VERSIONEN.md).
 
 Abschnitte je Version: **Neu**, **Geändert**, **Behoben**. Ein Eintrag ist ein
 Satz aus Nutzersicht — was man jetzt anders machen kann, nicht welche Datei

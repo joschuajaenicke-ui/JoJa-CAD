@@ -104,19 +104,29 @@ brings it to the front. For separate work, use a different data folder
 
 ## Documentation
 
-The documentation is written in German, the language of the interface.
+The documentation is written in German, the language of the interface, and sorted
+by **reader** rather than by topic:
 
-- [`docs/BEDIENUNG.md`](docs/BEDIENUNG.md) — tools, panels, first steps
-- [`docs/ARCHITEKTUR.md`](docs/ARCHITEKTUR.md) — structure, data flow, decisions
-- [`docs/FORMAT.md`](docs/FORMAT.md) — `.jjcad` file format (JSON, open)
-- [`docs/SICHERUNG.md`](docs/SICHERUNG.md) — autosave and retention: settings, guarantees, rules
-- [`docs/BEFEHLE.md`](docs/BEFEHLE.md) — every action with its parameters
-- [`docs/MCP.md`](docs/MCP.md) — AI control, tools, examples
-- [`docs/GLOSSAR.md`](docs/GLOSSAR.md) — terms, binding for interface and code
-- [`docs/STATUS.md`](docs/STATUS.md) — current state and open points
-- [`docs/WAYLAND-DATEI-DROP.md`](docs/WAYLAND-DATEI-DROP.md) — why file drop does not work under Wayland and when it returns
-- [`docs/BEKANNTE-GRENZEN.md`](docs/BEKANNTE-GRENZEN.md) — known limits that cannot be solved right now (and what would solve them)
-- [`docs/VERSIONEN.md`](docs/VERSIONEN.md) — versioning, release process, the way to 0.3
+| Folder | For | Content |
+|---|---|---|
+| [`docs/benutzer/`](docs/benutzer/) | users | operation, keyboard, backups, glossary, known limits |
+| [`docs/technik/`](docs/technik/) | developers and agents | architecture, file format, command reference, MCP, translations, releases |
+| [`docs/wissen/`](docs/wissen/) | anyone asking *why* | derivations and measurements: wall mitres, arc smoothing, insulation loops, PDF import, Wayland findings |
+
+`docs/wissen/` goes beyond the source code: it records how a problem was solved,
+which approach was rejected, and which measurement backs the solution. Entry
+point and rules for all three areas: [`docs/README.md`](docs/README.md).
+
+The most important files:
+
+- [`docs/benutzer/BEDIENUNG.md`](docs/benutzer/BEDIENUNG.md) — tools, panels, first steps
+- [`docs/benutzer/SICHERUNG.md`](docs/benutzer/SICHERUNG.md) — autosave and retention: settings, guarantees, rules
+- [`docs/benutzer/GLOSSAR.md`](docs/benutzer/GLOSSAR.md) — terms, binding for interface and code
+- [`docs/benutzer/BEKANNTE-GRENZEN.md`](docs/benutzer/BEKANNTE-GRENZEN.md) — known limits and what would solve them
+- [`docs/technik/ARCHITEKTUR.md`](docs/technik/ARCHITEKTUR.md) — structure, data flow, decisions
+- [`docs/technik/FORMAT.md`](docs/technik/FORMAT.md) — `.jjcad` file format (JSON, open)
+- [`docs/technik/BEFEHLE.md`](docs/technik/BEFEHLE.md) — every action with its parameters
+- [`docs/technik/MCP.md`](docs/technik/MCP.md) — AI control, tools, examples
 - [`CHANGELOG.md`](CHANGELOG.md) — what changed in each version
 
 ## License
@@ -162,7 +172,7 @@ AI agent.
 
 The more precisely an issue describes these three points, the more likely it can
 be taken over directly as a prompt. Important terms are defined in
-[`docs/GLOSSAR.md`](docs/GLOSSAR.md).
+[`docs/benutzer/GLOSSAR.md`](docs/benutzer/GLOSSAR.md).
 
 Forking and building on it yourself is expressly permitted by the GPL;
 the GitHub project also contains the required [`AGENTS.md`](AGENTS.md) so that

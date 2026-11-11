@@ -5,7 +5,7 @@ Zeichnung in der Mitte, Layer links, Eigenschaften rechts, Hotbar unten.
 Die vollständige Tastenbelegung ist im Programm über den Tastatur-Editor
 einsehbar und dort frei änderbar (Ribbon ▸ Ansicht ▸ „Tasten").
 
-**Drei Schichten von Tasten** (verbindlich, ausführlich in `docs/TASTEN.md`):
+**Drei Schichten von Tasten** (verbindlich, ausführlich in `docs/benutzer/TASTEN.md`):
 
 1. **Ziffern `1` … `0`** starten die Hotbar-Slots — ihre Belegung steuert die
    **Hotbar**, nicht die Tastaturbelegung.
@@ -177,7 +177,7 @@ einsehbar und dort frei änderbar (Ribbon ▸ Ansicht ▸ „Tasten").
 
     **Unter Linux mit Wayland kommt der Drop derzeit nicht an** — die Fensterbibliothek unter
     egui (winit 0.30) kennt ihn dort nicht. Das ist kein Fehler des Programms; Ursache,
-    Bedingungen und Prüfweg stehen in [`docs/WAYLAND-DATEI-DROP.md`](WAYLAND-DATEI-DROP.md).
+    Bedingungen und Prüfweg stehen in [`docs/wissen/WAYLAND-DATEI-DROP.md`](../wissen/WAYLAND-DATEI-DROP.md).
 
 Der Zeiger ist über der Zeichenfläche ein durchgehendes Fadenkreuz; der Systemzeiger wird dort
 ausgeblendet.
@@ -354,7 +354,7 @@ Reiter in ihrer Reihenfolge, je Reiter Ansicht und aktives Blatt, aktiver Reiter
 Fenstergröße, Vollbild, „maximiert“ und -lage — steht in `sitzung.json` und wird
 beim nächsten Start wiederhergestellt. Unter Wayland kommt alles außer der Lage
 zurück: dort darf kein Programm seine Fensterposition setzen
-(`docs/BEKANNTE-GRENZEN.md`, Grenze 7). **Ungespeicherte Änderungen gehen dabei nicht verloren:** die
+(`docs/benutzer/BEKANNTE-GRENZEN.md`, Grenze 7). **Ungespeicherte Änderungen gehen dabei nicht verloren:** die
 Sicherung legt sie beim Beenden als Stand ab, und der nächste Start holt sie
 zurück — mit demselben Speicherort, aber als **geändert** markiert. Erst
 „Speichern“ schreibt in die Zieldatei. Auch eine Zeichnung, die nie gespeichert
