@@ -158,6 +158,41 @@ und „Dämmstoffe Schlaufen“ (und die drei „Abdichtungen“) sind mit T0132
 entfallen — Dämmung und Abdichtung sind Linienarten, keine Schraffuren. Alte
 Zeichnungen laden diese Namen als Mauerwerk (`FillPattern::Lines`).
 
+#### Darstellungsstufen der Dämmung (T0176)
+
+Wie fein die Schlaufe abgetastet wird, hängt seit T0176 an der **Abbildung**:
+`RenderCtx::screen` (Bildschirm-px je Welt-mm, von der Zeichenfläche auf den
+Zoom gesetzt, `RenderCtx::mit_abbildung`). Die Stufe gilt je Band und wird aus
+der Periodenlänge in mm × Abbildung bestimmt (`daemmung::stufe`):
+
+| px je Periode | Darstellung |
+|---|---|
+| ab 12 | dynamisch nach Pfeilhöhe: `N = gerade(ceil(sqrt(52 · ppx)))`, höchstens 512 |
+| 5 … 12 | 10 Punkte |
+| 2,5 … 5 | 6 Punkte |
+| 1,5 … 2,5 | 2 Punkte |
+| unter 1,5 | Gerade in Bandmitte, Bandhöhe als Strichbreite |
+
+Die Punktzahl ist **immer gerade**: der untere Scheitel liegt bei `t = π`; bei
+ungerader Zahl trifft ihn kein Knoten, das Band wird unten zu flach (N = 5:
+80,9 %, N = 7: 90,1 % der Bandhöhe). Die Knoten sitzen exakt auf den
+Periodengrenzen (Bruchteile 0, 1/N … der Periode), die Phase bleibt am
+Weltnullpunkt verankert — benachbarte Bänder driften nicht.
+
+**Ohne Abbildung** (Druck, PNG, DXF, alle Ausgaben) bleibt es bei der
+weltfesten Dichte (12…40 Punkte je Periode, Schraffur 32 je Schlaufe): ein
+Ausdruck darf sich nicht mit dem Zoom ändern. `DisplayList::screen` trägt die
+Abbildung in die Übersetzung; die Gerade unter 1,5 px markiert ihre Breite mit
+`PrimStyle::welt_breite`, damit die Anzeige sie mit dem Zoom skaliert statt sie
+als Strichstärke zu deuten.
+
+Die Dämmungsschraffur zieht in **konvexen** Flächen ohne Inseln je Kurvenpunkt
+im Voraus aus, für welche Reihenlagen er innen liegt (Halbebenen der Kanten →
+Intervall in `v`), und begrenzt die Reihe auf den Längsbereich der Fläche. Bei
+30 px/mm sind das rund 148 000 Punkte: ohne diese Rechnung kostet die
+Anzeigeliste 15 ms, mit ihr 2,4 ms. Nicht konvexe Flächen und Flächen mit
+Inseln gehen den allgemeinen Weg mit Beschnitt je Teilstrecke.
+
 ### Blöcke mit Namensräumen
 
 Block-IDs sind präfixiert (`sys:`, `prj:`, `dxf:`). Beim Import kollidierender

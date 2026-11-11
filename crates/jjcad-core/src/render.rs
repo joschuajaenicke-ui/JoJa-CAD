@@ -32,6 +32,12 @@ pub struct PrimStyle {
     pub loop_width: f64,
     /// Dämmung: Schlaufenform r; 0 = Vorgabe ([`crate::daemmung::FORM`]).
     pub loop_shape: f64,
+    /// `width` ist ein **Weltmaß** in mm (die Bandhöhe der Dämmung), nicht die
+    /// Strichstärke der Ebene: die Anzeige skaliert sie mit der Abbildung
+    /// (Welt-mm → px). Gesetzt wird das nur vom Fallback „Gerade statt
+    /// Schlaufenband“ unter 1,5 px je Periode (T0176); Druck, PNG und DXF
+    /// kennen diesen Fall nicht, weil sie ohne Abbildung rechnen.
+    pub welt_breite: bool,
 }
 
 impl Default for PrimStyle {
@@ -43,6 +49,7 @@ impl Default for PrimStyle {
             fill: None,
             loop_width: 0.0,
             loop_shape: 0.0,
+            welt_breite: false,
         }
     }
 }
@@ -477,6 +484,11 @@ pub fn text_frame_path(t: &TextPrim, radius: f64) -> Vec<Vec2> {
 pub struct DisplayList {
     pub prims: Vec<Prim>,
     pub bbox: BBox,
+    /// Abbildung der Anzeige (Bildschirm-px je Welt-mm), `None` = ohne
+    /// Abbildung. Sie entscheidet, wie fein das Dämmungs-Schlaufenband
+    /// abgetastet wird (T0176); Druck, PNG und DXF lassen sie leer und bleiben
+    /// weltfest.
+    pub screen: Option<f64>,
 }
 
 /// Weg, auf dem ein Schlaufenband läuft — `None` für Formen ohne Linie
@@ -541,20 +553,38 @@ impl DisplayList {
                     line_type: LineType::Solid,
                     ..p.style
                 };
-                self.push(Prim {
-                    shape: Shape::Poly(
-                        crate::daemmung::band(
-                            &pfad.0,
-                            pfad.1,
-                            p.style.loop_width,
-                            p.style.loop_shape,
-                        ),
-                        false,
-                    ),
-                    style: st,
-                    entity: p.entity,
-                    layer: p.layer,
-                });
+                match crate::daemmung::band(
+                    &pfad.0,
+                    pfad.1,
+                    p.style.loop_width,
+                    p.style.loop_shape,
+                    self.screen,
+                ) {
+                    crate::daemmung::Verlauf::Zug(pts) => {
+                        self.push(Prim {
+                            shape: Shape::Poly(pts, false),
+                            style: st,
+                            entity: p.entity,
+                            layer: p.layer,
+                        });
+                    }
+                    // Unter 1,5 px je Periode: Gerade in Bandmitte mit der
+                    // Bandhöhe als Strichbreite (T0176). Die Breite ist ein
+                    // Weltmaß — die Anzeige skaliert sie mit der Abbildung.
+                    crate::daemmung::Verlauf::Gerade(weg) => {
+                        let breit = PrimStyle {
+                            width: crate::daemmung::hoehe(p.style.loop_width),
+                            welt_breite: true,
+                            ..st
+                        };
+                        self.push(Prim {
+                            shape: Shape::Poly(weg, pfad.1),
+                            style: breit,
+                            entity: p.entity,
+                            layer: p.layer,
+                        });
+                    }
+                }
                 return;
             }
         }
@@ -593,6 +623,11 @@ pub struct RenderCtx<'a> {
     /// Ansichtsfenster und Ausgaben setzen hier ausdrücklich das Modell, damit
     /// ein gerade offener Papierraum nicht in die Zeichnung durchschlägt.
     pub entities: Option<&'a [Entity]>,
+    /// Abbildung der **Anzeige**: Bildschirm-px je Welt-mm (Zoom). `None` =
+    /// keine Abbildung — Druck, PNG, DXF und alle Ausgaben rechnen dann
+    /// weltfest und ändern sich nicht mit dem Zoom. Gelesen wird sie für die
+    /// Abtastung der Dämmungsschlaufe (T0176).
+    pub screen: Option<f64>,
     /// Wände des Durchgangs, einmal aufgebaut (Nachbarsuche, Bänder).
     walls: OnceCell<WallIndex<'a>>,
     /// Nur dieses Gebiet braucht der Durchgang (ein Objekt). Dann wird der
@@ -617,6 +652,7 @@ impl<'a> RenderCtx<'a> {
             selection: None,
             sheet_scale: None,
             entities: None,
+            screen: None,
             walls: OnceCell::new(),
             wall_scope: None,
             volumes: OnceCell::new(),
@@ -633,6 +669,7 @@ impl<'a> RenderCtx<'a> {
             selection: None,
             sheet_scale: None,
             entities: None,
+            screen: None,
             walls: OnceCell::new(),
             wall_scope: None,
             volumes: OnceCell::new(),
@@ -653,6 +690,18 @@ impl<'a> RenderCtx<'a> {
         let mut c = Self::with_scale(doc, scale);
         c.entities = Some(&doc.entities);
         c
+    }
+
+    /// Abbildung der Anzeige setzen (Bildschirm-px je Welt-mm) — die
+    /// Zeichenfläche übergibt hier ihren Zoom, damit Kurven in der Auflösung
+    /// entstehen, in der sie gezeigt werden (T0176).
+    pub fn mit_abbildung(mut self, px_je_mm: f64) -> Self {
+        self.screen = if px_je_mm.is_finite() && px_je_mm > 0.0 {
+            Some(px_je_mm)
+        } else {
+            None
+        };
+        self
     }
 
     /// Kontext über eine **ausdrückliche** Objektliste statt über das Dokument.
@@ -793,7 +842,12 @@ pub fn render_document(ctx: &RenderCtx) -> DisplayList {
     let mut fills = DisplayList::default();
     let mut rest = DisplayList::default();
     for e in ctx.ents() {
-        let mut tmp = DisplayList::default();
+        // Die Abbildung gilt für die Liste dieses Durchgangs: sie entscheidet,
+        // wie fein das Dämmungsband abgetastet wird (T0176).
+        let mut tmp = DisplayList {
+            screen: ctx.screen,
+            ..DisplayList::default()
+        };
         render_entity(ctx, e, Affine::IDENTITY, &mut tmp, 0);
         for prim in tmp.prims {
             if matches!(prim.shape, Shape::Fill { .. } | Shape::Image { .. }) {
@@ -810,7 +864,10 @@ pub fn render_document(ctx: &RenderCtx) -> DisplayList {
 }
 
 pub fn render_entities(ctx: &RenderCtx, ents: &[Entity]) -> DisplayList {
-    let mut dl = DisplayList::default();
+    let mut dl = DisplayList {
+        screen: ctx.screen,
+        ..DisplayList::default()
+    };
     for e in ents {
         render_entity(ctx, e, Affine::IDENTITY, &mut dl, 0);
     }
@@ -1131,6 +1188,7 @@ fn base_style(doc: &Document, e: &Entity, override_color: Option<Color>) -> Prim
         fill: e.style.fill,
         loop_width: doc.effective_loop_width(e),
         loop_shape: doc.effective_loop_shape(e),
+        welt_breite: false,
     }
 }
 
@@ -2064,7 +2122,211 @@ fn muster_kurve_ablegen(
     muster_zug_ablegen(dl, e, st, &mut lauf);
 }
 
-/// Eine Strecke an der Kontur beschneiden und als Musterlinie(n) ausgeben.
+/// Konvexe Fläche ohne Inseln: Zeilenlage statt Beschnitt je Teilstrecke.
+///
+/// Bei einer **konvexen** Fläche liegt eine Strecke zwischen zwei innen
+/// liegenden Punkten ganz innen. Und für einen Kurvenpunkt lässt sich im
+/// Voraus ausrechnen, für welche Reihenlagen `v` er innen liegt: jede Kante
+/// gibt eine Halbebene `s + t·v ≥ 0`, deren Schnitt ein Intervall in `v` ist.
+/// Damit genügt je Punkt und Reihe **ein Vergleich** statt einer Seitenprobe an
+/// jeder Kante. Beim Dämmungsmuster sind das bei 30 px/mm rund 440 000
+/// Punkte — ohne diese Rechnung kostet die Anzeigeliste 15 ms (T0176).
+struct Konvex<'a> {
+    ring: &'a [Vec2],
+    /// Vorzeichen der Fläche (mathematisch positiv = +1).
+    vorz: f64,
+    min: Vec2,
+    max: Vec2,
+}
+
+impl<'a> Konvex<'a> {
+    fn neu(ring: &'a [Vec2]) -> Option<Self> {
+        if ring.len() < 3 {
+            return None;
+        }
+        let mut flaeche = 0.0;
+        for i in 0..ring.len() {
+            let a = ring[i];
+            let b = ring[(i + 1) % ring.len()];
+            flaeche += a.cross(b);
+        }
+        if flaeche.abs() < 1e-12 {
+            return None;
+        }
+        let vorz = flaeche.signum();
+        // Konvex: jede Ecke liegt auf derselben Seite jeder Kante.
+        for i in 0..ring.len() {
+            let a = ring[i];
+            let b = ring[(i + 1) % ring.len()];
+            for q in ring.iter() {
+                if vorz * (b - a).cross(*q - a) < -1e-9 {
+                    return None;
+                }
+            }
+        }
+        let mut min = ring[0];
+        let mut max = ring[0];
+        for q in ring {
+            min = Vec2::new(min.x.min(q.x), min.y.min(q.y));
+            max = Vec2::new(max.x.max(q.x), max.y.max(q.y));
+        }
+        Some(Self {
+            ring,
+            vorz,
+            min,
+            max,
+        })
+    }
+
+    /// Für jeden Kurvenpunkt (`basis` = Lage bei `v = 0`, `nrm` = Richtung der
+    /// Reihenlage): der Bereich von `v`, in dem der Punkt innen liegt.
+    fn zeilenbereiche(&self, basis: &[Vec2], nrm: Vec2) -> Vec<(f64, f64)> {
+        let mut out = Vec::with_capacity(basis.len());
+        for b in basis {
+            let mut lo = f64::NEG_INFINITY;
+            let mut hi = f64::INFINITY;
+            for i in 0..self.ring.len() {
+                let a = self.ring[i];
+                let c = self.ring[(i + 1) % self.ring.len()];
+                // Innere Normale der Kante (rechts bei negativem Umlauf).
+                let n = (c - a).perp() * self.vorz;
+                let s = n.dot(*b - a);
+                let t = n.dot(nrm);
+                if t.abs() < 1e-12 {
+                    // Kante parallel zur Reihe: entweder ganz innen oder ganz außen.
+                    if s < 0.0 {
+                        lo = 1.0;
+                        hi = 0.0;
+                        break;
+                    }
+                } else {
+                    let g = -s / t;
+                    if t > 0.0 {
+                        if g > lo {
+                            lo = g;
+                        }
+                    } else if g < hi {
+                        hi = g;
+                    }
+                }
+            }
+            out.push((lo, hi));
+        }
+        out
+    }
+
+    /// Längsbereich (`u`) der Fläche über der Reihenlage `v` ± Bandhöhe.
+    ///
+    /// Eine Reihe braucht nur die Kurvenstücke, die in diesem Bereich liegen —
+    /// alles davor und dahinter ist sicher außen. Bei 30 px/mm spart das rund
+    /// ein Drittel der Punkte (T0176).
+    fn zeilenfenster(&self, r: &Raster, v: f64, h: f64) -> (f64, f64) {
+        let (v0, v1) = (v - h, v + h);
+        let mut lo = f64::INFINITY;
+        let mut hi = f64::NEG_INFINITY;
+        for i in 0..self.ring.len() {
+            let a = self.ring[i];
+            let b = self.ring[(i + 1) % self.ring.len()];
+            let (au, av) = r.uv(a);
+            let (bu, bv) = r.uv(b);
+            if (v0..=v1).contains(&av) {
+                lo = lo.min(au);
+                hi = hi.max(au);
+            }
+            if (bv - av).abs() > 1e-12 {
+                for vv in [v0, v1] {
+                    let t = (vv - av) / (bv - av);
+                    if (0.0..=1.0).contains(&t) {
+                        let u = au + (bu - au) * t;
+                        lo = lo.min(u);
+                        hi = hi.max(u);
+                    }
+                }
+            }
+        }
+        (lo, hi)
+    }
+
+    /// Berührt die Strecke `a`–`b` die Hülle der Fläche? Außerhalb der Hülle
+    /// liegt sie sicher außen und braucht keinen Beschnitt.
+    fn beruehrt(&self, a: Vec2, b: Vec2) -> bool {
+        a.x.min(b.x) <= self.max.x
+            && a.x.max(b.x) >= self.min.x
+            && a.y.min(b.y) <= self.max.y
+            && a.y.max(b.y) >= self.min.y
+    }
+}
+
+/// Lauf einer Musterkurve durch eine konvexe Fläche — dieselben Züge wie
+/// [`muster_kurve_ablegen`], nur ohne Beschnitt für Strecken, die ganz innen
+/// oder ganz außen liegen.
+fn muster_kurve_konvex(
+    dl: &mut DisplayList,
+    e: &Entity,
+    st: &PrimStyle,
+    basis: &[Vec2],
+    spanne: &[(f64, f64)],
+    nrm: Vec2,
+    v: f64,
+    k: &Konvex<'_>,
+    lauf: &mut Vec<Vec2>,
+    fenster: (usize, usize),
+) {
+    let (i0, i1) = fenster;
+    if i1 <= i0 + 1 {
+        return;
+    }
+    let mut it = basis[i0..i1].iter().zip(spanne[i0..i1].iter());
+    let Some((b0, &(lo0, hi0))) = it.next() else {
+        return;
+    };
+    let shift = nrm * v;
+    let mut q = *b0 + shift;
+    let mut q_innen = v >= lo0 && v <= hi0;
+    for (b, (lo, hi)) in it {
+        let p = *b + shift;
+        let innen = v >= *lo && v <= *hi;
+        if innen && q_innen {
+            if lauf.is_empty() {
+                lauf.push(q);
+            }
+            lauf.push(p);
+        } else if !innen && !q_innen {
+            if k.beruehrt(q, p) {
+                beschneide_und_haenge_an(dl, e, st, k.ring, q, p, lauf);
+            } else {
+                muster_zug_ablegen(dl, e, st, lauf);
+            }
+        } else {
+            beschneide_und_haenge_an(dl, e, st, k.ring, q, p, lauf);
+        }
+        q = p;
+        q_innen = innen;
+    }
+    muster_zug_ablegen(dl, e, st, lauf);
+}
+
+/// Ein Stück an der Kontur beschneiden und an den laufenden Zug hängen.
+fn beschneide_und_haenge_an(
+    dl: &mut DisplayList,
+    e: &Entity,
+    st: &PrimStyle,
+    ring: &[Vec2],
+    a: Vec2,
+    b: Vec2,
+    lauf: &mut Vec<Vec2>,
+) {
+    for (q0, q1) in crate::area::clip_line_area(a, b, ring, &[]) {
+        let weiter = lauf.last().map(|p| p.dist(q0) <= 1e-6).unwrap_or(false);
+        if !weiter {
+            muster_zug_ablegen(dl, e, st, lauf);
+            lauf.push(q0);
+        }
+        lauf.push(q1);
+    }
+}
+
+/// Eine Strecke an der Kontur beschneiden und als Musterlinie(n) ausgeben./// Eine Strecke an der Kontur beschneiden und als Musterlinie(n) ausgeben.
 fn muster_abschnitt(
     dl: &mut DisplayList,
     e: &Entity,
@@ -2385,17 +2647,89 @@ fn muster_daemmung(
     let p = crate::daemmung::periode(h, form);
     // Ein Punktzug für **alle** Reihen — die Bänder sind parallel, nur die
     // Lage quer zum Muster ist verschieden.
-    let kurve = crate::daemmung::band_fest(h, form, umin - p, umax + p);
-    if kurve.len() < 2 {
+    let kurve = crate::daemmung::band_fest(h, form, umin - p, umax + p, dl.screen);
+    if kurve.punkte().len() < 2 {
         return;
     }
 
+    // Unter 1,5 px je Periode ist von der Schlaufe kein Umriss mehr zu sehen
+    // (T0176): die Reihe wird eine Gerade in Bandmitte, gezeichnet mit der
+    // Bandhöhe als Strichbreite. Damit ist die Fläche dort vollständig bedeckt
+    // — so sieht eine Dämmung im kleinen Maßstab aus.
+    if kurve.ist_gerade() {
+        let breit = PrimStyle {
+            width: h,
+            welt_breite: true,
+            line_type: LineType::Solid,
+            ..*st
+        };
+        for i in i0..=i1 {
+            let v = (i as f64 + 0.5) * h;
+            let a = r.punkt(umin - h, v);
+            let b = r.punkt(umax + h, v);
+            for (q0, q1) in crate::area::clip_line_area(a, b, pts, holes) {
+                dl.push(Prim {
+                    shape: Shape::Line(q0, q1),
+                    style: breit,
+                    entity: e.id,
+                    layer: e.layer,
+                });
+            }
+        }
+        return;
+    }
+    let kurve = kurve.in_punkte();
+
+    // Konvexe Fläche ohne Inseln (der Regelfall): je Kurvenpunkt im Voraus
+    // bestimmen, für welche Reihenlagen er innen liegt — dann genügt je Punkt
+    // und Reihe ein Vergleich.
+    if let Some(k) = if holes.is_empty() {
+        Konvex::neu(pts)
+    } else {
+        None
+    } {
+        let basis: Vec<Vec2> = kurve.iter().map(|q| r.punkt(q.x, q.y)).collect();
+        let spanne = k.zeilenbereiche(&basis, r.nrm);
+        let mut lauf: Vec<Vec2> = Vec::new();
+        // Lage der Kurve im Raster: sie beginnt bei der Periode `kstart` und
+        // hat `je` Punkte je Periode. Damit lässt sich der für eine Reihe
+        // nötige Abschnitt direkt ausrechnen.
+        let je = match dl.screen.map(|px| crate::daemmung::stufe(p * px)) {
+            Some(crate::daemmung::Stufe::Punkte(n)) => n,
+            _ => 0,
+        };
+        let kstart = ((umin - p) / p).floor() - 1.0;
+        for i in i0..=i1 {
+            let v = (i as f64 + 0.5) * h;
+            let fenster = if je > 0 {
+                let (lo_u, hi_u) = k.zeilenfenster(&r, v, h);
+                if lo_u > hi_u {
+                    // Reihe liegt außerhalb der Fläche.
+                    continue;
+                }
+                let periode = |u: f64| ((u / p).floor() - kstart).max(0.0);
+                let i_an = (periode(lo_u) - 1.0).max(0.0) as usize;
+                let i_ab = (periode(hi_u) + 2.0) as usize;
+                (
+                    i_an.saturating_mul(je).min(basis.len()),
+                    i_ab.saturating_mul(je).min(basis.len()),
+                )
+            } else {
+                (0, basis.len())
+            };
+            muster_kurve_konvex(dl, e, st, &basis, &spanne, r.nrm, v, &k, &mut lauf, fenster);
+        }
+        return;
+    }
+
+    let mut reihe: Vec<Vec2> = Vec::new();
     for i in i0..=i1 {
         let v = (i as f64 + 0.5) * h;
         // Die Reihe als **ein** Punktzug umrechnen und dann stückweise
         // ablegen: der Beschnitt trennt an den Kanten, innerhalb einer Reihe
         // entsteht ein Polygonzug statt einer Strecke je Stützpunkt (T0164).
-        let reihe: Vec<Vec2> = kurve.iter().map(|k| r.punkt(k.x, v + k.y)).collect();
+        reihe.clear();
+        reihe.extend(kurve.iter().map(|k| r.punkt(k.x, v + k.y)));
         muster_kurve_ablegen(dl, e, st, &reihe, pts, holes);
     }
 }
@@ -3539,6 +3873,7 @@ fn halb_stil(st: &PrimStyle, teil: Option<&EntityStyle>) -> PrimStyle {
         fill: t.fill.or(st.fill),
         loop_width: st.loop_width,
         loop_shape: st.loop_shape,
+        welt_breite: st.welt_breite,
     }
 }
 
@@ -4185,6 +4520,7 @@ pub fn render_sheet(doc: &Document, sheet: &Sheet) -> DisplayList {
         selection: None,
         sheet_scale: Some(sheet.scale),
         entities: Some(&sheet.entities),
+        screen: None,
         walls: OnceCell::new(),
         wall_scope: None,
         volumes: OnceCell::new(),
@@ -4210,6 +4546,7 @@ pub fn render_model_scaled(doc: &Document, scale: f64, layers: Option<Vec<Id>>) 
         selection: None,
         sheet_scale: None,
         entities: Some(&doc.entities),
+        screen: None,
         walls: OnceCell::new(),
         wall_scope: None,
         volumes: OnceCell::new(),
@@ -4229,6 +4566,7 @@ pub fn render_viewport(doc: &Document, vp: &Viewport) -> DisplayList {
         selection: None,
         sheet_scale: None,
         entities: Some(&doc.entities),
+        screen: None,
         walls: OnceCell::new(),
         wall_scope: None,
         volumes: OnceCell::new(),

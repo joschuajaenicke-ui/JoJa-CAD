@@ -448,12 +448,19 @@ fn paint_prim(p: &Painter, prim: &Prim, w2s: &dyn Fn(V2) -> Pos2, scale: f64, pc
     //  "Papier (maßstabsgetreu)"   = Breite_mm * Pixel-pro-Papier-mm, ohne Obergrenze,
     //                                damit Strichbreite und Abstand in jedem Zoom im
     //                                selben Verhältnis stehen wie im PDF.
-    let base_w = linienbreite_px(
-        prim.style.width,
-        pc.paper_px,
-        pc.lineweights_scaled,
-        pc.lineweight_factor,
-    );
+    // Ein Weltmaß (Bandhöhe der Dämmung, T0176) skaliert immer mit der
+    // Abbildung — sonst hinge die Dicke am Linienstärke-Modus und würde in
+    // „Bildschirm (konstant)“ bei 9 px gedeckelt.
+    let base_w = if prim.style.welt_breite {
+        (prim.style.width * scale).max(0.05)
+    } else {
+        linienbreite_px(
+            prim.style.width,
+            pc.paper_px,
+            pc.lineweights_scaled,
+            pc.lineweight_factor,
+        )
+    };
     let _ = pc.lineweights;
     let w = if pc.preview {
         1.2
@@ -1691,7 +1698,10 @@ fn display_list(app: &mut App) -> DisplayList {
         Some((k, dl)) if zwischen && k.matches(&key) => (dl.clone(), false),
         _ => {
             let doc = app.doc().clone();
-            let ctx = render::RenderCtx::new(&doc);
+            // Die Abbildung (px je Welt-mm) geht in die Anzeigeliste: Kurven
+            // entstehen in der Auflösung, in der sie gezeigt werden (T0176).
+            let zoom = app.current_view().zoom;
+            let ctx = render::RenderCtx::new(&doc).mit_abbildung(zoom);
             let dl = render::render_document(&ctx);
             app.tab_mut().cache = if zwischen { Some((key, dl.clone())) } else { None };
             (dl, true)
@@ -5692,8 +5702,11 @@ fn draw_fill_ghost(app: &App, p: &Painter, rect: Rect, view: View, umriss: &[V2]
     );
     e.style.fill = app.ui.pending.fill;
     let mut dl = DisplayList::default();
+    // Die Vorschau zeigt das Muster in derselben Auflösung wie die Zeichnung
+    // (T0176) — sonst stünde bei kleiner Ansicht ein dichtes Schlaufenband
+    // neben der Geraden des fertigen Objekts.
     render::render_entity(
-        &render::RenderCtx::new(app.doc()),
+        &render::RenderCtx::new(app.doc()).mit_abbildung(view.zoom),
         &e,
         Affine::IDENTITY,
         &mut dl,
@@ -5751,8 +5764,11 @@ fn draw_paint_ghost(
     );
     e.style.fill = app.ui.pending.fill;
     let mut dl = DisplayList::default();
+    // Die Vorschau zeigt das Muster in derselben Auflösung wie die Zeichnung
+    // (T0176) — sonst stünde bei kleiner Ansicht ein dichtes Schlaufenband
+    // neben der Geraden des fertigen Objekts.
     render::render_entity(
-        &render::RenderCtx::new(app.doc()),
+        &render::RenderCtx::new(app.doc()).mit_abbildung(view.zoom),
         &e,
         Affine::IDENTITY,
         &mut dl,
@@ -15332,6 +15348,12 @@ mod tests_daemmungsschraffur {
             })
         ));
         app.ui.show_grid = false;
+        // Feste Ansicht: seit T0176 hängt die Anzeigeliste am Zoom, und die
+        // selbsttätige Einpassung läuft zeitabhängig. Geprüft werden die Züge
+        // je Reihe, nicht die Einpassung.
+        let mut v = app.current_view();
+        v.zoom = 0.07;
+        app.set_view(v);
         // Bildschirmkonstante Striche: nur dann ist die Breite unter 2 px und
         // der Zug wird als **eine** Form gezeichnet (Vorgabe des Nutzers).
         app.ui.lineweights_scaled = false;
