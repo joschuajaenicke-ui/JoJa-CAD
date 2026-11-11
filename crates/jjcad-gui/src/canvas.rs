@@ -1581,6 +1581,33 @@ fn ohne_texteingabe(app: &App, dl: &mut DisplayList) {
     }
 }
 
+/// Die Maßkette, deren Messpunkte gerade gesetzt werden, steht als **Vorschau**
+/// (`draw_tool_preview`) — sie darf nicht zusätzlich aus der Anzeige kommen
+/// (T0171, Turn 2).
+///
+/// Sonst stünden zwei Ketten übereinander: die alte mit ihren Maßzahlen und die
+/// Vorschau mit den neuen, und die Zahlen überlappten sich unleserlich. Die
+/// Vorschau zeigt dieselbe Kette mit dem Punkt am Zeiger — sichtbar bleibt
+/// also genau das, was der Klick erzeugt. Wie beim Text läuft der Filter
+/// **nach** dem Zwischenspeicher: der hängt an Revision und Zoom, der
+/// Werkzeugzustand nicht.
+fn ohne_bearbeitete_kette(app: &App, dl: &mut DisplayList) {
+    if let Some(id) = bearbeitete_kette(app) {
+        dl.prims.retain(|p| p.entity != id);
+    }
+}
+
+/// Kennung der Maßkette, deren Messpunkte gerade gesetzt werden (T0171).
+///
+/// Sie steht als Vorschau in der Zeichenfläche, nicht als gezeichnetes Objekt —
+/// deshalb bleibt sie aus der Anzeige **und** aus den Griffen heraus.
+fn bearbeitete_kette(app: &App) -> Option<Id> {
+    match app.tool.as_ref() {
+        Some(t) if ist_punktwerkzeug(&t.action) => t.obj,
+        _ => None,
+    }
+}
+
 fn display_list(app: &mut App) -> DisplayList {
     // Der Schlüssel enthält den Bearbeitungsraum: im Modell und im Papierraum
     // entstehen bei gleicher Revision völlig verschiedene Listen. Fehlte er,
@@ -1609,6 +1636,7 @@ fn display_list(app: &mut App) -> DisplayList {
     // Leistungsanzeige (T0068): Herkunft der Liste und Größe der Zeichnung.
     app.perf.anzeigeliste(neu, app.doc().ents().len());
     ohne_texteingabe(app, &mut dl);
+    ohne_bearbeitete_kette(app, &mut dl);
     dl
 }
 
@@ -1912,6 +1940,7 @@ fn draw_sheet(app: &mut App, p: &Painter, rect: Rect, view: View, cursor: Option
     };
     let mut dl = render::render_sheet(app.doc(), &sheet);
     ohne_texteingabe(app, &mut dl);
+    ohne_bearbeitete_kette(app, &mut dl);
     for prim in &dl.prims {
         if verworfen(prim, &w2s, cull, &pc) {
             continue;
@@ -5006,6 +5035,12 @@ fn draw_grips(app: &App, p: &Painter, rect: Rect, view: View, selected: &[Id]) {
         return;
     }
     for id in selected {
+        // Die Maßkette, deren Messpunkte gerade gesetzt werden, ist ausgeblendet
+        // (T0171, Turn 2) — Griffe an einem unsichtbaren Objekt wären irreführend,
+        // und die Vorschau zeigt ihre Messpunkte ohnehin.
+        if bearbeitete_kette(app) == Some(*id) {
+            continue;
+        }
         let Some(e) = app.doc().entity(*id) else {
             continue;
         };
@@ -15673,6 +15708,7 @@ mod tests_masspunkt_vorschau {
     fn vorschau_zeigt_die_kette_mit_dem_punkt_am_zeiger() {
         let mut app = app();
         let id = kette_id(&app);
+        let vorher = zeichnung_strecken(&mut app);
         app.start_tool("dim.point.add");
         // Erster Klick wählt die Kette (hier ihre Maßlinie).
         tool_click(&mut app, V2::new(1000.0, -500.0));
@@ -15682,7 +15718,6 @@ mod tests_masspunkt_vorschau {
             "der erste Klick muss die Maßkette wählen"
         );
 
-        let vorher = zeichnung_strecken(&mut app);
         let vorschau = vorschau_strecken(&mut app, V2::new(3000.0, 0.0));
         assert!(
             vorschau.len() > vorher.len(),
@@ -15694,6 +15729,7 @@ mod tests_masspunkt_vorschau {
 
         tool_click(&mut app, V2::new(3000.0, 0.0));
         assert_eq!(messpunkte(&app).len(), 4, "der Punkt kommt in die Kette");
+        app.tool = None; // Enter beendet die Reihe — die Kette ist wieder sichtbar
         assert_eq!(
             vorschau,
             zeichnung_strecken(&mut app),
@@ -15714,6 +15750,7 @@ mod tests_masspunkt_vorschau {
         let vorschau = vorschau_strecken(&mut app, V2::new(2000.0, 0.0));
         tool_click(&mut app, V2::new(2000.0, 0.0));
         assert_eq!(messpunkte(&app).len(), 2, "ein Punkt weniger");
+        app.tool = None;
         assert_eq!(
             vorschau,
             zeichnung_strecken(&mut app),
@@ -15783,6 +15820,91 @@ mod tests_masspunkt_vorschau {
         let mut app = app();
         let id = kette_id(&app);
         assert_eq!(hover_ziel(&app, V2::new(2500.0, -500.0), 20.0), Some(id));
+    }
+
+    /// Zahl der Anzeigeprims einer Kennung in der Bildliste.
+    fn prims_von(app: &mut App, id: Id) -> usize {
+        display_list(app).prims.iter().filter(|p| p.entity == id).count()
+    }
+
+    /// Während die Messpunkte gesetzt werden, ist die **alte** Kette
+    /// ausgeblendet — sonst stünden ihre Maßzahlen über denen der Vorschau.
+    #[test]
+    fn alte_kette_ist_waehrend_der_bearbeitung_ausgeblendet() {
+        let mut app = app();
+        let id = kette_id(&app);
+        assert!(prims_von(&mut app, id) > 0, "ohne Werkzeug ist die Kette da");
+
+        app.start_tool("dim.point.add");
+        assert!(
+            prims_von(&mut app, id) > 0,
+            "vor der Kettenwahl bleibt sie sichtbar — sie soll ja hervortreten"
+        );
+
+        tool_click(&mut app, V2::new(1000.0, -500.0)); // Kette wählen
+        assert_eq!(app.tool.as_ref().and_then(|t| t.obj), Some(id));
+        assert_eq!(
+            prims_von(&mut app, id),
+            0,
+            "während der Bearbeitung darf die alte Kette nicht mehr gezeichnet werden"
+        );
+        // Die Vorschau zeigt sie weiterhin — es fehlt nichts im Bild.
+        assert!(
+            !vorschau_strecken(&mut app, V2::new(3000.0, 0.0)).is_empty(),
+            "die Vorschau muss die Kette ersetzen"
+        );
+
+        app.tool = None; // Enter beendet das Werkzeug
+        assert!(
+            prims_von(&mut app, id) > 0,
+            "nach dem Beenden ist die Kette wieder in der Anzeige"
+        );
+    }
+
+    /// Auch beim Entfernen wird die alte Kette ausgeblendet.
+    #[test]
+    fn entfernen_blendet_die_alte_kette_ebenfalls_aus() {
+        let mut app = app();
+        let id = kette_id(&app);
+        app.start_tool("dim.point.remove");
+        tool_click(&mut app, V2::new(1000.0, -500.0));
+        assert_eq!(app.tool.as_ref().and_then(|t| t.obj), Some(id));
+        assert_eq!(prims_von(&mut app, id), 0);
+    }
+
+    /// Zahl der Formen, die `draw_grips` für die Auswahl malt.
+    fn griff_formen(app: &mut App) -> usize {
+        let view = app.current_view();
+        let selected = app.selection().to_vec();
+        let ctx = app.ctx.clone();
+        let out = ctx.run(egui::RawInput::default(), |ctx| {
+            let layer = egui::LayerId::new(egui::Order::Background, egui::Id::new("griffe"));
+            let p = egui::Painter::new(ctx.clone(), layer, Rect::EVERYTHING);
+            draw_grips(app, &p, RECT, view, &selected);
+        });
+        out.shapes.len()
+    }
+
+    /// Griffe gehören zur gezeichneten Kette: ist die Kette ausgeblendet,
+    /// verschwinden auch ihre Griffe (sie wären sonst unsichtbar greifbar).
+    #[test]
+    fn ausgeblendete_kette_zeigt_keine_griffe() {
+        let mut app = app();
+        let id = kette_id(&app);
+        app.session_mut().select(vec![id]);
+        assert!(griff_formen(&mut app) > 0, "ausgewählt hat die Kette Griffe");
+
+        app.start_tool("dim.point.add");
+        tool_click(&mut app, V2::new(1000.0, -500.0));
+        assert_eq!(app.tool.as_ref().and_then(|t| t.obj), Some(id));
+        assert_eq!(
+            griff_formen(&mut app),
+            0,
+            "an einer ausgeblendeten Kette dürfen keine Griffe stehen"
+        );
+
+        app.tool = None;
+        assert!(griff_formen(&mut app) > 0, "nach dem Beenden wieder Griffe");
     }
 }
 
