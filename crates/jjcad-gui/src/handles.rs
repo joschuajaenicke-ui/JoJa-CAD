@@ -2173,7 +2173,7 @@ mod tests_masskette {
                     V2::new(5000.0, 0.0),
                 ],
                 line_pos: V2::new(1000.0, -400.0),
-                axis: DimAxis::X,
+                angle: 0.0,
                 override_text: None,
             },
         )
@@ -2337,7 +2337,7 @@ mod tests_masskette {
             EntityKind::Dim {
                 pts: vec![V2::new(0.0, 0.0), V2::new(3000.0, 0.0)],
                 line_pos: V2::new(1500.0, -300.0),
-                axis: DimAxis::X,
+                angle: 0.0,
                 override_text: None,
             },
         );

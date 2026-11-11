@@ -118,8 +118,8 @@ Jedes Objekt hat `id`, `kind`, `layer` und optional `style`:
 | `spline` | `verts[{p,bulge}]`, `closed` | Catmull-Rom-Kurve durch `verts`, zentripetal; `bulge` ungenutzt |
 | `hatch` | `boundary[]`, `pattern`, `angle`, `spacing`, `filled` | Muster: `Solid`, `Lines`, `Cross`, `Dots` |
 | `text` | `p`, `text`, `height`, `angle`, `align`, `valign`, `bold` | `{DATUM}` usw. werden ersetzt |
-| `dim` | `a`, `b`, `line_pos`, `axis`, `override_text` | `axis`: `X`, `Y`, `Aligned` |
-| `dim_chain` | `pts[]`, `line_pos`, `axis` | Maßkette |
+| `dim` | `pts[]`, `line_pos`, `angle`, `override_text` | Maßkette; `angle` = Richtung der Maßlinie in **Bogenmaß** (0 = waagerecht, π/2 = senkrecht). Ältere Dateien tragen `axis` (`X`, `Y`, `Aligned`) — das wird beim Laden in den Winkel umgerechnet |
+| `dim_chain` | `pts[]`, `line_pos`, `axis` | Maßkette in älteren Dateien (wird beim Laden zu `dim` mit `angle`) |
 | `elevation_plan` | `p`, `z` | Grundriss-Kote: Kreis-Symbol, Höhenwert rechts daneben; `z` in mm über ±0,00 |
 | `elevation_section` | `pts[]` | Schnitt-Kote: Dreieck und Höhenangabe je Punkt; der **erste** Punkt ist ±0,00, alle weiteren Höhen folgen aus der Y-Differenz zu ihm (Modell-mm) |
 | `wall` | `a`, `b`, `thickness`, `height`, `material` | Achse + Dicke; Öffnungen kommen aus Türen/Fenstern mit `host` |

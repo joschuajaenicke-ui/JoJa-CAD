@@ -5,7 +5,7 @@
 //! eine Tür ohne Wand (freistehende Tür, `host: null`). Beides muss jetzt
 //! entweder richtig rechnen oder einen Fehler melden.
 
-use jjcad_core::model::{DimAxis, EntityKind};
+use jjcad_core::model::EntityKind;
 use jjcad_core::render::{render_document, RenderCtx, Shape};
 use jjcad_core::session::Session;
 use serde_json::json;
@@ -41,9 +41,10 @@ fn masskette_senkrecht_ohne_achse_misst_senkrecht() {
 
     let e = s.doc.entities.last().unwrap();
     match &e.kind {
-        EntityKind::Dim { axis, .. } => {
-            assert_eq!(*axis, DimAxis::Y, "senkrechte Kette muss senkrecht messen")
-        }
+        EntityKind::Dim { angle, .. } => assert!(
+            (angle - std::f64::consts::FRAC_PI_2).abs() < 1e-9,
+            "senkrechte Kette muss senkrecht messen: {angle}"
+        ),
         other => panic!("keine Maßkette: {other:?}"),
     }
 
@@ -72,7 +73,7 @@ fn masskette_waagerecht_ohne_achse_misst_waagerecht() {
     )
     .unwrap();
     match &s.doc.entities.last().unwrap().kind {
-        EntityKind::Dim { axis, .. } => assert_eq!(*axis, DimAxis::X),
+        EntityKind::Dim { angle, .. } => assert!(angle.abs() < 1e-9, "waagerecht: {angle}"),
         other => panic!("keine Maßkette: {other:?}"),
     }
     let texte = mass_texte(&s);

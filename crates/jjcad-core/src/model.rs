@@ -59,12 +59,19 @@ impl Layer {
 // Entitäten
 // ---------------------------------------------------------------------------
 
+/// Eingabeweise einer Maßkette — **keine** Eigenschaft des Objekts (T0166).
+///
+/// Eine Maßkette hat eine Lage (`pts`, `line_pos`) und eine **Orientierung**
+/// (`Dim::angle`, Bogenmaß). Waagerecht, senkrecht und parallel sind nur drei
+/// bequeme Winkel derselben Sache: 0°, 90° und die Richtung der ersten
+/// Messstrecke. Gespeichert wird immer der Winkel, damit sich jede Kette
+/// beliebig drehen lässt.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, Default)]
 pub enum DimAxis {
     #[default]
-    /// Waagerecht gemessen
+    /// Waagerecht gemessen (0°)
     X,
-    /// Senkrecht gemessen
+    /// Senkrecht gemessen (90°)
     Y,
     /// Parallel zur Messstrecke
     Aligned,
@@ -72,6 +79,41 @@ pub enum DimAxis {
 
 impl DimAxis {
     pub const ALL: [DimAxis; 3] = [DimAxis::X, DimAxis::Y, DimAxis::Aligned];
+
+    /// Richtungswinkel der Maßlinie in Bogenmaß (0 = waagerecht, π/2 =
+    /// senkrecht). `Aligned` nimmt die Richtung der ersten Messstrecke; ohne
+    /// zwei verschiedene Punkte gibt es keine Richtung (`None`).
+    pub fn winkel(self, pts: &[Vec2]) -> Option<f64> {
+        match self {
+            DimAxis::X => Some(0.0),
+            DimAxis::Y => Some(std::f64::consts::FRAC_PI_2),
+            DimAxis::Aligned => {
+                let a = *pts.first()?;
+                let b = *pts.get(1)?;
+                let d = b - a;
+                if d.len() < 1e-9 {
+                    None
+                } else {
+                    Some(d.angle())
+                }
+            }
+        }
+    }
+
+    /// Nächstgelegene Eingabeweise zu einem gespeicherten Winkel — für die
+    /// Anzeige im Eigenschaften-Panel. Alles, was nicht waagerecht oder
+    /// senkrecht liegt, heißt „Parallel“ (die Kette läuft dann schräg).
+    pub fn aus_winkel(angle: f64) -> DimAxis {
+        let a = angle.rem_euclid(std::f64::consts::PI);
+        let grad = a.to_degrees();
+        if grad < 0.5 || grad > 179.5 {
+            DimAxis::X
+        } else if (grad - 90.0).abs() < 0.5 {
+            DimAxis::Y
+        } else {
+            DimAxis::Aligned
+        }
+    }
     pub fn label(self) -> &'static str {
         match self {
             DimAxis::X => "Waagerecht",
@@ -684,8 +726,12 @@ pub enum EntityKind {
         pts: Vec<Vec2>,
         /// Punkt auf der Maßlinie (bestimmt Lage der Maßlinie).
         line_pos: Vec2,
+        /// Orientierung: Richtung der Maßlinie in **Bogenmaß** (0 = waagerecht,
+        /// π/2 = senkrecht). Eine Maßkette ist damit ein Objekt mit Lage und
+        /// Richtung — waagerecht und senkrecht sind nur zwei Winkel davon, und
+        /// Drehen ändert den Winkel mit (T0166).
         #[serde(default)]
-        axis: DimAxis,
+        angle: f64,
         /// Maßtext des **ersten** Segments überschreiben (z. B. "2,50").
         #[serde(default, skip_serializing_if = "Option::is_none")]
         override_text: Option<String>,

@@ -310,7 +310,7 @@ Mit dem Nutzer abgestimmt — nicht „verbessern“:
   Getrennte Flächen, mehrfacher Randkontakt und eine gekreuzte Insel sind Fehler
   (kein stiller Erfolg). Ribbon: Zeichnen ▸ Füllen ▸ „Vereinigen" / „Schneiden".
 - **Maßkette und Einzelmaß sind ein Element (T0154)**: `EntityKind::Dim` trägt
-  `pts` (mindestens zwei **Messpunkte**), `line_pos`, `axis`, `override_text`;
+  `pts` (mindestens zwei **Messpunkte**), `line_pos`, `angle`, `override_text`;
   das frühere Einzelmaß (`a`, `b`) und `DimChain` gibt es nicht mehr. Alte
   Dateien und Blöcke schreibt `persist::migrate_legacy_dims` beim Laden um —
   **ein** Renderer (`render_dim_chain`) zeichnet jede Bemaßung, `dim.linear`
@@ -337,6 +337,20 @@ Mit dem Nutzer abgestimmt — nicht „verbessern“:
   verwerfen: `App::escape_pressed` schickt die Maßketten-Werkzeuge in
   `finish_tool` (ohne einen Klick bricht Esc ab), das Punktwerkzeug endet ohne
   die Auswahl zu leeren.
+- **Orientierung der Maßkette (T0166)**: Eine Maßkette hat **eine** Orientierung
+  — `Dim::angle` (Bogenmaß, Richtung der Maßlinie). Waagerecht (0°) und senkrecht
+  (π/2) sind nur zwei Winkel desselben Objekts; `DimAxis` ist seitdem **keine
+  Objekteigenschaft** mehr, sondern die bequeme Eingabeweise (`x`/`y`/`aligned`)
+  und wandert über `DimAxis::winkel(pts)` in den Winkel. Drehen und Spiegeln
+  ändern den Winkel mit (`transform::transform_entity`: `+ rotation()`, gespiegelt
+  `rotation() − angle`), deshalb dreht die Rotationsfunktion die **ganze**
+  Darstellung (Maßlinie, Hilfslinien, Maßtext) — vorher wanderten nur die
+  Messpunkte und die Maßlinie blieb waagerecht stehen. Alle Rechnungen hängen an
+  `render::dim_achse(angle)` (Richtung + Abstandsrichtung quer, positiv links der
+  Messrichtung); `dim_projiziert`/`dim_sortieren`/`dim_offset` gibt es nur einmal
+  für jeden Winkel. Alte Dateien rechnet `persist::migrate_legacy_dims` beim
+  Laden um (`axis` → `angle`). Prüfweg: `cargo test -p jjcad-core --test
+  masskette_rotieren`, Prüfbild `--demo masskettengedreht`.
 - **Bemaßung beim Ändern**: Die Maßlinie behält ihre **Lage**. Ein waagerechtes
   Maß liegt auf *einer* Höhe (`line_pos.y` für alle Basispunkte), ein senkrechtes
   auf einer Breite — `render::dim_projiziert` **setzt** die Koordinate, es addiert

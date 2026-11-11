@@ -6,7 +6,7 @@
 
 use jjcad_core::actions;
 use jjcad_core::geom::v;
-use jjcad_core::model::{DimAxis, Document, EntityKind};
+use jjcad_core::model::{Document, EntityKind};
 use jjcad_core::persist;
 use jjcad_core::units::Unit;
 use serde_json::json;
@@ -49,7 +49,7 @@ fn einzelmass_ist_eine_kette_aus_zwei_messpunkten() {
     let id = r["created"][0].as_u64().unwrap();
     assert_eq!(punkte(&d, id), vec![v(0.0, 0.0), v(3000.0, 0.0)]);
     match &d.entity(id).unwrap().kind {
-        EntityKind::Dim { axis, .. } => assert_eq!(*axis, DimAxis::X),
+        EntityKind::Dim { angle, .. } => assert!(angle.abs() < 1e-9, "waagerecht: {angle}"),
         k => panic!("kein Dim: {k:?}"),
     }
 }
@@ -190,7 +190,7 @@ fn vorschau_ist_das_fertige_objekt() {
     let id = kette(&mut d);
     let e = d.entity(id).expect("Maßkette").clone();
     let anzeige = render::render_entities(&RenderCtx::new(&d), std::slice::from_ref(&e));
-    let vorschau = render::preview_dim(&d, &pts, v(1000.0, -400.0), DimAxis::X, e.layer, e.style.color);
+    let vorschau = render::preview_dim(&d, &pts, v(1000.0, -400.0), 0.0, e.layer, e.style.color);
 
     assert_eq!(
         vorschau.prims.len(),
@@ -215,20 +215,27 @@ fn masslinie_faengt_parallel_im_abstand_075() {
 
     // Zeiger genau 750 mm darunter → die Parallele wird gefangen.
     let pts = vec![v(0.0, 0.0), v(1000.0, 0.0)];
-    let p = snap::dim_parallel(&d, &pts, DimAxis::X, v(700.0, -1150.0), 50.0)
+    let p = snap::dim_parallel(&d, &pts, 0.0, v(700.0, -1150.0), 50.0)
         .expect("Parallele nicht gefangen");
     assert!((p.y + 1150.0).abs() < 1e-6, "falsche Höhe: {p:?}");
     assert!((p.x - 700.0).abs() < 1e-6, "Lage auf der Linie bleibt: {p:?}");
 
     // Auch von der anderen Seite (750 mm darüber).
-    let oben = snap::dim_parallel(&d, &pts, DimAxis::X, v(700.0, 350.0), 50.0)
+    let oben = snap::dim_parallel(&d, &pts, 0.0, v(700.0, 350.0), 50.0)
         .expect("Parallele oben nicht gefangen");
     assert!((oben.y - 350.0).abs() < 1e-6, "{oben:?}");
 
     // Außerhalb des Fangradius: kein Fang.
-    assert!(snap::dim_parallel(&d, &pts, DimAxis::X, v(700.0, -1300.0), 50.0).is_none());
+    assert!(snap::dim_parallel(&d, &pts, 0.0, v(700.0, -1300.0), 50.0).is_none());
     // Senkrechte Kette ist kein Vorbild für eine waagerechte Maßlinie.
-    assert!(snap::dim_parallel(&d, &pts, DimAxis::Y, v(700.0, -1150.0), 50.0).is_none());
+    assert!(snap::dim_parallel(
+        &d,
+        &pts,
+        std::f64::consts::FRAC_PI_2,
+        v(700.0, -1150.0),
+        50.0
+    )
+    .is_none());
 }
 
 /// Dasselbe für die schräge („direkte“) Kette: die Parallele läuft im rechten
@@ -250,7 +257,13 @@ fn schraege_masslinie_faengt_parallel() {
     // Normale der 45°-Richtung ist (-1, 1)/√2; 750 mm davon entfernt.
     let vers = v(-1.0, 1.0) * (750.0 / 2f64.sqrt());
     let ziel = v(0.0, 1000.0) + vers;
-    let p = snap::dim_parallel(&d, &pts, DimAxis::Aligned, ziel + v(10.0, 0.0), 60.0)
+    let p = snap::dim_parallel(
+        &d,
+        &pts,
+        std::f64::consts::FRAC_PI_4,
+        ziel + v(10.0, 0.0),
+        60.0,
+    )
         .expect("schräge Parallele nicht gefangen");
     let abstand = (p - v(0.0, 1000.0)).dot(vers.normalized()).abs();
     assert!((abstand - 750.0).abs() < 1.0, "Abstand {abstand}");
@@ -325,7 +338,10 @@ fn senkrechte_kette_sortiert_nach_hoehe() {
         vec![v(0.0, 0.0), v(0.0, 1200.0), v(0.0, 2500.0)]
     );
     match &d.entity(id).unwrap().kind {
-        EntityKind::Dim { axis, .. } => assert_eq!(*axis, DimAxis::Y),
+        EntityKind::Dim { angle, .. } => assert!(
+            (angle - std::f64::consts::FRAC_PI_2).abs() < 1e-9,
+            "senkrecht: {angle}"
+        ),
         k => panic!("kein Dim: {k:?}"),
     }
 }
@@ -335,10 +351,11 @@ fn senkrechte_kette_sortiert_nach_hoehe() {
 #[test]
 fn die_drei_werkzeuge_setzen_ihre_achse() {
     let mut d = doc_mm();
-    for (werkzeug, achse) in [
-        ("dim.chain.h", DimAxis::X),
-        ("dim.chain.v", DimAxis::Y),
-        ("dim.chain.d", DimAxis::Aligned),
+    for (werkzeug, winkel) in [
+        ("dim.chain.h", 0.0),
+        ("dim.chain.v", std::f64::consts::FRAC_PI_2),
+        // „Direkt“ nimmt die Richtung der ersten Messstrecke (2000, 500).
+        ("dim.chain.d", 500f64.atan2(2000.0)),
     ] {
         let r = actions::execute(
             &mut d,
@@ -349,9 +366,10 @@ fn die_drei_werkzeuge_setzen_ihre_achse() {
         .unwrap_or_else(|e| panic!("{werkzeug} fehlgeschlagen: {e}"));
         let id = r["created"][0].as_u64().unwrap();
         match &d.entity(id).unwrap().kind {
-            EntityKind::Dim { axis, .. } => {
-                assert_eq!(*axis, achse, "{werkzeug} hat die falsche Achse")
-            }
+            EntityKind::Dim { angle, .. } => assert!(
+                (angle - winkel).abs() < 1e-9,
+                "{werkzeug} hat den falschen Winkel: {angle} statt {winkel}"
+            ),
             k => panic!("kein Dim: {k:?}"),
         }
     }

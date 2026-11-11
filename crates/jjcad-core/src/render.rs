@@ -882,7 +882,7 @@ pub fn preview_dim(
     doc: &Document,
     pts: &[Vec2],
     line_pos: Vec2,
-    axis: DimAxis,
+    angle: f64,
     layer: Id,
     color: Option<Color>,
 ) -> DisplayList {
@@ -892,7 +892,7 @@ pub fn preview_dim(
         EntityKind::Dim {
             pts: pts.to_vec(),
             line_pos,
-            axis,
+            angle,
             override_text: None,
         },
     );
@@ -1414,7 +1414,7 @@ pub fn render_entity(
         EntityKind::Dim {
             pts,
             line_pos,
-            axis,
+            angle,
             override_text,
         } => {
             render_dim_chain(
@@ -1423,7 +1423,7 @@ pub fn render_entity(
                 &st,
                 pts,
                 *line_pos,
-                *axis,
+                *angle,
                 override_text.as_deref(),
                 xf,
                 dl,
@@ -3892,26 +3892,13 @@ fn dim_text_runs(measure: f64, doc: &Document, resolve: bool) -> (String, Vec<Te
 /// (`handles`) und die Befehlsschicht (`modify.set` mit `offset`): sonst
 /// rechneten drei Stellen dieselbe Achse und der Griff liefe neben der Linie.
 ///
-/// Der Abstand zählt von den Basispunkten **zur** Maßlinie: bei `X` nach oben
-/// (+Y), bei `Y` nach rechts (+X), bei `Aligned` links der Messrichtung. Das
-/// Vorzeichen ist damit anschaulich — positiv heißt „über“ bzw. „rechts“ der
-/// Messstrecke.
-pub fn dim_achse(pts: &[Vec2], axis: DimAxis) -> (Vec2, Vec2) {
-    match axis {
-        DimAxis::X => (v(1.0, 0.0), v(0.0, 1.0)),
-        DimAxis::Y => (v(0.0, 1.0), v(1.0, 0.0)),
-        DimAxis::Aligned => {
-            let d = pts.get(1).map(|b| *b - pts[0]).unwrap_or(v(1.0, 0.0));
-            // Entartete Messstrecke: die Achse ist nicht bestimmt, dann bleibt
-            // es bei waagerecht (die Anzeige zeigt ohnehin keinen Maßtext).
-            let dir = if d.len() < 1e-9 {
-                v(1.0, 0.0)
-            } else {
-                d.normalized()
-            };
-            (dir, dir.perp())
-        }
-    }
+/// Der Abstand zählt von den Basispunkten **zur** Maßlinie, positiv **links**
+/// der Messrichtung. Bei waagerechter Messung (0°) ist das „über“ der
+/// Messstrecke, bei senkrechter (90°) „links“ davon. Das Vorzeichen ist damit
+/// anschaulich und für jeden Winkel gleich definiert (T0166).
+pub fn dim_achse(angle: f64) -> (Vec2, Vec2) {
+    let dir = Vec2::polar(angle, 1.0);
+    (dir, dir.perp())
 }
 
 /// Sortiert Messpunkte entlang der Messrichtung (T0154).
@@ -3925,11 +3912,11 @@ pub fn dim_achse(pts: &[Vec2], axis: DimAxis) -> (Vec2, Vec2) {
 /// Kette bei waagerechter Messung liegt auf einer Höhe) behalten ihre
 /// Klickreihenfolge. Weniger als drei Punkte bleiben, wie sie sind — bei zwei
 /// Punkten ist die Reihenfolge die Richtung der Kette.
-pub fn dim_sortieren(pts: &[Vec2], axis: DimAxis) -> Vec<Vec2> {
+pub fn dim_sortieren(pts: &[Vec2], angle: f64) -> Vec<Vec2> {
     if pts.len() < 3 {
         return pts.to_vec();
     }
-    let (dir, _) = dim_achse(pts, axis);
+    let (dir, _) = dim_achse(angle);
     let mut out = pts.to_vec();
     out.sort_by(|a, b| {
         let ta = (*a - pts[0]).dot(dir);
@@ -3949,31 +3936,29 @@ pub fn dim_sortieren(pts: &[Vec2], axis: DimAxis) -> Vec<Vec2> {
 /// addiert. Ein Versatz je Basispunkt kippte die Maßlinie, sobald ein
 /// Basispunkt seitlich wanderte (T0055, Turn 1: Ziehen am Punkt drehte die
 /// Linie mit).
-pub fn dim_projiziert(pts: &[Vec2], line_pos: Vec2, axis: DimAxis) -> Vec<Vec2> {
-    match axis {
-        DimAxis::X => pts.iter().map(|p| v(p.x, line_pos.y)).collect(),
-        DimAxis::Y => pts.iter().map(|p| v(line_pos.x, p.y)).collect(),
-        DimAxis::Aligned => {
-            if pts.is_empty() {
-                return Vec::new();
-            }
-            let (_, vers) = dim_achse(pts, axis);
-            let off = (line_pos - pts[0]).dot(vers);
-            pts.iter().map(|p| *p + vers * off).collect()
-        }
+pub fn dim_projiziert(pts: &[Vec2], line_pos: Vec2, angle: f64) -> Vec<Vec2> {
+    if pts.is_empty() {
+        return Vec::new();
     }
+    let (_, vers) = dim_achse(angle);
+    // Lot auf die Maßlinie: der Anteil quer zur Messrichtung wird gesetzt,
+    // der Anteil längs bleibt. Für jeden Winkel dieselbe Rechnung — waagerecht
+    // und senkrecht sind nur die Fälle 0° und 90° (T0166).
+    pts.iter()
+        .map(|p| *p + vers * ((line_pos - *p).dot(vers)))
+        .collect()
 }
 
 /// Basispunkte eines Maßes/einer Maßkette mit Maßlinie und Achse — die eine
 /// Stelle, an der die Hülle eines Bemaßungsobjekts aufgemacht wird.
-fn dim_teile(kind: &EntityKind) -> Option<(Vec<Vec2>, Vec2, DimAxis)> {
+fn dim_teile(kind: &EntityKind) -> Option<(Vec<Vec2>, Vec2, f64)> {
     match kind {
         EntityKind::Dim {
             pts,
             line_pos,
-            axis,
+            angle,
             ..
-        } if pts.len() >= 2 => Some((pts.clone(), *line_pos, *axis)),
+        } if pts.len() >= 2 => Some((pts.clone(), *line_pos, *angle)),
         _ => None,
     }
 }
@@ -3981,26 +3966,26 @@ fn dim_teile(kind: &EntityKind) -> Option<(Vec<Vec2>, Vec2, DimAxis)> {
 /// Maßlinie eines Maßes oder einer Maßkette: Anfang und Ende der gezeichneten
 /// Linie in Weltkoordinaten.
 pub fn dim_line_span(kind: &EntityKind) -> Option<(Vec2, Vec2)> {
-    let (pts, line_pos, axis) = dim_teile(kind)?;
-    let proj = dim_projiziert(&pts, line_pos, axis);
+    let (pts, line_pos, angle) = dim_teile(kind)?;
+    let proj = dim_projiziert(&pts, line_pos, angle);
     Some((*proj.first()?, *proj.last()?))
 }
 
 /// Abstand der Maßlinie vom **ersten** Basispunkt in mm, vorzeichenbehaftet
 /// (positiv in Richtung [`dim_achse`]-Versatz).
 pub fn dim_offset(kind: &EntityKind) -> Option<f64> {
-    let (pts, line_pos, axis) = dim_teile(kind)?;
-    let (_, vers) = dim_achse(&pts, axis);
+    let (pts, line_pos, angle) = dim_teile(kind)?;
+    let (_, vers) = dim_achse(angle);
     Some((line_pos - pts[0]).dot(vers))
 }
 
 /// Setzt den Abstand der Maßlinie. Liefert `false`, wenn das Objekt keine
 /// Bemaßung ist — ein stiller Vorgabewert wäre hier ein Fehler (T0038).
 pub fn dim_offset_set(kind: &mut EntityKind, off: f64) -> bool {
-    let Some((pts, _, axis)) = dim_teile(kind) else {
+    let Some((pts, _, angle)) = dim_teile(kind) else {
         return false;
     };
-    let (_, vers) = dim_achse(&pts, axis);
+    let (_, vers) = dim_achse(angle);
     let bezug = pts[0];
     match kind {
         EntityKind::Dim { line_pos, .. } => {
@@ -4017,10 +4002,10 @@ pub fn dim_offset_set(kind: &mut EntityKind, off: f64) -> bool {
 /// Zieht die Maßlinie senkrecht zu ihrer Richtung auf die Höhe von `ziel`.
 /// Liefert `false`, wenn das Objekt keine Bemaßung ist.
 pub fn dim_line_move(kind: &mut EntityKind, ziel: Vec2) -> bool {
-    let Some((pts, _, axis)) = dim_teile(kind) else {
+    let Some((pts, _, angle)) = dim_teile(kind) else {
         return false;
     };
-    let (_, vers) = dim_achse(&pts, axis);
+    let (_, vers) = dim_achse(angle);
     dim_offset_set(kind, (ziel - pts[0]).dot(vers))
 }
 
@@ -4037,7 +4022,7 @@ fn render_dim_chain(
     st: &PrimStyle,
     pts: &[Vec2],
     line_pos: Vec2,
-    axis: DimAxis,
+    angle: f64,
     override_text: Option<&str>,
     xf: Affine,
     dl: &mut DisplayList,
@@ -4057,15 +4042,15 @@ fn render_dim_chain(
     let ueberstand = ctx.a(style.text_height * DIM_UEBERSTAND_H);
     let text_gap = ctx.a(style.text_gap)
         .max(ctx.a(style.text_height * DIM_TEXT_ABSTAND_H));
-    let (dir, _) = dim_achse(pts, axis);
+    let (dir, _) = dim_achse(angle);
     // Lage des Maßtextes: links der Messrichtung (nicht der Abstandsrichtung).
     let n = dir.perp();
-    let angle = dir.angle();
+    let text_angle = dir.angle();
 
     // Maßlinie — dieselbe Lotrechnung wie der Griff an der Maßlinie
     // (`render::dim_projiziert`), mit Überstand über die äußeren
     // Maßhilfslinien (§9.1, Bild 3).
-    let projected: Vec<Vec2> = dim_projiziert(pts, line_pos, axis);
+    let projected: Vec<Vec2> = dim_projiziert(pts, line_pos, angle);
     dl.push(Prim {
         shape: Shape::Line(
             xf.apply(projected[0] - dir * ueberstand),
@@ -4092,7 +4077,7 @@ fn render_dim_chain(
     // als Doppelmarke) auf demselben Punkt.
     match style.arrow {
         ArrowKind::Slash => {
-            let d = Vec2::polar(angle + std::f64::consts::FRAC_PI_4, marke * 0.5);
+            let d = Vec2::polar(text_angle + std::f64::consts::FRAC_PI_4, marke * 0.5);
             for p in &projected {
                 dl.push(Prim {
                     shape: Shape::Line(xf.apply(*p - d), xf.apply(*p + d)),
@@ -4125,11 +4110,9 @@ fn render_dim_chain(
     for i in 0..projected.len() - 1 {
         let p0 = projected[i];
         let p1 = projected[i + 1];
-        let measure = match axis {
-            DimAxis::X => (p1.x - p0.x).abs(),
-            DimAxis::Y => (p1.y - p0.y).abs(),
-            DimAxis::Aligned => p0.dist(p1),
-        };
+        // Gemessen wird der Anteil **längs** der Maßlinie — für jeden Winkel
+        // dieselbe Rechnung (T0166).
+        let measure = (p1 - p0).dot(dir).abs();
         let (txt, runs) = match override_text.filter(|_| i == 0) {
             Some(t) => {
                 let t = if ctx.resolve_text {
@@ -4170,7 +4153,7 @@ fn render_dim_chain(
         let mid = (p0 + p1) * 0.5;
         let text_w = estimate_text_width(&txt, text_h);
         let span = p0.dist(p1);
-        let mut ta = angle;
+        let mut ta = text_angle;
         if ta > std::f64::consts::FRAC_PI_2 + 0.01 || ta < -std::f64::consts::FRAC_PI_2 - 0.01 {
             ta += std::f64::consts::PI;
         }

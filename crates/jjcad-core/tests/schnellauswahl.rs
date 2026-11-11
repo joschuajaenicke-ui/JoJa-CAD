@@ -130,7 +130,7 @@ fn jede_objektart_startet_ihren_erzeuger() {
         &EntityKind::Dim {
             pts: vec![v(0.0, 0.0), v(1000.0, 0.0)],
             line_pos: v(0.0, -300.0),
-            axis: DimAxis::X,
+            angle: 0.0,
             override_text: None,
         },
         "dim.chain.d",
@@ -139,7 +139,7 @@ fn jede_objektart_startet_ihren_erzeuger() {
         &EntityKind::Dim {
             pts: vec![v(0.0, 0.0), v(1000.0, 0.0), v(2000.0, 0.0)],
             line_pos: v(0.0, -300.0),
-            axis: DimAxis::X,
+            angle: 0.0,
             override_text: None,
         },
         "dim.chain.d",

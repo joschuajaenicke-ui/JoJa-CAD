@@ -5,7 +5,7 @@
 //! Prüfweg ohne Oberfläche (MCP, Panel).
 
 use jjcad_core::geom::v;
-use jjcad_core::model::{DimAxis, EntityKind};
+use jjcad_core::model::EntityKind;
 use jjcad_core::render::{dim_line_span, dim_offset};
 use serde_json::json;
 
@@ -111,10 +111,10 @@ fn einzelmass_basispunkte_und_abstand() {
 
     let e = s.doc.entity(id).expect("Maß");
     match &e.kind {
-        EntityKind::Dim { pts, line_pos, axis, .. } => {
+        EntityKind::Dim { pts, line_pos, angle, .. } => {
             assert_eq!(pts[0], v(-500.0, 0.0));
             assert_eq!(pts[1], v(3500.0, 0.0));
-            assert_eq!(*axis, DimAxis::X);
+            assert!(angle.abs() < 1e-9, "waagerecht: {angle}");
             // Nur die Höhe zählt, die Lage entlang der Maßlinie bleibt.
             assert_eq!(*line_pos, v(1500.0, 600.0), "Maßlinie auf dem Abstand");
         }
@@ -177,8 +177,9 @@ fn einzelmass_kippt_nicht() {
     assert!(winkel < 1e-9, "Maßlinie steht schief: {winkel}");
 }
 
-/// Senkrechtes Maß: der Abstand zählt nach rechts, die Maßlinie bleibt auf
-/// ihrer Breite stehen.
+/// Senkrechtes Maß: der Abstand zählt **links** der Messrichtung (bei
+/// senkrechter Messung nach links, T0166), die Maßlinie bleibt auf ihrer
+/// Breite stehen.
 #[test]
 fn senkrechtes_mass_bleibt_auf_der_breite() {
     let mut s = jjcad_core::session::Session::new();
@@ -193,8 +194,10 @@ fn senkrechtes_mass_bleibt_auf_der_breite() {
         .expect("Maßkette");
     let id = r["created"][0].as_u64().expect("id");
     let e = s.doc.entity(id).expect("Maßkette");
+    // Positiv ist links der Messrichtung: die Maßlinie liegt bei x = −0,4 m,
+    // die Messpunkte bei x = 0 — also 400 mm links.
     assert!(
-        (dim_offset(&e.kind).unwrap() + 400.0).abs() < 1e-6,
+        (dim_offset(&e.kind).unwrap() - 400.0).abs() < 1e-6,
         "Abstand: {:?}",
         dim_offset(&e.kind)
     );
@@ -208,10 +211,10 @@ fn senkrechtes_mass_bleibt_auf_der_breite() {
     let (p0, p1) = dim_line_span(&e.kind).expect("Maßlinie");
     assert!((p0.x + 400.0).abs() < 1e-6 && (p1.x + 400.0).abs() < 1e-6, "{p0:?} {p1:?}");
 
-    // Abstand zählt vom ersten Basispunkt: 0,6 m rechts von x = 0,3 m.
+    // Abstand zählt vom ersten Basispunkt: 0,6 m links von x = 0,3 m.
     s.execute("modify.set", &json!({"ids": [id], "offset": 0.6}))
         .expect("Abstand");
     let e = s.doc.entity(id).expect("Maßkette");
     let (p0, _) = dim_line_span(&e.kind).expect("Maßlinie");
-    assert!((p0.x - 900.0).abs() < 1e-6, "{p0:?}");
+    assert!((p0.x + 300.0).abs() < 1e-6, "{p0:?}");
 }

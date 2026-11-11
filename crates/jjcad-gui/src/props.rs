@@ -2090,26 +2090,33 @@ pub fn bemassung(app: &mut App, ui: &mut Ui, ziel: Ziel) {
     let mut abstand = e
         .as_ref()
         .and_then(|e| jjcad_core::render::dim_offset(&e.kind));
-    let (layer, farbe, mut achse, mut masstext) = match &e {
+    // Orientierung: gespeichert ist ein Winkel (T0166). Die Auswahl zeigt
+    // daraus die nächstgelegene Eingabeweise, das Winkel-Feld den genauen Wert.
+    let (layer, farbe, mut achse, mut winkel, mut masstext) = match &e {
         Some(e) => match &e.kind {
             EntityKind::Dim {
-                axis,
+                angle,
                 override_text,
                 ..
             } => (
                 e.layer,
                 e.style.color,
-                Some(*axis),
+                Some(DimAxis::aus_winkel(*angle)),
+                *angle,
                 override_text.clone().unwrap_or_default(),
             ),
             _ => return,
         },
-        None => (
-            app.doc().current_layer,
-            app.ui.pending.color,
-            Some(app.options.dim_axis.unwrap_or(DimAxis::X)),
-            app.options.dim_text.clone(),
-        ),
+        None => {
+            let achse = app.options.dim_axis.unwrap_or(DimAxis::X);
+            (
+                app.doc().current_layer,
+                app.ui.pending.color,
+                Some(achse),
+                achse.winkel(&[]).unwrap_or(0.0),
+                app.options.dim_text.clone(),
+            )
+        }
     };
     let farbe_gezeigt = farbe.unwrap_or_else(|| {
         app.doc()
@@ -2168,6 +2175,48 @@ pub fn bemassung(app: &mut App, ui: &mut Ui, ziel: Ziel) {
         });
         if let Some(v) = picked {
             achse = v;
+            // Die Auswahl setzt den Winkel der Kette — „Parallel“ nimmt die
+            // Richtung der ersten Messstrecke (T0166).
+            if let Some(e) = &e {
+                if let EntityKind::Dim { pts, .. } = &e.kind {
+                    if let Some(w) = v.and_then(|a| a.winkel(pts)) {
+                        winkel = w;
+                    }
+                }
+            }
+        }
+    }
+
+    // Orientierung als Winkel: beim Erzeugen zeigt die Zeile den Winkel des
+    // Werkzeugmodus (gesetzt wird er über die drei Schaltflächen), bei der
+    // Auswahl lässt sie sich frei drehen — dieselbe Zeile in beiden Fällen.
+    zeile("winkel");
+    if ziel.ist_neu() {
+        // Beim Erzeugen steht der Winkel erst nach den Messpunkten fest, wenn
+        // das Werkzeug „Direkt“ läuft — dann zeigt die Zeile das an, statt
+        // eine Zahl zu erfinden.
+        let direkt = matches!(achse, Some(DimAxis::Aligned) | None);
+        widgets::field_row(ui, jjcad_core::i18n::tr("gui.props.winkel"), |ui| {
+            if direkt {
+                ui.label(theme::faint(jjcad_core::i18n::tr("gui.props.aus_den_klicks")));
+            } else {
+                ui.label(theme::mono(format!(
+                    "{}°",
+                    jjcad_core::units::format_number(winkel.to_degrees(), 1)
+                )));
+            }
+        });
+    } else {
+        let mut grad = winkel.to_degrees();
+        widgets::field_row(ui, jjcad_core::i18n::tr("gui.props.winkel"), |ui| {
+            ui.add(widgets::zahl(
+                &mut grad,
+                1.0,
+                widgets::WINKEL_MIN..=widgets::WINKEL_MAX,
+            ));
+        });
+        if (grad - winkel.to_degrees()).abs() > 1e-9 {
+            winkel = grad.to_radians();
         }
     }
 
@@ -2204,16 +2253,14 @@ pub fn bemassung(app: &mut App, ui: &mut Ui, ziel: Ziel) {
     ui.add_space(4.0);
     match (&e, ziel) {
         (Some(e), Ziel::Auswahl(_)) => {
-            if let EntityKind::Dim { pts, axis, .. } = &e.kind {
+            if let EntityKind::Dim { pts, angle, .. } = &e.kind {
                 // Anzahl der Messpunkte und die Summe aller Segmente — beim
-                // Einzelmaß ist das genau eine Strecke (T0154).
+                // Einzelmaß ist das genau eine Strecke (T0154). Gemessen wird
+                // der Anteil längs der Maßlinie (T0166).
+                let (dir, _) = jjcad_core::render::dim_achse(*angle);
                 let mut summe = 0.0;
                 for w in pts.windows(2) {
-                    summe += match axis {
-                        DimAxis::X => (w[1].x - w[0].x).abs(),
-                        DimAxis::Y => (w[1].y - w[0].y).abs(),
-                        DimAxis::Aligned => w[0].dist(w[1]),
-                    };
+                    summe += (w[1] - w[0]).dot(dir).abs();
                 }
                 ui.label(theme::dim(jjcad_core::i18n::t_args_owned(
                     "gui.props.x_basispunkte",
@@ -2243,7 +2290,7 @@ pub fn bemassung(app: &mut App, ui: &mut Ui, ziel: Ziel) {
             if let Some(map) = params.as_object_mut() {
                 if let Some(e) = &e {
                     if let EntityKind::Dim {
-                        axis,
+                        angle,
                         override_text,
                         ..
                     } = &e.kind
@@ -2253,18 +2300,9 @@ pub fn bemassung(app: &mut App, ui: &mut Ui, ziel: Ziel) {
                             map.insert("text".into(), serde_json::json!(masstext));
                             geaendert = true;
                         }
-                        if let Some(neu_achse) = achse {
-                            if neu_achse != *axis {
-                                map.insert(
-                                    "axis".into(),
-                                    serde_json::json!(match neu_achse {
-                                        DimAxis::X => "x",
-                                        DimAxis::Y => "y",
-                                        DimAxis::Aligned => "aligned",
-                                    }),
-                                );
-                                geaendert = true;
-                            }
+                        if (winkel - *angle).abs() > 1e-9 {
+                            map.insert("angle".into(), serde_json::json!(winkel.to_degrees()));
+                            geaendert = true;
                         }
                         if let Some(v) = abstand {
                             if let Some(alt) = jjcad_core::render::dim_offset(&e.kind) {
@@ -4432,7 +4470,7 @@ mod tests {
                 EntityKind::Dim {
                     pts: vec![jjcad_core::geom::Vec2::ZERO, v(1000.0, 0.0)],
                     line_pos: v(500.0, -300.0),
-                    axis: DimAxis::X,
+                    angle: 0.0,
                     override_text: None,
                 },
             ),
@@ -4735,7 +4773,7 @@ mod tests {
                     jjcad_core::geom::v(1000.0, 0.0),
                 ],
                 line_pos: jjcad_core::geom::v(500.0, -300.0),
-                axis: DimAxis::X,
+                angle: 0.0,
                 override_text: None,
             },
             EntityKind::ElevationPlan {
