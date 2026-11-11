@@ -6232,11 +6232,20 @@ fn tool_click_at(app: &mut App, w: V2, raw: V2) {
                 if start.dist(w) > 0.5 {
                     let t = app.options.wall_thickness;
                     let h = app.options.wall_height;
+                    // Schraffur der Wand gehört zu ihren Eigenschaften: ohne
+                    // diesen Parameter startete jede Wand vollflächig, obwohl
+                    // das Panel eine Schraffur anzeigte (T0169).
+                    let hatch = app
+                        .options
+                        .wall_hatch
+                        .map(|hp| hp.key())
+                        .unwrap_or("none");
                     let _ = run(
                         app,
                         "draw.wall",
                         json!({"a": ax(start), "b": ax(w), "thickness": unit.from_mm(t),
-                                    "height": unit.from_mm(h), "align": align_name(app.options.wall_align)}),
+                                    "height": unit.from_mm(h), "align": align_name(app.options.wall_align),
+                                    "hatch": hatch}),
                     );
                     app.tool = Some(Tool {
                         action: "draw.wall".into(),
@@ -7049,6 +7058,10 @@ fn tool_click_at(app: &mut App, w: V2, raw: V2) {
                 }
                 _ => actions::erzeuger_fuer(&kind),
             };
+            // T0169: **alle** Eigenschaften des angeklickten Objekts gelten für
+            // das nächste Element — Ebene, Farbe, Stärke, Linientyp und die
+            // art-eigenen Werte. Ohne das entstand eine rote Linie schwarz.
+            crate::props::vorgaben_aus_objekt(app, id);
             app.start_tool(werkzeug);
         }
         "modify.select" => {}
@@ -12090,6 +12103,124 @@ mod tests_schnellauswahl {
         let mut app = app_mit_objekten();
         tool_click(&mut app, V2::new(9000.0, 9000.0));
         assert_eq!(app.tool_id(), Some("modify.quickselect"));
+    }
+
+    /// T0169: Die Schnellauswahl übernimmt **alle** Eigenschaften. Eine rote,
+    /// gestrichelte Linie auf einer anderen Ebene erzeugt wieder genau so eine
+    /// Linie — vorher entstand sie in der zuletzt gewählten Farbe.
+    #[test]
+    fn rote_linie_gibt_ihre_eigenschaften_weiter() {
+        let mut app = App::with_ctx(egui::Context::default());
+        app.doc_mut().settings.input_unit = Unit::Mm;
+        let rot = jjcad_core::style::Color::RED;
+        let angelegt = app
+            .session_mut()
+            .execute(
+                "draw.line",
+                &json!({
+                    "a": [0.0, 0.0],
+                    "b": [3000.0, 0.0],
+                    "color": rot.to_hex(),
+                    "lineweight": 0.5,
+                    "linetype": "dashed",
+                    "layer": "Bemaßung",
+                }),
+            )
+            .expect("rote Linie anlegen");
+        let quelle = angelegt["created"][0].as_u64().expect("Linien-Id");
+        let ebene = app.doc().entity(quelle).expect("Linie").layer;
+
+        app.start_tool("modify.quickselect");
+        tool_click(&mut app, V2::new(1500.0, 0.0));
+        assert_eq!(app.tool_id(), Some("draw.line"), "Linienwerkzeug startet");
+        tool_click(&mut app, V2::new(0.0, 2000.0));
+        tool_click(&mut app, V2::new(3000.0, 2000.0));
+
+        let neu = app
+            .doc()
+            .ents()
+            .iter()
+            .rev()
+            .find(|e| matches!(e.kind, EntityKind::Line { .. }) && e.id != quelle)
+            .cloned()
+            .expect("die zweite Linie fehlt");
+        assert_eq!(neu.style.color, Some(rot), "Farbe nicht übernommen");
+        assert_eq!(
+            neu.style.line_weight,
+            Some(0.5),
+            "Stärke nicht übernommen"
+        );
+        assert_eq!(
+            neu.style.line_type,
+            Some(jjcad_core::style::LineType::Dashed),
+            "Linientyp nicht übernommen"
+        );
+        assert_eq!(neu.layer, ebene, "Ebene nicht übernommen");
+    }
+
+    /// T0169: Auch die art-eigenen Werte gelten weiter — eine 300 mm starke,
+    /// links ausgerichtete Mauerwerkswand erzeugt wieder eine solche.
+    #[test]
+    fn wand_gibt_dicke_schraffur_und_ausrichtung_weiter() {
+        let mut app = App::with_ctx(egui::Context::default());
+        app.doc_mut().settings.input_unit = Unit::Mm;
+        let angelegt = app
+            .session_mut()
+            .execute(
+                "draw.wall",
+                &json!({
+                    "a": [0.0, 0.0],
+                    "b": [4000.0, 0.0],
+                    "thickness": 300.0,
+                    "height": 2800.0,
+                    "hatch": "mauerwerk",
+                    "align": "left",
+                }),
+            )
+            .expect("Wand anlegen");
+        let quelle = angelegt["created"][0].as_u64().expect("Wand-Id");
+
+        app.start_tool("modify.quickselect");
+        tool_click(&mut app, V2::new(2000.0, 0.0));
+        assert_eq!(app.tool_id(), Some("draw.wall"), "Wandwerkzeug startet");
+        assert_eq!(app.options.wall_thickness, 300.0, "Dicke nicht übernommen");
+        assert_eq!(app.options.wall_height, 2800.0, "Höhe nicht übernommen");
+        assert_eq!(
+            app.options.wall_hatch,
+            Some(jjcad_core::style::FillPattern::Lines),
+            "Schraffur nicht übernommen"
+        );
+        assert_eq!(
+            app.options.wall_align,
+            jjcad_core::style::WallAlign::Left,
+            "Ausrichtung nicht übernommen"
+        );
+
+        tool_click(&mut app, V2::new(0.0, 3000.0));
+        tool_click(&mut app, V2::new(4000.0, 3000.0));
+        let neu = app
+            .doc()
+            .ents()
+            .iter()
+            .rev()
+            .find(|e| matches!(e.kind, EntityKind::Wall { .. }) && e.id != quelle)
+            .cloned()
+            .expect("die zweite Wand fehlt");
+        match neu.kind {
+            EntityKind::Wall {
+                thickness,
+                height,
+                hatch,
+                align,
+                ..
+            } => {
+                assert!((thickness - 300.0).abs() < 1e-6, "Dicke: {thickness}");
+                assert!((height - 2800.0).abs() < 1e-6, "Höhe: {height}");
+                assert_eq!(hatch, Some(jjcad_core::style::FillPattern::Lines));
+                assert_eq!(align, jjcad_core::style::WallAlign::Left);
+            }
+            _ => unreachable!(),
+        }
     }
 }
 

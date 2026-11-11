@@ -586,6 +586,187 @@ pub fn gemein_nach_objekt(app: &mut App, id: Id, a: &Gemein) {
     }
 }
 
+/// Übernimmt **alle** Eigenschaften eines vorhandenen Objekts in die Vorgaben
+/// für das nächste Element (Schnellauswahl, T0169).
+///
+/// Die Schnellauswahl startet den Erzeuger der angeklickten Art; ohne diese
+/// Übernahme entstand das neue Element in der zuletzt gewählten Farbe und
+/// Stärke — eine rote Linie wurde zur schwarzen. Übernommen werden die
+/// gemeinsamen Zeilen (Ebene, Farbe, Füllung, Stärke, Linientyp, Dämmung) und
+/// die art-eigenen Werte, die im Eigenschaften-Panel beim Erzeugen stehen.
+///
+/// Die Werte kommen aus **derselben** Quelle wie die Anzeige bei Auswahl
+/// (`Ziel::Auswahl`): die Felder des Objekts, nicht die wirksamen Werte der
+/// Ebene. Ein Objekt mit `color: None` (vom Layer) setzt die Vorgabe deshalb
+/// wieder auf „vom Layer“ — die neue Linie erbt dann die Farbe ihrer Ebene.
+///
+/// Liefert `false`, wenn das Objekt nicht (mehr) existiert.
+pub fn vorgaben_aus_objekt(app: &mut App, id: Id) -> bool {
+    let Some(e) = app.doc().entity(id).cloned() else {
+        return false;
+    };
+    // Ebene: das neue Element soll auf derselben Ebene liegen. `canvas::run`
+    // gibt `current_layer` an jede Erzeuger-Action weiter.
+    app.doc_mut().current_layer = e.layer;
+    // Gemeinsame Zeilen — dieselben Felder, die `gemein_nach_optionen` setzt.
+    app.ui.pending.color = e.style.color;
+    app.ui.pending.fill = e.style.fill;
+    app.ui.pending.lineweight = e.style.line_weight;
+    app.ui.pending.line_type = e.style.line_type;
+    app.ui.pending.loop_width = e.style.loop_width;
+    app.ui.pending.loop_shape = e.style.loop_shape;
+
+    // Art-eigene Werte — je Zweig dieselben Felder, die das Panel beim
+    // Erzeugen in `ToolOptions` schreibt.
+    match &e.kind {
+        EntityKind::Wall {
+            thickness,
+            height,
+            hatch,
+            align,
+            ..
+        } => {
+            app.options.wall_thickness = *thickness;
+            app.options.wall_height = *height;
+            app.options.wall_hatch = *hatch;
+            app.options.wall_align = *align;
+        }
+        EntityKind::Door {
+            width,
+            kind,
+            hinge,
+            swing_in,
+            base,
+            ..
+        } => {
+            app.options.door_width = *width;
+            app.options.door_kind = *kind;
+            app.options.hinge = *hinge;
+            app.options.swing_in = *swing_in;
+            app.options.door_base = *base;
+        }
+        EntityKind::Window {
+            width,
+            sill,
+            height,
+            align,
+            ..
+        } => {
+            app.options.window_width = *width;
+            app.options.window_sill = *sill;
+            app.options.window_height = *height;
+            app.options.window_align = *align;
+        }
+        EntityKind::Text {
+            height,
+            angle,
+            align,
+            valign,
+            bold,
+            italic,
+            underline,
+            superscript,
+            font,
+            line_spacing,
+            frame,
+            frame_round,
+            background,
+            ..
+        } => {
+            app.options.text_height = *height;
+            app.options.text_angle = angle.to_degrees();
+            app.options.text_align = *align;
+            app.options.text_valign = *valign;
+            app.options.text_bold = *bold;
+            app.options.text_italic = *italic;
+            app.options.text_underline = *underline;
+            app.options.text_superscript = *superscript;
+            app.options.text_font = *font;
+            app.options.text_line_spacing = *line_spacing;
+            app.options.text_frame = *frame;
+            app.options.text_frame_round = *frame_round;
+            app.options.text_background = *background;
+            // Der Text wird in der Zeichenfläche getippt; dessen Editor liest
+            // die Farbe aus `text_color` (nicht aus `pending.color`).
+            app.options.text_color = e.style.color;
+        }
+        EntityKind::Room { height, heading, .. } => {
+            app.options.room_height = *height;
+            app.options.room_heading = heading.clone();
+        }
+        EntityKind::Dim {
+            angle,
+            override_text,
+            ..
+        } => {
+            app.options.dim_axis = Some(DimAxis::aus_winkel(*angle));
+            app.options.dim_text = override_text.clone().unwrap_or_default();
+        }
+        EntityKind::ElevationPlan { z, .. } => {
+            app.options.elevation_z = *z;
+        }
+        EntityKind::Fill {
+            pattern,
+            pattern_angle,
+            pattern_scale,
+            ..
+        } => {
+            app.options.fill_pattern = *pattern;
+            app.options.fill_angle = *pattern_angle;
+            app.options.fill_scale = *pattern_scale;
+        }
+        EntityKind::Volume {
+            height,
+            pattern,
+            pattern_angle,
+            pattern_scale,
+            ..
+        } => {
+            app.options.volume_height = *height;
+            app.options.volume_pattern = *pattern;
+            app.options.volume_angle = *pattern_angle;
+            app.options.volume_scale = *pattern_scale;
+        }
+        EntityKind::Stair {
+            width,
+            steps,
+            height,
+            auto_steps,
+            cut,
+            ..
+        } => {
+            app.options.stair_width = *width;
+            app.options.stair_steps = *steps;
+            app.options.stair_height = *height;
+            app.options.stair_auto = *auto_steps;
+            app.options.stair_cut = *cut;
+        }
+        EntityKind::BlockRef {
+            block, rot, scale, ..
+        } => {
+            app.options.block_id = Some(block.clone());
+            app.options.block_rot = rot.to_degrees();
+            app.options.block_scale = scale.x;
+        }
+        EntityKind::Image {
+            lock_ratio,
+            name,
+            data,
+            ..
+        } => {
+            app.options.bild_lock = *lock_ratio;
+            app.options.bild = Some(crate::app::BildQuelle {
+                name: name.clone(),
+                data: data.clone(),
+            });
+        }
+        // Freie Geometrie, Koten und Ansichtsfenster tragen nur die
+        // gemeinsamen Zeilen — die Maße entstehen aus den Klicks.
+        _ => {}
+    }
+    true
+}
+
 // ---------------------------------------------------------------------------
 // Text
 // ---------------------------------------------------------------------------
@@ -933,6 +1114,13 @@ pub fn text(app: &mut App, ui: &mut Ui, ziel: Ziel) {
     match ziel {
         Ziel::Neu => {
             gemein_nach_optionen(app, &a);
+            // Die Farbe des nächsten Textes steht in `text_color`: der Editor in
+            // der Zeichenfläche liest sie dort (nicht aus `pending.color`), und
+            // die Zeile oben zeigt sie von dort. Ohne diesen Schritt schrieb das
+            // Panel die Farbe an eine Stelle, die der Text nicht liest (T0169).
+            if let Some(v) = a.farbe {
+                app.options.text_color = v;
+            }
             app.options.text_height = hoehe;
             app.options.text_font = schrift;
             app.options.text_line_spacing = zeilenabstand;
@@ -5340,4 +5528,67 @@ mod tests {
         assert_eq!(app.ui.pending.loop_shape, Some(0.35));
     }
 
+    /// T0169: Die Schnellauswahl übernimmt auch die Werte, die **nur** in den
+    /// Werkzeugvorgaben stehen. Beim Text sind das Höhe, Schrift, Auszeichnung
+    /// und die Farbe — letztere liegt für den Editor in `text_color`, nicht in
+    /// `pending.color`.
+    #[test]
+    fn vorgaben_aus_objekt_uebernimmt_textwerte() {
+        let mut app = App::with_ctx(egui::Context::default());
+        app.session_mut()
+            .execute("doc.settings", &json!({ "input_unit": "m" }))
+            .expect("Einheit");
+        let rot = Color::RED;
+        let angelegt = app
+            .session_mut()
+            .execute(
+                "draw.text",
+                &json!({
+                    "p": [1.0, 1.0],
+                    "text": "Hallo",
+                    "height": 0.35,
+                    "color": rot.to_hex(),
+                    "font": "din_mittel",
+                    "bold": true,
+                    "align": "center",
+                }),
+            )
+            .expect("Text anlegen");
+        let id = angelegt["created"][0].as_u64().expect("Text-Id");
+
+        assert!(vorgaben_aus_objekt(&mut app, id));
+        assert!(
+            (app.options.text_height - 350.0).abs() < 1e-6,
+            "Höhe: {}",
+            app.options.text_height
+        );
+        assert_eq!(app.options.text_font, TextFont::DinMittel, "Schrift");
+        assert!(app.options.text_bold, "Auszeichnung");
+        assert_eq!(app.options.text_align, TextAlignH::Center, "Ausrichtung");
+        assert_eq!(app.options.text_color, Some(rot), "Farbe für den Editor");
+        assert_eq!(app.ui.pending.color, Some(rot), "Farbe für die Action");
+    }
+
+    /// Die Übernahme nimmt die **Felder** des Objekts, nicht die wirksamen
+    /// Werte der Ebene: ein Objekt „vom Layer“ setzt die Vorgabe wieder auf
+    /// „vom Layer“, damit die neue Linie die Farbe ihrer Ebene erbt.
+    #[test]
+    fn vorgaben_aus_objekt_setzt_bylayer_auf_bylayer() {
+        let mut app = App::with_ctx(egui::Context::default());
+        app.session_mut()
+            .execute("doc.settings", &json!({ "input_unit": "m" }))
+            .expect("Einheit");
+        app.ui.pending.color = Some(Color::RED);
+        let angelegt = app
+            .session_mut()
+            .execute(
+                "draw.line",
+                &json!({"a": [0.0, 0.0], "b": [2.0, 0.0], "color": "bylayer"}),
+            )
+            .expect("Linie anlegen");
+        let id = angelegt["created"][0].as_u64().expect("Linien-Id");
+
+        assert!(vorgaben_aus_objekt(&mut app, id));
+        assert_eq!(app.ui.pending.color, None, "Vorgabe muss „vom Layer“ sein");
+    }
 }
