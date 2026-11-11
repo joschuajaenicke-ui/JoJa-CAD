@@ -2182,26 +2182,26 @@ pub const DIM_PARALLEL_ABSTAND_MM: f64 = 750.0;
 /// Zeigers, quer gerastet). So sitzen zwei Maßketten übereinander in
 /// gleichmäßigem Abstand, ohne dass der Nutzer die Zahl im Panel einstellt.
 ///
-/// `pts` sind die bereits gesetzten Messpunkte: bei `DimAxis::Aligned` geben
-/// sie die Richtung vor. Ohne zwei Punkte gibt es keine Richtung und damit
-/// keine Parallele.
+/// `angle` ist die Richtung der neuen Maßlinie (Bogenmaß); `pts` sind die
+/// bereits gesetzten Messpunkte und dienen nur der Vollständigkeit halber —
+/// die Richtung steht schon fest (T0166).
 pub fn dim_parallel(
     doc: &Document,
     pts: &[Vec2],
-    axis: DimAxis,
+    angle: f64,
     cursor: Vec2,
     tol: f64,
 ) -> Option<Vec2> {
     if pts.len() < 2 {
         return None;
     }
-    let (dir, vers) = render::dim_achse(pts, axis);
+    let (dir, vers) = render::dim_achse(angle);
     let mut best: Option<(f64, Vec2)> = None;
     for e in doc.ents() {
         let EntityKind::Dim {
             pts: referenz,
             line_pos,
-            axis: ref_axis,
+            angle: ref_angle,
             ..
         } = &e.kind
         else {
@@ -2210,7 +2210,7 @@ pub fn dim_parallel(
         if referenz.len() < 2 {
             continue;
         }
-        let (ref_dir, ref_vers) = render::dim_achse(referenz, *ref_axis);
+        let (ref_dir, ref_vers) = render::dim_achse(*ref_angle);
         // Nur parallele Maßketten sind ein Vorbild — eine schräge Kette gibt
         // keine waagerechte Parallele.
         if dir.cross(ref_dir).abs() > 0.02 {

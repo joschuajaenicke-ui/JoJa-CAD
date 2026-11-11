@@ -552,9 +552,11 @@ impl DimModus {
         }
     }
 
-    /// Modus zu einer Achse — die Umkehrung von [`DimModus::axis`].
-    pub fn aus_achse(axis: DimAxis) -> Self {
-        match axis {
+    /// Modus zu einem gespeicherten Winkel — die Umkehrung von
+    /// [`DimModus::axis`] für die Schnellauswahl (T0166). Eine schräg gedrehte
+    /// Kette entsteht wieder im Modus „Direkt“.
+    pub fn aus_winkel(angle: f64) -> Self {
+        match DimAxis::aus_winkel(angle) {
             DimAxis::X => DimModus::Waagerecht,
             DimAxis::Y => DimModus::Senkrecht,
             DimAxis::Aligned => DimModus::Direkt,
@@ -2472,6 +2474,26 @@ impl App {
                             .and_then(|r| r["created"][0].as_u64()),
                     };
                     if let Some(id) = id {
+                        self.session_mut().select(vec![id]);
+                    }
+                }
+                // Gedrehte Maßkette (T0166): eine waagerechte Kette wird um
+                // 30° gedreht — Maßlinie, Hilfslinien und Maßtext laufen
+                // schräg, das Panel zeigt den Winkel.
+                "masskettengedreht" => {
+                    self.ui.props_open = true;
+                    self.ui.ribbon = RibbonTab::Bemassung;
+                    // Werte in der Eingabeeinheit der Zeichnung (Meter).
+                    let antwort = self.session_mut().execute(
+                        "dim.chain",
+                        &serde_json::json!({"pts": [[0.0, 0.0], [2.0, 0.0], [5.0, 0.0]],
+                                            "line_pos": [2.5, -0.9], "axis": "x"}),
+                    );
+                    if let Some(id) = antwort.ok().and_then(|r| r["created"][0].as_u64()) {
+                        let _ = self.session_mut().execute(
+                            "modify.rotate",
+                            &serde_json::json!({"ids": [id], "center": [0.0, 0.0], "angle": 30.0}),
+                        );
                         self.session_mut().select(vec![id]);
                     }
                 }

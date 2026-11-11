@@ -3200,23 +3200,25 @@ fn draw_tool_preview(
         // Renderer wie das eingefügte Element (T0154).
         "dim.chain" | "dim.chain.h" | "dim.chain.v" | "dim.chain.d" => {
             let modus = DimModus::aus_werkzeug(&tool.action).unwrap_or(DimModus::Direkt);
-            let axis = modus.axis();
             let mut pts = dim_messpunkte(&tool, modus);
             let mut line_pos = dim_masslinie(&tool, modus);
+            // Die Orientierung steht vor dem ersten Klick fest (Modus), in
+            // „Direkt“ liefert sie die erste Messstrecke (T0166).
+            let angle = dim_winkel(modus, &pts);
             if dim_legt_masslinie(&tool, modus) {
                 // Die Maßlinie liegt am Zeiger. Vor dem ersten Messpunkt zeigt
                 // eine **exemplarische** Kette die Form (drei Punkte); in
                 // „Direkt“ stehen die zwei Messpunkte schon fest, dann ist die
                 // Vorschau die echte Kette an der Zeigerlage.
                 if pts.len() < 2 {
-                    let (dir, _) = render::dim_achse(&[cursor, cursor + V2::X], axis);
+                    let dir = V2::polar(angle, 1.0);
                     pts = vec![cursor - dir * 1500.0, cursor, cursor + dir * 1000.0];
                 }
                 line_pos = Some(cursor);
             } else {
                 pts.push(cursor);
                 if line_pos.is_none() {
-                    let (_, vers) = render::dim_achse(&pts, axis);
+                    let (_, vers) = render::dim_achse(angle);
                     line_pos = Some(pts[0] + vers * (app.doc().settings.annotation_scale * 8.0));
                 }
             }
@@ -3224,12 +3226,12 @@ fn draw_tool_preview(
                 // Die Vorschau zeigt die Kette in **Messreihenfolge** — so
                 // sieht man schon vor dem Klick, dass ein seitlich gesetzter
                 // Punkt richtig einsortiert wird (T0154, Turn 3).
-                let pts = render::dim_sortieren(&pts, axis);
+                let pts = render::dim_sortieren(&pts, angle);
                 let dl = render::preview_dim(
                     app.doc(),
                     &pts,
                     lp,
-                    axis,
+                    angle,
                     app.doc().current_layer,
                     app.ui.pending.color,
                 );
@@ -4004,16 +4006,16 @@ fn fang_aufloesung(app: &App, w: V2, tol: f64) -> snap::SnapResolution {
     if let Some(t) = app.tool.as_ref() {
         let modus = DimModus::aus_werkzeug(&t.action);
         if let Some(modus) = modus.filter(|m| dim_legt_masslinie(t, *m)) {
-            let axis = modus.axis();
             let pts = dim_messpunkte(t, modus);
+            let angle = dim_winkel(modus, &pts);
             // Bei „Direkt“ stehen die zwei Messpunkte schon fest; bei
-            // „Waagerecht“/„Senkrecht“ ist die Richtung die Achse selbst.
+            // „Waagerecht“/„Senkrecht“ ist die Richtung der Modus selbst.
             let richtung: Vec<V2> = if pts.len() >= 2 {
                 pts
             } else {
-                vec![V2::ZERO, V2::polar(axis_dir(axis), 1.0)]
+                vec![V2::ZERO, V2::polar(angle, 1.0)]
             };
-            if let Some(p) = snap::dim_parallel(app.doc(), &richtung, axis, w, tol) {
+            if let Some(p) = snap::dim_parallel(app.doc(), &richtung, angle, w, tol) {
                 return snap::SnapResolution {
                     point: p,
                     source: snap::SnapSource::Object(snap::SnapKind::DimParallel),
@@ -5752,11 +5754,11 @@ pub fn finish_tool(app: &mut App, from_enter: bool) {
             let modus = DimModus::aus_werkzeug(&tool.action).unwrap_or(DimModus::Direkt);
             let pts = dim_messpunkte(&tool, modus);
             if pts.len() >= 2 {
-                let axis = modus.axis();
+                let angle = dim_winkel(modus, &pts);
                 let line_pos = dim_masslinie(&tool, modus).unwrap_or_else(|| {
                     // Ohne dritten Klick: die Maßlinie liegt wie bisher ein
                     // Stück neben der Messstrecke.
-                    let (_, vers) = render::dim_achse(&pts, axis);
+                    let (_, vers) = render::dim_achse(angle);
                     pts[0] + vers * (app.doc().settings.annotation_scale * 8.0)
                 });
                 let _ = run(
@@ -5764,11 +5766,7 @@ pub fn finish_tool(app: &mut App, from_enter: bool) {
                     "dim.chain",
                     json!({"pts": pts.iter().map(|p| [app.unit().from_mm(p.x), app.unit().from_mm(p.y)]).collect::<Vec<_>>(),
                            "line_pos": [app.unit().from_mm(line_pos.x), app.unit().from_mm(line_pos.y)],
-                           "axis": match axis {
-                               DimAxis::X => "x",
-                               DimAxis::Y => "y",
-                               DimAxis::Aligned => "aligned",
-                           }}),
+                           "angle": angle.to_degrees()}),
                 );
             } else {
                 app.toast(jjcad_core::i18n::tr("gui.canvas.masskette_zwei_messpunkte"));
@@ -6118,13 +6116,19 @@ fn tool_click(app: &mut App, w: V2) {
 // Maßkette: drei Eingabemodi (T0154)
 // ---------------------------------------------------------------------------
 
-/// Richtungswinkel der Messachse (0° waagerecht, 90° senkrecht).
-fn axis_dir(axis: DimAxis) -> f64 {
-    match axis {
-        DimAxis::X => 0.0,
-        DimAxis::Y => std::f64::consts::FRAC_PI_2,
-        // Parallel ohne Punkte gibt es nicht; die Vorschau zeigt dann waagerecht.
-        DimAxis::Aligned => 0.0,
+/// Richtungswinkel der Maßlinie für einen Eingabemodus (Bogenmaß).
+///
+/// Waagerecht und senkrecht sind feste Winkel, „Direkt“ nimmt die Richtung der
+/// ersten Messstrecke. Ohne zwei Punkte gibt es dort keine Richtung — die
+/// Vorschau zeigt dann waagerecht (T0166).
+fn dim_winkel(modus: DimModus, pts: &[V2]) -> f64 {
+    match modus {
+        DimModus::Waagerecht => 0.0,
+        DimModus::Senkrecht => std::f64::consts::FRAC_PI_2,
+        DimModus::Direkt => match (pts.first(), pts.get(1)) {
+            (Some(a), Some(b)) if a.dist(*b) > 1e-9 => (*b - *a).angle(),
+            _ => 0.0,
+        },
     }
 }
 
@@ -7040,8 +7044,8 @@ fn tool_click_at(app: &mut App, w: V2, raw: V2) {
             // angeklickten Maßes — so entsteht dasselbe Element wieder
             // (T0154, Turn 3).
             let werkzeug = match &kind {
-                EntityKind::Dim { axis, .. } => {
-                    crate::app::DimModus::aus_achse(*axis).werkzeug()
+                EntityKind::Dim { angle, .. } => {
+                    crate::app::DimModus::aus_winkel(*angle).werkzeug()
                 }
                 _ => actions::erzeuger_fuer(&kind),
             };
@@ -12147,8 +12151,8 @@ mod tests_masskette_eingabe {
             .find(|e| matches!(e.kind, EntityKind::Dim { .. }))
             .unwrap();
         match &e.kind {
-            EntityKind::Dim { axis, line_pos, .. } => {
-                assert_eq!(*axis, DimAxis::X);
+            EntityKind::Dim { angle, line_pos, .. } => {
+                assert!(angle.abs() < 1e-9, "waagerecht: {angle}");
                 assert!(
                     (line_pos.y + 900.0).abs() < 1e-6,
                     "Maßlinie nicht auf der Klickhöhe: {line_pos:?}"
@@ -12177,9 +12181,12 @@ mod tests_masskette_eingabe {
             .find(|e| matches!(e.kind, EntityKind::Dim { .. }))
             .unwrap();
         match &e.kind {
-            EntityKind::Dim { pts, axis, line_pos, .. } => {
+            EntityKind::Dim { pts, angle, line_pos, .. } => {
                 assert_eq!(pts.len(), 2);
-                assert_eq!(*axis, DimAxis::Y);
+                assert!(
+                    (angle - std::f64::consts::FRAC_PI_2).abs() < 1e-9,
+                    "senkrecht: {angle}"
+                );
                 assert!((line_pos.x + 700.0).abs() < 1e-6, "{line_pos:?}");
             }
             _ => unreachable!(),
@@ -12234,9 +12241,11 @@ mod tests_masskette_eingabe {
             .find(|e| matches!(e.kind, EntityKind::Dim { .. }))
             .expect("Maßkette fehlt");
         match &e.kind {
-            EntityKind::Dim { pts, axis, line_pos, .. } => {
+            EntityKind::Dim { pts, angle, line_pos, .. } => {
                 assert_eq!(pts.len(), 2);
-                assert_eq!(*axis, DimAxis::Aligned);
+                // „Direkt“ übernimmt die Richtung der ersten Messstrecke —
+                // hier waagerecht von (0,0) nach (3000,0).
+                assert!(angle.abs() < 1e-9, "direkt: {angle}");
                 assert!(line_pos.dist(V2::new(0.0, 0.0)) > 100.0, "{line_pos:?}");
             }
             _ => unreachable!(),
@@ -12304,10 +12313,12 @@ mod tests_masskette_eingabe {
     /// Turn 3).
     #[test]
     fn drei_werkzeuge_setzen_ihre_achse() {
-        for (werkzeug, achse) in [
-            ("dim.chain.h", DimAxis::X),
-            ("dim.chain.v", DimAxis::Y),
-            ("dim.chain.d", DimAxis::Aligned),
+        for (werkzeug, winkel) in [
+            ("dim.chain.h", 0.0),
+            ("dim.chain.v", std::f64::consts::FRAC_PI_2),
+            // „Direkt“ nimmt die Richtung der ersten Messstrecke — hier
+            // (0,−900)→(0,0), also senkrecht.
+            ("dim.chain.d", std::f64::consts::FRAC_PI_2),
         ] {
             let mut app = app();
             app.start_tool(werkzeug);
@@ -12324,7 +12335,10 @@ mod tests_masskette_eingabe {
                 .find(|e| matches!(e.kind, EntityKind::Dim { .. }))
                 .unwrap_or_else(|| panic!("{werkzeug} hat keine Maßkette angelegt"));
             match &e.kind {
-                EntityKind::Dim { axis, .. } => assert_eq!(*axis, achse, "{werkzeug}"),
+                EntityKind::Dim { angle, .. } => assert!(
+                    (angle - winkel).abs() < 1e-9,
+                    "{werkzeug}: Winkel {angle} statt {winkel}"
+                ),
                 _ => unreachable!(),
             }
         }

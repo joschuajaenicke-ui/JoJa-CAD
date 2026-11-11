@@ -262,15 +262,58 @@ pub fn migrate_legacy_dims(v: &mut serde_json::Value) {
                     kind.insert("type".into(), serde_json::json!("dim"));
                 }
                 Some("dim") => {
-                    if kind.contains_key("pts") {
+                    if !kind.contains_key("pts") {
+                        if let Some(a) = kind.remove("a") {
+                            if let Some(b) = kind.remove("b") {
+                                kind.insert("pts".into(), serde_json::json!([a, b]));
+                            } else {
+                                kind.insert("a".into(), a);
+                            }
+                        }
+                    }
+                    // T0166: Die Achse (`x`/`y`/`aligned`) ist kein Feld des
+                    // Objekts mehr — gespeichert wird die **Orientierung** als
+                    // Winkel in Bogenmaß. Alte Dateien bekommen ihn hier.
+                    if kind.contains_key("angle") {
+                        kind.remove("axis");
                         continue;
                     }
-                    let Some(a) = kind.remove("a") else { continue };
-                    let Some(b) = kind.remove("b") else {
-                        kind.insert("a".into(), a);
-                        continue;
+                    // In der Datei steht der Serde-Name der Achse (`X`, `Y`,
+                    // `Aligned`), in der Befehlsschicht der kleine Schlüssel
+                    // (`x`, `y`, `aligned`) — beide gelten hier.
+                    let achse = kind
+                        .remove("axis")
+                        .and_then(|a| a.as_str().map(|s| s.to_lowercase()))
+                        .unwrap_or_else(|| "x".to_string());
+                    let winkel = match achse.as_str() {
+                        "y" | "vertical" | "senkrecht" => std::f64::consts::FRAC_PI_2,
+                        "aligned" | "parallel" => {
+                            // Richtung der ersten Messstrecke — dieselbe
+                            // Rechnung wie `DimAxis::Aligned`.
+                            let p = kind
+                                .get("pts")
+                                .and_then(|p| p.as_array())
+                                .map(|a| a.as_slice())
+                                .unwrap_or(&[]);
+                            let punkt = |i: usize| -> Option<(f64, f64)> {
+                                let q = p.get(i)?.as_array()?;
+                                Some((q.first()?.as_f64()?, q.get(1)?.as_f64()?))
+                            };
+                            match (punkt(0), punkt(1)) {
+                                (Some((ax, ay)), Some((bx, by))) => {
+                                    let (dx, dy) = (bx - ax, by - ay);
+                                    if dx.abs() < 1e-9 && dy.abs() < 1e-9 {
+                                        0.0
+                                    } else {
+                                        dy.atan2(dx)
+                                    }
+                                }
+                                _ => 0.0,
+                            }
+                        }
+                        _ => 0.0,
                     };
-                    kind.insert("pts".into(), serde_json::json!([a, b]));
+                    kind.insert("angle".into(), serde_json::json!(winkel));
                 }
                 _ => {}
             }

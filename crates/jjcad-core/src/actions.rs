@@ -1245,11 +1245,11 @@ fn ids_from(p: &Params, key: &str) -> Vec<Id> {
 /// Gezählt wird entlang der Messrichtung: der Punkt gehört vor den ersten
 /// Punkt, der weiter vorn liegt. So bleibt die Kette monoton und ihre
 /// Maßzahlen positiv — egal, in welcher Reihenfolge der Nutzer klickt.
-fn einfuege_index(pts: &[Vec2], axis: DimAxis, q: Vec2) -> usize {
+fn einfuege_index(pts: &[Vec2], angle: f64, q: Vec2) -> usize {
     if pts.is_empty() {
         return 0;
     }
-    let (dir, _) = crate::render::dim_achse(pts, axis);
+    let (dir, _) = crate::render::dim_achse(angle);
     let t = (q - pts[0]).dot(dir);
     pts.iter()
         .position(|p| (*p - pts[0]).dot(dir) > t)
@@ -1583,16 +1583,26 @@ fn dim_kette(
     if pts.len() < 2 {
         return Err("Maßkette braucht mindestens zwei Punkte".into());
     }
-    // Achse ohne Angabe aus der Dominanz der Punktdifferenz bestimmen.
-    // Zwei verschiedene Punkte dürfen nie den Maßtext „0,0“ ergeben;
-    // eine gemischte Kette ohne brauchbare Achse ist ein Fehler (T0038).
-    let axis = match feste_achse.or_else(|| p.dim_axis("axis")) {
+    // Orientierung: ein ausdrücklicher Winkel (`angle`, Grad) sticht; sonst
+    // die Eingabeweise (`axis` bzw. das Werkzeug), sonst die Dominanz der
+    // Punktdifferenz. Zwei verschiedene Punkte dürfen nie den Maßtext „0,0“
+    // ergeben; eine gemischte Kette ohne brauchbare Richtung ist ein Fehler
+    // (T0038).
+    let angle = match p.angle("angle") {
         Some(a) => a,
-        None => DimAxis::aus_kette(&pts).ok_or_else(|| {
-            "Maßkette · Achse nicht bestimmbar — `axis` angeben".to_string()
-        })?,
+        None => {
+            let axis = match feste_achse.or_else(|| p.dim_axis("axis")) {
+                Some(a) => a,
+                None => DimAxis::aus_kette(&pts).ok_or_else(|| {
+                    "Maßkette · Achse nicht bestimmbar — `axis` angeben".to_string()
+                })?,
+            };
+            axis.winkel(&pts).ok_or_else(|| {
+                "Maßkette · Achse nicht bestimmbar — `axis` angeben".to_string()
+            })?
+        }
     };
-    let pts = crate::render::dim_sortieren(&pts, axis);
+    let pts = crate::render::dim_sortieren(&pts, angle);
     let line_pos = p
         .pt("line_pos")
         .or_else(|| p.pt("pos"))
@@ -1608,7 +1618,7 @@ fn dim_kette(
         EntityKind::Dim {
             pts,
             line_pos,
-            axis,
+            angle,
             override_text: p.text("text"),
         },
     );
@@ -2259,13 +2269,19 @@ pub fn execute(doc: &mut Document, id: &str, params: &Value) -> Result<Value, St
                 let m = (a + b) * 0.5;
                 v(m.x, m.y + doc.settings.annotation_scale * 8.0)
             });
-            let axis = p.dim_axis("axis").unwrap_or_else(|| {
-                if (b.x - a.x).abs() >= (b.y - a.y).abs() {
-                    DimAxis::X
-                } else {
-                    DimAxis::Y
+            let angle = match p.angle("angle") {
+                Some(w) => w,
+                None => {
+                    let axis = p.dim_axis("axis").unwrap_or_else(|| {
+                        if (b.x - a.x).abs() >= (b.y - a.y).abs() {
+                            DimAxis::X
+                        } else {
+                            DimAxis::Y
+                        }
+                    });
+                    axis.winkel(&[a, b]).unwrap_or(0.0)
                 }
-            });
+            };
             let layer = resolve_layer_in(doc, &p, ebene);
             let idn = doc.new_id();
             let mut e = Entity::new(
@@ -2274,7 +2290,7 @@ pub fn execute(doc: &mut Document, id: &str, params: &Value) -> Result<Value, St
                 EntityKind::Dim {
                     pts: vec![a, b],
                     line_pos,
-                    axis,
+                    angle,
                     override_text: p.text("text"),
                 },
             );
@@ -2312,12 +2328,12 @@ pub fn execute(doc: &mut Document, id: &str, params: &Value) -> Result<Value, St
                 let e = doc
                     .entity_mut(id)
                     .ok_or_else(|| format!("Objekt {id} nicht gefunden"))?;
-                let EntityKind::Dim { pts, axis, .. } = &mut e.kind else {
+                let EntityKind::Dim { pts, angle, .. } = &mut e.kind else {
                     return Err("dim.point.add · Objekt ist keine Maßkette".to_string());
                 };
                 let idx = match p.num("index") {
                     Some(i) => (i.round().max(0.0) as usize).min(pts.len()),
-                    None => einfuege_index(pts, *axis, q),
+                    None => einfuege_index(pts, *angle, q),
                 };
                 pts.insert(idx, q);
                 (idx, pts.len())
@@ -3386,14 +3402,20 @@ pub fn execute(doc: &mut Document, id: &str, params: &Value) -> Result<Value, St
                         EntityKind::Dim {
                             pts,
                             line_pos,
-                            axis,
+                            angle,
                             override_text,
                         } => {
                             if let Some(v) = text {
                                 *override_text = Some(v);
                             }
-                            if let Some(ax) = p.dim_axis("axis") {
-                                *axis = ax;
+                            // Orientierung: `angle` (Grad) setzt sie frei,
+                            // `axis` ist die bequeme Eingabeweise (T0166).
+                            if let Some(w) = p.angle("angle") {
+                                *angle = w;
+                            } else if let Some(ax) = p.dim_axis("axis") {
+                                if let Some(w) = ax.winkel(pts) {
+                                    *angle = w;
+                                }
                             }
                             let mut neue = p.pts("pts");
                             if neue.is_none() {
@@ -3413,7 +3435,7 @@ pub fn execute(doc: &mut Document, id: &str, params: &Value) -> Result<Value, St
                                 *line_pos = q;
                             }
                             if let Some(off) = p.len("offset") {
-                                let (_, n) = crate::render::dim_achse(pts, *axis);
+                                let (_, n) = crate::render::dim_achse(*angle);
                                 let alt = (*line_pos - pts[0]).dot(n);
                                 *line_pos = *line_pos + n * (off - alt);
                             }

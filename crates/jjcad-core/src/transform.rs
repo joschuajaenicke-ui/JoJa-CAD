@@ -213,15 +213,26 @@ pub fn transform_kind(k: &EntityKind, m: &Affine) -> EntityKind {
             height: height * f,
             heading: heading.clone(),
         },
+        // Bemaßung: Messpunkte und Maßlinie wandern mit, und die
+        // **Orientierung** dreht mit (T0166). Ohne das blieben beim Drehen die
+        // Maßlinie waagerecht und nur die Messpunkte wanderten — die Kette sah
+        // danach aus wie vorher.
         EntityKind::Dim {
             pts,
             line_pos,
-            axis,
+            angle,
             override_text,
         } => EntityKind::Dim {
             pts: pts.iter().map(|p| m.apply(*p)).collect(),
             line_pos: m.apply(*line_pos),
-            axis: *axis,
+            // Gespiegelt kehrt sich die Richtung: bei einer Spiegelung an der
+            // Geraden mit Winkel θ ist `rotation()` = 2θ, die gespiegelte
+            // Richtung also 2θ − φ (T0166).
+            angle: if m.is_mirrored() {
+                m.rotation() - *angle
+            } else {
+                *angle + m.rotation()
+            },
             override_text: override_text.clone(),
         },
         EntityKind::ElevationPlan { p, z } => EntityKind::ElevationPlan {
