@@ -18,6 +18,7 @@
 //!   auf, die Schlaufe wird nicht kleiner.
 
 use jjcad_core::daemmung;
+use jjcad_core::geom::Vec2;
 use jjcad_core::render::{render_document, Prim, RenderCtx, Shape};
 use jjcad_core::session::Session;
 use jjcad_core::style::FillPattern;
@@ -28,6 +29,11 @@ const H: f64 = 100.0;
 
 /// Fläche füllen und ihre Displaylisten-Primitive liefern.
 fn fuellung(kontur: &[[f64; 2]]) -> Vec<Prim> {
+    fuellung_mit(kontur, H)
+}
+
+/// Wie [`fuellung`], mit eigenem Musterabstand (= Dämmstärke H).
+fn fuellung_mit(kontur: &[[f64; 2]], h: f64) -> Vec<Prim> {
     let mut s = Session::new();
     s.execute("doc.settings", &json!({ "input_unit": "mm" }))
         .expect("Eingabe in Millimetern");
@@ -38,7 +44,7 @@ fn fuellung(kontur: &[[f64; 2]]) -> Vec<Prim> {
                 "boundary": kontur,
                 "pattern": FillPattern::InsulationHatch.key(),
                 "angle": 0.0,
-                "scale": H,
+                "scale": h,
                 "border": false,
                 // Die Ebene „Schraffur“ ist hell; für die Rechnung ist die
                 // Farbe egal, die dunkle Ebene hält die Prims aber prüfbar.
@@ -78,6 +84,32 @@ fn auf_dem_raster(x: f64, raster: &[f64]) -> bool {
     raster.iter().any(|u| (u - x).abs() < 0.05)
 }
 
+/// Die gezeichneten Strecken des Musters.
+///
+/// Die Dämmung entsteht als **Polygonzug** je Reihe (T0164): eine eigene
+/// Strecke je Stützpunkt ergab bei 100 m² über 140 000 Primitiva und kostete
+/// die Anzeige ein Vielfaches. Die Proben hier gelten der Kurve, nicht der
+/// Form des Primitivs — beide Formen werden deshalb zu Strecken zerlegt.
+fn strecken(prims: &[Prim]) -> Vec<(Vec2, Vec2)> {
+    let mut out = Vec::new();
+    for pr in prims {
+        match &pr.shape {
+            Shape::Line(a, b) => out.push((*a, *b)),
+            Shape::Poly(pts, closed) => {
+                if pts.len() < 2 {
+                    continue;
+                }
+                let kanten = if *closed { pts.len() } else { pts.len() - 1 };
+                for i in 0..kanten {
+                    out.push((pts[i], pts[(i + 1) % pts.len()]));
+                }
+            }
+            _ => {}
+        }
+    }
+    out
+}
+
 #[test]
 fn muster_ist_das_daemmungsmuster() {
     // Der Schlüssel der Befehlsschicht findet dasselbe Muster wie die Auswahl
@@ -112,8 +144,7 @@ fn schlaufenmass_haengt_nicht_an_der_laenge() {
         let prims = fuellung(&rechteck(breite, 300.0));
         assert!(!prims.is_empty(), "Breite {breite}: nichts gezeichnet");
         let mut geprueft = 0;
-        for pr in &prims {
-            let Shape::Line(a, b) = pr.shape else { continue };
+        for (a, b) in strecken(&prims) {
             for q in [a, b] {
                 // Nur Stützpunkte im Inneren: am Rand schneidet die Kontur.
                 if q.y < 2.0 || q.y > 298.0 || q.x < 1.0 || q.x > breite - 1.0 {
@@ -144,8 +175,7 @@ fn baender_sind_parallel_und_gleichphasig() {
 
     // Je Reihe die Stützpunkte sammeln (Reihe = Bandhöhe über y).
     let mut reihen: std::collections::BTreeMap<i64, Vec<f64>> = Default::default();
-    for pr in &prims {
-        let Shape::Line(a, b) = pr.shape else { continue };
+    for (a, b) in strecken(&prims) {
         for q in [a, b] {
             if q.y < 2.0 || q.y > 2998.0 || q.x < 1.0 {
                 continue;
@@ -177,8 +207,7 @@ fn baender_bleiben_in_ihrer_bandhoehe() {
     let hoehe = 500.0;
     let prims = fuellung(&rechteck(2000.0, hoehe));
     let mut lagen: Vec<f64> = Vec::new();
-    for pr in &prims {
-        let Shape::Line(a, b) = pr.shape else { continue };
+    for (a, b) in strecken(&prims) {
         for q in [a, b] {
             lagen.push(q.y);
         }
@@ -213,8 +242,7 @@ fn schraege_kante_beschneidet_statt_zu_stauchen() {
     // deutlich kürzer sind als p/24 · 0,5.
     let mut kurz = 0;
     let mut gesamt = 0;
-    for pr in &prims {
-        let Shape::Line(a, b) = pr.shape else { continue };
+    for (a, b) in strecken(&prims) {
         gesamt += 1;
         if a.dist(b) < p / 48.0 {
             kurz += 1;
@@ -226,5 +254,96 @@ fn schraege_kante_beschneidet_statt_zu_stauchen() {
         kurz * 100 <= gesamt * 25,
         "{kurz} von {gesamt} Strichen sind kürzer als {:.2} mm — Muster gestaucht?",
         p / 48.0
+    );
+}
+
+/// Ein Polygonzug je Reihe statt einer Strecke je Stützpunkt (T0164).
+///
+/// 100 m² Dämmung mit H = 200 mm sind 46 Reihen. Vorher entstand daraus je
+/// Stützpunkt eine eigene Strecke — 144 004 Primitiva, die die Anzeige einzeln
+/// malen musste. Jetzt sind es rund 50 Züge mit derselben Kurve.
+#[test]
+fn daemmung_ist_ein_zug_je_reihe() {
+    let (breite, hoehe, h) = (10000.0, 9000.0, 200.0);
+    let prims = fuellung_mit(&rechteck(breite, hoehe), h);
+    assert!(!prims.is_empty(), "nichts gezeichnet");
+
+    let reihen = (hoehe / h).ceil() as usize + 2;
+    let mut zuge = 0;
+    let mut punkte = 0;
+    for pr in &prims {
+        match &pr.shape {
+            Shape::Poly(pts, closed) => {
+                assert!(!closed, "ein Musterzug ist offen");
+                assert!(pts.len() > 1, "Zug mit einem Punkt");
+                punkte += pts.len();
+                zuge += 1;
+            }
+            // Die Fläche selbst (Füllung ohne Rand) — kein Musterstück.
+            Shape::Fill { .. } | Shape::FillOrdered { .. } => {}
+            _ => panic!("Musterstück ist weder Zug noch Fläche"),
+        }
+    }
+    assert!(
+        zuge <= 2 * reihen,
+        "{zuge} Züge für {reihen} Reihen — Muster wieder je Strecke abgelegt?"
+    );
+    // Die Kurve bleibt vollständig: je Reihe 200 Schlaufen zu 32 Stützpunkten.
+    assert!(
+        punkte > 40 * (breite / (0.5 * h)) as usize,
+        "zu wenige Stützpunkte: {punkte}"
+    );
+}
+
+/// Die Bounding-Box einer Fläche kommt aus der Umgrenzung, nicht aus dem
+/// gezeichneten Muster (T0164).
+///
+/// Vorher wurde für die Box das ganze Muster gerendert — bei 100 m²
+/// Dämmungsschraffur rund 6 ms je Aufruf, und Trefferprüfung und Auswahl
+/// fragen die Box mehrmals je Bild. Das Muster liegt immer **innerhalb** der
+/// Kontur (es wird an ihr beschnitten), die Box ist also dieselbe.
+#[test]
+fn bbox_einer_schraffur_zeichnet_das_muster_nicht() {
+    let kontur = rechteck(10000.0, 9000.0);
+    let mut s = Session::new();
+    s.execute("doc.settings", &json!({ "input_unit": "mm" }))
+        .expect("Eingabe in Millimetern");
+    let a = s
+        .execute(
+            "draw.fill.points",
+            &json!({
+                "boundary": kontur,
+                "pattern": FillPattern::InsulationHatch.key(),
+                "angle": 0.0,
+                "scale": 200.0,
+                "border": false,
+                "layer": "Wände"
+            }),
+        )
+        .expect("Füllfläche");
+    let id = a["created"][0].as_u64().expect("Id");
+    let e = s.doc.ents().iter().find(|e| e.id == id).expect("Objekt");
+
+    let bb = jjcad_core::render::entity_bbox(&s.doc, e);
+    assert!(bb.is_valid(), "keine Bounding-Box");
+    assert!(
+        (bb.min.x).abs() < 1e-9 && (bb.min.y).abs() < 1e-9,
+        "Box beginnt nicht im Ursprung: {:?}",
+        bb.min
+    );
+    assert!(
+        (bb.max.x - 10000.0).abs() < 1e-9 && (bb.max.y - 9000.0).abs() < 1e-9,
+        "Box endet nicht an der Kontur: {:?}",
+        bb.max
+    );
+
+    let t = std::time::Instant::now();
+    for _ in 0..20 {
+        std::hint::black_box(jjcad_core::render::entity_bbox(&s.doc, e));
+    }
+    let ms = t.elapsed().as_secs_f64() * 1000.0;
+    assert!(
+        ms < 20.0,
+        "20 Abfragen der Box dauern {ms:.1} ms — wird das Muster mitgerendert?"
     );
 }

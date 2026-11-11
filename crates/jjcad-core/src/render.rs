@@ -912,6 +912,27 @@ pub fn entity_bbox(doc: &Document, e: &Entity) -> BBox {
     if let EntityKind::Viewport(vp) = &e.kind {
         return vp.rect();
     }
+    // Füllfläche und Volumen: die Ausdehnung ist die Umgrenzung. Das Muster
+    // liegt **innerhalb** der Kontur (es wird an ihr beschnitten), kann die
+    // Bounding-Box also nicht vergrößern. Ohne diesen Zweig wurde für die Box
+    // das ganze Muster gerendert — bei 100 m² Dämmungsschraffur 6 ms je Aufruf,
+    // und Trefferprüfung und Auswahl fragen sie mehrmals je Bild (T0164).
+    // **Nicht** für den Raumstempel: er zeichnet nur seine Beschriftung, und die
+    // darf außerhalb der Umgrenzung stehen.
+    let umgrenzung: Option<(&Vec<Vec2>, &[Vec<Vec2>])> = match &e.kind {
+        EntityKind::Fill { boundary, holes, .. }
+        | EntityKind::Volume { boundary, holes, .. } => Some((boundary, holes.as_slice())),
+        _ => None,
+    };
+    if let Some((boundary, holes)) = umgrenzung {
+        let mut bb = BBox::from_points(boundary);
+        for h in holes.iter() {
+            bb.union(BBox::from_points(h));
+        }
+        if bb.is_valid() {
+            return bb;
+        }
+    }
     let ctx = RenderCtx::for_entity(doc, e);
     let mut dl = DisplayList::default();
     render_entity(&ctx, e, Affine::IDENTITY, &mut dl, 0);
@@ -1878,6 +1899,60 @@ fn muster_linie(
     });
 }
 
+/// Lauf eines Musters als **einen** Polygonzug ablegen (T0164).
+///
+/// Eine Kurve entsteht aus einer dichten Punktfolge. Jede Teilstrecke einzeln
+/// als [`Shape::Line`] abzulegen ergab bei 100 m² Dämmung 144 004 Primitiva —
+/// die Anzeige malt jede Strecke als eigene Form. Als Polygonzug sind es 49
+/// Primitiva mit **derselben** Kurve.
+fn muster_zug_ablegen(dl: &mut DisplayList, e: &Entity, st: &PrimStyle, lauf: &mut Vec<Vec2>) {
+    if lauf.len() >= 2 {
+        dl.push(Prim {
+            shape: Shape::Poly(std::mem::take(lauf), false),
+            style: *st,
+            entity: e.id,
+            layer: e.layer,
+        });
+    } else {
+        lauf.clear();
+    }
+}
+
+/// Eine Kurve an der Kontur beschneiden und **stückweise** als Polygonzüge
+/// ablegen: ein Zug läuft, solange die Kurve im Inneren bleibt, und endet an
+/// jeder Kante. Die Zerlegung in Strecken passiert dabei nicht mehr je
+/// Stützpunkt (`muster_abschnitt`), sondern einmal für den ganzen Zug.
+fn muster_kurve_ablegen(
+    dl: &mut DisplayList,
+    e: &Entity,
+    st: &PrimStyle,
+    kurve: &[Vec2],
+    pts: &[Vec2],
+    holes: &[Vec<Vec2>],
+) {
+    let mut lauf: Vec<Vec2> = Vec::new();
+    for w in kurve.windows(2) {
+        let (a, b) = (w[0], w[1]);
+        let teile = crate::area::clip_line_area(a, b, pts, holes);
+        if teile.is_empty() {
+            // Ganz außerhalb: der laufende Zug endet hier.
+            muster_zug_ablegen(dl, e, st, &mut lauf);
+            continue;
+        }
+        for (q0, q1) in teile {
+            // Setzt das Stück den laufenden Zug fort? Sonst beginnt ein neuer
+            // (Beginn einer Insel oder Wiedereintritt nach einer Lücke).
+            let weiter = lauf.last().map(|p| p.dist(q0) <= 1e-6).unwrap_or(false);
+            if !weiter {
+                muster_zug_ablegen(dl, e, st, &mut lauf);
+                lauf.push(q0);
+            }
+            lauf.push(q1);
+        }
+    }
+    muster_zug_ablegen(dl, e, st, &mut lauf);
+}
+
 /// Eine Strecke an der Kontur beschneiden und als Musterlinie(n) ausgeben.
 fn muster_abschnitt(
     dl: &mut DisplayList,
@@ -2206,14 +2281,11 @@ fn muster_daemmung(
 
     for i in i0..=i1 {
         let v = (i as f64 + 0.5) * h;
-        let mut prev: Option<Vec2> = None;
-        for k in &kurve {
-            let q = r.punkt(k.x, v + k.y);
-            if let Some(a) = prev {
-                muster_abschnitt(dl, e, st, a, q, pts, holes);
-            }
-            prev = Some(q);
-        }
+        // Die Reihe als **ein** Punktzug umrechnen und dann stückweise
+        // ablegen: der Beschnitt trennt an den Kanten, innerhalb einer Reihe
+        // entsteht ein Polygonzug statt einer Strecke je Stützpunkt (T0164).
+        let reihe: Vec<Vec2> = kurve.iter().map(|k| r.punkt(k.x, v + k.y)).collect();
+        muster_kurve_ablegen(dl, e, st, &reihe, pts, holes);
     }
 }
 

@@ -223,6 +223,16 @@ fn stroke_pts(p: &Painter, pts: &[Pos2], w: f32, col: Color32) {
         p.circle_filled(pts[0], (w * 0.5).max(0.4), col);
         return;
     }
+    // Dünne Züge in **einer** Form zeichnen (T0164): eine Kapsel je Strecke
+    // sind bei einer dichten Kurve (Dämmung als Linie, Dämmungsschraffur) über
+    // 100 000 Formen je Bild — egui prüft, kopiert und tesselliert jede einzeln
+    // (gemessen 6,2 ms gegen 2,5 ms je Bild bei 100 m² Dämmung). Unter 2 px
+    // Breite malt `capsule` ohnehin nur eine einfache Strecke, es geht also
+    // nichts verloren.
+    if w < 2.0 {
+        p.add(Shape::line(pts.to_vec(), Stroke::new(w.max(0.4), col)));
+        return;
+    }
     for pair in pts.windows(2) {
         capsule(p, pair[0], pair[1], w, col);
     }
@@ -14756,6 +14766,74 @@ mod tests_ansichtsbereich {
         assert!(
             (danach.center - view.center).len() < 1e-9,
             "die Blattansicht bleibt stehen"
+        );
+    }
+}
+
+#[cfg(test)]
+mod tests_daemmungsschraffur {
+    use super::*;
+
+    const FENSTER: Vec2 = Vec2::new(1500.0, 950.0);
+
+    fn rahmen(ctx: &egui::Context, app: &mut App, zeiger: Option<Pos2>) -> egui::FullOutput {
+        let mut raw = egui::RawInput {
+            screen_rect: Some(Rect::from_min_size(Pos2::ZERO, FENSTER)),
+            ..Default::default()
+        };
+        if let Some(p) = zeiger {
+            raw.events.push(egui::Event::PointerMoved(p));
+        }
+        ctx.run(raw, |ctx| app.ui(ctx))
+    }
+
+    /// Die Dämmungsschraffur ist **ein** Zug je Reihe (T0164).
+    ///
+    /// Vorher entstand je Stützpunkt eine eigene Kapsel: bei 100 m² Dämmung
+    /// 145 000 Formen je Bild. Der Test zählt die Formen eines Bildes und
+    /// verlangt einen langen Zug — eine Rückkehr zur Strecke je Stützpunkt
+    /// lässt ihn sofort fallen.
+    #[test]
+    fn daemmungsschraffur_ist_ein_zug_je_reihe() {
+        let ctx = egui::Context::default();
+        let mut app = App::with_ctx(ctx.clone());
+        assert!(run(
+            &mut app,
+            "draw.fill.points",
+            json!({
+                "boundary": [[0.0, 0.0], [10000.0, 0.0], [10000.0, 9000.0], [0.0, 9000.0]],
+                "pattern": "daemmung",
+                "angle": 0.0,
+                "scale": 200.0,
+                "border": false
+            })
+        ));
+        app.ui.show_grid = false;
+        // Bildschirmkonstante Striche: nur dann ist die Breite unter 2 px und
+        // der Zug wird als **eine** Form gezeichnet (Vorgabe des Nutzers).
+        app.ui.lineweights_scaled = false;
+        app.ui.lineweight_factor = 1.0;
+        // Zwei Bilder: im ersten schwingt das Layout ein.
+        let _ = rahmen(&ctx, &mut app, Some(Pos2::new(700.0, 500.0)));
+        let out = rahmen(&ctx, &mut app, Some(Pos2::new(700.0, 500.0)));
+
+        let mut zuge = 0;
+        let mut laengster = 0;
+        for cs in &out.shapes {
+            if let egui::Shape::Path(p) = &cs.shape {
+                zuge += 1;
+                laengster = laengster.max(p.points.len());
+            }
+        }
+        assert!(
+            laengster > 500,
+            "kein Zug mit vielen Punkten (längster {laengster})"
+        );
+        assert!(zuge > 20, "zu wenige Züge: {zuge}");
+        assert!(
+            out.shapes.len() < 5000,
+            "{} Formen je Bild — wird das Muster wieder je Strecke gezeichnet?",
+            out.shapes.len()
         );
     }
 }
