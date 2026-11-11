@@ -1507,21 +1507,17 @@ pub fn show(app: &mut App, ui: &mut Ui) {
     draw_ghost_zeiger(app, ui.ctx(), rect);
 
     // Eingabe
-    let pointer_pos = ui.ctx().pointer_hover_pos();
     if resp.hovered() && !chat_offen {
-        if let Some(pos) = pointer_pos {
-            // Hover-Highlight (auch im Papierraum — dort auf Schriftfeld/Texten).
-            // Die Schnellauswahl arbeitet **mit** einem Werkzeug: das Objekt,
-            // das der nächste Klick trifft, muss schon vorher hervortreten.
-            if app.tool.is_none() || app.schnellauswahl_aktiv() {
-                if let Some(w) = snapped {
-                    let tol = (8.0 / view_now.zoom).max(0.5);
-                    let h = snap::hit_test(app.doc(), w, tol, None);
-                    app.tab_mut().hover = h;
-                }
-            } else {
-                app.tab_mut().hover = None;
-            }
+        // Hover-Highlight (auch im Papierraum — dort auf Schriftfeld/Texten).
+        // Die Schnellauswahl arbeitet **mit** einem Werkzeug: das Objekt,
+        // das der nächste Klick trifft, muss schon vorher hervortreten.
+        // Das Punktwerkzeug der Maßkette ebenso — es wählt im ersten Schritt
+        // eine bestehende Kette (T0171). Welches Objekt das ist, entscheidet
+        // `hover_ziel`; ohne passendes Werkzeug gibt es keins.
+        if let Some(w) = snapped {
+            let tol = (8.0 / view_now.zoom).max(0.5);
+            let h = hover_ziel(app, w, tol);
+            app.tab_mut().hover = h;
         }
     }
 
@@ -2562,6 +2558,35 @@ fn draw_opening_preview(
     }
 }
 
+/// Zeichnet eine Vorschau-Anzeigeliste in der Akzentfarbe der Vorschau.
+///
+/// Eine Stelle für alle Werkzeuge, deren Vorschau das **fertige** Objekt ist
+/// (Maßkette, Messpunkt an einer Kette, Schnitt-Kote): dieselbe Auswertung wie
+/// die eingefügte Zeichnung (`paint_prim`), nur `preview: true`.
+fn paint_vorschau_dl(
+    app: &App,
+    p: &Painter,
+    view: View,
+    w2s: &dyn Fn(V2) -> Pos2,
+    dl: &render::DisplayList,
+) {
+    let pc = PaintCtx {
+        selected: Vec::new(),
+        hover: None,
+        lineweights: app.ui.lineweights,
+        lineweights_scaled: app.ui.lineweights_scaled,
+        lineweight_factor: app.ui.lineweight_factor as f64,
+        paper_px: view.zoom * app.doc().settings.annotation_scale,
+        preview: true,
+        rot: view.rot as f32,
+        text_deckel: app.prefs.textaufloesung.px(),
+        kurven: kurven_guete(app),
+    };
+    for prim in &dl.prims {
+        paint_prim(p, prim, w2s, view.zoom, &pc, 1.0);
+    }
+}
+
 fn draw_tool_preview(
     app: &mut App,
     p: &Painter,
@@ -3267,21 +3292,7 @@ fn draw_tool_preview(
                     app.doc().current_layer,
                     app.ui.pending.color,
                 );
-                let pc = PaintCtx {
-                    selected: Vec::new(),
-                    hover: None,
-                    lineweights: app.ui.lineweights,
-                    lineweights_scaled: app.ui.lineweights_scaled,
-                    lineweight_factor: app.ui.lineweight_factor as f64,
-                    paper_px: view.zoom * app.doc().settings.annotation_scale,
-                    preview: true,
-                    rot: view.rot as f32,
-                    text_deckel: app.prefs.textaufloesung.px(),
-                    kurven: kurven_guete(app),
-                };
-                for prim in &dl.prims {
-                    paint_prim(p, prim, &w2s, view.zoom, &pc, 1.0);
-                }
+                paint_vorschau_dl(app, p, view, &w2s, &dl);
             }
             if let Some(start) = last {
                 label = format!(
@@ -3289,6 +3300,56 @@ fn draw_tool_preview(
                     unit.format_plain(start.dist(cursor), unit.decimals()),
                     unit.short()
                 );
+            }
+        }
+        // Messpunkt an eine **bestehende** Maßkette hängen bzw. herausnehmen
+        // (T0171): Die Vorschau ist das fertige Objekt — dieselbe Anzeige wie
+        // beim Erzeugen der Kette (`render::preview_dim`), mit dem Punkt am
+        // Zeiger. Ohne sie war vor dem Klick weder zu sehen, wo der Punkt
+        // landet, noch welche Maßzahlen daraus entstehen.
+        "dim.point.add" | "dim.point.remove" => {
+            if let Some(id) = tool.obj {
+                if let Some(e) = app.doc().entity(id) {
+                    if let EntityKind::Dim {
+                        pts,
+                        line_pos,
+                        angle,
+                        ..
+                    } = &e.kind
+                    {
+                        let mut neu = pts.clone();
+                        if tool.action == "dim.point.add" {
+                            neu.push(cursor);
+                        } else if neu.len() > 2 {
+                            // Ohne Index nimmt der Befehl den **nächsten**
+                            // Messpunkt heraus — die Vorschau zeigt genau
+                            // diesen Stand.
+                            let idx = neu
+                                .iter()
+                                .enumerate()
+                                .min_by(|(_, a), (_, b)| {
+                                    a.dist(cursor)
+                                        .partial_cmp(&b.dist(cursor))
+                                        .unwrap_or(std::cmp::Ordering::Equal)
+                                })
+                                .map(|(i, _)| i)
+                                .unwrap_or(0);
+                            neu.remove(idx);
+                        }
+                        // Messreihenfolge wie beim Anlegen: ein seitlich
+                        // gesetzter Punkt wird einsortiert, nicht angehängt.
+                        let neu = render::dim_sortieren(&neu, *angle);
+                        let dl = render::preview_dim(
+                            app.doc(),
+                            &neu,
+                            *line_pos,
+                            *angle,
+                            e.layer,
+                            app.ui.pending.color,
+                        );
+                        paint_vorschau_dl(app, p, view, &w2s, &dl);
+                    }
+                }
             }
         }
         // Grundriss-Kote: Kreis mit Fadenkreuz, Größe wie das eingefügte
@@ -6220,6 +6281,60 @@ pub fn dim_masslinie(tool: &Tool, modus: DimModus) -> Option<V2> {
     }
 }
 
+/// Ist das ein Werkzeug, das **Messpunkte einer bestehenden Maßkette** ändert?
+fn ist_punktwerkzeug(action: &str) -> bool {
+    matches!(action, "dim.point.add" | "dim.point.remove")
+}
+
+/// Maßkette unter dem Zeiger — dieselbe Auswertung für Hervorhebung und Klick.
+///
+/// Getroffen wird über Maßlinie/Maßtext (`snap::hit_test`) oder über einen
+/// Messpunkt: der liegt auf dem Bauteil und ist keine Trefferfläche der
+/// Bemaßung. Beide Wege stehen hier **einmal**, damit die Hervorhebung vor dem
+/// Klick nicht eine andere Kette zeigt als der Klick wählt (T0171).
+pub fn dim_kette_unter_zeiger(app: &App, w: V2, tol: f64) -> Option<Id> {
+    let ist_kette = |id: &Id| {
+        matches!(
+            app.doc().entity(*id).map(|e| &e.kind),
+            Some(EntityKind::Dim { .. })
+        )
+    };
+    snap::hit_test(app.doc(), w, tol, None)
+        .filter(ist_kette)
+        .or_else(|| {
+            app.doc()
+                .ents()
+                .iter()
+                .find(|e| match &e.kind {
+                    EntityKind::Dim { pts, .. } => pts.iter().any(|p| p.dist(w) <= tol),
+                    _ => false,
+                })
+                .map(|e| e.id)
+        })
+}
+
+/// Objekt, das der nächste Klick trifft und deshalb schon unter dem Zeiger
+/// hervortreten muss.
+///
+/// Ohne Werkzeug (und bei der Schnellauswahl) ist das der normale Treffer.
+/// Das Punktwerkzeug der Maßkette wählt im ersten Schritt eine **bestehende
+/// Kette** — ohne Hervorhebung ist vor dem Klick nicht zu sehen, welche gemeint
+/// ist (T0171). Ist die Kette schon gewählt, bleibt es beim normalen Treffer:
+/// sie ist dann ohnehin blau eingefärbt, und ein zweiter Rahmen daneben
+/// verwirrte nur.
+fn hover_ziel(app: &App, w: V2, tol: f64) -> Option<Id> {
+    let Some(tool) = app.tool.as_ref() else {
+        return snap::hit_test(app.doc(), w, tol, None);
+    };
+    if app.schnellauswahl_aktiv() {
+        return snap::hit_test(app.doc(), w, tol, None);
+    }
+    if tool.obj.is_none() && ist_punktwerkzeug(&tool.action) {
+        return dim_kette_unter_zeiger(app, w, tol);
+    }
+    None
+}
+
 /// Klick im Werkzeug. `w` ist der Fangpunkt, `raw` der rohe Zeigerpunkt.
 ///
 /// Fast alle Werkzeuge arbeiten auf dem Fangpunkt. Der Farbeimer braucht den
@@ -6772,42 +6887,23 @@ fn tool_click_at(app: &mut App, w: V2, raw: V2) {
         // ohne neuen ersten Klick; Enter beendet.
         "dim.point.add" | "dim.point.remove" => {
             let tol = (8.0 / app.current_view().zoom).max(0.5);
-            let treffer = |id: &Id| {
-                matches!(
-                    app.doc().entity(*id).map(|e| &e.kind),
-                    Some(EntityKind::Dim { .. })
-                )
-            };
             match tool.obj {
                 // Schritt 1: welche Maßkette? Treffer auf Maßlinie/Maßtext
                 // oder an einem ihrer Messpunkte — der Punkt selbst liegt auf
                 // dem Bauteil und ist keine Trefferfläche der Bemaßung.
-                None => {
-                    let ziel = snap::hit_test(app.doc(), w, tol, None)
-                        .filter(treffer)
-                        .or_else(|| {
-                            app.doc()
-                                .ents()
-                                .iter()
-                                .find(|e| match &e.kind {
-                                    EntityKind::Dim { pts, .. } => {
-                                        pts.iter().any(|p| p.dist(w) <= tol)
-                                    }
-                                    _ => false,
-                                })
-                                .map(|e| e.id)
-                        });
-                    match ziel {
-                        Some(id) => {
-                            tool.obj = Some(id);
-                            app.session_mut().select(vec![id]);
-                            app.tool = Some(tool);
-                        }
-                        None => {
-                            app.toast(jjcad_core::i18n::tr("gui.canvas.masskette_waehlen"));
-                        }
+                // Dieselbe Auswertung hebt die Kette vorher hervor
+                // (`hover_ziel`), sonst zeigte der Hover eine andere als der
+                // Klick wählt.
+                None => match dim_kette_unter_zeiger(app, w, tol) {
+                    Some(id) => {
+                        tool.obj = Some(id);
+                        app.session_mut().select(vec![id]);
+                        app.tool = Some(tool);
                     }
-                }
+                    None => {
+                        app.toast(jjcad_core::i18n::tr("gui.canvas.masskette_waehlen"));
+                    }
+                },
                 // Schritt 2: der Messpunkt.
                 Some(id) => {
                     let action = tool.action.clone();
@@ -15448,6 +15544,247 @@ mod tests_culling {
     }
 }
 
+
+#[cfg(test)]
+mod tests_masspunkt_vorschau {
+    //! T0171: Beim Ändern der Messpunkte einer **bestehenden** Maßkette zeigt
+    //! die Zeichenfläche das fertige Objekt als Vorschau — dieselbe Anzeige wie
+    //! beim Erzeugen (`render::preview_dim`), mit dem Punkt am Zeiger. Und die
+    //! Kette tritt schon vor dem ersten Klick hervor, damit zu sehen ist,
+    //! welche gemeint ist.
+
+    use super::*;
+    use jjcad_core::units::Unit;
+
+    const RECT: Rect = Rect {
+        min: Pos2::new(0.0, 0.0),
+        max: Pos2::new(1200.0, 800.0),
+    };
+
+    /// Maßkette 0 … 5 m mit der Maßlinie 500 mm darunter.
+    fn app() -> App {
+        let mut app = App::with_ctx(egui::Context::default());
+        app.doc_mut().settings.input_unit = Unit::Mm;
+        app.session_mut()
+            .execute(
+                "dim.chain",
+                &json!({"pts": [[0.0, 0.0], [2000.0, 0.0], [5000.0, 0.0]],
+                        "line_pos": [1000.0, -500.0], "axis": "x"}),
+            )
+            .expect("Maßkette");
+        app
+    }
+
+    fn kette_id(app: &App) -> Id {
+        app.doc()
+            .ents()
+            .iter()
+            .find(|e| matches!(e.kind, EntityKind::Dim { .. }))
+            .map(|e| e.id)
+            .expect("keine Maßkette")
+    }
+
+    /// Linienformen einer gezeichneten Bildliste (Strecken der Anzeige).
+    fn strecken(shape: &Shape) -> Option<(Pos2, Pos2)> {
+        match shape {
+            Shape::LineSegment { points, .. } => Some((points[0], points[1])),
+            _ => None,
+        }
+    }
+
+    /// Strecken, die die Vorschau des Werkzeugs malt — auf halbe Pixel
+    /// gerundet, damit sie mit der gezeichneten Anzeige vergleichbar sind.
+    fn vorschau_strecken(app: &mut App, zeiger: V2) -> Vec<(i64, i64, i64, i64)> {
+        let view = app.current_view();
+        let ctx = app.ctx.clone();
+        let out = ctx.run(egui::RawInput::default(), |ctx| {
+            let layer = egui::LayerId::new(egui::Order::Background, egui::Id::new("masspunkt"));
+            let p = egui::Painter::new(ctx.clone(), layer, Rect::EVERYTHING);
+            draw_tool_preview(app, &p, RECT, view, Some(zeiger), Some(zeiger));
+        });
+        let mut v: Vec<(i64, i64, i64, i64)> = out
+            .shapes
+            .iter()
+            .filter_map(|cs| strecken(&cs.shape))
+            .map(|(a, b)| runden(a, b))
+            .collect();
+        v.sort();
+        v
+    }
+
+    /// Strecken der **gezeichneten** Maßkette (dieselbe Anzeige wie auf dem
+    /// Schirm, nur ohne Vorschau-Farbe).
+    fn zeichnung_strecken(app: &mut App) -> Vec<(i64, i64, i64, i64)> {
+        let view = app.current_view();
+        let ctx = app.ctx.clone();
+        let dl = display_list(app);
+        let lineweights = app.ui.lineweights;
+        let lineweights_scaled = app.ui.lineweights_scaled;
+        let lineweight_factor = app.ui.lineweight_factor as f64;
+        let paper_px = view.zoom * app.doc().settings.annotation_scale;
+        let text_deckel = app.prefs.textaufloesung.px();
+        let kurven = kurven_guete(app);
+        let out = ctx.run(egui::RawInput::default(), |ctx| {
+            let layer = egui::LayerId::new(egui::Order::Background, egui::Id::new("kette"));
+            let p = egui::Painter::new(ctx.clone(), layer, Rect::EVERYTHING);
+            let pc = PaintCtx {
+                selected: Vec::new(),
+                hover: None,
+                lineweights,
+                lineweights_scaled,
+                lineweight_factor,
+                paper_px,
+                preview: false,
+                rot: view.rot as f32,
+                text_deckel,
+                kurven,
+            };
+            let w2s = |q: V2| world_to_screen(RECT, view, q);
+            for prim in &dl.prims {
+                paint_prim(&p, prim, &w2s, view.zoom, &pc, 1.0);
+            }
+        });
+        let mut v: Vec<(i64, i64, i64, i64)> = out
+            .shapes
+            .iter()
+            .filter_map(|cs| strecken(&cs.shape))
+            .map(|(a, b)| runden(a, b))
+            .collect();
+        v.sort();
+        v
+    }
+
+    fn runden(a: Pos2, b: Pos2) -> (i64, i64, i64, i64) {
+        let r = |v: f32| (v as f64 * 2.0).round() as i64;
+        (r(a.x), r(a.y), r(b.x), r(b.y))
+    }
+
+    fn messpunkte(app: &App) -> Vec<V2> {
+        let e = app.doc().entity(kette_id(app)).expect("Maßkette").clone();
+        match e.kind {
+            EntityKind::Dim { pts, .. } => pts,
+            _ => unreachable!(),
+        }
+    }
+
+    /// Der Punkt am Zeiger gehört zur Vorschau — und nach dem Klick steht
+    /// genau diese Kette in der Zeichnung.
+    #[test]
+    fn vorschau_zeigt_die_kette_mit_dem_punkt_am_zeiger() {
+        let mut app = app();
+        let id = kette_id(&app);
+        app.start_tool("dim.point.add");
+        // Erster Klick wählt die Kette (hier ihre Maßlinie).
+        tool_click(&mut app, V2::new(1000.0, -500.0));
+        assert_eq!(
+            app.tool.as_ref().and_then(|t| t.obj),
+            Some(id),
+            "der erste Klick muss die Maßkette wählen"
+        );
+
+        let vorher = zeichnung_strecken(&mut app);
+        let vorschau = vorschau_strecken(&mut app, V2::new(3000.0, 0.0));
+        assert!(
+            vorschau.len() > vorher.len(),
+            "die Vorschau muss die Kette **mit** dem Zeigerpunkt zeigen: \
+             {} Strecken gegen {} der Kette",
+            vorschau.len(),
+            vorher.len()
+        );
+
+        tool_click(&mut app, V2::new(3000.0, 0.0));
+        assert_eq!(messpunkte(&app).len(), 4, "der Punkt kommt in die Kette");
+        assert_eq!(
+            vorschau,
+            zeichnung_strecken(&mut app),
+            "die Vorschau muss dieselbe Kette zeigen, die der Klick anlegt"
+        );
+    }
+
+    /// „Punkt entfernen“ zeigt die Kette **ohne** den Punkt, den der Klick
+    /// herausnimmt — ebenfalls deckungsgleich mit dem Ergebnis.
+    #[test]
+    fn vorschau_beim_entfernen_zeigt_die_kuerzere_kette() {
+        let mut app = app();
+        let id = kette_id(&app);
+        app.start_tool("dim.point.remove");
+        tool_click(&mut app, V2::new(1000.0, -500.0));
+        assert_eq!(app.tool.as_ref().and_then(|t| t.obj), Some(id));
+
+        let vorschau = vorschau_strecken(&mut app, V2::new(2000.0, 0.0));
+        tool_click(&mut app, V2::new(2000.0, 0.0));
+        assert_eq!(messpunkte(&app).len(), 2, "ein Punkt weniger");
+        assert_eq!(
+            vorschau,
+            zeichnung_strecken(&mut app),
+            "die Vorschau zeigt die Kette ohne den entfernten Punkt"
+        );
+    }
+
+    /// Ohne gewählte Kette gibt es nichts vorzuzeigen.
+    #[test]
+    fn ohne_gewaehlte_kette_keine_vorschau() {
+        let mut app = app();
+        app.start_tool("dim.point.add");
+        assert!(
+            vorschau_strecken(&mut app, V2::new(3000.0, 0.0)).is_empty(),
+            "vor der Kettenwahl darf keine Vorschau stehen"
+        );
+    }
+
+    /// Die Kette tritt schon vor dem Klick hervor — und nur die Kette.
+    #[test]
+    fn hover_hebt_die_masskette_vor_dem_klick_hervor() {
+        let mut app = app();
+        let id = kette_id(&app);
+        app.start_tool("dim.point.add");
+
+        assert_eq!(
+            hover_ziel(&app, V2::new(2500.0, -500.0), 20.0),
+            Some(id),
+            "auf der Maßlinie muss die Kette hervortreten"
+        );
+        assert_eq!(
+            hover_ziel(&app, V2::new(5000.0, 0.0), 20.0),
+            Some(id),
+            "auch ein Messpunkt wählt die Kette"
+        );
+        assert_eq!(
+            hover_ziel(&app, V2::new(2500.0, 5000.0), 20.0),
+            None,
+            "neben der Kette keine Hervorhebung"
+        );
+
+        // Ein anderes Objekt unter dem Zeiger wird **nicht** hervorgehoben:
+        // das Werkzeug meint nur Maßketten.
+        app.session_mut()
+            .execute("draw.line", &json!({"a": [0.0, 3000.0], "b": [6000.0, 3000.0]}))
+            .expect("Linie");
+        assert_eq!(
+            hover_ziel(&app, V2::new(2500.0, 3000.0), 20.0),
+            None,
+            "eine Linie ist keine Maßkette"
+        );
+
+        // Ist die Kette gewählt, ist sie ohnehin blau — kein zweiter Rahmen.
+        let mut t = app.tool.clone().expect("Werkzeug läuft");
+        t.obj = Some(id);
+        app.tool = Some(t);
+        assert_eq!(
+            hover_ziel(&app, V2::new(2500.0, -500.0), 20.0),
+            None,
+            "nach der Wahl bleibt es beim normalen Treffer"
+        );
+    }
+
+    /// Ohne Werkzeug bleibt die Hervorhebung, wie sie war (jedes Objekt).
+    #[test]
+    fn ohne_werkzeug_hebt_das_uebliche_objekt_hervor() {
+        let mut app = app();
+        let id = kette_id(&app);
+        assert_eq!(hover_ziel(&app, V2::new(2500.0, -500.0), 20.0), Some(id));
+    }
+}
 
 #[cfg(test)]
 mod tests_kurventoleranz {
