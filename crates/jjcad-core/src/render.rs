@@ -906,11 +906,122 @@ pub fn preview_dim(
     dl
 }
 
+/// Form, die die Dämmungslinie abfährt — dieselbe, die der Renderer ablegt.
+///
+/// Der Weg des Schlaufenbandes entsteht aus dieser Form (`band_pfad`), also
+/// liefert sie hier denselben Weg wie beim Zeichnen. Gebraucht wird sie für die
+/// Bounding-Box der Dämmung, die das Band **nicht** mehr rendert (T0168).
+///
+/// `None` für Formen ohne Linie und für die Wand: ihr Band liegt auf der
+/// Wandmitte, die Ausdehnung ist ohnehin der Wandkörper.
+fn daemmung_form(e: &Entity) -> Option<Shape> {
+    Some(match &e.kind {
+        EntityKind::Line { a, b } => Shape::Line(*a, *b),
+        EntityKind::Polyline { verts, closed } => {
+            Shape::Poly(verts.iter().map(|v| v.p).collect(), *closed)
+        }
+        EntityKind::Spline { verts, closed } => {
+            let sp = Spline {
+                verts: verts.clone(),
+                closed: *closed,
+            };
+            let pts = sp.flatten(SPLINE_TOL_MM);
+            if pts.len() < 2 {
+                return None;
+            }
+            Shape::Poly(pts, *closed)
+        }
+        EntityKind::Arc { c, r, a0, a1 } => Shape::Arc {
+            c: *c,
+            r: *r,
+            a0: *a0,
+            a1: *a1,
+        },
+        EntityKind::Circle { c, r } => Shape::Circle { c: *c, r: *r },
+        EntityKind::Ellipse { c, rx, ry, rot } => Shape::Ellipse {
+            c: *c,
+            rx: *rx,
+            ry: *ry,
+            rot: *rot,
+        },
+        EntityKind::EllipseArc {
+            c,
+            rx,
+            ry,
+            rot,
+            a0,
+            a1,
+        } => Shape::EllipseArc {
+            c: *c,
+            rx: *rx,
+            ry: *ry,
+            rot: *rot,
+            a0: *a0,
+            a1: *a1,
+        },
+        _ => return None,
+    })
+}
+
+/// Hülle einer Dämmungslinie: der Weg, je Strecke um die halbe Bandhöhe quer
+/// versetzt.
+///
+/// Das Band entsteht streckenweise ([`crate::daemmung::band`]): jeder Punkt
+/// liegt auf seiner Strecke, quer dazu um höchstens `H/2` versetzt. Die Hülle
+/// ist deshalb die Vereinigung der Streckenkästen, jeder nur in **Querrichtung**
+/// um `H/2` gewachsen — das Band selbst wird dafür nicht gerechnet. Vorher
+/// kostete eine Abfrage bei 100 m² Dämmung 3 ms, und Fang und Trefferprüfung
+/// fragen die Box je Bild mehrfach (T0164 hat dasselbe für die Schraffur
+/// behoben).
+///
+/// Gewachsen wird in x und y nur um den Anteil der Querrichtung, nicht rundum:
+/// eine waagerechte Linie wird nur in y höher. Eine runde Hülle machte die
+/// Zeichnung um `H/2` breiter, und `Document::bbox` bestimmt die Größe von PNG
+/// und PDF.
+fn daemmung_huelle(doc: &Document, e: &Entity) -> Option<BBox> {
+    let (pfad, geschlossen) = band_pfad(&daemmung_form(e)?)?;
+    if pfad.len() < 2 {
+        return None;
+    }
+    let h2 = doc.effective_loop_width(e) * 0.5;
+    let kanten = if geschlossen {
+        pfad.len()
+    } else {
+        pfad.len() - 1
+    };
+    let mut bb = BBox::EMPTY;
+    for i in 0..kanten {
+        let (a, b) = (pfad[i], pfad[(i + 1) % pfad.len()]);
+        let d = b - a;
+        let l = d.len();
+        if l < 1e-9 {
+            bb.union(BBox::from_points(&[a]));
+            continue;
+        }
+        let quer = d.perp() * (1.0 / l);
+        let mut kasten = BBox::from_points(&[a, b]);
+        let versatz = Vec2::new(quer.x.abs() * h2, quer.y.abs() * h2);
+        kasten.min = kasten.min - versatz;
+        kasten.max = kasten.max + versatz;
+        bb.union(kasten);
+    }
+    bb.is_valid().then_some(bb)
+}
+
 pub fn entity_bbox(doc: &Document, e: &Entity) -> BBox {
     // Ansichtsfenster: die Fläche ist das Rechteck, auch wenn der Rahmen
     // abgeschaltet ist (dann zeichnet der Renderer nichts).
     if let EntityKind::Viewport(vp) = &e.kind {
         return vp.rect();
+    }
+    // Dämmung als Linie (T0168): die Linienart legt ein Schlaufenband ab, das
+    // um die halbe Dämmstärke quer zum Weg versetzt liegt. Für die Box wird das
+    // Band **nicht** gerechnet — bei 100 m² Dämmung kostete eine Abfrage 3 ms,
+    // und Fang und Trefferprüfung fragen sie je Bild mehrfach.
+    if doc.effective_line_type(e) == LineType::Insulation {
+        if let Some(bb) = daemmung_huelle(doc, e) {
+            return bb;
+        }
     }
     // Füllfläche und Volumen: die Ausdehnung ist die Umgrenzung. Das Muster
     // liegt **innerhalb** der Kontur (es wird an ihr beschnitten), kann die

@@ -1850,6 +1850,14 @@ fn hit_test_opt(
         if !b.is_valid() {
             continue;
         }
+        // Vorprüfung über die Ausdehnung (T0168): jede Trefferfläche dieses
+        // Objekts liegt **in** seiner Box, ein Punkt weiter als der Fangradius
+        // davon entfernt kann also nichts treffen. Ohne diese Zeile wurde für
+        // jede Dämmungslinie der Zeichnung das Schlaufenband gerechnet, auch
+        // für die weit entfernten (bei 100 m² Dämmung 4,7 ms je Klick).
+        if !b.expanded(tol).contains(p) {
+            continue;
+        }
         // Bemaßung: der Maßtext ist Teil des sichtbaren Bereichs und zählt wie
         // ein Text als Fläche; die Maßlinie trifft über die Segmente
         // (`entity_segments` liefert seit T0052 die gezeichnete Geometrie).

@@ -481,6 +481,21 @@ Mit dem Nutzer abgestimmt — nicht „verbessern“:
   Raumstempel bleibt der Renderweg, weil er nur seine Beschriftung zeichnet.
   Die Anzeige malt dünne Züge (unter 2 px) als **eine** Form
   (`canvas::stroke_pts`), Kapseln je Strecke erst darüber.
+  **Dämmung als Linie (T0168)**: Die Linienart `LineType::Insulation` legt je
+  Linie ein Schlaufenband ab (10 m bei H = 200 mm sind 2500 Punkte). Drei
+  Stellen waren darauf nicht vorbereitet: `render::entity_bbox` rechnet die Box
+  aus dem **Weg** (`daemmung_huelle`: je Strecke um H/2 quer versetzt), nicht
+  aus dem Band — Fang und Trefferprüfung fragen sie je Bild mehrfach
+  (2,9 ms → 0,0 ms je Abfrage); `snap::hit_test` prüft erst die Ausdehnung,
+  bevor es das Band eines Objekts rendert (7,4 → 0,1 ms je Klick); und
+  `canvas::stroke_pts` malt einen **dichten** Zug (ab `DICHTER_ZUG_PUNKTE` =
+  128 Punkten) auch bei breitem Strich als eine Form mit zwei Kreisen für die
+  runden Enden — hervorgehoben oder ausgewählt entstand sonst je Strecke eine
+  Kapsel (17,3 → 1,3 ms Bildzeit bei 100 m² Dämmung). Die Hülle wächst nur in
+  Querrichtung, nicht rundum: eine runde Hülle machte die Zeichnung um H/2
+  breiter, und `Document::bbox` bestimmt die Größe von PNG und PDF.
+  Prüfweg: `cargo test -p jjcad-core --test daemmung_linie` und
+  `cargo test -p jjcad-gui hervorgehobene_daemmungslinie`.
   **Ausnahme Wand (T0161)**: In einer Wand zeichnet die Schraffur „Dämmung“
   **kein** Muster, sondern **eine** Linie mit der Linienart „Dämmung“ auf der
   Wandmitte (Bandhöhe = Wanddicke, je Wandstück eine). Die parallelen Bänder
