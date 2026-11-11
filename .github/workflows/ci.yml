@@ -12,7 +12,10 @@ env:
 jobs:
   build-und-test:
     name: Bauen und testen (Linux)
-    runs-on: ubuntu-latest
+    # Feste Image-Version: `ubuntu-latest` sprang am 11.11.2026 auf 26.04, dort
+    # hing `apt-get update` an nicht erreichbaren Mirrors und der Lauf brach in
+    # den Systempaketen ab.
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
 
@@ -21,7 +24,7 @@ jobs:
       # Systemschriften (Liberation, Quicksand) und prüft das auch.
       - name: Systempakete
         run: |
-          sudo apt-get update
+          sudo apt-get update || sudo apt-get update
           sudo apt-get install -y --no-install-recommends \
             libxkbcommon-dev libwayland-dev libx11-dev libgl1-mesa-dev \
             fonts-liberation fonts-liberation-sans-narrow fonts-quicksand
