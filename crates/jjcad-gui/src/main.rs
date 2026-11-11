@@ -8,6 +8,7 @@ mod app;
 mod bildablage;
 mod canvas;
 mod chat;
+mod culling;
 mod diag;
 mod dialogs;
 mod ghost;

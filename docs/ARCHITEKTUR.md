@@ -287,6 +287,19 @@ der Oberfläche. Ein kopiertes Verzeichnis wird über `--daten-dir` geöffnet.
   einer Pause nichts gerechnet wurde. Die Zerlegung je Grafikelement ist nur bei
   offener Anzeige aktiv (eine Uhr je Element).
 
+- **Culling (T0167):** Beim Zeichnen prüft `crates/jjcad-gui/src/culling.rs` je
+  Grafikelement, ob seine Ausdehnung den Bereich schneidet, in dem gezeichnet
+  wird (`Prim::bbox` → Bildschirmhülle gegen die Zeichenfläche). Was vollständig
+  außerhalb liegt, wird **nicht** gemalt; die Displayliste selbst bleibt
+  unverändert und vollständig, PDF und PNG geben weiterhin jedes Objekt aus.
+  Die Prüfung ist gutmütig: bei gedrehter Ansicht zählt die achsenparallele
+  Hülle, und ein Rand aus halber Strichbreite deckt dicke Linien ab — ein Fehler
+  in der Rechnung darf nur **mehr** zeichnen, nie weniger. Der Prüfbetrieb in der
+  Leistungsanzeige (Umschalt+F3, Haken „Bereich verkleinern“) schrumpft den
+  Bereich um 12,5 % je Seite (Kantenlänge 75 %), zeigt seine Grenze als lila
+  Rechteck und nennt in der Anzeige, wie viele Grafikelemente gezeichnet und wie
+  viele verworfen wurden.
+
 ## Ausgabe
 
 - **PDF:** eigener Schreiber (kein Fremdpaket): Content-Streams, Helvetica mit

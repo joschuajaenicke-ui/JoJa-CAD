@@ -1775,6 +1775,10 @@ abschnitte = "Sections"
 jetzt = "  now"
 anteil = " share"
 bilder_ms = "Frames (ms)"
+culling = "Culling"
+culling_bereich_verkleinern = "Shrink area"
+culling_x_von_y_gezeichnet = "Culling: {gezeichnet} of {gesamt} drawn · {verworfen} culled"
+hinweis_culling_bereich = "Draws only the area outlined in purple — for checking the culling"
 x_objekte = "{wert1} objects"
 
 [gui.widgets]

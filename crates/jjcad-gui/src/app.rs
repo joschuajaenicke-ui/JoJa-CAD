@@ -1933,6 +1933,12 @@ impl App {
                 "keymap" => self.ui.keymap_open = true,
                 // Leistungsanzeige offen (Screenshot-Prüfung T0068)
                 "perf" | "leistung" => self.perf.an = true,
+                // Culling-Prüfbetrieb (Screenshot-Prüfung T0167): Anzeige offen
+                // und der Bereich um ein Viertel kleiner.
+                "culling" => {
+                    self.perf.an = true;
+                    self.perf.culling_verkleinern = true;
+                }
                 // Chat-Protokoll mit Beispielmeldungen (Screenshot-Prüfung)
                 "chat" => {
                     for t in [

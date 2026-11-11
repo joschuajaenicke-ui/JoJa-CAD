@@ -365,6 +365,23 @@ fn bild_mesh(
     Shape::mesh(mesh)
 }
 
+/// Culling (T0167): Liegt das Grafikelement **vollständig** außerhalb des
+/// Bereichs, in dem gezeichnet wird?
+///
+/// Der Rand ist die halbe Strichbreite in Pixeln plus ein Zuschlag für die
+/// Kantenglättung: eine Linie ragt über ihre Mittellinie hinaus, und bei
+/// „Papier (maßstabsgetreu)“ kann die Strichbreite mit dem Zoom groß werden.
+fn verworfen(prim: &Prim, w2s: &dyn Fn(V2) -> Pos2, bereich: Rect, pc: &PaintCtx) -> bool {
+    let breite = linienbreite_px(
+        prim.style.width,
+        pc.paper_px,
+        pc.lineweights_scaled,
+        pc.lineweight_factor,
+    );
+    let rand = (breite.max(1.6) * 0.5 + 3.0) as f32;
+    crate::culling::ausserhalb(&prim.bbox(), w2s, bereich, rand)
+}
+
 fn paint_prim(p: &Painter, prim: &Prim, w2s: &dyn Fn(V2) -> Pos2, scale: f64, pc: &PaintCtx, alpha: f32) {
     let is_sel = !pc.preview && pc.selected.contains(&prim.entity) && prim.entity != 0;
     let is_hover = !pc.preview && pc.hover == Some(prim.entity) && prim.entity != 0 && !is_sel;
@@ -1337,6 +1354,15 @@ pub fn show(app: &mut App, ui: &mut Ui) {
         app.perf.abschnitt(Abschnitt::Zeichnen);
         // Druckvorschau: Blatt, Ansichtsfenster und Papierraum-Objekte.
         draw_sheet(app, &painter, rect, view_now, snapped);
+        // Prüfbetrieb: das lila Rechteck zeigt die Grenze des Cullings (T0167).
+        if app.perf.an {
+            let cull = crate::culling::bereich(rect, app.perf.culling_verkleinern);
+            painter.rect_stroke(
+                cull.shrink(1.0),
+                0.0,
+                Stroke::new(1.5, crate::culling::FARBE),
+            );
+        }
         app.perf.abschnitt(Abschnitt::Bedienung);
         // Danach dieselbe Bedien-Darstellung wie im Zeichenmodus — Werkzeug,
         // Griffe, Einfüge-Vorschau, Auswahlfenster und Fadenkreuz-Zeiger.
@@ -1392,20 +1418,38 @@ pub fn show(app: &mut App, ui: &mut Ui) {
             draw_grid(app, &painter, rect, view_now);
         }
         let w2s = |p: V2| world_to_screen(rect, view_now, p);
+        // Culling (T0167): Der Bereich, in dem gezeichnet wird. Der Prüfbetrieb
+        // der Leistungsanzeige verkleinert ihn, damit man das Wegfallen sieht.
+        let cull = crate::culling::bereich(rect, app.perf.culling_verkleinern);
         if app.perf.an {
             // Offene Leistungsanzeige: je Grafikelement die Zeit messen, damit
             // sich „Zeichnen“ nach Füllung, Linie und Text aufteilen lässt. Die
             // Uhr je Element kostet selbst Zeit — deshalb nur bei offener
             // Anzeige.
             for prim in &dl.prims {
+                if verworfen(prim, &w2s, cull, &pc) {
+                    app.perf.grafikelement_verworfen();
+                    continue;
+                }
                 let t = std::time::Instant::now();
                 paint_prim(&painter, prim, &w2s, view_now.zoom, &pc, 1.0);
                 app.perf.grafikelement(prim, t.elapsed());
             }
         } else {
             for prim in &dl.prims {
+                if verworfen(prim, &w2s, cull, &pc) {
+                    continue;
+                }
                 paint_prim(&painter, prim, &w2s, view_now.zoom, &pc, 1.0);
             }
+        }
+        // Prüfbetrieb: das lila Rechteck zeigt die Grenze des Cullings.
+        if app.perf.an {
+            painter.rect_stroke(
+                cull.shrink(1.0),
+                0.0,
+                Stroke::new(1.5, crate::culling::FARBE),
+            );
         }
         // Blockeditor: Basispunkt und Hinweis, wo man zeichnet (T0137).
         if is_block {
@@ -1762,6 +1806,8 @@ fn draw_sheet(app: &mut App, p: &Painter, rect: Rect, view: View, cursor: Option
     ));
     p.add(Shape::convex_polygon(ecken.to_vec(), Palette::paper(), Stroke::NONE));
     let w2s = |q: V2| world_to_screen(rect, view, q);
+    // Culling (T0167): Bereich, in dem gezeichnet wird.
+    let cull = crate::culling::bereich(rect, app.perf.culling_verkleinern);
 
     // 1. Inhalt der Ansichtsfenster (liegt unter dem Papierraum)
     for (_, vp) in sheet.viewports() {
@@ -1793,7 +1839,14 @@ fn draw_sheet(app: &mut App, p: &Painter, rect: Rect, view: View, cursor: Option
             rot: 0.0,
             text_deckel: app.prefs.textaufloesung.px(),
         };
+        // Culling (T0167): was außerhalb der Zeichenfläche liegt, wird nicht
+        // gezeichnet. Geprüft wird gegen die **Fläche**, nicht gegen den
+        // Fensterrahmen — der ist bei gedrehter Ansicht eine Hülle, und ein
+        // Fehler dort dürfte nur mehr zeichnen, nie weniger.
         for prim in &vdl.prims {
+            if verworfen(prim, &vp_w2s, cull, &vpc) {
+                continue;
+            }
             paint_prim(&clip, prim, &vp_w2s, view.zoom * s, &vpc, 1.0);
         }
     }
@@ -1843,6 +1896,9 @@ fn draw_sheet(app: &mut App, p: &Painter, rect: Rect, view: View, cursor: Option
     let mut dl = render::render_sheet(app.doc(), &sheet);
     ohne_texteingabe(app, &mut dl);
     for prim in &dl.prims {
+        if verworfen(prim, &w2s, cull, &pc) {
+            continue;
+        }
         paint_prim(p, prim, &w2s, view.zoom, &pc, 1.0);
     }
 
@@ -14978,3 +15034,224 @@ mod tests_daemmungslinie {
         );
     }
 }
+
+#[cfg(test)]
+mod tests_culling {
+    //! T0167: Culling — was vollständig außerhalb der Ansicht liegt, wird nicht
+    //! gezeichnet. Geprüft wird am gemessenen Bild: die Zähler der
+    //! Leistungsanzeige nennen gezeichnete und verworfene Grafikelemente, das
+    //! lila Prüfrechteck liegt im Bild, und der Haken im Streifen schaltet den
+    //! verkleinerten Bereich.
+
+    use super::*;
+
+    const FENSTER: Vec2 = Vec2::new(1500.0, 950.0);
+
+    fn rahmen(ctx: &egui::Context, app: &mut App) -> egui::FullOutput {
+        let raw = egui::RawInput {
+            screen_rect: Some(Rect::from_min_size(Pos2::ZERO, FENSTER)),
+            ..Default::default()
+        };
+        app.perf.bild_beginnen();
+        let out = ctx.run(raw, |ctx| app.ui(ctx));
+        app.perf.bild_beenden();
+        out
+    }
+
+    /// Zwei Bilder: im ersten schwingt das Layout ein.
+    fn zwei_rahmen(ctx: &egui::Context, app: &mut App) -> egui::FullOutput {
+        let _ = rahmen(ctx, app);
+        rahmen(ctx, app)
+    }
+
+    /// App mit **fester** Ansicht: die ersten Bilder passen die Zeichnung sonst
+    /// selbst ein, und eine in Bildschirmkoordinaten gelegte Linie läge danach
+    /// woanders.
+    fn app_mit_fester_ansicht() -> (egui::Context, App) {
+        let ctx = egui::Context::default();
+        let mut app = App::with_ctx(ctx.clone());
+        let _ = rahmen(&ctx, &mut app);
+        // Kein selbsttätiges Einpassen mehr (wie in den Demo-Zuständen).
+        app.started_at = 3.0;
+        app.set_view(View {
+            center: V2::new(0.0, 0.0),
+            zoom: 0.5,
+            rot: 0.0,
+        });
+        let _ = rahmen(&ctx, &mut app);
+        (ctx, app)
+    }
+
+    /// Gerade in Bildschirmkoordinaten anlegen — so ist die Lage im Bild exakt
+    /// bekannt, unabhängig von Zoom und Ausschnitt.
+    fn linie_im_bild(app: &mut App, a: Pos2, b: Pos2) {
+        let rect = app.ui.last_canvas;
+        let view = app.current_view();
+        // `draw.line` erwartet die Eingabeeinheit der Zeichnung (Vorgabe Meter),
+        // `screen_to_world` liefert Millimeter.
+        let u = app.unit();
+        let (wa, wb) = (
+            screen_to_world(rect, view, a),
+            screen_to_world(rect, view, b),
+        );
+        assert!(
+            run(
+                app,
+                "draw.line",
+                json!({
+                    "a": [u.from_mm(wa.x), u.from_mm(wa.y)],
+                    "b": [u.from_mm(wb.x), u.from_mm(wb.y)]
+                })
+            ),
+            "Linie konnte nicht angelegt werden"
+        );
+    }
+
+    fn klick(ctx: &egui::Context, app: &mut App, pos: Pos2) {
+        for pressed in [true, false] {
+            let raw = egui::RawInput {
+                screen_rect: Some(Rect::from_min_size(Pos2::ZERO, FENSTER)),
+                events: vec![
+                    egui::Event::PointerMoved(pos),
+                    egui::Event::PointerButton {
+                        pos,
+                        button: egui::PointerButton::Primary,
+                        pressed,
+                        modifiers: egui::Modifiers::NONE,
+                    },
+                ],
+                ..Default::default()
+            };
+            app.perf.bild_beginnen();
+            let _ = ctx.run(raw, |ctx| app.ui(ctx));
+            app.perf.bild_beenden();
+        }
+    }
+
+    /// Das lila Prüfrechteck aus dem Bild (falls es eines gibt).
+    fn pruefrechteck(out: &egui::FullOutput) -> Option<Rect> {
+        out.shapes.iter().find_map(|cs| match &cs.shape {
+            egui::Shape::Rect(r) if r.stroke.color == crate::culling::FARBE => Some(r.rect),
+            _ => None,
+        })
+    }
+
+    #[test]
+    fn objekt_ausserhalb_der_ansicht_wird_nicht_gezeichnet() {
+        let (ctx, mut app) = app_mit_fester_ansicht();
+        let rect = app.ui.last_canvas;
+        linie_im_bild(
+            &mut app,
+            Pos2::new(rect.left() + 300.0, rect.center().y),
+            Pos2::new(rect.right() - 300.0, rect.center().y),
+        );
+        app.perf.an = true;
+        let _ = zwei_rahmen(&ctx, &mut app);
+        let innen = app.perf.letztes().expect("Bild gemessen");
+        assert_eq!(innen.grafikelemente, 1, "die Linie im Bild muss gezeichnet werden");
+        assert_eq!(innen.verworfen, 0, "im Bild wird nichts verworfen");
+
+        // Zweite Linie 100 m neben dem Ausschnitt.
+        linie_im_bild(
+            &mut app,
+            Pos2::new(rect.right() + 8000.0, rect.center().y),
+            Pos2::new(rect.right() + 9000.0, rect.center().y),
+        );
+        let _ = zwei_rahmen(&ctx, &mut app);
+        let mit_aussen = app.perf.letztes().expect("Bild gemessen");
+        assert_eq!(
+            mit_aussen.grafikelemente, 1,
+            "die äußere Linie darf keine Malzeit kosten ({} statt 1)",
+            mit_aussen.grafikelemente
+        );
+        assert_eq!(
+            mit_aussen.verworfen, 1,
+            "genau die äußere Linie wird verworfen ({} verworfen)",
+            mit_aussen.verworfen
+        );
+    }
+
+    #[test]
+    fn verkleinern_verwirft_objekte_zwischen_rand_und_pruefbereich() {
+        let (ctx, mut app) = app_mit_fester_ansicht();
+        let rect = app.ui.last_canvas;
+        // Senkrechte 20 px neben dem linken Rand: im Bild, aber außerhalb des um
+        // 12,5 % je Seite verkleinerten Prüfbereichs.
+        linie_im_bild(
+            &mut app,
+            Pos2::new(rect.left() + 20.0, rect.center().y - 40.0),
+            Pos2::new(rect.left() + 20.0, rect.center().y + 40.0),
+        );
+        app.perf.an = true;
+        let _ = zwei_rahmen(&ctx, &mut app);
+        let weit = app.perf.letztes().expect("Bild gemessen");
+        assert_eq!(weit.grafikelemente, 1, "ohne Prüfbetrieb liegt die Linie im Bild");
+        assert_eq!(weit.verworfen, 0);
+
+        app.perf.culling_verkleinern = true;
+        let _ = zwei_rahmen(&ctx, &mut app);
+        let eng = app.perf.letztes().expect("Bild gemessen");
+        assert_eq!(
+            eng.grafikelemente, 0,
+            "im Prüfbetrieb liegt die Linie außerhalb und darf nicht gezeichnet werden"
+        );
+        assert_eq!(eng.verworfen, 1);
+    }
+
+    #[test]
+    fn lila_rechteck_zeigt_den_bereich_des_cullings() {
+        let ctx = egui::Context::default();
+        let mut app = App::with_ctx(ctx.clone());
+        app.perf.an = true;
+        let _ = zwei_rahmen(&ctx, &mut app);
+        let flaeche = app.ui.last_canvas;
+        let weit = zwei_rahmen(&ctx, &mut app);
+        let r = pruefrechteck(&weit).expect("das lila Prüfrechteck fehlt im Bild");
+        assert!(
+            (r.width() - flaeche.width()).abs() <= 2.0,
+            "ohne Prüfbetrieb liegt die Grenze am Bildrand ({} gegen {})",
+            r.width(),
+            flaeche.width()
+        );
+
+        app.perf.culling_verkleinern = true;
+        let eng = zwei_rahmen(&ctx, &mut app);
+        let r = pruefrechteck(&eng).expect("das lila Prüfrechteck fehlt im Bild");
+        let (soll_w, soll_h) = (flaeche.width() * 0.75, flaeche.height() * 0.75);
+        assert!(
+            (r.width() - soll_w).abs() <= 2.0 && (r.height() - soll_h).abs() <= 2.0,
+            "das Prüfrechteck muss ein Viertel kleiner sein: {r:?} statt {soll_w} × {soll_h}"
+        );
+        assert!(
+            (r.center() - flaeche.center()).length() <= 2.0,
+            "das Prüfrechteck liegt nicht mittig in der Ansicht"
+        );
+    }
+
+    #[test]
+    fn haken_im_leistungsstreifen_schaltet_den_pruefbereich() {
+        let ctx = egui::Context::default();
+        let mut app = App::with_ctx(ctx.clone());
+        app.perf.an = true;
+        for _ in 0..3 {
+            let _ = rahmen(&ctx, &mut app);
+        }
+        assert!(!app.perf.culling_verkleinern, "der Prüfbetrieb ist aus");
+        let streifen = ctx
+            .memory(|m| m.area_rect(egui::Id::new("leistungsanzeige_culling")))
+            .expect("der Streifen mit dem Haken fehlt im Bild");
+        // Der Haken sitzt links im Streifen, hinter dem Innenrand (10 px).
+        let ziel = Pos2::new(streifen.left() + 18.0, streifen.center().y);
+        klick(&ctx, &mut app, ziel);
+        assert!(
+            app.perf.culling_verkleinern,
+            "ein Klick auf den Haken muss den Prüfbetrieb einschalten"
+        );
+        klick(&ctx, &mut app, ziel);
+        assert!(
+            !app.perf.culling_verkleinern,
+            "ein zweiter Klick muss ihn wieder ausschalten"
+        );
+    }
+}
+

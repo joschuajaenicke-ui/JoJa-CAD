@@ -156,6 +156,9 @@ pub struct Bild {
     pub fuellungen: usize,
     pub linien: usize,
     pub texte: usize,
+    /// Grafikelemente, die das Culling verworfen hat (T0167) — sie liegen
+    /// vollständig außerhalb des Bereichs, in dem gezeichnet wird.
+    pub verworfen: usize,
 }
 
 impl Default for Bild {
@@ -171,6 +174,7 @@ impl Default for Bild {
             fuellungen: 0,
             linien: 0,
             texte: 0,
+            verworfen: 0,
         }
     }
 }
@@ -206,6 +210,10 @@ impl Bild {
 pub struct Perf {
     /// Anzeige offen (Umschalt+F3)
     pub an: bool,
+    /// Prüfbetrieb des Cullings (T0167): der Bereich, in dem gezeichnet wird,
+    /// ist dann um [`crate::culling::VERKLEINERUNG`] je Seite kleiner. Nur zur
+    /// Kontrolle — aus heißt: die ganze Zeichenfläche.
+    pub culling_verkleinern: bool,
     /// Laufendes Bild
     laufend: Bild,
     /// Zeitpunkt des letzten Abschnittswechsels
@@ -236,6 +244,7 @@ impl Default for Perf {
         let jetzt = Instant::now();
         Self {
             an: false,
+            culling_verkleinern: false,
             laufend: Bild::default(),
             marke: jetzt,
             phase: Abschnitt::Oberflaeche,
@@ -284,6 +293,12 @@ impl Perf {
             MalKlasse::Linie => self.laufend.linien += 1,
             MalKlasse::Text => self.laufend.texte += 1,
         }
+    }
+
+    /// Ein Grafikelement wurde vom Culling verworfen (nur bei offener Anzeige
+    /// aufgerufen) — es liegt vollständig außerhalb der Ansicht.
+    pub fn grafikelement_verworfen(&mut self) {
+        self.laufend.verworfen += 1;
     }
 
     /// Woher die Displayliste dieses Bildes kam und wie groß die Zeichnung ist.
@@ -522,9 +537,11 @@ fn kopf_wert(ui: &mut egui::Ui, text: &str) {
 
 /// Die Leistungsanzeige über der Zeichenfläche (Umschalt+F3).
 ///
-/// Sie nimmt **keine Klicks an**: sie liegt über der Zeichnung, darf aber kein
-/// Werkzeug blockieren und keinen Zeiger fangen.
-pub fn overlay(app: &App, ctx: &egui::Context) {
+/// Die **Anzeige** nimmt keine Klicks an: sie liegt über der Zeichnung, darf
+/// aber kein Werkzeug blockieren und keinen Zeiger fangen (T0068). Nur der
+/// Streifen mit dem Culling-Haken darüber ist anklickbar (T0167) — ohne eigene
+/// Klick-Ebene ließe sich der Haken nicht bedienen.
+pub fn overlay(app: &mut App, ctx: &egui::Context) {
     if !app.perf.an {
         return;
     }
@@ -534,6 +551,47 @@ pub fn overlay(app: &App, ctx: &egui::Context) {
         return;
     }
     let pos = egui::pos2(flaeche.right() - breite - 12.0, flaeche.top() + 12.0);
+
+    // Prüfbetrieb des Cullings (T0167): eigener, anklickbarer Streifen über der
+    // Anzeige. Er sitzt **über** dem Panel, damit dessen Klick-Durchlässigkeit
+    // erhalten bleibt.
+    let streifen = egui::Area::new(Id::new("leistungsanzeige_culling"))
+        .order(Order::Foreground)
+        .fixed_pos(pos)
+        .show(ctx, |ui| {
+            egui::Frame::none()
+                .fill(Palette::panel())
+                .stroke(Stroke::new(1.0_f32, Palette::border()))
+                .rounding(egui::Rounding::same(4.0))
+                .inner_margin(egui::Margin::symmetric(10.0, 5.0))
+                .show(ui, |ui| {
+                    ui.set_width(breite - 20.0);
+                    ui.horizontal(|ui| {
+                        let mut an = app.perf.culling_verkleinern;
+                        let antwort = ui.checkbox(
+                            &mut an,
+                            jjcad_core::i18n::tr("gui.perf.culling_bereich_verkleinern"),
+                        );
+                        if antwort
+                            .on_hover_text(jjcad_core::i18n::tr("gui.perf.hinweis_culling_bereich"))
+                            .changed()
+                        {
+                            app.perf.culling_verkleinern = an;
+                        }
+                        ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+                            ui.label(
+                                RichText::new(jjcad_core::i18n::tr("gui.perf.culling"))
+                                    .size(10.0)
+                                    .color(crate::culling::FARBE),
+                            );
+                        });
+                    });
+                });
+        });
+    // Die Anzeige rückt unter den Streifen. Im ersten Bild kennt ein frisches
+    // `egui::Area` seine Höhe noch nicht — dann sitzt sie einmal zu hoch und
+    // zieht im nächsten Bild nach.
+    let pos = egui::pos2(pos.x, streifen.response.rect.bottom() + 4.0);
     egui::Area::new(Id::new("leistungsanzeige"))
         .order(Order::Foreground)
         .interactable(false)
@@ -700,7 +758,21 @@ fn inhalt(app: &App, ui: &mut egui::Ui) {
         zeile1.push_str(&jjcad_core::i18n::t_args_owned("gui.perf.x_grafikelemente", &[("wert1", format!("{}", zahl_text(b.grafikelemente)))]));
     }
     ui.label(theme_mono(&zeile1).color(Palette::text_dim()));
+    // Culling (T0167): wie viele Grafikelemente wirklich gezeichnet wurden und
+    // wie viele die Prüfung außerhalb der Ansicht verworfen hat.
     if let Some(b) = letzt {
+        let gesamt = b.grafikelemente + b.verworfen;
+        ui.label(
+            theme_mono(&jjcad_core::i18n::t_args_owned(
+                "gui.perf.culling_x_von_y_gezeichnet",
+                &[
+                    ("gezeichnet", zahl_text(b.grafikelemente)),
+                    ("gesamt", zahl_text(gesamt)),
+                    ("verworfen", zahl_text(b.verworfen)),
+                ],
+            ))
+            .color(Palette::text_dim()),
+        );
         ui.label(
             theme_mono(&jjcad_core::i18n::t_args_owned(
                 "gui.perf.fuellungen_x_linien_x_text_x",
