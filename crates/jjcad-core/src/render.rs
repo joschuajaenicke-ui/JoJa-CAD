@@ -3228,10 +3228,21 @@ fn render_polyline(
     }
 }
 
+/// Pfeilhöhe, mit der ein Spline **in der Anzeige** zerlegt wird
+/// (Bildschirm-pixel). Die Toleranz in Welt-mm ist `SPLINE_TOL_PX / screen`;
+/// ohne Abbildung (Druck, PNG, DXF) gilt [`SPLINE_TOL_MM`] (T0175).
+pub const SPLINE_TOL_PX: f64 = 0.15;
+
 /// Spline zeichnen: die Catmull-Rom-Kurve wird in eine Punktfolge zerlegt und
 /// als **ein** Polygonzug ausgegeben (eine Glättung, keine Stöße zwischen
 /// Teilstrecken). Stützpunkte selbst sind keine Displaylist-Primitive — sie
 /// erscheinen nur als Griffe in der Auswahl.
+///
+/// Die Zerlegung folgt der **Anzeige**: mit Abbildung (`dl.screen`, px je
+/// Welt-mm) wird auf [`SPLINE_TOL_PX`] Bildschirm-pixel abgeflacht, ohne
+/// Abbildung weltfest auf [`SPLINE_TOL_MM`]. Fang, Trefferprüfung und Auswahl
+/// rechnen dagegen immer weltfest (`Spline::segments`) — die Kurve bleibt
+/// dieselbe, nur ihre Auflösung im Bild hängt am Zoom (T0175).
 fn render_spline(
     e: &Entity,
     st: &PrimStyle,
@@ -3244,7 +3255,11 @@ fn render_spline(
         verts: verts.to_vec(),
         closed,
     };
-    let pts: Vec<Vec2> = sp.flatten(SPLINE_TOL_MM).into_iter().map(|p| xf.apply(p)).collect();
+    let tol = match dl.screen {
+        Some(px) if px.is_finite() && px > 0.0 => SPLINE_TOL_PX / px,
+        _ => SPLINE_TOL_MM,
+    };
+    let pts: Vec<Vec2> = sp.flatten(tol).into_iter().map(|p| xf.apply(p)).collect();
     if pts.len() < 2 {
         return;
     }
