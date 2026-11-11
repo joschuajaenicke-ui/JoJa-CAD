@@ -218,6 +218,17 @@ pub(crate) fn kreis_zug(center: Pos2, radius: f32, stroke: Stroke) -> egui::Shap
     egui::Shape::closed_line(pts, stroke)
 }
 
+/// Ab dieser Punktzahl wird ein Zug **als ein Pfad** gezeichnet, auch wenn der
+/// Strich breiter als 2 px ist (T0168).
+///
+/// Die Kapsel je Strecke gibt es für die runden Enden und Übergänge einer
+/// Linie aus wenigen Punkten. Bei einer dichten Kurve — Dämmung als Linie mit
+/// 2500 Stützpunkten, hervorgehoben oder ausgewählt — ist jede Strecke kürzer
+/// als der Strich breit ist: die runden Enden liegen im Nachbarn, sichtbar
+/// ändert sich nichts, aber es entstehen 2500 Formen je Bild statt einer
+/// (gemessen 18 ms gegen 4 ms Bildzeit bei 100 m² Dämmung).
+const DICHTER_ZUG_PUNKTE: usize = 128;
+
 fn stroke_pts(p: &Painter, pts: &[Pos2], w: f32, col: Color32) {
     if pts.len() == 1 {
         p.circle_filled(pts[0], (w * 0.5).max(0.4), col);
@@ -231,6 +242,16 @@ fn stroke_pts(p: &Painter, pts: &[Pos2], w: f32, col: Color32) {
     // nichts verloren.
     if w < 2.0 {
         p.add(Shape::line(pts.to_vec(), Stroke::new(w.max(0.4), col)));
+        return;
+    }
+    // Dichter Zug: ein Pfad, die runden Enden als zwei Kreise (T0168). Der
+    // Pfad wird als Band mit gemittelten Normalen tesselliert — bei dieser
+    // Punktdichte nicht von Kapseln zu unterscheiden.
+    if pts.len() >= DICHTER_ZUG_PUNKTE {
+        p.add(Shape::line(pts.to_vec(), Stroke::new(w, col)));
+        let r = w * 0.5;
+        p.circle_filled(pts[0], r, col);
+        p.circle_filled(*pts.last().unwrap(), r, col);
         return;
     }
     for pair in pts.windows(2) {
@@ -14882,6 +14903,78 @@ mod tests_daemmungsschraffur {
             out.shapes.len() < 5000,
             "{} Formen je Bild — wird das Muster wieder je Strecke gezeichnet?",
             out.shapes.len()
+        );
+    }
+}
+
+#[cfg(test)]
+mod tests_daemmungslinie {
+    use super::*;
+
+    const FENSTER: Vec2 = Vec2::new(1500.0, 950.0);
+
+    fn rahmen(ctx: &egui::Context, app: &mut App, zeiger: Option<Pos2>) -> egui::FullOutput {
+        let mut raw = egui::RawInput {
+            screen_rect: Some(Rect::from_min_size(Pos2::ZERO, FENSTER)),
+            ..Default::default()
+        };
+        if let Some(p) = zeiger {
+            raw.events.push(egui::Event::PointerMoved(p));
+        }
+        ctx.run(raw, |ctx| app.ui(ctx))
+    }
+
+    /// Eine **hervorgehobene** Dämmungslinie ist ein Zug, nicht 2500 Kapseln
+    /// (T0168).
+    ///
+    /// Der hervorgehobene Strich ist breiter als 2 px; vorher entstand deshalb
+    /// je Strecke eine Kapsel. Bei 100 m² Dämmung als Linien sind das 2500
+    /// Formen für **eine** Linie und gemessen 17 ms Bildzeit statt 1,3 ms.
+    /// Der Test zählt die Formen eines Bildes und verlangt einen langen Zug.
+    #[test]
+    fn hervorgehobene_daemmungslinie_ist_ein_zug() {
+        let ctx = egui::Context::default();
+        let mut app = App::with_ctx(ctx.clone());
+        assert!(run(
+            &mut app,
+            "draw.line",
+            json!({
+                "a": [0.0, 0.0],
+                "b": [10000.0, 0.0],
+                "linetype": "insulation",
+                "loop_width": 200.0
+            })
+        ));
+        let id = app.doc().ents()[0].id;
+        app.ui.show_grid = false;
+        // Zwei Bilder: im ersten schwingt das Layout ein.
+        let _ = rahmen(&ctx, &mut app, Some(Pos2::new(1400.0, 900.0)));
+        // Ohne Hervorhebung: dünner Strich, ein Zug.
+        app.tab_mut().hover = None;
+        let ohne = rahmen(&ctx, &mut app, Some(Pos2::new(1400.0, 900.0)));
+        // Hervorhebung: derselbe Weg wie beim Zeiger über der Linie. Der Strich
+        // wird dabei breiter als 2 px.
+        app.tab_mut().hover = Some(id);
+        let mit = rahmen(&ctx, &mut app, Some(Pos2::new(1400.0, 900.0)));
+
+        let mut laengster = 0;
+        for cs in &mit.shapes {
+            if let egui::Shape::Path(p) = &cs.shape {
+                laengster = laengster.max(p.points.len());
+            }
+        }
+        assert!(
+            laengster > 500,
+            "kein Zug mit vielen Punkten (längster {laengster}) — wird die Dämmung wieder je Strecke gezeichnet?"
+        );
+        // Die Hervorhebung darf fast nichts kosten: sie malt denselben Zug in
+        // der Hervorhebungsfarbe, nicht 2500 Kapseln.
+        let mehr = mit.shapes.len().saturating_sub(ohne.shapes.len());
+        assert!(
+            mehr < 100,
+            "die Hervorhebung bringt {mehr} Formen mehr ({} gegen {}) — eine Kapsel je Strecke?",
+            mit.shapes.len(),
+            ohne.shapes.len()
         );
     }
 }
