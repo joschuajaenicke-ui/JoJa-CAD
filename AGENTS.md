@@ -269,7 +269,13 @@ Mit dem Nutzer abgestimmt — nicht „verbessern“:
   Der Objekteintrag **„Eigenschaften im Panel“** öffnet das Eigenschaften-Panel
   (ausgeschaltet oder auf die Leiste eingeklappt) und wählt das Objekt aus; steht
   das Panel offen, wird der Eintrag gar nicht gezeichnet — die eine Abfrage ist
-  `App::eigenschaften_panel_offen` (T0179).
+  `App::eigenschaften_panel_offen` (T0179). Eine **bewegte Ansicht** und jede neu
+  gestartete **Zeichenfunktion** schließen das Menü dagegen (T0180): es hängt an
+  einer Bildschirmstelle, die Zeichnung darunter wandert beim Schwenken/Zoomen weg,
+  und über einem frisch gestarteten Werkzeug stand es im Weg. Die zwei Stellen sind
+  `App::set_view` (alle Bewegungen: Schwenk, Zoom, Einpassen, Drehen) und
+  `App::start_tool`/`App::start_ghost_paste`/`App::start_ghost_block` (Werkzeug- und
+  Einfüge-Start) — nicht im Klickpfad daneben nachbauen.
 - **Eigenschaften-Panel**: gleiche Zeilen (96 px Label, 150 px Wert) beim Platzieren
   *und* bei Auswahl; bei Mehrfachauswahl nur gemeinsame Felder, abweichende Werte
   als `*variiert*`; nicht editierbare Werte (Länge, Fläche) anzeigen.
