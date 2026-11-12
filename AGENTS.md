@@ -642,12 +642,28 @@ Mit dem Nutzer abgestimmt — nicht „verbessern“:
   `cargo test -p jjcad-gui einstellungsfenster_gleich_gross_in_allen_kategorien`
   (vergleicht die Fensterfläche je Kategorie; vor dem Fix 1021 px gegen 976 px).
 - **Einstellungsfenster (T0061)**: links die Kategorienliste
-  (`dialogs::EINSTELLUNGSKATEGORIEN`, Icon + Name, Auswahl blau), darüber das Suchfeld,
+  (`dialogs::EINSTELLUNGSKATEGORIEN`, Icon + Name), darüber das Suchfeld,
   rechts die Einstellungen der gewählten Kategorie. Beide Spalten scrollen getrennt.
   Eine neue Einstellung wird in ihrer Kategorie über `dialogs::zeile`/`zeile_mit`
   gezeichnet **und** ihr Name in den `stichworte`n der Kategorie eingetragen — sonst
-  findet die Suche sie nicht. Zeilennamen bleiben kurz (Labelspalte 96 px), lange
+  findet die Suche sie nicht. Zeilennamen bleiben kurz (Namensspalte 160 px), lange
   Begriffe kommen als Alias in `zeile_mit`; Häkchen ohne Wert stehen mit vollem Text.
+- **Einstellungen aufgeräumt (T0178)**: Die Kategorien stehen in dieser Reihenfolge:
+  Bedienung, Darstellung, Grafik, Raster, Fang, Voreinstellungen, Architektur,
+  Bemaßung, Update (leerer Platzhalter), Speicherorte, Sicherung. Der Zweig in
+  `settings_body` hängt am **Katalogschlüssel** (`EINSTELLUNGSKATEGORIEN[kat].key`),
+  nicht am Index — mit Index zeigte eine Umsortierung die Einstellungen einer
+  fremden Kategorie. Jede Beschreibung steht als **Tooltip am Infozeichen** der
+  Zeile (`dialogs::zeile_tip` → `widgets::field_row_tip`), nicht als Absatz
+  darunter; kein Zweig schreibt eigene Hinweistexte. Alle Bedienelemente einer
+  Zeile sind `widgets::FELD_H` (20 px) hoch — `field_row` setzt dafür
+  `interact_size.y`, Auswahlfelder im Fenster laufen über `dialogs::auswahl`
+  (`panels::dropdown_mit_hoehe`); ein einfaches `DragValue` war sonst 24 px hoch
+  und wirkte größer als das Auswahlfeld. Die gewählte Kategorie trägt den
+  **Farbakzent** (weiche Akzentfläche, 2-px-Streifen, Akzenttext), nicht Blau.
+  „Einheiten und Maßstab“ ist entfallen — Einheit, Dezimalen, Rasterweite und
+  Maßstab stehen im Eigenschaften-Panel der Zeichnung (`panels::doc_props`).
+  „Lineale einblenden“ ist entfernt: `show_rulers` wurde nirgends gezeichnet.
 - **Ansicht verschieben: zwei Bewegungsarten (T0101)**: Einstellungen → Bedienung →
   „Verschieben" wählt `prefs.pan_mode` — **Kontinuierlich** (Vorgabe) hält die
   Ansicht in Bewegung, solange die Schwenkfunktion gedrückt bleibt, **Sprunghaft**

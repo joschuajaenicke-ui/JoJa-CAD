@@ -1127,12 +1127,134 @@ impl Einstellungskategorie {
     }
 }
 
-/// Die Kategorien des Einstellungsfensters in der Reihenfolge der Liste links.
+/// Die Kategorien des Einstellungsfensters in der Reihenfolge der Liste links
+/// (T0178: mit dem Nutzer abgestimmte Reihenfolge).
+///
+/// Der Zweig der Einstellungen hängt am `key`, nicht an der Position — die
+/// Reihenfolge ist damit frei änderbar. „Update“ ist ein bewusst leerer
+/// Platzhalter für spätere Einstellungen der Aktualisierung.
 pub(crate) const EINSTELLUNGSKATEGORIEN: &[Einstellungskategorie] = &[
     Einstellungskategorie {
-        key: "settings.category_einheiten",
-        icon: "staerke",
-        stichworte: &["Eingabe", "Einheit", "Nachkommastellen", "Maßstab"],
+        key: "settings.category_bedienung",
+        icon: "move",
+        stichworte: &[
+            "Ziehen",
+            "Maus",
+            "Maus verschiebt",
+            "Verschieben",
+            "Schwenk",
+            "Bewegungsgeschwindigkeit",
+            "Geschwindigkeit",
+            "WASD",
+            "W A S D",
+            "Ansicht",
+            "Ansicht verschieben",
+            "Bewegungsart",
+            "kontinuierlich",
+            "sprunghaft",
+            "Drehpunkt",
+            "Einfügen",
+            "Vorschau",
+            "Rotieren",
+            "Drehen",
+            "Mittelpunkt",
+            "Basispunkt",
+            "Fadenkreuz",
+            "Zwischenablage",
+            "Dateidialog",
+            "Sprache",
+            "Englisch",
+            "Language",
+            "Bedienung",
+        ],
+    },
+    Einstellungskategorie {
+        key: "settings.category_darstellung",
+        icon: "eye",
+        stichworte: &[
+            "Linienstärken",
+            "Linienstärke",
+            "Papier",
+            "maßstabsgetreu",
+            "Bildschirm",
+            "konstant",
+            "Faktor",
+            "Skalierung",
+            "Layer-Panel",
+            "Eigenschaften-Panel",
+            "Fangmarker",
+            "Design",
+            "Farbschema",
+            "Erscheinungsbild",
+            "Aussehen",
+            "Hell",
+            "Dunkel",
+            "Nachtmodus",
+            "System",
+            "Betriebssystem",
+            "Farbakzent",
+            "Farbakzente",
+            "Akzent",
+            "Akzentfarbe",
+            "Bernstein",
+            "Orange",
+            "Saphir",
+            "Smaragd",
+            "Rubin",
+            "Amethyst",
+            "Blau",
+            "Grün",
+            "Rot",
+            "Violett",
+            "Fensterrahmen",
+            "Titelleiste",
+            "Minimieren",
+            "Vergrößern",
+            "Maximieren",
+            "Schließen",
+            "Rahmen",
+            "Fenster",
+            "Fensterschatten",
+            "Schatten",
+            "Andocken",
+            "Darstellung",
+        ],
+    },
+    // T0165: Leistungseinstellungen der Anzeige — Kantenglättung, Textatlas,
+    // Anzeigeliste und Leistungsanzeige. Die personalisierte Darstellung
+    // (Design, Farbakzent, Linienstärken) bleibt in ihrer eigenen Kategorie;
+    // hier steht nur, was die Zeichenzeit bestimmt. Platz für weitere
+    // Stellschrauben: eine Zeile je Einstellung, Zeilenname in die Stichworte.
+    Einstellungskategorie {
+        key: "settings.category_grafik",
+        icon: "image",
+        stichworte: &[
+            "Kantenglättung",
+            "Antialiasing",
+            "Kante",
+            "Kanten",
+            "Weichheit",
+            "Kurventoleranz",
+            "Rundung",
+            "Rundungen",
+            "Bogen",
+            "Pfeilhöhe",
+            "Toleranz",
+            "Textauflösung",
+            "Auflösung",
+            "Schärfe",
+            "Rastergröße",
+            "Schrift",
+            "Atlas",
+            "Zwischenspeicher",
+            "Anzeigeliste",
+            "Cache",
+            "Leistungsanzeige",
+            "Leistung",
+            "Performance",
+            "F3",
+            "Grafik",
+        ],
     },
     Einstellungskategorie {
         key: "settings.category_raster",
@@ -1177,6 +1299,30 @@ pub(crate) const EINSTELLUNGSKATEGORIEN: &[Einstellungskategorie] = &[
             "Fangen",
         ],
     },
+    // T0125: Voreinstellungen der Linienstärke je Objektart.
+    Einstellungskategorie {
+        key: "settings.category_voreinstellungen",
+        icon: "staerke",
+        stichworte: &[
+            "Linienstärke",
+            "Linienbreite",
+            "Linienstärken",
+            "Voreinstellungen",
+            "Objektart",
+            "Wände",
+            "Türen",
+            "Fenster",
+            "Treppen",
+            "Bemaßung",
+            "Text",
+            "Schraffur",
+            "Möbel",
+            "Achsen",
+            "Hilfslinien",
+            "zurücksetzen",
+            "0,18",
+        ],
+    },
     Einstellungskategorie {
         key: "settings.category_architektur",
         icon: "wall",
@@ -1205,152 +1351,12 @@ pub(crate) const EINSTELLUNGSKATEGORIEN: &[Einstellungskategorie] = &[
             "Bemaßung",
         ],
     },
+    // T0178: leerer Platzhalter — die Seite bleibt leer, der Platz hält die
+    // geplante Reihenfolge frei.
     Einstellungskategorie {
-        key: "settings.category_bedienung",
-        icon: "move",
-        stichworte: &[
-            "Ziehen",
-            "Maus",
-            "Maus verschiebt",
-            "Verschieben",
-            "Schwenk",
-            "Bewegungsgeschwindigkeit",
-            "Geschwindigkeit",
-            "WASD",
-            "W A S D",
-            "Ansicht",
-            "Ansicht verschieben",
-            "Bewegungsart",
-            "kontinuierlich",
-            "sprunghaft",
-            "Drehpunkt",
-            "Einfügen",
-            "Vorschau",
-            "Rotieren",
-            "Drehen",
-            "Mittelpunkt",
-            "Basispunkt",
-            "Fadenkreuz",
-            "Zwischenablage",
-            "Dateidialog",
-            "Fensterrahmen",
-            "Titelleiste",
-            "Minimieren",
-            "Vergrößern",
-            "Schließen",
-            "Rahmen",
-            "Fenster",
-            "Sprache",
-            "Englisch",
-            "Language",
-            "Bedienung",
-        ],
-    },
-    Einstellungskategorie {
-        key: "settings.category_darstellung",
-        icon: "eye",
-        stichworte: &[
-            "Linienstärken",
-            "Linienstärke",
-            "Papier",
-            "maßstabsgetreu",
-            "Bildschirm",
-            "konstant",
-            "Faktor",
-            "Skalierung",
-            "Layer-Panel",
-            "Eigenschaften-Panel",
-            "Fangmarker",
-            "Lineale",
-            "Design",
-            "Farbschema",
-            "Erscheinungsbild",
-            "Aussehen",
-            "Hell",
-            "Dunkel",
-            "Nachtmodus",
-            "System",
-            "Betriebssystem",
-            "Farbakzent",
-            "Farbakzente",
-            "Akzent",
-            "Akzentfarbe",
-            "Bernstein",
-            "Orange",
-            "Saphir",
-            "Smaragd",
-            "Rubin",
-            "Amethyst",
-            "Blau",
-            "Grün",
-            "Rot",
-            "Violett",
-            "Fensterschatten",
-            "Schatten",
-            "Andocken",
-            "Titelleiste",
-            "Darstellung",
-        ],
-    },
-    // T0165: Leistungseinstellungen der Anzeige — Kantenglättung, Textatlas,
-    // Anzeigeliste und Leistungsanzeige. Die personalisierte Darstellung
-    // (Design, Farbakzent, Linienstärken) bleibt in ihrer eigenen Kategorie;
-    // hier steht nur, was die Zeichenzeit bestimmt. Platz für weitere
-    // Stellschrauben: eine Zeile je Einstellung, Zeilenname in die Stichworte.
-    Einstellungskategorie {
-        key: "settings.category_grafik",
-        icon: "image",
-        stichworte: &[
-            "Kantenglättung",
-            "Antialiasing",
-            "Kante",
-            "Kanten",
-            "Weichheit",
-            "Kurventoleranz",
-            "Rundung",
-            "Rundungen",
-            "Bogen",
-            "Pfeilhöhe",
-            "Toleranz",
-            "Textauflösung",
-            "Auflösung",
-            "Schärfe",
-            "Rastergröße",
-            "Schrift",
-            "Atlas",
-            "Zwischenspeicher",
-            "Anzeigeliste",
-            "Cache",
-            "Leistungsanzeige",
-            "Leistung",
-            "Performance",
-            "F3",
-            "Grafik",
-        ],
-    },
-    // T0125: Voreinstellungen der Linienstärke je Objektart.
-    Einstellungskategorie {
-        key: "settings.category_voreinstellungen",
-        icon: "staerke",
-        stichworte: &[
-            "Linienstärke",
-            "Linienbreite",
-            "Linienstärken",
-            "Voreinstellungen",
-            "Objektart",
-            "Wände",
-            "Türen",
-            "Fenster",
-            "Treppen",
-            "Bemaßung",
-            "Text",
-            "Schraffur",
-            "Möbel",
-            "Achsen",
-            "Hilfslinien",
-            "zurücksetzen",
-            "0,18",
-        ],
+        key: "settings.category_update",
+        icon: "repeat",
+        stichworte: &["Update", "Aktualisierung", "Version", "Neu"],
     },
     // T0127: eine Wurzel für alle Nutzdaten; die drei Unterordner sind
     // änderbar.
@@ -1472,6 +1478,22 @@ fn zeile_tip(
     }
 }
 
+/// Auswahlfeld im Einstellungsfenster (T0178).
+///
+/// Dieselbe Bauart wie `panels::dropdown` (150 px Wertespalte, gleicher Pfeil),
+/// aber in der Höhe der Eingabefelder daneben (`widgets::FELD_H`) — vorher war
+/// das Auswahlfeld 20 px hoch und ein einfaches Zahlenfeld 24 px, dadurch wirkte
+/// es deutlich kleiner.
+fn auswahl<R>(
+    ui: &mut Ui,
+    salt: &str,
+    caption: &str,
+    icon: Option<panels::BtnIcon>,
+    add: impl FnOnce(&mut Ui) -> Option<R>,
+) -> Option<R> {
+    panels::dropdown_mit_hoehe(ui, salt, caption, icon, widgets::FELD_H, add)
+}
+
 /// Abschnittsüberschrift; während einer Suche entfällt sie, damit nur die
 /// Treffer übrig bleiben.
 fn abschnitt(suche: &str, ui: &mut Ui, text: &str) {
@@ -1488,12 +1510,21 @@ fn kategorie_zeile(ui: &mut Ui, kat: &Einstellungskategorie, gewaehlt: bool) -> 
     if ui.is_rect_visible(rect) {
         let p = ui.painter();
         if gewaehlt {
-            p.rect_filled(rect, Rounding::same(6.0), Palette::select().gamma_multiply(0.85));
+            // T0178: Die gewählte Kategorie trägt den **Farbakzent** der
+            // Bedienung (bis dahin war sie immer blau). Fläche im weichen
+            // Akzentton, Name und Icon im Akzent, links ein 2-px-Streifen —
+            // dieselbe Sprache wie Reiter und Chips der Kopfzeile.
+            p.rect_filled(rect, Rounding::same(6.0), Palette::accent_soft());
+            p.rect_filled(
+                Rect::from_min_size(rect.min, Vec2::new(2.0, rect.height())),
+                Rounding::same(2.0),
+                Palette::accent(),
+            );
         } else if antwort.hovered() {
             p.rect_filled(rect, Rounding::same(6.0), Palette::panel_alt());
         }
         let farbe = if gewaehlt {
-            Color32::WHITE
+            Palette::accent()
         } else if antwort.hovered() {
             Palette::text()
         } else {
@@ -1540,8 +1571,10 @@ fn settings_body(app: &mut App, ui: &mut Ui) {
 
     // Ausgangswerte einlesen
     let cur = app.doc().settings.clone();
-    let mut input = cur.input_unit;
-    let mut decimals = cur.decimals as i32;
+    // T0178: Einheit und Dezimalstellen standen in der Kategorie „Einheiten
+    // und Maßstab“. Die ist entfallen — beide Werte stehen im
+    // Eigenschaften-Panel der Zeichnung (`panels::doc_props`), also dort, wo
+    // sie gelten, und werden hier nicht mehr geführt.
     let mut show_grid = app.ui.show_grid;
     let mut snap = cur.snap.clone();
     let mut grid_step = snap.grid_step;
@@ -1557,7 +1590,6 @@ fn settings_body(app: &mut App, ui: &mut Ui) {
     let mut door = cur.door_width;
     let mut win = cur.window_width;
     let mut stair = cur.stair_width;
-    let mut rulers = cur.show_rulers;
     let mut ds = app.doc().dim_style.clone();
     let mut ds_changed = false;
     let mut lw_scaled = app.ui.lineweights_scaled;
@@ -1694,154 +1726,719 @@ fn settings_body(app: &mut App, ui: &mut Ui) {
                             ));
                             return;
                         }
-                        match kat {
-                            // ------------------------ Einheiten -------------------
-                            0 => {
-                                abschnitt(&suche, ui, jjcad_core::i18n::tr("gui.dialogs.einheiten"));
-                                zeile(&suche, ui, jjcad_core::i18n::tr("gui.dialogs.eingabe"), |ui| {
-                                    for u in Unit::ALL {
-                                        ui.selectable_value(&mut input, u, u.short());
-                                    }
-                                });
-                                zeile_mit(
+                        // T0178: Der Zweig hängt am **Katalogschlüssel** der
+                        // Kategorie, nicht an ihrer Position — die Reihenfolge
+                        // der Liste links ist damit frei änderbar, ohne dass
+                        // eine Kategorie die Einstellungen einer anderen zeigt.
+                        match EINSTELLUNGSKATEGORIEN[kat].key {
+                            // ------------------------- Bedienung ------------------
+                            "settings.category_bedienung" => {
+                                abschnitt(&suche, ui, jjcad_core::i18n::tr("gui.dialogs.bedienung"));
+                                // T0103: Sprache der Oberfläche — wirkt sofort, ohne
+                                // Neustart. T0178: erste Zeile der Kategorie.
+                                zeile_tip(
                                     &suche,
                                     ui,
-                                    jjcad_core::i18n::tr("gui.dialogs.dezimalstellen"),
-                                    &["Nachkommastellen"],
+                                    jjcad_core::i18n::tr("gui.dialogs.sprache"),
+                                    &["Language", "Deutsch", "Englisch", "English", "Übersetzung"],
+                                    jjcad_core::i18n::tr("settings.language_hint"),
                                     |ui| {
-                                        ui.add(crate::widgets::zahl(&mut decimals, 1.0, 0..=4));
+                                        let mut gewaehlt = jjcad_core::i18n::language();
+                                        let vorher = gewaehlt;
+                                        for l in jjcad_core::i18n::Lang::ALL {
+                                            ui.selectable_value(&mut gewaehlt, l, l.name());
+                                        }
+                                        if gewaehlt != vorher {
+                                            jjcad_core::i18n::set_language(gewaehlt);
+                                            app.prefs.language = gewaehlt;
+                                            let _ = app.prefs.save();
+                                            // Der Wechsel gilt ab dem nächsten Bild — ohne
+                                            // Anforderung bliebe die Oberfläche stehen.
+                                            ui.ctx().request_repaint();
+                                        }
                                     },
                                 );
-                                if suche.is_empty() {
-                                    ui.add(
-                                        egui::Label::new(theme::faint(
-                                            jjcad_core::i18n::tr("gui.dialogs.masseinheit_massstab_textgroesse_und_bogensymbole_stehen"),
-                                        ))
-                                        .wrap(),
-                                    );
+                                zeile_tip(
+                                    &suche,
+                                    ui,
+                                    jjcad_core::i18n::tr("gui.dialogs.ziehen"),
+                                    &["Gedrückthalten", "Zwei Klicks"],
+                                    jjcad_core::i18n::tr("gui.dialogs.gilt_fuer_griffe_und_objekte"),
+                                    |ui| {
+                                        for m in DragMode::ALL {
+                                            ui.selectable_value(&mut drag_mode, m, m.text())
+                                                .on_hover_text(m.tip());
+                                        }
+                                    },
+                                );
+                                // T0145: Das Auswahlfenster (Rechteck auf der freien
+                                // Fläche) hat einen eigenen Schalter — vorher galt
+                                // „Zwei Klicks“ nur für Griffe und Objekte.
+                                zeile_tip(
+                                    &suche,
+                                    ui,
+                                    jjcad_core::i18n::tr("gui.dialogs.auswahlfenster"),
+                                    &["Auswahl", "Rechteck", "Ziehen"],
+                                    jjcad_core::i18n::tr("gui.dialogs.gilt_fuer_das_auswahlfenster"),
+                                    |ui| {
+                                        for m in DragMode::ALL {
+                                            ui.selectable_value(&mut select_mode, m, m.text())
+                                                .on_hover_text(m.tip());
+                                        }
+                                    },
+                                );
+                                // T0063: Objekte mit der gedrückten Maustaste
+                                // verschieben — für alle Objektarten gemeinsam.
+                                zeile_tip(
+                                    &suche,
+                                    ui,
+                                    jjcad_core::i18n::tr("gui.dialogs.maus_verschiebt"),
+                                    &["Maus", "Verschieben", "Objekte"],
+                                    jjcad_core::i18n::tr(
+                                        "gui.dialogs.aus_objekte_wandern_nur_ueber_das_werkzeug_verschieben",
+                                    ),
+                                    |ui| {
+                                        ui.checkbox(&mut mouse_move, "");
+                                    },
+                                );
+                                // T0101: Bewegungsart der Ansicht. „Kontinuierlich“
+                                // hält die Ansicht in Bewegung, solange die Funktion
+                                // gedrückt bleibt; „Sprunghaft“ rückt je Druck um einen
+                                // Schritt (bisheriges Verhalten).
+                                zeile_tip(
+                                    &suche,
+                                    ui,
+                                    jjcad_core::i18n::tr("gui.dialogs.ansicht_verschieben"),
+                                    &[
+                                        "Verschieben",
+                                        "Ansicht verschieben",
+                                        "Bewegung",
+                                        "Bewegungsart",
+                                        "kontinuierlich",
+                                        "sprunghaft",
+                                        "Schwenk",
+                                        "WASD",
+                                    ],
+                                    jjcad_core::i18n::tr("gui.dialogs.gilt_fuer_die_schwenkfunktionen"),
+                                    |ui| {
+                                        for m in jjcad_core::persist::PanMode::ALL {
+                                            ui.selectable_value(&mut pan_mode, m, m.text())
+                                                .on_hover_text(m.tip());
+                                        }
+                                    },
+                                );
+                                // T0067: Tempo der Schwenk-Funktionen (`view.pan_*`,
+                                // Vorgabe W/A/S/D) als Faktor auf das Grundtempo.
+                                // T0146: Die Zeile heißt „Geschwindigkeit der
+                                // Ansicht“; „Schwenk“ bleibt als Suchbegriff.
+                                zeile_tip(
+                                    &suche,
+                                    ui,
+                                    jjcad_core::i18n::tr("gui.dialogs.geschwindigkeit_der_ansicht"),
+                                    &[
+                                        "Schwenk",
+                                        "Bewegungsgeschwindigkeit",
+                                        "Geschwindigkeit",
+                                        "WASD",
+                                        "W A S D",
+                                        "Tempo",
+                                        "Ansicht",
+                                    ],
+                                    jjcad_core::i18n::tr(
+                                        "gui.dialogs.gilt_fuer_den_schwenk_der_ansicht_w_a_s_d",
+                                    ),
+                                    |ui| {
+                                        ui.add_sized(
+                                            [widgets::VAL_W, widgets::FELD_H],
+                                            widgets::zahl(
+                                                &mut pan_speed,
+                                                0.05,
+                                                jjcad_core::persist::SCHWENK_FAKTOR_MIN
+                                                    ..=jjcad_core::persist::SCHWENK_FAKTOR_MAX,
+                                            )
+                                            .max_decimals(2)
+                                            .suffix(" ×"),
+                                        );
+                                    },
+                                );
+                                // T0070: Drehpunkt beim Einfügen aus der Zwischenablage.
+                                // „Basispunkt" ist das bisherige Verhalten, „Mittelpunkt"
+                                // lässt die Vorschau oben rechts am Fadenkreuz stehen.
+                                zeile_tip(
+                                    &suche,
+                                    ui,
+                                    jjcad_core::i18n::tr("gui.dialogs.drehpunkt"),
+                                    &[
+                                        "Einfügen",
+                                        "Vorschau",
+                                        "Rotieren",
+                                        "Drehen",
+                                        "Mittelpunkt",
+                                        "Basispunkt",
+                                        "Fadenkreuz",
+                                        "Zwischenablage",
+                                    ],
+                                    jjcad_core::i18n::tr(
+                                        "gui.dialogs.basispunkt_drehen_um_das_fadenkreuz_mittelpunkt_vorschau",
+                                    ),
+                                    |ui| {
+                                        for m in PastePivot::ALL {
+                                            ui.selectable_value(&mut paste_pivot, m, m.text())
+                                                .on_hover_text(m.tip());
+                                        }
+                                    },
+                                );
+                                zeile_tip(
+                                    &suche,
+                                    ui,
+                                    jjcad_core::i18n::tr("gui.dialogs.dateidialog"),
+                                    &["Datei", "Dialog", "System", "Eingebaut"],
+                                    jjcad_core::i18n::tr("settings.dateidialog_hint"),
+                                    |ui| {
+                                        let moeglich = crate::systemdialog::verfuegbar();
+                                        ui.selectable_value(
+                                            &mut dateidialog_system,
+                                            true,
+                                            jjcad_core::i18n::tr("gui.dialogs.system"),
+                                        )
+                                        .on_hover_text(jjcad_core::i18n::tr(
+                                            "gui.dialogs.dialog_des_betriebssystems_dolphin_dateien_windows",
+                                        ));
+                                        ui.selectable_value(
+                                            &mut dateidialog_system,
+                                            false,
+                                            jjcad_core::i18n::tr("gui.dialogs.eingebaut"),
+                                        )
+                                        .on_hover_text(jjcad_core::i18n::tr(
+                                            "gui.dialogs.dialog_von_joja_cad",
+                                        ));
+                                        if !moeglich {
+                                            ui.label(theme::dim(jjcad_core::i18n::tr(
+                                                "gui.dialogs.kein_systemdialog_verfuegbar",
+                                            )));
+                                        }
+                                    },
+                                );
+                            }
+                            // ------------------------ Darstellung -----------------
+                            "settings.category_darstellung" => {
+                                abschnitt(&suche, ui, jjcad_core::i18n::tr("gui.dialogs.darstellung"));
+                                // T0102: Hell, Dunkel oder wie das Betriebssystem —
+                                // die Wahl wirkt sofort (Palette und Stil neu).
+                                zeile_tip(
+                                    &suche,
+                                    ui,
+                                    jjcad_core::i18n::tr("gui.dialogs.design"),
+                                    &[
+                                        "Farbschema",
+                                        "Erscheinungsbild",
+                                        "Aussehen",
+                                        "Hell",
+                                        "Dunkel",
+                                        "Nachtmodus",
+                                        "System",
+                                        "Betriebssystem",
+                                    ],
+                                    jjcad_core::i18n::tr("settings.design_hint"),
+                                    |ui| {
+                                        let mut gewaehlt = design;
+                                        for m in Design::ALL {
+                                            ui.selectable_value(&mut gewaehlt, m, m.text())
+                                                .on_hover_text(m.tip());
+                                        }
+                                        design = gewaehlt;
+                                    },
+                                );
+                                // T0111: Der Akzent färbt alle hervorgehobenen
+                                // Stellen der Bedienung; jede Wahl wird in ihrem
+                                // eigenen Ton gezeigt (Farbprobe).
+                                zeile_tip(
+                                    &suche,
+                                    ui,
+                                    jjcad_core::i18n::tr("gui.dialogs.farbakzente"),
+                                    &[
+                                        "Akzent",
+                                        "Akzentfarbe",
+                                        "Bernstein",
+                                        "Orange",
+                                        "Saphir",
+                                        "Smaragd",
+                                        "Rubin",
+                                        "Amethyst",
+                                        "Blau",
+                                        "Grün",
+                                        "Rot",
+                                        "Violett",
+                                        "Farbe",
+                                    ],
+                                    jjcad_core::i18n::tr("settings.farbakzent_hint"),
+                                    |ui| {
+                                        // Auswahlfeld wie alle anderen (150 px
+                                        // Wertespalte, gleicher Pfeil); die
+                                        // geschlossene Zeile trägt eine Farbprobe
+                                        // des gewählten Akzents.
+                                        let probe = theme::akzent_probe(farbakzent);
+                                        let icon = panels::BtnIcon::Color(
+                                            jjcad_core::style::Color::rgb(
+                                                probe.r(),
+                                                probe.g(),
+                                                probe.b(),
+                                            ),
+                                        );
+                                        let cap = farbakzent.text().to_string();
+                                        if let Some(neu) = auswahl(
+                                            ui,
+                                            "farbakzent",
+                                            &cap,
+                                            Some(icon),
+                                            |ui| {
+                                                let mut out = None;
+                                                for m in Farbakzent::ALL {
+                                                    let text = egui::RichText::new(m.text())
+                                                        .color(theme::akzent_probe(m));
+                                                    if ui
+                                                        .selectable_label(m == farbakzent, text)
+                                                        .on_hover_text(m.tip())
+                                                        .clicked()
+                                                    {
+                                                        out = Some(m);
+                                                    }
+                                                }
+                                                out
+                                            },
+                                        ) {
+                                            farbakzent = neu;
+                                        }
+                                    },
+                                );
+                                // T0098: Fenster ohne Titelleiste. Ohne Rahmen des
+                                // Fenstermanagers zeichnet JoJa-CAD Minimieren,
+                                // Vergrößern und Schließen selbst; die Kopfzeile
+                                // verschiebt das Fenster. T0178: gehört zur
+                                // Darstellung, nicht zur Bedienung.
+                                zeile_tip(
+                                    &suche,
+                                    ui,
+                                    jjcad_core::i18n::tr("gui.dialogs.fensterrahmen"),
+                                    &[
+                                        "Titelleiste",
+                                        "Fenster",
+                                        "Rahmen",
+                                        "Minimieren",
+                                        "Vergrößern",
+                                        "Maximieren",
+                                        "Schließen",
+                                        "KDE",
+                                        "Windows",
+                                    ],
+                                    jjcad_core::i18n::tr(
+                                        "gui.dialogs.ohne_titelleiste_minimieren_vergroessern_und_schliessen",
+                                    ),
+                                    |ui| {
+                                        for m in Fensterrahmen::ALL {
+                                            ui.selectable_value(&mut fensterrahmen, m, m.text())
+                                                .on_hover_text(m.tip());
+                                        }
+                                    },
+                                );
+                                // T0177: Der Fensterschatten gehört zum
+                                // Fenster — beim Andocken an den Bildschirmrand
+                                // bleibt deshalb ein Streifen seiner Breite
+                                // frei. Wer das nicht will, schaltet ihn hier ab.
+                                zeile_tip(
+                                    &suche,
+                                    ui,
+                                    jjcad_core::i18n::tr("gui.dialogs.schatten"),
+                                    &["Fensterschatten", "Schatten", "Andocken", "Titelleiste"],
+                                    jjcad_core::i18n::tr("settings.fensterschatten_hint"),
+                                    |ui| {
+                                        ui.checkbox(&mut fensterschatten, "");
+                                    },
+                                );
+                                zeile_tip(
+                                    &suche,
+                                    ui,
+                                    jjcad_core::i18n::tr("gui.dialogs.linienstaerken"),
+                                    &["Stärke", "Papier", "Bildschirm", "maßstabsgetreu"],
+                                    jjcad_core::i18n::tr("settings.linienstaerken_modus_hint"),
+                                    |ui| {
+                                        // T0139: die beiden Modi heißen jetzt nach dem, was sie
+                                        // zeigen — „Bildschirm (konstant)“ und „Papier
+                                        // (maßstabsgetreu)“. Auswahlfeld statt zweier Wahlen,
+                                        // weil die vollen Namen nicht nebeneinander passen.
+                                        let cap = if lw_scaled {
+                                            jjcad_core::i18n::tr("gui.dialogs.linienstaerke_papier")
+                                        } else {
+                                            jjcad_core::i18n::tr("gui.dialogs.linienstaerke_bildschirm")
+                                        };
+                                        if let Some(neu) = auswahl(
+                                            ui,
+                                            "linienstaerken_modus",
+                                            cap,
+                                            None,
+                                            |ui| {
+                                                let mut out = None;
+                                                for (wert, text) in [
+                                                    (
+                                                        false,
+                                                        jjcad_core::i18n::tr(
+                                                            "gui.dialogs.linienstaerke_bildschirm",
+                                                        ),
+                                                    ),
+                                                    (
+                                                        true,
+                                                        jjcad_core::i18n::tr(
+                                                            "gui.dialogs.linienstaerke_papier",
+                                                        ),
+                                                    ),
+                                                ] {
+                                                    if ui
+                                                        .selectable_label(lw_scaled == wert, text)
+                                                        .clicked()
+                                                    {
+                                                        out = Some(wert);
+                                                    }
+                                                }
+                                                out
+                                            },
+                                        ) {
+                                            lw_scaled = neu;
+                                        }
+                                    },
+                                );
+                                // T0139: Faktor der Stärke im Modus „Bildschirm
+                                // (konstant)“. T0178: Das Feld ist **immer**
+                                // bedienbar — vorher war es im Papier-Modus
+                                // ausgegraut, dadurch war nicht erkennbar, dass
+                                // der Wert dort nur gerade nicht wirkt (der
+                                // Tooltip sagt es).
+                                zeile_tip(
+                                    &suche,
+                                    ui,
+                                    jjcad_core::i18n::tr("gui.dialogs.linienstaerke_faktor"),
+                                    &["Faktor", "Skalierung", "Stärke", "Bildschirm"],
+                                    jjcad_core::i18n::tr("settings.linienstaerke_faktor_hint"),
+                                    |ui| {
+                                        ui.add_sized(
+                                            [widgets::VAL_W, widgets::FELD_H],
+                                            widgets::zahl(
+                                                &mut lw_factor,
+                                                0.01,
+                                                jjcad_core::persist::LINIENSTAERKE_FAKTOR_MIN
+                                                    ..=jjcad_core::persist::LINIENSTAERKE_FAKTOR_MAX,
+                                            )
+                                            .suffix(" ×"),
+                                        );
+                                    },
+                                );
+                                // Häkchen mit vollem Text — die Labelspalte der
+                                // Zeilen (160 px) schnitte „Eigenschaften-Panel“ ab.
+                                for (name, wert) in [
+                                    ("Layer-Panel", &mut show_layers),
+                                    ("Eigenschaften-Panel", &mut show_props),
+                                ] {
+                                    if !suche.is_empty() && !name.to_lowercase().contains(&suche) {
+                                        continue;
+                                    }
+                                    ui.add_space(2.0);
+                                    ui.checkbox(wert, name);
                                 }
                             }
+                            // ------------------------ Grafik (T0165) -------------
+                            // Nur Leistungseinstellungen der Anzeige: was die
+                            // Zeichenzeit bestimmt. Die personalisierte
+                            // Darstellung (Design, Farbakzent, Linienstärken)
+                            // steht weiter in „Darstellung“.
+                            "settings.category_grafik" => {
+                                abschnitt(
+                                    &suche,
+                                    ui,
+                                    jjcad_core::i18n::tr("settings.category_grafik"),
+                                );
+                                // Kantenglättung: egui zeichnet jede Kante mit
+                                // einem weichen Saum. Aus endet die Fläche hart
+                                // auf dem Pixel — schneller, aber treppig.
+                                zeile_tip(
+                                    &suche,
+                                    ui,
+                                    jjcad_core::i18n::tr("gui.dialogs.kantenglaettung"),
+                                    &["Antialiasing", "Glättung", "Kante", "weich"],
+                                    jjcad_core::i18n::tr("settings.kantenglaettung_hint"),
+                                    |ui| {
+                                        ui.checkbox(&mut kantenglaettung, "");
+                                    },
+                                );
+                                // Breite des weichen Saums; ohne Glättung
+                                // sinnlos und deshalb ausgegraut.
+                                zeile_tip(
+                                    &suche,
+                                    ui,
+                                    jjcad_core::i18n::tr("gui.dialogs.kantenweichheit"),
+                                    &["Weichheit", "Saum", "Kante", "Glättung"],
+                                    jjcad_core::i18n::tr("settings.kantenweichheit_hint"),
+                                    |ui| {
+                                        ui.add_enabled_ui(kantenglaettung, |ui| {
+                                            ui.add(
+                                                crate::widgets::zahl(
+                                                    &mut kantenweichheit,
+                                                    0.05,
+                                                    jjcad_core::persist::KANTENWEICHHEIT_MIN
+                                                        ..=jjcad_core::persist::KANTENWEICHHEIT_MAX,
+                                                )
+                                                .suffix(" px"),
+                                            );
+                                        });
+                                    },
+                                );
+                                // T0172: Pfeilhöhe, mit der Rundungen
+                                // (Kreis, Bogen, Ellipsenbogen) in Sehnen
+                                // zerlegt werden. Klein = glatter, groß =
+                                // schneller; gilt sofort.
+                                zeile_tip(
+                                    &suche,
+                                    ui,
+                                    jjcad_core::i18n::tr("gui.dialogs.kurventoleranz"),
+                                    &[
+                                        "Rundung",
+                                        "Rundungen",
+                                        "Bogen",
+                                        "Kreis",
+                                        "Pfeilhöhe",
+                                        "Toleranz",
+                                        "Glättung",
+                                    ],
+                                    jjcad_core::i18n::tr("settings.kurventoleranz_hint"),
+                                    |ui| {
+                                        ui.add(
+                                            crate::widgets::zahl(
+                                                &mut kurven_toleranz,
+                                                0.01,
+                                                jjcad_core::persist::KURVEN_TOLERANZ_MIN
+                                                    ..=jjcad_core::persist::KURVEN_TOLERANZ_MAX,
+                                            )
+                                            .suffix(" px"),
+                                        );
+                                    },
+                                );
+                                // T0114: höchste Rastergröße der Schrift. Höher
+                                // heißt schärfer im hohen Zoom, kostet aber
+                                // Schriftatlas — deshalb nur vier feste Stufen.
+                                // Steht seit T0165 hier: es ist die Atlasgröße,
+                                // keine Darstellungsvorliebe.
+                                zeile_tip(
+                                    &suche,
+                                    ui,
+                                    jjcad_core::i18n::tr("gui.dialogs.textaufloesung"),
+                                    &[
+                                        "Maximale Textauflösung",
+                                        "Auflösung",
+                                        "Schärfe",
+                                        "Rastergröße",
+                                        "Schrift",
+                                        "Atlas",
+                                    ],
+                                    jjcad_core::i18n::tr("settings.textaufloesung_hint"),
+                                    |ui| {
+                                        let cap = textaufloesung.text().to_string();
+                                        if let Some(neu) = auswahl(
+                                            ui,
+                                            "textaufloesung",
+                                            &cap,
+                                            None,
+                                            |ui| {
+                                                let mut out = None;
+                                                for m in Textaufloesung::ALL {
+                                                    if ui
+                                                        .selectable_label(
+                                                            m == textaufloesung,
+                                                            m.text(),
+                                                        )
+                                                        .on_hover_text(m.tip())
+                                                        .clicked()
+                                                    {
+                                                        out = Some(m);
+                                                    }
+                                                }
+                                                out
+                                            },
+                                        ) {
+                                            textaufloesung = neu;
+                                        }
+                                    },
+                                );
+                                // Anzeigeliste: die aus dem Modell erzeugte
+                                // Liste wird wiederverwendet, solange sich
+                                // Zeichnung, Zoom und Raum nicht ändern. Aus
+                                // heißt jedes Bild neu aufbauen — langsamer.
+                                zeile_tip(
+                                    &suche,
+                                    ui,
+                                    jjcad_core::i18n::tr("gui.dialogs.zwischenspeicher"),
+                                    &[
+                                        "Anzeigeliste zwischenspeichern",
+                                        "Anzeigeliste",
+                                        "Cache",
+                                        "Zwischenspeicher",
+                                        "Performance",
+                                    ],
+                                    jjcad_core::i18n::tr("settings.zwischenspeicher_hint"),
+                                    |ui| {
+                                        ui.checkbox(&mut anzeigeliste_cache, "");
+                                    },
+                                );
+                                // Leistungsanzeige: dieselbe wie Umschalt+F3.
+                                zeile_tip(
+                                    &suche,
+                                    ui,
+                                    jjcad_core::i18n::tr("gui.dialogs.leistungsanzeige"),
+                                    &["Leistung", "Performance", "F3", "Messwerte"],
+                                    jjcad_core::i18n::tr("settings.leistungsanzeige_hint"),
+                                    |ui| {
+                                        ui.checkbox(&mut perf_anzeige, "");
+                                    },
+                                );
+                            }
                             // -------------------------- Raster --------------------
-                            1 => {
+                            "settings.category_raster" => {
                                 abschnitt(&suche, ui, jjcad_core::i18n::tr("gui.dialogs.raster"));
-                                zeile(&suche, ui, jjcad_core::i18n::tr("gui.dialogs.rasterweite"), |ui| {
-                                    // Dieselben Grenzen wie im Eigenschaften-Panel (1 mm … 10 m).
-                                    let mut g = grid_step;
-                                    if widgets::length_field(
-                                        ui,
-                                        &mut g,
-                                        unit,
-                                        90.0,
-                                        jjcad_core::model::GRID_STEP_MIN_MM,
-                                        jjcad_core::model::GRID_STEP_MAX_MM,
-                                    ) {
-                                        grid_step = g;
-                                    }
-                                });
-                                zeile(&suche, ui, jjcad_core::i18n::tr("gui.dialogs.raster_anzeigen"), |ui| {
-                                    if ui.checkbox(&mut show_grid, "").changed() {
-                                        snap.grid = show_grid;
-                                    }
-                                });
-                                zeile(&suche, ui, jjcad_core::i18n::tr("gui.dialogs.rasterfang"), |ui| {
-                                    ui.checkbox(&mut snap.grid, "");
-                                });
+                                zeile_tip(
+                                    &suche,
+                                    ui,
+                                    jjcad_core::i18n::tr("gui.dialogs.rasterweite"),
+                                    &["Weite", "Abstand", "Raster"],
+                                    jjcad_core::i18n::tr("settings.rasterweite_hint"),
+                                    |ui| {
+                                        // Dieselben Grenzen wie im Eigenschaften-Panel (1 mm … 10 m).
+                                        let mut g = grid_step;
+                                        if widgets::length_field(
+                                            ui,
+                                            &mut g,
+                                            unit,
+                                            widgets::VAL_W,
+                                            jjcad_core::model::GRID_STEP_MIN_MM,
+                                            jjcad_core::model::GRID_STEP_MAX_MM,
+                                        ) {
+                                            grid_step = g;
+                                        }
+                                    },
+                                );
+                                zeile_tip(
+                                    &suche,
+                                    ui,
+                                    jjcad_core::i18n::tr("gui.dialogs.raster_anzeigen"),
+                                    &["Raster", "sichtbar", "Anzeige"],
+                                    jjcad_core::i18n::tr("settings.raster_anzeigen_hint"),
+                                    |ui| {
+                                        if ui.checkbox(&mut show_grid, "").changed() {
+                                            snap.grid = show_grid;
+                                        }
+                                    },
+                                );
+                                zeile_tip(
+                                    &suche,
+                                    ui,
+                                    jjcad_core::i18n::tr("gui.dialogs.rasterfang"),
+                                    &["Raster", "Fangen", "Punkt"],
+                                    jjcad_core::i18n::tr("settings.rasterfang_hint"),
+                                    |ui| {
+                                        ui.checkbox(&mut snap.grid, "");
+                                    },
+                                );
                                 // T0144: Art des Rasters — dieselben Achsen gelten
                                 // für Anzeige und Fang.
-                                zeile(&suche, ui, jjcad_core::i18n::tr("gui.dialogs.rasterart"), |ui| {
-                                    let cap = rasterart_text(rasterart);
-                                    if let Some(neu) = panels::dropdown(
-                                        ui,
-                                        "rasterart",
-                                        cap,
-                                        None,
-                                        |ui| {
-                                            let mut out = None;
-                                            for art in jjcad_core::gitter::Rasterart::ALL {
-                                                if ui
-                                                    .selectable_label(
-                                                        art == rasterart,
-                                                        rasterart_text(art),
-                                                    )
-                                                    .clicked()
-                                                {
-                                                    out = Some(art);
+                                zeile_tip(
+                                    &suche,
+                                    ui,
+                                    jjcad_core::i18n::tr("gui.dialogs.rasterart"),
+                                    &["Raster", "Isometrisch", "Dimetrie", "Trimetrie"],
+                                    jjcad_core::i18n::tr("gui.dialogs.rasterart_hinweis"),
+                                    |ui| {
+                                        let cap = rasterart_text(rasterart);
+                                        if let Some(neu) = auswahl(
+                                            ui,
+                                            "rasterart",
+                                            cap,
+                                            None,
+                                            |ui| {
+                                                let mut out = None;
+                                                for art in jjcad_core::gitter::Rasterart::ALL {
+                                                    if ui
+                                                        .selectable_label(
+                                                            art == rasterart,
+                                                            rasterart_text(art),
+                                                        )
+                                                        .clicked()
+                                                    {
+                                                        out = Some(art);
+                                                    }
                                                 }
-                                            }
-                                            out
-                                        },
-                                    ) {
-                                        rasterart = neu;
-                                    }
-                                });
-                                if suche.is_empty() {
-                                    ui.label(theme::faint(jjcad_core::i18n::tr(
-                                        "gui.dialogs.rasterart_hinweis",
-                                    )));
-                                }
+                                                out
+                                            },
+                                        ) {
+                                            rasterart = neu;
+                                        }
+                                    },
+                                );
                                 // T0144: skaliert die gezeichnete Weite mit dem
                                 // Zoom oder bleibt sie fest?
-                                zeile_mit(
+                                zeile_tip(
                                     &suche,
                                     ui,
                                     jjcad_core::i18n::tr("gui.dialogs.rastermodus"),
                                     &["Rasterweite folgt dem Zoom", "Modus", "Raster"],
+                                    jjcad_core::i18n::tr("gui.dialogs.rastermodus_hinweis"),
                                     |ui| {
-                                    let cap = rastermodus_text(rastermodus);
-                                    if let Some(neu) = panels::dropdown(
-                                        ui,
-                                        "rastermodus",
-                                        cap,
-                                        None,
-                                        |ui| {
-                                            let mut out = None;
-                                            for m in jjcad_core::gitter::Rastermodus::ALL {
-                                                if ui
-                                                    .selectable_label(m == rastermodus, rastermodus_text(m))
-                                                    .clicked()
-                                                {
-                                                    out = Some(m);
+                                        let cap = rastermodus_text(rastermodus);
+                                        if let Some(neu) = auswahl(
+                                            ui,
+                                            "rastermodus",
+                                            cap,
+                                            None,
+                                            |ui| {
+                                                let mut out = None;
+                                                for m in jjcad_core::gitter::Rastermodus::ALL {
+                                                    if ui
+                                                        .selectable_label(
+                                                            m == rastermodus,
+                                                            rastermodus_text(m),
+                                                        )
+                                                        .clicked()
+                                                    {
+                                                        out = Some(m);
+                                                    }
                                                 }
-                                            }
-                                            out
-                                        },
-                                    ) {
-                                        rastermodus = neu;
-                                    }
-                                });
-                                if suche.is_empty() {
-                                    ui.label(theme::faint(jjcad_core::i18n::tr(
-                                        "gui.dialogs.rastermodus_hinweis",
-                                    )));
-                                }
+                                                out
+                                            },
+                                        ) {
+                                            rastermodus = neu;
+                                        }
+                                    },
+                                );
                                 // T0144: jede Eingabe liegt im Raster.
-                                zeile_mit(
+                                zeile_tip(
                                     &suche,
                                     ui,
                                     jjcad_core::i18n::tr("gui.dialogs.raster_erzwingen"),
                                     &["Rasterfang erzwingen", "Raster", "Zwang"],
+                                    jjcad_core::i18n::tr("gui.dialogs.raster_erzwingen_hinweis"),
                                     |ui| {
                                         ui.checkbox(&mut grid_force, "");
                                     },
                                 );
-                                if suche.is_empty() {
-                                    ui.label(theme::faint(jjcad_core::i18n::tr(
-                                        "gui.dialogs.raster_erzwingen_hinweis",
-                                    )));
-                                }
                             }
                             // -------------------------- Fangen --------------------
                             // T0160: Der Fang ist in Gruppen geordnet — Allgemein,
                             // Objektfang, Raster und Winkel, erweiterter Punktfang,
                             // Anzeige. Jede Stellschraube steht genau einmal hier;
                             // die Rasterweite bleibt in der Kategorie „Raster“.
-                            2 => {
+                            "settings.category_fangen" => {
                                 abschnitt(&suche, ui, jjcad_core::i18n::tr("gui.dialogs.allgemein"));
-                                zeile_mit(
+                                zeile_tip(
                                     &suche,
                                     ui,
                                     jjcad_core::i18n::tr("gui.dialogs.fangradius"),
                                     &["Trefferbereich", "Radius", "Fangen"],
+                                    jjcad_core::i18n::tr("gui.dialogs.fangradius_hinweis"),
                                     |ui| {
                                         ui.add(
                                             crate::widgets::zahl(&mut snap.tolerance_px, 1.0, 1.0..=60.0)
@@ -1849,11 +2446,6 @@ fn settings_body(app: &mut App, ui: &mut Ui) {
                                         );
                                     },
                                 );
-                                if suche.is_empty() {
-                                    ui.label(theme::faint(jjcad_core::i18n::tr(
-                                        "gui.dialogs.fangradius_hinweis",
-                                    )));
-                                }
 
                                 abschnitt(&suche, ui, jjcad_core::i18n::tr("gui.dialogs.objektfang"));
                                 for (label, field) in [
@@ -1898,38 +2490,50 @@ fn settings_body(app: &mut App, ui: &mut Ui) {
                                         ui.checkbox(field, "");
                                     });
                                 }
-                                zeile(&suche, ui, jjcad_core::i18n::tr("gui.dialogs.polarwinkel"), |ui| {
-                                    ui.add(
-                                        crate::widgets::zahl(&mut snap.polar_step, 1.0, 1.0..=180.0)
-                                            .suffix("°"),
-                                    );
-                                    ui.label(theme::dim(jjcad_core::i18n::tr("gui.dialogs.architektur_45")));
-                                });
-                                zeile(&suche, ui, jjcad_core::i18n::tr("gui.dialogs.polarfenster"), |ui| {
-                                    ui.add(
-                                        crate::widgets::zahl(&mut snap.polar_tolerance, 0.5, 0.0..=45.0)
-                                            .suffix("°"),
-                                    );
-                                    ui.label(theme::dim(
-                                        jjcad_core::i18n::tr("gui.dialogs.nur_innerhalb_dieser_abweichung_rastet_polar_ein"),
-                                    ));
-                                });
-                                if suche.is_empty() {
-                                    ui.label(theme::faint(jjcad_core::i18n::tr(
-                                        "gui.dialogs.raster_im_fang_hinweis",
-                                    )));
-                                }
+                                zeile_mit(
+                                    &suche,
+                                    ui,
+                                    jjcad_core::i18n::tr("gui.dialogs.polarwinkel"),
+                                    &["Winkel", "Raster", "45"],
+                                    |ui| {
+                                        ui.add_sized(
+                                            [70.0, widgets::FELD_H],
+                                            crate::widgets::zahl(&mut snap.polar_step, 1.0, 1.0..=180.0)
+                                                .suffix("°"),
+                                        );
+                                        ui.label(theme::dim(jjcad_core::i18n::tr(
+                                            "gui.dialogs.architektur_45",
+                                        )));
+                                    },
+                                );
+                                zeile_tip(
+                                    &suche,
+                                    ui,
+                                    jjcad_core::i18n::tr("gui.dialogs.polarfenster"),
+                                    &["Winkel", "Toleranz", "Polar"],
+                                    jjcad_core::i18n::tr(
+                                        "gui.dialogs.nur_innerhalb_dieser_abweichung_rastet_polar_ein",
+                                    ),
+                                    |ui| {
+                                        ui.add_sized(
+                                            [70.0, widgets::FELD_H],
+                                            crate::widgets::zahl(&mut snap.polar_tolerance, 0.5, 0.0..=45.0)
+                                                .suffix("°"),
+                                        );
+                                    },
+                                );
 
                                 abschnitt(
                                     &suche,
                                     ui,
                                     jjcad_core::i18n::tr("gui.dialogs.erweiterter_punktfang"),
                                 );
-                                zeile_mit(
+                                zeile_tip(
                                     &suche,
                                     ui,
                                     jjcad_core::i18n::tr("gui.dialogs.hilfslinien"),
                                     &["erweiterter Punktfang", "Verweilen", "Halten"],
+                                    jjcad_core::i18n::tr("gui.dialogs.hilfslinien_hinweis"),
                                     |ui| {
                                         ui.checkbox(&mut snap.hilfslinien, "");
                                     },
@@ -1969,11 +2573,6 @@ fn settings_body(app: &mut App, ui: &mut Ui) {
                                         });
                                     },
                                 );
-                                if suche.is_empty() {
-                                    ui.label(theme::faint(jjcad_core::i18n::tr(
-                                        "gui.dialogs.hilfslinien_hinweis",
-                                    )));
-                                }
 
                                 abschnitt(&suche, ui, jjcad_core::i18n::tr("gui.dialogs.anzeige"));
                                 zeile_mit(
@@ -1986,8 +2585,57 @@ fn settings_body(app: &mut App, ui: &mut Ui) {
                                     },
                                 );
                             }
+                            // ------------------- Voreinstellungen ----------------
+                            // T0125: eine Zeile je Objektart, Liste aus
+                            // `style::LAYER_DEFAULTS` — nicht ein zweites Mal
+                            // getippt. Der Wert gilt für neue Zeichnungen und
+                            // neu angelegte Standardebenen; bestehende Ebenen
+                            // einer offenen Zeichnung bleiben unverändert.
+                            "settings.category_voreinstellungen" => {
+                                abschnitt(
+                                    &suche,
+                                    ui,
+                                    jjcad_core::i18n::tr("settings.linienstaerken_neuer_objekte"),
+                                );
+                                for (name, _, _) in jjcad_core::style::LAYER_DEFAULTS {
+                                    zeile_tip(
+                                        &suche,
+                                        ui,
+                                        name,
+                                        &[],
+                                        jjcad_core::i18n::tr("settings.linienstaerken_hint"),
+                                        |ui| {
+                                            let breite = app.prefs.linienstaerke(name);
+                                            if let Some(neu) = panels::weight_combo(
+                                                ui,
+                                                &format!("vorgabe_{name}"),
+                                                breite,
+                                                false,
+                                            ) {
+                                                app.prefs.set_linienstaerke(name, neu);
+                                                let _ = app.prefs.save();
+                                                app.voreinstellungen_uebernehmen();
+                                            }
+                                        },
+                                    );
+                                }
+                                if suche.is_empty() {
+                                    ui.add_space(8.0);
+                                    if ui
+                                        .button(jjcad_core::i18n::tr(
+                                            "settings.vorgaben_zuruecksetzen",
+                                        ))
+                                        .clicked()
+                                    {
+                                        app.prefs.linienstaerken_zuruecksetzen();
+                                        let _ = app.prefs.save();
+                                        app.voreinstellungen_uebernehmen();
+                                        ui.ctx().request_repaint();
+                                    }
+                                }
+                            }
                             // ------------------------ Architektur -----------------
-                            3 => {
+                            "settings.category_architektur" => {
                                 abschnitt(&suche, ui, jjcad_core::i18n::tr("gui.dialogs.architektur"));
                                 for (label, val, def) in [
                                     (jjcad_core::i18n::tr("gui.dialogs.wandstaerke"), &mut wall, 240.0),
@@ -1999,7 +2647,11 @@ fn settings_body(app: &mut App, ui: &mut Ui) {
                                     if !suche.is_empty() && !label.to_lowercase().contains(&suche) {
                                         continue;
                                     }
-                                    widgets::field_row(ui, label, |ui| {
+                                    widgets::field_row_tip(
+                                        ui,
+                                        label,
+                                        jjcad_core::i18n::tr("settings.architektur_hint"),
+                                        |ui| {
                                         let mut v = *val;
                                         if widgets::length_field(
                                             ui,
@@ -2022,23 +2674,30 @@ fn settings_body(app: &mut App, ui: &mut Ui) {
                                 }
                             }
                             // -------------------------- Bemaßung ------------------
-                            4 => {
+                            "settings.category_bemassung" => {
                                 abschnitt(&suche, ui, jjcad_core::i18n::tr("gui.dialogs.bemassung"));
-                                zeile(&suche, ui, jjcad_core::i18n::tr("gui.dialogs.pfeilgroesse"), |ui| {
-                                    if ui
-                                        .add(
-                                            crate::widgets::zahl(
-                                                &mut ds.arrow_size,
-                                                0.5,
-                                                0.1..=1000.0,
+                                zeile_tip(
+                                    &suche,
+                                    ui,
+                                    jjcad_core::i18n::tr("gui.dialogs.pfeilgroesse"),
+                                    &["Pfeil", "Bogen", "Symbol"],
+                                    jjcad_core::i18n::tr("settings.pfeilgroesse_hint"),
+                                    |ui| {
+                                        if ui
+                                            .add(
+                                                crate::widgets::zahl(
+                                                    &mut ds.arrow_size,
+                                                    0.5,
+                                                    0.1..=1000.0,
+                                                )
+                                                .suffix(" mm"),
                                             )
-                                            .suffix(" mm"),
-                                        )
-                                        .changed()
-                                    {
-                                        ds_changed = true;
-                                    }
-                                });
+                                            .changed()
+                                        {
+                                            ds_changed = true;
+                                        }
+                                    },
+                                );
                                 zeile_mit(
                                     &suche,
                                     ui,
@@ -2071,648 +2730,32 @@ fn settings_body(app: &mut App, ui: &mut Ui) {
                                     crate::panels::dim_fields(app, ui);
                                 }
                             }
-                            // ------------------------- Bedienung ------------------
-                            5 => {
-                                abschnitt(&suche, ui, jjcad_core::i18n::tr("gui.dialogs.bedienung"));
-                                zeile(&suche, ui, jjcad_core::i18n::tr("gui.dialogs.ziehen"), |ui| {
-                                    for m in DragMode::ALL {
-                                        ui.selectable_value(&mut drag_mode, m, m.text())
-                                            .on_hover_text(m.tip());
-                                    }
-                                });
-                                if suche.is_empty() {
-                                    ui.label(theme::faint(jjcad_core::i18n::tr("gui.dialogs.gilt_fuer_griffe_und_objekte")));
-                                }
-                                // T0145: Das Auswahlfenster (Rechteck auf der freien
-                                // Fläche) hat einen eigenen Schalter — vorher galt
-                                // „Zwei Klicks“ nur für Griffe und Objekte.
-                                zeile(&suche, ui, jjcad_core::i18n::tr("gui.dialogs.auswahlfenster"), |ui| {
-                                    for m in DragMode::ALL {
-                                        ui.selectable_value(&mut select_mode, m, m.text())
-                                            .on_hover_text(m.tip());
-                                    }
-                                });
-                                if suche.is_empty() {
-                                    ui.label(theme::faint(jjcad_core::i18n::tr("gui.dialogs.gilt_fuer_das_auswahlfenster")));
-                                }
-                                // T0063: Objekte mit der gedrückten Maustaste
-                                // verschieben — für alle Objektarten gemeinsam.
-                                zeile(&suche, ui, jjcad_core::i18n::tr("gui.dialogs.maus_verschiebt"), |ui| {
-                                    ui.checkbox(&mut mouse_move, "");
-                                });
-                                if suche.is_empty() {
-                                    ui.label(theme::faint(
-                                        jjcad_core::i18n::tr("gui.dialogs.aus_objekte_wandern_nur_ueber_das_werkzeug_verschieben"),
-                                    ));
-                                }
-                                // T0101: Bewegungsart der Ansicht. „Kontinuierlich“
-                                // hält die Ansicht in Bewegung, solange die Funktion
-                                // gedrückt bleibt; „Sprunghaft“ rückt je Druck um einen
-                                // Schritt (bisheriges Verhalten).
-                                zeile_mit(
-                                    &suche,
-                                    ui,
-                                    jjcad_core::i18n::tr("gui.dialogs.ansicht_verschieben"),
-                                    &[
-                                        "Verschieben",
-                                        "Ansicht verschieben",
-                                        "Bewegung",
-                                        "Bewegungsart",
-                                        "kontinuierlich",
-                                        "sprunghaft",
-                                        "Schwenk",
-                                        "WASD",
-                                    ],
-                                    |ui| {
-                                        for m in jjcad_core::persist::PanMode::ALL {
-                                            ui.selectable_value(&mut pan_mode, m, m.text())
-                                                .on_hover_text(m.tip());
-                                        }
-                                    },
+                            // --------------------------- Update -------------------
+                            // T0178: leerer Platzhalter für spätere Einstellungen
+                            // der Aktualisierung. Die Seite bleibt bewusst leer —
+                            // sie hält den Platz, damit die Reihenfolge der
+                            // Kategorien schon jetzt der geplanten entspricht.
+                            "settings.category_update" => {
+                                abschnitt(&suche, ui, jjcad_core::i18n::tr("settings.category_update"));
+                                ui.add(
+                                    egui::Label::new(theme::faint(jjcad_core::i18n::tr(
+                                        "settings.update_leer",
+                                    )))
+                                    .wrap(),
                                 );
-                                if suche.is_empty() {
-                                    ui.label(theme::faint(
-                                        jjcad_core::i18n::tr("gui.dialogs.gilt_fuer_die_schwenkfunktionen"),
-                                    ));
-                                }
-                                // T0067: Tempo der Schwenk-Funktionen (`view.pan_*`,
-                                // Vorgabe W/A/S/D) als Faktor auf das Grundtempo.
-                                // T0146: Die Zeile heißt „Geschwindigkeit der
-                                // Ansicht“; „Schwenk“ bleibt als Suchbegriff.
-                                zeile_mit(
-                                    &suche,
-                                    ui,
-                                    jjcad_core::i18n::tr("gui.dialogs.geschwindigkeit_der_ansicht"),
-                                    &[
-                                        "Schwenk",
-                                        "Bewegungsgeschwindigkeit",
-                                        "Geschwindigkeit",
-                                        "WASD",
-                                        "W A S D",
-                                        "Tempo",
-                                        "Ansicht",
-                                    ],
-                                    |ui| {
-                                        let antwort = ui.add_sized(
-                                            [widgets::VAL_W, 20.0],
-                                            widgets::zahl(
-                                                &mut pan_speed,
-                                                0.05,
-                                                jjcad_core::persist::SCHWENK_FAKTOR_MIN
-                                                    ..=jjcad_core::persist::SCHWENK_FAKTOR_MAX,
-                                            )
-                                            .max_decimals(2)
-                                            .suffix(" ×"),
-                                        );
-                                        antwort.on_hover_text(
-                                            jjcad_core::i18n::tr("gui.dialogs.faktor_fuer_den_schwenk_mit_w_a_s_d_1_vorgabe"),
-                                        );
-                                    },
-                                );
-                                if suche.is_empty() {
-                                    ui.label(theme::faint(
-                                        jjcad_core::i18n::tr("gui.dialogs.gilt_fuer_den_schwenk_der_ansicht_w_a_s_d"),
-                                    ));
-                                }
-                                // T0070: Drehpunkt beim Einfügen aus der Zwischenablage.
-                                // „Basispunkt" ist das bisherige Verhalten, „Mittelpunkt"
-                                // lässt die Vorschau oben rechts am Fadenkreuz stehen.
-                                zeile_mit(
-                                    &suche,
-                                    ui,
-                                    jjcad_core::i18n::tr("gui.dialogs.drehpunkt"),
-                                    &[
-                                        "Einfügen",
-                                        "Vorschau",
-                                        "Rotieren",
-                                        "Drehen",
-                                        "Mittelpunkt",
-                                        "Basispunkt",
-                                        "Fadenkreuz",
-                                        "Zwischenablage",
-                                    ],
-                                    |ui| {
-                                        for m in PastePivot::ALL {
-                                            ui.selectable_value(&mut paste_pivot, m, m.text())
-                                                .on_hover_text(m.tip());
-                                        }
-                                    },
-                                );
-                                if suche.is_empty() {
-                                    ui.label(theme::faint(
-                                        jjcad_core::i18n::tr("gui.dialogs.basispunkt_drehen_um_das_fadenkreuz_mittelpunkt_vorschau"),
-                                    ));
-                                }
-                                // T0103: Sprache der Oberfläche — wirkt sofort, ohne Neustart.
-                zeile_mit(
-                    &suche,
-                    ui,
-                    jjcad_core::i18n::tr("gui.dialogs.sprache"),
-                    &["Language", "Deutsch", "Englisch", "English", "Übersetzung"],
-                    |ui| {
-                        let mut gewaehlt = jjcad_core::i18n::language();
-                        let vorher = gewaehlt;
-                        for l in jjcad_core::i18n::Lang::ALL {
-                            ui.selectable_value(&mut gewaehlt, l, l.name());
-                        }
-                        if gewaehlt != vorher {
-                            jjcad_core::i18n::set_language(gewaehlt);
-                            app.prefs.language = gewaehlt;
-                            let _ = app.prefs.save();
-                            // Der Wechsel gilt ab dem nächsten Bild — ohne
-                            // Anforderung bliebe die Oberfläche stehen.
-                            ui.ctx().request_repaint();
-                        }
-                    },
-                );
-                if suche.is_empty() {
-                    ui.label(theme::faint(
-                        jjcad_core::i18n::tr("settings.language_hint"),
-                    ));
-                }
-                zeile(&suche, ui, jjcad_core::i18n::tr("gui.dialogs.dateidialog"), |ui| {
-                                    let moeglich = crate::systemdialog::verfuegbar();
-                                    ui.selectable_value(&mut dateidialog_system, true, jjcad_core::i18n::tr("gui.dialogs.system"))
-                                        .on_hover_text(
-                                            jjcad_core::i18n::tr("gui.dialogs.dialog_des_betriebssystems_dolphin_dateien_windows"),
-                                        );
-                                    ui.selectable_value(
-                                        &mut dateidialog_system,
-                                        false,
-                                        jjcad_core::i18n::tr("gui.dialogs.eingebaut"),
-                                    )
-                                    .on_hover_text(jjcad_core::i18n::tr("gui.dialogs.dialog_von_joja_cad"));
-                                    if !moeglich {
-                                        ui.label(theme::dim(jjcad_core::i18n::tr("gui.dialogs.kein_systemdialog_verfuegbar")));
-                                    }
-                                });
-                                // T0098: Fenster ohne Titelleiste. Ohne Rahmen des
-                                // Fenstermanagers zeichnet JoJa-CAD Minimieren,
-                                // Vergrößern und Schließen selbst; die Kopfzeile
-                                // verschiebt das Fenster.
-                                zeile_mit(
-                                    &suche,
-                                    ui,
-                                    jjcad_core::i18n::tr("gui.dialogs.fensterrahmen"),
-                                    &[
-                                        "Titelleiste",
-                                        "Fenster",
-                                        "Rahmen",
-                                        "Minimieren",
-                                        "Vergrößern",
-                                        "Maximieren",
-                                        "Schließen",
-                                        "KDE",
-                                        "Windows",
-                                    ],
-                                    |ui| {
-                                        for m in Fensterrahmen::ALL {
-                                            ui.selectable_value(&mut fensterrahmen, m, m.text())
-                                                .on_hover_text(m.tip());
-                                        }
-                                    },
-                                );
-                                if suche.is_empty() {
-                                    ui.label(theme::faint(
-                                        jjcad_core::i18n::tr(
-                                            "gui.dialogs.ohne_titelleiste_minimieren_vergroessern_und_schliessen",
-                                        ),
-                                    ));
-                                }
-                            }
-                            // ------------------------ Darstellung -----------------
-                            6 => {
-                                abschnitt(&suche, ui, jjcad_core::i18n::tr("gui.dialogs.darstellung"));
-                                // T0102: Hell, Dunkel oder wie das Betriebssystem —
-                                // die Wahl wirkt sofort (Palette und Stil neu).
-                                zeile_mit(
-                                    &suche,
-                                    ui,
-                                    jjcad_core::i18n::tr("gui.dialogs.design"),
-                                    &[
-                                        "Farbschema",
-                                        "Erscheinungsbild",
-                                        "Aussehen",
-                                        "Hell",
-                                        "Dunkel",
-                                        "Nachtmodus",
-                                        "System",
-                                        "Betriebssystem",
-                                    ],
-                                    |ui| {
-                                        let mut gewaehlt = design;
-                                        for m in Design::ALL {
-                                            ui.selectable_value(&mut gewaehlt, m, m.text())
-                                                .on_hover_text(m.tip());
-                                        }
-                                        design = gewaehlt;
-                                    },
-                                );
-                                if suche.is_empty() {
-                                    ui.label(theme::faint(
-                                        jjcad_core::i18n::tr("settings.design_hint"),
-                                    ));
-                                }
-                                // T0111: Der Akzent färbt alle hervorgehobenen
-                                // Stellen der Bedienung; jede Wahl wird in ihrem
-                                // eigenen Ton gezeigt (Farbprobe).
-                                zeile_mit(
-                                    &suche,
-                                    ui,
-                                    jjcad_core::i18n::tr("gui.dialogs.farbakzente"),
-                                    &[
-                                        "Akzent",
-                                        "Akzentfarbe",
-                                        "Bernstein",
-                                        "Orange",
-                                        "Saphir",
-                                        "Smaragd",
-                                        "Rubin",
-                                        "Amethyst",
-                                        "Blau",
-                                        "Grün",
-                                        "Rot",
-                                        "Violett",
-                                        "Farbe",
-                                    ],
-                                    |ui| {
-                                        // Auswahlfeld wie alle anderen (150 px
-                                        // Wertespalte, gleicher Pfeil); die
-                                        // geschlossene Zeile trägt eine Farbprobe
-                                        // des gewählten Akzents.
-                                        let probe = theme::akzent_probe(farbakzent);
-                                        let icon = panels::BtnIcon::Color(
-                                            jjcad_core::style::Color::rgb(
-                                                probe.r(),
-                                                probe.g(),
-                                                probe.b(),
-                                            ),
-                                        );
-                                        let cap = farbakzent.text().to_string();
-                                        if let Some(neu) = panels::dropdown(
-                                            ui,
-                                            "farbakzent",
-                                            &cap,
-                                            Some(icon),
-                                            |ui| {
-                                                let mut out = None;
-                                                for m in Farbakzent::ALL {
-                                                    let text = egui::RichText::new(m.text())
-                                                        .color(theme::akzent_probe(m));
-                                                    if ui
-                                                        .selectable_label(m == farbakzent, text)
-                                                        .on_hover_text(m.tip())
-                                                        .clicked()
-                                                    {
-                                                        out = Some(m);
-                                                    }
-                                                }
-                                                out
-                                            },
-                                        ) {
-                                            farbakzent = neu;
-                                        }
-                                    },
-                                );
-                                if suche.is_empty() {
-                                    ui.label(theme::faint(
-                                        jjcad_core::i18n::tr("settings.farbakzent_hint"),
-                                    ));
-                                }
-                                // T0177: Der Fensterschatten gehört zum
-                                // Fenster — beim Andocken an den Bildschirmrand
-                                // bleibt deshalb ein Streifen seiner Breite
-                                // frei. Wer das nicht will, schaltet ihn hier ab.
-                                zeile_mit(
-                                    &suche,
-                                    ui,
-                                    jjcad_core::i18n::tr("gui.dialogs.schatten"),
-                                    &["Fensterschatten", "Schatten", "Andocken", "Titelleiste"],
-                                    |ui| {
-                                        ui.checkbox(&mut fensterschatten, "");
-                                    },
-                                );
-                                if suche.is_empty() {
-                                    ui.label(theme::faint(
-                                        jjcad_core::i18n::tr("settings.fensterschatten_hint"),
-                                    ));
-                                }
-                                zeile(&suche, ui, jjcad_core::i18n::tr("gui.dialogs.linienstaerken"), |ui| {
-                                    // T0139: die beiden Modi heißen jetzt nach dem, was sie
-                                    // zeigen — „Bildschirm (konstant)“ und „Papier
-                                    // (maßstabsgetreu)“. Auswahlfeld statt zweier Wahlen,
-                                    // weil die vollen Namen nicht nebeneinander passen.
-                                    let cap = if lw_scaled {
-                                        jjcad_core::i18n::tr("gui.dialogs.linienstaerke_papier")
-                                    } else {
-                                        jjcad_core::i18n::tr("gui.dialogs.linienstaerke_bildschirm")
-                                    };
-                                    if let Some(neu) = panels::dropdown(
-                                        ui,
-                                        "linienstaerken_modus",
-                                        cap,
-                                        None,
-                                        |ui| {
-                                            let mut out = None;
-                                            for (wert, text) in [
-                                                (
-                                                    false,
-                                                    jjcad_core::i18n::tr(
-                                                        "gui.dialogs.linienstaerke_bildschirm",
-                                                    ),
-                                                ),
-                                                (
-                                                    true,
-                                                    jjcad_core::i18n::tr(
-                                                        "gui.dialogs.linienstaerke_papier",
-                                                    ),
-                                                ),
-                                            ] {
-                                                if ui.selectable_label(lw_scaled == wert, text).clicked() {
-                                                    out = Some(wert);
-                                                }
-                                            }
-                                            out
-                                        },
-                                    ) {
-                                        lw_scaled = neu;
-                                    }
-                                });
-                                // T0139: Faktor nur im Modus „Bildschirm (konstant)“. Im
-                                // Papier-Modus bleibt die Zeile sichtbar, aber deaktiviert —
-                                // dort bestimmt der Maßstab der Zeichnung die Breite.
-                                zeile_mit(
-                                    &suche,
-                                    ui,
-                                    jjcad_core::i18n::tr("gui.dialogs.linienstaerke_faktor"),
-                                    &["Faktor", "Skalierung", "Stärke", "Bildschirm"],
-                                    |ui| {
-                                        ui.add_enabled_ui(!lw_scaled, |ui| {
-                                            ui.add_sized(
-                                                [ui.available_width(), 20.0],
-                                                widgets::zahl(
-                                                    &mut lw_factor,
-                                                    0.01,
-                                                    jjcad_core::persist::LINIENSTAERKE_FAKTOR_MIN
-                                                        ..=jjcad_core::persist::LINIENSTAERKE_FAKTOR_MAX,
-                                                )
-                                                .suffix(" ×"),
-                                            );
-                                        });
-                                    },
-                                );
-                                if suche.is_empty() {
-                                    ui.label(theme::faint(jjcad_core::i18n::tr(
-                                        "settings.linienstaerke_faktor_hint",
-                                    )));
-                                }
-                                // Häkchen mit vollem Text — die Labelspalte der
-                                // Zeilen (96 px) schnitte „Eigenschaften-Panel“ ab.
-                                for (name, wert) in [
-                                    ("Layer-Panel", &mut show_layers),
-                                    ("Eigenschaften-Panel", &mut show_props),
-                                    ("Lineale einblenden", &mut rulers),
-                                ] {
-                                    if !suche.is_empty() && !name.to_lowercase().contains(&suche) {
-                                        continue;
-                                    }
-                                    ui.add_space(2.0);
-                                    ui.checkbox(wert, name);
-                                }
-                            }
-                            // ------------------------ Grafik (T0165) -------------
-                            // Nur Leistungseinstellungen der Anzeige: was die
-                            // Zeichenzeit bestimmt. Die personalisierte
-                            // Darstellung (Design, Farbakzent, Linienstärken)
-                            // steht weiter in „Darstellung“.
-                            7 => {
-                                abschnitt(
-                                    &suche,
-                                    ui,
-                                    jjcad_core::i18n::tr("settings.category_grafik"),
-                                );
-                                // Kantenglättung: egui zeichnet jede Kante mit
-                                // einem weichen Saum. Aus endet die Fläche hart
-                                // auf dem Pixel — schneller, aber treppig.
-                                zeile_mit(
-                                    &suche,
-                                    ui,
-                                    jjcad_core::i18n::tr("gui.dialogs.kantenglaettung"),
-                                    &["Antialiasing", "Glättung", "Kante", "weich"],
-                                    |ui| {
-                                        ui.checkbox(&mut kantenglaettung, "");
-                                    },
-                                );
-                                if suche.is_empty() {
-                                    ui.label(theme::faint(jjcad_core::i18n::tr(
-                                        "settings.kantenglaettung_hint",
-                                    )));
-                                }
-                                // Breite des weichen Saums; ohne Glättung
-                                // sinnlos und deshalb ausgegraut.
-                                zeile_mit(
-                                    &suche,
-                                    ui,
-                                    jjcad_core::i18n::tr("gui.dialogs.kantenweichheit"),
-                                    &["Weichheit", "Saum", "Kante", "Glättung"],
-                                    |ui| {
-                                        ui.add_enabled_ui(kantenglaettung, |ui| {
-                                            ui.add(
-                                                crate::widgets::zahl(
-                                                    &mut kantenweichheit,
-                                                    0.05,
-                                                    jjcad_core::persist::KANTENWEICHHEIT_MIN
-                                                        ..=jjcad_core::persist::KANTENWEICHHEIT_MAX,
-                                                )
-                                                .suffix(" px"),
-                                            );
-                                        });
-                                    },
-                                );
-                                if suche.is_empty() {
-                                    ui.label(theme::faint(jjcad_core::i18n::tr(
-                                        "settings.kantenweichheit_hint",
-                                    )));
-                                }
-                                // T0172: Pfeilhöhe, mit der Rundungen
-                                // (Kreis, Bogen, Ellipsenbogen) in Sehnen
-                                // zerlegt werden. Klein = glatter, groß =
-                                // schneller; gilt sofort.
-                                zeile_mit(
-                                    &suche,
-                                    ui,
-                                    jjcad_core::i18n::tr("gui.dialogs.kurventoleranz"),
-                                    &[
-                                        "Rundung",
-                                        "Rundungen",
-                                        "Bogen",
-                                        "Kreis",
-                                        "Pfeilhöhe",
-                                        "Toleranz",
-                                        "Glättung",
-                                    ],
-                                    |ui| {
-                                        ui.add(
-                                            crate::widgets::zahl(
-                                                &mut kurven_toleranz,
-                                                0.01,
-                                                jjcad_core::persist::KURVEN_TOLERANZ_MIN
-                                                    ..=jjcad_core::persist::KURVEN_TOLERANZ_MAX,
-                                            )
-                                            .suffix(" px"),
-                                        );
-                                    },
-                                );
-                                if suche.is_empty() {
-                                    ui.label(theme::faint(jjcad_core::i18n::tr(
-                                        "settings.kurventoleranz_hint",
-                                    )));
-                                }
-                                // T0114: höchste Rastergröße der Schrift. Höher
-                                // heißt schärfer im hohen Zoom, kostet aber
-                                // Schriftatlas — deshalb nur vier feste Stufen.
-                                // Steht seit T0165 hier: es ist die Atlasgröße,
-                                // keine Darstellungsvorliebe.
-                                zeile_mit(
-                                    &suche,
-                                    ui,
-                                    jjcad_core::i18n::tr("gui.dialogs.textaufloesung"),
-                                    &[
-                                        "Maximale Textauflösung",
-                                        "Auflösung",
-                                        "Schärfe",
-                                        "Rastergröße",
-                                        "Schrift",
-                                        "Atlas",
-                                    ],
-                                    |ui| {
-                                        let cap = textaufloesung.text().to_string();
-                                        if let Some(neu) = panels::dropdown(
-                                            ui,
-                                            "textaufloesung",
-                                            &cap,
-                                            None,
-                                            |ui| {
-                                                let mut out = None;
-                                                for m in Textaufloesung::ALL {
-                                                    if ui
-                                                        .selectable_label(
-                                                            m == textaufloesung,
-                                                            m.text(),
-                                                        )
-                                                        .on_hover_text(m.tip())
-                                                        .clicked()
-                                                    {
-                                                        out = Some(m);
-                                                    }
-                                                }
-                                                out
-                                            },
-                                        ) {
-                                            textaufloesung = neu;
-                                        }
-                                    },
-                                );
-                                if suche.is_empty() {
-                                    ui.label(theme::faint(
-                                        jjcad_core::i18n::tr("settings.textaufloesung_hint"),
-                                    ));
-                                }
-                                // Anzeigeliste: die aus dem Modell erzeugte
-                                // Liste wird wiederverwendet, solange sich
-                                // Zeichnung, Zoom und Raum nicht ändern. Aus
-                                // heißt jedes Bild neu aufbauen — langsamer.
-                                zeile_mit(
-                                    &suche,
-                                    ui,
-                                    jjcad_core::i18n::tr("gui.dialogs.zwischenspeicher"),
-                                    &[
-                                        "Anzeigeliste zwischenspeichern",
-                                        "Anzeigeliste",
-                                        "Cache",
-                                        "Zwischenspeicher",
-                                        "Performance",
-                                    ],
-                                    |ui| {
-                                        ui.checkbox(&mut anzeigeliste_cache, "");
-                                    },
-                                );
-                                if suche.is_empty() {
-                                    ui.label(theme::faint(jjcad_core::i18n::tr(
-                                        "settings.zwischenspeicher_hint",
-                                    )));
-                                }
-                                // Leistungsanzeige: dieselbe wie Umschalt+F3.
-                                zeile_mit(
-                                    &suche,
-                                    ui,
-                                    jjcad_core::i18n::tr("gui.dialogs.leistungsanzeige"),
-                                    &["Leistung", "Performance", "F3", "Messwerte"],
-                                    |ui| {
-                                        ui.checkbox(&mut perf_anzeige, "");
-                                    },
-                                );
-                                if suche.is_empty() {
-                                    ui.label(theme::faint(jjcad_core::i18n::tr(
-                                        "settings.leistungsanzeige_hint",
-                                    )));
-                                }
-                            }
-                            // ------------------- Voreinstellungen ----------------
-                            // T0125: eine Zeile je Objektart, Liste aus
-                            // `style::LAYER_DEFAULTS` — nicht ein zweites Mal
-                            // getippt. Der Wert gilt für neue Zeichnungen und
-                            // neu angelegte Standardebenen; bestehende Ebenen
-                            // einer offenen Zeichnung bleiben unverändert.
-                            8 => {
-                                abschnitt(
-                                    &suche,
-                                    ui,
-                                    jjcad_core::i18n::tr("settings.linienstaerken_neuer_objekte"),
-                                );
-                                for (name, _, _) in jjcad_core::style::LAYER_DEFAULTS {
-                                    zeile_mit(&suche, ui, name, &[], |ui| {
-                                        let breite = app.prefs.linienstaerke(name);
-                                        if let Some(neu) = panels::weight_combo(
-                                            ui,
-                                            &format!("vorgabe_{name}"),
-                                            breite,
-                                            false,
-                                        ) {
-                                            app.prefs.set_linienstaerke(name, neu);
-                                            let _ = app.prefs.save();
-                                            app.voreinstellungen_uebernehmen();
-                                        }
-                                    });
-                                }
-                                if suche.is_empty() {
-                                    ui.add_space(8.0);
-                                    if ui
-                                        .button(jjcad_core::i18n::tr(
-                                            "settings.vorgaben_zuruecksetzen",
-                                        ))
-                                        .clicked()
-                                    {
-                                        app.prefs.linienstaerken_zuruecksetzen();
-                                        let _ = app.prefs.save();
-                                        app.voreinstellungen_uebernehmen();
-                                        ui.ctx().request_repaint();
-                                    }
-                                    ui.label(theme::faint(jjcad_core::i18n::tr(
-                                        "settings.linienstaerken_hint",
-                                    )));
-                                }
                             }
                             // ------------------------ Speicherorte (T0127) ---------
-                            9 => {
+                            "settings.category_speicherorte" => {
                                 abschnitt(&suche, ui, jjcad_core::i18n::tr("settings.speicherorte"));
                                 // Die Wurzel ist nicht änderbar — sie steht als
                                 // eigener Abschnitt über den Pfadfeldern, weil
                                 // ein voller Pfad nicht in die Wertespalte passt.
+                                // T0178: Die Erklärung hängt als Tooltip daran.
                                 let wurzel_name = jjcad_core::i18n::tr("settings.datenwurzel");
                                 if suche.is_empty() || wurzel_name.to_lowercase().contains(&suche) {
                                     ui.add_space(4.0);
-                                    ui.label(theme::bold(wurzel_name, 14.0));
+                                    ui.label(theme::bold(wurzel_name, 14.0))
+                                        .on_hover_text(jjcad_core::i18n::tr("settings.speicherorte_hint"));
                                     ui.add(
                                         egui::Label::new(theme::dim(
                                             &jjcad_core::daten::pfad_text(
@@ -2729,11 +2772,6 @@ fn settings_body(app: &mut App, ui: &mut Ui) {
                                     {
                                         app.datenordner_oeffnen();
                                     }
-                                }
-                                if suche.is_empty() {
-                                    ui.label(theme::faint(jjcad_core::i18n::tr(
-                                        "settings.speicherorte_hint",
-                                    )));
                                     ui.add_space(6.0);
                                 }
                                 if !app.ui.speicherorte_geladen {
@@ -2972,23 +3010,20 @@ fn settings_body(app: &mut App, ui: &mut Ui) {
                                 }
                             }
                             // ------------------------ Sicherung (T0129) --------
-                            10 => {
-                                if suche.is_empty() {
-                                    ui.add(
-                                        egui::Label::new(theme::dim(jjcad_core::i18n::tr(
-                                            "settings.sicherung_erklaerung",
-                                        )))
-                                        .wrap(),
-                                    );
-                                    ui.add_space(8.0);
-                                }
+                            "settings.category_sicherung" => {
                                 abschnitt(&suche, ui, jjcad_core::i18n::tr("settings.sicherung"));
+                                // T0178: Die Erklärung der Sicherung steht als
+                                // Tooltip an der ersten Zeile statt als Absatz.
                                 zeile_tip(
                                     &suche,
                                     ui,
                                     jjcad_core::i18n::tr("settings.sicherung_zwischenstaende"),
                                     &["Verlauf", "Sicherungen", "an", "aus"],
-                                    jjcad_core::i18n::tr("settings.sicherung_zwischenstaende_tip"),
+                                    &format!(
+                                        "{}\n\n{}",
+                                        jjcad_core::i18n::tr("settings.sicherung_erklaerung"),
+                                        jjcad_core::i18n::tr("settings.sicherung_zwischenstaende_tip")
+                                    ),
                                     |ui| {
                                         ui.checkbox(&mut s_verlauf, "");
                                     },
@@ -3016,7 +3051,7 @@ fn settings_body(app: &mut App, ui: &mut Ui) {
                                     jjcad_core::i18n::tr("settings.sicherung_zeitraum_tip"),
                                     |ui| {
                                         let caption = stunden_name(s_stunden);
-                                        if let Some(neu) = crate::panels::dropdown(
+                                        if let Some(neu) = auswahl(
                                             ui,
                                             "sicherung_stunden",
                                             &caption,
@@ -3093,12 +3128,24 @@ fn settings_body(app: &mut App, ui: &mut Ui) {
                                     intervall_min: s_intervall.max(1) as u32,
                                 };
                                 let abstand = einst.abstand(dateien);
+                                // T0178: die Beispielrechnung steht im Tooltip
+                                // derselben Zeile statt als Absatz darunter.
                                 zeile_tip(
                                     &suche,
                                     ui,
                                     jjcad_core::i18n::tr("settings.sicherung_abstand"),
                                     &["Abstand der Stände", "Prozent"],
-                                    jjcad_core::i18n::tr("settings.sicherung_abstand_tip"),
+                                    &format!(
+                                        "{}\n\n{}",
+                                        jjcad_core::i18n::tr("settings.sicherung_abstand_tip"),
+                                        jjcad_core::i18n::t_args_owned(
+                                            "settings.sicherung_abstand_beispiel",
+                                            &[
+                                                ("stunde", zahl_deutsch(60.0 * abstand, 0)),
+                                                ("tag", zahl_deutsch(480.0 * abstand, 0)),
+                                            ],
+                                        )
+                                    ),
                                     |ui| {
                                         ui.label(theme::dim(&format!(
                                             "{} %",
@@ -3106,23 +3153,6 @@ fn settings_body(app: &mut App, ui: &mut Ui) {
                                         )));
                                     },
                                 );
-                                if suche.is_empty() {
-                                    // Konkretes Beispiel statt nur einer Prozentzahl:
-                                    // dieselben Zahlen stehen in `docs/benutzer/SICHERUNG.md`.
-                                    ui.add(
-                                        egui::Label::new(theme::faint(
-                                            jjcad_core::i18n::t_args_owned(
-                                                "settings.sicherung_abstand_beispiel",
-                                                &[
-                                                    ("stunde", zahl_deutsch(60.0 * abstand, 0)),
-                                                    ("tag", zahl_deutsch(480.0 * abstand, 0)),
-                                                ],
-                                            ),
-                                        ))
-                                        .wrap(),
-                                    );
-                                    ui.add_space(6.0);
-                                }
                                 zeile_mit(
                                     &suche,
                                     ui,
@@ -3151,10 +3181,12 @@ fn settings_body(app: &mut App, ui: &mut Ui) {
                                         )));
                                     },
                                 );
-                                zeile(
+                                zeile_tip(
                                     &suche,
                                     ui,
                                     jjcad_core::i18n::tr("settings.sicherung_ordner"),
+                                    &["Ordner", "Dateimanager"],
+                                    jjcad_core::i18n::tr("settings.sicherung_hint"),
                                     |ui| {
                                         if ui
                                             .button(jjcad_core::i18n::tr(
@@ -3166,14 +3198,6 @@ fn settings_body(app: &mut App, ui: &mut Ui) {
                                         }
                                     },
                                 );
-                                if suche.is_empty() {
-                                    ui.add(
-                                        egui::Label::new(theme::faint(jjcad_core::i18n::tr(
-                                            "settings.sicherung_hint",
-                                        )))
-                                        .wrap(),
-                                    );
-                                }
                             }
                             // Die Auswahl oben ist auf die Liste begrenzt; der
                             // Zweig hält den `match` vollständig.
@@ -3357,9 +3381,7 @@ fn settings_body(app: &mut App, ui: &mut Ui) {
         app.ui.show_grid = show_grid;
     }
 
-    let settings_changed = input != cur.input_unit
-        || decimals as usize != cur.decimals
-        || (grid_step - cur.snap.grid_step).abs() > 1e-9
+    let settings_changed = (grid_step - cur.snap.grid_step).abs() > 1e-9
         || rasterart != cur.snap.grid_kind
         || rastermodus != cur.snap.grid_mode
         || grid_force != cur.snap.grid_force
@@ -3387,15 +3409,11 @@ fn settings_body(app: &mut App, ui: &mut Ui) {
         || (wall - cur.wall_thickness).abs() > 1e-9
         || (door - cur.door_width).abs() > 1e-9
         || (win - cur.window_width).abs() > 1e-9
-        || (stair - cur.stair_width).abs() > 1e-9
-        || rulers != cur.show_rulers;
+        || (stair - cur.stair_width).abs() > 1e-9;
 
     if settings_changed {
         let p = json!({
-            "input_unit": input.short(),
-            "decimals": decimals,
             "show_grid": show_grid,
-            "show_rulers": rulers,
             "text_height": unit.from_mm(th),
             "wall_thickness": unit.from_mm(wall),
             "door_width": unit.from_mm(door),
@@ -6222,6 +6240,9 @@ mod tests_einstellungen {
         for _ in 0..3 {
             out = ctx.run(bild(), |ctx| app.ui(ctx));
         }
+        // T0178: Die Erklärungsabsätze sind zu Tooltips geworden; die Zeilen
+        // selbst und ihre Werte stehen weiter im Bild („Weite folgt“ ist der
+        // Name der Moduszeile, „Ansicht (skaliert)“ ihr Wert).
         for wort in [
             "Rasterweite",
             "Raster anzeigen",
@@ -6237,6 +6258,15 @@ mod tests_einstellungen {
                 "„{wort}“ fehlt in der Kategorie Raster"
             );
         }
+    }
+
+    /// Stelle einer Kategorie über ihren Katalogschlüssel (T0178) — Tests
+    /// sollen nicht an der Reihenfolge der Liste hängen.
+    fn kat_index(key: &str) -> usize {
+        EINSTELLUNGSKATEGORIEN
+            .iter()
+            .position(|k| k.key == key)
+            .unwrap_or_else(|| panic!("Kategorie {key} fehlt"))
     }
 
     /// Mitte der gezeichneten Beschriftung `label` (Knopf, Chip, Zeilenwert).
@@ -6717,7 +6747,7 @@ mod tests_einstellungen {
         let ctx = egui::Context::default();
         let mut app = App::with_ctx(ctx.clone());
         app.ui.settings_open = true;
-        app.ui.settings_kat = 5;
+        app.ui.settings_kat = kat_index("settings.category_bedienung");
         let bild = || egui::RawInput {
             screen_rect: Some(Rect::from_min_size(Pos2::ZERO, Vec2::new(1500.0, 950.0))),
             ..Default::default()
@@ -6752,7 +6782,7 @@ mod tests_einstellungen {
         let ctx = egui::Context::default();
         let mut app = App::with_ctx(ctx.clone());
         app.ui.settings_open = true;
-        app.ui.settings_kat = 6;
+        app.ui.settings_kat = kat_index("settings.category_darstellung");
         let bild = || egui::RawInput {
             screen_rect: Some(Rect::from_min_size(Pos2::ZERO, Vec2::new(1500.0, 950.0))),
             ..Default::default()
@@ -6786,7 +6816,7 @@ mod tests_einstellungen {
         let ctx = egui::Context::default();
         let mut app = App::with_ctx(ctx.clone());
         app.ui.settings_open = true;
-        app.ui.settings_kat = 6;
+        app.ui.settings_kat = kat_index("settings.category_darstellung");
         app.ui.lineweights_scaled = false;
         let bild = || egui::RawInput {
             screen_rect: Some(Rect::from_min_size(Pos2::ZERO, Vec2::new(1500.0, 950.0))),
@@ -6916,7 +6946,7 @@ mod tests_einstellungen {
         let ctx = egui::Context::default();
         let mut app = App::with_ctx(ctx.clone());
         app.ui.settings_open = true;
-        app.ui.settings_kat = 5;
+        app.ui.settings_kat = kat_index("settings.category_bedienung");
         let bild = || egui::RawInput {
             screen_rect: Some(Rect::from_min_size(Pos2::ZERO, Vec2::new(1500.0, 950.0))),
             ..Default::default()
@@ -6968,7 +6998,7 @@ mod tests_einstellungen {
         let ctx = egui::Context::default();
         let mut app = App::with_ctx(ctx.clone());
         app.ui.settings_open = true;
-        app.ui.settings_kat = 5;
+        app.ui.settings_kat = kat_index("settings.category_bedienung");
         let bild = || egui::RawInput {
             screen_rect: Some(Rect::from_min_size(Pos2::ZERO, Vec2::new(1500.0, 950.0))),
             ..Default::default()
@@ -7012,7 +7042,7 @@ mod tests_einstellungen {
         let ctx = egui::Context::default();
         let mut app = App::with_ctx(ctx.clone());
         app.ui.settings_open = true;
-        app.ui.settings_kat = 5;
+        app.ui.settings_kat = kat_index("settings.category_bedienung");
         app.ui.settings_suche = String::new();
         let bild = || egui::RawInput {
             screen_rect: Some(Rect::from_min_size(Pos2::ZERO, Vec2::new(1500.0, 950.0))),
@@ -7055,7 +7085,7 @@ mod tests_einstellungen {
         let ctx = egui::Context::default();
         let mut app = App::with_ctx(ctx.clone());
         app.ui.settings_open = true;
-        app.ui.settings_kat = 5;
+        app.ui.settings_kat = kat_index("settings.category_bedienung");
         let bild = || egui::RawInput {
             screen_rect: Some(Rect::from_min_size(Pos2::ZERO, Vec2::new(1500.0, 950.0))),
             ..Default::default()
@@ -7097,7 +7127,7 @@ mod tests_einstellungen {
         let mut app = App::with_ctx(ctx.clone());
         app.prefs.paste_pivot = PastePivot::Center;
         app.ui.settings_open = true;
-        app.ui.settings_kat = 5;
+        app.ui.settings_kat = kat_index("settings.category_bedienung");
         let bild = || egui::RawInput {
             screen_rect: Some(Rect::from_min_size(Pos2::ZERO, Vec2::new(1500.0, 950.0))),
             ..Default::default()
@@ -7166,7 +7196,7 @@ mod tests_einstellungen {
         let ctx = egui::Context::default();
         let mut app = App::with_ctx(ctx.clone());
         app.ui.settings_open = true;
-        app.ui.settings_kat = 5;
+        app.ui.settings_kat = kat_index("settings.category_bedienung");
         let bild = || egui::RawInput {
             screen_rect: Some(Rect::from_min_size(Pos2::ZERO, Vec2::new(1500.0, 950.0))),
             ..Default::default()
@@ -7254,7 +7284,7 @@ mod tests_einstellungen {
         let mut app = App::with_ctx(ctx.clone());
         app.prefs.pan_mode = jjcad_core::persist::PanMode::Kontinuierlich;
         app.ui.settings_open = true;
-        app.ui.settings_kat = 5;
+        app.ui.settings_kat = kat_index("settings.category_bedienung");
         app.ui.settings_suche = "Ansicht verschieben".into();
         let bild = || egui::RawInput {
             screen_rect: Some(Rect::from_min_size(Pos2::ZERO, Vec2::new(1500.0, 950.0))),
@@ -7326,7 +7356,7 @@ mod tests_einstellungen {
         let mut app = App::with_ctx(ctx.clone());
         app.prefs.fensterrahmen = Fensterrahmen::System;
         app.ui.settings_open = true;
-        app.ui.settings_kat = 5;
+        app.ui.settings_kat = kat_index("settings.category_bedienung");
         // Die Seite scrollt: mit dem Suchbegriff steht die Zeile oben im Bild
         // und ist anklickbar (Suchbegriff zugleich mitgeprüft).
         app.ui.settings_suche = "Fensterrahmen".to_string();
@@ -7402,5 +7432,318 @@ mod tests_einstellungen {
             "der Fenstermanager muss die Dekoration abbestellen (Befehle: {cmds:?})"
         );
     }
+
+    // -----------------------------------------------------------------------
+    // T0178 — Einstellungen aufgeräumt
+    // -----------------------------------------------------------------------
+
+    /// Zeichnet die Einstellungsseite einer Kategorie ein paar Bilder lang
+    /// (ein selbstgroßes Fenster wächst erst nach mehreren Bildern).
+    fn seite(key: &str, suche: &str) -> (App, egui::Context, egui::FullOutput) {
+        let ctx = egui::Context::default();
+        let mut app = App::with_ctx(ctx.clone());
+        app.ui.settings_open = true;
+        app.ui.settings_kat = kat_index(key);
+        app.ui.settings_suche = suche.to_string();
+        let bild = || egui::RawInput {
+            screen_rect: Some(Rect::from_min_size(Pos2::ZERO, Vec2::new(1500.0, 950.0))),
+            ..Default::default()
+        };
+        let mut out = ctx.run(bild(), |ctx| app.ui(ctx));
+        for _ in 0..3 {
+            out = ctx.run(bild(), |ctx| app.ui(ctx));
+        }
+        (app, ctx, out)
+    }
+
+    /// Alle gezeichneten Texte eines Bildes.
+    fn gezeichnete_texte(out: &egui::FullOutput) -> Vec<String> {
+        out.shapes
+            .iter()
+            .filter_map(|cs| match &cs.shape {
+                egui::Shape::Text(t) => Some(t.galley.text().to_string()),
+                _ => None,
+            })
+            .collect()
+    }
+
+    /// T0178: Die Kategorien stehen in der mit dem Nutzer abgestimmten
+    /// Reihenfolge; „Einheiten und Maßstab“ ist entfallen, „Update“ ist ein
+    /// leerer Platzhalter. Der Zweig der Einstellungen hängt am Schlüssel —
+    /// eine Umsortierung zeigt keine fremden Einstellungen.
+    #[test]
+    fn kategorien_stehen_in_der_abgestimmten_reihenfolge() {
+        let keys: Vec<&str> = EINSTELLUNGSKATEGORIEN.iter().map(|k| k.key).collect();
+        assert_eq!(
+            keys,
+            vec![
+                "settings.category_bedienung",
+                "settings.category_darstellung",
+                "settings.category_grafik",
+                "settings.category_raster",
+                "settings.category_fangen",
+                "settings.category_voreinstellungen",
+                "settings.category_architektur",
+                "settings.category_bemassung",
+                "settings.category_update",
+                "settings.category_speicherorte",
+                "settings.category_sicherung",
+            ],
+            "die Reihenfolge der Kategorien weicht von der Vorgabe ab"
+        );
+        // Der Schlüssel wird zusammengesetzt, damit die i18n-Prüfung ihn nicht
+        // als „benutzt“ zählt (er ist gelöscht, T0178).
+        let entfallen = format!("settings.category_{}", "einheiten");
+        assert!(
+            !keys.contains(&entfallen.as_str()),
+            "„Einheiten und Maßstab“ ist wieder da"
+        );
+        // Jeder Schlüssel muss einen Zweig in `settings_body` haben: sonst
+        // bleibt die Seite einer Kategorie leer, ohne dass es auffällt.
+        let quelle = include_str!("dialogs.rs");
+        for key in &keys {
+            assert!(
+                quelle.contains(&format!("{key}\" =>")),
+                "Kategorie {key} hat keinen Zweig in settings_body"
+            );
+        }
+    }
+
+    /// T0178: „Update“ ist bewusst leer und sagt das auch.
+    #[test]
+    fn update_ist_ein_leerer_platzhalter() {
+        let _sperre = KONFIG.lock().unwrap_or_else(|e| e.into_inner());
+        let _konfig = WegwerfKonfig::neu("update");
+        let (_, _, out) = seite("settings.category_update", "");
+        let texte = gezeichnete_texte(&out);
+        assert!(
+            texte.iter().any(|t| t.contains("Noch keine Einstellungen")),
+            "der Hinweis auf den leeren Platzhalter fehlt (gezeichnet: {texte:?})"
+        );
+        // Keine einzige Einstellungszeile auf der Seite.
+        for fremd in ["Rasterweite", "Fangradius", "Wandstärke", "Design"] {
+            assert!(
+                !texte.iter().any(|t| t == fremd),
+                "„{fremd}“ steht auf der Update-Seite"
+            );
+        }
+    }
+
+    /// T0178: „Lineale einblenden“ hatte keine Wirkung (der Wert `show_rulers`
+    /// wird nirgends gezeichnet) und ist entfallen.
+    #[test]
+    fn lineale_einblenden_ist_entfernt() {
+        let _sperre = KONFIG.lock().unwrap_or_else(|e| e.into_inner());
+        let _konfig = WegwerfKonfig::neu("lineale");
+        let (_, _, out) = seite("settings.category_darstellung", "");
+        let texte = gezeichnete_texte(&out);
+        assert!(
+            !texte.iter().any(|t| t.contains("Lineale")),
+            "„Lineale einblenden“ steht noch in der Darstellung"
+        );
+        let quelle = include_str!("dialogs.rs");
+        assert!(
+            !quelle.contains("\"Lineale einblenden\""),
+            "der Einstellungspunkt steht noch im Quelltext"
+        );
+    }
+
+    /// T0178: Die Beschreibungen unter den Einstellungspunkten sind Tooltips
+    /// geworden — sie werden nicht mehr gezeichnet.
+    #[test]
+    fn beschreibungen_werden_nicht_mehr_gezeichnet() {
+        let _sperre = KONFIG.lock().unwrap_or_else(|e| e.into_inner());
+        let _konfig = WegwerfKonfig::neu("hinweise");
+
+        let (_, _, out) = seite("settings.category_bedienung", "");
+        let texte = gezeichnete_texte(&out);
+        for alt in [
+            "Gilt für Griffe und verschiebbare Objekte",
+            "Gilt für das Aufziehen des Auswahlfensters",
+            "gilt sofort, ohne Neustart",
+        ] {
+            assert!(
+                !texte.iter().any(|t| t == alt),
+                "der Hinweis „{alt}“ steht noch als Absatz auf der Seite"
+            );
+        }
+
+        let (_, _, out) = seite("settings.category_grafik", "");
+        let texte = gezeichnete_texte(&out);
+        assert!(
+            !texte
+                .iter()
+                .any(|t| t.starts_with("weiche Kante an Flächen")),
+            "der Kantenglättungs-Hinweis steht noch als Absatz"
+        );
+    }
+
+    /// T0178: Verweilt der Zeiger auf einem Namen mit Hinweis, erscheint der
+    /// Text als Tooltip über dem Infozeichen.
+    #[test]
+    fn hinweis_erscheint_als_tooltip_am_namen() {
+        let _sperre = KONFIG.lock().unwrap_or_else(|e| e.into_inner());
+        let _konfig = WegwerfKonfig::neu("tooltip");
+        let (mut app, ctx, out) = seite("settings.category_bedienung", "Sprache");
+        let stelle = text_links(&out, "Sprache").expect("Zeile „Sprache“ fehlt");
+        // Der Name beginnt 4 px in der Zeile; die Fläche reicht über das
+        // Infozeichen rechts.
+        let ziel = Pos2::new(stelle.x + 20.0, stelle.y + 5.0);
+        let mut gefunden = false;
+        let mut t = 0.0;
+        for _ in 0..30 {
+            t += 0.1;
+            let raw = egui::RawInput {
+                screen_rect: Some(Rect::from_min_size(Pos2::ZERO, Vec2::new(1500.0, 950.0))),
+                time: Some(t),
+                events: vec![egui::Event::PointerMoved(ziel)],
+                ..Default::default()
+            };
+            let out = ctx.run(raw, |ctx| app.ui(ctx));
+            if gezeichnete_texte(&out)
+                .iter()
+                .any(|s| s.contains("gilt sofort, ohne Neustart"))
+            {
+                gefunden = true;
+                break;
+            }
+        }
+        assert!(
+            gefunden,
+            "der Tooltip „gilt sofort, ohne Neustart“ erscheint nicht am Namen"
+        );
+    }
+
+    /// T0178: Eingabefeld und Auswahlfeld sind gleich hoch — vorher war das
+/// Auswahlfeld 20 px hoch, ein Zahlenfeld 24 px (egui-Vorgabe).
+#[test]
+fn eingabefeld_und_auswahlfeld_gleich_hoch() {
+    let ctx = egui::Context::default();
+    let mut wert = 5.0_f64;
+    let mut hoehen: Vec<f32> = Vec::new();
+    let _ = ctx.run(
+        egui::RawInput {
+            screen_rect: Some(Rect::from_min_size(Pos2::ZERO, Vec2::new(600.0, 400.0))),
+            ..Default::default()
+        },
+        |ctx| {
+            egui::CentralPanel::default().show(ctx, |ui| {
+                widgets::field_row(ui, "Zahlenfeld", |ui| {
+                    let r = ui.add(widgets::zahl(&mut wert, 1.0, 0.0..=10.0));
+                    hoehen.push(r.rect.height());
+                });
+                widgets::field_row(ui, "Auswahlfeld", |ui| {
+                    let mut flaeche = None;
+                    let _ = panels::dropdown_mit_hoehe_rect(
+                        ui,
+                        "hoehe",
+                        "Wert",
+                        None,
+                        widgets::FELD_H,
+                        &mut flaeche,
+                        |_| None::<i32>,
+                    );
+                    if let Some(r) = flaeche {
+                        hoehen.push(r.height());
+                    }
+                });
+            });
+        },
+    );
+    assert_eq!(hoehen.len(), 2, "zwei Felder erwartet, gemessen {hoehen:?}");
+    assert!(
+        (hoehen[0] - hoehen[1]).abs() < 0.01,
+        "Zahlenfeld {} px, Auswahlfeld {} px",
+        hoehen[0],
+        hoehen[1]
+    );
+    for h in &hoehen {
+        assert!(
+            (h - widgets::FELD_H).abs() < 0.01,
+            "ein Feld ist {h} px hoch, erwartet {}",
+            widgets::FELD_H
+        );
+    }
+}
+
+/// T0178: Die gewählte Kategorie trägt den Farbakzent, nicht mehr Blau.
+///
+/// Gemessen wird die Fläche der Zeile in der Kategorienliste: sie muss dem
+/// weichen Akzentton nahekommen und dem alten Auswahlblau nicht. Ein exakter
+/// Farbvergleich ginge nicht — die Fläche wird mit der Deckkraft des Fensters
+/// gezeichnet.
+#[test]
+fn gewaehlte_kategorie_traegt_den_farbakzent() {
+    let _sperre = KONFIG.lock().unwrap_or_else(|e| e.into_inner());
+    let _konfig = WegwerfKonfig::neu("akzent");
+    let (app, _, out) = seite("settings.category_darstellung", "");
+    let nav = app.ui.last_settings_nav.expect("Kategorienliste gezeichnet");
+    let abstand = |a: egui::Color32, b: egui::Color32| -> i32 {
+        (a.r() as i32 - b.r() as i32).abs()
+            + (a.g() as i32 - b.g() as i32).abs()
+            + (a.b() as i32 - b.b() as i32).abs()
+    };
+    let akzent = Palette::accent_soft();
+    let blau = Palette::select();
+    let mut treffer = 0;
+    let mut fuellungen = Vec::new();
+    for cs in &out.shapes {
+        if let egui::Shape::Rect(r) = &cs.shape {
+            // Nur die Zeilenfläche selbst (volle Breite der Liste), nicht
+            // Suchfeld oder Streifen.
+            if !nav.intersects(r.rect) || r.rect.width() < nav.width() - 2.0 {
+                continue;
+            }
+            fuellungen.push((r.fill, r.rect));
+            let zu_akzent = abstand(r.fill, akzent);
+            let zu_blau = abstand(r.fill, blau);
+            if zu_akzent <= 45 && zu_akzent < zu_blau {
+                treffer += 1;
+            }
+        }
+    }
+    assert!(
+        treffer >= 1,
+        "keine Zeile im Akzentton gefüllt (Füllungen: {fuellungen:?})"
+    );
+}
+
+/// T0178: Die Sprache steht als erste Zeile der Bedienung.
+    #[test]
+    fn sprache_steht_oben_in_der_bedienung() {
+        let _sperre = KONFIG.lock().unwrap_or_else(|e| e.into_inner());
+        let _konfig = WegwerfKonfig::neu("sprache-oben");
+        let (_, _, out) = seite("settings.category_bedienung", "");
+        let sprache = text_links(&out, "Sprache").expect("Zeile „Sprache“ fehlt");
+        let ziehen = text_links(&out, "Ziehen").expect("Zeile „Ziehen“ fehlt");
+        assert!(
+            sprache.y < ziehen.y,
+            "„Sprache“ steht bei y {}, „Ziehen“ bei y {} — die Sprache gehört nach oben",
+            sprache.y,
+            ziehen.y
+        );
+    }
+
+    /// T0178: Der Stärke-Faktor ist auch im Modus „Papier“ bedienbar — vorher
+    /// war das Feld dort ausgegraut.
+    #[test]
+    fn staerke_faktor_bleibt_im_papier_modus_bedienbar() {
+        let quelle = include_str!("dialogs.rs");
+        let anfang = quelle.find("fn settings_body").expect("settings_body");
+        let ende = quelle[anfang..]
+            .find("\nfn ")
+            .map(|i| anfang + i)
+            .unwrap_or(quelle.len());
+        let body = &quelle[anfang..ende];
+        assert!(
+            !body.contains("add_enabled_ui(!lw_scaled"),
+            "der Stärke-Faktor wird im Papier-Modus noch ausgegraut"
+        );
+        assert!(
+            body.contains("linienstaerke_faktor_hint"),
+            "dem Stärke-Faktor fehlt der erklärende Tooltip"
+        );
+    }
+
 }
 
