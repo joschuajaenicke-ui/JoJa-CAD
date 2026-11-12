@@ -1285,6 +1285,10 @@ pub(crate) const EINSTELLUNGSKATEGORIEN: &[Einstellungskategorie] = &[
             "Grün",
             "Rot",
             "Violett",
+            "Fensterschatten",
+            "Schatten",
+            "Andocken",
+            "Titelleiste",
             "Darstellung",
         ],
     },
@@ -1578,6 +1582,9 @@ fn settings_body(app: &mut App, ui: &mut Ui) {
     let mut design = app.prefs.design;
     // T0111: Farbakzent der Bedienung (Vorgabe Bernstein).
     let mut farbakzent = app.prefs.farbakzent;
+    // T0177: Der selbst gezeichnete Fensterschatten (ohne Titelleiste) ist
+    // abschaltbar.
+    let mut fensterschatten = app.prefs.fensterschatten;
     // T0114/T0165: höchste Rastergröße der Schrift (Vorgabe 256 px).
     let mut textaufloesung = app.prefs.textaufloesung;
     // T0165: Kantenglättung der Zeichnung, Anzeigeliste und Leistungsanzeige.
@@ -2370,6 +2377,24 @@ fn settings_body(app: &mut App, ui: &mut Ui) {
                                 if suche.is_empty() {
                                     ui.label(theme::faint(
                                         jjcad_core::i18n::tr("settings.farbakzent_hint"),
+                                    ));
+                                }
+                                // T0177: Der Fensterschatten gehört zum
+                                // Fenster — beim Andocken an den Bildschirmrand
+                                // bleibt deshalb ein Streifen seiner Breite
+                                // frei. Wer das nicht will, schaltet ihn hier ab.
+                                zeile_mit(
+                                    &suche,
+                                    ui,
+                                    jjcad_core::i18n::tr("gui.dialogs.schatten"),
+                                    &["Fensterschatten", "Schatten", "Andocken", "Titelleiste"],
+                                    |ui| {
+                                        ui.checkbox(&mut fensterschatten, "");
+                                    },
+                                );
+                                if suche.is_empty() {
+                                    ui.label(theme::faint(
+                                        jjcad_core::i18n::tr("settings.fensterschatten_hint"),
                                     ));
                                 }
                                 zeile(&suche, ui, jjcad_core::i18n::tr("gui.dialogs.linienstaerken"), |ui| {
@@ -3211,6 +3236,14 @@ fn settings_body(app: &mut App, ui: &mut Ui) {
             ));
         // Ohne diese Anforderung bliebe die Kopfzeile im alten Zustand stehen,
         // bis der nächste Klick ein Bild auslöst.
+        ui.ctx().request_repaint();
+    }
+    if app.prefs.fensterschatten != fensterschatten {
+        // T0177: gilt sofort — der Rand hängt am Bild, nicht am Fenster. Ohne
+        // ihn füllt die Oberfläche das Fenster ganz; ein Neustart ist nicht
+        // nötig (die Fenstergröße bleibt, sie ist nur nicht mehr eingerückt).
+        app.prefs.fensterschatten = fensterschatten;
+        let _ = app.prefs.save();
         ui.ctx().request_repaint();
     }
     if app.prefs.design != design {
@@ -6706,6 +6739,40 @@ mod tests_einstellungen {
         assert!(
             jjcad_core::persist::UserPrefs::default().mouse_move,
             "Vorgabe: Maus verschiebt ist eingeschaltet"
+        );
+    }
+
+    /// T0177: Unter „Darstellung“ steht der Schalter für den Fensterschatten —
+    /// gezeichnet (nicht nur im Code geführt), und die Vorgabe ist an
+    /// (bisheriges Aussehen).
+    #[test]
+    fn darstellung_zeigt_die_einstellung_fensterschatten() {
+        let _sperre = KONFIG.lock().unwrap_or_else(|e| e.into_inner());
+        let _konfig = WegwerfKonfig::neu("fensterschatten");
+        let ctx = egui::Context::default();
+        let mut app = App::with_ctx(ctx.clone());
+        app.ui.settings_open = true;
+        app.ui.settings_kat = 6;
+        let bild = || egui::RawInput {
+            screen_rect: Some(Rect::from_min_size(Pos2::ZERO, Vec2::new(1500.0, 950.0))),
+            ..Default::default()
+        };
+        let mut out = ctx.run(bild(), |ctx| app.ui(ctx));
+        for _ in 0..3 {
+            out = ctx.run(bild(), |ctx| app.ui(ctx));
+        }
+        assert!(
+            out.shapes
+                .iter()
+                .any(|cs| matches!(&cs.shape,
+                    egui::Shape::Text(t) if t.galley.text() == "Schatten")),
+            "Zeile „Schatten“ fehlt im Einstellungsfenster"
+        );
+        // T0127: `prefs.json` liegt in der Datenwurzel — geprüft wird die
+        // Vorgabe selbst, nicht der Rechner des Nutzers.
+        assert!(
+            jjcad_core::persist::UserPrefs::default().fensterschatten,
+            "Vorgabe: der Fensterschatten ist eingeschaltet"
         );
     }
 
