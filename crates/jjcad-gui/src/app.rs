@@ -3894,6 +3894,11 @@ impl App {
     }
 
     pub fn set_view(&mut self, v: View) {
+        // T0180: Eine bewegte Ansicht lässt das Kontextmenü nicht stehen — es
+        // hängt an einer Bildschirmstelle, die Zeichnung darunter wandert weg.
+        // Der eine Ort dafür ist hier: Schwenk, Zoom, Einpassen und Drehen
+        // laufen alle durch `set_view`.
+        self.ui.menu = None;
         let active = self.active;
         let tabkind = self.tabs[active].tab.clone();
         let t = &mut self.tabs[active];
@@ -4301,6 +4306,11 @@ impl App {
         if actions::action(id).is_none() {
             return;
         }
+        // T0180: Eine neue Zeichenfunktion schließt das offene Kontextmenü. Der
+        // Klick auf Ribbon/Hotbar täte das ohnehin (Klick außerhalb), ein
+        // Tastenkürzel oder eine Hotbar-Ziffer nicht — dort blieb das Menü über
+        // dem startenden Werkzeug stehen.
+        self.ui.menu = None;
         // T0094: Eine andere Funktion beendet das Einfügen. Sonst liefen Vorschau
         // und Werkzeug gleichzeitig — der nächste Klick setzte die Kopie ab,
         // während das Werkzeug auf seinen Punkt wartete.
@@ -7993,6 +8003,9 @@ fn rail(ui: &mut egui::Ui, icon: &str, tooltip: &str, chevron: &str) -> bool {
 
     /// Startet die Vorschau für einen Block aus der Bibliothek.
     pub fn start_ghost_block(&mut self, block: String) {
+        // T0180: wie beim Einfügen aus der Zwischenablage — eine neue
+        // Zeichenfunktion schließt das offene Kontextmenü.
+        self.ui.menu = None;
         let pos = self
             .pointer_world
             .or_else(|| self.pointer_world_fallback())
@@ -8244,6 +8257,9 @@ fn rail(ui: &mut egui::Ui, icon: &str, tooltip: &str, chevron: &str) -> bool {
         if self.ghost.is_some() {
             return;
         }
+        // T0180: Das Einfügen ist ebenfalls eine Zeichenfunktion — das offene
+        // Kontextmenü schließt dabei.
+        self.ui.menu = None;
         let pos = self
             .pointer_world
             .or_else(|| self.pointer_world_fallback())
@@ -16473,6 +16489,76 @@ mod tests_rechtsklick {
             eintrag(&out).is_none(),
             "bei offenem Panel darf der Eintrag nicht erscheinen"
         );
+    }
+
+    /// T0180: Eine bewegte Ansicht nimmt das Kontextmenü mit. Es hängt an einer
+    /// Bildschirmstelle — die Zeichnung darunter wandert beim Schwenken und
+    /// Zoomen weg, der Eintrag zeigte dann auf ein anderes Objekt. Alle
+    /// Bewegungen laufen durch `App::set_view`.
+    ///
+    /// Je Bewegung eine frische App: ein zweiter Rechtsklick auf dieselbe
+    /// Stelle gilt in egui als Doppelklick und öffnet das Menü nicht erneut.
+    #[test]
+    fn schwenken_schliesst_das_kontextmenue() {
+        let (ctx, mut app, _id) = app_mit_schraffur();
+        let _ = objektmenue_oeffnen(&ctx, &mut app);
+        assert!(app.menu_open(), "Vorbedingung: das Menü steht offen");
+
+        // Schwenk um einen Schritt (60 px, wie `view.pan_*`).
+        app.schwenk_schritt(60.0, 0.0);
+        assert!(!app.menu_open(), "das Menü blieb beim Schwenken offen");
+    }
+
+    #[test]
+    fn zoomen_schliesst_das_kontextmenue() {
+        let (ctx, mut app, _id) = app_mit_schraffur();
+        let _ = objektmenue_oeffnen(&ctx, &mut app);
+        assert!(app.menu_open(), "Vorbedingung: das Menü steht offen");
+
+        app.zoom_by(1.25);
+        assert!(!app.menu_open(), "das Menü blieb beim Zoomen offen");
+    }
+
+    #[test]
+    fn einpassen_schliesst_das_kontextmenue() {
+        let (ctx, mut app, _id) = app_mit_schraffur();
+        let _ = objektmenue_oeffnen(&ctx, &mut app);
+        assert!(app.menu_open(), "Vorbedingung: das Menü steht offen");
+
+        app.fit_view();
+        assert!(!app.menu_open(), "das Menü blieb beim Einpassen offen");
+    }
+
+    /// T0180: Eine neue Zeichenfunktion schließt das Menü. Der Klick auf
+    /// Ribbon/Hotbar täte das ohnehin (Klick außerhalb), ein Tastenkürzel oder
+    /// eine Hotbar-Ziffer nicht — dort blieb das Menü über dem startenden
+    /// Werkzeug stehen.
+    #[test]
+    fn werkzeugstart_schliesst_das_kontextmenue() {
+        let (ctx, mut app, _id) = app_mit_schraffur();
+        let _ = objektmenue_oeffnen(&ctx, &mut app);
+        assert!(app.menu_open(), "Vorbedingung: das Menü steht offen");
+
+        app.start_tool("draw.wall");
+        assert!(
+            !app.menu_open(),
+            "das Menü blieb beim Start des Werkzeugs offen"
+        );
+        assert_eq!(app.tool_id(), Some("draw.wall"), "das Werkzeug läuft nicht");
+    }
+
+    /// T0180: Auch das Einfügen (Zwischenablage) ist eine Zeichenfunktion.
+    #[test]
+    fn einfuegen_schliesst_das_kontextmenue() {
+        let (ctx, mut app, _id) = app_mit_schraffur();
+        let _ = objektmenue_oeffnen(&ctx, &mut app);
+        assert!(app.menu_open(), "Vorbedingung: das Menü steht offen");
+
+        let id = app.doc().ents()[0].id;
+        app.merke_zwischenablage(&[id], None);
+        app.start_ghost_paste();
+        assert!(!app.menu_open(), "das Menü blieb beim Einfügen offen");
+        assert!(app.ghost.is_some(), "die Einfüge-Vorschau läuft nicht");
     }
 }
 
