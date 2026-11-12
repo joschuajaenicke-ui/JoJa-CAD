@@ -8976,6 +8976,14 @@ impl App {
         self.ui.menu.is_some()
     }
 
+    /// Steht das Eigenschaften-Panel **offen** — also eingeschaltet *und*
+    /// aufgeklappt? Eingeklappt ist es nur noch die schmale Leiste am rechten
+    /// Rand, und ausgeschaltet ist es gar nicht da. Beide Fälle zählen als
+    /// „nicht offen“ (T0179).
+    pub fn eigenschaften_panel_offen(&self) -> bool {
+        self.ui.props_open && !self.ui.props_collapsed
+    }
+
     /// Zeichnet das offene Kontextmenü (Objekt, Zeichenfläche oder Chip).
     fn draw_menu(&mut self, ctx: &egui::Context) {
         let Some(menu) = self.ui.menu else {
@@ -9077,11 +9085,18 @@ impl App {
                             self.mark_changed();
                             close = true;
                         }
-                        ui.separator();
-                        if ui.button(jjcad_core::i18n::tr("gui.app.eigenschaften_im_panel")).clicked() {
-                            self.ui.props_open = true;
-                            self.session_mut().select(vec![id]);
-                            close = true;
+                        // T0179: Der Eintrag öffnet das Eigenschaften-Panel.
+                        // Steht es schon offen, gibt es nichts zu öffnen —
+                        // dann wird er gar nicht erst angeboten (auch der
+                        // Trenner entfällt, sonst stünde eine Leerzeile).
+                        if !self.eigenschaften_panel_offen() {
+                            ui.separator();
+                            if ui.button(jjcad_core::i18n::tr("gui.app.eigenschaften_im_panel")).clicked() {
+                                self.ui.props_open = true;
+                                self.ui.props_collapsed = false;
+                                self.session_mut().select(vec![id]);
+                                close = true;
+                            }
                         }
                     }
                     MenuKind::Canvas => {
@@ -16279,6 +16294,149 @@ mod tests_rechtsklick {
             Some(MenuKind::Canvas) => {}
             other => panic!("erwartet Flächenmenü, bekommen: {other:?}"),
         }
+    }
+
+    /// Alle gemalten Texte eines Bildes samt ihrer Fläche — auch die in
+    /// Gruppen (`Shape::Vec`), sonst findet der Test die Menüeinträge nicht.
+    fn texte_mit_lage(out: &egui::FullOutput) -> Vec<(String, egui::Rect)> {
+        fn sammeln(s: &egui::Shape, ziel: &mut Vec<(String, egui::Rect)>) {
+            match s {
+                egui::Shape::Text(t) => ziel.push((
+                    t.galley.text().to_string(),
+                    egui::Rect::from_min_size(t.pos, t.galley.size()),
+                )),
+                egui::Shape::Vec(v) => {
+                    for s in v {
+                        sammeln(s, ziel);
+                    }
+                }
+                _ => {}
+            }
+        }
+        let mut ziel = Vec::new();
+        for cs in &out.shapes {
+            sammeln(&cs.shape, &mut ziel);
+        }
+        ziel
+    }
+
+    fn primaer(pos: Pos2, gedrueckt: bool) -> egui::Event {
+        egui::Event::PointerButton {
+            pos,
+            button: egui::PointerButton::Primary,
+            pressed: gedrueckt,
+            modifiers: egui::Modifiers::NONE,
+        }
+    }
+
+    /// Rechtsklick in die Fläche und den Rahmen des offenen Menüs zurückgeben.
+    ///
+    /// `App::ui` zeichnet die Fläche samt Panels, das Menü hängt in
+    /// `App::draw_menu` (in der App ruft `update` beide nacheinander) — der
+    /// Test muss den zweiten Schritt selbst gehen, sonst bleibt das Menü
+    /// unsichtbar und der Test prüft nichts.
+    fn objektmenue_oeffnen(ctx: &egui::Context, app: &mut App) -> egui::FullOutput {
+        let _ = ctx.run(rahmen(vec![]), |ctx| {
+            app.ui(ctx);
+            app.draw_menu(ctx);
+        });
+        let pos = world_to_screen(
+            app.ui.last_canvas,
+            app.current_view(),
+            V2::new(1500.0, 1000.0),
+        );
+        let _ = ctx.run(
+            rahmen(vec![egui::Event::PointerMoved(pos), sekundaer(pos, true)]),
+            |ctx| {
+                app.ui(ctx);
+                app.draw_menu(ctx);
+            },
+        );
+        let _ = ctx.run(rahmen(vec![sekundaer(pos, false)]), |ctx| {
+            app.ui(ctx);
+            app.draw_menu(ctx);
+        });
+        // Das Menü öffnet beim **Loslassen** — erst das nächste Bild trägt
+        // seinen Inhalt, und nur dieses Bild ist als Prüfstand brauchbar.
+        ctx.run(rahmen(vec![]), |ctx| {
+            app.ui(ctx);
+            app.draw_menu(ctx);
+        })
+    }
+
+    fn eintrag(out: &egui::FullOutput) -> Option<egui::Rect> {
+        texte_mit_lage(out)
+            .into_iter()
+            .find(|(t, _)| t.trim() == "Eigenschaften im Panel")
+            .map(|(_, r)| r)
+    }
+
+    /// T0179: Der Eintrag „Eigenschaften im Panel“ steht nur, solange das
+    /// Panel nicht offen ist — und sein Klick klappt es auf. Vorher setzte er
+    /// nur `props_open`, was bei eingeklapptem Panel schon `true` war: der
+    /// Klick tat sichtbar nichts.
+    #[test]
+    fn eigenschaften_eintrag_oeffnet_das_eingeklappte_panel() {
+        let (ctx, mut app, id) = app_mit_schraffur();
+        // Ausgangslage: Panel eingeklappt (Leiste am rechten Rand).
+        app.ui.props_open = true;
+        app.ui.props_collapsed = true;
+        let out = objektmenue_oeffnen(&ctx, &mut app);
+        let kasten = eintrag(&out).expect("bei eingeklapptem Panel fehlt der Eintrag");
+
+        let klick = kasten.center();
+        let _ = ctx.run(
+            rahmen(vec![egui::Event::PointerMoved(klick), primaer(klick, true)]),
+            |ctx| {
+                app.ui(ctx);
+                app.draw_menu(ctx);
+            },
+        );
+        let _ = ctx.run(rahmen(vec![primaer(klick, false)]), |ctx| {
+            app.ui(ctx);
+            app.draw_menu(ctx);
+        });
+        let out = ctx.run(rahmen(vec![]), |ctx| {
+            app.ui(ctx);
+            app.draw_menu(ctx);
+        });
+
+        assert!(
+            app.eigenschaften_panel_offen(),
+            "der Klick hat das Panel nicht aufgeklappt (open={}, collapsed={})",
+            app.ui.props_open,
+            app.ui.props_collapsed
+        );
+        assert!(app.selection().contains(&id), "das Objekt ist nicht ausgewählt");
+        assert!(
+            eintrag(&out).is_none(),
+            "der Eintrag steht noch im Menü, obwohl das Panel offen ist"
+        );
+    }
+
+    /// Gegenprobe zur Sichtbarkeit: ausgeschaltet (gar kein Panel) wird der
+    /// Eintrag angeboten, offen stehend nicht.
+    #[test]
+    fn eigenschaften_eintrag_nur_bei_geschlossenem_panel() {
+        let (ctx, mut app, _id) = app_mit_schraffur();
+        app.ui.props_open = false;
+        app.ui.props_collapsed = false;
+        let out = objektmenue_oeffnen(&ctx, &mut app);
+        assert!(
+            eintrag(&out).is_some(),
+            "ohne Panel muss der Eintrag angeboten werden"
+        );
+
+        app.ui.props_open = true;
+        app.ui.props_collapsed = false;
+        let out = ctx.run(rahmen(vec![]), |ctx| {
+            app.ui(ctx);
+            app.draw_menu(ctx);
+        });
+        assert!(
+            eintrag(&out).is_none(),
+            "bei offenem Panel darf der Eintrag nicht erscheinen"
+        );
     }
 }
 
