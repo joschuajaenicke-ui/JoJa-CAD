@@ -1342,6 +1342,14 @@ mod tests_haarnnaht {
 // Hauptfunktion
 // ---------------------------------------------------------------------------
 
+/// Zwei Flächen gelten als gleich, wenn sich ihre Ecken um weniger als einen
+/// Hundertstelpunkt unterscheiden (T0184). Ein Vergleich auf Gleichheit genügt
+/// nicht: egui rechnet die Fläche aus Bruchteilen zusammen, und ein Zittern um
+/// 0,001 px würde die Ansicht Bild für Bild nachziehen.
+pub(crate) fn flaechen_gleich(a: Rect, b: Rect) -> bool {
+    (a.min - b.min).length() < 0.01 && (a.max - b.max).length() < 0.01
+}
+
 pub fn show(app: &mut App, ui: &mut Ui) {
     // Leistungsanzeige (T0068): mit der Zeichenfläche beginnt der Abschnitt
     // „Fangen“ — Navigation, Zeigerlage und Fangpunkte werden hier ermittelt.
@@ -1349,6 +1357,18 @@ pub fn show(app: &mut App, ui: &mut Ui) {
     let rect = ui.available_rect_before_wrap();
     let (resp, painter) = ui.allocate_painter(rect.size(), Sense::click_and_drag());
     let rect = resp.rect;
+    // T0184: Ändert sich nur die **Zeichenfläche** (Seiten-Panel auf oder zu,
+    // Ribbon ein- oder ausgeklappt), bleibt die Zeichnung an ihrem
+    // Bildschirmplatz — die Fläche wächst dann nur in eine Richtung. Die
+    // Fensterfläche entscheidet mit: wird das Fenster selbst vergrößert, bleibt
+    // es beim Einpassen um die Mitte.
+    let buehne = ui.ctx().screen_rect();
+    if let Some((alt, alt_buehne)) = app.ui.letzte_flaeche {
+        if !flaechen_gleich(alt, rect) && flaechen_gleich(alt_buehne, buehne) {
+            app.ansicht_verankern(alt, rect, buehne.left_top());
+        }
+    }
+    app.ui.letzte_flaeche = Some((rect, buehne));
     app.ui.last_canvas = rect;
 
     // Betriebssystem-Zeiger ausblenden: die Fläche zeichnet ihr eigenes Fadenkreuz.

@@ -1129,6 +1129,11 @@ pub struct UiState {
     /// Dateidialog ab, bleibt der Merker nicht stehen und der Reiter offen.
     pub schliessen_nach_speichern: Option<usize>,
     pub last_canvas: Rect,
+    /// Zeichenfläche und Fensterfläche des **vorigen** Bildes (T0184). Daraus
+    /// erkennt `canvas::show`, ob sich nur die Zeichenfläche geändert hat
+    /// (Seiten-Panel auf oder zu) — dann bleibt die Zeichnung an ihrem
+    /// Bildschirmplatz. `None` im ersten Bild: da gibt es noch nichts zu halten.
+    pub letzte_flaeche: Option<(Rect, Rect)>,
     /// Kennzahlen des Pools für die Einstellungsseite:
     /// (Zeit, Bytes, Stände, Dateien).
     pub sicherung_info: Option<(f64, u64, usize, usize)>,
@@ -1279,6 +1284,7 @@ impl Default for UiState {
             confirm_close: None,
             schliessen_nach_speichern: None,
             last_canvas: Rect::from_min_size(Pos2::ZERO, Vec2::new(1000.0, 700.0)),
+            letzte_flaeche: None,
             sicherung_info: None,
             last_ribbon_content_h: 0.0,
             last_slots: None,
@@ -3891,6 +3897,11 @@ impl App {
     }
 
     pub fn set_view(&mut self, v: View) {
+        // T0180: Eine bewegte Ansicht lässt das Kontextmenü nicht stehen — es
+        // hängt an einer Bildschirmstelle, die Zeichnung darunter wandert weg.
+        // Der eine Ort dafür ist hier: Schwenk, Zoom, Einpassen und Drehen
+        // laufen alle durch `set_view`.
+        self.ui.menu = None;
         let active = self.active;
         let tabkind = self.tabs[active].tab.clone();
         let t = &mut self.tabs[active];
@@ -3904,6 +3915,36 @@ impl App {
             }
         }
         t.cache = None;
+    }
+
+    /// Hält die Zeichnung an ihrem Bildschirmplatz, wenn sich die Zeichenfläche
+    /// ändert (T0184).
+    ///
+    /// Die Ansicht hängt an der **Mitte** der Zeichenfläche (`screen_to_world`).
+    /// Öffnet sich ein Seiten-Panel, wandert diese Mitte und die Zeichnung
+    /// rutschte zur Seite. Deshalb wird der Weltpunkt am linken oberen
+    /// Fensterrand festgehalten: die Fläche wächst oder schrumpft nur in eine
+    /// Richtung, die Objekte bleiben stehen. Gerechnet wird mit der **Fläche**,
+    /// nicht mit dem Panel — damit gilt es für jedes Panel an jeder Seite und
+    /// für jede Breite, auch für künftige.
+    ///
+    /// `alt`/`neu` sind die Zeichenflächen, `anker` ist der feste Bildschirmpunkt
+    /// (linke obere Ecke der Fensterfläche).
+    pub fn ansicht_verankern(&mut self, alt: Rect, neu: Rect, anker: Pos2) {
+        let v = self.current_view();
+        // Weltpunkt, der bisher am Anker stand …
+        let w = screen_to_world(alt, v, anker);
+        // … und der Versatz, den `screen_to_world` mit der neuen Fläche bildet.
+        let d = rot_vec(
+            V2::new(
+                (anker.x - neu.center().x) as f64 / v.zoom,
+                -((anker.y - neu.center().y) as f64) / v.zoom,
+            ),
+            -v.rot,
+        );
+        let mut neu_v = v;
+        neu_v.center = V2::new(w.x - d.x, w.y - d.y);
+        self.set_view(neu_v);
     }
 
     /// Ansichtsfenster, dessen **Ansichtsbereich** gerade eingestellt wird
@@ -4268,6 +4309,11 @@ impl App {
         if actions::action(id).is_none() {
             return;
         }
+        // T0180: Eine neue Zeichenfunktion schließt das offene Kontextmenü. Der
+        // Klick auf Ribbon/Hotbar täte das ohnehin (Klick außerhalb), ein
+        // Tastenkürzel oder eine Hotbar-Ziffer nicht — dort blieb das Menü über
+        // dem startenden Werkzeug stehen.
+        self.ui.menu = None;
         // T0094: Eine andere Funktion beendet das Einfügen. Sonst liefen Vorschau
         // und Werkzeug gleichzeitig — der nächste Klick setzte die Kopie ab,
         // während das Werkzeug auf seinen Punkt wartete.
@@ -7960,6 +8006,9 @@ fn rail(ui: &mut egui::Ui, icon: &str, tooltip: &str, chevron: &str) -> bool {
 
     /// Startet die Vorschau für einen Block aus der Bibliothek.
     pub fn start_ghost_block(&mut self, block: String) {
+        // T0180: wie beim Einfügen aus der Zwischenablage — eine neue
+        // Zeichenfunktion schließt das offene Kontextmenü.
+        self.ui.menu = None;
         let pos = self
             .pointer_world
             .or_else(|| self.pointer_world_fallback())
@@ -8211,6 +8260,9 @@ fn rail(ui: &mut egui::Ui, icon: &str, tooltip: &str, chevron: &str) -> bool {
         if self.ghost.is_some() {
             return;
         }
+        // T0180: Das Einfügen ist ebenfalls eine Zeichenfunktion — das offene
+        // Kontextmenü schließt dabei.
+        self.ui.menu = None;
         let pos = self
             .pointer_world
             .or_else(|| self.pointer_world_fallback())
@@ -16467,6 +16519,76 @@ mod tests_rechtsklick {
             "bei offenem Panel darf der Eintrag nicht erscheinen"
         );
     }
+
+    /// T0180: Eine bewegte Ansicht nimmt das Kontextmenü mit. Es hängt an einer
+    /// Bildschirmstelle — die Zeichnung darunter wandert beim Schwenken und
+    /// Zoomen weg, der Eintrag zeigte dann auf ein anderes Objekt. Alle
+    /// Bewegungen laufen durch `App::set_view`.
+    ///
+    /// Je Bewegung eine frische App: ein zweiter Rechtsklick auf dieselbe
+    /// Stelle gilt in egui als Doppelklick und öffnet das Menü nicht erneut.
+    #[test]
+    fn schwenken_schliesst_das_kontextmenue() {
+        let (ctx, mut app, _id) = app_mit_schraffur();
+        let _ = objektmenue_oeffnen(&ctx, &mut app);
+        assert!(app.menu_open(), "Vorbedingung: das Menü steht offen");
+
+        // Schwenk um einen Schritt (60 px, wie `view.pan_*`).
+        app.schwenk_schritt(60.0, 0.0);
+        assert!(!app.menu_open(), "das Menü blieb beim Schwenken offen");
+    }
+
+    #[test]
+    fn zoomen_schliesst_das_kontextmenue() {
+        let (ctx, mut app, _id) = app_mit_schraffur();
+        let _ = objektmenue_oeffnen(&ctx, &mut app);
+        assert!(app.menu_open(), "Vorbedingung: das Menü steht offen");
+
+        app.zoom_by(1.25);
+        assert!(!app.menu_open(), "das Menü blieb beim Zoomen offen");
+    }
+
+    #[test]
+    fn einpassen_schliesst_das_kontextmenue() {
+        let (ctx, mut app, _id) = app_mit_schraffur();
+        let _ = objektmenue_oeffnen(&ctx, &mut app);
+        assert!(app.menu_open(), "Vorbedingung: das Menü steht offen");
+
+        app.fit_view();
+        assert!(!app.menu_open(), "das Menü blieb beim Einpassen offen");
+    }
+
+    /// T0180: Eine neue Zeichenfunktion schließt das Menü. Der Klick auf
+    /// Ribbon/Hotbar täte das ohnehin (Klick außerhalb), ein Tastenkürzel oder
+    /// eine Hotbar-Ziffer nicht — dort blieb das Menü über dem startenden
+    /// Werkzeug stehen.
+    #[test]
+    fn werkzeugstart_schliesst_das_kontextmenue() {
+        let (ctx, mut app, _id) = app_mit_schraffur();
+        let _ = objektmenue_oeffnen(&ctx, &mut app);
+        assert!(app.menu_open(), "Vorbedingung: das Menü steht offen");
+
+        app.start_tool("draw.wall");
+        assert!(
+            !app.menu_open(),
+            "das Menü blieb beim Start des Werkzeugs offen"
+        );
+        assert_eq!(app.tool_id(), Some("draw.wall"), "das Werkzeug läuft nicht");
+    }
+
+    /// T0180: Auch das Einfügen (Zwischenablage) ist eine Zeichenfunktion.
+    #[test]
+    fn einfuegen_schliesst_das_kontextmenue() {
+        let (ctx, mut app, _id) = app_mit_schraffur();
+        let _ = objektmenue_oeffnen(&ctx, &mut app);
+        assert!(app.menu_open(), "Vorbedingung: das Menü steht offen");
+
+        let id = app.doc().ents()[0].id;
+        app.merke_zwischenablage(&[id], None);
+        app.start_ghost_paste();
+        assert!(!app.menu_open(), "das Menü blieb beim Einfügen offen");
+        assert!(app.ghost.is_some(), "die Einfüge-Vorschau läuft nicht");
+    }
 }
 
 /// Tangentialfang (T0157): der Schalter im Fangmenü und in den Einstellungen
@@ -16530,6 +16652,144 @@ mod tests_grafikeinstellungen {
         assert_eq!(
             app.perf.an, app.prefs.perf_anzeige,
             "die Leistungsanzeige folgt nicht der gespeicherten Wahl"
+        );
+    }
+}
+
+#[cfg(test)]
+mod tests_ansicht_verankern {
+    //! T0184: Öffnen und Schließen der Seiten-Panels verschiebt die Zeichnung
+    //! nicht mehr.
+    //!
+    //! Die Ansicht hängt an der **Mitte** der Zeichenfläche. Ändert sich nur die
+    //! Fläche (Panel auf oder zu), hält `App::ansicht_verankern` den Weltpunkt am
+    //! linken oberen Fensterrand fest — die Fläche wächst dann nur in eine
+    //! Richtung. Geprüft wird die Bildschirmlage eines Weltpunkts über dieselbe
+    //! Umrechnung, die auch die Zeichenfläche benutzt (`world_to_screen`).
+
+    use super::*;
+
+    fn bild(app: &mut App, breite: f32, hoehe: f32) {
+        let ctx = app.ctx.clone();
+        let raw = egui::RawInput {
+            screen_rect: Some(Rect::from_min_size(Pos2::ZERO, Vec2::new(breite, hoehe))),
+            ..Default::default()
+        };
+        let _ = ctx.run(raw, |ctx| app.ui(ctx));
+    }
+
+    /// Bildschirmlage eines Weltpunkts.
+    fn lage(app: &App, p: V2) -> Pos2 {
+        world_to_screen(app.ui.last_canvas, app.current_view(), p)
+    }
+
+    /// App mit geschlossenen Seiten-Panels, zwei Bilder gelaufen — die
+    /// Zeichenfläche steht danach fest.
+    fn app_ohne_panels() -> App {
+        let mut app = App::with_ctx(egui::Context::default());
+        app.prefs.reset_bindings();
+        app.ui.props_open = false;
+        app.ui.layers_open = false;
+        app.ui.props_collapsed = false;
+        app.ui.layers_collapsed = false;
+        app.ui.ribbon_collapsed = false;
+        bild(&mut app, 1500.0, 950.0);
+        bild(&mut app, 1500.0, 950.0);
+        app
+    }
+
+    /// Prüfpunkt: die Zeichnung steht nach dem Umschalten an derselben Stelle.
+    fn bleibt_stehen(app: &mut App, umschalten: impl FnOnce(&mut App)) {
+        let punkt = V2::new(3000.0, 2000.0);
+        let vorher = lage(app, punkt);
+        let flaeche_vorher = app.ui.last_canvas;
+        umschalten(app);
+        bild(app, 1500.0, 950.0);
+        bild(app, 1500.0, 950.0);
+        assert!(
+            !crate::canvas::flaechen_gleich(app.ui.last_canvas, flaeche_vorher),
+            "die Zeichenfläche muss sich geändert haben, sonst prüft der Test nichts"
+        );
+        let nachher = lage(app, punkt);
+        assert!(
+            (nachher - vorher).length() < 0.5,
+            "die Zeichnung ist um {:.1} px gewandert: {vorher:?} → {nachher:?}",
+            (nachher - vorher).length()
+        );
+    }
+
+    #[test]
+    fn eigenschaften_panel_verschiebt_die_zeichnung_nicht() {
+        let mut app = app_ohne_panels();
+        bleibt_stehen(&mut app, |a| a.ui.props_open = true);
+    }
+
+    #[test]
+    fn layer_panel_verschiebt_die_zeichnung_nicht() {
+        let mut app = app_ohne_panels();
+        bleibt_stehen(&mut app, |a| a.ui.layers_open = true);
+    }
+
+    #[test]
+    fn beide_panels_verschieben_die_zeichnung_nicht() {
+        let mut app = app_ohne_panels();
+        bleibt_stehen(&mut app, |a| {
+            a.ui.props_open = true;
+            a.ui.layers_open = true;
+        });
+    }
+
+    /// 28 px statt 292 px: die Rechnung hängt an der Fläche, nicht an der
+    /// Panelbreite — deshalb gilt sie auch für künftige Panels anderer Größe.
+    #[test]
+    fn eingeklapptes_panel_verschiebt_ebenfalls_nicht() {
+        let mut app = app_ohne_panels();
+        app.ui.props_open = true;
+        bild(&mut app, 1500.0, 950.0);
+        bild(&mut app, 1500.0, 950.0);
+        bleibt_stehen(&mut app, |a| a.ui.props_collapsed = true);
+    }
+
+    /// Auch ein Panel oben (Ribbon einklappen) hält die Zeichnung fest.
+    #[test]
+    fn eingeklappter_ribbon_verschiebt_die_zeichnung_nicht() {
+        let mut app = app_ohne_panels();
+        bleibt_stehen(&mut app, |a| a.ui.ribbon_collapsed = true);
+    }
+
+    /// Schließen stellt die Lage wieder her — hin und zurück bleibt sie gleich.
+    #[test]
+    fn schliessen_stellt_die_lage_wieder_her() {
+        let mut app = app_ohne_panels();
+        let punkt = V2::new(3000.0, 2000.0);
+        let vorher = lage(&app, punkt);
+        app.ui.props_open = true;
+        bild(&mut app, 1500.0, 950.0);
+        bild(&mut app, 1500.0, 950.0);
+        app.ui.props_open = false;
+        bild(&mut app, 1500.0, 950.0);
+        bild(&mut app, 1500.0, 950.0);
+        let nachher = lage(&app, punkt);
+        assert!(
+            (nachher - vorher).length() < 0.5,
+            "nach dem Schließen steht die Zeichnung nicht wieder am Platz: \
+             {vorher:?} → {nachher:?}"
+        );
+    }
+
+    /// Gegenprobe zum Verhalten beim **Fenster**-Vergrößern: dort bleibt es
+    /// beim Einpassen um die Mitte (die Fläche ändert sich mit dem Fenster).
+    #[test]
+    fn fenster_vergroessern_haelt_die_mitte() {
+        let mut app = app_ohne_panels();
+        let mitte = app.current_view().center;
+        bild(&mut app, 1800.0, 1100.0);
+        bild(&mut app, 1800.0, 1100.0);
+        assert!(
+            (app.current_view().center - mitte).len() < 1.0,
+            "beim Vergrößern des Fensters muss die Mitte stehen bleiben: \
+             {mitte:?} → {:?}",
+            app.current_view().center
         );
     }
 }

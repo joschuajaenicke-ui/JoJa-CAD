@@ -103,6 +103,19 @@ Mit dem Nutzer abgestimmt — nicht „verbessern“:
   Einstellungen ▸ Darstellung ▸ „Schatten“ (`prefs.fensterschatten`, Vorgabe an);
   ohne ihn fordert `main.rs` den Streifen gar nicht erst an. `clear_color` ist
   nur dann durchsichtig, wenn `ui.fenster_aussen` in **diesem** Bild gesetzt ist.
+- **Seiten-Panels verschieben die Zeichnung nicht (T0184)**: Die Ansicht hängt an
+  der **Mitte** der Zeichenfläche (`screen_to_world`). Öffnet oder schließt sich
+  ein Panel, wandert diese Mitte und die Zeichnung rutschte zur Seite (gemessen:
+  Eigenschaften-Panel 292 px → 146 px Versatz, Layer-Panel 232 px → 116 px).
+  Deshalb hält `App::ansicht_verankern` den Weltpunkt am **linken oberen
+  Fensterrand** fest: die Fläche wächst nur in eine Richtung, die Objekte bleiben
+  auf ihrem Bildschirmplatz. Gerechnet wird mit der **Fläche**, nicht mit dem
+  Panel — damit gilt es für jedes Panel an jeder Seite und für jede Breite, auch
+  für künftige. Ausgewertet wird das an **einer** Stelle (`canvas::show`): ändert
+  sich die Zeichenfläche, aber nicht die Fensterfläche, wird verankert; wird das
+  Fenster selbst vergrößert, bleibt es beim Einpassen um die Mitte. Prüfweg:
+  `cargo test -p jjcad-gui tests_ansicht_verankern` (7 Tests, Gegenprobe ohne
+  `ansicht_verankern` fallen 5).
 - **Türen** sitzen immer auf der *vorderen Wandkante* (Blattseite), nicht in der
   Wandmitte. Kein Auswahlfeld für die Tür-Lage. Fenster dürfen ihre Lage in
   der Wanddicke wählen (Links/Mittig/Rechts).
@@ -269,7 +282,13 @@ Mit dem Nutzer abgestimmt — nicht „verbessern“:
   Der Objekteintrag **„Eigenschaften im Panel“** öffnet das Eigenschaften-Panel
   (ausgeschaltet oder auf die Leiste eingeklappt) und wählt das Objekt aus; steht
   das Panel offen, wird der Eintrag gar nicht gezeichnet — die eine Abfrage ist
-  `App::eigenschaften_panel_offen` (T0179).
+  `App::eigenschaften_panel_offen` (T0179). Eine **bewegte Ansicht** und jede neu
+  gestartete **Zeichenfunktion** schließen das Menü dagegen (T0180): es hängt an
+  einer Bildschirmstelle, die Zeichnung darunter wandert beim Schwenken/Zoomen weg,
+  und über einem frisch gestarteten Werkzeug stand es im Weg. Die zwei Stellen sind
+  `App::set_view` (alle Bewegungen: Schwenk, Zoom, Einpassen, Drehen) und
+  `App::start_tool`/`App::start_ghost_paste`/`App::start_ghost_block` (Werkzeug- und
+  Einfüge-Start) — nicht im Klickpfad daneben nachbauen.
 - **Eigenschaften-Panel**: gleiche Zeilen (96 px Label, 150 px Wert) beim Platzieren
   *und* bei Auswahl; bei Mehrfachauswahl nur gemeinsame Felder, abweichende Werte
   als `*variiert*`; nicht editierbare Werte (Länge, Fläche) anzeigen.
