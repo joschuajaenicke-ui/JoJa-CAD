@@ -68,6 +68,20 @@ fn kurven_guete(app: &App) -> CurveQuality {
     CurveQuality::mit_pfeilhoehe(app.prefs.kurven_toleranz_px)
 }
 
+/// Hintergrundfarbe des gerade bearbeiteten Raums (T0181): Modell, Papier
+/// oder Blockeditor. **Die eine Abfrage** für die Fläche der Zeichenfläche und
+/// für die freigelegten Löcher der Öffnungs-Vorschau — sonst deckte ein Loch
+/// in der falschen Farbe die Wand ab.
+fn hintergrund(app: &App) -> Color32 {
+    if app.doc().block_space.is_some() {
+        Palette::blockeditor()
+    } else if app.doc().in_paper_space() {
+        Palette::papier()
+    } else {
+        Palette::modell()
+    }
+}
+
 /// Strichmuster in Bildschirmpixeln.
 /// `scaled` = „Papier (maßstabsgetreu)“: das Muster wächst mit dem Zoom wie im PDF.
 /// Sonst „Bildschirm (konstant)“ — das Muster bleibt in Bildschirmpixeln gleich.
@@ -435,9 +449,9 @@ fn paint_prim(p: &Painter, prim: &Prim, w2s: &dyn Fn(V2) -> Pos2, scale: f64, pc
     let mut col = color32(prim.style.color);
     if pc.preview {
         // Wie die Einfüge-Vorschau (ghost): durchgezogene Akzentkontur
-        col = Palette::accent();
+        col = Palette::vorschau();
     } else if is_sel {
-        col = Palette::select();
+        col = Palette::auswahl();
     } else if is_hover {
         col = Palette::hover();
     }
@@ -530,7 +544,7 @@ fn paint_prim(p: &Painter, prim: &Prim, w2s: &dyn Fn(V2) -> Pos2, scale: f64, pc
                 // Fläche darüber (ein Rahmen wäre ein zweites Auswahlzeichen).
                 p.add(Shape::convex_polygon(
                     pts,
-                    Palette::select().gamma_multiply(0.25 * alpha),
+                    Palette::auswahl().gamma_multiply(0.25 * alpha),
                     Stroke::NONE,
                 ));
             }
@@ -557,9 +571,9 @@ fn paint_prim(p: &Painter, prim: &Prim, w2s: &dyn Fn(V2) -> Pos2, scale: f64, pc
             let fill = prim.style.fill.unwrap_or(prim.style.color);
             let c = if pc.preview {
                 // Nur andeuten: die Vorschau darf den Plan darunter nicht verdecken
-                Palette::accent().gamma_multiply(0.12)
+                Palette::vorschau().gamma_multiply(0.12)
             } else if is_sel {
-                Palette::select().gamma_multiply(0.25)
+                Palette::auswahl().gamma_multiply(0.25)
             } else if is_hover {
                 Palette::hover().gamma_multiply(0.2)
             } else {
@@ -1491,16 +1505,8 @@ pub fn show(app: &mut App, ui: &mut Ui) {
         if app.ui.show_grid {
             draw_grid(app, &painter, rect, view_now);
         }
-        // Papierfläche — der Blockeditor hat einen eigenen Ton (T0137).
-        painter.rect_filled(
-            rect,
-            0.0,
-            if is_block {
-                Palette::block_paper()
-            } else {
-                Palette::paper()
-            },
-        );
+        // Papierfläche — je Bearbeitungsraum ein eigener Ton (T0137, T0181).
+        painter.rect_filled(rect, 0.0, hintergrund(app));
         if app.ui.show_grid {
             draw_grid(app, &painter, rect, view_now);
         }
@@ -1921,7 +1927,7 @@ fn draw_sheet(app: &mut App, p: &Painter, rect: Rect, view: View, cursor: Option
         Color32::from_black_alpha(90),
         Stroke::NONE,
     ));
-    p.add(Shape::convex_polygon(ecken.to_vec(), Palette::paper(), Stroke::NONE));
+    p.add(Shape::convex_polygon(ecken.to_vec(), Palette::papier(), Stroke::NONE));
     let w2s = |q: V2| world_to_screen(rect, view, q);
     // Culling (T0167): Bereich, in dem gezeichnet wird.
     let cull = crate::culling::bereich(rect, app.perf.culling_verkleinern);
@@ -2050,13 +2056,13 @@ fn draw_sheet(app: &mut App, p: &Painter, rect: Rect, view: View, cursor: Option
                     0.0,
                     Color32::from_rgba_unmultiplied(0x2F, 0x8C, 0xF0, 26),
                 );
-                p.rect_stroke(r, 0.0, Stroke::new(1.4, Palette::select()));
+                p.rect_stroke(r, 0.0, Stroke::new(1.4, Palette::auswahl()));
                 p.text(
                     Pos2::new(r.left() + 4.0, r.top() + 3.0),
                     Align2::LEFT_TOP,
                     jjcad_core::i18n::t_args_owned("gui.canvas.x_x_mm", &[("wert1", format!("{:.0}", r.width())), ("wert2", format!("{:.0}", r.height()))]),
                     FontId::proportional(10.5),
-                    Palette::select(),
+                    Palette::auswahl(),
                 );
             }
         }
@@ -2348,7 +2354,7 @@ mod tests_fangmarke {
             .map(|(_, c)| c)
             .collect();
         assert!(
-            farben.contains(&egui::epaint::ColorMode::Solid(Palette::track())),
+            farben.contains(&egui::epaint::ColorMode::Solid(Palette::fang())),
             "die Fangmarke steht nicht in der Fangfarbe (Grün)"
         );
         assert!(
@@ -2564,7 +2570,7 @@ pub fn draw_ghost_zeiger(app: &App, ctx: &egui::Context, flaeche: Rect) {
         egui::Id::new("ghost_zeiger"),
     ));
     p.rect_filled(kasten, 6.0, Palette::schwebend());
-    p.rect_stroke(kasten, 6.0, Stroke::new(1.0, Palette::accent()));
+    p.rect_stroke(kasten, 6.0, Stroke::new(1.0, Palette::vorschau()));
 
     // Geometrie des laufenden Inhalts (Block oder Zwischenablage) — gedreht
     // und gespiegelt wie die Vorschau in der Zeichnung.
@@ -2577,7 +2583,7 @@ pub fn draw_ghost_zeiger(app: &App, ctx: &egui::Context, flaeche: Rect) {
             kasten.shrink(4.0),
             geo.bbox,
             &dl,
-            Palette::accent(),
+            Palette::vorschau(),
         );
     }
 }
@@ -2633,7 +2639,7 @@ fn draw_opening_preview(
 ) {
     for quad in &v.loch {
         let pts: Vec<Pos2> = quad.iter().map(|q| w2s(*q)).collect();
-        p.add(egui::Shape::convex_polygon(pts, Palette::paper(), Stroke::NONE));
+        p.add(egui::Shape::convex_polygon(pts, hintergrund(app), Stroke::NONE));
     }
     let paper_px = view.zoom * app.doc().settings.annotation_scale;
     let wand_ctx = PaintCtx {
@@ -2716,7 +2722,7 @@ fn draw_tool_preview(
         return;
     };
     let Some(tool) = app.tool.clone() else { return };
-    let col = Palette::accent().gamma_multiply(0.9);
+    let col = Palette::vorschau().gamma_multiply(0.9);
     let stroke = Stroke::new(1.4, col);
     let dashed = Stroke::new(1.0, col.gamma_multiply(0.55));
     let w2s = |q: V2| world_to_screen(rect, view, q);
@@ -2757,7 +2763,7 @@ fn draw_tool_preview(
                     ];
                     p.add(egui::Shape::convex_polygon(
                         quad,
-                        Palette::select().gamma_multiply(0.18),
+                        Palette::auswahl().gamma_multiply(0.18),
                         Stroke::NONE,
                     ));
                     p.line_segment([w2s(a0 + nrm * t), w2s(b0 + nrm * t)], stroke);
@@ -2833,7 +2839,7 @@ fn draw_tool_preview(
                 }
             }
             for q in &tool.pts {
-                p.circle_stroke(w2s(*q), 2.0, Stroke::new(1.0, Palette::accent()));
+                p.circle_stroke(w2s(*q), 2.0, Stroke::new(1.0, Palette::vorschau()));
             }
             if label.is_empty() {
                 label = jjcad_core::i18n::t_args_owned("gui.canvas.x_stuetzpunkte", &[("wert1", format!("{}", tool.pts.len() + 1))]);
@@ -3562,7 +3568,7 @@ fn draw_tool_preview(
                 let far = 100000.0;
                 p.line_segment(
                     [w2s(p0 - dir * far), w2s(p0 + dir * far)],
-                    Stroke::new(1.0, Palette::select()),
+                    Stroke::new(1.0, Palette::auswahl()),
                 );
                 let drag = cursor - p0;
                 let m = Affine::mirror(p0, cursor);
@@ -3650,7 +3656,7 @@ fn draw_tool_preview(
                         render::render_entity(&ctx, e, m, &mut dl, 0);
                     }
                     for prim in &dl.prims {
-                        let stroke2 = Stroke::new(1.2, Palette::select().gamma_multiply(0.8));
+                        let stroke2 = Stroke::new(1.2, Palette::auswahl().gamma_multiply(0.8));
                         if let PShape::Line(a, b) = &prim.shape {
                             p.line_segment([w2s(*a), w2s(*b)], stroke2);
                         }
@@ -3686,7 +3692,7 @@ fn draw_trim_preview(app: &App, p: &Painter, rect: Rect, view: View, at: V2) {
     let Some((id, segs)) = vorschau_objekt(app, view, at, actions::trim_vorschau) else {
         return;
     };
-    draw_abschnitt_preview(app, p, rect, view, id, &segs, Palette::danger());
+    draw_abschnitt_preview(app, p, rect, view, id, &segs, Palette::entfernen());
 }
 
 /// Hervorhebung der Strecke, die „Verlängern“ an dieser Stelle ansetzen würde
@@ -3700,7 +3706,7 @@ fn draw_extend_preview(app: &App, p: &Painter, rect: Rect, view: View, at: V2) {
     let Some((id, segs)) = vorschau_objekt(app, view, at, actions::extend_vorschau) else {
         return;
     };
-    draw_abschnitt_preview(app, p, rect, view, id, &segs, Palette::ok());
+    draw_abschnitt_preview(app, p, rect, view, id, &segs, Palette::erweitern());
 }
 
 /// Hervorhebung beim Verschneiden (T0082): ist das erste Objekt gemerkt und
@@ -3721,7 +3727,7 @@ fn draw_verschneiden_preview(app: &App, p: &Painter, rect: Rect, view: View, at:
         return;
     }
     for (id, segs) in actions::verschneiden_vorschau(app.doc(), erstes, zweites) {
-        draw_abschnitt_preview(app, p, rect, view, id, &segs, Palette::ok());
+        draw_abschnitt_preview(app, p, rect, view, id, &segs, Palette::erweitern());
     }
 }
 
@@ -3747,7 +3753,7 @@ fn draw_explode_preview(app: &App, p: &Painter, rect: Rect, view: View, at: V2) 
         EntityKind::BlockRef { block, .. } if app.doc().block(block).is_none() => return,
         _ => {}
     }
-    draw_objekt_hervorhebung(app, p, rect, view, e, Palette::danger());
+    draw_objekt_hervorhebung(app, p, rect, view, e, Palette::entfernen());
 }
 
 /// Zeichnet ein Objekt vollständig in einer Farbe über die Zeichnung.
@@ -5031,7 +5037,7 @@ fn draw_auswahlfenster(p: &Painter, rect: Rect, view: View, start: V2, cur: V2) 
     p.rect_stroke(
         r,
         0.0,
-        Stroke::new(1.2, if crossing { Palette::ok() } else { Palette::select() }),
+        Stroke::new(1.2, if crossing { Palette::ok() } else { Palette::auswahl() }),
     );
 }
 
@@ -5053,7 +5059,7 @@ fn draw_text_rahmen(app: &App, p: &Painter, rect: Rect, view: View, selected: &[
         let pts: Vec<Pos2> = ecken.iter().map(|q| world_to_screen(rect, view, *q)).collect();
         p.add(Shape::closed_line(
             pts,
-            Stroke::new(1.0, Palette::select().gamma_multiply(0.55)),
+            Stroke::new(1.0, Palette::auswahl().gamma_multiply(0.55)),
         ));
     }
 }
@@ -5203,7 +5209,7 @@ fn draw_ghost(app: &App, p: &Painter, rect: Rect, view: View) {
     let w2s = |q: V2| world_to_screen(rect, view, q);
     let zoom = view.zoom;
 
-    let stroke = Stroke::new(1.5, Palette::accent());
+    let stroke = Stroke::new(1.5, Palette::vorschau());
     let mut dl = jjcad_core::render::DisplayList::default();
     dl.prims = geo.prims.clone();
     for prim in &dl.prims {
@@ -5227,11 +5233,11 @@ fn draw_ghost(app: &App, p: &Painter, rect: Rect, view: View) {
         p.rect_stroke(
             r,
             0.0,
-            Stroke::new(1.0, Palette::select().gamma_multiply(0.55)),
+            Stroke::new(1.0, Palette::auswahl().gamma_multiply(0.55)),
         );
     }
     let anchor = w2s(g.pos);
-    let c = Palette::accent();
+    let c = Palette::vorschau();
     p.line_segment([anchor - Vec2::new(6.0, 0.0), anchor + Vec2::new(6.0, 0.0)], Stroke::new(1.4, c));
     p.line_segment([anchor - Vec2::new(0.0, 6.0), anchor + Vec2::new(0.0, 6.0)], Stroke::new(1.4, c));
 
@@ -5249,7 +5255,7 @@ fn draw_ghost(app: &App, p: &Painter, rect: Rect, view: View) {
             Align2::LEFT_BOTTOM,
             badge,
             FontId::proportional(11.0),
-            Palette::accent(),
+            Palette::vorschau(),
         );
     }
 }
@@ -5311,7 +5317,7 @@ fn ghost_shape(
         // Text war hier nicht gezeichnet: die Einfüge-Vorschau zeigte bei
         // kopierten Textfeldern nur den Anker, keinen Text (T0025). Gezeichnet
         // über `paint_text` — dieselbe Lage, Schrift und Drehung wie danach.
-        PShape::Text(t) => paint_text(p, t, w2s(t.pos), zoom, Palette::accent(), rot, deckel),
+        PShape::Text(t) => paint_text(p, t, w2s(t.pos), zoom, Palette::vorschau(), rot, deckel),
         PShape::Dot { p: pos, r } => {
             p.circle_filled(w2s(*pos), ((*r * zoom) as f32).max(1.2), stroke.color);
         }
@@ -5566,7 +5572,7 @@ fn draw_hilfslinien(app: &App, p: &Painter, rect: Rect, view: View) {
     if linien.is_empty() {
         return;
     }
-    let col = Palette::track();
+    let col = Palette::fang();
     let muster = [6.0, 4.0];
     let lang = rect.width().max(rect.height()) * 1.2;
     let mut shapes: Vec<Shape> = Vec::new();
@@ -5680,7 +5686,7 @@ fn draw_fill_ghost(app: &App, p: &Painter, rect: Rect, view: View, umriss: &[V2]
     // Fläche andeuten — der Plan darunter bleibt lesbar
     let screen: Vec<Pos2> = boundary.iter().map(|q| w2s(*q)).collect();
     if !fill_too_thin(&screen) {
-        let c = Palette::accent().gamma_multiply(0.14);
+        let c = Palette::vorschau().gamma_multiply(0.14);
         for tri in triangulate(&screen) {
             p.add(Shape::convex_polygon(tri.to_vec(), c, Stroke::NONE));
         }
@@ -5794,7 +5800,7 @@ fn draw_paint_ghost(
     // Fläche nicht ohne Kante steht. Mit Umrandung zeichnet der Renderer sie
     // bereits — eine zweite Linie würde sie nur dicker machen.
     if !app.options.fill_border_paint {
-        let stroke = Stroke::new(1.2, Palette::accent().gamma_multiply(0.85));
+        let stroke = Stroke::new(1.2, Palette::vorschau().gamma_multiply(0.85));
         for ring in std::iter::once(boundary).chain(holes.iter().map(|h| h.as_slice())) {
             if ring.len() < 2 {
                 continue;
@@ -6196,7 +6202,7 @@ fn dreh_vorschau(
     stroke: Stroke,
     dashed: Stroke,
 ) -> String {
-    center_mark(p, w2s(c), Palette::accent());
+    center_mark(p, w2s(c), Palette::vorschau());
     let getippt = rotate_typed_angle(c, from, Some(cursor), &app.ui.typed);
     // Bezugsrichtung: der „von"-Punkt, ohne ihn die Richtung zum Zeiger.
     let a0 = match from {
@@ -6275,7 +6281,7 @@ fn dreh_vorschau(
             render::render_entity(&rctx, e, m, &mut dl, 0);
         }
     }
-    let pre = Stroke::new(1.1, Palette::select().gamma_multiply(0.85));
+    let pre = Stroke::new(1.1, Palette::auswahl().gamma_multiply(0.85));
     for prim in &dl.prims {
         ghost_shape(
             p,
@@ -13124,7 +13130,7 @@ mod tests_stutzvorschau {
         let mut v = Vec::new();
         for cs in &out.shapes {
             if let Shape::LineSegment { points, stroke } = &cs.shape {
-                if stroke.color == egui::epaint::ColorMode::Solid(Palette::danger()) {
+                if stroke.color == egui::epaint::ColorMode::Solid(Palette::entfernen()) {
                     v.push((points[0], points[1], stroke.width));
                 }
             }
@@ -13149,7 +13155,7 @@ mod tests_stutzvorschau {
                 Shape::Path(p) => Some(p.stroke.color.clone()),
                 _ => None,
             };
-            if farbe == Some(egui::epaint::ColorMode::Solid(Palette::danger())) {
+            if farbe == Some(egui::epaint::ColorMode::Solid(Palette::entfernen())) {
                 v.push(match &cs.shape {
                     Shape::Path(p) => p.points.len(),
                     _ => 2,
@@ -13360,7 +13366,7 @@ mod tests_verlaengernvorschau {
         let mut v = Vec::new();
         for cs in &out.shapes {
             if let Shape::LineSegment { points, stroke } = &cs.shape {
-                if stroke.color == egui::epaint::ColorMode::Solid(Palette::ok()) {
+                if stroke.color == egui::epaint::ColorMode::Solid(Palette::erweitern()) {
                     v.push((points[0], points[1], stroke.width));
                 }
             }
@@ -13716,7 +13722,7 @@ mod tests_verschneiden {
         let mut v = Vec::new();
         for cs in &out.shapes {
             if let Shape::LineSegment { points, stroke } = &cs.shape {
-                if stroke.color == egui::epaint::ColorMode::Solid(Palette::ok()) {
+                if stroke.color == egui::epaint::ColorMode::Solid(Palette::erweitern()) {
                     v.push((points[0], points[1]));
                 }
             }
@@ -13946,9 +13952,9 @@ mod tests_zerlegen {
             .iter()
             .filter(|cs| match &cs.shape {
                 Shape::LineSegment { stroke, .. } => {
-                    stroke.color == egui::epaint::ColorMode::Solid(Palette::danger())
+                    stroke.color == egui::epaint::ColorMode::Solid(Palette::entfernen())
                 }
-                Shape::Path(p) => p.stroke.color == egui::epaint::ColorMode::Solid(Palette::danger()),
+                Shape::Path(p) => p.stroke.color == egui::epaint::ColorMode::Solid(Palette::entfernen()),
                 _ => false,
             })
             .count()
@@ -16419,3 +16425,120 @@ mod tests_kurventoleranz {
     }
 }
 
+
+#[cfg(test)]
+mod tests_zeichenfarben {
+    //! T0181: Die Rollenfarben aus den Einstellungen erreichen die
+    //! Zeichenfläche — Hintergründe, Vorschau neuer Elemente, Stutzen-Vorschau.
+    //!
+    //! Geprüft wird gegen die **eingestellte** Farbe, nicht gegen die Vorgabe:
+    //! ein Test, der nur `Palette::vorschau()` mit sich selbst vergleicht,
+    //! bliebe grün, wenn die Zeichenstelle die Farbe gar nicht liest.
+
+    use super::*;
+    use jjcad_core::persist::Zeichenfarbe;
+    use std::collections::BTreeMap;
+
+    const RECT: Rect = Rect {
+        min: Pos2::new(0.0, 0.0),
+        max: Pos2::new(1200.0, 800.0),
+    };
+
+    fn app() -> App {
+        let mut app = App::with_ctx(egui::Context::default());
+        app.session_mut()
+            .execute("doc.settings", &json!({ "input_unit": "m" }))
+            .expect("Einheit setzen");
+        app.session_mut()
+            .execute("draw.line", &json!({ "a": [0, 0], "b": [6, 0] }))
+            .expect("Linie anlegen");
+        app
+    }
+
+    fn setze(app: &App, rolle: Zeichenfarbe, farbe: Color32) {
+        let mut m = BTreeMap::new();
+        m.insert(rolle, farbe);
+        crate::theme::set_zeichenfarben(&m, &app.ctx);
+    }
+
+    /// Alle Volltonfarben der Werkzeug-Vorschau eines Bildes.
+    fn vorschau_farben(app: &mut App, zeiger: Option<V2>) -> Vec<Color32> {
+        let view = app.current_view();
+        let ctx = app.ctx.clone();
+        let out = ctx.run(egui::RawInput::default(), |ctx| {
+            let layer = egui::LayerId::new(egui::Order::Background, egui::Id::new("zeichenfarben"));
+            let p = egui::Painter::new(ctx.clone(), layer, Rect::EVERYTHING);
+            draw_tool_preview(app, &p, RECT, view, zeiger, zeiger);
+        });
+        let mut v = Vec::new();
+        for cs in &out.shapes {
+            let farbe = match &cs.shape {
+                Shape::LineSegment { stroke, .. } => Some(stroke.color.clone()),
+                Shape::Path(p) => Some(p.stroke.color.clone()),
+                _ => None,
+            };
+            if let Some(egui::epaint::ColorMode::Solid(c)) = farbe {
+                v.push(c);
+            }
+        }
+        v
+    }
+
+    /// Die Vorschau neuer Elemente trägt die eingestellte Farbe — nicht mehr
+    /// den Akzent der Bedienung.
+    #[test]
+    fn vorschau_neuer_elemente_traegt_die_eingestellte_farbe() {
+        let mut app = app();
+        app.start_tool("draw.line");
+        app.tool.as_mut().unwrap().pts.push(V2::new(0.0, 0.0));
+        let farbe = Color32::from_rgb(0x11, 0x22, 0x33);
+        setze(&app, Zeichenfarbe::Vorschau, farbe);
+        let farben = vorschau_farben(&mut app, Some(V2::new(3.0, 0.0)));
+        assert!(
+            farben.contains(&farbe.gamma_multiply(0.9)),
+            "Vorschau nicht in der eingestellten Farbe: {farben:?}"
+        );
+        assert!(
+            !farben.contains(&Palette::accent().gamma_multiply(0.9)),
+            "die Vorschau steht noch im Akzent der Bedienung"
+        );
+    }
+
+    /// Die Stutzen-Vorschau trägt die eingestellte Farbe „Entfernen“.
+    #[test]
+    fn stutzen_vorschau_traegt_die_eingestellte_farbe() {
+        let mut app = app();
+        app.start_tool("modify.trim");
+        let farbe = Color32::from_rgb(0x33, 0x22, 0x11);
+        setze(&app, Zeichenfarbe::Entfernen, farbe);
+        let farben = vorschau_farben(&mut app, Some(V2::new(3.0, 0.0)));
+        assert!(
+            farben.contains(&farbe),
+            "Stutzen-Vorschau nicht in der eingestellten Farbe: {farben:?}"
+        );
+    }
+
+    /// Der Hintergrund folgt dem Bearbeitungsraum **und** der Einstellung.
+    #[test]
+    fn hintergrund_folgt_raum_und_einstellung() {
+        let mut app = app();
+        let modell = Color32::from_rgb(0x10, 0x20, 0x30);
+        let papier = Color32::from_rgb(0x40, 0x50, 0x60);
+        let block = Color32::from_rgb(0x70, 0x80, 0x90);
+        let mut m = BTreeMap::new();
+        m.insert(Zeichenfarbe::Modell, modell);
+        m.insert(Zeichenfarbe::Papier, papier);
+        m.insert(Zeichenfarbe::Blockeditor, block);
+        crate::theme::set_zeichenfarben(&m, &app.ctx);
+
+        assert_eq!(hintergrund(&app), modell, "Modellbereich");
+
+        let sid = app.doc().sheets[0].id;
+        app.session_mut().set_space(Some(sid));
+        assert_eq!(hintergrund(&app), papier, "Papierbereich");
+
+        app.session_mut().set_space(None);
+        app.doc_mut().block_space = Some("test".to_string());
+        assert_eq!(hintergrund(&app), block, "Blockeditor");
+    }
+}

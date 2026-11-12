@@ -8,7 +8,10 @@
 //! dann gilt das helle oder dunkle Farbschema des Betriebssystems.
 
 use egui::{Color32, FontFamily, FontId, Frame, Margin, Rounding, Stroke, TextStyle, Visuals};
-use jjcad_core::persist::{Design, Farbakzent, KANTENWEICHHEIT_MAX, KANTENWEICHHEIT_MIN};
+use jjcad_core::persist::{
+    Design, Farbakzent, Zeichenfarbe, KANTENWEICHHEIT_MAX, KANTENWEICHHEIT_MIN,
+};
+use std::collections::BTreeMap;
 use std::sync::atomic::{AtomicBool, AtomicU8, Ordering};
 
 /// Alle Farben eines Designs. Eine Zeile je Aufgabe — Flächen von außen nach
@@ -281,13 +284,38 @@ impl Palette {
     pub fn ok() -> Color32 {
         farben().ok
     }
-    pub fn paper() -> Color32 {
-        farben().paper
+    /// Hintergrund des **Modellbereichs** (T0181) — eigene Wahl oder Papier.
+    pub fn modell() -> Color32 {
+        zeichenfarbe(Zeichenfarbe::Modell)
     }
-    /// Fläche des Blockeditors — in beiden Designs derselbe Ton (wie das
-    /// Papier bleibt die Zeichenfläche unabhängig vom Design).
-    pub fn block_paper() -> Color32 {
-        farben().block_paper
+    /// Blattfläche im **Papierbereich** (T0181) — eigene Wahl oder Papier.
+    pub fn papier() -> Color32 {
+        zeichenfarbe(Zeichenfarbe::Papier)
+    }
+    /// Hintergrund des **Blockeditors** (T0181) — eigene Wahl oder Blockton.
+    pub fn blockeditor() -> Color32 {
+        zeichenfarbe(Zeichenfarbe::Blockeditor)
+    }
+    /// Vorschau **neuer** Elemente (T0181) — eigene Wahl oder Akzent.
+    pub fn vorschau() -> Color32 {
+        zeichenfarbe(Zeichenfarbe::Vorschau)
+    }
+    /// Einfärbung **ausgewählter** Elemente (T0181) — eigene Wahl oder Blau.
+    pub fn auswahl() -> Color32 {
+        zeichenfarbe(Zeichenfarbe::Auswahl)
+    }
+    /// Vorschau des **Entfernens** (Stutzen, T0181) — eigene Wahl oder Rot.
+    pub fn entfernen() -> Color32 {
+        zeichenfarbe(Zeichenfarbe::Entfernen)
+    }
+    /// Vorschau des **Erweiterns** (Verlängern, Verschneiden, T0181) — eigene
+    /// Wahl oder Grün.
+    pub fn erweitern() -> Color32 {
+        zeichenfarbe(Zeichenfarbe::Erweitern)
+    }
+    /// **Punktfang** (Fangmarke, Hilfslinien, T0181) — eigene Wahl oder Türkis.
+    pub fn fang() -> Color32 {
+        zeichenfarbe(Zeichenfarbe::Fang)
     }
     pub fn paper_shadow() -> Color32 {
         farben().paper_shadow
@@ -324,6 +352,97 @@ impl Palette {
 /// Ist das gerade gezeichnete Design hell?
 pub fn ist_hell() -> bool {
     hell_jetzt()
+}
+
+// ---------------------------------------------------------------------------
+// Zeichenfarben (T0181)
+// ---------------------------------------------------------------------------
+
+/// Eigene Zeichenfarben, prozessweit — wie Design und Akzent.
+///
+/// Die **Rollen** stehen in [`Zeichenfarbe`] (Kern), die Vorgaben je Design in
+/// [`standard_zeichenfarbe`]. Hier liegen nur die Abweichungen des Nutzers;
+/// eine fehlende Rolle folgt weiter dem Design.
+static ZEICHENFARBEN: std::sync::RwLock<BTreeMap<Zeichenfarbe, Color32>> =
+    std::sync::RwLock::new(BTreeMap::new());
+
+thread_local! {
+    /// Zeichenfarben des **eigenen Fadens**, sobald dieser sie selbst gesetzt
+    /// hat — dieselbe Absicherung wie bei Design und Akzent: Tests laufen in
+    /// Fäden nebeneinander und stellen die Farben um (T0099).
+    static ZEICHENFARBEN_IM_FADEN: std::cell::RefCell<Option<BTreeMap<Zeichenfarbe, Color32>>> =
+        const { std::cell::RefCell::new(None) };
+}
+
+/// Eigene Wahl einer Rolle, falls es eine gibt.
+fn eigene_zeichenfarbe(rolle: Zeichenfarbe) -> Option<Color32> {
+    let im_faden: Option<Option<Color32>> = ZEICHENFARBEN_IM_FADEN
+        .with(|z| z.borrow().as_ref().map(|m| m.get(&rolle).copied()));
+    match im_faden {
+        Some(wert) => wert,
+        None => ZEICHENFARBEN
+            .read()
+            .ok()
+            .and_then(|m| m.get(&rolle).copied()),
+    }
+}
+
+/// Vorgabe einer Zeichenfarbe im gerade gezeichneten Design.
+///
+/// **Die eine Stelle** für die Standardtöne: Papier für Modell und Papier,
+/// eigener Blockton, Akzent für die Vorschau neuer Elemente, Blau für die
+/// Auswahl, Rot für das Entfernen, Grün für das Erweitern, Türkis für den
+/// Fang. Wer eine Rolle ergänzt, trägt sie hier ein — nicht an der
+/// Zeichenstelle.
+fn standard_zeichenfarbe(rolle: Zeichenfarbe) -> Color32 {
+    let f = farben();
+    match rolle {
+        Zeichenfarbe::Modell => f.paper,
+        Zeichenfarbe::Papier => f.paper,
+        Zeichenfarbe::Blockeditor => f.block_paper,
+        Zeichenfarbe::Vorschau => akzentfarben(akzent_jetzt(), hell_jetzt()).accent,
+        Zeichenfarbe::Auswahl => f.select,
+        Zeichenfarbe::Entfernen => f.danger,
+        Zeichenfarbe::Erweitern => f.ok,
+        Zeichenfarbe::Fang => f.track,
+    }
+}
+
+/// Die Zeichenfarbe einer Rolle: eigene Wahl des Nutzers oder Vorgabe.
+///
+/// **Der eine Weg** für alle Zeichenstellen — Hintergründe, Vorschauen,
+/// Auswahl und Fang lesen ihre Farbe hier. Eine neue Rolle bekommt damit
+/// automatisch eine Einstellung und folgt dem Design, ohne dass an der
+/// Zeichenstelle eine Farbe festgehalten wird.
+pub fn zeichenfarbe(rolle: Zeichenfarbe) -> Color32 {
+    eigene_zeichenfarbe(rolle).unwrap_or_else(|| standard_zeichenfarbe(rolle))
+}
+
+/// Eigene Zeichenfarben setzen (Einstellungen → Darstellung → „Zeichenfarben“).
+///
+/// Gilt ab dem nächsten Bild; die Zeichenfläche liest die Farben bei jedem
+/// Bild, ein Neustart ist nicht nötig. Eine leere Zuordnung stellt alle
+/// Vorgaben wieder her.
+pub fn set_zeichenfarben(farben: &BTreeMap<Zeichenfarbe, Color32>, ctx: &egui::Context) {
+    if let Ok(mut zelle) = ZEICHENFARBEN.write() {
+        *zelle = farben.clone();
+    }
+    ZEICHENFARBEN_IM_FADEN.with(|z| *z.borrow_mut() = Some(farben.clone()));
+    ctx.request_repaint();
+}
+
+/// Die in `prefs.json` gespeicherten Zeichenfarben als egui-Farben (T0181).
+///
+/// Der Kern kennt egui nicht — die Umrechnung steht deshalb hier, an der
+/// einen Stelle zwischen Einstellung und Zeichenweg.
+pub fn farben_aus_prefs(
+    prefs: &jjcad_core::persist::UserPrefs,
+) -> BTreeMap<Zeichenfarbe, Color32> {
+    prefs
+        .zeichenfarben
+        .iter()
+        .map(|(rolle, c)| (*rolle, Color32::from_rgb(c.r, c.g, c.b)))
+        .collect()
 }
 
 /// Auflösen der Wahl: `System` folgt dem Betriebssystem, Hell und Dunkel sind
@@ -958,7 +1077,7 @@ mod tests {
     fn umschalten_tauscht_die_farben() {
         let ctx = egui::Context::default();
         set_design(Design::Dunkel, &ctx);
-        let (dunkel_bg, dunkel_text, papier) = (Palette::bg(), Palette::text(), Palette::paper());
+        let (dunkel_bg, dunkel_text, papier) = (Palette::bg(), Palette::text(), Palette::modell());
         assert!(!ist_hell());
 
         set_design(Design::Hell, &ctx);
@@ -966,12 +1085,53 @@ mod tests {
         assert_ne!(Palette::bg(), dunkel_bg, "die Fläche blieb im alten Design");
         assert!(helligkeit(Palette::bg()) > helligkeit(dunkel_bg));
         assert!(helligkeit(Palette::text()) < helligkeit(dunkel_text));
-        assert_eq!(Palette::paper(), papier, "das Papier wechselt mit");
+        assert_eq!(Palette::modell(), papier, "das Papier wechselt mit");
 
         set_design(Design::Dunkel, &ctx);
         assert!(!ist_hell());
         assert_eq!(Palette::bg(), dunkel_bg, "zurück im dunklen Design");
         assert_eq!(Palette::text(), dunkel_text);
+    }
+
+    /// T0181: Eigene Zeichenfarben überschreiben die Vorgabe, eine leere
+    /// Zuordnung stellt sie zurück, und ein Designwechsel verliert die Wahl
+    /// nicht — die Vorgaben ziehen mit, die eigenen Töne bleiben.
+    #[test]
+    fn zeichenfarben_ueberschreiben_die_vorgabe() {
+        let ctx = egui::Context::default();
+        set_design(Design::Dunkel, &ctx);
+        set_akzent(Farbakzent::Bernstein, &ctx);
+        set_zeichenfarben(&BTreeMap::new(), &ctx);
+
+        // Vorgaben: Papier, Blockton, Akzent, Blau, Rot, Grün, Türkis.
+        assert_eq!(Palette::modell(), DUNKEL.paper);
+        assert_eq!(Palette::papier(), DUNKEL.paper);
+        assert_eq!(Palette::blockeditor(), DUNKEL.block_paper);
+        assert_eq!(Palette::vorschau(), Palette::accent());
+        assert_eq!(Palette::auswahl(), DUNKEL.select);
+        assert_eq!(Palette::entfernen(), DUNKEL.danger);
+        assert_eq!(Palette::erweitern(), DUNKEL.ok);
+        assert_eq!(Palette::fang(), DUNKEL.track);
+
+        let mut eigene = BTreeMap::new();
+        eigene.insert(Zeichenfarbe::Vorschau, Color32::from_rgb(1, 2, 3));
+        eigene.insert(Zeichenfarbe::Modell, Color32::from_rgb(4, 5, 6));
+        set_zeichenfarben(&eigene, &ctx);
+        assert_eq!(Palette::vorschau(), Color32::from_rgb(1, 2, 3));
+        assert_eq!(Palette::modell(), Color32::from_rgb(4, 5, 6));
+        // Nicht gesetzte Rollen folgen weiter dem Design.
+        assert_eq!(Palette::fang(), DUNKEL.track);
+
+        // Designwechsel: eigene Töne bleiben, Vorgaben ziehen mit.
+        set_design(Design::Hell, &ctx);
+        assert_eq!(Palette::vorschau(), Color32::from_rgb(1, 2, 3));
+        assert_eq!(Palette::fang(), HELL.track);
+
+        // „Standard“ = leere Zuordnung.
+        set_zeichenfarben(&BTreeMap::new(), &ctx);
+        assert_eq!(Palette::vorschau(), Palette::accent());
+        assert_eq!(Palette::modell(), HELL.paper);
+        set_design(Design::Dunkel, &ctx);
     }
 
     /// T0111: Bernstein bleibt der Programmstandard und trägt **genau** die

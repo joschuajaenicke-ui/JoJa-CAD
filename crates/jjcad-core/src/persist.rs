@@ -1070,6 +1070,106 @@ impl SpeicherortFeld {
     }
 }
 
+/// Rolle einer **Zeichenfarbe** (T0181) — Einstellungen → Darstellung →
+/// „Zeichenfarben“.
+///
+/// Die Zeichnung hat Farben, die nicht zum Objekt gehören, sondern zur
+/// **Bedeutung** einer Stelle: der Hintergrund des Bearbeitungsraums, die
+/// Vorschau eines neuen Elements, die Einfärbung der Auswahl, die Vorschau
+/// von Stutzen, Verlängern und Verschneiden, die Fangmarke. Sie standen
+/// bisher fest im Code (Papier, Akzent, Blau, Rot, Grün, Türkis).
+///
+/// Diese Aufzählung ist die **eine** Liste dieser Rollen. Wer eine neue
+/// solche Farbe braucht, ergänzt sie hier und in
+/// `jjcad_gui::theme::Palette` — nicht an der Zeichenstelle. Die Vorgaben
+/// stehen in `theme.rs` (je Design), eigene Werte in
+/// [`UserPrefs::zeichenfarben`].
+#[derive(
+    Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Debug, serde::Serialize, serde::Deserialize,
+)]
+pub enum Zeichenfarbe {
+    /// Hintergrund des Modellbereichs
+    #[serde(rename = "modell")]
+    Modell,
+    /// Blattfläche im Papierbereich (Druckvorschau)
+    #[serde(rename = "papier")]
+    Papier,
+    /// Hintergrund des Blockeditors
+    #[serde(rename = "blockeditor")]
+    Blockeditor,
+    /// Vorschau neuer Elemente (Werkzeug-Vorschau, Einfüge-Vorschau)
+    #[serde(rename = "vorschau")]
+    Vorschau,
+    /// Einfärbung ausgewählter Elemente
+    #[serde(rename = "auswahl")]
+    Auswahl,
+    /// Vorschau des Entfernens (Stutzen)
+    #[serde(rename = "entfernen")]
+    Entfernen,
+    /// Vorschau des Erweiterns (Verlängern, Verschneiden)
+    #[serde(rename = "erweitern")]
+    Erweitern,
+    /// Punktfang (Fangmarke und Hilfslinien)
+    #[serde(rename = "fang")]
+    Fang,
+}
+
+impl Zeichenfarbe {
+    /// Alle Rollen in der Reihenfolge der Einstellungsseite.
+    pub const ALL: [Zeichenfarbe; 8] = [
+        Zeichenfarbe::Modell,
+        Zeichenfarbe::Papier,
+        Zeichenfarbe::Blockeditor,
+        Zeichenfarbe::Vorschau,
+        Zeichenfarbe::Auswahl,
+        Zeichenfarbe::Entfernen,
+        Zeichenfarbe::Erweitern,
+        Zeichenfarbe::Fang,
+    ];
+
+    /// Schlüssel in `prefs.json` (gleich dem Serde-Namen).
+    pub fn key(self) -> &'static str {
+        match self {
+            Zeichenfarbe::Modell => "modell",
+            Zeichenfarbe::Papier => "papier",
+            Zeichenfarbe::Blockeditor => "blockeditor",
+            Zeichenfarbe::Vorschau => "vorschau",
+            Zeichenfarbe::Auswahl => "auswahl",
+            Zeichenfarbe::Entfernen => "entfernen",
+            Zeichenfarbe::Erweitern => "erweitern",
+            Zeichenfarbe::Fang => "fang",
+        }
+    }
+
+    /// Beschriftung in der gewählten Sprache (T0106).
+    pub fn text(self) -> &'static str {
+        match self {
+            Zeichenfarbe::Modell => crate::i18n::tr("ui.zeichenfarbe.modell"),
+            Zeichenfarbe::Papier => crate::i18n::tr("ui.zeichenfarbe.papier"),
+            Zeichenfarbe::Blockeditor => crate::i18n::tr("ui.zeichenfarbe.blockeditor"),
+            Zeichenfarbe::Vorschau => crate::i18n::tr("ui.zeichenfarbe.vorschau"),
+            Zeichenfarbe::Auswahl => crate::i18n::tr("ui.zeichenfarbe.auswahl"),
+            Zeichenfarbe::Entfernen => crate::i18n::tr("ui.zeichenfarbe.entfernen"),
+            Zeichenfarbe::Erweitern => crate::i18n::tr("ui.zeichenfarbe.erweitern"),
+            Zeichenfarbe::Fang => crate::i18n::tr("ui.zeichenfarbe.fang"),
+        }
+    }
+
+    /// Kurze Erläuterung (Tooltip im Einstellungsfenster).
+    pub fn tip(self) -> &'static str {
+        match self {
+            Zeichenfarbe::Modell => crate::i18n::tr("ui.zeichenfarbe.tip_modell"),
+            Zeichenfarbe::Papier => crate::i18n::tr("ui.zeichenfarbe.tip_papier"),
+            Zeichenfarbe::Blockeditor => crate::i18n::tr("ui.zeichenfarbe.tip_blockeditor"),
+            Zeichenfarbe::Vorschau => crate::i18n::tr("ui.zeichenfarbe.tip_vorschau"),
+            Zeichenfarbe::Auswahl => crate::i18n::tr("ui.zeichenfarbe.tip_auswahl"),
+            Zeichenfarbe::Entfernen => crate::i18n::tr("ui.zeichenfarbe.tip_entfernen"),
+            Zeichenfarbe::Erweitern => crate::i18n::tr("ui.zeichenfarbe.tip_erweitern"),
+            Zeichenfarbe::Fang => crate::i18n::tr("ui.zeichenfarbe.tip_fang"),
+        }
+    }
+}
+
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct UserPrefs {
     #[serde(default)]
@@ -1206,6 +1306,13 @@ pub struct UserPrefs {
     /// (`crate::theme::set_akzent`).
     #[serde(default)]
     pub farbakzent: Farbakzent,
+    /// Eigene **Zeichenfarben** (T0181): je Rolle ([`Zeichenfarbe`]) ein
+    /// eigener Ton. Fehlt eine Rolle, gilt die Vorgabe des Designs aus
+    /// `jjcad_gui::theme` — ältere `prefs.json` bleiben damit gültig und
+    /// folgen weiter dem Design (Papier, Akzent, Blau, Rot, Grün, Türkis).
+    /// Die Wahl wirkt sofort, ohne Neustart.
+    #[serde(default)]
+    pub zeichenfarben: BTreeMap<Zeichenfarbe, crate::style::Color>,
     /// Maximale Rastergröße der Schrift in der Zeichenfläche (T0114):
     /// 128, 256 (Vorgabe), 512 oder 1024 px. Höher = schärfer im hohen Zoom,
     /// aber mehr Schriftatlas. Gilt sofort, ohne Neustart. Steht seit T0165 in
@@ -1683,6 +1790,8 @@ impl Default for UserPrefs {
             // Programmstandard (T0111): der Bernstein-Akzent (bisheriges
             // Aussehen).
             farbakzent: Farbakzent::Bernstein,
+            // T0181: keine eigenen Zeichenfarben — alle Rollen folgen dem Design.
+            zeichenfarben: BTreeMap::new(),
             // Programmstandard (T0114): 256 px Rastergröße — der Atlas bleibt
             // klein, kleine Schriften sind bei jedem Zoom scharf.
             textaufloesung: Textaufloesung::Px256,
@@ -2440,6 +2549,59 @@ mod tests {
         );
         assert!(aufgeloest.is_absolute(), "relativer Pfad bleibt relativ");
         let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// T0181: Jede Rolle hat einen stabilen Dateischlüssel — er ist der
+    /// Serde-Name und steht so in `prefs.json`.
+    #[test]
+    fn zeichenfarben_haben_stabile_schluessel() {
+        for rolle in Zeichenfarbe::ALL {
+            let roh = serde_json::to_string(&rolle).unwrap();
+            assert_eq!(
+                roh,
+                format!("\"{}\"", rolle.key()),
+                "{rolle:?}: Dateischlüssel weicht vom Serde-Namen ab"
+            );
+        }
+        // Acht Rollen, acht verschiedene Schlüssel.
+        let mut keys: Vec<&str> = Zeichenfarbe::ALL.iter().map(|r| r.key()).collect();
+        keys.sort_unstable();
+        keys.dedup();
+        assert_eq!(keys.len(), Zeichenfarbe::ALL.len());
+    }
+
+    /// T0181: Eigene Zeichenfarben überleben Speichern und Laden; eine alte
+    /// `prefs.json` ohne den Schlüssel lädt unverändert (alle Rollen folgen
+    /// dann dem Design).
+    #[test]
+    fn zeichenfarben_werden_gespeichert_und_gelesen() {
+        let mut prefs = UserPrefs::default();
+        assert!(
+            prefs.zeichenfarben.is_empty(),
+            "Vorgabe: keine eigenen Zeichenfarben"
+        );
+        prefs.zeichenfarben.insert(
+            Zeichenfarbe::Vorschau,
+            crate::style::Color::rgb(1, 2, 3),
+        );
+        prefs
+            .zeichenfarben
+            .insert(Zeichenfarbe::Fang, crate::style::Color::rgb(9, 8, 7));
+        let roh = serde_json::to_string(&prefs).unwrap();
+        assert!(roh.contains("\"vorschau\""), "Schlüssel fehlt: {roh}");
+        let wieder: UserPrefs = serde_json::from_str(&roh).unwrap();
+        assert_eq!(
+            wieder.zeichenfarben.get(&Zeichenfarbe::Vorschau),
+            Some(&crate::style::Color::rgb(1, 2, 3))
+        );
+        assert_eq!(
+            wieder.zeichenfarben.get(&Zeichenfarbe::Fang),
+            Some(&crate::style::Color::rgb(9, 8, 7))
+        );
+
+        // Altbestand ohne den Schlüssel.
+        let alt: UserPrefs = serde_json::from_str(r#"{"last_dir": "/tmp"}"#).unwrap();
+        assert!(alt.zeichenfarben.is_empty());
     }
 
     /// T0063: „Maus verschiebt“ ist in der Vorgabe an (bisheriges Verhalten)

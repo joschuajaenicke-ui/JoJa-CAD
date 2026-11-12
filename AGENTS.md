@@ -526,6 +526,23 @@ Mit dem Nutzer abgestimmt — nicht „verbessern“:
   Druck, nur die Bedienoberfläche wechselt (auch die Beschriftungsbox am Zeiger,
   `Palette::hinweis_flaeche`).
 
+- **Zeichenfarben (T0181)**: Die Farben, die nicht zum Objekt gehören, sondern zur
+  **Bedeutung** einer Stelle, stehen in **einer** Liste: `persist::Zeichenfarbe`
+  (`Modell`, `Papier`, `Blockeditor`, `Vorschau`, `Auswahl`, `Entfernen`,
+  `Erweitern`, `Fang`). Gelesen werden sie nur über `theme::Palette::modell()`,
+  `papier()`, `blockeditor()`, `vorschau()`, `auswahl()`, `entfernen()`,
+  `erweitern()`, `fang()`; die Vorgaben je Design stehen in
+  `theme::standard_zeichenfarbe` (Papier, Blockton, Akzent, Blau, Rot, Grün,
+  Türkis), eigene Werte in `prefs.json` (`zeichenfarben`, je Rolle ein
+  `#RRGGBB`). Einstellungen ▸ Darstellung ▸ „Zeichenfarben“ zeigt eine Zeile je
+  Rolle mit Farbwahl, Hexwert und „Standard“ (nimmt die eigene Wahl zurück).
+  **Wer eine neue solche Farbe braucht, ergänzt die Rolle in `Zeichenfarbe` und
+  die Vorgabe in `standard_zeichenfarbe`** — nicht eine Farbe an der
+  Zeichenstelle festhalten. Der Hintergrund des Bearbeitungsraums kommt aus
+  `canvas::hintergrund(app)` (eine Abfrage für Fläche und Vorschau-Löcher).
+  Prüfweg: `cargo test -p jjcad-gui tests_zeichenfarben` und
+  `cargo test -p jjcad-gui zeichenfarben` (Theme, Einstellungsseite, `prefs.json`).
+
 - **Schraffuren (T0095)**: Die Muster sind die Kennzeichnungen der Schnittflächen nach
   DIN 1356-1:2026-09, Tabelle 5 (17 Muster — Nr. 15 ist eine Linienart, T0132;
   `style::FillPattern`, `ALL` in der Reihenfolge der Norm); die Muster
