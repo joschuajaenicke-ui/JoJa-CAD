@@ -220,7 +220,9 @@ Mit dem Nutzer abgestimmt — nicht „verbessern“:
   `show_title_block` sind nur noch Altlasten für die Migration). Die echten Blattecken
   (0,0)…(B,H) fangen im Papierraum als „Blattecke“.
 - **Blockeditor (T0137)**: Eigene Blöcke (Projekt/Benutzer — **nicht** System) werden
-  über das Rechtsklickmenü der Blockbibliothek geöffnet. `Document::block_space` ist
+  über das Rechtsklickmenü der Blockbibliothek geöffnet — seit T0185 ebenso über
+  „Block bearbeiten“ im Objektmenü einer **eingesetzten Blockinstanz** (beide Wege
+  enden in `App::oeffne_block_editor`). `Document::block_space` ist
   der **dritte Bearbeitungsraum** neben Modell und Papierraum: `ents()`/`ents_mut()`
   liefern die Blockdefinition, damit gelten alle Actions, Fang, Auswahl und Griffe
   unverändert. Der Reiter steht im Streifen — Blöcke **der Datei** in der Blattzone,

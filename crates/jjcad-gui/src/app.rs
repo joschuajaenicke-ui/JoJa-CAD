@@ -2007,6 +2007,53 @@ impl App {
                     // Die ersten Bilder würden sonst selbst einpassen.
                     self.started_at = 3.0;
                 }
+                // T0185: Rechtsklickmenü einer eingesetzten Blockinstanz —
+                // zeigt den Eintrag „Block bearbeiten“ (nur eigene Blöcke).
+                "blockmenue" => {
+                    let layer = self.doc().current_layer;
+                    if self.doc().block("usr:tisch").is_none() {
+                        let mut kreis = Entity::new(
+                            1,
+                            layer,
+                            EntityKind::Circle {
+                                c: jjcad_core::geom::v(0.0, 0.0),
+                                r: 600.0,
+                            },
+                        );
+                        kreis.by_block = true;
+                        self.doc_mut().blocks.push(jjcad_core::model::BlockDef {
+                            id: "usr:tisch".into(),
+                            name: "Tisch".into(),
+                            category: "Projekt".into(),
+                            source: jjcad_core::model::BlockSource::User,
+                            description: String::new(),
+                            entities: vec![kreis],
+                            icon: None,
+                            base: V2::ZERO,
+                        });
+                    }
+                    let id = self.doc_mut().new_id();
+                    self.doc_mut().add_entity(Entity::new(
+                        id,
+                        layer,
+                        EntityKind::BlockRef {
+                            block: "usr:tisch".into(),
+                            pos: V2::ZERO,
+                            rot: 0.0,
+                            scale: V2::new(1.0, 1.0),
+                            mirror: false,
+                        },
+                    ));
+                    let mut v = self.current_view();
+                    v.center = V2::ZERO;
+                    v.zoom = 0.35;
+                    // `set_view` schließt ein offenes Menü — erst danach öffnen.
+                    self.set_view(v);
+                    self.open_menu(MenuKind::Object(id), egui::Pos2::new(420.0, 260.0));
+                    // Sonst passt die Ansicht in den ersten Bildern ein und
+                    // schließt das Menü (T0180).
+                    self.started_at = 3.0;
+                }
                 "blocks-tab" => {
                     self.ui.inventory_open = true;
                     self.ui.inventory_tab = 1;
@@ -9101,6 +9148,25 @@ impl App {
 
                 match menu.kind {
                     MenuKind::Object(id) => {
+                        // T0185: Eine Blockinstanz führt über das Menü direkt in
+                        // den Blockeditor. Nur **eigene** Blöcke — Systemblöcke
+                        // sind schreibgeschützt, genau wie im Rechtsklick der
+                        // Blockbibliothek (`inventory::block_tile`).
+                        let block_bearbeitbar = self
+                            .doc()
+                            .entity(id)
+                            .and_then(|e| match &e.kind {
+                                EntityKind::BlockRef { block, .. } => Some(block.clone()),
+                                _ => None,
+                            })
+                            .filter(|b| {
+                                self.doc()
+                                    .block(b)
+                                    .map(|blk| {
+                                        blk.source != jjcad_core::model::BlockSource::System
+                                    })
+                                    .unwrap_or(false)
+                            });
                         let (typ, layer) = self
                             .doc()
                             .entity(id)
@@ -9129,6 +9195,18 @@ impl App {
                             }
                         }
                         ui.separator();
+                        // T0185: bearbeitet die **Definition**, nicht die
+                        // Instanz — steht deshalb vor der Zeichenreihenfolge.
+                        if let Some(block) = block_bearbeitbar.as_deref() {
+                            if ui
+                                .button(jjcad_core::i18n::tr("gui.app.block_bearbeiten"))
+                                .clicked()
+                            {
+                                self.oeffne_block_editor(block);
+                                close = true;
+                            }
+                            ui.separator();
+                        }
                         // Zeichenreihenfolge: Position in der Objektliste
                         ui.label(theme::faint(jjcad_core::i18n::tr("gui.app.reihenfolge")));
                         if ui.button(jjcad_core::i18n::tr("gui.app.in_den_vordergrund")).clicked() {
@@ -16410,22 +16488,24 @@ mod tests_rechtsklick {
         }
     }
 
-    /// Rechtsklick in die Fläche und den Rahmen des offenen Menüs zurückgeben.
+    /// Rechtsklick an einer Weltstelle und den Rahmen des offenen Menüs
+    /// zurückgeben.
     ///
     /// `App::ui` zeichnet die Fläche samt Panels, das Menü hängt in
     /// `App::draw_menu` (in der App ruft `update` beide nacheinander) — der
     /// Test muss den zweiten Schritt selbst gehen, sonst bleibt das Menü
     /// unsichtbar und der Test prüft nichts.
     fn objektmenue_oeffnen(ctx: &egui::Context, app: &mut App) -> egui::FullOutput {
+        objektmenue_bei(ctx, app, V2::new(1500.0, 1000.0))
+    }
+
+    /// Dasselbe an einer beliebigen Weltstelle (T0185: Blockinstanz).
+    fn objektmenue_bei(ctx: &egui::Context, app: &mut App, welt: V2) -> egui::FullOutput {
         let _ = ctx.run(rahmen(vec![]), |ctx| {
             app.ui(ctx);
             app.draw_menu(ctx);
         });
-        let pos = world_to_screen(
-            app.ui.last_canvas,
-            app.current_view(),
-            V2::new(1500.0, 1000.0),
-        );
+        let pos = world_to_screen(app.ui.last_canvas, app.current_view(), welt);
         let _ = ctx.run(
             rahmen(vec![egui::Event::PointerMoved(pos), sekundaer(pos, true)]),
             |ctx| {
@@ -16446,9 +16526,14 @@ mod tests_rechtsklick {
     }
 
     fn eintrag(out: &egui::FullOutput) -> Option<egui::Rect> {
+        eintrag_mit(out, "Eigenschaften im Panel")
+    }
+
+    /// Fläche eines Menüeintrags mit diesem Text (getrimmt verglichen).
+    fn eintrag_mit(out: &egui::FullOutput, text: &str) -> Option<egui::Rect> {
         texte_mit_lage(out)
             .into_iter()
-            .find(|(t, _)| t.trim() == "Eigenschaften im Panel")
+            .find(|(t, _)| t.trim() == text)
             .map(|(_, r)| r)
     }
 
@@ -16588,6 +16673,98 @@ mod tests_rechtsklick {
         app.start_ghost_paste();
         assert!(!app.menu_open(), "das Menü blieb beim Einfügen offen");
         assert!(app.ghost.is_some(), "die Einfüge-Vorschau läuft nicht");
+    }
+
+    // ---------------------------------------------------------------------
+    // T0185: Blockinstanz direkt aus dem Rechtsklickmenü bearbeiten
+    // ---------------------------------------------------------------------
+
+    /// Zeichnung mit einer eingesetzten Blockinstanz (`usr:bank`) aus einer
+    /// waagerechten Linie. Die Quelle bestimmt, ob der Block bearbeitbar ist.
+    fn app_mit_blockinstanz(quelle: BlockSource) -> (egui::Context, App) {
+        let ctx = egui::Context::default();
+        let mut app = App::with_ctx(ctx.clone());
+        let layer = app.doc().current_layer;
+        let mut kind = Entity::new(
+            10_000,
+            layer,
+            EntityKind::Line {
+                a: V2::new(-1000.0, 0.0),
+                b: V2::new(1000.0, 0.0),
+            },
+        );
+        kind.by_block = true;
+        app.doc_mut().blocks.push(BlockDef {
+            id: "usr:bank".into(),
+            name: "Bank".into(),
+            category: "Projekt".into(),
+            source: quelle,
+            description: String::new(),
+            entities: vec![kind],
+            icon: None,
+            base: V2::ZERO,
+        });
+        let id = app.doc_mut().new_id();
+        let instanz = Entity::new(
+            id,
+            layer,
+            EntityKind::BlockRef {
+                block: "usr:bank".into(),
+                pos: V2::ZERO,
+                rot: 0.0,
+                scale: V2::new(1.0, 1.0),
+                mirror: false,
+            },
+        );
+        app.doc_mut().add_entity(instanz);
+        app.fit_view();
+        (ctx, app)
+    }
+
+    /// Der Eintrag „Block bearbeiten“ öffnet den Blockeditor der Instanz —
+    /// nicht den der zuletzt gewählten Blockbibliothek.
+    #[test]
+    fn blockinstanz_bietet_bearbeiten_und_oeffnet_den_editor() {
+        let (ctx, mut app) = app_mit_blockinstanz(BlockSource::User);
+        let out = objektmenue_bei(&ctx, &mut app, V2::new(0.0, 0.0));
+        assert!(
+            app.menu_open(),
+            "der Rechtsklick auf die Blockinstanz öffnete kein Menü"
+        );
+        let kasten = eintrag_mit(&out, "Block bearbeiten")
+            .expect("im Objektmenü fehlt der Eintrag „Block bearbeiten“");
+
+        let klick = kasten.center();
+        let _ = ctx.run(
+            rahmen(vec![egui::Event::PointerMoved(klick), primaer(klick, true)]),
+            |ctx| {
+                app.ui(ctx);
+                app.draw_menu(ctx);
+            },
+        );
+        let _ = ctx.run(rahmen(vec![primaer(klick, false)]), |ctx| {
+            app.ui(ctx);
+            app.draw_menu(ctx);
+        });
+
+        assert_eq!(
+            app.aktiver_block().as_deref(),
+            Some("usr:bank"),
+            "der Klick hat den Blockeditor nicht geöffnet"
+        );
+        assert!(!app.menu_open(), "das Menü blieb nach dem Klick offen");
+    }
+
+    /// Gegenprobe: ein Systemblock ist schreibgeschützt — der Eintrag fehlt,
+    /// genau wie im Rechtsklick der Blockbibliothek.
+    #[test]
+    fn systemblock_bietet_kein_bearbeiten_an() {
+        let (ctx, mut app) = app_mit_blockinstanz(BlockSource::System);
+        let out = objektmenue_bei(&ctx, &mut app, V2::new(0.0, 0.0));
+        assert!(
+            eintrag_mit(&out, "Block bearbeiten").is_none(),
+            "ein Systemblock darf keinen Editor anbieten"
+        );
     }
 }
 

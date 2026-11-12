@@ -90,6 +90,9 @@ einsehbar und dort frei änderbar (Ribbon ▸ Ansicht ▸ „Tasten").
     Klick-Werkzeug, und bei einer Schraffur genügt der Klick **irgendwo in die Fläche** —
     nicht nur auf den Rand: die Musterlinien werden zu einzelnen Linien, die Musterpunkte
     (Sand, Putz) zu kleinen gefüllten Kreisen in der Musterfarbe. Das Bild bleibt dabei gleich.
+    Bei einer **Blockinstanz** bietet das Menü zusätzlich **Block bearbeiten**: es öffnet die
+    Blockdefinition im Blockeditor. Systemblöcke sind schreibgeschützt und bekommen den
+    Eintrag nicht.
 11. **Ansichtsfenster**: auf einem Blatt über `Blatt ▸ Ansicht` als Rechteck aufziehen. Es ist
     ein normales Blattobjekt: per Klick oder Auswahlfenster wählen, an den vier Eckgriffen
     aufziehen, mit der Maus verschieben (Einstellungen ▸ Bedienung ▸ „Maus verschiebt") oder
