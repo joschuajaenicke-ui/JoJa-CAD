@@ -2664,17 +2664,27 @@ impl App {
                 "fensterrahmen" | "titelleiste" => {
                     self.prefs.fensterrahmen = jjcad_core::persist::Fensterrahmen::OhneTitelleiste;
                 }
-                // Einstellungen mit gewählter Kategorie (`settings:2`) oder mit
-                // Suchbegriff (`settings:Fenster`) — Prüfbild für T0061.
+                // Einstellungen mit gewählter Kategorie (`settings:2` oder
+                // `settings:darstellung`, T0178) oder mit Suchbegriff
+                // (`settings:Fenster`) — Prüfbild für T0061.
                 s if s.starts_with("settings:") => {
                     self.ui.settings_open = true;
                     let wahl = &s["settings:".len()..];
+                    let schluessel = format!("settings.category_{wahl}");
                     match wahl.parse::<usize>() {
                         Ok(n) => {
                             self.ui.settings_kat =
                                 n.min(crate::dialogs::EINSTELLUNGSKATEGORIEN.len() - 1)
                         }
-                        Err(_) => self.ui.settings_suche = wahl.to_string(),
+                        Err(_) => {
+                            match crate::dialogs::EINSTELLUNGSKATEGORIEN
+                                .iter()
+                                .position(|k| k.key == schluessel)
+                            {
+                                Some(i) => self.ui.settings_kat = i,
+                                None => self.ui.settings_suche = wahl.to_string(),
+                            }
+                        }
                     }
                 }
                 "help" => self.ui.help_open = true,

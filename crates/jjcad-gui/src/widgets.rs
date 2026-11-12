@@ -267,6 +267,18 @@ pub const LABEL_W: f32 = 160.0;
 pub const VAL_W: f32 = 150.0;
 /// Höhe einer Zeile
 pub const ROW_H: f32 = 22.0;
+/// Höhe eines Eingabefelds in einer Zeile (T0178).
+///
+/// Alle Bedienelemente einer Zeile — Zahlenfeld, Längenfeld und Auswahlfeld
+/// (`panels::dropdown`) — sind genau so hoch. Vorher war das Auswahlfeld 20 px
+/// hoch, ein einfaches `DragValue` dagegen 24 px (egui-Vorgabe
+/// `interact_size.y`); nebeneinander sah das Auswahlfeld dadurch kleiner aus.
+/// Die Zeile setzt deshalb in der Wertespalte `interact_size.y = FELD_H`, und
+/// jedes Auswahlfeld im Einstellungsfenster bekommt dieselbe Höhe.
+pub const FELD_H: f32 = 20.0;
+/// Kleinste Schriftgröße, in der ein Zeilenname noch gelesen werden kann —
+/// darunter wird er gekürzt (T0178).
+const KLEINSTE_LESEGROESSE: f32 = 9.5;
 
 pub fn field_row(ui: &mut Ui, label: &str, add: impl FnOnce(&mut Ui)) {
     field_row_mit_hinweis(ui, label, None, add);
@@ -300,25 +312,37 @@ fn field_row_mit_hinweis(
         );
     }
     // Name: exakt links, einzeilig, notfalls gekürzt. Mit Hinweis bleibt rechts
-    // Platz für das Infozeichen.
-    let platz = if tip.is_some() { 24 } else { 27 };
-    let mut text = label.to_string();
-    if text.chars().count() > platz {
-        text = format!("{}…", text.chars().take(platz - 1).collect::<String>());
-    }
+    // Platz für das Infozeichen (T0178: 18 px statt 11-px-Zeichen, damit es
+    // nicht am Namen klebt).
+    let icon_raum = if tip.is_some() { 18.0 } else { 0.0 };
+    let farbe = Palette::text_dim();
+    let verfuegbar = LABEL_W - 8.0 - icon_raum;
     // T0146: Ein Name, der die Namensspalte ausfüllt („Geschwindigkeit der
     // Ansicht“), wird so weit verkleinert, bis er **vor** der Wertspalte endet.
     // Die Spaltenbreite bleibt für alle Zeilen gleich; ohne die Verkleinerung
-    // liefe der Name ein Pixel in das Eingabefeld.
-    let farbe = Palette::text_dim();
-    let verfuegbar = LABEL_W - 8.0;
+    // liefe der Name ein Pixel in das Eingabefeld. Gekürzt wird erst, wenn der
+    // Name auch in der kleinsten Lesegröße nicht passt (T0178: der Platz für
+    // das Infozeichen nimmt 18 px weg, „Geschwindigkeit der Ansicht“ wurde
+    // deshalb vorher abgeschnitten statt verkleinert).
+    let mut text = label.to_string();
     let mut font = FontId::proportional(11.5);
-    let gemessen = ui
-        .fonts(|f| f.layout_no_wrap(text.clone(), font.clone(), farbe))
-        .size()
-        .x;
+    let messen = |ui: &Ui, text: &str, font: &FontId| {
+        ui.fonts(|f| f.layout_no_wrap(text.to_string(), font.clone(), farbe))
+            .size()
+            .x
+    };
+    let gemessen = messen(ui, &text, &font);
     if gemessen > verfuegbar {
-        font = FontId::proportional(passende_schriftgroesse(gemessen, verfuegbar, 11.5));
+        let kleiner = passende_schriftgroesse(gemessen, verfuegbar, 11.5);
+        if kleiner >= KLEINSTE_LESEGROESSE {
+            font = FontId::proportional(kleiner);
+        } else {
+            font = FontId::proportional(KLEINSTE_LESEGROESSE);
+            while text.chars().count() > 3 && messen(ui, &format!("{text}…"), &font) > verfuegbar {
+                text.pop();
+            }
+            text = format!("{}…", text.trim_end());
+        }
     }
     ui.painter().text(
         egui::pos2(row.left() + 4.0, row.center().y),
@@ -328,9 +352,12 @@ fn field_row_mit_hinweis(
         farbe,
     );
     if let Some(t) = tip {
+        // Einheitliches Infozeichen rechts in der Namensspalte; der Tooltip
+        // liegt auf der ganzen Namensfläche (T0178: vorher 11 px, dadurch
+        // gequetscht wirkend).
         let icon = Rect::from_center_size(
-            egui::pos2(row.left() + LABEL_W - 11.0, row.center().y),
-            Vec2::splat(11.0),
+            egui::pos2(row.left() + LABEL_W - 9.0, row.center().y),
+            Vec2::splat(12.0),
         );
         crate::icons::paint(ui.painter(), icon, "info", Palette::text_faint());
         ui.interact(
@@ -350,6 +377,10 @@ fn field_row_mit_hinweis(
             .max_rect(cell)
             .layout(egui::Layout::left_to_right(egui::Align::Center)),
         |ui| {
+            // T0178: gleiche Höhe für alle Bedienelemente der Wertespalte —
+            // sonst ist das Auswahlfeld (20 px) kleiner als ein Zahlenfeld
+            // (egui-Vorgabe 24 px).
+            ui.spacing_mut().interact_size.y = FELD_H;
             ui.set_max_width(cell.width());
             add(ui);
         },
@@ -633,7 +664,7 @@ pub fn length_field(
         .max_decimals(decimals + 2)
         .custom_formatter(move |n, _| unit.format_length_auto(unit.to_mm(n)))
         .suffix(format!(" {}", unit.short()));
-    let resp = ui.add_sized([width, 20.0], drag);
+    let resp = ui.add_sized([width, FELD_H], drag);
     if resp.changed() {
         *value_mm = unit.to_mm(v);
         true

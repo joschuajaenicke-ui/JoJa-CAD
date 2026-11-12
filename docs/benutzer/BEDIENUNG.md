@@ -104,10 +104,13 @@ einsehbar und dort frei änderbar (Ribbon ▸ Ansicht ▸ „Tasten").
     Der Rahmen des eingestellten Fensters ist in der Akzentfarbe markiert; der Schalter endet
     mit der Auswahl. **Ein Doppelklick in die Ansicht** schaltet ihn ebenfalls ein (und beim
     nächsten Doppelklick wieder aus) — der Weg ohne Umweg über das Panel.
-12. **Einstellungen** (Zahnrad) — links eine Tabelle der Kategorien (Einheiten und Maßstab,
-    Raster, Fangen, Architektur, Bemaßung, Bedienung, Darstellung, Grafik, Voreinstellungen,
-    Speicherorte, Sicherung), darüber die Suche, rechts die
-    Einstellungen der gewählten Kategorie. Die Suche filtert Kategorien **und** Zeilen und springt
+12. **Einstellungen** (Zahnrad) — links eine Tabelle der Kategorien in dieser Reihenfolge:
+    Bedienung, Darstellung, Grafik, Raster, Fangen, Voreinstellungen, Architektur, Bemaßung,
+    Update (noch leer), Speicherorte, Sicherung; darüber die Suche, rechts die
+    Einstellungen der gewählten Kategorie. Die gewählte Kategorie steht in der Akzentfarbe
+    (Einstellungen · Darstellung · Farbakzente). Jede Einstellung erklärt sich über das
+    **Infozeichen** rechts neben ihrem Namen: der Tooltip erscheint beim Verweilen mit der Maus.
+    Eingabefelder und Auswahlfelder sind gleich hoch. Die Suche filtert Kategorien **und** Zeilen und springt
     auf die erste passende Kategorie. **Grafik** führt nur die Leistungseinstellungen der Anzeige
     (Kantenglättung samt Kantenweichheit, Kurventoleranz, Textauflösung, Anzeigeliste
     zwischenspeichern, Leistungsanzeige); die personalisierte Darstellung (Design, Farbakzente,
