@@ -655,11 +655,17 @@ Mit dem Nutzer abgestimmt — nicht „verbessern“:
   nicht am Index — mit Index zeigte eine Umsortierung die Einstellungen einer
   fremden Kategorie. Jede Beschreibung steht als **Tooltip am Infozeichen** der
   Zeile (`dialogs::zeile_tip` → `widgets::field_row_tip`), nicht als Absatz
-  darunter; kein Zweig schreibt eigene Hinweistexte. Alle Bedienelemente einer
-  Zeile sind `widgets::FELD_H` (20 px) hoch — `field_row` setzt dafür
-  `interact_size.y`, Auswahlfelder im Fenster laufen über `dialogs::auswahl`
-  (`panels::dropdown_mit_hoehe`); ein einfaches `DragValue` war sonst 24 px hoch
-  und wirkte größer als das Auswahlfeld. Die gewählte Kategorie trägt den
+  darunter; kein Zweig schreibt eigene Hinweistexte. **Auswahlfelder sind so hoch
+  wie Eingabefelder**: maßgeblich ist `widgets::FELD_H` (24 px) — ein Zahlenfeld
+  nimmt sich mindestens `interact_size.y` der Vorlage und lässt sich mit
+  `add_sized` nicht kleiner ziehen (gemessen: 24 px gezeichnet, egal welche Höhe
+  vorgegeben wird). `panels::DROPDOWN_H` ist deshalb `widgets::FELD_H + 1`
+  (25 px): das Zahlenfeld zeichnet seinen Rahmen eine halbe Strichbreite über
+  die Fläche hinaus, der Auswahlknopf innerhalb — mit gleicher Vorgabe wäre er
+  sichtbar einen Pixel niedriger (gemessen 26 gegen 27 px im Bild). Auswahlfelder
+  im Einstellungsfenster laufen über `dialogs::auswahl`, im Panel über
+  `panels::dropdown`; `egui::ComboBox` ist überall ersetzt (niedriger als ein
+  Feld, siehe unten). Die gewählte Kategorie trägt den
   **Farbakzent** (weiche Akzentfläche, 2-px-Streifen, Akzenttext), nicht Blau.
   „Einheiten und Maßstab“ ist entfallen — Einheit, Dezimalen, Rasterweite und
   Maßstab stehen im Eigenschaften-Panel der Zeichnung (`panels::doc_props`).

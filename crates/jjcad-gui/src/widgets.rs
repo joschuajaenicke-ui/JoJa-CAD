@@ -269,13 +269,14 @@ pub const VAL_W: f32 = 150.0;
 pub const ROW_H: f32 = 22.0;
 /// Höhe eines Eingabefelds in einer Zeile (T0178).
 ///
-/// Alle Bedienelemente einer Zeile — Zahlenfeld, Längenfeld und Auswahlfeld
-/// (`panels::dropdown`) — sind genau so hoch. Vorher war das Auswahlfeld 20 px
-/// hoch, ein einfaches `DragValue` dagegen 24 px (egui-Vorgabe
-/// `interact_size.y`); nebeneinander sah das Auswahlfeld dadurch kleiner aus.
-/// Die Zeile setzt deshalb in der Wertespalte `interact_size.y = FELD_H`, und
-/// jedes Auswahlfeld im Einstellungsfenster bekommt dieselbe Höhe.
-pub const FELD_H: f32 = 20.0;
+/// Alle Bedienelemente einer Zeile — Zahlenfeld, Längenfeld, Häkchen und
+/// Auswahlfeld (`panels::dropdown`) — sind genau so hoch. Maßgeblich ist das
+/// `DragValue`: es nimmt sich mindestens `interact_size.y` der Vorlage (24 px)
+/// und **lässt sich mit `add_sized` nicht kleiner ziehen** (gemessen: 24 px
+/// hoch gezeichnet, egal welche Höhe man vorgibt). Ein Auswahlfeld mit 20 px
+/// wirkte daneben deutlich kleiner — deshalb steht hier derselbe Wert, und
+/// `panels::dropdown_mit_hoehe` bekommt ihn im Einstellungsfenster.
+pub const FELD_H: f32 = 24.0;
 /// Kleinste Schriftgröße, in der ein Zeilenname noch gelesen werden kann —
 /// darunter wird er gekürzt (T0178).
 const KLEINSTE_LESEGROESSE: f32 = 9.5;

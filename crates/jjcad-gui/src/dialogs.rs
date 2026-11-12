@@ -1491,7 +1491,9 @@ fn auswahl<R>(
     icon: Option<panels::BtnIcon>,
     add: impl FnOnce(&mut Ui) -> Option<R>,
 ) -> Option<R> {
-    panels::dropdown_mit_hoehe(ui, salt, caption, icon, widgets::FELD_H, add)
+    // Dieselbe Höhe wie in den Panels (`panels::DROPDOWN_H`) — dort steht,
+    // warum sie einen Bildpunkt über `widgets::FELD_H` liegt.
+    panels::dropdown_mit_hoehe(ui, salt, caption, icon, panels::DROPDOWN_H, add)
 }
 
 /// Abschnittsüberschrift; während einer Suche entfällt sie, damit nur die
@@ -7744,6 +7746,7 @@ fn gewaehlte_kategorie_traegt_den_farbakzent() {
             "dem Stärke-Faktor fehlt der erklärende Tooltip"
         );
     }
+
 
 }
 
