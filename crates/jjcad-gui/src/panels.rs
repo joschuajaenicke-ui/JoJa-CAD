@@ -245,20 +245,10 @@ pub fn layer_color_popup(app: &mut App, ctx: &egui::Context) {
                 ui.set_width(196.0);
                 ui.label(theme::bold(&layer.name, 12.0));
                 ui.add_space(4.0);
-                let palette = [
-                    ("gui.panels.farbe_schwarz", Color::BLACK),
-                    ("gui.panels.farbe_grau", Color::GREY),
-                    ("gui.panels.farbe_hellgrau", Color::LIGHT_GREY),
-                    ("gui.panels.farbe_rot", Color::RED),
-                    ("gui.panels.farbe_orange", Color::ORANGE),
-                    ("gui.panels.farbe_gruen", Color::GREEN),
-                    ("gui.panels.farbe_blau", Color::BLUE),
-                    ("gui.panels.farbe_cyan", Color::CYAN),
-                    ("gui.panels.farbe_violett", Color::PURPLE),
-                    ("gui.panels.farbe_braun", Color::rgb(120, 85, 55)),
-                    ("gui.panels.farbe_ocker", Color::rgb(190, 160, 90)),
-                    ("gui.panels.farbe_tinte", Color::rgb(40, 45, 52)),
-                ];
+                // Dieselbe Farbliste wie im Eigenschaften-Panel (T0183) — es
+                // gibt nur noch eine. Das doppelte Schwarz steht hier einmal:
+                // zwei gleiche Kreise wären nicht zu unterscheiden.
+                let palette = farbpalette();
                 for row in palette.chunks(4) {
                     ui.horizontal(|ui| {
                         for (name, c) in row {
@@ -274,7 +264,7 @@ pub fn layer_color_popup(app: &mut App, ctx: &egui::Context) {
                             if resp.clicked() {
                                 chosen = Some(*c);
                             }
-                            resp.on_hover_text(*name);
+                            resp.on_hover_text(name.as_str());
                         }
                     });
                 }
@@ -539,22 +529,92 @@ fn weight_label(w: f64) -> String {
     format!("{:.2} mm", w).replace('.', ",")
 }
 
-/// Farbvorgaben: (Name, Bedeutung, RGB)
-pub const COLOR_PRESETS: [(&str, &str, u32); 13] = [
-    ("gui.panels.farbe_schwarz", "gui.panels.bedeutung_bestand", 0x000000),
-    ("gui.panels.farbe_rot", "gui.panels.bedeutung_neubau", 0xFF0000),
-    ("gui.panels.farbe_gelb", "gui.panels.bedeutung_abbruch", 0xFFFF00),
-    ("gui.panels.farbe_blau", "", 0x2E5FA3),
-    ("gui.panels.farbe_gruen", "", 0x2E7D4F),
-    ("gui.panels.farbe_orange", "", 0xD9822B),
-    ("gui.panels.farbe_violett", "", 0x6A4C93),
-    ("gui.panels.farbe_tuerkis", "", 0x2A9D8F),
-    ("gui.panels.farbe_grau_25", "", 0x404040),
-    ("gui.panels.farbe_grau_50", "", 0x808080),
-    ("gui.panels.farbe_grau_75", "", 0xBFBFBF),
-    ("gui.panels.farbe_hellgrau", "", 0xD9D9D9),
-    ("gui.panels.farbe_weiss", "", 0xFFFFFF),
+/// Eine Gruppe von Farbvorgaben: Überschriftenschlüssel und Einträge
+/// (Name, Bedeutung, RGB).
+pub struct Farbgruppe {
+    pub titel: &'static str,
+    pub farben: &'static [(&'static str, &'static str, u32)],
+}
+
+/// Die eine Farbliste des Programms (T0183), in drei Gruppen: Bauteilfarben
+/// tragen eine Bedeutung (Bestand/Neubau/Abbruch), Gestaltungsfarben sind der
+/// geschlossene Farbkreis für die freie Zeichnung, Neutraltöne die Grauwerte.
+///
+/// `#000000` steht bewusst in **zwei** Gruppen: das neutrale Schwarz bleibt
+/// wählbar, wenn die Bauteilfarben ausgeblendet sind. Der Namensrückgriff
+/// nimmt den ersten Treffer — im Feld steht dann „Schwarz · Bestand“.
+pub const FARBGRUPPEN: [Farbgruppe; 3] = [
+    Farbgruppe {
+        titel: "gui.panels.farbgruppe_bauteile",
+        farben: &[
+            ("gui.panels.farbe_schwarz", "gui.panels.bedeutung_bestand", 0x000000),
+            ("gui.panels.farbe_rot", "gui.panels.bedeutung_neubau", 0xFF0000),
+            ("gui.panels.farbe_gelb", "gui.panels.bedeutung_abbruch", 0xFFFF00),
+        ],
+    },
+    Farbgruppe {
+        titel: "gui.panels.farbgruppe_gestaltung",
+        farben: &[
+            ("gui.panels.farbe_rot", "", 0xBE3226),
+            ("gui.panels.farbe_orange", "", 0xD9822B),
+            ("gui.panels.farbe_gelb", "", 0xEBCE2E),
+            ("gui.panels.farbe_braun", "", 0x7A5637),
+            ("gui.panels.farbe_gruen", "", 0x2E7D4F),
+            ("gui.panels.farbe_tuerkis", "", 0x2A9D8F),
+            ("gui.panels.farbe_cyan", "", 0x3FA6C2),
+            ("gui.panels.farbe_blau", "", 0x2E5FA3),
+            ("gui.panels.farbe_violett", "", 0x6A4C93),
+            ("gui.panels.farbe_magenta", "", 0xB3508A),
+        ],
+    },
+    Farbgruppe {
+        titel: "gui.panels.farbgruppe_neutral",
+        farben: &[
+            ("gui.panels.farbe_schwarz", "", 0x000000),
+            ("gui.panels.farbe_grau_25", "", 0x404040),
+            ("gui.panels.farbe_grau_50", "", 0x808080),
+            ("gui.panels.farbe_grau_75", "", 0xBFBFBF),
+            ("gui.panels.farbe_hellgrau", "", 0xD9D9D9),
+            ("gui.panels.farbe_weiss", "", 0xFFFFFF),
+        ],
+    },
 ];
+
+/// Anzeigename einer Vorgabe: „Name“ oder „Name · Bedeutung“.
+fn preset_label(name: &'static str, meaning: &'static str) -> String {
+    let n = jjcad_core::i18n::tr(name);
+    if meaning.is_empty() {
+        n.to_string()
+    } else {
+        format!("{} · {}", n, jjcad_core::i18n::tr(meaning))
+    }
+}
+
+/// Anzeigename zu einem Hexwert — erster Treffer in der Reihenfolge der
+/// Gruppen (bei `#000000` also „Schwarz · Bestand“).
+fn preset_name(hex: &str) -> Option<String> {
+    FARBGRUPPEN
+        .iter()
+        .flat_map(|g| g.farben.iter())
+        .find(|(_, _, rgb)| preset_color(*rgb).to_hex() == hex)
+        .map(|(n, m, _)| preset_label(n, m))
+}
+
+/// Alle Vorgaben für den Layer-Farbwähler, je Hexwert einmal (das doppelte
+/// Schwarz erscheint dort nur einmal).
+fn farbpalette() -> Vec<(String, Color)> {
+    let mut out: Vec<(String, Color)> = Vec::new();
+    for g in FARBGRUPPEN.iter() {
+        for (name, meaning, rgb) in g.farben.iter() {
+            let c = preset_color(*rgb);
+            if out.iter().any(|(_, v)| v.to_hex() == c.to_hex()) {
+                continue;
+            }
+            out.push((preset_label(name, meaning), c));
+        }
+    }
+    out
+}
 
 fn preset_color(rgb: u32) -> Color {
     Color::rgb(((rgb >> 16) & 0xFF) as u8, ((rgb >> 8) & 0xFF) as u8, (rgb & 0xFF) as u8)
@@ -902,21 +962,7 @@ pub(crate) fn color_combo(
         (unset_label.to_string(), None)
     } else {
         let hex = cur.to_hex();
-        let name = COLOR_PRESETS
-            .iter()
-            .find(|(_, _, rgb)| preset_color(*rgb).to_hex() == hex)
-            .map(|(n, m, _)| {
-                if m.is_empty() {
-                    jjcad_core::i18n::tr(n).to_string()
-                } else {
-                    format!(
-                        "{} · {}",
-                        jjcad_core::i18n::tr(n),
-                        jjcad_core::i18n::tr(m)
-                    )
-                }
-            })
-            .unwrap_or_else(|| format!("eigene {}", hex));
+        let name = preset_name(&hex).unwrap_or_else(|| format!("eigene {}", hex));
         (name, Some(cur))
     };
     dropdown(ui, salt, &cap, sw.map(BtnIcon::Color), |ui| {
@@ -925,26 +971,25 @@ pub(crate) fn color_combo(
             out = Some(None);
         }
         ui.separator();
-        ui.columns(2, |cols| {
-            for (i, (name, meaning, rgb)) in COLOR_PRESETS.iter().enumerate() {
-            let name = jjcad_core::i18n::tr(name);
-            let meaning = jjcad_core::i18n::tr(meaning);
-                let cell = &mut cols[i % 2];
-                let c = preset_color(*rgb);
-                let sel = !unset && cur.to_hex() == c.to_hex();
-                cell.horizontal(|ui| {
-                    swatch(ui, c);
-                    let txt = if meaning.is_empty() {
-                        name.to_string()
-                    } else {
-                        format!("{} · {}", name, meaning)
-                    };
-                    if ui.selectable_label(sel, txt).clicked() {
-                        out = Some(Some(c));
-                    }
-                });
-            }
-        });
+        for g in FARBGRUPPEN.iter() {
+            ui.add_space(2.0);
+            ui.label(
+                theme::bold(jjcad_core::i18n::tr(g.titel), 10.5).color(Palette::text_faint()),
+            );
+            ui.columns(2, |cols| {
+                for (i, (name, meaning, rgb)) in g.farben.iter().enumerate() {
+                    let cell = &mut cols[i % 2];
+                    let c = preset_color(*rgb);
+                    let sel = !unset && cur.to_hex() == c.to_hex();
+                    cell.horizontal(|ui| {
+                        swatch(ui, c);
+                        if ui.selectable_label(sel, preset_label(name, meaning)).clicked() {
+                            out = Some(Some(c));
+                        }
+                    });
+                }
+            });
+        }
         ui.separator();
         if ui.selectable_label(false, jjcad_core::i18n::tr("gui.panels.freie_farbe")).clicked() {
             ui.data_mut(|d| d.insert_temp(eid, true));
@@ -2285,5 +2330,108 @@ mod tests_linienstaerken {
         let w = wieder.effective_line_weight(e);
         assert!((w - 0.13).abs() < 1e-9, "gespeicherte Breite: {w}");
         assert_eq!(weight_text(w), "0,13 mm");
+    }
+}
+
+#[cfg(test)]
+mod tests_farbgruppen {
+    use super::*;
+
+    /// Die 19 Werte samt Gruppenzugehörigkeit (T0183).
+    #[test]
+    fn farbgruppen_haben_die_vereinbarten_werte() {
+        let erwartet: [(&str, &[u32]); 3] = [
+            (
+                "gui.panels.farbgruppe_bauteile",
+                &[0x000000, 0xFF0000, 0xFFFF00],
+            ),
+            (
+                "gui.panels.farbgruppe_gestaltung",
+                &[
+                    0xBE3226, 0xD9822B, 0xEBCE2E, 0x7A5637, 0x2E7D4F, 0x2A9D8F, 0x3FA6C2,
+                    0x2E5FA3, 0x6A4C93, 0xB3508A,
+                ],
+            ),
+            (
+                "gui.panels.farbgruppe_neutral",
+                &[0x000000, 0x404040, 0x808080, 0xBFBFBF, 0xD9D9D9, 0xFFFFFF],
+            ),
+        ];
+        assert_eq!(FARBGRUPPEN.len(), 3, "drei Gruppen");
+        for (g, (titel, werte)) in FARBGRUPPEN.iter().zip(erwartet) {
+            assert_eq!(g.titel, titel);
+            let ist: Vec<u32> = g.farben.iter().map(|(_, _, rgb)| *rgb).collect();
+            assert_eq!(ist, werte, "Gruppe {titel}");
+        }
+        let anzahl: usize = FARBGRUPPEN.iter().map(|g| g.farben.len()).sum();
+        assert_eq!(anzahl, 19, "3 + 10 + 6 Einträge");
+    }
+
+    fn gestaltung(name: &str) -> u32 {
+        FARBGRUPPEN[1]
+            .farben
+            .iter()
+            .find(|(n, _, _)| *n == name)
+            .map(|(_, _, rgb)| *rgb)
+            .expect("Eintrag in der Gruppe Gestaltung")
+    }
+
+    /// Der Farbkreis ist geschlossen: Gelb heller, Cyan und Magenta dazu.
+    #[test]
+    fn gestaltungsfarben_schliessen_den_farbkreis() {
+        assert_eq!(gestaltung("gui.panels.farbe_gelb"), 0xEBCE2E, "Gelb heller");
+        assert_eq!(gestaltung("gui.panels.farbe_cyan"), 0x3FA6C2, "Cyan");
+        assert_eq!(gestaltung("gui.panels.farbe_magenta"), 0xB3508A, "Magenta");
+        assert_eq!(gestaltung("gui.panels.farbe_braun"), 0x7A5637, "Braun");
+    }
+
+    /// `#000000` steht bewusst in zwei Gruppen; der Namensrückgriff nimmt den
+    /// ersten Treffer und zeigt „Schwarz · Bestand“.
+    #[test]
+    fn schwarz_steht_in_zwei_gruppen() {
+        let treffer: Vec<&str> = FARBGRUPPEN
+            .iter()
+            .filter(|g| g.farben.iter().any(|(_, _, rgb)| *rgb == 0x000000))
+            .map(|g| g.titel)
+            .collect();
+        assert_eq!(
+            treffer,
+            vec![
+                "gui.panels.farbgruppe_bauteile",
+                "gui.panels.farbgruppe_neutral"
+            ],
+            "Schwarz in Bauteilen und Neutraltönen"
+        );
+        assert_eq!(
+            preset_name("#000000").as_deref(),
+            Some("Schwarz · Bestand")
+        );
+    }
+
+    /// Der Layer-Farbwähler nimmt dieselbe Liste, das doppelte Schwarz aber
+    /// nur einmal — zwei gleiche Kreise wären nicht zu unterscheiden.
+    #[test]
+    fn layer_palette_hat_keine_dubletten() {
+        let palette = farbpalette();
+        assert_eq!(palette.len(), 18, "19 Einträge minus doppeltes Schwarz");
+        let mut hex: Vec<String> = palette.iter().map(|(_, c)| c.to_hex()).collect();
+        hex.sort();
+        hex.dedup();
+        assert_eq!(hex.len(), 18, "kein Hexwert doppelt");
+    }
+
+    /// Jede Vorgabe und jede Überschrift steht im Katalog (sonst zeigt das
+    /// Panel den Schlüssel statt des Namens).
+    #[test]
+    fn jede_vorgabe_hat_einen_katalogeintrag() {
+        for g in FARBGRUPPEN.iter() {
+            assert!(jjcad_core::i18n::deutsch_hat(g.titel), "{}", g.titel);
+            for (name, meaning, _) in g.farben.iter() {
+                assert!(jjcad_core::i18n::deutsch_hat(name), "{name}");
+                if !meaning.is_empty() {
+                    assert!(jjcad_core::i18n::deutsch_hat(meaning), "{meaning}");
+                }
+            }
+        }
     }
 }

@@ -197,6 +197,16 @@ ausgeblendet.
   einzelnen Objekts (z. B. Dicke, Höhe, Schraffur, Füllfarbe bei Wänden); abweichende Werte
   meldet die Kopfzeile als `*variiert*`, jede Änderung wirkt auf alle Objekte dieser Art in
   der Auswahl.
+- **Farbwahl** (T0183): Die Farbvorgaben stehen in **drei Gruppen** mit eigener Überschrift,
+  je zwei Spalten. **Bauteile** trägt die drei Bedeutungfarben der Bauzeichnung — Schwarz
+  (Bestand), Rot (Neubau), Gelb (Abbruch). **Gestaltung** ist der geschlossene Farbkreis für
+  die freie Zeichnung: Rot, Orange, Gelb, Braun, Grün, Türkis, Cyan, Blau, Violett, Magenta.
+  **Neutraltöne** sind Schwarz, Grau 25 %, Grau 50 %, Grau 75 %, Hellgrau und Weiß. Zusammen
+  sind das 19 Einträge. **Schwarz steht bewusst in zwei Gruppen**: das neutrale Schwarz bleibt
+  wählbar, wenn die Bauteilfarben nicht gebraucht werden; im Feld steht dann „Schwarz ·
+  Bestand“, weil der Name über den Hexwert gefunden wird und der erste Treffer gilt. Der
+  Farbwähler der Ebenen zeigt dieselbe Liste (dort einmal je Farbe), und „Freie Farbe …“
+  bleibt für jeden eigenen Wert darunter.
 - **Griffe**: Ausgewählte Elemente zeigen Griffe — Quadrate an Endpunkten und Ecken (Linie, Wand,
   Polylinie, Rechteck; Mittelpunkt bei Kreis/Bogen/Ellipse, **jeder Basispunkt** bei Maß und
   Maßkette) und Rauten in den Kantenmitten
