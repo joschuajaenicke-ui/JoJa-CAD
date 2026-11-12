@@ -4158,6 +4158,14 @@ impl App {
             // Ein neuer Reiter — die aktuelle Zeichnung bleibt offen (T0073)
             "file.new" => self.new_document(),
             "file.open" => self.open_file_dialog(FileMode::Open),
+            // T0186: Im Blockeditor gehört „Speichern“ (Strg+S, Ribbon, Menü)
+            // dem Block, nicht der Zeichnung. Gespeichert wird die
+            // Blockdefinition (bei Benutzerblöcken samt `.jjblk`), danach
+            // schließt der Reiter. Die `.jjcad`-Datei auf der Platte bleibt
+            // unberührt — vorher schrieb Strg+S die ganze Zeichnung.
+            "file.save" | "file.save_as" if self.aktiver_block().is_some() => {
+                self.block_editor_speichern();
+            }
             "file.save" => self.save_current(false),
             "file.save_as" => self.open_file_dialog(FileMode::SaveJjcad),
             // T0129: Stände der Sicherung ansehen und als neues Dokument öffnen.
@@ -16279,6 +16287,96 @@ mod tests_blockeditor {
         assert!(!app.doc().in_block_space());
     }
 
+    /// Ein Bild mit einem Tastendruck. egui liest die Modifier aus
+    /// `RawInput::modifiers`, nicht aus dem Ereignis (T0068) — sonst kommt
+    /// Strg+S nie als Kombination an.
+    fn frame_mit_taste(app: &mut App, key: egui::Key, modifiers: egui::Modifiers) {
+        let ctx = app.ctx.clone();
+        let raw = egui::RawInput {
+            screen_rect: Some(Rect::from_min_size(
+                Pos2::ZERO,
+                egui::vec2(1500.0, 950.0),
+            )),
+            modifiers,
+            events: vec![egui::Event::Key {
+                key,
+                physical_key: None,
+                pressed: true,
+                repeat: false,
+                modifiers,
+            }],
+            ..Default::default()
+        };
+        let _ = ctx.run(raw, |ctx| app.ui(ctx));
+    }
+
+    /// T0186: „Speichern“ im Blockeditor (Strg+S) speichert **den Block** und
+    /// schließt den Editor. Die Zeichnung auf der Platte bleibt Byte für Byte
+    /// stehen — vorher schrieb Strg+S die ganze Datei.
+    #[test]
+    fn strg_s_im_blockeditor_speichert_nur_den_block() {
+        let dir = test_dir("strg-s");
+        let mut app = app_mit_benutzerblock(&dir);
+        // Eine Zeichnung mit Pfad: ohne den Fix schriebe Strg+S sie neu.
+        let pfad = dir.join("Zeichnung.jjcad");
+        app.doc_mut().path = Some(pfad.to_string_lossy().to_string());
+        app.session_mut().save(&pfad).expect("Zeichnung schreiben");
+        let vorher = std::fs::read(&pfad).unwrap();
+
+        assert!(app.oeffne_block_editor("usr:stuhl"));
+        app.session_mut()
+            .execute(
+                "draw.line",
+                &serde_json::json!({"a": [200.0, 0.0], "b": [300.0, 0.0]}),
+            )
+            .unwrap();
+
+        frame_mit_taste(&mut app, egui::Key::S, egui::Modifiers::COMMAND);
+
+        // Der Editor ist zu und der Block trägt die Änderung.
+        assert_eq!(app.aktiver_block(), None, "der Blockeditor schließt sich");
+        assert!(app.tab().offene_bloecke.is_empty());
+        assert!(!app.doc().in_block_space());
+        let dateien = jjcad_core::bloecke::dateien(&dir);
+        assert_eq!(dateien.len(), 1, "genau eine Blockdatei");
+        let datei = jjcad_core::bloecke::lies(&dateien[0]).expect("Blockdatei lesbar");
+        assert_eq!(
+            datei.block.entities.len(),
+            3,
+            "die neue Linie steht im gespeicherten Block"
+        );
+
+        // Die Zeichnung wurde nicht angefasst.
+        assert_eq!(
+            std::fs::read(&pfad).unwrap(),
+            vorher,
+            "die .jjcad-Datei bleibt unverändert"
+        );
+    }
+
+    /// T0186: Auch „Speichern unter“ (Strg+Umschalt+S) fragt im Blockeditor
+    /// keinen Speicherort für die Zeichnung ab — das Ziel ist die Blockdatei.
+    #[test]
+    fn speichern_unter_im_blockeditor_oeffnet_keinen_dateidialog() {
+        let dir = test_dir("speichern-unter");
+        let mut app = app_mit_benutzerblock(&dir);
+        app.prefs.file_dialog = "intern".into();
+        assert!(app.oeffne_block_editor("usr:stuhl"));
+
+        let mut lage = egui::Modifiers::COMMAND;
+        lage.shift = true;
+        frame_mit_taste(&mut app, egui::Key::S, lage);
+
+        assert!(app.ui.file_dialog.is_none(), "kein Dateidialog");
+        assert!(app.ui.systemdialog.is_none(), "auch kein Systemdialog");
+        assert_eq!(app.aktiver_block(), None, "der Blockeditor schließt sich");
+        assert_eq!(
+            jjcad_core::bloecke::dateien(&dir).len(),
+            1,
+            "die Blockdatei ist geschrieben"
+        );
+    }
+
     #[test]
     fn schliessen_ohne_speichern_stellt_den_stand_wieder_her() {
         let dir = test_dir("verwerfen");
@@ -16384,6 +16482,15 @@ mod tests_rechtsklick {
     fn app_mit_schraffur() -> (egui::Context, App, Id) {
         let ctx = egui::Context::default();
         let mut app = App::with_ctx(ctx.clone());
+        // T0186: Der Test prüft das Kontextmenü, nicht den Fensterrahmen — die
+        // Vorgabe kommt aber aus der `prefs.json` des Rechners. Mit „ohne
+        // Titelleiste“ legt `App::fensterkanten` eigene Flächen (Foreground) an,
+        // und ein Rechtsklick dicht an der Ecke der Zeichenfläche kommt danach
+        // nicht mehr an — das Ergebnis hinge dann an der Einstellung des
+        // Benutzers. Also hier fest setzen (dieselbe Regel wie bei den anderen
+        // Tests, die Vorgaben prüfen).
+        app.prefs.fensterrahmen = jjcad_core::persist::Fensterrahmen::System;
+        app.prefs.fensterschatten = false;
         let layer = app.doc().current_layer;
         let id = app.doc_mut().new_id();
         let e = Entity::new(

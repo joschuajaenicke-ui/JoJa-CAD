@@ -382,6 +382,12 @@ anderen Datenordner (`--daten-dir`).
 Gespeichert wird **nur** auf Befehl (`Strg+S`, „Speichern unter"). Die Sicherung
 schreibt nie in die Zieldatei.
 
+Im **Blockeditor** gehört „Speichern" dem Block, nicht der Zeichnung: `Strg+S`
+übernimmt die Blockdefinition (bei eigenen Blöcken samt `.jjblk`-Datei) und
+schließt den Reiter; die `.jjcad`-Datei auf der Platte bleibt unberührt.
+„Speichern unter" (`Strg+Umschalt+S`) verhält sich dort gleich — es gibt kein
+zweites Ziel neben der Blockdatei.
+
 Beim Beenden wird **nicht** nach dem Speichern gefragt: Der Zustand — offene
 Reiter in ihrer Reihenfolge, je Reiter Ansicht und aktives Blatt, aktiver Reiter,
 Fenstergröße, Vollbild, „maximiert“ und -lage — steht in `sitzung.json` und wird
