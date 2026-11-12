@@ -266,6 +266,10 @@ Mit dem Nutzer abgestimmt — nicht „verbessern“:
   `keymap_importieren`. Die Auswahl zeigt den passenden Namen oder „Eigene
   Belegung" (`keymap_passend`) — keinen gespeicherten Zustand raten.
 - **Rechtsklickmenüs** bleiben offen, wenn der Zeiger in die Zeichenfläche kommt.
+  Der Objekteintrag **„Eigenschaften im Panel“** öffnet das Eigenschaften-Panel
+  (ausgeschaltet oder auf die Leiste eingeklappt) und wählt das Objekt aus; steht
+  das Panel offen, wird der Eintrag gar nicht gezeichnet — die eine Abfrage ist
+  `App::eigenschaften_panel_offen` (T0179).
 - **Eigenschaften-Panel**: gleiche Zeilen (96 px Label, 150 px Wert) beim Platzieren
   *und* bei Auswahl; bei Mehrfachauswahl nur gemeinsame Felder, abweichende Werte
   als `*variiert*`; nicht editierbare Werte (Länge, Fläche) anzeigen.
