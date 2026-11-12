@@ -582,7 +582,13 @@ pub(crate) enum BtnIcon {
 }
 
 /// Höhe eines Auswahlfelds in den Panels (dichte Zeilen).
-pub(crate) const DROPDOWN_H: f32 = 20.0;
+///
+/// T0178: dieselbe Höhe wie ein Eingabefeld (`widgets::FELD_H`) plus einen
+/// Bildpunkt — ein Zahlenfeld zeichnet seinen Rahmen eine halbe Strichbreite
+/// über die Fläche hinaus, der Auswahlknopf innerhalb seiner Fläche. Mit 20 px
+/// wirkte jedes Auswahlfeld neben einem Feld deutlich kleiner (gemessen 21
+/// gegen 26 px im Bild).
+pub(crate) const DROPDOWN_H: f32 = crate::widgets::FELD_H + 1.0;
 
 /// Höchsthöhe des aufgeklappten Auswahlmenüs (rund 15 Zeilen). Darüber wird
 /// gerollt — bis dahin wächst das Menü mit der Zahl der Einträge (T0076).
@@ -1390,15 +1396,16 @@ fn doc_props(app: &mut App, ui: &mut Ui) {
     let mut decimals = app.doc().settings.decimals as i32;
     let mut grid = app.doc().settings.snap.grid_step;
 
+    // T0178: eigener Auswahlknopf statt `ComboBox` — der ist niedriger als ein
+    // Eingabefeld und im Panel deshalb als „zu klein“ aufgefallen.
+    let einheiten: Vec<(Unit, String)> = Unit::ALL
+        .iter()
+        .map(|u| (*u, u.label().to_string()))
+        .collect();
     widgets::field_row(ui, jjcad_core::i18n::tr("gui.panels.einheit"), |ui| {
-        egui::ComboBox::from_id_salt("inpunit")
-            .width(ui.available_width())
-            .selected_text(input.label())
-            .show_ui(ui, |ui| {
-                for cand in Unit::ALL {
-                    ui.selectable_value(&mut input, cand, cand.label());
-                }
-            });
+        if let Some(neu) = pick_combo(ui, "inpunit", input, &einheiten) {
+            input = neu;
+        }
     });
     widgets::field_row(ui, jjcad_core::i18n::tr("gui.panels.dezimalen"), |ui| {
         ui.add_sized([ui.available_width(), 20.0], crate::widgets::zahl(&mut decimals, 1.0, 0..=4));
