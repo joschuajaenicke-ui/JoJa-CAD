@@ -273,6 +273,15 @@ ausgeblendet.
   dessen Fensterhintergrund, unter GTK „prefer dark"), **Hell** und **Dunkel** überstimmen es.
   Die Wahl wirkt sofort und steht in `prefs.json` (`design: system | hell | dunkel`). Die
   Zeichenfläche bleibt in beiden Designs Papier — es wechselt nur die Bedienoberfläche.
+- **Zeichenfarben** (Einstellungen ▸ Darstellung ▸ „Zeichenfarben"): acht Farben der
+  Zeichnung, die nichts über das Objekt aussagen, sondern über die Stelle — die Hintergründe
+  von **Modellbereich**, **Papierbereich** und **Blockeditor**, die Vorschau **neuer**
+  Elemente (bisher gelb, der Akzent der Bedienung), die Einfärbung **ausgewählter** Elemente
+  (blau), die Vorschau des **Entfernens** beim Stutzen (rot), des **Erweiterns** beim
+  Verlängern und Verschneiden (grün) und der **Punktfang** samt Hilfslinien (türkis). Jede
+  Zeile zeigt die Farbwahl, den Hexwert und „Standard" (nimmt die eigene Wahl zurück, danach
+  gilt wieder die Vorgabe des Designs). Die Wahl wirkt sofort und steht in `prefs.json`
+  (`zeichenfarben`); fehlt eine Rolle, folgt sie dem Design.
 - **Fenster ohne Titelleiste** (Einstellungen ▸ Bedienung ▸ „Fensterrahmen", *experimentell*): meldet
   dem Fenstermanager „keine Dekoration" — unter KDE/X11 über `_MOTIF_WM_HINTS`, unter
   KDE/Wayland über die Anfrage nach *client-seitiger* Dekoration, unter Windows als rahmenloses

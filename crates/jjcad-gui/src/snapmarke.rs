@@ -174,7 +174,7 @@ pub fn marke(art: FangArt) -> Vec<Zug> {
 
 /// Zeichnet die Marke einer Fangart um `mitte` (Bildschirmpunkte).
 ///
-/// Farbe ist die **Fangfarbe** (`Palette::track`) — dasselbe Grün wie die
+/// Farbe ist die **Fangfarbe** (`Palette::fang`) — dasselbe Grün wie die
 /// Hilfslinien des erweiterten Punktfangs (T0153, Turn 2). Die Marke gehört
 /// damit sichtbar zum Fang und nicht zur Auswahl (blau) oder zum Werkzeug.
 ///
@@ -183,7 +183,7 @@ pub fn marke(art: FangArt) -> Vec<Zug> {
 /// unsichtbar. Auf leerem Papier ist der Rand unsichtbar.
 pub fn zeichne(p: &Painter, mitte: Pos2, art: FangArt) {
     let farbe = Palette::track();
-    let rand = Palette::paper().gamma_multiply(0.9);
+    let rand = Palette::modell().gamma_multiply(0.9);
     let zuege = marke(art);
     for zug in &zuege {
         mal_zug(p, mitte, *zug, 3.4, rand);

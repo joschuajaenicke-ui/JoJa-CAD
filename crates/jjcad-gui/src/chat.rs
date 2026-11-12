@@ -274,9 +274,9 @@ pub fn schleier(rect: Rect) -> (Rect, Color32) {
     (
         rect,
         Color32::from_rgba_unmultiplied(
-            Palette::paper().r(),
-            Palette::paper().g(),
-            Palette::paper().b(),
+            Palette::modell().r(),
+            Palette::modell().g(),
+            Palette::modell().b(),
             120,
         ),
     )

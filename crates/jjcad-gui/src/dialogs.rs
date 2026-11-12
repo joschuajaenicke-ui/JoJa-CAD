@@ -9,6 +9,7 @@ use jjcad_core::actions;
 use jjcad_core::geom::{Vec2 as V2};
 use jjcad_core::persist::{
     fest_belegt, Design, DragMode, Farbakzent, Fensterrahmen, PastePivot, Textaufloesung,
+    Zeichenfarbe,
 };
 use jjcad_core::units::Unit;
 use serde_json::json;
@@ -1496,6 +1497,21 @@ fn auswahl<R>(
     panels::dropdown_mit_hoehe(ui, salt, caption, icon, panels::DROPDOWN_H, add)
 }
 
+/// Suchbegriffe einer Zeichenfarbe (T0181) — die Zeile heißt kurz, gesucht
+/// wird auch nach dem, was die Farbe bedeutet.
+fn zeichenfarbe_aliase(rolle: Zeichenfarbe) -> &'static [&'static str] {
+    match rolle {
+        Zeichenfarbe::Modell => &["Hintergrund", "Zeichenfläche", "Modell", "Papier"],
+        Zeichenfarbe::Papier => &["Hintergrund", "Blatt", "Papier", "Druckvorschau"],
+        Zeichenfarbe::Blockeditor => &["Hintergrund", "Block", "Blockeditor"],
+        Zeichenfarbe::Vorschau => &["Vorschau", "neu", "gelb", "Werkzeug"],
+        Zeichenfarbe::Auswahl => &["Auswahl", "blau", "markiert"],
+        Zeichenfarbe::Entfernen => &["Stutzen", "rot", "entfernen", "trim"],
+        Zeichenfarbe::Erweitern => &["Verlängern", "Verschneiden", "grün", "erweitern"],
+        Zeichenfarbe::Fang => &["Fang", "Punktfang", "türkis", "Hilfslinie"],
+    }
+}
+
 /// Abschnittsüberschrift; während einer Suche entfällt sie, damit nur die
 /// Treffer übrig bleiben.
 fn abschnitt(suche: &str, ui: &mut Ui, text: &str) {
@@ -1616,6 +1632,8 @@ fn settings_body(app: &mut App, ui: &mut Ui) {
     let mut design = app.prefs.design;
     // T0111: Farbakzent der Bedienung (Vorgabe Bernstein).
     let mut farbakzent = app.prefs.farbakzent;
+    // T0181: eigene Zeichenfarben (Hintergründe, Vorschauen, Auswahl, Fang).
+    let mut zeichenfarben = theme::farben_aus_prefs(&app.prefs);
     // T0177: Der selbst gezeichnete Fensterschatten (ohne Titelleiste) ist
     // abschaltbar.
     let mut fensterschatten = app.prefs.fensterschatten;
@@ -2013,6 +2031,62 @@ fn settings_body(app: &mut App, ui: &mut Ui) {
                                         }
                                     },
                                 );
+                                // T0181: Farben der Zeichnung — die Hintergründe
+                                // der drei Bearbeitungsräume und die
+                                // Bedeutungsfarben (Vorschau, Auswahl, Entfernen,
+                                // Erweitern, Fang). Eine Zeile je Rolle aus
+                                // `Zeichenfarbe::ALL`; ohne eigene Wahl gilt die
+                                // Vorgabe des Designs, „Standard“ nimmt sie zurück.
+                                abschnitt(
+                                    &suche,
+                                    ui,
+                                    jjcad_core::i18n::tr("gui.dialogs.zeichenfarben"),
+                                );
+                                for rolle in Zeichenfarbe::ALL {
+                                    let name = rolle.text();
+                                    let tip = rolle.tip();
+                                    let aliase = zeichenfarbe_aliase(rolle);
+                                    zeile_tip(&suche, ui, name, aliase, tip, |ui| {
+                                        // Enger als die übrigen Zeilen: Farbknopf,
+                                        // Hexwert und „Standard“ müssen in die
+                                        // 150-px-Wertespalte passen.
+                                        ui.spacing_mut().item_spacing.x = 4.0;
+                                        let cur = zeichenfarben
+                                            .get(&rolle)
+                                            .copied()
+                                            .unwrap_or_else(|| theme::zeichenfarbe(rolle));
+                                        let mut rgb = [cur.r(), cur.g(), cur.b()];
+                                        if ui.color_edit_button_srgb(&mut rgb).changed() {
+                                            zeichenfarben.insert(
+                                                rolle,
+                                                Color32::from_rgb(rgb[0], rgb[1], rgb[2]),
+                                            );
+                                        }
+                                        // Hexwert klein: er ist die Kontrolle
+                                        // der Wahl, nicht die Hauptsache.
+                                        ui.label(
+                                            egui::RichText::new(format!(
+                                                "#{:02X}{:02X}{:02X}",
+                                                rgb[0], rgb[1], rgb[2]
+                                            ))
+                                            .monospace()
+                                            .size(10.5)
+                                            .color(Palette::text_dim()),
+                                        );
+                                        if zeichenfarben.contains_key(&rolle)
+                                            && ui
+                                                .small_button(jjcad_core::i18n::tr(
+                                                    "gui.dialogs.standard",
+                                                ))
+                                                .on_hover_text(jjcad_core::i18n::tr(
+                                                    "gui.dialogs.zeichenfarbe_standard_hint",
+                                                ))
+                                                .clicked()
+                                        {
+                                            zeichenfarben.remove(&rolle);
+                                        }
+                                    });
+                                }
                                 // T0098: Fenster ohne Titelleiste. Ohne Rahmen des
                                 // Fenstermanagers zeichnet JoJa-CAD Minimieren,
                                 // Vergrößern und Schließen selbst; die Kopfzeile
@@ -3280,6 +3354,11 @@ fn settings_body(app: &mut App, ui: &mut Ui) {
     if app.prefs.farbakzent != farbakzent {
         // T0111: ebenso der Akzent — Palette und Stil tragen den neuen Ton.
         app.set_akzent(farbakzent, ui.ctx());
+    }
+    if theme::farben_aus_prefs(&app.prefs) != zeichenfarben {
+        // T0181: gilt sofort — die Zeichenfläche liest die Rollenfarben bei
+        // jedem Bild, ein Neuaufbau der Anzeigelisten ist nicht nötig.
+        app.set_zeichenfarben(&zeichenfarben, ui.ctx());
     }
     if app.prefs.textaufloesung != textaufloesung {
         // T0114: gilt sofort — die Zeichenfläche liest die Rastergröße bei
@@ -6805,6 +6884,30 @@ mod tests_einstellungen {
         assert!(
             jjcad_core::persist::UserPrefs::default().fensterschatten,
             "Vorgabe: der Fensterschatten ist eingeschaltet"
+        );
+    }
+
+    /// T0181: Unter „Darstellung“ stehen die Zeichenfarben — eine Zeile je
+    /// Rolle aus `Zeichenfarbe::ALL`, gezeichnet (nicht nur im Code geführt).
+    #[test]
+    fn darstellung_zeigt_die_zeichenfarben() {
+        let _sperre = KONFIG.lock().unwrap_or_else(|e| e.into_inner());
+        let _konfig = WegwerfKonfig::neu("zeichenfarben");
+        let (_, _, out) = seite("settings.category_darstellung", "");
+        let texte = gezeichnete_texte(&out);
+        for rolle in Zeichenfarbe::ALL {
+            let name = rolle.text();
+            assert!(
+                texte.iter().any(|t| t == name),
+                "Zeile „{name}“ fehlt in der Darstellung (gezeichnet: {texte:?})"
+            );
+        }
+        // Die Überschrift des Abschnitts steht ebenfalls da (`theme::section`
+        // setzt sie in Großbuchstaben).
+        let ueberschrift = jjcad_core::i18n::tr("gui.dialogs.zeichenfarben").to_uppercase();
+        assert!(
+            texte.iter().any(|t| *t == ueberschrift),
+            "Abschnitt „Zeichenfarben“ fehlt (gezeichnet: {texte:?})"
         );
     }
 

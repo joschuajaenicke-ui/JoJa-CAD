@@ -1694,6 +1694,9 @@ impl App {
         // T0111: und der Farbakzent (Vorgabe Bernstein) — er färbt alle
         // Akzentstellen der Bedienung ab dem ersten Bild.
         theme::set_akzent(prefs.farbakzent, &ctx);
+        // T0181: eigene Zeichenfarben (Hintergründe, Vorschauen, Auswahl,
+        // Fang) — gelten ab dem ersten Bild, fehlende Rollen folgen dem Design.
+        theme::set_zeichenfarben(&theme::farben_aus_prefs(&prefs), &ctx);
         // T0165: Kantenglättung der Zeichnung (Einstellungen → Grafik) — gilt
         // ab dem ersten Bild, damit die Flächen nicht erst nach einem Wechsel
         // hart oder weich werden.
@@ -8335,6 +8338,32 @@ fn rail(ui: &mut egui::Ui, icon: &str, tooltip: &str, chevron: &str) -> bool {
         for t in &mut self.tabs {
             t.cache = None;
         }
+        ctx.request_repaint();
+    }
+
+    /// Eigene Zeichenfarben umstellen (Einstellungen → Darstellung →
+    /// „Zeichenfarben“, T0181).
+    ///
+    /// Die Wahl wird gespeichert und gilt ab dem nächsten Bild. Die
+    /// Anzeigelisten der Reiter bleiben gültig: die Farben der Zeichnung
+    /// stecken in den Objekten, die Rollenfarben werden erst beim Malen
+    /// aufgesetzt.
+    pub fn set_zeichenfarben(
+        &mut self,
+        farben: &std::collections::BTreeMap<jjcad_core::persist::Zeichenfarbe, egui::Color32>,
+        ctx: &egui::Context,
+    ) {
+        theme::set_zeichenfarben(farben, ctx);
+        self.prefs.zeichenfarben = farben
+            .iter()
+            .map(|(rolle, c)| {
+                (
+                    *rolle,
+                    jjcad_core::style::Color::rgb(c.r(), c.g(), c.b()),
+                )
+            })
+            .collect();
+        let _ = self.prefs.save();
         ctx.request_repaint();
     }
 
