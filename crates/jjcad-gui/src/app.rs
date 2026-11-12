@@ -16482,6 +16482,15 @@ mod tests_rechtsklick {
     fn app_mit_schraffur() -> (egui::Context, App, Id) {
         let ctx = egui::Context::default();
         let mut app = App::with_ctx(ctx.clone());
+        // T0186: Der Test prüft das Kontextmenü, nicht den Fensterrahmen — die
+        // Vorgabe kommt aber aus der `prefs.json` des Rechners. Mit „ohne
+        // Titelleiste“ legt `App::fensterkanten` eigene Flächen (Foreground) an,
+        // und ein Rechtsklick dicht an der Ecke der Zeichenfläche kommt danach
+        // nicht mehr an — das Ergebnis hinge dann an der Einstellung des
+        // Benutzers. Also hier fest setzen (dieselbe Regel wie bei den anderen
+        // Tests, die Vorgaben prüfen).
+        app.prefs.fensterrahmen = jjcad_core::persist::Fensterrahmen::System;
+        app.prefs.fensterschatten = false;
         let layer = app.doc().current_layer;
         let id = app.doc_mut().new_id();
         let e = Entity::new(
