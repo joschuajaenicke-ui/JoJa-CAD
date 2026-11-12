@@ -93,6 +93,16 @@ Mit dem Nutzer abgestimmt — nicht „verbessern“:
   Fläche). Unter X11 bleibt es beim Schatten von KWin (gemessen: derselbe
   Schatten mit und ohne Titelleiste) — dort wäre der durchsichtige Rand ohne
   Compositor ein dunkler Rahmen. Im Vollbild und maximiert entfällt der Rand.
+  **Andocken (T0177)**: Der Streifen gehört zum Fenster, das Fenstermanagement
+  rechnet ihn mit — beim Andocken blieb ein Abstand in Schattenbreite und die
+  Oberfläche war um ihn kleiner. Deshalb entfällt der Rand auch, wenn das
+  Fenster am Bildschirmrand liegt: `app::fenster_angedockt` erkennt das an der
+  **Größe** (halbe Bildschirmbreite bzw. -höhe, beides = Viertel; gemessen unter
+  KWin 6.3: andocken links → 799 × 972 auf 1600 × 1000), weil winit unter
+  Wayland weder „angedockt“ noch eine Fensterlage meldet. Abschaltbar in
+  Einstellungen ▸ Darstellung ▸ „Schatten“ (`prefs.fensterschatten`, Vorgabe an);
+  ohne ihn fordert `main.rs` den Streifen gar nicht erst an. `clear_color` ist
+  nur dann durchsichtig, wenn `ui.fenster_aussen` in **diesem** Bild gesetzt ist.
 - **Türen** sitzen immer auf der *vorderen Wandkante* (Blattseite), nicht in der
   Wandmitte. Kein Auswahlfeld für die Tür-Lage. Fenster dürfen ihre Lage in
   der Wanddicke wählen (Links/Mittig/Rechts).

@@ -382,6 +382,57 @@ fn schatten_selbst_zeichnen() -> bool {
     !x11
 }
 
+/// Toleranz auf der **halben** Bildschirmlänge beim Erkennen eines angedockten
+/// Fensters (T0177).
+///
+/// Das Fenstermanagement legt ein angedocktes Fenster an die **Arbeitsfläche**,
+/// nicht an den ganzen Bildschirm: gemessen unter KWin 6.3
+/// (`kwin_wayland --virtual`, 1600 × 1000) ergibt „Fenster nach links
+/// andocken“ 799 × 972 — halbe Breite (1 px daneben), Höhe um die Bedienleiste
+/// gekürzt. Fünf Prozent decken auch Kachel-Lücken und krumme Skalierung ab.
+const SCHATTEN_DOCK_TOLERANZ: f32 = 0.05;
+
+/// Wie viel der **anderen** Bildschirmlänge ein angedocktes Fenster füllen muss
+/// (T0177).
+///
+/// Zehn Prozent Abstand, weil ein angedocktes Fenster an die Arbeitsfläche
+/// stößt: bei 1080 Bildpunkten Höhe und einer 60 px hohen Leiste bleiben 94,4 %.
+const SCHATTEN_DOCK_FAST_GANZ: f32 = 0.90;
+
+/// Hat das Fenstermanagement das Fenster an den Bildschirmrand gelegt (T0177)?
+///
+/// Ohne diese Erkennung bleibt beim Andocken ein Abstand in Schattenbreite: der
+/// durchsichtige Streifen für den selbst gezeichneten Schatten (T0147) gehört
+/// zum Fenster, das Fenstermanagement rechnet ihn mit, und die Oberfläche ist um
+/// seine Breite kleiner als die angedockte Fläche. Gemeldet wird der Zustand
+/// nicht — winit kennt unter Wayland kein „angedockt“ (`xdg-toplevel` führt
+/// dafür `tiled`-Zustände, egui reicht sie nicht durch), und eine Fensterlage
+/// gibt es dort ebenfalls nicht. Erkannt wird er deshalb an der **Größe** im
+/// Verhältnis zum Bildschirm: eine Richtung ist die halbe Bildschirmlänge (an
+/// eine Seite angedockt), die andere reicht bis an die Arbeitsfläche; beides
+/// zugleich ist ein Viertel. Ein von Hand genau so groß gezogenes Fenster
+/// verliert den Schatten ebenfalls; das ist der Preis dafür, den Rand überhaupt
+/// zu erkennen.
+fn fenster_angedockt(fenster: Vec2, monitor: Option<Vec2>) -> bool {
+    let Some(monitor) = monitor else {
+        return false;
+    };
+    if monitor.x < 2.0 || monitor.y < 2.0 {
+        return false;
+    }
+    // „Andocken“ heißt: **eine** Richtung ist die halbe Bildschirmlänge
+    // (Viertel: beide), die andere reicht bis an die Arbeitsfläche. Beides
+    // zusammen ist nötig, sonst sähe das Vorgabefenster auf einem großen
+    // Bildschirm wie angedockt aus — 1532 px breit sind auf 3072 px genau die
+    // Hälfte, aber nur 57 % der Höhe. Die volle Bildschirmgröße bleibt außen
+    // vor: die meldet der Fenstermanager als „maximiert“.
+    let halb = |a: f32, b: f32| (a - b * 0.5).abs() <= (b * 0.5 * SCHATTEN_DOCK_TOLERANZ).max(2.0);
+    let fast_ganz = |a: f32, b: f32| a >= b * SCHATTEN_DOCK_FAST_GANZ;
+    (halb(fenster.x, monitor.x) && (fast_ganz(fenster.y, monitor.y) || halb(fenster.y, monitor.y)))
+        || (halb(fenster.y, monitor.y)
+            && (fast_ganz(fenster.x, monitor.x) || halb(fenster.x, monitor.x)))
+}
+
 /// Wie lange der Startzustand des Fensters (Vollbild/maximiert) wiederholt
 /// wird, bis der Fenstermanager ihn annimmt (T0141, Turn 2).
 const FENSTER_START_GEDULD: f64 = 3.0;
@@ -9245,7 +9296,11 @@ impl eframe::App for App {
         // Alpha 0 sein: der Puffer ist vormultipliziert, ein Grund in
         // Fensterfarbe mit Alpha 0 legte diese Farbe über den Hintergrund
         // (gemessen: der Rand erschien als dunkler Rahmen statt durchsichtig).
-        if self.schatten_im_rand && self.prefs.fensterrahmen.ohne_titelleiste() {
+        // T0177: Maßgeblich ist der Rand **dieses** Bildes (`raw_input_hook`
+        // setzt ihn) — ist er abgeschaltet oder liegt das Fenster angedockt am
+        // Bildschirmrand, deckt die Oberfläche das Fenster und der Grund ist
+        // wieder Fensterfarbe.
+        if self.ui.fenster_aussen.is_some() && self.prefs.fensterrahmen.ohne_titelleiste() {
             return [0.0, 0.0, 0.0, 0.0];
         }
         let bg = Palette::bg();
@@ -9266,20 +9321,38 @@ impl eframe::App for App {
     /// Fensterfläche und die Zeichnung liefe unter den Schatten.
     fn raw_input_hook(&mut self, _ctx: &egui::Context, raw_input: &mut egui::RawInput) {
         self.ui.fenster_aussen = None;
-        if !self.schatten_im_rand || !self.fenster_ohne_titelleiste() {
+        // T0177: Der Schatten lässt sich abschalten — ohne ihn füllt die
+        // Oberfläche das Fenster ganz, und das Fenstermanagement rechnet keinen
+        // Streifen mit (Andocken an den Bildschirmrand ohne Abstand).
+        if !self.schatten_im_rand
+            || !self.prefs.fensterschatten
+            || !self.fenster_ohne_titelleiste()
+        {
             return;
         }
         let Some(aussen) = raw_input.screen_rect else {
             return;
         };
-        let (vollbild, maximiert) = raw_input
+        let (vollbild, maximiert, monitor) = raw_input
             .viewports
             .get(&egui::ViewportId::ROOT)
-            .map(|v| (v.fullscreen.unwrap_or(false), v.maximized.unwrap_or(false)))
-            .unwrap_or((false, false));
+            .map(|v| {
+                (
+                    v.fullscreen.unwrap_or(false),
+                    v.maximized.unwrap_or(false),
+                    v.monitor_size,
+                )
+            })
+            .unwrap_or((false, false, None));
         // Vollbild und maximiert füllen den Bildschirm — dort gibt es keinen
         // Rand, in dem ein Schatten läge.
         if vollbild || maximiert || self.ui.fullscreen {
+            return;
+        }
+        // T0177: Ein angedocktes Fenster liegt am Bildschirmrand. Ein Rand dort
+        // wäre ein Abstand zur Kante — und die Oberfläche wäre um seine Breite
+        // kleiner als die Fläche, die der Nutzer angedockt hat.
+        if fenster_angedockt(aussen.size(), monitor) {
             return;
         }
         let innen = aussen.shrink(SCHATTEN_RAND);
@@ -14496,14 +14569,27 @@ mod tests_fensterschatten {
     const FENSTER: Vec2 = Vec2::new(1500.0, 950.0);
 
     fn bild(app: &mut App, ctx: &egui::Context, maximiert: Option<bool>) -> egui::FullOutput {
+        bild_mit(app, ctx, FENSTER, None, maximiert)
+    }
+
+    /// Wie `bild`, aber mit Fenstergröße und Bildschirmgröße (T0177) — daran
+    /// erkennt `raw_input_hook` ein angedocktes Fenster.
+    fn bild_mit(
+        app: &mut App,
+        ctx: &egui::Context,
+        fenster: Vec2,
+        monitor: Option<Vec2>,
+        maximiert: Option<bool>,
+    ) -> egui::FullOutput {
         let mut raw = egui::RawInput {
-            screen_rect: Some(Rect::from_min_size(Pos2::ZERO, FENSTER)),
+            screen_rect: Some(Rect::from_min_size(Pos2::ZERO, fenster)),
             ..Default::default()
         };
         raw.viewports.insert(
             egui::ViewportId::ROOT,
             egui::ViewportInfo {
                 maximized: maximiert,
+                monitor_size: monitor,
                 ..Default::default()
             },
         );
@@ -14608,18 +14694,140 @@ mod tests_fensterschatten {
     /// Schatten nur ein dunkler Rahmen.
     #[test]
     fn grund_ist_ohne_titelleiste_durchsichtig() {
-        let (_, app) = app_mit(jjcad_core::persist::Fensterrahmen::OhneTitelleiste);
+        // T0177: Der Grund folgt dem Rand **dieses** Bildes — erst ein Bild
+        // laufen lassen, dann fragen.
+        let (ctx, mut app) = app_mit(jjcad_core::persist::Fensterrahmen::OhneTitelleiste);
+        bild(&mut app, &ctx, None);
         assert_eq!(
             app.clear_color(&egui::Visuals::dark())[3],
             0.0,
             "ohne Titelleiste braucht der Rand einen durchsichtigen Grund"
         );
-        let (_, app) = app_mit(jjcad_core::persist::Fensterrahmen::System);
+        let (ctx, mut app) = app_mit(jjcad_core::persist::Fensterrahmen::System);
+        bild(&mut app, &ctx, None);
         assert_eq!(
             app.clear_color(&egui::Visuals::dark())[3],
             1.0,
             "mit Titelleiste bleibt der Grund deckend"
         );
+    }
+
+    /// T0177: Ein angedocktes Fenster liegt am Bildschirmrand. Gemessen unter
+    /// KWin 6.3 (`kwin_wayland --virtual`, 1600 × 1000): „Fenster nach links
+    /// andocken“ ergibt 799 × 972 — halbe Breite, Höhe um die Bedienleiste
+    /// gekürzt. Dort darf kein Schattenrand liegen: er wäre ein Abstand zur
+    /// Kante, und die Oberfläche wäre um seine Breite kleiner.
+    #[test]
+    fn angedocktes_fenster_fuellt_die_oberflaeche_das_fenster() {
+        let (ctx, mut app) = app_mit(jjcad_core::persist::Fensterrahmen::OhneTitelleiste);
+        let fenster = Vec2::new(799.0, 972.0);
+        let monitor = Some(Vec2::new(1600.0, 1000.0));
+        let mut out = bild_mit(&mut app, &ctx, fenster, monitor, None);
+        for _ in 0..2 {
+            out = bild_mit(&mut app, &ctx, fenster, monitor, None);
+        }
+        assert!(
+            gleich(ctx.screen_rect(), Rect::from_min_size(Pos2::ZERO, fenster)),
+            "angeschlossen am Bildschirmrand muss die Oberfläche das ganze Fenster füllen: {:?}",
+            ctx.screen_rect()
+        );
+        assert!(
+            schatten(&out).is_empty(),
+            "am Bildschirmrand gibt es keinen Platz für einen Schatten: {:?}",
+            schatten(&out)
+        );
+        assert_eq!(
+            app.clear_color(&egui::Visuals::dark())[3],
+            1.0,
+            "ohne Rand ist der Grund deckend"
+        );
+    }
+
+    /// T0177: Die Einstellung schaltet den Schatten ab — dann füllt die
+    /// Oberfläche das Fenster ganz, auch ohne Andocken.
+    #[test]
+    fn abgeschalteter_schatten_fuellt_die_oberflaeche_das_fenster() {
+        let (ctx, mut app) = app_mit(jjcad_core::persist::Fensterrahmen::OhneTitelleiste);
+        app.prefs.fensterschatten = false;
+        let mut out = bild(&mut app, &ctx, None);
+        for _ in 0..2 {
+            out = bild(&mut app, &ctx, None);
+        }
+        assert!(
+            gleich(ctx.screen_rect(), Rect::from_min_size(Pos2::ZERO, FENSTER)),
+            "ohne Schatten füllt die Oberfläche das Fenster: {:?}",
+            ctx.screen_rect()
+        );
+        assert!(
+            schatten(&out).is_empty(),
+            "ohne Schatten darf nichts gezeichnet werden: {:?}",
+            schatten(&out)
+        );
+        assert_eq!(
+            app.clear_color(&egui::Visuals::dark())[3],
+            1.0,
+            "ohne Schatten braucht das Fenster keinen durchsichtigen Grund"
+        );
+    }
+
+    /// Gegenprobe zur Erkennung: ein frei stehendes Fenster behält den Rand —
+    /// auch wenn es fast bildschirmgroß ist (die Vorgabe 1500 × 950 auf einem
+    /// 1600 × 1000 großen Bildschirm).
+    #[test]
+    fn frei_stehendes_fenster_behaelt_den_schattenrand() {
+        let (ctx, mut app) = app_mit(jjcad_core::persist::Fensterrahmen::OhneTitelleiste);
+        let mut out = bild_mit(
+            &mut app,
+            &ctx,
+            FENSTER,
+            Some(Vec2::new(1600.0, 1000.0)),
+            None,
+        );
+        for _ in 0..2 {
+            out = bild_mit(
+                &mut app,
+                &ctx,
+                FENSTER,
+                Some(Vec2::new(1600.0, 1000.0)),
+                None,
+            );
+        }
+        assert!(
+            gleich(ctx.screen_rect(), Rect::from_min_size(Pos2::ZERO, FENSTER).shrink(SCHATTEN_RAND)),
+            "ein frei stehendes Fenster behält den Schattenrand: {:?}",
+            ctx.screen_rect()
+        );
+        assert!(
+            !schatten(&out).is_empty(),
+            "der Schatten fehlt am frei stehenden Fenster"
+        );
+    }
+
+    /// T0177: Die Erkennung selbst — halbe Breite oder Höhe ist angedockt,
+    /// volle Bildschirmgröße ist „maximiert“ und wird dort gemeldet.
+    #[test]
+    fn angedockt_wird_an_der_fenstergroesse_erkannt() {
+        let monitor = Some(Vec2::new(1600.0, 1000.0));
+        // Angedockt links/rechts: gemessen 799 × 972, rechnerisch 800 × 1000.
+        assert!(fenster_angedockt(Vec2::new(799.0, 972.0), monitor));
+        assert!(fenster_angedockt(Vec2::new(800.0, 1000.0), monitor));
+        // Oben/unten angedockt.
+        assert!(fenster_angedockt(Vec2::new(1600.0, 500.0), monitor));
+        // Viertel: beide Richtungen halb.
+        assert!(fenster_angedockt(Vec2::new(800.0, 500.0), monitor));
+        // Frei stehende Fenster — auch ein fast bildschirmgroßes.
+        assert!(!fenster_angedockt(Vec2::new(1500.0, 950.0), monitor));
+        assert!(!fenster_angedockt(Vec2::new(1080.0, 680.0), monitor));
+        // Das Vorgabefenster auf einem 4K-Bildschirm ist genau halb so breit
+        // (1532 von 3072), aber nur 57 % hoch — es steht frei und behält den
+        // Schatten.
+        let uhd = Some(Vec2::new(3072.0, 1728.0));
+        assert!(!fenster_angedockt(Vec2::new(1532.0, 982.0), uhd));
+        // Angedockt auf demselben Bildschirm: halbe Breite, Höhe bis zur
+        // Arbeitsfläche (gemessen 972 von 1000 → hier 1656 von 1728).
+        assert!(fenster_angedockt(Vec2::new(1536.0, 1656.0), uhd));
+        // Ohne Bildschirmgröße (erste Bilder, Testumgebung) wird nichts erkannt.
+        assert!(!fenster_angedockt(Vec2::new(799.0, 972.0), None));
     }
 }
 

@@ -117,7 +117,14 @@ fn starte_app(file: Option<String>, sperre: daten::Sperre) -> eframe::Result<()>
     // Fenster braucht einen Alphakanal (`with_transparent`), und die
     // Mindestgröße wächst um den Streifen, damit die Oberfläche darin noch
     // ihre Mindestbreite hat.
-    let schatten = if titelleiste { 0.0 } else { 2.0 * app::SCHATTEN_RAND };
+    // T0177: Der Schatten lässt sich in den Einstellungen abschalten. Ohne ihn
+    // bekommt das Fenster den Streifen gar nicht erst — sonst bliebe der
+    // Abstand beim Andocken auch dann, wenn nichts gezeichnet wird.
+    let schatten = if titelleiste || !prefs.fensterschatten {
+        0.0
+    } else {
+        2.0 * app::SCHATTEN_RAND
+    };
     let mut viewport = egui::ViewportBuilder::default()
         .with_inner_size([1500.0 + schatten, 950.0 + schatten])
         .with_min_inner_size([1080.0 + schatten, 680.0 + schatten])

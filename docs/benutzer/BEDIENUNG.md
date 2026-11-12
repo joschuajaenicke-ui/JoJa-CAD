@@ -283,6 +283,14 @@ ausgeblendet.
   Zeiger wieder ins Fenster wandert. In der Ecke unten rechts steht ein sichtbarer Griff. Die Ecke oben rechts gehört den Fensterknöpfen (kein Größe-Ziehen, sonst wäre
   „Schließen“ nicht zu treffen). Die Wahl steht in `prefs.json`
   (`fensterrahmen: system | ohne_titelleiste`) und wirkt beim Umschalten sofort, ohne Neustart.
+- **Fensterschatten** (Einstellungen ▸ Darstellung ▸ „Schatten"): Ohne Titelleiste zeichnet
+  JoJa-CAD den Schatten des Fensters selbst — der durchsichtige Streifen dafür (16 px je Seite)
+  gehört zum Fenster, das Fenstermanagement rechnet ihn mit. Liegt das Fenster an einer
+  Bildschirmhälfte oder an einem Viertel (angedockt) oder füllt es den Bildschirm, entfällt der
+  Streifen von selbst, damit kein Abstand zur Kante bleibt. Wer den Schatten ganz ablehnt,
+  schaltet ihn hier ab: dann füllt die Oberfläche das Fenster ohne Rand, und auch das Andocken in
+  eigenen Kachel-Layouts (Drittel) lässt keinen Abstand. Gespeichert in `prefs.json`
+  (`fensterschatten: true | false`, Vorgabe an) und wirksam ohne Neustart.
 - **Dateireiter** (Streifen unter dem Ribbon, **zwei getrennte Bereiche**): links auf dunklem
   Band jede geöffnete Zeichnung als Reiter mit Dateisymbol, der aktive als Karte mit
   Akzentlinie; rechts in einer abgesetzten Fläche die Blätter der aktiven Datei als kleinere

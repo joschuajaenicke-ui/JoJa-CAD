@@ -1187,6 +1187,14 @@ pub struct UserPrefs {
     /// rechts und die Kopfzeile verschiebt das Fenster (`prefs.json`).
     #[serde(default)]
     pub fensterrahmen: Fensterrahmen,
+    /// Fensterschatten (T0177): Ohne Titelleiste zeichnet JoJa-CAD den
+    /// Schatten selbst (T0147). Der durchsichtige Streifen dafür gehört zum
+    /// Fenster, das Fenstermanagement rechnet ihn mit — beim Andocken an den
+    /// Bildschirmrand bleibt deshalb ein Abstand in Schattenbreite. Abschaltbar
+    /// (Vorgabe: an, bisheriges Aussehen); ohne Schatten füllt die Oberfläche
+    /// das Fenster ganz.
+    #[serde(default = "default_true")]
+    pub fensterschatten: bool,
     /// Farbdesign der Oberfläche (T0102): `system` folgt dem Betriebssystem
     /// (Programmstandard), `hell` und `dunkel` sind feste Wahlen. Die Wahl
     /// wirkt sofort, ohne Neustart (`crate::theme::set_design`).
@@ -1667,6 +1675,9 @@ impl Default for UserPrefs {
             file_dialog: default_dateidialog(),
             language: crate::i18n::Lang::Deutsch,
             fensterrahmen: Fensterrahmen::System,
+            // T0177: Der eigene Fensterschatten ist eingeschaltet — das
+            // bisherige Aussehen; wer ihn stört (Andocken), schaltet ihn ab.
+            fensterschatten: true,
             // Programmstandard (T0102): das Farbschema des Betriebssystems.
             design: Design::System,
             // Programmstandard (T0111): der Bernstein-Akzent (bisheriges
@@ -2523,6 +2534,31 @@ mod tests {
     /// T0098: Der Fensterrahmen steht in den Voreinstellungen. Vorgabe ist die
     /// Titelleiste des Fenstermanagers; ein Altbestand ohne den Schlüssel
     /// bleibt dabei, der Modus „ohne Titelleiste“ überlebt Speichern und Laden.
+    /// T0177: Der Fensterschatten ist in der Vorgabe an (bisheriges Aussehen),
+    /// ein Altbestand ohne den Schlüssel ebenso, und die Wahl wird gespeichert.
+    #[test]
+    fn fensterschatten_vorgabe_an_und_gespeichert() {
+        assert!(UserPrefs::default().fensterschatten);
+        let alt: UserPrefs = serde_json::from_str(r#"{"last_dir": "/tmp"}"#).unwrap();
+        assert!(
+            alt.fensterschatten,
+            "Altbestand ohne Schlüssel muss den Schatten zeichnen"
+        );
+
+        let mut prefs = UserPrefs::default();
+        prefs.fensterschatten = false;
+        let roh = serde_json::to_string(&prefs).unwrap();
+        assert!(
+            roh.contains("\"fensterschatten\":false"),
+            "Schlüssel fehlt: {roh}"
+        );
+        let wieder: UserPrefs = serde_json::from_str(&roh).unwrap();
+        assert!(
+            !wieder.fensterschatten,
+            "die abgeschaltete Wahl ging beim Laden verloren"
+        );
+    }
+
     #[test]
     fn fensterrahmen_vorgabe_und_gespeichert() {
         assert_eq!(Fensterrahmen::default(), Fensterrahmen::System);

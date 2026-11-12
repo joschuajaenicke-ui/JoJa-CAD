@@ -17,6 +17,7 @@ von vorn.
 | 5 | Splines lassen sich nicht stutzen | Modell/Geometrie | numerischer Schnitt + Teilstück-Extraktion |
 | 6 | Bei großer Displayskalierung wird die Oberfläche abgeschnitten | Mindestfenstergröße in logischen Punkten | umbrechende/scrollende Ribbon-Gruppen |
 | 7 | Fensterposition lässt sich unter Wayland **nicht speichern** und nicht wiederherstellen | Wayland (`xdg-shell`) und winit | `xdg-session-management-v1` in KWin und winit |
+| 8 | Fensterschatten: beim Andocken in **eigenen Kachel-Layouts** (Drittel, freie Raster) bleibt ein Abstand in Schattenbreite | das Programm selbst — der Schattenrand gehört zum Fenster | Schatten vom Fenstermanager zeichnen lassen (server-seitige Dekoration bzw. `org_kde_kwin_shadow`) |
 
 ---
 
@@ -244,6 +245,42 @@ Programm seinen Zustand samt Position wieder anfordern.
 **Behelf.** Fensterregel in KWin (Systemeinstellungen → Fensterverwaltung →
 Fensterregeln): Eigenschaft „Position“ auf „Erzwingen“ für `jjcad`. Die Regel
 setzt KWin selbst, deshalb wirkt sie auch unter Wayland.
+
+---
+
+## 8. Fensterschatten: Abstand beim Andocken in eigenen Kachel-Layouts
+
+**Symptom.** Ohne Titelleiste bleibt ein angedocktes Fenster mit einem Abstand
+zur Bildschirmkante stehen, und die Oberfläche ist um diesen Streifen kleiner
+als die Fläche, die der Nutzer angedockt hat.
+
+**Ursache.** Der Fenstermanager zeichnet für ein Fenster ohne Dekoration unter
+Wayland keinen Schatten (T0147), JoJa-CAD malt ihn deshalb selbst: ein
+durchsichtiger Streifen von 16 px je Seite (`app::SCHATTEN_RAND`) am
+Fensterrand. Dieser Streifen **gehört zum Fenster** — das Fenstermanagement
+rechnet ihn mit. Für „an die Hälfte andocken“, „Viertel“ und „maximiert“
+erkennt `app::fenster_angedockt` den Zustand an der Fenstergröße und lässt den
+Streifen weg (gemessen unter KWin 6.3, `kwin_wayland --virtual`, 1600 × 1000:
+frei stehend 1500 × 950 → Oberfläche 1468 × 918; nach links angedockt
+799 × 972 → Oberfläche 799 × 972; maximiert 1600 × 972, `maximized = true`).
+
+**Was offen bleibt.** KWin kann Fenster auch in **Drittel** oder in eigenen
+Kachel-Layouts ablegen; dort ist keine Kante die halbe Bildschirmlänge, die
+Größe verrät den Zustand also nicht. Ebenso verliert ein von Hand genau halb so
+breit gezogenes Fenster den Schatten (kosmetisch, kein Fehler).
+
+**Warum jetzt nicht lösbar.** Den Zustand „angedockt“ meldet niemand: `winit`
+reicht die `tiled`-Zustände von `xdg-toplevel` nicht an `egui` durch, und eine
+Fensterlage gibt es unter Wayland nicht (Grenze 7). Bliebe der Streifen
+generell weg, gäbe es gar keinen Schatten; bliebe er immer, käme der Abstand
+zurück.
+
+**Behelf.** Einstellungen ▸ Darstellung ▸ „Schatten“ abschalten — dann füllt die
+Oberfläche das Fenster ganz, und es bleibt kein Abstand (auch in Drittel-Layouts).
+
+**Bedingung.** Server-seitiger Schatten unter Wayland: `xdg-decoration` mit
+server-seitigem Modus oder das KWin-Protokoll `org_kde_kwin_shadow`, das
+`winit`/`eframe` durchreichen müssten.
 
 ---
 
