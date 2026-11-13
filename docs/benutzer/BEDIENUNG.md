@@ -294,7 +294,8 @@ ausgeblendet.
   Verlängern und Verschneiden (grün) und der **Punktfang** samt Hilfslinien (türkis). Jede
   Zeile zeigt die Farbwahl, den Hexwert und „Standard" (nimmt die eigene Wahl zurück, danach
   gilt wieder die Vorgabe des Designs). Die Wahl wirkt sofort und steht in `prefs.json`
-  (`zeichenfarben`); fehlt eine Rolle, folgt sie dem Design.
+  (`zeichenfarben`); fehlt eine Rolle, folgt sie dem Design. Der Abschnitt steht **am
+  Ende** der Kategorie Darstellung — Design und Farbakzente bleiben oben zusammen.
 - **Fenster ohne Titelleiste** (Einstellungen ▸ Bedienung ▸ „Fensterrahmen", *experimentell*): meldet
   dem Fenstermanager „keine Dekoration" — unter KDE/X11 über `_MOTIF_WM_HINTS`, unter
   KDE/Wayland über die Anfrage nach *client-seitiger* Dekoration, unter Windows als rahmenloses
