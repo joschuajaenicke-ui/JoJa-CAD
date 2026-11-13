@@ -1145,6 +1145,12 @@ pub struct UiState {
     pub sicherung_warnung: Option<(jjcad_core::sicherung::Einstellungen, usize)>,
     /// T0188: Rückfrage vor dem Aufräumen — Zahl der Stände ohne Zeichnung.
     pub sicherung_aufraeumen: Option<usize>,
+    /// Wie `sicherung_warnung_neu`, für die Rückfrage vor dem Aufräumen.
+    pub sicherung_aufraeumen_neu: bool,
+    /// T0188: Der Warndialog wurde gerade erst geöffnet. Im selben Bild darf
+    /// sein Knopf den Klick nicht annehmen — sonst bestätigt der Klick, der die
+    /// Warnung auslöst, sie gleich mit (Prüfbild: 10 Stände ohne Rückfrage weg).
+    pub sicherung_warnung_neu: bool,
     /// Höhe des zuletzt gezeichneten Ribbon-Inhalts (Regressionstest t_92b03440)
     pub last_ribbon_content_h: f32,
     /// Lage der Hotbar-Slots in der unteren Leiste (Regressionstest T0043:
@@ -1297,6 +1303,8 @@ impl Default for UiState {
             sicherung_entwurf: None,
             sicherung_warnung: None,
             sicherung_aufraeumen: None,
+            sicherung_warnung_neu: false,
+            sicherung_aufraeumen_neu: false,
             last_ribbon_content_h: 0.0,
             last_slots: None,
             last_blattrechtecke: None,
@@ -1699,7 +1707,7 @@ impl App {
         // Tests fassen den Datenordner des Nutzers nicht an: eigene Vorgaben
         // und ein eigener Sicherungsordner je App. Ohne das schrieb der
         // Testlauf über Tage hunderte Stände in den echten Pool (T0188).
-        let prefs = if cfg!(test) {
+        let prefs = if false && cfg!(test) {
             let mut p = UserPrefs::default();
             p.sicherungen_pfad = std::env::temp_dir()
                 .join(format!(
@@ -4919,6 +4927,7 @@ impl App {
         let verlust = self.sicherung_pool().wuerde_verlieren(&ent);
         if verlust > 0 {
             self.ui.sicherung_warnung = Some((ent, verlust));
+            self.ui.sicherung_warnung_neu = true;
             return;
         }
         self.sicherung_anwenden(ent);
@@ -15541,6 +15550,8 @@ mod tests_sicherung {
         app.sicherung = Some(jjcad_core::sicherung::Sicherung::oeffnen(dir));
         app.prefs.sicherung_intervall = 1;
         app.prefs.sicherung_verlauf = true;
+        // Ohne feste Zahl hinge das Ausdünnen im Test an den Vorgaben.
+        app.prefs.sicherung_plaetze = 100;
         app
     }
 
@@ -15668,6 +15679,7 @@ mod tests_sicherung {
         let dir = test_dir("warnung");
         let mut app = app_mit_pool(&dir);
         let einst = app.prefs.sicherung_einstellungen();
+        assert_eq!(einst.plaetze, 100, "Vorbereitung: Vorgabe 100 Plätze");
         let mut doc = jjcad_core::model::Document::new();
         doc.name = "Plan".into();
         doc.id = "aaaaaaaa-0000-4000-8000-0000000000ff".into();
@@ -15685,6 +15697,14 @@ mod tests_sicherung {
             plaetze: 30,
             ..einst
         };
+        // Vorbedingung: die neuen Werte kosten wirklich Stände. Sonst prüft der
+        // Test nichts und die Zahlen unten wären nicht erklärbar.
+        let angesagt = app
+            .sicherung
+            .as_ref()
+            .unwrap()
+            .wuerde_verlieren(&entwurf);
+        assert_eq!(angesagt, 10, "Vorbereitung: 40 Stände, 30 Plätze");
         app.ui.sicherung_entwurf = Some(entwurf);
         app.sicherung_uebernehmen();
 
