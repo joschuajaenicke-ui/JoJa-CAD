@@ -1294,7 +1294,12 @@ impl Default for UiState {
             rename_layer: None,
             clipboard: crate::ghost::Clipboard::default(),
             clipboard_offset: 20.0,
-            bildablage: crate::bildablage::BildAblage::neu(),
+            // Tests fassen die Systemablage nicht an: sie gehört dem Rechner.
+            bildablage: if cfg!(test) {
+                crate::bildablage::BildAblage::ohne_systemablage()
+            } else {
+                crate::bildablage::BildAblage::neu()
+            },
             confirm_close: None,
             schliessen_nach_speichern: None,
             last_canvas: Rect::from_min_size(Pos2::ZERO, Vec2::new(1000.0, 700.0)),
