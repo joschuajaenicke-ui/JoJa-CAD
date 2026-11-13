@@ -2139,62 +2139,6 @@ fn settings_body(app: &mut App, ui: &mut Ui) {
                                         }
                                     },
                                 );
-                                // T0181: Farben der Zeichnung — die Hintergründe
-                                // der drei Bearbeitungsräume und die
-                                // Bedeutungsfarben (Vorschau, Auswahl, Entfernen,
-                                // Erweitern, Fang). Eine Zeile je Rolle aus
-                                // `Zeichenfarbe::ALL`; ohne eigene Wahl gilt die
-                                // Vorgabe des Designs, „Standard“ nimmt sie zurück.
-                                abschnitt(
-                                    &suche,
-                                    ui,
-                                    jjcad_core::i18n::tr("gui.dialogs.zeichenfarben"),
-                                );
-                                for rolle in Zeichenfarbe::ALL {
-                                    let name = rolle.text();
-                                    let tip = rolle.tip();
-                                    let aliase = zeichenfarbe_aliase(rolle);
-                                    zeile_tip(&suche, ui, name, aliase, tip, |ui| {
-                                        // Enger als die übrigen Zeilen: Farbknopf,
-                                        // Hexwert und „Standard“ müssen in die
-                                        // 150-px-Wertespalte passen.
-                                        ui.spacing_mut().item_spacing.x = 4.0;
-                                        let cur = zeichenfarben
-                                            .get(&rolle)
-                                            .copied()
-                                            .unwrap_or_else(|| theme::zeichenfarbe(rolle));
-                                        let mut rgb = [cur.r(), cur.g(), cur.b()];
-                                        if ui.color_edit_button_srgb(&mut rgb).changed() {
-                                            zeichenfarben.insert(
-                                                rolle,
-                                                Color32::from_rgb(rgb[0], rgb[1], rgb[2]),
-                                            );
-                                        }
-                                        // Hexwert klein: er ist die Kontrolle
-                                        // der Wahl, nicht die Hauptsache.
-                                        ui.label(
-                                            egui::RichText::new(format!(
-                                                "#{:02X}{:02X}{:02X}",
-                                                rgb[0], rgb[1], rgb[2]
-                                            ))
-                                            .monospace()
-                                            .size(10.5)
-                                            .color(Palette::text_dim()),
-                                        );
-                                        if zeichenfarben.contains_key(&rolle)
-                                            && ui
-                                                .small_button(jjcad_core::i18n::tr(
-                                                    "gui.dialogs.standard",
-                                                ))
-                                                .on_hover_text(jjcad_core::i18n::tr(
-                                                    "gui.dialogs.zeichenfarbe_standard_hint",
-                                                ))
-                                                .clicked()
-                                        {
-                                            zeichenfarben.remove(&rolle);
-                                        }
-                                    });
-                                }
                                 // T0098: Fenster ohne Titelleiste. Ohne Rahmen des
                                 // Fenstermanagers zeichnet JoJa-CAD Minimieren,
                                 // Vergrößern und Schließen selbst; die Kopfzeile
@@ -2326,6 +2270,67 @@ fn settings_body(app: &mut App, ui: &mut Ui) {
                                     }
                                     ui.add_space(2.0);
                                     ui.checkbox(wert, name);
+                                }
+                                // T0181: Farben der Zeichnung — die Hintergründe
+                                // der drei Bearbeitungsräume und die
+                                // Bedeutungsfarben (Vorschau, Auswahl, Entfernen,
+                                // Erweitern, Fang). Eine Zeile je Rolle aus
+                                // `Zeichenfarbe::ALL`; ohne eigene Wahl gilt die
+                                // Vorgabe des Designs, „Standard“ nimmt sie zurück.
+                                // T0181, Turn 2: Sie stehen **am Ende** der
+                                // Darstellung — Design und Farbakzente gehören
+                                // zusammen und bleiben oben; die Zeichenfarben
+                                // werden am seltensten gebraucht und schließen
+                                // die Kategorie ab.
+                                abschnitt(
+                                    &suche,
+                                    ui,
+                                    jjcad_core::i18n::tr("gui.dialogs.zeichenfarben"),
+                                );
+                                for rolle in Zeichenfarbe::ALL {
+                                    let name = rolle.text();
+                                    let tip = rolle.tip();
+                                    let aliase = zeichenfarbe_aliase(rolle);
+                                    zeile_tip(&suche, ui, name, aliase, tip, |ui| {
+                                        // Enger als die übrigen Zeilen: Farbknopf,
+                                        // Hexwert und „Standard“ müssen in die
+                                        // 150-px-Wertespalte passen.
+                                        ui.spacing_mut().item_spacing.x = 4.0;
+                                        let cur = zeichenfarben
+                                            .get(&rolle)
+                                            .copied()
+                                            .unwrap_or_else(|| theme::zeichenfarbe(rolle));
+                                        let mut rgb = [cur.r(), cur.g(), cur.b()];
+                                        if ui.color_edit_button_srgb(&mut rgb).changed() {
+                                            zeichenfarben.insert(
+                                                rolle,
+                                                Color32::from_rgb(rgb[0], rgb[1], rgb[2]),
+                                            );
+                                        }
+                                        // Hexwert klein: er ist die Kontrolle
+                                        // der Wahl, nicht die Hauptsache.
+                                        ui.label(
+                                            egui::RichText::new(format!(
+                                                "#{:02X}{:02X}{:02X}",
+                                                rgb[0], rgb[1], rgb[2]
+                                            ))
+                                            .monospace()
+                                            .size(10.5)
+                                            .color(Palette::text_dim()),
+                                        );
+                                        if zeichenfarben.contains_key(&rolle)
+                                            && ui
+                                                .small_button(jjcad_core::i18n::tr(
+                                                    "gui.dialogs.standard",
+                                                ))
+                                                .on_hover_text(jjcad_core::i18n::tr(
+                                                    "gui.dialogs.zeichenfarbe_standard_hint",
+                                                ))
+                                                .clicked()
+                                        {
+                                            zeichenfarben.remove(&rolle);
+                                        }
+                                    });
                                 }
                             }
                             // ------------------------ Grafik (T0165) -------------
@@ -7099,6 +7104,67 @@ mod tests_einstellungen {
         assert!(
             texte.iter().any(|t| *t == ueberschrift),
             "Abschnitt „Zeichenfarben“ fehlt (gezeichnet: {texte:?})"
+        );
+    }
+
+    /// T0181, Turn 2: Die Zeichenfarben schließen die Kategorie ab. Design und
+    /// Farbakzente gehören zusammen und stehen oben, Fensterrahmen, Schatten
+    /// und Linienstärken davor — sonst sähe es aus, als gehörte der
+    /// Fensterrahmen zu den Farben.
+    #[test]
+    fn zeichenfarben_stehen_am_ende_der_darstellung() {
+        let _sperre = KONFIG.lock().unwrap_or_else(|e| e.into_inner());
+        let _konfig = WegwerfKonfig::neu("zeichenfarben-ende");
+        let (_, _, out) = seite("settings.category_darstellung", "");
+        // Nur die Namensspalte: die Werte (Hex, Auswahlfelder) stehen rechts.
+        // Nur die Namensspalte der Seite (x ≈ 550 … 710): die Kategorienliste
+        // links und die Werte (Hex, Auswahlfelder) rechts bleiben draußen.
+        let mut zeilen: Vec<(f32, String)> = out
+            .shapes
+            .iter()
+            .filter_map(|cs| match &cs.shape {
+                egui::Shape::Text(t) if (500.0..700.0).contains(&t.pos.x) => {
+                    Some((t.pos.y, t.galley.text().to_string()))
+                }
+                _ => None,
+            })
+            .collect();
+        zeilen.sort_by(|a, b| a.0.partial_cmp(&b.0).unwrap_or(std::cmp::Ordering::Equal));
+        let namen: Vec<&str> = zeilen.iter().map(|(_, t)| t.as_str()).collect();
+
+        let pos = |name: &str| -> usize {
+            namen
+                .iter()
+                .position(|t| *t == name)
+                .unwrap_or_else(|| panic!("Zeile „{name}“ fehlt (gezeichnet: {namen:?})"))
+        };
+        let design = pos("Design");
+        let akzent = pos("Farbakzente");
+        let rahmen = pos("Fensterrahmen");
+        assert!(
+            design < akzent,
+            "die Farbakzente stehen nicht direkt beim Design"
+        );
+        assert!(
+            akzent < rahmen,
+            "die Zeichenfarben stehen noch zwischen Farbakzenten und Fensterrahmen"
+        );
+
+        // Der Abschnitt steht nach allen anderen Zeilen der Kategorie, und
+        // darin folgen die acht Rollen in der Reihenfolge von
+        // `Zeichenfarbe::ALL`.
+        let ueberschrift = jjcad_core::i18n::tr("gui.dialogs.zeichenfarben").to_uppercase();
+        let kopf = pos(&ueberschrift);
+        let letzte_zeile = pos("Eigenschaften-Panel");
+        assert!(
+            letzte_zeile < kopf,
+            "die Zeichenfarben stehen nicht am Ende der Darstellung"
+        );
+        let erwartet: Vec<&str> = Zeichenfarbe::ALL.iter().map(|r| r.text()).collect();
+        assert_eq!(
+            &namen[kopf + 1..kopf + 1 + erwartet.len()],
+            erwartet.as_slice(),
+            "die Rollen stehen nicht in der Reihenfolge von `Zeichenfarbe::ALL`              (gezeichnet: {namen:?})"
         );
     }
 
