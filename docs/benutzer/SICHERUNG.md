@@ -52,6 +52,33 @@ Einstellungen → Sicherung:
 Jede Zeile trägt ein Infozeichen mit derselben Erklärung; über der Tabelle steht
 das Konzept in drei Sätzen.
 
+Die Seite Einstellungen → Sicherung arbeitet auf einem Entwurf. Änderungen an
+„Verlauf aufbewahren“, „Anzahl der Sicherungen“, „Aufbewahrungszeitraum“ und
+„Sicherung alle“ wirken deshalb nicht sofort. Unter der Tabelle stehen die
+Knöpfe „Übernehmen“ und „Verwerfen“; solange nichts geändert wurde, sind beide
+inaktiv. „Verwerfen“ stellt die gespeicherten Werte wieder her. „Übernehmen“
+prüft zuerst, wie viele Stände die neuen Werte kosten würden. Ginge dabei etwas
+verloren, erscheint ein Fenster mit dem Text „Mit diesen Einstellungen werden X
+von Y Sicherungen endgültig gelöscht. Das lässt sich nicht rückgängig machen.“
+und den Knöpfen „Abbrechen“ und „Endgültig löschen und übernehmen“. Ohne
+Verlust wird sofort übernommen: Die Einstellungen werden gespeichert und der
+Pool sofort ausgedünnt. Dieser Ablauf besteht, weil früher jede Änderung sofort
+wirkte und beim Verkleinern der Zahl Stände ohne Rückfrage gelöscht wurden. Das
+Abschalten von „Verlauf aufbewahren“ löscht weiterhin nichts; es verhindert nur
+neue Stände.
+
+Die Zeile „Aufräumen“ enthält den Knopf „N ohne Zeichnung löschen“. Er löscht
+Sicherungen, deren vermerkte Zieldatei nicht mehr auf der Platte liegt; vorher
+kommt eine Rückfrage mit der Zahl. Ältere Sicherungen ohne vermerkten Pfad
+bleiben stehen, weil dort unbekannt ist, ob die Zeichnung noch existiert.
+Liegen mehr Zeichnungen im Sicherungsordner, als Sicherungen eingestellt sind,
+steht in der Seite ein Hinweis in Rot: „X Zeichnungen im Sicherungsordner — mehr
+als Sicherungen. Je Zeichnung bleibt der letzte Stand, der Ordner wächst deshalb
+auf Y Stände. Für Verlauf: Anzahl der Sicherungen erhöhen.“ Der Hinweis erklärt,
+warum der Ordner mehr Dateien enthält als eingestellt: Jede Zeichnung belegt
+einen Platz (Abschnitt 5).
+
+
 Der **Aufbewahrungszeitraum** ist in **Arbeitsstunden** angegeben, nicht in Kalendertagen:
 
 | Auswahl | Arbeitsstunden | Zyklen bei 1 min | bei Dauerbetrieb |
@@ -100,7 +127,8 @@ Bei vielen Dateien wird er gröber, weil jede Datei einen Platz belegt
 
 Jede Datei belegt einen Platz (ihren letzten Stand). Bleiben zu wenige Plätze
 für den Verlauf, wird der Abstand grob; reicht es gar nicht, hebt das Programm
-die Plätze selbst auf die Zahl der Dateien an und sagt es im Dialog.
+die Plätze selbst auf die Zahl der Dateien an und schreibt es rot in die
+Einstellungsseite: „X Zeichnungen im Sicherungsordner — mehr als Sicherungen.“
 
 | Dateien | Plätze | Abstand bei Quartal | Empfehlung |
 |---|---|---|---|
@@ -209,6 +237,12 @@ gleichem Inhalt — als neuester Stand, damit er die Regel aus Abschnitt 6 träg
   Stände aus älteren Pools (`stand-<n>-<uuid>.jjcad`) werden beim Öffnen
   umbenannt.
 
+Je Stand steht außerdem `pfad`: die Zieldatei zum Zeitpunkt der Sicherung. Er
+bleibt leer, wenn die Zeichnung nie gespeichert wurde oder der Stand aus einem
+älteren Pool kommt. Das Aufräumen (Abschnitt 2) findet damit Stände, deren
+Zeichnung verschwunden ist; Stände ohne Pfad werden nicht angefasst, weil dort
+unbekannt ist, ob die Zeichnung noch existiert.
+
 Die Zyklusnummer ist der einzige Zeitanker für Entscheidungen: monoton,
 DST-fest, unabhängig von der Systemuhr. Der Pin ist **abgeleitet** (neuester
 Stand je UUID), nicht gespeichert — so kann er nicht veralten.
@@ -299,6 +333,15 @@ erfolgreichen Schreiben; die Spitze liegt kurzzeitig bei `Plätze + 1`. Waisen
 13. Verwerfen, Starten: die verworfene Arbeit ist weg, die Datei gilt.
 14. Standdateien heißen `<Zieldatei>_autosave_<JJJJMMTT-HHMMSS>.jjcad`, sind
     alphabetisch chronologisch sortiert und kollidieren nicht.
+15. Eine Einstellung ändern (Zahl, Zeitraum, Intervall, Haken) löscht **nichts**
+    und wirkt **nicht** sofort; erst „Übernehmen“ speichert sie.
+16. „Übernehmen“, das Stände kostet: Fenster mit „X von Y Sicherungen“, der Pool
+    bleibt unverändert; „Abbrechen“ lässt alles stehen.
+17. „Übernehmen“ ohne Verlust: Einstellungen gespeichert, sofort ausgedünnt,
+    Meldung mit der Zahl der gelöschten Stände.
+18. „Aufräumen“ löscht nur Stände mit vermerktem Pfad, deren Datei fehlt;
+    Stände ohne Pfad bleiben.
+19. Der Testlauf schreibt keine Stände in den Datenordner des Nutzers.
 
 ### 14. Randfälle
 
@@ -311,8 +354,8 @@ erfolgreichen Schreiben; die Spitze liegt kurzzeitig bei `Plätze + 1`. Waisen
 | Uhrzeit/DST/Zeitsprung | ohne Wirkung — gerechnet wird in Zyklen |
 | Speichern unter / umbenennen | Stände folgen der Datei-UUID, nicht dem Pfad |
 | Zeichnung ohne Kennung im Kopf | Kennung aus dem Pfad abgeleitet, über Sitzungen stabil; nach dem ersten Speichern steht sie in der Datei und gewinnt |
-| Datei gelöscht | Pin bleibt, bis die Datei 30 Tage unbekannt ist |
-| `N`, `T` oder Intervall geändert | gilt ab der nächsten Ausdünnung; bestehende Stände behalten ihre Frist |
+| Datei gelöscht | Pin bleibt; „Aufräumen“ löscht Stände mit vermerktem, verschwundenem Pfad nach Rückfrage |
+| `N`, `T` oder Intervall geändert | gilt erst mit „Übernehmen“; kostet es Stände, kommt vorher die Warnung mit der Zahl |
 | Verlauf aus | je Dokument nur der neueste Stand; vorhandene Sicherungen bleiben, neue werden nicht angelegt |
 | Netzlaufwerk | Kopie + fsync + rename, keine Hardlinks |
 | Absturz zwischen Stand und Manifest | Waisen werden beim Start entfernt |

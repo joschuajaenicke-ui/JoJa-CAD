@@ -420,6 +420,21 @@ Minuten), dazu der mittlere Abstand der Stände, der belegte Speicher und der
 Hinweis zum Netzlaufwerk. Jede Zeile erklärt sich über ihr Infozeichen; über der
 Tabelle steht das Konzept in drei Sätzen.
 
+Die Einstellungen dieser Seite werden erst wirksam, wenn „Übernehmen“ gedrückt
+wird; „Verwerfen“ stellt die gespeicherten Werte wieder her. Solange nichts
+geändert wurde, bleiben beide Knöpfe inaktiv. Beim Übernehmen rechnet das
+Programm vorab, wie viele Sicherungen die neuen Werte kosten: Ginge etwas
+verloren, erscheint ein Fenster mit der Zahl („X von Y Sicherungen werden
+endgültig gelöscht“) und den Knöpfen „Abbrechen“ und „Endgültig löschen und
+übernehmen“; erst die Bestätigung löscht. Ohne Verlust wird sofort übernommen
+und ausgedünnt. Der Grund für diese Rückfrage liegt darin, dass früher jede
+Änderung sofort wirkte und beim Verkleinern der Zahl Stände ohne Rückfrage
+verschwanden. Die Zeile „Aufräumen“ löscht Sicherungen, deren Zeichnung nicht
+mehr auf der Platte liegt, ebenfalls erst nach einer Rückfrage. Liegen mehr
+Zeichnungen im Sicherungsordner, als Sicherungen eingestellt sind, steht ein
+roter Hinweis in der Seite: Jede Zeichnung belegt einen Platz, deshalb kann
+der Ordner mehr Dateien enthalten als eingestellt.
+
 **Sicherungen ansehen**: Einstellungen → Sicherung → **Sicherungsordner** öffnet
 den Ordner im Dateimanager (dieselbe Funktion wie *Sicherungen öffnen* in
 Inventar und Hotbar). Jeder Stand ist eine gewöhnliche `.jjcad`-Datei — öffnen
