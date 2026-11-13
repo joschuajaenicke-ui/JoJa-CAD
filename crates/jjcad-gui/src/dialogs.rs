@@ -697,6 +697,108 @@ pub fn show(app: &mut App, ctx: &egui::Context) {
         app.ui.schliessen_nach_speichern = None;
     }
 
+    // T0188: Warnung vor dem Übernehmen der Sicherungseinstellungen.
+    if let Some((entwurf, verlust)) = app.ui.sicherung_warnung {
+        dim_background(ctx);
+        let mut offen = true;
+        let mut ja = false;
+        let mut nein = false;
+        let gesamt = app.sicherung_pool().manifest().staende.len();
+        modal_window(
+            ctx,
+            jjcad_core::i18n::tr("settings.sicherung_warnung_titel"),
+            480.0,
+            &mut offen,
+        )
+        .show(ctx, |ui| {
+            ui.set_width(460.0);
+            ui.add(
+                egui::Label::new(
+                    egui::RichText::new(jjcad_core::i18n::t_args_owned(
+                        "settings.sicherung_warnung_text",
+                        &[
+                            ("anzahl", verlust.to_string()),
+                            ("gesamt", gesamt.to_string()),
+                        ],
+                    ))
+                    .strong(),
+                )
+                .wrap(),
+            );
+            ui.add_space(6.0);
+            ui.add(
+                egui::Label::new(theme::dim(jjcad_core::i18n::tr(
+                    "settings.sicherung_warnung_hinweis",
+                )))
+                .wrap(),
+            );
+            ui.add_space(10.0);
+            button_row(ui, |ui| {
+                if ui
+                    .button(jjcad_core::i18n::tr("settings.sicherung_warnung_abbrechen"))
+                    .clicked()
+                {
+                    nein = true;
+                }
+                if ui
+                    .button(jjcad_core::i18n::tr("settings.sicherung_warnung_loeschen"))
+                    .clicked()
+                {
+                    ja = true;
+                }
+            });
+        });
+        if ja {
+            app.sicherung_anwenden(entwurf);
+        } else if nein || !offen {
+            app.ui.sicherung_warnung = None;
+        }
+    }
+
+    // T0188: Rückfrage vor dem Aufräumen der Sicherungen ohne Zeichnung.
+    if let Some(anzahl) = app.ui.sicherung_aufraeumen {
+        dim_background(ctx);
+        let mut offen = true;
+        let mut ja = false;
+        let mut nein = false;
+        modal_window(
+            ctx,
+            jjcad_core::i18n::tr("settings.sicherung_aufraeumen_titel"),
+            460.0,
+            &mut offen,
+        )
+        .show(ctx, |ui| {
+            ui.set_width(440.0);
+            ui.add(
+                egui::Label::new(theme::dim(jjcad_core::i18n::t_args_owned(
+                    "settings.sicherung_aufraeumen_text",
+                    &[("anzahl", anzahl.to_string())],
+                )))
+                .wrap(),
+            );
+            ui.add_space(10.0);
+            button_row(ui, |ui| {
+                if ui
+                    .button(jjcad_core::i18n::tr("settings.sicherung_warnung_abbrechen"))
+                    .clicked()
+                {
+                    nein = true;
+                }
+                if ui
+                    .button(jjcad_core::i18n::tr("settings.sicherung_aufraeumen_ja"))
+                    .clicked()
+                {
+                    ja = true;
+                }
+            });
+        });
+        if ja {
+            app.sicherung_aufraeumen_jetzt();
+        } else if nein || !offen {
+            app.ui.sicherung_aufraeumen = None;
+        }
+    }
+
     // Neuer Block
     if app.ui.block_name_dialog.is_some() {
         dim_background(ctx);
@@ -1646,11 +1748,17 @@ fn settings_body(app: &mut App, ui: &mut Ui) {
     let mut kurven_toleranz = app.prefs.kurven_toleranz_px;
     let mut anzeigeliste_cache = app.prefs.anzeigeliste_cache;
     let mut perf_anzeige = app.prefs.perf_anzeige;
-    // T0129: Sicherung — Verlauf, Plätze, Reichweite, Intervall.
-    let mut s_verlauf = app.prefs.sicherung_verlauf;
-    let mut s_plaetze = app.prefs.sicherung_plaetze as i32;
-    let mut s_stunden = app.prefs.sicherung_stunden;
-    let mut s_intervall = app.prefs.sicherung_intervall as i32;
+    // T0129/T0188: Sicherung — die Seite arbeitet auf einem **Entwurf**. Erst
+    // „Übernehmen“ schreibt ihn in die Einstellungen und dünnt aus; vorher wird
+    // gefragt, wenn dabei Sicherungen verloren gingen.
+    let entwurf = app
+        .ui
+        .sicherung_entwurf
+        .unwrap_or_else(|| app.prefs.sicherung_einstellungen());
+    let mut s_verlauf = entwurf.verlauf;
+    let mut s_plaetze = entwurf.plaetze as i32;
+    let mut s_stunden = entwurf.stunden;
+    let mut s_intervall = entwurf.intervall_min as i32;
 
     // Suche: Kategorien, deren Name oder eine ihrer Einstellungen passt.
     let suche = app.ui.settings_suche.trim().to_lowercase();
@@ -3257,6 +3365,33 @@ fn settings_body(app: &mut App, ui: &mut Ui) {
                                         )));
                                     },
                                 );
+                                // T0188: Reichen die Plätze nicht für alle Zeichnungen,
+                                // wächst der Pool über die eingestellte Zahl hinaus. Das
+                                // muss dastehen — sonst sucht man den Grund im Ordner.
+                                if dateien > einst.plaetze as usize {
+                                    ui.horizontal(|ui| {
+                                        ui.add_space(8.0);
+                                        ui.add(
+                                            egui::Label::new(
+                                                egui::RichText::new(
+                                                    jjcad_core::i18n::t_args_owned(
+                                                        "settings.sicherung_mehr_dateien",
+                                                        &[
+                                                            ("dateien", dateien.to_string()),
+                                                            (
+                                                                "plaetze",
+                                                                einst.plaetze_effektiv(dateien)
+                                                                    .to_string(),
+                                                            ),
+                                                        ],
+                                                    ),
+                                                )
+                                                .color(theme::Palette::danger()),
+                                            )
+                                            .wrap(),
+                                        );
+                                    });
+                                }
                                 zeile_tip(
                                     &suche,
                                     ui,
@@ -3271,6 +3406,74 @@ fn settings_body(app: &mut App, ui: &mut Ui) {
                                             .clicked()
                                         {
                                             app.sicherungsordner_oeffnen();
+                                        }
+                                    },
+                                );
+                                // Entwurf fortschreiben: die Widgets oben haben
+                                // nur die lokalen Werte geändert.
+                                app.ui.sicherung_entwurf =
+                                    Some(jjcad_core::sicherung::Einstellungen {
+                                        verlauf: s_verlauf,
+                                        plaetze: s_plaetze.max(0) as u32,
+                                        stunden: s_stunden,
+                                        intervall_min: s_intervall.max(1) as u32,
+                                    });
+                                ui.add_space(8.0);
+                                ui.horizontal(|ui| {
+                                    let geaendert = app
+                                        .ui
+                                        .sicherung_entwurf
+                                        .map(|e| e != app.prefs.sicherung_einstellungen())
+                                        .unwrap_or(false);
+                                    if ui
+                                        .add_enabled(
+                                            geaendert,
+                                            egui::Button::new(jjcad_core::i18n::tr(
+                                                "settings.sicherung_uebernehmen",
+                                            )),
+                                        )
+                                        .on_hover_text(jjcad_core::i18n::tr(
+                                            "settings.sicherung_uebernehmen_tip",
+                                        ))
+                                        .clicked()
+                                    {
+                                        app.sicherung_uebernehmen();
+                                    }
+                                    if ui
+                                        .add_enabled(
+                                            geaendert,
+                                            egui::Button::new(jjcad_core::i18n::tr(
+                                                "settings.sicherung_verwerfen",
+                                            )),
+                                        )
+                                        .clicked()
+                                    {
+                                        app.ui.sicherung_entwurf = None;
+                                    }
+                                });
+                                // Aufräumen: Stände, deren Zeichnung verschwunden ist.
+                                let waisen = app.sicherung_pool().ohne_zeichnung().len();
+                                zeile(
+                                    &suche,
+                                    ui,
+                                    jjcad_core::i18n::tr("settings.sicherung_aufraeumen"),
+                                    |ui| {
+                                        if ui
+                                            .add_enabled(
+                                                waisen > 0,
+                                                egui::Button::new(
+                                                    jjcad_core::i18n::t_args_owned(
+                                                        "settings.sicherung_aufraeumen_knopf",
+                                                        &[("anzahl", waisen.to_string())],
+                                                    ),
+                                                ),
+                                            )
+                                            .on_hover_text(jjcad_core::i18n::tr(
+                                                "settings.sicherung_aufraeumen_tip",
+                                            ))
+                                            .clicked()
+                                        {
+                                            app.ui.sicherung_aufraeumen = Some(waisen);
                                         }
                                     },
                                 );
@@ -3421,21 +3624,9 @@ fn settings_body(app: &mut App, ui: &mut Ui) {
         jjcad_core::sicherung::INTERVALL_MIN as i32,
         jjcad_core::sicherung::INTERVALL_MAX as i32,
     ) as u32;
-    if app.prefs.sicherung_verlauf != s_verlauf
-        || app.prefs.sicherung_plaetze != s_plaetze
-        || app.prefs.sicherung_stunden != s_stunden
-        || app.prefs.sicherung_intervall != s_intervall
-    {
-        app.prefs.sicherung_verlauf = s_verlauf;
-        app.prefs.sicherung_plaetze = s_plaetze;
-        app.prefs.sicherung_stunden = s_stunden;
-        app.prefs.sicherung_intervall = s_intervall;
-        let _ = app.prefs.save();
-        // Die Ausdünnung greift sofort mit den neuen Werten.
-        let einst = app.prefs.sicherung_einstellungen();
-        app.sicherung_pool().ausduennen(&einst);
-        app.ui.sicherung_info = None;
-    }
+    // T0188: Die Sicherungseinstellungen werden **nicht** hier übernommen —
+    // das macht `App::sicherung_uebernehmen` erst auf Knopfdruck, nach einer
+    // Warnung, wenn dabei Stände verloren gingen.
     let dialog_neu = if dateidialog_system { "system" } else { "intern" };
     if app.prefs.file_dialog != dialog_neu {
         app.prefs.file_dialog = dialog_neu.to_string();
