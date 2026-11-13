@@ -204,36 +204,67 @@ fn blocks_tab(app: &mut App, ui: &mut Ui) {
                 .size(12.0)
                 .color(Palette::text_dim()),
         );
-        ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-            if ui.button(jjcad_core::i18n::tr("gui.inventory.block_aus_auswahl")).clicked() {
-                app.run_action(ui.ctx(), "block.create");
-            }
-        });
     });
-    ui.add_space(4.0);
+    ui.add_space(6.0);
 
+    // T0188: Die drei Quellen der Bibliothek sind eigene Reiter — System-,
+    // Benutzer- und Projektblöcke stehen getrennt. Die Reihenfolge entspricht
+    // dem Index in `UiState::block_quelle`.
+    ui.horizontal(|ui| {
+        ui.spacing_mut().item_spacing.x = 4.0;
+        let mut reiter: Vec<(usize, Rect)> = Vec::new();
+        for (i, name) in [
+            jjcad_core::i18n::tr("gui.inventory.systembloecke"),
+            jjcad_core::i18n::tr("gui.inventory.benutzerbloecke"),
+            jjcad_core::i18n::tr("gui.inventory.projektbloecke"),
+        ]
+        .iter()
+        .enumerate()
+        {
+            let resp = quelle_reiter(ui, app.ui.block_quelle == i, name);
+            if resp.clicked() {
+                app.ui.block_quelle = i;
+            }
+            reiter.push((i, resp.rect));
+        }
+        app.ui.last_block_reiter = reiter;
+    });
+    ui.add_space(6.0);
+
+    let quelle = *BLOCK_QUELLEN
+        .get(app.ui.block_quelle)
+        .unwrap_or(&BLOCK_QUELLEN[0]);
     egui::ScrollArea::vertical().auto_shrink([false, false]).show(ui, |ui| {
-        let blocks = app.doc().blocks.clone();
-        let cats: Vec<String> = {
-            let mut v: Vec<String> = blocks.iter().map(|b| b.category.clone()).collect();
-            v.sort();
-            v.dedup();
-            v
-        };
+        let blocks = sichtbare_bloecke(&app.doc().blocks, quelle);
+        if blocks.is_empty() {
+            ui.add_space(10.0);
+            ui.label(theme::dim(jjcad_core::i18n::tr(
+                "gui.inventory.keine_bloecke_in_dieser_kategorie",
+            )));
+            return;
+        }
+        let mut cats: Vec<String> = blocks.iter().map(|b| b.category.clone()).collect();
+        cats.sort();
+        cats.dedup();
         for cat in cats {
-            ui.add_space(8.0);
-            ui.horizontal(|ui| {
-                ui.label(
-                    RichText::new(cat.to_uppercase())
-                        .size(9.5)
-                        .color(Palette::text_faint())
-                        .strong(),
-                );
+            if !cat.is_empty() {
+                ui.add_space(8.0);
+                ui.horizontal(|ui| {
+                    ui.label(
+                        RichText::new(cat.to_uppercase())
+                            .size(9.5)
+                            .color(Palette::text_faint())
+                            .strong(),
+                    );
+                    ui.add_space(4.0);
+                    let (rect, _) = ui.allocate_exact_size(
+                        Vec2::new(ui.available_width(), 1.0),
+                        Sense::hover(),
+                    );
+                    ui.painter().rect_filled(rect, 0.0, Palette::border_soft());
+                });
                 ui.add_space(4.0);
-                let (rect, _) = ui.allocate_exact_size(Vec2::new(ui.available_width(), 1.0), Sense::hover());
-                ui.painter().rect_filled(rect, 0.0, Palette::border_soft());
-            });
-            ui.add_space(4.0);
+            }
             ui.horizontal_wrapped(|ui| {
                 for b in blocks.iter().filter(|b| b.category == cat) {
                     block_tile(app, ui, b);
@@ -241,6 +272,62 @@ fn blocks_tab(app: &mut App, ui: &mut Ui) {
             });
         }
     });
+}
+
+/// Die Quellen der Blockbibliothek in der Reihenfolge der Reiter (T0188).
+const BLOCK_QUELLEN: [jjcad_core::model::BlockSource; 3] = [
+    jjcad_core::model::BlockSource::System,
+    jjcad_core::model::BlockSource::User,
+    jjcad_core::model::BlockSource::Project,
+];
+
+/// Blöcke **einer** Quelle — die eine Auswahl für den Reiter (T0188).
+fn sichtbare_bloecke(
+    blocks: &[BlockDef],
+    quelle: jjcad_core::model::BlockSource,
+) -> Vec<BlockDef> {
+    blocks
+        .iter()
+        .filter(|b| b.source == quelle)
+        .cloned()
+        .collect()
+}
+
+/// Unterkategorie-Reiter der Blockbibliothek — kleiner als die Reiter des
+/// Inventars, damit die zwei Ebenen unterscheidbar bleiben (T0188).
+fn quelle_reiter(ui: &mut Ui, aktiv: bool, text: &str) -> egui::Response {
+    let galley = ui.painter().layout_no_wrap(
+        text.to_string(),
+        FontId::proportional(11.5),
+        if aktiv { Palette::text() } else { Palette::text_dim() },
+    );
+    let (rect, resp) = ui.allocate_exact_size(
+        Vec2::new(galley.size().x + 20.0, 24.0),
+        Sense::click(),
+    );
+    let p = ui.painter();
+    if aktiv {
+        p.rect_filled(rect, Rounding::same(6.0), Palette::panel_alt());
+        p.rect_filled(
+            Rect::from_min_max(
+                Pos2::new(rect.left() + 6.0, rect.bottom() - 2.0),
+                Pos2::new(rect.right() - 6.0, rect.bottom()),
+            ),
+            Rounding::same(1.0),
+            Palette::accent(),
+        );
+    } else if resp.hovered() {
+        p.rect_filled(rect, Rounding::same(6.0), Palette::panel_alt().gamma_multiply(0.5));
+    }
+    p.galley(
+        Pos2::new(
+            rect.center().x - galley.size().x / 2.0,
+            rect.center().y - galley.size().y / 2.0,
+        ),
+        galley,
+        if aktiv { Palette::text() } else { Palette::text_dim() },
+    );
+    resp
 }
 
 fn block_tile(app: &mut App, ui: &mut Ui, b: &BlockDef) {
@@ -644,6 +731,129 @@ fn functions_tab(app: &mut App, ui: &mut Ui) {
         ui.add_space(12.0);
         ui.label(theme::dim(jjcad_core::i18n::t_args_owned("gui.inventory.x_bloecke_x_funktionen_x_objekte", &[("wert1", format!("{}", app.doc().blocks.len())), ("wert2", format!("{}", actions::ACTIONS.len())), ("wert3", format!("{}", app.doc().entities.len()))])));
     });
+}
+
+#[cfg(test)]
+mod tests_bloecke {
+    //! T0188: Die Blockbibliothek teilt sich in drei Reiter — System-,
+    //! Benutzer- und Projektblöcke. Geprüft wird die Auswahl je Quelle und der
+    //! Reiterwechsel über einen echten Klick auf den gezeichneten Reiter.
+
+    use super::*;
+    use crate::dialogs::tests_tastatur::{WegwerfKonfig, KONFIG};
+    use jjcad_core::model::BlockSource;
+    use jjcad_core::geom::Vec2 as V2;
+
+    thread_local! {
+        static ZEIT: std::cell::Cell<f64> = const { std::cell::Cell::new(0.0) };
+    }
+
+    fn naechste_zeit() -> f64 {
+        ZEIT.with(|z| {
+            let t = z.get() + 0.25;
+            z.set(t);
+            t
+        })
+    }
+
+    fn rahmen(ctx: &egui::Context, app: &mut App, events: Vec<egui::Event>) {
+        let input = egui::RawInput {
+            screen_rect: Some(Rect::from_min_size(Pos2::ZERO, Vec2::new(1500.0, 950.0))),
+            time: Some(naechste_zeit()),
+            events,
+            ..Default::default()
+        };
+        let _ = ctx.run(input, |ctx| app.ui(ctx));
+    }
+
+    fn klick(ctx: &egui::Context, app: &mut App, pos: Pos2) {
+        let knopf = |pressed: bool| egui::Event::PointerButton {
+            pos,
+            button: egui::PointerButton::Primary,
+            pressed,
+            modifiers: egui::Modifiers::NONE,
+        };
+        rahmen(ctx, app, vec![egui::Event::PointerMoved(pos)]);
+        rahmen(ctx, app, vec![knopf(true)]);
+        rahmen(ctx, app, vec![knopf(false)]);
+        rahmen(ctx, app, vec![]);
+    }
+
+    fn pruefblock(id: &str, quelle: BlockSource) -> BlockDef {
+        BlockDef {
+            id: id.to_string(),
+            name: id.to_string(),
+            category: String::new(),
+            source: quelle,
+            description: String::new(),
+            entities: Vec::new(),
+            icon: None,
+            base: V2::ZERO,
+        }
+    }
+
+    /// Jeder Block erscheint in genau dem Reiter seiner Quelle.
+    #[test]
+    fn die_drei_reiter_teilen_die_bibliothek() {
+        let bloecke = vec![
+            pruefblock("sys:a", BlockSource::System),
+            pruefblock("usr:a", BlockSource::User),
+            pruefblock("prj:a", BlockSource::Project),
+            pruefblock("usr:b", BlockSource::User),
+        ];
+        let ids = |q: BlockSource| -> Vec<String> {
+            sichtbare_bloecke(&bloecke, q).into_iter().map(|b| b.id).collect()
+        };
+        assert_eq!(ids(BlockSource::System), vec!["sys:a".to_string()]);
+        assert_eq!(
+            ids(BlockSource::User),
+            vec!["usr:a".to_string(), "usr:b".to_string()]
+        );
+        assert_eq!(ids(BlockSource::Project), vec!["prj:a".to_string()]);
+        assert_eq!(
+            BLOCK_QUELLEN.len(),
+            3,
+            "die Bibliothek hat genau drei Unterkategorien"
+        );
+    }
+
+    /// Der Klick auf den dritten Reiter zeigt die Projektblöcke.
+    #[test]
+    fn klick_auf_reiter_wechselt_die_quelle() {
+        let _sperre = KONFIG.lock().unwrap_or_else(|e| e.into_inner());
+        let _konfig = WegwerfKonfig::neu("t0188-blockreiter");
+        let ctx = egui::Context::default();
+        let mut app = App::with_ctx(ctx.clone());
+        app.doc_mut().blocks.push(pruefblock("usr:pruef", BlockSource::User));
+        app.doc_mut()
+            .blocks
+            .push(pruefblock("prj:pruef", BlockSource::Project));
+        app.ui.inventory_open = true;
+        app.ui.inventory_tab = 1;
+        app.ui.block_quelle = 0;
+        // Zwei Bilder: ein frisches Fenster kennt seine Größe erst danach.
+        rahmen(&ctx, &mut app, vec![]);
+        rahmen(&ctx, &mut app, vec![]);
+
+        assert_eq!(
+            app.ui.last_block_reiter.len(),
+            3,
+            "es werden nicht drei Reiter gezeichnet"
+        );
+        let ziel = app
+            .ui
+            .last_block_reiter
+            .iter()
+            .find(|(i, _)| *i == 2)
+            .map(|(_, r)| r.center())
+            .expect("Reiter „Projektblöcke“ fehlt");
+        klick(&ctx, &mut app, ziel);
+
+        assert_eq!(
+            app.ui.block_quelle, 2,
+            "der Klick auf den Reiter hat die Quelle nicht gewechselt"
+        );
+    }
 }
 
 #[cfg(test)]

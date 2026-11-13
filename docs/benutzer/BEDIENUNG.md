@@ -447,11 +447,15 @@ einen Plattenausfall. Dafür den Sicherungsordner (Einstellungen → Speicherort
 
 ### Eigene Blöcke
 
-„Block aus Auswahl" im Blockmanager legt den Block **dauerhaft** an: eine Datei
+Die Blockbibliothek im Inventar (Reiter „Blöcke“) ist in drei Reiter geteilt:
+**Systemblöcke** (mitgeliefert, schreibgeschützt), **Benutzerblöcke** (eigene,
+profilweit) und **Projektblöcke** (in dieser Zeichnung angelegt).
+
+„Block aus Auswahl“ im Band Blöcke legt den Block **dauerhaft** an: eine Datei
 `blocks/<name>.jjblk` im Datenordner. Nach dem nächsten Start steht er wieder im
-Blockmanager, Untertitel **Benutzer**; Löschen im Blockmanager entfernt auch die
-Datei. Das Verzeichnis ist die Wahrheit — es gibt keinen Index. Eine unlesbare
-Datei wird gemeldet und übersprungen, sie hält den Start nicht auf.
+Reiter Benutzerblöcke; Löschen im Blockmanager entfernt auch die Datei. Das
+Verzeichnis ist die Wahrheit — es gibt keinen Index. Eine unlesbare Datei wird
+gemeldet und übersprungen, sie hält den Start nicht auf.
 
 ## Nachweis für den Papier-Modus
 
