@@ -175,8 +175,8 @@ gleich — umbenannt wird die Datei plus das Feld `name`.
 ```
 
 Eine unlesbare Datei wird beim Start gemeldet und übersprungen; sie reißt die
-übrige Bibliothek nicht mit. Geschrieben wird sie von „Block aus Auswahl“,
-gelöscht beim Löschen im Blockmanager.
+übrige Bibliothek nicht mit. Geschrieben wird sie von „Block aus Auswahl“ (Band
+Blöcke), gelöscht beim Löschen im Blockmanager.
 
 ## `sheets`
 

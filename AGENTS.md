@@ -234,6 +234,16 @@ Mit dem Nutzer abgestimmt — nicht „verbessern“:
   `render::visible_bbox` liest `doc.ents()` — sonst passt die Ansicht im Blockeditor
   die Zeichnung statt den Block ein.
   - **Mauszeiger** ist ein durchgehendes Fadenkreuz bis zum Bildschirmrand.
+- **Blockbibliothek in drei Reitern (T0188)**: Der Reiter „Blöcke“ im Inventar hat
+  drei Unterreiter — **Systemblöcke**, **Benutzerblöcke**, **Projektblöcke**, je
+  `BlockSource` und in der Reihenfolge von `inventory::BLOCK_QUELLEN`. Die Chips sind
+  kleiner als die Reiter des Inventars, damit die zwei Ebenen unterscheidbar bleiben;
+  die gewählte Quelle steht in `UiState::block_quelle`. Innerhalb eines Reiters
+  gruppieren weiter die Kategorien des Blocks (`BlockDef::category`) mit Überschrift,
+  ein leerer Reiter zeigt „Keine Blöcke in dieser Kategorie“. Den Knopf
+  „Block aus Auswahl“ gibt es nur noch im Band Blöcke (Aktion `block.create`), nicht
+  mehr im Inventar. Prüfweg `cargo test -p jjcad-gui tests_bloecke`; Prüfbilder
+  `--demo "blockeditor,blockreiter:benutzer"` bzw. `…:projekt`.
 - **Einfügen** (Block/Zwischenablage): Vorschau oben rechts am Zeiger, `R` dreht,
   `S` spiegelt, Klick bestätigt. Beim Einfügen aus der Zwischenablage entscheidet
   Einstellungen → Bedienung → „Drehpunkt" (`prefs.paste_pivot`), welcher Punkt am

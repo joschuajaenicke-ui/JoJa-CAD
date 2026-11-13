@@ -1178,6 +1178,12 @@ pub struct UiState {
     /// geprüft wird, dass die mittlere Maustaste genau den getroffenen Platz
     /// leert (T0088, wie bei den Hotbar-Slots).
     pub last_lager: Option<Vec<(usize, Rect)>>,
+    /// T0188: gewählte Unterkategorie der Blockbibliothek — 0 = System,
+    /// 1 = Benutzer, 2 = Projekt (Reihenfolge wie im Reiterstreifen).
+    pub block_quelle: usize,
+    /// Flächen der drei Unterkategorie-Reiter im zuletzt gezeichneten Bild
+    /// (Index wie `block_quelle`) — der Prüfweg für den Reiterwechsel.
+    pub last_block_reiter: Vec<(usize, Rect)>,
     /// Breite des zuletzt gezeichneten Ribbon-Inhalts
     pub last_ribbon_content_w: f32,
     /// Rechtecke der selbst gezeichneten Fensterknöpfe (T0098) in der
@@ -1233,6 +1239,8 @@ impl Default for UiState {
             ribbon: RibbonTab::Start_default(),
             inventory_open: false,
             inventory_tab: 0,
+            block_quelle: 0,
+            last_block_reiter: Vec::new(),
             layers_open: true,
             props_open: true,
             layers_collapsed: false,
@@ -2101,6 +2109,18 @@ impl App {
                 "blocks-tab" => {
                     self.ui.inventory_open = true;
                     self.ui.inventory_tab = 1;
+                }
+                // T0188: Prüfbild der drei Unterkategorien der Blockbibliothek —
+                // `blockreiter:benutzer` bzw. `blockreiter:projekt` öffnet den
+                // Reiter „Blöcke“ gleich auf der genannten Quelle.
+                s if s.starts_with("blockreiter:") => {
+                    self.ui.inventory_open = true;
+                    self.ui.inventory_tab = 1;
+                    self.ui.block_quelle = match s["blockreiter:".len()..].trim() {
+                        "benutzer" => 1,
+                        "projekt" => 2,
+                        _ => 0,
+                    };
                 }
                 "functions" => {
                     self.ui.inventory_open = true;
