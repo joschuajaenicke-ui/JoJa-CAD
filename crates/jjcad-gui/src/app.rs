@@ -14291,7 +14291,12 @@ mod tests_fensterrahmen {
         app.prefs.fensterrahmen = jjcad_core::persist::Fensterrahmen::OhneTitelleiste;
         // T0147: der eigene Schatten hängt am Fenstersystem — im Test
         // ausdrücklich an, sonst hinge das Ergebnis an der Umgebung.
+        // `raw_input_hook` fragt **beides** ab (`schatten_im_rand` und
+        // `prefs.fensterschatten`) — ohne den zweiten Wert hing der Test an der
+        // `prefs.json` des Rechners: mit abgeschaltetem Schatten fielen alle
+        // Kantenzonen-Tests.
         app.schatten_im_rand = true;
+        app.prefs.fensterschatten = true;
         app
     }
 
@@ -14957,7 +14962,11 @@ mod tests_fensterschatten {
         let mut app = App::with_ctx(ctx.clone());
         app.prefs.fensterrahmen = rahmen;
         // Der eigene Schatten hängt am Fenstersystem — im Test ausdrücklich an.
+        // `raw_input_hook` prüft **beides**; `prefs.fensterschatten` kommt sonst
+        // aus der `prefs.json` des Rechners und die Tests hingen an seiner
+        // Einstellung (abgeschalteter Schatten → 12 rote Fenstertests).
         app.schatten_im_rand = true;
+        app.prefs.fensterschatten = true;
         (ctx, app)
     }
 
