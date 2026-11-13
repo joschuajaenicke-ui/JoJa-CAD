@@ -1818,6 +1818,13 @@ impl App {
         app.ui.copy_input = CopyInput::from_key(&app.prefs.copy_input);
         app.ui.layers_open = layers_open;
         app.ui.props_open = props_open;
+        // T0187: Der Testlauf liest **nicht** die Zwischenablage des Rechners.
+        // Liegt dort ein Bild (Screenshot des Nutzers), macht `bild_einfuegen`
+        // aus Strg+V ein Bildwerkzeug statt der Zwischenablage-Vorschau — zwei
+        // Tests fielen dann je nach Inhalt der echten Zwischenablage.
+        if cfg!(test) {
+            app.ui.bildablage = crate::bildablage::BildAblage::ohne_system();
+        }
         app.fit_view();
         app.started_at = 0.0;
         // T0127: Blöcke aus der Benutzerbibliothek der Datenwurzel.

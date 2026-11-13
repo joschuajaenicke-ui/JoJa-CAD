@@ -48,6 +48,19 @@ impl BildAblage {
         Self::default()
     }
 
+    /// Eine Ablage **ohne** System-Zwischenablage — für den Testlauf.
+    ///
+    /// `cargo test` erbt die Anzeige des Rechners; liegt dort ein Bild, wurde
+    /// aus Strg+V ein Bildwerkzeug statt der Zwischenablage-Vorschau, und
+    /// Tests fielen je nach Inhalt der echten Zwischenablage (T0187). Alle
+    /// Wege sind hier stille No-Ops, wie ohne Anzeige.
+    pub fn ohne_system() -> Self {
+        Self {
+            ohne_anzeige: true,
+            ..Default::default()
+        }
+    }
+
     /// Öffnet die Verbindung beim ersten Bedarf. `None` ohne Anzeige.
     fn verbindung(&mut self) -> Option<&mut arboard::Clipboard> {
         if self.clip.is_none() && !self.ohne_anzeige {
