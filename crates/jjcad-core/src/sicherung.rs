@@ -71,6 +71,11 @@ pub struct Stand {
     /// ableiten — so heißen Stände aus älteren Pools noch.
     #[serde(default)]
     pub datei_name: String,
+    /// Zieldatei zum Zeitpunkt der Sicherung (leer = unbekannt, z. B. bei
+    /// Altbestand oder einer nie gespeicherten Zeichnung). Damit findet das
+    /// Aufräumen Stände, deren Zeichnung es nicht mehr gibt.
+    #[serde(default)]
+    pub pfad: String,
 }
 
 impl Stand {
@@ -389,6 +394,7 @@ impl Sicherung {
             zeit: zeitstempel(),
             gesichert,
             datei_name: String::new(),
+            pfad: doc.path.clone().unwrap_or_default(),
         };
         // Zwei Stände in derselben Sekunde (zwei Reiter mit gleichem Dateinamen)
         // dürfen sich nicht gegenseitig überschreiben.
@@ -438,88 +444,68 @@ impl Sicherung {
         self.manifest.zyklus = zyklus;
     }
 
-    /// Dünnt den Pool nach den Regeln aus `docs/benutzer/SICHERUNG.md` §10 aus.
-    pub fn ausduennen(&mut self, einst: &Einstellungen) {
-        let t = einst.zyklen();
-        let n = self.manifest.zyklus;
-        let pins = self.pin_zyklen();
-
-        // 1. Fenster: nichts außer Pins älter als T.
+    /// Dünnt den Pool nach den Regeln aus `docs/SICHERUNG.md` §10 aus.
+    ///
+    /// Liefert die Zahl der gelöschten Stände.
+    pub fn ausduennen(&mut self, einst: &Einstellungen) -> usize {
+        let weg = zu_loeschen(&self.manifest.staende, self.manifest.zyklus, einst);
+        if weg.is_empty() {
+            return 0;
+        }
         let mut entfernt: Vec<Stand> = Vec::new();
-        let mut behalten: Vec<Stand> = Vec::with_capacity(self.manifest.staende.len());
-        for s in self.manifest.staende.drain(..) {
-            let alter = n.saturating_sub(s.zyklus);
-            if pins.contains(&s.zyklus) || alter <= t {
-                behalten.push(s);
+        self.manifest.staende.retain(|s| {
+            if weg.contains(&s.zyklus) {
+                entfernt.push(s.clone());
+                false
             } else {
-                entfernt.push(s);
+                true
             }
+        });
+        for s in &entfernt {
+            let _ = std::fs::remove_file(self.stand_pfad(s));
         }
-        self.manifest.staende = behalten;
+        let _ = self.manifest_schreiben();
+        entfernt.len()
+    }
 
-        // 2. Verlauf aus: nichts löschen. Die Einstellung verhindert nur neue
-        //    Stände (§10.5) — vorhandene bleiben, bis Fenster und Obergrenze
-        //    sie ausdünnen. Ein Haken darf keine Sicherungen vernichten.
+    /// Wie viele Stände würde [`Sicherung::ausduennen`] mit **diesen**
+    /// Einstellungen löschen? Reine Rechnung — es wird nichts angefasst.
+    ///
+    /// Grundlage der Warnung vor dem Übernehmen neuer Einstellungen.
+    pub fn wuerde_verlieren(&self, einst: &Einstellungen) -> usize {
+        zu_loeschen(&self.manifest.staende, self.manifest.zyklus, einst).len()
+    }
 
-        // 3. Obergrenze: ausdünnen, solange der Pool voll ist.
-        let plaetze = einst.plaetze_effektiv(self.dateien());
-        while self.manifest.staende.len() > plaetze {
-            let Some(pos) = self.kuerzester_kandidat(&pins, t) else {
-                break;
-            };
-            entfernt.push(self.manifest.staende.remove(pos));
-        }
+    /// Stände, deren Zeichnung es nicht mehr gibt: Der Pfad ist vermerkt, die
+    /// Datei fehlt. Altbestand ohne Pfad zählt nicht — dort ist unbekannt, ob
+    /// die Zeichnung noch existiert.
+    pub fn ohne_zeichnung(&self) -> Vec<&Stand> {
+        self.manifest
+            .staende
+            .iter()
+            .filter(|s| !s.pfad.is_empty() && !std::path::Path::new(&s.pfad).is_file())
+            .collect()
+    }
 
+    /// Löscht die Stände mit diesen Zyklusnummern (Datei und Eintrag).
+    /// Liefert die Zahl der gelöschten Stände.
+    pub fn entferne_zyklen(&mut self, zyklen: &[u64]) -> usize {
+        let mut entfernt: Vec<Stand> = Vec::new();
+        self.manifest.staende.retain(|s| {
+            if zyklen.contains(&s.zyklus) {
+                entfernt.push(s.clone());
+                false
+            } else {
+                true
+            }
+        });
         for s in &entfernt {
             let _ = std::fs::remove_file(self.stand_pfad(s));
         }
         if !entfernt.is_empty() {
             let _ = self.manifest_schreiben();
         }
-    }
-
-    /// Zyklusnummern der Pins: je Dokument der neueste Stand.
-    fn pin_zyklen(&self) -> Vec<u64> {
-        let mut neueste: std::collections::BTreeMap<&str, u64> = std::collections::BTreeMap::new();
-        for s in &self.manifest.staende {
-            let e = neueste.entry(s.datei.as_str()).or_insert(s.zyklus);
-            if s.zyklus > *e {
-                *e = s.zyklus;
-            }
-        }
-        neueste.into_values().collect()
-    }
-
-    /// Kandidat mit den kleinsten Kosten (Regel 10.4). `None`, wenn kein Stand
-    /// ausgedünnt werden darf (nur Pins und Dichtezone übrig).
-    fn kuerzester_kandidat(&self, pins: &[u64], t: u64) -> Option<usize> {
-        let n = self.manifest.zyklus;
-        // Nach Alter aufsteigend: Index 0 = neuester Stand.
-        let mut liste: Vec<(usize, u64)> = self
-            .manifest
-            .staende
-            .iter()
-            .enumerate()
-            .map(|(i, s)| (i, n.saturating_sub(s.zyklus)))
-            .collect();
-        liste.sort_by_key(|(_, alter)| *alter);
-        let alter: Vec<u64> = liste.iter().map(|(_, a)| *a).collect();
-        let mut bestes: Option<(usize, f64)> = None;
-        for (pos, (idx, a)) in liste.iter().enumerate() {
-            if *a < DICHTEZONE || pins.contains(&self.manifest.staende[*idx].zyklus) {
-                continue;
-            }
-            let vorher = if pos == 0 { 0 } else { alter[pos - 1] };
-            let nachher = if pos + 1 >= alter.len() { t } else { alter[pos + 1] };
-            if nachher == 0 {
-                continue;
-            }
-            let kosten = (nachher as f64 - vorher as f64) / nachher as f64;
-            if bestes.map(|(_, k)| kosten < k).unwrap_or(true) {
-                bestes = Some((*idx, kosten));
-            }
-        }
-        bestes.map(|(i, _)| i)
+        entfernt.len()
     }
 
     /// Entfernt Standdateien ohne Eintrag, Einträge ohne Datei und Reste
@@ -562,6 +548,94 @@ impl Sicherung {
             .map_err(|e| format!("Manifest nicht schreibbar: {e}"))?;
         atomar_schreiben(&self.dir.join(MANIFEST_DATEI), text.as_bytes())
     }
+}
+
+/// Zyklusnummern der Pins: je Dokument der neueste Stand.
+fn pin_zyklen(staende: &[Stand]) -> Vec<u64> {
+    let mut neueste: std::collections::BTreeMap<&str, u64> = std::collections::BTreeMap::new();
+    for s in staende {
+        let e = neueste.entry(s.datei.as_str()).or_insert(s.zyklus);
+        if s.zyklus > *e {
+            *e = s.zyklus;
+        }
+    }
+    neueste.into_values().collect()
+}
+
+/// Zahl der verschiedenen Dokumente.
+fn anzahl_dateien(staende: &[Stand]) -> usize {
+    let mut ids: Vec<&str> = staende.iter().map(|s| s.datei.as_str()).collect();
+    ids.sort_unstable();
+    ids.dedup();
+    ids.len()
+}
+
+/// Kandidat mit den kleinsten Kosten (Regel 10.4). `None`, wenn kein Stand
+/// ausgedünnt werden darf (nur Pins und Dichtezone übrig).
+fn kuerzester_kandidat(staende: &[Stand], pins: &[u64], t: u64, n: u64) -> Option<usize> {
+    // Nach Alter aufsteigend: Index 0 = neuester Stand.
+    let mut liste: Vec<(usize, u64)> = staende
+        .iter()
+        .enumerate()
+        .map(|(i, s)| (i, n.saturating_sub(s.zyklus)))
+        .collect();
+    liste.sort_by_key(|(_, alter)| *alter);
+    let alter: Vec<u64> = liste.iter().map(|(_, a)| *a).collect();
+    let mut bestes: Option<(usize, f64)> = None;
+    for (pos, (idx, a)) in liste.iter().enumerate() {
+        if *a < DICHTEZONE || pins.contains(&staende[*idx].zyklus) {
+            continue;
+        }
+        let vorher = if pos == 0 { 0 } else { alter[pos - 1] };
+        let nachher = if pos + 1 >= alter.len() { t } else { alter[pos + 1] };
+        if nachher == 0 {
+            continue;
+        }
+        let kosten = (nachher as f64 - vorher as f64) / nachher as f64;
+        if bestes.map(|(_, k)| kosten < k).unwrap_or(true) {
+            bestes = Some((*idx, kosten));
+        }
+    }
+    bestes.map(|(i, _)| i)
+}
+
+/// Welche Stände würde die Ausdünnung mit diesen Einstellungen löschen?
+///
+/// Reine Rechnung auf einer Kopie — dieselbe Funktion entscheidet beim
+/// Ausdünnen **und** bei der Warnung vor neuen Einstellungen, damit die
+/// angezeigte Zahl nicht von der tatsächlichen abweichen kann.
+fn zu_loeschen(staende: &[Stand], zyklus: u64, einst: &Einstellungen) -> Vec<u64> {
+    let t = einst.zyklen();
+    let mut rest: Vec<Stand> = staende.to_vec();
+    let mut weg: Vec<u64> = Vec::new();
+
+    // 1. Fenster: nichts außer Pins älter als T.
+    let pins = pin_zyklen(&rest);
+    let mut behalten = Vec::with_capacity(rest.len());
+    for s in rest {
+        let alter = zyklus.saturating_sub(s.zyklus);
+        if pins.contains(&s.zyklus) || alter <= t {
+            behalten.push(s);
+        } else {
+            weg.push(s.zyklus);
+        }
+    }
+    rest = behalten;
+
+    // 2. Verlauf aus: nichts löschen. Die Einstellung verhindert nur neue
+    //    Stände (§10.5) — vorhandene bleiben, bis Fenster und Obergrenze sie
+    //    ausdünnen. Ein Haken darf keine Sicherungen vernichten.
+
+    // 3. Obergrenze: ausdünnen, solange der Pool voll ist.
+    let plaetze = einst.plaetze_effektiv(anzahl_dateien(&rest));
+    while rest.len() > plaetze {
+        let pins = pin_zyklen(&rest);
+        let Some(i) = kuerzester_kandidat(&rest, &pins, t, zyklus) else {
+            break;
+        };
+        weg.push(rest.remove(i).zyklus);
+    }
+    weg
 }
 
 /// Schreibt eine Datei atomar: temp → fsync → rename, danach das Verzeichnis
@@ -817,7 +891,7 @@ mod tests {
             pool.sichern(&mut doc, &einst).unwrap();
         }
         let n = pool.manifest().zyklus;
-        let pins = pool.pin_zyklen();
+        let pins = pin_zyklen(pool.manifest().staende.as_slice());
         for s in pool.manifest().staende.iter() {
             if pins.contains(&s.zyklus) {
                 continue;
@@ -1066,6 +1140,73 @@ mod tests {
         assert!(pool.neuester(&doc.id).unwrap().gesichert);
     }
 
+    /// T0188: Die Vorausrechnung nennt genau so viele Stände, wie die
+    /// Ausdünnung danach wirklich löscht.
+    #[test]
+    fn wuerde_verlieren_zaehlt_wie_ausduennen() {
+        for plaetze in [30u32, 60, 100] {
+            let dir = test_dir(&format!("voraus-{plaetze}"));
+            let mut pool = Sicherung::oeffnen(&dir);
+            let einst = Einstellungen {
+                plaetze: 200,
+                ..Einstellungen::default()
+            };
+            let mut doc = doc_mit("Plan", "aaaaaaaa-0000-4000-8000-0000000000e1");
+            for i in 0..120 {
+                doc.name = format!("Plan {i}");
+                pool.sichern(&mut doc, &einst).unwrap();
+            }
+            let streng = Einstellungen {
+                plaetze,
+                ..einst
+            };
+            let vorher = pool.manifest().staende.len();
+            let angesagt = pool.wuerde_verlieren(&streng);
+            assert_eq!(vorher, 120, "Vorbereitung: alle Stände angelegt");
+            assert!(angesagt > 0, "bei {plaetze} Plätzen muss etwas wegfallen");
+            let geloescht = pool.ausduennen(&streng);
+            assert_eq!(
+                angesagt, geloescht,
+                "angesagte und gelöschte Zahl weichen ab ({plaetze} Plätze)"
+            );
+            assert_eq!(pool.manifest().staende.len(), vorher - geloescht);
+        }
+    }
+
+    /// T0188: Ein Stand merkt sich die Zieldatei; fehlt sie, findet das
+    /// Aufräumen ihn — Stände ohne Pfad bleiben unangetastet.
+    #[test]
+    fn pfad_und_ohne_zeichnung() {
+        let dir = test_dir("pfad");
+        let mut pool = Sicherung::oeffnen(&dir);
+        let einst = Einstellungen::default();
+        let vorhanden = dir.join("da.jjcad");
+        std::fs::write(&vorhanden, "{}").unwrap();
+
+        let mut mit = doc_mit("Da", "aaaaaaaa-0000-4000-8000-0000000000f1");
+        mit.path = Some(vorhanden.to_string_lossy().to_string());
+        pool.sichern(&mut mit, &einst).unwrap();
+
+        let mut ohne = doc_mit("Weg", "aaaaaaaa-0000-4000-8000-0000000000f2");
+        ohne.path = Some(dir.join("weg.jjcad").to_string_lossy().to_string());
+        pool.sichern(&mut ohne, &einst).unwrap();
+
+        let mut unbekannt = doc_mit("Unbenannt", "aaaaaaaa-0000-4000-8000-0000000000f3");
+        unbekannt.path = None;
+        pool.sichern(&mut unbekannt, &einst).unwrap();
+
+        let waisen: Vec<String> = pool
+            .ohne_zeichnung()
+            .iter()
+            .map(|s| s.name.clone())
+            .collect();
+        assert_eq!(waisen, vec!["Weg".to_string()], "falsche Waisen: {waisen:?}");
+
+        let zyklen: Vec<u64> = pool.ohne_zeichnung().iter().map(|s| s.zyklus).collect();
+        assert_eq!(pool.entferne_zyklen(&zyklen), 1);
+        assert_eq!(pool.manifest().staende.len(), 2, "zu viel gelöscht");
+    }
+
     /// Der Name eines Standes: Zieldatei + `autosave` + Rückwärtsdatum.
     #[test]
     fn standname_aus_datei_autosave_und_rueckwaertsdatum() {
@@ -1078,6 +1219,7 @@ mod tests {
             zeit: "2026-11-08T15:30:12".into(),
             gesichert: false,
             datei_name: String::new(),
+            pfad: String::new(),
         };
         assert_eq!(
             stand.dateiname(),
@@ -1125,6 +1267,7 @@ mod tests {
             zeit: "2026-11-08T15:30:12".into(),
             gesichert: false,
             datei_name: String::new(),
+            pfad: String::new(),
         });
         std::fs::write(dir.join("manifest.json"), serde_json::to_string(&m).unwrap()).unwrap();
         std::fs::write(dir.join("stand-3-abc.jjcad"), "{}").unwrap();

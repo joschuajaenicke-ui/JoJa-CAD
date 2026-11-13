@@ -567,7 +567,9 @@ Mit dem Nutzer abgestimmt — nicht „verbessern“:
   `theme::standard_zeichenfarbe` (Papier, Blockton, Akzent, Blau, Rot, Grün,
   Türkis), eigene Werte in `prefs.json` (`zeichenfarben`, je Rolle ein
   `#RRGGBB`). Einstellungen ▸ Darstellung ▸ „Zeichenfarben“ zeigt eine Zeile je
-  Rolle mit Farbwahl, Hexwert und „Standard“ (nimmt die eigene Wahl zurück).
+  Rolle mit Farbwahl, Hexwert und „Standard“ (nimmt die eigene Wahl zurück);
+  der Abschnitt steht **am Ende** der Kategorie — Design und Farbakzente
+  gehören zusammen und bleiben oben (T0181, Turn 2).
   **Wer eine neue solche Farbe braucht, ergänzt die Rolle in `Zeichenfarbe` und
   die Vorgabe in `standard_zeichenfarbe`** — nicht eine Farbe an der
   Zeichenstelle festhalten. Der Hintergrund des Bearbeitungsraums kommt aus

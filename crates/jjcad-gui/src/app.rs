@@ -1137,6 +1137,14 @@ pub struct UiState {
     /// Kennzahlen des Pools für die Einstellungsseite:
     /// (Zeit, Bytes, Stände, Dateien).
     pub sicherung_info: Option<(f64, u64, usize, usize)>,
+    /// T0188: Entwurf der Sicherungseinstellungen. Die Seite schreibt nur hier
+    /// hinein; erst „Übernehmen“ macht daraus Einstellungen.
+    pub sicherung_entwurf: Option<jjcad_core::sicherung::Einstellungen>,
+    /// T0188: Warnung vor dem Übernehmen — (Entwurf, Zahl der Stände, die
+    /// dabei endgültig gelöscht würden).
+    pub sicherung_warnung: Option<(jjcad_core::sicherung::Einstellungen, usize)>,
+    /// T0188: Rückfrage vor dem Aufräumen — Zahl der Stände ohne Zeichnung.
+    pub sicherung_aufraeumen: Option<usize>,
     /// Höhe des zuletzt gezeichneten Ribbon-Inhalts (Regressionstest t_92b03440)
     pub last_ribbon_content_h: f32,
     /// Lage der Hotbar-Slots in der unteren Leiste (Regressionstest T0043:
@@ -1286,6 +1294,9 @@ impl Default for UiState {
             last_canvas: Rect::from_min_size(Pos2::ZERO, Vec2::new(1000.0, 700.0)),
             letzte_flaeche: None,
             sicherung_info: None,
+            sicherung_entwurf: None,
+            sicherung_warnung: None,
+            sicherung_aufraeumen: None,
             last_ribbon_content_h: 0.0,
             last_slots: None,
             last_blattrechtecke: None,
@@ -1685,7 +1696,27 @@ impl App {
     /// Dialoge in Tests headless gezeichnet werden können.
     pub fn with_ctx(ctx: egui::Context) -> Self {
         theme::install(&ctx);
-        let prefs = UserPrefs::load();
+        // Tests fassen den Datenordner des Nutzers nicht an: eigene Vorgaben
+        // und ein eigener Sicherungsordner je App. Ohne das schrieb der
+        // Testlauf über Tage hunderte Stände in den echten Pool (T0188).
+        let prefs = if cfg!(test) {
+            let mut p = UserPrefs::default();
+            p.sicherungen_pfad = std::env::temp_dir()
+                .join(format!(
+                    "jjcad-test-sicherungen-{}-{}",
+                    std::process::id(),
+                    {
+                        use std::sync::atomic::{AtomicU64, Ordering};
+                        static N: AtomicU64 = AtomicU64::new(0);
+                        N.fetch_add(1, Ordering::Relaxed)
+                    }
+                ))
+                .to_string_lossy()
+                .to_string();
+            p
+        } else {
+            UserPrefs::load()
+        };
         // T0103: die gespeicherte Sprache gilt ab dem ersten Bild.
         jjcad_core::i18n::set_language(prefs.language);
         // T0102: ebenso das Design — bei „System“ entscheidet das
@@ -4870,6 +4901,63 @@ impl App {
             }
             self.sicherung = Some(pool);
         }
+    }
+
+    /// T0188: Den Entwurf der Sicherungseinstellungen übernehmen.
+    ///
+    /// Ginge dabei etwas verloren, wird **nicht** übernommen, sondern die
+    /// Warnung gestellt (`UiState::sicherung_warnung`) — gelöscht wird erst
+    /// nach der Bestätigung.
+    pub fn sicherung_uebernehmen(&mut self) {
+        let Some(ent) = self.ui.sicherung_entwurf else {
+            return;
+        };
+        if ent == self.prefs.sicherung_einstellungen() {
+            self.ui.sicherung_entwurf = None;
+            return;
+        }
+        let verlust = self.sicherung_pool().wuerde_verlieren(&ent);
+        if verlust > 0 {
+            self.ui.sicherung_warnung = Some((ent, verlust));
+            return;
+        }
+        self.sicherung_anwenden(ent);
+    }
+
+    /// Schreibt die Einstellungen, sichert sie und dünnt sofort aus.
+    pub fn sicherung_anwenden(&mut self, ent: jjcad_core::sicherung::Einstellungen) {
+        self.prefs.sicherung_verlauf = ent.verlauf;
+        self.prefs.sicherung_plaetze = ent.plaetze;
+        self.prefs.sicherung_stunden = ent.stunden;
+        self.prefs.sicherung_intervall = ent.intervall_min;
+        let _ = self.prefs.save();
+        let weg = self.sicherung_pool().ausduennen(&ent);
+        self.ui.sicherung_entwurf = None;
+        self.ui.sicherung_warnung = None;
+        self.ui.sicherung_info = None;
+        if weg > 0 {
+            self.toast(jjcad_core::i18n::t_args_owned(
+                "gui.app.sicherung_geloescht_x",
+                &[("anzahl", weg.to_string())],
+            ));
+        }
+    }
+
+    /// T0188: Stände löschen, deren Zeichnung es nicht mehr gibt.
+    pub fn sicherung_aufraeumen_jetzt(&mut self) {
+        let zyklen: Vec<u64> = self
+            .sicherung_pool()
+            .ohne_zeichnung()
+            .iter()
+            .map(|s| s.zyklus)
+            .collect();
+        let weg = self.sicherung_pool().entferne_zyklen(&zyklen);
+        self.ui.sicherung_aufraeumen = None;
+        self.ui.sicherung_info = None;
+        self.toast(jjcad_core::i18n::t_args_owned(
+            "gui.app.sicherung_aufgeraeumt_x",
+            &[("anzahl", weg.to_string())],
+        ));
     }
 
     /// „Verwerfen“ beim Schließen eines Reiters: die ungespeicherten Änderungen
@@ -15549,6 +15637,92 @@ mod tests_sicherung {
             "verworfene Änderung ist zurückgekommen"
         );
         assert!(!neu.doc().modified, "die Datei gilt als gespeichert");
+    }
+
+    /// T0188: Die Seite arbeitet auf einem Entwurf — ohne „Übernehmen“ ändert
+    /// sich an den Einstellungen nichts.
+    #[test]
+    fn sicherungseinstellungen_gelten_erst_nach_uebernehmen() {
+        let dir = test_dir("entwurf");
+        let mut app = app_mit_pool(&dir);
+        app.prefs.sicherung_plaetze = 100;
+        let entwurf = jjcad_core::sicherung::Einstellungen {
+            plaetze: 30,
+            ..app.prefs.sicherung_einstellungen()
+        };
+        app.ui.sicherung_entwurf = Some(entwurf);
+        assert_eq!(
+            app.prefs.sicherung_plaetze, 100,
+            "der Entwurf hat sofort gewirkt"
+        );
+        assert!(
+            app.sicherung.as_ref().unwrap().manifest().staende.is_empty(),
+            "der Entwurf hat schon ausgedünnt"
+        );
+    }
+
+    /// T0188: Ein Übernehmen, das Stände kostet, fragt erst und löscht nichts
+    /// ohne Bestätigung.
+    #[test]
+    fn uebernehmen_warnt_vor_dem_loeschen() {
+        let dir = test_dir("warnung");
+        let mut app = app_mit_pool(&dir);
+        let einst = app.prefs.sicherung_einstellungen();
+        let mut doc = jjcad_core::model::Document::new();
+        doc.name = "Plan".into();
+        doc.id = "aaaaaaaa-0000-4000-8000-0000000000ff".into();
+        for i in 0..40 {
+            doc.name = format!("Plan {i}");
+            app.sicherung
+                .as_mut()
+                .unwrap()
+                .sichern(&mut doc, &einst)
+                .unwrap();
+        }
+        assert_eq!(app.sicherung.as_ref().unwrap().manifest().staende.len(), 40);
+
+        let entwurf = jjcad_core::sicherung::Einstellungen {
+            plaetze: 30,
+            ..einst
+        };
+        app.ui.sicherung_entwurf = Some(entwurf);
+        app.sicherung_uebernehmen();
+
+        assert!(app.ui.sicherung_warnung.is_some(), "keine Warnung gestellt");
+        assert_eq!(
+            app.sicherung.as_ref().unwrap().manifest().staende.len(),
+            40,
+            "ohne Bestätigung wurde gelöscht"
+        );
+        assert_eq!(app.prefs.sicherung_plaetze, 100, "ohne Bestätigung übernommen");
+
+        app.sicherung_anwenden(entwurf);
+        assert_eq!(app.sicherung.as_ref().unwrap().manifest().staende.len(), 30);
+        assert_eq!(app.prefs.sicherung_plaetze, 30);
+        assert!(app.ui.sicherung_warnung.is_none());
+    }
+
+    /// T0188: Aufräumen löscht nur Stände mit vermerktem, aber verschwundenem
+    /// Pfad — Altbestand ohne Pfad bleibt stehen.
+    #[test]
+    fn aufraeumen_trifft_nur_verschwundene_zeichnungen() {
+        let dir = test_dir("aufraeumen");
+        let mut app = app_mit_pool(&dir);
+        let einst = app.prefs.sicherung_einstellungen();
+        let mut weg = jjcad_core::model::Document::new();
+        weg.path = Some(dir.join("gibtsnicht.jjcad").to_string_lossy().to_string());
+        weg.id = "aaaaaaaa-0000-4000-8000-0000000000a1".into();
+        app.sicherung.as_mut().unwrap().sichern(&mut weg, &einst).unwrap();
+
+        let mut bleibt = jjcad_core::model::Document::new();
+        bleibt.id = "aaaaaaaa-0000-4000-8000-0000000000a2".into();
+        app.sicherung.as_mut().unwrap().sichern(&mut bleibt, &einst).unwrap();
+
+        assert_eq!(app.sicherung.as_ref().unwrap().ohne_zeichnung().len(), 1);
+        app.sicherung_aufraeumen_jetzt();
+        let pool = app.sicherung.as_ref().unwrap();
+        assert_eq!(pool.manifest().staende.len(), 1, "falsche Stände gelöscht");
+        assert_eq!(pool.manifest().staende[0].datei, bleibt.id);
     }
 
     /// Vor Ablauf des Intervalls wird nichts gesichert.
