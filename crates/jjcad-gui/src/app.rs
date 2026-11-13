@@ -3659,6 +3659,19 @@ impl App {
                     let ids: Vec<Id> = self.doc().ents().iter().map(|e| e.id).collect();
                     self.session_mut().select(ids);
                 }
+                // T0189: Rechtsklickmenü einer **Mehrfachauswahl** — der Kopf
+                // nennt die Anzahl der Objekte, alle Einträge gelten für die
+                // ganze Auswahl.
+                "mehrfachmenue" => {
+                    let ids: Vec<Id> = self.doc().ents().iter().map(|e| e.id).collect();
+                    if let Some(erstes) = ids.first().copied() {
+                        self.session_mut().select(ids);
+                        self.open_menu(MenuKind::Object(erstes), egui::Pos2::new(420.0, 260.0));
+                        // Sonst passt die Ansicht in den ersten Bildern ein und
+                        // schließt das Menü (T0180).
+                        self.started_at = 3.0;
+                    }
+                }
                 _ => {}
             }
         }
@@ -9214,6 +9227,20 @@ impl App {
         self.ui.menu.is_some()
     }
 
+    /// T0189: Die Objekte, auf die ein Objektmenü wirkt.
+    ///
+    /// Liegt der angeklickte Gegenstand in einer **Mehrfachauswahl**, gilt das
+    /// Menü für alle gewählten Objekte — der Rechtsklick verengt die Auswahl
+    /// nicht mehr. Sonst für das eine Objekt.
+    pub fn menue_ziel(&self, id: Id) -> Vec<Id> {
+        let sel = self.selection();
+        if sel.len() > 1 && sel.contains(&id) {
+            sel.to_vec()
+        } else {
+            vec![id]
+        }
+    }
+
     /// Steht das Eigenschaften-Panel **offen** — also eingeschaltet *und*
     /// aufgeklappt? Eingeklappt ist es nur noch die schmale Leiste am rechten
     /// Rand, und ausgeschaltet ist es gar nicht da. Beide Fälle zählen als
@@ -9258,6 +9285,11 @@ impl App {
 
                 match menu.kind {
                     MenuKind::Object(id) => {
+                        // T0189: Das Menü gilt für die **ganze** Auswahl, wenn
+                        // das angeklickte Objekt zu einer Mehrfachauswahl
+                        // gehört (`App::menue_ziel`).
+                        let ziel = self.menue_ziel(id);
+                        let mehrfach = ziel.len() > 1;
                         // T0185: Eine Blockinstanz führt über das Menü direkt in
                         // den Blockeditor. Nur **eigene** Blöcke — Systemblöcke
                         // sind schreibgeschützt, genau wie im Rechtsklick der
@@ -9276,7 +9308,10 @@ impl App {
                                         blk.source != jjcad_core::model::BlockSource::System
                                     })
                                     .unwrap_or(false)
-                            });
+                            })
+                            // T0189: Bei mehreren Objekten gibt es keinen
+                            // einzelnen Block zu bearbeiten.
+                            .filter(|_| !mehrfach);
                         let (typ, layer) = self
                             .doc()
                             .entity(id)
@@ -9290,8 +9325,32 @@ impl App {
                                 )
                             })
                             .unwrap_or(("Objekt".into(), String::new()));
-                        ui.label(theme::bold(typ, 12.0));
-                        ui.label(theme::dim(layer));
+                        if mehrfach {
+                            // T0189: Anzahl statt einer Objektart — bei
+                            // mehreren Objekten nennt eine einzelne Art die
+                            // falsche. Die Ebene steht nur darunter, wenn alle
+                            // Objekte auf derselben liegen.
+                            ui.label(theme::bold(
+                                jjcad_core::i18n::t_args_owned(
+                                    "gui.dialogs.bestand_x_objekte",
+                                    &[("anzahl", ziel.len().to_string())],
+                                ),
+                                12.0,
+                            ));
+                            let mut ebenen = ziel
+                                .iter()
+                                .filter_map(|i| self.doc().entity(*i).map(|e| e.layer));
+                            if let Some(erste) = ebenen.next() {
+                                if ebenen.all(|l| l == erste) {
+                                    if let Some(l) = self.doc().layer(erste) {
+                                        ui.label(theme::dim(l.name.clone()));
+                                    }
+                                }
+                            }
+                        } else {
+                            ui.label(theme::bold(typ, 12.0));
+                            ui.label(theme::dim(layer));
+                        }
                         ui.separator();
                         for (label, action) in [
                             (jjcad_core::i18n::tr("gui.app.verschieben"), "modify.move"),
@@ -9320,20 +9379,20 @@ impl App {
                         // Zeichenreihenfolge: Position in der Objektliste
                         ui.label(theme::faint(jjcad_core::i18n::tr("gui.app.reihenfolge")));
                         if ui.button(jjcad_core::i18n::tr("gui.app.in_den_vordergrund")).clicked() {
-                            self.order_to(true, vec![id]);
+                            self.order_to(true, ziel.clone());
                             close = true;
                         }
                         if ui.button(jjcad_core::i18n::tr("gui.app.in_den_hintergrund")).clicked() {
-                            self.order_to(false, vec![id]);
+                            self.order_to(false, ziel.clone());
                             close = true;
                         }
                         if ui.button(jjcad_core::i18n::tr("gui.app.vor_element")).clicked() {
-                            self.session_mut().select(vec![id]);
+                            self.session_mut().select(ziel.clone());
                             self.order_pick_start(true);
                             close = true;
                         }
                         if ui.button(jjcad_core::i18n::tr("gui.app.hinter_element")).clicked() {
-                            self.session_mut().select(vec![id]);
+                            self.session_mut().select(ziel.clone());
                             self.order_pick_start(false);
                             close = true;
                         }
@@ -9341,15 +9400,16 @@ impl App {
                         if ui.button(jjcad_core::i18n::tr("gui.app.zerlegen")).clicked() {
                             let _ = self.session_mut().execute(
                                 "modify.explode",
-                                &serde_json::json!({"ids": [id]}),
+                                &serde_json::json!({"ids": ziel.clone()}),
                             );
+                            self.session_mut().clear_selection();
                             self.mark_changed();
                             close = true;
                         }
                         if ui.button(jjcad_core::i18n::tr("gui.app.loeschen")).clicked() {
                             let _ = self
                                 .session_mut()
-                                .execute("modify.erase", &serde_json::json!({"ids": [id]}));
+                                .execute("modify.erase", &serde_json::json!({"ids": ziel.clone()}));
                             self.session_mut().clear_selection();
                             self.mark_changed();
                             close = true;
@@ -9363,7 +9423,7 @@ impl App {
                             if ui.button(jjcad_core::i18n::tr("gui.app.eigenschaften_im_panel")).clicked() {
                                 self.ui.props_open = true;
                                 self.ui.props_collapsed = false;
-                                self.session_mut().select(vec![id]);
+                                self.session_mut().select(ziel.clone());
                                 close = true;
                             }
                         }
@@ -14231,7 +14291,12 @@ mod tests_fensterrahmen {
         app.prefs.fensterrahmen = jjcad_core::persist::Fensterrahmen::OhneTitelleiste;
         // T0147: der eigene Schatten hängt am Fenstersystem — im Test
         // ausdrücklich an, sonst hinge das Ergebnis an der Umgebung.
+        // `raw_input_hook` fragt **beides** ab (`schatten_im_rand` und
+        // `prefs.fensterschatten`) — ohne den zweiten Wert hing der Test an der
+        // `prefs.json` des Rechners: mit abgeschaltetem Schatten fielen alle
+        // Kantenzonen-Tests.
         app.schatten_im_rand = true;
+        app.prefs.fensterschatten = true;
         app
     }
 
@@ -14897,7 +14962,11 @@ mod tests_fensterschatten {
         let mut app = App::with_ctx(ctx.clone());
         app.prefs.fensterrahmen = rahmen;
         // Der eigene Schatten hängt am Fenstersystem — im Test ausdrücklich an.
+        // `raw_input_hook` prüft **beides**; `prefs.fensterschatten` kommt sonst
+        // aus der `prefs.json` des Rechners und die Tests hingen an seiner
+        // Einstellung (abgeschalteter Schatten → 12 rote Fenstertests).
         app.schatten_im_rand = true;
+        app.prefs.fensterschatten = true;
         (ctx, app)
     }
 
@@ -17070,6 +17139,178 @@ mod tests_rechtsklick {
         assert!(
             eintrag_mit(&out, "Block bearbeiten").is_none(),
             "ein Systemblock darf keinen Editor anbieten"
+        );
+    }
+
+    // ---------------------------------------------------------------------
+    // T0189: Rechtsklick in einer Mehrfachauswahl
+    // ---------------------------------------------------------------------
+
+    /// Zeichnung mit **zwei** Schraffuren nebeneinander (je 3 × 2 m), Ansicht
+    /// darauf eingepasst. Liefert die beiden Kennungen.
+    fn app_mit_zwei_flaechen() -> (egui::Context, App, Id, Id) {
+        let ctx = egui::Context::default();
+        let mut app = App::with_ctx(ctx.clone());
+        app.prefs.fensterrahmen = jjcad_core::persist::Fensterrahmen::System;
+        app.prefs.fensterschatten = false;
+        let layer = app.doc().current_layer;
+        for x in [0.0, 4000.0] {
+            let id = app.doc_mut().new_id();
+            let e = Entity::new(
+                id,
+                layer,
+                EntityKind::Fill {
+                    boundary: vec![
+                        V2::new(x, 0.0),
+                        V2::new(x + 3000.0, 0.0),
+                        V2::new(x + 3000.0, 2000.0),
+                        V2::new(x, 2000.0),
+                    ],
+                    holes: Vec::new(),
+                    pattern: FillPattern::Lines,
+                    pattern_angle: 0.0,
+                    pattern_scale: 200.0,
+                    border: true,
+                },
+            );
+            app.doc_mut().add_entity(e);
+        }
+        app.fit_view();
+        let ids: Vec<Id> = app.doc().ents().iter().map(|e| e.id).collect();
+        (ctx, app, ids[0], ids[1])
+    }
+
+    /// Klickt einen Menüeintrag an (Fläche aus dem Menübild).
+    fn klicke_eintrag(ctx: &egui::Context, app: &mut App, kasten: egui::Rect) {
+        let klick = kasten.center();
+        let _ = ctx.run(
+            rahmen(vec![egui::Event::PointerMoved(klick), primaer(klick, true)]),
+            |ctx| {
+                app.ui(ctx);
+                app.draw_menu(ctx);
+            },
+        );
+        let _ = ctx.run(rahmen(vec![primaer(klick, false)]), |ctx| {
+            app.ui(ctx);
+            app.draw_menu(ctx);
+        });
+        let _ = ctx.run(rahmen(vec![]), |ctx| {
+            app.ui(ctx);
+            app.draw_menu(ctx);
+        });
+    }
+
+    /// Der Rechtsklick auf ein Objekt, das zur Auswahl gehört, lässt die
+    /// Auswahl stehen. Vorher blieb nur das angeklickte Objekt übrig, und
+    /// „Löschen“, „Verschieben“ & Co. trafen nur noch dieses.
+    #[test]
+    fn rechtsklick_in_der_mehrfachauswahl_haelt_die_auswahl() {
+        let (ctx, mut app, a, b) = app_mit_zwei_flaechen();
+        app.session_mut().select(vec![a, b]);
+        // Rechtsklick in die Mitte der ersten Fläche.
+        let _ = objektmenue_oeffnen(&ctx, &mut app);
+
+        assert!(
+            matches!(app.ui.menu.map(|m| m.kind), Some(MenuKind::Object(hit)) if hit == a),
+            "das Menü zeigt nicht auf das angeklickte Objekt"
+        );
+        let sel = app.selection().to_vec();
+        assert_eq!(
+            sel.len(),
+            2,
+            "der Rechtsklick hat die Auswahl auf {sel:?} verengt"
+        );
+        assert!(
+            sel.contains(&a) && sel.contains(&b),
+            "die Auswahl ist nicht mehr vollständig: {sel:?}"
+        );
+    }
+
+    /// Gegenprobe: ein Rechtsklick **neben** der Auswahl wählt wie bisher das
+    /// angeklickte Objekt allein.
+    #[test]
+    fn rechtsklick_ausserhalb_der_auswahl_waehlt_das_objekt() {
+        let (ctx, mut app, a, b) = app_mit_zwei_flaechen();
+        app.session_mut().select(vec![a]);
+        // Mitte der zweiten Fläche (4000…7000).
+        let _ = objektmenue_bei(&ctx, &mut app, V2::new(5500.0, 1000.0));
+
+        assert_eq!(
+            app.selection().to_vec(),
+            vec![b],
+            "der Rechtsklick neben der Auswahl wählt nicht das getroffene Objekt"
+        );
+        assert!(
+            matches!(app.ui.menu.map(|m| m.kind), Some(MenuKind::Object(hit)) if hit == b),
+            "das Menü zeigt nicht auf das getroffene Objekt"
+        );
+    }
+
+    /// „Löschen“ im Menü trifft **alle** Objekte der Auswahl, nicht nur das
+    /// angeklickte.
+    #[test]
+    fn loeschen_im_menue_trifft_die_ganze_auswahl() {
+        let (ctx, mut app, a, b) = app_mit_zwei_flaechen();
+        app.session_mut().select(vec![a, b]);
+        let out = objektmenue_oeffnen(&ctx, &mut app);
+        let kasten = eintrag_mit(&out, "Löschen").expect("im Objektmenü fehlt „Löschen“");
+        klicke_eintrag(&ctx, &mut app, kasten);
+
+        assert!(
+            app.doc().entity(a).is_none(),
+            "das angeklickte Objekt steht noch in der Zeichnung"
+        );
+        assert!(
+            app.doc().entity(b).is_none(),
+            "das zweite Objekt der Auswahl steht noch — „Löschen“ traf nur eines"
+        );
+        assert!(
+            app.selection().is_empty(),
+            "die Auswahl zeigt nach dem Löschen noch Objekte"
+        );
+    }
+
+    /// „Verschieben“ startet für die ganze Auswahl: die Auswahl bleibt stehen,
+    /// das Werkzeug arbeitet auf ihr (so macht es auch die Zeichenfläche).
+    #[test]
+    fn verschieben_im_menue_behaelt_die_ganze_auswahl() {
+        let (ctx, mut app, a, b) = app_mit_zwei_flaechen();
+        app.session_mut().select(vec![a, b]);
+        let out = objektmenue_oeffnen(&ctx, &mut app);
+        let kasten = eintrag_mit(&out, "Verschieben").expect("im Objektmenü fehlt „Verschieben“");
+        klicke_eintrag(&ctx, &mut app, kasten);
+
+        assert_eq!(app.tool_id(), Some("modify.move"), "das Werkzeug läuft nicht");
+        assert_eq!(
+            app.selection().to_vec().len(),
+            2,
+            "die Auswahl für das Werkzeug ist geschrumpft"
+        );
+    }
+
+    /// Der Menükopf nennt bei mehreren Objekten die Anzahl statt einer
+    /// Objektart.
+    #[test]
+    fn menuekopf_nennt_bei_mehreren_objekten_die_anzahl() {
+        let (ctx, mut app, a, b) = app_mit_zwei_flaechen();
+        app.session_mut().select(vec![a, b]);
+        let out = objektmenue_oeffnen(&ctx, &mut app);
+        assert!(
+            eintrag_mit(&out, "2 Objekte").is_some(),
+            "der Menükopf nennt nicht die Anzahl der gewählten Objekte"
+        );
+    }
+
+    /// Bei einem einzelnen Objekt bleibt der Kopf beim Typ (und nennt keine
+    /// Anzahl).
+    #[test]
+    fn menuekopf_zeigt_bei_einem_objekt_die_art() {
+        let (ctx, mut app, a, _b) = app_mit_zwei_flaechen();
+        app.session_mut().select(vec![a]);
+        let out = objektmenue_oeffnen(&ctx, &mut app);
+        assert!(
+            eintrag_mit(&out, "Füllfläche").is_some(),
+            "der Menükopf nennt nicht die Objektart"
         );
     }
 }

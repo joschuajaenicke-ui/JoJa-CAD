@@ -4715,7 +4715,16 @@ fn handle_input(
                 // Fläche landete im Flächenmenü, das kein Zerlegen kennt.
                 match snap::hit_test_flaeche(app.doc(), w, tol, None) {
                     Some(id) => {
-                        app.session_mut().select(vec![id]);
+                        // T0189: Gehört das getroffene Objekt zur Auswahl,
+                        // bleibt die Auswahl stehen — das Menü gilt dann für
+                        // **alle** gewählten Objekte. Vorher verengte der
+                        // Rechtsklick sie auf das eine Objekt, und „Löschen“,
+                        // „Verschieben“, „Drehen“ & Co. trafen nur noch dieses.
+                        // Getroffen außerhalb der Auswahl: wie bisher nur das
+                        // angeklickte Objekt.
+                        if !app.selection().contains(&id) {
+                            app.session_mut().select(vec![id]);
+                        }
                         app.open_menu(crate::app::MenuKind::Object(id), pos);
                     }
                     None => app.open_menu(crate::app::MenuKind::Canvas, pos),
