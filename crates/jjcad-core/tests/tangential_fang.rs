@@ -15,7 +15,7 @@
 use jjcad_core::geom::{dist_point_line, Vec2};
 use jjcad_core::model::Id;
 use jjcad_core::session::Session;
-use jjcad_core::snap::{snap_constrained_ohne_punkte, SnapKind, SnapResolution};
+use jjcad_core::snap::{snap_constrained, SnapKind, SnapResolution};
 use serde_json::json;
 
 /// Sitzung in Millimetern ohne Raster, Ortho, Polar und ohne die
@@ -69,14 +69,12 @@ fn fang(
     reference: Option<(f64, f64)>,
     ignore: &[Id],
 ) -> SnapResolution {
-    snap_constrained_ohne_punkte(
+    snap_constrained(
         &s.doc,
         Vec2::new(cursor.0, cursor.1),
         20.0,
         reference.map(|p| Vec2::new(p.0, p.1)),
         ignore,
-        &[],
-        &[],
         false,
     )
 }

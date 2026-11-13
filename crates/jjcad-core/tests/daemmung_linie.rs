@@ -230,7 +230,7 @@ fn fang_der_daemmung_bleibt_guenstig() {
     let p = Vec2::new(5000.0, 4100.0);
     let t = std::time::Instant::now();
     for _ in 0..20 {
-        std::hint::black_box(jjcad_core::snap::snap_candidates(&s.doc, p, 12.0, None, &[], &[]));
+        std::hint::black_box(jjcad_core::snap::snap_candidates(&s.doc, p, 12.0, None, &[]));
     }
     let ms = t.elapsed().as_secs_f64() * 1000.0;
     assert!(
@@ -238,7 +238,7 @@ fn fang_der_daemmung_bleibt_guenstig() {
         "20 Fangabfragen dauern {ms:.1} ms — wird die Box je Linie aus dem Band gerechnet?"
     );
     // Und der Fang findet weiterhin die Linie unter dem Zeiger.
-    let cands = jjcad_core::snap::snap_candidates(&s.doc, p, 12.0, None, &[], &[]);
+    let cands = jjcad_core::snap::snap_candidates(&s.doc, p, 12.0, None, &[]);
     assert!(!cands.is_empty(), "kein Fangpunkt auf der Dämmungslinie");
 }
 

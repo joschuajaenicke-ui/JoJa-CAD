@@ -1,21 +1,20 @@
-//! Punktfang beim Bearbeiten einer ausgewählten Polylinie (Kanban t_eb950a21).
+//! Punktfang beim Bearbeiten einer ausgewählten Polylinie.
 //!
-//! Beim Ziehen eines Stützpunkts wandert genau *ein* Punkt mit der Maus. Die
-//! Fang-Engine bekommt deshalb drei Angaben getrennt:
+//! **Regel:** Ein Element, das gerade bearbeitet wird, ist kein Fangziel. Es
+//! steht in `ignore` und liefert überhaupt keine Fangpunkte — auch nicht seine
+//! ruhenden Nachbarecken. Damit kann es sich nicht selbst fangen, und es gibt
+//! keine Liste „welche Punkte wandern mit?", die je Elementart gepflegt werden
+//! müsste.
 //!
-//! * `selected` — das Element bleibt mit seinen diskreten Punkten fangbar
-//!   (die Polylinie soll sich an ihre eigenen Nachbarecken anschließen können),
-//! * `gesperrt` — nur der gezogene Punkt selbst fängt nicht (sonst zieht er
-//!   sich selbst fest und der Griff bleibt stehen),
-//! * ein fremdes Element auf derselben Stelle fängt weiter (sonst bricht der
-//!   Fang in dem Moment ab, in dem der Griff auf dem Ziel ankommt).
+//! Fremde Elemente fangen unverändert, auch wenn sie genau auf einer Ecke des
+//! bearbeiteten Elements liegen.
 //!
 //! Alle Koordinaten in Millimetern (`input_unit: mm`).
 
 use jjcad_core::geom::{v, Vec2};
 use jjcad_core::model::{EntityKind, Id};
 use jjcad_core::session::Session;
-use jjcad_core::snap::{snap_constrained_ohne_punkte, SnapKind, SnapResolution, SnapSource};
+use jjcad_core::snap::{snap_constrained, SnapKind, SnapResolution, SnapSource};
 use serde_json::json;
 
 fn s() -> Session {
@@ -50,10 +49,9 @@ fn szenario() -> (Session, Id, Id) {
     (s, poly, linie)
 }
 
-/// Fang mit der Polylinie als *ausgewähltem* Element und gesperrten
-/// Stützpunkten — genau die Lage während eines Griffzugs.
-fn fang(s: &Session, cursor: Vec2, tol: f64, poly: Id, gesperrt: &[(Id, Vec2)]) -> SnapResolution {
-    snap_constrained_ohne_punkte(&s.doc, cursor, tol, None, &[], &[poly], gesperrt, false)
+/// Fang während eines Griffzugs an der Polylinie: sie steht im Ausschluss.
+fn fang(s: &Session, cursor: Vec2, tol: f64, poly: Id) -> SnapResolution {
+    snap_constrained(&s.doc, cursor, tol, None, &[poly], false)
 }
 
 fn punkte(s: &Session, id: Id) -> Vec<Vec2> {
@@ -68,69 +66,68 @@ fn assert_punkt(ist: Vec2, soll: Vec2) {
 }
 
 // ---------------------------------------------------------------------------
-// Die ausgewählte Polylinie darf sich selbst fangen
+// Das bearbeitete Element fängt nicht auf sich selbst
 // ---------------------------------------------------------------------------
 
-/// Kern der Karte: die blau hinterlegte Polylinie liefert ihre eigene
-/// Nachbarecke als Fangpunkt. Vorher schob die Zeichenfläche die *ganze*
-/// Auswahl in den Ausschluss — die Polylinie konnte sich nicht an sich selbst
-/// anschließen, geschlossene Züge waren unmöglich.
-#[test]
-fn ausgewaehlte_polylinie_faengt_eigene_ecke() {
-    let (s, poly, _) = szenario();
-    assert_eq!(punkte(&s, poly).len(), 3, "drei Stützpunkte");
-    // Griff 0 (auf (0;0)) wird gezogen und ist gesperrt; der Zeiger steht 8 mm
-    // neben der Ecke (2000;0) derselben Polylinie.
-    let res = fang(&s, v(1994.0, 8.0), 40.0, poly, &[(poly, v(0.0, 0.0))]);
-    assert_eq!(res.source, SnapSource::Object(SnapKind::Endpoint), "{res:?}");
-    assert_punkt(res.point, v(2000.0, 0.0));
-}
-
-/// Der Anfangspunkt derselben Polylinie ist ebenfalls fangbar — so entsteht der
-/// geschlossene Zug (letzter Stützpunkt auf den ersten).
-#[test]
-fn anfangspunkt_der_eigenen_polylinie_faengt() {
-    let (s, poly, _) = szenario();
-    // Griff 2 (auf (2000;1500)) wird gezogen, Ziel ist der Anfang (0;0).
-    let res = fang(&s, v(6.0, -4.0), 40.0, poly, &[(poly, v(2000.0, 1500.0))]);
-    assert_eq!(res.source, SnapSource::Object(SnapKind::Endpoint), "{res:?}");
-    assert_punkt(res.point, v(0.0, 0.0));
-}
-
-// ---------------------------------------------------------------------------
-// Der gezogene Punkt fängt sich nicht selbst
-// ---------------------------------------------------------------------------
-
-/// Ohne Sperre gewinnt der eigene Endpunkt (Priorität END) und der Griff bliebe
+/// Der gezogene Stützpunkt liegt dauerhaft im Fangradius des Zeigers. Ohne
+/// Ausschluss gewinnt der eigene Endpunkt (Priorität END) und der Griff bliebe
 /// stehen, statt der Maus zu folgen.
 #[test]
 fn gezogener_stuetzpunkt_faengt_sich_nicht_selbst() {
     let (s, poly, _) = szenario();
     let cursor = v(5.0, 5.0);
-    let res = fang(&s, cursor, 40.0, poly, &[(poly, v(0.0, 0.0))]);
+    let res = fang(&s, cursor, 40.0, poly);
     assert_eq!(res.source, SnapSource::Free, "{res:?}");
     assert_punkt(res.point, cursor);
 }
 
-/// Sperre nur für *diesen* Punkt: die ruhende Nachbarecke fängt weiter.
+/// Auch die **ruhenden** Ecken desselben Elements fangen nicht: sie sind
+/// Fangziele desselben, gerade bewegten Objekts. Ein geschlossener Zug entsteht
+/// über die Zieh-Toleranz von `apply_grip_tol`, nicht über den Fang.
 #[test]
-fn ruhende_nachbar_ecke_bleibt_trotz_sperre_fangbar() {
+fn eigene_ruhende_ecke_faengt_nicht() {
     let (s, poly, _) = szenario();
-    let res = fang(&s, v(1994.0, 1506.0), 40.0, poly, &[(poly, v(2000.0, 0.0))]);
-    assert_eq!(res.source, SnapSource::Object(SnapKind::Endpoint), "{res:?}");
-    assert_punkt(res.point, v(2000.0, 1500.0));
+    assert_eq!(punkte(&s, poly).len(), 3, "drei Stützpunkte");
+    // Zeiger 8 mm neben der Nachbarecke (2000;0) derselben Polylinie.
+    let cursor = v(1994.0, 8.0);
+    let res = fang(&s, cursor, 40.0, poly);
+    assert_eq!(res.source, SnapSource::Free, "{res:?}");
+    assert_punkt(res.point, cursor);
 }
 
-/// Ein fremdes Element auf derselben Stelle fängt weiter (die Sperre hängt am
-/// Element, nicht an der Koordinate). Sonst fiele der Fang in dem Moment auf
-/// „Nächster Punkt“ derselben Linie zurück, in dem der Griff ankommt — der
-/// Punkt wanderte bei jeder weiteren Bewegung um Bruchteile.
+/// Dasselbe am Anfangspunkt: auch er ist kein Fangziel, solange die Polylinie
+/// bearbeitet wird.
 #[test]
-fn fremder_endpunkt_auf_gesperrter_stelle_faengt_weiter() {
+fn eigener_anfangspunkt_faengt_nicht() {
+    let (s, poly, _) = szenario();
+    let cursor = v(6.0, -4.0);
+    let res = fang(&s, cursor, 40.0, poly);
+    assert_eq!(res.source, SnapSource::Free, "{res:?}");
+    assert_punkt(res.point, cursor);
+}
+
+// ---------------------------------------------------------------------------
+// Fremde Elemente fangen unverändert
+// ---------------------------------------------------------------------------
+
+/// Ein fremdes Element auf derselben Stelle fängt weiter: der Ausschluss hängt
+/// am Element, nicht an der Koordinate.
+#[test]
+fn fremder_endpunkt_faengt_weiter() {
     let (s, poly, linie) = szenario();
     assert_ne!(linie, poly);
     let ziel = v(2000.0, 3000.0);
-    let res = fang(&s, v(1990.0, 3008.0), 120.0, poly, &[(poly, ziel)]);
+    let res = fang(&s, v(1990.0, 3008.0), 120.0, poly);
     assert_eq!(res.source, SnapSource::Object(SnapKind::Endpoint), "{res:?}");
     assert_punkt(res.point, ziel);
+}
+
+/// Ohne Bearbeitung fängt die Polylinie ganz normal — der Ausschluss gilt nur,
+/// solange sie das bearbeitete Element ist.
+#[test]
+fn ohne_bearbeitung_faengt_die_polylinie_normal() {
+    let (s, poly, _) = szenario();
+    let res = snap_constrained(&s.doc, v(1994.0, 8.0), 40.0, None, &[], false);
+    assert_eq!(res.source, SnapSource::Object(SnapKind::Endpoint), "{res:?}");
+    assert_punkt(res.point, v(2000.0, 0.0));
 }

@@ -11,7 +11,7 @@
 //! serifenlos und schnitt bei DIN 1451 Breitschrift und EN ISO 3098 ab (T0110).
 //!
 //! Geprüft wird über `render::text_frame` (eine Quelle für Anzeige und Fang)
-//! und `snap::snap_constrained_ohne_punkte` — denselben Weg, den die
+//! und `snap::snap_constrained` — denselben Weg, den die
 //! Zeichenfläche für Zeigeranzeige und Klickpunkt nimmt. Die erwarteten Maße
 //! rechnet der Test aus den Schriftdateien selbst (`text::width_em_mit_schrift`,
 //! `fonts::line_height_em`), nicht aus `render::text_box` — sonst prüfte er
@@ -23,7 +23,7 @@ use jjcad_core::model::{EntityKind, TextFont};
 use jjcad_core::persist;
 use jjcad_core::render;
 use jjcad_core::session::Session;
-use jjcad_core::snap::{snap_constrained_ohne_punkte, SnapKind, SnapResolution, SnapSource};
+use jjcad_core::snap::{snap_constrained, SnapKind, SnapResolution, SnapSource};
 use serde_json::json;
 
 fn s() -> Session {
@@ -72,7 +72,7 @@ fn letzter_text(s: &Session) -> &jjcad_core::model::Entity {
 }
 
 fn fang(s: &Session, cursor: Vec2, tol: f64) -> SnapResolution {
-    snap_constrained_ohne_punkte(&s.doc, cursor, tol, None, &[], &[], &[], false)
+    snap_constrained(&s.doc, cursor, tol, None, &[], false)
 }
 
 fn assert_punkt(ist: Vec2, soll: Vec2, was: &str) {

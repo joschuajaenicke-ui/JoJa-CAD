@@ -56,7 +56,7 @@ fn linie(s: &mut Session) {
 /// Fang ohne Raster und ohne Ausschluss — wie die Zeichenfläche bei
 /// ausgeblendetem Raster zeichnet.
 fn fang(s: &Session, cursor: Vec2, tol: f64, reference: Option<Vec2>) -> SnapResolution {
-    snap_constrained(&s.doc, cursor, tol, reference, &[], &[], false)
+    snap_constrained(&s.doc, cursor, tol, reference, &[], false)
 }
 
 fn assert_punkt(ist: Vec2, soll: Vec2, was: &str) {

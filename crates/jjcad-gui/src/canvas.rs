@@ -4311,8 +4311,6 @@ fn fang_aufloesung(app: &App, w: V2, tol: f64) -> snap::SnapResolution {
         tol,
         &achsen,
         &regeln.ignore,
-        &regeln.keep,
-        &regeln.gesperrt,
         &vorschau,
         &app.halt,
         app.ui.show_grid,
@@ -4345,88 +4343,51 @@ fn snap_at(app: &App, rect: Rect, view: View, pos: Pos2) -> V2 {
     fang_zeiger(app, w, fang_radius_px(app, view.zoom)).0
 }
 
-/// Fang-Regeln für den aktuellen Zustand: was ist gesperrt, was ausdrücklich
-/// erlaubt, welche Punkte sind als Ziel verboten.
+/// Fang-Regeln für den aktuellen Zustand: welche Elemente überhaupt nicht
+/// fangen.
+///
+/// Ein Element, das gerade **bearbeitet** wird, ist kein Fangziel — ohne
+/// Ausnahme und ohne Liste je Elementart. Es steht in `ignore` und liefert
+/// damit überhaupt keine Fangpunkte; das ist der **einzige** Schutz gegen den
+/// Selbst-Fang. Er greift in genau zwei Lagen:
+///
+/// * **Griffzug:** das eine Element, dessen Griff wandert.
+/// * **Auswahl wandert ganz** (Ziehen am Objekt, Verschieben ab dem
+///   Basispunkt): die ganze Auswahl.
+///
+/// Der **Basispunkt** eines Verschiebens ist noch keine Bewegung — solange er
+/// nicht gesetzt ist, fängt die Auswahl normal. Werkzeuge, die ihre Auswahl
+/// erst beim Abschlussklick verändern (Drehen, Spiegeln, Skalieren, Versetzen),
+/// brauchen keinen Ausschluss: dort bewegt sich während des Fangens nichts.
+///
+/// Der Fang der **Vorschau** (Polylinie/Spline im Entstehen) ist davon
+/// unberührt: das Element steht noch nicht im Dokument und kommt über
+/// [`vorschau_punkte`] herein.
 #[derive(Default)]
 struct FangRegeln {
-    /// Elemente, die überhaupt nicht fangen.
+    /// Elemente, die überhaupt nicht fangen: das bearbeitete Element.
     ignore: Vec<Id>,
-    /// Elemente, die nur mit ihren *diskreten* Punkten fangen (Ecke, Mitte,
-    /// Zentrum, Quadrant) — keine kontinuierlichen Fänge. Sie bewegen sich
-    /// gerade mit, an ihnen würde „Nächster Punkt" den Zeiger zurückziehen.
-    keep: Vec<Id>,
-    /// Einzelne Punkte, die nicht fangen, obwohl ihr Element es darf: die
-    /// gerade gezogenen Stützpunkte (Element + Stelle).
-    gesperrt: Vec<snap::GesperrterPunkt>,
 }
 
-/// Fang-Ausschluss, Fang-Auswahl und gesperrte Punkte für den aktuellen Zustand.
-///
-/// * **Ruhezustand / Werkzeug:** die Auswahl ist ausdrücklich *erlaubt*
-///   (Ecken/Endpunkte), nichts ist ausgeschlossen.
-/// * **Auswahl wandert ganz** (Ziehen am Objekt, Verschieben/Kopieren ab dem
-///   Basispunkt): die ganze Auswahl fällt aus dem Fang, weil alle ihre Ecken
-///   mit dem Zeiger wandern — sonst klebt die Bewegung am Startpunkt.
-/// * **Griff-Drag:** nur *ein* Stützpunkt wandert. Das Element bleibt mit
-///   seinen übrigen Ecken fangbar (Polylinie an ihre eigene Nachbarecke bzw.
-///   an den Anfangspunkt anschließen — Voraussetzung für geschlossene Züge);
-///   allein der gezogene Punkt ist gesperrt, sonst fängt er sich selbst und
-///   der Griff bleibt stehen (Karte t_eb950a21).
-/// * **Wand im Griffzug:** die Wand fällt ganz aus dem Fang. Ihre Stirn- und
-///   Gehrungsecken hängen am gezogenen Ende und wandern mit; der Fang zöge den
-///   Punkt auf eine Ecke, die dadurch weiterwandert — der Fang oszilliert
-///   (T0051).
+/// Fang-Ausschluss für den aktuellen Zustand.
 fn fang_regeln(app: &App) -> FangRegeln {
+    if let Some(drag) = app.grip_drag.as_ref() {
+        return FangRegeln {
+            ignore: vec![drag.entity],
+        };
+    }
     let auswahl_wandert = app.move_drag.is_some()
         || app
             .tool
             .as_ref()
-            .map(|t| {
-                t.action == "modify.move" && !t.pts.is_empty()
-            })
+            .map(|t| t.action == "modify.move" && !t.pts.is_empty())
             .unwrap_or(false);
     if auswahl_wandert {
         return FangRegeln {
             ignore: app.selection().to_vec(),
-            ..FangRegeln::default()
         };
     }
-    if let Some(drag) = app.grip_drag.as_ref() {
-        // Wand (T0051): Ihre Stirn- und Gehrungsecken hängen am gezogenen
-        // Endpunkt und wandern mit. Liegt der Griff im Fangradius einer
-        // solchen Ecke, zieht der Fang die Wand auf die Ecke, die Ecke wandert
-        // aus dem Radius, im Bild darauf greift sie wieder — der Punkt
-        // oszilliert. Eine Wand fängt beim Manipulieren deshalb **gar nicht**
-        // auf sich selbst, auch nicht mit ihren diskreten Ecken.
-        let eigene_wand = app
-            .doc()
-            .entity(drag.entity)
-            .map(|e| matches!(e.kind, EntityKind::Wall { .. }))
-            .unwrap_or(false);
-        if eigene_wand {
-            return FangRegeln {
-                ignore: vec![drag.entity],
-                ..FangRegeln::default()
-            };
-        }
-        let gesperrt = app
-            .doc()
-            .entity(drag.entity)
-            .map(|e| crate::handles::fang_sperre(e, drag.kind))
-            .unwrap_or_default()
-            .into_iter()
-            .map(|p| (drag.entity, p))
-            .collect();
-        return FangRegeln {
-            ignore: Vec::new(),
-            keep: vec![drag.entity],
-            gesperrt,
-        };
-    }
-    FangRegeln {
-        keep: app.selection().to_vec(),
-        ..FangRegeln::default()
-    }
+    FangRegeln::default()
 }
 
 fn handle_input(
@@ -5604,8 +5565,6 @@ fn verweil_kandidat(app: &App, w: V2, tol: f64) -> Option<snap::HaltPunkt> {
         tol,
         reference,
         &regeln.ignore,
-        &regeln.keep,
-        &regeln.gesperrt,
         &vorschau,
         false,
     )
@@ -9664,16 +9623,18 @@ mod tests_fang_griff {
         assert_punkt(p, V2::new(2000.0, 3000.0));
     }
 
-    /// Die ausgewählte Polylinie fängt auf ihre *eigene* Nachbarecke — die
-    /// Grundlage für den geschlossenen Zug.
+    /// Die Polylinie fängt **nicht** auf ihre eigene Nachbarecke: sie ist das
+    /// bearbeitete Element und liefert überhaupt keine Fangpunkte. Der Griff
+    /// folgt dem Zeiger.
     #[test]
-    fn griffzug_faengt_eigene_ecke() {
+    fn griffzug_faengt_eigene_ecke_nicht() {
         let (mut app, poly) = szenario();
         app.begin_grip_drag(poly, crate::handles::GripKind::Vert(0));
 
-        let (p, label) = fang_zeiger(&app, V2::new(1994.0, 8.0), 40.0);
-        assert_eq!(label, Some("Endpunkt"), "{p:?}");
-        assert_punkt(p, V2::new(2000.0, 0.0));
+        let roh = V2::new(1994.0, 8.0);
+        let (p, label) = fang_zeiger(&app, roh, 40.0);
+        assert_eq!(label, None, "die eigene Ecke darf nicht fangen: {p:?}");
+        assert_punkt(p, roh);
     }
 
     /// Kein Selbst-Fang: der gezogene Stützpunkt liegt im Fangradius des
@@ -10091,11 +10052,13 @@ mod tests_fang_griff {
         }
     }
 
-    /// Fängt der Fang auf der Nachbarecke, während die gezogene Ecke schon dort
-    /// liegt, darf er nicht wieder abfallen — sonst springt die Vorschau
-    /// zwischen Fangpunkt und Zeiger hin und her (T0018, Turn 3).
+    /// Der gezogene Punkt bleibt in jedem Bild am Zeiger — auch in der Nähe der
+    /// eigenen Nachbarecke. Früher zog der Fang ihn auf die Ecke, die Ecke
+    /// wanderte dadurch aus dem Radius und im nächsten Bild griff der Fang
+    /// wieder: Vorschau und Fangmarke flackerten (T0018, Turn 3). Mit dem
+    /// Ausschluss des bearbeiteten Elements gibt es diesen Zustand nicht mehr.
     #[test]
-    fn griffzug_auf_die_nachbarecke_flackert_nicht() {
+    fn griffzug_bleibt_am_zeiger() {
         let (mut app, id) = szenario_flaeche();
         app.begin_grip_drag(id, crate::handles::GripKind::Vert(1));
         let zoom = app.current_view().zoom.max(1e-6);
@@ -10110,35 +10073,30 @@ mod tests_fang_griff {
             lagen.push((rand(&app, id)[1], label));
         }
         for (ecke, label) in &lagen {
-            assert_eq!(
-                *label,
-                Some("Endpunkt"),
-                "der Fang fällt im nächsten Frame wieder aus: {lagen:?}"
-            );
+            assert_eq!(*label, None, "kein Fang am eigenen Element: {lagen:?}");
             assert!(
-                ecke.dist(V2::new(0.0, 0.0)) < 1e-9,
-                "die Ecke springt zwischen Fangpunkt und Zeiger: {lagen:?}"
+                ecke.dist(roh) < 1e-9,
+                "die Ecke springt vom Zeiger weg: {lagen:?}"
             );
         }
 
-        // Dasselbe beim **Bewegen**: solange der Zeiger im Fangradius um die
-        // Ecke bleibt, sitzt der Punkt dort — er springt nicht zwischen den
-        // Bildern hin und her (so sieht der Nutzer das Flackern).
+        // Dasselbe beim **Bewegen**: der Punkt sitzt in jedem Bild genau am
+        // Zeiger, nichts rastet hin und her (so sah der Nutzer das Flackern).
         for px in [11.0, 9.0, 7.0, 5.0, 8.0, 10.0] {
             let roh = V2::new(px / zoom, 2.0 / zoom);
             let (p, label) = fang_zeiger(&app, roh, tol);
             app.update_grip_drag(p);
-            assert_eq!(label, Some("Endpunkt"), "bei {px} px: Fang fällt aus");
+            assert_eq!(label, None, "bei {px} px: Fang am eigenen Element");
             assert!(
-                rand(&app, id)[1].dist(V2::new(0.0, 0.0)) < 1e-9,
-                "bei {px} px: der Punkt springt vom Ziel weg"
+                rand(&app, id)[1].dist(roh) < 1e-9,
+                "bei {px} px: der Punkt springt vom Zeiger weg"
             );
         }
 
-        // Weit weg vom Punkt löst sich der Fang — keine Haftung.
+        // Weit weg ebenfalls: der Punkt folgt immer dem Zeiger.
         let weit = V2::new(60.0 / zoom, 40.0 / zoom);
         let (p, label) = fang_zeiger(&app, weit, tol);
-        assert_eq!(label, None, "kein Fang weit weg von der Ecke");
+        assert_eq!(label, None, "kein Fang weit weg");
         assert!(p.dist(weit) < 1e-9);
     }
 
@@ -10204,10 +10162,282 @@ mod tests_fang_griff {
             app.update_grip_drag(q);
         }
 
-        // Gegenprobe: der ruhende Stützpunkt (1000;600) fängt weiterhin.
+        // Gegenprobe: auch der ruhende Stützpunkt desselben Splines fängt
+        // nicht — das bearbeitete Element ist ganz aus dem Fang.
         let (q, label) = fang_zeiger(&app, V2::new(1006.0, 603.0), tol);
-        assert_eq!(label, Some("Endpunkt"), "Stützpunkt muss fangen");
-        assert_punkt(q, V2::new(1000.0, 600.0));
+        assert_eq!(label, None, "der bearbeitete Spline darf nicht fangen");
+        assert_punkt(q, V2::new(1006.0, 603.0));
+    }
+
+    // ---- Selbst-Fang: der Wächter über alle Elementarten ----
+
+    /// Kurzname der Elementart für die Abdeckungsprüfung des Wächters.
+    ///
+    /// **Erschöpfend ohne `_`-Zweig**: kommt eine neue Elementart dazu, bricht
+    /// dieser Test beim Bauen — genau dann muss entschieden werden, ob sie
+    /// Griffe hat und ins Szenario gehört.
+    fn art_name(k: &EntityKind) -> &'static str {
+        match k {
+            EntityKind::Point { .. } => "Punkt",
+            EntityKind::Line { .. } => "Linie",
+            EntityKind::Circle { .. } => "Kreis",
+            EntityKind::Arc { .. } => "Bogen",
+            EntityKind::Ellipse { .. } => "Ellipse",
+            EntityKind::EllipseArc { .. } => "Ellipsenbogen",
+            EntityKind::Polyline { .. } => "Polylinie",
+            EntityKind::Spline { .. } => "Spline",
+            EntityKind::Fill { .. } => "Fläche",
+            EntityKind::Volume { .. } => "Volumen",
+            EntityKind::Text { .. } => "Text",
+            EntityKind::Room { .. } => "Raumstempel",
+            EntityKind::Dim { .. } => "Bemaßung",
+            EntityKind::ElevationPlan { .. } => "Grundriss-Kote",
+            EntityKind::ElevationSection { .. } => "Schnitt-Kote",
+            EntityKind::Wall { .. } => "Wand",
+            EntityKind::Door { .. } => "Tür",
+            EntityKind::Window { .. } => "Fenster",
+            EntityKind::Stair { .. } => "Treppe",
+            EntityKind::BlockRef { .. } => "Block",
+            EntityKind::Image { .. } => "Bild",
+            EntityKind::Viewport(_) => "Ansichtsfenster",
+        }
+    }
+
+    /// Wächter gegen den Selbst-Fang: **kein** Element darf während eines
+    /// Griffzugs eigene Fangpunkte liefern — geprüft über alle Elementarten mit
+    /// Griffen und über **jeden** ihrer Griffe.
+    ///
+    /// Der Test fragt nicht „welcher Punkt wandert mit?", sondern nur „taucht
+    /// das bearbeitete Element als Fangziel auf?". Deshalb kann ihn keine
+    /// Einzellösung umgehen: ein vergessener Zweig je Elementart fällt hier auf.
+    #[test]
+    fn kein_selbstfang_ueber_alle_elementarten() {
+        let mut app = app();
+        for (action, params) in [
+            ("draw.line", json!({"a": [0.0, 0.0], "b": [4000.0, 0.0]})),
+            (
+                "draw.wall",
+                json!({"a": [0.0, 2000.0], "b": [4000.0, 2000.0], "thickness": 300.0}),
+            ),
+            (
+                "draw.polyline",
+                json!({"pts": [[0.0, 4000.0], [2000.0, 4000.0], [2000.0, 6000.0]]}),
+            ),
+            (
+                "draw.spline",
+                json!({"pts": [[0.0, 8000.0], [1000.0, 8600.0], [2000.0, 8000.0]]}),
+            ),
+            ("draw.circle", json!({"c": [8000.0, 0.0], "r": 1000.0})),
+            (
+                "draw.ellipse",
+                json!({"c": [8000.0, 3000.0], "rx": 1000.0, "ry": 600.0}),
+            ),
+            (
+                "draw.arc",
+                json!({"c": [8000.0, 6000.0], "r": 1000.0, "a0": 0.0, "a1": 90.0}),
+            ),
+            ("draw.point", json!({"p": [12000.0, 0.0]})),
+            (
+                "draw.fill.points",
+                json!({"pts": [[12000.0, 2000.0], [14000.0, 2000.0], [14000.0, 4000.0]],
+                       "pattern": "solid"}),
+            ),
+            (
+                "draw.stair",
+                json!({"a": [12000.0, 6000.0], "b": [14000.0, 6000.0], "width": 1000.0}),
+            ),
+            (
+                "dim.linear",
+                json!({"a": [0.0, 12000.0], "b": [4000.0, 12000.0]}),
+            ),
+        ] {
+            assert!(run(&mut app, action, params), "{action} legt nichts an");
+        }
+
+        let ids: Vec<Id> = app.doc().entities.iter().map(|e| e.id).collect();
+        let mut arten: Vec<&'static str> = Vec::new();
+        for id in ids {
+            let e = app.doc().entity(id).expect("Element fehlt").clone();
+            let griffe = crate::handles::grips_of(&e);
+            if griffe.is_empty() {
+                continue;
+            }
+            arten.push(art_name(&e.kind));
+            let b = jjcad_core::render::entity_bbox(app.doc(), &e);
+            let mitte = (b.min + b.max) * 0.5;
+            // Fangradius so groß wie das Element: jeder eigene Punkt liegt im
+            // Suchfenster, ein Selbst-Fang kann sich nicht verstecken.
+            let tol = (b.max - b.min).len().max(1000.0);
+            for (kind, _) in griffe {
+                app.session_mut().select(vec![id]);
+                app.begin_grip_drag(id, kind);
+                for h in snap::snap_candidates(app.doc(), mitte, tol, None, &[id]) {
+                    assert_ne!(
+                        h.entity,
+                        Some(id),
+                        "Selbst-Fang an {} mit {kind:?}: {h:?}",
+                        art_name(&e.kind)
+                    );
+                }
+                app.cancel_grip_drag();
+            }
+        }
+
+        arten.sort_unstable();
+        assert_eq!(
+            arten,
+            vec![
+                "Bemaßung", "Bogen", "Ellipse", "Fläche", "Kreis", "Linie", "Polylinie",
+                "Punkt", "Spline", "Treppe", "Wand"
+            ],
+            "das Szenario deckt nicht mehr alle Elementarten mit Griffen ab"
+        );
+    }
+
+    // ---- Die vier belegten Fälle (vorher: Fang zog das Element auf sich selbst) ----
+
+    /// Zieht einen Griff über vier Bilder und liefert die Lage des Griffs je
+    /// Bild samt Fang-Label.
+    fn griffzug_lagen(
+        app: &mut App,
+        id: Id,
+        kind: crate::handles::GripKind,
+        roh: V2,
+    ) -> (Vec<V2>, Vec<Option<&'static str>>) {
+        let zoom = app.current_view().zoom.max(1e-6);
+        let tol = 12.0 / zoom;
+        app.begin_grip_drag(id, kind);
+        let mut lagen = Vec::new();
+        let mut labels = Vec::new();
+        for _ in 0..4 {
+            let (p, label) = fang_zeiger(app, roh, tol);
+            app.update_grip_drag(p);
+            labels.push(label);
+            let griff = crate::handles::grips_of(app.doc().entity(id).expect("Element fehlt"))
+                .into_iter()
+                .find(|(k, _)| *k == kind)
+                .map(|(_, q)| q)
+                .expect("Griff fehlt");
+            lagen.push(griff);
+        }
+        (lagen, labels)
+    }
+
+    fn assert_folgt_dem_zeiger(was: &str, lagen: &[V2], labels: &[Option<&'static str>], roh: V2) {
+        for (i, (p, l)) in lagen.iter().zip(labels).enumerate() {
+            assert_eq!(
+                *l, None,
+                "{was}: Bild {i} fängt ({l:?}) statt dem Zeiger zu folgen — Lagen {lagen:?}"
+            );
+            assert!(
+                p.dist(roh) < 1e-9,
+                "{was}: Bild {i} springt von {roh:?} auf {p:?}"
+            );
+        }
+    }
+
+    /// Bild: die gezogene Ecke folgt dem Zeiger.
+    #[test]
+    fn bild_ecke_folgt_dem_zeiger() {
+        let mut app = app();
+        app.options.bild = Some(crate::app::BildQuelle {
+            name: "Probe.png".into(),
+            data: "iVBORw0KGgoAAAANSUhEUgAAAAIAAAACCAIAAAD91JpzAAAAEklEQVR4nGP4z8DAAMIM/4EAAB/uBfsL2WiLAAAAAElFTkSuQmCC".into(),
+        });
+        app.start_tool("draw.image");
+        tool_click(&mut app, V2::new(1000.0, 500.0));
+        tool_click(&mut app, V2::new(3000.0, 500.0));
+        let id = app.doc().entities[0].id;
+        app.session_mut().select(vec![id]);
+        let zoom = app.current_view().zoom.max(1e-6);
+        let roh = V2::new(3000.0 + 5.0 / zoom, 500.0);
+        let (lagen, labels) = griffzug_lagen(&mut app, id, crate::handles::GripKind::Vert(1), roh);
+        assert_folgt_dem_zeiger("Bild", &lagen, &labels, roh);
+    }
+
+    /// Ansichtsfenster (Papierraum): das Fenster liefert beim Ziehen an seiner
+    /// Ecke **keine** eigenen Fangziele. Vorher fehlte der Zweig in der Liste
+    /// der mitwandernden Punkte; die Ecke hing am eigenen Fangpunkt und sprang
+    /// in Fangradius-Schritten.
+    ///
+    /// Geprüft wird über die Kandidatenliste, nicht über die Zeigerlage: im
+    /// Papierraum steht das Schriftfeld des Blattes als fremdes Objekt daneben,
+    /// und ein Fang darauf ist richtig.
+    #[test]
+    fn ansichtsfenster_ecke_folgt_dem_zeiger() {
+        let mut app = app();
+        app.new_document();
+        let sid = app.doc().sheets.first().map(|s| s.id).unwrap_or(0);
+        app.session_mut()
+            .execute(
+                "sheet.add_viewport",
+                &json!({"sheet": sid, "rect_mm": [100.0, 100.0, 400.0, 300.0]}),
+            )
+            .expect("Ansichtsfenster");
+        let id = app
+            .doc()
+            .sheets
+            .iter()
+            .flat_map(|s| s.entities.iter())
+            .find(|e| matches!(e.kind, EntityKind::Viewport(_)))
+            .map(|e| e.id)
+            .expect("Ansichtsfenster fehlt");
+        app.session_mut().set_space(Some(sid));
+        app.session_mut().select(vec![id]);
+        let e = app.doc().entity(id).expect("Ansichtsfenster").clone();
+        let start = crate::handles::grips_of(&e)[1].1;
+
+        let b = jjcad_core::render::entity_bbox(app.doc(), &e);
+        let tol = (b.max - b.min).len().max(1000.0);
+        app.begin_grip_drag(id, crate::handles::GripKind::Vert(1));
+        for h in snap::snap_candidates(app.doc(), (b.min + b.max) * 0.5, tol, None, &[id]) {
+            assert_ne!(h.entity, Some(id), "eigenes Fangziel am Fenster: {h:?}");
+        }
+        // Der Griff wandert wirklich (kein Festhängen am eigenen Fangpunkt).
+        app.update_grip_drag(start + V2::new(30.0, 20.0));
+        let danach = crate::handles::grips_of(app.doc().entity(id).expect("Element")).to_vec();
+        assert!(
+            danach[1].1.dist(start) > 1.0,
+            "die Ecke hängt fest: {danach:?}"
+        );
+        app.cancel_grip_drag();
+    }
+
+    /// Kreis: die Mitte folgt dem Zeiger — auch knapp innerhalb des eigenen
+    /// Randes. Vorher sprang der Kreis um einen Radius, weil der Quadrant bzw.
+    /// das Bogenende als Fangziel angeboten wurde.
+    #[test]
+    fn kreis_mitte_folgt_dem_zeiger() {
+        let mut app = app();
+        assert!(run(
+            &mut app,
+            "draw.circle",
+            json!({"c": [0.0, 0.0], "r": 1000.0})
+        ));
+        let id = app.doc().entities[0].id;
+        app.session_mut().select(vec![id]);
+        let zoom = app.current_view().zoom.max(1e-6);
+        let roh = V2::new(1000.0 + 5.0 / zoom, 0.0);
+        let (lagen, labels) = griffzug_lagen(&mut app, id, crate::handles::GripKind::Vert(0), roh);
+        assert_folgt_dem_zeiger("Kreis", &lagen, &labels, roh);
+    }
+
+    /// Ellipse: dasselbe — ihre Zerlegungssehnen lieferten zusätzlich
+    /// „Endpunkte" auf dem eigenen Rand.
+    #[test]
+    fn ellipse_mitte_folgt_dem_zeiger() {
+        let mut app = app();
+        assert!(run(
+            &mut app,
+            "draw.ellipse",
+            json!({"c": [0.0, 0.0], "rx": 1000.0, "ry": 600.0})
+        ));
+        let id = app.doc().entities[0].id;
+        app.session_mut().select(vec![id]);
+        let zoom = app.current_view().zoom.max(1e-6);
+        let roh = V2::new(1000.0 + 5.0 / zoom, 0.0);
+        let (lagen, labels) = griffzug_lagen(&mut app, id, crate::handles::GripKind::Vert(0), roh);
+        assert_folgt_dem_zeiger("Ellipse", &lagen, &labels, roh);
     }
 
     /// Zwei Ecken aufeinandergelegt (Zug mit Fang auf die Nachbarecke): aus
@@ -11299,7 +11529,7 @@ mod tests_hilfslinien {
     }
 
     fn halt_am_ende(app: &App, id: Id) -> snap::HaltPunkt {
-        let hit = snap::find_snap(app.doc(), V2::new(1999.0, 2.0), 30.0, None, &[], &[])
+        let hit = snap::find_snap(app.doc(), V2::new(1999.0, 2.0), 30.0, None, &[])
             .expect("Linienende muss fangen");
         snap::HaltPunkt::neu(app.doc(), &hit)
     }

@@ -122,6 +122,36 @@ ist ohne Sonderfälle erklärbar, in einem Durchgang über die Liste gerechnet u
 in den meisten Fällen richtig. Wer eine Objektart ergänzt, ordnet sie in
 `zeichenrang` einer Klasse zu — der Compiler erzwingt den Zweig.
 
+### Kein Selbst-Fang beim Bearbeiten
+
+Ein Element, das gerade bearbeitet wird, ist kein Fangziel. Es steht im
+Ausschluss (`ignore`) der Fang-Engine und liefert überhaupt keine Fangpunkte.
+Die Regel gilt in zwei Lagen: beim Griffzug (genau ein Element) und bei der
+wandernden Auswahl (Ziehen am Objekt, Verschieben ab dem Basispunkt). Der
+Basispunkt eines Verschiebens ist noch keine Bewegung: solange er nicht gesetzt
+ist, fängt die Auswahl normal. Werkzeuge, die erst beim Abschlussklick
+verändern (Drehen, Spiegeln, Skalieren, Versetzen), brauchen keinen Ausschluss.
+
+Der Ort der Regel ist `canvas::fang_regeln`; `FangRegeln` hat nur noch das Feld
+`ignore`. Früher gab es drei Mechanismen: `selected` (nur diskrete Punkte),
+gesperrte Punkte (`snap::GesperrterPunkt`) und
+`handles::moving_points`/`fang_sperre`. Alle drei sind entfallen. Der Grund für
+den Umbau: die Liste „welche Punkte wandern mit" musste je Elementart gepflegt
+werden; jeder fehlende Zweig brachte den Selbst-Fang zurück (Bild,
+Ansichtsfenster, Kreis, Ellipse sprangen).
+
+Das Schließen einer Polylinie und das Verschmelzen zweier Flächenecken laufen
+über die Zieh-Toleranz (`handles::apply_grip_tol`, `App::end_grip_drag`), nicht
+über den Fang; die Toleranz ist mit 12 px dieselbe wie der Fangradius, das
+Ergebnis exakt. Der Vorschau-Fang beim Zeichnen einer Polylinie oder eines
+Splines bleibt: das Element steht noch nicht im Dokument, seine Stützpunkte
+kommen über `canvas::vorschau_punkte` herein.
+
+Als Wächter prüft
+`canvas::tests_fang_griff::kein_selbstfang_ueber_alle_elementarten` jede
+Elementart mit Griffen und jeden Griff; `art_name` ist ein erschöpfender match,
+eine neue Elementart bricht den Bau.
+
 ### Dämmung als Linienart (T0120)
 
 Die Linienart **Dämmung** (`LineType::Insulation`) ist kein Strichmuster: sie
