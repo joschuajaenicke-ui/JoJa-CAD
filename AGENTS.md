@@ -302,6 +302,15 @@ Mit dem Nutzer abgestimmt — nicht „verbessern“:
   `App::set_view` (alle Bewegungen: Schwenk, Zoom, Einpassen, Drehen) und
   `App::start_tool`/`App::start_ghost_paste`/`App::start_ghost_block` (Werkzeug- und
   Einfüge-Start) — nicht im Klickpfad daneben nachbauen.
+  **Mehrfachauswahl (T0189)**: Ein Rechtsklick auf ein Objekt, das zur Auswahl
+  gehört, lässt die Auswahl stehen — das Menü gilt dann für **alle** gewählten
+  Objekte (`App::menue_ziel`), und „Verschieben“, „Kopieren mit Basispunkt“,
+  „Drehen“, „Spiegeln“, „Zerlegen“, „Löschen“, die Zeichenreihenfolge und
+  „Eigenschaften im Panel“ treffen die ganze Auswahl. Getroffen **außerhalb**
+  der Auswahl wird wie bisher nur das angeklickte Objekt gewählt; ein
+  Rechtsklick in die leere Fläche bleibt beim Flächenmenü. Der Menükopf nennt
+  bei mehreren Objekten die Anzahl (und die Ebene nur, wenn alle auf derselben
+  liegen) — „Block bearbeiten“ gibt es nur bei genau einem Objekt.
 - **Eigenschaften-Panel**: gleiche Zeilen (96 px Label, 150 px Wert) beim Platzieren
   *und* bei Auswahl; bei Mehrfachauswahl nur gemeinsame Felder, abweichende Werte
   als `*variiert*`; nicht editierbare Werte (Länge, Fläche) anzeigen.
