@@ -10259,6 +10259,24 @@ mod tests_fang_griff {
                 "dim.linear",
                 json!({"a": [0.0, 12000.0], "b": [4000.0, 12000.0]}),
             ),
+            (
+                "dim.room",
+                json!({"pts": [[16000.0, 0.0], [20000.0, 0.0], [20000.0, 4000.0],
+                               [16000.0, 4000.0]]}),
+            ),
+            (
+                "dim.elevation.plan",
+                json!({"p": [22000.0, 0.0], "z": 0.0}),
+            ),
+            (
+                "dim.elevation.section",
+                json!({"pts": [[16000.0, 6000.0], [18000.0, 6000.0]]}),
+            ),
+            (
+                "draw.volume",
+                json!({"pts": [[16000.0, 10000.0], [20000.0, 10000.0],
+                               [20000.0, 14000.0], [16000.0, 14000.0]]}),
+            ),
         ] {
             assert!(run(&mut app, action, params), "{action} legt nichts an");
         }
@@ -10296,8 +10314,9 @@ mod tests_fang_griff {
         assert_eq!(
             arten,
             vec![
-                "Bemaßung", "Bogen", "Ellipse", "Fläche", "Kreis", "Linie", "Polylinie",
-                "Punkt", "Spline", "Treppe", "Wand"
+                "Bemaßung", "Bogen", "Ellipse", "Fläche", "Grundriss-Kote", "Kreis", "Linie",
+                "Polylinie", "Punkt", "Raumstempel", "Schnitt-Kote", "Spline", "Treppe",
+                "Volumen", "Wand"
             ],
             "das Szenario deckt nicht mehr alle Elementarten mit Griffen ab"
         );
