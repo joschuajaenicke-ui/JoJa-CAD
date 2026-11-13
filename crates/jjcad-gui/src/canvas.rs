@@ -1396,8 +1396,10 @@ pub fn show(app: &mut App, ui: &mut Ui) {
         handle_navigation(app, ui, &resp, rect, view);
     }
 
-    // Weltkoordinate unter dem Zeiger
-    let pointer = ui.ctx().pointer_hover_pos().filter(|p| rect.contains(*p));
+    // Weltkoordinate unter dem Zeiger. Über einem Fenster (Inventar,
+    // Tastaturbelegung, Einstellungen) gibt es keinen Punkt der Zeichnung —
+    // das Fenster liegt darüber (T0187).
+    let pointer = zeiger_in_flaeche(ui.ctx(), rect);
     let raw_world = pointer.map(|p| screen_to_world(rect, app.current_view(), p));
 
     // Erweiterter Punktfang: steht der Zeiger lange genug auf einem Fangpunkt,
@@ -2102,6 +2104,43 @@ fn draw_sheet(app: &mut App, p: &Painter, rect: Rect, view: View, cursor: Option
 // Auswahl, Cursor, Vorschau
 // ---------------------------------------------------------------------------
 
+/// Steht der Zeiger über einem Fenster der Oberfläche (Inventar,
+/// Tastaturbelegung, Einstellungen, Menü, Farbwahl …)?
+///
+/// Ein Fenster liegt **über** der Zeichenfläche: der Punkt der Zeichnung
+/// darunter ist nicht gemeint. Für alles, was am Zeiger hängt (Fadenkreuz,
+/// Einfüge-Vorschau, Miniatur), gilt so ein Zeiger deshalb als „außerhalb des
+/// Zeichenbereichs“ (T0187). Vorher prüfte die Zeichenfläche nur ihr eigenes
+/// Rechteck — über dem Inventar standen Fadenkreuz und Vorschau im Hintergrund
+/// weiter, und die Miniatur des Einfügens fehlte genau dort, wo sie zum
+/// Ablegen auf einen Slot gebraucht wird.
+///
+/// Gefragt wird bei egui nach der obersten **anklickbaren** Ebene an dieser
+/// Stelle: die Zeichenfläche liegt in `Order::Background`, jedes Fenster
+/// darüber in `Middle`/`Foreground`/`Tooltip`. Nicht anklickbare Flächen
+/// (Leistungsanzeige, Datei-Hinweis) zählen nicht — sie nehmen keinen Klick an
+/// und dürfen die Zeichnung nicht sperren.
+pub fn zeiger_ueber_fenster(ctx: &egui::Context, pos: Pos2) -> bool {
+    matches!(
+        ctx.layer_id_at(pos),
+        Some(ebene) if ebene.order != egui::Order::Background
+    )
+}
+
+/// Der Zeiger, wenn er wirklich über der Zeichenfläche steht: innerhalb ihres
+/// Rechtecks und nicht von einem Fenster verdeckt (T0187).
+///
+/// Eine Quelle für Fadenkreuz, Fang, Vorschau und Miniatur — wer den Zeiger
+/// der Zeichenfläche braucht, fragt hier und baut keine zweite
+/// `rect.contains`-Prüfung daneben.
+pub fn zeiger_in_flaeche(ctx: &egui::Context, flaeche: Rect) -> Option<Pos2> {
+    let pos = ctx.pointer_hover_pos()?;
+    if !flaeche.contains(pos) || zeiger_ueber_fenster(ctx, pos) {
+        return None;
+    }
+    Some(pos)
+}
+
 /// Die beiden Linien des Fadenkreuzes (waagerecht, senkrecht) über die ganze
 /// Fläche. `None`, wenn der Zeiger außerhalb liegt — dann bleibt der
 /// Systemzeiger sichtbar.
@@ -2185,12 +2224,7 @@ fn draw_grip_mass(app: &App, ui: &Ui, p: &Painter, rect: Rect, view: View) {
         .into_iter()
         .find(|(art, _)| *art == drag.kind)
         .map(|(_, g)| world_to_screen(rect, view, g));
-    let Some(pos) = ui
-        .ctx()
-        .pointer_hover_pos()
-        .filter(|q| rect.contains(*q))
-        .or(griff)
-    else {
+    let Some(pos) = zeiger_in_flaeche(ui.ctx(), rect).or(griff) else {
         return;
     };
     let mass = jjcad_core::stair::treppenmass(a.dist(*b), *height, *steps, *auto_steps);
@@ -2497,7 +2531,10 @@ fn draw_cursor(
     _raw: Option<V2>,
     fang_art: Option<FangArt>,
 ) {
-    let Some(pos) = ui.ctx().pointer_hover_pos().filter(|q| rect.contains(*q)) else {
+    // Nur über der Zeichenfläche selbst: ein Fenster darüber (Inventar,
+    // Tastaturbelegung, Einstellungen) verdeckt die Zeichnung, dort gehört der
+    // Systemzeiger hin und kein Fadenkreuz im Hintergrund (T0187).
+    let Some(pos) = zeiger_in_flaeche(ui.ctx(), rect) else {
         return;
     };
     if let Some(w) = snapped {
@@ -2579,8 +2616,11 @@ pub fn draw_ghost_zeiger(app: &App, ctx: &egui::Context, flaeche: Rect) {
         return;
     }
     // Über der Zeichenfläche zeichnet die Vorschau selbst — die Miniatur
-    // ersetzt sie nur draußen.
-    if flaeche.contains(zeiger) {
+    // ersetzt sie nur draußen. Ein **Fenster** über der Zeichenfläche zählt
+    // dabei als draußen (T0187): Inventar und Tastaturbelegung liegen über der
+    // Zeichnung, und gerade dort wird die Miniatur zum Ablegen auf einen Slot
+    // gebraucht.
+    if zeiger_in_flaeche(ctx, flaeche).is_some() {
         return;
     }
 
@@ -4611,8 +4651,9 @@ fn handle_input(
         return;
     }
 
-    let Some(pos) = ctx.pointer_hover_pos() else { return };
-    if !rect.contains(pos) {
+    // Nur über der Zeichenfläche selbst — ein Fenster darüber nimmt den Klick
+    // an, nicht die Zeichnung (T0187).
+    if zeiger_in_flaeche(ctx, rect).is_none() {
         return;
     }
     let w = match snapped {
@@ -4912,11 +4953,9 @@ fn zwei_klick_auswahl(
     };
     // Zweite Ecke folgt dem Zeiger — auch ohne gedrückte Taste. Außerhalb der
     // Zeichenfläche bleibt der letzte Stand stehen (kein Springen an den Rand).
-    if let Some(p) = ctx.pointer_hover_pos() {
-        if rect.contains(p) {
-            cur = screen_to_world(rect, view, p);
-            app.select_zwei = Some((start, cur, add));
-        }
+    if let Some(p) = zeiger_in_flaeche(ctx, rect) {
+        cur = screen_to_world(rect, view, p);
+        app.select_zwei = Some((start, cur, add));
     }
     // Rechtsklick bricht ab und öffnet danach sein Menü (Rückgabe `false`),
     // Esc ebenso ohne weitere Wirkung.
@@ -12319,6 +12358,149 @@ mod tests_ghost_zeiger {
                 "an der Ecke {ecke:?} hängt die Miniatur aus dem Fenster ({r:?})"
             );
         }
+    }
+
+    // -----------------------------------------------------------------
+    // T0187: Ein Fenster über der Zeichenfläche nimmt den Zeiger
+    // -----------------------------------------------------------------
+    //
+    // Inventar, Tastaturbelegung und Einstellungen liegen **über** der
+    // Zeichnung. Vorher prüften Fadenkreuz und Einfüge-Vorschau nur das
+    // Rechteck der Zeichenfläche: das Fadenkreuz stand im Hintergrund des
+    // Fensters weiter, und die Miniatur des Einfügens fehlte genau dort, wo
+    // der Inhalt auf einen Slot oder eine Taste gelegt wird.
+
+    /// Waagerechte Fadenkreuzlinie durch `y` über die **ganze** Fläche?
+    fn fadenkreuz_waagerecht(out: &egui::FullOutput, flaeche: Rect, y: f32) -> bool {
+        out.shapes.iter().any(|cs| match &cs.shape {
+            egui::Shape::LineSegment { points, .. } => {
+                let (a, b) = (points[0], points[1]);
+                (a.y - y).abs() < 0.5
+                    && (b.y - y).abs() < 0.5
+                    && (a.x.min(b.x) - flaeche.left()).abs() < 0.5
+                    && (a.x.max(b.x) - flaeche.right()).abs() < 0.5
+            }
+            _ => false,
+        })
+    }
+
+    /// Fläche eines offenen Fensters (egui merkt sie sich je `Id`).
+    fn fenster_flaeche(ctx: &egui::Context, id: &str) -> Rect {
+        ctx.memory(|m| m.area_rect(egui::Id::new(id)))
+            .unwrap_or_else(|| panic!("Fenster „{id}“ ist nicht offen"))
+    }
+
+    /// Über dem Inventar: Miniatur am Zeiger, keine Vorschau und kein
+    /// Fadenkreuz im Hintergrund.
+    #[test]
+    fn ueber_dem_inventar_haengt_die_miniatur() {
+        let ctx = egui::Context::default();
+        let mut app = app_mit_einfuegen(&ctx);
+        rahmen(&ctx, &mut app, None);
+        app.ui.inventory_open = true;
+        // Ein Fenster kennt seine Fläche erst nach dem ersten Bild.
+        rahmen(&ctx, &mut app, None);
+        rahmen(&ctx, &mut app, None);
+
+        let flaeche = app.ui.last_canvas;
+        let zeiger = fenster_flaeche(&ctx, "inventar").center();
+        assert!(
+            flaeche.contains(zeiger),
+            "der Prüfpunkt {zeiger:?} liegt nicht über der Zeichenfläche {flaeche:?}"
+        );
+        assert!(
+            zeiger_ueber_fenster(&ctx, zeiger),
+            "der Zeiger steht nicht über dem Inventar"
+        );
+
+        let out = rahmen(&ctx, &mut app, Some(zeiger));
+        let anker = world_to_screen(
+            flaeche,
+            app.current_view(),
+            app.ghost.as_ref().expect("die Vorschau läuft").pos,
+        );
+        assert_eq!(
+            anker_kreuz(&out, anker),
+            0,
+            "die Vorschau steht über dem Inventar in der Zeichnung"
+        );
+        assert_eq!(
+            miniatur_kasten(&out, ghost_zeiger_rect(zeiger, fenster())),
+            2,
+            "die Miniatur fehlt über dem Inventar (Füllung und Rand)"
+        );
+        assert!(
+            !fadenkreuz_waagerecht(&out, flaeche, zeiger.y),
+            "das Fadenkreuz steht hinter dem Inventar"
+        );
+    }
+
+    /// Dasselbe über der Tastaturbelegung.
+    #[test]
+    fn ueber_der_tastaturbelegung_haengt_die_miniatur() {
+        let ctx = egui::Context::default();
+        let mut app = app_mit_einfuegen(&ctx);
+        rahmen(&ctx, &mut app, None);
+        app.ui.keymap_open = true;
+        rahmen(&ctx, &mut app, None);
+        rahmen(&ctx, &mut app, None);
+
+        let flaeche = app.ui.last_canvas;
+        let zeiger = fenster_flaeche(&ctx, "Tastaturbelegung").center();
+        assert!(
+            flaeche.contains(zeiger),
+            "der Prüfpunkt {zeiger:?} liegt nicht über der Zeichenfläche {flaeche:?}"
+        );
+
+        let out = rahmen(&ctx, &mut app, Some(zeiger));
+        assert_eq!(
+            miniatur_kasten(&out, ghost_zeiger_rect(zeiger, fenster())),
+            2,
+            "die Miniatur fehlt über der Tastaturbelegung"
+        );
+        assert!(
+            !fadenkreuz_waagerecht(&out, flaeche, zeiger.y),
+            "das Fadenkreuz steht hinter der Tastaturbelegung"
+        );
+    }
+
+    /// Einstellungen: kein Fadenkreuz im Hintergrund — und die Gegenprobe im
+    /// selben Lauf, dass es ohne Fenster an derselben Stelle steht.
+    #[test]
+    fn kein_fadenkreuz_ueber_den_einstellungen() {
+        let ctx = egui::Context::default();
+        let mut app = App::with_ctx(ctx.clone());
+        rahmen(&ctx, &mut app, None);
+        app.ui.settings_open = true;
+        rahmen(&ctx, &mut app, None);
+        rahmen(&ctx, &mut app, None);
+
+        let flaeche = app.ui.last_canvas;
+        let fenster = app
+            .ui
+            .last_settings_fenster
+            .expect("die Einstellungen sind offen");
+        let zeiger = fenster.center();
+        assert!(
+            flaeche.contains(zeiger),
+            "der Prüfpunkt {zeiger:?} liegt nicht über der Zeichenfläche {flaeche:?}"
+        );
+
+        let out = rahmen(&ctx, &mut app, Some(zeiger));
+        assert!(
+            !fadenkreuz_waagerecht(&out, flaeche, zeiger.y),
+            "das Fadenkreuz steht hinter den Einstellungen"
+        );
+
+        // Gegenprobe: Fenster zu, ein Bild zum Vergessen der Fläche, dann
+        // muss das Fadenkreuz an derselben Stelle stehen.
+        app.ui.settings_open = false;
+        rahmen(&ctx, &mut app, None);
+        let out = rahmen(&ctx, &mut app, Some(zeiger));
+        assert!(
+            fadenkreuz_waagerecht(&out, flaeche, zeiger.y),
+            "ohne Fenster fehlt das Fadenkreuz"
+        );
     }
 }
 

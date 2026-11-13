@@ -703,6 +703,10 @@ pub fn show(app: &mut App, ctx: &egui::Context) {
         let mut offen = true;
         let mut ja = false;
         let mut nein = false;
+        // Im Bild, in dem die Warnung entsteht, lag der Klick noch auf
+        // „Übernehmen“; die Knöpfe nehmen erst den nächsten an.
+        let bedienbar = !app.ui.sicherung_warnung_neu;
+        app.ui.sicherung_warnung_neu = false;
         let gesamt = app.sicherung_pool().manifest().staende.len();
         modal_window(
             ctx,
@@ -735,15 +739,21 @@ pub fn show(app: &mut App, ctx: &egui::Context) {
             ui.add_space(10.0);
             button_row(ui, |ui| {
                 if ui
-                    .button(jjcad_core::i18n::tr("settings.sicherung_warnung_abbrechen"))
+                    .add_enabled(
+                        bedienbar,
+                        egui::Button::new(jjcad_core::i18n::tr(
+                            "settings.sicherung_warnung_abbrechen",
+                        )),
+                    )
                     .clicked()
                 {
                     nein = true;
                 }
-                if ui
-                    .button(jjcad_core::i18n::tr("settings.sicherung_warnung_loeschen"))
-                    .clicked()
-                {
+                let loeschen = ui.add_enabled(
+                    bedienbar,
+                    egui::Button::new(jjcad_core::i18n::tr("settings.sicherung_warnung_loeschen")),
+                );
+                if loeschen.clicked() {
                     ja = true;
                 }
             });
@@ -761,6 +771,8 @@ pub fn show(app: &mut App, ctx: &egui::Context) {
         let mut offen = true;
         let mut ja = false;
         let mut nein = false;
+        let bedienbar = !app.ui.sicherung_aufraeumen_neu;
+        app.ui.sicherung_aufraeumen_neu = false;
         modal_window(
             ctx,
             jjcad_core::i18n::tr("settings.sicherung_aufraeumen_titel"),
@@ -779,13 +791,23 @@ pub fn show(app: &mut App, ctx: &egui::Context) {
             ui.add_space(10.0);
             button_row(ui, |ui| {
                 if ui
-                    .button(jjcad_core::i18n::tr("settings.sicherung_warnung_abbrechen"))
+                    .add_enabled(
+                        bedienbar,
+                        egui::Button::new(jjcad_core::i18n::tr(
+                            "settings.sicherung_warnung_abbrechen",
+                        )),
+                    )
                     .clicked()
                 {
                     nein = true;
                 }
                 if ui
-                    .button(jjcad_core::i18n::tr("settings.sicherung_aufraeumen_ja"))
+                    .add_enabled(
+                        bedienbar,
+                        egui::Button::new(jjcad_core::i18n::tr(
+                            "settings.sicherung_aufraeumen_ja",
+                        )),
+                    )
                     .clicked()
                 {
                     ja = true;
@@ -3430,7 +3452,7 @@ fn settings_body(app: &mut App, ui: &mut Ui) {
                                         .sicherung_entwurf
                                         .map(|e| e != app.prefs.sicherung_einstellungen())
                                         .unwrap_or(false);
-                                    if ui
+                                    let antwort = ui
                                         .add_enabled(
                                             geaendert,
                                             egui::Button::new(jjcad_core::i18n::tr(
@@ -3439,9 +3461,8 @@ fn settings_body(app: &mut App, ui: &mut Ui) {
                                         )
                                         .on_hover_text(jjcad_core::i18n::tr(
                                             "settings.sicherung_uebernehmen_tip",
-                                        ))
-                                        .clicked()
-                                    {
+                                        ));
+                                    if antwort.clicked() {
                                         app.sicherung_uebernehmen();
                                     }
                                     if ui
@@ -3479,6 +3500,7 @@ fn settings_body(app: &mut App, ui: &mut Ui) {
                                             .clicked()
                                         {
                                             app.ui.sicherung_aufraeumen = Some(waisen);
+                                            app.ui.sicherung_aufraeumen_neu = true;
                                         }
                                     },
                                 );

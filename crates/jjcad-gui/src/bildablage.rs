@@ -48,6 +48,19 @@ impl BildAblage {
         Self::default()
     }
 
+    /// Nie die Systemablage anfassen — für Tests und Prüfläufe.
+    ///
+    /// Ein Bild in der Systemablage des Rechners (oder des Prüf-Rechners)
+    /// machte sonst aus Strg+V ein Bildeinfügen, und der Test bekam keine
+    /// Vorschau der eigenen Zwischenablage.
+    pub fn ohne_systemablage() -> Self {
+        Self {
+            clip: None,
+            ohne_anzeige: true,
+            eigen: None,
+        }
+    }
+
     /// Öffnet die Verbindung beim ersten Bedarf. `None` ohne Anzeige.
     fn verbindung(&mut self) -> Option<&mut arboard::Clipboard> {
         if self.clip.is_none() && !self.ohne_anzeige {

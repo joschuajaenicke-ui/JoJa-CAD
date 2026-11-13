@@ -256,6 +256,17 @@ Mit dem Nutzer abgestimmt — nicht „verbessern“:
   die Vorschau) — damit ist sichtbar, was ein Klick auf einen Slot oder eine Taste
   ablegt. Prüfzustand `--demo blockvorschau`; Tests
   `cargo test -p jjcad-gui tests_ghost_zeiger`.
+  **Fenster über der Zeichenfläche (T0187)**: Inventar, Tastaturbelegung, Einstellungen
+  und Menüs liegen über der Zeichnung — ein Zeiger dort gilt als **außerhalb des
+  Zeichenbereichs**. Vorher prüften Fadenkreuz und Vorschau nur das Rechteck der Fläche:
+  das Fadenkreuz stand hinter dem Fenster weiter, und die Miniatur fehlte genau über dem
+  Inventar, wo der Inhalt auf einen Slot gelegt wird. Die eine Abfrage ist
+  `canvas::zeiger_in_flaeche(ctx, flaeche)` (Rechteck **und** nicht von einem Fenster
+  verdeckt); `canvas::zeiger_ueber_fenster` fragt dafür die oberste **anklickbare** Ebene
+  bei egui (`ctx.layer_id_at`, alles über `Order::Background`). Nicht anklickbare Flächen
+  (Leistungsanzeige, Datei-Hinweis) zählen nicht. Prüfweg
+  `cargo test -p jjcad-gui tests_ghost_zeiger` (drei Tests: Inventar, Tastaturbelegung,
+  Einstellungen samt Gegenprobe).
 - **Tastenbelegung in drei Schichten (T0056, `docs/benutzer/TASTEN.md` ist verbindlich)**:
   Ziffern `1`–`0` gehören der **Hotbar**, Buchstaben und Symbole der
   **Tastaturbelegung** (frei und dynamisch änderbar, je Taste genau eine
