@@ -48,16 +48,16 @@ impl BildAblage {
         Self::default()
     }
 
-    /// Eine Ablage **ohne** System-Zwischenablage — für den Testlauf.
+    /// Nie die Systemablage anfassen — für Tests und Prüfläufe.
     ///
-    /// `cargo test` erbt die Anzeige des Rechners; liegt dort ein Bild, wurde
-    /// aus Strg+V ein Bildwerkzeug statt der Zwischenablage-Vorschau, und
-    /// Tests fielen je nach Inhalt der echten Zwischenablage (T0187). Alle
-    /// Wege sind hier stille No-Ops, wie ohne Anzeige.
-    pub fn ohne_system() -> Self {
+    /// Ein Bild in der Systemablage des Rechners (oder des Prüf-Rechners)
+    /// machte sonst aus Strg+V ein Bildeinfügen, und der Test bekam keine
+    /// Vorschau der eigenen Zwischenablage.
+    pub fn ohne_systemablage() -> Self {
         Self {
+            clip: None,
             ohne_anzeige: true,
-            ..Default::default()
+            eigen: None,
         }
     }
 
