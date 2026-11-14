@@ -66,7 +66,7 @@ Ohne `host` sucht `draw.door`/`draw.window` die nächste Wand im Umfeld und
 | `dim.chain.h` / `.v` / `.d` | `pts[]`, `line_pos` | Werkzeuge der Oberfläche: Maßkette waagerecht, senkrecht oder direkt — die Achse kommt aus dem Werkzeug, ein mitgegebenes `axis` sticht sie nicht |
 | `dim.point.add` | `ids`, `p` (oder `pos`), optional `index` | Fügt einer Maßkette einen Messpunkt hinzu; ohne `index` an der Stelle, die die Kette entlang der Messrichtung geordnet hält |
 | `dim.point.remove` | `ids`, `index` oder `p` | Entfernt einen Messpunkt; unter zwei Punkten ist das ein Fehler |
-| `dim.elevation.plan` | `p`, `z` | Grundriss-Kote (Kreis-Symbol), `z` in mm über ±0,00 |
+| `dim.elevation.plan` | `p`, `z`, `text_pos` | Grundriss-Kote (Kreis-Symbol), `z` in mm über ±0,00; `text_pos` = `top` (Vorgabe) / `bottom` / `left` / `right` — Lage des Höhenwertes am Symbol |
 | `dim.elevation.section` | `pts[]` | Schnitt-Kote; der erste Punkt ist ±0,00, alle weiteren Höhen rechnet der Renderer aus der Y-Differenz |
 
 ## Ändern
@@ -97,7 +97,8 @@ und in `modify.set`; ohne Angabe 100 mm und 0,5.
 Typparameter für `modify.set`: `thickness`, `height`, `material` (Wand),
 `width`, `kind`, `hinge`, `swing_in` (Tür), `width`, `sill` (Fenster),
 `steps`, `direction` (Treppe), `text`, `angle`, `bold` (Text), `r` (Kreis),
-`axis`, `angle`, `text` (Maß), `z` (Grundriss-Kote), `pts` (Schnitt-Kote).
+`axis`, `angle`, `text` (Maß), `z`, `text_pos` (Grundriss-Kote), `pts`
+(Schnitt-Kote).
 
 ## Standardebenen
 

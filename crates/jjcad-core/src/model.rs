@@ -209,6 +209,68 @@ impl DoorKind {
 
 }
 
+/// Lage des Höhenwertes an der Grundriss-Kote (T0196).
+///
+/// Der Wert gehört zum Symbol und steht normalerweise **oben** darüber. Je
+/// nach Platz in der Zeichnung lässt er sich auch unten, links oder rechts
+/// daneben setzen; die Lage im Symbol selbst (Kreis, Fadenkreuz) ändert sich
+/// dabei nicht.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[serde(rename_all = "lowercase")]
+pub enum ElevationTextPos {
+    #[default]
+    Top,
+    Bottom,
+    Left,
+    Right,
+}
+
+impl ElevationTextPos {
+    pub const ALL: [ElevationTextPos; 4] = [
+        ElevationTextPos::Top,
+        ElevationTextPos::Bottom,
+        ElevationTextPos::Left,
+        ElevationTextPos::Right,
+    ];
+    /// Deutscher Name — Dateien und Action-Parameter benutzen `key()`.
+    pub fn label(self) -> &'static str {
+        match self {
+            ElevationTextPos::Top => "Oben",
+            ElevationTextPos::Bottom => "Unten",
+            ElevationTextPos::Left => "Links",
+            ElevationTextPos::Right => "Rechts",
+        }
+    }
+    /// Beschriftung in der gewählten Sprache (T0106).
+    pub fn text(self) -> &'static str {
+        match self {
+            ElevationTextPos::Top => crate::i18n::tr("ui.elevationtextpos.top"),
+            ElevationTextPos::Bottom => crate::i18n::tr("ui.elevationtextpos.bottom"),
+            ElevationTextPos::Left => crate::i18n::tr("ui.elevationtextpos.left"),
+            ElevationTextPos::Right => crate::i18n::tr("ui.elevationtextpos.right"),
+        }
+    }
+    /// Schlüssel in der Datei und in der Befehlsschicht.
+    pub fn key(self) -> &'static str {
+        match self {
+            ElevationTextPos::Top => "top",
+            ElevationTextPos::Bottom => "bottom",
+            ElevationTextPos::Left => "left",
+            ElevationTextPos::Right => "right",
+        }
+    }
+    /// Aus dem Text der Befehlsschicht — auch die deutschen Namen.
+    pub fn from_text(t: &str) -> Option<ElevationTextPos> {
+        match t.trim().to_lowercase().as_str() {
+            "top" | "oben" => Some(ElevationTextPos::Top),
+            "bottom" | "unten" => Some(ElevationTextPos::Bottom),
+            "left" | "links" => Some(ElevationTextPos::Left),
+            "right" | "rechts" => Some(ElevationTextPos::Right),
+            _ => None,
+        }
+    }
+}
+
 /// Lage des Basispunktes einer Tür längs ihrer Breite (T0091).
 ///
 /// Der Basispunkt ist der Punkt, an dem eine **neue** Tür am Mauszeiger
@@ -746,6 +808,9 @@ pub enum EntityKind {
         p: Vec2,
         /// Höhe in mm über ±0,00.
         z: f64,
+        /// Lage des Höhenwertes am Symbol (T0196), Vorgabe „Oben".
+        #[serde(default)]
+        text_pos: ElevationTextPos,
     },
     /// Schnitt-Kote: Punktfolge aus Dreieck und Höhenangabe je Punkt.
     ///

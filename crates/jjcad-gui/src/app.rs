@@ -737,6 +737,8 @@ pub struct ToolOptions {
     pub dim_text: String,
     pub offset_dist: f64,
     pub elevation_z: f64,
+    /// Lage des Höhenwertes der nächsten Grundriss-Kote (T0196).
+    pub elevation_text_pos: jjcad_core::model::ElevationTextPos,
     pub fill_pattern: FillPattern,
     /// Muster des Farbeimers. Eigener Wert, damit der Eimer mit Vollfläche
     /// startet (wie ein Farbeimer im Malprogramm), ohne dass die anderen
@@ -846,6 +848,7 @@ impl ToolOptions {
             dim_text: String::new(),
             offset_dist: doc.settings.wall_thickness,
             elevation_z: 0.0,
+            elevation_text_pos: jjcad_core::model::ElevationTextPos::default(),
             fill_pattern: FillPattern::Lines,
             paint_pattern: FillPattern::Solid,
             fill_scale: 100.0,
@@ -2537,6 +2540,34 @@ impl App {
                     let mut v = self.current_view();
                     v.center = V2::new(3600.0, 900.0);
                     v.zoom = 0.35;
+                    self.set_view(v);
+                    self.started_at = 3.0;
+                }
+                // Lage des Höhenwertes an der Grundriss-Kote (T0196): vier
+                // Koten nebeneinander, je eine Lage — Prüfbild für Oben,
+                // Unten, Links und Rechts.
+                "kotepositionen" => {
+                    self.ui.ribbon = RibbonTab::Bemassung;
+                    self.new_document();
+                    let u = self.unit();
+                    let ax = |x: f64, y: f64| [u.from_mm(x), u.from_mm(y)];
+                    for (i, pos) in ["top", "bottom", "left", "right"].iter().enumerate() {
+                        let x = 1000.0 + i as f64 * 1800.0;
+                        let _ = self.session_mut().execute(
+                            "dim.elevation.plan",
+                            &serde_json::json!({
+                                "p": ax(x, 0.0),
+                                "z": u.from_mm(900.0),
+                                "text_pos": pos
+                            }),
+                        );
+                    }
+                    let mut v = self.current_view();
+                    v.center = V2::new(3700.0, 0.0);
+                    // Der Höhenwert trägt den Beschriftungsmaßstab (1:100),
+                    // ist also 250 mm hoch — bei 0,08 px/mm passen alle vier
+                    // Koten nebeneinander ins Bild.
+                    v.zoom = 0.08;
                     self.set_view(v);
                     self.started_at = 3.0;
                 }

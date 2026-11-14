@@ -689,6 +689,12 @@ left = "Links"
 center = "Mitte"
 right = "Rechts"
 
+[ui.elevationtextpos]
+top = "Oben"
+bottom = "Unten"
+left = "Links"
+right = "Rechts"
+
 [ui.textfont]
 sans = "Serifenlos"
 serif = "Serifen"
@@ -1696,6 +1702,7 @@ gilt_fuer_die_markierten_zeichen = "Gilt für die markierten Zeichen."
 hoehe = "Höhe"
 hoehe_steht_im_eigenschaften_panel = "Höhe steht im Eigenschaften-Panel"
 hoehen = "Höhen"
+textposition = "Textposition"
 hoehen_entstehen_aus_der_y_differenz_zum_ersten_punkt = "Höhen entstehen aus der Y-Differenz zum ersten Punkt"
 im_zeichenbereich = "im Zeichenbereich"
 je_objekt_x_im_blatt = "je Objekt · {total} im Blatt"

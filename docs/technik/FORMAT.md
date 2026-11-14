@@ -120,7 +120,7 @@ Jedes Objekt hat `id`, `kind`, `layer` und optional `style`:
 | `text` | `p`, `text`, `height`, `angle`, `align`, `valign`, `bold` | `{DATUM}` usw. werden ersetzt |
 | `dim` | `pts[]`, `line_pos`, `angle`, `override_text` | Maßkette; `angle` = Richtung der Maßlinie in **Bogenmaß** (0 = waagerecht, π/2 = senkrecht). Ältere Dateien tragen `axis` (`X`, `Y`, `Aligned`) — das wird beim Laden in den Winkel umgerechnet |
 | `dim_chain` | `pts[]`, `line_pos`, `axis` | Maßkette in älteren Dateien (wird beim Laden zu `dim` mit `angle`) |
-| `elevation_plan` | `p`, `z` | Grundriss-Kote: Kreis-Symbol, Höhenwert rechts daneben; `z` in mm über ±0,00 |
+| `elevation_plan` | `p`, `z`, `text_pos` | Grundriss-Kote: Kreis-Symbol; `z` in mm über ±0,00, `text_pos` = Lage des Höhenwertes am Symbol (`top` Vorgabe, `bottom`, `left`, `right`) |
 | `elevation_section` | `pts[]` | Schnitt-Kote: Dreieck und Höhenangabe je Punkt; der **erste** Punkt ist ±0,00, alle weiteren Höhen folgen aus der Y-Differenz zu ihm (Modell-mm) |
 | `wall` | `a`, `b`, `thickness`, `height`, `material` | Achse + Dicke; Öffnungen kommen aus Türen/Fenstern mit `host` |
 | `door` | `center`, `angle`, `width`, `kind`, `hinge`, `swing_in`, `host` | `kind`: `Hinge`, `Sliding`, `Double`, `Opening` |
