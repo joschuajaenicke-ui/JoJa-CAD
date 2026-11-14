@@ -122,6 +122,23 @@ ist ohne Sonderfälle erklärbar, in einem Durchgang über die Liste gerechnet u
 in den meisten Fällen richtig. Wer eine Objektart ergänzt, ordnet sie in
 `zeichenrang` einer Klasse zu — der Compiler erzwingt den Zweig.
 
+### Gezeichnet wird je Objekt als Einheit (T0192)
+
+Die Zeichenreihenfolge gilt **je Objekt**, nicht je Primitiv: `render_document`
+legt für jedes Objekt erst dessen Füllflächen, dann dessen Linien in die
+Displayliste (`render::push_als_einheit`). Daraus folgen zwei Dinge:
+
+- Die Umrandung einer Fläche liegt immer über ihrer **eigenen** Füllung.
+- Zwischen zwei Objekten entscheidet allein die Reihenfolge. Eine Fläche, die
+  über einer anderen liegt, deckt deren Umrandung mit zu — vorher standen global
+  alle Füllungen vor allen Linien, und die Umrandung der unteren Fläche blieb
+  über der oberen sichtbar.
+
+Der Zeichenrang bleibt unverändert: eine neue Fläche landet hinter allen Linien
+und deckt sie deshalb nicht zu. Erst „Reihenfolge" (`modify.order`) holt sie
+bewusst nach vorn — dann deckt sie auch Linien zu. Prüfweg:
+`cargo test -p jjcad-core --test flaeche_ueberdeckt`.
+
 ### Kein Selbst-Fang beim Bearbeiten
 
 Ein Element, das gerade bearbeitet wird, ist kein Fangziel. Es steht im

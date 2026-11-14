@@ -146,8 +146,13 @@ Mit dem Nutzer abgestimmt — nicht „verbessern“:
   Fangstelle.
 - **Linienstärken**: zwei Modi, `px` (bildschirmkonstant) und `DPI`
   (maßstabsgetreu wie im Druck). Strichmuster folgt demselben Schalter.
-- **Wandgehrung** über die *Innenwinkel*-Halbierende (`away - outward`);
-  Füllungen vor allen Linien zeichnen, damit keine Umrandung überdeckt wird.
+- **Wandgehrung** über die *Innenwinkel*-Halbierende (`away - outward`).
+  **Gezeichnet wird je Objekt als Einheit** (T0192): erst seine Füllflächen, dann
+  seine Linien (`render::push_als_einheit`). Die Umrandung liegt damit immer über
+  der eigenen Füllung, und zwischen zwei Objekten entscheidet die
+  Zeichenreihenfolge — eine oben liegende Fläche deckt die Umrandung der unteren
+  mit zu. Vorher standen global alle Füllungen vor allen Linien; dadurch blieb die
+  Umrandung der unteren Fläche über der oberen sichtbar.
 - **Auswahl** färbt nur blau ein — kein zusätzlicher Auswahlrahmen. **Ausnahme Text**:
   der Text hat einen unsichtbaren Rahmen (derselbe Kasten wie in der Einfüge-Vorschau), der
   bei Auswahl gezeichnet wird und dessen Ecken/Kantenmitten fangen. Ob Text mit der

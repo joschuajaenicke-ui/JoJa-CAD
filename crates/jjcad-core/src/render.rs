@@ -829,18 +829,48 @@ impl<'a> RenderCtx<'a> {
 // Modell rendern
 // ---------------------------------------------------------------------------
 
+/// Ein Objekt als **Einheit** in die Liste legen: erst seine Füllflächen, dann
+/// seine Linien.
+///
+/// Damit liegt die Umrandung eines Objekts immer über seiner eigenen Füllung,
+/// und zwischen zwei Objekten entscheidet allein die Zeichenreihenfolge — eine
+/// später gezeichnete Fläche deckt deshalb auch die Umrandung einer früher
+/// gezeichneten Fläche zu (T0192).
+fn push_als_einheit(dl: &mut DisplayList, tmp: DisplayList) {
+    let mut linien = Vec::new();
+    for prim in tmp.prims {
+        if matches!(prim.shape, Shape::Fill { .. } | Shape::Image { .. }) {
+            dl.push(prim);
+        } else {
+            linien.push(prim);
+        }
+    }
+    for prim in linien {
+        dl.push(prim);
+    }
+}
+
 pub fn render_document(ctx: &RenderCtx) -> DisplayList {
-    // Die Objektliste ist die Zeichenreihenfolge (Index 0 = hinten). Innerhalb
-    // dieser Reihenfolge stehen **alle** Füllungen vor allen Linien: sonst
-    // deckt die Wandfüllung die Umrandung einer anderen Wand zu. Untereinander
-    // behalten die Füllungen ihre Stellung im Dokument — der Zeichenrang
-    // entscheidet also, welche Fläche oben liegt (Wand über Füllfläche, T0050).
+    // Die Objektliste ist die Zeichenreihenfolge (Index 0 = hinten). Gezeichnet
+    // wird je Objekt: seine Füllungen, dann seine Linien ([`push_als_einheit`]).
+    // Innerhalb eines Objekts liegt die Umrandung damit über der eigenen
+    // Füllung; zwischen Objekten entscheidet die Reihenfolge. Eine Fläche, die
+    // über einer anderen liegt, deckt deren Umrandung mit zu (T0192) — vorher
+    // standen global **alle** Füllungen vor allen Linien, dadurch blieb die
+    // Umrandung der unteren Fläche über der oberen sichtbar.
+    //
+    // Der Zeichenrang beim Einfügen bleibt unverändert: eine neue Fläche
+    // (`RANG_FLAECHE` = 0) landet hinter allen Linien und kann sie deshalb
+    // nicht zudecken. Erst „Reihenfolge“ im Objektmenü holt sie bewusst nach
+    // vorn — dann deckt sie auch Linien zu, wie gewollt.
     // Der Hintergrund eines Textfelds ist die Ausnahme: er gehört zum Text
     // und bleibt an dessen Stelle (`Shape::FillOrdered`), sonst läge er unter
     // Linien, die das Textfeld überdeckt (T0126, Turn 3).
     // Gerendert wird der aktive Bearbeitungsraum: Modell oder Papierraum.
-    let mut fills = DisplayList::default();
-    let mut rest = DisplayList::default();
+    let mut dl = DisplayList {
+        screen: ctx.screen,
+        ..DisplayList::default()
+    };
     for e in ctx.ents() {
         // Die Abbildung gilt für die Liste dieses Durchgangs: sie entscheidet,
         // wie fein das Dämmungsband abgetastet wird (T0176).
@@ -849,18 +879,9 @@ pub fn render_document(ctx: &RenderCtx) -> DisplayList {
             ..DisplayList::default()
         };
         render_entity(ctx, e, Affine::IDENTITY, &mut tmp, 0);
-        for prim in tmp.prims {
-            if matches!(prim.shape, Shape::Fill { .. } | Shape::Image { .. }) {
-                fills.push(prim);
-            } else {
-                rest.push(prim);
-            }
-        }
+        push_als_einheit(&mut dl, tmp);
     }
-    for prim in rest.prims {
-        fills.push(prim);
-    }
-    fills
+    dl
 }
 
 pub fn render_entities(ctx: &RenderCtx, ents: &[Entity]) -> DisplayList {
@@ -878,32 +899,21 @@ pub fn render_entities(ctx: &RenderCtx, ents: &[Entity]) -> DisplayList {
 ///
 /// Grundlage für die Vorschau beim Verschieben/Kopieren: dieselbe Geometrie wie
 /// die fertige Platzierung (alle Elementtypen inklusive Blockauflösung), nur um
-/// `delta` versetzt. Wandfüllungen stehen wie in [`render_document`] vor allen
-/// Linien, damit keine Umrandung überdeckt wird.
+/// `delta` versetzt. Gezeichnet wird wie in [`render_document`] je Objekt als
+/// Einheit — erst seine Füllungen, dann seine Linien.
 pub fn preview_selection(doc: &Document, ids: &[Id], delta: Vec2) -> DisplayList {
     let ctx = RenderCtx::new(doc);
     let xf = Affine::translate(delta);
-    let mut fills = DisplayList::default();
-    let mut rest = DisplayList::default();
+    let mut dl = DisplayList::default();
     for id in ids {
         let Some(e) = doc.entity(*id) else { continue };
         let mut tmp = DisplayList::default();
         render_entity(&ctx, e, xf, &mut tmp, 0);
-        // Dieselbe Ordnung wie `render_document`: alle Füllungen vor allen
-        // Linien, untereinander in der Reihenfolge der Auswahl — der
-        // Texthintergrund bleibt beim Text (`Shape::FillOrdered`).
-        for prim in tmp.prims {
-            if matches!(prim.shape, Shape::Fill { .. } | Shape::Image { .. }) {
-                fills.push(prim);
-            } else {
-                rest.push(prim);
-            }
-        }
+        // Dieselbe Ordnung wie `render_document` — der Texthintergrund bleibt
+        // beim Text (`Shape::FillOrdered`).
+        push_als_einheit(&mut dl, tmp);
     }
-    for prim in rest.prims {
-        fills.push(prim);
-    }
-    fills
+    dl
 }
 
 /// Vorschau einer Schnitt-Kote: die Anzeige des **fertigen** Objekts für eine
