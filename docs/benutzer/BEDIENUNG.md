@@ -201,7 +201,10 @@ ausgeblendet.
   meldet die Kopfzeile als `*variiert*`, jede Änderung wirkt auf alle Objekte dieser Art in
   der Auswahl. Sind Objekte **verschiedener** Arten gewählt, steht unter „Mehrfachauswahl“ und
   „N Objekte · M Arten“ nur noch, was alle gemeinsam haben: Reihenfolge, Layer und Farbe, bei
-  Linien zusätzlich Stärke und Linientyp. Geändert wird damit die ganze Auswahl.
+  Linien zusätzlich Stärke und Linientyp. Geändert wird damit die ganze Auswahl. Das Feld
+  **„Art“** darunter listet genau die Arten der Auswahl; eine Wahl lässt nur deren Objekte
+  gewählt — aus Wand und Linie wird so die Wand, und das Panel zeigt danach den
+  Wand-Abschnitt.
 - **Farbwahl** (T0183): Die Farbvorgaben stehen in **drei Gruppen** mit eigener Überschrift,
   je zwei Spalten. **Bauteile** trägt die drei Bedeutungfarben der Bauzeichnung — Schwarz
   (Bestand), Rot (Neubau), Gelb (Abbruch). **Gestaltung** ist der geschlossene Farbkreis für
