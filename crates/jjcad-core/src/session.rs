@@ -68,17 +68,18 @@ impl Session {
         // dort gibt es keine Wände des Modells, und Block-Objekt-Ids dürfen
         // nicht mit Modell-Ids verwechselt werden (T0137).
         if actions::is_mutating(action) && !self.doc.in_block_space() {
+            let raum = self.doc.space;
+            self.doc.space = None;
+            // Nur eine freie Verschiebung macht die Längslage ungültig — dann
+            // wird sie aus dem neuen Mittelpunkt neu bestimmt. Danach setzt
+            // `reflow_openings` jede Öffnung aus ihrer Wand neu (Türen auf die
+            // vordere Wandkante, Fenster in den Wandkörper).
             if matches!(
                 action,
                 "modify.move" | "modify.copy" | "modify.rotate" | "modify.scale" | "modify.mirror"
             ) {
-                let raum = self.doc.space;
-                self.doc.space = None;
                 actions::resync_openings(&mut self.doc);
-                self.doc.space = raum;
             }
-            let raum = self.doc.space;
-            self.doc.space = None;
             actions::reflow_openings(&mut self.doc);
             self.doc.space = raum;
         }
@@ -102,6 +103,23 @@ impl Session {
     /// Bearbeitungsraum: `None` = Modell, `Some(blatt)` = Papierraum.
     pub fn space(&self) -> Option<Id> {
         self.doc.space
+    }
+
+    /// Türen und Fenster nach einem **freien** Manipulieren wieder auf ihre
+    /// Wand setzen (T0191).
+    ///
+    /// Nötig für die Wege, die kein Objekt über die Action-Schicht schreiben:
+    /// Verschieben mit der Maus (`App::update_move_drag`) und Einfügen aus der
+    /// Zwischenablage. Ohne diesen Schritt blieb eine Tür neben ihrer Wand
+    /// stehen — ihr Basispunkt verließ damit die Wandkante.
+    pub fn oeffnungen_auf_wand(&mut self) {
+        if self.doc.in_block_space() {
+            return;
+        }
+        let raum = self.doc.space;
+        self.doc.space = None;
+        actions::oeffnungen_auf_wand(&mut self.doc);
+        self.doc.space = raum;
     }
 
     /// Bearbeitungsraum wechseln. Die Auswahl gehört zum Raum und wird beim
