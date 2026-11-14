@@ -19,7 +19,10 @@ einsehbar und dort frei änderbar (Ribbon ▸ Ansicht ▸ „Tasten").
 
 1. **Wand** (`G`): Start- und Endpunkt klicken — die Wand läuft als Kette weiter, `ESC` beendet.
 2. **Tür** (`H`) / **Fenster** (`J`): in eine Wand klicken. Öffnung, Laibungen und Anschlag
-   entstehen automatisch, die Tür richtet sich an der Wand aus.
+   entstehen automatisch, die Tür richtet sich an der Wand aus. Beim späteren
+   Verschieben bleibt eine Tür auf ihrer Wand: längs der Wand wandert sie mit,
+   quer zur Wand und über das Wandende hinaus nicht — ihr Basispunkt sitzt
+   immer auf einer der beiden Wandkanten.
 3. **Maßkette** (`M`): ein Element, drei Eingabemodi — im Reiter „Bemaßung“
    stehen dafür **drei eigene Schaltflächen mit eigenem Symbol**
    (**Waagerecht**, **Senkrecht**, **Direkt**), kein Dropdown. *Waagerecht* und

@@ -1104,6 +1104,23 @@ pub fn reflow_openings(doc: &mut Document) {
     }
 }
 
+/// Türen und Fenster nach einem **freien** Manipulieren wieder auf ihre Wand
+/// setzen (T0191).
+///
+/// Wird ein Objekt unmittelbar geschrieben statt über die Action-Schicht —
+/// Verschieben mit der Maus, Einfügen aus der Zwischenablage —, ändert sich
+/// nur der Mittelpunkt: die Längslage `at` bleibt alt und der Querabstand zur
+/// Wand ist beliebig. Eine Tür stand danach neben der Wand, und ihr Basispunkt
+/// wanderte von der Wandkante weg. Diese eine Funktion zieht beides nach: erst
+/// die Längslage aus dem Mittelpunkt neu bestimmen und auf die freie
+/// Wandstrecke begrenzen ([`resync_openings`]), dann folgt der Mittelpunkt aus
+/// der Wand ([`reflow_openings`]) — Türen sitzen wieder auf der vorderen
+/// Wandkante (Blattseite), Fenster im Wandkörper.
+pub fn oeffnungen_auf_wand(doc: &mut Document) {
+    resync_openings(doc);
+    reflow_openings(doc);
+}
+
 /// Datei-Migration: Längslage fehlender Öffnungen ergänzen und alle Öffnungen
 /// anschließend aus ihrer Wand neu setzen.
 pub fn normalize_openings(doc: &mut Document) {

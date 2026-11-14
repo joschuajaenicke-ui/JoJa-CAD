@@ -8681,6 +8681,9 @@ fn rail(ui: &mut egui::Ui, icon: &str, tooltip: &str, chevron: &str) -> bool {
             // (`Document::insert_ranked`): Flächen hinter Linien und Wänden.
             self.doc_mut().insert_ranked(e);
         }
+        // T0191: eine eingefügte Tür hängt an ihrer Wand — die Kopie liegt
+        // danach wieder auf der Wandkante, nicht frei in der Zeichnung.
+        self.session_mut().oeffnungen_auf_wand();
         self.session_mut().select(ids);
         self.mark_changed();
         self.ghost = None;
@@ -10347,6 +10350,12 @@ impl App {
                 *dst = moved;
             }
         }
+        // Türen und Fenster bleiben auf ihrer Wand (T0191): der freie Zug
+        // schreibt die Objekte unmittelbar, ohne die Action-Schicht — ohne
+        // diesen Schritt wanderte eine Tür samt Basispunkt von der Wandkante
+        // weg. Quer zur Wand rührt sich die Tür dadurch nicht mehr, längs
+        // wandert sie wie bisher (an den Wandenden begrenzt).
+        self.session_mut().oeffnungen_auf_wand();
         // Displayliste neu aufbauen: sonst zeigt die Zeichenfläche beim Ziehen
         // den alten Stand (die Vorschau klebt am Zeiger statt mitzuwandern).
         self.mark_changed();
@@ -10371,6 +10380,9 @@ impl App {
 
     pub fn end_move_drag(&mut self) {
         if self.move_drag.take().is_some() {
+            // T0191: die abschließende Lage noch einmal auf die Wand setzen —
+            // der letzte Zugframe kann einen Zwischenstand tragen.
+            self.session_mut().oeffnungen_auf_wand();
             self.mark_changed();
             self.mitteilung(jjcad_core::i18n::tr("gui.app.auswahl_verschoben"));
         }
@@ -12153,6 +12165,76 @@ mod tests_einfuegen_abbrechen {
 }
 
 #[cfg(test)]
+mod tests_tuer_einfuegen {
+    //! T0191: Eine aus der Zwischenablage eingefügte Tür hängt an ihrer Wand.
+    //!
+    //! `App::commit_ghost` schreibt die Kopien unmittelbar in die Zeichnung —
+    //! ohne die Nachführung `Session::oeffnungen_auf_wand` blieb die Kopie an
+    //! der Stelle des Zeigers stehen und ihr Basispunkt lag neben der Wand.
+
+    use super::*;
+
+    #[test]
+    fn eingefuegte_tuer_bleibt_auf_der_wandkante() {
+        let mut app = App::with_ctx(egui::Context::default());
+        app.session_mut()
+            .execute("doc.settings", &serde_json::json!({"input_unit": "mm"}))
+            .expect("Einheit setzen");
+        let w = app
+            .session_mut()
+            .execute(
+                "draw.wall",
+                &serde_json::json!({"a": [0, 0], "b": [6000, 0], "thickness": 300}),
+            )
+            .expect("Wand anlegen")["created"][0]
+            .as_u64()
+            .expect("Wand-Id") as Id;
+        let t = app
+            .session_mut()
+            .execute(
+                "draw.door",
+                &serde_json::json!({"center": [2000, 0], "width": 900, "host": [w]}),
+            )
+            .expect("Tür anlegen")["created"][0]
+            .as_u64()
+            .expect("Tür-Id") as Id;
+
+        app.session_mut().select(vec![t]);
+        let ids = app.selection().to_vec();
+        app.merke_zwischenablage(&ids, None);
+        // Zeiger weit neben der Wand: die Vorschau hängt dort.
+        app.pointer_world = Some(V2::new(3000.0, 2500.0));
+        app.start_ghost_paste();
+        assert!(app.commit_ghost(), "der Klick setzt die Kopie ab");
+
+        let kopie = app
+            .doc()
+            .entities
+            .iter()
+            .filter(|e| matches!(e.kind, EntityKind::Door { .. }))
+            .map(|e| e.id)
+            .find(|id| *id != t)
+            .expect("keine Kopie der Tür");
+        let bp = jjcad_core::render::door_base_point(app.doc().entity(kopie).unwrap())
+            .expect("Basispunkt");
+        assert!(
+            (bp.y - 150.0).abs() < 0.5,
+            "Basispunkt der Kopie muss auf der Wandkante liegen: {bp:?}"
+        );
+        match &app.doc().entity(kopie).unwrap().kind {
+            EntityKind::Door { at, center, .. } => {
+                assert!(at.is_some(), "die Kopie hat eine Längslage in der Wand");
+                assert!(
+                    (center.y - 150.0).abs() < 0.5,
+                    "die Kopie sitzt auf der Wandkante: center={center:?}"
+                );
+            }
+            _ => panic!("keine Tür"),
+        }
+    }
+}
+
+#[cfg(test)]
 mod tests_vollbild {
     //! T0008: Vollbild (rahmenloses Fenster) über F11 und über den Knopf im
     //! Reiter „Ansicht".
@@ -12416,6 +12498,67 @@ mod tests_text_ziehen {
             .expect("Linie fehlt")
             .id;
         (app, text, linie)
+    }
+
+    /// T0191: Der Mauszug schreibt die Objekte unmittelbar, an der
+    /// Action-Schicht vorbei — ohne Nachführung wanderte der Basispunkt einer
+    /// Tür beliebig von der Wandkante weg. Quer zur Wand rührt sie sich nicht
+    /// mehr, längs wandert sie weiter (an den Wandenden begrenzt).
+    #[test]
+    fn mauszug_haelt_den_basispunkt_der_tuer_auf_der_wandkante() {
+        let mut app = App::with_ctx(egui::Context::default());
+        app.prefs.mouse_move = true;
+        app.session_mut()
+            .execute("doc.settings", &serde_json::json!({"input_unit": "mm"}))
+            .expect("Einheit setzen");
+        let w = app
+            .session_mut()
+            .execute(
+                "draw.wall",
+                &serde_json::json!({"a": [0, 0], "b": [6000, 0], "thickness": 300}),
+            )
+            .expect("Wand anlegen")["created"][0]
+            .as_u64()
+            .expect("Wand-Id") as Id;
+        let t = app
+            .session_mut()
+            .execute(
+                "draw.door",
+                &serde_json::json!({"center": [2000, 0], "width": 900, "host": [w]}),
+            )
+            .expect("Tür anlegen")["created"][0]
+            .as_u64()
+            .expect("Tür-Id") as Id;
+        app.session_mut().select(vec![t]);
+
+        // 2 m quer zur Wand ziehen: die Tür bleibt auf der Wandkante.
+        assert!(app.begin_move_drag_bei_klick(t, V2::ZERO, 0.0), "Zug startet");
+        app.update_move_drag(V2::new(0.0, 2000.0));
+        let bp = jjcad_core::render::door_base_point(app.doc().entity(t).unwrap())
+            .expect("Basispunkt");
+        assert!(
+            (bp.y - 150.0).abs() < 0.5,
+            "Basispunkt muss auf der Wandkante bleiben: {bp:?}"
+        );
+        app.end_move_drag();
+
+        // 1 m längs der Wand: die Tür wandert mit (Zentrum 2450 → 3450).
+        assert!(app.begin_move_drag_bei_klick(t, V2::ZERO, 0.0), "Zug startet");
+        app.update_move_drag(V2::new(1000.0, 0.0));
+        app.end_move_drag();
+        match &app.doc().entity(t).unwrap().kind {
+            EntityKind::Door { at, center, .. } => {
+                assert!(
+                    (at.unwrap() - 3450.0).abs() < 0.5,
+                    "längs der Wand wandert die Tür: at={at:?}"
+                );
+                assert!(
+                    (center.y - 150.0).abs() < 0.5,
+                    "und bleibt auf der Wandkante: center={center:?}"
+                );
+            }
+            _ => panic!("keine Tür"),
+        }
     }
 
     /// Abgeschaltet startet Ziehen auf dem ausgewählten Text kein Verschieben
