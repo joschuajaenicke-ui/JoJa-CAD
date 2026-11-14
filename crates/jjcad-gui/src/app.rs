@@ -3169,6 +3169,42 @@ impl App {
                         self.session_mut().selection = vec![id];
                     }
                 }
+                // T0193: erste Wand **und** eine freie Linie auswählen — das
+                // Eigenschaften-Panel zeigt dann nur die gemeinsamen Zeilen.
+                // Die Wohnhaus-Vorlage enthält keine Linie, deshalb entsteht
+                // eine; die Auswahl stellt sich danach aus Wand und Linie
+                // zusammen.
+                "selgemischt" => {
+                    let wand = self
+                        .doc()
+                        .entities
+                        .iter()
+                        .find(|e| matches!(e.kind, EntityKind::Wall { .. }))
+                        .map(|e| e.id);
+                    let linie = self
+                        .doc()
+                        .entities
+                        .iter()
+                        .find(|e| {
+                            matches!(
+                                e.kind,
+                                EntityKind::Line { .. } | EntityKind::Polyline { .. }
+                            )
+                        })
+                        .map(|e| e.id)
+                        .or_else(|| {
+                            self.session_mut()
+                                .execute(
+                                    "draw.line",
+                                    &serde_json::json!({"a": [1.0, 3.0], "b": [3.0, 3.0]}),
+                                )
+                                .ok()
+                                .and_then(|a| a["created"][0].as_u64())
+                        });
+                    if let (Some(w), Some(l)) = (wand, linie) {
+                        self.session_mut().selection = vec![w, l];
+                    }
+                }
                 "selffill" | "selfill" => {
                     // erste Füllfläche auswählen: Eigenschaften-Panel der
                     // Füllfläche (Muster, Winkel, Abstand, Umrandung) zeigen

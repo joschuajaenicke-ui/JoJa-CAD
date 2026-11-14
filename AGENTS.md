@@ -355,12 +355,19 @@ Mit dem Nutzer abgestimmt — nicht „verbessern“:
   Anleitung im Kopf von `props.rs` eingetragen (Zeichnen, Werte holen, Anwenden,
   Zeilen anmelden, Routing, Test) — `props::tests::jede_objektart_hat_ein_panel`
   und `…::alle_erzeuger_zeigen_dieselben_zeilen_wie_das_objekt` erzwingen das.
-  Die **Mehrfachauswahl** (`props::mehrfach`) zeichnet **je Objektart** denselben
-  Abschnitt wie ein einzelnes Objekt und schickt jede Änderung über `props::setzen`
-  an **alle** Objekte der Gruppe (`App::mehrfach_ziel`). Damit gilt jede Eigenschaft
-  eines Objekts automatisch auch für die Auswahl — wer eine Zeile ergänzt, hat sie
-  in der Mehrfachauswahl schon. Abweichende Werte meldet die Kopfzeile als
-  `*variiert*`; ein zweiter Maler existiert nicht mehr.
+  Die **Mehrfachauswahl** (`props::mehrfach`) zeichnet bei **einer** Objektart
+  denselben Abschnitt wie das einzelne Objekt und schickt jede Änderung über
+  `props::setzen` an **alle** Objekte der Gruppe (`App::mehrfach_ziel`). Damit
+  gilt jede Eigenschaft eines Objekts automatisch auch für die Auswahl — wer
+  eine Zeile ergänzt, hat sie in der Mehrfachauswahl schon. Abweichende Werte
+  meldet die Kopfzeile als `*variiert*`; ein zweiter Maler existiert nicht mehr.
+  **Gemischte Auswahl (T0193)**: Sind Objekte **verschiedener** Arten gewählt,
+  erscheint keine Liste je Art mehr, sondern **nur, was alle gemeinsam haben**
+  (`props::mehrfach_gemeinsam`): Kopf „Mehrfachauswahl", „N Objekte · M Arten",
+  dann Reihenfolge, Layer und Farbe — dazu Stärke und Linientyp, sofern jede
+  Art eine Linie hat (`props::hat_linie`; Text, Raumstempel, Block, Bild und
+  Ansichtsfenster haben keine). Jede Änderung dort geht an **alle** Objekte der
+  Auswahl. Prüfweg: `cargo test -p jjcad-gui props::tests::gemischte_`.
 - **Markenzeichen (T0083)**: Das Icon aus `branding/` ist **eine** Bilddatei
   (`crates/jjcad-gui/assets/jjc-icon-512.png`, per `include_bytes!` im Programm wie die
   technischen Schriften). Drei Stellen zeigen es über `icon::textur`/`icon::textur_klein`/

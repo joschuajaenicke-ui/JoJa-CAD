@@ -196,10 +196,12 @@ ausgeblendet.
 - **Eigenschaften-Panel** (rechts): tabellarische Liste mit Layer, Farbe, Stärke, Linientyp und
   nicht editierbaren Angaben (Länge, Radius, Fläche). Läuft ein Werkzeug, stehen oben die
   Eigenschaften für das **nächste** Element — einmal gesetzt gilt das für alle folgenden Elemente.
-  Bei Mehrfachauswahl erscheint **je Objektart** ein Abschnitt mit genau den Feldern des
+  Bei Mehrfachauswahl **einer** Objektart erscheint ein Abschnitt mit genau den Feldern des
   einzelnen Objekts (z. B. Dicke, Höhe, Schraffur, Füllfarbe bei Wänden); abweichende Werte
   meldet die Kopfzeile als `*variiert*`, jede Änderung wirkt auf alle Objekte dieser Art in
-  der Auswahl.
+  der Auswahl. Sind Objekte **verschiedener** Arten gewählt, steht unter „Mehrfachauswahl“ und
+  „N Objekte · M Arten“ nur noch, was alle gemeinsam haben: Reihenfolge, Layer und Farbe, bei
+  Linien zusätzlich Stärke und Linientyp. Geändert wird damit die ganze Auswahl.
 - **Farbwahl** (T0183): Die Farbvorgaben stehen in **drei Gruppen** mit eigener Überschrift,
   je zwei Spalten. **Bauteile** trägt die drei Bedeutungfarben der Bauzeichnung — Schwarz
   (Bestand), Rot (Neubau), Gelb (Abbruch). **Gestaltung** ist der geschlossene Farbkreis für

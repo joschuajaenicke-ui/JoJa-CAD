@@ -4185,6 +4185,89 @@ pub fn viewport(app: &mut App, ui: &mut Ui, ziel: Ziel) {
     }
 }
 
+/// Hat diese Objektart eine Linie (Farbe, Stärke, Linientyp)?
+///
+/// Text, Raumstempel, Block, Bild und Ansichtsfenster haben keine — bei ihnen
+/// sähen Stärke und Linientyp aus, als ließen sie sich einstellen, ohne dass
+/// sich am Bild etwas ändert.
+fn hat_linie(kind: &EntityKind) -> bool {
+    !matches!(
+        kind,
+        EntityKind::Text { .. }
+            | EntityKind::Room { .. }
+            | EntityKind::BlockRef { .. }
+            | EntityKind::Image { .. }
+            | EntityKind::Viewport { .. }
+    )
+}
+
+/// Eigenschaften einer Auswahl aus **mehreren Objektarten** (T0193).
+///
+/// Gezeigt wird nur, was **alle** Objekte gemeinsam haben: Reihenfolge, Layer
+/// und Farbe, dazu Stärke und Linientyp, sofern jede Art eine Linie besitzt.
+/// Die art-eigenen Werte (Dicke, Radius, Schraffur, Schrift …) bleiben weg —
+/// für ein Objekt, das sie nicht hat, gäbe es nichts zu ändern, und die lange
+/// Liste je Art war genau das, was hier gestört hat.
+///
+/// Geändert wird über [`gemein_nach_objekt`] → [`setzen`] an **alle** Kennungen:
+/// dafür steht `App::mehrfach_ziel` während des Zeichnens auf der ganzen
+/// Auswahl.
+fn mehrfach_gemeinsam(app: &mut App, ui: &mut Ui, ids: &[Id], arten: usize) {
+    let vorher = std::mem::take(&mut app.mehrfach_ziel);
+    app.mehrfach_ziel = ids.to_vec();
+
+    section_title(ui, "select", jjcad_core::i18n::tr("gui.props.mehrfachauswahl"));
+    ui.label(theme::dim(jjcad_core::i18n::t_args_owned(
+        "gui.props.x_objekte_x_arten",
+        &[
+            ("anzahl", format!("{}", ids.len())),
+            ("wert1", format!("{arten}")),
+        ],
+    )));
+    ui.add_space(6.0);
+
+    let erste = ids[0];
+    let e: Option<Entity> = app.doc().entity(erste).cloned();
+    let (layer, farbe) = match &e {
+        Some(e) => (e.layer, e.style.color),
+        None => (app.doc().current_layer, app.ui.pending.color),
+    };
+    let farbe_gezeigt = farbe.unwrap_or_else(|| {
+        app.doc()
+            .layer(layer)
+            .map(|l| l.color)
+            .unwrap_or(Color::BLACK)
+    });
+    let (staerke, linientyp) = linienwerte(app, &e, "Linie");
+    // Nur wenn **jede** Art eine Linie hat, sind Stärke und Linientyp
+    // gemeinsame Eigenschaften.
+    let mit_linie = ids.iter().all(|id| {
+        app.doc()
+            .entity(*id)
+            .map(|e| hat_linie(&e.kind))
+            .unwrap_or(false)
+    });
+
+    reihenfolge(app, ui, Ziel::Auswahl(erste));
+    let a = gemein(
+        app,
+        ui,
+        Ziel::Auswahl(erste),
+        layer,
+        farbe,
+        farbe_gezeigt,
+        staerke,
+        linientyp,
+        mit_linie,
+        jjcad_core::i18n::tr("gui.props.farbe"),
+    );
+    // `setzen` schickt an alle Kennungen in `mehrfach_ziel` — also an jedes
+    // Objekt der Auswahl, unabhängig von seiner Art.
+    gemein_nach_objekt(app, erste, &a);
+
+    app.mehrfach_ziel = vorher;
+}
+
 pub fn mehrfach(app: &mut App, ui: &mut Ui, ids: &[Id]) {
     let mut gruppen: Vec<(std::mem::Discriminant<EntityKind>, Vec<Id>)> = Vec::new();
     for id in ids {
@@ -4199,43 +4282,42 @@ pub fn mehrfach(app: &mut App, ui: &mut Ui, ids: &[Id]) {
         return;
     }
 
-    section_title(ui, "select", jjcad_core::i18n::tr("gui.props.mehrfachauswahl"));
-    let anzahl: usize = gruppen.iter().map(|(_, l)| l.len()).sum();
-    // Bei einer einzigen Art nennt der Kopf des Abschnitts die Anzahl — hier
-    // stünde sie sonst zweimal untereinander.
+    // Mehrere Arten: nur die gemeinsamen Zeilen (T0193).
     if gruppen.len() > 1 {
-        ui.label(theme::dim(jjcad_core::i18n::t_args_owned("gui.props.x_objekte_x_arten", &[("anzahl", format!("{}", anzahl)), ("wert1", format!("{}", gruppen.len()))])));
-    }
+        mehrfach_gemeinsam(app, ui, ids, gruppen.len());
+    } else {
+        section_title(ui, "select", jjcad_core::i18n::tr("gui.props.mehrfachauswahl"));
 
-    let vorher = std::mem::take(&mut app.mehrfach_ziel);
-    for (i, (_, liste)) in gruppen.iter().enumerate() {
-        if i > 0 {
-            ui.add_space(8.0);
-            widgets::hline(ui);
-            ui.add_space(6.0);
-        }
-        app.mehrfach_ziel = liste.clone();
-        let ziel = Ziel::Auswahl(liste[0]);
-        let art = app.doc().entity(liste[0]).map(|e| e.kind.clone());
-        match art {
-            Some(EntityKind::Text { .. }) => text(app, ui, ziel),
-            Some(EntityKind::Wall { .. }) => wand(app, ui, ziel),
-            Some(EntityKind::Door { .. }) => tuer(app, ui, ziel),
-            Some(EntityKind::Window { .. }) => fenster(app, ui, ziel),
-            Some(EntityKind::Fill { .. }) => fuellflaeche(app, ui, ziel),
-            Some(EntityKind::Dim { .. }) => bemassung(app, ui, ziel),
-            Some(EntityKind::Volume { .. }) => volumen(app, ui, ziel),
-            Some(EntityKind::Stair { .. }) => treppe(app, ui, ziel),
-            Some(EntityKind::Room { .. }) => raumstempel(app, ui, ziel),
-            Some(kind) => {
-                if let Some(a) = Einfach::aus_objekt(&kind) {
-                    einfach(app, ui, ziel, a)
-                }
+        let vorher = std::mem::take(&mut app.mehrfach_ziel);
+        for (i, (_, liste)) in gruppen.iter().enumerate() {
+            if i > 0 {
+                ui.add_space(8.0);
+                widgets::hline(ui);
+                ui.add_space(6.0);
             }
-            None => {}
+            app.mehrfach_ziel = liste.clone();
+            let ziel = Ziel::Auswahl(liste[0]);
+            let art = app.doc().entity(liste[0]).map(|e| e.kind.clone());
+            match art {
+                Some(EntityKind::Text { .. }) => text(app, ui, ziel),
+                Some(EntityKind::Wall { .. }) => wand(app, ui, ziel),
+                Some(EntityKind::Door { .. }) => tuer(app, ui, ziel),
+                Some(EntityKind::Window { .. }) => fenster(app, ui, ziel),
+                Some(EntityKind::Fill { .. }) => fuellflaeche(app, ui, ziel),
+                Some(EntityKind::Dim { .. }) => bemassung(app, ui, ziel),
+                Some(EntityKind::Volume { .. }) => volumen(app, ui, ziel),
+                Some(EntityKind::Stair { .. }) => treppe(app, ui, ziel),
+                Some(EntityKind::Room { .. }) => raumstempel(app, ui, ziel),
+                Some(kind) => {
+                    if let Some(a) = Einfach::aus_objekt(&kind) {
+                        einfach(app, ui, ziel, a)
+                    }
+                }
+                None => {}
+            }
         }
+        app.mehrfach_ziel = vorher;
     }
-    app.mehrfach_ziel = vorher;
 
     // ---- Auswertung über die ganze Auswahl ----
     let ents: Vec<Entity> = ids
@@ -5191,10 +5273,11 @@ mod tests {
         }
     }
 
-    /// Auswahl über mehrere Arten: je Art ein Abschnitt — die Zeilen beider
-    /// Arten stehen im Panel, geändert wird je Gruppe.
+    /// Auswahl über mehrere Arten: es stehen **nur** die gemeinsamen Zeilen im
+    /// Panel (T0193) — Reihenfolge, Layer, Farbe, Stärke, Linientyp. Die
+    /// art-eigenen Werte (Dicke, Schraffur, Geometrie der Linie) fehlen.
     #[test]
-    fn gemischte_auswahl_zeigt_je_art_einen_abschnitt() {
+    fn gemischte_auswahl_zeigt_nur_gemeinsame_zeilen() {
         let (mut app, a, b) = zwei_waende();
         let line = app
             .session_mut()
@@ -5207,21 +5290,83 @@ mod tests {
             .expect("Linien-Id");
         app.session_mut().selection = vec![a, b, line];
         let zeilen = zeichne(&mut app);
-        // Wandzeilen …
-        assert!(zeilen.contains(&"dicke"), "Dicke fehlt: {zeilen:?}");
-        assert!(zeilen.contains(&"schraffur"), "Schraffur fehlt: {zeilen:?}");
-        // … und die Zeilen der Linie (aus `Einfach`, hier `geometrie`).
+
+        for gemeinsame in ["reihenfolge", "layer", "farbe", "staerke", "linientyp"] {
+            assert!(
+                zeilen.contains(&gemeinsame),
+                "gemeinsame Zeile „{gemeinsame}“ fehlt: {zeilen:?}"
+            );
+        }
+        // Nichts, was nur eine der beiden Arten hat.
+        for eigene in ["dicke", "schraffur", "geometrie", "hoehe", "kennzahlen"] {
+            assert!(
+                !zeilen.contains(&eigene),
+                "art-eigene Zeile „{eigene}“ in der gemischten Auswahl: {zeilen:?}"
+            );
+        }
+        // Genau ein Abschnitt, jede gemeinsame Zeile genau einmal.
+        for einmal in ["layer", "farbe", "staerke", "linientyp"] {
+            assert_eq!(
+                zeilen.iter().filter(|z| **z == einmal).count(),
+                1,
+                "Zeile „{einmal}“ doppelt: {zeilen:?}"
+            );
+        }
+    }
+
+    /// Hat eine der Arten keine Linie (Text), entfallen Stärke und Linientyp —
+    /// Layer und Farbe bleiben.
+    #[test]
+    fn gemischte_auswahl_mit_text_ohne_linienzeilen() {
+        let (mut app, a, b) = zwei_waende();
+        let text = app
+            .session_mut()
+            .execute(
+                "draw.text",
+                &json!({"p": [1.0, 1.0], "text": "Hallo", "height": 0.25}),
+            )
+            .expect("Text")["created"][0]
+            .as_u64()
+            .expect("Text-Id");
+        app.session_mut().selection = vec![a, b, text];
+        let zeilen = zeichne(&mut app);
+
+        assert!(zeilen.contains(&"layer"), "Layer fehlt: {zeilen:?}");
+        assert!(zeilen.contains(&"farbe"), "Farbe fehlt: {zeilen:?}");
         assert!(
-            zeilen.contains(&"geometrie"),
-            "die Linie hat in der gemischten Auswahl keinen Abschnitt: {zeilen:?}"
+            !zeilen.contains(&"staerke"),
+            "Stärke steht, obwohl der Text keine Linie hat: {zeilen:?}"
         );
-        // Der Abschnitt der Wand steht genau einmal (eine Gruppe), der der
-        // Linie genau einmal — nicht doppelt.
-        assert_eq!(
-            zeilen.iter().filter(|z| **z == "dicke").count(),
-            1,
-            "Wandabschnitt doppelt: {zeilen:?}"
+        assert!(
+            !zeilen.contains(&"linientyp"),
+            "Linientyp steht, obwohl der Text keine Linie hat: {zeilen:?}"
         );
+    }
+
+    /// Eine Änderung der gemeinsamen Zeilen trifft **alle** Arten der Auswahl —
+    /// auch die, deren Werte nicht angezeigt werden.
+    #[test]
+    fn gemischte_auswahl_aenderung_trifft_alle_arten() {
+        let (mut app, a, _b) = zwei_waende();
+        let line = app
+            .session_mut()
+            .execute(
+                "draw.line",
+                &json!({"a": [0.0, 5.0], "b": [2.0, 5.0]}),
+            )
+            .expect("Linie")["created"][0]
+            .as_u64()
+            .expect("Linien-Id");
+        app.mehrfach_ziel = vec![a, line];
+        let mut aenderung = Gemein::default();
+        aenderung.farbe = Some(Some(Color::rgb(10, 120, 200)));
+        aenderung.staerke = Some(0.42);
+        gemein_nach_objekt(&mut app, a, &aenderung);
+        for id in [a, line] {
+            let e = app.doc().entity(id).expect("Objekt");
+            assert_eq!(e.style.color, Some(Color::rgb(10, 120, 200)), "#{id}");
+            assert_eq!(e.style.line_weight, Some(0.42), "#{id}");
+        }
     }
 
     /// Auch die gemeinsamen Zeilen (Farbe, Stärke, Linientyp) laufen über
