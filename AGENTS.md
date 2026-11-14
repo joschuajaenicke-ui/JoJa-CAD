@@ -484,6 +484,24 @@ Mit dem Nutzer abgestimmt — nicht „verbessern“:
   Stücke immer offen) — nicht an einer zweiten Stelle nachbauen. Ältere Dateien
   dürfen noch Zwei-Punkt-Züge enthalten; sie werden erst beim Stutzen zur Linie.
   Prüfweg: `cargo test -p jjcad-core --test polylinie_geschlossen`.
+- **Parallele (T0200)**: Das Werkzeug `draw.parallel` (Reiter Zeichnen, Gruppe
+  „Grundelemente") legt eine **Linie oder Polylinie** im Abstand daneben; die Seite
+  bestimmt der Mauszeiger, den Abstand nimmt der erste Klick von ihm und **merkt** ihn
+  sich danach. Die Geometrie steht **einmal** in `actions::parallel_kind` (Linie: Normale
+  der Richtung; Polylinie: `geom::offset_polyline`, Vorzeichen aus der **nächsten**
+  Strecke) — Vorschau und Action rufen dieselbe Funktion, die Vorschau ist also
+  zeilengleich mit dem Ergebnis. Den Abstand misst `actions::parallel_abstand` senkrecht
+  zur nächsten Strecke; gemessen wird am **rohen** Zeiger, nicht am Fangpunkt (sonst zöge
+  der Objektfang den Punkt auf die Vorlage selbst und der Abstand wäre 0). Der gemerkte
+  Wert liegt in `ToolOptions::parallel_dist` und beginnt bei jedem Start des Werkzeugs
+  leer; jede weitere Parallele geht von der **zuletzt angelegten** Linie aus (`Tool::obj`
+  rückt nach) — so entsteht eine Reihe im selben Abstand. Ebene und Stil erbt das neue
+  Objekt von der Vorlage; jede andere Objektart ist ein Fehler (kein stiller Erfolg).
+  Der Reiter Zeichnen trägt seitdem 14 Schaltflächen und braucht mit dem üblichen
+  5-px-Abstand 1128 px — deshalb steht sein `item_spacing.x` auf 2 px (gemessen 1074 px,
+  `reiter_zeichnen_passt_in_die_mindestbreite`). Prüfweg:
+  `cargo test -p jjcad-core --test parallele` und `cargo test -p jjcad-gui tests_parallele`;
+  Prüfbild `--demo "draw,parallele"`.
 - **Treppen** sind von der Kontur her ein **Rechteck**: erster und zweiter Klick
   liegen auf der **Außenkante** (Länge), der dritte setzt die Breite dorthin, wo
   der Zeiger steht. Gespeichert ist die Lauflinie (`a`→`b`, Mitte) plus Breite —

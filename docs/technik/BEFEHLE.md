@@ -36,6 +36,7 @@ Befehls-Schicht vorbei.
 | `draw.point` | `p` | `{"p":[1.2,3.4]}` |
 | `draw.line` | `a`, `b` | `{"a":[0,0],"b":[5,0]}` |
 | `draw.polyline` | `pts[]`, `closed` | `{"pts":[[0,0],[3,1],[5,0]],"closed":false}` |
+| `draw.parallel` | `ids` (Linie oder Polylinie), `distance`, `side` | `{"ids":[7],"distance":0.3,"side":[2,1]}` — neue Linie/Polylinie im Abstand `distance`; `side` ist ein Punkt und bestimmt nur die **Seite**. Ebene, Farbe und Stärke erbt das neue Objekt von der Vorlage. Andere Objektarten sind ein Fehler |
 | `draw.spline` | `pts[]`, `closed` | `{"pts":[[0,0],[3,1],[5,0]],"closed":false}` — Catmull-Rom durch die Punkte |
 | `draw.rect` | `a`, `b`, optional `height` | `{"a":[0,0],"b":[3,2]}` — mit `height` ist `a`→`b` die Basislinie beliebiger Lage, `height` der senkrechte Abstand (Vorzeichen = Seite, positiv links der Richtung a→b): `{"a":[0,0],"b":[3,3],"height":1}` |
 | `draw.circle` | `c`, `r` oder `through` | `{"c":[2,2],"r":0.75}` |

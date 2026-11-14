@@ -3672,6 +3672,34 @@ fn draw_tool_preview(
                 label = jjcad_core::i18n::tr("gui.canvas.objekt_anklicken").into();
             }
         }
+        "draw.parallel" => {
+            // Vorschau ist die fertige Parallele: dieselbe Rechnung wie die
+            // Action (`actions::parallel_kind`), nur noch nicht eingefügt.
+            let zeiger = raw.unwrap_or(cursor);
+            let quelle = parallel_quelle(app, &tool).and_then(|id| app.doc().entity(id));
+            match quelle {
+                Some(e) => {
+                    let dist = match app.options.parallel_dist {
+                        Some(d) if d > 0.0 => d,
+                        _ => jjcad_core::actions::parallel_abstand(e, zeiger).unwrap_or(0.0),
+                    };
+                    if let Some(kind) = jjcad_core::actions::parallel_kind(e, dist, zeiger) {
+                        let mut vor = Entity::new(e.id, e.layer, kind);
+                        vor.style = e.style.clone();
+                        draw_objekt_hervorhebung(app, p, rect, view, &vor, col);
+                    }
+                    label = format!(
+                        "{} {}",
+                        unit.format_plain(dist, unit.decimals()),
+                        unit.short()
+                    );
+                }
+                None => {
+                    p.circle_stroke(w2s(zeiger), 8.0, dashed);
+                    label = jjcad_core::i18n::tr("gui.canvas.parallele_linie_anklicken").into();
+                }
+            }
+        }
         "modify.trim" => {
             // Der Abschnitt, den ein Klick hier entfernen würde (T0075).
             draw_trim_preview(app, p, rect, view, cursor);
@@ -6505,7 +6533,35 @@ fn hover_ziel(app: &App, w: V2, tol: f64) -> Option<Id> {
     if tool.obj.is_none() && ist_punktwerkzeug(&tool.action) {
         return dim_kette_unter_zeiger(app, w, tol);
     }
+    // Parallele (T0200): im ersten Schritt wählt der Klick eine Linie oder
+    // Polylinie — sie muss vorher hervortreten, sonst ist nicht zu sehen,
+    // wozu die Parallele gehören wird.
+    if tool.obj.is_none() && tool.action == "draw.parallel" {
+        return snap::hit_test(app.doc(), w, tol, None).filter(|id| parallel_faehig(app, *id));
+    }
     None
+}
+
+/// Ist das Objekt eine Vorlage für die Parallele — Linie oder Polylinie?
+///
+/// Andere Objektarten haben keine parallele Entsprechung im Sinne des
+/// Werkzeugs (eine Wand hat Dicke, ein Kreis ist kein Zug); sie werden beim
+/// ersten Klick abgewiesen statt still übergangen (T0038).
+fn parallel_faehig(app: &App, id: Id) -> bool {
+    matches!(
+        app.doc().entity(id).map(|e| &e.kind),
+        Some(EntityKind::Line { .. }) | Some(EntityKind::Polyline { .. })
+    )
+}
+
+/// Vorlage des laufenden Werkzeugs „Parallele" (T0200).
+///
+/// Die im Werkzeug gewählte (`Tool::obj`) oder — beim Start — die einzige
+/// gewählte Linie/Polylinie der Zeichnung.
+fn parallel_quelle(app: &App, tool: &Tool) -> Option<Id> {
+    tool.obj
+        .filter(|id| parallel_faehig(app, *id))
+        .or_else(|| app.parallel_quelle_aus_auswahl())
 }
 
 /// Klick im Werkzeug. `w` ist der Fangpunkt, `raw` der rohe Zeigerpunkt.
@@ -7267,6 +7323,61 @@ fn tool_click_at(app: &mut App, w: V2, raw: V2) {
                     json!({"ids": ids, "distance": unit.from_mm(d), "side": ax(w)}),
                 );
                 app.tool = None;
+            }
+        }
+        // Parallele (T0200): erst die Vorlage (Linie/Polylinie), dann der
+        // Abstand. Der erste Klick wählt die Vorlage, jeder weitere setzt eine
+        // Parallele — der Abstand bleibt für alle folgenden stehen, solange
+        // das Werkzeug läuft.
+        "draw.parallel" => {
+            let quelle = match parallel_quelle(app, &tool) {
+                Some(id) => id,
+                None => {
+                    let tol = (8.0 / app.current_view().zoom).max(0.5);
+                    match snap::hit_test(app.doc(), w, tol, None) {
+                        Some(id) if parallel_faehig(app, id) => {
+                            tool.obj = Some(id);
+                            app.tool = Some(tool);
+                            app.session_mut().select(vec![id]);
+                        }
+                        _ => app.toast(jjcad_core::i18n::tr("gui.canvas.parallele_linie_anklicken")),
+                    }
+                    return;
+                }
+            };
+            let Some(vorlage) = app.doc().entity(quelle).cloned() else {
+                return;
+            };
+            // Der Abstand kommt vom **rohen** Zeiger, nicht vom Fangpunkt: der
+            // Objektfang zöge den Punkt auf die Vorlage selbst (Abstand 0) und
+            // der Rastersprung hinge an der Rasterweite statt am Zeiger.
+            let dist = match app.options.parallel_dist {
+                Some(d) if d > 0.0 => d,
+                _ => jjcad_core::actions::parallel_abstand(&vorlage, raw).unwrap_or(0.0),
+            };
+            if dist <= 1.0 {
+                app.toast(jjcad_core::i18n::tr("gui.canvas.parallele_abstand_zu_klein"));
+                return;
+            }
+            if !run(
+                app,
+                "draw.parallel",
+                json!({
+                    "ids": [quelle],
+                    "distance": unit.from_mm(dist),
+                    "side": ax(raw),
+                }),
+            ) {
+                return;
+            }
+            // Abstand merken und die neue Linie zur Vorlage der nächsten machen:
+            // so rückt jede weitere Parallele um denselben Betrag weiter.
+            app.options.parallel_dist = Some(dist);
+            if let Some(neu) = app.session().last_created.first().copied() {
+                if let Some(t) = app.tool.as_mut() {
+                    t.obj = Some(neu);
+                }
+                app.session_mut().select(vec![neu]);
             }
         }
         "modify.trim" | "modify.extend" => {
@@ -17269,5 +17380,219 @@ mod tests_zeichenfarben {
         app.session_mut().set_space(None);
         app.doc_mut().block_space = Some("test".to_string());
         assert_eq!(hintergrund(&app), block, "Blockeditor");
+    }
+}
+
+#[cfg(test)]
+mod tests_parallele {
+    //! T0200: Werkzeug „Parallele".
+    //!
+    //! Der Klickweg wird über dieselbe Funktion geprüft wie die Maus
+    //! (`tool_click`): erst die Vorlage (Linie/Polylinie), dann der Abstand. Ab
+    //! der ersten Parallele bleibt der Abstand stehen und jede weitere rückt um
+    //! denselben Betrag weiter.
+
+    use super::*;
+
+    const RECT: Rect = Rect {
+        min: Pos2::new(0.0, 0.0),
+        max: Pos2::new(1000.0, 800.0),
+    };
+
+    fn app_mit_linie() -> (App, Id) {
+        let mut app = App::with_ctx(egui::Context::default());
+        app.doc_mut().settings.input_unit = jjcad_core::units::Unit::Mm;
+        run(
+            &mut app,
+            "draw.line",
+            json!({"a": [0.0, 0.0], "b": [2000.0, 0.0]}),
+        );
+        let id = *app.session().last_created.first().expect("Linie angelegt");
+        (app, id)
+    }
+
+    fn linien(app: &App) -> Vec<(V2, V2)> {
+        app.doc()
+            .entities
+            .iter()
+            .filter_map(|e| match &e.kind {
+                EntityKind::Line { a, b } => Some((*a, *b)),
+                _ => None,
+            })
+            .collect()
+    }
+
+    /// Der erste Klick wählt die Vorlage, der zweite setzt die Parallele im
+    /// Abstand des Zeigers — und der Abstand bleibt für die nächste stehen.
+    #[test]
+    fn klick_setzt_parallelen_im_gemerkten_abstand() {
+        let (mut app, _quelle) = app_mit_linie();
+        app.start_tool("draw.parallel");
+        assert!(app.tool.is_some(), "Werkzeug läuft");
+
+        // 1. Klick: Vorlage wählen — es entsteht noch nichts.
+        tool_click(&mut app, V2::new(1000.0, 0.0));
+        assert_eq!(app.doc().entities.len(), 1, "nur die Vorlage");
+        assert!(app.tool.as_ref().and_then(|t| t.obj).is_some(), "Vorlage gemerkt");
+
+        // 2. Klick: 600 mm unterhalb — die Parallele sitzt dort.
+        tool_click(&mut app, V2::new(1000.0, -600.0));
+        assert_eq!(app.doc().entities.len(), 2, "eine Parallele");
+        assert_eq!(app.options.parallel_dist, Some(600.0), "Abstand gemerkt");
+        assert!(app.tool.is_some(), "Werkzeug bleibt für weitere Parallelen aktiv");
+
+        // 3. Klick: nochmals 600 mm weiter außen.
+        tool_click(&mut app, V2::new(1000.0, -1200.0));
+        assert_eq!(app.doc().entities.len(), 3, "zweite Parallele");
+        let ys: Vec<f64> = linien(&app).iter().map(|(a, _)| a.y).collect();
+        assert!(ys.iter().any(|y| (*y + 600.0).abs() < 1e-6), "y=-600 fehlt: {ys:?}");
+        assert!(ys.iter().any(|y| (*y + 1200.0).abs() < 1e-6), "y=-1200 fehlt: {ys:?}");
+    }
+
+    /// Der Abstand wird beim Start zurückgesetzt — ein neuer Lauf beginnt mit
+    /// dem Zeiger, nicht mit dem Wert des letzten.
+    #[test]
+    fn neuer_start_vergisst_den_abstand() {
+        let (mut app, _quelle) = app_mit_linie();
+        app.start_tool("draw.parallel");
+        tool_click(&mut app, V2::new(1000.0, 0.0));
+        tool_click(&mut app, V2::new(1000.0, -400.0));
+        assert_eq!(app.options.parallel_dist, Some(400.0));
+        app.tool = None;
+        app.start_tool("draw.parallel");
+        assert_eq!(app.options.parallel_dist, None, "neuer Lauf, neuer Abstand");
+    }
+
+    /// Eine gewählte Linie ist beim Start sofort die Vorlage — der Nutzer hat
+    /// sie ja schon ausgewählt.
+    #[test]
+    fn gewaehlte_linie_ist_die_vorlage() {
+        let (mut app, quelle) = app_mit_linie();
+        app.session_mut().select(vec![quelle]);
+        app.start_tool("draw.parallel");
+        assert_eq!(
+            app.tool.as_ref().and_then(|t| t.obj),
+            Some(quelle),
+            "Auswahl wird zur Vorlage"
+        );
+        // Der nächste Klick setzt sofort ab, ohne erneute Wahl.
+        tool_click(&mut app, V2::new(1000.0, 300.0));
+        assert_eq!(app.doc().entities.len(), 2, "sofort eine Parallele");
+    }
+
+    /// Mehrere Objekte in der Auswahl sind keine eindeutige Vorlage — dann
+    /// wählt der Klick im Werkzeug.
+    #[test]
+    fn mehrfachauswahl_ist_keine_vorlage() {
+        let (mut app, quelle) = app_mit_linie();
+        run(
+            &mut app,
+            "draw.line",
+            json!({"a": [0.0, 2000.0], "b": [2000.0, 2000.0]}),
+        );
+        let zweite = *app.session().last_created.first().expect("zweite Linie");
+        app.session_mut().select(vec![quelle, zweite]);
+        app.start_tool("draw.parallel");
+        assert_eq!(app.tool.as_ref().and_then(|t| t.obj), None, "nicht eindeutig");
+    }
+
+    /// Ein Klick auf etwas anderes als Linie/Polylinie wählt keine Vorlage und
+    /// legt nichts an (T0038: kein stiller Erfolg).
+    #[test]
+    fn eine_wand_ist_keine_vorlage() {
+        let mut app = App::with_ctx(egui::Context::default());
+        app.doc_mut().settings.input_unit = jjcad_core::units::Unit::Mm;
+        run(
+            &mut app,
+            "draw.wall",
+            json!({"a": [0.0, 0.0], "b": [2000.0, 0.0], "thickness": 240.0}),
+        );
+        let vorher = app.doc().entities.len();
+        app.start_tool("draw.parallel");
+        tool_click(&mut app, V2::new(1000.0, 0.0));
+        assert_eq!(app.doc().entities.len(), vorher, "nichts angelegt");
+        assert_eq!(app.tool.as_ref().and_then(|t| t.obj), None, "keine Vorlage");
+    }
+
+    /// Die Aufforderung im Chat folgt dem Schritt: erst die Vorlage wählen,
+    /// dann die Seite. Der erste Klick füllt nur `obj` — die Punktliste bleibt
+    /// leer, deshalb darf die Aufforderung nicht an `pts` hängen (T0200).
+    #[test]
+    fn aufforderung_wechselt_mit_der_vorlage() {
+        let (mut app, _quelle) = app_mit_linie();
+        app.start_tool("draw.parallel");
+        let tool = app.tool.clone().expect("Werkzeug läuft");
+        assert_eq!(
+            crate::app::commands_hint(&tool, &app.options),
+            jjcad_core::i18n::tr("gui.app.parallele_quelle_waehlen")
+        );
+        tool_click(&mut app, V2::new(1000.0, 0.0));
+        let tool = app.tool.clone().expect("Werkzeug läuft");
+        assert_eq!(
+            crate::app::commands_hint(&tool, &app.options),
+            jjcad_core::i18n::tr("gui.app.parallele_seite_klicken")
+        );
+    }
+
+    /// Die Vorschau zeigt die fertige Parallele: dieselbe Lage, die der Klick
+    /// danach anlegt.
+    #[test]
+    fn vorschau_zeigt_die_kommende_parallele() {
+        let (mut app, quelle) = app_mit_linie();
+        app.session_mut().select(vec![quelle]);
+        app.start_tool("draw.parallel");
+
+        let view = app.current_view();
+        let farbe = Palette::vorschau().gamma_multiply(0.9);
+        let zeiger = V2::new(1000.0, 500.0);
+        let ctx = app.ctx.clone();
+        let out = ctx.run(egui::RawInput::default(), |ctx| {
+            let layer = egui::LayerId::new(egui::Order::Background, egui::Id::new("parallele"));
+            let p = egui::Painter::new(ctx.clone(), layer, Rect::EVERYTHING);
+            draw_tool_preview(&mut app, &p, RECT, view, Some(zeiger), Some(zeiger));
+        });
+        let strecken: Vec<(Pos2, Pos2)> = out
+            .shapes
+            .iter()
+            .filter_map(|cs| match &cs.shape {
+                Shape::LineSegment { points, stroke }
+                    if stroke.color == egui::epaint::ColorMode::Solid(farbe) =>
+                {
+                    Some((points[0], points[1]))
+                }
+                _ => None,
+            })
+            .collect();
+        assert_eq!(strecken.len(), 1, "genau eine Vorschau-Linie: {strecken:?}");
+        let erwartet_a = world_to_screen(RECT, view, V2::new(0.0, 500.0));
+        let erwartet_b = world_to_screen(RECT, view, V2::new(2000.0, 500.0));
+        let (a, b) = strecken[0];
+        assert!(
+            (a.x - erwartet_a.x).abs() < 0.6 && (a.y - erwartet_a.y).abs() < 0.6,
+            "Anfang: {a:?} statt {erwartet_a:?}"
+        );
+        assert!(
+            (b.x - erwartet_b.x).abs() < 0.6 && (b.y - erwartet_b.y).abs() < 0.6,
+            "Ende: {b:?} statt {erwartet_b:?}"
+        );
+    }
+
+    /// Vor der Wahl der Vorlage tritt die Linie unter dem Zeiger hervor — und
+    /// nur eine Linie, keine Wand.
+    #[test]
+    fn vorlage_tritt_vor_dem_klick_hervor() {
+        let (mut app, quelle) = app_mit_linie();
+        run(
+            &mut app,
+            "draw.wall",
+            json!({"a": [0.0, 3000.0], "b": [2000.0, 3000.0], "thickness": 240.0}),
+        );
+        app.start_tool("draw.parallel");
+        assert_eq!(hover_ziel(&app, V2::new(1000.0, 0.0), 20.0), Some(quelle));
+        assert_eq!(
+            hover_ziel(&app, V2::new(1000.0, 3000.0), 20.0),
+            None,
+            "eine Wand ist keine Vorlage"
+        );
     }
 }
