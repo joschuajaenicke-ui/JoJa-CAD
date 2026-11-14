@@ -4310,6 +4310,7 @@ fn fang_aufloesung(app: &App, w: V2, tol: f64) -> snap::SnapResolution {
         w,
         tol,
         &achsen,
+        auswahl_wandert(app),
         &regeln.ignore,
         &vorschau,
         &app.halt,
@@ -4355,6 +4356,10 @@ fn snap_at(app: &App, rect: Rect, view: View, pos: Pos2) -> V2 {
 /// * **Auswahl wandert ganz** (Ziehen am Objekt, Verschieben ab dem
 ///   Basispunkt): die ganze Auswahl.
 ///
+/// Die **abgeleitete** Geometrie eines fremden Elements deckt die Fang-Engine
+/// selbst ab: die Laibungsecken der Wand, in der eine bearbeitete Tür steckt,
+/// fallen dort heraus (`snap::snap_candidates_alle`, `wall::laibungsecken`).
+///
 /// Der **Basispunkt** eines Verschiebens ist noch keine Bewegung — solange er
 /// nicht gesetzt ist, fängt die Auswahl normal. Werkzeuge, die ihre Auswahl
 /// erst beim Abschlussklick verändern (Drehen, Spiegeln, Skalieren, Versetzen),
@@ -4369,25 +4374,29 @@ struct FangRegeln {
     ignore: Vec<Id>,
 }
 
-/// Fang-Ausschluss für den aktuellen Zustand.
-fn fang_regeln(app: &App) -> FangRegeln {
-    if let Some(drag) = app.grip_drag.as_ref() {
-        return FangRegeln {
-            ignore: vec![drag.entity],
-        };
-    }
-    let auswahl_wandert = app.move_drag.is_some()
+/// Wandert die ganze Auswahl gerade mit dem Zeiger?
+///
+/// Ziehen am Objekt (`move_drag`) und Verschieben ab dem Basispunkt
+/// (`modify.move` mit gesetztem Punkt). Der Basispunkt selbst ist noch keine
+/// Bewegung — solange er nicht gesetzt ist, fängt die Auswahl normal.
+fn auswahl_wandert(app: &App) -> bool {
+    app.move_drag.is_some()
         || app
             .tool
             .as_ref()
             .map(|t| t.action == "modify.move" && !t.pts.is_empty())
-            .unwrap_or(false);
-    if auswahl_wandert {
-        return FangRegeln {
-            ignore: app.selection().to_vec(),
-        };
+            .unwrap_or(false)
+}
+
+/// Fang-Ausschluss für den aktuellen Zustand.
+fn fang_regeln(app: &App) -> FangRegeln {
+    let mut ignore: Vec<Id> = Vec::new();
+    if let Some(drag) = app.grip_drag.as_ref() {
+        ignore.push(drag.entity);
+    } else if auswahl_wandert(app) {
+        ignore.extend(app.selection().iter().copied());
     }
-    FangRegeln::default()
+    FangRegeln { ignore }
 }
 
 fn handle_input(
@@ -10466,6 +10475,212 @@ mod tests_fang_griff {
         let roh = V2::new(1000.0 + 5.0 / zoom, 0.0);
         let (lagen, labels) = griffzug_lagen(&mut app, id, crate::handles::GripKind::Vert(0), roh);
         assert_folgt_dem_zeiger("Ellipse", &lagen, &labels, roh);
+    }
+
+    // ---- Tür/Fenster: die Wand hängt an der Öffnung ----
+
+    /// Wand 0…6000 (300 dick) mit einer Tür bei 2000 (900 breit).
+    fn szenario_tuer() -> (App, Id, Id) {
+        let mut app = app();
+        assert!(run(
+            &mut app,
+            "draw.wall",
+            json!({"a": [0.0, 0.0], "b": [6000.0, 0.0], "thickness": 300.0})
+        ));
+        let wand = app.doc().entities[0].id;
+        assert!(run(
+            &mut app,
+            "draw.door",
+            json!({"center": [2000.0, 0.0], "width": 900.0, "host": [wand]})
+        ));
+        let tuer = app
+            .doc()
+            .entities
+            .iter()
+            .find(|e| matches!(e.kind, EntityKind::Door { .. }))
+            .map(|e| e.id)
+            .expect("Tür fehlt");
+        (app, wand, tuer)
+    }
+
+    fn tuer_mitte(app: &App, id: Id) -> V2 {
+        match &app.doc().entity(id).expect("Tür fehlt").kind {
+            EntityKind::Door { center, .. } => *center,
+            other => panic!("keine Tür: {other:?}"),
+        }
+    }
+
+    /// Der Basispunkt einer Tür liegt **auf** der Wandkontur — die Laibungsecke
+    /// der Wand wird aus der Öffnung gerechnet. Ohne Ausschluss der Wand zieht
+    /// der Fang die Tür auf ihre eigene Laibungsecke: die Tür bleibt stehen,
+    /// springt beim Verlassen des Fangradius ein Stück, hängt dort wieder fest —
+    /// in jedem Bild hin und her.
+    ///
+    /// Deshalb fällt die Wand mit aus dem Fang, solange ihre Öffnung bewegt
+    /// wird. Geprüft wird über sechs Bilder: kein Fang, und die Tür wandert
+    /// gleichmäßig mit dem Zeiger.
+    #[test]
+    fn tuer_basispunkt_folgt_dem_zeiger() {
+        let (mut app, wand, tuer) = szenario_tuer();
+        let basis = jjcad_core::render::door_base_point(app.doc().entity(tuer).unwrap())
+            .expect("Basispunkt");
+        // Vorbedingung: der Basispunkt liegt genau auf einer Wandecke.
+        let kontur = jjcad_core::wall::wall_contour_points(app.doc(), app.doc().entity(wand).unwrap());
+        assert!(
+            kontur.iter().any(|p| p.dist(basis) < 1e-6),
+            "Basispunkt {basis:?} liegt nicht auf der Wandkontur: {kontur:?}"
+        );
+
+        app.session_mut().select(vec![tuer]);
+        app.begin_move_drag(basis, 0.0);
+        let zoom = app.current_view().zoom.max(1e-6);
+        let tol = 12.0 / zoom;
+
+        let mut lagen = Vec::new();
+        let mut labels = Vec::new();
+        for schritt in 1..=6 {
+            let roh = basis + V2::new(20.0 * schritt as f64, 0.0);
+            let (p, label) = fang_zeiger(&app, roh, tol);
+            app.update_move_drag(p);
+            labels.push(label);
+            lagen.push(
+                jjcad_core::render::door_base_point(app.doc().entity(tuer).unwrap())
+                    .expect("Basispunkt"),
+            );
+        }
+        assert!(
+            labels.iter().all(|l| l.is_none()),
+            "die Wand der Tür darf nicht fangen: {labels:?}"
+        );
+        for (i, bp) in lagen.iter().enumerate() {
+            let soll = 2000.0 + 20.0 * (i + 1) as f64;
+            assert!(
+                (bp.x - soll).abs() < 1.0,
+                "Bild {i}: Basispunkt bei {bp:?}, erwartet x≈{soll} — Lagen {lagen:?}"
+            );
+            assert!(
+                (bp.y - 150.0).abs() < 1.0,
+                "Bild {i}: die Tür hat die Wandkante verlassen: {bp:?}"
+            );
+        }
+    }
+
+    /// Gegenprobe: eine **fremde** Wand daneben fängt weiterhin — der
+    /// Ausschluss gilt nur für die Wand, in der die Öffnung steckt.
+    #[test]
+    fn fremde_wand_faengt_beim_tuerzug_weiter() {
+        let (mut app, _wand, tuer) = szenario_tuer();
+        assert!(run(
+            &mut app,
+            "draw.wall",
+            json!({"a": [0.0, 2000.0], "b": [6000.0, 2000.0], "thickness": 300.0})
+        ));
+        let fremd = app.doc().entities.last().unwrap().id;
+        let ecke = jjcad_core::wall::wall_contour_points(app.doc(), app.doc().entity(fremd).unwrap())
+            .into_iter()
+            .min_by(|a, b| a.x.total_cmp(&b.x))
+            .expect("Konturecke");
+
+        app.session_mut().select(vec![tuer]);
+        let basis = jjcad_core::render::door_base_point(app.doc().entity(tuer).unwrap())
+            .expect("Basispunkt");
+        app.begin_move_drag(basis, 0.0);
+        let (p, label) = fang_zeiger(&app, ecke + V2::new(3.0, 3.0), 40.0);
+        assert_eq!(label, Some("Endpunkt"), "fremde Wandecke muss fangen");
+        assert_punkt(p, ecke);
+    }
+
+    /// Nur die Laibungsecken fallen weg: das **Wandende** bleibt Fangziel,
+    /// während die Tür gezogen wird.
+    #[test]
+    fn wandende_faengt_beim_tuerzug() {
+        let (mut app, wand, tuer) = szenario_tuer();
+        let ende = jjcad_core::wall::wall_contour_points(app.doc(), app.doc().entity(wand).unwrap())
+            .into_iter()
+            .max_by(|a, b| a.x.total_cmp(&b.x))
+            .expect("Wandende");
+        assert!(ende.x > 5000.0, "rechtes Wandende erwartet: {ende:?}");
+
+        app.session_mut().select(vec![tuer]);
+        let basis = jjcad_core::render::door_base_point(app.doc().entity(tuer).unwrap())
+            .expect("Basispunkt");
+        app.begin_move_drag(basis, 0.0);
+        let (p, label) = fang_zeiger(&app, ende + V2::new(3.0, 3.0), 40.0);
+        assert_eq!(label, Some("Endpunkt"), "das Wandende muss fangen: {p:?}");
+        assert_punkt(p, ende);
+    }
+
+    /// Auch die **Gehrungsecke** zweier verbundener Wände bleibt Fangziel.
+    #[test]
+    fn gehrungsecke_faengt_beim_tuerzug() {
+        let (mut app, wand, tuer) = szenario_tuer();
+        // Zweite Wand im rechten Winkel am rechten Ende der ersten.
+        assert!(run(
+            &mut app,
+            "draw.wall",
+            json!({"a": [6000.0, 0.0], "b": [6000.0, 4000.0], "thickness": 300.0})
+        ));
+        // Die Gehrungsecke liegt außen hinter dem Knoten (6000,0).
+        let ecken = jjcad_core::wall::wall_contour_points(app.doc(), app.doc().entity(wand).unwrap());
+        let gehrung = ecken
+            .iter()
+            .copied()
+            .filter(|p| p.x > 6000.0)
+            .min_by(|a, b| a.y.total_cmp(&b.y))
+            .unwrap_or_else(|| panic!("keine Gehrungsecke hinter dem Knoten: {ecken:?}"));
+
+        app.session_mut().select(vec![tuer]);
+        let basis = jjcad_core::render::door_base_point(app.doc().entity(tuer).unwrap())
+            .expect("Basispunkt");
+        app.begin_move_drag(basis, 0.0);
+        let (p, label) = fang_zeiger(&app, gehrung + V2::new(3.0, 3.0), 40.0);
+        assert_eq!(label, Some("Endpunkt"), "die Gehrungsecke muss fangen: {p:?}");
+        assert_punkt(p, gehrung);
+    }
+
+    /// Die Laibung selbst ist **kein** Fangziel, solange die Tür bearbeitet
+    /// wird — weder ihre vier Ecken noch die Kante („Nächster Punkt") noch ein
+    /// Schnittpunkt mit ihr. Die Längskante **außerhalb** der Öffnung fängt
+    /// weiterhin.
+    #[test]
+    fn laibung_faengt_beim_tuerzug_nicht() {
+        let (mut app, _wand, tuer) = szenario_tuer();
+        let spanne = jjcad_core::wall::laibungsspanne(app.doc(), tuer).expect("Laibungsspanne");
+        assert!(
+            (spanne.s0 - 2000.0).abs() < 1e-6 && (spanne.s1 - 2900.0).abs() < 1e-6,
+            "Längsbereich der Öffnung: {spanne:?}"
+        );
+
+        app.session_mut().select(vec![tuer]);
+        let basis = jjcad_core::render::door_base_point(app.doc().entity(tuer).unwrap())
+            .expect("Basispunkt");
+        app.begin_move_drag(basis, 0.0);
+
+        // Vier Laibungsecken und die Mitte beider Laibungskanten: an genau
+        // diesen Stellen darf kein Kandidat der Wand stehen.
+        for p in [
+            V2::new(2000.0, 150.0),
+            V2::new(2000.0, -150.0),
+            V2::new(2900.0, 150.0),
+            V2::new(2900.0, -150.0),
+            V2::new(2000.0, 0.0),
+            V2::new(2900.0, 0.0),
+        ] {
+            let treffer: Vec<_> = snap::snap_candidates(app.doc(), p, 40.0, None, &[tuer])
+                .into_iter()
+                .filter(|h| h.point.dist(p) < 1e-6)
+                .collect();
+            assert!(
+                treffer.is_empty(),
+                "Laibungspunkt {p:?} wird angeboten: {treffer:?}"
+            );
+        }
+
+        // Gegenprobe: die Längskante vor der Öffnung fängt weiterhin (Mitte
+        // oder nächster Punkt — beides liegt auf der Kante).
+        let (q, label) = fang_zeiger(&app, V2::new(1000.0, 152.0), 40.0);
+        assert!(label.is_some(), "Längskante muss fangen: {q:?}");
+        assert_punkt(q, V2::new(1000.0, 150.0));
     }
 
     /// Zwei Ecken aufeinandergelegt (Zug mit Fang auf die Nachbarecke): aus

@@ -1017,8 +1017,26 @@ fn snap_candidates_alle(
     let tol = tol.max(1e-6);
     let mut cands: Vec<(f64, SnapHit)> = Vec::new();
 
+    // Laibungen der bearbeiteten Öffnungen: die Wand wird dort aufgeschnitten,
+    // die Laibungskanten und ihre Ecken sind aus der Öffnung gerechnet und
+    // wandern mit ihr. Sie sind damit kein Fangziel — sonst zieht der Fang die
+    // Tür auf ihre eigene Laibung, die Tür wandert mit, die Kante ist wieder
+    // woanders: der Punkt springt in jedem Bild.
+    //
+    // Nur der Längsbereich der Öffnung fällt weg. Der Rest der Wand bleibt
+    // fangbar: Stirnkanten, Gehrungsecken an Anschlüssen und Kreuzungen,
+    // Längskanten außerhalb der Öffnung. Der Bereich wird **gerechnet**, nicht
+    // je Elementart gepflegt.
+    let spannen: Vec<crate::wall::Laibungsspanne> = ignore
+        .iter()
+        .filter_map(|id| crate::wall::laibungsspanne(doc, *id))
+        .collect();
+
     let mut consider = |p: Vec2, kind: SnapKind, entity: Option<Id>, dist: f64| {
         if dist > tol {
+            return;
+        }
+        if spannen.iter().any(|s| s.enthaelt(entity, p)) {
             return;
         }
         cands.push((
@@ -1137,8 +1155,11 @@ fn snap_candidates_alle(
         if s.perpendicular {
             if let Some(r) = reference {
                 let foot = closest_point_on_segment(r, a, b);
-                // Lot nur, wenn der Fuß nahe am Cursor liegt
-                consider(foot, SnapKind::Perpendicular, Some(*id), foot.dist(cursor));
+                // Ein Fußpunkt, der auf dem Bezugspunkt selbst liegt, ist kein
+                // Lot (der Bezugspunkt liegt dann auf der Strecke).
+                if foot.dist(r) > SNAP_DEDUP {
+                    consider(foot, SnapKind::Perpendicular, Some(*id), foot.dist(cursor));
+                }
             }
         }
         if s.nearest {
@@ -1374,6 +1395,7 @@ pub fn snap_constrained_mit_halte(
         cursor,
         tol,
         reference.as_slice(),
+        false,
         ignore,
         vorschau,
         halte,
@@ -1406,18 +1428,25 @@ pub fn snap_constrained_achsen(
     cursor: Vec2,
     tol: f64,
     achsen: &[Vec2],
+    lot_aus: bool,
     ignore: &[Id],
     vorschau: &[Vec2],
     halte: &[HaltPunkt],
     allow_grid: bool,
 ) -> SnapResolution {
     let reference = naechster_bezug(achsen, cursor);
+    // Beim Bewegen der Auswahl ist der Bezugspunkt der **Basispunkt des Zuges**
+    // — ein Punkt des bewegten Elements. Ein Lot von dort auf eine fremde Kante
+    // zöge das Element auf seinen Startpunkt zurück (es klebt, springt beim
+    // Verlassen des Fangradius und klebt wieder). Deshalb gibt es dort kein Lot;
+    // „Nächster Punkt" setzt den Zeiger genauso auf die Kante.
+    let lot = if lot_aus { None } else { reference };
     let s = doc.settings.snap.clone();
     let tol = tol.max(1e-6);
 
     // 1. Objektfang ohne Raster: er gewinnt gegen jede Zwangsrichtung.
     //    Das Raster ist eine Führung wie Ortho und kommt erst in Schritt 3.
-    let mut cands = snap_candidates_alle(doc, cursor, tol, reference, ignore, vorschau, false);
+    let mut cands = snap_candidates_alle(doc, cursor, tol, lot, ignore, vorschau, false);
     // Die Winkelhalbierende zwischen zwei Linien (T0150) ist ein **Fang**, kein
     // Zwang: sie tritt als Kandidat in dieselbe Liste und verliert damit gegen
     // Endpunkt, Schnittpunkt und Mitte, gewinnt aber gegen „Nächster Punkt" und

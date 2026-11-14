@@ -1038,6 +1038,78 @@ pub fn wall_contour_points(doc: &Document, e: &Entity) -> Vec<Vec2> {
 /// Toleranz, unterhalb derer zwei Konturpunkte als derselbe Punkt gelten (mm).
 const CONTOUR_DEDUP: f64 = 0.1;
 
+/// Längsbereich einer Öffnung in ihrer Wand.
+///
+/// Alles, was die Wand in diesem Bereich anbietet, ist aus der Öffnung
+/// gerechnet und wandert mit ihr: die beiden Laibungskanten (quer, bei `s0` und
+/// `s1`), ihre vier Ecken und jeder Schnittpunkt mit ihnen. Der Rest der Wand —
+/// Stirnkanten, Gehrungsecken an Anschlüssen und Kreuzungen, Längskanten
+/// außerhalb der Öffnung — steht still und bleibt Fangziel.
+#[derive(Clone, Copy, Debug)]
+pub struct Laibungsspanne {
+    /// Wand, in der die Öffnung steckt.
+    pub wand: Id,
+    /// Anfang und Richtung der Wandachse (Bezug für die Längslage).
+    pub a: Vec2,
+    pub dir: Vec2,
+    /// Längslage der beiden Laibungskanten, gemessen von `a`.
+    pub s0: f64,
+    pub s1: f64,
+}
+
+impl Laibungsspanne {
+    /// Liegt dieser Punkt der Wand in der Öffnung?
+    ///
+    /// Geprüft wird die Längslage; die Querlage ist gleichgültig, weil die
+    /// Laibungskanten über die ganze Wanddicke laufen.
+    pub fn enthaelt(&self, entity: Option<Id>, p: Vec2) -> bool {
+        if entity != Some(self.wand) {
+            return false;
+        }
+        let t = (p - self.a).dot(self.dir);
+        t >= self.s0 - SPANNE_EPS && t <= self.s1 + SPANNE_EPS
+    }
+}
+
+/// Toleranz der Längslage, unter der ein Punkt noch an der Laibungskante liegt
+/// (mm). Die Kontur rechnet mit derselben Größenordnung.
+const SPANNE_EPS: f64 = 0.1;
+
+/// Längsbereich einer Tür oder eines Fensters in seiner Wand.
+///
+/// `None`, wenn das Element keine Öffnung ist, keine Wand hat oder nicht auf
+/// ihr liegt.
+pub fn laibungsspanne(doc: &Document, oeffnung: Id) -> Option<Laibungsspanne> {
+    let e = doc.entity(oeffnung)?;
+    let (center, width, host) = match &e.kind {
+        EntityKind::Door {
+            center, width, host, ..
+        }
+        | EntityKind::Window {
+            center, width, host, ..
+        } => (*center, *width, *host),
+        _ => return None,
+    };
+    let wand = host.and_then(|h| doc.entity(h))?;
+    let EntityKind::Wall { a, b, .. } = &wand.kind else {
+        return None;
+    };
+    let dir = (*b - *a).normalized();
+    if dir.len() < 1e-9 {
+        return None;
+    }
+    let len = a.dist(*b);
+    let t = (center - *a).dot(dir);
+    let hw = width * 0.5;
+    Some(Laibungsspanne {
+        wand: wand.id,
+        a: *a,
+        dir,
+        s0: (t - hw).clamp(0.0, len),
+        s1: (t + hw).clamp(0.0, len),
+    })
+}
+
 /// Grenze, die eine Anschlussnaht für die nutzbare Wandstrecke setzt.
 ///
 /// Die Naht ist die Gerade durch die Gehrungspunkte; der Körper behält die

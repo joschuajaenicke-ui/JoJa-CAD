@@ -140,6 +140,18 @@ den Umbau: die Liste „welche Punkte wandern mit" musste je Elementart gepflegt
 werden; jeder fehlende Zweig brachte den Selbst-Fang zurück (Bild,
 Ansichtsfenster, Kreis, Ellipse sprangen).
 
+Zur Regel gehört die **abgeleitete** Geometrie: eine Tür oder ein Fenster steckt
+in einer Wand, und deren Laibung ist aus der Öffnung gerechnet. Genau der
+Längsbereich der Öffnung fällt deshalb aus dem Fang (`wall::laibungsspanne`) —
+die Laibungskanten, ihre vier Ecken und jeder Schnittpunkt mit ihnen. Der Rest
+der Wand bleibt Fangziel: Stirnkanten, Gehrungsecken an Anschlüssen und
+Kreuzungen, Längskanten außerhalb der Öffnung.
+
+Beim Bewegen der Auswahl gibt es außerdem **kein Lot**: sein Fußpunkt wird vom
+Basispunkt des Zuges aus gerechnet, und der ist ein Punkt des bewegten Elements
+— der Fuß zöge es auf seinen Startpunkt zurück. „Nächster Punkt" setzt den
+Zeiger genauso auf die Kante.
+
 Das Schließen einer Polylinie und das Verschmelzen zweier Flächenecken laufen
 über die Zieh-Toleranz (`handles::apply_grip_tol`, `App::end_grip_drag`), nicht
 über den Fang; die Toleranz ist mit 12 px dieselbe wie der Fangradius, das
