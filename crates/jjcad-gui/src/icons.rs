@@ -411,6 +411,14 @@ pub fn paint(painter: &Painter, rect: Rect, name: &str, color: Color32) {
             i.poly(&[(5.0, 5.0), (13.0, 5.0), (13.0, 13.0), (5.0, 13.0)], true);
             i.poly(&[(10.0, 2.0), (19.0, 2.0), (19.0, 19.0), (2.0, 19.0), (2.0, 10.0)], false);
         }
+        // Parallele (T0200): zwei parallele Linien, dazwischen die
+        // Abstandsmarke (zwei kurze Querstriche an den Enden).
+        "parallel" => {
+            i.poly(&[(3.0, 18.0), (15.0, 6.0)], false);
+            i.poly(&[(9.0, 21.0), (21.0, 9.0)], false);
+            i.line(3.0, 18.0, 9.0, 21.0);
+            i.line(15.0, 6.0, 21.0, 9.0);
+        }
         "trim" => {
             i.poly(&[(3.0, 18.0), (21.0, 6.0)], false);
             i.line(8.0, 4.0, 8.0, 20.0);

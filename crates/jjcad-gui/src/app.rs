@@ -740,6 +740,13 @@ pub struct ToolOptions {
     /// Eigener Maßtext des nächsten Maßes (leer = automatisch berechnet).
     pub dim_text: String,
     pub offset_dist: f64,
+    /// Gemerkter Abstand des Werkzeugs „Parallele" (T0200).
+    ///
+    /// `None` = noch nicht gesetzt: der erste Klick nimmt den Abstand vom
+    /// Mauszeiger. Danach bleibt der Wert stehen, solange das Werkzeug läuft —
+    /// so entstehen weitere Parallelen im selben Abstand (`App::start_tool`
+    /// setzt ihn beim Start zurück).
+    pub parallel_dist: Option<f64>,
     pub elevation_z: f64,
     /// Lage des Höhenwertes der nächsten Grundriss-Kote (T0196).
     pub elevation_text_pos: jjcad_core::model::ElevationTextPos,
@@ -851,6 +858,7 @@ impl ToolOptions {
             dim_axis: None,
             dim_text: String::new(),
             offset_dist: doc.settings.wall_thickness,
+            parallel_dist: None,
             elevation_z: 0.0,
             elevation_text_pos: jjcad_core::model::ElevationTextPos::default(),
             fill_pattern: FillPattern::Lines,
@@ -3048,6 +3056,26 @@ impl App {
                 "door" => self.start_tool("draw.door"),
                 "window" => self.start_tool("draw.window"),
                 "dimtool" => self.start_tool("dim.chain"),
+                // Parallele (T0200): eine Linie als Vorlage wählen und das
+                // Werkzeug starten — die Vorschau folgt dem Zeiger.
+                "parallele" | "parallel" => {
+                    if !self.doc().entities.iter().any(|e| matches!(e.kind, EntityKind::Line { .. })) {
+                        let _ = self.session_mut().execute(
+                            "draw.line",
+                            &serde_json::json!({"a": [1.0, 1.0], "b": [6.0, 1.0]}),
+                        );
+                    }
+                    if let Some(id) = self
+                        .doc()
+                        .entities
+                        .iter()
+                        .find(|e| matches!(e.kind, EntityKind::Line { .. }))
+                        .map(|e| e.id)
+                    {
+                        self.session_mut().select(vec![id]);
+                    }
+                    self.start_tool("draw.parallel");
+                }
                 "stairtool" => self.start_tool("draw.stair"),
                 "kreistool" => self.start_tool("draw.circle"),
                 "circlepanel" => {
@@ -4540,6 +4568,26 @@ impl App {
         }
     }
 
+    /// Vorlage des Werkzeugs „Parallele" (T0200): genau eine gewählte Linie
+    /// oder Polylinie.
+    ///
+    /// Mehrere oder fremde Objekte in der Auswahl ergeben `None` — dann ist
+    /// nicht eindeutig, wozu die Parallele gehört, und der erste Klick im
+    /// Werkzeug wählt die Vorlage.
+    pub fn parallel_quelle_aus_auswahl(&self) -> Option<Id> {
+        let mut treffer = self.selection().iter().filter(|id| {
+            matches!(
+                self.doc().entity(**id).map(|e| &e.kind),
+                Some(EntityKind::Line { .. }) | Some(EntityKind::Polyline { .. })
+            )
+        });
+        let erste = *treffer.next()?;
+        if treffer.next().is_some() {
+            return None;
+        }
+        Some(erste)
+    }
+
     pub fn start_tool(&mut self, id: &str) {
         if actions::action(id).is_none() {
             return;
@@ -4583,6 +4631,18 @@ impl App {
                 ),
             phase: ToolPhase::Collecting,
         });
+        // Parallele (T0200): Der gemerkte Abstand gehört zu **einem** Lauf des
+        // Werkzeugs und beginnt leer. Steht schon genau eine Linie oder
+        // Polylinie in der Auswahl, ist sie die Vorlage (der Nutzer hat sie
+        // dann bereits „ausgewählt"); sonst wählt sie der erste Klick.
+        if id == "draw.parallel" {
+            self.options.parallel_dist = None;
+            if let Some(quelle) = self.parallel_quelle_aus_auswahl() {
+                if let Some(t) = self.tool.as_mut() {
+                    t.obj = Some(quelle);
+                }
+            }
+        }
         // Aufforderung im Chat-Schema (`<Werkzeug> · <Schritt>`). Die
         // Zeichenfläche meldet in jedem Frame denselben Text; dort wird die
         // Wiederholung unterdrückt.
@@ -7810,10 +7870,16 @@ fn rail(ui: &mut egui::Ui, icon: &str, tooltip: &str, chevron: &str) -> bool {
                     });
                 }
                 RibbonTab::Zeichnen => {
+                    // Vierzehn Schaltflächen in vier Gruppen — mit dem
+                    // Standardabstand von 5 px braucht der Reiter 1128 px und
+                    // schnitte bei der Mindestfensterbreite (1080 px) rechts ab
+                    // (T0200). Enger gestellt misst er wieder unter 1080.
+                    ui.spacing_mut().item_spacing.x = 2.0;
                     self.group(ui, "ribbon.group.grundelemente", |ui, app| {
                         for (id, icon) in [
                             ("draw.line", "line"),
                             ("draw.polyline", "polyline"),
+                            ("draw.parallel", "parallel"),
                             ("draw.spline", "spline"),
                             ("draw.rect", "rect"),
                             ("draw.circle", "circle"),
@@ -9179,6 +9245,15 @@ pub(crate) fn commands_hint(tool: &Tool, opts: &ToolOptions) -> &'static str {
                 jjcad_core::i18n::tr("gui.app.skalieren_bezugspunkt_klicken")
             }
         }
+        // Parallele (T0200): „weiter" heißt hier **Vorlage gewählt** — die
+        // Punktliste bleibt leer, das Werkzeug merkt sich die Linie in `obj`.
+        "draw.parallel" => {
+            if tool.obj.is_some() {
+                jjcad_core::i18n::tr("gui.app.parallele_seite_klicken")
+            } else {
+                jjcad_core::i18n::tr("gui.app.parallele_quelle_waehlen")
+            }
+        }
         "modify.offset" => {
             if lebt {
                 jjcad_core::i18n::tr("gui.app.versetzen_seite_klicken")
@@ -9223,6 +9298,7 @@ pub(crate) fn abschluss_meldung(action: &str) -> Option<&'static str> {
     Some(match action {
         "draw.line" => jjcad_core::i18n::tr("gui.app.linie_gesetzt"),
         "draw.polyline" => jjcad_core::i18n::tr("gui.app.polylinie_abgeschlossen"),
+        "draw.parallel" => jjcad_core::i18n::tr("gui.app.parallele_gesetzt"),
         "draw.spline" => jjcad_core::i18n::tr("gui.app.spline_abgeschlossen"),
         "draw.rect" => jjcad_core::i18n::tr("gui.app.rechteck_gesetzt"),
         "draw.image" => jjcad_core::i18n::tr("gui.app.bild_gesetzt"),
@@ -12522,7 +12598,9 @@ mod tests_vollbild {
     }
 
     /// Der Reiter „Zeichnen" trägt seit T0090 „Vereinigen" und „Schneiden" in
-    /// der Gruppe „Füllen" — er muss weiter in die Mindestbreite passen.
+    /// der Gruppe „Füllen" und seit T0200 „Parallele" in „Grundelemente" — er
+    /// muss weiter in die Mindestbreite passen (gemessen 1074 px mit dem
+    /// engeren Abstand dieses Reiters).
     #[test]
     fn reiter_zeichnen_passt_in_die_mindestbreite() {
         let ctx = egui::Context::default();

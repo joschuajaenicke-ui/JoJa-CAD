@@ -277,6 +277,13 @@ ausgeblendet.
   Fang bleibt es beim kleinen Kreuz am Zeiger, `Ortho` führt ebenfalls nur. Die Marke steht in
   der **Fangfarbe** (dasselbe Grün wie die Hilfslinien des erweiterten Punktfangs), ist 18 px
   groß, liegt über der Zeichnung und erscheint nicht im Druck.
+- **Parallele** (Zeichnen ▸ Grundelemente, T0200): erst eine **Linie oder Polylinie**
+  anklicken (ist genau eine gewählt, ist sie sofort die Vorlage), dann die Seite. Der Abstand
+  ergibt sich aus dem Abstand des Zeigers zur Vorlage; die Vorschau zeigt die fertige Linie
+  samt Maß. Der Klick setzt sie ab, und der Abstand bleibt für alle weiteren stehen — jeder
+  weitere Klick rückt um denselben Betrag in die Richtung, in der der Zeiger steht. Rechtsklick
+  oder `ESC` beendet die Reihe; ein neuer Start beginnt wieder mit dem Abstand am Zeiger.
+  Andere Objektarten (Wand, Kreis, Text …) sind keine Vorlage.
 - **Linien** werden als Kapsel gezeichnet: Rechteck plus Halbkreis an beiden Enden. Dadurch sind
   auch die Übergänge in Polylinien, Bögen und an Wandanschlüssen rund statt eckig.
 - **Ribbon** lässt sich über den Pfeil rechts in der Kopfzeile einklappen; die Reiter bleiben sichtbar.

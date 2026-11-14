@@ -141,6 +141,9 @@ pub const ACTIONS: &[ActionDef] = &[
     // Zeichnen
     act!("draw.line", "action.draw.line.label", Zeichnen, "line", "l", "action.draw.line.hint", true),
     act!("draw.polyline", "action.draw.polyline.label", Zeichnen, "polyline", "o", "action.draw.polyline.hint", true),
+    // Parallele (T0200): eigene Linie/Polylinie als Vorlage, Abstand am
+    // Mauszeiger. Liegt im Reiter „Zeichnen", weil sie neues Zeichnen erzeugt.
+    act!("draw.parallel", "action.draw.parallel.label", Zeichnen, "parallel", "", "action.draw.parallel.hint", true),
     act!("draw.spline", "action.draw.spline.label", Zeichnen, "spline", "u", "action.draw.spline.hint", true),
     act!("draw.rect", "action.draw.rect.label", Zeichnen, "rect", "", "action.draw.rect.hint", true),
     act!("draw.circle", "action.draw.circle.label", Zeichnen, "circle", "k", "action.draw.circle.hint", true),
@@ -372,6 +375,7 @@ pub fn is_mutating(id: &str) -> bool {
         id,
         "draw.line"
             | "draw.polyline"
+            | "draw.parallel"
             | "draw.spline"
             | "draw.rect"
             | "draw.circle"
@@ -1815,6 +1819,37 @@ pub fn execute(doc: &mut Document, id: &str, params: &Value) -> Result<Value, St
             let mut e = Entity::new(idn, layer, kind);
             apply_common(doc, &mut e, &p, layer);
             doc.add_entity(e);
+            Ok(json!({"ok": true, "created": [idn]}))
+        }
+        // Parallele (T0200): aus einer Linie oder Polylinie eine neue im
+        // Abstand daneben. Die Seite bestimmt der Punkt `side` (der Mauszeiger) —
+        // derselbe Wert, den die Vorschau zeigt. Ebene und Stil erbt das neue
+        // Objekt von der Vorlage; ein „color“/„lineweight“ aus dem Panel gilt hier
+        // nicht, eine Parallele ist immer eine Kopie ihrer Quelle.
+        "draw.parallel" => {
+            let ids = ids_from(&p, "ids");
+            let Some(src) = ids.first().and_then(|id| doc.entity(*id).cloned()) else {
+                return Err("Parameter 'ids' fehlt: Parallele braucht eine Linie oder Polylinie".into());
+            };
+            let dist = p
+                .len("distance")
+                .or_else(|| p.len("dist"))
+                .ok_or_else(|| "Parameter 'distance' fehlt".to_string())?;
+            if dist.abs() <= POINT_EPS_MM {
+                return Err("Parallele: Der Abstand darf nicht null sein".into());
+            }
+            let side = p
+                .pt("side")
+                .or_else(|| p.pt("at"))
+                .ok_or_else(|| "Parameter 'side' (Seite) fehlt".to_string())?;
+            let Some(kind) = parallel_kind(&src, dist.abs(), side) else {
+                return Err("Parallele geht nur mit einer Linie oder Polylinie".into());
+            };
+            let idn = doc.new_id();
+            let mut ne = Entity::new(idn, src.layer, kind);
+            ne.style = src.style.clone();
+            ne.by_block = src.by_block;
+            doc.insert_ranked(ne);
             Ok(json!({"ok": true, "created": [idn]}))
         }
         // Spline: dieselbe Eingabe wie die Polylinie (Punktfolge, Klick auf den
@@ -4373,6 +4408,99 @@ fn offset_kind(e: &Entity, dist: f64, side: Option<Vec2>) -> Option<EntityKind> 
                 verts: off.into_iter().map(Vertex::new).collect(),
                 closed: *closed,
             })
+        }
+        _ => None,
+    }
+}
+
+/// Parallele zu einer Linie oder Polylinie im Abstand `dist` auf der Seite von
+/// `side` (T0200).
+///
+/// Die eine Rechnung für Werkzeug-Vorschau und Action: die Vorschau zeichnet
+/// genau das Objekt, das der Klick danach anlegt. `side` ist ein Punkt — der
+/// Mauszeiger; er bestimmt nur die **Seite**, nicht den Abstand.
+///
+/// Ein anderes Objekt ergibt `None` (kein stiller Erfolg, T0038): eine Parallele
+/// gibt es nur zu Linie und Polylinie.
+pub fn parallel_kind(e: &Entity, dist: f64, side: Vec2) -> Option<EntityKind> {
+    match &e.kind {
+        EntityKind::Line { a, b } => {
+            let d = *b - *a;
+            if d.len() <= POINT_EPS_MM {
+                return None;
+            }
+            let n = d.normalized().perp();
+            let sign = if (side - *a).dot(n) >= 0.0 { 1.0 } else { -1.0 };
+            let off = n * (dist * sign);
+            Some(EntityKind::Line {
+                a: *a + off,
+                b: *b + off,
+            })
+        }
+        EntityKind::Polyline { verts, closed } => {
+            let pts: Vec<Vec2> = verts.iter().map(|q| q.p).collect();
+            if pts.len() < 2 {
+                return None;
+            }
+            let sign = polyline_side(&pts, side);
+            let off = offset_polyline(&pts, *closed, dist * sign);
+            Some(EntityKind::Polyline {
+                verts: off.into_iter().map(Vertex::new).collect(),
+                closed: *closed,
+            })
+        }
+        _ => None,
+    }
+}
+
+/// Auf welcher Seite einer Polylinie liegt `side`?
+///
+/// Maßgeblich ist die **nächste** Strecke; ihre Normale (links der
+/// Laufrichtung) gibt das Vorzeichen. Ein Punkt in einem geschlossenen Zug
+/// liegt damit nicht pauschal „innen", sondern auf der Seite, auf der er
+/// tatsächlich steht — bei einer L-Form wäre „innen" für den einen Schenkel
+/// falsch.
+fn polyline_side(pts: &[Vec2], side: Vec2) -> f64 {
+    let mut best: Option<(f64, f64)> = None;
+    for w in pts.windows(2) {
+        let (a, b) = (w[0], w[1]);
+        let d = b - a;
+        if d.len() <= POINT_EPS_MM {
+            continue;
+        }
+        let n = d.normalized().perp();
+        let abstand = dist_point_segment(side, a, b);
+        if best.map(|(bd, _)| abstand < bd).unwrap_or(true) {
+            let sign = if (side - a).dot(n) >= 0.0 { 1.0 } else { -1.0 };
+            best = Some((abstand, sign));
+        }
+    }
+    best.map(|(_, s)| s).unwrap_or(1.0)
+}
+
+/// Abstand des Punktes `p` zur Linie bzw. Polylinie `e` — der Wert, den das
+/// Werkzeug „Parallele" beim ersten Klick übernimmt.
+///
+/// Gemessen wird **senkrecht** zur nächsten Strecke (nicht der Abstand zum
+/// nächsten Punkt): der Abstand einer Parallelen ist überall derselbe, sonst
+/// hinge er davon ab, wo entlang der Linie der Zeiger gerade steht.
+pub fn parallel_abstand(e: &Entity, p: Vec2) -> Option<f64> {
+    match &e.kind {
+        EntityKind::Line { a, b } => Some(dist_point_line(p, *a, *b)),
+        EntityKind::Polyline { verts, .. } => {
+            let pts: Vec<Vec2> = verts.iter().map(|q| q.p).collect();
+            let mut best: Option<(f64, f64)> = None;
+            for w in pts.windows(2) {
+                let (a, b) = (w[0], w[1]);
+                if a.dist(b) <= POINT_EPS_MM {
+                    continue;
+                }
+                let abstand = dist_point_segment(p, a, b);
+                if best.map(|(bd, _)| abstand < bd).unwrap_or(true) {
+                    best = Some((abstand, dist_point_line(p, a, b)));
+                }
+            }
+            best.map(|(_, d)| d)
         }
         _ => None,
     }
