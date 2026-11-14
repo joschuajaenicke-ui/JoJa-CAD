@@ -1104,6 +1104,23 @@ pub fn reflow_openings(doc: &mut Document) {
     }
 }
 
+/// Türen und Fenster nach einem **freien** Manipulieren wieder auf ihre Wand
+/// setzen (T0191).
+///
+/// Wird ein Objekt unmittelbar geschrieben statt über die Action-Schicht —
+/// Verschieben mit der Maus, Einfügen aus der Zwischenablage —, ändert sich
+/// nur der Mittelpunkt: die Längslage `at` bleibt alt und der Querabstand zur
+/// Wand ist beliebig. Eine Tür stand danach neben der Wand, und ihr Basispunkt
+/// wanderte von der Wandkante weg. Diese eine Funktion zieht beides nach: erst
+/// die Längslage aus dem Mittelpunkt neu bestimmen und auf die freie
+/// Wandstrecke begrenzen ([`resync_openings`]), dann folgt der Mittelpunkt aus
+/// der Wand ([`reflow_openings`]) — Türen sitzen wieder auf der vorderen
+/// Wandkante (Blattseite), Fenster im Wandkörper.
+pub fn oeffnungen_auf_wand(doc: &mut Document) {
+    resync_openings(doc);
+    reflow_openings(doc);
+}
+
 /// Datei-Migration: Längslage fehlender Öffnungen ergänzen und alle Öffnungen
 /// anschließend aus ihrer Wand neu setzen.
 pub fn normalize_openings(doc: &mut Document) {
@@ -2815,10 +2832,9 @@ pub fn execute(doc: &mut Document, id: &str, params: &Value) -> Result<Value, St
         }
         "modify.explode" => {
             let ids = ids_from(&p, "ids");
-            let mut created = Vec::new();
-            for eid in &ids {
-                created.extend(explode_entity(doc, *eid)?);
-            }
+            // Alle Objekte zusammen: die Umrandungen entstehen aus dem
+            // unveränderten Stand (T0190, siehe `explode_entities`).
+            let created = explode_entities(doc, &ids)?;
             doc.modified = true;
             Ok(json!({"ok": true, "created": created}))
         }
@@ -5521,121 +5537,57 @@ pub fn verschneiden_vorschau(doc: &Document, a: Id, b: Id) -> Vec<(Id, Vec<Seg>)
 // Zerlegen
 // ---------------------------------------------------------------------------
 
-/// Zerlegt ein Objekt in Grundelemente (auch Blöcke und Bemaßungen).
-pub fn explode_entity(doc: &mut Document, id: Id) -> Result<Vec<Id>, String> {
-    let Some(e) = doc.entity(id).cloned() else {
-        return Err(format!("Objekt {id} nicht gefunden"));
-    };
-    if matches!(e.kind, EntityKind::BlockRef { .. }) && doc.block(match &e.kind {
-        EntityKind::BlockRef { block, .. } => block,
-        _ => "",
-    }).is_none() {
-        return Err("Blockdefinition fehlt".into());
-    }
-    // Ein Text wird nicht über die Displayliste zerlegt, sondern über die
-    // Umrisse seiner Zeichen — und nur mit Schriften, die dafür vorgesehen sind.
-    if matches!(e.kind, EntityKind::Text { .. }) {
-        return explode_text(doc, &e);
-    }
-    // Ein Bild besteht aus Pixeln, nicht aus Linien — Zerlegen würde es
-    // ersatzlos löschen. Deshalb ein klarer Fehler statt eines stillen Verlusts.
-    if matches!(e.kind, EntityKind::Image { .. }) {
-        return Err("Ein Bild lässt sich nicht zerlegen".into());
-    }
-    let ziel = e.clone();
-    let ctx = render::RenderCtx::new(doc);
-    let mut dl = render::DisplayList::default();
-    render::render_entity(&ctx, &ziel, Affine::IDENTITY, &mut dl, 0);
-    let mut created = Vec::new();
-    let mut new_ents = Vec::new();
-    for prim in dl.prims {
-        let kind = match &prim.shape {
-            Shape::Line(a, b) => {
-                if a.dist(*b) < 1e-9 {
-                    None
-                } else {
-                    Some(EntityKind::Line { a: *a, b: *b })
-                }
-            }
-            Shape::Poly(pts, closed) => {
-                if pts.len() < 2 {
-                    None
-                } else {
-                    Some(EntityKind::Polyline {
-                        verts: pts.iter().map(|p| Vertex::new(*p)).collect(),
-                        closed: *closed,
-                    })
-                }
-            }
-            Shape::Circle { c, r } => Some(EntityKind::Circle { c: *c, r: *r }),
-            Shape::Arc { c, r, a0, a1 } => Some(EntityKind::Arc {
-                c: *c,
-                r: *r,
-                a0: *a0,
-                a1: *a1,
-            }),
-            Shape::Ellipse { c, rx, ry, rot } => Some(EntityKind::Ellipse {
-                c: *c,
-                rx: *rx,
-                ry: *ry,
-                rot: *rot,
-            }),
-            Shape::EllipseArc {
-                c,
-                rx,
-                ry,
-                rot,
-                a0,
-                a1,
-            } => Some(EntityKind::EllipseArc {
-                c: *c,
-                rx: *rx,
-                ry: *ry,
-                rot: *rot,
-                a0: *a0,
-                a1: *a1,
-            }),
-            Shape::Fill { outer, holes } | Shape::FillOrdered { outer, holes } => {
-                if outer.len() >= 3 {
-                    Some(EntityKind::Fill {
-                        boundary: outer.clone(),
-                        holes: holes.clone(),
-                        pattern: FillPattern::Solid,
-                        pattern_angle: 0.0,
-                        pattern_scale: 100.0,
-                        border: false,
-                    })
-                } else {
-                    None
-                }
-            }
-            // Ein Punkt des Musters (Sand, Putz) ist ein **gefüllter Kreis** vom
-            // Radius `r` — ein Punktobjekt zeichnete dagegen einen Anzeigepunkt
-            // (Radius aus der Linienstärke × Beschriftungsmaßstab, mindestens
-            // 32 mm bei 1:100) und die Sandkörner wären neunmal zu groß (T0138).
-            Shape::Dot { p, r } => Some(EntityKind::Circle { c: *p, r: *r }),
-            // Bilder werden vor der Displayliste abgewiesen (siehe oben).
-            Shape::Image { .. } => None,
-            Shape::Text(t) => Some(EntityKind::Text {
-                p: t.pos,
-                text: t.text.clone(),
-                height: t.height,
-                angle: t.angle,
-                align: t.align,
-                valign: t.valign,
-                bold: t.bold,
-                italic: t.italic,
-                underline: t.underline,
-                superscript: t.superscript,
-                runs: t.runs.clone(),
-                font: t.font,
-                line_spacing: t.line_spacing,
-                frame: false,
-                frame_round: false,
-                background: None,
-            }),
+/// Zerlegt mehrere Objekte in **einem** Durchgang (T0190).
+///
+/// Die Anzeigelisten aller Objekte entstehen aus **demselben, unveränderten**
+/// Stand der Zeichnung. Wird Objekt für Objekt zerlegt, fehlt dem zweiten
+/// Objekt beim Rendern der bereits entfernte Nachbar: die Wand bekommt an der
+/// Ecke eine geschlossene Umrandung statt der Gehrung, und die an einem
+/// Volumen freigelegte Stelle entfällt — das Bild nach dem Zerlegen wiche vom
+/// Bild davor ab.
+pub fn explode_entities(doc: &mut Document, ids: &[Id]) -> Result<Vec<Id>, String> {
+    // 1. Prüfen — ein Fehler darf die Auswahl noch nicht verändert haben.
+    let mut ziele: Vec<Entity> = Vec::with_capacity(ids.len());
+    for id in ids {
+        let Some(e) = doc.entity(*id).cloned() else {
+            return Err(format!("Objekt {id} nicht gefunden"));
         };
-        if let Some(kind) = kind {
+        pruefe_zerlegbar(doc, &e)?;
+        ziele.push(e);
+    }
+    if ziele.is_empty() {
+        return Ok(Vec::new());
+    }
+    // 2. Anzeigelisten aller Objekte aus demselben Stand bauen — noch ist keine
+    //    Wand entfernt, also rechnet der Renderer Gehrung und Anschlüsse wie im
+    //    Bild vor dem Zerlegen.
+    let mut listen: Vec<Vec<render::Prim>> = (0..ziele.len()).map(|_| Vec::new()).collect();
+    {
+        let ctx = render::RenderCtx::new(doc);
+        for (i, e) in ziele.iter().enumerate() {
+            if matches!(e.kind, EntityKind::Text { .. }) {
+                continue;
+            }
+            let mut dl = render::DisplayList::default();
+            render::render_entity(&ctx, e, Affine::IDENTITY, &mut dl, 0);
+            listen[i] = dl.prims;
+        }
+    }
+    // 3. Erst alle Objekte entfernen, dann die Grundelemente einhängen.
+    for e in &ziele {
+        doc.remove_entity(e.id);
+    }
+    let mut created = Vec::new();
+    for (i, e) in ziele.iter().enumerate() {
+        if matches!(e.kind, EntityKind::Text { .. }) {
+            // Zeichenumrisse über die Schrift — `explode_text` legt sie selbst ab.
+            created.extend(explode_text(doc, e)?);
+            continue;
+        }
+        for prim in &listen[i] {
+            let Some(kind) = zerlege_prim(&prim.shape) else {
+                continue;
+            };
             let nid = doc.new_id();
             let mut ne = Entity::new(nid, e.layer, kind);
             ne.style.color = Some(prim.style.color);
@@ -5645,19 +5597,142 @@ pub fn explode_entity(doc: &mut Document, id: Id) -> Result<Vec<Id>, String> {
             // Ein Musterpunkt wird zum **gefüllten Kreis in der Musterfarbe**:
             // ohne ausdrückliche Füllfarbe bliebe er ein leerer Ring und die
             // Schraffur verblasste beim Zerlegen (T0138).
-            if matches!(prim.shape, Shape::Dot { .. }) {
+            if matches!(&prim.shape, Shape::Dot { .. }) {
                 ne.style.fill = Some(prim.style.color);
             }
-            new_ents.push(ne);
+            doc.ents_mut().push(ne);
             created.push(nid);
         }
     }
-    doc.remove_entity(id);
-    for ne in new_ents {
-        doc.ents_mut().push(ne);
-    }
     doc.modified = true;
     Ok(created)
+}
+
+/// Zerlegt ein Objekt in Grundelemente (auch Blöcke und Bemaßungen).
+pub fn explode_entity(doc: &mut Document, id: Id) -> Result<Vec<Id>, String> {
+    explode_entities(doc, &[id])
+}
+
+/// Was sich grundsätzlich nicht zerlegen lässt, wird **vor** jeder Änderung
+/// abgewiesen — sonst bliebe bei einer Liste die halbe Auswahl zerlegt zurück.
+fn pruefe_zerlegbar(doc: &Document, e: &Entity) -> Result<(), String> {
+    if matches!(e.kind, EntityKind::BlockRef { .. })
+        && doc
+            .block(match &e.kind {
+                EntityKind::BlockRef { block, .. } => block,
+                _ => "",
+            })
+            .is_none()
+    {
+        return Err("Blockdefinition fehlt".into());
+    }
+    // Ein Bild besteht aus Pixeln, nicht aus Linien — Zerlegen würde es
+    // ersatzlos löschen. Deshalb ein klarer Fehler statt eines stillen Verlusts.
+    if matches!(e.kind, EntityKind::Image { .. }) {
+        return Err("Ein Bild lässt sich nicht zerlegen".into());
+    }
+    // Ein Text wird nicht über die Displayliste zerlegt, sondern über die
+    // Umrisse seiner Zeichen — und nur mit Schriften, die dafür vorgesehen sind.
+    if let EntityKind::Text { font, text, .. } = &e.kind {
+        if !font.explodierbar() {
+            return Err(format!(
+                "Schrift „{}“ lässt sich nicht in Linien zerlegen — {}",
+                font.label(),
+                font.explode_hinweis()
+            ));
+        }
+        if text.trim().is_empty() {
+            return Err("Der Text ist leer".into());
+        }
+    }
+    Ok(())
+}
+
+/// Wandelt eine Anzeigeform in die passende Objektart (Grundelement).
+fn zerlege_prim(shape: &Shape) -> Option<EntityKind> {
+    Some(match shape {
+        Shape::Line(a, b) => {
+            if a.dist(*b) < 1e-9 {
+                return None;
+            }
+            EntityKind::Line { a: *a, b: *b }
+        }
+        Shape::Poly(pts, closed) => {
+            if pts.len() < 2 {
+                return None;
+            }
+            EntityKind::Polyline {
+                verts: pts.iter().map(|p| Vertex::new(*p)).collect(),
+                closed: *closed,
+            }
+        }
+        Shape::Circle { c, r } => EntityKind::Circle { c: *c, r: *r },
+        Shape::Arc { c, r, a0, a1 } => EntityKind::Arc {
+            c: *c,
+            r: *r,
+            a0: *a0,
+            a1: *a1,
+        },
+        Shape::Ellipse { c, rx, ry, rot } => EntityKind::Ellipse {
+            c: *c,
+            rx: *rx,
+            ry: *ry,
+            rot: *rot,
+        },
+        Shape::EllipseArc {
+            c,
+            rx,
+            ry,
+            rot,
+            a0,
+            a1,
+        } => EntityKind::EllipseArc {
+            c: *c,
+            rx: *rx,
+            ry: *ry,
+            rot: *rot,
+            a0: *a0,
+            a1: *a1,
+        },
+        Shape::Fill { outer, holes } | Shape::FillOrdered { outer, holes } => {
+            if outer.len() < 3 {
+                return None;
+            }
+            EntityKind::Fill {
+                boundary: outer.clone(),
+                holes: holes.clone(),
+                pattern: FillPattern::Solid,
+                pattern_angle: 0.0,
+                pattern_scale: 100.0,
+                border: false,
+            }
+        }
+        // Ein Punkt des Musters (Sand, Putz) ist ein **gefüllter Kreis** vom
+        // Radius `r` — ein Punktobjekt zeichnete dagegen einen Anzeigepunkt
+        // (Radius aus der Linienstärke × Beschriftungsmaßstab, mindestens
+        // 32 mm bei 1:100) und die Sandkörner wären neunmal zu groß (T0138).
+        Shape::Dot { p, r } => EntityKind::Circle { c: *p, r: *r },
+        // Bilder werden vor der Displayliste abgewiesen (siehe oben).
+        Shape::Image { .. } => return None,
+        Shape::Text(t) => EntityKind::Text {
+            p: t.pos,
+            text: t.text.clone(),
+            height: t.height,
+            angle: t.angle,
+            align: t.align,
+            valign: t.valign,
+            bold: t.bold,
+            italic: t.italic,
+            underline: t.underline,
+            superscript: t.superscript,
+            runs: t.runs.clone(),
+            font: t.font,
+            line_spacing: t.line_spacing,
+            frame: false,
+            frame_round: false,
+            background: None,
+        },
+    })
 }
 
 // ---------------------------------------------------------------------------

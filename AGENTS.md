@@ -119,6 +119,15 @@ Mit dem Nutzer abgestimmt — nicht „verbessern“:
 - **Türen** sitzen immer auf der *vorderen Wandkante* (Blattseite), nicht in der
   Wandmitte. Kein Auswahlfeld für die Tür-Lage. Fenster dürfen ihre Lage in
   der Wanddicke wählen (Links/Mittig/Rechts).
+  **Der Basispunkt bleibt auf der Wandkante (T0191)**: Jede freie Bearbeitung —
+  Verschieben mit der Maus, Werkzeug „Verschieben", Drehen, Spiegeln, Einfügen
+  aus der Zwischenablage — setzt Türen und Fenster über
+  `actions::oeffnungen_auf_wand` (bzw. `Session::oeffnungen_auf_wand`) wieder
+  auf ihre Wand: Längslage aus dem Mittelpunkt neu bestimmt und auf die freie
+  Wandstrecke begrenzt, Querlage aus der Wand gerechnet. Quer zur Wand rührt
+  sich eine Tür danach nicht mehr, längs wandert sie wie bisher. Prüfweg:
+  `cargo test -p jjcad-core --test tuer_auf_wand` und
+  `cargo test -p jjcad-gui basispunkt`.
 - **Vorschau von Tür und Fenster** ist das fertige Objekt, kein Platzhalter:
   `render::preview_door`/`preview_window` liefern `OpeningPreview` (Symbol, Wand des
   Hosts, freigelegte Fläche) aus demselben Renderer wie der eingefügte Block — Tür auf
@@ -234,6 +243,16 @@ Mit dem Nutzer abgestimmt — nicht „verbessern“:
   `render::visible_bbox` liest `doc.ents()` — sonst passt die Ansicht im Blockeditor
   die Zeichnung statt den Block ein.
   - **Mauszeiger** ist ein durchgehendes Fadenkreuz bis zum Bildschirmrand.
+- **Blockbibliothek in drei Reitern (T0188)**: Der Reiter „Blöcke“ im Inventar hat
+  drei Unterreiter — **Systemblöcke**, **Benutzerblöcke**, **Projektblöcke**, je
+  `BlockSource` und in der Reihenfolge von `inventory::BLOCK_QUELLEN`. Die Chips sind
+  kleiner als die Reiter des Inventars, damit die zwei Ebenen unterscheidbar bleiben;
+  die gewählte Quelle steht in `UiState::block_quelle`. Innerhalb eines Reiters
+  gruppieren weiter die Kategorien des Blocks (`BlockDef::category`) mit Überschrift,
+  ein leerer Reiter zeigt „Keine Blöcke in dieser Kategorie“. Den Knopf
+  „Block aus Auswahl“ gibt es nur noch im Band Blöcke (Aktion `block.create`), nicht
+  mehr im Inventar. Prüfweg `cargo test -p jjcad-gui tests_bloecke`; Prüfbilder
+  `--demo "blockeditor,blockreiter:benutzer"` bzw. `…:projekt`.
 - **Einfügen** (Block/Zwischenablage): Vorschau oben rechts am Zeiger, `R` dreht,
   `S` spiegelt, Klick bestätigt. Beim Einfügen aus der Zwischenablage entscheidet
   Einstellungen → Bedienung → „Drehpunkt" (`prefs.paste_pivot`), welcher Punkt am

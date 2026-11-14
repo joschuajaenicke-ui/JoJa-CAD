@@ -19,7 +19,10 @@ einsehbar und dort frei änderbar (Ribbon ▸ Ansicht ▸ „Tasten").
 
 1. **Wand** (`G`): Start- und Endpunkt klicken — die Wand läuft als Kette weiter, `ESC` beendet.
 2. **Tür** (`H`) / **Fenster** (`J`): in eine Wand klicken. Öffnung, Laibungen und Anschlag
-   entstehen automatisch, die Tür richtet sich an der Wand aus.
+   entstehen automatisch, die Tür richtet sich an der Wand aus. Beim späteren
+   Verschieben bleibt eine Tür auf ihrer Wand: längs der Wand wandert sie mit,
+   quer zur Wand und über das Wandende hinaus nicht — ihr Basispunkt sitzt
+   immer auf einer der beiden Wandkanten.
 3. **Maßkette** (`M`): ein Element, drei Eingabemodi — im Reiter „Bemaßung“
    stehen dafür **drei eigene Schaltflächen mit eigenem Symbol**
    (**Waagerecht**, **Senkrecht**, **Direkt**), kein Dropdown. *Waagerecht* und
@@ -447,11 +450,15 @@ einen Plattenausfall. Dafür den Sicherungsordner (Einstellungen → Speicherort
 
 ### Eigene Blöcke
 
-„Block aus Auswahl" im Blockmanager legt den Block **dauerhaft** an: eine Datei
+Die Blockbibliothek im Inventar (Reiter „Blöcke“) ist in drei Reiter geteilt:
+**Systemblöcke** (mitgeliefert, schreibgeschützt), **Benutzerblöcke** (eigene,
+profilweit) und **Projektblöcke** (in dieser Zeichnung angelegt).
+
+„Block aus Auswahl“ im Band Blöcke legt den Block **dauerhaft** an: eine Datei
 `blocks/<name>.jjblk` im Datenordner. Nach dem nächsten Start steht er wieder im
-Blockmanager, Untertitel **Benutzer**; Löschen im Blockmanager entfernt auch die
-Datei. Das Verzeichnis ist die Wahrheit — es gibt keinen Index. Eine unlesbare
-Datei wird gemeldet und übersprungen, sie hält den Start nicht auf.
+Reiter Benutzerblöcke; Löschen im Blockmanager entfernt auch die Datei. Das
+Verzeichnis ist die Wahrheit — es gibt keinen Index. Eine unlesbare Datei wird
+gemeldet und übersprungen, sie hält den Start nicht auf.
 
 ## Nachweis für den Papier-Modus
 
