@@ -415,6 +415,9 @@ pub fn apply_grip_tol(orig: &Entity, kind: GripKind, target: V2, tol: f64) -> Op
     }
     match (&mut e.kind, kind) {
         // Bemaßung: Basispunkte ziehen, die Maßlinie bleibt an ihrer Höhe.
+        // Wandert der Punkt zwischen seine Nachbarn, wird die Kette danach neu
+        // sortiert (`render::dim_reihenfolge`) — sonst zeigten die Maßzahlen
+        // Strecken, die es so nicht mehr gibt (T0195).
         (EntityKind::Dim { pts, .. }, GripKind::Vert(i)) => {
             *pts.get_mut(i)? = target;
         }
@@ -628,6 +631,12 @@ pub fn apply_grip_tol(orig: &Entity, kind: GripKind, target: V2, tol: f64) -> Op
         }
         _ => return None,
     }
+    // Messpunkte einer Bemaßung stehen nach jeder Bewegung wieder in
+    // Messreihenfolge (T0195): ein gezogener Punkt kann zwischen seine Nachbarn
+    // geraten, und die Maßzahlen hängen an der gespeicherten Reihenfolge.
+    // Eine Stelle für alle Griffarten — die Maßlinien-Raute kehrt oben zurück
+    // und rührt die Punkte nicht an.
+    jjcad_core::render::dim_reihenfolge(&mut e.kind);
     Some(e)
 }
 
@@ -1868,6 +1877,41 @@ mod tests_masskette {
             }
             k => panic!("keine Maßkette mehr: {k:?}"),
         }
+    }
+
+    /// Ein Messpunkt, der zwischen seine Nachbarn gezogen wird, wandert in der
+    /// Kette an die richtige Stelle (T0195): die Maßzahlen gehören danach zu
+    /// den neuen Nachbarn, nicht zu den alten.
+    #[test]
+    fn gezogener_punkt_wird_einsortiert() {
+        // Kette 0 / 2,00 m / 5,00 m; der letzte Punkt auf 0,70 m gezogen.
+        let neu = apply_grip(&kette(), GripKind::Vert(2), V2::new(700.0, 0.0)).unwrap();
+        match &neu.kind {
+            EntityKind::Dim { pts, .. } => assert_eq!(
+                pts,
+                &vec![
+                    V2::new(0.0, 0.0),
+                    V2::new(700.0, 0.0),
+                    V2::new(2000.0, 0.0)
+                ],
+                "Messpunkte nicht in Messreihenfolge"
+            ),
+            k => panic!("keine Maßkette mehr: {k:?}"),
+        }
+
+        // Die Anzeige schreibt die Maße der neuen Nachbarstrecken: 0,70 m und
+        // 1,30 m — nicht 2,00 m und 1,30 m gegen den alten Nachbarn.
+        let mut doc = jjcad_core::model::Document::new();
+        doc.add_entity(neu.clone());
+        let texte: Vec<String> = jjcad_core::render::render_document(&jjcad_core::render::RenderCtx::new(&doc))
+            .prims
+            .iter()
+            .filter_map(|p| match &p.shape {
+                jjcad_core::render::Shape::Text(t) => Some(t.text.clone()),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(texte, vec!["70".to_string(), "1,30".to_string()]);
     }
 
     /// Die Raute zieht nur die Maßlinie — senkrecht zur Messrichtung, die

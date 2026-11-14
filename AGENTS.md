@@ -437,6 +437,22 @@ Mit dem Nutzer abgestimmt — nicht „verbessern“:
   für jeden Winkel. Alte Dateien rechnet `persist::migrate_legacy_dims` beim
   Laden um (`axis` → `angle`). Prüfweg: `cargo test -p jjcad-core --test
   masskette_rotieren`, Prüfbild `--demo masskettengedreht`.
+- **Reihenfolge der Messpunkte (T0195)**: Die Reihenfolge in `Dim::pts` **ist**
+  die Reihenfolge der Maßzahlen — gemessen wird immer zwischen zwei
+  aufeinanderfolgenden Punkten. Ein gezogener Messpunkt kann zwischen seine
+  Nachbarn geraten; ohne Neuordnen stünden danach Maße über Strecken, die es so
+  nicht mehr gibt (gemeldet: dritter Punkt zwischen die ersten beiden gezogen →
+  falsche Werte). Deshalb sortiert `render::dim_reihenfolge` (die eine Stelle,
+  dieselbe Rechnung wie `dim_sortieren` beim Anlegen) nach jeder Bewegung: im
+  Griffzug (`handles::apply_grip_tol`, einmal am Ende), in
+  `transform::transform_kind` (Verschieben, Drehen, Spiegeln, Kopieren, Einfügen)
+  und beim Laden (`persist::normalize_dim_reihenfolge` — alte Zeichnungen tragen
+  die falsche Reihenfolge in der Datei). Weniger als drei Punkte bleiben stehen:
+  bei zwei Punkten ist die Reihenfolge die Richtung des Maßes. `modify.set` mit
+  `pts` sortiert **nicht** — dort gibt der Aufrufer die Reihenfolge vor (wie
+  `dim.point.add` mit `index`). Prüfweg: `cargo test -p jjcad-core --test
+  masskette_reihenfolge` und `cargo test -p jjcad-gui gezogener_punkt_wird_einsortiert`,
+  Prüfbild `--demo massketteeinsortiert`.
 - **Bemaßung beim Ändern**: Die Maßlinie behält ihre **Lage**. Ein waagerechtes
   Maß liegt auf *einer* Höhe (`line_pos.y` für alle Basispunkte), ein senkrechtes
   auf einer Breite — `render::dim_projiziert` **setzt** die Koordinate, es addiert

@@ -62,8 +62,33 @@ pub fn from_json(s: &str) -> Result<Document, String> {
     normalize_sheet_frames(&mut doc);
     // Ansichtsfenster älterer Dateien zu normalen Blattobjekten machen (T0109)
     normalize_sheet_viewports(&mut doc);
+    // Messpunkte von Maßketten in Messreihenfolge bringen (T0195)
+    normalize_dim_reihenfolge(&mut doc);
     doc.modified = false;
     Ok(doc)
+}
+
+/// Messpunkte von Maßketten in Messreihenfolge bringen (T0195).
+///
+/// Die Reihenfolge in `pts` ist die Reihenfolge der Maßzahlen: gemessen wird
+/// immer zwischen zwei aufeinanderfolgenden Punkten. Vor T0195 konnte ein
+/// gezogener Messpunkt zwischen seine Nachbarn geraten; solche Zeichnungen
+/// tragen die falsche Reihenfolge in der Datei. Beim Laden wird sie deshalb
+/// einmal sortiert — jede weitere Bewegung hält die Ordnung selbst
+/// (`render::dim_reihenfolge` in `transform` und im Griffzug).
+pub fn normalize_dim_reihenfolge(doc: &mut Document) {
+    let mut sortiere = |ents: &mut Vec<Entity>| {
+        for e in ents.iter_mut() {
+            crate::render::dim_reihenfolge(&mut e.kind);
+        }
+    };
+    sortiere(&mut doc.entities);
+    for s in doc.sheets.iter_mut() {
+        sortiere(&mut s.entities);
+    }
+    for b in doc.blocks.iter_mut() {
+        sortiere(&mut b.entities);
+    }
 }
 
 /// Blattrahmen zu normalen Linien machen (T0004).

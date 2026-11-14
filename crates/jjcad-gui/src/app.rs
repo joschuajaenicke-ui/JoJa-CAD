@@ -2707,6 +2707,39 @@ impl App {
                         self.session_mut().select(vec![id]);
                     }
                 }
+                // Messpunkt nachträglich zwischen seine Nachbarn gezogen: die
+                // Kette sortiert ihn ein, die Maßzahlen gehören zu den neuen
+                // Nachbarn (T0195) — 1,00 m / 4,00 m statt 2,00 m / 4,00 m.
+                "massketteeinsortiert" => {
+                    // Frische Zeichnung: im Bild steht nur die Kette.
+                    self.new_document();
+                    self.ui.props_open = true;
+                    self.ui.ribbon = RibbonTab::Bemassung;
+                    let antwort = self.session_mut().execute(
+                        "dim.chain",
+                        &serde_json::json!({"pts": [[0.0, 0.0], [2.0, 0.0], [5.0, 0.0]],
+                                            "line_pos": [2.5, -0.9], "axis": "x"}),
+                    );
+                    if let Some(id) = antwort.ok().and_then(|r| r["created"][0].as_u64()) {
+                        if let Some(e) = self.doc_mut().entity_mut(id) {
+                            if let Some(neu) = crate::handles::apply_grip(
+                                e,
+                                crate::handles::GripKind::Vert(2),
+                                jjcad_core::geom::Vec2::new(1000.0, 0.0),
+                            ) {
+                                *e = neu;
+                            }
+                        }
+                        self.session_mut().select(vec![id]);
+                    }
+                    // Ansicht auf die Kette stellen (Bildmitte 2,50 m; das
+                    // automatische Einpassen der ersten Bilder aushebeln).
+                    self.started_at = 3.0;
+                    let mut v = self.current_view();
+                    v.center = jjcad_core::geom::Vec2::new(2500.0, -450.0);
+                    v.zoom = 0.15;
+                    self.set_view(v);
+                }
                 // „Punkt hinzufügen“ mit gewählter Maßkette: der nächste Klick
                 // setzt den Messpunkt (zweiter Schritt, T0154 Turn 3).
                 "punktwerkzeug" => {
