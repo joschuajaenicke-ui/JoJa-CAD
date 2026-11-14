@@ -91,7 +91,7 @@ fn ecke(s: &mut Session) {
 }
 
 fn fang(s: &Session, cursor: Vec2, achsen: &[Vec2]) -> jjcad_core::snap::SnapResolution {
-    snap_constrained_achsen(&s.doc, cursor, 30.0, achsen, &[], &[], &[], false)
+    snap_constrained_achsen(&s.doc, cursor, 30.0, achsen, false, &[], &[], &[], false)
 }
 
 /// Die Winkelhalbierende im Scheitel fängt, solange `bisector` an ist.
@@ -129,7 +129,7 @@ fn halt(p: Vec2) -> HaltPunkt {
 }
 
 fn fang_mit_halte(s: &Session, cursor: Vec2, halte: &[HaltPunkt]) -> jjcad_core::snap::SnapResolution {
-    snap_constrained_achsen(&s.doc, cursor, 30.0, &[], &[], &[], halte, false)
+    snap_constrained_achsen(&s.doc, cursor, 30.0, &[], false, &[], &[], halte, false)
 }
 
 /// Die Senkrechte eines gehaltenen Punktes fängt den nächsten Punkt.
