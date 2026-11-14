@@ -112,7 +112,7 @@ einsehbar und dort frei änderbar (Ribbon ▸ Ansicht ▸ „Tasten").
     nächsten Doppelklick wieder aus) — der Weg ohne Umweg über das Panel.
 12. **Einstellungen** (Zahnrad) — links eine Tabelle der Kategorien in dieser Reihenfolge:
     Bedienung, Darstellung, Grafik, Raster, Fangen, Voreinstellungen, Architektur, Bemaßung,
-    Update (noch leer), Speicherorte, Sicherung; darüber die Suche, rechts die
+    Speicherorte, Sicherung; darüber die Suche, rechts die
     Einstellungen der gewählten Kategorie. Die gewählte Kategorie steht in der Akzentfarbe
     (Einstellungen · Darstellung · Farbakzente). Jede Einstellung erklärt sich über das
     **Infozeichen** rechts neben ihrem Namen: der Tooltip erscheint beim Verweilen mit der Maus.
