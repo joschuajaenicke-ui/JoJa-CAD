@@ -666,6 +666,15 @@ pub fn systemdialog_schleier(app: &App, ctx: &egui::Context) {
         });
 }
 
+/// Adresse des öffentlichen Projekts (T0199).
+///
+/// Der Über-Dialog verweist nur darauf — das Programm ruft von sich aus nichts
+/// im Netz ab (keine Update-Prüfung, kein HTTP, keine Telemetrie).
+pub(crate) const PROJEKT_SEITE: &str = "https://github.com/joschuajaenicke-ui/JoJa-CAD";
+/// Adresse der Veröffentlichungen (T0199) — Fassungen und Downloads.
+pub(crate) const PROJEKT_VERSIONEN: &str =
+    "https://github.com/joschuajaenicke-ui/JoJa-CAD/releases";
+
 pub fn show(app: &mut App, ctx: &egui::Context) {
     // Systemdialog des Betriebssystems (KDE/Dolphin, GNOME, Windows, macOS)
     systemdialog_abholen(app, ctx);
@@ -1182,6 +1191,27 @@ pub fn show(app: &mut App, ctx: &egui::Context) {
             ui.label(theme::dim(jjcad_core::i18n::tr("gui.dialogs.rust_egui_eigener_pdf_und_dxf_export_mcp_schnittstelle_f")));
             ui.add_space(6.0);
             ui.label(theme::dim(jjcad_core::i18n::tr("gui.dialogs.lizenz_mit_format_jjcad_json_offen_dokumentiert")));
+            // T0199: Verweise auf das öffentliche Projekt. Das Programm ruft
+            // selbst nichts im Netz ab — wer nachsehen will, öffnet die Seite
+            // im Systembrowser (eframe reicht `open_url` an ihn weiter).
+            ui.add_space(4.0);
+            // Der Stil des Programms färbt jeden Text einheitlich ein
+            // (`override_text_color`, siehe `theme.rs`); ein Verweis sähe damit
+            // wie eine gewöhnliche Zeile aus. In diesem Rahmen gilt deshalb die
+            // Verweisfarbe der Palette — sichtbar anklickbar, ohne den Stil
+            // anderswo zu ändern.
+            ui.scope(|ui| {
+                ui.visuals_mut().override_text_color = None;
+                ui.style_mut().visuals.hyperlink_color = Palette::accent();
+                ui.hyperlink_to(
+                    jjcad_core::i18n::tr("gui.dialogs.projekt_auf_github"),
+                    PROJEKT_SEITE,
+                );
+                ui.hyperlink_to(
+                    jjcad_core::i18n::tr("gui.dialogs.versionen_und_downloads"),
+                    PROJEKT_VERSIONEN,
+                );
+            });
             ui.add_space(8.0);
             ui.label(theme::dim(jjcad_core::i18n::t_args_owned("gui.dialogs.dokument_x_x", &[("wert1", format!("{}", app.doc().name)), ("wert2", format!("{}", app.doc().summary()))])));
             if let Some(p) = &app.doc().path {
@@ -1256,8 +1286,7 @@ impl Einstellungskategorie {
 /// (T0178: mit dem Nutzer abgestimmte Reihenfolge).
 ///
 /// Der Zweig der Einstellungen hängt am `key`, nicht an der Position — die
-/// Reihenfolge ist damit frei änderbar. „Update“ ist ein bewusst leerer
-/// Platzhalter für spätere Einstellungen der Aktualisierung.
+/// Reihenfolge ist damit frei änderbar.
 pub(crate) const EINSTELLUNGSKATEGORIEN: &[Einstellungskategorie] = &[
     Einstellungskategorie {
         key: "settings.category_bedienung",
@@ -1475,13 +1504,6 @@ pub(crate) const EINSTELLUNGSKATEGORIEN: &[Einstellungskategorie] = &[
             "Maßstab",
             "Bemaßung",
         ],
-    },
-    // T0178: leerer Platzhalter — die Seite bleibt leer, der Platz hält die
-    // geplante Reihenfolge frei.
-    Einstellungskategorie {
-        key: "settings.category_update",
-        icon: "repeat",
-        stichworte: &["Update", "Aktualisierung", "Version", "Neu"],
     },
     // T0127: eine Wurzel für alle Nutzdaten; die drei Unterordner sind
     // änderbar.
@@ -2940,20 +2962,6 @@ fn settings_body(app: &mut App, ui: &mut Ui) {
                                 if block_passt {
                                     crate::panels::dim_fields(app, ui);
                                 }
-                            }
-                            // --------------------------- Update -------------------
-                            // T0178: leerer Platzhalter für spätere Einstellungen
-                            // der Aktualisierung. Die Seite bleibt bewusst leer —
-                            // sie hält den Platz, damit die Reihenfolge der
-                            // Kategorien schon jetzt der geplanten entspricht.
-                            "settings.category_update" => {
-                                abschnitt(&suche, ui, jjcad_core::i18n::tr("settings.category_update"));
-                                ui.add(
-                                    egui::Label::new(theme::faint(jjcad_core::i18n::tr(
-                                        "settings.update_leer",
-                                    )))
-                                    .wrap(),
-                                );
                             }
                             // ------------------------ Speicherorte (T0127) ---------
                             "settings.category_speicherorte" => {
@@ -4666,6 +4674,93 @@ mod modaltests {
         sichtbar(ctx, Order::Background, "modal_bg")
     }
 
+    /// Klickt auf die gezeichnete Beschriftung `label` und liefert die Adresse,
+    /// die egui in diesen Bildern als `open_url` ausgibt (T0199).
+    fn klick_auf_text(ctx: &egui::Context, app: &mut App, label: &str) -> Option<String> {
+        let out = rahmen(ctx, app, vec![]);
+        let pos = text_mitte(&out, label)?;
+        let knopf = |pressed: bool| egui::Event::PointerButton {
+            pos,
+            button: egui::PointerButton::Primary,
+            pressed,
+            modifiers: egui::Modifiers::NONE,
+        };
+        let mut url = None;
+        for events in [
+            vec![egui::Event::PointerMoved(pos)],
+            vec![knopf(true)],
+            vec![knopf(false)],
+            vec![],
+            vec![],
+        ] {
+            let out = rahmen(ctx, app, events);
+            if let Some(ziel) = out.platform_output.open_url {
+                url = Some(ziel.url);
+            }
+        }
+        url
+    }
+
+    /// T0199: Der Über-Dialog verweist auf das öffentliche Projekt. Der Klick
+    /// auf einen Link landet als `open_url` in der Ausgabe — so reicht eframe
+    /// ihn an den Systembrowser weiter. Das Programm selbst ruft nichts im
+    /// Netz ab; der Test braucht deshalb keinen Browser.
+    #[test]
+    fn ueber_dialog_oeffnet_die_projektseite() {
+        let (mut app, ctx) = leeres_app();
+        app.ui.about_open = true;
+        for _ in 0..2 {
+            frame(&ctx, &mut app, vec![]);
+        }
+        // Die Verweise müssen auch wie Verweise aussehen: der Programmstil färbt
+        // sonst jeden Text einheitlich ein (`override_text_color`). Verglichen
+        // wird deshalb mit einer gewöhnlichen Zeile desselben Dialogs — nicht mit
+        // der Palettenfarbe, denn der Dialog zeichnet mit verminderter Deckkraft.
+        let out = rahmen(&ctx, &mut app, vec![]);
+        let farbe = |text: &str| -> Option<[u8; 4]> {
+            out.shapes.iter().find_map(|cs| match &cs.shape {
+                egui::Shape::Text(t) if t.galley.text() == text => {
+                    Some(t.fallback_color.to_srgba_unmultiplied())
+                }
+                _ => None,
+            })
+        };
+        let gewoehnlich = farbe(jjcad_core::i18n::tr(
+            "gui.dialogs.lizenz_mit_format_jjcad_json_offen_dokumentiert",
+        ))
+        .expect("die Lizenzzeile fehlt im Über-Dialog");
+        for schluessel in [
+            "gui.dialogs.projekt_auf_github",
+            "gui.dialogs.versionen_und_downloads",
+        ] {
+            let text = jjcad_core::i18n::tr(schluessel);
+            let link = farbe(text).unwrap_or_else(|| panic!("„{text}“ fehlt im Dialog"));
+            assert_ne!(
+                link, gewoehnlich,
+                "„{text}“ wird wie gewöhnlicher Text gezeichnet"
+            );
+        }
+        let seite = klick_auf_text(
+            &ctx,
+            &mut app,
+            jjcad_core::i18n::tr("gui.dialogs.projekt_auf_github"),
+        )
+        .expect("der Link „Projekt auf GitHub“ öffnet nichts");
+        assert_eq!(seite, PROJEKT_SEITE, "der Link zeigt auf die falsche Adresse");
+
+        let versionen = klick_auf_text(
+            &ctx,
+            &mut app,
+            jjcad_core::i18n::tr("gui.dialogs.versionen_und_downloads"),
+        )
+        .expect("der Link „Versionen und Downloads“ öffnet nichts");
+        assert_eq!(
+            versionen, PROJEKT_VERSIONEN,
+            "der Link zeigt auf die falsche Adresse"
+        );
+        assert!(app.ui.about_open, "der Über-Dialog schließt beim Klick");
+    }
+
     #[test]
     fn weitere_module_werden_gezeichnet() {
         let (mut app, ctx) = leeres_app();
@@ -6325,7 +6420,7 @@ mod tests_einstellungen {
 
     #[test]
     fn jede_kategorie_hat_name_icon_und_stichworte() {
-        assert_eq!(EINSTELLUNGSKATEGORIEN.len(), 11, "Kategorienzahl");
+        assert_eq!(EINSTELLUNGSKATEGORIEN.len(), 10, "Kategorienzahl");
         for k in EINSTELLUNGSKATEGORIEN {
             assert!(!k.name().is_empty(), "Kategorie ohne Namen");
             assert!(!k.icon.is_empty(), "Kategorie „{}“ ohne Icon", k.name());
@@ -7852,9 +7947,11 @@ mod tests_einstellungen {
     }
 
     /// T0178: Die Kategorien stehen in der mit dem Nutzer abgestimmten
-    /// Reihenfolge; „Einheiten und Maßstab“ ist entfallen, „Update“ ist ein
-    /// leerer Platzhalter. Der Zweig der Einstellungen hängt am Schlüssel —
-    /// eine Umsortierung zeigt keine fremden Einstellungen.
+    /// Reihenfolge; „Einheiten und Maßstab“ ist entfallen, der leere
+    /// Platzhalter „Update“ ebenfalls (T0199 — die Aktualisierung ist eine
+    /// Entscheidung des Anwenders, das Programm prüft nichts von selbst).
+    /// Der Zweig der Einstellungen hängt am Schlüssel — eine Umsortierung
+    /// zeigt keine fremden Einstellungen.
     #[test]
     fn kategorien_stehen_in_der_abgestimmten_reihenfolge() {
         let keys: Vec<&str> = EINSTELLUNGSKATEGORIEN.iter().map(|k| k.key).collect();
@@ -7869,7 +7966,6 @@ mod tests_einstellungen {
                 "settings.category_voreinstellungen",
                 "settings.category_architektur",
                 "settings.category_bemassung",
-                "settings.category_update",
                 "settings.category_speicherorte",
                 "settings.category_sicherung",
             ],
@@ -7882,6 +7978,11 @@ mod tests_einstellungen {
             !keys.contains(&entfallen.as_str()),
             "„Einheiten und Maßstab“ ist wieder da"
         );
+        let update = format!("settings.category_{}", "update");
+        assert!(
+            !keys.contains(&update.as_str()),
+            "die leere Kategorie „Update“ ist wieder da"
+        );
         // Jeder Schlüssel muss einen Zweig in `settings_body` haben: sonst
         // bleibt die Seite einer Kategorie leer, ohne dass es auffällt.
         let quelle = include_str!("dialogs.rs");
@@ -7893,24 +7994,37 @@ mod tests_einstellungen {
         }
     }
 
-    /// T0178: „Update“ ist bewusst leer und sagt das auch.
+    /// T0199: Die Suche nach „Update“ oder „Version“ findet keine leere Seite
+    /// mehr — es gibt die Kategorie nicht.
     #[test]
-    fn update_ist_ein_leerer_platzhalter() {
-        let _sperre = KONFIG.lock().unwrap_or_else(|e| e.into_inner());
-        let _konfig = WegwerfKonfig::neu("update");
-        let (_, _, out) = seite("settings.category_update", "");
-        let texte = gezeichnete_texte(&out);
-        assert!(
-            texte.iter().any(|t| t.contains("Noch keine Einstellungen")),
-            "der Hinweis auf den leeren Platzhalter fehlt (gezeichnet: {texte:?})"
-        );
-        // Keine einzige Einstellungszeile auf der Seite.
-        for fremd in ["Rasterweite", "Fangradius", "Wandstärke", "Design"] {
+    fn suche_nach_update_findet_keine_leere_kategorie() {
+        let treffer = |s: &str| -> Vec<&'static str> {
+            EINSTELLUNGSKATEGORIEN
+                .iter()
+                .filter(|k| k.passt(&s.to_lowercase()))
+                .map(|k| k.name())
+                .collect()
+        };
+        for begriff in ["update", "aktualisierung", "version"] {
             assert!(
-                !texte.iter().any(|t| t == fremd),
-                "„{fremd}“ steht auf der Update-Seite"
+                !treffer(begriff).contains(&"Update"),
+                "die Suche nach „{begriff}“ findet noch eine Kategorie „Update“"
             );
         }
+        // Auch im Quelltext steht weder die Kategorie noch ihr Leertext. Die
+        // Schlüssel werden zusammengesetzt, damit die i18n-Prüfung sie nicht
+        // als „benutzt“ zählt (sie sind gelöscht).
+        let quelle = include_str!("dialogs.rs");
+        let kategorie = format!("settings.category_{}", "update");
+        assert!(
+            !quelle.contains(&kategorie),
+            "die Kategorie „Update“ steht noch im Quelltext"
+        );
+        let leertext = format!("settings.{}_leer", "update");
+        assert!(
+            !quelle.contains(&leertext),
+            "der Leertext der Update-Seite steht noch im Quelltext"
+        );
     }
 
     /// T0178: „Lineale einblenden“ hatte keine Wirkung (der Wert `show_rulers`
