@@ -4268,6 +4268,33 @@ pub fn dim_sortieren(pts: &[Vec2], angle: f64) -> Vec<Vec2> {
     out
 }
 
+/// Bringt die Messpunkte eines Objekts in Messreihenfolge (T0195).
+///
+/// Die Reihenfolge in `pts` **ist** die Reihenfolge der Maßzahlen: gemessen
+/// wird immer zwischen zwei aufeinanderfolgenden Punkten. Wandert ein Punkt
+/// durch Ziehen zwischen seine Nachbarn, stimmt die gespeicherte Reihenfolge
+/// nicht mehr mit der Lage auf der Maßlinie überein — die Maßzahlen gehören
+/// dann zu falschen Strecken. Deshalb wird nach jeder Bewegung sortiert.
+///
+/// Weniger als drei Punkte bleiben, wie sie sind: bei zwei Punkten ist die
+/// Reihenfolge die Richtung des Maßes (und eine Umkehr würde nur die
+/// Pfeilrichtung drehen). Liefert `true`, wenn die Reihenfolge sich geändert
+/// hat.
+pub fn dim_reihenfolge(kind: &mut EntityKind) -> bool {
+    let EntityKind::Dim { pts, angle, .. } = kind else {
+        return false;
+    };
+    if pts.len() < 3 {
+        return false;
+    }
+    let neu = dim_sortieren(pts, *angle);
+    if neu == *pts {
+        return false;
+    }
+    *pts = neu;
+    true
+}
+
 /// Basispunkte auf die Maßlinie gelotet.
 ///
 /// Für `X` ist die Maßlinie waagerecht auf **einer** Höhe (`line_pos.y`), für

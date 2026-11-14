@@ -222,19 +222,26 @@ pub fn transform_kind(k: &EntityKind, m: &Affine) -> EntityKind {
             line_pos,
             angle,
             override_text,
-        } => EntityKind::Dim {
-            pts: pts.iter().map(|p| m.apply(*p)).collect(),
-            line_pos: m.apply(*line_pos),
-            // Gespiegelt kehrt sich die Richtung: bei einer Spiegelung an der
-            // Geraden mit Winkel θ ist `rotation()` = 2θ, die gespiegelte
-            // Richtung also 2θ − φ (T0166).
-            angle: if m.is_mirrored() {
-                m.rotation() - *angle
-            } else {
-                *angle + m.rotation()
-            },
-            override_text: override_text.clone(),
-        },
+        } => {
+            // Messpunkte in Messreihenfolge halten (T0195): Ziehen, Drehen,
+            // Spiegeln und Einfügen verschieben Punkte über ihre Nachbarn
+            // hinweg — die Maßzahlen hängen an der gespeicherten Reihenfolge.
+            let mut kind = EntityKind::Dim {
+                pts: pts.iter().map(|p| m.apply(*p)).collect(),
+                line_pos: m.apply(*line_pos),
+                // Gespiegelt kehrt sich die Richtung: bei einer Spiegelung an der
+                // Geraden mit Winkel θ ist `rotation()` = 2θ, die gespiegelte
+                // Richtung also 2θ − φ (T0166).
+                angle: if m.is_mirrored() {
+                    m.rotation() - *angle
+                } else {
+                    *angle + m.rotation()
+                },
+                override_text: override_text.clone(),
+            };
+            crate::render::dim_reihenfolge(&mut kind);
+            kind
+        }
         EntityKind::ElevationPlan { p, z } => EntityKind::ElevationPlan {
             p: m.apply(*p),
             z: *z,
