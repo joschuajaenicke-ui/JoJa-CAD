@@ -1427,6 +1427,7 @@ bestand_zeile = "{objekte} objects · {waende} walls · {tueren} doors · {fenst
 
 [gui.handles]
 fuellflaeche_punkt_verbunden = "Fill area · point joined"
+masskette_punkt_entfernt = "Dimension · point removed"
 griff_gesetzt = "Grip · set"
 griff_ziehen = "Grip · drag"
 

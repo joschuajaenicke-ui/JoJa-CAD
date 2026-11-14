@@ -25,6 +25,11 @@ pub struct GripDrag {
     pub entity: Id,
     pub kind: GripKind,
     pub orig: Entity,
+    /// Zuletzt angesteuerte Weltposition des Griffs (T0198). Beim Loslassen
+    /// entscheidet sie, ob ein Messpunkt auf einem anderen liegt — der
+    /// Griffindex taugt dafür nicht, weil die Messpunkte nach jeder Bewegung
+    /// neu sortiert werden.
+    pub ziel: Option<V2>,
 }
 
 /// Kleinster Knick, ab dem ein Randpunkt der Füllfläche als **Ecke** gilt
@@ -70,6 +75,43 @@ fn verschmelze_nachbar(ring: &mut Vec<V2>, i: usize, tol: f64) -> bool {
     let danach = ring[(i + 1) % n];
     if p.dist(davor) <= tol || p.dist(danach) <= tol {
         ring.remove(i);
+        return true;
+    }
+    false
+}
+
+/// Zwei **Messpunkte** einer Maßkette übereinandergelegt werden zu einem: der
+/// andere fällt weg, der gezogene bleibt auf seiner Stelle (T0198).
+///
+/// Geprüft wird die **echte** Deckung, nicht die Lage auf der Maßlinie: die
+/// Messpunkte dürfen quer zur Messrichtung verschieden stehen und liegen
+/// projiziert trotzdem auf derselben Stelle — dort ist nichts doppelt. Unter
+/// zwei Punkten bleibt die Kette stehen, sonst gäbe es kein Maß mehr.
+///
+/// Gesucht wird über die **Zielstelle** des Zugs, nicht über den Griffindex:
+/// `render::dim_reihenfolge` sortiert die Punkte nach jeder Bewegung, der
+/// gezogene steht danach an einer anderen Stelle der Liste. Liefert `true`,
+/// wenn ein Punkt entfernt wurde.
+fn verschmelze_messpunkt(pts: &mut Vec<V2>, ziel: V2, tol: f64) -> bool {
+    if pts.len() <= 2 {
+        return false;
+    }
+    // Der gezogene Punkt ist der nächste an der Zielstelle — er bleibt stehen.
+    let Some(i) = pts
+        .iter()
+        .enumerate()
+        .min_by(|a, b| {
+            a.1.dist(ziel)
+                .partial_cmp(&b.1.dist(ziel))
+                .unwrap_or(std::cmp::Ordering::Equal)
+        })
+        .map(|(i, _)| i)
+    else {
+        return false;
+    };
+    let p = pts[i];
+    if let Some(k) = pts.iter().enumerate().position(|(k, q)| k != i && p.dist(*q) <= tol) {
+        pts.remove(k);
         return true;
     }
     false
@@ -848,6 +890,7 @@ impl App {
             entity,
             kind,
             orig,
+            ziel: None,
         });
         self.mitteilung(jjcad_core::i18n::tr("gui.handles.griff_ziehen"));
     }
@@ -869,6 +912,9 @@ impl App {
         if let Some(e) = self.doc_mut().entity_mut(d.entity) {
             *e = new_e;
             self.mark_changed();
+            if let Some(drag) = self.grip_drag.as_mut() {
+                drag.ziel = Some(target);
+            }
             true
         } else {
             false
@@ -877,12 +923,14 @@ impl App {
 
     /// Beendet den Griffzug. Liegt die gezogene Ecke einer Füllfläche auf einer
     /// ihrer Nachbarecken, werden beide zu **einem** Punkt: die Umgrenzung hat
-    /// danach einen Punkt weniger.
+    /// danach einen Punkt weniger. Dasselbe gilt für einen **Messpunkt** einer
+    /// Maßkette, der auf einem anderen Messpunkt derselben Kette liegt (T0198).
     pub fn end_grip_drag(&mut self) {
         let Some(d) = self.grip_drag.take() else {
             return;
         };
         let mut verbunden = false;
+        let mut masskette = false;
         if let GripKind::Vert(i) = d.kind {
             let tol = (12.0 / self.current_view().zoom.max(1e-6))
                 .max(jjcad_core::model::POINT_EPS_MM);
@@ -893,14 +941,27 @@ impl App {
                 ) {
                     if let Some((ring, idx)) = fill_ring_mut(&mut e.kind, i) {
                         verbunden = verschmelze_nachbar(ring, idx, tol);
-                        if verbunden {
-                            self.mark_changed();
-                        }
                     }
+                } else if let EntityKind::Dim { pts, .. } = &mut e.kind {
+                    if let Some(ziel) = d.ziel {
+                        verbunden = verschmelze_messpunkt(pts, ziel, tol);
+                    }
+                    if verbunden {
+                        // Nach dem Wegfall steht die Kette wieder in
+                        // Messreihenfolge (T0195) — die Maßzahlen hängen an der
+                        // gespeicherten Reihenfolge.
+                        jjcad_core::render::dim_reihenfolge(&mut e.kind);
+                        masskette = true;
+                    }
+                }
+                if verbunden {
+                    self.mark_changed();
                 }
             }
         }
-        if verbunden {
+        if masskette {
+            self.mitteilung(jjcad_core::i18n::tr("gui.handles.masskette_punkt_entfernt"));
+        } else if verbunden {
             self.mitteilung(jjcad_core::i18n::tr("gui.handles.fuellflaeche_punkt_verbunden"));
         } else {
             self.mitteilung(jjcad_core::i18n::tr("gui.handles.griff_gesetzt"));
@@ -1955,11 +2016,12 @@ mod tests_masskette {
     #[test]
     fn mauszug_bewegt_den_basispunkt() {
         let mut app = App::with_ctx(egui::Context::default());
+        app.doc_mut().settings.input_unit = jjcad_core::units::Unit::Mm;
         app.session_mut()
             .execute(
                 "dim.chain",
-                &serde_json::json!({"pts": [[0.0, 0.0], [2.0, 0.0], [5.0, 0.0]],
-                                    "line_pos": [1.0, -0.4], "axis": "x"}),
+                &serde_json::json!({"pts": [[0.0, 0.0], [2000.0, 0.0], [5000.0, 0.0]],
+                                    "line_pos": [1000.0, -400.0], "axis": "x"}),
             )
             .expect("Maßkette");
         let id = app.doc().ents().last().map(|e| e.id).expect("Maßkette");
@@ -1984,15 +2046,144 @@ mod tests_masskette {
         }
     }
 
+    /// Zwei Messpunkte übereinandergelegt: einer fällt weg (T0198). Die Kette
+    /// misst danach die Strecke zwischen den verbliebenen Punkten.
+    #[test]
+    fn messpunkt_auf_dem_nachbarn_wird_entfernt() {
+        let mut app = App::with_ctx(egui::Context::default());
+        app.doc_mut().settings.input_unit = jjcad_core::units::Unit::Mm;
+        app.session_mut()
+            .execute(
+                "dim.chain",
+                &serde_json::json!({"pts": [[0.0, 0.0], [2000.0, 0.0], [5000.0, 0.0]],
+                                    "line_pos": [1000.0, -400.0], "axis": "x"}),
+            )
+            .expect("Maßkette");
+        let id = app.doc().ents().last().map(|e| e.id).expect("Maßkette");
+        app.session_mut().selection = vec![id];
+
+        let (gid, kind) = app
+            .grip_at(V2::new(2000.0, 0.0), 5.0)
+            .expect("kein Griff am Messpunkt");
+        assert_eq!(kind, GripKind::Vert(1));
+        app.begin_grip_drag(gid, kind);
+        // Auf den dritten Messpunkt gezogen — der Fang liefert ihn exakt.
+        assert!(app.update_grip_drag(V2::new(5000.0, 0.0)), "Zug kam nicht an");
+        app.end_grip_drag();
+
+        match &app.doc().entity(id).unwrap().kind {
+            EntityKind::Dim { pts, .. } => assert_eq!(
+                pts,
+                &vec![V2::new(0.0, 0.0), V2::new(5000.0, 0.0)],
+                "doppelter Messpunkt steht noch in der Kette: {pts:?}"
+            ),
+            k => panic!("keine Maßkette mehr: {k:?}"),
+        }
+    }
+
+    /// Der gezogene Punkt darf auch **über** seine Nachbarn hinweg auf einen
+    /// weiter entfernten Punkt gelegt werden: die Kette wird beim Ziehen neu
+    /// sortiert, der Griffindex zeigt danach auf einen anderen Punkt (T0198).
+    #[test]
+    fn messpunkt_auf_weiter_entferntem_punkt_wird_entfernt() {
+        let mut app = App::with_ctx(egui::Context::default());
+        app.doc_mut().settings.input_unit = jjcad_core::units::Unit::Mm;
+        app.session_mut()
+            .execute(
+                "dim.chain",
+                &serde_json::json!({"pts": [[0.0, 0.0], [2000.0, 0.0], [5000.0, 0.0]],
+                                    "line_pos": [1000.0, -400.0], "axis": "x"}),
+            )
+            .expect("Maßkette");
+        let id = app.doc().ents().last().map(|e| e.id).expect("Maßkette");
+        app.session_mut().selection = vec![id];
+
+        let (gid, kind) = app
+            .grip_at(V2::new(5000.0, 0.0), 5.0)
+            .expect("kein Griff am Messpunkt");
+        assert_eq!(kind, GripKind::Vert(2));
+        app.begin_grip_drag(gid, kind);
+        assert!(app.update_grip_drag(V2::new(0.0, 0.0)), "Zug kam nicht an");
+        app.end_grip_drag();
+
+        match &app.doc().entity(id).unwrap().kind {
+            EntityKind::Dim { pts, .. } => assert_eq!(
+                pts,
+                &vec![V2::new(0.0, 0.0), V2::new(2000.0, 0.0)],
+                "doppelter Messpunkt steht noch in der Kette: {pts:?}"
+            ),
+            k => panic!("keine Maßkette mehr: {k:?}"),
+        }
+    }
+
+    /// Ohne Deckung bleibt die Kette unverändert — ein Zug in die freie Fläche
+    /// entfernt keinen Messpunkt.
+    #[test]
+    fn messpunkt_ohne_deckung_bleibt_stehen() {
+        let mut app = App::with_ctx(egui::Context::default());
+        app.doc_mut().settings.input_unit = jjcad_core::units::Unit::Mm;
+        app.session_mut()
+            .execute(
+                "dim.chain",
+                &serde_json::json!({"pts": [[0.0, 0.0], [2000.0, 0.0], [5000.0, 0.0]],
+                                    "line_pos": [1000.0, -400.0], "axis": "x"}),
+            )
+            .expect("Maßkette");
+        let id = app.doc().ents().last().map(|e| e.id).expect("Maßkette");
+        app.session_mut().selection = vec![id];
+
+        let (gid, kind) = app
+            .grip_at(V2::new(2000.0, 0.0), 5.0)
+            .expect("kein Griff am Messpunkt");
+        app.begin_grip_drag(gid, kind);
+        assert!(app.update_grip_drag(V2::new(3000.0, 800.0)), "Zug kam nicht an");
+        app.end_grip_drag();
+
+        match &app.doc().entity(id).unwrap().kind {
+            EntityKind::Dim { pts, .. } => assert_eq!(pts.len(), 3, "{pts:?}"),
+            k => panic!("keine Maßkette mehr: {k:?}"),
+        }
+    }
+
+    /// Ein Einzelmaß (zwei Messpunkte) behält beide: ohne Messpunkte gäbe es
+    /// kein Maß mehr (T0198).
+    #[test]
+    fn einzelmass_behaelt_seine_zwei_punkte() {
+        let mut app = App::with_ctx(egui::Context::default());
+        app.doc_mut().settings.input_unit = jjcad_core::units::Unit::Mm;
+        app.session_mut()
+            .execute(
+                "dim.chain",
+                &serde_json::json!({"pts": [[0.0, 0.0], [2000.0, 0.0]],
+                                    "line_pos": [1000.0, -400.0], "axis": "x"}),
+            )
+            .expect("Maßkette");
+        let id = app.doc().ents().last().map(|e| e.id).expect("Maßkette");
+        app.session_mut().selection = vec![id];
+
+        let (gid, kind) = app
+            .grip_at(V2::new(2000.0, 0.0), 5.0)
+            .expect("kein Griff am Messpunkt");
+        app.begin_grip_drag(gid, kind);
+        assert!(app.update_grip_drag(V2::new(0.0, 0.0)), "Zug kam nicht an");
+        app.end_grip_drag();
+
+        match &app.doc().entity(id).unwrap().kind {
+            EntityKind::Dim { pts, .. } => assert_eq!(pts.len(), 2, "{pts:?}"),
+            k => panic!("keine Maßkette mehr: {k:?}"),
+        }
+    }
+
     /// Dasselbe für die Raute an der Maßlinie: sie verschiebt nur die Linie.
     #[test]
     fn mauszug_bewegt_die_masslinie() {
         let mut app = App::with_ctx(egui::Context::default());
+        app.doc_mut().settings.input_unit = jjcad_core::units::Unit::Mm;
         app.session_mut()
             .execute(
                 "dim.chain",
-                &serde_json::json!({"pts": [[0.0, 0.0], [2.0, 0.0], [5.0, 0.0]],
-                                    "line_pos": [1.0, -0.4], "axis": "x"}),
+                &serde_json::json!({"pts": [[0.0, 0.0], [2000.0, 0.0], [5000.0, 0.0]],
+                                    "line_pos": [1000.0, -400.0], "axis": "x"}),
             )
             .expect("Maßkette");
         let id = app.doc().ents().last().map(|e| e.id).expect("Maßkette");
