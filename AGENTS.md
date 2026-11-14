@@ -453,6 +453,19 @@ Mit dem Nutzer abgestimmt — nicht „verbessern“:
   `dim.point.add` mit `index`). Prüfweg: `cargo test -p jjcad-core --test
   masskette_reihenfolge` und `cargo test -p jjcad-gui gezogener_punkt_wird_einsortiert`,
   Prüfbild `--demo massketteeinsortiert`.
+- **Messpunkte übereinanderlegen (T0198)**: Beim Ziehen an einem Messpunkt
+  steht die Kette im Fang-Ausschluss (`canvas::fang_regeln`) und liefert damit
+  keinen Fangpunkt — auch nicht an ihren übrigen Messpunkten. Diese kommen
+  deshalb als **zusätzliche Fangziele** herein (`FangRegeln::punkte`, an
+  `snap_constrained_achsen` als Vorschau-Punkte übergeben); der gezogene Punkt
+  selbst bleibt ausgenommen, sonst hielte der Fang den Griff fest. Beim
+  Loslassen prüft `App::end_grip_drag`, ob der gezogene Messpunkt auf einem
+  anderen liegt, und entfernt den anderen (`handles::verschmelze_messpunkt`).
+  Gesucht wird über die **Zielstelle** des Zugs (`GripDrag::ziel`), nicht über
+  den Griffindex: `render::dim_reihenfolge` sortiert die Punkte nach jeder
+  Bewegung. Unter zwei Punkten bleibt die Kette stehen. Prüfweg:
+  `cargo test -p jjcad-gui tests_masskette_punktfang` und
+  `cargo test -p jjcad-gui tests_masskette::`.
 - **Bemaßung beim Ändern**: Die Maßlinie behält ihre **Lage**. Ein waagerechtes
   Maß liegt auf *einer* Höhe (`line_pos.y` für alle Basispunkte), ein senkrechtes
   auf einer Breite — `render::dim_projiziert` **setzt** die Koordinate, es addiert

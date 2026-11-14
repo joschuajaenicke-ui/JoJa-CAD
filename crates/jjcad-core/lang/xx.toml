@@ -1485,6 +1485,7 @@
 #
 [gui.handles]
 # fuellflaeche_punkt_verbunden = "Füllfläche · Punkt verbunden"
+# masskette_punkt_entfernt = "Maßkette · Messpunkt entfernt"
 # griff_gesetzt = "Griff · gesetzt"
 # griff_ziehen = "Griff · ziehen"
 #

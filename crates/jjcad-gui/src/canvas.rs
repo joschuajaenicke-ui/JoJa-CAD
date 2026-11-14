@@ -4337,7 +4337,11 @@ fn fang_aufloesung(app: &App, w: V2, tol: f64) -> snap::SnapResolution {
     }
     let achsen = bezug_achsen(app);
     let regeln = fang_regeln(app);
-    let vorschau = vorschau_punkte(app);
+    let mut vorschau = vorschau_punkte(app);
+    // Die übrigen Messpunkte der gezogenen Maßkette fangen wie Endpunkte
+    // (T0198) — sie stehen im ausgeschlossenen Element und kommen deshalb über
+    // denselben Weg wie die Vorschau-Punkte herein.
+    vorschau.extend(regeln.punkte.iter().copied());
     // `snap_constrained_achsen`: die Haltepunkte des erweiterten Punktfangs
     // liefern ihre Hilfslinien als zusätzliche Fangziele mit; mehrere
     // Bezugspunkte (beide Nachbarn eines Griffs) rasten getrennt je Koordinate.
@@ -4408,6 +4412,11 @@ fn snap_at(app: &App, rect: Rect, view: View, pos: Pos2) -> V2 {
 struct FangRegeln {
     /// Elemente, die überhaupt nicht fangen: das bearbeitete Element.
     ignore: Vec<Id>,
+    /// Zusätzliche Fangpunkte, die nicht aus dem Dokument kommen: die
+    /// **übrigen Messpunkte** der Maßkette, an deren Messpunkt gerade gezogen
+    /// wird (T0198). Sie gehören zum ausgeschlossenen Element und wären ohne
+    /// diesen Weg nicht erreichbar.
+    punkte: Vec<V2>,
 }
 
 /// Wandert die ganze Auswahl gerade mit dem Zeiger?
@@ -4427,12 +4436,29 @@ fn auswahl_wandert(app: &App) -> bool {
 /// Fang-Ausschluss für den aktuellen Zustand.
 fn fang_regeln(app: &App) -> FangRegeln {
     let mut ignore: Vec<Id> = Vec::new();
+    let mut punkte: Vec<V2> = Vec::new();
     if let Some(drag) = app.grip_drag.as_ref() {
         ignore.push(drag.entity);
+        // Die **anderen** Messpunkte derselben Maßkette bleiben Fangziele
+        // (T0198): nur so lässt sich ein Messpunkt genau auf einen anderen
+        // legen, und erst die Deckung erlaubt das Entfernen des doppelten
+        // Punktes. Der gezogene Punkt selbst ist ausgenommen — er sitzt unter
+        // dem Zeiger, ein Fang auf ihn hielte den Griff fest.
+        if let crate::handles::GripKind::Vert(i) = drag.kind {
+            if let Some(EntityKind::Dim { pts, .. }) = app.doc().entity(drag.entity).map(|e| &e.kind)
+            {
+                punkte.extend(
+                    pts.iter()
+                        .enumerate()
+                        .filter(|(k, _)| *k != i)
+                        .map(|(_, p)| *p),
+                );
+            }
+        }
     } else if auswahl_wandert(app) {
         ignore.extend(app.selection().iter().copied());
     }
-    FangRegeln { ignore }
+    FangRegeln { ignore, punkte }
 }
 
 fn handle_input(
@@ -13610,6 +13636,84 @@ mod tests_masskette_eingabe {
         tool_click(&mut app, V2::new(0.0, -1150.0));
         let (q, _) = fang_zeiger(&app, V2::new(500.0, -1150.0), 50.0);
         assert!((q.y + 1150.0).abs() > 1e-6, "Fang wirkt noch: {q:?}");
+    }
+}
+
+mod tests_masskette_punktfang {
+    //! T0198: Die Messpunkte einer Maßkette fangen aufeinander.
+    //!
+    //! Beim Ziehen an einem Messpunkt steht die Kette in `ignore` — sie liefert
+    //! damit **keinen** Fangpunkt, auch nicht an ihren übrigen Messpunkten. Ohne
+    //! diesen Weg ließe sich ein Punkt nie genau auf einen anderen legen, und
+    //! das Entfernen des doppelten Punktes wäre Glückssache.
+
+    use super::*;
+    use crate::handles::GripKind;
+
+    fn app_mit_kette() -> (App, Id) {
+        let mut app = App::with_ctx(egui::Context::default());
+        // Eingabeeinheit festlegen: die Vorgabe kommt sonst aus der
+        // `prefs.json` des Rechners und die Koordinaten unten wären geraten.
+        app.doc_mut().settings.input_unit = jjcad_core::units::Unit::Mm;
+        // Nur der Objektfang zählt: Raster, Ortho und Polar führen den Zeiger
+        // sonst auf dieselbe Stelle und der Test wäre blind für die Fangart.
+        app.doc_mut().settings.snap.grid = false;
+        app.doc_mut().settings.snap.ortho = false;
+        app.doc_mut().settings.snap.polar = false;
+        app.session_mut()
+            .execute(
+                "dim.chain",
+                &json!({"pts": [[0.0, 0.0], [2000.0, 0.0], [5000.0, 0.0]],
+                        "line_pos": [1000.0, -400.0], "axis": "x"}),
+            )
+            .expect("Maßkette");
+        let id = app.doc().ents().last().map(|e| e.id).expect("Maßkette");
+        app.session_mut().selection = vec![id];
+        (app, id)
+    }
+
+    /// Der gezogene Messpunkt fängt auf dem Nachbarn: der Zeiger steht 3 mm
+    /// daneben, der Fangpunkt liegt exakt auf dem Messpunkt.
+    #[test]
+    fn gezogener_messpunkt_faengt_auf_dem_nachbarn() {
+        let (mut app, id) = app_mit_kette();
+        app.begin_grip_drag(id, GripKind::Vert(1));
+
+        let (p, _, art) = fang_zeiger_art(&app, V2::new(4997.0, 2.0), 12.0);
+        assert_eq!(p, V2::new(5000.0, 0.0), "nicht auf dem Messpunkt: {p:?}");
+        assert_eq!(
+            art,
+            Some(FangArt::Objekt(jjcad_core::snap::SnapKind::Endpoint)),
+            "Fangart"
+        );
+    }
+
+    /// Der **gezogene** Punkt selbst ist kein Fangziel — sonst hielte der Fang
+    /// den Griff an seiner eigenen Stelle fest.
+    #[test]
+    fn der_gezogene_punkt_faengt_nicht_auf_sich_selbst() {
+        let (mut app, id) = app_mit_kette();
+        app.begin_grip_drag(id, GripKind::Vert(1));
+
+        let (_, _, art) = fang_zeiger_art(&app, V2::new(2003.0, 2.0), 12.0);
+        assert_ne!(
+            art,
+            Some(FangArt::Objekt(jjcad_core::snap::SnapKind::Endpoint)),
+            "der gezogene Messpunkt ist Fangziel"
+        );
+    }
+
+    /// Ohne Griffzug fängt die Kette nicht auf ihren Messpunkten: die
+    /// Fangziele gehören zum Ziehen, nicht zur ruhenden Zeichnung.
+    #[test]
+    fn ohne_griffzug_kein_messpunktfang() {
+        let (app, _) = app_mit_kette();
+        let (_, _, art) = fang_zeiger_art(&app, V2::new(4997.0, 2.0), 12.0);
+        assert_ne!(
+            art,
+            Some(FangArt::Objekt(jjcad_core::snap::SnapKind::Endpoint)),
+            "Messpunkt fängt ohne Zug"
+        );
     }
 }
 
