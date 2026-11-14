@@ -1,17 +1,19 @@
-//! Punktfang an einem Spline (T0134).
+//! Punktfang an einem Spline.
 //!
 //! Die gezeichnete Kurve ist eine Zerlegung in viele kurze Teilstrecken. Deren
-//! Enden dürfen **keine** Fangpunkte sein: beim Ziehen an einem Stützpunkt
-//! wandert die Kurve mit, der Fang zöge den Zeiger auf einen Punkt, der im
-//! nächsten Bild woanders liegt — die Linie flackert und zittert. Fangbar sind
-//! allein die Stützpunkte (die vom Nutzer gesetzten Punkte).
+//! Enden sind **keine** Fangpunkte — sie sind keine gesetzten Punkte, sondern
+//! Rechenergebnis; an jedem Zerlegungspunkt hinge sonst ein „Endpunkt", den
+//! niemand gesetzt hat. Fangbar sind allein die Stützpunkte.
+//!
+//! Während der Spline **bearbeitet** wird, fängt er überhaupt nicht: er steht
+//! dann im Ausschluss der Fang-Engine (siehe `snap_edit_griff.rs`).
 //!
 //! Alle Koordinaten in Millimetern (`input_unit: mm`).
 
 use jjcad_core::geom::{v, Spline, Vec2, SPLINE_TOL_MM};
 use jjcad_core::model::Id;
 use jjcad_core::session::Session;
-use jjcad_core::snap::{snap_constrained_ohne_punkte, SnapKind, SnapResolution, SnapSource};
+use jjcad_core::snap::{snap_constrained, SnapKind, SnapResolution, SnapSource};
 use serde_json::json;
 
 /// Stützpunkte des Prüfsplines — die Kurve wölbt sich deutlich zwischen ihnen.
@@ -53,10 +55,15 @@ fn szenario() -> (Session, Id) {
     (s, id)
 }
 
-/// Fang wie während eines Griffzugs: der Spline ist ausgewählt (`selected`),
-/// der gezogene Stützpunkt ist gesperrt.
-fn fang(s: &Session, cursor: Vec2, id: Id, gesperrt: &[(Id, Vec2)]) -> SnapResolution {
-    snap_constrained_ohne_punkte(&s.doc, cursor, 20.0, None, &[], &[id], gesperrt, false)
+/// Fang ohne Bearbeitung: der Spline steht im Dokument, nichts ist
+/// ausgeschlossen.
+fn fang(s: &Session, cursor: Vec2) -> SnapResolution {
+    snap_constrained(&s.doc, cursor, 20.0, None, &[], false)
+}
+
+/// Fang während eines Griffzugs am Spline: er steht im Ausschluss.
+fn fang_bearbeitet(s: &Session, cursor: Vec2, id: Id) -> SnapResolution {
+    snap_constrained(&s.doc, cursor, 20.0, None, &[id], false)
 }
 
 fn stuetzpunkte() -> Vec<Vec2> {
@@ -86,15 +93,15 @@ fn zwischenpunkt() -> Vec2 {
         .expect("die Zerlegung hat Zwischenpunkte")
 }
 
-/// Der Kern des Tickets: ein Zwischenpunkt der Kurve fängt nicht.
+/// Ein Zwischenpunkt der Kurve fängt nicht: er ist keine gesetzte Stelle.
 #[test]
 fn teilstrecken_der_kurve_fangen_nicht() {
-    let (s, id) = szenario();
+    let (s, _) = szenario();
     let zwischen = zwischenpunkt();
-    let res = fang(&s, zwischen, id, &[(id, v(0.0, 0.0))]);
+    let res = fang(&s, zwischen);
     assert!(
         !res.is_snap(),
-        "Teilstrecken-Ende darf nicht fangen, sonst zittert die Linie: {res:?}"
+        "Teilstrecken-Ende darf nicht fangen: {res:?}"
     );
     assert!(
         res.point.dist(zwischen) < 1e-9,
@@ -110,14 +117,13 @@ fn teilstrecken_der_kurve_fangen_nicht() {
 /// Stützpunkt das Ziel ist und nicht das Teilstrecken-Ende.
 #[test]
 fn kein_kurvenpunkt_zieht_den_zeiger() {
-    let (s, id) = szenario();
+    let (s, _) = szenario();
     let kurve = Spline::new(stuetzpunkte(), false).flatten(SPLINE_TOL_MM);
-    let gesperrt = [(id, v(0.0, 0.0))];
     for p in &kurve {
         if stuetzpunkte().iter().any(|q| p.dist(*q) <= 1.0) {
             continue;
         }
-        let res = fang(&s, *p, id, &gesperrt);
+        let res = fang(&s, *p);
         if res.is_snap() {
             assert!(
                 stuetzpunkte().iter().any(|q| res.point.dist(*q) < 1e-9),
@@ -128,12 +134,12 @@ fn kein_kurvenpunkt_zieht_den_zeiger() {
     }
 }
 
-/// Die Stützpunkte bleiben fangbar — auch während ein anderer gezogen wird.
+/// Die Stützpunkte sind die festen Fangziele der Kurve.
 #[test]
-fn stuetzpunkt_faengt_beim_griffzug() {
-    let (s, id) = szenario();
+fn stuetzpunkt_faengt() {
+    let (s, _) = szenario();
     let ziel = v(2000.0, 0.0);
-    let res = fang(&s, ziel + v(6.0, 4.0), id, &[(id, v(0.0, 0.0))]);
+    let res = fang(&s, ziel + v(6.0, 4.0));
     assert_eq!(res.source, SnapSource::Object(SnapKind::Endpoint));
     assert!(
         res.point.dist(ziel) < 1e-9,
@@ -141,13 +147,23 @@ fn stuetzpunkt_faengt_beim_griffzug() {
     );
 }
 
-/// Der gezogene Stützpunkt fängt sich nicht selbst (sonst bleibt der Griff
-/// stehen) — die Sperre greift weiterhin.
+/// Während der Spline bearbeitet wird, fängt er gar nicht — auch nicht mit
+/// seinen Stützpunkten. Der gezogene Punkt bleibt am Zeiger, der Griff folgt
+/// der Maus.
 #[test]
-fn gezogener_stuetzpunkt_faengt_sich_nicht_selbst() {
+fn bearbeiteter_spline_faengt_nicht() {
     let (s, id) = szenario();
-    let res = fang(&s, v(3.0, 3.0), id, &[(id, v(0.0, 0.0))]);
+    // Der gezogene Stützpunkt selbst …
+    let res = fang_bearbeitet(&s, v(3.0, 3.0), id);
     assert!(!res.is_snap(), "der gezogene Punkt darf nicht fangen: {res:?}");
+    // … und ein ruhender Stützpunkt desselben Splines.
+    let ruhend = v(2000.0, 0.0);
+    let res = fang_bearbeitet(&s, ruhend + v(6.0, 4.0), id);
+    assert!(
+        !res.is_snap(),
+        "der bearbeitete Spline darf gar nicht fangen: {res:?}"
+    );
+    assert!(res.point.dist(ruhend + v(6.0, 4.0)) < 1e-9, "{res:?}");
 }
 
 /// Ein fremdes Objekt auf derselben Stelle fängt unverändert — der Fang darf
@@ -161,26 +177,23 @@ fn fremdes_objekt_faengt_weiterhin() {
         &json!({ "a": [zwischen.x, zwischen.y], "b": [zwischen.x + 500.0, zwischen.y + 500.0] }),
     )
     .unwrap();
-    let res = fang(&s, zwischen + v(4.0, 3.0), id, &[(id, v(0.0, 0.0))]);
+    let res = fang_bearbeitet(&s, zwischen + v(4.0, 3.0), id);
     assert_eq!(res.source, SnapSource::Object(SnapKind::Endpoint));
     assert!(res.point.dist(zwischen) < 1e-9, "{res:?}");
     assert_ne!(res.point, v(0.0, 0.0));
 }
 
-/// „Nächster Punkt" auf der Kurve bleibt erhalten: ein **nicht** ausgewählter
+/// „Nächster Punkt" auf der Kurve bleibt erhalten: ein **nicht** bearbeiteter
 /// Spline lässt sich weiterhin an seiner Kurve fangen.
 #[test]
 fn naechster_punkt_auf_der_kurve_bleibt() {
     let mut s = s();
-    s.execute(
-        "doc.settings",
-        &json!({ "snap": { "nearest": true } }),
-    )
-    .unwrap();
+    s.execute("doc.settings", &json!({ "snap": { "nearest": true } }))
+        .unwrap();
     s.execute("draw.spline", &json!({ "pts": STUETZ }))
         .unwrap();
     let zwischen = zwischenpunkt();
-    let res = snap_constrained_ohne_punkte(&s.doc, zwischen, 20.0, None, &[], &[], &[], false);
+    let res = snap_constrained(&s.doc, zwischen, 20.0, None, &[], false);
     assert_eq!(res.source, SnapSource::Object(SnapKind::Nearest));
     assert!(res.point.dist(zwischen) < 1e-6, "{res:?}");
 }

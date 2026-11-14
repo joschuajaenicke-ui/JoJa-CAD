@@ -434,7 +434,6 @@ fn blattecken_fangen_im_papierraum() {
         6.0,
         None,
         &[],
-        &[],
     );
     let ecke = kandidaten
         .iter()
@@ -455,7 +454,6 @@ fn blattecken_fangen_im_papierraum() {
         6.0,
         None,
         &[],
-        &[],
     );
     assert!(
         oben.iter()
@@ -470,7 +468,6 @@ fn blattecken_fangen_im_papierraum() {
         jjcad_core::geom::v(1.0, 1.0),
         6.0,
         None,
-        &[],
         &[],
     );
     assert!(

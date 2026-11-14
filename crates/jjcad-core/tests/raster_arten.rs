@@ -1,14 +1,14 @@
 //! Rasterarten, Rastermodus und erzwungener Rasterfang (T0144).
 //!
 //! Geprüft wird über die Action `doc.settings` und die öffentliche Fang-Engine
-//! `snap::snap_constrained_ohne_punkte` — denselben Weg, den die Zeichenfläche
+//! `snap::snap_constrained` — denselben Weg, den die Zeichenfläche
 //! für Zeigeranzeige und Klickpunkt nimmt. Die Rasterart muss **auch fangen**;
 //! eine Anzeige, die anders liegt als der Fang, wäre ein zweites Rastermodell.
 
 use jjcad_core::geom::{v, Vec2};
 use jjcad_core::gitter::{Rasterart, Rastermodus};
 use jjcad_core::session::Session;
-use jjcad_core::snap::{snap_constrained_ohne_punkte, SnapKind, SnapSource};
+use jjcad_core::snap::{snap_constrained, SnapKind, SnapSource};
 use serde_json::json;
 
 /// Sitzung in Millimetern mit Rasterfang an und 100 mm Weite.
@@ -25,7 +25,7 @@ fn s() -> Session {
 }
 
 fn fangen(s: &Session, p: Vec2, tol: f64) -> Vec2 {
-    snap_constrained_ohne_punkte(&s.doc, p, tol, None, &[], &[], &[], true).point
+    snap_constrained(&s.doc, p, tol, None, &[], true).point
 }
 
 #[test]
@@ -109,7 +109,7 @@ fn erzwungener_rasterfang_laesst_objektpunkte_exakt() {
         &json!({ "a": [137.0, 41.0], "b": [900.0, 41.0] }),
     )
     .unwrap();
-    let res = snap_constrained_ohne_punkte(&s.doc, v(139.0, 42.0), 12.0, None, &[], &[], &[], true);
+    let res = snap_constrained(&s.doc, v(139.0, 42.0), 12.0, None, &[], true);
     assert_eq!(res.source, SnapSource::Object(SnapKind::Endpoint));
     assert!((res.point - v(137.0, 41.0)).len() < 1e-6, "Punkt {:?}", res.point);
 }
@@ -124,13 +124,11 @@ fn erzwungener_rasterfang_bleibt_auf_der_zwangsachse() {
     .unwrap();
     // Bezug (0,0), Zeiger bei (137, 41): Ortho zieht auf die X-Achse (137, 0),
     // das Raster rundet danach auf (100, 0) — beides gilt zugleich.
-    let res = snap_constrained_ohne_punkte(
+    let res = snap_constrained(
         &s.doc,
         v(137.0, 41.0),
         12.0,
         Some(v(0.0, 0.0)),
-        &[],
-        &[],
         &[],
         true,
     );

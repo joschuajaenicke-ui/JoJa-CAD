@@ -19,7 +19,7 @@ fn doc() -> Document {
 
 fn fang(d: &Document, cursor: Vec2, tol: f64, achsen: &[Vec2]) -> (Vec2, SnapSource) {
     let r = snap_constrained_achsen(
-        d, cursor, tol, achsen, &[], &[], &[], &[], &[], false,
+        d, cursor, tol, achsen, &[], &[], &[], false,
     );
     (r.point, r.source)
 }

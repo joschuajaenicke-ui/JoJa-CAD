@@ -54,7 +54,7 @@ fn quadrant_faengt_auch_ohne_endpunkt_fang() {
     s.doc.settings.snap.midpoint = false;
     s.doc.settings.snap.nearest = false;
     s.doc.settings.snap.quadrant = true;
-    let hit = find_snap(&s.doc, v(0.0, 1004.0), 30.0, None, &[], &[])
+    let hit = find_snap(&s.doc, v(0.0, 1004.0), 30.0, None, &[])
         .expect("Quadrant muss fangen");
     assert_eq!(hit.kind, SnapKind::Quadrant);
     assert!(hit.point.dist(v(0.0, 1000.0)) < 1e-6, "{:?}", hit.point);
@@ -69,13 +69,13 @@ fn quadrant_ist_einzeln_abschaltbar() {
     s.doc.settings.snap.endpoint = true;
     s.doc.settings.snap.midpoint = false;
     s.doc.settings.snap.nearest = false;
-    let cands = snap_candidates(&s.doc, v(0.0, 1000.0), 30.0, None, &[], &[]);
+    let cands = snap_candidates(&s.doc, v(0.0, 1000.0), 30.0, None, &[]);
     assert!(
         !cands.iter().any(|h| h.kind == SnapKind::Quadrant),
         "Quadrant trotz Abschaltung: {cands:?}"
     );
     // Der Endpunkt des Bogenstücks (1000; 0) fängt weiter.
-    let hit = find_snap(&s.doc, v(1000.0, 0.0), 30.0, None, &[], &[]).expect("Endpunkt");
+    let hit = find_snap(&s.doc, v(1000.0, 0.0), 30.0, None, &[]).expect("Endpunkt");
     assert_eq!(hit.kind, SnapKind::Endpoint);
 }
 
@@ -91,7 +91,7 @@ fn ecke(s: &mut Session) {
 }
 
 fn fang(s: &Session, cursor: Vec2, achsen: &[Vec2]) -> jjcad_core::snap::SnapResolution {
-    snap_constrained_achsen(&s.doc, cursor, 30.0, achsen, &[], &[], &[], &[], &[], false)
+    snap_constrained_achsen(&s.doc, cursor, 30.0, achsen, &[], &[], &[], false)
 }
 
 /// Die Winkelhalbierende im Scheitel fängt, solange `bisector` an ist.
@@ -129,7 +129,7 @@ fn halt(p: Vec2) -> HaltPunkt {
 }
 
 fn fang_mit_halte(s: &Session, cursor: Vec2, halte: &[HaltPunkt]) -> jjcad_core::snap::SnapResolution {
-    snap_constrained_achsen(&s.doc, cursor, 30.0, &[], &[], &[], &[], &[], halte, false)
+    snap_constrained_achsen(&s.doc, cursor, 30.0, &[], &[], &[], halte, false)
 }
 
 /// Die Senkrechte eines gehaltenen Punktes fängt den nächsten Punkt.

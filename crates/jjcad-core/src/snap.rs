@@ -565,9 +565,8 @@ pub fn hilfslinien_snap_mit_geometrie(
     cursor: Vec2,
     tol: f64,
     ignore: &[Id],
-    selected: &[Id],
 ) -> Option<SnapHit> {
-    let segs = nahe_segmente(doc, cursor, tol, ignore, selected);
+    let segs = nahe_segmente(doc, cursor, tol, ignore);
     hilfslinien_snap_innen(halte, cursor, tol, &segs, None)
 }
 
@@ -585,26 +584,19 @@ pub fn hilfslinien_snap_mit_zwang(
     cursor: Vec2,
     tol: f64,
     ignore: &[Id],
-    selected: &[Id],
     zwang: Option<Zwangsachse>,
 ) -> Option<SnapHit> {
     if zwang.is_none() {
-        return hilfslinien_snap_mit_geometrie(doc, halte, cursor, tol, ignore, selected);
+        return hilfslinien_snap_mit_geometrie(doc, halte, cursor, tol, ignore);
     }
-    let segs = nahe_segmente(doc, cursor, tol, ignore, selected);
+    let segs = nahe_segmente(doc, cursor, tol, ignore);
     hilfslinien_snap_innen(halte, cursor, tol, &segs, zwang)
 }
 
 /// Strecken in Fangreichweite — dieselbe Auswahl wie in der Fang-Engine
 /// (sichtbare, nicht ausgeschlossene Objekte; Wandkontur nur bei
-/// `snap.wall_edges`), mit der Marke „gehört zu einem ausgewählten Objekt".
-fn nahe_segmente(
-    doc: &Document,
-    cursor: Vec2,
-    tol: f64,
-    ignore: &[Id],
-    selected: &[Id],
-) -> Vec<(Seg, Id, bool)> {
+/// `snap.wall_edges`).
+fn nahe_segmente(doc: &Document, cursor: Vec2, tol: f64, ignore: &[Id]) -> Vec<(Seg, Id)> {
     let tol = tol.max(1e-6);
     let area = BBox::new(cursor - v(tol, tol), cursor + v(tol, tol));
     let wall_edges = doc.settings.snap.wall_edges;
@@ -623,17 +615,16 @@ fn nahe_segmente(
         if !b.is_valid() || !b.expanded(tol * 2.0).intersects(&area) {
             continue;
         }
-        let ausgewaehlt = selected.contains(&e.id);
         for sg in render::entity_segments(doc, e) {
-            segs.push((sg, e.id, ausgewaehlt));
+            segs.push((sg, e.id));
         }
         for sg in render::text_frame_segments(doc, e) {
-            segs.push((sg, e.id, ausgewaehlt));
+            segs.push((sg, e.id));
         }
         if wall_edges && matches!(e.kind, EntityKind::Wall { .. }) {
             let idx = widx.get_or_insert_with(|| render::WallIndex::build(doc, doc.ents()));
             for sg in render::wall_contour_segments_idx(idx, e) {
-                segs.push((sg, e.id, ausgewaehlt));
+                segs.push((sg, e.id));
             }
         }
     }
@@ -659,7 +650,7 @@ fn hilfslinien_snap_innen(
     halte: &[HaltPunkt],
     cursor: Vec2,
     tol: f64,
-    segs: &[(Seg, Id, bool)],
+    segs: &[(Seg, Id)],
     zwang: Option<Zwangsachse>,
 ) -> Option<SnapHit> {
     if halte.is_empty() || tol <= 0.0 {
@@ -730,13 +721,9 @@ fn hilfslinien_snap_innen(
                 entity: halt_entity(halte, l),
             });
         }
-        // Schnitt mit einer bestehenden Linie: nur an nicht ausgewählten
-        // Objekten — sie bewegen sich mit, der Schnittpunkt wanderte mit (wie
-        // beim Objekt-Schnittpunkt der Fang-Engine).
-        for (sg, id, ausgewaehlt) in segs {
-            if *ausgewaehlt {
-                continue;
-            }
+        // Schnitt mit einer bestehenden Linie. Ein bearbeitetes Element steht
+        // in `ignore` und taucht hier deshalb gar nicht auf.
+        for (sg, id) in segs {
             for p in gerade_schneidet_seg(l, sg) {
                 let d = p.dist(cursor);
                 if d <= tol {
@@ -939,21 +926,16 @@ pub fn tangent_treffer(
 ///
 /// * `tol` – Fangradius in Weltkoordinaten
 /// * `reference` – Bezugspunkt (für Lotfuß / Ortho)
-/// * `ignore` – Objekte, die überhaupt nicht fangen (z. B. das gerade live
-///   gezogene Objekt)
-/// * `selected` – ausgewählte Objekte: sie bleiben mit ihren *diskreten*
-///   Punkten (Ende, Mitte, Zentrum, Quadrant) fangbar, liefern aber keine
-///   kontinuierlichen Fänge (Nächster Punkt, Lot, Schnittpunkt). Sonst klebte
-///   ein bewegtes Objekt an sich selbst.
+/// * `ignore` – Objekte, die überhaupt nicht fangen. Hier steht das Element,
+///   das gerade bearbeitet wird: ein Objekt fängt nie auf sich selbst.
 pub fn find_snap(
     doc: &Document,
     cursor: Vec2,
     tol: f64,
     reference: Option<Vec2>,
     ignore: &[Id],
-    selected: &[Id],
 ) -> Option<SnapHit> {
-    find_snap_gated(doc, cursor, tol, reference, ignore, selected, true)
+    find_snap_gated(doc, cursor, tol, reference, ignore, true)
 }
 
 /// Wie [`find_snap`], aber der Rasterfang lässt sich abschalten —
@@ -964,10 +946,9 @@ pub fn find_snap_gated(
     tol: f64,
     reference: Option<Vec2>,
     ignore: &[Id],
-    selected: &[Id],
     allow_grid: bool,
 ) -> Option<SnapHit> {
-    snap_candidates_gated(doc, cursor, tol, reference, ignore, selected, allow_grid)
+    snap_candidates_gated(doc, cursor, tol, reference, ignore, allow_grid)
         .into_iter()
         .next()
 }
@@ -986,64 +967,36 @@ pub fn snap_candidates(
     tol: f64,
     reference: Option<Vec2>,
     ignore: &[Id],
-    selected: &[Id],
 ) -> Vec<SnapHit> {
-    snap_candidates_gated(doc, cursor, tol, reference, ignore, selected, true)
+    snap_candidates_gated(doc, cursor, tol, reference, ignore, true)
 }
 
-#[allow(clippy::too_many_arguments)]
+/// Wie [`snap_candidates`], aber der Rasterfang lässt sich abschalten.
 pub fn snap_candidates_gated(
     doc: &Document,
     cursor: Vec2,
     tol: f64,
     reference: Option<Vec2>,
     ignore: &[Id],
-    selected: &[Id],
     allow_grid: bool,
 ) -> Vec<SnapHit> {
-    snap_candidates_ohne_punkte(doc, cursor, tol, reference, ignore, selected, &[], allow_grid)
+    snap_candidates_mit_vorschau(doc, cursor, tol, reference, ignore, &[], allow_grid)
 }
 
-/// Wie [`snap_candidates_gated`], aber gesperrte Punkte fallen schon beim
-/// Sammeln heraus — **vor** dem Entdoppeln. Nachträglich zu filtern wäre falsch:
-/// sitzt ein gesperrter Punkt genau auf dem Endpunkt eines fremden Elements,
-/// hätte das Entdoppeln den fremden Kandidaten bereits verworfen und der Fang
-/// fiele auf einen kontinuierlichen Treffer zurück.
-#[allow(clippy::too_many_arguments)]
-pub fn snap_candidates_ohne_punkte(
-    doc: &Document,
-    cursor: Vec2,
-    tol: f64,
-    reference: Option<Vec2>,
-    ignore: &[Id],
-    selected: &[Id],
-    gesperrt: &[GesperrterPunkt],
-    allow_grid: bool,
-) -> Vec<SnapHit> {
-    snap_candidates_alle(
-        doc, cursor, tol, reference, ignore, selected, gesperrt, &[], allow_grid,
-    )
-}
-
-/// Wie [`snap_candidates_ohne_punkte`], zusätzlich mit **Vorschau-Punkten**:
+/// Wie [`snap_candidates_gated`], zusätzlich mit **Vorschau-Punkten**:
 /// Stützpunkte eines noch nicht angelegten Zuges (Polylinie) fangen wie
 /// Endpunkte. Ohne sie wäre der eigene Anfang nicht erreichbar und ein
 /// geschlossener Zug nur per Zufall möglich.
-#[allow(clippy::too_many_arguments)]
 pub fn snap_candidates_mit_vorschau(
     doc: &Document,
     cursor: Vec2,
     tol: f64,
     reference: Option<Vec2>,
     ignore: &[Id],
-    selected: &[Id],
-    gesperrt: &[GesperrterPunkt],
     vorschau: &[Vec2],
     allow_grid: bool,
 ) -> Vec<SnapHit> {
-    snap_candidates_alle(
-        doc, cursor, tol, reference, ignore, selected, gesperrt, vorschau, allow_grid,
-    )
+    snap_candidates_alle(doc, cursor, tol, reference, ignore, vorschau, allow_grid)
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -1053,8 +1006,6 @@ fn snap_candidates_alle(
     tol: f64,
     reference: Option<Vec2>,
     ignore: &[Id],
-    selected: &[Id],
-    gesperrt: &[GesperrterPunkt],
     vorschau: &[Vec2],
     allow_grid: bool,
 ) -> Vec<SnapHit> {
@@ -1070,29 +1021,32 @@ fn snap_candidates_alle(
         if dist > tol {
             return;
         }
-        let hit = SnapHit {
-            point: p,
-            kind,
-            entity,
-        };
-        if ist_gesperrt(&hit, gesperrt) {
-            return;
-        }
-        cands.push((dist, hit));
+        cands.push((
+            dist,
+            SnapHit {
+                point: p,
+                kind,
+                entity,
+            },
+        ));
     };
 
     // Kandidaten sammeln (nur sichtbare Objekte in der Nähe).
-    // Dritter Wert je Segment: gehört das Segment zu einem ausgewählten
-    // Objekt? Dann nur diskrete Punkte anbieten, keine kontinuierlichen Fänge.
+    //
+    // `ignore` ist der **einzige** Selbst-Fang-Schutz: das Element, das gerade
+    // bearbeitet wird (Griffzug, wandernde Auswahl), steht darin und liefert
+    // damit überhaupt keine Fangpunkte — auch keine, die erst durch eine
+    // Zerlegung entstehen. Eine Prüfung „welcher Punkt wandert mit?" gibt es
+    // bewusst nicht: sie müsste je Elementart gepflegt werden und jeder
+    // vergessene Zweig bringt den Selbst-Fang zurück.
     let area = BBox::new(cursor - v(tol, tol), cursor + v(tol, tol));
-    let mut segs: Vec<(Seg, Id, bool)> = Vec::new();
+    let mut segs: Vec<(Seg, Id)> = Vec::new();
     let mut widx: Option<render::WallIndex> = None;
     // Splines: die gezeichnete Kurve ist eine Zerlegung in viele kurze
-    // Teilstrecken. Deren Enden sind **keine** Fangpunkte — beim Ziehen an
-    // einem Stützpunkt wandert die Kurve mit, der Fang zöge den Zeiger auf
-    // einen Punkt, der im nächsten Bild woanders liegt (Flackern und Zittern,
-    // T0134). Fangbar sind nur die Stützpunkte; die Teilstrecken bleiben für
-    // Schnittpunkt und „Nächster Punkt" erhalten.
+    // Teilstrecken. Deren Enden sind **keine** Fangpunkte — sonst hinge an
+    // jedem Zerlegungspunkt ein „Endpunkt", den niemand gesetzt hat. Fangbar
+    // sind nur die Stützpunkte; die Teilstrecken bleiben für Schnittpunkt und
+    // „Nächster Punkt" erhalten.
     let mut spline_ids: std::collections::HashSet<Id> = std::collections::HashSet::new();
     let mut stuetzpunkte: Vec<(Vec2, Id)> = Vec::new();
     // Aktiver Bearbeitungsraum (Modell oder Papierraum)
@@ -1100,7 +1054,6 @@ fn snap_candidates_alle(
         if ignore.contains(&e.id) {
             continue;
         }
-        let ausgewaehlt = selected.contains(&e.id);
         if let Some(l) = doc.layer(e.layer) {
             if !l.visible || l.locked {
                 continue;
@@ -1111,9 +1064,9 @@ fn snap_candidates_alle(
             continue;
         }
         for sg in render::entity_segments(doc, e) {
-            segs.push((sg, e.id, ausgewaehlt));
+            segs.push((sg, e.id));
         }
-        // Spline: nur die Stützpunkte sind feste Fangziele (T0134).
+        // Spline: nur die Stützpunkte sind feste Fangziele.
         if let EntityKind::Spline { verts, .. } = &e.kind {
             spline_ids.insert(e.id);
             if s.endpoint {
@@ -1126,7 +1079,7 @@ fn snap_candidates_alle(
         // (MIT) und Kanten (NÄC) fangbar — er ist der Kasten, den die
         // Einfüge-Vorschau zeigt und der bei Auswahl gezeichnet wird.
         for sg in render::text_frame_segments(doc, e) {
-            segs.push((sg, e.id, ausgewaehlt));
+            segs.push((sg, e.id));
         }
         // Wandkörper: die umgrenzenden Linien (Längskanten, Gehrungs-/Stirn-
         // ecken, Laibungen) liefern ebenfalls Fangpunkte. Ohne diesen Zweig
@@ -1135,7 +1088,7 @@ fn snap_candidates_alle(
         if s.wall_edges && matches!(e.kind, EntityKind::Wall { .. }) {
             let idx = widx.get_or_insert_with(|| render::WallIndex::build(doc, doc.ents()));
             for sg in render::wall_contour_segments_idx(idx, e) {
-                segs.push((sg, e.id, ausgewaehlt));
+                segs.push((sg, e.id));
             }
         }
         if s.center {
@@ -1149,11 +1102,11 @@ fn snap_candidates_alle(
     }
 
     // Endpunkte / Mittelpunkte / Quadranten
-    for (sg, id, ausgewaehlt) in &segs {
-        // Teilstrecken eines Splines liefern keine End- und Mittelpunkte
-        // (T0134): sie sind nur die Zerlegung der Kurve, keine gesetzten
-        // Punkte. Fangbar sind allein die Stützpunkte (siehe unten); die
-        // Teilstrecken bleiben für Lot und „Nächster Punkt" erhalten.
+    for (sg, id) in &segs {
+        // Teilstrecken eines Splines liefern keine End- und Mittelpunkte:
+        // sie sind nur die Zerlegung der Kurve, keine gesetzten Punkte.
+        // Fangbar sind allein die Stützpunkte (siehe unten); die Teilstrecken
+        // bleiben für Lot und „Nächster Punkt" erhalten.
         let teilstrecke_eines_splines = spline_ids.contains(id);
         let a = sg.start();
         let b = sg.end();
@@ -1181,17 +1134,14 @@ fn snap_candidates_alle(
                 }
             }
         }
-        // Kontinuierliche Fänge nur an nicht ausgewählten Objekten: an einem
-        // ausgewählten Objekt würde „Nächster Punkt" den Zeiger auf das
-        // Objekt selbst zurückziehen, sobald es mitgezogen wird.
-        if s.perpendicular && !*ausgewaehlt {
+        if s.perpendicular {
             if let Some(r) = reference {
                 let foot = closest_point_on_segment(r, a, b);
                 // Lot nur, wenn der Fuß nahe am Cursor liegt
                 consider(foot, SnapKind::Perpendicular, Some(*id), foot.dist(cursor));
             }
         }
-        if s.nearest && !*ausgewaehlt {
+        if s.nearest {
             let (q, d) = sg.closest(cursor);
             consider(q, SnapKind::Nearest, Some(*id), d);
         }
@@ -1224,17 +1174,13 @@ fn snap_candidates_alle(
         }
     }
 
-    // Schnittpunkte — nicht mit ausgewählten Objekten: der Schnittpunkt
-    // wandert mit, sobald das Objekt bewegt wird (gleiche Begründung wie oben).
+    // Schnittpunkte
     if s.intersection {
         let n = segs.len().min(400);
         for i in 0..n {
             for j in (i + 1)..n {
-                let (a, ia, sa) = &segs[i];
-                let (b, ib, sb) = &segs[j];
-                if *sa || *sb {
-                    continue;
-                }
+                let (a, ia) = &segs[i];
+                let (b, ib) = &segs[j];
                 // Nur wenn beide Segmente nahe am Cursor liegen
                 let ba = a.bbox();
                 let bb = b.bbox();
@@ -1297,20 +1243,6 @@ fn sortiere_kandidaten(mut hits: Vec<SnapHit>, cursor: Vec2) -> Vec<SnapHit> {
         out.push(hit);
     }
     out
-}
-
-/// Ein gesperrter Fangpunkt: gehört zu diesem Element *und* liegt auf dieser
-/// Stelle. Nur die Kombination ist gesperrt — ein fremdes Element, das zufällig
-/// auf demselben Punkt sitzt, darf weiterhin fangen (sonst bricht der Fang ab,
-/// sobald der gezogene Griff auf dem Ziel angekommen ist).
-pub type GesperrterPunkt = (Id, Vec2);
-
-/// Ist dieser Kandidat gesperrt? Verglichen wird mit derselben Toleranz, unter
-/// der zwei Fangpunkte als derselbe Punkt gelten.
-fn ist_gesperrt(hit: &SnapHit, gesperrt: &[GesperrterPunkt]) -> bool {
-    gesperrt
-        .iter()
-        .any(|(id, g)| hit.entity == Some(*id) && g.dist(hit.point) <= SNAP_DEDUP)
 }
 
 /// Woher der endgültige Zeigerpunkt stammt — die Stufen der Fang-Kette.
@@ -1394,75 +1326,26 @@ pub fn snap_constrained(
     tol: f64,
     reference: Option<Vec2>,
     ignore: &[Id],
-    selected: &[Id],
     allow_grid: bool,
 ) -> SnapResolution {
-    snap_constrained_ohne_punkte(doc, cursor, tol, reference, ignore, selected, &[], allow_grid)
+    snap_constrained_mit_halte(doc, cursor, tol, reference, ignore, &[], &[], allow_grid)
 }
 
-/// Wie [`snap_constrained`], aber die Punkte in `gesperrt` sind als Fangziel
-/// ausgeschlossen.
-///
-/// Gebraucht beim Ziehen eines Griffs: der bewegte Stützpunkt liegt dauerhaft
-/// im Fangradius des Zeigers. Ohne Sperre fängt er sich selbst (Endpunkt hat
-/// die höchste Priorität) und der Griff bleibt stehen, statt der Maus zu
-/// folgen. Gesperrt wird nur der *eine* Punkt an seinem Element — die ruhenden
-/// Nachbarecken derselben Polylinie fangen weiter (Polylinie an sich selbst
-/// anschließen), und ein fremdes Element auf derselben Stelle ebenfalls.
-#[allow(clippy::too_many_arguments)]
-pub fn snap_constrained_ohne_punkte(
-    doc: &Document,
-    cursor: Vec2,
-    tol: f64,
-    reference: Option<Vec2>,
-    ignore: &[Id],
-    selected: &[Id],
-    gesperrt: &[GesperrterPunkt],
-    allow_grid: bool,
-) -> SnapResolution {
-    snap_constrained_alle(
-        doc, cursor, tol, reference, ignore, selected, gesperrt, &[], allow_grid,
-    )
-}
-
-/// Wie [`snap_constrained_ohne_punkte`], zusätzlich mit Vorschau-Punkten des
-/// laufenden Zuges (siehe [`snap_candidates_mit_vorschau`]).
-#[allow(clippy::too_many_arguments)]
+/// Wie [`snap_constrained`], zusätzlich mit Vorschau-Punkten des laufenden
+/// Zuges (siehe [`snap_candidates_mit_vorschau`]).
 pub fn snap_constrained_mit_vorschau(
     doc: &Document,
     cursor: Vec2,
     tol: f64,
     reference: Option<Vec2>,
     ignore: &[Id],
-    selected: &[Id],
-    gesperrt: &[GesperrterPunkt],
     vorschau: &[Vec2],
     allow_grid: bool,
 ) -> SnapResolution {
-    snap_constrained_alle(
-        doc, cursor, tol, reference, ignore, selected, gesperrt, vorschau, allow_grid,
-    )
+    snap_constrained_mit_halte(doc, cursor, tol, reference, ignore, vorschau, &[], allow_grid)
 }
 
-#[allow(clippy::too_many_arguments)]
-fn snap_constrained_alle(
-    doc: &Document,
-    cursor: Vec2,
-    tol: f64,
-    reference: Option<Vec2>,
-    ignore: &[Id],
-    selected: &[Id],
-    gesperrt: &[GesperrterPunkt],
-    vorschau: &[Vec2],
-    allow_grid: bool,
-) -> SnapResolution {
-    snap_constrained_mit_halte(
-        doc, cursor, tol, reference, ignore, selected, gesperrt, vorschau, &[], allow_grid,
-    )
-}
-
-/// Wie [`snap_constrained_alle`], zusätzlich mit Haltepunkten des erweiterten
-/// Punktfangs.
+/// Die Fang-Kette mit Haltepunkten des erweiterten Punktfangs.
 ///
 /// Reihenfolge innerhalb der Fang-Kette:
 ///
@@ -1482,14 +1365,18 @@ pub fn snap_constrained_mit_halte(
     tol: f64,
     reference: Option<Vec2>,
     ignore: &[Id],
-    selected: &[Id],
-    gesperrt: &[GesperrterPunkt],
     vorschau: &[Vec2],
     halte: &[HaltPunkt],
     allow_grid: bool,
 ) -> SnapResolution {
     snap_constrained_achsen(
-        doc, cursor, tol, reference.as_slice(), ignore, selected, gesperrt, vorschau, halte,
+        doc,
+        cursor,
+        tol,
+        reference.as_slice(),
+        ignore,
+        vorschau,
+        halte,
         allow_grid,
     )
 }
@@ -1520,8 +1407,6 @@ pub fn snap_constrained_achsen(
     tol: f64,
     achsen: &[Vec2],
     ignore: &[Id],
-    selected: &[Id],
-    gesperrt: &[GesperrterPunkt],
     vorschau: &[Vec2],
     halte: &[HaltPunkt],
     allow_grid: bool,
@@ -1532,9 +1417,7 @@ pub fn snap_constrained_achsen(
 
     // 1. Objektfang ohne Raster: er gewinnt gegen jede Zwangsrichtung.
     //    Das Raster ist eine Führung wie Ortho und kommt erst in Schritt 3.
-    let mut cands = snap_candidates_alle(
-        doc, cursor, tol, reference, ignore, selected, gesperrt, vorschau, false,
-    );
+    let mut cands = snap_candidates_alle(doc, cursor, tol, reference, ignore, vorschau, false);
     // Die Winkelhalbierende zwischen zwei Linien (T0150) ist ein **Fang**, kein
     // Zwang: sie tritt als Kandidat in dieselbe Liste und verliert damit gegen
     // Endpunkt, Schnittpunkt und Mitte, gewinnt aber gegen „Nächster Punkt" und
@@ -1576,9 +1459,7 @@ pub fn snap_constrained_achsen(
     // Hilfslinien sind abschaltbar (T0160): dann fängt der nächste Punkt zwar
     // weiter normal, aber nicht mehr auf den Linien gehaltener Punkte.
     if s.hilfslinien {
-        if let Some(hit) =
-            hilfslinien_snap_mit_zwang(doc, halte, cursor, tol, ignore, selected, zwang)
-        {
+        if let Some(hit) = hilfslinien_snap_mit_zwang(doc, halte, cursor, tol, ignore, zwang) {
             return SnapResolution {
                 point: hit.point,
                 source: SnapSource::Object(hit.kind),
@@ -2314,7 +2195,7 @@ mod tests {
             "{pts:?}"
         );
         // Der Fang greift auf der Konturecke, nicht auf der Achse.
-        let hit = find_snap_gated(&doc, Vec2::new(4.0, 146.0), 30.0, None, &[], &[], false)
+        let hit = find_snap_gated(&doc, Vec2::new(4.0, 146.0), 30.0, None, &[], false)
             .expect("Konturecke muss fangbar sein");
         assert!(hit.point.dist(Vec2::new(0.0, 150.0)) < 1e-6, "{hit:?}");
         assert_eq!(hit.kind, SnapKind::Endpoint);
@@ -2355,7 +2236,7 @@ mod tests {
         ] {
             assert!(pts.iter().any(|p| p.dist(soll) < 1e-6), "fehlt {soll:?}: {pts:?}");
         }
-        let hit = find_snap_gated(&doc, Vec2::new(1502.0, 147.0), 30.0, None, &[], &[], false)
+        let hit = find_snap_gated(&doc, Vec2::new(1502.0, 147.0), 30.0, None, &[], false)
             .expect("Laibungsecke muss fangbar sein");
         assert!(hit.point.dist(Vec2::new(1500.0, 150.0)) < 1e-6, "{hit:?}");
     }
@@ -2369,10 +2250,10 @@ mod tests {
             wand(d, Vec2::ZERO, Vec2::new(5000.0, 0.0));
         }
         let cursor = Vec2::new(4.0, 146.0);
-        let an = find_snap_gated(&doc, cursor, 30.0, None, &[], &[], false);
+        let an = find_snap_gated(&doc, cursor, 30.0, None, &[], false);
         assert!(an.is_some());
         // Aus: keine Konturpunkte mehr — und die Achse liefert hier nichts.
-        let aus = find_snap_gated(&doc_aus, cursor, 30.0, None, &[], &[], false);
+        let aus = find_snap_gated(&doc_aus, cursor, 30.0, None, &[], false);
         assert!(aus.is_none(), "{aus:?}");
     }
 
@@ -2384,7 +2265,7 @@ mod tests {
         wand(&mut doc, Vec2::ZERO, Vec2::new(0.0, 4000.0));
         // Beide Wände rechnen die Gehrungsecke (-150,-150) — sie darf nur einmal
         // im Vorschlag stehen.
-        let cands = snap_candidates_gated(&doc, Vec2::new(-150.0, -150.0), 200.0, None, &[], &[], false);
+        let cands = snap_candidates_gated(&doc, Vec2::new(-150.0, -150.0), 200.0, None, &[], false);
         for (i, a) in cands.iter().enumerate() {
             for b in cands.iter().skip(i + 1) {
                 assert!(
@@ -2399,78 +2280,42 @@ mod tests {
         assert_eq!(treffer, 1, "{cands:?}");
     }
 
+    /// Das Element, das gerade bearbeitet wird, steht in `ignore` und liefert
+    /// **überhaupt keine** Fangpunkte — auch nicht seine Konturecken. Das ist
+    /// der einzige Selbst-Fang-Schutz; eine Prüfung „welcher Punkt wandert mit?"
+    /// gibt es nicht mehr.
     #[test]
-    fn ausgewaehlte_wand_liefert_weiter_eckpunkte() {
+    fn ignoriertes_element_liefert_gar_nichts() {
         let mut doc = Document::blank();
         let id = wand(&mut doc, Vec2::ZERO, Vec2::new(5000.0, 0.0));
         let cursor = Vec2::new(4.0, 146.0);
-        // Bisher wurde die Auswahl als `ignore` übergeben — dann kein Fang …
+        // Ohne Ausschluss fängt die Konturecke …
+        assert!(find_snap_gated(&doc, cursor, 30.0, None, &[], false).is_some());
+        // … im Ausschluss (bearbeitetes Element) gar nichts.
         assert!(
-            find_snap_gated(&doc, cursor, 30.0, None, &[id], &[], false).is_none(),
-            "ignoriertes Objekt darf nichts liefern"
+            find_snap_gated(&doc, cursor, 30.0, None, &[id], false).is_none(),
+            "das bearbeitete Element darf keine Fangpunkte liefern"
         );
-        // … als ausgewähltes Objekt liefert sie ihre Konturecke.
-        let hit = find_snap_gated(&doc, cursor, 30.0, None, &[], &[id], false)
-            .expect("ausgewählte Wandecke muss fangen");
-        assert!(hit.point.dist(Vec2::new(0.0, 150.0)) < 1e-9, "{hit:?}");
-        assert_eq!(hit.kind, SnapKind::Endpoint);
-        assert_eq!(hit.entity, Some(id));
-    }
-
-    #[test]
-    fn ausgewaehltes_objekt_liefert_keinen_naechsten_punkt() {
-        let mut doc = Document::blank();
-        let id = wand(&mut doc, Vec2::ZERO, Vec2::new(5000.0, 0.0));
-        // 1000 mm die Wand entlang, 5 mm daneben: nichts diskretes in Reichweite.
-        let cursor = Vec2::new(1000.0, 5.0);
-        let ohne = find_snap_gated(&doc, cursor, 30.0, None, &[], &[], false);
-        assert_eq!(
-            ohne.map(|h| h.kind),
-            Some(SnapKind::Nearest),
-            "nicht ausgewählt: Nächster Punkt wie bisher"
-        );
-        // Ausgewählt: kein Zurückziehen auf das eigene Objekt (sonst klebt das
-        // Verschieben am Startpunkt).
         assert!(
-            find_snap_gated(&doc, cursor, 30.0, None, &[], &[id], false).is_none(),
-            "ausgewähltes Objekt darf keinen Nächster-Punkt-Fang liefern"
-        );
-    }
-
-    #[test]
-    fn ausgewaehltes_objekt_bildet_keinen_schnittpunkt() {
-        let mut doc = Document::blank();
-        let a = wand(&mut doc, Vec2::ZERO, Vec2::new(5000.0, 0.0));
-        wand(&mut doc, Vec2::new(2500.0, -2000.0), Vec2::new(2500.0, 2000.0));
-        doc.settings.snap.nearest = false;
-        doc.settings.snap.midpoint = false;
-        doc.settings.snap.perpendicular = false;
-        doc.settings.snap.grid = false;
-        let cursor = Vec2::new(2500.0, 0.0);
-        let ohne = snap_candidates_gated(&doc, cursor, 30.0, None, &[], &[], false);
-        assert!(
-            ohne
+            snap_candidates_gated(&doc, cursor, 30.0, None, &[id], false)
                 .iter()
-                .any(|h| h.kind == SnapKind::Intersection && h.point.dist(cursor) < 1.0),
-            "{ohne:?}"
-        );
-        let mit = snap_candidates_gated(&doc, cursor, 30.0, None, &[], &[a], false);
-        assert!(
-            mit.iter().all(|h| h.kind != SnapKind::Intersection),
-            "{mit:?}"
+                .all(|h| h.entity != Some(id)),
+            "kein Kandidat darf vom bearbeiteten Element stammen"
         );
     }
 
+    /// Fremde Objekte fangen unverändert — auch wenn ein anderes Element im
+    /// Ausschluss steht.
     #[test]
-    fn nicht_ausgewaehlte_objekte_fangen_unveraendert() {
+    fn fremde_objekte_fangen_unveraendert() {
         let mut doc = Document::blank();
         let a = wand(&mut doc, Vec2::ZERO, Vec2::new(5000.0, 0.0));
         let b = wand(&mut doc, Vec2::new(0.0, -4000.0), Vec2::new(0.0, -1000.0));
-        // Cursor an der Konturecke der *nicht* ausgewählten Wand b.
+        // Cursor an der Konturecke der *nicht* ausgeschlossenen Wand b.
         let cursor = Vec2::new(147.0, -1004.0);
-        let ohne = find_snap_gated(&doc, cursor, 30.0, None, &[], &[], false).expect("Fang an b");
+        let ohne = find_snap_gated(&doc, cursor, 30.0, None, &[], false).expect("Fang an b");
         let mit =
-            find_snap_gated(&doc, cursor, 30.0, None, &[], &[a], false).expect("Fang an b mit Auswahl");
+            find_snap_gated(&doc, cursor, 30.0, None, &[a], false).expect("Fang an b mit Ausschluss");
         assert_eq!(ohne.point, mit.point);
         assert_eq!(ohne.kind, mit.kind);
         assert_eq!(mit.entity, Some(b));
@@ -2490,7 +2335,9 @@ mod tests {
         .unwrap();
         let id = s.doc.entities[0].id;
         // Klick 6 mm neben der Konturecke (0,150) — der Fang zieht exakt dorthin.
-        let basis = find_snap_gated(&s.doc, Vec2::new(6.0, 144.0), 30.0, None, &[], &[id], false)
+        // Das ist der **Basispunkt** des Verschiebens: zu diesem Zeitpunkt
+        // wandert noch nichts, die Wand fängt deshalb normal.
+        let basis = find_snap_gated(&s.doc, Vec2::new(6.0, 144.0), 30.0, None, &[], false)
             .expect("Wandecke als Basispunkt")
             .point;
         assert!(basis.dist(Vec2::new(0.0, 150.0)) < 1e-9, "{basis:?}");
@@ -2515,9 +2362,9 @@ mod tests {
         let doc = Document::blank();
         let p = Vec2::new(104.0, 97.0);
         // Raster eingeschaltet -> fängt auf 100/100
-        let on = find_snap_gated(&doc, p, 20.0, None, &[], &[], true).expect("Rasterfang");
+        let on = find_snap_gated(&doc, p, 20.0, None, &[], true).expect("Rasterfang");
         assert!((on.point.x - 100.0).abs() < 1e-9);
         // Raster ausgeschaltet -> kein Rasterfang mehr
-        assert!(find_snap_gated(&doc, p, 20.0, None, &[], &[], false).is_none());
+        assert!(find_snap_gated(&doc, p, 20.0, None, &[], false).is_none());
     }
 }

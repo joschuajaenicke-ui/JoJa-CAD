@@ -34,11 +34,6 @@ pub struct GripDrag {
 /// fassen.
 const FILL_ECKE_MIN_WINKEL: f64 = 0.017_453_3;
 
-/// Abstand, unter dem zwei Ecken als **dieselbe Stelle** gelten (mm). Der Fang
-/// setzt den gezogenen Punkt exakt auf den Zielpunkt, deshalb genügt ein
-/// Bruchteil eines Millimeters.
-const FANG_SPERRE_EPS: f64 = 1e-6;
-
 /// Knickt der Rand an `i`? Zwischenpunkte auf einer geraden Kante bekommen
 /// keinen Griff — nur die Ecken.
 fn ist_ecke(ring: &[V2], i: usize) -> bool {
@@ -636,134 +631,6 @@ pub fn apply_grip_tol(orig: &Entity, kind: GripKind, target: V2, tol: f64) -> Op
     Some(e)
 }
 
-/// Punkte, die eine Griffbewegung **verschiebt** — in der aktuellen Lage des
-/// Elements (während des Zugs ist das schon die bewegte Lage).
-///
-/// Der Punktfang sperrt genau diese Punkte, solange gezogen wird: der gezogene
-/// Stützpunkt liegt dauerhaft im Fangradius des Zeigers und würde sich sonst
-/// selbst fangen — der Griff bliebe stehen, statt der Maus zu folgen. Die
-/// *ruhenden* Punkte desselben Elements (Nachbarecken) bleiben fangbar.
-pub fn moving_points(e: &Entity, kind: GripKind) -> Vec<V2> {
-    match (&e.kind, kind) {
-        (EntityKind::Line { a, .. }, GripKind::Vert(0))
-        | (EntityKind::Wall { a, .. }, GripKind::Vert(0)) => vec![*a],
-        (EntityKind::Line { b, .. }, GripKind::Vert(1))
-        | (EntityKind::Wall { b, .. }, GripKind::Vert(1)) => vec![*b],
-        // Raumstempel: die gezogene Ecke bzw. das gezogene Textfeld wandert.
-        (EntityKind::Room { boundary, .. }, GripKind::Vert(i)) => {
-            boundary.get(i).map(|p| vec![*p]).unwrap_or_default()
-        }
-        (EntityKind::Room { label, .. }, GripKind::Label) => vec![*label],
-        // Bemaßung: der gezogene Basispunkt wandert, die übrigen stehen.
-        (EntityKind::Dim { pts, .. }, GripKind::Vert(i)) => {
-            pts.get(i).map(|p| vec![*p]).unwrap_or_default()
-        }
-        (EntityKind::ElevationPlan { p, .. }, GripKind::Vert(_)) => vec![*p],
-        (EntityKind::ElevationSection { pts }, GripKind::Vert(i)) => {
-            pts.get(i).map(|p| vec![*p]).unwrap_or_default()
-        }
-        // Maßlinie: beide Enden wandern mit (senkrecht zur Messrichtung).
-        (EntityKind::Dim { .. }, GripKind::Edge(0)) => {
-            match jjcad_core::render::dim_line_span(&e.kind) {
-                Some((s, t)) => vec![s, t],
-                None => Vec::new(),
-            }
-        }
-        (EntityKind::Polyline { verts, .. } | EntityKind::Spline { verts, .. }, GripKind::Vert(i)) => {
-            verts.get(i).map(|v| vec![v.p]).unwrap_or_default()
-        }
-        // Rechteckige Polylinie: die ganze Kante wandert — beide Ecken und alle
-        // Zwischenpunkte darauf (T0133).
-        (EntityKind::Polyline { verts, closed }, GripKind::Edge(i)) if *closed => {
-            let ring: Vec<V2> = verts.iter().map(|v| v.p).collect();
-            match jjcad_core::geom::rechteck_ecken(&ring) {
-                Some(ecken) => rechteck_kante_punkte(&ring, &ecken, i),
-                None => Vec::new(),
-            }
-        }
-        // Treppenkante: beide Enden der Kante wandern mit.
-        (EntityKind::Stair { a, b, width, .. }, GripKind::Edge(i)) => {
-            let (ecken, _, _, _) = stair_rechteck(*a, *b, *width);
-            if i >= 4 {
-                return Vec::new();
-            }
-            vec![ecken[i], ecken[(i + 1) % 4]]
-        }
-        // Füllfläche: flacher Eckindex, Umgrenzung zuerst.
-        (EntityKind::Fill { boundary, holes, .. }
-        | EntityKind::Volume { boundary, holes, .. }, GripKind::Vert(i)) => {
-            let mut base = 0usize;
-            for ring in std::iter::once(boundary).chain(holes.iter()) {
-                let n = ring.len();
-                if i < base + n {
-                    return ring.get(i - base).map(|p| vec![*p]).unwrap_or_default();
-                }
-                base += n;
-            }
-            Vec::new()
-        }
-        // Rechteckige Fläche: die ganze Kante wandert — beide Ecken und alle
-        // Zwischenpunkte darauf (T0131).
-        (
-            EntityKind::Fill {
-                boundary, holes, ..
-            }
-            | EntityKind::Volume {
-                boundary, holes, ..
-            },
-            GripKind::Edge(i),
-        ) => {
-            if !holes.is_empty() {
-                return Vec::new();
-            }
-            match jjcad_core::geom::rechteck_ecken(boundary) {
-                Some(ecken) => rechteck_kante_punkte(boundary, &ecken, i),
-                None => Vec::new(),
-            }
-        }
-        // Kreis, Bogen, Ellipse und Punkt bewegen ihren Mittelpunkt.
-        (
-            EntityKind::Circle { c, .. }
-            | EntityKind::Arc { c, .. }
-            | EntityKind::Ellipse { c, .. }
-            | EntityKind::EllipseArc { c, .. }
-            | EntityKind::Point { p: c },
-            GripKind::Vert(_),
-        ) => vec![*c],
-        (EntityKind::EllipseArc { c, rx, ry, rot, a0, .. }, GripKind::ArcStart) => {
-            vec![Ellipse::new(*c, *rx, *ry, *rot).point_at(*a0)]
-        }
-        (EntityKind::EllipseArc { c, rx, ry, rot, a1, .. }, GripKind::ArcEnd) => {
-            vec![Ellipse::new(*c, *rx, *ry, *rot).point_at(*a1)]
-        }
-        // Bogenenden: der Punkt selbst wandert, der Mittelpunkt bleibt.
-        (EntityKind::Arc { c, r, a0, .. }, GripKind::ArcStart) => vec![*c + V2::polar(*a0, *r)],
-        (EntityKind::Arc { c, r, a1, .. }, GripKind::ArcEnd) => vec![*c + V2::polar(*a1, *r)],
-        _ => Vec::new(),
-    }
-}
-
-/// Fang-Sperre für den laufenden Griffzug.
-///
-/// Wie [`moving_points`], aber ein Punkt, auf dem eine **zweite Ecke desselben
-/// Elements** liegt, wird nicht gesperrt: dort ist der Fang das Ziel, kein
-/// Selbst-Fang. Ohne diese Ausnahme verschwindet der Fang genau in dem Moment,
-/// in dem er den Punkt auf die Nachbarecke gezogen hat — die Sperre liegt dann
-/// auf derselben Stelle wie das Ziel, der Zeiger springt zurück zum Mauszeiger,
-/// im nächsten Frame ist die Ecke wieder frei und der Fang zieht erneut:
-/// Vorschau und Fangmarke flackern (T0018, Turn 3).
-pub fn fang_sperre(e: &Entity, kind: GripKind) -> Vec<V2> {
-    let punkte = moving_points(e, kind);
-    if punkte.is_empty() {
-        return punkte;
-    }
-    let eigene = eigene_fangpunkte(e);
-    punkte
-        .into_iter()
-        .filter(|p| eigene.iter().filter(|q| q.dist(*p) <= FANG_SPERRE_EPS).count() < 2)
-        .collect()
-}
-
 /// **Erster** Bezugspunkt für Ortho und Polar beim Ziehen eines Griffs.
 ///
 /// Beim Erstellen ist der Bezug der zuletzt gesetzte Punkt, deshalb rastet die
@@ -870,110 +737,6 @@ pub fn bezugspunkte(e: &Entity, kind: GripKind) -> Vec<V2> {
                 base += n;
             }
             Vec::new()
-        }
-        _ => Vec::new(),
-    }
-}
-
-/// Fangpunkte, die das Element selbst anbietet: Ecken und Kantenmitten.
-///
-/// Liegt der gezogene Punkt auf einem davon, ist er das *Ziel* des Fangs und
-/// darf nicht gesperrt werden — sonst fiele der Fang im nächsten Frame aus und
-/// flackerte (siehe [`fang_sperre`]).
-fn eigene_fangpunkte(e: &Entity) -> Vec<V2> {
-    let mut out = eckpunkte(e);
-    out.extend(kantenmitten(e));
-    out
-}
-
-/// Kantenmitten eines Elements — die Punkte, die der Fang als „Mitte" (MIT)
-/// anbietet.
-fn kantenmitten(e: &Entity) -> Vec<V2> {
-    let mitte = |a: V2, b: V2| (a + b) * 0.5;
-    match &e.kind {
-        EntityKind::Line { a, b } | EntityKind::Wall { a, b, .. } => vec![mitte(*a, *b)],
-        EntityKind::Polyline { verts, closed } => {
-            let n = verts.len();
-            let mut out: Vec<V2> = (0..n.saturating_sub(1))
-                .map(|i| mitte(verts[i].p, verts[i + 1].p))
-                .collect();
-            if *closed && n >= 2 {
-                out.push(mitte(verts[n - 1].p, verts[0].p));
-            }
-            out
-        }
-        EntityKind::Stair { a, b, width, .. } => {
-            let (ecken, _, _, _) = stair_rechteck(*a, *b, *width);
-            (0..4).map(|i| mitte(ecken[i], ecken[(i + 1) % 4])).collect()
-        }
-        EntityKind::Image { .. } => {
-            let ecken = bild_ecken(e);
-            (0..4).map(|i| mitte(ecken[i], ecken[(i + 1) % 4])).collect()
-        }
-        // Mitte der Maßlinie: dort sitzt der Griff, also ist sie auch ein
-        // Fangpunkt des eigenen Elements.
-        EntityKind::Dim { .. } => {
-            jjcad_core::render::dim_line_span(&e.kind)
-                .map(|(s, t)| vec![mitte(s, t)])
-                .unwrap_or_default()
-        }
-        EntityKind::Fill { boundary, holes, .. } => {
-            let mut out = Vec::new();
-            for ring in std::iter::once(boundary).chain(holes.iter()) {
-                let n = ring.len();
-                if n >= 2 {
-                    for i in 0..n {
-                        out.push(mitte(ring[i], ring[(i + 1) % n]));
-                    }
-                }
-            }
-            out
-        }
-        _ => Vec::new(),
-    }
-}
-
-/// Alle Eckpunkte eines Elements — **ungefiltert**: auch Zwischenpunkte einer
-/// geraden Kante und zwei Punkte, die aufeinander liegen.
-///
-/// [`grips_of`] blendet genau diese aus (kein Griff auf einem Zwischenpunkt,
-/// und bei zwei aufeinanderliegenden Ecken knickt der Rand an keiner von
-/// beiden). Für die Fang-Sperre zählt aber die Frage „liegt hier noch ein
-/// zweiter Punkt desselben Elements?" — dafür braucht es die rohe Liste.
-fn eckpunkte(e: &Entity) -> Vec<V2> {
-    match &e.kind {
-        EntityKind::Line { a, b } | EntityKind::Wall { a, b, .. } => vec![*a, *b],
-        EntityKind::Polyline { verts, .. } | EntityKind::Spline { verts, .. } => {
-            verts.iter().map(|v| v.p).collect()
-        }
-        EntityKind::Circle { c, .. }
-        | EntityKind::Ellipse { c, .. }
-        | EntityKind::Point { p: c } => vec![*c],
-        // Bogen: Mittelpunkt und beide Enden. Die Enden sind eigene Fangziele;
-        // ohne sie fiele der Fang beim Ziehen eines Endpunkts aus (Flackern).
-        EntityKind::Arc { c, r, a0, a1 } => {
-            vec![*c, *c + V2::polar(*a0, *r), *c + V2::polar(*a1, *r)]
-        }
-        EntityKind::EllipseArc { c, rx, ry, rot, a0, a1 } => {
-            let el = Ellipse::new(*c, *rx, *ry, *rot);
-            vec![*c, el.point_at(*a0), el.point_at(*a1)]
-        }
-        EntityKind::Stair { a, b, width, .. } => {
-            stair_rechteck(*a, *b, *width).0.to_vec()
-        }
-        EntityKind::Image { .. } => bild_ecken(e).to_vec(),
-        // Basispunkte der Bemaßung: der Fang darf sie beim Ziehen nicht sperren
-        // und beim Fangen nicht doppelt anbieten (T0055).
-        EntityKind::Dim { pts, .. } => pts.clone(),
-        EntityKind::Fill { boundary, holes, .. } => boundary
-            .iter()
-            .chain(holes.iter().flatten())
-            .copied()
-            .collect(),
-        EntityKind::Room { boundary, label, .. } => {
-            let mut out: Vec<V2> = boundary.clone();
-            out.push(*label);
-            out
         }
         _ => Vec::new(),
     }
@@ -1438,17 +1201,6 @@ mod tests {
         );
     }
 
-    /// Die gezogene Kante ist während des Zugs gesperrt (Selbst-Fang), die
-    /// Gegenkante bleibt fangbar (T0131).
-    #[test]
-    fn kante_bewegt_ihre_punkte_als_einheit() {
-        let e = quadrat();
-        let bewegt = moving_points(&e, GripKind::Edge(0));
-        assert_eq!(bewegt.len(), 2, "beide Ecken der Kante: {bewegt:?}");
-        assert!(bewegt.contains(&V2::new(0.0, 0.0)));
-        assert!(bewegt.contains(&V2::new(4000.0, 0.0)));
-        assert!(fang_sperre(&e, GripKind::Edge(0)).len() == 2);
-    }
 
     /// Ecke ziehen: nur dieser Punkt wandert, Muster und Umrandung bleiben.
     #[test]
@@ -1507,12 +1259,6 @@ mod tests {
         assert_eq!(inseln[0][2], V2::new(1500.0, 1500.0));
     }
 
-    /// Der gezogene Punkt ist der einzige, der aus dem Fang fällt.
-    #[test]
-    fn fuellflaeche_moving_points() {
-        let e = quadrat();
-        assert_eq!(moving_points(&e, GripKind::Vert(1)), vec![V2::new(4000.0, 0.0)]);
-    }
 
     // ---- Bogen: Endpunkte ziehen (T0022) ----
 
@@ -1596,23 +1342,6 @@ mod tests {
         assert!(apply_grip_tol(&e, GripKind::ArcStart, V2::new(1000.0, 1000.0), 1.0).is_none());
     }
 
-    /// Der gezogene Endpunkt ist der einzige, der aus dem Fang fällt.
-    #[test]
-    fn bogen_ende_moving_points_ist_der_endpunkt() {
-        let e = bogen();
-        assert_eq!(
-            moving_points(&e, GripKind::ArcEnd),
-            vec![V2::new(1000.0, 1500.0)]
-        );
-        assert_eq!(
-            moving_points(&e, GripKind::ArcStart),
-            vec![V2::new(1500.0, 1000.0)]
-        );
-        assert_eq!(
-            moving_points(&e, GripKind::Vert(0)),
-            vec![V2::new(1000.0, 1000.0)]
-        );
-    }
 
     // ---- Zwei Ecken aufeinandergelegt: ein Punkt (T0018, Turn 2) ----
 
@@ -1710,65 +1439,6 @@ mod tests {
 
     // ---- Fang-Sperre: nicht sperren, was selbst das Ziel ist (T0018, Turn 3) ----
 
-    /// Solange die Ecke frei am Zeiger hängt, wird sie gesperrt (sonst fängt sie
-    /// sich selbst).
-    #[test]
-    fn freie_ecke_bleibt_gesperrt() {
-        let e = quadrat();
-        assert_eq!(fang_sperre(&e, GripKind::Vert(1)), vec![V2::new(4000.0, 0.0)]);
-    }
-
-    /// Liegt die gezogene Ecke auf der Nachbarecke, darf die Sperre nicht
-    /// greifen: sonst sperrt sie das Fangziel und der Fang fällt im nächsten
-    /// Frame aus (Flackern).
-    #[test]
-    fn ecke_auf_der_nachbarecke_wird_nicht_gesperrt() {
-        let mut e = quadrat();
-        if let EntityKind::Fill { boundary, .. } = &mut e.kind {
-            boundary[1] = boundary[0];
-        }
-        assert!(
-            fang_sperre(&e, GripKind::Vert(1)).is_empty(),
-            "zwei Punkte auf derselben Stelle: dort ist der Fang das Ziel"
-        );
-    }
-
-    /// Auch eine Kantenmitte desselben Elements ist ein Fangziel: liegt die
-    /// gezogene Ecke dort, darf die Sperre nicht greifen (sonst flackert der
-    /// Fang auf „Mitte" genauso).
-    #[test]
-    fn ecke_auf_eigener_kantenmitte_wird_nicht_gesperrt() {
-        let mut e = quadrat();
-        if let EntityKind::Fill { boundary, .. } = &mut e.kind {
-            // Mitte der linken Kante (0;0) → (0;3000)
-            boundary[1] = V2::new(0.0, 1500.0);
-        }
-        assert!(fang_sperre(&e, GripKind::Vert(1)).is_empty());
-        // Der Punkt bleibt trotzdem in der Punktliste (er wird ja bewegt).
-        assert_eq!(moving_points(&e, GripKind::Vert(1)), vec![V2::new(0.0, 1500.0)]);
-    }
-
-    /// Dasselbe für den geschlossenen Zug einer Polylinie (letzter Punkt auf
-    /// dem ersten).
-    #[test]
-    fn polylinie_auf_dem_anfangspunkt_wird_nicht_gesperrt() {
-        let mut e = offen(&[
-            V2::new(0.0, 0.0),
-            V2::new(2000.0, 0.0),
-            V2::new(2000.0, 1500.0),
-            V2::new(0.0, 3000.0),
-        ]);
-        let i = 3;
-        if let EntityKind::Polyline { verts, .. } = &mut e.kind {
-            verts[i].p = verts[0].p;
-        }
-        assert!(fang_sperre(&e, GripKind::Vert(i)).is_empty());
-        // Ein mittlerer Punkt bleibt gesperrt.
-        assert_eq!(
-            fang_sperre(&e, GripKind::Vert(1)),
-            vec![V2::new(2000.0, 0.0)]
-        );
-    }
 
     /// Ein Griff, den es nicht gibt, verändert nichts (kein Panik, kein None-Fehler).
     #[test]
@@ -1962,19 +1632,6 @@ mod tests_raumstempel {
         assert_eq!(label, V2::new(2000.0, 1500.0), "Textlage bleibt stehen");
     }
 
-    /// Der gezogene Punkt wird beim Fangen gesperrt, die Nachbarecken bleiben
-    /// Fangziel — sonst flackerte der Griff (T0018).
-    #[test]
-    fn ecke_ziehen_sperrt_nur_den_gezogenen_punkt() {
-        let e = stempel();
-        assert_eq!(
-            moving_points(&e, GripKind::Vert(1)),
-            vec![V2::new(4000.0, 0.0)]
-        );
-        assert_eq!(moving_points(&e, GripKind::Label), vec![V2::new(2000.0, 1500.0)]);
-        let bezug = bezugspunkte(&e, GripKind::Vert(0));
-        assert_eq!(bezug.len(), 2, "voriger und nächster Punkt");
-    }
 }
 
 #[cfg(test)]
@@ -2236,19 +1893,6 @@ mod tests_masskette {
         }
     }
 
-    /// Der gezogene Basispunkt darf sich nicht selbst fangen (Flackern), die
-    /// Maßlinie als Ganzes ebenso wenig.
-    #[test]
-    fn gezogener_punkt_sperrt_sich_selbst() {
-        assert_eq!(
-            moving_points(&kette(), GripKind::Vert(1)),
-            vec![V2::new(2000.0, 0.0)]
-        );
-        assert_eq!(
-            moving_points(&kette(), GripKind::Edge(0)),
-            vec![V2::new(0.0, -400.0), V2::new(5000.0, -400.0)]
-        );
-    }
 
     /// Ortho und Polar richten sich am Nachbarpunkt der Kette aus.
     #[test]
@@ -2602,43 +2246,6 @@ mod tests_rechteck_polylinie {
         assert_eq!(kanten(&neu).len(), 4);
     }
 
-    /// Zwischenpunkte auf der gezogenen Kante wandern mit (kopierte Züge tragen
-    /// sie) — sonst knickt die Kante beim Verschieben.
-    #[test]
-    fn zwischenpunkte_der_kante_wandern_mit() {
-        let e = zug(
-            &[
-                V2::new(0.0, 0.0),
-                V2::new(2000.0, 0.0),
-                V2::new(4000.0, 0.0),
-                V2::new(4000.0, 3000.0),
-                V2::new(0.0, 3000.0),
-            ],
-            true,
-        );
-        assert_eq!(kanten(&e).len(), 4, "vier Ecken erkannt: {:?}", grips_of(&e));
-        let bewegt = moving_points(&e, GripKind::Edge(0));
-        assert_eq!(
-            bewegt,
-            vec![
-                V2::new(0.0, 0.0),
-                V2::new(2000.0, 0.0),
-                V2::new(4000.0, 0.0)
-            ],
-            "der Zwischenpunkt gehört zur Kante"
-        );
-        let neu = apply_grip_tol(&e, GripKind::Edge(0), V2::new(2000.0, 400.0), 1.0).unwrap();
-        assert_eq!(
-            stand(&neu),
-            vec![
-                V2::new(0.0, 400.0),
-                V2::new(2000.0, 400.0),
-                V2::new(4000.0, 400.0),
-                V2::new(4000.0, 3000.0),
-                V2::new(0.0, 3000.0),
-            ]
-        );
-    }
 
     /// Die Kante lässt sich nicht über die Gegenkante hinausziehen — sonst
     /// kehrte sich der Ring um.

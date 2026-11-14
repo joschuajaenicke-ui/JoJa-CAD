@@ -36,7 +36,7 @@ fn assert_punkt(ist: Vec2, soll: Vec2, was: &str) {
 
 /// Halt aus einem echten Fangtreffer der Engine (wie ihn die GUI bildet).
 fn halt(s: &Session, p: Vec2, tol: f64) -> HaltPunkt {
-    let hit: SnapHit = jjcad_core::snap::find_snap(&s.doc, p, tol, None, &[], &[])
+    let hit: SnapHit = jjcad_core::snap::find_snap(&s.doc, p, tol, None, &[])
         .unwrap_or_else(|| panic!("kein Fangpunkt bei {p:?}"));
     HaltPunkt::neu(&s.doc, &hit)
 }
@@ -50,7 +50,7 @@ fn fang(
     halte: &[HaltPunkt],
 ) -> jjcad_core::snap::SnapResolution {
     snap_constrained_mit_halte(
-        &s.doc, cursor, tol, reference, &[], &[], &[], &[], halte, false,
+        &s.doc, cursor, tol, reference, &[], &[], halte, false,
     )
 }
 
@@ -352,10 +352,10 @@ fn verlaengerung_der_linie_ist_kein_schnittpunkt() {
     assert_punkt(r.point, v(0.0, 1000.0), "Fußpunkt");
 }
 
-/// Ein ausgewähltes Objekt liefert keinen Hilfslinien-Schnittpunkt — es bewegt
-/// sich mit, der Punkt wanderte mit (wie beim Objekt-Schnittpunkt).
+/// Ein bearbeitetes Objekt (in `ignore`) bildet keinen Hilfslinien-Schnittpunkt
+/// — es steht gar nicht in der Streckenliste, aus der die Kreuzungen kommen.
 #[test]
-fn ausgewaehlte_linie_bildet_keinen_hilfslinien_schnittpunkt() {
+fn bearbeitete_linie_bildet_keinen_hilfslinien_schnittpunkt() {
     let mut s = s();
     s.execute(
         "draw.line",
@@ -368,9 +368,7 @@ fn ausgewaehlte_linie_bildet_keinen_hilfslinien_schnittpunkt() {
         v(4.0, 996.0),
         30.0,
         None,
-        &[],
         &[id],
-        &[],
         &[],
         &[halt_im_ursprung()],
         false,

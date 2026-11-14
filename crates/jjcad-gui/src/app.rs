@@ -2826,7 +2826,6 @@ impl App {
                             60.0,
                             None,
                             &[],
-                            &[],
                         ) {
                             self.halt.push(jjcad_core::snap::HaltPunkt::neu(self.doc(), &hit));
                         }

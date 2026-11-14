@@ -13,8 +13,7 @@ use jjcad_core::geom::{v, Vec2};
 use jjcad_core::model::EntityKind;
 use jjcad_core::session::Session;
 use jjcad_core::snap::{
-    snap_constrained_mit_vorschau, snap_constrained_ohne_punkte, SnapKind, SnapResolution,
-    SnapSource,
+    snap_constrained, snap_constrained_mit_vorschau, SnapKind, SnapResolution, SnapSource,
 };
 use serde_json::json;
 
@@ -43,7 +42,7 @@ fn mit_ortho() -> Session {
 
 /// Fang mit Vorschau-Punkten — die Lage während der Eingabe.
 fn fang(s: &Session, cursor: Vec2, tol: f64, reference: Option<Vec2>, vorschau: &[Vec2]) -> SnapResolution {
-    snap_constrained_mit_vorschau(&s.doc, cursor, tol, reference, &[], &[], &[], vorschau, false)
+    snap_constrained_mit_vorschau(&s.doc, cursor, tol, reference, &[], vorschau, false)
 }
 
 fn assert_punkt(ist: Vec2, soll: Vec2, was: &str) {
@@ -87,13 +86,11 @@ fn zwischenpunkt_der_vorschau_faengt() {
 fn ohne_vorschau_kein_fang() {
     let s = s();
     let cursor = v(1994.0, 8.0);
-    let r = snap_constrained_ohne_punkte(
+    let r = snap_constrained(
         &s.doc,
         cursor,
         40.0,
         Some(v(2000.0, 1500.0)),
-        &[],
-        &[],
         &[],
         false,
     );

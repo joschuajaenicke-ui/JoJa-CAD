@@ -46,7 +46,7 @@ fn fang(
     halte: &[HaltPunkt],
 ) -> jjcad_core::snap::SnapResolution {
     snap_constrained_achsen(
-        &s.doc, cursor, tol, achsen, &[], &[], &[], &[], halte, false,
+        &s.doc, cursor, tol, achsen, &[], &[], halte, false,
     )
 }
 

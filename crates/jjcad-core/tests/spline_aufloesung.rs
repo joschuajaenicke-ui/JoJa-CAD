@@ -16,7 +16,7 @@ use jjcad_core::geom::{
 use jjcad_core::model::EntityKind;
 use jjcad_core::render::{self, RenderCtx, Shape};
 use jjcad_core::session::Session;
-use jjcad_core::snap::{snap_constrained_ohne_punkte, SnapKind, SnapSource};
+use jjcad_core::snap::{snap_constrained, SnapKind, SnapSource};
 use serde_json::json;
 
 /// Prüfspline: drei Spannen, die mittlere mit Wendepunkt (S-Form) — genau die
@@ -193,12 +193,12 @@ fn fang_und_schnitt_bleiben_weltfest() {
 
     // „Nächster Punkt" auf der Kurve.
     let cursor = Vec2::new(1500.0, 410.0);
-    let naechster = snap_constrained_ohne_punkte(&s.doc, cursor, 20.0, None, &[], &[], &[], false);
+    let naechster = snap_constrained(&s.doc, cursor, 20.0, None, &[], false);
     assert_eq!(naechster.source, SnapSource::Object(SnapKind::Nearest));
 
     // Schnittpunkt Kurve × Linie.
     let kreuz = Vec2::new(1584.0, 300.0);
-    let schnitt = snap_constrained_ohne_punkte(&s.doc, kreuz, 20.0, None, &[], &[], &[], false);
+    let schnitt = snap_constrained(&s.doc, kreuz, 20.0, None, &[], false);
     assert_eq!(schnitt.source, SnapSource::Object(SnapKind::Intersection));
 
     // Beide Punkte liegen exakt auf der weltfesten Zerlegung.
@@ -226,7 +226,7 @@ fn fang_und_schnitt_bleiben_weltfest() {
         let dl = render::render_document(&RenderCtx::model(&s.doc).mit_abbildung(zoom));
         assert!(!dl.prims.is_empty(), "Anzeige bei {zoom} px/mm leer");
         let nochmal =
-            snap_constrained_ohne_punkte(&s.doc, cursor, 20.0, None, &[], &[], &[], false);
+            snap_constrained(&s.doc, cursor, 20.0, None, &[], false);
         assert!(
             nochmal.point.dist(naechster.point) < 1e-6,
             "Fang wandert mit dem Zoom ({zoom} px/mm): {:?} statt {:?}",
@@ -234,7 +234,7 @@ fn fang_und_schnitt_bleiben_weltfest() {
             naechster.point
         );
         let nochmal =
-            snap_constrained_ohne_punkte(&s.doc, kreuz, 20.0, None, &[], &[], &[], false);
+            snap_constrained(&s.doc, kreuz, 20.0, None, &[], false);
         assert!(
             nochmal.point.dist(schnitt.point) < 1e-6,
             "Schnitt wandert mit dem Zoom ({zoom} px/mm): {:?} statt {:?}",
