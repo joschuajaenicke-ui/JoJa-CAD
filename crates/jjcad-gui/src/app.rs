@@ -466,6 +466,9 @@ pub struct DrawCacheKey {
     /// ohne das Kennzeichen bliebe beim Wechsel in einen Blockeditor die
     /// Zeichnung des vorigen Raums stehen.
     pub block: bool,
+    /// Kurventoleranz in Bildschirm-pixeln (T0197): die Splines entstehen in
+    /// dieser Auflösung, ein geänderter Wert muss die Liste neu bauen.
+    pub kurven: f64,
 }
 
 /// Faktor, um den sich der Zoom ändern darf, ohne die Anzeigeliste neu zu
@@ -499,6 +502,7 @@ impl DrawCacheKey {
             && (self.annot - other.annot).abs() < 1e-9
             && self.space == other.space
             && self.block == other.block
+            && (self.kurven - other.kurven).abs() < 1e-9
     }
 }
 

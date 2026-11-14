@@ -489,6 +489,11 @@ pub struct DisplayList {
     /// abgetastet wird (T0176); Druck, PNG und DXF lassen sie leer und bleiben
     /// weltfest.
     pub screen: Option<f64>,
+    /// Pfeilhöhe in Bildschirm-pixeln, mit der Splines in dieser Liste zerlegt
+    /// werden (T0197) — die Kurventoleranz aus den Einstellungen („Grafik“).
+    /// `None` = die Vorgabe [`SPLINE_TOL_PX`]; Druck, PNG und DXF lassen sie
+    /// leer und bleiben weltfest.
+    pub sagitta_px: Option<f64>,
 }
 
 /// Weg, auf dem ein Schlaufenband läuft — `None` für Formen ohne Linie
@@ -628,6 +633,10 @@ pub struct RenderCtx<'a> {
     /// weltfest und ändern sich nicht mit dem Zoom. Gelesen wird sie für die
     /// Abtastung der Dämmungsschlaufe (T0176).
     pub screen: Option<f64>,
+    /// Pfeilhöhe in Bildschirm-pixeln für die Zerlegung von Splines (T0197,
+    /// Einstellungen → Grafik → Kurventoleranz). Vorgabe [`SPLINE_TOL_PX`];
+    /// Druck, PNG und DXF setzen sie nicht und bleiben bei [`SPLINE_TOL_MM`].
+    pub sagitta_px: f64,
     /// Wände des Durchgangs, einmal aufgebaut (Nachbarsuche, Bänder).
     walls: OnceCell<WallIndex<'a>>,
     /// Nur dieses Gebiet braucht der Durchgang (ein Objekt). Dann wird der
@@ -653,6 +662,7 @@ impl<'a> RenderCtx<'a> {
             sheet_scale: None,
             entities: None,
             screen: None,
+            sagitta_px: SPLINE_TOL_PX,
             walls: OnceCell::new(),
             wall_scope: None,
             volumes: OnceCell::new(),
@@ -670,6 +680,7 @@ impl<'a> RenderCtx<'a> {
             sheet_scale: None,
             entities: None,
             screen: None,
+            sagitta_px: SPLINE_TOL_PX,
             walls: OnceCell::new(),
             wall_scope: None,
             volumes: OnceCell::new(),
@@ -701,6 +712,17 @@ impl<'a> RenderCtx<'a> {
         } else {
             None
         };
+        self
+    }
+
+    /// Pfeilhöhe der Spline-Zerlegung in Bildschirm-pixeln setzen (T0197) —
+    /// die Kurventoleranz aus den Einstellungen („Grafik“). Gilt nur mit
+    /// Abbildung ([`Self::mit_abbildung`]); ohne sie bleibt es bei
+    /// [`SPLINE_TOL_MM`]. Ein unbrauchbarer Wert lässt die Vorgabe stehen.
+    pub fn mit_kurventoleranz(mut self, px: f64) -> Self {
+        if px.is_finite() && px > 0.0 {
+            self.sagitta_px = px;
+        }
         self
     }
 
@@ -869,6 +891,7 @@ pub fn render_document(ctx: &RenderCtx) -> DisplayList {
     // Gerendert wird der aktive Bearbeitungsraum: Modell oder Papierraum.
     let mut dl = DisplayList {
         screen: ctx.screen,
+        sagitta_px: Some(ctx.sagitta_px),
         ..DisplayList::default()
     };
     for e in ctx.ents() {
@@ -876,6 +899,7 @@ pub fn render_document(ctx: &RenderCtx) -> DisplayList {
         // wie fein das Dämmungsband abgetastet wird (T0176).
         let mut tmp = DisplayList {
             screen: ctx.screen,
+            sagitta_px: Some(ctx.sagitta_px),
             ..DisplayList::default()
         };
         render_entity(ctx, e, Affine::IDENTITY, &mut tmp, 0);
@@ -887,6 +911,7 @@ pub fn render_document(ctx: &RenderCtx) -> DisplayList {
 pub fn render_entities(ctx: &RenderCtx, ents: &[Entity]) -> DisplayList {
     let mut dl = DisplayList {
         screen: ctx.screen,
+        sagitta_px: Some(ctx.sagitta_px),
         ..DisplayList::default()
     };
     for e in ents {
@@ -3294,8 +3319,12 @@ fn render_spline(
         verts: verts.to_vec(),
         closed,
     };
+    let sagitta = dl
+        .sagitta_px
+        .filter(|px| px.is_finite() && *px > 0.0)
+        .unwrap_or(SPLINE_TOL_PX);
     let tol = match dl.screen {
-        Some(px) if px.is_finite() && px > 0.0 => SPLINE_TOL_PX / px,
+        Some(px) if px.is_finite() && px > 0.0 => sagitta / px,
         _ => SPLINE_TOL_MM,
     };
     let pts: Vec<Vec2> = sp.flatten(tol).into_iter().map(|p| xf.apply(p)).collect();
@@ -4602,6 +4631,7 @@ pub fn render_sheet(doc: &Document, sheet: &Sheet) -> DisplayList {
         sheet_scale: Some(sheet.scale),
         entities: Some(&sheet.entities),
         screen: None,
+        sagitta_px: SPLINE_TOL_PX,
         walls: OnceCell::new(),
         wall_scope: None,
         volumes: OnceCell::new(),
@@ -4628,6 +4658,7 @@ pub fn render_model_scaled(doc: &Document, scale: f64, layers: Option<Vec<Id>>) 
         sheet_scale: None,
         entities: Some(&doc.entities),
         screen: None,
+        sagitta_px: SPLINE_TOL_PX,
         walls: OnceCell::new(),
         wall_scope: None,
         volumes: OnceCell::new(),
@@ -4648,6 +4679,7 @@ pub fn render_viewport(doc: &Document, vp: &Viewport) -> DisplayList {
         sheet_scale: None,
         entities: Some(&doc.entities),
         screen: None,
+        sagitta_px: SPLINE_TOL_PX,
         walls: OnceCell::new(),
         wall_scope: None,
         volumes: OnceCell::new(),

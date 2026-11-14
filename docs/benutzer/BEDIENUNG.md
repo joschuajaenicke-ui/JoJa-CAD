@@ -121,7 +121,7 @@ einsehbar und dort frei änderbar (Ribbon ▸ Ansicht ▸ „Tasten").
     (Kantenglättung samt Kantenweichheit, Kurventoleranz, Textauflösung, Anzeigeliste
     zwischenspeichern, Leistungsanzeige); die personalisierte Darstellung (Design, Farbakzente,
     Linienstärken) bleibt in **Darstellung**. Die **Kurventoleranz** ist die Pfeilhöhe, mit der
-    Kreise, Bögen und Ellipsenbögen auf dem Bildschirm in Sehnen zerlegt werden (0,05 bis 2,0 px,
+    Kreise, Bögen, Ellipsenbögen und Splines auf dem Bildschirm in Sehnen zerlegt werden (0,05 bis 2,0 px,
     Vorgabe 0,15 px): klein = glatter, groß = schneller, gilt sofort. Der Druck (PDF, PNG) liest
     sie nicht — dort gilt unverändert die feinere Druckgüte.
 13. **Platzieren mit Vorschau**: Block aus dem Inventar wählen oder `Strg+V` drücken — die Vorschau

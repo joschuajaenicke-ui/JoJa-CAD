@@ -584,7 +584,12 @@ Mit dem Nutzer abgestimmt — nicht „verbessern“:
   `render::SPLINE_TOL_PX` (0,15 px) / Zoom ab, `RenderCtx::screen` trägt den Zoom
   (`mit_abbildung`, gesetzt nur von der Zeichenfläche); Druck, PNG, DXF und
   Ansichtsfenster lassen ihn leer und bleiben weltfest bei `SPLINE_TOL_MM`
-  (0,05 mm). Fang, Trefferprüfung, Fläche und Bounding-Box rechnen **immer**
+  (0,05 mm). **Die Pfeilhöhe ist die Kurventoleranz aus den Einstellungen**
+  (T0197): `RenderCtx::mit_kurventoleranz` reicht `prefs.kurven_toleranz_px` in
+  die Anzeigeliste (`DisplayList::sagitta_px`), die Vorschau des Spline-Werkzeugs
+  rechnet mit demselben Wert. `SPLINE_TOL_PX` bleibt die Vorgabe für Aufrufer, die
+  nichts setzen; `DrawCacheKey::kurven` baut die Liste bei geändertem Wert neu.
+  Fang, Trefferprüfung, Fläche und Bounding-Box rechnen **immer**
   weltfest (`Spline::segments`) — die Auflösung im Bild darf den Fang nicht
   verschieben. Weil die Liste damit am Zoom hängt, vergleicht `DrawCacheKey` den
   Zoom mit **Hysterese** (`app::ZOOM_HYSTERESE` = 1,25): neu gebaut wird erst,
