@@ -1717,6 +1717,7 @@ fn display_list(app: &mut App) -> DisplayList {
         annot: app.doc().settings.annotation_scale,
         space: app.session().space(),
         block: app.doc().in_block_space(),
+        kurven: app.prefs.kurven_toleranz_px,
     };
     // T0165: Einstellungen → Grafik → „Anzeigeliste zwischenspeichern“. Aus
     // heißt: jedes Bild baut die Liste neu (langsamer, nur zum Messen), und
@@ -1729,7 +1730,9 @@ fn display_list(app: &mut App) -> DisplayList {
             // Die Abbildung (px je Welt-mm) geht in die Anzeigeliste: Kurven
             // entstehen in der Auflösung, in der sie gezeigt werden (T0176).
             let zoom = app.current_view().zoom;
-            let ctx = render::RenderCtx::new(&doc).mit_abbildung(zoom);
+            let ctx = render::RenderCtx::new(&doc)
+                .mit_abbildung(zoom)
+                .mit_kurventoleranz(app.prefs.kurven_toleranz_px);
             let dl = render::render_document(&ctx);
             app.tab_mut().cache = if zwischen { Some((key, dl.clone())) } else { None };
             (dl, true)
@@ -2881,7 +2884,12 @@ fn draw_tool_preview(
             } else {
                 pts.push(cursor);
             }
-            let kurve = catmull_rom_points(&pts, am_start, SPLINE_TOL_MM);
+            // Pfeilhöhe wie die Anzeige: die Kurventoleranz aus den
+            // Einstellungen, in Welt-mm umgerechnet (T0197). Vorher stand hier
+            // `SPLINE_TOL_MM` — die Vorschau war damit unabhängig von der
+            // Einstellung und feiner als der eingefügte Spline.
+            let sagitta = kurven_guete(app).max_sagitta / view.zoom.max(1e-9);
+            let kurve = catmull_rom_points(&pts, am_start, sagitta);
             if kurve.len() >= 2 {
                 let screen: Vec<Pos2> = kurve.iter().map(|q| w2s(*q)).collect();
                 if am_start {
@@ -2892,7 +2900,7 @@ fn draw_tool_preview(
             }
             // Die schon gesetzten Punkte als durchgezogene Kurve darüber.
             if tool.pts.len() >= 2 {
-                let fest = catmull_rom_points(&tool.pts, false, SPLINE_TOL_MM);
+                let fest = catmull_rom_points(&tool.pts, false, sagitta);
                 if fest.len() >= 2 {
                     let screen: Vec<Pos2> = fest.iter().map(|q| w2s(*q)).collect();
                     p.add(Shape::line(screen, stroke));
@@ -11314,6 +11322,7 @@ mod tests_raumwechsel_anzeige {
             annot: 100.0,
             space: None,
             block: false,
+            kurven: 0.15,
         };
         let blatt = DrawCacheKey {
             rev: 7,
@@ -11321,6 +11330,7 @@ mod tests_raumwechsel_anzeige {
             annot: 100.0,
             space: Some(3),
             block: false,
+            kurven: 0.15,
         };
         // T0137: Der Blockeditor hat keinen `space` — ohne eigenes Kennzeichen
         // gälte seine Liste als die des Modells.
@@ -11330,6 +11340,7 @@ mod tests_raumwechsel_anzeige {
             annot: 100.0,
             space: None,
             block: true,
+            kurven: 0.15,
         };
         assert!(!modell.matches(&blatt), "Papierraum gilt sonst als Modell");
         assert!(!blatt.matches(&modell));
@@ -11360,6 +11371,7 @@ mod tests_raumwechsel_anzeige {
             annot: 100.0,
             space: None,
             block: false,
+            kurven: 0.15,
         };
         // Innerhalb eines Viertels: derselbe Stand.
         assert!(basis.matches(&DrawCacheKey { zoom: 1.2, ..basis }));
@@ -17078,6 +17090,47 @@ mod tests_kurventoleranz {
             }
             andere => panic!("erwartet ein Pfad, bekommen {andere:?}"),
         }
+    }
+
+    /// T0197: Die Kurventoleranz gilt auch für **Splines**. Der Spline steht
+    /// als eine Punktfolge in der Anzeigeliste; ihre Länge muss der Einstellung
+    /// folgen. Geprüft wird über `display_list` (der Weg der Zeichenfläche) mit
+    /// eingeschaltetem Zwischenspeicher — so belegt der Test zugleich, dass ein
+    /// geänderter Wert die Liste neu baut (`DrawCacheKey::kurven`).
+    #[test]
+    fn spline_folgt_der_kurventoleranz() {
+        let ctx = egui::Context::default();
+        let mut app = App::with_ctx(ctx);
+        app.ui.show_grid = false;
+        app.prefs.anzeigeliste_cache = true;
+        assert!(run(
+            &mut app,
+            "doc.settings",
+            json!({ "input_unit": "mm" })
+        ));
+        assert!(run(
+            &mut app,
+            "draw.spline",
+            json!({ "pts": [[0.0, 0.0], [1000.0, 800.0], [2000.0, 0.0], [3000.0, 800.0]] })
+        ));
+        let punkte = |app: &mut App| -> usize {
+            display_list(app)
+                .prims
+                .iter()
+                .filter_map(|p| match &p.shape {
+                    PShape::Poly(v, _) => Some(v.len()),
+                    _ => None,
+                })
+                .sum()
+        };
+        app.prefs.kurven_toleranz_px = 0.05;
+        let fein = punkte(&mut app);
+        app.prefs.kurven_toleranz_px = 2.0;
+        let grob = punkte(&mut app);
+        assert!(
+            fein > grob && grob > 2,
+            "0,05 px → {fein} Punkte, 2,0 px → {grob} Punkte — der Spline folgt der Kurventoleranz nicht"
+        );
     }
 
     /// Die Vorgabe 0,15 px ergibt genau das Bild der Konstante — wer die

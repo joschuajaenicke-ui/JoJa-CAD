@@ -70,6 +70,28 @@ fn pfeilhoehe(pts: &[Vec2], poly: &[Vec2]) -> f64 {
     max
 }
 
+/// Die Punktfolge, die die Anzeige für den Spline ablegt — mit
+/// ausdrücklicher Kurventoleranz (T0197).
+fn anzeige_polygon_mit(zoom: f64, sagitta_px: f64) -> Vec<Vec2> {
+    let mut s = Session::new();
+    s.execute("doc.settings", &json!({ "input_unit": "mm" }))
+        .unwrap();
+    s.execute("draw.spline", &json!({ "pts": STUETZ }))
+        .unwrap();
+    let id = s.doc.entities[0].id;
+    let ctx = RenderCtx::model(&s.doc)
+        .mit_abbildung(zoom)
+        .mit_kurventoleranz(sagitta_px);
+    let dl = render::render_document(&ctx);
+    dl.prims
+        .iter()
+        .find_map(|p| match &p.shape {
+            Shape::Poly(v, _) if p.entity == id => Some(v.clone()),
+            _ => None,
+        })
+        .expect("der Spline steht als Polygonzug in der Anzeigeliste")
+}
+
 /// Die Punktfolge, die die Anzeige für den Spline ablegt.
 fn anzeige_polygon(zoom: Option<f64>) -> Vec<Vec2> {
     let mut s = Session::new();
@@ -264,6 +286,28 @@ fn anzeigeliste_folgt_dem_zoom() {
     for (a, b) in fein.iter().zip(erwartet.iter()) {
         assert!(a.dist(*b) < 1e-9, "Anzeige weicht von der Zerlegung ab");
     }
+}
+
+/// T0197: Der Spline folgt der **Kurventoleranz** aus den Einstellungen, nicht
+/// einer festen 0,15 px. Bei gleichem Zoom muss ein kleinerer Wert mehr Punkte
+/// ergeben, und die Zerlegung muss genau `flatten(sagitta / zoom)` sein.
+#[test]
+fn spline_folgt_der_kurventoleranz() {
+    let zoom = 30.0;
+    let fein = anzeige_polygon_mit(zoom, 0.05);
+    let vorgabe = anzeige_polygon_mit(zoom, 0.15);
+    let grob = anzeige_polygon_mit(zoom, 2.0);
+    assert!(
+        fein.len() > vorgabe.len() && vorgabe.len() > grob.len(),
+        "Punktzahlen 0,05 px {}, 0,15 px {}, 2,0 px {}",
+        fein.len(),
+        vorgabe.len(),
+        grob.len()
+    );
+    assert_eq!(fein.len(), spline().flatten(0.05 / zoom).len());
+    assert_eq!(grob.len(), spline().flatten(2.0 / zoom).len());
+    // Die Vorgabe bleibt die Konstante — bestehende Prüfbilder gelten weiter.
+    assert_eq!(vorgabe.len(), spline().flatten(render::SPLINE_TOL_PX / zoom).len());
 }
 
 /// Der Schnittpunkt einer Linie mit der Kurve liegt auf der **gezeichneten**

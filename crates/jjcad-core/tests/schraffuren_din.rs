@@ -185,7 +185,15 @@ fn muster_durchgang(p: FillPattern) -> (DisplayList, BBox) {
         jjcad_core::geom::v(0.0, 0.0),
         jjcad_core::geom::v(3000.0, 2000.0),
     );
-    (DisplayList { bbox: flaeche, prims: eigene, screen: None }, flaeche)
+    (
+        DisplayList {
+            bbox: flaeche,
+            prims: eigene,
+            screen: None,
+            sagitta_px: None,
+        },
+        flaeche,
+    )
 }
 
 /// Kennzahl eines Durchgangs: Art und Menge der Primitive. Zwei Muster mit
