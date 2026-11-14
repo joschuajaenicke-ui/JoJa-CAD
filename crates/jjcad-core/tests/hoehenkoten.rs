@@ -366,7 +366,7 @@ fn alte_elevation_wird_als_grundriss_kote_gelesen() {
     let kind: EntityKind = serde_json::from_value(alt).expect("alte Höhenkote lesen");
     assert!(matches!(
         kind,
-        EntityKind::ElevationPlan { p, z }
+        EntityKind::ElevationPlan { p, z, .. }
             if (p - v(1000.0, 2000.0)).len() < 1e-9 && (z - 2500.0).abs() < 1e-9
     ));
 }

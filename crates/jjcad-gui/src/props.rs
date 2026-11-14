@@ -59,7 +59,7 @@
 
 use egui::Ui;
 use jjcad_core::model::{
-    DimAxis, DoorBase, DoorKind, Entity, EntityKind, Id, TextFont, TextRun,
+    DimAxis, DoorBase, DoorKind, ElevationTextPos, Entity, EntityKind, Id, TextFont, TextRun,
 };
 use jjcad_core::style::Color;
 use jjcad_core::text::RunStyle;
@@ -702,8 +702,9 @@ pub fn vorgaben_aus_objekt(app: &mut App, id: Id) -> bool {
             app.options.dim_axis = Some(DimAxis::aus_winkel(*angle));
             app.options.dim_text = override_text.clone().unwrap_or_default();
         }
-        EntityKind::ElevationPlan { z, .. } => {
+        EntityKind::ElevationPlan { z, text_pos, .. } => {
             app.options.elevation_z = *z;
+            app.options.elevation_text_pos = *text_pos;
         }
         EntityKind::Fill {
             pattern,
@@ -2809,6 +2810,8 @@ pub fn einfach(app: &mut App, ui: &mut Ui, ziel: Ziel, art: Einfach) {
     let mut hoehe: Option<f64> = None;
     let mut drehung: Option<f64> = None;
     let mut faktor: Option<f64> = None;
+    // Lage des Höhenwertes an der Grundriss-Kote (T0196).
+    let mut text_pos: Option<ElevationTextPos> = None;
     // Lage der Maßlinie einer Maßkette (Abstand zu den Basispunkten).
     let mut abstand: Option<f64> = None;
     // Bild: Breite (untere Kante), Höhe und die Sperre des Seitenverhältnisses.
@@ -2946,16 +2949,18 @@ pub fn einfach(app: &mut App, ui: &mut Ui, ziel: Ziel, art: Einfach) {
                 }
             }
         }
-        // Grundriss-Kote: die Höhe ist die einzige Eingabe des Nutzers.
+        // Grundriss-Kote: Höhe und Lage des Höhenwertes sind die Eingaben des
+        // Nutzers (T0196).
         Einfach::Grundrisskote => {
-            let z0 = match &e {
+            let (z0, pos0) = match &e {
                 Some(e) => match &e.kind {
-                    EntityKind::ElevationPlan { z, .. } => *z,
-                    _ => 0.0,
+                    EntityKind::ElevationPlan { z, text_pos, .. } => (*z, *text_pos),
+                    _ => (0.0, ElevationTextPos::default()),
                 },
-                None => app.options.elevation_z,
+                None => (app.options.elevation_z, app.options.elevation_text_pos),
             };
             hoehe = Some(z0);
+            text_pos = Some(pos0);
             zeile("hoehe");
             widgets::field_row(ui, jjcad_core::i18n::tr("gui.props.hoehe"), |ui| {
                 let mut v = z0;
@@ -2972,6 +2977,20 @@ pub fn einfach(app: &mut App, ui: &mut Ui, ziel: Ziel, art: Einfach) {
                     hoehe = Some(z0);
                 }
             });
+            // Lage des Höhenwertes am Symbol — dieselbe Zeile beim Platzieren
+            // und bei der Auswahl.
+            zeile("textposition");
+            let items: Vec<(ElevationTextPos, String)> = ElevationTextPos::ALL
+                .iter()
+                .map(|p| (*p, p.text().to_string()))
+                .collect();
+            let mut picked = None;
+            widgets::field_row(ui, jjcad_core::i18n::tr("gui.props.textposition"), |ui| {
+                picked = panels::pick_combo(ui, &ziel.salt("kote_textposition"), pos0, &items);
+            });
+            if let Some(v) = picked {
+                text_pos = Some(v);
+            }
         }
         // Schnitt-Kote: keine Höheneingabe — der erste Punkt ist ±0,00, alle
         // weiteren Höhen folgen aus der Y-Differenz. Punktzahl und die sich
@@ -3260,6 +3279,9 @@ pub fn einfach(app: &mut App, ui: &mut Ui, ziel: Ziel, art: Einfach) {
             if let Some(v) = hoehe {
                 app.options.elevation_z = v;
             }
+            if let Some(v) = text_pos {
+                app.options.elevation_text_pos = v;
+            }
             if let Some(v) = drehung {
                 app.options.block_rot = v;
             }
@@ -3279,6 +3301,16 @@ pub fn einfach(app: &mut App, ui: &mut Ui, ziel: Ziel, art: Einfach) {
                     // Ellipsenbogen: Achsen, Drehlage und beide Parameterwinkel
                     // (T0084). Geht vor der gemeinsamen Schleife, weil hier fünf
                     // Werte zusammen gehören — keine andere Art nutzt sie.
+                    // Grundriss-Kote: Lage des Höhenwertes (T0196). Steht vor
+                    // der Werteschleife, weil sie kein Zahlenwert ist.
+                    if let EntityKind::ElevationPlan { text_pos: alt, .. } = &e.kind {
+                        if let Some(v) = text_pos {
+                            if v != *alt {
+                                map.insert("text_pos".into(), serde_json::json!(v.key()));
+                                geaendert = true;
+                            }
+                        }
+                    }
                     if let EntityKind::EllipseArc { rx, ry, rot, a0, a1, .. } = &e.kind {
                         if let Some(v) = halbachse_x {
                             if (v - *rx).abs() > 1e-9 {
@@ -4631,6 +4663,43 @@ mod tests {
         assert_eq!(neu, auswahl, "Bemaßung: Zeilen weichen ab");
     }
 
+    /// Die Grundriss-Kote zeigt die Lage des Höhenwertes in beiden Fällen
+    /// (T0196): beim Platzieren aus den Vorgaben, bei der Auswahl aus dem
+    /// Objekt — und `vorgaben_aus_objekt` übernimmt sie mit.
+    #[test]
+    fn grundrisskote_zeigt_die_textposition() {
+        let mut app = App::with_ctx(egui::Context::default());
+        app.session_mut()
+            .execute("doc.settings", &json!({ "input_unit": "m" }))
+            .expect("Einheit");
+        app.session_mut()
+            .execute(
+                "dim.elevation.plan",
+                &json!({"p": [1.0, 1.0], "z": 0.0, "text_pos": "links"}),
+            )
+            .expect("Kote anlegen");
+        let id = app.doc().ents().last().expect("Kote fehlt").id;
+
+        app.session_mut().selection = vec![id];
+        let auswahl = zeichne(&mut app);
+        assert!(
+            auswahl.contains(&"textposition"),
+            "Grundriss-Kote ohne Textposition: {auswahl:?}"
+        );
+
+        app.session_mut().selection.clear();
+        app.start_tool("dim.elevation.plan");
+        let neu = zeichne(&mut app);
+        assert_eq!(neu, auswahl, "Grundriss-Kote: Zeilen weichen ab");
+
+        assert!(vorgaben_aus_objekt(&mut app, id), "Vorgaben nicht übernommen");
+        assert_eq!(
+            app.options.elevation_text_pos,
+            ElevationTextPos::Left,
+            "Vorgabe der Textposition nicht aus dem Objekt übernommen"
+        );
+    }
+
     /// Die Maßkette hat im Panel einen **Abstand** (Lage der Maßlinie) und
     /// zeigt ihn beim Platzieren wie bei der Auswahl (T0055).
     #[test]
@@ -4804,6 +4873,7 @@ mod tests {
                 EntityKind::ElevationPlan {
                     p: jjcad_core::geom::Vec2::ZERO,
                     z: 1200.0,
+                    text_pos: jjcad_core::model::ElevationTextPos::default(),
                 },
             ),
             (
@@ -5104,6 +5174,7 @@ mod tests {
             EntityKind::ElevationPlan {
                 p: jjcad_core::geom::Vec2::ZERO,
                 z: 0.0,
+                text_pos: jjcad_core::model::ElevationTextPos::default(),
             },
             EntityKind::ElevationSection {
                 pts: vec![jjcad_core::geom::Vec2::ZERO],

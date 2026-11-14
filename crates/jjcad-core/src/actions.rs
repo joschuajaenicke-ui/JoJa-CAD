@@ -2397,17 +2397,38 @@ pub fn execute(doc: &mut Document, id: &str, params: &Value) -> Result<Value, St
             doc.modified = true;
             Ok(json!({"ok": true, "changed": [id], "index": idx, "punkte": punkte}))
         }
-        // Grundriss-Kote: Kreis-Symbol, Höhe kommt aus dem Panel.
+        // Grundriss-Kote: Kreis-Symbol, Höhe kommt aus dem Panel. Die Lage des
+        // Höhenwertes ist `text_pos` (Vorgabe „oben", T0196) — ein unbekannter
+        // Wert ist ein Fehler, kein stiller Rückfall auf die Vorgabe.
         "dim.elevation.plan" => {
             let pt = require_pt(&p, "p")?;
             let layer = resolve_layer_in(doc, &p, ebene);
             let idn = doc.new_id();
             let z = p.len_or("z", 0.0);
-            let mut e = Entity::new(idn, layer, EntityKind::ElevationPlan { p: pt, z });
+            let text_pos = match p.text("text_pos") {
+                Some(t) => crate::model::ElevationTextPos::from_text(&t).ok_or_else(|| {
+                    format!("Unbekannte Textposition '{t}' (oben, unten, links, rechts)")
+                })?,
+                None => crate::model::ElevationTextPos::default(),
+            };
+            let mut e = Entity::new(
+                idn,
+                layer,
+                EntityKind::ElevationPlan {
+                    p: pt,
+                    z,
+                    text_pos,
+                },
+            );
             apply_common(doc, &mut e, &p, layer);
             bemasung_schwarz(&p, &mut e);
             doc.add_entity(e);
-            Ok(json!({"ok": true, "created": [idn], "z_mm": z}))
+            Ok(json!({
+                "ok": true,
+                "created": [idn],
+                "z_mm": z,
+                "text_pos": text_pos.key(),
+            }))
         }
         // Schnitt-Kote: eine Punktfolge. Der erste Punkt ist ±0,00, die
         // übrigen Höhen rechnet der Renderer aus der Y-Differenz — hier wird
@@ -3456,9 +3477,21 @@ pub fn execute(doc: &mut Document, id: &str, params: &Value) -> Result<Value, St
                                 *line_pos = *line_pos + n * (off - alt);
                             }
                         }
-                        EntityKind::ElevationPlan { z, .. } => {
+                        EntityKind::ElevationPlan { z, text_pos, .. } => {
                             if let Some(v) = p.len("z") {
                                 *z = v;
+                            }
+                            // Lage des Höhenwertes (T0196); ein unbekannter
+                            // Wert ist ein Fehler, kein stiller Rückfall.
+                            if let Some(t) = p.text("text_pos") {
+                                *text_pos =
+                                    crate::model::ElevationTextPos::from_text(&t).ok_or_else(
+                                        || {
+                                            format!(
+                                                "Unbekannte Textposition '{t}' (oben, unten, links, rechts)"
+                                            )
+                                        },
+                                    )?;
                             }
                         }
                         // Punkte der Schnitt-Kote lassen sich verschieben/ersetzen;

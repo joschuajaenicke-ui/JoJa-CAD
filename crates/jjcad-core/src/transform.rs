@@ -242,9 +242,10 @@ pub fn transform_kind(k: &EntityKind, m: &Affine) -> EntityKind {
             crate::render::dim_reihenfolge(&mut kind);
             kind
         }
-        EntityKind::ElevationPlan { p, z } => EntityKind::ElevationPlan {
+        EntityKind::ElevationPlan { p, z, text_pos } => EntityKind::ElevationPlan {
             p: m.apply(*p),
             z: *z,
+            text_pos: *text_pos,
         },
         // Die Höhen der Schnitt-Kote hängen an der Y-Differenz zum ersten
         // Punkt. Nach Drehen/Spiegeln rechnen sie sich deshalb neu — das ist

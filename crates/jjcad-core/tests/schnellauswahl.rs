@@ -148,6 +148,7 @@ fn jede_objektart_startet_ihren_erzeuger() {
         &EntityKind::ElevationPlan {
             p: v(0.0, 0.0),
             z: 2500.0,
+            text_pos: jjcad_core::model::ElevationTextPos::default(),
         },
         "dim.elevation.plan",
     );

@@ -7079,10 +7079,11 @@ fn tool_click_at(app: &mut App, w: V2, raw: V2) {
         }
         "dim.elevation.plan" => {
             let z = app.options.elevation_z;
+            let text_pos = app.options.elevation_text_pos.key();
             let _ = run(
                 app,
                 "dim.elevation.plan",
-                json!({"p": ax(w), "z": unit.from_mm(z)}),
+                json!({"p": ax(w), "z": unit.from_mm(z), "text_pos": text_pos}),
             );
         }
         "dim.elevation.section" => {

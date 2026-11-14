@@ -1498,8 +1498,9 @@ pub fn render_entity(
             );
         }
         // Grundriss-Kote: Kreis mit Fadenkreuz, zwei gegenüberliegende Viertel
-        // gefüllt; der Höhenwert steht rechts daneben und gehört zum Symbol.
-        EntityKind::ElevationPlan { p, z } => {
+        // gefüllt; der Höhenwert steht je nach `text_pos` oben (Vorgabe),
+        // unten, links oder rechts daneben und gehört zum Symbol (T0196).
+        EntityKind::ElevationPlan { p, z, text_pos } => {
             let h = ctx.a(doc.dim_style.text_height);
             let p = xf.apply(*p);
             let r = h * 0.55;
@@ -1559,14 +1560,42 @@ pub fn render_entity(
             } else {
                 elevation_text(*z)
             };
+            // Lage des Höhenwertes (T0196): Abstand zur Symbolmitte ist der
+            // Arm des Fadenkreuzes plus eine Luft von 0,3 Texthöhen. Waagerecht
+            // steht der Wert links/mittig/rechts vom Anker, senkrecht darüber
+            // oder darunter — der Anker ist dabei immer die Kante, die zum
+            // Symbol zeigt.
+            let abstand = arm + h * 0.3;
+            let (pos, align, valign) = match text_pos {
+                ElevationTextPos::Top => (
+                    p + Vec2::new(0.0, abstand),
+                    TextAlignH::Center,
+                    TextAlignV::Bottom,
+                ),
+                ElevationTextPos::Bottom => (
+                    p - Vec2::new(0.0, abstand),
+                    TextAlignH::Center,
+                    TextAlignV::Top,
+                ),
+                ElevationTextPos::Left => (
+                    p - Vec2::new(abstand, 0.0),
+                    TextAlignH::Right,
+                    TextAlignV::Middle,
+                ),
+                ElevationTextPos::Right => (
+                    p + Vec2::new(abstand, 0.0),
+                    TextAlignH::Left,
+                    TextAlignV::Middle,
+                ),
+            };
             dl.push(Prim {
                 shape: Shape::Text(TextPrim {
-                    pos: p + Vec2::new(arm + h * 0.3, 0.0),
+                    pos,
                     text: txt,
                     height: h,
                     angle: 0.0,
-                    align: TextAlignH::Left,
-                    valign: TextAlignV::Middle,
+                    align,
+                    valign,
                     bold: false,
                     italic: false,
                     underline: false,

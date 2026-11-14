@@ -671,6 +671,12 @@ left = "Left"
 center = "Centre"
 right = "Right"
 
+[ui.elevationtextpos]
+top = "Top"
+bottom = "Bottom"
+left = "Left"
+right = "Right"
+
 [ui.textfont]
 sans = "Sans serif"
 serif = "Serif"
@@ -1674,6 +1680,7 @@ gilt_fuer_die_markierten_zeichen = "Applies to the selected characters."
 hoehe = "Height"
 hoehe_steht_im_eigenschaften_panel = "Height is in the properties panel"
 hoehen = "Heights"
+textposition = "Text position"
 hoehen_entstehen_aus_der_y_differenz_zum_ersten_punkt = "Heights come from the Y difference to the first point"
 im_zeichenbereich = "in the drawing area"
 je_objekt_x_im_blatt = "per object · {total} on the sheet"
