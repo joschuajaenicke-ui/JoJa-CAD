@@ -4201,6 +4201,17 @@ fn hat_linie(kind: &EntityKind) -> bool {
     )
 }
 
+/// Die Auswahl auf die Objekte **einer** Objektart setzen (T0194) — der Weg
+/// des Art-Filters im Eigenschaften-Panel.
+///
+/// Die übrigen Arten fallen aus der Auswahl; das Panel zeigt danach den
+/// Abschnitt dieser Art. `App::sync_space` zieht den Schalter „Ansichtsbereich
+/// anpassen“ nach, der am ausgewählten Ansichtsfenster hängt.
+pub fn auswahl_auf_art(app: &mut App, ids: Vec<Id>) {
+    app.session_mut().select(ids);
+    app.sync_space();
+}
+
 /// Eigenschaften einer Auswahl aus **mehreren Objektarten** (T0193).
 ///
 /// Gezeigt wird nur, was **alle** Objekte gemeinsam haben: Reihenfolge, Layer
@@ -4212,7 +4223,12 @@ fn hat_linie(kind: &EntityKind) -> bool {
 /// Geändert wird über [`gemein_nach_objekt`] → [`setzen`] an **alle** Kennungen:
 /// dafür steht `App::mehrfach_ziel` während des Zeichnens auf der ganzen
 /// Auswahl.
-fn mehrfach_gemeinsam(app: &mut App, ui: &mut Ui, ids: &[Id], arten: usize) {
+fn mehrfach_gemeinsam(
+    app: &mut App,
+    ui: &mut Ui,
+    ids: &[Id],
+    arten: &[(std::mem::Discriminant<EntityKind>, Vec<Id>)],
+) {
     let vorher = std::mem::take(&mut app.mehrfach_ziel);
     app.mehrfach_ziel = ids.to_vec();
 
@@ -4221,9 +4237,48 @@ fn mehrfach_gemeinsam(app: &mut App, ui: &mut Ui, ids: &[Id], arten: usize) {
         "gui.props.x_objekte_x_arten",
         &[
             ("anzahl", format!("{}", ids.len())),
-            ("wert1", format!("{arten}")),
+            ("wert1", format!("{}", arten.len())),
         ],
     )));
+
+    // T0194: Die Auswahl auf **eine** Objektart einschränken. Die Liste zeigt
+    // genau die Arten, die gerade in der Auswahl liegen; die Wahl setzt die
+    // Auswahl auf deren Objekte, die übrigen Arten fallen heraus. Danach
+    // zeichnet das Panel den Abschnitt dieser Art (bei mehreren Objekten den
+    // Mehrfachabschnitt, bei einem das Objekt selbst).
+    zeile("art_filter");
+    let namen: Vec<String> = arten
+        .iter()
+        .map(|(_, liste)| {
+            app.doc()
+                .entity(liste[0])
+                .map(|e| e.kind.type_name().to_string())
+                .unwrap_or_else(|| "—".to_string())
+        })
+        .collect();
+    let mut gewaehlt: Option<usize> = None;
+    widgets::field_row(ui, jjcad_core::i18n::tr("gui.props.art"), |ui| {
+        gewaehlt = panels::dropdown(
+            ui,
+            "mehrfach_art",
+            jjcad_core::i18n::tr("gui.props.alle_arten"),
+            None,
+            |ui| {
+                let mut out = None;
+                for (i, name) in namen.iter().enumerate() {
+                    if ui.selectable_label(false, name).clicked() {
+                        out = Some(i);
+                    }
+                }
+                out
+            },
+        );
+    });
+    if let Some(i) = gewaehlt {
+        if let Some((_, liste)) = arten.get(i) {
+            auswahl_auf_art(app, liste.clone());
+        }
+    }
     ui.add_space(6.0);
 
     let erste = ids[0];
@@ -4284,7 +4339,7 @@ pub fn mehrfach(app: &mut App, ui: &mut Ui, ids: &[Id]) {
 
     // Mehrere Arten: nur die gemeinsamen Zeilen (T0193).
     if gruppen.len() > 1 {
-        mehrfach_gemeinsam(app, ui, ids, gruppen.len());
+        mehrfach_gemeinsam(app, ui, ids, &gruppen);
     } else {
         section_title(ui, "select", jjcad_core::i18n::tr("gui.props.mehrfachauswahl"));
 
@@ -5735,5 +5790,168 @@ mod tests {
 
         assert!(vorgaben_aus_objekt(&mut app, id));
         assert_eq!(app.ui.pending.color, None, "Vorgabe muss „vom Layer“ sein");
+    }
+}
+
+/// Art-Filter der Mehrfachauswahl (T0194): Steht über der Auswahl mehr als
+/// eine Objektart, listet ein Auswahlfeld unter „N Objekte · M Arten“ genau
+/// diese Arten; eine Wahl lässt nur deren Objekte in der Auswahl.
+#[cfg(test)]
+mod tests_artfilter {
+    use super::*;
+    use serde_json::json;
+
+    /// Zwei Wände und eine Linie, alle drei ausgewählt.
+    fn gemischte_auswahl() -> (App, Vec<Id>, Id) {
+        let mut app = App::with_ctx(egui::Context::default());
+        app.session_mut()
+            .execute("doc.settings", &json!({ "input_unit": "m" }))
+            .expect("Einheit");
+        let mut waende = Vec::new();
+        for (a, b) in [([0.0, 0.0], [3.0, 0.0]), ([0.0, 2.0], [4.0, 2.0])] {
+            let r = app
+                .session_mut()
+                .execute(
+                    "draw.wall",
+                    &json!({"a": a, "b": b, "thickness": 0.24, "hatch": "solid"}),
+                )
+                .expect("Wand");
+            waende.push(r["created"][0].as_u64().expect("Wand-Id") as Id);
+        }
+        let r = app
+            .session_mut()
+            .execute("draw.line", &json!({"a": [0.0, 5.0], "b": [2.0, 5.0]}))
+            .expect("Linie");
+        let linie = r["created"][0].as_u64().expect("Linien-Id") as Id;
+        let alle = vec![waende[0], waende[1], linie];
+        app.session_mut().select(alle);
+        (app, waende, linie)
+    }
+
+    /// Ein Bild des Eigenschaften-Panels; liefert die gezeichneten Formen.
+    fn bild(app: &mut App, ereignisse: Vec<egui::Event>, zeit: f64) -> egui::FullOutput {
+        let raw = egui::RawInput {
+            screen_rect: Some(egui::Rect::from_min_size(
+                egui::Pos2::ZERO,
+                egui::Vec2::new(1200.0, 950.0),
+            )),
+            time: Some(zeit),
+            predicted_dt: 0.016,
+            events: ereignisse,
+            ..Default::default()
+        };
+        app.ctx.clone().run(raw, |ctx| {
+            egui::SidePanel::right("eigenschaften")
+                .exact_width(280.0)
+                .show(ctx, |ui| crate::panels::properties(app, ui));
+        })
+    }
+
+    /// Alle gezeichneten Texte mit ihrer Fläche — auch die im aufgeklappten
+    /// Menü (eigene Ebene, teils in `Shape::Vec`).
+    fn texte(out: &egui::FullOutput) -> Vec<(String, egui::Rect)> {
+        fn lauf(s: &egui::Shape, acc: &mut Vec<(String, egui::Rect)>) {
+            match s {
+                egui::Shape::Text(t) => {
+                    let r = t.galley.rect.translate(t.pos.to_vec2());
+                    acc.push((t.galley.text().to_string(), r));
+                }
+                egui::Shape::Vec(list) => {
+                    for s in list {
+                        lauf(s, acc);
+                    }
+                }
+                _ => {}
+            }
+        }
+        let mut acc = Vec::new();
+        for cs in &out.shapes {
+            lauf(&cs.shape, &mut acc);
+        }
+        acc
+    }
+
+    fn flaeche(out: &egui::FullOutput, text: &str) -> egui::Rect {
+        texte(out)
+            .into_iter()
+            .find(|(t, _)| t.trim() == text)
+            .unwrap_or_else(|| {
+                let alle: Vec<String> = texte(out).into_iter().map(|(t, _)| t).collect();
+                panic!("Text „{text}“ nicht im Panel: {alle:?}")
+            })
+            .1
+    }
+
+    fn knopf(pos: egui::Pos2, pressed: bool) -> egui::Event {
+        egui::Event::PointerButton {
+            pos,
+            button: egui::PointerButton::Primary,
+            pressed,
+            modifiers: Default::default(),
+        }
+    }
+
+    /// Ein Klick auf eine Fläche in zwei Bildern (Drücken, Loslassen).
+    fn klick(app: &mut App, ziel: egui::Pos2, zeit: f64) {
+        let _ = bild(app, vec![egui::Event::PointerMoved(ziel)], zeit);
+        let _ = bild(app, vec![knopf(ziel, true)], zeit + 0.05);
+        let _ = bild(app, vec![knopf(ziel, false)], zeit + 0.1);
+        let _ = bild(app, Vec::new(), zeit + 0.15);
+    }
+
+    /// Die Wahl „Wand“ entfernt die Linie aus der Auswahl; das Panel zeigt
+    /// danach den Abschnitt der Wand, nicht mehr den gemischten Kopf.
+    #[test]
+    fn artwahl_entfernt_die_uebrigen_arten_aus_der_auswahl() {
+        let (mut app, waende, linie) = gemischte_auswahl();
+        let out = bild(&mut app, Vec::new(), 1.0);
+        let feld = flaeche(&out, "Alle Arten");
+        klick(&mut app, feld.center(), 2.0);
+
+        let out = bild(&mut app, Vec::new(), 3.0);
+        let eintrag = flaeche(&out, "Wand");
+        klick(&mut app, eintrag.center(), 4.0);
+
+        let auswahl = app.session().selection.clone();
+        assert_eq!(auswahl, waende, "die Auswahl ist nicht auf die Wände gefallen");
+        assert!(!auswahl.contains(&linie), "die Linie steckt noch in der Auswahl");
+
+        // Das Panel zeigt jetzt die Wand (Dicke), nicht mehr den gemischten Kopf.
+        let mut app = app;
+        let out = bild(&mut app, Vec::new(), 6.0);
+        let alle: Vec<String> = texte(&out).into_iter().map(|(t, _)| t).collect();
+        assert!(
+            !alle.iter().any(|t| t.contains("Arten")),
+            "der gemischte Kopf steht noch: {alle:?}"
+        );
+        assert!(
+            alle.iter().any(|t| t.contains("2 Objekte")),
+            "die Wand-Mehrfachauswahl fehlt: {alle:?}"
+        );
+    }
+
+    /// Das Menü listet **nur** die Arten der Auswahl — Wand und Linie, nicht
+    /// jede Objektart des Programms.
+    #[test]
+    fn artmenue_listet_nur_die_arten_der_auswahl() {
+        let (mut app, _waende, _linie) = gemischte_auswahl();
+        let out = bild(&mut app, Vec::new(), 1.0);
+        let feld = flaeche(&out, "Alle Arten");
+        klick(&mut app, feld.center(), 2.0);
+
+        let out = bild(&mut app, Vec::new(), 3.0);
+        let alle: Vec<String> = texte(&out).into_iter().map(|(t, _)| t).collect();
+        for erwartet in ["Wand", "Linie"] {
+            assert!(
+                alle.iter().any(|t| t.trim() == erwartet),
+                "„{erwartet}“ fehlt im Menü: {alle:?}"
+            );
+        }
+        for fremd in ["Text", "Kreis", "Füllfläche", "Raumstempel"] {
+            assert!(
+                !alle.iter().any(|t| t.trim() == fremd),
+                "„{fremd}“ steht im Menü, ist aber nicht in der Auswahl: {alle:?}"
+            );
+        }
     }
 }
