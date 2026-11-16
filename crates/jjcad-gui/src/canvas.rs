@@ -7594,17 +7594,15 @@ fn run_mit_meldung(
         // Standardebene bei der aktuellen Ebene.
         if let Some(o) = params.as_object_mut() {
             if !o.contains_key("layer") {
-                let eigene = app
-                    .doc()
-                    .layer(app.doc().current_layer)
-                    .map(|l| {
-                        !jjcad_core::style::LAYER_DEFAULTS
-                            .iter()
-                            .any(|(n, _, _)| n.eq_ignore_ascii_case(&l.name))
-                    })
-                    .unwrap_or(false);
-                if eigene || jjcad_core::actions::standard_ebene(action).is_none() {
-                    o.insert("layer".into(), serde_json::json!(app.doc().current_layer));
+                // Ausdrückliche Wahl im Eigenschaften-Panel sticht (T0202).
+                let ebene = app
+                    .ui
+                    .pending
+                    .layer
+                    .filter(|l| app.doc().layer(*l).is_some())
+                    .or_else(|| app.werkzeug_ebene(action));
+                if let Some(ebene) = ebene {
+                    o.insert("layer".into(), serde_json::json!(ebene));
                 }
             }
         }
@@ -7698,6 +7696,32 @@ mod tests {
             "Wand trägt {}, erwartet 0,50 aus der Ebene",
             app.doc().effective_line_weight(e)
         );
+    }
+
+    /// T0202: Das Eigenschaften-Panel zeigt beim Platzieren die Ebene, auf der
+    /// das Objekt danach liegt — nicht die zuletzt angeklickte.
+    #[test]
+    fn ziel_ebene_folgt_dem_typ() {
+        let mut app = app();
+        app.new_document();
+        let name = |app: &App, id: jjcad_core::model::Id| {
+            app.doc().layer(id).map(|l| l.name.clone()).unwrap_or_default()
+        };
+        assert_eq!(
+            name(&app, app.werkzeug_ziel_ebene("Beschriftung")),
+            "Beschriftung",
+            "Text und Bemaßung gehören zur Beschriftung"
+        );
+        assert_eq!(
+            name(&app, app.werkzeug_ziel_ebene("Architektur")),
+            "Architektur"
+        );
+        assert_eq!(name(&app, app.werkzeug_ziel_ebene("Zeichnung")), "Zeichnung");
+
+        // Eine ausdrückliche Panel-Wahl sticht die Vorgabe.
+        let ziel = app.doc().layer_id_by_name("Blöcke").expect("Ebene");
+        app.ui.pending.layer = Some(ziel);
+        assert_eq!(name(&app, app.werkzeug_ziel_ebene("Beschriftung")), "Blöcke");
     }
 
     /// T0125: Ohne eigene Wahl trägt eine neue Zeichnung 0,18 mm — auch am

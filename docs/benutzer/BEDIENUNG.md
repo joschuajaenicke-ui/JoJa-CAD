@@ -357,8 +357,10 @@ ausgeblendet.
   **Zeichnung** (Linien, Kreise, Bögen, Flächen, Schraffuren, Bilder), **Architektur** (Wände,
   Türen, Fenster, Treppen, Volumen), **Beschriftung** (Texte, Bemaßung, Höhenkoten, Raumstempel)
   und **Blöcke** (eingesetzte Blockinstanzen). Werkzeuge legen ihr Objekt auf die Ebene ihres
-  Typs; eine **eigene** Ebene (nicht eine der vier) sticht das — wer sie wählt, zeichnet bewusst
-  dorthin. Ein ausgeblendeter Plan blendet alle seine Layer aus, ein gesperrter sperrt sie; die
+  Typs — ein neuer Text und jede Bemaßung landen auf **Beschriftung**, Wände auf **Architektur**,
+  Blöcke auf **Blöcke**, Linien und Flächen auf **Zeichnung**. Das Eigenschaften-Panel zeigt beim
+  Platzieren diese Ziel-Ebene in der Zeile „Layer“; eine dort (oder im Layer-Manager als **eigene**
+  Ebene) gewählte Ebene sticht die Vorgabe — wer sie wählt, zeichnet bewusst dorthin. Ein ausgeblendeter Plan blendet alle seine Layer aus, ein gesperrter sperrt sie; die
   Einstellungen der einzelnen Layer bleiben dabei erhalten.
 - Das rechte Panel zeigt die **Eigenschaften der Auswahl**; ohne Auswahl die der Datei bzw. des
   Blatts. Die Werte stehen als Tabelle mit fester Namensspalte und Zebra-Streifen untereinander.

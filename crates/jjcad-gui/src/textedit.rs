@@ -355,9 +355,19 @@ fn uebernehmen(app: &mut App, ctx: &egui::Context) {
                        "line_spacing": t.line_spacing,
                        "frame": t.frame,
                        "frame_round": t.frame_round,
-                       "runs": runs_json.clone(),
-                       // Ebene des Layer-Panels, nicht die Standardebene „Text“.
-                       "layer": app.doc().current_layer});
+                       "runs": runs_json.clone()});
+            // Ebene wie bei jedem Werkzeug (T0202): neuer Text gehört auf
+            // „Beschriftung“ (seine Standardebene), außer eine eigene Ebene ist
+            // im Layer-Manager gewählt.
+            let ebene = app
+                .ui
+                .pending
+                .layer
+                .filter(|l| app.doc().layer(*l).is_some())
+                .or_else(|| app.werkzeug_ebene("draw.text"));
+            if let Some(ebene) = ebene {
+                params["layer"] = json!(ebene);
+            }
             // Nur wenn eine Farbe gewählt wurde — sonst gilt die Layerfarbe.
             if let Some(c) = app.options.text_color {
                 params["color"] = json!(c.to_hex());
@@ -670,6 +680,63 @@ mod tests {
             panic!("Text erwartet");
         };
         assert!(*bold && *underline, "Auszeichnung fehlt");
+    }
+
+    /// Name der Ebene, auf der der erste Text liegt.
+    fn text_ebene(app: &App) -> String {
+        let e = app.doc().ents().first().expect("Text fehlt");
+        app.doc()
+            .layer(e.layer)
+            .map(|l| l.name.clone())
+            .expect("Ebene fehlt")
+    }
+
+    /// T0202: Ein neuer Text gehört auf „Beschriftung“ — die zuletzt
+    /// angeklickte Ebene („Zeichnung“) darf ihn nicht einsammeln.
+    #[test]
+    fn neuer_text_landet_auf_beschriftung() {
+        let mut app = app_mm();
+        assert_eq!(
+            app.doc().layer(app.doc().current_layer).map(|l| l.name.as_str()),
+            Some("Zeichnung"),
+            "Ausgangslage: aktuelle Ebene ist „Zeichnung“"
+        );
+        crate::textedit::start(&mut app, jjcad_core::geom::Vec2::new(1000.0, 500.0));
+        if let Some(t) = app.ui.texteingabe.as_mut() {
+            t.text = "Wohnen".to_string();
+        }
+        uebernehmen_fuer_test(&mut app);
+        assert_eq!(text_ebene(&app), "Beschriftung");
+    }
+
+    /// Eine **eigene** Ebene sticht die Standardebene weiterhin (T0039).
+    #[test]
+    fn eigene_ebene_sticht_beschriftung() {
+        let mut app = app_mm();
+        let ziel = app
+            .doc_mut()
+            .ensure_layer("Bauantrag", jjcad_core::style::Color::BLACK);
+        app.doc_mut().current_layer = ziel;
+        crate::textedit::start(&mut app, jjcad_core::geom::Vec2::new(1000.0, 500.0));
+        if let Some(t) = app.ui.texteingabe.as_mut() {
+            t.text = "Wohnen".to_string();
+        }
+        uebernehmen_fuer_test(&mut app);
+        assert_eq!(text_ebene(&app), "Bauantrag");
+    }
+
+    /// Die Ebene aus dem Eigenschaften-Panel sticht auch beim Text (T0202).
+    #[test]
+    fn panel_wahl_sticht_die_beschriftung() {
+        let mut app = app_mm();
+        let ziel = app.doc().layer_id_by_name("Architektur").expect("Ebene");
+        app.ui.pending.layer = Some(ziel);
+        crate::textedit::start(&mut app, jjcad_core::geom::Vec2::new(1000.0, 500.0));
+        if let Some(t) = app.ui.texteingabe.as_mut() {
+            t.text = "Wohnen".to_string();
+        }
+        uebernehmen_fuer_test(&mut app);
+        assert_eq!(text_ebene(&app), "Architektur");
     }
 
     fn texte(app: &App) -> Vec<(String, f64)> {
