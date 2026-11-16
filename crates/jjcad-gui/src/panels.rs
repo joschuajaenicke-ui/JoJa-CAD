@@ -36,7 +36,16 @@ pub fn layers(app: &mut App, ui: &mut Ui) {
             if widgets::icon_button(ui, "layers", 22.0, false, tr("gui.panels.layer_verwalten")).clicked() {
                 app.ui.layers_open = !app.ui.layers_open;
             }
-            if widgets::icon_button(ui, "chevron_left", 20.0, false, tr("gui.panels.einklappen")).clicked() {
+            // T0203: Der Pfeil zeigt zur Seite, auf der das Panel liegt —
+            // eingeklappt wird dorthin, wo die Leiste steht.
+            let pfeil = if app.panel_seite(crate::app::SeitenPanel::Layer)
+                == jjcad_core::persist::PanelSeite::Links
+            {
+                "chevron_left"
+            } else {
+                "chevron_right"
+            };
+            if widgets::icon_button(ui, pfeil, 20.0, false, tr("gui.panels.einklappen")).clicked() {
                 app.ui.layers_collapsed = true;
             }
         });
@@ -675,7 +684,15 @@ pub fn properties(app: &mut App, ui: &mut Ui) {
                 .strong(),
         );
         ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-            if widgets::icon_button(ui, "chevron_right", 20.0, false, jjcad_core::i18n::tr("gui.panels.einklappen")).clicked() {
+            // T0203: Der Pfeil zeigt zur Seite, auf der das Panel liegt.
+            let pfeil = if app.panel_seite(crate::app::SeitenPanel::Eigenschaften)
+                == jjcad_core::persist::PanelSeite::Links
+            {
+                "chevron_left"
+            } else {
+                "chevron_right"
+            };
+            if widgets::icon_button(ui, pfeil, 20.0, false, jjcad_core::i18n::tr("gui.panels.einklappen")).clicked() {
                 app.ui.props_collapsed = true;
             }
         });

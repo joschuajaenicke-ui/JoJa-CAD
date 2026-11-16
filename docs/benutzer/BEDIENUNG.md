@@ -198,7 +198,14 @@ ausgeblendet.
 
 ## Oberfläche
 
-- **Eigenschaften-Panel** (rechts): tabellarische Liste mit Layer, Farbe, Stärke, Linientyp und
+- **Seitenpanels auf beiden Seiten (T0203)**: Layer und Eigenschaften lassen sich auf die linke
+  oder die rechte Seite legen. Beide Panels klappen über den Pfeil in ihrer Kopfzeile auf eine
+  schmale Leiste ein; die Leisten **beider** Seiten tragen dann dieselben zwei Symbole (Layer,
+  Eigenschaften). Ein Klick auf ein Symbol legt das Panel auf diese Seite und klappt es aus;
+  liegt es dort schon, klappt derselbe Klick es ein. Liegen beide Panels auf einer Seite,
+  teilen sie sich die Höhe. Die Wahl steht in `prefs.json` (`layers_side`, `props_side`) und
+  übersteht den Neustart.
+- **Eigenschaften-Panel** (Vorgabe rechts): tabellarische Liste mit Layer, Farbe, Stärke, Linientyp und
   nicht editierbaren Angaben (Länge, Radius, Fläche). Läuft ein Werkzeug, stehen oben die
   Eigenschaften für das **nächste** Element — einmal gesetzt gilt das für alle folgenden Elemente.
   Bei Mehrfachauswahl **einer** Objektart erscheint ein Abschnitt mit genau den Feldern des
