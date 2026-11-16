@@ -116,6 +116,18 @@ Mit dem Nutzer abgestimmt — nicht „verbessern“:
   Fenster selbst vergrößert, bleibt es beim Einpassen um die Mitte. Prüfweg:
   `cargo test -p jjcad-gui tests_ansicht_verankern` (7 Tests, Gegenprobe ohne
   `ansicht_verankern` fallen 5).
+- **Panels auf beiden Seiten (T0203)**: Layer und Eigenschaften liegen nicht mehr fest
+  (links/rechts), sondern auf einer wählbaren Seite (`UiState::layers_side`/`props_side`,
+  gespeichert in `prefs.json` als `layers_side`/`props_side`). Die Leisten **beider** Seiten
+  tragen dieselben zwei Symbole (`app::SeitenPanel::ALLE`); ein Klick legt das Panel auf diese
+  Seite und klappt es aus, auf der eigenen Seite klappt er es ein (`App::leisten_klick`).
+  Eine Leiste erscheint, sobald ein Panel eingeklappt ist — und dann auf **beiden** Seiten,
+  damit jedes Panel von jeder Seite erreichbar bleibt; ohne eingeklapptes Panel gibt es keine
+  Leiste (die Ansicht sieht aus wie bisher). Liegen beide Panels auf einer Seite, teilen sie
+  sich die Höhe (`allocate_ui_with_layout`). Der Einklapp-Pfeil im Panelkopf zeigt zur Seite
+  des Panels. Prüfweg: `cargo test -p jjcad-gui tests_seitenleisten` (6 Tests) und
+  `cargo test -p jjcad-core panel_seiten`; Prüfbilder `--demo leisten`, `--demo panelslinks`,
+  `--demo panelsrechts`.
 - **Türen** sitzen immer auf der *vorderen Wandkante* (Blattseite), nicht in der
   Wandmitte. Kein Auswahlfeld für die Tür-Lage. Fenster dürfen ihre Lage in
   der Wanddicke wählen (Links/Mittig/Rechts).

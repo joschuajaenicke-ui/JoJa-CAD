@@ -1221,6 +1221,34 @@ impl Zeichenfarbe {
     }
 }
 
+/// Seite, auf der ein Seitenpanel liegt (T0203).
+///
+/// Layer und Eigenschaften lassen sich auf **beiden** Seiten ablegen; die
+/// Leisten tragen deshalb stets dieselben Icons. Gespeichert wird die Wahl in
+/// `prefs.json`, damit sie den Neustart übersteht.
+#[derive(Clone, Copy, PartialEq, Eq, Debug, Default, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum PanelSeite {
+    /// Linke Seite (Vorgabe des Layer-Panels)
+    #[default]
+    Links,
+    /// Rechte Seite (Vorgabe des Eigenschaften-Panels)
+    Rechts,
+}
+
+impl PanelSeite {
+    /// Beide Seiten in Anzeigereihenfolge.
+    pub const ALL: [PanelSeite; 2] = [PanelSeite::Links, PanelSeite::Rechts];
+
+    /// Die andere Seite — für Umschalter und Tests.
+    pub fn andere(self) -> PanelSeite {
+        match self {
+            PanelSeite::Links => PanelSeite::Rechts,
+            PanelSeite::Rechts => PanelSeite::Links,
+        }
+    }
+}
+
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct UserPrefs {
     #[serde(default)]
@@ -1321,6 +1349,13 @@ pub struct UserPrefs {
     pub show_properties: bool,
     #[serde(default = "default_true")]
     pub show_layers: bool,
+    /// Seite des Layer-Panels (T0203). Beide Panels dürfen auf beiden Seiten
+    /// liegen; die Leisten zeigen stets dieselben Icons.
+    #[serde(default)]
+    pub layers_side: PanelSeite,
+    /// Seite des Eigenschaften-Panels (T0203).
+    #[serde(default = "default_panel_rechts")]
+    pub props_side: PanelSeite,
     /// Inventar-Raster (frei belegbar, beliebig erweiterbar)
     #[serde(default)]
     pub inventory: Vec<Option<String>>,
@@ -1458,6 +1493,11 @@ fn default_sicherung_intervall() -> u32 {
 }
 fn default_true() -> bool {
     true
+}
+
+/// T0203: Das Eigenschaften-Panel liegt in der Vorgabe rechts.
+fn default_panel_rechts() -> PanelSeite {
+    PanelSeite::Rechts
 }
 
 /// Vorgabe der Schwenkgeschwindigkeit: unverändert das bisherige Tempo (T0067).
@@ -1829,6 +1869,10 @@ impl Default for UserPrefs {
             snap_wall_edges: true,
             show_properties: true,
             show_layers: true,
+            // T0203: Layer links, Eigenschaften rechts — wie bisher; beide
+            // lassen sich auf die andere Seite legen.
+            layers_side: PanelSeite::Links,
+            props_side: PanelSeite::Rechts,
             inventory: vec![None; 40],
             file_dialog: default_dateidialog(),
             language: crate::i18n::Lang::Deutsch,
@@ -2657,6 +2701,32 @@ mod tests {
 
     /// T0063: „Maus verschiebt“ ist in der Vorgabe an (bisheriges Verhalten)
     /// und überlebt Speichern und Laden; fehlt der Schlüssel, gilt ebenfalls an.
+    /// T0203: Die Seite der beiden Seitenpanels übersteht das Speichern; eine
+    /// alte `prefs.json` ohne die Felder behält das bisherige Bild (Layer
+    /// links, Eigenschaften rechts).
+    #[test]
+    fn panel_seiten_ueberstehen_das_speichern() {
+        let prefs = UserPrefs::default();
+        assert_eq!(prefs.layers_side, PanelSeite::Links);
+        assert_eq!(prefs.props_side, PanelSeite::Rechts);
+
+        let mut prefs = UserPrefs::default();
+        prefs.layers_side = PanelSeite::Rechts;
+        prefs.props_side = PanelSeite::Links;
+        let roh = serde_json::to_string(&prefs).unwrap();
+        assert!(
+            roh.contains("\"layers_side\":\"rechts\""),
+            "Schlüssel fehlt: {roh}"
+        );
+        let wieder: UserPrefs = serde_json::from_str(&roh).unwrap();
+        assert_eq!(wieder.layers_side, PanelSeite::Rechts);
+        assert_eq!(wieder.props_side, PanelSeite::Links);
+
+        let alt: UserPrefs = serde_json::from_str(r#"{"last_dir": "/tmp"}"#).unwrap();
+        assert_eq!(alt.layers_side, PanelSeite::Links);
+        assert_eq!(alt.props_side, PanelSeite::Rechts);
+    }
+
     #[test]
     fn maus_verschiebt_vorgabe_an_und_wird_gespeichert() {
         assert!(UserPrefs::default().mouse_move);

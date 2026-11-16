@@ -13,7 +13,7 @@ use jjcad_core::actions::{self, ActionGroup};
 use jjcad_core::export::RasterOptions;
 use jjcad_core::geom::{BBox, Vec2 as V2};
 use jjcad_core::model::*;
-use jjcad_core::persist::{self, DragMode, UserPrefs};
+use jjcad_core::persist::{self, DragMode, PanelSeite, UserPrefs};
 use jjcad_core::render::DisplayList;
 use jjcad_core::session::Session;
 use jjcad_core::sitzung;
@@ -37,6 +37,10 @@ pub const RIBBON_CONTENT_H: f32 = RIBBON_H - 2.0 * RIBBON_PAD;
 pub const RIBBON_GROUP_H: f32 = 67.0;
 pub const HEADER_H: f32 = 38.0;
 pub const DOCTABS_H: f32 = 34.0;
+/// Breite einer Seitenleiste mit den Panel-Symbolen (T0203). Beide Seiten
+/// tragen dieselben Icons; die Leiste erscheint, sobald ein Panel eingeklappt
+/// ist.
+pub const LEISTE_W: f32 = 28.0;
 /// Höhe der einen unteren Leiste: Slot-Kante (50 px) + 2 × 5 px Rand
 pub const HOTBAR_H: f32 = 60.0;
 /// Breite eines selbst gezeichneten Fensterknopfs (T0098) — ohne Titelleiste
@@ -1044,6 +1048,13 @@ pub struct UiState {
     /// Panels und Ribbon eingeklappt
     pub layers_collapsed: bool,
     pub props_collapsed: bool,
+    /// T0203: Seite, auf der das jeweilige Panel liegt. Beide Panels dürfen
+    /// auf beiden Seiten stehen; die Leisten tragen stets dieselben Icons.
+    pub layers_side: PanelSeite,
+    pub props_side: PanelSeite,
+    /// T0203: Lage der Symbole in den Seitenleisten im zuletzt gezeichneten
+    /// Bild — (Panel, Seite, Fläche). Prüfwert der Tests.
+    pub last_leisten_icons: Vec<(SeitenPanel, PanelSeite, Rect)>,
     pub ribbon_collapsed: bool,
     pub keymap_open: bool,
     pub settings_open: bool,
@@ -1296,6 +1307,9 @@ impl Default for UiState {
             props_open: true,
             layers_collapsed: false,
             props_collapsed: false,
+            layers_side: PanelSeite::Links,
+            props_side: PanelSeite::Rechts,
+            last_leisten_icons: Vec::new(),
             ribbon_collapsed: false,
             keymap_open: false,
             settings_open: false,
@@ -1754,6 +1768,38 @@ pub struct App {
     pub fenster_start_zeit: Option<f64>,
 }
 
+/// Ein Seitenpanel, das auf **beiden** Seiten liegen kann (T0203).
+///
+/// Die Leisten beider Seiten zeigen immer dieselben Symbole — Layer und
+/// Eigenschaften. Welches Panel wo liegt, steht in `UiState::layers_side` /
+/// `UiState::props_side`.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum SeitenPanel {
+    Layer,
+    Eigenschaften,
+}
+
+impl SeitenPanel {
+    /// Beide Panels in der Reihenfolge der Leisten — auf beiden Seiten gleich.
+    pub const ALLE: [SeitenPanel; 2] = [SeitenPanel::Layer, SeitenPanel::Eigenschaften];
+
+    /// Symbol in der Leiste.
+    pub fn icon(self) -> &'static str {
+        match self {
+            SeitenPanel::Layer => "layers",
+            SeitenPanel::Eigenschaften => "properties",
+        }
+    }
+
+    /// Breite des ausgeklappten Panels (wie bisher 232 bzw. 292 px).
+    pub fn breite(self) -> f32 {
+        match self {
+            SeitenPanel::Layer => 232.0,
+            SeitenPanel::Eigenschaften => 292.0,
+        }
+    }
+}
+
 impl App {
     pub fn new(cc: &eframe::CreationContext<'_>) -> Self {
         // Klick-Toleranz: egui verwirft einen Klick, sobald sich der Zeiger zwischen
@@ -1840,6 +1886,9 @@ impl App {
         let select_mode = prefs.select_mode;
         let layers_open = prefs.show_layers;
         let props_open = prefs.show_properties;
+        // T0203: Die gewählte Seite der beiden Panels übersteht den Neustart.
+        let layers_side = prefs.layers_side;
+        let props_side = prefs.props_side;
         let mut app = Self {
             tabs: vec![tab],
             diag: crate::diag::Diagnose::new(),
@@ -1894,6 +1943,8 @@ impl App {
         app.ui.copy_input = CopyInput::from_key(&app.prefs.copy_input);
         app.ui.layers_open = layers_open;
         app.ui.props_open = props_open;
+        app.ui.layers_side = layers_side;
+        app.ui.props_side = props_side;
         app.fit_view();
         app.started_at = 0.0;
         // T0127: Blöcke aus der Benutzerbibliothek der Datenwurzel.
@@ -1962,6 +2013,31 @@ impl App {
                     let mitte = v.center;
                     v.rotate_about(mitte, 30f64.to_radians());
                     self.set_view(v);
+                }
+                // T0203: Seitenpanels auf beiden Seiten. `leisten` klappt beide
+                // ein (beide Leisten mit denselben Symbolen), `panelslinks` /
+                // `panelsrechts` legen beide ausgeklappt auf eine Seite.
+                "leisten" => {
+                    self.ui.layers_open = true;
+                    self.ui.props_open = true;
+                    self.ui.layers_collapsed = true;
+                    self.ui.props_collapsed = true;
+                }
+                "panelslinks" => {
+                    self.ui.layers_open = true;
+                    self.ui.props_open = true;
+                    self.ui.layers_collapsed = false;
+                    self.ui.props_collapsed = false;
+                    self.ui.layers_side = PanelSeite::Links;
+                    self.ui.props_side = PanelSeite::Links;
+                }
+                "panelsrechts" => {
+                    self.ui.layers_open = true;
+                    self.ui.props_open = true;
+                    self.ui.layers_collapsed = false;
+                    self.ui.props_collapsed = false;
+                    self.ui.layers_side = PanelSeite::Rechts;
+                    self.ui.props_side = PanelSeite::Rechts;
                 }
                 // Zoomstufe in Prozent (`zoom:600`) — Prüfbilder der Schrift im
                 // hohen Zoom (T0114).
@@ -8006,25 +8082,6 @@ impl App {
         self.ui.last_fensterkanten = Some(lagen);
     }
 
-/// Schmale Leiste eines eingeklappten Seitenpanels.
-fn rail(ui: &mut egui::Ui, icon: &str, tooltip: &str, chevron: &str) -> bool {
-    let mut clicked = false;
-    ui.vertical_centered(|ui| {
-        ui.add_space(6.0);
-        if widgets::icon_button(ui, chevron, 22.0, false, tooltip).clicked() {
-            clicked = true;
-        }
-        ui.add_space(10.0);
-        let (r, resp) = ui.allocate_exact_size(Vec2::splat(18.0), Sense::click());
-        crate::icons::paint(ui.painter(), r, icon, Palette::text_dim());
-        if resp.clicked() {
-            clicked = true;
-        }
-        resp.on_hover_text(tooltip);
-    });
-    clicked
-}
-
     /// Zeichnet die Ribbon-Leiste in einen **festen** Inhaltsbereich.
     ///
     /// Ohne diesen festen Rahmen bestimmte der Inhalt die Panelhöhe: der Reiter
@@ -9233,48 +9290,11 @@ fn rail(ui: &mut egui::Ui, icon: &str, tooltip: &str, chevron: &str) -> bool {
         // Zeichenfläche, damit die Bewegung im selben Bild zu sehen ist.
         self.schwenk_fortschritt(ctx);
 
-        if self.ui.layers_open {
-            let collapsed = self.ui.layers_collapsed;
-            let (w, margin) = if collapsed { (28.0, 0.0) } else { (232.0, 10.0) };
-            egui::SidePanel::left("layers")
-                .exact_width(auf_pixel(ctx, w))
-                .resizable(false)
-                .frame(
-                    Frame::none()
-                        .fill(Palette::panel())
-                        .inner_margin(Margin::symmetric(margin, if collapsed { 0.0 } else { 8.0 })),
-                )
-                .show(ctx, |ui| {
-                    if collapsed {
-                        if Self::rail(ui, "layers", jjcad_core::i18n::tr("gui.app.layers_ausklappen"), "chevron_right") {
-                            self.ui.layers_collapsed = false;
-                        }
-                    } else {
-                        panels::layers(self, ui);
-                    }
-                });
-        }
-        if self.ui.props_open {
-            let collapsed = self.ui.props_collapsed;
-            let (w, margin) = if collapsed { (28.0, 0.0) } else { (292.0, 10.0) };
-            egui::SidePanel::right("props")
-                .exact_width(auf_pixel(ctx, w))
-                .resizable(false)
-                .frame(
-                    Frame::none()
-                        .fill(Palette::panel())
-                        .inner_margin(Margin::symmetric(margin, if collapsed { 0.0 } else { 8.0 })),
-                )
-                .show(ctx, |ui| {
-                    if collapsed {
-                        if Self::rail(ui, "properties", jjcad_core::i18n::tr("gui.app.eigenschaften_ausklappen"), "chevron_left") {
-                            self.ui.props_collapsed = false;
-                        }
-                    } else {
-                        panels::properties(self, ui);
-                    }
-                });
-        }
+        // T0203: Beide Seitenpanels dürfen auf beiden Seiten liegen. Die
+        // Leisten tragen deshalb stets **dieselben** Icons (Layer und
+        // Eigenschaften); ein Klick legt das Panel auf diese Seite und klappt
+        // es aus.
+        self.seitenleisten(ctx);
 
         egui::CentralPanel::default()
             .frame(Frame::none().fill(Palette::bg()))
@@ -9305,6 +9325,179 @@ fn rail(ui: &mut egui::Ui, icon: &str, tooltip: &str, chevron: &str) -> bool {
         // Leistungsanzeige zuletzt: sie zeigt die **abgeschlossenen** Bilder und
         // gehört damit über alles andere.
         crate::perf::overlay(self, ctx);
+    }
+
+    // ---- Seitenpanels auf beiden Seiten (T0203) ----
+
+    /// Ist das Panel über den Ribbon-Schalter geöffnet?
+    pub fn panel_offen(&self, p: SeitenPanel) -> bool {
+        match p {
+            SeitenPanel::Layer => self.ui.layers_open,
+            SeitenPanel::Eigenschaften => self.ui.props_open,
+        }
+    }
+
+    /// Ist das Panel auf seine Leiste eingeklappt?
+    pub fn panel_eingeklappt(&self, p: SeitenPanel) -> bool {
+        match p {
+            SeitenPanel::Layer => self.ui.layers_collapsed,
+            SeitenPanel::Eigenschaften => self.ui.props_collapsed,
+        }
+    }
+
+    /// Auf welcher Seite liegt das Panel?
+    pub fn panel_seite(&self, p: SeitenPanel) -> PanelSeite {
+        match p {
+            SeitenPanel::Layer => self.ui.layers_side,
+            SeitenPanel::Eigenschaften => self.ui.props_side,
+        }
+    }
+
+    /// Setzt Öffnung, Einklappung und Seite eines Panels in einem Zug.
+    pub fn panel_setze(&mut self, p: SeitenPanel, offen: bool, eingeklappt: bool, seite: PanelSeite) {
+        match p {
+            SeitenPanel::Layer => {
+                self.ui.layers_open = offen;
+                self.ui.layers_collapsed = eingeklappt;
+                self.ui.layers_side = seite;
+            }
+            SeitenPanel::Eigenschaften => {
+                self.ui.props_open = offen;
+                self.ui.props_collapsed = eingeklappt;
+                self.ui.props_side = seite;
+            }
+        }
+    }
+
+    /// Klick auf ein Symbol der Seitenleiste.
+    ///
+    /// Liegt das Panel schon auf dieser Seite, klappt der Klick es ein bzw.
+    /// wieder aus. Liegt es auf der anderen Seite, wandert es hierher und ist
+    /// danach ausgeklappt — so ist jedes Panel von jeder Seite erreichbar.
+    pub fn leisten_klick(&mut self, p: SeitenPanel, seite: PanelSeite) {
+        if self.panel_seite(p) == seite {
+            let eingeklappt = self.panel_eingeklappt(p);
+            self.panel_setze(p, true, !eingeklappt, seite);
+        } else {
+            self.panel_setze(p, true, false, seite);
+        }
+    }
+
+    /// Zeichnet Leisten und ausgeklappte Panels beider Seiten.
+    ///
+    /// Eine Leiste erscheint, sobald ein Panel eingeklappt ist — und dann auf
+    /// **beiden** Seiten, damit die Symbole überall dieselben sind und jedes
+    /// Panel von jeder Seite erreichbar bleibt. Ohne eingeklapptes Panel gibt
+    /// es keine Leiste; die Ansicht sieht dann aus wie bisher.
+    fn seitenleisten(&mut self, ctx: &egui::Context) {
+        self.ui.last_leisten_icons.clear();
+        let leisten = (self.ui.layers_open && self.ui.layers_collapsed)
+            || (self.ui.props_open && self.ui.props_collapsed);
+        for seite in PanelSeite::ALL {
+            if leisten {
+                let id = match seite {
+                    PanelSeite::Links => "seitenleiste_links",
+                    PanelSeite::Rechts => "seitenleiste_rechts",
+                };
+                let mut panel = match seite {
+                    PanelSeite::Links => egui::SidePanel::left(id),
+                    PanelSeite::Rechts => egui::SidePanel::right(id),
+                };
+                panel
+                    .exact_width(auf_pixel(ctx, LEISTE_W))
+                    .resizable(false)
+                    .frame(Frame::none().fill(Palette::panel()))
+                    .show(ctx, |ui| self.leiste(ui, seite));
+            }
+            // Ausgeklappte Panels dieser Seite, in der Reihenfolge der Leiste.
+            let hier: Vec<SeitenPanel> = SeitenPanel::ALLE
+                .iter()
+                .copied()
+                .filter(|p| {
+                    self.panel_offen(*p)
+                        && !self.panel_eingeklappt(*p)
+                        && self.panel_seite(*p) == seite
+                })
+                .collect();
+            if hier.is_empty() {
+                continue;
+            }
+            let breite = hier.iter().map(|p| p.breite()).fold(0.0_f32, f32::max);
+            let id = match seite {
+                PanelSeite::Links => "seiten_panel_links",
+                PanelSeite::Rechts => "seiten_panel_rechts",
+            };
+            let mut panel = match seite {
+                PanelSeite::Links => egui::SidePanel::left(id),
+                PanelSeite::Rechts => egui::SidePanel::right(id),
+            };
+            panel
+                .exact_width(auf_pixel(ctx, breite + 20.0))
+                .resizable(false)
+                .frame(
+                    Frame::none()
+                        .fill(Palette::panel())
+                        .inner_margin(Margin::symmetric(10.0, 8.0)),
+                )
+                .show(ctx, |ui| {
+                    // Liegen beide Panels auf einer Seite, teilen sie sich die
+                    // Höhe — sonst nähme das erste dem zweiten alles weg.
+                    let n = hier.len();
+                    for (i, p) in hier.iter().enumerate() {
+                        let hoehe = if i + 1 == n {
+                            ui.available_height()
+                        } else {
+                            (ui.available_height() / (n - i) as f32).max(120.0)
+                        };
+                        let _ = ui.allocate_ui_with_layout(
+                            Vec2::new(ui.available_width(), hoehe),
+                            Layout::top_down(Align::Min),
+                            |ui| match p {
+                                SeitenPanel::Layer => panels::layers(self, ui),
+                                SeitenPanel::Eigenschaften => panels::properties(self, ui),
+                            },
+                        );
+                        if i + 1 < n {
+                            ui.separator();
+                        }
+                    }
+                });
+        }
+    }
+
+    /// Zeichnet die Leiste einer Seite: **beide** Symbole, auf beiden Seiten
+    /// dieselben (T0203).
+    fn leiste(&mut self, ui: &mut egui::Ui, seite: PanelSeite) {
+        let tr = jjcad_core::i18n::tr;
+        ui.vertical_centered(|ui| {
+            ui.add_space(6.0);
+            for p in SeitenPanel::ALLE {
+                let hier = self.panel_seite(p) == seite;
+                let ausgeklappt = hier && self.panel_offen(p) && !self.panel_eingeklappt(p);
+                let tip = if !hier {
+                    tr(match p {
+                        SeitenPanel::Layer => "gui.app.layers_hierher",
+                        SeitenPanel::Eigenschaften => "gui.app.eigenschaften_hierher",
+                    })
+                } else if ausgeklappt {
+                    tr(match p {
+                        SeitenPanel::Layer => "gui.app.layers_einklappen",
+                        SeitenPanel::Eigenschaften => "gui.app.eigenschaften_einklappen",
+                    })
+                } else {
+                    tr(match p {
+                        SeitenPanel::Layer => "gui.app.layers_ausklappen",
+                        SeitenPanel::Eigenschaften => "gui.app.eigenschaften_ausklappen",
+                    })
+                };
+                let resp = widgets::icon_button(ui, p.icon(), 22.0, ausgeklappt, tip);
+                self.ui.last_leisten_icons.push((p, seite, resp.rect));
+                if resp.clicked() {
+                    self.leisten_klick(p, seite);
+                }
+                ui.add_space(6.0);
+            }
+        });
     }
 }
 
@@ -10280,6 +10473,8 @@ impl eframe::App for App {
     fn on_exit(&mut self, _gl: Option<&eframe::glow::Context>) {
         self.prefs.show_layers = self.ui.layers_open;
         self.prefs.show_properties = self.ui.props_open;
+        self.prefs.layers_side = self.ui.layers_side;
+        self.prefs.props_side = self.ui.props_side;
         self.prefs.show_lineweights = self.ui.lineweights;
         self.prefs.lineweights_scaled = self.ui.lineweights_scaled;
         self.prefs.lineweight_factor = self.ui.lineweight_factor;
@@ -18301,6 +18496,189 @@ mod tests_ansicht_verankern {
             "beim Vergrößern des Fensters muss die Mitte stehen bleiben: \
              {mitte:?} → {:?}",
             app.current_view().center
+        );
+    }
+}
+
+#[cfg(test)]
+mod tests_seitenleisten {
+    //! T0203: Layer und Eigenschaften lassen sich auf **beiden** Seiten
+    //! ablegen. Die Leisten beider Seiten tragen dieselben Symbole; ein Klick
+    //! legt das Panel auf diese Seite und klappt es aus.
+    //!
+    //! Geprüft wird an den Flächen, die `App::leiste` je Symbol meldet
+    //! (`UiState::last_leisten_icons`) — dieselbe Stelle, die auch der Klick
+    //! trifft.
+
+    use super::*;
+
+    fn bild(app: &mut App, events: Vec<egui::Event>) {
+        let ctx = app.ctx.clone();
+        let raw = egui::RawInput {
+            screen_rect: Some(Rect::from_min_size(Pos2::ZERO, Vec2::new(1500.0, 950.0))),
+            events,
+            ..Default::default()
+        };
+        let _ = ctx.run(raw, |ctx| app.ui(ctx));
+    }
+
+    fn knopf(pos: Pos2, pressed: bool) -> egui::Event {
+        egui::Event::PointerButton {
+            pos,
+            button: egui::PointerButton::Primary,
+            pressed,
+            modifiers: egui::Modifiers::NONE,
+        }
+    }
+
+    fn klick(app: &mut App, pos: Pos2) {
+        for events in [
+            vec![egui::Event::PointerMoved(pos)],
+            vec![knopf(pos, true)],
+            vec![knopf(pos, false)],
+            vec![],
+        ] {
+            bild(app, events);
+        }
+    }
+
+    /// Beide Panels eingeklappt: Layer links, Eigenschaften rechts.
+    fn app_mit_leisten() -> App {
+        let mut app = App::with_ctx(egui::Context::default());
+        app.prefs.reset_bindings();
+        app.ui.layers_open = true;
+        app.ui.props_open = true;
+        app.ui.layers_collapsed = true;
+        app.ui.props_collapsed = true;
+        app.ui.layers_side = PanelSeite::Links;
+        app.ui.props_side = PanelSeite::Rechts;
+        app.ui.ribbon_collapsed = false;
+        bild(&mut app, Vec::new());
+        bild(&mut app, Vec::new());
+        app
+    }
+
+    fn symbol(app: &App, p: SeitenPanel, seite: PanelSeite) -> Rect {
+        app.ui
+            .last_leisten_icons
+            .iter()
+            .find(|(pp, ss, _)| *pp == p && *ss == seite)
+            .map(|(_, _, r)| *r)
+            .unwrap_or_else(|| panic!("Symbol {p:?} fehlt in der Leiste {seite:?}"))
+    }
+
+    /// Die eine Forderung des Tickets: **beide** Leisten zeigen **dieselben**
+    /// Symbole, in derselben Reihenfolge und auf derselben Höhe.
+    #[test]
+    fn beide_leisten_zeigen_dieselben_symbole() {
+        let app = app_mit_leisten();
+        let mut links: Vec<(SeitenPanel, f32)> = app
+            .ui
+            .last_leisten_icons
+            .iter()
+            .filter(|(_, s, _)| *s == PanelSeite::Links)
+            .map(|(p, _, r)| (*p, r.center().y))
+            .collect();
+        let mut rechts: Vec<(SeitenPanel, f32)> = app
+            .ui
+            .last_leisten_icons
+            .iter()
+            .filter(|(_, s, _)| *s == PanelSeite::Rechts)
+            .map(|(p, _, r)| (*p, r.center().y))
+            .collect();
+        links.sort_by(|a, b| a.1.total_cmp(&b.1));
+        rechts.sort_by(|a, b| a.1.total_cmp(&b.1));
+        assert_eq!(links.len(), 2, "die linke Leiste muss beide Panels tragen");
+        assert_eq!(rechts.len(), 2, "die rechte Leiste muss beide Panels tragen");
+        assert_eq!(
+            links, rechts,
+            "die Leisten müssen dieselben Symbole in derselben Reihenfolge zeigen"
+        );
+    }
+
+    /// Ohne eingeklapptes Panel gibt es keine Leiste — die Ansicht sieht aus
+    /// wie bisher.
+    #[test]
+    fn ohne_eingeklapptes_panel_gibt_es_keine_leiste() {
+        let mut app = app_mit_leisten();
+        app.ui.layers_collapsed = false;
+        app.ui.props_collapsed = false;
+        bild(&mut app, Vec::new());
+        assert!(
+            app.ui.last_leisten_icons.is_empty(),
+            "ohne eingeklapptes Panel darf keine Leiste erscheinen"
+        );
+    }
+
+    /// Das Layer-Panel wandert über das Symbol der **rechten** Leiste dorthin.
+    #[test]
+    fn klick_legt_das_layer_panel_auf_die_rechte_seite() {
+        let mut app = app_mit_leisten();
+        let r = symbol(&app, SeitenPanel::Layer, PanelSeite::Rechts);
+        klick(&mut app, r.center());
+        assert_eq!(app.ui.layers_side, PanelSeite::Rechts);
+        assert!(!app.ui.layers_collapsed, "das Panel muss ausgeklappt sein");
+        bild(&mut app, Vec::new());
+        // Links steht nur noch die Leiste (28 px), das Panel sitzt rechts.
+        assert!(
+            app.ui.last_canvas.left() < 40.0,
+            "links darf nur die Leiste stehen, Fläche beginnt bei {:.1}",
+            app.ui.last_canvas.left()
+        );
+        assert!(
+            app.ui.last_canvas.right() < 1500.0 - 200.0,
+            "rechts muss das Panel stehen, Fläche endet bei {:.1}",
+            app.ui.last_canvas.right()
+        );
+    }
+
+    /// Und das Eigenschaften-Panel über das Symbol der **linken** Leiste.
+    #[test]
+    fn klick_legt_das_eigenschaften_panel_auf_die_linke_seite() {
+        let mut app = app_mit_leisten();
+        let r = symbol(&app, SeitenPanel::Eigenschaften, PanelSeite::Links);
+        klick(&mut app, r.center());
+        assert_eq!(app.ui.props_side, PanelSeite::Links);
+        assert!(!app.ui.props_collapsed);
+        bild(&mut app, Vec::new());
+        assert!(
+            app.ui.last_canvas.left() > 200.0,
+            "links muss das Panel stehen, Fläche beginnt bei {:.1}",
+            app.ui.last_canvas.left()
+        );
+    }
+
+    /// Liegt das Panel schon auf dieser Seite und ist ausgeklappt, klappt der
+    /// Klick es ein.
+    #[test]
+    fn klick_auf_das_eigene_symbol_klappt_das_panel_ein() {
+        let mut app = app_mit_leisten();
+        app.ui.layers_collapsed = false;
+        bild(&mut app, Vec::new());
+        let r = symbol(&app, SeitenPanel::Layer, PanelSeite::Links);
+        klick(&mut app, r.center());
+        assert!(app.ui.layers_collapsed, "der Klick muss das Panel einklappen");
+    }
+
+    /// Beide Panels auf einer Seite: sie teilen sich die Höhe, statt dass das
+    /// erste dem zweiten alles wegnimmt.
+    #[test]
+    fn zwei_panels_auf_einer_seite_teilen_sich_die_hoehe() {
+        let mut app = app_mit_leisten();
+        app.ui.layers_collapsed = false;
+        app.ui.props_collapsed = false;
+        app.ui.props_side = PanelSeite::Links;
+        bild(&mut app, Vec::new());
+        bild(&mut app, Vec::new());
+        assert!(
+            app.ui.last_canvas.left() > 200.0,
+            "links müssen beide Panels stehen, Fläche beginnt bei {:.1}",
+            app.ui.last_canvas.left()
+        );
+        assert!(
+            app.ui.last_canvas.right() > 1500.0 - 1.0,
+            "rechts darf nichts stehen, Fläche endet bei {:.1}",
+            app.ui.last_canvas.right()
         );
     }
 }
