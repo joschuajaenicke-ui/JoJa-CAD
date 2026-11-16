@@ -1016,6 +1016,25 @@ pub struct PdfImportWahl {
     /// Als ein Element (Block) einfügen statt als Einzelobjekte
     pub als_block: bool,
 }
+
+/// T0204: Eigenschaften eines Blocks — Name und Gruppe, bearbeitet im
+/// Fenster „Block-Eigenschaften“ (Rechtsklick in der Blockbibliothek).
+///
+/// Die Gruppe ist die Überschrift, unter der der Block in der Bibliothek
+/// steht; eine neue Gruppe entsteht, indem ein Block sie bekommt.
+#[derive(Clone, Debug)]
+pub struct BlockEigenschaften {
+    /// Kennung des Blocks (`usr:…`, `prj:…`) — die Kennung bleibt beim
+    /// Umbenennen gleich.
+    pub block: String,
+    /// Eingabepuffer Name
+    pub name: String,
+    /// Gewählte Gruppe
+    pub gruppe: String,
+    /// Eingabe einer neuen Gruppe (leer = keine angelegt)
+    pub neue_gruppe: String,
+}
+
 /// R2.3: Die Zieldatei wurde außerhalb von JoJa-CAD geändert, während im
 /// Sicherungsordner ungespeicherte Arbeit liegt. Der Benutzer entscheidet,
 /// welche Fassung weiterverwendet wird.
@@ -1086,6 +1105,8 @@ pub struct UiState {
     /// Laufende Texteingabe in der Zeichnung (T0019)
     pub texteingabe: Option<crate::textedit::Texteingabe>,
     pub block_name_dialog: Option<(String, bool)>,
+    /// T0204: Fenster „Block-Eigenschaften" (Name und Gruppe eines Blocks)
+    pub block_eigenschaften: Option<BlockEigenschaften>,
     /// Hotbar-Vorlage: (None = neu, Some(index) = umbenennen), Name
     pub preset_dialog: Option<(Option<usize>, String)>,
     /// Fenster „Hotbar-Vorlagen" offen (Auswahl der Leiste)
@@ -1328,6 +1349,7 @@ impl Default for UiState {
             project_dialog: false,
             texteingabe: None,
             block_name_dialog: None,
+            block_eigenschaften: None,
             preset_dialog: None,
             hotbar_picker_open: false,
             file_dialog: None,
@@ -1969,6 +1991,56 @@ impl App {
         r.ok().and_then(|v| v["created"][0].as_u64())
     }
 
+    /// Prüfhilfe (T0204): Benutzerblock „Tisch“ samt eingesetzter Instanz im
+    /// Modell — Prüfzustände `blockmenue`, `blockpanel` und
+    /// `blockeigenschaften` zeigen damit Block-Eigenschaften.
+    fn demo_benutzerblock(&mut self) -> Option<u64> {
+        let layer = self.doc().current_layer;
+        if self.doc().block("usr:tisch").is_none() {
+            let mut kreis = Entity::new(
+                1,
+                layer,
+                EntityKind::Circle {
+                    c: jjcad_core::geom::v(0.0, 0.0),
+                    r: 600.0,
+                },
+            );
+            kreis.by_block = true;
+            self.doc_mut().blocks.push(jjcad_core::model::BlockDef {
+                id: "usr:tisch".into(),
+                name: "Tisch".into(),
+                category: "Projekt".into(),
+                source: jjcad_core::model::BlockSource::User,
+                description: String::new(),
+                entities: vec![kreis],
+                icon: None,
+                base: V2::ZERO,
+            });
+        }
+        if let Some(id) = self
+            .doc()
+            .entities
+            .iter()
+            .find(|e| matches!(e.kind, EntityKind::BlockRef { .. }))
+            .map(|e| e.id)
+        {
+            return Some(id);
+        }
+        let id = self.doc_mut().new_id();
+        self.doc_mut().add_entity(Entity::new(
+            id,
+            layer,
+            EntityKind::BlockRef {
+                block: "usr:tisch".into(),
+                pos: V2::ZERO,
+                rot: 0.0,
+                scale: V2::new(1.0, 1.0),
+                mirror: false,
+            },
+        ));
+        Some(id)
+    }
+
     /// Prüfhilfe (T0090): Ausschnitt auf die 8 × 3 m große Probe legen.
     fn demo_ausschnitt(&mut self) {
         let mut v = self.current_view();
@@ -2278,49 +2350,33 @@ impl App {
                 // T0185: Rechtsklickmenü einer eingesetzten Blockinstanz —
                 // zeigt den Eintrag „Block bearbeiten“ (nur eigene Blöcke).
                 "blockmenue" => {
-                    let layer = self.doc().current_layer;
-                    if self.doc().block("usr:tisch").is_none() {
-                        let mut kreis = Entity::new(
-                            1,
-                            layer,
-                            EntityKind::Circle {
-                                c: jjcad_core::geom::v(0.0, 0.0),
-                                r: 600.0,
-                            },
-                        );
-                        kreis.by_block = true;
-                        self.doc_mut().blocks.push(jjcad_core::model::BlockDef {
-                            id: "usr:tisch".into(),
-                            name: "Tisch".into(),
-                            category: "Projekt".into(),
-                            source: jjcad_core::model::BlockSource::User,
-                            description: String::new(),
-                            entities: vec![kreis],
-                            icon: None,
-                            base: V2::ZERO,
-                        });
+                    if let Some(id) = self.demo_benutzerblock() {
+                        let mut v = self.current_view();
+                        v.center = V2::ZERO;
+                        v.zoom = 0.35;
+                        // `set_view` schließt ein offenes Menü — erst danach öffnen.
+                        self.set_view(v);
+                        self.open_menu(MenuKind::Object(id), egui::Pos2::new(420.0, 260.0));
+                        // Sonst passt die Ansicht in den ersten Bildern ein und
+                        // schließt das Menü (T0180).
+                        self.started_at = 3.0;
                     }
-                    let id = self.doc_mut().new_id();
-                    self.doc_mut().add_entity(Entity::new(
-                        id,
-                        layer,
-                        EntityKind::BlockRef {
-                            block: "usr:tisch".into(),
-                            pos: V2::ZERO,
-                            rot: 0.0,
-                            scale: V2::new(1.0, 1.0),
-                            mirror: false,
-                        },
-                    ));
-                    let mut v = self.current_view();
-                    v.center = V2::ZERO;
-                    v.zoom = 0.35;
-                    // `set_view` schließt ein offenes Menü — erst danach öffnen.
-                    self.set_view(v);
-                    self.open_menu(MenuKind::Object(id), egui::Pos2::new(420.0, 260.0));
-                    // Sonst passt die Ansicht in den ersten Bildern ein und
-                    // schließt das Menü (T0180).
-                    self.started_at = 3.0;
+                }
+                // T0204: Ausgewählter Block — das Eigenschaften-Panel zeigt
+                // Name und Gruppe des Blocks.
+                "blockpanel" => {
+                    if let Some(id) = self.demo_benutzerblock() {
+                        self.session_mut().selection = vec![id];
+                        self.ui.props_open = true;
+                    }
+                }
+                // T0204: Fenster „Block-Eigenschaften“ über der Bibliothek.
+                "blockeigenschaften" => {
+                    self.demo_benutzerblock();
+                    self.ui.inventory_open = true;
+                    self.ui.inventory_tab = 1;
+                    self.ui.block_quelle = 1;
+                    self.oeffne_block_eigenschaften("usr:tisch");
                 }
                 "blocks-tab" => {
                     self.ui.inventory_open = true;
@@ -4147,6 +4203,72 @@ impl App {
             self.fit_view();
         }
         true
+    }
+
+    /// T0204: Fenster „Block-Eigenschaften“ für einen Block der Bibliothek.
+    ///
+    /// Systemblöcke sind schreibgeschützt — sie haben kein Fenster (dieselbe
+    /// Regel wie „Bearbeiten“ im Rechtsklickmenü).
+    pub fn oeffne_block_eigenschaften(&mut self, id: &str) -> bool {
+        let Some(block) = self.doc().block(id).cloned() else {
+            self.toast(jjcad_core::i18n::tr("gui.app.block_nicht_gefunden"));
+            return false;
+        };
+        if block.source == jjcad_core::model::BlockSource::System {
+            self.toast(jjcad_core::i18n::tr("gui.app.systemblock_schreibgeschuetzt"));
+            return false;
+        }
+        self.ui.block_eigenschaften = Some(BlockEigenschaften {
+            block: block.id.clone(),
+            name: block.name.clone(),
+            gruppe: block.category.clone(),
+            neue_gruppe: String::new(),
+        });
+        true
+    }
+
+    /// Übernimmt Name und Gruppe aus dem Fenster „Block-Eigenschaften“.
+    ///
+    /// Der Weg ist die Action `block.update` — dieselbe, die MCP und der
+    /// Blockeditor benutzen. Bei Benutzerblöcken schreibt sie die `.jjblk`
+    /// mit (Umbenennen = neue Datei, alte weg).
+    pub fn block_eigenschaften_uebernehmen(&mut self) -> bool {
+        let Some(wahl) = self.ui.block_eigenschaften.clone() else {
+            return false;
+        };
+        let name = wahl.name.trim().to_string();
+        if name.is_empty() {
+            self.toast(jjcad_core::i18n::tr("gui.app.block_name_fehlt"));
+            return false;
+        }
+        // Eine neu angelegte Gruppe sticht die gewählte — sie ist die
+        // Eingabe, die der Nutzer gerade gemacht hat.
+        let gruppe = if wahl.neue_gruppe.trim().is_empty() {
+            wahl.gruppe.trim().to_string()
+        } else {
+            wahl.neue_gruppe.trim().to_string()
+        };
+        let dir = self.prefs.blocks_dir().to_string_lossy().to_string();
+        match self.session_mut().execute(
+            "block.update",
+            &serde_json::json!({
+                "block": wahl.block,
+                "name": name,
+                "category": gruppe,
+                "dir": dir,
+            }),
+        ) {
+            Ok(_) => {
+                self.ui.block_eigenschaften = None;
+                self.mark_changed();
+                self.toast(jjcad_core::i18n::tr("gui.app.block_gespeichert"));
+                true
+            }
+            Err(e) => {
+                self.toast(e);
+                false
+            }
+        }
     }
 
     /// Blockeditor schließen. Ohne `speichern` wird der Stand vom Öffnen
@@ -18679,6 +18801,148 @@ mod tests_seitenleisten {
             app.ui.last_canvas.right() > 1500.0 - 1.0,
             "rechts darf nichts stehen, Fläche endet bei {:.1}",
             app.ui.last_canvas.right()
+        );
+    }
+}
+
+mod tests_block_eigenschaften {
+    //! T0204: Name und Gruppe eines Blocks — Fenster aus der Blockbibliothek
+    //! (Rechtsklick ▸ „Eigenschaften …“), geschrieben über `block.update`.
+
+    use super::*;
+    use jjcad_core::model::BlockSource;
+
+    fn test_dir(name: &str) -> PathBuf {
+        let d = std::env::temp_dir().join(format!(
+            "jjcad-blockeigenschaften-{}-{name}",
+            std::process::id()
+        ));
+        let _ = std::fs::remove_dir_all(&d);
+        std::fs::create_dir_all(&d).unwrap();
+        d
+    }
+
+    /// Zeichnung mit einem Benutzerblock (`usr:stuhl`), Bibliothek im Testordner.
+    fn app_mit_block(dir: &std::path::Path) -> App {
+        let mut app = App::with_ctx(egui::Context::default());
+        app.prefs.blocks_pfad = dir.to_string_lossy().to_string();
+        app.doc_mut().blocks.push(BlockDef {
+            id: "usr:stuhl".into(),
+            name: "Stuhl".into(),
+            category: "Projekt".into(),
+            source: BlockSource::User,
+            description: String::new(),
+            entities: Vec::new(),
+            icon: None,
+            base: V2::ZERO,
+        });
+        app
+    }
+
+    #[test]
+    fn fenster_zeigt_name_und_gruppe_des_blocks() {
+        let dir = test_dir("oeffnen");
+        let mut app = app_mit_block(&dir);
+        assert!(app.oeffne_block_eigenschaften("usr:stuhl"));
+        let wahl = app
+            .ui
+            .block_eigenschaften
+            .clone()
+            .expect("Fenster „Block-Eigenschaften“ fehlt");
+        assert_eq!(wahl.block, "usr:stuhl");
+        assert_eq!(wahl.name, "Stuhl");
+        assert_eq!(wahl.gruppe, "Projekt");
+    }
+
+    #[test]
+    fn systemblock_bekommt_kein_fenster() {
+        let dir = test_dir("system");
+        let mut app = app_mit_block(&dir);
+        app.doc_mut().blocks.push(BlockDef {
+            id: "sys:tuer".into(),
+            name: "Tür".into(),
+            category: "Architektur".into(),
+            source: BlockSource::System,
+            description: String::new(),
+            entities: Vec::new(),
+            icon: None,
+            base: V2::ZERO,
+        });
+        assert!(
+            !app.oeffne_block_eigenschaften("sys:tuer"),
+            "Systemblöcke sind schreibgeschützt"
+        );
+        assert!(app.ui.block_eigenschaften.is_none());
+    }
+
+    #[test]
+    fn uebernehmen_schreibt_name_und_gruppe_in_datei_und_dokument() {
+        let dir = test_dir("uebernehmen");
+        let mut app = app_mit_block(&dir);
+        // Ausgangsstand als Datei — so ist das Umbenennen an der Datei prüfbar.
+        let start = app.doc().block("usr:stuhl").cloned().expect("Block fehlt");
+        jjcad_core::bloecke::schreibe_block(&app.prefs.blocks_dir(), &start).unwrap();
+        assert!(app.prefs.blocks_dir().join("stuhl.jjblk").is_file());
+
+        assert!(app.oeffne_block_eigenschaften("usr:stuhl"));
+        if let Some(wahl) = app.ui.block_eigenschaften.as_mut() {
+            wahl.name = "Stuhl rund".into();
+            wahl.gruppe = "Möbel".into();
+        }
+        assert!(app.block_eigenschaften_uebernehmen());
+
+        let block = app.doc().block("usr:stuhl").expect("Block fehlt");
+        assert_eq!(block.name, "Stuhl rund");
+        assert_eq!(block.category, "Möbel");
+        assert!(
+            app.ui.block_eigenschaften.is_none(),
+            "das Fenster bleibt nach dem Übernehmen offen"
+        );
+
+        let ordner = app.prefs.blocks_dir();
+        assert!(
+            !ordner.join("stuhl.jjblk").exists(),
+            "die alte Blockdatei muss weg sein"
+        );
+        let datei = ordner.join("stuhl-rund.jjblk");
+        assert!(datei.is_file(), "neue Blockdatei fehlt: {}", datei.display());
+        let roh: serde_json::Value =
+            serde_json::from_str(&std::fs::read_to_string(&datei).unwrap()).unwrap();
+        assert_eq!(roh["block"]["name"], "Stuhl rund");
+        assert_eq!(roh["block"]["category"], "Möbel");
+        assert_eq!(roh["block"]["id"], "usr:stuhl", "Kennung bleibt stabil");
+    }
+
+    /// Eine neue Gruppe entsteht, indem der Block sie bekommt — das Feld
+    /// „Neue Gruppe“ sticht die Auswahl.
+    #[test]
+    fn neue_gruppe_aus_dem_feld_sticht_die_auswahl() {
+        let dir = test_dir("neue-gruppe");
+        let mut app = app_mit_block(&dir);
+        assert!(app.oeffne_block_eigenschaften("usr:stuhl"));
+        if let Some(wahl) = app.ui.block_eigenschaften.as_mut() {
+            wahl.gruppe = "Projekt".into();
+            wahl.neue_gruppe = "Sitzmöbel".into();
+        }
+        assert!(app.block_eigenschaften_uebernehmen());
+        assert_eq!(app.doc().block("usr:stuhl").unwrap().category, "Sitzmöbel");
+    }
+
+    #[test]
+    fn leerer_name_aendert_nichts_und_laesst_das_fenster_stehen() {
+        let dir = test_dir("leer");
+        let mut app = app_mit_block(&dir);
+        assert!(app.oeffne_block_eigenschaften("usr:stuhl"));
+        if let Some(wahl) = app.ui.block_eigenschaften.as_mut() {
+            wahl.name = "   ".into();
+            wahl.gruppe = "Möbel".into();
+        }
+        assert!(!app.block_eigenschaften_uebernehmen());
+        assert_eq!(app.doc().block("usr:stuhl").unwrap().name, "Stuhl");
+        assert_eq!(app.doc().block("usr:stuhl").unwrap().category, "Projekt");
+        assert!(
+            app.ui.block_eigenschaften.is_some(),
+            "das Fenster muss zum Nachbessern offen bleiben"
         );
     }
 }

@@ -3946,6 +3946,14 @@ pub fn execute(doc: &mut Document, id: &str, params: &Value) -> Result<Value, St
             if let Some(n) = p.text("name") {
                 neu.name = n.to_string();
             }
+            // T0204: Name **und** Gruppe sind die Eigenschaften eines Blocks —
+            // die Gruppe ist die Überschrift in der Blockbibliothek.
+            if let Some(c) = p.text("category") {
+                neu.category = c.to_string();
+            }
+            if let Some(d) = p.text("description") {
+                neu.description = d.to_string();
+            }
             // Benutzerblock (T0128): Datei nachziehen — Umbenennen ist
             // `rename` plus Feld, die Kennung bleibt gleich.
             if neu.source == BlockSource::User {

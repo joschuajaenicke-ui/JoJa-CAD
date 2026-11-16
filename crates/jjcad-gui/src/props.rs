@@ -3172,6 +3172,36 @@ pub fn einfach(app: &mut App, ui: &mut Ui, ziel: Ziel, art: Einfach) {
             );
         }
         Einfach::Block => {
+            // T0204: Ein Block zeigt **seine** Eigenschaften — Name und Gruppe
+            // der Blockdefinition, nicht nur Drehung und Faktor der Instanz.
+            // Beim Platzieren stehen sie in den Vorgaben (`options.block_id`),
+            // bei der Auswahl kommt die Kennung aus dem Objekt. Die Gruppe ist
+            // die Überschrift in der Blockbibliothek.
+            let block_id = match &e {
+                Some(e) => match &e.kind {
+                    EntityKind::BlockRef { block, .. } => Some(block.clone()),
+                    _ => None,
+                },
+                None => app.options.block_id.clone(),
+            };
+            let definition = block_id.as_deref().and_then(|id| app.doc().block(id));
+            let block_name = definition
+                .map(|b| b.name.clone())
+                .or_else(|| block_id.clone())
+                .unwrap_or_else(|| "—".to_string());
+            let block_gruppe = definition
+                .map(|b| b.category.clone())
+                .filter(|c| !c.trim().is_empty())
+                .unwrap_or_else(|| "—".to_string());
+            zeile("blockname");
+            widgets::field_row(ui, jjcad_core::i18n::tr("gui.props.blockname"), |ui| {
+                ui.label(theme::mono(block_name.clone()));
+            });
+            zeile("gruppe");
+            widgets::field_row(ui, jjcad_core::i18n::tr("gui.props.gruppe"), |ui| {
+                ui.label(theme::mono(block_gruppe.clone()));
+            });
+
             let (r0, s0) = match &e {
                 Some(e) => match &e.kind {
                     EntityKind::BlockRef { rot, scale, .. } => (rot.to_degrees(), scale.x),
@@ -3257,14 +3287,6 @@ pub fn einfach(app: &mut App, ui: &mut Ui, ziel: Ziel, art: Einfach) {
                 widgets::field_row(ui, name, |ui| {
                     ui.label(theme::mono(wert.clone()));
                 });
-            }
-            if let EntityKind::BlockRef { block, .. } = &e.kind {
-                let name = app
-                    .doc()
-                    .block(block)
-                    .map(|b| b.name.clone())
-                    .unwrap_or_else(|| block.clone());
-                ui.label(theme::dim(jjcad_core::i18n::t_args_owned("gui.props.block_x", &[("name", format!("{}", name))])));
             }
         }
         _ => {
@@ -5001,6 +5023,50 @@ mod tests {
 
             assert_eq!(neu, auswahl, "{tool}: Zeilen weichen vom Objekt ab");
         }
+    }
+
+    /// T0204: Ein ausgewählter Block zeigt **seine** Eigenschaften — Name und
+    /// Gruppe der Blockdefinition stehen als Zeilen im Panel.
+    #[test]
+    fn blockpanel_zeigt_name_und_gruppe() {
+        let mut app = App::with_ctx(egui::Context::default());
+        app.session_mut()
+            .execute("doc.settings", &json!({ "input_unit": "m" }))
+            .expect("Einheit");
+        app.doc_mut().blocks.push(jjcad_core::model::BlockDef {
+            id: "usr:tisch".into(),
+            name: "Tisch".into(),
+            category: "Möbel".into(),
+            source: jjcad_core::model::BlockSource::User,
+            description: String::new(),
+            entities: Vec::new(),
+            icon: None,
+            base: jjcad_core::geom::Vec2::ZERO,
+        });
+        let layer = app.doc().current_layer;
+        let id = app.doc_mut().new_id();
+        app.doc_mut().add_entity(Entity::new(
+            id,
+            layer,
+            EntityKind::BlockRef {
+                block: "usr:tisch".into(),
+                pos: jjcad_core::geom::Vec2::ZERO,
+                rot: 0.0,
+                scale: jjcad_core::geom::v(1.0, 1.0),
+                mirror: false,
+            },
+        ));
+        app.session_mut().selection = vec![id];
+
+        let zeilen = zeichne(&mut app);
+        assert!(
+            zeilen.contains(&"blockname"),
+            "Block ohne Namenszeile: {zeilen:?}"
+        );
+        assert!(
+            zeilen.contains(&"gruppe"),
+            "Block ohne Gruppenzeile: {zeilen:?}"
+        );
     }
 
     #[test]

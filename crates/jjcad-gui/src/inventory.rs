@@ -368,6 +368,16 @@ fn block_tile(app: &mut App, ui: &mut Ui, b: &BlockDef) {
         app.ui.slot_drag = Some((usize::MAX, format!("block:{}", b.id)));
     }
     resp.context_menu(|ui| {
+        // T0204: Name und Gruppe des Blocks — die Eigenschaften der Definition.
+        // Systemblöcke sind schreibgeschützt und haben deshalb keinen Eintrag.
+        if b.source != jjcad_core::model::BlockSource::System
+            && ui
+                .button(jjcad_core::i18n::tr("gui.inventory.eigenschaften"))
+                .clicked()
+        {
+            app.oeffne_block_eigenschaften(&b.id);
+            ui.close_menu();
+        }
         // T0137: Nur eigene Blöcke sind bearbeitbar — Systemblöcke nicht.
         if b.source != jjcad_core::model::BlockSource::System
             && ui

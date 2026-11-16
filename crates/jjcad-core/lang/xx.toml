@@ -903,6 +903,7 @@
 # und {wert1} stehen für Werte, die das Programm einsetzt.
 #
 [gui.app]
+# block_name_fehlt = "Block · Name fehlt"
 # datenordner_geoeffnet_x = "Datenordner: {wert1}"
 # sicherungsordner_geoeffnet_x = "Sicherungsordner: {wert1}"
 # blockdatei_uebersprungen_x = "Blockdatei übersprungen: {wert1}"
@@ -1273,6 +1274,12 @@
 # version_x_build_x_x = "Version {wert1} · Build {wert2} ({wert3})\n"
 #
 [gui.dialogs]
+# block_eigenschaften = "Block-Eigenschaften"
+# name_und_gruppe_des_blocks = "Name und Gruppe des Blocks. Die Gruppe ist die Überschrift in der Blockbibliothek."
+# neue_gruppe = "Neue Gruppe"
+# name = "Name"
+# gruppe = "Gruppe"
+# uebernehmen = "Übernehmen"
 # ansicht_verschieben = "Verschieben"
 # dxf_zeichnung = "DXF-Zeichnung"
 # gilt_fuer_die_schwenkfunktionen = "gilt für das Verschieben der Ansicht (Vorgabe W A S D) — gehalten bewegt sie sich weiter, wenn „Kontinuierlich“ gewählt ist"
@@ -1549,6 +1556,7 @@
 # x_slots = "{wert1} Slots"
 #
 [gui.inventory]
+# eigenschaften = "Eigenschaften …"
 # bearbeiten = "Bearbeiten …"
 # abbrechen = "Abbrechen"
 # alle_befehle_anklicken_zum_starten_auf_hotbar_ziehen_zum = "Alle Befehle – anklicken zum Starten, auf Hotbar ziehen zum Belegen."
@@ -1716,6 +1724,8 @@
 # keine = "keine"
 #
 [gui.props]
+# blockname = "Blockname"
+# gruppe = "Gruppe"
 # ansichtsbereich_anpassen = "Ansichtsbereich anpassen"
 # ansichtsbereich_tip = "Mausrad ändert den Maßstab · Mitteltaste verschiebt den Ausschnitt"
 # zeilenabstand = "Zeilenabstand"
@@ -1747,7 +1757,6 @@
 # blatt_schlaegt_auf_seite_a_der_wand_auf = "Blatt schlägt auf Seite A der Wand auf"
 # blatt_schlaegt_auf_seite_b_der_wand_auf = "Blatt schlägt auf Seite B der Wand auf"
 # block = "Block"
-# block_x = "Block: {name}"
 # blocklage_entsteht_aus_dem_klick = "Blocklage entsteht aus dem Klick"
 # bogen = "Bogen"
 # breite = "Breite"
