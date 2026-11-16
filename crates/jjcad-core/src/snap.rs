@@ -1805,9 +1805,10 @@ fn hit_test_opt(
             }
             continue;
         }
-        // Bild: die ganze Fläche zählt — der Rahmen ist nicht gezeichnet, ein
-        // Klick auf die Bildmitte muss das Bild wählen. Objekte darüber (Wand,
-        // Linie, Text) haben Vorrang, deshalb Priorität wie ein Textfeld.
+        // Bild: nur die **Kanten** sind anklickbar (T0201). Die Fläche zählt
+        // nicht — sonst bliebe über einem Bild kein Platz zum Zeichnen, und
+        // jeder Zeiger darüber höbe es hervor. Getroffen wird wie eine Linie
+        // (Priorität 1).
         if let EntityKind::Image {
             a: ia,
             b: ib,
@@ -1820,10 +1821,13 @@ fn hit_test_opt(
             let hoehe = crate::bild::dekodiere(data)
                 .map(|bild| crate::bild::wirksame_hoehe(&bild, ia.dist(*ib), *height, *lock_ratio))
                 .unwrap_or(1.0);
-            if crate::bild::punkt_im_bild(*ia, *ib, hoehe, p) {
-                let d = b.center().dist(p);
-                let prio = 2;
-                if best.map(|(_, bd, bp)| prio < bp || (prio == bp && d < bd)).unwrap_or(true) {
+            let d = crate::bild::kantenabstand(*ia, *ib, hoehe, p);
+            if d <= tol {
+                let prio = 1;
+                if best
+                    .map(|(_, bd, bp)| prio < bp || (d < bd && prio <= bp))
+                    .unwrap_or(true)
+                {
                     best = Some((e.id, d, prio));
                 }
             }
@@ -1977,6 +1981,26 @@ pub fn select_window(doc: &Document, a: Vec2, b: Vec2, crossing: bool) -> Vec<Id
             }
             continue;
         }
+        // Bild: geprüft wird das **gedrehte** Rechteck, nicht seine
+        // achsenparallele Hülle (T0201). Ein Fenster im Eckbereich der Hülle
+        // hat das schräg liegende Bild nicht berührt und wählt es nicht mit.
+        if let EntityKind::Image {
+            a, b, height, lock_ratio, data, ..
+        } = &e.kind
+        {
+            let hoehe = crate::bild::dekodiere(data)
+                .map(|bild| crate::bild::wirksame_hoehe(&bild, a.dist(*b), *height, *lock_ratio))
+                .unwrap_or(1.0);
+            let trifft = if crossing {
+                crate::bild::beruehrt_rechteck(*a, *b, hoehe, &rect)
+            } else {
+                crate::bild::in_rechteck(*a, *b, hoehe, &rect)
+            };
+            if trifft {
+                out.push(e.id);
+            }
+            continue;
+        }
         // Punkt, Text und Treppe: die Bounding-Box ist ihre Trefferfläche
         // (Punkt ohne Ausdehnung, Text als Zeilenbox, Treppe als Rechteck).
         let flaechig = matches!(
@@ -1984,9 +2008,6 @@ pub fn select_window(doc: &Document, a: Vec2, b: Vec2, crossing: bool) -> Vec<Id
             EntityKind::Stair { .. }
                 | EntityKind::Text { .. }
                 | EntityKind::Point { .. }
-                // Bild: die Fläche ist das Rechteck — dieselbe Trefferfläche
-                // wie beim Klick (T0100).
-                | EntityKind::Image { .. }
                 // Ansichtsfenster: die Fläche ist das Rechteck (T0109).
                 | EntityKind::Viewport(_)
         );

@@ -757,6 +757,18 @@ Mit dem Nutzer abgestimmt — nicht „verbessern“:
   Bezugsachse auf die Linienrichtung zu setzen (`let (achse, start) = (1.0, 0.0)`).
 - **Auswahl über Rechteck** prüft echte Geometrie (Segmente, Wandkörper),
   nicht die achsenparallele Bounding-Box.
+- **Bilder sind nur an den Kanten anklickbar (T0201)**: Ein Bild hat keine
+  Anklickfläche in der Mitte — der Zeiger über der Fläche höbe es sonst hervor,
+  und über einem Bild ließe sich nicht zeichnen. `snap::hit_test` prüft für
+  `EntityKind::Image` den Abstand zur nächsten der vier Kanten
+  (`bild::kantenabstand`, wie eine Linie, Priorität 1); die Mitte trifft nichts.
+  Das Auswahlfenster prüft das **gedrehte** Rechteck
+  (`bild::beruehrt_rechteck`/`bild::in_rechteck`), nicht seine achsenparallele
+  Hülle — ein Fenster in der Ecke der Hülle hat das Bild nicht berührt.
+  Prüfweg: `cargo test -p jjcad-core --test bild`
+  (`bild_ist_nur_an_den_kanten_anklickbar`, `auswahlfenster_prueft_das_schraege_rechteck`);
+  Gegenprobe ist `bild::punkt_im_bild` in `kantenabstand` bzw. `BBox::intersects`
+  im Fenster (drei Tests fallen).
 - **Zerlegen trifft die Fläche (T0138)**: `snap::hit_test_flaeche` nimmt eine
   Füllfläche auch **innen** (Rückfall, wenn kein Objekt darüber liegt) — genutzt
   von Zerlegen (Werkzeug, Vorschau) **und vom Rechtsklick**: erst dadurch öffnet

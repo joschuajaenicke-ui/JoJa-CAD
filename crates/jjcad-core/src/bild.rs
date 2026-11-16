@@ -10,7 +10,7 @@
 //! jedem Neuaufbau der Displayliste nach demselben Bild und bekommt dieselbe
 //! bereits zerlegte Fassung zurück.
 
-use crate::geom::Vec2;
+use crate::geom::{BBox, Vec2};
 use std::collections::HashMap;
 use std::path::Path;
 use std::sync::{Arc, Mutex, OnceLock};
@@ -281,6 +281,31 @@ pub fn punkt_im_bild(a: Vec2, b: Vec2, hoehe: f64, p: Vec2) -> bool {
     let u = (p - a).dot(d) / len;
     let v = (p - a).dot(d.perp() / len);
     (-1e-6..=len + 1e-6).contains(&u) && (-1e-6..=hoehe + 1e-6).contains(&v)
+}
+
+/// Abstand von `p` zum **Rand** des Bildes (0 auf einer Kante, im Inneren
+/// positiv). Nur der Rand ist anklickbar (T0201): über einem Bild lässt sich
+/// zeichnen, ohne dass es dabei hervortritt.
+pub fn kantenabstand(a: Vec2, b: Vec2, hoehe: f64, p: Vec2) -> f64 {
+    let e = ecken(a, b, hoehe);
+    (0..4)
+        .map(|i| crate::geom::dist_point_segment(p, e[i], e[(i + 1) % 4]))
+        .fold(f64::INFINITY, f64::min)
+}
+
+/// Berührt das gedrehte Bildrechteck das Fenster `rect`? (Auswahlfenster
+/// rechts→links.) Geprüft wird das **schräge** Rechteck, nicht seine
+/// achsenparallele Hülle (T0201).
+pub fn beruehrt_rechteck(a: Vec2, b: Vec2, hoehe: f64, rect: &BBox) -> bool {
+    let e = ecken(a, b, hoehe);
+    crate::area::flaeche_beruehrt_rechteck(&e, &[], rect)
+}
+
+/// Liegt das gedrehte Bildrechteck **ganz** in `rect`? (Auswahlfenster
+/// links→rechts.) Ein Fenster, das nur die Hülle bedeckt, wählt das Bild
+/// nicht mehr mit.
+pub fn in_rechteck(a: Vec2, b: Vec2, hoehe: f64, rect: &BBox) -> bool {
+    ecken(a, b, hoehe).iter().all(|p| rect.contains(*p))
 }
 
 #[cfg(test)]

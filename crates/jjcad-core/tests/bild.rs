@@ -104,10 +104,15 @@ fn kante_dreht_das_bild() {
     let bb = jjcad_core::render::entity_bbox(&s.doc, e);
     assert_eq!(bb.min, Vec2::new(-1000.0, 0.0));
     assert_eq!(bb.max, Vec2::new(0.0, 2000.0));
-    // Die Fläche ist gedreht: links der Kante innen, rechts außen.
+    // Die Fläche ist gedreht: die Kante lässt sich anklicken, die Mitte und
+    // die Fläche rechts der Kante nicht (T0201: nur Kanten sind anklickbar).
+    assert_eq!(
+        jjcad_core::snap::hit_test(&s.doc, Vec2::new(0.0, 1000.0), 5.0, None),
+        Some(id)
+    );
     assert_eq!(
         jjcad_core::snap::hit_test(&s.doc, Vec2::new(-500.0, 1000.0), 5.0, None),
-        Some(id)
+        None
     );
     assert_eq!(
         jjcad_core::snap::hit_test(&s.doc, Vec2::new(500.0, 1000.0), 5.0, None),
@@ -379,47 +384,98 @@ fn pdf_bettet_das_bild_als_objekt_ein() {
 }
 
 #[test]
-fn bild_ist_in_der_flaeche_anklickbar() {
+fn bild_ist_nur_an_den_kanten_anklickbar() {
+    // 45° gedrehtes Bild: untere Kante (0,0)→(1414;1414), Höhe 1000 mm
+    // (PNG 4×2). Die Ecken sind (0,0), (1414;1414), (707;2121), (-707;707).
     let mut s = leer();
-    let id = bild_einfuegen(
-        &mut s,
-        &png_bytes(200, 200, 200, 2, 2),
-        (0.0, 0.0),
-        (4000.0, 0.0),
-    );
-    // Mitten in der Fläche trifft das Bild …
+    let k = 2000.0 / 2f64.sqrt();
+    let id = bild_einfuegen(&mut s, &png_bytes(200, 200, 200, 4, 2), (0.0, 0.0), (k, k));
+    let e = s.doc.entity(id).expect("Bild fehlt");
+    let hoehe = match &e.kind {
+        EntityKind::Image { height, .. } => *height,
+        _ => panic!("kein Bild"),
+    };
+    assert!((hoehe - 1000.0).abs() < 1e-6, "Höhe {hoehe}");
+
+    // Jede der vier Kanten trifft …
+    let kantenmitten = [
+        Vec2::new(k / 2.0, k / 2.0),
+        Vec2::new(k * 0.75 + 0.0, k + k * 0.25),
+        Vec2::new(0.0, k),
+        Vec2::new(-k / 2.0, k / 2.0),
+    ];
+    for p in kantenmitten {
+        assert_eq!(
+            jjcad_core::snap::hit_test(&s.doc, p, 5.0, None),
+            Some(id),
+            "Kante {p:?} muss treffen"
+        );
+    }
+    // … die Mitte der Fläche nicht: über dem Bild lässt sich zeichnen, ohne
+    // daß es hervortritt (T0201).
+    let mitte = Vec2::new(k / 4.0, k * 0.75);
+    assert_eq!(jjcad_core::snap::hit_test(&s.doc, mitte, 5.0, None), None);
+
+    // Knapp außerhalb der unteren Kante liegt der Rand im Fangradius.
+    let quer = Vec2::new(1.0, -1.0).normalized();
+    let auf_kante = Vec2::new(k / 2.0, k / 2.0);
     assert_eq!(
-        jjcad_core::snap::hit_test(&s.doc, Vec2::new(2000.0, 2000.0), 5.0, None),
-        Some(id)
+        jjcad_core::snap::hit_test(&s.doc, auf_kante + quer * 4.0, 5.0, None),
+        Some(id),
+        "4 mm neben der Kante muss treffen"
     );
-    // … außerhalb nicht.
     assert_eq!(
-        jjcad_core::snap::hit_test(&s.doc, Vec2::new(6000.0, 2000.0), 5.0, None),
-        None
+        jjcad_core::snap::hit_test(&s.doc, auf_kante + quer * 200.0, 5.0, None),
+        None,
+        "200 mm neben der Kante darf nicht treffen"
     );
-    // Ein Querfenster **innerhalb** der Fläche wählt das Bild mit.
-    let treffer = jjcad_core::snap::select_window(
+}
+
+#[test]
+fn auswahlfenster_prueft_das_schraege_rechteck() {
+    // Dasselbe 45°-Bild: Hülle x −707…1414, y 0…2121 — das schräge Rechteck
+    // deckt davon nur die Diagonale ab.
+    let mut s = leer();
+    let k = 2000.0 / 2f64.sqrt();
+    let id = bild_einfuegen(&mut s, &png_bytes(200, 200, 200, 4, 2), (0.0, 0.0), (k, k));
+
+    // Querfenster in der Ecke der Hülle, weit unter der Diagonale: berührt das
+    // Bild nicht — vorher (Achsenhülle) wurde es mitgewählt.
+    let ecke = jjcad_core::snap::select_window(
         &s.doc,
-        Vec2::new(1500.0, 1000.0),
-        Vec2::new(2500.0, 3000.0),
+        Vec2::new(1300.0, 0.0),
+        Vec2::new(1414.0, 100.0),
         true,
     );
-    assert!(treffer.contains(&id), "Querfenster im Bild: {treffer:?}");
+    assert!(!ecke.contains(&id), "Ecke der Hülle: {ecke:?}");
 
-    // Eine Wand über dem Bild hat Vorrang: der Klick wählt die Wand.
-    let wand = s
-        .execute(
-            "draw.wall",
-            &json!({"a": [0.0, 2000.0], "b": [4000.0, 2000.0], "thickness": 200.0}),
-        )
-        .expect("Wand")["created"][0]
-        .as_u64()
-        .expect("Wand-Id");
-    assert_eq!(
-        jjcad_core::snap::hit_test(&s.doc, Vec2::new(2000.0, 2000.0), 5.0, None),
-        Some(wand),
-        "die Wand liegt über dem Bild"
+    // Querfenster über der Bildecke berührt das Rechteck.
+    let ecke_an = jjcad_core::snap::select_window(
+        &s.doc,
+        Vec2::new(1200.0, 1200.0),
+        Vec2::new(1500.0, 1500.0),
+        true,
     );
+    assert!(ecke_an.contains(&id), "Bildecke: {ecke_an:?}");
+
+    // Fenster (links→rechts) um das ganze gedrehte Rechteck wählt es.
+    let ganz = jjcad_core::snap::select_window(
+        &s.doc,
+        Vec2::new(-800.0, -100.0),
+        Vec2::new(1500.0, 2200.0),
+        false,
+    );
+    assert!(ganz.contains(&id), "ganz umschlossen: {ganz:?}");
+
+    // Innerhalb der Hülle, aber die obere Ecke (707;2121) bleibt draußen:
+    // nicht vollständig enthalten.
+    let halb = jjcad_core::snap::select_window(
+        &s.doc,
+        Vec2::new(-707.0, 0.0),
+        Vec2::new(1414.0, 2000.0),
+        false,
+    );
+    assert!(!halb.contains(&id), "Hülle statt Rechteck: {halb:?}");
 }
 
 #[test]
