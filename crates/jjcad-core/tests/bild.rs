@@ -467,15 +467,32 @@ fn auswahlfenster_prueft_das_schraege_rechteck() {
     );
     assert!(ganz.contains(&id), "ganz umschlossen: {ganz:?}");
 
-    // Innerhalb der Hülle, aber die obere Ecke (707;2121) bleibt draußen:
-    // nicht vollständig enthalten.
-    let halb = jjcad_core::snap::select_window(
+    // Ein Fenster **ganz innerhalb** des Bildes berührt keine Kante und wählt
+    // es nicht mit (gemeldet: „alles auswählen" nahm das Bild mit).
+    let innen = jjcad_core::snap::select_window(
         &s.doc,
-        Vec2::new(-707.0, 0.0),
-        Vec2::new(1414.0, 2000.0),
+        Vec2::new(300.0, 1000.0),
+        Vec2::new(400.0, 1100.0),
         false,
     );
-    assert!(!halb.contains(&id), "Hülle statt Rechteck: {halb:?}");
+    assert!(!innen.contains(&id), "Fenster im Bild: {innen:?}");
+    // Dasselbe als Querfenster (grün, Zug nach links) — ebenfalls kein Treffer.
+    let innen_quer = jjcad_core::snap::select_window(
+        &s.doc,
+        Vec2::new(400.0, 1100.0),
+        Vec2::new(300.0, 1000.0),
+        true,
+    );
+    assert!(!innen_quer.contains(&id), "Querfenster im Bild: {innen_quer:?}");
+
+    // Ein Fenster, das nur die untere Kante bedeckt, berührt sie und wählt mit.
+    let kante = jjcad_core::snap::select_window(
+        &s.doc,
+        Vec2::new(-50.0, -50.0),
+        Vec2::new(50.0, 50.0),
+        false,
+    );
+    assert!(kante.contains(&id), "Fenster auf der Kante: {kante:?}");
 }
 
 #[test]

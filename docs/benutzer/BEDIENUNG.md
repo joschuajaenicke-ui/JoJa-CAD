@@ -176,7 +176,9 @@ einsehbar und dort frei änderbar (Ribbon ▸ Ansicht ▸ „Tasten").
     Verhältnis wächst die Breite mit). Angeklickt wird das Bild **nur an seinen Kanten**
     (Fangradius 8 px): über die Fläche lässt sich zeichnen, ohne dass das Bild dabei
     hervortritt. Ein Auswahlfenster prüft das **gedrehte** Rechteck, nicht seine
-    achsenparallele Hülle. Ein Bild lässt sich nicht zerlegen.
+    achsenparallele Hülle, und nimmt das Bild nur mit, wenn das Fenster eine seiner
+    Kanten berührt oder es ganz umschließt — ein Fenster **innerhalb** des Bildes
+    wählt es nicht. Ein Bild lässt sich nicht zerlegen.
 
 17. **Dateien ins Fenster ziehen** (Drag an Drop): eine Datei aus dem Dateimanager auf das
     Programmfenster ziehen. Solange sie schwebt, nennt ein Hinweis oben in der Mitte die Datei
