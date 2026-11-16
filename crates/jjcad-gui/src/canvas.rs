@@ -7580,13 +7580,32 @@ fn run_mit_meldung(
     // Aktuelle Zeichen-Eigenschaften (Farbe/Stärke/Typ) an neue Elemente weitergeben
     let mut params = params;
     if ist_erzeuger(action) {
-        // Die im Layer-Panel gewählte Ebene gilt für Werkzeuge (der Nutzer
-        // wählt sie selbst). Ohne diese Angabe legt die Befehls-Schicht das
-        // Objekt auf die typgerechte Standardebene — richtig für MCP-Aufrufe
-        // ohne `layer`, für ein Werkzeug aber eine stille Umstellung (T0039).
+        // Welche Ebene bekommt das neue Objekt (T0039, T0202)?
+        //
+        // Die vier Standardlayer eines Plans sind festen Objektarten
+        // zugeordnet (Zeichnung, Architektur, Beschriftung, Blöcke). Ein
+        // Werkzeug legt sein Objekt deshalb auf die Ebene seines Typs —
+        // sonst hinge die Zuordnung allein daran, welchen Layer der Nutzer
+        // zuletzt angeklickt hat, und „Architektur enthält die Wände“ gälte
+        // nicht mehr.
+        //
+        // Eine **eigene** Ebene (nicht eine der vier) sticht das: wer sie im
+        // Panel wählt, zeichnet bewusst dorthin. Ebenso bleiben Aktionen ohne
+        // Standardebene bei der aktuellen Ebene.
         if let Some(o) = params.as_object_mut() {
             if !o.contains_key("layer") {
-                o.insert("layer".into(), serde_json::json!(app.doc().current_layer));
+                let eigene = app
+                    .doc()
+                    .layer(app.doc().current_layer)
+                    .map(|l| {
+                        !jjcad_core::style::LAYER_DEFAULTS
+                            .iter()
+                            .any(|(n, _, _)| n.eq_ignore_ascii_case(&l.name))
+                    })
+                    .unwrap_or(false);
+                if eigene || jjcad_core::actions::standard_ebene(action).is_none() {
+                    o.insert("layer".into(), serde_json::json!(app.doc().current_layer));
+                }
             }
         }
         if let Some(o) = params.as_object_mut() {
@@ -7664,7 +7683,7 @@ mod tests {
     #[test]
     fn neues_objekt_erbt_die_ebenenstaerke() {
         let mut app = app();
-        app.prefs.set_linienstaerke("Wände", 0.50);
+        app.prefs.set_linienstaerke("Architektur", 0.50);
         app.new_document();
         assert!(run(
             &mut app,
@@ -13782,15 +13801,14 @@ mod tests_massketten_farbe {
         );
     }
 
-    /// Die im Panel gewählte Ebene gilt auch für die Bemaßung — nicht die
-    /// Standardebene „Bemaßung“.
+    /// Eine **eigene** Ebene aus dem Panel gilt auch für die Bemaßung — nicht
+    /// die Standardebene „Beschriftung“ (T0039, T0202).
     #[test]
     fn masskette_landet_auf_der_gewaehlten_ebene() {
         let mut app = app();
         let ziel = app
-            .doc()
-            .layer_id_by_name("Text")
-            .expect("Ebene „Text“ fehlt");
+            .doc_mut()
+            .ensure_layer("Bauantrag", Color::BLACK);
         app.doc_mut().current_layer = ziel;
         let e = neu(
             &mut app,
@@ -13798,7 +13816,7 @@ mod tests_massketten_farbe {
             json!({"pts": [[0.0, 0.0], [2000.0, 0.0]], "line_pos": [0.0, -800.0]}),
         );
         assert_eq!(e.layer, ziel, "Ebene aus dem Panel");
-        assert_eq!(ebene_name(&app, &e), "Text");
+        assert_eq!(ebene_name(&app, &e), "Bauantrag");
     }
 
     /// Auch eine Farbe aus dem Panel bleibt stehen (vorher überschrieb die
@@ -13821,7 +13839,7 @@ mod tests_massketten_farbe {
     #[test]
     fn einzelmass_und_hoehenkote_nehmen_die_vorgaben() {
         let mut app = app();
-        let ziel = app.doc().layer_id_by_name("Schraffur").expect("Ebene fehlt");
+        let ziel = app.doc_mut().ensure_layer("Bauantrag", Color::BLACK);
         app.doc_mut().current_layer = ziel;
         app.ui.pending.color = Some(Color::GREEN);
         let mass = neu(
@@ -13845,7 +13863,7 @@ mod tests_massketten_farbe {
     #[test]
     fn klickweg_der_masskette_nimmt_die_vorgaben() {
         let mut app = app();
-        let ziel = app.doc().layer_id_by_name("Achsen").expect("Ebene fehlt");
+        let ziel = app.doc_mut().ensure_layer("Bauantrag", Color::BLACK);
         app.doc_mut().current_layer = ziel;
         app.ui.pending.color = Some(Color::PURPLE);
         app.start_tool("dim.chain");

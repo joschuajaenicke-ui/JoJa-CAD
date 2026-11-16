@@ -830,10 +830,9 @@ impl<'a> RenderCtx<'a> {
     }
 
     fn layer_ok(&self, layer: Id) -> bool {
-        if let Some(l) = self.doc.layer(layer) {
-            if !l.visible {
-                return false;
-            }
+        // T0202: ein ausgeblendeter Plan blendet seine Layer mit aus.
+        if !self.doc.layer_sichtbar(layer) {
+            return false;
         }
         match &self.layer_filter {
             Some(list) => list.contains(&layer),
@@ -1203,10 +1202,8 @@ pub fn visible_bbox(doc: &Document) -> BBox {
     // Der aktive Bearbeitungsraum: im Blockeditor ist das die Blockdefinition,
     // sonst die Zeichnung (T0137).
     for e in doc.ents() {
-        if let Some(l) = doc.layer(e.layer) {
-            if !l.visible {
-                continue;
-            }
+        if !doc.layer_sichtbar(e.layer) {
+            continue;
         }
         let mut dl = DisplayList::default();
         render_entity(&ctx, e, Affine::IDENTITY, &mut dl, 0);

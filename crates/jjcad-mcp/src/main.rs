@@ -776,7 +776,12 @@ fn handle(server: &mut Server, msg: &Value) -> Option<Value> {
                             "info": d.session.info(),
                             "layers": d.session.doc.layers.iter().map(|l| json!({
                                 "id": l.id, "name": l.name, "color": l.color.to_hex(),
-                                "visible": l.visible, "locked": l.locked
+                                "visible": l.visible, "locked": l.locked,
+                                "effektiv_sichtbar": d.session.doc.layer_sichtbar(l.id),
+                                "plan": l.plan
+                            })).collect::<Vec<_>>(),
+                            "plans": d.session.doc.plans.iter().map(|p| json!({
+                                "id": p.id, "name": p.name, "visible": p.visible, "locked": p.locked
                             })).collect::<Vec<_>>(),
                             "project": d.session.doc.project,
                         }))

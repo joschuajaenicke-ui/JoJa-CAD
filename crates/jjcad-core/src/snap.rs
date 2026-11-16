@@ -319,11 +319,7 @@ pub fn winkelhalbierende(doc: &Document, p: Vec2, ignore: &[Id]) -> Vec<Hilfslin
         if ignore.contains(&e.id) {
             continue;
         }
-        if let Some(l) = doc.layer(e.layer) {
-            if !l.visible || l.locked {
-                continue;
-            }
-        }
+        if doc.layer_gesperrt(e.layer) { continue; }
         let (a, b) = match &e.kind {
             EntityKind::Line { a, b } => (*a, *b),
             EntityKind::Wall { a, b, .. } => (*a, *b),
@@ -606,11 +602,7 @@ fn nahe_segmente(doc: &Document, cursor: Vec2, tol: f64, ignore: &[Id]) -> Vec<(
         if ignore.contains(&e.id) {
             continue;
         }
-        if let Some(l) = doc.layer(e.layer) {
-            if !l.visible || l.locked {
-                continue;
-            }
-        }
+        if doc.layer_gesperrt(e.layer) { continue; }
         let b = render::entity_bbox(doc, e);
         if !b.is_valid() || !b.expanded(tol * 2.0).intersects(&area) {
             continue;
@@ -812,11 +804,7 @@ pub fn tangent_treffer(
             if ignore.contains(&e.id) {
                 continue;
             }
-            if let Some(l) = doc.layer(e.layer) {
-                if !l.visible || l.locked {
-                    continue;
-                }
-            }
+            if doc.layer_gesperrt(e.layer) { continue; }
             let (c, r, bereich) = match &e.kind {
                 EntityKind::Circle { c, r } => (*c, *r, None),
                 EntityKind::Arc { c, r, a0, a1 } => (*c, *r, Some((*a0, *a1))),
@@ -880,11 +868,7 @@ pub fn tangent_treffer(
             if ignore.contains(&e.id) {
                 continue;
             }
-            if let Some(l) = doc.layer(e.layer) {
-                if !l.visible || l.locked {
-                    continue;
-                }
-            }
+            if doc.layer_gesperrt(e.layer) { continue; }
             let b = render::entity_bbox(doc, e);
             if !b.is_valid() || !b.expanded(tol * 2.0 + weit).intersects(&area) {
                 continue;
@@ -1072,11 +1056,7 @@ fn snap_candidates_alle(
         if ignore.contains(&e.id) {
             continue;
         }
-        if let Some(l) = doc.layer(e.layer) {
-            if !l.visible || l.locked {
-                continue;
-            }
-        }
+        if doc.layer_gesperrt(e.layer) { continue; }
         let b = render::entity_bbox(doc, e);
         if !b.is_valid() || !b.expanded(tol * 2.0).intersects(&area) {
             continue;
@@ -1746,14 +1726,12 @@ fn hit_test_opt(
     let mut innen: Option<Id> = None;
     // Treffer zählen im aktiven Raum — im Papierraum also Schriftfeld und Text
     for e in doc.ents().iter().rev() {
-        if let Some(l) = doc.layer(e.layer) {
-            if !l.visible || l.locked {
+        if doc.layer_gesperrt(e.layer) {
+            continue;
+        }
+        if let Some(f) = layer_filter {
+            if !f.contains(&e.layer) {
                 continue;
-            }
-            if let Some(f) = layer_filter {
-                if !f.contains(&e.layer) {
-                    continue;
-                }
             }
         }
         let b = render::entity_bbox(doc, e);
@@ -1953,11 +1931,7 @@ pub fn select_window(doc: &Document, a: Vec2, b: Vec2, crossing: bool) -> Vec<Id
     let rect = BBox::from_corners(a, b);
     let mut out = Vec::new();
     for e in doc.ents() {
-        if let Some(l) = doc.layer(e.layer) {
-            if !l.visible || l.locked {
-                continue;
-            }
-        }
+        if doc.layer_gesperrt(e.layer) { continue; }
         let bb = render::entity_bbox(doc, e);
         if !bb.is_valid() {
             continue;

@@ -341,6 +341,10 @@ pub const ACTIONS: &[ActionDef] = &[
 
     // Interne/fortgeschrittene Aktionen (MCP + Eigenschaften-Panel)
     act!("modify.set", "action.modify.set.label", Aendern, "properties", "", "action.modify.set.hint", false),
+    // Pläne (T0202): die oberste Gliederungsebene des Layer-Managers.
+    act!("plan.create", "action.plan.create.label", Ansicht, "layers", "", "action.plan.create.hint", false),
+    act!("plan.update", "action.plan.update.label", Ansicht, "layers", "", "action.plan.update.hint", false),
+    act!("plan.list", "action.plan.list.label", Ansicht, "layers", "", "action.plan.list.hint", false),
     act!("layer.create", "action.layer.create.label", Ansicht, "layers", "", "action.layer.create.hint", false),
     act!("layer.update", "action.layer.update.label", Ansicht, "layers", "", "action.layer.update.hint", false),
     act!("layer.delete", "action.layer.delete.label", Ansicht, "layers", "", "action.layer.delete.hint", false),
@@ -420,6 +424,8 @@ pub fn is_mutating(id: &str) -> bool {
             | "modify.area.split"
             | "text.format"
             | "modify.set"
+            | "plan.create"
+            | "plan.update"
             | "layer.create"
             | "layer.update"
             | "layer.delete"
@@ -703,14 +709,20 @@ fn require_pt(p: &Params, k: &str) -> Result<Vec2, String> {
 /// jeder einzelne Schritt `layer` mitschicken muss. Ein ausdrücklich
 /// übergebenes `layer` sticht die Vorgabe immer (siehe [`resolve_layer_in`]).
 ///
-/// Die freie Geometrie (Punkt, Linie, Polylinie, Spline, Rechteck, Kreis,
-/// Bogen, Ellipse) ist Hilfsgeometrie — sie landet auf „Hilfslinien“.
-fn standard_ebene(action: &str) -> Option<&'static str> {
+/// Seit T0202 gibt es nur noch die vier Layer eines Plans
+/// ([`crate::style::LAYER_DEFAULTS`]):
+///
+/// - **Zeichnung** — freie Geometrie und Flächen (Linien, Kreise, Bögen,
+///   Rechtecke, Splines, Füllflächen, Schraffuren, Bilder),
+/// - **Architektur** — Wände, Türen, Fenster, Treppen, Volumen,
+/// - **Beschriftung** — Texte, Bemaßung, Höhenkoten, Raumstempel,
+/// - **Blöcke** — eingesetzte Blockinstanzen.
+pub fn standard_ebene(action: &str) -> Option<&'static str> {
     Some(match action {
-        "draw.wall" => "Wände",
-        "draw.door" => "Türen",
-        "draw.window" => "Fenster",
-        "draw.stair" | "draw.stair.label" => "Treppen",
+        "draw.wall" | "draw.door" | "draw.window" | "draw.stair" | "draw.stair.label" => "Architektur",
+        // Ein Volumen ist ein Körper im Wandton (Füllung aus der Ebene) — es
+        // gehört deshalb zur Architektur, nicht zur Zeichnung.
+        "draw.volume" | "draw.volume.points" | "draw.volume.paint" => "Architektur",
         "dim.linear"
         | "dim.chain"
         | "dim.chain.h"
@@ -718,20 +730,24 @@ fn standard_ebene(action: &str) -> Option<&'static str> {
         | "dim.chain.d"
         | "dim.elevation.plan"
         | "dim.elevation.section"
-        | "dim.room" => "Bemaßung",
-        "draw.text" => "Text",
-        // Bilder bekommen eine eigene Ebene: sie liegen hinter allem und
-        // sollen sich gemeinsam ein-/ausschalten lassen.
-        "draw.image" => "Bilder",
-        "draw.fill" | "draw.fill.points" | "draw.fill.boundary" | "draw.fill.paint" | "draw.hatch" => {
-            "Schraffur"
-        }
-        // Ein Volumen ist ein Körper im Wandton (Füllung aus der Ebene) — es
-        // gehört deshalb zu den Wänden, nicht zur Schraffur.
-        "draw.volume" | "draw.volume.points" | "draw.volume.paint" => "Wände",
-        "block.insert" => "Möbel",
-        "draw.point" | "draw.line" | "draw.polyline" | "draw.spline" | "draw.rect"
-        | "draw.circle" | "draw.arc" | "draw.ellipse" => "Hilfslinien",
+        | "dim.room"
+        | "draw.text" => "Beschriftung",
+        "block.insert" => "Blöcke",
+        // Alles, was Fläche oder Linie ist, gehört in die Zeichnung.
+        "draw.image"
+        | "draw.fill"
+        | "draw.fill.points"
+        | "draw.fill.boundary"
+        | "draw.fill.paint"
+        | "draw.hatch"
+        | "draw.point"
+        | "draw.line"
+        | "draw.polyline"
+        | "draw.spline"
+        | "draw.rect"
+        | "draw.circle"
+        | "draw.arc"
+        | "draw.ellipse" => "Zeichnung",
         _ => return None,
     })
 }
@@ -798,10 +814,9 @@ fn resolve_layer_in(doc: &mut Document, p: &Params, standard: Option<&str>) -> I
         }
     }
     if let Some(name) = standard {
-        if let Some(id) = doc.layer_id_by_name(name) {
-            return id;
-        }
-        // Die Standardebene wird bei Bedarf angelegt.
+        // T0202: Jeder Plan hat seine eigenen vier Layer — die Standardebene
+        // wird deshalb im Plan des aktuellen Layers gesucht (und dort bei
+        // Bedarf angelegt), nicht irgendwo in der Zeichnung.
         return doc.ensure_layer(name, Color::BLACK);
     }
     doc.current_layer
@@ -3580,20 +3595,116 @@ pub fn execute(doc: &mut Document, id: &str, params: &Value) -> Result<Value, St
             Ok(json!({"ok": true, "changed": changed}))
         }
 
+        // ---------------- Pläne (T0202) ----------------
+        "plan.create" => {
+            // Ein neuer Plan ist eine leere Zeichenfläche mit ihren vier
+            // Standardlayern — genau wie „Plan 1“ in einer neuen Datei.
+            let name = p
+                .text("name")
+                .filter(|n| !n.trim().is_empty())
+                .unwrap_or_else(|| format!("Plan {}", doc.plans.len() + 1));
+            if doc.plans.iter().any(|x| x.name.eq_ignore_ascii_case(&name)) {
+                return Err(format!("Plan '{name}' existiert bereits"));
+            }
+            let id = doc.new_id();
+            doc.plans.push(Plan::new(id, &name));
+            doc.add_standard_layers(id);
+            Ok(json!({"ok": true, "id": id}))
+        }
+        "plan.update" => {
+            let target = p
+                .v
+                .get("plan")
+                .or_else(|| p.v.get("id"))
+                .cloned()
+                .ok_or_else(|| "Parameter 'plan' fehlt".to_string())?;
+            let pid = target
+                .as_u64()
+                .or_else(|| {
+                    target
+                        .as_str()
+                        .and_then(|s| doc.plans.iter().find(|x| x.name.eq_ignore_ascii_case(s)).map(|x| x.id))
+                })
+                .ok_or_else(|| "Plan nicht gefunden".to_string())?;
+            let Some(plan) = doc.plan_mut(pid) else {
+                return Err("Plan nicht gefunden".into());
+            };
+            if let Some(n) = p.text("name") {
+                if !n.trim().is_empty() {
+                    plan.name = n;
+                }
+            }
+            if let Some(v) = p.boolean("visible") {
+                plan.visible = v;
+            }
+            if let Some(v) = p.boolean("locked") {
+                plan.locked = v;
+            }
+            if let Some(v) = p.boolean("collapsed") {
+                plan.collapsed = v;
+            }
+            doc.modified = true;
+            Ok(json!({"ok": true}))
+        }
+        "plan.list" => {
+            let plans: Vec<Value> = doc
+                .plans
+                .iter()
+                .map(|pl| {
+                    let layer: Vec<Value> = doc
+                        .layers_of_plan(pl.id)
+                        .iter()
+                        .map(|l| {
+                            json!({
+                                "id": l.id, "name": l.name, "visible": l.visible,
+                                "locked": l.locked
+                            })
+                        })
+                        .collect();
+                    json!({
+                        "id": pl.id, "name": pl.name, "visible": pl.visible,
+                        "locked": pl.locked, "collapsed": pl.collapsed, "layers": layer
+                    })
+                })
+                .collect();
+            Ok(json!({"ok": true, "plans": plans, "current": doc.aktueller_plan()}))
+        }
+
         // ---------------- Layer ----------------
         "layer.create" => {
             let name = p.text("name").ok_or_else(|| "Parameter 'name' fehlt".to_string())?;
-            if doc.layer_by_name(&name).is_some() {
+            let plan = p
+                .id("plan")
+                .or_else(|| doc.aktueller_plan())
+                .unwrap_or(0);
+            if doc.plan(plan).is_none() {
+                return Err("Plan nicht gefunden".into());
+            }
+            // Ein Layername ist je Plan eindeutig (T0202), nicht global.
+            if doc
+                .layers
+                .iter()
+                .any(|l| l.plan == plan && l.name.eq_ignore_ascii_case(&name))
+            {
                 return Err(format!("Layer '{name}' existiert bereits"));
             }
             let id = doc.new_id();
             let mut l = Layer::new(id, &name, p.color("color").unwrap_or(Color::BLACK));
+            l.plan = plan;
             l.line_weight = p.num_or("lineweight", 0.25);
             l.line_type = p.linetype("linetype").unwrap_or(LineType::Solid);
             l.visible = p.boolean_or("visible", true);
             l.locked = p.boolean_or("locked", false);
-            doc.layers.push(l);
-            Ok(json!({"ok": true, "id": id}))
+            // Hinter den letzten Layer des Plans einsortieren, damit die
+            // Anzeige gruppiert bleibt.
+            let pos = doc
+                .layers
+                .iter()
+                .rposition(|x| x.plan == plan)
+                .map(|i| i + 1)
+                .unwrap_or(doc.layers.len());
+            doc.layers.insert(pos, l);
+            Ok(json!({"ok": true, "id": id, "plan": plan}))
         }
         "layer.update" => {
             let target = p
@@ -3627,6 +3738,14 @@ pub fn execute(doc: &mut Document, id: &str, params: &Value) -> Result<Value, St
                 }
                 if let Some(v) = p.boolean("printable") {
                     l.printable = v;
+                }
+            }
+            // Ein Layer kann in einen anderen Plan wandern (T0202).
+            if let Some(pid) = p.id("plan") {
+                if doc.plan(pid).is_some() {
+                    if let Some(l) = doc.layer_mut(lid) {
+                        l.plan = pid;
+                    }
                 }
             }
             Ok(json!({"ok": true}))
@@ -3677,6 +3796,8 @@ pub fn execute(doc: &mut Document, id: &str, params: &Value) -> Result<Value, St
                     json!({
                         "id": l.id, "name": l.name, "color": l.color.to_hex(),
                         "visible": l.visible, "locked": l.locked,
+                        "sichtbar": doc.layer_sichtbar(l.id), "gesperrt": doc.layer_gesperrt(l.id),
+                        "plan": l.plan,
                         "lineweight": l.line_weight, "linetype": l.line_type
                     })
                 })
@@ -4207,7 +4328,7 @@ pub fn execute(doc: &mut Document, id: &str, params: &Value) -> Result<Value, St
             let ids: Vec<Id> = doc
                 .ents()
                 .iter()
-                .filter(|e| doc.layer(e.layer).map(|l| l.visible && !l.locked).unwrap_or(true))
+                .filter(|e| !doc.layer_gesperrt(e.layer))
                 .map(|e| e.id)
                 .collect();
             Ok(json!({"ok": true, "ids": ids}))
@@ -4516,11 +4637,7 @@ fn cutter_segments(doc: &Document, exclude: &[Id]) -> Vec<(Seg, Id)> {
         if exclude.contains(&e.id) {
             continue;
         }
-        if let Some(l) = doc.layer(e.layer) {
-            if !l.visible {
-                continue;
-            }
-        }
+        if !doc.layer_sichtbar(e.layer) { continue; }
         for s in render::entity_segments(doc, e) {
             out.push((s, e.id));
         }

@@ -50,6 +50,24 @@ interpretiert dieselben Primitive — Wände, Türen, Bemaßung und Blöcke werd
 
 ## Wichtige Entscheidungen
 
+### Pläne und Layer (T0202)
+
+Der Layer-Manager hat **eine** Stufe: `Document::plans` (`Plan { id, name, visible,
+locked, collapsed }`) und `Layer::plan` — jeder Layer gehört zu genau einem Plan.
+Ein Layername ist damit **je Plan** eindeutig, nicht global; `Document::ensure_layer_in`
+legt ihn im angegebenen Plan an, `Document::ensure_layer` im Plan des aktuellen
+Layers. Die vier Standardlayer eines Plans stehen in `style::LAYER_DEFAULTS`
+(Zeichnung, Architektur, Beschriftung, Blöcke); `Document::add_standard_layers`
+legt sie für einen neuen Plan an, `actions::standard_ebene` ordnet jeder
+Zeichenaktion ihre Ebene zu.
+
+Sichtbarkeit und Sperre sind **wirksam** gerechnet, nicht kopiert:
+`Document::layer_sichtbar` und `Document::layer_gesperrt` verknüpfen Layer und
+Plan. Anzeige (`RenderCtx::layer_ok`), Fang (`snap`), Auswahl (`select.all`) und
+`Document::visible_layers` fragen diese beiden Funktionen — ein ausgeblendeter
+Plan blendet seine Layer aus, ohne deren eigene Schalter zu verändern. Ältere
+Dateien ohne Pläne bekommen beim Laden einen Plan (`persist::normalize_plaene`).
+
 ### Einheit Millimeter, überall
 
 Das Dokument rechnet intern in **mm**. `settings.input_unit` betrifft nur Eingabe

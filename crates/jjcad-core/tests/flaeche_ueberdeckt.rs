@@ -30,7 +30,7 @@ fn leinwand() -> Session {
         .expect("Eingabe in Metern");
     // Kräftige Strichstärke, damit das Pixelmaß trägt: bei 0,47 px/mm ist eine
     // 2-mm-Linie nur einen Pixel breit und wird weichgezeichnet (Vorgabe 0,18).
-    if let Some(l) = s.doc.layers.iter_mut().find(|l| l.name == "Wände") {
+    if let Some(l) = s.doc.layers.iter_mut().find(|l| l.name == "Zeichnung") {
         l.line_weight = 6.0;
     }
     s
@@ -51,7 +51,7 @@ fn flaeche(s: &mut Session, ecken: &[(f64, f64)], farbe: &str) -> Id {
                 "pattern": "solid",
                 "fill": farbe,
                 "border": true,
-                "layer": "Wände",
+                "layer": "Zeichnung",
             }),
         )
         .expect("Fläche");
@@ -62,7 +62,7 @@ fn linie(s: &mut Session, a: (f64, f64), b: (f64, f64)) -> Id {
     let r = s
         .execute(
             "draw.line",
-            &json!({"a": [a.0, a.1], "b": [b.0, b.1], "layer": "Wände"}),
+            &json!({"a": [a.0, a.1], "b": [b.0, b.1], "layer": "Zeichnung"}),
         )
         .expect("Linie");
     id_aus(&r)
