@@ -377,14 +377,13 @@ pub fn layers(app: &mut App, ui: &mut Ui) {
                                 Palette::panel_alt().gamma_multiply(0.6),
                             );
                         }
-                        // Farbfeld wie auf Papier: erst ein heller Grund, dann
-                        // die Ebenenfarbe. Ein reiner Farbpunkt verschwände bei
-                        // dunklen Ebenen (Zeichnung, Architektur) auf dunklem
-                        // Panel.
+                        // Farbpunkt in der Ebenenfarbe — dasselbe Bild wie vor
+                        // der Überarbeitung, nur um die Einrückung unter dem
+                        // Plan verschoben. Kein heller Grund: der wirkte als
+                        // breiter weißer Rand (T0202, Turn 5).
                         let dot = Pos2::new(rect.left() + 27.0, rect.center().y);
-                        p.circle_filled(dot, 5.5, Palette::papier());
-                        p.circle_filled(dot, 3.6, app::color_to_egui(l.color));
-                        p.circle_stroke(dot, 5.5, Stroke::new(1.0, Palette::text_faint()));
+                        p.circle_filled(dot, 5.0, app::color_to_egui(l.color));
+                        p.circle_stroke(dot, 5.0, Stroke::new(1.0, farbpunkt_ring(l.color)));
                         // Name
                         let max_w = rect.width() - 106.0;
                         let mut name = l.name.clone();
@@ -592,6 +591,20 @@ pub fn layers(app: &mut App, ui: &mut Ui) {
     }
     if loeschen {
         app.toast(tr("gui.panels.layer_geloescht"));
+    }
+}
+
+/// Ring um den Farbpunkt einer Layerzeile.
+///
+/// Wie vor der Überarbeitung ein dünner dunkler Ring — nur bei sehr dunklen
+/// Ebenenfarben („Zeichnung“, „Architektur“) hell, sonst verschwände der Punkt
+/// auf dem dunklen Panel. Der Ring ist eine Haarlinie; ein heller **Grund**
+/// unter dem Punkt wirkte als breiter weißer Rand.
+fn farbpunkt_ring(color: Color) -> Color32 {
+    if color.luminance() < 0.25 {
+        Palette::text_faint()
+    } else {
+        Color32::from_black_alpha(80)
     }
 }
 
@@ -2869,6 +2882,16 @@ mod tests_plaene {
                 }],
             );
         }
+    }
+
+    /// T0202 (Turn 5): Der Farbpunkt hat keinen hellen Grund mehr — nur einen
+    /// Haarring. Bei dunklen Ebenenfarben ist er hell, sonst dunkel.
+    #[test]
+    fn farbpunkt_ohne_hellen_grund() {
+        let dunkel = farbpunkt_ring(Color::rgb(35, 38, 44));
+        assert_eq!(dunkel, Palette::text_faint(), "dunkle Ebene: heller Ring");
+        let hell = farbpunkt_ring(Color::rgb(190, 70, 60));
+        assert_eq!(hell, Color32::from_black_alpha(80), "helle Ebene: dunkler Ring");
     }
 
     #[test]
