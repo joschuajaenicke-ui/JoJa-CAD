@@ -774,6 +774,78 @@ pub fn show(app: &mut App, ctx: &egui::Context) {
         }
     }
 
+    // R2.3: Konflikt um eine außerhalb von JoJa-CAD geänderte Zieldatei.
+    if let Some(k) = app.ui.konflikt.clone() {
+        dim_background(ctx);
+        let mut offen = true;
+        let mut datei_nehmen = false;
+        let mut stand_nehmen = false;
+        // Im Bild, in dem der Konflikt entsteht, lag der Klick noch woanders;
+        // die Knöpfe nehmen erst den nächsten an.
+        let bedienbar = !k.neu;
+        if let Some(kk) = app.ui.konflikt.as_mut() {
+            kk.neu = false;
+        }
+        let zeit = crate::app::kurz_zeit(&k.zeit);
+        modal_window(
+            ctx,
+            jjcad_core::i18n::tr("gui.dialogs.konflikt_titel"),
+            520.0,
+            &mut offen,
+        )
+        .show(ctx, |ui| {
+            ui.set_width(500.0);
+            ui.add(
+                egui::Label::new(
+                    egui::RichText::new(jjcad_core::i18n::t_args_owned(
+                        "gui.dialogs.konflikt_text",
+                        &[("name", k.name.clone()), ("zeit", zeit.clone())],
+                    ))
+                    .strong(),
+                )
+                .wrap(),
+            );
+            ui.add_space(6.0);
+            ui.add(
+                egui::Label::new(theme::dim(jjcad_core::i18n::tr(
+                    "gui.dialogs.konflikt_hinweis",
+                )))
+                .wrap(),
+            );
+            ui.add_space(10.0);
+            button_row(ui, |ui| {
+                if ui
+                    .add_enabled(
+                        bedienbar,
+                        egui::Button::new(jjcad_core::i18n::tr("gui.dialogs.konflikt_datei")),
+                    )
+                    .clicked()
+                {
+                    datei_nehmen = true;
+                }
+                if ui
+                    .add_enabled(
+                        bedienbar,
+                        egui::Button::new(jjcad_core::i18n::t_args_owned(
+                            "gui.dialogs.konflikt_stand",
+                            &[("zeit", zeit.clone())],
+                        )),
+                    )
+                    .clicked()
+                {
+                    stand_nehmen = true;
+                }
+            });
+        });
+        // Schließen über das X heißt: die Datei gilt. Sie ist der Stand auf
+        // der Platte, nicht die Erinnerung im Pool.
+        if stand_nehmen {
+            app.konflikt_entscheiden(true);
+        } else if datei_nehmen || !offen {
+            app.konflikt_entscheiden(false);
+        }
+    }
+
     // T0188: Rückfrage vor dem Aufräumen der Sicherungen ohne Zeichnung.
     if let Some(anzahl) = app.ui.sicherung_aufraeumen {
         dim_background(ctx);
@@ -1573,12 +1645,14 @@ fn groesse_text(bytes: u64) -> String {
 }
 
 /// Name einer Wahl für „Reicht zurück“ (Arbeitsstunden, T0129).
+/// Beschriftung der Wahl „Reicht zurück“ (SRR A.4: Tag, Woche, Monat,
+/// Quartal — länger als ein Quartal ist nicht sinnvoll).
 fn stunden_name(stunden: u32) -> String {
     match stunden {
+        8 => jjcad_core::i18n::tr("settings.stunden_tag").to_string(),
         40 => jjcad_core::i18n::tr("settings.stunden_woche").to_string(),
         160 => jjcad_core::i18n::tr("settings.stunden_monat").to_string(),
         480 => jjcad_core::i18n::tr("settings.stunden_quartal").to_string(),
-        1900 => jjcad_core::i18n::tr("settings.stunden_jahr").to_string(),
         _ => format!("{stunden} h"),
     }
 }
@@ -3400,10 +3474,33 @@ fn settings_body(app: &mut App, ui: &mut Ui) {
                                         )));
                                     },
                                 );
+                                // R3.5: verworfene Arbeit bleibt im Pool und
+                                // ist hier als Papierkorb sichtbar.
+                                zeile_mit(
+                                    &suche,
+                                    ui,
+                                    jjcad_core::i18n::tr("settings.sicherung_verworfen"),
+                                    &["Verworfen", "Papierkorb", "gelöscht"],
+                                    |ui| {
+                                        let anzahl = app.sicherung_pool().verworfene();
+                                        let schluessel = if anzahl == 1 {
+                                            "settings.sicherung_verworfen_wert_eins"
+                                        } else {
+                                            "settings.sicherung_verworfen_wert"
+                                        };
+                                        ui.label(theme::dim(&jjcad_core::i18n::t_args_owned(
+                                            schluessel,
+                                            &[("anzahl", anzahl.to_string())],
+                                        )))
+                                        .on_hover_text(jjcad_core::i18n::tr(
+                                            "settings.sicherung_verworfen_tip",
+                                        ));
+                                    },
+                                );
                                 // T0188: Reichen die Plätze nicht für alle Zeichnungen,
                                 // wächst der Pool über die eingestellte Zahl hinaus. Das
                                 // muss dastehen — sonst sucht man den Grund im Ordner.
-                                if dateien > einst.plaetze as usize {
+                                if einst.plaetze_effektiv(dateien) > einst.plaetze as usize {
                                     ui.horizontal(|ui| {
                                         ui.add_space(8.0);
                                         ui.add(

@@ -8,6 +8,20 @@ Abschnitte je Version: **Neu**, **Geändert**, **Behoben**. Ein Eintrag ist ein
 Satz aus Nutzersicht — was man jetzt anders machen kann, nicht welche Datei
 angefasst wurde.
 
+## [Unveröffentlicht]
+
+### Neu
+- Wurde eine Zeichnung außerhalb von JoJa-CAD verändert, während ungespeicherte Arbeit im Sicherungsordner liegt, fragt der Programmstart, welche Fassung weiterverwendet werden soll; bis zur Entscheidung gilt die Datei, überschrieben wird nichts.
+- Wird ein Reiter mit „Verwerfen“ geschlossen, bleibt der letzte Arbeitsstand als verworfener Stand im Sicherungsordner liegen; die Einstellungsseite zeigt die Zahl der verworfenen Stände an, zurückgeholt wird nichts.
+
+### Geändert
+- Die Sicherung bewahrt Stände nach dem Verfahren Geometric Retention auf: mit festem Platzvorrat, gleichbleibender Auflösung über die Nutzungsdauer und einem Alter in Zyklen statt in Kalenderzeit.
+- Neue Vorgaben sind 150 Plätze, eine Reichweite von einer Woche und ein Intervall von einer Minute; der Aufbewahrungszeitraum ist als Tag, Woche, Monat oder Quartal wählbar, die Wahl „Jahr“ entfällt.
+- Der neueste Stand einer Zeichnung bleibt bis zum Ende des Aufbewahrungszeitraums erhalten und verfällt danach mit dem Verlauf; der älteste Stand rückt nach, sobald der Verlauf tief genug ist.
+- Die Obergrenze des Sicherungsordners beträgt max(Plätze, 2 × Zeichnungen), sodass jede Zeichnung Platz für ihren neuesten und ihren ältesten Stand behält.
+- Die Anzeige „Abstand der Stände“ rechnet nach der Formel des neuen Verfahrens.
+- Das Speichern der Zieldatei ist atomar über eine temporäre Datei, fsync und rename; ein Absturz mitten im Speichern hinterlässt keine halbe Datei mehr.
+
 ## [0.2.2] — 2026-11-11
 
 Erste Fassung mit fertigen Paketen: **AppImage** für Linux. Der größte Sprung

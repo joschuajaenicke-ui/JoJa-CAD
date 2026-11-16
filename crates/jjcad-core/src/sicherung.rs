@@ -12,8 +12,14 @@
 //! ```
 //!
 //! Der **Pin** (neuester Stand je Dokument) ist abgeleitet, nicht gespeichert:
-//! so kann er nicht veralten. Die **Dichtezone** sind die letzten
-//! [`DICHTEZONE`] Zyklen; sie werden nie ausgedünnt.
+//! so kann er nicht veralten. Ebenso abgeleitet ist der **Anker** (ältester
+//! Stand je Dokument). Beide werden beim Ausdünnen nie angefasst; der Pin
+//! verfällt, sobald er `T` Zyklen alt ist (Anhang A.2, Schritt 2), der Anker
+//! nur, indem ein jüngerer Stand nachrückt.
+//!
+//! Aufbewahrt wird nach dem Verfahren „Geometric Retention“ (SRR, Anhang A):
+//! fester Platzvorrat, konstante relative Auflösung, Alter in Zyklen statt in
+//! Kalenderzeit. Vorgabe und Begründung: `docs/benutzer/SICHERUNG.md`.
 
 use crate::model::Document;
 use crate::persist;
@@ -28,18 +34,17 @@ use std::time::{SystemTime, UNIX_EPOCH};
 pub const MANIFEST_DATEI: &str = "manifest.json";
 /// Kennung des Manifests (Formatprüfung beim Laden).
 pub const MANIFEST_FORMAT: &str = "jjcad-sicherung";
-/// Fassung des Manifests.
-pub const MANIFEST_VERSION: u32 = 1;
-/// Dichtezone in Zyklen: die letzten `D` Stände liegen lückenlos vor.
-pub const DICHTEZONE: u64 = 10;
+/// Fassung des Manifests. 2 = Geometric Retention (SRR), Stand kann
+/// „verworfen“ sein; Fassung 1 kannte nur Fenster, Obergrenze und Dichtezone.
+pub const MANIFEST_VERSION: u32 = 2;
 /// Grenzen der Plätze im Pool (Einstellung „Plätze im Pool“).
 pub const PLAETZE_MIN: u32 = 30;
 pub const PLAETZE_MAX: u32 = 2000;
-pub const PLAETZE_VORGABE: u32 = 100;
-/// Vorgabe für „Reicht zurück“ in Arbeitsstunden (Quartal).
-pub const STUNDEN_VORGABE: u32 = 480;
-/// Die vier Wahlen für „Reicht zurück“ in Arbeitsstunden.
-pub const STUNDEN_WAHL: [u32; 4] = [40, 160, 480, 1900];
+pub const PLAETZE_VORGABE: u32 = 150;
+/// Vorgabe für „Reicht zurück“ in Arbeitsstunden (eine Woche).
+pub const STUNDEN_VORGABE: u32 = 40;
+/// Die vier Wahlen für „Reicht zurück“: Tag, Woche, Monat, Quartal.
+pub const STUNDEN_WAHL: [u32; 4] = [8, 40, 160, 480];
 /// Grenzen des Intervalls in Minuten.
 pub const INTERVALL_MIN: u32 = 1;
 pub const INTERVALL_MAX: u32 = 240;
@@ -67,6 +72,17 @@ pub struct Stand {
     /// Datei; nur ein Stand mit `gesichert = false` trägt ungespeicherte Arbeit.
     #[serde(default)]
     pub gesichert: bool,
+    /// R3.5: Der Benutzer hat diese Arbeit verworfen (Reiter ohne Speichern
+    /// geschlossen). Der Stand bleibt bis zu seinem Verfall liegen, wird aber
+    /// **nie** automatisch wiederhergestellt.
+    #[serde(default)]
+    pub verworfen: bool,
+    /// SHA-256 der **Zieldatei**, wie sie beim Anlegen des Standes aussah
+    /// (leer, wenn es keine Zieldatei gab). Damit erkennt R2.3, ob eine fremde
+    /// Anwendung die Datei seither verändert hat — der Inhalt des Standes
+    /// selbst taugt dafür nicht, weil er den Pfad im Kopf trägt.
+    #[serde(default)]
+    pub datei_hash: String,
     /// Dateiname im Pool (ohne Verzeichnis). Leer = aus `name` und `zeit`
     /// ableiten — so heißen Stände aus älteren Pools noch.
     #[serde(default)]
@@ -179,25 +195,70 @@ impl Einstellungen {
         ((self.stunden as u64) * 60 / intervall).max(1)
     }
 
-    /// Obergrenze des Pools: `max(N, Anzahl Dateien)`.
+    /// Obergrenze des Pools: `max(N, 2 · Anzahl Dateien)`.
+    ///
+    /// Der Faktor 2 lässt jeder Datei Pin **und** Anker — erst dann ist die
+    /// Kostenrechnung aus A.2 Schritt 4 überhaupt anwendbar, weil jeder
+    /// Kandidat zwei Nachbarn in derselben Datei hat.
     pub fn plaetze_effektiv(&self, dateien: usize) -> usize {
-        (self.plaetze as usize).max(dateien)
+        (self.plaetze as usize).max(2 * dateien)
     }
 
-    /// Abstand der Stände als relative Lücke (Formel §3 der Vorgabe).
+    /// Relative Lücke `g`, die eine Datei braucht, um mit `staende` Ständen
+    /// den Zeitraum `T` abzudecken (Anhang A.3, Umkehrung von
+    /// [`staende_fuer_abstand`]).
     ///
-    /// `1 − (D / T) ^ (1 / (Plätze − Dateien))`. Ohne Platz für Verlauf
-    /// (Plätze ≤ Dateien oder `T ≤ D`) ist der Abstand 1 (kein Verlauf).
+    /// Ohne Verlauf (weniger als drei Plätze je Datei) gibt es keine Lücke,
+    /// die eine Verteilung beschreibt — dann 1,0 (alles eine Lücke).
     pub fn abstand(&self, dateien: usize) -> f64 {
-        let t = self.zyklen() as f64;
-        let d = DICHTEZONE as f64;
-        let plaetze = self.plaetze_effektiv(dateien) as f64;
-        let frei = plaetze - dateien as f64;
-        if frei < 1.0 || t <= d {
-            return 1.0;
-        }
-        1.0 - (d / t).powf(1.0 / frei)
+        let dateien = dateien.max(1);
+        let je_datei = self.plaetze_effektiv(dateien) as f64 / dateien as f64;
+        abstand_fuer_staende(je_datei, self.zyklen() as f64)
     }
+}
+
+/// Stände, die eine Datei für den relativen Abstand `g` braucht (A.3):
+///
+/// ```text
+/// k(g) = 1/g + ln(g·T) / ln(1/(1−g))
+/// ```
+///
+/// Bis zum Alter `1/g` liegen alle Stände lückenlos, danach wächst der Abstand
+/// geometrisch. `T` geht nur logarithmisch ein.
+pub fn staende_fuer_abstand(g: f64, t: f64) -> f64 {
+    if !(0.0 < g && g < 1.0) || t <= 0.0 {
+        return f64::INFINITY;
+    }
+    let zaehler = (g * t).ln();
+    let nenner = (1.0 / (1.0 - g)).ln();
+    if zaehler <= 0.0 || nenner <= 0.0 {
+        // g·T ≤ 1: der Zeitraum ist mit einem Stand erreicht.
+        return 1.0 / g;
+    }
+    1.0 / g + zaehler / nenner
+}
+
+/// Umkehrung von [`staende_fuer_abstand`]: der Abstand `g`, den `staende`
+/// Stände bei der Tiefe `t` ergeben.
+///
+/// `k(g)` fällt streng monoton in `g`; die Lösung wird durch Bisektion
+/// gesucht (kein geschlossener Ausdruck). Liegt `staende` unter dem Bedarf von
+/// `g = 1` (also unter einem Stand), ist die Lücke 1,0.
+pub fn abstand_fuer_staende(staende: f64, t: f64) -> f64 {
+    if staende <= 1.0 || t <= 0.0 {
+        return 1.0;
+    }
+    let (mut lo, mut hi) = (1e-6_f64, 0.999_999_f64);
+    // 80 Halbierungen sind weit unter jeder Anzeigegenauigkeit.
+    for _ in 0..80 {
+        let mid = 0.5 * (lo + hi);
+        if staende_fuer_abstand(mid, t) > staende {
+            lo = mid;
+        } else {
+            hi = mid;
+        }
+    }
+    0.5 * (lo + hi)
 }
 
 /// Der Pool: Manifest und Verzeichnis.
@@ -339,7 +400,7 @@ impl Sicherung {
         doc: &mut Document,
         einst: &Einstellungen,
     ) -> Result<Option<Stand>, String> {
-        self.ablegen(doc, einst, false, false)
+        self.ablegen(doc, einst, false, false, false)
     }
 
     /// Stand, der dem Inhalt der **Zieldatei** entspricht (T0129): nach dem
@@ -353,7 +414,20 @@ impl Sicherung {
         doc: &mut Document,
         einst: &Einstellungen,
     ) -> Result<Option<Stand>, String> {
-        self.ablegen(doc, einst, true, true)
+        self.ablegen(doc, einst, true, true, false)
+    }
+
+    /// R3.5: Den letzten Zustand **verworfener** Arbeit als Stand ablegen.
+    ///
+    /// Der Stand wird als `verworfen` markiert: er bleibt bis zu seinem
+    /// Verfall im Pool und ist einzeln zu öffnen, aber weder das
+    /// Wiederherstellen noch das Öffnen wählen ihn von selbst.
+    pub fn sichern_verworfen(
+        &mut self,
+        doc: &mut Document,
+        einst: &Einstellungen,
+    ) -> Result<Option<Stand>, String> {
+        self.ablegen(doc, einst, true, false, true)
     }
 
     fn ablegen(
@@ -362,6 +436,7 @@ impl Sicherung {
         einst: &Einstellungen,
         erzwingen: bool,
         gesichert: bool,
+        verworfen: bool,
     ) -> Result<Option<Stand>, String> {
         if doc.id.trim().is_empty() {
             doc.id = neue_uuid();
@@ -378,11 +453,14 @@ impl Sicherung {
         let zyklus = self.manifest.zyklus + 1;
         // Ohne Verlauf bleibt je Dokument genau **ein** Stand: der bisherige
         // neueste wird ersetzt, nicht ergänzt. Vorhandene Stände werden dabei
-        // nicht gelöscht — die Einstellung verhindert nur neue.
-        if !einst.verlauf {
+        // nicht gelöscht — die Einstellung verhindert nur neue. Verworfene
+        // Arbeit (R3.5) wird nie ersetzt: ihr Stand ist der einzige Beleg.
+        if !einst.verlauf && !verworfen {
             if let Some(alt) = self.neuester(&doc.id).cloned() {
-                let _ = std::fs::remove_file(self.stand_pfad(&alt));
-                self.manifest.staende.retain(|s| s.zyklus != alt.zyklus);
+                if !alt.verworfen {
+                    let _ = std::fs::remove_file(self.stand_pfad(&alt));
+                    self.manifest.staende.retain(|s| s.zyklus != alt.zyklus);
+                }
             }
         }
         let mut stand = Stand {
@@ -393,6 +471,8 @@ impl Sicherung {
             groesse: json.len() as u64,
             zeit: zeitstempel(),
             gesichert,
+            verworfen,
+            datei_hash: zieldatei_hash(doc),
             datei_name: String::new(),
             pfad: doc.path.clone().unwrap_or_default(),
         };
@@ -487,8 +567,35 @@ impl Sicherung {
             .collect()
     }
 
+    /// R2.3: Wurde die Zieldatei seit dem letzten Stand außerhalb von
+    /// JoJa-CAD verändert?
+    ///
+    /// Maßstab ist der Hash der Zieldatei, den der jüngste Stand festgehalten
+    /// hat. Kennt er ihn nicht (Stand aus einer älteren Fassung, Datei damals
+    /// nicht vorhanden), ist die Frage nicht entscheidbar und die Antwort
+    /// `false`.
+    pub fn extern_geaendert(&self, datei: &str, pfad: &Path) -> bool {
+        let Ok(inhalt) = std::fs::read(pfad) else {
+            return false;
+        };
+        let letzter = self
+            .manifest
+            .staende
+            .iter()
+            .filter(|s| s.datei == datei)
+            .max_by_key(|s| s.zyklus);
+        match letzter {
+            Some(s) if !s.datei_hash.is_empty() => s.datei_hash != hash_hex(&inhalt),
+            _ => false,
+        }
+    }
+
+    /// Zahl der als „verworfen“ markierten Stände (R3.5) — der Papierkorb.
+    pub fn verworfene(&self) -> usize {
+        self.manifest.staende.iter().filter(|s| s.verworfen).count()
+    }
+
     /// Löscht die Stände mit diesen Zyklusnummern (Datei und Eintrag).
-    /// Liefert die Zahl der gelöschten Stände.
     pub fn entferne_zyklen(&mut self, zyklen: &[u64]) -> usize {
         let mut entfernt: Vec<Stand> = Vec::new();
         self.manifest.staende.retain(|s| {
@@ -550,6 +657,18 @@ impl Sicherung {
     }
 }
 
+/// Hash der Zieldatei eines Dokuments, wie sie gerade auf der Platte liegt.
+/// Leer, wenn das Dokument keinen Pfad hat oder die Datei nicht lesbar ist.
+fn zieldatei_hash(doc: &Document) -> String {
+    let Some(pfad) = doc.path.as_deref() else {
+        return String::new();
+    };
+    match std::fs::read(pfad) {
+        Ok(b) => hash_hex(&b),
+        Err(_) => String::new(),
+    }
+}
+
 /// Zyklusnummern der Pins: je Dokument der neueste Stand.
 fn pin_zyklen(staende: &[Stand]) -> Vec<u64> {
     let mut neueste: std::collections::BTreeMap<&str, u64> = std::collections::BTreeMap::new();
@@ -562,6 +681,18 @@ fn pin_zyklen(staende: &[Stand]) -> Vec<u64> {
     neueste.into_values().collect()
 }
 
+/// Zyklusnummern der Anker: je Dokument der älteste Stand (A.1).
+fn anker_zyklen(staende: &[Stand]) -> Vec<u64> {
+    let mut aelteste: std::collections::BTreeMap<&str, u64> = std::collections::BTreeMap::new();
+    for s in staende {
+        let e = aelteste.entry(s.datei.as_str()).or_insert(s.zyklus);
+        if s.zyklus < *e {
+            *e = s.zyklus;
+        }
+    }
+    aelteste.into_values().collect()
+}
+
 /// Zahl der verschiedenen Dokumente.
 fn anzahl_dateien(staende: &[Stand]) -> usize {
     let mut ids: Vec<&str> = staende.iter().map(|s| s.datei.as_str()).collect();
@@ -570,33 +701,42 @@ fn anzahl_dateien(staende: &[Stand]) -> usize {
     ids.len()
 }
 
-/// Kandidat mit den kleinsten Kosten (Regel 10.4). `None`, wenn kein Stand
-/// ausgedünnt werden darf (nur Pins und Dichtezone übrig).
-fn kuerzester_kandidat(staende: &[Stand], pins: &[u64], t: u64, n: u64) -> Option<usize> {
-    // Nach Alter aufsteigend: Index 0 = neuester Stand.
-    let mut liste: Vec<(usize, u64)> = staende
-        .iter()
-        .enumerate()
-        .map(|(i, s)| (i, n.saturating_sub(s.zyklus)))
-        .collect();
-    liste.sort_by_key(|(_, alter)| *alter);
-    let alter: Vec<u64> = liste.iter().map(|(_, a)| *a).collect();
-    let mut bestes: Option<(usize, f64)> = None;
-    for (pos, (idx, a)) in liste.iter().enumerate() {
-        if *a < DICHTEZONE || pins.contains(&staende[*idx].zyklus) {
+/// Kandidat mit den kleinsten Kosten (A.2 Schritt 4); `None`, wenn es keinen
+/// gibt (jede Datei hat nur noch Pin und Anker).
+///
+/// ```text
+/// Kosten(i) = (a_älter − a_jünger) / a_älter
+/// ```
+///
+/// `a_älter` und `a_jünger` sind die Alter der **beiden Nachbarn in derselben
+/// Datei**. Genommen wird der Stand, dessen Löschung die kleinste relative
+/// Lücke hinterlässt — dort fällt sie am wenigsten auf.
+fn kandidat_mit_kleinsten_kosten(staende: &[Stand], zyklus: u64) -> Option<u64> {
+    let mut je_datei: std::collections::BTreeMap<&str, Vec<&Stand>> =
+        std::collections::BTreeMap::new();
+    for s in staende {
+        je_datei.entry(s.datei.as_str()).or_default().push(s);
+    }
+    let mut bestes: Option<(u64, f64)> = None;
+    for (_, mut gruppe) in je_datei {
+        // Neueste zuerst: Index 0 = Pin, letzter = Anker; beide sind geschützt.
+        gruppe.sort_by(|a, b| b.zyklus.cmp(&a.zyklus));
+        if gruppe.len() < 3 {
             continue;
         }
-        let vorher = if pos == 0 { 0 } else { alter[pos - 1] };
-        let nachher = if pos + 1 >= alter.len() { t } else { alter[pos + 1] };
-        if nachher == 0 {
-            continue;
-        }
-        let kosten = (nachher as f64 - vorher as f64) / nachher as f64;
-        if bestes.map(|(_, k)| kosten < k).unwrap_or(true) {
-            bestes = Some((*idx, kosten));
+        for i in 1..gruppe.len() - 1 {
+            let a_juenger = zyklus.saturating_sub(gruppe[i - 1].zyklus) as f64;
+            let a_aelter = zyklus.saturating_sub(gruppe[i + 1].zyklus) as f64;
+            if a_aelter <= 0.0 {
+                continue;
+            }
+            let kosten = (a_aelter - a_juenger) / a_aelter;
+            if bestes.map(|(_, k)| kosten < k).unwrap_or(true) {
+                bestes = Some((gruppe[i].zyklus, kosten));
+            }
         }
     }
-    bestes.map(|(i, _)| i)
+    bestes.map(|(z, _)| z)
 }
 
 /// Welche Stände würde die Ausdünnung mit diesen Einstellungen löschen?
@@ -604,37 +744,60 @@ fn kuerzester_kandidat(staende: &[Stand], pins: &[u64], t: u64, n: u64) -> Optio
 /// Reine Rechnung auf einer Kopie — dieselbe Funktion entscheidet beim
 /// Ausdünnen **und** bei der Warnung vor neuen Einstellungen, damit die
 /// angezeigte Zahl nicht von der tatsächlichen abweichen kann.
+///
+/// Ablauf nach Anhang A.2: (2) Fenster je Datei, (3) Obergrenze
+/// `max(N, 2·Dateien)`, (4) Ausdünnen über die Kosten. Pin und Anker sind
+/// geschützt; gelöscht wird nur, nichts wird neu berechnet (5).
 fn zu_loeschen(staende: &[Stand], zyklus: u64, einst: &Einstellungen) -> Vec<u64> {
     let t = einst.zyklen();
     let mut rest: Vec<Stand> = staende.to_vec();
     let mut weg: Vec<u64> = Vec::new();
 
-    // 1. Fenster: nichts außer Pins älter als T.
-    let pins = pin_zyklen(&rest);
-    let mut behalten = Vec::with_capacity(rest.len());
-    for s in rest {
-        let alter = zyklus.saturating_sub(s.zyklus);
-        if pins.contains(&s.zyklus) || alter <= t {
-            behalten.push(s);
-        } else {
-            weg.push(s.zyklus);
+    // Schritt 2 — Fenster: Der älteste Stand einer Datei wird gelöscht,
+    // solange sein jüngerer Nachbar mindestens T alt ist (der Anker rückt
+    // nach). Ist der Pin selbst mindestens T alt, verfällt auch er und die
+    // Datei verlässt den Pool.
+    let mut ids: Vec<String> = rest.iter().map(|s| s.datei.clone()).collect();
+    ids.sort_unstable();
+    ids.dedup();
+    for id in ids {
+        let mut gruppe: Vec<Stand> = rest.iter().filter(|s| s.datei == id).cloned().collect();
+        gruppe.sort_by(|a, b| b.zyklus.cmp(&a.zyklus));
+        loop {
+            if gruppe.len() >= 2 {
+                let juenger = zyklus.saturating_sub(gruppe[gruppe.len() - 2].zyklus);
+                if juenger >= t {
+                    if let Some(s) = gruppe.pop() {
+                        weg.push(s.zyklus);
+                    }
+                    continue;
+                }
+            } else if gruppe.len() == 1 {
+                if zyklus.saturating_sub(gruppe[0].zyklus) >= t {
+                    if let Some(s) = gruppe.pop() {
+                        weg.push(s.zyklus);
+                    }
+                }
+            }
+            break;
         }
     }
-    rest = behalten;
+    rest.retain(|s| !weg.contains(&s.zyklus));
 
-    // 2. Verlauf aus: nichts löschen. Die Einstellung verhindert nur neue
-    //    Stände (§10.5) — vorhandene bleiben, bis Fenster und Obergrenze sie
-    //    ausdünnen. Ein Haken darf keine Sicherungen vernichten.
-
-    // 3. Obergrenze: ausdünnen, solange der Pool voll ist.
+    // Schritt 3 und 4 — Obergrenze, dann nach Kosten ausdünnen.
     let plaetze = einst.plaetze_effektiv(anzahl_dateien(&rest));
     while rest.len() > plaetze {
-        let pins = pin_zyklen(&rest);
-        let Some(i) = kuerzester_kandidat(&rest, &pins, t, zyklus) else {
+        let Some(z) = kandidat_mit_kleinsten_kosten(&rest, zyklus) else {
             break;
         };
-        weg.push(rest.remove(i).zyklus);
+        weg.push(z);
+        rest.retain(|s| s.zyklus != z);
     }
+
+    // Schritt 2 kann Zyklen doppelt melden, wenn zwei Regeln denselben Stand
+    // treffen; doppelte Nummern würden beim Zählen doppelt wirken.
+    weg.sort_unstable();
+    weg.dedup();
     weg
 }
 
@@ -654,7 +817,16 @@ pub fn atomar_schreiben(ziel: &Path, inhalt: &[u8]) -> Result<(), String> {
         f.sync_all()
             .map_err(|e| format!("{} nicht sicherbar: {e}", tmp.display()))?;
     }
-    std::fs::rename(&tmp, ziel).map_err(|e| {
+    // Windows ersetzt ein vorhandenes Ziel bei `rename` nicht; dort wird es
+    // vorher entfernt. Die Lücke zwischen Entfernen und Umbenennen ist der
+    // Preis — die temporäre Datei bleibt vollständig, ein Absturz dazwischen
+    // hinterlässt also eine lesbare Sicherung statt einer halben Datei.
+    let mut versuch = std::fs::rename(&tmp, ziel);
+    if versuch.is_err() && ziel.exists() {
+        let _ = std::fs::remove_file(ziel);
+        versuch = std::fs::rename(&tmp, ziel);
+    }
+    versuch.map_err(|e| {
         let _ = std::fs::remove_file(&tmp);
         format!("{} nicht ersetzbar: {e}", ziel.display())
     })?;
@@ -850,10 +1022,11 @@ mod tests {
         assert_eq!(pool.manifest().staende.len(), 1);
     }
 
-    /// §13.3: Jede Datei behält ihren Pin, auch nach dem Dreifachen von T.
+    /// R3.4 / A.3: Der neueste Stand (Pin) bleibt bis `T` erhalten; danach
+    /// verfällt er samt Verlauf, die Datei verlässt den Pool.
     #[test]
-    fn jede_datei_behaelt_einen_stand() {
-        let dir = test_dir("pin");
+    fn pin_bleibt_bis_t_und_verfaellt_danach() {
+        let dir = test_dir("pin-verfall");
         let mut pool = Sicherung::oeffnen(&dir);
         let einst = Einstellungen {
             plaetze: 30,
@@ -861,22 +1034,36 @@ mod tests {
             intervall_min: 1,
             ..Einstellungen::default()
         };
+        assert_eq!(einst.zyklen(), 60, "T bei 1 Stunde und 1 Minute");
         let mut alt = doc_mit("Alt", "aaaaaaaa-0000-4000-8000-000000000004");
         pool.sichern(&mut alt, &einst).unwrap();
         let mut neu = doc_mit("Neu", "aaaaaaaa-0000-4000-8000-000000000005");
-        for i in 0..200 {
+        for i in 0..30 {
             neu.name = format!("Neu {i}");
             pool.sichern(&mut neu, &einst).unwrap();
         }
         assert!(
             pool.neuester(&alt.id).is_some(),
-            "der Pin der ruhenden Datei ist verschwunden"
+            "vor T muss der Pin der ruhenden Datei bleiben"
+        );
+        for i in 0..60 {
+            neu.name = format!("Neu weiter {i}");
+            pool.sichern(&mut neu, &einst).unwrap();
+        }
+        assert!(
+            pool.neuester(&alt.id).is_none(),
+            "nach T muss der Pin verfallen (A.2 Schritt 2)"
+        );
+        assert!(
+            !pool.manifest().staende.iter().any(|s| s.datei == alt.id),
+            "die ruhende Datei belegt weiter Plätze"
         );
     }
 
-    /// §13.4: Kein Stand außer Pins ist älter als T.
+    /// A.2 Schritt 2: Außer Pin und Anker ist kein Stand älter als `T`; der
+    /// Anker rückt nach, sobald sein jüngerer Nachbar `T` erreicht hat.
     #[test]
-    fn kein_stand_ausser_pins_aelter_als_t() {
+    fn kein_stand_ausser_pin_und_anker_aelter_als_t() {
         let dir = test_dir("fenster");
         let mut pool = Sicherung::oeffnen(&dir);
         let einst = Einstellungen {
@@ -892,8 +1079,9 @@ mod tests {
         }
         let n = pool.manifest().zyklus;
         let pins = pin_zyklen(pool.manifest().staende.as_slice());
+        let anker = anker_zyklen(pool.manifest().staende.as_slice());
         for s in pool.manifest().staende.iter() {
-            if pins.contains(&s.zyklus) {
+            if pins.contains(&s.zyklus) || anker.contains(&s.zyklus) {
                 continue;
             }
             assert!(
@@ -903,6 +1091,15 @@ mod tests {
                 einst.zyklen()
             );
         }
+        // Der Anker ist der älteste Stand und mindestens T alt.
+        let aeltester = pool.manifest().staende.iter().map(|s| s.zyklus).min().unwrap();
+        assert_eq!(anker, vec![aeltester], "der Anker ist nicht der älteste Stand");
+        assert!(
+            n - aeltester >= einst.zyklen(),
+            "die Tiefe T wird nicht erreicht ({} < {})",
+            n - aeltester,
+            einst.zyklen()
+        );
     }
 
     /// §13.5: Ein abgebrochenes Schreiben hinterlässt keine halbe Datei und
@@ -938,13 +1135,14 @@ mod tests {
         assert_eq!(stand_dateien(&dir), wieder.manifest().staende.len());
     }
 
-    /// §13.6: Die letzten D Zyklen liegen lückenlos vor.
+    /// Solange der Pool Platz hat, wird nichts gelöscht — nahe am Jetzt
+    /// liegen die Stände damit lückenlos (A.2, Anmerkung zu den Kosten).
     #[test]
-    fn dichtezone_ist_lueckenlos() {
+    fn unterhalb_der_obergrenze_wird_nichts_geloescht() {
         let dir = test_dir("dichtezone");
         let mut pool = Sicherung::oeffnen(&dir);
         let einst = Einstellungen {
-            plaetze: 30,
+            plaetze: 150,
             ..Einstellungen::default()
         };
         let mut doc = doc_mit("Plan", "aaaaaaaa-0000-4000-8000-000000000008");
@@ -952,26 +1150,31 @@ mod tests {
             doc.name = format!("Plan {i}");
             pool.sichern(&mut doc, &einst).unwrap();
         }
+        assert_eq!(
+            pool.manifest().staende.len(),
+            100,
+            "unter der Obergrenze darf nichts verfallen"
+        );
         let n = pool.manifest().zyklus;
-        for k in 0..DICHTEZONE {
+        for k in 0..100 {
             let zyklus = n - k;
             assert!(
                 pool.manifest().staende.iter().any(|s| s.zyklus == zyklus),
-                "Zyklus {zyklus} fehlt in der Dichtezone"
+                "Zyklus {zyklus} fehlt"
             );
         }
     }
 
-    /// §13.7: Die Zahl der Stände hängt nicht an der Zahl der Dateien.
+    /// A.2 Schritt 3: Der Pool bleibt bei jeder Dateizahl an oder unter
+    /// `max(N, 2 · Dateien)` — er wächst nicht mit der Nutzungsdauer.
     #[test]
-    fn pool_groesse_haengt_nicht_an_der_dateizahl() {
+    fn pool_bleibt_unter_der_obergrenze() {
         let einst = Einstellungen {
             plaetze: 60,
             ..Einstellungen::default()
         };
         let mut zahlen = Vec::new();
-        // So viele Stände je Datei, dass der Pool in jedem Fall voll ist
-        // (5 × 12 = 60, 20 × 3 = 60, 50 × 2 = 100 → 60).
+        // So viele Stände je Datei, dass der Pool in jedem Fall voll ist.
         for (dateien, je) in [(5usize, 12usize), (20, 3), (50, 2)] {
             let dir = test_dir(&format!("dateien-{dateien}"));
             let mut pool = Sicherung::oeffnen(&dir);
@@ -985,10 +1188,16 @@ mod tests {
                     pool.sichern(&mut doc, &einst).unwrap();
                 }
             }
+            let grenze = einst.plaetze_effektiv(dateien);
+            assert!(
+                pool.manifest().staende.len() <= grenze,
+                "{dateien} Dateien: {} Stände über der Grenze {grenze}",
+                pool.manifest().staende.len()
+            );
             zahlen.push(pool.manifest().staende.len());
         }
-        assert_eq!(zahlen[0], zahlen[1], "5 gegen 20 Dateien: {zahlen:?}");
-        assert_eq!(zahlen[1], zahlen[2], "20 gegen 50 Dateien: {zahlen:?}");
+        assert!(zahlen[0] <= 60, "5 Dateien: {zahlen:?}");
+        assert!(zahlen[2] <= 100, "50 Dateien: {zahlen:?}");
     }
 
     /// §13.8: Die Zieldatei bleibt bei jedem Autosave unverändert.
@@ -1078,22 +1287,60 @@ mod tests {
         assert_eq!(std::fs::read(&ziel).unwrap(), vorher);
     }
 
-    /// Die Abstandsformel der Vorgabe: 10 Dateien, 100 Plätze, Quartal → 8,5 %.
+    /// Die Formel aus A.3 trifft die Tabelle der Vorgabe.
     #[test]
-    fn abstand_folgt_der_formel() {
-        let einst = Einstellungen::default();
-        assert_eq!(einst.zyklen(), 28_800);
-        let g = einst.abstand(10);
-        assert!((g - 0.085).abs() < 0.001, "Abstand war {g}");
-        // Intervall 5 min: gleiche Reichweite, ein Fünftel der Zyklen.
-        let langsam = Einstellungen {
-            intervall_min: 5,
-            ..Einstellungen::default()
-        };
-        assert_eq!(langsam.zyklen(), 5_760);
-        // Ohne Platz für Verlauf: kein Verlauf.
-        assert_eq!(einst.abstand(100), 1.0);
+    fn staende_fuer_abstand_folgt_der_tabelle() {
+        // Tabelle: Woche = 40 h = 2400 Zyklen bei I = 1 min.
+        let woche = 2400.0;
+        let faelle = [(0.10, 62.0), (0.15, 43.0), (0.20, 33.0)];
+        for (g, k) in faelle {
+            let ist = staende_fuer_abstand(g, woche);
+            assert!(
+                (ist - k).abs() <= 1.0,
+                "g = {g}: {ist} Stände statt {k}"
+            );
+        }
+        // Monat (160 h) und Quartal (480 h): T geht nur logarithmisch ein.
+        let monat = staende_fuer_abstand(0.15, 9600.0);
+        assert!((monat - 51.0).abs() <= 1.0, "Monat: {monat}");
+        let quartal = staende_fuer_abstand(0.15, 28800.0);
+        assert!((quartal - 58.0).abs() <= 1.0, "Quartal: {quartal}");
     }
+
+    /// Hin und zurück: zu `k` Ständen gehört ein Abstand, der wieder `k`
+    /// Stände braucht. Ohne diese Gegenprobe wäre die Bisektion blind.
+    #[test]
+    fn abstand_ist_die_umkehrung_von_staende_fuer_abstand() {
+        let t = 2400.0;
+        for k in [5.0, 12.0, 33.0, 62.0, 150.0] {
+            let g = abstand_fuer_staende(k, t);
+            let zurueck = staende_fuer_abstand(g, t);
+            assert!(
+                (zurueck - k).abs() < 0.05,
+                "k = {k}: g = {g} → {zurueck}"
+            );
+        }
+        // Ohne Platz für Verlauf gibt es keine Lücke zu verteilen.
+        assert_eq!(abstand_fuer_staende(1.0, t), 1.0);
+        assert_eq!(abstand_fuer_staende(0.5, t), 1.0);
+    }
+
+    /// Die Vorgaben der Vorgabe (SRR A.1/A.4): N = 150, T = eine Woche,
+    /// I = 1 Minute.
+    #[test]
+    fn vorgaben_entsprechen_der_spezifikation() {
+        let e = Einstellungen::default();
+        assert_eq!(e.plaetze, 150);
+        assert_eq!(e.stunden, 40);
+        assert_eq!(e.intervall_min, 1);
+        assert_eq!(e.zyklen(), 2400);
+        assert_eq!(
+            STUNDEN_WAHL,
+            [8, 40, 160, 480],
+            "Tag, Woche, Monat, Quartal"
+        );
+    }
+
 
     /// Die Kennung ist eindeutig und hat die Form einer UUID.
     #[test]
@@ -1218,6 +1465,8 @@ mod tests {
             groesse: 1,
             zeit: "2026-11-08T15:30:12".into(),
             gesichert: false,
+            verworfen: false,
+            datei_hash: String::new(),
             datei_name: String::new(),
             pfad: String::new(),
         };
@@ -1251,6 +1500,144 @@ mod tests {
         assert_eq!(pool.freier_name(basis), format!("{basis}-3.jjcad"));
     }
 
+    fn stand_mit(zyklus: u64, datei: &str) -> Stand {
+        Stand {
+            zyklus,
+            datei: datei.into(),
+            name: "Plan".into(),
+            hash: "h".into(),
+            groesse: 1,
+            zeit: String::new(),
+            gesichert: false,
+            verworfen: false,
+            datei_hash: String::new(),
+            datei_name: String::new(),
+            pfad: String::new(),
+        }
+    }
+
+    /// A.2 Schritt 4: Gelöscht wird der Kandidat mit der kleinsten relativen
+    /// Lücke. Bei gleichmäßigem Abstand liegt sie direkt hinter dem Anker —
+    /// nahe am Jetzt ist ein einzelner Zyklus schon eine große Lücke.
+    #[test]
+    fn kosten_waehlen_die_kleinste_relative_luecke() {
+        let einst = Einstellungen {
+            plaetze: 30,
+            ..Einstellungen::default()
+        };
+        let staende: Vec<Stand> = (1..=31).map(|z| stand_mit(z, "A")).collect();
+        let weg = zu_loeschen(&staende, 31, &einst);
+        assert_eq!(weg.len(), 1, "genau ein Stand muss wegfallen: {weg:?}");
+        assert_eq!(
+            weg[0], 2,
+            "hinter dem Anker ist die relative Lücke am kleinsten"
+        );
+    }
+
+    /// Pin und Anker überleben das Ausdünnen; alles dazwischen darf fallen.
+    #[test]
+    fn ausduennen_schuetzt_pin_und_anker() {
+        let dir = test_dir("pin-anker");
+        let mut pool = Sicherung::oeffnen(&dir);
+        let einst = Einstellungen {
+            plaetze: 30,
+            ..Einstellungen::default()
+        };
+        let mut doc = doc_mit("Plan", "aaaaaaaa-0000-4000-8000-000000000011");
+        for i in 0..120 {
+            doc.name = format!("Plan {i}");
+            pool.sichern(&mut doc, &einst).unwrap();
+        }
+        let staende = pool.staende_von(&doc.id);
+        assert_eq!(staende.len(), 30, "Obergrenze nicht eingehalten");
+        let neueste = staende.first().unwrap().zyklus;
+        let aelteste = staende.last().unwrap().zyklus;
+        assert_eq!(neueste, pool.manifest().zyklus, "der Pin fehlt");
+        assert_eq!(aelteste, 1, "der Anker fehlt");
+        // Zweimal ausdünnen ändert nichts mehr (Monotonie, A.2 Schritt 5).
+        assert_eq!(pool.ausduennen(&einst), 0);
+    }
+
+    /// A.2 Schritt 3: Die Obergrenze ist `max(N, 2 · Dateien)` — jede Datei
+    /// behält Platz für Pin und Anker.
+    #[test]
+    fn obergrenze_laesst_zwei_plaetze_je_datei() {
+        let dir = test_dir("zwei-je-datei");
+        let mut pool = Sicherung::oeffnen(&dir);
+        let einst = Einstellungen {
+            plaetze: 30,
+            ..Einstellungen::default()
+        };
+        for d in 0..20 {
+            let mut doc =
+                doc_mit(&format!("Plan {d}"), &format!("aaaaaaaa-0000-4000-8000-{d:012}"));
+            for i in 0..3 {
+                doc.name = format!("Plan {d} {i}");
+                pool.sichern(&mut doc, &einst).unwrap();
+            }
+        }
+        assert_eq!(einst.plaetze_effektiv(20), 40);
+        assert_eq!(pool.manifest().staende.len(), 40, "Pool nicht auf 2·F begrenzt");
+        for d in 0..20 {
+            let id = format!("aaaaaaaa-0000-4000-8000-{d:012}");
+            assert_eq!(
+                pool.staende_von(&id).len(),
+                2,
+                "Datei {d} hat nicht Pin und Anker"
+            );
+        }
+    }
+
+    /// R3.5: Verworfene Arbeit bleibt als Stand liegen, ist als `verworfen`
+    /// markiert und wird nicht vom Verlauf-aus-Modus ersetzt.
+    #[test]
+    fn verworfen_ist_markiert_und_bleibt_liegen() {
+        let dir = test_dir("verworfen");
+        let mut pool = Sicherung::oeffnen(&dir);
+        let einst = Einstellungen {
+            verlauf: false,
+            ..Einstellungen::default()
+        };
+        let mut doc = doc_mit("Plan", "aaaaaaaa-0000-4000-8000-000000000012");
+        doc.name = "verworfene Arbeit".into();
+        let stand = pool.sichern_verworfen(&mut doc, &einst).unwrap().unwrap();
+        assert!(stand.verworfen, "Stand nicht als verworfen markiert");
+        assert!(!stand.gesichert, "verworfene Arbeit ist kein Dateistand");
+        // Dateistand danach: der verworfene Stand bleibt, der Dateistand kommt
+        // dazu — auch bei abgeschaltetem Verlauf.
+        doc.name = "Datei".into();
+        pool.sichern_dateistand(&mut doc, &einst).unwrap();
+        let alle = pool.staende_von(&doc.id);
+        assert_eq!(alle.len(), 2, "der verworfene Stand wurde ersetzt");
+        assert_eq!(alle.iter().filter(|s| s.verworfen).count(), 1);
+        assert_eq!(pool.neuester(&doc.id).unwrap().name, "Datei");
+    }
+
+    /// R2.3: Eine extern geänderte Zieldatei wird erkannt.
+    #[test]
+    fn extern_geaenderte_datei_wird_erkannt() {
+        let dir = test_dir("extern");
+        let mut pool = Sicherung::oeffnen(&dir);
+        let einst = Einstellungen::default();
+        let ziel = dir.join("plan.jjcad");
+        let mut doc = doc_mit("Plan", "aaaaaaaa-0000-4000-8000-000000000013");
+        doc.path = Some(ziel.to_string_lossy().to_string());
+        persist::save_document(&mut doc, &ziel).unwrap();
+        pool.sichern_dateistand(&mut doc, &einst).unwrap();
+
+        assert!(
+            !pool.extern_geaendert(&doc.id, &ziel),
+            "unveränderte Datei darf keinen Konflikt melden"
+        );
+        // Fremder Schreiber: anderer Inhalt.
+        std::fs::write(&ziel, b"{\"format\":\"jjcad\",\"extern\":true}").unwrap();
+        assert!(
+            pool.extern_geaendert(&doc.id, &ziel),
+            "extern geänderte Datei nicht erkannt"
+        );
+    }
+
+
     /// Stände aus einem älteren Pool (`stand-<n>-<uuid>.jjcad`) werden beim
     /// Öffnen umbenannt statt als Waise verworfen.
     #[test]
@@ -1266,6 +1653,8 @@ mod tests {
             groesse: 2,
             zeit: "2026-11-08T15:30:12".into(),
             gesichert: false,
+            verworfen: false,
+            datei_hash: String::new(),
             datei_name: String::new(),
             pfad: String::new(),
         });
