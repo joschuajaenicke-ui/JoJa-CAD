@@ -963,6 +963,126 @@ pub fn show(app: &mut App, ctx: &egui::Context) {
         }
     }
 
+    // T0204: Block-Eigenschaften — Name und Gruppe eines Blocks.
+    //
+    // Die Gruppe ist die Überschrift in der Blockbibliothek; die Auswahl
+    // bietet die Gruppen derselben Herkunft (der Reiter, in dem der Block
+    // steht) und ein Feld für eine neue Gruppe. Beides schreibt `block.update`.
+    if let Some(mut wahl) = app.ui.block_eigenschaften.clone() {
+        dim_background(ctx);
+        let mut win_open = true;
+        let mut close = false;
+        let mut ok = false;
+        // Gruppen der Bibliothek = Kategorien der Blöcke **dieser Herkunft**.
+        let quelle = app.doc().block(&wahl.block).map(|b| b.source);
+        let mut gruppen: Vec<String> = app
+            .doc()
+            .blocks
+            .iter()
+            .filter(|b| quelle.map(|q| b.source == q).unwrap_or(true))
+            .map(|b| b.category.clone())
+            .filter(|c| !c.trim().is_empty())
+            .collect();
+        if !wahl.gruppe.trim().is_empty() {
+            gruppen.push(wahl.gruppe.clone());
+        }
+        gruppen.sort();
+        gruppen.dedup();
+        modal_window(
+            ctx,
+            jjcad_core::i18n::tr("gui.dialogs.block_eigenschaften"),
+            440.0,
+            &mut win_open,
+        )
+        // T0204: Das Fenster kommt aus der Blockbibliothek — es muss **über**
+        // dem offenen Inventar liegen (beide sind sonst `Order::Middle`).
+        .order(egui::Order::Foreground)
+        .show(ctx, |ui| {
+            ui.set_width(420.0);
+            ui.label(theme::dim(jjcad_core::i18n::tr(
+                "gui.dialogs.name_und_gruppe_des_blocks",
+            )));
+            ui.add_space(6.0);
+            widgets::field_row(ui, jjcad_core::i18n::tr("gui.dialogs.name"), |ui| {
+                let feld = ui.add_sized(
+                    [230.0, 24.0],
+                    egui::TextEdit::singleline(&mut wahl.name)
+                        .hint_text(jjcad_core::i18n::tr("gui.dialogs.blockname")),
+                );
+                feld.request_focus();
+            });
+            ui.add_space(4.0);
+            widgets::field_row(ui, jjcad_core::i18n::tr("gui.dialogs.gruppe"), |ui| {
+                let caption = if wahl.gruppe.trim().is_empty() {
+                    "—".to_string()
+                } else {
+                    wahl.gruppe.clone()
+                };
+                let gewaehlt = panels::dropdown(ui, "block_gruppe", &caption, None, |ui| {
+                    ui.set_min_width(200.0);
+                    let mut out: Option<String> = None;
+                    for g in &gruppen {
+                        if ui.selectable_label(g == &wahl.gruppe, g).clicked() {
+                            out = Some(g.clone());
+                        }
+                    }
+                    out
+                });
+                if let Some(v) = gewaehlt {
+                    wahl.gruppe = v;
+                }
+            });
+            ui.add_space(4.0);
+            // Neue Gruppe: der Name macht sie zur Gruppe, sobald der Block ihn
+            // trägt — eine leere Gruppe hätte in der Bibliothek nichts zu zeigen.
+            widgets::field_row(ui, jjcad_core::i18n::tr("gui.dialogs.neue_gruppe"), |ui| {
+                ui.horizontal(|ui| {
+                    ui.add_sized(
+                        [150.0, 24.0],
+                        egui::TextEdit::singleline(&mut wahl.neue_gruppe),
+                    );
+                    if ui
+                        .button(jjcad_core::i18n::tr("gui.dialogs.anlegen"))
+                        .clicked()
+                    {
+                        let neu = wahl.neue_gruppe.trim().to_string();
+                        if !neu.is_empty() {
+                            wahl.gruppe = neu;
+                            wahl.neue_gruppe.clear();
+                        }
+                    }
+                });
+            });
+            ui.add_space(10.0);
+            button_row(ui, |ui| {
+                if ui
+                    .button(jjcad_core::i18n::tr("gui.dialogs.uebernehmen"))
+                    .clicked()
+                {
+                    ok = true;
+                }
+                if ui
+                    .button(jjcad_core::i18n::tr("gui.dialogs.abbrechen"))
+                    .clicked()
+                {
+                    close = true;
+                }
+            });
+            if ui.input(|i| i.key_pressed(egui::Key::Enter)) {
+                ok = true;
+            }
+        });
+        if ok {
+            app.ui.block_eigenschaften = Some(wahl);
+            app.block_eigenschaften_uebernehmen();
+        } else if close || !win_open {
+            app.ui.block_eigenschaften = None;
+        } else {
+            // Zwischenstand halten — sonst ginge der getippte Name verloren.
+            app.ui.block_eigenschaften = Some(wahl);
+        }
+    }
+
     // Hotbar-Vorlage anlegen / umbenennen
     if let Some((idx, name)) = app.ui.preset_dialog.clone() {
         dim_background(ctx);

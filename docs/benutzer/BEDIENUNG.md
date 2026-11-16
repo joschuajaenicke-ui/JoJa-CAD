@@ -500,6 +500,19 @@ Reiter Benutzerblöcke; Löschen im Blockmanager entfernt auch die Datei. Das
 Verzeichnis ist die Wahrheit — es gibt keinen Index. Eine unlesbare Datei wird
 gemeldet und übersprungen, sie hält den Start nicht auf.
 
+**Name und Gruppe** eines Blocks (T0204): Ein Rechtsklick auf eine Blockkachel
+öffnet „Eigenschaften …“ — dort steht der Name des Blocks und seine **Gruppe**,
+die Überschrift, unter der er in der Bibliothek steht. Die Gruppen einer
+Bibliothek sind die Kategorien ihrer Blöcke; eine **neue Gruppe** entsteht über
+das Feld „Neue Gruppe“ und „Anlegen“, sobald der Block sie bekommt. Eine leere
+Gruppe hätte in der Bibliothek nichts zu zeigen und wird nicht geführt. Beim
+Umbenennen bleibt die Kennung gleich, die Datei `blocks/<name>.jjblk` zieht mit
+(die alte Datei verschwindet). Systemblöcke sind schreibgeschützt und haben
+keinen Eintrag; Projektblöcke werden nur in der Zeichnung umbenannt.
+
+Ein **ausgewählter Block** zeigt seine Eigenschaften im Panel: Blockname,
+Gruppe, Drehung und Faktor (Maßstab der Instanz).
+
 ## Nachweis für den Papier-Modus
 
 `cargo run -p jjcad-core --example lw_test -- /tmp/lw.jjcad` erzeugt zwei parallele Linien

@@ -296,6 +296,19 @@ Mit dem Nutzer abgestimmt — nicht „verbessern“:
   „Block aus Auswahl“ gibt es nur noch im Band Blöcke (Aktion `block.create`), nicht
   mehr im Inventar. Prüfweg `cargo test -p jjcad-gui tests_bloecke`; Prüfbilder
   `--demo "blockeditor,blockreiter:benutzer"` bzw. `…:projekt`.
+- **Eigenschaften von Blöcken (T0204)**: Name und **Gruppe** (`BlockDef::name`,
+  `BlockDef::category` — die Überschrift in der Blockbibliothek) ändert das Fenster
+  „Block-Eigenschaften“ aus dem Rechtsklickmenü einer Blockkachel (`App::oeffne_block_eigenschaften`,
+  `App::block_eigenschaften_uebernehmen` → Action `block.update` mit `name`/`category`).
+  Eine **neue Gruppe** ist keine eigene Liste: sie entsteht, indem ein Block sie trägt
+  (Feld „Neue Gruppe“ + „Anlegen“ sticht die Auswahl). Benutzerblöcke schreiben die
+  `.jjblk` mit (Umbenennen = neue Datei, alte weg), Systemblöcke haben keinen Eintrag.
+  Das Fenster liegt in `Order::Foreground` — sonst deckt das offene Inventar es zu (beide
+  sind `Order::Middle`, gemessen im Prüfbild). Ein **ausgewählter Block** zeigt im Panel
+  die Zeilen `Blockname` und `Gruppe` (aus der Definition) über Drehung und Faktor.
+  Prüfweg: `cargo test -p jjcad-gui tests_block_eigenschaften` und
+  `cargo test -p jjcad-core --test bloecke_datei gruppe_`; Prüfbilder `--demo blockpanel`
+  und `--demo blockeigenschaften`.
 - **Einfügen** (Block/Zwischenablage): Vorschau oben rechts am Zeiger, `R` dreht,
   `S` spiegelt, Klick bestätigt. Beim Einfügen aus der Zwischenablage entscheidet
   Einstellungen → Bedienung → „Drehpunkt" (`prefs.paste_pivot`), welcher Punkt am

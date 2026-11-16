@@ -181,6 +181,67 @@ fn umbenennen_benennt_datei_um_und_behaelt_die_kennung() {
     assert_eq!(geladen[0].name, "Neu");
 }
 
+/// T0204: Die Gruppe ist die Überschrift in der Blockbibliothek — sie wird
+/// wie der Name über `block.update` geändert und steht in der Blockdatei.
+#[test]
+fn gruppe_wird_geaendert_und_in_der_datei_geschrieben() {
+    let dir = test_dir("gruppe");
+    let mut s = neue_session();
+    let bid = block_anlegen(&mut s, "Tisch", &dir);
+
+    s.execute(
+        "block.update",
+        &json!({
+            "block": bid,
+            "name": "Tisch rund",
+            "category": "Möbel",
+            "dir": dir.to_string_lossy(),
+        }),
+    )
+    .unwrap();
+
+    assert!(!dir.join("tisch.jjblk").exists(), "alte Datei muss weg sein");
+    let datei = dir.join("tisch-rund.jjblk");
+    assert!(datei.is_file(), "neue Datei fehlt: {}", datei.display());
+    let roh: serde_json::Value =
+        serde_json::from_str(&std::fs::read_to_string(&datei).unwrap()).unwrap();
+    assert_eq!(roh["block"]["id"], bid.as_str(), "Kennung bleibt stabil");
+    assert_eq!(roh["block"]["name"], "Tisch rund");
+    assert_eq!(roh["block"]["category"], "Möbel");
+
+    // Beim nächsten Start kommt die Gruppe aus der Datei zurück.
+    let (geladen, meldungen) = jjcad_core::daten::lade_benutzerbloecke_mit_meldungen(&dir);
+    assert!(meldungen.is_empty(), "{meldungen:?}");
+    assert_eq!(geladen.len(), 1);
+    assert_eq!(geladen[0].name, "Tisch rund");
+    assert_eq!(geladen[0].category, "Möbel");
+}
+
+/// T0204: Auch ein Block ohne Datei (Projektblock, MCP ohne `dir`) lässt sich
+/// umbenennen und in eine andere Gruppe legen — die Änderung bleibt im
+/// Dokument, es wird nichts geschrieben.
+#[test]
+fn gruppe_ohne_verzeichnis_aendert_nur_das_dokument() {
+    let mut s = neue_session();
+    s.execute("draw.rect", &json!({"a": [0, 0], "b": [2, 1]}))
+        .unwrap();
+    let id = s.doc.entities.last().unwrap().id;
+    let antwort = s
+        .execute("block.create", &json!({"name": "Stuhl", "ids": [id]}))
+        .unwrap();
+    let bid = antwort["block"].as_str().unwrap().to_string();
+
+    s.execute(
+        "block.update",
+        &json!({"block": bid, "name": "Hocker", "category": "Sitzmöbel"}),
+    )
+    .unwrap();
+
+    let block = s.doc.blocks.iter().find(|b| b.id == bid).unwrap();
+    assert_eq!(block.name, "Hocker");
+    assert_eq!(block.category, "Sitzmöbel");
+}
+
 /// Ohne `dir` bleibt die Bibliothek unberührt — MCP-Aufrufe und Tests ohne
 /// Datenwurzel dürfen nichts in das Benutzerverzeichnis schreiben.
 #[test]

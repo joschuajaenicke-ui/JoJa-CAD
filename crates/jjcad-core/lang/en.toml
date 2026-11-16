@@ -847,6 +847,7 @@ cm = "Centimetre"
 m = "Metre"
 
 [gui.app]
+block_name_fehlt = "Block · name missing"
 datenordner_geoeffnet_x = "Data folder: {wert1}"
 sicherungsordner_geoeffnet_x = "Backup folder: {wert1}"
 datenordner_nicht_geoeffnet_x = "Folder not opened: {wert1}"
@@ -1215,6 +1216,12 @@ spalte_x_x_x_der_zeilen_hell_farbe_xxx = "  Column x = {x}: {wert1} % of rows br
 version_x_build_x_x = "Version {wert1} · build {wert2} ({wert3})\n"
 
 [gui.dialogs]
+block_eigenschaften = "Block properties"
+name_und_gruppe_des_blocks = "Name and group of the block. The group is the heading in the block library."
+neue_gruppe = "New group"
+name = "Name"
+gruppe = "Group"
+uebernehmen = "Apply"
 ansicht_verschieben = "Move view"
 dxf_zeichnung = "DXF drawing"
 gilt_fuer_die_schwenkfunktionen = "applies to moving the view (default W A S D) — it keeps moving while held when \"Continuous\" is selected"
@@ -1491,6 +1498,7 @@ x_auf_slot_x_gelegt = "{wert1} placed on slot {wert2}"
 x_slots = "{wert1} slots"
 
 [gui.inventory]
+eigenschaften = "Properties …"
 bearbeiten = "Edit …"
 abbrechen = "Cancel"
 alle_befehle_anklicken_zum_starten_auf_hotbar_ziehen_zum = "All commands – click to start, drag onto the hotbar to assign."
@@ -1658,6 +1666,8 @@ hoch = "portrait"
 keine = "none"
 
 [gui.props]
+blockname = "Block name"
+gruppe = "Group"
 ansichtsbereich_anpassen = "Adjust view area"
 ansichtsbereich_tip = "Wheel changes the scale · middle button pans the view"
 zeilenabstand = "Line spacing"
@@ -1689,7 +1699,6 @@ blatt = "Leaf"
 blatt_schlaegt_auf_seite_a_der_wand_auf = "Leaf opens onto side A of the wall"
 blatt_schlaegt_auf_seite_b_der_wand_auf = "Leaf opens onto side B of the wall"
 block = "Block"
-block_x = "Block: {name}"
 blocklage_entsteht_aus_dem_klick = "Block position comes from the click"
 bogen = "Arc"
 breite = "Width"
