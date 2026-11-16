@@ -285,7 +285,7 @@ pub fn punkt_im_bild(a: Vec2, b: Vec2, hoehe: f64, p: Vec2) -> bool {
 
 /// Abstand von `p` zum **Rand** des Bildes (0 auf einer Kante, im Inneren
 /// positiv). Nur der Rand ist anklickbar (T0201): über einem Bild lässt sich
-/// zeichnen, ohne daß es dabei hervortritt.
+/// zeichnen, ohne dass es dabei hervortritt.
 pub fn kantenabstand(a: Vec2, b: Vec2, hoehe: f64, p: Vec2) -> f64 {
     let e = ecken(a, b, hoehe);
     (0..4)
