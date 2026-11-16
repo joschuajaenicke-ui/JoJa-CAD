@@ -413,11 +413,12 @@ pub fn paint(painter: &Painter, rect: Rect, name: &str, color: Color32) {
         }
         // Parallele (T0200): zwei parallele Linien, dazwischen die
         // Abstandsmarke (zwei kurze Querstriche an den Enden).
+        // Parallele (T0200): **nur zwei** parallele Linien. Querstriche an den
+        // Enden ließen das Zeichen wie ein Rechteck aussehen (Rückmeldung des
+        // Nutzers) — die Ähnlichkeit der beiden Striche ist die Aussage.
         "parallel" => {
-            i.poly(&[(3.0, 18.0), (15.0, 6.0)], false);
-            i.poly(&[(9.0, 21.0), (21.0, 9.0)], false);
-            i.line(3.0, 18.0, 9.0, 21.0);
-            i.line(15.0, 6.0, 21.0, 9.0);
+            i.poly(&[(3.0, 16.0), (13.0, 6.0)], false);
+            i.poly(&[(11.0, 18.0), (21.0, 8.0)], false);
         }
         "trim" => {
             i.poly(&[(3.0, 18.0), (21.0, 6.0)], false);
@@ -1051,5 +1052,56 @@ mod tests_schnellauswahl_icon {
             quelle.contains("\"quickselect\" =>"),
             "Icon \"quickselect\" fehlt in `paint` — gezeichnet würde ein Kreis"
         );
+    }
+}
+
+#[cfg(test)]
+mod tests_parallel_icon {
+    //! T0200: Das Zeichen der Parallele sind **zwei** Linien. Querstriche an den
+    //! Enden ließen es wie ein Rechteck aussehen (Rückmeldung des Nutzers) —
+    //! die Ähnlichkeit der beiden Striche ist die Aussage des Zeichens.
+
+    use super::*;
+
+    fn strecken() -> Vec<[Pos2; 2]> {
+        let ctx = egui::Context::default();
+        let out = ctx.run(egui::RawInput::default(), |ctx| {
+            let layer = egui::LayerId::new(egui::Order::Background, egui::Id::new("icon"));
+            let p = Painter::new(ctx.clone(), layer, Rect::EVERYTHING);
+            let r = Rect::from_min_size(Pos2::ZERO, Vec2::splat(24.0));
+            paint(&p, r, "parallel", Color32::WHITE);
+        });
+        out.shapes
+            .iter()
+            .filter_map(|cs| match &cs.shape {
+                egui::Shape::LineSegment { points, .. } => Some(*points),
+                _ => None,
+            })
+            .collect()
+    }
+
+    #[test]
+    fn das_zeichen_sind_genau_zwei_linien() {
+        let s = strecken();
+        assert_eq!(s.len(), 2, "genau zwei Linien erwartet, gezeichnet: {s:?}");
+    }
+
+    #[test]
+    fn die_zwei_linien_sind_parallel_und_getrennt() {
+        let s = strecken();
+        assert_eq!(s.len(), 2, "zwei Linien erwartet: {s:?}");
+        let richtung = |q: [Pos2; 2]| (q[1] - q[0]).normalized();
+        let (a, b) = (richtung(s[0]), richtung(s[1]));
+        assert!(
+            (a.x * b.y - a.y * b.x).abs() < 1e-3,
+            "die Linien sind nicht parallel: {a:?} / {b:?}"
+        );
+        // Kein gemeinsamer Endpunkt: sonst entstünde wieder ein geschlossener
+        // Zug und das Zeichen sähe wie ein Rechteck aus.
+        for p in s[0] {
+            for q in s[1] {
+                assert!(p.distance(q) > 1.0, "die Enden berühren sich: {p:?} / {q:?}");
+            }
+        }
     }
 }
