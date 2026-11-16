@@ -418,11 +418,24 @@ pub fn gemein(
 
     // Layer
     zeile("layer");
+    // T0202: Bei mehreren Plänen tragen mehrere Layer denselben Namen —
+    // die Auswahl nennt deshalb den Plan mit.
+    let mehrere_plaene = app.doc().plans.len() > 1;
     let layer_items: Vec<(Id, String)> = app
         .doc()
         .layers
         .iter()
-        .map(|l| (l.id, l.name.clone()))
+        .map(|l| {
+            let name = if mehrere_plaene {
+                match app.doc().plan(l.plan) {
+                    Some(p) => format!("{} · {}", p.name, l.name),
+                    None => l.name.clone(),
+                }
+            } else {
+                l.name.clone()
+            };
+            (l.id, name)
+        })
         .collect();
     let mut new_layer = layer;
     widgets::field_row(ui, jjcad_core::i18n::tr("gui.props.layer"), |ui| {

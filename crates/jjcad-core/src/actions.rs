@@ -3759,6 +3759,13 @@ pub fn execute(doc: &mut Document, id: &str, params: &Value) -> Result<Value, St
             if doc.layers.len() <= 1 {
                 return Err("Der letzte Layer kann nicht gelöscht werden".into());
             }
+            // T0202: Auch der letzte Layer **eines Plans** bleibt stehen —
+            // ein Plan ohne Layer wäre keine Zeichenfläche mehr.
+            if let Some(plan) = doc.layer(lid).map(|l| l.plan) {
+                if doc.layers.iter().filter(|l| l.plan == plan).count() <= 1 {
+                    return Err("Der letzte Layer eines Plans kann nicht gelöscht werden".into());
+                }
+            }
             // Papierraum zählt mit: ein Layer, der nur im Schriftfeld benutzt
             // wird, ist nicht leer.
             let benutzt = doc.entities.iter().chain(
@@ -3769,9 +3776,14 @@ pub fn execute(doc: &mut Document, id: &str, params: &Value) -> Result<Value, St
             if benutzt.clone().any(|e| e.layer == lid) {
                 return Err("Layer enthält noch Objekte".into());
             }
+            let plan = doc.layer(lid).map(|l| l.plan);
             doc.layers.retain(|l| l.id != lid);
             if doc.current_layer == lid {
-                doc.current_layer = doc.layers[0].id;
+                // Im selben Plan bleiben, sonst im ersten Layer überhaupt.
+                doc.current_layer = plan
+                    .and_then(|p| doc.layers.iter().find(|l| l.plan == p).map(|l| l.id))
+                    .or_else(|| doc.layers.first().map(|l| l.id))
+                    .unwrap_or(doc.current_layer);
             }
             Ok(json!({"ok": true}))
         }

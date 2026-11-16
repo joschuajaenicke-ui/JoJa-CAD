@@ -2004,6 +2004,36 @@ impl App {
                     self.ui.layers_open = true;
                     self.ui.layers_collapsed = false;
                 }
+                // T0202: ein Plan ausgeblendet, einer gesperrt — Prüfbild der
+                // Plan-Schalter (Auge/Schloss in der Kopfzeile).
+                "planaus" | "plangesperrt" => {
+                    for name in ["Erdgeschoss", "Obergeschoss"] {
+                        let _ = self
+                            .session_mut()
+                            .execute("plan.create", &serde_json::json!({"name": name}));
+                    }
+                    let ids: Vec<u64> = self.doc().plans.iter().map(|p| p.id).collect();
+                    if let Some(p) = ids.get(1) {
+                        let _ = self.session_mut().execute(
+                            "plan.update",
+                            &serde_json::json!({"plan": p, "locked": true}),
+                        );
+                    }
+                    if let Some(p) = ids.get(2) {
+                        let _ = self.session_mut().execute(
+                            "plan.update",
+                            &serde_json::json!({"plan": p, "visible": false}),
+                        );
+                    }
+                    if let Some(p) = ids.first() {
+                        let _ = self.session_mut().execute(
+                            "plan.update",
+                            &serde_json::json!({"plan": p, "collapsed": true}),
+                        );
+                    }
+                    self.ui.layers_open = true;
+                    self.ui.layers_collapsed = false;
+                }
                 "vollbild" | "fullscreen" => self.ui.fullscreen = true,
                 "aendern" | "change" => self.ui.ribbon = RibbonTab::Aendern,
                 "inv" | "inventar" => self.ui.inventory_open = true,

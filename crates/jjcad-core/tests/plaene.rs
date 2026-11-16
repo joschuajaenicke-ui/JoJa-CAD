@@ -254,3 +254,20 @@ fn alte_datei_ohne_plaene_bekommt_einen_plan() {
     }
     assert_eq!(d.layers.len(), 2, "die Layer selbst bleiben");
 }
+
+#[test]
+fn letzter_layer_eines_plans_bleibt_stehen() {
+    let mut d = Document::new();
+    let plan = d.plans[0].id;
+    // Drei Layer löschen geht, der vierte nicht.
+    for name in ["Blöcke", "Beschriftung", "Architektur"] {
+        let id = d.layer_id_by_name(name).expect("Ebene");
+        actions::execute(&mut d, "layer.delete", &json!({"layer": id}))
+            .unwrap_or_else(|e| panic!("{name}: {e}"));
+    }
+    assert_eq!(d.layers_of_plan(plan).len(), 1);
+    let letzter = d.layer_id_by_name("Zeichnung").expect("Ebene");
+    let r = actions::execute(&mut d, "layer.delete", &json!({"layer": letzter}));
+    assert!(r.is_err(), "der letzte Layer eines Plans darf nicht weg");
+    assert_eq!(d.layers.len(), 1);
+}

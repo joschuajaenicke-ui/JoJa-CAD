@@ -61,7 +61,16 @@ pub fn layers(app: &mut App, ui: &mut Ui) {
                     .session_mut()
                     .execute("plan.create", &json!({"name": n}))
                 {
-                    Ok(_) => {
+                    Ok(res) => {
+                        // Im neuen Plan weiterzeichnen: seine „Zeichnung“ wird
+                        // die aktuelle Ebene (der Nutzer will dort arbeiten).
+                        if let Some(pid) = res.get("id").and_then(|v| v.as_u64()) {
+                            if let Some(l) = app.doc().layers_of_plan(pid).first().map(|l| l.id) {
+                                let _ = app
+                                    .session_mut()
+                                    .execute("layer.set_current", &json!({"layer": l}));
+                            }
+                        }
                         app.mark_changed();
                         app.toast(jjcad_core::i18n::t_args_owned(
                             "gui.panels.plan_x_angelegt",
