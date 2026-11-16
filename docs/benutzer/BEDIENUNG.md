@@ -444,15 +444,15 @@ Reiter erst nach dem Sichern ab.
 
 Ändert sich eine Zeichnung, legt die Sicherung im eingestellten Intervall einen
 **Stand** im Sicherungsordner ab und dünnt die Stände nach Alter aus: vorne
-dicht, hinten grob. Vorgabe: 1 Minute, 100 Plätze, Reichweite ein Quartal. Ohne
+dicht, hinten grob. Vorgabe: 1 Minute, 150 Plätze, Reichweite eine Woche. Ohne
 Änderung entsteht kein Stand.
 
 Einstellungen → **Sicherung**: *Verlauf aufbewahren* (aus = je Zeichnung nur der
 neueste Stand, vorhandene Sicherungen bleiben), *Anzahl der Sicherungen*
-(30–2000), *Aufbewahrungszeitraum* (Woche bis Jahr), *Sicherung alle* (1–240
-Minuten), dazu der mittlere Abstand der Stände, der belegte Speicher und der
-Hinweis zum Netzlaufwerk. Jede Zeile erklärt sich über ihr Infozeichen; über der
-Tabelle steht das Konzept in drei Sätzen.
+(30–2000), *Aufbewahrungszeitraum* (Tag, Woche, Monat, Quartal), *Sicherung alle*
+(1–240 Minuten), dazu der mittlere Abstand der Stände, der belegte Speicher, die
+Zahl der verworfenen Stände und der Hinweis zum Netzlaufwerk. Jede Zeile erklärt
+sich über ihr Infozeichen.
 
 Die Einstellungen dieser Seite werden erst wirksam, wenn „Übernehmen“ gedrückt
 wird; „Verwerfen“ stellt die gespeicherten Werte wieder her. Solange nichts

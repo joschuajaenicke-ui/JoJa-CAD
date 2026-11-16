@@ -396,7 +396,10 @@ pub fn save_document(doc: &mut Document, path: &Path) -> Result<(), String> {
         }
     }
     let json = to_json(doc)?;
-    std::fs::write(path, json).map_err(|e| format!("Schreiben fehlgeschlagen: {e}"))?;
+    // R1.3: atomar schreiben — temporäre Datei, fsync, rename. Ein Absturz
+    // mitten im Speichern hinterlässt so nie eine halbe Zieldatei.
+    crate::sicherung::atomar_schreiben(path, json.as_bytes())
+        .map_err(|e| format!("Schreiben fehlgeschlagen: {e}"))?;
     doc.path = Some(path.to_string_lossy().to_string());
     doc.name = path
         .file_stem()

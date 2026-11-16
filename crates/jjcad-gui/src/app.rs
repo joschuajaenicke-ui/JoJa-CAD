@@ -1007,6 +1007,27 @@ pub struct PdfImportWahl {
     /// Als ein Element (Block) einfügen statt als Einzelobjekte
     pub als_block: bool,
 }
+/// R2.3: Die Zieldatei wurde außerhalb von JoJa-CAD geändert, während im
+/// Sicherungsordner ungespeicherte Arbeit liegt. Der Benutzer entscheidet,
+/// welche Fassung weiterverwendet wird.
+#[derive(Clone, Debug)]
+pub struct Konflikt {
+    /// Reiter, den die Entscheidung betrifft.
+    pub reiter: usize,
+    /// Dokumentkennung (Schlüssel des Standes im Pool).
+    pub datei: String,
+    /// Zieldatei auf der Platte.
+    pub pfad: String,
+    /// Zyklus und Zeit des Standes mit der ungespeicherten Arbeit.
+    pub zyklus: u64,
+    pub zeit: String,
+    /// Anzeigename der Zeichnung.
+    pub name: String,
+    /// Im Bild, in dem der Konflikt entsteht, darf kein Knopf den Klick
+    /// annehmen — sonst entscheidet der Klick, der den Start auslöst, mit.
+    pub neu: bool,
+}
+
 
 pub struct UiState {
     pub pending: PendingStyle,
@@ -1173,6 +1194,9 @@ pub struct UiState {
     /// sein Knopf den Klick nicht annehmen — sonst bestätigt der Klick, der die
     /// Warnung auslöst, sie gleich mit (Prüfbild: 10 Stände ohne Rückfrage weg).
     pub sicherung_warnung_neu: bool,
+    /// R2.3: Meldung, dass die Zieldatei außerhalb von JoJa-CAD geändert wurde
+    /// und der Benutzer entscheiden muss, welche Fassung weiterverwendet wird.
+    pub konflikt: Option<Konflikt>,
     /// Höhe des zuletzt gezeichneten Ribbon-Inhalts (Regressionstest t_92b03440)
     pub last_ribbon_content_h: f32,
     /// Lage der Hotbar-Slots in der unteren Leiste (Regressionstest T0043:
@@ -1343,6 +1367,7 @@ impl Default for UiState {
             sicherung_aufraeumen: None,
             sicherung_warnung_neu: false,
             sicherung_aufraeumen_neu: false,
+            konflikt: None,
             last_ribbon_content_h: 0.0,
             last_slots: None,
             last_blattrechtecke: None,
@@ -1967,6 +1992,19 @@ impl App {
                         .iter()
                         .position(|k| k.key == "settings.category_sicherung")
                         .unwrap_or(0);
+                }
+                // R2.3: Prüfzustand des Konfliktdialogs. Der Reiter trägt keine
+                // echten Dateien — geprüft wird die Darstellung des Fensters.
+                "konflikt" => {
+                    self.ui.konflikt = Some(Konflikt {
+                        reiter: self.active,
+                        datei: self.doc().id.clone(),
+                        pfad: self.doc().path.clone().unwrap_or_default(),
+                        zyklus: 42,
+                        zeit: "2026-11-16T09:15:00".into(),
+                        name: self.doc().name.clone(),
+                        neu: false,
+                    });
                 }
                 // T0202: Layer-Manager mit Plänen — zwei weitere Pläne, der
                 // erste eingeklappt, im zweiten eine Wand.
@@ -5252,18 +5290,16 @@ impl App {
         ));
     }
 
-    /// „Verwerfen“ beim Schließen eines Reiters: die ungespeicherten Änderungen
-    /// sollen nicht wiederkehren. Der neueste Stand wird deshalb auf den Inhalt
-    /// der Zieldatei gesetzt — beim nächsten Öffnen gilt die Datei.
+    /// „Verwerfen“ beim Schließen eines Reiters (R3.5): der letzte Zustand der
+    /// verworfenen Arbeit wird als Stand abgelegt und als `verworfen`
+    /// markiert; danach wird der Dateiinhalt als neuester Stand geschrieben,
+    /// damit beim nächsten Öffnen die Datei gilt.
     pub fn verwerfen_stand(&mut self, idx: usize) {
         let Some(pfad) = self
             .tabs
             .get(idx)
             .and_then(|t| t.session.doc.path.clone())
         else {
-            return;
-        };
-        let Ok(mut doc) = jjcad_core::persist::load_document(Path::new(&pfad)) else {
             return;
         };
         let einst = self.prefs.sicherung_einstellungen();
@@ -5273,9 +5309,60 @@ impl App {
             ));
         }
         if let Some(mut pool) = self.sicherung.take() {
-            let _ = pool.sichern_dateistand(&mut doc, &einst);
+            // Zuerst die verworfene Arbeit sichern — der Reiter trägt sie noch.
+            if let Some(tab) = self.tabs.get_mut(idx) {
+                let _ = pool.sichern_verworfen(&mut tab.session.doc, &einst);
+            }
+            if let Ok(mut doc) = jjcad_core::persist::load_document(Path::new(&pfad)) {
+                let _ = pool.sichern_dateistand(&mut doc, &einst);
+            }
             self.sicherung = Some(pool);
         }
+    }
+
+    /// R2.3: Entscheidung im Konflikt um eine extern geänderte Zieldatei.
+    ///
+    /// `stand_nehmen = true`: die ungespeicherte Arbeit aus dem
+    /// Sicherungsordner gewinnt, der Reiter gilt als geändert. `false`: die
+    /// Datei gewinnt, ihr Inhalt wird als neuester Stand festgehalten — sonst
+    /// fragte der nächste Start erneut.
+    pub fn konflikt_entscheiden(&mut self, stand_nehmen: bool) {
+        let Some(k) = self.ui.konflikt.take() else {
+            return;
+        };
+        let einst = self.prefs.sicherung_einstellungen();
+        if self.sicherung.is_none() {
+            self.sicherung = Some(jjcad_core::sicherung::Sicherung::oeffnen(
+                &self.prefs.sicherungen_dir(),
+            ));
+        }
+        let Some(mut pool) = self.sicherung.take() else {
+            return;
+        };
+        if stand_nehmen {
+            let stand = pool
+                .staende_von(&k.datei)
+                .into_iter()
+                .find(|s| s.zyklus == k.zyklus)
+                .cloned();
+            if let Some(stand) = stand {
+                if let Ok(mut doc) = pool.laden(&stand) {
+                    doc.path = Some(k.pfad.clone());
+                    doc.name = k.name.clone();
+                    doc.modified = true;
+                    doc.merke_standard_breiten(&self.prefs.layer_weights);
+                    if let Some(tab) = self.tabs.get_mut(k.reiter) {
+                        tab.session = Session::with_doc(doc);
+                        tab.tab = TabKind::Model;
+                        tab.rev += 1;
+                        tab.cache = None;
+                    }
+                }
+            }
+        } else if let Ok(mut doc) = jjcad_core::persist::load_document(Path::new(&k.pfad)) {
+            let _ = pool.sichern_dateistand(&mut doc, &einst);
+        }
+        self.sicherung = Some(pool);
     }
 
     pub fn load_document(&mut self, path: &PathBuf) {
@@ -5300,12 +5387,17 @@ impl App {
                     let pool = self.sicherung_pool();
                     ungespeicherter_stand(pool, &id, path)
                 };
-                if let Some(mut doc) = stand_doc {
-                    doc.path = Some(path.to_string_lossy().to_string());
-                    doc.name = s.doc.name.clone();
-                    doc.modified = true;
-                    doc.merke_standard_breiten(&self.prefs.layer_weights);
-                    s = Session::with_doc(doc);
+                if let Some((_stand, mut doc)) = stand_doc {
+                    // R2.3: Wurde die Datei inzwischen von außen geändert, gilt
+                    // der Klick des Benutzers auf **diese** Datei; der Stand
+                    // bleibt im Pool liegen und ist dort einzeln zu öffnen.
+                    if !self.sicherung_pool().extern_geaendert(&id, path) {
+                        doc.path = Some(path.to_string_lossy().to_string());
+                        doc.name = s.doc.name.clone();
+                        doc.modified = true;
+                        doc.merke_standard_breiten(&self.prefs.layer_weights);
+                        s = Session::with_doc(doc);
+                    }
                 }
                 let tab = DocTab {
                     session: s,
@@ -5785,18 +5877,37 @@ impl App {
             //    vielleicht liegt der Stand im Sicherungspool.
             let mut geladen: Option<Session> = None;
             let mut datei_grund: Option<String> = None;
+            let mut konflikt: Option<Konflikt> = None;
             if let Some(pfad) = r.datei.as_deref() {
                 match Session::open(Path::new(pfad)) {
                     Ok(mut sess) => {
                         // T0129: Gibt es einen neueren Stand mit **ungespeicherter**
                         // Arbeit, gilt sein Inhalt — der Pfad bleibt, damit
                         // „Speichern“ die Zieldatei überschreibt.
-                        if let Some(mut doc) = ungespeicherter_stand(&pool, &r.id, Path::new(pfad)) {
-                            doc.path = Some(pfad.to_string());
-                            doc.name = sess.doc.name.clone();
-                            doc.modified = true;
-                            doc.merke_standard_breiten(&self.prefs.layer_weights);
-                            sess = Session::with_doc(doc);
+                        if let Some((stand, mut doc)) =
+                            ungespeicherter_stand(&pool, &r.id, Path::new(pfad))
+                        {
+                            // R2.3: Hat eine fremde Anwendung die Zieldatei
+                            // seither verändert, entscheidet der Benutzer.
+                            // Bis dahin gilt die Datei — nichts wird
+                            // überschrieben.
+                            if pool.extern_geaendert(&r.id, Path::new(pfad)) {
+                                konflikt = Some(Konflikt {
+                                    reiter: tabs.len(),
+                                    datei: r.id.clone(),
+                                    pfad: pfad.to_string(),
+                                    zyklus: stand.zyklus,
+                                    zeit: stand.zeit.clone(),
+                                    name: r.name.clone(),
+                                    neu: true,
+                                });
+                            } else {
+                                doc.path = Some(pfad.to_string());
+                                doc.name = sess.doc.name.clone();
+                                doc.modified = true;
+                                doc.merke_standard_breiten(&self.prefs.layer_weights);
+                                sess = Session::with_doc(doc);
+                            }
                         }
                         sess.doc.merke_standard_breiten(&self.prefs.layer_weights);
                         geladen = Some(sess);
@@ -5868,6 +5979,11 @@ impl App {
                 }
             }
             tabs.push(tab);
+            // R2.3: Konflikte werden nacheinander gefragt; der Reiterindex
+            // stimmt, weil die Reiter in Sitzungsreihenfolge entstehen.
+            if konflikt.is_some() && self.ui.konflikt.is_none() {
+                self.ui.konflikt = konflikt;
+            }
         }
 
         if !tabs.is_empty() {
@@ -10104,25 +10220,31 @@ impl eframe::App for App {
     }
 }
 
-/// Inhalt des neuesten Standes, wenn er **ungespeicherte Arbeit** trägt und
-/// vom Inhalt der Zieldatei abweicht (T0129).
+/// Neuester Stand mit **ungespeicherter Arbeit**, wenn er vom Inhalt der
+/// Zieldatei abweicht (T0129).
 ///
 /// `None` heißt: die Datei gilt. Ein Stand, der der Datei entspricht
 /// (`gesichert`, geschrieben nach dem Speichern oder nach „Verwerfen“), zählt
-/// nie — sonst käme verworfene Arbeit zurück.
+/// nie — sonst käme verworfene Arbeit zurück. Ebenso zählt ein als
+/// `verworfen` markierter Stand nie (R3.5): er bleibt auffindbar, kehrt aber
+/// nicht von selbst zurück.
 fn ungespeicherter_stand(
     pool: &jjcad_core::sicherung::Sicherung,
     id: &str,
     pfad: &Path,
-) -> Option<jjcad_core::model::Document> {
+) -> Option<(jjcad_core::sicherung::Stand, jjcad_core::model::Document)> {
     let stand = pool.neuester(id)?.clone();
+    if stand.gesichert || stand.verworfen {
+        return None;
+    }
     let datei_hash = std::fs::read(pfad)
         .ok()
         .map(|b| jjcad_core::sicherung::hash_hex(&b));
-    if stand.gesichert || datei_hash.as_deref() == Some(stand.hash.as_str()) {
+    if datei_hash.as_deref() == Some(stand.hash.as_str()) {
         return None;
     }
-    pool.laden(&stand).ok()
+    let doc = pool.laden(&stand).ok()?;
+    Some((stand, doc))
 }
 
 /// Zeitstempel eines Standes für die Anzeige: `2026-11-08T12:33:29` →
@@ -16148,6 +16270,165 @@ mod tests_sicherung {
             "verworfene Änderung ist zurückgekommen"
         );
         assert!(!neu.doc().modified, "die Datei gilt als gespeichert");
+    }
+
+    /// R3.5 / P4: Verworfene Arbeit liegt danach als markierter Stand vor.
+    #[test]
+    fn verworfene_arbeit_liegt_als_stand_vor() {
+        let dir = test_dir("verworfen-stand");
+        let mut app = app_mit_pool(&dir);
+        let ziel = dir.join("Plan.jjcad");
+        linie(&mut app, 0.0);
+        app.session_mut().save(&ziel).expect("Zieldatei");
+
+        linie(&mut app, 500.0);
+        app.sicherung_jetzt();
+        app.verwerfen_stand(0);
+
+        let pool = app.sicherung.as_ref().expect("Pool");
+        assert_eq!(pool.verworfene(), 1, "der verworfene Stand fehlt");
+        let verworfen = pool
+            .staende_neueste()
+            .into_iter()
+            .find(|s| s.verworfen)
+            .cloned()
+            .expect("verworfener Stand");
+        let inhalt = pool.laden(&verworfen).expect("Stand lesbar");
+        assert_eq!(
+            inhalt.entities.len(),
+            2,
+            "der Stand trägt nicht die verworfene Arbeit"
+        );
+        // Der neueste Stand ist trotzdem der Dateiinhalt.
+        assert_eq!(pool.neuester(&app.doc().id).unwrap().name, "Plan");
+        assert!(!pool.neuester(&app.doc().id).unwrap().verworfen);
+    }
+
+    /// R2.3 / P3: Ändert eine fremde Anwendung die Zieldatei, entscheidet der
+    /// Benutzer — bis dahin gilt die Datei, und es wird nichts überschrieben.
+    #[test]
+    fn extern_geaenderte_datei_fragt_nach() {
+        let dir = test_dir("konflikt");
+        let mut app = app_mit_pool(&dir);
+        let ziel = dir.join("Plan.jjcad");
+        linie(&mut app, 0.0);
+        app.session_mut().save(&ziel).expect("Zieldatei");
+        app.sicherung_dateistand(0);
+
+        linie(&mut app, 500.0);
+        app.sicherung_jetzt();
+        let s = app.sitzung_sammeln();
+        let vorher = std::fs::read(&ziel).unwrap();
+
+        // Fremder Schreiber: eine dritte Linie direkt in der Datei.
+        let mut fremd = jjcad_core::persist::load_document(&ziel).expect("Datei lesbar");
+        let ebene = fremd.layers.first().expect("Ebene").id;
+        fremd.entities.push(jjcad_core::model::Entity::line(
+            9_999,
+            ebene,
+            jjcad_core::geom::Vec2::new(900.0, 0.0),
+            jjcad_core::geom::Vec2::new(900.0, 1000.0),
+        ));
+        jjcad_core::persist::save_document(&mut fremd, &ziel).expect("fremdes Speichern");
+        let fremd_inhalt = std::fs::read(&ziel).unwrap();
+        assert_ne!(vorher, fremd_inhalt, "Vorbereitung: Datei geändert");
+
+        let mut neu = App::with_ctx(egui::Context::default());
+        let meldungen = neu.sitzung_wiederherstellen(&s, &dir);
+        assert!(meldungen.is_empty(), "keine Meldung erwartet: {meldungen:?}");
+        let konflikt = neu.ui.konflikt.clone().expect("kein Konflikt gemeldet");
+        assert!(konflikt.neu, "die Knöpfe dürfen nicht im ersten Bild greifen");
+        assert_eq!(
+            neu.doc().entities.len(),
+            2,
+            "bis zur Entscheidung muss die Datei gelten"
+        );
+        assert_eq!(
+            std::fs::read(&ziel).unwrap(),
+            fremd_inhalt,
+            "die Datei wurde beim Start angefasst"
+        );
+    }
+
+    /// R2.3: Entscheidung für den Stand holt die ungespeicherte Arbeit zurück;
+    /// die Datei bleibt, wie sie ist.
+    #[test]
+    fn entscheidung_fuer_den_stand_holt_die_arbeit_zurueck() {
+        let dir = test_dir("konflikt-stand");
+        let mut app = app_mit_pool(&dir);
+        let ziel = dir.join("Plan.jjcad");
+        linie(&mut app, 0.0);
+        app.session_mut().save(&ziel).expect("Zieldatei");
+        app.sicherung_dateistand(0);
+        linie(&mut app, 500.0);
+        app.sicherung_jetzt();
+        let s = app.sitzung_sammeln();
+
+        let mut fremd = jjcad_core::persist::load_document(&ziel).expect("Datei lesbar");
+        let ebene = fremd.layers.first().expect("Ebene").id;
+        fremd.entities.push(jjcad_core::model::Entity::line(
+            9_999,
+            ebene,
+            jjcad_core::geom::Vec2::new(900.0, 0.0),
+            jjcad_core::geom::Vec2::new(900.0, 1000.0),
+        ));
+        jjcad_core::persist::save_document(&mut fremd, &ziel).expect("fremdes Speichern");
+        let fremd_inhalt = std::fs::read(&ziel).unwrap();
+
+        let mut neu = App::with_ctx(egui::Context::default());
+        neu.sicherung = Some(jjcad_core::sicherung::Sicherung::oeffnen(&dir));
+        neu.sitzung_wiederherstellen(&s, &dir);
+        assert!(neu.ui.konflikt.is_some(), "kein Konflikt gemeldet");
+        neu.konflikt_entscheiden(true);
+
+        assert_eq!(neu.doc().entities.len(), 2, "der Stand fehlt");
+        assert!(neu.doc().modified, "der Stand gilt als ungespeichert");
+        assert_eq!(
+            std::fs::read(&ziel).unwrap(),
+            fremd_inhalt,
+            "die Entscheidung hat die Datei überschrieben"
+        );
+        assert!(neu.ui.konflikt.is_none(), "der Konflikt bleibt stehen");
+    }
+
+    /// R2.3: Entscheidung für die Datei — der nächste Start fragt nicht wieder.
+    #[test]
+    fn entscheidung_fuer_die_datei_fragt_nicht_wieder() {
+        let dir = test_dir("konflikt-datei");
+        let mut app = app_mit_pool(&dir);
+        let ziel = dir.join("Plan.jjcad");
+        linie(&mut app, 0.0);
+        app.session_mut().save(&ziel).expect("Zieldatei");
+        app.sicherung_dateistand(0);
+        linie(&mut app, 500.0);
+        app.sicherung_jetzt();
+        let s = app.sitzung_sammeln();
+
+        let mut fremd = jjcad_core::persist::load_document(&ziel).expect("Datei lesbar");
+        let ebene = fremd.layers.first().expect("Ebene").id;
+        fremd.entities.push(jjcad_core::model::Entity::line(
+            9_999,
+            ebene,
+            jjcad_core::geom::Vec2::new(900.0, 0.0),
+            jjcad_core::geom::Vec2::new(900.0, 1000.0),
+        ));
+        jjcad_core::persist::save_document(&mut fremd, &ziel).expect("fremdes Speichern");
+
+        let mut neu = App::with_ctx(egui::Context::default());
+        neu.sicherung = Some(jjcad_core::sicherung::Sicherung::oeffnen(&dir));
+        neu.sitzung_wiederherstellen(&s, &dir);
+        neu.konflikt_entscheiden(false);
+        assert!(neu.ui.konflikt.is_none());
+        assert_eq!(neu.doc().entities.len(), 2, "die Datei muss gelten");
+
+        // Zweiter Start: kein Konflikt mehr, die Datei gilt.
+        let mut dritter = App::with_ctx(egui::Context::default());
+        dritter.sitzung_wiederherstellen(&s, &dir);
+        assert!(
+            dritter.ui.konflikt.is_none(),
+            "der Konflikt kommt beim nächsten Start wieder"
+        );
+        assert_eq!(dritter.doc().entities.len(), 2);
     }
 
     /// T0188: Die Seite arbeitet auf einem Entwurf — ohne „Übernehmen“ ändert
