@@ -366,6 +366,18 @@ label = "Change properties"
 hint = "Create a new layer"
 label = "Create layer"
 
+[action.plan.create]
+hint = "Create a new plan with the four standard layers"
+label = "Create plan"
+
+[action.plan.list]
+hint = "List plans with their layers"
+label = "List plans"
+
+[action.plan.update]
+hint = "Rename, hide or lock a plan"
+label = "Change plan"
+
 [action.layer.update]
 hint = "Rename/change a layer"
 label = "Edit layer"
@@ -1508,6 +1520,17 @@ werkzeug_waehlen_dann_leeren_lagerplatz_anklicken = "Choose a tool, then click a
 x_bloecke_x_funktionen_x_objekte = "{wert1} blocks · {wert2} functions · {wert3} objects"
 
 [gui.panels]
+layer_hinzufuegen = "Add layer"
+plan_ausblenden = "Hide plan"
+plan_einblenden = "Show plan"
+plan_entsperren = "Unlock plan"
+plan_hinzufuegen = "Add plan"
+plan_name = "Plan name"
+plan_n = "Plan {n}"
+plan_sperren = "Lock plan"
+plan_tip = "Plan with {n} layers · clicking draws in this plan"
+plan_x_angelegt = "Plan '{n}' created"
+x_plaene_x_layer_aktuell_x = "{plaene} plans · {layer} layers · current: {aktuell}"
 abbrechen = "Cancel"
 adresse = "Address"
 aktueller_layer = "Current layer"
@@ -1617,7 +1640,6 @@ viele_treppen = "Stairs"
 viele_tueren = "Doors"
 viele_waende = "Walls"
 vorgaben_anzeigen = "Show defaults"
-x_layer_aktuell_x = "{wert1} layers · current: {wert2}"
 x_x_mm_x = "{wert1} · {wert2} mm · {wert3}"
 x_x_objekte_layer_x = "{wert1} · {wert2} objects · layer {wert3}"
 x_x_x_mm_x = "{wert1} · {wert2} × {wert3} mm · {wert4}"

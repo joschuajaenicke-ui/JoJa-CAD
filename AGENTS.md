@@ -191,6 +191,26 @@ Mit dem Nutzer abgestimmt — nicht „verbessern“:
   Standardebenen) übernommen. Bestehende Ebenen werden nie umgeschrieben. Das
   Eigenschaften-Panel zeigt als „beim Erzeugen die Vorgabe“ dieselbe Zahl
   (`Document::standard_breite`), nicht mehr 0,35.
+- **Pläne und Layer (T0202)**: Der Layer-Manager hat **eine** Stufe — Layer
+  gehören zu einem Plan (`Document::plans`, `Layer::plan`). Pläne sortieren
+  Geschosse, Schnitte, Ansichten und Lagepläne; sie lassen sich einklappen,
+  ausblenden und sperren. Eine neue Datei hat **einen** Plan („Plan 1“), und
+  **jeder** Plan besteht aus den vier Layern `style::LAYER_DEFAULTS`:
+  **Zeichnung** (Linien, Kreise, Bögen, Flächen, Schraffuren, Bilder),
+  **Architektur** (Wände, Türen, Fenster, Treppen, Volumen), **Beschriftung**
+  (Texte, Bemaßung, Höhenkoten, Raumstempel), **Blöcke** (Blockinstanzen).
+  `actions::standard_ebene` ist die eine Zuordnung; `Document::add_standard_layers`
+  legt die vier Layer eines Plans an (`plan.create` ebenso). Ein Layername ist
+  **je Plan** eindeutig — `Document::ensure_layer_in` legt im genannten Plan an,
+  `ensure_layer` im Plan des aktuellen Layers. Sichtbarkeit und Sperre werden
+  **wirksam** gerechnet (`Document::layer_sichtbar`/`layer_gesperrt`), nie auf die
+  Layer kopiert: Anzeige (`RenderCtx::layer_ok`), Fang, `select.all` und
+  `visible_layers` fragen diese beiden Funktionen. Alte Dateien bekommen beim
+  Laden einen Plan (`persist::normalize_plaene`). Werkzeuge legen ihr Objekt auf
+  die Ebene ihres Typs; eine **eigene** Ebene (nicht eine der vier) sticht das
+  (`canvas::run_mit_meldung`) — wer sie im Panel wählt, zeichnet bewusst dorthin.
+  Prüfweg: `cargo test -p jjcad-core --test plaene` und
+  `cargo test -p jjcad-gui tests_plaene`.
 - **Raster-Chip** schaltet Anzeige *und* Rasterfang gemeinsam.
 - **Raster (T0144)**: Die Kategorie „Raster“ im Einstellungsfenster führt **alle**
   Rastereinstellungen (Weite, Anzeigen, Fang, Art, Modus, Erzwingen). Art und Weite

@@ -15,11 +15,45 @@ pub const FORMAT_VERSION: u32 = 2;
 // Layer
 // ---------------------------------------------------------------------------
 
+/// Ein **Plan** ist die oberste und einzige Gliederungsebene des Layer-Managers
+/// (T0202): Layers gehören zu genau einem Plan. Pläne sortieren Geschosse,
+/// Schnitte, Ansichten und Lagepläne; sie lassen sich als Ganzes ausblenden,
+/// sperren und im Panel einklappen.
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
+pub struct Plan {
+    pub id: Id,
+    pub name: String,
+    #[serde(default = "default_true")]
+    pub visible: bool,
+    #[serde(default)]
+    pub locked: bool,
+    /// Einklappzustand im Layer-Manager — reine Anzeige, gehört aber zum
+    /// Dokument, damit er beim Speichern erhalten bleibt.
+    #[serde(default)]
+    pub collapsed: bool,
+}
+
+impl Plan {
+    pub fn new(id: Id, name: &str) -> Self {
+        Self {
+            id,
+            name: name.to_string(),
+            visible: true,
+            locked: false,
+            collapsed: false,
+        }
+    }
+}
+
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
 pub struct Layer {
     pub id: Id,
     pub name: String,
     pub color: Color,
+    /// Plan, zu dem der Layer gehört (T0202). Ältere Dateien tragen 0; beim
+    /// Laden ordnet `persist::normalize_plaene` sie dem ersten Plan zu.
+    #[serde(default)]
+    pub plan: Id,
     /// Linienstärke in mm (Plot).
     #[serde(default = "default_lw")]
     pub line_weight: f64,
@@ -46,6 +80,7 @@ impl Layer {
             id,
             name: name.to_string(),
             color,
+            plan: 0,
             line_weight: 0.25,
             line_type: LineType::Solid,
             visible: true,
@@ -1690,6 +1725,9 @@ pub struct Document {
     pub project: ProjectMeta,
     #[serde(default)]
     pub settings: Settings,
+    /// Pläne des Layer-Managers (T0202) — die oberste Gliederungsebene.
+    #[serde(default)]
+    pub plans: Vec<Plan>,
     #[serde(default)]
     pub layers: Vec<Layer>,
     #[serde(default)]
@@ -1748,6 +1786,7 @@ impl Document {
             id: crate::sicherung::neue_uuid(),
             project: ProjectMeta::default(),
             settings: Settings::default(),
+            plans: Vec::new(),
             layers: Vec::new(),
             current_layer: 0,
             blocks: Vec::new(),
@@ -1761,18 +1800,13 @@ impl Document {
             modified: false,
             path: None,
         };
-        for (i, (name, color, lt)) in LAYER_DEFAULTS.iter().enumerate() {
-            let mut l = Layer::new(doc.next_id, name, *color);
-            // Ohne Voreinstellung gilt für jede Objektart dieselbe Breite
-            // (T0125); die Einstellung setzt `setze_standard_breiten` danach.
-            l.line_weight = LINIENSTAERKE_VORGABE;
-            l.line_type = *lt;
-            if i == 0 {
-                doc.current_layer = l.id;
-            }
-            doc.next_id += 1;
-            doc.layers.push(l);
-        }
+        // T0202: Eine neue Zeichnung hat **einen** Plan („Plan 1“) mit den vier
+        // Standardlayern. Weitere Pläne legt der Nutzer im Layer-Manager an;
+        // jeder neue Plan bekommt dieselben vier Layer (`actions::plan.create`).
+        let plan_id = doc.new_id();
+        doc.plans.push(Plan::new(plan_id, "Plan 1"));
+        doc.add_standard_layers(plan_id);
+        doc.current_layer = doc.layers.first().map(|l| l.id).unwrap_or(0);
         doc.blocks = crate::blocks_lib::system_blocks(&mut doc.next_id);
         let sheet = crate::templates::new_sheet(&mut doc, PaperSize::A3, true, "Blatt 1");
         doc.sheets.push(sheet);
@@ -1795,6 +1829,7 @@ impl Document {
             id: String::new(),
             project: ProjectMeta::default(),
             settings: Settings::default(),
+            plans: Vec::new(),
             layers: Vec::new(),
             current_layer: 0,
             blocks: Vec::new(),
@@ -1874,20 +1909,118 @@ impl Document {
         self.layer_by_name(name).map(|l| l.id)
     }
 
-    /// Layer für einen Namen holen oder neu anlegen.
-    pub fn ensure_layer(&mut self, name: &str, color: Color) -> Id {
-        if let Some(l) = self.layer_by_name(name) {
+    // ---------------- Pläne (T0202) ----------------
+
+    pub fn plan(&self, id: Id) -> Option<&Plan> {
+        self.plans.iter().find(|p| p.id == id)
+    }
+
+    pub fn plan_mut(&mut self, id: Id) -> Option<&mut Plan> {
+        self.plans.iter_mut().find(|p| p.id == id)
+    }
+
+    /// Der Plan, zu dem ein Layer gehört (ältere Dateien: keiner).
+    pub fn plan_of_layer(&self, layer: Id) -> Option<&Plan> {
+        let l = self.layer(layer)?;
+        self.plan(l.plan)
+    }
+
+    /// Die Layer eines Plans in Zeichenreihenfolge (Reihenfolge von
+    /// `Document::layers`).
+    pub fn layers_of_plan(&self, plan: Id) -> Vec<&Layer> {
+        self.layers.iter().filter(|l| l.plan == plan).collect()
+    }
+
+    /// Sichtbar ist ein Layer nur, wenn er selbst **und** sein Plan sichtbar
+    /// sind. Ein Layer ohne Plan (alte Datei, vor der Migration) zählt als
+    /// sichtbar.
+    pub fn layer_sichtbar(&self, layer: Id) -> bool {
+        match self.layer(layer) {
+            Some(l) => l.visible && self.plan(l.plan).map(|p| p.visible).unwrap_or(true),
+            None => true,
+        }
+    }
+
+    /// Gesperrt ist ein Layer, wenn er selbst oder sein Plan gesperrt ist —
+    /// ausgeblendet zählt wie gesperrt (nicht wählbar, kein Fangpunkt).
+    pub fn layer_gesperrt(&self, layer: Id) -> bool {
+        match self.layer(layer) {
+            Some(l) => {
+                let plan = self.plan(l.plan);
+                l.locked
+                    || !l.visible
+                    || plan.map(|p| p.locked || !p.visible).unwrap_or(false)
+            }
+            None => false,
+        }
+    }
+
+    /// Layer für einen Namen holen oder neu anlegen — **innerhalb eines
+    /// Plans** (T0202). Ein Layername ist je Plan eindeutig, nicht global:
+    /// „Zeichnung“ gibt es in jedem Plan.
+    pub fn ensure_layer_in(&mut self, name: &str, color: Color, plan: Id) -> Id {
+        if let Some(l) = self
+            .layers
+            .iter()
+            .find(|l| l.plan == plan && l.name.eq_ignore_ascii_case(name))
+        {
             return l.id;
         }
         let id = self.new_id();
         let mut l = Layer::new(id, name, color);
-        // T0125: eine neu angelegte Standardebene (z. B. „Bilder“) trägt die
-        // eingestellte Voreinstellung; freie Ebenen behalten die Grundbreite.
+        l.plan = plan;
+        // T0125: eine neu angelegte Standardebene trägt die eingestellte
+        // Voreinstellung; freie Ebenen behalten die Grundbreite.
         if let Some(w) = self.layer_weight_defaults.get(name) {
             l.line_weight = *w;
         }
-        self.layers.push(l);
+        // Hinter den letzten Layer desselben Plans einsortieren, damit die
+        // Anzeige gruppiert bleibt.
+        let pos = self
+            .layers
+            .iter()
+            .rposition(|x| x.plan == plan)
+            .map(|i| i + 1)
+            .unwrap_or(self.layers.len());
+        self.layers.insert(pos, l);
         id
+    }
+
+    /// Layer für einen Namen im Plan des aktuellen Layers holen oder anlegen.
+    pub fn ensure_layer(&mut self, name: &str, color: Color) -> Id {
+        let plan = self
+            .layer(self.current_layer)
+            .map(|l| l.plan)
+            .or_else(|| self.plans.first().map(|p| p.id))
+            .unwrap_or(0);
+        self.ensure_layer_in(name, color, plan)
+    }
+
+    /// Plan des aktuellen Layers — der Plan, in dem gezeichnet wird.
+    pub fn aktueller_plan(&self) -> Option<Id> {
+        self.layer(self.current_layer)
+            .map(|l| l.plan)
+            .or_else(|| self.plans.first().map(|p| p.id))
+    }
+
+    /// Legt die vier Standardlayer eines Plans an
+    /// ([`crate::style::LAYER_DEFAULTS`], T0202). Vorhandene Namen im Plan
+    /// bleiben, wie sie sind.
+    pub fn add_standard_layers(&mut self, plan: Id) {
+        for (name, color, lt) in LAYER_DEFAULTS.iter() {
+            let vorhanden = self
+                .layers
+                .iter()
+                .any(|l| l.plan == plan && l.name.eq_ignore_ascii_case(name));
+            let id = self.ensure_layer_in(name, *color, plan);
+            if !vorhanden {
+                let breite = self.standard_breite(name);
+                if let Some(l) = self.layer_mut(id) {
+                    l.line_type = *lt;
+                    l.line_weight = breite;
+                }
+            }
+        }
     }
 
     pub fn block(&self, id: &str) -> Option<&BlockDef> {
@@ -2070,11 +2203,12 @@ impl Document {
         self.ents_mut().iter_mut().find(|e| e.id == id)
     }
 
-    /// Alle sichtbaren Layer-IDs
+    /// Alle sichtbaren Layer-IDs — ein ausgeblendeter **Plan** blendet seine
+    /// Layer mit aus (T0202).
     pub fn visible_layers(&self) -> Vec<Id> {
         self.layers
             .iter()
-            .filter(|l| l.visible)
+            .filter(|l| self.layer_sichtbar(l.id))
             .map(|l| l.id)
             .collect()
     }
@@ -2200,9 +2334,9 @@ impl Document {
             .collect()
     }
 
-    /// Prüft, ob Layer `id` gesperrt ist.
+    /// Prüft, ob Layer `id` gesperrt ist — der Plan zählt mit (T0202).
     pub fn layer_locked(&self, id: Id) -> bool {
-        self.layer(id).map(|l| l.locked || !l.visible).unwrap_or(false)
+        self.layer_gesperrt(id)
     }
 
     /// Kurzfassung für die Statuszeile — zählt den aktiven Raum.

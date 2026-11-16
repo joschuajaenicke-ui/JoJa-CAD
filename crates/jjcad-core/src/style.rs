@@ -591,21 +591,19 @@ pub const LINIENSTAERKE_VORGABE: f64 = 0.18;
 
 /// Die Standardebenen einer neuen Zeichnung: Name, Farbe, Linientyp.
 ///
+/// Seit T0202 sind das die **vier Layer eines Plans**: Jeder Plan (auch jeder
+/// neu angelegte) besteht aus Zeichnung, Architektur, Beschriftung und Blöcken.
+/// Die Zuordnung der Objektarten steht in `actions::standard_ebene`.
+///
 /// Die **Linienstärke** steht bewusst nicht in dieser Liste — sie kommt aus
 /// den Voreinstellungen (`UserPrefs::layer_weights`, Vorgabe
 /// [`LINIENSTAERKE_VORGABE`]). So gibt es keine zweite, fest verdrahtete
 /// Wahrheit, die von der Einstellung abweichen könnte (T0125).
 pub const LAYER_DEFAULTS: &[(&str, Color, LineType)] = &[
-    ("Wände", Color::rgb(35, 38, 44), LineType::Solid),
-    ("Türen", Color::rgb(120, 85, 55), LineType::Solid),
-    ("Fenster", Color::rgb(45, 105, 190), LineType::Solid),
-    ("Treppen", Color::rgb(60, 140, 95), LineType::Solid),
-    ("Bemaßung", Color::rgb(190, 70, 60), LineType::Solid),
-    ("Text", Color::rgb(40, 45, 52), LineType::Solid),
-    ("Schraffur", Color::rgb(150, 155, 160), LineType::Solid),
-    ("Möbel", Color::rgb(110, 115, 122), LineType::Solid),
-    ("Achsen", Color::rgb(200, 120, 40), LineType::DashDot),
-    ("Hilfslinien", Color::rgb(150, 160, 175), LineType::Dashed),
+    ("Zeichnung", Color::rgb(35, 38, 44), LineType::Solid),
+    ("Architektur", Color::rgb(35, 38, 44), LineType::Solid),
+    ("Beschriftung", Color::rgb(190, 70, 60), LineType::Solid),
+    ("Blöcke", Color::rgb(110, 115, 122), LineType::Solid),
 ];
 
 // ---------------------------------------------------------------------------

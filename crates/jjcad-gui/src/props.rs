@@ -418,11 +418,24 @@ pub fn gemein(
 
     // Layer
     zeile("layer");
+    // T0202: Bei mehreren Plänen tragen mehrere Layer denselben Namen —
+    // die Auswahl nennt deshalb den Plan mit.
+    let mehrere_plaene = app.doc().plans.len() > 1;
     let layer_items: Vec<(Id, String)> = app
         .doc()
         .layers
         .iter()
-        .map(|l| (l.id, l.name.clone()))
+        .map(|l| {
+            let name = if mehrere_plaene {
+                match app.doc().plan(l.plan) {
+                    Some(p) => format!("{} · {}", p.name, l.name),
+                    None => l.name.clone(),
+                }
+            } else {
+                l.name.clone()
+            };
+            (l.id, name)
+        })
         .collect();
     let mut new_layer = layer;
     widgets::field_row(ui, jjcad_core::i18n::tr("gui.props.layer"), |ui| {
@@ -871,7 +884,7 @@ pub fn text(app: &mut App, ui: &mut Ui, ziel: Ziel) {
         layer,
         farbe,
         farbe_gezeigt,
-        app.doc().standard_breite("Text"),
+        app.doc().standard_breite("Beschriftung"),
         jjcad_core::style::LineType::Solid,
         false,
         jjcad_core::i18n::tr("gui.props.farbe"),
@@ -1453,7 +1466,7 @@ pub fn wand(app: &mut App, ui: &mut Ui, ziel: Ziel) {
     });
     kopf(app, ui, ziel, jjcad_core::i18n::tr("gui.props.wand"), "wall");
     reihenfolge(app, ui, ziel);
-    let (staerke, linientyp) = linienwerte(app, &e, "Wände");
+    let (staerke, linientyp) = linienwerte(app, &e, "Architektur");
 
     let a = gemein(
         app,
@@ -1705,7 +1718,7 @@ pub fn tuer(app: &mut App, ui: &mut Ui, ziel: Ziel) {
 
     kopf(app, ui, ziel, jjcad_core::i18n::tr("gui.props.tuer"), "door");
     reihenfolge(app, ui, ziel);
-    let (staerke, linientyp) = linienwerte(app, &e, "Türen");
+    let (staerke, linientyp) = linienwerte(app, &e, "Architektur");
 
     let a = gemein(
         app,
@@ -1908,7 +1921,7 @@ pub fn fenster(app: &mut App, ui: &mut Ui, ziel: Ziel) {
 
     kopf(app, ui, ziel, jjcad_core::i18n::tr("gui.props.fenster"), "window");
     reihenfolge(app, ui, ziel);
-    let (staerke, linientyp) = linienwerte(app, &e, "Fenster");
+    let (staerke, linientyp) = linienwerte(app, &e, "Architektur");
 
     let a = gemein(
         app,
@@ -2108,7 +2121,7 @@ pub fn fuellflaeche(app: &mut App, ui: &mut Ui, ziel: Ziel) {
         layer,
         farbe,
         farbe_gezeigt,
-        app.doc().standard_breite("Schraffur"),
+        app.doc().standard_breite("Zeichnung"),
         jjcad_core::style::LineType::Solid,
         true,
         jjcad_core::i18n::tr("gui.props.linienfarbe"),
@@ -2317,7 +2330,7 @@ pub fn bemassung(app: &mut App, ui: &mut Ui, ziel: Ziel) {
     kopf(app, ui, ziel, jjcad_core::i18n::tr("gui.props.bemassung"), "dim");
     reihenfolge(app, ui, ziel);
 
-    let (staerke, linientyp) = linienwerte(app, &e, "Bemaßung");
+    let (staerke, linientyp) = linienwerte(app, &e, "Beschriftung");
     let a = gemein(
         app,
         ui,
@@ -2550,10 +2563,10 @@ impl Einfach {
     /// Objekt sie bekommt.
     pub fn ebene(self) -> &'static str {
         match self {
-            Einfach::Grundrisskote | Einfach::Schnittkote => "Bemaßung",
-            Einfach::Block => "Möbel",
-            Einfach::Bild => "Bilder",
-            _ => "Hilfslinien",
+            Einfach::Grundrisskote | Einfach::Schnittkote => "Beschriftung",
+            Einfach::Block => "Blöcke",
+            Einfach::Bild => "Zeichnung",
+            _ => "Zeichnung",
         }
     }
 
@@ -2678,7 +2691,7 @@ pub fn raumstempel(app: &mut App, ui: &mut Ui, ziel: Ziel) {
         layer,
         farbe,
         farbe_gezeigt,
-        app.doc().standard_breite("Bemaßung"),
+        app.doc().standard_breite("Beschriftung"),
         jjcad_core::style::LineType::Solid,
         false,
         jjcad_core::i18n::tr("gui.props.farbe"),
@@ -3498,7 +3511,7 @@ pub fn volumen(app: &mut App, ui: &mut Ui, ziel: Ziel) {
             .map(|l| l.color)
             .unwrap_or(Color::BLACK)
     });
-    let (staerke, linientyp) = linienwerte(app, &e, "Wände");
+    let (staerke, linientyp) = linienwerte(app, &e, "Architektur");
 
     kopf(app, ui, ziel, jjcad_core::i18n::tr("gui.props.volumen"), "volume");
     reihenfolge(app, ui, ziel);
@@ -3740,7 +3753,7 @@ pub fn treppe(app: &mut App, ui: &mut Ui, ziel: Ziel) {
             .map(|l| l.color)
             .unwrap_or(Color::BLACK)
     });
-    let (staerke, linientyp) = linienwerte(app, &e, "Treppen");
+    let (staerke, linientyp) = linienwerte(app, &e, "Architektur");
     // Ohne Länge (beim Erzeugen) gilt die Vorgabe der Action als Rechengrundlage.
     let rechen_laenge = if laenge > 1.0 { laenge } else { 4640.0 };
     let mass = jjcad_core::stair::treppenmass(rechen_laenge, hoehe, stuen, auto);

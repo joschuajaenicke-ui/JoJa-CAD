@@ -1535,16 +1535,12 @@ pub(crate) const EINSTELLUNGSKATEGORIEN: &[Einstellungskategorie] = &[
             "Linienstärken",
             "Voreinstellungen",
             "Objektart",
-            "Wände",
-            "Türen",
-            "Fenster",
-            "Treppen",
-            "Bemaßung",
-            "Text",
-            "Schraffur",
-            "Möbel",
-            "Achsen",
-            "Hilfslinien",
+            "Zeichnung",
+            "Architektur",
+            "Beschriftung",
+            "Blöcke",
+            "Plan",
+            "Layer",
             "zurücksetzen",
             "0,18",
         ],
@@ -7472,10 +7468,10 @@ mod tests_einstellungen {
         let _konfig = WegwerfKonfig::neu("vorgaben-sofort");
         let ctx = egui::Context::default();
         let mut app = App::with_ctx(ctx.clone());
-        app.prefs.set_linienstaerke("Wände", 0.50);
+        app.prefs.set_linienstaerke("Architektur", 0.50);
         app.voreinstellungen_uebernehmen();
         assert!(
-            (app.doc().layer_by_name("Wände").unwrap().line_weight - 0.50).abs() < 1e-9,
+            (app.doc().layer_by_name("Architektur").unwrap().line_weight - 0.50).abs() < 1e-9,
             "leere Zeichnung muss die Voreinstellung sofort tragen"
         );
 
@@ -7483,10 +7479,10 @@ mod tests_einstellungen {
         app.session_mut()
             .execute("draw.line", &json!({"a": [0.0, 0.0], "b": [1.0, 0.0]}))
             .expect("Linie");
-        app.prefs.set_linienstaerke("Wände", 0.13);
+        app.prefs.set_linienstaerke("Architektur", 0.13);
         app.voreinstellungen_uebernehmen();
         assert!(
-            (app.doc().layer_by_name("Wände").unwrap().line_weight - 0.50).abs() < 1e-9,
+            (app.doc().layer_by_name("Architektur").unwrap().line_weight - 0.50).abs() < 1e-9,
             "bestehende Ebene darf sich nicht ändern"
         );
     }
@@ -7499,13 +7495,13 @@ mod tests_einstellungen {
         let _konfig = WegwerfKonfig::neu("vorgaben-neu");
         let ctx = egui::Context::default();
         let mut app = App::with_ctx(ctx.clone());
-        app.prefs.set_linienstaerke("Wände", 0.50);
-        app.prefs.set_linienstaerke("Hilfslinien", 0.13);
+        app.prefs.set_linienstaerke("Architektur", 0.50);
+        app.prefs.set_linienstaerke("Zeichnung", 0.13);
         app.new_document();
         let doc = app.doc();
-        assert!((doc.layer_by_name("Wände").unwrap().line_weight - 0.50).abs() < 1e-9);
-        assert!((doc.layer_by_name("Hilfslinien").unwrap().line_weight - 0.13).abs() < 1e-9);
-        assert!((doc.layer_by_name("Fenster").unwrap().line_weight - 0.18).abs() < 1e-9);
+        assert!((doc.layer_by_name("Architektur").unwrap().line_weight - 0.50).abs() < 1e-9);
+        assert!((doc.layer_by_name("Zeichnung").unwrap().line_weight - 0.13).abs() < 1e-9);
+        assert!((doc.layer_by_name("Blöcke").unwrap().line_weight - 0.18).abs() < 1e-9);
     }
 
     /// T0067/T0146: Unter „Bedienung“ steht zusätzlich die Zeile

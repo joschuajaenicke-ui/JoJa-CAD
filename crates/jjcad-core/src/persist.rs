@@ -44,6 +44,9 @@ pub fn from_json(s: &str) -> Result<Document, String> {
         doc.layers.push(Layer::new(1, "Waende", crate::style::Color::BLACK));
         doc.current_layer = 1;
     }
+    // T0202: Jede Datei braucht mindestens einen Plan; Layer ohne (oder mit
+    // unbekanntem) Plan landen im ersten.
+    normalize_plaene(&mut doc);
     if doc.layer(doc.current_layer).is_none() {
         doc.current_layer = doc.layers[0].id;
     }
@@ -52,6 +55,7 @@ pub fn from_json(s: &str) -> Result<Document, String> {
         .iter()
         .map(|e| e.id)
         .chain(doc.layers.iter().map(|l| l.id))
+        .chain(doc.plans.iter().map(|p| p.id))
         .chain(doc.sheets.iter().map(|s| s.id))
         .max()
         .unwrap_or(0);
@@ -66,6 +70,25 @@ pub fn from_json(s: &str) -> Result<Document, String> {
     normalize_dim_reihenfolge(&mut doc);
     doc.modified = false;
     Ok(doc)
+}
+
+/// Pläne älterer Dateien ergänzen und jeden Layer einem Plan zuordnen (T0202).
+///
+/// Vor T0202 kannte das Format keine Pläne. Beim Laden bekommt eine solche
+/// Datei **einen** Plan („Plan 1“), dem alle vorhandenen Layer zugeordnet
+/// werden — die Layer selbst bleiben unangetastet.
+pub fn normalize_plaene(doc: &mut Document) {
+    if doc.plans.is_empty() {
+        let id = doc.new_id();
+        doc.plans.push(Plan::new(id, "Plan 1"));
+    }
+    let first = doc.plans[0].id;
+    for i in 0..doc.layers.len() {
+        let plan = doc.layers[i].plan;
+        if doc.plans.iter().all(|p| p.id != plan) {
+            doc.layers[i].plan = first;
+        }
+    }
 }
 
 /// Messpunkte von Maßketten in Messreihenfolge bringen (T0195).

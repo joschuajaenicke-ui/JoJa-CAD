@@ -14,113 +14,219 @@ use serde_json::json;
 // ---------------------------------------------------------------------------
 
 pub fn layers(app: &mut App, ui: &mut Ui) {
+    let tr = jjcad_core::i18n::tr;
     ui.horizontal(|ui| {
         ui.label(
-            RichText::new(jjcad_core::i18n::tr("gui.panels.layer"))
+            RichText::new(tr("gui.panels.layer"))
                 .size(10.0)
                 .color(Palette::text_faint())
                 .strong(),
         );
         ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-            if widgets::icon_button(ui, "plus", 22.0, false, jjcad_core::i18n::tr("gui.panels.neuer_layer")).clicked() {
-                let n = app.doc().layers.len() + 1;
+            if widgets::icon_button(ui, "plus", 22.0, false, tr("gui.panels.neuer_layer")).clicked() {
+                // Neuer Layer im Plan des aktuellen Layers — jeder Plan hat
+                // seine eigenen Layer (T0202).
+                let plan = app.doc().aktueller_plan();
+                let n = plan
+                    .and_then(|p| app.doc().layers_of_plan(p).len().checked_add(1))
+                    .unwrap_or(1);
+                app.ui.new_layer_plan = plan;
                 app.ui.new_layer_dialog = Some(format!("Layer {n}"));
             }
-            if widgets::icon_button(ui, "layers", 22.0, false, jjcad_core::i18n::tr("gui.panels.layer_verwalten")).clicked() {
+            if widgets::icon_button(ui, "layers", 22.0, false, tr("gui.panels.layer_verwalten")).clicked() {
                 app.ui.layers_open = !app.ui.layers_open;
             }
-            if widgets::icon_button(ui, "chevron_left", 20.0, false, jjcad_core::i18n::tr("gui.panels.einklappen")).clicked() {
+            if widgets::icon_button(ui, "chevron_left", 20.0, false, tr("gui.panels.einklappen")).clicked() {
                 app.ui.layers_collapsed = true;
             }
         });
     });
     ui.add_space(4.0);
 
-    if let Some(name) = app.ui.new_layer_dialog.clone() {
+    // ---- Dialoge: neuer Plan, neuer Layer, Umbenennen ----
+    // Ein neuer Plan (T0202).
+    if let Some(name) = app.ui.new_plan_dialog.clone() {
+        let mut n = name;
+        let mut fertig = false;
         ui.horizontal(|ui| {
-            let mut n = name;
-            let resp = ui.add_sized([150.0, 22.0], egui::TextEdit::singleline(&mut n).hint_text(jjcad_core::i18n::tr("gui.panels.layer_name")));
-            let ok = ui.button(jjcad_core::i18n::tr("gui.panels.ok")).clicked() || (resp.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter)));
+            let resp = ui.add_sized(
+                [150.0, 22.0],
+                egui::TextEdit::singleline(&mut n)
+                    .hint_text(tr("gui.panels.plan_name")),
+            );
+            let ok = ui.button(tr("gui.panels.ok")).clicked()
+                || (resp.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter)));
             if ok {
-                match app.session_mut().execute("layer.create", &json!({"name": n})) {
-                    Ok(_) => {
+                match app
+                    .session_mut()
+                    .execute("plan.create", &json!({"name": n}))
+                {
+                    Ok(res) => {
+                        // Im neuen Plan weiterzeichnen: seine „Zeichnung“ wird
+                        // die aktuelle Ebene (der Nutzer will dort arbeiten).
+                        if let Some(pid) = res.get("id").and_then(|v| v.as_u64()) {
+                            if let Some(l) = app.doc().layers_of_plan(pid).first().map(|l| l.id) {
+                                let _ = app
+                                    .session_mut()
+                                    .execute("layer.set_current", &json!({"layer": l}));
+                            }
+                        }
                         app.mark_changed();
-                        app.toast(jjcad_core::i18n::t_args_owned("gui.panels.layer_x_angelegt", &[("n", format!("{}", n))]));
+                        app.toast(jjcad_core::i18n::t_args_owned(
+                            "gui.panels.plan_x_angelegt",
+                            &[("n", format!("{n}"))],
+                        ));
+                        fertig = true;
                     }
                     Err(e) => app.toast(e),
                 }
-                app.ui.new_layer_dialog = None;
-            } else {
-                app.ui.new_layer_dialog = Some(n);
             }
-            if ui.button(jjcad_core::i18n::tr("gui.panels.abbrechen")).clicked() {
-                app.ui.new_layer_dialog = None;
+            if ui.button(tr("gui.panels.abbrechen")).clicked() {
+                fertig = true;
             }
         });
+        app.ui.new_plan_dialog = if fertig { None } else { Some(n) };
+        ui.add_space(4.0);
+    }
+    // Ein neuer Layer (im gewählten Plan).
+    if let Some(name) = app.ui.new_layer_dialog.clone() {
+        let mut n = name;
+        let mut fertig = false;
+        ui.horizontal(|ui| {
+            let resp = ui.add_sized(
+                [150.0, 22.0],
+                egui::TextEdit::singleline(&mut n).hint_text(tr("gui.panels.layer_name")),
+            );
+            let ok = ui.button(tr("gui.panels.ok")).clicked()
+                || (resp.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter)));
+            if ok {
+                let mut params = json!({"name": n});
+                if let Some(p) = app.ui.new_layer_plan {
+                    params["plan"] = json!(p);
+                }
+                match app.session_mut().execute("layer.create", &params) {
+                    Ok(_) => {
+                        app.mark_changed();
+                        app.toast(jjcad_core::i18n::t_args_owned(
+                            "gui.panels.layer_x_angelegt",
+                            &[("n", format!("{n}"))],
+                        ));
+                        fertig = true;
+                    }
+                    Err(e) => app.toast(e),
+                }
+            }
+            if ui.button(tr("gui.panels.abbrechen")).clicked() {
+                fertig = true;
+            }
+        });
+        if fertig {
+            app.ui.new_layer_dialog = None;
+            app.ui.new_layer_plan = None;
+        } else {
+            app.ui.new_layer_dialog = Some(n);
+        }
+        ui.add_space(4.0);
+    }
+    // Umbenennen (Doppelklick auf Layer oder Plan, Kontextmenü).
+    if let Some((id, name)) = app.ui.rename_layer.clone() {
+        let mut n = name;
+        let mut fertig = false;
+        ui.horizontal(|ui| {
+            let resp = ui.add_sized(
+                [150.0, 22.0],
+                egui::TextEdit::singleline(&mut n).hint_text(tr("gui.panels.layer_name")),
+            );
+            let ok = ui.button(tr("gui.panels.ok")).clicked()
+                || (resp.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter)));
+            if ok {
+                let _ = app
+                    .session_mut()
+                    .execute("layer.update", &json!({"layer": id, "name": n}));
+                app.mark_changed();
+                fertig = true;
+            }
+            if ui.button(tr("gui.panels.abbrechen")).clicked() {
+                fertig = true;
+            }
+        });
+        app.ui.rename_layer = if fertig { None } else { Some((id, n)) };
+        ui.add_space(4.0);
+    }
+    if let Some((id, name)) = app.ui.rename_plan.clone() {
+        let mut n = name;
+        let mut fertig = false;
+        ui.horizontal(|ui| {
+            let resp = ui.add_sized(
+                [150.0, 22.0],
+                egui::TextEdit::singleline(&mut n).hint_text(tr("gui.panels.plan_name")),
+            );
+            let ok = ui.button(tr("gui.panels.ok")).clicked()
+                || (resp.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter)));
+            if ok {
+                let _ = app
+                    .session_mut()
+                    .execute("plan.update", &json!({"plan": id, "name": n}));
+                app.mark_changed();
+                fertig = true;
+            }
+            if ui.button(tr("gui.panels.abbrechen")).clicked() {
+                fertig = true;
+            }
+        });
+        app.ui.rename_plan = if fertig { None } else { Some((id, n)) };
         ui.add_space(4.0);
     }
 
     let current = app.doc().current_layer;
-    let layers = app.doc().layers.clone();
+    let plans = app.doc().plans.clone();
+    let mut befehle: Vec<(String, serde_json::Value)> = Vec::new();
     let mut set_current: Option<Id> = None;
-    let mut toggle_vis: Option<Id> = None;
-    let mut toggle_lock: Option<Id> = None;
-    let mut color_change: Option<(Id, Color)> = None;
-    let mut rename: Option<(Id, String)> = None;
-    let mut delete: Option<Id> = None;
+    let mut new_layer_fuer: Option<Id> = None;
 
     egui::ScrollArea::vertical()
         .auto_shrink([false, false])
         .show(ui, |ui| {
-            for l in &layers {
-                let is_current = l.id == current;
+            for plan in &plans {
+                // ---------------- Plan-Kopfzeile ----------------
                 let (rect, resp) = ui.allocate_exact_size(
-                    Vec2::new(ui.available_width(), 27.0),
+                    Vec2::new(ui.available_width(), 28.0),
                     Sense::click(),
                 );
                 if ui.is_rect_visible(rect) {
                     let p = ui.painter();
-                    if is_current {
-                        p.rect_filled(rect, Rounding::same(6.0), Palette::panel_alt());
-                        p.rect_filled(
-                            Rect::from_min_size(rect.left_top(), Vec2::new(2.0, rect.height())),
-                            Rounding::same(1.0),
-                            Palette::accent(),
-                        );
-                    } else if resp.hovered() {
-                        p.rect_filled(rect, Rounding::same(6.0), Palette::panel_alt().gamma_multiply(0.6));
-                    }
-                    // Farbpunkt
-                    let dot = Rect::from_center_size(
-                        Pos2::new(rect.left() + 13.0, rect.center().y),
+                    // Eine ausgeblendete oder gesperrte Planzeile bleibt
+                    // sichtbar, aber gedämpft — sie ist der Schalter dafür.
+                    let farbe = if !plan.visible {
+                        Palette::text_faint()
+                    } else if plan.locked {
+                        Palette::text_dim()
+                    } else {
+                        Palette::text()
+                    };
+                    // Einklapp-Dreieck
+                    let dreieck = Rect::from_center_size(
+                        Pos2::new(rect.left() + 9.0, rect.center().y),
                         Vec2::splat(14.0),
                     );
-                    p.circle_filled(dot.center(), 5.0, app::color_to_egui(l.color));
-                    p.circle_stroke(dot.center(), 5.0, Stroke::new(1.0, Color32::from_black_alpha(80)));
-                    // Name (gekürzt, damit er nicht unter die Symbole läuft)
-                    let max_w = rect.width() - 92.0;
-                    let mut name = l.name.clone();
-                    while p
-                        .layout_no_wrap(name.clone(), FontId::proportional(12.0), Palette::text())
-                        .size()
-                        .x
-                        > max_w
-                        && name.chars().count() > 3
-                    {
-                        name.pop();
-                    }
-                    if name != l.name {
-                        name.pop();
-                        name.push('…');
-                    }
-                    p.text(
-                        Pos2::new(rect.left() + 25.0, rect.center().y),
-                        egui::Align2::LEFT_CENTER,
-                        name,
-                        FontId::proportional(12.0),
-                        if is_current { Palette::text() } else { Palette::text_dim() },
+                    crate::icons::paint(
+                        p,
+                        dreieck,
+                        if plan.collapsed {
+                            "chevron_right"
+                        } else {
+                            "chevron_down"
+                        },
+                        Palette::text_dim(),
                     );
-                    // Sichtbarkeit / Sperre
+                    p.text(
+                        Pos2::new(rect.left() + 20.0, rect.center().y),
+                        egui::Align2::LEFT_CENTER,
+                        &plan.name,
+                        FontId::proportional(12.0),
+                        farbe,
+                    );
+                    // Auge und Schloss des ganzen Plans
                     let eye = Rect::from_center_size(
                         Pos2::new(rect.right() - 40.0, rect.center().y),
                         Vec2::splat(20.0),
@@ -128,8 +234,12 @@ pub fn layers(app: &mut App, ui: &mut Ui) {
                     crate::icons::paint(
                         p,
                         eye.shrink(3.0),
-                        if l.visible { "eye" } else { "eye_off" },
-                        if l.visible { Palette::text_dim() } else { Palette::text_faint() },
+                        if plan.visible { "eye" } else { "eye_off" },
+                        if plan.visible {
+                            Palette::text_dim()
+                        } else {
+                            Palette::text_faint()
+                        },
                     );
                     let lock = Rect::from_center_size(
                         Pos2::new(rect.right() - 19.0, rect.center().y),
@@ -138,93 +248,341 @@ pub fn layers(app: &mut App, ui: &mut Ui) {
                     crate::icons::paint(
                         p,
                         lock.shrink(4.0),
-                        if l.locked { "lock" } else { "unlock" },
-                        if l.locked { Palette::accent() } else { Palette::text_faint() },
+                        if plan.locked { "lock" } else { "unlock" },
+                        if plan.locked {
+                            Palette::accent()
+                        } else {
+                            Palette::text_faint()
+                        },
                     );
                 }
-                // Interaktion
-                if resp.double_clicked() {
-                    rename = Some((l.id, l.name.clone()));
+                // Ein Doppelklick auf den **Namen** benennt um; auf Dreieck,
+                // Auge oder Schloss zählt jeder Klick einzeln (sonst öffnete
+                // ein zweiter Klick auf das Dreieck das Umbenennen-Feld).
+                let pos = resp.interact_pointer_pos().unwrap_or(rect.center());
+                let schalter = pos.x < rect.left() + 18.0 || pos.x > rect.right() - 52.0;
+                if resp.double_clicked() && !schalter {
+                    app.ui.rename_plan = Some((plan.id, plan.name.clone()));
                 } else if resp.clicked() {
-                    let pos = resp.interact_pointer_pos().unwrap_or(rect.center());
                     if pos.x > rect.right() - 30.0 {
-                        toggle_lock = Some(l.id);
+                        befehle.push((
+                            "plan.update".into(),
+                            json!({"plan": plan.id, "locked": !plan.locked}),
+                        ));
                     } else if pos.x > rect.right() - 52.0 {
-                        toggle_vis = Some(l.id);
-                    } else if pos.x < rect.left() + 22.0 {
-                        app.ui.color_popup = Some(l.id);
-                    } else {
+                        befehle.push((
+                            "plan.update".into(),
+                            json!({"plan": plan.id, "visible": !plan.visible}),
+                        ));
+                    } else if pos.x < rect.left() + 18.0 {
+                        // Einklappen — reine Anzeige.
+                        befehle.push((
+                            "plan.update".into(),
+                            json!({"plan": plan.id, "collapsed": !plan.collapsed}),
+                        ));
+                    } else if let Some(l) = app.doc().layers_of_plan(plan.id).first() {
+                        // Klick auf den Namen: in diesem Plan zeichnen.
                         set_current = Some(l.id);
                     }
                 }
-                if resp.secondary_clicked() {
-                    app.ui.color_popup = Some(l.id);
-                }
-                let hover_text = jjcad_core::i18n::t_args_owned("gui.panels.x_x_mm_x", &[("wert1", format!("{}", l.name)), ("wert2", format!("{:.2}", l.line_weight)), ("wert3", format!("{}", l.line_type.text()))]);
-                resp.clone().on_hover_text(hover_text);
+                resp.clone().on_hover_text(jjcad_core::i18n::t_args_owned(
+                    "gui.panels.plan_tip",
+                    &[("n", format!("{}", app.doc().layers_of_plan(plan.id).len()))],
+                ));
                 resp.context_menu(|ui| {
-                    ui.label(theme::dim(&l.name));
+                    ui.label(theme::dim(&plan.name));
                     ui.separator();
-                    if ui.button(jjcad_core::i18n::tr("gui.panels.aktueller_layer")).clicked() {
-                        set_current = Some(l.id);
+                    if ui.button(tr("gui.panels.umbenennen")).clicked() {
+                        app.ui.rename_plan = Some((plan.id, plan.name.clone()));
                         ui.close_menu();
                     }
-                    if ui.button(jjcad_core::i18n::tr("gui.panels.umbenennen")).clicked() {
-                        rename = Some((l.id, l.name.clone()));
+                    if ui
+                        .button(if plan.visible {
+                            tr("gui.panels.plan_ausblenden")
+                        } else {
+                            tr("gui.panels.plan_einblenden")
+                        })
+                        .clicked()
+                    {
+                        befehle.push((
+                            "plan.update".into(),
+                            json!({"plan": plan.id, "visible": !plan.visible}),
+                        ));
                         ui.close_menu();
                     }
-                    if ui.button(jjcad_core::i18n::tr("gui.panels.loeschen")).clicked() {
-                        delete = Some(l.id);
+                    if ui
+                        .button(if plan.locked {
+                            tr("gui.panels.plan_entsperren")
+                        } else {
+                            tr("gui.panels.plan_sperren")
+                        })
+                        .clicked()
+                    {
+                        befehle.push((
+                            "plan.update".into(),
+                            json!({"plan": plan.id, "locked": !plan.locked}),
+                        ));
                         ui.close_menu();
                     }
                 });
-                // Kontextmenü: Linienstärke/Sichtbarkeit
-                if resp.secondary_clicked() {
-                    app.ui.color_popup = Some(l.id);
+
+                if plan.collapsed {
+                    continue;
                 }
+
+                // ---------------- Layer des Plans ----------------
+                // Kopie der Layer: darunter wird `app.ui` verändert (Dialoge,
+                // Farbwähler) — ein laufender Leih auf das Dokument ginge nicht.
+                let plan_layer: Vec<Layer> = app
+                    .doc()
+                    .layers_of_plan(plan.id)
+                    .into_iter()
+                    .cloned()
+                    .collect();
+                for l in plan_layer {
+                    let is_current = l.id == current;
+                    // Eingerückt unter dem Plan; die Sichtbarkeit folgt auch
+                    // dem Plan (T0202).
+                    let sichtbar = l.visible && plan.visible;
+                    let gesperrt = l.locked || plan.locked;
+                    let (rect, resp) = ui.allocate_exact_size(
+                        Vec2::new(ui.available_width(), 27.0),
+                        Sense::click(),
+                    );
+                    if ui.is_rect_visible(rect) {
+                        let p = ui.painter();
+                        if is_current {
+                            p.rect_filled(rect, Rounding::same(6.0), Palette::panel_alt());
+                            p.rect_filled(
+                                Rect::from_min_size(
+                                    rect.left_top(),
+                                    Vec2::new(2.0, rect.height()),
+                                ),
+                                Rounding::same(1.0),
+                                Palette::accent(),
+                            );
+                        } else if resp.hovered() {
+                            p.rect_filled(
+                                rect,
+                                Rounding::same(6.0),
+                                Palette::panel_alt().gamma_multiply(0.6),
+                            );
+                        }
+                        // Farbfeld wie auf Papier: erst ein heller Grund, dann
+                        // die Ebenenfarbe. Ein reiner Farbpunkt verschwände bei
+                        // dunklen Ebenen (Zeichnung, Architektur) auf dunklem
+                        // Panel.
+                        let dot = Pos2::new(rect.left() + 27.0, rect.center().y);
+                        p.circle_filled(dot, 5.5, Palette::papier());
+                        p.circle_filled(dot, 3.6, app::color_to_egui(l.color));
+                        p.circle_stroke(dot, 5.5, Stroke::new(1.0, Palette::text_faint()));
+                        // Name
+                        let max_w = rect.width() - 106.0;
+                        let mut name = l.name.clone();
+                        while p
+                            .layout_no_wrap(name.clone(), FontId::proportional(12.0), Palette::text())
+                            .size()
+                            .x
+                            > max_w
+                            && name.chars().count() > 3
+                        {
+                            name.pop();
+                        }
+                        if name != l.name {
+                            name.pop();
+                            name.push('…');
+                        }
+                        p.text(
+                            Pos2::new(rect.left() + 39.0, rect.center().y),
+                            egui::Align2::LEFT_CENTER,
+                            name,
+                            FontId::proportional(12.0),
+                            if is_current {
+                                Palette::text()
+                            } else if sichtbar {
+                                Palette::text_dim()
+                            } else {
+                                Palette::text_faint()
+                            },
+                        );
+                        let eye = Rect::from_center_size(
+                            Pos2::new(rect.right() - 40.0, rect.center().y),
+                            Vec2::splat(20.0),
+                        );
+                        crate::icons::paint(
+                            p,
+                            eye.shrink(3.0),
+                            if sichtbar { "eye" } else { "eye_off" },
+                            if sichtbar {
+                                Palette::text_dim()
+                            } else {
+                                Palette::text_faint()
+                            },
+                        );
+                        let lock = Rect::from_center_size(
+                            Pos2::new(rect.right() - 19.0, rect.center().y),
+                            Vec2::splat(20.0),
+                        );
+                        crate::icons::paint(
+                            p,
+                            lock.shrink(4.0),
+                            if gesperrt { "lock" } else { "unlock" },
+                            if gesperrt {
+                                Palette::accent()
+                            } else {
+                                Palette::text_faint()
+                            },
+                        );
+                    }
+                    let pos = resp.interact_pointer_pos().unwrap_or(rect.center());
+                    let schalter = pos.x < rect.left() + 36.0 || pos.x > rect.right() - 52.0;
+                    if resp.double_clicked() && !schalter {
+                        app.ui.rename_layer = Some((l.id, l.name.clone()));
+                    } else if resp.clicked() {
+                        if pos.x > rect.right() - 30.0 {
+                            befehle.push((
+                                "layer.update".into(),
+                                json!({"layer": l.id, "locked": !l.locked}),
+                            ));
+                        } else if pos.x > rect.right() - 52.0 {
+                            befehle.push((
+                                "layer.update".into(),
+                                json!({"layer": l.id, "visible": !l.visible}),
+                            ));
+                        } else if pos.x < rect.left() + 36.0 {
+                            app.ui.color_popup = Some(l.id);
+                        } else {
+                            set_current = Some(l.id);
+                        }
+                    }
+                    if resp.secondary_clicked() {
+                        app.ui.color_popup = Some(l.id);
+                    }
+                    let hover_text = jjcad_core::i18n::t_args_owned(
+                        "gui.panels.x_x_mm_x",
+                        &[
+                            ("wert1", format!("{}", l.name)),
+                            ("wert2", format!("{:.2}", l.line_weight)),
+                            ("wert3", format!("{}", l.line_type.text())),
+                        ],
+                    );
+                    resp.clone().on_hover_text(hover_text);
+                    resp.context_menu(|ui| {
+                        ui.label(theme::dim(&l.name));
+                        ui.separator();
+                        if ui.button(tr("gui.panels.aktueller_layer")).clicked() {
+                            set_current = Some(l.id);
+                            ui.close_menu();
+                        }
+                        if ui.button(tr("gui.panels.umbenennen")).clicked() {
+                            app.ui.rename_layer = Some((l.id, l.name.clone()));
+                            ui.close_menu();
+                        }
+                        if ui.button(tr("gui.panels.loeschen")).clicked() {
+                            ui.close_menu();
+                            befehle.push(("layer.delete".into(), json!({"layer": l.id})));
+                        }
+                    });
+                }
+
+                // ---------------- Layer hinzufügen (im Plan) ----------------
+                let (rect, resp) = ui.allocate_exact_size(
+                    Vec2::new(ui.available_width(), 24.0),
+                    Sense::click(),
+                );
+                if ui.is_rect_visible(rect) {
+                    let p = ui.painter();
+                    let plus = Rect::from_center_size(
+                        Pos2::new(rect.left() + 27.0, rect.center().y),
+                        Vec2::splat(14.0),
+                    );
+                    let f = if resp.hovered() {
+                        Palette::text()
+                    } else {
+                        Palette::text_faint()
+                    };
+                    crate::icons::paint(p, plus, "plus", f);
+                    p.text(
+                        Pos2::new(rect.left() + 39.0, rect.center().y),
+                        egui::Align2::LEFT_CENTER,
+                        tr("gui.panels.layer_hinzufuegen"),
+                        FontId::proportional(11.0),
+                        f,
+                    );
+                }
+                if resp.clicked() {
+                    new_layer_fuer = Some(plan.id);
+                }
+                ui.add_space(4.0);
+            }
+
+            // ---------------- Plan hinzufügen (am Ende der Liste) ----------
+            let (rect, resp) = ui.allocate_exact_size(
+                Vec2::new(ui.available_width(), 26.0),
+                Sense::click(),
+            );
+            if ui.is_rect_visible(rect) {
+                let p = ui.painter();
+                let f = if resp.hovered() {
+                    Palette::text()
+                } else {
+                    Palette::text_faint()
+                };
+                let plus = Rect::from_center_size(
+                    Pos2::new(rect.left() + 9.0, rect.center().y),
+                    Vec2::splat(14.0),
+                );
+                crate::icons::paint(p, plus, "plus", f);
+                p.text(
+                    Pos2::new(rect.left() + 20.0, rect.center().y),
+                    egui::Align2::LEFT_CENTER,
+                    tr("gui.panels.plan_hinzufuegen"),
+                    FontId::proportional(11.0),
+                    f,
+                );
+            }
+            if resp.clicked() {
+                let n = app.doc().plans.len() + 1;
+                app.ui.new_plan_dialog = Some(jjcad_core::i18n::t_args_owned(
+                    "gui.panels.plan_n",
+                    &[("n", format!("{n}"))],
+                ));
             }
             ui.add_space(6.0);
-            ui.label(theme::dim(jjcad_core::i18n::t_args_owned("gui.panels.x_layer_aktuell_x", &[("wert1", format!("{}", layers.len())), ("wert2", format!("{}", layers
-                    .iter()
-                    .find(|l| l.id == current)
-                    .map(|l| l.name.clone())
-                    .unwrap_or_default()))])));
+            let aktuell = app
+                .doc()
+                .layer(current)
+                .map(|l| l.name.clone())
+                .unwrap_or_default();
+            ui.label(theme::dim(jjcad_core::i18n::t_args_owned(
+                "gui.panels.x_plaene_x_layer_aktuell_x",
+                &[
+                    ("plaene", format!("{}", plans.len())),
+                    ("layer", format!("{}", app.doc().layers.len())),
+                    ("aktuell", aktuell),
+                ],
+            )));
         });
 
+    if let Some(plan) = new_layer_fuer {
+        app.ui.new_layer_plan = Some(plan);
+        let n = app.doc().layers_of_plan(plan).len() + 1;
+        app.ui.new_layer_dialog = Some(format!("Layer {n}"));
+    }
     if let Some(id) = set_current {
-        let _ = app.session_mut().execute("layer.set_current", &json!({"layer": id}));
-    }
-    if let Some(id) = toggle_vis {
-        let vis = app.doc().layer(id).map(|l| !l.visible).unwrap_or(true);
         let _ = app
             .session_mut()
-            .execute("layer.update", &json!({"layer": id, "visible": vis}));
-        app.mark_changed();
+            .execute("layer.set_current", &json!({"layer": id}));
     }
-    if let Some(id) = toggle_lock {
-        let lock = app.doc().layer(id).map(|l| !l.locked).unwrap_or(true);
-        let _ = app
-            .session_mut()
-            .execute("layer.update", &json!({"layer": id, "locked": lock}));
-        app.mark_changed();
-    }
-    if let Some((id, new)) = color_change {
-        let _ = app
-            .session_mut()
-            .execute("layer.update", &json!({"layer": id, "color": new.to_hex()}));
-        app.mark_changed();
-    }
-    if let Some((id, name)) = rename {
-        app.ui.rename_layer = Some((id, name));
-    }
-    if let Some(id) = delete {
-        match app.session_mut().execute("layer.delete", &json!({"layer": id})) {
-            Ok(_) => {
-                app.mark_changed();
-                app.toast(jjcad_core::i18n::tr("gui.panels.layer_geloescht"));
-            }
+    let loeschen = befehle.iter().any(|(a, _)| a == "layer.delete");
+    for (aktion, params) in befehle {
+        match app.session_mut().execute(&aktion, &params) {
+            Ok(_) => app.mark_changed(),
             Err(e) => app.toast(e),
         }
+    }
+    if loeschen {
+        app.toast(tr("gui.panels.layer_geloescht"));
     }
 }
 
@@ -2433,5 +2791,159 @@ mod tests_farbgruppen {
                 }
             }
         }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Layer-Manager mit Plänen (T0202)
+// ---------------------------------------------------------------------------
+
+#[cfg(test)]
+mod tests_plaene {
+    use super::*;
+
+    /// Ein eigenes Bild des Layer-Managers im übergebenen Kontext.
+    fn rahmen(ctx: &egui::Context, app: &mut App, events: Vec<egui::Event>) -> Vec<(String, Pos2)> {
+        let raw = egui::RawInput {
+            screen_rect: Some(Rect::from_min_size(Pos2::ZERO, Vec2::new(232.0, 900.0))),
+            events,
+            ..Default::default()
+        };
+        let out = ctx.run(raw, |ctx| {
+            egui::SidePanel::left("probe")
+                .exact_width(232.0)
+                .show(ctx, |ui| layers(app, ui));
+        });
+        out.shapes
+            .iter()
+            .filter_map(|cs| match &cs.shape {
+                egui::Shape::Text(t) => Some((t.galley.text().to_string(), t.pos)),
+                _ => None,
+            })
+            .collect()
+    }
+
+    /// Lage der Zeile mit diesem Text (Mitte der Zeilenbox).
+    fn mitte(texte: &[(String, Pos2)], text: &str) -> Pos2 {
+        let (_, pos) = texte
+            .iter()
+            .find(|(t, _)| t.trim() == text)
+            .unwrap_or_else(|| panic!("Text „{text}“ fehlt im Bild: {texte:?}"));
+        Pos2::new(pos.x, pos.y + 8.0)
+    }
+
+    /// Klickt an eine Stelle: erst ein Bild mit Zeigerlage (sonst kennt egui
+    /// kein Widget darunter), dann Druck, dann Loslassen.
+    fn klick(ctx: &egui::Context, app: &mut App, pos: Pos2) {
+        rahmen(
+            ctx,
+            app,
+            vec![egui::Event::PointerMoved(pos)],
+        );
+        for gedrueckt in [true, false] {
+            rahmen(
+                ctx,
+                app,
+                vec![egui::Event::PointerButton {
+                    pos,
+                    button: egui::PointerButton::Primary,
+                    pressed: gedrueckt,
+                    modifiers: egui::Modifiers::NONE,
+                }],
+            );
+        }
+    }
+
+    #[test]
+    fn neue_zeichnung_zeigt_einen_plan_mit_vier_layern() {
+        let ctx = egui::Context::default();
+        let mut app = App::with_ctx(ctx.clone());
+        let texte = rahmen(&ctx, &mut app, Vec::new());
+        let alle: Vec<&str> = texte.iter().map(|(t, _)| t.trim()).collect();
+        for erwartet in [
+            "Plan 1",
+            "Zeichnung",
+            "Architektur",
+            "Beschriftung",
+            "Blöcke",
+            "Plan hinzufügen",
+            "Layer hinzufügen",
+        ] {
+            assert!(
+                alle.contains(&erwartet),
+                "„{erwartet}“ fehlt in der Anzeige: {alle:?}"
+            );
+        }
+        // Ein Plan → eine Kopfzeile und eine Zeile „Layer hinzufügen“.
+        assert_eq!(alle.iter().filter(|t| **t == "Plan 1").count(), 1);
+        assert_eq!(alle.iter().filter(|t| **t == "Layer hinzufügen").count(), 1);
+    }
+
+    #[test]
+    fn einklappen_versteckt_die_layer_des_plans() {
+        let ctx = egui::Context::default();
+        let mut app = App::with_ctx(ctx.clone());
+        let texte = rahmen(&ctx, &mut app, Vec::new());
+        let kopf = mitte(&texte, "Plan 1");
+        assert!(!app.doc().plans[0].collapsed);
+        // Das Einklapp-Dreieck sitzt links in der Kopfzeile.
+        klick(&ctx, &mut app, Pos2::new(kopf.x - 11.0, kopf.y));
+        assert!(
+            app.doc().plans[0].collapsed,
+            "der Klick auf das Dreieck muss den Plan einklappen"
+        );
+        let texte = rahmen(&ctx, &mut app, Vec::new());
+        let alle: Vec<&str> = texte.iter().map(|(t, _)| t.trim()).collect();
+        assert!(!alle.contains(&"Zeichnung"), "Layer bleiben sichtbar");
+        assert!(alle.contains(&"Plan 1"), "die Kopfzeile bleibt");
+
+        // Und wieder auf: derselbe Klick.
+        let kopf = mitte(&texte, "Plan 1");
+        klick(&ctx, &mut app, Pos2::new(kopf.x - 11.0, kopf.y));
+        assert!(!app.doc().plans[0].collapsed);
+    }
+
+    #[test]
+    fn plan_hinzufuegen_legt_einen_zweiten_plan_an() {
+        let ctx = egui::Context::default();
+        let mut app = App::with_ctx(ctx.clone());
+        let texte = rahmen(&ctx, &mut app, Vec::new());
+        let zeile = mitte(&texte, "Plan hinzufügen");
+        klick(&ctx, &mut app, Pos2::new(zeile.x + 40.0, zeile.y));
+        assert!(
+            app.ui.new_plan_dialog.is_some(),
+            "der Klick muss das Eingabefeld für den neuen Plan öffnen"
+        );
+
+        // Das Feld schlägt „Plan 2“ vor; „OK“ bestätigt.
+        let texte = rahmen(&ctx, &mut app, Vec::new());
+        assert!(
+            texte.iter().any(|(t, _)| t.trim() == "Plan 2"),
+            "Vorschlag fehlt: {texte:?}"
+        );
+        let ok = mitte(&texte, "OK");
+        klick(&ctx, &mut app, Pos2::new(ok.x + 4.0, ok.y));
+        assert_eq!(app.doc().plans.len(), 2, "zweiter Plan fehlt");
+        assert_eq!(app.doc().layers.len(), 8, "vier Layer je Plan");
+        assert_eq!(app.doc().plans[1].name, "Plan 2");
+    }
+
+    #[test]
+    fn plan_auge_blendet_den_ganzen_plan_aus() {
+        let ctx = egui::Context::default();
+        let mut app = App::with_ctx(ctx.clone());
+        let texte = rahmen(&ctx, &mut app, Vec::new());
+        let kopf = mitte(&texte, "Plan 1");
+        // Rechte Seite der Kopfzeile: Auge bei right − 40, Schloss right − 19.
+        // Die Panelbreite ist 232 px, das Auge liegt also bei x ≈ 192.
+        klick(&ctx, &mut app, Pos2::new(kopf.x + 160.0, kopf.y));
+        assert!(
+            !app.doc().plans[0].visible,
+            "das Auge der Kopfzeile muss den Plan ausblenden"
+        );
+        let layer = app.doc().layers[0].id;
+        assert!(!app.doc().layer_sichtbar(layer));
+        // Die Layerzeile bleibt stehen (ausgegraut) — der Layer selbst auch an.
+        assert!(app.doc().layer(layer).unwrap().visible);
     }
 }

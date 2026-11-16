@@ -90,7 +90,7 @@ fn unbekannter_typ_liefert_null_treffer() {
 #[test]
 fn ebene_filter_trifft_nur_diese_ebene() {
     let (s, _, _, _) = probedokument();
-    let res = s.query(&json!({"layer": "Bemaßung"}));
+    let res = s.query(&json!({"layer": "Beschriftung"}));
     assert_eq!(res["count"], 1, "nur das Maß: {res}");
     assert_eq!(typen(&res), vec!["dim"]);
 
