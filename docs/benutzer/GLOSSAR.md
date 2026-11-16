@@ -34,6 +34,8 @@ Steht rechts „nicht", dann ist das Wort im Projekt verpönt (auch in der Oberf
 
 | Begriff | Bedeutung | nicht |
 |---|---|---|
+| **Plan** | Oberste und einzige Gliederungsebene des Layer-Managers: ein Plan bündelt seine Layer (z. B. ein Geschoss, ein Schnitt, eine Ansicht, ein Lageplan). Pläne lassen sich einklappen, ausblenden und sperren | Ebene, Teilbild, Layer-Gruppe |
+| **Layer** | Zeichenebene **innerhalb eines Plans**; jeder Plan hat die vier Layer Zeichnung, Architektur, Beschriftung und Blöcke | Ebene, Teilbild |
 | **Achse** (Wandachse) | Die Mittellinie einer Wand, auf der gezeichnet und gefangen wird | Mittellinie, Mittellinie der Wand |
 | **Wandkante** / **Wandkontur** | Die beiden Längsflächen des Wandkörpers, senkrecht zur Dicke | Wandlinie, Rand |
 | **Wandkörper** | Die gefüllte Fläche zwischen den Kanten (Dicke × Länge) | Wandfläche, Wandblock |

@@ -107,32 +107,38 @@ Ohne `layer` zeichnet jede Aktion auf die Ebene ihres Typs. Die Ebene wird bei
 Bedarf angelegt — ein Plan aus einem Batch hat damit seine Ebenenstruktur, ohne
 dass jeder Schritt `layer` mitgeben muss.
 
+Seit T0202 gibt es nur noch die vier Layer eines Plans: **Zeichnung**,
+**Architektur**, **Beschriftung** und **Blöcke**. Die Ebene wird im Plan des
+aktuellen Layers angelegt.
+
 | Aktion | Standardebene |
 |---|---|
-| `draw.wall` | Wände |
-| `draw.door` | Türen |
-| `draw.window` | Fenster |
-| `draw.stair`, `draw.stair.label` | Treppen |
-| `dim.linear`, `dim.chain`, `dim.elevation.plan`, `dim.elevation.section` | Bemaßung |
-| `draw.text` | Text |
-| `draw.fill*`, `draw.hatch` | Schraffur |
-| `draw.volume*` | Wände (Körper im Wandton) |
-| `block.insert` | Möbel |
-| `draw.point`, `draw.line`, `draw.polyline`, `draw.spline`, `draw.rect`, `draw.circle`, `draw.arc`, `draw.ellipse` | Hilfslinien |
-| `draw.image` | Bilder |
+| `draw.wall`, `draw.door`, `draw.window`, `draw.stair`, `draw.stair.label` | Architektur |
+| `draw.volume*` | Architektur (Körper im Wandton) |
+| `dim.linear`, `dim.chain*`, `dim.elevation.*`, `dim.room`, `draw.text` | Beschriftung |
+| `block.insert` | Blöcke |
+| `draw.fill*`, `draw.hatch`, `draw.image` | Zeichnung |
+| `draw.point`, `draw.line`, `draw.polyline`, `draw.spline`, `draw.rect`, `draw.circle`, `draw.arc`, `draw.ellipse` | Zeichnung |
 
-In der Oberfläche übergibt jedes Werkzeug die im Layer-Panel gewählte Ebene —
-dort gilt weiterhin die Auswahl des Nutzers.
+In der Oberfläche legt jedes Werkzeug sein Objekt ebenfalls auf die Ebene seines
+Typs. Eine **eigene** Ebene (nicht eine der vier) sticht das: wer sie im
+Layer-Panel wählt, zeichnet bewusst dorthin.
 
-## Ebenen
+## Pläne und Ebenen
+
+Ein **Plan** ist die oberste Stufe des Layer-Managers; Layer gehören zu einem
+Plan. Ein Layername ist je Plan eindeutig.
 
 | ID | Parameter |
 |---|---|
-| `layer.create` | `name`, `color`, `lineweight`, `linetype`, `visible`, `locked` |
-| `layer.update` | `layer`, beliebige Eigenschaften |
+| `plan.create` | `name` (Vorgabe „Plan N“) — legt den Plan mit den vier Standardlayern an |
+| `plan.update` | `plan`, `name`, `visible`, `locked`, `collapsed` |
+| `plan.list` | — (Pläne mit ihren Layern) |
+| `layer.create` | `name`, `plan`, `color`, `lineweight`, `linetype`, `visible`, `locked` |
+| `layer.update` | `layer`, beliebige Eigenschaften, `plan` (verschieben) |
 | `layer.delete` | `layer` |
 | `layer.set_current` | `layer` |
-| `layer.list` | — |
+| `layer.list` | — (je Layer auch `plan`, `sichtbar`, `gesperrt`) |
 
 ## Blöcke
 

@@ -27,7 +27,7 @@ fn leinwand() -> Session {
     // „Linie über der Füllung“ trägt. Seit T0125 ist die Programm-Vorgabe für
     // alle Ebenen 0,18 mm — hier ausdrücklich die alte 0,50 mm setzen, damit
     // der Schwellwert des Tests die Zeichenfolge misst und nicht die Vorgabe.
-    if let Some(l) = s.doc.layers.iter_mut().find(|l| l.name == "Wände") {
+    if let Some(l) = s.doc.layers.iter_mut().find(|l| l.name == "Zeichnung") {
         l.line_weight = 0.50;
     }
     s
@@ -43,7 +43,7 @@ fn linie(s: &mut Session, a: (f64, f64), b: (f64, f64)) -> Id {
             // Angabe läge eine Linie seit T0039 auf „Hilfslinien“ (hell,
             // gestrichelt).
             &json!({"a": [a.0 / 1000.0, a.1 / 1000.0], "b": [b.0 / 1000.0, b.1 / 1000.0],
-                    "layer": "Wände"}),
+                    "layer": "Zeichnung"}),
         )
         .expect("Linie");
     r["created"][0].as_u64().expect("ID der Linie") as Id

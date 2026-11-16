@@ -56,7 +56,7 @@ fn ohne_farbe(doc: &mut Document) -> Vec<Entity> {
 fn neue_bemassung_ist_schwarz() {
     let mut doc = Document::new();
     let rot = doc
-        .layer_by_name("Bemaßung")
+        .layer_by_name("Beschriftung")
         .map(|l| l.color)
         .expect("Ebene „Bemaßung“ fehlt");
     assert_ne!(rot, Color::BLACK, "Ausgangslage: die Ebene trägt Rot");
@@ -104,13 +104,13 @@ fn ausdrueckliches_bylayer_bleibt_bylayer() {
         &mut doc,
         "dim.linear",
         json!({"a": [0, 0], "b": [5, 0], "line_pos": [0, -0.5], "color": "bylayer",
-               "layer": "Bemaßung"}),
+               "layer": "Beschriftung"}),
     );
     assert_eq!(e.style.color, None, "keine eigene Farbe gespeichert");
-    assert_eq!(ebene(&doc, &e), "Bemaßung");
+    assert_eq!(ebene(&doc, &e), "Beschriftung");
     assert_eq!(
         doc.effective_color(&e),
-        doc.layer_by_name("Bemaßung").map(|l| l.color).unwrap(),
+        doc.layer_by_name("Beschriftung").map(|l| l.color).unwrap(),
         "Farbe kommt aus der Ebene"
     );
 }

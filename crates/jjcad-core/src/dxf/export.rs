@@ -142,7 +142,9 @@ pub fn export_dxf(doc: &Document, path: &Path) -> Result<(), String> {
         out.g(0, "LAYER");
         out.g(2, &l.name);
         out.g(70, if l.locked { 4 } else { 0 });
-        out.g(62, if l.visible { aci } else { -aci });
+        // Ausgeblendete Pläne (T0202) exportieren ihre Layer ebenfalls unsichtbar.
+        let sichtbar = doc.layer_sichtbar(l.id);
+        out.g(62, if sichtbar { aci } else { -aci });
         out.g(6, ltype_name(l.line_type));
     }
     out.g(0, "ENDTAB");

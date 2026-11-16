@@ -1126,9 +1126,16 @@ pub struct UiState {
     /// geleert, damit keine alte Funktion unbemerkt auf einer Taste landet.
     pub keymap_funktion: Option<String>,
     pub search: String,
+    /// Neuer Layer: Name im Eingabefeld; `new_layer_plan` ist der Plan, in
+    /// dem er entstehen soll (T0202).
     pub new_layer_dialog: Option<String>,
+    pub new_layer_plan: Option<Id>,
+    /// Neuer Plan: Name im Eingabefeld (T0202).
+    pub new_plan_dialog: Option<String>,
     pub color_popup: Option<Id>,
     pub rename_layer: Option<(Id, String)>,
+    /// Umbenennen eines Plans (T0202).
+    pub rename_plan: Option<(Id, String)>,
     /// Zwischenablage: Elemente **und** Basispunkt (siehe `ghost::Clipboard`)
     pub clipboard: crate::ghost::Clipboard,
     pub clipboard_offset: f64,
@@ -1313,8 +1320,11 @@ impl Default for UiState {
             keymap_funktion: None,
             search: String::new(),
             new_layer_dialog: None,
+            new_layer_plan: None,
+            new_plan_dialog: None,
             color_popup: None,
             rename_layer: None,
+            rename_plan: None,
             clipboard: crate::ghost::Clipboard::default(),
             clipboard_offset: 20.0,
             // Tests fassen die Systemablage nicht an: sie gehört dem Rechner.
@@ -1898,6 +1908,12 @@ impl App {
         let Ok(spec) = std::env::var("JJCAD_DEMO_UI") else { return };
         for part in spec.split(',') {
             match part.trim() {
+                // Leere Zeichnung (eine Datei ohne Beispielinhalt) — für
+                // Prüfbilder der Vorgaben.
+                "neudatei" | "neue_datei" => {
+                    self.new_document();
+                    self.fit_view();
+                }
                 "arch" => self.ui.ribbon = RibbonTab::Architektur,
                 "draw" => self.ui.ribbon = RibbonTab::Zeichnen,
                 "dim" => self.ui.ribbon = RibbonTab::Bemassung,
@@ -1951,6 +1967,72 @@ impl App {
                         .iter()
                         .position(|k| k.key == "settings.category_sicherung")
                         .unwrap_or(0);
+                }
+                // T0202: Layer-Manager mit Plänen — zwei weitere Pläne, der
+                // erste eingeklappt, im zweiten eine Wand.
+                "plaene" | "layerplaene" => {
+                    for name in ["Erdgeschoss", "Obergeschoss"] {
+                        let _ = self
+                            .session_mut()
+                            .execute("plan.create", &serde_json::json!({"name": name}));
+                    }
+                    if let Some(plan) = self.doc().plans.get(1) {
+                        let pid = plan.id;
+                        let zeichnung = self
+                            .doc()
+                            .layers_of_plan(pid)
+                            .iter()
+                            .find(|l| l.name == "Architektur")
+                            .map(|l| l.id);
+                        if let Some(layer) = zeichnung {
+                            let _ = self.session_mut().execute(
+                                "draw.wall",
+                                &serde_json::json!({
+                                    "a": [0.0, 0.0], "b": [5000.0, 0.0],
+                                    "thickness": 0.24, "layer": layer
+                                }),
+                            );
+                        }
+                    }
+                    if let Some(plan) = self.doc().plans.first() {
+                        let pid = plan.id;
+                        let _ = self.session_mut().execute(
+                            "plan.update",
+                            &serde_json::json!({"plan": pid, "collapsed": true}),
+                        );
+                    }
+                    self.ui.layers_open = true;
+                    self.ui.layers_collapsed = false;
+                }
+                // T0202: ein Plan ausgeblendet, einer gesperrt — Prüfbild der
+                // Plan-Schalter (Auge/Schloss in der Kopfzeile).
+                "planaus" | "plangesperrt" => {
+                    for name in ["Erdgeschoss", "Obergeschoss"] {
+                        let _ = self
+                            .session_mut()
+                            .execute("plan.create", &serde_json::json!({"name": name}));
+                    }
+                    let ids: Vec<u64> = self.doc().plans.iter().map(|p| p.id).collect();
+                    if let Some(p) = ids.get(1) {
+                        let _ = self.session_mut().execute(
+                            "plan.update",
+                            &serde_json::json!({"plan": p, "locked": true}),
+                        );
+                    }
+                    if let Some(p) = ids.get(2) {
+                        let _ = self.session_mut().execute(
+                            "plan.update",
+                            &serde_json::json!({"plan": p, "visible": false}),
+                        );
+                    }
+                    if let Some(p) = ids.first() {
+                        let _ = self.session_mut().execute(
+                            "plan.update",
+                            &serde_json::json!({"plan": p, "collapsed": true}),
+                        );
+                    }
+                    self.ui.layers_open = true;
+                    self.ui.layers_collapsed = false;
                 }
                 "vollbild" | "fullscreen" => self.ui.fullscreen = true,
                 "aendern" | "change" => self.ui.ribbon = RibbonTab::Aendern,

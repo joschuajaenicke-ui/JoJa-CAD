@@ -388,6 +388,18 @@
 # hint = "Neuen Layer anlegen"
 # label = "Layer anlegen"
 #
+[action.plan.create]
+# hint = "Neuen Plan mit den vier Standardlayern anlegen"
+# label = "Plan anlegen"
+#
+[action.plan.list]
+# hint = "Pläne mit ihren Layern auflisten"
+# label = "Pläne auflisten"
+#
+[action.plan.update]
+# hint = "Plan umbenennen, ausblenden oder sperren"
+# label = "Plan ändern"
+#
 [action.layer.update]
 # hint = "Layer umbenennen/ändern"
 # label = "Layer ändern"
@@ -1557,6 +1569,17 @@
 # x_bloecke_x_funktionen_x_objekte = "{wert1} Blöcke · {wert2} Funktionen · {wert3} Objekte"
 #
 [gui.panels]
+# layer_hinzufuegen = "Layer hinzufügen"
+# plan_ausblenden = "Plan ausblenden"
+# plan_einblenden = "Plan einblenden"
+# plan_entsperren = "Plan entsperren"
+# plan_hinzufuegen = "Plan hinzufügen"
+# plan_name = "Plan-Name"
+# plan_n = "Plan {n}"
+# plan_sperren = "Plan sperren"
+# plan_tip = "Plan mit {n} Layern · Klick zeichnet in diesem Plan"
+# plan_x_angelegt = "Plan '{n}' angelegt"
+# x_plaene_x_layer_aktuell_x = "{plaene} Pläne · {layer} Layer · aktuell: {aktuell}"
 # abbrechen = "Abbrechen"
 # adresse = "Adresse"
 # aktueller_layer = "Aktueller Layer"
@@ -1666,7 +1689,6 @@
 # viele_tueren = "Türen"
 # viele_waende = "Wände"
 # vorgaben_anzeigen = "Vorgaben anzeigen"
-# x_layer_aktuell_x = "{wert1} Layer · aktuell: {wert2}"
 # x_x_mm_x = "{wert1} · {wert2} mm · {wert3}"
 # x_x_objekte_layer_x = "{wert1} · {wert2} Objekte · Layer {wert3}"
 # x_x_x_mm_x = "{wert1} · {wert2} × {wert3} mm · {wert4}"

@@ -346,6 +346,20 @@ ausgeblendet.
   die **Blattreiter** der aktiven Datei: `Modell`, die Blätter und `+` für ein neues Blatt.
 - **Linkes Panel** (`Layers`) und **rechtes Panel** (`Eigenschaften`) klappen über den Pfeil in ihrer
   Kopfzeile zu einer schmalen Leiste zusammen — ein Klick auf den Pfeil holt sie zurück.
+- **Layer-Manager** (linkes Panel): Die Liste hat **eine** Stufe — **Layer gehören zu einem Plan**.
+  Pläne sortieren Geschosse, Schnitte, Ansichten und Lagepläne. Jede Planzeile trägt links ein
+  Dreieck zum **Einklappen**, in der Mitte den Namen und rechts **Auge** (ganzen Plan ausblenden)
+  und **Schloss** (ganzen Plan sperren). Ein Klick auf den Namen zeichnet wieder in diesem Plan;
+  ein Doppelklick auf den Namen benennt ihn um. Unter jedem Plan stehen seine Layer, eingerückt,
+  mit Farbpunkt, Auge und Schloss; darunter „Layer hinzufügen“. Am Ende der Liste legt
+  „Plan hinzufügen“ einen weiteren Plan an. Eine neue Datei hat **einen** Plan („Plan 1“), und
+  **jeder** Plan besteht aus denselben vier Layern:
+  **Zeichnung** (Linien, Kreise, Bögen, Flächen, Schraffuren, Bilder), **Architektur** (Wände,
+  Türen, Fenster, Treppen, Volumen), **Beschriftung** (Texte, Bemaßung, Höhenkoten, Raumstempel)
+  und **Blöcke** (eingesetzte Blockinstanzen). Werkzeuge legen ihr Objekt auf die Ebene ihres
+  Typs; eine **eigene** Ebene (nicht eine der vier) sticht das — wer sie wählt, zeichnet bewusst
+  dorthin. Ein ausgeblendeter Plan blendet alle seine Layer aus, ein gesperrter sperrt sie; die
+  Einstellungen der einzelnen Layer bleiben dabei erhalten.
 - Das rechte Panel zeigt die **Eigenschaften der Auswahl**; ohne Auswahl die der Datei bzw. des
   Blatts. Die Werte stehen als Tabelle mit fester Namensspalte und Zebra-Streifen untereinander.
 - **Hotbar-Vorlagen** wählt man über das Dropdown unten links; dort lassen sich neue Vorlagen

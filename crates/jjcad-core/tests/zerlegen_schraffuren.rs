@@ -8,7 +8,12 @@ use jjcad_core::style::{Color, FillPattern};
 /// Quadrat 3 × 2 m mit dem Muster, Randlinie an.
 fn doc_mit_muster(pattern: FillPattern) -> Document {
     let mut d = Document::new();
-    let layer = d.ensure_layer("Schraffur", Color::BLACK);
+    // Halbgraue, dünne Linien: so ist der Unterschied zweier Zeichenwege an
+    // den Stößen messbar (mit Schwarz überstrahlt die Kantenglättung).
+    let layer = d.ensure_layer("Zeichenprobe", Color::rgb(150, 155, 160));
+    if let Some(l) = d.layer_mut(layer) {
+        l.line_weight = 0.18;
+    }
     let boundary = vec![
         Vec2::new(0.0, 0.0),
         Vec2::new(3000.0, 0.0),
