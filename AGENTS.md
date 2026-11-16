@@ -788,9 +788,11 @@ Mit dem Nutzer abgestimmt — nicht „verbessern“:
   und über einem Bild ließe sich nicht zeichnen. `snap::hit_test` prüft für
   `EntityKind::Image` den Abstand zur nächsten der vier Kanten
   (`bild::kantenabstand`, wie eine Linie, Priorität 1); die Mitte trifft nichts.
-  Das Auswahlfenster prüft das **gedrehte** Rechteck
-  (`bild::beruehrt_rechteck`/`bild::in_rechteck`), nicht seine achsenparallele
-  Hülle — ein Fenster in der Ecke der Hülle hat das Bild nicht berührt.
+  Das Auswahlfenster prüft das **gedrehte** Rechteck und nimmt das Bild nur mit,
+  wenn das Fenster eine seiner Kanten berührt oder es ganz umschließt
+  (`bild::kanten_beruehrt`, dieselbe Regel für Fenster und Querfenster) — ein
+  Fenster in der Ecke der Hülle oder **innerhalb** des Bildes hat keine Kante
+  berührt und wählt es nicht.
   Prüfweg: `cargo test -p jjcad-core --test bild`
   (`bild_ist_nur_an_den_kanten_anklickbar`, `auswahlfenster_prueft_das_schraege_rechteck`);
   Gegenprobe ist `bild::punkt_im_bild` in `kantenabstand` bzw. `BBox::intersects`

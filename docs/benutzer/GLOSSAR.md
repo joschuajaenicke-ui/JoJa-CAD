@@ -124,6 +124,7 @@ Steht rechts „nicht", dann ist das Wort im Projekt verpönt (auch in der Oberf
 | **Verlauf aufbewahren** | Schalter: an = jeder Stand bleibt, aus = je Zeichnung nur der neueste (wird ersetzt, nichts wird gelöscht) | Verlauf sichern, History |
 | **Stand** (Sicherung) | Eine gesicherte Fassung einer Datei zu einem Zyklus, mit Hash und Größe | Version, Snapshot, Backup-Datei |
 | **Abstand der Stände** | Mittlerer relativer Altersabstand zweier benachbarter Stände in Prozent; wird im Sicherungsdialog angezeigt | Auflösung (das ist DPI) |
+| **Verworfen** (Sicherung) | Stand, dessen Arbeit beim Schließen eines Reiters verworfen wurde; bleibt bis zum Verfall im Sicherungsordner und kehrt nicht von selbst zurück | Papierkorb, gelöscht, Müll |
 | **Leistungsanzeige** | Feld oben rechts in der Zeichenfläche mit Abstand und Rechenzeit je Bild samt Abschnitten (Umschalt+F3) | Perf-Overlay, FPS-Anzeige, Debug-HUD |
 
 ## 6. Ausgabe

@@ -1955,9 +1955,11 @@ pub fn select_window(doc: &Document, a: Vec2, b: Vec2, crossing: bool) -> Vec<Id
             }
             continue;
         }
-        // Bild: geprüft wird das **gedrehte** Rechteck, nicht seine
-        // achsenparallele Hülle (T0201). Ein Fenster im Eckbereich der Hülle
-        // hat das schräg liegende Bild nicht berührt und wählt es nicht mit.
+        // Bild: nur wenn das Fenster eine seiner Kanten berührt (T0201) —
+        // für Fenster und Querfenster dieselbe Regel. Ein Fenster ganz
+        // **innerhalb** des Bildes hat keine Kante berührt und wählt es nicht
+        // mit; ein Fenster um das Bild deckt alle Kanten ab und wählt es.
+        // Geprüft wird das gedrehte Rechteck, nicht seine Hülle.
         if let EntityKind::Image {
             a, b, height, lock_ratio, data, ..
         } = &e.kind
@@ -1965,12 +1967,7 @@ pub fn select_window(doc: &Document, a: Vec2, b: Vec2, crossing: bool) -> Vec<Id
             let hoehe = crate::bild::dekodiere(data)
                 .map(|bild| crate::bild::wirksame_hoehe(&bild, a.dist(*b), *height, *lock_ratio))
                 .unwrap_or(1.0);
-            let trifft = if crossing {
-                crate::bild::beruehrt_rechteck(*a, *b, hoehe, &rect)
-            } else {
-                crate::bild::in_rechteck(*a, *b, hoehe, &rect)
-            };
-            if trifft {
+            if crate::bild::kanten_beruehrt(*a, *b, hoehe, &rect) {
                 out.push(e.id);
             }
             continue;

@@ -293,19 +293,32 @@ pub fn kantenabstand(a: Vec2, b: Vec2, hoehe: f64, p: Vec2) -> f64 {
         .fold(f64::INFINITY, f64::min)
 }
 
-/// Berührt das gedrehte Bildrechteck das Fenster `rect`? (Auswahlfenster
-/// rechts→links.) Geprüft wird das **schräge** Rechteck, nicht seine
-/// achsenparallele Hülle (T0201).
-pub fn beruehrt_rechteck(a: Vec2, b: Vec2, hoehe: f64, rect: &BBox) -> bool {
+/// Berührt das Auswahlfenster `rect` eine der vier Bildkanten?
+///
+/// Das ist die **eine** Regel für die Fensterauswahl von Bildern (T0201): ein
+/// Fenster, das ganz **innerhalb** des Bildes liegt, hat keine Kante berührt
+/// und wählt es nicht mit — sonst ließe sich über einem großen Bild nichts
+/// anderes auswählen. Ein Fenster, das das Bild umschließt, deckt alle vier
+/// Kanten ab und wählt es. Geprüft wird das **gedrehte** Rechteck, nicht seine
+/// achsenparallele Hülle.
+pub fn kanten_beruehrt(a: Vec2, b: Vec2, hoehe: f64, rect: &BBox) -> bool {
     let e = ecken(a, b, hoehe);
-    crate::area::flaeche_beruehrt_rechteck(&e, &[], rect)
-}
-
-/// Liegt das gedrehte Bildrechteck **ganz** in `rect`? (Auswahlfenster
-/// links→rechts.) Ein Fenster, das nur die Hülle bedeckt, wählt das Bild
-/// nicht mehr mit.
-pub fn in_rechteck(a: Vec2, b: Vec2, hoehe: f64, rect: &BBox) -> bool {
-    ecken(a, b, hoehe).iter().all(|p| rect.contains(*p))
+    let fenster = [
+        rect.min,
+        Vec2::new(rect.max.x, rect.min.y),
+        rect.max,
+        Vec2::new(rect.min.x, rect.max.y),
+    ];
+    (0..4).any(|i| {
+        let (p, q) = (e[i], e[(i + 1) % 4]);
+        // Kante liegt ganz im Fenster (Fenster umschließt das Bild) …
+        (rect.contains(p) && rect.contains(q))
+            // … oder kreuzt eine Fensterkante.
+            || (0..4).any(|k| {
+                crate::geom::line_line(p, q, fenster[k], fenster[(k + 1) % 4], false, false)
+                    .is_some()
+            })
+    })
 }
 
 #[cfg(test)]
