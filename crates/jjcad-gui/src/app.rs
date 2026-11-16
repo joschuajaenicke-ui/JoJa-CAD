@@ -977,6 +977,10 @@ pub struct PendingStyle {
     pub loop_width: Option<f64>,
     /// Dämmung: Schlaufenform r
     pub loop_shape: Option<f64>,
+    /// Ziel-Ebene für das nächste Element (T0202): ausdrücklich im
+    /// Eigenschaften-Panel gewählt. `None` heißt „die Ebene des Typs“
+    /// (`App::werkzeug_ziel_ebene`).
+    pub layer: Option<Id>,
 }
 
 impl Default for PendingStyle {
@@ -993,6 +997,7 @@ impl Default for PendingStyle {
             line_type: None,
             loop_width: None,
             loop_shape: None,
+            layer: None,
         }
     }
 }
@@ -4177,6 +4182,71 @@ impl App {
 
     pub fn unit(&self) -> Unit {
         self.doc().settings.input_unit
+    }
+
+    /// Ebene, die ein Werkzeug ausdrücklich an die Befehls-Schicht geben muss
+    /// (T0039, T0202).
+    ///
+    /// Die vier Standardlayer eines Plans sind festen Objektarten zugeordnet
+    /// (`actions::standard_ebene`): Texte und Bemaßung gehören zu
+    /// „Beschriftung“, Wände zu „Architektur“ usw. Ein Werkzeug darf diese
+    /// Zuordnung nicht mit der zuletzt angeklickten Ebene überschreiben.
+    /// Nur eine **eigene** Ebene (nicht eine der vier) sticht sie — wer sie im
+    /// Layer-Manager wählt, zeichnet bewusst dorthin. Eine Aktion ohne
+    /// Standardebene (z. B. `modify.*`) bekommt immer die aktuelle Ebene.
+    ///
+    /// `None` heißt: nichts übergeben, die Befehls-Schicht nimmt die
+    /// typgerechte Standardebene im Plan des aktuellen Layers.
+    pub fn werkzeug_ebene(&self, action: &str) -> Option<Id> {
+        let doc = self.doc();
+        let eigene = doc
+            .layer(doc.current_layer)
+            .map(|l| {
+                !jjcad_core::style::LAYER_DEFAULTS
+                    .iter()
+                    .any(|(n, _, _)| n.eq_ignore_ascii_case(&l.name))
+            })
+            .unwrap_or(false);
+        if eigene || jjcad_core::actions::standard_ebene(action).is_none() {
+            Some(doc.current_layer)
+        } else {
+            None
+        }
+    }
+
+    /// Die Ebene, die ein **neues** Objekt der Art `standard` bekommt — die
+    /// eine Anzeige im Eigenschaften-Panel (T0202).
+    ///
+    /// Reihenfolge: ausdrückliche Wahl im Panel (`pending.layer`), dann eine
+    /// **eigene** aktuelle Ebene, dann die Standardebene des Typs im Plan des
+    /// aktuellen Layers, zuletzt die aktuelle Ebene. So zeigt das Panel beim
+    /// Platzieren dieselbe Ebene, auf der das Objekt danach liegt.
+    pub fn werkzeug_ziel_ebene(&self, standard: &str) -> Id {
+        let doc = self.doc();
+        if let Some(l) = self.ui.pending.layer {
+            if doc.layer(l).is_some() {
+                return l;
+            }
+        }
+        let eigene = doc
+            .layer(doc.current_layer)
+            .map(|l| {
+                !jjcad_core::style::LAYER_DEFAULTS
+                    .iter()
+                    .any(|(n, _, _)| n.eq_ignore_ascii_case(&l.name))
+            })
+            .unwrap_or(false);
+        if eigene {
+            return doc.current_layer;
+        }
+        let plan = doc.aktueller_plan();
+        doc.layers
+            .iter()
+            .find(|l| {
+                Some(l.plan) == plan && l.name.eq_ignore_ascii_case(standard)
+            })
+            .map(|l| l.id)
+            .unwrap_or(doc.current_layer)
     }
 
     /// Meldung an den Nutzer: steht unten links im Chat (und in `status_msg`
@@ -9016,9 +9086,19 @@ fn rail(ui: &mut egui::Ui, icon: &str, tooltip: &str, chevron: &str) -> bool {
                 "rot": g.rot.to_degrees(),
                 "mirror": g.mirror,
                 "scale": g.scale,
-                // Ebene des Layer-Panels (nicht die Standardebene „Möbel“).
-                "layer": self.doc().current_layer,
             });
+            // Ebene wie bei jedem Werkzeug (T0202): die typgerechte
+            // Standardebene „Blöcke“, außer eine eigene Ebene ist gewählt.
+            let mut params = params;
+            let ebene = self
+                .ui
+                .pending
+                .layer
+                .filter(|l| self.doc().layer(*l).is_some())
+                .or_else(|| self.werkzeug_ebene("block.insert"));
+            if let Some(ebene) = ebene {
+                params["layer"] = serde_json::json!(ebene);
+            }
             return match self.session_mut().execute("block.insert", &params) {
                 Ok(_) => {
                     self.mark_changed();

@@ -207,8 +207,14 @@ Mit dem Nutzer abgestimmt — nicht „verbessern“:
   Layer kopiert: Anzeige (`RenderCtx::layer_ok`), Fang, `select.all` und
   `visible_layers` fragen diese beiden Funktionen. Alte Dateien bekommen beim
   Laden einen Plan (`persist::normalize_plaene`). Werkzeuge legen ihr Objekt auf
-  die Ebene ihres Typs; eine **eigene** Ebene (nicht eine der vier) sticht das
-  (`canvas::run_mit_meldung`) — wer sie im Panel wählt, zeichnet bewusst dorthin.
+  die Ebene ihres Typs; eine **eigene** Ebene (nicht eine der vier) sticht das.
+  Die eine Abfrage ist `App::werkzeug_ebene(action)` (übergibt die aktuelle
+  Ebene nur, wenn sie eigen ist) bzw. `App::werkzeug_ziel_ebene(standard)` für
+  die Anzeige im Eigenschaften-Panel; ein ausdrücklicher Wunsch aus dem Panel
+  steht in `UiState::pending.layer` und sticht beides. **Jeder Erzeugerpfad
+  muss dort anschließen** — `canvas::run_mit_meldung`, `textedit::uebernehmen`
+  und `App::commit_ghost`; die Stelle davor (`"layer": app.doc().current_layer`)
+  war die Ursache, dass neue Texte auf „Zeichnung“ landeten (T0202, Turn 3).
   Prüfweg: `cargo test -p jjcad-core --test plaene` und
   `cargo test -p jjcad-gui tests_plaene`.
 - **Raster-Chip** schaltet Anzeige *und* Rasterfang gemeinsam.

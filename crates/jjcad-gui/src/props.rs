@@ -542,7 +542,9 @@ pub fn gemein(
 /// Gemeinsame Zeilen auf die Vorgaben anwenden (Erzeugen).
 pub fn gemein_nach_optionen(app: &mut App, a: &Gemein) {
     if let Some(l) = a.layer {
-        app.doc_mut().current_layer = l;
+        // T0202: Die Wahl im Panel ist die Ziel-Ebene des nächsten Elements —
+        // sie verschiebt nicht mehr die „aktuelle Ebene“ (die folgt dem Typ).
+        app.ui.pending.layer = Some(l);
     }
     if let Some(v) = a.farbe {
         app.ui.pending.color = v;
@@ -847,7 +849,7 @@ pub fn text(app: &mut App, ui: &mut Ui, ziel: Ziel) {
             },
             None => (
                 "Text",
-                app.doc().current_layer,
+                app.werkzeug_ziel_ebene("Beschriftung"),
                 app.options.text_color,
                 app.options.text_height,
                 app.options.text_font,
@@ -1448,7 +1450,7 @@ pub fn wand(app: &mut App, ui: &mut Ui, ziel: Ziel) {
                 _ => return,
             },
             None => (
-                app.doc().current_layer,
+                app.werkzeug_ziel_ebene("Architektur"),
                 app.ui.pending.color,
                 app.options.wall_thickness,
                 app.options.wall_height,
@@ -1700,7 +1702,7 @@ pub fn tuer(app: &mut App, ui: &mut Ui, ziel: Ziel) {
             _ => return,
         },
         None => (
-            app.doc().current_layer,
+            app.werkzeug_ziel_ebene("Architektur"),
             app.ui.pending.color,
             app.options.door_width,
             app.options.door_kind,
@@ -1904,7 +1906,7 @@ pub fn fenster(app: &mut App, ui: &mut Ui, ziel: Ziel) {
             _ => return,
         },
         None => (
-            app.doc().current_layer,
+            app.werkzeug_ziel_ebene("Architektur"),
             app.ui.pending.color,
             app.options.window_width,
             app.options.window_sill,
@@ -2088,7 +2090,7 @@ pub fn fuellflaeche(app: &mut App, ui: &mut Ui, ziel: Ziel) {
                 _ => return,
             },
             None => (
-                app.doc().current_layer,
+                app.werkzeug_ziel_ebene("Zeichnung"),
                 app.ui.pending.color,
                 // Der Farbeimer hat sein eigenes Muster (startet mit
                 // Vollfläche, wie ein Farbeimer im Malprogramm).
@@ -2312,7 +2314,7 @@ pub fn bemassung(app: &mut App, ui: &mut Ui, ziel: Ziel) {
         None => {
             let achse = app.options.dim_axis.unwrap_or(DimAxis::X);
             (
-                app.doc().current_layer,
+                app.werkzeug_ziel_ebene("Beschriftung"),
                 app.ui.pending.color,
                 Some(achse),
                 achse.winkel(&[]).unwrap_or(0.0),
@@ -2667,7 +2669,7 @@ pub fn raumstempel(app: &mut App, ui: &mut Ui, ziel: Ziel) {
             _ => return,
         },
         None => (
-            app.doc().current_layer,
+            app.werkzeug_ziel_ebene("Beschriftung"),
             app.ui.pending.color,
             app.options.room_height,
             app.options.room_heading.clone(),
@@ -3495,7 +3497,7 @@ pub fn volumen(app: &mut App, ui: &mut Ui, ziel: Ziel) {
                 _ => return,
             },
             None => (
-                app.doc().current_layer,
+                app.werkzeug_ziel_ebene("Architektur"),
                 app.ui.pending.color,
                 app.options.volume_height,
                 app.options.volume_pattern,
@@ -3737,7 +3739,7 @@ pub fn treppe(app: &mut App, ui: &mut Ui, ziel: Ziel) {
             _ => return,
         },
         None => (
-            app.doc().current_layer,
+            app.werkzeug_ziel_ebene("Architektur"),
             app.ui.pending.color,
             0.0,
             0.0,
