@@ -7028,6 +7028,18 @@ impl App {
     /// der automatische Basispunkt der normalen Kopierfunktion. „Kopieren mit
     /// Basispunkt" übergibt den geklickten Punkt.
     pub fn merke_zwischenablage(&mut self, ids: &[Id], base: Option<V2>) {
+        // Türen und Fenster gehören zur Wand: wird eine Wand kopiert, wandern
+        // sie mit in die Zwischenablage (T0207). Sonst klebte die Kopie ohne
+        // Öffnungen in der Zeichnung, die alten blieben am Original.
+        let mut ids: Vec<Id> = ids.to_vec();
+        {
+            let doc = self.doc();
+            for extra in jjcad_core::actions::carried_openings(doc, &ids) {
+                if !ids.contains(&extra) {
+                    ids.push(extra);
+                }
+            }
+        }
         let ents: Vec<Entity> = {
             let doc = self.doc();
             doc.ents()
@@ -9303,12 +9315,30 @@ impl App {
         let snap = self.doc().clone();
         self.session_mut().history.record(&snap);
         let mut ids = Vec::new();
+        let mut zuordnung: Vec<(Id, Id)> = Vec::new();
         for mut e in ents {
+            let alt = e.id;
             e.id = self.doc_mut().new_id();
+            zuordnung.push((alt, e.id));
             ids.push(e.id);
             // Eingefügte Elemente ordnen sich nach ihrem Zeichenrang ein
             // (`Document::insert_ranked`): Flächen hinter Linien und Wänden.
             self.doc_mut().insert_ranked(e);
+        }
+        // Die mitkopierten Öffnungen hängen an der **eingefügten** Wand, nicht
+        // am Original (T0207): die Verweise auf die alten Ids werden auf die
+        // neuen umgesetzt. Ohne das saß die Tür weiter in der Ursprungswand.
+        for (_, neu) in &zuordnung {
+            let Some(em) = self.doc_mut().entity_mut(*neu) else {
+                continue;
+            };
+            let host = match &mut em.kind {
+                EntityKind::Door { host, .. } | EntityKind::Window { host, .. } => host,
+                _ => continue,
+            };
+            if let Some((_, neu_host)) = zuordnung.iter().find(|(alt, _)| Some(*alt) == *host) {
+                *host = Some(*neu_host);
+            }
         }
         // T0191: eine eingefügte Tür hängt an ihrer Wand — die Kopie liegt
         // danach wieder auf der Wandkante, nicht frei in der Zeichnung.
@@ -18947,5 +18977,115 @@ mod tests_block_eigenschaften {
             app.ui.block_eigenschaften.is_some(),
             "das Fenster muss zum Nachbessern offen bleiben"
         );
+    }
+}
+
+#[cfg(test)]
+mod tests_zwischenablage_wand {
+    //! T0207: Kopieren und Einfügen einer Wand nimmt ihre Türen und Fenster mit
+    //! — und die Kopie der Öffnung hängt an der **kopierten** Wand.
+    //!
+    //! Beide Wege sind betroffen: `App::merke_zwischenablage` (was kommt in die
+    //! Zwischenablage) und `App::commit_ghost` (welche Wand-Id steht danach im
+    //! `host` der eingefügten Tür).
+
+    use super::*;
+
+    fn app_mit_wand_und_tuer() -> (App, Id, Id) {
+        let mut app = App::with_ctx(egui::Context::default());
+        app.doc_mut().settings.input_unit = jjcad_core::units::Unit::Mm;
+        app.test_prefs_speichern = false;
+        let wand = app
+            .session_mut()
+            .execute(
+                "draw.wall",
+                &serde_json::json!({
+                    "a": [0.0, 0.0], "b": [5000.0, 0.0],
+                    "thickness": 240.0, "align": "center"
+                }),
+            )
+            .expect("Wand")["created"][0]
+            .as_u64()
+            .unwrap();
+        let tuer = app
+            .session_mut()
+            .execute(
+                "draw.door",
+                &serde_json::json!({
+                    "host": wand, "at": [2500.0, 0.0], "width": 1000.0, "swing_in": true
+                }),
+            )
+            .expect("Tür")["created"][0]
+            .as_u64()
+            .unwrap();
+        (app, wand, tuer)
+    }
+
+    /// Die Zwischenablage enthält die Tür, wenn die Wand kopiert wird.
+    #[test]
+    fn kopieren_der_wand_legt_die_tuer_mit_in_die_zwischenablage() {
+        let (mut app, wand, tuer) = app_mit_wand_und_tuer();
+        app.merke_zwischenablage(&[wand], None);
+        let ids: Vec<Id> = app.ui.clipboard.ents.iter().map(|e| e.id).collect();
+        assert!(ids.contains(&wand), "Wand fehlt: {ids:?}");
+        assert!(ids.contains(&tuer), "Tür fehlt in der Zwischenablage: {ids:?}");
+    }
+
+    /// Eingefügt: neue Wand, neue Tür — und die Tür hängt an der neuen Wand.
+    #[test]
+    fn einfuegen_haengt_die_tuer_an_die_eingefuegte_wand() {
+        let (mut app, wand, tuer) = app_mit_wand_und_tuer();
+        app.merke_zwischenablage(&[wand], None);
+        app.pointer_world = Some(V2::new(0.0, 6000.0));
+        app.start_ghost_paste();
+        assert!(app.commit_ghost(), "Einfügen muss etwas anlegen");
+
+        let waende: Vec<Id> = app
+            .doc()
+            .entities
+            .iter()
+            .filter(|e| matches!(e.kind, EntityKind::Wall { .. }))
+            .map(|e| e.id)
+            .collect();
+        let tueren: Vec<Id> = app
+            .doc()
+            .entities
+            .iter()
+            .filter(|e| matches!(e.kind, EntityKind::Door { .. }))
+            .map(|e| e.id)
+            .collect();
+        assert_eq!(waende.len(), 2, "eine Wand und ihre Kopie: {waende:?}");
+        assert_eq!(tueren.len(), 2, "eine Tür und ihre Kopie: {tueren:?}");
+
+        let neue_wand = *waende.iter().find(|id| **id != wand).unwrap();
+        let neue_tuer = *tueren.iter().find(|id| **id != tuer).unwrap();
+        let EntityKind::Door { host, center, .. } = &app.doc().entity(neue_tuer).unwrap().kind
+        else {
+            panic!("Tür erwartet");
+        };
+        assert_eq!(
+            *host,
+            Some(neue_wand),
+            "die eingefügte Tür muss an der eingefügten Wand hängen, nicht am Original"
+        );
+        // Die Tür sitzt auf der vorderen Kante **dieser** Wand (Dicke/2 über
+        // der Achse) — sie ist mit ihr gewandert.
+        let EntityKind::Wall { a, b, thickness, .. } = &app.doc().entity(neue_wand).unwrap().kind
+        else {
+            panic!("Wand erwartet");
+        };
+        assert!(
+            (center.y - (a.y + thickness * 0.5)).abs() <= 0.5
+                && (center.y - (b.y + thickness * 0.5)).abs() <= 0.5,
+            "die Tür muss auf der eingefügten Wand sitzen: Tür {center:?}, Wand {a:?}→{b:?}"
+        );
+        // Das Original bleibt, wo es war.
+        let EntityKind::Door { host: alt, center: alt_c, .. } =
+            &app.doc().entity(tuer).unwrap().kind
+        else {
+            panic!("Tür erwartet");
+        };
+        assert_eq!(*alt, Some(wand));
+        assert!((alt_c.y - 120.0).abs() <= 0.5, "Original-Tür bleibt: {alt_c:?}");
     }
 }

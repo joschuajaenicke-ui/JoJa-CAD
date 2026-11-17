@@ -1832,13 +1832,19 @@ fn hit_test_opt(
                 | EntityKind::Stair { .. }
         );
         if filled {
-            if let EntityKind::Wall { a, b: bb, thickness, .. } = &e.kind {
-                if dist_point_segment(p, *a, *bb) <= thickness * 0.5 + tol {
-                    let d = dist_point_segment(p, *a, *bb);
-                    if best.map(|(_, bd, _)| d < bd).unwrap_or(true) {
-                        best = Some((e.id, d, 0));
+            if let EntityKind::Wall { .. } = &e.kind {
+                // Trefferfläche ist der **Wandkörper** um die versetzte Achse,
+                // nicht die halbe Dicke um die Basislinie: bei den
+                // Ausrichtungen Links/Rechts lag die Hälfte des Körpers außer
+                // Reichweite (T0207).
+                if let Some(f) = crate::wall::Frame::of(e) {
+                    let d = f.band_abstand(p);
+                    if d <= tol {
+                        if best.map(|(_, bd, _)| d < bd).unwrap_or(true) {
+                            best = Some((e.id, d, 0));
+                        }
+                        continue;
                     }
-                    continue;
                 }
             }
             // **Volumen**: auch *in* der Fläche getroffen (Inseln zählen als
@@ -2022,31 +2028,26 @@ pub fn select_window(doc: &Document, a: Vec2, b: Vec2, crossing: bool) -> Vec<Id
             }
             continue;
         }
-        // Wand: Körper zählt als Fläche
-        if let EntityKind::Wall {
-            a: wa,
-            b: wb,
-            thickness,
-            ..
-        } = &e.kind
-        {
-            let halb = thickness * 0.5;
-            let mitte_innen = dist_point_segment(rect.center(), *wa, *wb) <= halb;
-            let im_koerper = |p: Vec2| dist_point_segment(p, *wa, *wb) <= halb;
-            let ecken_innen = [rect.min, Vec2::new(rect.max.x, rect.min.y), rect.max, Vec2::new(rect.min.x, rect.max.y)]
-                .iter()
-                .all(|p| im_koerper(*p));
-            if crossing {
-                if mitte_innen || ecken_innen || {
-                    let pts: Vec<Vec2> = render::entity_segments(doc, e)
-                        .iter()
-                        .flat_map(seg_points)
-                        .collect();
-                    pts.windows(2).any(|w| seg_meets_rect(w[0], w[1], &rect))
-                } {
-                    out.push(e.id);
-                }
-            } else if ecken_innen {
+        // Wand: der **Körper** zählt (Band um die versetzte Achse), nicht die
+        // halbe Dicke um die Basislinie (T0207). Bei den Ausrichtungen
+        // Links/Rechts lag die halbe Wand außerhalb jeder Prüfung.
+        //
+        // Kreuzauswahl: Berührung des Bandes. Fensterauswahl: das Fenster muss
+        // den Körper **ganz** umschließen — vorher wurde verlangt, dass alle
+        // vier Ecken *des Fensters* im Wandkörper liegen; das ist bei einer
+        // Wand praktisch nie der Fall, eine Wand ließ sich damit mit der
+        // Fensterauswahl überhaupt nicht wählen.
+        if let EntityKind::Wall { .. } = &e.kind {
+            let Some(f) = crate::wall::Frame::of(e) else {
+                continue;
+            };
+            let band = f.band();
+            let trifft = if crossing {
+                crate::area::flaeche_beruehrt_rechteck(&band, &[], &rect)
+            } else {
+                band.iter().all(|p| rect.contains(*p))
+            };
+            if trifft {
                 out.push(e.id);
             }
             continue;

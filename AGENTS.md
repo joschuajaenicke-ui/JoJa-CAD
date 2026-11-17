@@ -808,6 +808,21 @@ Mit dem Nutzer abgestimmt — nicht „verbessern“:
   Bezugsachse auf die Linienrichtung zu setzen (`let (achse, start) = (1.0, 0.0)`).
 - **Auswahl über Rechteck** prüft echte Geometrie (Segmente, Wandkörper),
   nicht die achsenparallele Bounding-Box.
+- **Wandkörper ist die Trefferfläche (T0207)**: Klick, Kreuz- und
+  Fensterauswahl sowie das Verlängern fragen den **Körper** (`wall::Frame::band_abstand`
+  bzw. `Frame::band`), nicht die halbe Dicke um die Basislinie. Bei den
+  Ausrichtungen Links/Rechts lag damit die halbe Wand außerhalb jeder Prüfung
+  (nicht anklickbar, nicht auswählbar), und die Fensterauswahl verlangte, dass
+  alle vier Ecken *des Fensters* im Wandkörper liegen — eine Wand ließ sich so
+  nie mit der Fensterauswahl wählen. **Verlängern** schneidet Wände mit ihrer
+  **Umrandung** (`actions::cutter_segments_umrandung`), **Stutzen** bleibt auf
+  der Achse (`cutter_segments`, siehe `snap_wandfang`). Kopieren — Action,
+  Drehen/Spiegeln mit Kopie und die Zwischenablage — nimmt Türen und Fenster
+  der Wand mit und setzt deren `host` auf die **neue** Wand
+  (`actions::kopiere_mit_oeffnungen`, `App::merke_zwischenablage` +
+  `App::commit_ghost`). Naht an der Ecke: geprüft wird, wo die Naht die
+  **Achse** jeder Wand trifft, nicht der Abstand des Gehrungspunkts vom Knoten —
+  sonst fiel sie bei kurzen Wänden aus (`h·√2` gegen Wandlänge).
 - **Bilder sind nur an den Kanten anklickbar (T0201)**: Ein Bild hat keine
   Anklickfläche in der Mitte — der Zeiger über der Fläche höbe es sonst hervor,
   und über einem Bild ließe sich nicht zeichnen. `snap::hit_test` prüft für
