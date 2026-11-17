@@ -1,3 +1,11 @@
+[features]
+# Windows-Fassung: Liberation und Quicksand liegen mit in der Programmdatei
+# (`src/schriften_eingebettet.rs`, T0205). Das Merkmal erlaubt denselben Weg auf
+# Linux zu prüfen (`cargo test -p jjcad-core --features schriften-eingebettet`);
+# ausgeliefert wird es nur unter Windows, wo `cfg(windows)` es ohnehin setzt.
+default = []
+schriften-eingebettet = []
+
 [package]
 name = "jjcad-core"
 version.workspace = true

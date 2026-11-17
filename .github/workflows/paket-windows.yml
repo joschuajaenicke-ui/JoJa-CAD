@@ -35,9 +35,13 @@ jobs:
           Copy-Item target/release/jjcad.exe $name
           Copy-Item target/release/jjcad-mcp.exe $name
           Copy-Item LICENSE, README.md $name
-          New-Item -ItemType Directory -Path "$name/fonts" | Out-Null
-          Copy-Item packaging/fonts/*.ttf "$name/fonts/"
-          Copy-Item packaging/fonts/*.txt "$name/fonts/"
+          # Die Gebrauchsschriften (Liberation, Quicksand) stecken seit T0205 in
+          # der .exe (crates/jjcad-core/src/schriften_eingebettet.rs) — der Ordner
+          # fonts/ entfällt. Die Lizenztexte der SIL OFL 1.1 gehören trotzdem ins
+          # Paket: eine Datei im Wurzelverzeichnis, nicht im Binary versteckt.
+          $lizenzen = @("packaging/fonts/Liberation-COPYRIGHT.txt", "packaging/fonts/Quicksand-COPYRIGHT.txt")
+          Get-Content $lizenzen | Set-Content -Path "$name/SCHRIFTEN-LIZENZ.txt" -Encoding UTF8
+          if (-not (Test-Path "$name/SCHRIFTEN-LIZENZ.txt")) { throw "Lizenztext der Schriften fehlt" }
 
           # Prüfen, dass Symbol und Versionsangaben wirklich in der .exe stecken
           $vi = (Get-Item "$name/jjcad.exe").VersionInfo

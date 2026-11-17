@@ -55,3 +55,10 @@ jobs:
         env:
           JJCAD_PERF_BUDGET_MS: 600
         run: cargo test --workspace
+
+      # Die Windows-Fassung bettet Liberation und Quicksand in die .exe ein
+      # (T0205). Auf Linux ist das abgeschaltet, damit der Build die
+      # Systemschriften benutzt — das Merkmal prüft die Tabelle trotzdem:
+      # jede Kombination aus Familie und Schnitt muss vorhanden sein.
+      - name: Eingebettete Schriften (Windows-Tabelle)
+        run: cargo test -p jjcad-core --features schriften-eingebettet --lib schriften_eingebettet

@@ -16,6 +16,14 @@
 //! damit in Tests, Rasterausgabe, PDF und GUI zur Verfügung, ohne dass jemand
 //! Dateien nachinstalliert. Herkunft und Lizenzen: `fonts/LIESMICH.md`.
 //!
+//! **Windows bringt die Gebrauchsschriften mit (T0205):** dort gibt es
+//! Liberation und Quicksand nicht, deshalb liegen sie in der Windows-Fassung
+//! ebenfalls in der Programmdatei (`schriften_eingebettet.rs`). Gesucht wird in
+//! dieser Reihenfolge: `fonts/` neben dem Programm (der Nutzer kann die
+//! Schriften dort austauschen) → eingebettet → Systempfade. Auf Linux bleibt es
+//! bei den Systemschriften; das AppImage liefert sie als Dateien mit, und
+//! Distro-Pakete dürfen keine Schriften bündeln, die es als Paket gibt.
+//!
 //! Bevorzugt wird bei den Systemschriften die Familie **Liberation**, weil sie
 //! metrisch identisch mit Helvetica/Arial/Times/Courier ist: alte Ausgaben
 //! (Helvetica) und neue (eingebettete Schrift) passen zusammen.
@@ -24,6 +32,12 @@ use crate::model::TextFont;
 use ab_glyph::{Font, FontRef, GlyphId};
 use std::collections::HashMap;
 use std::sync::{Mutex, OnceLock};
+
+// Gebrauchsschriften der Windows-Fassung: dieselbe Mechanik wie bei den
+// technischen Schriften, aber nur dort eingebettet (T0205).
+#[cfg(any(windows, feature = "schriften-eingebettet"))]
+#[path = "schriften_eingebettet.rs"]
+mod schriften_eingebettet;
 
 /// Schriftschnitt eines Textlaufs.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
@@ -169,33 +183,39 @@ fn gebuendelt(font: TextFont) -> Option<Gebuendelt> {
     })
 }
 
-/// Suchpfade für eine Familie und einen Schnitt — mit Rückfall auf den
-/// Grundschnitt, falls es den Schnitt nicht gibt.
-fn candidates(font: TextFont, style: FontStyle) -> Vec<String> {
-    const DIRS: [&str; 9] = [
-        "/usr/share/fonts/truetype/liberation/",
-        "/usr/share/fonts/liberation-sans/",
-        "/usr/share/fonts/truetype/quicksand/",
-        "/usr/share/fonts/truetype/dejavu/",
-        "/usr/share/fonts/TTF/",
-        "/usr/share/fonts/truetype/noto/",
-        "/usr/share/fonts/freefont/",
-        "C:\\Windows\\Fonts\\",
-        "/Library/Fonts/",
-    ];
-    // Neben dem Programm mitgelieferte Schriften haben Vorrang — nur so ist
-    // die Windows-Fassung ohne Systeminstallation von Liberation/Quicksand zu
-    // gebrauchen.
-    let mut dirs: Vec<String> = Vec::with_capacity(DIRS.len() + 1);
-    if let Ok(exe) = std::env::current_exe() {
-        if let Some(eltern) = exe.parent() {
-            let mut d = eltern.join("fonts").to_string_lossy().to_string();
-            d.push(std::path::MAIN_SEPARATOR);
-            dirs.push(d);
-        }
-    }
-    dirs.extend(DIRS.iter().map(|d| (*d).to_string()));
+/// Verzeichnisse, in denen das Betriebssystem Schriften bereitstellt.
+///
+/// Unter Windows greift davon nur `C:\Windows\Fonts\`; dort heißen die Dateien
+/// `arial.ttf`/`times.ttf`, die gesuchten `LiberationSans*.ttf` gibt es dort
+/// nicht. Diese Lücke schließt unter Windows die eingebettete Tabelle
+/// (`schriften_eingebettet.rs`, T0205).
+const SYSTEM_VERZEICHNISSE: [&str; 9] = [
+    "/usr/share/fonts/truetype/liberation/",
+    "/usr/share/fonts/liberation-sans/",
+    "/usr/share/fonts/truetype/quicksand/",
+    "/usr/share/fonts/truetype/dejavu/",
+    "/usr/share/fonts/TTF/",
+    "/usr/share/fonts/truetype/noto/",
+    "/usr/share/fonts/freefont/",
+    "/Library/Fonts/",
+    "C:\\Windows\\Fonts\\",
+];
 
+/// Der Ordner `fonts/` neben dem Programm — dort kann der Nutzer die Schriften
+/// austauschen. Er hat Vorrang vor allem anderen (außer den technischen
+/// Schriften, die fest im Programm liegen).
+fn verzeichnis_neben_dem_programm() -> Option<String> {
+    let exe = std::env::current_exe().ok()?;
+    let eltern = exe.parent()?;
+    let mut d = eltern.join("fonts").to_string_lossy().to_string();
+    d.push(std::path::MAIN_SEPARATOR);
+    Some(d)
+}
+
+/// Dateinamen (ohne Endung) für eine Familie und einen Schnitt, in
+/// Vorzugsreihenfolge — mit Rückfall auf den Grundschnitt, falls es den
+/// Schnitt nicht gibt.
+fn namen(font: TextFont, style: FontStyle) -> Vec<String> {
     let b = bases(font);
     let mut namen: Vec<String> = b
         .iter()
@@ -218,13 +238,57 @@ fn candidates(font: TextFont, style: FontStyle) -> Vec<String> {
         namen.push("LiberationSans".into());
         namen.push("DejaVuSans".into());
     }
+    namen
+}
+
+/// Suchpfade für eine Liste von Verzeichnissen.
+fn pfade(dirs: &[String], namen: &[String]) -> Vec<String> {
     let mut pfade = Vec::with_capacity(namen.len() * dirs.len());
     for n in namen {
-        for d in &dirs {
+        for d in dirs {
             pfade.push(format!("{d}{n}.ttf"));
         }
     }
     pfade
+}
+
+/// Dateiname ohne Endung — steht im PDF als `/BaseFont`.
+fn ps_name_aus_dateiname(name: &str) -> String {
+    std::path::Path::new(name)
+        .file_stem()
+        .map(|s| s.to_string_lossy().replace(' ', ""))
+        .unwrap_or_else(|| "Schrift".into())
+}
+
+/// Liest die erste vorhandene und lesbare Schriftdatei aus den Pfaden.
+fn lies(pfade: Vec<String>) -> Option<Loaded> {
+    pfade.into_iter().find_map(|pfad| {
+        let data = std::fs::read(&pfad).ok()?;
+        let info = TtfInfo::parse(&data).ok()?;
+        Some(Loaded {
+            data,
+            info,
+            ps_name: ps_name_aus_dateiname(&pfad),
+        })
+    })
+}
+
+/// Eingebettete Gebrauchsschrift (nur Windows bzw. Cargo-Merkmal
+/// `schriften-eingebettet`) — sonst gibt es keine.
+#[cfg(any(windows, feature = "schriften-eingebettet"))]
+fn eingebettet(font: TextFont, style: FontStyle) -> Option<Loaded> {
+    let d = schriften_eingebettet::datei(font, style)?;
+    let info = TtfInfo::parse(d.daten).ok()?;
+    Some(Loaded {
+        data: d.daten.to_vec(),
+        info,
+        ps_name: ps_name_aus_dateiname(d.dateiname),
+    })
+}
+
+#[cfg(not(any(windows, feature = "schriften-eingebettet")))]
+fn eingebettet(_font: TextFont, _style: FontStyle) -> Option<Loaded> {
+    None
 }
 
 /// Gelesene Schriftdatei — einmal je Familie und Schnitt.
@@ -269,20 +333,19 @@ fn lade(font: TextFont, style: FontStyle) -> Option<&'static Loaded> {
         }
         return geladen;
     }
-    let geladen = candidates(font, style)
-        .into_iter()
-        .find_map(|pfad| {
-            let data = std::fs::read(&pfad).ok()?;
-            let info = TtfInfo::parse(&data).ok()?;
-            let ps_name = std::path::Path::new(&pfad)
-                .file_stem()
-                .map(|s| s.to_string_lossy().replace(' ', ""))
-                .unwrap_or_else(|| "Schrift".into());
-            Some(Loaded {
-                data,
-                info,
-                ps_name,
-            })
+    // Suchreihenfolge (T0205): erst `fonts/` neben dem Programm — dort kann
+    // der Nutzer die Schriften austauschen —, dann die eingebetteten
+    // Gebrauchsschriften der Windows-Fassung, zuletzt die Systempfade.
+    let namen = namen(font, style);
+    let geladen = verzeichnis_neben_dem_programm()
+        .and_then(|d| lies(pfade(&[d], &namen)))
+        .or_else(|| eingebettet(font, style))
+        .or_else(|| {
+            let dirs: Vec<String> = SYSTEM_VERZEICHNISSE
+                .iter()
+                .map(|d| (*d).to_string())
+                .collect();
+            lies(pfade(&dirs, &namen))
         })
         .map(|l| &*Box::leak(Box::new(l)));
     if let Ok(mut m) = cache.lock() {
