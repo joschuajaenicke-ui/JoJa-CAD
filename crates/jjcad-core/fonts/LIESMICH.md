@@ -5,6 +5,12 @@ Rechner; aus den Systemschriften (Liberation, Quicksand) lassen sie sich nicht
 ableiten. Sie liegen deshalb hier und werden über `include_bytes!` in
 `../src/fonts.rs` geladen. Alles andere bleibt Systemschrift.
 
+Die **Gebrauchsschriften** (Liberation Sans/Serif/Mono/Narrow, Quicksand)
+bleiben Systemschriften — außer in der Windows-Fassung: dort gibt es sie nicht,
+deshalb liegen die 18 Dateien aus `packaging/fonts/` über `include_bytes!` in
+`../src/schriften_eingebettet.rs` im Programm (T0205). Hier liegt bewusst keine
+zweite Kopie; die Quelle ist `packaging/fonts/`.
+
 | Datei | Schrift | Verwendung in JoJa-CAD |
 |---|---|---|
 | `D-DINCondensed.ttf` | D-DIN Condensed | **DIN 1451 Engschrift** |
