@@ -444,14 +444,27 @@ pub fn layers(app: &mut App, ui: &mut Ui) {
                             .as_ref()
                             .map(|(_, n)| n.clone())
                             .unwrap_or_default();
+                        // Das Feld füllt die Zeile **ganz** (T0206, Turn 3):
+                        // `ui.put` schiebt den Layoutzeiger auf das Rechteck
+                        // des Feldes weiter. Ein 20-px-Feld in einer 27-px-
+                        // Zeile zog deshalb alle folgenden Zeilen um 3 px nach
+                        // oben — die Liste sprang beim Umbenennen.
                         let feld = Rect::from_min_max(
-                            Pos2::new(rect.left() + 39.0, rect.center().y - 10.0),
-                            Pos2::new(rect.right() - 52.0, rect.center().y + 10.0),
+                            Pos2::new(rect.left() + 39.0, rect.top()),
+                            Pos2::new(rect.right() - 52.0, rect.bottom()),
                         );
                         let feld_resp = ui.put(
                             feld,
                             egui::TextEdit::singleline(&mut n)
-                                .font(FontId::proportional(12.0)),
+                                .font(FontId::proportional(12.0))
+                                .margin(egui::Margin {
+                                    left: 4.0,
+                                    right: 4.0,
+                                    // Oben mehr Luft: der Text sitzt sonst
+                                    // 2 px höher als der Name der Nachbarzeilen.
+                                    top: 6.0,
+                                    bottom: 2.0,
+                                }),
                         );
                         if !app.ui.rename_layer_fokus {
                             feld_resp.request_focus();
@@ -3062,6 +3075,25 @@ mod tests_plaene {
         assert!(
             rechter_rand(&ctx, &mut app) <= 232.0,
             "der Inhalt darf das Panel nicht verbreitern"
+        );
+    }
+
+    /// T0206 (Turn 3): Das Feld füllt die Zeile ganz — die Liste behält
+    /// während des Umbenennens ihre Länge, keine Zeile wandert.
+    #[test]
+    fn umbenennen_verschiebt_die_liste_nicht() {
+        let ctx = egui::Context::default();
+        let mut app = App::with_ctx(ctx.clone());
+        let vorher = rahmen(&ctx, &mut app, Vec::new());
+        let naechste_y = mitte(&vorher, "Architektur").y;
+        let id = app.doc().layers[0].id;
+        app.ui.rename_layer = Some((id, "Zeichnung".into()));
+        app.ui.rename_layer_fokus = false;
+        let texte = rahmen(&ctx, &mut app, Vec::new());
+        assert_eq!(
+            mitte(&texte, "Architektur").y,
+            naechste_y,
+            "die Zeilen unter dem Feld dürfen nicht wandern"
         );
     }
 
