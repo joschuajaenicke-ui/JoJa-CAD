@@ -29,7 +29,10 @@ jobs:
           # („macos-14-arm64-us-xl is not supported").
           - runner: macos-latest # Apple Silicon
             arch: arm64
-          - runner: macos-13 # Intel
+          # `macos-13` (letzte Intel-Ausgabe) wird nicht mehr bedient — der Job
+          # bleibt in der Warteschlange stehen. `macos-15-intel` ist der
+          # aktuelle Name für Intel-Runner.
+          - runner: macos-15-intel # Intel
             arch: x64
     runs-on: ${{ matrix.runner }}
     steps:
