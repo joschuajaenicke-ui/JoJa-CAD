@@ -51,21 +51,21 @@ starten, keine Installation, keine Administratorrechte, kein Konto.
 **AppImage** (empfohlen, eine Datei):
 
 ```bash
-chmod +x JoJa-CAD-0.2.2-x86_64.AppImage
-./JoJa-CAD-0.2.2-x86_64.AppImage
+chmod +x JoJa-CAD-0.2.3-x86_64.AppImage
+./JoJa-CAD-0.2.3-x86_64.AppImage
 ```
 
 Wer mehrere AppImages verwaltet, bindet sie am besten mit
 [Gear Lever](https://github.com/mijorus/gearlever) ein: es legt die
 Startmenü-Verknüpfung an, aktualisiert beim neuen Release und hält die Dateien
 an einem Ort statt im Download-Ordner. Startet ein System ohne FUSE die Datei
-nicht, hilft `./JoJa-CAD-0.2.2-x86_64.AppImage --appimage-extract-and-run`.
+nicht, hilft `./JoJa-CAD-0.2.3-x86_64.AppImage --appimage-extract-and-run`.
 
 **Tar-Archiv** (wenn du die Dateien lieber offen im Ordner hast): entpacken und
 `./jjcad` starten. Die Schriften liegen im Ordner `fonts/` neben dem Programm.
 
-Der **MCP-Server** steckt in beiden Paketen mit: im AppImage über
-`--mcp` (z. B. `./JoJa-CAD-0.2.2-x86_64.AppImage --mcp --selftest`), im
+Der **MCP-Server** steckt in beiden Linux-Paketen mit: im AppImage über
+`--mcp` (z. B. `./JoJa-CAD-0.2.3-x86_64.AppImage --mcp --selftest`), im
 Tar-Archiv als eigene Datei `jjcad-mcp`.
 
 ### Windows
@@ -92,6 +92,24 @@ frisch heruntergeladene Datei als unbekannt ein. Drei Wege, je nach Meldung:
    **„Entsperren"** anhaken → Übernehmen → *danach* entpacken. Die Freigabe gilt
    dann für alles im Archiv. Die einzelne `.exe` hat dasselbe Kästchen unter
    Eigenschaften → Allgemein („Die Datei stammt von einem anderen Computer …").
+
+### macOS (ungeprüft)
+
+Die Fassung ist gebaut, aber noch nicht ausprobiert — Rückmeldung ist willkommen.
+Zwei Pakete: `macos-arm64` für Apple Silicon, `macos-x64` für Intel-Rechner.
+
+```bash
+unzip JoJa-CAD-0.2.3-macos-arm64.zip
+xattr -dr com.apple.quarantine JoJa-CAD-0.2.3.app
+open JoJa-CAD-0.2.3.app
+```
+
+Das Programm ist **nicht signiert und nicht notarisiert** (dafür braucht es ein
+Apple-Developer-Konto), deshalb blockiert macOS den ersten Start. Der
+`xattr`-Befehl hebt die Quarantäne auf; alternativ Rechtsklick auf das Programm →
+„Öffnen" → „Öffnen". Der MCP-Server liegt als
+`JoJa-CAD-0.2.3.app/Contents/MacOS/jjcad-mcp` daneben, die Schriften unter
+`Contents/MacOS/fonts/`.
 
 Wer selbst bauen will: siehe [Entwickeln](#entwickeln).
 

@@ -60,21 +60,21 @@ run, no installation, no administrator rights, no account.
 **AppImage** (recommended, a single file):
 
 ```bash
-chmod +x JoJa-CAD-0.2.2-x86_64.AppImage
-./JoJa-CAD-0.2.2-x86_64.AppImage
+chmod +x JoJa-CAD-0.2.3-x86_64.AppImage
+./JoJa-CAD-0.2.3-x86_64.AppImage
 ```
 
 If you keep several AppImages around, manage them with
 [Gear Lever](https://github.com/mijorus/gearlever): it registers the menu entry,
 updates on a new release and keeps the files in one place instead of the
 download folder. On a system without FUSE,
-`./JoJa-CAD-0.2.2-x86_64.AppImage --appimage-extract-and-run` does the job.
+`./JoJa-CAD-0.2.3-x86_64.AppImage --appimage-extract-and-run` does the job.
 
 **Tar archive** (if you prefer plain files): unpack and start `./jjcad`. The
 fonts live in the `fonts/` folder next to the program.
 
 The **MCP server** ships in both packages: in the AppImage via `--mcp`
-(e.g. `./JoJa-CAD-0.2.2-x86_64.AppImage --mcp --selftest`), in the tar archive as
+(e.g. `./JoJa-CAD-0.2.3-x86_64.AppImage --mcp --selftest`), in the tar archive as
 its own file `jjcad-mcp`.
 
 ### Windows
@@ -101,6 +101,23 @@ downloaded file as unknown. Three ways, depending on the message:
    extract. The clearance then applies to everything in the archive. A single
    `.exe` has the same checkbox under Properties → General ("This file came from
    another computer …").
+
+### macOS (untested)
+
+Built, but not tried out yet — feedback welcome. Two packages: `macos-arm64` for
+Apple Silicon, `macos-x64` for Intel Macs.
+
+```bash
+unzip JoJa-CAD-0.2.3-macos-arm64.zip
+xattr -dr com.apple.quarantine JoJa-CAD-0.2.3.app
+open JoJa-CAD-0.2.3.app
+```
+
+The program is **not signed and not notarised** (that needs an Apple Developer
+account), so macOS blocks the first launch. The `xattr` command lifts the
+quarantine; alternatively right-click the app → "Open" → "Open". The MCP server
+sits next to it as `JoJa-CAD-0.2.3.app/Contents/MacOS/jjcad-mcp`, the fonts under
+`Contents/MacOS/fonts/`.
 
 To build it yourself: see [Building](#building).
 

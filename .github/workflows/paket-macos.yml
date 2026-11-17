@@ -1,0 +1,113 @@
+name: Paket macOS
+
+# Die macOS-Fassung entsteht auf Apples eigenen Runnern — einmal für Apple
+# Silicon (arm64), einmal für Intel (x64). Gekreuzt wird nicht, damit die
+# Binaries echt sind.
+#
+# Signiert und notarisiert wird nicht: dafür bräuchte es ein Apple-Developer-
+# Konto. Das Paket ist deshalb als ungeprüfte Testfassung gekennzeichnet, und
+# macOS blockiert den ersten Start (Gatekeeper). Der Weg drumherum steht in der
+# README (`xattr -dr com.apple.quarantine`).
+
+on:
+  workflow_dispatch:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: read
+
+jobs:
+  paket:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: macos-14 # Apple Silicon
+            arch: arm64
+          - runner: macos-13 # Intel
+            arch: x64
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+
+      # Programm und MCP-Server gehören beide ins Bündel.
+      - name: Bauen
+        run: cargo build --release -p jjcad-gui -p jjcad-mcp
+
+      - name: App-Bündel schnüren
+        run: |
+          set -euo pipefail
+          version=$(sed -n 's/^version = "\(.*\)"/\1/p' Cargo.toml | head -1)
+          app="JoJa-CAD-$version.app"
+          rm -rf "$app"
+          mkdir -p "$app/Contents/MacOS" "$app/Contents/Resources"
+
+          cp target/release/jjcad "$app/Contents/MacOS/jjcad"
+          cp target/release/jjcad-mcp "$app/Contents/MacOS/jjcad-mcp"
+
+          # Die Gebrauchsschriften liegen unter macOS als Dateien neben dem
+          # Programm — die Einbettung in die Programmdatei gilt nur unter
+          # Windows (T0205). `fonts.rs` sucht genau dort zuerst.
+          cp -R packaging/fonts "$app/Contents/MacOS/fonts"
+
+          cp LICENSE "$app/Contents/Resources/LICENSE"
+          cp README.md "$app/Contents/Resources/README.md"
+
+          # Symbol aus den vorhandenen PNG-Größen (ein .icns ist ein
+          # Verzeichnis mit festen Namen).
+          iconset="AppIcon.iconset"
+          rm -rf "$iconset" && mkdir -p "$iconset"
+          sips -z 16 16   crates/jjcad-gui/assets/jjc-icon-16.png  --out "$iconset/icon_16x16.png"      >/dev/null
+          sips -z 32 32   crates/jjcad-gui/assets/jjc-icon-32.png  --out "$iconset/icon_16x16@2x.png"   >/dev/null
+          sips -z 32 32   crates/jjcad-gui/assets/jjc-icon-32.png  --out "$iconset/icon_32x32.png"      >/dev/null
+          sips -z 64 64   crates/jjcad-gui/assets/jjc-icon-64.png  --out "$iconset/icon_32x32@2x.png"   >/dev/null
+          sips -z 128 128 crates/jjcad-gui/assets/jjc-icon-128.png --out "$iconset/icon_128x128.png"    >/dev/null
+          sips -z 256 256 crates/jjcad-gui/assets/jjc-icon-256.png --out "$iconset/icon_128x128@2x.png" >/dev/null
+          sips -z 256 256 crates/jjcad-gui/assets/jjc-icon-256.png --out "$iconset/icon_256x256.png"    >/dev/null
+          sips -z 512 512 crates/jjcad-gui/assets/jjc-icon-512.png --out "$iconset/icon_256x256@2x.png" >/dev/null
+          sips -z 512 512 crates/jjcad-gui/assets/jjc-icon-512.png --out "$iconset/icon_512x512.png"    >/dev/null
+          sips -z 1024 1024 crates/jjcad-gui/assets/jjc-icon-512.png --out "$iconset/icon_512x512@2x.png" >/dev/null
+          iconutil -c icns "$iconset" -o "$app/Contents/Resources/jjc.icns"
+
+          cat > "$app/Contents/Info.plist" <<PLIST
+          <?xml version="1.0" encoding="UTF-8"?>
+          <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+          <plist version="1.0">
+          <dict>
+            <key>CFBundleName</key><string>JoJa-CAD</string>
+            <key>CFBundleDisplayName</key><string>JoJa-CAD</string>
+            <key>CFBundleIdentifier</key><string>de.joja.jjcad</string>
+            <key>CFBundleExecutable</key><string>jjcad</string>
+            <key>CFBundleIconFile</key><string>jjc</string>
+            <key>CFBundlePackageType</key><string>APPL</string>
+            <key>CFBundleShortVersionString</key><string>$version</string>
+            <key>CFBundleVersion</key><string>$version</string>
+            <key>LSMinimumSystemVersion</key><string>11.0</string>
+            <key>NSHighResolutionCapable</key><true/>
+            <key>NSSupportsAutomaticGraphicsSwitching</key><true/>
+          </dict>
+          </plist>
+          PLIST
+
+          # Ohne Signatur startet auf Apple Silicon gar nichts; ad hoc signieren
+          # ist der Mindeststand. Die Gatekeeper-Warnung bleibt trotzdem, weil
+          # die Identität fehlt.
+          codesign --force --deep --sign - "$app"
+
+          ditto -c -k --sequesterRsrc --keepParent "$app" "JoJa-CAD-$version-macos-${{ matrix.arch }}.zip"
+
+          echo "Bündel:"; du -sh "$app"
+          echo "Paket:";  ls -lh JoJa-CAD-*.zip
+          codesign -dv "$app" 2>&1 | head -3 || true
+
+      - name: Paket ablegen
+        uses: actions/upload-artifact@v4
+        with:
+          name: macos-${{ matrix.arch }}
+          path: JoJa-CAD-*-macos-*.zip
+          if-no-files-found: error

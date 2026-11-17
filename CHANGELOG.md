@@ -22,6 +22,63 @@ angefasst wurde.
 - Die Anzeige „Abstand der Stände“ rechnet nach der Formel des neuen Verfahrens.
 - Das Speichern der Zieldatei ist atomar über eine temporäre Datei, fsync und rename; ein Absturz mitten im Speichern hinterlässt keine halbe Datei mehr.
 
+## [0.2.3] — 2026-11-17
+
+Runde an Ebenen, Blöcken und Auswahl; dazu die erste macOS-Fassung.
+
+### Neu
+
+- **Parallele**: Linie oder Polylinie im gemerkten Abstand erzeugen.
+- **Layer-Manager** überarbeitet: Pläne mit vier Standardlayern, Pläne
+  einklappbar und sperrbar, Schalter je Plan.
+- **Panels auf beiden Seiten**, Leisten mit denselben Symbolen.
+- **Blöcke**: Name und Gruppe im Eigenschaften-Panel und im Fenster, Bearbeiten
+  über das Rechtsklickmenü, Blockbibliothek in drei Reitern.
+- **Zeichenfarben** in den Einstellungen anpassbar, in drei Gruppen und einer
+  gemeinsamen Farbliste.
+- **Grundriss-Kote**: Textposition Oben, Unten, Links, Rechts.
+- **Auswahl**: Mehrfachauswahl lässt sich nach Objektart filtern; bei gemischter
+  Auswahl zeigt das Panel nur die gemeinsamen Eigenschaften.
+- **Sicherung**: Aufbewahrung nach Geometrie, Nachfrage bei Konflikten,
+  verworfene Stände bleiben einsehbar.
+- **Über-Dialog** mit Verweisen auf das Projekt und die Downloads.
+- **Windows: die Schriften stecken in der `.exe`** — eine einzelne Datei, der
+  Ordner `fonts/` entfällt.
+- **macOS-Fassung** als `.app` (Apple Silicon und Intel), ungeprüft.
+
+### Geändert
+
+- Die Kurventoleranz gilt auch für Splines.
+- Maßketten: Messpunkte bleiben nach dem Ziehen in Messreihenfolge und fangen
+  aufeinander.
+- Flächen decken die Umrandung darunterliegender Objekte zu.
+- Bilder: nur die Kanten sind anklickbar; das Auswahlfenster prüft das schräge
+  Rechteck.
+- Fensterschatten dockt ohne Abstand an und ist abschaltbar.
+- Rechtsklick in einer Mehrfachauswahl gilt für alle Objekte der Auswahl.
+- Einstellungen aufgeräumt: Reihenfolge, Tooltips, Akzentfarbe.
+- Auswahlfelder sind so hoch wie Eingabefelder.
+
+### Behoben
+
+- Tür und Fenster: die Laibung fängt nicht mehr; der Basispunkt von Türen bleibt
+  auf der Wandkante.
+- Zerlegen mehrerer Objekte aus einem Stand lässt die Umrandungen, wie sie
+  gezeichnet sind.
+- Der Selbst-Fang beim Bearbeiten ist vollständig entfernt.
+- Das Rechtsklickmenü schließt bei Ansichtsbewegung und Werkzeugstart.
+- Seiten-Panels verschieben die Zeichnung nicht mehr.
+- Der Blockeditor speichert den Block, nicht die Zeichnung.
+- Der Zeiger über einem Fenster gilt als außerhalb der Zeichenfläche.
+
+### Bekannt
+
+- Die **macOS-Fassung ist gebaut, aber ungeprüft** — Rückmeldung willkommen.
+- Die Windows-Fassung ist gebaut, aber nicht ausgiebig getestet.
+- Unter Wayland wird die Fensterposition nicht gespeichert (siehe
+  `docs/benutzer/BEKANNTE-GRENZEN.md`).
+- Die Zeichnungen in `samples/` sind Platzhalter ohne fachliche Prüfung.
+
 ## [0.2.2] — 2026-11-11
 
 Erste Fassung mit fertigen Paketen: **AppImage** für Linux. Der größte Sprung

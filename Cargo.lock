@@ -1338,7 +1338,7 @@ checksum = "8f42a60cbdf9a97f5d2305f08a87dc4e09308d1276d28c869c684d7777685682"
 
 [[package]]
 name = "jjcad-core"
-version = "0.2.2"
+version = "0.2.3"
 dependencies = [
  "ab_glyph",
  "flate2",
@@ -1353,7 +1353,7 @@ dependencies = [
 
 [[package]]
 name = "jjcad-gui"
-version = "0.2.2"
+version = "0.2.3"
 dependencies = [
  "arboard",
  "eframe",
@@ -1369,7 +1369,7 @@ dependencies = [
 
 [[package]]
 name = "jjcad-mcp"
-version = "0.2.2"
+version = "0.2.3"
 dependencies = [
  "jjcad-core",
  "serde",
