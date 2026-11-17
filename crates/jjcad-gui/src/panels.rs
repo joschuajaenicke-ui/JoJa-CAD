@@ -57,42 +57,42 @@ pub fn layers(app: &mut App, ui: &mut Ui) {
     if let Some(name) = app.ui.new_plan_dialog.clone() {
         let mut n = name;
         let mut fertig = false;
+        let resp = ui.add_sized(
+            [ui.available_width(), 22.0],
+            egui::TextEdit::singleline(&mut n).hint_text(tr("gui.panels.plan_name")),
+        );
+        let enter = resp.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter));
         ui.horizontal(|ui| {
-            let resp = ui.add_sized(
-                [150.0, 22.0],
-                egui::TextEdit::singleline(&mut n)
-                    .hint_text(tr("gui.panels.plan_name")),
-            );
-            let ok = ui.button(tr("gui.panels.ok")).clicked()
-                || (resp.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter)));
-            if ok {
-                match app
-                    .session_mut()
-                    .execute("plan.create", &json!({"name": n}))
-                {
-                    Ok(res) => {
-                        // Im neuen Plan weiterzeichnen: seine „Zeichnung“ wird
-                        // die aktuelle Ebene (der Nutzer will dort arbeiten).
-                        if let Some(pid) = res.get("id").and_then(|v| v.as_u64()) {
-                            if let Some(l) = app.doc().layers_of_plan(pid).first().map(|l| l.id) {
-                                let _ = app
-                                    .session_mut()
-                                    .execute("layer.set_current", &json!({"layer": l}));
-                            }
-                        }
-                        app.mark_changed();
-                        app.toast(jjcad_core::i18n::t_args_owned(
-                            "gui.panels.plan_x_angelegt",
-                            &[("n", format!("{n}"))],
-                        ));
-                        fertig = true;
-                    }
-                    Err(e) => app.toast(e),
+            ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+                if ui.button(tr("gui.panels.abbrechen")).clicked() {
+                    fertig = true;
                 }
-            }
-            if ui.button(tr("gui.panels.abbrechen")).clicked() {
-                fertig = true;
-            }
+                if ui.button(tr("gui.panels.ok")).clicked() || enter {
+                    match app
+                        .session_mut()
+                        .execute("plan.create", &json!({"name": n}))
+                    {
+                        Ok(res) => {
+                            // Im neuen Plan weiterzeichnen: seine „Zeichnung“ wird
+                            // die aktuelle Ebene (der Nutzer will dort arbeiten).
+                            if let Some(pid) = res.get("id").and_then(|v| v.as_u64()) {
+                                if let Some(l) = app.doc().layers_of_plan(pid).first().map(|l| l.id) {
+                                    let _ = app
+                                        .session_mut()
+                                        .execute("layer.set_current", &json!({"layer": l}));
+                                }
+                            }
+                            app.mark_changed();
+                            app.toast(jjcad_core::i18n::t_args_owned(
+                                "gui.panels.plan_x_angelegt",
+                                &[("n", format!("{n}"))],
+                            ));
+                            fertig = true;
+                        }
+                        Err(e) => app.toast(e),
+                    }
+                }
+            });
         });
         app.ui.new_plan_dialog = if fertig { None } else { Some(n) };
         ui.add_space(4.0);
@@ -101,33 +101,34 @@ pub fn layers(app: &mut App, ui: &mut Ui) {
     if let Some(name) = app.ui.new_layer_dialog.clone() {
         let mut n = name;
         let mut fertig = false;
+        let resp = ui.add_sized(
+            [ui.available_width(), 22.0],
+            egui::TextEdit::singleline(&mut n).hint_text(tr("gui.panels.layer_name")),
+        );
+        let enter = resp.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter));
         ui.horizontal(|ui| {
-            let resp = ui.add_sized(
-                [150.0, 22.0],
-                egui::TextEdit::singleline(&mut n).hint_text(tr("gui.panels.layer_name")),
-            );
-            let ok = ui.button(tr("gui.panels.ok")).clicked()
-                || (resp.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter)));
-            if ok {
-                let mut params = json!({"name": n});
-                if let Some(p) = app.ui.new_layer_plan {
-                    params["plan"] = json!(p);
+            ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+                if ui.button(tr("gui.panels.abbrechen")).clicked() {
+                    fertig = true;
                 }
-                match app.session_mut().execute("layer.create", &params) {
-                    Ok(_) => {
-                        app.mark_changed();
-                        app.toast(jjcad_core::i18n::t_args_owned(
-                            "gui.panels.layer_x_angelegt",
-                            &[("n", format!("{n}"))],
-                        ));
-                        fertig = true;
+                if ui.button(tr("gui.panels.ok")).clicked() || enter {
+                    let mut params = json!({"name": n});
+                    if let Some(p) = app.ui.new_layer_plan {
+                        params["plan"] = json!(p);
                     }
-                    Err(e) => app.toast(e),
+                    match app.session_mut().execute("layer.create", &params) {
+                        Ok(_) => {
+                            app.mark_changed();
+                            app.toast(jjcad_core::i18n::t_args_owned(
+                                "gui.panels.layer_x_angelegt",
+                                &[("n", format!("{n}"))],
+                            ));
+                            fertig = true;
+                        }
+                        Err(e) => app.toast(e),
+                    }
                 }
-            }
-            if ui.button(tr("gui.panels.abbrechen")).clicked() {
-                fertig = true;
-            }
+            });
         });
         if fertig {
             app.ui.new_layer_dialog = None;
@@ -137,51 +138,33 @@ pub fn layers(app: &mut App, ui: &mut Ui) {
         }
         ui.add_space(4.0);
     }
-    // Umbenennen (Doppelklick auf Layer oder Plan, Kontextmenü).
-    if let Some((id, name)) = app.ui.rename_layer.clone() {
-        let mut n = name;
-        let mut fertig = false;
-        ui.horizontal(|ui| {
-            let resp = ui.add_sized(
-                [150.0, 22.0],
-                egui::TextEdit::singleline(&mut n).hint_text(tr("gui.panels.layer_name")),
-            );
-            let ok = ui.button(tr("gui.panels.ok")).clicked()
-                || (resp.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter)));
-            if ok {
-                let _ = app
-                    .session_mut()
-                    .execute("layer.update", &json!({"layer": id, "name": n}));
-                app.mark_changed();
-                fertig = true;
-            }
-            if ui.button(tr("gui.panels.abbrechen")).clicked() {
-                fertig = true;
-            }
-        });
-        app.ui.rename_layer = if fertig { None } else { Some((id, n)) };
-        ui.add_space(4.0);
-    }
+    // Umbenennen eines Layers läuft **in der Layerzeile** (T0206) — kein
+    // zweites Eingabefeld über der Liste, das die Zeile verschiebt und das
+    // Panel verbreitert.
     if let Some((id, name)) = app.ui.rename_plan.clone() {
         let mut n = name;
         let mut fertig = false;
+        // Feld über die volle Panelbreite, Knöpfe darunter (T0206): eine
+        // Zeile aus Feld und zwei Knöpfen war breiter als das Panel und trieb
+        // es auf — links blieb ein dunkler Balken stehen.
+        let resp = ui.add_sized(
+            [ui.available_width(), 22.0],
+            egui::TextEdit::singleline(&mut n).hint_text(tr("gui.panels.plan_name")),
+        );
+        let enter = resp.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter));
         ui.horizontal(|ui| {
-            let resp = ui.add_sized(
-                [150.0, 22.0],
-                egui::TextEdit::singleline(&mut n).hint_text(tr("gui.panels.plan_name")),
-            );
-            let ok = ui.button(tr("gui.panels.ok")).clicked()
-                || (resp.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter)));
-            if ok {
-                let _ = app
-                    .session_mut()
-                    .execute("plan.update", &json!({"plan": id, "name": n}));
-                app.mark_changed();
-                fertig = true;
-            }
-            if ui.button(tr("gui.panels.abbrechen")).clicked() {
-                fertig = true;
-            }
+            ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+                if ui.button(tr("gui.panels.abbrechen")).clicked() {
+                    fertig = true;
+                }
+                if ui.button(tr("gui.panels.ok")).clicked() || enter {
+                    let _ = app
+                        .session_mut()
+                        .execute("plan.update", &json!({"plan": id, "name": n}));
+                    app.mark_changed();
+                    fertig = true;
+                }
+            });
         });
         app.ui.rename_plan = if fertig { None } else { Some((id, n)) };
         ui.add_space(4.0);
@@ -350,6 +333,10 @@ pub fn layers(app: &mut App, ui: &mut Ui) {
                     .collect();
                 for l in plan_layer {
                     let is_current = l.id == current;
+                    // Wird dieser Layer gerade umbenannt? Dann steht das
+                    // Eingabefeld **in** der Zeile (T0206).
+                    let umbenennen =
+                        app.ui.rename_layer.as_ref().map(|(id, _)| *id) == Some(l.id);
                     // Eingerückt unter dem Plan; die Sichtbarkeit folgt auch
                     // dem Plan (T0202).
                     let sichtbar = l.visible && plan.visible;
@@ -384,35 +371,42 @@ pub fn layers(app: &mut App, ui: &mut Ui) {
                         let dot = Pos2::new(rect.left() + 27.0, rect.center().y);
                         p.circle_filled(dot, 5.0, app::color_to_egui(l.color));
                         p.circle_stroke(dot, 5.0, Stroke::new(1.0, farbpunkt_ring(l.color)));
-                        // Name
-                        let max_w = rect.width() - 106.0;
-                        let mut name = l.name.clone();
-                        while p
-                            .layout_no_wrap(name.clone(), FontId::proportional(12.0), Palette::text())
-                            .size()
-                            .x
-                            > max_w
-                            && name.chars().count() > 3
-                        {
-                            name.pop();
+                        // Name — beim Umbenennen steht hier das Eingabefeld
+                        // (unten, nach dem Maler), nicht der gemalte Text.
+                        if !umbenennen {
+                            let max_w = rect.width() - 106.0;
+                            let mut name = l.name.clone();
+                            while p
+                                .layout_no_wrap(
+                                    name.clone(),
+                                    FontId::proportional(12.0),
+                                    Palette::text(),
+                                )
+                                .size()
+                                .x
+                                > max_w
+                                && name.chars().count() > 3
+                            {
+                                name.pop();
+                            }
+                            if name != l.name {
+                                name.pop();
+                                name.push('…');
+                            }
+                            p.text(
+                                Pos2::new(rect.left() + 39.0, rect.center().y),
+                                egui::Align2::LEFT_CENTER,
+                                name,
+                                FontId::proportional(12.0),
+                                if is_current {
+                                    Palette::text()
+                                } else if sichtbar {
+                                    Palette::text_dim()
+                                } else {
+                                    Palette::text_faint()
+                                },
+                            );
                         }
-                        if name != l.name {
-                            name.pop();
-                            name.push('…');
-                        }
-                        p.text(
-                            Pos2::new(rect.left() + 39.0, rect.center().y),
-                            egui::Align2::LEFT_CENTER,
-                            name,
-                            FontId::proportional(12.0),
-                            if is_current {
-                                Palette::text()
-                            } else if sichtbar {
-                                Palette::text_dim()
-                            } else {
-                                Palette::text_faint()
-                            },
-                        );
                         let eye = Rect::from_center_size(
                             Pos2::new(rect.right() - 40.0, rect.center().y),
                             Vec2::splat(20.0),
@@ -442,55 +436,100 @@ pub fn layers(app: &mut App, ui: &mut Ui) {
                             },
                         );
                     }
-                    let pos = resp.interact_pointer_pos().unwrap_or(rect.center());
-                    let schalter = pos.x < rect.left() + 36.0 || pos.x > rect.right() - 52.0;
-                    if resp.double_clicked() && !schalter {
-                        app.ui.rename_layer = Some((l.id, l.name.clone()));
-                    } else if resp.clicked() {
-                        if pos.x > rect.right() - 30.0 {
-                            befehle.push((
-                                "layer.update".into(),
-                                json!({"layer": l.id, "locked": !l.locked}),
-                            ));
-                        } else if pos.x > rect.right() - 52.0 {
-                            befehle.push((
-                                "layer.update".into(),
-                                json!({"layer": l.id, "visible": !l.visible}),
-                            ));
-                        } else if pos.x < rect.left() + 36.0 {
-                            app.ui.color_popup = Some(l.id);
+                    if umbenennen {
+                        // Das Feld liegt in der Zeile, an der Stelle des Namens.
+                        let mut n = app
+                            .ui
+                            .rename_layer
+                            .as_ref()
+                            .map(|(_, n)| n.clone())
+                            .unwrap_or_default();
+                        let feld = Rect::from_min_max(
+                            Pos2::new(rect.left() + 39.0, rect.center().y - 10.0),
+                            Pos2::new(rect.right() - 52.0, rect.center().y + 10.0),
+                        );
+                        let feld_resp = ui.put(
+                            feld,
+                            egui::TextEdit::singleline(&mut n)
+                                .font(FontId::proportional(12.0)),
+                        );
+                        if !app.ui.rename_layer_fokus {
+                            feld_resp.request_focus();
+                            app.ui.rename_layer_fokus = true;
+                        }
+                        if ui.input(|i| i.key_pressed(egui::Key::Escape)) {
+                            // Esc verwirft den neuen Namen.
+                            app.ui.rename_layer = None;
+                        } else if feld_resp.lost_focus() {
+                            // Enter und ein Klick daneben übernehmen ihn.
+                            let _ = app.session_mut().execute(
+                                "layer.update",
+                                &json!({"layer": l.id, "name": n}),
+                            );
+                            app.mark_changed();
+                            app.ui.rename_layer = None;
                         } else {
-                            set_current = Some(l.id);
+                            app.ui.rename_layer = Some((l.id, n));
                         }
-                    }
-                    if resp.secondary_clicked() {
-                        app.ui.color_popup = Some(l.id);
-                    }
-                    let hover_text = jjcad_core::i18n::t_args_owned(
-                        "gui.panels.x_x_mm_x",
-                        &[
-                            ("wert1", format!("{}", l.name)),
-                            ("wert2", format!("{:.2}", l.line_weight)),
-                            ("wert3", format!("{}", l.line_type.text())),
-                        ],
-                    );
-                    resp.clone().on_hover_text(hover_text);
-                    resp.context_menu(|ui| {
-                        ui.label(theme::dim(&l.name));
-                        ui.separator();
-                        if ui.button(tr("gui.panels.aktueller_layer")).clicked() {
-                            set_current = Some(l.id);
-                            ui.close_menu();
-                        }
-                        if ui.button(tr("gui.panels.umbenennen")).clicked() {
+                    } else {
+                        let pos = resp.interact_pointer_pos().unwrap_or(rect.center());
+                        let schalter =
+                            pos.x < rect.left() + 36.0 || pos.x > rect.right() - 52.0;
+                        if resp.double_clicked() && !schalter {
                             app.ui.rename_layer = Some((l.id, l.name.clone()));
-                            ui.close_menu();
+                            app.ui.rename_layer_fokus = false;
+                        } else if resp.clicked() {
+                            if pos.x > rect.right() - 30.0 {
+                                befehle.push((
+                                    "layer.update".into(),
+                                    json!({"layer": l.id, "locked": !l.locked}),
+                                ));
+                            } else if pos.x > rect.right() - 52.0 {
+                                befehle.push((
+                                    "layer.update".into(),
+                                    json!({"layer": l.id, "visible": !l.visible}),
+                                ));
+                            } else if pos.x < rect.left() + 36.0 {
+                                // Linksklick auf den Farbpunkt: Farbe direkt
+                                // ändern (T0206).
+                                app.ui.color_popup = Some(l.id);
+                            } else {
+                                set_current = Some(l.id);
+                            }
                         }
-                        if ui.button(tr("gui.panels.loeschen")).clicked() {
-                            ui.close_menu();
-                            befehle.push(("layer.delete".into(), json!({"layer": l.id})));
-                        }
-                    });
+                        let hover_text = jjcad_core::i18n::t_args_owned(
+                            "gui.panels.x_x_mm_x",
+                            &[
+                                ("wert1", format!("{}", l.name)),
+                                ("wert2", format!("{:.2}", l.line_weight)),
+                                ("wert3", format!("{}", l.line_type.text())),
+                            ],
+                        );
+                        resp.clone().on_hover_text(hover_text);
+                        // **Ein** Menü beim Rechtsklick (T0206): vorher öffnete
+                        // sich zusätzlich der Farbwähler, der das Menü zudeckte.
+                        resp.context_menu(|ui| {
+                            ui.label(theme::dim(&l.name));
+                            ui.separator();
+                            if ui.button(tr("gui.panels.farbe_aendern")).clicked() {
+                                app.ui.color_popup = Some(l.id);
+                                ui.close_menu();
+                            }
+                            if ui.button(tr("gui.panels.aktueller_layer")).clicked() {
+                                set_current = Some(l.id);
+                                ui.close_menu();
+                            }
+                            if ui.button(tr("gui.panels.umbenennen")).clicked() {
+                                app.ui.rename_layer = Some((l.id, l.name.clone()));
+                                app.ui.rename_layer_fokus = false;
+                                ui.close_menu();
+                            }
+                            if ui.button(tr("gui.panels.loeschen")).clicked() {
+                                ui.close_menu();
+                                befehle.push(("layer.delete".into(), json!({"layer": l.id})));
+                            }
+                        });
+                    }
                 }
 
                 // ---------------- Layer hinzufügen (im Plan) ----------------
@@ -2966,6 +3005,115 @@ mod tests_plaene {
         assert_eq!(app.doc().plans.len(), 2, "zweiter Plan fehlt");
         assert_eq!(app.doc().layers.len(), 8, "vier Layer je Plan");
         assert_eq!(app.doc().plans[1].name, "Plan 2");
+    }
+
+    /// Rechter Rand aller gemalten Texte im Panel — ein Inhalt, der breiter
+    /// als das Panel ist, schiebt es auf (T0206: „schwarzer Balken“).
+    fn rechter_rand(ctx: &egui::Context, app: &mut App) -> f32 {
+        let raw = egui::RawInput {
+            screen_rect: Some(Rect::from_min_size(Pos2::ZERO, Vec2::new(232.0, 900.0))),
+            ..Default::default()
+        };
+        let out = ctx.run(raw, |ctx| {
+            egui::SidePanel::left("probe")
+                .exact_width(232.0)
+                .show(ctx, |ui| layers(app, ui));
+        });
+        out.shapes
+            .iter()
+            .filter_map(|cs| match &cs.shape {
+                egui::Shape::Text(t) => Some(t.pos.x + t.galley.size().x),
+                _ => None,
+            })
+            .fold(0.0_f32, f32::max)
+    }
+
+    /// T0206: Das Umbenennen steht **in** der Layerzeile — keine zusätzliche
+    /// Zeile über der Liste, kein breiteres Panel.
+    #[test]
+    fn umbenennen_steht_in_der_layerzeile() {
+        let ctx = egui::Context::default();
+        let mut app = App::with_ctx(ctx.clone());
+        let vorher = rahmen(&ctx, &mut app, Vec::new());
+        let plan_y = mitte(&vorher, "Plan 1").y;
+        let id = app.doc().layers[0].id;
+        app.ui.rename_layer = Some((id, "Wände".into()));
+        app.ui.rename_layer_fokus = false;
+
+        let texte = rahmen(&ctx, &mut app, Vec::new());
+        assert!(
+            app.ui.rename_layer.is_some(),
+            "das Feld muss offen bleiben, bis der Nutzer bestätigt"
+        );
+        assert_eq!(
+            mitte(&texte, "Plan 1").y,
+            plan_y,
+            "das Umbenennen darf keine neue Zeile über der Liste öffnen"
+        );
+        assert_eq!(
+            texte.iter().filter(|(t, _)| t.trim() == "Wände").count(),
+            1,
+            "der Name steht genau einmal im Bild (im Feld): {texte:?}"
+        );
+        assert!(
+            ctx.memory(|m| m.focused()).is_some(),
+            "das Feld muss den Tastaturfokus haben"
+        );
+        assert!(
+            rechter_rand(&ctx, &mut app) <= 232.0,
+            "der Inhalt darf das Panel nicht verbreitern"
+        );
+    }
+
+    /// T0206: Ein Rechtsklick öffnet **ein** Menü — nicht zusätzlich den
+    /// Farbwähler, der das Menü zudeckte.
+    #[test]
+    fn rechtsklick_oeffnet_nur_das_menue() {
+        let ctx = egui::Context::default();
+        let mut app = App::with_ctx(ctx.clone());
+        let texte = rahmen(&ctx, &mut app, Vec::new());
+        let zeile = mitte(&texte, "Zeichnung");
+        rahmen(&ctx, &mut app, vec![egui::Event::PointerMoved(zeile)]);
+        for gedrueckt in [true, false] {
+            rahmen(
+                &ctx,
+                &mut app,
+                vec![egui::Event::PointerButton {
+                    pos: zeile,
+                    button: egui::PointerButton::Secondary,
+                    pressed: gedrueckt,
+                    modifiers: egui::Modifiers::NONE,
+                }],
+            );
+        }
+        assert!(
+            app.ui.color_popup.is_none(),
+            "der Rechtsklick darf den Farbwähler nicht sofort öffnen"
+        );
+        // Das Menü wird im nächsten Bild gezeichnet.
+        let texte = rahmen(&ctx, &mut app, Vec::new());
+        let alle: Vec<&str> = texte.iter().map(|(t, _)| t.trim()).collect();
+        assert!(
+            alle.contains(&"Farbe ändern …"),
+            "Menüeintrag „Farbe ändern …“ fehlt: {alle:?}"
+        );
+    }
+
+    /// T0206: Der Linksklick auf den Farbpunkt ändert die Farbe weiterhin direkt.
+    #[test]
+    fn linksklick_auf_das_farbicon_oeffnet_den_farbwaehler() {
+        let ctx = egui::Context::default();
+        let mut app = App::with_ctx(ctx.clone());
+        let texte = rahmen(&ctx, &mut app, Vec::new());
+        let zeile = mitte(&texte, "Zeichnung");
+        let id = app.doc().layers[0].id;
+        // Der Farbpunkt sitzt 12 px links vom Namen (left + 27 gegen left + 39).
+        klick(&ctx, &mut app, Pos2::new(zeile.x - 12.0, zeile.y));
+        assert_eq!(
+            app.ui.color_popup,
+            Some(id),
+            "der Klick auf den Farbpunkt muss den Farbwähler öffnen"
+        );
     }
 
     #[test]

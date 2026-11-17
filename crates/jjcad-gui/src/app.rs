@@ -1192,6 +1192,8 @@ pub struct UiState {
     pub new_plan_dialog: Option<String>,
     pub color_popup: Option<Id>,
     pub rename_layer: Option<(Id, String)>,
+    /// Wurde der Fokus im Umbenennen-Feld schon gesetzt? (T0206)
+    pub rename_layer_fokus: bool,
     /// Umbenennen eines Plans (T0202).
     pub rename_plan: Option<(Id, String)>,
     /// Zwischenablage: Elemente **und** Basispunkt (siehe `ghost::Clipboard`)
@@ -1389,6 +1391,7 @@ impl Default for UiState {
             new_plan_dialog: None,
             color_popup: None,
             rename_layer: None,
+            rename_layer_fokus: false,
             rename_plan: None,
             clipboard: crate::ghost::Clipboard::default(),
             clipboard_offset: 20.0,
