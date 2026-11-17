@@ -16,7 +16,6 @@ use crate::geom::*;
 use crate::model::*;
 use crate::render::{self, DisplayList, Prim, Shape, TextPrim};
 use crate::style::{Color, LineType, PaperSize};
-use crate::tessellate::CurveQuality;
 use crate::text;
 use std::collections::BTreeMap;
 use std::fmt::Write as _;
@@ -347,7 +346,107 @@ fn push_polyline(c: &mut Content, pts: &[Vec2], closed: bool, xf: &Xf) {
     }
 }
 
-fn draw_prim(c: &mut Content, prim: &Prim, xf: &Xf, paper_scale: f64) {
+/// Ein Kurvenstück als kubische Bézier-Kurve (`c`) in den Inhaltsstrom.
+///
+/// `p0`/`p3` sind Anfang und Ende, `d0`/`d3` die Ableitungen nach dem
+/// Parameter an beiden Enden, `du` der überstrichene Parameterbereich. Die
+/// Vorschrift `α = 4/3 · tan(Δu/4)` ist die bekannte Näherung eines
+/// Kreisbogenstücks; für die Ellipse gilt sie im Parameterraum genauso, weil
+/// die Ableitung die Verzerrung mitbringt (T0209).
+fn push_kurvenstueck(
+    c: &mut Content,
+    xf: &Xf,
+    p0: Vec2,
+    d0: Vec2,
+    p3: Vec2,
+    d3: Vec2,
+    du: f64,
+) {
+    let alpha = 4.0 / 3.0 * (du / 4.0).tan();
+    let c1 = xf.map(p0 + d0 * alpha);
+    let c2 = xf.map(p3 - d3 * alpha);
+    let e = xf.map(p3);
+    let s = format!(
+        "{:.3} {:.3} {:.3} {:.3} {:.3} {:.3} c",
+        c1.x * MM2PT,
+        c1.y * MM2PT,
+        c2.x * MM2PT,
+        c2.y * MM2PT,
+        e.x * MM2PT,
+        e.y * MM2PT
+    );
+    c.raw(&s);
+}
+
+/// Schreibt einen Bogen als **echte Kurven** statt als Polygonzug (T0209).
+///
+/// `punkt` liefert den Kurvenpunkt, `ableitung` die Tangente je Parameterwert.
+/// Geteilt wird in Stücke von höchstens 90°; die Näherung liegt damit unter
+/// 0,03 % des Radius — bei einem 15-mm-Papierbogen 0,004 mm, also weit unter
+/// der Strichbreite. Vorher schrieb der Schreiber je nach Pfeilhöhe
+/// (0,05 Papier-mm) zwölf Sehnen über einen Viertelkreis; deren Knicke von
+/// 7,5° waren im Betrachter deutlich zu sehen.
+fn push_bogen_kurven(
+    c: &mut Content,
+    xf: &Xf,
+    punkt: impl Fn(f64) -> Vec2,
+    ableitung: impl Fn(f64) -> Vec2,
+    a0: f64,
+    sweep: f64,
+) {
+    if !sweep.is_finite() || sweep <= 0.0 {
+        return;
+    }
+    let n = ((sweep / std::f64::consts::FRAC_PI_2).ceil() as usize).max(1);
+    let du = sweep / n as f64;
+    c.move_to(xf.map(punkt(a0)));
+    for i in 0..n {
+        let u0 = a0 + du * i as f64;
+        let u1 = u0 + du;
+        push_kurvenstueck(
+            c,
+            xf,
+            punkt(u0),
+            ableitung(u0),
+            punkt(u1),
+            ableitung(u1),
+            du,
+        );
+    }
+}
+
+/// Kreisbogen als Bézier-Kurven; `a0 == a1` bedeutet Vollkreis.
+fn push_kreisbogen(c: &mut Content, xf: &Xf, cc: Vec2, r: f64, a0: f64, a1: f64) {
+    let arc = Arc::new(cc, r, a0, a1);
+    push_bogen_kurven(
+        c,
+        xf,
+        |u| cc + Vec2::polar(u, r),
+        |u| Vec2::new(-u.sin(), u.cos()) * r,
+        arc.a0,
+        arc.sweep(),
+    );
+}
+
+/// Ellipsenbogen als Bézier-Kurven; `a0 == a1` bedeutet volle Ellipse.
+fn push_ellipsenbogen(
+    c: &mut Content,
+    xf: &Xf,
+    el: &crate::geom::Ellipse,
+    a0: f64,
+    a1: f64,
+) {
+    push_bogen_kurven(
+        c,
+        xf,
+        |u| el.point_at(u),
+        |u| Vec2::new(-el.rx * u.sin(), el.ry * u.cos()).rotated(el.rot),
+        a0,
+        el.sweep(a0, a1),
+    );
+}
+
+fn draw_prim(c: &mut Content, prim: &Prim, xf: &Xf) {
     match &prim.shape {
         Shape::Line(a, b) => {
             c.stroke_color(prim.style.color);
@@ -418,22 +517,25 @@ fn draw_prim(c: &mut Content, prim: &Prim, xf: &Xf, paper_scale: f64) {
             c.stroke_color(prim.style.color);
             c.line_width(prim.style.width);
             c.dash(prim.style.line_type);
-            let arc = Arc::new(*cc, *r, *a0, *a1);
-            let pts = CurveQuality::PRINT.flatten(&arc, paper_scale);
-            push_polyline(c, &pts, false, xf);
+            // Echte Kurven statt Sehnen (T0209) — dieselbe Darstellung wie
+            // beim Vollkreis, der schon immer als Bézier geschrieben wird.
+            if r.is_finite() && *r > 1e-9 {
+                push_kreisbogen(c, xf, *cc, *r, *a0, *a1);
+            } else {
+                // Entarteter Bogen (Radius 0): ein Punkt, kein Pfad.
+                let p = xf.map(*cc);
+                c.move_to(p);
+                c.line_to(p);
+            }
             c.stroke();
         }
         Shape::Ellipse { c: cc, rx, ry, rot } => {
             c.stroke_color(prim.style.color);
             c.line_width(prim.style.width);
             c.dash(prim.style.line_type);
-            // Dieselbe Pfeilhöhen-Regel wie der Bogen (T0174): Drucktoleranz
-            // 0,05 Papier-mm, über die Abbildung in Welt-Millimeter gerechnet.
-            let pts = CurveQuality::PRINT.ellipse_punkte(
-                &crate::geom::Ellipse::new(*cc, *rx, *ry, *rot),
-                paper_scale,
-            );
-            push_polyline(c, &pts, true, xf);
+            let el = crate::geom::Ellipse::new(*cc, *rx, *ry, *rot);
+            // Volle Ellipse als vier Bézier-Stücke, `a0 == a1` = voller Umlauf.
+            push_ellipsenbogen(c, xf, &el, 0.0, 0.0);
             c.stroke();
         }
         Shape::EllipseArc {
@@ -447,8 +549,8 @@ fn draw_prim(c: &mut Content, prim: &Prim, xf: &Xf, paper_scale: f64) {
             c.stroke_color(prim.style.color);
             c.line_width(prim.style.width);
             c.dash(prim.style.line_type);
-            let pts = crate::geom::Ellipse::new(*cc, *rx, *ry, *rot).arc_points(*a0, *a1, 0.1);
-            push_polyline(c, &pts, false, xf);
+            let el = crate::geom::Ellipse::new(*cc, *rx, *ry, *rot);
+            push_ellipsenbogen(c, xf, &el, *a0, *a1);
             c.stroke();
         }
         Shape::Dot { p, r } => {
@@ -545,9 +647,9 @@ fn bild_obj(w: &mut PdfWriter, bild: &crate::bild::Bild) -> usize {
     w.add(body)
 }
 
-fn draw_display_list(c: &mut Content, dl: &DisplayList, xf: &Xf, paper_scale: f64) {
+fn draw_display_list(c: &mut Content, dl: &DisplayList, xf: &Xf) {
     for prim in &dl.prims {
-        draw_prim(c, prim, xf, paper_scale);
+        draw_prim(c, prim, xf);
     }
 }
 
@@ -909,7 +1011,7 @@ fn draw_sheet_page(doc: &Document, sheet: &Sheet) -> Page {
         scale: 1.0,
         offset: Vec2::ZERO,
     };
-    draw_display_list(&mut c, &dl, &page_xf, 1.0);
+    draw_display_list(&mut c, &dl, &page_xf);
 
     // Ansichtsfenster: der Inhalt liegt über dem Blatt, wird aber auf das
     // Fenster beschnitten — Rahmen und Schriftfeld bleiben sichtbar.
@@ -920,7 +1022,7 @@ fn draw_sheet_page(doc: &Document, sheet: &Sheet) -> Page {
         let scale = 1.0 / vp.scale.max(1e-9);
         let offset = v(vp.x + vp.w * 0.5, vp.y + vp.h * 0.5) - vp.center * scale;
         let xf = Xf { scale, offset };
-        draw_display_list(&mut c, &vl, &xf, scale);
+        draw_display_list(&mut c, &vl, &xf);
         c.restore();
     }
 
@@ -959,7 +1061,7 @@ pub fn export_model_pdf(doc: &Document, path: &Path, paper: PaperSize) -> Result
     let s = 1.0 / scale;
     let offset = v(pw * 0.5, ph * 0.5) - center * s;
     let xf = Xf { scale: s, offset };
-    draw_display_list(&mut c, &dl, &xf, s);
+    draw_display_list(&mut c, &dl, &xf);
     write_pdf(
         vec![Page {
             width_pt: pw * MM2PT,
@@ -1065,6 +1167,199 @@ mod tests {
         assert!(
             entpackt.contains("1 J 1 j"),
             "Modellseite ohne runde Linienenden:\n{entpackt}"
+        );
+    }
+
+    // -----------------------------------------------------------------
+    // T0209 — Bögen und Ellipsen als echte Kurven im PDF
+    // -----------------------------------------------------------------
+
+    /// Entpackt den ersten Inhaltsstrom einer geschriebenen PDF-Datei.
+    fn entpackter_strom(pfad: &Path) -> String {
+        let bytes = std::fs::read(pfad).expect("PDF lesen");
+        let start = bytes
+            .windows(7)
+            .position(|w| w == b"stream\n")
+            .expect("kein Inhaltsstrom")
+            + 7;
+        let ende = start
+            + bytes[start..]
+                .windows(10)
+                .position(|w| w == b"\nendstream")
+                .expect("Stromende fehlt");
+        let mut entpackt = String::new();
+        flate2::read::ZlibDecoder::new(&bytes[start..ende])
+            .read_to_string(&mut entpackt)
+            .expect("Inhaltsstrom nicht entpackbar");
+        entpackt
+    }
+
+    /// Liest den ersten Pfad eines Inhaltsstroms: Startpunkt und die
+    /// kubischen Stücke `(Kontrollpunkt 1, Kontrollpunkt 2, Endpunkt)`.
+    /// Die Koordinaten stehen im Strom in Punkt; zurück kommen Papier-mm.
+    fn erster_pfad(buf: &str) -> (Vec2, Vec<(Vec2, Vec2, Vec2)>) {
+        let mut start = None;
+        let mut stuecke = Vec::new();
+        for zeile in buf.lines() {
+            let t: Vec<&str> = zeile.split_whitespace().collect();
+            let zahlen: Vec<f64> = t
+                .iter()
+                .take_while(|z| z.parse::<f64>().is_ok())
+                .map(|z| z.parse().unwrap())
+                .collect();
+            match t.last() {
+                Some(&"m") if zahlen.len() == 2 && start.is_none() => {
+                    start = Some(v(zahlen[0] / MM2PT, zahlen[1] / MM2PT));
+                }
+                Some(&"c") if zahlen.len() == 6 && start.is_some() => {
+                    stuecke.push((
+                        v(zahlen[0] / MM2PT, zahlen[1] / MM2PT),
+                        v(zahlen[2] / MM2PT, zahlen[3] / MM2PT),
+                        v(zahlen[4] / MM2PT, zahlen[5] / MM2PT),
+                    ));
+                }
+                _ if start.is_some() => break,
+                _ => {}
+            }
+        }
+        (start.expect("kein Pfadbeginn"), stuecke)
+    }
+
+    /// Punkt einer kubischen Bézier-Kurve zum Parameter `t`.
+    fn bezier(p0: Vec2, c1: Vec2, c2: Vec2, p3: Vec2, t: f64) -> Vec2 {
+        let u = 1.0 - t;
+        p0 * (u * u * u) + c1 * (3.0 * u * u * t) + c2 * (3.0 * u * t * t) + p3 * (t * t * t)
+    }
+
+    fn alle_kurvenpunkte(pfad: &(Vec2, Vec<(Vec2, Vec2, Vec2)>), n: usize) -> Vec<Vec2> {
+        let mut out = vec![pfad.0];
+        let mut p0 = pfad.0;
+        for (c1, c2, p3) in &pfad.1 {
+            for i in 1..=n {
+                out.push(bezier(p0, *c1, *c2, *p3, i as f64 / n as f64));
+            }
+            p0 = *p3;
+        }
+        out
+    }
+
+    fn ident() -> Xf {
+        Xf {
+            scale: 1.0,
+            offset: Vec2::ZERO,
+        }
+    }
+
+    /// Ein Kreisbogen wird als **eine** Kurve geschrieben, nicht als Sehnen:
+    /// die Näherung liegt unter 0,03 % des Radius. Vorher standen hier zwölf
+    /// Sehnen mit 7,5°-Knick (T0209).
+    #[test]
+    fn kreisbogen_ist_eine_echte_kurve() {
+        let mut c = Content::new();
+        push_kreisbogen(&mut c, &ident(), Vec2::new(10.0, -3.0), 100.0, 0.0, std::f64::consts::FRAC_PI_2);
+        assert!(
+            !c.buf.contains(" l\n"),
+            "Kreisbogen noch als Polygonzug:\n{}",
+            c.buf
+        );
+        let pfad = erster_pfad(&c.buf);
+        assert_eq!(pfad.1.len(), 1, "Viertelkreis braucht genau ein Kurvenstück");
+        let cc = Vec2::new(10.0, -3.0);
+        for p in alle_kurvenpunkte(&pfad, 64) {
+            let d = (p - cc).len();
+            assert!((d - 100.0).abs() < 0.03, "Punkt {d} mm vom Mittelpunkt");
+        }
+        // Die Enden treffen die Bogenenden exakt.
+        let ende = pfad.1[0].2;
+        assert!((ende - (cc + Vec2::polar(std::f64::consts::FRAC_PI_2, 100.0))).len() < 2e-3);
+    }
+
+    /// Volle Ellipse: vier Kurvenstücke, alle Punkte liegen auf der Ellipse.
+    #[test]
+    fn ellipse_ist_eine_echte_kurve() {
+        let el = crate::geom::Ellipse::new(v(20.0, 30.0), 100.0, 30.0, 0.4);
+        let mut c = Content::new();
+        push_ellipsenbogen(&mut c, &ident(), &el, 0.0, 0.0);
+        assert!(!c.buf.contains(" l\n"), "Ellipse noch als Polygonzug:\n{}", c.buf);
+        let pfad = erster_pfad(&c.buf);
+        assert_eq!(pfad.1.len(), 4, "volle Ellipse = vier Kurvenstücke");
+        for p in alle_kurvenpunkte(&pfad, 64) {
+            let q = (p - el.c).rotated(-el.rot);
+            let f = (q.x / el.rx).powi(2) + (q.y / el.ry).powi(2) - 1.0;
+            assert!(f.abs() < 0.01, "Punkt neben der Ellipse: f = {f}");
+        }
+        // Geschlossen: das letzte Stück endet am Anfangspunkt.
+        let ende = pfad.1.last().unwrap().2;
+        assert!((ende - pfad.0).len() < 2e-3, "Ellipse nicht geschlossen");
+    }
+
+    /// Ellipsenbogen: Kurven zwischen den Parameterwinkeln, Enden exakt.
+    #[test]
+    fn ellipsenbogen_ist_eine_echte_kurve() {
+        let el = crate::geom::Ellipse::new(v(0.0, 0.0), 80.0, 25.0, 0.7);
+        let mut c = Content::new();
+        push_ellipsenbogen(&mut c, &ident(), &el, 0.5, 2.0);
+        let pfad = erster_pfad(&c.buf);
+        assert!((pfad.0 - el.point_at(0.5)).len() < 2e-3);
+        assert!((pfad.1.last().unwrap().2 - el.point_at(2.0)).len() < 2e-3);
+        for p in alle_kurvenpunkte(&pfad, 64) {
+            let q = (p - el.c).rotated(-el.rot);
+            let f = (q.x / el.rx).powi(2) + (q.y / el.ry).powi(2) - 1.0;
+            assert!(f.abs() < 0.01, "Punkt neben der Ellipse: f = {f}");
+        }
+    }
+
+    /// Der Radius 0 bleibt ein Punkt — kein Pfad, kein Absturz.
+    #[test]
+    fn bogen_mit_radius_null_schreibt_keine_kurve() {
+        let mut c = Content::new();
+        let prim = Prim {
+            shape: Shape::Arc {
+                c: v(1.0, 2.0),
+                r: 0.0,
+                a0: 0.0,
+                a1: 1.0,
+            },
+            style: crate::render::PrimStyle {
+                color: Color::rgb(0, 0, 0),
+                width: 0.25,
+                line_type: LineType::Solid,
+                fill: None,
+                ..Default::default()
+            },
+            entity: 1,
+            layer: 1,
+        };
+        draw_prim(&mut c, &prim, &ident());
+        assert!(!c.buf.contains(" c\n"), "Radius 0 als Kurve:\n{}", c.buf);
+        assert!(c.buf.contains("0.000 w") || c.buf.contains(" w"), "{}", c.buf);
+    }
+
+    /// Ende-zu-Ende: eine Zeichnung mit Bogen und Ellipsenbogen steht im
+    /// geschriebenen PDF als Kurve (`c`), nicht als Polygonzug (`l`).
+    #[test]
+    fn pdf_schreibt_boegen_als_kurven() {
+        let mut sess = crate::session::Session::new();
+        sess.execute(
+            "draw.arc",
+            &serde_json::json!({"c": [0, 0], "r": 500, "a0": 0.0, "a1": 90.0}),
+        )
+        .unwrap();
+        sess.execute(
+            "draw.ellipse",
+            &serde_json::json!({"c": [3000, 0], "rx": 800, "ry": 300, "rot": 20.0}),
+        )
+        .unwrap();
+        let pfad = std::env::temp_dir().join("jjcad-t0209-boegen.pdf");
+        export_model_pdf(&sess.doc, &pfad, PaperSize::A3).unwrap();
+        let strom = entpackter_strom(&pfad);
+        assert!(
+            strom.matches(" c\n").count() >= 5,
+            "zu wenige Kurvenstücke im PDF:\n{strom}"
+        );
+        assert!(
+            !strom.contains(" l\n"),
+            "Bogen oder Ellipse noch als Polygonzug:\n{strom}"
         );
     }
 }
