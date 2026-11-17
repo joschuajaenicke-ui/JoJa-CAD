@@ -679,6 +679,20 @@ Mit dem Nutzer abgestimmt — nicht „verbessern“:
   Zoomen die Liste neu. Prüfweg `cargo test -p jjcad-core --test
   spline_aufloesung` und `cargo test -p jjcad-gui anzeige_schluessel_zoom`.
 
+- **Bögen und Ellipsen im PDF sind echte Kurven (T0209)**: Kreis, Bogen,
+  Ellipse und Ellipsenbogen schreibt `pdf.rs` als kubische Bézier-Kurven
+  (`c`); je Stück höchstens 90°, Näherung unter 0,03 % des Radius. Vorher
+  gingen Bogen, Ellipse und Ellipsenbogen als **Polygonzug** in die Datei —
+  `CurveQuality::PRINT` (0,05 Papier-mm Pfeilhöhe) ergab bei einem 1,5-m-Bogen
+  im Maßstab 1:100 zwölf Sehnen über den Viertelkreis, deren 7,5°-Knicke im
+  Betrachter als Ecken zu sehen waren. Der Vollkreis war schon immer Bézier
+  und wirkte glatt; derselbe Weg gilt jetzt für alle vier Formen
+  (`push_kreisbogen`/`push_ellipsenbogen` → `push_bogen_kurven`, Vorschrift
+  `α = 4/3 · tan(Δu/4)`). Die Pfeilhöhen-Unterteilung bleibt für Bildschirm
+  (`canvas.rs`) und PNG (`raster.rs`) unverändert. Prüfweg: `cargo test -p
+  jjcad-core pdf::tests` (Kurvenpunkte auf Kreis/Ellipse, Ende-zu-Ende im
+  entpackten Inhaltsstrom: kein `l`, nur `c`).
+
 - **Dämmung und Abdichtung sind Linienarten, keine Muster (T0132)**: Die Muster
   „Dämmstoffe“, „Dämmstoffe Schlaufen“ und die drei „Abdichtungen“ sind
   **entfernt**. Dämmung zeichnet die Linienart `LineType::Insulation` (Schlaufenband,

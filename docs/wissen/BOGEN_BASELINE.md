@@ -112,12 +112,25 @@ einer Stelle:
   eingestellte Güte mit denselben Grenzen. Die Zahlen dieser Baseline gelten
   für die Vorgabe.
 * `CurveQuality::PRINT` — 0,05 Papier-mm, 5…2048 Segmente. Benutzt von PNG
-  (`raster.rs`) und PDF (`pdf.rs`).
+  (`raster.rs`); **das PDF schreibt seit T0209 echte Bézier-Kurven** statt
+  Sehnen (siehe Nachtrag unten).
 
 Die **volle** Ellipse folgt derselben Regel (T0174): `CurveQuality::ellipse_punkte`
 zerlegt sie mit der Pfeilhöhe der jeweiligen Vorgabe — vorher zeichneten
 Zeichenfläche, PNG und PDF sie mit **festen 72 Segmenten** (bei 30 px/mm 2,85 px
 Abweichung, an den Scheiteln als Ecken sichtbar).
+
+### Nachtrag 17.11.2026 — PDF ohne Sehnen (T0209)
+
+Die Zahlen dieses Dokuments gelten für die Anzeige und das Rasterbild. Der
+**PDF-Schreiber** zerlegt Bogen, Ellipse und Ellipsenbogen nicht mehr: er
+schreibt sie als kubische Bézier-Kurven (`c`), je Stück höchstens 90°
+(Näherung unter 0,03 % des Radius). Grund war die Sichtprüfung am Ausdruck —
+die 0,05-Papier-mm-Pfeilhöhe ergab bei einem 1,5-m-Bogen im Maßstab 1:100 nur
+zwölf Sehnen über den Viertelkreis, und deren Knicke waren im Betrachter zu
+sehen. Der Vollkreis wurde schon immer als Bézier geschrieben und wirkte
+glatt. Die Kriterien K1–K4 (Anzeige, Rasterbild) sind davon unberührt.
+
 
 `geom::Arc::flatten(tol)` (Weltmaß) bleibt als allgemeiner Weg bestehen und
 bildet auf dieselbe Rechnung ab (512 Segmente, 0,02 rad als Untergrenze).
