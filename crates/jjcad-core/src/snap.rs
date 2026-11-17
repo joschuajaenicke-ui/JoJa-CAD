@@ -10,6 +10,8 @@ pub enum SnapKind {
     Endpoint,
     /// Echte Eckpunkte des Blatts im Papierraum (0,0) … (B,H).
     SheetCorner,
+    /// Basispunkt des Blocks im Blockeditor (Weltursprung, T0208).
+    BlockBase,
     Intersection,
     Midpoint,
     Center,
@@ -34,6 +36,7 @@ impl SnapKind {
         match self {
             SnapKind::Endpoint => "Endpunkt",
             SnapKind::SheetCorner => "Blattecke",
+            SnapKind::BlockBase => "Basispunkt",
             SnapKind::Intersection => "Schnittpunkt",
             SnapKind::Midpoint => "Mittelpunkt",
             SnapKind::Center => "Zentrum",
@@ -53,6 +56,7 @@ impl SnapKind {
         match self {
             SnapKind::Endpoint => crate::i18n::tr("ui.snapkind.endpoint"),
             SnapKind::SheetCorner => crate::i18n::tr("ui.snapkind.sheet_corner"),
+            SnapKind::BlockBase => crate::i18n::tr("ui.snapkind.block_base"),
             SnapKind::Intersection => crate::i18n::tr("ui.snapkind.intersection"),
             SnapKind::Midpoint => crate::i18n::tr("ui.snapkind.midpoint"),
             SnapKind::Center => crate::i18n::tr("ui.snapkind.center"),
@@ -72,6 +76,7 @@ impl SnapKind {
         match self {
             SnapKind::Endpoint => "END",
             SnapKind::SheetCorner => "ECK",
+            SnapKind::BlockBase => "BP",
             SnapKind::Intersection => "SCHN",
             SnapKind::Midpoint => "MIT",
             SnapKind::Center => "ZEN",
@@ -95,6 +100,7 @@ impl SnapKind {
             self,
             SnapKind::Endpoint
                 | SnapKind::SheetCorner
+                | SnapKind::BlockBase
                 | SnapKind::Intersection
                 | SnapKind::Midpoint
                 | SnapKind::Center
@@ -107,6 +113,8 @@ impl SnapKind {
             SnapKind::Endpoint => 0,
             // Die Blattecke ist ein Endpunkt des Papiers — gleichrangig.
             SnapKind::SheetCorner => 0,
+            // Der Basispunkt ist der Einfügepunkt des Blocks — gleichrangig.
+            SnapKind::BlockBase => 0,
             SnapKind::Intersection => 1,
             SnapKind::Midpoint => 2,
             SnapKind::Center => 3,
@@ -983,6 +991,15 @@ pub fn snap_candidates_mit_vorschau(
     snap_candidates_alle(doc, cursor, tol, reference, ignore, vorschau, allow_grid)
 }
 
+/// Basispunkt des im Blockeditor offenen Blocks (T0208).
+///
+/// Der Block wird in Millimetern um seinen Basispunkt gezeichnet; im Editor
+/// liegt er deshalb im Weltursprung. Außerhalb des Blockeditors gibt es keinen
+/// Basispunkt — `None`.
+pub fn block_basispunkt(doc: &Document) -> Option<Vec2> {
+    doc.in_block_space().then_some(Vec2::ZERO)
+}
+
 #[allow(clippy::too_many_arguments)]
 fn snap_candidates_alle(
     doc: &Document,
@@ -1206,6 +1223,16 @@ fn snap_candidates_alle(
             for p in [v(0.0, 0.0), v(w, 0.0), v(w, h), v(0.0, h)] {
                 consider(p, SnapKind::SheetCorner, None, p.dist(cursor));
             }
+        }
+    }
+
+    // Basispunkt des Blocks: im Blockeditor ist der Weltursprung der
+    // Einfügepunkt des Blocks. Er ist kein Objekt und war bisher reine
+    // Anzeige — der Fang erreichte ihn nicht, obwohl das Kreuz dort steht
+    // (T0208). Wie die Blattecke hängt er am Schalter „Endpunkt".
+    if s.endpoint {
+        if let Some(bp) = block_basispunkt(doc) {
+            consider(bp, SnapKind::BlockBase, None, bp.dist(cursor));
         }
     }
 

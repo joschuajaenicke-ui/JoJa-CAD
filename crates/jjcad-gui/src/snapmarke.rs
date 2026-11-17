@@ -95,6 +95,13 @@ pub fn marke(art: FangArt) -> Vec<Zug> {
             l(&mut v, (7.5, 7.5), (-7.5, 7.5));
             l(&mut v, (-7.5, 7.5), (-7.5, -7.5));
         }
+        // Basispunkt des Blocks: Kreis mit Kreuz — dasselbe Zeichen, das der
+        // Blockeditor am Ursprung zeigt (T0208), nur im Fangraster.
+        FangArt::Objekt(SnapKind::BlockBase) => {
+            v.push(Kreis(8.0));
+            l(&mut v, (-9.0, 0.0), (9.0, 0.0));
+            l(&mut v, (0.0, -9.0), (0.0, 9.0));
+        }
         // Schnittpunkt: Kreuz aus beiden Diagonalen.
         FangArt::Objekt(SnapKind::Intersection) => {
             l(&mut v, (-6.5, -6.5), (6.5, 6.5));
@@ -215,9 +222,10 @@ fn mal_zug(p: &Painter, mitte: Pos2, zug: Zug, breite: f32, farbe: Color32) {
 
 /// Alle Fangarten, die eine Marke haben — Grundlage für die Vollständigkeit.
 #[cfg(test)]
-pub const ALLE: [FangArt; 12] = [
+pub const ALLE: [FangArt; 13] = [
     FangArt::Objekt(SnapKind::Endpoint),
     FangArt::Objekt(SnapKind::SheetCorner),
+    FangArt::Objekt(SnapKind::BlockBase),
     FangArt::Objekt(SnapKind::Intersection),
     FangArt::Objekt(SnapKind::Midpoint),
     FangArt::Objekt(SnapKind::Center),
