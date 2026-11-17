@@ -361,7 +361,11 @@ ausgeblendet.
   und **Schloss** (ganzen Plan sperren). Ein Klick auf den Namen zeichnet wieder in diesem Plan;
   ein Doppelklick auf den Namen benennt ihn um. Unter jedem Plan stehen seine Layer, eingerückt,
   mit Farbpunkt, Auge und Schloss; darunter „Layer hinzufügen“. Am Ende der Liste legt
-  „Plan hinzufügen“ einen weiteren Plan an. Eine neue Datei hat **einen** Plan („Plan 1“), und
+  „Plan hinzufügen“ einen weiteren Plan an. Ein **Doppelklick auf den Layernamen** macht genau
+  diese Zeile zum Eingabefeld — der neue Name wird an Ort und Stelle getippt, `Enter` oder ein
+  Klick daneben übernimmt ihn, `Esc` verwirft ihn. Ein **Linksklick auf den Farbpunkt** öffnet
+  den Farbwähler sofort; ein **Rechtsklick** auf die Zeile öffnet **ein** Menü mit
+  „Farbe ändern …“, „Aktueller Layer“, „Umbenennen“ und „Löschen“. Eine neue Datei hat **einen** Plan („Plan 1“), und
   **jeder** Plan besteht aus denselben vier Layern:
   **Zeichnung** (Linien, Kreise, Bögen, Flächen, Schraffuren, Bilder), **Architektur** (Wände,
   Türen, Fenster, Treppen, Volumen), **Beschriftung** (Texte, Bemaßung, Höhenkoten, Raumstempel)
