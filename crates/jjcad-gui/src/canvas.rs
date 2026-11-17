@@ -1754,7 +1754,9 @@ fn display_list(app: &mut App) -> DisplayList {
 /// der Zeichenfläche steht, dass hier ein Block und nicht die Zeichnung
 /// bearbeitet wird.
 ///
-/// Beides ist reine Anzeige — es wird nicht gefangen und nicht gedruckt.
+/// Der Basispunkt ist reine Anzeige, **fängt** aber als `SnapKind::BlockBase`
+/// (T0208) — sonst ließe sich der Block nicht an seinem Einfügepunkt
+/// ausrichten. Gedruckt wird beides nicht.
 fn draw_block_hinweise(app: &App, p: &Painter, rect: Rect, view: View) {
     let Some(block) = app.doc().block_edit() else {
         return;
@@ -2417,6 +2419,50 @@ mod tests_fangmarke {
         assert!(
             !farben.contains(&egui::epaint::ColorMode::Solid(Palette::accent())),
             "die Fangmarke steht noch in der Akzentfarbe"
+        );
+    }
+
+    /// Der Basispunkt im Blockeditor ist ein Fangziel (T0208): Zeiger daneben,
+    /// die Marke steht am Weltursprung in der Fangfarbe — nicht nur das
+    /// Anzeigekreuz des Editors in der Akzentfarbe.
+    #[test]
+    fn basispunkt_im_blockeditor_faengt_und_zeigt_die_marke() {
+        let ctx = egui::Context::default();
+        let mut app = App::with_ctx(ctx.clone());
+        app.doc_mut().blocks.push(jjcad_core::model::BlockDef {
+            id: "prj:probe".into(),
+            name: "Probe".into(),
+            category: String::new(),
+            source: jjcad_core::model::BlockSource::Project,
+            description: String::new(),
+            entities: Vec::new(),
+            icon: None,
+            base: V2::ZERO,
+        });
+        assert!(app.oeffne_block_editor("prj:probe"), "Blockeditor öffnet nicht");
+        assert!(app.doc().in_block_space());
+        app.ui.show_grid = false;
+        rahmen(&ctx, &mut app, None);
+        let flaeche = app.ui.last_canvas;
+        let o = world_to_screen(flaeche, app.current_view(), V2::ZERO);
+        assert!(flaeche.contains(o), "Basispunkt liegt nicht im Bild: {o:?}");
+
+        let out = rahmen(&ctx, &mut app, Some(o + Vec2::new(4.0, 3.0)));
+        assert_eq!(
+            app.snap_label.as_deref(),
+            Some("Basispunkt"),
+            "der Basispunkt fängt im Blockeditor nicht"
+        );
+        let ss = strecken_mit_farbe(&out);
+        let waagerecht = [Pos2::new(o.x - 9.0, o.y), Pos2::new(o.x + 9.0, o.y)];
+        let farben: Vec<egui::epaint::ColorMode> = ss
+            .iter()
+            .filter(|(p, _)| hat_strecke(&[*p], waagerecht[0], waagerecht[1]))
+            .map(|(_, c)| c.clone())
+            .collect();
+        assert!(
+            farben.contains(&egui::epaint::ColorMode::Solid(Palette::fang())),
+            "die Marke des Basispunkts steht nicht in der Fangfarbe"
         );
     }
 

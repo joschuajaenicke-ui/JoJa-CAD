@@ -833,6 +833,7 @@
 [ui.snapkind]
 # endpoint = "Endpunkt"
 # sheet_corner = "Blattecke"
+# block_base = "Basispunkt"
 # intersection = "Schnittpunkt"
 # midpoint = "Mittelpunkt"
 # center = "Zentrum"

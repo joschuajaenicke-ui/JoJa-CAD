@@ -783,6 +783,7 @@ tip_fang = "Snap: snap marker and guide lines"
 [ui.snapkind]
 endpoint = "End point"
 sheet_corner = "Sheet corner"
+block_base = "Base point"
 intersection = "Intersection"
 midpoint = "Midpoint"
 center = "Centre"
