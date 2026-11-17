@@ -365,9 +365,12 @@ fn extend_vorschau_verlaengert_eine_wand_bis_zur_nachbarwand() {
         panic!("Strecke erwartet: {segs:?}");
     };
     assert!((a.x - 2000.0).abs() < 1e-6, "Anfang am Wandende: {a:?}");
+    // Die Nachbarwand liegt bei x = 5000, 240 mm dick, mittig: ihre
+    // **Umrandung** ist die Kante bei x = 4880 (T0207 — vorher endete die
+    // Verlängerung auf der Basislinie mitten im Wandkörper).
     assert!(
-        (b.x - 5000.0).abs() < 1e-6 && (b.y - 3000.0).abs() < 1e-6,
-        "Ende auf der Basislinie der Nachbarwand: {b:?}"
+        (b.x - 4880.0).abs() < 1e-6 && (b.y - 3000.0).abs() < 1e-6,
+        "Ende auf der Umrandung der Nachbarwand: {b:?}"
     );
 
     s.execute(
@@ -379,7 +382,7 @@ fn extend_vorschau_verlaengert_eine_wand_bis_zur_nachbarwand() {
         panic!("Wand erwartet");
     };
     assert!(
-        (b.x - 5000.0).abs() < 1e-6,
+        (b.x - 4880.0).abs() < 1e-6,
         "die Wand endet wie die Vorschau: {b:?}"
     );
 }

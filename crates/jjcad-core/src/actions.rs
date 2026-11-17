@@ -1080,6 +1080,51 @@ pub fn carried_openings(doc: &Document, walls: &[Id]) -> Vec<Id> {
         .collect()
 }
 
+/// Kopiert die Objekte unter der Abbildung `m` — **mit** den Türen und Fenstern
+/// ihrer Wände (T0207).
+///
+/// Zwei Fehler waren hier drin: die Öffnungen wurden beim Kopieren gar nicht
+/// mitgenommen (die Kopie war eine nackte Wand), und ihre `host`-Kennung zeigte
+/// danach auf das **Original**. Diese eine Stelle legt die Kopien an und setzt
+/// die Verweise auf die neuen Wand-Ids um — für Verschieben-Kopieren, Drehen
+/// und Spiegeln gleich.
+///
+/// Zurück kommen die neuen Ids (in der Reihenfolge der Eingabe) und die
+/// Zuordnung alt → neu.
+pub(crate) fn kopiere_mit_oeffnungen(
+    doc: &mut Document,
+    ids: &[Id],
+    m: &Affine,
+) -> (Vec<Id>, Vec<(Id, Id)>) {
+    let mut zuordnung: Vec<(Id, Id)> = Vec::new();
+    let mut created = Vec::new();
+    for eid in ids {
+        let Some(e) = doc.entity(*eid).cloned() else {
+            continue;
+        };
+        let mut ne = transform::transform_entity(&e, m);
+        ne.id = doc.new_id();
+        zuordnung.push((*eid, ne.id));
+        created.push(ne.id);
+        // Kopien sind neue Elemente und ordnen sich nach ihrem Zeichenrang ein
+        // (T0048).
+        doc.insert_ranked(ne);
+    }
+    for (_, neu) in &zuordnung {
+        let Some(em) = doc.entity_mut(*neu) else {
+            continue;
+        };
+        let host = match &mut em.kind {
+            EntityKind::Door { host, .. } | EntityKind::Window { host, .. } => host,
+            _ => continue,
+        };
+        if let Some((_, neu_host)) = zuordnung.iter().find(|(alt, _)| Some(*alt) == *host) {
+            *host = Some(*neu_host);
+        }
+    }
+    (created, zuordnung)
+}
+
 /// Öffnungen folgen ihrer Wand: wird nach jeder mutierenden Aktion aufgerufen,
 /// damit Türen und Fenster beim Verschieben oder Verdicken der Wand mitlaufen.
 pub fn reflow_openings(doc: &mut Document) {
@@ -2608,26 +2653,23 @@ pub fn execute(doc: &mut Document, id: &str, params: &Value) -> Result<Value, St
             let m = Affine::translate(to - base);
             let copy = id == "modify.copy";
             let mut new_ids = Vec::new();
-            // Öffnungen wandern mit ihrer Wand
+            // Öffnungen wandern mit ihrer Wand — auch beim **Kopieren** (T0207):
+            // vorher blieben Türen und Fenster am Original, die Kopie war eine
+            // nackte Wand.
             let mut ids = ids;
-            if !copy {
-                for extra in carried_openings(doc, &ids) {
-                    if !ids.contains(&extra) {
-                        ids.push(extra);
-                    }
+            for extra in carried_openings(doc, &ids) {
+                if !ids.contains(&extra) {
+                    ids.push(extra);
                 }
             }
-            for eid in &ids {
-                let Some(e) = doc.entity(*eid).cloned() else { continue };
-                if copy {
-                    let mut ne = transform::transform_entity(&e, &m);
-                    ne.id = doc.new_id();
-                    new_ids.push(ne.id);
-                    // Kopien sind neue Elemente und ordnen sich nach ihrem
-                    // Zeichenrang ein (T0048).
-                    doc.insert_ranked(ne);
-                } else if let Some(em) = doc.entity_mut(*eid) {
-                    *em = transform::transform_entity(em, &m);
+            if copy {
+                let (created, _) = kopiere_mit_oeffnungen(doc, &ids, &m);
+                new_ids = created;
+            } else {
+                for eid in &ids {
+                    if let Some(em) = doc.entity_mut(*eid) {
+                        *em = transform::transform_entity(em, &m);
+                    }
                 }
             }
             doc.modified = true;
@@ -2643,20 +2685,24 @@ pub fn execute(doc: &mut Document, id: &str, params: &Value) -> Result<Value, St
             // Ein Bild dreht mit seiner unteren Kante mit — die Kante wandert
             // durch dieselbe Abbildung wie jede andere Geometrie.
             let m = Affine::rotate_about(center, angle);
-            let mut new_ids = Vec::new();
-            for eid in &ids {
-                let Some(e) = doc.entity(*eid).cloned() else { continue };
-                if copy {
-                    let mut ne = transform::transform_entity(&e, &m);
-                    ne.id = doc.new_id();
-                    new_ids.push(ne.id);
-                    // Kopien sind neue Elemente und ordnen sich nach ihrem
-                    // Zeichenrang ein (T0048).
-                    doc.insert_ranked(ne);
-                } else if let Some(em) = doc.entity_mut(*eid) {
-                    *em = transform::transform_entity(em, &m);
+            // Öffnungen wandern mit ihrer Wand — auch beim Kopieren (T0207).
+            let mut ids = ids;
+            for extra in carried_openings(doc, &ids) {
+                if !ids.contains(&extra) {
+                    ids.push(extra);
                 }
             }
+            let new_ids = if copy {
+                let (created, _) = kopiere_mit_oeffnungen(doc, &ids, &m);
+                created
+            } else {
+                for eid in &ids {
+                    if let Some(em) = doc.entity_mut(*eid) {
+                        *em = transform::transform_entity(em, &m);
+                    }
+                }
+                Vec::new()
+            };
             doc.modified = true;
             Ok(json!({"ok": true, "created": new_ids}))
         }
@@ -2666,18 +2712,24 @@ pub fn execute(doc: &mut Document, id: &str, params: &Value) -> Result<Value, St
             let p2 = require_pt(&p, "p2")?;
             let keep = p.boolean_or("keep_original", true);
             let m = Affine::mirror(p1, p2);
-            let mut new_ids = Vec::new();
-            for eid in &ids {
-                let Some(e) = doc.entity(*eid).cloned() else { continue };
-                if keep {
-                    let mut ne = transform::transform_entity(&e, &m);
-                    ne.id = doc.new_id();
-                    new_ids.push(ne.id);
-                    doc.insert_ranked(ne);
-                } else if let Some(em) = doc.entity_mut(*eid) {
-                    *em = transform::transform_entity(em, &m);
+            // Öffnungen wandern mit ihrer Wand — auch beim Spiegeln (T0207).
+            let mut ids = ids;
+            for extra in carried_openings(doc, &ids) {
+                if !ids.contains(&extra) {
+                    ids.push(extra);
                 }
             }
+            let new_ids = if keep {
+                let (created, _) = kopiere_mit_oeffnungen(doc, &ids, &m);
+                created
+            } else {
+                for eid in &ids {
+                    if let Some(em) = doc.entity_mut(*eid) {
+                        *em = transform::transform_entity(em, &m);
+                    }
+                }
+                Vec::new()
+            };
             doc.modified = true;
             Ok(json!({"ok": true, "created": new_ids}))
         }
@@ -4652,12 +4704,40 @@ pub fn parallel_abstand(e: &Entity, p: Vec2) -> Option<f64> {
 // ---------------------------------------------------------------------------
 
 fn cutter_segments(doc: &Document, exclude: &[Id]) -> Vec<(Seg, Id)> {
+    cutter_segments_mit(doc, exclude, false)
+}
+
+/// Schnittkanten fürs **Verlängern**: Wände mit ihrer **Umrandung**, nicht mit
+/// der Basislinie (T0207). Eine bis zur Achse verlängerte Linie steckte sonst
+/// im Wandkörper, obwohl die sichtbare Kante davor liegt.
+///
+/// Fürs **Stutzen** bleibt es bei der Achse: dort endet die Linie *im* Wandton
+/// (verdeckt) und der Anschluss liegt auf der Bezugslinie — so steht es in
+/// `snap_wandfang::stutzen_nutzt_weiter_die_wandachse`.
+fn cutter_segments_umrandung(doc: &Document, exclude: &[Id]) -> Vec<(Seg, Id)> {
+    cutter_segments_mit(doc, exclude, true)
+}
+
+fn cutter_segments_mit(doc: &Document, exclude: &[Id], wandkante: bool) -> Vec<(Seg, Id)> {
     let mut out = Vec::new();
+    // Der Index wird einmal gebaut — die Kontur braucht die Nachbarschaft
+    // (Gehrung, Anschlüsse).
+    let idx = if wandkante {
+        Some(render::WallIndex::build(doc, doc.ents()))
+    } else {
+        None
+    };
     for e in doc.ents() {
         if exclude.contains(&e.id) {
             continue;
         }
         if !doc.layer_sichtbar(e.layer) { continue; }
+        if let (Some(idx), true) = (&idx, matches!(e.kind, EntityKind::Wall { .. })) {
+            for s in render::wall_contour_segments_idx(idx, e) {
+                out.push((s, e.id));
+            }
+            continue;
+        }
         for s in render::entity_segments(doc, e) {
             out.push((s, e.id));
         }
@@ -5519,9 +5599,9 @@ fn verlaengerung(doc: &Document, id: Id, at: Vec2, cutters: &[Id]) -> Result<Ver
     };
     let exclude = vec![id];
     let segs = if cutters.is_empty() {
-        cutter_segments(doc, &exclude)
+        cutter_segments_umrandung(doc, &exclude)
     } else {
-        cutter_segments(doc, &exclude)
+        cutter_segments_umrandung(doc, &exclude)
             .into_iter()
             .filter(|(_, sid)| cutters.contains(sid))
             .collect()

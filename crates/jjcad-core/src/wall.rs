@@ -168,6 +168,26 @@ impl Frame {
         ]
     }
 
+    /// Abstand eines Punktes zum **Wandkörper** (0 innerhalb des Bandes).
+    ///
+    /// Das Band liegt um die *versetzte* Achse `a→b`, nicht um die Basislinie:
+    /// bei den Ausrichtungen Links/Rechts deckt die halbe Dicke um die
+    /// Basislinie nur die Hälfte des Körpers ab. Trefferprüfung und Auswahl
+    /// fragen deshalb diesen Abstand, nie `dist_point_segment` auf `a0→b0`.
+    pub fn band_abstand(&self, p: Vec2) -> f64 {
+        let s = (p - self.a).dot(self.dir);
+        let t = (p - self.a).dot(self.n);
+        let ds = if s < 0.0 {
+            -s
+        } else if s > self.len() {
+            s - self.len()
+        } else {
+            0.0
+        };
+        let dt = (t.abs() - self.h).max(0.0);
+        (ds * ds + dt * dt).sqrt()
+    }
+
     /// Achsabschnitt `s0..s1` (ab `a` gemessen) mit voller Dicke.
     fn quad(&self, s0: f64, s1: f64) -> Vec<Vec2> {
         let p0 = self.a + self.dir * s0;
@@ -744,7 +764,22 @@ impl<'a> WallIndex<'a> {
             if inner.dist(outer) > MITER_RATIO * 2.0 * f.h.min(g.h) {
                 continue;
             }
-            if inner.dist(p).max(outer.dist(p)) > f.len().min(g.len()).max(1.0) {
+            // Wo die Naht die Achse **jeder** Wand trifft, muss vor deren
+            // Ende liegen. Vorher stand hier der Abstand des Gehrungspunkts
+            // vom Knoten: bei einer 90°-Ecke ist das `h·√2`, die Naht reicht
+            // aber nur `h` in die Wand — bei Wänden kürzer als `h·√2`
+            // (240 mm dick: unter 170 mm) fiel die Naht deshalb aus und die
+            // Ecke blieb offen (T0207). Gemessen wird auf der Naht (dieselbe
+            // Gerade für beide Wände), also entscheiden beide gleich.
+            let Some(naht) = line_line(inner, outer, p, p + d, true, true) else {
+                continue;
+            };
+            let Some(naht_g) = line_line(inner, outer, p, p + dj, true, true) else {
+                continue;
+            };
+            if (naht - p).dot(d).abs() > f.len().max(1.0)
+                || (naht_g - p).dot(dj).abs() > g.len().max(1.0)
+            {
                 continue;
             }
             if !cut_ok(f, d, &g, dj, inner, outer) {
