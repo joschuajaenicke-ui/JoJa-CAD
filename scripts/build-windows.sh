@@ -46,21 +46,17 @@ export CARGO_TARGET_X86_64_PC_WINDOWS_GNU_LINKER=$CC
 cargo build --release -p jjcad-gui -p jjcad-mcp --target "$TRIPLE"
 
 # 4) Portables Paket ------------------------------------------------------
-# Schriften: Windows bringt Liberation und Quicksand nicht mit; der Kern sucht
-# sie zuerst in "fonts/" neben dem Programm (crates/jjcad-core/src/fonts.rs).
-FONTDIRS=(/usr/share/fonts/truetype/liberation /usr/share/fonts/truetype/quicksand)
-for d in "${FONTDIRS[@]}"; do
-    [ -d "$d" ] || { echo "!! Schriftordner fehlt: $d (fonts-liberation/-quicksand installieren)"; exit 1; }
-done
+# Die Gebrauchsschriften (Liberation, Quicksand) stecken seit T0205 in der .exe
+# (crates/jjcad-core/src/schriften_eingebettet.rs) — das Paket braucht keinen
+# Ordner fonts/ mehr. Die Lizenztexte der SIL OFL 1.1 gehören trotzdem mit, als
+# eine Datei im Wurzelverzeichnis.
 
 rm -rf "$PKG"
-mkdir -p "$PKG/fonts" "$PKG/beispiele"
+mkdir -p "$PKG/beispiele"
 cp "target/$TRIPLE/release/jjcad.exe" "target/$TRIPLE/release/jjcad-mcp.exe" "$PKG/"
-cp "${FONTDIRS[0]}"/*.ttf "${FONTDIRS[1]}"/*.ttf "$PKG/fonts/"
 cp samples/Wohnhaus.jjcad samples/Textfelder.jjcad "$PKG/beispiele/"
 cp LICENSE "$PKG/LIZENZ-JoJa-CAD.txt"
-cat /usr/share/doc/fonts-liberation/copyright      > "$PKG/fonts/LIZENZ-Liberation.txt"
-cat /usr/share/doc/fonts-quicksand/copyright       > "$PKG/fonts/LIZENZ-Quicksand.txt"
+cat "$PROJ"/packaging/fonts/*.txt > "$PKG/SCHRIFTEN-LIZENZ.txt"
 cp "$PROJ/scripts/windows-readme.txt" "$PKG/LIESMICH.txt"
 
 # Der Schalter für den portablen Betrieb (daten::ist_portabel): ohne diese Datei

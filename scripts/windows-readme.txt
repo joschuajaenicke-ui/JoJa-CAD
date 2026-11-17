@@ -13,22 +13,22 @@ Inhalt
                      Sitzung (sitzung.json) und Protokolle (log\). Wandert mit
                      dem Ordner; auf einem USB-Stick liegen die Daten also auf
                      dem Stick und nicht im Windows-Profil.
-  jjcad.exe ........ Zeichenprogramm (Oberfläche deutsch)
+  jjcad.exe ........ Zeichenprogramm (Oberfläche deutsch); bringt Liberation
+                     Sans/Serif/Mono/Narrow und Quicksand mit — Windows hat
+                     diese Schriften nicht.
   jjcad-mcp.exe .... Headless-Server über stdin/stdout (Model Context Protocol),
                      Selbsttest:  jjcad-mcp.exe --selftest
-  fonts\ ........... Liberation Sans/Serif/Mono/Narrow und Quicksand, samt
-                     Lizenztexten. Windows hat diese Schriften nicht; der Kern
-                     sucht sie zuerst in "fonts\" neben dem Programm, danach im
-                     System.
   beispiele\ ....... Wohnhaus.jjcad, Textfelder.jjcad
   LIZENZ-JoJa-CAD.txt
+  SCHRIFTEN-LIZENZ.txt  Lizenztexte der mitgelieferten Schriften (SIL OFL 1.1)
 
 Wichtig
   * "portable.txt" und der Ordner "data" gehören zusammen: fehlt die Datei,
     legt das Programm seine Daten unter %APPDATA%\JoJa-CAD ab (wie eine
     installierte Fassung) und der Ordner bleibt leer.
-  * Der Ordner "fonts" muss neben jjcad.exe liegen bleiben. Ohne ihn fehlen
-    die Beschriftungen auf der Zeichenfläche und im PDF-Export.
+  * Die Schriften stecken in der jjcad.exe; ein Ordner "fonts\" daneben ist
+    nicht nötig. Wer eigene Schriften einsetzen will, legt sie dort ab — dieser
+    Ordner hat Vorrang vor den mitgelieferten.
   * Zeichnungsdateien (.jjcad) sind reines JSON und zwischen Linux und Windows
     ohne Umweg austauschbar. Die technischen Schriften (DIN 1451, EN ISO 3098)
     sind im Programm eingebettet und brauchen die Systemschriften nicht.

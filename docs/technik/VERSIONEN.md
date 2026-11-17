@@ -37,9 +37,12 @@ geschlossenen Entwicklung zur ersten öffentlichen Fassung aussieht.
 3. **Binaries**: Linux (AppImage bzw. .deb) und Windows (Installer bzw. ZIP) —
    Windows erst, wenn der Windows-Build in der CI grün ist. Ein Release, der
    Windows nennt, ohne dass es gebaut wurde, ist ein Fehler.
-   Inhalt eines Pakets: **`jjcad` und `jjcad-mcp`**, der Ordner `fonts/`,
-   `LICENSE` und `README.md`. **Keine Beispieldateien** — `samples/` ist
-   Debug-Material und bleibt im Repository.
+   Inhalt eines Pakets: **`jjcad` und `jjcad-mcp`**, `LICENSE` und `README.md`.
+   Die Gebrauchsschriften (Liberation, Quicksand) bringt unter Linux der Ordner
+   `fonts/` neben dem Programm mit; in der **Windows**-Fassung stecken sie in
+   der `.exe`, dafür liegt `SCHRIFTEN-LIZENZ.txt` im Wurzelverzeichnis
+   (T0205). **Keine Beispieldateien** — `samples/` ist Debug-Material und
+   bleibt im Repository.
 4. **Prüfung**: Release-Seite öffnen, beide Pakete herunterladen, starten,
    eine Zeichnung anlegen und als PDF ausgeben.
 

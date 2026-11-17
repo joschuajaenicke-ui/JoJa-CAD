@@ -72,7 +72,9 @@ Tar-Archiv als eigene Datei `jjcad-mcp`.
 
 **Portables ZIP**: entpacken (beliebiger Ordner, USB-Stick genügt) und
 `jjcad.exe` starten. Keine Installation, keine Registry, keine
-Administratorrechte; der Ordner darf beliebig verschoben werden.
+Administratorrechte; der Ordner darf beliebig verschoben werden. Die Schriften
+stecken in der `.exe`, ein Ordner `fonts/` daneben ist nicht nötig;
+`SCHRIFTEN-LIZENZ.txt` daneben nennt ihre Lizenz (SIL OFL 1.1).
 
 #### Wenn Windows warnt
 

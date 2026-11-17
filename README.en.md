@@ -81,7 +81,9 @@ its own file `jjcad-mcp`.
 
 **Portable ZIP**: unpack (any folder, a USB stick is fine) and start
 `jjcad.exe`. No installation, no registry, no administrator rights; the folder
-can be moved anywhere.
+can be moved anywhere. The fonts are embedded in the `.exe`, no `fonts/` folder
+is needed next to it; `SCHRIFTEN-LIZENZ.txt` beside it carries their licence
+(SIL OFL 1.1).
 
 #### When Windows warns
 
