@@ -408,8 +408,10 @@ ausgeblendet.
   auf eine Zeile öffnet das Blatt und holt seinen Reiter zurück; das Häkchen rechts nimmt es in
   den **Plansatz** auf. „Plansatz als PDF (n)“ am Ende der Liste schreibt genau diese Blätter
   als eine mehrseitige PDF; ohne Häkchen ist der Knopf gesperrt.
-- **Linkes Panel** (`Layers`) und **rechtes Panel** (`Eigenschaften`) klappen über den Pfeil in ihrer
-  Kopfzeile zu einer schmalen Leiste zusammen — ein Klick auf den Pfeil holt sie zurück.
+- **Linkes Panel** (`Layers`), **rechtes Panel** (`Eigenschaften`) und der **Blattmanager** klappen über
+  den Pfeil in ihrer Kopfzeile zu einer schmalen Leiste zusammen; in der Leiste steht ihr Symbol
+  (Layer, Eigenschaften, Blätter) — ein Klick darauf holt das Panel zurück, ein Klick auf einer
+  anderen Seite legt es dorthin.
 - **Layer-Manager** (linkes Panel): Die Liste hat **eine** Stufe — **Layer gehören zu einem Plan**.
   Pläne sortieren Geschosse, Schnitte, Ansichten und Lagepläne. Jede Planzeile trägt links ein
   Dreieck zum **Einklappen**, in der Mitte den Namen und rechts **Auge** (ganzen Plan ausblenden)
