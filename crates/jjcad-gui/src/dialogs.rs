@@ -1053,6 +1053,23 @@ pub fn show(app: &mut App, ctx: &egui::Context) {
                     }
                 });
             });
+            ui.add_space(8.0);
+            // T0210: Blöcke können mit dem Zeichnungsmaßstab skalieren — dann
+            // liegt die Geometrie in Beschriftungsgröße und bleibt auf jedem
+            // Maßstab gleich groß (wie die Begrenzungssymbole der Bemaßung).
+            widgets::field_row(
+                ui,
+                jjcad_core::i18n::tr("gui.dialogs.massstab"),
+                |ui| {
+                    ui.checkbox(
+                        &mut wahl.annotative,
+                        jjcad_core::i18n::tr("gui.dialogs.mit_massstab_skalieren"),
+                    )
+                    .on_hover_text(jjcad_core::i18n::tr(
+                        "gui.dialogs.mit_massstab_skalieren_tip",
+                    ));
+                },
+            );
             ui.add_space(10.0);
             button_row(ui, |ui| {
                 if ui

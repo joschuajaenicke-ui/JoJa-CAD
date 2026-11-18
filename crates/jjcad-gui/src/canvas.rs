@@ -2507,6 +2507,7 @@ mod tests_fangmarke {
             entities: Vec::new(),
             icon: None,
             base: V2::ZERO,
+            annotative: false,
         });
         assert!(app.oeffne_block_editor("prj:probe"), "Blockeditor öffnet nicht");
         assert!(app.doc().in_block_space());

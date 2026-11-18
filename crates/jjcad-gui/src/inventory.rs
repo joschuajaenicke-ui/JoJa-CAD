@@ -799,6 +799,7 @@ mod tests_bloecke {
             entities: Vec::new(),
             icon: None,
             base: V2::ZERO,
+            annotative: false,
         }
     }
 

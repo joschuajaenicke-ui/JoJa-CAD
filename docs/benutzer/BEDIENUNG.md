@@ -56,7 +56,10 @@ einsehbar und dort frei änderbar (Ribbon ▸ Ansicht ▸ „Tasten").
    gewählt wird es im Eigenschaften-Panel in der Zeile **Symbol** bzw. **Ende**. Wählbar ist
    **jeder** Block dieser Kategorie, auch ein eigener Benutzerblock, sobald er die Gruppe
    „Punkt Symbole“ trägt. Gezeichnet wird das Symbol in Beschriftungsgröße, also auf jedem
-   Maßstab gleich groß.
+   Maßstab gleich groß. Dieselbe Größe hat der Block als **eingesetzte Instanz**, weil die
+   Punktsymbole die Blockeigenschaft „Mit Maßstab skalieren“ tragen; im Fenster
+   **Block-Eigenschaften** (Rechtsklick auf die Kachel) lässt sie sich für eigene Blöcke
+   setzen. Ohne sie gilt die Blockgeometrie maßstäblich (1:1).
 6. **Navigieren**: Mausrad zoomt, mittlere Taste oder `Leertaste`+Ziehen schwenkt.
    `F5` zeigt die ganze Zeichnung — dieselbe Funktion wie der Knopf „Alles zeigen"
    (Zoom und Mittelpunkt so, dass alles sichtbar wird).
