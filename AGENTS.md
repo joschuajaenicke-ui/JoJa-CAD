@@ -373,9 +373,11 @@ Mit dem Nutzer abgestimmt — nicht „verbessern“:
   `slots_fuer`/`set_slot_fuer`). Die Hotbar folgt der **gehaltenen** Ebene
   (`App::hotbar_kombination` liest den Tastaturzustand je Bild) und zeigt sie als
   kleines Feld daneben (`UiState::last_kombi_icon`). In der Tastaturbelegung sind
-  die drei Steuerungstasten **Schalter** über dem Tastenbild
-  (`UiState::kombi_ansicht`, gezeichnet von `dialogs::keymap_ebenen`); die
-  Anzeige je Taste kommt aus `dialogs::taste_funktion`. Prüfweg:
+  die Tasten **Umschalt, Strg und Alt im Tastenbild selbst** die Schalter
+  (`UiState::kombi_ansicht`; Zuordnung Taste→Ebene `dialogs::ebenen_taste`, links
+  und rechts dieselbe Ebene, `AltGr` gesperrt). Eine eigene Schalterzeile gibt
+  es nicht — der Nutzer wollte die vorhandenen Tasten. Die Anzeige je Taste
+  kommt aus `dialogs::taste_funktion`. Prüfweg:
   `cargo test -p jjcad-core --lib kombination_` und `hotbar_varianten`,
   `cargo test -p jjcad-gui strg_schaltet_die_hotbar` sowie
   `cargo test -p jjcad-gui ebenenschalter`; Prüfbild `--demo keymap`.

@@ -1277,14 +1277,11 @@
 # version_x_build_x_x = "Version {wert1} · Build {wert2} ({wert3})\n"
 #
 [gui.dialogs]
+# ebene_taste_x = "Ebene {wert1} — Klick schaltet sie ein und aus"
 # massstab = "Maßstab"
 # mit_massstab_skalieren = "Mit Maßstab skalieren"
 # mit_massstab_skalieren_tip = "Blockgeometrie in Beschriftungsgröße — das Symbol bleibt auf jedem Maßstab gleich groß, wie die Begrenzungssymbole der Bemaßung"
 # block_eigenschaften = "Block-Eigenschaften"
-# ebene = "Ebene"
-# ebene_alt = "Alt"
-# ebene_strg = "Strg"
-# ebene_umschalt = "Umschalt"
 # name_und_gruppe_des_blocks = "Name und Gruppe des Blocks. Die Gruppe ist die Überschrift in der Blockbibliothek."
 # neue_gruppe = "Neue Gruppe"
 # name = "Name"

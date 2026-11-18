@@ -4376,10 +4376,8 @@ fn keymap_window(app: &mut App, ctx: &egui::Context) {
         });
         ui.add_space(2.0);
         ui.separator();
-        // T0215: Umschalt, Strg und Alt als Schalter — sie wählen die Ebene,
-        // die das Tastenbild zeigt und deren Belegung bearbeitet wird.
-        keymap_ebenen(app, ui);
-        ui.add_space(2.0);
+        // T0215: Die Ebene schalten die Tasten Umschalt, Strg und Alt im
+        // Tastenbild selbst — eine eigene Schalterzeile gibt es nicht.
         keyboard_body(app, ui);
     });
     if let Some(r) = &ergebnis {
@@ -4691,80 +4689,17 @@ fn keyboard_layouts(app: &mut App, ui: &mut Ui) {
     app.ui.last_keymap_zeile = Some(zeile);
 }
 
-/// Die drei Steuerungstasten als **Schalter** über dem Tastenbild (T0215).
-///
-/// Sie schalten die Ebene um, deren Belegung das Tastenbild zeigt — wie ein
-/// Umschalter, nicht wie eine gedrückte Taste: mehrere dürfen gleichzeitig an
-/// sein (Strg+Umschalt). Ist Strg an, steht auf der Taste `c` die Funktion von
-/// `ctrl+c` (Kopieren) und lässt sich dort auch ändern.
-fn keymap_ebenen(app: &mut App, ui: &mut Ui) {
-    let mut neu = app.ui.kombi_ansicht;
-    let mut schalter: Vec<(Kombination, Rect)> = Vec::new();
-    ui.horizontal(|ui| {
-        ui.label(theme::dim(jjcad_core::i18n::tr("gui.dialogs.ebene")));
-        for teil in Kombination::STEUERUNG {
-            let an = neu.hat(teil);
-            let name = match teil {
-                Kombination::UMSCHALT => jjcad_core::i18n::tr("gui.dialogs.ebene_umschalt"),
-                Kombination::STRG => jjcad_core::i18n::tr("gui.dialogs.ebene_strg"),
-                _ => jjcad_core::i18n::tr("gui.dialogs.ebene_alt"),
-            };
-            let antwort = ebenen_schalter(ui, an, name);
-            schalter.push((teil, antwort.rect));
-            if antwort.clicked() {
-                neu = neu.umschalten(teil);
-            }
-        }
-        if !neu.ist_leer() {
-            ui.add_space(2.0);
-            ui.label(theme::mono(neu.text()));
-        }
-    });
-    app.ui.last_kombi_schalter = schalter;
-    app.ui.kombi_ansicht = neu;
-}
-
-/// Ein Schalter der Ebenenzeile: klein, damit die Zeile in die Breite des
-/// Tastenbilds passt (egui-Knöpfe nehmen sich die Mindestbreite eines Feldes).
-fn ebenen_schalter(ui: &mut Ui, an: bool, text: &str) -> egui::Response {
-    let breite = 16.0 + text.chars().count() as f32 * 6.4;
-    let (rect, antwort) = ui.allocate_exact_size(Vec2::new(breite, 20.0), Sense::click());
-    antwort.clone().on_hover_text(text);
-    if ui.is_rect_visible(rect) {
-        let p = ui.painter();
-        let flaeche = if an {
-            Palette::accent_soft()
-        } else if antwort.hovered() {
-            Palette::panel_alt()
-        } else {
-            Palette::bg()
-        };
-        p.rect_filled(rect, Rounding::same(5.0), flaeche);
-        p.rect_stroke(
-            rect,
-            Rounding::same(5.0),
-            Stroke::new(
-                if an { 1.5 } else { 1.0 },
-                if an {
-                    Palette::accent()
-                } else {
-                    Palette::border()
-                },
-            ),
-        );
-        p.text(
-            rect.center(),
-            egui::Align2::CENTER_CENTER,
-            text,
-            FontId::proportional(11.0),
-            if an {
-                Palette::accent()
-            } else {
-                Palette::text_dim()
-            },
-        );
+/// Ist diese Taste eine **Ebenen-Taste** (T0215)? Umschalt, Strg und Alt im
+/// Tastenbild schalten die Ebene, deren Belegung das Fenster zeigt — links wie
+/// rechts, denn die rechte Umschalt- und Strg-Taste ist dieselbe Steuerungs-
+/// taste. `AltGr` bleibt gesperrt: es ist keine eigene Ebene.
+fn ebenen_taste(key: &str) -> Option<Kombination> {
+    match key {
+        "shift" | "shift_r" => Some(Kombination::UMSCHALT),
+        "ctrl" | "ctrl_r" => Some(Kombination::STRG),
+        "alt" => Some(Kombination::ALT),
+        _ => None,
     }
-    antwort
 }
 
 /// Welche Funktion trägt eine Taste **in der gezeigten Ebene** (T0215)? Die
@@ -4783,20 +4718,33 @@ fn keyboard_body(app: &mut App, ui: &mut Ui) {
     // Taste `c` gehört ohne Steuerungstaste das Stutzen, mit Strg das
     // Kopieren. Der Vorsatz macht aus dem Tastennamen den Belegungsschlüssel.
     let lage = app.ui.kombi_ansicht;
+    // Die Flächen der Ebenen-Tasten für Prüfung und Demo (Umschalt, Strg,
+    // Alt — links und rechts dieselbe Ebene).
+    app.ui.last_kombi_schalter = tasten
+        .iter()
+        .filter_map(|(key, _, rect)| ebenen_taste(key).map(|e| (e, *rect)))
+        .collect();
     for (i, (key, label, zeile, spalte, breite, unten)) in TASTEN.iter().enumerate() {
         let label = taste_beschriftung(label);
         let (_, _, rect) = tasten[i];
         let flaechen = taste_flaechen(rahmen.min, key, *zeile, *spalte, *breite, *unten);
-        let gesperrt = fest_belegt(key);
+        // T0215: Umschalt, Strg und Alt sind **Schalter der Ebene** — sie sind
+        // klickbar, zeigen ihren Zustand und tragen keine Belegung. Alle
+        // übrigen Steuerungstasten bleiben gesperrt.
+        let ebene = ebenen_taste(key);
+        let an = ebene.map(|e| lage.hat(e)).unwrap_or(false);
+        let gesperrt = fest_belegt(key).filter(|_| ebene.is_none());
         // Gesperrte Tasten zeigen keine Belegung und nehmen keinen Klick an.
         let tastenname = lage.tastenlabel(key);
-        let action = if gesperrt.is_none() {
+        let action = if gesperrt.is_none() && ebene.is_none() {
             taste_funktion(app, key)
         } else {
             None
         };
-        let selected =
-            gesperrt.is_none() && app.ui.keymap_selected.as_deref() == Some(tastenname.as_str());
+        let selected = an
+            || (gesperrt.is_none()
+                && ebene.is_none()
+                && app.ui.keymap_selected.as_deref() == Some(tastenname.as_str()));
         let sense = if gesperrt.is_none() {
             Sense::click()
         } else {
@@ -4821,7 +4769,7 @@ fn keyboard_body(app: &mut App, ui: &mut Ui) {
                 if selected { 1.5 } else { 1.0 },
                 if selected {
                     Palette::accent()
-                } else if action.is_some() {
+                } else if action.is_some() || ebene.is_some() {
                     Palette::border()
                 } else {
                     Palette::border_soft()
@@ -4865,7 +4813,9 @@ fn keyboard_body(app: &mut App, ui: &mut Ui) {
                 egui::Align2::LEFT_TOP,
                 label,
                 FontId::proportional(9.0),
-                if gesperrt.is_some() {
+                if an {
+                    Palette::accent()
+                } else if gesperrt.is_some() {
                     gesperrt_text()
                 } else {
                     Palette::text_faint()
@@ -4889,7 +4839,13 @@ fn keyboard_body(app: &mut App, ui: &mut Ui) {
                 );
             }
         }
-        if resp.clicked() && gesperrt.is_none() {
+        if resp.clicked() && ebene.is_some() {
+            // T0215: Der Klick auf Umschalt, Strg oder Alt schaltet die Ebene
+            // ein oder aus — mehrere dürfen gleichzeitig an sein.
+            let e = ebene.unwrap_or(Kombination::KEINE);
+            app.ui.kombi_ansicht = lage.umschalten(e);
+            app.ui.keymap_selected = None;
+        } else if resp.clicked() && gesperrt.is_none() {
             // T0116: Läuft das Einfügen eines Blocks, nimmt die angeklickte
             // Taste den Block auf — dieselbe Geste wie ein Hotbar-Slot.
             if !app.bind_key_block(key) {
@@ -4920,7 +4876,7 @@ fn keyboard_body(app: &mut App, ui: &mut Ui) {
         }
         // Mittlere Maustaste: Belegung dieser Taste entfernen (T0064) — wie bei
         // den Slots der Hotbar.
-        if resp.clicked_by(egui::PointerButton::Middle) && gesperrt.is_none() {
+        if resp.clicked_by(egui::PointerButton::Middle) && gesperrt.is_none() && ebene.is_none() {
             match app.prefs.unbind_key(&tastenname) {
                 Some(a) => {
                     let _ = app.prefs.save();
@@ -4930,13 +4886,20 @@ fn keyboard_body(app: &mut App, ui: &mut Ui) {
                 None => app.toast(jjcad_core::i18n::tr("gui.dialogs.taste_nicht_belegt")),
             }
         }
-        match gesperrt {
+        match (ebene, gesperrt) {
+            // T0215: Die Ebenen-Taste erklärt, was sie tut und was gerade gilt.
+            (Some(e), _) => {
+                resp.on_hover_text(jjcad_core::i18n::t_args_owned(
+                    "gui.dialogs.ebene_taste_x",
+                    &[("wert1", e.text().to_string())],
+                ));
+            }
             // Hinweis auf den Grund: Ziffern gehören der Hotbar, die übrigen
             // Steuerungstasten dem Ablauf (Esc/Enter/Rücktaste usw.).
-            Some(grund) => {
+            (None, Some(grund)) => {
                 resp.on_hover_text(grund.grund());
             }
-            None => {
+            (None, None) => {
                 if let Some(a) = action {
                     let text = match actions::action(&a) {
                         Some(d) => format!("{} — {}", d.label(), d.hint()),
@@ -6300,10 +6263,11 @@ pub(crate) mod tests_tastatur {
         );
     }
 
-    /// T0215: Umschalt, Strg und Alt sind **Schalter** über dem Tastenbild. Ein
-    /// Klick auf „Strg" schaltet die Ebene ein: auf der Taste `c` steht dann die
-    /// Funktion von `ctrl+c` (Kopieren statt Stutzen), und eine Zuteilung
-    /// landet in dieser Ebene (`ctrl+,`), nicht auf der Grundbelegung.
+    /// T0215: Umschalt, Strg und Alt sind **Schalter im Tastenbild** — die
+    /// bisher gesperrten Steuerungstasten selbst. Ein Klick auf „Strg" schaltet
+    /// die Ebene ein: auf der Taste `c` steht dann die Funktion von `ctrl+c`
+    /// (Kopieren statt Stutzen), eine Zuteilung landet in dieser Ebene
+    /// (`ctrl+,`), und ein zweiter Schalter (Umschalt) kommt hinzu.
     #[test]
     fn ebenenschalter_zeigt_und_belegt_die_strg_ebene() {
         let _sperre = KONFIG.lock().unwrap_or_else(|e| e.into_inner());
@@ -6313,19 +6277,42 @@ pub(crate) mod tests_tastatur {
         assert_eq!(app.ui.kombi_ansicht, Kombination::KEINE);
         assert_eq!(taste_funktion(&app, "c").as_deref(), Some("modify.trim"));
 
-        // Den Schalter „Strg" anklicken.
+        // Die Schalter sind die Tasten des Tastenbilds — keine eigene Zeile.
         let schalter = app.ui.last_kombi_schalter.clone();
-        assert_eq!(schalter.len(), 3, "Umschalt, Strg und Alt als Schalter");
-        let strg = schalter
+        for teil in [
+            Kombination::UMSCHALT,
+            Kombination::STRG,
+            Kombination::ALT,
+        ] {
+            assert!(
+                schalter.iter().any(|(t, _)| *t == teil),
+                "die Taste der Ebene {} fehlt im Tastenbild",
+                teil.text()
+            );
+        }
+        let tasten = app.ui.last_tasten.clone().expect("Tastenbild gezeichnet");
+        let (_, _, strg) = *taste_mit(&tasten, "ctrl");
+        let flaeche = schalter
             .iter()
             .find(|(teil, _)| *teil == Kombination::STRG)
-            .expect("Strg-Schalter fehlt")
-            .1;
+            .map(|(_, r)| *r)
+            .expect("Strg-Taste fehlt");
+        assert!(
+            (flaeche.center() - strg.center()).length() < 0.5,
+            "der Schalter Strg liegt nicht auf der Strg-Taste des Tastenbilds"
+        );
+
+        // egui gibt dem Fenster beim ersten Klick den Fokus; dieser Klick
+        // kommt noch nicht an der Taste an. Deshalb einmal auf den Fensterkopf
+        // klicken (dort passiert nichts) und dann auf die Taste.
+        let kopf = app.ui.last_keymap_rect.expect("Fenster gezeichnet").min + Vec2::new(120.0, 12.0);
+        klick(&ctx, &mut app, kopf);
+        // Klick auf die Strg-Taste schaltet die Ebene ein.
         klick(&ctx, &mut app, strg.center());
         assert_eq!(
             app.ui.kombi_ansicht,
             Kombination::STRG,
-            "der Schalter schaltet die Ebene ein"
+            "die Taste schaltet die Ebene ein"
         );
         // Dieselbe Taste zeigt jetzt die Funktion ihrer Ebene.
         assert_eq!(
@@ -6335,7 +6322,6 @@ pub(crate) mod tests_tastatur {
         );
 
         // Eine Zuteilung auf eine freie Taste landet in dieser Ebene.
-        let tasten = app.ui.last_tasten.clone().expect("Tastenbild gezeichnet");
         let (_, _, komma) = *taste_mit(&tasten, ",");
         klick(&ctx, &mut app, komma.center());
         assert_eq!(
@@ -6352,14 +6338,26 @@ pub(crate) mod tests_tastatur {
             app.prefs.action_for_key(",").is_none(),
             "die Grundbelegung bleibt frei"
         );
+
+        // Ein zweiter Schalter kommt hinzu: Umschalt + Strg.
+        let tasten = app.ui.last_tasten.clone().expect("Tastenbild gezeichnet");
+        let (_, _, umschalt) = *taste_mit(&tasten, "shift");
+        klick(&ctx, &mut app, umschalt.center());
+        assert_eq!(
+            app.ui.kombi_ansicht,
+            Kombination::STRG.umschalten(Kombination::UMSCHALT)
+        );
+        assert_eq!(
+            taste_funktion(&app, "c").as_deref(),
+            Some("modify.copy"),
+            "Strg+Umschalt+C ist das Kopieren mit Basispunkt"
+        );
+
         // Zurück auf die Grundbelegung: `c` stutzt wieder.
-        let schalter = app.ui.last_kombi_schalter.clone();
-        let strg = schalter
-            .iter()
-            .find(|(teil, _)| *teil == Kombination::STRG)
-            .map(|(_, r)| *r)
-            .expect("Strg-Schalter fehlt");
         klick(&ctx, &mut app, strg.center());
+        let tasten = app.ui.last_tasten.clone().expect("Tastenbild gezeichnet");
+        let (_, _, umschalt) = *taste_mit(&tasten, "shift");
+        klick(&ctx, &mut app, umschalt.center());
         assert_eq!(app.ui.kombi_ansicht, Kombination::KEINE);
         assert_eq!(taste_funktion(&app, "c").as_deref(), Some("modify.trim"));
     }

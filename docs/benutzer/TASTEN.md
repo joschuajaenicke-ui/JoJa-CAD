@@ -128,9 +128,13 @@ Belegung derselben Tasten:
   Hotbar anders belegt ist.
 - **Ziffern starten den Slot der gehaltenen Ebene.** `Strg+3` startet also den
   dritten Slot der Strg-Hotbar; ohne Strg den der Grundbelegung.
-- **In der Tastaturbelegung sind die drei Steuerungstasten Schalter.** Über dem
-  Tastenbild stehen `Umschalt`, `Strg` und `Alt`; ein Klick schaltet die Ebene
-  ein oder aus (mehrere gleichzeitig sind erlaubt). Das Tastenbild zeigt dann
+- **In der Tastaturbelegung sind die drei Steuerungstasten selbst die
+  Schalter.** Die Tasten `Umschalt`, `Strg` und `Alt` im Tastenbild — bisher
+  ausgegraut — schalten die Ebene ein oder aus (mehrere gleichzeitig sind
+  erlaubt); eine eigene Schalterzeile gibt es nicht. Die rechte `R-Shift` und die
+  rechte `Strg` sind dieselbe Ebene; `AltGr` bleibt gesperrt, es ist keine Ebene.
+  Eine eingeschaltete Ebene ist an der Akzentfarbe der Taste zu sehen. Das
+  Tastenbild zeigt dann
   die Belegung **dieser** Ebene: mit Strg an steht auf der Taste `c` „Kopieren"
   statt „Stutzen", und genau diese Belegung lässt sich dort ändern, löschen und
   neu zuweisen. Belegt wird immer mit Vorsatz — eine Funktion auf eine freie
@@ -162,8 +166,9 @@ aus Ribbon, Hotbar oder Tastatur. Beim Schließen wird der Merker geleert.
 
 **Eine Funktion auf eine Taste legen (T0072):** Eine freie Taste anklicken —
 das Inventar öffnet sich im Reiter **Funktionen**, die gewählte Funktion liegt
-danach auf der Taste. Gilt für die Ebene, die die Schalter über dem Tastenbild
-eingeschaltet haben (`Strg` an → die Taste wird als `ctrl+…` belegt). Dieselbe Bedienung wie ein leerer Hotbar-Slot; auch eine
+danach auf der Taste. Gilt für die Ebene, die die Taste `Umschalt`, `Strg` oder
+`Alt` im Tastenbild eingeschaltet hat (`Strg` an → die Taste wird als `ctrl+…`
+belegt). Dieselbe Bedienung wie ein leerer Hotbar-Slot; auch eine
 belegte Taste lässt sich so umbelegen. Eine eigene Funktionsliste im Fenster
 gibt es nicht — und seit T0076 auch keine Knopfzeile darunter; fest verdrahtete
 Funktionen stehen im Inventar ausgegraut mit „· fest".

@@ -19,8 +19,9 @@ Jede Steuerungstaste — allein oder kombiniert, acht Ebenen — hat ihre **eige
 Belegung und ihre **eigene Hotbar**. Solange Strg gehalten wird, zeigt die Hotbar
 die Strg-Slots und neben ihr steht ein kleines Feld mit dem Namen der Ebene; auf
 der Taste `c` liegt dann nicht mehr Stutzen, sondern Kopieren. In der
-Tastaturbelegung schalten dieselben drei Tasten die Ebene ein und aus, in der das
-Tastenbild gerade belegt wird. `Strg+S`, `Strg+Z`, `Strg+C` & Co. sind nur noch
+Tastaturbelegung schalten die Tasten Umschalt, Strg und Alt im Tastenbild selbst
+die Ebene ein und aus, in der gerade belegt wird (ein Klick, kein Halten;
+eingeschaltet sind sie an der Akzentfarbe zu erkennen). `Strg+S`, `Strg+Z`, `Strg+C` & Co. sind nur noch
 die **Vorgabe** ihrer Ebene und lassen sich wie jede andere Taste ändern.
 
 ## Erste Schritte
