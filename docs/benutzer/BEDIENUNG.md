@@ -307,8 +307,12 @@ ausgeblendet.
   Prüfweg: `cargo test -p jjcad-core --test tangential_fang` (10 Tests, messen den Abstand
   Mittelpunkt → Gerade gegen den Radius und die Lage der Marke).
 - **Lotfang** (T0216): das Gegenstück zum Tangentialfang für Linien. *Liegt der feste Punkt
-  der neuen Linie auf einer vorhandenen Linie* (Linie, Wandachse, Polylinien- oder
-  Rechteckseite), gibt es durch ihn genau **eine** Senkrechte auf dieser Linie. Der zweite
+  der neuen Linie auf einer vorhandenen Linie* (Linie, Polylinien- oder Rechteckseite,
+  Wand mit Achse **und Umgrenzung**), gibt es durch ihn genau **eine** Senkrechte auf
+  dieser Linie. Bei einer Wand zählt auch die umgrenzende Kante: an der Längskante ist
+  das dieselbe Senkrechte wie an der Achse, an der Stirnseite läuft die neue Linie
+  parallel zur Wand. Die Umgrenzung hängt am Schalter „Wandkanten“ (Einstellungen ▸
+  Fangen) — ohne ihn bleibt es bei der Achse. Der zweite
   Punkt rastet auf ihr ein; die neue Linie steht damit exakt rechtwinklig auf der
   vorhandenen. Der Winkel wird aus der Richtung der vorhandenen Linie gerechnet, nicht
   geraten — auch bei einer schrägen Vorlage. Dasselbe gilt beim **Manipulieren**: zieht man
@@ -319,8 +323,8 @@ ausgeblendet.
   **Schnittpunkt** beider Linien (dem festen Punkt), leicht daneben oben rechts, damit sie
   den Punkt nicht zudeckt. Abschaltbar in Einstellungen ▸ Fangen und im Fangmenü der
   Statusleiste („Lotfang“).
-  Prüfweg: `cargo test -p jjcad-core --test lot_fang` (11 Tests, prüfen das Skalarprodukt
-  der beiden Richtungen gegen 0 und die Lage der Marke).
+  Prüfweg: `cargo test -p jjcad-core --test lot_fang` (14 Tests, prüfen das Skalarprodukt
+  der beiden Richtungen gegen 0, die Lage der Marke und die Wandkanten).
 - **Fangmarken** (T0153): Jeder Fang **am Element** zeigt sein eigenes Zeichen am
   **Fangpunkt** — also am Objekt, nicht am Zeiger: Endpunkt ein Quadrat, Mittelpunkt ein
   Dreieck, Zentrum ein Kreis mit Kreuz, Schnittpunkt ein Kreuz, Quadrant eine Raute, Lot ein
