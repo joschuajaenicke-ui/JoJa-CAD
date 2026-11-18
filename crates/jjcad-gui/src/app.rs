@@ -1071,6 +1071,26 @@ pub struct Konflikt {
 }
 
 
+/// T0223: Zustand des Fensters „Wiederherstellen“ — gewählte Zeichnung,
+/// gewählter Stand und die einmal je Auswahl geladene Vorschau.
+#[derive(Default)]
+pub struct Wiederherstellen {
+    /// Kennung der gewählten Zeichnung (Dokumentkennung im Pool).
+    pub datei: Option<String>,
+    /// Zyklus des gewählten Standes.
+    pub zyklus: Option<u64>,
+    /// Geladener Stand (Zyklus, Inhalt) — erspart das Lesen je Bild.
+    pub vorschau: Option<(u64, jjcad_core::model::Document)>,
+    /// Grund, warum der Stand nicht lesbar war.
+    pub fehler: Option<String>,
+    /// Flächen der Zeichnungsliste im letzten Bild (Prüfweg).
+    pub last_liste: Vec<(String, egui::Rect)>,
+    /// Flächen der Punkte im Diagramm im letzten Bild (Prüfweg).
+    pub last_punkte: Vec<(u64, egui::Rect)>,
+    /// Fläche der Vorschau im letzten Bild (Prüfweg).
+    pub last_vorschau: Option<egui::Rect>,
+}
+
 pub struct UiState {
     pub pending: PendingStyle,
     pub ribbon: RibbonTab,
@@ -1287,6 +1307,8 @@ pub struct UiState {
     /// sein Knopf den Klick nicht annehmen — sonst bestätigt der Klick, der die
     /// Warnung auslöst, sie gleich mit (Prüfbild: 10 Stände ohne Rückfrage weg).
     pub sicherung_warnung_neu: bool,
+    /// T0223: Fenster „Wiederherstellen“ — `Some`, solange es offen ist.
+    pub wiederherstellen: Option<Wiederherstellen>,
     /// R2.3: Meldung, dass die Zieldatei außerhalb von JoJa-CAD geändert wurde
     /// und der Benutzer entscheiden muss, welche Fassung weiterverwendet wird.
     pub konflikt: Option<Konflikt>,
@@ -1476,6 +1498,7 @@ impl Default for UiState {
             sicherung_warnung: None,
             sicherung_aufraeumen: None,
             sicherung_warnung_neu: false,
+            wiederherstellen: None,
             sicherung_aufraeumen_neu: false,
             konflikt: None,
             last_ribbon_content_h: 0.0,
@@ -2272,6 +2295,101 @@ impl App {
                         .iter()
                         .position(|k| k.key == "settings.category_sicherung")
                         .unwrap_or(0);
+                }
+                // T0223: Prüfzustand des Fensters „Wiederherstellen“ — zwei
+                // Zeichnungen mit Verlauf im Sicherungsordner, die erste
+                // gewählt und ein mittlerer Stand in der Vorschau. Für
+                // Prüfbilder zeigt `JJCAD_DATA_DIR` auf ein Wegwerf-Verzeichnis.
+                "wiederherstellen" | "restore" => {
+                    let einst = self.prefs.sicherung_einstellungen();
+                    if self.sicherung.is_none() {
+                        self.sicherung = Some(jjcad_core::sicherung::Sicherung::oeffnen(
+                            &self.prefs.sicherungen_dir(),
+                        ));
+                    }
+                    if let Some(mut pool) = self.sicherung.take() {
+                        // Ein Zimmer aus vier Wänden, dann je Stand eine
+                        // Trennwand dazu — die Vorschau zeigt damit einen
+                        // erkennbaren Grundriss, der von Stand zu Stand wächst.
+                        let raum = [
+                            ([0.0, 0.0], [5200.0, 0.0]),
+                            ([5200.0, 0.0], [5200.0, 3800.0]),
+                            ([5200.0, 3800.0], [0.0, 3800.0]),
+                            ([0.0, 3800.0], [0.0, 0.0]),
+                        ];
+                        self.doc_mut().name = "Wohnhaus".into();
+                        for (a, b) in raum {
+                            let _ = self.session_mut().execute(
+                                "draw.wall",
+                                &serde_json::json!({
+                                    "a": a, "b": b, "thickness": 0.24
+                                }),
+                            );
+                        }
+                        for i in 0..8 {
+                            let _ = self.session_mut().execute(
+                                "draw.wall",
+                                &serde_json::json!({
+                                    "a": [0.0, 900.0 * (i + 1) as f64],
+                                    "b": [5200.0, 900.0 * (i + 1) as f64],
+                                    "thickness": 0.12
+                                }),
+                            );
+                            let _ = pool.sichern(&mut self.doc_mut(), &einst);
+                        }
+                        // Zweite Zeichnung: eine Garage mit eigener Kennung.
+                        let mut zweite = jjcad_core::model::Document::new();
+                        zweite.name = "Garage".into();
+                        zweite.id = "d2e0c0de-0000-4000-8000-00000000c0de".into();
+                        for (a, b) in [
+                            ([0.0, 0.0], [3000.0, 0.0]),
+                            ([3000.0, 0.0], [3000.0, 2000.0]),
+                            ([3000.0, 2000.0], [0.0, 2000.0]),
+                            ([0.0, 2000.0], [0.0, 0.0]),
+                        ] {
+                            let _ = jjcad_core::actions::execute(
+                                &mut zweite,
+                                "draw.wall",
+                                &serde_json::json!({
+                                    "a": a, "b": b, "thickness": 0.24
+                                }),
+                            );
+                        }
+                        for i in 0..4 {
+                            let _ = jjcad_core::actions::execute(
+                                &mut zweite,
+                                "draw.wall",
+                                &serde_json::json!({
+                                    "a": [0.0, 500.0 * (i + 1) as f64],
+                                    "b": [3000.0, 500.0 * (i + 1) as f64],
+                                    "thickness": 0.12
+                                }),
+                            );
+                            let _ = pool.sichern(&mut zweite, &einst);
+                        }
+                        self.sicherung = Some(pool);
+                    }
+                    self.oeffne_wiederherstellen();
+                    let dateien = self.wiederherstellen_dateien();
+                    if let Some(w) = self.ui.wiederherstellen.as_mut() {
+                        w.datei = dateien.first().map(|d| d.datei.clone());
+                    }
+                    // Mittlerer Stand der gewählten Zeichnung als Vorschau.
+                    if let Some(id) = self.ui.wiederherstellen.as_ref().and_then(|w| w.datei.clone())
+                    {
+                        let zyklen: Vec<u64> = self
+                            .sicherung_pool()
+                            .staende_chronologisch(&id)
+                            .iter()
+                            .map(|s| s.zyklus)
+                            .collect();
+                        if let Some(z) = zyklen.get(zyklen.len() / 2).copied() {
+                            if let Some(w) = self.ui.wiederherstellen.as_mut() {
+                                w.zyklus = Some(z);
+                            }
+                        }
+                    }
+                    self.wiederherstellen_vorschau_nachziehen();
                 }
                 // R2.3: Prüfzustand des Konfliktdialogs. Der Reiter trägt keine
                 // echten Dateien — geprüft wird die Darstellung des Fensters.
@@ -5876,6 +5994,159 @@ impl App {
             }
             self.sicherung = Some(pool);
         }
+    }
+
+    /// T0223: Das Fenster „Wiederherstellen“ öffnen (Einstellungen ▸ Sicherung).
+    ///
+    /// Der Pool wird dabei **neu** vom Datenträger gelesen: im Fenster soll
+    /// stehen, was im Sicherungsordner liegt — nicht der Stand vom Start.
+    pub fn oeffne_wiederherstellen(&mut self) {
+        self.sicherung = Some(jjcad_core::sicherung::Sicherung::oeffnen(
+            &self.prefs.sicherungen_dir(),
+        ));
+        self.ui.wiederherstellen = Some(Wiederherstellen::default());
+    }
+
+    /// T0223: Die Zeichnungen im Sicherungsordner — ein Eintrag je Zeichnung
+    /// mit der Zahl ihrer Stände.
+    pub fn wiederherstellen_dateien(&mut self) -> Vec<jjcad_core::sicherung::DateiEintrag> {
+        self.sicherung_pool().zeichnungen()
+    }
+
+    /// T0223: Den Sicherungsordner neu einlesen, ohne die Auswahl zu verlieren.
+    pub fn wiederherstellen_neu_laden(&mut self) {
+        self.sicherung = Some(jjcad_core::sicherung::Sicherung::oeffnen(
+            &self.prefs.sicherungen_dir(),
+        ));
+        self.ui.sicherung_info = None;
+        if let Some(w) = self.ui.wiederherstellen.as_mut() {
+            w.vorschau = None;
+            w.fehler = None;
+        }
+        self.wiederherstellen_vorschau_nachziehen();
+    }
+
+    /// T0223: Den Inhalt des gewählten Standes für die Vorschau laden.
+    ///
+    /// Gelesen wird **einmal je Auswahl**: der Zustand merkt sich Zyklus und
+    /// Dokument, das Fenster fragt in jedem Bild nur nach dem Unterschied.
+    pub fn wiederherstellen_vorschau_nachziehen(&mut self) {
+        let Some(w) = self.ui.wiederherstellen.as_ref() else {
+            return;
+        };
+        let ziel = w.zyklus;
+        let schon = w.vorschau.as_ref().map(|(z, _)| *z);
+        if schon == ziel {
+            return;
+        }
+        let ergebnis: Result<Option<(u64, jjcad_core::model::Document)>, String> = match ziel {
+            None => Ok(None),
+            Some(z) => {
+                let pool = self.sicherung_pool();
+                match pool
+                    .manifest()
+                    .staende
+                    .iter()
+                    .find(|s| s.zyklus == z)
+                    .cloned()
+                {
+                    Some(stand) => pool.laden(&stand).map(|d| Some((z, d))),
+                    None => Err(jjcad_core::i18n::tr("wiederherstellen.stand_fehlt").to_string()),
+                }
+            }
+        };
+        if let Some(w) = self.ui.wiederherstellen.as_mut() {
+            match ergebnis {
+                Ok(v) => {
+                    w.vorschau = v;
+                    w.fehler = None;
+                }
+                Err(e) => {
+                    w.vorschau = None;
+                    w.fehler = Some(jjcad_core::i18n::t_args_owned(
+                        "wiederherstellen.fehler",
+                        &[("grund", e)],
+                    ));
+                }
+            }
+        }
+    }
+
+    /// T0223: Einen Stand als Reiter öffnen — „diese Zeichnung wieder öffnen“.
+    ///
+    /// Der Stand trägt den Speicherort der Zieldatei; der Reiter bekommt ihn
+    /// mit und gilt als **geändert**, damit „Speichern“ die Datei bewusst
+    /// überschreibt und das Schließen nachfragt (wie
+    /// [`App::sitzung_wiederherstellen`]). Liegt die Zieldatei schon in einem
+    /// Reiter, wird er ersetzt, statt einen zweiten auf denselben Pfad zu legen.
+    /// Liefert den Zeitstempel des Standes für die Meldung.
+    pub fn wiederherstellen_stand_oeffnen(&mut self, zyklus: u64) -> Result<String, String> {
+        let (stand, doc) = {
+            let pool = self.sicherung_pool();
+            let stand = pool
+                .manifest()
+                .staende
+                .iter()
+                .find(|s| s.zyklus == zyklus)
+                .cloned()
+                .ok_or_else(|| {
+                    jjcad_core::i18n::tr("wiederherstellen.stand_fehlt").to_string()
+                })?;
+            let doc = pool.laden(&stand)?;
+            (stand, doc)
+        };
+        let mut doc = doc;
+        doc.merke_standard_breiten(&self.prefs.layer_weights);
+        doc.modified = true;
+        let ziel = if stand.pfad.trim().is_empty() {
+            None
+        } else {
+            Some(std::path::PathBuf::from(&stand.pfad))
+        };
+        doc.path = ziel.as_ref().map(|p| p.to_string_lossy().to_string());
+        if doc.name.trim().is_empty() {
+            doc.name = stand.name.clone();
+        }
+        // Die Zieldatei liegt schon offen: der Stand ersetzt ihren Inhalt im
+        // vorhandenen Reiter. Ein zweiter Reiter auf denselben Pfad würde beim
+        // Speichern den ersten überschreiben.
+        if let Some(pfad) = &ziel {
+            if let Some(i) = self.reiter_der_datei(pfad) {
+                crate::textedit::beenden(self);
+                let tab = &mut self.tabs[i];
+                tab.session = Session::with_doc(doc);
+                tab.tab = TabKind::Model;
+                tab.rev += 1;
+                tab.cache = None;
+                tab.hover = None;
+                if i != self.active {
+                    self.switch_doc(i);
+                } else {
+                    self.datei_nachziehen();
+                }
+                self.ui.sicherung_info = None;
+                return Ok(stand.zeit.clone());
+            }
+        }
+        let tab = DocTab {
+            session: Session::with_doc(doc),
+            tab: TabKind::Model,
+            view_model: View::default(),
+            sheet_views: HashMap::new(),
+            block_views: HashMap::new(),
+            offene_bloecke: Vec::new(),
+            geschlossene_blaetter: Vec::new(),
+            block_original: HashMap::new(),
+            rev: 0,
+            cache: None,
+            hover: None,
+        };
+        self.tabs.push(tab);
+        self.active = self.tabs.len() - 1;
+        self.datei_nachziehen();
+        self.fit_view();
+        self.ui.sicherung_info = None;
+        Ok(stand.zeit.clone())
     }
 
     /// T0188: Den Entwurf der Sicherungseinstellungen übernehmen.

@@ -572,6 +572,20 @@ Inventar und Hotbar). Jeder Stand ist eine gewöhnliche `.jjcad`-Datei — öffn
 per Doppelklick oder in das Fenster ziehen. Ein so geöffneter Stand trägt keinen
 Speicherort; gespeichert wird er erst über „Speichern unter“.
 
+**Wiederherstellen-Fenster**: Einstellungen → Sicherung → **Wiederherstellen →
+Fenster öffnen** zeigt links alle Zeichnungen, die im Sicherungsordner liegen —
+je Zeile der Name, die Zahl der Stände und der jüngste Stand. Ist eine Zeichnung
+gewählt, erscheint rechts ihr Verlauf: ein Diagramm mit einem Punkt je Stand,
+waagerecht die Zeit, senkrecht die Dateigröße. Die Farbe sagt, was der Stand
+ist — bernsteinfarben ungespeicherte Arbeit, grau der Inhalt der Zieldatei, rot
+verworfen. Ein Klick auf einen Punkt wählt den Stand; darunter steht sein
+Zeitpunkt mit Größe und Art, darunter zeigt die Vorschau den Inhalt im
+Papierweiß der Zeichenfläche. **Zeichnung öffnen** legt den Stand als Reiter ab;
+der Reiter trägt den Speicherort der Zieldatei und gilt als geändert — erst
+„Speichern“ überschreibt die Datei. Liegt die Zieldatei schon offen, ersetzt der
+Stand ihren Inhalt im vorhandenen Reiter. **Neu laden** liest den Ordner erneut
+ein, wenn inzwischen Stände dazugekommen sind.
+
 Die Sicherung schützt gegen Absturz und vergessene Speicherung, **nicht** gegen
 einen Plattenausfall. Dafür den Sicherungsordner (Einstellungen → Speicherorte →
 *Sicherungen*) auf ein Netzlaufwerk mit redundanter Sicherung legen.
