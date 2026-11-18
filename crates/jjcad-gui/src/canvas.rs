@@ -2432,7 +2432,10 @@ mod tests_fangmarke {
         let out = rahmen(&ctx, &mut app, Some(tangentenpunkt + Vec2::new(1.0, 0.0)));
         let ss = strecken(&out);
         // Tangentialzeichen: Kreis (5 px) mit anliegender Gerade bei y = −5.
+        // Es steht **neben** dem Berührpunkt — um den Versatz seiner Art
+        // versetzt (T0211, Turn 3).
         let strahl = |o: Pos2| {
+            let o = o + FangArt::Objekt(jjcad_core::snap::SnapKind::Tangent).versatz();
             (
                 Pos2::new(o.x - 8.5, o.y - 5.0),
                 Pos2::new(o.x + 8.5, o.y - 5.0),
@@ -2441,13 +2444,22 @@ mod tests_fangmarke {
         let (a, b) = strahl(beruehr);
         assert!(
             hat_strecke(&ss, a, b),
-            "Tangentialmarke fehlt am Berührpunkt ({a:?} → {b:?})"
+            "Tangentialmarke fehlt neben dem Berührpunkt ({a:?} → {b:?})"
         );
         // Gegenprobe: am Fangpunkt unter dem Zeiger steht sie nicht.
         let (c, d) = strahl(tangentenpunkt);
         assert!(
             !hat_strecke(&ss, c, d),
             "Marke sitzt am Zeigerpunkt der Tangente statt am Berührpunkt"
+        );
+        // Und sie sitzt auch nicht mehr mittig auf dem Berührpunkt selbst.
+        let (e, f) = (
+            Pos2::new(beruehr.x - 8.5, beruehr.y - 5.0),
+            Pos2::new(beruehr.x + 8.5, beruehr.y - 5.0),
+        );
+        assert!(
+            !hat_strecke(&ss, e, f),
+            "Marke liegt noch genau auf dem Berührpunkt"
         );
     }
 
@@ -2665,10 +2677,12 @@ fn draw_cursor(
             // Ellipse ist im Plan unsichtbar; seine Marke trägt das Kreuz
             // (T0117).
             // Beim Tangentialfang steht sie am Berührpunkt von Linie und
-            // Kreis statt am Zeigerpunkt (T0211) — deshalb `zeichen.ort`.
+            // Kreis statt am Zeigerpunkt (T0211) — deshalb `zeichen.ort`. Der
+            // Versatz der Art rückt sie dort leicht neben den Punkt, damit das
+            // Zeichen ihn nicht zudeckt (T0211, Turn 3).
             Some(zeichen) => crate::snapmarke::zeichne(
                 p,
-                world_to_screen(rect, view, zeichen.ort),
+                world_to_screen(rect, view, zeichen.ort) + zeichen.art.versatz(),
                 zeichen.art,
             ),
             // Kein Fang: der Zeigerpunkt selbst, wie bisher als kleines Kreuz.

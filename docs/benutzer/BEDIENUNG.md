@@ -288,7 +288,8 @@ ausgeblendet.
   Lot-Fang denselben Punkt (Radius = Abstand Mittelpunkt → Linie), der Kreis liegt damit
   ebenfalls tangential. Die Statusleiste meldet „Tangential", die Marke ist ein Kreis mit
   anliegender Gerade. Sie steht am **Berührpunkt** von Linie und Kreis — dort, wo die Linie den
-  Kreis berührt —, nicht am Zeigerpunkt auf der Tangente (T0211). Abschaltbar in
+  Kreis berührt —, nicht am Zeigerpunkt auf der Tangente (T0211) — und dort leicht daneben
+  (oben rechts), damit das Zeichen den Punkt nicht zudeckt (T0211, Turn 3). Abschaltbar in
   Einstellungen ▸ Fangen und im Fangmenü der Statusleiste.
   Prüfweg: `cargo test -p jjcad-core --test tangential_fang` (10 Tests, messen den Abstand
   Mittelpunkt → Gerade gegen den Radius und die Lage der Marke).
