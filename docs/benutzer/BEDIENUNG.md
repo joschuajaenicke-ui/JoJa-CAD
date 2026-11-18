@@ -225,8 +225,11 @@ ausgeblendet.
   liegt es dort schon, klappt derselbe Klick es ein. Liegen beide Panels auf einer Seite,
   teilen sie sich die Höhe. Die Wahl steht in `prefs.json` (`layers_side`, `props_side`) und
   übersteht den Neustart.
-- **Eigenschaften-Panel** (Vorgabe rechts): tabellarische Liste mit Layer, Farbe, Stärke, Linientyp und
-  nicht editierbaren Angaben (Länge, Radius, Fläche). Läuft ein Werkzeug, stehen oben die
+- **Eigenschaften-Panel** (Vorgabe rechts): ganz oben stehen Symbol und Bezeichnung des Objekts,
+  darunter zwei Gruppen mit eigener Überschrift — **Allgemein** (Reihenfolge, Layer, Farbe, Stärke,
+  Linientyp) und die objekteigene Gruppe, die nach ihrem Inhalt heißt (**Wandaufbau**, **Türblatt**,
+  **Füllung**, **Maß**, **Geometrie** …). Dazu kommen nicht editierbare Angaben (Länge, Radius,
+  Fläche). Läuft ein Werkzeug, stehen oben die
   Eigenschaften für das **nächste** Element — einmal gesetzt gilt das für alle folgenden Elemente.
   Bei Mehrfachauswahl **einer** Objektart erscheint ein Abschnitt mit genau den Feldern des
   einzelnen Objekts (z. B. Dicke, Höhe, Schraffur, Füllfarbe bei Wänden); abweichende Werte
