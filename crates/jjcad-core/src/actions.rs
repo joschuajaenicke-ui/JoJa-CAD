@@ -4231,6 +4231,10 @@ pub fn execute(doc: &mut Document, id: &str, params: &Value) -> Result<Value, St
             if let Some(v) = p.boolean("landscape") {
                 sheet.landscape = v;
             }
+            // T0218: Häkchen im Blattmanager — Zugehörigkeit zum Plansatz.
+            if let Some(v) = p.boolean("plansatz") {
+                sheet.plansatz = v;
+            }
             Ok(json!({"ok": true}))
         }
         "sheet.delete" => {

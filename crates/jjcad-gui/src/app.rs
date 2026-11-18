@@ -520,6 +520,10 @@ pub struct DocTab {
     /// Offene Blockeditoren in Reihenfolge des Öffnens — ihre Reiter stehen
     /// im Streifen. Geschlossen wird über das Kreuz oder „Speichern“.
     pub offene_bloecke: Vec<String>,
+    /// Blätter, deren Reiter **geschlossen** wurde (T0218). Das Blatt bleibt
+    /// in der Zeichnung und steht weiter im Blattmanager; ein Klick dort holt
+    /// den Reiter zurück. Gehört zur Ansicht, nicht zur Datei.
+    pub geschlossene_blaetter: Vec<Id>,
     /// Stand der Blockdefinition beim Öffnen: Schließen ohne Speichern stellt
     /// ihn wieder her, damit ein versehentlich angetippter Reiter nichts
     /// verändert.
@@ -1074,6 +1078,8 @@ pub struct UiState {
     pub inventory_tab: usize,
     pub layers_open: bool,
     pub props_open: bool,
+    /// Blattmanager (T0218): eigene Liste **aller** Blätter, rechts angedockt.
+    pub blatt_open: bool,
     /// Panels und Ribbon eingeklappt
     pub layers_collapsed: bool,
     pub props_collapsed: bool,
@@ -1088,6 +1094,9 @@ pub struct UiState {
     /// gezeichneten Bild, von links nach rechts. Prüfwert der Tests: der Kopf
     /// trägt nur „Neuer Layer“ und „Einklappen“.
     pub last_layer_kopf: Vec<Rect>,
+    /// T0218: Lage der Blattzeilen im Blattmanager — (Blatt, Namensfläche,
+    /// Häkchenfläche) im zuletzt gezeichneten Bild. Prüfwert der Tests.
+    pub last_blattzeilen: Vec<(Id, Rect, Rect)>,
     pub ribbon_collapsed: bool,
     pub keymap_open: bool,
     pub settings_open: bool,
@@ -1361,12 +1370,14 @@ impl Default for UiState {
             last_block_reiter: Vec::new(),
             layers_open: true,
             props_open: true,
+            blatt_open: true,
             layers_collapsed: false,
             props_collapsed: false,
             layers_side: PanelSeite::Links,
             props_side: PanelSeite::Rechts,
             last_leisten_icons: Vec::new(),
             last_layer_kopf: Vec::new(),
+            last_blattzeilen: Vec::new(),
             ribbon_collapsed: false,
             keymap_open: false,
             settings_open: false,
@@ -1935,6 +1946,7 @@ impl App {
             sheet_views: HashMap::new(),
             block_views: HashMap::new(),
             offene_bloecke: Vec::new(),
+            geschlossene_blaetter: Vec::new(),
             block_original: HashMap::new(),
             rev: 0,
             cache: None,
@@ -1950,6 +1962,7 @@ impl App {
         let select_mode = prefs.select_mode;
         let layers_open = prefs.show_layers;
         let props_open = prefs.show_properties;
+        let blatt_open = prefs.show_blattmanager;
         // T0203: Die gewählte Seite der beiden Panels übersteht den Neustart.
         let layers_side = prefs.layers_side;
         let props_side = prefs.props_side;
@@ -2007,6 +2020,13 @@ impl App {
         app.ui.copy_input = CopyInput::from_key(&app.prefs.copy_input);
         app.ui.layers_open = layers_open;
         app.ui.props_open = props_open;
+        app.ui.blatt_open = blatt_open;
+        // T0218: Die Prüfläufe rechnen mit der vollen Zeichenfläche. Ein
+        // Blattmanager aus der echten `prefs.json` verschöbe sie; Tests
+        // starten deshalb ohne ihn und schalten ihn bei Bedarf selbst ein.
+        if cfg!(test) {
+            app.ui.blatt_open = false;
+        }
         app.ui.layers_side = layers_side;
         app.ui.props_side = props_side;
         app.fit_view();
@@ -2115,6 +2135,29 @@ impl App {
                 "dim" => self.ui.ribbon = RibbonTab::Bemassung,
                 "bloecke" | "blocks" => self.ui.ribbon = RibbonTab::Bloecke,
                 "blatt" | "sheet" => self.ui.ribbon = RibbonTab::Blatt,
+                // T0218: Blattmanager mit drei Blättern — zwei im Plansatz,
+                // der Reiter des zweiten geschlossen (bleibt in der Liste).
+                "blattmanager" => {
+                    self.ui.ribbon = RibbonTab::Blatt;
+                    self.ui.blatt_open = true;
+                    for i in 2..=3 {
+                        let _ = self.session_mut().execute(
+                            "sheet.new",
+                            &serde_json::json!({"name": format!("Blatt {i}")}),
+                        );
+                    }
+                    let ids: Vec<Id> = self.doc().sheets.iter().map(|s| s.id).collect();
+                    if ids.len() >= 3 {
+                        for id in [ids[0], ids[1]] {
+                            let _ = self.session_mut().execute(
+                                "sheet.update",
+                                &serde_json::json!({"sheet": id, "plansatz": true}),
+                            );
+                        }
+                        self.blatt_tab_schliessen(ids[1]);
+                        self.switch_tab(TabKind::Sheet(ids[2]));
+                    }
+                }
                 "ansicht" => self.ui.ribbon = RibbonTab::Ansicht,
                 // Drehen der Zeichnungsansicht: Werkzeug läuft (Aufforderung
                 // „Zentrum klicken") bzw. die Ansicht ist schon gedreht.
@@ -5861,6 +5904,7 @@ impl App {
                     sheet_views: HashMap::new(),
                     block_views: HashMap::new(),
                     offene_bloecke: Vec::new(),
+                    geschlossene_blaetter: Vec::new(),
                     block_original: HashMap::new(),
                     rev: 0,
                     cache: None,
@@ -5947,6 +5991,7 @@ impl App {
             sheet_views: HashMap::new(),
             block_views: HashMap::new(),
             offene_bloecke: Vec::new(),
+            geschlossene_blaetter: Vec::new(),
             block_original: HashMap::new(),
             rev: 0,
             cache: None,
@@ -6422,6 +6467,7 @@ impl App {
                 sheet_views: HashMap::new(),
                 block_views: HashMap::new(),
                 offene_bloecke: Vec::new(),
+                geschlossene_blaetter: Vec::new(),
                 block_original: HashMap::new(),
                 rev: 0,
                 cache: None,
@@ -6464,6 +6510,28 @@ impl App {
         };
         match res {
             Ok(_) => self.toast(jjcad_core::i18n::t_args_owned("gui.app.pdf_exportiert_x", &[("wert1", format!("{}", path.display()))])),
+            Err(e) => self.toast(e),
+        }
+    }
+
+    /// Öffnet den Speicherdialog für den **Plansatz** (T0218). Ohne Häkchen
+    /// gibt es nichts zu exportieren — dann eine Meldung statt einer leeren PDF.
+    pub fn plansatz_exportieren(&mut self) {
+        if self.plansatz_ids().is_empty() {
+            self.toast(jjcad_core::i18n::tr("gui.app.plansatz_leer"));
+            return;
+        }
+        self.open_file_dialog(crate::dialogs::FileMode::ExportPlansatz);
+    }
+
+    /// Schreibt die Blätter mit Plansatz-Häkchen als **eine** mehrseitige PDF.
+    pub fn export_plansatz_to(&mut self, path: PathBuf) {
+        let ids = self.plansatz_ids();
+        match pdf::export_sheets_pdf(self.doc(), &path, &ids) {
+            Ok(_) => self.toast(jjcad_core::i18n::t_args_owned(
+                "gui.app.pdf_exportiert_x",
+                &[("wert1", format!("{}", path.display()))],
+            )),
             Err(e) => self.toast(e),
         }
     }
@@ -7371,7 +7439,15 @@ impl App {
         let reiter: Vec<(TabKind, String, bool)> = {
             let t = self.tab();
             let mut v = vec![(TabKind::Model, jjcad_core::i18n::tr("gui.app.modell").to_string(), false)];
-            for s in &t.session.doc.sheets {
+            // T0218: Ein geschlossener Blattreiter bleibt geschlossen, das Blatt
+            // steht weiter in der Zeichnung und im Blattmanager.
+            for s in t
+                .session
+                .doc
+                .sheets
+                .iter()
+                .filter(|s| !t.geschlossene_blaetter.contains(&s.id))
+            {
                 v.push((TabKind::Sheet(s.id), s.name.clone(), true));
             }
             v
@@ -7633,20 +7709,50 @@ impl App {
             self.schliesse_block_editor(&id, false);
         }
         if let Some(id) = schliesse_blatt {
-            if self.doc().sheets.len() > 1 {
-                let _ = self.session_mut().execute("sheet.delete", &serde_json::json!({"sheet": id}));
-                if self.tab().tab == TabKind::Sheet(id) {
-                    self.switch_tab(TabKind::Model);
-                }
-                self.tab_mut().sheet_views.remove(&id);
-                self.mark_changed();
-            } else {
-                self.toast(jjcad_core::i18n::tr("gui.app.blatt_das_letzte_bleibt_offen"));
-            }
+            // T0218: Das Kreuz schließt nur den **Reiter**. Das Blatt bleibt in
+            // der Zeichnung (und im Blattmanager erreichbar) — gelöscht wird
+            // hier nichts mehr.
+            self.blatt_tab_schliessen(id);
         }
         if neues_blatt {
             self.run_action(ui.ctx(), "sheet.new");
         }
+    }
+
+    /// Ist der Reiter dieses Blatts offen? (T0218)
+    ///
+    /// Das Schließen eines Reiters löscht kein Blatt mehr — es merkt die
+    /// Kennung in `DocTab::geschlossene_blaetter`. Der Blattmanager listet
+    /// **alle** Blätter und holt den Reiter per Klick zurück.
+    pub fn blatt_tab_offen(&self, id: Id) -> bool {
+        !self.tab().geschlossene_blaetter.contains(&id)
+    }
+
+    /// Schließt den **Reiter** eines Blatts; das Blatt bleibt in der Zeichnung.
+    pub fn blatt_tab_schliessen(&mut self, id: Id) {
+        if self.blatt_tab_offen(id) {
+            self.tab_mut().geschlossene_blaetter.push(id);
+        }
+        if self.tab().tab == TabKind::Sheet(id) {
+            self.switch_tab(TabKind::Model);
+        }
+    }
+
+    /// Öffnet den Reiter eines Blatts und wechselt dorthin (T0218).
+    pub fn blatt_oeffnen(&mut self, id: Id) {
+        self.tab_mut().geschlossene_blaetter.retain(|x| *x != id);
+        self.switch_tab(TabKind::Sheet(id));
+    }
+
+    /// Kennungen der Blätter im **Plansatz** — in der Reihenfolge der
+    /// Blattliste, also so, wie die PDF blättert (T0218).
+    pub fn plansatz_ids(&self) -> Vec<Id> {
+        self.doc()
+            .sheets
+            .iter()
+            .filter(|s| s.plansatz)
+            .map(|s| s.id)
+            .collect()
     }
 
     /// Breite eines Datei-Reiters — dieselben Polster wie in `datei_reiter`.
@@ -8785,6 +8891,10 @@ impl App {
                         if widgets::ribbon_button(ui, "pdf", rb("ribbon.sheet_pdf"), false).clicked() {
                             app.run_action(ui.ctx(), "sheet.pdf");
                         }
+                        // T0218: Blattmanager ein-/ausblenden.
+                        if widgets::ribbon_button(ui, "sheet", rb("ribbon.blattmanager"), app.ui.blatt_open).clicked() {
+                            app.ui.blatt_open = !app.ui.blatt_open;
+                        }
                     });
                     widgets::vline(ui, RIBBON_GROUP_H);
                     // Papierraum: dieselben Zeichenwerkzeuge wie im Modell.
@@ -9607,6 +9717,19 @@ impl App {
         // Leisten tragen deshalb stets **dieselben** Icons (Layer und
         // Eigenschaften); ein Klick legt das Panel auf diese Seite und klappt
         // es aus.
+        // T0218: Blattmanager — eigene Liste aller Blätter, rechts außen.
+        if self.ui.blatt_open {
+            egui::SidePanel::right("blattmanager")
+                .exact_width(auf_pixel(ctx, 232.0))
+                .resizable(false)
+                .frame(
+                    Frame::none()
+                        .fill(Palette::panel())
+                        .inner_margin(Margin::symmetric(10.0, 8.0)),
+                )
+                .show(ctx, |ui| panels::blaetter(self, ui));
+        }
+
         self.seitenleisten(ctx);
 
         egui::CentralPanel::default()
@@ -10791,6 +10914,7 @@ impl eframe::App for App {
         self.prefs.show_properties = self.ui.props_open;
         self.prefs.layers_side = self.ui.layers_side;
         self.prefs.props_side = self.ui.props_side;
+        self.prefs.show_blattmanager = self.ui.blatt_open;
         self.prefs.show_lineweights = self.ui.lineweights;
         self.prefs.lineweights_scaled = self.ui.lineweights_scaled;
         self.prefs.lineweight_factor = self.ui.lineweight_factor;
@@ -19499,5 +19623,162 @@ mod tests_zwischenablage_wand {
         };
         assert_eq!(*alt, Some(wand));
         assert!((alt_c.y - 120.0).abs() <= 0.5, "Original-Tür bleibt: {alt_c:?}");
+    }
+}
+
+mod tests_blattmanager {
+    //! T0218: Der Blattmanager listet **alle** Blätter. Ein Reiterkreuz
+    //! schließt nur den Reiter — das Blatt bleibt in der Zeichnung und kommt
+    //! per Klick in der Liste zurück. Das Häkchen nimmt es in den Plansatz.
+
+    use super::*;
+
+    fn bild(app: &mut App, events: Vec<egui::Event>) -> egui::FullOutput {
+        let ctx = app.ctx.clone();
+        let raw = egui::RawInput {
+            screen_rect: Some(Rect::from_min_size(Pos2::ZERO, Vec2::new(1500.0, 950.0))),
+            events,
+            ..Default::default()
+        };
+        ctx.run(raw, |ctx| app.ui(ctx))
+    }
+
+    fn knopf(pos: Pos2, pressed: bool) -> egui::Event {
+        egui::Event::PointerButton {
+            pos,
+            button: egui::PointerButton::Primary,
+            pressed,
+            modifiers: egui::Modifiers::NONE,
+        }
+    }
+
+    fn klick(app: &mut App, pos: Pos2) {
+        for events in [
+            vec![egui::Event::PointerMoved(pos)],
+            vec![knopf(pos, true)],
+            vec![knopf(pos, false)],
+            vec![],
+        ] {
+            let _ = bild(app, events);
+        }
+    }
+
+    fn texte(out: &egui::FullOutput) -> Vec<String> {
+        fn sammeln(s: &egui::Shape, ziel: &mut Vec<String>) {
+            match s {
+                egui::Shape::Text(t) => ziel.push(t.galley.text().to_string()),
+                egui::Shape::Vec(v) => {
+                    for s in v {
+                        sammeln(s, ziel);
+                    }
+                }
+                _ => {}
+            }
+        }
+        let mut ziel = Vec::new();
+        for cs in &out.shapes {
+            sammeln(&cs.shape, &mut ziel);
+        }
+        ziel
+    }
+
+    /// Zwei Blätter, das zweite ist der aktive Reiter.
+    fn app_mit_zwei_blaettern() -> (App, Id) {
+        let mut app = App::with_ctx(egui::Context::default());
+        app.prefs.reset_bindings();
+        let res = app
+            .session_mut()
+            .execute("sheet.new", &serde_json::json!({"name": "Blatt 2"}))
+            .expect("sheet.new");
+        let id = res["sheet"].as_u64().expect("Blattkennung");
+        app.switch_tab(TabKind::Sheet(id));
+        app.ui.blatt_open = true;
+        app.ui.layers_open = false;
+        app.ui.props_open = false;
+        (app, id)
+    }
+
+    /// Das Kreuz schließt den Reiter, nicht das Blatt — und der Klick in der
+    /// Liste holt den Reiter zurück.
+    #[test]
+    fn reiter_schliessen_loescht_kein_blatt() {
+        let (mut app, id) = app_mit_zwei_blaettern();
+        let vorher = app.doc().sheets.len();
+        app.blatt_tab_schliessen(id);
+        assert_eq!(
+            app.doc().sheets.len(),
+            vorher,
+            "das Blatt muss in der Zeichnung bleiben"
+        );
+        assert!(!app.blatt_tab_offen(id), "der Reiter ist zu");
+        assert_eq!(app.tab().tab, TabKind::Model, "der aktive Reiter wechselt");
+
+        app.blatt_oeffnen(id);
+        assert!(app.blatt_tab_offen(id), "der Reiter ist wieder da");
+        assert_eq!(app.tab().tab, TabKind::Sheet(id));
+    }
+
+    /// Ein geschlossener Reiter steht weiter in der Liste — genau das ist der
+    /// Sinn des Blattmanagers.
+    #[test]
+    fn geschlossener_reiter_bleibt_in_der_liste() {
+        let (mut app, id) = app_mit_zwei_blaettern();
+        app.blatt_tab_schliessen(id);
+        let _ = bild(&mut app, Vec::new());
+        let out = bild(&mut app, Vec::new());
+        let texte = texte(&out);
+        assert!(
+            texte.iter().any(|t| t.contains("Blattmanager")),
+            "die Panelüberschrift fehlt: {texte:?}"
+        );
+        assert!(
+            texte.iter().filter(|t| *t == "Blatt 2").count() == 1,
+            "das geschlossene Blatt fehlt in der Liste: {texte:?}"
+        );
+        assert!(
+            app.ui.last_blattzeilen.iter().any(|(b, _, _)| *b == id),
+            "für das geschlossene Blatt fehlt die Zeile"
+        );
+    }
+
+    /// Klick auf die Zeile öffnet das Blatt und den Reiter.
+    #[test]
+    fn klick_in_der_liste_oeffnet_den_reiter() {
+        let (mut app, id) = app_mit_zwei_blaettern();
+        app.blatt_tab_schliessen(id);
+        let _ = bild(&mut app, Vec::new());
+        let _ = bild(&mut app, Vec::new());
+        let zeile = app
+            .ui
+            .last_blattzeilen
+            .iter()
+            .find(|(b, _, _)| *b == id)
+            .map(|(_, text, _)| *text)
+            .expect("Blattzeile");
+        klick(&mut app, zeile.center());
+        assert_eq!(app.tab().tab, TabKind::Sheet(id));
+        assert!(app.blatt_tab_offen(id));
+    }
+
+    /// Das Häkchen setzt die Zugehörigkeit zum Plansatz — über dieselbe
+    /// Action, die auch der Befehlskanal kennt.
+    #[test]
+    fn haekchen_setzt_den_plansatz() {
+        let (mut app, id) = app_mit_zwei_blaettern();
+        let _ = bild(&mut app, Vec::new());
+        let _ = bild(&mut app, Vec::new());
+        let haken = app
+            .ui
+            .last_blattzeilen
+            .iter()
+            .find(|(b, _, _)| *b == id)
+            .map(|(_, _, cb)| *cb)
+            .expect("Häkchenfläche");
+        klick(&mut app, haken.center());
+        assert!(
+            app.doc().sheet(id).expect("Blatt").plansatz,
+            "das Häkchen hat den Plansatz nicht gesetzt"
+        );
+        assert_eq!(app.plansatz_ids(), vec![id]);
     }
 }

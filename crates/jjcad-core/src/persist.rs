@@ -1407,6 +1407,10 @@ pub struct UserPrefs {
     pub show_properties: bool,
     #[serde(default = "default_true")]
     pub show_layers: bool,
+    /// Blattmanager-Panel (T0218). Vorgabe **an** — die Blattliste gehört zur
+    /// Datei und soll ohne Umweg sichtbar sein; der Pfeil im Kopf schließt sie.
+    #[serde(default = "default_true")]
+    pub show_blattmanager: bool,
     /// Seite des Layer-Panels (T0203). Beide Panels dürfen auf beiden Seiten
     /// liegen; die Leisten zeigen stets dieselben Icons.
     #[serde(default)]
@@ -2109,6 +2113,7 @@ impl Default for UserPrefs {
             snap_wall_edges: true,
             show_properties: true,
             show_layers: true,
+            show_blattmanager: true,
             // T0203: Layer links, Eigenschaften rechts — wie bisher; beide
             // lassen sich auf die andere Seite legen.
             layers_side: PanelSeite::Links,
