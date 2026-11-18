@@ -22,7 +22,7 @@
 //! jeder Mausstellung unter dem Zeiger, ein Zeichen dort klebte am Mauszeiger
 //! statt am Objekt (T0153, Turn 3). Die Statuszeile nennt sie weiterhin.
 
-use egui::{Color32, Painter, Pos2, Stroke};
+use egui::{Color32, Painter, Pos2, Stroke, Vec2};
 use jjcad_core::snap::SnapKind;
 
 use crate::theme::Palette;
@@ -41,6 +41,22 @@ impl FangArt {
     pub fn name(self) -> &'static str {
         match self {
             FangArt::Objekt(k) => k.label(),
+        }
+    }
+
+    /// Bildschirm-Versatz der Marke gegenüber ihrem Ort (y zeigt nach unten
+    /// wie in Bildschirmpunkten).
+    ///
+    /// Normalerweise sitzt das Zeichen mittig auf dem Punkt, den es meint. Der
+    /// Tangentialfang ist die Ausnahme (T0211, Turn 3): sein Punkt liegt genau
+    /// auf der Linie, und das Zeichen deckte ihn samt Kreuz zu. Es steht
+    /// deshalb leicht daneben — oben rechts, damit der Punkt sichtbar bleibt.
+    /// Der Versatz ist bildschirmfest (px), nicht Weltmaß: die Marke ist ein
+    /// Bildschirmzeichen.
+    pub fn versatz(self) -> Vec2 {
+        match self {
+            FangArt::Objekt(SnapKind::Tangent) => Vec2::new(11.0, -11.0),
+            FangArt::Objekt(_) => Vec2::ZERO,
         }
     }
 }
@@ -356,6 +372,27 @@ mod tests {
             !ALLE.contains(&FangArt::Objekt(SnapKind::Grid)),
             "der Rasterfang steht noch in der Liste der Marken"
         );
+    }
+
+    /// Nur der Tangentialfang steht **neben** seinem Punkt (T0211, Turn 3):
+    /// sein Zeichen deckte den Berührpunkt von Linie und Kreis zu. Der Versatz
+    /// ist bildschirmfest und so groß, dass der Punkt frei bleibt.
+    #[test]
+    fn tangentialsymbol_steht_neben_dem_punkt() {
+        let v = FangArt::Objekt(SnapKind::Tangent).versatz();
+        assert!(v.length() > HALB, "Versatz zu klein ({})", v.length());
+        assert!(v.x > 0.0 && v.y < 0.0, "Versatz nicht oben rechts: {v:?}");
+        for art in ALLE {
+            if art == FangArt::Objekt(SnapKind::Tangent) {
+                continue;
+            }
+            assert_eq!(
+                art.versatz(),
+                Vec2::ZERO,
+                "{} steht nicht auf seinem Punkt",
+                art.name()
+            );
+        }
     }
 
     /// Der Mittelpunkt behält sein Kreuz mit 7 px Halbbreite (T0117) und
