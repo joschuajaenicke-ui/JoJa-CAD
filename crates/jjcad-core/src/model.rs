@@ -1235,6 +1235,17 @@ pub struct Entity {
     /// In Blöcken: "ByBlock" für Farbe/Linie/Stärke
     #[serde(default)]
     pub by_block: bool,
+    /// Punktsymbol am **Anfang** (T0210) — Block-ID aus der Kategorie
+    /// [`PUNKTSYMBOL_KATEGORIE`].
+    ///
+    /// Ein Punkt hat keinen Anfang und kein Ende; er trägt sein Symbol deshalb
+    /// im Anfangsfeld. Bei einer Linie steht das Symbol am Basispunkt `a`,
+    /// [`Entity::end_symbol`] am Endpunkt `b`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub start_symbol: Option<String>,
+    /// Punktsymbol am **Ende** der Linie (T0210) — nur Linien lesen es.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub end_symbol: Option<String>,
 }
 
 impl Entity {
@@ -1245,7 +1256,26 @@ impl Entity {
             layer,
             style: EntityStyle::default(),
             by_block: false,
+            start_symbol: None,
+            end_symbol: None,
         }
+    }
+
+    /// Das Punktsymbol dieses Objekts am genannten Ende — `false` = Anfang.
+    ///
+    /// Für einen Punkt ist das immer der Anfang; ein Ende hat er nicht.
+    pub fn symbol(&self, am_ende: bool) -> Option<&str> {
+        let feld = if am_ende && matches!(self.kind, EntityKind::Line { .. }) {
+            &self.end_symbol
+        } else {
+            &self.start_symbol
+        };
+        feld.as_deref()
+    }
+
+    /// Trägt dieser Objekttyp überhaupt Punktsymbole? Nur Punkt und Linie.
+    pub fn kann_punktsymbol(&self) -> bool {
+        matches!(self.kind, EntityKind::Point { .. } | EntityKind::Line { .. })
     }
 
     pub fn line(id: Id, layer: Id, a: Vec2, b: Vec2) -> Self {
@@ -1326,6 +1356,13 @@ impl BlockSource {
 
 }
 
+/// Kategorie der Punktsymbole (T0210).
+///
+/// Blöcke dieser Kategorie lassen sich als Symbol an einem Punkt und an den
+/// Enden einer Linie wählen — auch Benutzer- und Projektblöcke, denn die
+/// Zuordnung hängt allein an der Kategorie, nicht an der Herkunft.
+pub const PUNKTSYMBOL_KATEGORIE: &str = "Punkt Symbole";
+
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
 pub struct BlockDef {
     /// Stabile, namensraum-präfixierte ID, z. B. "sys:wc" oder "prj:3f2a".
@@ -1354,6 +1391,15 @@ impl BlockDef {
             b.union(crate::render::entity_bbox(&scratch, e));
         }
         b
+    }
+
+    /// Gehört der Block zur Kategorie „Punkt Symbole“ (T0210)?
+    ///
+    /// Geprüft wird ohne Rücksicht auf Groß-/Kleinschreibung und Leerzeichen am
+    /// Rand — eine Kategorie schreibt der Nutzer im Fenster von Hand
+    /// („Block-Eigenschaften“, T0204), und „punkt symbole“ ist dieselbe Angabe.
+    pub fn ist_punktsymbol(&self) -> bool {
+        self.category.trim().eq_ignore_ascii_case(PUNKTSYMBOL_KATEGORIE)
     }
 }
 
@@ -2025,6 +2071,22 @@ impl Document {
 
     pub fn block(&self, id: &str) -> Option<&BlockDef> {
         self.blocks.iter().find(|b| b.id == id)
+    }
+
+    /// Alle Blöcke der Kategorie „Punkt Symbole“ (T0210), nach Namen sortiert.
+    ///
+    /// Das ist die **eine** Auswahlliste für das Eigenschaften-Panel — System-,
+    /// Projekt- und Benutzerblöcke stehen gleichberechtigt darin, weil allein
+    /// die Kategorie zählt. Wer eine zweite Liste daneben baut, lässt
+    /// Benutzerblöcke wieder aus.
+    pub fn punktsymbol_bloecke(&self) -> Vec<&BlockDef> {
+        let mut liste: Vec<&BlockDef> = self
+            .blocks
+            .iter()
+            .filter(|b| b.ist_punktsymbol())
+            .collect();
+        liste.sort_by(|a, b| a.name.to_lowercase().cmp(&b.name.to_lowercase()));
+        liste
     }
 
     pub fn block_mut(&mut self, id: &str) -> Option<&mut BlockDef> {

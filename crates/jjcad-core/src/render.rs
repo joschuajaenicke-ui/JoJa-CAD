@@ -1224,6 +1224,56 @@ fn base_style(doc: &Document, e: &Entity, override_color: Option<Color>) -> Prim
     }
 }
 
+/// Ein Punktsymbol zeichnen (T0210) — `true`, wenn es gezeichnet wurde.
+///
+/// Das Symbol sitzt mit seinem Basispunkt auf `pos` und ist um `rot` gedreht.
+/// Seine Größe ist **Papiergröße**: skaliert wird mit dem Beschriftungsmaßstab
+/// (`RenderCtx::a`), damit dieselbe Marke bei 1:50 und 1:200 gleich groß
+/// erscheint — ein Symbol ist eine Marke, kein Bauteil.
+fn push_punktsymbol(
+    ctx: &RenderCtx,
+    e: &Entity,
+    st: &PrimStyle,
+    id: &str,
+    pos: Vec2,
+    rot: f64,
+    xf: Affine,
+    dl: &mut DisplayList,
+    depth: usize,
+) -> bool {
+    let Some(def) = ctx.doc.block(id) else {
+        return false;
+    };
+    let k = ctx.a(1.0);
+    let m = xf * Affine::translate(pos) * Affine::rotate(rot) * Affine::scale(k, k);
+    for child in &def.entities {
+        let mut c = child.clone();
+        // Die gezeichneten Linien gehören zum **Objekt** — nur so wirkt
+        // Auswahl (blau) und Hervorhebung auf das Symbol.
+        c.id = e.id;
+        c.layer = e.layer;
+        if c.by_block {
+            if c.style.color.is_none() {
+                c.style.color = Some(st.color);
+            }
+            if c.style.line_type.is_none() {
+                c.style.line_type = Some(st.line_type);
+            }
+            if c.style.line_weight.is_none() {
+                c.style.line_weight = Some(st.width);
+            }
+            // Eine Vollfläche im Symbol trägt die Objektfarbe. Ohne diesen
+            // Schritt bliebe sie aufgehellt (Flächenregel) und ein gefüllter
+            // Punkt wäre auf dem Papier kaum zu sehen.
+            if c.style.fill.is_none() && matches!(c.kind, EntityKind::Fill { .. }) {
+                c.style.fill = Some(st.color);
+            }
+        }
+        render_entity(ctx, &c, m, dl, depth + 1);
+    }
+    true
+}
+
 /// Ein Objekt in die Displayliste rendern (inkl. Blockauflösung).
 pub fn render_entity(
     ctx: &RenderCtx,
@@ -1253,6 +1303,15 @@ pub fn render_entity(
 
     match &e.kind {
         EntityKind::Point { p } => {
+            // Punktsymbol (T0210): der Block der Kategorie „Punkt Symbole"
+            // ersetzt den nackten Punkt. Gezeichnet wird er in
+            // Beschriftungsgröße — ein Symbol ist eine Marke auf dem Papier,
+            // kein Bauteil im Maßstab.
+            if let Some(sym) = e.start_symbol.as_deref() {
+                if push_punktsymbol(ctx, e, &st, sym, *p, 0.0, xf, dl, depth) {
+                    return;
+                }
+            }
             dl.push(Prim {
                 shape: Shape::Dot {
                     p: xf.apply(*p),
@@ -1263,7 +1322,30 @@ pub fn render_entity(
                 layer: e.layer,
             });
         }
-        EntityKind::Line { a: p0, b: p1 } => push_line(dl, *p0, *p1),
+        EntityKind::Line { a: p0, b: p1 } => {
+            push_line(dl, *p0, *p1);
+            // Punktsymbole an Anfang und Ende (T0210). Der Pfeil eines
+            // Symbols zeigt nach +X; am Ende läuft er in die Linie hinein
+            // (Richtung a→b), am Anfang aus ihr heraus (Richtung b→a) —
+            // so zeigt eine Pfeilspitze nach außen, wie eine Marke es soll.
+            let winkel = (*p1 - *p0).angle();
+            if let Some(sym) = e.start_symbol.as_deref() {
+                push_punktsymbol(
+                    ctx,
+                    e,
+                    &st,
+                    sym,
+                    *p0,
+                    winkel + std::f64::consts::PI,
+                    xf,
+                    dl,
+                    depth,
+                );
+            }
+            if let Some(sym) = e.end_symbol.as_deref() {
+                push_punktsymbol(ctx, e, &st, sym, *p1, winkel, xf, dl, depth);
+            }
+        }
         EntityKind::Circle { c, r } => {
             dl.push(Prim {
                 shape: Shape::Circle {

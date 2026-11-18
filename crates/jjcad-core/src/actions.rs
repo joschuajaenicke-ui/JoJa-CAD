@@ -1709,6 +1709,20 @@ fn dim_kette(
     Ok(json!({"ok": true, "created": [idn]}))
 }
 
+/// Prüft eine Punktsymbol-Angabe (T0210): der genannte Block muss existieren.
+///
+/// Die Kategorie wird **nicht** verlangt. Die Auswahlliste im Eigenschaften-Panel
+/// bietet nur „Punkt Symbole“ an; ein Aufruf über MCP darf aber jeden Block als
+/// Marke setzen. Ein unbekannter Block ist dagegen ein Fehler — sonst stünde ein
+/// Objekt mit einem Symbol in der Datei, das niemand zeichnen kann (T0038).
+pub fn pruefe_punktsymbol(doc: &Document, id: &str) -> Result<(), String> {
+    if doc.block(id.trim()).is_some() {
+        Ok(())
+    } else {
+        Err(format!("Punktsymbol '{id}' ist kein Block dieser Zeichnung"))
+    }
+}
+
 pub fn execute(doc: &mut Document, id: &str, params: &Value) -> Result<Value, String> {
     let p = Params::new(params, doc.settings.input_unit);
     // Typgerechte Standardebene dieser Aktion (None = keine Vorgabe).
@@ -1722,6 +1736,11 @@ pub fn execute(doc: &mut Document, id: &str, params: &Value) -> Result<Value, St
             let id = doc.new_id();
             let mut e = Entity::new(id, layer, EntityKind::Point { p: pt });
             apply_common(doc, &mut e, &p, layer);
+            // Punktsymbol (T0210): Block aus der Kategorie „Punkt Symbole“.
+            if let Some(sym) = p.text("symbol").filter(|s| !s.trim().is_empty()) {
+                pruefe_punktsymbol(doc, &sym)?;
+                e.start_symbol = Some(sym);
+            }
             doc.add_entity(e);
             Ok(json!({"ok": true, "created": [id]}))
         }
@@ -1732,6 +1751,15 @@ pub fn execute(doc: &mut Document, id: &str, params: &Value) -> Result<Value, St
             let id = doc.new_id();
             let mut e = Entity::new(id, layer, EntityKind::Line { a, b });
             apply_common(doc, &mut e, &p, layer);
+            // Punktsymbole an Anfang und Ende (T0210).
+            if let Some(sym) = p.text("start_symbol").filter(|s| !s.trim().is_empty()) {
+                pruefe_punktsymbol(doc, &sym)?;
+                e.start_symbol = Some(sym);
+            }
+            if let Some(sym) = p.text("end_symbol").filter(|s| !s.trim().is_empty()) {
+                pruefe_punktsymbol(doc, &sym)?;
+                e.end_symbol = Some(sym);
+            }
             doc.add_entity(e);
             Ok(json!({"ok": true, "created": [id], "length_mm": a.dist(b)}))
         }
@@ -3045,6 +3073,30 @@ pub fn execute(doc: &mut Document, id: &str, params: &Value) -> Result<Value, St
                     _ => crate::style::WallAlign::Center,
                 });
             let swing_new = p.boolean("swing_in");
+            // Punktsymbole (T0210) vorab lesen: ein unbekannter Block ist ein
+            // Fehler, kein stiller Erfolg (T0038) — und geprüft wird, solange
+            // das Dokument nur lesend geliehen ist. `symbol` ist die kurze Form
+            // für den Anfang (ein Punkt hat nur diesen).
+            let symbol_feld = |key: &str| -> Option<Option<String>> {
+                let v = p.v.get(key)?;
+                if v.is_null() {
+                    return Some(None);
+                }
+                Some(
+                    p.text(key)
+                        .map(|s| s.trim().to_string())
+                        .filter(|s| !s.is_empty()),
+                )
+            };
+            let symbol_start_neu = symbol_feld("symbol").or_else(|| symbol_feld("start_symbol"));
+            let symbol_end_neu = symbol_feld("end_symbol");
+            for sym in [&symbol_start_neu, &symbol_end_neu]
+                .into_iter()
+                .flatten()
+                .flatten()
+            {
+                pruefe_punktsymbol(doc, sym)?;
+            }
             // Basispunkt der Tür (T0091) — verschiebt nur die Marke, nicht die Tür.
             let base_new = p
                 .text("base")
@@ -3111,6 +3163,14 @@ pub fn execute(doc: &mut Document, id: &str, params: &Value) -> Result<Value, St
                         .unwrap_or(false)
                     {
                         e.style.fill = None;
+                    }
+                    // Punktsymbole an Anfang und Ende (T0210) — der Punkt
+                    // trägt sein Symbol im Anfangsfeld.
+                    if let Some(s) = &symbol_start_neu {
+                        e.start_symbol = s.clone();
+                    }
+                    if let Some(s) = &symbol_end_neu {
+                        e.end_symbol = s.clone();
                     }
                     // Objektstil als Rückfall für die Treppenteile, bevor
                     // `kind` verliehen wird.
