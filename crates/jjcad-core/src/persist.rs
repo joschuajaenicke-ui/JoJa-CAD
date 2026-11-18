@@ -1428,6 +1428,10 @@ pub struct UserPrefs {
     /// Seite des Eigenschaften-Panels (T0203).
     #[serde(default = "default_panel_rechts")]
     pub props_side: PanelSeite,
+    /// Seite des Blattmanagers (T0218) — er liegt wie die anderen Panels
+    /// wahlweise links oder rechts.
+    #[serde(default = "default_panel_rechts")]
+    pub blatt_side: PanelSeite,
     /// Inventar-Raster (frei belegbar, beliebig erweiterbar)
     #[serde(default)]
     pub inventory: Vec<Option<String>>,
@@ -2124,6 +2128,7 @@ impl Default for UserPrefs {
             show_properties: true,
             show_layers: true,
             show_blattmanager: true,
+            blatt_side: PanelSeite::Rechts,
             // T0203: Layer links, Eigenschaften rechts — wie bisher; beide
             // lassen sich auf die andere Seite legen.
             layers_side: PanelSeite::Links,

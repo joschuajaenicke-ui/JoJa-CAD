@@ -43,9 +43,10 @@ Architekturregeln:
   das Blatt (`App::blatt_oeffnen`, holt den Reiter zurück), das Häkchen setzt `Sheet::plansatz`
   über `sheet.update`. Am Ende der Liste steht „Plansatz als PDF (n)“ — `pdf::export_sheets_pdf`
   schreibt die gewählten Blätter in Blattreihenfolge als eine mehrseitige PDF, eine leere
-  Auswahl ist ein Fehler und sperrt den Knopf. Das Panel liegt **außen rechts**, vor
-  `App::seitenleisten` gezeichnet; es hat keinen Seitenwechsel wie Layer/Eigenschaften, weil
-  drei Panels auf zwei Seiten die Zeichnung zu weit einengen. Prüfweg:
+  Auswahl ist ein Fehler und sperrt den Knopf. Der Blattmanager ist das **dritte**
+  `SeitenPanel` (`SeitenPanel::Blatt`, `blatt_open`/`blatt_collapsed`/`blatt_side`,
+  `prefs.blatt_side`): Pfeil im Kopf klappt ihn auf die Leiste, dort holt sein Symbol
+  (`sheet`) ihn zurück — genau wie Layer und Eigenschaften, inklusive Seitenwechsel. Prüfweg:
   `cargo test -p jjcad-core --test blatt_plansatz` und `cargo test -p jjcad-gui tests_blattmanager`,
   Prüfbild `--demo blattmanager`.
 - **Oberfläche und Code-Kommentare auf Deutsch.**
