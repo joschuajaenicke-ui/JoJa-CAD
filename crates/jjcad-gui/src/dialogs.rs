@@ -1740,6 +1740,9 @@ pub(crate) const EINSTELLUNGSKATEGORIEN: &[Einstellungskategorie] = &[
             "Schnittpunkt",
             "Lot",
             "Tangential",
+            "Lotfang",
+            "Lotrecht",
+            "rechtwinklig",
             "Nächster Punkt",
             "Winkelhalbierende",
             "Ortho",
@@ -2992,6 +2995,7 @@ fn settings_body(app: &mut App, ui: &mut Ui) {
                                     ),
                                     (jjcad_core::i18n::tr("gui.dialogs.lot"), &mut snap.perpendicular),
                                     (jjcad_core::i18n::tr("gui.dialogs.tangential"), &mut snap.tangent),
+                                    (jjcad_core::i18n::tr("gui.dialogs.lotfang"), &mut snap.lot),
                                     (
                                         jjcad_core::i18n::tr("gui.dialogs.naechster_punkt"),
                                         &mut snap.nearest,
@@ -4029,6 +4033,7 @@ fn settings_body(app: &mut App, ui: &mut Ui) {
         || snap.intersection != cur.snap.intersection
         || snap.perpendicular != cur.snap.perpendicular
         || snap.tangent != cur.snap.tangent
+        || snap.lot != cur.snap.lot
         || snap.nearest != cur.snap.nearest
         || snap.grid != cur.snap.grid
         || snap.ortho != cur.snap.ortho
@@ -4052,7 +4057,7 @@ fn settings_body(app: &mut App, ui: &mut Ui) {
             "snap": {
                 "endpoint": snap.endpoint, "midpoint": snap.midpoint, "center": snap.center,
                 "intersection": snap.intersection, "perpendicular": snap.perpendicular,
-                "tangent": snap.tangent,
+                "tangent": snap.tangent, "lot": snap.lot,
                 "nearest": snap.nearest, "grid": snap.grid, "ortho": snap.ortho,
                 "polar": snap.polar, "wall_edges": snap.wall_edges,
                 "grid_step": unit.from_mm(grid_step),

@@ -4361,6 +4361,7 @@ pub fn execute(doc: &mut Document, id: &str, params: &Value) -> Result<Value, St
                     ("intersection", &mut doc.settings.snap.intersection),
                     ("perpendicular", &mut doc.settings.snap.perpendicular),
                     ("tangent", &mut doc.settings.snap.tangent),
+                    ("lot", &mut doc.settings.snap.lot),
                     ("nearest", &mut doc.settings.snap.nearest),
                     ("grid", &mut doc.settings.snap.grid),
                     ("ortho", &mut doc.settings.snap.ortho),

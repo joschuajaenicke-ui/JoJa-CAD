@@ -29,6 +29,10 @@ pub enum SnapKind {
     /// Tangentialpunkt (T0157): die Linie verlässt einen Kreis/einen Bogen
     /// tangential, oder ein bewegter Kreis berührt eine Linie.
     Tangent,
+    /// Lotrechter Punkt (T0216): die neue bzw. gezogene Linie steht
+    /// **rechtwinklig** auf einer vorhandenen — berechnet aus deren Richtung,
+    /// nicht geraten. Der Bezugspunkt liegt dabei auf dieser Linie.
+    Lot,
 }
 
 impl SnapKind {
@@ -48,6 +52,7 @@ impl SnapKind {
             SnapKind::Bisector => "Winkelhalbierende",
             SnapKind::DimParallel => "Maßkette parallel",
             SnapKind::Tangent => "Tangential",
+            SnapKind::Lot => "Lotrecht",
         }
     }
     /// Beschriftung in der gewählten Sprache (T0106). `label()` bleibt der
@@ -68,6 +73,7 @@ impl SnapKind {
             SnapKind::Bisector => crate::i18n::tr("ui.snapkind.bisector"),
             SnapKind::DimParallel => crate::i18n::tr("ui.snapkind.dim_parallel"),
             SnapKind::Tangent => crate::i18n::tr("ui.snapkind.tangent"),
+            SnapKind::Lot => crate::i18n::tr("ui.snapkind.lot"),
         }
     }
 
@@ -88,6 +94,7 @@ impl SnapKind {
             SnapKind::Bisector => "WHB",
             SnapKind::DimParallel => "MPAR",
             SnapKind::Tangent => "TAN",
+            SnapKind::Lot => "LOTR",
         }
     }
 
@@ -130,6 +137,9 @@ impl SnapKind {
             // abgeleiteter Punkt: er schlägt „Nächster Punkt" und das Raster,
             // aber nie einen echten Objektpunkt (T0157).
             SnapKind::Tangent => 5,
+            // Der lotrechte Punkt ist derselbe Schlag: ein ausdrücklich
+            // anvisierter, aus der Geometrie gerechneter Punkt (T0216).
+            SnapKind::Lot => 5,
             SnapKind::Perpendicular => 6,
             SnapKind::Nearest => 7,
             SnapKind::Grid => 8,
@@ -927,6 +937,94 @@ pub fn tangent_treffer(
     out
 }
 
+/// Lotfang (T0216) — das Gegenstück zum Tangentialfang für **Linien**.
+///
+/// Liegt der Bezugspunkt (der zuletzt gesetzte Punkt des Zuges bzw. das feste
+/// Ende einer gezogenen Linie) auf einer vorhandenen Linie, dann gibt es durch
+/// ihn genau **eine** Senkrechte auf dieser Linie. Der Zeiger wird auf diese
+/// Gerade gezogen; der gesuchte Winkel ist damit der rechte Winkel zwischen
+/// beiden Linien — er wird aus der Richtung der vorhandenen Linie gerechnet,
+/// nicht geraten.
+///
+/// Der Fang liefert wie der Tangentialfang einen **Punkt** (den Zeigerort auf
+/// der Senkrechten), keine Richtung. Die Markenstelle ist der Bezugspunkt:
+/// dort schneiden sich beide Linien, dort sitzt das Zeichen für den rechten
+/// Winkel ([`SnapHit::marke`]). Er ist kein diskreter Punkt — er wandert mit
+/// dem Zeiger und taugt deshalb nicht als Haltepunkt des erweiterten
+/// Punktfangs.
+///
+/// Gilt für Erzeugen **und** Manipulieren: beim Griffzug ist der Bezugspunkt
+/// das stehengebliebene Ende der Linie, beim Zeichnen der zuletzt gesetzte
+/// Punkt. Ein bewegtes Element steht in `ignore` und fängt deshalb nicht auf
+/// sich selbst.
+pub fn lot_treffer(
+    doc: &Document,
+    reference: Option<Vec2>,
+    cursor: Vec2,
+    tol: f64,
+    ignore: &[Id],
+) -> Vec<SnapHit> {
+    let tol = tol.max(1e-6);
+    let mut out: Vec<SnapHit> = Vec::new();
+    let Some(r0) = reference else {
+        return out;
+    };
+    // Der Bezugspunkt muss **auf** einer Linie liegen; nur dort gibt es eine
+    // Senkrechte, die beide Linien wirklich schneidet. Gesucht wird deshalb um
+    // `r0`, nicht um den Zeiger — die Linie kann weit von ihm entfernt liegen.
+    let um = BBox::new(r0 - v(tol, tol), r0 + v(tol, tol));
+    for e in doc.ents() {
+        if ignore.contains(&e.id) {
+            continue;
+        }
+        if doc.layer_gesperrt(e.layer) {
+            continue;
+        }
+        // Gekrümmte Objekte sind keine „Linie": ihre Zerlegung besteht aus
+        // kurzen Sehnen, deren Senkrechte mit dem Zeiger nichts zu tun hat.
+        if matches!(
+            e.kind,
+            EntityKind::Circle { .. }
+                | EntityKind::Arc { .. }
+                | EntityKind::Ellipse { .. }
+                | EntityKind::EllipseArc { .. }
+        ) {
+            continue;
+        }
+        let b = render::entity_bbox(doc, e);
+        if !b.is_valid() || !b.expanded(tol * 2.0).intersects(&um) {
+            continue;
+        }
+        for sg in render::entity_segments(doc, e) {
+            let Seg::Line(a, b2) = sg else { continue };
+            // Der Bezugspunkt muss auf der **Strecke** liegen, nicht auf ihrer
+            // Verlängerung: sonst hinge der rechte Winkel an einer Stelle, an
+            // der gar keine Linie ist.
+            if dist_point_segment(r0, a, b2) > tol {
+                continue;
+            }
+            let ab = b2 - a;
+            if ab.len() <= 1e-9 {
+                continue;
+            }
+            let senkrecht = ab.perp().normalized();
+            let p = fuss_auf_gerade(cursor, r0, senkrecht);
+            let d = p.dist(cursor);
+            if d <= tol {
+                out.push(SnapHit {
+                    point: p,
+                    kind: SnapKind::Lot,
+                    entity: Some(e.id),
+                    // Beide Linien schneiden sich im Bezugspunkt — dort sitzt
+                    // das Zeichen für den rechten Winkel.
+                    marke: Some(r0),
+                });
+            }
+        }
+    }
+    out
+}
+
 /// Sucht den besten Fangpunkt in der Nähe des Cursors.
 ///
 /// * `tol` – Fangradius in Weltkoordinaten
@@ -1050,6 +1148,9 @@ fn snap_candidates_alle(
     // (T0211). Er kann sie nicht durch `consider` reichen (das setzt keine),
     // sondern sammelt getrennt und kommt am Ende dazu.
     let mut tangent_cands: Vec<(f64, SnapHit)> = Vec::new();
+    // Der Lotfang bringt ebenfalls eine eigene Markenstelle mit (T0216) und
+    // sammelt deshalb getrennt — `consider` setzt keine.
+    let mut lot_cands: Vec<(f64, SnapHit)> = Vec::new();
     let mut consider = |p: Vec2, kind: SnapKind, entity: Option<Id>, dist: f64| {
         if dist > tol {
             return;
@@ -1197,6 +1298,19 @@ fn snap_candidates_alle(
         }
     }
 
+    // Lotfang (T0216): rechtwinklig auf einer vorhandenen Linie, ausgehend vom
+    // Bezugspunkt. Wie der Tangentialfang tritt er als Kandidat in dieselbe
+    // Liste und wird nach denselben Regeln sortiert und entdoppelt.
+    if s.lot {
+        for hit in lot_treffer(doc, reference, cursor, tol, ignore) {
+            let d = hit.point.dist(cursor);
+            if d > tol {
+                continue;
+            }
+            lot_cands.push((d, hit));
+        }
+    }
+
     // Stützpunkte eines Splines: die vom Nutzer gesetzten Punkte sind die
     // einzigen festen Fangziele der Kurve (T0134). Sie fangen wie Endpunkte
     // eines Objekts; der gerade gezogene Punkt ist über `gesperrt` ausgenommen.
@@ -1269,6 +1383,7 @@ fn snap_candidates_alle(
     }
 
     cands.extend(tangent_cands);
+    cands.extend(lot_cands);
     sortiere_kandidaten(cands.into_iter().map(|(_, hit)| hit).collect(), cursor)
 }
 

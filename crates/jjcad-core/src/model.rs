@@ -1512,6 +1512,10 @@ pub struct SnapSettings {
     /// Kreis/Bogen tangential an einer Linie.
     #[serde(default = "default_true")]
     pub tangent: bool,
+    /// Lotfang (T0216): die neue bzw. gezogene Linie steht rechtwinklig auf
+    /// einer vorhandenen, wenn ihr Bezugspunkt auf dieser Linie liegt.
+    #[serde(default = "default_true")]
+    pub lot: bool,
     #[serde(default = "default_true")]
     pub nearest: bool,
     #[serde(default = "default_true")]
@@ -1645,6 +1649,7 @@ impl Default for SnapSettings {
             intersection: true,
             perpendicular: true,
             tangent: true,
+            lot: true,
             nearest: true,
             grid: true,
             ortho: false,

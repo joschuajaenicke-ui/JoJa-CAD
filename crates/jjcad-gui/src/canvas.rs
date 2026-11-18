@@ -2463,6 +2463,78 @@ mod tests_fangmarke {
         );
     }
 
+    /// Lotfang (T0216): das Zeichen gehört an den **Schnittpunkt** beider
+    /// Linien (den Bezugspunkt des Zuges). Der Fangpunkt selbst wandert mit
+    /// dem Zeiger auf der Senkrechten — dort stand die Marke sonst und zeigte
+    /// damit ins Leere.
+    #[test]
+    fn lotmarke_liegt_im_schnittpunkt_der_linien() {
+        let ctx = egui::Context::default();
+        let mut app = App::with_ctx(ctx.clone());
+        app.session_mut()
+            .execute("doc.settings", &json!({"input_unit": "mm"}))
+            .unwrap();
+        // Waagerechte Linie als Bezug — der erste Punkt des Zuges liegt auf ihr.
+        assert!(run(
+            &mut app,
+            "draw.line",
+            json!({"a": [0.0, 0.0], "b": [4000.0, 0.0]})
+        ));
+        // Nur der Lotfang an: sonst gewinnt „Nächster Punkt“ auf der Linie.
+        app.session_mut()
+            .execute(
+                "doc.settings",
+                &json!({"snap": {
+                    "grid": false, "ortho": false, "polar": false,
+                    "nearest": false, "midpoint": false, "perpendicular": false,
+                    "intersection": false, "endpoint": false, "center": false,
+                    "tangent": false, "lot": true
+                }}),
+            )
+            .unwrap();
+        app.ui.show_grid = false;
+        app.start_tool("draw.line");
+        app.tool.as_mut().unwrap().pts.push(V2::new(2000.0, 0.0));
+        let mut v = app.current_view();
+        v.center = V2::new(2000.0, 600.0);
+        v.zoom = 0.1;
+        app.set_view(v);
+        rahmen(&ctx, &mut app, None);
+
+        let flaeche = app.ui.last_canvas;
+        let schnitt = world_to_screen(flaeche, app.current_view(), V2::new(2000.0, 0.0));
+        let lotpunkt = world_to_screen(flaeche, app.current_view(), V2::new(2000.0, 1200.0));
+        assert!(
+            flaeche.contains(schnitt) && flaeche.contains(lotpunkt),
+            "Schnittpunkt oder Senkrechte liegt nicht im Bild"
+        );
+
+        // Zeiger 1 px neben der Senkrechten x = 2000.
+        let out = rahmen(&ctx, &mut app, Some(lotpunkt + Vec2::new(1.0, 0.0)));
+        let ss = strecken(&out);
+        // Lotzeichen: Winkelquadrat mit Scheitel im Schnittpunkt, Striche nach
+        // links und unten, um den Versatz seiner Art daneben gerückt (T0216).
+        let versatz = FangArt::Objekt(jjcad_core::snap::SnapKind::Lot).versatz();
+        let schenkel = |o: Pos2| {
+            let o = o + versatz;
+            [
+                (Pos2::new(o.x - 9.0, o.y), o),
+                (o, Pos2::new(o.x, o.y + 9.0)),
+            ]
+        };
+        let [a1, a2] = schenkel(schnitt);
+        assert!(
+            hat_strecke(&ss, a1.0, a1.1) && hat_strecke(&ss, a2.0, a2.1),
+            "Lotmarke fehlt neben dem Schnittpunkt ({a1:?} / {a2:?})"
+        );
+        // Gegenprobe: am Fangpunkt unter dem Zeiger steht sie nicht.
+        let [b1, b2] = schenkel(lotpunkt);
+        assert!(
+            !hat_strecke(&ss, b1.0, b1.1) && !hat_strecke(&ss, b2.0, b2.1),
+            "Marke sitzt am Zeigerpunkt der Senkrechten statt im Schnittpunkt"
+        );
+    }
+
     fn strecken_mit_farbe(out: &egui::FullOutput) -> Vec<([Pos2; 2], egui::epaint::ColorMode)> {
         out.shapes
             .iter()
