@@ -1,7 +1,7 @@
 //! Eine Instanz je Datenwurzel (T0135).
 //!
 //! Eine zweite Instanz auf derselben Wurzel darf nicht schreiben: sie würde
-//! `sitzung.json` und das Sicherungs-Manifest überschreiben. Statt sie nur
+//! `sitzung.json` überschreiben. Statt sie nur
 //! abzuweisen, reicht sie ihre Arbeit an die laufende weiter — eine übergebene
 //! Zeichnung wird dort als Reiter geöffnet, ohne Datei kommt das Fenster nach
 //! vorn. Der zweite Prozess endet danach.

@@ -77,13 +77,17 @@ T geht nur logarithmisch in den Platzbedarf ein. Zwölffache Tiefe (Woche gegen 
 
 1. Nach einem Absturz fehlt höchstens die Arbeit eines Intervalls.
 2. Der Pool bleibt an oder unter max(N, 2 × Zeichnungen) und wächst nicht mit der Nutzungsdauer.
-3. Der älteste Stand einer Zeichnung (Anker) ist mindestens T alt und höchstens T/(1−g).
-4. Der neueste Stand einer Zeichnung (Pin) bleibt bis T erhalten. Ist er T alt geworden, verfällt er samt Verlauf, und die Zeichnung belegt keine Plätze mehr.
+3. Der älteste Stand einer Zeichnung (Anker) ist mindestens T alt und höchstens T/(1−g). Er wird gelöscht, sobald sein jüngerer Nachbar T erreicht hat.
+4. Der neueste Stand einer Zeichnung (Pin) **bleibt immer**. Er verfällt nicht nach T; die Aufbewahrungszeit gilt nur für den Verlauf dahinter.
 5. Stände liegen im Format der Zieldatei und sind einzeln zu öffnen.
+6. **Der Ordnerinhalt ist die Wahrheit**: Wird der Ordner im Betrieb geleert oder eine Datei von Hand gelöscht, schreibt die Sicherung den aktuellen Stand im nächsten Takt neu — ohne Neustart. Fehlt der Ordner selbst, wird er neu angelegt.
+7. **Fremde Dateien verschwinden nicht**: Eine von Hand hineingelegte `.jjcad` wird übernommen, als „nicht zugeordnet“ geführt und nie automatisch gelöscht.
+8. **Kein Löschvorgang ohne Scan**: Gelöscht wird nur eine Datei, die in derselben Runde gelesen wurde und deren `stat` (Größe, Änderungszeit) unverändert ist. Meldet der Scan weniger Dateien als erwartet (Netzlaufwerk, halb lesbares Verzeichnis), wird in dieser Runde nichts gelöscht.
+9. **Kein Auffrischen liest einen ganzen Stand**: Ein `stat` auf das Verzeichnis genügt, solange sich nichts geändert hat. Nach einer Änderung werden nur unbekannte Dateien gelesen, und von ihnen nur der Kopf (2 KB).
 
 ### 5. Viele Zeichnungen
 
-Jede Zeichnung belegt zwei Plätze: neuester und ältester Stand. Erst dadurch hat jeder Löschkandidat zwei Nachbarn in derselben Zeichnung.
+Jede Zeichnung belegt zwei Plätze: neuester und ältester Stand. Erst dadurch hat jeder Löschkandidat zwei Nachbarn in derselben Zeichnung. Der Pin zählt dabei immer mit — er wird nie gelöscht.
 
 Zur Planung gilt: N etwa gleich Zahl der aktiven Zeichnungen × k(g), mindestens 30 Stände je aktive Zeichnung.
 
@@ -97,6 +101,8 @@ Zur Planung gilt: N etwa gleich Zahl der aktiven Zeichnungen × k(g), mindestens
 | 10 | 15 | 42,2 % |
 
 Ruhige Zeichnungen geben ungenutzte Plätze an aktive ab. Weil die Nachbarn je Zeichnung gebildet werden, erreichen alle Zeichnungen denselben relativen Abstand, soweit sie genug Stände haben. Kein Verfahren schafft Speicher: Wachsen die aktiven Zeichnungen bei gleichem N, sinkt die Auflösung je Zeichnung.
+
+**Obergrenze der Arbeit je Takt**: Ein Sicherungstakt liest keine gespeicherten Stände. Gemessen mit 150 Ständen von je 132 KB (19 MB zusammen): Start 1,2 ms, davon 150 Kopflesungen; Volltextlesen aller 150 Stände zum Vergleich 2,3 ms im Seitencache — bei 300-KB-Ständen auf kaltem Netzlaufwerk entsprechend mehr. Ein Takt ohne Änderung liest **0** Dateien.
 
 ### 6. Wiederherstellen
 
@@ -137,42 +143,68 @@ Verworfen (R3.5): Wählt der Benutzer beim Schließen eines Reiters „Verwerfen
 | Stand | Gesicherte Fassung einer Zeichnung, mit Zyklusnummer und Hash |
 | Pool | Alle Stände eines Sicherungsordners zusammen |
 | Arbeitskopie | Neuester Stand einer Zeichnung im Pool, atomar geschrieben |
-| Pin | Neuester Stand je Zeichnung; wird beim Ausdünnen nie angefasst und verfällt, sobald er T Zyklen alt ist |
+| Pin | Neuester Stand je Zeichnung; wird nie gelöscht, auch nicht nach T |
 | Anker | Ältester Stand je Zeichnung; wird beim Ausdünnen nie angefasst und nur ersetzt, indem ein jüngerer Stand nachrückt |
+| Kopf | Metadatenblock am Anfang einer Standdatei (`"sicherung": {…}`); die einzige Quelle für Zyklus, Kennung und Marken |
+| Nicht zugeordnet | Datei im Sicherungsordner, die zu keiner Zeichnung gehört (kein Kopf, keine bekannte Kennung); wird geführt und nie automatisch gelöscht |
 | Verworfen | Stand, dessen Arbeit der Benutzer beim Schließen verworfen hat; bleibt liegen, wird nie automatisch zurückgeholt |
 | Verlauf | Alle Stände außer Pin und Anker; wird ausgedünnt |
 | Alter | a = n − Zyklus eines Standes, in Zyklen |
 
 ### 9. Datenmodell
 
-Es gibt einen Pool für alle Zeichnungen eines Projektordners, damit dateiübergreifend ausgedünnt werden kann.
-
-Der Pool besteht aus zwei Arten von Dateien: einem Manifest mit dem globalen Zähler n und der Liste der Stände sowie einer Datei je Stand. Die Standdatei trägt den Namen der Zieldatei, das Suffix `_autosave_` und ein Rückwärtsdatum:
+Es gibt einen Pool für alle Zeichnungen eines Projektordners, damit dateiübergreifend ausgedünnt werden kann. **Der Pool ist ein Verzeichnis voller Standdateien — sonst nichts.** Ein Manifest gibt es nicht mehr: Es war eine zweite Wahrheit, und ging es verloren oder überschrieb es ein zweiter Prozess aus seinem Speicherstand, wurden Stände als Waisen gelöscht oder nie wieder geschrieben. Beides ist aufgetreten.
 
 ```text
-<Sicherungen>/manifest.json
 <Sicherungen>/<Zieldatei>_autosave_<JJJJMMTT-HHMMSS>.jjcad
+<Sicherungen>/pool.lock          Sperre für einen Schreibvorgang (PID + Zeitstempel, 10 s)
+<Sicherungen>/manifest.json.eingelesen   Rest eines alten Manifests, nur nach der Migration
 ```
 
-Das Manifest führt je Stand folgende Felder:
+Die Standdatei ist eine gewöhnliche `.jjcad`-Datei, deren **erstes Feld** ein Metadatenblock ist:
+
+```json
+{
+  "sicherung": {
+    "format": "jjcad-sicherung-stand",
+    "zyklus": 42,
+    "datei": "6f1c2a4e-8b3d-4c7a-9e10-2d5b8f0a1c33",
+    "zeit": "2026-11-18T14:35:44",
+    "gesichert": false,
+    "verworfen": false,
+    "hash": "…",
+    "datei_hash": "…",
+    "groesse": 60123,
+    "pfad": "/home/…/Wohnhaus.jjcad"
+  },
+  "format": "jjcad",
+  "version": 2,
+  …
+}
+```
 
 | Feld | Bedeutung |
 | --- | --- |
+| `format` | Immer `jjcad-sicherung-stand`; unterscheidet den Block von einem Zufallstreffer |
 | `zyklus` | Zyklusnummer des Standes; einziger Zeitanker für Entscheidungen |
-| `datei` | Dokumentkennung, UUID aus dem Dateikopf, nicht der Pfad |
-| `name` | Anzeigename |
-| `hash` | SHA-256 des Standinhalts |
-| `groesse` | Größe in Bytes |
+| `datei` | Dokumentkennung, UUID aus dem Dateikopf, nicht der Pfad. Leer = nicht zugeordnet |
 | `zeit` | Nur Anzeige, Ortszeit |
 | `gesichert` | true = der Stand entspricht dem Inhalt der Zieldatei, geschrieben nach dem Speichern |
 | `verworfen` | true = die Arbeit wurde verworfen |
-| `datei_hash` | SHA-256 der Zieldatei in dem Zustand, in dem sie beim Anlegen des Standes war; leer, wenn es keine Zieldatei gab. Grundlage der Konflikterkennung, weil der Standinhalt selbst den Pfad im Kopf trägt und deshalb nie byte-gleich zur Datei ist |
-| `datei_name` | Dateiname im Pool, einzige Quelle für den Pfad |
+| `hash` | SHA-256 des Dokumentinhalts **ohne** den Block — sonst wäre ein Stand nie gleich seiner Zieldatei |
+| `datei_hash` | SHA-256 der Zieldatei in dem Zustand, in dem sie beim Anlegen des Standes war; leer, wenn es keine Zieldatei gab. Grundlage der Konflikterkennung |
+| `groesse` | Größe der Standdatei in Bytes |
 | `pfad` | Zieldatei zum Zeitpunkt der Sicherung, leer bei nie gespeicherten Zeichnungen |
 
-Das Manifest trägt `format „jjcad-sicherung“` und `version 2`. Fassung 1 kannte nur Fenster, Obergrenze und Dichtezone; sie wird beim Öffnen übernommen, fehlende Felder gelten als false beziehungsweise leer.
+Der Block gehört zum Stand, nicht zur Zeichnung: Beim Laden wird er abgeschnitten und wandert deshalb nie in eine gespeicherte Datei. Der Dateiname im Pool ist die einzige Quelle für den Speicherort; das Feld `datei_name` des alten Manifests gibt es nicht mehr.
 
-Namensregeln: Die Zieldatei wird klein geschrieben, ohne Umlaute und Sonderzeichen (Wohnhaus Musterstraße → `wohnhaus-musterstrasse`), und ohne den Namen `zeichnung`. Das Rückwärtsdatum JJJJMMTT-HHMMSS sorgt dafür, dass alphabetische Sortierung chronologisch ist. Fehlt der Zeitstempel, steht `zyklus-000000123`; eine Kollision in derselben Sekunde bekommt `-2`, `-3`. Altbestand `stand-<n>-<uuid>.jjcad` wird beim Öffnen umbenannt.
+**Index im Speicher**: Beim Öffnen und bei jeder Änderung des Verzeichnisses wird der Index aus dem Inhalt gebildet. Der Normalfall ist ein `stat` auf das Verzeichnis (dev, ino, Änderungszeit, Größe); erst wenn sich die Signatur ändert, folgt ein `readdir`, und nur für Dateien, die nach Name, Größe und Änderungszeit unbekannt sind, wird der Kopf gelesen (2 KB). Der Zyklus des nächsten Standes ist der höchste bekannte + 1; eine externe Zählerquelle gibt es nicht.
+
+**Dateien ohne Herkunft** werden übernommen: Kopf lesen → sonst Zyklus aus dem Dateinamen (`…_autosave_zyklus-000000123`) → sonst aus der Änderungszeit der Datei. Sie werden als „nicht zugeordnet“ geführt und nie automatisch gelöscht.
+
+**Migration**: Beim ersten Start wird ein vorhandenes `manifest.json` einmal eingelesen — Zyklus, Hash und `gesichert` wandern in die Köpfe der Stände, alte Namen `stand-<n>-<uuid>.jjcad` werden umbenannt —, danach heißt es `manifest.json.eingelesen`. Gelöscht wird nichts.
+
+Namensregeln: Die Zieldatei wird klein geschrieben, ohne Umlaute und Sonderzeichen (Wohnhaus Musterstraße → `wohnhaus-musterstrasse`), und ohne den Namen `zeichnung`. Das Rückwärtsdatum JJJJMMTT-HHMMSS sorgt dafür, dass alphabetische Sortierung chronologisch ist. Fehlt der Zeitstempel, steht `zyklus-000000123`; eine Kollision in derselben Sekunde bekommt `-2`, `-3`. Der Zyklus steht nur im Kopf, nicht im Dateinamen.
 
 Kennung: Trägt eine Zeichnung im Kopf keine Kennung, wird beim Laden eine aus dem kanonischen Pfad abgeleitete vergeben (`daten::kennung_fuer_pfad`, UUID v5, unter Windows kleingeschrieben). Eine zufällige Kennung je Öffnen würde je Start einen neuen Pin anlegen.
 
@@ -180,10 +212,11 @@ Zeit: Die Zyklusnummer ist der einzige Zeitanker für Entscheidungen — monoton
 
 ### 10. Regeln (Geometric Retention, Anhang A.2)
 
-1. Sichern: n um 1 erhöhen, neuen Stand anlegen.
-2. Fenster: Der älteste Stand einer Zeichnung wird gelöscht, solange sein jüngerer Nachbar mindestens T alt ist (der Anker rückt nach). Ist der Pin selbst mindestens T alt, wird auch er gelöscht, und die Zeichnung verlässt den Pool.
-3. Obergrenze: max(N, 2F) Plätze, mit F = Zahl der Zeichnungen im Pool. Übersteigt der Pool sie, wird ausgedünnt.
-4. Ausdünnen, bis der Pool die Obergrenze einhält: Kandidaten sind alle Stände außer Pin und Anker. Gelöscht wird der Kandidat mit den kleinsten Kosten.
+1. Sichern: Zyklus um 1 erhöhen, neuen Stand anlegen — `create_dir_all` vorher, atomar schreiben (temp → fsync → rename). Ist der Hash des neuesten Standes dieser Zeichnung gleich dem Dokument, wird nichts geschrieben.
+2. Auffrischen vor jeder Entscheidung: ein `stat` auf das Verzeichnis; nur bei geänderter Signatur `readdir` und für unbekannte Dateien der Kopf. Der Index ist die Arbeitsgrundlage, das Verzeichnis die Wahrheit.
+3. Fenster: Der älteste Stand einer Zeichnung wird gelöscht, solange sein jüngerer Nachbar mindestens T alt ist (der Anker rückt nach). Der neueste Stand (Pin) bleibt **immer**.
+4. Obergrenze: max(N, 2F) Plätze, mit F = Zahl der Zeichnungen im Pool. Übersteigt der Pool sie, wird ausgedünnt.
+5. Ausdünnen, bis der Pool die Obergrenze einhält: Kandidaten sind alle Stände außer Pin und Anker. Gelöscht wird der Kandidat mit den kleinsten Kosten.
 
    ```text
    Kosten(i) = (a_älter − a_jünger) / a_älter
@@ -191,11 +224,13 @@ Zeit: Die Zyklusnummer ist der einzige Zeitanker für Entscheidungen — monoton
 
    a_älter und a_jünger sind die Alter der beiden Nachbarn von i in derselben Zeichnung. Beide existieren immer, weil Pin und Anker geschützt sind. Die Kosten sind die relative Lücke, die nach dem Löschen zwischen den Nachbarn entstünde; gelöscht wird dort, wo sie am wenigsten auffällt. Nahe am Jetzt bleiben die Stände von selbst lückenlos, weil dort schon ein einzelner Zyklus eine große relative Lücke ist.
 
-5. Monotonie: Es wird nur gelöscht, nie etwas wiederhergestellt oder neu berechnet. Nach einem Absturz genügt die aktuelle Liste, um weiterzumachen.
+6. Löschschutz: Gerechnet wird nur auf dem Index; gelöscht wird einzeln und nur, wenn die Datei in derselben Runde gescannt wurde und ihre `stat`-Angaben unverändert sind. War der Scan unvollständig, wird in dieser Runde nichts gelöscht. Fremde Dateien („nicht zugeordnet“) sind kein Kandidat.
+7. Sperre: Ein Schreibvorgang nimmt `pool.lock` (PID + Zeitstempel). Hält ein zweiter eigener Prozess sie, überspringt dieser Takt das Schreiben; nach 10 s gilt die Sperre als verwaist. Zwei Fenster gleichzeitig verlieren so keine Stände — höchstens entsteht ein doppelter.
+8. Monotonie: Es wird nur gelöscht, nie etwas wiederhergestellt oder neu berechnet. Nach einem Absturz genügt der Verzeichnisinhalt, um weiterzumachen.
 
-Eine Dichtezone gibt es nicht mehr. Ohne Schritt 2 bliebe der Anker ewig und die Auflösung sänke mit der Nutzungsdauer; Schritt 2 hält die Tiefe bei T. Zeichnungen ohne neue Stände verschwinden nach T aus dem Pool, verwaiste Zeichnungen belegen also keine Plätze. Weil n nur bei Arbeit zählt, läuft die Frist in Arbeitszeit, nicht in Kalenderzeit: eine Pause lässt nichts verfallen.
+Eine Dichtezone gibt es nicht mehr. Ohne Schritt 3 bliebe der Anker ewig und die Auflösung sänke mit der Nutzungsdauer; Schritt 3 hält die Tiefe bei T. Weil n nur bei Arbeit zählt, läuft die Frist in Arbeitszeit, nicht in Kalenderzeit: eine Pause lässt nichts verfallen.
 
-Beim Ausschalten des Verlaufs entsteht kein zusätzlicher Stand — der bisherige neueste je Zeichnung wird durch den neuen ersetzt. Vorhandene Stände werden nicht gelöscht; sie verfallen nur nach Schritt 2 und 3. Ein verworfen markierter Stand wird nie ersetzt.
+Beim Ausschalten des Verlaufs entsteht kein zusätzlicher Stand — der bisherige neueste je Zeichnung wird durch den neuen ersetzt. Vorhandene Stände werden nicht gelöscht; sie verfallen nur nach Schritt 3 und 4. Ein verworfen markierter Stand wird nie ersetzt.
 
 ### 11. Parameter
 
@@ -218,11 +253,14 @@ Tiefe = mindestens T, höchstens T / (1 − g)
 ### 12. Ablauf eines Autosave
 
 ```text
+Verzeichnis auffrischen (ein stat; nur bei Änderung readdir + Köpfe)
 wenn Inhalt geändert (Hash-Vergleich):
-    n += 1
-    Stand atomar schreiben             # temp → fsync → rename
-    Pool-Eintrag anhängen, Manifest fsync
-    ausdünnen(n)                       # Regeln 10.2 bis 10.4
+    Zyklus = höchster bekannter + 1
+    Sperre pool.lock nehmen
+    Stand atomar schreiben             # temp → fsync → rename, Kopf als erstes Feld
+    Index fortschreiben
+    ausdünnen(zyklus)                  # Regeln 10.3 bis 10.6
+    Sperre freigeben
 ```
 
 Beim Beenden läuft derselbe Ablauf sofort für jeden Reiter mit ungespeicherten Änderungen, ohne Rücksicht auf das Intervall.
@@ -231,7 +269,7 @@ Ein Dateistand (nach „Speichern“) überspringt den Hash-Vergleich und wird i
 
 „Verwerfen“ schreibt zuerst den verworfenen Arbeitsstand, dann den Dateistand.
 
-Die Zieldatei wird dabei nicht angefasst. Ausgedünnt wird nach dem erfolgreichen Schreiben; die Spitze liegt kurzzeitig bei Plätze + 1. Waisen (Standdatei ohne Eintrag) und Reste abgebrochener Schreibvorgänge werden beim Start entfernt. Aufwand: O(N) je Autosave.
+Die Zieldatei wird dabei nicht angefasst. Ausgedünnt wird nach dem erfolgreichen Schreiben; die Spitze liegt kurzzeitig bei Plätze + 1. Reste abgebrochener Schreibvorgänge (`.…tmp-<PID>`) werden nicht mehr weggeräumt — sie enden nicht auf `.jjcad` und stören niemanden. Aufwand: O(N) auf dem Index je Autosave; gelesen wird dabei keine Datei.
 
 ### 13. Abnahmekriterien
 
@@ -241,7 +279,7 @@ Die Zieldatei wird dabei nicht angefasst. Ausgedünnt wird nach dem erfolgreiche
 4. P4: Verwerfen — die Arbeit kehrt beim Start nicht zurück, ihr letzter Zustand liegt als verworfen markierter Stand vor (R3.5).
 5. P5: SIGKILL beim Schreiben — keine halbe Datei, Verlust höchstens ein Intervall (R1.3, R3.1).
 6. P6: Dauerbetrieb über viele Intervalle — die Zahl der Stände bleibt an oder unter der Obergrenze (R3.2).
-7. P7: Eine Zeichnung über viele Intervalle nicht bearbeiten — der neueste Stand ist bis T noch da, danach ist die Zeichnung aus dem Pool verschwunden (R3.4).
+7. P7: Eine Zeichnung über viele Intervalle nicht bearbeiten — ihr neuester Stand bleibt dauerhaft im Pool (T0225); nur der Verlauf dahinter verfällt nach T.
 8. P8: Eine Einstellung, die Stände löscht, verlangt eine Bestätigung mit Anzahl; vorher bleibt alles stehen (R3.6).
 9. Stände im Sicherungsordner höchstens max(N, 2 × Zeichnungen), geprüft per Dateizählung.
 10. Neuester Stand jeder Zeichnung nach jedem Autosave byte-identisch zum gesicherten Inhalt (Hash-Vergleich).
@@ -250,6 +288,10 @@ Die Zieldatei wird dabei nicht angefasst. Ausgedünnt wird nach dem erfolgreiche
 13. Standdateien heißen wie in Abschnitt 9 und kollidieren nicht.
 14. Eine Einstellung ändern löscht nichts und wirkt nicht sofort; erst „Übernehmen“ speichert sie.
 15. „Aufräumen“ löscht nur Stände mit vermerktem Pfad, deren Datei fehlt.
+17. Ordner im Betrieb leeren → im nächsten Takt steht wieder ein Stand da (`geloeschter_ordnerinhalt_wieder_geschrieben`).
+18. Fremde `.jjcad` in den Ordner legen → sie erscheint als „nicht zugeordnet“ und überlebt jede Ausdünnung (`fremde_datei_wird_uebernommen_und_nie_geloescht`).
+19. Unvollständiger Scan (halb lesbares Verzeichnis) → in dieser Runde wird nichts gelöscht (`unvollstaendiger_scan_loescht_nichts`).
+20. 150 Stände: Start liest 150 Köpfe in 1,2 ms; ein Takt ohne Änderung liest 0 Dateien (`messung_150_staende_nur_koepfe`).
 16. Der Testlauf schreibt keine Stände in den Datenordner des Benutzers.
 
 ### 14. Randfälle
@@ -264,12 +306,18 @@ Die Zieldatei wird dabei nicht angefasst. Ausgedünnt wird nach dem erfolgreiche
 | Uhrzeit, Zeitumstellung, Zeitsprung | Ohne Wirkung, gerechnet wird in Zyklen |
 | Speichern unter, umbenennen | Stände folgen der Dokumentkennung, nicht dem Pfad |
 | Zeichnung ohne Kennung im Kopf | Kennung aus dem Pfad abgeleitet, über Sitzungen stabil |
-| Datei gelöscht | Der Pin bleibt bis T; „Aufräumen“ löscht Stände mit vermerktem, verschwundenem Pfad nach Rückfrage |
+| Datei gelöscht | Der Pin bleibt immer; „Aufräumen“ löscht Stände mit vermerktem, verschwundenem Pfad nach Rückfrage |
+| Sicherungsordner geleert | Im nächsten Takt steht der aktuelle Stand wieder da, ohne Neustart |
+| Sicherungsordner selbst gelöscht | Beim nächsten Schreiben wird er neu angelegt; der Index fällt auf leer zurück |
+| Fremde `.jjcad` im Ordner | Wird übernommen, als „nicht zugeordnet“ geführt, nie automatisch gelöscht |
+| Datei im Ordner während des Laufs geändert | Kein Löschvorgang trifft sie: gelöscht wird nur, was in derselben Runde gelesen wurde und unverändert ist |
+| Zwei Fenster gleichzeitig | `pool.lock` lässt nur einen schreiben; der andere Takt fällt aus, kein Stand verschwindet |
+| Altes `manifest.json` vorhanden | Einmal eingelesen, danach `manifest.json.eingelesen`; nichts gelöscht |
 | N, T oder Intervall geändert | Gilt erst mit „Übernehmen“; kostet es Stände, kommt vorher die Warnung mit der Zahl |
 | Verlauf aus | Je Zeichnung nur der neueste Stand; vorhandene Stände bleiben |
 | Netzlaufwerk | Atomar über temporäre Datei und rename, keine Hardlinks |
-| Absturz zwischen Stand und Manifest | Waisen werden beim Start entfernt |
-| Zeichnung länger als T nicht bearbeitet | Pin und Verlauf verfallen, die Zeichnung belegt keine Plätze mehr |
+| Absturz mitten im Schreiben | Atomar: temp → fsync → rename; es bleibt höchstens ein temp-Rest, nie eine halbe Datei |
+| Zeichnung länger als T nicht bearbeitet | Der Verlauf verfällt, der Pin bleibt (ein Platz je Zeichnung) |
 
 ### 15. Offene Punkte
 

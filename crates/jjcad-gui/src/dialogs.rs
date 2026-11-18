@@ -905,7 +905,12 @@ pub fn show(app: &mut App, ctx: &egui::Context) {
         // „Übernehmen“; die Knöpfe nehmen erst den nächsten an.
         let bedienbar = !app.ui.sicherung_warnung_neu;
         app.ui.sicherung_warnung_neu = false;
-        let gesamt = app.sicherung_pool().manifest().staende.len();
+        // „Nicht zugeordnete“ Dateien sind keine Sicherungen einer Zeichnung;
+        // sie zählen in der Warnung nicht mit (T0225).
+        let gesamt = {
+            let pool = app.sicherung_pool();
+            pool.anzahl() - pool.nicht_zugeordnet()
+        };
         modal_window(
             ctx,
             jjcad_core::i18n::tr("settings.sicherung_warnung_titel"),
@@ -3735,7 +3740,7 @@ fn settings_body(app: &mut App, ui: &mut Ui) {
                                         let pool = app.sicherung_pool();
                                         (
                                             pool.pool_groesse(),
-                                            pool.manifest().staende.len(),
+                                            pool.anzahl() - pool.nicht_zugeordnet(),
                                             pool.dateien(),
                                         )
                                     };

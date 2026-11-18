@@ -6043,13 +6043,7 @@ impl App {
             None => Ok(None),
             Some(z) => {
                 let pool = self.sicherung_pool();
-                match pool
-                    .manifest()
-                    .staende
-                    .iter()
-                    .find(|s| s.zyklus == z)
-                    .cloned()
-                {
+                match pool.stand_mit_zyklus(z).cloned() {
                     Some(stand) => pool.laden(&stand).map(|d| Some((z, d))),
                     None => Err(jjcad_core::i18n::tr("wiederherstellen.stand_fehlt").to_string()),
                 }
@@ -6083,15 +6077,9 @@ impl App {
     pub fn wiederherstellen_stand_oeffnen(&mut self, zyklus: u64) -> Result<String, String> {
         let (stand, doc) = {
             let pool = self.sicherung_pool();
-            let stand = pool
-                .manifest()
-                .staende
-                .iter()
-                .find(|s| s.zyklus == zyklus)
-                .cloned()
-                .ok_or_else(|| {
-                    jjcad_core::i18n::tr("wiederherstellen.stand_fehlt").to_string()
-                })?;
+            let stand = pool.stand_mit_zyklus(zyklus).cloned().ok_or_else(|| {
+                jjcad_core::i18n::tr("wiederherstellen.stand_fehlt").to_string()
+            })?;
             let doc = pool.laden(&stand)?;
             (stand, doc)
         };
@@ -17535,7 +17523,7 @@ mod tests_sicherung {
     fn tick_sichert_und_laesst_die_zieldatei_unberuehrt() {
         let dir = test_dir("tick");
         let mut app = app_mit_pool(&dir);
-        let ziel = dir.join("Plan.jjcad");
+        let ziel = dir.join("ziele/Plan.jjcad");
         app.session_mut().save(&ziel).expect("Zieldatei");
         let vorher = std::fs::read(&ziel).unwrap();
 
@@ -17543,7 +17531,7 @@ mod tests_sicherung {
         app.sicherung_tick(120.0);
 
         let pool = app.sicherung.as_ref().expect("Pool");
-        assert_eq!(pool.manifest().staende.len(), 1, "kein Stand angelegt");
+        assert_eq!(pool.anzahl(), 1, "kein Stand angelegt");
         assert_eq!(
             std::fs::read(&ziel).unwrap(),
             vorher,
@@ -17565,7 +17553,7 @@ mod tests_sicherung {
     fn ungespeicherte_arbeit_kommt_beim_start_zurueck() {
         let dir = test_dir("ungespeichert");
         let mut app = app_mit_pool(&dir);
-        let ziel = dir.join("Plan.jjcad");
+        let ziel = dir.join("ziele/Plan.jjcad");
         linie(&mut app, 0.0);
         app.session_mut().save(&ziel).expect("Zieldatei");
         app.sicherung_dateistand(0);
@@ -17596,7 +17584,7 @@ mod tests_sicherung {
     fn verworfene_arbeit_kommt_nicht_zurueck() {
         let dir = test_dir("verworfen");
         let mut app = app_mit_pool(&dir);
-        let ziel = dir.join("Plan.jjcad");
+        let ziel = dir.join("ziele/Plan.jjcad");
         linie(&mut app, 0.0);
         app.session_mut().save(&ziel).expect("Zieldatei");
 
@@ -17620,7 +17608,7 @@ mod tests_sicherung {
     fn verworfene_arbeit_liegt_als_stand_vor() {
         let dir = test_dir("verworfen-stand");
         let mut app = app_mit_pool(&dir);
-        let ziel = dir.join("Plan.jjcad");
+        let ziel = dir.join("ziele/Plan.jjcad");
         linie(&mut app, 0.0);
         app.session_mut().save(&ziel).expect("Zieldatei");
 
@@ -17653,7 +17641,7 @@ mod tests_sicherung {
     fn extern_geaenderte_datei_fragt_nach() {
         let dir = test_dir("konflikt");
         let mut app = app_mit_pool(&dir);
-        let ziel = dir.join("Plan.jjcad");
+        let ziel = dir.join("ziele/Plan.jjcad");
         linie(&mut app, 0.0);
         app.session_mut().save(&ziel).expect("Zieldatei");
         app.sicherung_dateistand(0);
@@ -17699,7 +17687,7 @@ mod tests_sicherung {
     fn entscheidung_fuer_den_stand_holt_die_arbeit_zurueck() {
         let dir = test_dir("konflikt-stand");
         let mut app = app_mit_pool(&dir);
-        let ziel = dir.join("Plan.jjcad");
+        let ziel = dir.join("ziele/Plan.jjcad");
         linie(&mut app, 0.0);
         app.session_mut().save(&ziel).expect("Zieldatei");
         app.sicherung_dateistand(0);
@@ -17739,7 +17727,7 @@ mod tests_sicherung {
     fn entscheidung_fuer_die_datei_fragt_nicht_wieder() {
         let dir = test_dir("konflikt-datei");
         let mut app = app_mit_pool(&dir);
-        let ziel = dir.join("Plan.jjcad");
+        let ziel = dir.join("ziele/Plan.jjcad");
         linie(&mut app, 0.0);
         app.session_mut().save(&ziel).expect("Zieldatei");
         app.sicherung_dateistand(0);
@@ -17791,7 +17779,7 @@ mod tests_sicherung {
             "der Entwurf hat sofort gewirkt"
         );
         assert!(
-            app.sicherung.as_ref().unwrap().manifest().staende.is_empty(),
+            app.sicherung.as_ref().unwrap().staende().is_empty(),
             "der Entwurf hat schon ausgedünnt"
         );
     }
@@ -17815,7 +17803,7 @@ mod tests_sicherung {
                 .sichern(&mut doc, &einst)
                 .unwrap();
         }
-        assert_eq!(app.sicherung.as_ref().unwrap().manifest().staende.len(), 40);
+        assert_eq!(app.sicherung.as_ref().unwrap().anzahl(), 40);
 
         let entwurf = jjcad_core::sicherung::Einstellungen {
             plaetze: 30,
@@ -17834,14 +17822,14 @@ mod tests_sicherung {
 
         assert!(app.ui.sicherung_warnung.is_some(), "keine Warnung gestellt");
         assert_eq!(
-            app.sicherung.as_ref().unwrap().manifest().staende.len(),
+            app.sicherung.as_ref().unwrap().anzahl(),
             40,
             "ohne Bestätigung wurde gelöscht"
         );
         assert_eq!(app.prefs.sicherung_plaetze, 100, "ohne Bestätigung übernommen");
 
         app.sicherung_anwenden(entwurf);
-        assert_eq!(app.sicherung.as_ref().unwrap().manifest().staende.len(), 30);
+        assert_eq!(app.sicherung.as_ref().unwrap().anzahl(), 30);
         assert_eq!(app.prefs.sicherung_plaetze, 30);
         assert!(app.ui.sicherung_warnung.is_none());
     }
@@ -17865,8 +17853,8 @@ mod tests_sicherung {
         assert_eq!(app.sicherung.as_ref().unwrap().ohne_zeichnung().len(), 1);
         app.sicherung_aufraeumen_jetzt();
         let pool = app.sicherung.as_ref().unwrap();
-        assert_eq!(pool.manifest().staende.len(), 1, "falsche Stände gelöscht");
-        assert_eq!(pool.manifest().staende[0].datei, bleibt.id);
+        assert_eq!(pool.anzahl(), 1, "falsche Stände gelöscht");
+        assert_eq!(pool.staende()[0].datei, bleibt.id);
     }
 
     /// Vor Ablauf des Intervalls wird nichts gesichert.
@@ -17877,11 +17865,11 @@ mod tests_sicherung {
         linie(&mut app, 0.0);
         app.sicherung_tick(10.0);
         assert!(
-            app.sicherung.as_ref().unwrap().manifest().staende.is_empty(),
+            app.sicherung.as_ref().unwrap().staende().is_empty(),
             "vor Ablauf des Intervalls darf nichts gesichert werden"
         );
         app.sicherung_tick(61.0);
-        assert_eq!(app.sicherung.as_ref().unwrap().manifest().staende.len(), 1);
+        assert_eq!(app.sicherung.as_ref().unwrap().anzahl(), 1);
     }
 
     /// „Verlauf sichern“ aus → genau ein Stand je Dokument.
@@ -17895,7 +17883,7 @@ mod tests_sicherung {
             app.sicherung_tick(120.0 * (i + 1) as f64);
         }
         let pool = app.sicherung.as_ref().unwrap();
-        assert_eq!(pool.manifest().staende.len(), 1, "Verlauf aus hält einen Stand");
+        assert_eq!(pool.anzahl(), 1, "Verlauf aus hält einen Stand");
     }
 }
 
