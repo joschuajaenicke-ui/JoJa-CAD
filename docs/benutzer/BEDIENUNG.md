@@ -67,7 +67,9 @@ die **Vorgabe** ihrer Ebene und lassen sich wie jede andere Taste ändern.
    Maßstab gleich groß. Dieselbe Größe hat der Block als **eingesetzte Instanz**, weil die
    Punktsymbole die Blockeigenschaft „Mit Maßstab skalieren“ tragen; im Fenster
    **Block-Eigenschaften** (Rechtsklick auf die Kachel) lässt sie sich für eigene Blöcke
-   setzen. Ohne sie gilt die Blockgeometrie maßstäblich (1:1).
+   setzen. Ohne sie gilt die Blockgeometrie maßstäblich (1:1). Die **Pfeile** tragen ihre
+   Spitze auf dem Basispunkt: an einem Linienende deckt sich die Spitze damit genau mit dem
+   Endpunkt, an einem Anfang mit dem Anfangspunkt; der Pfeilkörper läuft von dort nach innen.
 6. **Navigieren**: Mausrad zoomt, mittlere Taste oder `Leertaste`+Ziehen schwenkt.
    `F5` zeigt die ganze Zeichnung — dieselbe Funktion wie der Knopf „Alles zeigen"
    (Zoom und Mittelpunkt so, dass alles sichtbar wird).

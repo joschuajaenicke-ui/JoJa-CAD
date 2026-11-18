@@ -136,17 +136,83 @@ fn linie_traegt_symbole_an_anfang_und_ende() {
     assert_eq!(e.symbol(false), Some("sys:pkt-punkt"));
     assert_eq!(e.symbol(true), Some("sys:pkt-pfeil"));
 
-    // Der Pfeil läuft 3,4 mm über den Endpunkt hinaus, der Punkt ragt 0,6 mm
-    // über den Anfang zurück — beides in Beschriftungsgröße (1:100).
+    // Der Pfeil sitzt mit seiner **Spitze auf dem Endpunkt** (T0210, Turn 5)
+    // und läuft von dort nach innen; der Punkt ragt 0,6 mm über den Anfang
+    // zurück — beides in Beschriftungsgröße (1:100).
     let bbox = jjcad_core::render::entity_bbox(&doc, &e);
     assert!(
-        bbox.max.x > 2000.0 + symbol_breite_mm(1.0, 100.0),
-        "Pfeil am Ende fehlt: {:.1}",
+        (bbox.max.x - 2000.0).abs() < 1.0,
+        "die Pfeilspitze steht nicht auf dem Endpunkt: {:.2} statt 2000",
         bbox.max.x
     );
     assert!(
         bbox.min.x < -symbol_breite_mm(0.4, 100.0),
         "Punkt am Anfang fehlt: {:.1}",
+        bbox.min.x
+    );
+}
+
+/// Die Pfeile tragen ihre Spitze auf dem Basispunkt (Ursprung): an einem
+/// Linienende deckt sie sich dann exakt mit dem Endpunkt, an einem Anfang mit
+/// dem Anfangspunkt. Vorher stand die Spitze 1,4 bzw. 1,6 Papier-mm daneben.
+#[test]
+fn pfeile_haben_die_spitze_auf_dem_basispunkt() {
+    let doc = Document::new();
+    for id in ["sys:pkt-pfeil", "sys:pkt-pfeilspitze"] {
+        let def = doc.block(id).unwrap_or_else(|| panic!("Block {id} fehlt"));
+        assert_eq!(def.base.x, 0.0, "{id}: Basispunkt nicht im Ursprung");
+        let mut doc2 = doc_mm();
+        doc2.blocks.push(def.clone());
+        let e = Entity::new(
+            1,
+            0,
+            EntityKind::BlockRef {
+                block: id.to_string(),
+                pos: jjcad_core::geom::Vec2::ZERO,
+                rot: 0.0,
+                scale: v(1.0, 1.0),
+                mirror: false,
+            },
+        );
+        let bbox = jjcad_core::render::entity_bbox(&doc2, &e);
+        assert!(
+            bbox.max.x.abs() < 0.01,
+            "{id}: die Spitze liegt bei x = {:.3}, erwartet 0",
+            bbox.max.x
+        );
+        assert!(
+            bbox.min.x < -1.5,
+            "{id}: der Körper muss nach −X laufen, min.x = {:.2}",
+            bbox.min.x
+        );
+    }
+}
+
+#[test]
+fn pfeilspitze_am_linienende_trifft_den_endpunkt_auf_den_punkt() {
+    let mut doc = doc_mm();
+    doc.settings.annotation_scale = 100.0;
+    let antwort = actions::execute(
+        &mut doc,
+        "draw.line",
+        &json!({
+            "a": [0.0, 0.0],
+            "b": [2000.0, 0.0],
+            "start_symbol": "sys:pkt-pfeilspitze",
+            "end_symbol": "sys:pkt-pfeilspitze",
+        }),
+    )
+    .expect("Linie");
+    let e = doc.entity(created(&antwort)).expect("Objekt").clone();
+    let bbox = jjcad_core::render::entity_bbox(&doc, &e);
+    assert!(
+        (bbox.max.x - 2000.0).abs() < 0.5,
+        "Ende: Spitze bei {:.2}, Linienende bei 2000",
+        bbox.max.x
+    );
+    assert!(
+        bbox.min.x.abs() < 0.5,
+        "Anfang: Spitze bei {:.2}, Linienanfang bei 0",
         bbox.min.x
     );
 }

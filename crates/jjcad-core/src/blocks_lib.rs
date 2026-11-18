@@ -530,26 +530,30 @@ pub fn system_blocks(_next_id: &mut Id) -> Vec<BlockDef> {
     ));
 
     // Pfeil nach +X: Schaft mit offener Spitze — zeigt an einer Linie in
-    // Laufrichtung, am Anfang entgegen.
+    // Laufrichtung, am Anfang entgegen. Die **Spitze liegt auf dem
+    // Basispunkt** (Ursprung) und der Körper läuft nach −X: an einem
+    // Linienende deckt sich die Spitze damit exakt mit dem Endpunkt, sonst
+    // stünde sie 1,4 mm (bei 1:100 also 14 cm) daneben (T0210, Turn 5).
     let mut b = B::new();
-    b.line(v(-2.0, 0.0), v(1.4, 0.0));
-    b.line(v(1.4, 0.0), v(0.4, 0.6));
-    b.line(v(1.4, 0.0), v(0.4, -0.6));
+    b.line(v(-3.4, 0.0), v(0.0, 0.0));
+    b.line(v(0.0, 0.0), v(-1.0, 0.6));
+    b.line(v(0.0, 0.0), v(-1.0, -0.6));
     out.push(block(
         "sys:pkt-pfeil",
         "Pfeil",
         PUNKTSYMBOL_KATEGORIE,
-        "Pfeil, 3,4 mm",
+        "Pfeil, 3,4 mm (Spitze am Basispunkt)",
         b,
     ));
 
+    // Gefüllte Spitze, ebenfalls mit der Spitze auf dem Basispunkt.
     let mut b = B::new();
-    b.fill_auto(vec![v(1.6, 0.0), v(-0.4, 0.8), v(-0.4, -0.8)]);
+    b.fill_auto(vec![v(0.0, 0.0), v(-2.0, 0.8), v(-2.0, -0.8)]);
     out.push(block(
         "sys:pkt-pfeilspitze",
         "Pfeilspitze",
         PUNKTSYMBOL_KATEGORIE,
-        "Gefüllte Pfeilspitze, 2 mm",
+        "Gefüllte Pfeilspitze, 2 mm (Spitze am Basispunkt)",
         b,
     ));
 
