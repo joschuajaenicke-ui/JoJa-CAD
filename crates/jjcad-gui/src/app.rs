@@ -5342,7 +5342,10 @@ impl App {
             .map(|t| {
                 let punktfolge = matches!(
                     t.action.as_str(),
-                    "draw.polyline" | "draw.spline" | "modify.area.split"
+                    // Raumstempel: ESC **bestätigt** die Punktfolge wie Enter
+                    // (T0220) — bisher brach ESC den Stempel ab, obwohl die
+                    // Ecken schon gesetzt waren.
+                    "draw.polyline" | "draw.spline" | "modify.area.split" | "dim.room"
                 ) || crate::canvas::ist_fuell_punkte(&t.action);
                 punktfolge && t.pts.len() >= 2
             })
@@ -14254,6 +14257,84 @@ mod tests_masskette_esc {
             &[id],
             "die bearbeitete Maßkette bleibt ausgewählt"
         );
+    }
+}
+
+mod tests_raumstempel_esc {
+    //! T0220: **ESC bestätigt** die Punktfolge des Raumstempels.
+    //!
+    //! Gesetzte Raumecken dürfen nicht verloren gehen, wenn man die Eingabe mit
+    //! ESC abschließt — wie bei Polylinie und Maßkette. Ohne einen einzigen
+    //! Klick bricht ESC weiterhin ab.
+
+    use super::*;
+    use jjcad_core::geom::v;
+
+    fn rahmen(events: Vec<egui::Event>) -> egui::RawInput {
+        egui::RawInput {
+            screen_rect: Some(egui::Rect::from_min_size(
+                egui::Pos2::ZERO,
+                egui::vec2(1600.0, 1000.0),
+            )),
+            events,
+            ..Default::default()
+        }
+    }
+
+    fn taste(key: egui::Key) -> egui::Event {
+        egui::Event::Key {
+            key,
+            physical_key: None,
+            pressed: true,
+            repeat: false,
+            modifiers: egui::Modifiers::NONE,
+        }
+    }
+
+    /// Oberfläche mit installierter Schrift (der Stempel malt Text).
+    fn app_mit_ecken() -> (egui::Context, App) {
+        let ctx = egui::Context::default();
+        crate::theme::install(&ctx);
+        let _ = ctx.run(rahmen(vec![]), |_| {});
+        let mut app = App::with_ctx(ctx.clone());
+        app.doc_mut().settings.input_unit = jjcad_core::units::Unit::Mm;
+        app.start_tool("dim.room");
+        if let Some(t) = app.tool.as_mut() {
+            t.pts.push(v(0.0, 0.0));
+            t.pts.push(v(4000.0, 0.0));
+            t.pts.push(v(4000.0, 3000.0));
+            t.pts.push(v(0.0, 3000.0));
+        }
+        (ctx, app)
+    }
+
+    fn stempel(app: &App) -> Option<Vec<jjcad_core::geom::Vec2>> {
+        app.doc().ents().iter().find_map(|e| match &e.kind {
+            EntityKind::Room { boundary, .. } => Some(boundary.clone()),
+            _ => None,
+        })
+    }
+
+    /// ESC legt den Stempel an, statt die Ecken wegzuwerfen.
+    #[test]
+    fn esc_uebernimmt_die_ecken_des_raumstempels() {
+        let (ctx, mut app) = app_mit_ecken();
+        let _ = ctx.run(rahmen(vec![]), |ctx| app.ui(ctx));
+        let _ = ctx.run(rahmen(vec![taste(egui::Key::Escape)]), |ctx| app.ui(ctx));
+
+        assert!(app.tool.is_none(), "ESC muss die Eingabe beenden");
+        let boundary = stempel(&app).expect("ESC muss den Stempel anlegen");
+        assert_eq!(boundary.len(), 4, "vier Ecken: {boundary:?}");
+    }
+
+    /// Gegenprobe: ohne eine einzige Ecke bricht ESC weiter ab.
+    #[test]
+    fn esc_ohne_ecken_bricht_ab() {
+        let mut app = App::with_ctx(egui::Context::default());
+        app.start_tool("dim.room");
+        app.escape_pressed();
+        assert!(app.tool.is_none());
+        assert!(stempel(&app).is_none(), "ohne Ecken darf nichts entstehen");
     }
 }
 

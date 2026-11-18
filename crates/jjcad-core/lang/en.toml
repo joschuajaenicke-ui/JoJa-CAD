@@ -1880,6 +1880,8 @@ bilddaten = "Image data"
 esc_uebernimmt_hinweis = "Esc applies · Enter new line · right click cancels"
 text_abgebrochen = "Text · cancelled"
 text_geaendert = "Text · changed"
+raumstempel_name_aendern_esc_uebernimmt = "Room stamp · edit name (Esc applies)"
+raumstempel_name_geaendert = "Room stamp · name changed"
 text_inhalt_aendern_esc_uebernimmt = "Text · edit content (Esc applies)"
 text_text_eingeben_esc_uebernimmt = "Text · type the text (Esc applies)"
 

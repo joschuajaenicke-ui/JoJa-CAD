@@ -1489,6 +1489,7 @@ pub fn show(app: &mut App, ui: &mut Ui) {
         draw_grip_mass(app, ui, &painter, rect, view_now);
         draw_hilfslinien(app, &painter, rect, view_now);
         draw_text_rahmen(app, &painter, rect, view_now, &selected);
+        draw_raum_umriss(app, &painter, rect, view_now, &selected);
         draw_wand_basislinien(app, &painter, rect, view_now, &selected);
         draw_tuer_basispunkte(app, &painter, rect, view_now, &selected);
         draw_grips(app, &painter, rect, view_now, &selected);
@@ -1584,6 +1585,7 @@ pub fn show(app: &mut App, ui: &mut Ui) {
         // selbst zeichnet (Vorschau, Griffe, Fadenkreuz).
         draw_hilfslinien(app, &painter, rect, view_now);
         draw_text_rahmen(app, &painter, rect, view_now, &selected);
+        draw_raum_umriss(app, &painter, rect, view_now, &selected);
         draw_wand_basislinien(app, &painter, rect, view_now, &selected);
         draw_tuer_basispunkte(app, &painter, rect, view_now, &selected);
         draw_grips(app, &painter, rect, view_now, &selected);
@@ -1707,7 +1709,7 @@ fn bearbeitete_kette(app: &App) -> Option<Id> {
     }
 }
 
-fn display_list(app: &mut App) -> DisplayList {
+pub(crate) fn display_list(app: &mut App) -> DisplayList {
     // Der Schlüssel enthält den Bearbeitungsraum: im Modell und im Papierraum
     // entstehen bei gleicher Revision völlig verschiedene Listen. Fehlte er,
     // wurde ein Papierraum-Stand als Modell gezeichnet (T0007).
@@ -5449,6 +5451,54 @@ fn draw_wand_basislinien(app: &App, p: &Painter, rect: Rect, view: View, selecte
             p.circle_filled(q, 2.2, Palette::accent());
         }
     }
+}
+
+/// Umrisse ausgewählter Raumstempel: die Ecken der unsichtbaren Umgrenzung,
+/// mit einer gestrichelten Hilfslinie verbunden (T0220).
+///
+/// Die Fläche eines Stempels ist absichtlich unsichtbar und nicht anklickbar —
+/// ohne diese Linie sieht man bei Auswahl nur die Eckgriffe, aber nicht, wie
+/// sie zusammenhängen. Gezeichnet wird nur bei Auswahl, in der Akzentfarbe;
+/// die Linie gehört zur Bedienung, nicht zur Zeichnung, und verschwindet mit
+/// der Auswahl. Die Ecken bekommen denselben Punkt wie die Wandbasislinien.
+fn draw_raum_umriss(app: &App, p: &Painter, rect: Rect, view: View, selected: &[Id]) {
+    let stroke = Stroke::new(1.2, Palette::accent());
+    for umriss in raum_umrisse(app, selected) {
+        let pts: Vec<Pos2> = umriss.iter().map(|q| world_to_screen(rect, view, *q)).collect();
+        p.extend(Shape::dashed_line(&pts, stroke, 9.0, 5.0));
+        // Die Ecken selbst: ein Punkt je Ecke, ohne den doppelten Schlusspunkt.
+        for q in &pts[..pts.len().saturating_sub(1)] {
+            p.circle_filled(*q, 2.2, Palette::accent());
+        }
+    }
+}
+
+/// Geschlossene Umrisse der ausgewählten Raumstempel in Weltkoordinaten —
+/// die eine Quelle für die Hilfslinie bei Auswahl.
+///
+/// Der Ring ist geschlossen (erster Punkt am Ende wiederholt), damit die
+/// gestrichelte Linie ohne Lücke umläuft. Nur die Umgrenzung des Stempels
+/// zählt, nie sein Textfeld; unter drei Ecken umschließt nichts eine Fläche.
+fn raum_umrisse(app: &App, selected: &[Id]) -> Vec<Vec<V2>> {
+    // Wie bei den Wandbasislinien: bei sehr vielen Objekten keine Hilfslinien.
+    if selected.is_empty() || selected.len() > 60 {
+        return Vec::new();
+    }
+    let doc = app.doc();
+    let mut out = Vec::new();
+    for id in selected {
+        let Some(e) = doc.entity(*id) else { continue };
+        let EntityKind::Room { boundary, .. } = &e.kind else {
+            continue;
+        };
+        if boundary.len() < 3 {
+            continue;
+        }
+        let mut ring = boundary.clone();
+        ring.push(boundary[0]);
+        out.push(ring);
+    }
+    out
 }
 
 /// Marke für einen Basispunkt (T0091): kleiner Kreis mit Fadenkreuz.
@@ -15355,6 +15405,44 @@ mod tests_raumstempel {
             k => panic!("kein Raumstempel: {}", k.type_name()),
         }
         assert_eq!(app.selection().len(), 1, "der neue Stempel wird ausgewählt");
+    }
+
+    /// Ein ausgewählter Stempel zeigt seine Umgrenzung als Hilfsring: die
+    /// Ecken sind mit einer gestrichelten Linie verbunden (T0220). Ohne
+    /// Auswahl oder bei einer anderen Objektart entsteht kein Ring.
+    #[test]
+    fn auswahl_verbindet_die_ecken_mit_einem_hilfsring() {
+        let mut app = app();
+        let antwort = app
+            .session_mut()
+            .execute(
+                "dim.room",
+                &json!({"pts": [[0.0, 0.0], [4000.0, 0.0], [4000.0, 3000.0], [0.0, 3000.0]]}),
+            )
+            .expect("Raumstempel anlegen");
+        let id = antwort["created"][0].as_u64().expect("Kennung");
+
+        assert!(
+            raum_umrisse(&app, &[]).is_empty(),
+            "ohne Auswahl keine Hilfslinie"
+        );
+
+        app.session_mut().select(vec![id]);
+        let ringe = raum_umrisse(&app, app.selection());
+        assert_eq!(ringe.len(), 1, "ein Ring für den Stempel");
+        assert_eq!(ringe[0].len(), 5, "vier Ecken plus Schlusspunkt");
+        assert_eq!(ringe[0][0], ringe[0][4], "der Ring ist geschlossen");
+
+        // Eine andere Objektart (Linie) liefert keinen Umriss.
+        let antwort = app
+            .session_mut()
+            .execute("draw.line", &json!({"a": [0.0, 0.0], "b": [1000.0, 0.0]}))
+            .expect("Linie anlegen");
+        let linie = antwort["created"][0].as_u64().expect("Kennung");
+        assert!(
+            raum_umrisse(&app, &[linie]).is_empty(),
+            "Linien haben keinen Raumumriss"
+        );
     }
 
     /// Unter drei Ecken entsteht kein Stempel — das Werkzeug bleibt stehen,

@@ -155,10 +155,60 @@ pub fn start(app: &mut App, pos: V2) {
 }
 
 /// Inhalt eines vorhandenen Textes bearbeiten (Doppelklick).
+///
+/// Auch der **Name eines Raumstempels** lässt sich so in der Zeichnung ändern
+/// (T0220): er ist die Überschrift des Stempels. Bearbeitet wird nur sie — der
+/// Flächeninhalt darunter wird bei jeder Anzeige aus der Umgrenzung gerechnet
+/// und ist deshalb nicht editierbar. Die Eingabe steht an derselben Stelle, in
+/// derselben Größe und Farbe wie der Stempeltext; Esc übernimmt wie beim Text.
 pub fn start_entitaet(app: &mut App, id: EId) -> bool {
     let Some(e) = app.doc().entity(id) else {
         return false;
     };
+    if let EntityKind::Room {
+        label,
+        height,
+        heading,
+        ..
+    } = &e.kind
+    {
+        let (label, height, heading) = (*label, *height, heading.clone());
+        let farbe = app.doc().effective_color(e);
+        app.tool = None;
+        // Wie beim Text: der Auswahlrahmen gehörte sonst um den bearbeiteten
+        // Stempel, beim Schreiben soll nur der Text dastehen.
+        app.session_mut().clear_selection();
+        // Der Stempel setzt seinen Text als Block **mittig** um den Anker —
+        // Name über Fläche. Die Eingabe steht auf der Zeile des Namens, damit
+        // er beim Übernehmen nicht springt: obere Kante der ersten Zeile des
+        // späteren Blocks (`valign = Top`).
+        let zeilen = heading.lines().count().max(1) + 1; // Name + Flächeninhalt
+        let lh = jjcad_core::fonts::line_height_em(
+            jjcad_core::model::TextFont::Sans,
+            jjcad_core::fonts::FontStyle::Regular,
+        ) * height
+            * render::TEXT_GROESSE_FAKTOR;
+        let oben = V2::new(label.x, label.y + lh * (zeilen as f64 - 1.0) * 0.5 + lh * 0.5);
+        app.ui.texteingabe = Some(Texteingabe::neu(
+            oben,
+            height,
+            heading,
+            0.0,
+            TextAlignH::Center,
+            TextAlignV::Top,
+            Some(id),
+            farbe,
+            jjcad_core::model::TextFont::Sans,
+            1.0,
+            false,
+            false,
+            None,
+        ));
+        app.mitteilung(jjcad_core::i18n::tr(
+            "gui.textedit.raumstempel_name_aendern_esc_uebernimmt",
+        ));
+        return true;
+    }
     let EntityKind::Text {
         p,
         text,
@@ -217,11 +267,15 @@ pub fn start_entitaet(app: &mut App, id: EId) -> bool {
 
 /// Text unter dem Punkt (Weltkoordinate) — es zählt der sichtbare Rahmen, also
 /// dieselbe Fläche, die bei Auswahl blau markiert wird.
+///
+/// Ein **Raumstempel** zählt mit (T0220): sein Name soll sich wie ein Textfeld
+/// per Doppelklick in der Zeichnung ändern lassen. Getroffen wird dort nur der
+/// Beschriftungskasten — die unsichtbare Umgrenzung bleibt unantastbar.
 pub fn text_bei(app: &App, w: V2) -> Option<EId> {
     let doc = app.doc();
     let tol = 2.0; // mm, damit der Rand des Rahmens noch trifft
     doc.ents().iter().rev().find_map(|e| {
-        if !matches!(e.kind, EntityKind::Text { .. }) {
+        if !matches!(e.kind, EntityKind::Text { .. } | EntityKind::Room { .. }) {
             return None;
         }
         let b = render::entity_bbox(doc, e);
@@ -305,6 +359,30 @@ fn uebernehmen(app: &mut App, ctx: &egui::Context) {
         return;
     };
     ctx.memory_mut(|m| m.stop_text_input());
+    // Raumstempel: bearbeitet wird nur der Name (Überschrift). Der
+    // Flächeninhalt ist abgeleitet und wird nie geschrieben (T0220). Ein
+    // leerer Name ist gültig — dann steht im Stempel nur die Fläche.
+    if let Some(id) = t.id {
+        let raum = app
+            .doc()
+            .entity(id)
+            .map(|e| matches!(e.kind, EntityKind::Room { .. }))
+            .unwrap_or(false);
+        if raum {
+            let name = t.text.trim_end_matches('\n').to_string();
+            match app
+                .session_mut()
+                .execute("modify.set", &json!({"ids": [id], "text": name}))
+            {
+                Ok(_) => {
+                    app.mark_changed();
+                    app.mitteilung(jjcad_core::i18n::tr("gui.textedit.raumstempel_name_geaendert"));
+                }
+                Err(e) => app.toast(e),
+            }
+            return;
+        }
+    }
     // Ein Zeilenumbruch am Ende entsteht leicht beim Tippen und wäre im
     // Textkasten eine leere Zeile.
     let text = t.text.trim_end_matches('\n').to_string();
@@ -1634,5 +1712,152 @@ mod tests_beschnitt {
                 kasten
             );
         }
+    }
+}
+
+
+#[cfg(test)]
+mod tests_raumstempel_name {
+    //! T0220: Der **Name eines Raumstempels** lässt sich wie ein Textfeld
+    //! direkt in der Zeichnung ändern.
+    //!
+    //! Bearbeitet wird nur die Überschrift; der Flächeninhalt darunter bleibt
+    //! abgeleitet (`model::room_text`) und steht nach dem Übernehmen wieder
+    //! unter dem Namen. Esc übernimmt — wie beim Text.
+
+    use super::*;
+    use serde_json::json;
+
+    fn app_raum() -> (App, EId) {
+        let mut app = App::with_ctx(egui::Context::default());
+        app.doc_mut().settings.input_unit = jjcad_core::units::Unit::Mm;
+        let antwort = app
+            .session_mut()
+            .execute(
+                "dim.room",
+                &json!({"pts": [[0.0, 0.0], [4000.0, 0.0], [4000.0, 3000.0], [0.0, 3000.0]],
+                        "heading": "Wohnen"}),
+            )
+            .expect("Raumstempel anlegen");
+        let id = antwort["created"][0].as_u64().expect("Kennung");
+        (app, id)
+    }
+
+    fn name(app: &App, id: EId) -> String {
+        match &app.doc().entity(id).expect("Stempel fehlt").kind {
+            EntityKind::Room { heading, .. } => heading.clone(),
+            k => panic!("kein Raumstempel: {}", k.type_name()),
+        }
+    }
+
+    /// Angezeigter Stempeltext aus der Anzeigeliste — Name und Fläche.
+    fn angezeigt(app: &mut App, id: EId) -> String {
+        let dl = crate::canvas::display_list(app);
+        dl.prims
+            .iter()
+            .find(|p| p.entity == id)
+            .and_then(|p| match &p.shape {
+                render::Shape::Text(t) => Some(t.text.clone()),
+                _ => None,
+            })
+            .unwrap_or_default()
+    }
+
+    /// Doppelklick auf den Stempel: die Eingabe steht am Textanker, zeigt den
+    /// Namen und ist mittig gesetzt — genau wie der Stempeltext.
+    #[test]
+    fn doppelklick_oeffnet_den_namen_des_raumstempels() {
+        let (mut app, id) = app_raum();
+        // Vor dem Bearbeiten ablesen: die Anzeige blendet den bearbeiteten
+        // Stempel aus (er steht dann in der Eingabe).
+        let (pos, lh) = {
+            let dl = crate::canvas::display_list(&mut app);
+            let prim = dl
+                .prims
+                .iter()
+                .find(|p| p.entity == id)
+                .and_then(|p| match &p.shape {
+                    render::Shape::Text(t) => Some(t.clone()),
+                    _ => None,
+                })
+                .expect("Stempeltext in der Anzeige");
+            (prim.pos, prim.line_height())
+        };
+        assert!(start_entitaet(&mut app, id), "Bearbeiten startet");
+
+        let label = match &app.doc().entity(id).unwrap().kind {
+            EntityKind::Room { label, .. } => *label,
+            _ => unreachable!(),
+        };
+        let (text, t_id, align, valign, pos_eingabe) = {
+            let t = app.ui.texteingabe.as_ref().expect("Eingabe offen");
+            (t.text.clone(), t.id, t.align, t.valign, t.pos)
+        };
+        assert_eq!(text, "Wohnen", "bearbeitet wird die Überschrift");
+        assert_eq!(t_id, Some(id), "Änderung trifft den vorhandenen Stempel");
+        assert_eq!(align, TextAlignH::Center);
+        assert_eq!(valign, TextAlignV::Top);
+        assert!(
+            (pos_eingabe.x - label.x).abs() < 1e-9,
+            "waagerecht am Textanker: {pos_eingabe:?}"
+        );
+        assert!(app.selection().is_empty(), "kein Auswahlrahmen beim Schreiben");
+
+        // Der Name springt beim Übernehmen nicht: die Eingabezeile liegt dort,
+        // wo die erste Zeile des Stempels (Name über Fläche) stehen wird.
+        let name_zeile_mitte = pos.y + lh * 0.5;
+        let feld_mitte = pos_eingabe.y - lh * 0.5;
+        assert!(
+            (feld_mitte - name_zeile_mitte).abs() < 1e-6,
+            "Eingabe {feld_mitte:.1} gegen Namenszeile {name_zeile_mitte:.1}"
+        );
+    }
+
+    /// Esc übernimmt: der neue Name steht im Stempel, die Fläche bleibt.
+    #[test]
+    fn esc_schreibt_den_neuen_namen_in_den_stempel() {
+        let (mut app, id) = app_raum();
+        start_entitaet(&mut app, id);
+        app.ui.texteingabe.as_mut().expect("Eingabe").text = "Küche".into();
+        uebernehmen_fuer_test(&mut app);
+
+        assert!(app.ui.texteingabe.is_none(), "Eingabe ist beendet");
+        assert_eq!(name(&app, id), "Küche", "Name wurde nicht geschrieben");
+        let text = angezeigt(&mut app, id);
+        assert!(
+            text.starts_with("Küche\n") && text.contains("m²"),
+            "Stempel zeigt Name und Flächeninhalt: {text:?}"
+        );
+    }
+
+    /// Ein leerer Name ist gültig: der Stempel zeigt dann nur die Fläche —
+    /// die Eingabe darf nicht als „abgebrochen" enden.
+    #[test]
+    fn leerer_name_bleibt_gueltig() {
+        let (mut app, id) = app_raum();
+        start_entitaet(&mut app, id);
+        app.ui.texteingabe.as_mut().expect("Eingabe").text = String::new();
+        uebernehmen_fuer_test(&mut app);
+
+        assert_eq!(name(&app, id), "");
+        let text = angezeigt(&mut app, id);
+        assert!(text.contains("m²"), "Fläche bleibt stehen: {text:?}");
+    }
+
+    /// Der Doppelklick trifft den Stempelschrift-Kasten, nicht die unsichtbare
+    /// Umgrenzung (dort bleibt ein Klick folgenlos).
+    #[test]
+    fn text_bei_trifft_den_raumstempel_nur_am_textkasten() {
+        let (app, id) = app_raum();
+        assert_eq!(
+            text_bei(&app, V2::new(2000.0, 1500.0)),
+            Some(id),
+            "in der Textmitte"
+        );
+        assert_eq!(
+            text_bei(&app, V2::new(300.0, 300.0)),
+            None,
+            "in der Ecke der Umgrenzung liegt kein Text"
+        );
     }
 }

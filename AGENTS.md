@@ -1033,6 +1033,19 @@ Mit dem Nutzer abgestimmt — nicht „verbessern“:
   `cargo test -p jjcad-core --test punktsymbole` und `--test block_massstab`,
   `cargo test -p jjcad-gui props::` und `tests_block_eigenschaften`; Prüfbild
   `--demo "neudatei,punktsymbol"` bzw. `--demo "neudatei,blockreiter:system"`.
+- **Raumstempel (T0220)**: Der **Name** des Stempels wird **direkt in der Zeichnung**
+  geändert — ein Doppelklick auf den Stempeltext öffnet ihn wie ein Textfeld
+  (`textedit::start_entitaet` erkennt `EntityKind::Room`, `textedit::text_bei` trifft
+  Stempel und Text). Bearbeitet wird nur die Überschrift (`heading`), geschrieben über
+  `modify.set` mit `text`; der Flächeninhalt bleibt abgeleitet (`model::room_text`) und
+  wird nie gespeichert. Die Eingabe steht auf der **Namenszeile** des Stempelblocks
+  (`valign Top`, eine Zeile über dem Anker) — so springt der Name beim Übernehmen nicht;
+  ein leerer Name ist gültig (nur die Fläche bleibt). `ESC` **bestätigt** die Eingabe
+  (wie beim Text) und ebenso die Punktfolge des Werkzeugs (`app::escape_pressed`,
+  `dim.room` in der Liste der bestätigbaren Punktfolgen). Ist der Stempel **ausgewählt**,
+  verbindet `canvas::draw_raum_umriss` (`raum_umrisse`) seine Ecken mit einer
+  gestrichelten Akzentlinie — Bedienhilfe, kein Zeichnungselement. Prüfweg:
+  `cargo test -p jjcad-gui tests_raumstempel`. Prüfbild `--demo raumstempel`.
 - **Höhenkoten (T0096)**: Zwei getrennte Objektarten ersetzen die frühere eine
   Höhenkote. Die **Grundriss-Kote** (`EntityKind::ElevationPlan`) ist ein
   Kreis-Symbol mit Fadenkreuz und zwei gefüllten Vierteln; der Höhenwert steht
