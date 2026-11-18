@@ -6,7 +6,8 @@ use crate::theme::{self, Palette};
 use crate::widgets;
 use egui::{Align, Color32, FontId, Layout, Pos2, Rect, RichText, Rounding, Sense, Stroke, Ui, Vec2};
 use jjcad_core::actions;
-use jjcad_core::geom::{Vec2 as V2};
+use jjcad_core::geom::Vec2 as V2;
+use jjcad_core::model::Id;
 use jjcad_core::persist::{
     fest_belegt, Design, DragMode, Farbakzent, Fensterrahmen, Kombination, PastePivot,
     Textaufloesung, Zeichenfarbe,
@@ -439,6 +440,95 @@ mod dirs {
 }
 
 // ---------------------------------------------------------------------------
+// Layer löschen (T0213)
+// ---------------------------------------------------------------------------
+
+/// Rückfrage beim Löschen eines Layers, der noch Objekte enthält.
+///
+/// Der Dialog nennt die Zahl der Objekte und bietet an, sie auf einen anderen
+/// Layer **desselben Plans** zu verschieben; „Abbrechen“ lässt alles stehen.
+/// Er läuft über `modal_window` wie die übrigen Rückfragen (abgedunkelter
+/// Hintergrund, Klick auf die Zeichnung geht nicht durch).
+pub fn layer_loeschen(app: &mut App, ctx: &egui::Context) {
+    let Some((lid, ziel)) = app.ui.layer_delete else {
+        return;
+    };
+    let Some(layer) = app.doc().layer(lid).cloned() else {
+        app.ui.layer_delete = None;
+        return;
+    };
+    let anzahl = app.doc().layer_objekte(lid);
+    let ziele: Vec<(Id, String)> = app
+        .doc()
+        .layers_of_plan(layer.plan)
+        .into_iter()
+        .filter(|l| l.id != lid)
+        .map(|l| (l.id, l.name.clone()))
+        .collect();
+    // Ohne anderen Layer im Plan gäbe es kein Ziel — dann bleibt es beim
+    // Fehler der Action („letzter Layer eines Plans“).
+    if ziele.is_empty() {
+        app.ui.layer_delete = None;
+        return;
+    }
+    let tr = jjcad_core::i18n::tr;
+    let mut offen = true;
+    let mut ziel = if ziele.iter().any(|(id, _)| *id == ziel) {
+        ziel
+    } else {
+        ziele[0].0
+    };
+    let mut verschieben = false;
+    let mut abbrechen = false;
+    dim_background(ctx);
+    modal_window(ctx, tr("gui.dialogs.layer_loeschen"), 460.0, &mut offen).show(ctx, |ui| {
+        ui.set_width(440.0);
+        ui.add(
+            egui::Label::new(
+                egui::RichText::new(jjcad_core::i18n::t_args_owned(
+                    "gui.dialogs.layer_x_enthaelt_n_objekte",
+                    &[
+                        ("name", layer.name.clone()),
+                        ("anzahl", anzahl.to_string()),
+                    ],
+                ))
+                .strong(),
+            )
+            .wrap(),
+        );
+        ui.add_space(6.0);
+        ui.label(theme::dim(tr("gui.dialogs.objekte_verschieben_nach")));
+        if let Some(neu) = panels::pick_combo(ui, "layer_delete_ziel", ziel, &ziele) {
+            ziel = neu;
+        }
+        ui.add_space(10.0);
+        button_row(ui, |ui| {
+            if ui.button(tr("gui.dialogs.verschieben_und_loeschen")).clicked() {
+                verschieben = true;
+            }
+            if ui.button(tr("gui.dialogs.abbrechen")).clicked() {
+                abbrechen = true;
+            }
+        });
+    });
+    if verschieben {
+        match app.session_mut().execute(
+            "layer.delete",
+            &json!({"layer": lid, "move_to": ziel}),
+        ) {
+            Ok(_) => app.mark_changed(),
+            Err(e) => app.toast(e),
+        }
+        app.ui.layer_delete = None;
+    } else if abbrechen || !offen {
+        app.ui.layer_delete = None;
+    } else {
+        // Die Auswahl im Feld muss den nächsten Bild überleben.
+        app.ui.layer_delete = Some((lid, ziel));
+    }
+}
+
+// ---------------------------------------------------------------------------
 // Gemeinsame Bausteine
 // ---------------------------------------------------------------------------
 
@@ -678,6 +768,9 @@ pub(crate) const PROJEKT_VERSIONEN: &str =
 pub fn show(app: &mut App, ctx: &egui::Context) {
     // Systemdialog des Betriebssystems (KDE/Dolphin, GNOME, Windows, macOS)
     systemdialog_abholen(app, ctx);
+
+    // T0213: Rückfrage beim Löschen eines Layers mit Objekten.
+    layer_loeschen(app, ctx);
 
     // Dateidialog
     if app.ui.file_dialog.is_some() {
@@ -8634,3 +8727,122 @@ fn gewaehlte_kategorie_traegt_den_farbakzent() {
 
 }
 
+#[cfg(test)]
+mod tests_layer_loeschen {
+    //! T0213: Die Rückfrage nennt die Objekte des Layers und verschiebt sie auf
+    //! das gewählte Ziel; „Abbrechen“ lässt Layer und Objekte stehen.
+    use super::*;
+
+    fn app_mit_linie() -> (App, egui::Context, Id, Id) {
+        let ctx = egui::Context::default();
+        let mut app = App::with_ctx(ctx.clone());
+        let quelle = app.doc().layer_id_by_name("Zeichnung").expect("Zeichnung");
+        let ziel = app
+            .doc()
+            .layer_id_by_name("Architektur")
+            .expect("Architektur");
+        app.session_mut()
+            .execute(
+                "draw.line",
+                &json!({"a": [0.0, 0.0], "b": [2000.0, 0.0], "layer": quelle}),
+            )
+            .expect("Linie");
+        (app, ctx, quelle, ziel)
+    }
+
+    fn rahmen(ctx: &egui::Context, app: &mut App, events: Vec<egui::Event>) -> egui::FullOutput {
+        let input = egui::RawInput {
+            screen_rect: Some(Rect::from_min_size(Pos2::ZERO, Vec2::new(1500.0, 950.0))),
+            events,
+            ..Default::default()
+        };
+        ctx.run(input, |ctx| show(app, ctx))
+    }
+
+    fn texte(out: &egui::FullOutput) -> Vec<String> {
+        out.shapes
+            .iter()
+            .filter_map(|cs| match &cs.shape {
+                egui::Shape::Text(t) => Some(t.galley.text().to_string()),
+                _ => None,
+            })
+            .collect()
+    }
+
+    fn text_mitte(out: &egui::FullOutput, label: &str) -> Option<Pos2> {
+        out.shapes.iter().find_map(|cs| match &cs.shape {
+            egui::Shape::Text(t) if t.galley.text() == label => {
+                Some(t.pos + t.galley.size() / 2.0)
+            }
+            _ => None,
+        })
+    }
+
+    fn klick(ctx: &egui::Context, app: &mut App, pos: Pos2) {
+        let knopf = |pressed: bool| egui::Event::PointerButton {
+            pos,
+            button: egui::PointerButton::Primary,
+            pressed,
+            modifiers: egui::Modifiers::NONE,
+        };
+        rahmen(ctx, app, vec![egui::Event::PointerMoved(pos)]);
+        rahmen(ctx, app, vec![knopf(true)]);
+        rahmen(ctx, app, vec![knopf(false)]);
+        rahmen(ctx, app, vec![]);
+    }
+
+    #[test]
+    fn dialog_nennt_die_objekte_und_verschiebt_sie() {
+        let (mut app, ctx, quelle, ziel) = app_mit_linie();
+        app.ui.layer_delete = Some((quelle, ziel));
+        rahmen(&ctx, &mut app, vec![]);
+        let out = rahmen(&ctx, &mut app, vec![]);
+        let alle = texte(&out);
+        let erwartet = jjcad_core::i18n::t_args_owned(
+            "gui.dialogs.layer_x_enthaelt_n_objekte",
+            &[("name", "Zeichnung".to_string()), ("anzahl", "1".to_string())],
+        );
+        assert!(
+            alle.iter().any(|t| t == &erwartet),
+            "Hinweis fehlt: {alle:?}"
+        );
+        let knopf = jjcad_core::i18n::tr("gui.dialogs.verschieben_und_loeschen");
+        let pos = text_mitte(&out, knopf).expect("Knopf „Verschieben und löschen“");
+        klick(&ctx, &mut app, pos);
+        assert!(app.ui.layer_delete.is_none(), "der Dialog schließt");
+        assert!(app.doc().layer(quelle).is_none(), "der Layer ist weg");
+        assert_eq!(app.doc().layer_objekte(ziel), 1, "das Objekt liegt auf dem Ziel");
+    }
+
+    #[test]
+    fn abbrechen_laesst_layer_und_objekte_stehen() {
+        let (mut app, ctx, quelle, ziel) = app_mit_linie();
+        app.ui.layer_delete = Some((quelle, ziel));
+        rahmen(&ctx, &mut app, vec![]);
+        let out = rahmen(&ctx, &mut app, vec![]);
+        let knopf = jjcad_core::i18n::tr("gui.dialogs.abbrechen");
+        let pos = text_mitte(&out, knopf).expect("Knopf „Abbrechen“");
+        klick(&ctx, &mut app, pos);
+        assert!(app.ui.layer_delete.is_none(), "der Dialog schließt");
+        assert!(app.doc().layer(quelle).is_some(), "der Layer bleibt");
+        assert_eq!(app.doc().layer_objekte(quelle), 1, "das Objekt bleibt");
+    }
+
+    #[test]
+    fn ohne_objekte_erscheint_kein_dialog() {
+        let (mut app, ctx, quelle, _ziel) = app_mit_linie();
+        // Layer leeren: das Objekt auf einen anderen Layer legen.
+        let andere = app.doc().layer_id_by_name("Architektur").expect("Architektur");
+        app.session_mut()
+            .execute(
+                "layer.delete",
+                &json!({"layer": quelle, "move_to": andere}),
+            )
+            .expect("Layer geht");
+        // Der Merker zeigt auf einen Layer, der nicht mehr existiert: der
+        // Dialog räumt sich selbst auf, statt stehen zu bleiben.
+        app.ui.layer_delete = Some((quelle, andere));
+        rahmen(&ctx, &mut app, vec![]);
+        assert!(app.ui.layer_delete.is_none());
+    }
+}

@@ -387,7 +387,10 @@ ausgeblendet.
   diese Zeile zum Eingabefeld — der neue Name wird an Ort und Stelle getippt, `Enter` oder ein
   Klick daneben übernimmt ihn, `Esc` verwirft ihn. Ein **Linksklick auf den Farbpunkt** öffnet
   den Farbwähler sofort; ein **Rechtsklick** auf die Zeile öffnet **ein** Menü mit
-  „Farbe ändern …“, „Aktueller Layer“, „Umbenennen“ und „Löschen“. Eine neue Datei hat **einen** Plan („Plan 1“), und
+  „Farbe ändern …“, „Aktueller Layer“, „Umbenennen“ und „Löschen“. Ein Layer, auf dem noch
+  Objekte liegen, wird nicht still gelöscht: ein Fenster nennt die Zahl der Objekte und bietet
+  an, sie auf einen anderen Layer **desselben Plans** zu verschieben („Verschieben und löschen“)
+  oder den Vorgang abzubrechen. Eine neue Datei hat **einen** Plan („Plan 1“), und
   **jeder** Plan besteht aus denselben vier Layern:
   **Zeichnung** (Linien, Kreise, Bögen, Flächen, Schraffuren, Bilder), **Architektur** (Wände,
   Türen, Fenster, Treppen, Volumen), **Beschriftung** (Texte, Bemaßung, Höhenkoten, Raumstempel)
