@@ -3880,13 +3880,26 @@ pub fn execute(doc: &mut Document, id: &str, params: &Value) -> Result<Value, St
             }
             // Papierraum zählt mit: ein Layer, der nur im Schriftfeld benutzt
             // wird, ist nicht leer.
-            let benutzt = doc.entities.iter().chain(
-                doc.sheets
-                    .iter()
-                    .flat_map(|s| s.entities.iter()),
-            );
-            if benutzt.clone().any(|e| e.layer == lid) {
-                return Err("Layer enthält noch Objekte".into());
+            if doc.layer_objekte(lid) > 0 {
+                // T0213: Die Objekte können mit `move_to` auf einen anderen
+                // Layer wandern; ohne Ziel bleibt es beim Fehler (MCP, ältere
+                // Aufrufer). Die Oberfläche fragt vorher nach.
+                let ziel = p.v.get("move_to").cloned().unwrap_or(Value::Null);
+                let zid = ziel
+                    .as_u64()
+                    .or_else(|| ziel.as_str().and_then(|s| doc.layer_id_by_name(s)));
+                match zid {
+                    Some(z) if z == lid => {
+                        return Err(
+                            "Ein Layer kann nicht auf sich selbst verschoben werden".into()
+                        );
+                    }
+                    Some(z) if doc.layer(z).is_some() => {
+                        doc.layer_objekte_verschieben(lid, z);
+                    }
+                    Some(_) => return Err("Ziellayer nicht gefunden".into()),
+                    None => return Err("Layer enthält noch Objekte".into()),
+                }
             }
             let plan = doc.layer(lid).map(|l| l.plan);
             doc.layers.retain(|l| l.id != lid);

@@ -549,7 +549,14 @@ pub fn layers(app: &mut App, ui: &mut Ui) {
                             }
                             if ui.button(tr("gui.panels.loeschen")).clicked() {
                                 ui.close_menu();
-                                befehle.push(("layer.delete".into(), json!({"layer": l.id})));
+                                // T0213: Hat der Layer noch Objekte, fragt ein
+                                // Popup nach dem Ziel; erst danach wird er
+                                // gelöscht. Ein leerer Layer geht sofort.
+                                match loeschen_ziel(app.doc(), l.id) {
+                                    Some(z) => app.ui.layer_delete = Some((l.id, z)),
+                                    None => befehle
+                                        .push(("layer.delete".into(), json!({"layer": l.id}))),
+                                }
                             }
                         });
                     }
@@ -644,16 +651,27 @@ pub fn layers(app: &mut App, ui: &mut Ui) {
             .session_mut()
             .execute("layer.set_current", &json!({"layer": id}));
     }
-    let loeschen = befehle.iter().any(|(a, _)| a == "layer.delete");
     for (aktion, params) in befehle {
         match app.session_mut().execute(&aktion, &params) {
             Ok(_) => app.mark_changed(),
             Err(e) => app.toast(e),
         }
     }
-    if loeschen {
-        app.toast(tr("gui.panels.layer_geloescht"));
+}
+
+/// Ziel einer Lösch-Rückfrage (T0213): Hat der Layer Objekte und gibt es im
+/// selben Plan einen anderen Layer, wird vor dem Löschen gefragt — `Some(ziel)`.
+/// Ein leerer Layer (oder der letzte seines Plans) geht direkt an die Action,
+/// die den Fehler meldet.
+pub(crate) fn loeschen_ziel(doc: &Document, lid: Id) -> Option<Id> {
+    if doc.layer_objekte(lid) == 0 {
+        return None;
     }
+    let plan = doc.layer(lid)?.plan;
+    doc.layers_of_plan(plan)
+        .into_iter()
+        .find(|l| l.id != lid)
+        .map(|l| l.id)
 }
 
 /// Ring um den Farbpunkt einer Layerzeile.
@@ -3210,5 +3228,72 @@ mod tests_plaene {
         assert!(!app.doc().layer_sichtbar(layer));
         // Die Layerzeile bleibt stehen (ausgegraut) — der Layer selbst auch an.
         assert!(app.doc().layer(layer).unwrap().visible);
+    }
+}
+
+#[cfg(test)]
+mod tests_layer_loeschen {
+    //! T0213: Ein Layer mit Objekten fragt vor dem Löschen nach; ein leerer
+    //! Layer geht direkt an die Action.
+    use super::*;
+
+    fn app() -> App {
+        let ctx = egui::Context::default();
+        App::with_ctx(ctx)
+    }
+
+    #[test]
+    fn leerer_layer_wird_ohne_rueckfrage_geloescht() {
+        let app = app();
+        let id = app.doc().layer_id_by_name("Zeichnung").expect("Zeichnung");
+        assert!(loeschen_ziel(app.doc(), id).is_none());
+    }
+
+    #[test]
+    fn layer_mit_objekten_bekommt_ein_ziel_im_selben_plan() {
+        let mut app = app();
+        let id = app.doc().layer_id_by_name("Zeichnung").expect("Zeichnung");
+        app.session_mut()
+            .execute(
+                "draw.line",
+                &json!({"a": [0.0, 0.0], "b": [1000.0, 0.0], "layer": id}),
+            )
+            .expect("Linie");
+        let ziel = loeschen_ziel(app.doc(), id).expect("Rückfrage mit Ziel");
+        let ziel_layer = app.doc().layer(ziel).expect("Ziellayer");
+        let plan = app.doc().layer(id).expect("Quelle").plan;
+        assert_eq!(ziel_layer.plan, plan, "das Ziel liegt im selben Plan");
+        assert_ne!(ziel, id);
+    }
+
+    #[test]
+    fn letzter_layer_eines_plans_bekommt_keine_rueckfrage() {
+        let mut app = app();
+        let id = app.doc().layer_id_by_name("Zeichnung").expect("Zeichnung");
+        app.session_mut()
+            .execute(
+                "draw.line",
+                &json!({"a": [0.0, 0.0], "b": [1000.0, 0.0], "layer": id}),
+            )
+            .expect("Linie");
+        // Alle anderen Layer des Plans entfernen, das Objekt vorher umhängen.
+        let plan = app.doc().layer(id).expect("Quelle").plan;
+        let andere: Vec<Id> = app
+            .doc()
+            .layers_of_plan(plan)
+            .into_iter()
+            .map(|l| l.id)
+            .filter(|l| *l != id)
+            .collect();
+        for andere in andere {
+            app.session_mut()
+                .execute("layer.delete", &json!({"layer": andere}))
+                .expect("leerer Layer geht");
+        }
+        assert_eq!(app.doc().layers_of_plan(plan).len(), 1);
+        assert!(
+            loeschen_ziel(app.doc(), id).is_none(),
+            "ohne anderes Ziel im Plan keine Rückfrage"
+        );
     }
 }

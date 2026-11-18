@@ -1994,6 +1994,38 @@ impl Document {
         }
     }
 
+    /// Zahl der Objekte auf einem Layer — Modell- und Papierraum zusammen
+    /// (T0213). Ein Layer, der nur im Schriftfeld benutzt wird, ist nicht leer.
+    pub fn layer_objekte(&self, layer: Id) -> usize {
+        self.entities
+            .iter()
+            .chain(self.sheets.iter().flat_map(|s| s.entities.iter()))
+            .filter(|e| e.layer == layer)
+            .count()
+    }
+
+    /// Setzt alle Objekte eines Layers auf einen anderen Layer (T0213):
+    /// Modell- und Papierraum. Blockdefinitionen bleiben unangetastet.
+    /// Gibt die Zahl der verschobenen Objekte zurück.
+    pub fn layer_objekte_verschieben(&mut self, von: Id, nach: Id) -> usize {
+        let mut n = 0;
+        for e in self.entities.iter_mut() {
+            if e.layer == von {
+                e.layer = nach;
+                n += 1;
+            }
+        }
+        for s in self.sheets.iter_mut() {
+            for e in s.entities.iter_mut() {
+                if e.layer == von {
+                    e.layer = nach;
+                    n += 1;
+                }
+            }
+        }
+        n
+    }
+
     /// Gesperrt ist ein Layer, wenn er selbst oder sein Plan gesperrt ist —
     /// ausgeblendet zählt wie gesperrt (nicht wählbar, kein Fangpunkt).
     pub fn layer_gesperrt(&self, layer: Id) -> bool {

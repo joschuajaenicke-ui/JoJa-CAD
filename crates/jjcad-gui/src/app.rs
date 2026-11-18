@@ -1221,6 +1221,9 @@ pub struct UiState {
     /// Neuer Plan: Name im Eingabefeld (T0202).
     pub new_plan_dialog: Option<String>,
     pub color_popup: Option<Id>,
+    /// T0213: Rückfrage beim Löschen eines Layers, der noch Objekte enthält —
+    /// (zu löschender Layer, gewähltes Ziel).
+    pub layer_delete: Option<(Id, Id)>,
     pub rename_layer: Option<(Id, String)>,
     /// Wurde der Fokus im Umbenennen-Feld schon gesetzt? (T0206)
     pub rename_layer_fokus: bool,
@@ -1425,6 +1428,7 @@ impl Default for UiState {
             new_layer_plan: None,
             new_plan_dialog: None,
             color_popup: None,
+            layer_delete: None,
             rename_layer: None,
             rename_layer_fokus: false,
             rename_plan: None,
@@ -2294,6 +2298,35 @@ impl App {
                         "samples/Wohnhaus.jjcad"
                     };
                     self.ui.drop_demo = Some(vec![PathBuf::from(name)]);
+                }
+                // T0213: Rückfrage beim Löschen eines Layers mit Objekten —
+                // Prüfbild des Popups samt Zielauswahl.
+                "layerloeschen" | "layerdialog" => {
+                    self.ui.layers_open = true;
+                    self.ui.layers_collapsed = false;
+                    let quelle = self
+                        .doc()
+                        .layer_id_by_name("Zeichnung")
+                        .unwrap_or(self.doc().current_layer);
+                    let _ = self.session_mut().execute(
+                        "draw.line",
+                        &serde_json::json!({
+                            "a": [0.0, 0.0],
+                            "b": [2000.0, 0.0],
+                            "layer": quelle,
+                        }),
+                    );
+                    if let Some(ziel) = self
+                        .doc()
+                        .layers_of_plan(
+                            self.doc().layer(quelle).map(|l| l.plan).unwrap_or(0),
+                        )
+                        .into_iter()
+                        .find(|l| l.id != quelle)
+                        .map(|l| l.id)
+                    {
+                        self.ui.layer_delete = Some((quelle, ziel));
+                    }
                 }
                 "schliessdialog" => {
                     self.new_document();
