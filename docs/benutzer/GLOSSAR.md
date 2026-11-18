@@ -104,6 +104,7 @@ Steht rechts „nicht", dann ist das Wort im Projekt verpönt (auch in der Oberf
 | **Registerkarte** | Zeichnen / Architektur / Bemassung / Blöcke / Blatt / Ansicht | Tab (das sind Dokumente) |
 | **Hotbar** | Die Schnellzugriffleiste unten; ihre Slots starten die Zifferntasten `1`–`0` | Favoritenleiste |
 | **Tastaturbelegung** | Der Dialog, in dem Buchstaben und Symbole Funktionen zugewiesen bekommen (`docs/benutzer/TASTEN.md`) | Tastenkürzel, Shortcuts |
+| **Ebene** | Eine der acht Lagen der Tastatur: ohne Steuerungstaste, Umschalt, Strg, Alt und ihre Kombinationen. Jede Ebene hat ihre eigene Belegung und ihre eigene Hotbar (T0215) | Variante, Modifier, Shift/Ctrl/Alt |
 | **Inventar** | Seitliche Sammlung von Blöcken und Funktionen (mit `E`) | Bibliothek, Palette |
 | **Eigenschaften** | Das rechte Seitenpanel mit Feldern zum ausgewählten Objekt **oder** zum nächsten Element | Einstellungen (das ist der Dialog), Seitenleiste |
 | **Einstellungen** | Der Dialog (`Datei → Einstellungen`) für globale Vorgaben | Optionen, Preferences |
