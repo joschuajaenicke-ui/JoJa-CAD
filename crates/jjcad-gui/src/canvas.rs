@@ -13484,6 +13484,67 @@ mod tests_ghost_zeiger {
 }
 
 #[cfg(test)]
+mod tests_block_basispunkt {
+    //! T0221: Ein Block wird an seinem **Basispunkt** eingefügt — der Basispunkt
+    //! steht am Mauszeiger. Geprüft wird der ganze Weg der Oberfläche: Vorschau
+    //! starten, Vorschaugeometrie, Klick (`commit_ghost`), eingesetztes Objekt.
+
+    use super::*;
+    use crate::app::App;
+
+    fn block_mit_geometrie(app: &App) -> String {
+        app.doc()
+            .blocks
+            .iter()
+            .find(|b| b.bbox().is_valid())
+            .map(|b| b.id.clone())
+            .expect("die Bibliothek führt mindestens einen Block mit Geometrie")
+    }
+
+    /// Der Klick setzt den Block mit dem Basispunkt auf den Zeiger, und Vorschau
+    /// und eingesetztes Objekt decken sich (vorher stand die untere linke Ecke
+    /// der Vorschau am Zeiger, das Objekt setzte sich versetzt ab).
+    #[test]
+    fn klick_setzt_den_basispunkt_auf_den_zeiger() {
+        let ctx = egui::Context::default();
+        let mut app = App::with_ctx(ctx.clone());
+        let zeiger = V2::new(2500.0, 1800.0);
+        let bid = block_mit_geometrie(&app);
+        app.pointer_world = Some(zeiger);
+        app.start_ghost_block(bid.clone());
+
+        let g = app.ghost.clone().expect("Vorschau läuft");
+        assert_eq!(g.pos, zeiger, "Anker der Vorschau ist der Zeiger");
+        let vorschau =
+            crate::ghost::geometry(app.doc(), &g, &crate::ghost::Clipboard::default());
+        assert_eq!(vorschau.origin, zeiger, "Einfügepunkt = Basispunkt am Zeiger");
+
+        assert!(app.commit_ghost(), "Klick setzt den Block ein");
+        let instanz = app
+            .doc()
+            .entities
+            .iter()
+            .find(|e| matches!(e.kind, EntityKind::BlockRef { .. }))
+            .expect("der Block steht in der Zeichnung");
+        match &instanz.kind {
+            EntityKind::BlockRef { block, pos, .. } => {
+                assert_eq!(block, &bid, "die gewählte Blockdefinition");
+                assert_eq!(*pos, zeiger, "Basispunkt liegt auf dem Zeiger");
+            }
+            other => panic!("keine Blockinstanz: {other:?}"),
+        }
+        let mut ergebnis = BBox::EMPTY;
+        ergebnis.union(render::entity_bbox(app.doc(), instanz));
+        assert!(
+            vorschau.bbox.min.dist(ergebnis.min) < 1e-6
+                && vorschau.bbox.max.dist(ergebnis.max) < 1e-6,
+            "Vorschau {:?} und Ergebnis {ergebnis:?} stimmen nicht überein",
+            vorschau.bbox
+        );
+    }
+}
+
+#[cfg(test)]
 mod schrifttests {
     use super::*;
 
