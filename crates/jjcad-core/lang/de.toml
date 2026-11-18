@@ -1922,6 +1922,8 @@ bilddaten = "Bilddaten"
 esc_uebernimmt_hinweis = "Esc übernimmt · Enter neue Zeile · Rechtsklick bricht ab"
 text_abgebrochen = "Text · abgebrochen"
 text_geaendert = "Text · geändert"
+raumstempel_name_aendern_esc_uebernimmt = "Raumstempel · Name ändern (Esc übernimmt)"
+raumstempel_name_geaendert = "Raumstempel · Name geändert"
 text_inhalt_aendern_esc_uebernimmt = "Text · Inhalt ändern (Esc übernimmt)"
 text_text_eingeben_esc_uebernimmt = "Text · Text eingeben (Esc übernimmt)"
 

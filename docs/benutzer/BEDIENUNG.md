@@ -217,6 +217,17 @@ die **Vorgabe** ihrer Ebene und lassen sich wie jede andere Taste ändern.
     egui (winit 0.30) kennt ihn dort nicht. Das ist kein Fehler des Programms; Ursache,
     Bedingungen und Prüfweg stehen in [`docs/wissen/WAYLAND-DATEI-DROP.md`](../wissen/WAYLAND-DATEI-DROP.md).
 
+18. **Raumstempel** (Ribbon ▸ Bemaßung ▸ „Raumstempel"): die Raumecken klicken, `Enter` **oder
+    `ESC`** setzt den Stempel — `ESC` **bestätigt** die gesetzten Ecken, statt sie zu verwerfen;
+    ohne eine einzige Ecke bricht es ab. Der Stempel zeichnet seinen Namen über den
+    Flächeninhalt; die Fläche selbst bleibt unsichtbar und ist nicht anklickbar.
+    **Der Name wird direkt in der Zeichnung geändert**: ein Doppelklick auf den Stempeltext
+    öffnet ihn wie ein Textfeld, `ESC` übernimmt (Rechtsklick bricht ab), der Flächeninhalt
+    darunter wird weiter aus der Umgrenzung gerechnet und bleibt unverändert stehen. Ist der
+    Stempel **ausgewählt**, verbindet eine gestrichelte Hilfslinie seine Eckpunkte — nur so ist
+    zu sehen, welche Fläche der Stempel beschriftet; die Linie gehört zur Bedienung und
+    verschwindet mit der Auswahl.
+
 Der Zeiger ist über der Zeichenfläche ein durchgehendes Fadenkreuz; der Systemzeiger wird dort
 ausgeblendet.
 
