@@ -332,6 +332,17 @@ Mit dem Nutzer abgestimmt — nicht „verbessern“:
   schaltet auf den Reiter Benutzerblöcke, damit die Kopie sichtbar ist.
   Prüfweg: `cargo test -p jjcad-core --test bloecke_datei kopie_` und
   `cargo test -p jjcad-gui tests_block_kopieren`.
+- **Blöcke löschen (T0219)**: Das Rechtsklickmenü löscht **nie** sofort — es
+  öffnet die Rückfrage `dialogs::block_loeschen` (`UiState::block_delete`,
+  `Order::Foreground`, sonst deckt das offene Inventar sie zu). `block.delete`
+  lehnt einen verwendeten Block ab und nennt die Zahl; mit `explode: true`
+  zerlegt `actions::zerlege_block_instanzen` vorher **alle** Verwendungen — im
+  Modell, auf jedem Blatt und in anderen Blockdefinitionen
+  (`Document::block_verwendungen`; `block_instances` liest nur das Modell).
+  Zerlegt wird je Bearbeitungsraum, weil `explode_entities` auf `ents_mut()`
+  arbeitet; der Raum des Aufrufers wird danach wiederhergestellt. Prüfweg:
+  `cargo test -p jjcad-core --test block_loeschen` und
+  `cargo test -p jjcad-gui tests_block_loeschen`; Prüfbild `--demo blockloeschen`.
 - **Einfügen** (Block/Zwischenablage): Vorschau am Zeiger, `R` dreht,
   `S` spiegelt, Klick bestätigt. Ein **Block** steht mit seinem **Basispunkt** am
   Mauszeiger (T0221, `ghost::geometry` übersetzt nur noch um `g.pos`) — Vorschau und

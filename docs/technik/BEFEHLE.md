@@ -147,7 +147,7 @@ Plan. Ein Layername ist je Plan eindeutig.
 | `block.insert` | `block` (ID oder Name), `pos`, `rot`, `scale`, `scale_y`, `mirror` | |
 | `block.create` | `name`, `ids[]`, `base`, `category` | Auswahl wird zur Definition, Instanz ersetzt sie |
 | `block.update` | `block`, `ids[]`, `name` | Definition aus Auswahl ersetzen |
-| `block.delete` | `block` | nur unbenutzte Blöcke |
+| `block.delete` | `block`, `explode` | ohne `explode` nur unbenutzte Blöcke; mit `explode` werden vorher **alle** Verwendungen zerlegt (Modell, Blätter, andere Blöcke) |
 | `block.copy` | `block` (ID oder Name), `name`, `dir` | Kopie als Benutzerblock (auch von Systemblöcken); `dir` schreibt die `.jjblk` |
 | `block.list` | — | |
 

@@ -1237,6 +1237,10 @@ pub struct UiState {
     /// T0213: Rückfrage beim Löschen eines Layers, der noch Objekte enthält —
     /// (zu löschender Layer, gewähltes Ziel).
     pub layer_delete: Option<(Id, Id)>,
+    /// T0219: Rückfrage beim Löschen eines Blocks — Kennung des Blocks.
+    /// Steht Instanzen in der Zeichnung, bietet der Dialog an, sie vorher zu
+    /// zerlegen; erst dann lässt sich der Block löschen.
+    pub block_delete: Option<String>,
     pub rename_layer: Option<(Id, String)>,
     /// Wurde der Fokus im Umbenennen-Feld schon gesetzt? (T0206)
     pub rename_layer_fokus: bool,
@@ -1446,6 +1450,7 @@ impl Default for UiState {
             new_plan_dialog: None,
             color_popup: None,
             layer_delete: None,
+            block_delete: None,
             rename_layer: None,
             rename_layer_fokus: false,
             rename_plan: None,
@@ -2510,6 +2515,34 @@ impl App {
                     self.ui.inventory_tab = 1;
                     self.ui.block_quelle = 1;
                     self.oeffne_block_eigenschaften("usr:tisch");
+                }
+                // T0219: Rückfrage beim Löschen eines Blocks, der noch
+                // eingesetzt ist — Hinweis samt Angebot, die Instanzen zu
+                // zerlegen. Prüfbild der Rückfrage.
+                "blockloeschen" | "blockdelete" => {
+                    self.demo_benutzerblock();
+                    // Zwei Instanzen machen den Hinweis anschaulich — die
+                    // Vorlage kann schon eine mitbringen (`demo_benutzerblock`).
+                    let layer = self.doc().current_layer;
+                    let vorhanden = self.doc().block_verwendungen("usr:tisch").len();
+                    for i in vorhanden..2 {
+                        let id = self.doc_mut().new_id();
+                        self.doc_mut().add_entity(Entity::new(
+                            id,
+                            layer,
+                            EntityKind::BlockRef {
+                                block: "usr:tisch".into(),
+                                pos: V2::new((i as f64 + 1.0) * 2500.0, 0.0),
+                                rot: 0.0,
+                                scale: V2::new(1.0, 1.0),
+                                mirror: false,
+                            },
+                        ));
+                    }
+                    self.ui.inventory_open = true;
+                    self.ui.inventory_tab = 1;
+                    self.ui.block_quelle = 1;
+                    self.block_loeschen_anfragen("usr:tisch");
                 }
                 "blocks-tab" => {
                     self.ui.inventory_open = true;
@@ -4508,6 +4541,63 @@ impl App {
                 self.ui.block_quelle = 1; // Benutzerblöcke (BLOCK_QUELLEN)
                 self.mark_changed();
                 self.toast(jjcad_core::i18n::tr("gui.app.block_kopiert"));
+                true
+            }
+            Err(e) => {
+                self.toast(e);
+                false
+            }
+        }
+    }
+
+    /// T0219: Löschen eines Blocks anfragen — der Weg des Rechtsklickmenüs in
+    /// der Blockbibliothek.
+    ///
+    /// Gelöscht wird **nie** sofort: erst die Rückfrage (`ui.block_delete`),
+    /// die auch auf noch vorhandene Instanzen hinweist. Systemblöcke sind
+    /// schreibgeschützt und haben keinen Löschweg (wie „Bearbeiten“).
+    pub fn block_loeschen_anfragen(&mut self, id: &str) -> bool {
+        let Some(block) = self.doc().block(id).cloned() else {
+            self.toast(jjcad_core::i18n::tr("gui.app.block_nicht_gefunden"));
+            return false;
+        };
+        if block.source == jjcad_core::model::BlockSource::System {
+            self.toast(jjcad_core::i18n::tr("gui.app.systemblock_schreibgeschuetzt"));
+            return false;
+        }
+        self.ui.block_delete = Some(block.id);
+        true
+    }
+
+    /// Führt das Löschen aus der Rückfrage aus (T0219).
+    ///
+    /// `zerlegen` schickt `explode` an `block.delete`: die Action zerlegt dann
+    /// zuerst **alle** Instanzen (Modell, Blätter, andere Blöcke) und löscht
+    /// den Block danach. Ohne das bleibt ein Block mit Instanzen stehen.
+    pub fn block_loeschen(&mut self, zerlegen: bool) -> bool {
+        let Some(id) = self.ui.block_delete.clone() else {
+            return false;
+        };
+        let dir = self.prefs.blocks_dir().to_string_lossy().to_string();
+        match self.session_mut().execute(
+            "block.delete",
+            &serde_json::json!({ "block": id, "dir": dir, "explode": zerlegen }),
+        ) {
+            Ok(_) => {
+                self.ui.block_delete = None;
+                // Ein offener Editor dieses Blocks hat keinen Block mehr.
+                self.tab_mut().offene_bloecke.retain(|x| x != &id);
+                self.tab_mut().block_original.remove(&id);
+                self.tab_mut().block_views.remove(&id);
+                if self.aktiver_block().as_deref() == Some(id.as_str()) {
+                    self.switch_tab(TabKind::Model);
+                }
+                self.mark_changed();
+                self.toast(jjcad_core::i18n::tr(if zerlegen {
+                    "gui.app.block_zerlegt_und_geloescht"
+                } else {
+                    "gui.app.block_geloescht"
+                }));
                 true
             }
             Err(e) => {

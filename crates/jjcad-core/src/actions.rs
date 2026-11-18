@@ -4100,19 +4100,28 @@ pub fn execute(doc: &mut Document, id: &str, params: &Value) -> Result<Value, St
         }
         "block.delete" => {
             let name = p.text("block").ok_or_else(|| "Parameter 'block' fehlt".to_string())?;
+            // T0219: Mit `explode` werden vorher **alle** Verwendungen des
+            // Blocks zerlegt — der Weg der Rückfrage in der Blockbibliothek.
+            let zerlegen = p.boolean_or("explode", false);
             let ziel = doc
                 .blocks
                 .iter()
                 .find(|b| b.id == name || b.name.eq_ignore_ascii_case(&name))
                 .cloned()
                 .ok_or_else(|| format!("Block '{name}' nicht gefunden"))?;
-            let in_benutzung = doc
-                .entities
-                .iter()
-                .chain(doc.sheets.iter().flat_map(|s| s.entities.iter()))
-                .any(|e| matches!(&e.kind, EntityKind::BlockRef{block,..} if *block == ziel.id));
-            if in_benutzung {
-                return Err("Block wird noch verwendet".into());
+            let verwendet = doc.block_verwendungen(&ziel.id);
+            if !verwendet.is_empty() {
+                if !zerlegen {
+                    return Err(format!(
+                        "Block wird noch {}-mal verwendet",
+                        verwendet.len()
+                    ));
+                }
+                zerlege_block_instanzen(doc, &ziel.id)?;
+                let rest = doc.block_verwendungen(&ziel.id);
+                if !rest.is_empty() {
+                    return Err(format!("Block wird noch {}-mal verwendet", rest.len()));
+                }
             }
             // Benutzerblock (T0128): die Datei ist die Bibliothek — Löschen im
             // Blockmanager entfernt sie mit.
@@ -6122,6 +6131,70 @@ pub fn explode_entities(doc: &mut Document, ids: &[Id]) -> Result<Vec<Id>, Strin
 /// Zerlegt ein Objekt in Grundelemente (auch Blöcke und Bemaßungen).
 pub fn explode_entity(doc: &mut Document, id: Id) -> Result<Vec<Id>, String> {
     explode_entities(doc, &[id])
+}
+
+/// Zerlegt **alle** Verwendungen eines Blocks — im Modell, auf jedem Blatt und
+/// in anderen Blockdefinitionen (T0219). Liefert die Zahl der zerlegten
+/// Instanzen.
+///
+/// Grundlage ist [`Document::block_verwendungen`]; zerlegt wird je
+/// Bearbeitungsraum, weil `explode_entities` auf `doc.ents_mut()` arbeitet.
+/// Der Raum, in dem der Aufrufer stand, wird danach wiederhergestellt.
+pub fn zerlege_block_instanzen(doc: &mut Document, block_id: &str) -> Result<usize, String> {
+    // Erst sammeln, was je Raum zu zerlegen ist — die Kennungen sind
+    // zeichnungsweit eindeutig, die Zuordnung geht beim Umschalten nicht verloren.
+    let treffer = |liste: &[Entity]| -> Vec<Id> {
+        liste
+            .iter()
+            .filter(|e| matches!(&e.kind, EntityKind::BlockRef { block, .. } if block == block_id))
+            .map(|e| e.id)
+            .collect()
+    };
+    let mut raeume: Vec<(Option<Id>, Option<String>, Vec<Id>)> = Vec::new();
+    let modell = treffer(&doc.entities);
+    if !modell.is_empty() {
+        raeume.push((None, None, modell));
+    }
+    for s in &doc.sheets {
+        let ids = treffer(&s.entities);
+        if !ids.is_empty() {
+            raeume.push((Some(s.id), None, ids));
+        }
+    }
+    for b in &doc.blocks {
+        if b.id == block_id {
+            continue;
+        }
+        let ids = treffer(&b.entities);
+        if !ids.is_empty() {
+            raeume.push((None, Some(b.id.clone()), ids));
+        }
+    }
+    let (alt_space, alt_block) = (doc.space, doc.block_space.clone());
+    let mut anzahl = 0usize;
+    let mut fehler: Option<String> = None;
+    for (space, block, ids) in raeume {
+        doc.space = space;
+        doc.block_space = block;
+        for id in ids {
+            match explode_entities(doc, &[id]) {
+                Ok(_) => anzahl += 1,
+                Err(e) => {
+                    fehler = Some(e);
+                    break;
+                }
+            }
+        }
+        if fehler.is_some() {
+            break;
+        }
+    }
+    doc.space = alt_space;
+    doc.block_space = alt_block;
+    match fehler {
+        Some(e) => Err(e),
+        None => Ok(anzahl),
+    }
 }
 
 /// Was sich grundsätzlich nicht zerlegen lässt, wird **vor** jeder Änderung
