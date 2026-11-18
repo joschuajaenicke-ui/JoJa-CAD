@@ -779,11 +779,20 @@ pub fn blaetter(app: &mut App, ui: &mut Ui) {
                 .strong(),
         );
         ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-            // Der Blattmanager liegt immer rechts; der Pfeil zeigt dorthin.
-            if widgets::icon_button(ui, "chevron_right", 20.0, false, tr("gui.panels.einklappen"))
+            // T0218: Der Pfeil zeigt zur Seite, auf der das Panel liegt —
+            // eingeklappt wird dorthin, wo die Leiste steht (wie beim
+            // Layer-Panel). Das Symbol in der Leiste holt den Manager zurück.
+            let pfeil = if app.panel_seite(crate::app::SeitenPanel::Blatt)
+                == jjcad_core::persist::PanelSeite::Links
+            {
+                "chevron_left"
+            } else {
+                "chevron_right"
+            };
+            if widgets::icon_button(ui, pfeil, 20.0, false, tr("gui.panels.einklappen"))
                 .clicked()
             {
-                app.ui.blatt_open = false;
+                app.ui.blatt_collapsed = true;
             }
         });
     });

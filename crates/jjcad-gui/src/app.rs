@@ -1083,10 +1083,14 @@ pub struct UiState {
     /// Panels und Ribbon eingeklappt
     pub layers_collapsed: bool,
     pub props_collapsed: bool,
+    /// Blattmanager auf die Leiste eingeklappt (T0218) — wie Layer und
+    /// Eigenschaften; das Symbol in der Leiste klappt ihn wieder aus.
+    pub blatt_collapsed: bool,
     /// T0203: Seite, auf der das jeweilige Panel liegt. Beide Panels dürfen
     /// auf beiden Seiten stehen; die Leisten tragen stets dieselben Icons.
     pub layers_side: PanelSeite,
     pub props_side: PanelSeite,
+    pub blatt_side: PanelSeite,
     /// T0203: Lage der Symbole in den Seitenleisten im zuletzt gezeichneten
     /// Bild — (Panel, Seite, Fläche). Prüfwert der Tests.
     pub last_leisten_icons: Vec<(SeitenPanel, PanelSeite, Rect)>,
@@ -1373,8 +1377,10 @@ impl Default for UiState {
             blatt_open: true,
             layers_collapsed: false,
             props_collapsed: false,
+            blatt_collapsed: false,
             layers_side: PanelSeite::Links,
             props_side: PanelSeite::Rechts,
+            blatt_side: PanelSeite::Rechts,
             last_leisten_icons: Vec::new(),
             last_layer_kopf: Vec::new(),
             last_blattzeilen: Vec::new(),
@@ -1845,32 +1851,39 @@ pub struct App {
 
 /// Ein Seitenpanel, das auf **beiden** Seiten liegen kann (T0203).
 ///
-/// Die Leisten beider Seiten zeigen immer dieselben Symbole — Layer und
-/// Eigenschaften. Welches Panel wo liegt, steht in `UiState::layers_side` /
-/// `UiState::props_side`.
+/// Die Leisten beider Seiten zeigen immer dieselben Symbole — Layer,
+/// Eigenschaften und Blattmanager (T0218). Welches Panel wo liegt, steht in
+/// `UiState::layers_side` / `UiState::props_side` / `UiState::blatt_side`.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum SeitenPanel {
     Layer,
     Eigenschaften,
+    Blatt,
 }
 
 impl SeitenPanel {
-    /// Beide Panels in der Reihenfolge der Leisten — auf beiden Seiten gleich.
-    pub const ALLE: [SeitenPanel; 2] = [SeitenPanel::Layer, SeitenPanel::Eigenschaften];
+    /// Alle Panels in der Reihenfolge der Leisten — auf beiden Seiten gleich.
+    pub const ALLE: [SeitenPanel; 3] = [
+        SeitenPanel::Layer,
+        SeitenPanel::Eigenschaften,
+        SeitenPanel::Blatt,
+    ];
 
     /// Symbol in der Leiste.
     pub fn icon(self) -> &'static str {
         match self {
             SeitenPanel::Layer => "layers",
             SeitenPanel::Eigenschaften => "properties",
+            SeitenPanel::Blatt => "sheet",
         }
     }
 
-    /// Breite des ausgeklappten Panels (wie bisher 232 bzw. 292 px).
+    /// Breite des ausgeklappten Panels (232 bzw. 292 px).
     pub fn breite(self) -> f32 {
         match self {
             SeitenPanel::Layer => 232.0,
             SeitenPanel::Eigenschaften => 292.0,
+            SeitenPanel::Blatt => 232.0,
         }
     }
 }
@@ -1966,6 +1979,7 @@ impl App {
         // T0203: Die gewählte Seite der beiden Panels übersteht den Neustart.
         let layers_side = prefs.layers_side;
         let props_side = prefs.props_side;
+        let blatt_side = prefs.blatt_side;
         let mut app = Self {
             tabs: vec![tab],
             diag: crate::diag::Diagnose::new(),
@@ -2029,6 +2043,7 @@ impl App {
         }
         app.ui.layers_side = layers_side;
         app.ui.props_side = props_side;
+        app.ui.blatt_side = blatt_side;
         app.fit_view();
         app.started_at = 0.0;
         // T0127: Blöcke aus der Benutzerbibliothek der Datenwurzel.
@@ -2178,8 +2193,10 @@ impl App {
                 "leisten" => {
                     self.ui.layers_open = true;
                     self.ui.props_open = true;
+                    self.ui.blatt_open = true;
                     self.ui.layers_collapsed = true;
                     self.ui.props_collapsed = true;
+                    self.ui.blatt_collapsed = true;
                 }
                 "panelslinks" => {
                     self.ui.layers_open = true;
@@ -8892,8 +8909,15 @@ impl App {
                             app.run_action(ui.ctx(), "sheet.pdf");
                         }
                         // T0218: Blattmanager ein-/ausblenden.
-                        if widgets::ribbon_button(ui, "sheet", rb("ribbon.blattmanager"), app.ui.blatt_open).clicked() {
-                            app.ui.blatt_open = !app.ui.blatt_open;
+                        if widgets::ribbon_button(ui, "sheet", rb("ribbon.blattmanager"), app.ui.blatt_open && !app.ui.blatt_collapsed).clicked() {
+                            // T0218: Der Knopf zeigt den Manager auch dann,
+                            // wenn er auf die Leiste eingeklappt ist.
+                            if app.ui.blatt_open && !app.ui.blatt_collapsed {
+                                app.ui.blatt_open = false;
+                            } else {
+                                app.ui.blatt_open = true;
+                                app.ui.blatt_collapsed = false;
+                            }
                         }
                     });
                     widgets::vline(ui, RIBBON_GROUP_H);
@@ -9713,23 +9737,10 @@ impl App {
         // Zeichenfläche, damit die Bewegung im selben Bild zu sehen ist.
         self.schwenk_fortschritt(ctx);
 
-        // T0203: Beide Seitenpanels dürfen auf beiden Seiten liegen. Die
-        // Leisten tragen deshalb stets **dieselben** Icons (Layer und
-        // Eigenschaften); ein Klick legt das Panel auf diese Seite und klappt
-        // es aus.
-        // T0218: Blattmanager — eigene Liste aller Blätter, rechts außen.
-        if self.ui.blatt_open {
-            egui::SidePanel::right("blattmanager")
-                .exact_width(auf_pixel(ctx, 232.0))
-                .resizable(false)
-                .frame(
-                    Frame::none()
-                        .fill(Palette::panel())
-                        .inner_margin(Margin::symmetric(10.0, 8.0)),
-                )
-                .show(ctx, |ui| panels::blaetter(self, ui));
-        }
-
+        // T0203/T0218: Alle drei Seitenpanels dürfen auf beiden Seiten
+        // liegen. Die Leisten tragen deshalb stets **dieselben** Icons
+        // (Layer, Eigenschaften, Blätter); ein Klick legt das Panel auf diese
+        // Seite und klappt es aus.
         self.seitenleisten(ctx);
 
         egui::CentralPanel::default()
@@ -9770,6 +9781,7 @@ impl App {
         match p {
             SeitenPanel::Layer => self.ui.layers_open,
             SeitenPanel::Eigenschaften => self.ui.props_open,
+            SeitenPanel::Blatt => self.ui.blatt_open,
         }
     }
 
@@ -9778,6 +9790,7 @@ impl App {
         match p {
             SeitenPanel::Layer => self.ui.layers_collapsed,
             SeitenPanel::Eigenschaften => self.ui.props_collapsed,
+            SeitenPanel::Blatt => self.ui.blatt_collapsed,
         }
     }
 
@@ -9786,6 +9799,7 @@ impl App {
         match p {
             SeitenPanel::Layer => self.ui.layers_side,
             SeitenPanel::Eigenschaften => self.ui.props_side,
+            SeitenPanel::Blatt => self.ui.blatt_side,
         }
     }
 
@@ -9801,6 +9815,11 @@ impl App {
                 self.ui.props_open = offen;
                 self.ui.props_collapsed = eingeklappt;
                 self.ui.props_side = seite;
+            }
+            SeitenPanel::Blatt => {
+                self.ui.blatt_open = offen;
+                self.ui.blatt_collapsed = eingeklappt;
+                self.ui.blatt_side = seite;
             }
         }
     }
@@ -9828,7 +9847,8 @@ impl App {
     fn seitenleisten(&mut self, ctx: &egui::Context) {
         self.ui.last_leisten_icons.clear();
         let leisten = (self.ui.layers_open && self.ui.layers_collapsed)
-            || (self.ui.props_open && self.ui.props_collapsed);
+            || (self.ui.props_open && self.ui.props_collapsed)
+            || (self.ui.blatt_open && self.ui.blatt_collapsed);
         for seite in PanelSeite::ALL {
             if leisten {
                 let id = match seite {
@@ -9891,6 +9911,7 @@ impl App {
                             |ui| match p {
                                 SeitenPanel::Layer => panels::layers(self, ui),
                                 SeitenPanel::Eigenschaften => panels::properties(self, ui),
+                                SeitenPanel::Blatt => panels::blaetter(self, ui),
                             },
                         );
                         if i + 1 < n {
@@ -9914,16 +9935,19 @@ impl App {
                     tr(match p {
                         SeitenPanel::Layer => "gui.app.layers_hierher",
                         SeitenPanel::Eigenschaften => "gui.app.eigenschaften_hierher",
+                        SeitenPanel::Blatt => "gui.app.blaetter_hierher",
                     })
                 } else if ausgeklappt {
                     tr(match p {
                         SeitenPanel::Layer => "gui.app.layers_einklappen",
                         SeitenPanel::Eigenschaften => "gui.app.eigenschaften_einklappen",
+                        SeitenPanel::Blatt => "gui.app.blaetter_einklappen",
                     })
                 } else {
                     tr(match p {
                         SeitenPanel::Layer => "gui.app.layers_ausklappen",
                         SeitenPanel::Eigenschaften => "gui.app.eigenschaften_ausklappen",
+                        SeitenPanel::Blatt => "gui.app.blaetter_ausklappen",
                     })
                 };
                 let resp = widgets::icon_button(ui, p.icon(), 22.0, ausgeklappt, tip);
@@ -10915,6 +10939,7 @@ impl eframe::App for App {
         self.prefs.layers_side = self.ui.layers_side;
         self.prefs.props_side = self.ui.props_side;
         self.prefs.show_blattmanager = self.ui.blatt_open;
+        self.prefs.blatt_side = self.ui.blatt_side;
         self.prefs.show_lineweights = self.ui.lineweights;
         self.prefs.lineweights_scaled = self.ui.lineweights_scaled;
         self.prefs.lineweight_factor = self.ui.lineweight_factor;
@@ -19141,8 +19166,8 @@ mod tests_seitenleisten {
             .collect();
         links.sort_by(|a, b| a.1.total_cmp(&b.1));
         rechts.sort_by(|a, b| a.1.total_cmp(&b.1));
-        assert_eq!(links.len(), 2, "die linke Leiste muss beide Panels tragen");
-        assert_eq!(rechts.len(), 2, "die rechte Leiste muss beide Panels tragen");
+        assert_eq!(links.len(), 3, "die linke Leiste muss alle Panels tragen");
+        assert_eq!(rechts.len(), 3, "die rechte Leiste muss alle Panels tragen");
         assert_eq!(
             links, rechts,
             "die Leisten müssen dieselben Symbole in derselben Reihenfolge zeigen"
@@ -19232,6 +19257,39 @@ mod tests_seitenleisten {
             app.ui.last_canvas.right() > 1500.0 - 1.0,
             "rechts darf nichts stehen, Fläche endet bei {:.1}",
             app.ui.last_canvas.right()
+        );
+    }
+
+    /// T0218: Der Blattmanager klappt in die Leiste und kommt über sein
+    /// Symbol zurück — wie Layer und Eigenschaften.
+    #[test]
+    fn blattmanager_klappt_in_die_leiste_und_zurueck() {
+        let mut app = app_mit_leisten();
+        app.ui.blatt_open = true;
+        app.ui.blatt_collapsed = true;
+        app.ui.blatt_side = PanelSeite::Rechts;
+        bild(&mut app, Vec::new());
+        bild(&mut app, Vec::new());
+        assert!(
+            app.ui
+                .last_leisten_icons
+                .iter()
+                .any(|(p, _, _)| *p == SeitenPanel::Blatt),
+            "das Blatt-Symbol fehlt in der Leiste"
+        );
+        assert!(
+            app.ui.last_blattzeilen.is_empty(),
+            "eingeklappt darf die Liste nicht gezeichnet werden"
+        );
+
+        let r = symbol(&app, SeitenPanel::Blatt, PanelSeite::Links);
+        klick(&mut app, r.center());
+        assert_eq!(app.ui.blatt_side, PanelSeite::Links);
+        assert!(!app.ui.blatt_collapsed, "der Klick muss ausklappen");
+        bild(&mut app, Vec::new());
+        assert!(
+            !app.ui.last_blattzeilen.is_empty(),
+            "ausgeklappt muss die Blattliste stehen"
         );
     }
 }
