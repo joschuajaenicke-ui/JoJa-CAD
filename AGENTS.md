@@ -332,8 +332,10 @@ Mit dem Nutzer abgestimmt — nicht „verbessern“:
   schaltet auf den Reiter Benutzerblöcke, damit die Kopie sichtbar ist.
   Prüfweg: `cargo test -p jjcad-core --test bloecke_datei kopie_` und
   `cargo test -p jjcad-gui tests_block_kopieren`.
-- **Einfügen** (Block/Zwischenablage): Vorschau oben rechts am Zeiger, `R` dreht,
-  `S` spiegelt, Klick bestätigt. Beim Einfügen aus der Zwischenablage entscheidet
+- **Einfügen** (Block/Zwischenablage): Vorschau am Zeiger, `R` dreht,
+  `S` spiegelt, Klick bestätigt. Ein **Block** steht mit seinem **Basispunkt** am
+  Mauszeiger (T0221, `ghost::geometry` übersetzt nur noch um `g.pos`) — Vorschau und
+  eingesetzte Instanz liegen deckungsgleich; gedreht wird um diesen Punkt. Beim Einfügen aus der Zwischenablage entscheidet
   Einstellungen → Bedienung → „Drehpunkt" (`prefs.paste_pivot`), welcher Punkt am
   Fadenkreuz steht: „Mittelpunkt" (Vorgabe seit T0087) hält die untere linke Ecke
   der gedrehten Auswahl am Fadenkreuz, sodass die Vorschau immer oben rechts davon

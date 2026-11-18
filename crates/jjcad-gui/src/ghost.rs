@@ -1,8 +1,8 @@
 //! Vorschau („Geist") vor dem Platzieren.
 //!
 //! Gilt für Blöcke aus dem Inventar und für das Einfügen aus der Zwischenablage.
-//! Bei Blöcken ist der Ankerpunkt die **untere linke Ecke** der Vorschau — sie
-//! steht damit oben rechts am Mauszeiger und verdeckt ihn nicht. Bei der
+//! Bei Blöcken steht der **Basispunkt** der Blockdefinition am Mauszeiger (T0221)
+//! — der Block setzt sich damit genau so ab, wie er nach dem Klick liegt. Bei der
 //! Zwischenablage ist der Anker der mitkopierte **Basispunkt** (siehe
 //! [`Clipboard`]) oder — im Modus [`PastePivot::Center`] (Vorgabe) — die untere linke
 //! Ecke der gedrehten Auswahl (T0070).
@@ -40,7 +40,8 @@ impl Clipboard {
 pub struct Ghost {
     /// Block-ID aus der Bibliothek — `None` bedeutet Zwischenablage.
     pub block: Option<String>,
-    /// Ankerpunkt in Weltkoordinaten (untere linke Ecke).
+    /// Ankerpunkt in Weltkoordinaten: bei Blöcken der **Basispunkt** des Blocks,
+    /// bei der Zwischenablage die untere linke Ecke (bzw. der Basispunkt).
     pub pos: V2,
     /// Drehung im Bogenmaß (mathematisch positiv).
     pub rot: f64,
@@ -163,17 +164,13 @@ pub fn geometry(doc: &Document, g: &Ghost, clip: &Clipboard) -> GhostGeo {
                 let k = doc.settings.annotation_scale;
                 local = Affine::scale(k, k) * local;
             }
-            // Lage ohne Verschiebung -> Bezugsrahmen für den Anker
-            let mut base = render::DisplayList::default();
-            for e in &def.entities {
-                render::render_entity(&ctx, e, local, &mut base, 0);
-            }
-            let shift = if base.bbox.is_valid() {
-                Affine::translate(g.pos - base.bbox.min)
-            } else {
-                Affine::translate(g.pos)
-            };
-            let m = shift * local;
+            // Der **Basispunkt** des Blocks steht am Mauszeiger (T0221): die
+            // Blockgeometrie liegt basispunktbezogen (Ursprung = Basispunkt),
+            // also ist `g.pos` selbst der Ort der Instanz — derselbe Punkt, den
+            // der Klick an `block.insert` übergibt. Vorher stand die untere
+            // linke Ecke der Vorschau am Zeiger, und der Block setzte sich um
+            // den Abstand Basispunkt↔Ecke versetzt ab.
+            let m = Affine::translate(g.pos) * local;
             let mut dl = render::DisplayList::default();
             for e in &def.entities {
                 render::render_entity(&ctx, e, m, &mut dl, 0);
@@ -181,7 +178,7 @@ pub fn geometry(doc: &Document, g: &Ghost, clip: &Clipboard) -> GhostGeo {
             return GhostGeo {
                 prims: dl.prims,
                 bbox: dl.bbox,
-                origin: g.pos - if base.bbox.is_valid() { base.bbox.min } else { V2::ZERO },
+                origin: g.pos,
             };
         }
     }
@@ -584,6 +581,121 @@ mod tests_drehpunkt {
             jjcad_core::persist::UserPrefs::default().paste_pivot,
             PastePivot::Center,
             "die Werkseinstellung der Voreinstellungen weicht ab"
+        );
+    }
+}
+
+#[cfg(test)]
+mod tests_blockbasispunkt {
+    //! T0221: Beim Einfügen eines Blocks steht sein **Basispunkt** am
+    //! Mauszeiger. Vorher ankerten Blöcke (anders als die Zwischenablage) an der
+    //! unteren linken Ecke ihrer Geometrie; der Block setzte sich dadurch um den
+    //! Abstand Basispunkt↔Ecke versetzt ab — bei den Punktsymbolen mit dem
+    //! Ursprung an der Pfeilspitze deutlich sichtbar.
+
+    use super::*;
+    use jjcad_core::model::{BlockDef, EntityKind};
+
+    /// Ein Block, dessen Geometrie **links** des Basispunkts liegt (wie die
+    /// Pfeilsymbole: Spitze im Ursprung, Körper nach −X).
+    fn doc_mit_pfeilblock() -> (Document, V2) {
+        let mut doc = Document::default();
+        let e = Entity::new(
+            1,
+            doc.current_layer,
+            EntityKind::Line {
+                a: V2::new(-1000.0, 0.0),
+                b: V2::new(0.0, 0.0),
+            },
+        );
+        doc.blocks.push(BlockDef {
+            id: "sys:test-pfeil".into(),
+            name: "Testpfeil".into(),
+            category: "Punkt Symbole".into(),
+            source: Default::default(),
+            description: String::new(),
+            entities: vec![e],
+            icon: None,
+            base: V2::ZERO,
+            annotative: false,
+        });
+        (doc, V2::new(5000.0, 4000.0))
+    }
+
+    fn umriss(doc: &Document, g: &Ghost) -> BBox {
+        let geo = geometry(doc, g, &Clipboard::default());
+        assert!(!geo.prims.is_empty(), "Vorschau ohne Geometrie");
+        geo.bbox
+    }
+
+    /// Der Basispunkt (Ursprung der Blockgeometrie) sitzt am Zeiger, nicht die
+    /// untere linke Ecke.
+    #[test]
+    fn basispunkt_steht_am_zeiger() {
+        let (doc, zeiger) = doc_mit_pfeilblock();
+        let g = Ghost::new(Some("sys:test-pfeil".into()), zeiger, PastePivot::Center);
+        let bb = umriss(&doc, &g);
+        assert!(
+            (bb.max.x - zeiger.x).abs() < 1e-6 && (bb.max.y - zeiger.y).abs() < 1e-6,
+            "Basispunkt muss am Zeiger stehen, der Umriss endet bei {bb:?} (Zeiger {zeiger:?})"
+        );
+        assert!(
+            (bb.min.x - (zeiger.x - 1000.0)).abs() < 1e-6,
+            "der Körper liegt links vom Basispunkt, war {bb:?}"
+        );
+        let geo = geometry(&doc, &g, &Clipboard::default());
+        assert_eq!(geo.origin, zeiger, "Einfügepunkt ist der Basispunkt am Zeiger");
+    }
+
+    /// Vorschau und eingefügter Block liegen deckungsgleich: der von der
+    /// Vorschau gemeldete Einfügepunkt (`origin`) ist der Ort der Instanz.
+    #[test]
+    fn eingefuegter_block_liegt_wie_die_vorschau() {
+        let (mut doc, zeiger) = doc_mit_pfeilblock();
+        let g = Ghost::new(Some("sys:test-pfeil".into()), zeiger, PastePivot::Center);
+        let geo = geometry(&doc, &g, &Clipboard::default());
+        let vorschau = geo.bbox;
+
+        let id = doc.new_id();
+        doc.entities.push(Entity::new(
+            id,
+            doc.current_layer,
+            EntityKind::BlockRef {
+                block: "sys:test-pfeil".into(),
+                pos: geo.origin,
+                rot: g.rot,
+                scale: V2::new(g.scale, g.scale),
+                mirror: g.mirror,
+            },
+        ));
+        let mut ergebnis = BBox::EMPTY;
+        for e in &doc.entities {
+            ergebnis.union(render::entity_bbox(&doc, e));
+        }
+        assert!(
+            (vorschau.min.dist(ergebnis.min)) < 1e-6 && (vorschau.max.dist(ergebnis.max)) < 1e-6,
+            "Vorschau {vorschau:?} weicht vom eingefügten Block {ergebnis:?} ab"
+        );
+    }
+
+    /// Auch gedreht bleibt der Basispunkt am Zeiger — gedreht wird um ihn, nicht
+    /// um die Ecke.
+    #[test]
+    fn gedrehter_block_haelt_den_basispunkt_am_zeiger() {
+        let (doc, zeiger) = doc_mit_pfeilblock();
+        let mut g = Ghost::new(Some("sys:test-pfeil".into()), zeiger, PastePivot::Center);
+        g.rotate(90.0);
+        let geo = geometry(&doc, &g, &Clipboard::default());
+        assert_eq!(geo.origin, zeiger, "Basispunkt bleibt am Zeiger");
+        // Die 1000 mm lange Linie steht nach 90° (mathematisch positiv) senkrecht
+        // **unter** dem Basispunkt: (-1000, 0) wird zu (0, -1000).
+        assert!(
+            (geo.bbox.min.x - zeiger.x).abs() < 1e-6
+                && (geo.bbox.max.x - zeiger.x).abs() < 1e-6
+                && (geo.bbox.max.y - zeiger.y).abs() < 1e-6
+                && (geo.bbox.min.y - (zeiger.y - 1000.0)).abs() < 1e-6,
+            "gedrehter Umriss falsch: {:?} (Zeiger {zeiger:?})",
+            geo.bbox
         );
     }
 }
