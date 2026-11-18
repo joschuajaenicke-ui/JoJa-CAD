@@ -21,6 +21,7 @@ fn doc_im_blockeditor() -> Document {
         entities: Vec::new(),
         icon: None,
         base: v(0.0, 0.0),
+        annotative: false,
     });
     assert!(doc.set_block_space(Some("prj:basispunkt")), "Blockeditor öffnet nicht");
     doc

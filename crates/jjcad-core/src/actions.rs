@@ -3993,6 +3993,8 @@ pub fn execute(doc: &mut Document, id: &str, params: &Value) -> Result<Value, St
                 base,
             );
             block.description = p.text_or("description", "");
+            // Mit dem Zeichnungsmaßstab skalieren (T0210, Turn 3).
+            block.annotative = p.boolean_or("annotative", block.annotative);
             // Eigene Blöcke des Benutzers (T0128): die Kennung `usr:…` steht im
             // Inhalt, der Dateiname folgt dem Namen. Geschrieben wird, bevor das
             // Dokument geändert wird — scheitert die Datei, bleibt die Auswahl
@@ -4066,6 +4068,10 @@ pub fn execute(doc: &mut Document, id: &str, params: &Value) -> Result<Value, St
             if let Some(d) = p.text("description") {
                 neu.description = d.to_string();
             }
+            // Mit dem Zeichnungsmaßstab skalieren (T0210, Turn 3).
+            if let Some(a) = p.boolean("annotative") {
+                neu.annotative = a;
+            }
             // Benutzerblock (T0128): Datei nachziehen — Umbenennen ist
             // `rename` plus Feld, die Kennung bleibt gleich.
             if neu.source == BlockSource::User {
@@ -4112,7 +4118,8 @@ pub fn execute(doc: &mut Document, id: &str, params: &Value) -> Result<Value, St
                     json!({
                         "id": b.id, "name": b.name, "category": b.category,
                         "source": b.source, "entities": b.entities.len(),
-                        "instances": doc.block_instances(&b.id).len()
+                        "instances": doc.block_instances(&b.id).len(),
+                        "annotative": b.annotative
                     })
                 })
                 .collect();
@@ -6372,6 +6379,7 @@ fn import_pdf_action(doc: &mut Document, p: &Params) -> Result<Value, String> {
         entities: ents,
         icon: None,
         base: Vec2::ZERO,
+        annotative: false,
     });
     let idn = doc.new_id();
     let mut inst = Entity::new(

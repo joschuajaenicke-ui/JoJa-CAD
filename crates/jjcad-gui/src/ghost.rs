@@ -157,6 +157,12 @@ pub fn geometry(doc: &Document, g: &Ghost, clip: &Clipboard) -> GhostGeo {
 
     if let Some(bid) = &g.block {
         if let Some(def) = doc.block(bid) {
+            // Block mit „mit Maßstab skalieren" (T0210): die Vorschau zeigt
+            // dieselbe Größe, die der Klick einsetzt.
+            if def.annotative {
+                let k = doc.settings.annotation_scale;
+                local = Affine::scale(k, k) * local;
+            }
             // Lage ohne Verschiebung -> Bezugsrahmen für den Anker
             let mut base = render::DisplayList::default();
             for e in &def.entities {

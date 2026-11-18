@@ -3314,6 +3314,18 @@ pub fn einfach(app: &mut App, ui: &mut Ui, ziel: Ziel, art: Einfach) {
             widgets::field_row(ui, jjcad_core::i18n::tr("gui.props.gruppe"), |ui| {
                 ui.label(theme::mono(block_gruppe.clone()));
             });
+            // T0210: ob der Block mit dem Zeichnungsmaßstab skaliert, gehört
+            // zur Definition — geändert wird es im Fenster
+            // „Block-Eigenschaften“ (Rechtsklick auf die Kachel).
+            let block_annotative = definition.map(|b| b.annotative).unwrap_or(false);
+            zeile("massstab");
+            widgets::field_row(ui, jjcad_core::i18n::tr("gui.props.massstab"), |ui| {
+                ui.label(theme::mono(jjcad_core::i18n::tr(if block_annotative {
+                    "gui.props.mit_zeichnung"
+                } else {
+                    "gui.props.eins_zu_eins"
+                })));
+            });
 
             let (r0, s0) = match &e {
                 Some(e) => match &e.kind {
@@ -5244,6 +5256,7 @@ mod tests {
             entities: Vec::new(),
             icon: None,
             base: jjcad_core::geom::Vec2::ZERO,
+            annotative: false,
         });
         let layer = app.doc().current_layer;
         let id = app.doc_mut().new_id();

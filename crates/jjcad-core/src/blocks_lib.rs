@@ -160,6 +160,7 @@ fn block(
         entities: b.ents,
         icon: None,
         base: Vec2::ZERO,
+        annotative: false,
     }
 }
 
@@ -596,6 +597,16 @@ pub fn system_blocks(_next_id: &mut Id) -> Vec<BlockDef> {
         "Offenes Dreieck der Schnitt-Kote",
         b,
     ));
+
+    // Punktsymbole skalieren mit dem Zeichnungsmaßstab (T0210, Turn 3): ihre
+    // Maße sind Papier-Millimeter, auch wenn sie als **Block** eingesetzt
+    // werden — genauso wie die Begrenzungssymbole der Bemaßung.
+    for b in out
+        .iter_mut()
+        .filter(|b| b.category == PUNKTSYMBOL_KATEGORIE)
+    {
+        b.annotative = true;
+    }
 
     out
 }
