@@ -134,13 +134,21 @@ Mit dem Nutzer abgestimmt — nicht „verbessern“:
   gespeichert in `prefs.json` als `layers_side`/`props_side`). Die Leisten **beider** Seiten
   tragen dieselben zwei Symbole (`app::SeitenPanel::ALLE`); ein Klick legt das Panel auf diese
   Seite und klappt es aus, auf der eigenen Seite klappt er es ein (`App::leisten_klick`).
-  Eine Leiste erscheint, sobald ein Panel eingeklappt ist — und dann auf **beiden** Seiten,
-  damit jedes Panel von jeder Seite erreichbar bleibt; ohne eingeklapptes Panel gibt es keine
-  Leiste (die Ansicht sieht aus wie bisher). Liegen beide Panels auf einer Seite, teilen sie
-  sich die Höhe (`allocate_ui_with_layout`). Der Einklapp-Pfeil im Panelkopf zeigt zur Seite
-  des Panels. Prüfweg: `cargo test -p jjcad-gui tests_seitenleisten` (6 Tests) und
+  **Die Leiste steht immer** — auf **beiden** Seiten, mit allen drei Symbolen (T0222; vorher
+  verschwand sie, sobald kein Panel eingeklappt war, und mit ihr der einzige Weg zum Wechseln).
+  **Je Seite höchstens zwei ausgeklappte Panels** (T0222): Ein drittes öffnet nicht mit —
+  `App::panels_begrenzen` gibt das am längsten unbenutzte derselben Seite auf
+  (`UiState::panel_benutzt`, hinten = zuletzt benutzt), es bleibt offen und liegt als Symbol
+  in der Leiste. Aufgerufen wird das vor dem Zeichnen **und** am Ende von `leisten_klick`,
+  damit auch der Ribbon-Schalter (`view.layers` holt das Panel aus der Leiste) und die
+  Objektmenü-Einträge die Grenze einhalten. Liegen zwei Panels auf einer Seite, teilen sie sich
+  die Höhe (`allocate_ui_with_layout`). Der Einklapp-Pfeil im Panelkopf zeigt zur Seite
+  des Panels. **Jede Panel-Scrollfläche trägt ein eigenes `id_salt`** (`panel_layer`,
+  `panel_props`, `panel_blatt`): ohne es bilden alle ScrollAreas im selben Elternteil dieselbe
+  Kennung, und ein Radschritt bewegte beide Panels (T0222). Prüfweg:
+  `cargo test -p jjcad-gui tests_seitenleisten` (10 Tests) und
   `cargo test -p jjcad-core panel_seiten`; Prüfbilder `--demo leisten`, `--demo panelslinks`,
-  `--demo panelsrechts`.
+  `--demo panelsrechts`, `--demo panelsdrei`.
 - **Türen** sitzen immer auf der *vorderen Wandkante* (Blattseite), nicht in der
   Wandmitte. Kein Auswahlfeld für die Tür-Lage. Fenster dürfen ihre Lage in
   der Wanddicke wählen (Links/Mittig/Rechts).
