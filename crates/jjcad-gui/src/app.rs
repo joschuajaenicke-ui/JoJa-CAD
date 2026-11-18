@@ -1074,6 +1074,10 @@ pub struct UiState {
     /// T0203: Lage der Symbole in den Seitenleisten im zuletzt gezeichneten
     /// Bild — (Panel, Seite, Fläche). Prüfwert der Tests.
     pub last_leisten_icons: Vec<(SeitenPanel, PanelSeite, Rect)>,
+    /// T0212: Lage der beiden Knöpfe im Kopf des Layer-Panels im zuletzt
+    /// gezeichneten Bild, von links nach rechts. Prüfwert der Tests: der Kopf
+    /// trägt nur „Neuer Layer“ und „Einklappen“.
+    pub last_layer_kopf: Vec<Rect>,
     pub ribbon_collapsed: bool,
     pub keymap_open: bool,
     pub settings_open: bool,
@@ -1333,6 +1337,7 @@ impl Default for UiState {
             layers_side: PanelSeite::Links,
             props_side: PanelSeite::Rechts,
             last_leisten_icons: Vec::new(),
+            last_layer_kopf: Vec::new(),
             ribbon_collapsed: false,
             keymap_open: false,
             settings_open: false,
