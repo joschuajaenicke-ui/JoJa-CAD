@@ -56,6 +56,10 @@ impl FangArt {
     pub fn versatz(self) -> Vec2 {
         match self {
             FangArt::Objekt(SnapKind::Tangent) => Vec2::new(11.0, -11.0),
+            // Der Lotfang meint den **Schnittpunkt** beider Linien; läge das
+            // Zeichen darauf, deckte es den Punkt zu, an dem der rechte Winkel
+            // hängt (T0216). Es steht deshalb daneben wie das Tangentialzeichen.
+            FangArt::Objekt(SnapKind::Lot) => Vec2::new(11.0, -11.0),
             FangArt::Objekt(_) => Vec2::ZERO,
         }
     }
@@ -190,6 +194,16 @@ pub fn marke(art: FangArt) -> Vec<Zug> {
             v.push(Kreis(5.0));
             l(&mut v, (-8.5, -5.0), (8.5, -5.0));
         }
+        // Lotfang: Winkelquadrat mit Scheitel im Schnittpunkt, Striche nach
+        // links und unten (das Zeichen steht oben rechts daneben, T0216) —
+        // das klassische Zeichen für „rechtwinklig“, klar verschieden vom
+        // Lot-Zeichen des Fußpunkts (Winkelquadrat oben links).
+        FangArt::Objekt(SnapKind::Lot) => {
+            l(&mut v, (-9.0, 0.0), (0.0, 0.0));
+            l(&mut v, (0.0, 0.0), (0.0, 9.0));
+            l(&mut v, (-4.0, 0.0), (-4.0, 4.0));
+            l(&mut v, (-4.0, 4.0), (0.0, 4.0));
+        }
     }
     v.push(Punkt((0.0, 0.0), 1.4));
     v
@@ -238,7 +252,7 @@ fn mal_zug(p: &Painter, mitte: Pos2, zug: Zug, breite: f32, farbe: Color32) {
 
 /// Alle Fangarten, die eine Marke haben — Grundlage für die Vollständigkeit.
 #[cfg(test)]
-pub const ALLE: [FangArt; 13] = [
+pub const ALLE: [FangArt; 14] = [
     FangArt::Objekt(SnapKind::Endpoint),
     FangArt::Objekt(SnapKind::SheetCorner),
     FangArt::Objekt(SnapKind::BlockBase),
@@ -252,6 +266,7 @@ pub const ALLE: [FangArt; 13] = [
     FangArt::Objekt(SnapKind::Bisector),
     FangArt::Objekt(SnapKind::DimParallel),
     FangArt::Objekt(SnapKind::Tangent),
+    FangArt::Objekt(SnapKind::Lot),
 ];
 
 #[cfg(test)]
@@ -374,16 +389,22 @@ mod tests {
         );
     }
 
-    /// Nur der Tangentialfang steht **neben** seinem Punkt (T0211, Turn 3):
-    /// sein Zeichen deckte den Berührpunkt von Linie und Kreis zu. Der Versatz
-    /// ist bildschirmfest und so groß, dass der Punkt frei bleibt.
+    /// Nur Tangential- und Lotfang stehen **neben** ihrem Punkt (T0211,
+    /// T0216): ihr Zeichen deckte den Berührpunkt von Linie und Kreis bzw. den
+    /// Schnittpunkt beider Linien zu. Der Versatz ist bildschirmfest und so
+    /// groß, dass der Punkt frei bleibt.
     #[test]
     fn tangentialsymbol_steht_neben_dem_punkt() {
         let v = FangArt::Objekt(SnapKind::Tangent).versatz();
         assert!(v.length() > HALB, "Versatz zu klein ({})", v.length());
         assert!(v.x > 0.0 && v.y < 0.0, "Versatz nicht oben rechts: {v:?}");
+        let lot = FangArt::Objekt(SnapKind::Lot).versatz();
+        assert!(lot.length() > HALB, "Lotzeichen zu nah am Punkt: {lot:?}");
         for art in ALLE {
-            if art == FangArt::Objekt(SnapKind::Tangent) {
+            if matches!(
+                art,
+                FangArt::Objekt(SnapKind::Tangent) | FangArt::Objekt(SnapKind::Lot)
+            ) {
                 continue;
             }
             assert_eq!(

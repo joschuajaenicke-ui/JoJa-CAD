@@ -2843,6 +2843,32 @@ impl App {
                 // erstem Punkt auf der Kreisbahn. Der Zeiger rastet auf der
                 // Senkrechten zum Radius ein — Prüfbild mit
                 // `x11-drive.py hover` auf diese Tangente.
+                // Lotfang (T0216): waagerechte Linie, Linienwerkzeug mit
+                // erstem Punkt auf ihr. Der Zeiger rastet auf der Senkrechten
+                // ein, das Winkelquadrat steht im Schnittpunkt — Prüfbild mit
+                // `x11-drive.py hover` auf diese Senkrechte.
+                "lotfang" | "lotrecht" => {
+                    self.ui.ribbon = RibbonTab::Zeichnen;
+                    self.new_document();
+                    self.session_mut()
+                        .execute("doc.settings", &serde_json::json!({"input_unit": "mm"}))
+                        .unwrap();
+                    let _ = self.session_mut().execute(
+                        "draw.line",
+                        &serde_json::json!({
+                            "a": [0.0, 0.0], "b": [6000.0, 0.0], "layer": "Wände"
+                        }),
+                    );
+                    self.start_tool("draw.line");
+                    if let Some(t) = self.tool.as_mut() {
+                        t.pts.push(V2::new(3000.0, 0.0));
+                    }
+                    let mut v = self.current_view();
+                    v.center = V2::new(3000.0, 700.0);
+                    v.zoom = 0.12;
+                    self.set_view(v);
+                    self.started_at = 3.0;
+                }
                 "tangential" => {
                     self.ui.ribbon = RibbonTab::Zeichnen;
                     // Frische Zeichnung: sie rechnet in Metern, die Punkte des
@@ -9281,6 +9307,7 @@ impl App {
             "intersection" => sn.intersection = value,
             "perpendicular" => sn.perpendicular = value,
             "tangent" => sn.tangent = value,
+            "lot" => sn.lot = value,
             "nearest" => sn.nearest = value,
             "grid" => sn.grid = value,
             "ortho" => sn.ortho = value,
@@ -9293,7 +9320,7 @@ impl App {
             &serde_json::json!({"snap": {
                 "endpoint": sn.endpoint, "midpoint": sn.midpoint, "center": sn.center,
                 "intersection": sn.intersection, "perpendicular": sn.perpendicular,
-                "tangent": sn.tangent,
+                "tangent": sn.tangent, "lot": sn.lot,
                 "nearest": sn.nearest, "grid": sn.grid, "ortho": sn.ortho, "polar": sn.polar,
                 "wall_edges": sn.wall_edges
             }}),
@@ -10431,6 +10458,7 @@ impl App {
                                 (jjcad_core::i18n::tr("gui.app.schnittpunkt"), "intersection", s0.intersection),
                                 (jjcad_core::i18n::tr("gui.app.lot"), "perpendicular", s0.perpendicular),
                                 (jjcad_core::i18n::tr("gui.app.tangential"), "tangent", s0.tangent),
+                                (jjcad_core::i18n::tr("gui.app.lotfang"), "lot", s0.lot),
                                 (jjcad_core::i18n::tr("gui.app.naechster_punkt"), "nearest", s0.nearest),
                             ] {
                                 let mut v = val;
@@ -10448,6 +10476,7 @@ impl App {
                                     "intersection",
                                     "perpendicular",
                                     "tangent",
+                                    "lot",
                                     "nearest",
                                 ] {
                                     self.set_snap(k, true);
@@ -10463,6 +10492,7 @@ impl App {
                                     "intersection",
                                     "perpendicular",
                                     "tangent",
+                                    "lot",
                                     "nearest",
                                 ] {
                                     self.set_snap(k, false);
@@ -18643,6 +18673,34 @@ mod tests_tangentialfang {
             app.doc().settings.snap.tangent,
             "Tangentialfang ließ sich nicht einschalten"
         );
+    }
+}
+
+/// Lotfang (T0216): derselbe Weg wie beim Tangentialfang — der Schalter im
+/// Fangmenü und in den Einstellungen muss in der Zeichnung ankommen. Ein
+/// Schlüssel, der in `App::set_snap` fehlt, wirkt im Menü und bleibt im Fang
+/// stumm.
+#[cfg(test)]
+mod tests_lotfang {
+    use super::*;
+
+    fn app() -> App {
+        let mut app = App::with_ctx(egui::Context::default());
+        app.prefs.reset_bindings();
+        app
+    }
+
+    #[test]
+    fn schalter_erreicht_die_zeichnung() {
+        let mut app = app();
+        assert!(app.doc().settings.snap.lot, "Vorgabe ist an");
+        app.set_snap("lot", false);
+        assert!(
+            !app.doc().settings.snap.lot,
+            "Lotfang ließ sich nicht abschalten"
+        );
+        app.set_snap("lot", true);
+        assert!(app.doc().settings.snap.lot, "Lotfang ließ sich nicht einschalten");
     }
 }
 

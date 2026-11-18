@@ -557,7 +557,18 @@ Mit dem Nutzer abgestimmt — nicht „verbessern“:
   ein Punkt seitlich wanderte (T0055). Griffe: Quadrat je Basispunkt, Raute in der
   Mitte der Maßlinie (verschiebt sie senkrecht zur Messrichtung, `render::dim_line_move`);
   im Eigenschaften-Panel steht derselbe Wert als „Abstand“ (`render::dim_offset`).
-- **Polarfang** 45° (Toleranz 6°); Fangmodi END, SCHN, MIT, ZEN, QUA, LOT, NÄC, RAS, POL.
+- **Polarfang** 45° (Toleranz 6°); Fangmodi END, SCHN, MIT, ZEN, QUA, LOT, NÄC, RAS, POL,
+  LOTR (Lotfang, s. u.).
+- **Lotfang (T0216)**: das Gegenstück zum Tangentialfang für Linien. Liegt der Bezugspunkt
+  (letzter Punkt des Zuges bzw. festes Ende einer gezogenen Linie) auf einer Linie, rastet
+  der Zeiger auf der **Senkrechten** durch ihn ein — `snap::lot_treffer` rechnet sie aus der
+  Richtung der Vorlage, gilt für Erzeugen und Manipulieren gleich und meldet
+  `SnapKind::Lot`. Die Markenstelle ist der **Schnittpunkt** beider Linien
+  (`SnapHit::marke`, wie beim Tangentialfang T0211), das Zeichen steht dort leicht daneben
+  (`snapmarke::FangArt::versatz`). Der Bezugspunkt muss auf der **Strecke** liegen, gekrümmte
+  Objekte zählen nicht als Linie. Prüfweg: `cargo test -p jjcad-core --test lot_fang` und
+  `cargo test -p jjcad-gui lotmarke`; Prüfbild `--demo lotfang` mit dem Zeiger auf der
+  Senkrechten.
   Das Winkel-Fenster **allein** wäre ein Kegel: die seitliche Abweichung wächst mit dem
   Abstand (bei 6° und 20 m über 2 m) und weit entfernte Punkte rasteten auf eine Richtung,
   die der Zeiger nicht meint (T0148). `Vec2::polar_snap(base, step, tol_deg, band)` prüft

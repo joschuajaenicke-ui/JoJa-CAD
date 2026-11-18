@@ -845,6 +845,7 @@
 # bisector = "Winkelhalbierende"
 # dim_parallel = "Maßkette parallel"
 # tangent = "Tangential"
+# lot = "Lotrecht"
 #
 [ui.linetype]
 # solid = "Durchgezogen"
@@ -1048,6 +1049,7 @@
 # loeschen = "Löschen"
 # loeschen_erst_objekte_waehlen = "Löschen · erst Objekte wählen"
 # lot = "Lot"
+# lotfang = "Lotfang"
 # mass_erster_punkt = "Maß · erster Punkt"
 # mass_gesetzt = "Maß · gesetzt"
 # mass_masslinie_platzieren = "Maß · Maßlinie platzieren"
@@ -1427,6 +1429,7 @@
 # versionen_und_downloads = "Versionen und Downloads"
 # loeschen = "Löschen"
 # lot = "Lot"
+# lotfang = "Lotfang"
 # maus_verschiebt = "Maus verschiebt"
 # mittelpunkt = "Mittelpunkt"
 # naechster_punkt = "Nächster Punkt"

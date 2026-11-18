@@ -90,7 +90,7 @@ die **Vorgabe** ihrer Ebene und lassen sich wie jede andere Taste ändern.
    Benutzerbibliothek und steht sofort als Einfüge-Vorschau am Zeiger.
 9. **Statusleiste**: `Raster`, `Ortho` und `Fang` schalten per Linksklick; **Rechtsklick** öffnet
    ein Menü mit den einzelnen Fangmodi (Endpunkt, Mittelpunkt, Zentrum, Schnittpunkt, Lot,
-   Tangential, nächster Punkt) bzw. Raster- und Polaroptionen. Ganz rechts schaltet `Stärke`
+   Tangential, Lotfang, nächster Punkt) bzw. Raster- und Polaroptionen. Ganz rechts schaltet `Stärke`
    zwischen **Bildschirm (konstant)** (Linienbreite immer gleich viele Bildschirmpixel,
    unabhängig vom Zoom; ein Faktor in Einstellungen ▸ Darstellung skaliert sie) und
    **Papier (maßstabsgetreu)** (Breite wie im exportierten PDF: `Breite_mm × Pixel pro
@@ -276,7 +276,7 @@ ausgeblendet.
   stehen, wird dieser gehalten und seine Hilfslinien fangen den gezogenen Punkt.
   Alle Fang-Einstellungen stehen gebündelt in **Einstellungen ▸ Fangen**: oben der Fangradius,
   darunter der Objektfang (Endpunkt, Mittelpunkt, Zentrum, Quadrant, Schnittpunkt, Lot,
-  Tangential, Nächster Punkt, Winkelhalbierende, Wandkanten), dann Raster und Winkel (Ortho,
+  Tangential, Lotfang, Nächster Punkt, Winkelhalbierende, Wandkanten), dann Raster und Winkel (Ortho,
   Polar mit Schrittweite und Fenster), der erweiterte Punktfang (Hilfslinien an/aus,
   Verweildauer, Höchstzahl der Haltepunkte) und die Anzeige (Fangmarker). Rasterweite,
   Rasterart und Rasterfang bleiben in der Kategorie **Raster**.
@@ -304,12 +304,28 @@ ausgeblendet.
   Einstellungen ▸ Fangen und im Fangmenü der Statusleiste.
   Prüfweg: `cargo test -p jjcad-core --test tangential_fang` (10 Tests, messen den Abstand
   Mittelpunkt → Gerade gegen den Radius und die Lage der Marke).
+- **Lotfang** (T0216): das Gegenstück zum Tangentialfang für Linien. *Liegt der feste Punkt
+  der neuen Linie auf einer vorhandenen Linie* (Linie, Wandachse, Polylinien- oder
+  Rechteckseite), gibt es durch ihn genau **eine** Senkrechte auf dieser Linie. Der zweite
+  Punkt rastet auf ihr ein; die neue Linie steht damit exakt rechtwinklig auf der
+  vorhandenen. Der Winkel wird aus der Richtung der vorhandenen Linie gerechnet, nicht
+  geraten — auch bei einer schrägen Vorlage. Dasselbe gilt beim **Manipulieren**: zieht man
+  das eine Ende einer Linie, deren anderes Ende auf einer Linie sitzt, bleibt die Linie
+  rechtwinklig. Der feste Punkt muss auf der **Strecke** liegen, nicht auf ihrer
+  Verlängerung; gekrümmte Objekte (Kreis, Bogen, Ellipse) zählen nicht als Linie. Die
+  Statusleiste meldet „Lotrecht“; die Marke ist ein Winkelquadrat und steht am
+  **Schnittpunkt** beider Linien (dem festen Punkt), leicht daneben oben rechts, damit sie
+  den Punkt nicht zudeckt. Abschaltbar in Einstellungen ▸ Fangen und im Fangmenü der
+  Statusleiste („Lotfang“).
+  Prüfweg: `cargo test -p jjcad-core --test lot_fang` (11 Tests, prüfen das Skalarprodukt
+  der beiden Richtungen gegen 0 und die Lage der Marke).
 - **Fangmarken** (T0153): Jeder Fang **am Element** zeigt sein eigenes Zeichen am
   **Fangpunkt** — also am Objekt, nicht am Zeiger: Endpunkt ein Quadrat, Mittelpunkt ein
   Dreieck, Zentrum ein Kreis mit Kreuz, Schnittpunkt ein Kreuz, Quadrant eine Raute, Lot ein
   rechter Winkel, nächster Punkt eine Sanduhr, Hilfslinie ein gestricheltes Kreuz,
   Winkelhalbierende ein Winkel mit Mittelstrahl, Maßkette parallel zwei parallele Striche,
-  Tangential ein Kreis mit anliegender Gerade, Blattecke ein gefülltes Quadrat. **Raster und
+  Tangential ein Kreis mit anliegender Gerade, Lotfang ein Winkelquadrat, Blattecke ein
+  gefülltes Quadrat. **Raster und
   Polarfang zeigen keine Marke**: sie haben keinen Punkt am Element, ihr Zeichen säße an jeder
   Mausstellung unter dem Zeiger (T0153, Turn 3) — die Statuszeile nennt sie weiterhin. Ohne
   Fang bleibt es beim kleinen Kreuz am Zeiger, `Ortho` führt ebenfalls nur. Die Marke steht in
