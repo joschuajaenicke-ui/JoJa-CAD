@@ -11,9 +11,17 @@ einsehbar und dort frei änderbar (Ribbon ▸ Ansicht ▸ „Tasten").
    **Hotbar**, nicht die Tastaturbelegung.
 2. **Buchstaben und Symbole** kommen aus der **Tastaturbelegung** und sind vom
    Benutzer frei und dynamisch änderbar.
-3. **Alle übrigen Tasten** (`Esc`, `Tab`, `Strg`, `Enter`, `Entf`, `F1`–`F12` …)
-   und **alle Tastenkombinationen** (`Strg+C`, `Strg+S`, `Strg+Z` …) sind
-   **hardcodiert** und nicht änderbar.
+3. **Steuerungs- und Funktionstasten** (`Esc`, `Tab`, `Enter`, `Entf`, `F1`–`F12` …)
+   sind **hardcodiert** und nicht änderbar.
+
+**Ebenen (T0215):** Umschalt, Strg und Alt sind **Schalter über der Belegung**.
+Jede Steuerungstaste — allein oder kombiniert, acht Ebenen — hat ihre **eigene**
+Belegung und ihre **eigene Hotbar**. Solange Strg gehalten wird, zeigt die Hotbar
+die Strg-Slots und neben ihr steht ein kleines Feld mit dem Namen der Ebene; auf
+der Taste `c` liegt dann nicht mehr Stutzen, sondern Kopieren. In der
+Tastaturbelegung schalten dieselben drei Tasten die Ebene ein und aus, in der das
+Tastenbild gerade belegt wird. `Strg+S`, `Strg+Z`, `Strg+C` & Co. sind nur noch
+die **Vorgabe** ihrer Ebene und lassen sich wie jede andere Taste ändern.
 
 ## Erste Schritte
 
@@ -393,7 +401,9 @@ ausgeblendet.
 - Das rechte Panel zeigt die **Eigenschaften der Auswahl**; ohne Auswahl die der Datei bzw. des
   Blatts. Die Werte stehen als Tabelle mit fester Namensspalte und Zebra-Streifen untereinander.
 - **Hotbar-Vorlagen** wählt man über das Dropdown unten links; dort lassen sich neue Vorlagen
-  anlegen (Kopie der aktuellen), umbenennen und löschen.
+  anlegen (Kopie der aktuellen), umbenennen und löschen. Jede Vorlage trägt je
+  **Ebene** (Umschalt, Strg, Alt …) eigene Slots; das Feld neben der Hotbar nennt
+  die gerade gehaltene Ebene.
 - **Leistungsanzeige** (Umschalt+F3, kleines Feld oben rechts in der Zeichenfläche): Abstand und
   Rechenzeit der gezeichneten Bilder mit Perzentilen (p50 · p95 · p99) sowie die Aufteilung der
   Rechenzeit in Abschnitte (Oberfläche, Displayliste, Fangen, Zeichnen, Bedienung, Fenster) mit

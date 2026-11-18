@@ -345,9 +345,9 @@ Mit dem Nutzer abgestimmt — nicht „verbessern“:
 - **Tastenbelegung in drei Schichten (T0056, `docs/benutzer/TASTEN.md` ist verbindlich)**:
   Ziffern `1`–`0` gehören der **Hotbar**, Buchstaben und Symbole der
   **Tastaturbelegung** (frei und dynamisch änderbar, je Taste genau eine
-  Funktion, Umschalt-Ebene als `shift+<Zeichen>`), alle übrigen Tasten
-  (`Esc`, `Strg`, `Enter`, `Entf`, `F1`–`F12` …) und Kombinationen (`Strg+C`,
-  `Strg+S`) sind **hardcodiert**. Eine Funktion kommt wie bei der Hotbar ins
+  Funktion), Steuerungs- und Funktionstasten (`Esc`, `Enter`, `Entf`,
+  `F1`–`F12` …) sind **hardcodiert**. **Tastenkombinationen sind es seit T0215
+  nicht mehr** — sie sind eine **Ebene** der Belegung (siehe unten). Eine Funktion kommt wie bei der Hotbar ins
   Tastenbild (T0072): freie Taste anklicken öffnet das Inventar im Reiter
   „Funktionen" (`UiState::bind_key`) — es gibt **keine** eigene Funktionsliste
   im Fenster der Tastaturbelegung. Eine Taste darf nie in zwei Schichten liegen:
@@ -355,6 +355,30 @@ Mit dem Nutzer abgestimmt — nicht „verbessern“:
   (Icon im Tastenbild), Drehen und Spiegeln der Einfüge-Vorschau hängen an
   `modify.rotate`/`modify.mirror`. Kürzel nur über `app::EINZELTASTEN` und das
   Action-Register auswerten, nicht zusätzlich im Code abfragen.
+- **Ebenen mit Umschalt, Strg und Alt (T0215)**: Die drei Steuerungstasten
+  schlagen je eine **eigene Belegung** derselben Tasten auf — allein und
+  kombiniert sind es acht Ebenen (`persist::Kombination`, Bitmaske). Die Ebene
+  steckt im Tastennamen (`c`, `shift+c`, `ctrl+c`, `ctrl+shift+s`), also in
+  derselben Form, in der `bindings` eine Taste schon immer trug: jedes
+  Tastaturlayout trägt damit automatisch alle Ebenen, Export/Import und die
+  Vorlagen ebenso. Gelesen wird ausschließlich über
+  `UserPrefs::action_for_kombination`; `App::handle_shortcuts` wertet Einzeltasten,
+  Sonderzeichen und Ziffern nur noch über diese eine Abfrage aus (die früheren
+  Zweige für `ctrl` und `shift` sind entfallen). Eine Funktion auf eine freie
+  Taste landet mit Vorsatz (`ctrl+,`), `bind`/`belegung_aenderbar` sperren nur
+  noch **Funktionstasten** (`FestBelegt::Funktion`) — Kombinationen sind
+  änderbar, ihre Vorgabe aus dem Action-Register (`ctrl+s` …) bleibt als
+  Startwert. Jede Hotbar-Vorlage hat je Ebene eigene Slots
+  (`HotbarPreset::varianten`, fehlt eine → Grundbelegung;
+  `slots_fuer`/`set_slot_fuer`). Die Hotbar folgt der **gehaltenen** Ebene
+  (`App::hotbar_kombination` liest den Tastaturzustand je Bild) und zeigt sie als
+  kleines Feld daneben (`UiState::last_kombi_icon`). In der Tastaturbelegung sind
+  die drei Steuerungstasten **Schalter** über dem Tastenbild
+  (`UiState::kombi_ansicht`, gezeichnet von `dialogs::keymap_ebenen`); die
+  Anzeige je Taste kommt aus `dialogs::taste_funktion`. Prüfweg:
+  `cargo test -p jjcad-core --lib kombination_` und `hotbar_varianten`,
+  `cargo test -p jjcad-gui strg_schaltet_die_hotbar` sowie
+  `cargo test -p jjcad-gui ebenenschalter`; Prüfbild `--demo keymap`.
 - **Fenster „Tastaturbelegung" (T0076)**: eigene Kopfleiste statt Titelleiste —
   **i** linksbündig (Bedienung als Tooltip), Titel daneben, Schließen rechts;
   darunter das Tastenbild, darunter **nur** die Layoutzeile. Das Fenster ist

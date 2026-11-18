@@ -1,8 +1,13 @@
-# Tastenbelegung — die drei Schichten
+# Tastenbelegung — drei Schichten, acht Ebenen
 
 Diese Datei ist verbindlich. Jede Taste in JoJa-CAD gehört genau einer der drei
 Schichten unten. Wer eine Funktion, ein Kürzel oder eine Taste ergänzt, ordnet
 sie zuerst hier ein — nicht „irgendwie" in den Code.
+
+**Seit T0215 gibt es zusätzlich Ebenen** ([unten](#ebenen--umschalt-strg-und-alt-t0215)):
+Umschalt, Strg und Alt schlagen je eine eigene Belegung derselben Tasten auf.
+Die drei Schichten sagen, **welche Taste** eine Funktion trägt; die Ebene sagt,
+**mit welcher Steuerungstaste** sie gedrückt wird.
 
 ## Die Regel
 
@@ -35,17 +40,21 @@ sie zuerst hier ein — nicht „irgendwie" in den Code.
    schlägt dabei die Taste, über die es getippt wird (`AltGr+E` = `€`, nicht
    `e`). Die Umschalt-Ebene gilt auch hier (`Umschalt+ä`).
 
-3. **Übrige Tasten und Tastenkombinationen — hardcodiert.**
-   Die Funktionsweise aller weiteren Tasten (`Esc`, `Tab`, `Caps`, `Umschalt`,
-   `Strg`, `Alt`, `AltGr`, `Enter`, `Rücktaste`, `Leertaste`, `Entf`, `F1` …
-   `F12`) sowie aller **Tastenkombinationen** (z. B. `Strg+C`, `Strg+S`,
-   `Strg+Z`, `Strg+Umschalt+C`, `Umschalt+F3`) ist **im Programm fest verdrahtet**
-   und vom Benutzer **nicht änderbar**. Sie stehen in `App::handle_shortcuts`
+3. **Übrige Tasten — hardcodiert.**
+   Die Funktionsweise der Steuerungstasten (`Esc`, `Tab`, `Caps`, `Umschalt`,
+   `Strg`, `Alt`, `AltGr`, `Enter`, `Rücktaste`, `Leertaste`, `Entf`) und der
+   Funktionstasten (`F1` … `F12`) ist **im Programm fest verdrahtet** und vom
+   Benutzer **nicht änderbar**. Sie stehen in `App::handle_shortcuts`
    (`crates/jjcad-gui/src/app.rs`) und sind im Tastenbild ausgegraut bzw. in der
    Funktionsliste als „fest" gekennzeichnet.
 
-Kurz: **Ziffern = Hotbar, Buchstaben/Symbole = Tastaturbelegung, alles andere =
-fest.** Keine Taste gehört zwei Schichten.
+**Tastenkombinationen gehören seit T0215 nicht mehr hierher**: `Strg+S`,
+`Strg+C`, `Strg+Umschalt+C` & Co. sind die **Vorgabebelegung einer Ebene** und
+lassen sich im Tastenbild umbelegen (siehe unten). Das war der Bruch mit dem
+alten Konzept — vorher standen sie fest im Code und waren ausgegraut.
+
+Kurz: **Ziffern = Hotbar, Buchstaben/Symbole = Tastaturbelegung, Steuerungs- und
+Funktionstasten = fest.** Keine Taste gehört zwei Schichten.
 
 ## Was daraus folgt (Stand T0056)
 
@@ -92,14 +101,60 @@ fest.** Keine Taste gehört zwei Schichten.
   legt, dreht die Vorschau mit `Q` und die Auswahl mit `Q`. `Umschalt` dreht
   gegen den Uhrzeigersinn.
 
+## Ebenen — Umschalt, Strg und Alt (T0215)
+
+Umschalt, Strg und Alt sind **Ebenen** der Belegung. Jede lässt sich allein und
+in Kombination halten — das sind acht Ebenen —, und jede trägt ihre **eigene**
+Belegung derselben Tasten:
+
+| Ebene | Taste `c` | Taste `,` |
+|---|---|---|
+| ohne | Stutzen (`c`) | frei |
+| `Umschalt` | Farbeimer (`shift+c`) | frei |
+| `Strg` | Kopieren (`ctrl+c`) | frei |
+| `Strg+Umschalt` | Kopieren mit Basispunkt (`ctrl+shift+c`) | frei |
+
+- **Jedes Tastaturlayout trägt alle acht Ebenen.** Ein Layout ist die
+  vollständige Belegung; die Ebene steckt im Tastennamen (`c`, `shift+c`,
+  `ctrl+c`, `ctrl+shift+c`, `alt+c` …). Speichern, Wechseln, Export und Import
+  nehmen sie mit.
+- **Jede Hotbar-Vorlage hat je Ebene eigene Slots.** Die Grundbelegung steht in
+  `slots`, eine Ebene bekommt ihre eigene Liste, sobald dort ein Slot belegt
+  wird (`varianten` in `prefs.json`); vorher zeigt sie die Grundbelegung.
+- **Die Hotbar schaltet mit.** Solange eine Steuerungstaste gehalten wird, zeigt
+  die Hotbar die Slots dieser Ebene, und **neben der Hotbar steht ein kleines
+  Feld** mit ihrem Namen (`Umsch`, `Strg`, `Alt`, `Strg+Umsch` …). Ohne
+  Steuerungstaste ist das Feld nicht da — so ist auf einen Blick klar, warum die
+  Hotbar anders belegt ist.
+- **Ziffern starten den Slot der gehaltenen Ebene.** `Strg+3` startet also den
+  dritten Slot der Strg-Hotbar; ohne Strg den der Grundbelegung.
+- **In der Tastaturbelegung sind die drei Steuerungstasten Schalter.** Über dem
+  Tastenbild stehen `Umschalt`, `Strg` und `Alt`; ein Klick schaltet die Ebene
+  ein oder aus (mehrere gleichzeitig sind erlaubt). Das Tastenbild zeigt dann
+  die Belegung **dieser** Ebene: mit Strg an steht auf der Taste `c` „Kopieren"
+  statt „Stutzen", und genau diese Belegung lässt sich dort ändern, löschen und
+  neu zuweisen. Belegt wird immer mit Vorsatz — eine Funktion auf eine freie
+  Taste der Strg-Ebene landet als `ctrl+<Taste>`.
+- **`Strg+S` speichert weiterhin** — nur eben als Belegung von `file.save` in der
+  Strg-Ebene, änderbar wie jede andere Taste. Die Vorgabe ist die frühere feste
+  Verdrahtung: `Strg+S` Speichern, `Strg+Umschalt+S` Speichern unter, `Strg+O`
+  Öffnen, `Strg+N` Neu, `Strg+P` PDF, `Strg+Z` Rückgängig, `Strg+Y` Wiederholen,
+  `Strg+A` Alles auswählen, `Strg+C` Kopieren, `Strg+Umschalt+C` Kopieren mit
+  Basispunkt.
+- **Umschalt allein ist die frühere „zweite Ebene"** — sie ist jetzt eine Ebene
+  unter acht, keine Sonderregel.
+- **`Alt` ist in der Vorgabe leer.** Damit bleibt `AltGr` (auf deutscher Tastatur
+  `Strg+Alt`) unauffällig, solange der Nutzer die Alt-Ebene nicht belegt.
+- **`Umschalt+F3`** (Leistungsanzeige) und `F11` bleiben fest verdrahtet: die
+  Messwerte sollen auch bei laufendem Werkzeug erreichbar sein.
+
 ## Funktionen direkt auf eine Taste legen (T0064)
 
 Der Weg wie bei der Hotbar: **Funktion im Ribbon anklicken, dann im Fenster
 „Tastaturbelegung" eine leere Taste anklicken** — die Taste übernimmt sie sofort.
 Das Fenster dunkelt den Hintergrund dafür nicht mehr ab; das Ribbon bleibt
 bedienbar. Eine bereits belegte Taste wird dabei nur ausgewählt (ihre Funktion
-bleibt), fest verdrahtete Funktionen (`Strg+S`, `F1` …) lassen sich so nicht
-umbelegen.
+bleibt), fest verdrahtete Funktionen (`F1` …) lassen sich so nicht umbelegen.
 
 Welche Funktion bereitliegt, merkt sich das Programm, solange das Fenster offen
 ist (`UiState::keymap_funktion`): jede über `App::run_action` gestartete Funktion
@@ -107,7 +162,8 @@ aus Ribbon, Hotbar oder Tastatur. Beim Schließen wird der Merker geleert.
 
 **Eine Funktion auf eine Taste legen (T0072):** Eine freie Taste anklicken —
 das Inventar öffnet sich im Reiter **Funktionen**, die gewählte Funktion liegt
-danach auf der Taste. Dieselbe Bedienung wie ein leerer Hotbar-Slot; auch eine
+danach auf der Taste. Gilt für die Ebene, die die Schalter über dem Tastenbild
+eingeschaltet haben (`Strg` an → die Taste wird als `ctrl+…` belegt). Dieselbe Bedienung wie ein leerer Hotbar-Slot; auch eine
 belegte Taste lässt sich so umbelegen. Eine eigene Funktionsliste im Fenster
 gibt es nicht — und seit T0076 auch keine Knopfzeile darunter; fest verdrahtete
 Funktionen stehen im Inventar ausgegraut mit „· fest".
@@ -169,10 +225,10 @@ Knopf „Werkseinstellungen".
 
 Ausgangspunkt jeder Vorlage ist die Belegung von JoJa-CAD; die fremden Vorlagen
 tragen nur die Tasten, in denen sich Allplan, ArchiCAD und AutoCAD unterscheiden
-(`persist::VORLAGE_*`, Quellen in den Kommentaren dort). Tastenkombinationen
-(`Strg+L` …) sind in JoJa-CAD fest verdrahtet — wo ein fremdes Programm eine
-Kombination vorgibt, nimmt die Vorlage den Buchstaben dahinter bzw. die
-Umschalt-Ebene.
+(`persist::VORLAGE_*`, Quellen in den Kommentaren dort). Gibt ein fremdes
+Programm eine Tastenkombination vor (`Strg+L` …), nimmt die Vorlage den
+Buchstaben dahinter bzw. die Umschalt-Ebene — die Strg-Ebene bleibt in den
+Vorlagen bei der JoJa-CAD-Vorgabe (Speichern, Kopieren …).
 
 | Funktion | JoJa-CAD | Allplan | ArchiCAD | AutoCAD |
 |---|---|---|---|---|
@@ -216,11 +272,21 @@ Zeichen, die JoJa-CAD nicht auswertet (`;`, `=`, `’`), sind bewusst nicht
   Taste steht in `app::EINZELTASTEN`. **Diese Liste ist die eine Quelle** für
   Kürzel-Auswertung und Ansichtsschwenk; wer sie erweitert, prüft
   `persist::tests::jede_taste_traegt_genau_eine_funktion`.
-- **Neue Taste in Schicht 3** (Steuerungstaste, Funktionstaste, Kombination):
-  Auswertung in `App::handle_shortcuts` ergänzen **und** die Taste in
-  `persist::fest_belegt` eintragen. Dann ist sie gesperrt, ausgegraut und in der
-  Funktionsliste als „fest" markiert. Eine Funktion mit solcher Taste lässt sich
-  nicht umbelegen (`UserPrefs::belegung_aenderbar`).
+- **Neue Taste in Schicht 3** (Steuerungstaste, Funktionstaste): Auswertung in
+  `App::handle_shortcuts` ergänzen **und** die Taste in `persist::fest_belegt`
+  eintragen. Dann ist sie gesperrt, ausgegraut und in der Funktionsliste als
+  „fest" markiert. Eine Funktion mit solcher Taste lässt sich nicht umbelegen
+  (`UserPrefs::belegung_aenderbar` prüft nur noch `FestBelegt::Funktion`).
+- **Eine Kombination anbieten:** einfach im Action-Register als `key` eintragen
+  (`"ctrl+shift+s"`) — sie erscheint als Vorgabe ihrer Ebene im Tastenbild und
+  ist änderbar. Die Ebene ist `persist::Kombination` (Bitmaske aus Umschalt,
+  Strg, Alt); Taste und Ebene werden über `Kombination::tastenlabel` bzw.
+  `Kombination::aus_tastenlabel` ineinander gerechnet. Ein Kürzel **niemals**
+  zusätzlich im Code abfragen — die Auswertung ist `prefs.action_for_kombination`
+  in `App::handle_shortcuts`.
+- **Eigene Slots je Ebene:** `UserPrefs::slots_fuer(kombi)` /
+  `set_slot_fuer(kombi, …)`; die Hotbar im Bild meldet die gehaltene Ebene als
+  `App::hotbar_kombination` und zeichnet das Feld über `UiState::last_kombi_icon`.
 - **Kein zweiter Weg:** keine Taste zusätzlich im Code abfragen
   (`ctx.input(|i| i.key_pressed(...))`), wenn sie schon über die Belegung läuft.
   Genau daraus entstand das Durcheinander: `S` schwenkte *und* stutzte, `V`
@@ -238,7 +304,11 @@ Zeichen, die JoJa-CAD nicht auswertet (`;`, `=`, `’`), sind bewusst nicht
 | Drei Schichten, gesperrte Tasten | `persist::tests::drei_schichten_der_tastatur` |
 | Schwenk liegt auf W/A/S/D, Stutzen nicht auf S | `persist::tests::ansicht_schwenk_ist_belegbar` |
 | Eine Taste = eine Funktion | `persist::tests::jede_taste_traegt_genau_eine_funktion` |
-| Kombinationen bleiben fest | `persist::tests::feste_kombinationen_lassen_sich_nicht_umbelegen` |
+| Kombinationen sind umbelegbar, Funktionstasten nicht | `persist::tests::kombinationen_sind_umbelegbar_funktionstasten_nicht` |
+| Taste und Ebene werden ineinander gerechnet | `persist::tests::kombination_schreibt_und_liest_ihre_tasten` |
+| Jede Hotbar-Vorlage hat eigene Slots je Ebene | `persist::tests::hotbar_varianten_sind_eigenstaendig` |
+| Strg schaltet Hotbar und Ebene, Feld neben der Hotbar | `app::tests_tastenbelegung::strg_schaltet_die_hotbar_um_und_zeigt_die_ebene` |
+| Ebenen-Schalter zeigen und belegen `ctrl+…` | `dialogs::tests_tastatur::ebenenschalter_zeigt_und_belegt_die_strg_ebene` |
 | Schwenk folgt der Belegung (Verhalten) | `app::tests_tastenbelegung::*` |
 | Icons der Schwenkrichtungen | `icons::tests_pan_icons` |
 | Leere Taste übernimmt die Ribbon-Funktion | `dialogs::tests_tastatur::leere_taste_uebernimmt_die_funktion_aus_dem_ribbon` |

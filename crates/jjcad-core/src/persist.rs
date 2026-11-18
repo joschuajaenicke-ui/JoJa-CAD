@@ -467,8 +467,15 @@ pub fn lade_vorlage(pfad: &Path) -> Result<Document, String> {
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
 pub struct HotbarPreset {
     pub name: String,
-    /// 10 Slots mit Action-IDs (None = leer)
+    /// 10 Slots mit Action-IDs (None = leer) — die **Grundbelegung** ohne
+    /// Steuerungstaste.
     pub slots: Vec<Option<String>>,
+    /// Eigene Slots je **Variante** (T0215, [`Kombination::key`]): jede
+    /// Kombination aus Umschalt, Strg und Alt hat ihre eigene Hotbar. Fehlt
+    /// eine Variante, gilt die Grundbelegung — eine Variante entsteht erst,
+    /// wenn der Nutzer in ihr einen Slot belegt (`UserPrefs::set_slot_fuer`).
+    #[serde(default)]
+    pub varianten: BTreeMap<String, Vec<Option<String>>>,
 }
 
 impl HotbarPreset {
@@ -476,6 +483,7 @@ impl HotbarPreset {
         Self {
             name: name.to_string(),
             slots: vec![None; 10],
+            varianten: BTreeMap::new(),
         }
     }
 
@@ -485,7 +493,39 @@ impl HotbarPreset {
         Self {
             name: name.to_string(),
             slots,
+            varianten: BTreeMap::new(),
         }
+    }
+
+    /// Slots der genannten Variante; ohne eigene Variante die Grundbelegung.
+    pub fn slots_fuer(&self, kombi: Kombination) -> Vec<Option<String>> {
+        if kombi.ist_leer() {
+            return self.slots.clone();
+        }
+        self.varianten
+            .get(kombi.key())
+            .cloned()
+            .unwrap_or_else(|| self.slots.clone())
+    }
+
+    /// Setzt einen Slot der genannten Variante. Die erste Änderung legt die
+    /// Variante als **Kopie** der Grundbelegung an — danach ist sie
+    /// eigenständig (eine Änderung an der Grundbelegung wirkt nicht hinein).
+    pub fn set_slot_fuer(&mut self, kombi: Kombination, idx: usize, action: Option<String>) {
+        if idx >= 10 {
+            return;
+        }
+        if kombi.ist_leer() {
+            self.slots.resize(10, None);
+            self.slots[idx] = action;
+            return;
+        }
+        let slots = self
+            .varianten
+            .entry(kombi.key().to_string())
+            .or_insert_with(|| self.slots.clone());
+        slots.resize(10, None);
+        slots[idx] = action;
     }
 }
 
@@ -1571,15 +1611,192 @@ fn default_lineweight_factor() -> f32 {
     1.0
 }
 
+/// Eine **Variante** der Belegung (T0215): welche der Steuerungstasten beim
+/// Tastendruck gehalten werden.
+///
+/// Umschalt, Strg und Alt lassen sich einzeln und in jeder Kombination halten —
+/// das sind acht Lagen, und jede hat eine **eigene** Belegung: je Tastaturlayout
+/// eine, je Hotbar-Vorlage eine. Gespeichert wird die Lage als Vorsatz der
+/// Taste (`"ctrl+c"`, `"ctrl+shift+s"`, `"shift+i"`), also in der Form, in der
+/// die Belegung eine Taste schon immer trägt.
+///
+/// Die Vorsatzreihenfolge ist fest (Strg, Umschalt, Alt) — so gibt es zu einer
+/// Lage genau eine Schreibweise, und `"ctrl+shift+s"` aus dem Action-Register
+/// findet dieselbe Lage wie das angehängte `"shift+ctrl+s"`.
+#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Debug, Default)]
+pub struct Kombination(u8);
+
+impl Kombination {
+    /// Ohne Steuerungstaste — die Grundbelegung.
+    pub const KEINE: Kombination = Kombination(0);
+    /// Umschalt gehalten (die frühere „zweite Ebene").
+    pub const UMSCHALT: Kombination = Kombination(1);
+    /// Strg gehalten.
+    pub const STRG: Kombination = Kombination(2);
+    /// Alt gehalten.
+    pub const ALT: Kombination = Kombination(4);
+
+    /// Alle acht Lagen in Anzeigereihenfolge: keine, je eine Steuerungstaste,
+    /// dann die Paare, zuletzt alle drei.
+    pub const ALLE: [Kombination; 8] = [
+        Kombination(0),
+        Kombination(1),
+        Kombination(2),
+        Kombination(4),
+        Kombination(3),
+        Kombination(5),
+        Kombination(6),
+        Kombination(7),
+    ];
+
+    /// Die drei Steuerungstasten einzeln (für die Schalter im Tastenbild).
+    pub const STEUERUNG: [Kombination; 3] = [
+        Kombination::UMSCHALT,
+        Kombination::STRG,
+        Kombination::ALT,
+    ];
+
+    /// Rohwert der Lage (Bit 0 = Umschalt, 1 = Strg, 2 = Alt).
+    pub fn bits(self) -> u8 {
+        self.0
+    }
+
+    /// Lage aus dem Rohwert; unbekannte Bits fallen weg.
+    pub fn aus_bits(bits: u8) -> Self {
+        Kombination(bits & 0b111)
+    }
+
+    /// Ist die Steuerungstaste dieser Lage gedrückt?
+    pub fn hat(self, teil: Kombination) -> bool {
+        self.0 & teil.0 == teil.0
+    }
+
+    /// Diese Lage mit oder ohne `teil` — der Schalter im Tastenbild.
+    pub fn umschalten(self, teil: Kombination) -> Self {
+        Kombination(self.0 ^ teil.0)
+    }
+
+    /// Lage aus dem Zustand der Tastatur.
+    pub fn aus_modifikatoren(umschalt: bool, strg: bool, alt: bool) -> Self {
+        Kombination(umschalt as u8 | (strg as u8) << 1 | (alt as u8) << 2)
+    }
+
+    /// Ist keine Steuerungstaste beteiligt?
+    pub fn ist_leer(self) -> bool {
+        self.0 == 0
+    }
+
+    /// Schlüssel in `prefs.json` und Vorsatz der Tasten (`""`, `"shift"`,
+    /// `"ctrl"`, `"alt"`, `"ctrl+shift"`, …).
+    pub fn key(self) -> &'static str {
+        match self.0 {
+            0 => "",
+            1 => "shift",
+            2 => "ctrl",
+            4 => "alt",
+            3 => "ctrl+shift",
+            5 => "shift+alt",
+            6 => "ctrl+alt",
+            _ => "ctrl+shift+alt",
+        }
+    }
+
+    /// Lage aus ihrem Schlüssel; unbekannte Angaben fallen auf [`Kombination::KEINE`].
+    pub fn aus_key(key: &str) -> Self {
+        let mut k = Kombination::KEINE;
+        for teil in key.split('+') {
+            match teil.trim().to_lowercase().as_str() {
+                "shift" | "umschalt" => k = k.umschalten(Kombination::UMSCHALT),
+                "ctrl" | "strg" => k = k.umschalten(Kombination::STRG),
+                "alt" => k = k.umschalten(Kombination::ALT),
+                _ => {}
+            }
+        }
+        k
+    }
+
+    /// Vorsatz einer Taste in der Belegung (`"ctrl+shift+"` bzw. `""`).
+    pub fn vorsatz(self) -> String {
+        if self.ist_leer() {
+            String::new()
+        } else {
+            format!("{}+", self.key())
+        }
+    }
+
+    /// Tastenname in der Belegung: Vorsatz plus Taste (`"ctrl+c"`).
+    pub fn tastenlabel(self, taste: &str) -> String {
+        format!("{}{}", self.vorsatz(), taste.to_lowercase())
+    }
+
+    /// Zerlegt einen Tastennamen der Belegung in Lage und Taste. Der Rest darf
+    /// selbst `+` enthalten (die Taste `+`), deshalb wird nur der **Anfang**
+    /// abgetragen.
+    pub fn aus_tastenlabel(label: &str) -> (Kombination, String) {
+        let mut rest = label.trim().to_lowercase();
+        let mut lage = Kombination::KEINE;
+        loop {
+            let Some((kopf, dahinter)) = rest.split_once('+') else {
+                break;
+            };
+            // `"+"` allein ist die Taste, kein Vorsatz.
+            let teil = match kopf {
+                "shift" | "umschalt" => Kombination::UMSCHALT,
+                "ctrl" | "strg" => Kombination::STRG,
+                "alt" => Kombination::ALT,
+                _ => break,
+            };
+            if dahinter.is_empty() {
+                break;
+            }
+            lage = lage.umschalten(teil);
+            rest = dahinter.to_string();
+        }
+        (lage, rest)
+    }
+
+    /// Deutscher Name der Lage für die Oberfläche (`"Strg+Umschalt"`).
+    pub fn text(self) -> &'static str {
+        match self.0 {
+            0 => "ohne",
+            1 => "Umschalt",
+            2 => "Strg",
+            4 => "Alt",
+            3 => "Strg+Umschalt",
+            5 => "Umschalt+Alt",
+            6 => "Strg+Alt",
+            _ => "Strg+Umschalt+Alt",
+        }
+    }
+
+    /// Kurzzeichen der Lage — das kleine Feld neben der Hotbar.
+    pub fn kurz(self) -> &'static str {
+        match self.0 {
+            0 => "",
+            1 => "Umsch",
+            2 => "Strg",
+            4 => "Alt",
+            3 => "Strg+Umsch",
+            5 => "Umsch+Alt",
+            6 => "Strg+Alt",
+            _ => "Strg+Umsch+Alt",
+        }
+    }
+}
+
 /// Die drei Schichten der Tastatur (T0056, `docs/benutzer/TASTEN.md`):
 ///
 /// 1. **Ziffern `1` … `0`** starten den Hotbar-Slot — gesteuert über die
 ///    Hotbar, nie über die Tastaturbelegung.
 /// 2. **Buchstaben und Symbole** sind frei zuweisbar (`UserPrefs::bindings`,
 ///    Dialog „Tastaturbelegung").
-/// 3. **Funktionstasten, Steuerungstasten und Tastenkombinationen** sind
-///    hart verdrahtet: ihre Funktion steht im Code und lässt sich nicht
-///    umbelegen.
+/// 3. **Funktionstasten** sind hart verdrahtet: ihre Funktion steht im Code
+///    und lässt sich nicht umbelegen.
+///
+/// **Seit T0215 sind Tastenkombinationen keine vierte Schicht mehr**: Strg, Alt
+/// und Umschalt schlagen eine **Variante** der freien Belegung auf
+/// ([`Kombination`]) — jede Kombination trägt eine eigene Taste je Funktion und
+/// lässt sich im Tastenbild bearbeiten.
 ///
 /// `fest_belegt` sagt, in welche Schicht eine Taste gehört; `None` heißt frei
 /// zuweisbar.
@@ -1607,7 +1824,9 @@ impl FestBelegt {
             FestBelegt::Hotbar => "Ziffer 1 … 0 startet die Hotbar — nicht belegbar",
             FestBelegt::Steuerung => "Steuerungstaste — fest belegt, nicht zuweisbar",
             FestBelegt::Funktion => "Funktionstaste — fest belegt, nicht zuweisbar",
-            FestBelegt::Kombination => "Tastenkombination — fest belegt, nicht zuweisbar",
+            FestBelegt::Kombination => {
+                "Tastenkombination — eigene Ebene (Strg/Alt), im Tastenbild bearbeitbar"
+            }
             FestBelegt::ZweiteEbene => {
                 "Zeichen der zweiten Ebene (Umschalt/AltGr) — nicht einzeln belegbar"
             }
@@ -1617,10 +1836,15 @@ impl FestBelegt {
     /// Darf diese Taste überhaupt einer Funktion gehören? Ziffern und
     /// Steuerungstasten lösen eigene Abläufe aus (Hotbar-Slot, Abbrechen,
     /// Bestätigen) und sind in keiner Belegung zu finden. Funktionstasten und
-    /// Kombinationen stehen dagegen als feste Belegung ihrer Funktion in
-    /// `bindings` — nur ändern lässt sich daran nichts.
+    /// Kombinationen stehen dagegen als Belegung ihrer Funktion in `bindings`.
     pub fn ist_feste_belegung(self) -> bool {
         matches!(self, FestBelegt::Funktion | FestBelegt::Kombination)
+    }
+
+    /// Nimmt diese Taste keine Belegung an? Ziffern, Steuerungstasten und die
+    /// zweite Ebene — sie gehören dem Programm, nicht der Tastaturbelegung.
+    pub fn ist_gesperrt(self) -> bool {
+        !self.ist_feste_belegung()
     }
 }
 
@@ -1628,11 +1852,9 @@ impl FestBelegt {
 pub fn fest_belegt(key: &str) -> Option<FestBelegt> {
     let k = key.to_lowercase();
     // Kombinationen zuerst: "ctrl+s" ist keine Steuerungstaste, sondern eine
-    // Kombination aus Strg und einem Buchstaben.
-    // Tastenkombinationen mit Strg oder Alt sind fest verdrahtet. Umschalt
-    // gehört dagegen zur Taste: `Umschalt+I` ist die zweite Ebene des
-    // Buchstabens und bleibt wie dieser frei belegbar. Die Taste `+` selbst ist
-    // ein Zeichen, keine Kombination.
+    // Kombination aus Strg und einem Buchstaben. Sie ist seit T0215 eine
+    // **eigene Ebene** der Belegung — belegbar, aber nicht frei wie ein
+    // Buchstabe ohne Steuerungstaste.
     if k.starts_with("ctrl+") || k.starts_with("alt+") {
         return Some(FestBelegt::Kombination);
     }
@@ -2085,6 +2307,11 @@ impl UserPrefs {
         for p in &mut self.hotbar_presets {
             p.slots.resize(10, None);
             p.slots.truncate(10);
+            // T0215: auch die Varianten tragen zehn Slots.
+            for slots in p.varianten.values_mut() {
+                slots.resize(10, None);
+                slots.truncate(10);
+            }
         }
         if self.inventory.len() < 40 {
             self.inventory.resize(40, None);
@@ -2118,11 +2345,12 @@ impl UserPrefs {
                 }
             }
         }
-        // T0056: Tastenkombinationen und Funktionstasten sind hart verdrahtet
-        // (`App::handle_shortcuts`) — eine gespeicherte Belegung darf sie nicht
-        // verschieben, sonst täte Strg+S etwas anderes als dokumentiert.
+        // T0215: Nur **Funktionstasten** stehen fest im Code (F1 … F12) — sie
+        // werden immer wieder eingesetzt. Tastenkombinationen gehören dagegen
+        // der Belegung: eine gespeicherte Umbelegung von Strg+S bleibt beim
+        // Laden stehen, sonst nähme jeder Start die Wahl des Nutzers zurück.
         for a in actions::ACTIONS {
-            if matches!(fest_belegt(a.key), Some(f) if f.ist_feste_belegung()) {
+            if matches!(fest_belegt(a.key), Some(FestBelegt::Funktion)) {
                 self.bindings
                     .insert(a.id.to_string(), vec![a.key.to_string()]);
             }
@@ -2231,19 +2459,29 @@ impl UserPrefs {
             .map_err(|e| format!("Einstellungen konnten nicht gespeichert werden: {e}"))
     }
 
-    /// Aktuelle Hotbar-Slots.
+    /// Aktuelle Hotbar-Slots der **Grundbelegung**.
     pub fn slots(&self) -> Vec<Option<String>> {
+        self.slots_fuer(Kombination::KEINE)
+    }
+
+    /// Hotbar-Slots einer Variante (T0215). Jede Kombination aus Umschalt,
+    /// Strg und Alt hat ihre eigene Hotbar; eine noch nie belegte Variante
+    /// zeigt die Grundbelegung.
+    pub fn slots_fuer(&self, kombi: Kombination) -> Vec<Option<String>> {
         self.hotbar_presets
             .get(self.active_preset)
-            .map(|p| p.slots.clone())
+            .map(|p| p.slots_fuer(kombi))
             .unwrap_or_else(|| vec![None; 10])
     }
 
     pub fn set_slot(&mut self, idx: usize, action: Option<String>) {
+        self.set_slot_fuer(Kombination::KEINE, idx, action);
+    }
+
+    /// Belegt einen Slot **einer Variante** (T0215).
+    pub fn set_slot_fuer(&mut self, kombi: Kombination, idx: usize, action: Option<String>) {
         if let Some(p) = self.hotbar_presets.get_mut(self.active_preset) {
-            if idx < p.slots.len() {
-                p.slots[idx] = action;
-            }
+            p.set_slot_fuer(kombi, idx, action);
         }
     }
 
@@ -2277,28 +2515,49 @@ impl UserPrefs {
             .map(|(a, _)| a.clone())
     }
 
-    /// Ist die Belegung dieser Funktion änderbar? Nein, wenn eine ihrer Tasten
-    /// fest verdrahtet ist (Funktionstaste, Tastenkombination) — die stehen im
-    /// Code (T0056, `docs/benutzer/TASTEN.md`).
+    /// Funktion einer Taste in einer **Variante** (T0215): `"c"` mit Strg
+    /// gefragt liefert die Belegung von `"ctrl+c"`.
+    pub fn action_for_kombination(&self, kombi: Kombination, taste: &str) -> Option<String> {
+        self.action_for_key(&kombi.tastenlabel(taste))
+    }
+
+    /// Legt eine Funktion auf eine Taste **einer Variante**.
+    pub fn bind_kombination(&mut self, action: &str, kombi: Kombination, taste: &str) {
+        self.bind(action, &kombi.tastenlabel(taste));
+    }
+
+    /// Nimmt eine Taste aus einer Variante und liefert ihre Funktion.
+    pub fn unbind_kombination(&mut self, kombi: Kombination, taste: &str) -> Option<String> {
+        self.unbind_key(&kombi.tastenlabel(taste))
+    }
+
+    /// Ist die Belegung dieser Funktion änderbar? Nein, wenn sie auf einer
+    /// Funktionstaste liegt (F1 … F12) — die stehen fest im Code (T0056,
+    /// `docs/benutzer/TASTEN.md`). **Tastenkombinationen sind seit T0215
+    /// änderbar**: sie sind eine eigene Ebene der Belegung.
     pub fn belegung_aenderbar(&self, action: &str) -> bool {
         match self.bindings.get(action) {
             Some(keys) => !keys
                 .iter()
-                .any(|k| matches!(fest_belegt(k), Some(f) if f.ist_feste_belegung())),
+                .any(|k| matches!(fest_belegt(k), Some(FestBelegt::Funktion))),
             None => true,
         }
     }
 
     /// Legt `action` **zusätzlich** auf `key` (T0064: eine Funktion darf auf
-    /// mehreren Tasten liegen). Gesperrte Tasten (`fest_belegt`) bleiben
-    /// unberührt — sie gehören dem Programm, nicht der Belegung. Funktionen mit
-    /// fest verdrahteter Taste lassen sich nicht umbelegen.
+    /// mehreren Tasten liegen). Gesperrte Tasten (`fest_belegt`: Ziffern,
+    /// Steuerungstasten, zweite Ebene) bleiben unberührt — sie gehören dem
+    /// Programm, nicht der Belegung. Funktionen mit fest verdrahteter
+    /// Funktionstaste lassen sich nicht umbelegen.
     ///
     /// Die Taste wird dabei einer anderen Funktion entzogen: eine Taste trägt
-    /// immer genau eine Funktion.
+    /// immer genau eine Funktion. Der `key` trägt seine Ebene als Vorsatz
+    /// (`"ctrl+c"`, `"shift+i"`, `"c"`) — siehe [`Kombination`].
     pub fn bind(&mut self, action: &str, key: &str) {
         let key = key.to_lowercase();
-        if fest_belegt(&key).is_some() || !self.belegung_aenderbar(action) {
+        if !matches!(fest_belegt(&key), None | Some(FestBelegt::Kombination))
+            || !self.belegung_aenderbar(action)
+        {
             return;
         }
         // Von Hand geändert: das gemerkte Layout gilt nicht mehr (T0076).
@@ -3468,16 +3727,15 @@ mod tests {
         );
     }
 
-    /// T0056: Funktionen mit hart verdrahteter Taste lassen sich nicht umbelegen
-    /// — auch nicht über eine alte `prefs.json`.
+    /// T0215: Kombinationen sind eine **eigene Ebene** der Belegung und damit
+    /// umbelegbar; fest bleiben nur die Funktionstasten.
     #[test]
-    fn feste_kombinationen_lassen_sich_nicht_umbelegen() {
+    fn kombinationen_sind_umbelegbar_funktionstasten_nicht() {
         let mut prefs = UserPrefs::default();
-        assert!(!prefs.belegung_aenderbar("file.save"));
+        assert!(prefs.belegung_aenderbar("file.save"), "Strg+S ist belegbar");
         assert!(prefs.belegung_aenderbar("draw.line"));
 
-        // T0159: „Alles zeigen" liegt fest auf F5 — im Register, in der
-        // Vorgabebelegung und nicht umbelegbar.
+        // F5 („Alles zeigen") steht fest im Code — nicht umbelegbar.
         assert_eq!(
             actions::action("view.zoom_extents").map(|a| a.key),
             Some("f5"),
@@ -3488,36 +3746,138 @@ mod tests {
             Some("f5"),
             "F5 muss in der Vorgabebelegung bei Alles zeigen stehen"
         );
-        assert_eq!(
-            prefs.action_for_key("f5").as_deref(),
-            Some("view.zoom_extents")
-        );
         assert!(!prefs.belegung_aenderbar("view.zoom_extents"));
-
-        prefs.bind("file.save", "k");
+        prefs.bind("view.zoom_extents", "k");
         assert_eq!(
-            prefs.key_for("file.save").as_deref(),
-            Some("ctrl+s"),
-            "Strg+S muss auf Speichern bleiben"
-        );
-        assert_eq!(
-            prefs.action_for_key("k").as_deref(),
-            Some("draw.circle"),
-            "die Taste K darf dabei nicht umgehängt werden"
+            prefs.key_for("view.zoom_extents").as_deref(),
+            Some("f5"),
+            "die feste Funktionstaste bleibt"
         );
 
-        // Alte Datei: Speichern lag auf K, Stutzen auf S.
+        // Eine Kombination lässt sich einer Funktion zusätzlich zuweisen —
+        // dieselbe Regel wie bei Buchstaben (eine Funktion, mehrere Tasten).
+        prefs.bind("file.save", "ctrl+k");
+        assert_eq!(
+            prefs.action_for_key("ctrl+k").as_deref(),
+            Some("file.save")
+        );
+        assert_eq!(
+            prefs.keys_for("file.save"),
+            &["ctrl+s".to_string(), "ctrl+k".to_string()]
+        );
+        // Eine belegte Kombination wandert dagegen zur neuen Funktion.
+        prefs.bind("draw.line", "ctrl+s");
+        assert_eq!(prefs.action_for_key("ctrl+s").as_deref(), Some("draw.line"));
+        assert_eq!(prefs.keys_for("file.save"), &["ctrl+k".to_string()]);
+        // Zurück auf die Vorgabe.
+        prefs.bind("file.save", "ctrl+s");
+        assert_eq!(prefs.action_for_key("ctrl+s").as_deref(), Some("file.save"));
+
+        // Die Ebenen liegen nebeneinander: C und Strg+C sind zwei Tasten.
+        assert_eq!(prefs.action_for_key("c").as_deref(), Some("modify.trim"));
+        assert_eq!(prefs.action_for_key("ctrl+c").as_deref(), Some("edit.copy"));
+
+        // Alte Datei: Speichern lag auf K. Die Kombination ist jetzt frei —
+        // sie bleibt beim Laden stehen, sie wird nicht zurückgesetzt.
         let mut alt = UserPrefs::default();
         alt.bindings.insert("file.save".into(), vec!["k".into()]);
-        alt.bindings.insert("modify.trim".into(), vec!["s".into()]);
         alt.ensure_defaults();
-        assert_eq!(alt.key_for("file.save").as_deref(), Some("ctrl+s"));
+        assert_eq!(alt.key_for("file.save").as_deref(), Some("k"));
         assert_eq!(
-            alt.key_for("modify.trim").as_deref(),
-            Some("c"),
-            "S fällt weg, C kommt aus der Vorgabe nach"
+            alt.action_for_key("ctrl+n").as_deref(),
+            Some("file.new"),
+            "die übrigen Kombinationen stehen weiter in der Belegung"
         );
-        assert_eq!(alt.action_for_key("s").as_deref(), Some("view.pan_down"));
+    }
+
+    // ---- Varianten (T0215) -------------------------------------------------
+
+    /// Acht Lagen, jede mit eigener Schreibweise — und die Schreibweise lässt
+    /// sich wieder lesen. `ctrl+shift+c` aus dem Action-Register findet
+    /// dieselbe Lage wie das angehängte `shift+ctrl+c`.
+    #[test]
+    fn kombination_schreibt_und_liest_ihre_tasten() {
+        assert_eq!(Kombination::KEINE.tastenlabel("C"), "c");
+        assert_eq!(Kombination::STRG.tastenlabel("c"), "ctrl+c");
+        assert_eq!(
+            Kombination::STRG.umschalten(Kombination::UMSCHALT).tastenlabel("s"),
+            "ctrl+shift+s"
+        );
+        assert_eq!(
+            Kombination::aus_tastenlabel("ctrl+shift+s"),
+            (
+                Kombination::STRG.umschalten(Kombination::UMSCHALT),
+                "s".to_string()
+            )
+        );
+        // Die Taste `+` ist ein Zeichen, kein Vorsatz.
+        assert_eq!(
+            Kombination::aus_tastenlabel("+"),
+            (Kombination::KEINE, "+".to_string())
+        );
+        assert_eq!(
+            Kombination::aus_tastenlabel("shift++"),
+            (Kombination::UMSCHALT, "+".to_string())
+        );
+        for lage in Kombination::ALLE {
+            assert_eq!(Kombination::aus_key(lage.key()), lage, "Schlüssel {}", lage.key());
+            assert_eq!(
+                Kombination::aus_tastenlabel(&lage.tastenlabel("k")).0,
+                lage
+            );
+        }
+        // Aus dem Zustand der Tastatur, wie ihn die Zeichenfläche liest.
+        assert_eq!(
+            Kombination::aus_modifikatoren(true, false, false),
+            Kombination::UMSCHALT
+        );
+        assert_eq!(
+            Kombination::aus_modifikatoren(true, true, true),
+            Kombination::aus_bits(0b111)
+        );
+        assert!(Kombination::aus_bits(0b111).hat(Kombination::ALT));
+        assert!(!Kombination::STRG.hat(Kombination::ALT));
+    }
+
+    /// Jede Hotbar-Vorlage hat je Kombination eine eigene Belegung (T0215);
+    /// eine noch nie belegte Variante zeigt die Grundbelegung.
+    #[test]
+    fn hotbar_varianten_sind_eigenstaendig() {
+        let mut prefs = UserPrefs::default();
+        let grund = prefs.slots();
+        assert_eq!(grund[0].as_deref(), Some("draw.wall"));
+
+        // Strg bekommt einen eigenen Slot — die Grundbelegung bleibt.
+        prefs.set_slot_fuer(Kombination::STRG, 0, Some("draw.circle".into()));
+        assert_eq!(
+            prefs.slots_fuer(Kombination::STRG)[0].as_deref(),
+            Some("draw.circle")
+        );
+        assert_eq!(prefs.slots()[0].as_deref(), Some("draw.wall"));
+        // Eine andere Variante fällt auf die Grundbelegung zurück.
+        assert_eq!(
+            prefs.slots_fuer(Kombination::ALT),
+            grund,
+            "eine unbelegte Variante zeigt die Grundbelegung"
+        );
+
+        // Danach ist die Variante eigenständig: eine Änderung an der
+        // Grundbelegung wirkt nicht mehr hinein.
+        prefs.set_slot(0, Some("draw.line".into()));
+        assert_eq!(
+            prefs.slots_fuer(Kombination::STRG)[0].as_deref(),
+            Some("draw.circle"),
+            "die Variante wandert nicht mit"
+        );
+
+        // Beim Speichern und Laden bleibt sie erhalten.
+        let roh = serde_json::to_string(&prefs).unwrap();
+        assert!(roh.contains("\"varianten\""), "Variante fehlt in der Datei: {roh}");
+        let wieder: UserPrefs = serde_json::from_str(&roh).unwrap();
+        assert_eq!(
+            wieder.slots_fuer(Kombination::STRG)[0].as_deref(),
+            Some("draw.circle")
+        );
     }
 
     // ---- Tastaturlayouts (T0076) -------------------------------------------
