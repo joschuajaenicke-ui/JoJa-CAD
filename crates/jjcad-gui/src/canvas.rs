@@ -2382,6 +2382,75 @@ mod tests_fangmarke {
         );
     }
 
+    /// Tangentialfang (T0211): das Zeichen gehört an den **Berührpunkt** von
+    /// Linie und Kreis. Der Fangpunkt selbst wandert mit dem Zeiger auf der
+    /// Tangente — dort stand die Marke bisher und zeigte damit ins Leere.
+    #[test]
+    fn tangentialmarke_liegt_am_beruehrpunkt() {
+        let ctx = egui::Context::default();
+        let mut app = App::with_ctx(ctx.clone());
+        // In Millimetern rechnen: Kreis r = 2 m, erster Linienpunkt auf der Bahn.
+        app.session_mut()
+            .execute("doc.settings", &json!({"input_unit": "mm"}))
+            .unwrap();
+        assert!(run(
+            &mut app,
+            "draw.circle",
+            json!({"c": [0.0, 0.0], "r": 2000.0})
+        ));
+        // Nur der Tangentialfang an: sonst gewinnt „Nächster Punkt“ am Kreis.
+        app.session_mut()
+            .execute(
+                "doc.settings",
+                &json!({"snap": {
+                    "grid": false, "ortho": false, "polar": false,
+                    "nearest": false, "midpoint": false, "perpendicular": false,
+                    "intersection": false, "endpoint": false, "center": false,
+                    "tangent": true
+                }}),
+            )
+            .unwrap();
+        app.ui.show_grid = false;
+        // Linienwerkzeug mit erstem Punkt auf der Kreisbahn (2000; 0).
+        app.start_tool("draw.line");
+        app.tool.as_mut().unwrap().pts.push(V2::new(2000.0, 0.0));
+        let mut v = app.current_view();
+        v.center = V2::new(1000.0, -600.0);
+        v.zoom = 0.1;
+        app.set_view(v);
+        rahmen(&ctx, &mut app, None);
+
+        let flaeche = app.ui.last_canvas;
+        let beruehr = world_to_screen(flaeche, app.current_view(), V2::new(2000.0, 0.0));
+        let tangentenpunkt = world_to_screen(flaeche, app.current_view(), V2::new(2000.0, -1200.0));
+        assert!(
+            flaeche.contains(beruehr) && flaeche.contains(tangentenpunkt),
+            "Berührpunkt oder Tangente liegt nicht im Bild"
+        );
+
+        // Zeiger 1 px neben der Tangente x = 2000.
+        let out = rahmen(&ctx, &mut app, Some(tangentenpunkt + Vec2::new(1.0, 0.0)));
+        let ss = strecken(&out);
+        // Tangentialzeichen: Kreis (5 px) mit anliegender Gerade bei y = −5.
+        let strahl = |o: Pos2| {
+            (
+                Pos2::new(o.x - 8.5, o.y - 5.0),
+                Pos2::new(o.x + 8.5, o.y - 5.0),
+            )
+        };
+        let (a, b) = strahl(beruehr);
+        assert!(
+            hat_strecke(&ss, a, b),
+            "Tangentialmarke fehlt am Berührpunkt ({a:?} → {b:?})"
+        );
+        // Gegenprobe: am Fangpunkt unter dem Zeiger steht sie nicht.
+        let (c, d) = strahl(tangentenpunkt);
+        assert!(
+            !hat_strecke(&ss, c, d),
+            "Marke sitzt am Zeigerpunkt der Tangente statt am Berührpunkt"
+        );
+    }
+
     fn strecken_mit_farbe(out: &egui::FullOutput) -> Vec<([Pos2; 2], egui::epaint::ColorMode)> {
         out.shapes
             .iter()
@@ -2579,7 +2648,7 @@ fn draw_cursor(
     view: View,
     snapped: Option<V2>,
     _raw: Option<V2>,
-    fang_art: Option<FangArt>,
+    fang_art: Option<FangZeichen>,
 ) {
     // Nur über der Zeichenfläche selbst: ein Fenster darüber (Inventar,
     // Tastaturbelegung, Einstellungen) verdeckt die Zeichnung, dort gehört der
@@ -2595,7 +2664,13 @@ fn draw_cursor(
             // (Grün wie die Hilfslinien). Der Mittelpunkt von Kreis, Bogen und
             // Ellipse ist im Plan unsichtbar; seine Marke trägt das Kreuz
             // (T0117).
-            Some(art) => crate::snapmarke::zeichne(p, s, art),
+            // Beim Tangentialfang steht sie am Berührpunkt von Linie und
+            // Kreis statt am Zeigerpunkt (T0211) — deshalb `zeichen.ort`.
+            Some(zeichen) => crate::snapmarke::zeichne(
+                p,
+                world_to_screen(rect, view, zeichen.ort),
+                zeichen.art,
+            ),
             // Kein Fang: der Zeigerpunkt selbst, wie bisher als kleines Kreuz.
             None => {
                 let r = 5.0;
@@ -4368,6 +4443,20 @@ fn fang_zeiger(app: &App, w: V2, tol: f64) -> (V2, Option<&'static str>) {
     (res.point, res.text())
 }
 
+/// Was am Zeiger als Fangmarke gezeichnet wird: die Art und der **Ort** des
+/// Zeichens (T0211).
+///
+/// Meist ist der Ort der Fangpunkt selbst. Der Tangentialfang ist die
+/// Ausnahme: sein Fangpunkt liegt auf der Tangente unter dem Zeiger, das
+/// Zeichen gehört aber an den Berührpunkt von Linie und Kreis — dorthin, wo
+/// die Linie den Kreis berührt (`SnapResolution::marke`).
+#[derive(Clone, Copy, PartialEq, Debug)]
+pub struct FangZeichen {
+    pub art: FangArt,
+    /// Ort der Marke in Weltkoordinaten.
+    pub ort: V2,
+}
+
 /// Wie [`fang_zeiger`], gibt aber zusätzlich die **Art** des Fangs zurück.
 ///
 /// Die Zeichenfläche braucht sie für die Fangmarke (T0153): jede Fangart mit
@@ -4376,11 +4465,18 @@ fn fang_zeiger(app: &App, w: V2, tol: f64) -> (V2, Option<&'static str>) {
 /// Raster, Polar, Ortho und „frei“ führen den Zeiger nur; ihr Punkt liegt an
 /// jeder Mausstellung unter dem Zeiger, ein Zeichen dort klebte am Cursor
 /// (T0153, Turn 3).
-fn fang_zeiger_art(app: &App, w: V2, tol: f64) -> (V2, Option<&'static str>, Option<FangArt>) {
+fn fang_zeiger_art(
+    app: &App,
+    w: V2,
+    tol: f64,
+) -> (V2, Option<&'static str>, Option<FangZeichen>) {
     let res = fang_aufloesung(app, w, tol);
     let art = match res.source {
         snap::SnapSource::Object(snap::SnapKind::Grid) => None,
-        snap::SnapSource::Object(k) => Some(FangArt::Objekt(k)),
+        snap::SnapSource::Object(k) => Some(FangZeichen {
+            art: FangArt::Objekt(k),
+            ort: res.marke.unwrap_or(res.point),
+        }),
         snap::SnapSource::Polar | snap::SnapSource::Ortho | snap::SnapSource::Free => None,
     };
     (res.point, res.text(), art)
@@ -4407,6 +4503,7 @@ fn fang_aufloesung(app: &App, w: V2, tol: f64) -> snap::SnapResolution {
                 return snap::SnapResolution {
                     point: p,
                     source: snap::SnapSource::Object(snap::SnapKind::DimParallel),
+                    marke: None,
                 };
             }
         }
@@ -13814,7 +13911,7 @@ mod tests_masskette_punktfang {
         let (p, _, art) = fang_zeiger_art(&app, V2::new(4997.0, 2.0), 12.0);
         assert_eq!(p, V2::new(5000.0, 0.0), "nicht auf dem Messpunkt: {p:?}");
         assert_eq!(
-            art,
+            art.map(|z| z.art),
             Some(FangArt::Objekt(jjcad_core::snap::SnapKind::Endpoint)),
             "Fangart"
         );
@@ -13829,7 +13926,7 @@ mod tests_masskette_punktfang {
 
         let (_, _, art) = fang_zeiger_art(&app, V2::new(2003.0, 2.0), 12.0);
         assert_ne!(
-            art,
+            art.map(|z| z.art),
             Some(FangArt::Objekt(jjcad_core::snap::SnapKind::Endpoint)),
             "der gezogene Messpunkt ist Fangziel"
         );
@@ -13842,7 +13939,7 @@ mod tests_masskette_punktfang {
         let (app, _) = app_mit_kette();
         let (_, _, art) = fang_zeiger_art(&app, V2::new(4997.0, 2.0), 12.0);
         assert_ne!(
-            art,
+            art.map(|z| z.art),
             Some(FangArt::Objekt(jjcad_core::snap::SnapKind::Endpoint)),
             "Messpunkt fängt ohne Zug"
         );

@@ -287,9 +287,11 @@ ausgeblendet.
   der Strecke liegen, nicht auf ihrer Verlängerung. Beim **Erzeugen** eines Kreises liefert der
   Lot-Fang denselben Punkt (Radius = Abstand Mittelpunkt → Linie), der Kreis liegt damit
   ebenfalls tangential. Die Statusleiste meldet „Tangential", die Marke ist ein Kreis mit
-  anliegender Gerade. Abschaltbar in Einstellungen ▸ Fangen und im Fangmenü der Statusleiste.
-  Prüfweg: `cargo test -p jjcad-core --test tangential_fang` (8 Tests, messen den Abstand
-  Mittelpunkt → Gerade gegen den Radius).
+  anliegender Gerade. Sie steht am **Berührpunkt** von Linie und Kreis — dort, wo die Linie den
+  Kreis berührt —, nicht am Zeigerpunkt auf der Tangente (T0211). Abschaltbar in
+  Einstellungen ▸ Fangen und im Fangmenü der Statusleiste.
+  Prüfweg: `cargo test -p jjcad-core --test tangential_fang` (10 Tests, messen den Abstand
+  Mittelpunkt → Gerade gegen den Radius und die Lage der Marke).
 - **Fangmarken** (T0153): Jeder Fang **am Element** zeigt sein eigenes Zeichen am
   **Fangpunkt** — also am Objekt, nicht am Zeiger: Endpunkt ein Quadrat, Mittelpunkt ein
   Dreieck, Zentrum ein Kreis mit Kreuz, Schnittpunkt ein Kreuz, Quadrant eine Raute, Lot ein
