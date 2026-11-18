@@ -1,6 +1,6 @@
 //! Inventar: Lager (Raster), Block-Manager, Funktionsliste.
 
-use crate::app::{App, TabKind};
+use crate::app::App;
 use crate::theme::{self, Palette};
 use crate::widgets;
 use egui::{Align, Color32, FontId, Layout, Pos2, Rect, RichText, Rounding, Sense, Stroke, Ui, Vec2};
@@ -405,21 +405,16 @@ fn block_tile(app: &mut App, ui: &mut Ui, b: &BlockDef) {
             }
             ui.close_menu();
         }
-        if b.source != jjcad_core::model::BlockSource::System && ui.button(jjcad_core::i18n::tr("gui.inventory.loeschen")).clicked() {
-            // T0128: die Blockdatei in `<blocks>/` geht mit.
-            let dir = app.prefs.blocks_dir().to_string_lossy().to_string();
-            let _ = app.session_mut().execute(
-                "block.delete",
-                &serde_json::json!({ "block": b.id, "dir": dir }),
-            );
-            // Ein offener Editor dieses Blocks hat keinen Block mehr.
-            app.tab_mut().offene_bloecke.retain(|x| x != &b.id);
-            app.tab_mut().block_original.remove(&b.id);
-            app.tab_mut().block_views.remove(&b.id);
-            if app.aktiver_block().as_deref() == Some(b.id.as_str()) {
-                app.switch_tab(TabKind::Model);
-            }
-            app.mark_changed();
+        if b.source != jjcad_core::model::BlockSource::System
+            && ui
+                .button(jjcad_core::i18n::tr("gui.inventory.loeschen"))
+                .clicked()
+        {
+            // T0219: Löschen **nur** über die Rückfrage — sie weist auf noch
+            // eingesetzte Instanzen hin und bietet an, sie zu zerlegen. Die
+            // Action selbst lehnt einen benutzten Block ab (kein stiller
+            // Erfolg); die Blockdatei in `<blocks>/` geht mit.
+            app.block_loeschen_anfragen(&b.id);
             ui.close_menu();
         }
     });

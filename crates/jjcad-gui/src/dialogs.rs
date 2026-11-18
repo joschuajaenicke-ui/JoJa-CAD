@@ -534,6 +534,91 @@ pub fn layer_loeschen(app: &mut App, ctx: &egui::Context) {
     }
 }
 
+/// T0219: Rückfrage vor dem unwiderruflichen Löschen eines Blocks.
+///
+/// Der Blockbibliothek-Rechtsklick öffnet sie über
+/// `App::block_loeschen_anfragen`; gelöscht wird erst hier. Stehen noch
+/// Instanzen in der Zeichnung, nennt der Dialog die Zahl und bietet an, sie
+/// vorher zu zerlegen (`block.delete` mit `explode`) — sonst bliebe der Block
+/// stehen und die Geometrie wäre ohne Warnung weg.
+pub fn block_loeschen(app: &mut App, ctx: &egui::Context) {
+    let Some(bid) = app.ui.block_delete.clone() else {
+        return;
+    };
+    let Some(block) = app.doc().block(&bid).cloned() else {
+        app.ui.block_delete = None;
+        return;
+    };
+    let anzahl = app.doc().block_verwendungen(&bid).len();
+    let tr = jjcad_core::i18n::tr;
+    let mut offen = true;
+    let mut nur_loeschen = false;
+    let mut zerlegen = false;
+    let mut abbrechen = false;
+    dim_background(ctx);
+    modal_window(ctx, tr("gui.dialogs.block_loeschen"), 460.0, &mut offen)
+        // Über der offenen Blockbibliothek (beide sind sonst `Order::Middle`).
+        .order(egui::Order::Foreground)
+        .show(ctx, |ui| {
+            ui.set_width(440.0);
+            ui.add(
+                egui::Label::new(
+                    egui::RichText::new(jjcad_core::i18n::t_args_owned(
+                        "gui.dialogs.block_x_unwiderruflich_loeschen",
+                        &[("name", block.name.clone())],
+                    ))
+                    .strong(),
+                )
+                .wrap(),
+            );
+            ui.add_space(6.0);
+            if anzahl > 0 {
+                ui.add(
+                    egui::Label::new(
+                        egui::RichText::new(jjcad_core::i18n::t_args_owned(
+                            "gui.dialogs.block_wird_noch_n_mal_verwendet",
+                            &[("anzahl", anzahl.to_string())],
+                        ))
+                        .color(Palette::entfernen()),
+                    )
+                    .wrap(),
+                );
+                ui.add_space(4.0);
+                ui.add(
+                    egui::Label::new(theme::dim(tr(
+                        "gui.dialogs.instanzen_zerlegen_hinweis",
+                    )))
+                    .wrap(),
+                );
+            } else {
+                ui.label(theme::dim(tr("gui.dialogs.loeschen_nicht_rueckgaengig")));
+            }
+            ui.add_space(10.0);
+            button_row(ui, |ui| {
+                if anzahl == 0 {
+                    if ui.button(tr("gui.dialogs.loeschen")).clicked() {
+                        nur_loeschen = true;
+                    }
+                } else if ui
+                    .button(tr("gui.dialogs.instanzen_zerlegen_und_loeschen"))
+                    .clicked()
+                {
+                    zerlegen = true;
+                }
+                if ui.button(tr("gui.dialogs.abbrechen")).clicked() {
+                    abbrechen = true;
+                }
+            });
+        });
+    if nur_loeschen {
+        app.block_loeschen(false);
+    } else if zerlegen {
+        app.block_loeschen(true);
+    } else if abbrechen || !offen {
+        app.ui.block_delete = None;
+    }
+}
+
 // ---------------------------------------------------------------------------
 // Gemeinsame Bausteine
 // ---------------------------------------------------------------------------
@@ -778,6 +863,10 @@ pub fn show(app: &mut App, ctx: &egui::Context) {
 
     // T0213: Rückfrage beim Löschen eines Layers mit Objekten.
     layer_loeschen(app, ctx);
+
+    // T0219: Rückfrage beim Löschen eines Blocks — mit Hinweis auf noch
+    // eingesetzte Instanzen und dem Angebot, sie vorher zu zerlegen.
+    block_loeschen(app, ctx);
 
     // Dateidialog
     if app.ui.file_dialog.is_some() {
@@ -8854,5 +8943,203 @@ mod tests_layer_loeschen {
         app.ui.layer_delete = Some((quelle, andere));
         rahmen(&ctx, &mut app, vec![]);
         assert!(app.ui.layer_delete.is_none());
+    }
+}
+
+mod tests_block_loeschen {
+    //! T0219: Die Rückfrage vor dem Löschen eines Blocks nennt die Zahl der
+    //! Instanzen und bietet an, sie zu zerlegen; ohne Instanzen löscht der
+    //! Knopf sofort, „Abbrechen“ lässt alles stehen.
+    use super::*;
+    use jjcad_core::model::{BlockDef, BlockSource, Entity, EntityKind};
+
+    fn test_dir(name: &str) -> std::path::PathBuf {
+        let d = std::env::temp_dir().join(format!(
+            "jjcad-blockloeschen-{}-{name}",
+            std::process::id()
+        ));
+        let _ = std::fs::remove_dir_all(&d);
+        std::fs::create_dir_all(&d).unwrap();
+        d
+    }
+
+    /// Zeichnung mit einem Benutzerblock `usr:stuhl`, `instanzen` Instanzen
+    /// davon in der Zeichnung.
+    fn app_mit_block(dir: &std::path::Path, instanzen: usize) -> (App, egui::Context) {
+        let ctx = egui::Context::default();
+        let mut app = App::with_ctx(ctx.clone());
+        app.prefs.blocks_pfad = dir.to_string_lossy().to_string();
+        let layer = app.doc().current_layer;
+        app.doc_mut().blocks.push(BlockDef {
+            id: "usr:stuhl".into(),
+            name: "Stuhl".into(),
+            category: "Projekt".into(),
+            source: BlockSource::User,
+            description: String::new(),
+            entities: vec![Entity::new(
+                1,
+                layer,
+                EntityKind::Circle {
+                    c: V2::ZERO,
+                    r: 500.0,
+                },
+            )],
+            icon: None,
+            base: V2::ZERO,
+            annotative: false,
+        });
+        for i in 0..instanzen {
+            app.session_mut()
+                .execute(
+                    "block.insert",
+                    &json!({"block": "usr:stuhl", "pos": [i as f64 * 2000.0, 0.0]}),
+                )
+                .expect("Instanz");
+        }
+        (app, ctx)
+    }
+
+    fn rahmen(ctx: &egui::Context, app: &mut App, events: Vec<egui::Event>) -> egui::FullOutput {
+        let input = egui::RawInput {
+            screen_rect: Some(Rect::from_min_size(Pos2::ZERO, Vec2::new(1500.0, 950.0))),
+            events,
+            ..Default::default()
+        };
+        ctx.run(input, |ctx| show(app, ctx))
+    }
+
+    fn texte(out: &egui::FullOutput) -> Vec<String> {
+        out.shapes
+            .iter()
+            .filter_map(|cs| match &cs.shape {
+                egui::Shape::Text(t) => Some(t.galley.text().to_string()),
+                _ => None,
+            })
+            .collect()
+    }
+
+    fn text_mitte(out: &egui::FullOutput, label: &str) -> Option<Pos2> {
+        out.shapes.iter().find_map(|cs| match &cs.shape {
+            egui::Shape::Text(t) if t.galley.text() == label => {
+                Some(t.pos + t.galley.size() / 2.0)
+            }
+            _ => None,
+        })
+    }
+
+    fn klick(ctx: &egui::Context, app: &mut App, pos: Pos2) {
+        let knopf = |pressed: bool| egui::Event::PointerButton {
+            pos,
+            button: egui::PointerButton::Primary,
+            pressed,
+            modifiers: egui::Modifiers::NONE,
+        };
+        rahmen(ctx, app, vec![egui::Event::PointerMoved(pos)]);
+        rahmen(ctx, app, vec![knopf(true)]);
+        rahmen(ctx, app, vec![knopf(false)]);
+        rahmen(ctx, app, vec![]);
+    }
+
+    fn blockrefs(app: &App) -> usize {
+        app.doc()
+            .entities
+            .iter()
+            .filter(|e| matches!(e.kind, EntityKind::BlockRef { .. }))
+            .count()
+    }
+
+    #[test]
+    fn dialog_nennt_die_instanzen_und_zerlegt_sie() {
+        let dir = test_dir("zerlegen");
+        let (mut app, ctx) = app_mit_block(&dir, 2);
+        assert!(app.block_loeschen_anfragen("usr:stuhl"));
+        rahmen(&ctx, &mut app, vec![]);
+        let out = rahmen(&ctx, &mut app, vec![]);
+        let alle = texte(&out);
+        let hinweis = jjcad_core::i18n::t_args_owned(
+            "gui.dialogs.block_wird_noch_n_mal_verwendet",
+            &[("anzahl", "2".to_string())],
+        );
+        assert!(
+            alle.iter().any(|t| t == &hinweis),
+            "Hinweis auf die Instanzen fehlt: {alle:?}"
+        );
+        // Der einfache „Löschen“-Knopf fehlt — nur Zerlegen führt zum Ziel.
+        let knopf = jjcad_core::i18n::tr("gui.dialogs.instanzen_zerlegen_und_loeschen");
+        assert!(
+            !alle.iter().any(|t| t == jjcad_core::i18n::tr("gui.dialogs.loeschen")),
+            "ohne Zerlegen gibt es keinen Löschen-Knopf"
+        );
+        let pos = text_mitte(&out, knopf).expect("Knopf „Instanzen zerlegen und löschen“");
+        klick(&ctx, &mut app, pos);
+        assert!(app.ui.block_delete.is_none(), "der Dialog schließt");
+        assert!(
+            app.doc().block("usr:stuhl").is_none(),
+            "der Block ist gelöscht"
+        );
+        assert_eq!(blockrefs(&app), 0, "keine Instanz mehr");
+        assert!(
+            !app.doc().entities.is_empty(),
+            "die Geometrie der Instanzen steht als Einzelobjekte"
+        );
+    }
+
+    #[test]
+    fn ohne_instanzen_loescht_der_knopf_sofort() {
+        let dir = test_dir("allein");
+        let (mut app, ctx) = app_mit_block(&dir, 0);
+        assert!(app.block_loeschen_anfragen("usr:stuhl"));
+        rahmen(&ctx, &mut app, vec![]);
+        let out = rahmen(&ctx, &mut app, vec![]);
+        let alle = texte(&out);
+        let knopf = jjcad_core::i18n::tr("gui.dialogs.loeschen");
+        assert!(
+            alle.iter().any(|t| t == &knopf),
+            "Knopf „Löschen“ fehlt: {alle:?}"
+        );
+        assert!(
+            !alle.iter().any(|t| t
+                == jjcad_core::i18n::tr("gui.dialogs.instanzen_zerlegen_und_loeschen")),
+            "ohne Instanzen braucht es kein Zerlegen"
+        );
+        let pos = text_mitte(&out, knopf).expect("Knopf „Löschen“");
+        klick(&ctx, &mut app, pos);
+        assert!(app.ui.block_delete.is_none(), "der Dialog schließt");
+        assert!(app.doc().block("usr:stuhl").is_none(), "der Block ist weg");
+    }
+
+    #[test]
+    fn abbrechen_laesst_den_block_stehen() {
+        let dir = test_dir("abbrechen");
+        let (mut app, ctx) = app_mit_block(&dir, 1);
+        assert!(app.block_loeschen_anfragen("usr:stuhl"));
+        rahmen(&ctx, &mut app, vec![]);
+        let out = rahmen(&ctx, &mut app, vec![]);
+        let knopf = jjcad_core::i18n::tr("gui.dialogs.abbrechen");
+        let pos = text_mitte(&out, knopf).expect("Knopf „Abbrechen“");
+        klick(&ctx, &mut app, pos);
+        assert!(app.ui.block_delete.is_none(), "der Dialog schließt");
+        assert!(app.doc().block("usr:stuhl").is_some(), "der Block bleibt");
+        assert_eq!(blockrefs(&app), 1, "die Instanz bleibt");
+    }
+
+    #[test]
+    fn systemblock_hat_keinen_loeschweg() {
+        let dir = test_dir("system");
+        let (mut app, _ctx) = app_mit_block(&dir, 0);
+        app.doc_mut().blocks.push(BlockDef {
+            id: "sys:pfeil".into(),
+            name: "Pfeil".into(),
+            category: "Punkt Symbole".into(),
+            source: BlockSource::System,
+            description: String::new(),
+            entities: Vec::new(),
+            icon: None,
+            base: V2::ZERO,
+            annotative: true,
+        });
+        assert!(!app.block_loeschen_anfragen("sys:pfeil"));
+        assert!(app.ui.block_delete.is_none(), "keine Rückfrage");
+        assert!(app.doc().block("sys:pfeil").is_some(), "der Block bleibt");
     }
 }

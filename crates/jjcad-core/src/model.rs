@@ -2445,6 +2445,36 @@ impl Document {
             .collect()
     }
 
+    /// Alle **Verwendungen** eines Blocks — im Modell, auf jedem Blatt und in
+    /// anderen Blockdefinitionen (T0219).
+    ///
+    /// `block_instances` liest nur das Modell; für die Frage „kann der Block
+    /// weg?“ zählt jeder Bearbeitungsraum. Ein Block, den ein anderer Block
+    /// einsetzt, darf ebenfalls nicht verschwinden — sonst bliebe dort ein
+    /// Verweis auf eine fehlende Definition stehen.
+    pub fn block_verwendungen(&self, block_id: &str) -> Vec<Id> {
+        let treffer = |liste: &[Entity]| -> Vec<Id> {
+            liste
+                .iter()
+                .filter(|e| {
+                    matches!(&e.kind, EntityKind::BlockRef { block, .. } if block == block_id)
+                })
+                .map(|e| e.id)
+                .collect()
+        };
+        let mut ids = treffer(&self.entities);
+        for s in &self.sheets {
+            ids.extend(treffer(&s.entities));
+        }
+        for b in &self.blocks {
+            if b.id == block_id {
+                continue;
+            }
+            ids.extend(treffer(&b.entities));
+        }
+        ids
+    }
+
     /// Prüft, ob Layer `id` gesperrt ist — der Plan zählt mit (T0202).
     pub fn layer_locked(&self, id: Id) -> bool {
         self.layer_gesperrt(id)

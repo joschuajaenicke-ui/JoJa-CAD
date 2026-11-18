@@ -588,6 +588,15 @@ Umbenennen bleibt die Kennung gleich, die Datei `blocks/<name>.jjblk` zieht mit
 (die alte Datei verschwindet). Systemblöcke sind schreibgeschützt und haben
 keinen Eintrag; Projektblöcke werden nur in der Zeichnung umbenannt.
 
+**Löschen** (T0219): „Löschen“ im Rechtsklickmenü fragt **immer** nach —
+der Block und bei eigenen Blöcken auch die Datei `blocks/<name>.jjblk` sind
+danach unwiderruflich weg. Steht der Block noch in der Zeichnung, nennt die
+Rückfrage die Zahl der Instanzen und bietet „Instanzen zerlegen und löschen“:
+alle Instanzen — im Modell, auf Blättern und in anderen Blöcken — werden zu
+Einzelobjekten, die Geometrie bleibt an ihrem Platz, nur der Blockbezug
+entfällt. Ohne diesen Schritt bleibt der Block stehen; Systemblöcke haben
+keinen Löschweg.
+
 Ein **ausgewählter Block** zeigt seine Eigenschaften im Panel: Blockname,
 Gruppe, Drehung und Faktor (Maßstab der Instanz).
 
