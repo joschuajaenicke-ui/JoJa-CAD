@@ -273,3 +273,57 @@ fn bogen_faengt_tangential_nur_im_winkelbereich() {
         res
     );
 }
+
+/// Die Fangmarke steht am **Berührpunkt** (T0211), nicht am Zeigerpunkt auf
+/// der Tangente: der Fangpunkt wandert mit dem Zeiger, berührt wird der Kreis
+/// aber in genau einem Punkt — dem Bezugspunkt der neuen Linie.
+#[test]
+fn marke_steht_am_beruehrpunkt_des_kreises() {
+    let mut s = s();
+    kreis(&mut s, (0.0, 0.0), 1000.0);
+    let res = fang(&s, (1005.0, 800.0), Some((1000.0, 0.0)), &[]);
+    assert_eq!(
+        res.source,
+        jjcad_core::snap::SnapSource::Object(SnapKind::Tangent),
+        "kein Tangentialfang: {:?}",
+        res
+    );
+    let marke = res.marke.expect("Tangentialfang ohne Markenstelle");
+    assert!(
+        marke.dist(Vec2::new(1000.0, 0.0)) < 1e-6,
+        "Marke steht nicht am Berührpunkt: {marke:?}"
+    );
+    // Der Fangpunkt liegt woanders (auf der Tangente unter dem Zeiger) — sonst
+    // wäre die Marke mit dem Zeigerpunkt gleichzusetzen.
+    assert!(
+        marke.dist(res.point) > 700.0,
+        "Marke und Fangpunkt fallen zusammen: {:?}",
+        res.point
+    );
+}
+
+/// Auch beim bewegten Kreis liegt die Marke auf der Linie — dort, wo der Kreis
+/// sie berührt —, während der Fangpunkt der neue Kreismittelpunkt ist.
+#[test]
+fn marke_des_bewegten_kreises_liegt_auf_der_linie() {
+    let mut s = s();
+    linie(&mut s, (0.0, 0.0), (5000.0, 0.0));
+    let k = kreis(&mut s, (2000.0, 1500.0), 500.0);
+    let res = fang(&s, (2000.0, 480.0), None, &[k]);
+    assert_eq!(
+        res.source,
+        jjcad_core::snap::SnapSource::Object(SnapKind::Tangent),
+        "bewegter Kreis rastet nicht: {:?}",
+        res
+    );
+    let marke = res.marke.expect("Tangentialfang ohne Markenstelle");
+    assert!(
+        marke.dist(Vec2::new(2000.0, 0.0)) < 1e-6,
+        "Marke steht nicht auf der Linie: {marke:?}"
+    );
+    assert!(
+        (marke.dist(res.point) - 500.0).abs() < 1e-6,
+        "Marke liegt nicht einen Radius neben dem Mittelpunkt: {}",
+        marke.dist(res.point)
+    );
+}
