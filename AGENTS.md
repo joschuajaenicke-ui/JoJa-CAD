@@ -941,9 +941,17 @@ Mit dem Nutzer abgestimmt — nicht „verbessern“:
   Laufrichtung, am Anfang entgegen. Die Maße der mitgelieferten Blöcke (`blocks_lib`, IDs
   `sys:pkt-*`) sind deshalb **Papier-Millimeter**, nicht Zeichnungs-Millimeter.
   `persist::normalize_systembloecke` ergänzt fehlende Systemblöcke beim Laden — sonst
-  erreichte die Kategorie keine bestehende Zeichnung. Prüfweg:
-  `cargo test -p jjcad-core --test punktsymbole` und `cargo test -p jjcad-gui props::`-
-  Prüfbild `--demo "neudatei,punktsymbol"` bzw. `--demo "neudatei,blockreiter:system"`.
+  erreichte die Kategorie keine bestehende Zeichnung. **Blöcke skalieren mit dem
+  Maßstab**: `BlockDef::annotative` (T0210, Turn 3) zeichnet die Blockgeometrie in
+  Beschriftungsgröße (`ctx.a(1.0)` in `render_entity`, `doc.settings.annotation_scale`
+  in `entity_segments`, dieselbe Rechnung in `ghost::geometry` für die Vorschau) —
+  wie die Begrenzungssymbole der Bemaßung. Die Punktsymbole tragen sie, damit Block
+  und Symbol am Punkt gleich groß sind; eigene Blöcke setzen sie im Fenster
+  „Block-Eigenschaften“ (Action `block.update`, Parameter `annotative`). Ohne die
+  Eigenschaft bleibt ein Block maßstäblich (1:1, Vorgabe für alte Dateien). Prüfweg:
+  `cargo test -p jjcad-core --test punktsymbole` und `--test block_massstab`,
+  `cargo test -p jjcad-gui props::` und `tests_block_eigenschaften`; Prüfbild
+  `--demo "neudatei,punktsymbol"` bzw. `--demo "neudatei,blockreiter:system"`.
 - **Höhenkoten (T0096)**: Zwei getrennte Objektarten ersetzen die frühere eine
   Höhenkote. Die **Grundriss-Kote** (`EntityKind::ElevationPlan`) ist ein
   Kreis-Symbol mit Fadenkreuz und zwei gefüllten Vierteln; der Höhenwert steht

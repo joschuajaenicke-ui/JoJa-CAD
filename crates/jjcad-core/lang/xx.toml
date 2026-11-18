@@ -1275,6 +1275,9 @@
 # version_x_build_x_x = "Version {wert1} · Build {wert2} ({wert3})\n"
 #
 [gui.dialogs]
+# massstab = "Maßstab"
+# mit_massstab_skalieren = "Mit Maßstab skalieren"
+# mit_massstab_skalieren_tip = "Blockgeometrie in Beschriftungsgröße — das Symbol bleibt auf jedem Maßstab gleich groß, wie die Begrenzungssymbole der Bemaßung"
 # block_eigenschaften = "Block-Eigenschaften"
 # name_und_gruppe_des_blocks = "Name und Gruppe des Blocks. Die Gruppe ist die Überschrift in der Blockbibliothek."
 # neue_gruppe = "Neue Gruppe"
@@ -1726,6 +1729,8 @@
 #
 [gui.props]
 # blockname = "Blockname"
+# mit_zeichnung = "mit Zeichnung"
+# eins_zu_eins = "1:1"
 # punktsymbol = "Symbol"
 # punktsymbol_ende = "Ende"
 # kein_symbol = "Kein Symbol"

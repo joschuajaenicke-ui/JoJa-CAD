@@ -1381,6 +1381,13 @@ pub struct BlockDef {
     /// Einfügebasispunkt (meist 0,0)
     #[serde(default)]
     pub base: Vec2,
+    /// **Mit dem Zeichnungsmaßstab skalieren** (T0210): die Blockgeometrie
+    /// liegt dann in Papier-Millimetern und wird beim Zeichnen mit dem
+    /// Beschriftungsmaßstab vervielfacht — wie die Begrenzungssymbole der
+    /// Bemaßung. Ohne die Eigenschaft gilt die Geometrie maßstäblich in der
+    /// Zeichnung (1:1).
+    #[serde(default)]
+    pub annotative: bool,
 }
 
 impl BlockDef {

@@ -1040,6 +1040,9 @@ pub struct BlockEigenschaften {
     pub gruppe: String,
     /// Eingabe einer neuen Gruppe (leer = keine angelegt)
     pub neue_gruppe: String,
+    /// Mit dem Zeichnungsmaßstab skalieren (T0210) — wie die
+    /// Begrenzungssymbole der Bemaßung.
+    pub annotative: bool,
 }
 
 /// R2.3: Die Zieldatei wurde außerhalb von JoJa-CAD geändert, während im
@@ -2030,6 +2033,7 @@ impl App {
                 entities: vec![kreis],
                 icon: None,
                 base: V2::ZERO,
+                annotative: false,
             });
         }
         if let Some(id) = self
@@ -2339,6 +2343,7 @@ impl App {
                             entities: ents,
                             icon: None,
                             base: V2::ZERO,
+                            annotative: false,
                         });
                     };
                     anlegen(
@@ -3672,6 +3677,12 @@ impl App {
                             self.session_mut().selection = vec![id];
                         }
                     }
+                    // Derselbe Block als **eingesetzte Instanz** (T0210, Turn 3):
+                    // er muss so groß sein wie das Symbol am Punkt daneben.
+                    let _ = self.session_mut().execute(
+                        "block.insert",
+                        &serde_json::json!({"block": "sys:pkt-kreuz", "pos": [2.0, 6.0]}),
+                    );
                 }
                 "selpoly" => {
                     // erste (geschlossene) Polylinie auswählen: Eigenschaften-
@@ -4265,6 +4276,7 @@ impl App {
             name: block.name.clone(),
             gruppe: block.category.clone(),
             neue_gruppe: String::new(),
+            annotative: block.annotative,
         });
         true
     }
@@ -4297,6 +4309,7 @@ impl App {
                 "block": wahl.block,
                 "name": name,
                 "category": gruppe,
+                "annotative": wahl.annotative,
                 "dir": dir,
             }),
         ) {
@@ -17674,6 +17687,7 @@ mod tests_blockeditor {
             entities: ents,
             icon: None,
             base: V2::ZERO,
+            annotative: false,
         });
         app
     }
@@ -18254,6 +18268,7 @@ mod tests_rechtsklick {
             entities: vec![kind],
             icon: None,
             base: V2::ZERO,
+            annotative: false,
         });
         let id = app.doc_mut().new_id();
         let instanz = Entity::new(
@@ -18907,6 +18922,7 @@ mod tests_block_eigenschaften {
             entities: Vec::new(),
             icon: None,
             base: V2::ZERO,
+            annotative: false,
         });
         app
     }
@@ -18939,6 +18955,7 @@ mod tests_block_eigenschaften {
             entities: Vec::new(),
             icon: None,
             base: V2::ZERO,
+            annotative: false,
         });
         assert!(
             !app.oeffne_block_eigenschaften("sys:tuer"),
@@ -18983,6 +19000,38 @@ mod tests_block_eigenschaften {
         assert_eq!(roh["block"]["name"], "Stuhl rund");
         assert_eq!(roh["block"]["category"], "Möbel");
         assert_eq!(roh["block"]["id"], "usr:stuhl", "Kennung bleibt stabil");
+    }
+
+    /// T0210: „Mit Maßstab skalieren“ gehört zu den Block-Eigenschaften — das
+    /// Häkchen schreibt `block.update` und landet in der `.jjblk`.
+    #[test]
+    fn massstabseigenschaft_wird_uebernommen() {
+        let dir = test_dir("massstab");
+        let mut app = app_mit_block(&dir);
+        assert!(!app.doc().block("usr:stuhl").unwrap().annotative);
+
+        assert!(app.oeffne_block_eigenschaften("usr:stuhl"));
+        if let Some(wahl) = app.ui.block_eigenschaften.as_mut() {
+            wahl.annotative = true;
+        }
+        assert!(app.block_eigenschaften_uebernehmen());
+        assert!(
+            app.doc().block("usr:stuhl").unwrap().annotative,
+            "die Eigenschaft steht nicht im Dokument"
+        );
+        // Benutzerblöcke schreiben ihre `.jjblk` mit — dort muss sie auch stehen.
+        let datei = app.prefs.blocks_dir().join("stuhl.jjblk");
+        let roh: serde_json::Value =
+            serde_json::from_str(&std::fs::read_to_string(&datei).unwrap()).unwrap();
+        assert_eq!(roh["block"]["annotative"], serde_json::json!(true));
+
+        // Und wieder aus: das Häkchen ist keine Einbahnstraße.
+        assert!(app.oeffne_block_eigenschaften("usr:stuhl"));
+        if let Some(wahl) = app.ui.block_eigenschaften.as_mut() {
+            wahl.annotative = false;
+        }
+        assert!(app.block_eigenschaften_uebernehmen());
+        assert!(!app.doc().block("usr:stuhl").unwrap().annotative);
     }
 
     /// Eine neue Gruppe entsteht, indem der Block sie bekommt — das Feld

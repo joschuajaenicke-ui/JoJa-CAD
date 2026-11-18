@@ -201,6 +201,7 @@ fn benutzerblock_der_kategorie_ist_als_symbol_waehlbar() {
         )],
         icon: None,
         base: jjcad_core::geom::Vec2::ZERO,
+        annotative: false,
     });
     assert!(
         doc.punktsymbol_bloecke().iter().any(|b| b.id == "usr:marke"),

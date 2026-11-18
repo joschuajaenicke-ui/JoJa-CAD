@@ -183,6 +183,7 @@ pub fn definition_aus_elementen(
         entities,
         icon: None,
         base,
+        annotative: false,
     }
 }
 

@@ -1869,6 +1869,13 @@ pub fn render_entity(
                 m = m * Affine::scale(-1.0, 1.0);
             }
             m = m * Affine::scale(scale.x, scale.y);
+            // Mit dem Zeichnungsmaßstab skalieren (T0210, Turn 3): die
+            // Blockgeometrie liegt in Papier-Millimetern und wächst mit dem
+            // Beschriftungsmaßstab — wie die Begrenzungssymbole der Bemaßung.
+            if def.annotative {
+                let k = ctx.a(1.0);
+                m = m * Affine::scale(k, k);
+            }
             let m = xf * m;
             let block_color = doc.effective_color(e);
             for child in &def.entities {
@@ -4972,6 +4979,10 @@ fn entity_segments_tief(doc: &Document, e: &Entity, depth: usize) -> Vec<Seg> {
                     m = m * Affine::scale(-1.0, 1.0);
                 }
                 m = m * Affine::scale(scale.x, scale.y);
+                if def.annotative {
+                    let k = doc.settings.annotation_scale;
+                    m = m * Affine::scale(k, k);
+                }
                 for ce in &def.entities {
                     let kind = transform::transform_kind(&ce.kind, &m);
                     let mut te = ce.clone();
