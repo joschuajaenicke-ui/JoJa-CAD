@@ -985,7 +985,12 @@ Mit dem Nutzer abgestimmt — nicht „verbessern“:
   Laufrichtung, am Anfang entgegen. Die Maße der mitgelieferten Blöcke (`blocks_lib`, IDs
   `sys:pkt-*`) sind deshalb **Papier-Millimeter**, nicht Zeichnungs-Millimeter.
   `persist::normalize_systembloecke` ergänzt fehlende Systemblöcke beim Laden — sonst
-  erreichte die Kategorie keine bestehende Zeichnung. **Blöcke skalieren mit dem
+  erreichte die Kategorie keine bestehende Zeichnung. **Pfeile sitzen mit der Spitze auf
+  dem Basispunkt** (T0210, Turn 5): `sys:pkt-pfeil` und `sys:pkt-pfeilspitze` haben den
+  Ursprung an der Spitze, der Körper läuft nach −X. Nur so deckt sich die Spitze an einem
+  Linienende mit dem Endpunkt (vorher stand sie 1,4 mm daneben, bei 1:100 also 14 cm);
+  `render::push_punktsymbol` dreht am Anfang um π, dort zeigt die Spitze nach außen und
+  der Körper liegt in der Linie. **Blöcke skalieren mit dem
   Maßstab**: `BlockDef::annotative` (T0210, Turn 3) zeichnet die Blockgeometrie in
   Beschriftungsgröße (`ctx.a(1.0)` in `render_entity`, `doc.settings.annotation_scale`
   in `entity_segments`, dieselbe Rechnung in `ghost::geometry` für die Vorschau) —
