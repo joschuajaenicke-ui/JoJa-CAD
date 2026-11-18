@@ -145,6 +145,11 @@ pub struct SnapHit {
     pub point: Vec2,
     pub kind: SnapKind,
     pub entity: Option<Id>,
+    /// Abweichende Stelle für die Fangmarke (T0211): beim Tangentialfang steht
+    /// das Zeichen am **Berührpunkt** von Linie und Kreis, während `point` der
+    /// Punkt am Zeiger ist (auf der Tangente bzw. der neue Kreismittelpunkt).
+    /// `None` heißt: die Marke sitzt auf `point`.
+    pub marke: Option<Vec2>,
 }
 
 // ---------------------------------------------------------------------------
@@ -428,6 +433,7 @@ pub fn winkelhalbierende_treffer(
                     point: f,
                     kind: SnapKind::Bisector,
                     entity: None,
+                    marke: None,
                 });
             }
         }
@@ -706,6 +712,7 @@ fn hilfslinien_snap_innen(
                 point: t.point,
                 kind: t.kind,
                 entity: t.entity,
+                marke: None,
             });
         }
     }
@@ -771,6 +778,7 @@ fn hilfslinien_snap_innen(
                 point: t.point,
                 kind: t.kind,
                 entity: t.entity,
+                marke: None,
             });
         }
     }
@@ -846,6 +854,8 @@ pub fn tangent_treffer(
                     point: p,
                     kind: SnapKind::Tangent,
                     entity: Some(e.id),
+                    // Die Linie berührt den Kreis dort, wo sie beginnt.
+                    marke: Some(r0),
                 });
             }
         }
@@ -903,6 +913,9 @@ pub fn tangent_treffer(
                                 point: q,
                                 kind: SnapKind::Tangent,
                                 entity: Some(e.id),
+                                // `q` ist der neue Mittelpunkt; berührt wird
+                                // die Linie an seinem Fußpunkt auf ihr.
+                                marke: Some(a + ab * t),
                             });
                         }
                     }
@@ -1033,6 +1046,10 @@ fn snap_candidates_alle(
         .filter_map(|id| crate::wall::laibungsspanne(doc, *id))
         .collect();
 
+    // Der Tangentialfang bringt als einziger eine **eigene Markenstelle** mit
+    // (T0211). Er kann sie nicht durch `consider` reichen (das setzt keine),
+    // sondern sammelt getrennt und kommt am Ende dazu.
+    let mut tangent_cands: Vec<(f64, SnapHit)> = Vec::new();
     let mut consider = |p: Vec2, kind: SnapKind, entity: Option<Id>, dist: f64| {
         if dist > tol {
             return;
@@ -1046,6 +1063,7 @@ fn snap_candidates_alle(
                 point: p,
                 kind,
                 entity,
+                marke: None,
             },
         ));
     };
@@ -1171,7 +1189,11 @@ fn snap_candidates_alle(
     // für ihn dieselbe Sortierung und Entdopplung wie für jeden anderen Fang.
     if s.tangent {
         for hit in tangent_treffer(doc, reference, cursor, tol, ignore) {
-            consider(hit.point, hit.kind, hit.entity, hit.point.dist(cursor));
+            let d = hit.point.dist(cursor);
+            if d > tol {
+                continue;
+            }
+            tangent_cands.push((d, hit));
         }
     }
 
@@ -1246,6 +1268,7 @@ fn snap_candidates_alle(
         }
     }
 
+    cands.extend(tangent_cands);
     sortiere_kandidaten(cands.into_iter().map(|(_, hit)| hit).collect(), cursor)
 }
 
@@ -1312,6 +1335,12 @@ impl SnapSource {
 pub struct SnapResolution {
     pub point: Vec2,
     pub source: SnapSource,
+    /// Stelle der Fangmarke (T0211), wenn sie nicht auf `point` liegt.
+    ///
+    /// Beim Tangentialfang fällt der Fangpunkt mit dem Zeigerort auf der
+    /// Tangente zusammen; das Zeichen gehört aber an den **Berührpunkt** von
+    /// Linie und Kreis — also dorthin, wo die Linie den Kreis berührt.
+    pub marke: Option<Vec2>,
 }
 
 impl SnapResolution {
@@ -1482,6 +1511,7 @@ pub fn snap_constrained_achsen(
         return SnapResolution {
             point: hit.point,
             source: SnapSource::Object(hit.kind),
+            marke: hit.marke,
         };
     }
 
@@ -1499,6 +1529,7 @@ pub fn snap_constrained_achsen(
             return SnapResolution {
                 point: hit.point,
                 source: SnapSource::Object(hit.kind),
+                marke: hit.marke,
             };
         }
     }
@@ -1508,6 +1539,7 @@ pub fn snap_constrained_achsen(
         return SnapResolution {
             point: hit.point,
             source: SnapSource::Object(hit.kind),
+            marke: hit.marke,
         };
     }
 
@@ -1573,11 +1605,16 @@ pub fn snap_constrained_achsen(
                 return SnapResolution {
                     point: gp,
                     source: SnapSource::Object(SnapKind::Grid),
+                    marke: None,
                 };
             }
         }
     }
-    SnapResolution { point, source }
+    SnapResolution {
+        point,
+        source,
+        marke: None,
+    }
 }
 
 /// Nächstgelegener Bezugspunkt — für Lot, Polarfang und die Kombination mit
