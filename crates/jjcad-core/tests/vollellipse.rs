@@ -139,6 +139,8 @@ fn png_zeichnet_die_volle_ellipse_glatt() {
             ..Default::default()
         },
         by_block: false,
+        start_symbol: None,
+        end_symbol: None,
     });
 
     // Ausschnitt um den Scheitel (100, 0) — dort liegt die Sehnenmitte, an der

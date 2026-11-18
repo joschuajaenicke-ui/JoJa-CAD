@@ -3359,6 +3359,35 @@ fn draw_tool_preview(
         }
         "draw.point" => {
             p.circle_stroke(w2s(cursor), 6.0, stroke);
+            // Punktsymbol (T0210): dasselbe Bild, das der Klick setzt — sonst
+            // wählt man das Symbol blind.
+            if let Some(sym) = app.options.symbol_start.as_deref() {
+                if let Some(def) = app.doc().block(sym) {
+                    let ctx = render::RenderCtx::new(app.doc());
+                    let k = app.doc().settings.annotation_scale;
+                    let aff = Affine::translate(cursor) * Affine::scale(k, k);
+                    let mut dl = render::DisplayList::default();
+                    for e in &def.entities {
+                        render::render_entity(&ctx, e, aff, &mut dl, 0);
+                    }
+                    let pc = PaintCtx {
+                        selected: Vec::new(),
+                        hover: None,
+                        lineweights: app.ui.lineweights,
+                        lineweights_scaled: app.ui.lineweights_scaled,
+                        lineweight_factor: app.ui.lineweight_factor as f64,
+                        paper_px: view.zoom * app.doc().settings.annotation_scale,
+                        preview: true,
+                        rot: view.rot as f32,
+                        text_deckel: app.prefs.textaufloesung.px(),
+                        kurven: kurven_guete(app),
+                        zaehlung: None,
+                    };
+                    for prim in &dl.prims {
+                        paint_prim(p, prim, &w2s, view.zoom, &pc, 1.0);
+                    }
+                }
+            }
         }
         "draw.text" => {
             let h = app.options.text_height;
@@ -6663,7 +6692,13 @@ fn tool_click_at(app: &mut App, w: V2, raw: V2) {
 
     match tool.action.as_str() {
         "draw.point" => {
-            let _ = run(app, "draw.point", json!({"p": ax(w)}));
+            // Punktsymbol aus dem Eigenschaften-Panel (T0210) — gilt für jedes
+            // folgende Element, bis der Nutzer ein anderes wählt.
+            let mut params = json!({"p": ax(w)});
+            if let Some(sym) = &app.options.symbol_start {
+                params["symbol"] = json!(sym);
+            }
+            let _ = run(app, "draw.point", params);
         }
         "draw.line" => {
             if tool.pts.is_empty() {
@@ -6672,7 +6707,14 @@ fn tool_click_at(app: &mut App, w: V2, raw: V2) {
             } else {
                 let start = tool.pts[0];
                 if start.dist(w) > 0.5 {
-                    let _ = run(app, "draw.line", json!({"a": ax(start), "b": ax(w)}));
+                    let mut params = json!({"a": ax(start), "b": ax(w)});
+                    if let Some(sym) = &app.options.symbol_start {
+                        params["start_symbol"] = json!(sym);
+                    }
+                    if let Some(sym) = &app.options.symbol_end {
+                        params["end_symbol"] = json!(sym);
+                    }
+                    let _ = run(app, "draw.line", params);
                     // Kette: weiter vom Endpunkt
                     app.tool = Some(Tool {
                         action: "draw.line".into(),

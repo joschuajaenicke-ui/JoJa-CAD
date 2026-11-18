@@ -2222,6 +2222,8 @@ mod tests {
             },
             style: Default::default(),
             by_block: false,
+            start_symbol: None,
+            end_symbol: None,
         };
         let id = e.id;
         doc.entities.push(e);
@@ -2273,6 +2275,8 @@ mod tests {
             },
             style: Default::default(),
             by_block: false,
+            start_symbol: None,
+            end_symbol: None,
         };
         doc.entities.push(door);
         let pts = render::wall_contour_points(&doc, doc.entity(id).unwrap());

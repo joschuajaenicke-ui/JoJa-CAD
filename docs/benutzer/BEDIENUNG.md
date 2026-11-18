@@ -50,6 +50,13 @@ einsehbar und dort frei änderbar (Ribbon ▸ Ansicht ▸ „Tasten").
 5. **Inventar** (`E`): Lager, Blockbibliothek und alle Funktionen — per Drag & Drop auf die Hotbar.
    Ein Block lässt sich auch per Klick auf einen Slot oder Lagerplatz legen, solange seine
    Einfüge-Vorschau läuft.
+   Die Blockbibliothek führt die Kategorie **Punkt Symbole** (Punkt, Kreis, Kreuz,
+   Andreaskreuz, Raute, Quadrat, Pfeil, Pfeilspitze, Maßmarke, Höhenkote Grundriss und
+   Schnitt). Ein Punkt trägt ein solches Symbol, eine Linie je eines an Anfang und Ende —
+   gewählt wird es im Eigenschaften-Panel in der Zeile **Symbol** bzw. **Ende**. Wählbar ist
+   **jeder** Block dieser Kategorie, auch ein eigener Benutzerblock, sobald er die Gruppe
+   „Punkt Symbole“ trägt. Gezeichnet wird das Symbol in Beschriftungsgröße, also auf jedem
+   Maßstab gleich groß.
 6. **Navigieren**: Mausrad zoomt, mittlere Taste oder `Leertaste`+Ziehen schwenkt.
    `F5` zeigt die ganze Zeichnung — dieselbe Funktion wie der Knopf „Alles zeigen"
    (Zoom und Mittelpunkt so, dass alles sichtbar wird).

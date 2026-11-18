@@ -1698,6 +1698,10 @@ keine = "keine"
 
 [gui.props]
 blockname = "Blockname"
+punktsymbol = "Symbol"
+punktsymbol_ende = "Ende"
+kein_symbol = "Kein Symbol"
+keine_punktsymbole = "Keine Blöcke in der Kategorie „Punkt Symbole“"
 gruppe = "Gruppe"
 ansichtsbereich_anpassen = "Ansichtsbereich anpassen"
 ansichtsbereich_tip = "Mausrad ändert den Maßstab · Mitteltaste verschiebt den Ausschnitt"

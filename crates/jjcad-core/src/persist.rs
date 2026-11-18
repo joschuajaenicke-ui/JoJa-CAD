@@ -68,8 +68,26 @@ pub fn from_json(s: &str) -> Result<Document, String> {
     normalize_sheet_viewports(&mut doc);
     // Messpunkte von Maßketten in Messreihenfolge bringen (T0195)
     normalize_dim_reihenfolge(&mut doc);
+    // Fehlende Systemblöcke ergänzen (T0210)
+    normalize_systembloecke(&mut doc);
     doc.modified = false;
     Ok(doc)
+}
+
+/// Fehlende **Systemblöcke** ergänzen (T0210).
+///
+/// Die Systembibliothek steht in der Datei (der Nutzer kann Blöcke löschen und
+/// eigene Gruppen anlegen). Neue, mit dem Programm gelieferte Blöcke erreichten
+/// eine bestehende Zeichnung deshalb nie — die Kategorie „Punkt Symbole“ fehlte
+/// in jeder älteren Datei. Beim Laden werden fehlende Systemblöcke angehängt;
+/// vorhandene bleiben unangetastet, auch wenn der Nutzer sie verändert hat.
+pub fn normalize_systembloecke(doc: &mut Document) {
+    let mut next = doc.next_id;
+    for def in crate::blocks_lib::system_blocks(&mut next) {
+        if doc.blocks.iter().all(|b| b.id != def.id) {
+            doc.blocks.push(def);
+        }
+    }
 }
 
 /// Pläne älterer Dateien ergänzen und jeden Layer einem Plan zuordnen (T0202).
