@@ -237,12 +237,15 @@ ausgeblendet.
 
 ## Oberfläche
 
-- **Seitenpanels auf beiden Seiten (T0203)**: Layer und Eigenschaften lassen sich auf die linke
-  oder die rechte Seite legen. Beide Panels klappen über den Pfeil in ihrer Kopfzeile auf eine
-  schmale Leiste ein; die Leisten **beider** Seiten tragen dann dieselben zwei Symbole (Layer,
-  Eigenschaften). Ein Klick auf ein Symbol legt das Panel auf diese Seite und klappt es aus;
-  liegt es dort schon, klappt derselbe Klick es ein. Liegen beide Panels auf einer Seite,
-  teilen sie sich die Höhe. Die Wahl steht in `prefs.json` (`layers_side`, `props_side`) und
+- **Seitenpanels auf beiden Seiten (T0203)**: Layer, Eigenschaften und Blattmanager lassen
+  sich auf die linke oder die rechte Seite legen. Beide Panels klappen über den Pfeil in ihrer
+  Kopfzeile auf eine schmale Leiste ein; die Leisten **beider** Seiten tragen dieselben drei
+  Symbole (Layer, Eigenschaften, Blätter) und stehen **immer** am Rand — auch wenn kein Panel
+  eingeklappt ist. Ein Klick auf ein Symbol legt das Panel auf diese Seite und klappt es aus;
+  liegt es dort schon, klappt derselbe Klick es ein. **Je Seite sind höchstens zwei Panels
+  ausgeklappt**: kommt ein drittes dazu, gibt das am längsten nicht benutzte auf und liegt als
+  Symbol in der Leiste. Zwei Panels auf einer Seite teilen sich die Höhe; jedes scrollt für
+  sich. Die Wahl steht in `prefs.json` (`layers_side`, `props_side`, `blatt_side`) und
   übersteht den Neustart.
 - **Eigenschaften-Panel** (Vorgabe rechts): ganz oben stehen Symbol und Bezeichnung des Objekts,
   darunter zwei Gruppen mit eigener Überschrift — **Allgemein** (Reihenfolge, Layer, Farbe, Stärke,
@@ -427,7 +430,8 @@ ausgeblendet.
 - **Linkes Panel** (`Layers`), **rechtes Panel** (`Eigenschaften`) und der **Blattmanager** klappen über
   den Pfeil in ihrer Kopfzeile zu einer schmalen Leiste zusammen; in der Leiste steht ihr Symbol
   (Layer, Eigenschaften, Blätter) — ein Klick darauf holt das Panel zurück, ein Klick auf einer
-  anderen Seite legt es dorthin.
+  anderen Seite legt es dorthin. Die Leisten bleiben immer sichtbar, auch wenn alle Panels
+  ausgeklappt sind; je Seite stehen höchstens zwei Panels offen.
 - **Layer-Manager** (linkes Panel): Die Liste hat **eine** Stufe — **Layer gehören zu einem Plan**.
   Pläne sortieren Geschosse, Schnitte, Ansichten und Lagepläne. Jede Planzeile trägt links ein
   Dreieck zum **Einklappen**, in der Mitte den Namen und rechts **Auge** (ganzen Plan ausblenden)

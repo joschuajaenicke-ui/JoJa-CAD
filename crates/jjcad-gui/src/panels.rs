@@ -187,6 +187,11 @@ pub fn layers(app: &mut App, ui: &mut Ui) {
     let mut new_layer_fuer: Option<Id> = None;
 
     egui::ScrollArea::vertical()
+        // T0222: eigener Scrollzustand je Panel. Ohne eigenes `id_salt` bilden
+        // alle Scrollflächen im selben Elternteil dieselbe Kennung
+        // (`Id::new("scroll_area")` auf der stabilen Ui-Kennung) — dann bewegt
+        // ein Mausrad über einem Panel auch das andere daneben.
+        .id_salt("panel_layer")
         .auto_shrink([false, false])
         .show(ui, |ui| {
             for plan in &plans {
@@ -819,6 +824,8 @@ pub fn blaetter(app: &mut App, ui: &mut Ui) {
 
     let list_hoehe = (ui.available_height() - 36.0).max(60.0);
     egui::ScrollArea::vertical()
+        // T0222: eigener Scrollzustand (siehe `layers`).
+        .id_salt("panel_blatt")
         .max_height(list_hoehe)
         // Senkrecht schrumpfen: der Knopf gehört **ans Ende der Liste**, nicht
         // an den unteren Fensterrand (bei drei Blättern stand er 500 px tiefer).
@@ -965,6 +972,8 @@ pub fn properties(app: &mut App, ui: &mut Ui) {
     // das ließ das Fenster beim Editieren anders aussehen.
     let eingabe = app.ui.texteingabe.as_ref().map(|t| t.id);
     egui::ScrollArea::vertical()
+        // T0222: eigener Scrollzustand (siehe `layers`).
+        .id_salt("panel_props")
         .auto_shrink([false, false])
         .show(ui, |ui| {
             if let Some(id) = eingabe {

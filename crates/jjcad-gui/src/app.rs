@@ -1091,6 +1091,10 @@ pub struct UiState {
     pub layers_side: PanelSeite,
     pub props_side: PanelSeite,
     pub blatt_side: PanelSeite,
+    /// T0222: Reihenfolge der **ausgeklappten** Panels, hinten das zuletzt
+    /// benutzte. Höchstens zwei dürfen je Seite ausgeklappt sein; bei einem
+    /// dritten gibt das vorderste (am längsten unbenutzte) auf.
+    pub panel_benutzt: Vec<SeitenPanel>,
     /// T0203: Lage der Symbole in den Seitenleisten im zuletzt gezeichneten
     /// Bild — (Panel, Seite, Fläche). Prüfwert der Tests.
     pub last_leisten_icons: Vec<(SeitenPanel, PanelSeite, Rect)>,
@@ -1385,6 +1389,7 @@ impl Default for UiState {
             layers_side: PanelSeite::Links,
             props_side: PanelSeite::Rechts,
             blatt_side: PanelSeite::Rechts,
+            panel_benutzt: Vec::new(),
             last_leisten_icons: Vec::new(),
             last_layer_kopf: Vec::new(),
             last_blattzeilen: Vec::new(),
@@ -2210,6 +2215,20 @@ impl App {
                     self.ui.props_collapsed = false;
                     self.ui.layers_side = PanelSeite::Links;
                     self.ui.props_side = PanelSeite::Links;
+                }
+                // T0222: Alle drei Panels auf **einer** Seite. Die Grenze von
+                // zwei ausgeklappten Panels greift, das dritte liegt als Symbol
+                // in der Leiste.
+                "panelsdrei" => {
+                    self.ui.layers_open = true;
+                    self.ui.props_open = true;
+                    self.ui.blatt_open = true;
+                    self.ui.layers_collapsed = false;
+                    self.ui.props_collapsed = false;
+                    self.ui.blatt_collapsed = false;
+                    self.ui.layers_side = PanelSeite::Links;
+                    self.ui.props_side = PanelSeite::Links;
+                    self.ui.blatt_side = PanelSeite::Links;
                 }
                 "panelsrechts" => {
                     self.ui.layers_open = true;
@@ -5176,7 +5195,14 @@ impl App {
                 self.ui.inventory_open = true;
                 self.ui.inventory_tab = 1;
             }
-            "view.layers" => self.ui.layers_open = !self.ui.layers_open,
+            "view.layers" => {
+                self.ui.layers_open = !self.ui.layers_open;
+                // T0222: Wiedereinschalten holt das Panel aus der Leiste.
+                if self.ui.layers_open {
+                    self.ui.layers_collapsed = false;
+                    self.panels_begrenzen();
+                }
+            }
             // Vollbild: Fenster ohne Rahmen, gleicher Weg für F11 und Ribbon
             "view.fullscreen" => self.toggle_fullscreen(ctx),
             "view.keymap" => self.ui.keymap_open = true,
@@ -9926,6 +9952,42 @@ impl App {
                 self.ui.blatt_side = seite;
             }
         }
+        // T0222: ausgeklappte Panels stehen hinten in der Benutzungsreihenfolge.
+        self.ui.panel_benutzt.retain(|q| *q != p);
+        if offen && !eingeklappt {
+            self.ui.panel_benutzt.push(p);
+        }
+    }
+
+    /// Höchstens zwei ausgeklappte Panels je Seite (T0222).
+    ///
+    /// Der Aufruf steht vor dem Zeichnen der Seitenpanels, damit **jeder** Weg
+    /// die Grenze einhält: die Leiste, der Ribbon-Schalter `view.layers` und die
+    /// Objektmenü-Einträge („Eigenschaften im Panel“) setzen die Felder an
+    /// verschiedenen Stellen. Beim dritten Panel gibt das am längsten nicht
+    /// mehr benutzte auf — es bleibt offen und liegt danach als Symbol in der
+    /// Leiste, ist also mit einem Klick zurück.
+    pub fn panels_begrenzen(&mut self) {
+        let mut reihe: Vec<SeitenPanel> = self.ui.panel_benutzt.clone();
+        reihe.retain(|p| self.panel_offen(*p) && !self.panel_eingeklappt(*p));
+        for p in SeitenPanel::ALLE {
+            if self.panel_offen(p) && !self.panel_eingeklappt(p) && !reihe.contains(&p) {
+                reihe.push(p);
+            }
+        }
+        for seite in PanelSeite::ALL {
+            let mut hier: Vec<SeitenPanel> = reihe
+                .iter()
+                .copied()
+                .filter(|p| self.panel_seite(*p) == seite)
+                .collect();
+            while hier.len() > 2 {
+                let alt = hier.remove(0);
+                reihe.retain(|p| *p != alt);
+                self.panel_setze(alt, true, true, seite);
+            }
+        }
+        self.ui.panel_benutzt = reihe;
     }
 
     /// Klick auf ein Symbol der Seitenleiste.
@@ -9940,35 +10002,39 @@ impl App {
         } else {
             self.panel_setze(p, true, false, seite);
         }
+        // T0222: Das dritte ausgeklappte Panel dieser Seite gibt sofort auf,
+        // damit das Bild gar nicht erst drei zusammengequetschte zeigt.
+        self.panels_begrenzen();
     }
 
     /// Zeichnet Leisten und ausgeklappte Panels beider Seiten.
     ///
-    /// Eine Leiste erscheint, sobald ein Panel eingeklappt ist — und dann auf
-    /// **beiden** Seiten, damit die Symbole überall dieselben sind und jedes
-    /// Panel von jeder Seite erreichbar bleibt. Ohne eingeklapptes Panel gibt
-    /// es keine Leiste; die Ansicht sieht dann aus wie bisher.
+    /// Die Leisten stehen **immer** — auf beiden Seiten mit denselben drei
+    /// Symbolen (T0222), damit jedes Panel von jeder Seite erreichbar bleibt.
+    /// Ausgeklappt sind höchstens zwei Panels je Seite (`panels_begrenzen`);
+    /// sie teilen sich die Höhe.
     fn seitenleisten(&mut self, ctx: &egui::Context) {
         self.ui.last_leisten_icons.clear();
-        let leisten = (self.ui.layers_open && self.ui.layers_collapsed)
-            || (self.ui.props_open && self.ui.props_collapsed)
-            || (self.ui.blatt_open && self.ui.blatt_collapsed);
+        // T0222: Höchstens zwei Panels je Seite — vor dem Zeichnen aufräumen.
+        self.panels_begrenzen();
         for seite in PanelSeite::ALL {
-            if leisten {
-                let id = match seite {
-                    PanelSeite::Links => "seitenleiste_links",
-                    PanelSeite::Rechts => "seitenleiste_rechts",
-                };
-                let mut panel = match seite {
-                    PanelSeite::Links => egui::SidePanel::left(id),
-                    PanelSeite::Rechts => egui::SidePanel::right(id),
-                };
-                panel
-                    .exact_width(auf_pixel(ctx, LEISTE_W))
-                    .resizable(false)
-                    .frame(Frame::none().fill(Palette::panel()))
-                    .show(ctx, |ui| self.leiste(ui, seite));
-            }
+            // T0222: Die Leiste steht **immer**, auch wenn kein Panel
+            // eingeklappt ist. Vorher verschwand sie, sobald drei Panels
+            // ausgeklappt waren — und mit ihr der einzige Weg, ein Panel zu
+            // wechseln.
+            let id = match seite {
+                PanelSeite::Links => "seitenleiste_links",
+                PanelSeite::Rechts => "seitenleiste_rechts",
+            };
+            let mut panel = match seite {
+                PanelSeite::Links => egui::SidePanel::left(id),
+                PanelSeite::Rechts => egui::SidePanel::right(id),
+            };
+            panel
+                .exact_width(auf_pixel(ctx, LEISTE_W))
+                .resizable(false)
+                .frame(Frame::none().fill(Palette::panel()))
+                .show(ctx, |ui| self.leiste(ui, seite));
             // Ausgeklappte Panels dieser Seite, in der Reihenfolge der Leiste.
             let hier: Vec<SeitenPanel> = SeitenPanel::ALLE
                 .iter()
@@ -19356,17 +19422,168 @@ mod tests_seitenleisten {
         );
     }
 
-    /// Ohne eingeklapptes Panel gibt es keine Leiste — die Ansicht sieht aus
-    /// wie bisher.
+    /// T0222: Die Leiste steht **immer** — auch wenn kein Panel eingeklappt
+    /// ist. Vorher verschwand sie, sobald drei Panels ausgeklappt waren; mit
+    /// ihr war der einzige Weg zum Wechseln weg.
     #[test]
-    fn ohne_eingeklapptes_panel_gibt_es_keine_leiste() {
+    fn leiste_steht_auch_ohne_eingeklapptes_panel() {
         let mut app = app_mit_leisten();
         app.ui.layers_collapsed = false;
         app.ui.props_collapsed = false;
         bild(&mut app, Vec::new());
+        let je_seite = |seite: PanelSeite| {
+            app.ui
+                .last_leisten_icons
+                .iter()
+                .filter(|(_, s, _)| *s == seite)
+                .count()
+        };
+        assert_eq!(
+            je_seite(PanelSeite::Links),
+            3,
+            "die linke Leiste muss auch ohne eingeklapptes Panel stehen"
+        );
+        assert_eq!(
+            je_seite(PanelSeite::Rechts),
+            3,
+            "die rechte Leiste muss auch ohne eingeklapptes Panel stehen"
+        );
+    }
+
+    /// T0222: Je Seite höchstens zwei ausgeklappte Panels — das dritte gibt
+    /// auf und liegt als Symbol in der Leiste.
+    #[test]
+    fn hoechstens_zwei_panels_je_seite() {
+        let mut app = app_mit_leisten();
+        for p in SeitenPanel::ALLE {
+            app.panel_setze(p, true, false, PanelSeite::Links);
+        }
+        bild(&mut app, Vec::new());
+        let offen: Vec<SeitenPanel> = SeitenPanel::ALLE
+            .iter()
+            .copied()
+            .filter(|p| {
+                app.panel_seite(*p) == PanelSeite::Links
+                    && app.panel_offen(*p)
+                    && !app.panel_eingeklappt(*p)
+            })
+            .collect();
+        assert_eq!(
+            offen.len(),
+            2,
+            "je Seite dürfen höchstens zwei Panels ausgeklappt sein, offen: {offen:?}"
+        );
+        // Erreichbar bleibt jedes: die Leiste trägt alle drei Symbole.
+        let links = app
+            .ui
+            .last_leisten_icons
+            .iter()
+            .filter(|(_, s, _)| *s == PanelSeite::Links)
+            .count();
+        assert_eq!(links, 3, "die Leiste muss alle drei Panels anbieten");
+    }
+
+    /// T0222: Ein Klick auf das dritte Panel gibt das am längsten unbenutzte
+    /// derselben Seite auf (Reihenfolge in `UiState::panel_benutzt`).
+    #[test]
+    fn drittes_panel_verdraengt_das_laengste_unbenutzte() {
+        let mut app = app_mit_leisten();
+        app.ui.layers_side = PanelSeite::Links;
+        app.ui.props_side = PanelSeite::Links;
+        app.ui.blatt_side = PanelSeite::Links;
+        app.ui.layers_collapsed = false;
+        app.ui.props_collapsed = false;
+        app.ui.blatt_open = true;
+        app.ui.blatt_collapsed = true;
+        app.ui.panel_benutzt = vec![SeitenPanel::Layer, SeitenPanel::Eigenschaften];
+        bild(&mut app, Vec::new());
+        bild(&mut app, Vec::new());
+
+        let r = symbol(&app, SeitenPanel::Blatt, PanelSeite::Links);
+        klick(&mut app, r.center());
+
         assert!(
-            app.ui.last_leisten_icons.is_empty(),
-            "ohne eingeklapptes Panel darf keine Leiste erscheinen"
+            !app.ui.blatt_collapsed,
+            "das geklickte Blatt-Panel muss ausgeklappt sein"
+        );
+        assert!(
+            app.ui.layers_collapsed,
+            "das am längsten unbenutzte Panel (Layer) muss aufgeben"
+        );
+        assert!(
+            !app.ui.props_collapsed,
+            "das zuletzt benutzte Eigenschaften-Panel bleibt stehen"
+        );
+    }
+
+    /// Ein Mausradschritt um `punkte` (negativ = nach unten).
+    fn rad(punkte: f32) -> egui::Event {
+        egui::Event::MouseWheel {
+            unit: egui::MouseWheelUnit::Point,
+            delta: egui::vec2(0.0, punkte),
+            modifiers: egui::Modifiers::NONE,
+        }
+    }
+
+    /// Rad über einer Stelle: erst den Zeiger dorthin, dann drehen.
+    fn rad_fahrt(app: &mut App, pos: Pos2, punkte: f32) {
+        bild(app, vec![egui::Event::PointerMoved(pos)]);
+        for _ in 0..6 {
+            bild(app, vec![rad(punkte)]);
+        }
+        bild(app, Vec::new());
+    }
+
+    /// T0222: Das Mausrad bewegt nur das Panel unter dem Zeiger.
+    ///
+    /// Beide Scrollflächen lagen vorher unter **derselben** Kennung
+    /// (`Id::new("scroll_area")` auf der stabilen Ui-Kennung) — ein Radschritt
+    /// über dem Layer-Panel zog den Blattmanager darunter mit. Geprüft wird an
+    /// den Blattzeilen aus `UiState::last_blattzeilen`; sie wandern mit dem
+    /// Scrollstand.
+    #[test]
+    fn scrollen_bewegt_nur_das_panel_unter_dem_zeiger() {
+        let mut app = app_mit_leisten();
+        app.ui.layers_side = PanelSeite::Links;
+        app.ui.blatt_side = PanelSeite::Links;
+        app.ui.layers_open = true;
+        app.ui.blatt_open = true;
+        app.ui.layers_collapsed = false;
+        app.ui.blatt_collapsed = false;
+        for i in 1..=30 {
+            let _ = app.session_mut().execute(
+                "sheet.new",
+                &serde_json::json!({"name": format!("Blatt {i}")}),
+            );
+        }
+        bild(&mut app, Vec::new());
+        bild(&mut app, Vec::new());
+
+        let zeilen = |app: &App| -> Vec<f32> {
+            app.ui
+                .last_blattzeilen
+                .iter()
+                .map(|(_, r, _)| r.min.y)
+                .collect()
+        };
+        let vorher = zeilen(&app);
+        assert!(vorher.len() >= 30, "die Blattliste muss lang genug sein");
+
+        // Untere Hälfte links = Blattmanager: das Rad scrollt ihn.
+        rad_fahrt(&mut app, Pos2::new(60.0, 780.0), -300.0);
+        let nach_blatt = zeilen(&app);
+        assert_ne!(
+            nach_blatt.first(),
+            vorher.first(),
+            "über dem Blattmanager muss das Rad die Liste bewegen"
+        );
+
+        // Obere Hälfte links = Layer-Panel: der Blattmanager bleibt stehen.
+        rad_fahrt(&mut app, Pos2::new(60.0, 300.0), -300.0);
+        assert_eq!(
+            zeilen(&app),
+            nach_blatt,
+            "das Rad über dem Layer-Panel darf den Blattmanager nicht mitziehen"
         );
     }
 
@@ -19435,9 +19652,10 @@ mod tests_seitenleisten {
             "links müssen beide Panels stehen, Fläche beginnt bei {:.1}",
             app.ui.last_canvas.left()
         );
+        // Rechts steht nur noch die Leiste (T0222: sie ist immer da, 28 px).
         assert!(
-            app.ui.last_canvas.right() > 1500.0 - 1.0,
-            "rechts darf nichts stehen, Fläche endet bei {:.1}",
+            app.ui.last_canvas.right() > 1500.0 - 40.0,
+            "rechts darf nur die Leiste stehen, Fläche endet bei {:.1}",
             app.ui.last_canvas.right()
         );
     }
