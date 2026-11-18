@@ -148,8 +148,9 @@ die **Vorgabe** ihrer Ebene und lassen sich wie jede andere Taste ändern.
     Vorgabe 0,15 px): klein = glatter, groß = schneller, gilt sofort. Der Druck (PDF, PNG) liest
     sie nicht — dort gilt unverändert die feinere Druckgüte.
 13. **Platzieren mit Vorschau**: Block aus dem Inventar wählen oder `Strg+V` drücken — die Vorschau
-    steht mit ihrer **unteren linken Ecke** am Mauszeiger (also oben rechts davon), folgt der Maus
-    und wird mit Klick gesetzt. `R` (die Funktion „Drehen") dreht in 90°-Schritten im
+    steht mit dem **Basispunkt** des Blocks am Mauszeiger, folgt der Maus
+    und wird mit Klick gesetzt. Ein Block setzt sich damit genau so ab, wie er vorher
+    zu sehen war; sein Basispunkt (im Blockeditor das Kreuz) liegt auf dem Zeiger. `R` (die Funktion „Drehen") dreht in 90°-Schritten im
     Uhrzeigersinn (`Umschalt+R` gegen den Uhrzeigersinn), `F` (die Funktion
     „Spiegeln") spiegelt, `ESC` bricht ab. Beide Tasten folgen der
     Tastaturbelegung: wer „Drehen" umlegt, dreht auch die Vorschau mit der neuen
