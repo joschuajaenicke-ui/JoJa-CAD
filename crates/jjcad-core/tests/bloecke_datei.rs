@@ -1,7 +1,7 @@
 //! T0128 — eigene Blöcke liegen als Datei in `<blocks>/` und kommen beim Start
 //! wieder. Eine Datei je Block, das Verzeichnis ist die Wahrheit.
 
-use jjcad_core::model::{BlockSource, EntityKind};
+use jjcad_core::model::{BlockDef, BlockSource, Entity, EntityKind};
 use jjcad_core::session::Session;
 use serde_json::json;
 use std::path::PathBuf;
@@ -254,4 +254,90 @@ fn ohne_verzeichnis_wird_nichts_geschrieben() {
         .unwrap();
     // Der Block entsteht trotzdem, nur eben nicht als Datei.
     assert!(s.doc.blocks.iter().any(|b| b.name == "Nur im Projekt"));
+}
+
+/// T0217: Ein Systemblock ist schreibgeschützt — kopiert wird er als
+/// **Benutzerblock** im Blocksverzeichnis und ist dann bearbeitbar. Die Kopie
+/// trägt eine eigene Kennung, einen eigenen Namen und dieselbe Geometrie.
+#[test]
+fn kopie_eines_systemblocks_landet_als_benutzerblock() {
+    let dir = test_dir("kopie");
+    let mut s = neue_session();
+    // Systemblock, wie ihn `persist::normalize_systembloecke` beim Start anlegt.
+    let mut sys = BlockDef {
+        id: "sys:pfeil".into(),
+        name: "Pfeil".into(),
+        category: "Punkt Symbole".into(),
+        source: BlockSource::System,
+        description: "Richtungspfeil".into(),
+        entities: Vec::new(),
+        icon: None,
+        base: jjcad_core::geom::Vec2::ZERO,
+        annotative: true,
+    };
+    let mut e = Entity::new(1, s.doc.current_layer, EntityKind::Line {
+        a: jjcad_core::geom::Vec2::new(0.0, 0.0),
+        b: jjcad_core::geom::Vec2::new(3.0, 0.0),
+    });
+    e.id = 1;
+    sys.entities.push(e);
+    s.doc.blocks.push(sys);
+
+    // Der Systemblock selbst bleibt schreibgeschützt.
+    let abgelehnt = s.execute("block.update", &json!({"block": "sys:pfeil", "name": "Neu"}));
+    assert!(abgelehnt.is_err(), "Systemblock darf nicht änderbar sein");
+
+    let antwort = s
+        .execute(
+            "block.copy",
+            &json!({"block": "sys:pfeil", "dir": dir.to_string_lossy()}),
+        )
+        .expect("Kopie muss gelingen");
+    let kopie_id = antwort["block"].as_str().unwrap().to_string();
+    assert!(kopie_id.starts_with("usr:"), "Kopie ist ein Benutzerblock: {kopie_id}");
+    assert_eq!(antwort["name"], "Pfeil (Kopie)");
+
+    // Das Original steht unverändert daneben.
+    assert!(s.doc.blocks.iter().any(|b| b.id == "sys:pfeil" && b.source == BlockSource::System));
+    let kopie = s.doc.blocks.iter().find(|b| b.id == kopie_id).expect("Kopie fehlt");
+    assert_eq!(kopie.source, BlockSource::User);
+    assert_eq!(kopie.name, "Pfeil (Kopie)");
+    assert_eq!(kopie.category, "Punkt Symbole", "Gruppe kommt mit");
+    assert!(kopie.annotative, "Maßstabsregel kommt mit");
+    assert_eq!(kopie.entities.len(), 1, "Geometrie kommt mit");
+    assert_eq!(kopie.base, jjcad_core::geom::Vec2::ZERO);
+
+    // Die Datei ist die Bibliothek: Name als Slug, Kennung im Inhalt.
+    let datei = dir.join("pfeil-kopie.jjblk");
+    assert!(datei.is_file(), "Blockdatei fehlt: {}", datei.display());
+    let roh: serde_json::Value =
+        serde_json::from_str(&std::fs::read_to_string(&datei).unwrap()).unwrap();
+    assert_eq!(roh["block"]["id"], kopie_id.as_str());
+    assert_eq!(roh["block"]["source"], "User");
+    assert_eq!(roh["block"]["entities"].as_array().unwrap().len(), 1);
+
+    // Eine zweite Kopie überschreibt die erste nicht.
+    let zweite = s
+        .execute("block.copy", &json!({"block": "sys:pfeil", "dir": dir.to_string_lossy()}))
+        .unwrap();
+    assert_eq!(zweite["name"], "Pfeil (Kopie 2)");
+    assert_ne!(zweite["block"], kopie_id);
+    assert!(dir.join("pfeil-kopie.jjblk").is_file());
+    assert!(dir.join("pfeil-kopie-2.jjblk").is_file());
+
+    // Und die Kopie ist als Benutzerblock bearbeitbar.
+    s.execute(
+        "block.update",
+        &json!({"block": kopie_id, "name": "Pfeil breit", "dir": dir.to_string_lossy()}),
+    )
+    .expect("Kopie muss bearbeitbar sein");
+    assert!(s.doc.blocks.iter().any(|b| b.name == "Pfeil breit"));
+}
+
+/// Ohne `block`-Parameter ist die Kopie ein Fehler — kein stiller Erfolg (T0038).
+#[test]
+fn kopie_ohne_block_ist_ein_fehler() {
+    let mut s = neue_session();
+    assert!(s.execute("block.copy", &json!({})).is_err());
+    assert!(s.execute("block.copy", &json!({"block": "gibt-es-nicht"})).is_err());
 }

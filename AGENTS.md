@@ -309,6 +309,16 @@ Mit dem Nutzer abgestimmt — nicht „verbessern“:
   Prüfweg: `cargo test -p jjcad-gui tests_block_eigenschaften` und
   `cargo test -p jjcad-core --test bloecke_datei gruppe_`; Prüfbilder `--demo blockpanel`
   und `--demo blockeigenschaften`.
+- **Blöcke kopieren (T0217)**: Das Rechtsklickmenü einer Blockkachel bietet
+  „Kopieren“ für **jeden** Block — auch für den schreibgeschützten Systemblock.
+  Die Action `block.copy` legt die Kopie als **Benutzerblock** an: neue Kennung
+  `usr:…`, Name aus `bloecke::kopie_name` („Name (Kopie)“, „(Kopie 2)“, …,
+  kollisionsfrei gegen alle vorhandenen Namen), Geometrie/Basispunkt/Gruppe/
+  `annotative` von der Vorlage, Datei über `bloecke::schreibe_block` **vor** dem
+  Eintrag im Dokument (wie `block.create`). Die Oberfläche (`App::block_kopieren`)
+  schaltet auf den Reiter Benutzerblöcke, damit die Kopie sichtbar ist.
+  Prüfweg: `cargo test -p jjcad-core --test bloecke_datei kopie_` und
+  `cargo test -p jjcad-gui tests_block_kopieren`.
 - **Einfügen** (Block/Zwischenablage): Vorschau oben rechts am Zeiger, `R` dreht,
   `S` spiegelt, Klick bestätigt. Beim Einfügen aus der Zwischenablage entscheidet
   Einstellungen → Bedienung → „Drehpunkt" (`prefs.paste_pivot`), welcher Punkt am
