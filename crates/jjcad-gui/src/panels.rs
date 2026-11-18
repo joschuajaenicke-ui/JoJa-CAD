@@ -15,6 +15,7 @@ use serde_json::json;
 
 pub fn layers(app: &mut App, ui: &mut Ui) {
     let tr = jjcad_core::i18n::tr;
+    app.ui.last_layer_kopf.clear();
     ui.horizontal(|ui| {
         ui.label(
             RichText::new(tr("gui.panels.layer"))
@@ -23,7 +24,9 @@ pub fn layers(app: &mut App, ui: &mut Ui) {
                 .strong(),
         );
         ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-            if widgets::icon_button(ui, "plus", 22.0, false, tr("gui.panels.neuer_layer")).clicked() {
+            let plus =
+                widgets::icon_button(ui, "plus", 22.0, false, tr("gui.panels.neuer_layer"));
+            if plus.clicked() {
                 // Neuer Layer im Plan des aktuellen Layers — jeder Plan hat
                 // seine eigenen Layer (T0202).
                 let plan = app.doc().aktueller_plan();
@@ -32,9 +35,6 @@ pub fn layers(app: &mut App, ui: &mut Ui) {
                     .unwrap_or(1);
                 app.ui.new_layer_plan = plan;
                 app.ui.new_layer_dialog = Some(format!("Layer {n}"));
-            }
-            if widgets::icon_button(ui, "layers", 22.0, false, tr("gui.panels.layer_verwalten")).clicked() {
-                app.ui.layers_open = !app.ui.layers_open;
             }
             // T0203: Der Pfeil zeigt zur Seite, auf der das Panel liegt —
             // eingeklappt wird dorthin, wo die Leiste steht.
@@ -45,9 +45,19 @@ pub fn layers(app: &mut App, ui: &mut Ui) {
             } else {
                 "chevron_right"
             };
-            if widgets::icon_button(ui, pfeil, 20.0, false, tr("gui.panels.einklappen")).clicked() {
+            // Das Einklappen ist die einzige Schließmöglichkeit im Kopf
+            // (T0212: der frühere Knopf „Layer verwalten“ schloss das Panel
+            // nur und ist entfallen).
+            let einklappen =
+                widgets::icon_button(ui, pfeil, 20.0, false, tr("gui.panels.einklappen"));
+            if einklappen.clicked() {
                 app.ui.layers_collapsed = true;
             }
+            // Lage der Knöpfe im Bild, von links nach rechts — Prüfwert der
+            // Tests (der Kopf trägt genau diese zwei).
+            let mut kopf = vec![plus.rect, einklappen.rect];
+            kopf.sort_by(|a, b| a.min.x.total_cmp(&b.min.x));
+            app.ui.last_layer_kopf = kopf;
         });
     });
     ui.add_space(4.0);
@@ -2969,6 +2979,41 @@ mod tests_plaene {
         // Ein Plan → eine Kopfzeile und eine Zeile „Layer hinzufügen“.
         assert_eq!(alle.iter().filter(|t| **t == "Plan 1").count(), 1);
         assert_eq!(alle.iter().filter(|t| **t == "Layer hinzufügen").count(), 1);
+    }
+
+    /// T0212: Der Kopf des Layer-Panels trägt nur noch „Neuer Layer“ und
+    /// „Einklappen“ — der frühere Knopf „Layer verwalten“ schloss das Panel
+    /// nur und ist entfallen. Kein Kopfknopf darf das Panel schließen.
+    #[test]
+    fn kopf_hat_keinen_schliessen_knopf() {
+        let ctx = egui::Context::default();
+        let mut app = App::with_ctx(ctx.clone());
+        rahmen(&ctx, &mut app, Vec::new());
+        assert_eq!(
+            app.ui.last_layer_kopf.len(),
+            2,
+            "der Kopf trägt genau zwei Knöpfe"
+        );
+        let knoepfe = app.ui.last_layer_kopf.clone();
+
+        // Beide drücken: keiner darf `layers_open` umschalten (früher saß dort
+        // der Knopf „Layer verwalten“, der das Panel nur schloss).
+        for r in knoepfe {
+            klick(&ctx, &mut app, r.center());
+            assert!(
+                app.ui.layers_open,
+                "kein Kopfknopf darf das Panel schließen"
+            );
+        }
+        // Die beiden Funktionen bleiben: neuer Layer und einklappen.
+        assert!(
+            app.ui.new_layer_dialog.is_some(),
+            "der Plus-Knopf legt weiter einen Layer an"
+        );
+        assert!(
+            app.ui.layers_collapsed,
+            "der Pfeil klappt das Panel weiter ein"
+        );
     }
 
     #[test]
