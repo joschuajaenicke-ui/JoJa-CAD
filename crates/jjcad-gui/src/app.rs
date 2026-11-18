@@ -788,6 +788,11 @@ pub struct ToolOptions {
     /// Seitenverhältnis des nächsten Bildes sperren (Vorgabe an). Gesperrt
     /// folgt die Höhe der Breite und dem Verhältnis der Datei.
     pub bild_lock: bool,
+    /// Punktsymbol am Anfang des nächsten Punktes bzw. der nächsten Linie
+    /// (T0210) — Block-ID aus der Kategorie „Punkt Symbole“.
+    pub symbol_start: Option<String>,
+    /// Punktsymbol am Ende der nächsten Linie (T0210).
+    pub symbol_end: Option<String>,
 }
 
 /// Ausgewählte Bilddatei für `draw.image` (Anzeigename und Base64-Daten).
@@ -880,6 +885,8 @@ impl ToolOptions {
             arc_mode: Bogenmodus::DreiPunkte,
             bild: None,
             bild_lock: true,
+            symbol_start: None,
+            symbol_end: None,
         }
     }
 
@@ -3632,6 +3639,33 @@ impl App {
                     {
                         self.options.bild = Some(BildQuelle { name, data });
                         self.start_tool("draw.image");
+                    }
+                }
+                // T0210: Punkte mit Punktsymbolen und eine Linie mit Marken an
+                // beiden Enden — das Eigenschaften-Panel zeigt die Symbolzeilen.
+                "punktsymbol" => {
+                    for (i, sym) in ["sys:pkt-kreuz", "sys:pkt-pfeil", "sys:pkt-kote-grundriss"]
+                        .iter()
+                        .enumerate()
+                    {
+                        let x = 2.0 + i as f64 * 2.0;
+                        let _ = self.session_mut().execute(
+                            "draw.point",
+                            &serde_json::json!({"p": [x, 4.0], "symbol": sym}),
+                        );
+                    }
+                    if let Ok(antwort) = self.session_mut().execute(
+                        "draw.line",
+                        &serde_json::json!({
+                            "a": [2.0, 2.0],
+                            "b": [6.0, 2.0],
+                            "start_symbol": "sys:pkt-punkt",
+                            "end_symbol": "sys:pkt-pfeilspitze",
+                        }),
+                    ) {
+                        if let Some(id) = antwort["created"][0].as_u64() {
+                            self.session_mut().selection = vec![id];
+                        }
                     }
                 }
                 "selpoly" => {

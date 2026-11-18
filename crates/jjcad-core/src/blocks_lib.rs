@@ -107,6 +107,41 @@ impl B {
         e.style.fill = Some(color);
         self.ents.push(e);
     }
+
+    /// Vollfläche ohne feste Farbe — sie nimmt beim Zeichnen die Farbe des
+    /// Objekts an, an dem das Symbol sitzt (Punktsymbole, T0210).
+    fn fill_auto(&mut self, pts: Vec<Vec2>) {
+        let id = self.id();
+        let mut e = Entity::new(id, 0, EntityKind::Fill {
+            boundary: pts,
+            holes: Vec::new(),
+            pattern: FillPattern::Solid,
+            pattern_angle: 0.0,
+            pattern_scale: 100.0,
+            border: false,
+        });
+        e.by_block = true;
+        self.ents.push(e);
+    }
+
+    /// Gefüllte Scheibe (Punkt) — 32-Eck, damit sie rund aussieht.
+    fn disc(&mut self, c: Vec2, r: f64) {
+        let n = 32;
+        let pts: Vec<Vec2> = (0..n)
+            .map(|i| c + Vec2::polar(std::f64::consts::TAU * i as f64 / n as f64, r))
+            .collect();
+        self.fill_auto(pts);
+    }
+
+    /// Viertelkreis als Fläche — für die gefüllten Viertel der Höhenkote.
+    fn viertel(&mut self, c: Vec2, r: f64, von: f64) {
+        let n = 12;
+        let mut pts = vec![c];
+        for i in 0..=n {
+            pts.push(c + Vec2::polar(von + std::f64::consts::FRAC_PI_2 * i as f64 / n as f64, r));
+        }
+        self.fill_auto(pts);
+    }
 }
 
 fn block(
@@ -407,10 +442,165 @@ pub fn system_blocks(_next_id: &mut Id) -> Vec<BlockDef> {
         b,
     ));
 
+    // ---------------- Punkt Symbole (T0210) ----------------
+    // Koordinaten in **Papier-Millimetern**: ein Punktsymbol wird in
+    // Beschriftungsgröße gezeichnet (`RenderCtx::a`), damit es auf jedem
+    // Maßstab gleich groß erscheint. Die Maße hier sind also die Größe auf
+    // dem Papier, nicht in der Zeichnung.
+    let mut b = B::new();
+    b.disc(Vec2::ZERO, 0.6);
+    out.push(block(
+        "sys:pkt-punkt",
+        "Punkt",
+        PUNKTSYMBOL_KATEGORIE,
+        "Gefüllter Punkt, 1,2 mm",
+        b,
+    ));
+
+    let mut b = B::new();
+    b.circle(Vec2::ZERO, 0.9);
+    out.push(block(
+        "sys:pkt-kreis",
+        "Kreis",
+        PUNKTSYMBOL_KATEGORIE,
+        "Offener Kreis, 1,8 mm",
+        b,
+    ));
+
+    let mut b = B::new();
+    b.circle(Vec2::ZERO, 0.9);
+    b.disc(Vec2::ZERO, 0.35);
+    out.push(block(
+        "sys:pkt-kreis-punkt",
+        "Kreis mit Punkt",
+        PUNKTSYMBOL_KATEGORIE,
+        "Kreis mit Mittelpunkt",
+        b,
+    ));
+
+    let mut b = B::new();
+    b.line(v(-1.1, 0.0), v(1.1, 0.0));
+    b.line(v(0.0, -1.1), v(0.0, 1.1));
+    out.push(block(
+        "sys:pkt-kreuz",
+        "Kreuz",
+        PUNKTSYMBOL_KATEGORIE,
+        "Fadenkreuz, 2,2 mm",
+        b,
+    ));
+
+    let mut b = B::new();
+    b.line(v(-0.8, -0.8), v(0.8, 0.8));
+    b.line(v(-0.8, 0.8), v(0.8, -0.8));
+    out.push(block(
+        "sys:pkt-andreaskreuz",
+        "Andreaskreuz",
+        PUNKTSYMBOL_KATEGORIE,
+        "Schrägkreuz, 1,6 mm",
+        b,
+    ));
+
+    let mut b = B::new();
+    b.push(EntityKind::Polyline {
+        verts: vec![
+            Vertex::new(v(1.1, 0.0)),
+            Vertex::new(v(0.0, 1.1)),
+            Vertex::new(v(-1.1, 0.0)),
+            Vertex::new(v(0.0, -1.1)),
+        ],
+        closed: true,
+    });
+    out.push(block(
+        "sys:pkt-raute",
+        "Raute",
+        PUNKTSYMBOL_KATEGORIE,
+        "Raute, 2,2 mm",
+        b,
+    ));
+
+    let mut b = B::new();
+    b.rect(-0.8, -0.8, 0.8, 0.8);
+    out.push(block(
+        "sys:pkt-quadrat",
+        "Quadrat",
+        PUNKTSYMBOL_KATEGORIE,
+        "Quadrat, 1,6 mm",
+        b,
+    ));
+
+    // Pfeil nach +X: Schaft mit offener Spitze — zeigt an einer Linie in
+    // Laufrichtung, am Anfang entgegen.
+    let mut b = B::new();
+    b.line(v(-2.0, 0.0), v(1.4, 0.0));
+    b.line(v(1.4, 0.0), v(0.4, 0.6));
+    b.line(v(1.4, 0.0), v(0.4, -0.6));
+    out.push(block(
+        "sys:pkt-pfeil",
+        "Pfeil",
+        PUNKTSYMBOL_KATEGORIE,
+        "Pfeil, 3,4 mm",
+        b,
+    ));
+
+    let mut b = B::new();
+    b.fill_auto(vec![v(1.6, 0.0), v(-0.4, 0.8), v(-0.4, -0.8)]);
+    out.push(block(
+        "sys:pkt-pfeilspitze",
+        "Pfeilspitze",
+        PUNKTSYMBOL_KATEGORIE,
+        "Gefüllte Pfeilspitze, 2 mm",
+        b,
+    ));
+
+    // Maßmarke nach DIN 1356-1: kurzer Strich unter 45°, wie an der Maßlinie.
+    let mut b = B::new();
+    b.line(v(-0.7, -0.7), v(0.7, 0.7));
+    out.push(block(
+        "sys:pkt-massmarke",
+        "Maßmarke",
+        PUNKTSYMBOL_KATEGORIE,
+        "Schrägstrich 45° (Maßmarke)",
+        b,
+    ));
+
+    // Höhenkote im Grundriss: Kreis, Fadenkreuz, zwei gefüllte Viertel —
+    // dasselbe Symbol wie `EntityKind::ElevationPlan` es zeichnet.
+    let mut b = B::new();
+    b.viertel(Vec2::ZERO, 1.0, std::f64::consts::FRAC_PI_2);
+    b.viertel(Vec2::ZERO, 1.0, -std::f64::consts::FRAC_PI_2);
+    b.circle(Vec2::ZERO, 1.0);
+    b.line(v(-1.4, 0.0), v(1.4, 0.0));
+    b.line(v(0.0, -1.4), v(0.0, 1.4));
+    out.push(block(
+        "sys:pkt-kote-grundriss",
+        "Höhenkote Grundriss",
+        PUNKTSYMBOL_KATEGORIE,
+        "Kreis mit Fadenkreuz und zwei gefüllten Vierteln",
+        b,
+    ));
+
+    // Höhenkote im Schnitt: offenes Dreieck (der erste Punkt ist ±0,00).
+    let mut b = B::new();
+    b.push(EntityKind::Polyline {
+        verts: vec![
+            Vertex::new(v(0.0, 0.0)),
+            Vertex::new(v(-0.45, 0.9)),
+            Vertex::new(v(0.45, 0.9)),
+        ],
+        closed: true,
+    });
+    out.push(block(
+        "sys:pkt-kote-schnitt",
+        "Höhenkote Schnitt",
+        PUNKTSYMBOL_KATEGORIE,
+        "Offenes Dreieck der Schnitt-Kote",
+        b,
+    ));
+
     out
 }
 
 /// Kategorien in Anzeigereihenfolge.
 pub fn categories() -> Vec<&'static str> {
-    vec!["Sanitär", "Küche", "Möbel", "Technik", "Symbole"]
+    vec!["Sanitär", "Küche", "Möbel", "Technik", "Symbole", PUNKTSYMBOL_KATEGORIE]
 }

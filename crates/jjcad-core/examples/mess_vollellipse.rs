@@ -62,6 +62,8 @@ fn probe_dokument() -> Document {
         layer,
         style: EntityStyle::default(),
         by_block: false,
+        start_symbol: None,
+        end_symbol: None,
     });
     doc
 }

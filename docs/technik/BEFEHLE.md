@@ -33,8 +33,8 @@ Befehls-Schicht vorbei.
 
 | ID | Parameter | Beispiel |
 |---|---|---|
-| `draw.point` | `p` | `{"p":[1.2,3.4]}` |
-| `draw.line` | `a`, `b` | `{"a":[0,0],"b":[5,0]}` |
+| `draw.point` | `p`, optional `symbol` | `{"p":[1.2,3.4]}` — `symbol` ist die Block-ID eines Punktsymbols (z. B. `sys:pkt-kreuz`) |
+| `draw.line` | `a`, `b`, optional `start_symbol`/`end_symbol` | `{"a":[0,0],"b":[5,0]}` — Punktsymbole an Anfang und Ende (Block-IDs) |
 | `draw.polyline` | `pts[]`, `closed` | `{"pts":[[0,0],[3,1],[5,0]],"closed":false}` |
 | `draw.parallel` | `ids` (Linie oder Polylinie), `distance`, `side` | `{"ids":[7],"distance":0.3,"side":[2,1]}` — neue Linie/Polylinie im Abstand `distance`; `side` ist ein Punkt und bestimmt nur die **Seite**. Ebene, Farbe und Stärke erbt das neue Objekt von der Vorlage. Andere Objektarten sind ein Fehler |
 | `draw.spline` | `pts[]`, `closed` | `{"pts":[[0,0],[3,1],[5,0]],"closed":false}` — Catmull-Rom durch die Punkte |

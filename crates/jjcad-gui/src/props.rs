@@ -630,6 +630,10 @@ pub fn vorgaben_aus_objekt(app: &mut App, id: Id) -> bool {
     app.ui.pending.line_type = e.style.line_type;
     app.ui.pending.loop_width = e.style.loop_width;
     app.ui.pending.loop_shape = e.style.loop_shape;
+    // Punktsymbole (T0210) gehören zu den übernommenen Eigenschaften: die
+    // Schnellauswahl soll dieselbe Marke wieder erzeugen.
+    app.options.symbol_start = e.start_symbol.clone();
+    app.options.symbol_end = e.end_symbol.clone();
 
     // Art-eigene Werte — je Zweig dieselben Felder, die das Panel beim
     // Erzeugen in `ToolOptions` schreibt.
@@ -2778,6 +2782,81 @@ fn bild_pixel(data: &str) -> Option<String> {
     jjcad_core::bild::dekodiere(data).map(|b| format!("{} × {} px", b.breite, b.hoehe))
 }
 
+/// Auswahl eines Punktsymbols (T0210).
+///
+/// Die Liste kommt aus [`jjcad_core::model::Document::punktsymbol_bloecke`] —
+/// **alle** Blöcke der Kategorie „Punkt Symbole“, gleich ob System-, Projekt-
+/// oder Benutzerblock. „Kein Symbol“ steht oben und nimmt die Marke weg.
+/// Rückgabe: `Some(None)` = kein Symbol, `Some(Some(id))` = gewählter Block.
+fn punktsymbol_wahl(
+    app: &App,
+    ui: &mut Ui,
+    salt: &str,
+    cur: Option<&str>,
+) -> Option<Option<String>> {
+    let bloecke: Vec<(String, String)> = app
+        .doc()
+        .punktsymbol_bloecke()
+        .iter()
+        .map(|b| (b.id.clone(), b.name.clone()))
+        .collect();
+    if bloecke.is_empty() {
+        ui.label(theme::faint(jjcad_core::i18n::tr("gui.props.keine_punktsymbole")));
+        return None;
+    }
+    let cap = cur
+        .and_then(|id| {
+            bloecke
+                .iter()
+                .find(|(b, _)| b == id)
+                .map(|(_, n)| n.clone())
+        })
+        .unwrap_or_else(|| jjcad_core::i18n::tr("gui.props.kein_symbol").to_string());
+    panels::dropdown(ui, salt, &cap, None, |ui| {
+        let mut out = None;
+        if ui
+            .selectable_label(cur.is_none(), jjcad_core::i18n::tr("gui.props.kein_symbol"))
+            .clicked()
+        {
+            out = Some(None);
+        }
+        for (id, name) in &bloecke {
+            let gewaehlt = cur == Some(id.as_str());
+            ui.horizontal(|ui| {
+                // Kleine Vorschau: ein Symbol wählt man nach seiner Form, nicht
+                // nach seinem Namen.
+                symbol_vorschau(app, ui, id);
+                if ui.selectable_label(gewaehlt, name).clicked() {
+                    out = Some(Some(id.clone()));
+                }
+            });
+        }
+        out
+    })
+}
+
+/// Zeichnet ein Punktsymbol als kleine Vorschau in die laufende Zeile.
+fn symbol_vorschau(app: &App, ui: &mut Ui, id: &str) {
+    let Some(def) = app.doc().block(id) else {
+        return;
+    };
+    let (rect, _) = ui.allocate_exact_size(egui::vec2(18.0, 16.0), egui::Sense::hover());
+    let ctx = jjcad_core::render::RenderCtx::new(app.doc());
+    let mut dl = jjcad_core::render::DisplayList::default();
+    for e in &def.entities {
+        jjcad_core::render::render_entity(
+            &ctx,
+            e,
+            jjcad_core::geom::Affine::IDENTITY,
+            &mut dl,
+            0,
+        );
+    }
+    if dl.bbox.is_valid() {
+        crate::inventory::draw_list_preview(ui.painter(), rect, dl.bbox, &dl, theme::Palette::text());
+    }
+}
+
 /// Alle Zeilen einer Klick-Art — für Erzeugen und Bearbeiten dieselben.
 pub fn einfach(app: &mut App, ui: &mut Ui, ziel: Ziel, art: Einfach) {
     let unit = app.unit();
@@ -2833,8 +2912,42 @@ pub fn einfach(app: &mut App, ui: &mut Ui, ziel: Ziel, art: Einfach) {
     let mut bild_breite: Option<f64> = None;
     let mut bild_hoehe: Option<f64> = None;
     let mut bild_lock: Option<bool> = None;
+    // Punktsymbole (T0210): `Some(None)` = kein Symbol gewählt.
+    let mut symbol_start: Option<Option<String>> = None;
+    let mut symbol_end: Option<Option<String>> = None;
 
     match art {
+        // Punktsymbole (T0210): ein Punkt trägt eines, eine Linie je eines an
+        // Anfang und Ende. Die Auswahl kommt aus `Document::punktsymbol_bloecke`
+        // — System-, Projekt- und Benutzerblöcke der Kategorie „Punkt Symbole"
+        // stehen gleichberechtigt darin.
+        Einfach::Punkt | Einfach::Linie => {
+            let (cur_start, cur_end) = match &e {
+                Some(e) => (e.start_symbol.clone(), e.end_symbol.clone()),
+                None => (
+                    app.options.symbol_start.clone(),
+                    app.options.symbol_end.clone(),
+                ),
+            };
+            zeile("symbol");
+            let mut neu_start = None;
+            widgets::field_row(ui, jjcad_core::i18n::tr("gui.props.punktsymbol"), |ui| {
+                neu_start = punktsymbol_wahl(app, ui, &ziel.salt("punkt_symbol"), cur_start.as_deref());
+            });
+            if neu_start.is_some() {
+                symbol_start = neu_start;
+            }
+            if matches!(art, Einfach::Linie) {
+                zeile("symbol_ende");
+                let mut neu_ende = None;
+                widgets::field_row(ui, jjcad_core::i18n::tr("gui.props.punktsymbol_ende"), |ui| {
+                    neu_ende = punktsymbol_wahl(app, ui, &ziel.salt("punkt_symbol_ende"), cur_end.as_deref());
+                });
+                if neu_ende.is_some() {
+                    symbol_end = neu_ende;
+                }
+            }
+        }
         Einfach::Kreis => {
             let wert = match &e {
                 Some(e) => match &e.kind {
@@ -3328,6 +3441,12 @@ pub fn einfach(app: &mut App, ui: &mut Ui, ziel: Ziel, art: Einfach) {
             if let Some(v) = bild_lock {
                 app.options.bild_lock = v;
             }
+            if let Some(v) = symbol_start {
+                app.options.symbol_start = v;
+            }
+            if let Some(v) = symbol_end {
+                app.options.symbol_end = v;
+            }
         }
         Ziel::Auswahl(id) => {
             gemein_nach_objekt(app, id, &a);
@@ -3335,6 +3454,19 @@ pub fn einfach(app: &mut App, ui: &mut Ui, ziel: Ziel, art: Einfach) {
             let mut geaendert = false;
             if let Some(map) = params.as_object_mut() {
                 if let Some(e) = &e {
+                    // Punktsymbole (T0210): `null` nimmt das Symbol weg.
+                    if let Some(v) = &symbol_start {
+                        if v.as_deref() != e.start_symbol.as_deref() {
+                            map.insert("start_symbol".into(), serde_json::json!(v));
+                            geaendert = true;
+                        }
+                    }
+                    if let Some(v) = &symbol_end {
+                        if v.as_deref() != e.end_symbol.as_deref() {
+                            map.insert("end_symbol".into(), serde_json::json!(v));
+                            geaendert = true;
+                        }
+                    }
                     // Ellipsenbogen: Achsen, Drehlage und beide Parameterwinkel
                     // (T0084). Geht vor der gemeinsamen Schleife, weil hier fünf
                     // Werte zusammen gehören — keine andere Art nutzt sie.
@@ -4554,6 +4686,76 @@ mod tests {
             neu, auswahl,
             "Erzeugen und Bearbeiten zeigen unterschiedliche Zeilen"
         );
+    }
+
+    /// T0210: Punkt und Linie zeigen die Symbolzeilen — beim Erzeugen und bei
+    /// der Auswahl dieselben.
+    #[test]
+    fn punkt_und_linie_zeigen_das_punktsymbol() {
+        let mut app = App::with_ctx(egui::Context::default());
+        let linie = app
+            .session_mut()
+            .execute(
+                "draw.line",
+                &json!({"a": [0.0, 0.0], "b": [2.0, 0.0], "end_symbol": "sys:pkt-pfeil"}),
+            )
+            .expect("Linie")["created"][0]
+            .as_u64()
+            .expect("Id");
+
+        app.session_mut().selection = vec![linie];
+        let auswahl = zeichne(&mut app);
+        assert!(
+            auswahl.contains(&"symbol") && auswahl.contains(&"symbol_ende"),
+            "Linie ohne Symbolzeilen: {auswahl:?}"
+        );
+
+        app.session_mut().selection.clear();
+        app.start_tool("draw.line");
+        let neu = zeichne(&mut app);
+        assert_eq!(neu, auswahl, "Linie: Zeilen weichen beim Erzeugen ab");
+        app.tool = None;
+
+        let punkt = app
+            .session_mut()
+            .execute("draw.point", &json!({"p": [0.0, 3.0]}))
+            .expect("Punkt")["created"][0]
+            .as_u64()
+            .expect("Id");
+        app.session_mut().selection = vec![punkt];
+        let punkt_auswahl = zeichne(&mut app);
+        assert!(
+            punkt_auswahl.contains(&"symbol"),
+            "Punkt ohne Symbolzeile: {punkt_auswahl:?}"
+        );
+        assert!(
+            !punkt_auswahl.contains(&"symbol_ende"),
+            "ein Punkt hat kein Ende: {punkt_auswahl:?}"
+        );
+    }
+
+    /// T0210: Die Schnellauswahl übernimmt die Symbole des angeklickten
+    /// Objekts — sonst entstünde die nächste Linie ohne Marken.
+    #[test]
+    fn schnellauswahl_uebernimmt_das_punktsymbol() {
+        let mut app = App::with_ctx(egui::Context::default());
+        let id = app
+            .session_mut()
+            .execute(
+                "draw.line",
+                &json!({
+                    "a": [0.0, 0.0],
+                    "b": [2.0, 0.0],
+                    "start_symbol": "sys:pkt-kreuz",
+                    "end_symbol": "sys:pkt-pfeil",
+                }),
+            )
+            .expect("Linie")["created"][0]
+            .as_u64()
+            .expect("Id");
+        assert!(vorgaben_aus_objekt(&mut app, id));
+        assert_eq!(app.options.symbol_start.as_deref(), Some("sys:pkt-kreuz"));
+        assert_eq!(app.options.symbol_end.as_deref(), Some("sys:pkt-pfeil"));
     }
 
     #[test]

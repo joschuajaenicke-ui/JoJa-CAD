@@ -929,6 +929,21 @@ Mit dem Nutzer abgestimmt — nicht „verbessern“:
   = 60 px) **und** auf das Tempo des Dauerlaufs — ein Faktor für beide
   Bewegungsarten.
 
+- **Punktsymbole (T0210)**: Ein **Punkt** und die **Enden einer Linie** tragen ein Symbol —
+  einen Block aus der Kategorie `PUNKTSYMBOL_KATEGORIE` („Punkt Symbole"). Gespeichert sind
+  die Block-IDs in `Entity::start_symbol`/`Entity::end_symbol` (Punkte nutzen das
+  Anfangsfeld, `Entity::symbol(am_ende)` ist die eine Abfrage). Gewählt wird in
+  `props::punktsymbol_wahl` aus `Document::punktsymbol_bloecke` — System-, Projekt- und
+  Benutzerblöcke gleichberechtigt, denn die Kategorie entscheidet, nicht die Herkunft.
+  Gezeichnet wird in `render::push_punktsymbol` mit dem **Beschriftungsmaßstab**
+  (`RenderCtx::a`): ein Symbol ist eine Marke auf dem Papier, keine Bauteilgröße — dieselbe
+  Marke ist bei 1:50 und 1:200 gleich groß. Der Pfeil zeigt nach +X, am Linienende in
+  Laufrichtung, am Anfang entgegen. Die Maße der mitgelieferten Blöcke (`blocks_lib`, IDs
+  `sys:pkt-*`) sind deshalb **Papier-Millimeter**, nicht Zeichnungs-Millimeter.
+  `persist::normalize_systembloecke` ergänzt fehlende Systemblöcke beim Laden — sonst
+  erreichte die Kategorie keine bestehende Zeichnung. Prüfweg:
+  `cargo test -p jjcad-core --test punktsymbole` und `cargo test -p jjcad-gui props::`-
+  Prüfbild `--demo "neudatei,punktsymbol"` bzw. `--demo "neudatei,blockreiter:system"`.
 - **Höhenkoten (T0096)**: Zwei getrennte Objektarten ersetzen die frühere eine
   Höhenkote. Die **Grundriss-Kote** (`EntityKind::ElevationPlan`) ist ein
   Kreis-Symbol mit Fadenkreuz und zwei gefüllten Vierteln; der Höhenwert steht
