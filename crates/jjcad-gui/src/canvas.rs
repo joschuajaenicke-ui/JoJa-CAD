@@ -3126,22 +3126,49 @@ fn draw_tool_preview(
         // Raumstempel: Umriss bis zum Zeiger, keine Füllung — die Fläche des
         // Stempels bleibt unsichtbar. Am Zeiger steht die Fläche, die der
         // Stempel später beschriftet.
+        //
+        // **Zwei Ecken** sind die Diagonale eines achsenparallelen Rechtecks
+        // (T0220, Turn 3): Enter/ESC legt genau dieses Rechteck an, deshalb
+        // steht es schon als Vorschau da — gestrichelt, mit seinen vier Ecken.
+        // Ein weiterer Klick hängt wieder eine Ecke an (Polygonzug).
         "dim.room" => {
-            for pair in tool.pts.windows(2) {
-                p.line_segment([w2s(pair[0]), w2s(pair[1])], stroke);
-            }
-            if let Some(start) = last {
-                p.line_segment([w2s(start), w2s(cursor)], stroke);
-                if let Some(first) = tool.pts.first() {
-                    p.line_segment([w2s(cursor), w2s(*first)], dashed);
-                }
-            }
-            let mut umriss = tool.pts.clone();
-            umriss.push(cursor);
-            if let Some(pts) = fill_boundary_points(&umriss) {
-                label = jjcad_core::i18n::t_args_owned("gui.canvas.x_punkte_x", &[("wert1", format!("{}", pts.len())), ("wert2", format!("{}", unit.format_area(polygon_area(&pts).abs(), 2)))]);
+            let rechteck = if tool.pts.len() == 2 {
+                jjcad_core::geom::rechteck_aus_diagonale(tool.pts[0], tool.pts[1])
             } else {
-                label = jjcad_core::i18n::t_args_owned("gui.canvas.x_punkte", &[("wert1", format!("{}", tool.pts.len() + 1))]);
+                None
+            };
+            if let Some(ecken) = rechteck {
+                let screen: Vec<Pos2> = ecken.iter().map(|q| w2s(*q)).collect();
+                let mut ring = screen.clone();
+                ring.push(screen[0]);
+                p.extend(Shape::dashed_line(&ring, stroke, 9.0, 5.0));
+                for q in &screen {
+                    p.circle_stroke(*q, 2.0, Stroke::new(1.0, Palette::vorschau()));
+                }
+                label = jjcad_core::i18n::t_args_owned(
+                    "gui.canvas.x_punkte_x",
+                    &[
+                        ("wert1", format!("{}", ecken.len())),
+                        ("wert2", format!("{}", unit.format_area(polygon_area(&ecken).abs(), 2))),
+                    ],
+                );
+            } else {
+                for pair in tool.pts.windows(2) {
+                    p.line_segment([w2s(pair[0]), w2s(pair[1])], stroke);
+                }
+                if let Some(start) = last {
+                    p.line_segment([w2s(start), w2s(cursor)], stroke);
+                    if let Some(first) = tool.pts.first() {
+                        p.line_segment([w2s(cursor), w2s(*first)], dashed);
+                    }
+                }
+                let mut umriss = tool.pts.clone();
+                umriss.push(cursor);
+                if let Some(pts) = fill_boundary_points(&umriss) {
+                    label = jjcad_core::i18n::t_args_owned("gui.canvas.x_punkte_x", &[("wert1", format!("{}", pts.len())), ("wert2", format!("{}", unit.format_area(polygon_area(&pts).abs(), 2)))]);
+                } else {
+                    label = jjcad_core::i18n::t_args_owned("gui.canvas.x_punkte", &[("wert1", format!("{}", tool.pts.len() + 1))]);
+                }
             }
         }
         "draw.fill.boundary" | "draw.fill.points" | "draw.volume.points" => {
@@ -6276,16 +6303,25 @@ fn finish_fill(app: &mut App, action: &str) -> bool {
 
 /// Schließt einen Raumstempel aus der geklickten Punktfolge.
 ///
-/// Die Eckpunkte entstehen mit [`fill_boundary_points`] (doppelte Punkte,
-/// Schluss auf dem Start), die Beschriftung setzt die Action selbst in den
+/// Die Eckpunkte entstehen mit [`fill_boundary_points_rechteck`] (doppelte
+/// Punkte, Schluss auf dem Start; **zwei** Punkte sind die Diagonale eines
+/// achsenparallelen Rechtecks), die Beschriftung setzt die Action selbst in den
 /// „Pole of Inaccessibility". Höhe und Überschrift kommen aus dem
 /// Eigenschaften-Panel — dieselben Zeilen wie am vorhandenen Stempel.
 fn finish_room(app: &mut App) -> bool {
     let Some(tool) = app.tool.clone() else {
         return false;
     };
-    let Some(boundary) = fill_boundary_points(&tool.pts) else {
-        app.toast(jjcad_core::i18n::tr("gui.canvas.raumstempel_mindestens_3_punkte"));
+    let Some(boundary) = fill_boundary_points_rechteck(&tool.pts) else {
+        // Zwei Punkte auf einer Waagerechten oder Senkrechten sind keine
+        // Diagonale — die Meldung sagt, was fehlt. Sonst bleibt es bei der
+        // Zahl der nötigen Ecken.
+        let zwei = tool.pts.len() == 2 && tool.pts[0].dist(tool.pts[1]) > 0.5;
+        app.toast(jjcad_core::i18n::tr(if zwei {
+            "gui.canvas.raumstempel_diagonale_auf_einer_achse"
+        } else {
+            "gui.canvas.raumstempel_mindestens_2_punkte"
+        }));
         return false;
     };
     let pts: Vec<[f64; 2]> = boundary
@@ -15506,11 +15542,48 @@ mod tests_raumstempel {
         );
     }
 
-    /// Unter drei Ecken entsteht kein Stempel — das Werkzeug bleibt stehen,
+    /// Zwei Klicks sind die Diagonale eines achsenparallelen Rechtecks
+    /// (T0220, Turn 3) — der Stempel entsteht mit vier Ecken.
+    #[test]
+    fn zwei_ecken_legen_ein_rechteck_an() {
+        let mut app = mit_punkten(app(), vec![V2::new(0.0, 0.0), V2::new(4000.0, 3000.0)]);
+        finish_tool(&mut app, true);
+
+        assert!(app.tool.is_none(), "Werkzeug blieb stehen");
+        match &app.doc().entities[0].kind {
+            EntityKind::Room { boundary, label, .. } => {
+                assert_eq!(
+                    boundary,
+                    &vec![
+                        V2::new(0.0, 0.0),
+                        V2::new(4000.0, 0.0),
+                        V2::new(4000.0, 3000.0),
+                        V2::new(0.0, 3000.0)
+                    ],
+                    "Rechteck aus der Diagonale"
+                );
+                assert!(label.dist(V2::new(2000.0, 1500.0)) < 1.0);
+            }
+            k => panic!("kein Raumstempel: {}", k.type_name()),
+        }
+    }
+
+    /// Zwei Ecken auf einer Achse sind keine Diagonale: es entsteht nichts,
+    /// das Werkzeug bleibt für einen weiteren Punkt stehen.
+    #[test]
+    fn zwei_ecken_auf_einer_achse_legen_nichts_an() {
+        let mut app = mit_punkten(app(), vec![V2::new(0.0, 0.0), V2::new(4000.0, 0.0)]);
+        finish_tool(&mut app, true);
+
+        assert!(app.doc().entities.is_empty(), "es wurde etwas angelegt");
+        assert!(app.tool.is_some(), "der Punkt darf nicht verloren gehen");
+    }
+
+    /// Unter zwei Ecken entsteht kein Stempel — das Werkzeug bleibt stehen,
     /// damit der gesetzte Punkt nicht verloren ist (ESC verwirft).
     #[test]
     fn zu_wenige_punkte_legen_nichts_an() {
-        let mut app = mit_punkten(app(), vec![V2::new(0.0, 0.0), V2::new(1000.0, 0.0)]);
+        let mut app = mit_punkten(app(), vec![V2::new(0.0, 0.0)]);
         finish_tool(&mut app, true);
         assert!(app.doc().entities.is_empty(), "es wurde trotzdem etwas angelegt");
     }

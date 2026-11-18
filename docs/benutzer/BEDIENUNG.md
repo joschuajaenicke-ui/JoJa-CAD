@@ -219,7 +219,11 @@ die **Vorgabe** ihrer Ebene und lassen sich wie jede andere Taste ändern.
 
 18. **Raumstempel** (Ribbon ▸ Bemaßung ▸ „Raumstempel"): die Raumecken klicken, `Enter` **oder
     `ESC`** setzt den Stempel — `ESC` **bestätigt** die gesetzten Ecken, statt sie zu verwerfen;
-    ohne eine einzige Ecke bricht es ab. Der Stempel zeichnet seinen Namen über den
+    ohne eine einzige Ecke bricht es ab. **Zwei Klicks genügen für einen rechteckigen Raum**: die
+    beiden Punkte sind die gegenüberliegenden Ecken eines achsenparallelen Rechtecks, die Vorschau
+    zeigt es schon gestrichelt. Liegen beide Punkte auf einer Waagerechten oder Senkrechten,
+    umschließt nichts eine Fläche — das Programm meldet das, statt ein Rechteck der Höhe null
+    anzulegen. Der Stempel zeichnet seinen Namen über den
     Flächeninhalt; die Fläche selbst bleibt unsichtbar und ist nicht anklickbar.
     **Der Name wird direkt in der Zeichnung geändert**: ein Doppelklick auf den Stempeltext
     öffnet ihn wie ein Textfeld, `ESC` übernimmt (Rechtsklick bricht ab), der Flächeninhalt
