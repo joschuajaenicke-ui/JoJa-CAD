@@ -53,7 +53,11 @@ pub fn taste_slot(label: &str) -> Option<usize> {
 
 pub fn show(app: &mut App, ui: &mut Ui) {
     let bar = ui.max_rect();
-    let slots = app.prefs.slots();
+    // T0215: Die Hotbar folgt der gehaltenen Ebene — mit Strg liegt dort eine
+    // eigene Belegung. Ohne Steuerungstaste die Grundbelegung.
+    let lage = app.hotbar_kombination(ui.ctx());
+    app.ui.hotbar_kombi = lage;
+    let slots = app.prefs.slots_fuer(lage);
     let n = slots.len().max(1);
     let gesamt = n as f32 * SLOT + (n - 1) as f32 * ABSTAND;
     let slots_rect = Rect::from_center_size(
@@ -115,6 +119,30 @@ pub fn show(app: &mut App, ui: &mut Ui) {
             merke(resp.rect);
             if resp.clicked() {
                 app.ui.hotbar_picker_open = !app.ui.hotbar_picker_open;
+            }
+            // T0215: Das kleine Feld zeigt die gehaltene Ebene — es ist der
+            // Hinweis darauf, warum die Hotbar gerade anders belegt ist.
+            app.ui.last_kombi_icon = None;
+            if !lage.ist_leer() {
+                ui.add_space(ABSTAND);
+                let breite = 10.0 + lage.kurz().chars().count() as f32 * 5.6;
+                let (rect, antwort) = ui.allocate_exact_size(Vec2::new(breite, KOPF), Sense::hover());
+                merke(rect);
+                let p = ui.painter();
+                p.rect_filled(rect, Rounding::same(5.0), Palette::accent_soft());
+                p.rect_stroke(rect, Rounding::same(5.0), Stroke::new(1.0, Palette::accent()));
+                p.text(
+                    rect.center(),
+                    egui::Align2::CENTER_CENTER,
+                    lage.kurz(),
+                    FontId::proportional(10.0),
+                    Palette::accent(),
+                );
+                antwort.on_hover_text(jjcad_core::i18n::t_args_owned(
+                    "gui.hotbar.kombination_x",
+                    &[("wert1", lage.text().to_string())],
+                ));
+                app.ui.last_kombi_icon = Some(rect);
             }
             app.ui.last_kopf_links = kopf;
         },
@@ -208,12 +236,12 @@ pub fn show(app: &mut App, ui: &mut Ui) {
                 if let Some((from, a)) = app.ui.slot_drag.clone() {
                     if resp.hovered() && ui.ctx().input(|inp| inp.pointer.any_released()) {
                         if from == usize::MAX {
-                            app.prefs.set_slot(i, Some(a.clone()));
+                            app.prefs.set_slot_fuer(lage, i, Some(a.clone()));
                             let _ = app.prefs.save();
                             app.toast(jjcad_core::i18n::t_args_owned("gui.hotbar.hotbar_slot_x_belegt", &[("wert1", format!("{}", i + 1))]));
                         } else if from != i {
-                            app.prefs.set_slot(i, Some(a.clone()));
-                            app.prefs.set_slot(from, action.clone());
+                            app.prefs.set_slot_fuer(lage, i, Some(a.clone()));
+                            app.prefs.set_slot_fuer(lage, from, action.clone());
                             let _ = app.prefs.save();
                         }
                         app.ui.slot_drag = None;

@@ -8,8 +8,8 @@ use egui::{Align, Color32, FontId, Layout, Pos2, Rect, RichText, Rounding, Sense
 use jjcad_core::actions;
 use jjcad_core::geom::{Vec2 as V2};
 use jjcad_core::persist::{
-    fest_belegt, Design, DragMode, Farbakzent, Fensterrahmen, PastePivot, Textaufloesung,
-    Zeichenfarbe,
+    fest_belegt, Design, DragMode, Farbakzent, Fensterrahmen, Kombination, PastePivot,
+    Textaufloesung, Zeichenfarbe,
 };
 use jjcad_core::units::Unit;
 use serde_json::json;
@@ -4184,7 +4184,7 @@ fn tasten_belegung(orig: Pos2) -> Vec<(&'static str, Rect)> {
 ///
 /// Derselbe Weg wie „Funktion im Inventar wählen" (T0072): `UserPrefs::bind`
 /// prüft die Sperren und räumt eine alte Belegung derselben Taste weg. Liefert
-/// `false`, wenn die Funktion fest verdrahtet ist (Strg+S, F1 …) — dann bleibt
+/// `false`, wenn die Funktion fest verdrahtet ist (F1 … F12) — dann bleibt
 /// die Belegung unverändert.
 pub(crate) fn funktion_auf_taste(app: &mut App, funktion: &str, key: &str) -> bool {
     if !app.prefs.belegung_aenderbar(funktion) {
@@ -4261,6 +4261,10 @@ fn keymap_window(app: &mut App, ctx: &egui::Context) {
         });
         ui.add_space(2.0);
         ui.separator();
+        // T0215: Umschalt, Strg und Alt als Schalter — sie wählen die Ebene,
+        // die das Tastenbild zeigt und deren Belegung bearbeitet wird.
+        keymap_ebenen(app, ui);
+        ui.add_space(2.0);
         keyboard_body(app, ui);
     });
     if let Some(r) = &ergebnis {
@@ -4572,22 +4576,112 @@ fn keyboard_layouts(app: &mut App, ui: &mut Ui) {
     app.ui.last_keymap_zeile = Some(zeile);
 }
 
+/// Die drei Steuerungstasten als **Schalter** über dem Tastenbild (T0215).
+///
+/// Sie schalten die Ebene um, deren Belegung das Tastenbild zeigt — wie ein
+/// Umschalter, nicht wie eine gedrückte Taste: mehrere dürfen gleichzeitig an
+/// sein (Strg+Umschalt). Ist Strg an, steht auf der Taste `c` die Funktion von
+/// `ctrl+c` (Kopieren) und lässt sich dort auch ändern.
+fn keymap_ebenen(app: &mut App, ui: &mut Ui) {
+    let mut neu = app.ui.kombi_ansicht;
+    let mut schalter: Vec<(Kombination, Rect)> = Vec::new();
+    ui.horizontal(|ui| {
+        ui.label(theme::dim(jjcad_core::i18n::tr("gui.dialogs.ebene")));
+        for teil in Kombination::STEUERUNG {
+            let an = neu.hat(teil);
+            let name = match teil {
+                Kombination::UMSCHALT => jjcad_core::i18n::tr("gui.dialogs.ebene_umschalt"),
+                Kombination::STRG => jjcad_core::i18n::tr("gui.dialogs.ebene_strg"),
+                _ => jjcad_core::i18n::tr("gui.dialogs.ebene_alt"),
+            };
+            let antwort = ebenen_schalter(ui, an, name);
+            schalter.push((teil, antwort.rect));
+            if antwort.clicked() {
+                neu = neu.umschalten(teil);
+            }
+        }
+        if !neu.ist_leer() {
+            ui.add_space(2.0);
+            ui.label(theme::mono(neu.text()));
+        }
+    });
+    app.ui.last_kombi_schalter = schalter;
+    app.ui.kombi_ansicht = neu;
+}
+
+/// Ein Schalter der Ebenenzeile: klein, damit die Zeile in die Breite des
+/// Tastenbilds passt (egui-Knöpfe nehmen sich die Mindestbreite eines Feldes).
+fn ebenen_schalter(ui: &mut Ui, an: bool, text: &str) -> egui::Response {
+    let breite = 16.0 + text.chars().count() as f32 * 6.4;
+    let (rect, antwort) = ui.allocate_exact_size(Vec2::new(breite, 20.0), Sense::click());
+    antwort.clone().on_hover_text(text);
+    if ui.is_rect_visible(rect) {
+        let p = ui.painter();
+        let flaeche = if an {
+            Palette::accent_soft()
+        } else if antwort.hovered() {
+            Palette::panel_alt()
+        } else {
+            Palette::bg()
+        };
+        p.rect_filled(rect, Rounding::same(5.0), flaeche);
+        p.rect_stroke(
+            rect,
+            Rounding::same(5.0),
+            Stroke::new(
+                if an { 1.5 } else { 1.0 },
+                if an {
+                    Palette::accent()
+                } else {
+                    Palette::border()
+                },
+            ),
+        );
+        p.text(
+            rect.center(),
+            egui::Align2::CENTER_CENTER,
+            text,
+            FontId::proportional(11.0),
+            if an {
+                Palette::accent()
+            } else {
+                Palette::text_dim()
+            },
+        );
+    }
+    antwort
+}
+
+/// Welche Funktion trägt eine Taste **in der gezeigten Ebene** (T0215)? Die
+/// eine Quelle für Anzeige, Klick und Prüfung: mit Strg an liefert `c` das
+/// Kopieren statt des Stutzens.
+fn taste_funktion(app: &App, key: &str) -> Option<String> {
+    app.prefs
+        .action_for_key(&app.ui.kombi_ansicht.tastenlabel(key))
+}
+
 fn keyboard_body(app: &mut App, ui: &mut Ui) {
     let (rahmen, _) = ui.allocate_exact_size(tastatur_flaeche(), Sense::hover());
     let tasten = tasten_rechtecke(rahmen.min);
     app.ui.last_tasten = Some(tasten.clone());
+    // T0215: Gezeigt und bearbeitet wird die Belegung **einer Ebene** — der
+    // Taste `c` gehört ohne Steuerungstaste das Stutzen, mit Strg das
+    // Kopieren. Der Vorsatz macht aus dem Tastennamen den Belegungsschlüssel.
+    let lage = app.ui.kombi_ansicht;
     for (i, (key, label, zeile, spalte, breite, unten)) in TASTEN.iter().enumerate() {
         let label = taste_beschriftung(label);
         let (_, _, rect) = tasten[i];
         let flaechen = taste_flaechen(rahmen.min, key, *zeile, *spalte, *breite, *unten);
         let gesperrt = fest_belegt(key);
         // Gesperrte Tasten zeigen keine Belegung und nehmen keinen Klick an.
+        let tastenname = lage.tastenlabel(key);
         let action = if gesperrt.is_none() {
-            app.prefs.action_for_key(key)
+            taste_funktion(app, key)
         } else {
             None
         };
-        let selected = gesperrt.is_none() && app.ui.keymap_selected.as_deref() == Some(key);
+        let selected =
+            gesperrt.is_none() && app.ui.keymap_selected.as_deref() == Some(tastenname.as_str());
         let sense = if gesperrt.is_none() {
             Sense::click()
         } else {
@@ -4690,20 +4784,20 @@ fn keyboard_body(app: &mut App, ui: &mut Ui) {
                 // ausgewählt.
                 match app.ui.keymap_funktion.clone() {
                     Some(f) if action.is_none() => {
-                        if !funktion_auf_taste(app, &f, key) {
-                            // Fest verdrahtete Funktionen (Strg+S, F1 …) lassen
+                        if !funktion_auf_taste(app, &f, &tastenname) {
+                            // Fest verdrahtete Funktionen (F1 … F12) lassen
                             // sich nicht umbelegen; sie bleiben im Inventar
                             // gesperrt.
                             app.toast(jjcad_core::i18n::tr("gui.dialogs.funktion_fest_belegt"));
                         }
                     }
                     _ => {
-                        app.ui.keymap_selected = Some(key.to_string());
+                        app.ui.keymap_selected = Some(tastenname.clone());
                         // T0072: Dieselbe Bedienung wie ein leerer Hotbar-Slot —
                         // freie Taste anklicken öffnet das Inventar im Reiter
                         // „Funktionen". Die Liste im Fenster gibt es nicht mehr.
                         if action.is_none() {
-                            taste_belegen(app, key);
+                            taste_belegen(app, &tastenname);
                         }
                     }
                 }
@@ -4712,7 +4806,7 @@ fn keyboard_body(app: &mut App, ui: &mut Ui) {
         // Mittlere Maustaste: Belegung dieser Taste entfernen (T0064) — wie bei
         // den Slots der Hotbar.
         if resp.clicked_by(egui::PointerButton::Middle) && gesperrt.is_none() {
-            match app.prefs.unbind_key(key) {
+            match app.prefs.unbind_key(&tastenname) {
                 Some(a) => {
                     let _ = app.prefs.save();
                     let name = app.slot_label(&a);
@@ -5344,14 +5438,14 @@ pub(crate) mod tests_tastatur {
         assert_eq!(app.ui.keymap_selected.as_deref(), Some("g"), "belegte Taste ist nicht ausgewählt");
     }
 
-    /// Fest verdrahtete Funktionen (Strg+S, F1 …) lassen sich auch über den
+    /// Fest verdrahtete Funktionen (F1 … F12) lassen sich auch über den
     /// Klickweg nicht umbelegen — die Taste bleibt dann leer.
     #[test]
     fn fest_verdrahtete_funktion_landet_nicht_auf_einer_taste() {
         let _sperre = KONFIG.lock().unwrap_or_else(|e| e.into_inner());
         let _konfig = WegwerfKonfig::neu("fest");
         let (mut app, ctx) = app_mit_tastatur();
-        app.ui.keymap_funktion = Some("file.save".to_string());
+        app.ui.keymap_funktion = Some("view.zoom_extents".to_string());
 
         let tasten = app.ui.last_tasten.clone().expect("Tastenbild gezeichnet");
         let (_, _, t) = *taste_mit(&tasten, ",");
@@ -5362,8 +5456,8 @@ pub(crate) mod tests_tastatur {
             "eine fest verdrahtete Funktion wurde auf eine Taste gelegt"
         );
         assert_eq!(
-            app.prefs.key_for("file.save").as_deref(),
-            Some("ctrl+s"),
+            app.prefs.key_for("view.zoom_extents").as_deref(),
+            Some("f5"),
             "die feste Belegung der Funktion wurde verändert"
         );
     }
@@ -5939,7 +6033,7 @@ pub(crate) mod tests_tastatur {
         );
     }
 
-    /// T0072: Fest verdrahtete Funktionen (Strg+S, F1 …) lassen sich auch aus
+    /// T0072: Fest verdrahtete Funktionen (F1 … F12) lassen sich auch aus
     /// dem Inventar nicht auf eine Taste legen.
     #[test]
     fn feste_funktion_aus_dem_inventar_belegt_keine_taste() {
@@ -5951,15 +6045,15 @@ pub(crate) mod tests_tastatur {
         klick(&ctx, &mut app, t.center());
         assert_eq!(app.ui.bind_key.as_deref(), Some(","));
 
-        crate::inventory::funktion_gewaehlt(&mut app, "file.save");
+        crate::inventory::funktion_gewaehlt(&mut app, "view.zoom_extents");
 
         assert!(
             app.prefs.action_for_key(",").is_none(),
             "eine fest verdrahtete Funktion wurde auf eine Taste gelegt"
         );
         assert_eq!(
-            app.prefs.key_for("file.save").as_deref(),
-            Some("ctrl+s"),
+            app.prefs.key_for("view.zoom_extents").as_deref(),
+            Some("f5"),
             "die feste Belegung der Funktion wurde verändert"
         );
     }
@@ -6015,7 +6109,7 @@ pub(crate) mod tests_tastatur {
         app.ui.bind_key = Some(",".to_string());
         app.ui.inventory_open = true;
         app.ui.inventory_tab = 2;
-        crate::inventory::funktion_gewaehlt(&mut app, "file.save");
+        crate::inventory::funktion_gewaehlt(&mut app, "view.zoom_extents");
         assert!(
             app.ui.inventory_open,
             "ohne Zuteilung darf die Funktionsliste nicht zufallen"
@@ -6089,6 +6183,70 @@ pub(crate) mod tests_tastatur {
             texte.iter().any(|t| t.contains("Vorlage JoJa-CAD")),
             "die Vorlage JoJa-CAD steht nicht in der Auswahl"
         );
+    }
+
+    /// T0215: Umschalt, Strg und Alt sind **Schalter** über dem Tastenbild. Ein
+    /// Klick auf „Strg" schaltet die Ebene ein: auf der Taste `c` steht dann die
+    /// Funktion von `ctrl+c` (Kopieren statt Stutzen), und eine Zuteilung
+    /// landet in dieser Ebene (`ctrl+,`), nicht auf der Grundbelegung.
+    #[test]
+    fn ebenenschalter_zeigt_und_belegt_die_strg_ebene() {
+        let _sperre = KONFIG.lock().unwrap_or_else(|e| e.into_inner());
+        let _konfig = WegwerfKonfig::neu("ebene");
+        let (mut app, ctx) = app_mit_tastatur();
+        // Grundbelegung: `c` ist das Stutzen, `ctrl+c` das Kopieren.
+        assert_eq!(app.ui.kombi_ansicht, Kombination::KEINE);
+        assert_eq!(taste_funktion(&app, "c").as_deref(), Some("modify.trim"));
+
+        // Den Schalter „Strg" anklicken.
+        let schalter = app.ui.last_kombi_schalter.clone();
+        assert_eq!(schalter.len(), 3, "Umschalt, Strg und Alt als Schalter");
+        let strg = schalter
+            .iter()
+            .find(|(teil, _)| *teil == Kombination::STRG)
+            .expect("Strg-Schalter fehlt")
+            .1;
+        klick(&ctx, &mut app, strg.center());
+        assert_eq!(
+            app.ui.kombi_ansicht,
+            Kombination::STRG,
+            "der Schalter schaltet die Ebene ein"
+        );
+        // Dieselbe Taste zeigt jetzt die Funktion ihrer Ebene.
+        assert_eq!(
+            taste_funktion(&app, "c").as_deref(),
+            Some("edit.copy"),
+            "mit Strg an steht auf der Taste c das Kopieren"
+        );
+
+        // Eine Zuteilung auf eine freie Taste landet in dieser Ebene.
+        let tasten = app.ui.last_tasten.clone().expect("Tastenbild gezeichnet");
+        let (_, _, komma) = *taste_mit(&tasten, ",");
+        klick(&ctx, &mut app, komma.center());
+        assert_eq!(
+            app.ui.bind_key.as_deref(),
+            Some("ctrl+,"),
+            "die Taste wird mit dem Vorsatz der Ebene belegt"
+        );
+        crate::inventory::funktion_gewaehlt(&mut app, "draw.wall");
+        assert_eq!(
+            app.prefs.action_for_key("ctrl+,").as_deref(),
+            Some("draw.wall")
+        );
+        assert!(
+            app.prefs.action_for_key(",").is_none(),
+            "die Grundbelegung bleibt frei"
+        );
+        // Zurück auf die Grundbelegung: `c` stutzt wieder.
+        let schalter = app.ui.last_kombi_schalter.clone();
+        let strg = schalter
+            .iter()
+            .find(|(teil, _)| *teil == Kombination::STRG)
+            .map(|(_, r)| *r)
+            .expect("Strg-Schalter fehlt");
+        klick(&ctx, &mut app, strg.center());
+        assert_eq!(app.ui.kombi_ansicht, Kombination::KEINE);
+        assert_eq!(taste_funktion(&app, "c").as_deref(), Some("modify.trim"));
     }
 
     /// T0076: Das Fenster ist genau so breit wie das Tastenbild — rechts bleibt

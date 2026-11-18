@@ -1188,6 +1188,22 @@ pub struct UiState {
     /// Flächen der Bedienelemente der Layoutzeile (Regressionstest T0076:
     /// Auswahlfeld und Knöpfe haben dieselbe Höhe).
     pub last_keymap_zeile: Option<Vec<(String, Rect)>>,
+    /// T0215: Die **Ebene**, die das Tastenbild zeigt und bearbeitet. Die drei
+    /// Steuerungstasten darüber wirken wie Schalter: Umschalt an → auf jeder
+    /// Taste steht die Umschalt-Belegung (`shift+c`), Strg an → `ctrl+c`.
+    /// Unabhängig von der Tastatur, damit sich eine Ebene in Ruhe einrichten
+    /// lässt.
+    pub kombi_ansicht: jjcad_core::persist::Kombination,
+    /// T0215: Das kleine Feld neben der Hotbar, das die gehaltene Ebene zeigt
+    /// (leer bei der Grundbelegung).
+    pub last_kombi_icon: Option<Rect>,
+    /// T0215: Die drei Ebenen-Schalter über dem Tastenbild samt ihren Flächen
+    /// (Reihenfolge: Umschalt, Strg, Alt).
+    pub last_kombi_schalter: Vec<(jjcad_core::persist::Kombination, Rect)>,
+    /// T0215: Die Ebene, die die Hotbar im letzten Bild gezeigt hat. Ein Klick
+    /// auf einen Slot belegt **diese** Variante — auch dort, wo kein
+    /// Tastaturzustand zur Hand ist (`App::bind_slot_action`).
+    pub hotbar_kombi: jjcad_core::persist::Kombination,
     /// Zuletzt gewählte Funktion für die Tastaturbelegung (T0064): Solange das
     /// Fenster offen ist, merkt es sich, was im Ribbon (oder über Hotbar und
     /// Taste) gestartet wurde — ein Klick auf eine leere Taste legt sie dort
@@ -1396,6 +1412,10 @@ impl Default for UiState {
             last_keymap_rect: None,
             last_keymap_info: None,
             last_keymap_zeile: None,
+            kombi_ansicht: jjcad_core::persist::Kombination::KEINE,
+            last_kombi_icon: None,
+            last_kombi_schalter: Vec::new(),
+            hotbar_kombi: jjcad_core::persist::Kombination::KEINE,
             keymap_funktion: None,
             search: String::new(),
             new_layer_dialog: None,
@@ -5234,7 +5254,8 @@ impl App {
     }
 
     pub fn bind_slot_action(&mut self, slot: usize, action: Option<String>) {
-        self.prefs.set_slot(slot, action);
+        // T0215: Belegt wird der Slot der Ebene, die die Hotbar gerade zeigt.
+        self.prefs.set_slot_fuer(self.ui.hotbar_kombi, slot, action);
         let name = self.prefs.hotbar_presets[self.prefs.active_preset].name.clone();
         let _ = self.prefs.save();
         self.toast(jjcad_core::i18n::t_args_owned("gui.app.hotbar_slot_x_belegt_x", &[("wert1", format!("{}", slot + 1)), ("name", format!("{}", name))]));
@@ -6532,7 +6553,12 @@ impl App {
         if chat_offen {
             return;
         }
-        let (ctrl, shift) = ctx.input(|i| (i.modifiers.command, i.modifiers.shift));
+        let (ctrl, shift, alt) =
+            ctx.input(|i| (i.modifiers.command, i.modifiers.shift, i.modifiers.alt));
+        // T0215: Die gehaltenen Steuerungstasten wählen die **Ebene** der
+        // Belegung. Jede Kombination aus Umschalt, Strg und Alt trägt ihre
+        // eigene Taste je Funktion und ihre eigene Hotbar.
+        let lage = jjcad_core::persist::Kombination::aus_modifikatoren(shift, ctrl, alt);
         // Strg+C/X/V kommen von egui als Ereignisse, nicht als Tastendruck
         let (ev_copy, ev_cut, ev_paste) = ctx.input(|i| {
             (
@@ -6542,26 +6568,31 @@ impl App {
             )
         });
         if !typing {
+            // Die Zwischenablage kommt bei egui als **Ereignis**, nicht als
+            // Tastendruck — sie folgt trotzdem der Belegung ihrer Ebene (T0215):
+            // steht dort nichts, gilt das bisherige Verhalten.
             if ev_copy {
                 // Strg+Umschalt+C kommt bei egui ebenfalls als Kopier-Ereignis
-                // an (egui-winit prüft nur Strg) — Umschalt entscheidet über den
-                // Basispunkt, damit Strg+C weiterhin nur kopiert.
-                if shift {
-                    self.start_tool("modify.copy");
-                } else {
-                    self.run_action(ctx, "edit.copy");
+                // an (egui-winit prüft nur Strg).
+                match self.prefs.action_for_kombination(lage, "c") {
+                    Some(a) => self.run_action(ctx, &a),
+                    None if shift => self.start_tool("modify.copy"),
+                    None => self.run_action(ctx, "edit.copy"),
                 }
             }
             if ev_cut {
-                self.copy_selection(true);
+                match self.prefs.action_for_kombination(lage, "x") {
+                    Some(a) => self.run_action(ctx, &a),
+                    None => self.copy_selection(true),
+                }
             }
             if ev_paste {
                 // T0142: Strg+Umschalt+V fügt die Zwischenablage als **Block**
                 // ein — der Block entsteht dabei ohne Namensdialog.
-                if shift {
-                    self.einfuegen_als_block();
-                } else {
-                    self.einfuegen();
+                match self.prefs.action_for_kombination(lage, "v") {
+                    Some(a) => self.run_action(ctx, &a),
+                    None if shift => self.einfuegen_als_block(),
+                    None => self.einfuegen(),
                 }
             } else if strg_v_losgelassen(ctx) && !self.ui.bildablage.hat_text() {
                 // egui-winit verschluckt Strg+V, wenn die Zwischenablage
@@ -6643,72 +6674,38 @@ impl App {
             }
         }
 
-        if ctrl {
-            if ctx.input(|i| i.key_pressed(egui::Key::Z)) {
-                run = Some(if shift { "edit.redo" } else { "edit.undo" }.into());
-            }
-            if ctx.input(|i| i.key_pressed(egui::Key::Y)) {
-                run = Some("edit.redo".into());
-            }
-            if ctx.input(|i| i.key_pressed(egui::Key::S)) {
-                run = Some(if shift { "file.save_as" } else { "file.save" }.into());
-            }
-            if ctx.input(|i| i.key_pressed(egui::Key::O)) {
-                run = Some("file.open".into());
-            }
-            if ctx.input(|i| i.key_pressed(egui::Key::N)) {
-                run = Some("file.new".into());
-            }
-            if ctx.input(|i| i.key_pressed(egui::Key::P)) {
-                run = Some("file.export_pdf".into());
-            }
-            if ctx.input(|i| i.key_pressed(egui::Key::A)) {
-                run = Some("select.all".into());
-            }
-        } else if !typing {
+        // T0215: Jede Kombination aus Umschalt, Strg und Alt ist eine eigene
+        // **Ebene** der Tastaturbelegung — dieselbe Taste trägt je Ebene eine
+        // Funktion (`c` = Stutzen, `ctrl+c` = Kopieren). Ausgewertet wird
+        // ausschließlich über `prefs.action_for_kombination`: was dort nicht
+        // steht, hat keine Wirkung.
+        if !typing {
             // Zeichen ohne eigene Taste (Umlaute, ß, …): sie kommen nur als
-            // Text an (T0121). Die Belegung gilt trotzdem — sonst ließe sich
-            // eine Funktion zwar auf ä/ö/ü legen, aber nie auslösen. Ein
-            // ausdrücklich belegtes Sonderzeichen schlägt dabei die Taste,
-            // über die es getippt wird (AltGr+E = €, nicht „e").
+            // Text an (T0121) — mit dem Vorsatz der Ebene.
             let sonderzeichen = getippte_zeichen(ctx)
                 .into_iter()
-                .find_map(|z| self.prefs.action_for_key(&zeichen_label(&z, shift)));
+                .find_map(|z| self.prefs.action_for_kombination(lage, &z));
             if let Some(action) = sonderzeichen.clone() {
                 run = Some(action);
             }
-            // Einzeltasten über die Belegung (Buchstaben und Symbole, T0056)
+            // Einzeltasten über die Belegung ihrer Ebene: der Vorsatz macht aus
+            // „c" ein „ctrl+c" bzw. „shift+c" (T0056/T0215).
             for (key, label) in EINZELTASTEN {
-                // Einzeltasten gelten nur ohne Umschalt — sonst würde
-                // Umschalt+I zusätzlich die Belegung von "i" auslösen.
-                if sonderzeichen.is_none() && !shift && ctx.input(|i| i.key_pressed(*key)) {
+                if sonderzeichen.is_none() && ctx.input(|i| i.key_pressed(*key)) {
                     // Auch der Ansichtsschwenk ist eine gewöhnliche Funktion
                     // (T0089): der Druck löst sie einmal aus, gehalten
                     // wiederholt das Betriebssystem den Druck wie bei jeder
-                    // anderen Taste. Früher lief er daneben als Dauerlauf auf
-                    // `key_down` — auch mit Strg (Strg+S schwenkte mit) und
-                    // unabhängig davon, was in der Hotbar lag.
-                    if let Some(action) = self.prefs.action_for_key(label) {
+                    // anderen Taste.
+                    if let Some(action) = self.prefs.action_for_kombination(lage, label) {
                         run = Some(action);
                     }
                 }
             }
-            // Umschalt-Ebene: jede Taste kann ein zweites Kürzel tragen, in der
-            // Belegung als "shift+<Zeichen>" gespeichert (Umschalt+I =
-            // Füllfläche nach Punktfolge, Umschalt+V = Volumen). Gilt für alle
-            // Einzeltasten, nicht nur für eine fest eingetragene (T0056).
-            if shift && sonderzeichen.is_none() {
-                for (key, label) in EINZELTASTEN {
-                    if !ctx.input(|i| i.key_pressed(*key)) {
-                        continue;
-                    }
-                    let kombi = format!("shift+{label}");
-                    if let Some(action) = self.prefs.action_for_key(&kombi) {
-                        run = Some(action);
-                    }
-                }
-            }
+            // Ziffer → Slot **der gehaltenen Ebene** (T0215): mit Strg liegt
+            // eine eigene Hotbar auf den Ziffern. `hotbar::taste_slot` ist die
+            // eine Zuordnung („0" ist der letzte Slot).
             let tool_waiting = self.tool.as_ref().map(|t| !t.pts.is_empty()).unwrap_or(false);
+            let slots = self.prefs.slots_fuer(lage);
             for (key, label) in [
                 (egui::Key::Num1, "1"),
                 (egui::Key::Num2, "2"),
@@ -6722,50 +6719,47 @@ impl App {
                 (egui::Key::Num0, "0"),
             ] {
                 if !tool_waiting && ctx.input(|i| i.key_pressed(key)) {
-                    // Ziffer → Slot über **eine** Quelle (`hotbar::taste_slot`):
-                    // „0" ist der letzte Slot, nicht der erste (T0065).
                     if let Some(slot) = crate::hotbar::taste_slot(label) {
-                        if let Some(Some(action)) = self.prefs.slots().get(slot) {
+                        if let Some(Some(action)) = slots.get(slot) {
                             run = Some(action.clone());
                         }
                     }
                 }
             }
-            if ctx.input(|i| i.key_pressed(egui::Key::Space)) {
-                if self.tool.is_none() {
-                    run = Some("edit.repeat".into());
-                }
-            }
-            if ctx.input(|i| i.key_pressed(egui::Key::Enter)) && !tool_waiting {
-                self.tool_enter();
-            }
-            if ctx.input(|i| i.key_pressed(egui::Key::Delete) || i.key_pressed(egui::Key::Backspace)) {
-                // Füllfläche/Schraffur im Modus „Punkte setzen": Entf und
-                // Backspace brechen die Eingabe ab — ESC bestätigt dort.
-                // Nur ohne Tippeingabe, sonst löscht Backspace die getippte
-                // Zahl/Länge statt das Werkzeug zu beenden.
-                if self.ui.typed.is_empty() && self.fill_points_running() {
-                    self.cancel_tool();
-                    self.toast(jjcad_core::i18n::tr("gui.app.fuellflaeche_verworfen"));
-                } else {
-                    let ids = self.selection().to_vec();
-                    if !ids.is_empty() {
-                        let _ = self.session_mut().execute("modify.erase", &serde_json::json!({"ids": ids}));
-                        self.session_mut().clear_selection();
-                        self.mark_changed();
+            // Die festen Tasten (`Esc`, `Enter`, `Entf`, `F1`, `F5` …) gelten
+            // ohne Steuerungstaste — mit Strg gehört die Taste der Belegung.
+            if lage.ist_leer() {
+                if ctx.input(|i| i.key_pressed(egui::Key::Space)) {
+                    if self.tool.is_none() {
+                        run = Some("edit.repeat".into());
                     }
                 }
-            }
-            if ctx.input(|i| i.key_pressed(egui::Key::F1)) {
-                self.ui.help_open = true;
-            }
-            // T0159: F5 zeigt die ganze Zeichnung — dieselbe Funktion wie der
-            // Knopf „Alles zeigen“ (`view.zoom_extents` → `App::fit_view`).
-            // Fest verdrahtet wie F1 und F11, damit sie auch bei laufendem
-            // Werkzeug erreichbar ist; über `run` läuft sie durch die
-            // Befehlsschicht, nicht an ihr vorbei.
-            if ctx.input(|i| i.key_pressed(egui::Key::F5)) {
-                run = Some("view.zoom_extents".into());
+                if ctx.input(|i| i.key_pressed(egui::Key::Enter)) && !tool_waiting {
+                    self.tool_enter();
+                }
+                if ctx.input(|i| i.key_pressed(egui::Key::Delete) || i.key_pressed(egui::Key::Backspace)) {
+                    // Füllfläche/Schraffur im Modus „Punkte setzen": Entf und
+                    // Backspace brechen die Eingabe ab — ESC bestätigt dort.
+                    if self.ui.typed.is_empty() && self.fill_points_running() {
+                        self.cancel_tool();
+                        self.toast(jjcad_core::i18n::tr("gui.app.fuellflaeche_verworfen"));
+                    } else {
+                        let ids = self.selection().to_vec();
+                        if !ids.is_empty() {
+                            let _ = self.session_mut().execute("modify.erase", &serde_json::json!({"ids": ids}));
+                            self.session_mut().clear_selection();
+                            self.mark_changed();
+                        }
+                    }
+                }
+                if ctx.input(|i| i.key_pressed(egui::Key::F1)) {
+                    self.ui.help_open = true;
+                }
+                // T0159: F5 zeigt die ganze Zeichnung — dieselbe Funktion wie der
+                // Knopf „Alles zeigen“ (`view.zoom_extents` → `App::fit_view`).
+                if ctx.input(|i| i.key_pressed(egui::Key::F5)) {
+                    run = Some("view.zoom_extents".into());
+                }
             }
         }
         if let Some(id) = run {
@@ -11142,6 +11136,25 @@ impl App {
         self.prefs.mouse_move && self.doc().entity(id).is_some()
     }
 
+    /// Die **Ebene**, die gerade gehalten wird (T0215) — Umschalt, Strg, Alt
+    /// und ihre Kombinationen. Sie schaltet die Hotbar um und wird als kleines
+    /// Feld neben ihr angezeigt.
+    ///
+    /// Gelesen wird der Zustand der Tastatur in **diesem** Bild, nicht ein
+    /// gemerkter Wert: die Hotbar folgt der Hand, und beim Loslassen steht
+    /// wieder die Grundbelegung da. `Shift` ist dabei dieselbe Ebene wie im
+    /// Tastenbild (`shift+c`) — die frühere „zweite Ebene" ist eine Variante
+    /// unter acht.
+    pub fn hotbar_kombination(&self, ctx: &egui::Context) -> jjcad_core::persist::Kombination {
+        ctx.input(|i| {
+            jjcad_core::persist::Kombination::aus_modifikatoren(
+                i.modifiers.shift,
+                i.modifiers.command,
+                i.modifiers.alt,
+            )
+        })
+    }
+
     /// Beginnt das Maus-Verschieben nur, wenn die Einstellung es zulässt.
     ///
     /// Liefert `false`, wenn der Zug nicht startet — dann läuft die übrige
@@ -12492,18 +12505,31 @@ mod tests_tastenbelegung {
         );
     }
 
-    /// Ein Druck auf eine Taste mit fester Kombination (Strg+S) bleibt beim
-    /// Speichern — die Funktion lässt sich nicht auf einen Buchstaben umlegen.
+    /// T0215: Funktionstasten bleiben fest im Code; **Tastenkombinationen** sind
+    /// eine eigene Ebene der Belegung und lassen sich umbelegen.
     #[test]
-    fn kombinationen_bleiben_fest() {
+    fn funktionstasten_bleiben_fest() {
         let mut app = App::with_ctx(egui::Context::default());
         // Welche Funktion heute auf `k` liegt, hängt von der Belegung des
         // Rechners ab — gemerkt wird sie trotzdem, das ist der Prüfpunkt.
         let vorher = app.prefs.action_for_key("k");
-        app.prefs.bind("file.save", "k");
-        assert_eq!(app.prefs.key_for("file.save").as_deref(), Some("ctrl+s"));
+        // F5 gehört „Alles zeigen" und lässt sich nicht auf einen Buchstaben legen.
+        app.prefs.bind("view.zoom_extents", "k");
+        assert_eq!(
+            app.prefs.key_for("view.zoom_extents").as_deref(),
+            Some("f5"),
+            "die feste Funktionstaste bleibt"
+        );
         assert_eq!(app.prefs.action_for_key("k"), vorher);
-        assert!(!app.prefs.belegung_aenderbar("file.save"));
+        assert!(!app.prefs.belegung_aenderbar("view.zoom_extents"));
+
+        // Strg+S darf dagegen auf eine andere Kombination wandern.
+        app.prefs.bind("file.save", "ctrl+k");
+        assert_eq!(
+            app.prefs.action_for_key("ctrl+k").as_deref(),
+            Some("file.save")
+        );
+        assert!(app.prefs.belegung_aenderbar("file.save"));
     }
 
     /// T0159: `F5` zeigt die ganze Zeichnung.
@@ -12551,6 +12577,57 @@ mod tests_tastenbelegung {
                 "Punkt {p:?} liegt nach F5 außerhalb der Zeichenfläche: {s:?} in {flaeche:?}"
             );
         }
+    }
+
+    /// T0215: Die gehaltene Steuerungstaste schaltet die **Hotbar** um — mit
+    /// Strg liegt dort eine eigene Belegung, und das kleine Feld neben der
+    /// Hotbar zeigt die Ebene. Die Ziffer startet den Slot dieser Ebene.
+    #[test]
+    fn strg_schaltet_die_hotbar_um_und_zeigt_die_ebene() {
+        let mut app = app_mit_zeichnung();
+        // Die Ebenen liegen nebeneinander: Slot 1 trägt ohne Strg etwas
+        // anderes als mit Strg.
+        app.prefs.set_slot_fuer(
+            jjcad_core::persist::Kombination::STRG,
+            0,
+            Some("draw.circle".into()),
+        );
+        assert_eq!(
+            app.prefs.slots()[0].as_deref(),
+            Some("draw.wall"),
+            "die Strg-Variante darf die Grundbelegung nicht überschreiben"
+        );
+
+        // Ohne Steuerungstaste: kein Ebenenfeld.
+        frame_mit(&mut app, vec![]);
+        assert!(
+            app.ui.last_kombi_icon.is_none(),
+            "ohne gehaltene Steuerungstaste steht kein Feld neben der Hotbar"
+        );
+        assert_eq!(app.ui.hotbar_kombi, jjcad_core::persist::Kombination::KEINE);
+
+        // Mit Strg: das Feld steht da, die Hotbar zeigt die Strg-Slots.
+        frame_mit_lage(&mut app, vec![], egui::Modifiers::COMMAND);
+        assert!(
+            app.ui.last_kombi_icon.is_some(),
+            "das kleine Feld neben der Hotbar fehlt"
+        );
+        assert_eq!(
+            app.ui.hotbar_kombi,
+            jjcad_core::persist::Kombination::STRG
+        );
+
+        // Ziffer 1 startet den Slot **dieser** Ebene.
+        frame_mit_lage(
+            &mut app,
+            vec![druck(egui::Key::Num1)],
+            egui::Modifiers::COMMAND,
+        );
+        assert_eq!(
+            app.tool_id(),
+            Some("draw.circle"),
+            "die Ziffer startet nicht den Slot der Strg-Ebene"
+        );
     }
 }
 
