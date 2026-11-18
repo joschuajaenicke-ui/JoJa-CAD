@@ -29,6 +29,8 @@ pub enum FileMode {
     /// Bild einfügen (PNG oder JPEG, T0100)
     ImportImage,
     ExportPdf,
+    /// Plansatz als mehrseitige PDF (T0218)
+    ExportPlansatz,
     ExportDxf,
     ExportPng,
     /// Tastaturlayout als Datei einlesen (T0076)
@@ -47,7 +49,7 @@ impl FileMode {
             FileMode::ImportPdf => "pdf",
             // Beide Formate sind gemeint; der Filter unten lässt png/jpg/jpeg zu.
             FileMode::ImportImage => "png",
-            FileMode::ExportPdf => "pdf",
+            FileMode::ExportPdf | FileMode::ExportPlansatz => "pdf",
             FileMode::ExportPng => "png",
             FileMode::ImportKeymap | FileMode::ExportKeymap => "json",
             FileMode::Vorlage => "jjcad",
@@ -61,6 +63,7 @@ impl FileMode {
             FileMode::ImportPdf => jjcad_core::i18n::tr("gui.dialogs.pdf_einfuegen"),
             FileMode::ImportImage => jjcad_core::i18n::tr("gui.dialogs.bild_einfuegen"),
             FileMode::ExportPdf => jjcad_core::i18n::tr("gui.dialogs.als_pdf_exportieren"),
+            FileMode::ExportPlansatz => jjcad_core::i18n::tr("gui.dialogs.plansatz_exportieren"),
             FileMode::ExportDxf => jjcad_core::i18n::tr("gui.dialogs.als_dxf_exportieren"),
             FileMode::ExportPng => jjcad_core::i18n::tr("gui.dialogs.als_png_exportieren"),
             FileMode::ImportKeymap => jjcad_core::i18n::tr("gui.dialogs.tastaturlayout_importieren"),
@@ -83,6 +86,7 @@ impl FileMode {
             self,
             FileMode::SaveJjcad
                 | FileMode::ExportPdf
+                | FileMode::ExportPlansatz
                 | FileMode::ExportDxf
                 | FileMode::ExportPng
                 | FileMode::ExportKeymap
@@ -95,7 +99,9 @@ impl FileMode {
             FileMode::ImportDxf | FileMode::ExportDxf => jjcad_core::i18n::tr("gui.dialogs.dxf_zeichnung"),
             FileMode::ImportPdf => jjcad_core::i18n::tr("gui.dialogs.pdf_dokument"),
             FileMode::ImportImage => jjcad_core::i18n::tr("gui.dialogs.bild"),
-            FileMode::ExportPdf => jjcad_core::i18n::tr("gui.dialogs.pdf_dokument"),
+            FileMode::ExportPdf | FileMode::ExportPlansatz => {
+                jjcad_core::i18n::tr("gui.dialogs.pdf_dokument")
+            }
             FileMode::ExportPng => jjcad_core::i18n::tr("gui.dialogs.png_bild"),
             FileMode::ImportKeymap | FileMode::ExportKeymap => jjcad_core::i18n::tr("gui.dialogs.tastaturlayout"),
             FileMode::Vorlage => jjcad_core::i18n::tr("gui.dialogs.zeichnung"),
@@ -609,6 +615,7 @@ pub fn datei_gewaehlt(app: &mut App, mode: FileMode, path: std::path::PathBuf) {
         FileMode::ImportPdf => app.pdf_import_oeffnen(path),
         FileMode::ImportImage => app.bild_importieren(path),
         FileMode::ExportPdf => app.export_pdf_to(path),
+        FileMode::ExportPlansatz => app.export_plansatz_to(path),
         FileMode::ExportDxf => app.export_dxf_to(path),
         FileMode::ExportPng => app.export_png_to(path),
         // Tastaturlayouts (T0076): Import übernimmt das Layout sofort, Export

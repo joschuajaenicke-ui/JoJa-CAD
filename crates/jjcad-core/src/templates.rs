@@ -174,6 +174,7 @@ pub fn new_sheet(doc: &mut Document, paper: PaperSize, landscape: bool, name: &s
         show_title_block: false,
         viewports_alt: Vec::new(),
         entities: Vec::new(),
+        plansatz: false,
     };
     // Rahmen und Schriftfeld bestehen aus normalen Linien und Textfeldern —
     // dieselben Objekte wie in der Zeichnung, nur im Papierraum. Eigene IDs aus

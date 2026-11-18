@@ -1098,6 +1098,25 @@ pub fn export_all_sheets_pdf(doc: &Document, path: &Path) -> Result<(), String> 
     write_pdf(pages, path, &doc.name)
 }
 
+/// Die **Blätter des Plansatzes** in eine mehrseitige PDF (T0218).
+///
+/// Geliefert wird in der Reihenfolge der Blattliste (nicht in der Reihenfolge
+/// der Kennungen) — der Plansatz soll so blättern, wie er im Blattmanager
+/// steht. Eine leere Auswahl ist ein Fehler: eine PDF ohne Seite wäre für den
+/// Aufrufer nicht von einem stillen Fehlschlag zu unterscheiden.
+pub fn export_sheets_pdf(doc: &Document, path: &Path, ids: &[Id]) -> Result<(), String> {
+    let pages: Vec<Page> = doc
+        .sheets
+        .iter()
+        .filter(|s| ids.contains(&s.id))
+        .map(|s| draw_sheet_page(doc, s))
+        .collect();
+    if pages.is_empty() {
+        return Err("Der Plansatz enthält keine Blätter".into());
+    }
+    write_pdf(pages, path, &doc.name)
+}
+
 /// Vorschau-Bilddaten für GUI (PDF-Seite als Bytes).
 pub fn pdf_bytes(doc: &Document, sheet_index: Option<usize>) -> Result<Vec<u8>, String> {
     let idx = sheet_index.unwrap_or(0);

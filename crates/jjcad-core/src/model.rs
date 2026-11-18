@@ -1465,6 +1465,11 @@ pub struct Sheet {
     /// Zeichnungselemente im Papierraum (Schriftfeld etc.)
     #[serde(default)]
     pub entities: Vec<Entity>,
+    /// Blatt gehört zum **Plansatz** (T0218): Die Blattliste im
+    /// Blattmanager setzt das Häkchen, der Knopf darunter exportiert genau
+    /// diese Blätter als eine mehrseitige PDF.
+    #[serde(default)]
+    pub plansatz: bool,
 }
 
 fn default_hundred() -> f64 {

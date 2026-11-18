@@ -402,6 +402,12 @@ ausgeblendet.
   „Verwerfen“ oder „Abbrechen“. Ohne Speicherort fragt „Speichern und schließen“ im
   Dateidialog nach dem Ziel und legt den Reiter erst nach dem Sichern ab. Rechts vom Trenner stehen
   die **Blattreiter** der aktiven Datei: `Modell`, die Blätter und `+` für ein neues Blatt.
+- **Blattreiter** schließen nur den Reiter: das `×` an einem Blatt-Chip nimmt das Blatt **nicht**
+  aus der Zeichnung. Der **Blattmanager** (Reiter Blatt ▸ „Blätter“, rechtes Panel) listet
+  **alle** Blätter der Datei — auch die mit geschlossenem Reiter, die blasser stehen. Ein Klick
+  auf eine Zeile öffnet das Blatt und holt seinen Reiter zurück; das Häkchen rechts nimmt es in
+  den **Plansatz** auf. „Plansatz als PDF (n)“ am Ende der Liste schreibt genau diese Blätter
+  als eine mehrseitige PDF; ohne Häkchen ist der Knopf gesperrt.
 - **Linkes Panel** (`Layers`) und **rechtes Panel** (`Eigenschaften`) klappen über den Pfeil in ihrer
   Kopfzeile zu einer schmalen Leiste zusammen — ein Klick auf den Pfeil holt sie zurück.
 - **Layer-Manager** (linkes Panel): Die Liste hat **eine** Stufe — **Layer gehören zu einem Plan**.

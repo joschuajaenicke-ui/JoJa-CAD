@@ -36,6 +36,18 @@ Architekturregeln:
   Datei zieht. Eine Datei liegt nur einmal offen (`App::datei_reiter`, echter Pfad); ein
   frisches `Document` gilt **nicht** als geändert (sonst landet die geöffnete Datei in
   einem zweiten Reiter).
+- **Blattmanager (T0218)**: Das Kreuz eines Blattreiters **löscht kein Blatt** mehr — es merkt
+  die Kennung in `DocTab::geschlossene_blaetter` (Ansicht, nicht Datei). Der Blattmanager ist
+  ein eigenes rechtes Seitenpanel (`panels::blaetter`, 232 px wie das Layer-Panel, Vorgabe an,
+  `prefs.show_blattmanager`) und listet **alle** Blätter der aktiven Datei; ein Klick öffnet
+  das Blatt (`App::blatt_oeffnen`, holt den Reiter zurück), das Häkchen setzt `Sheet::plansatz`
+  über `sheet.update`. Am Ende der Liste steht „Plansatz als PDF (n)“ — `pdf::export_sheets_pdf`
+  schreibt die gewählten Blätter in Blattreihenfolge als eine mehrseitige PDF, eine leere
+  Auswahl ist ein Fehler und sperrt den Knopf. Das Panel liegt **außen rechts**, vor
+  `App::seitenleisten` gezeichnet; es hat keinen Seitenwechsel wie Layer/Eigenschaften, weil
+  drei Panels auf zwei Seiten die Zeichnung zu weit einengen. Prüfweg:
+  `cargo test -p jjcad-core --test blatt_plansatz` und `cargo test -p jjcad-gui tests_blattmanager`,
+  Prüfbild `--demo blattmanager`.
 - **Oberfläche und Code-Kommentare auf Deutsch.**
 
 ## Bauen und testen

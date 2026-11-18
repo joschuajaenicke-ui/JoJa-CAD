@@ -1,4 +1,4 @@
-//! Seitenpanels: Layer (links) und Eigenschaften (rechts).
+//! Seitenpanels: Layer, Eigenschaften und Blattmanager (T0218).
 
 use crate::app::{self, App, TabKind};
 use crate::theme::{self, Palette};
@@ -758,6 +758,158 @@ pub fn layer_color_popup(app: &mut App, ctx: &egui::Context) {
                 app.ui.color_popup = None;
             }
         }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Blattmanager (T0218)
+// ---------------------------------------------------------------------------
+
+/// Liste **aller** Blätter der aktiven Datei — auch derer, deren Reiter
+/// geschlossen ist. Ein Klick öffnet das Blatt und holt den Reiter zurück;
+/// das Häkchen rechts nimmt es in den Plansatz auf, der Knopf darunter
+/// schreibt den Plansatz als eine mehrseitige PDF.
+pub fn blaetter(app: &mut App, ui: &mut Ui) {
+    let tr = jjcad_core::i18n::tr;
+    ui.horizontal(|ui| {
+        ui.label(
+            RichText::new(tr("gui.panels.blattmanager"))
+                .size(10.0)
+                .color(Palette::text_faint())
+                .strong(),
+        );
+        ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+            // Der Blattmanager liegt immer rechts; der Pfeil zeigt dorthin.
+            if widgets::icon_button(ui, "chevron_right", 20.0, false, tr("gui.panels.einklappen"))
+                .clicked()
+            {
+                app.ui.blatt_open = false;
+            }
+        });
+    });
+    ui.add_space(4.0);
+
+    let aktiv = app.tab().tab.clone();
+    let zeilen: Vec<(Id, String, bool, bool, bool)> = app
+        .doc()
+        .sheets
+        .iter()
+        .map(|s| {
+            (
+                s.id,
+                s.name.clone(),
+                s.plansatz,
+                matches!(aktiv, TabKind::Sheet(a) if a == s.id),
+                app.blatt_tab_offen(s.id),
+            )
+        })
+        .collect();
+    let mut oeffnen: Option<Id> = None;
+    let mut plansatz: Option<(Id, bool)> = None;
+    app.ui.last_blattzeilen.clear();
+
+    let list_hoehe = (ui.available_height() - 36.0).max(60.0);
+    egui::ScrollArea::vertical()
+        .max_height(list_hoehe)
+        // Senkrecht schrumpfen: der Knopf gehört **ans Ende der Liste**, nicht
+        // an den unteren Fensterrand (bei drei Blättern stand er 500 px tiefer).
+        .auto_shrink([false, true])
+        .show(ui, |ui| {
+            for (id, name, im_plansatz, ist_aktiv, tab_offen) in &zeilen {
+                let (rect, _) = ui.allocate_exact_size(
+                    Vec2::new(ui.available_width(), 24.0),
+                    Sense::hover(),
+                );
+                // Der Klickbereich endet vor dem Häkchen — sonst öffnete ein
+                // Klick daneben immer das Blatt.
+                let text_rect = Rect::from_min_max(
+                    rect.min,
+                    Pos2::new((rect.right() - 30.0).max(rect.left() + 1.0), rect.max.y),
+                );
+                let resp = ui.interact(
+                    text_rect,
+                    egui::Id::new(("blattmanager", *id)),
+                    Sense::click(),
+                );
+                if *ist_aktiv || resp.hovered() {
+                    ui.painter()
+                        .rect_filled(rect, Rounding::same(5.0), Palette::panel_alt());
+                }
+                let symbol = if *ist_aktiv {
+                    Palette::accent()
+                } else if *tab_offen {
+                    Palette::text_faint()
+                } else {
+                    Palette::text_dim()
+                };
+                crate::icons::paint(
+                    ui.painter(),
+                    Rect::from_min_size(
+                        Pos2::new(rect.left() + 4.0, rect.center().y - 6.0),
+                        Vec2::splat(12.0),
+                    ),
+                    "sheet",
+                    symbol,
+                );
+                let farbe = if *ist_aktiv {
+                    Palette::text()
+                } else if *tab_offen {
+                    Palette::text_dim()
+                } else {
+                    // Geschlossener Reiter: das Blatt ist da, aber nicht offen.
+                    Palette::text_faint()
+                };
+                let galley = ui.painter().layout_no_wrap(
+                    name.clone(),
+                    FontId::proportional(11.5),
+                    farbe,
+                );
+                ui.painter().galley(
+                    Pos2::new(rect.left() + 20.0, rect.center().y - galley.size().y / 2.0),
+                    galley,
+                    farbe,
+                );
+                let mut an = *im_plansatz;
+                let cb_rect = Rect::from_center_size(
+                    Pos2::new(rect.right() - 12.0, rect.center().y),
+                    Vec2::splat(18.0),
+                );
+                let cb = ui.put(cb_rect, egui::Checkbox::without_text(&mut an));
+                cb.clone().on_hover_text(tr("gui.panels.plansatz"));
+                app.ui.last_blattzeilen.push((*id, text_rect, cb_rect));
+                if cb.changed() {
+                    plansatz = Some((*id, an));
+                }
+                if resp.clicked() {
+                    oeffnen = Some(*id);
+                }
+            }
+        });
+
+    if let Some((id, an)) = plansatz {
+        let _ = app.session_mut().execute(
+            "sheet.update",
+            &json!({"sheet": id, "plansatz": an}),
+        );
+        app.mark_changed();
+    }
+    if let Some(id) = oeffnen {
+        app.blatt_oeffnen(id);
+    }
+
+    ui.add_space(6.0);
+    let anzahl = zeilen.iter().filter(|z| z.2).count();
+    let beschriftung = jjcad_core::i18n::t_args_owned(
+        "gui.panels.plansatz_pdf_n",
+        &[("n", format!("{anzahl}"))],
+    );
+    let farbe = if anzahl > 0 { Palette::text() } else { Palette::text_faint() };
+    let knopf = egui::Button::new(RichText::new(beschriftung).size(11.5).color(farbe))
+        .min_size(Vec2::new(ui.available_width(), 24.0))
+        .fill(Palette::panel_alt())
+        .stroke(Stroke::new(1.0_f32, Palette::border()));
+    if ui.add_enabled(anzahl > 0, knopf).clicked() {
+        app.plansatz_exportieren();
     }
 }
 
