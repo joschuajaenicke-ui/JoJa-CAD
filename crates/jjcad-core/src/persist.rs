@@ -74,18 +74,28 @@ pub fn from_json(s: &str) -> Result<Document, String> {
     Ok(doc)
 }
 
-/// Fehlende **Systemblöcke** ergänzen (T0210).
+/// **Systemblöcke** beim Laden auf den Stand der Bibliothek bringen (T0210).
 ///
-/// Die Systembibliothek steht in der Datei (der Nutzer kann Blöcke löschen und
-/// eigene Gruppen anlegen). Neue, mit dem Programm gelieferte Blöcke erreichten
-/// eine bestehende Zeichnung deshalb nie — die Kategorie „Punkt Symbole“ fehlte
-/// in jeder älteren Datei. Beim Laden werden fehlende Systemblöcke angehängt;
-/// vorhandene bleiben unangetastet, auch wenn der Nutzer sie verändert hat.
+/// Die Systembibliothek steht in der Datei, damit eine Zeichnung ohne Programm
+/// vollständig ist. Ein Systemblock ist aber Programmteil, kein
+/// Zeichnungsinhalt: er lässt sich nicht bearbeiten und nicht löschen
+/// (`block.update`/`block.delete` lehnen ihn ab). Deshalb gilt beim Laden die
+/// **Bibliothek** — fehlende Blöcke werden angehängt, vorhandene ersetzt.
+///
+/// Beides ist nötig: ohne das Anhängen erreichte ein neuer Block (etwa die
+/// Kategorie „Punkt Symbole“) keine ältere Datei, und ohne das Ersetzen behielte
+/// sie für immer den alten Stand — der Pfeil trug in jeder vor Turn 5
+/// gespeicherten Zeichnung weiter seinen Basispunkt in der Mitte, während ein
+/// frisches Blatt schon den neuen zeichnete (T0210, Turn 7).
 pub fn normalize_systembloecke(doc: &mut Document) {
     let mut next = doc.next_id;
     for def in crate::blocks_lib::system_blocks(&mut next) {
-        if doc.blocks.iter().all(|b| b.id != def.id) {
-            doc.blocks.push(def);
+        match doc.blocks.iter_mut().find(|b| b.id == def.id) {
+            // Nur echte Systemblöcke werden ersetzt; trüge ein Block des
+            // Benutzers dieselbe Kennung, bliebe er unangetastet.
+            Some(vorhanden) if vorhanden.source == BlockSource::System => *vorhanden = def,
+            Some(_) => {}
+            None => doc.blocks.push(def),
         }
     }
 }

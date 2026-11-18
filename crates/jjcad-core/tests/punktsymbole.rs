@@ -353,3 +353,91 @@ fn aeltere_datei_bekommt_die_punktsymbole_beim_laden() {
     ids.dedup();
     assert_eq!(ids.len(), vorher, "Blöcke wurden doppelt eingetragen");
 }
+
+/// Eine Zeichnung, die vor der Ausrichtung gespeichert wurde, trägt den alten
+/// Pfeil in ihrer Datei. Beim Laden gilt die Bibliothek — sonst bliebe der
+/// Basispunkt für immer in der Mitte (T0210, Turn 7).
+#[test]
+fn alte_datei_bekommt_den_neuen_pfeil_aus_der_bibliothek() {
+    let doc = doc_mm();
+    let mut roh: serde_json::Value =
+        serde_json::from_str(&jjcad_core::persist::to_json(&doc).unwrap()).unwrap();
+
+    // Den Stand von vor Turn 5 einbauen: Spitze 1,4 mm rechts vom Ursprung.
+    let mut alt = BlockDef {
+        id: "sys:pkt-pfeil".into(),
+        name: "Pfeil".into(),
+        category: PUNKTSYMBOL_KATEGORIE.into(),
+        source: BlockSource::System,
+        description: "Pfeil, 3,4 mm".into(),
+        entities: vec![Entity::new(
+            1,
+            0,
+            EntityKind::Line {
+                a: v(-2.0, 0.0),
+                b: v(1.4, 0.0),
+            },
+        )],
+        icon: None,
+        base: jjcad_core::geom::Vec2::ZERO,
+        annotative: true,
+    };
+    alt.entities[0].by_block = true;
+    let alt = serde_json::to_value(&alt).expect("alter Block");
+    for b in roh["blocks"].as_array_mut().expect("blocks").iter_mut() {
+        if b["id"] == "sys:pkt-pfeil" {
+            *b = alt.clone();
+        }
+    }
+
+    let geladen = jjcad_core::persist::from_json(&roh.to_string()).expect("Datei laden");
+    let def = geladen.block("sys:pkt-pfeil").expect("Pfeil");
+    let huelle = jjcad_core::render::entity_bbox(
+        &geladen,
+        &Entity::new(
+            999,
+            0,
+            EntityKind::BlockRef {
+                block: "sys:pkt-pfeil".into(),
+                pos: jjcad_core::geom::Vec2::ZERO,
+                rot: 0.0,
+                scale: v(1.0, 1.0),
+                mirror: false,
+            },
+        ),
+    );
+    assert!(
+        huelle.max.x.abs() < 0.01,
+        "der geladene Pfeil hat die Spitze bei x = {:.2} statt auf dem Basispunkt",
+        huelle.max.x
+    );
+    assert!(
+        def.description.contains("Basispunkt"),
+        "der Block stammt nicht aus der Bibliothek: {}",
+        def.description
+    );
+}
+
+/// Ein Block des Benutzers mit derselben Kennung bleibt stehen — ersetzt wird
+/// nur, was wirklich Systemblock ist.
+#[test]
+fn benutzerblock_mit_systemkennung_bleibt_stehen() {
+    let mut doc = doc_mm();
+    doc.blocks.retain(|b| b.id != "sys:pkt-pfeil");
+    doc.blocks.push(BlockDef {
+        id: "sys:pkt-pfeil".into(),
+        name: "Mein Pfeil".into(),
+        category: String::new(),
+        source: BlockSource::User,
+        description: String::new(),
+        entities: Vec::new(),
+        icon: None,
+        base: jjcad_core::geom::Vec2::ZERO,
+        annotative: false,
+    });
+    let roh = jjcad_core::persist::to_json(&doc).unwrap();
+    let geladen = jjcad_core::persist::from_json(&roh).expect("Datei laden");
+    let def = geladen.block("sys:pkt-pfeil").expect("Block");
+    assert_eq!(def.source, BlockSource::User);
+    assert_eq!(def.name, "Mein Pfeil");
+}

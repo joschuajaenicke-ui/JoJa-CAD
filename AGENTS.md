@@ -1010,8 +1010,13 @@ Mit dem Nutzer abgestimmt — nicht „verbessern“:
   Marke ist bei 1:50 und 1:200 gleich groß. Der Pfeil zeigt nach +X, am Linienende in
   Laufrichtung, am Anfang entgegen. Die Maße der mitgelieferten Blöcke (`blocks_lib`, IDs
   `sys:pkt-*`) sind deshalb **Papier-Millimeter**, nicht Zeichnungs-Millimeter.
-  `persist::normalize_systembloecke` ergänzt fehlende Systemblöcke beim Laden — sonst
-  erreichte die Kategorie keine bestehende Zeichnung. **Pfeile sitzen mit der Spitze auf
+  `persist::normalize_systembloecke` bringt die Systemblöcke beim Laden auf den Stand der
+  Bibliothek: fehlende werden angehängt, vorhandene **ersetzt**. Beides ist nötig — ohne das
+  Anhängen erreichte die Kategorie keine ältere Zeichnung, und ohne das Ersetzen behielte sie
+  den Stand der Version, die sie gespeichert hat (der Pfeil trug in jeder vor Turn 5
+  gespeicherten Datei weiter seinen Basispunkt in der Mitte). Systemblöcke sind
+  schreibgeschützt (`block.update`/`block.delete` lehnen sie ab), es geht also nichts Eigenes
+  verloren; ein Benutzerblock mit derselben Kennung bleibt stehen. **Pfeile sitzen mit der Spitze auf
   dem Basispunkt** (T0210, Turn 5): `sys:pkt-pfeil` und `sys:pkt-pfeilspitze` haben den
   Ursprung an der Spitze, der Körper läuft nach −X. Nur so deckt sich die Spitze an einem
   Linienende mit dem Endpunkt (vorher stand sie 1,4 mm daneben, bei 1:100 also 14 cm);
