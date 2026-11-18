@@ -1833,7 +1833,6 @@ steigung = "Steigung"
 stufen = "Stufen"
 stufenzahl_aus_laenge_und_hoehe_nach_2_s_a_63_cm = "Stufenzahl aus Länge und Höhe nach 2 S + A = 63 cm"
 stufenzahl_und_schrittmass_als_textfeld_neben_die_treppe = "Stufenzahl und Schrittmaß als Textfeld neben die Treppe setzen"
-text = "Text"
 textgroesse = "Textgröße"
 textlage_am_runden_griff_in_der_zeichnung = "Textlage am runden Griff in der Zeichnung"
 treppe = "Treppe"
@@ -1884,6 +1883,24 @@ keine_datei = "keine Datei"
 hoehe_folgt_aus_breite_und_dateiverhaeltnis = "Höhe folgt aus Breite und Verhältnis der Datei"
 seitenverhaeltnis = "Seitenverhältnis"
 sperren = "sperren"
+
+# T0214: Gliederung des Eigenschaften-Panels — „Allgemein“ und die
+# objekteigene Gruppe. Der Objektname steht nur noch im Kopf.
+allgemein = "Allgemein"
+wandaufbau = "Wandaufbau"
+tuerblatt = "Türblatt"
+fenstermasse = "Fenstermaße"
+fuellung = "Füllung"
+mass = "Maß"
+beschriftung = "Beschriftung"
+koerper = "Körper"
+treppenlauf = "Treppenlauf"
+ausschnitt = "Ausschnitt"
+schrift_und_inhalt = "Schrift und Inhalt"
+geometrie = "Geometrie"
+symbole = "Symbole"
+blockdaten = "Blockdaten"
+bilddaten = "Bilddaten"
 
 
 

@@ -413,6 +413,15 @@ Mit dem Nutzer abgestimmt — nicht „verbessern“:
 - **Eigenschaften-Panel**: gleiche Zeilen (96 px Label, 150 px Wert) beim Platzieren
   *und* bei Auswahl; bei Mehrfachauswahl nur gemeinsame Felder, abweichende Werte
   als `*variiert*`; nicht editierbare Werte (Länge, Fläche) anzeigen.
+  **Gliederung (T0214)**: Ganz oben steht der Objektkopf (`props::kopf`) — Symbol und
+  Bezeichnung, darunter Nummer/Layer bzw. „gilt für das nächste Element“. Die Bezeichnung
+  steht **genau einmal** im Panel. Darunter zwei Gruppen mit eigener Überschrift
+  (`props::abschnitt`): **Allgemein** (Reihenfolge, Layer, Farbe, Linienstärke, Linientyp)
+  und die **objekteigene Gruppe**, benannt nach ihrem Inhalt — Wandaufbau, Türblatt,
+  Fenstermaße, Füllung, Maß, Beschriftung, Körper, Treppenlauf, Schrift und Inhalt,
+  Ausschnitt, Geometrie/Symbole/Blockdaten/Bilddaten. Vorher hieß die zweite Gruppe wie
+  das Objekt, im Panel stand der Name also zweimal. Prüfweg:
+  `cargo test -p jjcad-gui props::tests::kopf_steht_oben`.
   Umgesetzt ist das in `crates/jjcad-gui/src/props.rs`: **eine** Funktion je
   Objektart zeichnet alle Zeilen, nur das Ziel der Änderung unterscheidet sich
   (`props::Ziel::Neu` schreibt in `ToolOptions` — „gilt für das nächste Element“;

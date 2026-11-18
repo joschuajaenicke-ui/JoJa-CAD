@@ -17,6 +17,24 @@
 //! Damit ist „beim Erzeugen merken, beim Bearbeiten nur die Auswahl ändern"
 //! **eine** Verzweigung an der Anwendungsstelle — nicht ein zweites Panel.
 //!
+//! # Gliederung
+//!
+//! Ganz oben steht der Objektkopf ([`kopf`]): Symbol und Bezeichnung, darunter
+//! die Herkunft (Nummer und Layer) bzw. „gilt für das nächste Element“. Die
+//! Bezeichnung erscheint damit **genau einmal** im Panel. Darunter gliedern
+//! zwei Gruppen mit eigener Überschrift ([`abschnitt`]):
+//!
+//! * **Allgemein** — die Werte, die jedes Objekt hat (Reihenfolge, Layer,
+//!   Farbe, Stärke, Linientyp).
+//! * die **objekteigene Gruppe**, benannt nach ihrem Inhalt („Wandaufbau“,
+//!   „Füllung“, „Maß“, „Geometrie“ …), nie nach dem Objekt selbst.
+//!
+//! Der Gruppenname steht als Schlüssel in `lang/de.toml` unter `gui.props`
+//! (z. B. `gui.props.wandaufbau`); eine neue Objektart bringt ihren eigenen
+//! mit. `tests::kopf_steht_oben_und_die_gruppen_haben_eigene_namen` prüft für
+//! jede Art, dass der Kopf oben und genau einmal steht und die Gruppen anders
+//! heißen.
+//!
 //! **Alle** Objektarten laufen hier — `panels` zeichnet kein eigenes Panel
 //! mehr. `tests::jede_objektart_hat_ein_panel` zählt jeden `EntityKind`-Zweig
 //! auf und `tests::alle_erzeuger_zeigen_dieselben_zeilen_wie_das_objekt`
@@ -196,10 +214,19 @@ pub fn protokoll_werkzeug() -> Vec<&'static str> {
 // Gemeinsame Zeilen: Kopf, Reihenfolge, Layer, Linie
 // ---------------------------------------------------------------------------
 
-/// Kopfzeile mit Symbol und Artname. Beim Erzeugen steht darunter, wofür die
-/// Werte gelten; beim Bearbeiten Objektnummer und Layer.
+/// Objektkopf: Symbol und Bezeichnung **ganz oben**, darunter die Herkunft
+/// (Nummer und Layer) bzw. wofür die Werte gelten.
+///
+/// Die Bezeichnung steht damit genau einmal über dem Panel; die Gruppen
+/// darunter nennen, was sie zeigen („Allgemein“ und die objekteigene Gruppe).
+/// Vorher trug der Kopf die Bezeichnung und die zweite Gruppe denselben Titel
+/// noch einmal — im Panel stand derselbe Name zweimal untereinander.
 pub fn kopf(app: &App, ui: &mut Ui, ziel: Ziel, titel: &str, icon: &str) {
-    section_title(ui, icon, titel);
+    ui.horizontal(|ui| {
+        let (r, _) = ui.allocate_exact_size(egui::Vec2::splat(20.0), egui::Sense::hover());
+        crate::icons::paint(ui.painter(), r, icon, theme::Palette::accent());
+        ui.label(theme::bold(titel, 14.5));
+    });
     match ziel {
         Ziel::Neu => {
             ui.label(theme::dim(jjcad_core::i18n::tr("gui.props.gilt_fuer_das_naechste_element")));
@@ -226,7 +253,22 @@ pub fn kopf(app: &App, ui: &mut Ui, ziel: Ziel, titel: &str, icon: &str) {
             }
         }
     }
+    ui.add_space(2.0);
+}
+
+/// Gruppenüberschrift einer Eigenschaftsgruppe — leiser als der Objektkopf
+/// und **ohne** dessen Bezeichnung.
+///
+/// Oben steht „Allgemein“ für die Werte, die jedes Objekt hat (Reihenfolge,
+/// Layer, Farbe, Linie); darunter folgt die objekteigene Gruppe, deren Titel
+/// nennt, was darin steht („Wandaufbau“, „Maß“, „Geometrie“ …). Damit ist die
+/// Gliederung an der Art des Werts erkennbar und nicht am Objektnamen.
+pub fn abschnitt(ui: &mut Ui, titel: &str) {
     ui.add_space(6.0);
+    widgets::hline(ui);
+    ui.add_space(5.0);
+    ui.label(theme::bold(titel, 11.5).color(theme::Palette::text_dim()));
+    ui.add_space(3.0);
 }
 
 /// Zeichenreihenfolge. Beim Erzeugen gibt es noch kein Objekt — die Zeile
@@ -880,6 +922,7 @@ pub fn text(app: &mut App, ui: &mut Ui, ziel: Ziel) {
             .unwrap_or(Color::BLACK)
     });
     kopf(app, ui, ziel, &titel, icon);
+    abschnitt(ui, jjcad_core::i18n::tr("gui.props.allgemein"));
     reihenfolge(app, ui, ziel);
 
     // Text hat keine Linie: Stärke und Linientyp erscheinen in beiden Fällen nicht.
@@ -896,11 +939,7 @@ pub fn text(app: &mut App, ui: &mut Ui, ziel: Ziel) {
         jjcad_core::i18n::tr("gui.props.farbe"),
     );
 
-    ui.add_space(4.0);
-    widgets::hline(ui);
-    ui.add_space(4.0);
-
-    section_title(ui, icon, jjcad_core::i18n::tr("gui.props.text"));
+    abschnitt(ui, jjcad_core::i18n::tr("gui.props.schrift_und_inhalt"));
     zeile("textkopf");
 
     // ---- Inhalt ----
@@ -1471,6 +1510,7 @@ pub fn wand(app: &mut App, ui: &mut Ui, ziel: Ziel) {
             .unwrap_or(Color::BLACK)
     });
     kopf(app, ui, ziel, jjcad_core::i18n::tr("gui.props.wand"), "wall");
+    abschnitt(ui, jjcad_core::i18n::tr("gui.props.allgemein"));
     reihenfolge(app, ui, ziel);
     let (staerke, linientyp) = linienwerte(app, &e, "Architektur");
 
@@ -1487,10 +1527,7 @@ pub fn wand(app: &mut App, ui: &mut Ui, ziel: Ziel) {
         jjcad_core::i18n::tr("gui.props.linienfarbe"),
     );
 
-    ui.add_space(4.0);
-    widgets::hline(ui);
-    ui.add_space(4.0);
-    section_title(ui, "wall", jjcad_core::i18n::tr("gui.props.wand"));
+    abschnitt(ui, jjcad_core::i18n::tr("gui.props.wandaufbau"));
     zeile("wandkopf");
 
     zeile("dicke");
@@ -1723,6 +1760,7 @@ pub fn tuer(app: &mut App, ui: &mut Ui, ziel: Ziel) {
     });
 
     kopf(app, ui, ziel, jjcad_core::i18n::tr("gui.props.tuer"), "door");
+    abschnitt(ui, jjcad_core::i18n::tr("gui.props.allgemein"));
     reihenfolge(app, ui, ziel);
     let (staerke, linientyp) = linienwerte(app, &e, "Architektur");
 
@@ -1739,10 +1777,7 @@ pub fn tuer(app: &mut App, ui: &mut Ui, ziel: Ziel) {
         jjcad_core::i18n::tr("gui.props.farbe"),
     );
 
-    ui.add_space(4.0);
-    widgets::hline(ui);
-    ui.add_space(4.0);
-    section_title(ui, "door", jjcad_core::i18n::tr("gui.props.tuer"));
+    abschnitt(ui, jjcad_core::i18n::tr("gui.props.tuerblatt"));
     zeile("tuerkopf");
 
     zeile("breite");
@@ -1926,6 +1961,7 @@ pub fn fenster(app: &mut App, ui: &mut Ui, ziel: Ziel) {
     });
 
     kopf(app, ui, ziel, jjcad_core::i18n::tr("gui.props.fenster"), "window");
+    abschnitt(ui, jjcad_core::i18n::tr("gui.props.allgemein"));
     reihenfolge(app, ui, ziel);
     let (staerke, linientyp) = linienwerte(app, &e, "Architektur");
 
@@ -1942,10 +1978,7 @@ pub fn fenster(app: &mut App, ui: &mut Ui, ziel: Ziel) {
         jjcad_core::i18n::tr("gui.props.farbe"),
     );
 
-    ui.add_space(4.0);
-    widgets::hline(ui);
-    ui.add_space(4.0);
-    section_title(ui, "window", jjcad_core::i18n::tr("gui.props.fenster"));
+    abschnitt(ui, jjcad_core::i18n::tr("gui.props.fenstermasse"));
     zeile("fensterkopf");
 
     zeile("breite");
@@ -2118,6 +2151,7 @@ pub fn fuellflaeche(app: &mut App, ui: &mut Ui, ziel: Ziel) {
     });
 
     kopf(app, ui, ziel, jjcad_core::i18n::tr("gui.props.fuellflaeche"), "fill");
+    abschnitt(ui, jjcad_core::i18n::tr("gui.props.allgemein"));
     reihenfolge(app, ui, ziel);
 
     let a = gemein(
@@ -2133,10 +2167,7 @@ pub fn fuellflaeche(app: &mut App, ui: &mut Ui, ziel: Ziel) {
         jjcad_core::i18n::tr("gui.props.linienfarbe"),
     );
 
-    ui.add_space(4.0);
-    widgets::hline(ui);
-    ui.add_space(4.0);
-    section_title(ui, "fill", jjcad_core::i18n::tr("gui.props.fuellflaeche"));
+    abschnitt(ui, jjcad_core::i18n::tr("gui.props.fuellung"));
     zeile("fuellkopf");
 
     zeile("muster");
@@ -2334,6 +2365,7 @@ pub fn bemassung(app: &mut App, ui: &mut Ui, ziel: Ziel) {
     });
 
     kopf(app, ui, ziel, jjcad_core::i18n::tr("gui.props.bemassung"), "dim");
+    abschnitt(ui, jjcad_core::i18n::tr("gui.props.allgemein"));
     reihenfolge(app, ui, ziel);
 
     let (staerke, linientyp) = linienwerte(app, &e, "Beschriftung");
@@ -2350,10 +2382,7 @@ pub fn bemassung(app: &mut App, ui: &mut Ui, ziel: Ziel) {
         jjcad_core::i18n::tr("gui.props.farbe"),
     );
 
-    ui.add_space(4.0);
-    widgets::hline(ui);
-    ui.add_space(4.0);
-    section_title(ui, "dim", jjcad_core::i18n::tr("gui.props.bemassung"));
+    abschnitt(ui, jjcad_core::i18n::tr("gui.props.mass"));
     zeile("dimkopf");
 
     zeile("richtung");
@@ -2687,6 +2716,7 @@ pub fn raumstempel(app: &mut App, ui: &mut Ui, ziel: Ziel) {
     });
 
     kopf(app, ui, ziel, jjcad_core::i18n::tr("gui.props.raumstempel"), "room");
+    abschnitt(ui, jjcad_core::i18n::tr("gui.props.allgemein"));
     reihenfolge(app, ui, ziel);
     // Ein Raumstempel hat keine Linie: Stärke und Linientyp entfallen in
     // beiden Fällen (wie beim Text).
@@ -2703,10 +2733,7 @@ pub fn raumstempel(app: &mut App, ui: &mut Ui, ziel: Ziel) {
         jjcad_core::i18n::tr("gui.props.farbe"),
     );
 
-    ui.add_space(4.0);
-    widgets::hline(ui);
-    ui.add_space(4.0);
-    section_title(ui, "room", jjcad_core::i18n::tr("gui.props.raumstempel"));
+    abschnitt(ui, jjcad_core::i18n::tr("gui.props.beschriftung"));
     zeile("artkopf");
 
     zeile("ueberschrift");
@@ -2874,6 +2901,7 @@ pub fn einfach(app: &mut App, ui: &mut Ui, ziel: Ziel, art: Einfach) {
     let (staerke, linientyp) = linienwerte(app, &e, art.ebene());
 
     kopf(app, ui, ziel, art.titel(), art.icon());
+    abschnitt(ui, jjcad_core::i18n::tr("gui.props.allgemein"));
     reihenfolge(app, ui, ziel);
 
     let a = gemein(
@@ -2889,10 +2917,14 @@ pub fn einfach(app: &mut App, ui: &mut Ui, ziel: Ziel, art: Einfach) {
         jjcad_core::i18n::tr("gui.props.farbe"),
     );
 
-    ui.add_space(4.0);
-    widgets::hline(ui);
-    ui.add_space(4.0);
-    section_title(ui, art.icon(), art.titel());
+    // Die Überschrift nennt, was die Zeilen zeigen: bei Block und Bild sind
+    // es dessen Daten, bei den übrigen Arten Maße und Winkel.
+    abschnitt(ui, jjcad_core::i18n::tr(match art {
+        Einfach::Block => "gui.props.blockdaten",
+        Einfach::Bild => "gui.props.bilddaten",
+        Einfach::Punkt | Einfach::Linie => "gui.props.symbole",
+        _ => "gui.props.geometrie",
+    }));
     zeile("artkopf");
 
     // ---- Art-eigene Zeilen ----
@@ -3682,6 +3714,7 @@ pub fn volumen(app: &mut App, ui: &mut Ui, ziel: Ziel) {
     let (staerke, linientyp) = linienwerte(app, &e, "Architektur");
 
     kopf(app, ui, ziel, jjcad_core::i18n::tr("gui.props.volumen"), "volume");
+    abschnitt(ui, jjcad_core::i18n::tr("gui.props.allgemein"));
     reihenfolge(app, ui, ziel);
 
     let a = gemein(
@@ -3697,10 +3730,7 @@ pub fn volumen(app: &mut App, ui: &mut Ui, ziel: Ziel) {
         jjcad_core::i18n::tr("gui.props.linienfarbe"),
     );
 
-    ui.add_space(4.0);
-    widgets::hline(ui);
-    ui.add_space(4.0);
-    section_title(ui, "volume", jjcad_core::i18n::tr("gui.props.volumen"));
+    abschnitt(ui, jjcad_core::i18n::tr("gui.props.koerper"));
     zeile("volumenkopf");
 
     zeile("hoehe");
@@ -3927,6 +3957,7 @@ pub fn treppe(app: &mut App, ui: &mut Ui, ziel: Ziel) {
     let mass = jjcad_core::stair::treppenmass(rechen_laenge, hoehe, stuen, auto);
 
     kopf(app, ui, ziel, jjcad_core::i18n::tr("gui.props.treppe"), "stair");
+    abschnitt(ui, jjcad_core::i18n::tr("gui.props.allgemein"));
     reihenfolge(app, ui, ziel);
 
     let a = gemein(
@@ -3942,10 +3973,7 @@ pub fn treppe(app: &mut App, ui: &mut Ui, ziel: Ziel) {
         jjcad_core::i18n::tr("gui.props.farbe"),
     );
 
-    ui.add_space(4.0);
-    widgets::hline(ui);
-    ui.add_space(4.0);
-    section_title(ui, "stair", jjcad_core::i18n::tr("gui.props.treppe"));
+    abschnitt(ui, jjcad_core::i18n::tr("gui.props.treppenlauf"));
     zeile("treppenkopf");
 
     let gesperrt = e.is_none();
@@ -4248,12 +4276,10 @@ pub fn viewport(app: &mut App, ui: &mut Ui, ziel: Ziel) {
         None => None,
     };
     kopf(app, ui, ziel, jjcad_core::i18n::tr("gui.props.ansichtsfenster"), "viewport");
+    abschnitt(ui, jjcad_core::i18n::tr("gui.props.allgemein"));
     reihenfolge(app, ui, ziel);
 
-    ui.add_space(4.0);
-    widgets::hline(ui);
-    ui.add_space(4.0);
-    section_title(ui, "viewport", jjcad_core::i18n::tr("gui.props.ansichtsfenster"));
+    abschnitt(ui, jjcad_core::i18n::tr("gui.props.ausschnitt"));
     zeile("artkopf");
 
     let gesperrt = vp.is_none();
@@ -4516,6 +4542,7 @@ fn mehrfach_gemeinsam(
             .unwrap_or(false)
     });
 
+    abschnitt(ui, jjcad_core::i18n::tr("gui.props.allgemein"));
     reihenfolge(app, ui, Ziel::Auswahl(erste));
     let a = gemein(
         app,
@@ -4654,6 +4681,157 @@ mod tests {
             });
         });
         protokoll()
+    }
+
+    /// Alle **gemalten** Texte eines Panelbildes in Malreihenfolge.
+    ///
+    /// Anders als [`zeichne`] prüft das die Anzeige statt nur das Protokoll:
+    /// so lässt sich belegen, was der Nutzer im Panel liest und in welcher
+    /// Reihenfolge es untereinander steht.
+    fn texte(app: &mut App) -> Vec<String> {
+        fn sammle(shape: &egui::Shape, out: &mut Vec<String>) {
+            match shape {
+                egui::Shape::Text(t) => out.push(t.galley.text().to_string()),
+                egui::Shape::Vec(list) => {
+                    for s in list {
+                        sammle(s, out);
+                    }
+                }
+                _ => {}
+            }
+        }
+        let ctx = app.ctx.clone();
+        let mut einmal = false;
+        let ausgabe = ctx.run(Default::default(), |ctx| {
+            egui::CentralPanel::default().show(ctx, |ui| {
+                if !einmal {
+                    einmal = true;
+                    crate::panels::properties(app, ui);
+                }
+            });
+        });
+        let mut out = Vec::new();
+        for gezeichnet in &ausgabe.shapes {
+            sammle(&gezeichnet.shape, &mut out);
+        }
+        out
+    }
+
+    /// Objekteigene Gruppe je Art — die erwartete Beschriftung, hier bewusst
+    /// als eigener Text und nicht aus dem Panel abgeleitet.
+    fn gruppentitel(kind: &EntityKind) -> &'static str {
+        match kind {
+            EntityKind::Wall { .. } => "Wandaufbau",
+            EntityKind::Door { .. } => "Türblatt",
+            EntityKind::Window { .. } => "Fenstermaße",
+            EntityKind::Fill { .. } => "Füllung",
+            EntityKind::Dim { .. } => "Maß",
+            EntityKind::Room { .. } => "Beschriftung",
+            EntityKind::Volume { .. } => "Körper",
+            EntityKind::Stair { .. } => "Treppenlauf",
+            EntityKind::Text { .. } => "Schrift und Inhalt",
+            EntityKind::Viewport(_) => "Ausschnitt",
+            EntityKind::Point { .. } | EntityKind::Line { .. } => "Symbole",
+            EntityKind::BlockRef { .. } => "Blockdaten",
+            EntityKind::Image { .. } => "Bilddaten",
+            _ => "Geometrie",
+        }
+    }
+
+    /// Prüft an einem gezeichneten Panel der Auswahl: Objektkopf ganz oben,
+    /// danach „Allgemein“, danach die objekteigene Gruppe mit eigenem Namen.
+    fn pruefe_kopf(app: &mut App, tool: &str, gruppe: &str) {
+        let texte = texte(app);
+        let ueberschrift = jjcad_core::i18n::tr("gui.panels.eigenschaften");
+
+        // Der Kopf ist das erste, was unter der Panel-Überschrift steht.
+        let pos_ueber = texte
+            .iter()
+            .position(|t| t == ueberschrift)
+            .unwrap_or_else(|| panic!("{tool}: Panel-Überschrift fehlt: {texte:?}"));
+        let name = texte
+            .get(pos_ueber + 1)
+            .cloned()
+            .unwrap_or_else(|| panic!("{tool}: kein Objektkopf: {texte:?}"));
+        assert_ne!(name, ueberschrift, "{tool}: Kopf fehlt: {texte:?}");
+        let pos_kopf = pos_ueber + 1;
+        assert_ne!(gruppe, name, "{tool}: Gruppe heißt wie der Objektkopf");
+
+        let pos_allgemein = texte
+            .iter()
+            .position(|t| t == "Allgemein")
+            .unwrap_or_else(|| panic!("{tool}: „Allgemein“ fehlt: {texte:?}"));
+        // Der Kopfbereich (bis „Allgemein“) nennt das Objekt genau einmal:
+        // Kopf, Herkunft, sonst nichts.
+        assert_eq!(
+            texte[..pos_allgemein].iter().filter(|t| **t == name).count(),
+            1,
+            "{tool}: „{name}“ steht mehrfach über den Gruppen: {texte:?}"
+        );
+        let pos_gruppe = texte
+            .iter()
+            .position(|t| t == gruppe)
+            .unwrap_or_else(|| panic!("{tool}: Gruppe „{gruppe}“ fehlt: {texte:?}"));
+        assert!(
+            pos_kopf < pos_allgemein && pos_allgemein < pos_gruppe,
+            "{tool}: Reihenfolge Kopf · Allgemein · Gruppe stimmt nicht: {texte:?}"
+        );
+    }
+
+    /// T0214: Symbol und Bezeichnung stehen **einmal** ganz oben; darunter
+    /// gliedern zwei Gruppen mit eigenen Namen — „Allgemein“ für die Werte
+    /// jedes Objekts und die objekteigene Gruppe nach ihrem Inhalt. Vorher
+    /// trug die zweite Gruppe denselben Titel wie der Kopf, im Panel stand der
+    /// Objektname also zweimal untereinander.
+    #[test]
+    fn kopf_steht_oben_und_die_gruppen_haben_eigene_namen() {
+        for (tool, kind) in erzeuger_faelle() {
+            let gruppe = gruppentitel(&kind);
+            let mut app = App::with_ctx(egui::Context::default());
+            app.session_mut()
+                .execute("doc.settings", &json!({ "input_unit": "m" }))
+                .expect("Einheit");
+            let layer = app.doc().current_layer;
+            let id = app.doc_mut().new_id();
+            app.doc_mut().add_entity(Entity::new(id, layer, kind));
+            app.session_mut().selection = vec![id];
+            pruefe_kopf(&mut app, tool, gruppe);
+        }
+
+        // Wand, Tür, Fenster, Fläche und Text stehen nicht in der Tabelle
+        // (sie haben eigene Zeilentests), gehören aber zu derselben Zusage.
+        let (mut app, tuer, fenster) = wand_mit_oeffnung();
+        let wand = app
+            .doc()
+            .ents()
+            .iter()
+            .find(|e| matches!(e.kind, EntityKind::Wall { .. }))
+            .map(|e| e.id)
+            .expect("Wand fehlt");
+        for (id, gruppe) in [(wand, "Wandaufbau"), (tuer, "Türblatt"), (fenster, "Fenstermaße")] {
+            app.session_mut().selection = vec![id];
+            pruefe_kopf(&mut app, "Wand mit Öffnung", gruppe);
+        }
+
+        let (mut app, text) = text_app();
+        app.session_mut().selection = vec![text];
+        pruefe_kopf(&mut app, "draw.text", "Schrift und Inhalt");
+
+        let mut app = App::with_ctx(egui::Context::default());
+        app.session_mut()
+            .execute("doc.settings", &json!({ "input_unit": "m" }))
+            .expect("Einheit");
+        let flaeche = app
+            .session_mut()
+            .execute(
+                "draw.fill",
+                &json!({"boundary": [[0.0, 0.0], [2.0, 0.0], [2.0, 2.0]], "border": true}),
+            )
+            .expect("Füllfläche")["created"][0]
+            .as_u64()
+            .expect("Id");
+        app.session_mut().selection = vec![flaeche];
+        pruefe_kopf(&mut app, "draw.fill", "Füllung");
     }
 
     fn text_app() -> (App, Id) {
@@ -5034,189 +5212,196 @@ mod tests {
         assert_eq!(beim_tippen, erzeugen, "Neuer Text: andere Zeilen beim Tippen");
     }
 
+    /// Alle Objektarten mit dem Werkzeug, das sie erzeugt — eine Tabelle
+    /// für die Prüfungen, die über **jede** Art laufen müssen.
+    fn erzeuger_faelle() -> Vec<(&'static str, EntityKind)> {
+        use jjcad_core::geom::v;
+        vec![
+        (
+            "draw.line",
+            EntityKind::Line {
+                a: jjcad_core::geom::Vec2::ZERO,
+                b: v(1000.0, 0.0),
+            },
+        ),
+        (
+            "draw.polyline",
+            EntityKind::Polyline {
+                verts: vec![
+                    jjcad_core::geom::Vertex::new(jjcad_core::geom::Vec2::ZERO),
+                    jjcad_core::geom::Vertex::new(v(1000.0, 0.0)),
+                ],
+                closed: false,
+            },
+        ),
+        (
+            "draw.spline",
+            EntityKind::Spline {
+                verts: vec![
+                    jjcad_core::geom::Vertex::new(jjcad_core::geom::Vec2::ZERO),
+                    jjcad_core::geom::Vertex::new(v(1000.0, 0.0)),
+                ],
+                closed: false,
+            },
+        ),
+        (
+            // Ein Rechteck ist ein geschlossener Streckenzug.
+            "draw.rect",
+            EntityKind::Polyline {
+                verts: vec![
+                    jjcad_core::geom::Vertex::new(jjcad_core::geom::Vec2::ZERO),
+                    jjcad_core::geom::Vertex::new(v(1000.0, 0.0)),
+                    jjcad_core::geom::Vertex::new(v(1000.0, 500.0)),
+                ],
+                closed: true,
+            },
+        ),
+        (
+            "draw.circle",
+            EntityKind::Circle {
+                c: jjcad_core::geom::Vec2::ZERO,
+                r: 500.0,
+            },
+        ),
+        (
+            "draw.arc",
+            EntityKind::Arc {
+                c: jjcad_core::geom::Vec2::ZERO,
+                r: 500.0,
+                a0: 0.0,
+                a1: 1.5,
+            },
+        ),
+        (
+            "draw.ellipse",
+            EntityKind::Ellipse {
+                c: jjcad_core::geom::Vec2::ZERO,
+                rx: 800.0,
+                ry: 400.0,
+                rot: 0.0,
+            },
+        ),
+        (
+            "draw.point",
+            EntityKind::Point {
+                p: jjcad_core::geom::Vec2::ZERO,
+            },
+        ),
+        (
+            "dim.chain",
+            EntityKind::Dim {
+                pts: vec![jjcad_core::geom::Vec2::ZERO, v(1000.0, 0.0)],
+                line_pos: v(500.0, -300.0),
+                angle: 0.0,
+                override_text: None,
+            },
+        ),
+        (
+            "dim.elevation.plan",
+            EntityKind::ElevationPlan {
+                p: jjcad_core::geom::Vec2::ZERO,
+                z: 1200.0,
+                text_pos: jjcad_core::model::ElevationTextPos::default(),
+            },
+        ),
+        (
+            "dim.elevation.section",
+            EntityKind::ElevationSection {
+                pts: vec![jjcad_core::geom::Vec2::ZERO, v(0.0, 1200.0)],
+            },
+        ),
+        (
+            "dim.room",
+            EntityKind::Room {
+                boundary: vec![
+                    jjcad_core::geom::Vec2::ZERO,
+                    v(4000.0, 0.0),
+                    v(4000.0, 3000.0),
+                    v(0.0, 3000.0),
+                ],
+                label: v(2000.0, 1500.0),
+                height: 250.0,
+                heading: "Zimmer".into(),
+            },
+        ),
+        (
+            "block.insert",
+            EntityKind::BlockRef {
+                block: "Test".into(),
+                pos: jjcad_core::geom::Vec2::ZERO,
+                rot: 0.0,
+                scale: v(1.0, 1.0),
+                mirror: false,
+            },
+        ),
+        (
+            "draw.volume",
+            EntityKind::Volume {
+                boundary: vec![
+                    jjcad_core::geom::Vec2::ZERO,
+                    v(2000.0, 0.0),
+                    v(2000.0, 2000.0),
+                ],
+                holes: Vec::new(),
+                pattern: jjcad_core::style::FillPattern::Solid,
+                pattern_angle: 0.0,
+                pattern_scale: 100.0,
+                border: true,
+                height: 2750.0,
+            },
+        ),
+        (
+            "draw.image",
+            EntityKind::Image {
+                a: jjcad_core::geom::Vec2::ZERO,
+                b: v(1000.0, 0.0),
+                height: 600.0,
+                lock_ratio: false,
+                name: "Bild".into(),
+                data: String::new(),
+            },
+        ),
+        (
+            "draw.stair",
+            EntityKind::Stair {
+                a: jjcad_core::geom::Vec2::ZERO,
+                b: v(4640.0, 0.0),
+                width: 1000.0,
+                steps: 16,
+                height: 2750.0,
+                auto_steps: true,
+                cut: true,
+                unten: None,
+                oben: None,
+            },
+        ),
+        (
+            // Ansichtsfenster: dieselben Zeilen beim Aufziehen und beim
+            // Bearbeiten (T0109).
+            "sheet.viewport_tool",
+            EntityKind::Viewport(jjcad_core::model::Viewport {
+                id: 1,
+                name: "Ansicht".into(),
+                x: 15.0,
+                y: 83.0,
+                w: 380.0,
+                h: 200.0,
+                center: jjcad_core::geom::Vec2::ZERO,
+                scale: 100.0,
+                show_frame: true,
+                locked: false,
+                layers: None,
+            }),
+        ),
+        ]
+    }
+
     /// Alle übrigen Erzeuger gegen ihr Objekt: gleiche Zeilen, gleiche
     /// Reihenfolge. Das ist die Tabelle, die den Umbau abgesichert hat.
     #[test]
     fn alle_erzeuger_zeigen_dieselben_zeilen_wie_das_objekt() {
         use jjcad_core::geom::v;
-        let faelle: Vec<(&str, EntityKind)> = vec![
-            (
-                "draw.line",
-                EntityKind::Line {
-                    a: jjcad_core::geom::Vec2::ZERO,
-                    b: v(1000.0, 0.0),
-                },
-            ),
-            (
-                "draw.polyline",
-                EntityKind::Polyline {
-                    verts: vec![
-                        jjcad_core::geom::Vertex::new(jjcad_core::geom::Vec2::ZERO),
-                        jjcad_core::geom::Vertex::new(v(1000.0, 0.0)),
-                    ],
-                    closed: false,
-                },
-            ),
-            (
-                "draw.spline",
-                EntityKind::Spline {
-                    verts: vec![
-                        jjcad_core::geom::Vertex::new(jjcad_core::geom::Vec2::ZERO),
-                        jjcad_core::geom::Vertex::new(v(1000.0, 0.0)),
-                    ],
-                    closed: false,
-                },
-            ),
-            (
-                // Ein Rechteck ist ein geschlossener Streckenzug.
-                "draw.rect",
-                EntityKind::Polyline {
-                    verts: vec![
-                        jjcad_core::geom::Vertex::new(jjcad_core::geom::Vec2::ZERO),
-                        jjcad_core::geom::Vertex::new(v(1000.0, 0.0)),
-                        jjcad_core::geom::Vertex::new(v(1000.0, 500.0)),
-                    ],
-                    closed: true,
-                },
-            ),
-            (
-                "draw.circle",
-                EntityKind::Circle {
-                    c: jjcad_core::geom::Vec2::ZERO,
-                    r: 500.0,
-                },
-            ),
-            (
-                "draw.arc",
-                EntityKind::Arc {
-                    c: jjcad_core::geom::Vec2::ZERO,
-                    r: 500.0,
-                    a0: 0.0,
-                    a1: 1.5,
-                },
-            ),
-            (
-                "draw.ellipse",
-                EntityKind::Ellipse {
-                    c: jjcad_core::geom::Vec2::ZERO,
-                    rx: 800.0,
-                    ry: 400.0,
-                    rot: 0.0,
-                },
-            ),
-            (
-                "draw.point",
-                EntityKind::Point {
-                    p: jjcad_core::geom::Vec2::ZERO,
-                },
-            ),
-            (
-                "dim.chain",
-                EntityKind::Dim {
-                    pts: vec![jjcad_core::geom::Vec2::ZERO, v(1000.0, 0.0)],
-                    line_pos: v(500.0, -300.0),
-                    angle: 0.0,
-                    override_text: None,
-                },
-            ),
-            (
-                "dim.elevation.plan",
-                EntityKind::ElevationPlan {
-                    p: jjcad_core::geom::Vec2::ZERO,
-                    z: 1200.0,
-                    text_pos: jjcad_core::model::ElevationTextPos::default(),
-                },
-            ),
-            (
-                "dim.elevation.section",
-                EntityKind::ElevationSection {
-                    pts: vec![jjcad_core::geom::Vec2::ZERO, v(0.0, 1200.0)],
-                },
-            ),
-            (
-                "dim.room",
-                EntityKind::Room {
-                    boundary: vec![
-                        jjcad_core::geom::Vec2::ZERO,
-                        v(4000.0, 0.0),
-                        v(4000.0, 3000.0),
-                        v(0.0, 3000.0),
-                    ],
-                    label: v(2000.0, 1500.0),
-                    height: 250.0,
-                    heading: "Zimmer".into(),
-                },
-            ),
-            (
-                "block.insert",
-                EntityKind::BlockRef {
-                    block: "Test".into(),
-                    pos: jjcad_core::geom::Vec2::ZERO,
-                    rot: 0.0,
-                    scale: v(1.0, 1.0),
-                    mirror: false,
-                },
-            ),
-            (
-                "draw.volume",
-                EntityKind::Volume {
-                    boundary: vec![
-                        jjcad_core::geom::Vec2::ZERO,
-                        v(2000.0, 0.0),
-                        v(2000.0, 2000.0),
-                    ],
-                    holes: Vec::new(),
-                    pattern: jjcad_core::style::FillPattern::Solid,
-                    pattern_angle: 0.0,
-                    pattern_scale: 100.0,
-                    border: true,
-                    height: 2750.0,
-                },
-            ),
-            (
-                "draw.image",
-                EntityKind::Image {
-                    a: jjcad_core::geom::Vec2::ZERO,
-                    b: v(1000.0, 0.0),
-                    height: 600.0,
-                    lock_ratio: false,
-                    name: "Bild".into(),
-                    data: String::new(),
-                },
-            ),
-            (
-                "draw.stair",
-                EntityKind::Stair {
-                    a: jjcad_core::geom::Vec2::ZERO,
-                    b: v(4640.0, 0.0),
-                    width: 1000.0,
-                    steps: 16,
-                    height: 2750.0,
-                    auto_steps: true,
-                    cut: true,
-                    unten: None,
-                    oben: None,
-                },
-            ),
-            (
-                // Ansichtsfenster: dieselben Zeilen beim Aufziehen und beim
-                // Bearbeiten (T0109).
-                "sheet.viewport_tool",
-                EntityKind::Viewport(jjcad_core::model::Viewport {
-                    id: 1,
-                    name: "Ansicht".into(),
-                    x: 15.0,
-                    y: 83.0,
-                    w: 380.0,
-                    h: 200.0,
-                    center: jjcad_core::geom::Vec2::ZERO,
-                    scale: 100.0,
-                    show_frame: true,
-                    locked: false,
-                    layers: None,
-                }),
-            ),
-        ];
+        let faelle = erzeuger_faelle();
 
         for (tool, kind) in faelle {
             let mut app = App::with_ctx(egui::Context::default());
