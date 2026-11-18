@@ -1051,7 +1051,11 @@ Mit dem Nutzer abgestimmt — nicht „verbessern“:
   (`textedit::start_entitaet` erkennt `EntityKind::Room`, `textedit::text_bei` trifft
   Stempel und Text). Bearbeitet wird nur die Überschrift (`heading`), geschrieben über
   `modify.set` mit `text`; der Flächeninhalt bleibt abgeleitet (`model::room_text`) und
-  wird nie gespeichert. Die Eingabe steht auf der **Namenszeile** des Stempelblocks
+  wird nie gespeichert. **Zwei Punkte** sind die gegenüberliegenden Ecken eines
+  achsenparallelen Rechtecks (`geom::rechteck_aus_diagonale`, dieselbe Funktion wie
+  beim Diagonal-Rechteck der Füllfläche) — die Action `dim.room` rechnet sie um, die
+  Vorschau zeigt das Rechteck, sobald zwei Ecken stehen. Eine Diagonale auf einer
+  Achse ist ein Fehler, kein Rechteck der Höhe null. Die Eingabe steht auf der **Namenzeile** des Stempelblocks
   (`valign Top`, eine Zeile über dem Anker) — so springt der Name beim Übernehmen nicht;
   ein leerer Name ist gültig (nur die Fläche bleibt). `ESC` **bestätigt** die Eingabe
   (wie beim Text) und ebenso die Punktfolge des Werkzeugs (`app::escape_pressed`,

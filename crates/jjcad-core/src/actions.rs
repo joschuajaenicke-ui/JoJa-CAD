@@ -2579,18 +2579,31 @@ pub fn execute(doc: &mut Document, id: &str, params: &Value) -> Result<Value, St
         // „Pole of Inaccessibility" — den Punkt der Fläche mit dem größten
         // Abstand zu allen Kanten. Eine Fläche ohne Ausdehnung ist ein Fehler
         // (T0038), kein Stempel im Ursprung.
+        //
+        // **Zwei Punkte** sind die gegenüberliegenden Ecken eines
+        // achsenparallelen Rechtecks (T0220, Turn 3): die bequeme Eingabe für
+        // einen rechteckigen Raum — zwei Klicks statt vier. Die vier Ecken
+        // entstehen in `geom::rechteck_aus_diagonale`; liegen beide Punkte auf
+        // einer Achse, umschließt nichts eine Fläche und das ist ein Fehler.
         "dim.room" => {
             let pts = p
                 .pts("pts")
                 .or_else(|| p.pts("boundary"))
                 .ok_or_else(|| "Parameter 'pts' fehlt".to_string())?;
-            let (boundary, _) = crate::model::polyline_points(
+            let (mut boundary, _) = crate::model::polyline_points(
                 &pts,
                 true,
                 crate::model::POINT_EPS_MM,
             );
+            if boundary.len() == 2 {
+                boundary = crate::geom::rechteck_aus_diagonale(boundary[0], boundary[1])
+                    .ok_or_else(|| {
+                        "Die zwei Punkte brauchen einen Abstand in beiden Richtungen".to_string()
+                    })?
+                    .to_vec();
+            }
             if boundary.len() < 3 {
-                return Err("Raumstempel braucht mindestens drei Punkte".into());
+                return Err("Raumstempel braucht mindestens zwei Punkte".into());
             }
             let flaeche = crate::area::area_of(&boundary, &[]);
             if !(flaeche > 1.0) {

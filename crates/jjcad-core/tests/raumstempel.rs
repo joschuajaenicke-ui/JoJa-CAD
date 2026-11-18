@@ -81,6 +81,59 @@ fn punktfolge_legt_raumstempel_an() {
     assert!(text.contains("12,00 m²"), "Flächeninhalt fehlt: {text:?}");
 }
 
+/// Zwei Punkte sind die **gegenüberliegenden Ecken** eines achsenparallelen
+/// Rechtecks (T0220, Turn 3) — zwei Klicks statt vier.
+#[test]
+fn zwei_punkte_ergeben_ein_achsenparalleles_rechteck() {
+    let mut s = Session::new();
+    s.execute("doc.settings", &json!({ "input_unit": "m" }))
+        .unwrap();
+    let antwort = s
+        .execute("dim.room", &json!({ "pts": [[0.0, 0.0], [4.0, 3.0]] }))
+        .expect("zwei Ecken reichen für einen Stempel");
+
+    assert_eq!(s.doc.entities.len(), 1, "genau ein Objekt");
+    let id = antwort["created"][0].as_u64().unwrap();
+    let (_, boundary, label, _) = raum_mit_id(&s);
+    assert_eq!(
+        boundary,
+        vec![
+            v(0.0, 0.0),
+            v(4000.0, 0.0),
+            v(4000.0, 3000.0),
+            v(0.0, 3000.0)
+        ],
+        "die vier Ecken des Rechtecks aus der Diagonale"
+    );
+    assert!(
+        (area_of(&boundary, &[]) / 1e6 - 12.0).abs() < 1e-6,
+        "Fläche {}",
+        area_of(&boundary, &[]) / 1e6
+    );
+    assert!(label.dist(v(2000.0, 1500.0)) < 1.0, "Textlage {label:?}");
+    let text = angezeigter_text(&s, id);
+    assert!(text.contains("12,00 m²"), "Flächeninhalt fehlt: {text:?}");
+}
+
+/// Zwei Punkte auf einer Waagerechten oder Senkrechten umschließen nichts —
+/// daraus wird kein Rechteck der Höhe null, sondern ein Fehler (T0038).
+#[test]
+fn zwei_punkte_auf_einer_achse_sind_ein_fehler() {
+    for pts in [
+        json!({ "pts": [[0.0, 0.0], [4.0, 0.0]] }),
+        json!({ "pts": [[0.0, 0.0], [0.0, 3.0]] }),
+    ] {
+        let mut s = Session::new();
+        s.execute("doc.settings", &json!({ "input_unit": "m" }))
+            .unwrap();
+        assert!(
+            s.execute("dim.room", &pts).is_err(),
+            "Diagonale auf einer Achse muss abgelehnt werden: {pts}"
+        );
+        assert!(s.doc.entities.is_empty(), "es darf nichts entstehen");
+    }
+}
+
 /// Die Fläche ist unsichtbar und nicht anklickbar — getroffen wird nur das
 /// Textfeld (Punktprobe an einer Ecke, in der Fläche und auf dem Text).
 #[test]

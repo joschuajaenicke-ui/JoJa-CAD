@@ -3316,6 +3316,17 @@ impl App {
                         ];
                     }
                 }
+                // Zwei Ecken als Diagonale (T0220, Turn 3): die Vorschau zeigt
+                // das achsenparallele Rechteck, das Enter/ESC anlegt.
+                "raumstempelrechteck" => {
+                    self.start_tool("dim.room");
+                    if let Some(t) = self.tool.as_mut() {
+                        t.pts = vec![
+                            jjcad_core::geom::Vec2::new(-2000.0, -1500.0),
+                            jjcad_core::geom::Vec2::new(2000.0, 1500.0),
+                        ];
+                    }
+                }
                 // T0144: Rasterart und -modus im Prüfbild — `raster:isometrisch`,
                 // `raster:dimetrie`, `raster:trimetrie`, `raster:fest`.
                 s if s.starts_with("raster:") => {
@@ -10233,8 +10244,8 @@ pub(crate) fn commands_hint(tool: &Tool, opts: &ToolOptions) -> &'static str {
             }
         }
         "dim.room" => {
-            if tool.pts.len() < 3 {
-                "Raumstempel · Raumecken klicken (mind. 3)"
+            if tool.pts.len() < 2 {
+                "Raumstempel · Raumecken klicken (mind. 2)"
             } else {
                 jjcad_core::i18n::tr("gui.app.raumstempel_enter_setzt_den_stempel")
             }
