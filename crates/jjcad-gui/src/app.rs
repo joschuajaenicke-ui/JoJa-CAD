@@ -3335,8 +3335,9 @@ impl App {
                         ];
                     }
                 }
-                // Zwei Ecken als Diagonale (T0220, Turn 3): die Vorschau zeigt
-                // das achsenparallele Rechteck, das Enter/ESC anlegt.
+                // Zwei Ecken gesetzt (T0220): die Vorschau läuft als Polygonzug
+                // bis zum Zeiger — wie bei den Füllflächen; Enter/ESC macht aus
+                // den zwei Punkten das achsenparallele Rechteck.
                 "raumstempelrechteck" => {
                     self.start_tool("dim.room");
                     if let Some(t) = self.tool.as_mut() {

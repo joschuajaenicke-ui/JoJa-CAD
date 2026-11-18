@@ -3127,48 +3127,26 @@ fn draw_tool_preview(
         // Stempels bleibt unsichtbar. Am Zeiger steht die Fläche, die der
         // Stempel später beschriftet.
         //
-        // **Zwei Ecken** sind die Diagonale eines achsenparallelen Rechtecks
-        // (T0220, Turn 3): Enter/ESC legt genau dieses Rechteck an, deshalb
-        // steht es schon als Vorschau da — gestrichelt, mit seinen vier Ecken.
-        // Ein weiterer Klick hängt wieder eine Ecke an (Polygonzug).
+        // Die Vorschau zeigt **was der nächste Klick anlegt** — wie bei den
+        // Füllflächen. Zwei gesetzte Ecken sind also noch ein Polygonzug bis
+        // zum Zeiger; das achsenparallele Rechteck entsteht erst beim
+        // **Bestätigen** (Enter/ESC) aus den zwei Punkten (T0220, Turn 5).
         "dim.room" => {
-            let rechteck = if tool.pts.len() == 2 {
-                jjcad_core::geom::rechteck_aus_diagonale(tool.pts[0], tool.pts[1])
+            for pair in tool.pts.windows(2) {
+                p.line_segment([w2s(pair[0]), w2s(pair[1])], stroke);
+            }
+            if let Some(start) = last {
+                p.line_segment([w2s(start), w2s(cursor)], stroke);
+                if let Some(first) = tool.pts.first() {
+                    p.line_segment([w2s(cursor), w2s(*first)], dashed);
+                }
+            }
+            let mut umriss = tool.pts.clone();
+            umriss.push(cursor);
+            if let Some(pts) = fill_boundary_points(&umriss) {
+                label = jjcad_core::i18n::t_args_owned("gui.canvas.x_punkte_x", &[("wert1", format!("{}", pts.len())), ("wert2", format!("{}", unit.format_area(polygon_area(&pts).abs(), 2)))]);
             } else {
-                None
-            };
-            if let Some(ecken) = rechteck {
-                let screen: Vec<Pos2> = ecken.iter().map(|q| w2s(*q)).collect();
-                let mut ring = screen.clone();
-                ring.push(screen[0]);
-                p.extend(Shape::dashed_line(&ring, stroke, 9.0, 5.0));
-                for q in &screen {
-                    p.circle_stroke(*q, 2.0, Stroke::new(1.0, Palette::vorschau()));
-                }
-                label = jjcad_core::i18n::t_args_owned(
-                    "gui.canvas.x_punkte_x",
-                    &[
-                        ("wert1", format!("{}", ecken.len())),
-                        ("wert2", format!("{}", unit.format_area(polygon_area(&ecken).abs(), 2))),
-                    ],
-                );
-            } else {
-                for pair in tool.pts.windows(2) {
-                    p.line_segment([w2s(pair[0]), w2s(pair[1])], stroke);
-                }
-                if let Some(start) = last {
-                    p.line_segment([w2s(start), w2s(cursor)], stroke);
-                    if let Some(first) = tool.pts.first() {
-                        p.line_segment([w2s(cursor), w2s(*first)], dashed);
-                    }
-                }
-                let mut umriss = tool.pts.clone();
-                umriss.push(cursor);
-                if let Some(pts) = fill_boundary_points(&umriss) {
-                    label = jjcad_core::i18n::t_args_owned("gui.canvas.x_punkte_x", &[("wert1", format!("{}", pts.len())), ("wert2", format!("{}", unit.format_area(polygon_area(&pts).abs(), 2)))]);
-                } else {
-                    label = jjcad_core::i18n::t_args_owned("gui.canvas.x_punkte", &[("wert1", format!("{}", tool.pts.len() + 1))]);
-                }
+                label = jjcad_core::i18n::t_args_owned("gui.canvas.x_punkte", &[("wert1", format!("{}", tool.pts.len() + 1))]);
             }
         }
         "draw.fill.boundary" | "draw.fill.points" | "draw.volume.points" => {
@@ -15586,6 +15564,55 @@ mod tests_raumstempel {
         let mut app = mit_punkten(app(), vec![V2::new(0.0, 0.0)]);
         finish_tool(&mut app, true);
         assert!(app.doc().entities.is_empty(), "es wurde trotzdem etwas angelegt");
+    }
+
+    /// Die gezeichneten Texte einer Werkzeug-Vorschau bei diesem Zeiger.
+    fn vorschau_texte(app: &mut App, cursor: V2) -> Vec<String> {
+        fn sammle(s: &egui::Shape, texte: &mut Vec<String>) {
+            match s {
+                egui::Shape::Text(t) => texte.push(t.galley.text().to_string()),
+                egui::Shape::Vec(v) => v.iter().for_each(|s| sammle(s, texte)),
+                _ => {}
+            }
+        }
+        let ctx = app.ctx.clone();
+        let out = ctx.run(egui::RawInput::default(), |ctx| {
+            let layer = egui::LayerId::new(egui::Order::Background, egui::Id::new("vorschau"));
+            let p = egui::Painter::new(ctx.clone(), layer, Rect::EVERYTHING);
+            let rect = Rect::from_min_size(Pos2::ZERO, Vec2::new(1000.0, 800.0));
+            let view = View {
+                center: V2::new(2000.0, 1500.0),
+                zoom: 0.2,
+                rot: 0.0,
+            };
+            draw_tool_preview(app, &p, rect, view, Some(cursor), Some(cursor));
+        });
+        let mut texte = Vec::new();
+        for cs in &out.shapes {
+            sammle(&cs.shape, &mut texte);
+        }
+        texte
+    }
+
+    /// Zwei gesetzte Ecken sind **noch kein Rechteck** (T0220, Turn 5): die
+    /// Vorschau läuft wie bei den Füllflächen als Polygonzug bis zum Zeiger und
+    /// nennt drei Punkte. Das Rechteck entsteht erst beim Bestätigen.
+    #[test]
+    fn vorschau_bei_zwei_ecken_zeigt_kein_rechteck() {
+        let mut app = mit_punkten(app(), vec![V2::new(0.0, 0.0), V2::new(4000.0, 0.0)]);
+        let texte = vorschau_texte(&mut app, V2::new(4000.0, 3000.0));
+
+        assert!(
+            texte.iter().any(|t| t.contains("3 Punkte")),
+            "die Vorschau muss den Polygonzug bis zum Zeiger zeigen: {texte:?}"
+        );
+        assert!(
+            !texte.iter().any(|t| t.contains("4 Punkte")),
+            "die Vorschau darf das Rechteck nicht vorwegnehmen: {texte:?}"
+        );
+        // Der dritte Punkt entsteht erst mit dem Klick — die Eingabe bleibt
+        // bei den zwei gesetzten Ecken.
+        assert_eq!(app.tool.as_ref().expect("Werkzeug läuft").pts.len(), 2);
     }
 }
 

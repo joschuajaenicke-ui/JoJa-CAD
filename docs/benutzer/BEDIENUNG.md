@@ -220,8 +220,10 @@ die **Vorgabe** ihrer Ebene und lassen sich wie jede andere Taste ändern.
 18. **Raumstempel** (Ribbon ▸ Bemaßung ▸ „Raumstempel"): die Raumecken klicken, `Enter` **oder
     `ESC`** setzt den Stempel — `ESC` **bestätigt** die gesetzten Ecken, statt sie zu verwerfen;
     ohne eine einzige Ecke bricht es ab. **Zwei Klicks genügen für einen rechteckigen Raum**: die
-    beiden Punkte sind die gegenüberliegenden Ecken eines achsenparallelen Rechtecks, die Vorschau
-    zeigt es schon gestrichelt. Liegen beide Punkte auf einer Waagerechten oder Senkrechten,
+    beiden Punkte sind die gegenüberliegenden Ecken eines achsenparallelen Rechtecks — es entsteht
+    beim **Bestätigen** mit `Enter` oder `ESC`. Bis dahin läuft die Vorschau wie bei den
+    Füllflächen als Polygonzug bis zum Zeiger; erst der Abschluss macht aus den zwei Ecken das
+    Rechteck. Liegen beide Punkte auf einer Waagerechten oder Senkrechten,
     umschließt nichts eine Fläche — das Programm meldet das, statt ein Rechteck der Höhe null
     anzulegen. Der Stempel zeichnet seinen Namen über den
     Flächeninhalt; die Fläche selbst bleibt unsichtbar und ist nicht anklickbar.
