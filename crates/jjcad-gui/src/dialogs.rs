@@ -623,7 +623,7 @@ pub fn block_loeschen(app: &mut App, ctx: &egui::Context) {
 // Gemeinsame Bausteine
 // ---------------------------------------------------------------------------
 
-fn dim_background(ctx: &egui::Context) {
+pub(crate) fn dim_background(ctx: &egui::Context) {
     egui::Area::new(egui::Id::new("modal_bg"))
         .order(egui::Order::Background)
         .fixed_pos(ctx.screen_rect().min)
@@ -648,7 +648,7 @@ fn button_row(ui: &mut Ui, add: impl FnOnce(&mut Ui)) {
     );
 }
 
-fn modal_window<'a>(
+pub(crate) fn modal_window<'a>(
     _ctx: &'a egui::Context,
     title: &str,
     width: f32,
@@ -1376,6 +1376,12 @@ pub fn show(app: &mut App, ctx: &egui::Context) {
             // T0127: der Pfadpuffer wird beim nächsten Öffnen neu gefüllt.
             app.ui.speicherorte_geladen = false;
         }
+    }
+
+    // T0223: Fenster „Wiederherstellen“ — über Einstellungen ▸ Sicherung
+    // geöffnet, liegt über den Einstellungen (Order::Foreground).
+    if app.ui.wiederherstellen.is_some() {
+        crate::wiederherstellen::show(app, ctx);
     }
 
     // Tastatur — bewusst **ohne** Abdunklung (T0064): das Ribbon bleibt
@@ -3864,6 +3870,29 @@ fn settings_body(app: &mut App, ui: &mut Ui) {
                                             .clicked()
                                         {
                                             app.sicherungsordner_oeffnen();
+                                        }
+                                    },
+                                );
+                                // T0223: Fenster „Wiederherstellen“ — die
+                                // Zeichnungen im Sicherungsordner mit ihrem
+                                // Verlauf, einer Vorschau und dem Weg zurück
+                                // in die Zeichnung.
+                                zeile_tip(
+                                    &suche,
+                                    ui,
+                                    jjcad_core::i18n::tr("settings.sicherung_wiederherstellen"),
+                                    &["Wiederherstellen", "Verlauf", "Stände", "zurückholen", "zurück"],
+                                    jjcad_core::i18n::tr(
+                                        "settings.sicherung_wiederherstellen_tip",
+                                    ),
+                                    |ui| {
+                                        if ui
+                                            .button(jjcad_core::i18n::tr(
+                                                "settings.sicherung_wiederherstellen_knopf",
+                                            ))
+                                            .clicked()
+                                        {
+                                            app.oeffne_wiederherstellen();
                                         }
                                     },
                                 );

@@ -20,6 +20,7 @@ mod inventory;
 mod panels;
 mod perf;
 mod props;
+mod wiederherstellen;
 mod snapmarke;
 mod systemdialog;
 mod textedit;

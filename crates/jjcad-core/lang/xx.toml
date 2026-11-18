@@ -643,6 +643,9 @@
 # sicherung_aufraeumen_tip = "Löscht Sicherungen, deren Zeichnung nicht mehr auf der Platte liegt. Ältere Sicherungen ohne vermerkten Pfad bleiben stehen."
 # sicherung_aufraeumen_titel = "Sicherungen ohne Zeichnung löschen"
 # sicherung_aufraeumen_text = "{anzahl} Sicherungen gehören zu Zeichnungen, die es nicht mehr gibt. Sie werden endgültig gelöscht."
+# sicherung_wiederherstellen = "Wiederherstellen"
+# sicherung_wiederherstellen_knopf = "Fenster öffnen …"
+# sicherung_wiederherstellen_tip = "Zeigt alle Zeichnungen im Sicherungsordner, je Zeichnung den Verlauf ihrer Stände als Punkte über der Zeit, eine Vorschau des gewählten Standes und den Weg, ihn als Reiter zu öffnen. Gespeichert wird erst über „Speichern“."
 # sicherung_aufraeumen_ja = "Endgültig löschen"
 # sicherung_warnung_titel = "Sicherungen gehen verloren"
 # sicherung_warnung_text = "Mit diesen Einstellungen werden {anzahl} von {gesamt} Sicherungen endgültig gelöscht. Das lässt sich nicht rückgängig machen."
@@ -2009,3 +2012,33 @@
 [gui.icon]
 # markenzeichen_nicht_lesbar = "Markenzeichen nicht lesbar: {e}"
 # markenzeichen_puffergroesse = "Markenzeichen hat eine unerwartete Puffergröße"
+#
+# --- wiederherstellen --------------------------------------------
+#
+#
+[wiederherstellen]
+# titel = "Wiederherstellen"
+# hinweis = "Zeichnung wählen, dann im Verlauf einen Stand. Die Vorschau zeigt den Inhalt, „Zeichnung öffnen“ legt ihn als Reiter ab."
+# dateien = "Zeichnungen"
+# verlauf = "Verlauf (Größe über der Zeit)"
+# x_staende = "{anzahl} Stände"
+# ein_stand = "1 Stand"
+# leer = "Im Sicherungsordner liegt keine Zeichnung."
+# keine_auswahl = "Zeichnung wählen"
+# kein_stand = "Stand im Verlauf wählen"
+# ohne_pfad = "ohne Speicherort"
+# status_gesichert = "entspricht der Zieldatei"
+# status_arbeit = "ungespeicherte Arbeit"
+# status_verworfen = "verworfen"
+# achse_kb = "{wert} kB"
+# punkt_kb = "{zeit} · {groesse} kB"
+# stand_details = "{zeit} · {groesse} kB · {status}"
+# vorschau = "Vorschau"
+# oeffnen = "Zeichnung öffnen"
+# oeffnen_tip = "Den gewählten Stand als Reiter öffnen. Gespeichert wird erst über „Speichern“ — die Zieldatei bleibt bis dahin unverändert."
+# neu_laden = "Neu laden"
+# neu_laden_tip = "Den Sicherungsordner erneut einlesen — neue Stände erscheinen dann in der Liste."
+# schliessen = "Schließen"
+# stand_fehlt = "Stand nicht mehr vorhanden"
+# fehler = "Stand nicht lesbar: {grund}"
+# geoeffnet = "Zeichnung · Stand {zeit} geöffnet"

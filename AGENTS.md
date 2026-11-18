@@ -1098,6 +1098,21 @@ Mit dem Nutzer abgestimmt — nicht „verbessern“:
   `canvas::tests_hoehenkoten::vorschau_der_schnitt_kote_zeigt_die_hoehen`;
   Prüfbild `--demo koteschnitt`.
 
+- **Wiederherstellen-Fenster (T0223)**: Einstellungen ▸ Sicherung ▸
+  „Wiederherstellen“ öffnet ein eigenes Fenster (`crates/jjcad-gui/src/wiederherstellen.rs`).
+  Links stehen die Zeichnungen aus dem Manifest (`Sicherung::zeichnungen()`, ein Eintrag je
+  Dokumentkennung mit Zahl der Stände), rechts der Verlauf
+  (`Sicherung::staende_chronologisch()`, älteste zuerst) als Punktdiagramm Größe über dem
+  Zyklus — bernsteinfarben ungespeicherte Arbeit, grau Dateistand, rot verworfen. Ein
+  gewählter Stand wird **einmal je Auswahl** über `Sicherung::laden()` gelesen
+  (`Wiederherstellen::vorschau`) und mit `canvas::paint_zeichnung` gemalt — derselbe
+  `paint_prim`-Weg wie die Zeichenfläche, keine zweite Vorschauzeichnung. „Zeichnung
+  öffnen“ (`App::wiederherstellen_stand_oeffnen`) legt den Stand als Reiter mit dem
+  Speicherort der Zieldatei und `modified = true` ab; liegt die Datei schon offen, ersetzt
+  der Stand ihren Inhalt, statt einen zweiten Reiter auf denselben Pfad zu legen. Prüfweg:
+  `cargo test -p jjcad-gui wiederherstellen` und `cargo test -p jjcad-core --lib
+  zeichnungen`; Prüfbild `--demo wiederherstellen`.
+
 ## Zahlenfelder: Grenzen und Zuggeschwindigkeit (verbindlich)
 
 Jedes Zahlenfeld — Eigenschaften-Panel, Einstellungen, Statusleiste — ist ein

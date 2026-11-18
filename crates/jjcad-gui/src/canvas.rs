@@ -1929,6 +1929,62 @@ fn draw_grid(app: &App, p: &Painter, rect: Rect, view: View) {
 // Blatt
 // ---------------------------------------------------------------------------
 
+/// Vorschau einer ganzen Zeichnung in einem Rechteck (T0223).
+///
+/// Für das Fenster „Wiederherstellen“: der Inhalt eines Standes wird in das
+/// Rechteck eingepasst und mit **denselben** Farben, Linienstärken und
+/// Linienarten gemalt wie die Zeichenfläche — eine Quelle mit `paint_prim`.
+/// Die Strichstärken bleiben bildschirmkonstant (Papier-Modus wäre bei einer
+/// eingepassten Zeichnung viele Pixel breit).
+///
+/// Liefert die einbeschriebene Fläche der Zeichnung (für Prüfungen), sonst
+/// `None`, wenn die Zeichnung leer ist.
+pub fn paint_zeichnung(
+    p: &Painter,
+    rect: Rect,
+    doc: &Document,
+    kurven: CurveQuality,
+) -> Option<Rect> {
+    let bbox = doc.bbox();
+    if !bbox.is_valid() || rect.width() < 4.0 || rect.height() < 4.0 {
+        return None;
+    }
+    let bw = bbox.width().max(1.0) as f32;
+    let bh = bbox.height().max(1.0) as f32;
+    let k = ((rect.width() - 8.0) / bw).min((rect.height() - 8.0) / bh);
+    if !(k > 0.0) {
+        return None;
+    }
+    let mitte = rect.center();
+    let cx = bbox.center().x as f32;
+    let cy = bbox.center().y as f32;
+    let w2s = move |q: V2| -> Pos2 {
+        Pos2::new(mitte.x + (q.x as f32 - cx) * k, mitte.y - (q.y as f32 - cy) * k)
+    };
+    let pc = PaintCtx {
+        selected: Vec::new(),
+        hover: None,
+        lineweights: true,
+        lineweights_scaled: false,
+        lineweight_factor: 1.0,
+        paper_px: 1.0,
+        preview: false,
+        rot: 0.0,
+        text_deckel: 48.0,
+        kurven,
+        zaehlung: None,
+    };
+    let dl = render::render_document(&render::RenderCtx::new(doc));
+    let clip = p.with_clip_rect(rect);
+    for prim in &dl.prims {
+        paint_prim(&clip, prim, &w2s, k as f64, &pc, 1.0);
+    }
+    Some(Rect::from_min_max(
+        w2s(V2::new(bbox.min.x, bbox.max.y)),
+        w2s(V2::new(bbox.max.x, bbox.min.y)),
+    ))
+}
+
 fn draw_sheet(app: &mut App, p: &Painter, rect: Rect, view: View, cursor: Option<V2>) {
     let Some(sid) = (match &app.tab().tab {
         TabKind::Sheet(id) => Some(*id),

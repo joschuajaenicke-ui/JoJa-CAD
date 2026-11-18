@@ -113,6 +113,8 @@ Konflikt (R2.3): Wurde die Zieldatei seit dem letzten Stand von einer anderen An
 
 Ausdrückliches Öffnen (Doppelklick, Datei als Argument): Der Stand hat Vorrang, damit ein Doppelklick die Arbeit von eben nicht verwirft. Wurde die Datei inzwischen von außen geändert, gilt die geöffnete Datei.
 
+Aus dem Fenster: Einstellungen → Sicherung → „Wiederherstellen“ listet alle Zeichnungen im Sicherungsordner; je Zeichnung zeigt ein Diagramm die Stände als Punkte über der Zeit (Größe über dem Zeitpunkt), ein gewählter Stand erscheint als Vorschau und lässt sich als Reiter öffnen. Der Reiter trägt den Speicherort der Zieldatei und gilt als geändert.
+
 Aus dem Ordner: Einstellungen → Sicherung → „Sicherungsordner“ öffnet den Ordner im Dateimanager. Jeder Stand ist eine gewöhnliche .jjcad-Datei und lässt sich öffnen; ein so geöffneter Stand trägt keinen Speicherort, gespeichert wird er erst durch „Speichern unter“.
 
 Verworfen (R3.5): Wählt der Benutzer beim Schließen eines Reiters „Verwerfen“, wird der letzte Zustand der Arbeit als Stand abgelegt und als „verworfen“ markiert; danach wird der Dateiinhalt als neuester Stand geschrieben. Die verworfene Arbeit kehrt beim Start nicht zurück, bleibt aber bis zum Verfall im Sicherungsordner und ist in den Einstellungen als Zahl sichtbar. Sie unterliegt derselben Obergrenze und demselben Verfall wie jeder Stand.
@@ -273,5 +275,5 @@ Die Zieldatei wird dabei nicht angefasst. Ausgedünnt wird nach dem erfolgreiche
 
 1. Pin-Tiefe: derzeit ein Stand je Zeichnung; zwei kosten einen Platz je Zeichnung.
 2. Zählt Leerlauf als Zyklus? Dieses Konzept sagt nein.
-3. Verworfene Stände sind nur über den Ordner und die Zahl in den Einstellungen sichtbar; eine eigene Liste mit Wiederherstellen-Knopf fehlt.
+3. Verworfene Stände sind im Wiederherstellen-Fenster als rote Punkte im Verlauf sichtbar (mit Zeitpunkt und Größe); ein eigener Papierkorb mit „endgültig löschen“ fehlt weiterhin — gelöscht wird über die Obergrenze und den Verfall.
 4. Große Zeichnungen (Bild, Video): Stände sind vollständige Fassungen. Unter etwa 20 Ständen je aktive Zeichnung lohnt das Verfahren kaum; dann Intervall erhöhen, T verkleinern oder Stände als Deltas speichern — das widerspricht aber der Anforderung, dass ein Stand im Format der Zieldatei vorliegt.

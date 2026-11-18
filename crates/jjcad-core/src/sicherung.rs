@@ -114,6 +114,29 @@ impl Stand {
     }
 }
 
+/// Eine Zeichnung im Sicherungsordner mit ihren Ständen (T0223).
+///
+/// Ein Eintrag je Dokumentkennung: die Liste im Fenster „Wiederherstellen“
+/// zeigt damit die Zeichnungen, nicht die einzelnen Standdateien — deren
+/// Verlauf erscheint erst bei Auswahl als Diagramm.
+#[derive(Clone, Debug, PartialEq)]
+pub struct DateiEintrag {
+    /// Kennung des Dokuments (UUID aus dem Dateikopf).
+    pub datei: String,
+    /// Anzeigename aus dem jüngsten Stand.
+    pub name: String,
+    /// Zieldatei aus dem jüngsten Stand (leer, wenn nie gespeichert).
+    pub pfad: String,
+    /// Zahl der Stände dieser Zeichnung.
+    pub staende: usize,
+    /// Zyklus des jüngsten Standes.
+    pub neuester_zyklus: u64,
+    /// Zyklus des ältesten Standes.
+    pub aeltester_zyklus: u64,
+    /// Zeitstempel des jüngsten Standes (nur Anzeige).
+    pub neueste_zeit: String,
+}
+
 /// Stamm für den Standnamen: klein, ohne Umlaute, ohne Sonderzeichen.
 fn dateistamm(name: &str) -> String {
     let s = crate::bloecke::slug(name);
@@ -593,6 +616,80 @@ impl Sicherung {
     /// Zahl der als „verworfen“ markierten Stände (R3.5) — der Papierkorb.
     pub fn verworfene(&self) -> usize {
         self.manifest.staende.iter().filter(|s| s.verworfen).count()
+    }
+
+    /// Alle Zeichnungen im Pool, alphabetisch nach Anzeigenamen (T0223).
+    ///
+    /// Die Liste ist der Inhalt des Sicherungsordners, gruppiert nach der
+    /// Dokumentkennung: ein Eintrag je Zeichnung, mit der Zahl ihrer Stände
+    /// und dem jüngsten Stand. Grundlage ist das Manifest — `oeffnen` hat
+    /// Waisen (Standdatei ohne Eintrag) vorher entfernt, Datei und Liste
+    /// stimmen also überein.
+    pub fn zeichnungen(&self) -> Vec<DateiEintrag> {
+        let mut out: Vec<DateiEintrag> = Vec::new();
+        for s in &self.manifest.staende {
+            match out.iter_mut().find(|e| e.datei == s.datei) {
+                Some(eintrag) => {
+                    eintrag.staende += 1;
+                    if s.zyklus > eintrag.neuester_zyklus {
+                        eintrag.neuester_zyklus = s.zyklus;
+                        eintrag.neueste_zeit = s.zeit.clone();
+                        // Name und Pfad folgen dem jüngsten Stand — er trägt
+                        // den zuletzt benutzten Namen und Speicherort.
+                        if !s.name.trim().is_empty() {
+                            eintrag.name = s.name.clone();
+                        }
+                        if !s.pfad.trim().is_empty() {
+                            eintrag.pfad = s.pfad.clone();
+                        }
+                    }
+                }
+                None => out.push(DateiEintrag {
+                    datei: s.datei.clone(),
+                    name: s.name.clone(),
+                    pfad: s.pfad.clone(),
+                    staende: 1,
+                    neuester_zyklus: s.zyklus,
+                    neueste_zeit: s.zeit.clone(),
+                    aeltester_zyklus: s.zyklus,
+                }),
+            }
+        }
+        for e in &mut out {
+            if e.name.trim().is_empty() {
+                e.name = e
+                    .pfad
+                    .rsplit(['/', '\\'])
+                    .next()
+                    .filter(|n| !n.trim().is_empty())
+                    .unwrap_or("Zeichnung")
+                    .to_string();
+            }
+            if let Some(alt) = self
+                .manifest
+                .staende
+                .iter()
+                .filter(|s| s.datei == e.datei)
+                .min_by_key(|s| s.zyklus)
+            {
+                e.aeltester_zyklus = alt.zyklus;
+            }
+        }
+        out.sort_by(|a, b| a.name.to_lowercase().cmp(&b.name.to_lowercase()));
+        out
+    }
+
+    /// Stände einer Zeichnung, **älteste zuerst** — der Zeitverlauf des
+    /// Diagramms im Fenster „Wiederherstellen“ (T0223).
+    pub fn staende_chronologisch(&self, datei: &str) -> Vec<&Stand> {
+        let mut v: Vec<&Stand> = self
+            .manifest
+            .staende
+            .iter()
+            .filter(|s| s.datei == datei)
+            .collect();
+        v.sort_by_key(|s| s.zyklus);
+        v
     }
 
     /// Löscht die Stände mit diesen Zyklusnummern (Datei und Eintrag).
@@ -1668,5 +1765,83 @@ mod tests {
             "Stand nicht umbenannt"
         );
         assert!(!dir.join("stand-3-abc.jjcad").exists(), "alter Name liegt noch");
+    }
+}
+
+#[cfg(test)]
+mod tests_zeichnungen {
+    //! T0223: die Zeichnungsliste für das Fenster „Wiederherstellen“ —
+    //! ein Eintrag je Zeichnung, der Verlauf chronologisch.
+
+    use super::*;
+
+    fn test_dir(name: &str) -> PathBuf {
+        let d = std::env::temp_dir().join(format!(
+            "jjcad-zeichnungen-{}-{name}",
+            std::process::id()
+        ));
+        let _ = std::fs::remove_dir_all(&d);
+        std::fs::create_dir_all(&d).unwrap();
+        d
+    }
+
+    fn doc(name: &str, id: &str) -> Document {
+        let mut d = Document::new();
+        d.name = name.into();
+        d.id = id.into();
+        d
+    }
+
+    #[test]
+    fn liste_gruppiert_nach_dokument_und_zaehlt_die_staende() {
+        let dir = test_dir("gruppe");
+        let mut pool = Sicherung::oeffnen(&dir);
+        let einst = Einstellungen::default();
+        let mut haus = doc("Wohnhaus", "aaaaaaaa-0000-4000-8000-00000000000a");
+        let mut garage = doc("Garage", "bbbbbbbb-0000-4000-8000-00000000000b");
+        for i in 0..3 {
+            haus.name = format!("Wohnhaus {i}");
+            pool.sichern(&mut haus, &einst).unwrap().unwrap();
+        }
+        for i in 0..2 {
+            garage.name = format!("Garage {i}");
+            pool.sichern(&mut garage, &einst).unwrap().unwrap();
+        }
+
+        let liste = pool.zeichnungen();
+        assert_eq!(liste.len(), 2, "eine Zeile je Zeichnung: {liste:?}");
+        // Alphabetisch nach Anzeigenamen.
+        assert_eq!(liste[0].name, "Garage 1");
+        assert_eq!(liste[0].staende, 2);
+        assert_eq!(liste[1].name, "Wohnhaus 2");
+        assert_eq!(liste[1].staende, 3);
+        // Der jüngste Stand bestimmt Name, Zeit und Speicherort.
+        assert_eq!(
+            liste[1].neuester_zyklus,
+            pool.staende_chronologisch(&haus.id).last().unwrap().zyklus
+        );
+        assert!(liste[1].aeltester_zyklus < liste[1].neuester_zyklus);
+    }
+
+    #[test]
+    fn verlauf_ist_chronologisch() {
+        let dir = test_dir("verlauf");
+        let mut pool = Sicherung::oeffnen(&dir);
+        let einst = Einstellungen::default();
+        let mut plan = doc("Plan", "cccccccc-0000-4000-8000-00000000000c");
+        for i in 0..4 {
+            plan.name = format!("Plan {i}");
+            pool.sichern(&mut plan, &einst).unwrap().unwrap();
+        }
+        let verlauf = pool.staende_chronologisch(&plan.id);
+        assert_eq!(verlauf.len(), 4);
+        assert!(
+            verlauf.windows(2).all(|w| w[0].zyklus < w[1].zyklus),
+            "die Stände stehen nicht in der Zeitfolge"
+        );
+        assert_eq!(verlauf.last().unwrap().name, "Plan 3");
+        // Eine unbekannte Kennung liefert eine leere Liste, keinen Fehler.
+        assert!(pool.staende_chronologisch("gibt-es-nicht").is_empty());
+        assert!(pool.zeichnungen().iter().all(|e| e.staende > 0));
     }
 }
