@@ -566,7 +566,9 @@ Mit dem Nutzer abgestimmt — nicht „verbessern“:
   `SnapKind::Lot`. Die Markenstelle ist der **Schnittpunkt** beider Linien
   (`SnapHit::marke`, wie beim Tangentialfang T0211), das Zeichen steht dort leicht daneben
   (`snapmarke::FangArt::versatz`). Der Bezugspunkt muss auf der **Strecke** liegen, gekrümmte
-  Objekte zählen nicht als Linie. Prüfweg: `cargo test -p jjcad-core --test lot_fang` und
+  Objekte zählen nicht als Linie. **Wände zählen auch mit ihrer Umgrenzung**
+  (`render::wall_contour_segments_idx`, nur mit `snap.wall_edges`): Längskante = wie die
+  Achse, Stirnseite = parallel zur Wand — nicht nur die Basislinie. Prüfweg: `cargo test -p jjcad-core --test lot_fang` und
   `cargo test -p jjcad-gui lotmarke`; Prüfbild `--demo lotfang` mit dem Zeiger auf der
   Senkrechten.
   Das Winkel-Fenster **allein** wäre ein Kegel: die seitliche Abweichung wächst mit dem

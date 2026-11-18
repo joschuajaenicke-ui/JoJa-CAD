@@ -957,6 +957,13 @@ pub fn tangent_treffer(
 /// das stehengebliebene Ende der Linie, beim Zeichnen der zuletzt gesetzte
 /// Punkt. Ein bewegtes Element steht in `ignore` und fängt deshalb nicht auf
 /// sich selbst.
+///
+/// **Wände zählen mit ihrer Umgrenzung** (T0216, Turn 3), nicht nur mit der
+/// Achse: der Bezugspunkt darf auf einer Längs-, Stirn- oder Laibungskante
+/// liegen, gerechnet wird dann mit deren Richtung. An der langen Kante ist das
+/// dieselbe Senkrechte wie an der Achse, an der Stirnseite steht die neue Linie
+/// parallel zur Wand. Die Umgrenzung hängt am Schalter „Wandkanten“
+/// (`SnapSettings::wall_edges`) — ohne ihn bleibt es bei der Achse.
 pub fn lot_treffer(
     doc: &Document,
     reference: Option<Vec2>,
@@ -973,6 +980,7 @@ pub fn lot_treffer(
     // Senkrechte, die beide Linien wirklich schneidet. Gesucht wird deshalb um
     // `r0`, nicht um den Zeiger — die Linie kann weit von ihm entfernt liegen.
     let um = BBox::new(r0 - v(tol, tol), r0 + v(tol, tol));
+    let mut widx: Option<render::WallIndex> = None;
     for e in doc.ents() {
         if ignore.contains(&e.id) {
             continue;
@@ -995,7 +1003,14 @@ pub fn lot_treffer(
         if !b.is_valid() || !b.expanded(tol * 2.0).intersects(&um) {
             continue;
         }
-        for sg in render::entity_segments(doc, e) {
+        let mut segs = render::entity_segments(doc, e);
+        // Umgrenzung der Wand: dieselbe Kontur, die der Punktfang benutzt
+        // (`wall_contour_segments_idx`), und nur mit dem Schalter „Wandkanten“.
+        if doc.settings.snap.wall_edges && matches!(e.kind, EntityKind::Wall { .. }) {
+            let idx = widx.get_or_insert_with(|| render::WallIndex::build(doc, doc.ents()));
+            segs.extend(render::wall_contour_segments_idx(idx, e));
+        }
+        for sg in segs {
             let Seg::Line(a, b2) = sg else { continue };
             // Der Bezugspunkt muss auf der **Strecke** liegen, nicht auf ihrer
             // Verlängerung: sonst hinge der rechte Winkel an einer Stelle, an

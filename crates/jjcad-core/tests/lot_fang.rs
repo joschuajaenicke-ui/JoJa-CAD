@@ -251,6 +251,85 @@ fn wandachse_zaehlt_wie_eine_linie() {
     );
 }
 
+/// Die **Umgrenzung** einer Wand zählt wie eine Linie (T0216, Turn 3): der
+/// Bezugspunkt liegt auf der Längskante, 120 mm neben der Achse. Die neue Linie
+/// steht rechtwinklig auf der Wand.
+#[test]
+fn wandkante_faengt_lotrecht() {
+    let mut s = s();
+    s.execute(
+        "draw.wall",
+        &json!({ "a": [0.0, 0.0], "b": [6000.0, 0.0], "thickness": 240.0 }),
+    )
+    .unwrap();
+    // Längskante bei y = +120 (Bezugspunkt liegt **nicht** auf der Achse).
+    let res = fang(&s, (3005.0, 900.0), Some((3000.0, 120.0)), &[]);
+    assert_eq!(
+        res.source,
+        SnapSource::Object(SnapKind::Lot),
+        "Wandkante fängt nicht lotrecht: {res:?}"
+    );
+    assert!(
+        (res.point.x - 3000.0).abs() < 1e-6,
+        "Fangpunkt nicht auf der Senkrechten zur Kante: {:?}",
+        res.point
+    );
+    let neu = res.point - Vec2::new(3000.0, 120.0);
+    assert!(
+        Vec2::new(6000.0, 0.0).dot(neu).abs() < 1e-6,
+        "Linie steht nicht rechtwinklig zur Wandkante"
+    );
+}
+
+/// An der **Stirnseite** steht die neue Linie parallel zur Wand — ebenfalls
+/// rechtwinklig auf der umgrenzenden Kante.
+#[test]
+fn wandstirnseite_steht_parallel_zur_wand() {
+    let mut s = s();
+    s.execute(
+        "draw.wall",
+        &json!({ "a": [0.0, 0.0], "b": [6000.0, 0.0], "thickness": 240.0 }),
+    )
+    .unwrap();
+    // Stirnkante bei x = 0, Bezugspunkt bei (0; 60).
+    let res = fang(&s, (800.0, 65.0), Some((0.0, 60.0)), &[]);
+    assert_eq!(
+        res.source,
+        SnapSource::Object(SnapKind::Lot),
+        "Stirnseite fängt nicht lotrecht: {res:?}"
+    );
+    assert!(
+        (res.point.y - 60.0).abs() < 1e-6,
+        "Fangpunkt nicht auf der Waagerechten zur Stirnkante: {:?}",
+        res.point
+    );
+    let neu = res.point - Vec2::new(0.0, 60.0);
+    assert!(
+        neu.y.abs() < 1e-6 && neu.x > 1.0,
+        "die neue Linie läuft nicht parallel zur Wand: {neu:?}"
+    );
+}
+
+/// Ohne den Schalter „Wandkanten“ bleibt es bei der Achse — ein Punkt auf der
+/// Umgrenzung ist dann kein Ausgangspunkt für den Lotfang.
+#[test]
+fn wandkante_faengt_nur_mit_wandkanten() {
+    let mut s = s();
+    s.execute(
+        "draw.wall",
+        &json!({ "a": [0.0, 0.0], "b": [6000.0, 0.0], "thickness": 240.0 }),
+    )
+    .unwrap();
+    s.execute("doc.settings", &json!({ "snap": { "wall_edges": false } }))
+        .unwrap();
+    let res = fang(&s, (3005.0, 900.0), Some((3000.0, 120.0)), &[]);
+    assert_ne!(
+        res.source,
+        SnapSource::Object(SnapKind::Lot),
+        "Lotfang auf der Wandkante trotz abgeschalteter Wandkanten: {res:?}"
+    );
+}
+
 /// Ein Kreis ist keine Linie: seine Zerlegung besteht aus kurzen Sehnen, deren
 /// Senkrechte nichts mit dem Zeiger zu tun hat. Liegt der Bezugspunkt auf der
 /// Bahn, darf daraus kein Lotfang werden.

@@ -2869,6 +2869,33 @@ impl App {
                     self.set_view(v);
                     self.started_at = 3.0;
                 }
+                // Lotfang auf der **Wandkante** (T0216, Turn 3): erster Punkt
+                // auf der Längskante einer 240 mm dicken Wand. Der Zeiger
+                // rastet auf deren Senkrechter ein — Prüfbild mit
+                // `x11-drive.py hover` auf diese Senkrechte.
+                "lotwand" => {
+                    self.ui.ribbon = RibbonTab::Zeichnen;
+                    self.new_document();
+                    self.session_mut()
+                        .execute("doc.settings", &serde_json::json!({"input_unit": "mm"}))
+                        .unwrap();
+                    let _ = self.session_mut().execute(
+                        "draw.wall",
+                        &serde_json::json!({
+                            "a": [0.0, 0.0], "b": [6000.0, 0.0], "thickness": 240.0
+                        }),
+                    );
+                    self.start_tool("draw.line");
+                    if let Some(t) = self.tool.as_mut() {
+                        // Längskante bei y = +120.
+                        t.pts.push(V2::new(3000.0, 120.0));
+                    }
+                    let mut v = self.current_view();
+                    v.center = V2::new(3000.0, 700.0);
+                    v.zoom = 0.12;
+                    self.set_view(v);
+                    self.started_at = 3.0;
+                }
                 "tangential" => {
                     self.ui.ribbon = RibbonTab::Zeichnen;
                     // Frische Zeichnung: sie rechnet in Metern, die Punkte des
