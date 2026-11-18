@@ -566,6 +566,14 @@ Zeichnungen im Sicherungsordner, als Sicherungen eingestellt sind, steht ein
 roter Hinweis in der Seite: Jede Zeichnung belegt einen Platz, deshalb kann
 der Ordner mehr Dateien enthalten als eingestellt.
 
+**Aufräumen von Hand**: Der Sicherungsordner ist die Wahrheit. Dateien lassen
+sich jederzeit im Dateimanager löschen; im nächsten Takt schreibt die Sicherung
+den aktuellen Stand der geöffneten Zeichnungen neu, wenn er fehlt. Eine von Hand
+hineinkopierte `.jjcad` wird übernommen und als „nicht zugeordnet“ geführt — sie
+wird **nie** automatisch gelöscht. Umgekehrt trifft kein Löschvorgang der
+Sicherung eine Datei, die sie nicht in derselben Runde gelesen hat: Ändert
+jemand eine Datei im Ordner, während die Sicherung läuft, bleibt sie stehen.
+
 **Sicherungen ansehen**: Einstellungen → Sicherung → **Sicherungsordner** öffnet
 den Ordner im Dateimanager (dieselbe Funktion wie *Sicherungen öffnen* in
 Inventar und Hotbar). Jeder Stand ist eine gewöhnliche `.jjcad`-Datei — öffnen

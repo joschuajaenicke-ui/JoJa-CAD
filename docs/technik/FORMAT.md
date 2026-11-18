@@ -47,6 +47,56 @@ der Datei, nicht dem Pfad — auch eine noch ungespeicherte Zeichnung hat eine.
 Das Feld ist optional: ältere Dateien bekommen beim Laden eine Kennung und
 schreiben sie beim nächsten Speichern mit. `version` bleibt deshalb 2.
 
+## `sicherung` — Block einer Standdatei
+
+Stände im Sicherungsordner sind gewöhnliche `.jjcad`-Dateien mit **einem
+zusätzlichen ersten Feld**. Es beschreibt den Stand, nicht die Zeichnung:
+
+```json
+{
+  "sicherung": {
+    "format": "jjcad-sicherung-stand",
+    "zyklus": 42,
+    "datei": "6f1c2a4e-8b3d-4c7a-9e10-2d5b8f0a1c33",
+    "zeit": "2026-11-18T14:35:44",
+    "gesichert": false,
+    "verworfen": false,
+    "hash": "9f2c…",
+    "datei_hash": "1a77…",
+    "groesse": 60123,
+    "pfad": "/home/joschua/Zeichnungen/Wohnhaus.jjcad"
+  },
+  "format": "jjcad",
+  "version": 2,
+  "name": "Wohnhaus",
+  …
+}
+```
+
+| Feld | Bedeutung |
+| --- | --- |
+| `format` | Immer `jjcad-sicherung-stand`; unterscheidet den Block von einem Zufallstreffer |
+| `zyklus` | Zyklusnummer des Standes; einziger Zeitanker der Aufbewahrung |
+| `datei` | Dokumentkennung (UUID aus dem Dateikopf). Leer = Datei gehört zu keiner Zeichnung („nicht zugeordnet“) |
+| `zeit` | Zeitstempel, nur zur Anzeige |
+| `gesichert` | Der Stand entspricht dem Inhalt der Zieldatei |
+| `verworfen` | Der Benutzer hat diese Arbeit verworfen |
+| `hash` | SHA-256 des Dokuments **ohne** diesen Block; der Block zählt nie mit, sonst wäre ein Stand nie gleich seiner Zieldatei |
+| `datei_hash` | SHA-256 der Zieldatei beim Anlegen des Standes (leer, wenn es keine gab) |
+| `groesse` | Größe der Standdatei in Bytes |
+| `pfad` | Zieldatei zum Zeitpunkt der Sicherung (leer, wenn nie gespeichert) |
+
+Regeln:
+
+- Der Block steht **an erster Stelle**, damit die Sicherung ihn aus den ersten
+  2 KB lesen kann, ohne den Stand zu laden.
+- **Beim Laden wird er verworfen** (`sicherung::ohne_kopf`); eine gespeicherte
+  Zieldatei trägt ihn nie. `persist::from_json` ignoriert ihn zusätzlich, weil
+  `Document` das Feld nicht kennt.
+- Es gibt **kein Manifest** mehr — der Verzeichnisinhalt ist die Wahrheit. Der
+  frühere `manifest.json` wird beim ersten Start einmal eingelesen und danach in
+  `manifest.json.eingelesen` umbenannt.
+
 ## `settings`
 
 | Feld | Typ | Standard | Bedeutung |

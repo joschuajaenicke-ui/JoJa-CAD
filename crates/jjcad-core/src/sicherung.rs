@@ -1,4 +1,4 @@
-//! Sicherung: Stände unabhängig vom Speichern (T0129).
+//! Sicherung: Stände unabhängig vom Speichern (T0129, T0225).
 //!
 //! Die Sicherung legt während der Arbeit Stände im **Pool** ab und dünnt sie
 //! nach Alter aus. Sie schreibt **nie** in die Zieldatei — gespeichert wird
@@ -7,36 +7,64 @@
 //! Aufbau des Pools (ein Pool für alle Dateien, ein Projektordner):
 //!
 //! ```text
-//! <Sicherungen>/manifest.json            Zähler n und die Liste der Stände
-//! <Sicherungen>/stand-<n>-<uuid>.jjcad   eine Datei je Stand
+//! <Sicherungen>/testdatei_autosave_20261118-143544.jjcad   eine Datei je Stand
+//! <Sicherungen>/pool.lock                                  Sperre für einen Schreibvorgang
 //! ```
 //!
-//! Der **Pin** (neuester Stand je Dokument) ist abgeleitet, nicht gespeichert:
-//! so kann er nicht veralten. Ebenso abgeleitet ist der **Anker** (ältester
-//! Stand je Dokument). Beide werden beim Ausdünnen nie angefasst; der Pin
-//! verfällt, sobald er `T` Zyklen alt ist (Anhang A.2, Schritt 2), der Anker
-//! nur, indem ein jüngerer Stand nachrückt.
+//! **Die Wahrheit ist der Verzeichnisinhalt** (T0225). Jeder Stand trägt seine
+//! Aufbewahrungs-Metadaten selbst, als **erstes** Feld der JSON-Datei:
+//!
+//! ```json
+//! {"sicherung":{"format":"jjcad-sicherung-stand","zyklus":7,"datei":"…",…},
+//!   "format": "jjcad", "version": 2, …}
+//! ```
+//!
+//! Ein Manifest gibt es nicht mehr: es war eine zweite Wahrheit, und ging es
+//! verloren oder überschrieb es ein zweiter Prozess aus seinem Speicherstand,
+//! wurden Stände als Waisen gelöscht oder nie wieder geschrieben. Der Index
+//! lebt nur im Speicher und wird aus dem Verzeichnis gebildet.
+//!
+//! Auffrischen kostet im Normalfall **einen** `stat`: die Signatur des
+//! Verzeichnisses (dev/ino/mtime/Größe) entscheidet, ob überhaupt etwas anders
+//! ist. Erst dann wird `readdir` gemacht, und nur für Dateien, die nach Name,
+//! Größe und Änderungszeit unbekannt sind, wird der Kopf gelesen (2 KB). Die
+//! vollen Stände werden nie zum Auffrischen gelesen — das wären 150 × bis
+//! 400 KB je Takt.
+//!
+//! Der **Pin** (neuester Stand je Dokument) bleibt immer; der **Anker**
+//! (ältester Stand je Dokument) nur, solange sein jüngerer Nachbar weniger als
+//! `T` alt ist. Fremde Dateien im Ordner werden übernommen (Kopf, sonst
+//! Dateiname, sonst Datei-mtime), als „nicht zugeordnet“ geführt und **nie**
+//! automatisch gelöscht.
 //!
 //! Aufbewahrt wird nach dem Verfahren „Geometric Retention“ (SRR, Anhang A):
 //! fester Platzvorrat, konstante relative Auflösung, Alter in Zyklen statt in
-//! Kalenderzeit. Vorgabe und Begründung: `docs/benutzer/SICHERUNG.md`.
+//! Kalenderzeit.
 
 use crate::model::Document;
 use crate::persist;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
-use std::io::Write;
+use std::collections::BTreeMap;
+use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
-use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
 use std::time::{SystemTime, UNIX_EPOCH};
 
-/// Name des Manifests im Pool.
-pub const MANIFEST_DATEI: &str = "manifest.json";
-/// Kennung des Manifests (Formatprüfung beim Laden).
+/// Formatkennung im Kopf eines Standes.
+pub const KOPF_FORMAT: &str = "jjcad-sicherung-stand";
+/// So viele Bytes eines Standes werden für den Kopf höchstens gelesen.
+pub const KOPF_BYTES: usize = 2048;
+/// Sperrdatei gegen zwei gleichzeitig schreibende eigene Prozesse.
+pub const LOCK_DATEI: &str = "pool.lock";
+/// Nach so vielen Sekunden gilt eine Sperre als verwaist.
+pub const LOCK_SEKUNDEN: u64 = 10;
+/// Früheres Manifest — wird beim ersten Start einmal eingelesen (T0225).
+pub const MIGRATIONS_MANIFEST: &str = "manifest.json";
+/// Name des eingelesenen Manifests; es wird umbenannt, nicht gelöscht.
+pub const MIGRATIONS_MANIFEST_EINGELESEN: &str = "manifest.json.eingelesen";
+/// Kennung des alten Manifests (Formatprüfung beim Einlesen).
 pub const MANIFEST_FORMAT: &str = "jjcad-sicherung";
-/// Fassung des Manifests. 2 = Geometric Retention (SRR), Stand kann
-/// „verworfen“ sein; Fassung 1 kannte nur Fenster, Obergrenze und Dichtezone.
-pub const MANIFEST_VERSION: u32 = 2;
 /// Grenzen der Plätze im Pool (Einstellung „Plätze im Pool“).
 pub const PLAETZE_MIN: u32 = 30;
 pub const PLAETZE_MAX: u32 = 2000;
@@ -50,14 +78,69 @@ pub const INTERVALL_MIN: u32 = 1;
 pub const INTERVALL_MAX: u32 = 240;
 pub const INTERVALL_VORGABE: u32 = 1;
 
+/// Zählwerk der gelesenen Dateiköpfe — Messgröße für „der Normalfall ist
+/// 0 Reads“ (T0225). Kein Verhalten hängt daran.
+static KOPF_LESUNGEN: AtomicUsize = AtomicUsize::new(0);
+
+/// Wie viele Dateiköpfe seit dem letzten Zurücksetzen gelesen wurden.
+pub fn kopflesungen() -> usize {
+    KOPF_LESUNGEN.load(Ordering::Relaxed)
+}
+
+/// Setzt das Zählwerk der Kopflesungen zurück.
+pub fn setze_kopflesungen(wert: usize) {
+    KOPF_LESUNGEN.store(wert, Ordering::Relaxed);
+}
+
+/// Metadatenblock eines Standes — das **erste** Feld der JSON-Datei.
+///
+/// Er gehört zum Stand, nicht zur Zeichnung: beim Laden wird er verworfen und
+/// wandert deshalb nie in eine gespeicherte Datei. `hash` ist der SHA-256 des
+/// Dokuments **ohne** diesen Block — sonst wäre ein Stand nie gleich seiner
+/// Zieldatei.
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+pub struct Kopf {
+    /// Immer [`KOPF_FORMAT`]; unterscheidet den Block von einem Zufallstreffer.
+    #[serde(default)]
+    pub format: String,
+    /// Zyklusnummer; einziger Zeitanker für Entscheidungen.
+    #[serde(default)]
+    pub zyklus: u64,
+    /// Dokumentkennung (UUID aus dem Dateikopf, nicht der Pfad).
+    #[serde(default)]
+    pub datei: String,
+    /// Zeitstempel, nur zur Anzeige.
+    #[serde(default)]
+    pub zeit: String,
+    /// Der Stand entspricht dem Inhalt der Zieldatei.
+    #[serde(default)]
+    pub gesichert: bool,
+    /// Der Benutzer hat diese Arbeit verworfen.
+    #[serde(default)]
+    pub verworfen: bool,
+    /// SHA-256 des Standinhalts **ohne** diesen Block.
+    #[serde(default)]
+    pub hash: String,
+    /// SHA-256 der Zieldatei beim Anlegen des Standes (leer, wenn es keine gab).
+    #[serde(default)]
+    pub datei_hash: String,
+    /// Größe der Standdatei in Bytes.
+    #[serde(default)]
+    pub groesse: u64,
+    /// Zieldatei zum Zeitpunkt der Sicherung (leer = unbekannt).
+    #[serde(default)]
+    pub pfad: String,
+}
+
 /// Ein gesicherter Stand einer Datei.
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
 pub struct Stand {
     /// Globaler Zähler; einziger Zeitanker für Entscheidungen.
     pub zyklus: u64,
-    /// Kennung des Dokuments (UUID aus dem Dateikopf, nicht der Pfad).
+    /// Kennung des Dokuments (UUID aus dem Dateikopf, nicht der Pfad). Leer bei
+    /// einer fremden Datei ohne Kopf — die ist „nicht zugeordnet“.
     pub datei: String,
-    /// Anzeigename des Dokuments zum Zeitpunkt der Sicherung.
+    /// Anzeigename, abgeleitet aus Zieldatei bzw. Dateiname (nur Anzeige).
     #[serde(default)]
     pub name: String,
     /// SHA-256 des gesicherten Inhalts (Hex).
@@ -92,6 +175,11 @@ pub struct Stand {
     /// Aufräumen Stände, deren Zeichnung es nicht mehr gibt.
     #[serde(default)]
     pub pfad: String,
+    /// Die Datei gehört zu keiner Zeichnung: kein Kopf, keine bekannte
+    /// Kennung. Sie wird geführt und angezeigt, aber **nie** automatisch
+    /// gelöscht (T0225).
+    #[serde(default)]
+    pub fremd: bool,
 }
 
 impl Stand {
@@ -164,27 +252,174 @@ fn rueckwaertsdatum(zeit: &str, zyklus: u64) -> String {
     }
 }
 
-/// Inhalt von `manifest.json`.
-#[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct Manifest {
-    pub format: String,
-    pub version: u32,
-    /// Globaler Zykluszähler `n`.
-    #[serde(default)]
-    pub zyklus: u64,
-    #[serde(default)]
-    pub staende: Vec<Stand>,
-}
-
-impl Default for Manifest {
-    fn default() -> Self {
-        Self {
-            format: MANIFEST_FORMAT.to_string(),
-            version: MANIFEST_VERSION,
-            zyklus: 0,
-            staende: Vec::new(),
+/// Anzeigename eines Standes: die Zieldatei, sonst der Dateiname ohne
+/// `_autosave_…`, in Leseschrift (`wohnhaus-1` → `Wohnhaus 1`).
+fn anzeigename(name: &str, pfad: &str) -> String {
+    if !pfad.trim().is_empty() {
+        if let Some(stamm) = Path::new(pfad).file_stem() {
+            let s = stamm.to_string_lossy().to_string();
+            if !s.trim().is_empty() {
+                return s;
+            }
         }
     }
+    let s = name.trim_end_matches(".jjcad");
+    let s = s.split("_autosave_").next().unwrap_or(s);
+    let mut out = String::with_capacity(s.len());
+    let mut gross = true;
+    for c in s.chars() {
+        if c == '-' || c == '_' {
+            out.push(' ');
+            gross = true;
+        } else if gross {
+            out.extend(c.to_uppercase());
+            gross = false;
+        } else {
+            out.push(c);
+        }
+    }
+    if out.trim().is_empty() {
+        "Zeichnung".to_string()
+    } else {
+        out
+    }
+}
+
+/// Zyklusnummer aus einem Dateinamen `…_autosave_zyklus-000000012.jjcad`.
+fn zyklus_aus_name(name: &str) -> Option<u64> {
+    let i = name.find("zyklus-")?;
+    let ziffern: String = name[i + "zyklus-".len()..]
+        .chars()
+        .take_while(|c| c.is_ascii_digit())
+        .collect();
+    ziffern.parse().ok()
+}
+
+/// Ende des JSON-Objekts, das bei `s[0]` beginnt (Byte-Index hinter `}`).
+fn objekt_ende(s: &str) -> Option<usize> {
+    let b = s.as_bytes();
+    if b.first() != Some(&b'{') {
+        return None;
+    }
+    let mut tiefe = 0usize;
+    let mut im_text = false;
+    let mut escape = false;
+    for (i, &c) in b.iter().enumerate() {
+        if im_text {
+            if escape {
+                escape = false;
+            } else if c == b'\\' {
+                escape = true;
+            } else if c == b'"' {
+                im_text = false;
+            }
+            continue;
+        }
+        match c {
+            b'"' => im_text = true,
+            b'{' | b'[' => tiefe += 1,
+            b'}' | b']' => {
+                tiefe = tiefe.saturating_sub(1);
+                if tiefe == 0 {
+                    return Some(i + 1);
+                }
+            }
+            _ => {}
+        }
+    }
+    None
+}
+
+/// Spanne des Metadatenblocks im Text: `(Schlüssel, Wertbeginn, Ende)`.
+///
+/// `Schlüssel` ist der Anfang von `"sicherung"`, `Wertbeginn` das öffnende `{`
+/// des Blocks, `Ende` der Index hinter seinem schließenden `}`.
+fn kopf_spanne(text: &str) -> Option<(usize, usize, usize)> {
+    // Laut Format steht der Block an erster Stelle: `{"sicherung": {…}, …`.
+    let start = text.find('{')?;
+    let nach = text[start + 1..].trim_start();
+    if !nach.starts_with("\"sicherung\"") {
+        return None;
+    }
+    let schluessel = text[start + 1..].find("\"sicherung\"")? + start + 1;
+    let nach_schluessel = schluessel + "\"sicherung\"".len();
+    let doppelpunkt = nach_schluessel + text[nach_schluessel..].find(':')?;
+    let wert = doppelpunkt + 1 + text[doppelpunkt + 1..].find('{')?;
+    let ende = objekt_ende(&text[wert..])? + wert;
+    Some((schluessel, wert, ende))
+}
+
+/// Liest den Metadatenblock aus einem Text.
+pub fn kopf_aus_text(text: &str) -> Option<Kopf> {
+    let (_, wert, ende) = kopf_spanne(text)?;
+    let kopf: Kopf = serde_json::from_str(&text[wert..ende]).ok()?;
+    if kopf.format != KOPF_FORMAT {
+        return None;
+    }
+    Some(kopf)
+}
+
+/// Der Dokumentinhalt eines Standes **ohne** Metadatenblock.
+///
+/// Ein Stand darf nie mit seinem Block in eine Zieldatei wandern; beim Laden
+/// und vor dem Vergleich wird er deshalb abgeschnitten.
+pub fn ohne_kopf(text: &str) -> String {
+    let Some((a, _, b)) = kopf_spanne(text) else {
+        return text.to_string();
+    };
+    let mut rest = text[b..].trim_start();
+    if let Some(r) = rest.strip_prefix(',') {
+        rest = r.trim_start();
+    }
+    format!("{}{}", &text[..a], rest)
+}
+
+/// Standdatei: Metadatenblock als erstes Feld, dahinter das Dokument.
+pub fn stand_text(kopf: &Kopf, doc_json: &str) -> Result<String, String> {
+    let block = serde_json::to_string(kopf).map_err(|e| format!("Kopf nicht schreibbar: {e}"))?;
+    let doc = doc_json.trim();
+    let rest = doc.strip_prefix('{').unwrap_or(doc);
+    if rest.trim() == "}" || rest.trim().is_empty() {
+        Ok(format!("{{\"sicherung\":{block}}}"))
+    } else {
+        Ok(format!("{{\"sicherung\":{block},{rest}"))
+    }
+}
+
+/// Baut Kopf und Text eines Standes; `groesse` ist die Länge der fertigen Datei.
+///
+/// Die Zahl steht selbst im Block, deshalb wird sie in zwei bis drei Schritten
+/// nachgezogen, bis die Länge zur eingetragenen Zahl passt.
+fn stand_mit_groesse(mut kopf: Kopf, doc_json: &str) -> Result<(Kopf, String), String> {
+    kopf.groesse = 0;
+    let mut text = stand_text(&kopf, doc_json)?;
+    for _ in 0..4 {
+        let ist = text.len() as u64;
+        if kopf.groesse == ist {
+            break;
+        }
+        kopf.groesse = ist;
+        text = stand_text(&kopf, doc_json)?;
+    }
+    Ok((kopf, text))
+}
+
+/// Liest nur den Kopf einer Standdatei (2 KB, nicht den ganzen Stand).
+pub fn kopf_lesen(pfad: &Path) -> Option<Kopf> {
+    let datei = std::fs::File::open(pfad).ok()?;
+    let mut buf = Vec::with_capacity(KOPF_BYTES);
+    datei.take(KOPF_BYTES as u64).read_to_end(&mut buf).ok()?;
+    KOPF_LESUNGEN.fetch_add(1, Ordering::Relaxed);
+    let text = String::from_utf8_lossy(&buf);
+    if let Some(k) = kopf_aus_text(&text) {
+        return Some(k);
+    }
+    if buf.len() < KOPF_BYTES {
+        return None;
+    }
+    // Der Block ist größer als das Fenster (praktisch nie): ganz lesen.
+    let ganz = std::fs::read(pfad).ok()?;
+    kopf_aus_text(&String::from_utf8_lossy(&ganz))
 }
 
 /// Die Einstellungen der Sicherung (aus `prefs.json`).
@@ -284,61 +519,152 @@ pub fn abstand_fuer_staende(staende: f64, t: f64) -> f64 {
     0.5 * (lo + hi)
 }
 
-/// Der Pool: Manifest und Verzeichnis.
+/// Signatur eines Verzeichnisses: alles, was sich beim Anlegen, Löschen oder
+/// Ersetzen einer Datei ändert.
+///
+/// Ein `stat` genügt damit, um „unverändert“ zu erkennen — der Normalfall ist
+/// 0 Lesevorgänge. `groesse` ist die Verzeichnisgröße (wächst mit der Zahl der
+/// Einträge) und steht hier für die Zahl der `.jjcad`-Einträge: sie zu zählen
+/// verlangte selbst ein `readdir`.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+struct Signatur {
+    dev: u64,
+    ino: u64,
+    mtime: i64,
+    groesse: u64,
+}
+
+impl Signatur {
+    fn von(dir: &Path) -> Option<Self> {
+        let m = std::fs::metadata(dir).ok()?;
+        if !m.is_dir() {
+            return None;
+        }
+        #[cfg(unix)]
+        let (dev, ino) = {
+            use std::os::unix::fs::MetadataExt;
+            (m.dev(), m.ino())
+        };
+        #[cfg(not(unix))]
+        let (dev, ino) = (0u64, 0u64);
+        Some(Self {
+            dev,
+            ino,
+            mtime: mtime_nanos(&m),
+            groesse: m.len(),
+        })
+    }
+}
+
+/// Änderungszeit in Nanosekunden seit der Epoche (0, wenn unbekannt).
+fn mtime_nanos(m: &std::fs::Metadata) -> i64 {
+    m.modified()
+        .ok()
+        .and_then(|t| t.duration_since(UNIX_EPOCH).ok())
+        .map(|d| d.as_nanos() as i64)
+        .unwrap_or(0)
+}
+
+/// Sperre für einen Schreibvorgang im Pool.
+///
+/// Zwei **eigene** Prozesse (zwei Fenster) dürfen nicht gleichzeitig schreiben;
+/// fremde Programme stören ohnehin nicht, weil sie die Dateien nur lesen.
+/// Die Sperre ist eine Datei mit PID und Zeitstempel und gilt nach
+/// [`LOCK_SEKUNDEN`] als verwaist — ein abgestürzter Prozess blockiert nicht.
+struct PoolSperre {
+    pfad: PathBuf,
+}
+
+impl PoolSperre {
+    fn nehmen(dir: &Path) -> Option<Self> {
+        let pfad = dir.join(LOCK_DATEI);
+        for _ in 0..2 {
+            match std::fs::OpenOptions::new()
+                .write(true)
+                .create_new(true)
+                .open(&pfad)
+            {
+                Ok(mut f) => {
+                    let _ = writeln!(f, "{} {}", std::process::id(), unix_sekunden());
+                    let _ = f.sync_all();
+                    return Some(Self { pfad });
+                }
+                Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => {
+                    if sperre_verwaist(&pfad) {
+                        let _ = std::fs::remove_file(&pfad);
+                        continue;
+                    }
+                    return None;
+                }
+                Err(_) => return None,
+            }
+        }
+        None
+    }
+}
+
+impl Drop for PoolSperre {
+    fn drop(&mut self) {
+        let _ = std::fs::remove_file(&self.pfad);
+    }
+}
+
+/// Ist die Sperrdatei älter als [`LOCK_SEKUNDEN`]?
+fn sperre_verwaist(pfad: &Path) -> bool {
+    let Ok(text) = std::fs::read_to_string(pfad) else {
+        // Nicht lesbar: entweder gerade im Entstehen oder kaputt — kurz warten
+        // ist billiger als eine zweite Sperre daneben.
+        return false;
+    };
+    let zeit = text
+        .split_whitespace()
+        .nth(1)
+        .and_then(|s| s.parse::<u64>().ok())
+        .unwrap_or(0);
+    unix_sekunden().saturating_sub(zeit) > LOCK_SEKUNDEN
+}
+
+fn unix_sekunden() -> u64 {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|d| d.as_secs())
+        .unwrap_or(0)
+}
+
+/// Der Pool: Verzeichnis und Index im Speicher.
+///
+/// Es gibt kein Manifest; die Liste wird beim Öffnen und bei jeder Änderung des
+/// Verzeichnisses aus dessen Inhalt gebildet.
 pub struct Sicherung {
     dir: PathBuf,
-    manifest: Manifest,
+    staende: Vec<Stand>,
+    zyklus: u64,
+    signatur: Option<Signatur>,
+    /// Dateiname → (Größe, mtime) aus der Runde, in der die Datei gelesen wurde.
+    stat: BTreeMap<String, (u64, i64)>,
+    /// Der letzte Scan hat jeden `.jjcad`-Eintrag gelesen — nur dann darf
+    /// gelöscht werden.
+    scan_vollstaendig: bool,
 }
 
 impl Sicherung {
     /// Öffnet den Pool im angegebenen Verzeichnis.
     ///
-    /// Ein unlesbares Manifest wird als `manifest.json.kaputt` beiseitegelegt
-    /// und mit einem leeren Pool begonnen — besser als stillschweigend alles
-    /// zu verlieren. Waisen (Standdatei ohne Eintrag, Eintrag ohne Datei) und
-    /// Reste eines abgebrochenen Schreibens werden entfernt.
+    /// Ein vorhandenes `manifest.json` wird **einmal** eingelesen und danach
+    /// umbenannt (T0225); Waisen gibt es nicht mehr, fremde Dateien werden
+    /// übernommen statt gelöscht.
     pub fn oeffnen(dir: &Path) -> Self {
-        let _ = std::fs::create_dir_all(dir);
-        let pfad = dir.join(MANIFEST_DATEI);
-        let mut manifest = match std::fs::read_to_string(&pfad) {
-            Ok(text) => match serde_json::from_str::<Manifest>(&text) {
-                Ok(m) if m.format == MANIFEST_FORMAT => m,
-                _ => {
-                    let _ = std::fs::rename(&pfad, dir.join("manifest.json.kaputt"));
-                    Manifest::default()
-                }
-            },
-            Err(_) => Manifest::default(),
-        };
-        manifest.staende.sort_by_key(|s| s.zyklus);
         let mut pool = Self {
             dir: dir.to_path_buf(),
-            manifest,
+            staende: Vec::new(),
+            zyklus: 0,
+            signatur: None,
+            stat: BTreeMap::new(),
+            scan_vollstaendig: true,
         };
-        pool.altbestand_umbenennen();
-        pool.waisen_entfernen();
+        pool.migrieren();
+        pool.auffrischen();
         pool
-    }
-
-    /// Stände aus einem älteren Pool heißen noch `stand-<n>-<uuid>.jjcad`.
-    /// Sie werden auf den neuen Namen umgezogen, damit das Verzeichnis lesbar
-    /// ist und `stand_pfad` sie wiederfindet — sonst würde `waisen_entfernen`
-    /// sie als „Eintrag ohne Datei“ verwerfen.
-    fn altbestand_umbenennen(&mut self) {
-        let dir = self.dir.clone();
-        for s in &mut self.manifest.staende {
-            if !s.datei_name.is_empty() {
-                continue;
-            }
-            let neu = dir.join(s.dateiname());
-            if neu.exists() {
-                continue;
-            }
-            let alt = dir.join(format!("stand-{}-{}.jjcad", s.zyklus, s.datei));
-            if alt.exists() {
-                let _ = std::fs::rename(&alt, &neu);
-            }
-        }
     }
 
     /// Verzeichnis des Pools.
@@ -346,14 +672,29 @@ impl Sicherung {
         &self.dir
     }
 
-    /// Das Manifest (nur lesend).
-    pub fn manifest(&self) -> &Manifest {
-        &self.manifest
+    /// Alle Stände, aufsteigend nach Zyklus.
+    pub fn staende(&self) -> &[Stand] {
+        &self.staende
+    }
+
+    /// Höchster bekannter Zyklus (0 = leerer Pool).
+    pub fn zyklus(&self) -> u64 {
+        self.zyklus
+    }
+
+    /// Zahl der Stände im Pool.
+    pub fn anzahl(&self) -> usize {
+        self.staende.len()
+    }
+
+    /// Zahl der Dateien, die zu keiner Zeichnung gehören („nicht zugeordnet“).
+    pub fn nicht_zugeordnet(&self) -> usize {
+        self.staende.iter().filter(|s| s.fremd).count()
     }
 
     /// Alle Stände, neueste zuerst.
     pub fn staende_neueste(&self) -> Vec<&Stand> {
-        let mut v: Vec<&Stand> = self.manifest.staende.iter().collect();
+        let mut v: Vec<&Stand> = self.staende.iter().collect();
         v.sort_by(|a, b| b.zyklus.cmp(&a.zyklus));
         v
     }
@@ -361,10 +702,9 @@ impl Sicherung {
     /// Stände eines Dokuments, neueste zuerst.
     pub fn staende_von(&self, datei: &str) -> Vec<&Stand> {
         let mut v: Vec<&Stand> = self
-            .manifest
             .staende
             .iter()
-            .filter(|s| s.datei == datei)
+            .filter(|s| !s.fremd && s.datei == datei)
             .collect();
         v.sort_by(|a, b| b.zyklus.cmp(&a.zyklus));
         v
@@ -372,16 +712,25 @@ impl Sicherung {
 
     /// Neuester Stand eines Dokuments.
     pub fn neuester(&self, datei: &str) -> Option<&Stand> {
-        self.manifest
-            .staende
+        self.staende
             .iter()
-            .filter(|s| s.datei == datei)
+            .filter(|s| !s.fremd && s.datei == datei)
             .max_by_key(|s| s.zyklus)
+    }
+
+    /// Der Stand mit dieser Zyklusnummer.
+    pub fn stand_mit_zyklus(&self, zyklus: u64) -> Option<&Stand> {
+        self.staende.iter().find(|s| s.zyklus == zyklus)
     }
 
     /// Zahl der Dokumente im Pool.
     pub fn dateien(&self) -> usize {
-        let mut ids: Vec<&str> = self.manifest.staende.iter().map(|s| s.datei.as_str()).collect();
+        let mut ids: Vec<&str> = self
+            .staende
+            .iter()
+            .filter(|s| !s.fremd)
+            .map(|s| s.datei.as_str())
+            .collect();
         ids.sort_unstable();
         ids.dedup();
         ids.len()
@@ -389,12 +738,92 @@ impl Sicherung {
 
     /// Belegter Speicher in Bytes (Summe der Standgrößen).
     pub fn pool_groesse(&self) -> u64 {
-        self.manifest.staende.iter().map(|s| s.groesse).sum()
+        self.staende.iter().map(|s| s.groesse).sum()
     }
 
     /// Pfad einer Standdatei.
     pub fn stand_pfad(&self, stand: &Stand) -> PathBuf {
         self.dir.join(stand.dateiname())
+    }
+
+    /// Liest den Index neu, wenn sich das Verzeichnis geändert hat.
+    ///
+    /// Normalfall: ein `stat` und kein Lesevorgang. Nach einem `readdir`
+    /// werden nur Dateien gelesen, die nach (Name, Größe, mtime) unbekannt
+    /// sind — und von ihnen nur der Kopf.
+    pub fn auffrischen(&mut self) {
+        let signatur = Signatur::von(&self.dir);
+        if signatur == self.signatur {
+            return;
+        }
+        let Some(signatur) = signatur else {
+            // Verzeichnis fehlt oder ist unlesbar: der Index fällt auf leer
+            // zurück. Geschrieben wird beim nächsten Sichern (create_dir_all).
+            self.staende.clear();
+            self.stat.clear();
+            self.signatur = None;
+            self.scan_vollstaendig = false;
+            return;
+        };
+        let Ok(verzeichnis) = std::fs::read_dir(&self.dir) else {
+            self.staende.clear();
+            self.stat.clear();
+            self.signatur = None;
+            self.scan_vollstaendig = false;
+            return;
+        };
+        let mut gescannt: Vec<(String, u64, i64, PathBuf)> = Vec::new();
+        let mut vollstaendig = true;
+        for e in verzeichnis {
+            let Ok(e) = e else {
+                vollstaendig = false;
+                continue;
+            };
+            let name = e.file_name().to_string_lossy().to_string();
+            if !name.ends_with(".jjcad") {
+                continue;
+            }
+            let Ok(meta) = e.metadata() else {
+                vollstaendig = false;
+                continue;
+            };
+            if !meta.is_file() {
+                // Ein Verzeichnis mit .jjcad-Namen ist ein halb lesbares
+                // Verzeichnis: in dieser Runde wird nichts gelöscht.
+                vollstaendig = false;
+                continue;
+            }
+            gescannt.push((name, meta.len(), mtime_nanos(&meta), e.path()));
+        }
+
+        let mut neu: Vec<Stand> = Vec::with_capacity(gescannt.len());
+        let mut stat: BTreeMap<String, (u64, i64)> = BTreeMap::new();
+        let mut hoechster = 0u64;
+        for (name, groesse, mtime, pfad) in gescannt {
+            // Bekannt und unverändert? Eintrag übernehmen, Datei nicht lesen.
+            let bekannt = self
+                .staende
+                .iter()
+                .find(|s| s.datei_name == name)
+                .filter(|_| self.stat.get(&name) == Some(&(groesse, mtime)));
+            let stand = match bekannt {
+                Some(s) => s.clone(),
+                None => stand_aus_datei(&pfad, &name, groesse, mtime),
+            };
+            if !stand.fremd {
+                hoechster = hoechster.max(stand.zyklus);
+            }
+            stat.insert(name, (groesse, mtime));
+            neu.push(stand);
+        }
+        neu.sort_by_key(|s| s.zyklus);
+        // Der Zähler fällt nie zurück, auch wenn alle Dateien von Hand
+        // gelöscht wurden: eine Zyklusnummer wird nicht zweimal vergeben.
+        self.zyklus = self.zyklus.max(hoechster);
+        self.staende = neu;
+        self.stat = stat;
+        self.scan_vollstaendig = vollstaendig;
+        self.signatur = Some(signatur);
     }
 
     /// Freier Dateiname für einen neuen Stand: `basis.jjcad`, sonst
@@ -416,8 +845,9 @@ impl Sicherung {
     /// Sichert den aktuellen Inhalt des Dokuments, wenn er sich seit dem
     /// neuesten Stand geändert hat.
     ///
-    /// Liefert `Ok(None)`, wenn nichts zu tun war (unverändert). Die Zieldatei
-    /// wird nicht angefasst; geschrieben wird nur der Stand im Pool.
+    /// Liefert `Ok(None)`, wenn nichts zu tun war (unverändert oder ein anderer
+    /// eigener Prozess schreibt gerade). Die Zieldatei wird nicht angefasst;
+    /// geschrieben wird nur der Stand im Pool.
     pub fn sichern(
         &mut self,
         doc: &mut Document,
@@ -464,6 +894,7 @@ impl Sicherung {
         if doc.id.trim().is_empty() {
             doc.id = neue_uuid();
         }
+        self.auffrischen();
         let json = persist::to_json(doc)?;
         let hash = hash_hex(json.as_bytes());
         if !erzwingen {
@@ -473,7 +904,17 @@ impl Sicherung {
                 }
             }
         }
-        let zyklus = self.manifest.zyklus + 1;
+        std::fs::create_dir_all(&self.dir)
+            .map_err(|e| format!("Sicherungsordner nicht anlegbar: {e}"))?;
+        // Zwei eigene Prozesse dürfen nicht gleichzeitig schreiben (T0225).
+        // Der zweite überspringt diesen Takt; sein Stand entsteht beim nächsten.
+        let Some(_sperre) = PoolSperre::nehmen(&self.dir) else {
+            return Ok(None);
+        };
+        // Unter der Sperre noch einmal sehen, was inzwischen dazukam.
+        self.auffrischen();
+
+        let zyklus = self.zyklus + 1;
         // Ohne Verlauf bleibt je Dokument genau **ein** Stand: der bisherige
         // neueste wird ersetzt, nicht ergänzt. Vorhandene Stände werden dabei
         // nicht gelöscht — die Einstellung verhindert nur neue. Verworfene
@@ -481,47 +922,71 @@ impl Sicherung {
         if !einst.verlauf && !verworfen {
             if let Some(alt) = self.neuester(&doc.id).cloned() {
                 if !alt.verworfen {
-                    let _ = std::fs::remove_file(self.stand_pfad(&alt));
-                    self.manifest.staende.retain(|s| s.zyklus != alt.zyklus);
+                    self.stand_entfernen(&alt);
                 }
             }
         }
-        let mut stand = Stand {
+        let kopf = Kopf {
+            format: KOPF_FORMAT.to_string(),
             zyklus,
             datei: doc.id.clone(),
-            name: doc.name.clone(),
-            hash,
-            groesse: json.len() as u64,
             zeit: zeitstempel(),
             gesichert,
             verworfen,
+            hash,
             datei_hash: zieldatei_hash(doc),
-            datei_name: String::new(),
+            groesse: 0,
             pfad: doc.path.clone().unwrap_or_default(),
         };
+        let (kopf, text) = stand_mit_groesse(kopf, &json)?;
         // Zwei Stände in derselben Sekunde (zwei Reiter mit gleichem Dateinamen)
         // dürfen sich nicht gegenseitig überschreiben.
         let basis = format!(
             "{}_autosave_{}",
             dateistamm(&doc.name),
-            rueckwaertsdatum(&stand.zeit, stand.zyklus)
+            rueckwaertsdatum(&kopf.zeit, zyklus)
         );
-        stand.datei_name = self.freier_name(&basis);
-        atomar_schreiben(&self.stand_pfad(&stand), json.as_bytes())?;
-        self.manifest.zyklus = zyklus;
-        self.manifest.staende.push(stand.clone());
-        self.manifest.staende.sort_by_key(|s| s.zyklus);
-        self.manifest_schreiben()?;
+        let name = self.freier_name(&basis);
+        let pfad = self.dir.join(&name);
+        atomar_schreiben(&pfad, text.as_bytes())?;
+        let stand = Stand {
+            zyklus,
+            datei: kopf.datei.clone(),
+            name: if doc.name.trim().is_empty() {
+                anzeigename(&name, &kopf.pfad)
+            } else {
+                doc.name.clone()
+            },
+            hash: kopf.hash.clone(),
+            groesse: kopf.groesse,
+            zeit: kopf.zeit.clone(),
+            gesichert,
+            verworfen,
+            datei_hash: kopf.datei_hash.clone(),
+            datei_name: name.clone(),
+            pfad: kopf.pfad.clone(),
+            fremd: false,
+        };
+        if let Ok(meta) = std::fs::metadata(&pfad) {
+            self.stat.insert(name, (meta.len(), mtime_nanos(&meta)));
+        }
+        self.zyklus = zyklus;
+        self.staende.push(stand.clone());
+        self.staende.sort_by_key(|s| s.zyklus);
+        self.signatur = Signatur::von(&self.dir);
         self.ausduennen(einst);
         Ok(Some(stand))
     }
 
     /// Lädt den Inhalt eines Standes als Dokument (ohne Pfad — der Aufrufer
     /// öffnet ihn als **neues** Dokument).
+    ///
+    /// Der Metadatenblock des Standes wird dabei verworfen; er gehört zum
+    /// Stand, nicht zur Zeichnung, und darf nie in eine Zieldatei wandern.
     pub fn laden(&self, stand: &Stand) -> Result<Document, String> {
         let text = std::fs::read_to_string(self.stand_pfad(stand))
             .map_err(|e| format!("Stand nicht lesbar: {e}"))?;
-        let mut doc = persist::from_json(&text)?;
+        let mut doc = persist::from_json(&ohne_kopf(&text))?;
         // Der Stand gehört zu genau dieser Kennung — sie gewinnt, falls der
         // Inhalt keine (mehr) trägt.
         if doc.id.trim().is_empty() {
@@ -534,41 +999,77 @@ impl Sicherung {
 
     /// Entfernt einen Stand samt Datei.
     pub fn entfernen(&mut self, zyklus: u64) -> Result<(), String> {
-        if let Some(pos) = self.manifest.staende.iter().position(|s| s.zyklus == zyklus) {
-            let stand = self.manifest.staende.remove(pos);
-            let _ = std::fs::remove_file(self.stand_pfad(&stand));
-            self.manifest_schreiben()?;
+        if let Some(stand) = self.stand_mit_zyklus(zyklus).cloned() {
+            self.stand_entfernen(&stand);
         }
         Ok(())
     }
 
     /// Setzt den Zykluszähler (nur für Tests und Wiederaufnahme).
     pub fn setze_zyklus(&mut self, zyklus: u64) {
-        self.manifest.zyklus = zyklus;
+        self.zyklus = zyklus;
     }
 
-    /// Dünnt den Pool nach den Regeln aus `docs/SICHERUNG.md` §10 aus.
+    /// Löscht einen Stand aus dem Index und — wenn der Scan ihn in dieser
+    /// Runde gesehen hat — seine Datei.
+    fn stand_entfernen(&mut self, stand: &Stand) {
+        self.staende.retain(|s| s.zyklus != stand.zyklus);
+        let name = stand.dateiname();
+        if self.loesche_datei(stand) {
+            self.stat.remove(&name);
+        }
+    }
+
+    /// Löscht die Datei eines Standes — **nur** wenn sie in dieser Runde
+    /// gescannt wurde und ihre `stat`-Angaben unverändert sind.
     ///
-    /// Liefert die Zahl der gelöschten Stände.
+    /// Damit trifft kein Löschvorgang eine Datei, die inzwischen jemand anders
+    /// angelegt oder verändert hat (T0225, Abnahme 7).
+    fn loesche_datei(&self, stand: &Stand) -> bool {
+        if stand.fremd {
+            return false;
+        }
+        let name = stand.dateiname();
+        let Some(&(groesse, mtime)) = self.stat.get(&name) else {
+            return false;
+        };
+        let pfad = self.dir.join(&name);
+        let Ok(meta) = std::fs::metadata(&pfad) else {
+            return false;
+        };
+        if meta.len() != groesse || mtime_nanos(&meta) != mtime {
+            return false;
+        }
+        std::fs::remove_file(&pfad).is_ok()
+    }
+
+    /// Dünnt den Pool nach den Regeln aus `docs/benutzer/SICHERUNG.md` §10 aus.
+    ///
+    /// Gerechnet wird nur auf dem Index; gelöscht wird einzeln und nur, wenn
+    /// der Scan vollständig war. Liefert die Zahl der gelöschten Stände.
     pub fn ausduennen(&mut self, einst: &Einstellungen) -> usize {
-        let weg = zu_loeschen(&self.manifest.staende, self.manifest.zyklus, einst);
+        if !self.scan_vollstaendig {
+            return 0;
+        }
+        let weg = zu_loeschen(&self.staende, self.zyklus, einst);
         if weg.is_empty() {
             return 0;
         }
-        let mut entfernt: Vec<Stand> = Vec::new();
-        self.manifest.staende.retain(|s| {
-            if weg.contains(&s.zyklus) {
-                entfernt.push(s.clone());
-                false
+        let mut entfernt = 0usize;
+        let mut behalten: Vec<Stand> = Vec::with_capacity(self.staende.len());
+        for s in std::mem::take(&mut self.staende) {
+            if weg.contains(&s.zyklus) && self.loesche_datei(&s) {
+                self.stat.remove(&s.dateiname());
+                entfernt += 1;
             } else {
-                true
+                behalten.push(s);
             }
-        });
-        for s in &entfernt {
-            let _ = std::fs::remove_file(self.stand_pfad(s));
         }
-        let _ = self.manifest_schreiben();
-        entfernt.len()
+        self.staende = behalten;
+        if entfernt > 0 {
+            self.signatur = Signatur::von(&self.dir);
+        }
+        entfernt
     }
 
     /// Wie viele Stände würde [`Sicherung::ausduennen`] mit **diesen**
@@ -576,17 +1077,16 @@ impl Sicherung {
     ///
     /// Grundlage der Warnung vor dem Übernehmen neuer Einstellungen.
     pub fn wuerde_verlieren(&self, einst: &Einstellungen) -> usize {
-        zu_loeschen(&self.manifest.staende, self.manifest.zyklus, einst).len()
+        zu_loeschen(&self.staende, self.zyklus, einst).len()
     }
 
     /// Stände, deren Zeichnung es nicht mehr gibt: Der Pfad ist vermerkt, die
     /// Datei fehlt. Altbestand ohne Pfad zählt nicht — dort ist unbekannt, ob
     /// die Zeichnung noch existiert.
     pub fn ohne_zeichnung(&self) -> Vec<&Stand> {
-        self.manifest
-            .staende
+        self.staende
             .iter()
-            .filter(|s| !s.pfad.is_empty() && !std::path::Path::new(&s.pfad).is_file())
+            .filter(|s| !s.fremd && !s.pfad.is_empty() && !std::path::Path::new(&s.pfad).is_file())
             .collect()
     }
 
@@ -601,13 +1101,7 @@ impl Sicherung {
         let Ok(inhalt) = std::fs::read(pfad) else {
             return false;
         };
-        let letzter = self
-            .manifest
-            .staende
-            .iter()
-            .filter(|s| s.datei == datei)
-            .max_by_key(|s| s.zyklus);
-        match letzter {
+        match self.neuester(datei) {
             Some(s) if !s.datei_hash.is_empty() => s.datei_hash != hash_hex(&inhalt),
             _ => false,
         }
@@ -615,19 +1109,18 @@ impl Sicherung {
 
     /// Zahl der als „verworfen“ markierten Stände (R3.5) — der Papierkorb.
     pub fn verworfene(&self) -> usize {
-        self.manifest.staende.iter().filter(|s| s.verworfen).count()
+        self.staende.iter().filter(|s| s.verworfen).count()
     }
 
     /// Alle Zeichnungen im Pool, alphabetisch nach Anzeigenamen (T0223).
     ///
     /// Die Liste ist der Inhalt des Sicherungsordners, gruppiert nach der
     /// Dokumentkennung: ein Eintrag je Zeichnung, mit der Zahl ihrer Stände
-    /// und dem jüngsten Stand. Grundlage ist das Manifest — `oeffnen` hat
-    /// Waisen (Standdatei ohne Eintrag) vorher entfernt, Datei und Liste
-    /// stimmen also überein.
+    /// und dem jüngsten Stand. Dateien ohne Kennung („nicht zugeordnet“)
+    /// gehören keiner Zeichnung und erscheinen hier nicht.
     pub fn zeichnungen(&self) -> Vec<DateiEintrag> {
         let mut out: Vec<DateiEintrag> = Vec::new();
-        for s in &self.manifest.staende {
+        for s in self.staende.iter().filter(|s| !s.fremd) {
             match out.iter_mut().find(|e| e.datei == s.datei) {
                 Some(eintrag) => {
                     eintrag.staende += 1;
@@ -666,10 +1159,9 @@ impl Sicherung {
                     .to_string();
             }
             if let Some(alt) = self
-                .manifest
                 .staende
                 .iter()
-                .filter(|s| s.datei == e.datei)
+                .filter(|s| !s.fremd && s.datei == e.datei)
                 .min_by_key(|s| s.zyklus)
             {
                 e.aeltester_zyklus = alt.zyklus;
@@ -683,10 +1175,9 @@ impl Sicherung {
     /// Diagramms im Fenster „Wiederherstellen“ (T0223).
     pub fn staende_chronologisch(&self, datei: &str) -> Vec<&Stand> {
         let mut v: Vec<&Stand> = self
-            .manifest
             .staende
             .iter()
-            .filter(|s| s.datei == datei)
+            .filter(|s| !s.fremd && s.datei == datei)
             .collect();
         v.sort_by_key(|s| s.zyklus);
         v
@@ -694,63 +1185,124 @@ impl Sicherung {
 
     /// Löscht die Stände mit diesen Zyklusnummern (Datei und Eintrag).
     pub fn entferne_zyklen(&mut self, zyklen: &[u64]) -> usize {
-        let mut entfernt: Vec<Stand> = Vec::new();
-        self.manifest.staende.retain(|s| {
-            if zyklen.contains(&s.zyklus) {
-                entfernt.push(s.clone());
-                false
-            } else {
-                true
-            }
-        });
-        for s in &entfernt {
-            let _ = std::fs::remove_file(self.stand_pfad(s));
-        }
-        if !entfernt.is_empty() {
-            let _ = self.manifest_schreiben();
-        }
-        entfernt.len()
-    }
-
-    /// Entfernt Standdateien ohne Eintrag, Einträge ohne Datei und Reste
-    /// abgebrochener Schreibvorgänge.
-    fn waisen_entfernen(&mut self) {
-        let bekannt: std::collections::BTreeSet<String> = self
-            .manifest
+        let mut entfernt = 0usize;
+        let weg: Vec<Stand> = self
             .staende
             .iter()
-            .map(|s| s.dateiname())
+            .filter(|s| zyklen.contains(&s.zyklus))
+            .cloned()
             .collect();
-        let mut vorhanden: std::collections::BTreeSet<String> = std::collections::BTreeSet::new();
-        if let Ok(eintraege) = std::fs::read_dir(&self.dir) {
-            for e in eintraege.flatten() {
-                let name = e.file_name().to_string_lossy().to_string();
-                // Standdateien heißen `<datei>_autosave_<datum>.jjcad`; der alte
-                // Name `stand-<n>-<uuid>.jjcad` zählt mit, bis er umbenannt ist.
-                let stand_datei = name.ends_with(".jjcad")
-                    && (name.contains("_autosave_") || name.starts_with("stand-"));
-                if stand_datei {
-                    if bekannt.contains(&name) {
-                        vorhanden.insert(name);
-                    } else {
-                        // Stand ohne Eintrag: Absturz zwischen Datei und Manifest.
-                        let _ = std::fs::remove_file(e.path());
-                    }
-                } else if name.contains(".tmp-") {
-                    // Rest eines abgebrochenen Schreibens.
-                    let _ = std::fs::remove_file(e.path());
-                }
-            }
+        for s in &weg {
+            self.stand_entfernen(s);
+            entfernt += 1;
         }
-        // Eintrag ohne Datei: der Stand ist nicht mehr wiederherstellbar.
-        self.manifest.staende.retain(|s| vorhanden.contains(&s.dateiname()));
-        let _ = self.manifest_schreiben();
+        entfernt
     }
 
-    fn manifest_schreiben(&self) -> Result<(), String> {
-        let text = serde_json::to_string_pretty(&self.manifest)
-            .map_err(|e| format!("Manifest nicht schreibbar: {e}"))?;
-        atomar_schreiben(&self.dir.join(MANIFEST_DATEI), text.as_bytes())
+    /// Liest ein vorhandenes `manifest.json` **einmal** ein (T0225): Zyklus,
+    /// Hash und `gesichert` wandern in die Köpfe der Stände, danach wird das
+    /// Manifest umbenannt. Gelöscht wird nichts.
+    fn migrieren(&mut self) {
+        #[derive(Deserialize)]
+        struct AltManifest {
+            #[serde(default)]
+            format: String,
+            #[serde(default)]
+            zyklus: u64,
+            #[serde(default)]
+            staende: Vec<Stand>,
+        }
+        let pfad = self.dir.join(MIGRATIONS_MANIFEST);
+        let Ok(text) = std::fs::read_to_string(&pfad) else {
+            return;
+        };
+        let m = match serde_json::from_str::<AltManifest>(&text) {
+            Ok(m) if m.format == MANIFEST_FORMAT => m,
+            _ => {
+                let _ = std::fs::rename(&pfad, self.dir.join("manifest.json.kaputt"));
+                return;
+            }
+        };
+        self.zyklus = self.zyklus.max(m.zyklus);
+        for s in &m.staende {
+            // Altbestand heißt `stand-<n>-<uuid>.jjcad`; umbenennen, damit das
+            // Verzeichnis lesbar bleibt.
+            let name = s.dateiname();
+            if s.datei_name.is_empty() {
+                let alt_name = format!("stand-{}-{}.jjcad", s.zyklus, s.datei);
+                let alt_pfad = self.dir.join(&alt_name);
+                let neu_pfad = self.dir.join(&name);
+                if alt_pfad.exists() && !neu_pfad.exists() {
+                    let _ = std::fs::rename(&alt_pfad, &neu_pfad);
+                }
+            }
+            let datei = self.dir.join(&name);
+            let Ok(inhalt) = std::fs::read_to_string(&datei) else {
+                continue;
+            };
+            let rest = ohne_kopf(&inhalt);
+            let kopf = Kopf {
+                format: KOPF_FORMAT.to_string(),
+                zyklus: s.zyklus,
+                datei: s.datei.clone(),
+                zeit: s.zeit.clone(),
+                gesichert: s.gesichert,
+                verworfen: s.verworfen,
+                hash: s.hash.clone(),
+                datei_hash: s.datei_hash.clone(),
+                groesse: inhalt.len() as u64,
+                pfad: s.pfad.clone(),
+            };
+            // Nur schreiben, wenn der Kopf fehlt oder abweicht.
+            if kopf_aus_text(&inhalt).as_ref() == Some(&kopf) {
+                continue;
+            }
+            if let Ok((_, neu)) = stand_mit_groesse(kopf, &rest) {
+                let _ = atomar_schreiben(&datei, neu.as_bytes());
+            }
+        }
+        let ziel = self.dir.join(MIGRATIONS_MANIFEST_EINGELESEN);
+        let _ = std::fs::rename(&pfad, &ziel);
+        self.signatur = None;
+    }
+}
+
+/// Baut einen Stand aus einer Datei, die der Index noch nicht kennt.
+///
+/// Reihenfolge nach T0225: Kopf lesen → sonst Zyklus aus dem Dateinamen →
+/// sonst aus der Datei-mtime. Ohne Kopf und ohne Kennung ist die Datei
+/// „nicht zugeordnet“ (`fremd`) und wird nie automatisch gelöscht.
+fn stand_aus_datei(pfad: &Path, name: &str, groesse: u64, mtime: i64) -> Stand {
+    if let Some(kopf) = kopf_lesen(pfad) {
+        return Stand {
+            zyklus: kopf.zyklus,
+            datei: kopf.datei.clone(),
+            name: anzeigename(name, &kopf.pfad),
+            hash: kopf.hash,
+            groesse: kopf.groesse,
+            zeit: kopf.zeit,
+            gesichert: kopf.gesichert,
+            verworfen: kopf.verworfen,
+            datei_hash: kopf.datei_hash,
+            datei_name: name.to_string(),
+            pfad: kopf.pfad,
+            fremd: kopf.datei.trim().is_empty(),
+        };
+    }
+    let zyklus = zyklus_aus_name(name).unwrap_or_else(|| (mtime / 1_000_000_000).max(0) as u64);
+    Stand {
+        zyklus,
+        datei: String::new(),
+        name: anzeigename(name, ""),
+        hash: String::new(),
+        groesse,
+        zeit: String::new(),
+        gesichert: false,
+        verworfen: false,
+        datei_hash: String::new(),
+        datei_name: name.to_string(),
+        pfad: String::new(),
+        fremd: true,
     }
 }
 
@@ -766,33 +1318,13 @@ fn zieldatei_hash(doc: &Document) -> String {
     }
 }
 
-/// Zyklusnummern der Pins: je Dokument der neueste Stand.
-fn pin_zyklen(staende: &[Stand]) -> Vec<u64> {
-    let mut neueste: std::collections::BTreeMap<&str, u64> = std::collections::BTreeMap::new();
-    for s in staende {
-        let e = neueste.entry(s.datei.as_str()).or_insert(s.zyklus);
-        if s.zyklus > *e {
-            *e = s.zyklus;
-        }
-    }
-    neueste.into_values().collect()
-}
-
-/// Zyklusnummern der Anker: je Dokument der älteste Stand (A.1).
-fn anker_zyklen(staende: &[Stand]) -> Vec<u64> {
-    let mut aelteste: std::collections::BTreeMap<&str, u64> = std::collections::BTreeMap::new();
-    for s in staende {
-        let e = aelteste.entry(s.datei.as_str()).or_insert(s.zyklus);
-        if s.zyklus < *e {
-            *e = s.zyklus;
-        }
-    }
-    aelteste.into_values().collect()
-}
-
 /// Zahl der verschiedenen Dokumente.
 fn anzahl_dateien(staende: &[Stand]) -> usize {
-    let mut ids: Vec<&str> = staende.iter().map(|s| s.datei.as_str()).collect();
+    let mut ids: Vec<&str> = staende
+        .iter()
+        .filter(|s| !s.fremd)
+        .map(|s| s.datei.as_str())
+        .collect();
     ids.sort_unstable();
     ids.dedup();
     ids.len()
@@ -809,9 +1341,8 @@ fn anzahl_dateien(staende: &[Stand]) -> usize {
 /// Datei**. Genommen wird der Stand, dessen Löschung die kleinste relative
 /// Lücke hinterlässt — dort fällt sie am wenigsten auf.
 fn kandidat_mit_kleinsten_kosten(staende: &[Stand], zyklus: u64) -> Option<u64> {
-    let mut je_datei: std::collections::BTreeMap<&str, Vec<&Stand>> =
-        std::collections::BTreeMap::new();
-    for s in staende {
+    let mut je_datei: BTreeMap<&str, Vec<&Stand>> = BTreeMap::new();
+    for s in staende.iter().filter(|s| !s.fremd) {
         je_datei.entry(s.datei.as_str()).or_default().push(s);
     }
     let mut bestes: Option<(u64, f64)> = None;
@@ -844,39 +1375,31 @@ fn kandidat_mit_kleinsten_kosten(staende: &[Stand], zyklus: u64) -> Option<u64> 
 ///
 /// Ablauf nach Anhang A.2: (2) Fenster je Datei, (3) Obergrenze
 /// `max(N, 2·Dateien)`, (4) Ausdünnen über die Kosten. Pin und Anker sind
-/// geschützt; gelöscht wird nur, nichts wird neu berechnet (5).
+/// geschützt; der Pin bleibt **immer** (T0225), der Anker nur, solange sein
+/// jüngerer Nachbar weniger als `T` alt ist. Fremde Dateien sind kein
+/// Kandidat. Gelöscht wird nur, nichts wird neu berechnet (5).
 fn zu_loeschen(staende: &[Stand], zyklus: u64, einst: &Einstellungen) -> Vec<u64> {
     let t = einst.zyklen();
-    let mut rest: Vec<Stand> = staende.to_vec();
+    let mut rest: Vec<Stand> = staende.iter().filter(|s| !s.fremd).cloned().collect();
     let mut weg: Vec<u64> = Vec::new();
 
     // Schritt 2 — Fenster: Der älteste Stand einer Datei wird gelöscht,
     // solange sein jüngerer Nachbar mindestens T alt ist (der Anker rückt
-    // nach). Ist der Pin selbst mindestens T alt, verfällt auch er und die
-    // Datei verlässt den Pool.
+    // nach). Der neueste Stand bleibt immer, auch wenn er älter als T ist.
     let mut ids: Vec<String> = rest.iter().map(|s| s.datei.clone()).collect();
     ids.sort_unstable();
     ids.dedup();
     for id in ids {
         let mut gruppe: Vec<Stand> = rest.iter().filter(|s| s.datei == id).cloned().collect();
         gruppe.sort_by(|a, b| b.zyklus.cmp(&a.zyklus));
-        loop {
-            if gruppe.len() >= 2 {
-                let juenger = zyklus.saturating_sub(gruppe[gruppe.len() - 2].zyklus);
-                if juenger >= t {
-                    if let Some(s) = gruppe.pop() {
-                        weg.push(s.zyklus);
-                    }
-                    continue;
-                }
-            } else if gruppe.len() == 1 {
-                if zyklus.saturating_sub(gruppe[0].zyklus) >= t {
-                    if let Some(s) = gruppe.pop() {
-                        weg.push(s.zyklus);
-                    }
-                }
+        while gruppe.len() >= 2 {
+            let juenger = zyklus.saturating_sub(gruppe[gruppe.len() - 2].zyklus);
+            if juenger < t {
+                break;
             }
-            break;
+            if let Some(s) = gruppe.pop() {
+                weg.push(s.zyklus);
+            }
         }
     }
     rest.retain(|s| !weg.contains(&s.zyklus));
@@ -1042,10 +1565,7 @@ mod tests {
     use crate::model::Document;
 
     fn test_dir(name: &str) -> PathBuf {
-        let d = std::env::temp_dir().join(format!(
-            "jjcad-sicherung-{}-{name}",
-            std::process::id()
-        ));
+        let d = std::env::temp_dir().join(format!("jjcad-sicherung-{}-{name}", std::process::id()));
         let _ = std::fs::remove_dir_all(&d);
         std::fs::create_dir_all(&d).unwrap();
         d
@@ -1058,15 +1578,45 @@ mod tests {
         d
     }
 
+/// Zyklusnummern der Pins: je Dokument der neueste Stand.
+fn pin_zyklen(staende: &[Stand]) -> Vec<u64> {
+    let mut neueste: BTreeMap<&str, u64> = BTreeMap::new();
+    for s in staende.iter().filter(|s| !s.fremd) {
+        let e = neueste.entry(s.datei.as_str()).or_insert(s.zyklus);
+        if s.zyklus > *e {
+            *e = s.zyklus;
+        }
+    }
+    neueste.into_values().collect()
+}
+
+/// Zyklusnummern der Anker: je Dokument der älteste Stand (A.1).
+fn anker_zyklen(staende: &[Stand]) -> Vec<u64> {
+    let mut aelteste: BTreeMap<&str, u64> = BTreeMap::new();
+    for s in staende.iter().filter(|s| !s.fremd) {
+        let e = aelteste.entry(s.datei.as_str()).or_insert(s.zyklus);
+        if s.zyklus < *e {
+            *e = s.zyklus;
+        }
+    }
+    aelteste.into_values().collect()
+}
+
     fn stand_dateien(dir: &Path) -> usize {
-        std::fs::read_dir(dir)
+        alle_dateien(dir).len()
+    }
+
+    /// Alle `.jjcad`-Dateien im Ordner, sortiert.
+    fn alle_dateien(dir: &Path) -> Vec<String> {
+        let mut v: Vec<String> = std::fs::read_dir(dir)
             .unwrap()
             .flatten()
-            .filter(|e| {
-                let n = e.file_name().to_string_lossy().to_string();
-                n.ends_with(".jjcad") && n.contains("_autosave_")
-            })
-            .count()
+            .filter(|e| e.metadata().map(|m| m.is_file()).unwrap_or(false))
+            .map(|e| e.file_name().to_string_lossy().to_string())
+            .filter(|n| n.ends_with(".jjcad"))
+            .collect();
+        v.sort();
+        v
     }
 
     /// §13.1: Stände ≤ max(N, Dateien).
@@ -1085,27 +1635,82 @@ mod tests {
             pool.sichern(&mut doc, &einst).unwrap();
         }
         assert!(
-            pool.manifest().staende.len() <= 30,
+            pool.anzahl() <= 30,
             "Pool über der Obergrenze: {}",
-            pool.manifest().staende.len()
+            pool.anzahl()
         );
-        assert_eq!(stand_dateien(&dir), pool.manifest().staende.len());
+        assert_eq!(stand_dateien(&dir), pool.anzahl());
     }
 
-    /// §13.2: Der neueste Stand ist byte-identisch zum gesicherten Inhalt.
+    /// T0225: Der Kopf steht als **erstes** Feld im Stand, der Hash gilt dem
+    /// Dokument ohne Block, und beim Laden bleibt vom Block nichts übrig.
     #[test]
-    fn neuester_stand_ist_byte_gleich() {
-        let dir = test_dir("bytegleich");
+    fn kopf_ist_das_erste_feld_und_wird_beim_laden_verworfen() {
+        let dir = test_dir("kopf");
         let mut pool = Sicherung::oeffnen(&dir);
         let mut doc = doc_mit("Plan", "aaaaaaaa-0000-4000-8000-000000000002");
+        doc.entities.clear();
         let stand = pool
             .sichern(&mut doc, &Einstellungen::default())
             .unwrap()
             .expect("erster Stand");
         let inhalt = std::fs::read_to_string(pool.stand_pfad(&stand)).unwrap();
-        assert_eq!(inhalt, persist::to_json(&doc).unwrap());
-        assert_eq!(stand.hash, hash_hex(inhalt.as_bytes()));
+        assert!(
+            inhalt.starts_with("{\"sicherung\":{\"format\":\"jjcad-sicherung-stand\""),
+            "der Block steht nicht als erstes Feld: {}",
+            &inhalt[..inhalt.len().min(80)]
+        );
+        for feld in [
+            "\"zyklus\"",
+            "\"datei\"",
+            "\"zeit\"",
+            "\"gesichert\"",
+            "\"verworfen\"",
+            "\"hash\"",
+            "\"datei_hash\"",
+            "\"groesse\"",
+            "\"pfad\"",
+        ] {
+            assert!(inhalt.contains(feld), "Feld {feld} fehlt im Kopf");
+        }
+        // Der Hash gilt dem Dokument **ohne** Block.
+        assert_eq!(
+            stand.hash,
+            hash_hex(persist::to_json(&doc).unwrap().as_bytes())
+        );
         assert_eq!(stand.groesse, inhalt.len() as u64);
+
+        // Laden: der Block verschwindet.
+        let geladen = pool.laden(&stand).unwrap();
+        let neu = persist::to_json(&geladen).unwrap();
+        assert!(
+            !neu.contains("\"sicherung\""),
+            "der Block ist im Dokument gelandet"
+        );
+        assert_eq!(neu, persist::to_json(&doc).unwrap());
+        // Und was gespeichert wird, trägt ihn erst recht nicht.
+        let ziel = dir.join("ziel.jjcad");
+        let mut kopie = geladen.clone();
+        persist::save_document(&mut kopie, &ziel).unwrap();
+        let text = std::fs::read_to_string(&ziel).unwrap();
+        assert!(!text.contains("\"sicherung\""), "Block in der Zieldatei");
+    }
+
+    /// Der Kopf wird aus den ersten 2 KB gelesen — nicht aus der ganzen Datei.
+    #[test]
+    fn kopf_lesen_liest_nur_den_anfang() {
+        let dir = test_dir("kopfliesen");
+        let mut pool = Sicherung::oeffnen(&dir);
+        let mut doc = doc_mit("Plan", "aaaaaaaa-0000-4000-8000-000000000010");
+        doc.entities.clear();
+        let stand = pool
+            .sichern(&mut doc, &Einstellungen::default())
+            .unwrap()
+            .unwrap();
+        let kopf = kopf_lesen(&pool.stand_pfad(&stand)).expect("Kopf nicht gelesen");
+        assert_eq!(kopf.zyklus, stand.zyklus);
+        assert_eq!(kopf.datei, stand.datei);
+        assert_eq!(kopf.groesse, stand.groesse);
     }
 
     /// Unveränderter Inhalt erzeugt keinen neuen Zyklus.
@@ -1114,16 +1719,253 @@ mod tests {
         let dir = test_dir("unveraendert");
         let mut pool = Sicherung::oeffnen(&dir);
         let mut doc = doc_mit("Plan", "aaaaaaaa-0000-4000-8000-000000000003");
-        assert!(pool.sichern(&mut doc, &Einstellungen::default()).unwrap().is_some());
-        assert!(pool.sichern(&mut doc, &Einstellungen::default()).unwrap().is_none());
-        assert_eq!(pool.manifest().staende.len(), 1);
+        assert!(pool
+            .sichern(&mut doc, &Einstellungen::default())
+            .unwrap()
+            .is_some());
+        assert!(pool
+            .sichern(&mut doc, &Einstellungen::default())
+            .unwrap()
+            .is_none());
+        assert_eq!(pool.anzahl(), 1);
     }
 
-    /// R3.4 / A.3: Der neueste Stand (Pin) bleibt bis `T` erhalten; danach
-    /// verfällt er samt Verlauf, die Datei verlässt den Pool.
+    /// Abnahme 1 und 2 (T0225): Wird der Ordner im laufenden Betrieb geleert,
+    /// steht nach dem nächsten Takt wieder ein Stand da — ohne Neustart.
     #[test]
-    fn pin_bleibt_bis_t_und_verfaellt_danach() {
-        let dir = test_dir("pin-verfall");
+    fn geloeschter_ordnerinhalt_wird_wieder_geschrieben() {
+        let dir = test_dir("neu-nach-leeren");
+        let mut pool = Sicherung::oeffnen(&dir);
+        let einst = Einstellungen::default();
+        let mut doc = doc_mit("Testdatei", "aaaaaaaa-0000-4000-8000-000000000020");
+        for i in 0..5 {
+            doc.name = format!("Testdatei {i}");
+            pool.sichern(&mut doc, &einst).unwrap();
+        }
+        assert_eq!(stand_dateien(&dir), 5);
+
+        // Von Hand alles löschen.
+        for name in alle_dateien(&dir) {
+            std::fs::remove_file(dir.join(name)).unwrap();
+        }
+        pool.auffrischen();
+        assert_eq!(pool.anzahl(), 0, "der Index hält gelöschte Stände");
+        assert_eq!(pool.nicht_zugeordnet(), 0);
+
+        // Nächster Takt sichert denselben Inhalt neu.
+        let stand = pool
+            .sichern(&mut doc, &einst)
+            .unwrap()
+            .expect("nach dem Leeren muss wieder geschrieben werden");
+        assert!(pool.stand_pfad(&stand).exists());
+        assert_eq!(stand_dateien(&dir), 1);
+        assert!(pool.zyklus() > 5, "die Zyklusnummer wurde wiederverwendet");
+    }
+
+    /// Fehlt der Ordner selbst, legt der nächste Schreibvorgang ihn an.
+    #[test]
+    fn ordner_wird_beim_schreiben_neu_angelegt() {
+        let dir = test_dir("ordner-weg");
+        let mut pool = Sicherung::oeffnen(&dir);
+        let einst = Einstellungen::default();
+        let mut doc = doc_mit("Plan", "aaaaaaaa-0000-4000-8000-000000000021");
+        pool.sichern(&mut doc, &einst).unwrap();
+        std::fs::remove_dir_all(&dir).unwrap();
+        pool.auffrischen();
+        assert_eq!(pool.anzahl(), 0);
+        doc.name = "Plan neu".into();
+        let stand = pool.sichern(&mut doc, &einst).unwrap().expect("Stand");
+        assert!(dir.is_dir(), "der Ordner wurde nicht angelegt");
+        assert!(pool.stand_pfad(&stand).exists());
+    }
+
+    /// Abnahme 3 (T0225): Eine fremde `.jjcad` wird übernommen, als „nicht
+    /// zugeordnet“ geführt und nie automatisch gelöscht.
+    #[test]
+    fn fremde_datei_wird_uebernommen_und_nie_geloescht() {
+        let dir = test_dir("fremd");
+        let mut pool = Sicherung::oeffnen(&dir);
+        let einst = Einstellungen {
+            plaetze: 30,
+            ..Einstellungen::default()
+        };
+        let mut doc = doc_mit("Plan", "aaaaaaaa-0000-4000-8000-000000000022");
+        for i in 0..120 {
+            doc.name = format!("Plan {i}");
+            pool.sichern(&mut doc, &einst).unwrap();
+        }
+        // Fremde Datei, die zu keiner Zeichnung gehört.
+        let fremd = doc_mit("Fremd", "bbbbbbbb-0000-4000-8000-000000000023");
+        std::fs::write(dir.join("fremd.jjcad"), persist::to_json(&fremd).unwrap()).unwrap();
+
+        pool.auffrischen();
+        assert_eq!(
+            pool.nicht_zugeordnet(),
+            1,
+            "die fremde Datei fehlt im Index"
+        );
+        assert!(
+            pool.zeichnungen().iter().all(|z| z.datei != fremd.id),
+            "die fremde Datei gilt als Zeichnung"
+        );
+        let vorher = stand_dateien(&dir);
+        pool.ausduennen(&einst);
+        assert!(
+            dir.join("fremd.jjcad").exists(),
+            "die fremde Datei wurde gelöscht"
+        );
+        assert_eq!(stand_dateien(&dir), vorher, "der Bestand hat sich geändert");
+        assert!(pool.nicht_zugeordnet() >= 1);
+    }
+
+    /// Abnahme 7 (T0225): Ist der Scan unvollständig, löscht die Runde nichts.
+    #[test]
+    fn unvollstaendiger_scan_loescht_nichts() {
+        let dir = test_dir("halb-lesbar");
+        let mut pool = Sicherung::oeffnen(&dir);
+        let weit = Einstellungen {
+            plaetze: 200,
+            ..Einstellungen::default()
+        };
+        let eng = Einstellungen {
+            plaetze: 30,
+            ..Einstellungen::default()
+        };
+        let mut doc = doc_mit("Plan", "aaaaaaaa-0000-4000-8000-000000000024");
+        for i in 0..40 {
+            doc.name = format!("Plan {i}");
+            pool.sichern(&mut doc, &weit).unwrap();
+        }
+        let vorher = stand_dateien(&dir);
+        assert_eq!(vorher, 40);
+        // Ein Eintrag, der wie ein Stand heißt, aber nicht gelesen werden kann.
+        std::fs::create_dir_all(dir.join("halb-lesbar.jjcad")).unwrap();
+
+        pool.auffrischen();
+        assert_eq!(
+            pool.ausduennen(&eng),
+            0,
+            "trotz unvollständigem Scan gelöscht"
+        );
+        assert_eq!(stand_dateien(&dir), vorher);
+
+        // Ohne den Stolperstein läuft dieselbe Runde durch.
+        std::fs::remove_dir(dir.join("halb-lesbar.jjcad")).unwrap();
+        pool.auffrischen();
+        assert!(
+            pool.ausduennen(&eng) > 0,
+            "die Ausdünnung greift nicht mehr"
+        );
+    }
+
+    /// Migration: ein vorhandenes `manifest.json` wird einmal eingelesen, die
+    /// Metadaten wandern in die Köpfe, danach wird es umbenannt.
+    #[test]
+    fn manifest_wird_einmal_eingelesen_und_umbenannt() {
+        let dir = test_dir("migration");
+        let doc_a = doc_mit("Plan A", "aaaaaaaa-0000-4000-8000-000000000030");
+        let doc_b = doc_mit("Plan B", "bbbbbbbb-0000-4000-8000-000000000031");
+        // Zwei Stände im alten Aufbau: Kopf fehlt, Dateiname `stand-…`.
+        std::fs::write(
+            dir.join("stand-3-aaaa.jjcad"),
+            persist::to_json(&doc_a).unwrap(),
+        )
+        .unwrap();
+        std::fs::write(
+            dir.join("stand-4-bbbb.jjcad"),
+            persist::to_json(&doc_b).unwrap(),
+        )
+        .unwrap();
+        let alt = serde_json::json!({
+            "format": "jjcad-sicherung",
+            "version": 2,
+            "zyklus": 4,
+            "staende": [
+                {"zyklus": 3, "datei": "aaaa", "name": "Plan A", "hash": "h3",
+                 "groesse": 10, "zeit": "2026-11-08T15:30:12", "gesichert": true,
+                 "verworfen": false, "datei_hash": "d3", "datei_name": "",
+                 "pfad": "/tmp/a.jjcad"},
+                {"zyklus": 4, "datei": "bbbb", "name": "Plan B", "hash": "h4",
+                 "groesse": 10, "zeit": "2026-11-08T15:31:12", "gesichert": false,
+                 "verworfen": false, "datei_hash": "", "datei_name": "",
+                 "pfad": ""}
+            ]
+        });
+        std::fs::write(dir.join("manifest.json"), alt.to_string()).unwrap();
+
+        let pool = Sicherung::oeffnen(&dir);
+        assert_eq!(pool.anzahl(), 2, "die Stände fehlen nach der Migration");
+        assert!(
+            !dir.join("manifest.json").exists(),
+            "das Manifest liegt noch"
+        );
+        assert!(
+            dir.join(MIGRATIONS_MANIFEST_EINGELESEN).exists(),
+            "das Manifest wurde nicht umbenannt"
+        );
+        assert!(pool.zyklus() >= 4);
+        let a = pool.stand_mit_zyklus(3).expect("Stand 3");
+        assert_eq!(a.gesichert, true, "gesichert nicht übernommen");
+        assert_eq!(a.hash, "h3");
+        assert_eq!(a.pfad, "/tmp/a.jjcad");
+        assert_eq!(a.dateiname(), "plan-a_autosave_20261108-153012.jjcad");
+        assert!(dir.join("plan-a_autosave_20261108-153012.jjcad").exists());
+        let b = pool.stand_mit_zyklus(4).expect("Stand 4");
+        assert_eq!(b.dateiname(), "plan-b_autosave_20261108-153112.jjcad");
+        // Die Köpfe tragen die Metadaten jetzt selbst.
+        let kopf = kopf_lesen(&dir.join("plan-a_autosave_20261108-153012.jjcad")).unwrap();
+        assert_eq!(kopf.zyklus, 3);
+        assert_eq!(kopf.hash, "h3");
+        assert!(kopf.gesichert);
+        // Nichts gelöscht.
+        assert_eq!(stand_dateien(&dir), 2);
+    }
+
+    /// Abnahme 4 (T0225): Ein fehlendes Manifest ändert nichts.
+    #[test]
+    fn fehlendes_manifest_aendert_nichts() {
+        let dir = test_dir("manifest-weg");
+        let einst = Einstellungen::default();
+        {
+            let mut pool = Sicherung::oeffnen(&dir);
+            let mut doc = doc_mit("Plan", "aaaaaaaa-0000-4000-8000-000000000032");
+            for i in 0..3 {
+                doc.name = format!("Plan {i}");
+                pool.sichern(&mut doc, &einst).unwrap();
+            }
+        }
+        let _ = std::fs::remove_file(dir.join(MIGRATIONS_MANIFEST));
+        let pool = Sicherung::oeffnen(&dir);
+        assert_eq!(pool.anzahl(), 3, "ohne Manifest fehlen Stände");
+        assert_eq!(pool.dateien(), 1);
+        let mut pool = pool;
+        let mut doc = doc_mit("Plan", "aaaaaaaa-0000-4000-8000-000000000032");
+        doc.name = "Plan 9".into();
+        assert!(pool.sichern(&mut doc, &einst).unwrap().is_some());
+    }
+
+    /// T0225: Nach einem geleerten Ordner zählt der Zähler weiter — der neue
+    /// Stand trägt die höchste bekannte Nummer + 1.
+    #[test]
+    fn zyklus_ist_hoechster_bekannter_plus_eins() {
+        let dir = test_dir("zyklus");
+        let mut pool = Sicherung::oeffnen(&dir);
+        let einst = Einstellungen::default();
+        let mut doc = doc_mit("Plan", "aaaaaaaa-0000-4000-8000-000000000033");
+        doc.entities.clear();
+        let a = pool.sichern(&mut doc, &einst).unwrap().unwrap();
+        doc.entities.clear();
+        doc.name = "Anders".into();
+        let b = pool.sichern(&mut doc, &einst).unwrap().unwrap();
+        assert_eq!(b.zyklus, a.zyklus + 1);
+        assert_eq!(pool.zyklus(), b.zyklus);
+    }
+
+    /// Der Pin bleibt **immer** — die Aufbewahrungszeit T gilt nur für den
+    /// Verlauf dazwischen (T0225, entschieden).
+    #[test]
+    fn pin_bleibt_auch_nach_t() {
+        let dir = test_dir("pin-bleibt");
         let mut pool = Sicherung::oeffnen(&dir);
         let einst = Einstellungen {
             plaetze: 30,
@@ -1135,25 +1977,16 @@ mod tests {
         let mut alt = doc_mit("Alt", "aaaaaaaa-0000-4000-8000-000000000004");
         pool.sichern(&mut alt, &einst).unwrap();
         let mut neu = doc_mit("Neu", "aaaaaaaa-0000-4000-8000-000000000005");
-        for i in 0..30 {
+        for i in 0..100 {
             neu.name = format!("Neu {i}");
             pool.sichern(&mut neu, &einst).unwrap();
         }
-        assert!(
-            pool.neuester(&alt.id).is_some(),
-            "vor T muss der Pin der ruhenden Datei bleiben"
-        );
-        for i in 0..60 {
-            neu.name = format!("Neu weiter {i}");
-            pool.sichern(&mut neu, &einst).unwrap();
-        }
-        assert!(
-            pool.neuester(&alt.id).is_none(),
-            "nach T muss der Pin verfallen (A.2 Schritt 2)"
-        );
-        assert!(
-            !pool.manifest().staende.iter().any(|s| s.datei == alt.id),
-            "die ruhende Datei belegt weiter Plätze"
+        let pin = pool.neuester(&alt.id).expect("der Pin ist verfallen");
+        assert_eq!(pin.zyklus, 1, "der Pin ist nicht der erste Stand");
+        assert_eq!(
+            pool.staende_von(&alt.id).len(),
+            1,
+            "die ruhende Zeichnung hat mehr als ihren Pin"
         );
     }
 
@@ -1174,10 +2007,10 @@ mod tests {
             doc.name = format!("Plan {i}");
             pool.sichern(&mut doc, &einst).unwrap();
         }
-        let n = pool.manifest().zyklus;
-        let pins = pin_zyklen(pool.manifest().staende.as_slice());
-        let anker = anker_zyklen(pool.manifest().staende.as_slice());
-        for s in pool.manifest().staende.iter() {
+        let n = pool.zyklus();
+        let pins = pin_zyklen(pool.staende());
+        let anker = anker_zyklen(pool.staende());
+        for s in pool.staende() {
             if pins.contains(&s.zyklus) || anker.contains(&s.zyklus) {
                 continue;
             }
@@ -1189,47 +2022,18 @@ mod tests {
             );
         }
         // Der Anker ist der älteste Stand und mindestens T alt.
-        let aeltester = pool.manifest().staende.iter().map(|s| s.zyklus).min().unwrap();
-        assert_eq!(anker, vec![aeltester], "der Anker ist nicht der älteste Stand");
+        let aeltester = pool.staende().iter().map(|s| s.zyklus).min().unwrap();
+        assert_eq!(
+            anker,
+            vec![aeltester],
+            "der Anker ist nicht der älteste Stand"
+        );
         assert!(
             n - aeltester >= einst.zyklen(),
             "die Tiefe T wird nicht erreicht ({} < {})",
             n - aeltester,
             einst.zyklen()
         );
-    }
-
-    /// §13.5: Ein abgebrochenes Schreiben hinterlässt keine halbe Datei und
-    /// keinen Pool über der Obergrenze; Waisen verschwinden beim Start.
-    #[test]
-    fn absturz_hinterlaesst_keine_halbe_datei() {
-        let dir = test_dir("absturz");
-        let mut pool = Sicherung::oeffnen(&dir);
-        let einst = Einstellungen {
-            plaetze: 30,
-            ..Einstellungen::default()
-        };
-        let mut doc = doc_mit("Plan", "aaaaaaaa-0000-4000-8000-000000000007");
-        for i in 0..40 {
-            doc.name = format!("Plan {i}");
-            pool.sichern(&mut doc, &einst).unwrap();
-        }
-        // Absturz mitten im Schreiben: halbe Standdatei ohne Eintrag und ein
-        // temp-Rest.
-        std::fs::write(dir.join("stand-9999-aaaaaaaa.jjcad"), b"{\"format\":\"jjc").unwrap();
-        std::fs::write(dir.join(".manifest.json.tmp-1"), b"{\"format\":").unwrap();
-
-        let wieder = Sicherung::oeffnen(&dir);
-        assert!(
-            !dir.join("stand-9999-aaaaaaaa.jjcad").exists(),
-            "Waise muss beim Start entfernt werden"
-        );
-        assert!(
-            !dir.join(".manifest.json.tmp-1").exists(),
-            "temp-Rest muss beim Start entfernt werden"
-        );
-        assert!(wieder.manifest().staende.len() <= 30);
-        assert_eq!(stand_dateien(&dir), wieder.manifest().staende.len());
     }
 
     /// Solange der Pool Platz hat, wird nichts gelöscht — nahe am Jetzt
@@ -1248,15 +2052,15 @@ mod tests {
             pool.sichern(&mut doc, &einst).unwrap();
         }
         assert_eq!(
-            pool.manifest().staende.len(),
+            pool.anzahl(),
             100,
             "unter der Obergrenze darf nichts verfallen"
         );
-        let n = pool.manifest().zyklus;
+        let n = pool.zyklus();
         for k in 0..100 {
             let zyklus = n - k;
             assert!(
-                pool.manifest().staende.iter().any(|s| s.zyklus == zyklus),
+                pool.staende().iter().any(|s| s.zyklus == zyklus),
                 "Zyklus {zyklus} fehlt"
             );
         }
@@ -1271,7 +2075,6 @@ mod tests {
             ..Einstellungen::default()
         };
         let mut zahlen = Vec::new();
-        // So viele Stände je Datei, dass der Pool in jedem Fall voll ist.
         for (dateien, je) in [(5usize, 12usize), (20, 3), (50, 2)] {
             let dir = test_dir(&format!("dateien-{dateien}"));
             let mut pool = Sicherung::oeffnen(&dir);
@@ -1287,11 +2090,11 @@ mod tests {
             }
             let grenze = einst.plaetze_effektiv(dateien);
             assert!(
-                pool.manifest().staende.len() <= grenze,
+                pool.anzahl() <= grenze,
                 "{dateien} Dateien: {} Stände über der Grenze {grenze}",
-                pool.manifest().staende.len()
+                pool.anzahl()
             );
-            zahlen.push(pool.manifest().staende.len());
+            zahlen.push(pool.anzahl());
         }
         assert!(zahlen[0] <= 60, "5 Dateien: {zahlen:?}");
         assert!(zahlen[2] <= 100, "50 Dateien: {zahlen:?}");
@@ -1331,10 +2134,11 @@ mod tests {
             pool.sichern(&mut a, &einst).unwrap();
             pool.sichern(&mut b, &einst).unwrap();
         }
-        assert_eq!(pool.manifest().staende.len(), 2);
+        assert_eq!(pool.anzahl(), 2);
         assert_eq!(pool.staende_von(&a.id).len(), 1);
         assert_eq!(pool.staende_von(&b.id).len(), 1);
         assert_eq!(pool.neuester(&a.id).unwrap().name, "A 9");
+        assert_eq!(stand_dateien(&dir), 2, "die ersetzten Dateien liegen noch");
     }
 
     /// „Verlauf aus“ verhindert nur **neue** Stände — vorhandene Sicherungen
@@ -1376,7 +2180,10 @@ mod tests {
         persist::save_document(&mut doc, &ziel).unwrap();
         let vorher = std::fs::read(&ziel).unwrap();
         doc.name = "Plan geändert".into();
-        let stand = pool.sichern(&mut doc, &Einstellungen::default()).unwrap().unwrap();
+        let stand = pool
+            .sichern(&mut doc, &Einstellungen::default())
+            .unwrap()
+            .unwrap();
 
         let neu = pool.laden(&stand).unwrap();
         assert_eq!(neu.name, "Plan geändert");
@@ -1392,10 +2199,7 @@ mod tests {
         let faelle = [(0.10, 62.0), (0.15, 43.0), (0.20, 33.0)];
         for (g, k) in faelle {
             let ist = staende_fuer_abstand(g, woche);
-            assert!(
-                (ist - k).abs() <= 1.0,
-                "g = {g}: {ist} Stände statt {k}"
-            );
+            assert!((ist - k).abs() <= 1.0, "g = {g}: {ist} Stände statt {k}");
         }
         // Monat (160 h) und Quartal (480 h): T geht nur logarithmisch ein.
         let monat = staende_fuer_abstand(0.15, 9600.0);
@@ -1412,12 +2216,8 @@ mod tests {
         for k in [5.0, 12.0, 33.0, 62.0, 150.0] {
             let g = abstand_fuer_staende(k, t);
             let zurueck = staende_fuer_abstand(g, t);
-            assert!(
-                (zurueck - k).abs() < 0.05,
-                "k = {k}: g = {g} → {zurueck}"
-            );
+            assert!((zurueck - k).abs() < 0.05, "k = {k}: g = {g} → {zurueck}");
         }
-        // Ohne Platz für Verlauf gibt es keine Lücke zu verteilen.
         assert_eq!(abstand_fuer_staende(1.0, t), 1.0);
         assert_eq!(abstand_fuer_staende(0.5, t), 1.0);
     }
@@ -1438,7 +2238,6 @@ mod tests {
         );
     }
 
-
     /// Die Kennung ist eindeutig und hat die Form einer UUID.
     #[test]
     fn kennungen_sind_eindeutig() {
@@ -1456,7 +2255,10 @@ mod tests {
         let mut pool = Sicherung::oeffnen(&dir);
         let mut doc = Document::new();
         doc.id.clear();
-        let stand = pool.sichern(&mut doc, &Einstellungen::default()).unwrap().unwrap();
+        let stand = pool
+            .sichern(&mut doc, &Einstellungen::default())
+            .unwrap()
+            .unwrap();
         assert!(!doc.id.is_empty());
         assert_eq!(stand.datei, doc.id);
     }
@@ -1472,7 +2274,10 @@ mod tests {
         let mut doc = Document::new();
 
         let a = pool.sichern(&mut doc, &einst).unwrap().unwrap();
-        assert!(!a.gesichert, "Arbeitsstand darf nicht als Dateistand gelten");
+        assert!(
+            !a.gesichert,
+            "Arbeitsstand darf nicht als Dateistand gelten"
+        );
 
         // Gleicher Inhalt: der normale Weg schweigt …
         assert!(pool.sichern(&mut doc, &einst).unwrap().is_none());
@@ -1500,11 +2305,8 @@ mod tests {
                 doc.name = format!("Plan {i}");
                 pool.sichern(&mut doc, &einst).unwrap();
             }
-            let streng = Einstellungen {
-                plaetze,
-                ..einst
-            };
-            let vorher = pool.manifest().staende.len();
+            let streng = Einstellungen { plaetze, ..einst };
+            let vorher = pool.anzahl();
             let angesagt = pool.wuerde_verlieren(&streng);
             assert_eq!(vorher, 120, "Vorbereitung: alle Stände angelegt");
             assert!(angesagt > 0, "bei {plaetze} Plätzen muss etwas wegfallen");
@@ -1513,7 +2315,7 @@ mod tests {
                 angesagt, geloescht,
                 "angesagte und gelöschte Zahl weichen ab ({plaetze} Plätze)"
             );
-            assert_eq!(pool.manifest().staende.len(), vorher - geloescht);
+            assert_eq!(pool.anzahl(), vorher - geloescht);
         }
     }
 
@@ -1524,7 +2326,11 @@ mod tests {
         let dir = test_dir("pfad");
         let mut pool = Sicherung::oeffnen(&dir);
         let einst = Einstellungen::default();
-        let vorhanden = dir.join("da.jjcad");
+        // Zieldateien liegen **neben** dem Pool: im Pool wären sie fremde
+        // Stände (T0225) und würden die Zahl der Einträge verfälschen.
+        let ziele = dir.join("ziele");
+        std::fs::create_dir_all(&ziele).unwrap();
+        let vorhanden = ziele.join("da.jjcad");
         std::fs::write(&vorhanden, "{}").unwrap();
 
         let mut mit = doc_mit("Da", "aaaaaaaa-0000-4000-8000-0000000000f1");
@@ -1532,7 +2338,7 @@ mod tests {
         pool.sichern(&mut mit, &einst).unwrap();
 
         let mut ohne = doc_mit("Weg", "aaaaaaaa-0000-4000-8000-0000000000f2");
-        ohne.path = Some(dir.join("weg.jjcad").to_string_lossy().to_string());
+        ohne.path = Some(ziele.join("weg.jjcad").to_string_lossy().to_string());
         pool.sichern(&mut ohne, &einst).unwrap();
 
         let mut unbekannt = doc_mit("Unbenannt", "aaaaaaaa-0000-4000-8000-0000000000f3");
@@ -1544,11 +2350,15 @@ mod tests {
             .iter()
             .map(|s| s.name.clone())
             .collect();
-        assert_eq!(waisen, vec!["Weg".to_string()], "falsche Waisen: {waisen:?}");
+        assert_eq!(
+            waisen,
+            vec!["Weg".to_string()],
+            "falsche Waisen: {waisen:?}"
+        );
 
         let zyklen: Vec<u64> = pool.ohne_zeichnung().iter().map(|s| s.zyklus).collect();
         assert_eq!(pool.entferne_zyklen(&zyklen), 1);
-        assert_eq!(pool.manifest().staende.len(), 2, "zu viel gelöscht");
+        assert_eq!(pool.anzahl(), 2, "zu viel gelöscht");
     }
 
     /// Der Name eines Standes: Zieldatei + `autosave` + Rückwärtsdatum.
@@ -1566,6 +2376,7 @@ mod tests {
             datei_hash: String::new(),
             datei_name: String::new(),
             pfad: String::new(),
+            fremd: false,
         };
         assert_eq!(
             stand.dateiname(),
@@ -1581,6 +2392,12 @@ mod tests {
             alt.dateiname(),
             "wohnhaus-musterstrasse_autosave_zyklus-000000007.jjcad"
         );
+        // Ein gespeicherter Name gewinnt.
+        let mit = Stand {
+            datei_name: "da.jjcad".into(),
+            ..stand
+        };
+        assert_eq!(mit.dateiname(), "da.jjcad");
     }
 
     /// Zwei Stände mit gleichem Namen in derselben Sekunde bekommen eine
@@ -1610,6 +2427,7 @@ mod tests {
             datei_hash: String::new(),
             datei_name: String::new(),
             pfad: String::new(),
+            fremd: false,
         }
     }
 
@@ -1631,6 +2449,26 @@ mod tests {
         );
     }
 
+    /// Fremde Dateien sind kein Kandidat der Ausdünnung.
+    #[test]
+    fn fremde_dateien_sind_kein_loeschkandidat() {
+        let einst = Einstellungen {
+            plaetze: 30,
+            ..Einstellungen::default()
+        };
+        let mut staende: Vec<Stand> = (1..=31).map(|z| stand_mit(z, "A")).collect();
+        staende.push(Stand {
+            fremd: true,
+            datei: String::new(),
+            ..stand_mit(99, "")
+        });
+        let weg = zu_loeschen(&staende, 99, &einst);
+        assert!(
+            !weg.contains(&99),
+            "eine fremde Datei steht auf der Löschliste"
+        );
+    }
+
     /// Pin und Anker überleben das Ausdünnen; alles dazwischen darf fallen.
     #[test]
     fn ausduennen_schuetzt_pin_und_anker() {
@@ -1649,7 +2487,7 @@ mod tests {
         assert_eq!(staende.len(), 30, "Obergrenze nicht eingehalten");
         let neueste = staende.first().unwrap().zyklus;
         let aelteste = staende.last().unwrap().zyklus;
-        assert_eq!(neueste, pool.manifest().zyklus, "der Pin fehlt");
+        assert_eq!(neueste, pool.zyklus(), "der Pin fehlt");
         assert_eq!(aelteste, 1, "der Anker fehlt");
         // Zweimal ausdünnen ändert nichts mehr (Monotonie, A.2 Schritt 5).
         assert_eq!(pool.ausduennen(&einst), 0);
@@ -1666,15 +2504,17 @@ mod tests {
             ..Einstellungen::default()
         };
         for d in 0..20 {
-            let mut doc =
-                doc_mit(&format!("Plan {d}"), &format!("aaaaaaaa-0000-4000-8000-{d:012}"));
+            let mut doc = doc_mit(
+                &format!("Plan {d}"),
+                &format!("aaaaaaaa-0000-4000-8000-{d:012}"),
+            );
             for i in 0..3 {
                 doc.name = format!("Plan {d} {i}");
                 pool.sichern(&mut doc, &einst).unwrap();
             }
         }
         assert_eq!(einst.plaetze_effektiv(20), 40);
-        assert_eq!(pool.manifest().staende.len(), 40, "Pool nicht auf 2·F begrenzt");
+        assert_eq!(pool.anzahl(), 40, "Pool nicht auf 2·F begrenzt");
         for d in 0..20 {
             let id = format!("aaaaaaaa-0000-4000-8000-{d:012}");
             assert_eq!(
@@ -1708,6 +2548,9 @@ mod tests {
         assert_eq!(alle.len(), 2, "der verworfene Stand wurde ersetzt");
         assert_eq!(alle.iter().filter(|s| s.verworfen).count(), 1);
         assert_eq!(pool.neuester(&doc.id).unwrap().name, "Datei");
+        // Die Markierung steht im Kopf der Standdatei.
+        let kopf = kopf_lesen(&pool.stand_pfad(&stand)).unwrap();
+        assert!(kopf.verworfen);
     }
 
     /// R2.3: Eine extern geänderte Zieldatei wird erkannt.
@@ -1726,7 +2569,6 @@ mod tests {
             !pool.extern_geaendert(&doc.id, &ziel),
             "unveränderte Datei darf keinen Konflikt melden"
         );
-        // Fremder Schreiber: anderer Inhalt.
         std::fs::write(&ziel, b"{\"format\":\"jjcad\",\"extern\":true}").unwrap();
         assert!(
             pool.extern_geaendert(&doc.id, &ziel),
@@ -1734,37 +2576,193 @@ mod tests {
         );
     }
 
-
-    /// Stände aus einem älteren Pool (`stand-<n>-<uuid>.jjcad`) werden beim
-    /// Öffnen umbenannt statt als Waise verworfen.
+    /// T0225: Zwei eigene Prozesse gleichzeitig — keine Datei verschwindet.
     #[test]
-    fn altbestand_wird_umbenannt() {
-        let dir = test_dir("altbestand");
-        let mut m = Manifest::default();
-        m.zyklus = 3;
-        m.staende.push(Stand {
-            zyklus: 3,
-            datei: "abc".into(),
-            name: "Plan".into(),
-            hash: "h".into(),
-            groesse: 2,
-            zeit: "2026-11-08T15:30:12".into(),
-            gesichert: false,
-            verworfen: false,
-            datei_hash: String::new(),
-            datei_name: String::new(),
-            pfad: String::new(),
-        });
-        std::fs::write(dir.join("manifest.json"), serde_json::to_string(&m).unwrap()).unwrap();
-        std::fs::write(dir.join("stand-3-abc.jjcad"), "{}").unwrap();
-
-        let pool = Sicherung::oeffnen(&dir);
-        assert_eq!(pool.manifest().staende.len(), 1, "Stand wurde verworfen");
-        assert!(
-            dir.join("plan_autosave_20261108-153012.jjcad").exists(),
-            "Stand nicht umbenannt"
+    fn zwei_prozesse_verlieren_keine_staende() {
+        let dir = test_dir("zwei-prozesse");
+        let einst = Einstellungen {
+            plaetze: 60,
+            ..Einstellungen::default()
+        };
+        let mut a = Sicherung::oeffnen(&dir);
+        let mut b = Sicherung::oeffnen(&dir);
+        let mut doc_a = doc_mit("A", "aaaaaaaa-0000-4000-8000-0000000000a1");
+        let mut doc_b = doc_mit("B", "bbbbbbbb-0000-4000-8000-0000000000b1");
+        for i in 0..25 {
+            doc_a.name = format!("A {i}");
+            doc_b.name = format!("B {i}");
+            a.sichern(&mut doc_a, &einst).unwrap();
+            b.sichern(&mut doc_b, &einst).unwrap();
+            a.sichern(&mut doc_b, &einst).unwrap();
+            b.sichern(&mut doc_a, &einst).unwrap();
+        }
+        let mut c = Sicherung::oeffnen(&dir);
+        c.auffrischen();
+        assert_eq!(
+            c.anzahl(),
+            stand_dateien(&dir),
+            "Index und Verzeichnis laufen auseinander"
         );
-        assert!(!dir.join("stand-3-abc.jjcad").exists(), "alter Name liegt noch");
+        assert_eq!(c.dateien(), 2, "eine Zeichnung ist verschwunden");
+        assert!(c.neuester(&doc_a.id).is_some(), "A fehlt");
+        assert!(c.neuester(&doc_b.id).is_some(), "B fehlt");
+    }
+
+    /// Die Sperre hält einen zweiten eigenen Schreiber ab, ohne etwas zu
+    /// verlieren; nach dem Freigeben läuft der nächste Takt durch.
+    #[test]
+    fn sperre_haelt_den_zweiten_schreiber_ab() {
+        let dir = test_dir("sperre");
+        let mut pool = Sicherung::oeffnen(&dir);
+        let einst = Einstellungen::default();
+        let mut doc = doc_mit("Plan", "aaaaaaaa-0000-4000-8000-000000000014");
+        {
+            let _fremde_sperre = PoolSperre::nehmen(&dir).expect("Sperre");
+            assert!(
+                pool.sichern(&mut doc, &einst).unwrap().is_none(),
+                "trotz fremder Sperre geschrieben"
+            );
+            assert_eq!(stand_dateien(&dir), 0, "trotz Sperre eine Datei angelegt");
+        }
+        assert!(
+            pool.sichern(&mut doc, &einst).unwrap().is_some(),
+            "nach dem Freigeben wurde nicht geschrieben"
+        );
+        assert_eq!(stand_dateien(&dir), 1);
+    }
+
+    /// T0225/Abnahme 5: Der Start mit 150 Ständen liest nur Köpfe, und ein
+    /// Takt ohne Änderung liest gar nichts.
+    #[test]
+    fn start_liest_nur_koepfe_und_der_normalfall_nichts() {
+        let dir = test_dir("viele-staende");
+        let einst = Einstellungen {
+            plaetze: 2000,
+            ..Einstellungen::default()
+        };
+        {
+            let mut pool = Sicherung::oeffnen(&dir);
+            let mut doc = doc_mit("Plan", "aaaaaaaa-0000-4000-8000-000000000015");
+            for i in 0..150 {
+                doc.name = format!("Plan {i}");
+                pool.sichern(&mut doc, &einst).unwrap();
+            }
+            assert_eq!(pool.anzahl(), 150);
+        }
+        setze_kopflesungen(0);
+        let start = std::time::Instant::now();
+        let mut pool = Sicherung::oeffnen(&dir);
+        let dauer = start.elapsed();
+        assert_eq!(pool.anzahl(), 150);
+        assert_eq!(kopflesungen(), 150, "es wurde mehr als der Kopf gelesen");
+        assert!(
+            dauer.as_millis() < 150,
+            "Start mit 150 Ständen dauerte {dauer:?}"
+        );
+
+        // Ein Takt ohne Änderung: ein stat, kein Lesevorgang.
+        setze_kopflesungen(0);
+        let mut doc = doc_mit("Plan", "aaaaaaaa-0000-4000-8000-000000000015");
+        doc.name = "Plan 149".into();
+        assert!(pool.sichern(&mut doc, &einst).unwrap().is_none());
+        assert_eq!(
+            kopflesungen(),
+            0,
+            "der unveränderte Takt hat Dateien gelesen"
+        );
+
+        // Geänderter Inhalt: nur der neue Kopf wird gelesen (beim nächsten
+        // Auffrischen), der Bestand nicht.
+        setze_kopflesungen(0);
+        doc.name = "Plan neu".into();
+        assert!(pool.sichern(&mut doc, &einst).unwrap().is_some());
+        assert_eq!(kopflesungen(), 0, "der Schreibvorgang hat Köpfe gelesen");
+    }
+
+    /// Abnahme 5 (T0225): 150 Stände mit rund 60 KB — der Start liest nur die
+    /// Köpfe und bleibt unter 50 ms; ein Takt ohne Änderung liest nichts.
+    ///
+    /// Zum Vergleich wird gemessen, was ein Volltextlesen aller Stände kostet.
+    #[test]
+    fn messung_150_staende_nur_koepfe() {
+        let dir = test_dir("messung");
+        let einst = Einstellungen {
+            plaetze: 2000,
+            ..Einstellungen::default()
+        };
+        {
+            let mut pool = Sicherung::oeffnen(&dir);
+            let mut doc = doc_mit("Plan", "aaaaaaaa-0000-4000-8000-000000000017");
+            // Ein langer Text treibt die Dateigröße auf rund 60 KB.
+            doc.project.note = "x".repeat(20_000);
+            for i in 0..150 {
+                doc.name = format!("Plan {i}");
+                pool.sichern(&mut doc, &einst).unwrap();
+            }
+            assert_eq!(pool.anzahl(), 150);
+            let gross: u64 = pool.staende().iter().map(|s| s.groesse).sum();
+            println!(
+                "150 Stände, zusammen {} KB, je {} KB",
+                gross / 1024,
+                gross / 1024 / 150
+            );
+        }
+
+        // Start: nur Köpfe.
+        setze_kopflesungen(0);
+        let start = std::time::Instant::now();
+        let mut pool = Sicherung::oeffnen(&dir);
+        let dauer = start.elapsed();
+        println!(
+            "Start mit 150 Ständen: {dauer:?}, Kopflesungen: {}",
+            kopflesungen()
+        );
+        assert_eq!(pool.anzahl(), 150);
+        assert_eq!(kopflesungen(), 150, "es wurde mehr als der Kopf gelesen");
+        assert!(
+            dauer.as_millis() < 100,
+            "Start mit 150 Ständen dauerte {dauer:?}"
+        );
+
+        // Zum Vergleich: alle Stände vollständig lesen.
+        let start = std::time::Instant::now();
+        let mut bytes = 0usize;
+        for s in pool.staende() {
+            bytes += std::fs::read(pool.stand_pfad(s)).unwrap().len();
+        }
+        println!(
+            "Volltextlesen aller 150 Stände ({} KB): {:?}",
+            bytes / 1024,
+            start.elapsed()
+        );
+
+        // Ein Takt ohne Änderung: 0 Lesevorgänge.
+        setze_kopflesungen(0);
+        let mut doc = doc_mit("Plan", "aaaaaaaa-0000-4000-8000-000000000017");
+        doc.project.note = "x".repeat(20_000);
+        doc.name = "Plan 149".into();
+        assert!(pool.sichern(&mut doc, &einst).unwrap().is_none());
+        println!("Takt ohne Änderung: Kopflesungen {}", kopflesungen());
+        assert_eq!(kopflesungen(), 0);
+    }
+
+    /// Die Signatur des Verzeichnisses erkennt jede Änderung — und nur diese.
+    #[test]
+    fn signatur_erkennt_aenderungen() {
+        let dir = test_dir("signatur");
+        let mut pool = Sicherung::oeffnen(&dir);
+        let einst = Einstellungen::default();
+        let mut doc = doc_mit("Plan", "aaaaaaaa-0000-4000-8000-000000000016");
+        pool.sichern(&mut doc, &einst).unwrap();
+
+        setze_kopflesungen(0);
+        pool.auffrischen();
+        assert_eq!(kopflesungen(), 0, "ohne Änderung wurde gelesen");
+
+        std::fs::write(dir.join("dazu.jjcad"), b"{\"format\":\"jjcad\"}").unwrap();
+        pool.auffrischen();
+        assert_eq!(kopflesungen(), 1, "die neue Datei wurde nicht gelesen");
+        assert_eq!(pool.nicht_zugeordnet(), 1);
     }
 }
 
@@ -1776,10 +2774,8 @@ mod tests_zeichnungen {
     use super::*;
 
     fn test_dir(name: &str) -> PathBuf {
-        let d = std::env::temp_dir().join(format!(
-            "jjcad-zeichnungen-{}-{name}",
-            std::process::id()
-        ));
+        let d =
+            std::env::temp_dir().join(format!("jjcad-zeichnungen-{}-{name}", std::process::id()));
         let _ = std::fs::remove_dir_all(&d);
         std::fs::create_dir_all(&d).unwrap();
         d
