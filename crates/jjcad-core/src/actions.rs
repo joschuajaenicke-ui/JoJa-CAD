@@ -355,6 +355,8 @@ pub const ACTIONS: &[ActionDef] = &[
     act!("select.area", "action.select.area.label", Aendern, "select", "", "action.select.area.hint", false),
     act!("block.update", "action.block.update.label", Bloecke, "blocknew", "", "action.block.update.hint", false),
     act!("block.delete", "action.block.delete.label", Bloecke, "library", "", "action.block.delete.hint", false),
+    // T0217: Kopie eines Blocks — auch eines schreibgeschützten Systemblocks.
+    act!("block.copy", "action.block.copy.label", Bloecke, "library", "", "action.block.copy.hint", false),
     act!("block.list", "action.block.list.label", Bloecke, "library", "", "action.block.list.hint", false),
     act!("sheet.update", "action.sheet.update.label", Blatt, "sheet", "", "action.sheet.update.hint", false),
     act!("sheet.delete", "action.sheet.delete.label", Blatt, "sheet", "", "action.sheet.delete.hint", false),
@@ -433,6 +435,7 @@ pub fn is_mutating(id: &str) -> bool {
             | "block.insert"
             | "block.update"
             | "block.delete"
+            | "block.copy"
             | "file.import.pdf"
             | "sheet.new"
             | "sheet.update"
@@ -4120,6 +4123,51 @@ pub fn execute(doc: &mut Document, id: &str, params: &Value) -> Result<Value, St
             }
             doc.blocks.retain(|b| b.id != ziel.id);
             Ok(json!({"ok": true}))
+        }
+        // T0217: Kopie eines Blocks. Systemblöcke sind schreibgeschützt — ihre
+        // Kopie entsteht als **Benutzerblock** im Blocksverzeichnis und ist
+        // danach bearbeitbar. Kennung und Name sind neu, die Geometrie (samt
+        // Basispunkt, Gruppe und Maßstabsregel) ist die der Vorlage.
+        "block.copy" => {
+            let name = p
+                .text("block")
+                .ok_or_else(|| "Parameter 'block' fehlt".to_string())?;
+            let vorlage = doc
+                .blocks
+                .iter()
+                .find(|b| b.id == name || b.name.eq_ignore_ascii_case(&name))
+                .cloned()
+                .ok_or_else(|| format!("Block '{name}' nicht gefunden"))?;
+            let neu_name = p
+                .text("name")
+                .map(|n| n.trim().to_string())
+                .filter(|n| !n.is_empty())
+                .unwrap_or_else(|| {
+                    crate::bloecke::kopie_name(
+                        &vorlage.name,
+                        doc.blocks.iter().map(|b| b.name.as_str()),
+                    )
+                });
+            let mut kopie = vorlage;
+            kopie.id = format!("usr:{}", crate::util::short_id());
+            kopie.name = neu_name;
+            kopie.source = BlockSource::User;
+            // Erst die Datei, dann das Dokument — scheitert die Datei, bleibt
+            // die Bibliothek unverändert (wie bei `block.create`).
+            let mut datei: Option<String> = None;
+            if let Some(dir) = bloecke_verzeichnis(&p) {
+                let pfad = crate::bloecke::schreibe_block(&dir, &kopie)?;
+                datei = Some(pfad.display().to_string());
+            }
+            let bid = kopie.id.clone();
+            let bname = kopie.name.clone();
+            doc.blocks.push(kopie);
+            Ok(json!({
+                "ok": true,
+                "block": bid,
+                "name": bname,
+                "datei": datei
+            }))
         }
         // ---------------- PDF einfügen ----------------
         "file.import.pdf" => import_pdf_action(doc, &p),

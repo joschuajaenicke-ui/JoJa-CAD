@@ -4432,6 +4432,31 @@ impl App {
         }
     }
 
+    /// T0217: Kopie eines Blocks in die Benutzerblöcke — der Weg des
+    /// Rechtsklickmenüs in der Blockbibliothek. Systemblöcke sind
+    /// schreibgeschützt; ihre Kopie ist ein Benutzerblock und damit
+    /// bearbeitbar. Die Bibliothek springt auf den Reiter „Benutzerblöcke“,
+    /// damit die Kopie sofort zu sehen ist.
+    pub fn block_kopieren(&mut self, id: &str) -> bool {
+        let dir = self.prefs.blocks_dir().to_string_lossy().to_string();
+        match self
+            .session_mut()
+            .execute("block.copy", &serde_json::json!({ "block": id, "dir": dir }))
+        {
+            Ok(_) => {
+                self.ui.inventory_tab = 1;
+                self.ui.block_quelle = 1; // Benutzerblöcke (BLOCK_QUELLEN)
+                self.mark_changed();
+                self.toast(jjcad_core::i18n::tr("gui.app.block_kopiert"));
+                true
+            }
+            Err(e) => {
+                self.toast(e);
+                false
+            }
+        }
+    }
+
     /// Blockeditor schließen. Ohne `speichern` wird der Stand vom Öffnen
     /// wiederhergestellt — ein Reiterkreuz verwirft, „Speichern“ übernimmt.
     pub fn schliesse_block_editor(&mut self, id: &str, speichern: bool) {
@@ -19084,6 +19109,110 @@ mod tests_seitenleisten {
             "rechts darf nichts stehen, Fläche endet bei {:.1}",
             app.ui.last_canvas.right()
         );
+    }
+}
+
+#[cfg(test)]
+mod tests_block_kopieren {
+    //! T0217: Das Rechtsklickmenü der Blockbibliothek kopiert einen Block in
+    //! die Benutzerblöcke. Der Systemblock bleibt schreibgeschützt, die Kopie
+    //! ist ein Benutzerblock und damit bearbeitbar.
+
+    use super::*;
+
+    fn test_dir(name: &str) -> PathBuf {
+        let d = std::env::temp_dir().join(format!(
+            "jjcad-block-kopie-{}-{name}",
+            std::process::id()
+        ));
+        let _ = std::fs::remove_dir_all(&d);
+        std::fs::create_dir_all(&d).unwrap();
+        d
+    }
+
+    /// Zeichnung mit einem Systemblock (`sys:pfeil`) und Bibliothek im Testordner.
+    fn app_mit_systemblock(dir: &std::path::Path) -> App {
+        let mut app = App::with_ctx(egui::Context::default());
+        app.prefs.blocks_pfad = dir.to_string_lossy().to_string();
+        let mut e = Entity::new(
+            1,
+            app.doc().current_layer,
+            EntityKind::Line {
+                a: V2::new(0.0, 0.0),
+                b: V2::new(3.0, 0.0),
+            },
+        );
+        e.id = 1;
+        app.doc_mut().blocks.push(BlockDef {
+            id: "sys:pfeil".into(),
+            name: "Pfeil".into(),
+            category: "Punkt Symbole".into(),
+            source: BlockSource::System,
+            description: String::new(),
+            entities: vec![e],
+            icon: None,
+            base: V2::ZERO,
+            annotative: true,
+        });
+        app
+    }
+
+    #[test]
+    fn kopie_eines_systemblocks_wird_benutzerblock() {
+        let dir = test_dir("system");
+        let mut app = app_mit_systemblock(&dir);
+        let vorher: Vec<String> = app.doc().blocks.iter().map(|b| b.id.clone()).collect();
+        assert!(app.block_kopieren("sys:pfeil"), "Kopie muss gelingen");
+
+        // Die Zeichnung bringt eigene Blöcke mit (Vorlagen) — die Kopie ist der
+        // Block, der vorher nicht da war.
+        let kopie = app
+            .doc()
+            .blocks
+            .iter()
+            .find(|b| !vorher.contains(&b.id))
+            .expect("Kopie fehlt in der Bibliothek")
+            .clone();
+        assert!(kopie.id.starts_with("usr:"));
+        assert_eq!(kopie.name, "Pfeil (Kopie)");
+        assert_eq!(kopie.entities.len(), 1, "Geometrie kommt mit");
+        assert!(
+            dir.join("pfeil-kopie.jjblk").is_file(),
+            "die Kopie liegt als Blockdatei im Verzeichnis"
+        );
+        // Das Original bleibt unberührt.
+        assert!(app
+            .doc()
+            .blocks
+            .iter()
+            .any(|b| b.id == "sys:pfeil" && b.source == BlockSource::System));
+
+        // Der Reiter springt auf die Benutzerblöcke, damit die Kopie zu sehen ist.
+        assert_eq!(app.ui.inventory_tab, 1);
+        assert_eq!(app.ui.block_quelle, 1);
+
+        // Die Kopie ist bearbeitbar, der Systemblock weiterhin nicht.
+        assert!(app.oeffne_block_eigenschaften(&kopie.id));
+        assert!(!app.oeffne_block_eigenschaften("sys:pfeil"));
+    }
+
+    /// Zweite Kopie überschreibt die erste weder im Namen noch in der Datei.
+    #[test]
+    fn zweite_kopie_bekommt_einen_eigenen_namen() {
+        let dir = test_dir("zweite");
+        let mut app = app_mit_systemblock(&dir);
+        assert!(app.block_kopieren("sys:pfeil"));
+        assert!(app.block_kopieren("sys:pfeil"));
+        let namen: Vec<&str> = app
+            .doc()
+            .blocks
+            .iter()
+            .filter(|b| b.name.starts_with("Pfeil (Kopie"))
+            .map(|b| b.name.as_str())
+            .collect();
+        assert_eq!(namen, vec!["Pfeil (Kopie)", "Pfeil (Kopie 2)"]);
+        assert!(dir.join("pfeil-kopie.jjblk").is_file());
+        assert!(dir.join("pfeil-kopie-2.jjblk").is_file());
     }
 }
 

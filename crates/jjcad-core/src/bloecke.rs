@@ -152,6 +152,32 @@ where
     format!("Unbenannt {}", crate::util::short_id())
 }
 
+/// Name für die Kopie eines Blocks (T0217): „Name (Kopie)“, bei Bedarf
+/// „Name (Kopie 2)“, „Name (Kopie 3)“, … — nie zweimal derselbe Name, weil
+/// die Datei dem Namen folgt und sonst die Bibliothek zwei gleiche Einträge
+/// zeigte. Verglichen wird wie beim Laden ohne Rücksicht auf Groß-/Kleinschreibung.
+pub fn kopie_name<'a, I>(name: &str, vorhanden: I) -> String
+where
+    I: IntoIterator<Item = &'a str>,
+{
+    let namen: Vec<String> = vorhanden
+        .into_iter()
+        .map(|n| n.trim().to_lowercase())
+        .collect();
+    let basis = name.trim();
+    for n in 1..=99_999u32 {
+        let kandidat = if n == 1 {
+            format!("{basis} (Kopie)")
+        } else {
+            format!("{basis} (Kopie {n})")
+        };
+        if !namen.iter().any(|v| *v == kandidat.to_lowercase()) {
+            return kandidat;
+        }
+    }
+    format!("{basis} (Kopie {})", crate::util::short_id())
+}
+
 /// Blockdefinition aus vorhandenen Elementen (T0142).
 ///
 /// Gilt für Blöcke, die **nicht** aus einer Auswahl im Dokument entstehen,

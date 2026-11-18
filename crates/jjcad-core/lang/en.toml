@@ -410,6 +410,10 @@ label = "Measure areas"
 hint = "Replace the block definition from the selection"
 label = "Update block"
 
+[action.block.copy]
+hint = "Create a copy as a user block"
+label = "Copy block"
+
 [action.block.delete]
 hint = "Remove the block definition"
 label = "Delete block"
@@ -856,6 +860,7 @@ datenordner_nicht_geoeffnet_x = "Folder not opened: {wert1}"
 blockdatei_uebersprungen_x = "Block file skipped: {wert1}"
 block_gespeichert = "Block · saved"
 block_bearbeiten = "Edit block"
+block_kopiert = "Block · copied"
 block_nicht_gefunden = "Block · not found"
 pruefblock = "Test block"
 systemblock_schreibgeschuetzt = "System block · read-only"
@@ -1523,6 +1528,7 @@ freies_raster_elemente_und_funktionen_zwischenlagern_auf = "Free grid – park e
 funktion_fest_belegt = "Function · permanently assigned"
 funktion_fuer_taste_x_waehlen = "Choose the function for key {wert1}"
 funktionen = "Functions"
+kopieren = "Copy"
 in_lager_legen = "Put into storage"
 ins_lager_gelegt = "Put into storage"
 keine_bloecke_in_dieser_kategorie = "No blocks in this category"

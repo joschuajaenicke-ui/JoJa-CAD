@@ -571,6 +571,15 @@ keinen Eintrag; Projektblöcke werden nur in der Zeichnung umbenannt.
 Ein **ausgewählter Block** zeigt seine Eigenschaften im Panel: Blockname,
 Gruppe, Drehung und Faktor (Maßstab der Instanz).
 
+**Kopieren** (T0217): Der Rechtsklick auf eine Blockkachel bietet „Kopieren“ —
+für **jeden** Block, auch für einen schreibgeschützten Systemblock. Die Kopie
+entsteht als **Benutzerblock** mit eigener Kennung (`usr:…`), dem Namen
+`<Name> (Kopie)` (bei Bedarf `(Kopie 2)`, `(Kopie 3)` …), derselben Geometrie
+samt Basispunkt, Gruppe und Maßstabsregel und liegt als
+`blocks/<name>-kopie.jjblk` im Datenordner. Die Bibliothek springt danach auf
+den Reiter Benutzerblöcke, wo die Kopie sofort bearbeitet werden kann; der
+Systemblock bleibt unverändert.
+
 ## Nachweis für den Papier-Modus
 
 `cargo run -p jjcad-core --example lw_test -- /tmp/lw.jjcad` erzeugt zwei parallele Linien

@@ -392,6 +392,12 @@ fn block_tile(app: &mut App, ui: &mut Ui, b: &BlockDef) {
             app.start_ghost_block(b.id.clone());
             ui.close_menu();
         }
+        // T0217: Kopie in den Benutzerblöcken — für **jeden** Block, auch für
+        // den schreibgeschützten Systemblock, der dadurch bearbeitbar wird.
+        if ui.button(jjcad_core::i18n::tr("gui.inventory.kopieren")).clicked() {
+            app.block_kopieren(&b.id);
+            ui.close_menu();
+        }
         if ui.button(jjcad_core::i18n::tr("gui.inventory.in_lager_legen")).clicked() {
             if let Some(free) = app.prefs.inventory.iter().position(|x| x.is_none()) {
                 app.prefs.inventory[free] = Some(format!("block:{}", b.id));

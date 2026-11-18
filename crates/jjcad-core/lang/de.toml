@@ -429,6 +429,10 @@ label = "Flächen ermitteln"
 hint = "Blockdefinition aus Auswahl ersetzen"
 label = "Block aktualisieren"
 
+[action.block.copy]
+hint = "Kopie als Benutzerblock anlegen"
+label = "Block kopieren"
+
 [action.block.delete]
 hint = "Blockdefinition entfernen"
 label = "Block löschen"
@@ -877,6 +881,7 @@ sicherungsordner_geoeffnet_x = "Sicherungsordner: {wert1}"
 blockdatei_uebersprungen_x = "Blockdatei übersprungen: {wert1}"
 block_gespeichert = "Block · gespeichert"
 block_bearbeiten = "Block bearbeiten"
+block_kopiert = "Block · kopiert"
 block_nicht_gefunden = "Block · nicht gefunden"
 pruefblock = "Prüfblock"
 systemblock_schreibgeschuetzt = "Systemblock · schreibgeschützt"
@@ -1554,6 +1559,7 @@ freies_raster_elemente_und_funktionen_zwischenlagern_auf = "Freies Raster – El
 funktion_fest_belegt = "Funktion · fest belegt"
 funktion_fuer_taste_x_waehlen = "Funktion für Taste {wert1} wählen"
 funktionen = "Funktionen"
+kopieren = "Kopieren"
 in_lager_legen = "In Lager legen"
 ins_lager_gelegt = "Ins Lager gelegt"
 keine_bloecke_in_dieser_kategorie = "Keine Blöcke in dieser Kategorie"
