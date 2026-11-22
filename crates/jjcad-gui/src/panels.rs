@@ -1667,6 +1667,21 @@ pub(crate) fn geo_rows(e: &jjcad_core::model::Entity, unit: Unit) -> Vec<(&'stat
     if area > 0.0 {
         rows.push((jjcad_core::i18n::tr("gui.panels.flaeche"), area_text(unit, area)));
     }
+    if let K::Path { segments, closed } = &e.kind {
+        rows.push((
+            jjcad_core::i18n::tr("gui.panels.stuecke"),
+            segments.len().to_string(),
+        ));
+        rows.push((
+            jjcad_core::i18n::tr("gui.panels.geschlossen"),
+            if *closed {
+                jjcad_core::i18n::tr("gui.panels.ja")
+            } else {
+                jjcad_core::i18n::tr("gui.panels.nein")
+            }
+            .to_string(),
+        ));
+    }
     if let K::Polyline { verts, closed } | K::Spline { verts, closed } = &e.kind {
         rows.push((jjcad_core::i18n::tr("gui.panels.stuetzpunkte"), verts.len().to_string()));
         rows.push((
@@ -1738,6 +1753,8 @@ pub(crate) fn entity_length(e: &jjcad_core::model::Entity) -> f64 {
             };
             sp.len()
         }
+        // Pfad: Summe aller Stücke (Bogen und Ellipsenbogen über ihre Zerlegung).
+        K::Path { segments, .. } => jjcad_core::pfad::pfad_len(segments),
         K::Polyline { verts, closed } => {
             let mut len = 0.0;
             for i in 0..verts.len().saturating_sub(1) {
@@ -3467,3 +3484,4 @@ mod tests_layer_loeschen {
         );
     }
 }
+

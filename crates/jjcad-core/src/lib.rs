@@ -28,6 +28,7 @@ pub mod model;
 pub mod pdf;
 pub mod pdf_read;
 pub mod persist;
+pub mod pfad;
 pub mod raster;
 pub mod render;
 pub mod session;

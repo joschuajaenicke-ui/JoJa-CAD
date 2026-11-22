@@ -669,6 +669,24 @@ Mit dem Nutzer abgestimmt — nicht „verbessern“:
   `reiter_zeichnen_passt_in_die_mindestbreite`). Prüfweg:
   `cargo test -p jjcad-core --test parallele` und `cargo test -p jjcad-gui tests_parallele`;
   Prüfbild `--demo "draw,parallele"`.
+- **Pfad (T0229)**: Ein Pfad ist eine Kette aus **Linien, Bögen, Ellipsenbögen und
+  Splines** (`EntityKind::Path { segments, closed }`, Geometrie in
+  `crates/jjcad-core/src/pfad.rs`). Jedes Stück trägt seine volle Geometrie; das Ende
+  eines Stücks ist der Anfang des nächsten. Anzeige (`render_path`), Trefferflächen
+  (`entity_segments`), Bounding-Box und Transformationen laufen über dieselben
+  Bausteine wie die Einzelobjekte. Das Werkzeug `draw.path` erzeugt **nur Linien und
+  Bögen**: ein Klick setzt das Ende des nächsten Stücks, im Bogenmodus kommt davor ein
+  Punkt auf dem Bogen (`pfad_aus_punkten`), **Umschalt** wechselt zwischen Linie und
+  Bogen (`canvas::pfad_umschalt`, Übergang je Druck), ein Klick auf den Startpunkt
+  schließt, Enter/ESC beendet. `path.connect` (Ribbon „Ändern“ ▸ Geometrie und
+  Objektmenü „Verbinden“) verbindet beliebig viele ausgewählte Linien/Bögen/
+  Ellipsenbögen/Splines zu einem Pfad — Voraussetzung ist eine lückenlose Kette
+  (`pfad_verbinden`), sonst bleibt alles stehen und es gibt einen Fehler. Ein
+  geschlossener Pfad umschließt eine **Fläche** (`pfad_flaeche`, Panel-Zeile „Fläche“);
+  ein Pfad mit Spline ist **nie** geschlossen und hat keine Fläche. Ribbon: Polylinie
+  und Pfad teilen sich eine geteilte Schaltfläche, sonst überschreitet der Reiter
+  „Zeichnen“ die Mindestbreite. Prüfweg: `cargo test -p jjcad-core --test pfad` und
+  `cargo test -p jjcad-gui tests_pfad`; Prüfbild `--demo "neudatei,pfad"`.
 - **Treppen** sind von der Kontur her ein **Rechteck**: erster und zweiter Klick
   liegen auf der **Außenkante** (Länge), der dritte setzt die Breite dorthin, wo
   der Zeiger steht. Gespeichert ist die Lauflinie (`a`→`b`, Mitte) plus Breite —

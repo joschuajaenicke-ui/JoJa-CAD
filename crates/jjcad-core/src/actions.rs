@@ -141,6 +141,9 @@ pub const ACTIONS: &[ActionDef] = &[
     // Zeichnen
     act!("draw.line", "action.draw.line.label", Zeichnen, "line", "l", "action.draw.line.hint", true),
     act!("draw.polyline", "action.draw.polyline.label", Zeichnen, "polyline", "o", "action.draw.polyline.hint", true),
+    // Pfad (T0229): Linien und Bögen am Stück — jedes Stück beginnt am Ende
+    // des vorigen, Umschalt wechselt zwischen Linie und Bogen.
+    act!("draw.path", "action.draw.path.label", Zeichnen, "polyline", "", "action.draw.path.hint", true),
     // Parallele (T0200): eigene Linie/Polylinie als Vorlage, Abstand am
     // Mauszeiger. Liegt im Reiter „Zeichnen", weil sie neues Zeichnen erzeugt.
     act!("draw.parallel", "action.draw.parallel.label", Zeichnen, "parallel", "", "action.draw.parallel.hint", true),
@@ -259,6 +262,8 @@ pub const ACTIONS: &[ActionDef] = &[
     ),
     act!("modify.erase", "action.modify.erase.label", Aendern, "erase", "entf", "action.modify.erase.hint", false),
     act!("modify.explode", "action.modify.explode.label", Aendern, "explode", "z", "action.modify.explode.hint", false),
+    // Verbinden (T0229): ausgewählte Linien/Bögen/Splines zu einem Pfad.
+    act!("path.connect", "action.path.connect.label", Aendern, "polyline", "", "action.path.connect.hint", false),
     act!(
         "text.format",
         "action.text.format.label",
@@ -383,6 +388,8 @@ pub fn is_mutating(id: &str) -> bool {
             | "draw.polyline"
             | "draw.parallel"
             | "draw.spline"
+            | "draw.path"
+            | "path.connect"
             | "draw.rect"
             | "draw.circle"
             | "draw.arc"
@@ -747,6 +754,7 @@ pub fn standard_ebene(action: &str) -> Option<&'static str> {
         | "draw.line"
         | "draw.polyline"
         | "draw.spline"
+        | "draw.path"
         | "draw.rect"
         | "draw.circle"
         | "draw.arc"
@@ -774,6 +782,7 @@ pub fn erzeuger_fuer(kind: &EntityKind) -> &'static str {
         EntityKind::EllipseArc { .. } => "draw.ellipse",
         EntityKind::Polyline { .. } => "draw.polyline",
         EntityKind::Spline { .. } => "draw.spline",
+        EntityKind::Path { .. } => "draw.path",
         EntityKind::Fill { .. } => "draw.fill",
         EntityKind::Volume { .. } => "draw.volume",
         EntityKind::Text { .. } => "draw.text",
@@ -1966,6 +1975,79 @@ pub fn execute(doc: &mut Document, id: &str, params: &Value) -> Result<Value, St
             let mut e = Entity::new(idn, layer, EntityKind::Spline { verts, closed });
             apply_common(doc, &mut e, &p, layer);
             doc.add_entity(e);
+            Ok(json!({"ok": true, "created": [idn]}))
+        }
+        // Pfad (T0229): eine Kette aus Linien und Bögen. `pts` sind die
+        // Klickpunkte, `schritte` sagt je Klick, was er beginnt (`start`,
+        // `line`, `arc_point`, `arc_end`). Fehlt `schritte`, ist jedes Stück
+        // eine Linie — das ist der einfachste Aufruf über MCP.
+        "draw.path" => {
+            let pts = p
+                .pts("pts")
+                .or_else(|| p.pts("points"))
+                .ok_or_else(|| "Parameter 'pts' fehlt".to_string())?;
+            if pts.len() < 2 {
+                return Err("Mindestens zwei Punkte nötig".into());
+            }
+            let mut schritte: Vec<crate::pfad::PfadSchritt> = vec![crate::pfad::PfadSchritt::Start];
+            if let Some(arr) = p.raw("schritte").and_then(|v| v.as_array()) {
+                for (i, v) in arr.iter().enumerate() {
+                    if i == 0 {
+                        continue;
+                    }
+                    let key = v.as_str().unwrap_or("line");
+                    let s = crate::pfad::PfadSchritt::from_key(key)
+                        .ok_or_else(|| format!("Unbekannter Schritt '{key}'"))?;
+                    schritte.push(s);
+                }
+            }
+            while schritte.len() < pts.len() {
+                schritte.push(crate::pfad::PfadSchritt::Line);
+            }
+            let mut segments = crate::pfad::pfad_aus_punkten(&pts, &schritte);
+            if segments.is_empty() {
+                return Err("Der Pfad braucht mindestens ein Stück".into());
+            }
+            let spline = segments.iter().any(|s| s.hat_spline());
+            let closed = !spline
+                && p.boolean_or("closed", crate::pfad::pfad_geschlossen(&segments));
+            let layer = resolve_layer_in(doc, &p, ebene);
+            let idn = doc.new_id();
+            let mut e = Entity::new(idn, layer, EntityKind::Path { segments, closed });
+            apply_common(doc, &mut e, &p, layer);
+            doc.add_entity(e);
+            Ok(json!({"ok": true, "created": [idn]}))
+        }
+        // Verbinden (T0229): beliebig viele ausgewählte Linien, Bögen,
+        // Ellipsenbögen und Splines werden geprüft und zu **einem** Pfad.
+        // Hängen sie nicht zusammen, bleibt alles stehen und es gibt einen
+        // Fehler — kein stiller Teilerfolg.
+        "path.connect" => {
+            let ids = ids_from(&p, "ids");
+            if ids.len() < 2 {
+                return Err("Mindestens zwei Objekte wählen".into());
+            }
+            let mut teile: Vec<EntityKind> = Vec::new();
+            for id in &ids {
+                let Some(e) = doc.entity(*id) else {
+                    return Err(format!("Objekt {id} gibt es nicht"));
+                };
+                teile.push(e.kind.clone());
+            }
+            let segments = crate::pfad::pfad_verbinden(&teile)?;
+            let spr = segments.iter().any(|s| s.hat_spline());
+            let closed = !spr && crate::pfad::pfad_geschlossen(&segments);
+            let Some(vorlage) = ids.first().and_then(|id| doc.entity(*id)).cloned() else {
+                return Err("Mindestens zwei Objekte wählen".into());
+            };
+            let idn = doc.new_id();
+            let mut e = Entity::new(idn, vorlage.layer, EntityKind::Path { segments, closed });
+            e.style = vorlage.style.clone();
+            e.by_block = vorlage.by_block;
+            doc.insert_ranked(e);
+            for id in &ids {
+                doc.remove_entity(*id);
+            }
             Ok(json!({"ok": true, "created": [idn]}))
         }
         // Eine Füllfläche aus einer Punktliste. Alle vier Namen laufen durch
