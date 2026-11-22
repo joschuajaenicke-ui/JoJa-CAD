@@ -191,6 +191,7 @@ fn muster_durchgang(p: FillPattern) -> (DisplayList, BBox) {
             prims: eigene,
             screen: None,
             sagitta_px: None,
+            skalen: Vec::new(),
         },
         flaeche,
     )

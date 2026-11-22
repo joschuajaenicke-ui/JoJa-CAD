@@ -74,7 +74,7 @@ fn grundriss_kote_ist_kreis_mit_gefuellten_vierteln_und_hoehenwert() {
     assert_eq!(texte(&doc), vec!["+1,20".to_string()]);
 
     // Kreis (voller Bogen) und zwei gefüllte Viertel.
-    let h = doc.dim_style.text_height * doc.settings.annotation_scale;
+    let h = doc.dim_style.text_height * doc.plans[0].scale;
     let r = h * 0.55;
     assert_eq!(
         anzahl(&doc, |s| matches!(
@@ -243,7 +243,7 @@ fn kote_laesst_sich_auf_der_gezeichneten_linie_anklicken() {
         "dim.elevation.plan",
         json!({"p": [1000.0, 1000.0], "z": 0.0}),
     );
-    let r = doc.dim_style.text_height * doc.settings.annotation_scale * 0.55;
+    let r = doc.dim_style.text_height * doc.plans[0].scale * 0.55;
     // Punkt auf dem Kreisrand (45°, abseits des Fadenkreuzes): die
     // Trefferflächen kommen aus der Anzeige.
     let rand = v(1000.0, 1000.0) + v(r, r) * std::f64::consts::FRAC_1_SQRT_2;
@@ -255,7 +255,7 @@ fn kote_laesst_sich_auf_der_gezeichneten_linie_anklicken() {
         "dim.elevation.section",
         json!({"pts": [[4000.0, 0.0], [5000.0, 800.0]]}),
     );
-    let h = doc.dim_style.text_height * doc.settings.annotation_scale;
+    let h = doc.dim_style.text_height * doc.plans[0].scale;
     // Punkt auf der linken Dreieckskante des zweiten Punktes.
     let links = v(5000.0 - h * 0.45, 800.0 + h * 0.9);
     let treffer = jjcad_core::snap::hit_test(&doc, links + v(0.0, -2.0), 3.0, None);
@@ -280,7 +280,7 @@ fn klick_zwischen_den_punkten_trifft_die_schnitt_kote_nicht() {
     );
 
     // Der Höhenwert über dem zweiten Dreieck ist ein Treffer.
-    let h = doc.dim_style.text_height * doc.settings.annotation_scale;
+    let h = doc.dim_style.text_height * doc.plans[0].scale;
     let text = v(4000.0, 4000.0 + h * 0.9 + h * 0.25 + h * 0.5);
     assert_eq!(
         jjcad_core::snap::hit_test(&doc, text, 2.0, None),

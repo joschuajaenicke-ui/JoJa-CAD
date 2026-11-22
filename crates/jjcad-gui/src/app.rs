@@ -2542,29 +2542,37 @@ impl App {
                 // T0202: Layer-Manager mit Plänen — zwei weitere Pläne, der
                 // erste eingeklappt, im zweiten eine Wand.
                 "plaene" | "layerplaene" => {
-                    for name in ["Erdgeschoss", "Obergeschoss"] {
-                        let _ = self
-                            .session_mut()
-                            .execute("plan.create", &serde_json::json!({"name": name}));
+                    // T0232: Jeder Plan trägt seinen eigenen Maßstab — die
+                    // Prüfzeichnung zeigt je Plan eine Wand derselben Stärke,
+                    // damit die Strichbreite vergleichbar ist.
+                    for (name, massstab) in [("Erdgeschoss", 200.0), ("Obergeschoss", 50.0)] {
+                        let _ = self.session_mut().execute(
+                            "plan.create",
+                            &serde_json::json!({"name": name, "scale": massstab}),
+                        );
                     }
-                    if let Some(plan) = self.doc().plans.get(1) {
-                        let pid = plan.id;
-                        let zeichnung = self
+                    for i in 0..self.doc().plans.len() {
+                        let pid = self.doc().plans[i].id;
+                        let layer = self
                             .doc()
                             .layers_of_plan(pid)
                             .iter()
                             .find(|l| l.name == "Architektur")
                             .map(|l| l.id);
-                        if let Some(layer) = zeichnung {
+                        if let Some(layer) = layer {
+                            // Modell in Metern — 5 m Wand je Plan, 0,8 m Abstand.
+                            let y = i as f64 * 0.8;
                             let _ = self.session_mut().execute(
                                 "draw.wall",
                                 &serde_json::json!({
-                                    "a": [0.0, 0.0], "b": [5000.0, 0.0],
+                                    "a": [0.0, y], "b": [5.0, y],
                                     "thickness": 0.24, "layer": layer
                                 }),
                             );
                         }
                     }
+                    // Maßstabsgetreue Strichstärken zeigen den Unterschied.
+                    self.ui.lineweights_scaled = true;
                     if let Some(plan) = self.doc().plans.first() {
                         let pid = plan.id;
                         let _ = self.session_mut().execute(

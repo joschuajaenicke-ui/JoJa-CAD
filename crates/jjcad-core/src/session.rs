@@ -181,7 +181,11 @@ impl Session {
             "units": self.doc.input_unit().short(),
             "paper_units": self.doc.settings.paper_input_unit.short(),
             "dim_unit": self.doc.settings.dim_unit.short(),
-            "annotation_scale": self.doc.settings.annotation_scale,
+            // T0232: Maßstab des Plans, in dem gerade gezeichnet wird.
+            "annotation_scale": self.doc.current_scale(),
+            "plans": self.doc.plans.iter().map(|p| json!({
+                "id": p.id, "name": p.name, "scale": p.scale
+            })).collect::<Vec<_>>(),
             "can_undo": self.history.can_undo(),
             "can_redo": self.history.can_redo(),
             "selection": self.selection,

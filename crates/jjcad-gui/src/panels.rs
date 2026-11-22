@@ -233,6 +233,15 @@ pub fn layers(app: &mut App, ui: &mut Ui) {
                         FontId::proportional(12.0),
                         farbe,
                     );
+                    // Maßstab des Plans (T0232): er gehört zu jedem Plan und
+                    // steuert alle Papiergrößen seiner Objekte.
+                    p.text(
+                        Pos2::new(rect.right() - 58.0, rect.center().y),
+                        egui::Align2::RIGHT_CENTER,
+                        format_scale(plan.scale),
+                        FontId::monospace(10.0),
+                        Palette::text_dim(),
+                    );
                     // Auge und Schloss des ganzen Plans
                     let eye = Rect::from_center_size(
                         Pos2::new(rect.right() - 40.0, rect.center().y),
@@ -331,6 +340,24 @@ pub fn layers(app: &mut App, ui: &mut Ui) {
                         ));
                         ui.close_menu();
                     }
+                    ui.separator();
+                    // Maßstab des Plans (T0232) — 1:N. Er bestimmt die
+                    // Papiergrößen aller Objekte dieses Plans (Strichstärke im
+                    // Modus „Papier (maßstabsgetreu)“, Text- und
+                    // Bemaßungshöhen, Punktsymbole).
+                    let mut skala = plan.scale;
+                    ui.horizontal(|ui| {
+                        ui.label(tr("gui.panels.massstab"));
+                        if ui
+                            .add(crate::widgets::zahl(&mut skala, 1.0, 1.0..=1000.0).prefix("1:"))
+                            .changed()
+                        {
+                            befehle.push((
+                                "plan.update".into(),
+                                json!({"plan": plan.id, "scale": skala}),
+                            ));
+                        }
+                    });
                 });
 
                 if plan.collapsed {
@@ -2144,23 +2171,8 @@ fn doc_props(app: &mut App, ui: &mut Ui) {
             app.mark_changed();
         }
     });
-    // Maßstab der Zeichnung (1:N, T0139) — im Modus „Papier
-    // (maßstabsgetreu)“ bestimmt er die Strichbreite auf dem Bildschirm.
-    let mut scale = app.doc().settings.annotation_scale;
-    widgets::field_row(ui, jjcad_core::i18n::tr("gui.panels.massstab"), |ui| {
-        if ui
-            .add_sized(
-                [ui.available_width(), 20.0],
-                crate::widgets::zahl(&mut scale, 1.0, 1.0..=1000.0).prefix("1:"),
-            )
-            .changed()
-        {
-            let _ = app
-                .session_mut()
-                .execute("doc.settings", &json!({"annotation_scale": scale}));
-            app.mark_changed();
-        }
-    });
+    // Den Maßstab der Zeichnung gibt es nicht mehr (T0232): er gehört zu jedem
+    // Plan und steht im Layer-Manager an der Planzeile (Rechtsklick → Maßstab).
     if input != app.doc().settings.input_unit || decimals as usize != app.doc().settings.decimals {
         let _ = app.session_mut().execute(
             "doc.settings",
@@ -2219,8 +2231,8 @@ fn doc_props(app: &mut App, ui: &mut Ui) {
 /// des Modells. Letzteres zeigte sie an, obwohl dort „Informationen über die
 /// Zeichnung" stehen — deshalb sitzen sie seit T0011 im Einstellungen-Dialog
 /// (Abschnitt „Bemaßung") und an keiner anderen Stelle. Sie sind
-/// Dokumenteinstellungen: `doc.settings.dim_unit`, `doc.settings.annotation_scale`
-/// und `doc.dim_style.text_height` / `.arrow`. Jede Änderung geht als Action
+/// Dokumenteinstellungen: `doc.settings.dim_unit`, der Maßstab des aktuellen
+/// Plans (T0232) und `doc.dim_style.text_height` / `.arrow`. Jede Änderung geht als Action
 /// (`doc.settings` bzw. `dim.style`) über die Befehlsschicht und landet damit
 /// auch in Undo/Redo und in der gespeicherten Datei.
 pub(crate) fn dim_fields(app: &mut App, ui: &mut Ui) {
@@ -2259,8 +2271,11 @@ pub(crate) fn dim_fields(app: &mut App, ui: &mut Ui) {
         }
     });
 
-    // Bezugsmaßstab (1:N) — alle Papiergrößen der Bemaßung hängen daran
-    let mut s = app.doc().settings.annotation_scale;
+    // Bezugsmaßstab (1:N) des Plans, in dem gezeichnet wird (T0232) — alle
+    // Papiergrößen der Bemaßung hängen daran. Jeder Plan trägt seinen eigenen;
+    // geschrieben wird der des aktuellen Plans.
+    let mut s = app.doc().current_scale();
+    let skala_plan = app.doc().aktueller_plan();
     widgets::field_row(ui, jjcad_core::i18n::tr("gui.panels.massstab"), |ui| {
         if ui
             .add_sized(
@@ -2269,10 +2284,13 @@ pub(crate) fn dim_fields(app: &mut App, ui: &mut Ui) {
             )
             .changed()
         {
-            let _ = app
-                .session_mut()
-                .execute("doc.settings", &json!({"annotation_scale": s}));
-            app.mark_changed();
+            if let Some(pid) = skala_plan {
+                let _ = app.session_mut().execute(
+                    "plan.update",
+                    &json!({"plan": pid, "scale": s}),
+                );
+                app.mark_changed();
+            }
         }
     });
 
@@ -2317,18 +2335,30 @@ fn arrow_caption(a: ArrowKind) -> &'static str {
 
 #[cfg(test)]
 mod tests_massstab {
-    //! T0139: Der Maßstab der Zeichnung (1:N) steht in den Zeichnungs-
-    //! Eigenschaften. Er bestimmt im Modus „Papier (maßstabsgetreu)“ die
-    //! Strichbreite auf dem Bildschirm.
+    //! T0232: Der Maßstab (1:N) gehört zum **Plan**, nicht mehr zur Datei. Er
+    //! steht in der Planzeile des Layer-Managers (als Text „1:N“) und wird im
+    //! Rechtsklickmenü der Zeile geändert.
 
     use super::*;
     use crate::app::App;
 
-    #[test]
-    fn zeichnungs_eigenschaften_zeigen_den_massstab() {
+    /// Zwei Pläne: „Plan 1“ 1:100, „Erdgeschoss“ 1:200.
+    fn zwei_plaene() -> (App, Id) {
         let ctx = egui::Context::default();
-        let mut app = App::with_ctx(ctx.clone());
-        app.ui.props_open = true;
+        let mut app = App::with_ctx(ctx);
+        app.ui.layers_open = true;
+        let _ = app
+            .session_mut()
+            .execute(
+                "plan.create",
+                &json!({"name": "Erdgeschoss", "scale": 200.0}),
+            )
+            .expect("Plan anlegen");
+        let zweiter = app.doc().plans[1].id;
+        (app, zweiter)
+    }
+
+    fn texte(app: &mut App, ctx: &egui::Context) -> Vec<String> {
         let bild = || egui::RawInput {
             screen_rect: Some(Rect::from_min_size(Pos2::ZERO, Vec2::new(1500.0, 950.0))),
             ..Default::default()
@@ -2337,11 +2367,45 @@ mod tests_massstab {
         for _ in 0..3 {
             out = ctx.run(bild(), |ctx| app.ui(ctx));
         }
+        out.shapes
+            .iter()
+            .filter_map(|cs| match &cs.shape {
+                egui::Shape::Text(t) => Some(t.galley.text().to_string()),
+                _ => None,
+            })
+            .collect()
+    }
+
+    #[test]
+    fn planzeile_zeigt_den_massstab_seines_plans() {
+        let (mut app, _) = zwei_plaene();
+        let ctx = app.ctx.clone();
+        let alle = texte(&mut app, &ctx);
         assert!(
-            out.shapes.iter().any(|cs| matches!(&cs.shape,
-                egui::Shape::Text(t) if t.galley.text() == "Maßstab")),
-            "Zeile „Maßstab“ fehlt in den Zeichnungs-Eigenschaften"
+            alle.iter().any(|t| t == "1:100"),
+            "Maßstab 1:100 fehlt in der Planzeile (Texte: {alle:?})"
         );
+        assert!(
+            alle.iter().any(|t| t == "1:200"),
+            "Maßstab 1:200 fehlt in der Planzeile des zweiten Plans (Texte: {alle:?})"
+        );
+    }
+
+    #[test]
+    fn plan_update_setzt_den_massstab() {
+        let (mut app, zweiter) = zwei_plaene();
+        let _ = app
+            .session_mut()
+            .execute("plan.update", &json!({"plan": zweiter, "scale": 50.0}))
+            .expect("plan.update");
+        assert_eq!(app.doc().plan_scale(zweiter), 50.0);
+        // Die Layer dieses Plans rechnen mit seinem Maßstab — der andere Plan
+        // bleibt bei 1:100.
+        let layer2 = app.doc().layers_of_plan(zweiter)[0].id;
+        assert_eq!(app.doc().plan_scale_of_layer(layer2), 50.0);
+        let layer1 = app.doc().plans[0].id;
+        let erste = app.doc().layers_of_plan(layer1)[0].id;
+        assert_eq!(app.doc().plan_scale_of_layer(erste), 100.0);
     }
 }
 

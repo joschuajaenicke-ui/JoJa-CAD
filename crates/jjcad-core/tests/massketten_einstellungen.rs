@@ -228,7 +228,7 @@ fn einstellungen_ueberleben_undo_und_neustart() {
     assert!(text.contains("\"dim_unit\""), "dim_unit fehlt in der Datei");
     let loaded = jjcad_core::persist::load_document(&path).unwrap();
     assert_eq!(loaded.settings.dim_unit, jjcad_core::units::Unit::Cm);
-    assert_eq!(loaded.settings.annotation_scale, 50.0);
+    assert_eq!(loaded.plans[0].scale, 50.0);
     assert_eq!(loaded.dim_style.text_height, 4.0);
     assert_eq!(loaded.dim_style.arrow, ArrowKind::Arrow);
 }

@@ -111,8 +111,10 @@ die **Vorgabe** ihrer Ebene und lassen sich wie jede andere Taste ändern.
    unabhängig vom Zoom; ein Faktor in Einstellungen ▸ Darstellung skaliert sie) und
    **Papier (maßstabsgetreu)** (Breite wie im exportierten PDF: `Breite_mm × Pixel pro
    Papier-mm`, ohne Obergrenze — beim Hineinzoomen werden die Linien im selben Verhältnis
-   dicker wie die Zeichnung). Im Papier-Modus bestimmt der **Maßstab** der Zeichnung
-   (Eigenschaften der Zeichnung, 1:N) die Strichbreite. Die Wahl wird gespeichert. Links davon stehen zwei weitere Schalter:
+   dicker wie die Zeichnung). Im Papier-Modus bestimmt der **Maßstab des Plans**
+   die Strichbreite (Rechtsklick auf die Planzeile im Layer-Manager, 1:N): Eine
+   Linie im Plan 1:100 erscheint breiter als dieselbe Stärke im Plan 1:200. Die
+   Wahl wird gespeichert. Links davon stehen zwei weitere Schalter:
    **Verschieben** (Vierfach-Pfeil) schaltet **„Maus verschiebt"** ein und aus — dieselbe
    Einstellung wie Einstellungen ▸ Bedienung; ausgeschaltet wandert nur noch das Werkzeug
    „Verschieben". **Drehpunkt** (Fadenkreuz im Quadrat) wechselt beim Einfügen zwischen

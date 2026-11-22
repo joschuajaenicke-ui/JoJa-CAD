@@ -215,7 +215,7 @@ fn symbol_ueberlebt_das_speichern() {
 #[test]
 fn symbol_waechst_mit_dem_massstab() {
     let mut d = doc_mm();
-    d.settings.annotation_scale = 100.0;
+    d.plans[0].scale = 100.0;
     let id = kette(&mut d);
     let dl = render_document(&RenderCtx::new(&d));
     let bbox = dl.bbox;
@@ -246,7 +246,7 @@ fn ohne_symbol_zeichnet_der_stil_seinen_strich() {
     actions::execute(&mut d, "modify.set", &json!({"ids": [id], "symbol": ""}))
         .expect("Symbol wegnehmen");
     let strich = jjcad_core::render::DIM_MARKE_H * d.dim_style.text_height
-        * d.settings.annotation_scale;
+        * d.plans[0].scale;
     let laengen: Vec<f64> = render_document(&RenderCtx::new(&d))
         .prims
         .iter()

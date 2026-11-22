@@ -96,9 +96,9 @@ Logik wie bei Linien — genau wie in der Spezifikation gefordert.
 
 ### Bemaßung in Papier-Millimetern
 
-`DimStyle` ist in Papier-mm definiert und wird mit dem Zeichnungsmaßstab
-multipliziert. Im Modell ist das `settings.annotation_scale`, im Ansichtsfenster
-der Fenstermaßstab. Dadurch stimmt die Strichstärke auf jedem Blatt, und
+`DimStyle` ist in Papier-mm definiert und wird mit dem Maßstab des **Plans**
+multipliziert, zu dem das Objekt gehört (`Plan::scale`, T0232) — im
+Ansichtsfenster mit dem Fenstermaßstab, im Papierraum mit 1. Dadurch stimmt die Strichstärke auf jedem Blatt, und
 `{MASSTAB}` im Schriftfeld zeigt den Blattmaßstab.
 
 ### Undo über Snapshots

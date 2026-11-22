@@ -160,7 +160,9 @@ pub fn geometry(doc: &Document, g: &Ghost, clip: &Clipboard) -> GhostGeo {
         if let Some(def) = doc.block(bid) {
             // Maßeinheit des Blocks (T0231): die Vorschau zeigt dieselbe Größe,
             // die der Klick einsetzt — neutral wächst mit dem Maßstab.
-            let k = def.faktor(doc.settings.annotation_scale);
+            // T0232: Papiergröße — der Maßstab des Plans, in dem der Block
+            // eingesetzt wird.
+            let k = def.faktor(doc.current_scale());
             local = Affine::scale(k, k) * local;
             // Der **Basispunkt** des Blocks steht am Mauszeiger (T0221): die
             // Blockgeometrie liegt basispunktbezogen (Ursprung = Basispunkt),

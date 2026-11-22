@@ -47,7 +47,7 @@ fn wert(doc: &Document) -> TextPrim {
 
 fn lage(doc: &Document, pos: ElevationTextPos) -> TextPrim {
     let t = wert(doc);
-    let h = doc.dim_style.text_height * doc.settings.annotation_scale;
+    let h = doc.dim_style.text_height * doc.plans[0].scale;
     let r = h * 0.55;
     let abstand = r * 1.4 + h * 0.3;
     let p = v(1000.0, 2000.0);
