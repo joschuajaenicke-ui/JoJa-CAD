@@ -690,8 +690,8 @@ Mit dem Nutzer abgestimmt — nicht „verbessern“:
   (`entity_segments`), Bounding-Box und Transformationen laufen über dieselben
   Bausteine wie die Einzelobjekte. Das Werkzeug `draw.path` erzeugt **nur Linien und
   Bögen**: ein Klick setzt das Ende des nächsten Stücks, im Bogenmodus kommt davor ein
-  Punkt auf dem Bogen (`pfad_aus_punkten`), **Umschalt** wechselt zwischen Linie und
-  Bogen (`canvas::pfad_umschalt`, Übergang je Druck), ein Klick auf den Startpunkt
+  Punkt auf dem Bogen (`pfad_aus_punkten`), **Tab** wechselt zwischen Linie und
+  Bogen (`canvas::pfad_modustaste`, je Druck einmal), ein Klick auf den Startpunkt
   schließt, Enter/ESC beendet. `path.connect` (Ribbon „Ändern“ ▸ Geometrie und
   Objektmenü „Verbinden“) verbindet beliebig viele ausgewählte Linien/Bögen/
   Ellipsenbögen/Splines zu einem Pfad — Voraussetzung ist eine lückenlose Kette
@@ -1198,13 +1198,22 @@ Mit dem Nutzer abgestimmt — nicht „verbessern“:
   gefangenen Punkt aus) und **setzt den Stift an ihr Ende** (`hilfslinie_stehen`): die nächste
   Wand beginnt dort und hat den Abstand der Hilfslinie. Gezeichnet in der Fangfarbe mit Kreuzen
   an beiden Enden und der Länge (`canvas::draw_hilfslinie`); während der Eingabe gestrichelt mit
-  Länge am Zeiger, und die Werkzeugvorschau ruht. Ohne Bezugspunkt legt der erste Klick den
-  Anker. `Esc` nimmt nur die Eingabe zurück, ein Rechtsklick bei stehender Linie nimmt sie weg
-  und beendet bzw. bricht das Werkzeug wie bisher. Prüfweg: `cargo test -p jjcad-core --test
+  Länge am Zeiger, und die Werkzeugvorschau ruht. Ohne Werkzeugpunkt ist der **Rechtsklick
+  selbst der Anker** (die anvisierte Wandkante), ohne Anker legt der erste Klick ihn. Gibt der
+  Zeiger **keine Richtung** (er steht auf dem Anker — typisch: Rechtsklick auf die Wandkante,
+  dann tippen), trägt die getippte Länge den Abstand **senkrecht** auf der Wand oder Linie unter
+  dem Anker ab (`canvas::abstandsrichtung`, Seite = Zeigerseite). Während der Eingabe gehören die
+  Ziffern der Längeneingabe — `handle_shortcuts` fragt dafür `App::hilfslinie_modus` mit ab,
+  sonst starten sie eine Hotbar-Funktion und die Eingabe ist weg. `Esc` nimmt nur die Eingabe
+  zurück, ein Rechtsklick bei stehender Linie nimmt sie weg und beendet bzw. bricht das
+  Werkzeug wie bisher. Prüfweg: `cargo test -p jjcad-core --test
   hilfslinie` und `cargo test -p jjcad-gui tests_hilfslinie` (der Test
   `getippte_laenge_setzt_die_hilfslinie_fuer_die_zweite_wand` fährt den Ablauf aus dem Ticket:
-  1-m-Wand, Rechtsklick, „1“ + Enter, zweite Wand — Abstand 1000 mm); Prüfbilder
-  `--demo hilfslinieeingabe` und `--demo hilfsliniegesetzt`.
+  1-m-Wand, Rechtsklick, „1“ + Enter, zweite Wand — Abstand 1000 mm; 
+  `abstand_per_rechtsklick_auf_die_wandkante` den aus Turn 5: bestehende Wand, Wand-Funktion,
+  Rechtsklick auf die Kante, „1“ + Enter → Hilfslinie 1 m **senkrecht**, neue Wand beginnt an
+  ihrem Ende); Prüfbilder `--demo hilfslinieeingabe`, `--demo hilfsliniegesetzt`,
+  `--demo hilfslinieabstand`.
 
 ## Zahlenfelder: Grenzen und Zuggeschwindigkeit (verbindlich)
 
