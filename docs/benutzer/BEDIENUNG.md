@@ -53,8 +53,11 @@ die **Vorgabe** ihrer Ebene und lassen sich wie jede andere Taste ändern.
    **Verlängerung** (Eigenschaften-Panel, Gruppe „Maß“): Maßhilfslinien von den
    Messpunkten zur Maßlinie. Vorgabe **aus** — die Maßzahl steht allein an der
    Maßlinie; eingeschaltet zeichnet jeder Messpunkt seine Hilfslinie.
-   **Symbol** (Gruppe „Maß“): die Marke, die **auf der Maßlinie** an jedem
-   Basispunkt steht und dort den Begrenzungsstrich **ersetzt** — eine Auswahl
+   **Symbol** (Gruppe „Maß“): die Marke, die **auf der Maßlinie** an den Enden
+   jedes Abschnitts steht und dort den Begrenzungsstrich **ersetzt** — jeder
+   Abschnitt ist eine Linie: am Anfang zeigt ein Pfeil nach außen, in der Mitte
+   hat jeder Abschnitt seinen eigenen; ein symmetrisches Symbol (Schrägstrich)
+   deckt sich in der Mitte. Auswahl
    aus der Blockbibliothek (Kategorie „Punkt Symbole“), Vorgabe
    **Schrägstrich** (Fadenkreuz mit 45°-Strich). **„Kein Symbol“ heißt kein
    Begrenzungszeichen**: die Kette zeigt dann nur Maßlinie, Maßzahl und (falls
