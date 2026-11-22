@@ -1395,7 +1395,7 @@ pub fn show(app: &mut App, ui: &mut Ui) {
     // und Bogen. Der Übergang wird erkannt, nicht der Dauerzustand — sonst
     // schaltete ein anderer Umschalt-Kurzbefehl das Werkzeug mit um.
     if !chat_offen {
-        pfad_umschalt(app, ui.ctx());
+        pfad_modustaste(app, ui.ctx());
     }
 
     // Navigation
@@ -3035,17 +3035,17 @@ fn paint_pfad(
     }
 }
 
-/// Umschalt schaltet beim Pfad-Werkzeug zwischen Linie und Bogen (T0229).
+/// **Tab** schaltet beim Pfad-Werkzeug zwischen Linie und Bogen (T0229).
 ///
-/// Ausgewertet wird der **Übergang** „Umschalt nicht gedrückt → gedrückt":
-/// solange die Taste gehalten wird, bleibt der Modus stehen. Mitten im Bogen
-/// (Durchgangspunkt gesetzt, Ende fehlt) wird nicht umgeschaltet — sonst
-/// entstünde ein halber Bogen.
-fn pfad_umschalt(app: &mut App, ctx: &egui::Context) {
-    let gedrueckt = ctx.input(|i| i.modifiers.shift);
-    let vorher = app.ui.path_shift;
-    app.ui.path_shift = gedrueckt;
-    if !gedrueckt || vorher {
+/// Tab wird mit [`egui::InputState::consume_key`] gelesen, sonst wandert der
+/// Fokus durch die Widgets und der zweite Druck käme nicht mehr beim Werkzeug
+/// an. Mitten im Bogen (Durchgangspunkt gesetzt, Ende fehlt) wird nicht
+/// umgeschaltet — sonst entstünde ein halber Bogen.
+fn pfad_modustaste(app: &mut App, ctx: &egui::Context) {
+    // Die Taste gehört dem Pfad-Werkzeug; alle anderen Werkzeuge lassen sie
+    // egui (Fokus-Navigation).
+    let tab = ctx.input_mut(|i| i.consume_key(egui::Modifiers::NONE, egui::Key::Tab));
+    if !tab {
         return;
     }
     let Some(t) = app.tool.as_mut() else { return };
@@ -3056,6 +3056,69 @@ fn pfad_umschalt(app: &mut App, ctx: &egui::Context) {
         return;
     }
     t.bogen = !t.bogen;
+    // Eine offene Texteingabe darf die Taste nicht behalten; der Tab gehört
+    // während des Zeichnens dem Werkzeug (gemessen: kein Widget erhält danach
+    // den Fokus, `Memory::focused()` bleibt leer).
+    ctx.memory_mut(|m| m.stop_text_input());
+}
+
+/// Nächstes Stück, das ein Klick im Pfad-Werkzeug anlegt — eine Quelle für
+/// Vorschau, Aufforderung und Tests (T0229).
+///
+/// Beim Setzen des Durchgangspunkts ist der **vorletzte** Punkt der Anfang des
+/// Bogens: der zuletzt geklickte Punkt liegt auf dem Bogen. Vorher (mit dem
+/// letzten Punkt als Anfang) war der Bogen entartet, weil Anfang und
+/// Durchgangspunkt zusammenfielen — die Bogenvorschau war unsichtbar.
+#[derive(Debug)]
+pub(crate) enum PfadVorschau {
+    /// Kein Punkt gesetzt.
+    Leer,
+    /// Strecke zum Zeiger (Linienmodus oder Bogen ohne Durchgangspunkt).
+    Sehne {
+        von: V2,
+        bis: V2,
+        bogen: bool,
+        schliesst: bool,
+    },
+    /// Bogen vom Anfang über den gesetzten Durchgangspunkt zum Zeiger.
+    Bogen(jjcad_core::pfad::PathSeg),
+}
+
+pub(crate) fn pfad_vorschau(tool: &Tool, cursor: V2, tol: f64) -> PfadVorschau {
+    use jjcad_core::pfad::PfadSchritt;
+    let Some(letzt) = tool.pts.last().copied() else {
+        return PfadVorschau::Leer;
+    };
+    if tool.schritte.last() == Some(&PfadSchritt::ArcPoint) && tool.pts.len() >= 2 {
+        let von = tool.pts[tool.pts.len() - 2];
+        return match Arc::from_3_points(von, letzt, cursor) {
+            Some(arc) => PfadVorschau::Bogen(jjcad_core::pfad::PathSeg::Arc {
+                c: arc.c,
+                r: arc.r,
+                a0: arc.a0,
+                a1: arc.a1,
+            }),
+            // Drei Punkte auf einer Geraden: der Klick legt eine Linie an.
+            None => PfadVorschau::Sehne {
+                von,
+                bis: cursor,
+                bogen: false,
+                schliesst: false,
+            },
+        };
+    }
+    let schliesst = tool.pts.len() >= 2
+        && tool
+            .pts
+            .first()
+            .map(|q| q.dist(cursor) <= tol)
+            .unwrap_or(false);
+    PfadVorschau::Sehne {
+        von: letzt,
+        bis: if schliesst { tool.pts[0] } else { cursor },
+        bogen: tool.bogen && !schliesst,
+        schliesst,
+    }
 }
 
 /// Zeichnet eine Vorschau-Anzeigeliste in der Akzentfarbe der Vorschau.
@@ -3244,44 +3307,45 @@ fn draw_tool_preview(
             // lässt.
             let fertig = jjcad_core::pfad::pfad_aus_punkten(&tool.pts, &tool.schritte);
             paint_pfad(&p, rect, view, &fertig, &stroke);
-            let wartet = tool.schritte.last() == Some(&jjcad_core::pfad::PfadSchritt::ArcPoint);
-            if let Some(start) = last {
-                match tool.pts.last() {
-                    Some(durch) if wartet => {
-                        let pts = match Arc::from_3_points(start, *durch, cursor) {
-                            Some(arc) => arc.flatten(0.3 / view.zoom.max(1e-6)),
-                            None => vec![start, cursor],
-                        };
-                        let screen: Vec<Pos2> = pts.iter().map(|q| w2s(*q)).collect();
-                        p.add(Shape::line(screen, dashed));
-                        label = jjcad_core::i18n::tr("gui.canvas.pfad_bogenende").into();
-                    }
-                    _ if tool.bogen => {
+            let tol = fang_radius_px(app, view.zoom);
+            match pfad_vorschau(&tool, cursor, tol) {
+                PfadVorschau::Leer => {}
+                PfadVorschau::Sehne {
+                    von,
+                    bis,
+                    bogen,
+                    schliesst,
+                } => {
+                    p.line_segment(
+                        [w2s(von), w2s(bis)],
+                        if schliesst { stroke } else { dashed },
+                    );
+                    if schliesst {
+                        label = jjcad_core::i18n::tr("gui.canvas.schliessen").to_string();
+                    } else if bogen {
                         // Noch kein Punkt auf dem Bogen: die Sehne als Hilfe.
-                        p.line_segment([w2s(start), w2s(cursor)], dashed);
                         label = jjcad_core::i18n::tr("gui.canvas.pfad_bogenpunkt").into();
-                    }
-                    _ => {
-                        let tol = fang_radius_px(app, view.zoom);
-                        let schliesst = tool.pts.len() >= 2
-                            && tool
-                                .pts
-                                .first()
-                                .map(|q| q.dist(cursor) <= tol)
-                                .unwrap_or(false);
-                        if schliesst {
-                            p.line_segment([w2s(start), w2s(cursor)], stroke);
-                            label = jjcad_core::i18n::tr("gui.canvas.schliessen").to_string();
-                        } else {
-                            p.line_segment([w2s(start), w2s(cursor)], dashed);
-                            label = format!(
-                                "{} {}",
-                                unit.format_plain(start.dist(cursor), unit.decimals()),
-                                unit.short()
-                            );
-                        }
+                    } else {
+                        label = format!(
+                            "{} {}",
+                            unit.format_plain(von.dist(bis), unit.decimals()),
+                            unit.short()
+                        );
                     }
                 }
+                PfadVorschau::Bogen(seg) => {
+                    // Der Bogen vom Anfang über den Durchgangspunkt zum Zeiger —
+                    // dieselbe Zerlegung wie das eingefügte Stück.
+                    let pts = seg.flatten(0.3 / view.zoom.max(1e-6));
+                    if pts.len() >= 2 {
+                        let screen: Vec<Pos2> = pts.iter().map(|q| w2s(*q)).collect();
+                        p.add(Shape::line(screen, dashed));
+                    }
+                    label = jjcad_core::i18n::tr("gui.canvas.pfad_bogenende").into();
+                }
+            }
+            for q in &tool.pts {
+                p.circle_stroke(w2s(*q), 2.0, Stroke::new(1.0, Palette::vorschau()));
             }
         }
         // Raumstempel: Umriss bis zum Zeiger, keine Füllung — die Fläche des
@@ -4927,6 +4991,7 @@ fn handle_input(
     raw: Option<V2>,
 ) {
     let ctx = ui.ctx();
+
     let view = app.current_view();
     // Solange ein Kontextmenü offen ist, reagiert die Fläche nicht auf Klicks
     if app.menu_open() {
@@ -18741,27 +18806,104 @@ mod tests_pfad {
         assert!(segs[1].start().dist(segs[0].end()) < 1e-6, "Bogen beginnt am Linienende");
     }
 
-    /// Umschalt schaltet je Druck einmal um; gehalten bleibt der Modus stehen.
+    /// **Tab** schaltet je Druck einmal zwischen Linie und Bogen (T0229).
     #[test]
-    fn umschalt_wechselt_einmal_je_druck() {
+    fn tab_wechselt_einmal_je_druck() {
         let mut app = app();
         app.start_tool("draw.path");
-        let frame = |app: &mut App, shift: bool| {
+        let tab = |app: &mut App| {
             let ctx = egui::Context::default();
             let input = egui::RawInput {
-                modifiers: if shift { egui::Modifiers::SHIFT } else { egui::Modifiers::NONE },
+                screen_rect: Some(Rect::from_min_size(Pos2::ZERO, Vec2::new(1500.0, 950.0))),
+                events: vec![egui::Event::Key {
+                    key: egui::Key::Tab,
+                    physical_key: None,
+                    pressed: true,
+                    repeat: false,
+                    modifiers: egui::Modifiers::NONE,
+                }],
                 ..Default::default()
             };
-            let _ = ctx.run(input, |ctx| pfad_umschalt(app, ctx));
+            let _ = ctx.run(input, |ctx| pfad_modustaste(app, ctx));
         };
-        frame(&mut app, true);
-        assert!(app.tool.as_ref().unwrap().bogen, "erster Druck → Bogen");
-        frame(&mut app, true);
-        assert!(app.tool.as_ref().unwrap().bogen, "gehalten schaltet nicht erneut");
-        frame(&mut app, false);
-        assert!(app.tool.as_ref().unwrap().bogen, "loslassen ändert nichts");
-        frame(&mut app, true);
-        assert!(!app.tool.as_ref().unwrap().bogen, "zweiter Druck → Linie");
+        tab(&mut app);
+        assert!(app.tool.as_ref().unwrap().bogen, "erster Tab → Bogen");
+        tab(&mut app);
+        assert!(!app.tool.as_ref().unwrap().bogen, "zweiter Tab → Linie");
+        // Mitten im Bogen (Durchgangspunkt gesetzt) wird nicht umgeschaltet.
+        app.tool.as_mut().unwrap().bogen = true;
+        tool_click(&mut app, V2::new(0.0, 0.0));
+        tool_click(&mut app, V2::new(1000.0, 500.0));
+        tab(&mut app);
+        assert!(app.tool.as_ref().unwrap().bogen, "kein Wechsel im halben Bogen");
+    }
+
+    /// Tab und Enter nacheinander: der Umschalt-Fokus darf das Abschließen
+    /// nicht verschlucken (egui bewegt den Fokus beim Tab).
+    #[test]
+    fn tab_und_enter_schliessen_den_pfad() {
+        let mut app = app();
+        app.start_tool("draw.path");
+        tool_click(&mut app, V2::new(0.0, 0.0));
+        tool_click(&mut app, V2::new(2000.0, 0.0));
+        let ctx = app.ctx.clone();
+        let mut frame = |app: &mut App, key: Option<egui::Key>| {
+            let events = key
+                .map(|key| {
+                    vec![egui::Event::Key {
+                        key,
+                        physical_key: None,
+                        pressed: true,
+                        repeat: false,
+                        modifiers: egui::Modifiers::NONE,
+                    }]
+                })
+                .unwrap_or_default();
+            let input = egui::RawInput {
+                screen_rect: Some(Rect::from_min_size(Pos2::ZERO, Vec2::new(1500.0, 950.0))),
+                events,
+                ..Default::default()
+            };
+            let _ = ctx.run(input, |ctx| app.ui(ctx));
+        };
+        frame(&mut app, Some(egui::Key::Tab));
+        assert!(app.tool.as_ref().unwrap().bogen, "Tab schaltet auf Bogen");
+        frame(&mut app, None);
+        frame(&mut app, None);
+        frame(&mut app, Some(egui::Key::Enter));
+        assert!(app.tool.is_none(), "Enter schließt den Pfad trotz Tab-Fokus");
+        assert_eq!(pfade(&app).len(), 1);
+    }
+
+    /// Die Bogenvorschau beginnt am **vorletzten** Punkt: Anfang, Durchgangs-
+    /// punkt und Zeiger spannen den Bogen. Vorher fielen Anfang und
+    /// Durchgangspunkt zusammen, der Bogen war entartet und nicht zu sehen.
+    #[test]
+    fn bogenvorschau_spannt_anfang_durchgang_und_zeiger() {
+        let mut app = app();
+        app.start_tool("draw.path");
+        tool_click(&mut app, V2::new(0.0, 0.0));
+        app.tool.as_mut().unwrap().bogen = true;
+        tool_click(&mut app, V2::new(1000.0, 0.0));
+        let tool = app.tool.clone().unwrap();
+        // Zeiger oberhalb der beiden Punkte: der Bogen wölbt sich nach oben.
+        match pfad_vorschau(&tool, V2::new(500.0, 500.0), 12.0) {
+            PfadVorschau::Bogen(jjcad_core::pfad::PathSeg::Arc { c, r, .. }) => {
+                assert!((c.x - 500.0).abs() < 1e-6 && (c.y - 0.0).abs() < 1e-6, "Mittelpunkt: {c:?}");
+                assert!((r - 500.0).abs() < 1e-6, "Radius: {r}");
+            }
+            other => panic!("keine Bogenvorschau: {other:?}"),
+        }
+        // Bogen ohne Durchgangspunkt: Sehne als Hinweis.
+        let mut ohne = tool.clone();
+        ohne.schritte = vec![jjcad_core::pfad::PfadSchritt::Start];
+        ohne.pts = vec![V2::new(0.0, 0.0)];
+        match pfad_vorschau(&ohne, V2::new(1000.0, 0.0), 12.0) {
+            PfadVorschau::Sehne { bogen, schliesst, .. } => {
+                assert!(bogen && !schliesst);
+            }
+            other => panic!("keine Sehnenvorschau: {other:?}"),
+        }
     }
 
     /// Enter beendet die Punktfolge wie bei der Polylinie.

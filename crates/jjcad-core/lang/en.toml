@@ -71,7 +71,7 @@ hint = "Click points; clicking the start closes, Enter ends"
 label = "Polyline"
 
 [action.draw.path]
-hint = "Lines and arcs in one chain; Shift switches, clicking the start closes"
+hint = "Lines and arcs in one chain; Tab switches, clicking the start closes"
 label = "Path"
 
 [action.draw.spline]

@@ -676,8 +676,8 @@ Mit dem Nutzer abgestimmt — nicht „verbessern“:
   (`entity_segments`), Bounding-Box und Transformationen laufen über dieselben
   Bausteine wie die Einzelobjekte. Das Werkzeug `draw.path` erzeugt **nur Linien und
   Bögen**: ein Klick setzt das Ende des nächsten Stücks, im Bogenmodus kommt davor ein
-  Punkt auf dem Bogen (`pfad_aus_punkten`), **Umschalt** wechselt zwischen Linie und
-  Bogen (`canvas::pfad_umschalt`, Übergang je Druck), ein Klick auf den Startpunkt
+  Punkt auf dem Bogen (`pfad_aus_punkten`), **Tab** wechselt zwischen Linie und
+  Bogen (`canvas::pfad_modustaste`, je Druck einmal), ein Klick auf den Startpunkt
   schließt, Enter/ESC beendet. `path.connect` (Ribbon „Ändern“ ▸ Geometrie und
   Objektmenü „Verbinden“) verbindet beliebig viele ausgewählte Linien/Bögen/
   Ellipsenbögen/Splines zu einem Pfad — Voraussetzung ist eine lückenlose Kette
