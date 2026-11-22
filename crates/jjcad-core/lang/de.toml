@@ -86,7 +86,7 @@ hint = "Punkte klicken, Klick auf den Startpunkt schließt, Enter beendet"
 label = "Polylinie"
 
 [action.draw.path]
-hint = "Linien und Bögen am Stück; Umschalt wechselt, Klick auf den Startpunkt schließt"
+hint = "Linien und Bögen am Stück; Tab wechselt, Klick auf den Startpunkt schließt"
 label = "Pfad"
 
 [action.draw.parallel]
