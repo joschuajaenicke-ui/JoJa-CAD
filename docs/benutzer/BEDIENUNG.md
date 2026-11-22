@@ -313,16 +313,18 @@ ausgeblendet.
   Rasterart und Rasterfang bleiben in der Kategorie **Raster**.
 - **Hilfslinie beim Eingeben eines Punktes** (T0230): Während ein Punkt gesetzt wird
   (Linie, Wand, Rechteck, Kreis, Bogen, Polylinie, Spline, Maßkette, Treppe … — jedes Werkzeug
-  außer dem Farbeimer), legt ein **Rechtsklick** eine Hilfslinie an: vom zuletzt gesetzten
-  Punkt des Zuges zum Klickpunkt. Beim **ersten** Punkt eines Objekts gibt es noch keinen
-  Bezugspunkt — dann steht sie am Klickpunkt und ihr zweites Ende folgt dem Zeiger. Sie ist
-  eine Strecke wie eine normale Linie: zwei Endpunkte, und der Zeiger rastet auf ihrem
-  Fußpunkt ein (Statusleiste „Hilfslinie“); ein Endpunkt oder Schnittpunkt an derselben Stelle
-  hat Vorrang, `Ortho` und der Polarfang schränken nur die Lage auf ihr ein. Sie lebt nur
-  **während der Eingabe** des Punktes und verschwindet mit dem nächsten Linksklick
-  (durchgezogen in der Fangfarbe, Kreuz am festen Ende, Ring am beweglichen). Ein **zweiter
-  Rechtsklick** nimmt sie weg und beendet bzw. bricht das Werkzeug ab — wie bisher;
-  `Enter` und `Esc` tun dasselbe. Prüfbild: `--demo hilfslinieeingabe`.
+  außer dem Farbeimer), **schaltet ein Rechtsklick die Eingabe einer Hilfslinie ein**: sie läuft
+  vom zuletzt gesetzten Punkt des Zuges aus und schreibt ihre Länge neben den Zeiger. Die Länge
+  wird danach angegeben — mit dem Zeiger und einem **Linksklick**, oder **getippt + `Enter`**
+  (`1`, `1,5`, `2500`). Der Klick setzt dabei **nur die Hilfslinie**, keinen Punkt des Objekts.
+  Danach steht die Strecke wie eine normale Linie in der Zeichnung: zwei Endkreuze, die Länge in
+  der Mitte, der Zeiger rastet auf ihrem Fußpunkt ein (Statusleiste „Hilfslinie“); ein Endpunkt
+  oder Schnittpunkt an derselben Stelle hat Vorrang. Der **Stift springt an ihr Ende** — die
+  nächste Wand beginnt dort und hat damit genau den Abstand der Hilfslinie. Sie bleibt für den
+  Rest des Werkzeugs stehen und verschwindet mit ihm; ein weiterer Rechtsklick nimmt sie weg und
+  beendet bzw. bricht das Werkzeug wie bisher, `Esc` nimmt nur die Eingabe zurück. Ohne
+  Bezugspunkt (erster Punkt eines Objekts) legt der erste Klick den Anfang. Prüfbilder:
+  `--demo hilfslinieeingabe` (Eingabe) und `--demo hilfsliniegesetzt` (stehende Linie).
 - **Winkelhalbierende am Schnittpunkt zweier Linien** (T0150): Der Fang wird **nur** aktiv, wenn
   der feste Punkt der neuen Linie auf dem Schnittpunkt zweier Linien liegt — also im Scheitel
   einer Ecke, Kreuzung oder eines Stoßes (Linien und Wände, letztere mit ihrer Achse). Liegt der

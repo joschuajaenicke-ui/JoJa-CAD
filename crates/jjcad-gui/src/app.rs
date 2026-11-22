@@ -562,33 +562,33 @@ pub enum ToolPhase {
     TextInput,
 }
 
-/// Eine Hilfslinie, die der Nutzer **während der Eingabe** eines Punktes legt
+/// Eine Hilfslinie, die der Nutzer während der Eingabe eines Punktes legt
 /// (T0230).
 ///
-/// Sie lebt nur bis zum nächsten gesetzten Punkt: der Rechtsklick legt sie an,
-/// `canvas::tool_click_at` bzw. `canvas::finish_tool` nimmt sie wieder weg.
-/// Gezeichnet und gefangen wird sie wie eine normale Linie — ihre Strecke hat
-/// zwei Endpunkte, und der Zeiger rastet auf ihrem Fußpunkt ein
-/// (`SnapKind::Tracking`).
+/// Sie entsteht in **zwei Schritten**: der Rechtsklick schaltet die Eingabe ein
+/// (`App::hilfslinie_modus`), der nächste Linksklick oder eine **getippte
+/// Länge** setzt ihren zweiten Endpunkt. Danach steht sie wie eine normale
+/// Linie in der Zeichnung — mit zwei Endpunkten und Fußpunkt-Fang
+/// (`SnapKind::Tracking`) —, bis das Werkzeug endet oder der Nutzer sie mit
+/// einem weiteren Rechtsklick wegnimmt.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Hilfslinie {
-    /// Fester Endpunkt: der Bezugspunkt des laufenden Zuges — gibt es noch
-    /// keinen (erster Punkt eines Objekts), ist es der Klickpunkt selbst.
+    /// Fester Endpunkt: der Bezugspunkt des Zuges beim Anlegen (bzw. der erste
+    /// Klick, wenn es noch keinen gibt).
     pub a: V2,
-    /// Zweiter Endpunkt aus dem Klick; `None` heißt: er folgt dem Zeiger, weil
-    /// ohne Bezugspunkt keine Richtung feststeht.
-    pub b: Option<V2>,
+    /// Zweiter Endpunkt — die Länge ist der Abstand der beiden.
+    pub b: V2,
 }
 
 impl Hilfslinie {
-    /// Die Strecke, sofern beide Endpunkte feststehen.
-    pub fn strecke(&self) -> Option<(V2, V2)> {
-        self.b.map(|b| (self.a, b))
+    /// Die Strecke der Hilfslinie.
+    pub fn strecke(&self) -> (V2, V2) {
+        (self.a, self.b)
     }
 
-    /// Der zweite Endpunkt, notfalls am Zeiger — so wird sie gezeichnet.
-    pub fn ende(&self, zeiger: V2) -> V2 {
-        self.b.unwrap_or(zeiger)
+    /// Länge in mm — die Zahl, die beim Eingeben und an der Linie steht.
+    pub fn laenge(&self) -> f64 {
+        self.a.dist(self.b)
     }
 }
 
@@ -1875,9 +1875,16 @@ pub struct App {
     pub halt: Vec<jjcad_core::snap::HaltPunkt>,
     /// Verweil-Erkennung, die `halt` füllt.
     pub verweil: crate::canvas::VerweilFang,
-    /// Vom Nutzer gelegte Hilfslinie für den nächsten Punkt (T0230). `None` =
-    /// keine; sie verschwindet mit dem gesetzten Punkt von selbst.
+    /// Vom Nutzer gelegte Hilfslinie während der Eingabe (T0230). `None` =
+    /// keine; sie bleibt stehen, bis das Werkzeug endet oder ein weiterer
+    /// Rechtsklick sie wegnimmt.
     pub hilfslinie: Option<Hilfslinie>,
+    /// Läuft die Eingabe einer Hilfslinie? Der Rechtsklick schaltet sie ein,
+    /// der nächste Klick (oder eine getippte Länge + Enter) setzt die Strecke.
+    pub hilfslinie_modus: bool,
+    /// Ankerpunkt der laufenden Eingabe, wenn es noch keinen Bezugspunkt gibt
+    /// (erster Punkt eines Objekts): der erste Klick legt ihn fest.
+    pub hilfslinie_anker: Option<V2>,
     /// Leistungsanzeige (Umschalt+F3): Messwerte je Bild und ihr Verlauf
     pub perf: crate::perf::Perf,
     /// Objekte einer laufenden Mehrfachauswahl, für die das Eigenschaften-Panel
@@ -2131,6 +2138,8 @@ impl App {
             halt: Vec::new(),
             verweil: crate::canvas::VerweilFang::default(),
             hilfslinie: None,
+            hilfslinie_modus: false,
+            hilfslinie_anker: None,
             perf: crate::perf::Perf::default(),
             mehrfach_ziel: Vec::new(),
             sperre: None,
@@ -3870,23 +3879,46 @@ impl App {
                 "copyclip" => self.ui.copy_input = CopyInput::Clipboard,
                 // Prüfhilfe T0021: die erste Wand kopieren und die Einfüge-Vorschau
                 // zeigen — sie steht als Akzentlinie über der Originalwand.
-                // Hilfslinie während der Eingabe (T0230): Linien-Werkzeug mit
-                // gesetztem Anfang, die Hilfslinie steht vom Anfang zum
-                // nächsten Klickpunkt. Der Zeiger steht im Bild darauf.
+                // Hilfslinien-Eingabe (T0230): Linien-Werkzeug, die Eingabe
+                // ist eingeschaltet — die gestrichelte Vorschau läuft vom
+                // letzten Punkt zum Zeiger und schreibt ihre Länge daneben.
                 "hilfslinieeingabe" | "hilfsliniezeichnen" => {
                     self.start_tool("draw.line");
                     let anfang = V2::new(-2000.0, -1000.0);
                     if let Some(t) = self.tool.as_mut() {
                         t.pts.push(anfang);
                     }
-                    self.hilfslinie = Some(Hilfslinie {
-                        a: anfang,
-                        b: Some(V2::new(2000.0, 1000.0)),
-                    });
+                    self.hilfslinie_modus = true;
                     self.started_at = 3.0;
                     let mut v = self.current_view();
                     v.center = V2::new(0.0, 0.0);
                     v.zoom = 0.2;
+                    self.set_view(v);
+                }
+                // Stehende Hilfslinie (T0230): 1-m-Strecke am Wandende, mit
+                // ihren Endkreuzen und der Länge; der Stift steht auf ihrem
+                // Ende, der nächste Klick zeichnet die zweite Wand.
+                "hilfsliniegesetzt" | "hilfslinielinie" => {
+                    self.start_tool("draw.wall");
+                    let anfang = V2::new(-2000.0, -1000.0);
+                    if let Some(t) = self.tool.as_mut() {
+                        t.pts.push(anfang);
+                    }
+                    let _ = self.session_mut().execute(
+                        "draw.wall",
+                        &serde_json::json!({"a": [-2.0, -1.0], "b": [-1.0, -1.0]}),
+                    );
+                    if let Some(t) = self.tool.as_mut() {
+                        t.pts = vec![V2::new(-1000.0, -1000.0)];
+                    }
+                    self.hilfslinie = Some(Hilfslinie {
+                        a: V2::new(-1000.0, -1000.0),
+                        b: V2::new(-1000.0, 0.0),
+                    });
+                    self.started_at = 3.0;
+                    let mut v = self.current_view();
+                    v.center = V2::new(-1000.0, -500.0);
+                    v.zoom = 0.25;
                     self.set_view(v);
                 }
                 "wandvorschau" => {
@@ -5673,6 +5705,8 @@ impl App {
         self.ui.menu = None;
         // T0230: Eine Hilfslinie gehört zu **einem** Lauf des Werkzeugs.
         self.hilfslinie = None;
+        self.hilfslinie_modus = false;
+        self.hilfslinie_anker = None;
         // T0094: Eine andere Funktion beendet das Einfügen. Sonst liefen Vorschau
         // und Werkzeug gleichzeitig — der nächste Klick setzte die Kopie ab,
         // während das Werkzeug auf seinen Punkt wartete.
@@ -5757,6 +5791,14 @@ impl App {
     /// Verworfen wird nur eine unfertige Punktfolge — ein unfertiger erster
     /// Punkt; der harte Abbruch dieser Werkzeuge liegt auf Entf/Backspace.
     fn escape_pressed(&mut self) {
+        // Hilfslinien-Eingabe (T0230): ESC nimmt nur sie zurück, das Werkzeug
+        // läuft weiter — sonst wäre ein versehentlicher Rechtsklick nur noch
+        // über einen Werkzeugabbruch zu lösen.
+        if self.hilfslinie_modus {
+            self.hilfslinie_modus = false;
+            self.hilfslinie_anker = None;
+            return;
+        }
         // Maßketten-Eingabe: **ESC bestätigt** die Eingabe wie Enter (T0154,
         // Turn 5) — die Punkte sind gesetzt, ein Abbruch würde sie
         // wegwerfen. Nur ohne jeden Klick gibt es nichts zu bestätigen, dann
@@ -5869,6 +5911,8 @@ impl App {
 
     pub fn cancel_tool(&mut self) {
         self.hilfslinie = None;
+        self.hilfslinie_modus = false;
+        self.hilfslinie_anker = None;
         if self.tool.is_some() {
             self.tool = None;
             self.mitteilung(jjcad_core::i18n::tr("gui.app.abgebrochen"));

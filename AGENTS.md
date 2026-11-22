@@ -1174,19 +1174,23 @@ Mit dem Nutzer abgestimmt — nicht „verbessern“:
   `cargo test -p jjcad-gui wiederherstellen` und `cargo test -p jjcad-core --lib
   zeichnungen`; Prüfbild `--demo wiederherstellen`.
 
-- **Hilfslinie beim Eingeben eines Punktes (T0230)**: Während ein Punkt ansteht, legt der
-  **Rechtsklick** eine Hilfslinie an (`App::hilfslinie`): vom Bezugspunkt des Zuges (zuletzt
-  gesetzter Punkt) zum Klickpunkt; ohne Bezugspunkt (erster Punkt eines Objekts) steht sie am
-  Klickpunkt und der zweite Endpunkt folgt dem Zeiger (`Hilfslinie { a, b: Option }`). Sie ist
-  eine **Strecke wie eine normale Linie** — Fußpunkt-Fang über `snap::hilfslinien_fuss` (auf die
-  Strecke begrenzt, Statuszeile „Hilfslinie“, `SnapKind::Tracking`), ein echter Objektpunkt
-  schlägt sie, `Ortho`/Polar rechnen den Fußpunkt vom gefangenen Punkt aus. Sie lebt nur bis zum
-  nächsten gesetzten Punkt (`tool_click_at`, `finish_tool`, `start_tool`, `cancel_tool` leeren
-  sie) und wird durchgezogen in der Fangfarbe gezeichnet (`canvas::draw_hilfslinie`, Kreuz am
-  festen Ende). Ein **zweiter** Rechtsklick nimmt sie weg und beendet bzw. bricht das Werkzeug
-  wie bisher — so bleibt „Rechtsklick beendet die Polylinie“ erhalten. Prüfweg:
-  `cargo test -p jjcad-core --test hilfslinie` und `cargo test -p jjcad-gui tests_hilfslinie`;
-  Prüfbild `--demo hilfslinieeingabe`.
+- **Hilfslinie beim Eingeben eines Punktes (T0230)**: Der **Rechtsklick schaltet die
+  Eingabe ein** (`App::hilfslinie_modus`), er legt noch keine Linie an. Die Länge kommt danach:
+  Linksklick (`canvas::hilfslinie_setzen`) oder **getippte Länge + Enter** (Zweig in
+  `handle_input` neben der Tippeingabe). In der Eingabe setzt der Klick **keinen** Punkt des
+  Werkzeugs. Die fertige Strecke (`App::hilfslinie`) steht bis zum Werkzeugende, fängt wie eine
+  normale Linie (`snap::hilfslinien_fuss`, auf die Strecke begrenzt, Statuszeile „Hilfslinie“,
+  `SnapKind::Tracking`; echte Objektpunkte haben Vorrang, Ortho/Polar rechnen den Fußpunkt vom
+  gefangenen Punkt aus) und **setzt den Stift an ihr Ende** (`hilfslinie_stehen`): die nächste
+  Wand beginnt dort und hat den Abstand der Hilfslinie. Gezeichnet in der Fangfarbe mit Kreuzen
+  an beiden Enden und der Länge (`canvas::draw_hilfslinie`); während der Eingabe gestrichelt mit
+  Länge am Zeiger, und die Werkzeugvorschau ruht. Ohne Bezugspunkt legt der erste Klick den
+  Anker. `Esc` nimmt nur die Eingabe zurück, ein Rechtsklick bei stehender Linie nimmt sie weg
+  und beendet bzw. bricht das Werkzeug wie bisher. Prüfweg: `cargo test -p jjcad-core --test
+  hilfslinie` und `cargo test -p jjcad-gui tests_hilfslinie` (der Test
+  `getippte_laenge_setzt_die_hilfslinie_fuer_die_zweite_wand` fährt den Ablauf aus dem Ticket:
+  1-m-Wand, Rechtsklick, „1“ + Enter, zweite Wand — Abstand 1000 mm); Prüfbilder
+  `--demo hilfslinieeingabe` und `--demo hilfsliniegesetzt`.
 
 ## Zahlenfelder: Grenzen und Zuggeschwindigkeit (verbindlich)
 

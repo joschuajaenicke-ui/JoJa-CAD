@@ -60,7 +60,7 @@ Steht rechts „nicht", dann ist das Wort im Projekt verpönt (auch in der Oberf
 | **Polarfang** | Fang auf feste Winkel (45°-Schritte, Winkel-Toleranz 6°); der Fangbereich ist ein **Band** um den Strahl — seitlich höchstens der Fangradius, nicht ein mit dem Abstand wachsender Kegel | Winkelraster, Ortho (das ist etwas anderes) |
 | **Erweiterter Punktfang** | Bleibt der Zeiger kurz auf einem Fangpunkt stehen, wird dieser gehalten und bekommt zwei Hilfslinien; auf ihnen fängt der nächste Punkt | Punktverfolgung, Tracking, OTRACK |
 | **Hilfslinie (Punktfang)** | Eine der beiden Linien des erweiterten Punktfangs — **nicht** die Winkelhalbierende und nicht der Layer „Hilfslinien" | Fanglinie, Verfolgungslinie |
-| **Hilfslinie (Eingabe)** | Eine Strecke, die der **Rechtsklick** während der Eingabe eines Punktes legt; sie fängt wie eine normale Linie und verschwindet mit dem gesetzten Punkt (`App::hilfslinie`) | Konstruktionslinie, Hilfslinie selbst gezeichnet |
+| **Hilfslinie (Eingabe)** | Eine Strecke, die während der Eingabe eines Punktes entsteht: der **Rechtsklick** schaltet die Eingabe ein, die Länge kommt per Klick oder getippt + `Enter`; sie fängt wie eine normale Linie, setzt den Stift an ihr Ende und verschwindet mit dem Werkzeug (`App::hilfslinie`) | Konstruktionslinie, Abstandslinie |
 | **Ortho** | Sperre auf waagerecht/senkrecht | — |
 | **Raster** | Zeichenraster; der Chip schaltet Anzeige **und** Rasterfang | Gitter |
 
