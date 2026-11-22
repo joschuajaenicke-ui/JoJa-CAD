@@ -382,8 +382,10 @@ Mit dem Nutzer abgestimmt — nicht „verbessern“:
   arbeitet; der Raum des Aufrufers wird danach wiederhergestellt. Prüfweg:
   `cargo test -p jjcad-core --test block_loeschen` und
   `cargo test -p jjcad-gui tests_block_loeschen`; Prüfbild `--demo blockloeschen`.
-- **Einfügen** (Block/Zwischenablage): Vorschau am Zeiger, `R` dreht,
-  `S` spiegelt, Klick bestätigt. Ein **Block** steht mit seinem **Basispunkt** am
+- **Einfügen** (Block/Zwischenablage): Vorschau am Zeiger, die **Funktionen**
+  „Drehen“ (`modify.rotate`) und „Spiegeln“ (`modify.mirror`) drehen bzw.
+  spiegeln sie — über **jeden** Startweg (Taste, Ribbon, Hotbar, Panel; T0237),
+  Klick bestätigt. Ein **Block** steht mit seinem **Basispunkt** am
   Mauszeiger (T0221, `ghost::geometry` übersetzt nur noch um `g.pos`) — Vorschau und
   eingesetzte Instanz liegen deckungsgleich; gedreht wird um diesen Punkt. Beim Einfügen aus der Zwischenablage entscheidet
   Einstellungen → Bedienung → „Drehpunkt" (`prefs.paste_pivot`), welcher Punkt am
