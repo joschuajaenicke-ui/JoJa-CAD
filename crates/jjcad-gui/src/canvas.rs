@@ -2649,7 +2649,7 @@ mod tests_fangmarke {
             entities: Vec::new(),
             icon: None,
             base: V2::ZERO,
-            annotative: false,
+            einheit: BlockEinheit::Millimeter,
         });
         assert!(app.oeffne_block_editor("prj:probe"), "Blockeditor öffnet nicht");
         assert!(app.doc().in_block_space());
@@ -4520,7 +4520,7 @@ fn handle_navigation(app: &mut App, ui: &mut Ui, resp: &Response, rect: Rect, vi
             let pointer = ctx.pointer_hover_pos().unwrap_or(rect.center());
             let before = screen_to_world(rect, view, pointer);
             let mut v = view;
-            v.zoom = (v.zoom * factor).clamp(1e-5, 80.0);
+            v.zoom = (v.zoom * factor).clamp(1e-5, app.zoom_max());
             let after = screen_to_world(rect, v, pointer);
             v.center += before - after;
             app.set_view(v);

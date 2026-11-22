@@ -6,7 +6,7 @@
 //! (wie ein Endpunkt, mit Vorrang vor dem Raster), und nur dort.
 
 use jjcad_core::geom::v;
-use jjcad_core::model::{BlockDef, BlockSource, Document};
+use jjcad_core::model::{BlockDef, BlockEinheit, BlockSource, Document};
 use jjcad_core::snap::{self, SnapKind};
 
 /// Zeichnung mit einem bearbeitbaren Block im Blockeditor.
@@ -21,7 +21,7 @@ fn doc_im_blockeditor() -> Document {
         entities: Vec::new(),
         icon: None,
         base: v(0.0, 0.0),
-        annotative: false,
+        einheit: BlockEinheit::Millimeter,
     });
     assert!(doc.set_block_space(Some("prj:basispunkt")), "Blockeditor öffnet nicht");
     doc

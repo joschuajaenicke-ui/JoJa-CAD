@@ -210,11 +210,16 @@ schneidet die Öffnung aus der Wand und zeichnet die Laibungen.
   IDs automatisch umbenannt.
 - Blockinhalte liegen im **Blockkoordinatensystem**; die Instanz transformiert sie
   (Position, Rotation, Skalierung, Spiegelung).
-- `annotative: true` (T0210) heißt: die Blockgeometrie ist in **Papier-Millimetern**
-  angegeben und wird mit dem Beschriftungsmaßstab vervielfacht — der Block bleibt auf
-  jedem Maßstab gleich groß, wie die Begrenzungssymbole der Bemaßung. Fehlt das Feld
-  (ältere Dateien), gilt der Block maßstäblich (1:1). Die Punktsymbole der
-  Systembibliothek (`sys:pkt-*`) tragen die Eigenschaft.
+- `einheit` (T0231) ist die **Maßeinheit der Blockgeometrie**: `"Neutral"` (Vorgabe
+  für ältere Blöcke ohne Angabe ist `"Millimeter"`; `Neutral` nur, wo die Geometrie
+  ein Symbol ist) — dann wächst der Block mit dem **Zeichnungsmaßstab**, eine
+  Blockeinheit ist ein Papier-Millimeter, der Block bleibt auf jedem Maßstab gleich
+  groß wie die Begrenzungssymbole der Bemaßung; oder `"Millimeter"`/`"Zentimeter"`/
+  `"Meter"` — dann gilt die Geometrie maßstäblich (1 Einheit = 1/10/1000 mm). Die
+  Punktsymbole der Systembibliothek (`sys:pkt-*`) sind **neutral** und auf
+  Einheitsgröße 1 normiert. Ältere Dateien tragen statt `einheit` ein Häkchen
+  `annotative: true` (⟶ `Neutral`); es wird beim Laden umgeschrieben und nicht mehr
+  geschrieben.
 
 ### Eigene Blöcke: `<blocks>/<slug>.jjblk`
 

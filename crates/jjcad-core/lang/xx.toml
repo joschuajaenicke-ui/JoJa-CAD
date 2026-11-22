@@ -771,6 +771,12 @@
 # middle = "Mitte"
 # bottom = "Unten"
 #
+[ui.blockeinheit]
+# neutral = "ohne Einheit"
+# mm = "Millimeter"
+# cm = "Zentimeter"
+# m = "Meter"
+#
 [ui.blocksource]
 # system = "System"
 # project = "Projekt"
@@ -1293,9 +1299,8 @@
 #
 [gui.dialogs]
 # ebene_taste_x = "Ebene {wert1} — Klick schaltet sie ein und aus"
-# massstab = "Maßstab"
-# mit_massstab_skalieren = "Mit Maßstab skalieren"
-# mit_massstab_skalieren_tip = "Blockgeometrie in Beschriftungsgröße — das Symbol bleibt auf jedem Maßstab gleich groß, wie die Begrenzungssymbole der Bemaßung"
+# einheit = "Einheit"
+# einheit_tip = "Maßeinheit der Blockgeometrie: „ohne Einheit“ skaliert mit dem Zeichnungsmaßstab (Symbol fester Papiergröße), Millimeter/Zentimeter/Meter gelten maßstäblich"
 # block_eigenschaften = "Block-Eigenschaften"
 # block_loeschen = "Block löschen"
 # block_x_unwiderruflich_loeschen = "Block '{name}' unwiderruflich löschen?"
@@ -1763,8 +1768,7 @@
 #
 [gui.props]
 # blockname = "Blockname"
-# mit_zeichnung = "mit Zeichnung"
-# eins_zu_eins = "1:1"
+# einheit = "Einheit"
 # punktsymbol = "Symbol"
 # punktsymbol_ende = "Ende"
 # kein_symbol = "Kein Symbol"

@@ -6,7 +6,7 @@ use crate::widgets;
 use egui::{Align, Color32, FontId, Layout, Pos2, Rect, RichText, Rounding, Sense, Stroke, Ui, Vec2};
 use jjcad_core::actions;
 use jjcad_core::geom::Affine;
-use jjcad_core::model::BlockDef;
+use jjcad_core::model::{BlockDef, BlockEinheit};
 use jjcad_core::render::{self, DisplayList, Shape as PShape};
 
 pub fn show(app: &mut App, ctx: &egui::Context) {
@@ -800,7 +800,7 @@ mod tests_bloecke {
             entities: Vec::new(),
             icon: None,
             base: V2::ZERO,
-            annotative: false,
+            einheit: BlockEinheit::Millimeter,
         }
     }
 

@@ -8,7 +8,7 @@
 //! Ecke der gedrehten Auswahl (T0070).
 
 use jjcad_core::geom::{Affine, BBox, Vec2 as V2};
-use jjcad_core::model::{Document, Entity, EntityKind};
+use jjcad_core::model::{BlockEinheit, Document, Entity, EntityKind};
 use jjcad_core::persist::PastePivot;
 use jjcad_core::render::{self, Prim, RenderCtx};
 
@@ -158,12 +158,10 @@ pub fn geometry(doc: &Document, g: &Ghost, clip: &Clipboard) -> GhostGeo {
 
     if let Some(bid) = &g.block {
         if let Some(def) = doc.block(bid) {
-            // Block mit „mit Maßstab skalieren" (T0210): die Vorschau zeigt
-            // dieselbe Größe, die der Klick einsetzt.
-            if def.annotative {
-                let k = doc.settings.annotation_scale;
-                local = Affine::scale(k, k) * local;
-            }
+            // Maßeinheit des Blocks (T0231): die Vorschau zeigt dieselbe Größe,
+            // die der Klick einsetzt — neutral wächst mit dem Maßstab.
+            let k = def.faktor(doc.settings.annotation_scale);
+            local = Affine::scale(k, k) * local;
             // Der **Basispunkt** des Blocks steht am Mauszeiger (T0221): die
             // Blockgeometrie liegt basispunktbezogen (Ursprung = Basispunkt),
             // also ist `g.pos` selbst der Ort der Instanz — derselbe Punkt, den
@@ -617,7 +615,7 @@ mod tests_blockbasispunkt {
             entities: vec![e],
             icon: None,
             base: V2::ZERO,
-            annotative: false,
+            einheit: BlockEinheit::Millimeter,
         });
         (doc, V2::new(5000.0, 4000.0))
     }

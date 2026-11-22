@@ -7,7 +7,7 @@ use crate::widgets;
 use egui::{Align, Color32, FontId, Layout, Pos2, Rect, RichText, Rounding, Sense, Stroke, Ui, Vec2};
 use jjcad_core::actions;
 use jjcad_core::geom::Vec2 as V2;
-use jjcad_core::model::Id;
+use jjcad_core::model::{BlockEinheit, Id};
 use jjcad_core::persist::{
     fest_belegt, Design, DragMode, Farbakzent, Fensterrahmen, Kombination, PastePivot,
     Textaufloesung, Zeichenfarbe,
@@ -1247,21 +1247,33 @@ pub fn show(app: &mut App, ctx: &egui::Context) {
                     }
                 });
             });
-            ui.add_space(8.0);
-            // T0210: Blöcke können mit dem Zeichnungsmaßstab skalieren — dann
-            // liegt die Geometrie in Beschriftungsgröße und bleibt auf jedem
-            // Maßstab gleich groß (wie die Begrenzungssymbole der Bemaßung).
-            widgets::field_row(
+            ui.add_space(4.0);
+            // T0231: Maßeinheit der Blockgeometrie — „ohne Einheit“ skaliert
+            // mit dem Zeichnungsmaßstab, mm/cm/m gelten maßstäblich.
+            widgets::field_row_tip(
                 ui,
-                jjcad_core::i18n::tr("gui.dialogs.massstab"),
+                jjcad_core::i18n::tr("gui.dialogs.einheit"),
+                jjcad_core::i18n::tr("gui.dialogs.einheit_tip"),
                 |ui| {
-                    ui.checkbox(
-                        &mut wahl.annotative,
-                        jjcad_core::i18n::tr("gui.dialogs.mit_massstab_skalieren"),
-                    )
-                    .on_hover_text(jjcad_core::i18n::tr(
-                        "gui.dialogs.mit_massstab_skalieren_tip",
-                    ));
+                    let gewaehlt = panels::dropdown(
+                        ui,
+                        "block_einheit",
+                        wahl.einheit.text(),
+                        None,
+                        |ui| {
+                            ui.set_min_width(200.0);
+                            let mut out = None;
+                            for e in jjcad_core::model::BlockEinheit::ALL {
+                                if ui.selectable_label(e == wahl.einheit, e.text()).clicked() {
+                                    out = Some(e);
+                                }
+                            }
+                            out
+                        },
+                    );
+                    if let Some(e) = gewaehlt {
+                        wahl.einheit = e;
+                    }
                 },
             );
             ui.add_space(10.0);
@@ -9020,7 +9032,7 @@ mod tests_block_loeschen {
             )],
             icon: None,
             base: V2::ZERO,
-            annotative: false,
+            einheit: BlockEinheit::Millimeter,
         });
         for i in 0..instanzen {
             app.session_mut()
@@ -9170,7 +9182,7 @@ mod tests_block_loeschen {
             entities: Vec::new(),
             icon: None,
             base: V2::ZERO,
-            annotative: true,
+            einheit: BlockEinheit::Neutral,
         });
         assert!(!app.block_loeschen_anfragen("sys:pfeil"));
         assert!(app.ui.block_delete.is_none(), "keine Rückfrage");

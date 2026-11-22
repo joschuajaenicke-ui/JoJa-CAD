@@ -1,7 +1,7 @@
 //! T0128 — eigene Blöcke liegen als Datei in `<blocks>/` und kommen beim Start
 //! wieder. Eine Datei je Block, das Verzeichnis ist die Wahrheit.
 
-use jjcad_core::model::{BlockDef, BlockSource, Entity, EntityKind};
+use jjcad_core::model::{BlockDef, BlockEinheit, BlockSource, Entity, EntityKind};
 use jjcad_core::session::Session;
 use serde_json::json;
 use std::path::PathBuf;
@@ -273,7 +273,7 @@ fn kopie_eines_systemblocks_landet_als_benutzerblock() {
         entities: Vec::new(),
         icon: None,
         base: jjcad_core::geom::Vec2::ZERO,
-        annotative: true,
+        einheit: BlockEinheit::Neutral,
     };
     let mut e = Entity::new(1, s.doc.current_layer, EntityKind::Line {
         a: jjcad_core::geom::Vec2::new(0.0, 0.0),
@@ -303,7 +303,11 @@ fn kopie_eines_systemblocks_landet_als_benutzerblock() {
     assert_eq!(kopie.source, BlockSource::User);
     assert_eq!(kopie.name, "Pfeil (Kopie)");
     assert_eq!(kopie.category, "Punkt Symbole", "Gruppe kommt mit");
-    assert!(kopie.annotative, "Maßstabsregel kommt mit");
+    assert_eq!(
+        kopie.einheit,
+        BlockEinheit::Neutral,
+        "die Maßeinheit kommt mit"
+    );
     assert_eq!(kopie.entities.len(), 1, "Geometrie kommt mit");
     assert_eq!(kopie.base, jjcad_core::geom::Vec2::ZERO);
 
