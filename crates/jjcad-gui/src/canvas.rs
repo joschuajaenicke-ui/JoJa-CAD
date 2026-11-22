@@ -5068,13 +5068,30 @@ fn handle_input(
                             tool_click(app, V2::new(x, y));
                         }
                     }
+                    app.ui.typed.clear();
                 } else if let Some(dist) = jjcad_core::units::parse_length(&typed, app.unit()) {
-                    let dir = (w - last).normalized();
-                    if dir.len() > 0.0 {
-                        tool_click(app, last + dir * dist);
+                    // Richtung des Zeigers. Steht er genau auf dem letzten Punkt
+                    // — beim Tippen auf dem Ziffernblock wird die Maus nicht
+                    // bewegt —, gilt die Richtung der letzten Strecke (T0236).
+                    // Ohne sie wurde die getippte Länge bisher still verworfen;
+                    // das sah aus, als hätte `Enter` nichts getan.
+                    let mut dir = (w - last).normalized();
+                    if dir.len() == 0.0 {
+                        dir = app.letzte_richtung.unwrap_or(V2::ZERO);
                     }
+                    if dir.len() > 0.0 {
+                        app.letzte_richtung = Some(dir);
+                        tool_click(app, last + dir * dist);
+                        app.ui.typed.clear();
+                    } else {
+                        // Auch die letzte Strecke fehlt (allererste Wand): die
+                        // Eingabe bleibt stehen und sagt, was fehlt — still zu
+                        // verwerfen wäre eine Falle.
+                        app.toast(jjcad_core::i18n::tr("gui.canvas.laenge_richtung_fehlt"));
+                    }
+                } else {
+                    app.ui.typed.clear();
                 }
-                app.ui.typed.clear();
             }
         }
         if ctx.input(|i| i.key_pressed(egui::Key::Escape)) {
@@ -7197,6 +7214,15 @@ fn tool_click_at(app: &mut App, w: V2, raw: V2) {
     let Some(mut tool) = app.tool.clone() else { return };
     // T0230: Mit dem gesetzten Punkt hat die Hilfslinie ihren Zweck erfüllt.
     app.hilfslinie = None;
+    // Richtung der letzten Strecke merken (T0236): eine getippte Länge ohne
+    // Zeigerrichtung (Zeiger genau auf dem letzten Punkt) zeichnet in dieser
+    // Richtung weiter — so, wie ein CAD-Programm die letzte Richtung behält.
+    if let Some(letzte) = tool.pts.last().copied() {
+        let d = (w - letzte).normalized();
+        if d.len() > 0.0 {
+            app.letzte_richtung = Some(d);
+        }
+    }
     let unit = app.unit();
     let ax = |p: V2| [unit.from_mm(p.x), unit.from_mm(p.y)];
 
@@ -18955,6 +18981,136 @@ mod tests_hilfslinie {
             app.snap_label.as_deref(),
             Some("Endpunkt"),
             "der Endpunkt muss Vorrang haben"
+        );
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Getippte Länge ohne Zeigerrichtung (T0236)
+// ---------------------------------------------------------------------------
+
+#[cfg(test)]
+mod tests_laengeneingabe {
+    //! T0236: Eine getippte Länge bestätigt `Enter` auch dann, wenn der Zeiger
+    //! keine Richtung hergibt.
+    //!
+    //! Wer den Abstand auf dem Ziffernblock tippt, bewegt die Maus nicht: der
+    //! Zeiger steht noch genau auf dem zuletzt gesetzten Punkt (beim Fangen
+    //! sogar exakt darauf). Dann war die Richtung null und die Eingabe wurde
+    //! **still verworfen** — es sah aus, als hätte `Enter` nichts getan. Jetzt
+    //! gilt die Richtung der letzten Strecke; fehlt auch die (allererste Wand),
+    //! bleibt die Eingabe mit einem Hinweis stehen, statt zu verschwinden.
+    //!
+    //! Geprüft wird über die volle Oberfläche (`app.ui`, echter Tastendruck) und
+    //! an den Wänden im Dokument, nie an der Vorschau.
+
+    use super::*;
+
+    fn app() -> App {
+        App::with_ctx(egui::Context::default())
+    }
+
+    fn frame(app: &mut App, events: Vec<egui::Event>) {
+        let ctx = app.ctx.clone();
+        let input = egui::RawInput {
+            screen_rect: Some(Rect::from_min_size(Pos2::ZERO, egui::vec2(1500.0, 950.0))),
+            events,
+            ..Default::default()
+        };
+        let _ = ctx.run(input, |ctx| app.ui(ctx));
+    }
+
+    fn enter() -> egui::Event {
+        egui::Event::Key {
+            key: egui::Key::Enter,
+            physical_key: None,
+            pressed: true,
+            repeat: false,
+            modifiers: egui::Modifiers::NONE,
+        }
+    }
+
+    /// Wände als (Anfang, Ende).
+    fn waende(app: &App) -> Vec<(V2, V2)> {
+        app.doc()
+            .entities
+            .iter()
+            .filter_map(|e| match &e.kind {
+                EntityKind::Wall { a, b, .. } => Some((*a, *b)),
+                _ => None,
+            })
+            .collect()
+    }
+
+    /// Zwei Klicks zeichnen eine Wand nach +X (0,0) → (2000,0); das Werkzeug
+    /// steht danach mit seinem letzten Punkt auf (2000,0).
+    fn erste_wand(app: &mut App) {
+        app.start_tool("draw.wall");
+        tool_click(app, V2::new(0.0, 0.0));
+        tool_click(app, V2::new(2000.0, 0.0));
+        assert_eq!(waende(app).len(), 1, "erste Wand aus zwei Klicks");
+    }
+
+    /// Zeiger genau auf den letzten Punkt stellen und `Enter` drücken — der
+    /// Abstand steht vorher im Tippepuffer.
+    fn enter_auf_dem_letzten_punkt(app: &mut App, letzter: V2) {
+        frame(app, Vec::new()); // Fläche und Ansicht stehen erst nach einem Bild
+        let pos = world_to_screen(app.ui.last_canvas, app.current_view(), letzter);
+        frame(app, vec![egui::Event::PointerMoved(pos), enter()]);
+    }
+
+    #[test]
+    fn getippte_laenge_nimmt_die_richtung_der_letzten_strecke() {
+        let mut app = app();
+        erste_wand(&mut app);
+        // 1 (Meter — Eingabeeinheit der Zeichnung) = 1000 mm
+        app.ui.typed = "1".into();
+        enter_auf_dem_letzten_punkt(&mut app, V2::new(2000.0, 0.0));
+
+        let w = waende(&app);
+        assert_eq!(w.len(), 2, "die getippte Länge setzt die zweite Wand");
+        let (a, b) = w[1];
+        assert!(
+            a.dist(V2::new(2000.0, 0.0)) < 0.5 && b.dist(V2::new(3000.0, 0.0)) < 0.5,
+            "zweite Wand in Richtung der ersten, 1 m lang: {a:?} → {b:?}"
+        );
+        assert!(app.ui.typed.is_empty(), "der Tippepuffer ist geleert");
+    }
+
+    #[test]
+    fn krumme_richtung_bleibt_erhalten() {
+        let mut app = app();
+        app.start_tool("draw.wall");
+        tool_click(&mut app, V2::new(0.0, 0.0));
+        tool_click(&mut app, V2::new(3000.0, 4000.0));
+        app.ui.typed = "5".into();
+        enter_auf_dem_letzten_punkt(&mut app, V2::new(3000.0, 4000.0));
+
+        let w = waende(&app);
+        assert_eq!(w.len(), 2);
+        let (_, b) = w[1];
+        assert!(
+            b.dist(V2::new(6000.0, 8000.0)) < 1.0,
+            "3-4-5-Richtung, 5 m lang: {b:?}"
+        );
+    }
+
+    /// Ohne jede bisherige Strecke gibt es keine Richtung: die Eingabe bleibt
+    /// stehen und sagt es, statt still zu verschwinden.
+    #[test]
+    fn ohne_richtung_bleibt_die_eingabe_stehen() {
+        let mut app = app();
+        app.start_tool("draw.wall");
+        tool_click(&mut app, V2::new(0.0, 0.0)); // erster Punkt, keine Strecke
+        app.ui.typed = "1".into();
+        enter_auf_dem_letzten_punkt(&mut app, V2::new(0.0, 0.0));
+
+        assert!(waende(&app).is_empty(), "ohne Richtung entsteht keine Wand");
+        assert_eq!(app.ui.typed, "1", "die Eingabe bleibt stehen");
+        let texte: Vec<String> = app.chat.nachrichten.iter().map(|n| n.text.clone()).collect();
+        assert!(
+            texte.iter().any(|t| t.contains("Zeigerrichtung")),
+            "der Hinweis nennt die fehlende Richtung: {texte:?}"
         );
     }
 }

@@ -90,6 +90,10 @@ die **Vorgabe** ihrer Ebene und lassen sich wie jede andere Taste ändern.
    weiter, der Dauerlauf fährt 720 px/s (T0146, 50 % mehr als vorher).
 7. **Länge tippen**: nach dem ersten Klick Ziffern eingeben, `Enter` übernimmt den Abstand —
    oder `x;y` für absolute Koordinaten (Semikolon trennt, Komma ist Dezimalzeichen: `2,5;3,0`).
+   `Enter` gilt auf dem Hauptblock und auf dem Ziffernblock. Steht der Zeiger dabei genau auf
+   dem zuletzt gesetzten Punkt (wer auf dem Ziffernblock tippt, bewegt die Maus nicht), läuft
+   der Abstand in der **Richtung der letzten Strecke** weiter; gibt es noch keine, bleibt die
+   Eingabe stehen und die Zeichenfläche meldet „Länge · Zeigerrichtung fehlt".
 8. **Auswählen**: Klick wählt ein Objekt, `Umschalt`+Klick ergänzt. Ziehen von links nach rechts
    wählt vollständig umschlossene Objekte (Fenster), von rechts nach links auch geschnittene
    (Querfenster). `Strg+C` / `Strg+X` / `Strg+V` kopieren, schneiden aus und fügen 20 mm versetzt ein.
