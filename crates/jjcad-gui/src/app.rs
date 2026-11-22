@@ -20129,6 +20129,14 @@ mod tests_block_kopieren {
     fn app_mit_systemblock(dir: &std::path::Path) -> App {
         let mut app = App::with_ctx(egui::Context::default());
         app.prefs.blocks_pfad = dir.to_string_lossy().to_string();
+        // `App::with_ctx` hängt die **echte** Benutzerbibliothek des Rechners
+        // ein. Liegt dort schon eine „Pfeil (Kopie)“, vergäbe `block.copy`
+        // „(Kopie 2)“ und der Test hinge an der Bibliothek des Nutzers
+        // (gesehen: mitten im Merge-Lauf kopiert). Kopien dieses Namens
+        // deshalb vorher aus der Zeichnung nehmen — der Test legt sie selbst an.
+        app.doc_mut()
+            .blocks
+            .retain(|b| !b.name.starts_with("Pfeil (Kopie"));
         let mut e = Entity::new(
             1,
             app.doc().current_layer,
