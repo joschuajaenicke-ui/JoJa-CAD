@@ -3895,6 +3895,27 @@ impl App {
                     v.zoom = 0.2;
                     self.set_view(v);
                 }
+                // Abstand zu einer bestehenden Wand (T0230, Turn 5): die
+                // Wand-Funktion läuft, die Hilfslinie steht 1 m **senkrecht**
+                // auf der bestehenden Wand — ihr Ende ist der Punkt, an dem
+                // die neue Wand ansetzt.
+                "hilfslinieabstand" | "hilfslinienabstand" => {
+                    let _ = self.session_mut().execute(
+                        "draw.wall",
+                        // `draw.wall` nimmt die Eingabeeinheit (Meter): 0,24
+                        // sind 240 mm Dicke.
+                        &serde_json::json!({"a": [-2.0, -1.0], "b": [1.0, -1.0], "thickness": 0.24}),
+                    );
+                    self.start_tool("draw.wall");
+                    let anker = V2::new(-500.0, -1000.0);
+                    let ende = V2::new(-500.0, 0.0);
+                    self.hilfslinie = Some(Hilfslinie { a: anker, b: ende });
+                    self.started_at = 3.0;
+                    let mut v = self.current_view();
+                    v.center = V2::new(-500.0, -500.0);
+                    v.zoom = 0.35;
+                    self.set_view(v);
+                }
                 // Stehende Hilfslinie (T0230): 1-m-Strecke am Wandende, mit
                 // ihren Endkreuzen und der Länge; der Stift steht auf ihrem
                 // Ende, der nächste Klick zeichnet die zweite Wand.
@@ -7655,7 +7676,11 @@ impl App {
             // Ziffer → Slot **der gehaltenen Ebene** (T0215): mit Strg liegt
             // eine eigene Hotbar auf den Ziffern. `hotbar::taste_slot` ist die
             // eine Zuordnung („0" ist der letzte Slot).
-            let tool_waiting = self.tool.as_ref().map(|t| !t.pts.is_empty()).unwrap_or(false);
+            // Eine getippte Länge gehört dem Werkzeug **oder** der
+            // Hilfslinien-Eingabe (T0230): dort dürfen die Ziffern keine
+            // Funktion aus der Hotbar starten.
+            let tool_waiting = self.tool.as_ref().map(|t| !t.pts.is_empty()).unwrap_or(false)
+                || self.hilfslinie_modus;
             let slots = self.prefs.slots_fuer(lage);
             for (key, label) in [
                 (egui::Key::Num1, "1"),
@@ -7685,7 +7710,10 @@ impl App {
                         run = Some("edit.repeat".into());
                     }
                 }
-                if ctx.input(|i| i.key_pressed(egui::Key::Enter)) && !tool_waiting {
+                if ctx.input(|i| i.key_pressed(egui::Key::Enter))
+                    && !tool_waiting
+                    && !self.hilfslinie_modus
+                {
                     self.tool_enter();
                 }
                 if ctx.input(|i| i.key_pressed(egui::Key::Delete) || i.key_pressed(egui::Key::Backspace)) {
