@@ -4477,36 +4477,32 @@ pub fn viewport(app: &mut App, ui: &mut Ui, ziel: Ziel) {
         })
         .collect();
     let mut wahl: Option<Vec<Id>> = None;
-    egui::ScrollArea::vertical()
-        .id_salt("panel_vp_layer")
-        .max_height(150.0)
-        .auto_shrink([false, true])
-        .show(ui, |ui| {
-            for (plan_name, layer) in &zeilen {
-                if layer.is_empty() {
-                    continue;
-                }
-                let plan_layer: Vec<Id> = layer.iter().map(|(id, _)| *id).collect();
-                let mut an = plan_layer.iter().all(|id| gewaehlt.contains(id));
-                let antwort = ui.add_enabled(
-                    !gesperrt,
-                    egui::Checkbox::new(&mut an, egui::RichText::new(plan_name).strong()),
-                );
+    // Keine eigene Scrollfläche: das Panel scrollt bereits, zwei ineinander
+    // verschachtelte Radflächen wären eine Falle (T0222).
+    for (plan_name, layer) in &zeilen {
+        if layer.is_empty() {
+            continue;
+        }
+        let plan_layer: Vec<Id> = layer.iter().map(|(id, _)| *id).collect();
+        let mut an = plan_layer.iter().all(|id| gewaehlt.contains(id));
+        let antwort = ui.add_enabled(
+            !gesperrt,
+            egui::Checkbox::new(&mut an, egui::RichText::new(plan_name).strong()),
+        );
+        if antwort.changed() {
+            wahl = Some(plan_layer_umschalten(&gewaehlt, &plan_layer));
+        }
+        ui.indent(("vp_layer", plan_name.as_str()), |ui| {
+            for (id, name) in layer {
+                let mut an = gewaehlt.contains(id);
+                let antwort =
+                    ui.add_enabled(!gesperrt, egui::Checkbox::new(&mut an, name.as_str()));
                 if antwort.changed() {
-                    wahl = Some(plan_layer_umschalten(&gewaehlt, &plan_layer));
+                    wahl = Some(layer_umschalten(&gewaehlt, *id));
                 }
-                ui.indent(("vp_layer", plan_name.as_str()), |ui| {
-                    for (id, name) in layer {
-                        let mut an = gewaehlt.contains(id);
-                        let antwort =
-                            ui.add_enabled(!gesperrt, egui::Checkbox::new(&mut an, name.as_str()));
-                        if antwort.changed() {
-                            wahl = Some(layer_umschalten(&gewaehlt, *id));
-                        }
-                    }
-                });
             }
         });
+    }
     if let (Some(id), Some(neu)) = (ziel.id(), wahl) {
         // Zeigt das Fenster wieder alle Layer, steht `null` in der Datei —
         // so erscheinen später angelegte Layer von selbst.
