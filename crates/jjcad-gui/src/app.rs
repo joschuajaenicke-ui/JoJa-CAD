@@ -13329,6 +13329,13 @@ mod tests_tastenbelegung {
         // Vorgabebelegung ausdrücklich setzen: `App::with_ctx` lädt die
         // Einstellungen des Nutzers, die hier nicht stören dürfen.
         app.prefs.reset_bindings();
+        // T0233: Dasselbe für die Hotbar-Vorlagen. Seit T0215 prüfen mehrere
+        // Tests die Slots der ersten Vorlage; die `prefs.json` des Rechners
+        // hat der Nutzer aber womöglich umbelegt (`strg_schaltet_die_hotbar_…`
+        // fiel genau daran, nicht am Code).
+        let werk = jjcad_core::persist::UserPrefs::default();
+        app.prefs.hotbar_presets = werk.hotbar_presets;
+        app.prefs.active_preset = werk.active_preset;
         app
     }
 
