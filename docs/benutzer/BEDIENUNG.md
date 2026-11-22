@@ -711,6 +711,15 @@ samt Basispunkt, Gruppe und Maßstabsregel und liegt als
 den Reiter Benutzerblöcke, wo die Kopie sofort bearbeitet werden kann; der
 Systemblock bleibt unverändert.
 
+**Planrahmen** (T0239): Unter *Systemblöcke → Planrahmen* liegen drei fertige
+Blätter — **A3 quer** (420 × 297 mm, der Rahmen, den jedes neue Blatt trägt),
+**A3 hoch** (297 × 420) und **A4 hoch** (210 × 297). Ein Planrahmen ist **ein**
+Objekt: Blattrahmen, Schriftfeld und die weiße Fläche dahinter. Sein Basispunkt
+ist die **untere linke Blattecke**, ein eingefügter Rahmen sitzt damit ohne
+Versatz auf dem Blatt. Die weiße Fläche deckt genau das Schriftfeld ab und
+liegt über der Zeichnung: ein Ansichtsfenster darf das ganze Blatt füllen, der
+Plankopf bleibt lesbar — auf dem Schirm wie im Druck (PDF, PNG).
+
 ## Nachweis für den Papier-Modus
 
 `cargo run -p jjcad-core --example lw_test -- /tmp/lw.jjcad` erzeugt zwei parallele Linien
