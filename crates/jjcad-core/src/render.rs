@@ -977,6 +977,7 @@ pub fn preview_dim(
     layer: Id,
     color: Option<Color>,
     ext_lines: bool,
+    symbol: &str,
 ) -> DisplayList {
     let mut e = Entity::new(
         0,
@@ -987,6 +988,7 @@ pub fn preview_dim(
             angle,
             override_text: None,
             ext_lines,
+            symbol: symbol.to_string(),
         },
     );
     // Wie die Action: ohne ausdrückliche Farbe ist neue Bemaßung schwarz.
@@ -1594,6 +1596,7 @@ pub fn render_entity(
             angle,
             override_text,
             ext_lines,
+            symbol,
         } => {
             render_dim_chain(
                 ctx,
@@ -1604,6 +1607,7 @@ pub fn render_entity(
                 *angle,
                 override_text.as_deref(),
                 *ext_lines,
+                symbol,
                 xf,
                 dl,
             );
@@ -4648,11 +4652,22 @@ fn render_dim_chain(
     angle: f64,
     override_text: Option<&str>,
     ext_lines: bool,
+    // Punktsymbol an jedem Messpunkt (T0227), leer = kein Symbol.
+    symbol: &str,
     xf: Affine,
     dl: &mut DisplayList,
 ) {
     if pts.len() < 2 {
         return;
+    }
+    // Punktsymbol an jedem Messpunkt (T0227): die Marke kennzeichnet die
+    // **gemessene Stelle** selbst, nicht die Maßlinie — dort steht der
+    // Begrenzungsstrich. Leer heißt „kein Symbol“, ein unbekannter Block wird
+    // in `push_punktsymbol` still übersprungen.
+    if !symbol.is_empty() {
+        for w in pts {
+            push_punktsymbol(ctx, e, st, symbol, *w, 0.0, xf, dl, 0);
+        }
     }
     let style = &ctx.doc.dim_style;
     let a = ctx.a(1.0);

@@ -1726,12 +1726,28 @@ fn dim_kette(
             angle,
             override_text: p.text("text"),
             ext_lines: p.boolean_or("ext_lines", false),
+            symbol: dim_symbol(doc, p)?,
         },
     );
     apply_common(doc, &mut e, p, layer);
     bemasung_schwarz(p, &mut e);
     doc.add_entity(e);
     Ok(json!({"ok": true, "created": [idn]}))
+}
+
+/// Punktsymbol einer neuen Maßkette (T0227): der Wunsch des Aufrufers, sonst
+/// die Vorgabe „Schrägstrich“. Ein leerer Text heißt „kein Symbol“; ein
+/// genannter Block muss existieren, sonst entstünde eine Marke, die niemand
+/// zeichnen kann.
+fn dim_symbol(doc: &Document, p: &Params) -> Result<String, String> {
+    let sym = p
+        .text("symbol")
+        .unwrap_or_else(|| crate::model::DIM_SYMBOL_VORGABE.to_string());
+    let sym = sym.trim().to_string();
+    if !sym.is_empty() {
+        pruefe_punktsymbol(doc, &sym)?;
+    }
+    Ok(sym)
 }
 
 /// Prüft eine Punktsymbol-Angabe (T0210): der genannte Block muss existieren.
@@ -2531,6 +2547,7 @@ pub fn execute(doc: &mut Document, id: &str, params: &Value) -> Result<Value, St
                     angle,
                     override_text: p.text("text"),
                     ext_lines: p.boolean_or("ext_lines", false),
+                    symbol: dim_symbol(doc, &p)?,
                 },
             );
             apply_common(doc, &mut e, &p, layer);
@@ -3209,6 +3226,16 @@ pub fn execute(doc: &mut Document, id: &str, params: &Value) -> Result<Value, St
             {
                 pruefe_punktsymbol(doc, sym)?;
             }
+            // Punktsymbol an den Messpunkten einer Maßkette (T0227): derselbe
+            // Schlüssel „symbol“. `Some(None)` = Symbol wegnehmen, `Some(Some)`
+            // = setzen, `None` = unberührt — geprüft wird vorab, solange das
+            // Dokument nur lesend geliehen ist (ein `pruefe` im Ausleihbereich
+            // der Objekte wäre ein doppelter Borrow).
+            let dim_symbol_neu = if p.v.get("symbol").is_some() {
+                symbol_feld("symbol")
+            } else {
+                None
+            };
             // Basispunkt der Tür (T0091) — verschiebt nur die Marke, nicht die Tür.
             let base_new = p
                 .text("base")
@@ -3277,9 +3304,14 @@ pub fn execute(doc: &mut Document, id: &str, params: &Value) -> Result<Value, St
                         e.style.fill = None;
                     }
                     // Punktsymbole an Anfang und Ende (T0210) — der Punkt
-                    // trägt sein Symbol im Anfangsfeld.
+                    // trägt sein Symbol im Anfangsfeld. Nur Punkt und Linie
+                    // zeichnen es; eine Maßkette führt ihr Symbol an den
+                    // Messpunkten in `EntityKind::Dim::symbol` (T0227) und
+                    // bekäme hier sonst ein zweites, ungenutztes Feld.
                     if let Some(s) = &symbol_start_neu {
-                        e.start_symbol = s.clone();
+                        if e.kann_punktsymbol() {
+                            e.start_symbol = s.clone();
+                        }
                     }
                     if let Some(s) = &symbol_end_neu {
                         e.end_symbol = s.clone();
@@ -3716,9 +3748,15 @@ pub fn execute(doc: &mut Document, id: &str, params: &Value) -> Result<Value, St
                             angle,
                             override_text,
                             ext_lines,
+                            symbol,
                         } => {
                             if let Some(v) = text {
                                 *override_text = Some(v);
+                            }
+                            // Punktsymbol an den Messpunkten (T0227): leer =
+                            // kein Symbol, sonst steht der Block geprüft bereit.
+                            if let Some(neu) = &dim_symbol_neu {
+                                *symbol = neu.clone().unwrap_or_default();
                             }
                             // Verlängerung zu den Messpunkten (T0226): der
                             // Schalter im Eigenschaften-Panel schickt hier

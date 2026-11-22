@@ -231,6 +231,7 @@ pub fn transform_kind(k: &EntityKind, m: &Affine) -> EntityKind {
             angle,
             override_text,
             ext_lines,
+            symbol,
         } => {
             // Messpunkte in Messreihenfolge halten (T0195): Ziehen, Drehen,
             // Spiegeln und Einfügen verschieben Punkte über ihre Nachbarn
@@ -248,6 +249,7 @@ pub fn transform_kind(k: &EntityKind, m: &Affine) -> EntityKind {
                 },
                 override_text: override_text.clone(),
                 ext_lines: *ext_lines,
+                symbol: symbol.clone(),
             };
             crate::render::dim_reihenfolge(&mut kind);
             kind

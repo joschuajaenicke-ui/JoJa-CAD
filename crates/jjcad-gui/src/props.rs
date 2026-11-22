@@ -2504,6 +2504,24 @@ pub fn bemassung(app: &mut App, ui: &mut Ui, ziel: Ziel) {
         },
     );
 
+    // Punktsymbol an den Messpunkten (T0227): die Marke, die jeder Messpunkt
+    // trägt. Vorgabe ist der Schrägstrich; „Kein Symbol“ nimmt sie weg.
+    let mut symbol = e
+        .as_ref()
+        .and_then(|e| match &e.kind {
+            EntityKind::Dim { symbol, .. } => Some(symbol.clone()),
+            _ => None,
+        })
+        .unwrap_or_else(|| app.options.dim_symbol.clone());
+    zeile("symbol");
+    let mut symbol_neu: Option<Option<String>> = None;
+    widgets::field_row(ui, jjcad_core::i18n::tr("gui.props.punktsymbol"), |ui| {
+        symbol_neu = punktsymbol_wahl(app, ui, &ziel.salt("dim_symbol"), Some(&symbol));
+    });
+    if let Some(v) = symbol_neu {
+        symbol = v.unwrap_or_default();
+    }
+
     zeile("kennzahlen");
     ui.add_space(4.0);
     match (&e, ziel) {
@@ -2538,6 +2556,7 @@ pub fn bemassung(app: &mut App, ui: &mut Ui, ziel: Ziel) {
             app.options.dim_axis = achse;
             app.options.dim_text = masstext;
             app.options.dim_ext = verlaengerung;
+            app.options.dim_symbol = symbol;
         }
         Ziel::Auswahl(id) => {
             gemein_nach_objekt(app, id, &a);
@@ -2566,6 +2585,15 @@ pub fn bemassung(app: &mut App, ui: &mut Ui, ziel: Ziel) {
                         );
                         if verlaengerung != alt_ext {
                             map.insert("ext_lines".into(), serde_json::json!(verlaengerung));
+                            geaendert = true;
+                        }
+                        // Punktsymbol an den Messpunkten (T0227).
+                        let alt_sym = match &e.kind {
+                            EntityKind::Dim { symbol, .. } => symbol.clone(),
+                            _ => String::new(),
+                        };
+                        if symbol != alt_sym {
+                            map.insert("symbol".into(), serde_json::json!(symbol));
                             geaendert = true;
                         }
                         if let Some(v) = abstand {
@@ -5325,6 +5353,7 @@ mod tests {
                 angle: 0.0,
                 override_text: None,
                 ext_lines: false,
+                symbol: jjcad_core::model::DIM_SYMBOL_VORGABE.to_string(),
             },
         ),
         (
@@ -5687,6 +5716,7 @@ mod tests {
                 angle: 0.0,
                 override_text: None,
                 ext_lines: false,
+                symbol: jjcad_core::model::DIM_SYMBOL_VORGABE.to_string(),
             },
             EntityKind::ElevationPlan {
                 p: jjcad_core::geom::Vec2::ZERO,
@@ -6598,5 +6628,170 @@ mod tests_artfilter {
                 "„{fremd}“ steht im Menü, ist aber nicht in der Auswahl: {alle:?}"
             );
         }
+    }
+}
+
+
+/// Punktsymbol der Maßkette (T0227): Das Auswahlfeld im Eigenschaften-Panel
+/// zeigt die Vorgabe „Schrägstrich“ und schreibt die Wahl an das Objekt.
+#[cfg(test)]
+mod tests_masskette_symbol {
+    use super::*;
+    use serde_json::json;
+
+    /// Ein Bild des Eigenschaften-Panels; liefert die gezeichneten Formen.
+    fn bild(app: &mut App, ereignisse: Vec<egui::Event>, zeit: f64) -> egui::FullOutput {
+        let raw = egui::RawInput {
+            screen_rect: Some(egui::Rect::from_min_size(
+                egui::Pos2::ZERO,
+                egui::Vec2::new(1200.0, 950.0),
+            )),
+            time: Some(zeit),
+            predicted_dt: 0.016,
+            events: ereignisse,
+            ..Default::default()
+        };
+        app.ctx.clone().run(raw, |ctx| {
+            egui::SidePanel::right("eigenschaften")
+                .exact_width(280.0)
+                .show(ctx, |ui| crate::panels::properties(app, ui));
+        })
+    }
+
+    /// Alle gezeichneten Texte mit ihrer Fläche — auch die im aufgeklappten
+    /// Menü (eigene Ebene, teils in `Shape::Vec`).
+    fn texte(out: &egui::FullOutput) -> Vec<(String, egui::Rect)> {
+        fn lauf(s: &egui::Shape, acc: &mut Vec<(String, egui::Rect)>) {
+            match s {
+                egui::Shape::Text(t) => {
+                    let r = t.galley.rect.translate(t.pos.to_vec2());
+                    acc.push((t.galley.text().to_string(), r));
+                }
+                egui::Shape::Vec(list) => {
+                    for s in list {
+                        lauf(s, acc);
+                    }
+                }
+                _ => {}
+            }
+        }
+        let mut acc = Vec::new();
+        for cs in &out.shapes {
+            lauf(&cs.shape, &mut acc);
+        }
+        acc
+    }
+
+    fn flaeche(out: &egui::FullOutput, text: &str) -> egui::Rect {
+        texte(out)
+            .into_iter()
+            .find(|(t, _)| t.trim() == text)
+            .unwrap_or_else(|| {
+                let alle: Vec<String> = texte(out).into_iter().map(|(t, _)| t).collect();
+                panic!("Text „{text}“ nicht im Panel: {alle:?}")
+            })
+            .1
+    }
+
+    fn knopf(pos: egui::Pos2, pressed: bool) -> egui::Event {
+        egui::Event::PointerButton {
+            pos,
+            button: egui::PointerButton::Primary,
+            pressed,
+            modifiers: Default::default(),
+        }
+    }
+
+    fn klick(app: &mut App, ziel: egui::Pos2, zeit: f64) {
+        let _ = bild(app, vec![egui::Event::PointerMoved(ziel)], zeit);
+        let _ = bild(app, vec![knopf(ziel, true)], zeit + 0.05);
+        let _ = bild(app, vec![knopf(ziel, false)], zeit + 0.1);
+        let _ = bild(app, Vec::new(), zeit + 0.15);
+    }
+
+    /// Eine ausgewählte Maßkette mit zwei Messpunkten.
+    fn kette() -> (App, Id) {
+        let mut app = App::with_ctx(egui::Context::default());
+        app.session_mut()
+            .execute("doc.settings", &json!({ "input_unit": "m" }))
+            .expect("Einheit");
+        let r = app
+            .session_mut()
+            .execute(
+                "dim.chain",
+                &json!({"pts": [[0.0, 0.0], [3.0, 0.0]],
+                        "line_pos": [0.0, -1.0], "angle": 0.0}),
+            )
+            .expect("Maßkette");
+        let id = r["created"][0].as_u64().expect("Kennung") as Id;
+        app.session_mut().select(vec![id]);
+        (app, id)
+    }
+
+    fn symbol(app: &App, id: Id) -> String {
+        match &app.doc().entity(id).expect("Maßkette").kind {
+            EntityKind::Dim { symbol, .. } => symbol.clone(),
+            k => panic!("keine Maßkette: {k:?}"),
+        }
+    }
+
+    /// Das Feld zeigt die Vorgabe — ohne eigene Wahl steht der Schrägstrich da.
+    #[test]
+    fn feld_zeigt_den_schraegstrich() {
+        let (mut app, id) = kette();
+        assert_eq!(
+            symbol(&app, id),
+            jjcad_core::model::DIM_SYMBOL_VORGABE,
+            "Vorgabe"
+        );
+        let out = bild(&mut app, Vec::new(), 1.0);
+        // Die Zeile heißt „Symbol“ (nicht zweimal „Punktsymbol“ im Panel) und
+        // zeigt den Namen der Vorgabe.
+        let alle: Vec<String> = texte(&out).into_iter().map(|(t, _)| t).collect();
+        assert!(
+            alle.iter().any(|t| t.trim() == "Symbol"),
+            "die Zeile „Symbol“ fehlt: {alle:?}"
+        );
+        assert!(
+            alle.iter().any(|t| t.trim() == "Schrägstrich"),
+            "das Feld zeigt nicht die Vorgabe: {alle:?}"
+        );
+    }
+
+    /// Ein Klick auf einen Eintrag schreibt den Block an das Objekt.
+    #[test]
+    fn auswahl_setzt_ein_anderes_symbol() {
+        let (mut app, id) = kette();
+        let out = bild(&mut app, Vec::new(), 1.0);
+        let feld = flaeche(&out, "Schrägstrich");
+        klick(&mut app, feld.center(), 2.0);
+
+        let out = bild(&mut app, Vec::new(), 3.0);
+        let eintrag = flaeche(&out, "Raute");
+        klick(&mut app, eintrag.center(), 4.0);
+
+        assert_eq!(symbol(&app, id), "sys:pkt-raute", "die Wahl muss ankommen");
+        // Das geschlossene Feld zeigt jetzt den gewählten Namen.
+        let out = bild(&mut app, Vec::new(), 5.0);
+        let alle: Vec<String> = texte(&out).into_iter().map(|(t, _)| t).collect();
+        assert!(
+            alle.iter().any(|t| t.trim() == "Raute"),
+            "das Feld zeigt die Wahl nicht: {alle:?}"
+        );
+    }
+
+    /// „Kein Symbol“ nimmt die Marke von den Messpunkten.
+    #[test]
+    fn kein_symbol_nimmt_die_marke_weg() {
+        let (mut app, id) = kette();
+        let out = bild(&mut app, Vec::new(), 1.0);
+        let feld = flaeche(&out, "Schrägstrich");
+        klick(&mut app, feld.center(), 2.0);
+
+        let out = bild(&mut app, Vec::new(), 3.0);
+        let eintrag = flaeche(&out, "Kein Symbol");
+        klick(&mut app, eintrag.center(), 4.0);
+
+        assert_eq!(symbol(&app, id), "", "leer heißt kein Symbol");
     }
 }

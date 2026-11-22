@@ -791,6 +791,10 @@ pub struct ToolOptions {
     /// Verlängerung zu den Messpunkten beim nächsten Maß (T0226) — Vorgabe
     /// aus, wie die Vorgabe des Objekts.
     pub dim_ext: bool,
+    /// Punktsymbol an den Messpunkten des nächsten Maßes (T0227) — Block-ID aus
+    /// der Kategorie „Punkt Symbole“, leer = kein Symbol. Vorgabe ist der
+    /// Schrägstrich (`model::DIM_SYMBOL_VORGABE`).
+    pub dim_symbol: String,
     pub offset_dist: f64,
     /// Gemerkter Abstand des Werkzeugs „Parallele" (T0200).
     ///
@@ -915,6 +919,7 @@ impl ToolOptions {
             dim_axis: None,
             dim_text: String::new(),
             dim_ext: false,
+            dim_symbol: jjcad_core::model::DIM_SYMBOL_VORGABE.to_string(),
             offset_dist: doc.settings.wall_thickness,
             parallel_dist: None,
             elevation_z: 0.0,

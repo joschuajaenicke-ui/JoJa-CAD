@@ -53,6 +53,10 @@ die **Vorgabe** ihrer Ebene und lassen sich wie jede andere Taste ändern.
    **Verlängerung** (Eigenschaften-Panel, Gruppe „Maß“): Maßhilfslinien von den
    Messpunkten zur Maßlinie. Vorgabe **aus** — die Maßzahl steht allein an der
    Maßlinie; eingeschaltet zeichnet jeder Messpunkt seine Hilfslinie.
+   **Symbol** (Gruppe „Maß“): die Marke, die **jeder Messpunkt** trägt — eine
+   Auswahl aus der Blockbibliothek (Kategorie „Punkt Symbole“), Vorgabe
+   **Schrägstrich** (Fadenkreuz mit 45°-Strich). „Kein Symbol“ nimmt die Marke
+   weg; die Marke wächst mit dem Zeichnungsmaßstab wie jedes Punktsymbol.
 4. **Hotbar**: Tasten `1`–`0`. Aktives Werkzeug + Klick auf einen leeren Slot verknüpft es.
    Läuft das **Einfügen eines Blocks**, nimmt der angeklickte Slot den Block auf (der Slot
    zeigt dann die Miniaturaansicht des Blocks, sein Tooltip den Blocknamen); die Taste `1`–`0`

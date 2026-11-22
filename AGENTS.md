@@ -578,6 +578,20 @@ Mit dem Nutzer abgestimmt — nicht „verbessern“:
   Maßlinie, Begrenzungsstriche und Maßzahl bleiben unverändert. Alte Dateien
   und DIN-Prüfungen schalten sie ausdrücklich ein (`ext_lines: true`).
   Prüfweg: `cargo test -p jjcad-core --test masskette_verlaengerung`.
+- **Punktsymbol an den Messpunkten (T0227)**: Jede Maßkette trägt **eine**
+  Marke an **jedem Messpunkt** — `EntityKind::Dim::symbol`, Block-ID aus der
+  Kategorie „Punkt Symbole“, leer = kein Symbol. Vorgabe ist der **Schrägstrich**
+  (`model::DIM_SYMBOL_VORGABE` = `sys:pkt-schraegstrich`, Fadenkreuz plus
+  45°-Strich, Papiergröße): `#[serde(default = "default_dim_symbol")]` bringt sie
+  auch in vorhandene Zeichnungen. Gezeichnet wird sie in `render_dim_chain` über
+  `push_punktsymbol` — dieselbe Rechnung wie Punkt und Linienende, also in
+  Beschriftungsgröße. Wahl im Eigenschaften-Panel (Gruppe „Maß“, Zeile „Symbol“)
+  über `props::punktsymbol_wahl`; geschrieben über `modify.set` mit dem Schlüssel
+  `symbol`. Diesen Schlüssel liest `modify.set` für **alle** Objekte, das
+  Anfangsfeld `Entity::start_symbol` setzt es aber nur noch bei
+  `Entity::kann_punktsymbol` (Punkt/Linie) — sonst trüge die Kette zwei Symbole.
+  Prüfweg: `cargo test -p jjcad-core --test masskette_symbol` und
+  `cargo test -p jjcad-gui tests_masskette_symbol`; Prüfbild `--demo masskette`.
 - **Reihenfolge der Messpunkte (T0195)**: Die Reihenfolge in `Dim::pts` **ist**
   die Reihenfolge der Maßzahlen — gemessen wird immer zwischen zwei
   aufeinanderfolgenden Punkten. Ein gezogener Messpunkt kann zwischen seine

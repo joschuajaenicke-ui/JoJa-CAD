@@ -848,6 +848,13 @@ pub enum EntityKind {
         /// im Eigenschaften-Panel ein.
         #[serde(default)]
         ext_lines: bool,
+        /// Punktsymbol an **jedem Messpunkt** (T0227): Block-ID aus der
+        /// Kategorie „Punkt Symbole“; leer = kein Symbol. Vorgabe ist der
+        /// Schrägstrich (`DIM_SYMBOL_VORGABE`) — `#[serde(default)]` bringt sie
+        /// auch in vorhandene Zeichnungen, denn die Marke gehört zur
+        /// Maßkette selbst.
+        #[serde(default = "default_dim_symbol")]
+        symbol: String,
     },
     /// Grundriss-Kote: Kreis-Symbol mit verknüpftem Höhenwert daneben.
     ///
@@ -1380,6 +1387,17 @@ impl BlockSource {
 /// Enden einer Linie wählen — auch Benutzer- und Projektblöcke, denn die
 /// Zuordnung hängt allein an der Kategorie, nicht an der Herkunft.
 pub const PUNKTSYMBOL_KATEGORIE: &str = "Punkt Symbole";
+
+/// Vorgabe des Punktsymbols an einer Maßkette (T0227): der Schrägstrich.
+///
+/// Die Marke gehört zur Maßkette — ohne eigene Wahl trägt jeder Messpunkt
+/// diese eine Marke. Ein leerer Text (`""`) heißt „kein Symbol“.
+pub const DIM_SYMBOL_VORGABE: &str = "sys:pkt-schraegstrich";
+
+/// Vorgabewert des Feldes `EntityKind::Dim::symbol` beim Laden (T0227).
+fn default_dim_symbol() -> String {
+    DIM_SYMBOL_VORGABE.to_string()
+}
 
 /// Größe der Blockgeometrie (T0231).
 ///
