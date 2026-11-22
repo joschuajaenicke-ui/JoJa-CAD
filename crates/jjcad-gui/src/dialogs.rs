@@ -2154,7 +2154,9 @@ pub(crate) fn rastermodus_text(m: jjcad_core::gitter::Rastermodus) -> &'static s
 }
 
 fn settings_body(app: &mut App, ui: &mut Ui) {
-    let unit = app.doc().settings.input_unit;
+    // T0228: Anzeige und Rückweg derselben Felder in der Einheit des aktiven
+    // Raums — `doc.settings` liest die Werte mit `Document::input_unit()` ein.
+    let unit = app.unit();
 
     // Ausgangswerte einlesen
     let cur = app.doc().settings.clone();

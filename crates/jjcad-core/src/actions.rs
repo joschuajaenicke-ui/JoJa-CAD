@@ -1749,7 +1749,7 @@ pub fn pruefe_punktsymbol(doc: &Document, id: &str) -> Result<(), String> {
 }
 
 pub fn execute(doc: &mut Document, id: &str, params: &Value) -> Result<Value, String> {
-    let p = Params::new(params, doc.settings.input_unit);
+    let p = Params::new(params, doc.input_unit());
     // Typgerechte Standardebene dieser Aktion (None = keine Vorgabe).
     let ebene = standard_ebene(id);
 
@@ -4406,7 +4406,7 @@ pub fn execute(doc: &mut Document, id: &str, params: &Value) -> Result<Value, St
             }
             vp.show_frame = p.boolean_or("show_frame", true);
             let vid = vp.id;
-            let einheit = doc.settings.input_unit;
+            let einheit = doc.input_unit();
             let info = viewport_info(einheit, &vp);
             let mut e = Entity::new(vid, 0, EntityKind::Viewport(vp));
             e.style.color = Some(Color::BLACK);
@@ -4419,7 +4419,7 @@ pub fn execute(doc: &mut Document, id: &str, params: &Value) -> Result<Value, St
         "sheet.update_viewport" => {
             let sid = p.id("sheet").unwrap_or(0);
             let vid = p.id("viewport").unwrap_or(0);
-            let einheit = doc.settings.input_unit;
+            let einheit = doc.input_unit();
             let sheet = doc.sheet_mut(sid).ok_or_else(|| "Blatt nicht gefunden".to_string())?;
             let vp = viewport_mut(sheet, vid)
                 .ok_or_else(|| "Ansichtsfenster nicht gefunden".to_string())?;
@@ -4451,7 +4451,7 @@ pub fn execute(doc: &mut Document, id: &str, params: &Value) -> Result<Value, St
             // Blatt gehört und nicht zur Zeichnung.
             let margin = p.num("margin_mm").unwrap_or(10.0).clamp(0.0, 100.0);
             let scale_vorgabe = p.num("scale").filter(|s| *s > 0.0);
-            let einheit = doc.settings.input_unit;
+            let einheit = doc.input_unit();
             let sheet = doc.sheet_mut(sid).ok_or_else(|| "Blatt nicht gefunden".to_string())?;
             let vp = match vid {
                 Some(vid) => viewport_mut(sheet, vid)
@@ -4499,6 +4499,12 @@ pub fn execute(doc: &mut Document, id: &str, params: &Value) -> Result<Value, St
             if let Some(u) = p.text("input_unit") {
                 if let Some(u) = Unit::from_str_loose(&u) {
                     doc.settings.input_unit = u;
+                }
+            }
+            // T0228: eigener Papierraum-Eingabeeinheit, unabhängig vom Modell.
+            if let Some(u) = p.text("paper_input_unit") {
+                if let Some(u) = Unit::from_str_loose(&u) {
+                    doc.settings.paper_input_unit = u;
                 }
             }
             if let Some(u) = p.text("dim_unit") {
@@ -4734,7 +4740,7 @@ pub fn execute(doc: &mut Document, id: &str, params: &Value) -> Result<Value, St
 /// Stellen still ignoriert. Unbekannte Werte (Typ, Ebene) treffen nichts, sie
 /// liefern 0 Treffer statt der ganzen Liste.
 pub fn query_ids(doc: &Document, params: &Value) -> Vec<Id> {
-    let p = Params::new(params, doc.settings.input_unit);
+    let p = Params::new(params, doc.input_unit());
     let ids = p.ids("ids");
     let layer = p.text("layer").filter(|l| !l.trim().is_empty());
     let typ = p.text("type").filter(|t| !t.trim().is_empty());

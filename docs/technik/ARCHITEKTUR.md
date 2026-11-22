@@ -68,12 +68,17 @@ Plan. Anzeige (`RenderCtx::layer_ok`), Fang (`snap`), Auswahl (`select.all`) und
 Plan blendet seine Layer aus, ohne deren eigene Schalter zu verändern. Ältere
 Dateien ohne Pläne bekommen beim Laden einen Plan (`persist::normalize_plaene`).
 
-### Einheit Millimeter, überall
+### Einheit Millimeter intern, je Raum eine Eingabeeinheit
 
-Das Dokument rechnet intern in **mm**. `settings.input_unit` betrifft nur Eingabe
-und Anzeige; Aktionen nehmen Koordinaten in dieser Einheit entgegen und rechnen
-zentral um (`Params::pt`). Damit ist das Dateiformat unabhängig von der
-Benutzereinstellung und MCP-Aufrufe sind reproduzierbar.
+Das Dokument rechnet intern in **mm**. Jeder **Bearbeitungsraum** hat seine eigene
+Eingabeeinheit: `settings.input_unit` gilt für das Modell (Vorgabe Meter),
+`settings.paper_input_unit` für den Papierraum (Vorgabe **Millimeter** — das Blatt
+reicht von (0,0) bis (420,297), eine Texthöhe von 2,5 mm wäre in Metern nicht
+eingebbar). Die eine Abfrage ist `Document::input_unit()`; Actions lesen ihre
+Vorgabe dort (`Params::pt`), die Oberfläche beschriftet ihre Felder mit
+`App::unit()`. Ein Block in Papiergröße rechnet ebenfalls in Millimetern (T0231).
+Beide Einheiten betreffen nur Eingabe und Anzeige — das Dateiformat bleibt
+unabhängig von der Benutzereinstellung und MCP-Aufrufe sind reproduzierbar.
 
 ### Wände als Achse mit Dicke
 

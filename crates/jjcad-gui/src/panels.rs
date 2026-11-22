@@ -1822,6 +1822,23 @@ fn sheet_props(app: &mut App, ui: &mut Ui, sid: Id) {
             app.mark_changed();
         }
     });
+    // T0228: Eingabeeinheit des **Papierraums**, unabhängig vom Modell. Das
+    // Papier ist in Millimetern gezeichnet (Blattecken (0,0)…(297,210), Text
+    // 2,5 mm) — in Metern stünde jedes Feld auf 0,00. Vorgabe Millimeter.
+    let mut paper_unit = app.doc().settings.paper_input_unit;
+    let einheiten: Vec<(Unit, String)> = Unit::ALL
+        .iter()
+        .map(|u| (*u, u.label().to_string()))
+        .collect();
+    widgets::field_row(ui, jjcad_core::i18n::tr("gui.panels.einheit"), |ui| {
+        if let Some(neu) = pick_combo(ui, "papiereinheit", paper_unit, &einheiten) {
+            let _ = app.session_mut().execute(
+                "doc.settings",
+                &json!({ "paper_input_unit": neu.short() }),
+            );
+            app.mark_changed();
+        }
+    });
     // Rahmen und Schriftfeld sind normale Blattobjekte (T0004): sie werden im
     // Papierraum angeklickt und geändert wie jede Linie und jeder Text. Ein
     // Schalter dafür wäre irreführend — hier steht deshalb nur der Hinweis.
