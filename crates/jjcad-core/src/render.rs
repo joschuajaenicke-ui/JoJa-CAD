@@ -4782,17 +4782,30 @@ fn render_dim_chain(
             });
         }
     }
-    // Begrenzungszeichen **einmal je Basispunkt**: liegen zwei Segmente
-    // aneinander, standen bisher zwei Striche (bei Pfeil und Punkt sichtbar
-    // als Doppelmarke) auf demselben Punkt. Das gewählte Punktsymbol (T0227)
-    // steht an **dieser** Stelle: es liegt auf der Maßlinie und **ersetzt den
-    // Begrenzungsstrich** — es stand vorher an den Messpunkten, wo es nicht
-    // hingehört. Ohne Symbol zeichnet die Kette dort **gar nichts** (Turn 7);
-    // die Marken „Punkt“ und „Pfeil“ des Stils bleiben unberührt. Ein
-    // unbekannter Block wird in `push_punktsymbol` still übersprungen.
+    // Begrenzungszeichen: **jeder Abschnitt ist eine Linie** (T0227, Turn 9).
+    // An seinem Anfang steht das Symbol wie an einem Linienanfang (entgegen
+    // der Laufrichtung), an seinem Ende wie an einem Linienende — dieselbe
+    // Drehregel wie bei `EntityKind::Line`, damit ein Pfeil am Kettenanfang
+    // nach außen zeigt und in der Mitte jeder Abschnitt seinen eigenen Pfeil
+    // bekommt. Ein rotationssymmetrisches Symbol (Schrägstrich, Kreuz) deckt
+    // am Zwischenpunkt zweimal auf demselben Punkt: gewollt und unsichtbar.
+    // Ohne Symbol zeichnet die Kette dort **gar nichts** (Turn 7); die Marken
+    // „Punkt“ und „Pfeil“ des Stils bleiben unberührt. Ein unbekannter Block
+    // wird in `push_punktsymbol` still übersprungen.
     if !symbol.is_empty() && matches!(style.arrow, ArrowKind::Slash) {
-        for p in &projected {
-            push_punktsymbol(ctx, e, st, symbol, *p, text_angle, xf, dl, 0);
+        for abschnitt in projected.windows(2) {
+            push_punktsymbol(
+                ctx,
+                e,
+                st,
+                symbol,
+                abschnitt[0],
+                text_angle + std::f64::consts::PI,
+                xf,
+                dl,
+                0,
+            );
+            push_punktsymbol(ctx, e, st, symbol, abschnitt[1], text_angle, xf, dl, 0);
         }
     } else {
         match style.arrow {

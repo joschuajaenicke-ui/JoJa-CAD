@@ -117,8 +117,9 @@ fn vorgabe_ist_der_schraegstrich() {
 }
 
 /// Die Marke steht **auf der Maßlinie** und **ersetzt** den Begrenzungsstrich:
-/// drei Basispunkte → drei Symbole zu je drei Linien statt drei Schrägstrichen.
-/// „Kein Symbol“ gibt dem Stil seine Marke zurück.
+/// jeder Abschnitt trägt eine an seinem Anfang und eine an seinem Ende, also
+/// vier Symbole zu je drei Linien bei drei Basispunkten. „Kein Symbol“ lässt
+/// die Kette ohne jedes Begrenzungszeichen.
 #[test]
 fn symbol_liegt_auf_der_masslinie_und_ersetzt_den_strich() {
     let mut d = doc_mm();
@@ -130,12 +131,13 @@ fn symbol_liegt_auf_der_masslinie_und_ersetzt_den_strich() {
         .expect("Symbol wegnehmen");
     let ohne = linien(&d) - vorher;
 
-    // Ersatz, nicht Zusatz: neun Symbol-Linien, sonst steht dort **gar nichts**
-    // (der alte Begrenzungsstrich kommt bei „Kein Symbol“ nicht zurück).
+    // Ersatz, nicht Zusatz: zwei Abschnitte × zwei Enden × drei Linien = zwölf;
+    // ohne Symbol steht dort **gar nichts** (der alte Begrenzungsstrich kommt
+    // bei „Kein Symbol“ nicht zurück).
     assert_eq!(
         mit - ohne,
-        9,
-        "drei Symbole zu je drei Linien, ohne Symbol nichts (mit {mit}, ohne {ohne})"
+        12,
+        "vier Symbole zu je drei Linien, ohne Symbol nichts (mit {mit}, ohne {ohne})"
     );
     assert_eq!(symbol(&d, id), "", "leeres Feld heißt kein Symbol");
 
@@ -283,5 +285,91 @@ fn ohne_symbol_steht_kein_begrenzungszeichen() {
     assert!(
         laengen.iter().any(|l| (*l - 5000.0).abs() < 3.0),
         "die Maßlinie fehlt: {laengen:?}"
+    );
+}
+
+/// **Jeder Abschnitt ist eine Linie** (T0227, Turn 9): an seinem Anfang steht
+/// das Symbol wie an einem Linienanfang, an seinem Ende wie an einem
+/// Linienende. Deshalb zeichnet eine Maßkette aus zwei Punkten mit einem
+/// gerichteten Symbol (Pfeil) **dieselben** Markenlinien wie eine Linie
+/// zwischen denselben Punkten — und an einem Zwischenpunkt steht je ein Pfeil
+/// für den linken und den rechten Abschnitt.
+#[test]
+fn jeder_abschnitt_ist_eine_linie() {
+    /// Markenlinien (kurz) eines Objekts, lagerichtig normiert.
+    fn marken(d: &Document, id: u64) -> Vec<(i64, i64, i64, i64)> {
+        let mut out: Vec<(i64, i64, i64, i64)> = render_document(&RenderCtx::new(d))
+            .prims
+            .iter()
+            .filter(|p| p.entity == id)
+            .filter_map(|p| match &p.shape {
+                Shape::Line(a, b) if a.dist(*b) < 500.0 => {
+                    let (a, b) = if (a.x, a.y) <= (b.x, b.y) { (*a, *b) } else { (*b, *a) };
+                    Some((
+                        (a.x * 100.0).round() as i64,
+                        (a.y * 100.0).round() as i64,
+                        (b.x * 100.0).round() as i64,
+                        (b.y * 100.0).round() as i64,
+                    ))
+                }
+                _ => None,
+            })
+            .collect();
+        out.sort();
+        out
+    }
+
+    let mut d = doc_mm();
+    // Pfeil als Marke: eine Kette aus zwei Punkten …
+    let r = actions::execute(
+        &mut d,
+        "dim.chain",
+        &json!({
+            "pts": [[0.0, 0.0], [3000.0, 0.0]],
+            "line_pos": [0.0, -400.0],
+            "angle": 0.0,
+            "symbol": "sys:pkt-pfeil"
+        }),
+    )
+    .expect("Maßkette");
+    let kette = r["created"][0].as_u64().expect("Kennung");
+    // … und eine Linie zwischen denselben Punkten mit demselben Symbol.
+    let r = actions::execute(
+        &mut d,
+        "draw.line",
+        &json!({
+            "a": [0.0, -400.0],
+            "b": [3000.0, -400.0],
+            "start_symbol": "sys:pkt-pfeil",
+            "end_symbol": "sys:pkt-pfeil"
+        }),
+    )
+    .expect("Linie");
+    let linie = r["created"][0].as_u64().expect("Kennung");
+
+    let k = marken(&d, kette);
+    let l = marken(&d, linie);
+    assert_eq!(k.len(), 6, "zwei Pfeile zu je drei Linien: {k:?}");
+    assert_eq!(k, l, "der Abschnitt zeichnet nicht wie eine Linie");
+
+    // Drei Punkte: in der Mitte je ein Pfeil für den linken und rechten
+    // Abschnitt, insgesamt vier Pfeile — die Spitzen liegen paarweise
+    // übereinander (Deckung ist gewollt).
+    let r = actions::execute(
+        &mut d,
+        "dim.chain",
+        &json!({
+            "pts": [[0.0, 0.0], [2000.0, 0.0], [4000.0, 0.0]],
+            "line_pos": [0.0, -1200.0],
+            "angle": 0.0,
+            "symbol": "sys:pkt-pfeil"
+        }),
+    )
+    .expect("Kette mit drei Punkten");
+    let kette3 = r["created"][0].as_u64().expect("Kennung");
+    assert_eq!(
+        marken(&d, kette3).len(),
+        12,
+        "vier Pfeile (je Abschnitt zwei) zu je drei Linien"
     );
 }

@@ -669,11 +669,10 @@ Mit dem Nutzer abgestimmt — nicht „verbessern“:
   Maßlinie, Begrenzungsstriche und Maßzahl bleiben unverändert. Alte Dateien
   und DIN-Prüfungen schalten sie ausdrücklich ein (`ext_lines: true`).
   Prüfweg: `cargo test -p jjcad-core --test masskette_verlaengerung`.
-- **Punktsymbol auf der Maßlinie (T0227)**: Jede Maßkette trägt **eine** Marke
-  an **jedem Basispunkt der Maßlinie** — sie **ersetzt** dort den
-  Begrenzungsstrich (`EntityKind::Dim::symbol`, Block-ID aus der Kategorie
-  „Punkt Symbole“, leer = der Stil zeichnet seine Marke wie bisher). Vorgabe ist
-  der **Schrägstrich** (`model::DIM_SYMBOL_VORGABE` = `sys:pkt-schraegstrich`,
+- **Punktsymbol auf der Maßlinie (T0227)**: Jede Maßkette trägt ihr Symbol an
+  den **Enden jedes Abschnitts** — sie **ersetzt** dort den Begrenzungsstrich
+  (`EntityKind::Dim::symbol`, Block-ID aus der Kategorie „Punkt Symbole“, leer =
+  kein Begrenzungszeichen). Vorgabe ist der **Schrägstrich** (`model::DIM_SYMBOL_VORGABE` = `sys:pkt-schraegstrich`,
   Fadenkreuz plus 45°-Strich, Papiergröße): `#[serde(default =
   "default_dim_symbol")]` bringt sie auch in vorhandene Zeichnungen. Gezeichnet
   wird sie in `render_dim_chain` über `push_punktsymbol` an den **projizierten**
@@ -685,7 +684,15 @@ Mit dem Nutzer abgestimmt — nicht „verbessern“:
   Basispunkt**: der Überstand über die Maßhilfslinie (§9.1, Bild 3) gehörte zum
   Schrägstrich, denn die Marke schließt die Linie ab. An den Messpunkten
   (den Enden der Maßhilfslinien) steht sie **nicht** — dort gehört sie nicht hin.
-  Wahl im Eigenschaften-Panel (Gruppe „Maß“, Zeile „Symbol“) über
+  **Jeder Abschnitt ist eine Linie** (Turn 9): an seinem Anfang steht das Symbol
+  wie an einem Linienanfang (Drehung `text_angle + π`), an seinem Ende wie an
+  einem Linienende — dieselbe Drehregel wie bei `EntityKind::Line`. Deshalb
+  zeigt ein Pfeil am Kettenanfang nach außen und in der Mitte jeder Abschnitt
+  seinen eigenen Pfeil (zwei Spitzen auf demselben Punkt). Ein
+  **rotationssymmetrisches** Symbol (Schrägstrich, Kreuz) deckt sich dort
+  deckungsgleich — gewollt, gemessen: +0,8 % Tinte und 0,4 % der Pixel mit
+  höchstens 55/255 Kantendifferenz im Raster (nur bei Sub-Pixel-Strichbreite
+  sichtbar). Wahl im Eigenschaften-Panel (Gruppe „Maß“, Zeile „Symbol“) über
   `props::punktsymbol_wahl`; geschrieben über `modify.set` mit dem Schlüssel
   `symbol`. Diesen Schlüssel liest `modify.set` für **alle** Objekte, das
   Anfangsfeld `Entity::start_symbol` setzt es aber nur noch bei

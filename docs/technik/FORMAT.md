@@ -302,9 +302,12 @@ Maßlinie, `DIM_EXT_GAP_H` = 0,8 h Abstand am Maßpunkt). Bei 2,5 mm Texthöhe:
 Maßhilfslinie wird **am Maßpunkt** gekürzt (Abstand), nicht an der Maßlinie;
 dort gilt der Wert `ext_overshoot` aus der Datei.
 
-**Seit T0227** trägt die Maßkette an jedem Basispunkt der Maßlinie ihr
-**Punktsymbol** (`EntityKind::Dim::symbol`, Block der Kategorie „Punkt
-Symbole“, Papiergröße) — es ersetzt den Begrenzungsstrich. Die Maßlinie endet
+**Seit T0227** trägt die Maßkette an den Enden **jedes Abschnitts** der
+Maßlinie ihr **Punktsymbol** (`EntityKind::Dim::symbol`, Block der Kategorie
+„Punkt Symbole“, Papiergröße) — es ersetzt den Begrenzungsstrich. Jeder
+Abschnitt ist eine Linie: Anfang `text_angle + π`, Ende `text_angle`
+(wie `EntityKind::Line`); ein rotationssymmetrisches Symbol deckt sich am
+Zwischenpunkt. Die Maßlinie endet
 deshalb **genau am äußeren Basispunkt**: der frühere Überstand über die
 Maßhilfslinie hinaus (`DIM_UEBERSTAND_H` = 1,2 h) gehörte zum Schrägstrich.
 Ohne Symbol (Feld leer) steht an den Enden **gar nichts**.

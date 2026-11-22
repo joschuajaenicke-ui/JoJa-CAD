@@ -132,9 +132,10 @@ fn marke_ist_das_punktsymbol_oder_leer() {
     let l = linien(&s2, id2);
     let kurz: Vec<&(f64, (f64, f64), (f64, f64))> =
         l.iter().filter(|e| e.0 < 500.0).collect();
-    // Drei Punkte × drei Striche des Symbols.
-    assert_eq!(kurz.len(), 9, "Markenlinien: {kurz:?}");
-    // Davon je Basispunkt genau einer unter 45° (gleiche Ausdehnung in x/y).
+    // Zwei Abschnitte × zwei Enden × drei Striche des Symbols.
+    assert_eq!(kurz.len(), 12, "Markenlinien: {kurz:?}");
+    // Davon an jedem Abschnittsende einer unter 45° (gleiche Ausdehnung x/y):
+    // in der Mitte decken sich die beiden Marken der Nachbarabschnitte.
     let schraeg = l
         .iter()
         .filter(|e| e.0 < 500.0)
@@ -144,7 +145,7 @@ fn marke_ist_das_punktsymbol_oder_leer() {
             (dx - dy).abs() < 0.01
         })
         .count();
-    assert_eq!(schraeg, 3, "ein 45°-Strich je Basispunkt: {l:?}");
+    assert_eq!(schraeg, 4, "ein 45°-Strich je Abschnittsende: {l:?}");
 }
 
 /// Ein Punkt zweier Segmente trägt **eine** Marke, nicht zwei übereinander.
