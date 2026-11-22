@@ -65,6 +65,12 @@ jobs:
           cp LICENSE "$app/Contents/Resources/LICENSE"
           cp README.md "$app/Contents/Resources/README.md"
 
+          # Schalterdatei neben dem Programm: ohne sie nimmt JoJa-CAD den
+          # Plattformstandard (~/Library/Application Support/JoJa-CAD) statt
+          # Contents/MacOS/data — das Bündel wäre dann nicht portabel.
+          : > "$app/Contents/MacOS/portable.txt"
+          test -f "$app/Contents/MacOS/portable.txt"
+
           # Symbol aus den vorhandenen PNG-Größen (ein .icns ist ein
           # Verzeichnis mit festen Namen).
           iconset="AppIcon.iconset"

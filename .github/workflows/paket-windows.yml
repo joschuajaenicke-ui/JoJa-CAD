@@ -35,6 +35,11 @@ jobs:
           Copy-Item target/release/jjcad.exe $name
           Copy-Item target/release/jjcad-mcp.exe $name
           Copy-Item LICENSE, README.md $name
+          # Schalterdatei: ohne sie nimmt das Programm den Plattformstandard
+          # (%APPDATA%\JoJa-CAD) statt <Programmordner>\data — das Paket wäre
+          # dann nicht portabel (daten::ist_portabel).
+          New-Item -ItemType File -Path "$name/portable.txt" | Out-Null
+          if (-not (Test-Path "$name/portable.txt")) { throw "portable.txt fehlt" }
           # Die Gebrauchsschriften (Liberation, Quicksand) stecken seit T0205 in
           # der .exe (crates/jjcad-core/src/schriften_eingebettet.rs) — der Ordner
           # fonts/ entfällt. Die Lizenztexte der SIL OFL 1.1 gehören trotzdem ins

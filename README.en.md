@@ -3,7 +3,7 @@
 [Deutsch](README.md) · **English**
 
 **2D CAD for architecture and building-permit drawings.** Deliberately minimal,
-free and open source — for Linux and Windows.
+free and open source — for Linux, Windows and macOS.
 
 ![JoJa-CAD interface](samples/ui.png)
 
@@ -20,7 +20,7 @@ nothing else.
 - **Deliberately minimal**: only what a submission drawing needs. No 3D, no BIM,
   no IFC, no DWG.
 - **Free and open source** (GPL-3.0-or-later), open file format (JSON), no cloud, no account.
-- **Linux and Windows.** macOS is planned.
+- **Linux, Windows and macOS.** The macOS build is still untested.
 - **German interface**, switchable to English, further languages possible.
 - **Fully controllable by AI** through an MCP server.
 
@@ -60,21 +60,21 @@ run, no installation, no administrator rights, no account.
 **AppImage** (recommended, a single file):
 
 ```bash
-chmod +x JoJa-CAD-0.2.3-x86_64.AppImage
-./JoJa-CAD-0.2.3-x86_64.AppImage
+chmod +x JoJa-CAD-0.2.4-x86_64.AppImage
+./JoJa-CAD-0.2.4-x86_64.AppImage
 ```
 
 If you keep several AppImages around, manage them with
 [Gear Lever](https://github.com/mijorus/gearlever): it registers the menu entry,
 updates on a new release and keeps the files in one place instead of the
 download folder. On a system without FUSE,
-`./JoJa-CAD-0.2.3-x86_64.AppImage --appimage-extract-and-run` does the job.
+`./JoJa-CAD-0.2.4-x86_64.AppImage --appimage-extract-and-run` does the job.
 
 **Tar archive** (if you prefer plain files): unpack and start `./jjcad`. The
 fonts live in the `fonts/` folder next to the program.
 
 The **MCP server** ships in both packages: in the AppImage via `--mcp`
-(e.g. `./JoJa-CAD-0.2.3-x86_64.AppImage --mcp --selftest`), in the tar archive as
+(e.g. `./JoJa-CAD-0.2.4-x86_64.AppImage --mcp --selftest`), in the tar archive as
 its own file `jjcad-mcp`.
 
 ### Windows
@@ -108,15 +108,15 @@ Built, but not tried out yet — feedback welcome. Two packages: `macos-arm64` f
 Apple Silicon, `macos-x64` for Intel Macs.
 
 ```bash
-unzip JoJa-CAD-0.2.3-macos-arm64.zip
-xattr -dr com.apple.quarantine JoJa-CAD-0.2.3.app
-open JoJa-CAD-0.2.3.app
+unzip JoJa-CAD-0.2.4-macos-arm64.zip
+xattr -dr com.apple.quarantine JoJa-CAD-0.2.4.app
+open JoJa-CAD-0.2.4.app
 ```
 
 The program is **not signed and not notarised** (that needs an Apple Developer
 account), so macOS blocks the first launch. The `xattr` command lifts the
 quarantine; alternatively right-click the app → "Open" → "Open". The MCP server
-sits next to it as `JoJa-CAD-0.2.3.app/Contents/MacOS/jjcad-mcp`, the fonts under
+sits next to it as `JoJa-CAD-0.2.4.app/Contents/MacOS/jjcad-mcp`, the fonts under
 `Contents/MacOS/fonts/`.
 
 To build it yourself: see [Building](#building).
@@ -149,6 +149,13 @@ The folder is determined by the first matching entry:
    - Linux `$XDG_DATA_HOME/JoJa-CAD`, otherwise `~/.local/share/JoJa-CAD`
    - Windows `%APPDATA%\JoJa-CAD`
    - macOS `~/Library/Application Support/JoJa-CAD`
+
+`portable.txt` is the **only** switch between portable and installed: if the file
+sits next to the program, everything stays in the program folder (`data/`); if it
+is missing, everything goes to the platform default. The tar archive, the Windows
+ZIP and the macOS bundle ship it (do not delete it); the AppImage does not, because
+its content is read-only. A portable run adopts **no** settings from the machine
+it sits on.
 
 On first start an existing `prefs.json` from the old location (`~/.config/jjcad`)
 is copied into the new folder; the old file stays where it is. The three

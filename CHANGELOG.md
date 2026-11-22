@@ -22,6 +22,82 @@ angefasst wurde.
 - Die Anzeige „Abstand der Stände“ rechnet nach der Formel des neuen Verfahrens.
 - Das Speichern der Zieldatei ist atomar über eine temporäre Datei, fsync und rename; ein Absturz mitten im Speichern hinterlässt keine halbe Datei mehr.
 
+## [0.2.4] — 2026-11-22
+
+Große Runde an Blöcken, Maßketten und Papier. Die Pakete sind jetzt wirklich
+portabel: sie legen ihre Daten neben dem Programm ab.
+
+### Blöcke
+
+- Blöcke haben eine **Größe**: fest, in Papiergröße oder mit dem
+  Zeichnungsmaßstab skalierend; sie tragen eine **Maßeinheit** und sitzen mit
+  ihrem **Basispunkt** am Mauszeiger.
+- Eigene Blöcke lassen sich im Panel **umbenennen**, per Rechtsklick
+  **kopieren** und erst nach Rückfrage löschen — auf Wunsch mit Zerlegen der
+  Instanzen.
+- Systemblöcke gelten beim Laden in der Fassung der Bibliothek; Punktsymbole
+  sitzen an Punkt, Linienenden und in den Symbolblöcken.
+
+### Maßketten
+
+- Jeder Abschnitt ist eine **Linie**, jeder Messpunkt trägt sein **Symbol**
+  (Vorgabe Schrägstrich), die Marke liegt auf der Maßlinie, Begrenzungszeichen
+  stehen nur, wo sie hingehören, und die Verlängerung zu den Messpunkten ist
+  abschaltbar.
+
+### Neu
+
+- **Pfad-Werkzeug**: Linien und Bögen am Stück zeichnen, Verbinden aus der
+  Auswahl.
+- **PNG-Export eines Bereichs** über die Diagonale, mit Auflösung und
+  Hintergrund.
+- **Wiederherstellen-Fenster**: Zeichnungen und Stände aus dem Sicherungsordner
+  mit Verlauf, Vorschau und Öffnen.
+- **Planrahmen** als Block mit Abdeckfläche in A4 und A3 hoch; der Maßstab
+  gehört zu jedem Plan.
+- **Blattmanager** als Seitenpanel.
+- **Raumstempel** aus zwei Punkten, Name direkt in der Zeichnung änderbar.
+- **Hilfslinie** per Rechtsklick mitten in der Eingabe; Abstand zu einer
+  bestehenden Wand per Rechtsklick und getippter Länge.
+- **Lotfang** rechtwinklig auf vorhandene Linien und auf die Wandumgrenzung
+  (Längs-, Stirn- und Laibungskanten).
+- **Ansichtsfenster** zeigen nur die gewählten Layer; das
+  Standard-Ansichtsfenster füllt das ganze Blatt.
+- **Sprache** in den Einstellungen als Auswahlfeld.
+- **Modell und Papierraum** mit eigener Eingabeeinheit; Text rastet auf die
+  nächstgrößere Leiterstufe.
+
+### Geändert
+
+- **Die portablen Pakete legen ihre Daten im Programmordner ab** (Ordner
+  `data/`). Bisher fehlte die Schalterdatei, deshalb landeten Einstellungen,
+  eigene Blöcke und Sicherungen im Benutzerprofil. Wer eine ältere Fassung aus
+  demselben Ordner benutzt hat, startet mit leeren Einstellungen — die alten
+  liegen weiter im Benutzerprofil.
+- Bögen und Ellipsen stehen im PDF als echte Bézier-Kurven.
+- Der **Wandkörper** ist die Trefferfläche für Auswahl und Verlängern, nicht
+  mehr die Basislinie; Öffnungen wandern beim Kopieren mit.
+- Die Tangential-Fangmarke sitzt am Berührpunkt von Linie und Kreis.
+- Die Tastenbelegung zeigt **Ebenen** (Umschalt, Strg, Alt).
+- Seitenleiste immer sichtbar, eigenes Scrollen je Panel.
+- Eigenschaften-Panel: Objektkopf einmal, dann allgemeine und objekteigene
+  Gruppen.
+- Nach dem Öffnen einer Datei holt sich JoJa-CAD in den Vordergrund.
+
+### Behoben
+
+- Ein Layer mit Objekten fragt vor dem Löschen nach.
+- Das Umbenennen-Feld füllt die Zeile, ohne dass die Liste springt.
+- Sicherungen ohne Manifest: Metadaten im Stand, Index im Speicher.
+
+### Bekannt
+
+- Die **macOS-Fassung ist gebaut, aber ungeprüft** — Rückmeldung willkommen.
+- Die Windows-Fassung ist gebaut, aber nicht ausgiebig getestet.
+- Unter Wayland wird die Fensterposition nicht gespeichert (siehe
+  `docs/benutzer/BEKANNTE-GRENZEN.md`).
+- Die Zeichnungen in `samples/` sind Platzhalter ohne fachliche Prüfung.
+
 ## [0.2.3] — 2026-11-17
 
 Runde an Ebenen, Blöcken und Auswahl; dazu die erste macOS-Fassung.
