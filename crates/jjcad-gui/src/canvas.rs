@@ -3878,6 +3878,7 @@ fn draw_tool_preview(
                     app.doc().current_layer,
                     app.ui.pending.color,
                     app.options.dim_ext,
+                    &app.options.dim_symbol,
                 );
                 paint_vorschau_dl(app, p, view, &w2s, &dl);
             }
@@ -3902,6 +3903,7 @@ fn draw_tool_preview(
                         line_pos,
                         angle,
                         ext_lines,
+                        symbol,
                         ..
                     } = &e.kind
                     {
@@ -3935,6 +3937,7 @@ fn draw_tool_preview(
                             e.layer,
                             app.ui.pending.color,
                             *ext_lines,
+                            symbol,
                         );
                         paint_vorschau_dl(app, p, view, &w2s, &dl);
                     }
@@ -6800,7 +6803,8 @@ pub fn finish_tool(app: &mut App, from_enter: bool) {
                     json!({"pts": pts.iter().map(|p| [app.unit().from_mm(p.x), app.unit().from_mm(p.y)]).collect::<Vec<_>>(),
                            "line_pos": [app.unit().from_mm(line_pos.x), app.unit().from_mm(line_pos.y)],
                            "angle": angle.to_degrees(),
-                           "ext_lines": app.options.dim_ext}),
+                           "ext_lines": app.options.dim_ext,
+                           "symbol": app.options.dim_symbol.clone()}),
                 );
             } else {
                 app.toast(jjcad_core::i18n::tr("gui.canvas.masskette_zwei_messpunkte"));
@@ -7887,6 +7891,8 @@ fn tool_click_at(app: &mut App, w: V2, raw: V2) {
                 }
                 // Verlängerung zu den Messpunkten (T0226).
                 params["ext_lines"] = json!(app.options.dim_ext);
+                // Punktsymbol an den Messpunkten (T0227).
+                params["symbol"] = json!(app.options.dim_symbol.clone());
                 let _ = run(app, "dim.linear", params);
                 app.tool = None;
             } else {

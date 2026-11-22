@@ -21,6 +21,7 @@ fn dim(pts: Vec<Vec2>) -> EntityKind {
         angle: 0.0,
         override_text: None,
         ext_lines: false,
+        symbol: jjcad_core::model::DIM_SYMBOL_VORGABE.to_string(),
     }
 }
 

@@ -195,7 +195,18 @@ fn vorschau_ist_das_fertige_objekt() {
         *ext_lines = true;
     }
     let anzeige = render::render_entities(&RenderCtx::new(&d), std::slice::from_ref(&e));
-    let vorschau = render::preview_dim(&d, &pts, v(1000.0, -400.0), 0.0, e.layer, e.style.color, true);
+    // Dasselbe Punktsymbol wie das Objekt (T0227), sonst fehlt der Vorschau
+    // die Marke an jedem Messpunkt.
+    let vorschau = render::preview_dim(
+        &d,
+        &pts,
+        v(1000.0, -400.0),
+        0.0,
+        e.layer,
+        e.style.color,
+        true,
+        jjcad_core::model::DIM_SYMBOL_VORGABE,
+    );
 
     assert_eq!(
         vorschau.prims.len(),

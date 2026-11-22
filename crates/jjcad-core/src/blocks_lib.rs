@@ -568,6 +568,21 @@ pub fn system_blocks(_next_id: &mut Id) -> Vec<BlockDef> {
         b,
     ));
 
+    // Schrägstrich (T0227): Fadenkreuz mit 45°-Strich — die Marke, mit der ein
+    // Vermessungspunkt im Plan gekennzeichnet wird. Vorgabe der Maßketten
+    // (`model::DIM_SYMBOL_VORGABE`), damit jeder Messpunkt eine Marke trägt.
+    let mut b = B::new();
+    b.line(v(-1.1, 0.0), v(1.1, 0.0));
+    b.line(v(0.0, -1.1), v(0.0, 1.1));
+    b.line(v(-1.1, -1.1), v(1.1, 1.1));
+    out.push(block(
+        "sys:pkt-schraegstrich",
+        "Schrägstrich",
+        PUNKTSYMBOL_KATEGORIE,
+        "Fadenkreuz mit Schrägstrich, 2,2 mm",
+        b,
+    ));
+
     // Höhenkote im Grundriss: Kreis, Fadenkreuz, zwei gefüllte Viertel —
     // dasselbe Symbol wie `EntityKind::ElevationPlan` es zeichnet.
     let mut b = B::new();

@@ -22,7 +22,10 @@ fn kette(d: &mut Document) -> u64 {
         &json!({
             "pts": [[0.0, 0.0], [3000.0, 0.0]],
             "line_pos": [0.0, -400.0],
-            "angle": 0.0
+            "angle": 0.0,
+            // Das Punktsymbol der Messpunkte (T0227) ist hier aus: der Test
+            // zählt die Linien der Bemaßung selbst.
+            "symbol": ""
         }),
     )
     .expect("Maßkette anlegen");

@@ -133,6 +133,7 @@ fn jede_objektart_startet_ihren_erzeuger() {
             angle: 0.0,
             override_text: None,
                 ext_lines: false,
+                symbol: jjcad_core::model::DIM_SYMBOL_VORGABE.to_string(),
         },
         "dim.chain.d",
     );
@@ -143,6 +144,7 @@ fn jede_objektart_startet_ihren_erzeuger() {
             angle: 0.0,
             override_text: None,
                 ext_lines: false,
+                symbol: jjcad_core::model::DIM_SYMBOL_VORGABE.to_string(),
         },
         "dim.chain.d",
     );
