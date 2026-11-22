@@ -317,6 +317,10 @@ ausgeblendet.
   vom zuletzt gesetzten Punkt des Zuges aus und schreibt ihre Länge neben den Zeiger. Die Länge
   wird danach angegeben — mit dem Zeiger und einem **Linksklick**, oder **getippt + `Enter`**
   (`1`, `1,5`, `2500`). Der Klick setzt dabei **nur die Hilfslinie**, keinen Punkt des Objekts.
+  **Abstand zu einer bestehenden Wand**: Wand-Funktion starten, die Wand mit dem Rechtsklick
+  anvisieren (ohne vorher gesetzten Punkt ist der Klickpunkt der Anfang), `1` tippen, `Enter` —
+  die Hilfslinie steht dann **senkrecht** auf dieser Wand, weil der Zeiger auf dem Anfang steht
+  und keine Richtung vorgibt. Die Ziffern gehören dabei der Längeneingabe, nicht der Hotbar.
   Danach steht die Strecke wie eine normale Linie in der Zeichnung: zwei Endkreuze, die Länge in
   der Mitte, der Zeiger rastet auf ihrem Fußpunkt ein (Statusleiste „Hilfslinie“); ein Endpunkt
   oder Schnittpunkt an derselben Stelle hat Vorrang. Der **Stift springt an ihr Ende** — die
