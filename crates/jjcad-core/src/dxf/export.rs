@@ -291,6 +291,45 @@ fn write_entity(out: &mut W, doc: &Document, e: &Entity, block_ctx: Option<&str>
                 .collect();
             write_polyline(out, &layer, &flach, *closed, color);
         }
+        // Pfad: jede Strecke als LINE, jeder Bogen als ARC, Ellipsenbogen und
+        // Spline als abgeflachte POLYLINE — so kommt die Kette in jedem CAD an
+        // (T0229).
+        EntityKind::Path { segments, .. } => {
+            for seg in segments {
+                match seg {
+                    crate::pfad::PathSeg::Line { a, b } => {
+                        out.g(0, "LINE");
+                        out.g(8, &layer);
+                        if let Some(c) = color {
+                            out.g(62, c);
+                        }
+                        out.g(6, ltype_name(lt));
+                        out.p(10, *a, 0.0);
+                        out.p(11, *b, 0.0);
+                    }
+                    crate::pfad::PathSeg::Arc { c, r, a0, a1 } => {
+                        out.g(0, "ARC");
+                        out.g(8, &layer);
+                        if let Some(cc) = color {
+                            out.g(62, cc);
+                        }
+                        out.g(6, ltype_name(lt));
+                        out.p(10, *c, 0.0);
+                        out.f(40, *r);
+                        out.f(50, to_deg(norm_angle(*a0)));
+                        out.f(51, to_deg(norm_angle(*a1)));
+                    }
+                    andere => {
+                        let flach: Vec<Vertex> = andere
+                            .flatten(crate::geom::SPLINE_TOL_MM)
+                            .into_iter()
+                            .map(Vertex::new)
+                            .collect();
+                        write_polyline(out, &layer, &flach, false, color);
+                    }
+                }
+            }
+        }
         EntityKind::Point { p } => {
             out.g(0, "POINT");
             out.g(8, &layer);

@@ -2576,6 +2576,8 @@ pub enum Einfach {
     Linie,
     Polylinie,
     Spline,
+    /// Pfad: Kette aus Linien, Bögen, Ellipsenbögen und Splines (T0229).
+    Pfad,
     Rechteck,
     Kreis,
     Bogen,
@@ -2611,6 +2613,7 @@ impl Einfach {
             "draw.point" => Self::Punkt,
             "draw.line" => Self::Linie,
             "draw.polyline" => Self::Polylinie,
+            "draw.path" => Self::Pfad,
             "draw.spline" => Self::Spline,
             "draw.rect" => Self::Rechteck,
             "draw.circle" => Self::Kreis,
@@ -2630,6 +2633,7 @@ impl Einfach {
             EntityKind::Point { .. } => Self::Punkt,
             EntityKind::Line { .. } => Self::Linie,
             EntityKind::Polyline { .. } => Self::Polylinie,
+            EntityKind::Path { .. } => Self::Pfad,
             EntityKind::Spline { .. } => Self::Spline,
             EntityKind::Circle { .. } => Self::Kreis,
             EntityKind::Arc { .. } => Self::Bogen,
@@ -2648,6 +2652,7 @@ impl Einfach {
             Self::Punkt => jjcad_core::i18n::tr("gui.props.punkt"),
             Self::Linie => jjcad_core::i18n::tr("gui.props.linie"),
             Self::Polylinie => jjcad_core::i18n::tr("gui.props.polylinie"),
+            Self::Pfad => jjcad_core::i18n::tr("gui.props.pfad"),
             Self::Spline => jjcad_core::i18n::tr("gui.props.spline"),
             Self::Rechteck => jjcad_core::i18n::tr("gui.props.rechteck"),
             Self::Kreis => jjcad_core::i18n::tr("gui.props.kreis"),
@@ -2665,7 +2670,7 @@ impl Einfach {
         match self {
             Self::Punkt => "point",
             Self::Linie => "line",
-            Self::Polylinie | Self::Rechteck => "polyline",
+            Self::Polylinie | Self::Rechteck | Self::Pfad => "polyline",
             Self::Spline => "spline",
             Self::Kreis => "circle",
             Self::Bogen => "arc",
@@ -3451,7 +3456,10 @@ pub fn einfach(app: &mut App, ui: &mut Ui, ziel: Ziel, art: Einfach) {
                 Einfach::Kreis => jjcad_core::i18n::tr("gui.props.radius_und_mittelpunkt_entstehen_aus_den_klicks"),
                 Einfach::Bogen => jjcad_core::i18n::tr("gui.props.radius_und_winkel_entstehen_aus_den_klicks"),
                 Einfach::Linie => jjcad_core::i18n::tr("gui.props.laenge_und_winkel_entstehen_aus_den_klicks"),
-                Einfach::Polylinie | Einfach::Spline | Einfach::Rechteck => {
+                Einfach::Polylinie
+                | Einfach::Spline
+                | Einfach::Rechteck
+                | Einfach::Pfad => {
                     jjcad_core::i18n::tr("gui.props.laenge_flaeche_und_stuetzpunkte_entstehen_aus_den_klicks")
                 }
                 Einfach::Ellipse => jjcad_core::i18n::tr("gui.props.achsen_entstehen_aus_den_klicks"),
@@ -5537,6 +5545,10 @@ mod tests {
             },
             EntityKind::Spline {
                 verts: vec![],
+                closed: false,
+            },
+            EntityKind::Path {
+                segments: vec![],
                 closed: false,
             },
             EntityKind::Circle {

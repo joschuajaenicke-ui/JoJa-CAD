@@ -1414,6 +1414,7 @@ pub fn render_entity(
         }
         EntityKind::Polyline { verts, closed } => render_polyline(ctx, e, &st, verts, *closed, xf, dl),
         EntityKind::Spline { verts, closed } => render_spline(e, &st, verts, *closed, xf, dl),
+        EntityKind::Path { segments, closed } => render_path(e, &st, segments, *closed, xf, dl),
         EntityKind::Fill {
             boundary,
             holes,
@@ -3383,6 +3384,111 @@ fn render_polyline(
 /// ohne Abbildung (Druck, PNG, DXF) gilt [`SPLINE_TOL_MM`] (T0175).
 pub const SPLINE_TOL_PX: f64 = 0.15;
 
+/// Pfad zeichnen: jedes Stück mit **seinem** Renderer, damit Linie, Bogen,
+/// Ellipsenbogen und Spline genauso aussehen wie als eigenes Objekt. Bei
+/// geschlossenem Pfad wird die Lücke zwischen Ende und Anfang geschlossen
+/// (bei einem sauber gebauten Pfad ist sie null).
+fn render_path(
+    e: &Entity,
+    st: &PrimStyle,
+    segments: &[crate::pfad::PathSeg],
+    closed: bool,
+    xf: Affine,
+    dl: &mut DisplayList,
+) {
+    let f = xf.scale_factor();
+    let rot = xf.rotation();
+    let mirror = xf.is_mirrored();
+    for s in segments {
+        match s {
+            crate::pfad::PathSeg::Line { a, b } => dl.push(Prim {
+                shape: Shape::Line(xf.apply(*a), xf.apply(*b)),
+                style: *st,
+                entity: e.id,
+                layer: e.layer,
+            }),
+            crate::pfad::PathSeg::Arc { c, r, a0, a1 } => {
+                let (aa, ab) = if mirror { (-*a1, -*a0) } else { (*a0, *a1) };
+                dl.push(Prim {
+                    shape: Shape::Arc {
+                        c: xf.apply(*c),
+                        r: *r * f,
+                        a0: aa + rot,
+                        a1: ab + rot,
+                    },
+                    style: *st,
+                    entity: e.id,
+                    layer: e.layer,
+                });
+            }
+            crate::pfad::PathSeg::EllipseArc {
+                c,
+                rx,
+                ry,
+                rot: er,
+                a0,
+                a1,
+            } => {
+                let (aa, ab, r) = if mirror {
+                    (-*a1, -*a0, rot - *er)
+                } else {
+                    (*a0, *a1, *er + rot)
+                };
+                dl.push(Prim {
+                    shape: Shape::EllipseArc {
+                        c: xf.apply(*c),
+                        rx: *rx * f,
+                        ry: *ry * f,
+                        rot: r,
+                        a0: aa,
+                        a1: ab,
+                    },
+                    style: *st,
+                    entity: e.id,
+                    layer: e.layer,
+                });
+            }
+            crate::pfad::PathSeg::Spline { verts } => {
+                let sp = Spline {
+                    verts: verts.clone(),
+                    closed: false,
+                };
+                let sagitta = dl
+                    .sagitta_px
+                    .filter(|px| px.is_finite() && *px > 0.0)
+                    .unwrap_or(SPLINE_TOL_PX);
+                let tol = match dl.screen {
+                    Some(px) if px.is_finite() && px > 0.0 => sagitta / px,
+                    _ => SPLINE_TOL_MM,
+                };
+                let pts: Vec<Vec2> = sp.flatten(tol).into_iter().map(|p| xf.apply(p)).collect();
+                if pts.len() >= 2 {
+                    dl.push(Prim {
+                        shape: Shape::Poly(pts, false),
+                        style: *st,
+                        entity: e.id,
+                        layer: e.layer,
+                    });
+                }
+            }
+        }
+    }
+    if closed {
+        if let (Some(erstes), Some(letztes)) = (segments.first(), segments.last()) {
+            let a = letztes.end();
+            let b = erstes.start();
+            if a.dist(b) > crate::pfad::PFAD_EPS_MM {
+                dl.push(Prim {
+                    shape: Shape::Line(xf.apply(a), xf.apply(b)),
+                    style: *st,
+                    entity: e.id,
+                    layer: e.layer,
+                });
+            }
+        }
+    }
+}
+
 /// Spline zeichnen: die Catmull-Rom-Kurve wird in eine Punktfolge zerlegt und
 /// als **ein** Polygonzug ausgegeben (eine Glättung, keine Stöße zwischen
 /// Teilstrecken). Stützpunkte selbst sind keine Displaylist-Primitive — sie
@@ -4882,6 +4988,22 @@ fn entity_segments_tief(doc: &Document, e: &Entity, depth: usize) -> Vec<Seg> {
             // Dieselbe Zerlegung wie beim Zeichnen (`render_spline`), sonst
             // läge der Fangpunkt neben der sichtbaren Kurve.
             out.extend(sp.segments());
+        }
+        // Pfad: jedes Stück mit derselben Zerlegung wie die Anzeige; ist er
+        // geschlossen, gehört die Schlussstrecke mit zur Trefferfläche.
+        EntityKind::Path { segments, closed } => {
+            for s in segments {
+                out.extend(s.segments());
+            }
+            if *closed {
+                if let (Some(erstes), Some(letztes)) = (segments.first(), segments.last()) {
+                    let a = letztes.end();
+                    let b = erstes.start();
+                    if a.dist(b) > crate::pfad::PFAD_EPS_MM {
+                        out.push(Seg::Line(a, b));
+                    }
+                }
+            }
         }
         EntityKind::Fill {
             boundary, holes, ..

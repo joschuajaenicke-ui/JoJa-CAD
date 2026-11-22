@@ -692,6 +692,16 @@ pub enum EntityKind {
         verts: Vec<Vertex>,
         closed: bool,
     },
+    /// Pfad (T0229): eine Kette aus Linien, Bögen, Ellipsenbögen und Splines.
+    ///
+    /// Die Stücke liegen lückenlos aneinander (Ende = Anfang des nächsten).
+    /// Geschlossen umschließt der Pfad eine Fläche; ein Pfad mit Spline wird
+    /// nie geschlossen. Siehe [`crate::pfad`].
+    Path {
+        segments: Vec<crate::pfad::PathSeg>,
+        #[serde(default)]
+        closed: bool,
+    },
     /// Füllfläche: Muster + Flächenfarbe + optionale Randlinie.
     ///
     /// Der einzige gefüllte Objekttyp — die frühere Schraffur (Typ
@@ -1036,7 +1046,8 @@ impl EntityKind {
             | EntityKind::Ellipse { .. }
             | EntityKind::EllipseArc { .. }
             | EntityKind::Polyline { .. }
-            | EntityKind::Spline { .. } => RANG_LINIE,
+            | EntityKind::Spline { .. }
+            | EntityKind::Path { .. } => RANG_LINIE,
             EntityKind::Text { .. }
             | EntityKind::Room { .. }
             | EntityKind::Dim { .. }
@@ -1092,6 +1103,7 @@ impl EntityKind {
             EntityKind::EllipseArc { .. } => "Ellipsenbogen",
             EntityKind::Polyline { .. } => "Polylinie",
             EntityKind::Spline { .. } => "Spline",
+            EntityKind::Path { .. } => "Pfad",
             EntityKind::Fill { .. } => "Füllfläche",
             EntityKind::Volume { .. } => "Volumen",
             EntityKind::Text { .. } => "Text",

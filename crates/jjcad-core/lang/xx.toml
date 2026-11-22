@@ -88,6 +88,10 @@
 # hint = "Punkte klicken, Klick auf den Startpunkt schließt, Enter beendet"
 # label = "Polylinie"
 #
+[action.draw.path]
+# hint = "Linien und Bögen am Stück; Umschalt wechselt, Klick auf den Startpunkt schließt"
+# label = "Pfad"
+#
 [action.draw.parallel]
 # hint = "Linie oder Polylinie anklicken, dann die Seite"
 # label = "Parallele"
@@ -231,6 +235,10 @@
 [action.modify.explode]
 # hint = "Blöcke/Bauteile in Einzelelemente, Text in Linien zerlegen"
 # label = "Zerlegen"
+#
+[action.path.connect]
+# hint = "Linien, Bögen und Splines wählen, die zusammen eine Kette bilden"
+# label = "Verbinden"
 #
 [action.text.format]
 # hint = "Zeichenbereich eines Textes fett/kursiv/unterstrichen/hochgestellt setzen"
@@ -1143,6 +1151,13 @@
 # spline_abgeschlossen = "Spline · abgeschlossen"
 # spline_naechster_punkt_enter_beendet = "Spline · nächster Punkt (Enter beendet)"
 # spline_startpunkt_klicken = "Spline · Startpunkt klicken"
+# pfad_abgeschlossen = "Pfad · abgeschlossen"
+# objekte_verbunden = "Objekte · verbunden"
+# pfad_startpunkt_klicken = "Pfad · Startpunkt klicken"
+# pfad_bogenende_klicken = "Pfad · Bogenende klicken"
+# pfad_bogenpunkt_klicken = "Pfad · Bogenpunkt klicken"
+# pfad_naechster_punkt_enter_beendet = "Pfad · nächster Punkt (Enter beendet)"
+# verbinden_zwei_objekte_waehlen = "Verbinden: mindestens zwei Linien, Bögen oder Splines wählen"
 # stutzen_segment_anklicken = "Stutzen · Segment anklicken"
 # tastatur_belegen_abgebrochen = "Tastatur · belegen abgebrochen"
 # tastaturbelegung = "Tastaturbelegung"
@@ -1191,6 +1206,7 @@
 # zeichenflaeche = "Zeichenfläche"
 # zentrum = "Zentrum"
 # zerlegen = "Zerlegen"
+# verbinden = "Verbinden"
 # zerlegen_objekt_anklicken = "Zerlegen · Objekt anklicken"
 # zwei_oder_mehr_angrenzende_fuellflaechen_zu_einer_verein = "Zwei oder mehr angrenzende Füllflächen zu einer vereinigen"
 # sicherung_fehler_x = "Sicherung: {grund}"
@@ -1208,6 +1224,8 @@
 # kommandozeile = "Alternativ von der Kommandozeile: jjcad --daten-dir <Pfad>"
 #
 [gui.canvas]
+# pfad_bogenende = "Bogen · Ende"
+# pfad_bogenpunkt = "Bogen · Punkt auf dem Bogen"
 # abgebrochen = "Abgebrochen"
 # ansichtsbereich_hinweis = "Ansichtsbereich · Mausrad Maßstab · Mitteltaste verschieben"
 # masskette_waehlen = "Maßkette · erst eine Maßkette anklicken"
@@ -1626,6 +1644,7 @@
 # x_bloecke_x_funktionen_x_objekte = "{wert1} Blöcke · {wert2} Funktionen · {wert3} Objekte"
 #
 [gui.panels]
+# stuecke = "Stücke"
 # blattmanager = "Blattmanager"
 # plansatz = "Zum Plansatz"
 # plansatz_pdf_n = "Plansatz als PDF ({n})"
@@ -1859,6 +1878,7 @@
 # ohne_markierung_gilt_die_auszeichnung_fuer_das_was_sie_a = "Ohne Markierung gilt die Auszeichnung für das, was Sie als Nächstes tippen."
 # platzhalter_x_x_x_x = "Platzhalter: {DATUM} {PROJEKT} {MASSTAB} {PLAN}"
 # polylinie = "Polylinie"
+# pfad = "Pfad"
 # position_x_x_richtung_x = "Position ({wert1}, {wert2}) · Richtung {wert3}°"
 # punkt = "Punkt"
 # punkte = "Punkte"

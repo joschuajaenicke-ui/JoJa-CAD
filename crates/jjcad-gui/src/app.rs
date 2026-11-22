@@ -537,6 +537,10 @@ pub struct DocTab {
 pub struct Tool {
     pub action: String,
     pub pts: Vec<V2>,
+    /// Pfad (T0229): Rolle jedes Klicks im Punktpuffer. Ohne Werkzeug leer.
+    pub schritte: Vec<jjcad_core::pfad::PfadSchritt>,
+    /// Pfad-Werkzeug: nächste Strecke als Bogen? Umschalt schaltet um.
+    pub bogen: bool,
     /// Erstes angeklicktes Objekt bei Werkzeugen, die ein **Paar** brauchen
     /// (Verschneiden, T0082). Der Punktpuffer `pts` reicht dafür nicht: die
     /// Action braucht die Kennung, nicht die Klickstelle.
@@ -1126,6 +1130,9 @@ pub struct UiState {
     /// Häkchenfläche) im zuletzt gezeichneten Bild. Prüfwert der Tests.
     pub last_blattzeilen: Vec<(Id, Rect, Rect)>,
     pub ribbon_collapsed: bool,
+    /// Pfad-Werkzeug (T0229): Stand der Umschalttaste im vorigen Bild — der
+    /// Übergang „nicht gedrückt → gedrückt" schaltet zwischen Linie und Bogen.
+    pub path_shift: bool,
     pub keymap_open: bool,
     pub settings_open: bool,
     /// Gewählte Kategorie im Einstellungsfenster (Index in
@@ -1416,6 +1423,7 @@ impl Default for UiState {
             last_layer_kopf: Vec::new(),
             last_blattzeilen: Vec::new(),
             ribbon_collapsed: false,
+            path_shift: false,
             keymap_open: false,
             settings_open: false,
             settings_kat: 0,
@@ -3738,6 +3746,25 @@ impl App {
                     }
                     self.start_tool("draw.parallel");
                 }
+                // Pfad-Werkzeug (T0229): zeigt den Werkzeugzustand und wählt
+                // den Pfad, damit Vorschau und Panel im Bild stehen.
+                "pfad" | "path" => {
+                    let antwort = self.session_mut().execute(
+                        "draw.path",
+                        &serde_json::json!({"pts": [[0.0, 0.0], [2.0, 0.0], [2.5, 1.0], [2.0, 2.0], [0.0, 2.0]],
+                                            "schritte": ["start", "line", "arc_point", "arc_end", "line"],
+                                            "closed": true}),
+                    );
+                    if let Ok(v) = antwort {
+                        if let Some(id) = v.get("created").and_then(|c| c.get(0)).and_then(|x| x.as_u64()) {
+                            self.session_mut().select(vec![id]);
+                        }
+                    }
+                }
+                "pfadtool" | "pathtool" => {
+                    self.start_tool("draw.path");
+                    self.ui.ribbon = RibbonTab::Zeichnen;
+                }
                 "stairtool" => self.start_tool("draw.stair"),
                 "kreistool" => self.start_tool("draw.circle"),
                 "circlepanel" => {
@@ -5262,6 +5289,30 @@ impl App {
             }
             return;
         }
+        // Verbinden (T0229): wirkt sofort auf die Auswahl — kein Klickwerkzeug.
+        if id == "path.connect" {
+            let ids = self.selection().to_vec();
+            if ids.len() < 2 {
+                self.toast(jjcad_core::i18n::tr("gui.app.verbinden_zwei_objekte_waehlen"));
+                return;
+            }
+            match self
+                .session_mut()
+                .execute("path.connect", &serde_json::json!({ "ids": ids }))
+            {
+                Ok(v) => {
+                    self.mark_changed();
+                    let neu = v
+                        .get("created")
+                        .and_then(|c| c.get(0))
+                        .and_then(|x| x.as_u64());
+                    self.session_mut().select(neu.into_iter().collect());
+                    self.toast(jjcad_core::i18n::tr("gui.app.objekte_verbunden"));
+                }
+                Err(e) => self.toast(e),
+            }
+            return;
+        }
         // Werkzeuge
         if def.tool
             || matches!(
@@ -5535,6 +5586,8 @@ impl App {
         self.tool = Some(Tool {
             action: id.to_string(),
             pts: Vec::new(),
+            schritte: Vec::new(),
+            bogen: false,
             obj: None,
             selecting: self.session().selection.is_empty()
                 && matches!(
@@ -5628,7 +5681,7 @@ impl App {
                     // Raumstempel: ESC **bestätigt** die Punktfolge wie Enter
                     // (T0220) — bisher brach ESC den Stempel ab, obwohl die
                     // Ecken schon gesetzt waren.
-                    "draw.polyline" | "draw.spline" | "modify.area.split" | "dim.room"
+                    "draw.polyline" | "draw.spline" | "draw.path" | "modify.area.split" | "dim.room"
                 ) || crate::canvas::ist_fuell_punkte(&t.action);
                 punktfolge && t.pts.len() >= 2
             })
@@ -7778,7 +7831,7 @@ impl App {
     fn tool_enter(&mut self) {
         if let Some(tool) = self.tool.clone() {
             match tool.action.as_str() {
-                "draw.polyline" | "draw.spline" | "dim.chain" => {
+                "draw.polyline" | "draw.spline" | "draw.path" | "dim.chain" => {
                     if tool.pts.len() >= 2 {
                         canvas::finish_tool(self, true);
                     }
@@ -9164,6 +9217,14 @@ impl App {
                             ("draw.arc", "arc"),
                         ] {
                             let label = aktion_label(id);
+                            // Polylinie und Pfad teilen sich einen Platz: der
+                            // Pfeil öffnet die Wahl, der Knopf startet den
+                            // zuletzt benutzten (T0229). So bleibt der Reiter
+                            // in der Mindestbreite.
+                            if id == "draw.polyline" {
+                                app.polyline_group_button(ui);
+                                continue;
+                            }
                             // Rechteck trägt zwei Einfügemodi — der Pfeil am
                             // Knopf öffnet sie (Über Ecken / Basislinie + Höhe).
                             if id == "draw.rect" {
@@ -9272,8 +9333,20 @@ impl App {
                             ("modify.intersect", "intersect"),
                             ("modify.explode", "explode"),
                             ("modify.erase", "erase"),
+                            ("path.connect", "polyline"),
                         ] {
                             let label = aktion_label(id);
+                            // Verbinden ist kein Klickwerkzeug: es arbeitet
+                            // sofort auf der Auswahl (T0229).
+                            if id == "path.connect" {
+                                if widgets::ribbon_button(ui, icon, label, false)
+                                    .on_hover_text(jjcad_core::i18n::tr(actions::action(id).map(|a| a.hint()).unwrap_or("")))
+                                    .clicked()
+                                {
+                                    app.run_action(ui.ctx(), id);
+                                }
+                                continue;
+                            }
                             if widgets::ribbon_button(ui, icon, label, app.tool_id() == Some(id)).clicked() {
                                 app.start_tool(id);
                             }
@@ -10583,6 +10656,18 @@ pub(crate) fn commands_hint(tool: &Tool, opts: &ToolOptions) -> &'static str {
                 jjcad_core::i18n::tr("gui.app.spline_startpunkt_klicken")
             }
         }
+        // Pfad: der Schritt hängt am Modus und am halben Bogen (T0229).
+        "draw.path" => {
+            if !lebt {
+                jjcad_core::i18n::tr("gui.app.pfad_startpunkt_klicken")
+            } else if tool.schritte.last() == Some(&jjcad_core::pfad::PfadSchritt::ArcPoint) {
+                jjcad_core::i18n::tr("gui.app.pfad_bogenende_klicken")
+            } else if tool.bogen {
+                jjcad_core::i18n::tr("gui.app.pfad_bogenpunkt_klicken")
+            } else {
+                jjcad_core::i18n::tr("gui.app.pfad_naechster_punkt_enter_beendet")
+            }
+        }
         "draw.rect" => match (modus, tool.pts.len()) {
             (Einfuegemodus::Basislinie, 0) => jjcad_core::i18n::tr("gui.app.rechteck_basislinie_anfang_klicken"),
             (Einfuegemodus::Basislinie, 1) => jjcad_core::i18n::tr("gui.app.rechteck_basislinie_ende_klicken"),
@@ -10807,6 +10892,8 @@ pub(crate) fn abschluss_meldung(action: &str) -> Option<&'static str> {
         "draw.polyline" => jjcad_core::i18n::tr("gui.app.polylinie_abgeschlossen"),
         "draw.parallel" => jjcad_core::i18n::tr("gui.app.parallele_gesetzt"),
         "draw.spline" => jjcad_core::i18n::tr("gui.app.spline_abgeschlossen"),
+        "draw.path" => jjcad_core::i18n::tr("gui.app.pfad_abgeschlossen"),
+        "path.connect" => jjcad_core::i18n::tr("gui.app.objekte_verbunden"),
         "draw.rect" => jjcad_core::i18n::tr("gui.app.rechteck_gesetzt"),
         "draw.image" => jjcad_core::i18n::tr("gui.app.bild_gesetzt"),
         "draw.circle" => jjcad_core::i18n::tr("gui.app.kreis_gesetzt"),
@@ -11106,6 +11193,43 @@ impl App {
                             close = true;
                         }
                         ui.separator();
+                        // Verbinden (T0229): nur, wenn die ganze Auswahl aus
+                        // Linien, Bögen, Ellipsenbögen oder Splines besteht.
+                        // Ob sie zusammenhängen, prüft der Befehl selbst.
+                        {
+                            let faehig = ziel
+                                .iter()
+                                .filter(|id| {
+                                    matches!(
+                                        self.doc().entity(**id).map(|e| &e.kind),
+                                        Some(EntityKind::Line { .. })
+                                            | Some(EntityKind::Arc { .. })
+                                            | Some(EntityKind::EllipseArc { .. })
+                                            | Some(EntityKind::Spline { .. })
+                                    )
+                                })
+                                .count();
+                            if faehig >= 2 && faehig == ziel.len() {
+                                if ui.button(jjcad_core::i18n::tr("gui.app.verbinden")).clicked() {
+                                    match self
+                                        .session_mut()
+                                        .execute("path.connect", &serde_json::json!({ "ids": ziel.clone() }))
+                                    {
+                                        Ok(v) => {
+                                            self.mark_changed();
+                                            let neu = v
+                                                .get("created")
+                                                .and_then(|c| c.get(0))
+                                                .and_then(|x| x.as_u64());
+                                            self.session_mut().select(neu.into_iter().collect());
+                                        }
+                                        Err(e) => self.toast(e),
+                                    }
+                                    close = true;
+                                }
+                                ui.separator();
+                            }
+                        }
                         if ui.button(jjcad_core::i18n::tr("gui.app.zerlegen")).clicked() {
                             let _ = self.session_mut().execute(
                                 "modify.explode",
@@ -11609,6 +11733,7 @@ pub fn entity_kind_icon(kind: &EntityKind) -> &'static str {
         EntityKind::EllipseArc { .. } => "arc",
         EntityKind::Polyline { .. } => "polyline",
         EntityKind::Spline { .. } => "spline",
+        EntityKind::Path { .. } => "polyline",
         EntityKind::Fill { .. } => "fill",
         EntityKind::Volume { .. } => "volume",
         EntityKind::Text { .. } => "text",
@@ -11904,6 +12029,71 @@ impl App {
     /// Gleiche Bedienung wie bei den Flächen: Hauptfläche startet den zuletzt
     /// benutzten Modus, der Pfeil öffnet die Auswahl. Das Icon zeigt den Modus —
     /// „Kopieren mit Basispunkt" trägt unten links einen Punkt.
+    /// Polylinie und Pfad auf **einem** Platz (T0229): der Knopf startet den
+    /// zuletzt benutzten, der Pfeil öffnet die Wahl. Zwei eigene Knöpfe
+    /// überschritten die Mindestfensterbreite des Reiters „Zeichnen".
+    fn polyline_group_button(&mut self, ui: &mut egui::Ui) {
+        let cur = self.tool_id() == Some("draw.path");
+        let aktiv = cur || self.tool_id() == Some("draw.polyline");
+        let label = aktion_label(if cur { "draw.path" } else { "draw.polyline" });
+        let (main, arrow) = widgets::ribbon_split_button(ui, "polyline", label, aktiv);
+        let popup_id = ui.make_persistent_id("pfadpop");
+        let now = ui.input(|i| i.time);
+        if arrow.clicked() {
+            ui.memory_mut(|m| m.toggle_popup(popup_id));
+            ui.memory_mut(|m| m.data.insert_temp(popup_id.with("opened"), now));
+        } else if main.clicked() {
+            self.start_tool(if cur { "draw.path" } else { "draw.polyline" });
+        }
+        // Der Klick, der das Menü öffnet, darf nicht sofort einen Eintrag wählen
+        let geoeffnet = ui.memory(|m| m.data.get_temp::<f64>(popup_id.with("opened")).unwrap_or(0.0));
+        let bereit = now - geoeffnet > 0.25;
+        egui::popup_below_widget(
+            ui,
+            popup_id,
+            &arrow,
+            egui::PopupCloseBehavior::CloseOnClickOutside,
+            |ui| {
+                ui.set_min_width(260.0);
+                ui.spacing_mut().item_spacing.y = 1.0;
+                for (id, icon) in [("draw.polyline", "polyline"), ("draw.path", "polyline")] {
+                    let (rect, resp) = ui.allocate_exact_size(
+                        egui::Vec2::new(ui.available_width().max(256.0), 26.0),
+                        egui::Sense::click(),
+                    );
+                    let gewaehlt = self.tool_id() == Some(id);
+                    if resp.hovered() || gewaehlt {
+                        ui.painter().rect_filled(
+                            rect,
+                            egui::Rounding::same(4.0),
+                            Palette::panel_alt(),
+                        );
+                    }
+                    crate::icons::paint(
+                        ui.painter(),
+                        egui::Rect::from_center_size(
+                            egui::Pos2::new(rect.left() + 16.0, rect.center().y),
+                            egui::Vec2::splat(18.0),
+                        ),
+                        icon,
+                        if gewaehlt { Palette::accent() } else { Palette::text() },
+                    );
+                    ui.painter().text(
+                        egui::Pos2::new(rect.left() + 32.0, rect.center().y),
+                        egui::Align2::LEFT_CENTER,
+                        aktion_label(id),
+                        egui::FontId::proportional(12.5),
+                        if gewaehlt { Palette::accent() } else { Palette::text() },
+                    );
+                    if resp.clicked() && bereit {
+                        self.start_tool(id);
+                        ui.memory_mut(|m| m.close_popup());
+                    }
+                }
+            },
+        );
+    }
+
     fn copy_group_button(&mut self, ui: &mut egui::Ui) {
         let cur = self.ui.copy_input;
         let aktiv = self.tool_id() == Some(cur.action());
@@ -14456,6 +14646,8 @@ mod tests_chat_texte {
                         out.push(Tool {
                             action: a.id.to_string(),
                             pts: vec![V2::ZERO; anzahl],
+                            schritte: Vec::new(),
+                            bogen: false,
                             obj: None,
                             selecting,
                             phase,

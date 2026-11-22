@@ -123,6 +123,14 @@ pub fn transform_kind(k: &EntityKind, m: &Affine) -> EntityKind {
                 .collect(),
             closed: *closed,
         },
+        // Pfad: jedes Stück mit derselben Abbildung wie ein eigenes Objekt.
+        EntityKind::Path { segments, closed } => EntityKind::Path {
+            segments: segments
+                .iter()
+                .map(|s| transform_path_seg(s, m, f, nonuniform))
+                .collect(),
+            closed: *closed,
+        },
         EntityKind::Fill {
             boundary,
             holes,
@@ -444,4 +452,73 @@ pub fn mirror_at(p1: Vec2, p2: Vec2) -> Affine {
 
 pub fn scale_about(c: Vec2, s: f64) -> Affine {
     Affine::scale_about(c, s, s)
+}
+
+/// Ein Pfadstück unter einer affinen Abbildung — Bogen und Ellipsenbogen wie
+/// die gleichnamigen Objekte (gespiegelt kehren sich die Winkel um).
+fn transform_path_seg(
+    s: &crate::pfad::PathSeg,
+    m: &Affine,
+    f: f64,
+    nonuniform: Option<(f64, f64)>,
+) -> crate::pfad::PathSeg {
+    use crate::pfad::PathSeg;
+    match s {
+        PathSeg::Line { a, b } => PathSeg::Line {
+            a: m.apply(*a),
+            b: m.apply(*b),
+        },
+        PathSeg::Arc { c, r, a0, a1 } => {
+            if m.is_mirrored() {
+                PathSeg::Arc {
+                    c: m.apply(*c),
+                    r: *r * f,
+                    a0: -a1 + m.rotation(),
+                    a1: -a0 + m.rotation(),
+                }
+            } else {
+                PathSeg::Arc {
+                    c: m.apply(*c),
+                    r: *r * f,
+                    a0: a0 + m.rotation(),
+                    a1: a1 + m.rotation(),
+                }
+            }
+        }
+        PathSeg::EllipseArc {
+            c,
+            rx,
+            ry,
+            rot,
+            a0,
+            a1,
+        } => {
+            let (aa, ab, r) = if m.is_mirrored() {
+                (-*a1, -*a0, m.rotation() - *rot)
+            } else {
+                (*a0, *a1, *rot + m.rotation())
+            };
+            PathSeg::EllipseArc {
+                c: m.apply(*c),
+                rx: *rx * sx(m),
+                ry: *ry * sy(m),
+                rot: r,
+                a0: aa,
+                a1: ab,
+            }
+        }
+        PathSeg::Spline { verts } => PathSeg::Spline {
+            verts: verts
+                .iter()
+                .map(|v| crate::geom::Vertex {
+                    p: m.apply(v.p),
+                    bulge: if m.is_mirrored() && nonuniform.is_none() {
+                        -v.bulge
+                    } else {
+                        v.bulge
+                    },
+                })
+                .collect(),
+        },
+    }
 }
