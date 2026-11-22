@@ -9,10 +9,17 @@
 //! 3. Was außerhalb des Bereichs liegt, ist nicht im Bild.
 //! 4. Eine Diagonale ohne Fläche ist ein Fehler, kein stilles Bild.
 
-use jjcad_core::raster::{render_bereich_pixmap, render_png_bereich};
+use jjcad_core::raster::{png_hoehe_px, png_verhaeltnis, render_bereich_pixmap, render_png_auswahl};
 use jjcad_core::session::Session;
 use serde_json::json;
 use tiny_skia::Pixmap;
+
+/// Ein PNG als Pixmap lesen (tiny-skia bringt den Dekoder mit).
+fn png_lesen(pfad: &std::path::Path) -> Pixmap {
+    Pixmap::load_png(pfad).expect("PNG lesbar")
+}
+
+
 
 /// Zeichnung mit einer Linie quer durch den Bereich und einer weit außerhalb.
 fn zeichnung() -> Session {
@@ -63,7 +70,7 @@ fn spannen(pm: &Pixmap, y: u32) -> Option<(u32, u32)> {
 fn bereich_fuellt_das_bild_ohne_rand() {
     let s = zeichnung();
     // Quadratischer Bereich 1000 × 1000 mm um die Linie in der Mitte.
-    let pm = render_bereich_pixmap(&s.doc, [0.0, -500.0, 1000.0, 500.0], None, 400).expect("Bild");
+    let pm = render_bereich_pixmap(&s.doc, [0.0, -500.0, 1000.0, 500.0], None, 400, true).expect("Bild");
     assert_eq!((pm.width(), pm.height()), (400, 400), "Bildgröße folgt dem Bereich");
 
     // Die Linie liegt auf y = 0, also in der Bildmitte.
@@ -97,11 +104,11 @@ fn bereich_fuellt_das_bild_ohne_rand() {
 fn hoehe_folgt_dem_seitenverhaeltnis() {
     let s = zeichnung();
     // 2000 × 1000 mm → 400 × 200 px, unverzerrt.
-    let pm = render_bereich_pixmap(&s.doc, [0.0, -500.0, 2000.0, 500.0], None, 400).expect("Bild");
+    let pm = render_bereich_pixmap(&s.doc, [0.0, -500.0, 2000.0, 500.0], None, 400, true).expect("Bild");
     assert_eq!((pm.width(), pm.height()), (400, 200));
 
     // 1000 × 500 mm → 400 × 200 px.
-    let pm = render_bereich_pixmap(&s.doc, [0.0, 0.0, 1000.0, 500.0], None, 400).expect("Bild");
+    let pm = render_bereich_pixmap(&s.doc, [0.0, 0.0, 1000.0, 500.0], None, 400, true).expect("Bild");
     assert_eq!((pm.width(), pm.height()), (400, 200));
 }
 
@@ -124,7 +131,7 @@ fn nur_der_bereich_steht_im_bild() {
     )
     .expect("Linie außerhalb");
 
-    let pm = render_bereich_pixmap(&s.doc, [0.0, -500.0, 1000.0, 500.0], None, 400).expect("Bild");
+    let pm = render_bereich_pixmap(&s.doc, [0.0, -500.0, 1000.0, 500.0], None, 400, true).expect("Bild");
     let (_, rechts) = spannen(&pm, 200).expect("Linie im Bild");
     // Die Linie endet bei 500 mm, also in der Bildmitte — die rechte Hälfte
     // bleibt weiß, und die Linie bei y = 5000 liegt außerhalb.
@@ -135,9 +142,9 @@ fn nur_der_bereich_steht_im_bild() {
 #[test]
 fn diagonale_ohne_flaeche_ist_ein_fehler() {
     let s = zeichnung();
-    let leer = render_bereich_pixmap(&s.doc, [100.0, 100.0, 100.0, 400.0], None, 400);
+    let leer = render_bereich_pixmap(&s.doc, [100.0, 100.0, 100.0, 400.0], None, 400, true);
     assert!(leer.is_err(), "senkrechte Diagonale ohne Breite muss ein Fehler sein");
-    let leer = render_bereich_pixmap(&s.doc, [100.0, 100.0, 400.0, 100.0], None, 400);
+    let leer = render_bereich_pixmap(&s.doc, [100.0, 100.0, 400.0, 100.0], None, 400, true);
     assert!(leer.is_err(), "waagerechte Diagonale ohne Höhe muss ein Fehler sein");
 }
 
@@ -146,10 +153,70 @@ fn bereich_wird_als_png_datei_geschrieben() {
     let s = zeichnung();
     let dir = std::env::temp_dir().join(format!("jjcad-t0235-{}", std::process::id()));
     let pfad = dir.join("bereich.png");
-    render_png_bereich(&s.doc, [0.0, -500.0, 1000.0, 500.0], None, 400, &pfad).expect("PNG");
+    render_png_auswahl(
+        &s.doc,
+        Some([0.0, -500.0, 1000.0, 500.0]),
+        None,
+        400,
+        true,
+        &pfad,
+    )
+    .expect("PNG");
     let pm = Pixmap::load_png(&pfad).expect("PNG lesbar");
     assert_eq!((pm.width(), pm.height()), (400, 400));
     assert!(dunkel(&pm, 200, 200), "die Linie fehlt im geschriebenen PNG");
+    let _ = std::fs::remove_file(&pfad);
+    let _ = std::fs::remove_dir(&dir);
+}
+
+#[test]
+fn ganze_zeichnung_haelt_ihr_seitenverhaeltnis() {
+    let s = zeichnung();
+    // Die Zeichnung ist 1000 mm breit und (durch den 3-%-Rand) etwas höher als
+    // die Linie: die Höhe der Datei muss zur angezeigten Zahl passen.
+    let verhaeltnis = png_verhaeltnis(&s.doc, None, None);
+    assert!(verhaeltnis > 0.0, "Seitenverhältnis der Zeichnung");
+    let hoehe = png_hoehe_px(400, verhaeltnis);
+    let dir = std::env::temp_dir().join(format!("jjcad-t0235-ganz-{}", std::process::id()));
+    let pfad = dir.join("ganz.png");
+    render_png_auswahl(&s.doc, None, None, 400, true, &pfad).expect("PNG");
+    let pm = png_lesen(&pfad);
+    assert_eq!(pm.width(), 400);
+    assert_eq!(pm.height(), hoehe, "die Datei hat nicht die angezeigte Höhe");
+    let _ = std::fs::remove_file(&pfad);
+    let _ = std::fs::remove_dir(&dir);
+}
+
+#[test]
+fn ohne_papier_bleibt_der_grund_durchsichtig() {
+    let s = zeichnung();
+    let weiss = render_bereich_pixmap(&s.doc, [0.0, -500.0, 1000.0, 500.0], None, 200, true)
+        .expect("Bild");
+    let klar = render_bereich_pixmap(&s.doc, [0.0, -500.0, 1000.0, 500.0], None, 200, false)
+        .expect("Bild");
+    // Ein Punkt abseits der Linie: weiß bzw. durchsichtig.
+    let (x, y) = (10, 10);
+    let oben = weiss.pixel(x, y).expect("Pixel");
+    let durch = klar.pixel(x, y).expect("Pixel");
+    assert_eq!((oben.red(), oben.alpha()), (255, 255), "Papier ist weiß");
+    assert_eq!(durch.alpha(), 0, "ohne Papier bleibt der Grund durchsichtig");
+    // Die Linie selbst ist in beiden Bildern gezeichnet.
+    assert!(
+        klar.pixel(100, 100).map(|p| p.alpha()).unwrap_or(0) > 0,
+        "die Linie fehlt im durchsichtigen Bild"
+    );
+
+    // Derselbe Schalter gilt für die ganze Zeichnung (der zweite Weg im Export).
+    let dir = std::env::temp_dir().join(format!("jjcad-t0235-klar-{}", std::process::id()));
+    let pfad = dir.join("ganz.png");
+    render_png_auswahl(&s.doc, None, None, 300, false, &pfad).expect("PNG");
+    let pm = png_lesen(&pfad);
+    let ecke = pm.pixel(1, 1).expect("Pixel");
+    assert_eq!(ecke.alpha(), 0, "die ganze Zeichnung ohne Papier ist durchsichtig");
+    let gezeichnet = (0..pm.height()).any(|y| {
+        (0..pm.width()).any(|x| pm.pixel(x, y).map(|p| p.alpha()).unwrap_or(0) > 0)
+    });
+    assert!(gezeichnet, "die Linien fehlen in der ganzen Zeichnung");
     let _ = std::fs::remove_file(&pfad);
     let _ = std::fs::remove_dir(&dir);
 }

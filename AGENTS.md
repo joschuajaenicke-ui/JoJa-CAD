@@ -196,18 +196,22 @@ Mit dem Nutzer abgestimmt — nicht „verbessern“:
   Zeichenreihenfolge — eine oben liegende Fläche deckt die Umrandung der unteren
   mit zu. Vorher standen global alle Füllungen vor allen Linien; dadurch blieb die
   Umrandung der unteren Fläche über der oberen sichtbar.
-- **PNG-Export eines Bereichs (T0235)**: Der Ribbon-Knopf „PNG" ist eine geteilte
-  Schaltfläche — der Hauptklick exportiert die **ganze** Zeichnung (bzw. das Blatt), der
-  Pfeil öffnet ein Menü mit „Ganze Zeichnung" und „Bereich · Diagonale". Der Bereich ist
-  immer ein Rechteck, angegeben über die **Diagonale**: `UiState::png_wahl` sammelt die
-  beiden Klicks in `canvas::handle_input` (`canvas::png_bereich_klick`), danach steht der
-  Ausschnitt in `UiState::png_bereich` und der Speicherdialog fragt nach dem Ziel.
-  Geschrieben wird über `raster::render_png_bereich`/`render_bereich_pixmap` — **exakt**
-  der Bereich (kein 3-%-Rand wie `render_model_pixmap`), Höhe aus dem Seitenverhältnis,
-  Breite 2400 px; im Papierraum rechnet der Ausschnitt in Papier-Millimetern. Ein
-  Zeichnungs-Export über den Hauptknopf setzt `png_bereich` zurück, eine Diagonale ohne
-  Fläche ist ein Fehler. Prüfweg: `cargo test -p jjcad-core --test png_bereich` und
-  `cargo test -p jjcad-gui tests_png_bereich`; Prüfbild `--demo png` (offenes Menü).
+- **PNG exportieren — ein Knopf, ein Fenster (T0235)**: Der Bild-Export hat **einen**
+  Weg: der Ribbon-Knopf „PNG" (Aktion `file.export_png`) öffnet das Fenster
+  `dialogs::png_export` (`UiState::png_export_offen`) — keine zweite Schaltfläche,
+  kein Menü daneben. Es zeigt **Quelle** (Modell oder Blatt, aus dem Reiter),
+  **Bereich**, **Seitenverhältnis**, **Auflösung** (Breite in Pixeln, Höhe folgt aus
+  `raster::png_verhaeltnis`/`png_hoehe_px`) und **Hintergrund** (Weiß/Durchsichtig).
+  „Bereich auswählen" schließt das Fenster und sammelt zwei Klicks in
+  `canvas::handle_input` (`canvas::png_bereich_klick`); der Bereich steht danach in
+  `UiState::png_bereich` und **bleibt für den nächsten Export** gemerkt, „Aufheben"
+  nimmt ihn zurück. Nicht wieder ein Menü an den Knopf hängen: die Bedienung soll
+  **eine** Exportmethode zeigen. Geschrieben wird über `raster::render_png_auswahl`
+  (Bereich exakt, ganze Zeichnung mit ihrem 3-%-Rand, `papier` = weißer Grund, sonst
+  Alpha). Prüfweg: `cargo test -p jjcad-core --test png_bereich` (7 Tests) und
+  `cargo test -p jjcad-gui tests_png_bereich` (6 Tests); Prüfbild `--demo png`.
+  **Achtung im Test**: egui rechnet Klicks gegen die Flächen des Vorframes — nach dem
+  Schließen des Fensters braucht der erste Klick auf die Fläche ein Bild ohne Fenster.
 - **Auswahl** färbt nur blau ein — kein zusätzlicher Auswahlrahmen. **Ausnahme Text**:
   der Text hat einen unsichtbaren Rahmen (derselbe Kasten wie in der Einfüge-Vorschau), der
   bei Auswahl gezeichnet wird und dessen Ecken/Kantenmitten fangen. Ob Text mit der

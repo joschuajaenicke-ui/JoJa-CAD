@@ -619,6 +619,204 @@ pub fn block_loeschen(app: &mut App, ctx: &egui::Context) {
     }
 }
 
+/// T0235: Fenster „PNG exportieren" — der **eine** Weg, ein Bild zu schreiben.
+///
+/// Es zeigt und ändert alles, was den Export bestimmt: Quelle (Zeichnung oder
+/// Blatt, je nach Reiter), den gemerkten **Bereich** (Rechteck über die
+/// Diagonale, gewählt mit „Bereich auswählen"), die **Auflösung** (Breite in
+/// Pixeln, die Höhe folgt aus dem Seitenverhältnis) und den **Hintergrund**
+/// (Weiß oder durchsichtig). Der Bereich bleibt nach dem Export stehen und gilt
+/// für den nächsten.
+pub fn png_export(app: &mut App, ctx: &egui::Context) {
+    if !app.ui.png_export_offen {
+        return;
+    }
+    // Während der Bereichswahl gehört die Fläche der Diagonale — das Fenster
+    // tritt so lange zurück.
+    if app.ui.png_wahl.is_some() {
+        return;
+    }
+    let tr = jjcad_core::i18n::tr;
+    let unit = app.unit();
+    let sheet = match &app.tab().tab {
+        crate::app::TabKind::Sheet(id) => app
+            .doc()
+            .sheets
+            .iter()
+            .position(|s| s.id == *id),
+        _ => None,
+    };
+    let quelle = match sheet.and_then(|i| app.doc().sheets.get(i)) {
+        Some(s) => format!("{} · {}", tr("gui.dialogs.png_blatt"), s.name),
+        None => tr("gui.dialogs.png_zeichnung").to_string(),
+    };
+    let verhaeltnis = jjcad_core::raster::png_verhaeltnis(app.doc(), app.ui.png_bereich, sheet);
+    let mut offen = true;
+    let mut exportieren = false;
+    let mut waehlen = false;
+    let mut aufheben = false;
+    let mut abbrechen = false;
+    let mut einstellungen = app.ui.png_einstellungen;
+    dim_background(ctx);
+    modal_window(ctx, tr("gui.dialogs.png_export"), 480.0, &mut offen)
+        .order(egui::Order::Foreground)
+        .show(ctx, |ui| {
+            ui.set_width(460.0);
+            widgets::field_row(ui, tr("gui.dialogs.png_quelle"), |ui| {
+                ui.label(quelle.clone());
+            });
+            ui.add_space(4.0);
+            // Bereich: Rechteck über die Diagonale, gemerkt für den nächsten Export.
+            let bereich_text = match app.ui.png_bereich {
+                Some([x0, y0, x1, y1]) => format!(
+                    "{} × {}",
+                    unit.format_length_auto((x1 - x0).abs()),
+                    unit.format_length_auto((y1 - y0).abs())
+                ),
+                None => tr("gui.dialogs.png_ganze_zeichnung").to_string(),
+            };
+            widgets::field_row_tip(
+                ui,
+                tr("gui.dialogs.png_bereich"),
+                tr("gui.dialogs.png_bereich_tip"),
+                |ui| {
+                    ui.label(bereich_text.clone());
+                },
+            );
+            ui.add_space(4.0);
+            // Seitenverhältnis aus dem Bereich: daraus folgt die Höhe des Bildes.
+            let (br, ho) = ausschnitt_masse(app, sheet);
+            widgets::field_row(ui, tr("gui.dialogs.png_seitenverhaeltnis"), |ui| {
+                let [b, h] = seitenverhaeltnis_zahlen(br, ho);
+                // Krumme Maße (ganze Zeichnung) kürzen sich nicht auf kleine
+                // Zahlen — dort ist der Dezimalwert ehrlicher als „13262 : 12169".
+                if b.max(h) <= 40 {
+                    ui.label(format!("{b} : {h}"));
+                } else {
+                    ui.label(format!("1 : {:.2}", ho / br).replace('.', ","));
+                }
+            });
+            ui.add_space(4.0);
+            // Auflösung: nur die Breite ist ein Feld, die Höhe folgt.
+            widgets::field_row(ui, tr("gui.dialogs.png_breite_px"), |ui| {
+                ui.horizontal(|ui| {
+                    ui.add_sized(
+                        [110.0, widgets::FELD_H],
+                        widgets::zahl(&mut einstellungen.breite_px, 20.0, 100..=20000),
+                    );
+                    let hoehe = jjcad_core::raster::png_hoehe_px(einstellungen.breite_px, verhaeltnis);
+                    ui.label(theme::dim(jjcad_core::i18n::t_args_owned(
+                        "gui.dialogs.png_hoehe_px",
+                        &[("hoehe", hoehe.to_string())],
+                    )));
+                });
+            });
+            ui.add_space(4.0);
+            widgets::field_row_tip(
+                ui,
+                tr("gui.dialogs.png_hintergrund"),
+                tr("gui.dialogs.png_hintergrund_tip"),
+                |ui| {
+                    let caption = if einstellungen.papier {
+                        tr("gui.dialogs.png_weiss")
+                    } else {
+                        tr("gui.dialogs.png_transparent")
+                    };
+                    let gewaehlt = panels::dropdown(ui, "png_hintergrund", caption, None, |ui| {
+                        ui.set_min_width(200.0);
+                        let mut out = None;
+                        if ui
+                            .selectable_label(einstellungen.papier, tr("gui.dialogs.png_weiss"))
+                            .clicked()
+                        {
+                            out = Some(true);
+                        }
+                        if ui
+                            .selectable_label(
+                                !einstellungen.papier,
+                                tr("gui.dialogs.png_transparent"),
+                            )
+                            .clicked()
+                        {
+                            out = Some(false);
+                        }
+                        out
+                    });
+                    if let Some(p) = gewaehlt {
+                        einstellungen.papier = p;
+                    }
+                },
+            );
+            ui.add_space(8.0);
+            ui.horizontal(|ui| {
+                if ui.button(tr("gui.dialogs.png_bereich_waehlen")).clicked() {
+                    waehlen = true;
+                }
+                if app.ui.png_bereich.is_some()
+                    && ui.button(tr("gui.dialogs.png_bereich_aufheben")).clicked()
+                {
+                    aufheben = true;
+                }
+            });
+            ui.add_space(10.0);
+            button_row(ui, |ui| {
+                if ui.button(tr("gui.dialogs.png_exportieren")).clicked() {
+                    exportieren = true;
+                }
+                if ui.button(tr("gui.dialogs.abbrechen")).clicked() {
+                    abbrechen = true;
+                }
+            });
+        });
+    app.ui.png_einstellungen = einstellungen;
+    if waehlen {
+        app.start_png_bereich();
+    } else if aufheben {
+        app.ui.png_bereich = None;
+    } else if exportieren {
+        app.ui.png_export_offen = false;
+        app.open_file_dialog(FileMode::ExportPng);
+    } else if abbrechen || !offen {
+        app.ui.png_export_offen = false;
+    }
+}
+
+/// Ausdehnung dessen, was der PNG-Export zeigt, in Millimetern (T0235):
+/// der gemerkte Bereich, sonst das Blatt, sonst die Zeichnung samt dem
+/// 3-%-Rand von `raster::render_model_pixmap`.
+fn ausschnitt_masse(app: &App, sheet: Option<usize>) -> (f64, f64) {
+    if let Some([x0, y0, x1, y1]) = app.ui.png_bereich {
+        return ((x1 - x0).abs(), (y1 - y0).abs());
+    }
+    if let Some(s) = sheet.and_then(|i| app.doc().sheets.get(i)) {
+        return s.size();
+    }
+    let bb = app.doc().bbox();
+    let rand = bb.width().max(bb.height()) * 0.03;
+    (bb.width() + 2.0 * rand, bb.height() + 2.0 * rand)
+}
+
+/// Seitenverhältnis als ganze Zahlen für die Anzeige (T0235): Breite und Höhe
+/// auf den größten gemeinsamen Teiler gekürzt — „3 : 2" statt „1 : 0,667".
+fn seitenverhaeltnis_zahlen(br: f64, ho: f64) -> [u64; 2] {
+    let (b, h) = (br.round().max(0.0) as u64, ho.round().max(0.0) as u64);
+    if b == 0 || h == 0 {
+        return [1, 1];
+    }
+    let mut a = b;
+    let mut c = h;
+    while c != 0 {
+        let t = c;
+        c = a % c;
+        a = t;
+    }
+    if a > 0 {
+        [b / a, h / a]
+    } else {
+        [b, h]
+    }
+}
+
 // ---------------------------------------------------------------------------
 // Gemeinsame Bausteine
 // ---------------------------------------------------------------------------
@@ -867,6 +1065,9 @@ pub fn show(app: &mut App, ctx: &egui::Context) {
     // T0219: Rückfrage beim Löschen eines Blocks — mit Hinweis auf noch
     // eingesetzte Instanzen und dem Angebot, sie vorher zu zerlegen.
     block_loeschen(app, ctx);
+
+    // T0235: Fenster „PNG exportieren" — der eine Weg für den Bild-Export.
+    png_export(app, ctx);
 
     // Dateidialog
     if app.ui.file_dialog.is_some() {
@@ -9286,5 +9487,64 @@ mod tests_block_loeschen {
         assert!(!app.block_loeschen_anfragen("sys:pfeil"));
         assert!(app.ui.block_delete.is_none(), "keine Rückfrage");
         assert!(app.doc().block("sys:pfeil").is_some(), "der Block bleibt");
+    }
+}
+
+// ---------------------------------------------------------------------------
+// PNG-Fenster (T0235)
+// ---------------------------------------------------------------------------
+
+mod tests_png_export {
+    //! T0235: Seitenverhältnis und Ausschnittmaße, wie das Fenster sie zeigt.
+
+    use super::*;
+
+    fn app_mit_zeichnung() -> App {
+        let mut app = App::with_ctx(egui::Context::default());
+        app.session_mut()
+            .execute(
+                "doc.settings",
+                &serde_json::json!({"input_unit": "mm"}),
+            )
+            .unwrap();
+        app.session_mut()
+            .execute(
+                "draw.line",
+                &serde_json::json!({"a": [0.0, 0.0], "b": [2000.0, 1000.0]}),
+            )
+            .unwrap();
+        app
+    }
+
+    #[test]
+    fn seitenverhaeltnis_kuerzt_auf_kleine_zahlen() {
+        assert_eq!(seitenverhaeltnis_zahlen(600.0, 400.0), [3, 2]);
+        assert_eq!(seitenverhaeltnis_zahlen(420.0, 297.0), [140, 99]);
+        assert_eq!(seitenverhaeltnis_zahlen(0.0, 400.0), [1, 1]);
+    }
+
+    #[test]
+    fn ausschnitt_ist_der_gemerkte_bereich_sonst_die_zeichnung() {
+        let mut app = app_mit_zeichnung();
+        // Ohne Bereich: die Zeichnung samt ihrem 3-%-Rand.
+        // Der Rand ist 3 % der **größeren** Seite (2000 mm → 60 mm je Seite).
+        let (b, h) = ausschnitt_masse(&app, None);
+        assert!((b - 2120.0).abs() < 1e-6, "Breite incl. Rand: {b}");
+        assert!((h - 1120.0).abs() < 1e-6, "Höhe incl. Rand: {h}");
+
+        // Mit Bereich: genau seine Ausdehnung.
+        app.ui.png_bereich = Some([100.0, 200.0, 700.0, 500.0]);
+        assert_eq!(ausschnitt_masse(&app, None), (600.0, 300.0));
+
+        // Auf einem Blatt: das Papier.
+        let sid = app
+            .session_mut()
+            .execute("sheet.new", &serde_json::json!({"name": "Blatt 2"}))
+            .map(|v| v["created"][0].as_str().unwrap_or("").to_string())
+            .unwrap_or_default();
+        let _ = sid;
+        app.ui.png_bereich = None;
+        let (b, h) = ausschnitt_masse(&app, Some(0));
+        assert!((b - 420.0).abs() < 1e-6 && (h - 297.0).abs() < 1e-6);
     }
 }

@@ -5072,7 +5072,10 @@ fn handle_input(
         if ctx.input(|i| i.key_pressed(egui::Key::Escape))
             || resp.clicked_by(egui::PointerButton::Secondary)
         {
+            // Zurück ins Fenster — dort bleibt der zuletzt gemerkte Bereich
+            // stehen, abgebrochen wird nur die neue Wahl (T0235).
             app.ui.png_wahl = None;
+            app.ui.png_export_offen = true;
             app.mitteilung(jjcad_core::i18n::tr("gui.canvas.png_bereich_abgebrochen"));
             return;
         }
@@ -5647,7 +5650,9 @@ fn png_bereich_klick(app: &mut App, p: V2) {
                 return;
             }
             app.ui.png_bereich = Some([a.x.min(p.x), a.y.min(p.y), a.x.max(p.x), a.y.max(p.y)]);
-            app.open_file_dialog(crate::dialogs::FileMode::ExportPng);
+            // Zurück ins Fenster: es zeigt den Bereich, das Seitenverhältnis und
+            // die Auflösung; der Export startet erst dort.
+            app.ui.png_export_offen = true;
         }
     }
 }
@@ -19729,9 +19734,10 @@ mod tests_plan_massstab {
 // ---------------------------------------------------------------------------
 
 mod tests_png_bereich {
-    //! Der Bereich ist immer ein Rechteck und wird über die Diagonale angegeben:
-    //! der erste Klick setzt die eine Ecke, der zweite die andere, danach fragt
-    //! der Speicherdialog nach dem Ziel. Geprüft wird der ganze Weg bis zur
+    //! T0235: **ein** Weg für den Bild-Export — der PNG-Knopf öffnet ein
+    //! Fenster mit Bereich, Auflösung und Hintergrund. Der Bereich ist immer
+    //! ein Rechteck und wird über die Diagonale gewählt; er bleibt für den
+    //! nächsten Export gemerkt. Geprüft wird der ganze Weg bis zur
     //! geschriebenen Datei samt Bildgröße und Inhalt.
 
     use super::*;
@@ -19778,9 +19784,13 @@ mod tests_png_bereich {
         frame(app, vec![taste(pos, false)]);
     }
 
-    /// Bereichswahl starten, zwei Ecken klicken. Liefert die Weltkoordinaten
-    /// der beiden Klicks.
+    /// Bild-Export öffnen (wie der Ribbon-Knopf), dann „Bereich auswählen"
+    /// drücken (wie der Knopf im Fenster) und zwei Ecken klicken.
+    /// Liefert die Weltkoordinaten der beiden Klicks.
     fn bereich_waehlen(app: &mut App) -> (V2, V2) {
+        let ctx = app.ctx.clone();
+        app.run_action(&ctx, "file.export_png");
+        assert!(app.ui.png_export_offen, "der Knopf öffnet das Fenster");
         frame(app, vec![]);
         let rect = app.ui.last_canvas;
         let view = app.current_view();
@@ -19791,8 +19801,15 @@ mod tests_png_bereich {
             screen_to_world(rect, view, a),
             screen_to_world(rect, view, b),
         );
+        // Das ist der Weg des Knopfes „Bereich auswählen": das Fenster tritt
+        // zurück, die Fläche nimmt die Diagonale an.
         app.start_png_bereich();
         assert!(app.ui.png_wahl.is_some(), "die Bereichswahl läuft");
+        assert!(!app.ui.png_export_offen, "das Fenster tritt für die Wahl zurück");
+        // Ein Bild ohne das Fenster: egui rechnet Klicks gegen die Flächen des
+        // Vorframe, und die gerade geschlossene Fensterfläche deckte den
+        // Klickpunkt noch zu (gemessen: der erste Klick kam sonst nicht an).
+        frame(app, vec![]);
         klick_bild(app, a);
         assert!(
             app.ui.png_wahl.as_ref().and_then(|w| w.erster).is_some(),
@@ -19824,24 +19841,48 @@ mod tests_png_bereich {
         summe < 480
     }
 
+    fn exportpfad(name: &str) -> std::path::PathBuf {
+        let dir = std::env::temp_dir().join(format!("jjcad-t0235-gui-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).ok();
+        dir.join(name)
+    }
+
     #[test]
-    fn zwei_klicks_legen_den_bereich_und_oeffnen_den_speicherdialog() {
+    fn knopf_oeffnet_das_fenster_statt_sofort_zu_exportieren() {
+        let mut app = app();
+        let ctx = app.ctx.clone();
+        app.run_action(&ctx, "file.export_png");
+        assert!(app.ui.png_export_offen, "das Fenster steht offen");
+        assert!(app.ui.png_wahl.is_none(), "ohne Wahl keine Diagonale");
+        assert!(app.ui.file_dialog.is_none(), "der Speicherdialog kommt erst danach");
+    }
+
+    #[test]
+    fn nach_der_diagonale_steht_der_bereich_im_fenster() {
         let mut app = app();
         let (wa, wb) = bereich_waehlen(&mut app);
 
         assert!(app.ui.png_wahl.is_none(), "die Wahl ist mit dem zweiten Klick beendet");
+        assert!(app.ui.png_export_offen, "danach ist das Fenster wieder da");
         let bereich = app.ui.png_bereich.expect("Bereich gemerkt");
         assert!((bereich[0] - wa.x.min(wb.x)).abs() < 1e-6);
         assert!((bereich[1] - wa.y.min(wb.y)).abs() < 1e-6);
         assert!((bereich[2] - wa.x.max(wb.x)).abs() < 1e-6);
         assert!((bereich[3] - wa.y.max(wb.y)).abs() < 1e-6);
-
-        let dialog = app.ui.file_dialog.as_ref().expect("Speicherdialog offen");
-        assert_eq!(dialog.mode, crate::dialogs::FileMode::ExportPng);
+        // Seitenverhältnis und Höhe, die das Fenster anzeigt, folgen aus ihm.
+        let verhaeltnis = jjcad_core::raster::png_verhaeltnis(&app.doc(), Some(bereich), None);
+        let soll = (bereich[3] - bereich[1]) / (bereich[2] - bereich[0]);
+        assert!((verhaeltnis - soll).abs() < 1e-6);
+        let hoehe = jjcad_core::raster::png_hoehe_px(app.ui.png_einstellungen.breite_px, verhaeltnis);
+        assert_eq!(
+            hoehe,
+            (app.ui.png_einstellungen.breite_px as f64 * soll).round() as u32
+        );
+        assert!(app.ui.file_dialog.is_none(), "noch kein Speicherdialog");
     }
 
     #[test]
-    fn export_schreibt_genau_den_bereich() {
+    fn export_schreibt_genau_den_bereich_mit_eigener_aufloesung() {
         let mut app = app();
         let (wa, wb) = bereich_waehlen(&mut app);
         let bereich = app.ui.png_bereich.expect("Bereich gemerkt");
@@ -19856,16 +19897,20 @@ mod tests_png_bereich {
             )
             .expect("Linie");
 
-        let dir = std::env::temp_dir().join(format!("jjcad-t0235-gui-{}", std::process::id()));
-        std::fs::create_dir_all(&dir).ok();
-        let pfad = dir.join("bereich.png");
+        // Auflösung im Fenster verstellen — sie gilt für diesen Export.
+        app.ui.png_einstellungen.breite_px = 600;
+        let pfad = exportpfad("bereich.png");
+        // Der Knopf „Exportieren …" schließt das Fenster und öffnet den Dialog.
+        app.ui.png_export_offen = false;
+        app.open_file_dialog(crate::dialogs::FileMode::ExportPng);
+        let dialog = app.ui.file_dialog.as_ref().expect("Speicherdialog offen");
+        assert_eq!(dialog.mode, crate::dialogs::FileMode::ExportPng);
         app.ui.file_dialog = None;
         crate::dialogs::datei_gewaehlt(&mut app, crate::dialogs::FileMode::ExportPng, pfad.clone());
 
         let (breite, hoehe, bpp, bytes) = png_lesen(&pfad);
-        // Seitenverhältnis des Bereichs, Breite 2400 px.
-        let soll = ((2400.0 * (bereich[3] - bereich[1]) / (bereich[2] - bereich[0])).round()) as u32;
-        assert_eq!(breite, 2400, "die Breite ist fest");
+        let soll = ((600.0 * (bereich[3] - bereich[1]) / (bereich[2] - bereich[0])).round()) as u32;
+        assert_eq!(breite, 600, "die eingestellte Breite");
         assert_eq!(hoehe, soll, "Höhe folgt dem Seitenverhältnis: {hoehe} statt {soll}");
         assert!(
             dunkel(&bytes, bpp, breite, breite / 2, hoehe / 2),
@@ -19875,15 +19920,33 @@ mod tests_png_bereich {
         assert!(dunkel(&bytes, bpp, breite, 1, hoehe / 2), "links liegt ein Rand");
         assert!(dunkel(&bytes, bpp, breite, breite - 2, hoehe / 2), "rechts liegt ein Rand");
 
-        // Nach dem Export ist der Bereich verbraucht.
-        assert!(app.ui.png_bereich.is_none());
+        // Der Bereich bleibt für den nächsten Export gemerkt.
+        assert_eq!(app.ui.png_bereich, Some(bereich));
         let _ = std::fs::remove_file(&pfad);
-        let _ = std::fs::remove_dir(&dir);
+        let _ = std::fs::remove_dir(pfad.parent().unwrap());
     }
 
     #[test]
-    fn esc_bricht_die_bereichswahl_ab() {
+    fn transparenter_hintergrund_kommt_in_der_datei_an() {
         let mut app = app();
+        let (wa, wb) = bereich_waehlen(&mut app);
+        let _ = (wa, wb);
+        app.ui.png_einstellungen.papier = false;
+        app.ui.png_einstellungen.breite_px = 300;
+        let pfad = exportpfad("transparent.png");
+        crate::dialogs::datei_gewaehlt(&mut app, crate::dialogs::FileMode::ExportPng, pfad.clone());
+        let (_, _, bpp, bytes) = png_lesen(&pfad);
+        assert_eq!(bpp, 4, "PNG mit Alpha-Kanal");
+        assert_eq!(bytes[3], 0, "der Grund ist durchsichtig");
+        let _ = std::fs::remove_file(&pfad);
+        let _ = std::fs::remove_dir(pfad.parent().unwrap());
+    }
+
+    #[test]
+    fn esc_kehrt_ins_fenster_zurueck_ohne_bereich() {
+        let mut app = app();
+        let ctx = app.ctx.clone();
+        app.run_action(&ctx, "file.export_png");
         frame(&mut app, vec![]);
         let rect = app.ui.last_canvas;
         let a = Pos2::new(rect.center().x - 100.0, rect.center().y - 100.0);
@@ -19901,6 +19964,7 @@ mod tests_png_bereich {
         );
         assert!(app.ui.png_wahl.is_none(), "ESC beendet die Bereichswahl");
         assert!(app.ui.png_bereich.is_none(), "kein Bereich gemerkt");
+        assert!(app.ui.png_export_offen, "das Fenster ist wieder da");
         assert!(app.ui.file_dialog.is_none(), "kein Speicherdialog");
     }
 
@@ -19916,6 +19980,6 @@ mod tests_png_bereich {
         klick_bild(&mut app, Pos2::new(rect.center().x + 100.0, a.y));
         assert!(app.ui.png_bereich.is_none(), "kein Bereich aus einer Linie");
         assert!(app.ui.png_wahl.is_some(), "die Wahl läuft weiter");
-        assert!(app.ui.file_dialog.is_none(), "kein Speicherdialog");
+        assert!(!app.ui.png_export_offen, "das Fenster bleibt für die Wahl zurück");
     }
 }

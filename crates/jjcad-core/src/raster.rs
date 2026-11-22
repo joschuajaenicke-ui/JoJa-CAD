@@ -409,7 +409,27 @@ fn draw_dl(pm: &mut Pixmap, dl: &DisplayList, map: &Map, paper_px: f64, je_plan:
 
 /// Rendert das Modell in ein Pixmap.
 pub fn render_model_pixmap(doc: &Document, opts: &RasterOptions) -> Result<Pixmap, String> {
-    let mut bbox = match opts.bbox {
+    modell_pixmap(
+        doc,
+        opts.bbox,
+        opts.width_px,
+        opts.height_px,
+        opts.annot_scale,
+        true,
+    )
+}
+
+/// Das Modell als Pixmap; `papier` legt weißen Grund an, sonst bleibt er
+/// durchsichtig (PNG mit Alpha, T0235). `bbox` grenzt den Ausschnitt ein.
+fn modell_pixmap(
+    doc: &Document,
+    bbox: Option<[f64; 4]>,
+    width_px: u32,
+    height_px: u32,
+    annot_scale: Option<f64>,
+    papier: bool,
+) -> Result<Pixmap, String> {
+    let mut bbox = match bbox {
         Some([x0, y0, x1, y1]) => BBox::new(v(x0, y0), v(x1, y1)),
         None => doc.bbox(),
     };
@@ -417,9 +437,11 @@ pub fn render_model_pixmap(doc: &Document, opts: &RasterOptions) -> Result<Pixma
         bbox = BBox::new(v(-5000.0, -5000.0), v(5000.0, 5000.0));
     }
     bbox = bbox.expanded(bbox.width().max(bbox.height()) * 0.03);
-    let (w, h) = (opts.width_px.max(16), opts.height_px.max(16));
+    let (w, h) = (width_px.max(16), height_px.max(16));
     let mut pm = Pixmap::new(w, h).ok_or_else(|| "Bild konnte nicht angelegt werden".to_string())?;
-    pm.fill(tiny_skia::Color::from_rgba8(255, 255, 255, 255));
+    if papier {
+        pm.fill(tiny_skia::Color::from_rgba8(255, 255, 255, 255));
+    }
 
     let k = (w as f64 / bbox.width()).min(h as f64 / bbox.height());
     let map = Map {
@@ -430,22 +452,36 @@ pub fn render_model_pixmap(doc: &Document, opts: &RasterOptions) -> Result<Pixma
     // Ein ausdrücklicher Maßstab in den Optionen gilt für **alle** Objekte;
     // sonst rechnet jedes mit dem Maßstab seines Plans (T0232).
     let mut ctx = crate::render::RenderCtx::new(doc);
-    if let Some(a) = opts.annot_scale {
+    if let Some(a) = annot_scale {
         ctx = ctx.mit_festem_massstab(a);
     }
     let dl = crate::render::render_document(&ctx);
     // Pixel je Welt-mm; die Strichstärke (Papier-mm) wächst mit dem Maßstab
     // des Plans, zu dem das Objekt gehört.
-    draw_dl(&mut pm, &dl, &map, k, opts.annot_scale.is_none());
+    draw_dl(&mut pm, &dl, &map, k, annot_scale.is_none());
     Ok(pm)
 }
 
 /// Rendert ein Blatt (Papier + Ansichtsfenster) in ein Pixmap.
 pub fn render_sheet_pixmap(doc: &Document, sheet: &Sheet, opts: &RasterOptions) -> Result<Pixmap, String> {
+    blatt_pixmap(doc, sheet, opts.width_px, opts.height_px, true)
+}
+
+/// Das Blatt als Pixmap; `papier` legt weißen Grund an, sonst bleibt er
+/// durchsichtig (PNG mit Alpha, T0235).
+fn blatt_pixmap(
+    doc: &Document,
+    sheet: &Sheet,
+    width_px: u32,
+    height_px: u32,
+    papier: bool,
+) -> Result<Pixmap, String> {
     let (pw, ph) = sheet.size();
-    let (w, h) = (opts.width_px.max(16), opts.height_px.max(16));
+    let (w, h) = (width_px.max(16), height_px.max(16));
     let mut pm = Pixmap::new(w, h).ok_or_else(|| "Bild konnte nicht angelegt werden".to_string())?;
-    pm.fill(tiny_skia::Color::from_rgba8(255, 255, 255, 255));
+    if papier {
+        pm.fill(tiny_skia::Color::from_rgba8(255, 255, 255, 255));
+    }
     let k = (w as f64 / pw).min(h as f64 / ph);
     let map = Map {
         k,
@@ -484,6 +520,48 @@ pub fn render_sheet_pixmap(doc: &Document, sheet: &Sheet, opts: &RasterOptions) 
     Ok(pm)
 }
 
+/// Seitenverhältnis (Höhe / Breite) dessen, was ein PNG-Export zeigt (T0235).
+///
+/// Die Oberfläche gibt nur die **Breite** in Pixeln vor; die Höhe folgt aus
+/// diesem Verhältnis. Es gilt für den gemerkten Bereich, sonst für das Blatt
+/// und zuletzt für die ganze Zeichnung — dort mit demselben 3-%-Rand, den
+/// `render_model_pixmap` anlegt.
+pub fn png_verhaeltnis(doc: &Document, bereich: Option<[f64; 4]>, sheet: Option<usize>) -> f64 {
+    let aus = |b: BBox| -> Option<f64> {
+        if b.is_valid() && b.width() > 1e-6 && b.height() > 1e-6 {
+            Some(b.height() / b.width())
+        } else {
+            None
+        }
+    };
+    if let Some([x0, y0, x1, y1]) = bereich {
+        if let Some(v) = aus(BBox::new(v(x0, y0), v(x1, y1))) {
+            return v;
+        }
+    }
+    if let Some(idx) = sheet {
+        if let Some(s) = doc.sheets.get(idx) {
+            let (w, h) = s.size();
+            if w > 1e-6 && h > 1e-6 {
+                return h / w;
+            }
+        }
+    }
+    let bb = doc.bbox();
+    let pad = bb.width().max(bb.height()) * 0.03;
+    aus(BBox::new(
+        v(bb.min.x - pad, bb.min.y - pad),
+        v(bb.max.x + pad, bb.max.y + pad),
+    ))
+    .unwrap_or(1.0)
+}
+
+/// Höhe in Pixeln zu einer vorgegebenen Breite (T0235) — dieselbe Rechnung
+/// wie im Export, damit die Anzeige im Fenster nicht von der Datei abweicht.
+pub fn png_hoehe_px(breite_px: u32, verhaeltnis: f64) -> u32 {
+    ((breite_px.max(16) as f64 * verhaeltnis).round() as u32).max(16)
+}
+
 /// Rendert einen **Bereich** in ein Pixmap (T0235).
 ///
 /// Das Rechteck aus der Diagonale füllt das Bild genau: kein Rand wie bei der
@@ -491,20 +569,24 @@ pub fn render_sheet_pixmap(doc: &Document, sheet: &Sheet, opts: &RasterOptions) 
 /// keine Verzerrung — die Höhe folgt aus dem Seitenverhältnis des Bereichs.
 /// Im Modell rechnet der Bereich in Zeichnungs-Millimetern, im Papierraum in
 /// Papier-Millimetern (dort zählt die Blattfläche von (0,0) bis (B,H)).
+/// `papier` legt weißen Grund an; aus bleibt der Grund durchsichtig.
 pub fn render_bereich_pixmap(
     doc: &Document,
     bereich: [f64; 4],
     sheet: Option<usize>,
     breite_px: u32,
+    papier: bool,
 ) -> Result<Pixmap, String> {
     let bbox = BBox::new(v(bereich[0], bereich[1]), v(bereich[2], bereich[3]));
     if !bbox.is_valid() || bbox.width() < 1e-6 || bbox.height() < 1e-6 {
         return Err("Der Bereich hat keine Fläche".to_string());
     }
     let w = breite_px.max(16);
-    let h = ((w as f64 * bbox.height() / bbox.width()).round() as u32).max(16);
+    let h = png_hoehe_px(w, bbox.height() / bbox.width());
     let mut pm = Pixmap::new(w, h).ok_or_else(|| "Bild konnte nicht angelegt werden".to_string())?;
-    pm.fill(tiny_skia::Color::from_rgba8(255, 255, 255, 255));
+    if papier {
+        pm.fill(tiny_skia::Color::from_rgba8(255, 255, 255, 255));
+    }
     let k = w as f64 / bbox.width();
     let map = Map {
         k,
@@ -530,15 +612,36 @@ pub fn render_bereich_pixmap(
     Ok(pm)
 }
 
-/// PNG eines Bereichs schreiben (T0235) — siehe [`render_bereich_pixmap`].
-pub fn render_png_bereich(
+/// Das Bild eines PNG-Exports (T0235) — **ein** Weg für die Oberfläche.
+///
+/// `bereich` ist der für den nächsten Export gemerkte Ausschnitt
+/// (Welt- bzw. Papier-Millimeter); `None` exportiert die ganze Zeichnung bzw.
+/// das ganze Blatt. Die Höhe folgt aus [`png_verhaeltnis`], `papier` legt
+/// weißen Grund an.
+pub fn render_png_auswahl(
     doc: &Document,
-    bereich: [f64; 4],
+    bereich: Option<[f64; 4]>,
     sheet: Option<usize>,
     breite_px: u32,
+    papier: bool,
     path: &Path,
 ) -> Result<(), String> {
-    let pm = render_bereich_pixmap(doc, bereich, sheet, breite_px)?;
+    let pm = match bereich {
+        Some(b) => render_bereich_pixmap(doc, b, sheet, breite_px, papier)?,
+        None => {
+            let h = png_hoehe_px(breite_px, png_verhaeltnis(doc, None, sheet));
+            match sheet {
+                Some(idx) => {
+                    let sheet = doc
+                        .sheets
+                        .get(idx)
+                        .ok_or_else(|| format!("Blatt {} existiert nicht", idx + 1))?;
+                    blatt_pixmap(doc, sheet, breite_px, h, papier)?
+                }
+                None => modell_pixmap(doc, None, breite_px, h, None, papier)?,
+            }
+        }
+    };
     let png = pm
         .encode_png()
         .map_err(|e| format!("PNG-Kodierung fehlgeschlagen: {e}"))?;
