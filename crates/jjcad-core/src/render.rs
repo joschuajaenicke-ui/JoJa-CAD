@@ -4652,22 +4652,13 @@ fn render_dim_chain(
     angle: f64,
     override_text: Option<&str>,
     ext_lines: bool,
-    // Punktsymbol an jedem Messpunkt (T0227), leer = kein Symbol.
+    // Punktsymbol auf der Maßlinie (T0227), leer = keins.
     symbol: &str,
     xf: Affine,
     dl: &mut DisplayList,
 ) {
     if pts.len() < 2 {
         return;
-    }
-    // Punktsymbol an jedem Messpunkt (T0227): die Marke kennzeichnet die
-    // **gemessene Stelle** selbst, nicht die Maßlinie — dort steht der
-    // Begrenzungsstrich. Leer heißt „kein Symbol“, ein unbekannter Block wird
-    // in `push_punktsymbol` still übersprungen.
-    if !symbol.is_empty() {
-        for w in pts {
-            push_punktsymbol(ctx, e, st, symbol, *w, 0.0, xf, dl, 0);
-        }
     }
     let style = &ctx.doc.dim_style;
     let a = ctx.a(1.0);
@@ -4717,37 +4708,48 @@ fn render_dim_chain(
     }
     // Begrenzungszeichen **einmal je Basispunkt**: liegen zwei Segmente
     // aneinander, standen bisher zwei Striche (bei Pfeil und Punkt sichtbar
-    // als Doppelmarke) auf demselben Punkt.
-    match style.arrow {
-        ArrowKind::Slash => {
-            let d = Vec2::polar(text_angle + std::f64::consts::FRAC_PI_4, marke * 0.5);
-            for p in &projected {
-                dl.push(Prim {
-                    shape: Shape::Line(xf.apply(*p - d), xf.apply(*p + d)),
-                    style: *st,
-                    entity: e.id,
-                    layer: e.layer,
-                });
-            }
+    // als Doppelmarke) auf demselben Punkt. Ein gewähltes Punktsymbol (T0227)
+    // steht an **dieser** Stelle: es liegt auf der Maßlinie und **ersetzt den
+    // Begrenzungsstrich** (`ArrowKind::Slash`) — es stand vorher an den
+    // Messpunkten, wo es nicht hingehört. Punkt- und Pfeilmarken des Stils
+    // bleiben unberührt; „kein Symbol“ heißt: der Stil zeichnet wie bisher.
+    // Ein unbekannter Block wird in `push_punktsymbol` still übersprungen.
+    if !symbol.is_empty() && matches!(style.arrow, ArrowKind::Slash) {
+        for p in &projected {
+            push_punktsymbol(ctx, e, st, symbol, *p, text_angle, xf, dl, 0);
         }
-        ArrowKind::Dot => {
-            for p in &projected {
-                dl.push(Prim {
-                    shape: Shape::Dot {
-                        p: xf.apply(*p),
-                        r: arrow * 0.3,
-                    },
-                    style: PrimStyle {
-                        color: st.color,
-                        fill: Some(st.color),
-                        ..*st
-                    },
-                    entity: e.id,
-                    layer: e.layer,
-                });
+    } else {
+        match style.arrow {
+            ArrowKind::Slash => {
+                let d = Vec2::polar(text_angle + std::f64::consts::FRAC_PI_4, marke * 0.5);
+                for p in &projected {
+                    dl.push(Prim {
+                        shape: Shape::Line(xf.apply(*p - d), xf.apply(*p + d)),
+                        style: *st,
+                        entity: e.id,
+                        layer: e.layer,
+                    });
+                }
             }
+            ArrowKind::Dot => {
+                for p in &projected {
+                    dl.push(Prim {
+                        shape: Shape::Dot {
+                            p: xf.apply(*p),
+                            r: arrow * 0.3,
+                        },
+                        style: PrimStyle {
+                            color: st.color,
+                            fill: Some(st.color),
+                            ..*st
+                        },
+                        entity: e.id,
+                        layer: e.layer,
+                    });
+                }
+            }
+            ArrowKind::Arrow | ArrowKind::None => {}
         }
-        ArrowKind::Arrow | ArrowKind::None => {}
     }
     // Segmente + Text
     for i in 0..projected.len() - 1 {
@@ -4768,7 +4770,8 @@ fn render_dim_chain(
             None => dim_text_runs(measure, ctx.doc, ctx.resolve_text),
         };
         // Pfeile nur an den Segmentenden (Schrägstrich und Punkt stehen
-        // bereits einmal je Basispunkt oben)
+        // bereits einmal je Basispunkt oben; das Punktsymbol der Maßkette
+        // ersetzt nur den Schrägstrich, T0227).
         match style.arrow {
             ArrowKind::Arrow => {
                 for (p, s) in [(p0, -1.0), (p1, 1.0)] {

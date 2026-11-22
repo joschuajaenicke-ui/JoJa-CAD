@@ -848,10 +848,11 @@ pub enum EntityKind {
         /// im Eigenschaften-Panel ein.
         #[serde(default)]
         ext_lines: bool,
-        /// Punktsymbol an **jedem Messpunkt** (T0227): Block-ID aus der
-        /// Kategorie „Punkt Symbole“; leer = kein Symbol. Vorgabe ist der
-        /// Schrägstrich (`DIM_SYMBOL_VORGABE`) — `#[serde(default)]` bringt sie
-        /// auch in vorhandene Zeichnungen, denn die Marke gehört zur
+        /// Punktsymbol **auf der Maßlinie** (T0227): Block-ID aus der Kategorie
+        /// „Punkt Symbole“; es ersetzt den Begrenzungsstrich an jedem
+        /// Basispunkt, leer = der Stil zeichnet seine Marke wie bisher. Vorgabe
+        /// ist der Schrägstrich (`DIM_SYMBOL_VORGABE`) — `#[serde(default)]`
+        /// bringt sie auch in vorhandene Zeichnungen, denn die Marke gehört zur
         /// Maßkette selbst.
         #[serde(default = "default_dim_symbol")]
         symbol: String,
@@ -1390,8 +1391,9 @@ pub const PUNKTSYMBOL_KATEGORIE: &str = "Punkt Symbole";
 
 /// Vorgabe des Punktsymbols an einer Maßkette (T0227): der Schrägstrich.
 ///
-/// Die Marke gehört zur Maßkette — ohne eigene Wahl trägt jeder Messpunkt
-/// diese eine Marke. Ein leerer Text (`""`) heißt „kein Symbol“.
+/// Die Marke steht auf der Maßlinie und ersetzt dort den Begrenzungsstrich —
+/// ohne eigene Wahl trägt jeder Basispunkt diese eine Marke. Ein leerer Text
+/// (`""`) heißt „kein Symbol“: dann zeichnet der Stil seine Marke wie bisher.
 pub const DIM_SYMBOL_VORGABE: &str = "sys:pkt-schraegstrich";
 
 /// Vorgabewert des Feldes `EntityKind::Dim::symbol` beim Laden (T0227).
