@@ -275,9 +275,11 @@ pub fn new_sheet(doc: &mut Document, paper: PaperSize, landscape: bool, name: &s
         }
     }
 
-    // Ansichtsfenster über dem Schriftfeld
+    // Ansichtsfenster über dem ganzen Blatt (T0239): Rahmen und Schriftfeld
+    // liegen darüber, dessen weiße Abdeckfläche hält den Plankopf lesbar —
+    // die Zeichnung darf deshalb bis in die Ecke laufen.
     let vp_x = 15.0;
-    let vp_y = 10.0 + 65.0 + 8.0;
+    let vp_y = 10.0;
     let vp_w = w - 10.0 - vp_x;
     let vp_h = h - 10.0 - vp_y;
     let bbox = doc.bbox();
@@ -324,10 +326,11 @@ pub fn default_viewport(doc: &mut Document, w: f64, h: f64) -> Viewport {
     Viewport {
         id: doc.new_id(),
         name: "Ansicht".to_string(),
+        // Über dem ganzen Blatt — der Plankopf liegt als Block darüber.
         x: 15.0,
-        y: 10.0 + 73.0,
-        w: w - 35.0,
-        h: h - 95.0,
+        y: 10.0,
+        w: w - 25.0,
+        h: h - 20.0,
         center: Vec2::ZERO,
         scale: 100.0,
         show_frame: true,

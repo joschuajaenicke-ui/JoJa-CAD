@@ -370,12 +370,15 @@ Mit dem Nutzer abgestimmt — nicht „verbessern“:
   (15 mm Heftrand links, 10 mm ringsum). Die **weiße Abdeckfläche** bedeckt
   genau `templates::title_block_rect` und liegt im Block hinter den Linien und
   Texten, aber über dem Inhalt der Ansichtsfenster — ein Fenster darf damit das
-  ganze Blatt füllen, ohne den Plankopf unlesbar zu machen. Dafür zeichnen
+  ganze Blatt füllen, ohne den Plankopf unlesbar zu machen; das **Standard-
+  Ansichtsfenster eines neuen Blatts reicht deshalb über das ganze Blatt**
+  (15, 10 bis Blattmaß − 10/− 10, vorher endete es 73 mm über dem Blattrand).
+  Dafür zeichnen
   **PDF und PNG die Ansichtsfenster unter den Papierraum** (seit T0239, wie die
   Zeichenfläche es immer tat). Geometrie: `templates::planrahmen_entities`;
   `templates::new_sheet` wählt den Block über `templates::planrahmen_block` und
   legt für Papierformate ohne Block lose Objekte an. Prüfweg:
-  `cargo test -p jjcad-core --test planrahmen` (8 Tests, darunter das gemessene
+  `cargo test -p jjcad-core --test planrahmen` (9 Tests, darunter das gemessene
   Pixel im PNG und im PDF) und `cargo test -p jjcad-gui`; Prüfbild
   `--demo "plankopf"` bzw. `--demo blatt`.
 - **Blockeditor (T0137)**: Eigene Blöcke (Projekt/Benutzer — **nicht** System) werden

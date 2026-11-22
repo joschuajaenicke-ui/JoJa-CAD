@@ -227,6 +227,21 @@ fn abdeckung_haelt_den_plankopf_im_bild_frei() {
 }
 
 #[test]
+fn standard_ansichtsfenster_reicht_ueber_das_ganze_blatt() {
+    // Erst die weiße Abdeckfläche macht das möglich: die Zeichnung darf hinter
+    // dem Plankopf weiterlaufen.
+    let sess = frisch();
+    let sheet = &sess.doc.sheets[0];
+    let (w, h) = sheet.size();
+    let (_, vp) = sheet.viewports().next().expect("Ansichtsfenster");
+    assert_eq!((vp.x, vp.y), (15.0, 10.0));
+    assert!((vp.w - (w - 25.0)).abs() < 1e-9 && (vp.h - (h - 20.0)).abs() < 1e-9);
+    // Es überdeckt das Schriftfeld — genau der Fall aus dem Ticket.
+    let (x0, y0, _, y1) = templates::title_block_rect(w, h);
+    assert!(vp.x <= x0 && vp.y <= y0 && vp.x + vp.w >= x0 && vp.y + vp.h >= y1);
+}
+
+#[test]
 fn ansichtsfenster_und_planrahmen_bleiben_getrennte_objekte() {
     // Das Fenster liegt über demselben Blatt, ist aber ein eigenes Objekt —
     // sonst ließe es sich nicht einpassen und der Rahmen nicht verschieben.
