@@ -571,10 +571,16 @@ pub fn system_blocks(_next_id: &mut Id) -> Vec<BlockDef> {
     // Schrägstrich (T0227): Fadenkreuz mit 45°-Strich — die Marke, mit der ein
     // Vermessungspunkt im Plan gekennzeichnet wird. Vorgabe der Maßketten
     // (`model::DIM_SYMBOL_VORGABE`), damit jeder Messpunkt eine Marke trägt.
+    // **Alle drei Striche haben dieselbe radiale Länge** (`ARM`): der schräge
+    // endet auf demselben Kreis wie die beiden senkrechten — seine Enden liegen
+    // bei `ARM/√2`, nicht bei `ARM` (sonst wäre er um √2 länger, wie in der
+    // ersten Fassung).
+    const ARM: f64 = 1.1;
+    let ecke = ARM / std::f64::consts::SQRT_2;
     let mut b = B::new();
-    b.line(v(-1.1, 0.0), v(1.1, 0.0));
-    b.line(v(0.0, -1.1), v(0.0, 1.1));
-    b.line(v(-1.1, -1.1), v(1.1, 1.1));
+    b.line(v(-ARM, 0.0), v(ARM, 0.0));
+    b.line(v(0.0, -ARM), v(0.0, ARM));
+    b.line(v(-ecke, -ecke), v(ecke, ecke));
     out.push(block(
         "sys:pkt-schraegstrich",
         "Schrägstrich",
