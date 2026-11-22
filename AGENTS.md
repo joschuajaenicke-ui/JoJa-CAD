@@ -722,6 +722,18 @@ Mit dem Nutzer abgestimmt — nicht „verbessern“:
   (`snap::zwangsachse`, `hilfslinien_snap_mit_zwang`) — die Achse bleibt, die Hilfslinie wählt nur
   die Lage auf ihr. Ohne das kippte die neue Linie je nach Abstand zur Hilfslinie aus der
   Zwangsrichtung (T0042).
+- **Getippte Länge braucht keine Zeigerrichtung (T0236)**: Eine Länge, die der
+  Nutzer tippt und mit `Enter` bestätigt, läuft in der Richtung des Zeigers.
+  **Hauptblock und Ziffernblock sind dabei nicht unterscheidbar** — egui-winit
+  bildet `Return`, `KP_Enter` und `ISO_Enter` alle auf `Key::Enter` ab
+  (gemessen: X11-Tastencode 36 und 104 erzeugen dieselben Ereignisse). Steht der
+  Zeiger genau auf dem zuletzt gesetzten Punkt — beim Tippen auf dem
+  Ziffernblock bleibt die Maus liegen —, ist die Zeigerrichtung **null**; dann
+  gilt `App::letzte_richtung` (gemerkt in `canvas::tool_click_at`, also die
+  Richtung der zuletzt gesetzten Strecke). Fehlt auch die (allererste Wand),
+  bleibt der Tippepuffer stehen und `gui.canvas.laenge_richtung_fehlt` sagt es;
+  ihn still zu leeren sah aus, als hätte `Enter` nichts getan. Prüfweg:
+  `cargo test -p jjcad-gui --bin jjcad -- tests_laengeneingabe` (3 Tests).
 - **Texteingabe** läuft direkt in der Zeichnung (kein Dialog, keine Eingabefläche): ein
   Klick mit dem Textwerkzeug setzt den Cursor an die Klickstelle, der Text erscheint sofort
   in der Zeichnung — gleiche Schrift, gleiche Lage, gleiche Farbe wie danach. Ein Doppelklick
