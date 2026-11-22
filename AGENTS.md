@@ -647,7 +647,10 @@ Mit dem Nutzer abgestimmt — nicht „verbessern“:
   Punkten, gedreht um die Messrichtung (`text_angle`) — dieselbe Rechnung wie
   Punkt und Linienende, also in Beschriftungsgröße; sie ersetzt damit den
   **Begrenzungsstrich** (`ArrowKind::Slash`) des Stils, Punkt- und Pfeilmarken
-  bleiben unberührt. An den Messpunkten
+  bleiben unberührt — **ohne Symbol steht dort gar nichts** (der alte
+  Schrägstrich kommt nicht zurück). Die Maßlinie endet **am äußeren
+  Basispunkt**: der Überstand über die Maßhilfslinie (§9.1, Bild 3) gehörte zum
+  Schrägstrich, denn die Marke schließt die Linie ab. An den Messpunkten
   (den Enden der Maßhilfslinien) steht sie **nicht** — dort gehört sie nicht hin.
   Wahl im Eigenschaften-Panel (Gruppe „Maß“, Zeile „Symbol“) über
   `props::punktsymbol_wahl`; geschrieben über `modify.set` mit dem Schlüssel
