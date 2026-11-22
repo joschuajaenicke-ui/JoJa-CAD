@@ -551,6 +551,36 @@ pub enum ToolPhase {
     TextInput,
 }
 
+/// Eine Hilfslinie, die der Nutzer **während der Eingabe** eines Punktes legt
+/// (T0230).
+///
+/// Sie lebt nur bis zum nächsten gesetzten Punkt: der Rechtsklick legt sie an,
+/// `canvas::tool_click_at` bzw. `canvas::finish_tool` nimmt sie wieder weg.
+/// Gezeichnet und gefangen wird sie wie eine normale Linie — ihre Strecke hat
+/// zwei Endpunkte, und der Zeiger rastet auf ihrem Fußpunkt ein
+/// (`SnapKind::Tracking`).
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Hilfslinie {
+    /// Fester Endpunkt: der Bezugspunkt des laufenden Zuges — gibt es noch
+    /// keinen (erster Punkt eines Objekts), ist es der Klickpunkt selbst.
+    pub a: V2,
+    /// Zweiter Endpunkt aus dem Klick; `None` heißt: er folgt dem Zeiger, weil
+    /// ohne Bezugspunkt keine Richtung feststeht.
+    pub b: Option<V2>,
+}
+
+impl Hilfslinie {
+    /// Die Strecke, sofern beide Endpunkte feststehen.
+    pub fn strecke(&self) -> Option<(V2, V2)> {
+        self.b.map(|b| (self.a, b))
+    }
+
+    /// Der zweite Endpunkt, notfalls am Zeiger — so wird sie gezeichnet.
+    pub fn ende(&self, zeiger: V2) -> V2 {
+        self.b.unwrap_or(zeiger)
+    }
+}
+
 /// Einfügemodus für Rechteck und Ellipse.
 ///
 /// `Achsenparallel` ist der bisherige Weg (zwei gegenüberliegende Ecken bzw.
@@ -1830,6 +1860,9 @@ pub struct App {
     pub halt: Vec<jjcad_core::snap::HaltPunkt>,
     /// Verweil-Erkennung, die `halt` füllt.
     pub verweil: crate::canvas::VerweilFang,
+    /// Vom Nutzer gelegte Hilfslinie für den nächsten Punkt (T0230). `None` =
+    /// keine; sie verschwindet mit dem gesetzten Punkt von selbst.
+    pub hilfslinie: Option<Hilfslinie>,
     /// Leistungsanzeige (Umschalt+F3): Messwerte je Bild und ihr Verlauf
     pub perf: crate::perf::Perf,
     /// Objekte einer laufenden Mehrfachauswahl, für die das Eigenschaften-Panel
@@ -2082,6 +2115,7 @@ impl App {
             paint: crate::canvas::PaintPreview::default(),
             halt: Vec::new(),
             verweil: crate::canvas::VerweilFang::default(),
+            hilfslinie: None,
             perf: crate::perf::Perf::default(),
             mehrfach_ziel: Vec::new(),
             sperre: None,
@@ -3786,6 +3820,25 @@ impl App {
                 "copyclip" => self.ui.copy_input = CopyInput::Clipboard,
                 // Prüfhilfe T0021: die erste Wand kopieren und die Einfüge-Vorschau
                 // zeigen — sie steht als Akzentlinie über der Originalwand.
+                // Hilfslinie während der Eingabe (T0230): Linien-Werkzeug mit
+                // gesetztem Anfang, die Hilfslinie steht vom Anfang zum
+                // nächsten Klickpunkt. Der Zeiger steht im Bild darauf.
+                "hilfslinieeingabe" | "hilfsliniezeichnen" => {
+                    self.start_tool("draw.line");
+                    let anfang = V2::new(-2000.0, -1000.0);
+                    if let Some(t) = self.tool.as_mut() {
+                        t.pts.push(anfang);
+                    }
+                    self.hilfslinie = Some(Hilfslinie {
+                        a: anfang,
+                        b: Some(V2::new(2000.0, 1000.0)),
+                    });
+                    self.started_at = 3.0;
+                    let mut v = self.current_view();
+                    v.center = V2::new(0.0, 0.0);
+                    v.zoom = 0.2;
+                    self.set_view(v);
+                }
                 "wandvorschau" => {
                     let wand = self
                         .doc()
@@ -5518,6 +5571,8 @@ impl App {
         // Tastenkürzel oder eine Hotbar-Ziffer nicht — dort blieb das Menü über
         // dem startenden Werkzeug stehen.
         self.ui.menu = None;
+        // T0230: Eine Hilfslinie gehört zu **einem** Lauf des Werkzeugs.
+        self.hilfslinie = None;
         // T0094: Eine andere Funktion beendet das Einfügen. Sonst liefen Vorschau
         // und Werkzeug gleichzeitig — der nächste Klick setzte die Kopie ab,
         // während das Werkzeug auf seinen Punkt wartete.
@@ -5711,6 +5766,7 @@ impl App {
     }
 
     pub fn cancel_tool(&mut self) {
+        self.hilfslinie = None;
         if self.tool.is_some() {
             self.tool = None;
             self.mitteilung(jjcad_core::i18n::tr("gui.app.abgebrochen"));

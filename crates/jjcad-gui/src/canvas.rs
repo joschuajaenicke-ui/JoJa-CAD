@@ -2,7 +2,7 @@
 
 use crate::app::{
     screen_to_world, visible_world_bounds, world_to_screen, App, Bogenmodus, DimModus,
-    DrawCacheKey, Einfuegemodus, TabKind, Tool, ToolPhase, View,
+    DrawCacheKey, Einfuegemodus, Hilfslinie, TabKind, Tool, ToolPhase, View,
 };
 use crate::perf::Abschnitt;
 use crate::snapmarke::FangArt;
@@ -1484,6 +1484,7 @@ pub fn show(app: &mut App, ui: &mut Ui) {
         // Griffe, Einfüge-Vorschau, Auswahlfenster und Fadenkreuz-Zeiger.
         if app.tool.is_some() {
             draw_tool_preview(app, &painter, rect, view_now, snapped, raw_world);
+            draw_hilfslinie(app, &painter, rect, view_now, snapped);
         }
         // Maßangabe beim Ziehen an einer Treppenkante (T0027, Turn 4)
         draw_grip_mass(app, ui, &painter, rect, view_now);
@@ -1578,6 +1579,7 @@ pub fn show(app: &mut App, ui: &mut Ui) {
         app.perf.abschnitt(Abschnitt::Bedienung);
         if app.tool.is_some() {
             draw_tool_preview(app, &painter, rect, view_now, snapped, raw_world);
+            draw_hilfslinie(app, &painter, rect, view_now, snapped);
         }
         // Maßangabe beim Ziehen an einer Treppenkante (T0027, Turn 4)
         draw_grip_mass(app, ui, &painter, rect, view_now);
@@ -4670,7 +4672,7 @@ fn fang_aufloesung(app: &App, w: V2, tol: f64) -> snap::SnapResolution {
     // `snap_constrained_achsen`: die Haltepunkte des erweiterten Punktfangs
     // liefern ihre Hilfslinien als zusätzliche Fangziele mit; mehrere
     // Bezugspunkte (beide Nachbarn eines Griffs) rasten getrennt je Koordinate.
-    snap::snap_constrained_achsen(
+    let res = snap::snap_constrained_achsen(
         app.doc(),
         w,
         tol,
@@ -4680,7 +4682,33 @@ fn fang_aufloesung(app: &App, w: V2, tol: f64) -> snap::SnapResolution {
         &vorschau,
         &app.halt,
         app.ui.show_grid,
-    )
+    );
+    // Hilfslinie (T0230): Der Zeiger rastet auf dem Fußpunkt der vom Nutzer
+    // gelegten Strecke ein — aber nur, wo sonst nichts Besseres greift. Ein
+    // echter Objektpunkt und die Zwangsrichtung Ortho/Polar behalten Vorrang,
+    // „frei", Raster und „Nächster Punkt" weichen der Hilfslinie.
+    if let Some((a, b)) = app.hilfslinie.and_then(|h| h.strecke()) {
+        let weich = match res.source {
+            snap::SnapSource::Free | snap::SnapSource::Ortho | snap::SnapSource::Polar => true,
+            snap::SnapSource::Object(k) => {
+                matches!(k, snap::SnapKind::Grid | snap::SnapKind::Nearest)
+            }
+        };
+        if weich {
+            // Gerechnet wird vom **gefangenen** Punkt aus: liegt eine
+            // Zwangsachse (Ortho/Polar) an, ist der Fußpunkt auf der
+            // Hilfslinie deren Schnittpunkt mit der Achse — dieselbe Regel
+            // wie bei den Hilfslinien des erweiterten Punktfangs.
+            if let Some(f) = snap::hilfslinien_fuss(a, b, res.point, tol) {
+                return snap::SnapResolution {
+                    point: f,
+                    source: snap::SnapSource::Object(snap::SnapKind::Tracking),
+                    marke: None,
+                };
+            }
+        }
+    }
+    res
 }
 
 /// Stützpunkte des gerade gezeichneten Zuges als zusätzliche Fangziele.
@@ -5175,8 +5203,33 @@ fn handle_input(
         }
     }
 
-    // Rechte Maustaste: beenden / wiederholen
+    // Rechtsklick während einer Punkt-Eingabe: Hilfslinie (T0230).
+    // Sie läuft vom Bezugspunkt des Zuges zum Klickpunkt; gibt es noch keinen
+    // (erster Punkt eines Objekts), steht sie am Klickpunkt und der zweite
+    // Endpunkt folgt dem Zeiger. Sie lebt nur bis zum nächsten gesetzten
+    // Punkt — der Klick nimmt sie in `tool_click_at` wieder weg.
+    //
+    // Steht schon eine Hilfslinie, nimmt derselbe Rechtsklick sie weg und
+    // beendet bzw. bricht das Werkzeug wie bisher (Enter und Esc tun das
+    // ebenso). So bleibt „Rechtsklick beendet die Polylinie“ erhalten, ohne
+    // dass beide Bedeutungen auf denselben Klick fallen.
+    if resp.clicked_by(egui::PointerButton::Secondary) && app.hilfslinie.is_none() {
+        if let Some(tool) = app.tool.as_ref() {
+            if tool.phase == ToolPhase::Collecting && legt_punkte(&tool.action) {
+                app.hilfslinie = Some(match tool.pts.last().copied() {
+                    Some(a) => Hilfslinie { a, b: Some(w) },
+                    None => Hilfslinie { a: w, b: None },
+                });
+                return;
+            }
+        }
+    }
+
+    // Rechte Maustaste: beenden / wiederholen (ohne Hilfslinie)
     if resp.clicked_by(egui::PointerButton::Secondary) {
+        // T0230: Der zweite Rechtsklick räumt die Hilfslinie weg und beendet
+        // bzw. bricht das Werkzeug.
+        app.hilfslinie = None;
         if let Some(tool) = app.tool.clone() {
             match tool.action.as_str() {
                 "draw.polyline"
@@ -6026,6 +6079,36 @@ fn verweil_kandidat(app: &App, w: V2, tol: f64) -> Option<snap::HaltPunkt> {
     .map(|h| snap::HaltPunkt::neu(app.doc(), &h))
 }
 
+/// Die vom Nutzer gelegte Hilfslinie zeichnen (T0230).
+///
+/// Sie liegt durchgezogen in der Fangfarbe wie eine normale Linie in der
+/// Zeichnung; das Kreuz markiert den festen Endpunkt. Solange kein
+/// Bezugspunkt die Richtung festlegt (erster Punkt eines Objekts), folgt der
+/// zweite Endpunkt dem Zeiger.
+fn draw_hilfslinie(app: &App, p: &Painter, rect: Rect, view: View, zeiger: Option<V2>) {
+    let Some(h) = app.hilfslinie else { return };
+    let Some(ende) = zeiger.map(|z| h.ende(z)) else { return };
+    if h.a.dist(ende) < 0.5 {
+        return;
+    }
+    let col = Palette::fang();
+    let a = world_to_screen(rect, view, h.a);
+    let b = world_to_screen(rect, view, ende);
+    p.line_segment([a, b], Stroke::new(1.4, col));
+    // Fester Endpunkt als Kreuz — sonst ist nicht zu sehen, welcher der beiden
+    // Endpunkte hängt.
+    let r = 5.0;
+    p.line_segment(
+        [a - Vec2::new(r, 0.0), a + Vec2::new(r, 0.0)],
+        Stroke::new(1.4, col),
+    );
+    p.line_segment(
+        [a - Vec2::new(0.0, r), a + Vec2::new(0.0, r)],
+        Stroke::new(1.4, col),
+    );
+    p.circle_stroke(b, 3.0, Stroke::new(1.0, col));
+}
+
 /// Hilfslinien der gehaltenen Punkte zeichnen: gestrichelt quer durch die
 /// Zeichenfläche, die Haltepunkte selbst als kleines Kreuz.
 ///
@@ -6082,6 +6165,16 @@ fn draw_hilfslinien(app: &App, p: &Painter, rect: Rect, view: View) {
         ));
     }
     p.extend(shapes);
+}
+
+/// Legt das Werkzeug seinen Punkt per Klick an? Dann gehört ihm der
+/// Rechtsklick als Hilfslinie (T0230).
+///
+/// Der Farbeimer und die Körper-Füllung fragen nur eine Fläche unter dem
+/// Zeiger ab — dort bleibt der Rechtsklick beim Abbrechen.
+fn legt_punkte(action: &str) -> bool {
+    (action.starts_with("draw.") || action.starts_with("dim."))
+        && !matches!(action, "draw.fill.paint" | "draw.volume.paint")
 }
 
 /// Füll-Werkzeuge, deren Umgrenzung als Punktfolge geklickt wird.
@@ -6379,6 +6472,8 @@ fn finish_room(app: &mut App) -> bool {
 
 pub fn finish_tool(app: &mut App, from_enter: bool) {
     let Some(tool) = app.tool.clone() else { return };
+    // T0230: Die Hilfslinie gehört zur Eingabe, nicht zum fertigen Objekt.
+    app.hilfslinie = None;
     match tool.action.as_str() {
         "draw.polyline" | "draw.spline" => {
             let action = if tool.action == "draw.spline" {
@@ -6980,6 +7075,8 @@ fn parallel_quelle(app: &App, tool: &Tool) -> Option<Id> {
 /// geklickt“ und würde einen Klick dicht neben der Wand abweisen.
 fn tool_click_at(app: &mut App, w: V2, raw: V2) {
     let Some(mut tool) = app.tool.clone() else { return };
+    // T0230: Mit dem gesetzten Punkt hat die Hilfslinie ihren Zweck erfüllt.
+    app.hilfslinie = None;
     let unit = app.unit();
     let ax = |p: V2| [unit.from_mm(p.x), unit.from_mm(p.y)];
 
@@ -18322,6 +18419,206 @@ mod tests_parallele {
             hover_ziel(&app, V2::new(1000.0, 3000.0), 20.0),
             None,
             "eine Wand ist keine Vorlage"
+        );
+    }
+}
+
+#[cfg(test)]
+mod tests_hilfslinie {
+    //! Hilfslinie während der Eingabe eines Punktes (T0230).
+    //!
+    //! Geprüft wird der Weg, den der Nutzer geht: Werkzeug starten, Rechtsklick,
+    //! Punkt setzen. Die Hilfslinie muss dabei **nur** während der Eingabe
+    //! bestehen, auf ihrer Strecke fangen und mit dem gesetzten Punkt
+    //! verschwinden.
+
+    use super::*;
+
+    const FENSTER: Vec2 = Vec2::new(1500.0, 950.0);
+
+    fn rahmen_mit(ctx: &egui::Context, app: &mut App, events: Vec<egui::Event>) -> egui::FullOutput {
+        let raw = egui::RawInput {
+            screen_rect: Some(Rect::from_min_size(Pos2::ZERO, FENSTER)),
+            events,
+            ..Default::default()
+        };
+        ctx.run(raw, |ctx| app.ui(ctx))
+    }
+
+    fn taste(button: egui::PointerButton, pos: Pos2, gedrueckt: bool) -> egui::Event {
+        egui::Event::PointerButton {
+            pos,
+            button,
+            pressed: gedrueckt,
+            modifiers: egui::Modifiers::NONE,
+        }
+    }
+
+    /// Klick (Druck und Loslassen in zwei Bildern) an einer Weltstelle.
+    fn klick(app: &mut App, ctx: &egui::Context, button: egui::PointerButton, welt: V2) {
+        let ctx = ctx.clone();
+        let pos = world_to_screen(app.ui.last_canvas, app.current_view(), welt);
+        rahmen_mit(&ctx, app, vec![egui::Event::PointerMoved(pos), taste(button, pos, true)]);
+        rahmen_mit(&ctx, app, vec![taste(button, pos, false)]);
+    }
+
+    /// App mit laufendem Linien-Werkzeug; `start` ist der schon gesetzte Punkt.
+    fn app_mit_werkzeug(start: Option<V2>) -> (egui::Context, App) {
+        let ctx = egui::Context::default();
+        let mut app = App::with_ctx(ctx.clone());
+        app.ui.show_grid = false;
+        app.start_tool("draw.line");
+        if let Some(p) = start {
+            app.tool.as_mut().unwrap().pts.push(p);
+        }
+        // Erstes Bild: Layout und Ansicht stehen, danach lässt sich rechnen.
+        rahmen_mit(&ctx, &mut app, Vec::new());
+        (ctx, app)
+    }
+
+    /// Nach dem Bezugspunkt: die Strecke steht fest (Bezug → Klickpunkt).
+    #[test]
+    fn rechtsklick_legt_die_hilfslinie_vom_bezugspunkt() {
+        let (ctx, mut app) = app_mit_werkzeug(Some(V2::new(0.0, 0.0)));
+        let ziel = V2::new(2000.0, 0.0);
+        klick(&mut app, &ctx, egui::PointerButton::Secondary, ziel);
+
+        let h = app.hilfslinie.expect("der Rechtsklick legt keine Hilfslinie an");
+        assert_eq!(h.a, V2::new(0.0, 0.0), "Anfang ist der Bezugspunkt");
+        let b = h.b.expect("ohne Bezugspunkt wäre das Ende beweglich");
+        assert!(b.dist(ziel) < 1.0, "Ende am Klickpunkt: {b:?}");
+        assert!(
+            app.tool.is_some(),
+            "der Rechtsklick darf das Werkzeug nicht mehr beenden"
+        );
+
+        // Der nächste Punkt nimmt sie wieder weg.
+        klick(&mut app, &ctx, egui::PointerButton::Primary, ziel);
+        assert!(app.hilfslinie.is_none(), "Hilfslinie lebt nach dem Punkt weiter");
+        assert_eq!(
+            app.doc().entities.len(),
+            1,
+            "die Linie selbst muss entstanden sein"
+        );
+    }
+
+    /// Ohne gesetzten Punkt steht sie am Klickpunkt, das Ende hängt am Zeiger.
+    #[test]
+    fn ohne_bezugspunkt_haengt_das_ende_am_zeiger() {
+        let (ctx, mut app) = app_mit_werkzeug(None);
+        let anker = V2::new(500.0, 500.0);
+        klick(&mut app, &ctx, egui::PointerButton::Secondary, anker);
+
+        let h = app.hilfslinie.expect("der Rechtsklick legt keine Hilfslinie an");
+        assert!(h.a.dist(anker) < 1.0, "Anker am Klickpunkt: {:?}", h.a);
+        assert_eq!(h.b, None, "ohne Bezugspunkt gibt es keine feste Richtung");
+
+        // Gezeichnet wird sie bis zum Zeiger — als durchgezogene Strecke in
+        // der Fangfarbe.
+        let zeiger = V2::new(1500.0, 800.0);
+        let pos = world_to_screen(app.ui.last_canvas, app.current_view(), zeiger);
+        let out = rahmen_mit(&ctx, &mut app, vec![egui::Event::PointerMoved(pos)]);
+        let (a, b) = (h.a, zeiger);
+        let erwartet = (
+            world_to_screen(app.ui.last_canvas, app.current_view(), a),
+            world_to_screen(app.ui.last_canvas, app.current_view(), b),
+        );
+        let gezeichnet = out.shapes.iter().any(|cs| match &cs.shape {
+            egui::Shape::LineSegment { points, stroke } => {
+                stroke.color == egui::epaint::ColorMode::Solid(Palette::fang())
+                    && ((points[0].distance(erwartet.0) < 0.6
+                        && points[1].distance(erwartet.1) < 0.6)
+                        || (points[0].distance(erwartet.1) < 0.6
+                            && points[1].distance(erwartet.0) < 0.6))
+            }
+            _ => false,
+        });
+        assert!(gezeichnet, "die Hilfslinie fehlt im Bild");
+    }
+
+    /// Der Zeiger rastet auf dem Fußpunkt der Hilfslinie ein — wie auf einer
+    /// normalen Linie. Vorher zog ihn das Raster oder er blieb frei.
+    #[test]
+    fn zeiger_faengt_auf_der_hilfslinie() {
+        let (ctx, mut app) = app_mit_werkzeug(Some(V2::new(0.0, 0.0)));
+        klick(&mut app, &ctx, egui::PointerButton::Secondary, V2::new(2000.0, 0.0));
+
+        // 5 mm über der Streckenmitte: im Fangradius (12 px bei Zoom 1).
+        let pos = world_to_screen(
+            app.ui.last_canvas,
+            app.current_view(),
+            V2::new(1000.0, 5.0),
+        );
+        rahmen_mit(&ctx, &mut app, vec![egui::Event::PointerMoved(pos)]);
+
+        assert_eq!(
+            app.snap_label.as_deref(),
+            Some("Hilfslinie"),
+            "der Fang meldet nicht die Hilfslinie"
+        );
+        let p = app.pointer_world.expect("kein Fangpunkt");
+        assert!(
+            (p.x - 1000.0).abs() < 0.5 && p.y.abs() < 0.5,
+            "Fußpunkt auf der Strecke: {p:?}"
+        );
+    }
+
+    /// Der zweite Rechtsklick nimmt die Hilfslinie weg und beendet das
+    /// Werkzeug wie bisher — die Polylinie bleibt damit per Rechtsklick
+    /// abschließbar.
+    #[test]
+    fn zweiter_rechtsklick_beendet_die_polylinie() {
+        let ctx = egui::Context::default();
+        let mut app = App::with_ctx(ctx.clone());
+        app.ui.show_grid = false;
+        app.start_tool("draw.polyline");
+        rahmen_mit(&ctx, &mut app, Vec::new());
+        for p in [V2::new(0.0, 0.0), V2::new(2000.0, 0.0), V2::new(2000.0, 1500.0)] {
+            klick(&mut app, &ctx, egui::PointerButton::Primary, p);
+        }
+        assert!(app.tool.is_some(), "die Polylinie sammelt noch Punkte");
+
+        let pos = V2::new(1000.0, 800.0);
+        klick(&mut app, &ctx, egui::PointerButton::Secondary, pos);
+        assert!(app.hilfslinie.is_some(), "der erste Rechtsklick legt die Hilfslinie");
+        assert!(app.tool.is_some(), "… und beendet das Werkzeug noch nicht");
+
+        klick(&mut app, &ctx, egui::PointerButton::Secondary, pos);
+        assert!(app.hilfslinie.is_none(), "der zweite nimmt sie wieder weg");
+        assert!(app.tool.is_none(), "der zweite beendet das Werkzeug");
+        assert_eq!(app.doc().entities.len(), 1, "die Polylinie ist entstanden");
+    }
+
+    /// Ein echter Objektpunkt schlägt die Hilfslinie — sie ist ein weicher
+    /// Fang, kein Ersatz für Endpunkte.
+    #[test]
+    fn endpunkt_schlaegt_die_hilfslinie() {
+        let ctx = egui::Context::default();
+        let mut app = App::with_ctx(ctx.clone());
+        app.ui.show_grid = false;
+        // `run` nimmt die Eingabeeinheit der Zeichnung (Vorgabe Meter), die
+        // Rechnung hier ist in Millimetern.
+        let u = app.unit();
+        assert!(run(
+            &mut app,
+            "draw.line",
+            json!({"a": [u.from_mm(0.0), u.from_mm(0.0)], "b": [u.from_mm(4000.0), u.from_mm(0.0)]})
+        ));
+        app.start_tool("draw.line");
+        app.tool.as_mut().unwrap().pts.push(V2::new(0.0, 1000.0));
+        rahmen_mit(&ctx, &mut app, Vec::new());
+
+        // Hilfslinie dort anlegen, wo der Endpunkt der vorhandenen Linie liegt.
+        let endpunkt = V2::new(4000.0, 0.0);
+        klick(&mut app, &ctx, egui::PointerButton::Secondary, endpunkt);
+        assert!(app.hilfslinie.is_some());
+
+        let pos = world_to_screen(app.ui.last_canvas, app.current_view(), V2::new(4000.0, 3.0));
+        rahmen_mit(&ctx, &mut app, vec![egui::Event::PointerMoved(pos)]);
+        assert_eq!(
+            app.snap_label.as_deref(),
+            Some("Endpunkt"),
+            "der Endpunkt muss Vorrang haben"
         );
     }
 }
