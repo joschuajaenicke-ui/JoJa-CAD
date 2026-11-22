@@ -488,6 +488,31 @@ pub fn hilfslinien_gesamt(
     out
 }
 
+// ---------------------------------------------------------------------------
+// Vom Nutzer gelegte Hilfslinie (T0230)
+// ---------------------------------------------------------------------------
+
+/// Fußpunkt des Zeigers auf einer Hilfslinie, die der Nutzer während der
+/// Eingabe eines Punktes selbst gelegt hat.
+///
+/// Anders als die unbegrenzten Hilfslinien des erweiterten Punktfangs endet
+/// diese wie eine normale Linie an zwei Endpunkten — der Fußpunkt wird deshalb
+/// auf die **Strecke** begrenzt (vor dem Anfang zählt der Anfang, hinter dem
+/// Ende das Ende). Liegt er weiter als `tol` vom Zeiger entfernt, gibt es
+/// keinen Fang.
+pub fn hilfslinien_fuss(a: Vec2, b: Vec2, cursor: Vec2, tol: f64) -> Option<Vec2> {
+    let d = b - a;
+    let l2 = d.dot(d);
+    if l2 <= 1e-12 {
+        return None;
+    }
+    let f = a + d * ((cursor - a).dot(d) / l2).clamp(0.0, 1.0);
+    if f.dist(cursor) <= tol {
+        Some(f)
+    } else {
+        None
+    }
+}
 
 /// Richtung der Linie, auf der dieser Punkt des Elements liegt.
 ///

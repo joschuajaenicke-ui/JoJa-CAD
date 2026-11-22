@@ -20,6 +20,7 @@ pub fn from_json(s: &str) -> Result<Document, String> {
     migrate_legacy_fills(&mut raw);
     migrate_legacy_images(&mut raw);
     migrate_legacy_dims(&mut raw);
+    migrate_block_einheiten(&mut raw);
     let mut doc: Document = serde_json::from_value(raw)
         .map_err(|e| format!("Datei ist keine gültige JoJa-CAD-Zeichnung: {e}"))?;
     if doc.format != FORMAT_NAME {
@@ -413,6 +414,40 @@ pub fn migrate_legacy_dims(v: &mut serde_json::Value) {
         .and_then(|e| e.as_array_mut())
     {
         fix_list(arr);
+    }
+}
+
+/// **Maßeinheit der Blöcke** aus dem früheren Häkchen `annotative` (T0231).
+///
+/// Vor T0231 trug ein Block nur `annotative`: `true` hieß „Geometrie in
+/// Papier-Millimetern und mit dem Zeichnungsmaßstab skalieren“ (heute
+/// `einheit: "Neutral"`), `false` oder fehlend „maßstäblich in Millimetern“
+/// (heute `einheit: "Millimeter"`). Steht schon eine `einheit` am Block,
+/// gewinnt sie; `annotative` fällt in jedem Fall weg. Gilt für die
+/// `.jjcad`-Datei (`blocks`) und für eine Blockdatei (`block`, T0128).
+pub fn migrate_block_einheiten(v: &mut serde_json::Value) {
+    fn migriere(b: &mut serde_json::Value) {
+        let Some(obj) = b.as_object_mut() else {
+            return;
+        };
+        if !obj.contains_key("einheit") {
+            let alt = obj
+                .get("annotative")
+                .and_then(|a| a.as_bool())
+                .unwrap_or(false);
+            let neu = if alt { "Neutral" } else { "Millimeter" };
+            obj.insert("einheit".into(), serde_json::json!(neu));
+        }
+        obj.remove("annotative");
+    }
+
+    if let Some(blocks) = v.get_mut("blocks").and_then(|b| b.as_array_mut()) {
+        for b in blocks.iter_mut() {
+            migriere(b);
+        }
+    }
+    if let Some(b) = v.get_mut("block") {
+        migriere(b);
     }
 }
 

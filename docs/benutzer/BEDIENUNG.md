@@ -50,6 +50,9 @@ die **Vorgabe** ihrer Ebene und lassen sich wie jede andere Taste ändern.
    **Reihenfolge**: Messpunkte dürfen in beliebiger Reihenfolge geklickt
    werden — die Kette sortiert sie entlang der Maßlinie, beim Anlegen und beim
    Einfügen. Ein Zickzack entsteht dadurch nicht.
+   **Verlängerung** (Eigenschaften-Panel, Gruppe „Maß“): Maßhilfslinien von den
+   Messpunkten zur Maßlinie. Vorgabe **aus** — die Maßzahl steht allein an der
+   Maßlinie; eingeschaltet zeichnet jeder Messpunkt seine Hilfslinie.
 4. **Hotbar**: Tasten `1`–`0`. Aktives Werkzeug + Klick auf einen leeren Slot verknüpft es.
    Läuft das **Einfügen eines Blocks**, nimmt der angeklickte Slot den Block auf (der Slot
    zeigt dann die Miniaturaansicht des Blocks, sein Tooltip den Blocknamen); die Taste `1`–`0`
@@ -66,9 +69,11 @@ die **Vorgabe** ihrer Ebene und lassen sich wie jede andere Taste ändern.
    **jeder** Block dieser Kategorie, auch ein eigener Benutzerblock, sobald er die Gruppe
    „Punkt Symbole“ trägt. Gezeichnet wird das Symbol in Beschriftungsgröße, also auf jedem
    Maßstab gleich groß. Dieselbe Größe hat der Block als **eingesetzte Instanz**, weil die
-   Punktsymbole die Blockeigenschaft „Mit Maßstab skalieren“ tragen; im Fenster
-   **Block-Eigenschaften** (Rechtsklick auf die Kachel) lässt sie sich für eigene Blöcke
-   setzen. Ohne sie gilt die Blockgeometrie maßstäblich (1:1). Die **Pfeile** tragen ihre
+   Punktsymbole die Blockeigenschaft **Einheit „ohne Einheit“** tragen; im Fenster
+   **Block-Eigenschaften** (Rechtsklick auf die Kachel) wählt man sie für eigene Blöcke —
+   „ohne Einheit“ skaliert mit dem Zeichnungsmaßstab, Millimeter/Zentimeter/Meter gelten
+   maßstäblich (1:1). Alle Punktsymbole sind auf **Einheitsgröße 1** normiert, im
+   Blockeditor also normal groß. Die **Pfeile** tragen ihre
    Spitze auf dem Basispunkt: an einem Linienende deckt sich die Spitze damit genau mit dem
    Endpunkt, an einem Anfang mit dem Anfangspunkt; der Pfeilkörper läuft von dort nach innen.
 6. **Navigieren**: Mausrad zoomt, mittlere Taste oder `Leertaste`+Ziehen schwenkt.
@@ -304,6 +309,18 @@ ausgeblendet.
   Polar mit Schrittweite und Fenster), der erweiterte Punktfang (Hilfslinien an/aus,
   Verweildauer, Höchstzahl der Haltepunkte) und die Anzeige (Fangmarker). Rasterweite,
   Rasterart und Rasterfang bleiben in der Kategorie **Raster**.
+- **Hilfslinie beim Eingeben eines Punktes** (T0230): Während ein Punkt gesetzt wird
+  (Linie, Wand, Rechteck, Kreis, Bogen, Polylinie, Spline, Maßkette, Treppe … — jedes Werkzeug
+  außer dem Farbeimer), legt ein **Rechtsklick** eine Hilfslinie an: vom zuletzt gesetzten
+  Punkt des Zuges zum Klickpunkt. Beim **ersten** Punkt eines Objekts gibt es noch keinen
+  Bezugspunkt — dann steht sie am Klickpunkt und ihr zweites Ende folgt dem Zeiger. Sie ist
+  eine Strecke wie eine normale Linie: zwei Endpunkte, und der Zeiger rastet auf ihrem
+  Fußpunkt ein (Statusleiste „Hilfslinie“); ein Endpunkt oder Schnittpunkt an derselben Stelle
+  hat Vorrang, `Ortho` und der Polarfang schränken nur die Lage auf ihr ein. Sie lebt nur
+  **während der Eingabe** des Punktes und verschwindet mit dem nächsten Linksklick
+  (durchgezogen in der Fangfarbe, Kreuz am festen Ende, Ring am beweglichen). Ein **zweiter
+  Rechtsklick** nimmt sie weg und beendet bzw. bricht das Werkzeug ab — wie bisher;
+  `Enter` und `Esc` tun dasselbe. Prüfbild: `--demo hilfslinieeingabe`.
 - **Winkelhalbierende am Schnittpunkt zweier Linien** (T0150): Der Fang wird **nur** aktiv, wenn
   der feste Punkt der neuen Linie auf dem Schnittpunkt zweier Linien liegt — also im Scheitel
   einer Ecke, Kreuzung oder eines Stoßes (Linien und Wände, letztere mit ihrer Achse). Liegt der
@@ -365,6 +382,8 @@ ausgeblendet.
   samt Maß. Der Klick setzt sie ab, und der Abstand bleibt für alle weiteren stehen — jeder
   weitere Klick rückt um denselben Betrag in die Richtung, in der der Zeiger steht. Rechtsklick
   oder `ESC` beendet die Reihe; ein neuer Start beginnt wieder mit dem Abstand am Zeiger.
+  (Der erste Rechtsklick legt hier dieselbe **Hilfslinie** an wie in jedem Werkzeug — der
+  zweite beendet die Reihe.)
   Andere Objektarten (Wand, Kreis, Text …) sind keine Vorlage.
 - **Linien** werden als Kapsel gezeichnet: Rechteck plus Halbkreis an beiden Enden. Dadurch sind
   auch die Übergänge in Polylinien, Bögen und an Wandanschlüssen rund statt eckig.

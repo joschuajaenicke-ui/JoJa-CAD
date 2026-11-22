@@ -335,7 +335,7 @@ Mit dem Nutzer abgestimmt — nicht „verbessern“:
   Die Action `block.copy` legt die Kopie als **Benutzerblock** an: neue Kennung
   `usr:…`, Name aus `bloecke::kopie_name` („Name (Kopie)“, „(Kopie 2)“, …,
   kollisionsfrei gegen alle vorhandenen Namen), Geometrie/Basispunkt/Gruppe/
-  `annotative` von der Vorlage, Datei über `bloecke::schreibe_block` **vor** dem
+  `einheit` von der Vorlage, Datei über `bloecke::schreibe_block` **vor** dem
   Eintrag im Dokument (wie `block.create`). Die Oberfläche (`App::block_kopieren`)
   schaltet auf den Reiter Benutzerblöcke, damit die Kopie sichtbar ist.
   Prüfweg: `cargo test -p jjcad-core --test bloecke_datei kopie_` und
@@ -567,6 +567,17 @@ Mit dem Nutzer abgestimmt — nicht „verbessern“:
   für jeden Winkel. Alte Dateien rechnet `persist::migrate_legacy_dims` beim
   Laden um (`axis` → `angle`). Prüfweg: `cargo test -p jjcad-core --test
   masskette_rotieren`, Prüfbild `--demo masskettengedreht`.
+- **Verlängerung zu den Messpunkten (T0226)**: Die Maßhilfslinien von den
+  Messpunkten zur Maßlinie sind ein Schalter je Maßkette
+  (`EntityKind::Dim::ext_lines`, `#[serde(default)]`, Vorgabe **aus**). Im
+  Eigenschaften-Panel steht er als Häkchen „Verlängerung“ in der Gruppe „Maß“
+  und wird über `modify.set` mit `ext_lines` geschrieben; beim Erzeugen nimmt
+  `ToolOptions::dim_ext` (Vorgabe aus) den Wert mit, die Vorschau
+  (`render::preview_dim`, letztes Argument) zeichnet dieselbe Form. Gezeichnet
+  wird die Hilfslinie in `render_dim_chain` nur bei gesetztem Schalter —
+  Maßlinie, Begrenzungsstriche und Maßzahl bleiben unverändert. Alte Dateien
+  und DIN-Prüfungen schalten sie ausdrücklich ein (`ext_lines: true`).
+  Prüfweg: `cargo test -p jjcad-core --test masskette_verlaengerung`.
 - **Reihenfolge der Messpunkte (T0195)**: Die Reihenfolge in `Dim::pts` **ist**
   die Reihenfolge der Maßzahlen — gemessen wird immer zwischen zwei
   aufeinanderfolgenden Punkten. Ein gezogener Messpunkt kann zwischen seine
@@ -1048,8 +1059,9 @@ Mit dem Nutzer abgestimmt — nicht „verbessern“:
   Gezeichnet wird in `render::push_punktsymbol` mit dem **Beschriftungsmaßstab**
   (`RenderCtx::a`): ein Symbol ist eine Marke auf dem Papier, keine Bauteilgröße — dieselbe
   Marke ist bei 1:50 und 1:200 gleich groß. Der Pfeil zeigt nach +X, am Linienende in
-  Laufrichtung, am Anfang entgegen. Die Maße der mitgelieferten Blöcke (`blocks_lib`, IDs
-  `sys:pkt-*`) sind deshalb **Papier-Millimeter**, nicht Zeichnungs-Millimeter.
+  Laufrichtung, am Anfang entgegen. Die mitgelieferten Blöcke (`blocks_lib`, IDs
+  `sys:pkt-*`) sind deshalb **neutral** und auf **Einheitsgröße 1** normiert (T0231):
+  der Pfeil läuft von 0 nach −1, das Kreuz misst ±0,5 — siehe unten.
   `persist::normalize_systembloecke` bringt die Systemblöcke beim Laden auf den Stand der
   Bibliothek: fehlende werden angehängt, vorhandene **ersetzt**. Beides ist nötig — ohne das
   Anhängen erreichte die Kategorie keine ältere Zeichnung, und ohne das Ersetzen behielte sie
@@ -1061,17 +1073,29 @@ Mit dem Nutzer abgestimmt — nicht „verbessern“:
   Ursprung an der Spitze, der Körper läuft nach −X. Nur so deckt sich die Spitze an einem
   Linienende mit dem Endpunkt (vorher stand sie 1,4 mm daneben, bei 1:100 also 14 cm);
   `render::push_punktsymbol` dreht am Anfang um π, dort zeigt die Spitze nach außen und
-  der Körper liegt in der Linie. **Blöcke skalieren mit dem
-  Maßstab**: `BlockDef::annotative` (T0210, Turn 3) zeichnet die Blockgeometrie in
-  Beschriftungsgröße (`ctx.a(1.0)` in `render_entity`, `doc.settings.annotation_scale`
-  in `entity_segments`, dieselbe Rechnung in `ghost::geometry` für die Vorschau) —
-  wie die Begrenzungssymbole der Bemaßung. Die Punktsymbole tragen sie, damit Block
-  und Symbol am Punkt gleich groß sind; eigene Blöcke setzen sie im Fenster
-  „Block-Eigenschaften“ (Action `block.update`, Parameter `annotative`). Ohne die
-  Eigenschaft bleibt ein Block maßstäblich (1:1, Vorgabe für alte Dateien). Prüfweg:
-  `cargo test -p jjcad-core --test punktsymbole` und `--test block_massstab`,
-  `cargo test -p jjcad-gui props::` und `tests_block_eigenschaften`; Prüfbild
+  der Körper liegt in der Linie. Prüfweg:
+  `cargo test -p jjcad-core --test punktsymbole`; Prüfbild
   `--demo "neudatei,punktsymbol"` bzw. `--demo "neudatei,blockreiter:system"`.
+- **Maßeinheit der Blöcke (T0231)**: Jeder Block trägt `BlockDef::einheit`
+  (`BlockEinheit::Neutral | Millimeter | Zentimeter | Meter`). **Ohne Maßeinheit**
+  (`Neutral`) ist die Geometrie ein Symbol der Größe 1, das mit dem
+  **Zeichnungsmaßstab** wächst — eine Blockeinheit ist ein Papier-Millimeter; `mm`/`cm`/`m`
+  gelten dagegen maßstäblich (1 Einheit = 1/10/1000 mm). Die eine Rechnung ist
+  `BlockDef::faktor(annot_scale)`; sie gilt in `render_entity`, in `entity_segments`
+  (Fang, Trefferprüfung, Bounding-Box) und in `ghost::geometry` (Vorschau) — nie
+  daneben rechnen. Das alte Häkchen `annotative` gibt es nicht mehr; Dateien davor
+  schreibt `persist::migrate_block_einheiten` beim Laden um (`true` → `Neutral`, sonst
+  `Millimeter`), die Action `block.update` nimmt `einheit` (Schlüssel `neutral`/`mm`/`cm`/`m`)
+  und weiter das alte Argument `annotative`. Geändert wird sie im Fenster
+  „Block-Eigenschaften“ (Auswahlfeld „Einheit“). **Alle Punktsymbole sind auf
+  Einheitsgröße 1 normiert** (Kästchen der Größe 1 um den Basispunkt, Pfeil und
+  Schnitt-Kote mit der Spitze im Ursprung) — dadurch ist die Geometrie im Blockeditor
+  normal groß, und alle Symbole sind auf dem Papier gleich groß. Damit der Editor einen
+  Block überhaupt zeigt, gilt dort `app::BLOCK_ZOOM_MAX` (4000 px/mm) statt der
+  Zeichengrenze 80 (`App::zoom_max`) — ein Block ist klein. Prüfweg:
+  `cargo test -p jjcad-core --test block_einheit` und
+  `cargo test -p jjcad-gui tests_block_eigenschaften`; Prüfbild
+  `--demo punktsymbolblock`.
 - **Raumstempel (T0220)**: Der **Name** des Stempels wird **direkt in der Zeichnung**
   geändert — ein Doppelklick auf den Stempeltext öffnet ihn wie ein Textfeld
   (`textedit::start_entitaet` erkennt `EntityKind::Room`, `textedit::text_bei` trifft
@@ -1148,6 +1172,20 @@ Mit dem Nutzer abgestimmt — nicht „verbessern“:
   der Stand ihren Inhalt, statt einen zweiten Reiter auf denselben Pfad zu legen. Prüfweg:
   `cargo test -p jjcad-gui wiederherstellen` und `cargo test -p jjcad-core --lib
   zeichnungen`; Prüfbild `--demo wiederherstellen`.
+
+- **Hilfslinie beim Eingeben eines Punktes (T0230)**: Während ein Punkt ansteht, legt der
+  **Rechtsklick** eine Hilfslinie an (`App::hilfslinie`): vom Bezugspunkt des Zuges (zuletzt
+  gesetzter Punkt) zum Klickpunkt; ohne Bezugspunkt (erster Punkt eines Objekts) steht sie am
+  Klickpunkt und der zweite Endpunkt folgt dem Zeiger (`Hilfslinie { a, b: Option }`). Sie ist
+  eine **Strecke wie eine normale Linie** — Fußpunkt-Fang über `snap::hilfslinien_fuss` (auf die
+  Strecke begrenzt, Statuszeile „Hilfslinie“, `SnapKind::Tracking`), ein echter Objektpunkt
+  schlägt sie, `Ortho`/Polar rechnen den Fußpunkt vom gefangenen Punkt aus. Sie lebt nur bis zum
+  nächsten gesetzten Punkt (`tool_click_at`, `finish_tool`, `start_tool`, `cancel_tool` leeren
+  sie) und wird durchgezogen in der Fangfarbe gezeichnet (`canvas::draw_hilfslinie`, Kreuz am
+  festen Ende). Ein **zweiter** Rechtsklick nimmt sie weg und beendet bzw. bricht das Werkzeug
+  wie bisher — so bleibt „Rechtsklick beendet die Polylinie“ erhalten. Prüfweg:
+  `cargo test -p jjcad-core --test hilfslinie` und `cargo test -p jjcad-gui tests_hilfslinie`;
+  Prüfbild `--demo hilfslinieeingabe`.
 
 ## Zahlenfelder: Grenzen und Zuggeschwindigkeit (verbindlich)
 

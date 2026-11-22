@@ -18,7 +18,7 @@
 //! zwei Dateien (`…-2.jjblk`), keiner überschreibt den anderen.
 
 use crate::geom::{Affine, Vec2};
-use crate::model::{BlockDef, BlockSource, Entity};
+use crate::model::{BlockDef, BlockEinheit, BlockSource, Entity};
 use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
 
@@ -105,6 +105,7 @@ pub fn lies(pfad: &Path) -> Result<Blockdatei, String> {
     let mut raw: serde_json::Value = serde_json::from_str(&text)
         .map_err(|e| format!("kein gültiger Block (JSON): {e}"))?;
     crate::persist::migrate_legacy_dims(&mut raw);
+    crate::persist::migrate_block_einheiten(&mut raw);
     let datei: Blockdatei = serde_json::from_value(raw)
         .map_err(|e| format!("kein gültiger Block (JSON): {e}"))?;
     if !datei.format.eq_ignore_ascii_case(FORMAT) {
@@ -209,7 +210,7 @@ pub fn definition_aus_elementen(
         entities,
         icon: None,
         base,
-        annotative: false,
+        einheit: BlockEinheit::Millimeter,
     }
 }
 

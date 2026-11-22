@@ -976,6 +976,7 @@ pub fn preview_dim(
     angle: f64,
     layer: Id,
     color: Option<Color>,
+    ext_lines: bool,
 ) -> DisplayList {
     let mut e = Entity::new(
         0,
@@ -985,6 +986,7 @@ pub fn preview_dim(
             line_pos,
             angle,
             override_text: None,
+            ext_lines,
         },
     );
     // Wie die Action: ohne ausdrückliche Farbe ist neue Bemaßung schwarz.
@@ -1244,7 +1246,9 @@ fn push_punktsymbol(
     let Some(def) = ctx.doc.block(id) else {
         return false;
     };
-    let k = ctx.a(1.0);
+    // Ein Punkt symbol ist ein **neutraler** Block der Einheitsgröße 1 (T0231);
+    // als Symbol an einem Punkt gilt dieselbe Rechnung wie für die Instanz.
+    let k = def.faktor(ctx.annot_scale);
     let m = xf * Affine::translate(pos) * Affine::rotate(rot) * Affine::scale(k, k);
     for child in &def.entities {
         let mut c = child.clone();
@@ -1589,6 +1593,7 @@ pub fn render_entity(
             line_pos,
             angle,
             override_text,
+            ext_lines,
         } => {
             render_dim_chain(
                 ctx,
@@ -1598,6 +1603,7 @@ pub fn render_entity(
                 *line_pos,
                 *angle,
                 override_text.as_deref(),
+                *ext_lines,
                 xf,
                 dl,
             );
@@ -1870,13 +1876,11 @@ pub fn render_entity(
                 m = m * Affine::scale(-1.0, 1.0);
             }
             m = m * Affine::scale(scale.x, scale.y);
-            // Mit dem Zeichnungsmaßstab skalieren (T0210, Turn 3): die
-            // Blockgeometrie liegt in Papier-Millimetern und wächst mit dem
-            // Beschriftungsmaßstab — wie die Begrenzungssymbole der Bemaßung.
-            if def.annotative {
-                let k = ctx.a(1.0);
-                m = m * Affine::scale(k, k);
-            }
+            // Maßeinheit der Blockgeometrie (T0231): ein neutraler Block wächst
+            // mit dem Beschriftungsmaßstab, ein Block mit Maßeinheit zeichnet
+            // maßstäblich (Millimeter, Zentimeter, Meter).
+            let k = def.faktor(ctx.annot_scale);
+            m = m * Affine::scale(k, k);
             let m = xf * m;
             let block_color = doc.effective_color(e);
             for child in &def.entities {
@@ -4643,6 +4647,7 @@ fn render_dim_chain(
     line_pos: Vec2,
     angle: f64,
     override_text: Option<&str>,
+    ext_lines: bool,
     xf: Affine,
     dl: &mut DisplayList,
 ) {
@@ -4679,17 +4684,21 @@ fn render_dim_chain(
         entity: e.id,
         layer: e.layer,
     });
-    // Hilfslinien an allen Punkten — schmal wie die Maßlinie (Tabelle 2, 01.1.8)
-    for (w, d) in pts.iter().zip(projected.iter()) {
-        let dd = (*d - *w).normalized();
-        let s = *w + dd * ext_gap.min(w.dist(*d) * 0.5);
-        let t = *d + dd * over;
-        dl.push(Prim {
-            shape: Shape::Line(xf.apply(s), xf.apply(t)),
-            style: *st,
-            entity: e.id,
-            layer: e.layer,
-        });
+    // Verlängerung zu den Messpunkten — schmal wie die Maßlinie
+    // (Tabelle 2, 01.1.8). Vorgabe aus (T0226): ohne sie steht die Maßzahl
+    // allein an der Maßlinie.
+    if ext_lines {
+        for (w, d) in pts.iter().zip(projected.iter()) {
+            let dd = (*d - *w).normalized();
+            let s = *w + dd * ext_gap.min(w.dist(*d) * 0.5);
+            let t = *d + dd * over;
+            dl.push(Prim {
+                shape: Shape::Line(xf.apply(s), xf.apply(t)),
+                style: *st,
+                entity: e.id,
+                layer: e.layer,
+            });
+        }
     }
     // Begrenzungszeichen **einmal je Basispunkt**: liegen zwei Segmente
     // aneinander, standen bisher zwei Striche (bei Pfeil und Punkt sichtbar
@@ -5101,10 +5110,10 @@ fn entity_segments_tief(doc: &Document, e: &Entity, depth: usize) -> Vec<Seg> {
                     m = m * Affine::scale(-1.0, 1.0);
                 }
                 m = m * Affine::scale(scale.x, scale.y);
-                if def.annotative {
-                    let k = doc.settings.annotation_scale;
-                    m = m * Affine::scale(k, k);
-                }
+                // Maßeinheit der Blockgeometrie (T0231) — dieselbe Rechnung
+                // wie in der Anzeige, damit Fang und Bild übereinstimmen.
+                let k = def.faktor(doc.settings.annotation_scale);
+                m = m * Affine::scale(k, k);
                 for ce in &def.entities {
                     let kind = transform::transform_kind(&ce.kind, &m);
                     let mut te = ce.clone();

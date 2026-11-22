@@ -842,6 +842,12 @@ pub enum EntityKind {
         /// Maßtext des **ersten** Segments überschreiben (z. B. "2,50").
         #[serde(default, skip_serializing_if = "Option::is_none")]
         override_text: Option<String>,
+        /// Maßhilfslinien von den Messpunkten zur Maßlinie zeichnen
+        /// (T0226). Vorgabe **aus**: die Maßzahl steht ohne Verlängerung
+        /// direkt an der Maßlinie; wer die Hilfslinien braucht, schaltet sie
+        /// im Eigenschaften-Panel ein.
+        #[serde(default)]
+        ext_lines: bool,
     },
     /// Grundriss-Kote: Kreis-Symbol mit verknüpftem Höhenwert daneben.
     ///
@@ -1375,6 +1381,81 @@ impl BlockSource {
 /// Zuordnung hängt allein an der Kategorie, nicht an der Herkunft.
 pub const PUNKTSYMBOL_KATEGORIE: &str = "Punkt Symbole";
 
+/// Maßeinheit der Blockgeometrie (T0231).
+///
+/// Ein Block wird einmal entworfen und in beliebigem Maßstab eingesetzt; damit
+/// das aufgeht, muss seine Geometrie sagen, in welcher Einheit sie vorliegt.
+/// Zwei Fälle:
+///
+/// * **echte Längen** (Millimeter, Zentimeter, Meter) — die Instanz zeichnet die
+///   Geometrie maßstäblich, eine Einheit sind 1 / 10 / 1000 mm;
+/// * **[`BlockEinheit::Neutral`]** — ohne Maßeinheit: die Geometrie ist ein
+///   Symbol der Größe 1 und wächst mit dem **Zeichnungsmaßstab** (eine
+///   Blockeinheit ist ein Papier-Millimeter). So bleiben Punktsymbole auf jedem
+///   Maßstab gleich groß, wie die Begrenzungssymbole der Bemaßung.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, Default)]
+pub enum BlockEinheit {
+    /// Ohne Maßeinheit: neutrales Symbol der Größe 1, skaliert mit dem
+    /// Zeichnungsmaßstab.
+    Neutral,
+    /// Geometrie in Millimetern — maßstäblich (1:1) in der Zeichnung.
+    #[default]
+    Millimeter,
+    /// Geometrie in Zentimetern (1 Einheit = 10 mm).
+    Zentimeter,
+    /// Geometrie in Metern (1 Einheit = 1000 mm).
+    Meter,
+}
+
+impl BlockEinheit {
+    /// Anzeigereihenfolge in Auswahlfeldern.
+    pub const ALL: [BlockEinheit; 4] = [
+        BlockEinheit::Neutral,
+        BlockEinheit::Millimeter,
+        BlockEinheit::Zentimeter,
+        BlockEinheit::Meter,
+    ];
+
+    /// Modell-Millimeter je Blockeinheit; `None` bei [`BlockEinheit::Neutral`]
+    /// — dort gilt der Zeichnungsmaßstab.
+    pub fn mm(self) -> Option<f64> {
+        match self {
+            BlockEinheit::Neutral => None,
+            BlockEinheit::Millimeter => Some(1.0),
+            BlockEinheit::Zentimeter => Some(10.0),
+            BlockEinheit::Meter => Some(1000.0),
+        }
+    }
+
+    /// Schlüssel in der Datei und in Action-Parametern (stabil, klein).
+    pub fn key(self) -> &'static str {
+        match self {
+            BlockEinheit::Neutral => "neutral",
+            BlockEinheit::Millimeter => "mm",
+            BlockEinheit::Zentimeter => "cm",
+            BlockEinheit::Meter => "m",
+        }
+    }
+
+    /// Einheit aus dem Schlüssel — die Gegenrichtung zu [`Self::key`].
+    pub fn aus_key(s: &str) -> Option<BlockEinheit> {
+        let s = s.trim();
+        BlockEinheit::ALL
+            .into_iter()
+            .find(|e| e.key().eq_ignore_ascii_case(s))
+    }
+
+    /// Beschriftung in der gewählten Sprache (T0106).
+    pub fn text(self) -> &'static str {
+        match self {
+            BlockEinheit::Neutral => crate::i18n::tr("ui.blockeinheit.neutral"),
+            BlockEinheit::Millimeter => crate::i18n::tr("ui.blockeinheit.mm"),
+            BlockEinheit::Zentimeter => crate::i18n::tr("ui.blockeinheit.cm"),
+            BlockEinheit::Meter => crate::i18n::tr("ui.blockeinheit.m"),
+        }
+    }
+}
+
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
 pub struct BlockDef {
     /// Stabile, namensraum-präfixierte ID, z. B. "sys:wc" oder "prj:3f2a".
@@ -1393,13 +1474,14 @@ pub struct BlockDef {
     /// Einfügebasispunkt (meist 0,0)
     #[serde(default)]
     pub base: Vec2,
-    /// **Mit dem Zeichnungsmaßstab skalieren** (T0210): die Blockgeometrie
-    /// liegt dann in Papier-Millimetern und wird beim Zeichnen mit dem
-    /// Beschriftungsmaßstab vervielfacht — wie die Begrenzungssymbole der
-    /// Bemaßung. Ohne die Eigenschaft gilt die Geometrie maßstäblich in der
-    /// Zeichnung (1:1).
+    /// **Maßeinheit der Blockgeometrie** (T0231). Ohne Maßeinheit
+    /// ([`BlockEinheit::Neutral`]) wächst der Block mit dem Zeichnungsmaßstab;
+    /// sonst gilt die Geometrie maßstäblich in dieser Einheit.
+    ///
+    /// Dateien vor T0231 tragen statt dessen ein Häkchen `annotative`; es wird
+    /// beim Laden umgeschrieben (`persist::migrate_block_einheiten`).
     #[serde(default)]
-    pub annotative: bool,
+    pub einheit: BlockEinheit,
 }
 
 impl BlockDef {
@@ -1420,6 +1502,21 @@ impl BlockDef {
     pub fn ist_punktsymbol(&self) -> bool {
         self.category.trim().eq_ignore_ascii_case(PUNKTSYMBOL_KATEGORIE)
     }
+
+    /// Ohne Maßeinheit — der Block wächst mit dem Zeichnungsmaßstab (T0231).
+    pub fn ist_neutral(&self) -> bool {
+        self.einheit == BlockEinheit::Neutral
+    }
+
+    /// Modell-Millimeter je Blockeinheit beim Zeichnen einer Instanz.
+    ///
+    /// Die **eine** Rechnung für Anzeige, Fang, Bounding-Box und Vorschau: bei
+    /// [`BlockEinheit::Neutral`] ist es der Beschriftungsmaßstab der Zeichnung,
+    /// sonst die Einheit selbst.
+    pub fn faktor(&self, annot_scale: f64) -> f64 {
+        self.einheit.mm().unwrap_or(annot_scale)
+    }
+
 }
 
 // ---------------------------------------------------------------------------

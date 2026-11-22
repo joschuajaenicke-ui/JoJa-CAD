@@ -8,7 +8,7 @@
 use jjcad_core::actions;
 use jjcad_core::geom::{v, Vertex};
 use jjcad_core::model::{
-    BlockDef, BlockSource, Document, Entity, EntityKind, PUNKTSYMBOL_KATEGORIE,
+    BlockDef, BlockEinheit, BlockSource, Document, Entity, EntityKind, PUNKTSYMBOL_KATEGORIE,
 };
 use jjcad_core::units::Unit;
 use serde_json::json;
@@ -82,12 +82,13 @@ fn punkt_traegt_ein_symbol_und_zeichnet_es() {
     assert!(e.end_symbol.is_none(), "ein Punkt hat kein Ende");
 
     // Ohne Symbol zeichnet der Punkt nur seinen Dot; mit Kreuz ist die
-    // Ausdehnung die des Blocks in Beschriftungsgröße (2,2 mm bei 1:100).
+    // Ausdehnung die des Blocks in Beschriftungsgröße (Einheitsgröße 1, bei
+    // 1:100 also 1 mm auf dem Papier, T0231).
     let mit = jjcad_core::render::entity_bbox(&doc, &e);
     let mut ohne = e.clone();
     ohne.start_symbol = None;
     let ohne = jjcad_core::render::entity_bbox(&doc, &ohne);
-    let erwartet = symbol_breite_mm(2.2, 100.0);
+    let erwartet = symbol_breite_mm(1.0, 100.0);
     assert!(
         (mit.width() - erwartet).abs() < 5.0,
         "Kreuzbreite {:.1} mm, erwartet {:.1} mm",
@@ -95,7 +96,7 @@ fn punkt_traegt_ein_symbol_und_zeichnet_es() {
         erwartet
     );
     assert!(
-        mit.width() > ohne.width() + 100.0,
+        mit.width() > ohne.width() + 20.0,
         "das Symbol vergrößert die Ausdehnung nicht ({:.1} gegen {:.1})",
         mit.width(),
         ohne.width()
@@ -137,8 +138,8 @@ fn linie_traegt_symbole_an_anfang_und_ende() {
     assert_eq!(e.symbol(true), Some("sys:pkt-pfeil"));
 
     // Der Pfeil sitzt mit seiner **Spitze auf dem Endpunkt** (T0210, Turn 5)
-    // und läuft von dort nach innen; der Punkt ragt 0,6 mm über den Anfang
-    // zurück — beides in Beschriftungsgröße (1:100).
+    // und läuft von dort nach innen; der Punkt ragt eine halbe Einheit über den
+    // Anfang zurück — beides in Beschriftungsgröße (1:100).
     let bbox = jjcad_core::render::entity_bbox(&doc, &e);
     assert!(
         (bbox.max.x - 2000.0).abs() < 1.0,
@@ -236,8 +237,8 @@ fn symbolgroesse_folgt_dem_beschriftungsmassstab() {
         (gross / klein - 2.0).abs() < 0.05,
         "1:100 muss doppelt so groß sein wie 1:50 ({gross:.1} / {klein:.1})"
     );
-    // Das Quadrat ist 1,6 Papier-mm breit.
-    assert!((klein - symbol_breite_mm(1.6, 50.0)).abs() < 2.0);
+    // Das Quadrat ist eine Einheit breit — bei 1:50 also 1 Papier-mm (T0231).
+    assert!((klein - symbol_breite_mm(1.0, 50.0)).abs() < 2.0);
 }
 
 /// Ein Benutzerblock mit der Kategorie „Punkt Symbole“ — auch klein
@@ -267,7 +268,7 @@ fn benutzerblock_der_kategorie_ist_als_symbol_waehlbar() {
         )],
         icon: None,
         base: jjcad_core::geom::Vec2::ZERO,
-        annotative: false,
+        einheit: BlockEinheit::Neutral,
     });
     assert!(
         doc.punktsymbol_bloecke().iter().any(|b| b.id == "usr:marke"),
@@ -380,7 +381,7 @@ fn alte_datei_bekommt_den_neuen_pfeil_aus_der_bibliothek() {
         )],
         icon: None,
         base: jjcad_core::geom::Vec2::ZERO,
-        annotative: true,
+        einheit: BlockEinheit::Neutral,
     };
     alt.entities[0].by_block = true;
     let alt = serde_json::to_value(&alt).expect("alter Block");
@@ -433,7 +434,7 @@ fn benutzerblock_mit_systemkennung_bleibt_stehen() {
         entities: Vec::new(),
         icon: None,
         base: jjcad_core::geom::Vec2::ZERO,
-        annotative: false,
+        einheit: BlockEinheit::Millimeter,
     });
     let roh = jjcad_core::persist::to_json(&doc).unwrap();
     let geladen = jjcad_core::persist::from_json(&roh).expect("Datei laden");

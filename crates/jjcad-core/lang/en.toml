@@ -729,6 +729,12 @@ top = "Top"
 middle = "Middle"
 bottom = "Bottom"
 
+[ui.blockeinheit]
+neutral = "no unit"
+mm = "millimetres"
+cm = "centimetres"
+m = "metres"
+
 [ui.blocksource]
 system = "System"
 project = "Project"
@@ -1253,6 +1259,8 @@ version_x_build_x_x = "Version {wert1} · build {wert2} ({wert3})\n"
 
 [gui.dialogs]
 block_eigenschaften = "Block properties"
+einheit = "Unit"
+einheit_tip = "Unit of the block geometry: “no unit” scales with the drawing scale (a symbol of fixed paper size); millimetres, centimetres and metres are drawn to scale"
 ebene_taste_x = "Level {wert1} — click to toggle it on and off"
 block_loeschen = "Delete block"
 block_x_unwiderruflich_loeschen = "Delete block '{name}' permanently?"
@@ -1721,6 +1729,7 @@ keine = "none"
 
 [gui.props]
 blockname = "Block name"
+einheit = "Unit"
 gruppe = "Group"
 ansichtsbereich_anpassen = "Adjust view area"
 ansichtsbereich_tip = "Wheel changes the scale · middle button pans the view"
@@ -1857,6 +1866,8 @@ anzeigen = "Show"
 hintergrund = "Background"
 keine_flaeche = "No fill"
 variiert_die_objekte_unterscheiden_sich_eine_aenderung_s = "*varies* — the objects differ; a change makes them all equal"
+verlaengerung = "Extension"
+verlaengerung_hinweis = "Draw extension lines from the measuring points to the dimension line — the extension the dimension text sits on"
 verschieben = "Move"
 volumen = "Volume"
 volumen_x_m3 = "Volume {wert1} m³"

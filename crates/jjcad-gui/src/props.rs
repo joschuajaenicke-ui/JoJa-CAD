@@ -77,7 +77,8 @@
 
 use egui::Ui;
 use jjcad_core::model::{
-    DimAxis, DoorBase, DoorKind, ElevationTextPos, Entity, EntityKind, Id, TextFont, TextRun,
+    BlockEinheit, DimAxis, DoorBase, DoorKind, ElevationTextPos, Entity, EntityKind, Id, TextFont,
+    TextRun,
 };
 use jjcad_core::style::Color;
 use jjcad_core::text::RunStyle;
@@ -2486,6 +2487,23 @@ pub fn bemassung(app: &mut App, ui: &mut Ui, ziel: Ziel) {
         None => gesperrt_zeile(ui, jjcad_core::i18n::tr("gui.props.abstand"), jjcad_core::i18n::tr("gui.props.aus_den_klicks")),
     }
 
+    // Verlängerung zu den Messpunkten (T0226): Maßhilfslinien von jedem
+    // Messpunkt zur Maßlinie. Vorgabe aus — die Maßzahl steht allein an der
+    // Maßlinie.
+    let mut verlaengerung = e
+        .as_ref()
+        .map(|e| matches!(&e.kind, EntityKind::Dim { ext_lines: true, .. }))
+        .unwrap_or(app.options.dim_ext);
+    zeile("verlaengerung");
+    widgets::field_row(
+        ui,
+        jjcad_core::i18n::tr("gui.props.verlaengerung"),
+        |ui| {
+            ui.checkbox(&mut verlaengerung, "")
+                .on_hover_text(jjcad_core::i18n::tr("gui.props.verlaengerung_hinweis"));
+        },
+    );
+
     zeile("kennzahlen");
     ui.add_space(4.0);
     match (&e, ziel) {
@@ -2519,6 +2537,7 @@ pub fn bemassung(app: &mut App, ui: &mut Ui, ziel: Ziel) {
             gemein_nach_optionen(app, &a);
             app.options.dim_axis = achse;
             app.options.dim_text = masstext;
+            app.options.dim_ext = verlaengerung;
         }
         Ziel::Auswahl(id) => {
             gemein_nach_objekt(app, id, &a);
@@ -2539,6 +2558,14 @@ pub fn bemassung(app: &mut App, ui: &mut Ui, ziel: Ziel) {
                         }
                         if (winkel - *angle).abs() > 1e-9 {
                             map.insert("angle".into(), serde_json::json!(winkel.to_degrees()));
+                            geaendert = true;
+                        }
+                        let alt_ext = matches!(
+                            &e.kind,
+                            EntityKind::Dim { ext_lines: true, .. }
+                        );
+                        if verlaengerung != alt_ext {
+                            map.insert("ext_lines".into(), serde_json::json!(verlaengerung));
                             geaendert = true;
                         }
                         if let Some(v) = abstand {
@@ -3351,17 +3378,12 @@ pub fn einfach(app: &mut App, ui: &mut Ui, ziel: Ziel, art: Einfach) {
             widgets::field_row(ui, jjcad_core::i18n::tr("gui.props.gruppe"), |ui| {
                 ui.label(theme::mono(block_gruppe.clone()));
             });
-            // T0210: ob der Block mit dem Zeichnungsmaßstab skaliert, gehört
-            // zur Definition — geändert wird es im Fenster
-            // „Block-Eigenschaften“ (Rechtsklick auf die Kachel).
-            let block_annotative = definition.map(|b| b.annotative).unwrap_or(false);
-            zeile("massstab");
-            widgets::field_row(ui, jjcad_core::i18n::tr("gui.props.massstab"), |ui| {
-                ui.label(theme::mono(jjcad_core::i18n::tr(if block_annotative {
-                    "gui.props.mit_zeichnung"
-                } else {
-                    "gui.props.eins_zu_eins"
-                })));
+            // T0231: die Maßeinheit gehört zur Definition — geändert wird sie
+            // im Fenster „Block-Eigenschaften“ (Rechtsklick auf die Kachel).
+            let block_einheit = definition.map(|b| b.einheit).unwrap_or_default();
+            zeile("einheit");
+            widgets::field_row(ui, jjcad_core::i18n::tr("gui.props.einheit"), |ui| {
+                ui.label(theme::mono(block_einheit.text()));
             });
 
             let (r0, s0) = match &e {
@@ -5302,6 +5324,7 @@ mod tests {
                 line_pos: v(500.0, -300.0),
                 angle: 0.0,
                 override_text: None,
+                ext_lines: false,
             },
         ),
         (
@@ -5449,7 +5472,7 @@ mod tests {
             entities: Vec::new(),
             icon: None,
             base: jjcad_core::geom::Vec2::ZERO,
-            annotative: false,
+            einheit: BlockEinheit::Millimeter,
         });
         let layer = app.doc().current_layer;
         let id = app.doc_mut().new_id();
@@ -5663,6 +5686,7 @@ mod tests {
                 line_pos: jjcad_core::geom::v(500.0, -300.0),
                 angle: 0.0,
                 override_text: None,
+                ext_lines: false,
             },
             EntityKind::ElevationPlan {
                 p: jjcad_core::geom::Vec2::ZERO,
@@ -6492,6 +6516,63 @@ mod tests_artfilter {
             alle.iter().any(|t| t.contains("2 Objekte")),
             "die Wand-Mehrfachauswahl fehlt: {alle:?}"
         );
+    }
+
+    /// Verlängerung (T0226): das Häkchen im Panel schreibt `ext_lines` an das
+    /// Objekt, und ein zweiter Klick nimmt es zurück. Vorgabe ist **aus**.
+    #[test]
+    fn haekchen_schaltet_die_verlaengerung() {
+        let mut app = App::with_ctx(egui::Context::default());
+        app.session_mut()
+            .execute("doc.settings", &json!({ "input_unit": "m" }))
+            .expect("Einheit");
+        let r = app
+            .session_mut()
+            .execute(
+                "dim.chain",
+                &json!({"pts": [[0.0, 0.0], [3.0, 0.0], [6.0, 0.0]],
+                        "line_pos": [0.0, -1.0], "angle": 0.0}),
+            )
+            .expect("Maßkette");
+        let id = r["created"][0].as_u64().expect("Kennung") as Id;
+        app.session_mut().select(vec![id]);
+
+        let ext = |app: &App| match &app.doc().entity(id).expect("Maßkette").kind {
+            EntityKind::Dim { ext_lines, .. } => *ext_lines,
+            k => panic!("keine Maßkette: {k:?}"),
+        };
+        assert!(!ext(&app), "Vorgabe muss aus sein");
+
+        // Die Häkchenfläche: Namensspalte 160 px, das Kästchen sitzt links in
+        // der Wertspalte.
+        let out = bild(&mut app, Vec::new(), 1.0);
+        let zeile = flaeche(&out, "Verlängerung");
+        let kaestchen = egui::pos2(zeile.left() + 166.0, zeile.center().y);
+
+        klick(&mut app, kaestchen, 2.0);
+        assert!(ext(&app), "Klick muss die Verlängerung einschalten");
+
+        klick(&mut app, kaestchen, 4.0);
+        assert!(!ext(&app), "zweiter Klick muss sie wieder ausschalten");
+    }
+
+    /// Beim Erzeugen gilt das Häkchen für das nächste Element: es schreibt in
+    /// die Vorgaben des Werkzeugs (`ToolOptions::dim_ext`, T0226).
+    #[test]
+    fn haekchen_gilt_fuer_das_naechste_element() {
+        let mut app = App::with_ctx(egui::Context::default());
+        app.session_mut()
+            .execute("doc.settings", &json!({ "input_unit": "m" }))
+            .expect("Einheit");
+        app.start_tool("dim.chain");
+        assert!(!app.options.dim_ext, "Vorgabe muss aus sein");
+
+        let out = bild(&mut app, Vec::new(), 1.0);
+        let zeile = flaeche(&out, "Verlängerung");
+        let kaestchen = egui::pos2(zeile.left() + 166.0, zeile.center().y);
+        klick(&mut app, kaestchen, 2.0);
+
+        assert!(app.options.dim_ext, "Vorgabe muss an sein");
     }
 
     /// Das Menü listet **nur** die Arten der Auswahl — Wand und Linie, nicht

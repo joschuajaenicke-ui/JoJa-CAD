@@ -751,6 +751,12 @@ top = "Oben"
 middle = "Mitte"
 bottom = "Unten"
 
+[ui.blockeinheit]
+neutral = "ohne Einheit"
+mm = "Millimeter"
+cm = "Zentimeter"
+m = "Meter"
+
 [ui.blocksource]
 system = "System"
 project = "Projekt"
@@ -1278,9 +1284,8 @@ version_x_build_x_x = "Version {wert1} · Build {wert2} ({wert3})\n"
 
 [gui.dialogs]
 ebene_taste_x = "Ebene {wert1} — Klick schaltet sie ein und aus"
-massstab = "Maßstab"
-mit_massstab_skalieren = "Mit Maßstab skalieren"
-mit_massstab_skalieren_tip = "Blockgeometrie in Beschriftungsgröße — das Symbol bleibt auf jedem Maßstab gleich groß, wie die Begrenzungssymbole der Bemaßung"
+einheit = "Einheit"
+einheit_tip = "Maßeinheit der Blockgeometrie: „ohne Einheit“ skaliert mit dem Zeichnungsmaßstab (Symbol fester Papiergröße), Millimeter/Zentimeter/Meter gelten maßstäblich"
 block_eigenschaften = "Block-Eigenschaften"
 block_loeschen = "Block löschen"
 block_x_unwiderruflich_loeschen = "Block '{name}' unwiderruflich löschen?"
@@ -1753,8 +1758,7 @@ keine = "keine"
 
 [gui.props]
 blockname = "Blockname"
-mit_zeichnung = "mit Zeichnung"
-eins_zu_eins = "1:1"
+einheit = "Einheit"
 punktsymbol = "Symbol"
 punktsymbol_ende = "Ende"
 kein_symbol = "Kein Symbol"
@@ -1895,6 +1899,8 @@ anzeigen = "Anzeigen"
 hintergrund = "Hintergrund"
 keine_flaeche = "keine Fläche"
 variiert_die_objekte_unterscheiden_sich_eine_aenderung_s = "*variiert* — die Objekte unterscheiden sich; eine Änderung setzt alle gleich"
+verlaengerung = "Verlängerung"
+verlaengerung_hinweis = "Maßhilfslinien von den Messpunkten zur Maßlinie zeichnen — die Verlängerung, auf der die Maßzahl steht"
 verschieben = "Verschieben"
 volumen = "Volumen"
 volumen_x_m3 = "Volumen {wert1} m³"

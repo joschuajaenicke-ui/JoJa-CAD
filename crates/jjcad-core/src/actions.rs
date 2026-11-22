@@ -1713,6 +1713,7 @@ fn dim_kette(
             line_pos,
             angle,
             override_text: p.text("text"),
+            ext_lines: p.boolean_or("ext_lines", false),
         },
     );
     apply_common(doc, &mut e, p, layer);
@@ -2517,6 +2518,7 @@ pub fn execute(doc: &mut Document, id: &str, params: &Value) -> Result<Value, St
                     line_pos,
                     angle,
                     override_text: p.text("text"),
+                    ext_lines: p.boolean_or("ext_lines", false),
                 },
             );
             apply_common(doc, &mut e, &p, layer);
@@ -3701,9 +3703,16 @@ pub fn execute(doc: &mut Document, id: &str, params: &Value) -> Result<Value, St
                             line_pos,
                             angle,
                             override_text,
+                            ext_lines,
                         } => {
                             if let Some(v) = text {
                                 *override_text = Some(v);
+                            }
+                            // Verlängerung zu den Messpunkten (T0226): der
+                            // Schalter im Eigenschaften-Panel schickt hier
+                            // `ext_lines`.
+                            if let Some(v) = p.boolean("ext_lines") {
+                                *ext_lines = v;
                             }
                             // Orientierung: `angle` (Grad) setzt sie frei,
                             // `axis` ist die bequeme Eingabeweise (T0166).
@@ -4104,8 +4113,14 @@ pub fn execute(doc: &mut Document, id: &str, params: &Value) -> Result<Value, St
                 base,
             );
             block.description = p.text_or("description", "");
-            // Mit dem Zeichnungsmaßstab skalieren (T0210, Turn 3).
-            block.annotative = p.boolean_or("annotative", block.annotative);
+            // Maßeinheit der Geometrie (T0231) — Vorgabe: maßstäblich (mm).
+            // `annotative` bleibt als altes Argument gültig.
+            if p.boolean_or("annotative", false) {
+                block.einheit = BlockEinheit::Neutral;
+            }
+            if let Some(e) = p.text("einheit").and_then(|e| BlockEinheit::aus_key(&e)) {
+                block.einheit = e;
+            }
             // Eigene Blöcke des Benutzers (T0128): die Kennung `usr:…` steht im
             // Inhalt, der Dateiname folgt dem Namen. Geschrieben wird, bevor das
             // Dokument geändert wird — scheitert die Datei, bleibt die Auswahl
@@ -4179,9 +4194,18 @@ pub fn execute(doc: &mut Document, id: &str, params: &Value) -> Result<Value, St
             if let Some(d) = p.text("description") {
                 neu.description = d.to_string();
             }
-            // Mit dem Zeichnungsmaßstab skalieren (T0210, Turn 3).
+            // Maßeinheit der Geometrie (T0231). `annotative` ist das alte
+            // Argument derselben Angabe und bleibt gültig.
             if let Some(a) = p.boolean("annotative") {
-                neu.annotative = a;
+                neu.einheit = if a {
+                    BlockEinheit::Neutral
+                } else {
+                    BlockEinheit::Millimeter
+                };
+            }
+            if let Some(e) = p.text("einheit") {
+                neu.einheit = BlockEinheit::aus_key(&e)
+                    .ok_or_else(|| format!("Unbekannte Einheit '{e}' (neutral, mm, cm, m)"))?;
             }
             // Benutzerblock (T0128): Datei nachziehen — Umbenennen ist
             // `rename` plus Feld, die Kennung bleibt gleich.
@@ -4284,7 +4308,7 @@ pub fn execute(doc: &mut Document, id: &str, params: &Value) -> Result<Value, St
                         "id": b.id, "name": b.name, "category": b.category,
                         "source": b.source, "entities": b.entities.len(),
                         "instances": doc.block_instances(&b.id).len(),
-                        "annotative": b.annotative
+                        "einheit": b.einheit.key()
                     })
                 })
                 .collect();
@@ -6613,7 +6637,7 @@ fn import_pdf_action(doc: &mut Document, p: &Params) -> Result<Value, String> {
         entities: ents,
         icon: None,
         base: Vec2::ZERO,
-        annotative: false,
+        einheit: BlockEinheit::Millimeter,
     });
     let idn = doc.new_id();
     let mut inst = Entity::new(

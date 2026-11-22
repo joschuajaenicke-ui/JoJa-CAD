@@ -20,6 +20,7 @@ fn dim(pts: Vec<Vec2>) -> EntityKind {
         line_pos: v(0.0, -400.0),
         angle: 0.0,
         override_text: None,
+        ext_lines: false,
     }
 }
 
