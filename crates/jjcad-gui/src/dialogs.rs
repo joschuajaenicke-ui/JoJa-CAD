@@ -2154,6 +2154,12 @@ pub(crate) fn rastermodus_text(m: jjcad_core::gitter::Rastermodus) -> &'static s
 }
 
 fn settings_body(app: &mut App, ui: &mut Ui) {
+    // T0233: Der Zeilenzähler läuft je Bild über alle Panels; zurückgesetzt
+    // wurde er bisher nur im Eigenschaften-Panel. Ist das Panel zu (Standard-
+    // betrieb), wanderten die Streifen und die Kennungen der Hinweisflächen
+    // von Bild zu Bild — kein Tooltip erschien mehr. Die Seite setzt ihn
+    // deshalb selbst zurück.
+    widgets::reset_rows();
     // T0228: Anzeige und Rückweg derselben Felder in der Einheit des aktiven
     // Raums — `doc.settings` liest die Werte mit `Document::input_unit()` ein.
     let unit = app.unit();

@@ -1165,6 +1165,10 @@ pub struct UiState {
     /// benutzte. Höchstens zwei dürfen je Seite ausgeklappt sein; bei einem
     /// dritten gibt das vorderste (am längsten unbenutzte) auf.
     pub panel_benutzt: Vec<SeitenPanel>,
+    /// T0233: Stand der drei Panels im vorigen Bild. Ribbon-Schalter,
+    /// Objektmenü und Demo-Zustände schreiben `*_open` direkt; der Übergang
+    /// zu → offen wird daran erkannt und zählt als Benutzung.
+    pub panel_offen_vorher: [bool; 3],
     /// T0203: Lage der Symbole in den Seitenleisten im zuletzt gezeichneten
     /// Bild — (Panel, Seite, Fläche). Prüfwert der Tests.
     pub last_leisten_icons: Vec<(SeitenPanel, PanelSeite, Rect)>,
@@ -1462,6 +1466,8 @@ impl Default for UiState {
             props_side: PanelSeite::Rechts,
             blatt_side: PanelSeite::Rechts,
             panel_benutzt: Vec::new(),
+            // T0233: Im ersten Bild gibt es keinen Übergang zu erkennen.
+            panel_offen_vorher: [true, true, true],
             last_leisten_icons: Vec::new(),
             last_layer_kopf: Vec::new(),
             last_blattzeilen: Vec::new(),
@@ -2177,6 +2183,35 @@ impl App {
         app.ui.layers_side = layers_side;
         app.ui.props_side = props_side;
         app.ui.blatt_side = blatt_side;
+        // T0233: Im Standardbetrieb („Seitenleiste immer anzeigen“ aus) steht
+        // beim Start **ein** Panel; die übrigen liegen als Symbol in der Leiste.
+        // Gewählt wird in der Reihenfolge Layer, Eigenschaften, Blätter — sonst
+        // entschiede die Vorgabe der `prefs.json`, welches Panel übrig bleibt.
+        if !app.prefs.seitenleiste_immer {
+            let start = [
+                (SeitenPanel::Layer, app.ui.layers_open),
+                (SeitenPanel::Eigenschaften, app.ui.props_open),
+                (SeitenPanel::Blatt, app.ui.blatt_open),
+            ];
+            let mut frei = true;
+            for (p, war) in start {
+                let bleibt = war && frei;
+                frei = frei && !bleibt;
+                match p {
+                    SeitenPanel::Layer => app.ui.layers_open = bleibt,
+                    SeitenPanel::Eigenschaften => app.ui.props_open = bleibt,
+                    SeitenPanel::Blatt => app.ui.blatt_open = bleibt,
+                }
+                if bleibt {
+                    app.ui.panel_benutzt.push(p);
+                }
+            }
+            app.ui.panel_offen_vorher = [
+                app.ui.layers_open,
+                app.ui.props_open,
+                app.ui.blatt_open,
+            ];
+        }
         app.fit_view();
         app.started_at = 0.0;
         // T0127: Blöcke aus der Benutzerbibliothek der Datenwurzel.
@@ -10628,6 +10663,21 @@ impl App {
     /// T0233: Ohne „Seitenleiste immer anzeigen“ (Programmstandard) ist
     /// **ein** ausgeklapptes Panel die Grenze — die übrigen geben auf.
     pub fn panels_begrenzen(&mut self) {
+        // T0233: Ein direkt geöffnetes Panel (Ribbon, Objektmenü, Demo) gilt
+        // als zuletzt benutzt — sonst verdrängte die Grenze unten gerade das
+        // eben geöffnete.
+        let offen = [
+            self.panel_offen(SeitenPanel::Layer),
+            self.panel_offen(SeitenPanel::Eigenschaften),
+            self.panel_offen(SeitenPanel::Blatt),
+        ];
+        for (i, p) in SeitenPanel::ALLE.iter().copied().enumerate() {
+            if offen[i] && !self.ui.panel_offen_vorher[i] {
+                self.ui.panel_benutzt.retain(|q| *q != p);
+                self.ui.panel_benutzt.push(p);
+            }
+        }
+        self.ui.panel_offen_vorher = offen;
         let mut reihe: Vec<SeitenPanel> = self.ui.panel_benutzt.clone();
         reihe.retain(|p| self.panel_offen(*p) && !self.panel_eingeklappt(*p));
         for p in SeitenPanel::ALLE {

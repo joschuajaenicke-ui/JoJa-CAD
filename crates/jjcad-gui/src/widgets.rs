@@ -363,7 +363,10 @@ fn field_row_mit_hinweis(
         crate::icons::paint(ui.painter(), icon, "info", Palette::text_faint());
         ui.interact(
             Rect::from_min_size(row.min, Vec2::new(LABEL_W, ROW_H)),
-            ui.id().with(("feldhinweis", idx)),
+            // T0233: Die Kennung hängt am Namen, nicht am Zeilenzähler — ein
+            // nicht zurückgesetzter Zähler ließ sie von Bild zu Bild wandern
+            // und der Tooltip erschien nie (Reparatur siehe `settings_body`).
+            ui.id().with(("feldhinweis", label)),
             Sense::hover(),
         )
         .on_hover_text(t);
