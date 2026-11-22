@@ -371,7 +371,7 @@ fn fill_too_thin(v: &[Pos2]) -> bool {
 /// skaliert sie zusätzlich. `scaled = true` = „Papier (maßstabsgetreu)“ — die
 /// Breite_mm × Pixel je Papier-mm, ohne Obergrenze, damit Strichbreite und
 /// Abstand in jedem Zoom im selben Verhältnis stehen wie im PDF. Dort bestimmt
-/// der Maßstab der Zeichnung (`settings.annotation_scale`) die Papier-mm.
+/// der Maßstab des **Plans** (`Plan::scale`, T0232) die Papier-mm.
 fn linienbreite_px(width_mm: f64, paper_px: f64, scaled: bool, faktor: f64) -> f64 {
     if scaled {
         (width_mm * paper_px).max(0.05)
@@ -1539,6 +1539,8 @@ pub fn show(app: &mut App, ui: &mut Ui) {
         if let Some((start, cur, _)) = app.select_zwei {
             draw_auswahlfenster(&painter, rect, view_now, start, cur);
         }
+        // T0235: laufende Bereichswahl für den PNG-Export.
+        draw_png_bereich(app, &painter, rect, view_now, snapped);
         draw_cursor(app, ui, &painter, rect, view_now, snapped, raw_world, fang_art);
     } else {
         app.perf.abschnitt(Abschnitt::Displayliste);
@@ -1639,6 +1641,8 @@ pub fn show(app: &mut App, ui: &mut Ui) {
         if let Some((start, cur, _)) = app.select_zwei {
             draw_auswahlfenster(&painter, rect, view_now, start, cur);
         }
+        // T0235: laufende Bereichswahl für den PNG-Export.
+        draw_png_bereich(app, &painter, rect, view_now, snapped);
         draw_cursor(app, ui, &painter, rect, view_now, snapped, raw_world, fang_art);
     }
 
@@ -1675,7 +1679,21 @@ pub fn show(app: &mut App, ui: &mut Ui) {
         // Aufforderung des laufenden Werkzeugs (bzw. der Einfüge-Vorschau) in
         // den Chat. Nur bei geändertem Text, sonst stünde sie 60-mal pro
         // Sekunde im Protokoll.
-        if app.ghost.is_some() {
+        if app.ui.png_wahl.is_some() {
+            // T0235: die Aufforderung der Bereichswahl.
+            let erster = app
+                .ui
+                .png_wahl
+                .as_ref()
+                .map(|w| w.erster.is_some())
+                .unwrap_or(false);
+            let hinweis = if erster {
+                jjcad_core::i18n::tr("gui.canvas.png_bereich_zweiter_punkt")
+            } else {
+                jjcad_core::i18n::tr("gui.canvas.png_bereich_diagonale")
+            };
+            app.mitteilung_wenn_neu(hinweis);
+        } else if app.ghost.is_some() {
             app.mitteilung_wenn_neu(jjcad_core::i18n::tr("gui.canvas.einfuegen_klick_setzt_ab"));
         } else if let Some(t) = app.tool.clone() {
             let hinweis = crate::app::commands_hint(&t, &app.options);
@@ -5047,6 +5065,25 @@ fn handle_input(
         return;
     }
 
+    // T0235: Bereich für den PNG-Export über die Diagonale wählen. Der Klick
+    // gehört der Bereichswahl, nicht der Zeichnung; die übrige Auswertung ruht,
+    // solange gewählt wird.
+    if app.ui.png_wahl.is_some() {
+        if ctx.input(|i| i.key_pressed(egui::Key::Escape))
+            || resp.clicked_by(egui::PointerButton::Secondary)
+        {
+            app.ui.png_wahl = None;
+            app.mitteilung(jjcad_core::i18n::tr("gui.canvas.png_bereich_abgebrochen"));
+            return;
+        }
+        if resp.clicked_by(egui::PointerButton::Primary) {
+            if let Some(p) = snapped.or(raw) {
+                png_bereich_klick(app, p);
+            }
+        }
+        return;
+    }
+
     // Zwei-Klick-Auswahlfenster (T0145): der zweite Klick übernimmt die
     // Auswahl. Muss vor der übrigen Klickauswertung stehen — sonst schaltet
     // der Abschlussklick noch ein Objekt unter dem Zeiger um.
@@ -5587,6 +5624,34 @@ fn handle_input(
     // dann, wenn der Zeiger die Zeichenfläche bzw. das Fenster verlassen hat.
 }
 
+/// T0235: ein Linksklick der Bereichswahl für den PNG-Export.
+///
+/// Der erste Klick setzt die eine Ecke der Diagonalen, der zweite die andere —
+/// danach fragt der Speicherdialog nach dem Ziel. Eine Diagonale ohne Fläche
+/// (beide Punkte auf einer Achse) ist ein Fehler und wird gemeldet, statt ein
+/// leeres Bild zu erzeugen.
+fn png_bereich_klick(app: &mut App, p: V2) {
+    let Some(mut wahl) = app.ui.png_wahl.take() else {
+        return;
+    };
+    match wahl.erster {
+        None => {
+            wahl.erster = Some(p);
+            app.ui.png_wahl = Some(wahl);
+            app.mitteilung(jjcad_core::i18n::tr("gui.canvas.png_bereich_zweiter_punkt"));
+        }
+        Some(a) => {
+            if (a.x - p.x).abs() < 1e-6 || (a.y - p.y).abs() < 1e-6 {
+                app.mitteilung(jjcad_core::i18n::tr("gui.canvas.png_bereich_ohne_flaeche"));
+                app.ui.png_wahl = Some(crate::app::PngWahl { erster: None });
+                return;
+            }
+            app.ui.png_bereich = Some([a.x.min(p.x), a.y.min(p.y), a.x.max(p.x), a.y.max(p.y)]);
+            app.open_file_dialog(crate::dialogs::FileMode::ExportPng);
+        }
+    }
+}
+
 /// Zwei-Klick-Auswahlfenster (T0145).
 ///
 /// Im Modus „Zwei Klicks“ setzt ein Klick auf die freie Fläche die erste Ecke
@@ -5771,6 +5836,37 @@ fn draw_auswahlfenster(p: &Painter, rect: Rect, view: View, start: V2, cur: V2) 
         r,
         0.0,
         Stroke::new(1.2, if crossing { Palette::ok() } else { Palette::auswahl() }),
+    );
+}
+
+/// Bereichswahl für den PNG-Export (T0235): Das Rechteck über die Diagonale
+/// steht in der Akzentfarbe, der zweite Eckpunkt folgt dem Zeiger.
+fn draw_png_bereich(app: &App, p: &Painter, rect: Rect, view: View, zeiger: Option<V2>) {
+    let Some(wahl) = app.ui.png_wahl.as_ref() else {
+        return;
+    };
+    let Some(a) = wahl.erster else {
+        return;
+    };
+    let Some(b) = zeiger else {
+        return;
+    };
+    let r = Rect::from_two_pos(world_to_screen(rect, view, a), world_to_screen(rect, view, b));
+    p.rect_filled(r, 0.0, Palette::accent_soft());
+    p.rect_stroke(r, 0.0, Stroke::new(1.5, Palette::accent()));
+    p.line_segment(
+        [
+            world_to_screen(rect, view, a),
+            world_to_screen(rect, view, b),
+        ],
+        Stroke::new(1.0, Palette::accent()),
+    );
+    p.text(
+        Pos2::new(r.left() + 6.0, r.top() - 3.0),
+        Align2::LEFT_BOTTOM,
+        jjcad_core::i18n::tr("gui.canvas.png_bereich"),
+        FontId::proportional(12.0),
+        Palette::accent(),
     );
 }
 
@@ -15241,9 +15337,8 @@ mod tests_stutzvorschau {
     }
 
     /// T0139/T0232: Im Papier-Modus bestimmt der Maßstab **des Plans** die
-    /// Strichbreite. Bezug ist 1:100; ein feinerer Plan (1:50) zeigt dieselbe
-    /// Linie bei gleichem Zoom **doppelt** so breit, ein gröberer (1:200)
-    /// halb so breit.
+    /// Strichbreite: 1:50 zeigt dieselbe Linie bei gleichem Zoom halb so breit
+    /// wie 1:100, 1:200 doppelt so breit (Papier-Stärke wie im Druck).
     #[test]
     fn massstab_der_zeichnung_bestimmt_die_breite_im_papier_modus() {
         let mut app = app();
@@ -15257,15 +15352,15 @@ mod tests_stutzvorschau {
         // 1:100 → paper_px = 4 → 4 px Strich + 1 px Hervorhebung.
         let bei_100 = stutz_strecken(&mut app, Some(V2::new(3000.0, 0.0)))[0].2;
         app.doc_mut().plans[0].scale = 50.0;
-        // 1:50 → Faktor 2 → paper_px = 8 → 8 px Strich + 1 px Hervorhebung.
+        // 1:50 → paper_px = 2 → 2 px Strich + 1 px Hervorhebung.
         let bei_50 = stutz_strecken(&mut app, Some(V2::new(3000.0, 0.0)))[0].2;
         app.doc_mut().plans[0].scale = 200.0;
-        // 1:200 → Faktor ½ → paper_px = 2 → 2 px Strich + 1 px Hervorhebung.
+        // 1:200 → paper_px = 8 → 8 px Strich + 1 px Hervorhebung.
         let bei_200 = stutz_strecken(&mut app, Some(V2::new(3000.0, 0.0)))[0].2;
         assert!((bei_100 - 5.0).abs() < 0.01, "1:100: {bei_100}");
-        assert!((bei_50 - 9.0).abs() < 0.01, "1:50: {bei_50}");
-        assert!((bei_200 - 3.0).abs() < 0.01, "1:200: {bei_200}");
-        assert!(bei_100 > bei_200, "1:100 muss breiter sein als 1:200");
+        assert!((bei_50 - 3.0).abs() < 0.01, "1:50: {bei_50}");
+        assert!((bei_200 - 9.0).abs() < 0.01, "1:200: {bei_200}");
+        assert!(bei_200 > bei_100, "1:200 ist relativ zur Zeichnung breiter");
     }
 }
 
@@ -19472,8 +19567,10 @@ mod tests_hilfslinie {
 #[cfg(test)]
 mod tests_plan_massstab {
     //! T0232: Der Maßstab gehört zum Plan. Im Modus „Papier (maßstabsgetreu)“
-    //! wird dieselbe Papier-Stärke im Plan 1:100 doppelt so breit gezeichnet
-    //! wie im Plan 1:200 — gemessen am gezeichneten Mesh, nicht am Quelltext.
+    //! hängt die gezeichnete Strichbreite am Plan des Objekts: dieselbe
+    //! Papier-Stärke erscheint im Plan 1:200 doppelt so breit wie im Plan 1:100
+    //! (so dick ist sie relativ zur Zeichnung auch im Druck) — gemessen am
+    //! gezeichneten Mesh, nicht am Quelltext.
 
     use super::*;
 
@@ -19536,22 +19633,23 @@ mod tests_plan_massstab {
     }
 
     #[test]
-    fn linie_im_plan_1zu100_ist_breiter_als_im_plan_1zu200() {
-        // Gleiche Papier-Stärke (0,35 mm), gleicher Zoom.
-        let dick = strichbreite_px(100.0, 1, 0.35);
-        let duenn = strichbreite_px(200.0, 2, 0.35);
+    fn linie_im_plan_1zu200_ist_breiter_als_im_plan_1zu100() {
+        // Gleiche Papier-Stärke (0,35 mm), gleicher Zoom: im Maßstab 1:200
+        // liegt sie auf der doppelten Weltstrecke.
+        let breit = strichbreite_px(200.0, 2, 0.35);
+        let schmal = strichbreite_px(100.0, 1, 0.35);
         assert!(
-            dick > duenn * 1.6,
-            "1:100 muss rund doppelt so breit sein wie 1:200: {dick:.2} px gegen {duenn:.2} px"
+            breit > schmal * 1.6,
+            "1:200 muss rund doppelt so breit sein wie 1:100: {breit:.2} px gegen {schmal:.2} px"
         );
         assert!(
-            (dick / duenn - 2.0).abs() < 0.2,
+            (breit / schmal - 2.0).abs() < 0.2,
             "Verhältnis der Strichbreiten {:.2} statt 2,0",
-            dick / duenn
+            breit / schmal
         );
         // Gegenprobe derselbe Plan: gleiche Breite.
-        let nochmal = strichbreite_px(100.0, 1, 0.35);
-        assert!((dick - nochmal).abs() < 0.01, "gleicher Plan, gleiche Breite");
+        let nochmal = strichbreite_px(200.0, 2, 0.35);
+        assert!((breit - nochmal).abs() < 0.01, "gleicher Plan, gleiche Breite");
     }
 
     #[test]
@@ -19623,5 +19721,201 @@ mod tests_plan_massstab {
             breiten[0],
             breiten[1]
         );
+    }
+}
+
+// ---------------------------------------------------------------------------
+// PNG-Export mit Bereich (T0235)
+// ---------------------------------------------------------------------------
+
+mod tests_png_bereich {
+    //! Der Bereich ist immer ein Rechteck und wird über die Diagonale angegeben:
+    //! der erste Klick setzt die eine Ecke, der zweite die andere, danach fragt
+    //! der Speicherdialog nach dem Ziel. Geprüft wird der ganze Weg bis zur
+    //! geschriebenen Datei samt Bildgröße und Inhalt.
+
+    use super::*;
+    use jjcad_core::persist::DragMode;
+
+    fn app() -> App {
+        let mut app = App::with_ctx(egui::Context::default());
+        app.ui.drag_mode = DragMode::HoldAndDrag;
+        // Eingebauter Dateidialog: der Systemdialog hängt an Display und
+        // Sitzungs-D-Bus und gehört nicht in einen Test.
+        app.prefs.file_dialog = "intern".into();
+        app.session_mut()
+            .execute(
+                "doc.settings",
+                &serde_json::json!({"input_unit": "mm",
+                                   "snap": {"ortho": false, "polar": false, "grid": false}}),
+            )
+            .unwrap();
+        app
+    }
+
+    fn frame(app: &mut App, events: Vec<egui::Event>) {
+        let ctx = app.ctx.clone();
+        let input = egui::RawInput {
+            screen_rect: Some(Rect::from_min_size(Pos2::ZERO, egui::vec2(1500.0, 950.0))),
+            events,
+            ..Default::default()
+        };
+        let _ = ctx.run(input, |ctx| app.ui(ctx));
+    }
+
+    fn taste(pos: Pos2, gedrueckt: bool) -> egui::Event {
+        egui::Event::PointerButton {
+            pos,
+            button: egui::PointerButton::Primary,
+            pressed: gedrueckt,
+            modifiers: egui::Modifiers::NONE,
+        }
+    }
+
+    /// Klick auf eine Bildschirmstelle (Druck und Loslassen in zwei Bildern).
+    fn klick_bild(app: &mut App, pos: Pos2) {
+        frame(app, vec![egui::Event::PointerMoved(pos), taste(pos, true)]);
+        frame(app, vec![taste(pos, false)]);
+    }
+
+    /// Bereichswahl starten, zwei Ecken klicken. Liefert die Weltkoordinaten
+    /// der beiden Klicks.
+    fn bereich_waehlen(app: &mut App) -> (V2, V2) {
+        frame(app, vec![]);
+        let rect = app.ui.last_canvas;
+        let view = app.current_view();
+        // Zwei Stellen in der Zeichenfläche, die ein Rechteck aufspannen.
+        let a = Pos2::new(rect.center().x - 150.0, rect.center().y - 100.0);
+        let b = Pos2::new(rect.center().x + 150.0, rect.center().y + 100.0);
+        let (wa, wb) = (
+            screen_to_world(rect, view, a),
+            screen_to_world(rect, view, b),
+        );
+        app.start_png_bereich();
+        assert!(app.ui.png_wahl.is_some(), "die Bereichswahl läuft");
+        klick_bild(app, a);
+        assert!(
+            app.ui.png_wahl.as_ref().and_then(|w| w.erster).is_some(),
+            "der erste Klick setzt die erste Ecke"
+        );
+        klick_bild(app, b);
+        (wa, wb)
+    }
+
+    /// Ein PNG lesen: (Breite, Höhe, Bytes je Punkt, Pixelbytes).
+    fn png_lesen(pfad: &std::path::Path) -> (u32, u32, usize, Vec<u8>) {
+        let decoder = png::Decoder::new(std::fs::File::open(pfad).expect("PNG öffnen"));
+        let mut reader = decoder.read_info().expect("PNG-Kopf");
+        let mut buf = vec![0u8; reader.output_buffer_size()];
+        let info = reader.next_frame(&mut buf).expect("PNG-Bild");
+        let bpp = match info.color_type {
+            png::ColorType::Rgba => 4,
+            png::ColorType::Rgb => 3,
+            png::ColorType::Grayscale => 1,
+            png::ColorType::GrayscaleAlpha => 2,
+            png::ColorType::Indexed => panic!("indiziertes PNG"),
+        };
+        (info.width, info.height, bpp, buf)
+    }
+
+    fn dunkel(bytes: &[u8], bpp: usize, breite: u32, x: u32, y: u32) -> bool {
+        let i = (y * breite + x) as usize * bpp;
+        let summe: u32 = bytes[i..(i + bpp.min(3))].iter().map(|b| *b as u32).sum();
+        summe < 480
+    }
+
+    #[test]
+    fn zwei_klicks_legen_den_bereich_und_oeffnen_den_speicherdialog() {
+        let mut app = app();
+        let (wa, wb) = bereich_waehlen(&mut app);
+
+        assert!(app.ui.png_wahl.is_none(), "die Wahl ist mit dem zweiten Klick beendet");
+        let bereich = app.ui.png_bereich.expect("Bereich gemerkt");
+        assert!((bereich[0] - wa.x.min(wb.x)).abs() < 1e-6);
+        assert!((bereich[1] - wa.y.min(wb.y)).abs() < 1e-6);
+        assert!((bereich[2] - wa.x.max(wb.x)).abs() < 1e-6);
+        assert!((bereich[3] - wa.y.max(wb.y)).abs() < 1e-6);
+
+        let dialog = app.ui.file_dialog.as_ref().expect("Speicherdialog offen");
+        assert_eq!(dialog.mode, crate::dialogs::FileMode::ExportPng);
+    }
+
+    #[test]
+    fn export_schreibt_genau_den_bereich() {
+        let mut app = app();
+        let (wa, wb) = bereich_waehlen(&mut app);
+        let bereich = app.ui.png_bereich.expect("Bereich gemerkt");
+
+        // Eine Linie quer durch die Mitte des Bereichs — sie muss im Bild stehen.
+        let mitte = (wa.y + wb.y) * 0.5;
+        app.session_mut()
+            .execute(
+                "draw.line",
+                &serde_json::json!({"a": [bereich[0], mitte], "b": [bereich[2], mitte],
+                                    "layer": "Wände", "lineweight": 0.5}),
+            )
+            .expect("Linie");
+
+        let dir = std::env::temp_dir().join(format!("jjcad-t0235-gui-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).ok();
+        let pfad = dir.join("bereich.png");
+        app.ui.file_dialog = None;
+        crate::dialogs::datei_gewaehlt(&mut app, crate::dialogs::FileMode::ExportPng, pfad.clone());
+
+        let (breite, hoehe, bpp, bytes) = png_lesen(&pfad);
+        // Seitenverhältnis des Bereichs, Breite 2400 px.
+        let soll = ((2400.0 * (bereich[3] - bereich[1]) / (bereich[2] - bereich[0])).round()) as u32;
+        assert_eq!(breite, 2400, "die Breite ist fest");
+        assert_eq!(hoehe, soll, "Höhe folgt dem Seitenverhältnis: {hoehe} statt {soll}");
+        assert!(
+            dunkel(&bytes, bpp, breite, breite / 2, hoehe / 2),
+            "die Linie in der Bereichsmitte fehlt im PNG"
+        );
+        // Ohne den 3-%-Rand reicht die Linie bis an beide Bildkanten.
+        assert!(dunkel(&bytes, bpp, breite, 1, hoehe / 2), "links liegt ein Rand");
+        assert!(dunkel(&bytes, bpp, breite, breite - 2, hoehe / 2), "rechts liegt ein Rand");
+
+        // Nach dem Export ist der Bereich verbraucht.
+        assert!(app.ui.png_bereich.is_none());
+        let _ = std::fs::remove_file(&pfad);
+        let _ = std::fs::remove_dir(&dir);
+    }
+
+    #[test]
+    fn esc_bricht_die_bereichswahl_ab() {
+        let mut app = app();
+        frame(&mut app, vec![]);
+        let rect = app.ui.last_canvas;
+        let a = Pos2::new(rect.center().x - 100.0, rect.center().y - 100.0);
+        app.start_png_bereich();
+        klick_bild(&mut app, a);
+        frame(
+            &mut app,
+            vec![egui::Event::Key {
+                key: egui::Key::Escape,
+                physical_key: None,
+                pressed: true,
+                repeat: false,
+                modifiers: egui::Modifiers::NONE,
+            }],
+        );
+        assert!(app.ui.png_wahl.is_none(), "ESC beendet die Bereichswahl");
+        assert!(app.ui.png_bereich.is_none(), "kein Bereich gemerkt");
+        assert!(app.ui.file_dialog.is_none(), "kein Speicherdialog");
+    }
+
+    #[test]
+    fn diagonale_ohne_flaeche_bleibt_bei_der_wahl() {
+        let mut app = app();
+        frame(&mut app, vec![]);
+        let rect = app.ui.last_canvas;
+        let a = Pos2::new(rect.center().x - 100.0, rect.center().y);
+        app.start_png_bereich();
+        klick_bild(&mut app, a);
+        // Zweiter Klick auf derselben Höhe: die Diagonale hat keine Fläche.
+        klick_bild(&mut app, Pos2::new(rect.center().x + 100.0, a.y));
+        assert!(app.ui.png_bereich.is_none(), "kein Bereich aus einer Linie");
+        assert!(app.ui.png_wahl.is_some(), "die Wahl läuft weiter");
+        assert!(app.ui.file_dialog.is_none(), "kein Speicherdialog");
     }
 }

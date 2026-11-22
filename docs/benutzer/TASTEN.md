@@ -99,7 +99,10 @@ Funktionstasten = fest.** Keine Taste gehört zwei Schichten.
   **„Drehen"** (`modify.rotate`, Vorgabe `R`) und **„Spiegeln"**
   (`modify.mirror`, Vorgabe `F`) — nicht an festen Tasten. Wer „Drehen" auf `Q`
   legt, dreht die Vorschau mit `Q` und die Auswahl mit `Q`. `Umschalt` dreht
-  gegen den Uhrzeigersinn.
+  gegen den Uhrzeigersinn. **Jeder Startweg zählt (T0237)**: auch der
+  Ribbon-Knopf, ein Hotbar-Slot und die Knöpfe im Eigenschaften-Panel drehen
+  die laufende Vorschau, statt das Einfügen abzubrechen — die Funktion hat den
+  Inhalt der Zwischenablage zu drehen, nicht die Taste.
 
 ## Ebenen — Umschalt, Strg und Alt (T0215)
 

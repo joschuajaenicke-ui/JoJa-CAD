@@ -10,19 +10,16 @@ pub type Id = u64;
 
 pub const FORMAT_NAME: &str = "jjcad";
 
-/// Bezugsmaßstab der Strichstärke-Anzeige (T0232).
-///
-/// Im Modus „Papier (maßstabsgetreu)“ hängt die gezeichnete Strichbreite am
-/// Maßstab des Plans. Bezug ist **1:100**: dort gilt die Papier-Stärke
-/// unverändert (`zoom · 100` wie vor T0232). Ein Plan 1:200 zeichnet dieselbe
-/// Stärke **halb** so breit, ein Plan 1:50 doppelt so breit — der Auftrag zu
-/// T0232 verlangt ausdrücklich, dass 1:100 breiter erscheint als 1:200.
-pub const STRICH_BEZUG: f64 = 100.0;
-
 /// Faktor der Strichstärke für einen Plan (T0232): `width_mm · pixel_je_mm ·
 /// strich_faktor(scale)`.
+///
+/// **Papier (maßstabsgetreu) wie im Druck**: dieselbe Papier-Stärke (0,35 mm)
+/// liegt bei 1:200 auf einer doppelt so großen Weltstrecke wie bei 1:100 — bei
+/// gleichem Zoom erscheint die Linie im Plan 1:200 deshalb breiter, und relativ
+/// zur Zeichnung stimmt das Verhältnis mit dem Ausdruck überein. Der Wert ist
+/// der Maßstab selbst; im Papierraum (1:1) gilt genau die Papier-Stärke.
 pub fn strich_faktor(plan_scale: f64) -> f64 {
-    (STRICH_BEZUG * STRICH_BEZUG / plan_scale.max(1.0)).clamp(0.05, 4000.0)
+    plan_scale.max(1.0)
 }
 pub const FORMAT_VERSION: u32 = 2;
 

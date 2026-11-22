@@ -115,17 +115,19 @@ fn masstext_folgt_dem_plan_seines_layers() {
 }
 
 #[test]
-fn strichfaktor_1zu100_breiter_als_1zu200() {
-    // Auftrag T0232: Eine Linie im Plan 1:100 erscheint im Modus „Papier
-    // (maßstabsgetreu)“ breiter als dieselbe Stärke im Plan 1:200.
+fn strichfaktor_folgt_dem_planmassstab() {
+    // Papier-Stärke wie im Druck: bei 1:200 liegt dieselbe Papier-Stärke auf
+    // der doppelten Weltstrecke, ist relativ zur Zeichnung also doppelt so
+    // breit; 1:50 halb so breit. Der Faktor ist der Maßstab selbst — im
+    // Papierraum (1:1) gilt genau die Papier-Stärke.
     let f100 = jjcad_core::model::strich_faktor(100.0);
     let f200 = jjcad_core::model::strich_faktor(200.0);
     let f50 = jjcad_core::model::strich_faktor(50.0);
-    assert!(f100 > f200, "1:100 ({f100}) muss breiter sein als 1:200 ({f200})");
-    assert!((f100 / f200 - 2.0).abs() < 1e-9, "1:200 halb so breit wie 1:100");
-    assert!(f50 > f100, "1:50 noch breiter als 1:100");
-    // Bezug 1:100 = unverändertes Verhalten von vor T0232.
-    assert!((f100 - 100.0).abs() < 1e-9, "Bezug 1:100 muss 100 sein: {f100}");
+    assert!(f200 > f100, "1:200 ({f200}) ist breiter als 1:100 ({f100})");
+    assert!((f200 / f100 - 2.0).abs() < 1e-9, "1:200 doppelt so breit wie 1:100");
+    assert!(f50 < f100, "1:50 schmaler als 1:100");
+    assert!((f100 - 100.0).abs() < 1e-9, "Faktor ist der Maßstab: {f100}");
+    assert!((jjcad_core::model::strich_faktor(1.0) - 1.0).abs() < 1e-9, "1:1 = Papier-Stärke");
 
     // Dieselbe Rechnung über den Layer: der Plan entscheidet.
     let mut d = Document::new();
@@ -134,12 +136,12 @@ fn strichfaktor_1zu100_breiter_als_1zu200() {
     let layer1 = d.layers_of_plan(d.plans[0].id)[0].id;
     let zoom = 0.04;
     assert!(
-        d.strich_px(layer1, zoom) > d.strich_px(layer2, zoom),
-        "Layer im Plan 1:100 muss die breitere Strichstärke liefern"
+        d.strich_px(layer2, zoom) > d.strich_px(layer1, zoom),
+        "Layer im Plan 1:200 muss die breitere Strichstärke liefern"
     );
     assert!(
-        (d.strich_px(layer1, zoom) / d.strich_px(layer2, zoom) - 2.0).abs() < 1e-9,
-        "Verhältnis 1:100 zu 1:200 muss 2 sein"
+        (d.strich_px(layer2, zoom) / d.strich_px(layer1, zoom) - 2.0).abs() < 1e-9,
+        "Verhältnis 1:200 zu 1:100 muss 2 sein"
     );
 }
 
@@ -270,15 +272,15 @@ fn strichbreite_im_png_folgt_dem_plan() {
     let b50 = kantenbreite(50.0);
     println!("Strichbreite im PNG (1:100 / 1:200 / 1:50): {b100} / {b200} / {b50} px");
     assert!(
-        b100 > b200,
-        "1:100 ({b100} px) muss breiter sein als 1:200 ({b200} px)"
+        b200 > b100,
+        "1:200 ({b200} px) ist relativ zur Zeichnung breiter als 1:100 ({b100} px)"
     );
     assert!(
-        (b100 as f64 - 2.0 * b200 as f64).abs() <= 2.0,
-        "1:100 muss doppelt so breit sein wie 1:200: {b100} gegen {b200} px"
+        (b200 as f64 - 2.0 * b100 as f64).abs() <= 1.0,
+        "1:200 muss doppelt so breit sein wie 1:100: {b200} gegen {b100} px"
     );
     assert!(
-        (b50 as f64 - 2.0 * b100 as f64).abs() <= 3.0,
-        "1:50 muss doppelt so breit sein wie 1:100: {b50} gegen {b100} px"
+        (b100 as f64 - 2.0 * b50 as f64).abs() <= 1.0,
+        "1:100 muss doppelt so breit sein wie 1:50: {b100} gegen {b50} px"
     );
 }

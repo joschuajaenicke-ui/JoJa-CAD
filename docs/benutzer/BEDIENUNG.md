@@ -169,7 +169,10 @@ die **Vorgabe** ihrer Ebene und lassen sich wie jede andere Taste ändern.
     Uhrzeigersinn (`Umschalt+R` gegen den Uhrzeigersinn), `F` (die Funktion
     „Spiegeln") spiegelt, `ESC` bricht ab. Beide Tasten folgen der
     Tastaturbelegung: wer „Drehen" umlegt, dreht auch die Vorschau mit der neuen
-    Taste. Der Einfügepunkt ist exakt der Ankerpunkt der Vorschau.
+    Taste. Dasselbe gilt für **jeden anderen Weg zur Funktion** — der
+    Ribbon-Knopf „Drehen", ein Hotbar-Slot mit dieser Funktion und die Knöpfe im
+    Eigenschaften-Panel drehen bzw. spiegeln die Vorschau ebenfalls, statt das
+    Einfügen abzubrechen. Der Einfügepunkt ist exakt der Ankerpunkt der Vorschau.
     Verlässt der Zeiger die Zeichenfläche (Ribbon, Panels, Hotbar), verschwindet die
     Vorschau aus der Zeichnung — dort gibt es keinen Punkt zum Setzen. Am Mauszeiger
     hängt dann die **Miniatur** des Blocks bzw. der Zwischenablage (dieselbe Darstellung
@@ -248,6 +251,15 @@ die **Vorgabe** ihrer Ebene und lassen sich wie jede andere Taste ändern.
     Stempel **ausgewählt**, verbindet eine gestrichelte Hilfslinie seine Eckpunkte — nur so ist
     zu sehen, welche Fläche der Stempel beschriftet; die Linie gehört zur Bedienung und
     verschwindet mit der Auswahl.
+
+19. **PNG-Export eines Bereichs** (Ribbon ▸ Start ▸ Ausgabe ▸ „PNG", Pfeil am Knopf): der
+    Hauptklick exportiert wie bisher die **ganze** Zeichnung (bzw. das Blatt), das Menü bietet
+    zusätzlich **„Bereich · Diagonale"**. Der Bereich ist immer ein Rechteck und wird über die
+    **Diagonale** angegeben: der erste Klick setzt die eine Ecke, der zweite die andere (mit Fang,
+    `ESC` oder Rechtsklick bricht ab). Danach fragt der Speicherdialog nach dem Ziel. Das Bild
+    zeigt **genau** das gewählte Rechteck ohne Rand, die Höhe folgt aus dem Seitenverhältnis
+    (Breite 2400 px), und die Diagonale beider Punkte auf einer Achse wird als Fehler gemeldet,
+    statt ein leeres Bild zu schreiben.
 
 Der Zeiger ist über der Zeichenfläche ein durchgehendes Fadenkreuz; der Systemzeiger wird dort
 ausgeblendet.

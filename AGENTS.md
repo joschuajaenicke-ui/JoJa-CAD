@@ -195,6 +195,18 @@ Mit dem Nutzer abgestimmt — nicht „verbessern“:
   Zeichenreihenfolge — eine oben liegende Fläche deckt die Umrandung der unteren
   mit zu. Vorher standen global alle Füllungen vor allen Linien; dadurch blieb die
   Umrandung der unteren Fläche über der oberen sichtbar.
+- **PNG-Export eines Bereichs (T0235)**: Der Ribbon-Knopf „PNG" ist eine geteilte
+  Schaltfläche — der Hauptklick exportiert die **ganze** Zeichnung (bzw. das Blatt), der
+  Pfeil öffnet ein Menü mit „Ganze Zeichnung" und „Bereich · Diagonale". Der Bereich ist
+  immer ein Rechteck, angegeben über die **Diagonale**: `UiState::png_wahl` sammelt die
+  beiden Klicks in `canvas::handle_input` (`canvas::png_bereich_klick`), danach steht der
+  Ausschnitt in `UiState::png_bereich` und der Speicherdialog fragt nach dem Ziel.
+  Geschrieben wird über `raster::render_png_bereich`/`render_bereich_pixmap` — **exakt**
+  der Bereich (kein 3-%-Rand wie `render_model_pixmap`), Höhe aus dem Seitenverhältnis,
+  Breite 2400 px; im Papierraum rechnet der Ausschnitt in Papier-Millimetern. Ein
+  Zeichnungs-Export über den Hauptknopf setzt `png_bereich` zurück, eine Diagonale ohne
+  Fläche ist ein Fehler. Prüfweg: `cargo test -p jjcad-core --test png_bereich` und
+  `cargo test -p jjcad-gui tests_png_bereich`; Prüfbild `--demo png` (offenes Menü).
 - **Auswahl** färbt nur blau ein — kein zusätzlicher Auswahlrahmen. **Ausnahme Text**:
   der Text hat einen unsichtbaren Rahmen (derselbe Kasten wie in der Einfüge-Vorschau), der
   bei Auswahl gezeichnet wird und dessen Ecken/Kantenmitten fangen. Ob Text mit der
@@ -266,15 +278,19 @@ Mit dem Nutzer abgestimmt — nicht „verbessern“:
   lesen ihn; `RenderCtx::a()` und `def.faktor()` rechnen je Objekt mit dem
   Maßstab seines Layers (`render_entity` zieht ihn nach, Papierraum bleibt 1).
   Die **gezeichnete Strichstärke** im Modus „Papier (maßstabsgetreu)“ hängt
-  ebenfalls am Plan: `model::strich_faktor(scale)` mit Bezug 1:100 — **1:100
-  zeichnet breiter als 1:200** (Auftrag T0232), ein 1:50 doppelt so breit wie
-  1:100. Die Pixel je Papier-mm je Layer stehen als `DisplayList::skalen` in der
-  Anzeigeliste; die Zeichenfläche (`PaintCtx::skalen`) und der PNG-Rasterer
-  (`draw_dl(..., je_plan)`) lesen sie — nicht daneben rechnen. PDF übernimmt die
-  Papier-mm unverändert. Prüfweg: `cargo test -p jjcad-core --test
-  massstab_plaene` (8 Tests, darunter die gemessene Strichbreite im PNG: 31 / 16
-  / 62 px für 1:100 / 1:200 / 1:50) und `cargo test -p jjcad-gui massstab`;
-  Prüfbild `--demo plaene` (drei Pläne 1:100 / 1:200 / 1:50 mit je einer Wand).
+  ebenfalls am Plan: `model::strich_faktor(scale)` ist der Maßstab selbst (wie
+  im Druck). Dieselbe Papier-Stärke erscheint damit im Plan **1:200 doppelt so
+  breit wie in 1:100** und in 1:50 halb so breit — relativ zur Zeichnung stimmt
+  das Verhältnis mit dem Ausdruck überein. (Wäre die Gegenrichtung gewünscht,
+  ist es diese eine Formel; sie kippt dann aber auch 1:1- und 1:50-Pläne um
+  Faktor 100 bzw. 4.) Die Pixel je Papier-mm je Layer stehen als
+  `DisplayList::skalen` in der Anzeigeliste; die Zeichenfläche
+  (`PaintCtx::skalen`) und der PNG-Rasterer (`draw_dl(..., je_plan)`) lesen sie
+  — nicht daneben rechnen. PDF übernimmt die Papier-mm unverändert. Prüfweg:
+  `cargo test -p jjcad-core --test massstab_plaene` (8 Tests, darunter die
+  gemessene Strichbreite im PNG: 31 / 62 / 16 px für 1:100 / 1:200 / 1:50) und
+  `cargo test -p jjcad-gui massstab`; Prüfbild `--demo plaene` (drei Pläne
+  1:100 / 1:200 / 1:50 mit je einer Wand).
 - **Raster-Chip** schaltet Anzeige *und* Rasterfang gemeinsam.
 - **Raster (T0144)**: Die Kategorie „Raster“ im Einstellungsfenster führt **alle**
   Rastereinstellungen (Weite, Anzeigen, Fang, Art, Modus, Erzwingen). Art und Weite
@@ -386,8 +402,10 @@ Mit dem Nutzer abgestimmt — nicht „verbessern“:
   arbeitet; der Raum des Aufrufers wird danach wiederhergestellt. Prüfweg:
   `cargo test -p jjcad-core --test block_loeschen` und
   `cargo test -p jjcad-gui tests_block_loeschen`; Prüfbild `--demo blockloeschen`.
-- **Einfügen** (Block/Zwischenablage): Vorschau am Zeiger, `R` dreht,
-  `S` spiegelt, Klick bestätigt. Ein **Block** steht mit seinem **Basispunkt** am
+- **Einfügen** (Block/Zwischenablage): Vorschau am Zeiger, die **Funktionen**
+  „Drehen“ (`modify.rotate`) und „Spiegeln“ (`modify.mirror`) drehen bzw.
+  spiegeln sie — über **jeden** Startweg (Taste, Ribbon, Hotbar, Panel; T0237),
+  Klick bestätigt. Ein **Block** steht mit seinem **Basispunkt** am
   Mauszeiger (T0221, `ghost::geometry` übersetzt nur noch um `g.pos`) — Vorschau und
   eingesetzte Instanz liegen deckungsgleich; gedreht wird um diesen Punkt. Beim Einfügen aus der Zwischenablage entscheidet
   Einstellungen → Bedienung → „Drehpunkt" (`prefs.paste_pivot`), welcher Punkt am

@@ -484,6 +484,72 @@ pub fn render_sheet_pixmap(doc: &Document, sheet: &Sheet, opts: &RasterOptions) 
     Ok(pm)
 }
 
+/// Rendert einen **Bereich** in ein Pixmap (T0235).
+///
+/// Das Rechteck aus der Diagonale füllt das Bild genau: kein Rand wie bei der
+/// ganzen Zeichnung (`render_model_pixmap` vergrößert die Hülle um 3 %) und
+/// keine Verzerrung — die Höhe folgt aus dem Seitenverhältnis des Bereichs.
+/// Im Modell rechnet der Bereich in Zeichnungs-Millimetern, im Papierraum in
+/// Papier-Millimetern (dort zählt die Blattfläche von (0,0) bis (B,H)).
+pub fn render_bereich_pixmap(
+    doc: &Document,
+    bereich: [f64; 4],
+    sheet: Option<usize>,
+    breite_px: u32,
+) -> Result<Pixmap, String> {
+    let bbox = BBox::new(v(bereich[0], bereich[1]), v(bereich[2], bereich[3]));
+    if !bbox.is_valid() || bbox.width() < 1e-6 || bbox.height() < 1e-6 {
+        return Err("Der Bereich hat keine Fläche".to_string());
+    }
+    let w = breite_px.max(16);
+    let h = ((w as f64 * bbox.height() / bbox.width()).round() as u32).max(16);
+    let mut pm = Pixmap::new(w, h).ok_or_else(|| "Bild konnte nicht angelegt werden".to_string())?;
+    pm.fill(tiny_skia::Color::from_rgba8(255, 255, 255, 255));
+    let k = w as f64 / bbox.width();
+    let map = Map {
+        k,
+        ox: -bbox.min.x * k,
+        oy: bbox.max.y * k,
+    };
+    // T0232: Im Modell rechnet jedes Objekt mit dem Maßstab seines Plans, auf
+    // dem Blatt steht alles 1:1 — `paper_px` ist Pixel je Welt-mm.
+    let (dl, je_plan) = match sheet {
+        Some(idx) => {
+            let sheet = doc
+                .sheets
+                .get(idx)
+                .ok_or_else(|| format!("Blatt {} existiert nicht", idx + 1))?;
+            (crate::render::render_sheet(doc, sheet), false)
+        }
+        None => (
+            crate::render::render_document(&crate::render::RenderCtx::new(doc)),
+            true,
+        ),
+    };
+    draw_dl(&mut pm, &dl, &map, k, je_plan);
+    Ok(pm)
+}
+
+/// PNG eines Bereichs schreiben (T0235) — siehe [`render_bereich_pixmap`].
+pub fn render_png_bereich(
+    doc: &Document,
+    bereich: [f64; 4],
+    sheet: Option<usize>,
+    breite_px: u32,
+    path: &Path,
+) -> Result<(), String> {
+    let pm = render_bereich_pixmap(doc, bereich, sheet, breite_px)?;
+    let png = pm
+        .encode_png()
+        .map_err(|e| format!("PNG-Kodierung fehlgeschlagen: {e}"))?;
+    if let Some(parent) = path.parent() {
+        if !parent.as_os_str().is_empty() {
+            std::fs::create_dir_all(parent).ok();
+        }
+    }
+    std::fs::write(path, png).map_err(|e| format!("PNG schreiben fehlgeschlagen: {e}"))
+}
+
 /// PNG-Datei erzeugen.
 pub fn render_png(doc: &Document, opts: &RasterOptions, path: &Path) -> Result<(), String> {
     let pm = match opts.sheet {
