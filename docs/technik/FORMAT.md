@@ -210,16 +210,15 @@ schneidet die Öffnung aus der Wand und zeichnet die Laibungen.
   IDs automatisch umbenannt.
 - Blockinhalte liegen im **Blockkoordinatensystem**; die Instanz transformiert sie
   (Position, Rotation, Skalierung, Spiegelung).
-- `einheit` (T0231) ist die **Maßeinheit der Blockgeometrie**: `"Neutral"` (Vorgabe
-  für ältere Blöcke ohne Angabe ist `"Millimeter"`; `Neutral` nur, wo die Geometrie
-  ein Symbol ist) — dann wächst der Block mit dem **Zeichnungsmaßstab**, eine
-  Blockeinheit ist ein Papier-Millimeter, der Block bleibt auf jedem Maßstab gleich
-  groß wie die Begrenzungssymbole der Bemaßung; oder `"Millimeter"`/`"Zentimeter"`/
-  `"Meter"` — dann gilt die Geometrie maßstäblich (1 Einheit = 1/10/1000 mm). Die
-  Punktsymbole der Systembibliothek (`sys:pkt-*`) sind **neutral** und auf
-  Einheitsgröße 1 normiert. Ältere Dateien tragen statt `einheit` ein Häkchen
-  `annotative: true` (⟶ `Neutral`); es wird beim Laden umgeschrieben und nicht mehr
-  geschrieben.
+- `groesse` (T0231) beantwortet die eine Frage, die ein Block beantworten muss:
+  **feste Größe oder Papiergröße?** `"Fest"` = die Geometrie steht in
+  Zeichnungs-Millimetern und wird maßstäblich (1:1) eingefügt — ein Bett bleibt 2 m
+  lang. `"Papier"` = die Geometrie steht in **Papier-Millimetern, so groß wie
+  gedruckt**, und wächst mit dem Zeichnungsmaßstab — eine Grundriss-Kote bleibt auf
+  1:50, 1:100 und 1:200 gleich groß. Die Punktsymbole der Systembibliothek
+  (`sys:pkt-*`) sind `"Papier"`; fehlt das Feld (ältere Dateien), gilt `"Fest"`
+  (`"Millimeter"`, das frühere `einheit` aus Turn 2, und das Häkchen
+  `annotative: true` schreibt `persist::migrate_block_groessen` beim Laden um).
 
 ### Eigene Blöcke: `<blocks>/<slug>.jjblk`
 

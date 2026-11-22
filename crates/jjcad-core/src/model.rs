@@ -1381,77 +1381,54 @@ impl BlockSource {
 /// Zuordnung hängt allein an der Kategorie, nicht an der Herkunft.
 pub const PUNKTSYMBOL_KATEGORIE: &str = "Punkt Symbole";
 
-/// Maßeinheit der Blockgeometrie (T0231).
+/// Größe der Blockgeometrie (T0231).
 ///
-/// Ein Block wird einmal entworfen und in beliebigem Maßstab eingesetzt; damit
-/// das aufgeht, muss seine Geometrie sagen, in welcher Einheit sie vorliegt.
-/// Zwei Fälle:
+/// Ein Block wird einmal entworfen und in beliebigem Maßstab eingesetzt. Die
+/// eine Frage ist deshalb: **hat der Block eine feste Größe, oder soll er auf
+/// dem Papier immer gleich groß aussehen?**
 ///
-/// * **echte Längen** (Millimeter, Zentimeter, Meter) — die Instanz zeichnet die
-///   Geometrie maßstäblich, eine Einheit sind 1 / 10 / 1000 mm;
-/// * **[`BlockEinheit::Neutral`]** — ohne Maßeinheit: die Geometrie ist ein
-///   Symbol der Größe 1 und wächst mit dem **Zeichnungsmaßstab** (eine
-///   Blockeinheit ist ein Papier-Millimeter). So bleiben Punktsymbole auf jedem
-///   Maßstab gleich groß, wie die Begrenzungssymbole der Bemaßung.
+/// * [`BlockGroesse::Fest`] — echte Maße in Zeichnungs-Millimetern: ein Bett
+///   bleibt 2 m lang, ein Waschbecken 600 mm breit, egal in welchem Maßstab
+///   gezeichnet wird (1:1 eingefügt).
+/// * [`BlockGroesse::Papier`] — Beschriftungsgröße: die Geometrie ist so groß,
+///   wie sie **gedruckt** wird (Papier-Millimeter) und wächst mit dem
+///   Zeichnungsmaßstab — eine Grundriss-Kote bleibt auf 1:50, 1:100 und 1:200
+///   gleich groß auf dem Papier.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, Default)]
-pub enum BlockEinheit {
-    /// Ohne Maßeinheit: neutrales Symbol der Größe 1, skaliert mit dem
-    /// Zeichnungsmaßstab.
-    Neutral,
-    /// Geometrie in Millimetern — maßstäblich (1:1) in der Zeichnung.
+pub enum BlockGroesse {
+    /// Feste Größe: Geometrie in Zeichnungs-Millimetern, eingefügt 1:1.
     #[default]
-    Millimeter,
-    /// Geometrie in Zentimetern (1 Einheit = 10 mm).
-    Zentimeter,
-    /// Geometrie in Metern (1 Einheit = 1000 mm).
-    Meter,
+    Fest,
+    /// Papiergröße: Geometrie in Papier-Millimetern, skaliert mit dem
+    /// Zeichnungsmaßstab.
+    Papier,
 }
 
-impl BlockEinheit {
+impl BlockGroesse {
     /// Anzeigereihenfolge in Auswahlfeldern.
-    pub const ALL: [BlockEinheit; 4] = [
-        BlockEinheit::Neutral,
-        BlockEinheit::Millimeter,
-        BlockEinheit::Zentimeter,
-        BlockEinheit::Meter,
-    ];
-
-    /// Modell-Millimeter je Blockeinheit; `None` bei [`BlockEinheit::Neutral`]
-    /// — dort gilt der Zeichnungsmaßstab.
-    pub fn mm(self) -> Option<f64> {
-        match self {
-            BlockEinheit::Neutral => None,
-            BlockEinheit::Millimeter => Some(1.0),
-            BlockEinheit::Zentimeter => Some(10.0),
-            BlockEinheit::Meter => Some(1000.0),
-        }
-    }
+    pub const ALL: [BlockGroesse; 2] = [BlockGroesse::Fest, BlockGroesse::Papier];
 
     /// Schlüssel in der Datei und in Action-Parametern (stabil, klein).
     pub fn key(self) -> &'static str {
         match self {
-            BlockEinheit::Neutral => "neutral",
-            BlockEinheit::Millimeter => "mm",
-            BlockEinheit::Zentimeter => "cm",
-            BlockEinheit::Meter => "m",
+            BlockGroesse::Fest => "fest",
+            BlockGroesse::Papier => "papier",
         }
     }
 
-    /// Einheit aus dem Schlüssel — die Gegenrichtung zu [`Self::key`].
-    pub fn aus_key(s: &str) -> Option<BlockEinheit> {
+    /// Größe aus dem Schlüssel — die Gegenrichtung zu [`Self::key`].
+    pub fn aus_key(s: &str) -> Option<BlockGroesse> {
         let s = s.trim();
-        BlockEinheit::ALL
+        BlockGroesse::ALL
             .into_iter()
-            .find(|e| e.key().eq_ignore_ascii_case(s))
+            .find(|g| g.key().eq_ignore_ascii_case(s))
     }
 
     /// Beschriftung in der gewählten Sprache (T0106).
     pub fn text(self) -> &'static str {
         match self {
-            BlockEinheit::Neutral => crate::i18n::tr("ui.blockeinheit.neutral"),
-            BlockEinheit::Millimeter => crate::i18n::tr("ui.blockeinheit.mm"),
-            BlockEinheit::Zentimeter => crate::i18n::tr("ui.blockeinheit.cm"),
-            BlockEinheit::Meter => crate::i18n::tr("ui.blockeinheit.m"),
+            BlockGroesse::Fest => crate::i18n::tr("ui.blockgroesse.fest"),
+            BlockGroesse::Papier => crate::i18n::tr("ui.blockgroesse.papier"),
         }
     }
 }
@@ -1474,14 +1451,13 @@ pub struct BlockDef {
     /// Einfügebasispunkt (meist 0,0)
     #[serde(default)]
     pub base: Vec2,
-    /// **Maßeinheit der Blockgeometrie** (T0231). Ohne Maßeinheit
-    /// ([`BlockEinheit::Neutral`]) wächst der Block mit dem Zeichnungsmaßstab;
-    /// sonst gilt die Geometrie maßstäblich in dieser Einheit.
+    /// **Feste Größe oder Papiergröße** der Blockgeometrie (T0231).
     ///
-    /// Dateien vor T0231 tragen statt dessen ein Häkchen `annotative`; es wird
-    /// beim Laden umgeschrieben (`persist::migrate_block_einheiten`).
+    /// Ältere Dateien tragen statt dessen `einheit` (T0231, Turn 2) oder das
+    /// Häkchen `annotative` (T0210); beides schreibt
+    /// `persist::migrate_block_groessen` beim Laden um.
     #[serde(default)]
-    pub einheit: BlockEinheit,
+    pub groesse: BlockGroesse,
 }
 
 impl BlockDef {
@@ -1503,18 +1479,21 @@ impl BlockDef {
         self.category.trim().eq_ignore_ascii_case(PUNKTSYMBOL_KATEGORIE)
     }
 
-    /// Ohne Maßeinheit — der Block wächst mit dem Zeichnungsmaßstab (T0231).
-    pub fn ist_neutral(&self) -> bool {
-        self.einheit == BlockEinheit::Neutral
+    /// Wächst der Block mit dem Zeichnungsmaßstab (Papiergröße)?
+    pub fn ist_papiergroesse(&self) -> bool {
+        self.groesse == BlockGroesse::Papier
     }
 
     /// Modell-Millimeter je Blockeinheit beim Zeichnen einer Instanz.
     ///
-    /// Die **eine** Rechnung für Anzeige, Fang, Bounding-Box und Vorschau: bei
-    /// [`BlockEinheit::Neutral`] ist es der Beschriftungsmaßstab der Zeichnung,
-    /// sonst die Einheit selbst.
+    /// Die **eine** Rechnung für Anzeige, Fang, Bounding-Box und Vorschau: ein
+    /// Block fester Größe wird 1:1 gezeichnet (Faktor 1), ein Block in
+    /// Papiergröße mit dem Beschriftungsmaßstab der Zeichnung.
     pub fn faktor(&self, annot_scale: f64) -> f64 {
-        self.einheit.mm().unwrap_or(annot_scale)
+        match self.groesse {
+            BlockGroesse::Fest => 1.0,
+            BlockGroesse::Papier => annot_scale.max(0.01),
+        }
     }
 
 }

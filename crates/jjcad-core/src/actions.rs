@@ -1352,6 +1352,18 @@ fn einfuege_index(pts: &[Vec2], angle: f64, q: Vec2) -> usize {
 /// Benutzerbibliothek aus dem Aufruf (`dir`, die Oberfläche übergibt
 /// `prefs.blocks_dir`). Ohne Angabe bleibt das Verzeichnis unberührt — Tests
 /// und Aufrufe ohne Datenwurzel schreiben nichts in das Benutzerverzeichnis.
+/// Frühere Angaben zur Blockgröße in die heutige übertragen (T0231).
+///
+/// Turn 2 nannte die Eigenschaft `einheit` (`neutral`/`mm`/`cm`/`m`), davor gab
+/// es das Häkchen `annotative`. „Neutral“ (und `annotative: true`) ist heute die
+/// **Papiergröße**, jede echte Einheit die **feste Größe**.
+fn alt_einheit_zu_groesse(s: &str) -> BlockGroesse {
+    match s.trim().to_ascii_lowercase().as_str() {
+        "neutral" | "papier" | "papiergroesse" => BlockGroesse::Papier,
+        _ => BlockGroesse::Fest,
+    }
+}
+
 fn bloecke_verzeichnis(p: &Params) -> Option<std::path::PathBuf> {
     let angabe = p.text("dir")?;
     let angabe = angabe.trim();
@@ -4113,13 +4125,16 @@ pub fn execute(doc: &mut Document, id: &str, params: &Value) -> Result<Value, St
                 base,
             );
             block.description = p.text_or("description", "");
-            // Maßeinheit der Geometrie (T0231) — Vorgabe: maßstäblich (mm).
-            // `annotative` bleibt als altes Argument gültig.
+            // Größe der Blockgeometrie (T0231): feste Größe oder Papiergröße.
+            // Die alten Argumente `annotative`/`einheit` gelten weiter.
             if p.boolean_or("annotative", false) {
-                block.einheit = BlockEinheit::Neutral;
+                block.groesse = BlockGroesse::Papier;
             }
-            if let Some(e) = p.text("einheit").and_then(|e| BlockEinheit::aus_key(&e)) {
-                block.einheit = e;
+            if let Some(e) = p.text("einheit") {
+                block.groesse = alt_einheit_zu_groesse(&e);
+            }
+            if let Some(g) = p.text("groesse").and_then(|g| BlockGroesse::aus_key(&g)) {
+                block.groesse = g;
             }
             // Eigene Blöcke des Benutzers (T0128): die Kennung `usr:…` steht im
             // Inhalt, der Dateiname folgt dem Namen. Geschrieben wird, bevor das
@@ -4194,18 +4209,22 @@ pub fn execute(doc: &mut Document, id: &str, params: &Value) -> Result<Value, St
             if let Some(d) = p.text("description") {
                 neu.description = d.to_string();
             }
-            // Maßeinheit der Geometrie (T0231). `annotative` ist das alte
-            // Argument derselben Angabe und bleibt gültig.
+            // Größe der Blockgeometrie (T0231). `annotative`/`einheit` sind die
+            // früheren Argumente derselben Angabe und bleiben gültig.
             if let Some(a) = p.boolean("annotative") {
-                neu.einheit = if a {
-                    BlockEinheit::Neutral
+                neu.groesse = if a {
+                    BlockGroesse::Papier
                 } else {
-                    BlockEinheit::Millimeter
+                    BlockGroesse::Fest
                 };
             }
             if let Some(e) = p.text("einheit") {
-                neu.einheit = BlockEinheit::aus_key(&e)
-                    .ok_or_else(|| format!("Unbekannte Einheit '{e}' (neutral, mm, cm, m)"))?;
+                neu.groesse = alt_einheit_zu_groesse(&e);
+            }
+            if let Some(g) = p.text("groesse") {
+                neu.groesse = BlockGroesse::aus_key(&g).ok_or_else(|| {
+                    format!("Unbekannte Größe '{g}' (fest, papier)")
+                })?;
             }
             // Benutzerblock (T0128): Datei nachziehen — Umbenennen ist
             // `rename` plus Feld, die Kennung bleibt gleich.
@@ -4308,7 +4327,7 @@ pub fn execute(doc: &mut Document, id: &str, params: &Value) -> Result<Value, St
                         "id": b.id, "name": b.name, "category": b.category,
                         "source": b.source, "entities": b.entities.len(),
                         "instances": doc.block_instances(&b.id).len(),
-                        "einheit": b.einheit.key()
+                        "groesse": b.groesse.key()
                     })
                 })
                 .collect();
@@ -6637,7 +6656,7 @@ fn import_pdf_action(doc: &mut Document, p: &Params) -> Result<Value, String> {
         entities: ents,
         icon: None,
         base: Vec2::ZERO,
-        einheit: BlockEinheit::Millimeter,
+        groesse: BlockGroesse::Fest,
     });
     let idn = doc.new_id();
     let mut inst = Entity::new(
