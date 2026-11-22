@@ -358,3 +358,56 @@ fn alter_rahmen_bekommt_die_abdeckflaeche_beim_laden() {
         _ => unreachable!(),
     }
 }
+
+#[test]
+fn jedes_blatt_bekommt_einen_passenden_planrahmen() {
+    // Die drei mitgelieferten Blöcke decken den Standard (A3 quer) und die
+    // beiden Hochformate ab; A3 hoch und A4 hoch sind genau die Blöcke aus der
+    // Bibliothek. Übrige Formate bekommen dieselben Objekte lose.
+    let mut sess = frisch();
+    for (paper, landscape, block) in [
+        ("A3", true, Some(RAHMEN_A3_QUER)),
+        ("A3", false, Some(RAHMEN_A3_HOCH)),
+        ("A4", false, Some(RAHMEN_A4_HOCH)),
+        ("A4", true, None),
+        ("A2", true, None),
+    ] {
+        let antwort = sess
+            .execute(
+                "sheet.new",
+                &serde_json::json!({"paper": paper, "landscape": landscape}),
+            )
+            .unwrap();
+        let sid = antwort["sheet"].as_u64().unwrap();
+        let sheet = sess.doc.sheet(sid).unwrap().clone();
+        let verweise: Vec<&str> = sheet
+            .entities
+            .iter()
+            .filter_map(|e| match &e.kind {
+                EntityKind::BlockRef { block, .. } => Some(block.as_str()),
+                _ => None,
+            })
+            .collect();
+        match block {
+            Some(id) => assert_eq!(verweise, vec![id], "{paper} {landscape}"),
+            None => assert!(verweise.is_empty(), "{paper} {landscape}"),
+        }
+        // In beiden Fällen steht die weiße Abdeckung bereit — lose oder im Block.
+        let deck = if let Some(id) = block {
+            sess.doc
+                .block(id)
+                .unwrap()
+                .entities
+                .iter()
+                .find(|e| matches!(e.kind, EntityKind::Fill { .. }))
+                .expect("Abdeckfläche im Block")
+        } else {
+            sheet
+                .entities
+                .iter()
+                .find(|e| matches!(e.kind, EntityKind::Fill { .. }))
+                .expect("Abdeckfläche lose")
+        };
+        assert_eq!(deck.style.fill, Some(Color::WHITE), "{paper} {landscape}");
+    }
+}

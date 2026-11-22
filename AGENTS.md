@@ -375,7 +375,7 @@ Mit dem Nutzer abgestimmt — nicht „verbessern“:
   Zeichenfläche es immer tat). Geometrie: `templates::planrahmen_entities`;
   `templates::new_sheet` wählt den Block über `templates::planrahmen_block` und
   legt für Papierformate ohne Block lose Objekte an. Prüfweg:
-  `cargo test -p jjcad-core --test planrahmen` (7 Tests, darunter das gemessene
+  `cargo test -p jjcad-core --test planrahmen` (8 Tests, darunter das gemessene
   Pixel im PNG und im PDF) und `cargo test -p jjcad-gui`; Prüfbild
   `--demo "plankopf"` bzw. `--demo blatt`.
 - **Blockeditor (T0137)**: Eigene Blöcke (Projekt/Benutzer — **nicht** System) werden
