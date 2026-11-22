@@ -159,8 +159,9 @@ pub fn normalize_dim_reihenfolge(doc: &mut Document) {
 ///
 /// Bis dahin zeichnete der Renderer den Rahmen aus `Sheet::frame` — er war
 /// damit weder auswählbar noch bearbeitbar. Beim Laden bekommt jedes Blatt mit
-/// gesetztem Rahmen vier Linienobjekte (vor dem Schriftfeld, also dahinter) und
-/// die Flags werden zurückgesetzt. Neue Blätter legen sie sofort an.
+/// gesetztem Rahmen dieselben Objekte, die heute der Planrahmen-Block trägt
+/// (Abdeckfläche, Rahmen, Schriftfeld), und die Flags werden zurückgesetzt.
+/// Neue Blätter legen den Block sofort an (T0239).
 pub fn normalize_sheet_frames(doc: &mut Document) {
     let mut nachzuholen: Vec<(usize, Vec<Entity>)> = Vec::new();
     for (i, sheet) in doc.sheets.iter().enumerate() {
@@ -168,7 +169,13 @@ pub fn normalize_sheet_frames(doc: &mut Document) {
             continue;
         }
         let (w, h) = sheet.size();
-        nachzuholen.push((i, crate::templates::frame_entities(w, h)));
+        // Ohne Schriftfeld bleibt es beim nackten Rahmen — die weiße Fläche
+        // gehört zum Plankopf.
+        if sheet.show_title_block {
+            nachzuholen.push((i, crate::templates::planrahmen_entities(w, h)));
+        } else {
+            nachzuholen.push((i, crate::templates::frame_entities(w, h)));
+        }
     }
     for (i, mut rahmen) in nachzuholen {
         for e in rahmen.iter_mut() {

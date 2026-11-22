@@ -2,7 +2,7 @@
 
 use crate::geom::*;
 use crate::model::*;
-use crate::style::{Color, PaperSize};
+use crate::style::{Color, FillPattern, PaperSize};
 
 /// Linienstärken im Schriftfeld (Papier-mm)
 const LW_THIN: f64 = 0.18;
@@ -69,16 +69,26 @@ impl TB {
     }
 }
 
-/// Schriftfeld am unteren rechten Blattrand.
+/// Rechteck des Schriftfelds am unteren rechten Blattrand (Papier-mm).
+///
+/// **Eine** Quelle für die Felder des Schriftfelds und die weiße Abdeckfläche
+/// dahinter (T0239) — sonst läge die Fläche um ein Feldmaß daneben.
 /// `w`/`h` = Blattmaße, Rahmen: 10 mm Rand, 15 mm Heftrand links.
-pub fn title_block(w: f64, h: f64) -> Vec<Entity> {
-    let mut t = TB::new();
+pub fn title_block_rect(w: f64, _h: f64) -> (f64, f64, f64, f64) {
     let bw = 180.0_f64.min(w - 40.0);
     let bh = 65.0;
     let x0 = w - 10.0 - bw;
     let y0 = 10.0;
-    let x1 = x0 + bw;
-    let y1 = y0 + bh;
+    (x0, y0, x0 + bw, y0 + bh)
+}
+
+/// Schriftfeld am unteren rechten Blattrand.
+/// `w`/`h` = Blattmaße, Rahmen: 10 mm Rand, 15 mm Heftrand links.
+pub fn title_block(w: f64, h: f64) -> Vec<Entity> {
+    let mut t = TB::new();
+    let (x0, y0, x1, y1) = title_block_rect(w, h);
+    let bw = x1 - x0;
+    let bh = y1 - y0;
 
     // Außenrahmen
     t.rect_w(x0, y0, x1, y1, LW_BOLD);
@@ -158,7 +168,65 @@ pub fn frame_entities(w: f64, h: f64) -> Vec<Entity> {
     out
 }
 
-/// Neues Blatt inkl. Schriftfeld und einem Ansichtsfenster.
+/// Weiße Abdeckfläche hinter dem Schriftfeld (T0239).
+///
+/// Sie liegt im Planrahmen **über** dem Inhalt der Ansichtsfenster und unter
+/// den Linien und Texten des Schriftfelds: ein Ansichtsfenster darf damit das
+/// ganze Blatt füllen, ohne dass die darunter liegende Zeichnung den Plankopf
+/// unlesbar macht. Deckungsgleich mit [`title_block_rect`], sonst bliebe ein
+/// Streifen der Zeichnung neben dem Schriftfeld stehen.
+pub fn abdeckung(w: f64, h: f64) -> Entity {
+    let (x0, y0, x1, y1) = title_block_rect(w, h);
+    let mut e = Entity::new(0, 0, EntityKind::Fill {
+        boundary: vec![v(x0, y0), v(x1, y0), v(x1, y1), v(x0, y1)],
+        holes: Vec::new(),
+        pattern: FillPattern::Solid,
+        pattern_angle: 0.0,
+        pattern_scale: 100.0,
+        border: false,
+    });
+    e.style.fill = Some(Color::WHITE);
+    e.by_block = true;
+    e
+}
+
+/// Der ganze Planrahmen als **ein** Objekt: Abdeckfläche, Blattrahmen und
+/// Schriftfeld in dieser Reihenfolge (hinten nach vorn, T0239).
+///
+/// Die Kennungen laufen blocklokal von 1 aufwärts — dieselbe Form, die
+/// [`crate::blocks_lib`] für seine Blöcke vergibt. Der Ursprung ist die **untere
+/// linke Blattecke** (0,0), damit der Basispunkt des Blocks genau dort liegt
+/// und das Einfügen ohne Versatz passt.
+pub fn planrahmen_entities(w: f64, h: f64) -> Vec<Entity> {
+    let mut out = Vec::new();
+    out.push(abdeckung(w, h));
+    out.extend(frame_entities(w, h));
+    out.extend(title_block(w, h));
+    for (i, e) in out.iter_mut().enumerate() {
+        e.id = i as Id + 1;
+    }
+    out
+}
+
+/// Systemblock-Kennung des Planrahmens für ein Papierformat (`None` = für
+/// dieses Format gibt es keinen Block, dann legt das Blatt lose Objekte an).
+pub fn planrahmen_block(w: f64, h: f64) -> Option<&'static str> {
+    let (bw, bh) = (297.0, 420.0); // A3 hoch
+    let (qw, qh) = (420.0, 297.0); // A3 quer
+    let (vw, vh) = (210.0, 297.0); // A4 hoch
+    let nah = |a: f64, b: f64| (a - b).abs() < 0.5;
+    if nah(w, qw) && nah(h, qh) {
+        Some(crate::model::RAHMEN_A3_QUER)
+    } else if nah(w, bw) && nah(h, bh) {
+        Some(crate::model::RAHMEN_A3_HOCH)
+    } else if nah(w, vw) && nah(h, vh) {
+        Some(crate::model::RAHMEN_A4_HOCH)
+    } else {
+        None
+    }
+}
+
+/// Neues Blatt inkl. Planrahmen (ein Block, T0239) und einem Ansichtsfenster.
 pub fn new_sheet(doc: &mut Document, paper: PaperSize, landscape: bool, name: &str) -> Sheet {
     let id = doc.new_id();
     let (w, h) = paper.dims(landscape);
@@ -176,19 +244,42 @@ pub fn new_sheet(doc: &mut Document, paper: PaperSize, landscape: bool, name: &s
         entities: Vec::new(),
         plansatz: false,
     };
-    // Rahmen und Schriftfeld bestehen aus normalen Linien und Textfeldern —
-    // dieselben Objekte wie in der Zeichnung, nur im Papierraum. Eigene IDs aus
-    // dem Dokument, damit sie sich eindeutig auswählen und bearbeiten lassen.
-    // Der Rahmen kommt zuerst: er liegt damit hinter dem Schriftfeld.
-    sheet.entities = frame_entities(w, h);
-    sheet.entities.extend(title_block(w, h));
-    for e in sheet.entities.iter_mut() {
-        e.id = doc.new_id();
+    // Der ganze Planrahmen (Abdeckfläche, Blattrahmen, Schriftfeld) ist **ein**
+    // Objekt (T0239): ein Block, dessen Basispunkt die untere linke Blattecke
+    // ist. Er steht bei (0,0) und lässt sich als Ganzes wählen, verschieben
+    // und löschen. Für Papierformate ohne Block bleiben lose Objekte.
+    match planrahmen_block(w, h) {
+        Some(block) => {
+            let mut e = Entity::new(
+                doc.new_id(),
+                0,
+                EntityKind::BlockRef {
+                    block: block.to_string(),
+                    pos: Vec2::ZERO,
+                    rot: 0.0,
+                    scale: Vec2::new(1.0, 1.0),
+                    mirror: false,
+                },
+            );
+            e.style.color = Some(Color::BLACK);
+            sheet.entities.push(e);
+        }
+        None => {
+            // Dieselben Objekte wie der Block, nur lose: eigene IDs aus dem
+            // Dokument, damit sie sich eindeutig auswählen lassen.
+            let mut rahmen = planrahmen_entities(w, h);
+            for e in rahmen.iter_mut() {
+                e.id = doc.new_id();
+            }
+            sheet.entities.extend(rahmen);
+        }
     }
 
-    // Ansichtsfenster über dem Schriftfeld
+    // Ansichtsfenster über dem ganzen Blatt (T0239): Rahmen und Schriftfeld
+    // liegen darüber, dessen weiße Abdeckfläche hält den Plankopf lesbar —
+    // die Zeichnung darf deshalb bis in die Ecke laufen.
     let vp_x = 15.0;
-    let vp_y = 10.0 + 65.0 + 8.0;
+    let vp_y = 10.0;
     let vp_w = w - 10.0 - vp_x;
     let vp_h = h - 10.0 - vp_y;
     let bbox = doc.bbox();
@@ -235,10 +326,11 @@ pub fn default_viewport(doc: &mut Document, w: f64, h: f64) -> Viewport {
     Viewport {
         id: doc.new_id(),
         name: "Ansicht".to_string(),
+        // Über dem ganzen Blatt — der Plankopf liegt als Block darüber.
         x: 15.0,
-        y: 10.0 + 73.0,
-        w: w - 35.0,
-        h: h - 95.0,
+        y: 10.0,
+        w: w - 25.0,
+        h: h - 20.0,
         center: Vec2::ZERO,
         scale: 100.0,
         show_frame: true,

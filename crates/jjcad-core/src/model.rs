@@ -1408,6 +1408,21 @@ impl BlockSource {
 /// Zuordnung hängt allein an der Kategorie, nicht an der Herkunft.
 pub const PUNKTSYMBOL_KATEGORIE: &str = "Punkt Symbole";
 
+/// Kategorie der Planrahmen-Blöcke (T0239).
+///
+/// Ein Planrahmen ist der Blattrahmen samt Schriftfeld und der weißen
+/// Abdeckfläche dahinter — als Block ein zusammenhängendes Objekt, dessen
+/// Basispunkt die untere linke Blattecke ist.
+pub const RAHMEN_KATEGORIE: &str = "Planrahmen";
+
+/// Systemblock-Kennungen der mitgelieferten Planrahmen (T0239). Die Geometrie
+/// baut [`crate::templates::planrahmen_entities`]; der Basispunkt ist (0,0) =
+/// untere linke Blattecke.
+pub const RAHMEN_A3_QUER: &str = "sys:planrahmen-a3-quer";
+pub const RAHMEN_A3_HOCH: &str = "sys:planrahmen-a3-hoch";
+pub const RAHMEN_A4_HOCH: &str = "sys:planrahmen-a4-hoch";
+
+
 /// Vorgabe des Punktsymbols an einer Maßkette (T0227): der Schrägstrich.
 ///
 /// Die Marke steht auf der Maßlinie und ersetzt dort den Begrenzungsstrich —

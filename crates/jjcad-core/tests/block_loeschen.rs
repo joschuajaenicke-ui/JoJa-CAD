@@ -134,14 +134,16 @@ fn instanz_auf_dem_blatt_wird_mit_zerlegt() {
     )
     .expect("Zerlegen und Löschen über alle Räume");
     assert!(s.doc.block(&bid).is_none());
+    // Seit T0239 trägt jedes Blatt den Planrahmen als eigenen Blockverweis —
+    // geprüft wird deshalb der gelöschte Block, nicht jeder Verweis.
     assert!(
         s.doc
             .sheet(blatt)
             .unwrap()
             .entities
             .iter()
-            .all(|e| !matches!(e.kind, EntityKind::BlockRef { .. })),
-        "auf dem Blatt steht kein Blockverweis mehr"
+            .all(|e| !matches!(&e.kind, EntityKind::BlockRef { block, .. } if block == &bid)),
+        "auf dem Blatt steht kein Verweis auf den gelöschten Block mehr"
     );
     assert!(
         !s.doc.sheet(blatt).unwrap().entities.is_empty(),

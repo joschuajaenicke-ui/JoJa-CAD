@@ -145,6 +145,10 @@ fn rundlauf(pdf_name: &str) -> (Document, Document, PathBuf) {
 
     // Ansichtsfenster auf 1:1 über die ganze Seite — der Import liegt bereits
     // in Papierkoordinaten.
+    //
+    // Blattgerüst bleibt stehen (die Textprüfung vergleicht es mit); für das
+    // Pixelbild räumt `rundlauf_pixel` es weg, weil das eingefügte PDF Rahmen
+    // und Schriftfeld bereits enthält (T0239).
     if let Some(sheet) = s.doc.sheets.first_mut() {
         let (pw, ph) = sheet.size();
         // Ansichtsfenster ist seit T0109 ein normales Blattobjekt.
@@ -247,8 +251,18 @@ fn rundlauf_struktur_und_text() {
 fn rundlauf_pixel() {
     let (original, reimport, pfad) = rundlauf("jjcad-rt-pixel.pdf");
     let _ = pfad;
+    // Vergleichsbild des Re-Imports **ohne** eigenes Blattgerüst: das
+    // eingefügte PDF bringt Rahmen und Schriftfeld mit, und seit T0239 liegt
+    // der Papierraum über den Ansichtsfenstern — sonst stünde beides doppelt
+    // im Bild (sichtbar dunkler) und die Differenz überschritte die Grenze.
+    let mut vergleich = reimport.clone();
+    if let Some(sheet) = vergleich.sheets.first_mut() {
+        sheet
+            .entities
+            .retain(|e| matches!(e.kind, EntityKind::Viewport(_)));
+    }
     let sheet_a = original.sheets[0].clone();
-    let sheet_b = reimport.sheets[0].clone();
+    let sheet_b = vergleich.sheets[0].clone();
     let (pw, ph) = sheet_a.size();
     let px_pro_mm = 4.0;
     let w = (pw * px_pro_mm).round() as u32;
@@ -261,7 +275,7 @@ fn rundlauf_pixel() {
         ..Default::default()
     };
     let bild_a = raster::render_sheet_pixmap(&original, &sheet_a, &opts).expect("Bild Original");
-    let bild_b = raster::render_sheet_pixmap(&reimport, &sheet_b, &opts).expect("Bild Re-Import");
+    let bild_b = raster::render_sheet_pixmap(&vergleich, &sheet_b, &opts).expect("Bild Re-Import");
     assert_eq!(bild_a.width(), bild_b.width());
     assert_eq!(bild_a.height(), bild_b.height());
 

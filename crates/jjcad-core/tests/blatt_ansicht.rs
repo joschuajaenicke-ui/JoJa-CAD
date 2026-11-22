@@ -200,12 +200,14 @@ fn fit_viewport_setzt_mitte_und_masstab() {
     // Mitte = BBox-Mitte
     assert!(nah(vp.center.x, bbox.center().x, 1e-6));
     assert!(nah(vp.center.y, bbox.center().y, 1e-6));
-    // Maßstab aus der Blattgröße: 15000 mm / (204 − 2·10) mm ≈ 82 → 1:100
-    assert_eq!(vp.scale, 100.0, "Maßstab war {}", vp.scale);
+    // Maßstab aus der Blattgröße: 15000 mm / (277 − 2·10) mm ≈ 58 → 1:75.
+    // Das Fenster reicht seit T0239 über das ganze Blatt (Rahmen und Schriftfeld
+    // liegen als Block darüber), vorher waren es 204 mm Höhe → 1:100.
+    assert_eq!(vp.scale, 75.0, "Maßstab war {}", vp.scale);
     // Papier-Maß = BBox ÷ Maßstab, mit Rand im Fenster
     let w = bbox.width() / vp.scale;
     let h = bbox.height() / vp.scale;
-    assert!(nah(w, 130.0, 1e-9) && nah(h, 150.0, 1e-9));
+    assert!(nah(w, 13000.0 / 75.0, 1e-9) && nah(h, 15000.0 / 75.0, 1e-9));
     assert!(w <= vp.w - 20.0 + 0.5 && h <= vp.h - 20.0 + 0.5);
     assert!(nah(r["gezeichnet_mm"][0].as_f64().unwrap(), w, 1e-9));
     assert!(nah(r["gezeichnet_mm"][1].as_f64().unwrap(), h, 1e-9));

@@ -623,6 +623,45 @@ pub fn system_blocks(_next_id: &mut Id) -> Vec<BlockDef> {
         b,
     ));
 
+    // ---------------- Planrahmen (T0239) ----------------
+    // Der ganze Planrahmen samt Schriftfeld als **ein** Objekt. Der Ursprung
+    // (und damit der Basispunkt) ist die untere linke Blattecke (0,0) — so
+    // landet ein eingefügter Rahmen ohne Versatz auf dem Blatt. Die weiße
+    // Abdeckfläche hinter dem Schriftfeld hält den Plankopf lesbar, auch wenn
+    // ein Ansichtsfenster das ganze Blatt füllt.
+    for (id, name, (w, h), desc) in [
+        (
+            RAHMEN_A3_QUER,
+            "Planrahmen A3 quer",
+            (420.0, 297.0),
+            "Blattrahmen mit Schriftfeld, A3 quer, 420 × 297 mm",
+        ),
+        (
+            RAHMEN_A3_HOCH,
+            "Planrahmen A3 hoch",
+            (297.0, 420.0),
+            "Blattrahmen mit Schriftfeld, A3 hoch, 297 × 420 mm",
+        ),
+        (
+            RAHMEN_A4_HOCH,
+            "Planrahmen A4 hoch",
+            (210.0, 297.0),
+            "Blattrahmen mit Schriftfeld, A4 hoch, 210 × 297 mm",
+        ),
+    ] {
+        out.push(BlockDef {
+            id: id.to_string(),
+            name: name.to_string(),
+            category: RAHMEN_KATEGORIE.to_string(),
+            source: BlockSource::System,
+            description: desc.to_string(),
+            entities: crate::templates::planrahmen_entities(w, h),
+            icon: None,
+            base: Vec2::ZERO,
+            groesse: BlockGroesse::Fest,
+        });
+    }
+
     // Punktsymbole haben **Papiergröße** (T0231): ihre Maße sind Papier-
     // Millimeter und wachsen mit dem Zeichnungsmaßstab — als Block wie als
     // Symbol an Punkt und Linienende, wie die Begrenzungssymbole der Bemaßung.
@@ -638,5 +677,13 @@ pub fn system_blocks(_next_id: &mut Id) -> Vec<BlockDef> {
 
 /// Kategorien in Anzeigereihenfolge.
 pub fn categories() -> Vec<&'static str> {
-    vec!["Sanitär", "Küche", "Möbel", "Technik", "Symbole", PUNKTSYMBOL_KATEGORIE]
+    vec![
+        RAHMEN_KATEGORIE,
+        "Sanitär",
+        "Küche",
+        "Möbel",
+        "Technik",
+        "Symbole",
+        PUNKTSYMBOL_KATEGORIE,
+    ]
 }

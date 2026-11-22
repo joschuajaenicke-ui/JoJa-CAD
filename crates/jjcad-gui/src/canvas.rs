@@ -12393,10 +12393,12 @@ mod tests_papierraum {
     #[test]
     fn wechsel_ins_modell_leert_auswahl() {
         let mut app = app_im_papierraum();
+        // Seit T0239 stecken Schriftfeld-Texte im Planrahmen-Block; gewählt
+        // wird der Block — ein Blattobjekt wie jedes andere.
         let feld = app.doc().sheets[0]
             .entities
             .iter()
-            .find(|e| matches!(e.kind, EntityKind::Text { .. }))
+            .find(|e| matches!(e.kind, EntityKind::BlockRef { .. }))
             .map(|e| e.id)
             .unwrap();
         app.session_mut().selection = vec![feld];
