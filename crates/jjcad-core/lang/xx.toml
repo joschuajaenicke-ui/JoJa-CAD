@@ -779,11 +779,9 @@
 # middle = "Mitte"
 # bottom = "Unten"
 #
-[ui.blockeinheit]
-# neutral = "ohne Einheit"
-# mm = "Millimeter"
-# cm = "Zentimeter"
-# m = "Meter"
+[ui.blockgroesse]
+# fest = "Feste Größe"
+# papier = "Papiergröße (mit Maßstab)"
 #
 [ui.blocksource]
 # system = "System"
@@ -1317,8 +1315,8 @@
 #
 [gui.dialogs]
 # ebene_taste_x = "Ebene {wert1} — Klick schaltet sie ein und aus"
-# einheit = "Einheit"
-# einheit_tip = "Maßeinheit der Blockgeometrie: „ohne Einheit“ skaliert mit dem Zeichnungsmaßstab (Symbol fester Papiergröße), Millimeter/Zentimeter/Meter gelten maßstäblich"
+# groesse = "Größe"
+# groesse_tip = "Feste Größe: die Geometrie gilt in Zeichnungs-Millimetern und wird 1:1 eingefügt (ein Bett bleibt 2 m lang). Papiergröße: die Geometrie ist so groß, wie sie gedruckt wird, und wächst mit dem Zeichnungsmaßstab (Koten, Symbole)"
 # block_eigenschaften = "Block-Eigenschaften"
 # block_loeschen = "Block löschen"
 # block_x_unwiderruflich_loeschen = "Block '{name}' unwiderruflich löschen?"
@@ -1787,7 +1785,7 @@
 #
 [gui.props]
 # blockname = "Blockname"
-# einheit = "Einheit"
+# groesse = "Größe"
 # punktsymbol = "Symbol"
 # punktsymbol_ende = "Ende"
 # kein_symbol = "Kein Symbol"

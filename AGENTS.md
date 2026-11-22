@@ -1060,8 +1060,8 @@ Mit dem Nutzer abgestimmt — nicht „verbessern“:
   (`RenderCtx::a`): ein Symbol ist eine Marke auf dem Papier, keine Bauteilgröße — dieselbe
   Marke ist bei 1:50 und 1:200 gleich groß. Der Pfeil zeigt nach +X, am Linienende in
   Laufrichtung, am Anfang entgegen. Die mitgelieferten Blöcke (`blocks_lib`, IDs
-  `sys:pkt-*`) sind deshalb **neutral** und auf **Einheitsgröße 1** normiert (T0231):
-  der Pfeil läuft von 0 nach −1, das Kreuz misst ±0,5 — siehe unten.
+  `sys:pkt-*`) tragen deshalb `groesse: Papier` und ihre Geometrie steht in der
+  **gedruckten Größe** (Pfeil 3,4 mm, Kreuz 2,2 mm) — siehe unten.
   `persist::normalize_systembloecke` bringt die Systemblöcke beim Laden auf den Stand der
   Bibliothek: fehlende werden angehängt, vorhandene **ersetzt**. Beides ist nötig — ohne das
   Anhängen erreichte die Kategorie keine ältere Zeichnung, und ohne das Ersetzen behielte sie
@@ -1073,29 +1073,30 @@ Mit dem Nutzer abgestimmt — nicht „verbessern“:
   Ursprung an der Spitze, der Körper läuft nach −X. Nur so deckt sich die Spitze an einem
   Linienende mit dem Endpunkt (vorher stand sie 1,4 mm daneben, bei 1:100 also 14 cm);
   `render::push_punktsymbol` dreht am Anfang um π, dort zeigt die Spitze nach außen und
-  der Körper liegt in der Linie. Prüfweg:
+  der Körper liegt in der Linie. Als Block tragen sie `groesse: Papier` (s. u.). Prüfweg:
   `cargo test -p jjcad-core --test punktsymbole`; Prüfbild
   `--demo "neudatei,punktsymbol"` bzw. `--demo "neudatei,blockreiter:system"`.
-- **Maßeinheit der Blöcke (T0231)**: Jeder Block trägt `BlockDef::einheit`
-  (`BlockEinheit::Neutral | Millimeter | Zentimeter | Meter`). **Ohne Maßeinheit**
-  (`Neutral`) ist die Geometrie ein Symbol der Größe 1, das mit dem
-  **Zeichnungsmaßstab** wächst — eine Blockeinheit ist ein Papier-Millimeter; `mm`/`cm`/`m`
-  gelten dagegen maßstäblich (1 Einheit = 1/10/1000 mm). Die eine Rechnung ist
-  `BlockDef::faktor(annot_scale)`; sie gilt in `render_entity`, in `entity_segments`
-  (Fang, Trefferprüfung, Bounding-Box) und in `ghost::geometry` (Vorschau) — nie
-  daneben rechnen. Das alte Häkchen `annotative` gibt es nicht mehr; Dateien davor
-  schreibt `persist::migrate_block_einheiten` beim Laden um (`true` → `Neutral`, sonst
-  `Millimeter`), die Action `block.update` nimmt `einheit` (Schlüssel `neutral`/`mm`/`cm`/`m`)
-  und weiter das alte Argument `annotative`. Geändert wird sie im Fenster
-  „Block-Eigenschaften“ (Auswahlfeld „Einheit“). **Alle Punktsymbole sind auf
-  Einheitsgröße 1 normiert** (Kästchen der Größe 1 um den Basispunkt, Pfeil und
-  Schnitt-Kote mit der Spitze im Ursprung) — dadurch ist die Geometrie im Blockeditor
-  normal groß, und alle Symbole sind auf dem Papier gleich groß. Damit der Editor einen
-  Block überhaupt zeigt, gilt dort `app::BLOCK_ZOOM_MAX` (4000 px/mm) statt der
-  Zeichengrenze 80 (`App::zoom_max`) — ein Block ist klein. Prüfweg:
-  `cargo test -p jjcad-core --test block_einheit` und
-  `cargo test -p jjcad-gui tests_block_eigenschaften`; Prüfbild
-  `--demo punktsymbolblock`.
+- **Größe der Blöcke (T0231)**: Jeder Block trägt `BlockDef::groesse`
+  (`BlockGroesse::Fest | Papier`) — die eine Frage, die ein Block beantworten muss:
+  **hat er eine feste Größe, oder soll er auf dem Papier immer gleich groß aussehen?**
+  `Fest` = Geometrie in Zeichnungs-Millimetern, 1:1 eingefügt (Bett 2 m, WC 380 mm),
+  `Papier` = Geometrie in **Papier-Millimetern, so groß wie gedruckt**, wächst mit dem
+  Zeichnungsmaßstab (Koten, Symbole). Die eine Rechnung ist `BlockDef::faktor(annot_scale)`;
+  sie gilt in `render_entity`, in `entity_segments` (Fang, Trefferprüfung, Bounding-Box)
+  und in `ghost::geometry` (Vorschau) — nie daneben rechnen. Die früheren Angaben
+  (`einheit` aus Turn 2, Häkchen `annotative` aus T0210) schreibt
+  `persist::migrate_block_groessen` beim Laden um (`neutral`/`true` → `Papier`, sonst
+  `Fest`), für `.jjcad` und `.jjblk`; geschrieben wird nur `groesse`. Die Action
+  `block.update`/`block.list`/`block.create` sprechen `groesse` (Schlüssel `fest`/`papier`)
+  und nehmen `einheit`/`annotative` weiter an. Geändert wird sie im Fenster
+  „Block-Eigenschaften“ (Auswahlfeld „Größe“). **Die Punktsymbole haben Papiergröße und
+  ihre Geometrie steht in der gedruckten Größe** (`sys:pkt-pfeil` 3,4 mm, Kreuz 2,2 mm) —
+  eine künstliche Einheitsgröße gibt es nicht mehr. Weil ein Block klein ist, gilt im
+  Blockeditor `app::BLOCK_ZOOM_MAX` (4000 px/mm) statt der Zeichengrenze 80
+  (`App::zoom_max`), und `App::unit()` liefert dort **Millimeter** statt der
+  Zeichnungseinheit (`dialogs`/`panels`/Statusleiste) — in Metern stünde jede Länge eines
+  3-mm-Symbols auf 0,00. Prüfweg: `cargo test -p jjcad-core --test block_groesse` und
+  `cargo test -p jjcad-gui tests_block_eigenschaften`; Prüfbild `--demo punktsymbolblock`.
 - **Raumstempel (T0220)**: Der **Name** des Stempels wird **direkt in der Zeichnung**
   geändert — ein Doppelklick auf den Stempeltext öffnet ihn wie ein Textfeld
   (`textedit::start_entitaet` erkennt `EntityKind::Room`, `textedit::text_bei` trifft

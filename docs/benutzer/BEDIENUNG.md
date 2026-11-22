@@ -69,11 +69,13 @@ die **Vorgabe** ihrer Ebene und lassen sich wie jede andere Taste ändern.
    **jeder** Block dieser Kategorie, auch ein eigener Benutzerblock, sobald er die Gruppe
    „Punkt Symbole“ trägt. Gezeichnet wird das Symbol in Beschriftungsgröße, also auf jedem
    Maßstab gleich groß. Dieselbe Größe hat der Block als **eingesetzte Instanz**, weil die
-   Punktsymbole die Blockeigenschaft **Einheit „ohne Einheit“** tragen; im Fenster
-   **Block-Eigenschaften** (Rechtsklick auf die Kachel) wählt man sie für eigene Blöcke —
-   „ohne Einheit“ skaliert mit dem Zeichnungsmaßstab, Millimeter/Zentimeter/Meter gelten
-   maßstäblich (1:1). Alle Punktsymbole sind auf **Einheitsgröße 1** normiert, im
-   Blockeditor also normal groß. Die **Pfeile** tragen ihre
+   Punktsymbole die Blockeigenschaft **Größe „Papiergröße“** tragen — sie stehen in
+   Papier-Millimetern, also so groß, wie sie gedruckt werden. Im Fenster
+   **Block-Eigenschaften** (Rechtsklick auf die Kachel) wählt man für eigene Blöcke
+   zwischen **fester Größe** (Geometrie in Zeichnungs-Millimetern, 1:1 eingefügt — ein
+   Bett bleibt 2 m lang) und **Papiergröße** (wächst mit dem Zeichnungsmaßstab). Im
+   Blockeditor rechnen die Längen eines Blocks in Papiergröße in Millimetern. Die
+   **Pfeile** tragen ihre
    Spitze auf dem Basispunkt: an einem Linienende deckt sich die Spitze damit genau mit dem
    Endpunkt, an einem Anfang mit dem Anfangspunkt; der Pfeilkörper läuft von dort nach innen.
 6. **Navigieren**: Mausrad zoomt, mittlere Taste oder `Leertaste`+Ziehen schwenkt.

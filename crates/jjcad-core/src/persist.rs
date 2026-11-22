@@ -20,7 +20,7 @@ pub fn from_json(s: &str) -> Result<Document, String> {
     migrate_legacy_fills(&mut raw);
     migrate_legacy_images(&mut raw);
     migrate_legacy_dims(&mut raw);
-    migrate_block_einheiten(&mut raw);
+    migrate_block_groessen(&mut raw);
     let mut doc: Document = serde_json::from_value(raw)
         .map_err(|e| format!("Datei ist keine gültige JoJa-CAD-Zeichnung: {e}"))?;
     if doc.format != FORMAT_NAME {
@@ -417,27 +417,43 @@ pub fn migrate_legacy_dims(v: &mut serde_json::Value) {
     }
 }
 
-/// **Maßeinheit der Blöcke** aus dem früheren Häkchen `annotative` (T0231).
+/// **Größe der Blöcke** aus den früheren Angaben `einheit`/`annotative` (T0231).
 ///
-/// Vor T0231 trug ein Block nur `annotative`: `true` hieß „Geometrie in
-/// Papier-Millimetern und mit dem Zeichnungsmaßstab skalieren“ (heute
-/// `einheit: "Neutral"`), `false` oder fehlend „maßstäblich in Millimetern“
-/// (heute `einheit: "Millimeter"`). Steht schon eine `einheit` am Block,
-/// gewinnt sie; `annotative` fällt in jedem Fall weg. Gilt für die
-/// `.jjcad`-Datei (`blocks`) und für eine Blockdatei (`block`, T0128).
-pub fn migrate_block_einheiten(v: &mut serde_json::Value) {
+/// Die Blockgröße hieß in Turn 2 `einheit` (`Neutral`/`Millimeter`/…) und davor
+/// `annotative` (Häkchen). Heute ist sie `groesse`:
+///
+/// * `Neutral` bzw. `annotative: true` → `Papier` (Geometrie in Papier-Millimetern,
+///   wächst mit dem Zeichnungsmaßstab),
+/// * jede echte Einheit bzw. `annotative: false`/fehlend → `Fest` (1:1).
+///
+/// Steht schon eine `groesse` am Block, gewinnt sie; die alten Felder fallen in
+/// jedem Fall weg. Gilt für die `.jjcad`-Datei (`blocks`) und für eine
+/// Blockdatei (`block`, T0128).
+pub fn migrate_block_groessen(v: &mut serde_json::Value) {
     fn migriere(b: &mut serde_json::Value) {
         let Some(obj) = b.as_object_mut() else {
             return;
         };
-        if !obj.contains_key("einheit") {
-            let alt = obj
+        if !obj.contains_key("groesse") {
+            // Turn 2: `einheit` als Serde-Name ("Neutral", "Millimeter", …) oder
+            // als Action-Schlüssel ("neutral", "mm", …).
+            let alt_einheit = obj
+                .get("einheit")
+                .and_then(|e| e.as_str())
+                .map(|e| e.trim().to_ascii_lowercase());
+            let alt_annotative = obj
                 .get("annotative")
                 .and_then(|a| a.as_bool())
                 .unwrap_or(false);
-            let neu = if alt { "Neutral" } else { "Millimeter" };
-            obj.insert("einheit".into(), serde_json::json!(neu));
+            let papier = match alt_einheit.as_deref() {
+                Some("neutral") | Some("papier") => true,
+                Some(_) => false,
+                None => alt_annotative,
+            };
+            let neu = if papier { "Papier" } else { "Fest" };
+            obj.insert("groesse".into(), serde_json::json!(neu));
         }
+        obj.remove("einheit");
         obj.remove("annotative");
     }
 

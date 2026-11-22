@@ -31,7 +31,7 @@ fn session_mit_bloecken() -> Session {
         entities: vec![linie],
         icon: None,
         base: jjcad_core::geom::v(0.0, 0.0),
-        einheit: BlockEinheit::Millimeter,
+        groesse: BlockGroesse::Fest,
     });
     s
 }

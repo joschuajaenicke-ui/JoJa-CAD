@@ -7,7 +7,7 @@ use crate::widgets;
 use egui::{Align, Color32, FontId, Layout, Pos2, Rect, RichText, Rounding, Sense, Stroke, Ui, Vec2};
 use jjcad_core::actions;
 use jjcad_core::geom::Vec2 as V2;
-use jjcad_core::model::{BlockEinheit, Id};
+use jjcad_core::model::{BlockGroesse, Id};
 use jjcad_core::persist::{
     fest_belegt, Design, DragMode, Farbakzent, Fensterrahmen, Kombination, PastePivot,
     Textaufloesung, Zeichenfarbe,
@@ -1248,31 +1248,32 @@ pub fn show(app: &mut App, ctx: &egui::Context) {
                 });
             });
             ui.add_space(4.0);
-            // T0231: Maßeinheit der Blockgeometrie — „ohne Einheit“ skaliert
-            // mit dem Zeichnungsmaßstab, mm/cm/m gelten maßstäblich.
+            // T0231: Größe der Blockgeometrie — feste Größe (1:1 in der
+            // Zeichnung) oder Papiergröße (so groß wie gedruckt, wächst mit dem
+            // Zeichnungsmaßstab).
             widgets::field_row_tip(
                 ui,
-                jjcad_core::i18n::tr("gui.dialogs.einheit"),
-                jjcad_core::i18n::tr("gui.dialogs.einheit_tip"),
+                jjcad_core::i18n::tr("gui.dialogs.groesse"),
+                jjcad_core::i18n::tr("gui.dialogs.groesse_tip"),
                 |ui| {
                     let gewaehlt = panels::dropdown(
                         ui,
-                        "block_einheit",
-                        wahl.einheit.text(),
+                        "block_groesse",
+                        wahl.groesse.text(),
                         None,
                         |ui| {
                             ui.set_min_width(200.0);
                             let mut out = None;
-                            for e in jjcad_core::model::BlockEinheit::ALL {
-                                if ui.selectable_label(e == wahl.einheit, e.text()).clicked() {
-                                    out = Some(e);
+                            for g in jjcad_core::model::BlockGroesse::ALL {
+                                if ui.selectable_label(g == wahl.groesse, g.text()).clicked() {
+                                    out = Some(g);
                                 }
                             }
                             out
                         },
                     );
-                    if let Some(e) = gewaehlt {
-                        wahl.einheit = e;
+                    if let Some(g) = gewaehlt {
+                        wahl.groesse = g;
                     }
                 },
             );
@@ -9064,7 +9065,7 @@ mod tests_block_loeschen {
             )],
             icon: None,
             base: V2::ZERO,
-            einheit: BlockEinheit::Millimeter,
+            groesse: BlockGroesse::Fest,
         });
         for i in 0..instanzen {
             app.session_mut()
@@ -9214,7 +9215,7 @@ mod tests_block_loeschen {
             entities: Vec::new(),
             icon: None,
             base: V2::ZERO,
-            einheit: BlockEinheit::Neutral,
+            groesse: BlockGroesse::Papier,
         });
         assert!(!app.block_loeschen_anfragen("sys:pfeil"));
         assert!(app.ui.block_delete.is_none(), "keine Rückfrage");

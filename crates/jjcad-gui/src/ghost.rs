@@ -8,7 +8,7 @@
 //! Ecke der gedrehten Auswahl (T0070).
 
 use jjcad_core::geom::{Affine, BBox, Vec2 as V2};
-use jjcad_core::model::{BlockEinheit, Document, Entity, EntityKind};
+use jjcad_core::model::{BlockGroesse, Document, Entity, EntityKind};
 use jjcad_core::persist::PastePivot;
 use jjcad_core::render::{self, Prim, RenderCtx};
 
@@ -615,7 +615,7 @@ mod tests_blockbasispunkt {
             entities: vec![e],
             icon: None,
             base: V2::ZERO,
-            einheit: BlockEinheit::Millimeter,
+            groesse: BlockGroesse::Fest,
         });
         (doc, V2::new(5000.0, 4000.0))
     }
