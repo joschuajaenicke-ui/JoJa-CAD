@@ -1171,9 +1171,6 @@ pub struct UiState {
     /// Häkchenfläche) im zuletzt gezeichneten Bild. Prüfwert der Tests.
     pub last_blattzeilen: Vec<(Id, Rect, Rect)>,
     pub ribbon_collapsed: bool,
-    /// Pfad-Werkzeug (T0229): Stand der Umschalttaste im vorigen Bild — der
-    /// Übergang „nicht gedrückt → gedrückt" schaltet zwischen Linie und Bogen.
-    pub path_shift: bool,
     pub keymap_open: bool,
     pub settings_open: bool,
     /// Gewählte Kategorie im Einstellungsfenster (Index in
@@ -1464,7 +1461,6 @@ impl Default for UiState {
             last_layer_kopf: Vec::new(),
             last_blattzeilen: Vec::new(),
             ribbon_collapsed: false,
-            path_shift: false,
             keymap_open: false,
             settings_open: false,
             settings_kat: 0,
