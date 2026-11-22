@@ -245,7 +245,7 @@ pub fn import_dxf(path: &Path) -> Result<ImportResult, String> {
                     entities: ents,
                     icon: None,
                     base,
-                    einheit: BlockEinheit::Millimeter,
+                    groesse: BlockGroesse::Fest,
                 };
                 if let Some(desc) = find1(&g, 4) {
                     bd.description = desc.to_string();

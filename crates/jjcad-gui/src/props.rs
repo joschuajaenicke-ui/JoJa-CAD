@@ -77,7 +77,7 @@
 
 use egui::Ui;
 use jjcad_core::model::{
-    BlockEinheit, DimAxis, DoorBase, DoorKind, ElevationTextPos, Entity, EntityKind, Id, TextFont,
+    BlockGroesse, DimAxis, DoorBase, DoorKind, ElevationTextPos, Entity, EntityKind, Id, TextFont,
     TextRun,
 };
 use jjcad_core::style::Color;
@@ -3378,12 +3378,12 @@ pub fn einfach(app: &mut App, ui: &mut Ui, ziel: Ziel, art: Einfach) {
             widgets::field_row(ui, jjcad_core::i18n::tr("gui.props.gruppe"), |ui| {
                 ui.label(theme::mono(block_gruppe.clone()));
             });
-            // T0231: die Maßeinheit gehört zur Definition — geändert wird sie
-            // im Fenster „Block-Eigenschaften“ (Rechtsklick auf die Kachel).
-            let block_einheit = definition.map(|b| b.einheit).unwrap_or_default();
-            zeile("einheit");
-            widgets::field_row(ui, jjcad_core::i18n::tr("gui.props.einheit"), |ui| {
-                ui.label(theme::mono(block_einheit.text()));
+            // T0231: die Größe gehört zur Definition — geändert wird sie im
+            // Fenster „Block-Eigenschaften“ (Rechtsklick auf die Kachel).
+            let block_groesse = definition.map(|b| b.groesse).unwrap_or_default();
+            zeile("groesse");
+            widgets::field_row(ui, jjcad_core::i18n::tr("gui.props.groesse"), |ui| {
+                ui.label(theme::mono(block_groesse.text()));
             });
 
             let (r0, s0) = match &e {
@@ -5472,7 +5472,7 @@ mod tests {
             entities: Vec::new(),
             icon: None,
             base: jjcad_core::geom::Vec2::ZERO,
-            einheit: BlockEinheit::Millimeter,
+            groesse: BlockGroesse::Fest,
         });
         let layer = app.doc().current_layer;
         let id = app.doc_mut().new_id();

@@ -1089,10 +1089,9 @@ pub struct BlockEigenschaften {
     pub gruppe: String,
     /// Eingabe einer neuen Gruppe (leer = keine angelegt)
     pub neue_gruppe: String,
-    /// Maßeinheit der Blockgeometrie (T0231): ohne Einheit wächst der Block
-    /// mit dem Zeichnungsmaßstab, sonst gilt die Geometrie maßstäblich in
-    /// Millimetern, Zentimetern oder Metern.
-    pub einheit: jjcad_core::model::BlockEinheit,
+    /// Größe der Blockgeometrie (T0231): feste Größe (1:1 in der Zeichnung)
+    /// oder Papiergröße (so groß wie gedruckt, wächst mit dem Maßstab).
+    pub groesse: jjcad_core::model::BlockGroesse,
 }
 
 /// R2.3: Die Zieldatei wurde außerhalb von JoJa-CAD geändert, während im
@@ -2216,7 +2215,7 @@ impl App {
                 entities: vec![kreis],
                 icon: None,
                 base: V2::ZERO,
-                einheit: BlockEinheit::Millimeter,
+                groesse: BlockGroesse::Fest,
             });
         }
         if let Some(id) = self
@@ -2689,7 +2688,7 @@ impl App {
                             entities: ents,
                             icon: None,
                             base: V2::ZERO,
-                            einheit: BlockEinheit::Millimeter,
+                            groesse: BlockGroesse::Fest,
                         });
                     };
                     anlegen(
@@ -4769,7 +4768,7 @@ impl App {
             name: block.name.clone(),
             gruppe: block.category.clone(),
             neue_gruppe: String::new(),
-            einheit: block.einheit,
+            groesse: block.groesse,
         });
         true
     }
@@ -4802,7 +4801,7 @@ impl App {
                 "block": wahl.block,
                 "name": name,
                 "category": gruppe,
-                "einheit": wahl.einheit.key(),
+                "groesse": wahl.groesse.key(),
                 "dir": dir,
             }),
         ) {
@@ -5009,6 +5008,15 @@ impl App {
     }
 
     pub fn unit(&self) -> Unit {
+        // T0231: Im Blockeditor eines Blocks in **Papiergröße** sind alle Längen
+        // Papier-Millimeter — das Symbol ist 1–3 mm groß, eine Anzeige in
+        // Metern stünde überall auf 0,00. Die Werkzeuge rechnen unverändert:
+        // `from_mm`/`to_mm` mit mm sind die Identität.
+        if let Some(b) = self.doc().block_edit() {
+            if b.ist_papiergroesse() {
+                return Unit::Mm;
+            }
+        }
         self.doc().settings.input_unit
     }
 
@@ -18978,7 +18986,7 @@ mod tests_blockeditor {
             entities: ents,
             icon: None,
             base: V2::ZERO,
-            einheit: BlockEinheit::Millimeter,
+            groesse: BlockGroesse::Fest,
         });
         app
     }
@@ -19036,7 +19044,7 @@ mod tests_blockeditor {
             ],
             icon: None,
             base: V2::ZERO,
-            einheit: BlockEinheit::Neutral,
+            groesse: BlockGroesse::Papier,
         });
         assert_eq!(app.zoom_max(), 80.0, "in der Zeichnung gilt 80 px/mm");
 
@@ -19621,7 +19629,7 @@ mod tests_rechtsklick {
             entities: vec![kind],
             icon: None,
             base: V2::ZERO,
-            einheit: BlockEinheit::Millimeter,
+            groesse: BlockGroesse::Fest,
         });
         let id = app.doc_mut().new_id();
         let instanz = Entity::new(
@@ -20506,7 +20514,7 @@ mod tests_block_kopieren {
             entities: vec![e],
             icon: None,
             base: V2::ZERO,
-            einheit: BlockEinheit::Neutral,
+            groesse: BlockGroesse::Papier,
         });
         app
     }
@@ -20600,7 +20608,7 @@ mod tests_block_eigenschaften {
             entities: Vec::new(),
             icon: None,
             base: V2::ZERO,
-            einheit: BlockEinheit::Millimeter,
+            groesse: BlockGroesse::Fest,
         });
         app
     }
@@ -20633,7 +20641,7 @@ mod tests_block_eigenschaften {
             entities: Vec::new(),
             icon: None,
             base: V2::ZERO,
-            einheit: BlockEinheit::Millimeter,
+            groesse: BlockGroesse::Fest,
         });
         assert!(
             !app.oeffne_block_eigenschaften("sys:tuer"),
@@ -20680,43 +20688,68 @@ mod tests_block_eigenschaften {
         assert_eq!(roh["block"]["id"], "usr:stuhl", "Kennung bleibt stabil");
     }
 
-    /// T0231: Die **Maßeinheit** gehört zu den Block-Eigenschaften — sie
-    /// schreibt `block.update` und landet in der `.jjblk`.
+    /// T0231: Die **Größe** (feste Größe / Papiergröße) gehört zu den
+    /// Block-Eigenschaften — sie schreibt `block.update` und landet in der
+    /// `.jjblk`.
     #[test]
-    fn einheit_wird_uebernommen() {
-        let dir = test_dir("einheit");
+    fn groesse_wird_uebernommen() {
+        let dir = test_dir("groesse");
         let mut app = app_mit_block(&dir);
         assert_eq!(
-            app.doc().block("usr:stuhl").unwrap().einheit,
-            jjcad_core::model::BlockEinheit::Millimeter
+            app.doc().block("usr:stuhl").unwrap().groesse,
+            jjcad_core::model::BlockGroesse::Fest
         );
 
         assert!(app.oeffne_block_eigenschaften("usr:stuhl"));
         if let Some(wahl) = app.ui.block_eigenschaften.as_mut() {
-            wahl.einheit = jjcad_core::model::BlockEinheit::Neutral;
+            wahl.groesse = jjcad_core::model::BlockGroesse::Papier;
         }
         assert!(app.block_eigenschaften_uebernehmen());
         assert_eq!(
-            app.doc().block("usr:stuhl").unwrap().einheit,
-            jjcad_core::model::BlockEinheit::Neutral,
-            "die Einheit steht nicht im Dokument"
+            app.doc().block("usr:stuhl").unwrap().groesse,
+            jjcad_core::model::BlockGroesse::Papier,
+            "die Größe steht nicht im Dokument"
         );
         // Benutzerblöcke schreiben ihre `.jjblk` mit — dort muss sie auch stehen.
         let datei = app.prefs.blocks_dir().join("stuhl.jjblk");
         let roh: serde_json::Value =
             serde_json::from_str(&std::fs::read_to_string(&datei).unwrap()).unwrap();
-        assert_eq!(roh["block"]["einheit"], serde_json::json!("Neutral"));
+        assert_eq!(roh["block"]["groesse"], serde_json::json!("Papier"));
 
-        // Und wieder zurück: die Einheit ist keine Einbahnstraße.
+        // Und wieder zurück: die Größe ist keine Einbahnstraße.
         assert!(app.oeffne_block_eigenschaften("usr:stuhl"));
         if let Some(wahl) = app.ui.block_eigenschaften.as_mut() {
-            wahl.einheit = jjcad_core::model::BlockEinheit::Zentimeter;
+            wahl.groesse = jjcad_core::model::BlockGroesse::Fest;
         }
         assert!(app.block_eigenschaften_uebernehmen());
         assert_eq!(
-            app.doc().block("usr:stuhl").unwrap().einheit,
-            jjcad_core::model::BlockEinheit::Zentimeter
+            app.doc().block("usr:stuhl").unwrap().groesse,
+            jjcad_core::model::BlockGroesse::Fest
         );
+    }
+
+    /// T0231: Im Blockeditor eines Blocks in **Papiergröße** rechnet die
+    /// Oberfläche in Millimetern — in Metern stünde jede Länge auf 0,00.
+    #[test]
+    fn papiergroesse_rechnet_im_blockeditor_in_millimetern() {
+        let dir = test_dir("papier-mm");
+        let mut app = app_mit_block(&dir);
+        app.doc_mut().settings.input_unit = jjcad_core::units::Unit::M;
+        assert_eq!(app.unit(), jjcad_core::units::Unit::M, "Modell in Metern");
+
+        app.doc_mut().block_mut("usr:stuhl").unwrap().groesse =
+            jjcad_core::model::BlockGroesse::Papier;
+        assert!(app.oeffne_block_editor("usr:stuhl"));
+        assert_eq!(
+            app.unit(),
+            jjcad_core::units::Unit::Mm,
+            "ein Block in Papiergröße wird in Papier-Millimetern beschriftet"
+        );
+
+        // Ein Block fester Größe bleibt bei der Zeichnungseinheit.
+        app.doc_mut().block_mut("usr:stuhl").unwrap().groesse =
+            jjcad_core::model::BlockGroesse::Fest;
+        assert_eq!(app.unit(), jjcad_core::units::Unit::M);
     }
 
     /// Eine neue Gruppe entsteht, indem der Block sie bekommt — das Feld
