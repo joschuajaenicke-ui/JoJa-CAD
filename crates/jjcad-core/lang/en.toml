@@ -1171,7 +1171,6 @@ beenden = "Quit"
 kommandozeile = "Alternatively from the command line: jjcad --daten-dir <path>"
 
 [gui.canvas]
-png_bereich = "Region"
 png_bereich_diagonale = "PNG · click diagonal"
 png_bereich_zweiter_punkt = "PNG · click second corner"
 png_bereich_ohne_flaeche = "PNG · diagonal without area"

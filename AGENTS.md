@@ -203,7 +203,10 @@ Mit dem Nutzer abgestimmt — nicht „verbessern“:
   **Bereich**, **Seitenverhältnis**, **Auflösung** (Breite in Pixeln, Höhe folgt aus
   `raster::png_verhaeltnis`/`png_hoehe_px`) und **Hintergrund** (Weiß/Durchsichtig).
   „Bereich auswählen" schließt das Fenster und sammelt zwei Klicks in
-  `canvas::handle_input` (`canvas::png_bereich_klick`); der Bereich steht danach in
+  `canvas::handle_input` (`canvas::png_bereich_klick`); die Vorschau ist **nur die
+  Umrandung** des Rechtecks (`canvas::draw_png_bereich`: `Shape::closed_line` in der
+  Vorschaufarbe — keine Füllung, keine Diagonale, kein Text, wie beim Rechteck-Werkzeug);
+  der Bereich steht danach in
   `UiState::png_bereich` und **bleibt für den nächsten Export** gemerkt, „Aufheben"
   nimmt ihn zurück. Nicht wieder ein Menü an den Knopf hängen: die Bedienung soll
   **eine** Exportmethode zeigen. Geschrieben wird über `raster::render_png_auswahl`
