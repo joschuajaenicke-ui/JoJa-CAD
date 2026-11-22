@@ -3942,6 +3942,7 @@ fn draw_tool_preview(
                     app.doc().current_layer,
                     app.ui.pending.color,
                     app.options.dim_ext,
+                    &app.options.dim_symbol,
                 );
                 paint_vorschau_dl(app, p, view, &w2s, &dl);
             }
@@ -3966,6 +3967,7 @@ fn draw_tool_preview(
                         line_pos,
                         angle,
                         ext_lines,
+                        symbol,
                         ..
                     } = &e.kind
                     {
@@ -3999,6 +4001,7 @@ fn draw_tool_preview(
                             e.layer,
                             app.ui.pending.color,
                             *ext_lines,
+                            symbol,
                         );
                         paint_vorschau_dl(app, p, view, &w2s, &dl);
                     }
@@ -5050,8 +5053,11 @@ fn handle_input(
         }
     }
 
-    // Tippen von Längen/Koordinaten
-    let tool_waiting = app.tool.as_ref().map(|t| !t.pts.is_empty()).unwrap_or(false);
+    // Tippen von Längen/Koordinaten. In der Hilfslinien-Eingabe (T0230) wird
+    // ebenfalls getippt — dort ist der Anker die Bezugsstelle, nicht der
+    // letzte Werkzeugpunkt.
+    let tool_waiting = app.tool.as_ref().map(|t| !t.pts.is_empty()).unwrap_or(false)
+        || app.hilfslinie_modus;
     if tool_waiting && !ctx.wants_keyboard_input() {
         ctx.input(|i| {
             for ev in &i.events {
@@ -5122,7 +5128,15 @@ fn handle_input(
                     None => app.toast(jjcad_core::i18n::tr("gui.canvas.drehen_winkel_unbrauchbar")),
                 }
                 app.ui.typed.clear();
-            } else if let (Some(w), Some(last)) = (snapped, app.tool.as_ref().and_then(|t| t.pts.last().copied())) {
+            } else if let (Some(w), Some(last)) = (
+                snapped,
+                (if app.hilfslinie_modus {
+                    app.hilfslinie_anker
+                        .or_else(|| app.tool.as_ref().and_then(|t| t.pts.last().copied()))
+                } else {
+                    app.tool.as_ref().and_then(|t| t.pts.last().copied())
+                }),
+            ) {
                 let typed = app.ui.typed.clone();
                 // Koordinaten nur mit Semikolon trennen — das Komma bleibt
                 // Dezimaltrennzeichen ("2,5" = 2,5 m, "2,5;3,0" = x/y).
@@ -5138,7 +5152,14 @@ fn handle_input(
                         }
                     }
                 } else if let Some(dist) = jjcad_core::units::parse_length(&typed, app.unit()) {
-                    let dir = (w - last).normalized();
+                    let mut dir = (w - last).normalized();
+                    if dir.len() == 0.0 && app.hilfslinie_modus {
+                        // Der Zeiger steht noch genau auf dem Anker (typisch:
+                        // Rechtsklick auf die Wandkante, dann tippen): der
+                        // Abstand zu einer bestehenden Wand läuft **senkrecht**
+                        // auf ihr. Ohne Bezugslinie bleibt es beim Abbruch.
+                        dir = abstandsrichtung(app, last, w).unwrap_or(V2::ZERO);
+                    }
                     if dir.len() > 0.0 {
                         if app.hilfslinie_modus {
                             // T0230: In der Hilfslinien-Eingabe setzt die
@@ -5401,15 +5422,19 @@ fn handle_input(
     // die Polylinie“ erhalten, ohne dass beide Bedeutungen auf denselben Klick
     // fallen.
     if resp.clicked_by(egui::PointerButton::Secondary) {
-        if let Some(tool) = app.tool.as_ref() {
-            if tool.phase == ToolPhase::Collecting && legt_punkte(&tool.action) {
-                // Noch keine Linie und keine Eingabe: Eingabe einschalten.
-                if !app.hilfslinie_modus && app.hilfslinie.is_none() {
-                    app.hilfslinie_modus = true;
-                    app.hilfslinie_anker = None;
-                    return;
-                }
-            }
+        let punkt_eingabe = app
+            .tool
+            .as_ref()
+            .map(|t| t.phase == ToolPhase::Collecting && legt_punkte(&t.action))
+            .unwrap_or(false);
+        if punkt_eingabe && !app.hilfslinie_modus && app.hilfslinie.is_none() {
+            // Noch keine Linie und keine Eingabe: Eingabe einschalten. Ohne
+            // Werkzeugpunkt ist der Rechtsklick selbst der Anker — die
+            // Wandkante, auf die er zeigt.
+            let leer = app.tool.as_ref().map(|t| t.pts.is_empty()).unwrap_or(false);
+            app.hilfslinie_modus = true;
+            app.hilfslinie_anker = if leer { Some(w) } else { None };
+            return;
         }
     }
 
@@ -6331,6 +6356,15 @@ fn draw_hilfslinie(app: &App, p: &Painter, rect: Rect, view: View, zeiger: Optio
             world_to_screen(rect, view, zeiger),
         );
         if a.distance(b) < 1.0 {
+            // Der Zeiger steht auf dem Anker (typisch: Rechtsklick auf die
+            // Wandkante, dann tippen). Dann gibt die **Senkrechte** auf der
+            // Wand die Richtung — sie steht als Vorschau schon da.
+            if let Some(quer) = abstandsrichtung(app, anker_welt, zeiger) {
+                p.line_segment(
+                    [a, world_to_screen(rect, view, anker_welt + quer * 1000.0)],
+                    Stroke::new(1.0, fang.gamma_multiply(0.4)),
+                );
+            }
             return;
         }
         p.line_segment([a, b], Stroke::new(1.0, fang.gamma_multiply(0.55)));
@@ -6415,9 +6449,31 @@ fn hilfslinie_stehen(app: &mut App, a: V2, b: V2) {
     app.hilfslinie_modus = false;
     app.hilfslinie_anker = None;
     if let Some(t) = app.tool.as_mut() {
-        if let Some(stift) = t.pts.last_mut() {
-            *stift = b;
+        match t.pts.last_mut() {
+            Some(stift) => *stift = b,
+            // Noch kein Punkt im Zug: die neue Wand beginnt am Ende der
+            // Hilfslinie — der nächste Klick zeichnet sie von dort.
+            None => t.pts.push(b),
         }
+    }
+}
+
+/// Richtung der Hilfslinie, wenn der Zeiger keine vorgibt (T0230): die
+/// **Senkrechte** auf der Wand oder Linie unter dem Anker.
+///
+/// Das ist der Abstand zu einer bestehenden Wand: „1 m Abstand“ ist quer zu
+/// ihr gemessen, nicht in die Richtung, in der der Zeiger zufällig steht. Die
+/// Seite wählt der Zeiger (steht er auf der Linie, die linke Seite der
+/// Linienrichtung).
+fn abstandsrichtung(app: &App, anker: V2, zeiger: V2) -> Option<V2> {
+    let tol = 20.0;
+    let id = snap::hit_test(app.doc(), anker, tol, None)?;
+    let laengs = snap::richtung_am_punkt(app.doc(), id, anker)?;
+    let quer = laengs.perp();
+    if (zeiger - anker).dot(quer) < 0.0 {
+        Some(-quer)
+    } else {
+        Some(quer)
     }
 }
 
@@ -6865,7 +6921,8 @@ pub fn finish_tool(app: &mut App, from_enter: bool) {
                     json!({"pts": pts.iter().map(|p| [app.unit().from_mm(p.x), app.unit().from_mm(p.y)]).collect::<Vec<_>>(),
                            "line_pos": [app.unit().from_mm(line_pos.x), app.unit().from_mm(line_pos.y)],
                            "angle": angle.to_degrees(),
-                           "ext_lines": app.options.dim_ext}),
+                           "ext_lines": app.options.dim_ext,
+                           "symbol": app.options.dim_symbol.clone()}),
                 );
             } else {
                 app.toast(jjcad_core::i18n::tr("gui.canvas.masskette_zwei_messpunkte"));
@@ -7952,6 +8009,8 @@ fn tool_click_at(app: &mut App, w: V2, raw: V2) {
                 }
                 // Verlängerung zu den Messpunkten (T0226).
                 params["ext_lines"] = json!(app.options.dim_ext);
+                // Punktsymbol an den Messpunkten (T0227).
+                params["symbol"] = json!(app.options.dim_symbol.clone());
                 let _ = run(app, "dim.linear", params);
                 app.tool = None;
             } else {
@@ -19113,6 +19172,88 @@ mod tests_hilfslinie {
             "der Klick hat keinen Punkt des Werkzeugs gesetzt"
         );
         assert!(app.doc().entities.is_empty());
+    }
+
+    /// Der Ablauf aus Turn 5: bestehende Wand, Wand-Funktion starten, ihre
+    /// Kante wählen, Rechtsklick, **1 m tippen**, bestätigen — die neue Wand
+    /// liegt 1 m daneben. Vorher fingen die Ziffern die Hotbar ab.
+    #[test]
+    fn abstand_per_rechtsklick_auf_die_wandkante() {
+        let ctx = egui::Context::default();
+        let mut app = App::with_ctx(ctx.clone());
+        app.ui.show_grid = false;
+        let u = app.unit();
+        // Bestehende Wand 3 m lang, Achse auf y = 0, Dicke 200 mm.
+        assert!(run(
+            &mut app,
+            "draw.wall",
+            json!({"a": [u.from_mm(0.0), u.from_mm(0.0)], "b": [u.from_mm(3000.0), u.from_mm(0.0)], "thickness": 200.0})
+        ));
+
+        // Wand-Funktion starten — noch kein Punkt gesetzt.
+        app.start_tool("draw.wall");
+        rahmen_mit(&ctx, &mut app, Vec::new());
+        assert!(app.tool.as_ref().unwrap().pts.is_empty());
+
+        // Kante der bestehenden Wand mit dem Rechtsklick wählen (der Fang
+        // zieht ihn auf die Wandachse).
+        let kante = V2::new(1000.0, 100.0);
+        klick(&mut app, &ctx, egui::PointerButton::Secondary, kante);
+        assert!(app.hilfslinie_modus, "der Rechtsklick schaltet die Eingabe nicht ein");
+        let anker = app.hilfslinie_anker.expect("der Rechtsklick ist der Anker");
+        assert!(anker.dist(kante) < 150.0, "Anker an der Wand: {anker:?}");
+
+        // 1 m tippen und bestätigen. Die Ziffer darf **keine** Hotbar-Funktion
+        // starten (vorher wechselte sie das Werkzeug und die Eingabe war weg).
+        let p = pos(&app, kante);
+        rahmen_mit(&ctx, &mut app, vec![egui::Event::PointerMoved(p)]);
+        rahmen_mit(&ctx, &mut app, vec![egui::Event::Text("1".to_string())]);
+        assert_eq!(app.ui.typed, "1", "die Ziffer landet nicht im Tippepuffer");
+        assert_eq!(
+            app.tool.as_ref().map(|t| t.action.as_str()),
+            Some("draw.wall"),
+            "die Ziffer hat eine Hotbar-Funktion gestartet"
+        );
+        rahmen_mit(
+            &ctx,
+            &mut app,
+            vec![egui::Event::Key {
+                key: egui::Key::Enter,
+                physical_key: None,
+                pressed: true,
+                repeat: false,
+                modifiers: egui::Modifiers::NONE,
+            }],
+        );
+
+        let h = app.hilfslinie.expect("die getippte Länge setzt keine Hilfslinie");
+        assert!((h.laenge() - 1000.0).abs() < 1.0, "Länge 1 m: {}", h.laenge());
+        // Ohne Zeigerrichtung läuft sie **senkrecht** auf der Wand.
+        let laengs = V2::new(1.0, 0.0);
+        let strecke = h.b - h.a;
+        assert!(
+            strecke.normalized().dot(laengs).abs() < 0.01,
+            "die Hilfslinie steht nicht senkrecht auf der Wand: {strecke:?}"
+        );
+        assert!(h.a.dist(anker) < 1.0, "Anfang am Anker: {:?}", h.a);
+
+        // Zurück in der Wand-Funktion: ein Klick zeichnet die neue Wand am
+        // Ende der Hilfslinie.
+        klick(&mut app, &ctx, egui::PointerButton::Primary, V2::new(2500.0, h.b.y));
+        let w = waende(&app);
+        assert_eq!(w.len(), 2, "zwei Wände: {w:?}");
+        assert!(
+            w[1].0.dist(h.b) < 1.0,
+            "die neue Wand beginnt am Ende der Hilfslinie: {:?}",
+            w[1]
+        );
+        // Der Anfang der neuen Wand liegt 1 m neben der bestehenden — der
+        // eingegebene Abstand, quer gemessen.
+        assert!(
+            (w[1].0.y - anker.y - 1000.0).abs() < 1.0,
+            "Abstand zur Wand: {} mm",
+            w[1].0.y - anker.y
+        );
     }
 
     /// Der Ablauf aus dem Ticket: 1 m Wand, Rechtsklick, **Länge 1 m getippt**,

@@ -22,8 +22,11 @@ fn kette(pts: &[[f64; 2]], line_pos: [f64; 2], axis: &str) -> (Session, u64) {
         .execute(
             "dim.chain",
             // DIN-Bild 3 zeichnet die Maßhilfslinie — die Vorgabe des
-            // Objekts ist seit T0226 aus, hier ausdrücklich an.
-            &json!({ "pts": pts, "line_pos": line_pos, "axis": axis, "ext_lines": true }),
+            // Objekts ist seit T0226 aus, hier ausdrücklich an. Das
+            // Punktsymbol der Messpunkte (T0227) ist abgeschaltet: hier zählen
+            // nur die Linien der Bemaßung selbst.
+            &json!({ "pts": pts, "line_pos": line_pos, "axis": axis,
+                     "ext_lines": true, "symbol": "" }),
         )
         .expect("Maßkette");
     (s, r["created"][0].as_u64().expect("id"))
@@ -36,7 +39,8 @@ fn einzelmass() -> (Session, u64) {
     let r = s
         .execute(
             "dim.linear",
-            &json!({ "a": [0.0, 0.0], "b": [3.0, 0.0], "line_pos": [1.5, -0.6], "ext_lines": true }),
+            &json!({ "a": [0.0, 0.0], "b": [3.0, 0.0], "line_pos": [1.5, -0.6],
+                     "ext_lines": true, "symbol": "" }),
         )
         .expect("Maß");
     (s, r["created"][0].as_u64().expect("id"))

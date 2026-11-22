@@ -53,6 +53,10 @@ die **Vorgabe** ihrer Ebene und lassen sich wie jede andere Taste ändern.
    **Verlängerung** (Eigenschaften-Panel, Gruppe „Maß“): Maßhilfslinien von den
    Messpunkten zur Maßlinie. Vorgabe **aus** — die Maßzahl steht allein an der
    Maßlinie; eingeschaltet zeichnet jeder Messpunkt seine Hilfslinie.
+   **Symbol** (Gruppe „Maß“): die Marke, die **jeder Messpunkt** trägt — eine
+   Auswahl aus der Blockbibliothek (Kategorie „Punkt Symbole“), Vorgabe
+   **Schrägstrich** (Fadenkreuz mit 45°-Strich). „Kein Symbol“ nimmt die Marke
+   weg; die Marke wächst mit dem Zeichnungsmaßstab wie jedes Punktsymbol.
 4. **Hotbar**: Tasten `1`–`0`. Aktives Werkzeug + Klick auf einen leeren Slot verknüpft es.
    Läuft das **Einfügen eines Blocks**, nimmt der angeklickte Slot den Block auf (der Slot
    zeigt dann die Miniaturaansicht des Blocks, sein Tooltip den Blocknamen); die Taste `1`–`0`
@@ -317,6 +321,10 @@ ausgeblendet.
   vom zuletzt gesetzten Punkt des Zuges aus und schreibt ihre Länge neben den Zeiger. Die Länge
   wird danach angegeben — mit dem Zeiger und einem **Linksklick**, oder **getippt + `Enter`**
   (`1`, `1,5`, `2500`). Der Klick setzt dabei **nur die Hilfslinie**, keinen Punkt des Objekts.
+  **Abstand zu einer bestehenden Wand**: Wand-Funktion starten, die Wand mit dem Rechtsklick
+  anvisieren (ohne vorher gesetzten Punkt ist der Klickpunkt der Anfang), `1` tippen, `Enter` —
+  die Hilfslinie steht dann **senkrecht** auf dieser Wand, weil der Zeiger auf dem Anfang steht
+  und keine Richtung vorgibt. Die Ziffern gehören dabei der Längeneingabe, nicht der Hotbar.
   Danach steht die Strecke wie eine normale Linie in der Zeichnung: zwei Endkreuze, die Länge in
   der Mitte, der Zeiger rastet auf ihrem Fußpunkt ein (Statusleiste „Hilfslinie“); ein Endpunkt
   oder Schnittpunkt an derselben Stelle hat Vorrang. Der **Stift springt an ihr Ende** — die
