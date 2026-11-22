@@ -323,6 +323,16 @@ Mit dem Nutzer abgestimmt — nicht „verbessern“:
   `Sheet::viewports_alt` wird nur noch beim Laden gelesen (`persist::normalize_sheet_viewports`).
   Den Inhalt (die Zeichnung im Maßstab) rendert weiterhin `render::render_viewport`; der Rahmen
   kommt aus `render_sheet`.
+  **Angezeigte Layer (T0238)** wählt das Eigenschaften-Panel: eine Liste **aller** Layer,
+  nach Plänen gruppiert, jede Zeile mit Häkchen; die Checkbox eines Plans schaltet alle
+  seine Layer gemeinsam (`props::plan_layer_umschalten`), eine Layerzeile genau einen
+  (`props::layer_umschalten`). Gespeichert ist `Viewport::layers: Option<Vec<Id>>` — `None`
+  heißt „alle sichtbaren“ und ist der Stand jeder alten Datei; sind wieder alle Layer
+  gewählt, schreibt das Panel `null` zurück, damit später angelegte Layer von selbst
+  erscheinen. Geschrieben über `modify.set` (Schlüssel `layers`) bzw. `sheet.update_viewport`;
+  gelesen hat es der Renderer längst (`RenderCtx::layer_filter` → `layer_ok`). Prüfweg:
+  `cargo test -p jjcad-core --test ansichtsfenster` und
+  `cargo test -p jjcad-gui tests_ansichtsfenster_layer`; Prüfbild `--demo "selviewport,panelslinks"`.
   **Ansichtsbereich anpassen (T0158)** ist ein Schalter im Eigenschaften-Panel
   (`UiState::vp_edit`): solange er an ist, gehören die Bewegungsfunktionen dem Fenster statt dem
   Blatt — Mitteltaste/Leertaste+Ziehen schieben den Ausschnitt (`canvas::viewport_ziehen`),

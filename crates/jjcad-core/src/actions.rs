@@ -1640,6 +1640,7 @@ pub fn viewport_info(einheit: Unit, vp: &Viewport) -> Value {
         "center_mm": vp.center.to_array(),
         "units": u.short(),
         "show_frame": vp.show_frame,
+        "layers": vp.layers,
     })
 }
 
@@ -3860,6 +3861,29 @@ pub fn execute(doc: &mut Document, id: &str, params: &Value) -> Result<Value, St
                             if let Some(n) = p.text("name") {
                                 vp.name = n;
                             }
+                            // Angezeigte Layer (T0238): `layers: null` heißt
+                            // „alle sichtbaren“, sonst zählt die Liste die
+                            // Layer auf, die im Fenster erscheinen.
+                            if let Some(v) = p.v.get("layers") {
+                                if v.is_null() {
+                                    vp.layers = None;
+                                } else if let Some(arr) = v.as_array() {
+                                    let ids: Vec<Id> =
+                                        arr.iter().filter_map(|x| x.as_u64()).collect();
+                                    if ids.len() != arr.len() {
+                                        return Err(
+                                            "layers muss eine Liste von Layer-Kennungen sein"
+                                                .to_string(),
+                                        );
+                                    }
+                                    vp.layers = Some(ids);
+                                } else {
+                                    return Err(
+                                        "layers muss eine Liste von Layer-Kennungen oder null sein"
+                                            .to_string(),
+                                    );
+                                }
+                            }
                         }
                         _ => {}
                     }
@@ -4486,6 +4510,14 @@ pub fn execute(doc: &mut Document, id: &str, params: &Value) -> Result<Value, St
             viewport_center(&p, vp)?;
             if let Some(f) = p.boolean("show_frame") {
                 vp.show_frame = f;
+            }
+            // Angezeigte Layer (T0238); `null` = alle sichtbaren.
+            if let Some(v) = p.v.get("layers") {
+                if v.is_null() {
+                    vp.layers = None;
+                } else if let Some(arr) = v.as_array() {
+                    vp.layers = Some(arr.iter().filter_map(|x| x.as_u64()).collect());
+                }
             }
             let info = viewport_info(einheit, vp);
             Ok(json!({"ok": true, "viewport": vid, "viewport_info": info}))

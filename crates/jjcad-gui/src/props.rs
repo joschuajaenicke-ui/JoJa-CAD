@@ -4449,6 +4449,71 @@ pub fn viewport(app: &mut App, ui: &mut Ui, ziel: Ziel) {
         ui.label(theme::faint(jjcad_core::i18n::tr("gui.props.aus_den_klicks")));
     }
 
+    // T0238: Angezeigte Layer. Eine Liste **aller** Layer der Zeichnung, nach
+    // Plänen gruppiert, jede Zeile mit Häkchen. Die Checkbox eines Plans
+    // schaltet alle seine Layer gemeinsam. `None` am Objekt heißt „alle
+    // sichtbaren“ — die Liste zeigt dann überall ein Häkchen.
+    abschnitt(ui, jjcad_core::i18n::tr("gui.props.layer"));
+    zeile("layer");
+    let alle_layer: Vec<Id> = app.doc().layers.iter().map(|l| l.id).collect();
+    let gewaehlt = match &vp {
+        Some(v) => viewport_layer(v, &alle_layer),
+        // Beim Aufziehen gibt es noch kein Objekt: ein neues Fenster zeigt alle.
+        None => alle_layer.clone(),
+    };
+    let zeilen: Vec<(String, Vec<(Id, String)>)> = app
+        .doc()
+        .plans
+        .iter()
+        .map(|p| {
+            (
+                p.name.clone(),
+                app.doc()
+                    .layers_of_plan(p.id)
+                    .iter()
+                    .map(|l| (l.id, l.name.clone()))
+                    .collect(),
+            )
+        })
+        .collect();
+    let mut wahl: Option<Vec<Id>> = None;
+    // Keine eigene Scrollfläche: das Panel scrollt bereits, zwei ineinander
+    // verschachtelte Radflächen wären eine Falle (T0222).
+    for (plan_name, layer) in &zeilen {
+        if layer.is_empty() {
+            continue;
+        }
+        let plan_layer: Vec<Id> = layer.iter().map(|(id, _)| *id).collect();
+        let mut an = plan_layer.iter().all(|id| gewaehlt.contains(id));
+        let antwort = ui.add_enabled(
+            !gesperrt,
+            egui::Checkbox::new(&mut an, egui::RichText::new(plan_name).strong()),
+        );
+        if antwort.changed() {
+            wahl = Some(plan_layer_umschalten(&gewaehlt, &plan_layer));
+        }
+        ui.indent(("vp_layer", plan_name.as_str()), |ui| {
+            for (id, name) in layer {
+                let mut an = gewaehlt.contains(id);
+                let antwort =
+                    ui.add_enabled(!gesperrt, egui::Checkbox::new(&mut an, name.as_str()));
+                if antwort.changed() {
+                    wahl = Some(layer_umschalten(&gewaehlt, *id));
+                }
+            }
+        });
+    }
+    if let (Some(id), Some(neu)) = (ziel.id(), wahl) {
+        // Zeigt das Fenster wieder alle Layer, steht `null` in der Datei —
+        // so erscheinen später angelegte Layer von selbst.
+        let wert = if neu.len() == alle_layer.len() {
+            serde_json::Value::Null
+        } else {
+            serde_json::json!(neu)
+        };
+        setzen(app, &serde_json::json!({"ids": [id], "layers": wert}));
+    }
+
     if let Some(id) = ziel.id() {
         let mut params = serde_json::json!({"ids": [id]});
         let mut geaendert = false;
@@ -4480,6 +4545,50 @@ pub fn viewport(app: &mut App, ui: &mut Ui, ziel: Ziel) {
             setzen(app, &params);
         }
     }
+}
+
+/// Angezeigte Layer eines Ansichtsfensters (T0238).
+///
+/// `Viewport::layers` mit `None` heißt „alle sichtbaren Layer“; für die
+/// Häkchenliste wird daraus die Liste **aller** Layer der Zeichnung. Die
+/// Reihenfolge folgt der Zeichnung, nicht der gespeicherten Liste.
+pub fn viewport_layer(vp: &jjcad_core::model::Viewport, alle: &[Id]) -> Vec<Id> {
+    match &vp.layers {
+        Some(list) => alle.iter().copied().filter(|id| list.contains(id)).collect(),
+        None => alle.to_vec(),
+    }
+}
+
+/// Klick auf die Checkbox **eines Plans** im Ansichtsfenster (T0238): Sind
+/// alle seine Layer gezeigt, nimmt der Klick sie alle heraus; sonst ergänzt er
+/// die fehlenden. Ein Klick auf den Plan schaltet damit die ganze Gruppe.
+pub fn plan_layer_umschalten(gewaehlt: &[Id], plan_layer: &[Id]) -> Vec<Id> {
+    if plan_layer.iter().all(|id| gewaehlt.contains(id)) {
+        gewaehlt
+            .iter()
+            .copied()
+            .filter(|id| !plan_layer.contains(id))
+            .collect()
+    } else {
+        let mut neu = gewaehlt.to_vec();
+        for id in plan_layer {
+            if !neu.contains(id) {
+                neu.push(*id);
+            }
+        }
+        neu
+    }
+}
+
+/// Klick auf die Checkbox **eines Layers** im Ansichtsfenster (T0238).
+pub fn layer_umschalten(gewaehlt: &[Id], id: Id) -> Vec<Id> {
+    let mut neu = gewaehlt.to_vec();
+    if let Some(pos) = neu.iter().position(|x| *x == id) {
+        neu.remove(pos);
+    } else {
+        neu.push(id);
+    }
+    neu
 }
 
 /// Hat diese Objektart eine Linie (Farbe, Stärke, Linientyp)?
@@ -6793,5 +6902,170 @@ mod tests_masskette_symbol {
         klick(&mut app, eintrag.center(), 4.0);
 
         assert_eq!(symbol(&app, id), "", "leer heißt kein Symbol");
+    }
+}
+
+/// Angezeigte Layer im Ansichtsfenster (T0238): Die Häkchenliste im
+/// Eigenschaften-Panel schreibt `Viewport::layers`. Ein Klick auf den Plan
+/// schaltet alle seine Layer, ein Klick auf eine Zeile genau einen.
+#[cfg(test)]
+mod tests_ansichtsfenster_layer {
+    use super::*;
+
+    fn bild(app: &mut App, ereignisse: Vec<egui::Event>, zeit: f64) -> egui::FullOutput {
+        let raw = egui::RawInput {
+            screen_rect: Some(egui::Rect::from_min_size(
+                egui::Pos2::ZERO,
+                egui::Vec2::new(1200.0, 950.0),
+            )),
+            time: Some(zeit),
+            predicted_dt: 0.016,
+            events: ereignisse,
+            ..Default::default()
+        };
+        app.ctx.clone().run(raw, |ctx| {
+            egui::SidePanel::right("eigenschaften")
+                .exact_width(280.0)
+                .show(ctx, |ui| crate::panels::properties(app, ui));
+        })
+    }
+
+    fn texte(out: &egui::FullOutput) -> Vec<(String, egui::Rect)> {
+        fn lauf(s: &egui::Shape, acc: &mut Vec<(String, egui::Rect)>) {
+            match s {
+                egui::Shape::Text(t) => {
+                    let r = t.galley.rect.translate(t.pos.to_vec2());
+                    acc.push((t.galley.text().to_string(), r));
+                }
+                egui::Shape::Vec(list) => {
+                    for s in list {
+                        lauf(s, acc);
+                    }
+                }
+                _ => {}
+            }
+        }
+        let mut acc = Vec::new();
+        for cs in &out.shapes {
+            lauf(&cs.shape, &mut acc);
+        }
+        acc
+    }
+
+    fn flaeche(out: &egui::FullOutput, text: &str) -> egui::Rect {
+        texte(out)
+            .into_iter()
+            .find(|(t, _)| t.trim() == text)
+            .unwrap_or_else(|| {
+                let alle: Vec<String> = texte(out).into_iter().map(|(t, _)| t).collect();
+                panic!("Text „{text}“ nicht im Panel: {alle:?}")
+            })
+            .1
+    }
+
+    fn knopf(pos: egui::Pos2, pressed: bool) -> egui::Event {
+        egui::Event::PointerButton {
+            pos,
+            button: egui::PointerButton::Primary,
+            pressed,
+            modifiers: Default::default(),
+        }
+    }
+
+    fn klick(app: &mut App, ziel: egui::Pos2, zeit: f64) {
+        let _ = bild(app, vec![egui::Event::PointerMoved(ziel)], zeit);
+        let _ = bild(app, vec![knopf(ziel, true)], zeit + 0.05);
+        let _ = bild(app, vec![knopf(ziel, false)], zeit + 0.1);
+        let _ = bild(app, Vec::new(), zeit + 0.15);
+    }
+
+    /// App mit ausgewähltem Ansichtsfenster auf dem ersten Blatt.
+    fn app_mit_fenster() -> (App, Id) {
+        let mut app = App::with_ctx(egui::Context::default());
+        let vid = app
+            .doc()
+            .sheets[0]
+            .viewports()
+            .next()
+            .map(|(e, _)| e.id)
+            .expect("Blatt hat ein Ansichtsfenster");
+        // Das Panel liest `doc.ents()` — im Modell läge das Ansichtsfenster
+        // nicht darin, es ist ein Blattobjekt. Der Raumwechsel leert die
+        // Auswahl, sie wird deshalb danach gesetzt.
+        let sid = app.doc().sheets[0].id;
+        app.session_mut().set_space(Some(sid));
+        app.session_mut().selection = vec![vid];
+        (app, vid)
+    }
+
+    fn layer(app: &App, vid: Id) -> Option<Vec<Id>> {
+        app.doc().sheets[0].viewport(vid).map(|vp| vp.layers.clone()).flatten()
+    }
+
+    /// Die Liste aller Layer, wie sie das Panel zeigt.
+    #[test]
+    fn panel_zeigt_alle_layer_mit_haken() {
+        let (mut app, _) = app_mit_fenster();
+        let out = bild(&mut app, Vec::new(), 1.0);
+        let alle = texte(&out);
+        let namen: Vec<&str> = alle.iter().map(|(t, _)| t.trim()).collect();
+        for erwartet in ["Plan 1", "Zeichnung", "Architektur", "Beschriftung", "Blöcke"] {
+            assert!(
+                namen.contains(&erwartet),
+                "„{erwartet}“ fehlt in der Layerliste: {namen:?}"
+            );
+        }
+    }
+
+    /// Ein Klick auf die Checkbox des Plans nimmt alle seine Layer heraus;
+    /// ein zweiter Klick holt sie zurück (`null` = alle).
+    #[test]
+    fn plan_haken_schaltet_alle_seine_layer() {
+        let (mut app, vid) = app_mit_fenster();
+        let alle_layer = app.doc().layers.len();
+        assert_eq!(layer(&app, vid), None, "ein neues Fenster zeigt alle Layer");
+
+        let out = bild(&mut app, Vec::new(), 1.0);
+        let plan = flaeche(&out, "Plan 1");
+        klick(&mut app, plan.center(), 2.0);
+        assert_eq!(
+            layer(&app, vid),
+            Some(Vec::new()),
+            "der Planhaken muss alle seine Layer abwählen"
+        );
+
+        let out = bild(&mut app, Vec::new(), 4.0);
+        let plan = flaeche(&out, "Plan 1");
+        klick(&mut app, plan.center(), 5.0);
+        assert_eq!(
+            layer(&app, vid),
+            None,
+            "sind wieder alle Layer gewählt, steht `null` in der Datei ({alle_layer} Layer)"
+        );
+    }
+
+    /// Ein Klick auf eine einzelne Layerzeile lässt die übrigen stehen.
+    #[test]
+    fn layer_haken_schaltet_genau_einen_layer() {
+        let (mut app, vid) = app_mit_fenster();
+        let architektur = app
+            .doc()
+            .layers
+            .iter()
+            .find(|l| l.name == "Architektur")
+            .map(|l| l.id)
+            .expect("Layer „Architektur“");
+
+        let out = bild(&mut app, Vec::new(), 1.0);
+        let zeile = flaeche(&out, "Architektur");
+        klick(&mut app, zeile.center(), 2.0);
+
+        let wahl = layer(&app, vid).expect("nach dem Abwählen steht eine Liste");
+        assert!(!wahl.contains(&architektur), "„Architektur“ ist noch gewählt");
+        assert_eq!(
+            wahl.len(),
+            app.doc().layers.len() - 1,
+            "nur ein Layer darf fehlen: {wahl:?}"
+        );
     }
 }
