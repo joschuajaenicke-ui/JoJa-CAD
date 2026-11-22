@@ -4,6 +4,17 @@
 
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
+mod aktivieren;
+#[cfg(not(target_os = "linux"))]
+mod aktivieren {
+    //! Ersatz außerhalb von Linux: dort gibt es kein Wayland, `Focus` wirkt.
+    pub fn token_aus_umgebung() -> Option<String> {
+        None
+    }
+    pub fn aktiviere(_frame: &eframe::Frame, _token: &str) -> Result<(), String> {
+        Err("Aktivierung nur unter Wayland".into())
+    }
+}
 mod app;
 mod bildablage;
 mod canvas;
@@ -47,9 +58,16 @@ fn main() -> eframe::Result<()> {
     // T0135: Läuft schon eine Instanz auf dieser Wurzel, übernimmt sie die
     // Arbeit — Zeichnung als Reiter öffnen, sonst Fenster nach vorn holen.
     // Der zweite Prozess endet sofort, statt eine Meldung zu zeigen.
+    // T0224: Das `xdg-activation`-Token dieses Starts reist mit — nur damit
+    // darf die laufende Instanz unter Wayland ihr Fenster aktivieren (ein
+    // selbst erfragtes Token lehnt der Compositor ab).
+    let token = aktivieren::token_aus_umgebung();
     let auftrag = match &datei {
-        Some(d) => instanz::Auftrag::Oeffnen(PathBuf::from(d)),
-        None => instanz::Auftrag::Zeigen,
+        Some(d) => instanz::Auftrag::Oeffnen {
+            pfad: PathBuf::from(d),
+            token: token.clone(),
+        },
+        None => instanz::Auftrag::Zeigen { token },
     };
     // Prüfläufe (`JJCAD_DEMO_UI`) sind keine Arbeit des Benutzers: sie übergeben
     // nichts an ein laufendes Fenster, sondern starten wie bisher.
@@ -181,6 +199,9 @@ fn starte_app(file: Option<String>, sperre: daten::Sperre) -> eframe::Result<()>
         options,
         Box::new(move |cc| {
             let mut app = app::App::new(cc);
+            // T0224: Ein mitgegebenes Aktivierungstoken holt auch ein frisch
+            // gestartetes Fenster nach vorn — eframe reicht es nicht weiter.
+            app.start_mit_token(aktivieren::token_aus_umgebung());
             // Sperrdatei lebt so lange wie die Anwendung.
             app.sperre = Some(sperre);
             // T0141: die gespeicherte Fenstergröße gilt als „normaler“ Stand —

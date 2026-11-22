@@ -1845,6 +1845,11 @@ pub struct App {
     /// T0135: Kanal für eine zweite Instanz — Zeichnung als Reiter öffnen oder
     /// das Fenster nach vorn holen.
     pub instanz: Option<jjcad_core::instanz::Dienst>,
+    /// T0224: Ein Auftrag von außen (Zeichnung geöffnet, Fenster zeigen) soll
+    /// das Fenster in den Vordergrund holen. Der Wunsch wirkt über einige
+    /// Bilder, weil ein Fenstermanager ihn auch ablehnen darf — dann meldet
+    /// der letzte Schritt Aufmerksamkeit an. `None` = nichts zu tun.
+    pub nach_vorn: Option<NachVorn>,
     /// Ablage der Blockdatei für Blöcke, die direkt entstehen (T0142).
     /// Nur für Tests: `None` heißt „wie eingestellt“ (`prefs.blocks_dir()`).
     /// Ohne diesen Weg schriebe ein Test in die Benutzerbibliothek des Nutzers.
@@ -1919,6 +1924,37 @@ impl SeitenPanel {
             SeitenPanel::Blatt => 232.0,
         }
     }
+}
+
+/// T0224: Wie lange ein Auftrag von außen das Fenster nach vorn holen darf.
+///
+/// Ein Fenstermanager darf einen Fokuswunsch ablehnen (Zen-Regel, anderes
+/// Vollbildfenster); dann ist Wiederholen zwecklos. Nach dieser Zeit gibt die
+/// Anwendung auf, damit sie den Nutzer nicht dauerhaft bedrängt.
+pub const NACH_VORN_DAUER: f64 = 3.0;
+
+/// T0224: Ab wann der abgelehnte Wunsch als Aufmerksamkeit gemeldet wird.
+///
+/// Unter **Wayland** ist `ViewportCommand::Focus` wirkungslos (winit reicht
+/// dort nichts weiter); die Aktivierung entscheidet der Compositor. Er kann sie
+/// erst nach einem sichtbaren Anliegen gewähren — `RequestUserAttention` legt
+/// dafür ein `xdg_activation`-Anliegen vor. Kurz warten, damit ein
+/// Fenstermanager, der den Fokus sofort gibt, kein Aufblinken der Taskleiste
+/// erzeugt.
+pub const NACH_VORN_MELDEN: f64 = 0.25;
+
+/// T0224: Ein noch offener Wunsch, das Fenster nach vorn zu holen.
+#[derive(Clone, Debug)]
+pub struct NachVorn {
+    /// Zeitpunkt des Auftrags (egui-Zeit in Sekunden).
+    pub seit: f64,
+    /// `true`, sobald Aufmerksamkeit angemeldet wurde.
+    pub gemeldet: bool,
+    /// `xdg-activation`-Token des Aufrufers, falls eines mitkam (Wayland).
+    pub token: Option<String>,
+    /// `true`, sobald das Token beim Compositor vorgelegt wurde — es gilt
+    /// einmal und wird nicht wiederholt.
+    pub nativ: bool,
 }
 
 impl App {
@@ -2048,6 +2084,7 @@ impl App {
             sicherung: None,
             sicherung_zuletzt: 0.0,
             instanz: None,
+            nach_vorn: None,
             #[cfg(test)]
             test_blockordner: None,
             #[cfg(test)]
@@ -5900,6 +5937,115 @@ impl App {
             move || c.request_repaint()
         };
         self.instanz = jjcad_core::instanz::dienst_starten(&jjcad_core::daten::wurzel(), wecken);
+    }
+
+    /// Verarbeitet die Aufträge einer zweiten Instanz (T0135, T0224).
+    ///
+    /// Eine Zeichnung wird als Reiter geöffnet, ohne Datei kommt nur das
+    /// Fenster nach vorn. **Beides** holt das Fenster nach vorn: vor T0224 tat
+    /// das nur der Auftrag ohne Datei — beim Doppelklick im Dateibrowser wurde
+    /// die Zeichnung zwar geöffnet, blieb aber hinter dem Browser.
+    pub fn auftraege_bearbeiten(
+        &mut self,
+        ctx: &egui::Context,
+        auftraege: Vec<jjcad_core::instanz::Auftrag>,
+        jetzt: f64,
+    ) {
+        for a in auftraege {
+            match a {
+                jjcad_core::instanz::Auftrag::Oeffnen { pfad, token } => {
+                    self.load_document(&pfad);
+                    self.fenster_nach_vorn(ctx, jetzt, token);
+                }
+                jjcad_core::instanz::Auftrag::Zeigen { token } => {
+                    self.fenster_nach_vorn(ctx, jetzt, token)
+                }
+            }
+        }
+    }
+
+    /// Will das Fenster nach vorn holen (T0224).
+    ///
+    /// Drei Schritte, weil kein einzelner auf allen Systemen genügt:
+    /// `Minimized(false)` holt ein eingeklapptes Fenster zurück (ein
+    /// minimiertes Fenster nimmt keinen Fokus an), `Focus` gibt den Wunsch an
+    /// den Fenstermanager (X11: `_NET_ACTIVE_WINDOW`, Windows und macOS: ihr
+    /// jeweiliger Weg). Der Wunsch wird nicht einmalig gestellt, sondern von
+    /// [`App::nach_vorn_betreuen`] über einige Bilder nachgehalten.
+    pub fn fenster_nach_vorn(
+        &mut self,
+        ctx: &egui::Context,
+        jetzt: f64,
+        token: Option<String>,
+    ) {
+        ctx.send_viewport_cmd(egui::ViewportCommand::Minimized(false));
+        ctx.send_viewport_cmd(egui::ViewportCommand::Focus);
+        self.nach_vorn = Some(NachVorn {
+            seit: jetzt,
+            gemeldet: false,
+            token,
+            nativ: false,
+        });
+    }
+
+    /// Übernimmt das Aktivierungstoken des eigenen Starts (T0224).
+    ///
+    /// Wird jjcad frisch aus dem Dateibrowser gestartet, liegt das Token in der
+    /// Umgebung; eframe gibt es nicht an die Fenstererzeugung weiter. Hier wird
+    /// es dem ersten Bild mitgegeben, damit [`App::nach_vorn_betreuen`] es
+    /// vorlegt.
+    pub fn start_mit_token(&mut self, token: Option<String>) {
+        if token.is_some() {
+            self.nach_vorn = Some(NachVorn {
+                seit: 0.0,
+                gemeldet: false,
+                token,
+                nativ: false,
+            });
+        }
+    }
+
+    /// Hält einen offenen Wunsch „nach vorn“ nach (T0224).
+    ///
+    /// Solange das Fenster den Fokus nicht hat, wird der Wunsch wiederholt;
+    /// nach [`NACH_VORN_MELDEN`] meldet die Anwendung zusätzlich Aufmerksamkeit
+    /// an. Unter **Wayland** ist `Focus` wirkungslos — dort entscheidet der
+    /// Compositor, und `RequestUserAttention` ist der einzige Weg, ihm ein
+    /// Anliegen vorzulegen (`xdg_activation`). Hat das Fenster den Fokus
+    /// (oder ist [`NACH_VORN_DAUER`] verstrichen), endet der Wunsch.
+    pub fn nach_vorn_betreuen(&mut self, ctx: &egui::Context, jetzt: f64) -> Option<String> {
+        let Some(mut stand) = self.nach_vorn.clone() else {
+            return None;
+        };
+        if ctx.input(|i| i.focused) {
+            self.nach_vorn = None;
+            return None;
+        }
+        let alter = jetzt - stand.seit;
+        if alter > NACH_VORN_DAUER {
+            self.nach_vorn = None;
+            return None;
+        }
+        // Das Token gilt einmal: hier zurückgeben, der Aufrufer legt es dem
+        // Compositor vor (er hat das Fenster, dieses Modul nicht).
+        let mut vorzulegen = None;
+        if !stand.nativ {
+            stand.nativ = true;
+            vorzulegen = stand.token.clone();
+            self.nach_vorn = Some(stand.clone());
+        }
+        ctx.send_viewport_cmd(egui::ViewportCommand::Focus);
+        if !stand.gemeldet && alter >= NACH_VORN_MELDEN {
+            ctx.send_viewport_cmd(egui::ViewportCommand::RequestUserAttention(
+                egui::UserAttentionType::Critical,
+            ));
+            stand.gemeldet = true;
+            self.nach_vorn = Some(stand);
+        }
+        // Ohne Eingabe käme kein Bild — der Wunsch braucht aber Bilder, um
+        // nachgehalten zu werden.
+        ctx.request_repaint_after(std::time::Duration::from_millis(100));
+        vorzulegen
     }
 
     /// Sicherung (T0129): Pool öffnen, falls noch nicht geschehen.
@@ -11295,12 +11441,16 @@ impl eframe::App for App {
             .as_ref()
             .map(|d| d.abholen())
             .unwrap_or_default();
-        for a in auftraege {
-            match a {
-                jjcad_core::instanz::Auftrag::Oeffnen(pfad) => self.load_document(&pfad),
-                jjcad_core::instanz::Auftrag::Zeigen => {
-                    ctx.send_viewport_cmd(egui::ViewportCommand::Focus)
-                }
+        let jetzt = ctx.input(|i| i.time);
+        self.auftraege_bearbeiten(ctx, auftraege, jetzt);
+        // T0224: Ein Auftrag von außen holt das Fenster nach vorn; der Wunsch
+        // wird über einige Bilder nachgehalten, bis das Fenster den Fokus hat.
+        if let Some(token) = self.nach_vorn_betreuen(ctx, jetzt) {
+            // Wayland: Ohne `xdg-activation` bleibt `Focus` wirkungslos —
+            // das Token des Aufrufers ist der einzige Weg nach vorn. Ein
+            // Fehlschlag ist harmlos, der Fokuswunsch läuft daneben weiter.
+            if let Err(e) = crate::aktivieren::aktiviere(frame, &token) {
+                eprintln!("Aktivierung: {e}");
             }
         }
         // T0102: Bei der Wahl „System“ folgt das Design dem Betriebssystem auch
@@ -11313,7 +11463,6 @@ impl eframe::App for App {
         self.draw_menu(ctx);
         // T0129: Sicherung — Stände anlegen, wenn das Intervall abgelaufen ist.
         // Der Weckruf hält die Prüfung auch ohne Eingabe am Laufen.
-        let jetzt = ctx.input(|i| i.time);
         self.sicherung_tick(jetzt);
         let intervall = (self.prefs.sicherung_einstellungen().intervall_min.max(1) as f64) * 60.0;
         let rest = (intervall - (jetzt - self.sicherung_zuletzt)).max(1.0);
@@ -20498,5 +20647,248 @@ mod tests_blattmanager {
             "das Häkchen hat den Plansatz nicht gesetzt"
         );
         assert_eq!(app.plansatz_ids(), vec![id]);
+    }
+}
+
+/// T0224: Ein Auftrag von außen (Zeichnung geöffnet, Fenster zeigen) holt
+/// JoJa-CAD in den Vordergrund.
+///
+/// Vorher schickte nur der Auftrag „zeigen“ einen Fokuswunsch; beim Doppelklick
+/// im Dateibrowser wurde die Zeichnung zwar geöffnet, das Fenster blieb aber
+/// hinter dem Browser. Geprüft wird der Weg **bis zum Fensterbefehl**: der
+/// Fokuswunsch steht in der Ausgabe des Bildes, in dem der Auftrag ankommt.
+#[cfg(test)]
+mod tests_nach_vorn {
+    use super::*;
+
+    /// Führt ein Bild aus und liefert die Fensterbefehle des Hauptfensters.
+    fn befehle(
+        app: &mut App,
+        zeit: f64,
+        fokus: bool,
+        mut tun: impl FnMut(&mut App, &egui::Context),
+    ) -> Vec<egui::ViewportCommand> {
+        let ctx = app.ctx.clone();
+        let raw = egui::RawInput {
+            time: Some(zeit),
+            focused: fokus,
+            ..Default::default()
+        };
+        let out = ctx.run(raw, |c| tun(app, c));
+        out.viewport_output
+            .get(&egui::ViewportId::ROOT)
+            .map(|v| v.commands.clone())
+            .unwrap_or_default()
+    }
+
+    fn fordert_fokus(befehle: &[egui::ViewportCommand]) -> bool {
+        befehle
+            .iter()
+            .any(|c| matches!(c, egui::ViewportCommand::Focus))
+    }
+
+    fn meldet_aufmerksamkeit(befehle: &[egui::ViewportCommand]) -> bool {
+        befehle.iter().any(|c| {
+            matches!(
+                c,
+                egui::ViewportCommand::RequestUserAttention(
+                    egui::UserAttentionType::Critical
+                )
+            )
+        })
+    }
+
+    /// App mit eigenem Sicherungsordner — ein Testlauf fasst den Pool des
+    /// Nutzers nicht an.
+    fn app() -> App {
+        let mut app = App::with_ctx(egui::Context::default());
+        app.prefs.reset_bindings();
+        app.prefs.sicherungen_pfad = std::env::temp_dir()
+            .join(format!("jjcad-t0224-{}", std::process::id()))
+            .to_string_lossy()
+            .to_string();
+        app
+    }
+
+    /// Eine gespeicherte Zeichnung im Temp-Verzeichnis.
+    fn datei(name: &str) -> std::path::PathBuf {
+        let dir = std::env::temp_dir().join(format!("jjcad-t0224-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let pfad = dir.join(name);
+        let mut doc = jjcad_core::model::Document::new();
+        jjcad_core::persist::save_document(&mut doc, &pfad).expect("speichern");
+        pfad
+    }
+
+    #[test]
+    fn ohne_auftrag_kein_fokuswunsch() {
+        // Gegenprobe: das Bild allein fordert keinen Fokus an.
+        let mut app = app();
+        let befehle = befehle(&mut app, 1.0, true, |app, ctx| {
+            app.auftraege_bearbeiten(ctx, Vec::new(), 1.0)
+        });
+        assert!(!fordert_fokus(&befehle), "ohne Auftrag kein Fokuswunsch");
+    }
+
+    #[test]
+    fn oeffnen_holt_das_fenster_nach_vorn() {
+        let pfad = datei("Aussen.jjcad");
+        let mut app = app();
+        let vorher = app.tabs.len();
+        let befehle = befehle(&mut app, 2.0, false, |app, ctx| {
+            app.auftraege_bearbeiten(
+                ctx,
+                vec![jjcad_core::instanz::Auftrag::Oeffnen {
+                    pfad: pfad.clone(),
+                    token: Some("kwin-1".into()),
+                }],
+                2.0,
+            )
+        });
+        assert!(
+            fordert_fokus(&befehle),
+            "der Auftrag „öffnen“ muss den Fokus anfordern: {befehle:?}"
+        );
+        assert!(
+            befehle
+                .iter()
+                .any(|c| matches!(c, egui::ViewportCommand::Minimized(false))),
+            "ein minimiertes Fenster muss zurückkommen: {befehle:?}"
+        );
+        // Der leere Startreiter wird ersetzt, ein zweiter Reiter entsteht nur
+        // bei vorhandener Arbeit — hier bleibt es bei einem Reiter, der die
+        // übergebene Datei trägt.
+        assert_eq!(app.tabs.len(), vorher, "die Zeichnung öffnet im Reiter");
+        assert_eq!(
+            app.tabs[app.active].session.doc.path.as_deref(),
+            Some(pfad.to_string_lossy().as_ref()),
+            "der Auftrag hat die übergebene Zeichnung geöffnet"
+        );
+        assert!(app.nach_vorn.is_some(), "der Wunsch wird nachgehalten");
+    }
+
+    #[test]
+    fn zeigen_holt_das_fenster_nach_vorn() {
+        let mut app = app();
+        let befehle = befehle(&mut app, 2.0, false, |app, ctx| {
+            app.auftraege_bearbeiten(
+                ctx,
+                vec![jjcad_core::instanz::Auftrag::Zeigen { token: None }],
+                2.0,
+            )
+        });
+        assert!(fordert_fokus(&befehle), "Fokuswunsch fehlt: {befehle:?}");
+        assert_eq!(app.tabs.len(), 1, "„zeigen“ öffnet keine Zeichnung");
+    }
+
+    #[test]
+    fn wunsch_endet_mit_dem_fokus() {
+        let mut app = app();
+        app.nach_vorn = Some(NachVorn {
+            seit: 1.0,
+            gemeldet: false,
+            token: None,
+            nativ: true,
+        });
+        let befehle = befehle(&mut app, 1.1, true, |app, ctx| {
+            let _ = app.nach_vorn_betreuen(ctx, 1.1);
+        });
+        assert!(app.nach_vorn.is_none(), "mit Fokus ist der Wunsch erledigt");
+        assert!(!fordert_fokus(&befehle), "erledigt wird nicht mehr gefordert");
+    }
+
+    #[test]
+    fn wunsch_wird_bis_zur_frist_nachgehalten() {
+        let mut app = app();
+        app.nach_vorn = Some(NachVorn {
+            seit: 1.0,
+            gemeldet: false,
+            token: None,
+            nativ: true,
+        });
+        // Noch kein Fokus, aber innerhalb der Frist: der Wunsch wird wiederholt.
+        let befehle = befehle(&mut app, 1.2, false, |app, ctx| {
+            let _ = app.nach_vorn_betreuen(ctx, 1.2);
+        });
+        assert!(fordert_fokus(&befehle), "der Wunsch wird wiederholt");
+        assert!(
+            app.nach_vorn.is_some(),
+            "vor Ablauf der Frist bleibt der Wunsch offen"
+        );
+    }
+
+    #[test]
+    fn wunsch_gibt_nach_der_frist_auf() {
+        let mut app = app();
+        app.nach_vorn = Some(NachVorn {
+            seit: 1.0,
+            gemeldet: false,
+            token: None,
+            nativ: true,
+        });
+        let befehle = befehle(&mut app, 1.0 + NACH_VORN_DAUER + 0.1, false, |app, ctx| {
+            let _ = app.nach_vorn_betreuen(ctx, 1.0 + NACH_VORN_DAUER + 0.1);
+        });
+        assert!(
+            app.nach_vorn.is_none(),
+            "nach der Frist bedrängt die Anwendung nicht weiter"
+        );
+        assert!(!fordert_fokus(&befehle), "kein Fokuswunsch mehr");
+    }
+
+    /// T0224: Das Aktivierungstoken des Aufrufers wird **einmal** vorgelegt —
+    /// ein Token gilt beim Compositor nur für einen Vorgang.
+    #[test]
+    fn token_wird_einmal_vorgelegt() {
+        let mut app = app();
+        app.nach_vorn = Some(NachVorn {
+            seit: 1.0,
+            gemeldet: false,
+            token: Some("kwin-9".into()),
+            nativ: false,
+        });
+        let mut erstes = None;
+        let _ = befehle(&mut app, 1.05, false, |app, ctx| {
+            erstes = app.nach_vorn_betreuen(ctx, 1.05);
+        });
+        let mut zweites = None;
+        let _ = befehle(&mut app, 1.10, false, |app, ctx| {
+            zweites = app.nach_vorn_betreuen(ctx, 1.10);
+        });
+        assert_eq!(erstes.as_deref(), Some("kwin-9"), "das Token kommt einmal");
+        assert_eq!(zweites, None, "ein Token darf nicht zweimal vorgelegt werden");
+    }
+
+    /// Der Weg für Wayland: dort ist `Focus` wirkungslos, `RequestUserAttention`
+    /// legt dem Compositor ein `xdg_activation`-Anliegen vor — genau einmal.
+    #[test]
+    fn ohne_fokus_meldet_er_einmal_aufmerksamkeit() {
+        let mut app = app();
+        app.nach_vorn = Some(NachVorn {
+            seit: 1.0,
+            gemeldet: false,
+            token: None,
+            nativ: true,
+        });
+        let spaet = 1.0 + NACH_VORN_MELDEN + 0.05;
+        let erstes = befehle(&mut app, spaet, false, |app, ctx| {
+            let _ = app.nach_vorn_betreuen(ctx, spaet);
+        });
+        assert!(
+            meldet_aufmerksamkeit(&erstes),
+            "ohne Fokus muss Aufmerksamkeit gemeldet werden: {erstes:?}"
+        );
+        assert!(
+            app.nach_vorn.as_ref().map(|n| n.gemeldet).unwrap_or(false),
+            "die Meldung ist vermerkt"
+        );
+        // Zweites Bild: nicht noch einmal.
+        let zweites = befehle(&mut app, spaet + 0.1, false, |app, ctx| {
+            let _ = app.nach_vorn_betreuen(ctx, spaet + 0.1);
+        });
+        assert!(
+            !meldet_aufmerksamkeit(&zweites),
+            "die Meldung wird nicht wiederholt: {zweites:?}"
+        );
     }
 }

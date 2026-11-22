@@ -1098,6 +1098,24 @@ Mit dem Nutzer abgestimmt — nicht „verbessern“:
   `canvas::tests_hoehenkoten::vorschau_der_schnitt_kote_zeigt_die_hoehen`;
   Prüfbild `--demo koteschnitt`.
 
+- **Nach vorn holen (T0224)**: Ein Auftrag von außen — Zeichnung aus dem
+  Dateibrowser geöffnet oder eine zweite Instanz ohne Datei gestartet — holt das
+  Fenster in den Vordergrund (`App::fenster_nach_vorn`, `App::nach_vorn_betreuen`).
+  Drei Schritte, weil keiner allein genügt: `Minimized(false)` (ein minimiertes
+  Fenster nimmt keinen Fokus an), `ViewportCommand::Focus` (X11:
+  `_NET_ACTIVE_WINDOW`) und — unter **Wayland**, wo `Focus` wirkungslos ist —
+  das `xdg-activation`-Protokoll (`crates/jjcad-gui/src/aktivieren.rs`).
+  **Das Token reist mit**: der Aufrufer hat für seinen Klick ein Token erhalten
+  (`XDG_ACTIVATION_TOKEN`), `main.rs` legt es dem `instanz::Auftrag` bei, und die
+  laufende Instanz legt es dem Compositor vor — ein selbst erfragtes Token lehnt
+  KWin ab („not-granted“, gemessen). Der Wunsch wird über
+  `NACH_VORN_DAUER` = 3 s nachgehalten und endet mit dem Fokus; nach
+  `NACH_VORN_MELDEN` = 0,25 s meldet die Anwendung zusätzlich Aufmerksamkeit an,
+  falls der Fenstermanager den Fokus verweigert. Prüfweg:
+  `cargo test -p jjcad-gui tests_nach_vorn` (8 Tests) und `-p jjcad-core
+  instanz`; am laufenden Programm gemessen mit eigenem KWin
+  (`kwin_wayland --virtual`, eigener Bus): vorher blieb der Fokus beim zweiten
+  Fenster, danach schreibt KWin „activating …“ und das Fenster nimmt den Fokus.
 - **Wiederherstellen-Fenster (T0223)**: Einstellungen ▸ Sicherung ▸
   „Wiederherstellen“ öffnet ein eigenes Fenster (`crates/jjcad-gui/src/wiederherstellen.rs`).
   Links stehen die Zeichnungen aus dem Manifest (`Sicherung::zeichnungen()`, ein Eintrag je
