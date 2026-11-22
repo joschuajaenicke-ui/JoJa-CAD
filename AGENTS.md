@@ -567,6 +567,17 @@ Mit dem Nutzer abgestimmt — nicht „verbessern“:
   für jeden Winkel. Alte Dateien rechnet `persist::migrate_legacy_dims` beim
   Laden um (`axis` → `angle`). Prüfweg: `cargo test -p jjcad-core --test
   masskette_rotieren`, Prüfbild `--demo masskettengedreht`.
+- **Verlängerung zu den Messpunkten (T0226)**: Die Maßhilfslinien von den
+  Messpunkten zur Maßlinie sind ein Schalter je Maßkette
+  (`EntityKind::Dim::ext_lines`, `#[serde(default)]`, Vorgabe **aus**). Im
+  Eigenschaften-Panel steht er als Häkchen „Verlängerung“ in der Gruppe „Maß“
+  und wird über `modify.set` mit `ext_lines` geschrieben; beim Erzeugen nimmt
+  `ToolOptions::dim_ext` (Vorgabe aus) den Wert mit, die Vorschau
+  (`render::preview_dim`, letztes Argument) zeichnet dieselbe Form. Gezeichnet
+  wird die Hilfslinie in `render_dim_chain` nur bei gesetztem Schalter —
+  Maßlinie, Begrenzungsstriche und Maßzahl bleiben unverändert. Alte Dateien
+  und DIN-Prüfungen schalten sie ausdrücklich ein (`ext_lines: true`).
+  Prüfweg: `cargo test -p jjcad-core --test masskette_verlaengerung`.
 - **Reihenfolge der Messpunkte (T0195)**: Die Reihenfolge in `Dim::pts` **ist**
   die Reihenfolge der Maßzahlen — gemessen wird immer zwischen zwei
   aufeinanderfolgenden Punkten. Ein gezogener Messpunkt kann zwischen seine

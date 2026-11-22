@@ -1704,6 +1704,7 @@ fn dim_kette(
             line_pos,
             angle,
             override_text: p.text("text"),
+            ext_lines: p.boolean_or("ext_lines", false),
         },
     );
     apply_common(doc, &mut e, p, layer);
@@ -2435,6 +2436,7 @@ pub fn execute(doc: &mut Document, id: &str, params: &Value) -> Result<Value, St
                     line_pos,
                     angle,
                     override_text: p.text("text"),
+                    ext_lines: p.boolean_or("ext_lines", false),
                 },
             );
             apply_common(doc, &mut e, &p, layer);
@@ -3619,9 +3621,16 @@ pub fn execute(doc: &mut Document, id: &str, params: &Value) -> Result<Value, St
                             line_pos,
                             angle,
                             override_text,
+                            ext_lines,
                         } => {
                             if let Some(v) = text {
                                 *override_text = Some(v);
+                            }
+                            // Verlängerung zu den Messpunkten (T0226): der
+                            // Schalter im Eigenschaften-Panel schickt hier
+                            // `ext_lines`.
+                            if let Some(v) = p.boolean("ext_lines") {
+                                *ext_lines = v;
                             }
                             // Orientierung: `angle` (Grad) setzt sie frei,
                             // `axis` ist die bequeme Eingabeweise (T0166).

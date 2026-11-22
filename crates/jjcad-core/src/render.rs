@@ -976,6 +976,7 @@ pub fn preview_dim(
     angle: f64,
     layer: Id,
     color: Option<Color>,
+    ext_lines: bool,
 ) -> DisplayList {
     let mut e = Entity::new(
         0,
@@ -985,6 +986,7 @@ pub fn preview_dim(
             line_pos,
             angle,
             override_text: None,
+            ext_lines,
         },
     );
     // Wie die Action: ohne ausdrückliche Farbe ist neue Bemaßung schwarz.
@@ -1588,6 +1590,7 @@ pub fn render_entity(
             line_pos,
             angle,
             override_text,
+            ext_lines,
         } => {
             render_dim_chain(
                 ctx,
@@ -1597,6 +1600,7 @@ pub fn render_entity(
                 *line_pos,
                 *angle,
                 override_text.as_deref(),
+                *ext_lines,
                 xf,
                 dl,
             );
@@ -4537,6 +4541,7 @@ fn render_dim_chain(
     line_pos: Vec2,
     angle: f64,
     override_text: Option<&str>,
+    ext_lines: bool,
     xf: Affine,
     dl: &mut DisplayList,
 ) {
@@ -4573,17 +4578,21 @@ fn render_dim_chain(
         entity: e.id,
         layer: e.layer,
     });
-    // Hilfslinien an allen Punkten — schmal wie die Maßlinie (Tabelle 2, 01.1.8)
-    for (w, d) in pts.iter().zip(projected.iter()) {
-        let dd = (*d - *w).normalized();
-        let s = *w + dd * ext_gap.min(w.dist(*d) * 0.5);
-        let t = *d + dd * over;
-        dl.push(Prim {
-            shape: Shape::Line(xf.apply(s), xf.apply(t)),
-            style: *st,
-            entity: e.id,
-            layer: e.layer,
-        });
+    // Verlängerung zu den Messpunkten — schmal wie die Maßlinie
+    // (Tabelle 2, 01.1.8). Vorgabe aus (T0226): ohne sie steht die Maßzahl
+    // allein an der Maßlinie.
+    if ext_lines {
+        for (w, d) in pts.iter().zip(projected.iter()) {
+            let dd = (*d - *w).normalized();
+            let s = *w + dd * ext_gap.min(w.dist(*d) * 0.5);
+            let t = *d + dd * over;
+            dl.push(Prim {
+                shape: Shape::Line(xf.apply(s), xf.apply(t)),
+                style: *st,
+                entity: e.id,
+                layer: e.layer,
+            });
+        }
     }
     // Begrenzungszeichen **einmal je Basispunkt**: liegen zwei Segmente
     // aneinander, standen bisher zwei Striche (bei Pfeil und Punkt sichtbar

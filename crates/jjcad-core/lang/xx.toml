@@ -1904,6 +1904,8 @@
 # hintergrund = "Hintergrund"
 # keine_flaeche = "keine Fläche"
 # variiert_die_objekte_unterscheiden_sich_eine_aenderung_s = "*variiert* — die Objekte unterscheiden sich; eine Änderung setzt alle gleich"
+# verlaengerung = "Verlängerung"
+# verlaengerung_hinweis = "Maßhilfslinien von den Messpunkten zur Maßlinie zeichnen — die Verlängerung, auf der die Maßzahl steht"
 # verschieben = "Verschieben"
 # volumen = "Volumen"
 # volumen_x_m3 = "Volumen {wert1} m³"

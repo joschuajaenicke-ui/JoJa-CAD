@@ -3772,6 +3772,7 @@ fn draw_tool_preview(
                     angle,
                     app.doc().current_layer,
                     app.ui.pending.color,
+                    app.options.dim_ext,
                 );
                 paint_vorschau_dl(app, p, view, &w2s, &dl);
             }
@@ -3795,6 +3796,7 @@ fn draw_tool_preview(
                         pts,
                         line_pos,
                         angle,
+                        ext_lines,
                         ..
                     } = &e.kind
                     {
@@ -3827,6 +3829,7 @@ fn draw_tool_preview(
                             *angle,
                             e.layer,
                             app.ui.pending.color,
+                            *ext_lines,
                         );
                         paint_vorschau_dl(app, p, view, &w2s, &dl);
                     }
@@ -6477,7 +6480,8 @@ pub fn finish_tool(app: &mut App, from_enter: bool) {
                     "dim.chain",
                     json!({"pts": pts.iter().map(|p| [app.unit().from_mm(p.x), app.unit().from_mm(p.y)]).collect::<Vec<_>>(),
                            "line_pos": [app.unit().from_mm(line_pos.x), app.unit().from_mm(line_pos.y)],
-                           "angle": angle.to_degrees()}),
+                           "angle": angle.to_degrees(),
+                           "ext_lines": app.options.dim_ext}),
                 );
             } else {
                 app.toast(jjcad_core::i18n::tr("gui.canvas.masskette_zwei_messpunkte"));
@@ -7515,6 +7519,8 @@ fn tool_click_at(app: &mut App, w: V2, raw: V2) {
                 if !app.options.dim_text.trim().is_empty() {
                     params["text"] = json!(app.options.dim_text.clone());
                 }
+                // Verlängerung zu den Messpunkten (T0226).
+                params["ext_lines"] = json!(app.options.dim_ext);
                 let _ = run(app, "dim.linear", params);
                 app.tool = None;
             } else {

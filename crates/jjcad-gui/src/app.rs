@@ -747,6 +747,9 @@ pub struct ToolOptions {
     pub dim_axis: Option<DimAxis>,
     /// Eigener Maßtext des nächsten Maßes (leer = automatisch berechnet).
     pub dim_text: String,
+    /// Verlängerung zu den Messpunkten beim nächsten Maß (T0226) — Vorgabe
+    /// aus, wie die Vorgabe des Objekts.
+    pub dim_ext: bool,
     pub offset_dist: f64,
     /// Gemerkter Abstand des Werkzeugs „Parallele" (T0200).
     ///
@@ -870,6 +873,7 @@ impl ToolOptions {
             room_heading: "Zimmer".to_string(),
             dim_axis: None,
             dim_text: String::new(),
+            dim_ext: false,
             offset_dist: doc.settings.wall_thickness,
             parallel_dist: None,
             elevation_z: 0.0,
@@ -20125,6 +20129,14 @@ mod tests_block_kopieren {
     fn app_mit_systemblock(dir: &std::path::Path) -> App {
         let mut app = App::with_ctx(egui::Context::default());
         app.prefs.blocks_pfad = dir.to_string_lossy().to_string();
+        // `App::with_ctx` hängt die **echte** Benutzerbibliothek des Rechners
+        // ein. Liegt dort schon eine „Pfeil (Kopie)“, vergäbe `block.copy`
+        // „(Kopie 2)“ und der Test hinge an der Bibliothek des Nutzers
+        // (gesehen: mitten im Merge-Lauf kopiert). Kopien dieses Namens
+        // deshalb vorher aus der Zeichnung nehmen — der Test legt sie selbst an.
+        app.doc_mut()
+            .blocks
+            .retain(|b| !b.name.starts_with("Pfeil (Kopie"));
         let mut e = Entity::new(
             1,
             app.doc().current_layer,

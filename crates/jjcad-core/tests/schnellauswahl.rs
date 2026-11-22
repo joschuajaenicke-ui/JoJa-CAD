@@ -132,6 +132,7 @@ fn jede_objektart_startet_ihren_erzeuger() {
             line_pos: v(0.0, -300.0),
             angle: 0.0,
             override_text: None,
+                ext_lines: false,
         },
         "dim.chain.d",
     );
@@ -141,6 +142,7 @@ fn jede_objektart_startet_ihren_erzeuger() {
             line_pos: v(0.0, -300.0),
             angle: 0.0,
             override_text: None,
+                ext_lines: false,
         },
         "dim.chain.d",
     );

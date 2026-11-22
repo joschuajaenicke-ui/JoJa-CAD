@@ -50,6 +50,9 @@ die **Vorgabe** ihrer Ebene und lassen sich wie jede andere Taste ändern.
    **Reihenfolge**: Messpunkte dürfen in beliebiger Reihenfolge geklickt
    werden — die Kette sortiert sie entlang der Maßlinie, beim Anlegen und beim
    Einfügen. Ein Zickzack entsteht dadurch nicht.
+   **Verlängerung** (Eigenschaften-Panel, Gruppe „Maß“): Maßhilfslinien von den
+   Messpunkten zur Maßlinie. Vorgabe **aus** — die Maßzahl steht allein an der
+   Maßlinie; eingeschaltet zeichnet jeder Messpunkt seine Hilfslinie.
 4. **Hotbar**: Tasten `1`–`0`. Aktives Werkzeug + Klick auf einen leeren Slot verknüpft es.
    Läuft das **Einfügen eines Blocks**, nimmt der angeklickte Slot den Block auf (der Slot
    zeigt dann die Miniaturaansicht des Blocks, sein Tooltip den Blocknamen); die Taste `1`–`0`

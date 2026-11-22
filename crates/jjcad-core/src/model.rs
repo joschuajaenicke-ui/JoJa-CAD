@@ -832,6 +832,12 @@ pub enum EntityKind {
         /// Maßtext des **ersten** Segments überschreiben (z. B. "2,50").
         #[serde(default, skip_serializing_if = "Option::is_none")]
         override_text: Option<String>,
+        /// Maßhilfslinien von den Messpunkten zur Maßlinie zeichnen
+        /// (T0226). Vorgabe **aus**: die Maßzahl steht ohne Verlängerung
+        /// direkt an der Maßlinie; wer die Hilfslinien braucht, schaltet sie
+        /// im Eigenschaften-Panel ein.
+        #[serde(default)]
+        ext_lines: bool,
     },
     /// Grundriss-Kote: Kreis-Symbol mit verknüpftem Höhenwert daneben.
     ///

@@ -188,9 +188,14 @@ fn vorschau_ist_das_fertige_objekt() {
     let mut d = doc_mm();
     let pts = vec![v(0.0, 0.0), v(2000.0, 0.0), v(5000.0, 0.0)];
     let id = kette(&mut d);
-    let e = d.entity(id).expect("Maßkette").clone();
+    let mut e = d.entity(id).expect("Maßkette").clone();
+    // Mit Verlängerung prüfen (T0226): so deckt der Vergleich auch die
+    // Maßhilfslinien ab, die die Vorgabe aus lässt.
+    if let EntityKind::Dim { ext_lines, .. } = &mut e.kind {
+        *ext_lines = true;
+    }
     let anzeige = render::render_entities(&RenderCtx::new(&d), std::slice::from_ref(&e));
-    let vorschau = render::preview_dim(&d, &pts, v(1000.0, -400.0), 0.0, e.layer, e.style.color);
+    let vorschau = render::preview_dim(&d, &pts, v(1000.0, -400.0), 0.0, e.layer, e.style.color, true);
 
     assert_eq!(
         vorschau.prims.len(),
