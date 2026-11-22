@@ -1141,6 +1141,12 @@ pub struct Wiederherstellen {
     pub last_vorschau: Option<egui::Rect>,
 }
 
+/// T0235: laufende Wahl des Export-Bereichs für das PNG. Der erste Klick
+/// setzt die eine Ecke der Diagonalen, der zweite die andere.
+pub struct PngWahl {
+    pub erster: Option<jjcad_core::geom::Vec2>,
+}
+
 pub struct UiState {
     pub pending: PendingStyle,
     pub ribbon: RibbonTab,
@@ -1218,6 +1224,11 @@ pub struct UiState {
     pub systemdialog: Option<(FileMode, Systemdialog)>,
     /// Seite für „PDF einfügen" bereits gewählt
     pub pdf_import: Option<PdfImportWahl>,
+    /// T0235: Bereich für den PNG-Export (Welt-mm als x0, y0, x1, y1);
+    /// `None` = ganze Zeichnung.
+    pub png_bereich: Option<[f64; 4]>,
+    /// T0235: laufende Wahl der Diagonalen für den PNG-Bereich.
+    pub png_wahl: Option<PngWahl>,
     /// Schwebende Dateien für den Prüfzustand `dateidrop` (T0115): ein echter
     /// Drag an Drop lässt sich headless nicht erzeugen.
     pub drop_demo: Option<Vec<PathBuf>>,
@@ -1489,6 +1500,8 @@ impl Default for UiState {
             file_dialog: None,
             systemdialog: None,
             pdf_import: None,
+            png_bereich: None,
+            png_wahl: None,
             drop_demo: None,
             text_format_next: None,
             show_grid: true,
@@ -2281,6 +2294,8 @@ impl App {
                 "arch" => self.ui.ribbon = RibbonTab::Architektur,
                 "draw" => self.ui.ribbon = RibbonTab::Zeichnen,
                 "dim" => self.ui.ribbon = RibbonTab::Bemassung,
+                // T0235: PNG-Knopf mit offenem Menü (Ganze Zeichnung / Bereich).
+                "png" => self.ui.ribbon = RibbonTab::Datei,
                 "bloecke" | "blocks" => self.ui.ribbon = RibbonTab::Bloecke,
                 "blatt" | "sheet" => self.ui.ribbon = RibbonTab::Blatt,
                 // T0218: Blattmanager mit drei Blättern — zwei im Plansatz,
@@ -5403,6 +5418,12 @@ impl App {
             self.start_ghost_block(block.to_string());
             return;
         }
+        // T0235: Bereich für den PNG-Export — die Oberfläche fragt die Diagonale
+        // ab, das ist keine Modellaktion und steht deshalb nicht im Register.
+        if id == "file.export_png_bereich" {
+            self.start_png_bereich();
+            return;
+        }
         let Some(def) = actions::action(id) else {
             return;
         };
@@ -5502,7 +5523,12 @@ impl App {
             "file.import_dxf" => self.open_file_dialog(FileMode::ImportDxf),
             "file.import.pdf" => self.open_file_dialog(FileMode::ImportPdf),
             "file.import_image" => self.open_file_dialog(FileMode::ImportImage),
-            "file.export_png" => self.open_file_dialog(FileMode::ExportPng),
+            "file.export_png" => {
+                // T0235: Die ganze Zeichnung — ein zuvor gewählter Bereich
+                // gilt nur für den einen Export über das Menü.
+                self.ui.png_bereich = None;
+                self.open_file_dialog(FileMode::ExportPng);
+            }
             "edit.undo" => {
                 if self.session_mut().undo() {
                     self.mark_changed();
@@ -7320,19 +7346,45 @@ impl App {
         }
     }
 
+    /// T0235: Bereich für den PNG-Export über die Diagonale wählen.
+    ///
+    /// Der Bereich ist immer ein Rechteck: der erste Klick setzt die eine Ecke
+    /// der Diagonalen, der zweite die andere. Danach fragt der Speicherdialog
+    /// nach dem Ziel. Das läuft neben dem Action-Register, weil es keine
+    /// Modelländerung ist, sondern eine Frage des Exports an die Oberfläche.
+    pub fn start_png_bereich(&mut self) {
+        // Ein laufendes Werkzeug würde die Klicks für sich beanspruchen.
+        self.tool = None;
+        self.ghost = None;
+        self.ui.png_bereich = None;
+        self.ui.png_wahl = Some(PngWahl { erster: None });
+        self.mitteilung(jjcad_core::i18n::tr("gui.canvas.png_bereich_diagonale"));
+    }
+
     pub fn export_png_to(&mut self, path: PathBuf) {
         let sheet = match &self.tab().tab {
             TabKind::Sheet(id) => self.doc().sheets.iter().position(|s| s.id == *id),
             TabKind::Model | TabKind::Block(_) => None,
         };
-        let opts = RasterOptions {
-            width_px: 2400,
-            height_px: if sheet.is_some() { 1697 } else { 1600 },
-            sheet,
-            ..Default::default()
+        // T0235: ein gewählter Bereich füllt das Bild genau; ohne ihn bleibt es
+        // bei der ganzen Zeichnung bzw. dem ganzen Blatt.
+        let res = match self.ui.png_bereich {
+            Some(bereich) => raster::render_png_bereich(self.doc(), bereich, sheet, 2400, &path),
+            None => {
+                let opts = RasterOptions {
+                    width_px: 2400,
+                    height_px: if sheet.is_some() { 1697 } else { 1600 },
+                    sheet,
+                    ..Default::default()
+                };
+                raster::render_png(self.doc(), &opts, &path)
+            }
         };
-        match raster::render_png(self.doc(), &opts, &path) {
-            Ok(_) => self.toast(jjcad_core::i18n::t_args_owned("gui.app.png_exportiert_x", &[("wert1", format!("{}", path.display()))])),
+        match res {
+            Ok(_) => {
+                self.ui.png_bereich = None;
+                self.toast(jjcad_core::i18n::t_args_owned("gui.app.png_exportiert_x", &[("wert1", format!("{}", path.display()))]))
+            }
             Err(e) => self.toast(e),
         }
     }
@@ -9322,9 +9374,9 @@ impl App {
                         if widgets::ribbon_button(ui, "dxf", rb("ribbon.dxf"), false).clicked() {
                             app.run_action(ui.ctx(), "file.export_dxf");
                         }
-                        if widgets::ribbon_button(ui, "image", rb("ribbon.png"), false).clicked() {
-                            app.run_action(ui.ctx(), "file.export_png");
-                        }
+                        // T0235: Hauptklick = ganze Zeichnung, Pfeil = Menü mit
+                        // dem Export eines Bereichs über die Diagonale.
+                        app.png_export_group_button(ui);
                         if widgets::ribbon_button(ui, "import", rb("ribbon.import"), false).clicked() {
                             app.run_action(ui.ctx(), "file.import_dxf");
                         }
@@ -11961,6 +12013,78 @@ impl App {
         self.start_tool("draw.arc");
     }
 
+    /// Ribbon-Knopf „PNG" mit Menü (T0235): der Hauptklick exportiert die
+    /// **ganze** Zeichnung (bisheriges Verhalten), der Pfeil bietet zusätzlich
+    /// den Export eines Bereichs über die Diagonale an.
+    fn png_export_group_button(&mut self, ui: &mut egui::Ui) {
+        let (main, arrow) = widgets::ribbon_split_button(ui, "image", rb("ribbon.png"), false);
+        let popup_id = ui.make_persistent_id("png_export_menu");
+        let now = ui.input(|i| i.time);
+        if arrow.clicked() {
+            ui.memory_mut(|m| m.toggle_popup(popup_id));
+            ui.memory_mut(|m| m.data.insert_temp(popup_id.with("opened"), now));
+        } else if main.clicked() {
+            self.run_action(ui.ctx(), "file.export_png");
+        }
+        // Prüfhilfe: Menü für einen Screenshot offen halten (nur mit Env-Variable)
+        let demo_offen = std::env::var("JJCAD_DEMO_UI")
+            .map(|s| s.split(',').any(|t| t.trim() == "png"))
+            .unwrap_or(false);
+        if demo_offen || std::env::var("JJCAD_DEMO_MENU").map(|w| w == "png").unwrap_or(false) {
+            ui.memory_mut(|m| m.open_popup(popup_id));
+        }
+        // Der Klick, der das Menü öffnet, darf nicht sofort einen Eintrag wählen
+        let geoeffnet = ui
+            .memory(|m| m.data.get_temp::<f64>(popup_id.with("opened")).unwrap_or(0.0));
+        let bereit = now - geoeffnet > 0.25;
+        let eintraege = [
+            jjcad_core::i18n::tr("gui.app.png_ganze_zeichnung"),
+            jjcad_core::i18n::tr("gui.app.png_bereich_diagonale"),
+        ];
+        let mut gewaehlt: Option<usize> = None;
+        egui::popup_below_widget(
+            ui,
+            popup_id,
+            &arrow,
+            egui::PopupCloseBehavior::CloseOnClickOutside,
+            |ui| {
+                ui.set_min_width(230.0);
+                ui.spacing_mut().item_spacing.y = 1.0;
+                for (i, name) in eintraege.iter().enumerate() {
+                    let (rect, resp) = ui.allocate_exact_size(
+                        egui::Vec2::new(ui.available_width().max(226.0), 26.0),
+                        egui::Sense::click(),
+                    );
+                    if resp.hovered() {
+                        ui.painter().rect_filled(
+                            rect,
+                            egui::Rounding::same(4.0),
+                            Palette::panel_alt(),
+                        );
+                    }
+                    ui.painter().text(
+                        egui::Pos2::new(rect.left() + 10.0, rect.center().y),
+                        egui::Align2::LEFT_CENTER,
+                        *name,
+                        egui::FontId::proportional(12.5),
+                        Palette::text(),
+                    );
+                    if bereit && resp.clicked() {
+                        gewaehlt = Some(i);
+                    }
+                }
+            },
+        );
+        if let Some(i) = gewaehlt {
+            ui.memory_mut(|m| m.close_popup());
+            if i == 0 {
+                self.run_action(ui.ctx(), "file.export_png");
+            } else {
+                self.start_png_bereich();
+            }
+        }
+    }
+
     /// Geteilte Schaltfläche mit einer Liste von Eingabemodi.
     ///
     /// Der Hauptknopf startet das Werkzeug im zuletzt gewählten Modus, der
@@ -14548,8 +14672,9 @@ mod tests_vollbild {
     /// Der Reiter „Start" ist **breiter als die Mindestfensterbreite** — das war
     /// er schon vor T0100 (1308 px bei 1080 px Fenster); „Bild einfügen" in der
     /// Gruppe „Ausgabe" kommt hinzu (gemessen 1383 px), seit T0127 „Datenordner"
-    /// in der Gruppe „Projekt" (gemessen 1458 px). Der Test hält den Ist-Stand
-    /// als Riegel: ein weiterer Knopf fällt sofort auf. Bei der
+    /// in der Gruppe „Projekt" (gemessen 1458 px), seit T0235 die geteilte
+    /// PNG-Schaltfläche (74 px gegen 70 px, gemessen 1462 px). Der Test hält den
+    /// Ist-Stand als Riegel: ein weiterer Knopf fällt sofort auf. Bei der
     /// Standard-Fensterbreite 1500 px ist alles sichtbar.
     #[test]
     fn reiter_start_bleibt_in_seiner_breite() {
@@ -14566,8 +14691,8 @@ mod tests_vollbild {
             breite = app.ui.last_ribbon_content_w;
         }
         assert!(
-            breite <= 1460.0,
-            "Reiter Start braucht {breite} px (Riegel 1460) — ein Knopf mehr schneidet rechts ab"
+            breite <= 1462.0,
+            "Reiter Start braucht {breite} px (Riegel 1462) — ein Knopf mehr schneidet rechts ab"
         );
     }
 
