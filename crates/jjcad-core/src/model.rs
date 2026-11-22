@@ -1786,6 +1786,12 @@ impl Default for SnapSettings {
 pub struct Settings {
     #[serde(default)]
     pub input_unit: Unit,
+    /// Eingabeeinheit des **Papierraums** (T0228). Papier ist in Millimetern
+    /// gezeichnet — eine Wandstärke oder Texthöhe in Metern wäre dort nicht
+    /// eingebbar („0,00“ auf jedem Feld). Vorgabe deshalb Millimeter, vom
+    /// Modell unabhängig wählbar.
+    #[serde(default = "default_paper_unit")]
+    pub paper_input_unit: Unit,
     #[serde(default = "default_dim_unit")]
     pub dim_unit: Unit,
     #[serde(default = "default_two")]
@@ -1814,6 +1820,10 @@ pub struct Settings {
 fn default_dim_unit() -> Unit {
     Unit::M
 }
+fn default_paper_unit() -> Unit {
+    // T0228: Papier in Millimetern — die Blattecke liegt bei (0,0)…(297,210).
+    Unit::Mm
+}
 fn default_two() -> usize {
     2
 }
@@ -1837,6 +1847,7 @@ impl Default for Settings {
     fn default() -> Self {
         Self {
             input_unit: Unit::M,
+            paper_input_unit: Unit::Mm,
             dim_unit: Unit::M,
             decimals: 2,
             annotation_scale: 100.0,
@@ -2344,6 +2355,31 @@ impl Document {
     /// Ist der Papierraum (Druckvorschau) der aktive Raum?
     pub fn in_paper_space(&self) -> bool {
         self.space_sheet().is_some()
+    }
+
+    /// Eingabeeinheit des **aktiven** Bearbeitungsraums (T0228) — die eine
+    /// Abfrage für die Befehlsschicht und alle Anzeigen.
+    ///
+    /// Jeder Raum hat seine eigene Einheit, weil sie zu seiner Zeichnung
+    /// gehört: das Modell in Metern (Wandlängen, Geschosse), das Papier in
+    /// Millimetern (Blattecken (0,0)…(297,210), Texthöhe 2,5 mm). Eine
+    /// gemeinsame Einheit machte die eine Hälfte unbedienbar. Ein Block in
+    /// **Papiergröße** ist ebenfalls in Papier-Millimetern gezeichnet (T0231).
+    ///
+    /// Die Actions lesen hierüber ihre Vorgabe: die Oberfläche rechnet die
+    /// Werte mit `App::unit()` in diese Einheit um, core liest sie mit
+    /// derselben wieder ein.
+    pub fn input_unit(&self) -> Unit {
+        if let Some(b) = self.block_edit() {
+            if b.ist_papiergroesse() {
+                return Unit::Mm;
+            }
+        }
+        if self.in_paper_space() {
+            self.settings.paper_input_unit
+        } else {
+            self.settings.input_unit
+        }
     }
 
     /// Rasterweite des aktiven Raums in mm. Der Papierraum ist in Blatt-

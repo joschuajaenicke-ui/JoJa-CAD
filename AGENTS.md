@@ -292,6 +292,16 @@ Mit dem Nutzer abgestimmt — nicht „verbessern“:
   Textfelder in `sheet.entities` (kein Renderer-Sonderrahmen mehr, `Sheet::frame`/
   `show_title_block` sind nur noch Altlasten für die Migration). Die echten Blattecken
   (0,0)…(B,H) fangen im Papierraum als „Blattecke“.
+  **Eigene Eingabeeinheit je Raum (T0228)**: Das Modell rechnet in
+  `settings.input_unit` (Vorgabe Meter), der Papierraum in
+  `settings.paper_input_unit` (Vorgabe **Millimeter**) — das Blatt reicht von
+  (0,0) bis (420,297), in Metern stünde jedes Feld auf 0,00. Die eine Abfrage ist
+  `Document::input_unit()`: Actions lesen ihre Vorgabe dort, die Oberfläche
+  beschriftet mit `App::unit()`. Gewählt wird die Papier-Einheit im
+  Eigenschaften-Panel des Blattes (`panels::sheet_props`), die Modell-Einheit im
+  Panel der Zeichnung (`panels::doc_props`). Prüfweg:
+  `cargo test -p jjcad-core --test papier_einheit` und
+  `cargo test -p jjcad-gui papierbereich_hat_eigene_eingabeeinheit`.
 - **Blockeditor (T0137)**: Eigene Blöcke (Projekt/Benutzer — **nicht** System) werden
   über das Rechtsklickmenü der Blockbibliothek geöffnet — seit T0185 ebenso über
   „Block bearbeiten“ im Objektmenü einer **eingesetzten Blockinstanz** (beide Wege

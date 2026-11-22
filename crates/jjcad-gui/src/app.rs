@@ -5062,16 +5062,12 @@ impl App {
     }
 
     pub fn unit(&self) -> Unit {
-        // T0231: Im Blockeditor eines Blocks in **Papiergröße** sind alle Längen
-        // Papier-Millimeter — das Symbol ist 1–3 mm groß, eine Anzeige in
-        // Metern stünde überall auf 0,00. Die Werkzeuge rechnen unverändert:
-        // `from_mm`/`to_mm` mit mm sind die Identität.
-        if let Some(b) = self.doc().block_edit() {
-            if b.ist_papiergroesse() {
-                return Unit::Mm;
-            }
-        }
-        self.doc().settings.input_unit
+        // T0228: Jeder Bearbeitungsraum trägt seine eigene Eingabeeinheit —
+        // das Modell in Metern, der Papierraum (und ein Block in Papiergröße)
+        // in Millimetern. Die eine Abfrage steht in `Document::input_unit`;
+        // die Oberfläche rechnet die Werte damit um und core liest sie damit
+        // wieder ein, sonst läge eine 240-mm-Wand im Blatt bei 240 m.
+        self.doc().input_unit()
     }
 
     /// Ebene, die ein Werkzeug ausdrücklich an die Befehls-Schicht geben muss
@@ -20823,6 +20819,43 @@ mod tests_block_eigenschaften {
         app.doc_mut().block_mut("usr:stuhl").unwrap().groesse =
             jjcad_core::model::BlockGroesse::Fest;
         assert_eq!(app.unit(), jjcad_core::units::Unit::M);
+    }
+
+    /// T0228: Modell und Papierraum tragen **eigene** Eingabeeinheiten — das
+    /// Modell in Metern, das Papier in Millimetern (Vorgabe). Eine Wahl im
+    /// Papierraum ändert das Modell nicht.
+    #[test]
+    fn papierbereich_hat_eigene_eingabeeinheit() {
+        let mut app = App::with_ctx(egui::Context::default());
+        app.test_prefs_speichern = false;
+        app.doc_mut().settings.input_unit = jjcad_core::units::Unit::M;
+        assert_eq!(app.unit(), jjcad_core::units::Unit::M, "Modell in Metern");
+
+        let sid = app.doc().sheets[0].id;
+        app.blatt_oeffnen(sid);
+        assert!(app.doc().in_paper_space());
+        assert_eq!(
+            app.unit(),
+            jjcad_core::units::Unit::Mm,
+            "Papier in Millimetern"
+        );
+
+        let _ = app
+            .session_mut()
+            .execute("doc.settings", &serde_json::json!({"paper_input_unit": "cm"}));
+        assert_eq!(app.unit(), jjcad_core::units::Unit::Cm);
+        assert_eq!(
+            app.doc().settings.input_unit,
+            jjcad_core::units::Unit::M,
+            "das Modell behält Meter"
+        );
+
+        app.switch_tab(TabKind::Model);
+        assert_eq!(
+            app.unit(),
+            jjcad_core::units::Unit::M,
+            "zurück im Modell gilt wieder Meter"
+        );
     }
 
     /// Eine neue Gruppe entsteht, indem der Block sie bekommt — das Feld
