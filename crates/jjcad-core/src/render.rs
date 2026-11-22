@@ -1246,7 +1246,9 @@ fn push_punktsymbol(
     let Some(def) = ctx.doc.block(id) else {
         return false;
     };
-    let k = ctx.a(1.0);
+    // Ein Punkt symbol ist ein **neutraler** Block der Einheitsgröße 1 (T0231);
+    // als Symbol an einem Punkt gilt dieselbe Rechnung wie für die Instanz.
+    let k = def.faktor(ctx.annot_scale);
     let m = xf * Affine::translate(pos) * Affine::rotate(rot) * Affine::scale(k, k);
     for child in &def.entities {
         let mut c = child.clone();
@@ -1873,13 +1875,11 @@ pub fn render_entity(
                 m = m * Affine::scale(-1.0, 1.0);
             }
             m = m * Affine::scale(scale.x, scale.y);
-            // Mit dem Zeichnungsmaßstab skalieren (T0210, Turn 3): die
-            // Blockgeometrie liegt in Papier-Millimetern und wächst mit dem
-            // Beschriftungsmaßstab — wie die Begrenzungssymbole der Bemaßung.
-            if def.annotative {
-                let k = ctx.a(1.0);
-                m = m * Affine::scale(k, k);
-            }
+            // Maßeinheit der Blockgeometrie (T0231): ein neutraler Block wächst
+            // mit dem Beschriftungsmaßstab, ein Block mit Maßeinheit zeichnet
+            // maßstäblich (Millimeter, Zentimeter, Meter).
+            let k = def.faktor(ctx.annot_scale);
+            m = m * Affine::scale(k, k);
             let m = xf * m;
             let block_color = doc.effective_color(e);
             for child in &def.entities {
@@ -4988,10 +4988,10 @@ fn entity_segments_tief(doc: &Document, e: &Entity, depth: usize) -> Vec<Seg> {
                     m = m * Affine::scale(-1.0, 1.0);
                 }
                 m = m * Affine::scale(scale.x, scale.y);
-                if def.annotative {
-                    let k = doc.settings.annotation_scale;
-                    m = m * Affine::scale(k, k);
-                }
+                // Maßeinheit der Blockgeometrie (T0231) — dieselbe Rechnung
+                // wie in der Anzeige, damit Fang und Bild übereinstimmen.
+                let k = def.faktor(doc.settings.annotation_scale);
+                m = m * Affine::scale(k, k);
                 for ce in &def.entities {
                     let kind = transform::transform_kind(&ce.kind, &m);
                     let mut te = ce.clone();

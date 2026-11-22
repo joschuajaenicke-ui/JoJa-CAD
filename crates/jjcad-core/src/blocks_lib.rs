@@ -160,7 +160,7 @@ fn block(
         entities: b.ents,
         icon: None,
         base: Vec2::ZERO,
-        annotative: false,
+        einheit: BlockEinheit::Millimeter,
     }
 }
 
@@ -443,34 +443,36 @@ pub fn system_blocks(_next_id: &mut Id) -> Vec<BlockDef> {
         b,
     ));
 
-    // ---------------- Punkt Symbole (T0210) ----------------
-    // Koordinaten in **Papier-Millimetern**: ein Punktsymbol wird in
-    // Beschriftungsgröße gezeichnet (`RenderCtx::a`), damit es auf jedem
-    // Maßstab gleich groß erscheint. Die Maße hier sind also die Größe auf
-    // dem Papier, nicht in der Zeichnung.
+    // ---------------- Punkt Symbole (T0210, T0231) ----------------
+    // **Neutrales Einheitsmaß 1**: jedes Symbol liegt in einem Kästchen der
+    // Größe 1 um seinen Basispunkt (Pfeil und Schnitt-Kote mit der Spitze im
+    // Ursprung). Der Block trägt die Einheit `Neutral` und wird mit dem
+    // Zeichnungsmaßstab gezeichnet — eine Einheit ist ein Papier-Millimeter.
+    // So ist die Geometrie im Blockeditor normal groß und das Symbol auf jedem
+    // Maßstab gleich groß.
     let mut b = B::new();
-    b.disc(Vec2::ZERO, 0.6);
+    b.disc(Vec2::ZERO, 0.5);
     out.push(block(
         "sys:pkt-punkt",
         "Punkt",
         PUNKTSYMBOL_KATEGORIE,
-        "Gefüllter Punkt, 1,2 mm",
+        "Gefüllter Punkt, Einheitsgröße 1",
         b,
     ));
 
     let mut b = B::new();
-    b.circle(Vec2::ZERO, 0.9);
+    b.circle(Vec2::ZERO, 0.5);
     out.push(block(
         "sys:pkt-kreis",
         "Kreis",
         PUNKTSYMBOL_KATEGORIE,
-        "Offener Kreis, 1,8 mm",
+        "Offener Kreis, Einheitsgröße 1",
         b,
     ));
 
     let mut b = B::new();
-    b.circle(Vec2::ZERO, 0.9);
-    b.disc(Vec2::ZERO, 0.35);
+    b.circle(Vec2::ZERO, 0.5);
+    b.disc(Vec2::ZERO, 0.19);
     out.push(block(
         "sys:pkt-kreis-punkt",
         "Kreis mit Punkt",
@@ -480,34 +482,34 @@ pub fn system_blocks(_next_id: &mut Id) -> Vec<BlockDef> {
     ));
 
     let mut b = B::new();
-    b.line(v(-1.1, 0.0), v(1.1, 0.0));
-    b.line(v(0.0, -1.1), v(0.0, 1.1));
+    b.line(v(-0.5, 0.0), v(0.5, 0.0));
+    b.line(v(0.0, -0.5), v(0.0, 0.5));
     out.push(block(
         "sys:pkt-kreuz",
         "Kreuz",
         PUNKTSYMBOL_KATEGORIE,
-        "Fadenkreuz, 2,2 mm",
+        "Fadenkreuz, Einheitsgröße 1",
         b,
     ));
 
     let mut b = B::new();
-    b.line(v(-0.8, -0.8), v(0.8, 0.8));
-    b.line(v(-0.8, 0.8), v(0.8, -0.8));
+    b.line(v(-0.5, -0.5), v(0.5, 0.5));
+    b.line(v(-0.5, 0.5), v(0.5, -0.5));
     out.push(block(
         "sys:pkt-andreaskreuz",
         "Andreaskreuz",
         PUNKTSYMBOL_KATEGORIE,
-        "Schrägkreuz, 1,6 mm",
+        "Schrägkreuz, Einheitsgröße 1",
         b,
     ));
 
     let mut b = B::new();
     b.push(EntityKind::Polyline {
         verts: vec![
-            Vertex::new(v(1.1, 0.0)),
-            Vertex::new(v(0.0, 1.1)),
-            Vertex::new(v(-1.1, 0.0)),
-            Vertex::new(v(0.0, -1.1)),
+            Vertex::new(v(0.5, 0.0)),
+            Vertex::new(v(0.0, 0.5)),
+            Vertex::new(v(-0.5, 0.0)),
+            Vertex::new(v(0.0, -0.5)),
         ],
         closed: true,
     });
@@ -515,17 +517,17 @@ pub fn system_blocks(_next_id: &mut Id) -> Vec<BlockDef> {
         "sys:pkt-raute",
         "Raute",
         PUNKTSYMBOL_KATEGORIE,
-        "Raute, 2,2 mm",
+        "Raute, Einheitsgröße 1",
         b,
     ));
 
     let mut b = B::new();
-    b.rect(-0.8, -0.8, 0.8, 0.8);
+    b.rect(-0.5, -0.5, 0.5, 0.5);
     out.push(block(
         "sys:pkt-quadrat",
         "Quadrat",
         PUNKTSYMBOL_KATEGORIE,
-        "Quadrat, 1,6 mm",
+        "Quadrat, Einheitsgröße 1",
         b,
     ));
 
@@ -535,31 +537,31 @@ pub fn system_blocks(_next_id: &mut Id) -> Vec<BlockDef> {
     // Linienende deckt sich die Spitze damit exakt mit dem Endpunkt, sonst
     // stünde sie 1,4 mm (bei 1:100 also 14 cm) daneben (T0210, Turn 5).
     let mut b = B::new();
-    b.line(v(-3.4, 0.0), v(0.0, 0.0));
-    b.line(v(0.0, 0.0), v(-1.0, 0.6));
-    b.line(v(0.0, 0.0), v(-1.0, -0.6));
+    b.line(v(-1.0, 0.0), v(0.0, 0.0));
+    b.line(v(0.0, 0.0), v(-0.3, 0.18));
+    b.line(v(0.0, 0.0), v(-0.3, -0.18));
     out.push(block(
         "sys:pkt-pfeil",
         "Pfeil",
         PUNKTSYMBOL_KATEGORIE,
-        "Pfeil, 3,4 mm (Spitze am Basispunkt)",
+        "Pfeil, Einheitsgröße 1 (Spitze am Basispunkt)",
         b,
     ));
 
     // Gefüllte Spitze, ebenfalls mit der Spitze auf dem Basispunkt.
     let mut b = B::new();
-    b.fill_auto(vec![v(0.0, 0.0), v(-2.0, 0.8), v(-2.0, -0.8)]);
+    b.fill_auto(vec![v(0.0, 0.0), v(-1.0, 0.4), v(-1.0, -0.4)]);
     out.push(block(
         "sys:pkt-pfeilspitze",
         "Pfeilspitze",
         PUNKTSYMBOL_KATEGORIE,
-        "Gefüllte Pfeilspitze, 2 mm (Spitze am Basispunkt)",
+        "Gefüllte Pfeilspitze, Einheitsgröße 1 (Spitze am Basispunkt)",
         b,
     ));
 
     // Maßmarke nach DIN 1356-1: kurzer Strich unter 45°, wie an der Maßlinie.
     let mut b = B::new();
-    b.line(v(-0.7, -0.7), v(0.7, 0.7));
+    b.line(v(-0.5, -0.5), v(0.5, 0.5));
     out.push(block(
         "sys:pkt-massmarke",
         "Maßmarke",
@@ -571,11 +573,11 @@ pub fn system_blocks(_next_id: &mut Id) -> Vec<BlockDef> {
     // Höhenkote im Grundriss: Kreis, Fadenkreuz, zwei gefüllte Viertel —
     // dasselbe Symbol wie `EntityKind::ElevationPlan` es zeichnet.
     let mut b = B::new();
-    b.viertel(Vec2::ZERO, 1.0, std::f64::consts::FRAC_PI_2);
-    b.viertel(Vec2::ZERO, 1.0, -std::f64::consts::FRAC_PI_2);
-    b.circle(Vec2::ZERO, 1.0);
-    b.line(v(-1.4, 0.0), v(1.4, 0.0));
-    b.line(v(0.0, -1.4), v(0.0, 1.4));
+    b.viertel(Vec2::ZERO, 0.36, std::f64::consts::FRAC_PI_2);
+    b.viertel(Vec2::ZERO, 0.36, -std::f64::consts::FRAC_PI_2);
+    b.circle(Vec2::ZERO, 0.36);
+    b.line(v(-0.5, 0.0), v(0.5, 0.0));
+    b.line(v(0.0, -0.5), v(0.0, 0.5));
     out.push(block(
         "sys:pkt-kote-grundriss",
         "Höhenkote Grundriss",
@@ -589,8 +591,8 @@ pub fn system_blocks(_next_id: &mut Id) -> Vec<BlockDef> {
     b.push(EntityKind::Polyline {
         verts: vec![
             Vertex::new(v(0.0, 0.0)),
-            Vertex::new(v(-0.45, 0.9)),
-            Vertex::new(v(0.45, 0.9)),
+            Vertex::new(v(-0.5, 1.0)),
+            Vertex::new(v(0.5, 1.0)),
         ],
         closed: true,
     });
@@ -602,14 +604,14 @@ pub fn system_blocks(_next_id: &mut Id) -> Vec<BlockDef> {
         b,
     ));
 
-    // Punktsymbole skalieren mit dem Zeichnungsmaßstab (T0210, Turn 3): ihre
-    // Maße sind Papier-Millimeter, auch wenn sie als **Block** eingesetzt
-    // werden — genauso wie die Begrenzungssymbole der Bemaßung.
+    // Punktsymbole sind **neutral** (T0231): Geometrie in Einheitsgröße 1,
+    // gezeichnet mit dem Zeichnungsmaßstab — als Block wie als Symbol an Punkt
+    // und Linienende, wie die Begrenzungssymbole der Bemaßung.
     for b in out
         .iter_mut()
         .filter(|b| b.category == PUNKTSYMBOL_KATEGORIE)
     {
-        b.annotative = true;
+        b.einheit = BlockEinheit::Neutral;
     }
 
     out

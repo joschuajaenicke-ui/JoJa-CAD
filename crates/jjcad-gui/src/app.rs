@@ -484,6 +484,13 @@ pub struct DrawCacheKey {
 /// Pfeilhöhe wächst dadurch höchstens auf 0,19 px (0,15 px × 1,25).
 pub const ZOOM_HYSTERESE: f64 = 1.25;
 
+/// Höchster Zoom (px je Modell-mm) im **Blockeditor** (T0231).
+///
+/// Ein Block ist klein: ein neutrales Punktsymbol misst eine Einheit. Mit der
+/// Grenze der Zeichnung (80 px/mm) wäre es im Editor nur wenige Pixel groß und
+/// nicht zu bearbeiten — der Editor zoomt deshalb bis auf Fenstergröße hinein.
+pub const BLOCK_ZOOM_MAX: f64 = 4000.0;
+
 /// Liegen zwei Zooms innerhalb der Hysterese?
 fn zoom_passt(a: f64, b: f64) -> bool {
     if !(a.is_finite() && b.is_finite()) {
@@ -1078,9 +1085,10 @@ pub struct BlockEigenschaften {
     pub gruppe: String,
     /// Eingabe einer neuen Gruppe (leer = keine angelegt)
     pub neue_gruppe: String,
-    /// Mit dem Zeichnungsmaßstab skalieren (T0210) — wie die
-    /// Begrenzungssymbole der Bemaßung.
-    pub annotative: bool,
+    /// Maßeinheit der Blockgeometrie (T0231): ohne Einheit wächst der Block
+    /// mit dem Zeichnungsmaßstab, sonst gilt die Geometrie maßstäblich in
+    /// Millimetern, Zentimetern oder Metern.
+    pub einheit: jjcad_core::model::BlockEinheit,
 }
 
 /// R2.3: Die Zieldatei wurde außerhalb von JoJa-CAD geändert, während im
@@ -2200,7 +2208,7 @@ impl App {
                 entities: vec![kreis],
                 icon: None,
                 base: V2::ZERO,
-                annotative: false,
+                einheit: BlockEinheit::Millimeter,
             });
         }
         if let Some(id) = self
@@ -2341,7 +2349,7 @@ impl App {
                 s if s.starts_with("zoom:") => {
                     if let Ok(prozent) = s[5..].trim().parse::<f64>() {
                         let mut v = self.current_view();
-                        v.zoom = (prozent / 100.0).clamp(1e-5, 80.0);
+                        v.zoom = (prozent / 100.0).clamp(1e-5, self.zoom_max());
                         self.set_view(v);
                         // Die ersten Bilder passen sonst selbst ein und
                         // überschreiben die Zoomstufe.
@@ -2673,7 +2681,7 @@ impl App {
                             entities: ents,
                             icon: None,
                             base: V2::ZERO,
-                            annotative: false,
+                            einheit: BlockEinheit::Millimeter,
                         });
                     };
                     anlegen(
@@ -2696,6 +2704,22 @@ impl App {
                     self.set_view(v);
                     // Die ersten Bilder würden sonst selbst einpassen.
                     self.started_at = 3.0;
+                }
+                // T0231: Punktsymbol im Blockeditor — die Geometrie ist auf
+                // Einheitsgröße 1 normiert, der Block trägt keine Maßeinheit
+                // und erscheint deshalb in Zeichnungsgröße (Maßstab 1:100).
+                "punktsymbolblock" | "punktsymboledit" => {
+                    let id = "prj:pkt-pfeil-demo";
+                    if self.doc().block(id).is_none() {
+                        if let Some(vorlage) = self.doc().block("sys:pkt-pfeil").cloned() {
+                            let mut b = vorlage;
+                            b.id = id.to_string();
+                            b.source = jjcad_core::model::BlockSource::Project;
+                            b.name = "Pfeil (Block)".to_string();
+                            self.doc_mut().blocks.push(b);
+                        }
+                    }
+                    self.oeffne_block_editor(id);
                 }
                 // T0185: Rechtsklickmenü einer eingesetzten Blockinstanz —
                 // zeigt den Eintrag „Block bearbeiten“ (nur eigene Blöcke).
@@ -4718,7 +4742,7 @@ impl App {
             name: block.name.clone(),
             gruppe: block.category.clone(),
             neue_gruppe: String::new(),
-            annotative: block.annotative,
+            einheit: block.einheit,
         });
         true
     }
@@ -4751,7 +4775,7 @@ impl App {
                 "block": wahl.block,
                 "name": name,
                 "category": gruppe,
-                "annotative": wahl.annotative,
+                "einheit": wahl.einheit.key(),
                 "dir": dir,
             }),
         ) {
@@ -5254,17 +5278,34 @@ impl App {
         let bh = bbox.height().max(1.0);
         let margin = if is_sheet { 46.0 } else { 70.0 };
         let zoom = ((w - margin).max(60.0) / bw).min((h - margin).max(60.0) / bh);
+        // Im Blockeditor ist die Grenze der Zeichnung zu flach: ein Block misst
+        // oft nur eine Einheit, das Fenster soll ihn trotzdem groß zeigen (T0231).
+        let grenze = if matches!(&tab.tab, TabKind::Block(_)) {
+            BLOCK_ZOOM_MAX
+        } else {
+            60.0
+        };
         let v = View {
             center: bbox.center(),
-            zoom: zoom.clamp(1e-4, 60.0),
+            zoom: zoom.clamp(1e-4, grenze),
             ..self.current_view()
         };
         self.set_view(v);
     }
 
+    /// Obergrenze des Zooms für den aktiven Reiter (T0231): im Blockeditor
+    /// darf es viel tiefer hineingehen als in der Zeichnung, weil ein Block
+    /// klein ist (ein Punktsymbol misst eine Einheit).
+    pub fn zoom_max(&self) -> f64 {
+        match self.tab().tab {
+            TabKind::Block(_) => BLOCK_ZOOM_MAX,
+            _ => 80.0,
+        }
+    }
+
     pub fn zoom_by(&mut self, factor: f64) {
         let mut v = self.current_view();
-        v.zoom = (v.zoom * factor).clamp(1e-5, 80.0);
+        v.zoom = (v.zoom * factor).clamp(1e-5, self.zoom_max());
         self.set_view(v);
     }
 
@@ -18745,7 +18786,7 @@ mod tests_blockeditor {
             entities: ents,
             icon: None,
             base: V2::ZERO,
-            annotative: false,
+            einheit: BlockEinheit::Millimeter,
         });
         app
     }
@@ -18766,6 +18807,68 @@ mod tests_blockeditor {
         assert_eq!(app.aktiver_block().as_deref(), Some("usr:stuhl"));
         assert_eq!(app.doc().block_space.as_deref(), Some("usr:stuhl"));
         assert_eq!(app.tab().offene_bloecke, vec!["usr:stuhl".to_string()]);
+    }
+
+    /// T0231: Ein Block ist klein — ein Punktsymbol misst eine Einheit. Mit
+    /// der Grenze der Zeichnung (80 px/mm) wäre es im Editor nur wenige Pixel
+    /// groß, deshalb gilt dort `BLOCK_ZOOM_MAX`.
+    #[test]
+    fn blockeditor_zoomt_tiefer_als_die_zeichnung() {
+        let dir = test_dir("zoom");
+        let mut app = app_mit_benutzerblock(&dir);
+        // Ein neutrales Symbol der Einheitsgröße 1, wie die Punktsymbole.
+        let layer = app.doc().current_layer;
+        app.doc_mut().blocks.push(BlockDef {
+            id: "usr:punkt".into(),
+            name: "Punkt".into(),
+            category: jjcad_core::model::PUNKTSYMBOL_KATEGORIE.into(),
+            source: BlockSource::User,
+            description: "eine Einheit".into(),
+            entities: vec![
+                Entity::new(
+                    1,
+                    layer,
+                    EntityKind::Line {
+                        a: V2::new(-0.5, 0.0),
+                        b: V2::new(0.5, 0.0),
+                    },
+                ),
+                Entity::new(
+                    2,
+                    layer,
+                    EntityKind::Line {
+                        a: V2::new(0.0, -0.5),
+                        b: V2::new(0.0, 0.5),
+                    },
+                ),
+            ],
+            icon: None,
+            base: V2::ZERO,
+            einheit: BlockEinheit::Neutral,
+        });
+        assert_eq!(app.zoom_max(), 80.0, "in der Zeichnung gilt 80 px/mm");
+
+        assert!(app.oeffne_block_editor("usr:punkt"));
+        assert_eq!(
+            app.zoom_max(),
+            BLOCK_ZOOM_MAX,
+            "im Blockeditor gilt die tiefere Grenze"
+        );
+        // Einpassen auf das eine Einheit große Symbol — der Zoom liegt weit
+        // über der Zeichengrenze, sonst wäre der Block ein Punkt im Bild.
+        app.ui.last_canvas = egui::Rect::from_min_size(
+            egui::Pos2::ZERO,
+            egui::Vec2::new(1500.0, 950.0),
+        );
+        app.fit_view();
+        let z = app.current_view().zoom;
+        assert!(
+            z > 80.0,
+            "der Editor zoomt nur auf {z:.1} px/mm — die Zeichnungsgrenze gilt noch"
+        );
+        // Zoomen bleibt innerhalb der tieferen Grenze.
+        app.zoom_by(2.0);
+        assert!(app.current_view().zoom <= BLOCK_ZOOM_MAX);
     }
 
     #[test]
@@ -19326,7 +19429,7 @@ mod tests_rechtsklick {
             entities: vec![kind],
             icon: None,
             base: V2::ZERO,
-            annotative: false,
+            einheit: BlockEinheit::Millimeter,
         });
         let id = app.doc_mut().new_id();
         let instanz = Entity::new(
@@ -20211,7 +20314,7 @@ mod tests_block_kopieren {
             entities: vec![e],
             icon: None,
             base: V2::ZERO,
-            annotative: true,
+            einheit: BlockEinheit::Neutral,
         });
         app
     }
@@ -20305,7 +20408,7 @@ mod tests_block_eigenschaften {
             entities: Vec::new(),
             icon: None,
             base: V2::ZERO,
-            annotative: false,
+            einheit: BlockEinheit::Millimeter,
         });
         app
     }
@@ -20338,7 +20441,7 @@ mod tests_block_eigenschaften {
             entities: Vec::new(),
             icon: None,
             base: V2::ZERO,
-            annotative: false,
+            einheit: BlockEinheit::Millimeter,
         });
         assert!(
             !app.oeffne_block_eigenschaften("sys:tuer"),
@@ -20385,36 +20488,43 @@ mod tests_block_eigenschaften {
         assert_eq!(roh["block"]["id"], "usr:stuhl", "Kennung bleibt stabil");
     }
 
-    /// T0210: „Mit Maßstab skalieren“ gehört zu den Block-Eigenschaften — das
-    /// Häkchen schreibt `block.update` und landet in der `.jjblk`.
+    /// T0231: Die **Maßeinheit** gehört zu den Block-Eigenschaften — sie
+    /// schreibt `block.update` und landet in der `.jjblk`.
     #[test]
-    fn massstabseigenschaft_wird_uebernommen() {
-        let dir = test_dir("massstab");
+    fn einheit_wird_uebernommen() {
+        let dir = test_dir("einheit");
         let mut app = app_mit_block(&dir);
-        assert!(!app.doc().block("usr:stuhl").unwrap().annotative);
+        assert_eq!(
+            app.doc().block("usr:stuhl").unwrap().einheit,
+            jjcad_core::model::BlockEinheit::Millimeter
+        );
 
         assert!(app.oeffne_block_eigenschaften("usr:stuhl"));
         if let Some(wahl) = app.ui.block_eigenschaften.as_mut() {
-            wahl.annotative = true;
+            wahl.einheit = jjcad_core::model::BlockEinheit::Neutral;
         }
         assert!(app.block_eigenschaften_uebernehmen());
-        assert!(
-            app.doc().block("usr:stuhl").unwrap().annotative,
-            "die Eigenschaft steht nicht im Dokument"
+        assert_eq!(
+            app.doc().block("usr:stuhl").unwrap().einheit,
+            jjcad_core::model::BlockEinheit::Neutral,
+            "die Einheit steht nicht im Dokument"
         );
         // Benutzerblöcke schreiben ihre `.jjblk` mit — dort muss sie auch stehen.
         let datei = app.prefs.blocks_dir().join("stuhl.jjblk");
         let roh: serde_json::Value =
             serde_json::from_str(&std::fs::read_to_string(&datei).unwrap()).unwrap();
-        assert_eq!(roh["block"]["annotative"], serde_json::json!(true));
+        assert_eq!(roh["block"]["einheit"], serde_json::json!("Neutral"));
 
-        // Und wieder aus: das Häkchen ist keine Einbahnstraße.
+        // Und wieder zurück: die Einheit ist keine Einbahnstraße.
         assert!(app.oeffne_block_eigenschaften("usr:stuhl"));
         if let Some(wahl) = app.ui.block_eigenschaften.as_mut() {
-            wahl.annotative = false;
+            wahl.einheit = jjcad_core::model::BlockEinheit::Zentimeter;
         }
         assert!(app.block_eigenschaften_uebernehmen());
-        assert!(!app.doc().block("usr:stuhl").unwrap().annotative);
+        assert_eq!(
+            app.doc().block("usr:stuhl").unwrap().einheit,
+            jjcad_core::model::BlockEinheit::Zentimeter
+        );
     }
 
     /// Eine neue Gruppe entsteht, indem der Block sie bekommt — das Feld
