@@ -130,12 +130,12 @@ fn symbol_liegt_auf_der_masslinie_und_ersetzt_den_strich() {
         .expect("Symbol wegnehmen");
     let ohne = linien(&d) - vorher;
 
-    // Ersatz, nicht Zusatz: 9 Symbol-Linien statt der 3 Schrägstriche.
+    // Ersatz, nicht Zusatz: neun Symbol-Linien, sonst steht dort **gar nichts**
+    // (der alte Begrenzungsstrich kommt bei „Kein Symbol“ nicht zurück).
     assert_eq!(
         mit - ohne,
-        6,
-        "drei Symbole zu drei Linien statt drei Begrenzungsstrichen \
-         (mit Symbol {mit}, mit Stilmarke {ohne})"
+        9,
+        "drei Symbole zu je drei Linien, ohne Symbol nichts (mit {mit}, ohne {ohne})"
     );
     assert_eq!(symbol(&d, id), "", "leeres Feld heißt kein Symbol");
 
@@ -240,10 +240,11 @@ fn symbol_waechst_mit_dem_massstab() {
     let dl = render_document(&RenderCtx::new(&d));
     let bbox = dl.bbox;
     // Erster und letzter Basispunkt der Maßlinie liegen bei x = 0 bzw. 5000:
-    // die Marke reicht 1,1 Papier-mm (also 110 Welt-mm) darüber hinaus.
+    // die Marke reicht 1,1 Papier-mm (also 110 Welt-mm) darüber hinaus — die
+    // Maßlinie selbst endet genau dort (kein Überstand mehr, Turn 7).
     assert!(
-        bbox.min.x <= -110.0,
-        "die Marke wächst nicht mit dem Maßstab: {bbox:?} (Kette {id})"
+        bbox.min.x <= -110.0 && bbox.min.x > -130.0,
+        "die Marke wächst nicht mit dem Maßstab oder die Maßlinie steht über: {bbox:?} (Kette {id})"
     );
     assert!(
         bbox.max.x >= 5110.0,
@@ -257,16 +258,14 @@ fn symbol_waechst_mit_dem_massstab() {
     );
 }
 
-/// Ohne eigenes Symbol zeichnet der Stil seine Marke wie bisher — der
-/// DIN-Begrenzungsstrich bleibt damit erreichbar („Kein Symbol“).
+/// „Kein Symbol“ heißt wirklich **kein** Begrenzungszeichen (T0227, Turn 7):
+/// die Maßkette zeigt dann nur Maßlinie, Maßzahl und (falls an) Hilfslinien.
 #[test]
-fn ohne_symbol_zeichnet_der_stil_seinen_strich() {
+fn ohne_symbol_steht_kein_begrenzungszeichen() {
     let mut d = doc_mm();
     let id = kette(&mut d);
     actions::execute(&mut d, "modify.set", &json!({"ids": [id], "symbol": ""}))
         .expect("Symbol wegnehmen");
-    let strich = jjcad_core::render::DIM_MARKE_H * d.dim_style.text_height
-        * d.plans[0].scale;
     let laengen: Vec<f64> = render_document(&RenderCtx::new(&d))
         .prims
         .iter()
@@ -276,12 +275,13 @@ fn ohne_symbol_zeichnet_der_stil_seinen_strich() {
             _ => None,
         })
         .collect();
-    // Je Basispunkt ein Schrägstrich unter 45° der Länge `marke`
-    // (`text_height × DIM_MARKE_H` in Papier-mm).
-    let erwartet = strich;
-    assert_eq!(
-        laengen.iter().filter(|l| (*l - erwartet).abs() < 0.5).count(),
-        3,
-        "drei Begrenzungsstriche erwartet (Länge {erwartet}), gezeichnet: {laengen:?}"
+    // Maßlinie 5000 mm (kein Überstand mehr); ein Symbol wäre 220–311 mm kurz.
+    assert!(
+        laengen.iter().all(|l| *l > 500.0),
+        "ohne Symbol darf nichts an den Enden stehen: {laengen:?}"
+    );
+    assert!(
+        laengen.iter().any(|l| (*l - 5000.0).abs() < 3.0),
+        "die Maßlinie fehlt: {laengen:?}"
     );
 }

@@ -56,9 +56,12 @@ die **Vorgabe** ihrer Ebene und lassen sich wie jede andere Taste ändern.
    **Symbol** (Gruppe „Maß“): die Marke, die **auf der Maßlinie** an jedem
    Basispunkt steht und dort den Begrenzungsstrich **ersetzt** — eine Auswahl
    aus der Blockbibliothek (Kategorie „Punkt Symbole“), Vorgabe
-   **Schrägstrich** (Fadenkreuz mit 45°-Strich). „Kein Symbol“ gibt dem Stil
-   seine Marke zurück (Vorgabe: der DIN-Schrägstrich). Die Marke wächst mit dem
-   Zeichnungsmaßstab wie jedes Punktsymbol und steht in Messrichtung.
+   **Schrägstrich** (Fadenkreuz mit 45°-Strich). **„Kein Symbol“ heißt kein
+   Begrenzungszeichen**: die Kette zeigt dann nur Maßlinie, Maßzahl und (falls
+   an) die Hilfslinien. Die Marke wächst mit dem Zeichnungsmaßstab wie jedes
+   Punktsymbol und steht in Messrichtung; die Maßlinie endet **genau am
+   äußeren Basispunkt** — den Abschluss markiert die Marke, nicht ein
+   Überstand der Linie.
 4. **Hotbar**: Tasten `1`–`0`. Aktives Werkzeug + Klick auf einen leeren Slot verknüpft es.
    Läuft das **Einfügen eines Blocks**, nimmt der angeklickte Slot den Block auf (der Slot
    zeigt dann die Miniaturaansicht des Blocks, sein Tooltip den Blocknamen); die Taste `1`–`0`

@@ -7,6 +7,11 @@
 //! 1,5 mm und denselben Überstand der Maßlinie über die äußere Maßhilfslinie
 //! (0,6 h), die Maßzahl sitzt etwa 1,75 mm (0,7 h) über der Linie.
 //!
+//! **Abweichung seit T0227 (Turn 7)**: den Begrenzungsstrich stellt das
+//! Punktsymbol der Maßkette (Block aus der Bibliothek, Papiergröße) — es sitzt
+//! auf dem äußeren Basispunkt. Der Überstand der Maßlinie entfällt deshalb:
+//! er gehörte zum Schrägstrich, der die Enden markierte.
+//!
 //! Geprüft wird an der Displayliste — das ist die eine Quelle für Anzeige,
 //! PDF und PNG. Die Weltwerte sind Papier-Millimeter × Maßstab (hier 1:100).
 
@@ -74,66 +79,81 @@ fn texte(s: &Session, id: u64) -> Vec<(f64, f64, f64, String)> {
         .collect()
 }
 
-/// Maßlinie: durchgezogen über alle Basispunkte **mit Überstand** an beiden
-/// Enden (§9.1: „Auf den Überstand der Maßlinie über die Maßhilfslinie hinaus
-/// darf verzichtet werden“ — Bild 3 zeichnet ihn).
+/// Maßlinie: durchgezogen **vom ersten bis zum letzten Basispunkt** — kein
+/// Überstand mehr (T0227, Turn 7: den Abschluss markiert das Punktsymbol).
 #[test]
-fn masslinie_hat_ueberstand_an_beiden_enden() {
+fn masslinie_endet_am_aeusseren_basispunkt() {
     let (s, id) = kette(&[[0.0, 0.0], [2.0, 0.0], [4.0, 0.0]], [0.0, -1.2], "x");
     let l = linien(&s, id);
     let masslinie = l.last().expect("Maßlinie");
-    // Basispunkte 0…4000 mm, Überstand 1,2 × 2,5 mm × 100 = 300 mm je Ende.
+    // Basispunkte 0…4000 mm, kein Überstand.
     assert!(
-        (masslinie.0 - 4600.0).abs() < 0.5,
-        "Maßlinie ohne Überstand: Länge {}, Enden {:?} {:?}",
+        (masslinie.0 - 4000.0).abs() < 0.5,
+        "Maßlinie zu lang: Länge {}, Enden {:?} {:?}",
         masslinie.0,
         masslinie.1,
         masslinie.2
     );
     let x0 = masslinie.1 .0.min(masslinie.2 .0);
     let x1 = masslinie.1 .0.max(masslinie.2 .0);
-    assert!((x0 + 300.0).abs() < 0.5, "Überstand links fehlt: {x0}");
-    assert!((x1 - 4300.0).abs() < 0.5, "Überstand rechts fehlt: {x1}");
+    assert!(x0.abs() < 0.5, "Maßlinie beginnt zu früh: {x0}");
+    assert!((x1 - 4000.0).abs() < 0.5, "Maßlinie endet zu spät: {x1}");
 }
 
-/// Begrenzungsstrich: 45° und deutlich länger als die Ziffern hoch sind
-/// (1,2 h — Bild 3/Bild 4); nicht die Pfeilgröße (die gilt nur für Pfeil und
-/// Punkt).
+/// Die Marke der Maßkette ist das **Punktsymbol**, kein textabhängiger
+/// Schrägstrich mehr: mit Symbol stehen an jedem Basispunkt dessen Linien,
+/// ohne Symbol steht dort **gar nichts** (T0227, Turn 7).
 #[test]
-fn schraegstrich_ist_eine_texthoehen_laenge_lang() {
+fn marke_ist_das_punktsymbol_oder_leer() {
+    // Ohne Symbol: nur Maß- und Hilfslinien, nichts Kurzes an den Enden.
     let (s, id) = kette(&[[0.0, 0.0], [2.0, 0.0], [4.0, 0.0]], [0.0, -1.2], "x");
-    let l = linien(&s, id);
-    let mut striche: Vec<f64> = l
+    let kurz_ohne: Vec<f64> = linien(&s, id)
         .iter()
         .map(|e| e.0)
-        .filter(|len| *len < 500.0) // Striche; Maß- und Hilfslinien sind länger
+        .filter(|len| *len < 500.0)
         .collect();
-    striche.sort_by(|a, b| a.partial_cmp(b).unwrap());
-    // Drei Basispunkte → drei Striche à 150 mm; die Hilfslinien sind länger.
-    assert_eq!(striche.len(), 3, "Strichzahl: {striche:?}");
-    for len in &striche {
-        assert!(
-            (len - 300.0).abs() < 0.5,
-            "Schrägstrich muss 1,2 × 2,5 mm × 100 = 300 mm lang sein, ist {len}"
-        );
-    }
-    // 45°: gleiche Waagerecht- und Senkrechtausdehnung.
-    let strich = l
+    assert!(
+        kurz_ohne.is_empty(),
+        "ohne Symbol darf kein Begrenzungszeichen stehen: {kurz_ohne:?}"
+    );
+
+    // Mit der Vorgabe (Schrägstrich-Block): je Basispunkt zwei Achsenstriche
+    // und der 45°-Strich, alle in der Papiergröße des Blocks.
+    let mut s2 = Session::new();
+    s2.execute("doc.settings", &json!({ "input_unit": "m" })).unwrap();
+    let r = s2
+        .execute(
+            "dim.chain",
+            &json!({ "pts": [[0.0, 0.0], [2.0, 0.0], [4.0, 0.0]],
+                     "line_pos": [0.0, -1.2], "axis": "x", "ext_lines": true }),
+        )
+        .expect("Maßkette");
+    let id2 = r["created"][0].as_u64().expect("id");
+    let l = linien(&s2, id2);
+    let kurz: Vec<&(f64, (f64, f64), (f64, f64))> =
+        l.iter().filter(|e| e.0 < 500.0).collect();
+    // Drei Punkte × drei Striche des Symbols.
+    assert_eq!(kurz.len(), 9, "Markenlinien: {kurz:?}");
+    // Davon je Basispunkt genau einer unter 45° (gleiche Ausdehnung in x/y).
+    let schraeg = l
         .iter()
-        .find(|e| (e.0 - 300.0).abs() < 0.5)
-        .expect("Strich");
-    let dx = (strich.2 .0 - strich.1 .0).abs();
-    let dy = (strich.2 .1 - strich.1 .1).abs();
-    assert!((dx - dy).abs() < 0.01, "kein 45°-Strich: dx {dx}, dy {dy}");
+        .filter(|e| e.0 < 500.0)
+        .filter(|e| {
+            let dx = (e.2 .0 - e.1 .0).abs();
+            let dy = (e.2 .1 - e.1 .1).abs();
+            (dx - dy).abs() < 0.01
+        })
+        .count();
+    assert_eq!(schraeg, 3, "ein 45°-Strich je Basispunkt: {l:?}");
 }
 
 /// Ein Punkt zweier Segmente trägt **eine** Marke, nicht zwei übereinander.
 #[test]
-fn ein_begrenzungsstrich_je_basispunkt() {
+fn eine_marke_je_basispunkt() {
     let (s, id) = kette(&[[0.0, 0.0], [2.0, 0.0], [4.0, 0.0]], [0.0, -1.2], "x");
     let l = linien(&s, id);
-    // Eine Maßlinie + drei Hilfslinien + drei Begrenzungsstriche.
-    assert_eq!(l.len(), 7, "Linienzahl der Kette: {l:?}");
+    // Eine Maßlinie + drei Hilfslinien, ohne Symbol keine Markenlinien.
+    assert_eq!(l.len(), 4, "Linienzahl der Kette: {l:?}");
     // Punkt-Marken ebenso: drei Punkte, nicht vier.
     let mut s2 = s;
     s2.execute("dim.style", &json!({ "arrow": "dot" })).unwrap();
@@ -212,14 +232,14 @@ fn einzelmass_folgt_denselben_regeln() {
     let (s, id) = einzelmass();
     let l = linien(&s, id);
     let masslinie = l.last().expect("Maßlinie");
-    // Basispunkte 0…3000, Überstand 300 mm je Ende.
+    // Basispunkte 0…3000, kein Überstand (T0227, Turn 7).
     assert!(
-        (masslinie.0 - 3600.0).abs() < 0.5,
-        "Einzelmaß ohne Überstand: {}",
+        (masslinie.0 - 3000.0).abs() < 0.5,
+        "Einzelmaß mit Überstand: {}",
         masslinie.0
     );
-    let striche = l.iter().filter(|e| (e.0 - 300.0).abs() < 0.5).count();
-    assert_eq!(striche, 2, "zwei Begrenzungsstriche am Einzelmaß");
+    let striche = l.iter().filter(|e| e.0 < 500.0).count();
+    assert_eq!(striche, 0, "ohne Symbol keine Markenlinien am Einzelmaß");
     let t = texte(&s, id);
     assert_eq!(t.len(), 1);
     assert!(

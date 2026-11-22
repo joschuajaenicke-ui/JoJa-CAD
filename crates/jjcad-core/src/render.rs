@@ -4744,7 +4744,6 @@ fn render_dim_chain(
     // Bild 3: Begrenzungsstrich, Überstand der Maßlinie und Textabstand sind
     // Anteile der Texthöhe (die Pfeilgröße gilt nur für Pfeil und Punkt).
     let marke = ctx.a(style.text_height * DIM_MARKE_H);
-    let ueberstand = ctx.a(style.text_height * DIM_UEBERSTAND_H);
     let text_gap = ctx.a(style.text_gap)
         .max(ctx.a(style.text_height * DIM_TEXT_ABSTAND_H));
     let (dir, _) = dim_achse(angle);
@@ -4753,13 +4752,15 @@ fn render_dim_chain(
     let text_angle = dir.angle();
 
     // Maßlinie — dieselbe Lotrechnung wie der Griff an der Maßlinie
-    // (`render::dim_projiziert`), mit Überstand über die äußeren
-    // Maßhilfslinien (§9.1, Bild 3).
+    // (`render::dim_projiziert`). Sie endet **genau am äußeren Basispunkt**:
+    // der frühere Überstand (§9.1, Bild 3) gehörte zum Schrägstrich, der die
+    // Enden markierte — diese Marke stellt jetzt das Punktsymbol (T0227,
+    // Turn 7).
     let projected: Vec<Vec2> = dim_projiziert(pts, line_pos, angle);
     dl.push(Prim {
         shape: Shape::Line(
-            xf.apply(projected[0] - dir * ueberstand),
-            xf.apply(*projected.last().unwrap() + dir * ueberstand),
+            xf.apply(projected[0]),
+            xf.apply(*projected.last().unwrap()),
         ),
         style: *st,
         entity: e.id,
@@ -4783,28 +4784,21 @@ fn render_dim_chain(
     }
     // Begrenzungszeichen **einmal je Basispunkt**: liegen zwei Segmente
     // aneinander, standen bisher zwei Striche (bei Pfeil und Punkt sichtbar
-    // als Doppelmarke) auf demselben Punkt. Ein gewähltes Punktsymbol (T0227)
+    // als Doppelmarke) auf demselben Punkt. Das gewählte Punktsymbol (T0227)
     // steht an **dieser** Stelle: es liegt auf der Maßlinie und **ersetzt den
-    // Begrenzungsstrich** (`ArrowKind::Slash`) — es stand vorher an den
-    // Messpunkten, wo es nicht hingehört. Punkt- und Pfeilmarken des Stils
-    // bleiben unberührt; „kein Symbol“ heißt: der Stil zeichnet wie bisher.
-    // Ein unbekannter Block wird in `push_punktsymbol` still übersprungen.
+    // Begrenzungsstrich** — es stand vorher an den Messpunkten, wo es nicht
+    // hingehört. Ohne Symbol zeichnet die Kette dort **gar nichts** (Turn 7);
+    // die Marken „Punkt“ und „Pfeil“ des Stils bleiben unberührt. Ein
+    // unbekannter Block wird in `push_punktsymbol` still übersprungen.
     if !symbol.is_empty() && matches!(style.arrow, ArrowKind::Slash) {
         for p in &projected {
             push_punktsymbol(ctx, e, st, symbol, *p, text_angle, xf, dl, 0);
         }
     } else {
         match style.arrow {
+            // Der Platz des Begrenzungsstrichs gehört dem Punktsymbol; ohne
+            // Symbol bleibt er leer (der alte Schrägstrich kommt nicht zurück).
             ArrowKind::Slash => {
-                let d = Vec2::polar(text_angle + std::f64::consts::FRAC_PI_4, marke * 0.5);
-                for p in &projected {
-                    dl.push(Prim {
-                        shape: Shape::Line(xf.apply(*p - d), xf.apply(*p + d)),
-                        style: *st,
-                        entity: e.id,
-                        layer: e.layer,
-                    });
-                }
             }
             ArrowKind::Dot => {
                 for p in &projected {

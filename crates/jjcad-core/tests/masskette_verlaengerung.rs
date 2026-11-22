@@ -58,11 +58,12 @@ fn vorgabe_ist_aus() {
     assert!(!ext_lines(&d, id), "Vorgabe muss aus sein");
     let mit = linien(&d);
 
-    // Ohne Verlängerung entstehen nur Maßlinie und Begrenzungsstriche.
+    // Ohne Verlängerung entsteht nur die Maßlinie: die Marken der Enden
+    // stellt das Punktsymbol, hier abgeschaltet (T0227, Turn 7).
     assert_eq!(
         mit - ohne,
-        3,
-        "Maßlinie + zwei Begrenzungsstriche, keine Maßhilfslinien (gezeichnet: {})",
+        1,
+        "Maßlinie, keine Maßhilfslinien (gezeichnet: {})",
         mit - ohne
     );
 
