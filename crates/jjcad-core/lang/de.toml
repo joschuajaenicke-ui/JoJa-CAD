@@ -892,6 +892,8 @@ cm = "Zentimeter"
 m = "Meter"
 
 [gui.app]
+png_ganze_zeichnung = "Ganze Zeichnung"
+png_bereich_diagonale = "Bereich · Diagonale"
 plansatz_leer = "Plansatz · keine Blätter gewählt"
 block_name_fehlt = "Block · Name fehlt"
 datenordner_geoeffnet_x = "Datenordner: {wert1}"
@@ -1196,6 +1198,11 @@ beenden = "Beenden"
 kommandozeile = "Alternativ von der Kommandozeile: jjcad --daten-dir <Pfad>"
 
 [gui.canvas]
+png_bereich = "Bereich"
+png_bereich_diagonale = "PNG · Diagonale klicken"
+png_bereich_zweiter_punkt = "PNG · zweiten Eckpunkt klicken"
+png_bereich_ohne_flaeche = "PNG · Diagonale ohne Fläche"
+png_bereich_abgebrochen = "PNG · abgebrochen"
 pfad_bogenende = "Bogen · Ende"
 pfad_bogenpunkt = "Bogen · Punkt auf dem Bogen"
 abgebrochen = "Abgebrochen"

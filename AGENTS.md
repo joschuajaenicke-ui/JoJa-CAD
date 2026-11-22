@@ -195,6 +195,18 @@ Mit dem Nutzer abgestimmt — nicht „verbessern“:
   Zeichenreihenfolge — eine oben liegende Fläche deckt die Umrandung der unteren
   mit zu. Vorher standen global alle Füllungen vor allen Linien; dadurch blieb die
   Umrandung der unteren Fläche über der oberen sichtbar.
+- **PNG-Export eines Bereichs (T0235)**: Der Ribbon-Knopf „PNG" ist eine geteilte
+  Schaltfläche — der Hauptklick exportiert die **ganze** Zeichnung (bzw. das Blatt), der
+  Pfeil öffnet ein Menü mit „Ganze Zeichnung" und „Bereich · Diagonale". Der Bereich ist
+  immer ein Rechteck, angegeben über die **Diagonale**: `UiState::png_wahl` sammelt die
+  beiden Klicks in `canvas::handle_input` (`canvas::png_bereich_klick`), danach steht der
+  Ausschnitt in `UiState::png_bereich` und der Speicherdialog fragt nach dem Ziel.
+  Geschrieben wird über `raster::render_png_bereich`/`render_bereich_pixmap` — **exakt**
+  der Bereich (kein 3-%-Rand wie `render_model_pixmap`), Höhe aus dem Seitenverhältnis,
+  Breite 2400 px; im Papierraum rechnet der Ausschnitt in Papier-Millimetern. Ein
+  Zeichnungs-Export über den Hauptknopf setzt `png_bereich` zurück, eine Diagonale ohne
+  Fläche ist ein Fehler. Prüfweg: `cargo test -p jjcad-core --test png_bereich` und
+  `cargo test -p jjcad-gui tests_png_bereich`; Prüfbild `--demo png` (offenes Menü).
 - **Auswahl** färbt nur blau ein — kein zusätzlicher Auswahlrahmen. **Ausnahme Text**:
   der Text hat einen unsichtbaren Rahmen (derselbe Kasten wie in der Einfüge-Vorschau), der
   bei Auswahl gezeichnet wird und dessen Ecken/Kantenmitten fangen. Ob Text mit der
