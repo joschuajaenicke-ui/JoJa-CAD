@@ -22,10 +22,20 @@
 //! zusammen rund 7 % des Atlasses, ein einzelner Text hat höchstens eine
 //! Handvoll Einträge statt beliebig vieler.
 //!
-//! Der Preis ist bewusst: oberhalb von 256 px wird die Schrift weich
-//! (gestreckte Rasterung). Bei 600 % ist ein 250-mm-Text ohnehin größer als das
-//! Fenster; kleine Schriften (2,5 mm) bleiben bei jedem Zoom unter dem Deckel
-//! und damit scharf.
+//! Gerastert wird die **nächstgrößere** Leiterstufe ([`leiterstufe`] rundet auf),
+//! nie eine kleinere: gestreckt wird damit ausschließlich nach unten (Faktor
+//! 0,8…1,0). Eine zu klein gerasterte Galley wird aufgeweitet — mit `round`
+//! bis Faktor 1,118 (gemessen über einen Zoomlauf, in 26,7 % der Fälle
+//! gestreckt) — und ist dadurch sichtbar weich; am härtesten traf es kleinen
+//! Text (2,5 mm bei 1 px/mm: 3,3 px gewünscht, in 3,0 px gerastert, um 10 %
+//! gestreckt, T0240). Der Preis der Aufrundung ist ein um bis zu eine Stufe
+//! größerer Atlas-Eintrag; die Leiter selbst ist unverändert, der Atlasanteil
+//! bleibt praktisch gleich (gemessen 41,31 % → 41,36 %).
+//!
+//! Der Preis des Deckels bleibt bewusst: oberhalb von 256 px wächst der Faktor
+//! unbegrenzt, dort wird weiter gestreckt (bei 600 % ist ein 250-mm-Text
+//! ohnehin größer als das Fenster). Kleine Schriften (2,5 mm) bleiben bei jedem
+//! Zoom unter dem Deckel und damit scharf.
 
 use std::sync::Arc;
 
@@ -50,20 +60,28 @@ pub const LEITER_FAKTOR: f32 = 1.25;
 /// Rastergröße und Skalierfaktor für eine gewünschte Schriftgröße in Pixeln.
 ///
 /// `deckel` ist die eingestellte Höchstgröße (`Textaufloesung::px`). Die
-/// Rastergröße ist die nächstgelegene Leiterstufe unterhalb des Deckels; der
-/// Faktor bringt die gerasterte Galley auf die gewünschte Größe
-/// (`gewünscht = Rastergröße × Faktor`).
+/// Rastergröße ist die **nächstgrößere** Leiterstufe, geklemmt auf
+/// `RASTER_MIN_PX`…`deckel`; der Faktor bringt die gerasterte Galley auf die
+/// gewünschte Größe (`gewünscht = Rastergröße × Faktor`). Weil aufgerundet
+/// wird, ist die Rastergröße nie kleiner als die gewünschte: der Faktor liegt
+/// bei 0,8…1,0 (gestaucht, nie gestreckt) — außer über dem Deckel, dort wächst
+/// er unbegrenzt.
 pub fn raster_und_skalierung(gewuenscht: f32, deckel: f32) -> (f32, f32) {
     let gewuenscht = gewuenscht.max(RASTER_MIN_PX);
     let stufe = leiterstufe(gewuenscht.min(deckel), deckel);
     (stufe, gewuenscht / stufe)
 }
 
-/// Nächstgelegene Stufe der Größenleiter (1,25er-Schritte ab
+/// Nächstgrößere Stufe der Größenleiter (1,25er-Schritte ab
 /// [`RASTER_MIN_PX`]), begrenzt auf [`RASTER_MIN_PX`]…`deckel`.
+///
+/// `ceil` statt `round` (T0240): die Stufe ist nie kleiner als `size`, solange
+/// `size` unter dem Deckel liegt — die Galley wird danach nur gestaucht. Liegt
+/// `size` über dem Deckel, klemmt die Begrenzung auf den Deckel und der Faktor
+/// darüber wächst unbegrenzt.
 pub fn leiterstufe(size: f32, deckel: f32) -> f32 {
     let n = (size.max(RASTER_MIN_PX) / RASTER_MIN_PX).ln() / LEITER_FAKTOR.ln();
-    let stufe = RASTER_MIN_PX * LEITER_FAKTOR.powf(n.round());
+    let stufe = RASTER_MIN_PX * LEITER_FAKTOR.powf(n.ceil());
     stufe.clamp(RASTER_MIN_PX, deckel.max(RASTER_MIN_PX))
 }
 
@@ -120,6 +138,40 @@ mod tests {
                 );
                 vorher = raster;
                 size *= 1.05;
+            }
+        }
+    }
+
+    /// Nie gestreckt: die Rastergröße ist nie kleiner als die gewünschte.
+    ///
+    /// T0240: mit `round` lag die Stufe in 26,7 % der Fälle unter der
+    /// gewünschten Größe, der Faktor stieg bis 1,118 und die Galley wurde
+    /// sichtbar aufgeweitet. Mit `ceil` gilt **unter** dem Deckel
+    /// `raster >= size` und damit `faktor <= 1`; eine Leiterstufe Abstand
+    /// ergibt höchstens 1/1,25 = 0,80. Über dem Deckel bleibt es beim
+    /// unbegrenzt wachsenden Faktor (`ueber_dem_deckel_…`), dort gilt nur
+    /// `raster >= deckel`.
+    #[test]
+    fn rastergroesse_nie_kleiner_als_gewuenscht() {
+        for deckel in [128.0_f32, 256.0, 512.0, 1024.0] {
+            let mut size = 3.0_f32;
+            while size <= 4096.0 {
+                let (raster, faktor) = raster_und_skalierung(size, deckel);
+                assert!(
+                    raster >= size.min(deckel) - 1e-3,
+                    "{size} px bei Deckel {deckel}: Rastergröße {raster} px zu klein"
+                );
+                if size <= deckel {
+                    assert!(
+                        faktor <= 1.0 + 1e-6,
+                        "{size} px bei Deckel {deckel}: Faktor {faktor} streckt (gerastert {raster} px)"
+                    );
+                    assert!(
+                        faktor >= 0.8 - 1e-6,
+                        "{size} px bei Deckel {deckel}: Faktor {faktor} staucht um mehr als eine Stufe"
+                    );
+                }
+                size += 1.0;
             }
         }
     }
