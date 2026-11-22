@@ -747,6 +747,9 @@ pub struct ToolOptions {
     pub dim_axis: Option<DimAxis>,
     /// Eigener Maßtext des nächsten Maßes (leer = automatisch berechnet).
     pub dim_text: String,
+    /// Verlängerung zu den Messpunkten beim nächsten Maß (T0226) — Vorgabe
+    /// aus, wie die Vorgabe des Objekts.
+    pub dim_ext: bool,
     pub offset_dist: f64,
     /// Gemerkter Abstand des Werkzeugs „Parallele" (T0200).
     ///
@@ -870,6 +873,7 @@ impl ToolOptions {
             room_heading: "Zimmer".to_string(),
             dim_axis: None,
             dim_text: String::new(),
+            dim_ext: false,
             offset_dist: doc.settings.wall_thickness,
             parallel_dist: None,
             elevation_z: 0.0,

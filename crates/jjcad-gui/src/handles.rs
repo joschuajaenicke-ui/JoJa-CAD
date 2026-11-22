@@ -1902,6 +1902,7 @@ mod tests_masskette {
                 line_pos: V2::new(1000.0, -400.0),
                 angle: 0.0,
                 override_text: None,
+                ext_lines: false,
             },
         )
     }
@@ -2218,6 +2219,7 @@ mod tests_masskette {
                 line_pos: V2::new(1500.0, -300.0),
                 angle: 0.0,
                 override_text: None,
+                ext_lines: false,
             },
         );
         let griffe = grips_of(&e);
