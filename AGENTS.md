@@ -597,15 +597,21 @@ Mit dem Nutzer abgestimmt — nicht „verbessern“:
   Maßlinie, Begrenzungsstriche und Maßzahl bleiben unverändert. Alte Dateien
   und DIN-Prüfungen schalten sie ausdrücklich ein (`ext_lines: true`).
   Prüfweg: `cargo test -p jjcad-core --test masskette_verlaengerung`.
-- **Punktsymbol an den Messpunkten (T0227)**: Jede Maßkette trägt **eine**
-  Marke an **jedem Messpunkt** — `EntityKind::Dim::symbol`, Block-ID aus der
-  Kategorie „Punkt Symbole“, leer = kein Symbol. Vorgabe ist der **Schrägstrich**
-  (`model::DIM_SYMBOL_VORGABE` = `sys:pkt-schraegstrich`, Fadenkreuz plus
-  45°-Strich, Papiergröße): `#[serde(default = "default_dim_symbol")]` bringt sie
-  auch in vorhandene Zeichnungen. Gezeichnet wird sie in `render_dim_chain` über
-  `push_punktsymbol` — dieselbe Rechnung wie Punkt und Linienende, also in
-  Beschriftungsgröße. Wahl im Eigenschaften-Panel (Gruppe „Maß“, Zeile „Symbol“)
-  über `props::punktsymbol_wahl`; geschrieben über `modify.set` mit dem Schlüssel
+- **Punktsymbol auf der Maßlinie (T0227)**: Jede Maßkette trägt **eine** Marke
+  an **jedem Basispunkt der Maßlinie** — sie **ersetzt** dort den
+  Begrenzungsstrich (`EntityKind::Dim::symbol`, Block-ID aus der Kategorie
+  „Punkt Symbole“, leer = der Stil zeichnet seine Marke wie bisher). Vorgabe ist
+  der **Schrägstrich** (`model::DIM_SYMBOL_VORGABE` = `sys:pkt-schraegstrich`,
+  Fadenkreuz plus 45°-Strich, Papiergröße): `#[serde(default =
+  "default_dim_symbol")]` bringt sie auch in vorhandene Zeichnungen. Gezeichnet
+  wird sie in `render_dim_chain` über `push_punktsymbol` an den **projizierten**
+  Punkten, gedreht um die Messrichtung (`text_angle`) — dieselbe Rechnung wie
+  Punkt und Linienende, also in Beschriftungsgröße; sie ersetzt damit den
+  **Begrenzungsstrich** (`ArrowKind::Slash`) des Stils, Punkt- und Pfeilmarken
+  bleiben unberührt. An den Messpunkten
+  (den Enden der Maßhilfslinien) steht sie **nicht** — dort gehört sie nicht hin.
+  Wahl im Eigenschaften-Panel (Gruppe „Maß“, Zeile „Symbol“) über
+  `props::punktsymbol_wahl`; geschrieben über `modify.set` mit dem Schlüssel
   `symbol`. Diesen Schlüssel liest `modify.set` für **alle** Objekte, das
   Anfangsfeld `Entity::start_symbol` setzt es aber nur noch bei
   `Entity::kann_punktsymbol` (Punkt/Linie) — sonst trüge die Kette zwei Symbole.
