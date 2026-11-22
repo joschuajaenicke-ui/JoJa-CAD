@@ -146,9 +146,18 @@ Mit dem Nutzer abgestimmt — nicht „verbessern“:
   des Panels. **Jede Panel-Scrollfläche trägt ein eigenes `id_salt`** (`panel_layer`,
   `panel_props`, `panel_blatt`): ohne es bilden alle ScrollAreas im selben Elternteil dieselbe
   Kennung, und ein Radschritt bewegte beide Panels (T0222). Prüfweg:
-  `cargo test -p jjcad-gui tests_seitenleisten` (10 Tests) und
+  `cargo test -p jjcad-gui tests_seitenleisten` (14 Tests) und
   `cargo test -p jjcad-core panel_seiten`; Prüfbilder `--demo leisten`, `--demo panelslinks`,
   `--demo panelsrechts`, `--demo panelsdrei`.
+  **Seitenleiste immer anzeigen (T0233)**: Der Schalter in Einstellungen ▸ Darstellung
+  (`prefs.seitenleiste_immer`) bestimmt, wie viel Leiste bleibt. **Aus** ist der
+  Programmstandard: Auf einer Seite, auf der ein Panel **ausgeklappt** ist, entfällt die
+  Leiste (`App::panel_ausgeklappt_auf` in `App::seitenleisten`), und `panels_begrenzen`
+  hält **ein** ausgeklapptes Panel — die übrigen geben auf. Ein Klick in die Leiste
+  schließt die anderen Panels und klappt das gewählte aus (`App::leisten_klick`). **An**
+  ist der Stand seit T0222: beide Leisten stehen immer, je Seite bis zu zwei Panels.
+  Beides gilt sofort, ohne Neustart; im Standard ist der Weg zum Wechseln der
+  Einklapp-Pfeil im Panelkopf.
 - **Türen** sitzen immer auf der *vorderen Wandkante* (Blattseite), nicht in der
   Wandmitte. Kein Auswahlfeld für die Tür-Lage. Fenster dürfen ihre Lage in
   der Wanddicke wählen (Links/Mittig/Rechts).

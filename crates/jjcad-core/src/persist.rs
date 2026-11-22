@@ -1508,6 +1508,12 @@ pub struct UserPrefs {
     /// das Fenster ganz.
     #[serde(default = "default_true")]
     pub fensterschatten: bool,
+    /// Seitenleiste immer anzeigen (T0233): **an** lässt beide Leisten ständig
+    /// stehen, mehrere Panels dürfen gleichzeitig offen sein (Stand seit T0222);
+    /// **aus** (Programmstandard) blendet die Leiste einer Seite aus, sobald
+    /// dort ein Panel ausgeklappt ist, und hält immer nur **ein** Panel offen.
+    #[serde(default)]
+    pub seitenleiste_immer: bool,
     /// Farbdesign der Oberfläche (T0102): `system` folgt dem Betriebssystem
     /// (Programmstandard), `hell` und `dunkel` sind feste Wahlen. Die Wahl
     /// wirkt sofort, ohne Neustart (`crate::theme::set_design`).
@@ -2191,6 +2197,9 @@ impl Default for UserPrefs {
             // T0177: Der eigene Fensterschatten ist eingeschaltet — das
             // bisherige Aussehen; wer ihn stört (Andocken), schaltet ihn ab.
             fensterschatten: true,
+            // T0233: Programmstandard ist der ruhige Betrieb — eine Leiste je
+            // Seite, und sie verschwindet, sobald dort ein Panel steht.
+            seitenleiste_immer: false,
             // Programmstandard (T0102): das Farbschema des Betriebssystems.
             design: Design::System,
             // Programmstandard (T0111): der Bernstein-Akzent (bisheriges
@@ -3073,6 +3082,32 @@ mod tests {
         let alt: UserPrefs = serde_json::from_str(r#"{"last_dir": "/tmp"}"#).unwrap();
         assert_eq!(alt.layers_side, PanelSeite::Links);
         assert_eq!(alt.props_side, PanelSeite::Rechts);
+    }
+
+    /// T0233: „Seitenleiste immer anzeigen“ ist im Programmstandard **aus**;
+    /// eine ältere `prefs.json` ohne den Schlüssel liest ebenfalls aus, und die
+    /// Wahl übersteht Speichern und Laden.
+    #[test]
+    fn seitenleiste_immer_vorgabe_aus_und_gespeichert() {
+        assert!(
+            !UserPrefs::default().seitenleiste_immer,
+            "Programmstandard: Seitenleiste immer anzeigen ist aus"
+        );
+        let alt: UserPrefs = serde_json::from_str(r#"{"last_dir": "/tmp"}"#).unwrap();
+        assert!(!alt.seitenleiste_immer, "Altbestand ohne Schlüssel liest aus");
+
+        let mut prefs = UserPrefs::default();
+        prefs.seitenleiste_immer = true;
+        let roh = serde_json::to_string(&prefs).unwrap();
+        assert!(
+            roh.contains("\"seitenleiste_immer\":true"),
+            "Schlüssel fehlt: {roh}"
+        );
+        let wieder: UserPrefs = serde_json::from_str(&roh).unwrap();
+        assert!(
+            wieder.seitenleiste_immer,
+            "Einstellung ging beim Laden verloren"
+        );
     }
 
     #[test]
