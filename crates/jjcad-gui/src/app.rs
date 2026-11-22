@@ -10616,7 +10616,7 @@ impl App {
         }
     }
 
-    /// Höchstens zwei ausgeklappte Panels je Seite (T0222).
+    /// T0222: Höchstens zwei ausgeklappte Panels je Seite.
     ///
     /// Der Aufruf steht vor dem Zeichnen der Seitenpanels, damit **jeder** Weg
     /// die Grenze einhält: die Leiste, der Ribbon-Schalter `view.layers` und die
@@ -10624,6 +10624,9 @@ impl App {
     /// verschiedenen Stellen. Beim dritten Panel gibt das am längsten nicht
     /// mehr benutzte auf — es bleibt offen und liegt danach als Symbol in der
     /// Leiste, ist also mit einem Klick zurück.
+    ///
+    /// T0233: Ohne „Seitenleiste immer anzeigen“ (Programmstandard) ist
+    /// **ein** ausgeklapptes Panel die Grenze — die übrigen geben auf.
     pub fn panels_begrenzen(&mut self) {
         let mut reihe: Vec<SeitenPanel> = self.ui.panel_benutzt.clone();
         reihe.retain(|p| self.panel_offen(*p) && !self.panel_eingeklappt(*p));
@@ -10632,19 +10635,41 @@ impl App {
                 reihe.push(p);
             }
         }
-        for seite in PanelSeite::ALL {
-            let mut hier: Vec<SeitenPanel> = reihe
-                .iter()
-                .copied()
-                .filter(|p| self.panel_seite(*p) == seite)
-                .collect();
-            while hier.len() > 2 {
-                let alt = hier.remove(0);
-                reihe.retain(|p| *p != alt);
+        if self.seitenleiste_immer() {
+            for seite in PanelSeite::ALL {
+                let mut hier: Vec<SeitenPanel> = reihe
+                    .iter()
+                    .copied()
+                    .filter(|p| self.panel_seite(*p) == seite)
+                    .collect();
+                while hier.len() > 2 {
+                    let alt = hier.remove(0);
+                    reihe.retain(|p| *p != alt);
+                    self.panel_setze(alt, true, true, seite);
+                }
+            }
+        } else {
+            // T0233: nur ein Panel zugleich — das am längsten unbenutzte gibt auf.
+            while reihe.len() > 1 {
+                let alt = reihe.remove(0);
+                let seite = self.panel_seite(alt);
                 self.panel_setze(alt, true, true, seite);
             }
         }
         self.ui.panel_benutzt = reihe;
+    }
+
+    /// T0233: „Seitenleiste immer anzeigen“ aus den Einstellungen (Vorgabe aus).
+    pub fn seitenleiste_immer(&self) -> bool {
+        self.prefs.seitenleiste_immer
+    }
+
+    /// Liegt auf dieser Seite ein **ausgeklapptes** Panel? Dann entfällt dort
+    /// im Standardbetrieb die Leiste (T0233).
+    pub fn panel_ausgeklappt_auf(&self, seite: PanelSeite) -> bool {
+        SeitenPanel::ALLE.iter().any(|p| {
+            self.panel_seite(*p) == seite && self.panel_offen(*p) && !self.panel_eingeklappt(*p)
+        })
     }
 
     /// Klick auf ein Symbol der Seitenleiste.
@@ -10652,11 +10677,24 @@ impl App {
     /// Liegt das Panel schon auf dieser Seite, klappt der Klick es ein bzw.
     /// wieder aus. Liegt es auf der anderen Seite, wandert es hierher und ist
     /// danach ausgeklappt — so ist jedes Panel von jeder Seite erreichbar.
+    ///
+    /// T0233: Im Standardbetrieb ist immer nur **ein** Panel offen; ein Klick
+    /// schließt die übrigen und klappt das gewählte aus.
     pub fn leisten_klick(&mut self, p: SeitenPanel, seite: PanelSeite) {
-        if self.panel_seite(p) == seite {
-            let eingeklappt = self.panel_eingeklappt(p);
-            self.panel_setze(p, true, !eingeklappt, seite);
+        if self.seitenleiste_immer() {
+            if self.panel_seite(p) == seite {
+                let eingeklappt = self.panel_eingeklappt(p);
+                self.panel_setze(p, true, !eingeklappt, seite);
+            } else {
+                self.panel_setze(p, true, false, seite);
+            }
         } else {
+            for q in SeitenPanel::ALLE {
+                if q != p {
+                    let eigene = self.panel_seite(q);
+                    self.panel_setze(q, false, false, eigene);
+                }
+            }
             self.panel_setze(p, true, false, seite);
         }
         // T0222: Das dritte ausgeklappte Panel dieser Seite gibt sofort auf,
@@ -10679,19 +10717,24 @@ impl App {
             // eingeklappt ist. Vorher verschwand sie, sobald drei Panels
             // ausgeklappt waren — und mit ihr der einzige Weg, ein Panel zu
             // wechseln.
-            let id = match seite {
-                PanelSeite::Links => "seitenleiste_links",
-                PanelSeite::Rechts => "seitenleiste_rechts",
-            };
-            let mut panel = match seite {
-                PanelSeite::Links => egui::SidePanel::left(id),
-                PanelSeite::Rechts => egui::SidePanel::right(id),
-            };
-            panel
-                .exact_width(auf_pixel(ctx, LEISTE_W))
-                .resizable(false)
-                .frame(Frame::none().fill(Palette::panel()))
-                .show(ctx, |ui| self.leiste(ui, seite));
+            // T0233: Im Standardbetrieb („Seitenleiste immer anzeigen“ aus)
+            // entfällt die Leiste auf einer Seite, sobald dort ein Panel
+            // ausgeklappt ist — der Weg zum Wechseln ist dann das Einklappen.
+            if self.seitenleiste_immer() || !self.panel_ausgeklappt_auf(seite) {
+                let id = match seite {
+                    PanelSeite::Links => "seitenleiste_links",
+                    PanelSeite::Rechts => "seitenleiste_rechts",
+                };
+                let mut panel = match seite {
+                    PanelSeite::Links => egui::SidePanel::left(id),
+                    PanelSeite::Rechts => egui::SidePanel::right(id),
+                };
+                panel
+                    .exact_width(auf_pixel(ctx, LEISTE_W))
+                    .resizable(false)
+                    .frame(Frame::none().fill(Palette::panel()))
+                    .show(ctx, |ui| self.leiste(ui, seite));
+            }
             // Ausgeklappte Panels dieser Seite, in der Reihenfolge der Leiste.
             let hier: Vec<SeitenPanel> = SeitenPanel::ALLE
                 .iter()
@@ -20220,6 +20263,10 @@ mod tests_seitenleisten {
         app.ui.layers_side = PanelSeite::Links;
         app.ui.props_side = PanelSeite::Rechts;
         app.ui.ribbon_collapsed = false;
+        // T0233: Die Prüfungen dieser Gruppe gelten dem Stand mit „Seitenleiste
+        // immer anzeigen“ — beide Leisten stehen, zwei Panels je Seite. Der
+        // Programmstandard (Leiste weg, ein Panel) hat eigene Tests.
+        app.prefs.seitenleiste_immer = true;
         bild(&mut app, Vec::new());
         bild(&mut app, Vec::new());
         app
@@ -20354,6 +20401,117 @@ mod tests_seitenleisten {
         assert!(
             !app.ui.props_collapsed,
             "das zuletzt benutzte Eigenschaften-Panel bleibt stehen"
+        );
+    }
+
+    /// T0233: Programmstandard („Seitenleiste immer anzeigen“ aus) — auf einer
+    /// Seite mit ausgeklapptem Panel entfällt die Leiste, die andere bleibt.
+    #[test]
+    fn standard_blendet_die_leiste_der_panel_seite_aus() {
+        let mut app = app_mit_leisten();
+        app.prefs.seitenleiste_immer = false;
+        app.ui.layers_collapsed = false; // Layer links ausgeklappt
+        bild(&mut app, Vec::new());
+        bild(&mut app, Vec::new());
+        let je_seite = |seite: PanelSeite| {
+            app.ui
+                .last_leisten_icons
+                .iter()
+                .filter(|(_, s, _)| *s == seite)
+                .count()
+        };
+        assert_eq!(
+            je_seite(PanelSeite::Links),
+            0,
+            "links steht ein Panel — die Leiste gehört ausgeblendet"
+        );
+        assert_eq!(
+            je_seite(PanelSeite::Rechts),
+            3,
+            "rechts ist kein Panel offen — die Leiste bleibt stehen"
+        );
+    }
+
+    /// T0233: „Immer anzeigen“ an — beide Leisten stehen auch neben einem
+    /// ausgeklappten Panel, und zwei Panels dürfen gleichzeitig offen sein.
+    #[test]
+    fn immer_an_laesst_beide_leisten_und_zwei_panels_stehen() {
+        let mut app = app_mit_leisten(); // setzt seitenleiste_immer = true
+        app.ui.props_side = PanelSeite::Links;
+        app.ui.layers_collapsed = false;
+        app.ui.props_collapsed = false;
+        app.ui.panel_benutzt = vec![SeitenPanel::Eigenschaften, SeitenPanel::Layer];
+        bild(&mut app, Vec::new());
+        bild(&mut app, Vec::new());
+        let ausgeklappt = SeitenPanel::ALLE
+            .iter()
+            .filter(|p| app.panel_offen(**p) && !app.panel_eingeklappt(**p))
+            .count();
+        assert_eq!(
+            ausgeklappt, 2,
+            "mit „immer anzeigen“ bleiben zwei Panels offen"
+        );
+        for seite in PanelSeite::ALL {
+            let n = app
+                .ui
+                .last_leisten_icons
+                .iter()
+                .filter(|(_, s, _)| *s == seite)
+                .count();
+            assert_eq!(n, 3, "die Leiste {seite:?} muss trotz offener Panels stehen");
+        }
+    }
+
+    /// T0233: Standardbetrieb hält nur **ein** Panel offen — das am längsten
+    /// unbenutzte gibt auf.
+    #[test]
+    fn standard_haelt_nur_ein_panel_offen() {
+        let mut app = app_mit_leisten();
+        app.prefs.seitenleiste_immer = false;
+        app.ui.props_side = PanelSeite::Links;
+        app.ui.layers_collapsed = false;
+        app.ui.props_collapsed = false;
+        app.ui.panel_benutzt = vec![SeitenPanel::Eigenschaften, SeitenPanel::Layer];
+        app.panels_begrenzen();
+        let offen: Vec<SeitenPanel> = SeitenPanel::ALLE
+            .iter()
+            .copied()
+            .filter(|p| app.panel_offen(*p) && !app.panel_eingeklappt(*p))
+            .collect();
+        assert_eq!(
+            offen,
+            vec![SeitenPanel::Layer],
+            "nur das zuletzt benutzte Panel bleibt offen"
+        );
+    }
+
+    /// T0233: Im Standardbetrieb schließt ein Klick in die Leiste die übrigen
+    /// Panels — und blendet danach die Leiste dieser Seite aus.
+    #[test]
+    fn standard_klick_schliesst_die_anderen_panels() {
+        let mut app = app_mit_leisten();
+        app.prefs.seitenleiste_immer = false;
+        // Beide Panels eingeklappt → beide Leisten stehen und sind klickbar.
+        let r = symbol(&app, SeitenPanel::Blatt, PanelSeite::Links);
+        klick(&mut app, r.center());
+        assert!(
+            app.ui.blatt_open && !app.ui.blatt_collapsed,
+            "das geklickte Blatt-Panel muss ausgeklappt sein"
+        );
+        assert!(!app.ui.layers_open, "das Layer-Panel muss geschlossen sein");
+        assert!(
+            !app.ui.props_open,
+            "das Eigenschaften-Panel muss geschlossen sein"
+        );
+        let links = app
+            .ui
+            .last_leisten_icons
+            .iter()
+            .filter(|(_, s, _)| *s == PanelSeite::Links)
+            .count();
+        assert_eq!(
+            links, 0,
+            "links steht jetzt ein Panel — die Leiste gehört ausgeblendet"
         );
     }
 

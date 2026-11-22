@@ -2208,6 +2208,9 @@ fn settings_body(app: &mut App, ui: &mut Ui) {
     // T0177: Der selbst gezeichnete Fensterschatten (ohne Titelleiste) ist
     // abschaltbar.
     let mut fensterschatten = app.prefs.fensterschatten;
+    // T0233: Seitenleisten immer stehen lassen (an) oder mit dem geöffneten
+    // Panel ausblenden (aus, Programmstandard).
+    let mut seitenleiste_immer = app.prefs.seitenleiste_immer;
     // T0114/T0165: höchste Rastergröße der Schrift (Vorgabe 256 px).
     let mut textaufloesung = app.prefs.textaufloesung;
     // T0165: Kantenglättung der Zeichnung, Anzeigeliste und Leistungsanzeige.
@@ -2662,6 +2665,30 @@ fn settings_body(app: &mut App, ui: &mut Ui) {
                                     jjcad_core::i18n::tr("settings.fensterschatten_hint"),
                                     |ui| {
                                         ui.checkbox(&mut fensterschatten, "");
+                                    },
+                                );
+                                // T0233: Verhalten der Seitenleisten — an
+                                // bleiben sie immer stehen (mehrere Panels
+                                // zugleich), aus verschwindet die Leiste einer
+                                // Seite, sobald dort ein Panel geöffnet ist.
+                                zeile_tip(
+                                    &suche,
+                                    ui,
+                                    jjcad_core::i18n::tr("gui.dialogs.seitenleiste"),
+                                    &[
+                                        "Panels",
+                                        "Seitenpanels",
+                                        "Panel",
+                                        "Blattmanager",
+                                        "Leiste",
+                                        "Leisten",
+                                    ],
+                                    jjcad_core::i18n::tr("settings.seitenleiste_immer_hint"),
+                                    |ui| {
+                                        ui.checkbox(
+                                            &mut seitenleiste_immer,
+                                            jjcad_core::i18n::tr("gui.dialogs.seitenleiste_immer"),
+                                        );
                                     },
                                 );
                                 zeile_tip(
@@ -4065,6 +4092,14 @@ fn settings_body(app: &mut App, ui: &mut Ui) {
         // ihn füllt die Oberfläche das Fenster ganz; ein Neustart ist nicht
         // nötig (die Fenstergröße bleibt, sie ist nur nicht mehr eingerückt).
         app.prefs.fensterschatten = fensterschatten;
+        let _ = app.prefs.save();
+        ui.ctx().request_repaint();
+    }
+    if app.prefs.seitenleiste_immer != seitenleiste_immer {
+        // T0233: gilt sofort — die Leisten werden je Bild gezeichnet. Beim
+        // Abschalten gibt `panels_begrenzen` im nächsten Bild die überzähligen
+        // Panels auf, beim Einschalten bleiben die Leisten stehen.
+        app.prefs.seitenleiste_immer = seitenleiste_immer;
         let _ = app.prefs.save();
         ui.ctx().request_repaint();
     }
@@ -7838,6 +7873,29 @@ mod tests_einstellungen {
         assert!(
             jjcad_core::persist::UserPrefs::default().fensterschatten,
             "Vorgabe: der Fensterschatten ist eingeschaltet"
+        );
+    }
+
+    /// T0233: Unter „Darstellung“ steht der Schalter „Seitenleiste immer
+    /// anzeigen“ — gezeichnet (nicht nur im Code geführt), und der
+    /// Programmstandard ist **aus** (Leiste weicht dem geöffneten Panel).
+    #[test]
+    fn darstellung_zeigt_die_einstellung_seitenleiste() {
+        let _sperre = KONFIG.lock().unwrap_or_else(|e| e.into_inner());
+        let _konfig = WegwerfKonfig::neu("seitenleiste");
+        let (_, _, out) = seite("settings.category_darstellung", "");
+        let texte = gezeichnete_texte(&out);
+        assert!(
+            texte.iter().any(|t| t == "Seitenleiste"),
+            "Zeile „Seitenleiste“ fehlt in der Darstellung (gezeichnet: {texte:?})"
+        );
+        assert!(
+            texte.iter().any(|t| t == "immer anzeigen"),
+            "Häkchen „immer anzeigen“ fehlt (gezeichnet: {texte:?})"
+        );
+        assert!(
+            !jjcad_core::persist::UserPrefs::default().seitenleiste_immer,
+            "Programmstandard: die Seitenleiste weicht dem geöffneten Panel"
         );
     }
 
