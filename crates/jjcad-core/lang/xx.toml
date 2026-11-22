@@ -604,7 +604,7 @@
 # design_hint = "gilt sofort; „System“ folgt dem hellen oder dunklen Farbschema des Betriebssystems"
 # farbakzent_hint = "gilt sofort; färbt Reiter, Chips, Rahmen und Schalter der Bedienoberfläche"
 # fensterschatten_hint = "gilt sofort; ohne Titelleiste zeichnet JoJa-CAD den Schatten selbst — der Streifen gehört zum Fenster, deshalb bleibt beim Andocken an den Bildschirmrand ein Abstand seiner Breite; aus füllt die Oberfläche das Fenster ganz"
-# seitenleiste_immer_hint = "an: beide Leisten bleiben stehen, mehrere Panels dürfen gleichzeitig offen sein · aus (Programmstandard): die Leiste einer Seite verschwindet, sobald dort ein Panel geöffnet ist, und es ist immer nur ein Panel offen"
+# seitenleiste_immer_hint = "an: beide Leisten bleiben stehen, je Seite dürfen bis zu zwei Panels offen sein · aus (Programmstandard): die Leiste einer Seite verschwindet, sobald dort ein Panel geöffnet ist — je Seite bleibt dann ein Panel offen"
 # textaufloesung_hint = "höchste Rastergröße der Schrift; höher = schärfer im hohen Zoom, aber mehr Schriftatlas — gilt sofort"
 # kantenglaettung_hint = "weiche Kante an Flächen und Linien; aus zeichnet jede Kante hart auf dem Pixel — schneller, aber treppig"
 # kantenweichheit_hint = "Breite des weichen Saums in Bildpunkten; wirkt nur bei eingeschalteter Kantenglättung"

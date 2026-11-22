@@ -1,11 +1,13 @@
-//! T0227: Punktsymbol an den Messpunkten einer Maßkette.
+//! T0227: Punktsymbol auf der Maßlinie einer Maßkette.
 //!
-//! Die Marke steht an **jedem** Messpunkt, wird im Eigenschaften-Panel aus der
-//! Blockbibliothek gewählt und ist der **Schrägstrich**, solange niemand etwas
-//! anderes wählt. Geprüft wird über die Action-Schicht und die Anzeige — der
-//! Weg, den Oberfläche und MCP nehmen.
+//! Die Marke steht an **jedem Basispunkt der Maßlinie** (und ersetzt dort den
+//! Begrenzungsstrich), wird im Eigenschaften-Panel aus der Blockbibliothek
+//! gewählt und ist der **Schrägstrich**, solange niemand etwas anderes wählt.
+//! Geprüft wird über die Action-Schicht und die Anzeige — der Weg, den
+//! Oberfläche und MCP nehmen.
 
 use jjcad_core::actions;
+use jjcad_core::geom::Vec2;
 use jjcad_core::model::{
     BlockGroesse, Document, EntityKind, PUNKTSYMBOL_KATEGORIE, DIM_SYMBOL_VORGABE,
 };
@@ -63,13 +65,31 @@ fn der_schraegstrich_steht_in_den_punktsymbolen() {
     assert_eq!(block.groesse, BlockGroesse::Papier, "Papiergröße");
     // Senkrechte, Waagerechte und der Strich unter 45°.
     assert_eq!(block.entities.len(), 3, "Fadenkreuz plus Schrägstrich");
+    // **Gleiche radiale Länge** für alle drei Striche (Turn 5): Fadenkreuz und
+    // Schrägstrich enden auf demselben Kreis um den Basispunkt — der schräge
+    // Strich liegt bei ±ARM/√2, nicht bei ±ARM.
+    let mut arme: Vec<f64> = Vec::new();
     for e in &block.entities {
-        assert!(
-            matches!(e.kind, EntityKind::Line { .. }),
-            "ein Symbol aus Linien erwartet: {:?}",
-            e.kind
-        );
+        match &e.kind {
+            EntityKind::Line { a, b } => {
+                assert!(
+                    (a.dist(Vec2::ZERO) - b.dist(Vec2::ZERO)).abs() < 1e-9,
+                    "der Strich liegt nicht mittig um den Basispunkt: {a:?}–{b:?}"
+                );
+                arme.push(a.dist(Vec2::ZERO));
+            }
+            k => panic!("ein Symbol aus Linien erwartet: {k:?}"),
+        }
     }
+    arme.sort_by(|a, b| a.partial_cmp(b).unwrap());
+    assert!(
+        (arme[arme.len() - 1] - arme[0]).abs() < 1e-9,
+        "die Striche sind verschieden lang (radial): {arme:?}"
+    );
+    assert!(
+        (arme[0] - 1.1).abs() < 1e-9,
+        "radiale Länge muss 1,1 mm sein: {arme:?}"
+    );
     assert!(
         d.punktsymbol_bloecke()
             .iter()

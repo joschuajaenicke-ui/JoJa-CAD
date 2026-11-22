@@ -287,9 +287,10 @@ ausgeblendet.
   übersteht den Neustart.
   **Seitenleiste immer anzeigen** (Einstellungen ▸ Darstellung) bestimmt, wie viel Leiste
   bleibt: **aus** ist der Programmstandard — auf einer Seite mit ausgeklapptem Panel
-  verschwindet deren Leiste, und es ist immer nur **ein** Panel offen (die übrigen schließt
-  ein Klick in die Leiste); **an** ist der Stand davor — beide Leisten stehen immer, je
-  Seite dürfen bis zu zwei Panels ausgeklappt sein.
+  verschwindet deren Leiste, und **je Seite** ist ein Panel offen (die übrigen derselben
+  Seite schließt ein Klick in die Leiste; die andere Seite behält ihres); **an** ist der
+  Stand davor — beide Leisten stehen immer, je Seite dürfen bis zu zwei Panels ausgeklappt
+  sein.
 - **Eigenschaften-Panel** (Vorgabe rechts): ganz oben stehen Symbol und Bezeichnung des Objekts,
   darunter zwei Gruppen mit eigener Überschrift — **Allgemein** (Reihenfolge, Layer, Farbe, Stärke,
   Linientyp) und die objekteigene Gruppe, die nach ihrem Inhalt heißt (**Wandaufbau**, **Türblatt**,
@@ -496,8 +497,8 @@ ausgeblendet.
   anderen Seite legt es dorthin. Die Leisten bleiben immer sichtbar, auch wenn alle Panels
   ausgeklappt sind; je Seite stehen höchstens zwei Panels offen. Mit „Seitenleiste immer
   anzeigen“ (Einstellungen ▸ Darstellung, Vorgabe **aus**) bleibt die Leiste einer Seite
-  weg, sobald dort ein Panel ausgeklappt ist, und es ist immer nur ein Panel offen;
-  eingeschaltet bleiben die Leisten immer sichtbar.
+  weg, sobald dort ein Panel ausgeklappt ist; je Seite bleibt dann ein Panel offen, die
+  andere Seite ist davon unberührt. Eingeschaltet bleiben die Leisten immer sichtbar.
 - **Layer-Manager** (linkes Panel): Die Liste hat **eine** Stufe — **Layer gehören zu einem Plan**.
   Pläne sortieren Geschosse, Schnitte, Ansichten und Lagepläne. Jede Planzeile trägt links ein
   Dreieck zum **Einklappen**, in der Mitte den Namen und rechts **Auge** (ganzen Plan ausblenden)
