@@ -1879,11 +1879,6 @@ pub struct App {
     /// Vom Nutzer gelegte Hilfslinie für den nächsten Punkt (T0230). `None` =
     /// keine; sie verschwindet mit dem gesetzten Punkt von selbst.
     pub hilfslinie: Option<Hilfslinie>,
-    /// Richtung der zuletzt gezeichneten Strecke (T0236). Eine getippte Länge
-    /// ohne Zeigerrichtung — der Zeiger steht genau auf dem letzten Punkt,
-    /// typisch beim Tippen auf dem Ziffernblock — läuft in dieser Richtung
-    /// weiter, statt still verworfen zu werden.
-    pub letzte_richtung: Option<V2>,
     /// Leistungsanzeige (Umschalt+F3): Messwerte je Bild und ihr Verlauf
     pub perf: crate::perf::Perf,
     /// Objekte einer laufenden Mehrfachauswahl, für die das Eigenschaften-Panel
@@ -2137,7 +2132,6 @@ impl App {
             halt: Vec::new(),
             verweil: crate::canvas::VerweilFang::default(),
             hilfslinie: None,
-            letzte_richtung: None,
             perf: crate::perf::Perf::default(),
             mehrfach_ziel: Vec::new(),
             sperre: None,
