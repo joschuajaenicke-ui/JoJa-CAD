@@ -252,14 +252,23 @@ die **Vorgabe** ihrer Ebene und lassen sich wie jede andere Taste ändern.
     zu sehen, welche Fläche der Stempel beschriftet; die Linie gehört zur Bedienung und
     verschwindet mit der Auswahl.
 
-19. **PNG-Export eines Bereichs** (Ribbon ▸ Start ▸ Ausgabe ▸ „PNG", Pfeil am Knopf): der
-    Hauptklick exportiert wie bisher die **ganze** Zeichnung (bzw. das Blatt), das Menü bietet
-    zusätzlich **„Bereich · Diagonale"**. Der Bereich ist immer ein Rechteck und wird über die
-    **Diagonale** angegeben: der erste Klick setzt die eine Ecke, der zweite die andere (mit Fang,
-    `ESC` oder Rechtsklick bricht ab). Danach fragt der Speicherdialog nach dem Ziel. Das Bild
-    zeigt **genau** das gewählte Rechteck ohne Rand, die Höhe folgt aus dem Seitenverhältnis
-    (Breite 2400 px), und die Diagonale beider Punkte auf einer Achse wird als Fehler gemeldet,
-    statt ein leeres Bild zu schreiben.
+19. **PNG exportieren** (Ribbon ▸ Start ▸ Ausgabe ▸ „PNG"):
+    **ein** Knopf, **ein** Fenster — es stellt alles ein, was das Bild bestimmt:
+    - **Quelle**: die Zeichnung (Reiter „Modell") bzw. das Blatt, auf dem man gerade steht.
+    - **Bereich**: die Vorgabe ist die **ganze Zeichnung**. „Bereich auswählen" schließt das
+      Fenster und nimmt in der Zeichnung die **Diagonale** eines Rechtecks an — der erste
+      Klick die eine Ecke, der zweite die andere (`ESC` oder Rechtsklick bricht ab, das
+      Fenster ist danach wieder da). Der Bereich ist immer ein Rechteck, bleibt **für den
+      nächsten Export gemerkt** und lässt sich mit „Aufheben" zurücknehmen. Er wird exakt
+      exportiert, ohne den Rand, den die ganze Zeichnung bekommt.
+    - **Seitenverhältnis** und **Auflösung**: aus dem Bereich folgt das Seitenverhältnis;
+      die **Breite in Pixeln** ist einstellbar (100 … 20000), die **Höhe** wird daraus
+      angezeigt und mitgeschrieben — das Bild wird nie verzerrt.
+    - **Hintergrund**: **Weiß** oder **Transparent** (PNG mit durchsichtigem Grund).
+    „Exportieren …" öffnet den Speicherdialog; das Fenster gilt nur für diesen Export, die
+    Einstellungen und der Bereich bleiben für den nächsten stehen. Eine Diagonale ohne
+    Fläche (beide Punkte auf einer Achse) meldet einen Fehler, statt ein leeres Bild zu
+    schreiben.
 
 Der Zeiger ist über der Zeichenfläche ein durchgehendes Fadenkreuz; der Systemzeiger wird dort
 ausgeblendet.
