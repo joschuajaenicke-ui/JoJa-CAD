@@ -152,3 +152,118 @@ fn alte_datei_wird_beim_laden_umgeschrieben() {
         "neue Dateien dürfen die alte Liste nicht mehr schreiben"
     );
 }
+
+// ---------------------------------------------------------------------------
+// c) Angezeigte Layer (T0238)
+// ---------------------------------------------------------------------------
+
+/// Ein Meter-Dokument mit zwei Wänden auf zwei Plänen; liefert Sitzung,
+/// Fensterkennung und die beiden Layer-Kennungen.
+fn zwei_plaene() -> (Session, u64, u64, u64) {
+    let mut s = Session::new();
+    s.execute("doc.settings", &json!({"input_unit": "m"}))
+        .expect("Einheit");
+    let vid = s.doc.sheets[0]
+        .viewports()
+        .next()
+        .map(|(e, _)| e.id)
+        .expect("Ansichtsfenster");
+    // Plan 1, Layer „Architektur“ (Standardebene der Wand).
+    s.execute(
+        "draw.wall",
+        &json!({"a": [0, 0], "b": [3, 0], "thickness": 0.24, "layer": "Architektur"}),
+    )
+    .expect("Wand im Erdgeschoss");
+    let plan2 = s
+        .execute("plan.create", &json!({"name": "Obergeschoss"}))
+        .expect("Plan")["id"]
+        .as_u64()
+        .expect("Plan-Kennung");
+    let l2 = s
+        .doc
+        .layers
+        .iter()
+        .find(|l| l.plan == plan2 && l.name == "Architektur")
+        .map(|l| l.id)
+        .expect("Architektur im zweiten Plan");
+    s.execute(
+        "draw.wall",
+        &json!({"a": [0, 2], "b": [3, 2], "thickness": 0.24, "layer": l2}),
+    )
+    .expect("Wand im Obergeschoss");
+    let l1 = s
+        .doc
+        .layers
+        .iter()
+        .find(|l| l.plan != plan2 && l.name == "Architektur")
+        .map(|l| l.id)
+        .expect("Architektur im ersten Plan");
+    // `modify.set` arbeitet am **Bearbeitungsraum**: erst im Papierraum des
+    // Blatts steht das Ansichtsfenster in `doc.ents_mut()`.
+    let sid = s.doc.sheets[0].id;
+    s.set_space(Some(sid));
+    (s, vid, l1, l2)
+}
+
+/// `layers: null` zeigt alle Layer; eine Liste nur die genannten, und eine
+/// leere Liste gar nichts. Belegt am Renderer, nicht an der Datei.
+#[test]
+fn ansichtsfenster_zeigt_nur_gewaehlte_layer() {
+    let (mut s, vid, l1, l2) = zwei_plaene();
+    let prims = |s: &Session| {
+        let vp = s.doc.sheets[0].viewport(vid).expect("Fenster").clone();
+        jjcad_core::render::render_viewport(&s.doc, &vp).prims.len()
+    };
+    let alle = prims(&s);
+    assert!(alle > 0, "die Zeichnung zeichnet nichts");
+
+    // Nur der Plan des Erdgeschosses.
+    s.execute("modify.set", &json!({"ids": [vid], "layers": [l1]}))
+        .expect("Layerwahl");
+    assert_eq!(
+        s.doc.sheets[0].viewport(vid).expect("Fenster").layers,
+        Some(vec![l1])
+    );
+    let nur_eg = prims(&s);
+    assert!(
+        0 < nur_eg && nur_eg < alle,
+        "ein Layer zeigt weniger als alle, aber etwas: {nur_eg} von {alle}"
+    );
+
+    // Nur der zweite Plan — dieselbe Zahl, denn beide Pläne haben eine Wand.
+    s.execute("modify.set", &json!({"ids": [vid], "layers": [l2]}))
+        .expect("Layerwahl");
+    assert_eq!(prims(&s), nur_eg, "die Layerwahl trifft den falschen Plan");
+
+    // Keine Liste: gar nichts.
+    s.execute("modify.set", &json!({"ids": [vid], "layers": []}))
+        .expect("Layerwahl");
+    assert_eq!(prims(&s), 0, "eine leere Auswahl zeigt nichts");
+
+    // `null`: wieder alle.
+    s.execute("modify.set", &json!({"ids": [vid], "layers": null}))
+        .expect("Layerwahl");
+    assert_eq!(s.doc.sheets[0].viewport(vid).expect("Fenster").layers, None);
+    assert_eq!(prims(&s), alle, "`null` muss alle Layer zurückbringen");
+}
+
+/// Die Wahl steht in der Datei (`layers` in der `.jjcad`-Struktur) und kommt
+/// beim Laden unverändert zurück.
+#[test]
+fn layerwahl_steht_in_der_datei() {
+    let (mut s, vid, l1, _) = zwei_plaene();
+    s.execute("modify.set", &json!({"ids": [vid], "layers": [l1]}))
+        .expect("Layerwahl");
+    let text = persist::to_json(&s.doc).expect("JSON");
+    assert!(
+        text.contains("\"layers\": [") || text.contains("\"layers\":["),
+        "die Layerwahl fehlt in der Datei: {:?}",
+        text.lines().take(3).collect::<Vec<_>>()
+    );
+    let doc = persist::from_json(&text).expect("Laden");
+    assert_eq!(
+        doc.sheets[0].viewport(vid).expect("Fenster").layers,
+        Some(vec![l1]),
+        "die Layerwahl überlebt das Speichern nicht"
+    );
+}
