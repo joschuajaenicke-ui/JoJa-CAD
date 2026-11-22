@@ -261,7 +261,9 @@ die **Vorgabe** ihrer Ebene und lassen sich wie jede andere Taste ändern.
     - **Bereich**: die Vorgabe ist die **ganze Zeichnung**. „Bereich auswählen" schließt das
       Fenster und nimmt in der Zeichnung die **Diagonale** eines Rechtecks an — der erste
       Klick die eine Ecke, der zweite die andere (`ESC` oder Rechtsklick bricht ab, das
-      Fenster ist danach wieder da). Der Bereich ist immer ein Rechteck, bleibt **für den
+      Fenster ist danach wieder da) — in der Zeichnung steht dabei nur die **Umrandung**
+      des Rechtecks, genau wie beim Rechteck-Werkzeug (keine Füllung, kein Text). Der
+      Bereich ist immer ein Rechteck, bleibt **für den
       nächsten Export gemerkt** und lässt sich mit „Aufheben" zurücknehmen. Er wird exakt
       exportiert, ohne den Rand, den die ganze Zeichnung bekommt.
     - **Seitenverhältnis** und **Auflösung**: aus dem Bereich folgt das Seitenverhältnis;

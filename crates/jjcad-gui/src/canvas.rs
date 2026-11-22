@@ -5845,7 +5845,9 @@ fn draw_auswahlfenster(p: &Painter, rect: Rect, view: View, start: V2, cur: V2) 
 }
 
 /// Bereichswahl für den PNG-Export (T0235): Das Rechteck über die Diagonale
-/// steht in der Akzentfarbe, der zweite Eckpunkt folgt dem Zeiger.
+/// steht als **Umrandung** in der Zeichnung — genau wie die Vorschau eines
+/// Rechtecks (`draw_tool_preview`, `draw.rect`): keine Füllung, keine Diagonale,
+/// kein Text. Der zweite Eckpunkt folgt dem Zeiger.
 fn draw_png_bereich(app: &App, p: &Painter, rect: Rect, view: View, zeiger: Option<V2>) {
     let Some(wahl) = app.ui.png_wahl.as_ref() else {
         return;
@@ -5856,23 +5858,17 @@ fn draw_png_bereich(app: &App, p: &Painter, rect: Rect, view: View, zeiger: Opti
     let Some(b) = zeiger else {
         return;
     };
-    let r = Rect::from_two_pos(world_to_screen(rect, view, a), world_to_screen(rect, view, b));
-    p.rect_filled(r, 0.0, Palette::accent_soft());
-    p.rect_stroke(r, 0.0, Stroke::new(1.5, Palette::accent()));
-    p.line_segment(
-        [
-            world_to_screen(rect, view, a),
-            world_to_screen(rect, view, b),
-        ],
-        Stroke::new(1.0, Palette::accent()),
-    );
-    p.text(
-        Pos2::new(r.left() + 6.0, r.top() - 3.0),
-        Align2::LEFT_BOTTOM,
-        jjcad_core::i18n::tr("gui.canvas.png_bereich"),
-        FontId::proportional(12.0),
-        Palette::accent(),
-    );
+    let quad = [
+        a,
+        V2::new(b.x, a.y),
+        b,
+        V2::new(a.x, b.y),
+    ]
+    .iter()
+    .map(|q| world_to_screen(rect, view, *q))
+    .collect::<Vec<_>>();
+    let col = Palette::vorschau().gamma_multiply(0.9);
+    p.add(egui::Shape::closed_line(quad, Stroke::new(1.4, col)));
 }
 
 /// Rahmen ausgewählter Texte: derselbe Kasten, den die Einfüge-Vorschau zeigt.
@@ -19966,6 +19962,74 @@ mod tests_png_bereich {
         assert!(app.ui.png_bereich.is_none(), "kein Bereich gemerkt");
         assert!(app.ui.png_export_offen, "das Fenster ist wieder da");
         assert!(app.ui.file_dialog.is_none(), "kein Speicherdialog");
+    }
+
+    /// Ein Bild zeichnen und alle Formen flach zurückgeben (T0235: Prüfung der
+    /// Vorschau — sie darf nur eine Umrandung sein).
+    fn frame_formen(app: &mut App, events: Vec<egui::Event>) -> Vec<egui::Shape> {
+        let ctx = app.ctx.clone();
+        let input = egui::RawInput {
+            screen_rect: Some(Rect::from_min_size(Pos2::ZERO, egui::vec2(1500.0, 950.0))),
+            events,
+            ..Default::default()
+        };
+        let out = ctx.run(input, |ctx| app.ui(ctx));
+        fn sammeln(s: &egui::Shape, out: &mut Vec<egui::Shape>) {
+            match s {
+                egui::Shape::Vec(v) => v.iter().for_each(|x| sammeln(x, out)),
+                other => out.push(other.clone()),
+            }
+        }
+        let mut flach = Vec::new();
+        for cs in &out.shapes {
+            sammeln(&cs.shape, &mut flach);
+        }
+        flach
+    }
+
+    #[test]
+    fn vorschau_des_bereichs_ist_nur_eine_umrandung() {
+        let mut app = app();
+        frame(&mut app, vec![]);
+        let rect = app.ui.last_canvas;
+        let a = Pos2::new(rect.center().x - 120.0, rect.center().y - 80.0);
+        let b = Pos2::new(rect.center().x + 120.0, rect.center().y + 90.0);
+        app.start_png_bereich();
+        frame(&mut app, vec![]);
+        // Erster Klick setzt die Ecke, der Zeiger steht schon am zweiten Punkt.
+        frame(&mut app, vec![egui::Event::PointerMoved(a), taste(a, true)]);
+        // Der Klick wird erst in der Eingabe ausgewertet — die Vorschau steht
+        // deshalb im **nächsten** Bild (gezeichnet wird vor der Eingabe).
+        frame_formen(&mut app, vec![taste(a, false), egui::Event::PointerMoved(b)]);
+        assert!(app.ui.png_wahl.as_ref().and_then(|w| w.erster).is_some());
+        let formen = frame_formen(&mut app, vec![egui::Event::PointerMoved(b)]);
+
+        let col = Palette::vorschau().gamma_multiply(0.9);
+        let umrisse: Vec<&egui::Shape> = formen
+            .iter()
+            .filter(|s| match s {
+                egui::Shape::Path(p) => {
+                    p.closed
+                        && p.points.len() == 4
+                        && matches!(p.stroke.color, egui::epaint::ColorMode::Solid(c) if c == col)
+                }
+                _ => false,
+            })
+            .collect();
+        assert_eq!(umrisse.len(), 1, "genau ein Umriss für den Bereich");
+        // Nur die Umrandung: keine gefüllte Fläche in der Vorschaufarbe (die
+        // Oberfläche selbst malt viele Flächen — verglichen wird die Farbe).
+        let gefuellt = formen.iter().any(|s| match s {
+            egui::Shape::Rect(r) => r.fill != Color32::TRANSPARENT && r.fill == col,
+            _ => false,
+        });
+        assert!(!gefuellt, "die Vorschau hat eine Füllung");
+        // Und kein Text am Rechteck („Bereich" stand vorher daneben).
+        let beschriftet = formen.iter().any(|s| match s {
+            egui::Shape::Text(t) => t.galley.job.text.trim() == "Bereich",
+            _ => false,
+        });
+        assert!(!beschriftet, "die Vorschau trägt einen Text");
     }
 
     #[test]

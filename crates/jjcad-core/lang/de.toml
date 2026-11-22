@@ -1196,7 +1196,6 @@ beenden = "Beenden"
 kommandozeile = "Alternativ von der Kommandozeile: jjcad --daten-dir <Pfad>"
 
 [gui.canvas]
-png_bereich = "Bereich"
 png_bereich_diagonale = "PNG · Diagonale klicken"
 png_bereich_zweiter_punkt = "PNG · zweiten Eckpunkt klicken"
 png_bereich_ohne_flaeche = "PNG · Diagonale ohne Fläche"
