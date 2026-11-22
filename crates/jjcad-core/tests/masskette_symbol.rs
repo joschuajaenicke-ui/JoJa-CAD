@@ -96,10 +96,11 @@ fn vorgabe_ist_der_schraegstrich() {
     assert_eq!(symbol(&d, id2), DIM_SYMBOL_VORGABE, "Vorgabe des Einzelmaßes");
 }
 
-/// Die Marke steht **an jedem** Messpunkt: drei Punkte → drei Symbole zu je
-/// drei Linien. „Kein Symbol“ nimmt genau diese neun Linien wieder weg.
+/// Die Marke steht **auf der Maßlinie** und **ersetzt** den Begrenzungsstrich:
+/// drei Basispunkte → drei Symbole zu je drei Linien statt drei Schrägstrichen.
+/// „Kein Symbol“ gibt dem Stil seine Marke zurück.
 #[test]
-fn symbol_steht_an_jedem_messpunkt() {
+fn symbol_liegt_auf_der_masslinie_und_ersetzt_den_strich() {
     let mut d = doc_mm();
     let vorher = linien(&d);
     let id = kette(&mut d);
@@ -109,12 +110,35 @@ fn symbol_steht_an_jedem_messpunkt() {
         .expect("Symbol wegnehmen");
     let ohne = linien(&d) - vorher;
 
+    // Ersatz, nicht Zusatz: 9 Symbol-Linien statt der 3 Schrägstriche.
     assert_eq!(
         mit - ohne,
-        9,
-        "drei Messpunkte mal drei Linien (Vorgabe {mit}, ohne Symbol {ohne})"
+        6,
+        "drei Symbole zu drei Linien statt drei Begrenzungsstrichen \
+         (mit Symbol {mit}, mit Stilmarke {ohne})"
     );
     assert_eq!(symbol(&d, id), "", "leeres Feld heißt kein Symbol");
+
+    // Und die Marke liegt auf der Maßlinie (y = −400), nicht an den
+    // Messpunkten (y = 0): keine Linie reicht dorthin.
+    let hoehen = linien_hoehen(&d, id);
+    assert!(
+        hoehen.iter().all(|(y0, y1)| *y0 < -280.0 && *y1 < -280.0),
+        "eine Linie steht an den Messpunkten statt auf der Maßlinie: {hoehen:?}"
+    );
+}
+
+/// Die Höhen (y) aller Linien einer Maßkette.
+fn linien_hoehen(d: &Document, id: u64) -> Vec<(f64, f64)> {
+    render_document(&RenderCtx::new(d))
+        .prims
+        .iter()
+        .filter(|p| p.entity == id)
+        .filter_map(|p| match &p.shape {
+            Shape::Line(a, b) => Some((a.y, b.y)),
+            _ => None,
+        })
+        .collect()
 }
 
 /// Das Panel schickt `symbol` über `modify.set`; ein unbekannter Block ist ein
@@ -186,7 +210,8 @@ fn symbol_ueberlebt_das_speichern() {
 }
 
 /// Die Marke ist eine Papiergröße: bei 1:100 wächst sie auf 2,2 m Kantenlänge,
-/// wie jedes Punktsymbol (T0231).
+/// wie jedes Punktsymbol (T0231) — und sie liegt auf der Maßlinie (y = −400),
+/// nicht an den Messpunkten (y = 0).
 #[test]
 fn symbol_waechst_mit_dem_massstab() {
     let mut d = doc_mm();
@@ -194,14 +219,49 @@ fn symbol_waechst_mit_dem_massstab() {
     let id = kette(&mut d);
     let dl = render_document(&RenderCtx::new(&d));
     let bbox = dl.bbox;
-    // Der erste Messpunkt liegt auf (0,0): die Marke reicht 1,1 Papier-mm
-    // (also 110 Welt-mm) darüber hinaus, ebenso am letzten Punkt bei 5000 mm.
+    // Erster und letzter Basispunkt der Maßlinie liegen bei x = 0 bzw. 5000:
+    // die Marke reicht 1,1 Papier-mm (also 110 Welt-mm) darüber hinaus.
     assert!(
-        bbox.min.x <= -110.0 && bbox.min.y <= -110.0,
+        bbox.min.x <= -110.0,
         "die Marke wächst nicht mit dem Maßstab: {bbox:?} (Kette {id})"
     );
     assert!(
         bbox.max.x >= 5110.0,
-        "die Marke am letzten Messpunkt fehlt: {bbox:?}"
+        "die Marke am letzten Basispunkt fehlt: {bbox:?}"
+    );
+    // Die Maßlinie liegt bei y = −400 (die Maßzahl steht darüber), die Marke
+    // reicht ±110 darum — nicht bis zu den Messpunkten bei y = 0.
+    assert!(
+        bbox.min.y <= -510.0,
+        "die Marke liegt nicht auf der Maßlinie (y = −400): {bbox:?}"
+    );
+}
+
+/// Ohne eigenes Symbol zeichnet der Stil seine Marke wie bisher — der
+/// DIN-Begrenzungsstrich bleibt damit erreichbar („Kein Symbol“).
+#[test]
+fn ohne_symbol_zeichnet_der_stil_seinen_strich() {
+    let mut d = doc_mm();
+    let id = kette(&mut d);
+    actions::execute(&mut d, "modify.set", &json!({"ids": [id], "symbol": ""}))
+        .expect("Symbol wegnehmen");
+    let strich = jjcad_core::render::DIM_MARKE_H * d.dim_style.text_height
+        * d.settings.annotation_scale;
+    let laengen: Vec<f64> = render_document(&RenderCtx::new(&d))
+        .prims
+        .iter()
+        .filter(|p| p.entity == id)
+        .filter_map(|p| match &p.shape {
+            Shape::Line(a, b) => Some(a.dist(*b)),
+            _ => None,
+        })
+        .collect();
+    // Je Basispunkt ein Schrägstrich unter 45° der Länge `marke`
+    // (`text_height × DIM_MARKE_H` in Papier-mm).
+    let erwartet = strich;
+    assert_eq!(
+        laengen.iter().filter(|l| (*l - erwartet).abs() < 0.5).count(),
+        3,
+        "drei Begrenzungsstriche erwartet (Länge {erwartet}), gezeichnet: {laengen:?}"
     );
 }
