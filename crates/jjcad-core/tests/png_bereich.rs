@@ -21,7 +21,9 @@ fn zeichnung() -> Session {
     // die Koordinaten in Metern und der Beschriftungsmaßstab macht aus einer
     // 0,5-mm-Linie eine 50 mm breite.
     s.execute("doc.settings", &json!({"input_unit": "mm"})).expect("Einstellungen");
-    s.doc.settings.annotation_scale = 1.0;
+    // T0232: Der Maßstab gehört zum Plan — 1:1, damit die 0,5-mm-Linie nicht
+    // über den Planmaßstab auf 50 mm anwächst.
+    s.doc.plans[0].scale = 1.0;
     s.execute(
         "draw.line",
         &json!({"a": [0.0, 0.0], "b": [1000.0, 0.0], "layer": "Wände", "lineweight": 0.5}),
@@ -107,7 +109,9 @@ fn hoehe_folgt_dem_seitenverhaeltnis() {
 fn nur_der_bereich_steht_im_bild() {
     let mut s = Session::new();
     s.execute("doc.settings", &json!({"input_unit": "mm"})).expect("Einstellungen");
-    s.doc.settings.annotation_scale = 1.0;
+    // T0232: Der Maßstab gehört zum Plan — 1:1, damit die 0,5-mm-Linie nicht
+    // über den Planmaßstab auf 50 mm anwächst.
+    s.doc.plans[0].scale = 1.0;
     // Eine Linie in der linken Hälfte des Bereichs, eine weit darunter.
     s.execute(
         "draw.line",

@@ -36,8 +36,12 @@ struct PaintCtx<'a> {
     /// Faktor der Linienstärke im Modus „Bildschirm (konstant)“ (T0139);
     /// im Modus „Papier (maßstabsgetreu)“ gilt er nicht.
     lineweight_factor: f64,
-    /// Pixel pro Papier-mm (für Strichstärken und Linientypen)
+    /// Pixel pro Papier-mm (Grundwert für Objekte ohne Layer-Eintrag)
     paper_px: f64,
+    /// Pixel je Papier-mm je Layer (T0232): Zoom × Maßstab seines Plans.
+    /// Strichstärke und Strichmuster im Modus „Papier (maßstabsgetreu)“
+    /// hängen damit am Plan des Objekts.
+    skalen: Vec<(Id, f64)>,
     /// Vorschau-Modus: einheitliche Akzentkontur (wie die Einfüge-Vorschau),
     /// ohne Auswahl-/Hover-Hervorhebung und ohne Originalfarbe/-strichart.
     preview: bool,
@@ -54,6 +58,26 @@ struct PaintCtx<'a> {
     /// Zählung der Sehnenpunkte (T0173). Nur die Zeichnung selbst zählt mit;
     /// Vorschauen, Ansichtsfenster und Prüfbilder lassen sie leer.
     zaehlung: Option<&'a crate::perf::Zaehlung>,
+}
+
+impl<'a> PaintCtx<'a> {
+    /// Pixel je Papier-mm für ein Objekt (T0232) — der Maßstab seines Plans.
+    fn paper_px_fuer(&self, layer: Id) -> f64 {
+        self.skalen
+            .iter()
+            .find(|(l, _)| *l == layer)
+            .map(|(_, px)| *px)
+            .unwrap_or(self.paper_px)
+    }
+}
+
+/// Pixel je Papier-mm je Layer (T0232): Zoom × Maßstab des Plans. Eine Stelle
+/// für alle Zeichenwege, die Strichstärken in Papier-Millimetern malen.
+fn skalen_px(doc: &jjcad_core::model::Document, zoom: f64) -> Vec<(Id, f64)> {
+    doc.skalen_je_layer()
+        .into_iter()
+        .map(|(l, _)| (l, doc.strich_px(l, zoom)))
+        .collect()
 }
 
 fn color32(c: jjcad_core::style::Color) -> Color32 {
@@ -347,7 +371,7 @@ fn fill_too_thin(v: &[Pos2]) -> bool {
 /// skaliert sie zusätzlich. `scaled = true` = „Papier (maßstabsgetreu)“ — die
 /// Breite_mm × Pixel je Papier-mm, ohne Obergrenze, damit Strichbreite und
 /// Abstand in jedem Zoom im selben Verhältnis stehen wie im PDF. Dort bestimmt
-/// der Maßstab der Zeichnung (`settings.annotation_scale`) die Papier-mm.
+/// der Maßstab des **Plans** (`Plan::scale`, T0232) die Papier-mm.
 fn linienbreite_px(width_mm: f64, paper_px: f64, scaled: bool, faktor: f64) -> f64 {
     if scaled {
         (width_mm * paper_px).max(0.05)
@@ -435,7 +459,7 @@ fn bild_mesh(
 fn verworfen(prim: &Prim, w2s: &dyn Fn(V2) -> Pos2, bereich: Rect, pc: &PaintCtx<'_>) -> bool {
     let breite = linienbreite_px(
         prim.style.width,
-        pc.paper_px,
+        pc.paper_px_fuer(prim.layer),
         pc.lineweights_scaled,
         pc.lineweight_factor,
     );
@@ -465,12 +489,15 @@ fn paint_prim(p: &Painter, prim: &Prim, w2s: &dyn Fn(V2) -> Pos2, scale: f64, pc
     // Ein Weltmaß (Bandhöhe der Dämmung, T0176) skaliert immer mit der
     // Abbildung — sonst hinge die Dicke am Linienstärke-Modus und würde in
     // „Bildschirm (konstant)“ bei 9 px gedeckelt.
+    // T0232: Dieselbe Papier-Stärke wird im Plan 1:100 doppelt so breit wie im
+    // Plan 1:200 — der Maßstab kommt vom Layer des Objekts.
+    let paper_px = pc.paper_px_fuer(prim.layer);
     let base_w = if prim.style.welt_breite {
         (prim.style.width * scale).max(0.05)
     } else {
         linienbreite_px(
             prim.style.width,
-            pc.paper_px,
+            paper_px,
             pc.lineweights_scaled,
             pc.lineweight_factor,
         )
@@ -487,7 +514,7 @@ fn paint_prim(p: &Painter, prim: &Prim, w2s: &dyn Fn(V2) -> Pos2, scale: f64, pc
     let dash = if pc.preview {
         None
     } else {
-        dash_pattern(prim.style.line_type, pc.paper_px, pc.lineweights_scaled)
+        dash_pattern(prim.style.line_type, paper_px, pc.lineweights_scaled)
     };
 
     match &prim.shape {
@@ -1461,7 +1488,7 @@ pub fn show(app: &mut App, ui: &mut Ui) {
     let lineweights = app.ui.lineweights;
     let lineweights_scaled = app.ui.lineweights_scaled;
     let lineweight_factor = app.ui.lineweight_factor as f64;
-    let paper_px = view_now.zoom * app.doc().settings.annotation_scale;
+    let paper_px = view_now.zoom * app.doc().current_scale();
 
     // Einfüge-Vorschau nur, solange der Zeiger über der Zeichenfläche steht
     // (T0156). Außerhalb gibt es keinen Punkt, an dem sie gesetzt werden
@@ -1529,6 +1556,7 @@ pub fn show(app: &mut App, ui: &mut Ui) {
             lineweights_scaled,
             lineweight_factor,
             paper_px,
+            skalen: skalen_px(app.doc(), view_now.zoom),
             preview: false,
             rot: view_now.rot as f32,
             text_deckel: app.prefs.textaufloesung.px(),
@@ -1747,7 +1775,7 @@ pub(crate) fn display_list(app: &mut App) -> DisplayList {
     let key = DrawCacheKey {
         rev: app.tab().rev,
         zoom: app.current_view().zoom,
-        annot: app.doc().settings.annotation_scale,
+        annot: app.doc().current_scale(),
         space: app.session().space(),
         block: app.doc().in_block_space(),
         kurven: app.prefs.kurven_toleranz_px,
@@ -1999,6 +2027,7 @@ pub fn paint_zeichnung(
         lineweights_scaled: false,
         lineweight_factor: 1.0,
         paper_px: 1.0,
+        skalen: Vec::new(),
         preview: false,
         rot: 0.0,
         text_deckel: 48.0,
@@ -2074,6 +2103,7 @@ fn draw_sheet(app: &mut App, p: &Painter, rect: Rect, view: View, cursor: Option
             lineweights_scaled: true,
             lineweight_factor: 1.0,
             paper_px: view.zoom,
+            skalen: Vec::new(),
             preview: false,
             rot: 0.0,
             text_deckel: app.prefs.textaufloesung.px(),
@@ -2130,6 +2160,7 @@ fn draw_sheet(app: &mut App, p: &Painter, rect: Rect, view: View, cursor: Option
         lineweights_scaled: true,
         lineweight_factor: 1.0,
         paper_px: view.zoom,
+        skalen: Vec::new(),
         preview: false,
         rot: view.rot as f32,
         text_deckel: app.prefs.textaufloesung.px(),
@@ -3001,7 +3032,7 @@ fn draw_opening_preview(
         let pts: Vec<Pos2> = quad.iter().map(|q| w2s(*q)).collect();
         p.add(egui::Shape::convex_polygon(pts, hintergrund(app), Stroke::NONE));
     }
-    let paper_px = view.zoom * app.doc().settings.annotation_scale;
+    let paper_px = view.zoom * app.doc().current_scale();
     let wand_ctx = PaintCtx {
         selected: app.selection().to_vec(),
         hover: app.tab().hover,
@@ -3009,6 +3040,7 @@ fn draw_opening_preview(
         lineweights_scaled: app.ui.lineweights_scaled,
         lineweight_factor: app.ui.lineweight_factor as f64,
         paper_px,
+        skalen: skalen_px(app.doc(), view.zoom),
         preview: false,
         rot: view.rot as f32,
         text_deckel: app.prefs.textaufloesung.px(),
@@ -3157,7 +3189,8 @@ fn paint_vorschau_dl(
         lineweights: app.ui.lineweights,
         lineweights_scaled: app.ui.lineweights_scaled,
         lineweight_factor: app.ui.lineweight_factor as f64,
-        paper_px: view.zoom * app.doc().settings.annotation_scale,
+        paper_px: view.zoom * app.doc().current_scale(),
+        skalen: skalen_px(app.doc(), view.zoom),
         preview: true,
         rot: view.rot as f32,
         text_deckel: app.prefs.textaufloesung.px(),
@@ -3776,7 +3809,7 @@ fn draw_tool_preview(
             if let Some(sym) = app.options.symbol_start.as_deref() {
                 if let Some(def) = app.doc().block(sym) {
                     let ctx = render::RenderCtx::new(app.doc());
-                    let k = app.doc().settings.annotation_scale;
+                    let k = app.doc().current_scale();
                     let aff = Affine::translate(cursor) * Affine::scale(k, k);
                     let mut dl = render::DisplayList::default();
                     for e in &def.entities {
@@ -3788,7 +3821,8 @@ fn draw_tool_preview(
                         lineweights: app.ui.lineweights,
                         lineweights_scaled: app.ui.lineweights_scaled,
                         lineweight_factor: app.ui.lineweight_factor as f64,
-                        paper_px: view.zoom * app.doc().settings.annotation_scale,
+                        paper_px: view.zoom * app.doc().current_scale(),
+                        skalen: skalen_px(app.doc(), view.zoom),
                         preview: true,
                         rot: view.rot as f32,
                         text_deckel: app.prefs.textaufloesung.px(),
@@ -3944,7 +3978,7 @@ fn draw_tool_preview(
                 pts.push(cursor);
                 if line_pos.is_none() {
                     let (_, vers) = render::dim_achse(angle);
-                    line_pos = Some(pts[0] + vers * (app.doc().settings.annotation_scale * 8.0));
+                    line_pos = Some(pts[0] + vers * (app.doc().current_scale() * 8.0));
                 }
             }
             if let Some(lp) = line_pos {
@@ -4063,7 +4097,8 @@ fn draw_tool_preview(
                 lineweights: app.ui.lineweights,
                 lineweights_scaled: app.ui.lineweights_scaled,
                 lineweight_factor: app.ui.lineweight_factor as f64,
-                paper_px: view.zoom * app.doc().settings.annotation_scale,
+                paper_px: view.zoom * app.doc().current_scale(),
+                skalen: skalen_px(app.doc(), view.zoom),
                 preview: true,
                 rot: view.rot as f32,
                 text_deckel: app.prefs.textaufloesung.px(),
@@ -4365,7 +4400,9 @@ fn draw_objekt_hervorhebung(
     let w2s = |q: V2| world_to_screen(rect, view, q);
     let breite = linienbreite_px(
         app.doc().effective_line_weight(e),
-        view.zoom * app.doc().settings.annotation_scale,
+        // T0232: Die Hervorhebung trägt dieselbe Strichbreite wie die Anzeige
+        // des Objekts — also der Maßstab seines Plans.
+        app.doc().strich_px(e.layer, view.zoom),
         app.ui.lineweights_scaled,
         app.ui.lineweight_factor as f64,
     );
@@ -4524,7 +4561,9 @@ fn draw_abschnitt_preview(
     };
     let breite = linienbreite_px(
         app.doc().effective_line_weight(e),
-        view.zoom * app.doc().settings.annotation_scale,
+        // T0232: Die Hervorhebung trägt dieselbe Strichbreite wie die Anzeige
+        // des Objekts — also der Maßstab seines Plans.
+        app.doc().strich_px(e.layer, view.zoom),
         app.ui.lineweights_scaled,
         app.ui.lineweight_factor as f64,
     );
@@ -4568,7 +4607,7 @@ fn draw_selection_preview(
     if dl.prims.is_empty() {
         return;
     }
-    let paper_px = view.zoom * app.doc().settings.annotation_scale;
+    let paper_px = view.zoom * app.doc().current_scale();
     let pc = PaintCtx {
         selected: Vec::new(),
         hover: None,
@@ -4576,6 +4615,7 @@ fn draw_selection_preview(
         lineweights_scaled: app.ui.lineweights_scaled,
         lineweight_factor: app.ui.lineweight_factor as f64,
         paper_px,
+        skalen: skalen_px(app.doc(), view.zoom),
         preview: true,
         rot: view.rot as f32,
         text_deckel: app.prefs.textaufloesung.px(),
@@ -6711,7 +6751,8 @@ fn draw_fill_ghost(app: &App, p: &Painter, rect: Rect, view: View, umriss: &[V2]
         lineweights: true,
         lineweights_scaled: app.ui.lineweights_scaled,
         lineweight_factor: app.ui.lineweight_factor as f64,
-        paper_px: view.zoom * app.doc().settings.annotation_scale,
+        paper_px: view.zoom * app.doc().current_scale(),
+        skalen: skalen_px(app.doc(), view.zoom),
         preview: true,
         rot: view.rot as f32,
         text_deckel: app.prefs.textaufloesung.px(),
@@ -6773,7 +6814,8 @@ fn draw_paint_ghost(
         lineweights: true,
         lineweights_scaled: app.ui.lineweights_scaled,
         lineweight_factor: app.ui.lineweight_factor as f64,
-        paper_px: view.zoom * app.doc().settings.annotation_scale,
+        paper_px: view.zoom * app.doc().current_scale(),
+        skalen: skalen_px(app.doc(), view.zoom),
         preview: true,
         rot: view.rot as f32,
         text_deckel: app.prefs.textaufloesung.px(),
@@ -7009,7 +7051,7 @@ pub fn finish_tool(app: &mut App, from_enter: bool) {
                     // Ohne dritten Klick: die Maßlinie liegt wie bisher ein
                     // Stück neben der Messstrecke.
                     let (_, vers) = render::dim_achse(angle);
-                    pts[0] + vers * (app.doc().settings.annotation_scale * 8.0)
+                    pts[0] + vers * (app.doc().current_scale() * 8.0)
                 });
                 let _ = run(
                     app,
@@ -15294,9 +15336,9 @@ mod tests_stutzvorschau {
         );
     }
 
-    /// T0139: Im Papier-Modus bestimmt der Maßstab der Zeichnung
-    /// (`settings.annotation_scale`) die Strichbreite: 1:50 zeigt dieselbe
-    /// Linie bei gleichem Zoom halb so breit wie 1:100.
+    /// T0139/T0232: Im Papier-Modus bestimmt der Maßstab **des Plans** die
+    /// Strichbreite: 1:50 zeigt dieselbe Linie bei gleichem Zoom halb so breit
+    /// wie 1:100, 1:200 doppelt so breit (Papier-Stärke wie im Druck).
     #[test]
     fn massstab_der_zeichnung_bestimmt_die_breite_im_papier_modus() {
         let mut app = app();
@@ -15309,11 +15351,16 @@ mod tests_stutzvorschau {
         app.set_view(view);
         // 1:100 → paper_px = 4 → 4 px Strich + 1 px Hervorhebung.
         let bei_100 = stutz_strecken(&mut app, Some(V2::new(3000.0, 0.0)))[0].2;
-        app.doc_mut().settings.annotation_scale = 50.0;
+        app.doc_mut().plans[0].scale = 50.0;
         // 1:50 → paper_px = 2 → 2 px Strich + 1 px Hervorhebung.
         let bei_50 = stutz_strecken(&mut app, Some(V2::new(3000.0, 0.0)))[0].2;
+        app.doc_mut().plans[0].scale = 200.0;
+        // 1:200 → paper_px = 8 → 8 px Strich + 1 px Hervorhebung.
+        let bei_200 = stutz_strecken(&mut app, Some(V2::new(3000.0, 0.0)))[0].2;
         assert!((bei_100 - 5.0).abs() < 0.01, "1:100: {bei_100}");
         assert!((bei_50 - 3.0).abs() < 0.01, "1:50: {bei_50}");
+        assert!((bei_200 - 9.0).abs() < 0.01, "1:200: {bei_200}");
+        assert!(bei_200 > bei_100, "1:200 ist relativ zur Zeichnung breiter");
     }
 }
 
@@ -15597,6 +15644,7 @@ mod tests_kreis_kontur {
             lineweights_scaled: skalierte_breiten,
             lineweight_factor: 1.0,
             paper_px: scale,
+            skalen: Vec::new(),
             preview: false,
             rot: 0.0,
             text_deckel: crate::textgroesse::RASTER_DECKEL_PX,
@@ -16548,6 +16596,7 @@ mod tests_mittelpunkt {
                 lineweights_scaled: false,
                 lineweight_factor: 1.0,
                 paper_px: 1.0,
+                skalen: Vec::new(),
                 preview: false,
                 rot: 0.0,
                 text_deckel: 64.0,
@@ -18119,7 +18168,7 @@ mod tests_masspunkt_vorschau {
         let lineweights = app.ui.lineweights;
         let lineweights_scaled = app.ui.lineweights_scaled;
         let lineweight_factor = app.ui.lineweight_factor as f64;
-        let paper_px = view.zoom * app.doc().settings.annotation_scale;
+        let paper_px = view.zoom * app.doc().current_scale();
         let text_deckel = app.prefs.textaufloesung.px();
         let kurven = kurven_guete(app);
         let out = ctx.run(egui::RawInput::default(), |ctx| {
@@ -18132,6 +18181,7 @@ mod tests_masspunkt_vorschau {
                 lineweights_scaled,
                 lineweight_factor,
                 paper_px,
+                skalen: skalen_px(app.doc(), view.zoom),
                 preview: false,
                 rot: view.rot as f32,
                 text_deckel,
@@ -18413,6 +18463,7 @@ mod tests_kurventoleranz {
                 lineweights_scaled: false,
                 lineweight_factor: 1.0,
                 paper_px: 1.0,
+                skalen: Vec::new(),
                 preview: false,
                 rot: 0.0,
                 text_deckel: 64.0,
@@ -19510,6 +19561,166 @@ mod tests_hilfslinie {
         );
         assert!(!app.hilfslinie_modus, "ESC beendet die Eingabe");
         assert!(app.tool.is_some(), "das Werkzeug läuft weiter");
+    }
+}
+
+#[cfg(test)]
+mod tests_plan_massstab {
+    //! T0232: Der Maßstab gehört zum Plan. Im Modus „Papier (maßstabsgetreu)“
+    //! hängt die gezeichnete Strichbreite am Plan des Objekts: dieselbe
+    //! Papier-Stärke erscheint im Plan 1:200 doppelt so breit wie im Plan 1:100
+    //! (so dick ist sie relativ zur Zeichnung auch im Druck) — gemessen am
+    //! gezeichneten Mesh, nicht am Quelltext.
+
+    use super::*;
+
+    const ZOOM: f64 = 4.0; // px je Welt-mm
+
+    /// Strichbreite in Pixeln, die `paint_prim` für ein Objekt auf `layer`
+    /// malt. `plan_skala` ist der Maßstab des Plans, zu dem der Layer gehört.
+    fn strichbreite_px(plan_skala: f64, layer: Id, breite_mm: f64) -> f32 {
+        let ctx = egui::Context::default();
+        let raw = egui::RawInput {
+            screen_rect: Some(Rect::from_min_size(Pos2::ZERO, Vec2::new(400.0, 400.0))),
+            ..Default::default()
+        };
+        let pc = PaintCtx {
+            selected: Vec::new(),
+            hover: None,
+            lineweights: true,
+            lineweights_scaled: true,
+            lineweight_factor: 1.0,
+            paper_px: ZOOM * 100.0,
+            skalen: vec![(layer, ZOOM * jjcad_core::model::strich_faktor(plan_skala))],
+            preview: false,
+            rot: 0.0,
+            text_deckel: crate::textgroesse::RASTER_DECKEL_PX,
+            kurven: CurveQuality::SCREEN,
+            zaehlung: None,
+        };
+        let prim = Prim {
+            shape: PShape::Line(V2::new(-10.0, 0.0), V2::new(10.0, 0.0)),
+            style: jjcad_core::render::PrimStyle {
+                width: breite_mm,
+                ..Default::default()
+            },
+            entity: 0,
+            layer,
+        };
+        // Waagerechte Linie durch die Bildmitte; gemessen wird die senkrechte
+        // Ausdehnung des Meshes.
+        let mitte = Pos2::new(200.0, 200.0);
+        let w2s = |q: V2| Pos2::new(mitte.x + q.x as f32 * ZOOM as f32, mitte.y - q.y as f32 * ZOOM as f32);
+        let out = ctx.run(raw, |ctx| {
+            let painter = ctx.layer_painter(egui::LayerId::background());
+            paint_prim(&painter, &prim, &w2s, ZOOM, &pc, 1.0);
+        });
+        let mut min = f32::INFINITY;
+        let mut max = f32::NEG_INFINITY;
+        for cp in ctx.tessellate(out.shapes, 1.0) {
+            if let egui::epaint::Primitive::Mesh(m) = &cp.primitive {
+                for vtx in &m.vertices {
+                    // Nur die Linie selbst, nicht Beschriftung oder Fadenkreuz.
+                    if (vtx.pos.x - mitte.x).abs() < 60.0 {
+                        min = min.min(vtx.pos.y);
+                        max = max.max(vtx.pos.y);
+                    }
+                }
+            }
+        }
+        assert!(min.is_finite() && max.is_finite(), "kein Mesh gezeichnet");
+        max - min
+    }
+
+    #[test]
+    fn linie_im_plan_1zu200_ist_breiter_als_im_plan_1zu100() {
+        // Gleiche Papier-Stärke (0,35 mm), gleicher Zoom: im Maßstab 1:200
+        // liegt sie auf der doppelten Weltstrecke.
+        let breit = strichbreite_px(200.0, 2, 0.35);
+        let schmal = strichbreite_px(100.0, 1, 0.35);
+        assert!(
+            breit > schmal * 1.6,
+            "1:200 muss rund doppelt so breit sein wie 1:100: {breit:.2} px gegen {schmal:.2} px"
+        );
+        assert!(
+            (breit / schmal - 2.0).abs() < 0.2,
+            "Verhältnis der Strichbreiten {:.2} statt 2,0",
+            breit / schmal
+        );
+        // Gegenprobe derselbe Plan: gleiche Breite.
+        let nochmal = strichbreite_px(200.0, 2, 0.35);
+        assert!((breit - nochmal).abs() < 0.01, "gleicher Plan, gleiche Breite");
+    }
+
+    #[test]
+    fn ohne_skalen_eintrag_gilt_der_grundwert() {
+        // Ein Layer ohne Eintrag (Vorschau, Test) rechnet mit `paper_px`; der
+        // Eintrag des Plans 1:100 liefert denselben Wert (`zoom · 100`).
+        let mut breiten = Vec::new();
+        for mit_eintrag in [true, false] {
+            let ctx = egui::Context::default();
+            let raw = egui::RawInput {
+                screen_rect: Some(Rect::from_min_size(Pos2::ZERO, Vec2::new(400.0, 400.0))),
+                ..Default::default()
+            };
+            let pc = PaintCtx {
+                selected: Vec::new(),
+                hover: None,
+                lineweights: true,
+                lineweights_scaled: true,
+                lineweight_factor: 1.0,
+                paper_px: ZOOM * 100.0,
+                skalen: if mit_eintrag {
+                    vec![(1, ZOOM * jjcad_core::model::strich_faktor(100.0))]
+                } else {
+                    Vec::new()
+                },
+                preview: false,
+                rot: 0.0,
+                text_deckel: crate::textgroesse::RASTER_DECKEL_PX,
+                kurven: CurveQuality::SCREEN,
+                zaehlung: None,
+            };
+            let prim = Prim {
+                shape: PShape::Line(V2::new(-10.0, 0.0), V2::new(10.0, 0.0)),
+                style: jjcad_core::render::PrimStyle {
+                    width: 0.35,
+                    ..Default::default()
+                },
+                entity: 0,
+                layer: 99, // steht in keinem `skalen`-Eintrag
+            };
+            let mitte = Pos2::new(200.0, 200.0);
+            let w2s = |q: V2| {
+                Pos2::new(
+                    mitte.x + q.x as f32 * ZOOM as f32,
+                    mitte.y - q.y as f32 * ZOOM as f32,
+                )
+            };
+            let out = ctx.run(raw, |ctx| {
+                let painter = ctx.layer_painter(egui::LayerId::background());
+                paint_prim(&painter, &prim, &w2s, ZOOM, &pc, 1.0);
+            });
+            let mut min = f32::INFINITY;
+            let mut max = f32::NEG_INFINITY;
+            for cp in ctx.tessellate(out.shapes, 1.0) {
+                if let egui::epaint::Primitive::Mesh(m) = &cp.primitive {
+                    for vtx in &m.vertices {
+                        if (vtx.pos.x - mitte.x).abs() < 60.0 {
+                            min = min.min(vtx.pos.y);
+                            max = max.max(vtx.pos.y);
+                        }
+                    }
+                }
+            }
+            breiten.push(max - min);
+        }
+        assert!(
+            (breiten[0] - breiten[1]).abs() < 0.01,
+            "ohne Planeintrag muss der Grundwert gelten: {:.2} px gegen {:.2} px",
+            breiten[0],
+            breiten[1]
+        );
     }
 }
 

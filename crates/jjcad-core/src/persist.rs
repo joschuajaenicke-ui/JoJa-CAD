@@ -111,6 +111,18 @@ pub fn normalize_plaene(doc: &mut Document) {
         let id = doc.new_id();
         doc.plans.push(Plan::new(id, "Plan 1"));
     }
+    // T0232: Der Maßstab lag früher **einmal je Datei** in
+    // `settings.annotation_scale`. Er gehört jetzt zu jedem Plan; beim Laden
+    // bekommen alle Pläne, die noch bei der Vorgabe stehen, den Wert der Datei.
+    // Danach ist das Feld leer und wird nicht mehr geschrieben.
+    if let Some(alt) = doc.settings.annotation_scale.take() {
+        let alt = alt.max(1.0);
+        for p in doc.plans.iter_mut() {
+            if (p.scale - 100.0).abs() < f64::EPSILON {
+                p.scale = alt;
+            }
+        }
+    }
     let first = doc.plans[0].id;
     for i in 0..doc.layers.len() {
         let plan = doc.layers[i].plan;

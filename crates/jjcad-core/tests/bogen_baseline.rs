@@ -322,7 +322,7 @@ fn szenen() -> Vec<(&'static str, f64, Vec<Bogen>)> {
 fn szene_doc(bogen: &[Bogen], massstab: f64) -> jjcad_core::model::Document {
     use jjcad_core::model::{Document, Entity, EntityKind, EntityStyle};
     let mut doc = Document::new();
-    doc.settings.annotation_scale = massstab;
+    doc.plans[0].scale = massstab;
     let layer = doc.current_layer;
     for s in bogen {
         let mut e = Entity::new(

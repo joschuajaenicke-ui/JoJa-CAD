@@ -14,7 +14,7 @@ fn main() {
 
     let mut doc = Document::blank();
     doc.name = "Linienbreiten-Test".into();
-    doc.settings.annotation_scale = 100.0;
+    doc.plans[0].scale = 100.0;
     doc.settings.show_grid = false;
 
     let lid = doc.new_id();

@@ -428,7 +428,8 @@ pub fn show(app: &mut App, ui: &mut Ui) {
 
             // Maßstab und Zoom: klein, links von den Schaltern
             ui.add_space(8.0);
-            ui.label(theme::mono(format_scale(app.doc().settings.annotation_scale)));
+            // T0232: Der Maßstab hängt am Plan, in dem gezeichnet wird.
+            ui.label(theme::mono(format_scale(app.doc().current_scale())));
             ui.add_space(6.0);
             ui.label(theme::mono(format!(
                 "{:.0} %",

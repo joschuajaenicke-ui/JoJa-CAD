@@ -104,7 +104,7 @@ Regeln:
 | `input_unit` | `"Mm" \| "Cm" \| "M"` | `"M"` | Einheit für Eingaben (auch MCP-Koordinaten) |
 | `dim_unit` | `"Mm" \| "Cm" \| "M"` | `"M"` | Einheit der Maßzahlen |
 | `decimals` | Zahl | `2` | Nachkommastellen der Maßzahlen |
-| `annotation_scale` | Zahl | `100` | Bezugsmaßstab für Papiergrößen von Texten/Bemaßung |
+| `annotation_scale` | Zahl | — | **Altlast** (T0232): lag einmal hier. Beim Laden verteilt ihn `normalize_plaene` auf die Pläne; geschrieben wird er nicht mehr |
 | `text_height` | mm | `250` | Standard-Texthöhe |
 | `wall_thickness`, `door_width`, `window_width`, `stair_width` | mm | 240 / 885 / 1200 / 1000 | Werkzeugvorgaben |
 | `show_grid`, `show_rulers` | bool | `true` | Anzeige |
@@ -126,6 +126,19 @@ Fang, `grid_mode` (`skaliert` | `fest`, Standard `skaliert`) ob die gezeichnete
 Weite mit dem Zoom ausgedünnt wird, `grid_force` (bool, Standard `false`) ob
 jede Eingabe ohne Fangradius im Raster liegt. Fehlende Felder gelten als
 Vorgabe — alte Dateien laden unverändert.
+
+## `plans`
+
+```json
+{ "id": 1, "name": "Plan 1", "visible": true, "locked": false, "collapsed": false,
+  "scale": 100.0 }
+```
+
+Ein Plan ist die oberste Gliederungsebene des Layer-Managers (T0202); jeder
+Layer gehört zu genau einem Plan (`Layer::plan`). `scale` ist der **Maßstab
+dieses Plans** (1:N, T0232): An ihm hängen alle Papiergrößen seiner Objekte
+(Strichstärke im Modus „Papier (maßstabsgetreu)“, Text- und Bemaßungshöhen,
+Punktsymbole). Fehlt das Feld, gilt 1:100.
 
 ## `layers`
 

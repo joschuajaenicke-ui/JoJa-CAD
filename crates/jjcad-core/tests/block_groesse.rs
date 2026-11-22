@@ -104,7 +104,7 @@ fn punktsymbole_haben_papiergroesse_in_gedruckter_groesse() {
 #[test]
 fn fester_block_bleibt_in_jedem_massstab_gleich() {
     let mut doc = doc_mm();
-    doc.settings.annotation_scale = 100.0;
+    doc.plans[0].scale = 100.0;
     let block = rechteck_block(&mut doc, BlockGroesse::Fest);
     let id = instanz(&mut doc, &block);
     assert!(
@@ -112,7 +112,7 @@ fn fester_block_bleibt_in_jedem_massstab_gleich() {
         "2 mm bleiben 2 mm, gemessen {:.2}",
         breite(&doc, id)
     );
-    doc.settings.annotation_scale = 50.0;
+    doc.plans[0].scale = 50.0;
     assert!(
         (breite(&doc, id) - 2.0).abs() < 0.01,
         "1:50 darf einen Block fester Größe nicht verändern"
@@ -124,7 +124,7 @@ fn fester_block_bleibt_in_jedem_massstab_gleich() {
 #[test]
 fn papierblock_waechst_mit_dem_beschriftungsmassstab() {
     let mut doc = doc_mm();
-    doc.settings.annotation_scale = 100.0;
+    doc.plans[0].scale = 100.0;
     let block = rechteck_block(&mut doc, BlockGroesse::Papier);
     // Gedruckte Breite 3 mm: das Rechteck ist 2 Einheiten breit, also ×1,5.
     let antwort = actions::execute(
@@ -157,7 +157,7 @@ fn papierblock_waechst_mit_dem_beschriftungsmassstab() {
     );
 
     // 1:50 → halbe Größe auf demselben Papier.
-    doc.settings.annotation_scale = 50.0;
+    doc.plans[0].scale = 50.0;
     assert!(
         (breite(&doc, id) - 150.0).abs() < 1.0,
         "bei 1:50 sind es 150 mm, gemessen {:.1}",
@@ -296,7 +296,7 @@ fn block_update_setzt_die_groesse() {
 #[test]
 fn punktsymbol_block_ist_so_gross_wie_das_symbol_am_punkt() {
     let mut doc = doc_mm();
-    doc.settings.annotation_scale = 100.0;
+    doc.plans[0].scale = 100.0;
     let punkt = actions::execute(
         &mut doc,
         "draw.point",

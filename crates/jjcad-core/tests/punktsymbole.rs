@@ -192,7 +192,7 @@ fn pfeile_haben_die_spitze_auf_dem_basispunkt() {
 #[test]
 fn pfeilspitze_am_linienende_trifft_den_endpunkt_auf_den_punkt() {
     let mut doc = doc_mm();
-    doc.settings.annotation_scale = 100.0;
+    doc.plans[0].scale = 100.0;
     let antwort = actions::execute(
         &mut doc,
         "draw.line",
@@ -221,7 +221,7 @@ fn pfeilspitze_am_linienende_trifft_den_endpunkt_auf_den_punkt() {
 #[test]
 fn symbolgroesse_folgt_dem_beschriftungsmassstab() {
     let mut doc = doc_mm();
-    doc.settings.annotation_scale = 100.0;
+    doc.plans[0].scale = 100.0;
     let id = created(
         &actions::execute(
             &mut doc,
@@ -231,7 +231,7 @@ fn symbolgroesse_folgt_dem_beschriftungsmassstab() {
         .expect("Punkt"),
     );
     let gross = jjcad_core::render::entity_bbox(&doc, doc.entity(id).unwrap()).width();
-    doc.settings.annotation_scale = 50.0;
+    doc.plans[0].scale = 50.0;
     let klein = jjcad_core::render::entity_bbox(&doc, doc.entity(id).unwrap()).width();
     assert!(
         (gross / klein - 2.0).abs() < 0.05,

@@ -9,6 +9,18 @@ use std::collections::BTreeMap;
 pub type Id = u64;
 
 pub const FORMAT_NAME: &str = "jjcad";
+
+/// Faktor der Strichstärke für einen Plan (T0232): `width_mm · pixel_je_mm ·
+/// strich_faktor(scale)`.
+///
+/// **Papier (maßstabsgetreu) wie im Druck**: dieselbe Papier-Stärke (0,35 mm)
+/// liegt bei 1:200 auf einer doppelt so großen Weltstrecke wie bei 1:100 — bei
+/// gleichem Zoom erscheint die Linie im Plan 1:200 deshalb breiter, und relativ
+/// zur Zeichnung stimmt das Verhältnis mit dem Ausdruck überein. Der Wert ist
+/// der Maßstab selbst; im Papierraum (1:1) gilt genau die Papier-Stärke.
+pub fn strich_faktor(plan_scale: f64) -> f64 {
+    plan_scale.max(1.0)
+}
 pub const FORMAT_VERSION: u32 = 2;
 
 // ---------------------------------------------------------------------------
@@ -31,6 +43,12 @@ pub struct Plan {
     /// Dokument, damit er beim Speichern erhalten bleibt.
     #[serde(default)]
     pub collapsed: bool,
+    /// Maßstab **dieses Plans** (1:scale, T0232). An ihm hängen alle
+    /// Papiergrößen seiner Objekte: Strichstärke im Modus „Papier
+    /// (maßstabsgetreu)“, Text- und Bemaßungshöhen, Punktsymbole. Vorher trug
+    /// die **Datei** einen einzigen Maßstab (`Settings::annotation_scale`).
+    #[serde(default = "default_hundred")]
+    pub scale: f64,
 }
 
 impl Plan {
@@ -41,6 +59,7 @@ impl Plan {
             visible: true,
             locked: false,
             collapsed: false,
+            scale: default_hundred(),
         }
     }
 }
@@ -1798,9 +1817,12 @@ pub struct Settings {
     pub dim_unit: Unit,
     #[serde(default = "default_two")]
     pub decimals: usize,
-    /// Bezugsmaßstab für Papiergrößen von Texten/Bemaßung (1:annotation_scale)
-    #[serde(default = "default_hundred")]
-    pub annotation_scale: f64,
+    /// Altlast (T0232): Der Maßstab lag einmal **einmal je Datei** hier. Er
+    /// gehört jetzt zu jedem Plan (`Plan::scale`); beim Laden verteilt ihn
+    /// `persist::normalize_plaene` auf die Pläne und leert das Feld, geschrieben
+    /// wird er nicht mehr.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub annotation_scale: Option<f64>,
     #[serde(default)]
     pub snap: SnapSettings,
     #[serde(default = "default_text_height")]
@@ -1852,7 +1874,7 @@ impl Default for Settings {
             paper_input_unit: Unit::Mm,
             dim_unit: Unit::M,
             decimals: 2,
-            annotation_scale: 100.0,
+            annotation_scale: None,
             snap: SnapSettings::default(),
             text_height: 250.0,
             wall_thickness: 240.0,
@@ -2111,6 +2133,45 @@ impl Document {
     /// `Document::layers`).
     pub fn layers_of_plan(&self, plan: Id) -> Vec<&Layer> {
         self.layers.iter().filter(|l| l.plan == plan).collect()
+    }
+
+    /// Maßstab (1:N) eines Plans (T0232) — nie kleiner als 1:1.
+    pub fn plan_scale(&self, plan: Id) -> f64 {
+        self.plan(plan)
+            .map(|p| p.scale.max(1.0))
+            .unwrap_or_else(default_hundred)
+    }
+
+    /// Maßstab des Plans, zu dem ein **Layer** gehört (T0232) — die eine
+    /// Abfrage für alle Papiergrößen eines Objekts. Ein Layer ohne Plan (alte
+    /// Datei vor der Migration) rechnet mit der Vorgabe 1:100.
+    pub fn plan_scale_of_layer(&self, layer: Id) -> f64 {
+        self.plan_of_layer(layer)
+            .map(|p| p.scale.max(1.0))
+            .unwrap_or_else(default_hundred)
+    }
+
+    /// Maßstab des Plans, in dem gerade gezeichnet wird — für neue Objekte und
+    /// alle Vorschauen.
+    pub fn current_scale(&self) -> f64 {
+        self.aktueller_plan()
+            .map(|p| self.plan_scale(p))
+            .unwrap_or_else(default_hundred)
+    }
+
+    /// Pixel je Papier-mm für die **Strichstärke** eines Layers (T0232):
+    /// `px_je_welt_mm · strich_faktor(Maßstab des Plans)`.
+    pub fn strich_px(&self, layer: Id, px_je_welt_mm: f64) -> f64 {
+        px_je_welt_mm * strich_faktor(self.plan_scale_of_layer(layer))
+    }
+
+    /// Maßstab je Layer (Layer, Maßstab seines Plans) — für die Anzeige, die
+    /// Strichstärke und Strichmuster je Objekt rechnet (T0232).
+    pub fn skalen_je_layer(&self) -> Vec<(Id, f64)> {
+        self.layers
+            .iter()
+            .map(|l| (l.id, self.plan_scale_of_layer(l.id)))
+            .collect()
     }
 
     /// Sichtbar ist ein Layer nur, wenn er selbst **und** sein Plan sichtbar
@@ -2574,7 +2635,7 @@ impl Document {
         s = s.replace("{ADRESSE}", &self.project.address);
         s = s.replace("{REVISION}", &self.project.revision);
         s = s.replace("{DATEI}", &self.name);
-        let sc = scale.unwrap_or(self.settings.annotation_scale);
+        let sc = scale.unwrap_or_else(|| self.current_scale());
         s = s.replace("{MASSTAB}", &crate::units::format_scale(sc));
         s = s.replace("{MASSSTAB}", &crate::units::format_scale(sc));
         s

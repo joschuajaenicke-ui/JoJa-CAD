@@ -131,8 +131,8 @@ Plan. Ein Layername ist je Plan eindeutig.
 
 | ID | Parameter |
 |---|---|
-| `plan.create` | `name` (Vorgabe „Plan N“) — legt den Plan mit den vier Standardlayern an |
-| `plan.update` | `plan`, `name`, `visible`, `locked`, `collapsed` |
+| `plan.create` | `name` (Vorgabe „Plan N“), `scale` (Maßstab 1:N, Vorgabe 100) — legt den Plan mit den vier Standardlayern an |
+| `plan.update` | `plan`, `name`, `visible`, `locked`, `collapsed`, `scale` |
 | `plan.list` | — (Pläne mit ihren Layern) |
 | `layer.create` | `name`, `plan`, `color`, `lineweight`, `linetype`, `visible`, `locked` |
 | `layer.update` | `layer`, beliebige Eigenschaften, `plan` (verschieben) |

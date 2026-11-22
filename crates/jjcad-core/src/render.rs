@@ -494,6 +494,22 @@ pub struct DisplayList {
     /// `None` = die Vorgabe [`SPLINE_TOL_PX`]; Druck, PNG und DXF lassen sie
     /// leer und bleiben weltfest.
     pub sagitta_px: Option<f64>,
+    /// Maßstab (1:N) je Layer (T0232): Strichstärke und Strichmuster im Modus
+    /// „Papier (maßstabsgetreu)“ hängen am **Plan** des Objekts. Im Papierraum
+    /// steht hier für jeden Layer 1 (das Blatt ist Papier).
+    pub skalen: Vec<(Id, f64)>,
+}
+
+impl DisplayList {
+    /// Maßstab (1:N) des Plans, zu dem ein Layer gehört — Vorgabe 1:100 für
+    /// Objekte ohne Layer (Vorschauen, Tests).
+    pub fn skala(&self, layer: Id) -> f64 {
+        self.skalen
+            .iter()
+            .find(|(l, _)| *l == layer)
+            .map(|(_, s)| *s)
+            .unwrap_or(100.0)
+    }
 }
 
 /// Weg, auf dem ein Schlaufenband läuft — `None` für Formen ohne Linie
@@ -614,8 +630,17 @@ impl DisplayList {
 
 pub struct RenderCtx<'a> {
     pub doc: &'a Document,
-    /// Papier-mm → Welt-mm (Zeichnungsmaßstab für Beschriftungshöhen)
+    /// Papier-mm → Welt-mm (Grundwert für Aufrufer ohne Objekt). Je Objekt
+    /// gilt der Maßstab seines **Plans** (T0232) — siehe `a()`.
     pub annot_scale: f64,
+    /// Wirksamer Maßstab des gerade gezeichneten Objekts. `Cell`, weil
+    /// `render_entity` ihn je Objekt setzt und die Zeichenfunktionen ihn über
+    /// `&RenderCtx` lesen.
+    skala: std::cell::Cell<f64>,
+    /// Je Objekt den Maßstab seines Plans nehmen (T0232). `false` nur, wenn der
+    /// Aufrufer **einen** Maßstab für alle Objekte vorgibt (Prüfbilder,
+    /// Exporte mit festem Maßstab).
+    plan_skala: bool,
     /// Falls gesetzt, nur diese Layer rendern
     pub layer_filter: Option<Vec<Id>>,
     /// Dynamische Textfelder auflösen
@@ -655,7 +680,9 @@ impl<'a> RenderCtx<'a> {
     pub fn new(doc: &'a Document) -> Self {
         Self {
             doc,
-            annot_scale: doc.settings.annotation_scale.max(0.01),
+            annot_scale: doc.current_scale().max(0.01),
+            skala: std::cell::Cell::new(doc.current_scale().max(0.01)),
+            plan_skala: true,
             layer_filter: None,
             resolve_text: true,
             selection: None,
@@ -674,6 +701,8 @@ impl<'a> RenderCtx<'a> {
         Self {
             doc,
             annot_scale: scale.max(0.01),
+            skala: std::cell::Cell::new(scale.max(0.01)),
+            plan_skala: true,
             layer_filter: None,
             resolve_text: true,
             selection: None,
@@ -686,6 +715,15 @@ impl<'a> RenderCtx<'a> {
             volumes: OnceCell::new(),
             wall_edges: OnceCell::new(),
         }
+    }
+
+    /// **Einen** Maßstab für alle Objekte statt je Plan (T0232) — für
+    /// Prüfbilder und Exporte, die eine feste Papiergröße brauchen.
+    pub fn mit_festem_massstab(mut self, scale: f64) -> Self {
+        self.annot_scale = scale.max(0.01);
+        self.skala.set(self.annot_scale);
+        self.plan_skala = false;
+        self
     }
 
     /// Kontext für die Zeichnung selbst — nie den Papierraum. Für Ausgaben,
@@ -822,6 +860,7 @@ impl<'a> RenderCtx<'a> {
     /// die ganze Zeichnung gebaut — und `entity_bbox` läuft in Schleifen.
     pub fn for_entity(doc: &'a Document, e: &Entity) -> Self {
         let mut c = Self::new(doc);
+        c.skala_nachziehen(e.layer);
         if let Some(f) = wall::Frame::of(e) {
             let pad = wall::MITER_LIMIT * f.h + 400.0;
             c.wall_scope = Some(crate::geom::BBox::from_points(&f.band()).expanded(pad));
@@ -840,9 +879,38 @@ impl<'a> RenderCtx<'a> {
         }
     }
 
-    /// Papier-mm in Welt-mm
+    /// Papier-mm in Welt-mm — mit dem Maßstab des **gerade gezeichneten**
+    /// Objekts (T0232), sonst dem Grundwert dieses Durchgangs.
     pub fn a(&self, paper_mm: f64) -> f64 {
-        paper_mm * self.annot_scale
+        paper_mm * self.skala.get()
+    }
+
+    /// Maßstab des gerade gezeichneten Objekts (1:N).
+    pub fn wirksame_skala(&self) -> f64 {
+        self.skala.get()
+    }
+
+    /// Maßstab aus dem Plan eines Layers übernehmen — der eine Ort, an dem
+    /// `render_entity` ihn je Objekt setzt (T0232).
+    fn skala_nachziehen(&self, layer: Id) {
+        if !self.plan_skala {
+            return;
+        }
+        if self.sheet_scale.is_some() {
+            // Papierraum: das Blatt ist Papier, seine Objekte stehen 1:1.
+            self.skala.set(1.0);
+        } else {
+            self.skala.set(self.doc.plan_scale_of_layer(layer).max(0.01));
+        }
+    }
+
+    /// Maßstab je Layer für die Anzeigeliste (Strichstärke, Strichmuster).
+    fn skalen_je_layer(&self) -> Vec<(Id, f64)> {
+        if self.sheet_scale.is_some() {
+            self.doc.layers.iter().map(|l| (l.id, 1.0)).collect()
+        } else {
+            self.doc.skalen_je_layer()
+        }
     }
 }
 
@@ -891,6 +959,7 @@ pub fn render_document(ctx: &RenderCtx) -> DisplayList {
     let mut dl = DisplayList {
         screen: ctx.screen,
         sagitta_px: Some(ctx.sagitta_px),
+        skalen: ctx.skalen_je_layer(),
         ..DisplayList::default()
     };
     for e in ctx.ents() {
@@ -911,6 +980,7 @@ pub fn render_entities(ctx: &RenderCtx, ents: &[Entity]) -> DisplayList {
     let mut dl = DisplayList {
         screen: ctx.screen,
         sagitta_px: Some(ctx.sagitta_px),
+        skalen: ctx.skalen_je_layer(),
         ..DisplayList::default()
     };
     for e in ents {
@@ -1250,7 +1320,7 @@ fn push_punktsymbol(
     };
     // Ein Punkt symbol ist ein **neutraler** Block der Einheitsgröße 1 (T0231);
     // als Symbol an einem Punkt gilt dieselbe Rechnung wie für die Instanz.
-    let k = def.faktor(ctx.annot_scale);
+    let k = def.faktor(ctx.a(1.0));
     let m = xf * Affine::translate(pos) * Affine::rotate(rot) * Affine::scale(k, k);
     for child in &def.entities {
         let mut c = child.clone();
@@ -1293,6 +1363,11 @@ pub fn render_entity(
     }
     if !ctx.layer_ok(e.layer) && depth == 0 {
         return;
+    }
+    if depth == 0 {
+        // T0232: Jedes Objekt rechnet mit dem Maßstab des Plans, zu dem seine
+        // Ebene gehört. Blockkinder erben ihn von der Instanz.
+        ctx.skala_nachziehen(e.layer);
     }
     let doc = ctx.doc;
     let st = base_style(doc, e, None);
@@ -1883,7 +1958,7 @@ pub fn render_entity(
             // Maßeinheit der Blockgeometrie (T0231): ein neutraler Block wächst
             // mit dem Beschriftungsmaßstab, ein Block mit Maßeinheit zeichnet
             // maßstäblich (Millimeter, Zentimeter, Meter).
-            let k = def.faktor(ctx.annot_scale);
+            let k = def.faktor(ctx.a(1.0));
             m = m * Affine::scale(k, k);
             let m = xf * m;
             let block_color = doc.effective_color(e);
@@ -4844,6 +4919,8 @@ pub fn render_sheet(doc: &Document, sheet: &Sheet) -> DisplayList {
     let ctx = RenderCtx {
         doc,
         annot_scale: 1.0,
+        skala: std::cell::Cell::new(1.0),
+        plan_skala: false,
         layer_filter: None,
         resolve_text: true,
         selection: None,
@@ -4871,6 +4948,8 @@ pub fn render_model_scaled(doc: &Document, scale: f64, layers: Option<Vec<Id>>) 
     let ctx = RenderCtx {
         doc,
         annot_scale: scale.max(0.01),
+        skala: std::cell::Cell::new(scale.max(0.01)),
+        plan_skala: true,
         layer_filter: layers,
         resolve_text: true,
         selection: None,
@@ -4892,6 +4971,8 @@ pub fn render_viewport(doc: &Document, vp: &Viewport) -> DisplayList {
     let ctx = RenderCtx {
         doc,
         annot_scale: vp.scale.max(0.01),
+        skala: std::cell::Cell::new(vp.scale.max(0.01)),
+        plan_skala: true,
         layer_filter: vp.layers.clone(),
         resolve_text: true,
         selection: None,
@@ -4967,11 +5048,14 @@ pub fn trefferbild(doc: &Document, e: &Entity) -> Trefferbild {
 
 /// Zerlegt ein Objekt in Segmente (für Fang, Schnitt und Trefferprüfung).
 pub fn entity_segments(doc: &Document, e: &Entity) -> Vec<Seg> {
-    entity_segments_tief(doc, e, 0)
+    // T0232: Papiergrößen (Blockfaktor, Textkasten) hängen am Plan des
+    // Objekts — der Maßstab kommt mit in die Tiefe.
+    entity_segments_tief(doc, e, doc.plan_scale_of_layer(e.layer), 0)
 }
 
-/// Wie `entity_segments`, mit Tiefenzähler gegen verschachtelte Blöcke.
-fn entity_segments_tief(doc: &Document, e: &Entity, depth: usize) -> Vec<Seg> {
+/// Wie `entity_segments`, mit Tiefenzähler gegen verschachtelte Blöcke und dem
+/// Maßstab des Objekts (T0232).
+fn entity_segments_tief(doc: &Document, e: &Entity, skala: f64, depth: usize) -> Vec<Seg> {
     let mut out = Vec::new();
     match &e.kind {
         EntityKind::Line { a, b } => out.push(Seg::Line(*a, *b)),
@@ -5130,13 +5214,13 @@ fn entity_segments_tief(doc: &Document, e: &Entity, depth: usize) -> Vec<Seg> {
                 m = m * Affine::scale(scale.x, scale.y);
                 // Maßeinheit der Blockgeometrie (T0231) — dieselbe Rechnung
                 // wie in der Anzeige, damit Fang und Bild übereinstimmen.
-                let k = def.faktor(doc.settings.annotation_scale);
+                let k = def.faktor(skala);
                 m = m * Affine::scale(k, k);
                 for ce in &def.entities {
                     let kind = transform::transform_kind(&ce.kind, &m);
                     let mut te = ce.clone();
                     te.kind = kind;
-                    out.extend(entity_segments_tief(doc, &te, depth + 1));
+                    out.extend(entity_segments_tief(doc, &te, skala, depth + 1));
                 }
             }
         }

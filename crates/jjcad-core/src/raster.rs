@@ -390,9 +390,20 @@ fn draw_bild(
     }
 }
 
-fn draw_dl(pm: &mut Pixmap, dl: &DisplayList, map: &Map, paper_px: f64) {
+/// Anzeigeliste zeichnen. `paper_px` = Pixel je Welt-mm; `je_plan` sagt, ob
+/// die Strichstärke zusätzlich mit dem Maßstab des Plans wächst (T0232) — im
+/// Modell ja, im Ansichtsfenster und auf dem Blatt nicht (dort zählt allein
+/// die Abbildung).
+fn draw_dl(pm: &mut Pixmap, dl: &DisplayList, map: &Map, paper_px: f64, je_plan: bool) {
     for prim in &dl.prims {
-        draw_prim(pm, prim, map, paper_px);
+        let px = if je_plan {
+            // `paper_px` ist hier Pixel je Welt-mm; die Strichstärke folgt dem
+            // Plan des Objekts (T0232).
+            paper_px * crate::model::strich_faktor(dl.skala(prim.layer))
+        } else {
+            paper_px
+        };
+        draw_prim(pm, prim, map, px);
     }
 }
 
@@ -416,12 +427,16 @@ pub fn render_model_pixmap(doc: &Document, opts: &RasterOptions) -> Result<Pixma
         ox: -bbox.min.x * k + (w as f64 - bbox.width() * k) * 0.5,
         oy: bbox.max.y * k + (h as f64 - bbox.height() * k) * 0.5,
     };
-    let annot = opts.annot_scale.unwrap_or(doc.settings.annotation_scale);
-    let ctx = crate::render::RenderCtx::model_scaled(doc, annot);
+    // Ein ausdrücklicher Maßstab in den Optionen gilt für **alle** Objekte;
+    // sonst rechnet jedes mit dem Maßstab seines Plans (T0232).
+    let mut ctx = crate::render::RenderCtx::new(doc);
+    if let Some(a) = opts.annot_scale {
+        ctx = ctx.mit_festem_massstab(a);
+    }
     let dl = crate::render::render_document(&ctx);
-    // Papier-mm pro Pixel
-    let paper_px = k * annot;
-    draw_dl(&mut pm, &dl, &map, paper_px);
+    // Pixel je Welt-mm; die Strichstärke (Papier-mm) wächst mit dem Maßstab
+    // des Plans, zu dem das Objekt gehört.
+    draw_dl(&mut pm, &dl, &map, k, opts.annot_scale.is_none());
     Ok(pm)
 }
 
@@ -438,7 +453,7 @@ pub fn render_sheet_pixmap(doc: &Document, sheet: &Sheet, opts: &RasterOptions) 
         oy: (h as f64 - ph * k) * 0.5 + ph * k,
     };
     let dl = crate::render::render_sheet(doc, sheet);
-    draw_dl(&mut pm, &dl, &map, k);
+    draw_dl(&mut pm, &dl, &map, k, false);
 
     for (_, vp) in sheet.viewports() {
         let sub_w = (vp.w * k).round().max(1.0) as u32;
@@ -454,7 +469,7 @@ pub fn render_sheet_pixmap(doc: &Document, sheet: &Sheet, opts: &RasterOptions) 
             oy: (vp.h * 0.5 + vp.center.y * s) * km,
         };
         let vl = crate::render::render_viewport(doc, vp);
-        draw_dl(&mut sub, &vl, &sub_map, km);
+        draw_dl(&mut sub, &vl, &sub_map, km, false);
         let px = (vp.x * k + map.ox) as i32;
         let py = ((ph - vp.y - vp.h) * k + (map.oy - ph * k)) as i32;
         pm.draw_pixmap(
@@ -496,23 +511,22 @@ pub fn render_bereich_pixmap(
         ox: -bbox.min.x * k,
         oy: bbox.max.y * k,
     };
-    let (dl, paper_px) = match sheet {
+    // T0232: Im Modell rechnet jedes Objekt mit dem Maßstab seines Plans, auf
+    // dem Blatt steht alles 1:1 — `paper_px` ist Pixel je Welt-mm.
+    let (dl, je_plan) = match sheet {
         Some(idx) => {
             let sheet = doc
                 .sheets
                 .get(idx)
                 .ok_or_else(|| format!("Blatt {} existiert nicht", idx + 1))?;
-            (crate::render::render_sheet(doc, sheet), k)
+            (crate::render::render_sheet(doc, sheet), false)
         }
-        None => {
-            let annot = doc.settings.annotation_scale;
-            (
-                crate::render::render_document(&crate::render::RenderCtx::model_scaled(doc, annot)),
-                k * annot,
-            )
-        }
+        None => (
+            crate::render::render_document(&crate::render::RenderCtx::new(doc)),
+            true,
+        ),
     };
-    draw_dl(&mut pm, &dl, &map, paper_px);
+    draw_dl(&mut pm, &dl, &map, k, je_plan);
     Ok(pm)
 }
 
@@ -616,7 +630,7 @@ pub fn block_thumbnail(doc: &Document, block: &BlockDef, px: u32) -> Result<Vec<
     for e in &block.entities {
         crate::render::render_entity(&ctx, e, Affine::IDENTITY, &mut dl, 0);
     }
-    draw_dl(&mut pm, &dl, &map, k);
+    draw_dl(&mut pm, &dl, &map, k, false);
     pm.encode_png()
         .map_err(|e| format!("PNG-Kodierung fehlgeschlagen: {e}"))
 }

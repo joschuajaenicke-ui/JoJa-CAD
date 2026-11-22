@@ -1708,14 +1708,17 @@ fn dim_kette(
         }
     };
     let pts = crate::render::dim_sortieren(&pts, angle);
+    // T0232: Der Abstand der Maßlinie ist ein Papier-Maß — er hängt am Maßstab
+    // des Plans, in dem die Kette liegt.
+    let layer = resolve_layer_in(doc, p, ebene);
+    let skala = doc.plan_scale_of_layer(layer);
     let line_pos = p
         .pt("line_pos")
         .or_else(|| p.pt("pos"))
         .unwrap_or_else(|| {
             let b = BBox::from_points(&pts);
-            v(b.min.x, b.min.y - doc.settings.annotation_scale * 8.0)
+            v(b.min.x, b.min.y - skala * 8.0)
         });
-    let layer = resolve_layer_in(doc, p, ebene);
     let idn = doc.new_id();
     let mut e = Entity::new(
         idn,
@@ -2519,9 +2522,12 @@ pub fn execute(doc: &mut Document, id: &str, params: &Value) -> Result<Value, St
         "dim.linear" => {
             let a = require_pt(&p, "a")?;
             let b = require_pt(&p, "b")?;
+            // T0232: Papier-Maß — gemessen am Plan, in dem die Kette liegt.
+            let ziel_layer = resolve_layer_in(doc, &p, ebene);
+            let skala = doc.plan_scale_of_layer(ziel_layer);
             let line_pos = p.pt("line_pos").or_else(|| p.pt("pos")).unwrap_or_else(|| {
                 let m = (a + b) * 0.5;
-                v(m.x, m.y + doc.settings.annotation_scale * 8.0)
+                v(m.x, m.y + skala * 8.0)
             });
             let angle = match p.angle("angle") {
                 Some(w) => w,
@@ -3876,9 +3882,15 @@ pub fn execute(doc: &mut Document, id: &str, params: &Value) -> Result<Value, St
                 return Err(format!("Plan '{name}' existiert bereits"));
             }
             let id = doc.new_id();
-            doc.plans.push(Plan::new(id, &name));
+            let mut plan = Plan::new(id, &name);
+            // T0232: Jeder Plan trägt seinen eigenen Maßstab; ohne Angabe die
+            // Vorgabe 1:100.
+            if let Some(s) = p.num("scale") {
+                plan.scale = s.max(1.0);
+            }
+            doc.plans.push(plan);
             doc.add_standard_layers(id);
-            Ok(json!({"ok": true, "id": id}))
+            Ok(json!({"ok": true, "id": id, "scale": doc.plan_scale(id)}))
         }
         "plan.update" => {
             let target = p
@@ -3912,6 +3924,11 @@ pub fn execute(doc: &mut Document, id: &str, params: &Value) -> Result<Value, St
             if let Some(v) = p.boolean("collapsed") {
                 plan.collapsed = v;
             }
+            // T0232: Maßstab des Plans (1:N) — er steuert alle Papiergrößen
+            // seiner Objekte.
+            if let Some(s) = p.num("scale") {
+                plan.scale = s.max(1.0);
+            }
             doc.modified = true;
             Ok(json!({"ok": true}))
         }
@@ -3932,7 +3949,8 @@ pub fn execute(doc: &mut Document, id: &str, params: &Value) -> Result<Value, St
                         .collect();
                     json!({
                         "id": pl.id, "name": pl.name, "visible": pl.visible,
-                        "locked": pl.locked, "collapsed": pl.collapsed, "layers": layer
+                        "locked": pl.locked, "collapsed": pl.collapsed,
+                        "scale": pl.scale, "layers": layer
                     })
                 })
                 .collect();
@@ -4553,8 +4571,15 @@ pub fn execute(doc: &mut Document, id: &str, params: &Value) -> Result<Value, St
             if let Some(d) = p.num("decimals") {
                 doc.settings.decimals = d.clamp(0.0, 4.0) as usize;
             }
+            // Altlast (T0232): Der Maßstab gehört zum Plan. Der Schlüssel
+            // bleibt für ältere Skripte und schreibt den Plan, in dem gerade
+            // gezeichnet wird.
             if let Some(s) = p.num("annotation_scale") {
-                doc.settings.annotation_scale = s.max(1.0);
+                if let Some(pid) = doc.aktueller_plan() {
+                    if let Some(pl) = doc.plan_mut(pid) {
+                        pl.scale = s.max(1.0);
+                    }
+                }
             }
             if let Some(g) = p.len("grid_step") {
                 doc.settings.snap.grid_step = crate::model::clamp_grid_step(g);
@@ -6619,7 +6644,7 @@ fn import_pdf_action(doc: &mut Document, p: &Params) -> Result<Value, String> {
     // genau so groß wie das Original, und Strichstärken stimmen — Linien sind
     // in JoJa-CAD Papier-Millimeter und werden mit demselben Maßstab gerechnet.
     let massstab = p
-        .num_or("scale", doc.settings.annotation_scale)
+        .num_or("scale", doc.current_scale())
         .abs()
         .max(1e-9);
     let as_block = p.boolean_or("as_block", true);

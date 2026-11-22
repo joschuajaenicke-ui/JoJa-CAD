@@ -271,6 +271,26 @@ Mit dem Nutzer abgestimmt — nicht „verbessern“:
   war die Ursache, dass neue Texte auf „Zeichnung“ landeten (T0202, Turn 3).
   Prüfweg: `cargo test -p jjcad-core --test plaene` und
   `cargo test -p jjcad-gui tests_plaene`.
+- **Maßstab je Plan (T0232)**: Der Maßstab (1:N) gehört **jedem Plan**, nicht der
+  Datei (`settings.annotation_scale` gibt es nur noch als Altlast zum Laden;
+  `persist::normalize_plaene` verteilt ihn auf die Pläne). `Plan::scale` ist die
+  eine Quelle: `Document::plan_scale_of_layer`, `plan_scale` und `current_scale`
+  lesen ihn; `RenderCtx::a()` und `def.faktor()` rechnen je Objekt mit dem
+  Maßstab seines Layers (`render_entity` zieht ihn nach, Papierraum bleibt 1).
+  Die **gezeichnete Strichstärke** im Modus „Papier (maßstabsgetreu)“ hängt
+  ebenfalls am Plan: `model::strich_faktor(scale)` ist der Maßstab selbst (wie
+  im Druck). Dieselbe Papier-Stärke erscheint damit im Plan **1:200 doppelt so
+  breit wie in 1:100** und in 1:50 halb so breit — relativ zur Zeichnung stimmt
+  das Verhältnis mit dem Ausdruck überein. (Wäre die Gegenrichtung gewünscht,
+  ist es diese eine Formel; sie kippt dann aber auch 1:1- und 1:50-Pläne um
+  Faktor 100 bzw. 4.) Die Pixel je Papier-mm je Layer stehen als
+  `DisplayList::skalen` in der Anzeigeliste; die Zeichenfläche
+  (`PaintCtx::skalen`) und der PNG-Rasterer (`draw_dl(..., je_plan)`) lesen sie
+  — nicht daneben rechnen. PDF übernimmt die Papier-mm unverändert. Prüfweg:
+  `cargo test -p jjcad-core --test massstab_plaene` (8 Tests, darunter die
+  gemessene Strichbreite im PNG: 31 / 62 / 16 px für 1:100 / 1:200 / 1:50) und
+  `cargo test -p jjcad-gui massstab`; Prüfbild `--demo plaene` (drei Pläne
+  1:100 / 1:200 / 1:50 mit je einer Wand).
 - **Raster-Chip** schaltet Anzeige *und* Rasterfang gemeinsam.
 - **Raster (T0144)**: Die Kategorie „Raster“ im Einstellungsfenster führt **alle**
   Rastereinstellungen (Weite, Anzeigen, Fang, Art, Modus, Erzwingen). Art und Weite

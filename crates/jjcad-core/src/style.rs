@@ -246,7 +246,7 @@ pub enum DimTextPos {
 }
 
 /// Alle Maße in Papier-Millimetern; der Renderer skaliert mit dem
-/// Zeichnungsmaßstab (`annotation_scale`).
+/// Maßstab des Plans (`Plan::scale`, T0232).
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
 pub struct DimStyle {
     pub text_height: f64,
