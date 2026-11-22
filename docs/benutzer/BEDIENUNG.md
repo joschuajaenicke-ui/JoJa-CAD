@@ -167,7 +167,10 @@ die **Vorgabe** ihrer Ebene und lassen sich wie jede andere Taste ändern.
     Uhrzeigersinn (`Umschalt+R` gegen den Uhrzeigersinn), `F` (die Funktion
     „Spiegeln") spiegelt, `ESC` bricht ab. Beide Tasten folgen der
     Tastaturbelegung: wer „Drehen" umlegt, dreht auch die Vorschau mit der neuen
-    Taste. Der Einfügepunkt ist exakt der Ankerpunkt der Vorschau.
+    Taste. Dasselbe gilt für **jeden anderen Weg zur Funktion** — der
+    Ribbon-Knopf „Drehen", ein Hotbar-Slot mit dieser Funktion und die Knöpfe im
+    Eigenschaften-Panel drehen bzw. spiegeln die Vorschau ebenfalls, statt das
+    Einfügen abzubrechen. Der Einfügepunkt ist exakt der Ankerpunkt der Vorschau.
     Verlässt der Zeiger die Zeichenfläche (Ribbon, Panels, Hotbar), verschwindet die
     Vorschau aus der Zeichnung — dort gibt es keinen Punkt zum Setzen. Am Mauszeiger
     hängt dann die **Miniatur** des Blocks bzw. der Zwischenablage (dieselbe Darstellung

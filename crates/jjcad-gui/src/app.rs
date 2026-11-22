@@ -5777,6 +5777,25 @@ impl App {
         if actions::action(id).is_none() {
             return;
         }
+        // T0237: „Drehen“ und „Spiegeln“ gehören der **Funktion**, nicht dem
+        // Tastendruck. Läuft die Einfüge-Vorschau, hat die Funktion den Inhalt
+        // der Zwischenablage zu drehen — egal, ob sie über Ribbon, Hotbar,
+        // Eigenschaften-Panel oder Tastatur kommt. Vorher drehte nur das
+        // Tastenereignis die Vorschau; ein Klick brach das Einfügen ab (T0094)
+        // und startete das Werkzeug auf der Auswahl.
+        if self.ghost.is_some() {
+            match id {
+                "modify.rotate" => {
+                    self.rotate_ghost(App::ghost_drehgrad(false));
+                    return;
+                }
+                "modify.mirror" => {
+                    self.flip_ghost();
+                    return;
+                }
+                _ => {}
+            }
+        }
         // T0180: Eine neue Zeichenfunktion schließt das offene Kontextmenü. Der
         // Klick auf Ribbon/Hotbar täte das ohnehin (Klick außerhalb), ein
         // Tastenkürzel oder eine Hotbar-Ziffer nicht — dort blieb das Menü über
@@ -14531,6 +14550,56 @@ mod tests_einfuegen_abbrechen {
             "Drehen der Vorschau startet kein Werkzeug: {:?}",
             app.tool_id()
         );
+    }
+
+    /// T0237: „Drehen“ gehört der **Funktion**, nicht der Taste. Derselbe Weg
+    /// wie der Ribbon-Knopf (der `start_tool` ruft) und ein Hotbar-Slot
+    /// (`run_action`) dreht die laufende Vorschau — statt das Einfügen
+    /// abzubrechen und das Drehwerkzeug zu starten.
+    #[test]
+    fn drehen_ueber_ribbon_und_hotbar_dreht_die_vorschau() {
+        let mut app = app_mit_einfuegen();
+        let ctx = app.ctx.clone();
+        // Hotbar: die Ziffer startet die Funktion über `run_action`.
+        app.run_action(&ctx, "modify.rotate");
+        // Ribbon: die Schaltfläche ruft `start_tool` unmittelbar.
+        app.start_tool("modify.rotate");
+
+        let g = app
+            .ghost
+            .as_ref()
+            .expect("die Vorschau muss nach dem Drehen weiterlaufen");
+        assert_eq!(
+            g.rot_deg(),
+            180.0,
+            "zwei Druck auf „Drehen“ drehen zweimal um 90° im Uhrzeigersinn"
+        );
+        assert!(
+            app.tool.is_none(),
+            "die Funktion startet kein Werkzeug: {:?}",
+            app.tool_id()
+        );
+        assert_eq!(
+            app.doc().entities.len(),
+            1,
+            "abgebrochen heißt: nichts eingefügt"
+        );
+    }
+
+    /// T0237: „Spiegeln“ ebenso — über Ribbon/Hotbar (`start_tool`), nicht nur
+    /// über die Taste.
+    #[test]
+    fn spiegeln_ueber_ribbon_und_hotbar_spiegelt_die_vorschau() {
+        let mut app = app_mit_einfuegen();
+        let ctx = app.ctx.clone();
+        app.run_action(&ctx, "modify.mirror");
+
+        let g = app
+            .ghost
+            .as_ref()
+            .expect("die Vorschau muss nach dem Spiegeln weiterlaufen");
+        assert!(g.mirror, "die Vorschau ist gespiegelt");
+        assert!(app.tool.is_none(), "kein Werkzeug gestartet: {:?}", app.tool_id());
     }
 }
 
