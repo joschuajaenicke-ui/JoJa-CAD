@@ -29,30 +29,76 @@ pub const KANAL_DATEI: &str = "instanz.port";
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Auftrag {
     /// Zeichnung als Reiter öffnen (oder dorthin wechseln, wenn schon offen).
-    Oeffnen(PathBuf),
+    Oeffnen {
+        pfad: PathBuf,
+        /// `xdg-activation`-Token des Aufrufers (T0224) — nur unter Wayland
+        /// nötig, damit das Fenster wirklich nach vorn kommt.
+        token: Option<String>,
+    },
     /// Fenster nach vorn holen.
-    Zeigen,
+    Zeigen {
+        /// Wie bei [`Auftrag::Oeffnen`].
+        token: Option<String>,
+    },
 }
 
 impl Auftrag {
-    /// Zeile für den Kanal: `zeigen` oder `oeffnen<TAB>pfad`.
+    /// Zeile für den Kanal: `zeigen`, `oeffnen<TAB>pfad`, jeweils mit
+    /// `<TAB>token` dahinter, wenn der Aufrufer eines mitbringt.
+    ///
+    /// Das Token steht **hinter dem letzten** Tabulatorzeichen — ein Pfad mit
+    /// Tabulator darin ist damit nicht eindeutig, kommt aber in der Praxis
+    /// nicht vor (und ein Token enthält selbst keinen).
     pub fn zeile(&self) -> String {
+        fn mit_token(s: String, token: &Option<String>) -> String {
+            match token {
+                Some(t) if !t.is_empty() => format!("{s}\t{t}"),
+                _ => s,
+            }
+        }
         match self {
-            Auftrag::Zeigen => "zeigen".to_string(),
-            Auftrag::Oeffnen(p) => format!("oeffnen\t{}", p.display()),
+            Auftrag::Zeigen { token } => mit_token("zeigen".to_string(), token),
+            Auftrag::Oeffnen { pfad, token } => {
+                mit_token(format!("oeffnen\t{}", pfad.display()), token)
+            }
         }
     }
 
     /// Gegenstück zu [`Auftrag::zeile`]; `None` bei unbekannter Zeile.
     pub fn aus_zeile(zeile: &str) -> Option<Auftrag> {
         let zeile = zeile.trim_end_matches(['\r', '\n']);
+        // Das Token steht hinter dem letzten Tabulatorzeichen. `zeigen` ohne
+        // Tabulator hat keines.
         if zeile == "zeigen" {
-            return Some(Auftrag::Zeigen);
+            return Some(Auftrag::Zeigen { token: None });
         }
-        zeile
-            .strip_prefix("oeffnen\t")
-            .filter(|p| !p.is_empty())
-            .map(|p| Auftrag::Oeffnen(PathBuf::from(p)))
+        if let Some(rest) = zeile.strip_prefix("zeigen\t") {
+            let token = rest.trim();
+            if token.is_empty() {
+                return Some(Auftrag::Zeigen { token: None });
+            }
+            return Some(Auftrag::Zeigen {
+                token: Some(token.to_string()),
+            });
+        }
+        let rest = zeile.strip_prefix("oeffnen\t")?;
+        if rest.is_empty() {
+            return None;
+        }
+        // Pfad und optionales Token: Das Token reist nur mit, wenn es wie eines
+        // aussieht (kein Leerzeichen, keine Pfadtrenner) — sonst gälte der Rest
+        // als Pfad.
+        let (pfad, token) = match rest.rsplit_once('\t') {
+            Some((p, t)) => (p, Some(t.trim().to_string()).filter(|t| !t.is_empty())),
+            None => (rest, None),
+        };
+        if pfad.is_empty() {
+            return None;
+        }
+        Some(Auftrag::Oeffnen {
+            pfad: PathBuf::from(pfad),
+            token,
+        })
     }
 }
 
@@ -183,17 +229,44 @@ mod tests {
 
     #[test]
     fn auftrag_ueberlebt_die_zeile() {
-        let a = Auftrag::Oeffnen(PathBuf::from("/tmp/Plan Nr. 2.jjcad"));
+        let a = Auftrag::Oeffnen {
+            pfad: PathBuf::from("/tmp/Plan Nr. 2.jjcad"),
+            token: None,
+        };
         assert_eq!(Auftrag::aus_zeile(&a.zeile()), Some(a));
-        assert_eq!(Auftrag::aus_zeile("zeigen"), Some(Auftrag::Zeigen));
+        assert_eq!(
+            Auftrag::aus_zeile("zeigen"),
+            Some(Auftrag::Zeigen { token: None })
+        );
         assert_eq!(Auftrag::aus_zeile("quatsch"), None);
         assert_eq!(Auftrag::aus_zeile("oeffnen\t"), None, "leerer Pfad");
+    }
+
+    /// T0224: Das Aktivierungstoken reist mit — sonst könnte die laufende
+    /// Instanz unter Wayland ihr Fenster nicht nach vorn holen.
+    #[test]
+    fn token_reist_mit() {
+        let a = Auftrag::Oeffnen {
+            pfad: PathBuf::from("/tmp/Haus.jjcad"),
+            token: Some("kwin-65".into()),
+        };
+        assert_eq!(Auftrag::aus_zeile(&a.zeile()), Some(a));
+        let z = Auftrag::Zeigen {
+            token: Some("kwin-66".into()),
+        };
+        assert_eq!(Auftrag::aus_zeile(&z.zeile()), Some(z));
+        // Ohne Token bleibt die Zeile wie bisher.
+        assert_eq!(
+            Auftrag::Zeigen { token: None }.zeile(),
+            "zeigen",
+            "ohne Token keine zusätzliche Spalte"
+        );
     }
 
     #[test]
     fn ohne_laufende_instanz_wird_nichts_gemeldet() {
         let dir = test_dir("leer");
-        assert!(!melden(&dir, &Auftrag::Zeigen));
+        assert!(!melden(&dir, &Auftrag::Zeigen { token: None }));
     }
 
     /// Die zweite Instanz meldet, die erste bekommt den Auftrag.
@@ -201,7 +274,10 @@ mod tests {
     fn zweite_instanz_uebergibt_an_die_erste() {
         let dir = test_dir("uebergabe");
         let dienst = dienst_starten(&dir, || {}).expect("Dienst");
-        let auftrag = Auftrag::Oeffnen(PathBuf::from("/tmp/Haus.jjcad"));
+        let auftrag = Auftrag::Oeffnen {
+            pfad: PathBuf::from("/tmp/Haus.jjcad"),
+            token: Some("kwin-7".into()),
+        };
         assert!(melden(&dir, &auftrag), "Meldung kam nicht an");
         // Der Empfang läuft im Thread — kurz warten.
         let mut empfangen = Vec::new();
