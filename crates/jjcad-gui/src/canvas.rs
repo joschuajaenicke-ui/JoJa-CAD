@@ -1391,6 +1391,13 @@ pub fn show(app: &mut App, ui: &mut Ui) {
     // scrollen kann. Die Zeichnung wird dafür blass.
     let chat_offen = app.chat.offen;
 
+    // Pfad-Werkzeug (T0229): jeder Druck auf Umschalt wechselt zwischen Linie
+    // und Bogen. Der Übergang wird erkannt, nicht der Dauerzustand — sonst
+    // schaltete ein anderer Umschalt-Kurzbefehl das Werkzeug mit um.
+    if !chat_offen {
+        pfad_umschalt(app, ui.ctx());
+    }
+
     // Navigation
     if !chat_offen {
         handle_navigation(app, ui, &resp, rect, view);
@@ -3001,6 +3008,52 @@ fn draw_opening_preview(
     }
 }
 
+/// Pfadstücke als Bildschirmlinien zeichnen (Vorschau).
+///
+/// Jedes Stück zerlegt sich selbst (`PathSeg::flatten`) — dieselbe Quelle wie
+/// die Anzeige, damit Linie, Bogen und Spline in der Vorschau nicht anders
+/// aussehen als nach dem Klick.
+fn paint_pfad(
+    p: &egui::Painter,
+    rect: Rect,
+    view: View,
+    segs: &[jjcad_core::pfad::PathSeg],
+    stroke: &Stroke,
+) {
+    let tol = 0.3 / view.zoom.max(1e-6);
+    for s in segs {
+        let pts = s.flatten(tol);
+        if pts.len() < 2 {
+            continue;
+        }
+        let screen: Vec<Pos2> = pts.iter().map(|q| world_to_screen(rect, view, *q)).collect();
+        p.add(Shape::line(screen, *stroke));
+    }
+}
+
+/// Umschalt schaltet beim Pfad-Werkzeug zwischen Linie und Bogen (T0229).
+///
+/// Ausgewertet wird der **Übergang** „Umschalt nicht gedrückt → gedrückt":
+/// solange die Taste gehalten wird, bleibt der Modus stehen. Mitten im Bogen
+/// (Durchgangspunkt gesetzt, Ende fehlt) wird nicht umgeschaltet — sonst
+/// entstünde ein halber Bogen.
+fn pfad_umschalt(app: &mut App, ctx: &egui::Context) {
+    let gedrueckt = ctx.input(|i| i.modifiers.shift);
+    let vorher = app.ui.path_shift;
+    app.ui.path_shift = gedrueckt;
+    if !gedrueckt || vorher {
+        return;
+    }
+    let Some(t) = app.tool.as_mut() else { return };
+    if t.action != "draw.path" {
+        return;
+    }
+    if t.schritte.last() == Some(&jjcad_core::pfad::PfadSchritt::ArcPoint) {
+        return;
+    }
+    t.bogen = !t.bogen;
+}
+
 /// Zeichnet eine Vorschau-Anzeigeliste in der Akzentfarbe der Vorschau.
 ///
 /// Eine Stelle für alle Werkzeuge, deren Vorschau das **fertige** Objekt ist
@@ -3179,6 +3232,52 @@ fn draw_tool_preview(
             }
             if label.is_empty() {
                 label = jjcad_core::i18n::t_args_owned("gui.canvas.x_stuetzpunkte", &[("wert1", format!("{}", tool.pts.len() + 1))]);
+            }
+        }
+        "draw.path" => {
+            // Fertige Stücke aus demselben Kern wie der Abschluss — so zeigt die
+            // Vorschau schon die Linien und Bögen, die der nächste Klick stehen
+            // lässt.
+            let fertig = jjcad_core::pfad::pfad_aus_punkten(&tool.pts, &tool.schritte);
+            paint_pfad(&p, rect, view, &fertig, &stroke);
+            let wartet = tool.schritte.last() == Some(&jjcad_core::pfad::PfadSchritt::ArcPoint);
+            if let Some(start) = last {
+                match tool.pts.last() {
+                    Some(durch) if wartet => {
+                        let pts = match Arc::from_3_points(start, *durch, cursor) {
+                            Some(arc) => arc.flatten(0.3 / view.zoom.max(1e-6)),
+                            None => vec![start, cursor],
+                        };
+                        let screen: Vec<Pos2> = pts.iter().map(|q| w2s(*q)).collect();
+                        p.add(Shape::line(screen, dashed));
+                        label = jjcad_core::i18n::tr("gui.canvas.pfad_bogenende").into();
+                    }
+                    _ if tool.bogen => {
+                        // Noch kein Punkt auf dem Bogen: die Sehne als Hilfe.
+                        p.line_segment([w2s(start), w2s(cursor)], dashed);
+                        label = jjcad_core::i18n::tr("gui.canvas.pfad_bogenpunkt").into();
+                    }
+                    _ => {
+                        let tol = fang_radius_px(app, view.zoom);
+                        let schliesst = tool.pts.len() >= 2
+                            && tool
+                                .pts
+                                .first()
+                                .map(|q| q.dist(cursor) <= tol)
+                                .unwrap_or(false);
+                        if schliesst {
+                            p.line_segment([w2s(start), w2s(cursor)], stroke);
+                            label = jjcad_core::i18n::tr("gui.canvas.schliessen").to_string();
+                        } else {
+                            p.line_segment([w2s(start), w2s(cursor)], dashed);
+                            label = format!(
+                                "{} {}",
+                                unit.format_plain(start.dist(cursor), unit.decimals()),
+                                unit.short()
+                            );
+                        }
+                    }
+                }
             }
         }
         // Raumstempel: Umriss bis zum Zeiger, keine Füllung — die Fläche des
@@ -4859,6 +4958,7 @@ fn handle_input(
                 t.action.as_str(),
                 "draw.polyline"
                     | "draw.spline"
+                    | "draw.path"
                     | "dim.chain"
                     | "dim.chain.h"
                     | "dim.chain.v"
@@ -6511,6 +6611,24 @@ pub fn finish_tool(app: &mut App, from_enter: bool) {
             }
             app.tool = None;
         }
+        "draw.path" => {
+            if tool.pts.len() >= 2 {
+                let layer = app.doc().current_layer;
+                let pts: Vec<[f64; 2]> = tool
+                    .pts
+                    .iter()
+                    .map(|p| [app.unit().from_mm(p.x), app.unit().from_mm(p.y)])
+                    .collect();
+                let schritte: Vec<&str> = tool.schritte.iter().map(|s| s.key()).collect();
+                let _ = run_mit_meldung(
+                    app,
+                    "draw.path",
+                    json!({"pts": pts, "schritte": schritte, "layer": layer}),
+                    None,
+                );
+            }
+            app.tool = None;
+        }
         "draw.fill.boundary" | "draw.fill.points" | "draw.volume.points" => {
             // Ein Abschluss für alle drei Eingaben; `action` bestimmt nur,
             // welche Action den Kern aufruft (MCP und Klickpfad landen im
@@ -6890,6 +7008,8 @@ fn restart_tool(app: &mut App, action: &str) {
     app.tool = Some(Tool {
         action: action.to_string(),
         pts: Vec::new(),
+        schritte: Vec::new(),
+        bogen: false,
         obj: None,
         selecting: false,
         phase: ToolPhase::Collecting,
@@ -7124,6 +7244,8 @@ fn tool_click_at(app: &mut App, w: V2, raw: V2) {
                     app.tool = Some(Tool {
                         action: "draw.line".into(),
                         pts: vec![w],
+                        schritte: Vec::new(),
+                        bogen: false,
                         obj: None,
                         selecting: false,
                         phase: ToolPhase::Collecting,
@@ -7158,12 +7280,55 @@ fn tool_click_at(app: &mut App, w: V2, raw: V2) {
                     app.tool = Some(Tool {
                         action: "draw.wall".into(),
                         pts: vec![w],
+                        schritte: Vec::new(),
+                        bogen: false,
                         obj: None,
                         selecting: false,
                         phase: ToolPhase::Collecting,
                     });
                 }
             }
+        }
+        // Pfad (T0229): Linien und Bögen am Stück. Ein Klick legt das Ende des
+        // nächsten Stücks fest; im Bogenmodus kommt davor ein Punkt auf dem
+        // Bogen. Jedes Stück beginnt am Ende des vorigen.
+        "draw.path" => {
+            use jjcad_core::pfad::PfadSchritt;
+            let tol = fang_radius_px(app, app.current_view().zoom);
+            let am_start = tool
+                .pts
+                .first()
+                .map(|q| q.dist(w) <= tol)
+                .unwrap_or(false);
+            let wartet = tool.schritte.last() == Some(&PfadSchritt::ArcPoint);
+            if !tool.pts.is_empty() && am_start && !wartet && tool.pts.len() >= 2 {
+                // Klick auf den Startpunkt schließt den Pfad.
+                let start = tool.pts[0];
+                tool.pts.push(start);
+                tool.schritte.push(PfadSchritt::Line);
+                app.tool = Some(tool);
+                finish_tool(app, false);
+                return;
+            }
+            if tool.pts.is_empty() {
+                tool.pts.push(w);
+                tool.schritte.push(PfadSchritt::Start);
+                app.tool = Some(tool);
+                return;
+            }
+            if tool.pts.last().map(|q| q.dist(w) <= tol).unwrap_or(false) {
+                return;
+            }
+            let schritt = if wartet {
+                PfadSchritt::ArcEnd
+            } else if tool.bogen {
+                PfadSchritt::ArcPoint
+            } else {
+                PfadSchritt::Line
+            };
+            tool.pts.push(w);
+            tool.schritte.push(schritt);
+            app.tool = Some(tool);
         }
         "draw.polyline" | "draw.spline" => {
             // Klick auf den Startpunkt schließt den Zug: der Punkt wird exakt
@@ -10888,6 +11053,7 @@ mod tests_fang_griff {
             EntityKind::EllipseArc { .. } => "Ellipsenbogen",
             EntityKind::Polyline { .. } => "Polylinie",
             EntityKind::Spline { .. } => "Spline",
+            EntityKind::Path { .. } => "Pfad",
             EntityKind::Fill { .. } => "Fläche",
             EntityKind::Volume { .. } => "Volumen",
             EntityKind::Text { .. } => "Text",
@@ -18420,6 +18586,176 @@ mod tests_parallele {
             None,
             "eine Wand ist keine Vorlage"
         );
+    }
+}
+
+#[cfg(test)]
+mod tests_pfad {
+    //! Pfad-Werkzeug (T0229): Linien und Bögen am Stück, Umschalt wechselt den
+    //! Modus, Verbinden macht aus ausgewählten Linien einen Pfad.
+
+    use super::*;
+    use jjcad_core::pfad::{PathSeg, PfadSchritt};
+
+    fn app() -> App {
+        App::with_ctx(egui::Context::default())
+    }
+
+    fn pfade(app: &App) -> Vec<(Vec<PathSeg>, bool)> {
+        app.doc()
+            .entities
+            .iter()
+            .filter_map(|e| match &e.kind {
+                EntityKind::Path { segments, closed } => Some((segments.clone(), *closed)),
+                _ => None,
+            })
+            .collect()
+    }
+
+    /// Linie, Umschalt, Bogen — der Bogen beginnt am Ende der Linie.
+    #[test]
+    fn werkzeug_legt_linie_und_bogen_an() {
+        let mut app = app();
+        app.start_tool("draw.path");
+        tool_click(&mut app, V2::new(0.0, 0.0));
+        tool_click(&mut app, V2::new(2000.0, 0.0));
+        app.tool.as_mut().unwrap().bogen = true;
+        tool_click(&mut app, V2::new(3000.0, 1000.0));
+        tool_click(&mut app, V2::new(2000.0, 2000.0));
+        finish_tool(&mut app, false);
+
+        let alle = pfade(&app);
+        assert_eq!(alle.len(), 1, "ein Pfad entsteht");
+        let (segs, closed) = &alle[0];
+        assert_eq!(segs.len(), 2, "Linie und Bogen: {segs:?}");
+        assert!(!closed);
+        assert!(matches!(segs[0], PathSeg::Line { .. }), "{:?}", segs[0]);
+        match &segs[1] {
+            PathSeg::Arc { r, .. } => assert!((r - 1000.0).abs() < 1e-6, "Radius {r}"),
+            other => panic!("kein Bogen: {other:?}"),
+        }
+        assert!(segs[1].start().dist(segs[0].end()) < 1e-6, "Bogen beginnt am Linienende");
+    }
+
+    /// Umschalt schaltet je Druck einmal um; gehalten bleibt der Modus stehen.
+    #[test]
+    fn umschalt_wechselt_einmal_je_druck() {
+        let mut app = app();
+        app.start_tool("draw.path");
+        let frame = |app: &mut App, shift: bool| {
+            let ctx = egui::Context::default();
+            let input = egui::RawInput {
+                modifiers: if shift { egui::Modifiers::SHIFT } else { egui::Modifiers::NONE },
+                ..Default::default()
+            };
+            let _ = ctx.run(input, |ctx| pfad_umschalt(app, ctx));
+        };
+        frame(&mut app, true);
+        assert!(app.tool.as_ref().unwrap().bogen, "erster Druck → Bogen");
+        frame(&mut app, true);
+        assert!(app.tool.as_ref().unwrap().bogen, "gehalten schaltet nicht erneut");
+        frame(&mut app, false);
+        assert!(app.tool.as_ref().unwrap().bogen, "loslassen ändert nichts");
+        frame(&mut app, true);
+        assert!(!app.tool.as_ref().unwrap().bogen, "zweiter Druck → Linie");
+    }
+
+    /// Enter beendet die Punktfolge wie bei der Polylinie.
+    #[test]
+    fn enter_beendet_den_pfad() {
+        let mut app = app();
+        app.start_tool("draw.path");
+        tool_click(&mut app, V2::new(0.0, 0.0));
+        tool_click(&mut app, V2::new(2000.0, 0.0));
+        tool_click(&mut app, V2::new(2000.0, 1000.0));
+        let ctx = app.ctx.clone();
+        let input = egui::RawInput {
+            screen_rect: Some(Rect::from_min_size(Pos2::ZERO, Vec2::new(1500.0, 950.0))),
+            events: vec![egui::Event::Key {
+                key: egui::Key::Enter,
+                physical_key: None,
+                pressed: true,
+                repeat: false,
+                modifiers: egui::Modifiers::NONE,
+            }],
+            ..Default::default()
+        };
+        let _ = ctx.run(input, |ctx| app.ui(ctx));
+        assert!(app.tool.is_none(), "Enter beendet das Werkzeug");
+        assert_eq!(pfade(&app).len(), 1, "der Pfad steht");
+    }
+
+    /// Ein Klick auf den Startpunkt schließt den Pfad.
+    #[test]
+    fn klick_auf_startpunkt_schliesst() {
+        let mut app = app();
+        app.start_tool("draw.path");
+        tool_click(&mut app, V2::new(0.0, 0.0));
+        tool_click(&mut app, V2::new(2000.0, 0.0));
+        tool_click(&mut app, V2::new(2000.0, 1000.0));
+        tool_click(&mut app, V2::new(0.0, 0.0));
+        let alle = pfade(&app);
+        assert_eq!(alle.len(), 1, "Werkzeug beendet und Pfad angelegt");
+        assert!(alle[0].1, "geschlossen");
+        assert!(app.tool.is_none(), "der Klick auf den Start beendet das Werkzeug");
+    }
+
+    /// Verbinden aus der Auswahl: zwei Linien werden ein Pfad.
+    #[test]
+    fn verbinden_aus_der_auswahl() {
+        let mut app = app();
+        let layer = app.doc().current_layer;
+        let a = app.doc_mut().new_id();
+        app.doc_mut().add_entity(Entity::new(
+            a,
+            layer,
+            EntityKind::Line {
+                a: V2::new(0.0, 0.0),
+                b: V2::new(2000.0, 0.0),
+            },
+        ));
+        let b = app.doc_mut().new_id();
+        app.doc_mut().add_entity(Entity::new(
+            b,
+            layer,
+            EntityKind::Line {
+                a: V2::new(4000.0, 0.0),
+                b: V2::new(2000.0, 0.0),
+            },
+        ));
+        app.session_mut().select(vec![a, b]);
+        let ctx = app.ctx.clone();
+        app.run_action(&ctx, "path.connect");
+        let alle = pfade(&app);
+        assert_eq!(alle.len(), 1, "ein Pfad");
+        assert_eq!(alle[0].0.len(), 2);
+        assert_eq!(app.doc().ents().len(), 1, "die Linien sind verbraucht");
+    }
+
+    /// Die Aufforderung im Chat nennt Modus und Schritt.
+    #[test]
+    fn aufforderung_nennt_modus_und_schritt() {
+        let mut app = app();
+        app.start_tool("draw.path");
+        let hint = |app: &App| {
+            let t = app.tool.as_ref().unwrap();
+            crate::app::commands_hint(t, &app.options)
+        };
+        assert_eq!(hint(&app), "Pfad · Startpunkt klicken");
+        tool_click(&mut app, V2::new(0.0, 0.0));
+        assert_eq!(hint(&app), "Pfad · nächster Punkt (Enter beendet)");
+        app.tool.as_mut().unwrap().bogen = true;
+        assert_eq!(hint(&app), "Pfad · Bogenpunkt klicken");
+        tool_click(&mut app, V2::new(0.0, 500.0));
+        assert_eq!(hint(&app), "Pfad · Bogenende klicken");
+        assert!(app
+            .tool
+            .as_ref()
+            .unwrap()
+            .schritte
+            .last()
+            .map(|s| *s == PfadSchritt::ArcPoint)
+            .unwrap_or(false));
     }
 }
 

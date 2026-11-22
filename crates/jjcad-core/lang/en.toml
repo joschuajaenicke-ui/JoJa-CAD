@@ -70,6 +70,10 @@ label = "Line"
 hint = "Click points; clicking the start closes, Enter ends"
 label = "Polyline"
 
+[action.draw.path]
+hint = "Lines and arcs in one chain; Shift switches, clicking the start closes"
+label = "Path"
+
 [action.draw.spline]
 hint = "Click points; clicking the start closes, Enter ends"
 label = "Spline"
@@ -209,6 +213,10 @@ label = "Delete"
 [action.modify.explode]
 hint = "Explode blocks/components into single elements, text into lines"
 label = "Explode"
+
+[action.path.connect]
+hint = "Select lines, arcs and splines that form one chain"
+label = "Connect"
 
 [action.text.format]
 hint = "Make a character range of a text bold/italic/underlined/superscript"
@@ -1093,6 +1101,13 @@ spiegeln_zweiten_achspunkt_klicken = "Mirror · click the second axis point"
 spline_abgeschlossen = "Spline · closed"
 spline_naechster_punkt_enter_beendet = "Spline · next point (Enter ends)"
 spline_startpunkt_klicken = "Spline · click the start point"
+pfad_abgeschlossen = "Path · closed"
+objekte_verbunden = "Objects · connected"
+pfad_startpunkt_klicken = "Path · click the start point"
+pfad_bogenende_klicken = "Path · click the arc end"
+pfad_bogenpunkt_klicken = "Path · click a point on the arc"
+pfad_naechster_punkt_enter_beendet = "Path · next point (Enter ends)"
+verbinden_zwei_objekte_waehlen = "Connect: select at least two lines, arcs or splines"
 stutzen_segment_anklicken = "Trim · click the segment"
 tastatur_belegen_abgebrochen = "Keyboard · assignment cancelled"
 tastaturbelegung = "Keyboard layout"
@@ -1138,6 +1153,7 @@ x_hinweise = ", {warn} notices"
 zeichenflaeche = "Drawing area"
 zentrum = "Centre"
 zerlegen = "Explode"
+verbinden = "Connect"
 zerlegen_objekt_anklicken = "Explode · click an object"
 zwei_oder_mehr_angrenzende_fuellflaechen_zu_einer_verein = "Unite two or more adjacent fill areas into one"
 
@@ -1156,6 +1172,8 @@ beenden = "Quit"
 kommandozeile = "Alternatively from the command line: jjcad --daten-dir <path>"
 
 [gui.canvas]
+pfad_bogenende = "Arc · end"
+pfad_bogenpunkt = "Arc · point on the arc"
 abgebrochen = "Cancelled"
 ansichtsbereich_hinweis = "View area · wheel scale · middle button pan"
 masskette_waehlen = "Dimension chain · click a chain first"
@@ -1573,6 +1591,7 @@ werkzeug_waehlen_dann_leeren_lagerplatz_anklicken = "Choose a tool, then click a
 x_bloecke_x_funktionen_x_objekte = "{wert1} blocks · {wert2} functions · {wert3} objects"
 
 [gui.panels]
+stuecke = "Segments"
 blattmanager = "Sheet manager"
 plansatz = "Add to sheet set"
 plansatz_pdf_n = "Sheet set as PDF ({n})"
@@ -1801,6 +1820,7 @@ naechste_zeichen = "next characters"
 ohne_markierung_gilt_die_auszeichnung_fuer_das_was_sie_a = "With no selection the formatting applies to what you type next."
 platzhalter_x_x_x_x = "Placeholders: {DATUM} {PROJEKT} {MASSTAB} {PLAN}"
 polylinie = "Polyline"
+pfad = "Path"
 position_x_x_richtung_x = "Position ({wert1}, {wert2}) · direction {wert3}°"
 punkt = "Point"
 punkte = "Points"

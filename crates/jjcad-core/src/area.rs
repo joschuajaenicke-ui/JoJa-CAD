@@ -99,6 +99,11 @@ pub fn entity_area(e: &Entity) -> Option<f64> {
         EntityKind::Wall {
             a, b, thickness, ..
         } => a.dist(*b) * thickness.abs(),
+        // Pfad: nur ein geschlossener Pfad umschließt etwas; ein Spline-Stück
+        // ergibt nie eine Fläche (T0229).
+        EntityKind::Path { segments, closed } if *closed => {
+            crate::pfad::pfad_flaeche(segments).unwrap_or(0.0)
+        }
         _ => 0.0,
     };
     // 1 µm² — alles darunter ist entartet und keine Fläche.
