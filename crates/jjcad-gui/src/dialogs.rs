@@ -2337,18 +2337,30 @@ fn settings_body(app: &mut App, ui: &mut Ui) {
                                     &["Language", "Deutsch", "Englisch", "English", "Übersetzung"],
                                     jjcad_core::i18n::tr("settings.language_hint"),
                                     |ui| {
-                                        let mut gewaehlt = jjcad_core::i18n::language();
-                                        let vorher = gewaehlt;
-                                        for l in jjcad_core::i18n::Lang::ALL {
-                                            ui.selectable_value(&mut gewaehlt, l, l.name());
-                                        }
-                                        if gewaehlt != vorher {
-                                            jjcad_core::i18n::set_language(gewaehlt);
-                                            app.prefs.language = gewaehlt;
-                                            let _ = app.prefs.save();
-                                            // Der Wechsel gilt ab dem nächsten Bild — ohne
-                                            // Anforderung bliebe die Oberfläche stehen.
-                                            ui.ctx().request_repaint();
+                                        // T0234: Die Sprache ist ein Auswahlfeld wie
+                                        // alle anderen Einstellungen — als Knopfband
+                                        // nebeneinander wäre eine längere Liste
+                                        // unterstützter Sprachen nicht unterzubringen.
+                                        let gewaehlt = jjcad_core::i18n::language();
+                                        let cap = gewaehlt.name().to_string();
+                                        let neu = auswahl(ui, "sprache", &cap, None, |ui| {
+                                            let mut out = None;
+                                            for l in jjcad_core::i18n::Lang::ALL {
+                                                if ui.selectable_label(l == gewaehlt, l.name()).clicked() {
+                                                    out = Some(l);
+                                                }
+                                            }
+                                            out
+                                        });
+                                        if let Some(neu) = neu {
+                                            if neu != gewaehlt {
+                                                jjcad_core::i18n::set_language(neu);
+                                                app.prefs.language = neu;
+                                                let _ = app.prefs.save();
+                                                // Der Wechsel gilt ab dem nächsten Bild — ohne
+                                                // Anforderung bliebe die Oberfläche stehen.
+                                                ui.ctx().request_repaint();
+                                            }
                                         }
                                     },
                                 );
@@ -8179,45 +8191,65 @@ mod tests_einstellungen {
         );
     }
 
-    /// T0103: Unter „Bedienung" steht die Sprachwahl. Der Test prüft die
-    /// gezeichneten Texte und die gespeicherte Auswahl — die globale Sprache
-    /// stellt er **nicht** um, sonst liefen die übrigen Tests dieser Datei
-    /// (die deutsche Beschriftungen prüfen) kreuz und quer.
+    /// Ein leeres Bild der Einstellungsseite (ohne Eingabe).
+    fn bild(ctx: &egui::Context, app: &mut App) -> egui::FullOutput {
+        ctx.run(
+            egui::RawInput {
+                screen_rect: Some(Rect::from_min_size(Pos2::ZERO, Vec2::new(1500.0, 950.0))),
+                ..Default::default()
+            },
+            |ctx| app.ui(ctx),
+        )
+    }
+
+    /// T0103/T0234: Unter „Bedienung" steht die Sprachwahl als **Auswahlfeld**.
+    /// Geschlossen zeigt es die eingestellte Sprache, aufgeklappt jede
+    /// unterstützte — so trägt es auch eine längere Sprachliste. Der Test
+    /// wählt bewusst **keine** Sprache: die Sprache gilt prozessweit, ein
+    /// Wechsel hier liefe in die übrigen Tests hinein (die deutsche
+    /// Beschriftungen prüfen).
     #[test]
-    fn bedienung_zeigt_die_sprachwahl() {
+    fn sprachwahl_ist_ein_auswahlfeld() {
         let _sperre = KONFIG.lock().unwrap_or_else(|e| e.into_inner());
         let _konfig = WegwerfKonfig::neu("sprachwahl");
-        let ctx = egui::Context::default();
-        let mut app = App::with_ctx(ctx.clone());
-        app.ui.settings_open = true;
-        app.ui.settings_kat = kat_index("settings.category_bedienung");
-        let bild = || egui::RawInput {
-            screen_rect: Some(Rect::from_min_size(Pos2::ZERO, Vec2::new(1500.0, 950.0))),
-            ..Default::default()
-        };
-        let mut out = ctx.run(bild(), |ctx| app.ui(ctx));
-        for _ in 0..3 {
-            out = ctx.run(bild(), |ctx| app.ui(ctx));
-        }
-        let texte: Vec<&str> = out
-            .shapes
-            .iter()
-            .filter_map(|cs| match &cs.shape {
-                egui::Shape::Text(t) => Some(t.galley.text()),
-                _ => None,
-            })
-            .collect();
-        for erwartet in ["Sprache", "Deutsch", "English"] {
-            assert!(
-                texte.iter().any(|t| *t == erwartet),
-                "„{erwartet}“ fehlt in den Einstellungen (gezeichnet: {texte:?})"
-            );
-        }
+        let (mut app, ctx, out) = seite("settings.category_bedienung", "");
+        let texte = gezeichnete_texte(&out);
+        assert!(
+            texte.iter().any(|t| t == "Sprache"),
+            "Zeile „Sprache“ fehlt (gezeichnet: {texte:?})"
+        );
         assert_eq!(
             app.prefs.language,
             jjcad_core::i18n::Lang::Deutsch,
             "Vorgabe ist Deutsch"
         );
+        // Geschlossen trägt das Feld die eingestellte Sprache — die übrigen
+        // Einträge der Liste stehen noch nicht im Bild.
+        assert!(
+            texte.iter().any(|t| t == "Deutsch"),
+            "das Auswahlfeld zeigt nicht die eingestellte Sprache (gezeichnet: {texte:?})"
+        );
+        assert!(
+            !texte.iter().any(|t| t == "English"),
+            "die Sprachliste steht ohne Aufklappen im Bild (gezeichnet: {texte:?})"
+        );
+
+        // Aufklappen: das Feld anklicken, dann steht die ganze Liste im Bild.
+        let feld = text_links(&out, "Deutsch").expect("Sprachfeld „Deutsch“ fehlt");
+        klick(&mut app, &ctx, Pos2::new(feld.x + 40.0, feld.y + 8.0));
+        let out = bild(&ctx, &mut app);
+        let texte = gezeichnete_texte(&out);
+        for l in jjcad_core::i18n::Lang::ALL {
+            assert!(
+                texte.iter().any(|t| t == l.name()),
+                "„{}“ fehlt in der aufgeklappten Sprachliste (gezeichnet: {texte:?})",
+                l.name()
+            );
+        }
+
+        // Die gespeicherte Wahl bleibt Deutsch: der Wechsel selbst ist nicht
+        // Teil dieses Tests (prozessweite Sprache, siehe oben).
+        assert_eq!(jjcad_core::i18n::language(), jjcad_core::i18n::Lang::Deutsch);
     }
 
     /// T0087: Der Drehpunkt lässt sich in den Einstellungen in **beide**
