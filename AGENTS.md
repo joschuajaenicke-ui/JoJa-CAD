@@ -1155,6 +1155,20 @@ Mit dem Nutzer abgestimmt — nicht „verbessern“:
   `cargo test -p jjcad-gui wiederherstellen` und `cargo test -p jjcad-core --lib
   zeichnungen`; Prüfbild `--demo wiederherstellen`.
 
+- **Hilfslinie beim Eingeben eines Punktes (T0230)**: Während ein Punkt ansteht, legt der
+  **Rechtsklick** eine Hilfslinie an (`App::hilfslinie`): vom Bezugspunkt des Zuges (zuletzt
+  gesetzter Punkt) zum Klickpunkt; ohne Bezugspunkt (erster Punkt eines Objekts) steht sie am
+  Klickpunkt und der zweite Endpunkt folgt dem Zeiger (`Hilfslinie { a, b: Option }`). Sie ist
+  eine **Strecke wie eine normale Linie** — Fußpunkt-Fang über `snap::hilfslinien_fuss` (auf die
+  Strecke begrenzt, Statuszeile „Hilfslinie“, `SnapKind::Tracking`), ein echter Objektpunkt
+  schlägt sie, `Ortho`/Polar rechnen den Fußpunkt vom gefangenen Punkt aus. Sie lebt nur bis zum
+  nächsten gesetzten Punkt (`tool_click_at`, `finish_tool`, `start_tool`, `cancel_tool` leeren
+  sie) und wird durchgezogen in der Fangfarbe gezeichnet (`canvas::draw_hilfslinie`, Kreuz am
+  festen Ende). Ein **zweiter** Rechtsklick nimmt sie weg und beendet bzw. bricht das Werkzeug
+  wie bisher — so bleibt „Rechtsklick beendet die Polylinie“ erhalten. Prüfweg:
+  `cargo test -p jjcad-core --test hilfslinie` und `cargo test -p jjcad-gui tests_hilfslinie`;
+  Prüfbild `--demo hilfslinieeingabe`.
+
 ## Zahlenfelder: Grenzen und Zuggeschwindigkeit (verbindlich)
 
 Jedes Zahlenfeld — Eigenschaften-Panel, Einstellungen, Statusleiste — ist ein

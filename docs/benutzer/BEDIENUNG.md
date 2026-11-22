@@ -309,6 +309,18 @@ ausgeblendet.
   Polar mit Schrittweite und Fenster), der erweiterte Punktfang (Hilfslinien an/aus,
   Verweildauer, Höchstzahl der Haltepunkte) und die Anzeige (Fangmarker). Rasterweite,
   Rasterart und Rasterfang bleiben in der Kategorie **Raster**.
+- **Hilfslinie beim Eingeben eines Punktes** (T0230): Während ein Punkt gesetzt wird
+  (Linie, Wand, Rechteck, Kreis, Bogen, Polylinie, Spline, Maßkette, Treppe … — jedes Werkzeug
+  außer dem Farbeimer), legt ein **Rechtsklick** eine Hilfslinie an: vom zuletzt gesetzten
+  Punkt des Zuges zum Klickpunkt. Beim **ersten** Punkt eines Objekts gibt es noch keinen
+  Bezugspunkt — dann steht sie am Klickpunkt und ihr zweites Ende folgt dem Zeiger. Sie ist
+  eine Strecke wie eine normale Linie: zwei Endpunkte, und der Zeiger rastet auf ihrem
+  Fußpunkt ein (Statusleiste „Hilfslinie“); ein Endpunkt oder Schnittpunkt an derselben Stelle
+  hat Vorrang, `Ortho` und der Polarfang schränken nur die Lage auf ihr ein. Sie lebt nur
+  **während der Eingabe** des Punktes und verschwindet mit dem nächsten Linksklick
+  (durchgezogen in der Fangfarbe, Kreuz am festen Ende, Ring am beweglichen). Ein **zweiter
+  Rechtsklick** nimmt sie weg und beendet bzw. bricht das Werkzeug ab — wie bisher;
+  `Enter` und `Esc` tun dasselbe. Prüfbild: `--demo hilfslinieeingabe`.
 - **Winkelhalbierende am Schnittpunkt zweier Linien** (T0150): Der Fang wird **nur** aktiv, wenn
   der feste Punkt der neuen Linie auf dem Schnittpunkt zweier Linien liegt — also im Scheitel
   einer Ecke, Kreuzung oder eines Stoßes (Linien und Wände, letztere mit ihrer Achse). Liegt der
@@ -370,6 +382,8 @@ ausgeblendet.
   samt Maß. Der Klick setzt sie ab, und der Abstand bleibt für alle weiteren stehen — jeder
   weitere Klick rückt um denselben Betrag in die Richtung, in der der Zeiger steht. Rechtsklick
   oder `ESC` beendet die Reihe; ein neuer Start beginnt wieder mit dem Abstand am Zeiger.
+  (Der erste Rechtsklick legt hier dieselbe **Hilfslinie** an wie in jedem Werkzeug — der
+  zweite beendet die Reihe.)
   Andere Objektarten (Wand, Kreis, Text …) sind keine Vorlage.
 - **Linien** werden als Kapsel gezeichnet: Rechteck plus Halbkreis an beiden Enden. Dadurch sind
   auch die Übergänge in Polylinien, Bögen und an Wandanschlüssen rund statt eckig.
