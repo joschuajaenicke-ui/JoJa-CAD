@@ -266,13 +266,20 @@ Blöcke), gelöscht beim Löschen im Blockmanager.
         "x": 15.0, "y": 83.0, "w": 395.0, "h": 204.0,
         "center": { "x": 5250.0, "y": 4100.0 }, "scale": 50.0,
         "show_frame": false, "locked": false, "layers": null } },
-    "...": "Schriftfeld im Papierraum (mm)"
+    { "id": 62, "kind": { "type": "block_ref", "block": "sys:planrahmen-a3-quer",
+        "pos": { "x": 0.0, "y": 0.0 }, "rot": 0.0,
+        "scale": { "x": 1.0, "y": 1.0 }, "mirror": false } }
   ]
 }
 ```
 
 - `entities` im Blatt sind normale Zeichenobjekte im Papierraum — das Schriftfeld
   ist damit frei gestaltbar und kann ersetzt werden.
+- Der **Planrahmen** (Abdeckfläche, Blattrahmen, Schriftfeld) ist seit T0239 **ein**
+  Objekt: eine Blockinstanz der Kategorie „Planrahmen“. Der Basispunkt des Blocks
+  ist die **untere linke Blattecke** (0,0), die Instanz steht bei `pos` (0,0).
+  Ohne Block (andere Papierformate) stehen dieselben Objekte lose in `entities`.
+  `frame`/`show_title_block` sind nur noch Altlasten zum Laden.
 - Ein **Ansichtsfenster** ist seit T0109 ebenfalls ein Objekt
   (`"type": "viewport"`). `x/y/w/h` sind **Papierkoordinaten in mm**, Ursprung
   unten links; `center` ist die Weltkoordinate in der Mitte des Fensters,

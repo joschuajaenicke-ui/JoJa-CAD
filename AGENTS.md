@@ -347,9 +347,9 @@ Mit dem Nutzer abgestimmt — nicht „verbessern“:
   Text-Doppelklick mit `App::verwerfe_move_drag` still verworfen.
 - **Druckvorschau = Papierraum**: gleiche Werkzeuge wie im Modell. Der Bearbeitungsraum
   steckt in `Document::space` (`None` = Modell, `Some(Blatt)` = Papierraum); alle Actions
-  laufen über `doc.ents()`/`doc.ents_mut()`. Rahmen und Schriftfeld sind normale Linien und
-  Textfelder in `sheet.entities` (kein Renderer-Sonderrahmen mehr, `Sheet::frame`/
-  `show_title_block` sind nur noch Altlasten für die Migration). Die echten Blattecken
+  laufen über `doc.ents()`/`doc.ents_mut()`. Rahmen und Schriftfeld sind seit T0239 **ein**
+  Block in `sheet.entities` (davor lose Linien und Textfelder; losen Rahmen alter Dateien
+  schreibt weiter `persist::normalize_sheet_frames` in Linien um). Die echten Blattecken
   (0,0)…(B,H) fangen im Papierraum als „Blattecke“.
   **Eigene Eingabeeinheit je Raum (T0228)**: Das Modell rechnet in
   `settings.input_unit` (Vorgabe Meter), der Papierraum in
@@ -361,6 +361,23 @@ Mit dem Nutzer abgestimmt — nicht „verbessern“:
   Panel der Zeichnung (`panels::doc_props`). Prüfweg:
   `cargo test -p jjcad-core --test papier_einheit` und
   `cargo test -p jjcad-gui papierbereich_hat_eigene_eingabeeinheit`.
+- **Planrahmen als Block (T0239)**: Der Standard-Planrahmen (Abdeckfläche,
+  Blattrahmen, Schriftfeld) ist **ein** Objekt — eine Blockinstanz der Kategorie
+  „Planrahmen“. Drei Systemblöcke liegen mit: `sys:planrahmen-a3-quer` (A3 quer,
+  420 × 297), `sys:planrahmen-a3-hoch` (297 × 420) und `sys:planrahmen-a4-hoch`
+  (210 × 297). **Basispunkt ist die untere linke Blattecke** (`BlockDef::base` =
+  (0,0), Instanz steht bei `pos` (0,0)); der Rahmen selbst beginnt beim Rand
+  (15 mm Heftrand links, 10 mm ringsum). Die **weiße Abdeckfläche** bedeckt
+  genau `templates::title_block_rect` und liegt im Block hinter den Linien und
+  Texten, aber über dem Inhalt der Ansichtsfenster — ein Fenster darf damit das
+  ganze Blatt füllen, ohne den Plankopf unlesbar zu machen. Dafür zeichnen
+  **PDF und PNG die Ansichtsfenster unter den Papierraum** (seit T0239, wie die
+  Zeichenfläche es immer tat). Geometrie: `templates::planrahmen_entities`;
+  `templates::new_sheet` wählt den Block über `templates::planrahmen_block` und
+  legt für Papierformate ohne Block lose Objekte an. Prüfweg:
+  `cargo test -p jjcad-core --test planrahmen` (7 Tests, darunter das gemessene
+  Pixel im PNG und im PDF) und `cargo test -p jjcad-gui`; Prüfbild
+  `--demo "plankopf"` bzw. `--demo blatt`.
 - **Blockeditor (T0137)**: Eigene Blöcke (Projekt/Benutzer — **nicht** System) werden
   über das Rechtsklickmenü der Blockbibliothek geöffnet — seit T0185 ebenso über
   „Block bearbeiten“ im Objektmenü einer **eingesetzten Blockinstanz** (beide Wege

@@ -4597,8 +4597,9 @@ impl App {
                         self.session_mut().selection = vec![id];
                     }
                 }
-                // Prüffall T0004: Papierraum der Druckvorschau mit ausgewähltem
-                // Textfeld des Plankopfes (Eigenschaften-Panel zeigt „Text").
+                // Prüffall T0004/T0239: Papierraum der Druckvorschau mit
+                // ausgewähltem Planrahmen (seit T0239 **ein** Block aus
+                // Abdeckfläche, Rahmen und Schriftfeld).
                 "plankopf" => {
                     if let Some(sid) = self.doc().sheets.first().map(|s| s.id) {
                         self.tab_mut().tab = TabKind::Sheet(sid);
@@ -4610,9 +4611,7 @@ impl App {
                             .and_then(|s| {
                                 s.entities
                                     .iter()
-                                    .find(|e| {
-                                        matches!(&e.kind, EntityKind::Text { text, .. } if text == "{PLANTITEL}")
-                                    })
+                                    .find(|e| matches!(e.kind, EntityKind::BlockRef { .. }))
                                     .map(|e| e.id)
                             });
                         if let Some(eid) = feld {

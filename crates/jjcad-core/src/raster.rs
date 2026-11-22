@@ -489,8 +489,11 @@ fn blatt_pixmap(
         oy: (h as f64 - ph * k) * 0.5 + ph * k,
     };
     let dl = crate::render::render_sheet(doc, sheet);
-    draw_dl(&mut pm, &dl, &map, k, false);
 
+    // Ansichtsfenster liegen **unter** dem Papierraum (T0239): erst ihre
+    // Inhalte auf das Fenster beschnitten einsetzen, dann Rahmen, Schriftfeld
+    // und die weiße Abdeckfläche darüber — sonst deckte die Zeichnung den
+    // Plankopf im Bild zu, während sie auf dem Bildschirm darunter liegt.
     for (_, vp) in sheet.viewports() {
         let sub_w = (vp.w * k).round().max(1.0) as u32;
         let sub_h = (vp.h * k).round().max(1.0) as u32;
@@ -517,6 +520,8 @@ fn blatt_pixmap(
             None,
         );
     }
+
+    draw_dl(&mut pm, &dl, &map, k, false);
     Ok(pm)
 }
 

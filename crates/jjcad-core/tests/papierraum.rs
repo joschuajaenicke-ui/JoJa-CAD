@@ -135,30 +135,47 @@ fn rueckgaengig_nimmt_papierraum_zurueck() {
 }
 
 #[test]
-fn plankopf_besteht_aus_linien_und_textfeldern() {
+fn plankopf_ist_ein_block_aus_linien_und_textfeldern() {
+    // T0239: Der ganze Planrahmen ist **ein** Objekt — eine Blockinstanz.
     let doc = Document::new();
     let sheet = &doc.sheets[0];
-    assert!(!sheet.entities.is_empty(), "Plankopf fehlt");
-    let linien = sheet
+    let verweis = sheet
+        .entities
+        .iter()
+        .find(|e| matches!(e.kind, EntityKind::BlockRef { .. }))
+        .expect("Plankopf fehlt");
+    let def = match &verweis.kind {
+        EntityKind::BlockRef { block, .. } => doc.block(block).expect("Block fehlt"),
+        _ => unreachable!(),
+    };
+    let linien = def
         .entities
         .iter()
         .filter(|e| matches!(e.kind, EntityKind::Line { .. }))
         .count();
-    let texte = sheet
+    let texte = def
         .entities
         .iter()
         .filter(|e| matches!(e.kind, EntityKind::Text { .. }))
         .count();
     assert!(linien >= 10, "Rahmenlinien fehlen: {linien}");
     assert!(texte >= 8, "Textfelder fehlen: {texte}");
-    // Kein anderes Element im Plankopf: er besteht nur aus Linien und Texten —
-    // dazu das Ansichtsfenster, das seit T0109 ein normales Blattobjekt ist.
+    // Dazu die weiße Abdeckfläche und sonst nichts.
+    let flaechen = def
+        .entities
+        .iter()
+        .filter(|e| matches!(e.kind, EntityKind::Fill { .. }))
+        .count();
+    assert_eq!(flaechen, 1, "genau eine Abdeckfläche");
+    assert_eq!(linien + texte + flaechen, def.entities.len());
+
+    // Das Blatt trägt den Rahmen und das Ansichtsfenster — sonst nichts.
     let fenster = sheet
         .entities
         .iter()
         .filter(|e| matches!(e.kind, EntityKind::Viewport(_)))
         .count();
-    assert_eq!(linien + texte + fenster, sheet.entities.len());
+    assert_eq!(1 + fenster, sheet.entities.len());
 
     // Eigene, eindeutige IDs — sonst kollidieren Auswahl und Bearbeitung.
     let mut ids: Vec<u64> = sheet.entities.iter().map(|e| e.id).collect();
@@ -172,40 +189,24 @@ fn plankopf_besteht_aus_linien_und_textfeldern() {
         "Plankopf-ID kollidiert mit einem Layer"
     );
     // Die Textfelder tragen die Platzhalter für die Projektdaten.
-    assert!(sheet.entities.iter().any(|e| matches!(
+    assert!(def.entities.iter().any(|e| matches!(
         &e.kind,
         EntityKind::Text { text, .. } if text == "{PROJEKT}"
     )));
 }
 
 #[test]
-fn plankopf_text_ist_bearbeitbar() {
+fn plankopf_zeigt_die_projektdaten() {
+    // T0239: Die Texte stecken im Block (Systemblöcke sind schreibgeschützt);
+    // ihre Werte kommen aus `doc.project` und werden beim Rendern aufgelöst —
+    // das Schriftfeld bleibt damit aktuell, ohne dass Objekte bearbeitet werden.
     let mut sess = s();
     in_papierraum(&mut sess);
-    // Ein Textfeld des Plankopfes auswählen und überschreiben.
-    let (id, alt) = sess.doc.sheets[0]
-        .entities
-        .iter()
-        .find_map(|e| match &e.kind {
-            EntityKind::Text { text, .. } if text == "{PLANTITEL}" => Some((e.id, text.clone())),
-            _ => None,
-        })
-        .expect("Feld {PLANTITEL} fehlt");
-    sess.execute("modify.set", &json!({"ids": [id], "text": "Grundriss EG"}))
-        .unwrap();
-    let neu = sess.doc.sheets[0]
-        .entities
-        .iter()
-        .find(|e| e.id == id)
-        .unwrap()
-        .kind
-        .clone();
-    match neu {
-        EntityKind::Text { text, .. } => assert_eq!(text, "Grundriss EG"),
-        other => panic!("kein Text: {other:?}"),
-    }
-    assert_ne!(alt, "Grundriss EG");
-    // Und das Blatt zeigt den neuen Text auch im Druckbild.
+    sess.execute(
+        "doc.project",
+        &json!({"plan_title": "Grundriss EG", "project": "Haus Test"}),
+    )
+    .unwrap();
     let dl = jjcad_core::render::render_sheet(&sess.doc, &sess.doc.sheets[0]);
     let texte: Vec<String> = dl
         .prims
@@ -217,8 +218,14 @@ fn plankopf_text_ist_bearbeitbar() {
         .collect();
     assert!(
         texte.iter().any(|t| t == "Grundriss EG"),
-        "Text fehlt im Blatt: {texte:?}"
+        "Planinhalt fehlt im Blatt: {texte:?}"
     );
+    assert!(
+        texte.iter().any(|t| t == "Haus Test"),
+        "Projekt fehlt im Blatt: {texte:?}"
+    );
+    // Der Platzhalter selbst steht nicht mehr im Druckbild.
+    assert!(!texte.iter().any(|t| t == "{PLANTITEL}"), "{texte:?}");
 }
 
 #[test]
@@ -346,41 +353,47 @@ fn objektzahl_zaehlt_den_aktiven_raum() {
 /// Der Rahmen ist kein Renderer-Sonderfall mehr, sondern vier Linien.
 #[test]
 fn blattrahmen_ist_ein_auswaehlbares_objekt() {
+    // T0239: Rahmen **und** Schriftfeld sind ein Block — ein Klick wählt das
+    // ganze Blattgerüst, ein Löschen nimmt es als Ganzes weg.
     let mut sess = s();
     let (w, h) = sess.doc.sheets[0].size();
-    let (m, left) = (10.0, 15.0);
-
-    // Die vier Rahmenlinien liegen auf dem Rahmenrechteck.
-    let rahmen: Vec<_> = sess.doc.sheets[0]
+    let (m, _left) = (10.0, 15.0);
+    let rahmen_id = sess.doc.sheets[0]
         .entities
         .iter()
-        .filter_map(|e| match &e.kind {
-            EntityKind::Line { a, b } => Some((e.id, *a, *b)),
-            _ => None,
-        })
-        .filter(|(_, a, b)| {
-            // achsparallel und auf dem Rahmen
-            (a.y == b.y && (a.y == m || a.y == h - m))
-                || (a.x == b.x && (a.x == left || a.x == w - m))
-        })
-        .collect();
-    assert!(rahmen.len() >= 4, "Rahmenlinien fehlen: {}", rahmen.len());
+        .find(|e| matches!(e.kind, EntityKind::BlockRef { .. }))
+        .map(|e| e.id)
+        .expect("Rahmen-Block fehlt");
 
-    // Anklicken trifft eine Rahmenlinie (kein entity:0-Sonderfall mehr) —
-    // gesucht wird im Papierraum, denn dort steht der Rahmen.
-    let id = rahmen[0].0;
+    // Anklicken trifft den Rahmen — gesucht wird im Papierraum, denn dort
+    // steht er.
     in_papierraum(&mut sess);
     let treffer = jjcad_core::snap::hit_test(&sess.doc, jjcad_core::geom::v(120.0, m), 1.0, None);
-    assert!(treffer.is_some(), "Rahmen ist nicht anklickbar");
-    assert!(
-        sess.doc.sheets[0].entities.iter().any(|e| e.id == treffer.unwrap()),
-        "Treffer gehört nicht zum Blatt"
+    assert_eq!(treffer, Some(rahmen_id), "Rahmen ist nicht anklickbar");
+    // Auch eine Schriftfeldlinie: sie gehört zum selben Objekt.
+    let treffer = jjcad_core::snap::hit_test(
+        &sess.doc,
+        jjcad_core::geom::v(w - 160.0, 28.0),
+        1.0,
+        None,
     );
+    assert_eq!(treffer, Some(rahmen_id), "Schriftfeld gehört nicht zum Rahmen");
 
-    // Und er lässt sich wie jedes Objekt löschen.
-    sess.execute("modify.erase", &json!({"ids": [id]}))
+    // Und er lässt sich wie jedes Objekt löschen — mit allem, was dazugehört.
+    sess.execute("modify.erase", &json!({"ids": [rahmen_id]}))
         .unwrap();
-    assert!(sess.doc.sheets[0].entities.iter().all(|e| e.id != id));
+    assert!(sess.doc.sheets[0]
+        .entities
+        .iter()
+        .all(|e| e.id != rahmen_id));
+    assert!(
+        sess.doc.sheets[0]
+            .entities
+            .iter()
+            .all(|e| !matches!(e.kind, EntityKind::Line { .. } | EntityKind::Text { .. })),
+        "Rahmenlinien blieben nach dem Löschen stehen"
+    );
+    let _ = h;
 }
 
 /// Alte Dateien (Rahmen als Flag) bekommen beim Laden Linien — sonst bliebe
@@ -392,7 +405,9 @@ fn alter_rahmen_wird_beim_laden_zu_linien() {
     {
         let sheet = &mut doc.sheets[0];
         let (w, h) = sheet.size();
-        sheet.entities.retain(|e| !ist_rahmenlinie(&e.kind, w, h));
+        sheet.entities.retain(|e| {
+            !ist_rahmenlinie(&e.kind, w, h) && !matches!(e.kind, EntityKind::BlockRef { .. })
+        });
         sheet.frame = true;
         sheet.show_title_block = true;
     }

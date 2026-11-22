@@ -1004,17 +1004,10 @@ fn draw_sheet_page(doc: &Document, sheet: &Sheet) -> Page {
     let (pw, ph) = sheet.size();
     let mut c = seite(pw, ph);
 
-    // Papierraum: Rahmen, Schriftfeld und eigene Blattelemente sind Objekte
-    // des Blatts (T0004) — gedruckt wird genau das, was auf dem Blatt steht.
-    let dl = render::render_sheet(doc, sheet);
-    let page_xf = Xf {
-        scale: 1.0,
-        offset: Vec2::ZERO,
-    };
-    draw_display_list(&mut c, &dl, &page_xf);
-
-    // Ansichtsfenster: der Inhalt liegt über dem Blatt, wird aber auf das
-    // Fenster beschnitten — Rahmen und Schriftfeld bleiben sichtbar.
+    // Ansichtsfenster liegen **unter** dem Papierraum (T0239): der Inhalt wird
+    // auf das Fenster beschnitten, und darüber stehen Rahmen, Schriftfeld und
+    // dessen weiße Abdeckfläche. Sonst deckte die Zeichnung den Plankopf beim
+    // Druck zu, während sie auf dem Bildschirm darunter liegt.
     for (_, vp) in sheet.viewports() {
         let vl = render::render_viewport(doc, vp);
         c.save();
@@ -1025,6 +1018,15 @@ fn draw_sheet_page(doc: &Document, sheet: &Sheet) -> Page {
         draw_display_list(&mut c, &vl, &xf);
         c.restore();
     }
+
+    // Papierraum: Rahmen, Schriftfeld und eigene Blattelemente sind Objekte
+    // des Blatts (T0004) — gedruckt wird genau das, was auf dem Blatt steht.
+    let dl = render::render_sheet(doc, sheet);
+    let page_xf = Xf {
+        scale: 1.0,
+        offset: Vec2::ZERO,
+    };
+    draw_display_list(&mut c, &dl, &page_xf);
 
     Page {
         width_pt: pw * MM2PT,
