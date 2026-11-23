@@ -30,6 +30,18 @@ png = "0.17"
 rfd = "0.17"
 # Fensterkennung des Hauptfensters, damit der Systemdialog an diesem Fenster hängt
 raw-window-handle = "0.6"
+# System-Zwischenablage für **Bilder** (T0112): Strg+C legt ein einzelnes Bild
+# als reine Bilddaten ab, Strg+V übernimmt ein Bild aus einem anderen Programm.
+# egui selbst kann nur Text — die Kiste spricht X11, Windows und macOS an,
+# deshalb steht sie hier und nicht im Linux-Block (T0241: der falsche Block
+# ließ die Windows- und macOS-Läufe mit „cannot find crate `arboard`" scheitern).
+# `wayland-data-control` ist Pflicht: unter Wayland läuft das Programm als
+# Wayland-Client, und der X11-Weg über XWayland liefert Bilder aus anderen
+# Wayland-Programmen nicht (KWin brückt dort nur Text). arboard nimmt den
+# nativen Weg, wenn `WAYLAND_DISPLAY` gesetzt ist, und fällt sonst auf X11
+# zurück. Auf Windows und macOS hat das Merkmal keine Wirkung.
+arboard = { version = "3.7", features = ["wayland-data-control"] }
+
 # T0224: Fenster unter Wayland in den Vordergrund holen. winit reicht das
 # `xdg-activation`-Token nicht an die Fenstererzeugung weiter und
 # `ViewportCommand::Focus` ist dort wirkungslos — das Protokoll wird deshalb
@@ -37,13 +49,3 @@ raw-window-handle = "0.6"
 [target.'cfg(target_os = "linux")'.dependencies]
 wayland-client = { version = "0.31", features = ["system"] }
 wayland-protocols = { version = "0.32", features = ["client", "staging"] }
-
-# System-Zwischenablage für **Bilder** (T0112): Strg+C legt ein einzelnes Bild
-# als reine Bilddaten ab, Strg+V übernimmt ein Bild aus einem anderen Programm.
-# egui selbst kann nur Text — die Kiste spricht X11, Windows und macOS an.
-# `wayland-data-control` ist Pflicht: unter Wayland läuft das Programm als
-# Wayland-Client, und der X11-Weg über XWayland liefert Bilder aus anderen
-# Wayland-Programmen nicht (KWin brückt dort nur Text). arboard nimmt den
-# nativen Weg, wenn `WAYLAND_DISPLAY` gesetzt ist, und fällt sonst auf X11
-# zurück.
-arboard = { version = "3.7", features = ["wayland-data-control"] }
