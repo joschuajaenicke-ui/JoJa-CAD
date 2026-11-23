@@ -138,4 +138,29 @@ mod tests {
              Einfügen von Bildern aus anderen Programmen unter Wayland leer"
         );
     }
+
+    /// T0241: `arboard` spricht X11, Wayland, Windows und macOS an — es gehört
+    /// deshalb in den allgemeinen `[dependencies]`-Block. Stand es im
+    /// Linux-Block, baute Linux weiter und nur `cargo check --target
+    /// x86_64-pc-windows-gnu -p jjcad-gui` brach mit „cannot find crate
+    /// `arboard`" ab (die Läufe „Paket Windows" und „Paket macOS" rot).
+    #[test]
+    fn arboard_steht_in_den_allgemeinen_abhaengigkeiten() {
+        let manifest = include_str!("../Cargo.toml");
+        let (allgemein, linux) = manifest
+            .split_once("[target.'cfg(target_os = \"linux\")'.dependencies]")
+            .expect("der Linux-Block der Cargo.toml fehlt");
+        assert!(
+            allgemein
+                .lines()
+                .any(|z| z.trim_start().starts_with("arboard")),
+            "arboard muss im allgemeinen [dependencies]-Block stehen — im \
+             Linux-Block bauen Windows und macOS nicht"
+        );
+        assert!(
+            !linux.lines().any(|z| z.trim_start().starts_with("arboard")),
+            "arboard gehört nicht in den Linux-Block; die Kiste ist plattformneutral \
+             und braucht für das Merkmal `wayland-data-control` keinen Linux-Eintrag"
+        );
+    }
 }
