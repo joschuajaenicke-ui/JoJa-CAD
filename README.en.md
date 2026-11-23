@@ -2,8 +2,8 @@
 
 [Deutsch](README.md) · **English**
 
-**2D CAD for architecture and building-permit drawings.** Deliberately minimal,
-free and open source — for Linux, Windows and macOS.
+**2D CAD for architecture and building-permit drawings.** Free and open source —
+for Linux, Windows and macOS.
 
 ![JoJa-CAD interface](samples/ui.png)
 
@@ -11,18 +11,28 @@ free and open source — for Linux, Windows and macOS.
 
 ## The idea
 
-A building-permit drawing does not need a 3D modelling suite with a thousand
-tools. It needs a clean tool for floor plans, dimensions and sheets — and
-nothing else.
+JoJa-CAD is a complete 2D CAD program focused on architecture and building-permit
+drawings. Free and open source — for Linux, Windows and macOS.
 
-- **Focused on permit drawings**: walls with openings, dimensions to German DIN
-  standards, sheets with frame and title block, line weights that match the print.
+- **Focused on architecture and permit drawings**: JoJa-CAD targets drawings for
+  building applications — walls with openings, dimensions to German DIN
+  standards, sheets with frame and title block, line weights that match the
+  print. Other fields such as mechanical engineering, civil engineering and
+  surveying are planned as later extensions; suggestions are welcome.
 - **Deliberately minimal**: only what a submission drawing needs. No 3D, no BIM,
   no IFC, no DWG.
 - **Free and open source** (GPL-3.0-or-later), open file format (JSON), no cloud, no account.
 - **Linux, Windows and macOS.** The macOS build is still untested.
 - **German interface**, switchable to English, further languages possible.
 - **Fully controllable by AI** through an MCP server.
+
+## Project status
+
+JoJa-CAD is in the early phase of version 0.2. The goal is to add new features
+as quickly as possible. New features are tested only lightly; bugs are possible.
+The construction-drawing feature set is meant to be complete with version 0.3. A
+stable release cycle is planned only for version 1.0, targeted for the end of
+Q1 2027.
 
 ## Main features
 
@@ -213,30 +223,12 @@ cargo test
 
 ## Contributing
 
-No commits or pull requests are accepted. With AI-generated code a classic code
-review is too expensive and would slow the development process down. Bug reports
-and feature requests as GitHub issues are welcome instead: since implementation
-happens through prompts, a prompt review is far easier than a code review, and
-submitted proposals are implemented in the project's own workflow with its own
-AI agent.
-
-**How to submit:**
-
-1. Open an issue on GitHub and pick the matching template (bug report or feature
-   request).
-2. Describe the matter the way you would give it to an agent: as a direct
-   instruction with a clear goal, not as a discussion.
-3. Stick to the same structure:
-   - **Current state**: what does the program do right now? How can the
-     behaviour be reproduced?
-   - **Defect or problem**: what is wrong or insufficient about it? (For feature
-     requests: what can the program not do yet that it should?)
-   - **Target state**: how should it behave instead? What exactly should the
-     agent do?
-
-The more precisely an issue describes these three points, the more likely it can
-be taken over directly as a prompt. Important terms are defined in
-[`docs/benutzer/GLOSSAR.md`](docs/benutzer/GLOSSAR.md).
+Any form of support is welcome: bug reports, feature requests, criticism of the
+project, and feedback and reviews from using the program. Commits and pull
+requests are not accepted, because a classic code review does not fit
+AI-generated code; instead, reports are taken over as prompts and implemented in
+the project's own workflow with its AI agent. Details: see
+[`CONTRIBUTING.md`](CONTRIBUTING.md).
 
 Forking and building on it yourself is expressly permitted by the GPL;
 the GitHub project also contains the required [`AGENTS.md`](AGENTS.md) so that

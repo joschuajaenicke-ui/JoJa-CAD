@@ -2,8 +2,8 @@
 
 **Deutsch** · [English](README.en.md)
 
-**2D-CAD für Architektur- und Bauantragszeichnungen.** Bewusst minimal, kostenlos
-und quelloffen — für Linux, Windows und macOS.
+**2D-CAD für Architektur- und Bauantragszeichnungen.** Kostenlos und quelloffen —
+für Linux, Windows und macOS.
 
 ![JoJa-CAD Oberfläche](samples/ui.png)
 
@@ -11,11 +11,14 @@ und quelloffen — für Linux, Windows und macOS.
 
 ## Die Idee
 
-Für einen Bauantrag braucht man kein 3D-Modellierprogramm mit tausend Werkzeugen,
-sondern ein sauberes Werkzeug für Grundriss, Bemaßung und Blatt — und sonst nichts.
+JoJa-CAD ist ein vollständiges 2D-CAD-Programm mit Fokus auf Architektur und
+Bauantragszeichnungen. Kostenlos und quelloffen — für Linux, Windows und macOS.
 
-- **Fokus Bauantragszeichnung**: Wände mit Öffnungen, Bemaßung nach DIN, Blätter
-  mit Rahmen und Schriftfeld, Linienstärken wie im Druck.
+- **Fokus auf Architektur und Bauanträgen**: JoJa-CAD ist auf Zeichnungen für
+  Bauanträge ausgerichtet — Wände mit Öffnungen, Bemaßung nach DIN, Blätter mit
+  Rahmen und Schriftfeld, Linienstärken wie im Druck. Weitere Bereiche wie
+  Maschinenbau, Bauingenieurwesen und Vermessungstechnik sind als spätere
+  Erweiterungen geplant; Vorschläge dazu sind willkommen.
 - **Bewusst minimal**: nur das, was eine Bauvorlage braucht. Kein 3D, kein BIM,
   kein IFC, kein DWG.
 - **Kostenlos und quelloffen** (GPL-3.0-or-later), offenes Dateiformat (JSON), keine Cloud,
@@ -23,6 +26,14 @@ sondern ein sauberes Werkzeug für Grundriss, Bemaßung und Blatt — und sonst 
 - **Linux, Windows und macOS.** Die macOS-Fassung ist noch ungeprüft.
 - **Oberfläche auf Deutsch**, auf Englisch umstellbar, weitere Sprachen möglich.
 - **Vollständig über KI steuerbar** durch einen MCP-Server.
+
+## Projektstatus
+
+JoJa-CAD befindet sich in der frühen Phase der Version 0.2. Ziel ist es,
+möglichst schnell neue Features hinzuzufügen. Neue Features werden nur wenig
+getestet, Fehler sind möglich. Der Bereich der Bauzeichnungen soll mit Version
+0.3 vollständig sein. Ein stabiler Release-Zyklus ist erst mit Version 1.0
+geplant, die für Ende Q1 2027 vorgesehen ist.
 
 ## Wichtigste Funktionen
 
@@ -213,17 +224,9 @@ cargo test
 
 ## Beitragen
 
-Es werden keine Commits oder Pull Requests angenommen. Bei KI-generiertem Code ist eine klassische Code-Review zu aufwendig und würde den Entwicklungsprozess ausbremsen. Willkommen sind stattdessen Fehlerberichte und Feature-Wünsche als GitHub-Issues: Da die Umsetzung über Prompts läuft, ist eine Prompt-Review deutlich einfacher als eine Code-Review, und eingereichte Vorschläge werden im eigenen Ablauf mit dem eigenen KI-Agenten umgesetzt.
-
-**So reichst du ein:**
-
-1. Öffne ein Issue auf GitHub und wähle die passende Vorlage (Bug Report oder Feature Request).
-2. Beschreibe das Anliegen so, wie man es einem Agenten geben würde: als direkte Anweisung mit klarem Ziel, nicht als Diskussion.
-3. Halte dich an dieselbe Struktur:
-   - **Ist-Zustand**: Was tut das Programm aktuell? Wie lässt sich das Verhalten reproduzieren?
-   - **Fehler bzw. Problem**: Was ist daran falsch oder unzureichend? (Bei Feature-Wünschen: Was kann das Programm noch nicht, was es können sollte?)
-   - **Soll-Zustand**: Wie soll es stattdessen sein? Was genau soll der Agent tun?
-
-Je präziser das Issue diese drei Punkte beschreibt, desto eher kann es direkt als Prompt übernommen und umgesetzt werden. Wichtige Begriffe sind in [`docs/benutzer/GLOSSAR.md`](docs/benutzer/GLOSSAR.md) formuliert.
-
-Forken und selbst weiterbauen ist mit der GPL ausdrücklich erlaubt; das GitHub-Projekt enthält auch die notwendige [`AGENTS.md`](AGENTS.md), damit direkt mit einem anderen Agenten weitergearbeitet werden kann.
+Jegliche Form der Unterstützung ist willkommen: Fehlerberichte, Feature-Wünsche,
+Kritik am Projekt sowie Feedback und Reviews aus der Benutzung. Commits und Pull
+Requests werden nicht angenommen, weil bei KI-generiertem Code eine klassische
+Code-Review nicht passt; stattdessen werden die Meldungen als Prompt übernommen
+und im eigenen Ablauf mit dem KI-Agenten umgesetzt. Details: siehe
+[`CONTRIBUTING.md`](CONTRIBUTING.md).
