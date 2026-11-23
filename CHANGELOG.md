@@ -92,9 +92,6 @@ portabel: sie legen ihre Daten neben dem Programm ab.
 
 ### Bekannt
 
-- **Windows- und macOS-Pakete folgen mit der nächsten Fassung.** Der Build
-  scheitert derzeit an einer Abhängigkeit der Bild-Zwischenablage, die nur für
-  Linux deklariert ist; die Oberfläche selbst ist davon nicht betroffen.
 - Die **macOS-Fassung ist gebaut, aber ungeprüft** — Rückmeldung willkommen.
 - Die Windows-Fassung ist gebaut, aber nicht ausgiebig getestet.
 - Unter Wayland wird die Fensterposition nicht gespeichert (siehe
