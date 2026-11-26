@@ -1246,6 +1246,14 @@ pub struct EntityStyle {
     /// Füllung (z. B. Wand-Poché); None = ByLayer bzw. kein Fill
     #[serde(default)]
     pub fill: Option<Color>,
+    /// Füllung ausdrücklich **aus** (T0242): `true` zeichnet den Körper ohne
+    /// Füllton und ohne Muster — nur die Umrandung.
+    ///
+    /// Ein eigenes Feld, weil „keine Füllfarbe“ nicht „keine Füllung“ ist: ohne
+    /// Farbe zeichnet eine Wand den Vorgabeton und eine Vollfläche die
+    /// aufgehellte Linienfarbe. Beides bleibt der Normalfall (`false`).
+    #[serde(default, skip_serializing_if = "ist_falsch")]
+    pub no_fill: bool,
     /// Dämmung (Linienart `Insulation`): Bandhöhe **H** in mm. `None` = Vorgabe
     /// ([`crate::daemmung::BREITE_MM`]). Nur diese Linienart liest den Wert.
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -1263,10 +1271,16 @@ impl Default for EntityStyle {
             line_type: None,
             line_weight: None,
             fill: None,
+            no_fill: false,
             loop_width: None,
             loop_shape: None,
         }
     }
+}
+
+/// Serde: `false` braucht keinen Platz in der Datei (T0242).
+fn ist_falsch(b: &bool) -> bool {
+    !*b
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]

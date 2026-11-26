@@ -1079,6 +1079,25 @@ Mit dem Nutzer abgestimmt — nicht „verbessern“:
   `App::commit_ghost`). Naht an der Ecke: geprüft wird, wo die Naht die
   **Achse** jeder Wand trifft, nicht der Abstand des Gehrungspunkts vom Knoten —
   sonst fiel sie bei kurzen Wänden aus (`h·√2` gegen Wandlänge).
+- **Keine Füllung von Wänden und Flächen (T0242)**: Wand, Füllfläche und Volumen lassen
+  sich **ohne** Füllfläche zeichnen. Gespeichert ist das im eigenen Feld
+  `EntityStyle::no_fill` (Vorgabe `false`, `skip_serializing_if`) — nicht als Sonderfarbe,
+  weil „keine Füllfarbe“ etwas anderes ist: ohne Farbe zeichnet eine Wand den Vorgabeton
+  (`WALL_FILL_MIX`) und eine Vollfläche die aufgehellte Linienfarbe. Gelesen wird das Feld an
+  **zwei** Stellen: `render::render_wall` (keine Fläche, kein Muster, nur Kanten) und
+  `render::render_fill` (keine Fläche, kein Muster, nur die Umrandung, wenn `border` an ist).
+  Geschrieben über `modify.set` und die Erzeuger mit dem Parameter `fill`:
+  `actions::fuellung_aus_params` ist die eine Auswertung — Farbwert = Farbe (und Fläche ein),
+  `none`/`bylayer` = nur die Farbe zurücknehmen (Standard), `keine`/`ohne`/`aus` = Fläche ganz
+  aus, `standard`/`vorgabe` = Abschalten zurücknehmen. Die Oberfläche wählt dreistufig
+  (`style::Fuellung` + `panels::fuellung_combo`, gemeinsam mit `panels::color_combo` über
+  `farb_palette`): „Keine Füllung“ · „Standard“ (beim Volumen „Wandton“) · Farbe; ein
+  gewähltes **Muster** schaltet die Füllung wieder ein. Die Vorschau geht denselben Weg
+  (`PendingStyle::no_fill` → `canvas::run_mit_meldung` als `fill: "keine"`,
+  Einfüge-Vorschau in `canvas::draw_fill_ghost`). Prüfweg:
+  `cargo test -p jjcad-core --test keine_fuellung` (10 Tests, darunter das PNG-Maß) und
+  `cargo test -p jjcad-gui keine_fuellung` (2 Tests: Panelanzeige und Erzeugerpfad).
+  Prüfbild `--demo flaeche` bzw. `--demo wandpanel`.
 - **Bilder sind nur an den Kanten anklickbar (T0201)**: Ein Bild hat keine
   Anklickfläche in der Mitte — der Zeiger über der Fläche höbe es sonst hervor,
   und über einem Bild ließe sich nicht zeichnen. `snap::hit_test` prüft für
